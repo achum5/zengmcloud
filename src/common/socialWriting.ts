@@ -49,15 +49,55 @@ export type Stance = "for" | "against" | "neutral";
 // a cap that lands on one is abandoned rather than patched - the clause the
 // comma cut already found is a better sentence than eight words and a shrug.
 const DANGLING = new Set([
-	"a", "an", "the", "to", "for", "of", "in", "on", "at", "by", "with",
-	"from", "and", "or", "but", "as", "into", "over", "after", "before",
-	"his", "her", "their", "its", "this", "that", "than", "who", "was",
-	"were", "is", "are", "has", "have", "had",
+	"a",
+	"an",
+	"the",
+	"to",
+	"for",
+	"of",
+	"in",
+	"on",
+	"at",
+	"by",
+	"with",
+	"from",
+	"and",
+	"or",
+	"but",
+	"as",
+	"into",
+	"over",
+	"after",
+	"before",
+	"his",
+	"her",
+	"their",
+	"its",
+	"this",
+	"that",
+	"than",
+	"who",
+	"was",
+	"were",
+	"is",
+	"are",
+	"has",
+	"have",
+	"had",
 ]);
 
 const endsDangling = (text: string): boolean => {
-	const last = text.split(" ").at(-1)?.toLowerCase().replace(/[^a-z0-9$]/g, "");
-	return last === undefined || last === "" || DANGLING.has(last) || /^\d+$/.test(last);
+	const last = text
+		.split(" ")
+		.at(-1)
+		?.toLowerCase()
+		.replace(/[^a-z0-9$]/g, "");
+	return (
+		last === undefined ||
+		last === "" ||
+		DANGLING.has(last) ||
+		/^\d+$/.test(last)
+	);
 };
 
 const trimDangling = (text: string): string => {
@@ -269,6 +309,8 @@ export type StandingsFrame = {
 	rivalAbbrev: string;
 	rivalWon: number;
 	rivalLost: number;
+	// Games between this team and the rival.
+	gap: number;
 	// The account's own team, which changes everything it will say. For a
 	// series, `mine` is the side that LEADS it - so a fan of the team going
 	// out needs its own flag, and had exactly one line without it.
@@ -403,6 +445,7 @@ export const frameFor = (
 			rivalAbbrev: str(f, "rivalAbbrev"),
 			rivalWon: num(f, "rivalWon"),
 			rivalLost: num(f, "rivalLost"),
+			gap: num(f, "gap"),
 			mine,
 			involved: mine || (side !== undefined && side === num(f, "rivalTid")),
 			trailing: !mine && side !== undefined && side === num(f, "rivalTid"),
@@ -426,7 +469,11 @@ export const frameFor = (
 	}
 	return {
 		kind: "summary",
-		summary,
+		// A full stop, so a line that carries on after it reads as two
+		// sentences. The league writes "was injured (Sprained ankle, out 3
+		// weeks)" with none, and "...out 3 weeks) The rotation changes." ran
+		// the two together.
+		summary: /[!.?]$/.test(summary) ? summary : `${summary}.`,
 		aboutMe: account.pid !== undefined && event.pids.includes(account.pid),
 		player: account.kind === "player",
 		// NOT THE SAME QUESTION. `bad` is "do not cheer this"; `injury` is "this
@@ -445,6 +492,14 @@ export const frameFor = (
 };
 
 // ---------------------------------------------------------------- TEMPLATES
+
+// "2nd", "23rd", "11th". The league table is ranked, and "2th" is the other
+// tell a generated feed gives itself away with.
+const nth = (n: number): string => {
+	const teen = n % 100 >= 11 && n % 100 <= 13;
+	const suffix = teen ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th");
+	return `${n}${suffix}`;
+};
 
 // "1 points" is the kind of thing that makes a whole feed look generated, and
 // a margin of one is common. Every count that can legitimately be 1 goes
@@ -504,6 +559,10 @@ type Template<F extends Frame> = {
 	// the margin, the rebounds, the turnovers - rather than one that would fit
 	// under any post on any night. Replies prefer these; see writeFirstAcceptable.
 	specific?: boolean;
+	// THIS REPLY PUSHES BACK: it disagrees, corrects, needles or doubts. Only
+	// a reply like that draws the original poster back into the thread - an
+	// answer to "Exactly this." with "Keep scrolling" is a feud with a friend.
+	push?: boolean;
 	text: (frame: F) => string;
 };
 
@@ -653,7 +712,9 @@ const GAME_TEMPLATES: Template<GameFrame>[] = [
 	{
 		id: "game.hold",
 		tones: ["beat", "snark"],
-		when: (f) => !f.blowout && !f.nailbiter,
+		// The margin is all this knows about how the game went, and a
+		// four-point final can have been anything. Twelve is a real cushion.
+		when: (f) => !f.blowout && f.margin >= 12,
 		text: (f) =>
 			`Never really in doubt: ${f.winner} by ${f.margin} over the ${f.loser}.`,
 	},
@@ -712,7 +773,7 @@ const GAME_TEMPLATES: Template<GameFrame>[] = [
 		mood: "down",
 		tones: ["doom", "snark"],
 		when: (f) => f.stance === "for",
-		text: (f) => `Beat the ${f.loser}. Enjoy tonight, the schedule gets worse.`,
+		text: (f) => `Beat the ${f.loser}. Enjoy it. It will not last.`,
 	},
 	{
 		id: "game.doom.win.close",
@@ -728,7 +789,7 @@ const GAME_TEMPLATES: Template<GameFrame>[] = [
 		tones: ["doom"],
 		when: (f) => f.stance === "for" && f.blowout,
 		text: (f) =>
-			`${f.winner} buried the ${f.loser}. One good night in a season of the other kind.`,
+			`${f.winner} buried the ${f.loser}. One good night. We have had those before.`,
 	},
 	{
 		id: "game.doom.win.streak",
@@ -736,14 +797,14 @@ const GAME_TEMPLATES: Template<GameFrame>[] = [
 		tones: ["doom", "snark"],
 		when: (f) => f.stance === "for" && f.streak !== undefined && f.streak >= 3,
 		text: (f) =>
-			`${f.winner} got the ${f.loser} too. The run ends. It always ends.`,
+			`${plural(f.streak ?? 0, "win")} in a row now. The run ends. It always ends.`,
 	},
 	{
 		id: "game.doom.neutral",
 		tones: ["doom", "snark"],
 		when: (f) => f.stance === "neutral",
 		text: (f) =>
-			`${f.winner} beat the ${f.loser}. Everyone above us keeps winning.`,
+			`${f.winner} beat the ${f.loser}. Somehow this is also bad for us.`,
 	},
 	{
 		id: "game.doom.neutral.two",
@@ -817,14 +878,20 @@ const GAME_TEMPLATES: Template<GameFrame>[] = [
 	{
 		id: "game.snark.win",
 		tones: ["snark"],
-		when: (f) => f.stance === "for",
+		when: (f) => f.stance === "for" && f.upset,
 		text: (f) =>
 			`Beat the ${f.loser}. Against all odds and most of the game plan.`,
 	},
 	{
-		id: "game.snark.neutral",
+		id: "game.snark.win.plain",
+		tones: ["snark"],
+		when: (f) => f.stance === "for" && !f.upset,
+		text: (f) => `Beat the ${f.loser}. Try to contain yourselves.`,
+	},
+	{
+		id: "game.snark.neutral.alt",
 		tones: ["snark", "wonk"],
-		when: (f) => f.stance === "neutral",
+		when: (f) => f.stance === "neutral" && f.margin >= 12,
 		text: (f) =>
 			`${f.loser} lost to the ${f.winner} by ${f.margin} and it flattered them.`,
 	},
@@ -836,13 +903,13 @@ const GAME_TEMPLATES: Template<GameFrame>[] = [
 			`${f.winner} and the ${f.loser} both spent the last two minutes trying to lose it.`,
 	},
 	{
-		id: "game.wonk.margin",
+		id: "game.wonk.margin.alt",
 		tones: ["wonk", "wire"],
 		text: (f) =>
 			`${f.winnerAbbrev} over ${f.loserAbbrev} by ${f.margin}. ${f.combined} combined.`,
 	},
 	{
-		id: "game.wonk.pace",
+		id: "game.wonk.pace.alt",
 		tones: ["wonk", "wire"],
 		when: (f) => f.combined >= 230,
 		text: (f) =>
@@ -1009,7 +1076,10 @@ const PERFORMANCE_TEMPLATES: Template<PerformanceFrame>[] = [
 	{
 		id: "perf.allaround",
 		tones: ["beat", "wonk", "wire"],
-		when: (f) => f.doubles >= 2,
+		// A slash line is points, boards and assists, so all three have to be
+		// worth printing: the double-double can be blocks, and "20/6/1" is
+		// not a bit of everything.
+		when: (f) => f.doubles >= 2 && f.reb >= 5 && f.ast >= 5,
 		text: (f) =>
 			`${f.name} did a bit of everything: ${f.pts}/${f.reb}/${f.ast}.`,
 	},
@@ -1029,13 +1099,14 @@ const PERFORMANCE_TEMPLATES: Template<PerformanceFrame>[] = [
 		id: "perf.wonk.usage",
 		tones: ["wonk"],
 		when: (f) => f.pts >= 20,
-		text: (f) => `${f.pts} points against ${f.opponent}. Efficient enough.`,
+		text: (f) =>
+			`${f.name}: ${f.pts} points against ${f.opponent}. Efficient enough.`,
 	},
 	{
 		id: "perf.snark.empty",
 		tones: ["snark", "doom"],
 		when: (f) => !f.won && f.pts >= 20,
-		text: (f) => `${f.pts} points and a loss. Empty calories.`,
+		text: (f) => `${f.pts} points and a loss for ${f.name}. Empty calories.`,
 	},
 	{
 		id: "perf.beat.vs",
@@ -1086,19 +1157,22 @@ const PERFORMANCE_TEMPLATES: Template<PerformanceFrame>[] = [
 		id: "perf.snark.volume",
 		tones: ["snark", "doom"],
 		when: (f) => f.fga >= 20,
-		text: (f) => `${f.pts} on ${f.fga} shots. Somebody had the green light.`,
+		text: (f) =>
+			`${f.pts} on ${f.fga} shots for ${f.name}. Somebody had the green light.`,
 	},
 	{
 		id: "perf.snark.loss",
 		tones: ["snark", "doom", "wonk"],
 		when: (f) => !f.won && f.pts >= 25,
-		text: (f) => `${f.pts} points in a loss. Hope it was worth it.`,
+		text: (f) =>
+			`${f.pts} points in a loss for ${f.name}. Hope it was worth it.`,
 	},
 	{
-		id: "perf.snark.tov",
+		id: "perf.snark.tov.alt",
 		tones: ["snark", "wonk"],
 		when: (f) => f.tov >= 5,
-		text: (f) => `${f.pts} points and ${f.tov} turnovers. Both are real.`,
+		text: (f) =>
+			`${f.name}: ${f.pts} points and ${f.tov} turnovers. Both are real.`,
 	},
 	{
 		id: "perf.snark.finally",
@@ -1109,6 +1183,8 @@ const PERFORMANCE_TEMPLATES: Template<PerformanceFrame>[] = [
 	{
 		id: "perf.snark.line",
 		tones: ["snark", "doom"],
+		// "30/13/0" is a slash line with a hole in it.
+		when: (f) => f.reb >= 3 && f.ast >= 3,
 		text: (f) =>
 			`${f.pts}/${f.reb}/${f.ast} from ${f.name}, for whatever that ends up being worth.`,
 	},
@@ -1122,7 +1198,8 @@ const PERFORMANCE_TEMPLATES: Template<PerformanceFrame>[] = [
 		id: "perf.doom.waste",
 		tones: ["doom", "snark"],
 		when: (f) => f.huge && !f.won,
-		text: (f) => `A night like that wasted. This is the whole problem.`,
+		text: (f) =>
+			`A night like that from ${f.name}, wasted. This is the whole problem.`,
 	},
 	{
 		id: "perf.doom.enjoy",
@@ -1150,11 +1227,11 @@ const PERFORMANCE_TEMPLATES: Template<PerformanceFrame>[] = [
 		text: (f) => `A ${f.pts}-point night for ${f.name}.`,
 	},
 	{
-		id: "perf.wonk.usage",
+		id: "perf.wonk.usage.alt",
 		tones: ["wonk"],
 		when: (f) => f.fga >= 15,
 		text: (f) =>
-			`${f.pts} points on ${f.fga} attempts and ${f.fta} free throws.`,
+			`${f.name}: ${f.pts} points on ${f.fga} attempts and ${f.fta} free throws.`,
 	},
 	{
 		id: "perf.wonk.allaround",
@@ -1321,7 +1398,7 @@ const SELF_TEMPLATES: Template<PerformanceFrame>[] = [
 	{
 		id: "self.loss.back",
 		when: (f) => !f.won,
-		text: () => `We will be back at it tomorrow. Nobody is panicking.`,
+		text: () => `Nobody in here is panicking. We go again.`,
 	},
 	{
 		id: "self.loss.big",
@@ -1633,7 +1710,7 @@ const SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 		id: "sum.inj.length",
 		tones: ["wire", "beat", "wonk"],
 		when: (f) => f.topic === "injury",
-		text: (f) => `${f.summary} The rotation changes tonight.`,
+		text: (f) => `${f.summary} The rotation changes.`,
 	},
 	{
 		id: "sum.inj.doom",
@@ -1779,33 +1856,37 @@ const SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 // THE LEAGUE'S NEWS, WHEN IT IS ABOUT YOU. Never quotes the log line, because
 // the log is written in the third person and reading it aloud about yourself is
 // the giveaway this whole design keeps having to design around.
+// News that sends a man to a new city, where "this city has had my back
+// from day one" is about the wrong city.
+const MOVED = new Set(["trade", "freeAgent"]);
+
 const SELF_SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 	{
 		id: "selfsum.blessed",
-		when: (f) => !f.bad,
+		when: (f) => !f.bad && f.leagueType !== "trade",
 		text: () => `Blessed. Thank you all.`,
 	},
 	{ id: "selfsum.work", text: () => `Work is not finished.` },
 	{
 		id: "selfsum.team",
-		when: (f) => !f.bad,
+		when: (f) => !f.bad && f.leagueType !== "trade",
 		text: () => `None of this happens without my teammates.`,
 	},
 	{
 		id: "selfsum.hype",
 		tones: ["hype", "unhinged", "corporate"],
-		when: (f) => !f.bad,
+		when: (f) => !f.bad && f.leagueType !== "trade",
 		text: () => `Told you.`,
 	},
 	{
 		id: "selfsum.quiet",
 		tones: ["wire", "beat", "wonk", "doom"],
 		when: (f) => !f.bad,
-		text: () => `Appreciate it. Back to work tomorrow.`,
+		text: () => `Appreciate it. Back to work.`,
 	},
 	{
 		id: "selfsum.family",
-		when: (f) => !f.bad,
+		when: (f) => !f.bad && f.leagueType !== "trade",
 		text: () => `For my family and everyone who backed me.`,
 	},
 	// The player it happened to.
@@ -1827,17 +1908,17 @@ const SELF_SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 	},
 	{
 		id: "selfsum.city",
-		when: (f) => !f.bad,
+		when: (f) => !f.bad && !MOVED.has(f.leagueType),
 		text: () => `This city has had my back from day one.`,
 	},
 	{
 		id: "selfsum.long",
-		when: (f) => !f.bad,
+		when: (f) => !f.bad && f.leagueType !== "trade",
 		text: () => `Long road. Would not change a step of it.`,
 	},
 	{
 		id: "selfsum.staff",
-		when: (f) => !f.bad,
+		when: (f) => !f.bad && f.leagueType !== "trade",
 		tones: ["wire", "beat", "wonk", "corporate"],
 		text: () => `Thank you to the staff nobody sees. This is theirs too.`,
 	},
@@ -1850,7 +1931,7 @@ const SELF_SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 	{
 		id: "selfsum.more",
 		tones: ["hype", "unhinged"],
-		when: (f) => !f.bad,
+		when: (f) => !f.bad && f.leagueType !== "trade",
 		text: () => `And I am not close to done.`,
 	},
 	{
@@ -1883,6 +1964,24 @@ const SELF_SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 		when: (f) => f.leagueType === "release",
 		text: () => `On to whatever is next. I am not finished.`,
 	},
+	// TRADED. Not a celebration and not a eulogy, and the city that "had my
+	// back from day one" is the one he just left.
+	{
+		id: "selfsum.trade.chapter",
+		when: (f) => f.leagueType === "trade",
+		text: () => `New chapter. Grateful for everything before it.`,
+	},
+	{
+		id: "selfsum.trade.ready",
+		when: (f) => f.leagueType === "trade",
+		text: () => `Ready to work. Let's get it.`,
+	},
+	{
+		id: "selfsum.trade.thanks",
+		when: (f) => f.leagueType === "trade",
+		text: () =>
+			`To everybody who had my back there: thank you. Nothing but love.`,
+	},
 	{
 		id: "selfsum.support",
 		mood: "up",
@@ -1897,11 +1996,19 @@ const SELF_SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 const PLAYER_SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 	{
 		id: "psum.congrats",
-		when: (f) => !f.bad,
+		when: (f) => !f.bad && f.leagueType !== "trade",
 		text: () => `Congrats bro. Well deserved.`,
 	},
-	{ id: "psum.earned", when: (f) => !f.bad, text: () => `Earned, not given.` },
-	{ id: "psum.happy", when: (f) => !f.bad, text: () => `Happy for him.` },
+	{
+		id: "psum.earned",
+		when: (f) => !f.bad && f.leagueType !== "trade",
+		text: () => `Earned, not given.`,
+	},
+	{
+		id: "psum.happy",
+		when: (f) => !f.bad && f.leagueType !== "trade",
+		text: () => `Happy for him.`,
+	},
 	{
 		id: "psum.hype",
 		tones: ["hype", "unhinged"],
@@ -1916,7 +2023,7 @@ const PLAYER_SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 	},
 	{
 		id: "psum.next",
-		when: (f) => !f.bad,
+		when: (f) => !f.bad && f.leagueType === "award",
 		text: () => `Now we go get the next one.`,
 	},
 	// What a team-mate actually posts under an injury.
@@ -1948,6 +2055,24 @@ const PLAYER_SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 		when: (f) => f.leagueType === "retired",
 		text: () => `Watched him put that work in for years. Enjoy it.`,
 	},
+	// A TRADE, which a player cannot congratulate: from here there is no
+	// telling whether his club sent the man away or took him in.
+	{
+		id: "psum.trade.big",
+		when: (f) => f.leagueType === "trade",
+		text: () => `Big move.`,
+	},
+	{
+		id: "psum.trade.business",
+		when: (f) => f.leagueType === "trade",
+		text: () => `Business is business. Love to him wherever he is.`,
+	},
+	{
+		id: "psum.trade.surprise",
+		tones: ["snark", "unhinged", "hype"],
+		when: (f) => f.leagueType === "trade",
+		text: () => `Did not see that one coming.`,
+	},
 	{
 		id: "psum.business",
 		when: (f) => f.leagueType === "release",
@@ -1961,40 +2086,40 @@ const PLAYER_SUMMARY_TEMPLATES: Template<SummaryFrame>[] = [
 	},
 	{
 		id: "psum.deserved",
-		when: (f) => !f.bad,
+		when: (f) => !f.bad && f.leagueType !== "trade",
 		text: () => `Been saying it. Glad everyone else caught up.`,
 	},
 	{
-		id: "psum.watched",
-		when: (f) => !f.bad,
+		id: "psum.watched.alt",
+		when: (f) => !f.bad && f.leagueType !== "trade",
 		text: () => `Watched him put that work in. Nobody handed him anything.`,
 	},
 	{
-		id: "psum.salute",
+		id: "psum.salute.alt",
 		when: (f) => !f.bad,
 		text: () => `Salute.`,
 	},
 	{
 		id: "psum.time",
-		when: (f) => !f.bad,
+		when: (f) => !f.bad && f.leagueType !== "trade",
 		tones: ["hype", "unhinged", "corporate"],
 		text: () => `About time.`,
 	},
 	{
 		id: "psum.proud",
-		when: (f) => !f.bad,
+		when: (f) => !f.bad && f.leagueType !== "trade",
 		text: () => `Proud of him. That is all.`,
 	},
 	{
 		id: "psum.brother",
-		when: (f) => !f.bad,
+		when: (f) => !f.bad && f.leagueType !== "trade",
 		text: () => `My brother. Well deserved.`,
 	},
 	{
 		id: "psum.next.one",
-		when: (f) => !f.bad,
+		when: (f) => !f.bad && f.leagueType === "award",
 		tones: ["wire", "beat", "wonk"],
-		text: () => `Good for the group. Back in tomorrow.`,
+		text: () => `Good for the group. Back to work.`,
 	},
 ];
 
@@ -2027,6 +2152,26 @@ export type ReplyFrame = {
 	// entry in a feed. Quotes therefore lose the one-word agreements and gain
 	// lines that stand on their own.
 	quote: boolean;
+	// THE ANSWER BACK: the original poster, replying to somebody who came at
+	// it. That is a retort, and it draws only from RETORT_TEMPLATES - the
+	// general bank, asked the same question, had the poster answering "You
+	// again" with "Co-signed." and "Say it louder".
+	back: boolean;
+	// The tone of the account being answered, so a doomer and a homer can
+	// argue as themselves.
+	parentTone: SocialTone;
+	// Same side, opposite outlook: the homer and the doomer of one club. They
+	// share a stance on every night and agree on none of them, so a homer
+	// answering "Down 29. Sell the team." with "SAY IT LOUDER" was agreement
+	// read off the stance alone. Agreement lines need both.
+	opposed: boolean;
+	// Who is being answered. A club account is not somebody to feud with:
+	// "Not reading all that" under its four-word final is a joke about
+	// nothing.
+	parentKind: ResolvedSocialAccount["kind"];
+	// Regular season, where "check back later" means something. In a series
+	// there is no later worth a screenshot.
+	later: boolean;
 	subject: Frame;
 };
 
@@ -2035,25 +2180,27 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	{
 		id: "re.agree.short",
 		tones: ["hype", "beat", "corporate", "unhinged"],
-		when: (f: ReplyFrame) => !f.quote && f.sameSide && f.heat < 0.4,
+		when: (f: ReplyFrame) =>
+			!f.quote && f.sameSide && !f.opposed && f.heat < 0.4,
 		text: () => `Exactly this.`,
 	},
 	{
 		id: "re.agree.name",
 		tones: ["hype", "beat", "corporate"],
-		when: (f: ReplyFrame) => f.sameSide && f.heat < 0.4,
+		when: (f: ReplyFrame) => f.sameSide && !f.opposed && f.heat < 0.4,
 		text: (f: ReplyFrame) => `${f.parentName} gets it.`,
 	},
 	{
 		id: "re.agree.finally",
 		tones: ["hype", "unhinged", "snark"],
-		when: (f: ReplyFrame) => !f.quote && f.sameSide,
+		when: (f: ReplyFrame) => !f.quote && f.sameSide && !f.opposed,
 		text: () => `Finally somebody says it.`,
 	},
 	// Correction. The one reply that needs a number, and it takes it from the
 	// same facts the original post was held to.
 	{
 		id: "re.correct.score",
+		push: true,
 		tones: ["wonk", "beat", "wire"],
 		when: (f: ReplyFrame) => f.correcting && f.subject.kind === "game",
 		text: (f: ReplyFrame) => {
@@ -2063,6 +2210,7 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	},
 	{
 		id: "re.correct.line",
+		push: true,
 		tones: ["wonk", "beat"],
 		when: (f: ReplyFrame) => f.correcting && f.subject.kind === "performance",
 		text: (f: ReplyFrame) => {
@@ -2072,6 +2220,7 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	},
 	{
 		id: "re.correct.soft",
+		push: true,
 		tones: ["wonk", "beat", "wire"],
 		when: (f: ReplyFrame) => f.correcting,
 		text: () => `This is not what the box score says.`,
@@ -2079,40 +2228,46 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	// Disagreement without a correction.
 	{
 		id: "re.disagree.plain",
+		push: true,
 		tones: ["snark", "doom", "wonk"],
 		when: (f: ReplyFrame) => !f.sameSide,
 		text: () => `Respectfully, no.`,
 	},
 	{
 		id: "re.disagree.name",
+		push: true,
 		tones: ["snark", "doom", "unhinged"],
 		when: (f: ReplyFrame) => !f.sameSide,
-		text: (f: ReplyFrame) => `${f.parentName} says this every week.`,
+		text: (f: ReplyFrame) => `${f.parentName} says this every time.`,
 	},
 	{
 		id: "re.disagree.wait",
+		push: true,
 		tones: ["snark", "doom"],
-		when: (f: ReplyFrame) => !f.sameSide,
-		text: () => `Ask me again in a month.`,
+		when: (f: ReplyFrame) => !f.sameSide && f.later,
+		text: () => `Ask me again in twenty games.`,
 	},
 	// Heat. Only available once there is history, which is what makes a feud
 	// feel earned rather than declared.
 	{
 		id: "re.heat.again",
+		push: true,
 		tones: ["snark", "unhinged", "doom"],
-		when: (f: ReplyFrame) => f.heat >= 0.5,
+		when: (f: ReplyFrame) => f.parentKind !== "team" && f.heat >= 0.5,
 		text: (f: ReplyFrame) => `You again, ${f.parentHandle}.`,
 	},
 	{
 		id: "re.heat.record",
+		push: true,
 		tones: ["snark", "unhinged", "hype"],
 		when: (f: ReplyFrame) => f.heat >= 0.5 && !f.sameSide,
-		text: () => `Imagine typing this with your season.`,
+		text: () => `Imagine typing this in public.`,
 	},
 	{
 		id: "re.heat.blocked",
+		push: true,
 		tones: ["unhinged", "snark"],
-		when: (f: ReplyFrame) => f.heat >= 0.6,
+		when: (f: ReplyFrame) => f.parentKind !== "team" && f.heat >= 0.6,
 		text: () => `Not reading all that. Wrong anyway.`,
 	},
 	// Despair and celebration under someone else's post.
@@ -2125,7 +2280,7 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	{
 		id: "re.hype.same",
 		tones: ["hype", "unhinged"],
-		when: (f: ReplyFrame) => f.sameSide,
+		when: (f: ReplyFrame) => f.sameSide && !f.opposed,
 		text: () => `SAY IT LOUDER`,
 	},
 	{
@@ -2137,7 +2292,8 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	{
 		id: "re.doom.warn",
 		tones: ["doom"],
-		text: () => `Check back in April.`,
+		when: (f: ReplyFrame) => f.later,
+		text: () => `Check back at the end of the season.`,
 	},
 	{
 		id: "re.doom.tired",
@@ -2148,6 +2304,12 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	{
 		id: "re.wire.add",
 		tones: ["wire", "beat", "wonk"],
+		// Only about a game or a line: a standings note or a trade has neither
+		// a margin nor rebounds, and this printed "undefined rebounds too".
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" ||
+			(f.subject.kind === "performance" &&
+				(f.subject as PerformanceFrame).reb >= 8),
 		text: (f: ReplyFrame) =>
 			f.subject.kind === "game"
 				? `Worth adding: the margin was ${(f.subject as GameFrame).margin}.`
@@ -2160,6 +2322,7 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	},
 	{
 		id: "re.wonk.sample",
+		push: true,
 		tones: ["wonk", "beat"],
 		when: (f: ReplyFrame) => !f.sameSide,
 		text: () => `One game is not a sample.`,
@@ -2178,6 +2341,7 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	},
 	{
 		id: "re.snark.bookmark",
+		push: true,
 		tones: ["snark", "wonk", "doom"],
 		when: (f: ReplyFrame) => !f.sameSide,
 		text: () => `Bookmarking this one.`,
@@ -2188,17 +2352,18 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	{
 		id: "qt.agree",
 		tones: ["hype", "corporate", "beat"],
-		when: (f: ReplyFrame) => f.quote && f.sameSide,
+		when: (f: ReplyFrame) => f.quote && f.sameSide && !f.opposed,
 		text: (f: ReplyFrame) => `${f.parentName} has it right here.`,
 	},
 	{
 		id: "qt.agree.loud",
 		tones: ["hype", "unhinged"],
-		when: (f: ReplyFrame) => f.quote && f.sameSide,
+		when: (f: ReplyFrame) => f.quote && f.sameSide && !f.opposed,
 		text: () => `Putting this at the top of the timeline.`,
 	},
 	{
 		id: "qt.disagree",
+		push: true,
 		tones: ["snark", "doom", "wonk"],
 		when: (f: ReplyFrame) => f.quote && !f.sameSide,
 		text: (f: ReplyFrame) =>
@@ -2206,18 +2371,22 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	},
 	{
 		id: "qt.disagree.soft",
+		push: true,
 		tones: ["wonk", "beat", "wire"],
 		when: (f: ReplyFrame) => f.quote && !f.sameSide,
 		text: () => `I do not read it this way at all.`,
 	},
 	{
 		id: "qt.heat",
+		push: true,
 		tones: ["snark", "unhinged", "doom"],
-		when: (f: ReplyFrame) => f.quote && f.heat >= 0.5,
-		text: (f: ReplyFrame) => `${f.parentHandle} again. Every single week.`,
+		when: (f: ReplyFrame) =>
+			f.parentKind !== "team" && f.quote && f.heat >= 0.5,
+		text: (f: ReplyFrame) => `${f.parentHandle} again. Every single time.`,
 	},
 	{
 		id: "qt.correct",
+		push: true,
 		tones: ["wonk", "wire", "beat"],
 		when: (f: ReplyFrame) =>
 			f.quote && f.correcting && f.subject.kind === "game",
@@ -2229,8 +2398,8 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	{
 		id: "qt.doom",
 		tones: ["doom", "snark"],
-		when: (f: ReplyFrame) => f.quote,
-		text: () => `Screenshotting this for April.`,
+		when: (f: ReplyFrame) => f.quote && f.later,
+		text: () => `Screenshotting this for the end of the season.`,
 	},
 	{
 		id: "qt.wonk",
@@ -2240,12 +2409,14 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	},
 	{
 		id: "qt.hype.disagree",
+		push: true,
 		tones: ["hype", "corporate", "unhinged"],
 		when: (f: ReplyFrame) => f.quote && !f.sameSide,
 		text: () => `Leaving this here for when it ages.`,
 	},
 	{
 		id: "qt.hype.disagree.two",
+		push: true,
 		tones: ["hype", "unhinged", "corporate"],
 		when: (f: ReplyFrame) => f.quote && !f.sameSide,
 		text: (f: ReplyFrame) =>
@@ -2253,6 +2424,7 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	},
 	{
 		id: "qt.hype.disagree.three",
+		push: true,
 		tones: ["hype", "unhinged"],
 		when: (f: ReplyFrame) => f.quote && !f.sameSide,
 		text: () => `Every year somebody posts this. Every year.`,
@@ -2276,8 +2448,8 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	},
 	{
 		id: "qt.any.month",
-		when: (f: ReplyFrame) => f.quote,
-		text: () => `Revisiting this in a month either way.`,
+		when: (f: ReplyFrame) => f.quote && f.later,
+		text: () => `Revisiting this in twenty games either way.`,
 	},
 	{
 		id: "qt.neutral",
@@ -2297,12 +2469,14 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	// Hype and corporate, disagreeing. They do not sneer; they redirect.
 	{
 		id: "re.hype.disagree",
+		push: true,
 		tones: ["hype", "corporate", "unhinged"],
 		when: (f: ReplyFrame) => !f.sameSide,
 		text: () => `Respect it, but we see this one completely differently.`,
 	},
 	{
 		id: "re.hype.disagree.watch",
+		push: true,
 		tones: ["hype", "unhinged"],
 		when: (f: ReplyFrame) => !f.sameSide,
 		text: () => `Keep talking. We are listening.`,
@@ -2315,52 +2489,121 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	},
 	{
 		id: "re.hype.confident",
+		push: true,
 		tones: ["hype", "corporate", "unhinged"],
 		when: (f: ReplyFrame) => !f.sameSide,
 		text: () => `Save this one. Genuinely.`,
 	},
 	{
 		id: "re.hype.late",
+		push: true,
 		tones: ["hype", "unhinged"],
 		when: (f: ReplyFrame) => !f.sameSide,
 		text: () => `You will come around like everyone else did.`,
+	},
+
+	// Wire, beat and wonk, DISAGREEING. They had three ways to do it, so once
+	// a feud began to prefer pushing back they said the same three things.
+	{
+		id: "re.wire.disagree.saw",
+		push: true,
+		tones: ["wire", "beat", "wonk"],
+		when: (f: ReplyFrame) => !f.sameSide,
+		text: () => `That is not how I saw it.`,
+	},
+	{
+		id: "re.wire.disagree.tape",
+		push: true,
+		tones: ["beat", "wonk"],
+		when: (f: ReplyFrame) =>
+			!f.sameSide &&
+			(f.subject.kind === "game" || f.subject.kind === "performance"),
+		text: () => `Not sure the tape backs that up.`,
+	},
+	{
+		id: "re.wire.disagree.stretch",
+		push: true,
+		tones: ["wire", "beat", "wonk", "corporate"],
+		when: (f: ReplyFrame) => !f.sameSide,
+		text: () => `Respectfully, that is a stretch.`,
+	},
+	{
+		id: "re.wire.disagree.agree",
+		push: true,
+		tones: ["wire", "beat", "corporate"],
+		when: (f: ReplyFrame) => !f.sameSide,
+		text: () => `We will have to disagree on this one.`,
+	},
+	{
+		id: "re.wire.disagree.push",
+		push: true,
+		tones: ["wire", "beat", "wonk"],
+		when: (f: ReplyFrame) => !f.sameSide,
+		text: () => `I would push back on that.`,
+	},
+	{
+		id: "re.corp.disagree.passion",
+		push: true,
+		tones: ["corporate"],
+		when: (f: ReplyFrame) => !f.sameSide,
+		text: () => `Appreciate the passion. We see it differently.`,
+	},
+	{
+		id: "qt.wire.disagree",
+		push: true,
+		tones: ["wire", "beat", "wonk", "corporate"],
+		when: (f: ReplyFrame) => f.quote && !f.sameSide,
+		text: (f: ReplyFrame) =>
+			`Sharing this, though I do not agree with ${f.parentName} on it.`,
+	},
+	{
+		id: "qt.wire.disagree.two",
+		push: true,
+		tones: ["wire", "beat", "wonk"],
+		when: (f: ReplyFrame) => f.quote && !f.sameSide,
+		text: () => `A take worth reading, even if I land somewhere else.`,
 	},
 
 	// Wire and beat, agreeing. Measured, not enthusiastic.
 	{
 		id: "re.wire.confirm",
 		tones: ["wire", "beat", "wonk"],
-		when: (f: ReplyFrame) => f.sameSide,
+		when: (f: ReplyFrame) => f.sameSide && !f.opposed,
 		text: () => `This matches what I had.`,
 	},
 	{
 		id: "re.wire.same",
 		tones: ["wire", "beat"],
-		when: (f: ReplyFrame) => f.sameSide,
+		when: (f: ReplyFrame) => f.sameSide && !f.opposed,
 		text: () => `Same read here.`,
 	},
 	{
 		id: "re.beat.detail",
 		tones: ["beat", "wire", "wonk"],
-		when: (f: ReplyFrame) => f.sameSide,
-		text: () => `Add that it held up in the second half too.`,
+		when: (f: ReplyFrame) => f.sameSide && !f.opposed,
+		text: () => `Worth saying twice.`,
 	},
 	{
 		id: "re.wonk.agree",
 		tones: ["wonk", "wire"],
-		when: (f: ReplyFrame) => f.sameSide,
+		when: (f: ReplyFrame) => f.sameSide && !f.opposed,
 		text: () => `The numbers back this up, for once.`,
 	},
 
 	// Available to everybody, which is what keeps the thin cells off the
 	// catch-all without making any one voice sound like another.
 	{
+		// About what happens next, so not under a final score: "could go
+		// either way" answering "By 30. Not a typo." is a reply to nothing.
 		id: "re.any.honest",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "standings" || f.subject.kind === "summary",
 		text: () => `Honest answer: could go either way.`,
 	},
 	{
 		id: "re.any.month",
-		text: () => `Talk to me in a month about this one.`,
+		when: (f: ReplyFrame) => f.later,
+		text: () => `Talk to me in twenty games about this one.`,
 	},
 	{
 		id: "re.any.point",
@@ -2369,8 +2612,9 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	},
 	{
 		id: "re.any.strong",
+		push: true,
 		when: (f: ReplyFrame) => !f.sameSide,
-		text: () => `Strong take. Not sure it survives the week.`,
+		text: () => `Strong take. Not sure it survives the next five games.`,
 	},
 	{
 		id: "re.any.watching",
@@ -2394,6 +2638,7 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	{
 		specific: true,
 		id: "re.perf.volume",
+		push: true,
 		when: (f: ReplyFrame) =>
 			f.subject.kind === "performance" &&
 			!f.sameSide &&
@@ -2417,6 +2662,7 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	{
 		specific: true,
 		id: "re.perf.tov",
+		push: true,
 		when: (f: ReplyFrame) =>
 			f.subject.kind === "performance" &&
 			!f.sameSide &&
@@ -2512,8 +2758,11 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	{
 		specific: true,
 		id: "re.game.ot",
+		// "It still counts" is the winners' line.
 		when: (f: ReplyFrame) =>
-			f.subject.kind === "game" && (f.subject as GameFrame).ot > 0,
+			f.subject.kind === "game" &&
+			f.subject.stance !== "against" &&
+			(f.subject as GameFrame).ot > 0,
 		text: () => `It took an extra five minutes. It still counts.`,
 	},
 	{
@@ -2539,8 +2788,12 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	{
 		specific: true,
 		id: "re.game.streak",
+		// The winners' streak, said by the winners' side or a bystander. A
+		// losing side's radio station answering its own defeat with "6 in a
+		// row is 6 in a row" was celebrating the other team.
 		when: (f: ReplyFrame) =>
 			f.subject.kind === "game" &&
+			f.subject.stance !== "against" &&
 			(f.subject as GameFrame).streak !== undefined &&
 			(f.subject as GameFrame).streak! >= 5,
 		text: (f: ReplyFrame) => {
@@ -2551,6 +2804,7 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	{
 		specific: true,
 		id: "re.game.skid",
+		push: true,
 		when: (f: ReplyFrame) =>
 			f.subject.kind === "game" &&
 			!f.sameSide &&
@@ -2580,6 +2834,215 @@ const REPLY_TEMPLATES: Template<any>[] = [
 		},
 	},
 
+	// ABOUT THE TEAMS, BY NAME. The lines above are about numbers; these are
+	// about who. A thread under a result reads like people who watched it
+	// when somebody names the side that won or the one that folded, and the
+	// tail below - "Seen it.", "Fair." - is what filled that gap before.
+	// Every claim here is one the event carries: the winner, a blowout, a
+	// close finish, a streak or a skid.
+	{
+		specific: true,
+		id: "re.game.them.fold",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" &&
+			f.subject.stance === "for" &&
+			(f.subject as GameFrame).blowout,
+		text: (f: ReplyFrame) =>
+			`The ${(f.subject as GameFrame).loserNick} had no answers at all.`,
+	},
+	{
+		specific: true,
+		id: "re.game.credit",
+		tones: ["beat", "wire", "wonk", "hype", "doom", "corporate"],
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" &&
+			f.subject.stance === "against" &&
+			!(f.subject as GameFrame).blowout,
+		text: (f: ReplyFrame) =>
+			`Hate saying it, but the ${(f.subject as GameFrame).winnerNick} earned that one.`,
+	},
+	{
+		specific: true,
+		id: "re.game.ugly",
+		push: true,
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" &&
+			f.subject.stance === "against" &&
+			(f.subject as GameFrame).blowout,
+		text: (f: ReplyFrame) =>
+			`Nothing about that from the ${(f.subject as GameFrame).loserNick} is okay.`,
+	},
+	{
+		specific: true,
+		id: "re.game.breathe",
+		tones: ["hype", "unhinged", "doom", "snark"],
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" &&
+			f.subject.stance !== "neutral" &&
+			(f.subject as GameFrame).nailbiter,
+		text: () => `Did not breathe for the last two minutes of that.`,
+	},
+	{
+		specific: true,
+		id: "re.game.upset.hurt",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" &&
+			f.subject.stance === "against" &&
+			(f.subject as GameFrame).upset,
+		text: (f: ReplyFrame) =>
+			`Losing that one to the ${(f.subject as GameFrame).winnerNick} is the part that stings.`,
+	},
+	{
+		specific: true,
+		id: "re.game.rolling",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" &&
+			f.subject.stance !== "against" &&
+			(f.subject as GameFrame).streak !== undefined &&
+			(f.subject as GameFrame).streak! >= 3,
+		text: (f: ReplyFrame) =>
+			`The ${(f.subject as GameFrame).winnerNick} keep stacking them.`,
+	},
+	{
+		specific: true,
+		id: "re.game.needone",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" &&
+			(f.subject as GameFrame).skid !== undefined &&
+			(f.subject as GameFrame).skid! >= 3 &&
+			!(f.subject as GameFrame).elimination,
+		text: (f: ReplyFrame) =>
+			`The ${(f.subject as GameFrame).loserNick} need a win from somewhere.`,
+	},
+	{
+		specific: true,
+		id: "re.perf.level",
+		tones: ["hype", "unhinged", "beat", "corporate"],
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "performance" &&
+			f.subject.stance === "for" &&
+			(f.subject as PerformanceFrame).huge,
+		text: (f: ReplyFrame) =>
+			`${(f.subject as PerformanceFrame).name} is on a different level right now.`,
+	},
+	{
+		specific: true,
+		id: "re.perf.respect",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "performance" &&
+			f.subject.stance === "against" &&
+			(f.subject as PerformanceFrame).huge,
+		text: (f: ReplyFrame) =>
+			`Not my guy, but you have to respect what ${(f.subject as PerformanceFrame).name} did there.`,
+	},
+	{
+		specific: true,
+		id: "re.perf.confidence",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "performance" &&
+			f.subject.stance === "for" &&
+			(f.subject as PerformanceFrame).cold,
+		text: (f: ReplyFrame) =>
+			`${(f.subject as PerformanceFrame).name} has to find another way when it is not falling.`,
+	},
+
+	// ABOUT THE TABLE AND THE NEWS, which had nothing but the tail.
+	{
+		specific: true,
+		id: "re.st.jinx",
+		tones: ["hype", "unhinged", "doom", "snark"],
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "standings" &&
+			(f.subject as StandingsFrame).mine &&
+			(f.subject as StandingsFrame).hot,
+		text: () => `Do not jinx this. I am begging.`,
+	},
+	{
+		specific: true,
+		id: "re.st.basement",
+		tones: ["doom", "snark", "unhinged"],
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "standings" && (f.subject as StandingsFrame).cold,
+		text: (f: ReplyFrame) =>
+			`The ${(f.subject as StandingsFrame).nick} keep finding new ways to lose.`,
+	},
+	{
+		specific: true,
+		id: "re.st.top",
+		tones: ["hype", "unhinged", "corporate"],
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "standings" &&
+			(f.subject as StandingsFrame).first &&
+			(f.subject as StandingsFrame).mine,
+		text: () => `Top of the league. Enjoy the view.`,
+	},
+	{
+		specific: true,
+		id: "re.st.doubt",
+		push: true,
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "standings" &&
+			!(f.subject as StandingsFrame).mine &&
+			((f.subject as StandingsFrame).hot ||
+				(f.subject as StandingsFrame).first),
+		text: (f: ReplyFrame) =>
+			`Wake me when the ${(f.subject as StandingsFrame).nick} do it against somebody good.`,
+	},
+	{
+		specific: true,
+		id: "re.news.trade.wait",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "summary" &&
+			(f.subject as SummaryFrame).leagueType === "trade",
+		text: () => `Need to see how it looks on the floor before I grade it.`,
+	},
+	{
+		specific: true,
+		id: "re.news.trade.winner",
+		push: true,
+		tones: ["snark", "doom", "unhinged", "wonk"],
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "summary" &&
+			(f.subject as SummaryFrame).leagueType === "trade",
+		text: () => `There is a winner in this trade and it is not close.`,
+	},
+	{
+		specific: true,
+		id: "re.news.money",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "summary" &&
+			((f.subject as SummaryFrame).leagueType === "freeAgent" ||
+				(f.subject as SummaryFrame).leagueType === "reSigned"),
+		text: () => `That number is going to age one way or the other.`,
+	},
+	{
+		specific: true,
+		id: "re.news.hurt",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "summary" && (f.subject as SummaryFrame).injury,
+		text: () => `Hate this. Get well.`,
+	},
+	{
+		specific: true,
+		id: "re.news.award",
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "summary" &&
+			(f.subject as SummaryFrame).leagueType === "award" &&
+			f.sameSide,
+		text: () => `Deserved. Not close.`,
+	},
+	{
+		specific: true,
+		id: "re.news.award.robbed",
+		push: true,
+		tones: ["snark", "doom", "unhinged", "hype"],
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "summary" &&
+			(f.subject as SummaryFrame).leagueType === "award" &&
+			!f.sameSide,
+		text: () => `Somebody got robbed here and everybody knows it.`,
+	},
+
 	// THE TAIL. On a busy night the day's duplicate check takes the good
 	// lines first, and whoever comes last falls through to whatever is left -
 	// so if what is left is one catch-all, every thread on every busy night
@@ -2588,61 +3051,210 @@ const REPLY_TEMPLATES: Template<any>[] = [
 	// saying very little.
 	{
 		id: "re.tail.true",
-		when: (f: ReplyFrame) => !f.quote,
+		when: (f: ReplyFrame) => !f.quote && f.sameSide && !f.opposed,
 		text: () => `True.`,
 	},
 	{
 		id: "re.tail.suppose",
-		when: (f: ReplyFrame) => !f.quote,
+		when: (f: ReplyFrame) => !f.quote && f.sameSide && !f.opposed,
 		text: () => `Suppose so.`,
 	},
 	{
 		id: "re.tail.maybe",
-		when: (f: ReplyFrame) => !f.quote,
+		when: (f: ReplyFrame) => !f.quote && !f.sameSide,
 		text: () => `Maybe.`,
 	},
 	{
 		id: "re.tail.hardtosay",
-		when: (f: ReplyFrame) => !f.quote,
+		when: (f: ReplyFrame) =>
+			!f.quote &&
+			!f.sameSide &&
+			(f.subject.kind === "standings" || f.subject.kind === "summary"),
 		text: () => `Hard to say either way.`,
 	},
 	{
 		id: "re.tail.seen",
+		tones: ["doom", "snark"],
 		when: (f: ReplyFrame) => !f.quote,
 		text: () => `Seen it.`,
 	},
 	{
 		id: "re.tail.point",
-		when: (f: ReplyFrame) => !f.quote,
+		when: (f: ReplyFrame) => !f.quote && !f.sameSide && f.heat < 0.5,
 		text: () => `You have a point.`,
 	},
 	{
 		id: "re.tail.notsure",
-		when: (f: ReplyFrame) => !f.quote,
+		push: true,
+		when: (f: ReplyFrame) => !f.quote && !f.sameSide,
 		text: () => `Not sure about that one.`,
 	},
 	{
 		id: "re.tail.wewill",
-		when: (f: ReplyFrame) => !f.quote,
+		when: (f: ReplyFrame) => !f.quote && !f.sameSide && f.later,
 		text: () => `We will find out.`,
 	},
 	{
 		id: "re.tail.reading",
-		when: (f: ReplyFrame) => !f.quote,
+		push: true,
+		when: (f: ReplyFrame) => !f.quote && !f.sameSide,
 		text: (f: ReplyFrame) => `Reading this one twice, ${f.parentHandle}.`,
 	},
 	{
 		id: "re.tail.enough",
-		when: (f: ReplyFrame) => !f.quote,
+		when: (f: ReplyFrame) => !f.quote && f.sameSide && !f.opposed,
 		text: () => `Good enough for me.`,
 	},
 	// The catch-all, so a thread is never left dangling for want of a line.
 	{
 		id: "re.neutral",
-		when: (f: ReplyFrame) => !f.quote,
+		when: (f: ReplyFrame) =>
+			!f.quote && ((f.sameSide && !f.opposed) || f.heat < 0.5),
 		text: () => `Fair.`,
 	},
 ];
+
+// THE POSTER ANSWERING BACK, to somebody who came at it. Its own bank
+// because it is its own act: the poster is defending what it said. Asked of
+// the general bank this answered "You again" with "Co-signed.", "Say it
+// louder" and "Suppose so" - agreeing with its heckler. Nothing here agrees.
+const RETORT_TEMPLATES: Template<any>[] = [
+	{
+		id: "rt.stand",
+		tones: ["beat", "wonk", "wire", "corporate"],
+		text: () => `I stand by it.`,
+	},
+	{
+		id: "rt.differ",
+		tones: ["beat", "wonk", "wire", "corporate"],
+		text: () => `Happy to disagree on this one.`,
+	},
+	{
+		id: "rt.same.read",
+		tones: ["beat", "wonk", "wire"],
+		text: () => `Fair to push back. I still read it the same way.`,
+	},
+	{
+		id: "rt.wonk.numbers",
+		tones: ["wonk"],
+		text: () => `The box score is right there. Read it again.`,
+	},
+	{
+		id: "rt.corp.thanks",
+		tones: ["corporate"],
+		text: () => `Appreciate you watching all the same.`,
+	},
+	{
+		id: "rt.scroll",
+		tones: ["snark", "unhinged"],
+		text: (f: ReplyFrame) => `Keep scrolling, ${f.parentHandle}.`,
+	},
+	{
+		id: "rt.asked",
+		tones: ["snark", "unhinged", "hype"],
+		text: (f: ReplyFrame) => `Nobody asked, ${f.parentHandle}.`,
+	},
+	{
+		id: "rt.every",
+		tones: ["snark", "doom", "unhinged"],
+		text: (f: ReplyFrame) =>
+			`Every time, ${f.parentHandle}. Every single time.`,
+	},
+	{
+		id: "rt.bold",
+		tones: ["snark", "hype"],
+		text: (f: ReplyFrame) => `Bold of you, ${f.parentHandle}.`,
+	},
+	{
+		id: "rt.still.right",
+		tones: ["hype", "snark", "unhinged"],
+		text: () => `Noted. Still right.`,
+	},
+	{
+		id: "rt.logoff",
+		tones: ["unhinged"],
+		text: (f: ReplyFrame) => `Log off, ${f.parentHandle}.`,
+	},
+	{
+		id: "rt.apology",
+		tones: ["hype", "unhinged"],
+		text: () => `I will be right here when you want to apologise.`,
+	},
+	{
+		id: "rt.wrong.always",
+		tones: ["hype", "unhinged", "snark"],
+		text: () => `You say this every time and you are wrong every time.`,
+	},
+	{
+		id: "rt.point",
+		tones: ["snark", "unhinged", "doom"],
+		text: () => `Come back when you have a point.`,
+	},
+	{
+		id: "rt.doom.hope",
+		tones: ["doom"],
+		text: () => `I hope you are right. You are not.`,
+	},
+	{
+		id: "rt.doom.adult",
+		tones: ["doom", "snark"],
+		when: (f: ReplyFrame) =>
+			f.parentTone === "hype" || f.parentTone === "unhinged",
+		text: () => `Somebody in this thread has to be the adult.`,
+	},
+	{
+		id: "rt.hype.fun",
+		tones: ["hype", "unhinged"],
+		when: (f: ReplyFrame) =>
+			f.parentTone === "doom" || f.parentTone === "snark",
+		text: (f: ReplyFrame) => `Some of us enjoy being fans, ${f.parentHandle}.`,
+	},
+	{
+		id: "rt.watch",
+		tones: ["hype", "snark", "unhinged", "doom"],
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" || f.subject.kind === "performance",
+		text: () => `Did we watch the same game?`,
+	},
+	{
+		id: "rt.scoreboard",
+		tones: ["hype", "snark", "unhinged"],
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" && f.subject.stance === "for",
+		text: (f: ReplyFrame) => `Scoreboard, ${f.parentHandle}.`,
+	},
+	{
+		id: "rt.lost.know",
+		tones: ["doom", "hype", "unhinged"],
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "game" && f.subject.stance === "against",
+		text: () => `We lost. I know. You do not have to tell me.`,
+	},
+	{
+		id: "rt.player",
+		tones: ["hype", "unhinged"],
+		when: (f: ReplyFrame) =>
+			f.subject.kind === "performance" && f.subject.stance === "for",
+		text: (f: ReplyFrame) =>
+			`${(f.subject as PerformanceFrame).name} does not need your approval.`,
+	},
+];
+
+// Whether a written reply was pushing back, which is the only kind the
+// original poster answers.
+// Which way a voice leans about its own club: the believers up, the doomer
+// down, everybody else level.
+const outlookOf = (tone: SocialTone): number =>
+	tone === "hype" || tone === "unhinged" || tone === "corporate"
+		? 1
+		: tone === "doom"
+			? -1
+			: 0;
+
+export const replyPushes = (templateId: string): boolean =>
+	REPLY_TEMPLATES.some(
+		(template) => template.id === templateId && template.push,
+	);
 
 export const writeReplyDetailed = ({
 	account,
@@ -2655,12 +3267,16 @@ export const writeReplyDetailed = ({
 	avoid,
 	staleTemplates,
 	parentText,
+	back,
 }: {
 	account: ResolvedSocialAccount;
 	parent: ResolvedSocialAccount;
 	event: SocialEvent;
 	heat: number;
 	quote?: boolean;
+	// The original poster answering a reply that came at it. See
+	// RETORT_TEMPLATES.
+	back?: boolean;
 	pool: PhrasePool;
 	rng: () => number;
 	avoid?: AvoidFn;
@@ -2674,6 +3290,7 @@ export const writeReplyDetailed = ({
 		return undefined;
 	}
 	const parentStance = stanceOf(parent, event);
+	const tone0 = account.personality.tone;
 	const frame: ReplyFrame = {
 		parentName: parent.name,
 		parentHandle: `@${parent.handle}`,
@@ -2683,11 +3300,16 @@ export const writeReplyDetailed = ({
 		correcting:
 			account.personality.accuracy - parent.personality.accuracy >= 0.3,
 		quote: quote === true,
+		back: back === true,
+		parentTone: parent.personality.tone,
+		opposed: outlookOf(parent.personality.tone) * outlookOf(tone0) < 0,
+		parentKind: parent.kind,
+		later: event.facts.playoffs !== true && event.facts.series !== true,
 		subject,
 	};
 
 	const { tone } = account.personality;
-	const eligible = REPLY_TEMPLATES.filter(
+	const eligible = (back === true ? RETORT_TEMPLATES : REPLY_TEMPLATES).filter(
 		(template) =>
 			(template.tones === undefined || template.tones.includes(tone)) &&
 			(template.when === undefined || template.when(frame)),
@@ -2848,12 +3470,12 @@ export const OPENERS: Fragment[] = [
 
 export const CLOSERS: Fragment[] = [
 	// Beat.
-	{ text: "More tomorrow.", tones: ["beat"] },
+	{ text: "More to come.", tones: ["beat"] },
 	{ text: "Full story to come.", tones: ["beat"] },
 	{ text: "Notebook later.", tones: ["beat"] },
 	{ text: "More as I get it.", tones: ["beat", "wire"] },
 	{ text: "That is the night.", tones: ["beat"] },
-	{ text: "Back at it tomorrow.", tones: ["beat", "corporate"] },
+	{ text: "On to the next one.", tones: ["beat", "corporate"] },
 	// Hype.
 	{ text: "We move.", tones: ["hype", "unhinged"] },
 	{ text: "On to the next.", tones: ["hype", "corporate"] },
@@ -2877,7 +3499,7 @@ export const CLOSERS: Fragment[] = [
 	{ text: "Long season.", tones: ["doom", "beat"] },
 	{ text: "It is what it is.", tones: ["doom"] },
 	{ text: "Same as always.", tones: ["doom"] },
-	{ text: "Ask me in April.", tones: ["doom", "snark"] },
+	{ text: "Ask me again later.", tones: ["doom", "snark"] },
 	{ text: "We know how this goes.", tones: ["doom"] },
 	{ text: "Do not get attached.", tones: ["doom"], mood: "up" },
 	// Wonk.
@@ -3197,7 +3819,11 @@ export const applyVoice = ({
 	// against nine beat posts a night collide by arithmetic, whatever the seed.
 	// See OPENERS.
 	if (rng() < chatty * quirks.openerRate && canOpen(out)) {
-		const options = fragmentsFor(OPENERS, tone, positive);
+		// One colon per post. "Noted here: Never really in doubt: Bulls by
+		// 13" is a label on a label.
+		const options = fragmentsFor(OPENERS, tone, positive).filter(
+			(opener) => !(opener.endsWith(":") && out.includes(":")),
+		);
 		if (options.length > 0) {
 			out = `${pool.pick(rng, options, "voice:opener")} ${out}`;
 		}
@@ -3434,7 +4060,8 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		tones: ["doom", "snark"],
 		when: (f) => f.first && f.mine,
 
-		text: () => `First place in February means nothing and you all know it.`,
+		text: () =>
+			`First place in the regular season means nothing and you all know it.`,
 	},
 	{
 		id: "st.first.other",
@@ -3573,7 +4200,11 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 	{
 		id: "st.series.neutral",
 		tones: ["snark", "wonk", "beat"],
-		when: (f) => !f.decided && f.series && f.stance === "neutral" && f.lead - f.behind <= 1,
+		when: (f) =>
+			!f.decided &&
+			f.series &&
+			f.stance === "neutral" &&
+			f.lead - f.behind <= 1,
 		text: (f) =>
 			`${f.abbrev} up ${f.lead}-${f.behind} and this series has been better than anyone expected.`,
 	},
@@ -3612,7 +4243,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		when: (f) => f.race,
 
 		text: (f) =>
-			`${f.team} at ${f.won}-${f.lost}, ${f.rival} at ${f.rivalWon}-${f.rivalLost}. That is the cut line.`,
+			`${f.team} at ${f.won}-${f.lost}, ${f.rival} at ${f.rivalWon}-${f.rivalLost}. Nothing between them.`,
 	},
 	{
 		id: "st.race.wonk",
@@ -3620,7 +4251,9 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		when: (f) => f.race,
 
 		text: (f) =>
-			`${f.gamesBack} games separate ${f.abbrev} and the ${f.rivalNick}. Every night counts now.`,
+			f.gap === 0
+				? `Nothing between ${f.abbrev} and the ${f.rivalNick} in the table. Every night counts now.`
+				: `${plural(f.gap, "game")} between ${f.abbrev} and the ${f.rivalNick}. Every night counts now.`,
 	},
 	{
 		id: "st.race.mine",
@@ -3644,7 +4277,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		when: (f) => f.race && !f.mine,
 
 		text: (f) =>
-			`${f.abbrev} and the ${f.rivalNick} fighting over a first-round exit.`,
+			`${f.abbrev} and the ${f.rivalNick}, fighting over the middle of the table.`,
 	},
 
 	// A SERIES THAT ENDED TONIGHT.
@@ -3706,7 +4339,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		tones: ["doom", "snark"],
 		when: (f) => f.decided && f.trailing,
 		mood: "down",
-		text: () => `That is the season. See everybody in October.`,
+		text: () => `That is the season. See everybody next year.`,
 	},
 	{
 		id: "st.done.out.quiet",
@@ -3758,7 +4391,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		tones: ["snark", "doom"],
 		when: (f) => f.hot && !f.mine && f.won > f.lost,
 
-		text: (f) => `${f.won}-${f.lost} and the schedule has not started yet.`,
+		text: (f) => `${f.won}-${f.lost}. Wake me when they beat somebody good.`,
 	},
 	{
 		id: "st.cold.pundit",
@@ -3796,7 +4429,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		when: (f) => !f.mine && f.rank > 0 && !f.first && !f.worst,
 
 		text: (f) =>
-			`${f.nick} are ${f.rank}th and every one of you will tell me that is wrong.`,
+			`${f.nick} are ${nth(f.rank)} in the league and every one of you will tell me that is wrong.`,
 	},
 	{
 		id: "st.gb.pundit",
@@ -3804,7 +4437,7 @@ const STANDINGS_TEMPLATES: Template<StandingsFrame>[] = [
 		when: (f) => !f.mine && f.gamesBack > 0 && f.gamesBack <= 3,
 
 		text: (f) =>
-			`${plural(f.gamesBack, "game")} back. Close enough to matter, far enough to hurt.`,
+			`The ${f.nick}, ${plural(f.gamesBack, "game")} off the top. Close enough to matter, far enough to hurt.`,
 	},
 ];
 
@@ -3817,7 +4450,7 @@ const CORPORATE_LOSS_TEMPLATES: Template<GameFrame>[] = [
 	{
 		id: "corp.loss.plain",
 		quiet: true,
-		text: () => `Not our night. Back at it tomorrow.`,
+		text: () => `Not our night. We go again.`,
 	},
 	{
 		id: "corp.loss.close",
@@ -3845,7 +4478,7 @@ const CORPORATE_LOSS_TEMPLATES: Template<GameFrame>[] = [
 	{
 		id: "corp.loss.back",
 		quiet: true,
-		when: (f) => (!f.blowout),
+		when: (f) => !f.blowout,
 		text: () => `We will look at it and we will be back out there.`,
 	},
 
@@ -3882,7 +4515,8 @@ const CORPORATE_LOSS_TEMPLATES: Template<GameFrame>[] = [
 		id: "corp.loss.ot",
 		quiet: true,
 		when: (f) => f.ot > 0,
-		text: () => `Overtime did not go our way. Thank you to everyone who stayed.`,
+		text: () =>
+			`Overtime did not go our way. Thank you to everyone who stayed.`,
 	},
 	{
 		id: "corp.loss.possession",
@@ -3926,13 +4560,13 @@ const CORPORATE_LOSS_TEMPLATES: Template<GameFrame>[] = [
 	{
 		id: "corp.loss.playoffs",
 		quiet: true,
-		when: (f) => (f.playoffs),
+		when: (f) => f.playoffs,
 		text: () => `We will be ready for the next one. Thank you for being loud.`,
 	},
 	{
 		id: "corp.loss.halves",
 		quiet: true,
-		when: (f) => (!f.blowout && !f.nailbiter),
+		when: (f) => !f.blowout && !f.nailbiter,
 		text: () => `Not the result we wanted. We keep going.`,
 	},
 	{
@@ -3941,10 +4575,10 @@ const CORPORATE_LOSS_TEMPLATES: Template<GameFrame>[] = [
 		text: () => `Appreciate everyone who showed up tonight.`,
 	},
 	{
-		id: "corp.loss.tomorrow",
+		id: "corp.loss.again",
 		quiet: true,
-		when: (f) => (!f.playoffs),
-		text: () => `We are back at it tomorrow.`,
+		when: (f) => !f.playoffs,
+		text: () => `We go again next time out.`,
 	},
 
 	// AND MOST OF IT SHOULD CARRY THE GAME. Widening this bank with flat
@@ -3955,7 +4589,8 @@ const CORPORATE_LOSS_TEMPLATES: Template<GameFrame>[] = [
 	{
 		id: "corp.loss.by",
 		quiet: true,
-		when: (f) => (f.margin > 0),
+		// Not after a one-point loss, which nobody calls a bad performance.
+		when: (f) => f.margin >= 8,
 		text: (f) => `${f.winnerNick} by ${f.margin}. We will be better than that.`,
 	},
 	{
@@ -4187,10 +4822,15 @@ const writeFirstAcceptable = ({
 		// Posts are not filtered this way. Their banks are already written off
 		// the frame, and preferring within them would narrow voices that are
 		// meant to differ.
+		// Between two accounts with history, pushing back IS the thing to say:
+		// a feud that answers with a fact about the rebounds is not one.
+		const feuding = "heat" in frame && (frame as ReplyFrame).heat >= 0.5;
+		const preferred = (t: Template<any>) =>
+			t.specific === true || (feuding && t.push === true);
 		const pool0 = preferSpecific
-			? (remaining.some((t) => t.specific)
-					? remaining.filter((t) => t.specific)
-					: remaining)
+			? remaining.some(preferred)
+				? remaining.filter(preferred)
+				: remaining
 			: remaining;
 		const unused = pool0.filter((template) => freshIds.has(template.id));
 		const candidates = unused.length > 0 ? unused : pool0;
@@ -4407,8 +5047,8 @@ export const receiptText = (opts: {
 // What the quoted account says back. He never concedes gracefully.
 const RECEIPT_REPLY_RISEN = [
 	"i stand by it",
-	"check back in a month",
-	"four games. wake me in june",
+	"check back in twenty games",
+	"small sample. wake me at the end of the season",
 	"blocked and reported",
 ];
 
@@ -4453,7 +5093,7 @@ const PLAYER_RECEIPT_FAN = [
 	"the disrespect was archived, don't worry",
 	"exhibit A, from earlier this season",
 	"they always know, right up until he reminds them",
-	"this stays pinned all week",
+	"this stays pinned",
 	"quote tweeting from the mountaintop",
 	"he saw this. i promise you he saw this",
 ];

@@ -86,6 +86,7 @@ import {
 	receiptText,
 	writePostDetailed,
 	writeReplyDetailed,
+	replyPushes,
 	type AvoidFn,
 } from "../../common/socialWriting.ts";
 import { recapGamesForDay } from "./getDayGamesForRecap.ts";
@@ -665,7 +666,14 @@ const handleMention = (handle: string) =>
 export const isMentionOf = (
 	post: Pick<
 		FeedPost,
-		"accountId" | "text" | "pid" | "pids" | "tid" | "tids" | "quoted" | "replies"
+		| "accountId"
+		| "text"
+		| "pid"
+		| "pids"
+		| "tid"
+		| "tids"
+		| "quoted"
+		| "replies"
 	>,
 	account: MentionTarget,
 ): boolean => {
@@ -692,9 +700,7 @@ export const isMentionOf = (
 		aboutThem ||
 		post.quoted?.accountId === account.id ||
 		handle.test(post.text) ||
-		post.replies.some(
-			(r) => r.accountId !== account.id && handle.test(r.text),
-		)
+		post.replies.some((r) => r.accountId !== account.id && handle.test(r.text))
 	);
 };
 
@@ -2110,7 +2116,15 @@ export const buildFeedDay = async ({
 		// original poster does not let it go - which is the whole point of
 		// deriving feuds in the first place, and was invisible while every
 		// thread stopped after one reply.
-		if (reply.heat < 0.5 || poster.personality.replyiness < 0.15) {
+		//
+		// Only when the reply pushed back. A heated pair can still agree about
+		// a night, and answering "Exactly this." with a retort is a feud with
+		// nobody.
+		if (
+			reply.heat < 0.5 ||
+			poster.personality.replyiness < 0.15 ||
+			!replyPushes(written.templateId)
+		) {
 			continue;
 		}
 		const own = memoryOf(snapshot, poster, dayIndex);
@@ -2119,6 +2133,7 @@ export const buildFeedDay = async ({
 			parent: replier,
 			event,
 			heat: reply.heat,
+			back: true,
 			pool,
 			rng: rngFromSeed(hashSeed(`${seed}|back|${poster.id}|${replier.id}`)),
 			// The POSTER's memory, not the replier's. Getting this wrong put

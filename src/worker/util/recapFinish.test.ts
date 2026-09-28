@@ -243,3 +243,43 @@ describe("finishScores", () => {
 		assert.ok(ties.has(99) && ties.has(97));
 	});
 });
+
+describe("the finish says only what the clock allows", () => {
+	test("a cut at the buzzer is too late, not something the winners held", () => {
+		const held: RecapTeam = { ...wizards, pts: 104 };
+		const chased: RecapTeam = { ...sixers, pts: 102 };
+		const game = build(
+			[ev(0, 11, 2, "rim", 80, [104, 97]), ev(1, 21, 3, "tp", 0.2, [104, 102])],
+			{ teams: [held, chased] },
+		);
+		(game.flow as any).late = [{ clock: 120, pts: [100, 95] }];
+		for (let seed = 0; seed < 12; seed++) {
+			const text = finishStory(
+				{ game, winner: held, loser: chased, regPeriods: 4, shotTold: false },
+				rngFromSeed(seed),
+			).join(" ");
+			assert.notMatch(text, /held from there|never got the stop/, text);
+		}
+	});
+
+	test("free throws that did not decide anything do not finish it", () => {
+		// Up nine when they were taken: the go-ahead basket and the cut are
+		// the story, and "his two free throws with 3.7 seconds left finished
+		// it" is not.
+		const game = build([
+			ev(1, 21, 2, "rim", 100, [97, 99]),
+			ev(0, 11, 3, "tp", 90, [100, 99]),
+			ev(1, 22, 2, "rim", 75, [100, 101]),
+			ev(0, 12, 2, "mid", 60, [102, 101]),
+			ev(1, 21, 1, "ft", 50, [102, 102]),
+			ev(0, 11, 2, "rim", 40, [104, 102]),
+			ev(0, 11, 3, "tp", 30, [107, 102]),
+			ev(0, 12, 2, "rim", 20, [109, 102]),
+			ev(0, 12, 2, "ft", 3.7, [111, 102]),
+		]);
+		for (let seed = 0; seed < 12; seed++) {
+			const text = tell(game, seed).join(" ");
+			assert.notMatch(text, /3\.7 seconds/, text);
+		}
+	});
+});

@@ -17,6 +17,8 @@ import {
 	writePost,
 	writeReply,
 	writePostDetailed,
+	writeReplyDetailed,
+	replyPushes,
 	OPENERS,
 	CLOSERS,
 } from "./socialWriting.ts";
@@ -604,8 +606,22 @@ describe("the night a season ends", () => {
 			playoffs: true,
 			elimination: true,
 			teams: [
-				{ tid: 0, region: "Boston", name: "Celtics", abbrev: "BOS", pts: 114, players: [] },
-				{ tid: 1, region: "Sacramento", name: "Kings", abbrev: "SAC", pts: 100, players: [] },
+				{
+					tid: 0,
+					region: "Boston",
+					name: "Celtics",
+					abbrev: "BOS",
+					pts: 114,
+					players: [],
+				},
+				{
+					tid: 1,
+					region: "Sacramento",
+					name: "Kings",
+					abbrev: "SAC",
+					pts: 100,
+					players: [],
+				},
 			],
 		})[0]!;
 
@@ -616,6 +632,8 @@ describe("the night a season ends", () => {
 			"next one",
 			"we keep going",
 			"turn it around",
+			"we go again",
+			"next time out",
 		];
 		let checked = 0;
 		for (let seed = 0; seed < 150; seed++) {
@@ -650,8 +668,22 @@ describe("the night a season ends", () => {
 			winnerTid: 0,
 			playoffs: false,
 			teams: [
-				{ tid: 0, region: "Boston", name: "Celtics", abbrev: "BOS", pts: 114, players: [] },
-				{ tid: 1, region: "Sacramento", name: "Kings", abbrev: "SAC", pts: 100, players: [] },
+				{
+					tid: 0,
+					region: "Boston",
+					name: "Celtics",
+					abbrev: "BOS",
+					pts: 114,
+					players: [],
+				},
+				{
+					tid: 1,
+					region: "Sacramento",
+					name: "Kings",
+					abbrev: "SAC",
+					pts: 100,
+					players: [],
+				},
 			],
 		})[0]!;
 		let forward = 0;
@@ -662,7 +694,10 @@ describe("the night a season ends", () => {
 				pool: createPhrasePool(),
 				rng: rngFromSeed(seed),
 			});
-			if (text !== undefined && /tomorrow|next one|keep going/i.test(text)) {
+			if (
+				text !== undefined &&
+				/we go again|next time out|next one|keep going/i.test(text)
+			) {
 				forward += 1;
 			}
 		}
@@ -691,16 +726,16 @@ describe("news nobody cheers", () => {
 	});
 
 	test("a retirement or a release is not celebrated", () => {
-		const CHEERS = [
-			"Let's go",
-			"LETS GO",
-			"Run it back",
-			"Love to see it",
-		];
+		const CHEERS = ["Let's go", "LETS GO", "Run it back", "Love to see it"];
 		// And the lines about a body healing, which is a different kind of
 		// wrong: they were on the same flag, so marking a retirement sombre
 		// answered a man's career with "Speedy recovery."
-		const HOSPITAL = ["speedy recovery", "rehab", "he'll be back", "from the bench"];
+		const HOSPITAL = [
+			"speedy recovery",
+			"rehab",
+			"he'll be back",
+			"from the bench",
+		];
 		let checked = 0;
 		for (const [leagueType, topic] of [
 			["retired", "milestone"],
@@ -872,8 +907,22 @@ describe("writeReply", () => {
 			for (const ev of [
 				game({
 					teams: [
-						{ tid: 0, region: "Boston", name: "Celtics", abbrev: "BOS", pts: 100, players: [] },
-						{ tid: 1, region: "Sacramento", name: "Kings", abbrev: "SAC", pts: 99, players: [] },
+						{
+							tid: 0,
+							region: "Boston",
+							name: "Celtics",
+							abbrev: "BOS",
+							pts: 100,
+							players: [],
+						},
+						{
+							tid: 1,
+							region: "Sacramento",
+							name: "Kings",
+							abbrev: "SAC",
+							pts: 99,
+							players: [],
+						},
 					],
 				}),
 				perfEvent({ pts: 1, reb: 1, ast: 1, tov: 1, blk: 1, stl: 1 }),
@@ -887,7 +936,10 @@ describe("writeReply", () => {
 					rng: rngFromSeed(seed),
 				});
 				if (text !== undefined) {
-					assert.notMatch(text, /\b1 (points|boards|assists|turnovers|blocks|steals)\b/);
+					assert.notMatch(
+						text,
+						/\b1 (points|boards|assists|turnovers|blocks|steals)\b/,
+					);
 				}
 			}
 		}
@@ -1476,5 +1528,187 @@ describe("cold nights", () => {
 			write(account("teamOfficial", { tid: 0 }), coldEvent()),
 			undefined,
 		);
+	});
+});
+
+describe("threads that read like people", () => {
+	const AGREEING =
+		/exactly this|gets it|finally somebody|say it louder|co-signed|^true|suppose so|good enough for me|^fair[!.]?$|has it right/i;
+
+	test("the poster answering back never agrees with its heckler", () => {
+		const TONES = [
+			"wire",
+			"beat",
+			"hype",
+			"snark",
+			"doom",
+			"wonk",
+			"corporate",
+			"unhinged",
+		] as const;
+		let written = 0;
+		for (const tone of TONES) {
+			const poster = account("homerFan", { tid: 0, override: { tone } });
+			const heckler = account("doomerFan", { tid: 0 });
+			for (let seed = 0; seed < 25; seed++) {
+				const text = writeReply({
+					account: poster,
+					parent: heckler,
+					event: game(),
+					heat: 0.8,
+					back: true,
+					pool: createPhrasePool(),
+					rng: rngFromSeed(seed),
+				});
+				if (text === undefined) {
+					continue;
+				}
+				written += 1;
+				assert.notMatch(text, AGREEING, `${tone} answered back with "${text}"`);
+			}
+		}
+		assert.isAbove(written, 100);
+	});
+
+	test("a homer does not agree with the doomer of the same club", () => {
+		// Same side, opposite outlook. "Down 29. Sell the team." answered with
+		// "SAY IT LOUDER" was agreement read off the stance alone.
+		const loss = game({ winnerTid: 1 });
+		for (let seed = 0; seed < 60; seed++) {
+			const text = writeReply({
+				account: account("homerFan", { tid: 0 }),
+				parent: account("doomerFan", { tid: 0 }),
+				event: loss,
+				heat: 0,
+				pool: createPhrasePool(),
+				rng: rngFromSeed(seed),
+			});
+			if (text !== undefined) {
+				assert.notMatch(text, AGREEING, `homer agreed: "${text}"`);
+			}
+		}
+	});
+
+	test("only a reply that pushes back draws an answer", () => {
+		const agree = writeReplyDetailed({
+			account: account("homerFan", { tid: 0 }),
+			parent: account("homerFan", { tid: 0 }),
+			event: game(),
+			heat: 0,
+			pool: createPhrasePool(),
+			rng: rngFromSeed(1),
+		})!;
+		assert.isFalse(replyPushes(agree.templateId), agree.text);
+		let pushed = 0;
+		for (let seed = 0; seed < 40; seed++) {
+			const push = writeReplyDetailed({
+				account: account("troll", { tid: 1 }),
+				parent: account("homerFan", { tid: 0 }),
+				event: game(),
+				heat: 0.9,
+				pool: createPhrasePool(),
+				rng: rngFromSeed(seed),
+			});
+			if (push && replyPushes(push.templateId)) {
+				pushed += 1;
+			}
+		}
+		assert.isAbove(pushed, 20, "a feud should mostly push back");
+	});
+});
+
+describe("posts say who they are about", () => {
+	test("a performance post from a bystander names the player", () => {
+		const events = [
+			perfEvent(),
+			perfEvent({ won: false, pts: 31 }),
+			perfEvent({ pts: 16, fga: 22, cold: true, tsp: 35 }),
+			perfEvent({ tov: 7 }),
+		];
+		for (const archetype of BUILT_IN_ARCHETYPES) {
+			if (archetype.id === "player" || archetype.id === "teamOfficial") {
+				continue;
+			}
+			for (const event of events) {
+				for (let seed = 0; seed < 8; seed++) {
+					const text = write(account(archetype.id), event, seed);
+					if (text !== undefined) {
+						assert.include(
+							text.toLowerCase(),
+							"pierce",
+							`${archetype.id}: "${text}"`,
+						);
+					}
+				}
+			}
+		}
+	});
+
+	test("a league rank reads as an ordinal", () => {
+		const standing = (rank: number): SocialEvent => ({
+			id: `ss:1:rank:${rank}`,
+			type: "standings",
+			topic: "standings",
+			season: 2013,
+			day: 30,
+			order: 1,
+			salience: 0.5,
+			tids: [3],
+			pids: [],
+			facts: {
+				tid: 3,
+				teamName: "Miami Heat",
+				teamNick: "Heat",
+				abbrev: "MIA",
+				won: 20,
+				lost: 10,
+				rank,
+				gamesBack: 2,
+				streak: 1,
+			},
+		});
+		const seen = new Set<string>();
+		for (const rank of [2, 3, 11, 21, 22]) {
+			for (let seed = 0; seed < 60; seed++) {
+				const text = write(account("nationalPundit"), standing(rank), seed);
+				const m = text?.match(/\b(\d+)(st|nd|rd|th)\b/);
+				if (m) {
+					seen.add(`${m[1]}${m[2]}`);
+				}
+			}
+		}
+		for (const bad of ["2th", "3th", "21th", "22th", "11st"]) {
+			assert.isFalse(seen.has(bad), `wrote ${bad}`);
+		}
+	});
+
+	test("a traded player does not thank the city he just left", () => {
+		const trade: SocialEvent = {
+			id: "e:trade",
+			type: "trade",
+			topic: "trade",
+			season: 2013,
+			day: 1,
+			order: 1,
+			salience: 0.7,
+			tids: [0, 1],
+			pids: [5],
+			facts: {
+				summary:
+					"The Boston Celtics traded Paul Pierce to the Sacramento Kings.",
+				leagueType: "trade",
+			},
+		};
+		const WRONG = /this city|my teammates|told you|for my family|long road/i;
+		for (let seed = 0; seed < 60; seed++) {
+			const text = write(
+				account("player", { tid: 0, pid: 5, kind: "player" }),
+				trade,
+				seed,
+			);
+			if (text !== undefined) {
+				assert.notMatch(text, WRONG, text);
+			}
+		}
 	});
 });

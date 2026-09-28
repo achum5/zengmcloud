@@ -152,7 +152,10 @@ const DOOMER_BRANDS = [
 	"{abbrev} Pain Index",
 	"Same Old {name}",
 	"{name} Misery Index",
-	"Trust The Process ({abbrev})",
+	// Not "Trust The Process": that is one real club's slogan, and a handle is
+	// cut to fifteen characters, so every city's copy lost its abbrev and
+	// read as a Philadelphia account.
+	"{abbrev} Lottery Watch",
 	"{region} Doomer",
 	"Blow It Up ({abbrev})",
 ];

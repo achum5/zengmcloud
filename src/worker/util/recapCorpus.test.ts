@@ -635,15 +635,61 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 			text: (a: string, b: string, p: string) => string;
 			teams: number;
 		}[] = [
-			{ type: "injured", score: 12, teams: 1, text: (a, _b, p) => `${p} of the ${a} was injured. (Sprained ankle, out 3 weeks)` },
-			{ type: "trade", score: 18, teams: 2, text: (a, b, p) => `The ${a} traded ${p} to the ${b}.` },
-			{ type: "freeAgent", score: 14, teams: 1, text: (a, _b, p) => `The ${a} signed ${p} for 4 years, $92M.` },
-			{ type: "reSigned", score: 11, teams: 1, text: (a, _b, p) => `The ${a} re-signed ${p} for 3 years, $54M.` },
-			{ type: "release", score: 8, teams: 1, text: (a, _b, p) => `The ${a} released ${p}.` },
-			{ type: "playerFeat", score: 16, teams: 1, text: (a, _b, p) => `${p} of the ${a} had 52 points and 18 rebounds.` },
-			{ type: "award", score: 20, teams: 1, text: (_a, _b, p) => `${p} won Most Valuable Player.` },
-			{ type: "retired", score: 15, teams: 1, text: (a, _b, p) => `${p} of the ${a} retired.` },
-			{ type: "madePlayoffs", score: 13, teams: 1, text: (a) => `The ${a} made the playoffs.` },
+			{
+				type: "injured",
+				score: 12,
+				teams: 1,
+				text: (a, _b, p) =>
+					`${p} of the ${a} was injured. (Sprained ankle, out 3 weeks)`,
+			},
+			{
+				type: "trade",
+				score: 18,
+				teams: 2,
+				text: (a, b, p) => `The ${a} traded ${p} to the ${b}.`,
+			},
+			{
+				type: "freeAgent",
+				score: 14,
+				teams: 1,
+				text: (a, _b, p) => `The ${a} signed ${p} for 4 years, $92M.`,
+			},
+			{
+				type: "reSigned",
+				score: 11,
+				teams: 1,
+				text: (a, _b, p) => `The ${a} re-signed ${p} for 3 years, $54M.`,
+			},
+			{
+				type: "release",
+				score: 8,
+				teams: 1,
+				text: (a, _b, p) => `The ${a} released ${p}.`,
+			},
+			{
+				type: "playerFeat",
+				score: 16,
+				teams: 1,
+				text: (a, _b, p) => `${p} of the ${a} had 52 points and 18 rebounds.`,
+			},
+			{
+				type: "award",
+				score: 20,
+				teams: 1,
+				text: (_a, _b, p) => `${p} won Most Valuable Player.`,
+			},
+			{
+				type: "retired",
+				score: 15,
+				teams: 1,
+				text: (a, _b, p) => `${p} of the ${a} retired.`,
+			},
+			{
+				type: "madePlayoffs",
+				score: 13,
+				teams: 1,
+				text: (a) => `The ${a} made the playoffs.`,
+			},
 		];
 
 		let eid = 1;
@@ -712,6 +758,55 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 		}
 		writeFileSync(`${LOG}.feed.txt`, feedOut.join("\n"));
 		writeFileSync(`${LOG}.feed.jsonl`, feedRows.join("\n"));
+
+		// What a read of the feed kept turning up, counted, so the next read
+		// starts from numbers. A hole in a template ("undefined rebounds too")
+		// is fatal; the rest are measurements.
+		const texts = feedOut.filter((line) => !line.startsWith("@"));
+		const replyTexts = texts
+			.filter((line) => line.startsWith("    > "))
+			.map((line) => line.replace(/^ {4}> @\S+ \[[^\]]*]( \(quote\))?: /, ""));
+		const bare = (t: string) =>
+			t
+				.toLowerCase()
+				.replace(/[#@]\w+/g, "")
+				.replace(/[^\d a-z]/g, "")
+				.trim();
+		const FILLER = new Set([
+			"maybe",
+			"fair",
+			"suppose so",
+			"seen it",
+			"true",
+			"hard to say either way",
+			"watching this one closely",
+			"say it louder",
+			"not sure about that one",
+			"cosigned",
+			"you have a point",
+			"we will find out",
+			"okay",
+			"good enough for me",
+			"noting this one down",
+		]);
+		const holes = texts.filter((t) => /undefined|NaN|\[object/.test(t));
+		const calendar = texts.filter((t) =>
+			/\btomorrow\b|\byesterday\b|back-to-back(?! champion)|\bin a month\b|\bapril\b|\boctober\b/i.test(
+				t,
+			),
+		);
+		writeFileSync(
+			`${LOG}.feed.stats.txt`,
+			[
+				`posts=${feedRows.length} replies=${replyTexts.length}`,
+				`filler replies=${replyTexts.filter((t) => FILLER.has(bare(t))).length}`,
+				`calendar claims=${calendar.length}`,
+				...calendar.slice(0, 10).map((t) => `    ${t}`),
+				`template holes=${holes.length}`,
+				...holes.slice(0, 10).map((t) => `    ${t}`),
+			].join("\n"),
+		);
+		assert.deepStrictEqual(holes, [], "a feed line with a hole in it");
 	}
 
 	// ACCURACY. Every number in the finished prose, held against the box score

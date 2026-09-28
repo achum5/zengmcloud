@@ -102,6 +102,24 @@ const nameOf = (game: RecapGame, pid: number | undefined) => {
 const scoreOf = (e: FinishEvent, wSide: GameFlowSide): [number, number] =>
 	wSide === 0 ? [e.score[0], e.score[1]] : [e.score[1], e.score[0]];
 
+// Whether a winner's free throws decided anything: the lead they were shot
+// with was one possession or less. Two free throws with 3.7 seconds left
+// did not "finish" a game already up nine.
+const mattered = (e: FinishEvent, wSide: GameFlowSide): boolean => {
+	const [w, l] = scoreOf(e, wSide);
+	return w - e.pts - l <= 3;
+};
+
+// The winners' lead at the end of the window.
+const finalLead = (moments: { e: FinishEvent }[], wSide: GameFlowSide) => {
+	const last = moments.at(-1);
+	if (!last) {
+		return 0;
+	}
+	const [w, l] = scoreOf(last.e, wSide);
+	return w - l;
+};
+
 // The same, leader first - "cut it to 121-117", never "made it 117-121".
 const shown = (e: FinishEvent, wSide: GameFlowSide): [number, number] => {
 	const [w, l] = scoreOf(e, wSide);
@@ -410,7 +428,13 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 			.filter((m) => m.role === "cut" && m.margin <= 3 && m.name)
 			.at(-1);
 		const seal = after
-			.filter((m) => m.e.side === wSide && m.name && m.e.kind === "ft")
+			.filter(
+				(m) =>
+					m.e.side === wSide &&
+					m.name &&
+					m.e.kind === "ft" &&
+					mattered(m.e, wSide),
+			)
 			.at(-1);
 		const cutText = cut
 			? (() => {
@@ -453,6 +477,8 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 				`${cap(shotBy(cut.name!, cut.e, justNamed))} ${when(cut.e, rng)} made the final ${w}-${l}.`,
 				cut.name,
 			);
+		} else if (cutText && cut && finalLead(moments, wSide) >= cut.margin + 4) {
+			say(`${cap(cutText)}, and ${W} pulled away from there.`, cut.name);
 		} else if (cutText) {
 			say(`${cap(cutText)}, and ${L} got no closer.`, cut!.name);
 		} else if (sealText) {
@@ -472,7 +498,13 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 	const [w, l] = shown(closest.e, wSide);
 	const later = moments.filter((m) => m.e.clock < closest.e.clock);
 	const seal = later
-		.filter((m) => m.e.side === wSide && m.name && m.e.kind === "ft")
+		.filter(
+			(m) =>
+				m.e.side === wSide &&
+				m.name &&
+				m.e.kind === "ft" &&
+				mattered(m.e, wSide),
+		)
 		.at(-1);
 	const cutText = pick(
 		rng,
@@ -497,12 +529,26 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 			)}.`,
 			seal.name,
 		);
+	} else if (closest.e.clock < 0.5) {
+		// The last shot of the game. There was no "from there" and no stop
+		// left to get: "a three at the buzzer got them within 2, and the
+		// Rockets held from there" held through zero seconds.
+		say(
+			`${cap(cutText)}, ${pick(
+				rng,
+				[`too late to matter`, `but time had run out`],
+				"finishHoldBuzzer",
+			)}.`,
+			closest.name,
+		);
 	} else {
 		say(
 			`${cap(cutText)}, ${pick(
 				rng,
 				[
-					`and ${L} never got the stop they needed`,
+					// "got the Nets within 3, and the Nets never got the stop
+					// they needed" named them twice in one breath.
+					`and ${cutText.includes(L) ? "they" : L} never got the stop they needed`,
 					`but that was as close as it got`,
 					`and ${W} held from there`,
 				],

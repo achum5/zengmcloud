@@ -417,6 +417,7 @@ export const eventsFromGame = (game: GameForEvents): SocialEvent[] => {
 				doubles: 0,
 				tripleDouble: false,
 				cold: true,
+				playoffs: game.playoffs,
 				...(dud.tsp !== undefined ? { tsp: dud.tsp } : {}),
 				opponentAbbrev:
 					dud.tid === game.teams[0].tid
@@ -784,6 +785,9 @@ export const seasonStateEvents = ({
 			rivalAbbrev: below.abbrev,
 			rivalWon: below.won,
 			rivalLost: below.lost,
+			// Games between the two, which is not either one's games back: that
+			// is measured from the top of the table.
+			gap: Math.abs(below.gamesBack - above.gamesBack),
 		});
 	}
 
@@ -975,7 +979,10 @@ export const seriesEndingGids = (
 		.toSorted((a, b) => a.day - b.day || a.gid - b.gid);
 
 	for (const game of ordered) {
-		const [x, y] = game.teams as [{ tid: number; pts: number }, { tid: number; pts: number }];
+		const [x, y] = game.teams as [
+			{ tid: number; pts: number },
+			{ tid: number; pts: number },
+		];
 		const key = [x.tid, y.tid].toSorted((a, b) => a - b).join("|");
 		let tally = wins.get(key);
 		if (!tally) {

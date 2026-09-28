@@ -202,6 +202,18 @@ export const castDay = ({
 	const perAccount = new Map<string, number>();
 	const perEvent = new Map<string, number>();
 	const out: SocialCasting[] = [];
+	// A BAD NIGHT IS ONE JOKE. Four accounts telling the timeline that the
+	// same man went 6 for 20 is a pile-on, not a conversation, and on a busy
+	// night it was a fifth of the feed. Two of them say it.
+	const COLD_NIGHT_POSTS = 2;
+	const capOf = new Map(
+		events.map((event) => [
+			event.id,
+			event.facts.cold === true
+				? Math.min(COLD_NIGHT_POSTS, maxPerEvent)
+				: maxPerEvent,
+		]),
+	);
 
 	candidates.sort(
 		(a, b) =>
@@ -226,7 +238,7 @@ export const castDay = ({
 			continue;
 		}
 		const byEvent = perEvent.get(candidate.eventId) ?? 0;
-		if (byEvent >= maxPerEvent) {
+		if (byEvent >= (capOf.get(candidate.eventId) ?? maxPerEvent)) {
 			continue;
 		}
 		perAccount.set(candidate.accountId, byAccount + 1);
