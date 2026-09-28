@@ -37,6 +37,7 @@ import {
 	pickByDay,
 	plural,
 	poss,
+	rngFromSeed,
 	scoredVerb,
 	statPhrase,
 	theNick,
@@ -62,6 +63,13 @@ const standingOf = (t: RecapTeam): StandingInfo | undefined => t.standing;
 
 // Ranks mean nothing until the sample does.
 const MIN_GAMES_FOR_STANDINGS = 15;
+
+// A standing that did NOT change is true after every win, so the leader's
+// "stayed top of the West" was under nearly every one of its games - thirteen
+// times in sixty days. It is told now and then, seeded on the team and its
+// games played so a game always reads the same.
+const nowAndThen = (tid: number, played: number): boolean =>
+	rngFromSeed(tid * 7919 + played * 104729)() < 0.25;
 
 // ---------------------------------------------------------------- THE TABLE
 
@@ -101,7 +109,12 @@ export const standingsBeat = (
 					"standingsUp",
 				),
 			);
-		} else if (w.rank === 1 && w.lead !== undefined && w.lead >= 1) {
+		} else if (
+			w.rank === 1 &&
+			w.lead !== undefined &&
+			w.lead >= 1 &&
+			nowAndThen(ctx.winner.tid, played(w))
+		) {
 			options.push(
 				pick(
 					rng,
@@ -113,7 +126,13 @@ export const standingsBeat = (
 					"standingsTop",
 				),
 			);
-		} else if (w.rank >= 2 && w.rank <= 4 && w.gb <= 3 && w.leader) {
+		} else if (
+			w.rank >= 2 &&
+			w.rank <= 4 &&
+			w.gb <= 3 &&
+			w.leader &&
+			nowAndThen(ctx.winner.tid, played(w))
+		) {
 			options.push(
 				pick(
 					rng,

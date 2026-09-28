@@ -168,27 +168,41 @@ describe("standings", () => {
 		);
 		noNumeralOpener(all);
 
-		const top = team({
-			tid: 1,
-			name: "Celtics",
-			standing: {
-				conf: "East",
-				rank: 1,
-				rankBefore: 1,
-				gb: 0,
-				teams: 15,
-				won: 20,
-				lost: 10,
-				lead: 2.5,
-			},
-		});
-		const topShapes = shapes((rng) =>
-			standingsBeat(
-				game(top, team({ tid: 2, name: "Knicks", pts: 90 })).ctx,
-				rng,
-			),
-		);
+		// Staying top is true after every win, so it is told now and then
+		// rather than every game: across a run of games it appears, in all
+		// its shapes, and on most nights it does not.
+		const topShapes = new Set<string>();
+		let quiet = 0;
+		for (let won = 20; won < 60; won++) {
+			const top = team({
+				tid: 1,
+				name: "Celtics",
+				standing: {
+					conf: "East",
+					rank: 1,
+					rankBefore: 1,
+					gb: 0,
+					teams: 15,
+					won,
+					lost: 10,
+					lead: 2.5,
+				},
+			});
+			const got = shapes((rng) =>
+				standingsBeat(
+					game(top, team({ tid: 2, name: "Knicks", pts: 90 })).ctx,
+					rng,
+				),
+			);
+			if (got.size === 0) {
+				quiet += 1;
+			}
+			for (const x of got) {
+				topShapes.add(x);
+			}
+		}
 		assert.strictEqual(topShapes.size, 3);
+		assert.ok(quiet >= 20, `told on ${40 - quiet} of 40 nights`);
 		assert.ok([...topShapes].every((s) => s.includes("# game")));
 	});
 

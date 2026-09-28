@@ -3663,8 +3663,22 @@ const gameStory = (
 		// "they": "The Lakers were up 56-44 at the break. From there, the
 		// Lakers led by as many as 17" names them twice running.
 		const aboutWinner = !covers.has("loserPeak");
+		const onlyPeak = parts.length === 1 && covers.has("winnerPeak");
 		out.push(
-			`${pick(rng, ["After the break", "In the second half", "From there"], "story:after")}, ${aboutWinner ? "they" : w} ${series(parts)}.`,
+			onlyPeak
+				? // The commonest case - nothing to add but how big it got - and
+					// the frame a slate repeated most, so it has shapes of its own.
+					pick(
+						rng,
+						[
+							`${pick(rng, ["After the break", "In the second half", "From there"], "story:after")}, ${aboutWinner ? "they" : w} led by as many as ${wMax}.`,
+							`The lead reached ${wMax} in the second half.`,
+							`After halftime the lead reached ${wMax}.`,
+							`${aboutWinner ? "They" : W} pushed on after the break and led by as many as ${wMax}.`,
+						],
+						"story:peakOnly",
+					)
+				: `${pick(rng, ["After the break", "In the second half", "From there"], "story:after")}, ${aboutWinner ? "they" : w} ${series(parts)}.`,
 		);
 	} else if (aheadForGoodByHalf && shape.margin >= 8) {
 		out.push(
@@ -4485,12 +4499,23 @@ const careerArcNote = (
 	rng: () => number,
 ): string | undefined => {
 	const avg = star.seasonAvg;
-	const past = star.career;
-	if (playoffs || !avg || avg.gp < 12 || !past || past.length < 2) {
+	// A season of a handful of games is not a season a man "averaged"
+	// anything in: a two-game year at 39 points became "some way down from the
+	// 39.1 he once averaged" under a centre's name.
+	const past = (star.career ?? []).filter((c) => c.gp >= 20);
+	if (playoffs || !avg || avg.gp < 12 || past.length < 2) {
+		return undefined;
+	}
+	// A FACT ABOUT THE SEASON, NOT THE NIGHT. It is as true in one game as
+	// the next, so it was eligible every time the man led a recap, and a
+	// reader following his team met the same sentence game after game. It
+	// runs now and then - seeded on the man and his games played, so the
+	// same game always tells it the same way.
+	if (rngFromSeed(star.pid * 7919 + avg.gp * 104729)() >= 0.2) {
 		return undefined;
 	}
 	const bestPast = Math.max(...past.map((c) => c.pts));
-	const seasons = past.length + 1;
+	const seasons = (star.career?.length ?? 0) + 1;
 	if (avg.pts > bestPast + 1.5 && avg.pts >= 15) {
 		return pick(
 			rng,
@@ -4502,11 +4527,22 @@ const careerArcNote = (
 			"careerBest",
 		);
 	}
-	// A veteran well past his peak is its own story.
-	if (seasons >= 8 && bestPast >= avg.pts + 6 && avg.pts >= 8) {
-		return `${star.name} is ${seasons} seasons in, some way down from the ${bestPast.toFixed(
-			1,
-		)} he once averaged.`;
+	// A veteran past his peak, on a night he played like he was at it. On any
+	// other night the decline is not the story of the game, and "some way
+	// down from what he once averaged" under a 33-point line read as a jab.
+	if (
+		seasons >= 10 &&
+		bestPast >= avg.pts + 6 &&
+		star.pts >= Math.max(20, bestPast)
+	) {
+		return pick(
+			rng,
+			[
+				`${cap(numWord(seasons))} seasons in, ${star.name} turned back the clock.`,
+				`It was a night from ${poss(star.name)} prime, ${numWord(seasons)} seasons into his career.`,
+			],
+			"careerVeteran",
+		);
 	}
 	return undefined;
 };

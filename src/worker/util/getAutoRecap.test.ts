@@ -2714,40 +2714,48 @@ describe("the extra colour paragraph", () => {
 		);
 	});
 
-	test("a career-best scoring season is called out", () => {
-		const w = realisticTeam(
-			{
-				tid: 3,
-				name: "Bucks",
-				abbrev: "MIL",
-				pts: 106,
-				ptsQtrs: [26, 27, 26, 27],
-			},
-			bigNight({
-				seasonAvg: avg({ gp: 40, pts: 24.5 }),
-				career: [
-					{ ...avg({ pts: 11.0 }), season: 2001 },
-					{ ...avg({ pts: 15.2 }), season: 2002 },
-					{ ...avg({ pts: 18.9 }), season: 2003 },
-				],
-			}),
-		);
-		const l = realisticTeam(
-			{
-				tid: 4,
-				name: "Hawks",
-				abbrev: "ATL",
-				pts: 95,
-				ptsQtrs: [24, 24, 23, 24],
-			},
-			player({ name: "Loser Star", pts: 21, reb: 6, fg: 8, fga: 19 }),
-		);
-		const recap = getAutoRecap(twoTeamGame(w, l));
-		// Any of the pool's shapes: the note does not always say "career".
-		assert.ok(
-			/career|has scored like this one|best scoring season/i.test(recap),
-			`no career context: ${recap}`,
-		);
+	// A fact about the season, so it is told now and then across a run of
+	// games - never under every one of them, which is what a reader following
+	// the team saw.
+	test("a career-best scoring season is called out, but not every game", () => {
+		let told = 0;
+		const games = 40;
+		for (let gp = 20; gp < 20 + games; gp++) {
+			const w = realisticTeam(
+				{
+					tid: 3,
+					name: "Bucks",
+					abbrev: "MIL",
+					pts: 106,
+					ptsQtrs: [26, 27, 26, 27],
+				},
+				bigNight({
+					seasonAvg: avg({ gp, pts: 24.5 }),
+					career: [
+						{ ...avg({ pts: 11.0 }), season: 2001 },
+						{ ...avg({ pts: 15.2 }), season: 2002 },
+						{ ...avg({ pts: 18.9 }), season: 2003 },
+					],
+				}),
+			);
+			const l = realisticTeam(
+				{
+					tid: 4,
+					name: "Hawks",
+					abbrev: "ATL",
+					pts: 95,
+					ptsQtrs: [24, 24, 23, 24],
+				},
+				player({ name: "Loser Star", pts: 21, reb: 6, fg: 8, fga: 19 }),
+			);
+			const recap = getAutoRecap(twoTeamGame(w, l));
+			// Any of the pool's shapes: the note does not always say "career".
+			if (/career|has scored like this one|best scoring season/i.test(recap)) {
+				told += 1;
+			}
+		}
+		assert.ok(told >= 3, `told ${told} times in ${games} games`);
+		assert.ok(told <= games * 0.35, `told ${told} times in ${games} games`);
 	});
 
 	test("nobody is named twice across the whole recap", () => {
@@ -7059,4 +7067,72 @@ test("a game with an early run, a hot first quarter and a halftime deficit finis
 			assert.ok(q1 < half, recap);
 		}
 	}
+});
+
+// The veteran line: once "N seasons in, some way down from the 39.1 he once
+// averaged" under every game a man led - a 33-point night included, and the
+// 39.1 a two-game season.
+test("a veteran's past is told only on a night that fits it", () => {
+	const career = [
+		{ ...avg({ gp: 2, pts: 39.1 }), season: 2001 },
+		...Array.from({ length: 13 }, (_, i) => ({
+			...avg({ gp: 70, pts: i === 5 ? 21.5 : 12 }),
+			season: 2002 + i,
+		})),
+	];
+	const recapFor = (pts: number, gp: number) =>
+		getAutoRecap(
+			game({
+				gid: 900 + gp,
+				teams: [
+					realisticTeam(
+						{
+							tid: 1,
+							name: "Celtics",
+							abbrev: "BOS",
+							pts: 102,
+							ptsQtrs: [33, 23, 21, 25],
+						},
+						player({
+							name: "Old Hand",
+							pts,
+							reb: 11,
+							blk: 4,
+							fg: Math.round(pts / 2.4),
+							fga: 18,
+							seasonAvg: avg({ gp, pts: 11.8 }),
+							career,
+						}),
+					),
+					realisticTeam(
+						{
+							tid: 2,
+							name: "Mavericks",
+							abbrev: "DAL",
+							pts: 81,
+							ptsQtrs: [18, 16, 29, 18],
+						},
+						player({ name: "Other Guy", pts: 16, fg: 6, fga: 11 }),
+					),
+				],
+				winnerTid: 1,
+			}),
+		);
+	let clock = 0;
+	for (let gp = 20; gp < 80; gp++) {
+		const big = recapFor(33, gp);
+		const quiet = recapFor(14, gp);
+		for (const recap of [big, quiet]) {
+			assert.doesNotMatch(recap, /39\.1|some way down|once averaged/, recap);
+		}
+		assert.doesNotMatch(
+			quiet,
+			/turned back the clock|a night from .* prime/,
+			quiet,
+		);
+		if (/turned back the clock|a night from .* prime/.test(big)) {
+			clock += 1;
+		}
+	}
+	assert.ok(clock > 0 && clock <= 25, `told ${clock} times`);
 });
