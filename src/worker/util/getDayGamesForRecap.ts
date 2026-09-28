@@ -9,7 +9,6 @@ import {
 	pastSeasonTotals,
 	playerEntering,
 	playerVsOpponent,
-	restEntering,
 	returnFromAbsence,
 	seasonMilestone,
 	scoringNorm,
@@ -209,8 +208,6 @@ export type RecapTeam = {
 	awayRecord?: { won: number; lost: number };
 	// The season series against tonight's opponent, entering the game.
 	seasonSeries?: SeasonSeries;
-	// Days since the team last played (1 is a back-to-back).
-	rest?: { daysSince: number; prevDay: number };
 	// The next game on the schedule after this one.
 	nextGame?: {
 		day: number;
@@ -1828,7 +1825,6 @@ const createAutoRecapContext = async (season: number) => {
 				const records = homeAwayRecords(team.tid, day2, mine);
 				team.homeRecord = records.home;
 				team.awayRecord = records.away;
-				team.rest = restEntering(team.tid, game.gid, day2, mine);
 				const next = nextGameFor(team.tid, game.gid, day2, mine, scheduleRows);
 				if (next) {
 					const info = await teamInfo(next.oppTid);

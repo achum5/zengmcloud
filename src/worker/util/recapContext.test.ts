@@ -6,7 +6,6 @@ import {
 	nextGameFor,
 	pastSeasonTotals,
 	playerEntering,
-	restEntering,
 	returnFromAbsence,
 	seasonMilestone,
 	seasonSeries,
@@ -88,24 +87,12 @@ describe("the season series", () => {
 	});
 });
 
-describe("rest and the next game", () => {
+describe("the next game", () => {
 	const log = [
 		game(1, 3, 0, 1, 100, 90),
 		game(2, 4, 2, 0, 100, 90),
 		game(3, 7, 0, 3, 100, 90),
 	];
-
-	test("a game the day after the last one is a back-to-back", () => {
-		assert.deepStrictEqual(restEntering(0, 2, 4, log), {
-			daysSince: 1,
-			prevDay: 3,
-		});
-		assert.deepStrictEqual(restEntering(0, 3, 7, log), {
-			daysSince: 3,
-			prevDay: 4,
-		});
-		assert.strictEqual(restEntering(0, 1, 3, log), undefined);
-	});
 
 	test("the next game comes from the log when it has been played", () => {
 		assert.deepStrictEqual(nextGameFor(0, 1, 3, log), {

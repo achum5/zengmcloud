@@ -6,13 +6,12 @@ import {
 	dayMilestones,
 	dayRaceSentence,
 	dayStandingsMovers,
-	dayTomorrow,
+	dayNextSlate,
 	homeRoadBeat,
 	milestoneBeat,
 	nextGameBeat,
 	playerHighBeat,
 	playerStreakBeat,
-	restBeat,
 	returnBeat,
 	scoringNormBeat,
 	seriesBeat,
@@ -122,6 +121,10 @@ const noNumeralOpener = (texts: Iterable<string>) => {
 		assert.match(t, /\.$/, `no full stop: ${t}`);
 	}
 };
+
+// Words that claim a calendar the schedule does not have.
+const CALENDAR =
+	/tomorrow|tonight's rest|back-to-back|days' rest|in (?:two|three|four|five|six|seven|\d+) days|night before|two nights|day off|days off/i;
 
 describe("standings", () => {
 	beforeEach(() => endRecapBatch());
@@ -365,34 +368,7 @@ describe("home and road, rest, and what comes next", () => {
 		noNumeralOpener(all);
 	});
 
-	test("a back-to-back and a long layoff", () => {
-		const winner = team({
-			tid: 1,
-			name: "Celtics",
-			rest: { daysSince: 5, prevDay: 25 },
-		});
-		const loser = team({
-			tid: 2,
-			name: "Knicks",
-			pts: 90,
-			rest: { daysSince: 1, prevDay: 29 },
-		});
-		const all = shapes((rng) => restBeat(game(winner, loser).ctx, rng));
-		assert.ok([...all].some((s) => /back-to-back/.test(s)));
-		assert.ok([...all].some((s) => /five days/.test(s)));
-		assert.strictEqual(
-			restBeat(
-				game(
-					team({ tid: 1, name: "A", rest: { daysSince: 2, prevDay: 1 } }),
-					team({ tid: 2, name: "B", pts: 90 }),
-				).ctx,
-				rngFromSeed(1),
-			),
-			undefined,
-		);
-	});
-
-	test("the next game, tomorrow or in a few days, home or away", () => {
+	test("the next game: who and where, never when", () => {
 		const winner = team({
 			tid: 1,
 			name: "Celtics",
@@ -408,13 +384,18 @@ describe("home and road, rest, and what comes next", () => {
 		const loser = team({ tid: 2, name: "Knicks", pts: 90 });
 		const all = shapes((rng) => nextGameBeat(game(winner, loser).ctx, rng));
 		assert.ok(all.size >= 3, [...all].join("\n"));
-		assert.ok([...all].every((s) => /tomorrow/.test(s) && /Bulls/.test(s)));
+		assert.ok([...all].every((s) => /Bulls/.test(s)));
+		// No calendar under the schedule, so nothing about when.
+		assert.ok(
+			[...all].every((s) => !CALENDAR.test(s)),
+			[...all].join("\n"),
+		);
 		const later = {
 			...winner,
 			nextGame: { ...winner.nextGame!, daysAway: 3, home: false },
 		};
 		const text = nextGameBeat(game(later, loser).ctx, rngFromSeed(2))!;
-		assert.match(text, /three days/);
+		assert.notMatch(text, CALENDAR);
 		assert.match(text, /road|away|visit/);
 	});
 });
@@ -1006,7 +987,7 @@ describe("the day wrap's context", () => {
 		assert.strictEqual(dayMilestones(ctx, rngFromSeed(1)), undefined);
 	});
 
-	test("tomorrow names the biggest matchup and counts the rest in words", () => {
+	test("the next slate names the biggest matchup and counts the rest in words", () => {
 		const next = (oppName: string, daysAway = 1, home = true) => ({
 			day: 41,
 			daysAway,
@@ -1037,11 +1018,12 @@ describe("the day wrap's context", () => {
 				}),
 			),
 		];
-		const text = dayTomorrow(ctxOf(games), rngFromSeed(1))!;
+		const text = dayNextSlate(ctxOf(games), rngFromSeed(1))!;
 		assert.match(text, /the Bucks at the Celtics/);
+		assert.notMatch(text, CALENDAR);
 		assert.match(text, /two others?|two other games/);
 		assert.notMatch(text, /\b\d+ other/);
-		assert.ok(shapes((rng) => dayTomorrow(ctxOf(games), rng)).size >= 3);
+		assert.ok(shapes((rng) => dayNextSlate(ctxOf(games), rng)).size >= 3);
 
 		const noneTomorrow = [
 			dayGame(
@@ -1050,7 +1032,7 @@ describe("the day wrap's context", () => {
 			),
 		];
 		assert.strictEqual(
-			dayTomorrow(ctxOf(noneTomorrow), rngFromSeed(1)),
+			dayNextSlate(ctxOf(noneTomorrow), rngFromSeed(1)),
 			undefined,
 		);
 	});

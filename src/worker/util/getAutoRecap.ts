@@ -48,14 +48,13 @@ import {
 	dayRaceSentence,
 	daySeasonHighs,
 	dayStandingsMovers,
-	dayTomorrow,
+	dayNextSlate,
 	homeRoadBeat,
 	milestoneBeat,
 	nextGameBeat,
 	playerCountBeat,
 	playerHighBeat,
 	playerStreakBeat,
-	restBeat,
 	returnBeat,
 	scoringNormBeat,
 	seriesBeat,
@@ -419,6 +418,9 @@ const storyPlayerOf = (
 		const alt = supportingCast(shape.winner.players, star).find(
 			(p) =>
 				(low.pts < 12 && p.pts >= 15) ||
+				// A 9-point, 6-rebound line is nobody's lede when a teammate
+				// outscored it; a double-double that small can still be one.
+				(low.pts < 12 && doubleCategories(low).length < 2 && p.pts > low.pts) ||
 				(low.pts < 15 && p.pts >= low.pts + 7) ||
 				(low.pts < 15 && p.pts >= 12 && doubleCategories(p).length >= 2) ||
 				// A 16-and-8 against a teammate's 25 and 12.
@@ -2495,11 +2497,14 @@ const leadSentence = (
 	// points as the Clippers won by 31" makes 13 points sound like the reason.
 	if (star.pts < 15 && shape.margin >= 20) {
 		if (omitResult) {
-			return `${star.name} led the way with ${statPhrase(star)}.`;
+			return shape.winner.players.some((p) => p.pts > star.pts)
+				? `${star.name} had ${statPhrase(star)}.`
+				: `${star.name} led the way with ${statPhrase(star)}.`;
 		}
+		const ledTeam = !shape.winner.players.some((p) => p.pts > star.pts);
 		return `${cap(theNick(shape.winner))} ${verb} ${theNick(shape.loser)}${
 			scoreTold ? "" : ` ${scoreTag(shape)}`
-		}${tail}, led by ${poss(star.name)} ${statPhrase(star)}.`;
+		}${tail}, ${ledTeam ? `led by ${poss(star.name)}` : `with ${star.name} putting up`} ${statPhrase(star)}.`;
 	}
 
 	// When the result has already been stated, the star's sentence is the only
@@ -2607,13 +2612,22 @@ const teamLede = (
 	}
 	const w = teamStats(shape.winner);
 	if (w.dblFig >= 6 && star.pts < 18 && dd < 3) {
+		// "Led by" and "leading the way" say he led the team, which is false
+		// when a teammate outscored him - "led by Jaden Mathis' 10 points and
+		// 10 assists" over a teammate's 18. Then he is only named.
+		const ledTeam = !shape.winner.players.some((p) => p.pts > star.pts);
 		return {
 			text: pick(
 				rng,
-				[
-					`${cap(numWord(w.dblFig))} ${nick(shape.winner)} scored in double figures as ${W} ${verb} ${L}${score}${tail}, ${poss(star.name)} ${statPhrase(star)} leading the way.`,
-					`${cap(W)} got ${numWord(w.dblFig)} men into double figures and ${verb} ${L}${score}${tail}, led by ${poss(star.name)} ${statPhrase(star)}.`,
-				],
+				ledTeam
+					? [
+							`${cap(numWord(w.dblFig))} ${nick(shape.winner)} scored in double figures as ${W} ${verb} ${L}${score}${tail}, ${poss(star.name)} ${statPhrase(star)} leading the way.`,
+							`${cap(W)} got ${numWord(w.dblFig)} men into double figures and ${verb} ${L}${score}${tail}, led by ${poss(star.name)} ${statPhrase(star)}.`,
+						]
+					: [
+							`${cap(numWord(w.dblFig))} ${nick(shape.winner)} scored in double figures as ${W} ${verb} ${L}${score}${tail}, ${star.name} adding ${statPhrase(star)}.`,
+							`${cap(W)} got ${numWord(w.dblFig)} men into double figures and ${verb} ${L}${score}${tail}, with ${star.name} putting up ${statPhrase(star)}.`,
+						],
 				"teamLedeBalance",
 			),
 			dblFig: true,
@@ -2999,6 +3013,12 @@ const statNote = (
 
 // The score at the break, stated plainly. Every wire recap has it; this
 // engine only had it when the half was part of a bigger story.
+// A sentence about the second half or the finish: a third or fourth quarter,
+// a run late on, the go-ahead and the clinching free throws, overtime, a lead
+// nearly let go. Anything the halftime score must come BEFORE.
+const SECOND_HALF_OR_FINISH =
+	/\b(?:third|fourth|final) (?:quarter|period)|\bin the (?:third|fourth)\b|\bthe (?:third|fourth)\b|quarter to play|with \d+(?:\.\d+)? seconds|with (?:no time|\d+:\d\d)|for good|sealed it|put it away|finished it|closed it out|down the stretch|second half|had to hold on|let it go\.|settled it|overtime|got as close as|cut it to|pulled within|was down to \d+ at the end|late run|the last (?:minute|two minutes)/i;
+
 const halftimeNote = (
 	shape: Shape,
 	rng: () => number,
@@ -3277,6 +3297,20 @@ const supportSentence = (
 	);
 	if (cast.length === 0) {
 		return undefined;
+	}
+	// Impact decides WHO is worth a mention, but when the sentence only shows
+	// points, the order has to follow them: "Keegan Mathis threw in 13 points,
+	// and Quentin Mathis posted 18" reads as though the piece cannot count.
+	const [first, next] = cast;
+	if (
+		first &&
+		next &&
+		doubleCategories(first).length < 2 &&
+		doubleCategories(next).length < 2 &&
+		next.pts > first.pts
+	) {
+		cast[0] = next;
+		cast[1] = first;
 	}
 	const second = cast[0]!;
 
@@ -3989,12 +4023,13 @@ const vsAverageNote = (
 				? // The split was printed in the lede, which can be two paragraphs
 					// back by now: "It was a long way clear of his 51.0% season mark"
 					// with nothing nearby for "it" to be. The number is restated.
+					// Only the new fact, the season mark: the night's percentage
+					// restated after its split ("9-of-15 ... shot 60% on the
+					// night") is the same number told twice.
 					[
-						`${star.name} shot ${fmtPct((100 * star.fg) / star.fga)}% on the night against a ${fmtPct(avg.fgp)}% season mark.`,
-						`${star.name} came in shooting ${fmtPct(avg.fgp)}% on the year and shot ${fmtPct((100 * star.fg) / star.fga)}% in this one.`,
-						// The split again, because the lede that printed it can be
-						// two paragraphs back by now.
-						`${star.name}, a ${fmtPct(avg.fgp)}% shooter on the season, went ${split}.`,
+						`${star.name} came in shooting ${fmtPct(avg.fgp)}% on the season.`,
+						`${star.name} had been a ${fmtPct(avg.fgp)}% shooter on the year.`,
+						`${poss(star.name)} season mark coming in was ${fmtPct(avg.fgp)}%.`,
 					]
 				: [
 						`${star.name} was ${split} from the floor, far better than the ${fmtPct(avg.fgp)}% he had managed on the season.`,
@@ -5358,14 +5393,16 @@ export const getAutoRecap = (game: RecapGame): string => {
 				),
 		);
 		if (half) {
-			// Before the lead that nearly got away, not after it: "had led by
-			// 29 and very nearly let it go. They went into the break ahead
-			// 69-45" runs the clock backwards.
-			const scare = para1.findIndex((t) =>
-				/had to hold on\.|let it go\.|was down to \d+ at the end/.test(t),
+			// IN ORDER. The break comes before anything that happened after
+			// it: "The fourth quarter settled it: 27-16. They took a 57-47 lead
+			// into halftime" and "had led by 29 and very nearly let it go. They
+			// went into the break ahead 69-45" both run the clock backwards. A
+			// first-half run stays ahead of it; the lede is never displaced.
+			const later = para1.findIndex(
+				(t, i) => i > 0 && SECOND_HALF_OR_FINISH.test(t),
 			);
-			if (scare >= 0) {
-				para1.splice(scare, 0, half);
+			if (later > 0) {
+				para1.splice(later, 0, half);
 			} else {
 				para1.push(half);
 			}
@@ -5549,7 +5586,6 @@ export const getAutoRecap = (game: RecapGame): string => {
 		() => seriesBeat(beatCtx, rng),
 		() => milestoneBeat(beatCtx, rng),
 		() => returnBeat(beatCtx, rng),
-		() => restBeat(beatCtx, rng),
 		() => homeRoadBeat(beatCtx, rng),
 		() => benchBeat(beatCtx, rng),
 	])) {
@@ -7945,7 +7981,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 
 	// Paragraph 4: what the night did to the season. Who moved in the table,
 	// where the race stands at the cut line, the team that cannot win, the
-	// round numbers passed, the season bests, and what is on tomorrow. Every
+	// round numbers passed, the season bests, and what is next on the schedule. Every
 	// one reads the context the games carry and says nothing when the night
 	// gives it nothing, so a quiet Tuesday still ends after paragraph three.
 	const para4 = playoffs
@@ -7962,9 +7998,9 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 				.filter((x): x is string => !!x)
 				.slice(0, 3);
 	if (!playoffs) {
-		const tomorrow = dayTomorrow(dayCtx, rng);
-		if (tomorrow) {
-			para4.push(tomorrow);
+		const nextSlate = dayNextSlate(dayCtx, rng);
+		if (nextSlate) {
+			para4.push(nextSlate);
 		}
 	}
 	// A lone closing sentence is not a paragraph; fold it up rather than let

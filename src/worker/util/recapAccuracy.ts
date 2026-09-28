@@ -585,6 +585,17 @@ export const verifyRecap = (
 		}
 	}
 
+	// --- no calendar ---------------------------------------------------------
+	// The schedule has an order but no calendar: nothing says how many days
+	// apart two games were, so "tomorrow", "in three days", "the second night
+	// of a back-to-back" and "four days' rest" are all invented. A title run's
+	// "back-to-back championships" is seasons, not days, and stays allowed.
+	for (const m of text.matchAll(
+		/\b(?:tomorrow|in (?:two|three|four|five|six|seven|\d+) days|days' rest|days of rest|a day off|days off|the night before|two nights|(?:on|of) (?:a|the) back-to-back|back end of a back-to-back)\b/gi,
+	)) {
+		add("calendar", `text claims schedule timing: "${m[0]}"`, m[0]!);
+	}
+
 	// --- claims about the whole game -----------------------------------------
 	const saidOt = /\bovertime\b|\(OT\)|\dOT|extra period/.test(text);
 	if (saidOt !== game.overtimes > 0) {

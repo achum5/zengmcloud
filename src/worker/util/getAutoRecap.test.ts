@@ -5795,7 +5795,6 @@ describe("the fourth paragraph", () => {
 				homeRecord: k === 1 ? { won: 12, lost: 2 } : undefined,
 				awayRecord: k === 1 ? { won: 9, lost: 7 } : undefined,
 				seasonSeries: k === 2 ? { won: 2, lost: 0 } : undefined,
-				rest: { daysSince: k === 3 ? 5 : 2, prevDay: 25 },
 				standing:
 					k === 0
 						? {
@@ -5867,7 +5866,6 @@ describe("the fourth paragraph", () => {
 				ptsQtrs: [24, 26, 24, 24],
 				record: { won: 10, lost: 20 + i },
 				homeRecord: k === 1 ? { won: 4, lost: 10 } : undefined,
-				rest: { daysSince: k === 0 ? 1 : 3, prevDay: 29 },
 				standing:
 					k === 1
 						? {

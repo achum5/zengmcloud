@@ -258,6 +258,40 @@ describe("edge cases", () => {
 		assert.deepEqual(verifyRecap(recap, g), []);
 	});
 
+	test("the desk rejects any claim about the calendar", () => {
+		const home = squad(
+			{ tid: 1, name: "Hawks" },
+			{ name: "Ace Hawk", pid: 11, pts: 24 },
+			102,
+		);
+		const away = squad(
+			{ tid: 2, name: "Bulls" },
+			{ name: "Bo Bull", pid: 21, pts: 22 },
+			95,
+		);
+		const g = game([home, away]);
+		for (const sentence of [
+			"The Hawks host the Heat tomorrow.",
+			"The Bulls were on the second night of a back-to-back.",
+			"The Hawks had come in off four days' rest.",
+			"The Bulls get the Nets in three days.",
+		]) {
+			const kinds = verifyRecap(
+				`**x**\n\nThe Hawks beat the Bulls 102-95. ${sentence}`,
+				g,
+			).map((v) => v.kind);
+			assert.include(kinds, "calendar", sentence);
+		}
+		// Seasons are not days: a title repeat is still a back-to-back.
+		assert.notInclude(
+			verifyRecap(
+				"**x**\n\nThe Hawks beat the Bulls 102-95. They won back-to-back championships once.",
+				g,
+			).map((v) => v.kind),
+			"calendar",
+		);
+	});
+
 	test("a 52-point night on the losing side is the story", () => {
 		const home = squad(
 			{ tid: 1, name: "Hawks" },
@@ -668,7 +702,7 @@ describe("edge cases", () => {
 			"The Hawks beat the Kings 110-102 in Game 4 of the First Round.",
 			"They take a 3-1 series lead.",
 			"The #2 seed is one win from putting out the #7 seed.",
-			"Game 5 is tomorrow in Atlanta.",
+			"Game 5 is in Atlanta.",
 		].join(" ");
 		assert.deepEqual(verifyRecap(`**x**\n\n${right}`, g), []);
 
@@ -676,7 +710,7 @@ describe("edge cases", () => {
 			"The Hawks beat the Kings 110-102 in Game 5 of the First Round.",
 			"They take a 3-2 series lead.",
 			"The #3 seed is two wins from putting out the #7 seed.",
-			"Game 6 is tomorrow in Atlanta.",
+			"Game 6 is in Atlanta.",
 		].join(" ");
 		const kinds = verifyRecap(`**x**\n\n${wrong}`, g).map((v) => v.kind);
 		assert.includeMembers(kinds, [
@@ -690,10 +724,10 @@ describe("edge cases", () => {
 		// The next-game check is on the NUMBER, not the phrasing: a new way of
 		// pointing at the next game cannot smuggle a wrong one past the desk.
 		for (const phrasing of [
-			"The series resumes in Atlanta tomorrow with Game 7.",
-			"They meet again tomorrow in Atlanta for Game 7.",
-			"Back at it tomorrow in Atlanta for Game 7.",
-			"Game 7 in Atlanta is tomorrow.",
+			"The series resumes in Atlanta with Game 7.",
+			"They meet again in Atlanta for Game 7.",
+			"Back at it in Atlanta for Game 7.",
+			"Game 7 is in Atlanta.",
 		]) {
 			const kinds2 = verifyRecap(
 				`**x**\n\nThe Hawks beat the Kings 110-102. ${phrasing}`,
@@ -703,12 +737,12 @@ describe("edge cases", () => {
 		}
 		// ...and the right number passes in every one of those shapes.
 		for (const phrasing of [
-			"Game 5 is tomorrow in Atlanta.",
-			"The series resumes in Atlanta tomorrow with Game 5.",
-			"They meet again tomorrow in Atlanta for Game 5.",
-			"Next is Game 5, tomorrow in Atlanta.",
-			"Game 5 in Atlanta is tomorrow.",
-			"Back at it tomorrow in Atlanta for Game 5.",
+			"Game 5 is in Atlanta.",
+			"The series resumes in Atlanta with Game 5.",
+			"They meet again in Atlanta for Game 5.",
+			"Next is Game 5, in Atlanta.",
+			"Game 5 is in Atlanta.",
+			"Back at it in Atlanta for Game 5.",
 		]) {
 			const kinds3 = verifyRecap(
 				`**x**\n\nThe Hawks beat the Kings 110-102 in Game 4 of the First Round. ${phrasing}`,

@@ -408,69 +408,13 @@ export const homeRoadBeat = (
 	return options.length > 0 ? pick(rng, options) : undefined;
 };
 
-// ---------------------------------------------------------------- THE REST
-
-export const restBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
-	const options: string[] = [];
-	const winnerHome = ctx.game.teams[0].tid === ctx.winner.tid;
-	for (const t of [ctx.loser, ctx.winner]) {
-		const r = t.rest;
-		if (!r) {
-			continue;
-		}
-		const lost = t === ctx.loser;
-		const T = cap(theNick(t));
-		const tn = theNick(t);
-		if (r.daysSince === 1) {
-			// A back-to-back is worth a sentence when it plausibly showed: the
-			// tired side lost by something, or won on the road anyway. Even then
-			// not every time - in a real league a third of games have a team on
-			// one, and the reader does not need telling on every page.
-			if (lost && ctx.margin >= 6 && rng() < 0.6) {
-				options.push(
-					pick(
-						rng,
-						[
-							`${T} were playing the second night of a back-to-back.`,
-							`It was the second night of a back-to-back for ${tn}.`,
-							`${T} were on the back end of a back-to-back.`,
-							`${T} had played the night before.`,
-							`This was ${poss(tn)} second game in two nights.`,
-						],
-						"backToBackLoser",
-					),
-				);
-			} else if (!lost && !winnerHome && rng() < 0.5) {
-				options.push(
-					pick(
-						rng,
-						[
-							`${T} won it on the second night of a back-to-back.`,
-							`${T} had played the night before and won on the road anyway.`,
-							`That was the back end of a back-to-back for ${tn}, and a road game at that.`,
-							`${T} were on a back-to-back, and it did not show.`,
-						],
-						"backToBackWinner",
-					),
-				);
-			}
-		} else if (r.daysSince >= 4 && rng() < 0.7) {
-			options.push(
-				pick(
-					rng,
-					[
-						`${T} had not played in ${numWord(r.daysSince)} days.`,
-						`${T} came in off ${numWord(r.daysSince)} days' rest.`,
-						`It was ${poss(tn)} first game in ${numWord(r.daysSince)} days.`,
-						`${T} had been idle for ${numWord(r.daysSince)} days.`,
-					],
-					"longRest",
-				),
-			);
-		}
-	}
-	return options.length > 0 ? pick(rng, options) : undefined;
-};
+// ---------------------------------------------------------------- NO CALENDAR
+//
+// There used to be a rest beat here: "the second night of a back-to-back",
+// "had not played in four days". A league's schedule has an ORDER - who
+// plays whom next - but no real calendar under it, so any sentence about how
+// many days apart two games were, or how rested a team was, is invented.
+// Nothing in a recap says when anything happens, only what comes next.
 
 // ---------------------------------------------------------------- SEASON HIGHS
 
@@ -900,7 +844,7 @@ export const benchBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 
 // ---------------------------------------------------------------- UP NEXT
 
-// "Game 5 is in two days in Milwaukee." The series' next game, when the
+// "Game 5 is in Milwaukee." The series' next game, when the
 // series is not over: the game number from the wins entering this one, the
 // venue from whose floor it is on.
 //
@@ -925,21 +869,20 @@ const nextPlayoffGame = (ctx: BeatContext, rng: Rng): string | undefined => {
 	const where = host.region
 		? ` in ${host.region}`
 		: ` at ${poss(theNick(host))} place`;
-	const when =
-		next.daysAway === 1 ? "tomorrow" : `in ${numWord(next.daysAway)} days`;
+	const hostNick = theNick(host);
 	return pick(
 		rng,
 		[
-			`Game ${gameNo} is ${when}${where}.`,
-			`The series resumes${where} ${when} with Game ${gameNo}.`,
+			`Game ${gameNo} is${where}.`,
+			`The series moves on to Game ${gameNo}${where}.`,
 			// Not "They meet again": the pronoun here means BOTH clubs, which
 			// is not what a "They" at the head of a sentence means anywhere
 			// else in the piece - the deduper and the short-pair joiner both
 			// read it as the winner alone.
-			`The two sides meet again ${when}${where} for Game ${gameNo}.`,
-			`Next is Game ${gameNo}, ${when}${where}.`,
-			`Game ${gameNo}${where} is ${when}.`,
-			`Back at it ${when}${where} for Game ${gameNo}.`,
+			`The two sides meet again${where} for Game ${gameNo}.`,
+			`Next is Game ${gameNo}${where}.`,
+			`Game ${gameNo} will be played${where}.`,
+			`${cap(hostNick)} host Game ${gameNo}.`,
 		],
 		"nextPlayoffGame",
 	);
@@ -966,25 +909,23 @@ export const nextGameBeat = (
 	if (!wNext && !lNext) {
 		return undefined;
 	}
-	const when = (daysAway: number) =>
-		daysAway === 1 ? "tomorrow" : `in ${numWord(daysAway)} days`;
+	// Who and where, never when - see NO CALENDAR above.
 	const line = (t: RecapTeam, n: NonNullable<RecapTeam["nextGame"]>) => {
 		const T = cap(theNick(t));
 		const tn = theNick(t);
 		const opp = `the ${n.oppName}`;
-		const options = [
-			`${T} are next in action ${when(n.daysAway)}, ${n.home ? "at home against" : "on the road against"} ${opp}.`,
-			`Up next for ${tn}: ${opp}, ${n.home ? "at home" : "away"}, ${when(n.daysAway)}.`,
-			`${T} ${n.home ? "host" : "visit"} ${opp} ${when(n.daysAway)}.`,
-			`Next up for ${tn} is ${opp} ${when(n.daysAway)}, ${n.home ? "at home" : "on the road"}.`,
-			`${T} get ${opp} ${when(n.daysAway)}.`,
-		];
-		if (n.daysAway === 1) {
-			options.push(
-				`${T} turn around and ${n.home ? "host" : "visit"} ${opp} tomorrow.`,
-			);
-		}
-		return pick(rng, options, "nextGame");
+		return pick(
+			rng,
+			[
+				`${T} are next in action ${n.home ? "at home against" : "on the road against"} ${opp}.`,
+				`Up next for ${tn}: ${opp}, ${n.home ? "at home" : "away"}.`,
+				`${T} ${n.home ? "host" : "visit"} ${opp} next.`,
+				`Next up for ${tn} is ${opp}, ${n.home ? "at home" : "on the road"}.`,
+				`${T} get ${opp} next${n.home ? ", at home" : ""}.`,
+				`${cap(opp)} are next on the schedule for ${tn}.`,
+			],
+			"nextGame",
+		);
 	};
 	// The same two teams again - a home-and-home. Said once from each side
 	// ("The Bulls visit the Trail Blazers in two days; the Trail Blazers host
@@ -1000,17 +941,17 @@ export const nextGameBeat = (
 		return pick(
 			rng,
 			[
-				`The two go again ${when(wNext.daysAway)}, with ${host} at home.`,
-				`They meet again ${when(wNext.daysAway)}, ${host} hosting.`,
-				`Same two teams ${when(wNext.daysAway)}, this time at ${poss(host)} place.`,
+				`The two go again next, with ${host} at home.`,
+				`They meet again in the next game, ${host} hosting.`,
+				`Same two teams next time out, this time at ${poss(host)} place.`,
 			],
 			"nextGameRematch",
 		);
 	}
 	if (wNext && lNext && rng() < 0.3) {
-		const W = cap(theNick(ctx.winner));
+		const wn = theNick(ctx.winner);
 		const ln = theNick(ctx.loser);
-		return `${W} ${wNext.home ? "host" : "visit"} the ${wNext.oppName} ${when(wNext.daysAway)}; ${ln} ${lNext.home ? "host" : "visit"} the ${lNext.oppName} ${when(lNext.daysAway)}.`;
+		return `Next, ${wn} ${wNext.home ? "host" : "visit"} the ${wNext.oppName} and ${ln} ${lNext.home ? "host" : "visit"} the ${lNext.oppName}.`;
 	}
 	if (wNext && (!lNext || rng() < 0.75)) {
 		return line(ctx.winner, wNext);
@@ -1625,10 +1566,11 @@ export const daySeasonHighs = (
 	);
 };
 
-// What is on tomorrow, from the teams that played tonight. The pick is the
+// What is on the next day of the schedule, from the teams that played tonight.
+// Said as "next on the schedule", never "tomorrow" - see NO CALENDAR. The pick is the
 // matchup between the two best records, because that is the one a reader
 // would circle.
-export const dayTomorrow = (
+export const dayNextSlate = (
 	ctx: DayBeatContext,
 	rng: Rng,
 ): string | undefined => {
@@ -1671,19 +1613,19 @@ export const dayTomorrow = (
 							` and ${numWord(rest)} other games`,
 							`, with ${restWord} on the slate`,
 						],
-						"dayTomorrowTail",
+						"dayNextSlateTail",
 					)
 				: "";
 	return pickByDay(
 		ctx.games[0]?.day,
 		rng,
 		[
-			`Tomorrow brings ${matchup}${tail}.`,
-			`Up tomorrow: ${matchup}${tail}.`,
-			`Tomorrow night, ${matchup}${tail}.`,
+			`Next on the schedule: ${matchup}${tail}.`,
+			`Up next: ${matchup}${tail}.`,
+			`The next slate brings ${matchup}${tail}.`,
 			`Next up on the schedule is ${matchup}${tail}.`,
 		],
-		"dayTomorrow",
+		"dayNextSlate",
 	);
 };
 

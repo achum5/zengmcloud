@@ -151,20 +151,6 @@ export const seasonSeries = (
 
 // ---------------------------------------------------------------- THE SCHEDULE
 
-// Days since the team last played, entering this game. One is a back-to-back.
-export const restEntering = (
-	tid: number,
-	gid: number,
-	day: number,
-	games: readonly ContextGameRow[],
-): { daysSince: number; prevDay: number } | undefined => {
-	const prev = teamGamesBefore(tid, gid, day, games).at(-1);
-	if (!prev) {
-		return undefined;
-	}
-	return { daysSince: day - dayOf(prev), prevDay: dayOf(prev) };
-};
-
 export type NextGame = {
 	day: number;
 	home: boolean;
