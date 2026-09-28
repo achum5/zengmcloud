@@ -5481,8 +5481,9 @@ describe("no branch has only one phrasing", () => {
 		[
 			"first-quarter run",
 			// Two pools, one angle: the hot start, and the hot start in a game
-			// that then got close.
-			/jumped out to a \d+-\d+ first quarter|was \d+-\d+ after one|ahead almost immediately|had to hold on|clawing back|very nearly not enough/,
+			// that then got close. The game story tells it too now, as part of
+			// the half ("won the first quarter 31-21 and led 55-44 at halftime").
+			/jumped out to a \d+-\d+ first quarter|was \d+-\d+ after one|ahead almost immediately|had to hold on|clawing back|very nearly not enough|(?:won|took) the first quarter \d+-\d+|won the quarter \d+-\d+/,
 		],
 	];
 
@@ -6924,4 +6925,138 @@ describe("possessives on nicknames that do not end in s", () => {
 		);
 		assert.ok(!/Magic' |Heat' |Jazz' |Thunder' /.test(recap), recap);
 	});
+});
+
+// THE GAME TOLD IN ORDER. The halftime score, the turn after it and the
+// finish used to be separate sentences from separate generators, placed
+// wherever each one landed. Now one pass tells them as a story.
+describe("the game story", () => {
+	const build = (seed: number): RecapGame =>
+		game({
+			gid: 700 + seed,
+			teams: [
+				realisticTeam(
+					{
+						tid: 1,
+						region: "Golden State",
+						name: "Warriors",
+						abbrev: "GSW",
+						pts: 100,
+						ptsQtrs: [20, 22, 30, 28],
+					},
+					player({ name: "Scoot Ellis", pts: 26, reb: 10, fg: 10, fga: 16 }),
+				),
+				realisticTeam(
+					{
+						tid: 2,
+						region: "Miami",
+						name: "Heat",
+						abbrev: "MIA",
+						pts: 90,
+						ptsQtrs: [28, 24, 18, 20],
+					},
+					player({ name: "Evan Hayes", pts: 24, reb: 8, fg: 9, fga: 20 }),
+				),
+			],
+			winnerTid: 1,
+			flow: {
+				leadChanges: 3,
+				ties: 2,
+				maxLead: [12, 14],
+				maxLeadAt: [4, 2],
+				lastLead: { side: 0, period: 3, clock: 300, pts: [66, 64] },
+				run: { side: 0, pts: 14, period: 3, clock: 400 },
+			},
+		});
+
+	test("the half comes before the turn, and the turn names the run", () => {
+		for (let seed = 0; seed < 15; seed++) {
+			const recap = getAutoRecap(build(seed));
+			const half = recap.search(/52-42/);
+			const turn = recap.search(/58-38/);
+			assert.ok(half >= 0 && turn > half, recap);
+			assert.match(recap, /ran off 14 straight points in the third/, recap);
+			assert.deepEqual(verifyRecap(recap, build(seed)), [], recap);
+		}
+	});
+
+	test("the story does not name the same team to open three sentences running", () => {
+		for (let seed = 0; seed < 15; seed++) {
+			const recap = getAutoRecap(build(seed));
+			for (const para of recap.split("\n\n").slice(1)) {
+				const opens = para
+					.split(/(?<=[!.?])\s+/)
+					.map((s) => /^The (Warriors|Heat)\b/.exec(s)?.[1] ?? "");
+				for (let i = 2; i < opens.length; i++) {
+					assert.ok(
+						!(
+							opens[i] &&
+							opens[i] === opens[i - 1] &&
+							opens[i] === opens[i - 2]
+						),
+						para,
+					);
+				}
+			}
+		}
+	});
+});
+
+// The game that hung a corpus run: two first-half notes on the wrong side of
+// the second-half one used to trade places with each other forever.
+test("a game with an early run, a hot first quarter and a halftime deficit finishes writing", () => {
+	const g = game({
+		gid: 105,
+		teams: [
+			realisticTeam(
+				{
+					tid: 1,
+					region: "San Antonio",
+					name: "Spurs",
+					abbrev: "SAS",
+					pts: 97,
+					ptsQtrs: [21, 31, 22, 23],
+				},
+				player({ name: "Ausar Lowry", pts: 12, reb: 10, fg: 5, fga: 14 }),
+			),
+			realisticTeam(
+				{
+					tid: 2,
+					region: "Orlando",
+					name: "Magic",
+					abbrev: "ORL",
+					pts: 104,
+					ptsQtrs: [31, 20, 21, 32],
+				},
+				player({
+					name: "Payton Jackson",
+					pts: 21,
+					reb: 14,
+					ast: 7,
+					fg: 8,
+					fga: 17,
+				}),
+			),
+		],
+		winnerTid: 2,
+		flow: {
+			leadChanges: 13,
+			ties: 3,
+			maxLead: [6, 11],
+			maxLeadAt: [1, 2],
+			run: { side: 1, pts: 13, period: 1, clock: 419 },
+			lastLead: { side: 1, period: 4, clock: 190, pts: [90, 92] },
+			lastTie: { period: 4, clock: 446, pts: 84 },
+		},
+	});
+	for (let seed = 0; seed < 10; seed++) {
+		const recap = getAutoRecap({ ...g, gid: 105 + seed * 1000 });
+		assert.deepEqual(verifyRecap(recap, g), [], recap);
+		// The first quarter comes before the half.
+		const q1 = recap.search(/31-21/);
+		const half = recap.search(/52-51|51-52/);
+		if (q1 >= 0 && half >= 0) {
+			assert.ok(q1 < half, recap);
+		}
+	}
 });

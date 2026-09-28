@@ -24,6 +24,8 @@ describe("FlowLog", () => {
 		assert.strictEqual(f.leadChanges, 2);
 		assert.strictEqual(f.ties, 2);
 		assert.deepStrictEqual(f.maxLead, [5, 1]);
+		// Home's 5 came first at 10-5 in the second; away's 1 in the first.
+		assert.deepStrictEqual(f.maxLeadAt, [2, 1]);
 		assert.deepStrictEqual(f.lastTie, { period: 1, clock: 600, pts: 5 });
 		// The lead last changed hands at 5-3; 7-5 kept it.
 		assert.strictEqual(f.lastLead?.clock, 640);

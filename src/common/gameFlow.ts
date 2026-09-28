@@ -42,6 +42,10 @@ export type GameFlow = {
 	ties: number;
 	// The biggest lead each side held: teams[0] (home), teams[1] (away).
 	maxLead: [number, number];
+	// The period each side's biggest lead was first reached, so a recap can
+	// put "the lead reached 43" where it happened instead of guessing. Absent
+	// in games simmed before it was recorded.
+	maxLeadAt?: [number, number];
 	// The last time the lead changed hands - from here the side that took it
 	// never trailed again. The opening score of a game nobody ever caught.
 	lastLead?: {
@@ -146,7 +150,12 @@ export class FlowLog {
 	summary(numPeriods: number): GameFlow {
 		this.flush();
 		const score: [number, number] = [0, 0];
-		const out: GameFlow = { leadChanges: 0, ties: 0, maxLead: [0, 0] };
+		const out: GameFlow = {
+			leadChanges: 0,
+			ties: 0,
+			maxLead: [0, 0],
+			maxLeadAt: [0, 0],
+		};
 		let leader: GameFlowSide | undefined;
 
 		let runSide: GameFlowSide | undefined;
@@ -212,7 +221,10 @@ export class FlowLog {
 					};
 				}
 				leader = now;
-				out.maxLead[now] = Math.max(out.maxLead[now], Math.abs(diff));
+				if (Math.abs(diff) > out.maxLead[now]) {
+					out.maxLead[now] = Math.abs(diff);
+					out.maxLeadAt![now] = e.period;
+				}
 			}
 
 			// The score at each mark is the score after the last event before
