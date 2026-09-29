@@ -310,9 +310,11 @@ or `smile2`.
   A very specific silhouette, unmistakable when it is right and badly wrong
   when it is not: `high` (a clean rectangle), `juice` (the same with a stepped,
   slanted front), `tall-fade` (a shorter box)
-- Afro: `afro2` is the real one — big, wide and textured. `afro` is a SMOOTH
-  rounded helmet with a clean outline, closer to a moderate rounded cut than to
-  a pick-out afro
+- Afro: `afro2` is the real one — tall and textured, the biggest hair
+  faces.js draws, though it still stops above the ears. An afro that is wider
+  than the head and comes down past the ears → `afro2` + `hairBg: longHair`,
+  which carries it down the sides. `afro` is a SMOOTH rounded helmet with a
+  clean outline, closer to a moderate rounded cut than to a pick-out afro
 - Braids and locs: `cornrows` (clear vertical rows on top, faded sides) — the
   only braided option, so use it for any braids worn tight to the scalp, faded
   sides or not. Box braids that hang loose, with the parts visible on top →
@@ -335,8 +337,8 @@ or `smile2`.
 - Long or shaggy: `longHair` (falls past the ears and frames the face),
   `shaggy1`, `shaggy2` (shorter and choppier), `messy` (chunky pieces over the
   forehead), `emo` (a long fringe swept over one eyebrow) — these, hanging
-  locs or twists, and curls that reach the jaw take a `hairBg`; every other cut
-  above keeps `hairBg: none`
+  locs or twists, and curls or an afro that reach the jaw take a `hairBg`;
+  every other cut above keeps `hairBg: none`
 
 `hairBg` draws its mass INDEPENDENTLY of the hair id, BEHIND the head: set it
 from how far the hair actually hangs, not from the style name. `longHair` shows
