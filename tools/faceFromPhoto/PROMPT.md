@@ -197,49 +197,78 @@ similar drawings next to each other; no group or id is preferred.
 
 ### head
 
-The outline of the face, from the temples down to the chin. Two things vary:
-the SIDES (curving all the way down, or running straight) and the CHIN
-(rounded, pointed, flat, or notched). `fatness` widens whichever you pick, so
-choose the shape here and the width there.
+**How the head works — read this first.** All 18 head drawings are the SAME
+length, and they are identical from the top of the skull down to the
+cheekbones: the same dome, the same temples, the same width at the
+cheekbones. They differ ONLY below the cheekbones, in the jaw and chin. So:
 
-- `head1` — a smooth egg: sides curve the whole way, widest at the
-  cheekbones, a rounded chin clearly narrower than the cheeks. No corners
-  anywhere.
-- `head2` — an egg that tapers more toward the bottom: sides curve in below
-  the cheeks to a narrower, softly rounded chin.
-- `head3` — straight sides down to the cheek, then straight lines angling in
-  to a small flat chin: a V / trapezoid jaw, with the jaw corners high.
-- `head4` — an oval tapering to a small flat chin with a slight notch at its
-  bottom.
-- `head5` — an oval whose lower sides straighten into a softly angled jaw
-  meeting at a rounded chin: the middle of the set, neither round, long nor
-  square.
-- `head6` — broad and soft: full rounded cheeks and a wide, rounded chin. A
-  round face.
-- `head7` — straight sides, then sharp jaw lines angling in steeply to a short
-  flat chin: a strong, angular V jaw.
-- `head8` — an oval with a small double bump (a shallow notch) in the middle
-  of a rounded chin.
-- `head9` — like `head8`, a little wider: rounded, with a small notch in the
+- The head id sets the JAW: where the sides turn in (the jaw corner), how
+  sharp that corner is, and how wide and what shape the chin is.
+- `fatness` sets the WIDTH of the whole head, top to chin, and it is the only
+  thing that makes a face look long and narrow or short and broad. No head id
+  is longer or narrower than another.
+
+Pick the jaw here and the width with `fatness` (see "Face shape and
+`fatness`" under Allowed numbers). A long, narrow face is a LOW `fatness`
+with a tapering jaw, never a boxy jaw at any `fatness`.
+
+The jaws, grouped by how wide the lower face stays (width just above the chin,
+as a share of the cheekbone width):
+
+Narrow, tapering jaws — the sides curve or angle in well above the chin to a
+small chin (lower face about 55–60% of the cheekbones):
+- `head1` — a smooth egg: the sides curve in continuously from the
+  cheekbones, no jaw corner anywhere, to a small rounded chin.
+- `head2` — an egg like `head1` that ends in a small, short, FLAT-bottomed
   chin.
-- `head10` — fairly straight sides, soft jaw corners, and a chin drawn as a
-  clear W: two bumps with a notch between, like a cleft.
-- `head11` — widest at the temples, the sides taper in fairly straight lines
-  to a rounded chin: an inverted triangle / heart shape.
-- `head12` — the widest and fullest outline: broad cheeks, a wide rounded
-  chin, a big round-square face.
-- `head13` — a broad oval with a wide rounded chin: a round face, less full
-  than `head6`.
-- `head14` — the longest, narrowest egg: sides curve gently to a small,
-  slightly squared chin. The long thin face.
-- `head15` — straight sides, clear angular jaw corners, and the chin brought
-  to a flat point: a diamond-ish, angular jaw.
-- `head16` — the boxiest: vertical sides, sharp jaw corners, a flat chin set
-  at a slight angle. A rectangle.
-- `head17` — straight sides and a broad flat chin with rounded corners: a
-  soft square.
-- `head18` — straight vertical sides and a wide flat chin with a small notch
-  in the middle: a square jaw with a cleft.
+- `head14` — an egg like `head1` with a slightly squared-off small chin; the
+  sides stay out a touch longer before curving in.
+- `head5` — the sides run fairly straight down past the mouth, then turn at a
+  soft, rounded jaw corner and angle in to a narrow rounded chin: a soft
+  shield / V.
+- `head11` — like `head5`, but the angled lines run longer and meet in a
+  narrower, more pointed chin: the most pointed soft V, a heart-shaped lower
+  face.
+- `head4` — an oval tapering to a small chin whose bottom is flat with a very
+  faint dip in the middle.
+- `head9` — an oval tapering to a small chin with a wavy double bump (a small
+  W) at the bottom.
+
+Angular V jaws — a clear, sharp jaw CORNER about level with the mouth, then
+straight lines angled in to the chin:
+- `head3` — sharp corners, then long straight lines to a small rounded chin:
+  a strong V.
+- `head7` — sharp corners, then shorter straight lines to a short flat chin:
+  a chiselled V with a blunt chin.
+- `head10` — fairly straight sides, defined corners, and a chin drawn as a
+  clear W (two bumps with a notch): a V jaw with a cleft chin.
+
+Full, rounded jaws — the lower face stays wide and rounds off in a U (lower
+face about 65–70% of the cheekbones):
+- `head12` — the lower face stays full nearly to the bottom, then rounds into
+  a medium chin: a broad U.
+- `head13` — like `head12`, a touch softer: a full, round lower face.
+- `head8` — a full rounded jaw with a small double bump (a slight cleft) at
+  the bottom of the chin.
+
+Broad jaws — the lower face stays wide right down to a wide chin (lower face
+about 75–80% of the cheekbones):
+- `head6` — broad and soft: full, heavy, rounded cheeks and jowls carried down
+  to a wide rounded chin. No corners: a jowly round face.
+- `head15` — straight sides, jaw corners low near the chin, then short angled
+  lines to a pointed chin: a wide jaw with a pointed chin.
+- `head16` — straight sides, sharp low jaw corners and a wide, flat, slightly
+  tilted chin: the boxiest, a rectangle.
+- `head17` — straight sides almost to the bottom, rounded corners, and the
+  widest flat chin of all: a soft square, the broadest jaw.
+- `head18` — straight sides, low corners, and a wide flat chin with a notch in
+  the middle: a square jaw with a cleft.
+
+Read the jaw off the photo: where do the sides of the face stop running down
+and start turning in (high, around the mouth, or low near the chin)? Is that
+turn a sharp corner or a curve? Is the chin narrow and pointed, small and
+flat, or wide? A face that narrows steadily from the cheekbones is one of
+the narrow tapering jaws, whatever else it looks like.
 
 ### hair
 
@@ -798,7 +827,7 @@ Clamp to these ranges. Round to two decimals.
 
 | field            | range       | meaning                                                               |
 | ---------------- | ----------- | --------------------------------------------------------------------- |
-| `fatness`        | 0 – 1       | face/jaw width. Lean guard ≈ 0.15, average ≈ 0.4, heavy big man ≈ 0.8 |
+| `fatness`        | 0 – 1       | head width. Long narrow face ≈ 0–0.15, average ≈ 0.35, heavy ≈ 0.8    |
 | `body.size`      | 0.8 – 1.05  | shoulder width                                                        |
 | `ear.size`       | 0.5 – 1.5   | 1.0 is normal, 1.3+ for noticeably big ears                           |
 | `nose.size`      | 0.5 – 1.25  |                                                                       |
@@ -813,13 +842,28 @@ on `side`, `false` raises the corner on your right.
 
 How to read the numbers off the photo:
 
-- **Face shape and `fatness`.** Compare the face's length (hairline to chin) with
-  its width (across the cheekbones). Noticeably long and narrow → an oval
-  `head14`/`head1`/`head2` and `fatness` 0.1–0.25; for an exceptionally long,
-  thin face, `head14` at 0–0.1, the longest faces.js can draw. About as long
-  as it is wide, full cheeks, soft jaw → a wider head and `fatness` 0.6+.
-  Judge `fatness` from the cheeks, jowls and neck, not from how big the man is
-  overall — a huge, muscular centre can have a lean face.
+- **Face shape and `fatness`.** `fatness` is the head's width, and the only
+  control over how long or broad the face looks.
+
+  Measure the photo: the head's length from the top of the skull (where the
+  scalp would be under the hair, not the top of the hair) to the bottom of
+  the chin, divided by the face's width across the cheekbones (not the ears,
+  not the hair). Real heads measure longer than the drawings, so map the
+  photo's number like this:
+
+  | photo length ÷ width | `fatness` | looks like                        |
+  | -------------------- | --------- | --------------------------------- |
+  | 1.85 or more         | 0         | very long and narrow              |
+  | about 1.75           | 0.15      | long, lean                        |
+  | about 1.65           | 0.35      | average                           |
+  | about 1.55           | 0.55      | broad                             |
+  | about 1.45           | 0.75      | wide, full                        |
+  | 1.4 or less          | 0.9 – 1   | a short, round, heavy head        |
+
+  (The drawings themselves run from 1.70 long at `fatness` 0 to 1.36 at 1.)
+  Judge it from the face itself, not from how big the man is overall — a
+  huge, muscular centre can have a lean face. Pair a long face with one
+  of the narrow tapering jaws, and a broad face with a full or broad one.
 - **A full beard widens the drawn face.** faces.js paints the beard as a solid
   mass around the jaw, so a bearded face reads wider and squarer than the same
   face clean-shaven. With a full beard or a large goatee, judge the head shape
