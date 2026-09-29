@@ -191,11 +191,31 @@ sits on the jaw, `eye10` is not an ordinary eye), so trust the description,
 never the name.
 
 The drawings are simple cartoon line art: a bold black outline, flat colors,
-no shading. For each slot, read every description, compare each with the
-photo, and pick the one that matches best. The groupings below only put
+no shading. Each slot starts with a few CALLS to make about the photo (what
+the tip of the nose does, where the jaw turns, how the lid sits) and a table
+from those calls to the drawing. Make every call from the photo, for every
+player, even when a feature looks ordinary: ordinary faces still lean one
+way or another on each call, and those leanings are what make two faces
+different. Then check the drawing's description below the table. The groupings below only put
 similar drawings next to each other; no group or id is preferred.
 
 ### head
+
+Make three calls on the lower face, then find the jaw (and set `fatness`
+from the face's length and width, see "Face shape and `fatness`"):
+
+1. **CORNER** — where the sides of the face turn in toward the chin: no
+   corner (a smooth curve), a soft corner, or a sharp, bony corner.
+2. **HEIGHT** of that turn — high (around the mouth) or low (near the chin).
+3. **CHIN** — small and rounded, small and flat, pointed, wide, or with a
+   cleft/notch.
+
+| corner / chin → | small round | small flat        | pointed  | wide                         | cleft / notch |
+| --------------- | ----------- | ----------------- | -------- | ---------------------------- | ------------- |
+| smooth curve    | `head1`     | `head2`, `head14` | `head11` | `head13`, `head12`; jowly `head6` | `head8`, `head9` |
+| soft, high      | `head5`     | `head4`           | `head11` | `head13`                     | `head4`       |
+| sharp, high     | `head3`     | `head7`           | `head3`  | `head7`                      | `head10`      |
+| low (near chin) | `head12`    | `head16`          | `head15` | `head17`; boxy `head16`      | `head18`      |
 
 **How the head works — read this first.** All 18 head drawings are the SAME
 length, and they are identical from the top of the skull down to the
@@ -276,6 +296,27 @@ flat, or wide? A face that narrows steadily from the cheekbones is one of
 the narrow tapering jaws, whatever else it looks like.
 
 ### hair
+
+Make four calls, then find the cut in the descriptions below:
+
+1. **LENGTH** — bald, shaved or buzzed, short, medium, long.
+2. **TEXTURE** — smooth/straight, wavy, tight curls, spiky, braided, locs or
+   twists.
+3. **SIDES** — full, faded (tapering to skin), or clipped to the skin.
+4. **FRONT** — the hairline (straight, M/receding, thin crown), any part
+   (side or centre), and whether the front lies flat, stands up, or falls
+   onto the forehead as a fringe.
+
+| texture / length → | shaved / buzzed                    | short                                                  | medium                                        | long                        |
+| ------------------ | ---------------------------------- | ------------------------------------------------------ | --------------------------------------------- | --------------------------- |
+| smooth             | `short-fade`, `short-fade-2`; `bald` | flat `short`/`short2`; clipped sides `crop`; fade `crop-fade`/`crop-fade2`; side part `parted`; centre `middle-part` | fringe `emo`/`shortBangs`; bowl `afro` | `longHair`, `shaggy1`, `shaggy2` |
+| wavy               | `crop`                             | `parted`, `hair`                                       | `hair`, `messy`                               | `shaggy1`                   |
+| tight curls        | `short-fade`                       | `short3`; fade `curlyFade1`/`curlyFade2`               | `curly`, `curly3`, `curly2`                   | big `afro2`                 |
+| spiky / bristly    | `crop`                             | `spike4`, `messy-short`; flat-top `spike`/`high`       | `spike2`, `spike3`, `messy`                   | `messy`                     |
+| braids / locs      | `cornrows`                         | `cornrows`; short twists `short3`                      | `curly3`; top-knot `dreads`                   | `cornrows` / `curly3`       |
+
+Receding with a thin crown → `short-bald`. A tall box → `tall-fade` (faded)
+or `high` (solid); a raised peak → `faux-hawk`, `fauxhawk-fade`.
 
 Match length and texture before the style name. `hair.color` colors all of
 it. Unless stated, the sides end beside the top third of the ear. `flip`
@@ -465,6 +506,22 @@ straight hair should get anything else.
 
 ### facialHair
 
+Make three calls, then build the id from the groups below:
+
+1. **UPPER LIP** — nothing, a thin patchy mustache, or a full mustache.
+2. **CHIN** — nothing, a soul patch, a patch on the chin, a pointed or
+   triangle goatee, or a tuft hanging below the chin.
+3. **JAW AND CHEEKS** — nothing, sideburns, a strap along the jaw, a short
+   full beard, or a long or bushy beard.
+
+Only jaw and cheeks → a full beard (`beard2`, `beard1`, `beard3`,
+`beard-point`) or a jaw strap / sideburns group. Mustache + chin, cheeks
+bare → a circle beard (`fullgoatee*`, `wilt`) if they join around the mouth,
+otherwise a chin-plus-mustache goatee. Chin only → a chin-only goatee.
+Mustache only → `mustache1` / `mustache-thin`. Patchy young growth → the
+hatch ids (`goatee-thin`, `goatee-thin-stache`, `mustache-thin`). Soft haze
+with no edge → no id, set `head.shave` instead.
+
 Every drawing except the three hatch ids is a solid shape in `hair.color` with
 a thin black outline; the hatch ids are black strokes whatever `hair.color`
 is. Each is one fixed drawing that only stretches sideways with `fatness`: it
@@ -647,6 +704,22 @@ corners of the mouth to the jaw):
 
 ### eye
 
+Make three calls, then find the eye (and `eye.angle` from the tilt):
+
+1. **LID** — high (the whole iris shows), low (the lid covers the top of the
+   iris: relaxed, hooded), or a heavy dark line/crease over the eye.
+2. **OPENING** — normal almond, narrow, or wide (white all round the iris).
+3. **TILT** of the line from inner to outer corner — up, level or down.
+
+| lid / opening → | normal almond        | narrow                                   | wide    |
+| --------------- | -------------------- | ---------------------------------------- | ------- |
+| high            | `eye13`              | `eye16`                                  | `eye15` |
+| low / hooded    | `eye14`              | `eye19`                                  | `eye14` |
+| heavy line      | `eye12`; peaked `eye18` | `eye16`; slanting hard `eye17`        | `eye18` |
+
+`eye.angle`: tilted up 4–8, level 0–2, down −3 to −6. The white cartoon eyes
+(`eye1`–`eye11`, below) are for a deliberately cartoonish look only.
+
 Three drawing styles.
 
 Soft OFF-WHITE eyes with a solid black upper lid and no line along the
@@ -707,6 +780,23 @@ apart from the expression").
 
 ### eyebrow
 
+Make three calls, then find the brow (and `eyebrow.angle` from the slope):
+
+1. **THICKNESS** — thin, medium or thick/bushy.
+2. **SHAPE** — straight, a soft arch, a high/strong arch, or an angled peak.
+3. **ENDS** — even width, or thick inside tapering to a thin tail; short or
+   long.
+
+| thickness / shape → | straight                          | soft arch                 | strong arch            | angled peak            |
+| ------------------- | --------------------------------- | ------------------------- | ---------------------- | ---------------------- |
+| thin                | `eyebrow19`; tapered `eyebrow15`  | `eyebrow18`               | `eyebrow5`             | `eyebrow17`            |
+| medium              | tapered `eyebrow13`, `eyebrow3`, `eyebrow11` | `eyebrow16`, `eyebrow20` | `eyebrow5`   | `eyebrow9`, `eyebrow4` |
+| thick               | `eyebrow7`; slab `eyebrow6`; wedge `eyebrow2`; forked end `eyebrow12` | `eyebrow1`, `eyebrow14` | `eyebrow14` | `eyebrow9`; scooped `eyebrow10` |
+| bushy               | `eyebrow6`                        | `eyebrow8`                | `eyebrow8`             | `eyebrow8`             |
+
+`eyebrow.angle`: outer ends higher than the inner (a V, stern) 4–10; level
+0–3; outer ends lower (worried) −3 to −8.
+
 Thickness first, then shape. The brows are drawn in `hair.color`.
 
 - `eyebrow1` — thick and rounded at the inner end, sweeping out in a long arch
@@ -747,21 +837,36 @@ Thickness first, then shape. The brows are drawn in `hair.color`.
 
 ### nose
 
-Every nose has something that sets it apart; find it before you pick. Look
-at, in order:
+Make three calls on every nose, each from the photo, before you pick:
 
-- the TIP: pointed, rounded, bulbous, turned up, or hooked down;
-- the LENGTH, from the brows to the tip, against the gap from the tip to the
-  mouth: short, medium or long;
-- the WIDTH at the nostrils, against the gap between the inner eye corners;
-- whether the photo is lit from one side (one side of the nose in shadow) or
-  straight on.
+1. **TIP** — plain (straight, nothing special), pointed, rounded/fleshy,
+   bulbous (a ball on the end), turned up (nostrils show from the front), or
+   hooked (curving down).
+2. **LENGTH**, brows to tip, against the gap from the tip to the mouth —
+   short, medium or long.
+3. **WIDTH** at the nostrils, against the gap between the inner eye corners —
+   narrow, medium or wide.
 
-Each drawing below says what it looks like and which real nose it draws.
-`nose7` is the plainest: it says only "a straight nose is here". It is right
-for a nose with no trait of its own; a nose with a pointed, rounded, hooked,
-turned-up, bulbous, long, short, wide or narrow look gets the drawing that
-shows that look.
+Real noses are seldom medium on all three; say which way each one leans.
+Then find the drawing:
+
+| tip            | short / narrow         | medium                     | long / big                  | wide                  |
+| -------------- | ---------------------- | -------------------------- | --------------------------- | --------------------- |
+| plain          | `nose10`               | `nose7`                    | `nose7` at size 1.15–1.25   | `nose11`              |
+| pointed        | `nose3`                | `nose3` / `pinocchio`      | `nose9` (long, narrow)      | `nose3` at size 1.15  |
+| rounded/fleshy | `nose8`                | `nose12`                   | `honker` (narrow) / `nose6` | `nose11` / `nose12`   |
+| bulbous        | `nose8`                | `nose13`                   | `nose13` / `nose6`          | `nose12` / `nose6`    |
+| turned up      | `nose14`               | `small`                    | `small` at size 1.15        | `nose1`               |
+| hooked         | `nose4`                | `nose2`                    | `nose2` at size 1.15–1.25   | `nose2` / `nose6`     |
+
+Very broad and flat, nostrils flared wide → `nose5`. Photo lit from one side
+or the face turned three-quarters, so only one side of the nose shows as a
+line → the one-sided drawings (`nose4` short, `nose9` medium, `nose2` long),
+whatever the tip.
+
+Then set `nose.size` from the length and width you called: short or narrow
+0.8–0.9, medium 1, long or wide 1.1–1.25. Two men who both get `nose7` still
+differ here.
 
 - `nose7` — a single bridge line down the middle over a flat base line: an
   upside-down T. Draws a plain, straight, medium nose, seen straight on,
@@ -816,6 +921,22 @@ as a whole.) Flip changes nothing visible on the other noses.
 
 ### mouth
 
+Make three calls, then find the mouth:
+
+1. **OPEN** — closed, lips just parted, teeth showing, or wide open.
+2. **CORNERS** — turned down, level, or up (a smile), or one side only.
+3. **LIPS / WIDTH** — thin or defined lips; a narrow or a wide mouth.
+
+| open / corners → | down     | level                                        | up                                   | one side |
+| ---------------- | -------- | -------------------------------------------- | ------------------------------------ | -------- |
+| closed           | `closed` | thin `straight`; soft `mouth5`; lips defined `mouth6` | slight `smile-closed`; broad `smile4` | `side` |
+| just parted      | `mouth4` | `mouth4`, `mouth2`                           | `mouth3`                             | `side`   |
+| teeth showing    | `angry`  | `mouth7`, `mouth8`                           | `mouth7`; broad beaming `smile`      | `mouth7` |
+| wide open        | `angry`  | `mouth`                                      | laugh `smile3`, `smile2`             | `smile2` |
+
+(The expression rules above the list still apply: a shout mid-play is
+`mouth2`, a big grin is kept one step calmer.)
+
 Match the expression in the photo, one step calmer: this face appears on
 every screen in the game, so a big grin is kept but never exaggerated. The
 mappings below already include that step, so use them as written. A polite
@@ -868,6 +989,10 @@ Open:
 - `angry` — a wide open mouth with a wavy, clenched outline: a grimace.
 
 ### ear
+
+Two calls: **SHAPE** (slim, round, or full and squarish) → `ear2` / `ear3` /
+`ear1`; **SIZE** (small, ordinary, big or prominent) → `ear.size` 0.8–0.9 /
+1 / 1.2–1.5.
 
 The size slider matters more than the shape.
 
