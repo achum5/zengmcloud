@@ -47,7 +47,7 @@ export const sheetLayout = (count: number) => {
 	return { cols, rows, scale };
 };
 
-const loadImage = (url: string) =>
+const loadDirect = (url: string) =>
 	new Promise<HTMLImageElement>((resolve, reject) => {
 		const img = new Image();
 		// Asks the host for CORS headers. Without them the load fails outright,
@@ -61,6 +61,23 @@ const loadImage = (url: string) =>
 		};
 		img.src = url;
 	});
+
+// Most photo hosts (NBA.com, basketball-reference, ESPN) send no CORS
+// headers, so a canvas can't read their images and the sheet can't be made
+// into one picture. wsrv.nl is a free public image relay that fetches the
+// photo and serves it back with CORS allowed - the same pixels, now readable.
+const RELAY = "https://wsrv.nl/?url=";
+
+const loadImage = async (url: string) => {
+	try {
+		return await loadDirect(url);
+	} catch (error) {
+		if (!/^https?:/.test(url)) {
+			throw error;
+		}
+		return loadDirect(`${RELAY}${encodeURIComponent(url)}`);
+	}
+};
 
 const drawTile = (
 	ctx: CanvasRenderingContext2D,
@@ -91,12 +108,26 @@ const drawTile = (
 	ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h + labelH - 1);
 };
 
-const loadAll = async (entries: SheetEntry[]) =>
-	Promise.all(
+// A photo that can't be read even through the relay leaves its tile blank
+// rather than sinking the whole sheet; only when none can be read is it an
+// error, and the page falls back to the on-screen sheet.
+export let missedPhotos = 0;
+const loadAll = async (entries: SheetEntry[]) => {
+	const images = await Promise.all(
 		entries.map((entry) =>
-			entry.photo ? loadImage(entry.photo) : Promise.resolve(undefined),
+			entry.photo
+				? loadImage(entry.photo).catch(() => undefined)
+				: Promise.resolve(undefined),
 		),
 	);
+	const wanted = entries.filter((entry) => entry.photo).length;
+	const got = images.filter((img) => img !== undefined).length;
+	missedPhotos = wanted - got;
+	if (wanted > 0 && got === 0) {
+		throw new PhotoReadError("no photo could be read");
+	}
+	return images;
+};
 
 const toBlob = (canvas: HTMLCanvasElement) =>
 	new Promise<Blob>((resolve, reject) => {

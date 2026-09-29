@@ -15,6 +15,7 @@ import {
 	LABEL_H,
 	PhotoReadError,
 	SHEET_MAX,
+	missedPhotos,
 	TILE_H,
 	TILE_W,
 	buildFiles,
@@ -408,7 +409,7 @@ const FaceConverter = () => {
 		setFullSheet(true);
 		showNotification({
 			type: "error",
-			text: "The photo host doesn't allow copying its images. Screenshot the sheet below instead.",
+			text: "Couldn't load the photos to make an image. Screenshot the sheet below instead.",
 		});
 	};
 
@@ -672,11 +673,8 @@ const FaceConverter = () => {
 														);
 														await copyImageToClipboard(blob);
 														showNotification({
-															type: "success",
-															text:
-																sheets.length > 1
-																	? `Sheet ${i + 1} copied.`
-																	: "Image copied.",
+															type: missedPhotos > 0 ? "error" : "success",
+															text: `${sheets.length > 1 ? `Sheet ${i + 1}` : "Image"} copied.${missedPhotos > 0 ? ` ${missedPhotos} photo${missedPhotos === 1 ? "" : "s"} couldn't be loaded.` : ""}`,
 														});
 													})
 												}
