@@ -81,9 +81,11 @@ describe("buildBatchPrompt", () => {
 				{ n: 2, pid: 202, name: "B Two" },
 			],
 			"sheet",
+			5,
 		);
-		assert.include(prompt, "#1 · id 101 · A One");
-		assert.include(prompt, "#2 · id 202 · B Two");
+		assert.include(prompt, "#1 · id 101 · A One (row 1, column 1)");
+		assert.include(prompt, "#2 · id 202 · B Two (row 1, column 2)");
+		assert.include(prompt, "label cut off");
 		assert.include(prompt, "## What every option looks like");
 		assert.include(prompt, "CONTACT SHEET");
 		const formatAt = prompt.indexOf("## Batch reply format");

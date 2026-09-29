@@ -50,8 +50,18 @@ you are sure about.`;
 export const buildBatchPrompt = (
 	entries: BatchEntry[],
 	source: "sheet" | "files",
+	// Columns in the contact sheet. With it, each roster line also gives its
+	// photo's place in the grid - the fallback when a screenshot cuts the
+	// labels off, which on a hand-taken screenshot of the sheet is common.
+	sheetCols?: number,
 ) => {
-	const roster = entries.map((entry) => batchLabel(entry)).join("\n");
+	const place = (i: number) =>
+		source === "sheet" && sheetCols
+			? ` (row ${Math.floor(i / sheetCols) + 1}, column ${(i % sheetCols) + 1})`
+			: "";
+	const roster = entries
+		.map((entry, i) => `${batchLabel(entry)}${place(i)}`)
+		.join("\n");
 	const photos =
 		source === "sheet"
 			? `The attached image is a CONTACT SHEET: ${entries.length} headshots in a grid, each with a white label strip directly under it.`
@@ -66,8 +76,16 @@ ${roster}
 
 How to work through a batch:
 
-- Match every answer to its player by the LABEL, never by where a photo sits
-  or the order the images arrived in.
+- Match every answer to its player by the LABEL, never by the order the
+  images arrived in.${
+		source === "sheet" && sheetCols
+			? `
+- A label cut off or unreadable (a screenshot can crop the bottom row): use
+  the grid place the roster gives for that line instead, counting rows from
+  the top and columns from the left. Never leave a visible photo out, and
+  never give it a placeholder face because its label is missing.`
+			: ""
+	}
 - The label strip is not part of the photo. Ignore it when you judge colors.
 - Do each player as a separate, complete job: run the whole method below on
   him, from studying the face to the final check, before you move on. Photos

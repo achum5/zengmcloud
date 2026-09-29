@@ -632,16 +632,16 @@ const FaceConverter = () => {
 									<button
 										className="btn btn-primary"
 										onClick={() => {
-											void copyText(buildBatchPrompt(batch, source)).then(
-												(ok) => {
-													if (ok) {
-														showNotification({
-															type: "success",
-															text: "Prompt copied.",
-														});
-													}
-												},
-											);
+											void copyText(
+												buildBatchPrompt(batch, source, layout.cols),
+											).then((ok) => {
+												if (ok) {
+													showNotification({
+														type: "success",
+														text: "Prompt copied.",
+													});
+												}
+											});
 										}}
 										type="button"
 									>
@@ -688,9 +688,12 @@ const FaceConverter = () => {
 													}));
 													files.push({
 														name: "prompt.md",
-														blob: new Blob([buildBatchPrompt(batch, source)], {
-															type: "text/markdown",
-														}),
+														blob: new Blob(
+															[buildBatchPrompt(batch, source, layout.cols)],
+															{
+																type: "text/markdown",
+															},
+														),
 													});
 													const where = await saveBatchFiles(files);
 													showNotification({

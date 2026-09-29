@@ -998,6 +998,49 @@ If the scalp should read as cleanly shaved, stay at `0.35` or below.
    unless you can see one.
 8. `jersey` — use `jersey` unless told otherwise; ZenGM recolors it.
 
+## Old photos: black-and-white, sepia, hand-tinted, newspaper
+
+Players from before about 1970 often have only an old photo. It has no real
+color to read, so the color rules above can't be followed as written. Use
+these instead.
+
+- **Skin from brightness, not color.** Compare the skin's grey with the
+  whitest white in the photo (a white jersey, the background, the eye whites)
+  and the darkest dark (black hair, shadows). Skin that sits close to the
+  white is fair: `#ecc8b3` / `#e3bda5`. Skin about halfway between is olive
+  to medium: `#d9a886` / `#bb876f`. Skin close to the dark hair is brown to
+  deep: `#8d5d45` / `#6e4030`. Always answer with a warm skin hex from the
+  ladder, never a grey one. Decide it for EVERY photo on its own: old photos
+  vary widely in exposure, and a batch where every black-and-white face got
+  the same skin color was not reading any of them.
+- **A hand-tinted or colorized photo** (an old trading card, a tinted
+  portrait) has PAINTED color. The paint is usually too orange or too pink,
+  and hair is often tinted one flat brown. Take the skin's depth from how
+  light or dark it is, then pick the matching ladder step, not the paint's
+  hue.
+- **Hair from brightness.** Black or near-black → `#272421`. Dark grey →
+  dark brown `#3D2314`. Mid grey → medium brown `#5A3825`. Light grey or
+  near-white on a young man → blond `#b89968`. On an older man it may be
+  grey `#9a9a9a`; judge by his age. Red hair shows as a mid grey and can't be
+  told apart, so it gets the brown.
+- **Film grain, halftone dots and scratches are not stubble, freckles or
+  lines.** A grainy or dotted newspaper print speckles the whole face
+  evenly. Set `head.shave` only for a real shadow along the jaw and upper lip
+  that is darker than the rest of the face, and leave `freckles*`, `eyeLine`
+  and `miscLine` at `none` unless the mark is clearly part of the face.
+- **Period hairstyles.**
+  - Combed or slicked back with height and a wave at the front (a
+    pompadour) → `hair`.
+  - A clear side part, flat or combed over → `parted`.
+  - A centre part → `middle-part`.
+  - Tight waves or curls on top → `curly`.
+  - A short crew cut → `crop` or `short`.
+  - A 1950s flat-top → `spike` (a flat top with bristle) or `high`.
+- **Action shots, a face half hidden or turned away, a blurry newspaper
+  crop:** read what you can see (the hair, the skin's brightness, a clear
+  feature like big ears or a heavy brow) and keep the rest neutral. It
+  still gets a real answer, never a copy-paste neutral face.
+
 ## When the photo won't support a confident call
 
 Small, dark, blurry, side-on or heavily-shadowed photos are common. Don't stall
