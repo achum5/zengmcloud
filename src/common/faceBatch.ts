@@ -43,8 +43,9 @@ exactly once:
 real keys, never a \`"..."\` key.)
 
 After the block you may add a short \`Notes:\` list, one line per player that
-needs one, each starting with his roster line's \`#n\` and name. Skip players
-you are sure about.`;
+needs one, each starting with his roster line's \`#n\` and name (in a batch
+this replaces the single-photo limit of three notes). Skip players you are
+sure about.`;
 };
 
 export const buildBatchPrompt = (
@@ -114,7 +115,9 @@ How to work through a batch:
   54-player batch came out with the same nose on 44 faces and the same head
   on half of them, and the photos did not look alike. A default is right
   only for a feature you truly cannot see; a face you CAN read gets its own
-  call in every slot.
+  call in every slot. Players who really do share something (a period
+  haircut, fair skin in a batch of fair-skinned men) may share its id; the
+  check is for sameness the photos don't show.
 
 ## Batch reply format (this replaces the single-photo output instructions below)
 

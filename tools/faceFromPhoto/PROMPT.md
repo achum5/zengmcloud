@@ -96,8 +96,9 @@ anything after it is free.
 
 Every value below is filler, there to show the SHAPE of each entry - which keys
 exist, and whether a slot takes an id, a number, a hex, or a boolean. Not one of
-them is a default or a suggestion. Read every slot off the photo. Reply in this
-exact form, fence and all.
+them is a default or a suggestion. Read every slot off the photo; the only
+exceptions are `teamColors` and `jersey`, which you copy exactly as shown.
+Reply in this exact form, fence and all.
 
 ```json
 {
@@ -622,7 +623,8 @@ Bridge visible:
 
 Bridge as a shadow down ONE side (a narrow straight nose, common with side
 light on a lighter face) — a single line with a hook at the bottom. Set `flip`
-so the line sits on the shadowed side:
+so the line sits on the shadowed side: `flip: false` draws the line on YOUR
+right as you look at the photo, `flip: true` on your left:
 - `nose4` — the shortest: a short line with a small kink.
 - `nose9` — a medium line ending in a small hook.
 - `nose2` — a long line ending in a rounded hooked tip.
@@ -641,6 +643,10 @@ No bridge, base only:
 - `nose14` — a tiny squared bracket (∩).
 - `nose8` — a short stub over a small arched base.
 
+A nose you truly cannot read (a tiny, blurred or turned-away face): `nose7`
+at size 1 if the face is long or narrow, `small` if it is short or round.
+That is the fallback only; any nose you can see gets its own call.
+
 Do not settle on `nose11` just because a nose is broad: check for the bridge
 first. In testing, a long straight nose drawn as `nose11` read as a short,
 rounded one and lost the resemblance.
@@ -650,7 +656,13 @@ rounded one and lost the resemblance.
 Match the expression in the photo, one step calmer: this face appears on
 every screen in the game, so a big grin is kept but never exaggerated. A
 neutral mouth → a closed id. A polite closed-mouth smile → `smile-closed` or
-`mouth3`. A wide grin showing teeth → `mouth7`, not `smile3` or `smile2`.
+`mouth3`. A smile with teeth showing:
+
+- teeth showing, the mouth no wider than usual → `mouth7`;
+- a broad, beaming grin, mouth stretched wide and cheeks pushed up → `smile`.
+  `mouth7` is small when drawn and reads as an "ooh" on a beaming face; in
+  testing, every big grin in a batch drawn as `mouth7` lost the smile.
+- a full laugh, mouth wide open → `smile3`.
 
 Closed:
 - `straight` — a short flat bar. The most minimal neutral mouth.
@@ -712,7 +724,7 @@ reason.
 
 The folds either side of the mouth, scaled by `smileLine.size`.
 
-- `none` — no folds.
+- `none` — no folds (still give it `"size": 1`).
 - `line1` — long parentheses `( )` curving away from the mouth: nasolabial
   folds.
 - `line3` — shorter, rounder parentheses `( )`.
@@ -803,7 +815,9 @@ Clamp to these ranges. Round to two decimals.
 | `eyebrow.angle`  | -15 – 20    | integer. Positive = raised/arched outer end                           |
 
 `flip` (on hair, mouth, nose) is a plain boolean that mirrors that piece — pick
-whichever matches the asymmetry you see, `false` if it looks symmetric.
+whichever matches the asymmetry you see, `false` if it looks symmetric. On a
+one-sided nose, `false` puts the line on your right as you look at the photo;
+on `side`, `false` raises the corner on your right.
 
 How to read the numbers off the photo:
 
@@ -964,7 +978,8 @@ Decide which one you need before you pick either:
 
 Since one value covers the face and the scalp, a bald player with heavy face
 stubble also gets a shadowed crown — which is normally right for a shaved head.
-If the scalp should read as cleanly shaved, stay at `0.35` or below.
+If the scalp should read as cleanly shaved, stay at `0.35` or below. On fair
+skin even `0.2` draws a clearly grey jaw, so go lighter there.
 
 ## How to choose
 
@@ -994,7 +1009,8 @@ If the scalp should read as cleanly shaved, stay at `0.35` or below.
    shows them. `chin2` is a cleft chin and `freckles1` freckles — both are
    identifying features worth setting when you can see them, at any age.
 7. **Accessories/glasses only if the player actually wears them in games.** A
-   headband, yes. Glasses from a press-conference photo, no. Never set `facemask`
+   headband, yes. Glasses in a photo where he is in uniform, yes. Glasses in
+   a suit or street clothes, no. Never set `facemask`
    unless you can see one.
 8. `jersey` — use `jersey` unless told otherwise; ZenGM recolors it.
 
@@ -1017,17 +1033,22 @@ these instead.
   portrait) has PAINTED color. The paint is usually too orange or too pink,
   and hair is often tinted one flat brown. Take the skin's depth from how
   light or dark it is, then pick the matching ladder step, not the paint's
-  hue.
+  hue. Read tinted hair by its depth too, with the steps below: a flat
+  mid-brown tint is `#5A3825`, a dark one `#3D2314`.
 - **Hair from brightness.** Black or near-black → `#272421`. Dark grey →
   dark brown `#3D2314`. Mid grey → medium brown `#5A3825`. Light grey or
   near-white on a young man → blond `#b89968`. On an older man it may be
   grey `#9a9a9a`; judge by his age. Red hair shows as a mid grey and can't be
-  told apart, so it gets the brown.
+  told apart, so it gets the medium brown `#5A3825`.
 - **Film grain, halftone dots and scratches are not stubble, freckles or
   lines.** A grainy or dotted newspaper print speckles the whole face
-  evenly. Set `head.shave` only for a real shadow along the jaw and upper lip
-  that is darker than the rest of the face, and leave `freckles*`, `eyeLine`
-  and `miscLine` at `none` unless the mark is clearly part of the face.
+  evenly, and a jaw in shadow from hard studio light is lighting, not
+  growth. Players then were shaved for the camera: `head.shave` stays at 0
+  on an old photo unless you can see stubble texture on a lit part of the
+  jaw or lip, and even then 0.1. In testing, `shave` at 0.2 on grainy
+  prints drew a grey beard on clean-shaven men. Leave `freckles*`,
+  `eyeLine` and `miscLine` at `none` unless the mark is clearly part of the
+  face.
 - **Period hairstyles.**
   - Combed or slicked back with height and a wave at the front (a
     pompadour) → `hair`.
