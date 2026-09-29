@@ -3,5 +3,5 @@
 	"framework": null,
 	"buildCommand": "pnpm build",
 	"outputDirectory": "build",
-	"rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+	"rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }]
 }

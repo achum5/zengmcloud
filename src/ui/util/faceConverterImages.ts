@@ -59,11 +59,13 @@ const loadDirect = (url: string, timeout = 12_000) =>
 
 // Most photo hosts (NBA.com, basketball-reference, ESPN) send no CORS
 // headers, so a canvas can't read their images and the sheet can't be made
-// into one picture. A public image relay fetches the photo and serves it back
+// into one picture. A relay fetches the photo and serves it back
 // with CORS allowed - the same pixels, now readable. A relay's own fetch can
 // be refused now and then (basketball-reference rate-limits hard, and a relay
-// is one IP shared by everyone), so there are two relays, each tried twice.
+// is one IP shared by everyone), so there are three relays, each tried twice.
 const RELAYS = [
+	// Our own (api/photo.js), then two public ones.
+	(url: string) => `/api/photo?url=${encodeURIComponent(url)}`,
 	(url: string) => `https://wsrv.nl/?url=${encodeURIComponent(url)}`,
 	(url: string) =>
 		`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,

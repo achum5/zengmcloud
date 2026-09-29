@@ -160,7 +160,7 @@ export default defineConfig(
 		},
 	},
 	{
-		files: ["*.{js,ts}", "tools/**/*.{js,ts}"],
+		files: ["*.{js,ts}", "tools/**/*.{js,ts}", "api/**/*.js"],
 
 		languageOptions: {
 			globals: {
