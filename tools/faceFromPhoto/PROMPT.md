@@ -7,8 +7,15 @@ JSON object you paste straight into **Tools → Customize Player → Face** in Z
 Not an image _generator_ — Midjourney/DALL-E/Stable Diffusion can't read a photo
 and emit structured JSON. It has to be a chat model that accepts image input.
 
-One photo per message gives the best result. If you send several at once, number
-them and ask for one JSON object per photo.
+**The photo matters more than anything in the prompt.** Best: a recent,
+front-facing headshot (a media-day portrait is ideal), even light, eyes open,
+no hat or sunglasses, at least a few hundred pixels across the face. Arena
+action shots, side profiles and tiny thumbnails all cost accuracy.
+
+You can attach **two or three photos of the same player** in one message — say
+so — and it will cross-check them (colors from the best-lit one, shapes from the
+most front-on). For several DIFFERENT players, number the photos and ask for one
+JSON object per photo.
 
 The reply is a `json` code block followed by a short `Notes:` block
 flagging anything it had to guess at. Use the chat's copy button on the code
@@ -27,7 +34,28 @@ You are converting a photograph of a person into a **faces.js** `FaceConfig`
 object (faces.js v5, the cartoon-avatar library used by ZenGM / Basketball GM).
 
 Look at the attached photo and pick the option in each slot that best matches the
-real person.
+real person. The goal is that someone who knows this player recognises him from
+the avatar at a glance.
+
+**Study the face before you choose anything** (silently — the reply still starts
+with the JSON). Go feature by feature: skin tone, hair (color, length, texture,
+hairline), facial hair, face shape and width, eyes, brows, nose, mouth, ears,
+age marks. Then name to yourself the **two or three things that make THIS face
+recognisable** — what a caricaturist would draw first: big ears, a broad nose, a
+long narrow face, heavy brows, a cleft chin, a receding hairline, a
+distinctive beard shape, a gap-toothed grin, very round cheeks. Likeness comes
+from getting those unmistakably right and keeping everything else neutral, so:
+
+- make each distinctive feature clearly visible in the output — the group that
+  shows it, and the size or angle pushed far enough to read at avatar size;
+- for every feature that is ordinary, choose the plain middle option. A face
+  where every slot is "a bit interesting" looks like nobody.
+
+If you are given **more than one photo of the same person**, use them together
+and reply with ONE object: take skin and hair color from the best-lit photo,
+face shape, nose and ears from the most front-on one, and treat anything that
+shows in only one photo (a beard, a headband) as belonging to that photo, not to
+the man, unless he is clearly the same age in both.
 
 **Output the JSON object first, with nothing before it, inside a fenced
 markdown code block tagged `json`** — no preamble, no explanation ahead of it.
@@ -244,6 +272,10 @@ grin wears badly.
 
 - Bald: `bald` — a bare scalp. The right id for essentially every bald player;
   pair it with a `head.shave` alpha (see below) and the shadow does the rest
+- Balding — bare on top with hair left around the sides and back, the classic
+  receding / male-pattern look: `short-bald`. When the crown is clearly thin or
+  gone but the sides are not shaved, this is the answer, not `bald` and not a
+  full cut; it is one of the strongest likeness cues an older player has
 - Shaved almost to the skin, scalp clearly showing through: `short-fade`
   (lightest), `short-fade-2`. These sit between `bald` and a buzz cut and are
   the right answer for a very close crop
@@ -306,12 +338,13 @@ actual looks.
 - Below the jaw only, nothing on the face itself: `neckbeard`, `neckbeard2`
 - Sideburns alone, longest first: `sideburns1`, `sideburns2`, `sideburns3`
 - Mutton chops — wide sideburns running down the jaw toward the mouth:
-  `mutton`, `logan` (the biggest), and the `muttonGoatee*` / `loganGoatee*`
-  variants which add a chin patch
+  `mutton`, `logan` (the biggest), and `muttonGoatee1`, `muttonGoatee2`,
+  `muttonGoatee5`, `loganGoatee2`, `loganGoatee3`, which add a chin patch
 - Horseshoe / handlebar — a mustache with two strips running down past the
   corners of the mouth: `harley1`, `harley2` (adds a soul patch), `harly3`
   (adds a chin patch — note the spelling, it is `harly3`, not `harley3`)
-- Box goatee — a hard rectangular block around the mouth and chin: `wilt`
+- Box goatee — a hard rectangular block around the mouth and chin: `wilt`;
+  `wilt-sideburns-long` and `wilt-sideburns-short` add sideburns to it
 
 The `-stache`, `Stache`, `SB1`/`SB2`/`-sb-1`/`-sb-2` and `soul` suffixes add a
 mustache, sideburns (1 = long, 2 = short) or a soul patch to the base shape.
@@ -367,6 +400,15 @@ the sides showing, so a cap is not a substitute for getting the hair right.
 `eye-black` is two black bars under the eyes. `santa-hat` is what it sounds
 like.
 
+**ear** — three outlines; the size slider matters more than the shape.
+
+- `ear2` — narrow and teardrop-shaped, angled slightly out at the bottom. The
+  neutral default
+- `ear1` — blocky, with a flat outer edge and a heavy outline; reads as ears that
+  stand straight out from the head
+- `ear3` — a round C-shaped cup; for ears that are visibly round rather than
+  long
+
 ## Allowed numbers
 
 Clamp to these ranges. Round to two decimals.
@@ -384,6 +426,32 @@ Clamp to these ranges. Round to two decimals.
 `flip` (on hair, mouth, nose) is a plain boolean that mirrors that piece — pick
 whichever matches the asymmetry you see, `false` if it looks symmetric.
 
+How to read the numbers off the photo:
+
+- **Face shape and `fatness`.** Compare the face's length (hairline to chin) with
+  its width (across the cheekbones). Noticeably long and narrow → an oval
+  `head14`/`head1`/`head2` and `fatness` 0.1–0.25. About as long as it is wide,
+  full cheeks, soft jaw → a wider head and `fatness` 0.6+. Judge `fatness` from
+  the cheeks, jowls and neck, not from how big the man is overall — a huge,
+  muscular centre can have a lean face.
+- **`eye.angle`.** Imagine a line from the inner corner of the eye to the outer
+  corner. Level is 0 and most faces sit between 0 and 5. Outer corner clearly
+  higher (upturned, almond) → 6–12; outer corner lower (downturned, hooded,
+  tired-looking) → -3 to -8.
+- **`eyebrow.angle`.** The slope from the inner end of the brow to the outer end.
+  Positive lifts the outer ends and drops the inner ones into a V, which reads
+  stern or intense; negative does the reverse and reads worried or sad. Flat,
+  level brows → around 0, and most faces sit between 0 and 6. An ARCH is a shape,
+  not an angle — get it from the brow id, not from this number.
+- **`nose.size`.** Compare the width of the nose at the nostrils with the gap
+  between the inner corners of the eyes. About equal is 1.0. Clearly wider →
+  1.1–1.25 together with a broad nose from the groups above. Clearly narrower or
+  shorter → 0.8–0.9. The shape group matters more than the number, so do not
+  use size to turn a narrow nose id into a broad nose.
+- **`ear.size`.** 1 unless the ears are a feature. Ears that clearly stick out
+  from the head in a front-on photo → 1.25–1.5; that is a big likeness cue, so
+  do not be timid with it.
+
 Most photos are head-and-shoulders crops, which say nothing about shoulder width
 and little about true ear size. **Default `body.size` and `ear.size` to `1`** and
 only move them when the photo actually shows otherwise — a visibly broad or
@@ -392,17 +460,50 @@ default does.
 
 ## Colors
 
-`body.color` is the SKIN tone and `hair.color` is the hair. Any hex works; these
-are the library's own anchors, so start from the nearest one and nudge it toward
-the photo rather than inventing a color from scratch.
+`body.color` is the SKIN tone and `hair.color` is the hair. Any hex works. Start
+from the nearest step on this ladder and nudge it toward the photo rather than
+inventing a color from scratch. It runs light to deep, and the steps are close
+enough that picking the right neighbour matters:
 
-- Light skin: `#f2d6cb`, `#ddb7a0`
-- East/Southeast Asian skin: `#fedac7`, `#f0c5a3`, `#eab687`
-- Medium/brown skin: `#bb876f`, `#aa816f`, `#a67358`
-- Deep skin: `#ad6453`, `#74453d`, `#5c3937`
+- Very fair: `#f5dccf`, `#f2d6cb`
+- Fair: `#ecc8b3`, `#e3bda5`, `#ddb7a0`
+- Light warm / golden (common in East and Southeast Asian players): `#fedac7`,
+  `#f0c5a3`, `#eab687`
+- Light olive / tan: `#d9a886`, `#cc9a78`
+- Medium: `#bb876f`, `#b07a5f`, `#aa816f`
+- Medium brown: `#a67358`, `#9b6a50`, `#8d5d45`
+- Brown: `#80523e`, `#74453d`
+- Deep: `#654036`, `#5c3937`
+- Very deep: `#4f312d`, `#432a27`
+
+Read skin from the pixels, never from the player's name, nationality or
+ethnicity. Arena and flash photos shift color a lot, so correct for the light
+before you pick:
+
+- Find something that should be neutral — the whites of the eyes, teeth, a white
+  jersey or background — and notice how far it is pushed toward orange, blue or
+  green. Take the same shift off the skin.
+- Sample the **lit** part of the cheek or forehead — not a highlight blown out to
+  near white, not the shadow under the jaw. The avatar is one flat fill, so it
+  needs the middle of the face, not its extremes.
+- Bright studio or flash light washes skin out, so when torn between two steps,
+  take the deeper one. Dim or orange arena light darkens it, so take the lighter
+  one.
 - Hair: black `#272421`, off-black `#0f0902` / `#1c1008`, dark brown `#3D2314` /
   `#2C1608`, medium brown `#5A3825`, light brown `#CC9966`, auburn `#B55239`,
   blond `#e9c67b`, dirty blond `#D7BF91`. Grey/white hair: `#9a9a9a` – `#e8e8e8`.
+
+**`hair.color` also colors the eyebrows and every facial-hair shape.** faces.js
+has no separate brow or beard color. So:
+
+- A **bald or shaved** player still needs a `hair.color` — set it from his
+  eyebrows and beard, not left at a default. Getting this wrong gives a
+  black-haired man blond eyebrows.
+- If the beard and the hair differ (a grey beard under dark hair, a red beard
+  under brown hair), choose the color of whichever covers more of the face in
+  the avatar — usually the beard when there is a full one.
+- Salt-and-pepper reads as a mid grey (`#8a8a8a`–`#a8a8a8`); do not pick pure
+  white unless it truly is.
 
 Leave `teamColors` exactly as shown — ZenGM overwrites it with the player's
 actual team colors.
@@ -495,3 +596,20 @@ because I can see and correct a generic.
   recoverable from poor image quality.
 - Then say which calls were shaky in the `Notes:` block. That is exactly what it
   is for.
+
+## Before you answer
+
+Check the finished object against the photo one last time:
+
+1. Would someone who knows him recognise him? Look again at the two or three
+   distinctive features you picked out — is each one clearly visible, not
+   hedged into a neutral option?
+2. Skin and hair color: right step on the ladder, corrected for the lighting?
+   Eyebrows and beard will be drawn in `hair.color` — is that right for them too?
+3. Hair: right length, texture and hairline (full, receding `short-bald`,
+   shaved, bald)? `hairBg` is `none` unless the hair really falls past the ears.
+4. Stubble vs grown facial hair decided deliberately, with `head.shave` set?
+5. Nothing added that you cannot see: no glasses, accessory, facial hair or
+   age line the photo does not show.
+6. Every id is spelled exactly as listed, every number is inside its range, and
+   every key from the output shape is present.

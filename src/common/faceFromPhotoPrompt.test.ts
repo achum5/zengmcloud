@@ -108,3 +108,31 @@ describe("the shape guide covers every slot that has one", () => {
 		});
 	}
 });
+
+// An id the prompt lists but never describes is one the model can only pick by
+// its name, and several names are misleading: `short-bald` - a receding,
+// bare-on-top cut that is one of an older player's strongest likeness cues -
+// sat undescribed in the list, so no photo ever produced it. Every listed id
+// is described, except the few whose meaning the prompt gives as a rule instead.
+describe("every listed id is described", () => {
+	const shapes =
+		FACE_FROM_PHOTO_PROMPT.split("## What the shapes")[1]!.split(
+			"## Allowed numbers",
+		)[0]!;
+	// facialHair's suffixed variants are covered by the suffix rule; ZenGM
+	// replaces body and jersey outright.
+	const RULE_COVERED = /-stache$|Stache$|SB[12]$|-sb-[12]$|Soul|soul$/;
+	for (const slot of SLOTS) {
+		if (slot === "body" || slot === "jersey") {
+			continue;
+		}
+		test(slot, () => {
+			const undescribed = listed(slot).filter(
+				(id) =>
+					!shapes.includes(`\`${id}\``) &&
+					!(slot === "facialHair" && RULE_COVERED.test(id)),
+			);
+			assert.deepEqual(undescribed, []);
+		});
+	}
+});
