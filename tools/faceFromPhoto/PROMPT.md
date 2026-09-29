@@ -704,18 +704,26 @@ corners of the mouth to the jaw):
 
 ### eye
 
-Make three calls, then find the eye (and `eye.angle` from the tilt):
+Make four calls, then find the eye (and `eye.angle` from the tilt):
 
-1. **LID** — high (the whole iris shows), low (the lid covers the top of the
-   iris: relaxed, hooded), or a heavy dark line/crease over the eye.
-2. **OPENING** — normal almond, narrow, or wide (white all round the iris).
-3. **TILT** of the line from inner to outer corner — up, level or down.
+1. **SET** — deep-set (the brow bone overhangs and the eye sits in its own
+   shadow, or a dark crease/lash line frames it) or not.
+2. **LID** — high (the whole iris shows) or low (the lid covers the top of
+   the iris: relaxed, hooded).
+3. **OPENING** — normal almond, narrow (a slit, squinting), or wide (white
+   all round the iris).
+4. **TILT** of the line from inner to outer corner — up, level or down.
 
-| lid / opening → | normal almond        | narrow                                   | wide    |
-| --------------- | -------------------- | ---------------------------------------- | ------- |
-| high            | `eye13`              | `eye16`                                  | `eye15` |
-| low / hooded    | `eye14`              | `eye19`                                  | `eye14` |
-| heavy line      | `eye12`; peaked `eye18` | `eye16`; slanting hard `eye17`        | `eye18` |
+| set, lid / opening → | normal almond | narrow  | wide    |
+| -------------------- | ------------- | ------- | ------- |
+| not deep, high lid   | `eye13`       | `eye16` | `eye15` |
+| not deep, low lid    | `eye14`       | `eye19` | `eye14` |
+| deep-set, high lid   | `eye12`       | `eye16` | `eye18` |
+| deep-set, low lid    | `eye19`       | `eye16`; slanting hard `eye17` | `eye18` |
+
+Deep-set, shadowed eyes are common, above all in lit studio portraits and
+under a heavy brow: say "deep-set" whenever the socket shows as a dark band
+between brow and eye.
 
 `eye.angle`: tilted up 4–8, level 0–2, down −3 to −6. The white cartoon eyes
 (`eye1`–`eye11`, below) are for a deliberately cartoonish look only.
@@ -780,19 +788,25 @@ apart from the expression").
 
 ### eyebrow
 
-Make three calls, then find the brow (and `eyebrow.angle` from the slope):
+Make four calls, then find the brow (and `eyebrow.angle` from the slope):
 
-1. **THICKNESS** — thin, medium or thick/bushy.
+1. **THICKNESS** — thin, medium or thick/bushy. Judge it by the brow's
+   HEIGHT against the eye opening below it, not by how dark it is: a line
+   well under half the eye's height is thin, about half is medium, as tall
+   as the eye opening is thick. Dark hair and black-and-white photos make
+   every brow look heavy; the height doesn't lie.
 2. **SHAPE** — straight, a soft arch, a high/strong arch, or an angled peak.
-3. **ENDS** — even width, or thick inside tapering to a thin tail; short or
-   long.
+3. **ENDS** — even width with blunt ends, or thick at the inner end
+   tapering to a thin tail.
+4. **LENGTH** — short (stops above the outer corner of the eye) or long
+   (runs past it).
 
-| thickness / shape → | straight                          | soft arch                 | strong arch            | angled peak            |
-| ------------------- | --------------------------------- | ------------------------- | ---------------------- | ---------------------- |
-| thin                | `eyebrow19`; tapered `eyebrow15`  | `eyebrow18`               | `eyebrow5`             | `eyebrow17`            |
-| medium              | tapered `eyebrow13`, `eyebrow3`, `eyebrow11` | `eyebrow16`, `eyebrow20` | `eyebrow5`   | `eyebrow9`, `eyebrow4` |
-| thick               | `eyebrow7`; slab `eyebrow6`; wedge `eyebrow2`; forked end `eyebrow12` | `eyebrow1`, `eyebrow14` | `eyebrow14` | `eyebrow9`; scooped `eyebrow10` |
-| bushy               | `eyebrow6`                        | `eyebrow8`                | `eyebrow8`             | `eyebrow8`             |
+| thickness / shape → | straight                                                                 | soft arch                                  | strong arch | angled peak                     |
+| ------------------- | ------------------------------------------------------------------------ | ------------------------------------------ | ----------- | ------------------------------- |
+| thin                | even `eyebrow19`; tapered `eyebrow15`                                    | `eyebrow18`                                | `eyebrow5`  | `eyebrow17`                     |
+| medium              | tapered long `eyebrow13` / `eyebrow3`; flat top `eyebrow11`; even short `eyebrow16` | short `eyebrow16`; wavy `eyebrow20` | `eyebrow5` | `eyebrow9`; even `eyebrow4` |
+| thick               | even, blunt `eyebrow7`; squared slab `eyebrow6`; tapered `eyebrow2`; forked end `eyebrow12` | tapered `eyebrow1`; blunt `eyebrow14` | `eyebrow14` | `eyebrow9`; scooped `eyebrow10` |
+| bushy               | `eyebrow6`                                                               | `eyebrow8`                                 | `eyebrow8`  | `eyebrow8`                      |
 
 `eyebrow.angle`: outer ends higher than the inner (a V, stern) 4–10; level
 0–3; outer ends lower (worried) −3 to −8.
@@ -848,6 +862,8 @@ Make three calls on every nose, each from the photo, before you pick:
    short, medium or long.
 3. **WIDTH** at the nostrils, against the gap between the inner eye corners —
    narrow, medium or wide.
+4. **WINGS** — do the nostril wings show as their own curves either side of
+   the tip, or is the base one smooth shape under the tip?
 
 Real noses are seldom medium on all three; say which way each one leans.
 Then find the drawing:
@@ -855,7 +871,7 @@ Then find the drawing:
 | tip            | short / narrow         | medium                     | long / big                  | wide                  |
 | -------------- | ---------------------- | -------------------------- | --------------------------- | --------------------- |
 | pointed        | `nose3`                | `nose3`; side-lit `nose9`  | `nose9`; sticking out `pinocchio` | `nose3` at size 1.15 |
-| rounded/fleshy | `nose8`                | `nose8` at size 1.1; broad `nose12` | `honker` (narrow) / `nose12` / `nose6` | `nose11` / `nose12` |
+| rounded/fleshy | tip up `nose8`; level `nose10` | wings show `nose12` at 0.9–1; smooth base, clear bridge `nose7`; low soft bridge `nose1` | `honker` (narrow) / `nose12` / `nose6` | `nose11` / `nose12` |
 | bulbous        | `nose8`                | `nose13`                   | `nose13` / `nose6`          | `nose12` / `nose6`    |
 | turned up      | `nose14`               | `small`                    | `small` at size 1.15        | `nose1`               |
 | hooked         | `nose4`                | `nose2`                    | `nose2` at size 1.15–1.25   | `nose2` / `nose6`     |
@@ -868,7 +884,9 @@ whatever the tip.
 
 Then set `nose.size` from the length and width you called: short or narrow
 0.8–0.9, medium 1, long or wide 1.1–1.25. Two men who both get `nose7` still
-differ here.
+differ here. `nose8`, `nose10`, `nose14` and `small` are the short noses:
+keep them at 1 or below; a nose too long for them at 1 is a medium nose and
+takes a medium drawing.
 
 - `nose7` — a single bridge line down the middle over a flat base line: an
   upside-down T. Draws a plain, straight, medium nose, seen straight on,
@@ -931,7 +949,7 @@ Make three calls, then find the mouth:
 
 | open / corners → | down     | level                                        | up                                   | one side |
 | ---------------- | -------- | -------------------------------------------- | ------------------------------------ | -------- |
-| closed           | `closed` | thin `straight`; soft `mouth5`; lips defined `mouth6` | slight `smile-closed`; broad `smile4` | `side` |
+| closed           | `closed` | lips hardly show `straight`; thin upper lip, visible lower lip `mouth5`; both lips full and outlined `mouth6` | slight `smile-closed`; broad `smile4` | `side` |
 | just parted      | `mouth4` | `mouth4`, `mouth2`                           | `mouth3`                             | `side`   |
 | teeth showing    | `angry`  | `mouth7`, `mouth8`                           | `mouth7`; broad beaming `smile`      | `mouth7` |
 | wide open        | `angry`  | `mouth`                                      | laugh `smile3`, `smile2`             | `smile2` |

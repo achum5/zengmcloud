@@ -110,7 +110,12 @@ How to work through a batch:
   nose hooked and one snub, one jaw square and one pointed, one brow thick
   and one thin), at least one of them is wrong. Go back to those photos,
   find the call that separates them, and fix it. Players whose feature
-  really does look alike keep the same drawing.
+  really does look alike keep the same drawing. Start with the biggest
+  groups: real faces vary in every feature, so when one id covers more
+  than about a quarter of the batch in any slot (the head, eyes, brows,
+  nose, mouth, ears or hair), that group almost always holds players whose
+  calls slid to the common answer. Redo the calls for each of them against
+  his photo; keep the ones that still come out the same.
 - The name is only there to keep the answers matched. Read the face from the
   photo; if you happen to know the player, the photo still wins wherever the
   two disagree, because it is the look he has in this game.
