@@ -16,12 +16,10 @@ export type SheetEntry = {
 
 export class PhotoReadError extends Error {}
 
-// NBA headshots are 260x190, and Claude reads an image of up to about 1568px on
-// its long side (1.15 megapixels) without shrinking it - so 19 headshots at
-// full size, 5 across, fit in one image with nothing lost.
-// A sheet holds at most this many photos: 20 headshots at full size is what
-// fits under Claude's resize limit. A bigger batch becomes several sheets,
-// each attached as its own image, so no photo is shrunk to fit.
+// Claude reads an image of up to about 1568px on its long side (1.15
+// megapixels) without shrinking it. A sheet holds at most this many photos:
+// 20 headshots at full size is what fits under that limit. A bigger batch
+// becomes several sheets, each attached as its own image.
 export const SHEET_MAX = 20;
 
 export const TILE_W = 260;
@@ -36,15 +34,7 @@ export const sheetLayout = (count: number) => {
 			? Math.min(Math.max(count, 1), 5)
 			: Math.ceil(Math.sqrt(count * 1.4));
 	const rows = Math.ceil(count / cols);
-	const width = cols * TILE_W;
-	const height = rows * (TILE_H + LABEL_H);
-	const scale = Math.min(
-		1,
-		MAX_SIDE / width,
-		MAX_SIDE / height,
-		Math.sqrt(MAX_PIXELS / (width * height)),
-	);
-	return { cols, rows, scale };
+	return { cols, rows };
 };
 
 const loadDirect = (url: string) =>
@@ -145,12 +135,49 @@ const toBlob = (canvas: HTMLCanvasElement) =>
 		}
 	});
 
+// The photo box on a sheet takes the shape of the photos on it. NBA.com
+// headshots are landscape, but most older photos are tall portraits, and in a
+// landscape box a portrait fills barely half the width - half the sheet's
+// pixels spent on white. Sizing the box to the photos' own shape, then growing
+// it to fill the image budget, about doubles the pixels on each face.
+export const tileSize = (
+	cols: number,
+	rows: number,
+	images: (HTMLImageElement | undefined)[],
+) => {
+	const shapes = images
+		.filter((img): img is HTMLImageElement => img !== undefined)
+		.map((img) => img.naturalHeight / img.naturalWidth)
+		.sort((a, b) => a - b);
+	const median = shapes.length > 0 ? shapes[Math.floor(shapes.length / 2)]! : 0;
+	const aspect =
+		median > 0 ? Math.min(1.8, Math.max(0.6, median)) : TILE_H / TILE_W;
+
+	// Largest width w with cols*w by rows*(aspect*w + LABEL_H) inside the
+	// pixel budget, then inside the long-side limit.
+	const a = cols * rows * aspect;
+	const b = cols * rows * LABEL_H;
+	let w = (-b + Math.sqrt(b * b + 4 * a * MAX_PIXELS)) / (2 * a);
+	w = Math.min(w, MAX_SIDE / cols, (MAX_SIDE / rows - LABEL_H) / aspect);
+
+	// Blowing a small photo up past 3x its size only makes the sheet heavier.
+	const widths = images
+		.filter((img): img is HTMLImageElement => img !== undefined)
+		.map((img) => img.naturalWidth)
+		.sort((x, y) => x - y);
+	if (widths.length > 0) {
+		w = Math.min(w, 3 * widths[Math.floor(widths.length / 2)]!);
+	}
+
+	w = Math.floor(w);
+	return { w, h: Math.floor(aspect * w) };
+};
+
 export const buildSheet = async (entries: SheetEntry[]) => {
 	const images = await loadAll(entries);
-	const { cols, rows, scale } = sheetLayout(entries.length);
-	const w = Math.round(TILE_W * scale);
-	const h = Math.round(TILE_H * scale);
-	const labelH = Math.max(18, Math.round(LABEL_H * scale));
+	const { cols, rows } = sheetLayout(entries.length);
+	const { w, h } = tileSize(cols, rows, images);
+	const labelH = LABEL_H;
 
 	const canvas = document.createElement("canvas");
 	canvas.width = cols * w;
