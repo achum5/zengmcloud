@@ -125,7 +125,9 @@ ${replyFormat(entries)}
 
 The method for each face follows. Wherever it talks about "the photo" or "the
 reply", read it as one player's photo and that player's entry in the batch
-object.
+object. Its "Output shape" section still lists the keys every face needs, but
+its layout (one face, pretty-printed) and its three-note cap give way to the
+batch format above.
 
 ---
 

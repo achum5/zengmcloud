@@ -96,8 +96,9 @@ anything after it is free.
 
 Every value below is filler, there to show the SHAPE of each entry - which keys
 exist, and whether a slot takes an id, a number, a hex, or a boolean. Not one of
-them is a default or a suggestion. Read every slot off the photo; the only
-exceptions are `teamColors` and `jersey`, which you copy exactly as shown.
+them is a default or a suggestion (the fallbacks for a feature you can't
+read are named in that slot's own section). Read every slot off the photo; the
+only exceptions are `teamColors` and `jersey`, which you copy exactly as shown.
 Reply in this exact form, fence and all.
 
 ```json
@@ -529,6 +530,7 @@ gives you. Choose between them by the UPPER LID:
 - Does a thick, dark lash line make the eyes look outlined and intense? →
   `eye12`.
 - Wide open, white showing all round the iris? → `eye15`.
+- Too small or grainy to see where the lid sits? → `eye13`.
 
 - `eye13` — a clean almond. The neutral default.
 - `eye14` — the `eye13` almond with the upper lid lowered across the top of the
@@ -644,7 +646,8 @@ No bridge, base only:
 - `nose8` — a short stub over a small arched base.
 
 A nose you truly cannot read (a tiny, blurred or turned-away face): `nose7`
-at size 1 if the face is long or narrow, `small` if it is short or round.
+at size 1 if the face is long or narrow or you can't tell, `small` if it is
+short or round.
 That is the fallback only; any nose you can see gets its own call.
 
 Do not settle on `nose11` just because a nose is broad: check for the bridge
@@ -663,6 +666,10 @@ neutral mouth → a closed id. A polite closed-mouth smile → `smile-closed` or
   `mouth7` is small when drawn and reads as an "ooh" on a beaming face; in
   testing, every big grin in a batch drawn as `mouth7` lost the smile.
 - a full laugh, mouth wide open → `smile3`.
+
+A mouth open mid-play (a shout, a grimace, breathing hard) is the moment,
+not his look: → `mouth2`, slightly parted. Never `smile` for an open mouth
+that isn't smiling, and never `angry` for effort.
 
 Closed:
 - `straight` — a short flat bar. The most minimal neutral mouth.
@@ -1028,13 +1035,16 @@ these instead.
   deep: `#8d5d45` / `#6e4030`. Always answer with a warm skin hex from the
   ladder, never a grey one. Decide it for EVERY photo on its own: old photos
   vary widely in exposure, and a batch where every black-and-white face got
-  the same skin color was not reading any of them.
+  the same skin color was not reading any of them. Deciding each one still
+  lands many fair-skinned men on the same step, and that is fine; what the
+  rule forbids is not looking.
 - **A hand-tinted or colorized photo** (an old trading card, a tinted
   portrait) has PAINTED color. The paint is usually too orange or too pink,
   and hair is often tinted one flat brown. Take the skin's depth from how
   light or dark it is, then pick the matching ladder step, not the paint's
   hue. Read tinted hair by its depth too, with the steps below: a flat
-  mid-brown tint is `#5A3825`, a dark one `#3D2314`.
+  mid-brown tint is `#5A3825`, a dark one `#3D2314`, a light or sandy one
+  blond `#b89968`.
 - **Hair from brightness.** Black or near-black → `#272421`. Dark grey →
   dark brown `#3D2314`. Mid grey → medium brown `#5A3825`. Light grey or
   near-white on a young man → blond `#b89968`. On an older man it may be
