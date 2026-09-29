@@ -118,8 +118,9 @@ How to work through a batch:
   on half of them, and the photos did not look alike. A default is right
   only for a feature you truly cannot see; a face you CAN read gets its own
   call in every slot. Players who really do share something (a period
-  haircut, fair skin in a batch of fair-skinned men) may share its id; the
-  check is for sameness the photos don't show.
+  haircut, fair skin in a batch of fair-skinned men, the grin most
+  headshots are taken with) may share its id; the check is for sameness the
+  photos don't show.
 
 ## Batch reply format (this replaces the single-photo output instructions below)
 

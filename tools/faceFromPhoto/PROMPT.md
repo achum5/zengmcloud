@@ -362,6 +362,10 @@ less like himself than with `none`.
 - Braids or cornrows, tight or hanging → `cornrows`.
 - Locs or twists → `curly3` (a full head of them) or `short3` (short ones).
 - A bun or top-knot of locs → `dreads`.
+- Hair pulled back and tied BEHIND the head (a low ponytail or bun, which a
+  front-on photo barely shows): draw what the front shows — braided rows →
+  `cornrows`; smooth hair pulled flat → `short` or `crop`; bumpy pulled-back
+  locs or curls → `short3`.
 
 ### hairBg
 
@@ -757,11 +761,14 @@ Ignore them rather than reaching for a nearby option.
 ### accessories
 
 - `none` — nothing.
-- `headband` — a team-colored band across the forehead at the hairline. Always
-  drawn in team colors, whatever color it is in the photo; set it anyway, since
-  it is a strong likeness cue. It hides the hairline, so choose the hair from
-  what shows above it and at the sides.
-- `headband-high` — the team-colored band worn higher, across the top of the head.
+- `headband` — a wide team-colored band straight across the upper forehead,
+  covering the hairline: a sweatband worn low. Always drawn in team colors,
+  whatever color it is in the photo; set it anyway, since it is a strong
+  likeness cue. It hides the hairline, so choose the hair from what shows
+  above it and at the sides.
+- `headband-high` — the same band arched higher, sitting at the hairline
+  with the whole forehead showing below it: a band pushed back into the
+  hair, or a thin hairband holding back big hair.
 - `hat` — a team-colored baseball cap. It covers the
   crown and leaves the hair at the sides showing, so it is not a substitute for
   getting the hair right.
@@ -837,10 +844,10 @@ How to read the numbers off the photo:
   do not be timid with it.
 
 Most photos are head-and-shoulders crops, which say nothing about shoulder width
-and little about true ear size. **Default `body.size` and `ear.size` to `1`** and
-only move them when the photo actually shows otherwise — a visibly broad or
-narrow frame, ears that clearly stick out. A guess here costs more than the
-default does.
+and little about true ear size. Keep the two NUMBERS `body.size` and
+`ear.size` at `1` unless the photo actually shows otherwise — a visibly broad
+or narrow frame, ears that clearly stick out. (The `body` and `ear` ids are
+still read from the photo like any other slot.)
 
 ## Colors
 
@@ -966,7 +973,9 @@ Decide which one you need before you pick either:
 Since one value covers the face and the scalp, a bald player with heavy face
 stubble also gets a shadowed crown — which is normally right for a shaved head.
 If the scalp should read as cleanly shaved, stay at `0.35` or below. On fair
-skin even `0.2` draws a clearly grey jaw, so go lighter there.
+skin the same alpha shows much more: visible stubble on a fair face is
+`0.1`–`0.15`, heavy stubble `0.2`–`0.25`; the table's higher steps are for
+medium and dark skin.
 
 ## How to choose
 
