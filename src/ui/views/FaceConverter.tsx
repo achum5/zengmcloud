@@ -510,6 +510,25 @@ const FaceConverter = () => {
 		});
 	};
 
+	// Drops every staged face in this class, so the batch can be redone. Nothing
+	// saved to a player is touched.
+	const discardAll = async () => {
+		const ok = await confirm(
+			`Discard all ${stagedHere.length} unapproved faces?`,
+			{ okText: "Discard all" },
+		);
+		if (!ok) {
+			return;
+		}
+		const next = { ...stagedRef.current };
+		for (const p of stagedHere) {
+			delete next[p.pid];
+		}
+		saveStaged(next);
+		setReply("");
+		setReplyResult(undefined);
+	};
+
 	// Sheets of at most SHEET_MAX photos, each copied as its own image.
 	const sheets: (typeof batch)[] = [];
 	for (let i = 0; i < batch.length; i += SHEET_MAX) {
@@ -830,6 +849,14 @@ const FaceConverter = () => {
 								type="button"
 							>
 								Approve all
+							</button>
+							<button
+								className="btn btn-light-bordered"
+								disabled={busy !== undefined}
+								onClick={discardAll}
+								type="button"
+							>
+								Discard all
 							</button>
 						</div>
 					) : null}
