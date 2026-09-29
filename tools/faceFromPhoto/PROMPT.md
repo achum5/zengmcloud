@@ -382,8 +382,8 @@ the hair actually hangs, not from the style name.
   almost invisible.
 
 On a cut that stops above the ears, any `hairBg` adds hair that is not there.
-Most players need `none`: in a batch of 100 modern players, only a few with
-long straight hair should get anything else.
+Most players need `none`: in a batch of 100 players, only a few with long
+straight hair should get anything else.
 
 ### facialHair
 
@@ -641,8 +641,9 @@ photo, `flip: true` on your left; put it on the shadowed side.
 ### mouth
 
 Match the expression in the photo, one step calmer: this face appears on
-every screen in the game, so a big grin is kept but never exaggerated. A polite closed-mouth smile → `smile-closed` or
-`mouth3`. A smile with teeth showing:
+every screen in the game, so a big grin is kept but never exaggerated. The
+mappings below already include that step, so use them as written. A polite
+closed-mouth smile → `smile-closed` or `mouth3`. A smile with teeth showing:
 
 - teeth showing, the mouth no wider than usual → `mouth7`;
 - a broad, beaming grin, mouth stretched wide and cheeks pushed up → `smile`.
@@ -939,8 +940,8 @@ actual team colors.
 
 ## Stubble: `head.shave`
 
-**This is the five o'clock shadow, and it is the single most commonly missed
-slot.** It is an `rgba(0,0,0,A)` string that shades the beard area of the face —
+**This is the five o'clock shadow, and on modern photos it is the single most
+commonly missed slot** (old photos have their own rule below). It is an `rgba(0,0,0,A)` string that shades the beard area of the face —
 jaw, chin, upper lip, cheeks — and, on a bald or closely-cropped head, the scalp
 along with it. It works whether or not the player has hair.
 
@@ -1027,6 +1028,8 @@ these instead.
   the same skin color was not reading any of them. Deciding each one still
   lands many fair-skinned men on the same step, and that is fine; what the
   rule forbids is not looking.
+- **Sepia or brown-toned prints** are black-and-white with a brown cast:
+  ignore the cast and read skin and hair by brightness, as above.
 - **A hand-tinted or colorized photo** (an old trading card, a tinted
   portrait) has PAINTED color. The paint is usually too orange or too pink,
   and hair is often tinted one flat brown. Take the skin's depth from how

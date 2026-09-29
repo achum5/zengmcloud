@@ -91,7 +91,7 @@ How to work through a batch:
 		source === "sheet" && sheets
 			? `
 - A label cut off or unreadable (a screenshot can crop the bottom row): use
-  the place the roster gives for that line instead${sheetCount > 1 ? " (sheets in the order they are attached)" : ""},
+  the place the roster gives for that line instead${sheetCount > 1 ? " (sheets in the order they are attached; the one time that order is used)" : ""},
   counting rows from the top and columns from the left. Never leave a
   visible photo out, and never give it a placeholder face because its label
   is missing.`
@@ -107,10 +107,12 @@ How to work through a batch:
 - The name is only there to keep the answers matched. Read the face from the
   photo; if you happen to know the player, the photo still wins wherever the
   two disagree, because it is the look he has in this game.
-- A photo that is missing, blank, unreadable or a stand-in (the plain black
-  head-and-shoulders silhouette sites show for a player with no photo) still
-  gets an entry: a neutral face with skin \`#a67358\` and hair \`#272421\`,
-  flagged in the notes so it can be fixed by hand.
+- A photo with NO face to read at all (missing, blank, pure noise, or the
+  plain black head-and-shoulders silhouette sites show for a player with no
+  photo) still gets an entry: a neutral face in the skin and hair colors
+  most of this batch shares, flagged in the notes so it can be fixed by
+  hand. Anything short of that (blurry, small, turned away, half hidden)
+  gets a real reading of whatever shows, not the neutral face.
 - Before you answer, read DOWN your finished object one slot at a time. If
   one id covers most of the batch in any slot (the same nose, head, hair or
   mouth on most of the players), go back to those photos. In testing, a
