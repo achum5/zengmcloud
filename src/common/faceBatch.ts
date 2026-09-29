@@ -107,8 +107,10 @@ How to work through a batch:
 - The name is only there to keep the answers matched. Read the face from the
   photo; if you happen to know the player, the photo still wins wherever the
   two disagree, because it is the look he has in this game.
-- A photo that is missing, blank or unreadable still gets an entry: your best
-  neutral face, flagged in the notes.
+- A photo that is missing, blank, unreadable or a stand-in (the plain black
+  head-and-shoulders silhouette sites show for a player with no photo) still
+  gets an entry: a neutral face with skin \`#a67358\` and hair \`#272421\`,
+  flagged in the notes so it can be fixed by hand.
 - Before you answer, read DOWN your finished object one slot at a time. If
   one id covers most of the batch in any slot (the same nose, head, hair or
   mouth on most of the players), go back to those photos. In testing, a
@@ -117,7 +119,9 @@ How to work through a batch:
   only for a feature you truly cannot see; a face you CAN read gets its own
   call in every slot. Players who really do share something (a period
   haircut, fair skin in a batch of fair-skinned men) may share its id; the
-  check is for sameness the photos don't show.
+  check is for sameness the photos don't show. The eye slot is the one
+  expected exception: most faces are \`eye13\` or \`eye14\`, split by the
+  upper lid.
 
 ## Batch reply format (this replaces the single-photo output instructions below)
 

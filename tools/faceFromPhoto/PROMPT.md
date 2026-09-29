@@ -324,8 +324,9 @@ Curly and afro, medium to big:
 
 faces.js draws all hair close to the head, so every cut comes out SMALLER than
 it looks in a photo. Judge big hair by its width against the face: hair that
-sticks out beyond the face on each side by a good part of the face's own width
-is big, and needs `afro2` + `hairBg: longHair` even when the curls are loose.
+sticks out beyond the face on each side by a third of the face's own width or
+more is big, and needs `afro2` + `hairBg: longHair` even when the curls are
+loose. Less than that is `curly2` or `curly3`.
 In a test, a big loose afro drawn as `curly2` came out as a modest crop.
 
 Braids, locs and raised centres:
@@ -373,7 +374,9 @@ the hair actually hangs, not from the style name.
 
 On a cut that stops above the ears, any `hairBg` adds hair that is not there.
 That includes a short cut with one or two thin braids trailing from the back:
-leave the braids out.
+leave the braids out. The line is how much hangs: a few strands behind the
+ears → `none`; braids, twists or locs hanging all round the head to the ears
+or below, so they frame the face → `longHair`.
 
 ### facialHair
 
@@ -913,8 +916,9 @@ before you pick:
   and shadows plainly belong to a brown-skinned man. There the pixels
   are wrong by two or three bands, not one, so go by the whole face rather
   than the sample. Well-lit brown skin samples saturated (orange or red-brown);
-  a pale, flat sample is the flash. For milder cases, when torn between two
-  steps, take the deeper one. Dim or orange arena light darkens it, so take
+  a pale, flat sample is the flash. For milder cases of a washed-out face,
+  when torn between two steps, take the deeper one (a face that is not
+  washed out follows "Do not over-correct deep skin" below instead). Dim or orange arena light darkens it, so take
   the lighter one. An evenly lit headshot where the white reference reads
   clean white and the skin keeps its color needs no correction: take the cheek
   color as it is.
@@ -978,7 +982,9 @@ Decide which one you need before you pick either:
 - Soft, no clear outline, skin still visible through it, the same length all
   over → **`head.shave`**, `facialHair: none`.
 - Solid, you could trace its edge, longer than a few days' growth → a
-  **`facialHair`** id, and usually `shave` at 0 or very low.
+  **`facialHair`** id, and usually `shave` at 0 or very low. A short, dense
+  beard with a clean line where it stops on the cheek is `beard2`, however
+  short; a shave line is an edge.
 - A shaped goatee or mustache sitting in a field of stubble → **both**: the
   `facialHair` id for the shaped part, plus a `shave` alpha for the haze around
   it.
