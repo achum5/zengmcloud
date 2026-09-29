@@ -297,7 +297,9 @@ grin wears badly.
 - Afro: `afro2` is the real one — big, wide and textured. `afro` is a SMOOTH
   rounded helmet with a clean outline, closer to a moderate rounded cut than to
   a pick-out afro
-- Braids and locs: `cornrows` (clear vertical rows on top, faded sides),
+- Braids and locs: `cornrows` (clear vertical rows on top, faded sides) — the
+  only braided option, so use it for any braids worn tight to the scalp, faded
+  sides or not;
   `dreads` (short sides with a BUNDLE of locs tied up on top — not long hanging
   locs)
 - Curly, medium volume: `curly`, `curly2` (the loosest and biggest), `curly3`
@@ -393,6 +395,9 @@ interchangeable with the rest.
   the safe choice for ordinary glasses; there is no `glasses1-black`
 - `facemask` is a translucent protective mask over the WHOLE face, not eyewear
 
+Earrings, tattoos, chains and other jewelry cannot be drawn in faces.js. Ignore
+them rather than reaching for a nearby option.
+
 **accessories** — `hat`, `hat2` and `hat3` are the same team-colored cap with
 different brim undersides, and they cover the crown while leaving the hair at
 the sides showing, so a cap is not a substitute for getting the hair right.
@@ -434,6 +439,12 @@ How to read the numbers off the photo:
   full cheeks, soft jaw → a wider head and `fatness` 0.6+. Judge `fatness` from
   the cheeks, jowls and neck, not from how big the man is overall — a huge,
   muscular centre can have a lean face.
+- **A full beard widens the drawn face.** faces.js paints the beard as a solid
+  mass around the jaw, so a bearded face reads wider and squarer than the same
+  face clean-shaven. With a full beard or a large goatee, judge the head shape
+  from the cheekbones and temples, not from the beard's outline, and take
+  `fatness` a notch lower than you otherwise would — a lean, long face with a
+  full beard wants an oval head and `fatness` around 0.15, not a square one.
 - **`eye.angle`.** Imagine a line from the inner corner of the eye to the outer
   corner. Level is 0 and most faces sit between 0 and 5. Outer corner clearly
   higher (upturned, almond) → 6–12; outer corner lower (downturned, hooded,
