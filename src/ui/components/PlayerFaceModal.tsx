@@ -43,7 +43,8 @@ const SKIN_COLORS = [
 	"#a67358",
 	"#ad6453",
 	"#74453d",
-	"#5c3937",
+	"#6e4030",
+	"#5a3325",
 ];
 
 const HAIR_COLORS = [
@@ -371,39 +372,21 @@ const Check = ({
 	</div>
 );
 
-export const PlayerFaceModal = ({
+// The editing half of the face editor - the JSON box with its Paste button,
+// and a control for every slot writing back into that same text. Shared by the
+// single-player modal and the face converter's review screen.
+export const FaceEditorControls = ({
 	colors,
-	imgURL,
-	initialFace,
 	jersey,
-	name,
-	onHide,
-	pid,
+	setText,
+	text,
 }: {
 	colors: [string, string, string] | undefined;
-	// The photo currently set on the player, if any. Shown beside the face so
-	// there's something to match against while editing - and saving a face
-	// replaces it, so this is the last look at what's being given up.
-	imgURL: string | undefined;
-	// The player's current face, or undefined if he only ever had an image.
-	initialFace: FaceConfig | undefined;
 	jersey: string | undefined;
-	name: string;
-	onHide: () => void;
-	pid: number;
+	setText: (text: string) => void;
+	text: string;
 }) => {
-	// The face is edited as JSON text, and the controls write back into that same
-	// text. One source of truth means pasting a config and nudging a slider are
-	// the same operation, and the textarea always shows exactly what will save.
-	const [text, setText] = useState(() =>
-		JSON.stringify(initialFace ?? generate(), undefined, 2),
-	);
-	const [saving, setSaving] = useState(false);
 	const [openSlot, setOpenSlot] = useState<string>();
-	// Stays "Copied" for the rest of the modal's life. It's a confirmation, not
-	// a mode, and a label that flips back after a couple of seconds just makes
-	// you wonder whether it worked.
-	const [copied, setCopied] = useState(false);
 
 	// Repairs the handful of things a chat AI reliably gets wrong (a value
 	// wrapped across two lines, curly quotes, a markdown fence, a trailing
@@ -481,6 +464,166 @@ export const PlayerFaceModal = ({
 	);
 
 	return (
+		<>
+			<div className="d-flex mb-1">
+				<button
+					className="btn btn-light-bordered btn-sm ms-auto"
+					onClick={async () => {
+						let clipboardText;
+						try {
+							clipboardText = await navigator.clipboard.readText();
+						} catch {
+							showNotification({
+								type: "error",
+								text: "Couldn't read the clipboard.",
+							});
+							return;
+						}
+						// Repair what can be repaired and reformat it so it reads
+						// like the rest of the editor's output. A paste that isn't a
+						// config at all goes in as-is, so what's on screen is what
+						// was actually on the clipboard.
+						const parsed = parseFaceJson(clipboardText);
+						setText(
+							parsed === undefined
+								? clipboardText
+								: JSON.stringify(parsed, undefined, 2),
+						);
+					}}
+					type="button"
+				>
+					Paste
+				</button>
+			</div>
+			<textarea
+				className="form-control font-monospace"
+				onChange={(event) => {
+					setText(event.target.value);
+				}}
+				rows={4}
+				spellCheck={false}
+				style={{ fontSize: "0.8rem" }}
+				value={text}
+			/>
+			{parseError ? (
+				<div className="text-danger small mt-1">{parseError}</div>
+			) : null}
+
+			<div className="row g-3 mt-0">
+				<div className="col-12 col-lg-6">
+					{slider("fatness", "Fatness")}
+					<Color
+						label="Skin"
+						onChange={(color) => {
+							set("body.color", color);
+						}}
+						presets={SKIN_COLORS}
+						value={(face as any)?.body?.color ?? "#f2d6cb"}
+					/>
+					{picker("head", "Head")}
+					<Slider
+						label="Stubble"
+						max={RANGES["head.shave"][1]}
+						min={RANGES["head.shave"][0]}
+						onChange={(value) => {
+							set("head.shave", `rgba(0,0,0,${value})`);
+						}}
+						step={RANGES["head.shave"][2]}
+						value={shaveAlpha((face as any)?.head?.shave)}
+					/>
+					{picker("hair", "Hair")}
+					<Color
+						label="Hair color"
+						onChange={(color) => {
+							set("hair.color", color);
+						}}
+						presets={HAIR_COLORS}
+						value={(face as any)?.hair?.color ?? "#272421"}
+					/>
+					<Check
+						label="Flip hair"
+						onChange={(value) => {
+							set("hair.flip", value);
+						}}
+						value={!!(face as any)?.hair?.flip}
+					/>
+					{picker("hairBg", "Hair behind head")}
+					{picker("facialHair", "Facial hair")}
+					{picker("ear", "Ears")}
+					{slider("ear.size", "Ear size")}
+				</div>
+				<div className="col-12 col-lg-6">
+					{picker("eye", "Eyes")}
+					{slider("eye.angle", "Eye angle")}
+					{picker("eyebrow", "Eyebrows")}
+					{slider("eyebrow.angle", "Eyebrow angle")}
+					{picker("nose", "Nose")}
+					{slider("nose.size", "Nose size")}
+					<Check
+						label="Flip nose"
+						onChange={(value) => {
+							set("nose.flip", value);
+						}}
+						value={!!(face as any)?.nose?.flip}
+					/>
+					{picker("mouth", "Mouth")}
+					<Check
+						label="Flip mouth"
+						onChange={(value) => {
+							set("mouth.flip", value);
+						}}
+						value={!!(face as any)?.mouth?.flip}
+					/>
+					{picker("eyeLine", "Eye line")}
+					{picker("smileLine", "Smile line")}
+					{slider("smileLine.size", "Smile line size")}
+					{picker("miscLine", "Other lines")}
+					{picker("glasses", "Glasses")}
+					{picker("accessories", "Accessories")}
+					{picker("body", "Body")}
+					{slider("body.size", "Body size")}
+				</div>
+			</div>
+		</>
+	);
+};
+
+export const PlayerFaceModal = ({
+	colors,
+	imgURL,
+	initialFace,
+	jersey,
+	name,
+	onHide,
+	pid,
+}: {
+	colors: [string, string, string] | undefined;
+	// The photo currently set on the player, if any. Shown beside the face so
+	// there's something to match against while editing - and saving a face
+	// replaces it, so this is the last look at what's being given up.
+	imgURL: string | undefined;
+	// The player's current face, or undefined if he only ever had an image.
+	initialFace: FaceConfig | undefined;
+	jersey: string | undefined;
+	name: string;
+	onHide: () => void;
+	pid: number;
+}) => {
+	// The face is edited as JSON text, and the controls write back into that same
+	// text. One source of truth means pasting a config and nudging a slider are
+	// the same operation, and the textarea always shows exactly what will save.
+	const [text, setText] = useState(() =>
+		JSON.stringify(initialFace ?? generate(), undefined, 2),
+	);
+	const [saving, setSaving] = useState(false);
+	// Stays "Copied" for the rest of the modal's life. It's a confirmation, not
+	// a mode, and a label that flips back after a couple of seconds just makes
+	// you wonder whether it worked.
+	const [copied, setCopied] = useState(false);
+
+	const face = parseFaceJson(text) as FaceConfig | undefined;
+
+	return (
 		<Modal onHide={onHide} show size="xl" scrollable>
 			<Modal.Header closeButton>
 				<Modal.Title>{name}</Modal.Title>
@@ -509,125 +652,12 @@ export const PlayerFaceModal = ({
 						</div>
 					</div>
 					<div className="col-12 col-md-8">
-						<div className="d-flex mb-1">
-							<button
-								className="btn btn-light-bordered btn-sm ms-auto"
-								onClick={async () => {
-									let clipboardText;
-									try {
-										clipboardText = await navigator.clipboard.readText();
-									} catch {
-										showNotification({
-											type: "error",
-											text: "Couldn't read the clipboard.",
-										});
-										return;
-									}
-									// Repair what can be repaired and reformat it so it reads
-									// like the rest of the editor's output. A paste that isn't a
-									// config at all goes in as-is, so what's on screen is what
-									// was actually on the clipboard.
-									const parsed = parseFaceJson(clipboardText);
-									setText(
-										parsed === undefined
-											? clipboardText
-											: JSON.stringify(parsed, undefined, 2),
-									);
-								}}
-								type="button"
-							>
-								Paste
-							</button>
-						</div>
-						<textarea
-							className="form-control font-monospace"
-							onChange={(event) => {
-								setText(event.target.value);
-							}}
-							rows={4}
-							spellCheck={false}
-							style={{ fontSize: "0.8rem" }}
-							value={text}
+						<FaceEditorControls
+							colors={colors}
+							jersey={jersey}
+							setText={setText}
+							text={text}
 						/>
-						{parseError ? (
-							<div className="text-danger small mt-1">{parseError}</div>
-						) : null}
-
-						<div className="row g-3 mt-0">
-							<div className="col-12 col-lg-6">
-								{slider("fatness", "Fatness")}
-								<Color
-									label="Skin"
-									onChange={(color) => {
-										set("body.color", color);
-									}}
-									presets={SKIN_COLORS}
-									value={(face as any)?.body?.color ?? "#f2d6cb"}
-								/>
-								{picker("head", "Head")}
-								<Slider
-									label="Stubble"
-									max={RANGES["head.shave"][1]}
-									min={RANGES["head.shave"][0]}
-									onChange={(value) => {
-										set("head.shave", `rgba(0,0,0,${value})`);
-									}}
-									step={RANGES["head.shave"][2]}
-									value={shaveAlpha((face as any)?.head?.shave)}
-								/>
-								{picker("hair", "Hair")}
-								<Color
-									label="Hair color"
-									onChange={(color) => {
-										set("hair.color", color);
-									}}
-									presets={HAIR_COLORS}
-									value={(face as any)?.hair?.color ?? "#272421"}
-								/>
-								<Check
-									label="Flip hair"
-									onChange={(value) => {
-										set("hair.flip", value);
-									}}
-									value={!!(face as any)?.hair?.flip}
-								/>
-								{picker("hairBg", "Hair behind head")}
-								{picker("facialHair", "Facial hair")}
-								{picker("ear", "Ears")}
-								{slider("ear.size", "Ear size")}
-							</div>
-							<div className="col-12 col-lg-6">
-								{picker("eye", "Eyes")}
-								{slider("eye.angle", "Eye angle")}
-								{picker("eyebrow", "Eyebrows")}
-								{slider("eyebrow.angle", "Eyebrow angle")}
-								{picker("nose", "Nose")}
-								{slider("nose.size", "Nose size")}
-								<Check
-									label="Flip nose"
-									onChange={(value) => {
-										set("nose.flip", value);
-									}}
-									value={!!(face as any)?.nose?.flip}
-								/>
-								{picker("mouth", "Mouth")}
-								<Check
-									label="Flip mouth"
-									onChange={(value) => {
-										set("mouth.flip", value);
-									}}
-									value={!!(face as any)?.mouth?.flip}
-								/>
-								{picker("eyeLine", "Eye line")}
-								{picker("smileLine", "Smile line")}
-								{slider("smileLine.size", "Smile line size")}
-								{picker("miscLine", "Other lines")}
-								{picker("glasses", "Glasses")}
-								{picker("accessories", "Accessories")}
-								{picker("body", "Body")}
-								{slider("body.size", "Body size")}
-							</div>
-						</div>
 					</div>
 				</div>
 			</Modal.Body>

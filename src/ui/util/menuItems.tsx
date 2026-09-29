@@ -822,6 +822,14 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 			},
 			{
 				type: "link",
+				active: (pageID) => pageID === "faceConverter",
+				league: true,
+				commandPalette: true,
+				path: ["face_converter"],
+				text: "Face Converter",
+			},
+			{
+				type: "link",
 				active: (pageID) => pageID === "fantasyDraft",
 				league: true,
 				commandPalette: true,

@@ -23,6 +23,7 @@ export { default as DangerZone } from "./DangerZone/index.tsx";
 export { default as Dashboard } from "./Dashboard.tsx";
 export { default as DefaultNewLeagueSettings } from "./DefaultNewLeagueSettings/index.tsx";
 export { default as DeleteOldData } from "./DeleteOldData.tsx";
+export { default as FaceConverter } from "./FaceConverter.tsx";
 export { default as Depth } from "./Depth.tsx";
 export { default as Draft } from "./Draft/index.tsx";
 export { default as DraftHistory } from "./DraftHistory.tsx";

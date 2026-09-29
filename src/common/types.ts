@@ -1643,6 +1643,9 @@ export type PlayerWithoutKey<PlayerRatings = MinimalPlayerRatings> = {
 		dpid?: number;
 	};
 	face: FaceConfig;
+	// The photo a face was drawn from, kept when a face replaces imgURL (see
+	// updatePlayerFace) so the photo can still be shown next to the face later.
+	faceSourceURL?: string;
 	// What this player looked like in past seasons, recorded only when the
 	// look actually changed. Absent for anyone who has always looked the
 	// same, which is most players. See common/playerAppearance.ts.

@@ -864,9 +864,14 @@ A ruddy fair face, common with red hair, is pinker than the fair steps:
 - Light olive / tan: `#d9a886`, `#cc9a78`
 - Medium: `#bb876f`, `#b07a5f`, `#aa816f`
 - Medium brown: `#a67358`, `#9b6a50`, `#8d5d45`
-- Brown: `#80523e`, `#74453d`
-- Deep: `#654036`, `#5c3937`
-- Very deep: `#4f312d`, `#432a27`
+- Brown: `#80523e`, `#7a4a36`, `#74453d`
+- Deep: `#6e4030`, `#673a2a`
+- Very deep: `#5a3325`, `#4a2a20` — only for the very darkest skin
+
+Deep skin in a studio headshot is WARM, a red-brown or chocolate, never grey
+or purple. Most dark-skinned players land in Brown or Deep; in testing, real
+deep-skinned players matched `#6e4030` and `#673a2a`, and the older, more
+purple deep colors (`#5c3937`) drew them too dark and too grey.
 
 Read skin from the pixels, never from the player's name, nationality or
 ethnicity. Arena and flash photos shift color a lot, so correct for the light
@@ -892,6 +897,15 @@ before you pick:
   the lighter one. An evenly lit headshot where the white reference reads
   clean white and the skin keeps its color needs no correction: take the cheek
   color as it is.
+- **Do not over-correct deep skin.** Every rule above that says "go deeper" is
+  for skin the camera has WASHED OUT. Medium-brown and deep skin in a normal
+  studio headshot is not washed out: its lit cheek is already the right
+  color, so take it as it is and never go deeper than it. The avatar is one
+  flat fill with no highlights, and a flat fill reads DARKER than the same
+  color in a photo, where highlights lift it. In a test, two deep-skinned
+  players were each given a color two ladder steps deeper than their lit
+  cheek, and both came out visibly too dark. When unsure between two steps
+  on a dark-skinned face, take the LIGHTER one.
 - Hair: black `#272421`, off-black `#0f0902` / `#1c1008`, dark brown `#3D2314` /
   `#2C1608`, medium brown `#5A3825`, light brown `#CC9966`, ginger / copper
   `#94502c` (most red-haired players), vivid orange-red `#B55239` (only when
@@ -990,6 +1004,10 @@ Small, dark, blurry, side-on or heavily-shadowed photos are common. Don't stall
 and don't invent detail — a wrong specific is worse than a right generic,
 because I can see and correct a generic.
 
+- Hair texture you cannot actually see on a small photo: use a SMOOTH cut
+  (`crop-fade`, `short`), not a curly or spiky one. Bumpy hair drawn on a man
+  with a close smooth crop is a bigger error than a smooth cap on short
+  curls.
 - Pick the **middle of the group**, not an extreme, whenever you're unsure which
   group applies. A neutral face that's slightly wrong everywhere reads better
   than one with a hooked nose and squinting eyes it doesn't have.

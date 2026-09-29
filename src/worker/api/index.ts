@@ -5795,10 +5795,97 @@ const updatePlayerFace = async ({
 	}
 
 	p.face = face;
+	// Keep the photo the face replaces, so the face converter can still show
+	// it beside the face when the player is reviewed again.
+	if (p.imgURL) {
+		p.faceSourceURL = p.imgURL;
+	}
 	// "" is how a player with no picture is stored (see player.generate).
 	p.imgURL = "";
 	await idb.cache.players.put(p);
 	await toUI("realtimeUpdate", [["playerMovement"]]);
+};
+
+// FACE CONVERTER (Tools > Face Converter): photos to faces.js, a draft class
+// at a time.
+
+// Every draft class in the league with its player count, read from the index
+// keys alone - loading every player in NBA history to count them would be
+// megabytes of stats nobody asked for.
+const faceConverterClasses = async () => {
+	const yearByPid = new Map<number, number>();
+	const index = idb.league
+		.transaction("players")
+		.store.index("draft.year, retiredYear");
+	let cursor = await index.openKeyCursor();
+	while (cursor) {
+		yearByPid.set(cursor.primaryKey, cursor.key[0]);
+		cursor = await cursor.continue();
+	}
+	// Players only in the cache (created since the last flush) are missing from
+	// the database index.
+	for (const p of await idb.cache.players.getAll()) {
+		yearByPid.set(p.pid, p.draft.year);
+	}
+
+	const counts = new Map<number, number>();
+	for (const year of yearByPid.values()) {
+		counts.set(year, (counts.get(year) ?? 0) + 1);
+	}
+	return [...counts]
+		.map(([year, count]) => ({ year, count }))
+		.sort((a, b) => a.year - b.year);
+};
+
+export type FaceConverterPlayer = {
+	pid: number;
+	name: string;
+	// The photo to convert from: the current image, or the one a converted
+	// face replaced.
+	photo: string | undefined;
+	// True once a face has replaced the photo.
+	converted: boolean;
+	face: FaceConfig;
+	colors?: [string, string, string];
+	jersey?: string;
+	draftRound: number;
+	draftPick: number;
+};
+
+const faceConverterClass = async ({
+	year,
+}: {
+	year: number;
+}): Promise<FaceConverterPlayer[]> => {
+	const players = (
+		await idb.getCopies.players({ draftYear: year }, "noCopyCache")
+	).filter((p) => p.draft.year === year);
+
+	const looks = await getPlayerFaces(players.map((p) => ({ pid: p.pid })));
+
+	return players
+		.map((p) => {
+			const look = looks[`${p.pid}:`];
+			return {
+				pid: p.pid,
+				name: `${p.firstName} ${p.lastName}`.trim(),
+				photo: p.imgURL || p.faceSourceURL || undefined,
+				converted: !p.imgURL && !!p.faceSourceURL,
+				face: p.face,
+				colors: look?.colors,
+				jersey: look?.jersey,
+				draftRound: p.draft.round,
+				draftPick: p.draft.pick,
+			};
+		})
+		.sort((a, b) => {
+			// Drafted players in pick order, then undrafted by name.
+			const ra = a.draftRound > 0 ? a.draftRound : 99;
+			const rb = b.draftRound > 0 ? b.draftRound : 99;
+			return (
+				ra - rb || a.draftPick - b.draftPick || a.name.localeCompare(b.name)
+			);
+		});
 };
 
 // PUT ONE SEASON'S FACE BACK, from the appearance gallery.
@@ -7728,6 +7815,8 @@ const api = {
 		updatePlayThroughInjuries,
 		revertPlayerFace,
 		updatePlayerFace,
+		faceConverterClasses,
+		faceConverterClass,
 		updatePlayerUntouchable,
 		updatePlayerWatch,
 		updatePlayersWatch,

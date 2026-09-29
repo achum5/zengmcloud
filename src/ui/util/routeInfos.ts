@@ -127,6 +127,7 @@ export const routeInfos = {
 	"/l/:lid/event_log/:abbrev": "eventLog",
 	"/l/:lid/event_log/:abbrev/:season": "eventLog",
 	"/l/:lid/delete_old_data": "deleteOldData",
+	"/l/:lid/face_converter": "faceConverter",
 	"/l/:lid/draft_lottery": "draftLottery",
 	"/l/:lid/draft_lottery/:season": "draftLottery",
 	"/l/:lid/draft_scouting": "draftScouting",
