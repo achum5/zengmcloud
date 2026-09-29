@@ -916,6 +916,9 @@ One slot, four unrelated things.
   cheekbones and upper nose, eyes open through cut-outs, dark straps at the
   temples; mouth and chin uncovered. Never unless you can see one.
 
+faces.js has no thin wire-rim or round glasses: for any ordinary glasses,
+wire rims included, `glasses2-black` is the closest.
+
 Earrings, tattoos, chains and other jewelry cannot be drawn in faces.js.
 Ignore them rather than reaching for a nearby option.
 
@@ -1265,7 +1268,7 @@ because I can see and correct a generic.
   in that slot that fits the little you can see, not an extreme. A face
   that's slightly wrong reads better than one with a hooked nose and
   squinting eyes it doesn't have. This is only for what you truly can't see.
-- Where a slot is genuinely unreadable, use the plain default: `eyeLine: none`,
+- Where one of these slots is genuinely unreadable, leave it off: `eyeLine: none`,
   `miscLine: none`, `glasses: none`, `accessories: none`, `ear.size: 1`,
   `body.size: 1`, `flip: false`. (`eyeLine` used to be defaulted to `line1`
   here, on the assumption that the name meant an eyelid crease. It does not —

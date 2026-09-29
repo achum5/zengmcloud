@@ -112,7 +112,9 @@ How to work through a batch:
   photo) still gets an entry: a neutral face in the skin and hair colors
   most of the players you have already done share, flagged in the notes so
   it can be fixed by hand. Anything short of that (blurry, small, turned away, half hidden)
-  gets a real reading of whatever shows, not the neutral face.
+  gets a real reading of whatever shows, not the neutral face. The test:
+  if you can make out even one feature (the hair, an ear, the eyes), read
+  it; if you can't make out any, it is the neutral face.
 
 ## Batch reply format (this replaces the single-photo output instructions below)
 
