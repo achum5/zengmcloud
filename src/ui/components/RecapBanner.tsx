@@ -1,4 +1,4 @@
-import { type MouseEvent } from "react";
+import { type MouseEvent, useLayoutEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import { Markdown } from "./Markdown.tsx";
 import {
@@ -42,9 +42,6 @@ export const RecapBanner = ({
 	sentenceGames?: SentenceGame[];
 }) => {
 	const text = note.trim();
-	if (text === "") {
-		return null;
-	}
 
 	const linked = links.length > 0 ? linkifyRecap(text, links) : text;
 	const lines = linked.split("\n");
@@ -59,6 +56,35 @@ export const RecapBanner = ({
 			: "";
 	const hasMore = body !== "";
 	const open = expanded && hasMore;
+
+	// ROOM TO READ IT. The overlay sits on top of the cards below, which is
+	// what keeps the page from jumping - but under the LAST game on the page
+	// there is nothing below it to cover, and the body ran off the end of the
+	// document, behind the ticker, where no amount of scrolling reached it.
+	// When it would reach the end, it opens in the page instead and pushes
+	// what little is below down, so the whole recap can be scrolled to.
+	const bodyRef = useRef<HTMLDivElement>(null);
+	const [pushDown, setPushDown] = useState(false);
+	useLayoutEffect(() => {
+		if (!open || flow) {
+			setPushDown(false);
+			return;
+		}
+		const el = bodyRef.current;
+		if (!el || typeof window === "undefined") {
+			return;
+		}
+		// Measured as an overlay, so the decision does not feed back on itself.
+		const bottom = el.getBoundingClientRect().bottom + window.scrollY;
+		const pageEnd = document.documentElement.scrollHeight;
+		// Anything fixed along the bottom of the screen (the ticker) hides
+		// the last stretch of the page, so leave it a margin.
+		setPushDown(bottom > pageEnd - 120);
+	}, [open, flow]);
+
+	if (text === "") {
+		return null;
+	}
 
 	// Click the header to toggle either way; ignore clicks on the auto-links so
 	// tapping a name navigates instead of collapsing.
@@ -76,6 +102,7 @@ export const RecapBanner = ({
 			className={clsx("game-note small position-relative", {
 				open,
 				"game-note-flow": flow,
+				"game-note-push": pushDown && !flow,
 				"game-note-centered": centered,
 			})}
 		>
@@ -103,7 +130,11 @@ export const RecapBanner = ({
 				) : null}
 			</div>
 			{hasMore ? (
-				<div className={clsx("game-note-body", { open })} aria-hidden={!open}>
+				<div
+					ref={bodyRef}
+					className={clsx("game-note-body", { open })}
+					aria-hidden={!open}
+				>
 					<Markdown
 						linkSegments={
 							sentenceGames && sentenceGames.length > 0

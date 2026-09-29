@@ -1769,6 +1769,15 @@ $small-scrollbar-thumb-hover-color: darken($gray-500, 10%) !default;
 		transform 0.15s ease;
 }
 
+// A game note near the end of the page opens IN the page instead: the overlay
+// would run past the end of the document, where it cannot be scrolled to. Same
+// card chrome, just in normal flow.
+.game-note-push .game-note-body.open {
+	position: relative;
+	top: auto;
+	box-shadow: none;
+}
+
 // The "Day in the League" recap is NOT a boxed card like the per-game notes - it
 // reads as a genuine headline ON the page: a big bold title sitting directly on
 // the background under a thin section rule, with the article flowing beneath it
