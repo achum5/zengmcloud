@@ -319,22 +319,30 @@ or `smile2`.
   locs). Short twists or locs that stop above the ears → `curly3`. Locs or
   twists that HANG down the sides are drawn in two parts: a
   short textured top (`short3` for a small crown, `curly3` for a fuller one)
-  plus `hairBg: longHair`, which supplies the strands hanging to the jaw
-- Curly, medium volume: `curly`, `curly2` (the loosest and biggest), `curly3`
+  plus `hairBg: longHair`, which supplies the strands hanging to the jaw.
+  Locs down to the shoulders or longer get the same pair, `short3` +
+  `hairBg: longHair`: the jaw is as long as faces.js draws, and it still reads
+  as long locs. Not the hair id `longHair`, which is smooth straight hair with a
+  swept fringe
+- Curly, medium volume: `curly`, `curly2` (the loosest and biggest), `curly3`.
+  Loose curls big enough to reach the jaw → `curly2` + `hairBg: longHair`
 - Raised in the middle: `faux-hawk` (soft, sides not shaved), `fauxhawk-fade`
   (a hard fade line at the sides)
 - Spiky: `spike` (a row of sharp vertical spikes over short sides), `spike2`,
   `spike3` (bushiest)
 - Long or shaggy: `longHair` (falls past the ears and frames the face),
   `shaggy1`, `shaggy2` (shorter and choppier), `messy` (chunky pieces over the
-  forehead), `emo` (a long fringe swept over one eyebrow) — these, and hanging
-  locs or twists, take a `hairBg`; every other cut above keeps `hairBg: none`
+  forehead), `emo` (a long fringe swept over one eyebrow) — these, hanging
+  locs or twists, and curls that reach the jaw take a `hairBg`; every other cut
+  above keeps `hairBg: none`
 
 `hairBg` draws its mass INDEPENDENTLY of the hair id, BEHIND the head: set it
 from how far the hair actually hangs, not from the style name. `longHair` shows
 as strands down both sides to about jaw level. `shaggy` sits almost entirely
 behind the head and barely shows. On a cut that stops above the ears, any
-`hairBg` adds hair that is not there.
+`hairBg` adds hair that is not there. That includes a short cut with one or two
+thin braids trailing from the back: `hairBg` draws a full mass of hair, so
+leave the braids out.
 
 **facialHair** — the families, since 83 ids is far more than the number of
 actual looks.
@@ -462,10 +470,11 @@ How to read the numbers off the photo:
 
 - **Face shape and `fatness`.** Compare the face's length (hairline to chin) with
   its width (across the cheekbones). Noticeably long and narrow → an oval
-  `head14`/`head1`/`head2` and `fatness` 0.1–0.25. About as long as it is wide,
-  full cheeks, soft jaw → a wider head and `fatness` 0.6+. Judge `fatness` from
-  the cheeks, jowls and neck, not from how big the man is overall — a huge,
-  muscular centre can have a lean face.
+  `head14`/`head1`/`head2` and `fatness` 0.1–0.25; for an exceptionally long,
+  thin face, `head14` at 0–0.1, the longest faces.js can draw. About as long
+  as it is wide, full cheeks, soft jaw → a wider head and `fatness` 0.6+.
+  Judge `fatness` from the cheeks, jowls and neck, not from how big the man is
+  overall — a huge, muscular centre can have a lean face.
 - **A full beard widens the drawn face.** faces.js paints the beard as a solid
   mass around the jaw, so a bearded face reads wider and squarer than the same
   face clean-shaven. With a full beard or a large goatee, judge the head shape
