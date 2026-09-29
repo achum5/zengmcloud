@@ -744,24 +744,28 @@ tip and nostrils, then pick the drawing that matches.
 
 - `nose7` — a single bridge line down the middle over a flat base line: an
   upside-down T. A long, straight nose drawn modestly.
-- `nose12` — two bridge lines plus the full rounded nostril outline: a long
-  nose with a broad base.
-- `nose6` — two long bridge lines with flaring nostrils: the biggest drawing
-  in the set, a nose that dominates the face.
+- `nose12` — a single bridge line down the middle over a full rounded nostril
+  outline: a long nose with a broad base.
+- `nose6` — two parallel bridge lines running into a squared-off nostril base
+  with flared wings: a long, broad nose; with `nose12`, the biggest drawing.
 - `honker` — a long narrow U-shaped tube: long, NOT broad.
-- `nose4` — a short line with a small kink at the bottom: a short, narrow
-  nose seen with light from one side.
+- `nose4` — a narrow line down from the bridge that kinks at the bottom into a
+  short foot slanting back toward the middle; drawn off-centre, to one side: a
+  narrow nose lit from one side.
 - `nose9` — a medium line ending in a small hook: a narrow straight nose
   with one side in shadow.
 - `nose2` — a long line ending in a rounded hooked tip (a J): a longer
   narrow nose with a rounded tip.
 - `nose13` — a big round C: a bulbous tip seen from the side.
-- `pinocchio` — a slanted line with a sharp bend: the most protruding.
+- `pinocchio` — a small "7": a short stroke at the top bending sharply into a
+  diagonal running down and back toward the middle, drawn off-centre: a small,
+  angular nose seen from one side.
 - `nose11` — a rounded base outline with both nostrils drawn, no bridge: a
   broad, soft nose.
 - `nose5` — a wider, flatter base with curled nostrils: the widest and
   flattest.
-- `nose1` — a soft horizontal squiggle, no hard edges: a small, soft nose.
+- `nose1` — a single wide wavy line (~), no bridge or nostrils: a low, soft,
+  fairly wide nose tip.
 - `nose3` — a plain V chevron: an angular, pointed tip.
 - `small` — a wide shallow curve under the tip: a neat, small nose.
 - `nose10` — a smaller, tighter curve: a very small nose.
@@ -769,21 +773,25 @@ tip and nostrils, then pick the drawing that matches.
 - `nose8` — a short stub over a small arched base: a short nose with a
   rounded tip.
 
-The one-sided drawings (`nose4`, `nose9`, `nose2`, `nose13`, `pinocchio`)
-take `flip`: `flip: false` puts the line on YOUR right as you look at the
-photo, `flip: true` on your left; put it on the shadowed side.
+The one-sided drawings take `flip`; put the line on the shadowed side. For
+`nose4`, `nose9`, `nose2` and `pinocchio`, `flip: false` puts the line on YOUR
+right as you look at the photo, `true` on your left. `nose13` is the reverse:
+`false` puts its C on your LEFT. (`nose4` and `pinocchio` move to that side
+as a whole.) Flip changes nothing visible on the other noses.
 
 ### mouth
 
 Match the expression in the photo, one step calmer: this face appears on
 every screen in the game, so a big grin is kept but never exaggerated. The
 mappings below already include that step, so use them as written. A polite
-closed-mouth smile → `smile-closed` or `mouth3`. A smile with teeth showing:
+closed-mouth smile → `smile-closed`; a slight smile with the lips just parted
+→ `mouth3`. A smile with teeth showing:
 
 - teeth showing, the mouth no wider than usual → `mouth7`;
 - a broad, beaming grin, mouth stretched wide and cheeks pushed up → `smile`.
-  `mouth7` is small when drawn and reads as an "ooh" on a beaming face; in
-  testing, every big grin in a batch drawn as `mouth7` lost the smile.
+  `mouth7` is mostly black inside with lip lines stacked above and below, so
+  on a beaming face it reads as an "ooh"; in testing, every big grin in a
+  batch drawn as `mouth7` lost the smile.
 - a full laugh, mouth wide open → `smile3`.
 
 A mouth open mid-play (a shout, a grimace, breathing hard) is the moment,
@@ -793,26 +801,30 @@ that isn't smiling, and never `angry` for effort.
 Closed:
 - `straight` — a short flat bar: the most minimal mouth.
 - `closed` — a wider flat bar with the ends bent down: pressed, stern.
-- `mouth5` — a soft wavy line with a small upper-lip curve above: a relaxed
-  closed mouth.
-- `mouth6` — an upper-lip arc over a flat line: a closed mouth with the lip
-  defined.
-- `mouth3` — a closed upward curve with the corners tucked in: a faint,
-  closed smile.
+- `mouth5` — a soft, slightly wavy line with small curled ends, an upper-lip
+  arc above and a lower-lip arc below: a relaxed closed mouth.
+- `mouth6` — thin upper- and lower-lip arcs around a long, gently bowed line:
+  a closed mouth with both lips defined.
 - `smile-closed` — a clean upward U arc: a closed smile.
 - `smile4` — a wide closed upward arc whose corners hook up into dimples: a
-  broad closed grin.
+  broad closed grin, the widest mouth of all.
 - `side` — a slanted line rising to one side with a kink: a one-sided smirk,
   strongly asymmetric.
 
 Open:
+- `mouth3` — a small smile with a thin white crescent of teeth under the
+  upper lip, ticks at the corners, a short lower-lip line: a slight smile,
+  lips just parted.
 - `mouth2` — a small white slit between the lips, an upper-lip line above:
   slightly parted.
-- `mouth4` — a thin white slit with a lip line above: barely parted.
-- `mouth` — a small open oval, white inside.
+- `mouth4` — a thin flat white slit between an upper-lip arc and a lower-lip
+  arc: barely parted.
+- `mouth` — a wide, flat open oval (a bean dented at the top centre), white
+  inside, no lip lines.
 - `mouth7` — open, showing a solid band of TEETH, with an upper-lip line: the
   toothy smile.
-- `mouth8` — the toothy `mouth7` with the gaps between the teeth drawn in.
+- `mouth8` — like `mouth7` (black inside, a band of upper teeth, a lower-lip
+  line) but with one line splitting the front teeth and no upper-lip line.
 - `smile` — an open half-moon (flat top, round bottom), white inside: a broad
   open smile.
 - `smile3` — the widest open half-moon grin in the set.
@@ -824,9 +836,10 @@ Open:
 
 The size slider matters more than the shape.
 
-- `ear2` — narrow and teardrop-shaped, angled slightly out at the bottom:
-  ordinary ears.
-- `ear1` — blocky, with a flat outer edge: ears that stand straight out.
+- `ear2` — the slimmest: a rounded top tapering to a narrow bottom with a
+  small lobe tucked against the head (a teardrop, point down): ordinary ears.
+- `ear1` — the largest shape: a rounded top, a straight vertical outer edge,
+  the bottom cut back diagonally to the head (a D): full, squarish ears.
 - `ear3` — a round C-shaped cup: ears that are visibly round rather than long.
 
 ### eyeLine
@@ -888,17 +901,20 @@ One slot, four unrelated things.
 ### glasses
 
 - `none` — no glasses.
-- `glasses2-black` — thin black frames with tinted lenses: ordinary glasses.
-- `glasses2-primary` — the thin `glasses2-black` frames in the team's main color, which
-  can come out bright blue or red.
-- `glasses2-secondary` — the thin `glasses2-black` frames in the team's second color.
+- `glasses2-black` — a heavy dark bar along the top edge only (browline,
+  half-rim) over rimless grey-tinted rectangular lenses: ordinary glasses.
+- `glasses2-primary` — the `glasses2-black` browline bar in the team's main
+  color, which can come out bright blue or red.
+- `glasses2-secondary` — the `glasses2-black` browline bar in the team's
+  second color.
 - `glasses1-primary` — THICK, heavy, rounded dark frames, like sports
   goggles, with the side pieces in the team's main color. There is no
   `glasses1-black`.
 - `glasses1-secondary` — the thick `glasses1-primary` frames with the side pieces in the
   team's second color.
-- `facemask` — a translucent protective mask over the WHOLE face, not
-  eyewear. Never unless you can see one.
+- `facemask` — a clear grey-tinted protective shield over the forehead,
+  cheekbones and upper nose, eyes open through cut-outs, dark straps at the
+  temples; mouth and chin uncovered. Never unless you can see one.
 
 Earrings, tattoos, chains and other jewelry cannot be drawn in faces.js.
 Ignore them rather than reaching for a nearby option.
@@ -906,17 +922,19 @@ Ignore them rather than reaching for a nearby option.
 ### accessories
 
 - `none` — nothing.
-- `headband` — a wide team-colored band straight across the upper forehead,
-  covering the hairline: a sweatband worn low. Always drawn in team colors,
-  whatever color it is in the photo; set it anyway, since it is a strong
-  likeness cue. It hides the hairline, so choose the hair from what shows
-  above it and at the sides.
+- `headband` — a wide band across the upper forehead covering the hairline,
+  arched so its ends drop to brow level at the temples: a sweatband worn low,
+  in the team's main color with a second-color stripe. Always drawn in team
+  colors, whatever color it is in the photo; set it anyway, since it is a
+  strong likeness cue. It hides the hairline, so choose the hair from what
+  shows above it and at the sides.
 - `headband-high` — the same band arched higher, sitting at the hairline
   with the whole forehead showing below it: a band pushed back into the
   hair, or a thin hairband holding back big hair.
-- `hat` — a team-colored baseball cap. It covers the
-  crown and leaves the hair at the sides showing, so it is not a substitute for
-  getting the hair right.
+- `hat` — a baseball cap seen from the front, all in the team's second color.
+  Under any cap (and `santa-hat`) faces.js REPLACES the hair: at most a short
+  dark patch at the temples, for many hair ids none at all; only `hairBg` and
+  facial hair still show. So a cap costs the player his hair in the drawing.
 - `hat2` — the `hat` cap with a different team-colored brim.
 - `hat3` — the `hat` cap with a third team-colored brim.
 - `eye-black` — two black bars under the eyes.
@@ -931,7 +949,8 @@ photo shows.
 - `body2` — shoulders with a small bump at each shoulder cap.
 - `body3` — a thick neck with trapezius lines and collarbone creases: the most
   muscular.
-- `body4` — rounded shoulders, a little narrower at the neck.
+- `body4` — the narrowest shoulders: a short neck, straight shoulder lines
+  sloping down to rounded caps.
 - `body5` — broad shoulders sloping in straight lines.
 
 `jersey` — use `jersey`; ZenGM recolors and restyles it for the sport.
@@ -952,8 +971,9 @@ Clamp to these ranges. Round to two decimals.
 
 `flip` (on hair, mouth, nose) is a plain boolean that mirrors that piece — pick
 whichever matches the asymmetry you see, `false` if it looks symmetric. On a
-one-sided nose, `false` puts the line on your right as you look at the photo;
-on `side`, `false` raises the corner on your right.
+one-sided nose, `false` puts the line on your right as you look at the photo
+(except `nose13`, the reverse); on `side`, `false` raises the corner on your
+right.
 
 How to read the numbers off the photo:
 
@@ -975,7 +995,11 @@ How to read the numbers off the photo:
   | about 1.45           | 0.75      | wide, full                        |
   | 1.4 or less          | 0.9 – 1   | a short, round, heavy head        |
 
-  (The drawings themselves run from 1.70 long at `fatness` 0 to 1.36 at 1.)
+  (The drawings themselves run from 1.65 long at `fatness` 0 to 1.33 at 1.)
+  `fatness` widens the head, hair, facial hair, glasses and accessories, and
+  moves the ears out, but the eyes, brows, nose, mouth and smile lines stay
+  the same size and in the same place: a high `fatness` makes the features
+  look small in a broad face, a low one crowds them.
   Judge it from the face itself, not from how big the man is overall — a
   huge, muscular centre can have a lean face. Pair a long face with one
   of the narrow tapering jaws, and a broad face with a full or broad one.
@@ -997,11 +1021,14 @@ How to read the numbers off the photo:
 - **`nose.size`.** Compare the width of the nose at the nostrils with the gap
   between the inner corners of the eyes. About equal is 1.0. Clearly wider →
   1.1–1.25 together with a broad nose from the list above. Clearly narrower or
-  shorter → 0.8–0.9. The shape group matters more than the number, so do not
+  shorter → 0.8–0.9. The size scales the whole drawing, so a bigger size
+  also makes the nose LONGER (and its line thicker). The shape group matters more than the number, so do not
   use size to turn a narrow nose id into a broad nose.
-- **`ear.size`.** 1 unless the ears are a feature. Ears that clearly stick out
-  from the head in a front-on photo → 1.25–1.5; that is a big likeness cue, so
-  do not be timid with it.
+- **`ear.size`.** 1 unless the ears are a feature. The size makes the ear
+  bigger about its own centre, mostly TALLER (68 units at 1, 100 at 1.5); it
+  sticks out only a little further. Big or prominent ears in a front-on
+  photo → 1.25–1.5; that is a big likeness cue, so do not be timid with it.
+  All three ear shapes stick out equally far.
 
 Most photos are head-and-shoulders crops, which say nothing about shoulder width
 and little about true ear size. Keep the two NUMBERS `body.size` and
