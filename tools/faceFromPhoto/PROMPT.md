@@ -1023,11 +1023,8 @@ these instead.
   white is fair: `#ecc8b3` / `#e3bda5`. Skin about halfway between is olive
   to medium: `#d9a886` / `#bb876f`. Skin close to the dark hair is brown to
   deep: `#8d5d45` / `#6e4030`. Always answer with a warm skin hex from the
-  ladder, never a grey one. Decide it for EVERY photo on its own: old photos
-  vary widely in exposure, and a batch where every black-and-white face got
-  the same skin color was not reading any of them. Deciding each one still
-  lands many fair-skinned men on the same step, and that is fine; what the
-  rule forbids is not looking.
+  ladder, never a grey one. Decide it for every photo on its own, from that
+  photo's own white and dark: old photos vary widely in exposure.
 - **Sepia or brown-toned prints** are black-and-white with a brown cast:
   ignore the cast and read skin and hair by brightness, as above.
 - **A hand-tinted or colorized photo** (an old trading card, a tinted

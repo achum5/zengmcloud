@@ -99,11 +99,11 @@ How to work through a batch:
 	}
 - The label strip is not part of the photo. Ignore it when you judge colors.
 - Do each player as a separate, complete job: run the whole method below on
-  him, from studying the face to the final check, before you move on. Photos
-  in one batch are not related, so nothing carries over from the last one.
-  The typical batch failure is a row of faces that share the same eyes,
-  nose, head and mouth because the first answer set a pattern; decide every
-  slot from THIS photo.
+  him, from studying the face to the final check, before you move on. Each
+  answer comes from his photo alone. Never copy an earlier answer, and never
+  avoid an id because other players already have it: how often an id
+  appears across the batch does not matter at all, only whether it is the
+  most accurate match for THIS face.
 - The name is only there to keep the answers matched. Read the face from the
   photo; if you happen to know the player, the photo still wins wherever the
   two disagree, because it is the look he has in this game.
@@ -113,16 +113,6 @@ How to work through a batch:
   most of this batch shares, flagged in the notes so it can be fixed by
   hand. Anything short of that (blurry, small, turned away, half hidden)
   gets a real reading of whatever shows, not the neutral face.
-- Before you answer, read DOWN your finished object one slot at a time. If
-  one id covers most of the batch in any slot (the same nose, head, hair or
-  mouth on most of the players), go back to those photos. In testing, a
-  54-player batch came out with the same nose on 44 faces and the same head
-  on half of them, and the photos did not look alike. A default is right
-  only for a feature you truly cannot see; a face you CAN read gets its own
-  call in every slot. Players who really do share something (a period
-  haircut, fair skin in a batch of fair-skinned men, the grin most
-  headshots are taken with) may share its id; the check is for sameness the
-  photos don't show.
 
 ## Batch reply format (this replaces the single-photo output instructions below)
 
