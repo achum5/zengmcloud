@@ -85,52 +85,36 @@ describe("the prompt's id lists match the faces.js build we ship", () => {
 // The shape guide is the half of the prompt that cannot be checked against
 // anything: it says what the drawings LOOK like, which only a person looking at
 // a render can know (tools/faceFromPhoto/renderSheets.mjs). What can be checked
-// is that it still talks about every group it claims to cover, so a rewrite
-// cannot quietly drop one.
-describe("the shape guide covers every slot that has one", () => {
-	const guide = FACE_FROM_PHOTO_PROMPT.split("## What the shapes")[1]!;
-	for (const slot of [
-		"head",
-		"eye",
-		"eyebrow",
-		"nose",
-		"mouth",
-		"hair",
-		"facialHair",
-		"eyeLine",
-		"smileLine",
-		"miscLine",
-		"glasses",
-		"accessories",
-	]) {
+// is its shape: a heading per slot, and a line of its own for every id.
+const guide = FACE_FROM_PHOTO_PROMPT.split(
+	"## What every option looks like",
+)[1]!.split("## Allowed numbers")[0]!;
+
+describe("the shape guide has a section for every slot", () => {
+	for (const slot of SLOTS) {
+		if (slot === "jersey") {
+			continue;
+		}
 		test(slot, () => {
-			assert.include(guide, `**${slot}**`);
+			assert.include(guide, `### ${slot}\n`);
 		});
 	}
 });
 
-// An id the prompt lists but never describes is one the model can only pick by
-// its name, and several names are misleading: `short-bald` - a receding,
-// bare-on-top cut that is one of an older player's strongest likeness cues -
-// sat undescribed in the list, so no photo ever produced it. Every listed id
-// is described, except the few whose meaning the prompt gives as a rule instead.
-describe("every listed id is described", () => {
-	const shapes =
-		FACE_FROM_PHOTO_PROMPT.split("## What the shapes")[1]!.split(
-			"## Allowed numbers",
-		)[0]!;
-	// facialHair's suffixed variants are covered by the suffix rule; ZenGM
-	// replaces body and jersey outright.
-	const RULE_COVERED = /-stache$|Stache$|SB[12]$|-sb-[12]$|Soul|soul$/;
+// The model that reads this prompt cannot see a single drawing, so an id it
+// can only judge by its name is a guess, and several names are misleading:
+// `short-bald` - a receding, bare-on-top cut that is one of an older player's
+// strongest likeness cues - once sat undescribed in the list, so no photo ever
+// produced it. Every id gets a bullet of its own: "- `id` — what it draws".
+// jersey is the one exception; ZenGM restyles it for the sport.
+describe("every listed id has its own description", () => {
 	for (const slot of SLOTS) {
-		if (slot === "body" || slot === "jersey") {
+		if (slot === "jersey") {
 			continue;
 		}
 		test(slot, () => {
 			const undescribed = listed(slot).filter(
-				(id) =>
-					!shapes.includes(`\`${id}\``) &&
-					!(slot === "facialHair" && RULE_COVERED.test(id)),
+				(id) => !guide.includes(`\n- \`${id}\` — `),
 			);
 			assert.deepEqual(undescribed, []);
 		});
@@ -138,17 +122,15 @@ describe("every listed id is described", () => {
 });
 
 // A few facial-hair drawings paint part of the beard in the TEAM color (beads
-// tied into a braided beard). Listed as an ordinary beard, they put red beads
-// on every bearded face, so the prompt must name each one in its beaded group.
-test("team-colored facial hair is flagged as beaded", () => {
-	const beaded = FACE_FROM_PHOTO_PROMPT.split(
-		"with team-colored BEADS",
-	)[1]!.split("\n- ")[0]!;
+// tied into a braided beard). Described as an ordinary beard, they put red beads
+// on every bearded face, so each one's own description must say so.
+test("team-colored facial hair is described as beaded", () => {
 	const teamColored = Object.entries(svgs.facialHair)
 		.filter(([, svg]) => /\$\[(primary|secondary|accent)]/.test(svg))
 		.map(([id]) => id);
 	assert.isNotEmpty(teamColored);
 	for (const id of teamColored) {
-		assert.include(beaded, `\`${id}\``);
+		const line = guide.split(`\n- \`${id}\` — `)[1]?.split("\n- ")[0] ?? "";
+		assert.include(line, "TEAM-COLORED bead", id);
 	}
 });
