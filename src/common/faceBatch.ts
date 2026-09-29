@@ -110,8 +110,8 @@ How to work through a batch:
 - A photo with NO face to read at all (missing, blank, pure noise, or the
   plain black head-and-shoulders silhouette sites show for a player with no
   photo) still gets an entry: a neutral face in the skin and hair colors
-  most of this batch shares, flagged in the notes so it can be fixed by
-  hand. Anything short of that (blurry, small, turned away, half hidden)
+  most of the players you have already done share, flagged in the notes so
+  it can be fixed by hand. Anything short of that (blurry, small, turned away, half hidden)
   gets a real reading of whatever shows, not the neutral face.
 
 ## Batch reply format (this replaces the single-photo output instructions below)

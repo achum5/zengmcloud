@@ -212,11 +212,16 @@ Pick the jaw here and the width with `fatness` (see "Face shape and
 `fatness`" under Allowed numbers). A long, narrow face is a LOW `fatness`
 with a tapering jaw, never a boxy jaw at any `fatness`.
 
-The jaws, grouped by how wide the lower face stays (width just above the chin,
-as a share of the cheekbone width):
+The jaws, grouped by how wide the lower face stays. faces.js draws every
+jaw narrower than a real one: a real man's jaw is nearly as wide as his
+cheekbones, and even the broad jaws below are narrower than that. So match
+the photo by how the jaw looks RELATIVE to an ordinary face, not by its
+absolute width: an ordinary lean or average jaw is one of the tapering or V
+jaws; the full and broad jaws are for a jaw that is visibly heavy, square
+or jowly, the kind people would describe.
 
 Narrow, tapering jaws — the sides curve or angle in well above the chin to a
-small chin (lower face about 55–60% of the cheekbones):
+small chin. Lean, oval and long faces:
 - `head1` — a smooth egg: the sides curve in continuously from the
   cheekbones, no jaw corner anywhere, to a small rounded chin.
 - `head2` — an egg like `head1` that ends in a small, short, FLAT-bottomed
@@ -235,7 +240,7 @@ small chin (lower face about 55–60% of the cheekbones):
   W) at the bottom.
 
 Angular V jaws — a clear, sharp jaw CORNER about level with the mouth, then
-straight lines angled in to the chin:
+straight lines angled in to the chin. Lean faces with a defined, bony jaw:
 - `head3` — sharp corners, then long straight lines to a small rounded chin:
   a strong V.
 - `head7` — sharp corners, then shorter straight lines to a short flat chin:
@@ -243,16 +248,16 @@ straight lines angled in to the chin:
 - `head10` — fairly straight sides, defined corners, and a chin drawn as a
   clear W (two bumps with a notch): a V jaw with a cleft chin.
 
-Full, rounded jaws — the lower face stays wide and rounds off in a U (lower
-face about 65–70% of the cheekbones):
+Full, rounded jaws — the lower face stays wide and rounds off in a U. Fleshy,
+round-cheeked faces:
 - `head12` — the lower face stays full nearly to the bottom, then rounds into
   a medium chin: a broad U.
 - `head13` — like `head12`, a touch softer: a full, round lower face.
 - `head8` — a full rounded jaw with a small double bump (a slight cleft) at
   the bottom of the chin.
 
-Broad jaws — the lower face stays wide right down to a wide chin (lower face
-about 75–80% of the cheekbones):
+Broad jaws — the lower face stays wide right down to a wide chin. A
+visibly heavy, square or jowly jaw:
 - `head6` — broad and soft: full, heavy, rounded cheeks and jowls carried down
   to a wide rounded chin. No corners: a jowly round face.
 - `head15` — straight sides, jaw corners low near the chin, then short angled
@@ -1076,11 +1081,13 @@ these instead.
   and hair is often tinted one flat brown. Take the skin's depth from how
   light or dark it is, then pick the matching ladder step, not the paint's
   hue. Read tinted hair by its depth too, with the steps below: a flat
-  mid-brown tint is `#5A3825`, a dark one `#3D2314`, a light or sandy one
-  blond `#b89968`.
+  mid-brown tint is `#5A3825`, a dark one `#3D2314`, a sandy light-brown one
+  `#CC9966`, a light or yellowish one blond `#b89968`, a reddish one ginger
+  `#94502c`.
 - **Hair from brightness.** Black or near-black → `#272421`. Dark grey →
-  dark brown `#3D2314`. Mid grey → medium brown `#5A3825`. Light grey or
-  near-white on a young man → blond `#b89968`. On an older man it may be
+  dark brown `#3D2314`. Mid grey → medium brown `#5A3825`. Light-mid grey →
+  light brown `#CC9966`. Light grey or near-white on a young man → blond
+  `#b89968`. On an older man it may be
   grey `#9a9a9a`; judge by his age. Red hair shows as a mid grey and can't be
   told apart, so it gets the medium brown `#5A3825`.
 - **Film grain, halftone dots and scratches are not stubble, freckles or
