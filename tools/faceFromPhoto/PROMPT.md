@@ -51,6 +51,18 @@ from getting those unmistakably right and keeping everything else neutral, so:
 - for every feature that is ordinary, choose the plain middle option. A face
   where every slot is "a bit interesting" looks like nobody.
 
+**Tell the face apart from the expression.** Headshots are often taken
+mid-grin, and a big smile changes several features at once. Read each one as it
+would be at rest:
+
+- a laugh squint narrows the eyes: still an ordinary eye, not a sleepy or slit
+  one, unless the eyes are narrow when he is not smiling;
+- the folds beside the mouth and the creases at the eye corners are the grin,
+  not age: a young player still gets `smileLine`/`eyeLine` `none`;
+- raised cheeks make the face look rounder: do not raise `fatness` for them.
+
+The smile itself is kept, one step calmer (see **mouth** below).
+
 If you are given **more than one photo of the same person**, use them together
 and reply with ONE object: take skin and hair color from the best-lit photo,
 face shape, nose and ears from the most front-on one, and treat anything that
@@ -249,9 +261,11 @@ these are genuinely different noses.
   NOT broad), `nose12` (a bridge line plus the full nostril base — the largest
   nose in the set), `nose7` (a bridge line over a wide shallow base)
 
-**mouth** — pick the expression first. A neutral or lightly-closed mouth is
-almost always right: this face appears on every screen in the game and a big
-grin wears badly.
+**mouth** — match the expression in the photo, one step calmer: this face
+appears on every screen in the game, so a big grin is kept but never
+exaggerated. A neutral mouth → a closed id. A polite closed-mouth smile →
+`smile-closed` or `mouth3`. A wide grin showing teeth → `mouth7`, not `smile3`
+or `smile2`.
 
 - Closed, neutral: `straight` (a short flat bar, the most minimal), `closed` (a
   wider flat bar with angled ends, reads stern/pressed), `mouth5` (a soft wavy
@@ -301,7 +315,9 @@ grin wears badly.
   only braided option, so use it for any braids worn tight to the scalp, faded
   sides or not;
   `dreads` (short sides with a BUNDLE of locs tied up on top — not long hanging
-  locs)
+  locs). Locs or twists that HANG down the sides are drawn in two parts: a
+  short textured top (`short3` for a small crown, `curly3` for a fuller one)
+  plus `hairBg: longHair`, which supplies the strands hanging to the jaw
 - Curly, medium volume: `curly`, `curly2` (the loosest and biggest), `curly3`
 - Raised in the middle: `faux-hawk` (soft, sides not shaved), `fauxhawk-fade`
   (a hard fade line at the sides)
@@ -309,13 +325,14 @@ grin wears badly.
   `spike3` (bushiest)
 - Long or shaggy: `longHair` (falls past the ears and frames the face),
   `shaggy1`, `shaggy2` (shorter and choppier), `messy` (chunky pieces over the
-  forehead), `emo` (a long fringe swept over one eyebrow) — and ONLY for these
-  set `hairBg` to `longHair` or `shaggy`; everything above keeps `hairBg: none`
+  forehead), `emo` (a long fringe swept over one eyebrow) — these, and hanging
+  locs or twists, take a `hairBg`; every other cut above keeps `hairBg: none`
 
-`hairBg` draws its mass INDEPENDENTLY of the hair id, so setting it on a short
-cut adds hair behind the head that the cut in front does not explain — it comes
-out looking like a mullet. That is the only thing to be careful about here:
-`longHair` hangs to about jaw level, `shaggy` is a little shorter and rougher.
+`hairBg` draws its mass INDEPENDENTLY of the hair id, BEHIND the head: set it
+from how far the hair actually hangs, not from the style name. `longHair` shows
+as strands down both sides to about jaw level. `shaggy` sits almost entirely
+behind the head and barely shows. On a cut that stops above the ears, any
+`hairBg` adds hair that is not there.
 
 **facialHair** — the families, since 83 ids is far more than the number of
 actual looks.
@@ -401,7 +418,11 @@ them rather than reaching for a nearby option.
 **accessories** — `hat`, `hat2` and `hat3` are the same team-colored cap with
 different brim undersides, and they cover the crown while leaving the hair at
 the sides showing, so a cap is not a substitute for getting the hair right.
-`headband` sits at the hairline and `headband-high` an inch above it.
+`headband` sits at the hairline and `headband-high` an inch above it. The
+headband is always drawn in the team's colors, whatever color it is in the
+photo; set it anyway, since it is a strong likeness cue for a player who wears
+one. It hides the hairline, so choose the hair from what shows above it and at
+the sides.
 `eye-black` is two black bars under the eyes. `santa-hat` is what it sounds
 like.
 
@@ -474,7 +495,9 @@ default does.
 `body.color` is the SKIN tone and `hair.color` is the hair. Any hex works. Start
 from the nearest step on this ladder and nudge it toward the photo rather than
 inventing a color from scratch. It runs light to deep, and the steps are close
-enough that picking the right neighbour matters:
+enough that picking the right neighbour matters. The steps are fairly muted, so
+nudge the warmth as well as the depth: a golden or reddish-brown cheek wants a
+warmer, more saturated hex than its step, or the avatar comes out greyish.
 
 - Very fair: `#f5dccf`, `#f2d6cb`
 - Fair: `#ecc8b3`, `#e3bda5`, `#ddb7a0`
@@ -497,9 +520,11 @@ before you pick:
 - Sample the **lit** part of the cheek or forehead — not a highlight blown out to
   near white, not the shadow under the jaw. The avatar is one flat fill, so it
   needs the middle of the face, not its extremes.
-- Bright studio or flash light washes skin out, so when torn between two steps,
-  take the deeper one. Dim or orange arena light darkens it, so take the lighter
-  one.
+- Harsh flash washes skin out (near-white highlights on the forehead and nose,
+  skin gone greyish), so when torn between two steps, take the deeper one. Dim
+  or orange arena light darkens it, so take the lighter one. An evenly lit
+  headshot where the white reference reads clean white and the skin keeps its
+  color needs no correction: take the lit cheek as it is.
 - Hair: black `#272421`, off-black `#0f0902` / `#1c1008`, dark brown `#3D2314` /
   `#2C1608`, medium brown `#5A3825`, light brown `#CC9966`, auburn `#B55239`,
   blond `#e9c67b`, dirty blond `#D7BF91`. Grey/white hair: `#9a9a9a` – `#e8e8e8`.
@@ -621,6 +646,7 @@ Check the finished object against the photo one last time:
    shaved, bald)? `hairBg` is `none` unless the hair really falls past the ears.
 4. Stubble vs grown facial hair decided deliberately, with `head.shave` set?
 5. Nothing added that you cannot see: no glasses, accessory, facial hair or
-   age line the photo does not show.
+   age line the photo does not show — and no squint, fold or round cheek that
+   is only there because he is grinning.
 6. Every id is spelled exactly as listed, every number is inside its range, and
    every key from the output shape is present.
