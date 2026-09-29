@@ -1294,6 +1294,10 @@ these instead.
     `high`.
   - Tight waves or curls on top → `curly`; a tousled mop → `messy`.
   - A thinning crown or receding hairline → `short-bald` or `short2`.
+  When a cut fits more than one line, the most visible trait wins: real
+  volume or waves standing up at the front → `hair` or `parted`, even over
+  receding temples; `short`/`short2` are for hair that truly lies flat;
+  `short-bald` only when the crown itself is thin.
 - **Action shots, a face half hidden or turned away, a blurry newspaper
   crop:** read what you can see (the hair, the skin's brightness, a clear
   feature like big ears or a heavy brow) and keep the rest neutral. It
