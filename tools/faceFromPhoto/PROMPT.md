@@ -205,31 +205,37 @@ set the width there.
   point at: `head3`, `head15`, `head16`, `head17`, `head18`, `head12` (the
   widest and boxiest in the set)
 
-**eye** — the sclera is drawn either bright white (reads cartoonish) or a soft
-off-white (reads more natural); it is a real difference at a glance.
+**eye** — two drawing styles, and the style matters as much as the shape.
+Four ids have a soft OFF-WHITE eye with no heavy outline and a big dark iris;
+they read as real eyes: `eye13` (a clean almond — the neutral default),
+`eye14` (the same almond with the upper lid lowered across the iris —
+relaxed, hooded, calm), `eye12` (an almond with a heavy dark lash line along
+the top — defined, intense eyes), `eye15` (wide, thin outline, tiny pupil —
+startled). Start from these four and leave them only for a reason the photo
+gives you. Everything else is drawn in bright white with a thick outline and
+reads as a cartoon:
 
-- Big and wide open, plenty of white: `eye1` (huge, squared-off top — the most
-  cartoonish), `eye8` (large angular hexagon), `eye15` (large but a thin
-  outline and a tiny pupil, reads startled), `eye2` (a plain dome), `eye4`
-  (pointed almond, large pupil), `eye12`
-- Ordinary almond, the neutral default: `eye10`, `eye13`, `eye6`, `eye9`
+- Ordinary shapes in the cartoon style: `eye6` (almond), `eye9` (small
+  almond), `eye4` (pointed almond, large pupil)
+- Round and wide-eyed: `eye10` (a white oval with a small pupil — NOT an
+  ordinary eye, it reads surprised), `eye2` (a plain dome), `eye8` (a large
+  rounded hexagon), `eye1` (huge, squared-off top — the most cartoonish)
 - Narrow, heavy-lidded, sleepy: `eye16` (a thick lid bar over a sliver of
-  white), `eye19`, `eye14`, `eye5` (tall and narrow with an unusual VERTICAL
-  pupil)
-- Angled and squinting, stern or intense: `eye17` (sharp angular wedge, the
-  hardest look in the set), `eye18`
+  white), `eye19` (a narrow almond under a thick lid line)
+- Angled and narrowed, stern or intense: `eye18` (a pointed, tilted almond),
+  `eye17` (a sharp angular wedge, the hardest look in the set)
 - Drawn with the lid CUTTING ACROSS the eye, which reads as half-closed however
   big the shape underneath is: `eye3` (a full circle with a straight lid across
   the top), `eye11`
-- `eye7` is a pure horizontal bar with no curve at all. It is a deliberate
-  deadpan/slit look, not a narrow eye — do not reach for it just because the
-  subject's eyes are small
+- Unusual, only on purpose: `eye5` (a tall box with a VERTICAL pupil), `eye7`
+  (a pure horizontal bar — a deadpan slit, not a narrow eye; do not reach for
+  it just because the subject's eyes are small)
 
 **eyebrow** — thickness first, then arch.
 
 - Thick and heavy: `eyebrow8` and `eyebrow14` (the boldest), `eyebrow7`,
   `eyebrow1`, `eyebrow5` (thick AND strongly arched), `eyebrow12` (thick with
-  angular, notched ends), `eyebrow10` (thick with a wavy underside),
+  angular, notched ends), `eyebrow10` (thick, the inner end hooked down — a built-in frown),
   `eyebrow6` (a plain thick rectangular slab, no arch at all)
 - Medium: `eyebrow15`, `eyebrow9`, `eyebrow16`, `eyebrow18`, `eyebrow20`
 - Thin and fine: `eyebrow3` (long and sleek, tapering to a point), `eyebrow13`,
@@ -588,6 +594,9 @@ has no separate brow or beard color. So:
   the avatar — usually the beard when there is a full one.
 - Salt-and-pepper reads as a mid grey (`#8a8a8a`–`#a8a8a8`); do not pick pure
   white unless it truly is.
+- Dyed tips or highlights: use the natural color at the ROOTS. The dye covers
+  a few strands, and the root color is also the brows and beard; setting it
+  from the tips gives a black-bearded man light-brown eyebrows.
 
 Leave `teamColors` exactly as shown — ZenGM overwrites it with the player's
 actual team colors.
