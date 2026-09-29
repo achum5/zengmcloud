@@ -44,12 +44,15 @@ age marks. Then name to yourself the **two or three things that make THIS face
 recognisable** — what a caricaturist would draw first: big ears, a broad nose, a
 long narrow face, heavy brows, a cleft chin, a receding hairline, a
 distinctive beard shape, a gap-toothed grin, very round cheeks. Likeness comes
-from getting those unmistakably right and keeping everything else neutral, so:
+from getting those unmistakably right, and from every other slot matching the
+photo as closely as the drawings allow, so:
 
-- make each distinctive feature clearly visible in the output — the group that
-  shows it, and the size or angle pushed far enough to read at avatar size;
-- for every feature that is ordinary, choose the plain middle option. A face
-  where every slot is "a bit interesting" looks like nobody.
+- make each distinctive feature clearly visible in the output — the option
+  that shows it, and the size or angle pushed far enough to read at avatar
+  size;
+- for every other feature, read the descriptions and take the drawing
+  closest to what the photo shows. Every option in a slot is a real choice;
+  none is a default to fall back on.
 
 **Tell the face apart from the expression.** Headshots are often taken
 mid-grin, and a big smile changes several features at once. Read each one as it
@@ -96,8 +99,7 @@ anything after it is free.
 
 Every value below is filler, there to show the SHAPE of each entry - which keys
 exist, and whether a slot takes an id, a number, a hex, or a boolean. Not one of
-them is a default or a suggestion (the fallbacks for a feature you can't
-read are named in that slot's own section). Read every slot off the photo; the
+them is a default or a suggestion. Read every slot off the photo; the
 only exceptions are `teamColors` and `jersey`, which you copy exactly as shown.
 Reply in this exact form, fence and all.
 
@@ -189,9 +191,9 @@ sits on the jaw, `eye10` is not an ordinary eye), so trust the description,
 never the name.
 
 The drawings are simple cartoon line art: a bold black outline, flat colors,
-no shading. Details are small at the size the game shows them, so for each
-slot first pick the kind of shape the photo shows, then the id whose
-description fits best. Where a group gives advice on choosing, follow it.
+no shading. For each slot, read every description, compare each with the
+photo, and pick the one that matches best. The groupings below only put
+similar drawings next to each other; no group or id is preferred.
 
 ### head
 
@@ -210,8 +212,8 @@ choose the shape here and the width there.
 - `head4` — an oval tapering to a small flat chin with a slight notch at its
   bottom.
 - `head5` — an oval whose lower sides straighten into a softly angled jaw
-  meeting at a rounded chin. The neutral middle of the whole set; use it when
-  the photo won't say.
+  meeting at a rounded chin: the middle of the set, neither round, long nor
+  square.
 - `head6` — broad and soft: full rounded cheeks and a wide, rounded chin. A
   round face.
 - `head7` — straight sides, then sharp jaw lines angling in steeply to a short
@@ -259,7 +261,7 @@ Bald and shaved:
 
 Smooth short caps (solid, clean outline):
 - `short` — a plain dark cap with a straight hairline, the hair running down
-  both sides to the ears. The neutral default.
+  both sides to the ears.
 - `short2` — the plain cap of `short`, full sides, but the hairline dips down in the
   middle of the forehead in a soft M (a gentle widow's peak).
 - `crop` — a smooth cap sitting high on the head with a gently curved
@@ -391,7 +393,7 @@ the absence of a mustache: several plain ids are drawn with one.
 
 Full beards (cheeks, jaw and chin, with a mustache):
 - `beard2` — a short, neatly trimmed full beard hugging the jaw, a thin band
-  up the cheeks to the ears. The common groomed look — start here.
+  up the cheeks to the ears: the common groomed look.
 - `beard1` — a big, thick full beard, heavy on the cheeks and jaw.
 - `beard3` — the longest and bushiest: a full beard hanging well below the
   chin with a wide flat bottom.
@@ -520,28 +522,17 @@ corners of the mouth to the jaw):
 
 ### eye
 
-Two drawing styles, and the style matters as much as the shape. Four ids
-have a soft OFF-WHITE eye with no heavy outline and a big dark iris; they read
-as real eyes. Start from these and leave them only for a reason the photo
-gives you. Choose between them by the UPPER LID:
+Two drawing styles. Four ids have a soft OFF-WHITE eye with no heavy outline
+and a big dark iris; they read as real eyes:
 
-- Does the upper lid sit low, covering the top of the iris, so the eye looks
-  relaxed, sleepy or hooded? → `eye14`. This is common: many players look
-  like this in a headshot, and in a blind test `eye13` was given to every
-  face, including two hooded ones that wanted `eye14`.
-- Is the whole iris clear, the lid well above it, the eye open and alert? →
-  `eye13`.
-- Does a thick, dark lash line make the eyes look outlined and intense? →
-  `eye12`.
-- Wide open, white showing all round the iris? → `eye15`.
-- Too small or grainy to see where the lid sits? → `eye13`.
-
-- `eye13` — a clean almond. The neutral default.
+- `eye13` — a clean almond, the whole iris showing, the lid well above it:
+  open and alert.
 - `eye14` — the `eye13` almond with the upper lid lowered across the top of the
-  iris: relaxed, hooded, calm.
+  iris: relaxed, hooded, sleepy, calm.
 - `eye12` — an almond under a heavy dark lash line along the top: defined,
   intense eyes.
-- `eye15` — a wide eye with a thin outline and a tiny pupil: startled.
+- `eye15` — a wide eye with a thin outline and a tiny pupil, white all round:
+  startled.
 
 Everything else is bright white with a thick black outline and reads as a
 cartoon:
@@ -563,8 +554,8 @@ cartoon:
 - `eye11` — a flat lid line across the top of a rounded shape, the white
   below it: half-closed.
 - `eye5` — a tall box with a VERTICAL pupil. Unusual; only on purpose.
-- `eye7` — a flat rectangular slit. A deliberate deadpan look, not a narrow
-  eye; do not reach for it just because the subject's eyes are small.
+- `eye7` — a flat rectangular slit: a deadpan look, flatter than any real
+  narrow eye.
 
 A laugh squint narrows the eyes: judge the eye at rest (see "Tell the face
 apart from the expression").
@@ -600,7 +591,7 @@ Thickness first, then shape. The brows are drawn in `hair.color`.
 - `eyebrow15` — medium-thin, long, almost straight, tapered at both ends.
 - `eyebrow16` — short and medium, with a slight arch.
 - `eyebrow17` — short and sharply arched like a caret (^), the outer end
-  hooking down. The most unusual shape; only when the photo shows it.
+  hooking down. The most unusual shape.
 - `eyebrow18` — medium, gently arched, thick at the inner end, tapering to a
   thin outer point.
 - `eyebrow19` — a thin straight bar of even width: the flattest option.
@@ -608,61 +599,45 @@ Thickness first, then shape. The brows are drawn in `hair.color`.
 
 ### nose
 
-No nose fits most faces; decide this slot from the photo every time. Answer
-two questions in order:
+Look at the nose's length, the width of its base against the gap between
+the inner eye corners, whether a bridge line shows, and the shape of the
+tip and nostrils, then pick the drawing that matches.
 
-1. **Can you see the BRIDGE** — a ridge or shadow line running down from
-   between the eyes toward the tip? Most adult noses show one in a studio
-   headshot.
-2. **How wide is the base** at the nostrils, against the gap between the
-   inner corners of the eyes?
-
-Bridge visible:
 - `nose7` — a single bridge line down the middle over a flat base line: an
-  upside-down T. A long straight nose; a modest, ordinary drawing, not a big
-  nose.
-- `nose12` — a bridge line plus the full rounded nostril outline: a long nose
-  with a broad base.
+  upside-down T. A long, straight nose drawn modestly.
+- `nose12` — two bridge lines plus the full rounded nostril outline: a long
+  nose with a broad base.
 - `nose6` — two long bridge lines with flaring nostrils: the biggest drawing
-  in the set, only when the nose truly dominates the face.
+  in the set, a nose that dominates the face.
 - `honker` — a long narrow U-shaped tube: long, NOT broad.
-
-Bridge as a shadow down ONE side (a narrow straight nose, common with side
-light on a lighter face) — a single line with a hook at the bottom. Set `flip`
-so the line sits on the shadowed side: `flip: false` draws the line on YOUR
-right as you look at the photo, `flip: true` on your left:
-- `nose4` — the shortest: a short line with a small kink.
-- `nose9` — a medium line ending in a small hook.
-- `nose2` — a long line ending in a rounded hooked tip.
-- `nose13` — a big round C: a bulbous tip seen in profile.
+- `nose4` — a short line with a small kink at the bottom: a short, narrow
+  nose seen with light from one side.
+- `nose9` — a medium line ending in a small hook: a narrow straight nose
+  with one side in shadow.
+- `nose2` — a long line ending in a rounded hooked tip (a J): a longer
+  narrow nose with a rounded tip.
+- `nose13` — a big round C: a bulbous tip seen from the side.
 - `pinocchio` — a slanted line with a sharp bend: the most protruding.
-
-No bridge, base only:
-- `nose11` — a rounded base outline with both nostrils drawn: a broad, soft
-  nose.
+- `nose11` — a rounded base outline with both nostrils drawn, no bridge: a
+  broad, soft nose.
 - `nose5` — a wider, flatter base with curled nostrils: the widest and
   flattest.
-- `nose1` — a soft horizontal squiggle, no hard edges.
-- `nose3` — a plain V chevron: an angular tip.
+- `nose1` — a soft horizontal squiggle, no hard edges: a small, soft nose.
+- `nose3` — a plain V chevron: an angular, pointed tip.
 - `small` — a wide shallow curve under the tip: a neat, small nose.
-- `nose10` — a smaller, tighter curve.
-- `nose14` — a tiny squared bracket (∩).
-- `nose8` — a short stub over a small arched base.
+- `nose10` — a smaller, tighter curve: a very small nose.
+- `nose14` — a tiny squared bracket (∩): a small button tip.
+- `nose8` — a short stub over a small arched base: a short nose with a
+  rounded tip.
 
-A nose you truly cannot read (a tiny, blurred or turned-away face): `nose7`
-at size 1 if the face is long or narrow or you can't tell, `small` if it is
-short or round.
-That is the fallback only; any nose you can see gets its own call.
-
-Do not settle on `nose11` just because a nose is broad: check for the bridge
-first. In testing, a long straight nose drawn as `nose11` read as a short,
-rounded one and lost the resemblance.
+The one-sided drawings (`nose4`, `nose9`, `nose2`, `nose13`, `pinocchio`)
+take `flip`: `flip: false` puts the line on YOUR right as you look at the
+photo, `flip: true` on your left; put it on the shadowed side.
 
 ### mouth
 
 Match the expression in the photo, one step calmer: this face appears on
-every screen in the game, so a big grin is kept but never exaggerated. A
-neutral mouth → a closed id. A polite closed-mouth smile → `smile-closed` or
+every screen in the game, so a big grin is kept but never exaggerated. A polite closed-mouth smile → `smile-closed` or
 `mouth3`. A smile with teeth showing:
 
 - teeth showing, the mouth no wider than usual → `mouth7`;
@@ -676,16 +651,15 @@ not his look: → `mouth2`, slightly parted. Never `smile` for an open mouth
 that isn't smiling, and never `angry` for effort.
 
 Closed:
-- `straight` — a short flat bar. The most minimal neutral mouth.
+- `straight` — a short flat bar: the most minimal mouth.
 - `closed` — a wider flat bar with the ends bent down: pressed, stern.
 - `mouth5` — a soft wavy line with a small upper-lip curve above: a relaxed
   closed mouth.
-- `mouth6` — an upper-lip arc over a flat line: a neutral closed mouth with
-  the lip defined.
+- `mouth6` — an upper-lip arc over a flat line: a closed mouth with the lip
+  defined.
 - `mouth3` — a closed upward curve with the corners tucked in: a faint,
   closed smile.
-- `smile-closed` — a clean upward U arc: a closed smile. The safe default when
-  the subject is smiling politely with the mouth shut.
+- `smile-closed` — a clean upward U arc: a closed smile.
 - `smile4` — a wide closed upward arc whose corners hook up into dimples: a
   broad closed grin.
 - `side` — a slanted line rising to one side with a kink: a one-sided smirk,
@@ -710,16 +684,16 @@ Open:
 
 The size slider matters more than the shape.
 
-- `ear2` — narrow and teardrop-shaped, angled slightly out at the bottom. The
-  neutral default.
+- `ear2` — narrow and teardrop-shaped, angled slightly out at the bottom:
+  ordinary ears.
 - `ear1` — blocky, with a flat outer edge: ears that stand straight out.
 - `ear3` — a round C-shaped cup: ears that are visibly round rather than long.
 
 ### eyeLine
 
 NOT an eyelid crease, whatever the name suggests: age and detail marks around
-the eye. `none` is the default, and adding one to a young face ages it for no
-reason.
+the eye. Each one ages the face, so a young face with no such marks takes
+`none`.
 
 - `none` — no marks.
 - `line1` — two short curved marks above the inner ends of the brows: frown
@@ -765,8 +739,7 @@ One slot, four unrelated things.
 ### glasses
 
 - `none` — no glasses.
-- `glasses2-black` — thin black frames with tinted lenses. The safe choice for
-  ordinary glasses.
+- `glasses2-black` — thin black frames with tinted lenses: ordinary glasses.
 - `glasses2-primary` — the thin `glasses2-black` frames in the team's main color, which
   can come out bright blue or red.
 - `glasses2-secondary` — the thin `glasses2-black` frames in the team's second color.
@@ -799,8 +772,8 @@ Ignore them rather than reaching for a nearby option.
 
 ### body
 
-The shoulders and neck under the jersey. Default `body`; change it only when
-the photo shows a clearly different build.
+The shoulders and neck under the jersey. Match the shoulders and neck the
+photo shows.
 
 - `body` — smooth, rounded shoulders and a slim neck.
 - `body2` — shoulders with a small bump at each shoulder cap.
@@ -1089,9 +1062,10 @@ because I can see and correct a generic.
   (`crop-fade`, `short`), not a curly or spiky one. Bumpy hair drawn on a man
   with a close smooth crop is a bigger error than a smooth cap on short
   curls.
-- Pick the **middle of the group**, not an extreme, whenever you're unsure which
-  group applies. A neutral face that's slightly wrong everywhere reads better
-  than one with a hooked nose and squinting eyes it doesn't have.
+- When a feature is too small or blurred to read, take the plainest drawing
+  in that slot that fits the little you can see, not an extreme. A face
+  that's slightly wrong reads better than one with a hooked nose and
+  squinting eyes it doesn't have. This is only for what you truly can't see.
 - Where a slot is genuinely unreadable, use the plain default: `eyeLine: none`,
   `miscLine: none`, `glasses: none`, `accessories: none`, `ear.size: 1`,
   `body.size: 1`, `flip: false`. (`eyeLine` used to be defaulted to `line1`

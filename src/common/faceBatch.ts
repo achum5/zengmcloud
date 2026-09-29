@@ -119,9 +119,7 @@ How to work through a batch:
   only for a feature you truly cannot see; a face you CAN read gets its own
   call in every slot. Players who really do share something (a period
   haircut, fair skin in a batch of fair-skinned men) may share its id; the
-  check is for sameness the photos don't show. The eye slot is the one
-  expected exception: most faces are \`eye13\` or \`eye14\`, split by the
-  upper lid.
+  check is for sameness the photos don't show.
 
 ## Batch reply format (this replaces the single-photo output instructions below)
 
