@@ -16,6 +16,7 @@ import {
 	PhotoReadError,
 	SHEET_MAX,
 	missedPhotos,
+	preloadPhotos,
 	TILE_H,
 	TILE_W,
 	buildFiles,
@@ -388,6 +389,10 @@ const FaceConverter = () => {
 		[players, staged, size],
 	);
 
+	useEffect(() => {
+		preloadPhotos(batch.map((entry) => entry.photo));
+	}, [batch]);
+
 	const stagedHere = (players ?? []).filter((p) => staged[p.pid]);
 
 	const yearIndex = classes?.findIndex((c) => c.year === year) ?? -1;
@@ -406,10 +411,9 @@ const FaceConverter = () => {
 	};
 
 	const photoError = () => {
-		setFullSheet(true);
 		showNotification({
 			type: "error",
-			text: "Couldn't load the photos to make an image. Screenshot the sheet below instead.",
+			text: "Couldn't load the photos. Try again in a minute, or screenshot the sheet below at full size.",
 		});
 	};
 
@@ -765,6 +769,16 @@ const FaceConverter = () => {
 									) : null}
 								</div>
 
+								<button
+									className="btn btn-sm btn-light-bordered mb-2"
+									onClick={() => {
+										setFullSheet(!fullSheet);
+									}}
+									title="Show the sheet at the size it is copied, to screenshot it"
+									type="button"
+								>
+									{fullSheet ? "Small" : "Full size"}
+								</button>
 								{sheets.map((sheet, i) => {
 									const cols = sheetLayout(sheet.length).cols;
 									return (

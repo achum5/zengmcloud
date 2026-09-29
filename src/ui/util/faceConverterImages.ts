@@ -4,10 +4,9 @@ import { downloadFile } from "./downloadFile.ts";
 // player id no matter what order the attachments arrive in.
 //
 // Everything here draws the photos onto a canvas, which only works when the
-// image host allows cross-origin reads (CORS). When it doesn't, the canvas is
-// "tainted" and nothing can be read back out of it - that surfaces as a
-// PhotoReadError, and the page falls back to the on-screen sheet, which the
-// user can screenshot instead.
+// image can be read cross-origin (CORS) - directly, or through a relay. A photo
+// that can't be read leaves its tile blank; when none can, that surfaces as a
+// PhotoReadError and the user can screenshot the on-screen sheet instead.
 
 export type SheetEntry = {
 	label: string;
@@ -37,16 +36,22 @@ export const sheetLayout = (count: number) => {
 	return { cols, rows };
 };
 
-const loadDirect = (url: string) =>
+const loadDirect = (url: string, timeout = 12_000) =>
 	new Promise<HTMLImageElement>((resolve, reject) => {
 		const img = new Image();
+		const timer = setTimeout(() => {
+			img.src = "";
+			reject(new PhotoReadError(url));
+		}, timeout);
 		// Asks the host for CORS headers. Without them the load fails outright,
 		// rather than succeeding and tainting the canvas later.
 		img.crossOrigin = "anonymous";
 		img.onload = () => {
+			clearTimeout(timer);
 			resolve(img);
 		};
 		img.onerror = () => {
+			clearTimeout(timer);
 			reject(new PhotoReadError(url));
 		};
 		img.src = url;
@@ -54,19 +59,98 @@ const loadDirect = (url: string) =>
 
 // Most photo hosts (NBA.com, basketball-reference, ESPN) send no CORS
 // headers, so a canvas can't read their images and the sheet can't be made
-// into one picture. wsrv.nl is a free public image relay that fetches the
-// photo and serves it back with CORS allowed - the same pixels, now readable.
-const RELAY = "https://wsrv.nl/?url=";
+// into one picture. A public image relay fetches the photo and serves it back
+// with CORS allowed - the same pixels, now readable. A relay's own fetch can
+// be refused now and then (basketball-reference rate-limits hard, and a relay
+// is one IP shared by everyone), so there are two relays, each tried twice.
+const RELAYS = [
+	(url: string) => `https://wsrv.nl/?url=${encodeURIComponent(url)}`,
+	(url: string) =>
+		`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+];
 
-const loadImage = async (url: string) => {
+const wait = (ms: number) =>
+	new Promise((resolve) => {
+		setTimeout(resolve, ms);
+	});
+
+// Photos read or being read, so the page can start loading a batch as soon as
+// it is shown, and copying a sheet again fetches nothing. A failed load is
+// dropped, so the next try starts fresh.
+const loads = new Map<string, Promise<HTMLImageElement>>();
+
+// Hosts that turned out to send no CORS headers: skip straight to a relay.
+const noCors = new Set<string>();
+
+const hostOf = (url: string) => {
 	try {
-		return await loadDirect(url);
-	} catch (error) {
-		if (!/^https?:/.test(url)) {
-			throw error;
-		}
-		return loadDirect(`${RELAY}${encodeURIComponent(url)}`);
+		return new URL(url, location.href).host;
+	} catch {
+		return url;
 	}
+};
+
+const fetchImage = async (url: string) => {
+	const remote = /^https?:/.test(url);
+	const host = hostOf(url);
+	if (!remote || !noCors.has(host)) {
+		try {
+			return await loadDirect(url);
+		} catch (error) {
+			if (!remote) {
+				throw error;
+			}
+			noCors.add(host);
+		}
+	}
+	for (const attempt of [0, 1]) {
+		for (const relay of RELAYS) {
+			try {
+				return await loadDirect(relay(url));
+			} catch {}
+		}
+		if (attempt === 0) {
+			await wait(1500);
+		}
+	}
+	throw new PhotoReadError(url);
+};
+
+const loadImage = (url: string) => {
+	let load = loads.get(url);
+	if (!load) {
+		load = fetchImage(url);
+		loads.set(url, load);
+		load.catch(() => {
+			loads.delete(url);
+		});
+	}
+	return load;
+};
+
+// A few at a time: 20 requests at once to one relay is the kind of burst that
+// gets refused.
+const CONCURRENCY = 5;
+const loadMany = async (urls: (string | undefined)[]) => {
+	const out: (HTMLImageElement | undefined)[] = urls.map(() => undefined);
+	let next = 0;
+	const worker = async () => {
+		while (next < urls.length) {
+			const i = next++;
+			const url = urls[i];
+			if (url) {
+				out[i] = await loadImage(url).catch(() => undefined);
+			}
+		}
+	};
+	await Promise.all(Array.from({ length: CONCURRENCY }, worker));
+	return out;
+};
+
+// Start reading a batch's photos in the background, before any copy button is
+// pressed.
+export const preloadPhotos = (urls: (string | undefined)[]) => {
+	void loadMany(urls);
 };
 
 const drawTile = (
@@ -103,13 +187,7 @@ const drawTile = (
 // error, and the page falls back to the on-screen sheet.
 export let missedPhotos = 0;
 const loadAll = async (entries: SheetEntry[]) => {
-	const images = await Promise.all(
-		entries.map((entry) =>
-			entry.photo
-				? loadImage(entry.photo).catch(() => undefined)
-				: Promise.resolve(undefined),
-		),
-	);
+	const images = await loadMany(entries.map((entry) => entry.photo));
 	const wanted = entries.filter((entry) => entry.photo).length;
 	const got = images.filter((img) => img !== undefined).length;
 	missedPhotos = wanted - got;
