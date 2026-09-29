@@ -738,40 +738,66 @@ Thickness first, then shape. The brows are drawn in `hair.color`.
 
 ### nose
 
-Look at the nose's length, the width of its base against the gap between
-the inner eye corners, whether a bridge line shows, and the shape of the
-tip and nostrils, then pick the drawing that matches.
+Every nose has something that sets it apart; find it before you pick. Look
+at, in order:
+
+- the TIP: pointed, rounded, bulbous, turned up, or hooked down;
+- the LENGTH, from the brows to the tip, against the gap from the tip to the
+  mouth: short, medium or long;
+- the WIDTH at the nostrils, against the gap between the inner eye corners;
+- whether the photo is lit from one side (one side of the nose in shadow) or
+  straight on.
+
+Each drawing below says what it looks like and which real nose it draws.
+`nose7` is the plainest: it says only "a straight nose is here". It is right
+for a nose with no trait of its own; a nose with a pointed, rounded, hooked,
+turned-up, bulbous, long, short, wide or narrow look gets the drawing that
+shows that look.
 
 - `nose7` — a single bridge line down the middle over a flat base line: an
-  upside-down T. A long, straight nose drawn modestly.
+  upside-down T. Draws a plain, straight, medium nose, seen straight on,
+  with no distinct tip, width or length.
 - `nose12` — a single bridge line down the middle over a full rounded nostril
-  outline: a long nose with a broad base.
+  outline. Draws a long nose whose nostril wings show: a fleshy, rounded
+  tip on a broad base.
 - `nose6` — two parallel bridge lines running into a squared-off nostril base
-  with flared wings: a long, broad nose; with `nose12`, the biggest drawing.
-- `honker` — a long narrow U-shaped tube: long, NOT broad.
-- `nose4` — a narrow line down from the bridge that kinks at the bottom into a
-  short foot slanting back toward the middle; drawn off-centre, to one side: a
-  narrow nose lit from one side.
-- `nose9` — a medium line ending in a small hook: a narrow straight nose
-  with one side in shadow.
-- `nose2` — a long line ending in a rounded hooked tip (a J): a longer
-  narrow nose with a rounded tip.
-- `nose13` — a big round C: a bulbous tip seen from the side.
-- `pinocchio` — a small "7": a short stroke at the top bending sharply into a
-  diagonal running down and back toward the middle, drawn off-centre: a small,
-  angular nose seen from one side.
-- `nose11` — a rounded base outline with both nostrils drawn, no bridge: a
-  broad, soft nose.
-- `nose5` — a wider, flatter base with curled nostrils: the widest and
-  flattest.
-- `nose1` — a single wide wavy line (~), no bridge or nostrils: a low, soft,
-  fairly wide nose tip.
-- `nose3` — a plain V chevron: an angular, pointed tip.
-- `small` — a wide shallow curve under the tip: a neat, small nose.
-- `nose10` — a smaller, tighter curve: a very small nose.
-- `nose14` — a tiny squared bracket (∩): a small button tip.
-- `nose8` — a short stub over a small arched base: a short nose with a
-  rounded tip.
+  with flared wings, the biggest drawing with `nose12`. Draws a large,
+  prominent nose: long AND broad, a nose people would mention.
+- `honker` — a long narrow U-shaped tube. Draws a long, narrow nose whose
+  rounded tip hangs low: a long, drooping nose, NOT broad.
+- `nose4` — a narrow line down from the bridge that kinks at the bottom into
+  a short foot slanting back toward the middle, drawn off-centre. Draws a
+  short, narrow, straight nose lit from one side.
+- `nose9` — a medium line ending in a small hook. Draws a narrow, straight,
+  medium nose with a small defined tip, one side in shadow.
+- `nose2` — a long line ending in a rounded hooked tip (a J). Draws a long
+  nose with a tip that curves down and rounds under: a Roman or aquiline
+  nose, or any long nose seen with side light.
+- `nose13` — a big round C. Draws a bulbous, ball-like tip seen from the side:
+  a big round nose end.
+- `pinocchio` — a small "7": a short stroke bending sharply into a diagonal
+  running down and back toward the middle, drawn off-centre. Draws a small
+  sharp nose whose tip sticks out, seen from one side: a pointed or
+  ski-slope nose.
+- `nose11` — a rounded base outline with both nostrils drawn, no bridge.
+  Draws a broad, soft nose with rounded nostrils and a low bridge.
+- `nose5` — a wider, flatter base with curled nostrils: the widest drawing.
+  Draws a very broad, flat nose with wide-set nostrils.
+- `nose1` — a single wide wavy line (~), no bridge or nostrils. Draws a low,
+  soft, fairly wide nose tip with nothing sharp about it.
+- `nose3` — a plain V chevron. Draws a nose with a pointed, angular tip: a
+  sharp, narrow nose end.
+- `small` — a wide shallow curve under the tip. Draws a neat, small nose,
+  often a little turned up.
+- `nose10` — a smaller, tighter curve. Draws a very small, short nose.
+- `nose14` — a tiny squared bracket (∩). Draws a small button nose, turned
+  up, the nostrils showing from the front.
+- `nose8` — a short stub over a small arched base. Draws a short nose with a
+  rounded, slightly upturned tip: a snub nose.
+
+In old studio portraits the front light shows a bridge on almost every face,
+so a visible bridge says nothing on its own there: judge those noses by their
+tip, length and width like any other.
 
 The one-sided drawings take `flip`; put the line on the shadowed side. For
 `nose4`, `nose9`, `nose2` and `pinocchio`, `flip: false` puts the line on YOUR
