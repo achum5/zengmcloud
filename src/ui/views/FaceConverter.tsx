@@ -99,9 +99,16 @@ const Tile = ({
 	label: string;
 	photo: string | undefined;
 }) => (
+	// Colors are literal, not theme classes: the dark theme remaps "white", and
+	// the prompt tells the AI to expect a white label strip under each photo.
 	<div
-		className="border bg-white text-black"
-		style={{ width: TILE_W, height: TILE_H + LABEL_H }}
+		style={{
+			backgroundColor: "#ffffff",
+			border: "1px solid #999999",
+			color: "#000000",
+			height: TILE_H + LABEL_H,
+			width: TILE_W,
+		}}
 	>
 		<div
 			className="d-flex align-items-center justify-content-center"
