@@ -240,26 +240,39 @@ off-white (reads more natural); it is a real difference at a glance.
   inner third), `eyebrow17` (short, and the outer end curls up into a hook —
   the most unusual shape here, so only when the photo shows it)
 
-**nose** — read the photo for three things: is there a bridge line down the
-middle, are the nostrils drawn, and how wide is the base. There is no default;
-these are genuinely different noses.
+**nose** — no nose fits most faces, so decide this slot from the photo every
+time. Answer two questions in order:
 
-- Barely drawn — a small curve or bracket, for a neat or narrow nose: `small`
-  and `nose10` (a shallow downward arc), `nose14` (a small squared bracket),
-  `nose8` (a short bridge stub over a small base)
-- A soft horizontal squiggle, no hard edges and no bridge: `nose1`
-- One clear line down ONE SIDE, ending in a hook — an angular or straight
-  profile seen slightly off-centre: `nose2` (long and sloped), `nose13`,
-  `nose9`, `nose4` (the shortest of them), `pinocchio` (a sharp bend, the most
-  protruding)
-- Angular tip with no side line: `nose3`, drawn as a plain V chevron
-- A full base outline with visible NOSTRILS, for a broad fleshy nose: `nose11`,
-  `nose5` (the widest and flattest)
-- Long, with a bridge line running down the middle — these fill the centre of
-  the face, so use them when the nose is genuinely the biggest feature on it:
-  `nose6` (two lines with flaring tips), `honker` (a long narrow tube — long,
-  NOT broad), `nose12` (a bridge line plus the full nostril base — the largest
-  nose in the set), `nose7` (a bridge line over a wide shallow base)
+1. **Can you see the BRIDGE** — a ridge or a shadow line running down from
+   between the eyes toward the tip? Most adult noses show one in a studio
+   headshot.
+2. **How wide is the base** at the nostrils, against the gap between the inner
+   corners of the eyes?
+
+Then:
+
+- Bridge visible, narrow to medium base, a long straight nose → `nose7` (a
+  bridge line over a flat base — a modest, ordinary drawing, not a big nose)
+- Bridge visible AND a broad base with rounded nostrils → `nose12` (bridge
+  line plus the full nostril outline)
+- Bridge visible as a shadow down ONE side of a narrow, straight nose (common
+  with side light on a lighter-skinned face) → a side line ending in a hook:
+  `nose4` (the shortest), `nose9`, `nose2` (long, with a rounded hooked tip),
+  `nose13` (a big round C — a bulbous tip in profile), `pinocchio` (a sharp
+  bend, the most protruding). Set `flip` so the line sits on the shadowed side
+- No bridge to speak of, broad rounded base with visible nostrils → `nose11`;
+  very wide and flat → `nose5`
+- Short, small, button nose, bridge barely there → `small` (a shallow curve
+  under the tip), `nose10` (a smaller one), `nose14` (a small squared bracket),
+  `nose8` (a short stub over a small base), `nose1` (a soft squiggle, no hard
+  edges), `nose3` (a plain V chevron — an angular tip)
+- Only when the nose truly dominates the face: `nose6` (two long bridge lines
+  with flaring nostrils — the biggest drawing in the set), `honker` (a long
+  narrow tube — long, NOT broad)
+
+Do not settle on `nose11` just because a nose is broad: check for the bridge
+first. In testing, a long straight nose drawn as `nose11` read as a short,
+rounded one and lost the resemblance.
 
 **mouth** — match the expression in the photo, one step calmer: this face
 appears on every screen in the game, so a big grin is kept but never
