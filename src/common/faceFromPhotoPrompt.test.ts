@@ -1,5 +1,5 @@
 import { assert, describe, test } from "vitest";
-import { svgsIndex } from "facesjs";
+import { svgs, svgsIndex } from "facesjs";
 import { FACE_FROM_PHOTO_PROMPT } from "./faceFromPhotoPrompt.ts";
 
 // THE PROMPT HANDS A MODEL A MENU, and a menu that has drifted from the kitchen
@@ -134,5 +134,21 @@ describe("every listed id is described", () => {
 			);
 			assert.deepEqual(undescribed, []);
 		});
+	}
+});
+
+// A few facial-hair drawings paint part of the beard in the TEAM color (beads
+// tied into a braided beard). Listed as an ordinary beard, they put red beads
+// on every bearded face, so the prompt must name each one in its beaded group.
+test("team-colored facial hair is flagged as beaded", () => {
+	const beaded = FACE_FROM_PHOTO_PROMPT.split(
+		"with team-colored BEADS",
+	)[1]!.split("\n- ")[0]!;
+	const teamColored = Object.entries(svgs.facialHair)
+		.filter(([, svg]) => /\$\[(primary|secondary|accent)]/.test(svg))
+		.map(([id]) => id);
+	assert.isNotEmpty(teamColored);
+	for (const id of teamColored) {
+		assert.include(beaded, `\`${id}\``);
 	}
 });

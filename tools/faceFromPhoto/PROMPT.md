@@ -291,8 +291,9 @@ or `smile2`.
   gone but the sides are not shaved, this is the answer, not `bald` and not a
   full cut; it is one of the strongest likeness cues an older player has
 - Shaved almost to the skin, scalp clearly showing through: `short-fade`
-  (lightest), `short-fade-2`. These sit between `bald` and a buzz cut and are
-  the right answer for a very close crop
+  (lightest), `short-fade-2`. These draw as a thin tint over the scalp and read
+  as nearly bald, so they suit a stubbly shaved head. A buzz that looks like a
+  solid dark cap in the photo, however short, is `crop-fade` or `crop`
 - Buzzed and faded, a smooth short cap with shorter sides: `crop` (no fade
   contrast at all), `crop-fade`, `crop-fade2`, `spike4`, `curlyFade1`,
   `curlyFade2`
@@ -315,7 +316,8 @@ or `smile2`.
   only braided option, so use it for any braids worn tight to the scalp, faded
   sides or not;
   `dreads` (short sides with a BUNDLE of locs tied up on top — not long hanging
-  locs). Locs or twists that HANG down the sides are drawn in two parts: a
+  locs). Short twists or locs that stop above the ears → `curly3`. Locs or
+  twists that HANG down the sides are drawn in two parts: a
   short textured top (`short3` for a small crown, `curly3` for a fuller one)
   plus `hairBg: longHair`, which supplies the strands hanging to the jaw
 - Curly, medium volume: `curly`, `curly2` (the loosest and biggest), `curly3`
@@ -337,12 +339,16 @@ behind the head and barely shows. On a cut that stops above the ears, any
 **facialHair** — the families, since 83 ids is far more than the number of
 actual looks.
 
-- Full beard, mustache included, heaviest first: `beard1`, `beard3`, `beard5`,
-  `beard2`, `beard6`, `beard-point` (drawn to a point at the chin), `beard4`
-  (the lightest — patchy and jaw-hugging)
+- Full beard, mustache included: `beard2` (short and neatly trimmed, the
+  common groomed look — start here), `beard1` (big and heavy), `beard3` (the
+  longest and bushiest), `beard-point` (drawn to a point at the chin), `beard4`
+  (on the jaw and chin only, cheeks bare)
 - Circle beard — mustache joined to a chin patch, nothing on the jaw:
-  `fullgoatee` (tightest) through `fullgoatee2`, `fullgoatee3`, `fullgoatee4`,
-  `fullgoatee5` to `fullgoatee6` (fullest, reaching the neck)
+  `fullgoatee` (tightest) through `fullgoatee2`, `fullgoatee3` to `fullgoatee4`
+  (fullest)
+- Braided beard with team-colored BEADS or bands on the chin: `beard5`,
+  `beard6`, `fullgoatee5`, `fullgoatee6`. The beads are drawn every time, so
+  never use these for an ordinary beard
 - Chin only, no mustache, smallest first: `soul` (a soul patch — a small
   triangle under the lip), `goatee9`, `goatee10`, `goatee7`, `goatee3`,
   `goatee17`, `goatee8`, `goatee2` (a narrow vertical strip), `goatee1`,
@@ -497,7 +503,9 @@ from the nearest step on this ladder and nudge it toward the photo rather than
 inventing a color from scratch. It runs light to deep, and the steps are close
 enough that picking the right neighbour matters. The steps are fairly muted, so
 nudge the warmth as well as the depth: a golden or reddish-brown cheek wants a
-warmer, more saturated hex than its step, or the avatar comes out greyish.
+warmer, more saturated hex than its step, or the avatar comes out greyish. The
+deeper steps also lean red, so a warm brown complexion wants more orange at
+the same depth (tested matches: `#bf7b58`, `#b87656` medium; `#8d5638` brown).
 
 - Very fair: `#f5dccf`, `#f2d6cb`
 - Fair: `#ecc8b3`, `#e3bda5`, `#ddb7a0`
@@ -520,8 +528,13 @@ before you pick:
 - Sample the **lit** part of the cheek or forehead — not a highlight blown out to
   near white, not the shadow under the jaw. The avatar is one flat fill, so it
   needs the middle of the face, not its extremes.
-- Harsh flash washes skin out (near-white highlights on the forehead and nose,
-  skin gone greyish), so when torn between two steps, take the deeper one. Dim
+- Harsh flash washes skin out: near-white highlights on the forehead and nose,
+  and skin that samples pale, pinkish and greyish on a face whose brows, hair
+  and shadows plainly belong to a brown-skinned man. There the pixels
+  are wrong by two or three bands, not one, so go by the whole face rather
+  than the sample. Well-lit brown skin samples saturated (orange or red-brown);
+  a pale, flat sample is the flash. For milder cases, when torn between two
+  steps, take the deeper one. Dim
   or orange arena light darkens it, so take the lighter one. An evenly lit
   headshot where the white reference reads clean white and the skin keeps its
   color needs no correction: take the lit cheek as it is.
@@ -587,8 +600,9 @@ If the scalp should read as cleanly shaved, stay at `0.35` or below.
 2. **Hair.** Length and texture before style name — see the hair groups above.
 3. **Facial hair — check for stubble FIRST.** If it's a shadow rather than grown
    hair, that's `head.shave` and `facialHair: none`; see the section above. Only
-   once you've ruled that out: full beard → `beard1`–`beard6`. Chin-only → a
-   `goatee*` or `fullgoatee*`. Mustache only → `mustache1`, `mustache-thin`.
+   once you've ruled that out: full beard → `beard2` (trimmed) or another
+   plain `beard*`, never the beaded ones. Chin-only → a `goatee*` or
+   `fullgoatee*`. Mustache only → `mustache1`, `mustache-thin`.
    Jawline strip → `chin-strap`. Sideburns → `sideburns1`–`3`, `mutton*`.
    Clean-shaven and no shadow → `none` with `shave` at 0. Ids ending in
    `Stache`, `-stache`, `SB1`/`SB2`/`-sb-1`/`-sb-2` add a mustache or sideburns
