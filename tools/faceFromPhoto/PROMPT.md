@@ -300,12 +300,16 @@ Bald and shaved:
 
 Smooth short caps (solid, clean outline):
 - `short` — a plain dark cap with a straight hairline, the hair running down
-  both sides to the ears.
-- `short2` — the plain cap of `short`, full sides, but the hairline dips down in the
-  middle of the forehead in a soft M (a gentle widow's peak).
+  both sides to the ears, lying flat with no volume on top. Draws a neat short
+  cut, or hair combed flat straight back as seen from the front.
+- `short2` — the plain cap of `short`, full sides, but the hairline dips down
+  in the middle of the forehead in a soft M (a gentle widow's peak, or temples
+  that have started to recede). Draws flat, combed-back or short hair with
+  that M hairline.
 - `crop` — the cap of `short` (same hairline height), but it ends at the
   temples: no sides at all, the skin bare from the temples down past the ears.
-  A buzz that stops at the temples.
+  Draws hair kept only on top with the sides clipped to the skin: "short back
+  and sides", a buzz that stops at the temples.
 - `crop-fade` — a smooth cap with a gently curved hairline, and the sides
   below it drawn in a faded, see-through tint of the hair color down to the
   ears. The standard short fade.
@@ -315,13 +319,16 @@ Smooth short caps (solid, clean outline):
   `short-fade`.
 - `parted` — smooth, with a side part: a small notch in the top outline and a
   curl in the hairline to one side of centre (your left with `flip: false`),
-  the hair swept across to the other side, highest over the part; full sides.
+  the hair swept up and across to the other side, highest over the part; full
+  sides. Draws a side-parted cut combed up and over with height on one side:
+  the classic side part, and a pompadour swept to one side.
 - `middle-part` — a centre part: two smooth lobes with a notch at the top
   centre; at the forehead the hair parts in an upside-down V, with a pointed
   tip hanging down on each side of the part; full sides, a little wider than
   the head.
-- `hair` — a medium, tousled cut: volume on top, a wave of fringe dipping to
-  the centre of the forehead, full sides.
+- `hair` — a full head of loose, wavy hair: volume on top, the front falling
+  in a wave that dips onto the centre of the forehead, wavy full sides. Draws
+  thick wavy hair with a forelock, not hair slicked flat.
 - `emo` — a smooth cap with a long fringe swept diagonally across the
   forehead, covering one side down to the eyebrow.
 - `afro` — NOT a textured afro: a SMOOTH rounded helmet with a clean outline,
@@ -345,7 +352,8 @@ Short and textured (bumpy or spiky outline):
   sawtooth fringe: the hairline is a row of sharp teeth pointing down onto the
   forehead; spikes also stick out at the sides.
 - `spike4` — short, neat spikes along the top edge, full sides, the soft-M
-  hairline of `short2`.
+  hairline of `short2`. Draws a crew cut or short bristly cut that stands up a
+  little.
 - `spike2` — a stepped dome edged with big sharp triangular spikes, a straight
   hairline, full sides with a finely serrated edge: the `spike4` family with
   bigger spikes and a straight hairline instead of the soft M.
@@ -371,7 +379,8 @@ Boxes (the flat-top family — unmistakable when right, badly wrong when not):
 
 Curly and afro, medium to big:
 - `curly` — medium height, loose bumpy curls with a few wisps on top, full
-  sides; the curls spill a little over the forehead corners.
+  sides; the curls spill a little over the forehead corners. Draws tight waves
+  or curls on top.
 - `curly2` — a wide, jagged mass of spiky curls sticking out past the head on
   both sides (about 15% of the head's width on each side), down over the tops
   of the ears; the same size as `curly3`, spikier. `afro2` is this same
@@ -1267,14 +1276,24 @@ these instead.
   prints drew a grey beard on clean-shaven men. Leave `freckles*`,
   `eyeLine` and `miscLine` at `none` unless the mark is clearly part of the
   face.
-- **Period hairstyles.**
-  - Combed or slicked back with height and a wave at the front (a
-    pompadour) → `hair`.
-  - A clear side part, flat or combed over → `parted`.
+- **Period hairstyles.** Most men then wore short, combed hair, and the
+  cuts differ in a few things you can read even on a small print: the
+  HAIRLINE (straight, an M, receding), whether the hair lies FLAT or is
+  raised at the front, where it is PARTED, and whether the SIDES are clipped
+  to the skin. Read those, then match:
+  - Combed flat straight back, a smooth cap from the front → `short`
+    (straight hairline) or `short2` (an M or receding temples).
+  - A side part, the hair combed across → `parted`; with a raised roll or
+    wave of height swept to one side (a pompadour) → `parted` too.
+  - Thick wavy hair with a wave falling onto the middle of the forehead →
+    `hair`.
   - A centre part → `middle-part`.
-  - Tight waves or curls on top → `curly`.
-  - A short crew cut → `crop` or `short`.
-  - A 1950s flat-top → `spike` (a flat top with bristle) or `high`.
+  - Sides clipped to the skin, hair only on top (short back and sides) →
+    `crop`.
+  - A crew cut, short and bristly on top → `spike4`; a flat-top → `spike` or
+    `high`.
+  - Tight waves or curls on top → `curly`; a tousled mop → `messy`.
+  - A thinning crown or receding hairline → `short-bald` or `short2`.
 - **Action shots, a face half hidden or turned away, a blurry newspaper
   crop:** read what you can see (the hair, the skin's brightness, a clear
   feature like big ears or a heavy brow) and keep the rest neutral. It
