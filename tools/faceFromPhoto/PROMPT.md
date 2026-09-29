@@ -135,8 +135,8 @@ Use these EXACT strings. Anything not on the list renders as a blank slot.
   faux-hawk, fauxhawk-fade, hair, high, juice, longHair, messy, messy-short,
   middle-part, parted, shaggy1, shaggy2, short, short2, short3, short-bald,
   short-fade, short-fade-2, shortBangs, spike, spike2, spike3, spike4, tall-fade
-- **hairBg** (the mass of hair drawn BEHIND the head — only for hair that falls
-  past the ears): none, longHair, shaggy
+- **hairBg** (straight hair drawn hanging BEHIND the head — only for long
+  straight or wavy hair; never braids, locs or afros): none, longHair, shaggy
 - **facialHair**: none, beard1, beard2, beard3, beard4, beard5, beard6,
   beard-point, chin-strap, chin-strapStache, fullgoatee, fullgoatee2,
   fullgoatee3, fullgoatee4, fullgoatee5, fullgoatee6, goatee1, goatee1-stache,
@@ -318,20 +318,22 @@ Curly and afro, medium to big:
 - `curly2` — the widest of the curly cuts, but only a little wider than the
   head: bumpy, spiky curls stopping at the tops of the ears.
 - `curly3` — a round, dense mass of tight curls with a bumpy outline, full
-  sides, medium volume. Also short twists or locs that stop above the ears.
+  sides, medium volume. Also twists or locs, of any length.
 - `afro2` — the real afro: a tall, wide mass with a jagged, textured outline,
   the biggest hair faces.js draws, though it still stops above the ears.
 
 faces.js draws all hair close to the head, so every cut comes out SMALLER than
 it looks in a photo. Judge big hair by its width against the face: hair that
 sticks out beyond the face on each side by a third of the face's own width or
-more is big, and needs `afro2` + `hairBg: longHair` even when the curls are
-loose. Less than that is `curly2` or `curly3`.
-In a test, a big loose afro drawn as `curly2` came out as a modest crop.
+more is big, and needs `afro2` even when the curls are loose. Less than that
+is `curly2` or `curly3`. In a test, a big loose afro drawn as `curly2` came
+out as a modest crop. An afro takes `hairBg: none`: the hanging layer only
+adds straight strands under it.
 
 Braids, locs and raised centres:
 - `cornrows` — clear vertical rows running back over the top, the sides faded.
-  The only braided option: use it for any braids worn tight to the scalp.
+  The only braided option: use it for any braids, tight to the scalp or
+  hanging.
 - `dreads` — NOT hanging locs: short faded sides with a big bundle of locs
   tied up on TOP of the head (a pineapple top-knot).
 - `faux-hawk` — the hair raised to a tall pointed peak in the centre, the sides
@@ -349,17 +351,15 @@ Long:
 - `messy` — medium length, chunky spiky pieces all over with a jagged fringe,
   full sides.
 
-How to build what no single id draws:
-- Afro or big curls clearly wider than the head, down past the ears →
-  `afro2` + `hairBg: longHair`.
-- Loose curls of medium volume, reaching the jaw → `curly2` +
-  `hairBg: longHair`.
-- Locs or twists that HANG down the sides → a short textured top (`short3` for
-  a small crown, `curly3` for a fuller one) + `hairBg: longHair`. Locs to the
-  shoulders or longer get the same pair: the jaw is as long as faces.js draws,
-  and it still reads as long locs. Not `longHair`, which is straight hair.
-- Box braids hanging loose, parts visible on top → `cornrows` +
-  `hairBg: longHair`.
+Braids, locs and twists, whatever their length, are drawn from the TOP of
+the head only, with `hairBg: none`. faces.js has no hanging locs or braids:
+its hanging layer is two smooth, pointed straight strands flaring out at the
+jaw, and on a braided or locked player it reads as a long straight haircut
+he doesn't have. In testing, every player given it for braids or locs looked
+less like himself than with `none`.
+- Braids or cornrows, tight or hanging → `cornrows`.
+- Locs or twists → `curly3` (a full head of them) or `short3` (short ones).
+- A bun or top-knot of locs → `dreads`.
 
 ### hairBg
 
@@ -367,16 +367,17 @@ Hair drawn BEHIND the head, independently of the hair id. Set it from how far
 the hair actually hangs, not from the style name.
 
 - `none` — nothing behind the head. Every cut that stops above the ears.
-- `longHair` — straight strands hanging down both sides of the face, behind
-  the ears, to about jaw level. The one to use for anything that hangs.
+- `longHair` — two smooth, pointed straight strands hanging down both sides
+  of the face behind the ears, flaring out at the jaw. Only for STRAIGHT or
+  wavy hair that really hangs to the jaw or longer (a long-haired rocker,
+  hair tucked behind the ears). Never for braids, locs, twists or an afro:
+  it draws them as straight hair.
 - `shaggy` — a few small spiky tufts poking out below the ears at the jaw;
   almost invisible.
 
 On a cut that stops above the ears, any `hairBg` adds hair that is not there.
-That includes a short cut with one or two thin braids trailing from the back:
-leave the braids out. The line is how much hangs: a few strands behind the
-ears → `none`; braids, twists or locs hanging all round the head to the ears
-or below, so they frame the face → `longHair`.
+Most players need `none`: in a batch of 100 modern players, only a few with
+long straight hair should get anything else.
 
 ### facialHair
 
@@ -1115,7 +1116,7 @@ Check the finished object against the photo one last time:
 2. Skin and hair color: right step on the ladder, corrected for the lighting?
    Eyebrows and beard will be drawn in `hair.color` — is that right for them too?
 3. Hair: right length, texture and hairline (full, receding `short-bald`,
-   shaved, bald)? `hairBg` is `none` unless the hair really falls past the ears.
+   shaved, bald)? `hairBg` is `none` unless long STRAIGHT hair really falls past the ears.
 4. Stubble vs grown facial hair decided deliberately, with `head.shave` set?
 5. Nothing added that you cannot see: no glasses, accessory, facial hair or
    age line the photo does not show — and no squint, fold or round cheek that
