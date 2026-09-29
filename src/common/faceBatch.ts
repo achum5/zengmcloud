@@ -50,21 +50,30 @@ you are sure about.`;
 export const buildBatchPrompt = (
 	entries: BatchEntry[],
 	source: "sheet" | "files",
-	// Columns in the contact sheet. With it, each roster line also gives its
-	// photo's place in the grid - the fallback when a screenshot cuts the
-	// labels off, which on a hand-taken screenshot of the sheet is common.
-	sheetCols?: number,
+	// How the contact sheets are laid out. With it, each roster line also gives
+	// its photo's place - the fallback when a screenshot cuts the labels off,
+	// which on a hand-taken screenshot of a sheet is common.
+	sheets?: { perSheet: number; cols: number },
 ) => {
-	const place = (i: number) =>
-		source === "sheet" && sheetCols
-			? ` (row ${Math.floor(i / sheetCols) + 1}, column ${(i % sheetCols) + 1})`
-			: "";
+	const sheetCount = sheets ? Math.ceil(entries.length / sheets.perSheet) : 1;
+	const place = (i: number) => {
+		if (source !== "sheet" || !sheets) {
+			return "";
+		}
+		const at = i % sheets.perSheet;
+		const where = `row ${Math.floor(at / sheets.cols) + 1}, column ${(at % sheets.cols) + 1}`;
+		return sheetCount > 1
+			? ` (sheet ${Math.floor(i / sheets.perSheet) + 1}, ${where})`
+			: ` (${where})`;
+	};
 	const roster = entries
 		.map((entry, i) => `${batchLabel(entry)}${place(i)}`)
 		.join("\n");
 	const photos =
 		source === "sheet"
-			? `The attached image is a CONTACT SHEET: ${entries.length} headshots in a grid, each with a white label strip directly under it.`
+			? sheetCount > 1
+				? `The attached images are ${sheetCount} CONTACT SHEETS, ${entries.length} headshots in all, each sheet a grid with a white label strip directly under every photo.`
+				: `The attached image is a CONTACT SHEET: ${entries.length} headshots in a grid, each with a white label strip directly under it.`
 			: `There are ${entries.length} attached photos, each with a white label strip along its bottom edge.`;
 
 	return `# Batch mode: ${entries.length} players
@@ -78,12 +87,13 @@ How to work through a batch:
 
 - Match every answer to its player by the LABEL, never by the order the
   images arrived in.${
-		source === "sheet" && sheetCols
+		source === "sheet" && sheets
 			? `
 - A label cut off or unreadable (a screenshot can crop the bottom row): use
-  the grid place the roster gives for that line instead, counting rows from
-  the top and columns from the left. Never leave a visible photo out, and
-  never give it a placeholder face because its label is missing.`
+  the place the roster gives for that line instead${sheetCount > 1 ? " (sheets in the order they are attached)" : ""},
+  counting rows from the top and columns from the left. Never leave a
+  visible photo out, and never give it a placeholder face because its label
+  is missing.`
 			: ""
 	}
 - The label strip is not part of the photo. Ignore it when you judge colors.
@@ -98,6 +108,13 @@ How to work through a batch:
   two disagree, because it is the look he has in this game.
 - A photo that is missing, blank or unreadable still gets an entry: your best
   neutral face, flagged in the notes.
+- Before you answer, read DOWN your finished object one slot at a time. If
+  one id covers most of the batch in any slot (the same nose, head, hair or
+  mouth on most of the players), go back to those photos. In testing, a
+  54-player batch came out with the same nose on 44 faces and the same head
+  on half of them, and the photos did not look alike. A default is right
+  only for a feature you truly cannot see; a face you CAN read gets its own
+  call in every slot.
 
 ## Batch reply format (this replaces the single-photo output instructions below)
 

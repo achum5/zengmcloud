@@ -19,6 +19,11 @@ export class PhotoReadError extends Error {}
 // NBA headshots are 260x190, and Claude reads an image of up to about 1568px on
 // its long side (1.15 megapixels) without shrinking it - so 19 headshots at
 // full size, 5 across, fit in one image with nothing lost.
+// A sheet holds at most this many photos: 20 headshots at full size is what
+// fits under Claude's resize limit. A bigger batch becomes several sheets,
+// each attached as its own image, so no photo is shrunk to fit.
+export const SHEET_MAX = 20;
+
 export const TILE_W = 260;
 export const TILE_H = 190;
 export const LABEL_H = 24;

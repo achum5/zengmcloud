@@ -81,7 +81,7 @@ describe("buildBatchPrompt", () => {
 				{ n: 2, pid: 202, name: "B Two" },
 			],
 			"sheet",
-			5,
+			{ perSheet: 20, cols: 5 },
 		);
 		assert.include(prompt, "#1 · id 101 · A One (row 1, column 1)");
 		assert.include(prompt, "#2 · id 202 · B Two (row 1, column 2)");
@@ -93,5 +93,21 @@ describe("buildBatchPrompt", () => {
 		assert.isAbove(formatAt, -1);
 		assert.isAbove(againAt, formatAt);
 		assert.include(prompt, '"101": {');
+	});
+
+	test("a batch over several sheets names the sheet in every roster line", () => {
+		const entries = Array.from({ length: 23 }, (_, i) => ({
+			n: i + 1,
+			pid: 500 + i,
+			name: `P ${i + 1}`,
+		}));
+		const prompt = buildBatchPrompt(entries, "sheet", {
+			perSheet: 20,
+			cols: 5,
+		});
+		assert.include(prompt, "2 CONTACT SHEETS");
+		assert.include(prompt, "#1 · id 500 · P 1 (sheet 1, row 1, column 1)");
+		assert.include(prompt, "#20 · id 519 · P 20 (sheet 1, row 4, column 5)");
+		assert.include(prompt, "#21 · id 520 · P 21 (sheet 2, row 1, column 1)");
 	});
 });

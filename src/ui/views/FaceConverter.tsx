@@ -14,6 +14,7 @@ import { FaceEditorControls } from "../components/PlayerFaceModal.tsx";
 import {
 	LABEL_H,
 	PhotoReadError,
+	SHEET_MAX,
 	TILE_H,
 	TILE_W,
 	buildFiles,
@@ -504,7 +505,15 @@ const FaceConverter = () => {
 		});
 	};
 
-	const layout = sheetLayout(batch.length);
+	// Sheets of at most SHEET_MAX photos, each copied as its own image.
+	const sheets: (typeof batch)[] = [];
+	for (let i = 0; i < batch.length; i += SHEET_MAX) {
+		sheets.push(batch.slice(i, i + SHEET_MAX));
+	}
+	const sheetSpec = {
+		perSheet: SHEET_MAX,
+		cols: sheetLayout(Math.min(batch.length, SHEET_MAX)).cols,
+	};
 	const current = reviewing ? byPid.get(reviewing.pid) : undefined;
 	const queue = reviewing?.queue?.filter((pid) => staged[pid]);
 	const queueIndex = queue && reviewing ? queue.indexOf(reviewing.pid) : -1;
@@ -633,7 +642,7 @@ const FaceConverter = () => {
 										className="btn btn-primary"
 										onClick={() => {
 											void copyText(
-												buildBatchPrompt(batch, source, layout.cols),
+												buildBatchPrompt(batch, source, sheetSpec),
 											).then((ok) => {
 												if (ok) {
 													showNotification({
@@ -648,28 +657,38 @@ const FaceConverter = () => {
 										1. Copy prompt
 									</button>
 									{source === "sheet" ? (
-										<button
-											className="btn btn-primary"
-											disabled={busy !== undefined}
-											onClick={() =>
-												run("sheet", async () => {
-													const blob = await buildSheet(
-														batch.map((entry) => ({
-															label: batchLabel(entry),
-															photo: entry.photo,
-														})),
-													);
-													await copyImageToClipboard(blob);
-													showNotification({
-														type: "success",
-														text: "Image copied.",
-													});
-												})
-											}
-											type="button"
-										>
-											{busy === "sheet" ? "Copying..." : "2. Copy image"}
-										</button>
+										sheets.map((sheet, i) => (
+											<button
+												className="btn btn-primary"
+												disabled={busy !== undefined}
+												key={i}
+												onClick={() =>
+													run(`sheet${i}`, async () => {
+														const blob = await buildSheet(
+															sheet.map((entry) => ({
+																label: batchLabel(entry),
+																photo: entry.photo,
+															})),
+														);
+														await copyImageToClipboard(blob);
+														showNotification({
+															type: "success",
+															text:
+																sheets.length > 1
+																	? `Sheet ${i + 1} copied.`
+																	: "Image copied.",
+														});
+													})
+												}
+												type="button"
+											>
+												{busy === `sheet${i}`
+													? "Copying..."
+													: sheets.length > 1
+														? `${i === 0 ? "2. " : ""}Copy sheet ${i + 1}`
+														: "2. Copy image"}
+											</button>
+										))
 									) : (
 										<button
 											className="btn btn-primary"
@@ -689,7 +708,7 @@ const FaceConverter = () => {
 													files.push({
 														name: "prompt.md",
 														blob: new Blob(
-															[buildBatchPrompt(batch, source, layout.cols)],
+															[buildBatchPrompt(batch, source, sheetSpec)],
 															{
 																type: "text/markdown",
 															},
@@ -748,24 +767,34 @@ const FaceConverter = () => {
 									) : null}
 								</div>
 
-								<div className="overflow-auto">
-									<div
-										className="d-grid"
-										style={{
-											gridTemplateColumns: `repeat(${layout.cols}, ${TILE_W}px)`,
-											width: layout.cols * TILE_W,
-											zoom: fullSheet ? 1 : 0.4,
-										}}
-									>
-										{batch.map((entry) => (
-											<Tile
-												key={entry.pid}
-												label={batchLabel(entry)}
-												photo={entry.photo}
-											/>
-										))}
-									</div>
-								</div>
+								{sheets.map((sheet, i) => {
+									const cols = sheetLayout(sheet.length).cols;
+									return (
+										<div className="overflow-auto mb-2" key={i}>
+											{sheets.length > 1 ? (
+												<div className="small text-body-secondary">
+													Sheet {i + 1}
+												</div>
+											) : null}
+											<div
+												className="d-grid"
+												style={{
+													gridTemplateColumns: `repeat(${cols}, ${TILE_W}px)`,
+													width: cols * TILE_W,
+													zoom: fullSheet ? 1 : 0.4,
+												}}
+											>
+												{sheet.map((entry) => (
+													<Tile
+														key={entry.pid}
+														label={batchLabel(entry)}
+														photo={entry.photo}
+													/>
+												))}
+											</div>
+										</div>
+									);
+								})}
 							</div>
 						</div>
 					) : null}
