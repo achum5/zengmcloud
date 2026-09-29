@@ -303,7 +303,8 @@ or `smile2`.
   peak in the fringe)
 - Short and TEXTURED rather than smooth — still short, but drawn bumpy or
   spiky: `short3` (short curls round the temples), `messy-short` (short but
-  strongly spiked all over), `blowoutFade` (tufted on top, faded sides),
+  strongly spiked all over), `blowoutFade` (tufted on top, faded sides — also
+  the answer for a TALL pile of tight curls over tapered sides),
   `shortBangs` (a jagged fringe of bangs low over the eyebrows)
 - Flat-top / box — a tall block of hair with a flat top and hard faded sides.
   A very specific silhouette, unmistakable when it is right and badly wrong
@@ -314,7 +315,8 @@ or `smile2`.
   a pick-out afro
 - Braids and locs: `cornrows` (clear vertical rows on top, faded sides) — the
   only braided option, so use it for any braids worn tight to the scalp, faded
-  sides or not;
+  sides or not. Box braids that hang loose, with the parts visible on top →
+  `cornrows` + `hairBg: longHair`;
   `dreads` (short sides with a BUNDLE of locs tied up on top — not long hanging
   locs). Short twists or locs that stop above the ears → `curly3`. Locs or
   twists that HANG down the sides are drawn in two parts: a
@@ -515,6 +517,8 @@ nudge the warmth as well as the depth: a golden or reddish-brown cheek wants a
 warmer, more saturated hex than its step, or the avatar comes out greyish. The
 deeper steps also lean red, so a warm brown complexion wants more orange at
 the same depth (tested matches: `#bf7b58`, `#b87656` medium; `#8d5638` brown).
+A ruddy fair face, common with red hair, is pinker than the fair steps:
+`#e8a88a` matched one.
 
 - Very fair: `#f5dccf`, `#f2d6cb`
 - Fair: `#ecc8b3`, `#e3bda5`, `#ddb7a0`
@@ -536,20 +540,26 @@ before you pick:
   green. Take the same shift off the skin.
 - Sample the **lit** part of the cheek or forehead — not a highlight blown out to
   near white, not the shadow under the jaw. The avatar is one flat fill, so it
-  needs the middle of the face, not its extremes.
+  needs the middle of the face, not its extremes. A studio flash puts a bright
+  band down the centre of the face (forehead, nose, inner cheeks) that is
+  lighter than the man's skin: read the colour across the cheek between that
+  band and the shadowed side, and if the two sides of the face disagree, take
+  the darker of the two lit sides.
 - Harsh flash washes skin out: near-white highlights on the forehead and nose,
   and skin that samples pale, pinkish and greyish on a face whose brows, hair
   and shadows plainly belong to a brown-skinned man. There the pixels
   are wrong by two or three bands, not one, so go by the whole face rather
   than the sample. Well-lit brown skin samples saturated (orange or red-brown);
   a pale, flat sample is the flash. For milder cases, when torn between two
-  steps, take the deeper one. Dim
-  or orange arena light darkens it, so take the lighter one. An evenly lit
-  headshot where the white reference reads clean white and the skin keeps its
-  color needs no correction: take the lit cheek as it is.
+  steps, take the deeper one. Dim or orange arena light darkens it, so take
+  the lighter one. An evenly lit headshot where the white reference reads
+  clean white and the skin keeps its color needs no correction: take the cheek
+  color as it is.
 - Hair: black `#272421`, off-black `#0f0902` / `#1c1008`, dark brown `#3D2314` /
-  `#2C1608`, medium brown `#5A3825`, light brown `#CC9966`, auburn `#B55239`,
-  blond `#e9c67b`, dirty blond `#D7BF91`. Grey/white hair: `#9a9a9a` – `#e8e8e8`.
+  `#2C1608`, medium brown `#5A3825`, light brown `#CC9966`, ginger / copper
+  `#94502c` (most red-haired players), vivid orange-red `#B55239` (only when
+  the red is truly bright), blond `#e9c67b`, dirty blond `#D7BF91`. Grey/white
+  hair: `#9a9a9a` – `#e8e8e8`.
 
 **`hair.color` also colors the eyebrows and every facial-hair shape.** faces.js
 has no separate brow or beard color. So:
