@@ -5837,6 +5837,22 @@ const faceConverterClasses = async () => {
 		.sort((a, b) => a.year - b.year);
 };
 
+// Undo converted faces: each player shows his photo again and counts as not
+// converted, so the class can be redone. The converted face stays in p.face,
+// hidden behind the photo as any face is.
+const faceConverterReset = async ({ pids }: { pids: number[] }) => {
+	for (const pid of pids) {
+		const p = await idb.getCopy.players({ pid }, "noCopyCache");
+		if (!p || p.imgURL || !p.faceSourceURL) {
+			continue;
+		}
+		p.imgURL = p.faceSourceURL;
+		delete p.faceSourceURL;
+		await idb.cache.players.put(p);
+	}
+	await toUI("realtimeUpdate", [["playerMovement"]]);
+};
+
 export type FaceConverterPlayer = {
 	pid: number;
 	name: string;
@@ -7817,6 +7833,7 @@ const api = {
 		updatePlayerFace,
 		faceConverterClasses,
 		faceConverterClass,
+		faceConverterReset,
 		updatePlayerUntouchable,
 		updatePlayerWatch,
 		updatePlayersWatch,

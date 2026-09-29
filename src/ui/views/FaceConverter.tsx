@@ -529,6 +529,38 @@ const FaceConverter = () => {
 		setReplyResult(undefined);
 	};
 
+	// Starts the whole class over: staged faces are dropped and approved ones
+	// go back to their photos.
+	const resetAll = async () => {
+		const list = players ?? [];
+		const converted = list.filter((p) => p.converted);
+		const ok = await confirm(
+			`Reset all ${list.length} players in this class? Approved faces go back to their photos.`,
+			{ okText: "Reset class" },
+		);
+		if (!ok) {
+			return;
+		}
+		await run("resetAll", async () => {
+			await toWorker("main", "faceConverterReset", {
+				pids: converted.map((p) => p.pid),
+			});
+			for (const p of converted) {
+				updatePlayerFaceData(p.pid, p.face, p.photo);
+			}
+			setPlayers((current) =>
+				current?.map((p) => (p.converted ? { ...p, converted: false } : p)),
+			);
+			const next = { ...stagedRef.current };
+			for (const p of list) {
+				delete next[p.pid];
+			}
+			saveStaged(next);
+			setReply("");
+			setReplyResult(undefined);
+		});
+	};
+
 	// Sheets of at most SHEET_MAX photos, each copied as its own image.
 	const sheets: (typeof batch)[] = [];
 	for (let i = 0; i < batch.length; i += SHEET_MAX) {
@@ -647,9 +679,23 @@ const FaceConverter = () => {
 					</select>
 				</div>
 				{players ? (
-					<div className="small text-body-secondary ms-auto">
-						{counts.todo} to do · {counts.staged} to review · {counts.done} done
-						{counts.nophoto > 0 ? ` · ${counts.nophoto} without photo` : ""}
+					<div className="small text-body-secondary ms-auto d-flex align-items-center gap-2">
+						<span>
+							{counts.todo} to do · {counts.staged} to review · {counts.done}{" "}
+							done
+							{counts.nophoto > 0 ? ` · ${counts.nophoto} without photo` : ""}
+						</span>
+						{counts.done + counts.staged > 0 ? (
+							<button
+								className="btn btn-sm btn-light-bordered"
+								disabled={busy !== undefined}
+								onClick={resetAll}
+								title="Remove every staged and approved face in this class"
+								type="button"
+							>
+								Reset class
+							</button>
+						) : null}
 					</div>
 				) : null}
 			</div>

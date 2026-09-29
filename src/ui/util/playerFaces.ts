@@ -97,7 +97,12 @@ const request = (key: string, pid: number, season: number | undefined) => {
 // since imgURL wins wherever a player is drawn) and every cached season for
 // this player picks up the new face right away, so the row you just edited
 // updates without a reload.
-export const updatePlayerFaceData = (pid: number, face: FaceConfig) => {
+// imgURL: the photo that now shows instead, when a converted face is undone.
+export const updatePlayerFaceData = (
+	pid: number,
+	face: FaceConfig,
+	imgURL?: string,
+) => {
 	const prefix = `${pid}:`;
 	const keys = new Set([...cache.keys(), ...subscribers.keys()]);
 
@@ -110,7 +115,7 @@ export const updatePlayerFaceData = (pid: number, face: FaceConfig) => {
 		cache.set(key, {
 			...(previous ?? {}),
 			face,
-			imgURL: undefined,
+			imgURL,
 		});
 		notify(key);
 	}
