@@ -558,8 +558,9 @@ before you pick:
 - Hair: black `#272421`, off-black `#0f0902` / `#1c1008`, dark brown `#3D2314` /
   `#2C1608`, medium brown `#5A3825`, light brown `#CC9966`, ginger / copper
   `#94502c` (most red-haired players), vivid orange-red `#B55239` (only when
-  the red is truly bright), blond `#e9c67b`, dirty blond `#D7BF91`. Grey/white
-  hair: `#9a9a9a` – `#e8e8e8`.
+  the red is truly bright), dark / dirty blond `#b89968` (the usual adult
+  blond), light ash blond `#D7BF91`, golden blond `#e9c67b` (bright, nearly
+  yellow). Grey/white hair: `#9a9a9a` – `#e8e8e8`.
 
 **`hair.color` also colors the eyebrows and every facial-hair shape.** faces.js
 has no separate brow or beard color. So:
