@@ -313,12 +313,18 @@ Tall boxes (flat-top family — unmistakable when right, badly wrong when not):
 Curly and afro, medium to big:
 - `curly` — medium height, loose bumpy curls with a few wisps on top, full
   sides; the curls spill a little over the forehead corners.
-- `curly2` — the widest of the curly cuts: bumpy, spiky curls standing out
-  past the ears.
+- `curly2` — the widest of the curly cuts, but only a little wider than the
+  head: bumpy, spiky curls stopping at the tops of the ears.
 - `curly3` — a round, dense mass of tight curls with a bumpy outline, full
   sides, medium volume. Also short twists or locs that stop above the ears.
 - `afro2` — the real afro: a tall, wide mass with a jagged, textured outline,
   the biggest hair faces.js draws, though it still stops above the ears.
+
+faces.js draws all hair close to the head, so every cut comes out SMALLER than
+it looks in a photo. Judge big hair by its width against the face: hair that
+sticks out beyond the face on each side by a good part of the face's own width
+is big, and needs `afro2` + `hairBg: longHair` even when the curls are loose.
+In a test, a big loose afro drawn as `curly2` came out as a modest crop.
 
 Braids, locs and raised centres:
 - `cornrows` — clear vertical rows running back over the top, the sides faded.
@@ -341,8 +347,10 @@ Long:
   full sides.
 
 How to build what no single id draws:
-- Afro wider than the head, down past the ears → `afro2` + `hairBg: longHair`.
-- Loose curls reaching the jaw → `curly2` + `hairBg: longHair`.
+- Afro or big curls clearly wider than the head, down past the ears →
+  `afro2` + `hairBg: longHair`.
+- Loose curls of medium volume, reaching the jaw → `curly2` +
+  `hairBg: longHair`.
 - Locs or twists that HANG down the sides → a short textured top (`short3` for
   a small crown, `curly3` for a fuller one) + `hairBg: longHair`. Locs to the
   shoulders or longer get the same pair: the jaw is as long as faces.js draws,
@@ -509,7 +517,17 @@ corners of the mouth to the jaw):
 Two drawing styles, and the style matters as much as the shape. Four ids
 have a soft OFF-WHITE eye with no heavy outline and a big dark iris; they read
 as real eyes. Start from these and leave them only for a reason the photo
-gives you:
+gives you. Choose between them by the UPPER LID:
+
+- Does the upper lid sit low, covering the top of the iris, so the eye looks
+  relaxed, sleepy or hooded? → `eye14`. This is common: many players look
+  like this in a headshot, and in a blind test `eye13` was given to every
+  face, including two hooded ones that wanted `eye14`.
+- Is the whole iris clear, the lid well above it, the eye open and alert? →
+  `eye13`.
+- Does a thick, dark lash line make the eyes look outlined and intense? →
+  `eye12`.
+- Wide open, white showing all round the iris? → `eye15`.
 
 - `eye13` — a clean almond. The neutral default.
 - `eye14` — the `eye13` almond with the upper lid lowered across the top of the
