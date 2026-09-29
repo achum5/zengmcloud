@@ -104,6 +104,13 @@ How to work through a batch:
   avoid an id because other players already have it: how often an id
   appears across the batch does not matter at all, only whether it is the
   most accurate match for THIS face.
+- Then one comparison, for accuracy: faces that look different in the
+  photos must come out different. For each slot, look at the players who
+  got the same drawing; if their photos clearly differ in that feature (one
+  nose hooked and one snub, one jaw square and one pointed, one brow thick
+  and one thin), at least one of them is wrong. Go back to those photos,
+  find the call that separates them, and fix it. Players whose feature
+  really does look alike keep the same drawing.
 - The name is only there to keep the answers matched. Read the face from the
   photo; if you happen to know the player, the photo still wins wherever the
   two disagree, because it is the look he has in this game.

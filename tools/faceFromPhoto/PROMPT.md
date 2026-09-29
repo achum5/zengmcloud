@@ -839,9 +839,11 @@ Thickness first, then shape. The brows are drawn in `hair.color`.
 
 Make three calls on every nose, each from the photo, before you pick:
 
-1. **TIP** — plain (straight, nothing special), pointed, rounded/fleshy,
-   bulbous (a ball on the end), turned up (nostrils show from the front), or
-   hooked (curving down).
+1. **TIP** — pointed (narrows to an edge), rounded/fleshy, bulbous (a ball on
+   the end), turned up (nostrils show from the front), or hooked (curving
+   down). There is no "plain": almost every real tip leans pointed or
+   rounded, so pick the side it leans to. Only a tip you truly cannot see is
+   "unreadable".
 2. **LENGTH**, brows to tip, against the gap from the tip to the mouth —
    short, medium or long.
 3. **WIDTH** at the nostrils, against the gap between the inner eye corners —
@@ -852,12 +854,12 @@ Then find the drawing:
 
 | tip            | short / narrow         | medium                     | long / big                  | wide                  |
 | -------------- | ---------------------- | -------------------------- | --------------------------- | --------------------- |
-| plain          | `nose10`               | `nose7`                    | `nose7` at size 1.15–1.25   | `nose11`              |
-| pointed        | `nose3`                | `nose3` / `pinocchio`      | `nose9` (long, narrow)      | `nose3` at size 1.15  |
-| rounded/fleshy | `nose8`                | `nose12`                   | `honker` (narrow) / `nose6` | `nose11` / `nose12`   |
+| pointed        | `nose3`                | `nose3`; side-lit `nose9`  | `nose9`; sticking out `pinocchio` | `nose3` at size 1.15 |
+| rounded/fleshy | `nose8`                | `nose8` at size 1.1; broad `nose12` | `honker` (narrow) / `nose12` / `nose6` | `nose11` / `nose12` |
 | bulbous        | `nose8`                | `nose13`                   | `nose13` / `nose6`          | `nose12` / `nose6`    |
 | turned up      | `nose14`               | `small`                    | `small` at size 1.15        | `nose1`               |
 | hooked         | `nose4`                | `nose2`                    | `nose2` at size 1.15–1.25   | `nose2` / `nose6`     |
+| unreadable     | `nose10`               | `nose7`                    | `nose7` at size 1.15–1.25   | `nose11`              |
 
 Very broad and flat, nostrils flared wide → `nose5`. Photo lit from one side
 or the face turned three-quarters, so only one side of the nose shows as a
