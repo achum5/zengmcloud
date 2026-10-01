@@ -8,7 +8,7 @@ import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
 
 // Instructions for the season-in-review. Kept as one editable constant so the
 // brief can change without touching the data-baking below.
-const INSTRUCTIONS = `You are a veteran basketball writer producing the season-in-review for a league. Write a season recap for EACH team in this batch.
+const INSTRUCTIONS = `You are a veteran basketball writer producing the season-in-review for a league. Write a season recap for EACH team listed below.
 
 ${FICTIONAL_LEAGUE_NOTICE}
 
@@ -51,7 +51,7 @@ Follow these rules EXACTLY:
 - Inside the fence, write GitHub-flavored Markdown only, with no text outside the per-team recaps.
 - Begin every team's recap with a line containing ONLY this marker: <!--team:ID--> (replace ID with that team's number, shown as "TEAM <ID>" below). This is how each recap is filed to the correct team. Never omit it, never change it.
 - After the marker, lead with a bold one-line headline that names the story, then the paragraphs.
-- Include EVERY team in this batch, in the order given.
+- Include EVERY team listed below, in the order given. Give each one the room its story needs; do not shorten later teams to fit.
 - Put exactly one blank line between teams.`;
 
 // Salaries and payrolls come through in thousands of dollars.
@@ -402,15 +402,14 @@ const leagueHeader = (data: RecapSeasonData): string => {
 	return lines.join("\n");
 };
 
-// The full prompt: instructions + league context + this batch's teams.
+// The full prompt: instructions + league context + the teams to write.
 export const buildSeasonRecapPrompt = (data: RecapSeasonData): string => {
 	const header = leagueHeader(data);
 	const numTeams = data.numTeams ?? data.teams.length;
 	const blocks = data.teams.map((t) => teamBlock(t, numTeams)).join("\n\n");
-	const batchCount = data.batchCount ?? 1;
 	const scope =
-		batchCount > 1
-			? `This is batch ${(data.batchIndex ?? 0) + 1} of ${batchCount}: ${data.teams.length} of the league's ${numTeams} teams.`
+		data.teams.length < numTeams
+			? `${data.teams.length} of the league's ${numTeams} teams to recap.`
 			: `${data.teams.length} team${data.teams.length === 1 ? "" : "s"} to recap.`;
 	return `${INSTRUCTIONS}
 
@@ -418,7 +417,7 @@ export const buildSeasonRecapPrompt = (data: RecapSeasonData): string => {
 
 ${data.season} season in review. ${scope}
 ${header ? `\n=== LEAGUE ${data.season} ===\n${header}\n` : ""}
-=== TEAMS IN THIS BATCH ===
+=== TEAMS ===
 
 ${blocks}`;
 };

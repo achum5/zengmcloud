@@ -9,14 +9,13 @@ import type { RecapSeasonData } from "../../worker/util/getSeasonRecapData.ts";
 
 // A league-wide "Team Recaps" workflow for a whole season, mirroring the Game
 // Recap flow on the Daily Schedule:
-//   Copy (a prompt with a batch of teams' seasons, franchise history, and the
+//   Copy (a prompt with every team's season, franchise history, and the
 //   moves that built them) → Claude (opens claude.ai in a new tab) → Paste
 //   (the AI's reply, filed as each team's Team Season note).
 // Best generated right after the playoffs finish, before the draft.
 //
-// Batches, like the player recaps: a whole league in one reply left each team
-// two thin paragraphs. Batches are cut from the teams still missing a note, so
-// the loop is Copy → AI → Paste until every team is written.
+// The prompt only carries teams still missing a note, so if a reply drops a
+// team, the next Copy is just the ones left.
 export const SeasonRecap = ({
 	heading,
 	season,
@@ -28,7 +27,6 @@ export const SeasonRecap = ({
 	// (iOS Safari rejects a clipboard write that happens after an await).
 	const [prompt, setPrompt] = useState<string | undefined>();
 	const [data, setData] = useState<RecapSeasonData | undefined>();
-	const [batchIndex, setBatchIndex] = useState(0);
 	const [loadFailed, setLoadFailed] = useState(false);
 	const [reload, setReload] = useState(0);
 
@@ -46,17 +44,16 @@ export const SeasonRecap = ({
 		setData(undefined);
 		(async () => {
 			try {
-				const batch = await toWorker("main", "getSeasonRecapData", {
+				const recapData = await toWorker("main", "getSeasonRecapData", {
 					season,
-					batchIndex,
 				});
 				if (cancelled) {
 					return;
 				}
-				setData(batch);
+				setData(recapData);
 				setPrompt(
-					batch && batch.teams.length > 0
-						? buildSeasonRecapPrompt(batch)
+					recapData && recapData.teams.length > 0
+						? buildSeasonRecapPrompt(recapData)
 						: undefined,
 				);
 			} catch (error) {
@@ -69,7 +66,7 @@ export const SeasonRecap = ({
 		return () => {
 			cancelled = true;
 		};
-	}, [season, batchIndex, reload]);
+	}, [season, reload]);
 
 	const copy = async () => {
 		setResult(undefined);
@@ -101,7 +98,7 @@ export const SeasonRecap = ({
 				);
 				return;
 			}
-			// One call for the whole batch, not one per team: in a shared league
+			// One call for every recap, not one per team: in a shared league
 			// every worker call waits on its own upload to the cloud.
 			await toWorker("main", "fileTeamSeasonRecaps", {
 				season,
@@ -116,14 +113,12 @@ export const SeasonRecap = ({
 				setResult(
 					`No recap for ${skipped
 						.map((t) => `${t.region} ${t.name}`)
-						.join(", ")} — they stay in the next batch.`,
+						.join(", ")} — copy again for the rest.`,
 				);
 			}
 
-			// Batches are re-cut from whoever is still unwritten, so start from the
-			// top again. Once every team has a note the section takes itself off
-			// the page.
-			setBatchIndex(0);
+			// Rebuild the prompt from whoever is still unwritten. Once every team
+			// has a note the section takes itself off the page.
 			setReload((prev) => prev + 1);
 		} catch (error) {
 			console.error("Failed to file season recaps", error);
@@ -167,7 +162,7 @@ export const SeasonRecap = ({
 					style={btnStyle}
 					disabled={busy}
 					onClick={copy}
-					title="Copy AI prompt (this batch of teams)"
+					title="Copy AI prompt"
 				>
 					{copied ? "✓" : "Copy"}
 				</button>
@@ -197,31 +192,6 @@ export const SeasonRecap = ({
 
 			{data ? (
 				<div className="d-flex align-items-center gap-2 mt-1 small text-body-secondary">
-					{data.batchCount > 1 ? (
-						<>
-							<button
-								className="btn btn-sm btn-link p-0 text-decoration-none"
-								disabled={busy || batchIndex === 0}
-								onClick={() => setBatchIndex(batchIndex - 1)}
-								title="Previous batch"
-							>
-								‹
-							</button>
-							<span>
-								Batch {data.batchIndex + 1}/{data.batchCount} ·{" "}
-								{data.teams.length} teams
-							</span>
-							<button
-								className="btn btn-sm btn-link p-0 text-decoration-none"
-								disabled={busy || batchIndex + 1 >= data.batchCount}
-								onClick={() => setBatchIndex(batchIndex + 1)}
-								title="Next batch"
-							>
-								›
-							</button>
-							<span>·</span>
-						</>
-					) : null}
 					<span>
 						{data.alreadyWrittenTotal}/{data.numTeams} written
 					</span>

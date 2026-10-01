@@ -16,9 +16,6 @@ const data: RecapSeasonData = {
 	numTeams: 2,
 	leaders: [],
 	awardRaces: [],
-	batchIndex: 0,
-	batchCount: 1,
-	batchSize: 5,
 	teams: [
 		{
 			tid: 0,

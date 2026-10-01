@@ -179,10 +179,10 @@ export type RecapSeasonData = {
 	runnerUp?: { tid: number; region: string; name: string; abbrev: string };
 	// League individual-award winners this season (name + team abbrev).
 	awards: { label: string; player: string; abbrev?: string }[];
-	// The teams in THIS batch - cut from the ones with no note yet.
+	// The teams still missing a note - every team on a fresh season.
 	teams: RecapSeasonTeam[];
-	// Every team's line, so each batch knows the whole league it is writing
-	// about, not just its own few teams.
+	// Every team's line, so the prompt still carries the whole league after
+	// some teams are already written.
 	standings: RecapStandingsRow[];
 	numTeams: number;
 	// League per-game leaders and award races, top five each.
@@ -191,18 +191,10 @@ export type RecapSeasonData = {
 		players: { name: string; abbrev: string; value: number }[];
 	}[];
 	awardRaces: { name: string; players: { name: string; abbrev: string }[] }[];
-	batchIndex: number;
-	batchCount: number;
-	batchSize: number;
 	// How many teams already have their season note written. When it reaches
 	// numTeams the pass is done and comes off the page.
 	alreadyWrittenTotal: number;
 };
-
-// Teams per prompt. A whole league in one reply was the main reason these read
-// thin: thirty teams share one answer's worth of room, so each got two generic
-// paragraphs. Five at a time leaves room for the story.
-export const TEAM_RECAP_BATCH_SIZE = 5;
 
 // The categories a team recap quotes a league rank for.
 const RANK_STATS = [
@@ -418,10 +410,9 @@ const awardsForSeason = (player: any, season: number): string[] => {
 // shaped the team this season - with the offseason correctly attributed across
 // BBGM's preseason year-flip.
 export const getSeasonRecapData = async (
-	arg: number | { season: number; batchIndex?: number },
+	arg: number | { season: number },
 ): Promise<RecapSeasonData> => {
 	const season = typeof arg === "number" ? arg : arg.season;
-	const requestedBatch = typeof arg === "number" ? 0 : (arg.batchIndex ?? 0);
 	let numPlayoffRounds = 4;
 	try {
 		numPlayoffRounds = g.get("numGamesPlayoffSeries", season).length;
@@ -972,19 +963,9 @@ export const getSeasonRecapData = async (
 	}
 	const alreadyWrittenTotal = teams.filter((t) => written.has(t.tid)).length;
 
-	// Batches are cut from the teams still missing a note, so each paste shrinks
-	// the list and a reply that drops a team hands it to the next batch.
+	// Only the teams still missing a note, so a reply that drops a team leaves
+	// just that team for the next Copy.
 	const unwritten = teams.filter((t) => !written.has(t.tid));
-	const batchSize = TEAM_RECAP_BATCH_SIZE;
-	const batchCount = Math.ceil(unwritten.length / batchSize);
-	const batchIndex = Math.min(
-		Math.max(0, requestedBatch),
-		Math.max(0, batchCount - 1),
-	);
-	const batch = unwritten.slice(
-		batchIndex * batchSize,
-		(batchIndex + 1) * batchSize,
-	);
 
 	const standings: RecapStandingsRow[] = teams.map((t) => ({
 		tid: t.tid,
@@ -1019,7 +1000,7 @@ export const getSeasonRecapData = async (
 		champ,
 		runnerUp,
 		awards,
-		teams: batch,
+		teams: unwritten,
 		standings,
 		numTeams: teams.length,
 		leaders,
@@ -1029,9 +1010,6 @@ export const getSeasonRecapData = async (
 				name: race.name,
 				players: race.players.slice(0, 5),
 			})),
-		batchIndex,
-		batchCount,
-		batchSize,
 		alreadyWrittenTotal,
 	};
 };
