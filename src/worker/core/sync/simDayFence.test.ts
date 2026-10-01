@@ -323,3 +323,98 @@ describe("revalidateQueuedSingleGame", () => {
 		);
 	});
 });
+
+// THE FIELD CAPTURE: playoff games simmed one after another on the device in
+// charge of simming. The gameSim lock frees before a game finishes uploading, so
+// the second "Sim game" claimed while the first was still publishing, and the
+// first call's drain then swept the second game's records into its own entry.
+// The first game's completion used to close the SECOND game's claim (one shared
+// slot), that entry was then refused as "games-already-simmed" on the very
+// device that simmed it, and the game never reached anyone else.
+describe("overlapping single-game sims", () => {
+	beforeEach(() => {
+		resetG();
+		g.setWithoutSavingToDB("season", 2016);
+		setSyncEngine({ catchUp: async () => true } as any);
+	});
+	afterEach(() => {
+		teardownSimDayFence();
+		setSyncEngine(undefined);
+	});
+
+	const stage = "sim:2016";
+
+	test("each game closes its own claim, and the swept game still publishes", async () => {
+		const t = makeTransport("me");
+		setupSimDayFence(t.transport as any);
+		assert.isTrue(await claimSimDayFence(92, [21995], { singleGame: true }));
+		assert.isTrue(await claimSimDayFence(92, [21998], { singleGame: true }));
+
+		// Game 1 lands and closes - only game 1.
+		completeClaimedSimDayFence({ synced: true, singleGame: true, gids: [21995] });
+		await Promise.resolve();
+		assert.deepEqual(t.completions, [{ day: 92, gids: [21995] }]);
+
+		// Game 2's records went out under the generic label. Room doc as the
+		// transport would have it after game 1's completion.
+		t.state.doc = {
+			holderId: "me",
+			stageKey: stage,
+			day: 92,
+			gids: [21995, 21998],
+			at: Date.now(),
+			maxDay: 92,
+			completedGids: [21995],
+		};
+		const swept = gameEntry("actions.simGame", [{ gid: 21998, day: 92 }]);
+		assert.strictEqual(await revalidateQueuedSingleGame(swept), "publish");
+
+		// Game 2's own drain found nothing (already swept) while that entry was
+		// still on its way up: deferred, not closed.
+		completeClaimedSimDayFence({
+			synced: false,
+			singleGame: true,
+			gids: [21998],
+		});
+		await Promise.resolve();
+		assert.strictEqual(t.completions.length, 1);
+		// The deferred game is still recognised as ours by the room doc.
+		assert.strictEqual(await revalidateQueuedSingleGame(swept), "publish");
+
+		completeDeferredSimDayFence();
+		await Promise.resolve();
+		assert.deepEqual(t.completions[1], { day: 92, gids: [21998] });
+	});
+
+	test("a game this session closed itself is never dropped as someone else's", async () => {
+		const t = makeTransport("me");
+		setupSimDayFence(t.transport as any);
+		assert.isTrue(await claimSimDayFence(92, [21998], { singleGame: true }));
+		completeClaimedSimDayFence({ synced: true, singleGame: true, gids: [21998] });
+		t.state.doc = {
+			holderId: "someone-else",
+			stageKey: stage,
+			day: 92,
+			gids: [21998, 21999],
+			at: Date.now(),
+			maxDay: 92,
+			completedGids: [21998],
+		};
+		assert.strictEqual(
+			await revalidateQueuedSingleGame(
+				gameEntry("actions.simGame", [{ gid: 21998, day: 92 }]),
+			),
+			"publish",
+		);
+	});
+
+	test("a day sim's completion is not taken by a single game claimed after it", async () => {
+		const t = makeTransport("me");
+		setupSimDayFence(t.transport as any);
+		assert.isTrue(await claimSimDayFence(40, [1, 2, 3]));
+		assert.isTrue(await claimSimDayFence(40, [9], { singleGame: true }));
+		completeClaimedSimDayFence({ synced: true, singleGame: false });
+		await Promise.resolve();
+		assert.deepEqual(t.completions, [{ day: 40, gids: [1, 2, 3] }]);
+	});
+});

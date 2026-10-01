@@ -36,19 +36,34 @@ const withClaimTimeout = <T>(promise: Promise<T>): Promise<T> =>
 
 let currentTransport: SyncTransport | undefined;
 
-// The most recent day this device claimed, so the end-of-sim publish can close
+// The most recent DAY this device claimed, so the end-of-sim publish can close
 // its crash-recovery window. Module-level because a multi-day sim recurses
-// through fresh play() closures; safe because only one sim chain runs at a
+// through fresh play() closures; safe because only one day sim chain runs at a
 // time (the gameSim lock). Intermediate days of a multi-day sim don't need
 // completing - each newer-day claim supersedes them via the high-water mark.
+// Single-game claims never touch it (see ownClaims).
 let lastClaimedDay: number | undefined;
 // ...and the games that claim covered, because completion is per gid: marking
 // anything broader permanently fences games this sim never touched (see
 // simDayClaimPolicy.ts).
 let lastClaimedGids: number[] | undefined;
 
-// A SINGLE game whose result is durably queued but has not yet been confirmed
-// in the room - its completion waits for the upload to land.
+// Every slice this session claimed and has not yet closed, by gid. Single games
+// can overlap: the gameSim lock is released before a game's upload finishes, so
+// a quick second "Sim game" claims while the first is still publishing. With
+// one shared slot, the first game's completion closed the SECOND game's claim -
+// stamping that game simmed before its result had gone anywhere - and the
+// second game's own result was then refused as stale on this very device and
+// never published. Each sim now closes exactly the gids it claimed.
+const ownClaims = new Map<number, number>();
+
+// Gids whose slices THIS session closed. Their results are this device's own:
+// the room cannot hold a different copy, because nobody can claim a gid after
+// it is completed.
+const ownCompleted = new Map<number, number>();
+
+// SINGLE games whose results are durably queued but not yet confirmed in the
+// room - their completion waits for the upload to land.
 //
 // A day sim in that state is left to its lease on purpose: completing a slice
 // whose results might never arrive could fence the day forever. But the two
@@ -60,26 +75,45 @@ let lastClaimedGids: number[] | undefined;
 // crashed slice and played it again, and the phone's result then landed on top
 // of that. So the completion is held here and fired by the drain that finally
 // confirms the upload (completeDeferredSimDayFence, from onUploadComplete).
-let deferred: { day: number; gids: number[] } | undefined;
+const deferred = new Map<number, number>();
 
 // Why the most recent claim was refused, for the message the sim shows.
 let lastRejection: string | undefined;
 export const lastSimDayRejection = () => lastRejection;
 
-export const setupSimDayFence = (transport: SyncTransport) => {
-	currentTransport = transport;
+const resetState = () => {
 	lastClaimedDay = undefined;
 	lastClaimedGids = undefined;
-	deferred = undefined;
+	ownClaims.clear();
+	ownCompleted.clear();
+	deferred.clear();
 	lastRejection = undefined;
+};
+
+export const setupSimDayFence = (transport: SyncTransport) => {
+	currentTransport = transport;
+	resetState();
 };
 
 export const teardownSimDayFence = () => {
 	currentTransport = undefined;
-	lastClaimedDay = undefined;
-	lastClaimedGids = undefined;
-	deferred = undefined;
-	lastRejection = undefined;
+	resetState();
+};
+
+// Is everything this device has queued confirmed in the room? A single game's
+// own drain can find nothing to send because an overlapping call's drain
+// already swept its records into an entry that is still on its way up - so
+// "my drain succeeded" is not "my result is in the room".
+export const outboxIsEmpty = async (): Promise<boolean> => {
+	const engine = getSyncEngine();
+	if (!engine) {
+		return true;
+	}
+	try {
+		return (await engine.pendingUploadCount()) === 0;
+	} catch {
+		return false;
+	}
 };
 
 const stageKey = () => `sim:${g.get("season")}`;
@@ -92,6 +126,7 @@ const stageKey = () => `sim:${g.get("season")}`;
 export const claimSimDayFence = async (
 	day: number,
 	gids: number[],
+	options?: { singleGame?: boolean },
 ): Promise<boolean> => {
 	const engine = getSyncEngine();
 	const transport = currentTransport;
@@ -114,8 +149,22 @@ export const claimSimDayFence = async (
 		return false;
 	}
 	if (granted) {
-		lastClaimedDay = day;
-		lastClaimedGids = gids;
+		for (const gid of gids) {
+			ownClaims.set(gid, day);
+			deferred.delete(gid);
+			ownCompleted.delete(gid);
+		}
+		if (!options?.singleGame) {
+			// The previous day of a multi-day sim is superseded by this one (see
+			// lastClaimedDay); it is no longer a slice this session holds open.
+			for (const gid of lastClaimedGids ?? []) {
+				if (!gids.includes(gid)) {
+					ownClaims.delete(gid);
+				}
+			}
+			lastClaimedDay = day;
+			lastClaimedGids = gids;
+		}
 	} else {
 		lastRejection = transport.lastSimDayClaimRejection;
 		syncDebugLog("simDayFence:rejected", { day, gids, reason: lastRejection });
@@ -127,6 +176,11 @@ export const claimSimDayFence = async (
 };
 
 const complete = (day: number, gids: number[], how: string) => {
+	for (const gid of gids) {
+		ownClaims.delete(gid);
+		deferred.delete(gid);
+		ownCompleted.set(gid, day);
+	}
 	const transport = currentTransport;
 	if (!transport?.completeSimDay) {
 		return;
@@ -135,7 +189,11 @@ const complete = (day: number, gids: number[], how: string) => {
 	void transport.completeSimDay(stageKey(), day, gids).catch(() => undefined);
 };
 
-// Close the last claimed slice's crash-recovery window.
+// Close a claimed slice's crash-recovery window.
+//
+// `gids` names the slice: a single game passes its own gid, so overlapping
+// single-game sims each close their own claim. Without it, the most recent day
+// claim is closed.
 //
 // `synced` means the results are confirmed in the room: complete now. Not
 // synced means they are durably queued but not yet confirmed. A whole day in
@@ -148,37 +206,67 @@ const complete = (day: number, gids: number[], how: string) => {
 export const completeClaimedSimDayFence = ({
 	synced,
 	singleGame,
+	gids: sliceGids,
 }: {
 	synced: boolean;
 	singleGame: boolean;
+	gids?: number[];
 }) => {
-	const day = lastClaimedDay;
-	const gids = lastClaimedGids;
-	lastClaimedDay = undefined;
-	lastClaimedGids = undefined;
+	let day: number | undefined;
+	let gids: number[];
+	if (sliceGids !== undefined) {
+		gids = sliceGids.filter((gid) => ownClaims.has(gid));
+		day = gids.length > 0 ? ownClaims.get(gids[0]!) : undefined;
+		gids = gids.filter((gid) => ownClaims.get(gid) === day);
+		if (
+			lastClaimedGids !== undefined &&
+			lastClaimedGids.length === sliceGids.length &&
+			lastClaimedGids.every((gid) => sliceGids.includes(gid))
+		) {
+			lastClaimedDay = undefined;
+			lastClaimedGids = undefined;
+		}
+	} else {
+		day = lastClaimedDay;
+		gids = lastClaimedGids ?? [];
+		lastClaimedDay = undefined;
+		lastClaimedGids = undefined;
+	}
 	if (day === undefined) {
 		return;
 	}
 	if (synced) {
-		complete(day, gids ?? [], "synced");
+		complete(day, gids, "synced");
 		return;
 	}
 	if (singleGame) {
-		deferred = { day, gids: gids ?? [] };
+		for (const gid of gids) {
+			ownClaims.delete(gid);
+			deferred.set(gid, day);
+		}
 		syncDebugLog("simDayFence:completion-deferred", { day, gids });
+	} else {
+		for (const gid of gids) {
+			ownClaims.delete(gid);
+		}
 	}
 };
 
 // A full drain just confirmed everything that was queued - the deferred single
-// game included, if there was one. Idempotent; a completion for a day the fence
-// has moved past is a no-op server-side.
+// games included. Idempotent; a completion for a day the fence has moved past
+// is a no-op server-side.
 export const completeDeferredSimDayFence = () => {
-	const pending = deferred;
-	deferred = undefined;
-	if (!pending) {
+	if (deferred.size === 0) {
 		return;
 	}
-	complete(pending.day, pending.gids, "deferred-upload-landed");
+	const byDay = new Map<number, number[]>();
+	for (const [gid, day] of deferred) {
+		byDay.set(day, [...(byDay.get(day) ?? []), gid]);
+	}
+	deferred.clear();
+	for (const [day, gids] of byDay) {
+		complete(day, gids, "deferred-upload-landed");
+	}
 };
 
 // The games a queued single-game entry carries, read off the changeset itself
@@ -251,10 +339,13 @@ export const revalidateQueuedSingleGame = async (
 	if (!games) {
 		return "publish";
 	}
+	// This session's own result: a slice it claimed and has not closed (the
+	// publish in flight right now), or one it closed itself.
 	if (
-		lastClaimedDay === games.day &&
-		lastClaimedGids !== undefined &&
-		games.gids.every((gid) => lastClaimedGids!.includes(gid))
+		games.gids.every(
+			(gid) =>
+				ownClaims.get(gid) === games.day || ownCompleted.get(gid) === games.day,
+		)
 	) {
 		return "publish";
 	}
@@ -318,8 +409,8 @@ export const revalidateQueuedSingleGame = async (
 	}
 	// day-already-run or games-already-simmed: the room has these games from
 	// someone else. This result is stale.
-	if (deferred?.day === games.day) {
-		deferred = undefined;
+	for (const gid of games.gids) {
+		deferred.delete(gid);
 	}
 	syncDebugLog("simDayFence:stale-result-dropped", {
 		day: games.day,

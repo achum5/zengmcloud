@@ -79,6 +79,7 @@ import { beginLiveSimNotificationHold } from "../sync/liveSimNotificationHold.ts
 import {
 	claimSimDayFence,
 	completeClaimedSimDayFence,
+	outboxIsEmpty,
 	lastSimDayRejection,
 } from "../sync/simDayFence.ts";
 import { syncDebugLog } from "../sync/debugLog.ts";
@@ -209,9 +210,16 @@ const play = async (
 		// fence the day forever while the room never receives it), but a single
 		// game's completion is DEFERRED to the moment its queued upload lands -
 		// see completeClaimedSimDayFence for why the two differ.
+		//
+		// A single game closes exactly its own gid, and only once the room has
+		// its result: a second "Sim game" clicked while this one was uploading
+		// can have its records swept into this call's drain, leaving its own
+		// drain nothing to send - which is not the same as having arrived.
 		completeClaimedSimDayFence({
-			synced,
+			synced:
+				synced && (gidOneGame === undefined || (await outboxIsEmpty())),
 			singleGame: gidOneGame !== undefined,
+			gids: gidOneGame !== undefined ? [gidOneGame] : undefined,
 		});
 		if (!synced) {
 			logEvent(
@@ -983,6 +991,7 @@ const play = async (
 			const granted = await claimSimDayFence(
 				games[0]!.day,
 				games.map((game) => game.gid),
+				{ singleGame: gidOneGame !== undefined },
 			);
 			if (!granted) {
 				// Name what was actually refused. Now that a user can sim their own
