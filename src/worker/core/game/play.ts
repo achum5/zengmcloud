@@ -73,7 +73,8 @@ import {
 import { last } from "../../../common/utils.ts";
 import {
 	runAfterActionHook,
-	setSingleGameSimActive,
+	beginSingleGameSim,
+	resetSingleGameSims,
 } from "../sync/afterActionHook.ts";
 import { beginLiveSimNotificationHold } from "../sync/liveSimNotificationHold.ts";
 import {
@@ -116,6 +117,8 @@ const play = async (
 	// sim, or the room's fence refuses the day. Every one of them used to leave
 	// that page loading forever. The caller needs a plain answer.
 	let liveSimDelivered = false;
+	// Closes this call's single-game-sim window (see beginSingleGameSim).
+	let closeSingleGameSim: (() => void) | undefined;
 	// This is called when there are no more games to play, either due to the user's request (e.g. 1 week) elapsing or at the end of the regular season
 	const cbNoGames = async (playoffsOver: boolean = false) => {
 		// Settle any sportsbook game bets whose games just finished (no-op if
@@ -232,11 +235,9 @@ const play = async (
 			);
 		}
 
-		// The single-game-sim window is over (its changeset is drained). Clear the
-		// force-silent flag so the next full day/week sim notifies normally.
-		if (gidOneGame !== undefined) {
-			setSingleGameSimActive(false);
-		}
+		// The single-game-sim window is over (its changeset is drained). Close it
+		// so the next full day/week sim notifies normally.
+		closeSingleGameSim?.();
 
 		// Last word on the ticker, after any phase change above has landed. The
 		// per-day refreshes inside the sim read a memoized slate and award race;
@@ -1164,7 +1165,11 @@ const play = async (
 		// Flag the whole window up front (before any game is written or the live
 		// game navigates) so afterAction stays silent no matter what drains the
 		// changeset; a day sim (gidOneGame undefined) clears it so it notifies.
-		setSingleGameSimActive(gidOneGame !== undefined);
+		if (gidOneGame !== undefined) {
+			closeSingleGameSim = beginSingleGameSim();
+		} else {
+			resetSingleGameSims();
+		}
 
 		// A game being WATCHED is different from one silently simmed: the room
 		// should hear about it, just not while the watcher is still on Q1. Hold
@@ -1220,9 +1225,7 @@ const play = async (
 			// leave the flag stuck on - silencing EVERY notification from this
 			// device (phase changes included) until a page refresh, while sync
 			// itself kept working so nothing looked wrong.
-			if (gidOneGame !== undefined) {
-				setSingleGameSimActive(false);
-			}
+			closeSingleGameSim?.();
 		}
 	} else {
 		await cbRunDay();

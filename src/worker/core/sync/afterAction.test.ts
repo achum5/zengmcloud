@@ -5,7 +5,10 @@ import { g } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { afterAction } from "./afterAction.ts";
-import { setSingleGameSimActive } from "./afterActionHook.ts";
+import {
+	beginSingleGameSim,
+	resetSingleGameSims,
+} from "./afterActionHook.ts";
 import { setSyncEngine } from "./engineHolder.ts";
 import {
 	beginLiveSimNotificationHold,
@@ -63,7 +66,7 @@ describe("afterAction silent publishing", () => {
 		setSyncEngine(undefined);
 		// Never let one test's hold leak into the next.
 		releaseLiveSimNotifications();
-		setSingleGameSimActive(false);
+		resetSingleGameSims();
 	});
 
 	// Record one finished game into the cache (inside a sim capture window, so it
@@ -200,7 +203,7 @@ describe("afterAction silent publishing", () => {
 	test("a single game drained by an interleaved call publishes as one", async () => {
 		const { engine, published } = makeEngine();
 		setSyncEngine(engine as any);
-		setSingleGameSimActive(true);
+		beginSingleGameSim();
 
 		await seedOneGame();
 		await afterAction("main", "updatePlayingTime");
@@ -209,10 +212,42 @@ describe("afterAction silent publishing", () => {
 		assert.strictEqual(published[0]!.label, "playMenu.simGame");
 	});
 
+	// Sim game clicked twice: the first sim's window closes while the second is
+	// still writing its game. A drain in between must still see a single game.
+	test("one sim closing its window leaves an overlapping one open", async () => {
+		const { engine, published } = makeEngine();
+		setSyncEngine(engine as any);
+		const closeFirst = beginSingleGameSim();
+		const closeSecond = beginSingleGameSim();
+		closeFirst();
+		closeFirst();
+
+		await seedOneGame();
+		await afterAction("main", "updatePlayingTime");
+
+		assert.strictEqual(published.length, 1);
+		assert.strictEqual(published[0]!.label, "playMenu.simGame");
+		closeSecond();
+	});
+
+	test("a window opened before a reset can't close one opened after", async () => {
+		const { engine, published } = makeEngine();
+		setSyncEngine(engine as any);
+		const closeStale = beginSingleGameSim();
+		resetSingleGameSims();
+		beginSingleGameSim();
+		closeStale();
+
+		await seedOneGame();
+		await afterAction("main", "updatePlayingTime");
+
+		assert.strictEqual(published[0]!.label, "playMenu.simGame");
+	});
+
 	test("a single game drained under its own label keeps it", async () => {
 		const { engine, published } = makeEngine();
 		setSyncEngine(engine as any);
-		setSingleGameSimActive(true);
+		beginSingleGameSim();
 
 		await seedOneGame();
 		await afterAction("actions", "liveGame");

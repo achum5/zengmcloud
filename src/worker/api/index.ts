@@ -134,7 +134,7 @@ import {
 	teardownSharedLeague,
 	updateLiveBroadcast,
 } from "../core/sync/index.ts";
-import { setSingleGameSimActive } from "../core/sync/afterActionHook.ts";
+import { resetSingleGameSims } from "../core/sync/afterActionHook.ts";
 import { releaseLiveSimNotifications } from "../core/sync/liveSimNotificationHold.ts";
 import { liveSimBlocksDaySim } from "../core/sync/liveSimDayCollision.ts";
 import { setSyncDebugLogging, syncDebugLog } from "../core/sync/debugLog.ts";
@@ -5186,10 +5186,12 @@ const onLiveSimOver = async (gid?: number) => {
 	// playback (final scores in the ticker, a phase flip, the status line).
 	flushDeferredRefreshAfterLive();
 
-	// Backstop: guarantee the single-game-sim force-silent flag is cleared once the
-	// live game is done (normal clear is in play.ts). Prevents a stale flag from
-	// silencing later notifications if a live sim errored before its normal clear.
-	setSingleGameSimActive(false);
+	// Backstop: guarantee the single-game-sim force-silent window is closed once
+	// the live game is done (normal close is in play.ts). Only while no sim is
+	// running, so it can't close the window of a game being simmed right now.
+	if (!lock.get("gameSim")) {
+		resetSingleGameSims();
+	}
 
 	// And now the room can be told. These were built when the sim ran and held
 	// back so watching a game wouldn't broadcast its score mid-playback; the

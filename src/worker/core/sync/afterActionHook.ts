@@ -68,12 +68,40 @@ export const runAfterActionHook = async (
 // game and animates playback, so an interleaved worker call can drain the game
 // changeset first under a non-silent label. And buildNotifications detects a sim
 // by CONTENT (it sees `games`), so it would fire regardless of the label. This
-// flag lets afterAction force silent for the ENTIRE single-game-sim window, no
-// matter what ends up draining the changeset. Set/cleared in game/play.ts.
-let singleGameSimActive = false;
+// lets afterAction force silent for the ENTIRE single-game-sim window, no
+// matter what ends up draining the changeset. Opened/closed in game/play.ts.
+//
+// Counted per sim, not a single on/off switch: Sim game clicked again while
+// the previous one is still uploading starts the second sim before the first
+// has finished, and the first one's "window over" used to switch the flag off
+// under the second while it was still writing its game. A drain in that gap
+// then published half of the second game under the drainer's own label.
+let singleGameSims = 0;
+// Bumped by a reset, so a sim opened before it can't decrement one opened after.
+let generation = 0;
 
-export const setSingleGameSimActive = (active: boolean) => {
-	singleGameSimActive = active;
+// Opens a single-game-sim window. Returns its close function, safe to call
+// more than once.
+export const beginSingleGameSim = (): (() => void) => {
+	singleGameSims += 1;
+	const openedIn = generation;
+	let closed = false;
+	return () => {
+		if (closed) {
+			return;
+		}
+		closed = true;
+		if (openedIn === generation && singleGameSims > 0) {
+			singleGameSims -= 1;
+		}
+	};
 };
 
-export const isSingleGameSimActive = () => singleGameSimActive;
+// Closes every open window - a whole-day sim starting, or a backstop once no
+// sim is running at all.
+export const resetSingleGameSims = () => {
+	singleGameSims = 0;
+	generation += 1;
+};
+
+export const isSingleGameSimActive = () => singleGameSims > 0;
