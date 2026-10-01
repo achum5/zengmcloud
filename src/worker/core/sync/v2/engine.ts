@@ -1383,15 +1383,13 @@ export class SyncEngineV2 {
 						state.checkpointChunkCount === undefined ||
 						!this.transport.fetchV2Checkpoint
 					) {
-						// No checkpoint to snap back to. This device is holding records
-						// the chain will never carry and there is nothing here that can
-						// remove them - the delta walk only adds. It must NOT go quiet
-						// and report itself caught up, which is precisely how a simmed
-						// day sat on one device for a night with every indicator green.
-						// (The publish path no longer discards without a checkpoint, so
-						// this should now be unreachable from a discard; if it is
-						// reached, something else set the flag and the same honesty
-						// applies.)
+						// No checkpoint to snap back to. This device may be holding
+						// records the chain will never carry and there is nothing here
+						// that can remove them - the delta walk only adds. Logged, not
+						// toasted: rooms run without checkpoints (auto-publish is off),
+						// so this is reached by every dropped stale single game, and a
+						// popup telling a device that is in fact fine that it "could not
+						// be re-synced" was read, correctly, as false.
 						syncDebugLog("v2:recovery-no-checkpoint", {
 							applied,
 							roomVersion: state.version,
@@ -1399,16 +1397,6 @@ export class SyncEngineV2 {
 						console.error(
 							"[sync] Recovery needed but the room has no checkpoint. This device may be holding records the room does not have; check Multiplayer > Sync for unsent days.",
 						);
-						try {
-							logEvent({
-								type: "error",
-								text: "This device could not be re-synced to the room, because the room has no restore point yet. Open Multiplayer sync and check for unsent days.",
-								saveToDb: false,
-								persistent: true,
-							});
-						} catch {
-							// UI notice only.
-						}
 						this.mustRecoverFromCheckpoint = false;
 					} else {
 						step = `checkpoint@${state.checkpointVersion}`;

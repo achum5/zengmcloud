@@ -3,7 +3,7 @@
 // transaction). Outside a sync room - or on a transport without the fence -
 // every claim is granted locally, so single-player behavior is untouched.
 
-import { g, logEvent } from "../../util/index.ts";
+import { g } from "../../util/index.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import { isSingleGameSimLabel } from "./actionLabels.ts";
@@ -321,12 +321,6 @@ export const revalidateQueuedSingleGame = async (
 	if (deferred?.day === games.day) {
 		deferred = undefined;
 	}
-	logEvent({
-		type: "error",
-		text: "The game you simmed earlier didn't reach the cloud before the league simmed that day from another device, so the league's result stands and yours was set aside. This device is re-syncing.",
-		saveToDb: false,
-		persistent: true,
-	});
 	syncDebugLog("simDayFence:stale-result-dropped", {
 		day: games.day,
 		gids: games.gids,
