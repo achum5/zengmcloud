@@ -2,7 +2,12 @@ import { idb } from "../db/index.ts";
 import { g, helpers } from "./index.ts";
 import { getPlayoffsByConfBySeason } from "../views/frivolitiesTeamSeasons.ts";
 import { getAwardCandidates } from "../core/awards/getAwardCandidates.ts";
-import { PHASE, PHASE_TEXT, RATINGS } from "../../common/constants.ts";
+import {
+	DEFAULT_RECAP_MAX_PLAYERS,
+	PHASE,
+	PHASE_TEXT,
+	RATINGS,
+} from "../../common/constants.ts";
 import { getGlobalSettings } from "./getGlobalSettings.ts";
 import { hasSeasonNote } from "../../common/seasonNote.ts";
 
@@ -111,6 +116,12 @@ export type RecapPlayer = {
 	// retrospective alongside the season recap. The whole career is already in
 	// the block above; this is the summary a retrospective actually leans on.
 	retiring?: RecapRetirement;
+	// The season's storylines, worked out here so they are stated rather than
+	// left for the AI to derive from rows of numbers: the jump or drop from last
+	// season, a career high, his place on his own team and in the league, a
+	// contract year, a new team. Deriving these is exactly where a model goes
+	// wrong or doesn't bother, and they are what makes a recap read as a story.
+	hooks: string[];
 	// Whether this player's note already has a section for the season being
 	// written, so the UI can report how much is already done.
 	alreadyWritten: boolean;
@@ -383,6 +394,205 @@ const buildLeaders = (
 	});
 };
 
+// Top-twenty league ranks per game, among qualified players, in the categories
+// a writer quotes. The leader boards stop at five, and "8th in the league in
+// rebounding" is a sentence a recap otherwise can't write.
+const RANK_DEPTH = 20;
+const leagueRanks = (
+	totalsByPid: Map<
+		number,
+		{ name: string; abbrev: string; gp: number; totals: Record<string, number> }
+	>,
+): Map<number, string[]> => {
+	const rows = [...totalsByPid.entries()];
+	const maxGp = rows.reduce((max, [, row]) => Math.max(max, row.gp), 0);
+	const minGp = Math.max(1, Math.round(maxGp * QUALIFY_SHARE));
+	const qualified = rows.filter(([, row]) => row.gp >= minGp);
+	const out = new Map<number, string[]>();
+	for (const { stat, label } of LEADER_STATS) {
+		if (stat === "min") {
+			continue;
+		}
+		const sorted = qualified
+			.map(([pid, row]) => ({ pid, value: (row.totals[stat] ?? 0) / row.gp }))
+			.filter((x) => x.value > 0)
+			.sort((a, b) => b.value - a.value);
+		let rank = 0;
+		let prev: number | undefined;
+		for (const [i, x] of sorted.entries()) {
+			if (i >= RANK_DEPTH) {
+				break;
+			}
+			if (prev === undefined || x.value !== prev) {
+				rank = i + 1;
+				prev = x.value;
+			}
+			const list = out.get(x.pid) ?? [];
+			list.push(
+				`${ordinalOf(rank)} in ${label} (${Math.round(x.value * 10) / 10})`,
+			);
+			out.set(x.pid, list);
+		}
+	}
+	return out;
+};
+
+const ordinalOf = (n: number) => {
+	const rem100 = n % 100;
+	if (rem100 >= 11 && rem100 <= 13) {
+		return `${n}th`;
+	}
+	return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+};
+
+const round1 = (x: number) => Math.round(x * 10) / 10;
+
+export const storyHooks = ({
+	statRows,
+	season,
+	teamAbbrevs,
+	teamRoster,
+	name,
+	leagueRanks,
+	contractExp,
+	draftYear,
+}: {
+	statRows: RecapPlayerSeasonStats[];
+	season: number;
+	teamAbbrevs: string[];
+	teamRoster: (abbrev: string) => RecapTeamPlayer[];
+	name: string;
+	leagueRanks: string[];
+	contractExp?: number;
+	draftYear?: number;
+}): string[] => {
+	const hooks: string[] = [];
+
+	// A season can be split across teams, so sum the regular-season rows.
+	const seasonLine = (yr: number) => {
+		const rows = statRows.filter((row) => row.season === yr && !row.playoffs);
+		const gp = rows.reduce((sum, row) => sum + row.gp, 0);
+		if (gp === 0) {
+			return undefined;
+		}
+		const total = (key: "pts" | "min" | "trb" | "ast") =>
+			rows.reduce((sum, row) => sum + row[key], 0);
+		const gs = rows.every((row) => row.gs !== undefined)
+			? rows.reduce((sum, row) => sum + (row.gs ?? 0), 0)
+			: undefined;
+		return {
+			gp,
+			gs,
+			pts: total("pts") / gp,
+			min: total("min") / gp,
+			trb: total("trb") / gp,
+			ast: total("ast") / gp,
+			abbrevs: rows.map((row) => row.abbrev),
+		};
+	};
+
+	const now = seasonLine(season);
+	if (!now) {
+		return hooks;
+	}
+	const last = seasonLine(season - 1);
+
+	if (last) {
+		let change = `vs last season: ${round1(last.pts)} to ${round1(now.pts)} points and ${round1(last.min)} to ${round1(now.min)} minutes per game`;
+		if (now.gs !== undefined && last.gs !== undefined) {
+			change += `, ${last.gs} to ${now.gs} starts`;
+		}
+		hooks.push(change);
+
+		const newTeam = teamAbbrevs.find(
+			(abbrev) => !last.abbrevs.includes(abbrev),
+		);
+		if (newTeam) {
+			hooks.push(`first season with ${newTeam}`);
+		}
+	} else if (!statRows.some((row) => row.season < season && !row.playoffs)) {
+		// By draft year: in a league's first season nobody has earlier stats, and
+		// every veteran would otherwise read as a rookie.
+		if (draftYear === season - 1) {
+			hooks.push("rookie season");
+		}
+	} else {
+		const prev = statRows
+			.filter((row) => row.season < season && !row.playoffs)
+			.at(-1);
+		if (prev) {
+			hooks.push(`back in the league after not playing since ${prev.season}`);
+		}
+	}
+
+	// Career highs, against at least two earlier seasons so a sophomore's every
+	// number isn't a "career high".
+	const earlier = [
+		...new Set(
+			statRows
+				.filter((row) => row.season < season && !row.playoffs)
+				.map((row) => row.season),
+		),
+	]
+		.map((yr) => ({ yr, line: seasonLine(yr)! }))
+		.filter((x) => x.line);
+	if (earlier.length >= 2) {
+		for (const [key, label] of [
+			["pts", "points"],
+			["trb", "rebounds"],
+			["ast", "assists"],
+		] as const) {
+			const best = earlier.reduce((a, b) =>
+				b.line[key] > a.line[key] ? b : a,
+			);
+			if (now[key] > best.line[key] && now[key] >= 3) {
+				hooks.push(
+					`career high in ${label} per game (previous best ${round1(best.line[key])} in ${best.yr})`,
+				);
+			}
+		}
+	}
+
+	// Where he sat on his own team: the team he finished the year with.
+	const abbrev = teamAbbrevs.at(-1);
+	if (abbrev) {
+		const roster = teamRoster(abbrev);
+		const maxGp = roster.reduce((max, spot) => Math.max(max, spot.gp), 0);
+		const regulars = roster.filter((spot) => spot.gp >= maxGp * 0.25);
+		const me = regulars.find((spot) => spot.name === name);
+		if (me) {
+			const rank = (key: "pts" | "min") =>
+				1 + regulars.filter((spot) => spot[key] > me[key]).length;
+			const scoring = rank("pts");
+			const minutes = rank("min");
+			if (scoring <= 3) {
+				hooks.push(
+					scoring === 1
+						? `led ${abbrev} in scoring`
+						: `${ordinalOf(scoring)} on ${abbrev} in scoring`,
+				);
+			}
+			if (minutes <= 3 && minutes !== scoring) {
+				hooks.push(
+					minutes === 1
+						? `led ${abbrev} in minutes`
+						: `${ordinalOf(minutes)} on ${abbrev} in minutes`,
+				);
+			}
+		}
+	}
+
+	if (leagueRanks.length > 0) {
+		hooks.push(`league: ${leagueRanks.join(", ")}`);
+	}
+
+	if (contractExp === season) {
+		hooks.push("contract year: his deal runs out after this season");
+	}
+
+	return hooks;
+};
+
 // A player belongs to a season if the league had ratings for them that year -
 // which covers everyone who was in the league at all, including players who
 // never got off the bench and unsigned free agents. (Stats alone would miss
@@ -423,7 +633,7 @@ let awardRaceCache:
 	| { key: string; races: RecapAwardRace[]; ranks: Map<number, string[]> }
 	| undefined;
 
-const getAwardRaces = async (
+export const getAwardRaces = async (
 	season: number,
 	abbrevByTid: Map<number, string>,
 ) => {
@@ -633,7 +843,10 @@ export const getPlayerRecapData = async ({
 	filter?: RecapFilter;
 }): Promise<RecapPlayerBatch | undefined> => {
 	const globalSettings = await getGlobalSettings();
-	const batchSize = Math.max(1, globalSettings.recapMaxPlayers ?? 40);
+	const batchSize = Math.max(
+		1,
+		globalSettings.recapMaxPlayers ?? DEFAULT_RECAP_MAX_PLAYERS,
+	);
 
 	const teams = await idb.getCopies.teamsPlus(
 		{
@@ -804,9 +1017,13 @@ export const getPlayerRecapData = async ({
 		abbrevByTid.get(row.tid) ??
 		`T${row.tid}`;
 
-	const leaders = buildLeaders(
-		seasonTotalsByPid(playersAll as any[], season, abbrevForStatRow),
+	const seasonTotals = seasonTotalsByPid(
+		playersAll as any[],
+		season,
+		abbrevForStatRow,
 	);
+	const leaders = buildLeaders(seasonTotals);
+	const leagueRanksByPid = leagueRanks(seasonTotals);
 
 	const { races: awardRaces, ranks: awardRanks } = await getAwardRaces(
 		season,
@@ -858,7 +1075,11 @@ export const getPlayerRecapData = async ({
 				// The feat's own summary line if there is one, else a stat digest.
 				text:
 					typeof feat.name === "string" && typeof feat.stats === "object"
-						? `${feat.stats.pts ?? 0} pts, ${feat.stats.trb ?? 0} reb, ${feat.stats.ast ?? 0} ast${feat.won ? " (win)" : " (loss)"}`
+						? `${feat.stats.pts ?? 0} pts, ${
+								// Feats store rebounds split, so a missing total is
+								// not zero - it printed "0 reb" on every big night.
+								feat.stats.trb ?? (feat.stats.orb ?? 0) + (feat.stats.drb ?? 0)
+							} reb, ${feat.stats.ast ?? 0} ast${feat.won ? " (win)" : " (loss)"}`
 						: "notable game",
 			});
 			featsByPid.set(feat.pid, list);
@@ -1098,6 +1319,16 @@ export const getPlayerRecapData = async ({
 					: undefined,
 			prospect: prospectFor(p, season),
 			retiring,
+			hooks: storyHooks({
+				statRows,
+				season,
+				teamAbbrevs,
+				teamRoster: (abbrev) => seasonRosterByAbbrev.get(abbrev) ?? [],
+				name: `${p.firstName} ${p.lastName}`,
+				leagueRanks: leagueRanksByPid.get(p.pid) ?? [],
+				contractExp: isCurrentSeason && p.contract ? p.contract.exp : undefined,
+				draftYear: p.draft?.year,
+			}),
 			alreadyWritten: hasSeasonNote(p.note, season),
 		};
 	});

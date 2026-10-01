@@ -1,5 +1,9 @@
 import { assert, beforeEach, describe, test } from "vitest";
-import { describeTransaction, draftIsComplete } from "./getPlayerRecapData.ts";
+import {
+	describeTransaction,
+	draftIsComplete,
+	storyHooks,
+} from "./getPlayerRecapData.ts";
 import { PHASE } from "../../common/constants.ts";
 import { g } from "./index.ts";
 import { resetG } from "../../test/helpers.ts";
@@ -141,5 +145,109 @@ describe("draftIsComplete", () => {
 	test("a class from a season that hasn't happened is never complete", () => {
 		g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
 		assert.strictEqual(draftIsComplete(2006), false);
+	});
+});
+
+describe("storyHooks", () => {
+	// Totals, like the stored stat rows: per game is total / gp.
+	const row = (
+		season: number,
+		abbrev: string,
+		gp: number,
+		perGame: { pts: number; min: number; gs?: number },
+	) => ({
+		season,
+		age: 25,
+		abbrev,
+		playoffs: false,
+		gp,
+		gs: perGame.gs,
+		min: perGame.min * gp,
+		pts: perGame.pts * gp,
+		trb: 4 * gp,
+		ast: 2 * gp,
+		stl: 0,
+		blk: 0,
+		tov: 0,
+		fg: 0,
+		fga: 0,
+		tp: 0,
+		tpa: 0,
+		ft: 0,
+		fta: 0,
+	});
+	const roster = [
+		{ name: "Me", pos: "G", age: 25, gp: 80, min: 34, pts: 24, trb: 4, ast: 2 },
+		{
+			name: "Other",
+			pos: "F",
+			age: 28,
+			gp: 80,
+			min: 36,
+			pts: 20,
+			trb: 8,
+			ast: 3,
+		},
+	];
+
+	test("a breakout on a new team says so, with the numbers", () => {
+		const hooks = storyHooks({
+			statRows: [
+				row(2024, "BOS", 70, { pts: 9, min: 18, gs: 2 }),
+				row(2025, "BOS", 70, { pts: 12, min: 22, gs: 10 }),
+				row(2026, "LAL", 80, { pts: 24, min: 34, gs: 80 }),
+			],
+			season: 2026,
+			teamAbbrevs: ["LAL"],
+			teamRoster: () => roster,
+			name: "Me",
+			leagueRanks: ["5th in points (24)"],
+			contractExp: 2026,
+		});
+		assert.deepStrictEqual(hooks, [
+			"vs last season: 12 to 24 points and 22 to 34 minutes per game, 10 to 80 starts",
+			"first season with LAL",
+			"career high in points per game (previous best 12 in 2025)",
+			"led LAL in scoring",
+			"2nd on LAL in minutes",
+			"league: 5th in points (24)",
+			"contract year: his deal runs out after this season",
+		]);
+	});
+
+	test("a rookie is a rookie, and a player who didn't play gets nothing", () => {
+		const rookie = storyHooks({
+			statRows: [row(2026, "LAL", 40, { pts: 5, min: 12 })],
+			season: 2026,
+			teamAbbrevs: ["LAL"],
+			teamRoster: () => [],
+			name: "Me",
+			leagueRanks: [],
+			draftYear: 2025,
+		});
+		assert.deepStrictEqual(rookie, ["rookie season"]);
+
+		// A league's first season: no earlier stats for anyone, but a veteran
+		// drafted years ago is not a rookie.
+		const veteran = storyHooks({
+			statRows: [row(2026, "LAL", 40, { pts: 5, min: 12 })],
+			season: 2026,
+			teamAbbrevs: ["LAL"],
+			teamRoster: () => [],
+			name: "Me",
+			leagueRanks: [],
+			draftYear: 2019,
+		});
+		assert.deepStrictEqual(veteran, []);
+
+		const none = storyHooks({
+			statRows: [row(2025, "LAL", 40, { pts: 5, min: 12 })],
+			season: 2026,
+			teamAbbrevs: [],
+			teamRoster: () => [],
+			name: "Me",
+			leagueRanks: [],
+		});
+		assert.deepStrictEqual(none, []);
 	});
 });

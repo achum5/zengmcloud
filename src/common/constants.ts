@@ -418,7 +418,7 @@ export const DEFAULT_RECAP_MAX_DAYS = 10;
 // brings their whole career - stats, ratings by season, transactions, feats -
 // so this trades round trips against prompt size AND against how much reply
 // room the AI has left for the last players in a batch.
-export const DEFAULT_RECAP_MAX_PLAYERS = 40;
+export const DEFAULT_RECAP_MAX_PLAYERS = 25;
 
 export const EXHIBITION_GAME_SETTINGS = [
 	"maxOvertimes",

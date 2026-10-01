@@ -12,6 +12,13 @@ const data: RecapSeasonData = {
 	luxuryTax: 180000,
 	minPayroll: 120000,
 	alreadyWrittenTotal: 0,
+	standings: [],
+	numTeams: 2,
+	leaders: [],
+	awardRaces: [],
+	batchIndex: 0,
+	batchCount: 1,
+	batchSize: 5,
 	teams: [
 		{
 			tid: 0,

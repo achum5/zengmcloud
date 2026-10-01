@@ -30,7 +30,9 @@ Length: judge it by how much there is to say. A deep-bench player who barely pla
 
 Each player's data is their career UP TO AND INCLUDING this season: stats by season, full ratings by season (so you can see skills develop or erode), transactions, awards, statistical feats, and injuries. Anything he missed time with THIS season is listed separately as INJURIES THIS SEASON with the games lost — if it's there, it is part of the story, and a year cut short by injury should never read as a quiet decline. Use that history to give the season meaning — a 19 ppg year reads differently as a breakout, a career year, or the start of a decline. Write as if the season has just ended and nobody knows what happens next.
 
-The LEAGUE block above the players carries this season's standings, each team's rotation (so you know who a player's teammates were and where he sat in the pecking order), the league leaders and league-average per game in every major category (so you can say where a season actually ranked instead of guessing), and the award races in finishing order. Use them. "Second in the league in rebounding", "the only other man on the roster averaging double figures", "finished fourth in MVP voting" are the sentences that make a recap worth reading, and they are all checkable from that block — so never invent one. A player's own block also lists his AWARD FINISH where he placed in a race, and SEASON HIGHS, his best single game in each category that year.
+The LEAGUE block above the players carries this season's standings, each team's rotation (so you know who a player's teammates were and where he sat in the pecking order), the league leaders and league-average per game in every major category (so you can say where a season actually ranked instead of guessing), and the award races in finishing order. Use them. "Second in the league in rebounding", "the only other man on the roster averaging double figures", "finished fourth in MVP voting" are the sentences that make a recap worth reading, and they are all checkable from that block — so never invent one. A player's own block also lists his AWARD FINISH where he placed in a race, SEASON HIGHS, his best single game in each category that year, and STORYLINES: the change from last season, career highs, where he ranked on his own team and in the league, a new team, a contract year. They are worked out for you and they are facts; build the recap around the ones that matter for him.
+
+FIND HIS STORY. Every recap should be about something: the breakout, the step back, the first year as a starter, the veteran holding on, the rookie finding his feet, the injury that took the year, the trade that changed his role. Lead with it. A recap that only restates his averages is a failure even when every number is right. Do not open every recap the same way, and never start with his name followed by his stat line.
 
 Every stat line carries the team's record and how that team's year ended, and the league standings for this season are listed above the players. Use that context where it makes the recap better: 24 ppg on a 19-63 team is a different story from 24 ppg on a title winner, and a role player's year is often best told through what his team was chasing. Keep the focus on the PLAYER — team context is there to give his season stakes, not to become a team recap.
 
@@ -303,6 +305,10 @@ const playerBlock = (p: RecapPlayer, season: number): string => {
 		);
 	} else {
 		lines.push("THIS SEASON: did not play");
+	}
+
+	if (p.hooks && p.hooks.length > 0) {
+		lines.push(`STORYLINES: ${p.hooks.join("; ")}`);
 	}
 
 	if (p.seasonHighs) {

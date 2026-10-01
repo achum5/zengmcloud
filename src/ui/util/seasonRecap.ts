@@ -8,30 +8,50 @@ import { FICTIONAL_LEAGUE_NOTICE } from "./fictionalLeagueNotice.ts";
 
 // Instructions for the season-in-review. Kept as one editable constant so the
 // brief can change without touching the data-baking below.
-const INSTRUCTIONS = `You are an expert basketball writer producing a league-wide season in review. Write a season recap for EACH team listed below.
+const INSTRUCTIONS = `You are a veteran basketball writer producing the season-in-review for a league. Write a season recap for EACH team in this batch.
 
 ${FICTIONAL_LEAGUE_NOTICE}
 
-You are given a lot of data per team: the franchise's history (championships, playoff appearances, recent seasons); every transaction that shaped the roster — draft picks, re-signings, free-agent signings, trades, releases — each one tagged in brackets with the part of the calendar it happened in and listed OLDEST FIRST; who left and who arrived versus last season; the team's end-of-season payroll this year and last against the league's salary cap; the record, seed, and points scored and allowed; the exact playoff series results (opponent and games won-lost each round — use these for how far a series went; never guess the number of games); and the key players' season and postseason lines, with ages, ratings, salaries, awards, their own transactions, and any major injury history (50+ games missed, with the season). Use whatever tells the best story — how the season met or defied expectations given the roster and moves, breakout or declining players, the franchise's arc, playoff runs or collapses, and how the offseason set the team up. Do NOT dump the raw data back.
+WHAT A GOOD RECAP IS. Find the story of this team's year and tell it. Every season has a throughline: a roster that outplayed its talent or wasted it, a hot start that collapsed, a late surge into the playoffs, a star's breakout, a trade that turned the year, a drought ended, a title defended, a rebuild that finally showed life, a contender that lost its best player for two months. Lead with that story, not with the win-loss record, and build every paragraph around it. A recap that walks through "they signed X, they went 41-41, they lost in the first round" is a failure even when every fact in it is right.
 
-IMPORTANT — tell the story in chronological order, exactly how the data is laid out per team: (1) the OFFSEASON MOVES that BUILT this year's roster (the prior offseason — signings, re-signings, draft picks, trades made BEFORE the season), then (2) the SEASON itself — the regular-season record and how it played out, the IN-SEASON MOVES (trades/cuts/signings made during the year), and (3) the PLAYOFFS. The offseason moves are last summer's build-up that set this team up; weave them in as the season's starting point.
+LENGTH. Scale it to the story. The champion, the finalists, the biggest risers and fallers, a drought ended or a collapse get 4-5 paragraphs. A middling season with nothing unusual gets 2-3 tight ones. Never pad.
 
-READ THE MOVES AS A SEQUENCE, not as a list. They are in the order they happened, so a move and whatever it made possible sit next to each other. Before you characterize any move, read the ones around it in the same window and check what happened to the payroll. A trade that brings back little, or a veteran cut loose, is often what paid for a signing a few lines later; a big signing usually has something that cleared room for it. The phase tags tell you the order within an offseason — draft, then re-signings, then free agency — and within a season, before or after the trade deadline.
+THE DATA, and what it is for. Each team block gives you these already worked out. Use them: they are the sentences that make a recap worth reading, and every one is checkable.
+- EXPECTATIONS: how the roster ranked in strength on opening night and at the end of the season, against where its record ranked. A roster that ranked 22nd and finished with the 6th-best record overachieved; one that ranked 3rd and finished 15th underachieved. This is often the spine of the story. Never quote the strength ranks as ratings or scores; say what they mean ("a roster few rated", "the most talented team in the conference").
+- LAST SEASON: last year's record and result, and the swing in wins.
+- HOW IT UNFOLDED: the record in each third of the season, the longest winning and losing streaks, the record in close games, the last ten, the biggest win and the worst loss. Use them to give the season a shape: when it turned, when it fell apart, how it finished.
+- LEAGUE RANKS: record, offence (points scored), defence (points allowed) and scoring margin, each ranked across the league; the conference and division finish; home and road records.
+- FRANCHISE: titles, recent seasons, and any streak or drought this season extended or ended.
+- MOVES: every transaction in the order it happened, tagged with the part of the calendar.
+- KEY PLAYERS: each one's season line and his line LAST season (so you can see who broke out and who declined), whether he was a rookie, games he missed injured THIS season, where he ranked in the league, how he finished in the award races, his salary and his own moves.
+The LEAGUE block above the teams carries every team's record and playoff result, the league leaders and the award races, so you can place each team in the league it actually played in.
 
-ACCURACY — these matter more than style:
-- Every fact must come from the data below. Do not invent trades, signings, contract terms, injuries, quotes, or games.
-- Do NOT assert WHY a team made a move — its intentions, its negotiations, its front office's thinking — unless the data says so. State what happened, in what order, and what it cost, and let that speak.
-- Do NOT call a move a giveaway, a fleecing, a mistake, or a salary dump unless the data supports it. Whether a team got something back is a question about the whole window of moves, not about one line of it.
+CHRONOLOGY. Tell the year in order: the offseason that built the roster, then the season, then the playoffs. But tell it as one story, not as three labelled sections. Do not narrate every transaction. Name the moves that shaped the season (ones involving players who mattered, or that cleared the money for one) and skip the roster filler.
+
+READ THE MOVES AS A SEQUENCE, not as a list. They are in the order they happened, so a move and whatever it made possible sit next to each other. Before you characterize any move, read the ones around it in the same window and check what happened to the payroll. A trade that brings back little, or a veteran cut loose, is often what paid for a signing a few lines later; a big signing usually has something that cleared room for it. The phase tags give the order within an offseason (draft, then re-signings, then free agency) and within a season (before or after the trade deadline).
+
+ACCURACY. These matter more than style:
+- Every fact must come from the data below. Do not invent trades, signings, contract terms, injuries, quotes, games or streaks.
+- Do NOT assert WHY a team made a move (its intentions, its negotiations, its front office's thinking) unless the data says so. State what happened, in what order, and what it cost, and let that speak.
+- Do NOT call a move a giveaway, a fleecing, a mistake or a salary dump unless the data supports it. Whether a team got something back is a question about the whole window of moves, not about one line of it.
+- Tie a stretch of the season to an injury or a trade only when the dates line up in the data. Otherwise state both facts and let the reader connect them.
 - Only a player marked "(retired)" retired. Everyone else who left is playing somewhere else.
 - If a team's move list says earlier moves are not shown, do not describe its offseason as if the list were complete.
+- Use the playoff series results for how far each series went. Never guess the number of games.
+
+STYLE.
+- Write like someone who watched the season happen: confident and specific. No hedging ("appears to", "seemingly", "it seems"). If something isn't in the data, leave it out.
+- Do not open every recap the same way. Never start with the team's name followed by its record.
+- Name teams in full the way a writer would ("the Toronto Raptors", "Toronto") using the names in the LEAGUE block, never by abbreviation.
+- Weave the numbers into the prose; do not paste a stat table or bullet lists. Bold a standout player's name with **name** the first time it appears, and keep the bolding light.
+- Never state a player's rating number. Ratings are scouting information for you: read them to know how good a player is and describe it in basketball terms, never as "a 78 overall". Statistics, records and league ranks are fine to quote.
 
 Follow these rules EXACTLY:
-- Put your ENTIRE reply inside ONE fenced code block so it can be copied in a single click: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence — no preamble, no closing summary.
+- Put your ENTIRE reply inside ONE fenced code block so it can be copied in a single click: open with a line of exactly \`\`\`markdown, then all the recaps, then a final line of exactly \`\`\`. Nothing before or after the fence: no preamble, no closing summary.
 - Inside the fence, write GitHub-flavored Markdown only, with no text outside the per-team recaps.
-- Begin every team's recap with a line containing ONLY this marker: <!--team:ID--> (replace ID with that team's number, shown as "TEAM <ID>" below). This is how each recap is filed to the correct team — never omit it, never change it.
-- After the marker, lead with a bold one-line headline, then 2–4 tight paragraphs.
-- Weave the notable numbers into the prose; do not paste a stat table. Bold standout players with **name**.
-- Never state a player's rating number. Ratings are scouting information for you — read them to know how good a player is and describe it in basketball terms, never as "a 78 overall". Statistics and records are fine to quote.
+- Begin every team's recap with a line containing ONLY this marker: <!--team:ID--> (replace ID with that team's number, shown as "TEAM <ID>" below). This is how each recap is filed to the correct team. Never omit it, never change it.
+- After the marker, lead with a bold one-line headline that names the story, then the paragraphs.
+- Include EVERY team in this batch, in the order given.
 - Put exactly one blank line between teams.`;
 
 // Salaries and payrolls come through in thousands of dollars.
@@ -49,10 +69,21 @@ const record = (t: RecapSeasonTeam): string => {
 	return parts.join(", ");
 };
 
+const ordinal = (n: number) => {
+	const rem100 = n % 100;
+	if (rem100 >= 11 && rem100 <= 13) {
+		return `${n}th`;
+	}
+	return `${n}${["th", "st", "nd", "rd"][n % 10] ?? "th"}`;
+};
+
+const signed = (n: number) => (n > 0 ? `+${n}` : `${n}`);
+
 const playerLine = (p: RecapSeasonPlayer): string => {
 	const tags = [
 		p.pos,
 		typeof p.age === "number" ? `age ${p.age}` : undefined,
+		p.rookie ? "rookie" : undefined,
 		typeof p.ovr === "number" && typeof p.pot === "number"
 			? `${p.ovr}/${p.pot} ovr/pot`
 			: undefined,
@@ -64,6 +95,22 @@ const playerLine = (p: RecapSeasonPlayer): string => {
 		typeof p.per === "number" ? `, ${p.per} PER` : ""
 	}, ${p.min} MPG over ${p.gp} G)`;
 	const lines = [head];
+	if (p.prior) {
+		lines.push(
+			`    · Last season: ${p.prior.pts}/${p.prior.trb}/${p.prior.ast} over ${p.prior.gp} G for ${p.prior.abbrev}`,
+		);
+	}
+	if (p.injuredThisSeason) {
+		lines.push(
+			`    · Missed ${p.injuredThisSeason.games} games injured this season (${p.injuredThisSeason.types.join(", ")})`,
+		);
+	}
+	if (p.leagueRanks && p.leagueRanks.length > 0) {
+		lines.push(`    · League: ${p.leagueRanks.join(", ")}`);
+	}
+	if (p.awardFinishes && p.awardFinishes.length > 0) {
+		lines.push(`    · Award races: ${p.awardFinishes.join("; ")}`);
+	}
 	if (p.playoff) {
 		lines.push(
 			`    · Playoffs: ${p.playoff.pts}/${p.playoff.trb}/${p.playoff.ast} over ${p.playoff.gp} G`,
@@ -103,6 +150,9 @@ const franchiseBlock = (t: RecapSeasonTeam): string => {
 			.join("; ");
 		lines.push(`Recent seasons: ${recent}`);
 	}
+	if (t.streaks && t.streaks.length > 0) {
+		lines.push(`This season in franchise history: ${t.streaks.join("; ")}`);
+	}
 	return lines.join("\n");
 };
 
@@ -110,13 +160,91 @@ const franchiseBlock = (t: RecapSeasonTeam): string => {
 const omitted = (count: number | undefined): string =>
 	count ? ` (${count} earlier ones not shown)` : "";
 
-const teamBlock = (t: RecapSeasonTeam): string => {
+const standingLine = (t: RecapSeasonTeam): string | undefined => {
+	const bits: string[] = [];
+	if (t.conf) {
+		bits.push(
+			`${t.conf}${typeof t.confRank === "number" ? ` (${ordinal(t.confRank)})` : ""}`,
+		);
+	}
+	if (t.div) {
+		bits.push(
+			`${t.div} division${typeof t.divRank === "number" ? ` (${ordinal(t.divRank)})` : ""}`,
+		);
+	}
+	return bits.length > 0 ? `Standing: ${bits.join(", ")}` : undefined;
+};
+
+const expectationsLine = (
+	t: RecapSeasonTeam,
+	numTeams: number,
+): string | undefined => {
+	const r = t.rosterRank;
+	if (!r || !t.ranks) {
+		return undefined;
+	}
+	const bits: string[] = [];
+	if (typeof r.start === "number") {
+		bits.push(
+			`roster strength ranked ${ordinal(r.start)} of ${numTeams} on opening night`,
+		);
+	}
+	if (typeof r.end === "number") {
+		bits.push(`${ordinal(r.end)} by the end of the regular season`);
+	}
+	bits.push(`finished with the ${ordinal(t.ranks.record)}-best record`);
+	return `Expectations: ${bits.join(", ")}`;
+};
+
+const ranksLine = (t: RecapSeasonTeam): string | undefined => {
+	if (!t.ranks) {
+		return undefined;
+	}
+	const parts = [
+		`offence ${ordinal(t.ranks.offense)}${typeof t.ptsPerGame === "number" ? ` (${t.ptsPerGame} PPG)` : ""}`,
+		`defence ${ordinal(t.ranks.defense)}${typeof t.oppPtsPerGame === "number" ? ` (${t.oppPtsPerGame} allowed)` : ""}`,
+		`margin ${ordinal(t.ranks.mov)}${typeof t.mov === "number" ? ` (${signed(t.mov)})` : ""}`,
+	];
+	const splits = [
+		t.home ? `home ${t.home}` : undefined,
+		t.away ? `road ${t.away}` : undefined,
+		typeof t.avgAge === "number" ? `average age ${t.avgAge}` : undefined,
+	].filter(Boolean);
+	return `League ranks: ${parts.join(", ")}${splits.length > 0 ? ` · ${splits.join(", ")}` : ""}`;
+};
+
+const shapeLine = (t: RecapSeasonTeam): string | undefined => {
+	const sh = t.shape;
+	if (!sh) {
+		return undefined;
+	}
+	const bits = [
+		sh.stretches.map((x) => `${x.label} ${x.won}-${x.lost}`).join(", "),
+		`longest winning streak ${sh.longestWinStreak}, longest losing streak ${sh.longestLosingStreak}`,
+		`close games (5 points or fewer) ${sh.close.won}-${sh.close.lost}`,
+		sh.lastTen ? `last ten ${sh.lastTen.won}-${sh.lastTen.lost}` : undefined,
+		sh.biggestWin ? `biggest win ${sh.biggestWin}` : undefined,
+		sh.worstLoss ? `worst loss ${sh.worstLoss}` : undefined,
+	].filter(Boolean);
+	return `How it unfolded: ${bits.join("; ")}`;
+};
+
+const teamBlock = (t: RecapSeasonTeam, numTeams: number): string => {
 	// Laid out chronologically so the recap reads in order: who they are →
 	// the prior offseason that built this year's team → the season → the playoffs.
 	const lines = [
 		`### TEAM ${t.tid}: ${t.region} ${t.name} (${t.abbrev})`,
 		franchiseBlock(t),
 	];
+
+	if (t.lastSeason) {
+		const swing = t.won - t.lastSeason.won;
+		lines.push(
+			`Last season: ${t.lastSeason.won}-${t.lastSeason.lost}${
+				t.lastSeason.result ? `, ${t.lastSeason.result}` : ""
+			} (${swing === 0 ? "same win total" : `${signed(swing)} wins this season`})`,
+		);
+	}
 
 	// 1) The prior offseason — what built this year's roster (before the season).
 	if (t.offseasonMoves.length > 0) {
@@ -158,19 +286,16 @@ const teamBlock = (t: RecapSeasonTeam): string => {
 		summary.push(`#${t.seed} seed`);
 	}
 	summary.push(t.madePlayoffs ? t.playoffResult : "missed playoffs");
-	if (typeof t.ptsPerGame === "number") {
-		summary.push(`${t.ptsPerGame} PPG / ${t.oppPtsPerGame ?? "?"} allowed`);
-	}
 	lines.push("", `The season: ${summary.join(" · ")}`);
-
-	if (t.playoffSeriesResults.length > 0) {
-		const seriesStr = t.playoffSeriesResults
-			.map(
-				(s) =>
-					`Round ${s.round}: ${s.win ? "beat" : "lost to"} ${s.opp} ${s.won}-${s.lost}`,
-			)
-			.join("; ");
-		lines.push(`Playoff series: ${seriesStr}`);
+	for (const line of [
+		expectationsLine(t, numTeams),
+		standingLine(t),
+		ranksLine(t),
+		shapeLine(t),
+	]) {
+		if (line) {
+			lines.push(line);
+		}
 	}
 
 	if (t.inSeasonMoves.length > 0) {
@@ -179,6 +304,17 @@ const teamBlock = (t: RecapSeasonTeam): string => {
 			`In-season moves, oldest first${omitted(t.inSeasonMovesOmitted)}:`,
 			...t.inSeasonMoves.map((m) => `- ${m}`),
 		);
+	}
+
+	// 3) The playoffs.
+	if (t.playoffSeriesResults.length > 0) {
+		const seriesStr = t.playoffSeriesResults
+			.map(
+				(s) =>
+					`Round ${s.round}: ${s.win ? "beat" : "lost to"} ${s.opp} ${s.won}-${s.lost}`,
+			)
+			.join("; ");
+		lines.push("", `Playoff series: ${seriesStr}`);
 	}
 
 	if (t.players.length > 0) {
@@ -219,21 +355,71 @@ const leagueHeader = (data: RecapSeasonData): string => {
 				.join("; ")}`,
 		);
 	}
+
+	const standings = data.standings ?? [];
+	if (standings.length > 0) {
+		lines.push("", "STANDINGS (best record first):");
+		const byConf = new Map<string, typeof standings>();
+		for (const row of standings) {
+			const key = row.conf ?? "";
+			byConf.set(key, [...(byConf.get(key) ?? []), row]);
+		}
+		for (const [conf, rows] of byConf) {
+			if (conf) {
+				lines.push(conf);
+			}
+			for (const row of rows) {
+				lines.push(
+					`  ${row.abbrev} = ${row.region} ${row.name}: ${row.won}-${row.lost}, ${row.result}`,
+				);
+			}
+		}
+	}
+
+	const leaders = data.leaders ?? [];
+	if (leaders.length > 0) {
+		lines.push("", "LEAGUE LEADERS (per game, qualified players):");
+		for (const row of leaders) {
+			lines.push(
+				`  ${row.label}: ${row.players
+					.map((p, i) => `${i + 1}. ${p.name} ${p.abbrev} ${p.value}`)
+					.join(", ")}`,
+			);
+		}
+	}
+
+	const races = data.awardRaces ?? [];
+	if (races.length > 0) {
+		lines.push("", "AWARD RACES (finishing order):");
+		for (const race of races) {
+			lines.push(
+				`  ${race.name}: ${race.players
+					.map((p, i) => `${i + 1}. ${p.name} ${p.abbrev}`)
+					.join(", ")}`,
+			);
+		}
+	}
 	return lines.join("\n");
 };
 
-// The full prompt: instructions + league context + every team's data.
+// The full prompt: instructions + league context + this batch's teams.
 export const buildSeasonRecapPrompt = (data: RecapSeasonData): string => {
 	const header = leagueHeader(data);
-	const blocks = data.teams.map(teamBlock).join("\n\n");
+	const numTeams = data.numTeams ?? data.teams.length;
+	const blocks = data.teams.map((t) => teamBlock(t, numTeams)).join("\n\n");
+	const batchCount = data.batchCount ?? 1;
+	const scope =
+		batchCount > 1
+			? `This is batch ${(data.batchIndex ?? 0) + 1} of ${batchCount}: ${data.teams.length} of the league's ${numTeams} teams.`
+			: `${data.teams.length} team${data.teams.length === 1 ? "" : "s"} to recap.`;
 	return `${INSTRUCTIONS}
 
 ---
 
-${data.season} season in review — ${data.teams.length} team${
-		data.teams.length === 1 ? "" : "s"
-	} to recap, best record first.
-${header ? `\n${header}\n` : ""}
+${data.season} season in review. ${scope}
+${header ? `\n=== LEAGUE ${data.season} ===\n${header}\n` : ""}
+=== TEAMS IN THIS BATCH ===
+
 ${blocks}`;
 };
 

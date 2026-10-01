@@ -5,13 +5,18 @@ import {
 	parseSeasonRecaps,
 } from "../util/seasonRecap.ts";
 import { RecapAIButton } from "./RecapAIButton.tsx";
+import type { RecapSeasonData } from "../../worker/util/getSeasonRecapData.ts";
 
 // A league-wide "Team Recaps" workflow for a whole season, mirroring the Game
 // Recap flow on the Daily Schedule:
-//   Copy (a prompt with every team's season, franchise history, and the moves
-//   that built it) → Claude (opens claude.ai in a new tab) → Paste
+//   Copy (a prompt with a batch of teams' seasons, franchise history, and the
+//   moves that built them) → Claude (opens claude.ai in a new tab) → Paste
 //   (the AI's reply, filed as each team's Team Season note).
 // Best generated right after the playoffs finish, before the draft.
+//
+// Batches, like the player recaps: a whole league in one reply left each team
+// two thin paragraphs. Batches are cut from the teams still missing a note, so
+// the loop is Copy → AI → Paste until every team is written.
 export const SeasonRecap = ({
 	heading,
 	season,
@@ -22,9 +27,8 @@ export const SeasonRecap = ({
 	// Built up-front so the Copy tap can write to the clipboard SYNCHRONOUSLY
 	// (iOS Safari rejects a clipboard write that happens after an await).
 	const [prompt, setPrompt] = useState<string | undefined>();
-	const [progress, setProgress] = useState<
-		{ written: number; total: number } | undefined
-	>();
+	const [data, setData] = useState<RecapSeasonData | undefined>();
+	const [batchIndex, setBatchIndex] = useState(0);
 	const [loadFailed, setLoadFailed] = useState(false);
 	const [reload, setReload] = useState(0);
 
@@ -39,21 +43,20 @@ export const SeasonRecap = ({
 		let cancelled = false;
 		setLoadFailed(false);
 		setPrompt(undefined);
-		setProgress(undefined);
+		setData(undefined);
 		(async () => {
 			try {
-				const data = await toWorker("main", "getSeasonRecapData", season);
+				const batch = await toWorker("main", "getSeasonRecapData", {
+					season,
+					batchIndex,
+				});
 				if (cancelled) {
 					return;
 				}
+				setData(batch);
 				setPrompt(
-					data && data.teams.length > 0
-						? buildSeasonRecapPrompt(data)
-						: undefined,
-				);
-				setProgress(
-					data
-						? { written: data.alreadyWrittenTotal, total: data.teams.length }
+					batch && batch.teams.length > 0
+						? buildSeasonRecapPrompt(batch)
 						: undefined,
 				);
 			} catch (error) {
@@ -66,7 +69,7 @@ export const SeasonRecap = ({
 		return () => {
 			cancelled = true;
 		};
-	}, [season, reload]);
+	}, [season, batchIndex, reload]);
 
 	const copy = async () => {
 		setResult(undefined);
@@ -107,8 +110,20 @@ export const SeasonRecap = ({
 			setManual(undefined);
 			setPasted(true);
 			globalThis.setTimeout(() => setPasted(false), 3000);
-			// Re-count, so the section can take itself off the page once every team
-			// has a note.
+
+			const skipped = (data?.teams ?? []).filter((t) => !recaps.has(t.tid));
+			if (skipped.length > 0) {
+				setResult(
+					`No recap for ${skipped
+						.map((t) => `${t.region} ${t.name}`)
+						.join(", ")} — they stay in the next batch.`,
+				);
+			}
+
+			// Batches are re-cut from whoever is still unwritten, so start from the
+			// top again. Once every team has a note the section takes itself off
+			// the page.
+			setBatchIndex(0);
 			setReload((prev) => prev + 1);
 		} catch (error) {
 			console.error("Failed to file season recaps", error);
@@ -139,7 +154,7 @@ export const SeasonRecap = ({
 	// Every team written means there is nothing left to do for this season, so
 	// the section disappears - which is how you tell at a glance that the year
 	// is finished.
-	if (progress && progress.total > 0 && progress.written >= progress.total) {
+	if (data && data.numTeams > 0 && data.alreadyWrittenTotal >= data.numTeams) {
 		return null;
 	}
 
@@ -152,7 +167,7 @@ export const SeasonRecap = ({
 					style={btnStyle}
 					disabled={busy}
 					onClick={copy}
-					title="Copy AI prompt (every team's season)"
+					title="Copy AI prompt (this batch of teams)"
 				>
 					{copied ? "✓" : "Copy"}
 				</button>
@@ -180,9 +195,36 @@ export const SeasonRecap = ({
 				</button>
 			</div>
 
-			{progress ? (
-				<div className="mt-1 small text-body-secondary">
-					{progress.written}/{progress.total} written
+			{data ? (
+				<div className="d-flex align-items-center gap-2 mt-1 small text-body-secondary">
+					{data.batchCount > 1 ? (
+						<>
+							<button
+								className="btn btn-sm btn-link p-0 text-decoration-none"
+								disabled={busy || batchIndex === 0}
+								onClick={() => setBatchIndex(batchIndex - 1)}
+								title="Previous batch"
+							>
+								‹
+							</button>
+							<span>
+								Batch {data.batchIndex + 1}/{data.batchCount} ·{" "}
+								{data.teams.length} teams
+							</span>
+							<button
+								className="btn btn-sm btn-link p-0 text-decoration-none"
+								disabled={busy || batchIndex + 1 >= data.batchCount}
+								onClick={() => setBatchIndex(batchIndex + 1)}
+								title="Next batch"
+							>
+								›
+							</button>
+							<span>·</span>
+						</>
+					) : null}
+					<span>
+						{data.alreadyWrittenTotal}/{data.numTeams} written
+					</span>
 				</div>
 			) : null}
 
