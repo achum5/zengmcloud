@@ -500,6 +500,8 @@ export interface SyncTransport {
 	// Completion is scoped to the gids whose results the caller durably
 	// queued - see simDayClaimPolicy.ts for why a day-level mark wedged rooms.
 	completeSimDay?(stageKey: string, day: number, gids: number[]): Promise<void>;
+	// Why the last claimSimDay returned false, when the transport can say.
+	lastSimDayClaimRejection?: string;
 	// The fence document as it stands, for a device deciding whether a result
 	// it queued while offline is still the room's to receive (see
 	// revalidateQueuedSingleGame in simDayFence.ts). A plain read; the decision

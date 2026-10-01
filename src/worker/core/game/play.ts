@@ -79,6 +79,7 @@ import { beginLiveSimNotificationHold } from "../sync/liveSimNotificationHold.ts
 import {
 	claimSimDayFence,
 	completeClaimedSimDayFence,
+	lastSimDayRejection,
 } from "../sync/simDayFence.ts";
 import { syncDebugLog } from "../sync/debugLog.ts";
 import { scheduleForSim } from "./singleGameSchedule.ts";
@@ -988,11 +989,17 @@ const play = async (
 				// single game while someone else runs the day, the common rejection is
 				// two people reaching for the SAME GAME - and telling them "this day"
 				// was already simmed describes something that did not happen.
+				// "day-already-run" while this device still lists the day as unplayed
+				// is not a race - nobody's result is about to arrive. The league
+				// played past this day and this copy kept the old schedule. Promising
+				// "a moment" here left a field user clicking Sim game for good.
+				const staleDay = lastSimDayRejection() === "day-already-run";
 				logEvent(
 					{
 						type: "error",
-						text:
-							gidOneGame === undefined
+						text: staleDay
+							? `The league has already played past day ${games[0]!.day}, but this device still has it scheduled, so it can't sim here. Let someone whose schedule is current sim, and re-import a fresh export of the league on this device.`
+							: gidOneGame === undefined
 								? `Another device already simmed this day, so this sim was skipped. Catching up to the cloud now.`
 								: `Someone else got to this game first, so it wasn't simmed here. Catching up to the cloud now — the result will appear in a moment.`,
 						persistent: true,

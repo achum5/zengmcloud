@@ -7,6 +7,7 @@ import {
 	completeClaimedSimDayFence,
 	completeDeferredSimDayFence,
 	fencedGamesIn,
+	lastSimDayRejection,
 	revalidateQueuedSingleGame,
 	setupSimDayFence,
 	teardownSimDayFence,
@@ -100,6 +101,39 @@ describe("simDayFence completion", () => {
 	});
 });
 
+describe("claim rejection reason", () => {
+	beforeEach(() => {
+		resetG();
+		g.setWithoutSavingToDB("season", 2026);
+		setSyncEngine({ catchUp: async () => true } as any);
+	});
+	afterEach(() => {
+		teardownSimDayFence();
+		setSyncEngine(undefined);
+	});
+
+	test("the transport's reason is kept for the message, and cleared by a grant", async () => {
+		const t = makeTransport();
+		let grant = false;
+		const transport = {
+			...t.transport,
+			lastSimDayClaimRejection: undefined as string | undefined,
+			claimSimDay: async () => {
+				transport.lastSimDayClaimRejection = grant
+					? undefined
+					: "day-already-run";
+				return grant;
+			},
+		};
+		setupSimDayFence(transport as any);
+		assert.isFalse(await claimSimDayFence(79, [21828]));
+		assert.strictEqual(lastSimDayRejection(), "day-already-run");
+		grant = true;
+		assert.isTrue(await claimSimDayFence(90, [30000]));
+		assert.isUndefined(lastSimDayRejection());
+	});
+});
+
 describe("revalidateQueuedSingleGame", () => {
 	beforeEach(() => {
 		resetG();
@@ -136,7 +170,53 @@ describe("revalidateQueuedSingleGame", () => {
 	test("a first attempt is never re-validated", async () => {
 		const t = makeTransport();
 		setupSimDayFence(t.transport as any);
+		assert.isTrue(await claimSimDayFence(12, [77]));
+		// Another device took the holder field with a disjoint slice; our own
+		// in-flight publish must still go up without asking.
+		t.state.doc = {
+			holderId: "someone",
+			stageKey: stage,
+			day: 12,
+			gids: [77, 78],
+			at: Date.now(),
+			maxDay: 12,
+			completedGids: [],
+		};
 		assert.strictEqual(await revalidateQueuedSingleGame(entry), "publish");
+	});
+
+	// THE RESTARTED PHONE: the result was queued in an earlier session, so this
+	// session has no record of it - and the room has since played on.
+	test("a result queued before a restart is still re-validated", async () => {
+		const t = makeTransport("me");
+		setupSimDayFence(t.transport as any);
+		t.state.doc = {
+			holderId: "simmer",
+			stageKey: stage,
+			day: 30,
+			gids: [200],
+			at: Date.now(),
+			maxDay: 30,
+			completedGids: [200],
+		};
+		assert.strictEqual(await revalidateQueuedSingleGame(entry), "drop");
+	});
+
+	test("a result queued before a restart publishes if still ours to give", async () => {
+		const t = makeTransport("me");
+		setupSimDayFence(t.transport as any);
+		const claimsBefore = t.claims.length;
+		t.state.doc = {
+			holderId: "old-session",
+			stageKey: stage,
+			day: 12,
+			gids: [77],
+			at: Date.now() - 10 * 60_000,
+			maxDay: 12,
+			completedGids: [],
+		};
+		assert.strictEqual(await revalidateQueuedSingleGame(entry), "publish");
+		assert.strictEqual(t.claims.length, claimsBefore + 1, "re-claimed");
 	});
 
 	test("our own live claim publishes", async () => {

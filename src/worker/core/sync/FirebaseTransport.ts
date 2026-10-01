@@ -727,6 +727,10 @@ export class FirebaseTransport implements SyncTransport {
 	// what makes a concurrent double-sim of the same day - which doubles every
 	// read-modify-write aggregate while the game records collide by gid -
 	// impossible, no matter what the advisory authority doc says.
+	// Why the last claimSimDay returned false: a policy reason
+	// ("day-already-run", "games-already-simmed", "lease-held") or the error.
+	lastSimDayClaimRejection: string | undefined;
+
 	async claimSimDay(
 		stageKey: string,
 		day: number,
@@ -734,6 +738,7 @@ export class FirebaseTransport implements SyncTransport {
 		leaseMs: number,
 	): Promise<boolean> {
 		const ref = doc(this.db, "leagues", this.code, "control", SIM_DAY_DOC_ID);
+		let rejection: string | undefined;
 		try {
 			await runTransaction(this.db, async (tx) => {
 				const snap = await tx.get(ref);
@@ -746,6 +751,7 @@ export class FirebaseTransport implements SyncTransport {
 					leaseMs,
 				});
 				if (!decision.grant) {
+					rejection = decision.reason;
 					throw new Error(`Sim day claim rejected: ${decision.reason}`);
 				}
 				tx.set(ref, {
@@ -764,8 +770,10 @@ export class FirebaseTransport implements SyncTransport {
 				});
 			});
 			this.markContact();
+			this.lastSimDayClaimRejection = undefined;
 			return true;
-		} catch {
+		} catch (error) {
+			this.lastSimDayClaimRejection = rejection ?? `error: ${String(error)}`;
 			return false;
 		}
 	}

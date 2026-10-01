@@ -62,11 +62,16 @@ let lastClaimedGids: number[] | undefined;
 // confirms the upload (completeDeferredSimDayFence, from onUploadComplete).
 let deferred: { day: number; gids: number[] } | undefined;
 
+// Why the most recent claim was refused, for the message the sim shows.
+let lastRejection: string | undefined;
+export const lastSimDayRejection = () => lastRejection;
+
 export const setupSimDayFence = (transport: SyncTransport) => {
 	currentTransport = transport;
 	lastClaimedDay = undefined;
 	lastClaimedGids = undefined;
 	deferred = undefined;
+	lastRejection = undefined;
 };
 
 export const teardownSimDayFence = () => {
@@ -74,6 +79,7 @@ export const teardownSimDayFence = () => {
 	lastClaimedDay = undefined;
 	lastClaimedGids = undefined;
 	deferred = undefined;
+	lastRejection = undefined;
 };
 
 const stageKey = () => `sim:${g.get("season")}`;
@@ -98,6 +104,7 @@ export const claimSimDayFence = async (
 	// the safe direction (skip and catch up; if the claim actually landed
 	// server-side, its lease expires on its own).
 	let granted = false;
+	lastRejection = undefined;
 	try {
 		granted = await withClaimTimeout(
 			transport.claimSimDay(stageKey(), day, gids, SIM_DAY_LEASE_MS),
@@ -110,7 +117,8 @@ export const claimSimDayFence = async (
 		lastClaimedDay = day;
 		lastClaimedGids = gids;
 	} else {
-		syncDebugLog("simDayFence:rejected", { day, gids });
+		lastRejection = transport.lastSimDayClaimRejection;
+		syncDebugLog("simDayFence:rejected", { day, gids, reason: lastRejection });
 		// The natural cause of a rejection is that this device is behind the
 		// room's real history; pull it in rather than leaving stale state up.
 		void engine.catchUp().catch(() => undefined);
@@ -219,19 +227,35 @@ export type QueuedResultVerdict = "publish" | "drop" | "wait";
 //   - completed elsewhere, or the day is history - drop, and re-sync to what
 //                           the room has.
 //
-// Never asked of a first attempt (the claim was granted moments ago and the
-// policy would read our own live lease as "held"), which is what `deferred`
-// records; and never of anything but a single-game entry, which is the only
-// kind whose completion is ever deferred.
+// Never asked of a first attempt: the slice this session's sim claimed moments
+// ago and is publishing right now (the policy would read our own live lease as
+// "held" - and another device claiming a disjoint slice of the same day takes
+// the holder field, so the own-claim check below can't cover it). Never of
+// anything but a single-game entry either.
+//
+// EVERYTHING ELSE IS ASKED - including an entry this session never claimed.
+// That used to be waved through: the only marker of "queued, not first
+// attempt" was `deferred`, which is module state, so an app restart erased it
+// and the queued result published blind on the next launch. That is exactly
+// the phone put away mid-season and opened again in the playoffs: its stale
+// regular-season game landed on top of a room that had long since played that
+// day.
 export const revalidateQueuedSingleGame = async (
 	entry: Pick<ChangesetEntry, "action" | "changeset">,
 ): Promise<QueuedResultVerdict> => {
 	const transport = currentTransport;
-	if (!transport?.readSimDayClaim || !transport.claimSimDay || !deferred) {
+	if (!transport?.readSimDayClaim || !transport.claimSimDay) {
 		return "publish";
 	}
 	const games = fencedGamesIn(entry);
-	if (!games || games.day !== deferred.day) {
+	if (!games) {
+		return "publish";
+	}
+	if (
+		lastClaimedDay === games.day &&
+		lastClaimedGids !== undefined &&
+		games.gids.every((gid) => lastClaimedGids!.includes(gid))
+	) {
 		return "publish";
 	}
 
@@ -294,7 +318,9 @@ export const revalidateQueuedSingleGame = async (
 	}
 	// day-already-run or games-already-simmed: the room has these games from
 	// someone else. This result is stale.
-	deferred = undefined;
+	if (deferred?.day === games.day) {
+		deferred = undefined;
+	}
 	logEvent({
 		type: "error",
 		text: "The game you simmed earlier didn't reach the cloud before the league simmed that day from another device, so the league's result stands and yours was set aside. This device is re-syncing.",
