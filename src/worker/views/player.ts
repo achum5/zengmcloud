@@ -11,10 +11,12 @@ import {
 } from "../../common/constants.ts";
 import { player } from "../core/index.ts";
 import { idb } from "../db/index.ts";
+import coarsenInjuryDrops, {
+	type ShownInjuryDrop,
+} from "../core/player/coarsenInjuryDrops.ts";
 import { feedAbout } from "../util/socialFeed.ts";
 import {
 	coarsenRating,
-	coarsenRatingDrop,
 	exemptFromCoarseRatings,
 	prospectRatingsSeason,
 } from "../../common/coarsenRating.ts";
@@ -62,8 +64,8 @@ export type PlayerAwardBuiltInWithPrefix = PlayerAwardBuiltIn & {
 // An injury as the player page shows it. Where the ratings are coarse, the
 // ovr/pot drop is how far the tens digit fell rather than the exact loss.
 type ShownInjury = Omit<Player["injuries"][number], "ovrDrop" | "potDrop"> & {
-	ovrDrop?: number | "-";
-	potDrop?: number | "-";
+	ovrDrop?: ShownInjuryDrop;
+	potDrop?: ShownInjuryDrop;
 };
 
 const shownInjuries = (p: Player): ShownInjury[] => {
@@ -75,34 +77,14 @@ const shownInjuries = (p: Player): ShownInjury[] => {
 		return p.injuries;
 	}
 
-	return p.injuries.map((injury, i) => {
-		// A rating-losing injury opened a new ratings row tagged with its index,
-		// so the row before it holds the ratings going in.
-		const rowIndex = p.ratings.findIndex((row) => row.injuryIndex === i);
-		const before = rowIndex > 0 ? p.ratings[rowIndex - 1]! : undefined;
-		const shown = (drop: number | undefined, rating: "ovr" | "pot") => {
-			if (drop === undefined) {
-				return undefined;
-			}
-			if (before === undefined) {
-				// No ratings to measure against, so no tens digit to report.
-				return drop > 0 ? "-" : drop;
-			}
-			if (prospectRatingsSeason(p.draft.year, before.season, exceptProspects)) {
-				return drop;
-			}
-			const fuzz = before.fuzz;
-			return coarsenRatingDrop(
-				player.fuzzRating(before[rating], fuzz),
-				player.fuzzRating(before[rating] - drop, fuzz),
-			);
-		};
-		return {
-			...injury,
-			ovrDrop: shown(injury.ovrDrop, "ovr"),
-			potDrop: shown(injury.potDrop, "pot"),
-		};
-	});
+	return p.injuries.map((injury, i) => ({
+		...injury,
+		...coarsenInjuryDrops(p, i, {
+			fuzz: true,
+			isExactSeason: (season) =>
+				prospectRatingsSeason(p.draft.year, season, exceptProspects),
+		}),
+	}));
 };
 
 export const getPlayer = async (

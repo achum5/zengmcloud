@@ -7,6 +7,8 @@ import { idb } from "../db/index.ts";
 import { getActualPlayThroughInjuries } from "../core/game/loadTeams.ts";
 import { actualPhase } from "../util/actualPhase.ts";
 import { bySport } from "../../common/sportFunctions.ts";
+import { exemptFromCoarseRatings } from "../../common/coarsenRating.ts";
+import coarsenInjuryDrops from "../core/player/coarsenInjuryDrops.ts";
 
 const updateInjuries = async (
 	inputs: ViewInput<"injuries">,
@@ -38,28 +40,51 @@ const updateInjuries = async (
 			inputs.tid,
 		);
 
+		// With the ones digit hidden, a drop shows how far the tens digit fell,
+		// measured against the full ratings history the rows above don't carry.
+		const exceptProspects = g.get("hideRatingsOnesDigitExceptProspects");
+		const rawPlayers = g.get("hideRatingsOnesDigit")
+			? new Map(
+					(
+						await idb.getCopies.players(
+							{
+								pids: players
+									.filter((p) => p.injuries.length > 0)
+									.map((p) => p.pid),
+							},
+							"noCopyCache",
+						)
+					).map((p) => [p.pid, p]),
+				)
+			: undefined;
+		const drops = (p: (typeof players)[number], index: number) => {
+			const raw = rawPlayers?.get(p.pid);
+			if (raw && !exemptFromCoarseRatings(raw.tid, exceptProspects)) {
+				return coarsenInjuryDrops(raw, index, { fuzz: true });
+			}
+			const injury = p.injuries[index];
+			return { ovrDrop: injury?.ovrDrop, potDrop: injury?.potDrop };
+		};
+
 		const injuries = [];
 		for (const p of players) {
 			if (inputs.season === "current") {
 				if (p.injury.gamesRemaining > 0) {
-					const injury = p.injuries.at(-1);
 					injuries.push({
 						...p,
 						type: p.injury.type,
 						games: p.injury.gamesRemaining,
-						ovrDrop: injury?.ovrDrop,
-						potDrop: injury?.potDrop,
+						...drops(p, p.injuries.length - 1),
 					});
 				}
 			} else {
-				for (const injury of p.injuries) {
+				for (const [i, injury] of p.injuries.entries()) {
 					if (injury.season === inputs.season) {
 						injuries.push({
 							...p,
 							type: injury.type,
 							games: injury.games,
-							ovrDrop: injury.ovrDrop,
-							potDrop: injury.potDrop,
+							...drops(p, i),
 						});
 					}
 				}

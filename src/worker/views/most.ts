@@ -13,12 +13,18 @@ import { processPlayersHallOfFame } from "../util/processPlayersHallOfFame.ts";
 import {
 	coarsenRating,
 	coarsenRatingChange,
+	coarsenRatingDrop,
 } from "../../common/coarsenRating.ts";
 import { formatPlayerAwardName } from "../../common/awards.ts";
 
 type Most = {
 	value: number;
 	extra?: Record<string, unknown>;
+};
+
+// What reaches the page: a coarsened drop can read "-".
+type MostShown = Omit<Most, "value"> & {
+	value: number | "-";
 };
 
 // The rating-scale numbers each list carries on `most`.
@@ -33,19 +39,16 @@ type Most = {
 //   valueDiffFrom - most.value is (ovr - extra[key]); shown as the difference
 //                   of the two DISPLAYED ovrs, so 56 -> 58 reads as 0 and
 //                   58 -> 62 reads as +1, matching coarsenRatingChange
-//
-// WORST INJURIES IS DELIBERATELY ABSENT. Its value is an ovr DROP, and a drop
-// is not a rating: flooring it to the tens digit turned every ordinary injury
-// into "0" and the whole list - which exists to rank players by that number -
-// into a column of zeroes with a scrambled order underneath. The exact drop is
-// also already on screen at full resolution in the two other places it appears
-// (the Injuries page and each player's own Injuries table, neither of which
-// coarsens it), so hiding it here bought nothing and cost the page its point.
+//   valueDropFrom - most.value is an injury's ovr DROP from extra[key]; shown as
+//                   how far the tens digit fell, or "-" for a loss inside the
+//                   decade (coarsenRatingDrop). extra[key] is exact, so it's
+//                   removed once used.
 const MOST_RATING_FIELDS: Record<
 	string,
 	{
 		extraOvrs?: string[];
 		valueDiffFrom?: string;
+		valueDropFrom?: string;
 	}
 > = {
 	progs: { valueDiffFrom: "progFrom" },
@@ -56,19 +59,31 @@ const MOST_RATING_FIELDS: Record<
 	oldest_mvp: { extraOvrs: ["ovr"] },
 	youngest_mvp: { extraOvrs: ["ovr"] },
 	rookies: { extraOvrs: ["rookieOvr"] },
+	worst_injuries: { valueDropFrom: "ovrBefore" },
 };
 
 // Display only, and deliberately AFTER the list has been chosen and ordered.
 // Which players make a top-25 is a calculation, and picking it from 0-10 inputs
 // would be a coin flip among everyone who happened to cross a decade boundary.
-export const coarsenMostForDisplay = (most: Most, type: string): Most => {
+export const coarsenMostForDisplay = (most: Most, type: string): MostShown => {
 	const fields = MOST_RATING_FIELDS[type];
 	if (!fields) {
 		return most;
 	}
 
-	const out: Most = { ...most };
+	const out: MostShown = { ...most };
 	const extra = most.extra;
+
+	if (fields.valueDropFrom !== undefined) {
+		const from = extra?.[fields.valueDropFrom];
+		if (typeof from === "number") {
+			out.value = coarsenRatingDrop(from, from - most.value);
+		} else if (most.value > 0) {
+			// No ratings to measure against, so no tens digit to report.
+			out.value = "-";
+		}
+		out.extra = omit(extra ?? {}, [fields.valueDropFrom]);
+	}
 
 	if (fields.valueDiffFrom !== undefined) {
 		const from = extra?.[fields.valueDiffFrom];
@@ -1035,13 +1050,15 @@ const updatePlayers = async (
 				let maxOvrDrop = 0;
 				let injuryType;
 				let injurySeason;
-				for (const injury of p.injuries) {
+				let injuryIndex = -1;
+				for (const [i, injury] of p.injuries.entries()) {
 					if (injury.ovrDrop !== undefined && injury.ovrDrop > maxOvrDrop) {
 						maxOvrDrop = injury.ovrDrop;
 
 						// Somehow propagate these through
 						injuryType = injury.type;
 						injurySeason = injury.season;
+						injuryIndex = i;
 					}
 				}
 
@@ -1049,9 +1066,18 @@ const updatePlayers = async (
 					return;
 				}
 
+				// The ovr going into the injury, for the coarse display. The injury
+				// opened a ratings row tagged with its index; the row before it
+				// holds the ratings he had.
+				const rowIndex = p.ratings.findIndex(
+					(row) => row.injuryIndex === injuryIndex,
+				);
+				const ovrBefore =
+					rowIndex > 0 ? p.ratings[rowIndex - 1]!.ovr : undefined;
+
 				return {
 					value: maxOvrDrop,
-					extra: { type: injuryType, season: injurySeason },
+					extra: { type: injuryType, season: injurySeason, ovrBefore },
 				};
 			};
 		} else if (type === "jersey_number") {

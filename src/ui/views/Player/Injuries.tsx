@@ -1,5 +1,6 @@
 import { DataTable } from "../../components/DataTable/index.tsx";
 import { getCols } from "../../../common/getCols.ts";
+import { injuryDropCell } from "../../util/injuryDropCell.ts";
 
 const cols = getCols(["Year", "Type", "Games", "Ovr Drop", "Pot Drop"], {
 	Type: {
@@ -62,8 +63,8 @@ const Injuries = ({
 						},
 						injury.type,
 						injury.games,
-						showRatings ? injury.ovrDrop : null,
-						showRatings ? injury.potDrop : null,
+						showRatings ? injuryDropCell(injury.ovrDrop) : null,
+						showRatings ? injuryDropCell(injury.potDrop) : null,
 					],
 				};
 			})}

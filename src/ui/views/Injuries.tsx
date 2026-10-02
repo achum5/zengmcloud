@@ -8,6 +8,7 @@ import { wrappedPlayerNameLabels } from "../components/PlayerNameLabels.tsx";
 import type { DataTableRow } from "../components/DataTable/index.tsx";
 import { wrappedCheckmarkOrCross } from "../components/CheckmarkOrCross.tsx";
 import { useLocal } from "../util/local.ts";
+import { injuryDropCell } from "../util/injuryDropCell.ts";
 
 const Injuries = ({ abbrev, injuries, season, stats }: View<"injuries">) => {
 	useTitleBar({
@@ -82,8 +83,8 @@ const Injuries = ({ abbrev, injuries, season, stats }: View<"injuries">) => {
 				p.type,
 				p.games,
 				wrappedCheckmarkOrCross({ hideCross: true, success: p.playingThrough }),
-				showRatings ? p.ovrDrop : null,
-				showRatings ? p.potDrop : null,
+				showRatings ? injuryDropCell(p.ovrDrop) : null,
+				showRatings ? injuryDropCell(p.potDrop) : null,
 			],
 			classNames: {
 				"table-danger": p.hof,

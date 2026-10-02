@@ -55,20 +55,34 @@ describe("coarsening the frivolities' rating columns", () => {
 		});
 	});
 
-	// AN INJURY'S OVR DROP IS SHOWN EXACTLY, even here. It is a difference, not
-	// a rating, so flooring it to the tens digit turned every ordinary injury
-	// into "0" and left a list whose entire purpose is ranking by that number as
-	// a column of zeroes. The same drop is already on screen at full resolution
-	// on the Injuries page and on each player's own Injuries table.
-	test("an injury's ovr drop keeps its ones digit", () => {
+	// An injury's ovr drop is shown as how far the tens digit fell, measured
+	// from the ovr going into the injury - and "-" when it stayed in its ten.
+	test("an injury's ovr drop is the fall of the tens digit", () => {
+		const out = coarsenMostForDisplay(
+			{ value: 17, extra: { ovrBefore: 62, season: 2004 } },
+			"worst_injuries",
+		);
+		assert.strictEqual(out.value, 2); // 62 -> 45
+		assert.strictEqual(out.extra?.season, 2004);
 		assert.strictEqual(
-			coarsenMostForDisplay({ value: 17 }, "worst_injuries").value,
-			17,
+			out.extra?.ovrBefore,
+			undefined,
+			"the exact pre-injury ovr doesn't reach the page",
+		);
+	});
+
+	test("an injury's ovr drop inside the same ten reads as a dash", () => {
+		assert.strictEqual(
+			coarsenMostForDisplay(
+				{ value: 4, extra: { ovrBefore: 58 } },
+				"worst_injuries",
+			).value,
+			"-",
 		);
 		assert.strictEqual(
 			coarsenMostForDisplay({ value: 4 }, "worst_injuries").value,
-			4,
-			"a single-digit drop would otherwise vanish to 0",
+			"-",
+			"no ratings to measure against",
 		);
 	});
 

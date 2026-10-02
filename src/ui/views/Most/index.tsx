@@ -10,6 +10,7 @@ import type { DataTableRow } from "../../components/DataTable/index.tsx";
 import { wrappedCurrency } from "../../components/wrappedCurrency.ts";
 import { SafeHtml } from "../../components/SafeHtml.tsx";
 import { useLocal } from "../../util/local.ts";
+import { injuryDropCell } from "../../util/injuryDropCell.ts";
 import { GoatBreakdown, formatGoatValue } from "./GoatBreakdown.tsx";
 
 export const getValue = (
@@ -109,6 +110,9 @@ const Most = ({
 					}
 					if (x.colName === "Prog") {
 						return helpers.plusMinus(value, 0);
+					}
+					if (x.colName === "Ovr Drop") {
+						return injuryDropCell(value);
 					}
 					if (x.colName === "GOAT") {
 						return {
