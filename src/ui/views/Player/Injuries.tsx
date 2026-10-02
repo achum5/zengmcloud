@@ -15,8 +15,9 @@ const Injuries = ({
 		games: number;
 		season: number;
 		type: string;
-		ovrDrop?: number;
-		potDrop?: number;
+		// "-" in coarse ratings mode: a drop that didn't cost a full tens digit.
+		ovrDrop?: number | "-";
+		potDrop?: number | "-";
 	}[];
 	showRatings: boolean;
 }) => {
@@ -24,30 +25,25 @@ const Injuries = ({
 		return <p>None</p>;
 	}
 
-	const totals: {
-		games: number;
-		ovrDrop: number | undefined;
-		potDrop: number | undefined;
-	} = {
-		games: 0,
-		ovrDrop: undefined,
-		potDrop: undefined,
+	const total = (key: "ovrDrop" | "potDrop") => {
+		let sum: number | undefined;
+		let dropped = false;
+		for (const injury of injuries) {
+			const drop = injury[key];
+			if (drop === "-") {
+				dropped = true;
+			} else if (drop !== undefined) {
+				sum = (sum ?? 0) + drop;
+			}
+		}
+		return dropped && !sum ? "-" : sum;
 	};
-	for (const injury of injuries) {
-		totals.games += injury.games;
-		if (injury.ovrDrop !== undefined) {
-			if (totals.ovrDrop === undefined) {
-				totals.ovrDrop = 0;
-			}
-			totals.ovrDrop += injury.ovrDrop;
-		}
-		if (injury.potDrop !== undefined) {
-			if (totals.potDrop === undefined) {
-				totals.potDrop = 0;
-			}
-			totals.potDrop += injury.potDrop;
-		}
-	}
+
+	const totals = {
+		games: injuries.reduce((sum, injury) => sum + injury.games, 0),
+		ovrDrop: total("ovrDrop"),
+		potDrop: total("potDrop"),
+	};
 
 	return (
 		<DataTable

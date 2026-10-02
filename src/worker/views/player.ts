@@ -14,7 +14,9 @@ import { idb } from "../db/index.ts";
 import { feedAbout } from "../util/socialFeed.ts";
 import {
 	coarsenRating,
+	coarsenRatingDrop,
 	exemptFromCoarseRatings,
+	prospectRatingsSeason,
 } from "../../common/coarsenRating.ts";
 import { g, helpers } from "../util/index.ts";
 import type {
@@ -57,6 +59,52 @@ export type PlayerAwardBuiltInWithPrefix = PlayerAwardBuiltIn & {
 	groupPrefix?: string;
 };
 
+// An injury as the player page shows it. Where the ratings are coarse, the
+// ovr/pot drop is how far the tens digit fell rather than the exact loss.
+type ShownInjury = Omit<Player["injuries"][number], "ovrDrop" | "potDrop"> & {
+	ovrDrop?: number | "-";
+	potDrop?: number | "-";
+};
+
+const shownInjuries = (p: Player): ShownInjury[] => {
+	const exceptProspects = g.get("hideRatingsOnesDigitExceptProspects");
+	const coarse =
+		g.get("hideRatingsOnesDigit") &&
+		!exemptFromCoarseRatings(p.tid, exceptProspects, true);
+	if (!coarse) {
+		return p.injuries;
+	}
+
+	return p.injuries.map((injury, i) => {
+		// A rating-losing injury opened a new ratings row tagged with its index,
+		// so the row before it holds the ratings going in.
+		const rowIndex = p.ratings.findIndex((row) => row.injuryIndex === i);
+		const before = rowIndex > 0 ? p.ratings[rowIndex - 1]! : undefined;
+		const shown = (drop: number | undefined, rating: "ovr" | "pot") => {
+			if (drop === undefined) {
+				return undefined;
+			}
+			if (before === undefined) {
+				// No ratings to measure against, so no tens digit to report.
+				return drop > 0 ? "-" : drop;
+			}
+			if (prospectRatingsSeason(p.draft.year, before.season, exceptProspects)) {
+				return drop;
+			}
+			const fuzz = before.fuzz;
+			return coarsenRatingDrop(
+				player.fuzzRating(before[rating], fuzz),
+				player.fuzzRating(before[rating] - drop, fuzz),
+			);
+		};
+		return {
+			...injury,
+			ovrDrop: shown(injury.ovrDrop, "ovr"),
+			potDrop: shown(injury.potDrop, "pot"),
+		};
+	});
+};
+
 export const getPlayer = async (
 	pRaw: Player,
 	seasonRange?: [number, number],
@@ -91,7 +139,6 @@ export const getPlayer = async (
 				| "appearances"
 				| "imgURL"
 				| "injury"
-				| "injuries"
 				| "college"
 				| "relatives"
 				| "srID"
@@ -105,6 +152,7 @@ export const getPlayer = async (
 				};
 				name: string;
 				abbrev: string;
+				injuries: ShownInjury[];
 				mood: any;
 				salaries: {
 					amount: number;
@@ -211,6 +259,8 @@ export const getPlayer = async (
 
 	// Filter out rows with no games played
 	p.stats = p.stats.filter((row) => row.gp! > 0);
+
+	p.injuries = shownInjuries(pRaw);
 
 	// Handle prefixing awards
 	for (const award of p.awards) {

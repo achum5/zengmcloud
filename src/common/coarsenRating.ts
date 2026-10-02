@@ -93,6 +93,18 @@ export const comparisonEntryExact = (
 export const coarsenRatingChange = (current: number, change: number): number =>
 	coarsenRating(current) - coarsenRating(current - change);
 
+// An injury's ovr or pot drop as the coarse mode shows it: how far the tens
+// digit fell, from `before` (the rating going into the injury) to `after`. A
+// loss that stayed inside the decade reads "-" - it happened, but any number
+// would give away the ones digit.
+export const coarsenRatingDrop = (
+	before: number,
+	after: number,
+): number | "-" => {
+	const shown = coarsenRating(before) - coarsenRating(after);
+	return shown === 0 && after < before ? "-" : shown;
+};
+
 // Put a rating onto the scale a row is being SHOWN on, so two rows can be
 // compared without subtracting across scales.
 //
@@ -138,9 +150,10 @@ export const coarsenRatingValue = (value: unknown): unknown => {
 // whole decade of players shows the same number. Sorting on one of these is a
 // ten-way tie, and whatever breaks the tie is a ranking of the hidden ones
 // digit - see the scramble in DataTable's processRows.
-// An injury's ovr/pot DROP is not here: a drop is a difference, not a rating,
-// and nothing coarsens it on any of the three pages that show one. Listing it
-// would have the table scramble ties in a column whose numbers are exact.
+// An injury's ovr/pot DROP is not here: a drop is a difference, not a rating.
+// The player page coarsens it (coarsenRatingDrop) before it reaches the table,
+// so no exact value is left to rank ties by; the other two pages that show one
+// leave it exact.
 const COARSENED_RATING_COLS = new Set([
 	"Ovr",
 	"Pot",

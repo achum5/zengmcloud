@@ -3,6 +3,7 @@ import {
 	coarsenPlayerForDisplay,
 	coarsenRating,
 	coarsenRatingChange,
+	coarsenRatingDrop,
 	coarsenRatingsRow,
 	coarsenRatingValue,
 	exemptFromCoarseRatings,
@@ -38,6 +39,21 @@ describe("coarsenRatingChange", () => {
 
 	test("no change stays no change", () => {
 		assert.strictEqual(coarsenRatingChange(56, 0), 0);
+	});
+});
+
+describe("coarsenRatingDrop", () => {
+	test("a drop is how far the tens digit fell", () => {
+		assert.strictEqual(coarsenRatingDrop(62, 58), 1);
+		assert.strictEqual(coarsenRatingDrop(71, 49), 3);
+	});
+
+	test("a drop inside the same ten reads as a dash", () => {
+		assert.strictEqual(coarsenRatingDrop(58, 51), "-");
+	});
+
+	test("no drop stays zero", () => {
+		assert.strictEqual(coarsenRatingDrop(55, 55), 0);
 	});
 });
 
