@@ -3,6 +3,7 @@ import {
 	drawBall,
 	drawHoop,
 	drawShadow,
+	standsPoint,
 	type HoopFx,
 } from "./arena.ts";
 import { depthOf, project, type Camera, type Shot } from "./camera.ts";
@@ -88,6 +89,75 @@ const warmupLook = (look: Look, top: string): Look => {
 	return out;
 };
 
+// A cheap hash to a number in [0, 1), so the same flashes go off every time.
+const unitHash = (a: number, b: number): number => {
+	let h =
+		Math.imul((a | 0) ^ 0x9e3779b9, 0x85ebca6b) ^ Math.imul(b + 1, 0xc2b2ae35);
+	h ^= h >>> 15;
+	h = Math.imul(h, 0x2c1b3c6d);
+	h ^= h >>> 12;
+	return (h >>> 0) / 2 ** 32;
+};
+
+// Cameras going off in the stands after a big dunk.
+const drawFlashes = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	tl: CourtTimeline,
+	t: number,
+) => {
+	const fx = recentFx(tl, t, ["dunk"], 1700);
+	if (!fx || !fx.big) {
+		return;
+	}
+	const since = t - fx.t;
+	for (let i = 0; i < 36; i++) {
+		const fire = 60 + unitHash(fx.t, i * 3) * 1500;
+		const age = since - fire;
+		if (age < 0 || age > 110) {
+			continue;
+		}
+		const p = project(
+			cam,
+			standsPoint(
+				-30 + unitHash(fx.t, i * 3 + 1) * 154,
+				1 + unitHash(fx.t, i * 3 + 2) * 26,
+			),
+		);
+		if (
+			p.x < -20 ||
+			p.x > cam.viewW + 20 ||
+			p.y < -20 ||
+			p.y > cam.viewH + 20
+		) {
+			continue;
+		}
+		const a = 1 - age / 110;
+		const r = Math.max(4, p.k * 1.4);
+		const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+		g.addColorStop(0, `rgba(255,255,255,${a})`);
+		g.addColorStop(0.25, `rgba(235,240,255,${0.6 * a})`);
+		g.addColorStop(1, "rgba(220,230,255,0)");
+		ctx.fillStyle = g;
+		ctx.beginPath();
+		ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+		ctx.fill();
+	}
+};
+
+// How much of the crowd is on its feet (0..1): the home crowd erupts at a
+// big play of its team's, the road fans less so.
+export const crowdUp = (tl: CourtTimeline, t: number): number => {
+	const fx = recentFx(tl, t, ["roar"], 2700);
+	if (!fx) {
+		return 0;
+	}
+	const e = t - fx.t;
+	const level =
+		e < 260 ? e / 260 : e < 1800 ? 1 : Math.max(0, 1 - (e - 1800) / 900);
+	return level * (fx.team === 1 ? 1 : 0.4);
+};
+
 // The players who are not in the game, sitting in order on their bench.
 const benchStates = (f: Frame, onFloor: Set<number>): PlayerState[] => {
 	const out: PlayerState[] = [];
@@ -128,6 +198,8 @@ export const drawFrame = (f: Frame) => {
 
 	const onFloor = new Set(players.map((p) => p.pid));
 	const bench = benchStates(f, onFloor);
+
+	drawFlashes(ctx, cam, tl, t);
 
 	// Reflections in the polished floor.
 	const g = glossCtx;

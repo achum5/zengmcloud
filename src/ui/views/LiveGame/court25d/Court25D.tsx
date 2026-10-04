@@ -46,7 +46,7 @@ import { headColors, loadHead, type HeadSprite } from "./faces.ts";
 import { kitsFor, shade, type Look } from "./figure.ts";
 import { COURT_H, COURT_W, type Side } from "./geometry.ts";
 import { bodyOf, type Body } from "./poses.ts";
-import { aimFor, drawFrame, momentAt, replayAim } from "./scene.ts";
+import { aimFor, crowdUp, drawFrame, momentAt, replayAim } from "./scene.ts";
 
 // THE 2.5D COURT: the game as a broadcast - the home team's own floor, the
 // players with their faces, a camera that follows the ball - acting out the
@@ -127,13 +127,16 @@ const FaceLoader = ({
 	return null;
 };
 
-// A painted canvas, mounted as is.
+// A painted canvas, mounted as is - with more over it to fade in and out
+// (the crowd on its feet), if given.
 const Painted = ({
 	canvas,
+	over = [],
 	plane,
 	setRef,
 }: {
 	canvas: HTMLCanvasElement;
+	over?: HTMLCanvasElement[];
 	plane: Plane;
 	setRef: (key: string, el: HTMLDivElement | null) => void;
 }) => (
@@ -141,10 +144,17 @@ const Painted = ({
 		ref={(el) => {
 			setRef(plane.key, el);
 			if (el && el.firstChild !== canvas) {
-				canvas.style.display = "block";
-				canvas.style.width = "100%";
-				canvas.style.height = "100%";
-				el.replaceChildren(canvas);
+				for (const c of [canvas, ...over]) {
+					c.style.display = "block";
+					c.style.position = "absolute";
+					c.style.inset = "0";
+					c.style.width = "100%";
+					c.style.height = "100%";
+				}
+				for (const c of over) {
+					c.style.opacity = "0";
+				}
+				el.replaceChildren(canvas, ...over);
 			}
 		}}
 		style={planeStyle(plane)}
@@ -253,6 +263,8 @@ const Court25D = ({
 		const table = paintTable(h, a);
 		return {
 			stands: paintStands(h, a, String(gid ?? 0)),
+			standsUp: paintStands(h, a, String(gid ?? 0), 1),
+			standsWave: paintStands(h, a, String(gid ?? 0), 2),
 			wall: paintWall(h),
 			tableTop: table.top,
 			tableFront: table.front,
@@ -261,6 +273,9 @@ const Court25D = ({
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [gid]);
+
+	const paintRef = useRef(paint);
+	paintRef.current = paint;
 
 	// Faces arrive asynchronously; until then a player has a plain head and an
 	// average build.
@@ -638,6 +653,17 @@ const Court25D = ({
 					tag.style.display = show;
 				}
 			}
+			// The crowd on its feet after a big play, arms going up and out.
+			const up = crowdUp(tl, moment.t);
+			const wave = Math.sin(now / 130) > 0;
+			const opacity = (c: HTMLCanvasElement, o: number) => {
+				const v = o.toFixed(2);
+				if (c.style.opacity !== v) {
+					c.style.opacity = v;
+				}
+			};
+			opacity(paintRef.current.standsUp, wave ? 0 : up);
+			opacity(paintRef.current.standsWave, wave ? up : 0);
 
 			let shotText = "";
 			let clockText = "";
@@ -731,7 +757,12 @@ const Court25D = ({
 					pointerEvents: "none",
 				}}
 			>
-				<Painted canvas={paint.stands} plane={STANDS} setRef={setPlaneRef} />
+				<Painted
+					canvas={paint.stands}
+					over={[paint.standsUp, paint.standsWave]}
+					plane={STANDS}
+					setRef={setPlaneRef}
+				/>
 				<Painted canvas={paint.wall} plane={LED_WALL} setRef={setPlaneRef} />
 				<div
 					ref={(el) => {
@@ -786,6 +817,16 @@ const Court25D = ({
 					inset: 0,
 					width: "100%",
 					height: "100%",
+				}}
+			/>
+			<div
+				aria-hidden
+				style={{
+					position: "absolute",
+					inset: 0,
+					pointerEvents: "none",
+					background:
+						"radial-gradient(ellipse at 50% 55%, transparent 58%, rgba(0,0,0,0.32) 100%)",
 				}}
 			/>
 			<div

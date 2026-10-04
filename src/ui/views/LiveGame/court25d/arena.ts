@@ -145,10 +145,22 @@ const PALETTE = [
 const teamColor = (team: ArenaTeam | undefined, i: number, fallback: string) =>
 	team?.colors?.[i] || fallback;
 
+// A point on the stands: x along the court, `up` feet up the rake from the
+// front row.
+export const standsPoint = (x: number, up: number): Pt3 => ({
+	x,
+	y: STANDS_Y - up * Math.cos(RAKE),
+	z: WALL_H + up * Math.sin(RAKE),
+});
+
+// The crowd, painted once - and twice more on its feet (`up` 1 and 2: arms
+// high, then waving wide), the same people in the same seats, for when the
+// building erupts.
 export const paintStands = (
 	home: ArenaTeam | undefined,
 	away: ArenaTeam | undefined,
 	seed: string,
+	up: 0 | 1 | 2 = 0,
 ): HTMLCanvasElement => {
 	const { w, h } = STANDS;
 	const px = w / (X1 - X0);
@@ -157,6 +169,9 @@ export const paintStands = (
 	canvas.height = h;
 	const ctx = canvas.getContext("2d")!;
 	const rng = makeCourtRng(`stands|${seed}`);
+	// Who gets up is decided apart from who is there, so both pictures have
+	// the same crowd.
+	const rise = makeCourtRng(`stands-up|${seed}`);
 	const g = ctx.createLinearGradient(0, 0, 0, h);
 	g.addColorStop(0, "#07080b");
 	g.addColorStop(1, "#1a1c22");
@@ -214,20 +229,53 @@ export const paintStands = (
 			}
 			const x = (xf - X0) * px + (rng() - 0.5) * 2;
 			const bodyW = (1.25 + rng() * 0.35) * px;
-			const bodyH = 1.45 * px;
-			ctx.fillStyle = shirt();
+			const color = shirt();
+			const skin = skins[Math.floor(rng() * skins.length)]!;
+			const homeFan = color === homeC[0] || color === homeC[1];
+			const standing = up > 0 && rise() < (homeFan ? 0.88 : 0.45);
+			// On his feet he is taller, and his arms are up.
+			const bodyH = (standing ? 2 : 1.45) * px;
+			const lift = standing ? 0.55 * px : 0;
+			ctx.fillStyle = color;
 			ctx.beginPath();
 			ctx.roundRect(
 				x - bodyW / 2,
-				yb - bodyH - 0.5 * px,
+				yb - bodyH - 0.5 * px - lift,
 				bodyW,
 				bodyH,
 				0.35 * px,
 			);
 			ctx.fill();
-			ctx.fillStyle = skins[Math.floor(rng() * skins.length)]!;
+			const headY = yb - bodyH - 0.75 * px - lift;
+			if (standing) {
+				// Arms up in a V - some waving a towel.
+				const reach = (1.25 + rise() * 0.45) * px;
+				const spread = (up === 1 ? 0.3 : 0.95) * px;
+				const shoulderY = headY + 0.55 * px;
+				const towel = homeFan && rise() < 0.35;
+				ctx.strokeStyle = skin;
+				ctx.lineWidth = 0.46 * px;
+				ctx.lineCap = "round";
+				ctx.beginPath();
+				const hands: [number, number][] = [];
+				for (const side of [-1, 1]) {
+					const sx = x + (side * bodyW) / 2.4;
+					const hx = sx + side * spread;
+					const hy = shoulderY - reach + (up === 2 ? 0.3 * px : 0);
+					ctx.moveTo(sx, shoulderY);
+					ctx.lineTo(hx, hy);
+					hands.push([hx, hy]);
+				}
+				ctx.stroke();
+				if (towel) {
+					const [hx, hy] = hands[up === 1 ? 1 : 0]!;
+					ctx.fillStyle = rise() < 0.5 ? "#f4f4f4" : homeC[0]!;
+					ctx.fillRect(hx - 0.45 * px, hy - 0.95 * px, 0.9 * px, 0.75 * px);
+				}
+			}
+			ctx.fillStyle = skin;
 			ctx.beginPath();
-			ctx.arc(x, yb - bodyH - 0.75 * px, 0.36 * px, 0, Math.PI * 2);
+			ctx.arc(x, headY, 0.36 * px, 0, Math.PI * 2);
 			ctx.fill();
 			if (rng() < 0.05) {
 				// Somebody's on his feet.
