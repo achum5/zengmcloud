@@ -734,13 +734,13 @@ export const bodyOf = (hgt = DEFAULT_HGT, weight = DEFAULT_WEIGHT): Body => {
 		shoulderW: H * 0.118 * g,
 		hipW: H * 0.066 * g,
 		depth: H * 0.1 * g,
-		thighR: H * 0.046 * g,
+		thighR: H * 0.05 * g,
 		kneeR: H * 0.034 * g,
 		calfR: H * 0.035 * g,
 		ankleR: H * 0.021,
-		upperR: H * 0.03 * g,
-		foreR: H * 0.025 * g,
-		handR: H * 0.024,
+		upperR: H * 0.035 * g,
+		foreR: H * 0.029 * g,
+		handR: H * 0.026,
 	};
 };
 

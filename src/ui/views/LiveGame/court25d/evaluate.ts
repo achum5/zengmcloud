@@ -236,18 +236,20 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 	return angleTo(here, ball, fallback);
 };
 
-// Turning takes a moment: the facing is the recent intentions, averaged.
-const YAW_SAMPLES = [0, 45, 90, 135, 180, 225];
+// Turning takes a moment: from where he meant to face a little while ago,
+// he turns toward each newer intention no faster than a player can pivot.
+// Worked out afresh for every t (no state), so any frame can be asked for.
+const TURN_STEP = 40;
+const TURN_WINDOW = 360;
+const TURN_MAX = (Math.PI * 3 * TURN_STEP) / 1000;
 const yawAt = (tl: CourtTimeline, tr: Track, t: number): number => {
-	let sx = 0;
-	let sy = 0;
-	for (let k = 0; k < YAW_SAMPLES.length; k++) {
-		const a = yawTarget(tl, tr, t - YAW_SAMPLES[k]!);
-		const w = YAW_SAMPLES.length - k;
-		sx += Math.cos(a) * w;
-		sy += Math.sin(a) * w;
+	let yaw = yawTarget(tl, tr, t - TURN_WINDOW);
+	for (let k = TURN_WINDOW - TURN_STEP; k >= 0; k -= TURN_STEP) {
+		let d = yawTarget(tl, tr, t - k) - yaw;
+		d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+		yaw += Math.max(-TURN_MAX, Math.min(TURN_MAX, d));
 	}
-	return Math.atan2(sy, sx);
+	return yaw;
 };
 
 export const evalPlayer = (

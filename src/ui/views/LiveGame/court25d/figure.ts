@@ -171,6 +171,53 @@ export const drawFigure = (
 
 	const parts: Part[] = [];
 
+	// A limb, lit from the arena lights above: the edges fall into shadow
+	// and a lighter core runs down the middle.
+	const tube = (a: P2, ra: number, b: P2, rb: number, color: string) => {
+		if (mirror) {
+			ctx.fillStyle = color;
+			capsule(ctx, a, ra, b, rb);
+			return;
+		}
+		ctx.fillStyle = shade(color, -0.16);
+		capsule(ctx, a, ra, b, rb);
+		ctx.fillStyle = shade(color, 0.05);
+		capsule(
+			ctx,
+			{ x: a.x - ra * 0.14, y: a.y - ra * 0.16 },
+			ra * 0.62,
+			{ x: b.x - rb * 0.14, y: b.y - rb * 0.16 },
+			rb * 0.62,
+		);
+	};
+	const ball = (c: P2, r: number, color: string) => {
+		tube(c, r, c, r, color);
+	};
+
+	// Rings round his middle at a height up the spine (0 hips, 1 shoulders):
+	// a torso or a waistband, seen from wherever the camera is.
+	const ring = (lambda: number, lat: number, dep: number): Projected[] => {
+		const f = sk.pelvis.f + (sk.chest.f - sk.pelvis.f) * lambda;
+		const u = sk.pelvis.u + (sk.chest.u - sk.pelvis.u) * lambda;
+		const out: Projected[] = [];
+		for (let i = 0; i < 12; i++) {
+			const a = (i / 12) * Math.PI * 2;
+			out.push(at({ f: f + Math.cos(a) * dep, s: Math.sin(a) * lat, u }));
+		}
+		return out;
+	};
+	// Lit from above: lighter at the shoulders, darker at the waist.
+	const litFill = (top: P2, bottom: P2, color: string) => {
+		if (mirror) {
+			return color;
+		}
+		const g = ctx.createLinearGradient(top.x, top.y, bottom.x, bottom.y);
+		g.addColorStop(0, shade(color, 0.12));
+		g.addColorStop(0.5, color);
+		g.addColorStop(1, shade(color, -0.2));
+		return g;
+	};
+
 	const leg = (limb: Limb, far: boolean) => {
 		const hip = at(limb.root);
 		const knee = at(limb.mid);
@@ -179,37 +226,34 @@ export const drawFigure = (
 		parts.push({
 			depth: knee.depth + (far ? 0.6 : 0),
 			draw: () => {
-				ctx.fillStyle = dim(skin, far);
-				capsule(ctx, knee, body.kneeR * knee.k, ankle, body.ankleR * ankle.k);
-				capsule(ctx, hip, body.thighR * hip.k, knee, body.kneeR * knee.k);
+				const sk0 = dim(skin, far);
+				tube(knee, body.kneeR * knee.k, ankle, body.ankleR * ankle.k, sk0);
+				tube(hip, body.thighR * hip.k, knee, body.kneeR * knee.k, sk0);
 				if (!mirror) {
-					ctx.fillStyle = dim(kit.sock, far);
 					const sockTop = lerp2(knee, ankle, 0.62);
-					capsule(
-						ctx,
+					tube(
 						sockTop,
 						body.calfR * 0.8 * ankle.k,
 						ankle,
 						body.ankleR * 1.15 * ankle.k,
+						dim(kit.sock, far),
 					);
 				}
-				ctx.fillStyle = dim(kit.shoe, far);
-				capsule(
-					ctx,
+				tube(
 					ankle,
 					body.ankleR * 1.55 * ankle.k,
 					toe,
 					body.ankleR * 1.3 * toe.k,
+					dim(kit.shoe, far),
 				);
 				// Baggy shorts down to just above the knee.
-				ctx.fillStyle = dim(kit.jersey, far);
-				const hem = lerp2(hip, knee, 0.78);
-				capsule(
-					ctx,
+				const hem = lerp2(hip, knee, 0.8);
+				tube(
 					hip,
-					body.thighR * 1.32 * hip.k,
+					body.thighR * 1.34 * hip.k,
 					hem,
-					body.thighR * 1.18 * knee.k,
+					body.thighR * 1.2 * knee.k,
+					dim(kit.jersey, far),
 				);
 			},
 		});
@@ -217,39 +261,32 @@ export const drawFigure = (
 	leg(sk.legR, !leftFar);
 	leg(sk.legL, leftFar);
 
-	// The waist of the shorts, so the two legs read as one pair of shorts.
+	// The top of the shorts, so the two legs read as one pair.
 	const pelvis = at(sk.pelvis);
 	const waist = [
-		at(off(sk.legR.root, body.depth * 0.5, -body.hipW * 0.6, 0.15)),
-		at(off(sk.legR.root, -body.depth * 0.5, -body.hipW * 0.6, 0.15)),
-		at(off(sk.legL.root, body.depth * 0.5, body.hipW * 0.6, 0.15)),
-		at(off(sk.legL.root, -body.depth * 0.5, body.hipW * 0.6, 0.15)),
-		at(off(sk.legR.root, body.depth * 0.3, -body.hipW * 0.4, -0.35)),
-		at(off(sk.legL.root, body.depth * 0.3, body.hipW * 0.4, -0.35)),
-		at(off(sk.legR.root, -body.depth * 0.3, -body.hipW * 0.4, -0.35)),
-		at(off(sk.legL.root, -body.depth * 0.3, body.hipW * 0.4, -0.35)),
+		...ring(0.1, body.hipW * 1.55, body.depth * 0.5),
+		...ring(-0.16, body.hipW * 1.6, body.depth * 0.5),
 	];
 	parts.push({
 		depth: pelvis.depth + 0.05,
 		draw: () => {
-			ctx.fillStyle = kit.jersey;
+			ctx.fillStyle = litFill(
+				at(off(sk.pelvis, 0, 0, 0.3)),
+				pelvis,
+				kit.jersey,
+			);
 			fillPoly(ctx, hull(waist));
 		},
 	});
 
-	// The torso: shoulders down to the waist, front and back.
+	// The torso: rounded through the chest, narrower at the waist, the
+	// jersey's straps inside the shoulders.
 	const chest = at(sk.chest);
-	const shR = sk.armR.root;
-	const shL = sk.armL.root;
 	const torsoPts = [
-		at(off(shR, body.depth * 0.45, 0.06, 0.1)),
-		at(off(shR, -body.depth * 0.45, 0.06, 0.1)),
-		at(off(shL, body.depth * 0.45, -0.06, 0.1)),
-		at(off(shL, -body.depth * 0.45, -0.06, 0.1)),
-		at(off(sk.pelvis, body.depth * 0.5, -body.hipW * 1.25, 0.25)),
-		at(off(sk.pelvis, -body.depth * 0.5, -body.hipW * 1.25, 0.25)),
-		at(off(sk.pelvis, body.depth * 0.5, body.hipW * 1.25, 0.25)),
-		at(off(sk.pelvis, -body.depth * 0.5, body.hipW * 1.25, 0.25)),
+		...ring(1, body.shoulderW * 0.86, body.depth * 0.4),
+		...ring(0.72, body.shoulderW * 0.95, body.depth * 0.52),
+		...ring(0.36, body.hipW * 1.55, body.depth * 0.48),
+		...ring(0.08, body.hipW * 1.45, body.depth * 0.46),
 	];
 	const neckBase = at(off(sk.chest, 0, 0, body.H * 0.01));
 	const headC = at(sk.head);
@@ -257,16 +294,15 @@ export const drawFigure = (
 		depth: (chest.depth + pelvis.depth) / 2,
 		draw: () => {
 			// The neck, under the collar.
-			ctx.fillStyle = skin;
-			capsule(
-				ctx,
+			tube(
 				neckBase,
 				body.headR * 0.5 * neckBase.k,
 				headC,
 				body.headR * 0.42 * headC.k,
+				skin,
 			);
 			const outline = hull(torsoPts);
-			ctx.fillStyle = kit.jersey;
+			ctx.fillStyle = litFill(chest, pelvis, kit.jersey);
 			fillPoly(ctx, outline);
 			if (mirror) {
 				return;
@@ -286,8 +322,8 @@ export const drawFigure = (
 			return;
 		}
 		const onFront = front > 0;
-		const lift = body.torso * 0.48;
-		const face = onFront ? body.depth * 0.5 : -body.depth * 0.5;
+		const lift = body.torso * 0.5;
+		const face = onFront ? body.depth * 0.52 : -body.depth * 0.5;
 		const o = at(off(sk.pelvis, face, 0, lift));
 		// His left-to-right across the screen, and his spine.
 		let a = at(off(sk.pelvis, face, body.hipW, lift));
@@ -322,12 +358,12 @@ export const drawFigure = (
 		parts.push({
 			depth: (el.depth + hand.depth) / 2 + (far ? 0.5 : -0.2),
 			draw: () => {
-				ctx.fillStyle = dim(skin, far);
-				capsule(ctx, sh, body.upperR * sh.k, el, body.foreR * 1.05 * el.k);
-				capsule(ctx, el, body.foreR * el.k, hand, body.handR * 0.8 * hand.k);
-				ctx.beginPath();
-				ctx.arc(hand.x, hand.y, body.handR * hand.k, 0, Math.PI * 2);
-				ctx.fill();
+				const c = dim(skin, far);
+				// The shoulder, the upper arm, the forearm, the hand.
+				ball(sh, body.upperR * 1.25 * sh.k, c);
+				tube(sh, body.upperR * sh.k, el, body.foreR * 1.05 * el.k, c);
+				tube(el, body.foreR * el.k, hand, body.handR * 0.8 * hand.k, c);
+				ball(hand, body.handR * hand.k, c);
 			},
 		});
 	};
