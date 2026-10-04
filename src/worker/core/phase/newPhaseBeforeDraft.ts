@@ -27,6 +27,7 @@ import { genMessage } from "./genMessage.ts";
 import { defaultGameAttributes } from "../../../common/defaultGameAttributes.ts";
 import { env } from "../../util/env.ts";
 import { orderTeams } from "../../util/orderTeams.ts";
+import { collegeDepartures } from "../college/offseason.ts";
 import { doAwards } from "../awards/doAwards.ts";
 
 const INFLATION_GAME_ATTRIBUTES = [
@@ -415,6 +416,10 @@ const newPhaseBeforeDraft = async (
 	}
 
 	const repeatSeasonType = g.get("repeatSeason")?.type;
+
+	if (g.get("college")) {
+		await collegeDepartures(conditions);
+	}
 
 	if (repeatSeasonType !== "playersAndRosters") {
 		// Do annual tasks for each player, like checking for retirement

@@ -1,5 +1,6 @@
 import { PLAYER } from "../../../common/constants.ts";
 import { finances, player, realRosters } from "../index.ts";
+import { genCollegeRecruits } from "../college/offseason.ts";
 import genPlayersWithoutSaving from "./genPlayersWithoutSaving.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, logEvent } from "../../util/index.ts";
@@ -9,6 +10,12 @@ const genPlayers = async (
 	scoutingLevel?: number,
 	forceScrubs?: boolean,
 ) => {
+	// College leagues bring in high school classes, not draft classes.
+	if (g.get("college")) {
+		await genCollegeRecruits(draftYear);
+		return;
+	}
+
 	// If scoutingLevel is not supplied, have to hit the DB to get it
 	if (scoutingLevel === undefined) {
 		scoutingLevel = await finances.getLevelLastThree("scouting", {

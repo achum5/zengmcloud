@@ -27,7 +27,7 @@ import {
 	formatKeyboardShortcut,
 	useKeyboardShortcuts,
 } from "../../util/keyboardShortcuts.ts";
-import { menuItems } from "../../util/menuItems.tsx";
+import { hiddenForLeagueType, menuItems } from "../../util/menuItems.tsx";
 import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
 import { local, useLocal } from "../../util/local.ts";
 import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
@@ -134,6 +134,10 @@ const getResultsGroupedDefault = ({
 		}
 
 		if (menuItem.godMode && !godMode) {
+			return false;
+		}
+
+		if (hiddenForLeagueType(menuItem, local.getState().college)) {
 			return false;
 		}
 

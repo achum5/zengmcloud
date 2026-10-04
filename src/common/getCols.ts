@@ -3165,6 +3165,11 @@ const cols: {
 		sortSequence: ["desc", "asc"],
 		sortType: "number",
 	},
+	Class: {
+		desc: "Class Year",
+		sortSequence: ["asc", "desc"],
+		sortType: "number",
+	},
 	Country: {
 		sortType: "country",
 	},

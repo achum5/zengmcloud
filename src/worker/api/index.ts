@@ -287,7 +287,11 @@ import { formatPlayerAwardName } from "../../common/awards.ts";
 import { formatScheduleForEditor } from "../views/scheduleEditor.ts";
 import type { KeyboardShortcutsLocal } from "../../ui/util/keyboardShortcuts.ts";
 import { getNumPlayoffTeamsRaw } from "../core/season/getNumPlayoffTeams.ts";
-import type { NewLeagueSettings } from "../views/newLeague.ts";
+import {
+	getDefaultSettings,
+	type NewLeagueSettings,
+} from "../views/newLeague.ts";
+import { COLLEGE_SETTINGS, getCollegeTeams } from "../core/college/setup.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "../core/player/getNumPlayersTradedAwayNormalized.ts";
 import { getAdjustedTicketPrice } from "../../common/getAdjustedTicketPrice.ts";
 import { gameAttributesArrayToObject } from "../../common/gameAttributesArrayToObject.ts";
@@ -2935,6 +2939,53 @@ const triviaNewTeamRound = async (options: TeamTriviaOptions | undefined) => {
 // per visit and cached in the UI - it only moves when a season finishes.
 const triviaTeamCatalog = async () => {
 	return getTeamTriviaCatalog();
+};
+
+// A brand new college league: every D1 school, college rules, no money.
+const createCollegeLeague = async (
+	{
+		name,
+		tid,
+		leagueCreationID,
+	}: {
+		name: string;
+		tid: number;
+		leagueCreationID: string;
+	},
+	conditions: Conditions,
+) => {
+	const { confs, divs, teams } = getCollegeTeams();
+	const settings = {
+		...getDefaultSettings(),
+		...COLLEGE_SETTINGS,
+	} as unknown as NewLeagueSettings;
+	return createLeague(
+		{
+			name,
+			tid,
+			file: undefined,
+			url: undefined,
+			shuffleRosters: false,
+			importLid: undefined,
+			getLeagueOptions: undefined,
+			keptKeys: [],
+			confs,
+			divs,
+			teamsFromInput: teams,
+			settings,
+			fromFile: {
+				gameAttributes: undefined,
+				hasRookieContracts: true,
+				maxGid: undefined,
+				startingSeason: undefined,
+				teams: undefined,
+				version: undefined,
+			},
+			startingSeasonFromInput: undefined,
+			leagueCreationID,
+		},
+		conditions,
+	);
 };
 
 // Spin Streak: one question per spin, so the reels always land on something
@@ -7732,6 +7783,7 @@ const api = {
 		triviaNewTeamRound,
 		triviaTeamCatalog,
 		triviaSpinQuestion,
+		createCollegeLeague,
 		getPlayerWatch,
 		getProjectedAttendance,
 		getRandomCollege,

@@ -3,6 +3,7 @@ import type { Conditions } from "../../../common/types.ts";
 import { g, helpers, logEvent } from "../../util/index.ts";
 import { getRealSchedule } from "./getRealSchedule.football.ts";
 import newScheduleGood from "./newScheduleGood.ts";
+import newScheduleCollege from "../college/newScheduleCollege.ts";
 
 const newSchedule = (
 	teams: {
@@ -19,6 +20,10 @@ const newSchedule = (
 		if (tids) {
 			return tids;
 		}
+	}
+
+	if (g.get("college")) {
+		return newScheduleCollege(teams, g.get("numGames"));
 	}
 
 	const { tids, warning } = newScheduleGood(teams);

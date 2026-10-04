@@ -28,6 +28,7 @@ export const gameAttributesKeysGameState: GameAttributeKey[] = [
 	"gameOver",
 	"godMode",
 	"godModeInPast",
+	"college",
 	"otherTeamsWantToHire",
 	"lowestDifficulty",
 	"difficulty",
@@ -495,6 +496,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	gameOver: false,
 	godMode: false,
 	godModeInPast: false,
+	college: false,
 	salaryCap: 150000, // [thousands of dollars]
 	hardCapAmount: 0, // [thousands of dollars] a second, higher ceiling above salaryCap; 0 = off
 	hardCapTids: [], // teams the hard cap binds; empty = all teams (when hardCapAmount > 0)

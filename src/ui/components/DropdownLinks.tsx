@@ -4,6 +4,7 @@ import type { MouseEvent, ReactNode } from "react";
 import { Dropdown, Nav } from "react-bootstrap";
 import { helpers } from "../util/helpers.ts";
 import { useLocal } from "../util/local.ts";
+import { hiddenForLeagueType } from "../util/menuItems.tsx";
 import type {
 	MenuItemLink,
 	MenuItemHeader,
@@ -142,7 +143,8 @@ const MenuItem = ({
 	// Read here rather than threaded down: one leaf needs it, and the flag has
 	// nothing to do with the components in between. Before the early returns,
 	// because it is a hook.
-	const { rotationPlans, socialFeed } = useLocal([
+	const { college, rotationPlans, socialFeed } = useLocal([
+		"college",
 		"rotationPlans",
 		"socialFeed",
 	]);
@@ -173,6 +175,10 @@ const MenuItem = ({
 		}
 
 		if (menuItem.rotationPlans && !rotationPlans) {
+			return null;
+		}
+
+		if (hiddenForLeagueType(menuItem, college)) {
 			return null;
 		}
 

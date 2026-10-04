@@ -17,7 +17,7 @@ import type {
 import CollapseArrow from "../CollapseArrow.tsx";
 import { AnimatePresence, m } from "framer-motion";
 import { VIDEO_ADS, VIDEO_AD_PADDING } from "../../../common/constants.ts";
-import { menuItems } from "../../util/menuItems.tsx";
+import { hiddenForLeagueType, menuItems } from "../../util/menuItems.tsx";
 import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
 
 export const getText = (
@@ -144,7 +144,8 @@ const MenuItem = ({
 	// Read here rather than threaded from the top: the flag is needed by one
 	// leaf, and passing it down would touch four components that have no other
 	// interest in it. Before every early return, because it is a hook.
-	const { rotationPlans, socialFeed } = useLocal([
+	const { college, rotationPlans, socialFeed } = useLocal([
+		"college",
 		"rotationPlans",
 		"socialFeed",
 	]);
@@ -175,6 +176,10 @@ const MenuItem = ({
 		}
 
 		if (menuItem.rotationPlans && !rotationPlans) {
+			return null;
+		}
+
+		if (hiddenForLeagueType(menuItem, college)) {
 			return null;
 		}
 

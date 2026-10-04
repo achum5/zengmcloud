@@ -14,6 +14,7 @@ export const routeInfos = {
 	"/settings/keyboard": "keyboardShortcuts",
 	"/dropbox": "dropbox",
 	"/exhibition": "exhibition",
+	"/new_college_league": "newCollegeLeague",
 	"/exhibition/game": "exhibitionGame",
 
 	// League views

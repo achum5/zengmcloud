@@ -835,6 +835,9 @@ export type GameAttributesLeague = {
 	gender: "female" | "male";
 	goatFormula?: string;
 	goatSeasonFormula?: string;
+	// College basketball league (set at creation, never toggled). Off for every
+	// pro league, so nothing college-specific ever runs there.
+	college: boolean;
 	godMode: boolean;
 	godModeInPast: boolean;
 	gracePeriodEnd: number;
@@ -1224,6 +1227,9 @@ export type MenuItemLink = {
 	socialFeed?: true;
 	// Hidden unless the league runs rotation plans, for the same reason.
 	rotationPlans?: true;
+	// Pro leagues only (contracts, trades, the draft) / college leagues only.
+	pro?: true;
+	college?: true;
 	nonLeague?: true;
 	commandPalette?: true;
 	commandPaletteOnly?: true;
@@ -1622,6 +1628,12 @@ export type PlayerWithoutKey<PlayerRatings = MinimalPlayerRatings> = {
 		loc: string;
 	};
 	college: string;
+	// College leagues only: season of his freshman year, and the season he
+	// redshirted (sat out without using a year of eligibility), if any.
+	collegeYear0?: number;
+	redshirt?: number;
+	// Why he left school, once he has.
+	collegeExit?: "graduated" | "draft";
 	contract: PlayerContract & {
 		temp?: true; // Used only on import
 	};
@@ -2105,6 +2117,10 @@ export type Team = {
 
 	pop: number;
 	stadiumCapacity: number;
+
+	// College leagues only: program prestige (1-100) and home state.
+	prestige?: number;
+	state?: string;
 
 	adjustForInflation: boolean;
 	disabled: boolean;

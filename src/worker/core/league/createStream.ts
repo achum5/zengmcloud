@@ -54,6 +54,7 @@ import addRelatives from "../realRosters/addRelatives.ts";
 import loadDataBasketball from "../realRosters/loadData.basketball.ts";
 import addDraftProspects from "./create/addDraftProspects.ts";
 import createRandomPlayers from "./create/createRandomPlayers.ts";
+import createCollegePlayers from "../college/createCollegePlayers.ts";
 import getRealTeamPlayerData from "./create/getRealTeamPlayerData.ts";
 import createGameAttributes from "./createGameAttributes.ts";
 import initRandomDebutsForRandomPlayersLeague from "./initRandomDebutsForRandomPlayersLeague.ts";
@@ -1644,12 +1645,18 @@ const afterDBStream = async ({
 
 	let activePlayers = fileHasPlayers
 		? extraFromStream.activePlayers
-		: await createRandomPlayers({
-				activeTids,
-				onlyFreeAgents: randomDebuts,
-				scoutingLevel,
-				teams,
-			});
+		: g.get("college")
+			? await createCollegePlayers({
+					activeTids,
+					scoutingLevel,
+					teams,
+				})
+			: await createRandomPlayers({
+					activeTids,
+					onlyFreeAgents: randomDebuts,
+					scoutingLevel,
+					teams,
+				});
 
 	// If players are specified for some team on import (from CustomizeTeams), replace the randomly generated players
 	const replaceTids = new Set();
@@ -1776,7 +1783,8 @@ const afterDBStream = async ({
 	}
 
 	// For random debuts we don't want addDraftProspects to be called, since it will fill in with random players. However this does imply that future pick value is going to be messed up for those transition years between random debuts generations, since getPickValues does not support partial draft classes.
-	if (!randomDebuts) {
+	// College leagues already have their high school class.
+	if (!randomDebuts && !g.get("college")) {
 		await addDraftProspects({
 			players: activePlayers,
 			scoutingLevel,

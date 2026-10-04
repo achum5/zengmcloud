@@ -1,4 +1,5 @@
 import { PHASE, PLAYER, POSITION_COUNTS } from "../../../common/constants.ts";
+import { collegeSigningDay } from "../college/offseason.ts";
 import {
 	contractNegotiation,
 	draft,
@@ -47,6 +48,11 @@ const newPhaseResignPlayers = async (
 	}
 
 	const repeatSeasonType = g.get("repeatSeason")?.type;
+
+	// College: this year's recruits sign before the rest become walk-ons.
+	if (g.get("college")) {
+		await collegeSigningDay();
+	}
 
 	// Reset contract demands of current free agents and undrafted players
 	// KeyRange only works because PLAYER.UNDRAFTED is -2 and PLAYER.FREE_AGENT is -1
@@ -577,7 +583,8 @@ const newPhaseResignPlayers = async (
 		}
 
 		// Generate a new draft class, while leaving existing players in that draft class in place
-		await draft.genPlayers(g.get("season") + 3);
+		// (College: next year's high school class.)
+		await draft.genPlayers(g.get("season") + (g.get("college") ? 1 : 3));
 	}
 
 	// Delete any old undrafted players that still somehow exist

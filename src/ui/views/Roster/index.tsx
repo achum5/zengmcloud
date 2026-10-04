@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { collegeClassLabel, collegeYear } from "../../../common/college.ts";
 import { Dropdown } from "react-bootstrap";
 import { arrayMove } from "@dnd-kit/sortable";
 import { PLAYER, WEBSITE_ROOT } from "../../../common/constants.ts";
@@ -121,6 +122,7 @@ const Roster = ({
 	const [prevPlayers, setPrevPlayers] = useState(players);
 	const {
 		challengeNoRatings,
+		college,
 		gender,
 		phase,
 		salaryCapType,
@@ -129,6 +131,7 @@ const Roster = ({
 		userTid,
 	} = useLocal([
 		"challengeNoRatings",
+		"college",
 		"gender",
 		"phase",
 		"salaryCapType",
@@ -168,7 +171,12 @@ const Roster = ({
 
 	const profit = t.seasonAttrs !== undefined ? t.seasonAttrs.profit : 0;
 
-	const showMood = season === currentSeason;
+	// College rosters: class years instead of years with team, NIL instead of
+	// contracts, and no mood or trades.
+	const showMood = season === currentSeason && !college;
+	const showRelease2 = showRelease;
+	const showTradeFor2 = showTradeFor && !college;
+	const showTradingBlock2 = showTradingBlock && !college;
 
 	const cols = getCols(
 		[
@@ -178,13 +186,13 @@ const Roster = ({
 			"Ovr",
 			"Pot",
 			...(season === currentSeason ? ["Contract"] : []),
-			"stat:yearsWithTeam",
+			college ? "Class" : "stat:yearsWithTeam",
 			"Country",
 			...stats.map((stat) => `stat:${stat}`),
 			...(editable ? ["PT"] : []),
 			...(showMood ? ["Mood"] : []),
-			...(showRelease ? ["Release"] : []),
-			...(showTradeFor || showTradingBlock ? ["Trade"] : []),
+			...(showRelease2 ? ["Release"] : []),
+			...(showTradeFor2 || showTradingBlock2 ? ["Trade"] : []),
 			"Acquired",
 		],
 		{
@@ -192,6 +200,9 @@ const Roster = ({
 				title: "",
 				desc: "Country",
 			},
+			...(college
+				? { Contract: { title: "NIL", desc: "NIL deal (per year)" } }
+				: {}),
 			PT: {
 				titleReact: (
 					<>
@@ -353,7 +364,14 @@ const Roster = ({
 					? wrappedRatingWithChange(p.ratings.pot, p.ratings.dpot)
 					: null,
 				...(season === currentSeason ? [wrappedContract(p)] : []),
-				playoffs === "playoffs" ? null : p.stats.yearsWithTeam,
+				college
+					? {
+							value: collegeClassLabel(p, season),
+							sortValue: collegeYear(p, season) ?? 0,
+						}
+					: playoffs === "playoffs"
+						? null
+						: p.stats.yearsWithTeam,
 				{
 					value: (
 						<>
@@ -383,7 +401,7 @@ const Roster = ({
 							}),
 						]
 					: []),
-				...(showRelease
+				...(showRelease2
 					? [
 							<button
 								className="btn btn-light-bordered btn-xs"
@@ -394,7 +412,7 @@ const Roster = ({
 							</button>,
 						]
 					: []),
-				...(showTradeFor
+				...(showTradeFor2
 					? [
 							<button
 								className="btn btn-light-bordered btn-xs"
@@ -407,7 +425,7 @@ const Roster = ({
 							</button>,
 						]
 					: []),
-				...(showTradingBlock
+				...(showTradingBlock2
 					? [
 							// "Trade away", with a dropdown caret to toggle "Untouchable"
 							// (protected from trade offers) for THIS team. Untouchable is
@@ -493,8 +511,8 @@ const Roster = ({
 				season={season}
 				payroll={payroll}
 				profit={profit}
-				showTradeFor={showTradeFor}
-				showTradingBlock={showTradingBlock}
+				showTradeFor={showTradeFor2}
+				showTradingBlock={showTradingBlock2}
 				t={t}
 				teamOvr={teamOvr}
 				tid={tid}
@@ -553,7 +571,7 @@ const Roster = ({
 								},
 							] as BulkAction[])
 						: []),
-					...(showTradeFor || showTradingBlock
+					...(showTradeFor2 || showTradingBlock2
 						? ([
 								{
 									onClick: (selectedRows) => {

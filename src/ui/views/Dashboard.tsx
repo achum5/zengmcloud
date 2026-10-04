@@ -462,6 +462,15 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 							<span className="dashboard-top-link-small">» Custom</span>
 						</a>
 						<a
+							href="/new_college_league"
+							className="btn btn-primary dashboard-top-link dashboard-top-link-new me-sm-3 mb-3"
+						>
+							New league
+							<br />
+							<span className="dashboard-top-link-small">» College</span>
+						</a>
+						<div className="d-sm-none" />
+						<a
 							href="/exhibition"
 							className="btn btn-secondary dashboard-top-link dashboard-top-link-new me-sm-3 mb-3"
 						>

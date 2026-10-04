@@ -41,6 +41,7 @@ export { default as eightyTwoZeroDraft } from "./eightyTwoZeroDraft.ts";
 export { default as editTeamCourt } from "./editTeamCourt.ts";
 export { default as editTeamUniform } from "./editTeamUniform.ts";
 export { default as exhibition } from "./exhibition.ts";
+export { default as newCollegeLeague } from "./newCollegeLeague.ts";
 export { default as exhibitionGame } from "./exhibitionGame.ts";
 export { default as intrasquad } from "./intrasquad.ts";
 export { default as intrasquadGame } from "./intrasquadGame.ts";

@@ -189,6 +189,7 @@ const TopStuff = ({
 	profit: number;
 }) => {
 	const {
+		college,
 		budget,
 		godMode,
 		hardCapAmount,
@@ -202,6 +203,7 @@ const TopStuff = ({
 		userTid,
 	} = useLocal([
 		"budget",
+		"college",
 		"godMode",
 		"hardCapAmount",
 		"hardCapTids",
@@ -349,7 +351,12 @@ const TopStuff = ({
 						{isCurrentSeason ? (
 							<div className="mt-3">{openRosterSpots} open roster spots</div>
 						) : null}
-						{payroll !== undefined ? (
+						{payroll !== undefined && college ? (
+							<div>
+								NIL payroll: {helpers.formatCurrency(payroll / 1000, "M")}
+							</div>
+						) : null}
+						{payroll !== undefined && !college ? (
 							<div>
 								{isCurrentSeason ? "Payroll" : "End of season payroll"}:{" "}
 								<PayrollAndPenalties

@@ -941,6 +941,9 @@ export const generateJsonSchema = (sport: Sport | "test") => {
 					godModeInPast: {
 						type: "boolean",
 					},
+					college: {
+						type: "boolean",
+					},
 					goatFormula: {
 						type: "string",
 					},

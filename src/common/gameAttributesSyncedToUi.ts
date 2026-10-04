@@ -3,6 +3,7 @@ export const gameAttributesSyncedToUi = [
 	"budget",
 	"challengeNoRatings",
 	"challengeNoTrades",
+	"college",
 	"currencyFormat",
 	"draftType",
 	"fantasyPoints",

@@ -118,6 +118,14 @@ const generate = (tm: any): Team => {
 		t.sportsbook = tm.sportsbook;
 	}
 
+	// College leagues
+	if (typeof tm.prestige === "number") {
+		t.prestige = tm.prestige;
+	}
+	if (typeof tm.state === "string") {
+		t.state = tm.state;
+	}
+
 	return t;
 };
 

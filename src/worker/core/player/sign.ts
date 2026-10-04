@@ -6,6 +6,7 @@ import fuzzRating from "./fuzzRating.ts";
 import genJerseyNumber from "./genJerseyNumber.ts";
 import setJerseyNumber from "./setJerseyNumber.ts";
 import { coarsenRating } from "../../../common/coarsenRating.ts";
+import { collegeFinalSeason } from "../../../common/college.ts";
 
 // HOW HIGH A POTENTIAL IS WORTH ANNOUNCING, and the number to quote when one
 // is. Undefined means say nothing.
@@ -76,6 +77,12 @@ const sign = async (
 		score -= 7;
 	}
 	score = Math.round(helpers.bound(score, 0, Infinity));
+
+	// A college NIL deal runs through his last season of eligibility.
+	const finalSeason = g.get("college") ? collegeFinalSeason(p) : undefined;
+	if (finalSeason !== undefined) {
+		contract = { ...contract, exp: Math.max(finalSeason, g.get("season")) };
+	}
 
 	setContract(p, contract, true);
 	const resigning =
