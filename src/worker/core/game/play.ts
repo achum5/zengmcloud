@@ -139,13 +139,18 @@ const play = async (
 		await lock.set("gameSim", false);
 
 		// Check to see if the season is over
-		const schedule = await season.getSchedule();
+		let schedule = await season.getSchedule();
 		let newPhaseCalled = false;
+		let collegeTourneyScheduled = false;
 		if (g.get("phase") < PHASE.PLAYOFFS) {
 			if (
 				schedule.length === 0 &&
-				!(g.get("college") && (await advanceCollegeConfTourneys(conditions)))
+				g.get("college") &&
+				(await advanceCollegeConfTourneys(conditions))
 			) {
+				collegeTourneyScheduled = true;
+				schedule = await season.getSchedule(true);
+			} else if (schedule.length === 0) {
 				await phase.newPhase(
 					PHASE.PLAYOFFS,
 					conditions,
@@ -186,6 +191,14 @@ const play = async (
 		}
 
 		await updatePlayMenu();
+
+		// Auto play only picks up again on a phase change, and a conference
+		// tournament round isn't one.
+		if (collegeTourneyScheduled && local.autoPlayUntil) {
+			setTimeout(() => {
+				void play(10, conditions);
+			}, 0);
+		}
 
 		// The sim has finished. Publish everything it changed to the cloud NOW.
 		// Multi-day sims ("week", "until playoffs", "until end of round", …) run

@@ -233,11 +233,9 @@ export const collegeStartRetention = async () => {
 // promise minutes to good players who want them.
 const aiRetention = async (pctByPid: Map<number, number>) => {
 	const season = g.get("season");
-	const userTids = g.get("userTids");
-	const auto = new Set(g.get("collegeAutoRecruit") ?? []);
 	const ctxs = await getTeamCtxs([]);
 	for (const ctx of ctxs.values()) {
-		if (userTids.includes(ctx.tid) && !auto.has(ctx.tid)) {
+		if (ctx.user && !ctx.auto) {
 			continue;
 		}
 		const roster = (

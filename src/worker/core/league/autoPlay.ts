@@ -72,7 +72,10 @@ const autoPlay = async (conditions: Conditions = {}) => {
 		currentPhase === PHASE.REGULAR_SEASON ||
 		currentPhase === PHASE.AFTER_TRADE_DEADLINE
 	) {
-		const numDays = await season.getDaysLeftSchedule();
+		// College: the conference tournaments come after the schedule runs out,
+		// a round at a time, before the phase changes.
+		const numDays =
+			(await season.getDaysLeftSchedule()) + (g.get("college") ? 10 : 0);
 		await game.play(numDays, conditions);
 	} else if (currentPhase === PHASE.PLAYOFFS) {
 		await game.play(100, conditions);

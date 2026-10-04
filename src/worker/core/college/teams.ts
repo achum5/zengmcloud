@@ -13,6 +13,7 @@ import { g, helpers } from "../../util/index.ts";
 import type { Player, Team } from "../../../common/types.ts";
 import { last } from "../../../common/utils.ts";
 import { userCoachStability } from "./coach.ts";
+import { isAiControlled } from "../../util/isAiControlled.ts";
 
 // What a school offers a player, priority by priority, and the interest that
 // adds up to. Shared by recruiting, the portal and retention.
@@ -123,7 +124,8 @@ export const getTeamCtxs = async (recruits: Player[]) => {
 			nilBudget: collegeNilBudget(prestige, nilScale),
 			nilCommitted,
 			visitsUsed: 0,
-			auto: auto.has(t.tid),
+			// Under auto play and in spectator mode the AI runs your school too.
+			auto: auto.has(t.tid) || isAiControlled(t),
 			user: userTids.includes(t.tid),
 		});
 	}
