@@ -56,6 +56,8 @@ export const genCollegePlayer = async (
 		name,
 	);
 	p.collegeYear0 = g.get("season") - classIndex;
+	// Fills in ovr and pot, which generate leaves at 0.
+	await player.develop(p, 0);
 	return p;
 };
 

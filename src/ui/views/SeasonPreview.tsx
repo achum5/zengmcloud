@@ -101,9 +101,11 @@ const PlayerList = ({
 					{showDraftPick ? (
 						<>
 							,{" "}
-							{p.draft.round > 0
-								? `${p.draft.round}-${p.draft.pick}`
-								: "undrafted"}
+							{p.collegeStars !== undefined
+								? `${p.collegeStars}-star`
+								: p.draft.round > 0
+									? `${p.draft.round}-${p.draft.pick}`
+									: "undrafted"}
 						</>
 					) : null}
 				</li>
@@ -235,8 +237,9 @@ const SeasonPreview = ({
 			seasons: season,
 		},
 	});
-	const { challengeNoRatings, hideTeamRatings, userTid } = useLocal([
+	const { challengeNoRatings, college, hideTeamRatings, userTid } = useLocal([
 		"challengeNoRatings",
+		"college",
 		"hideTeamRatings",
 		"userTid",
 	]);
@@ -278,7 +281,7 @@ const SeasonPreview = ({
 						/>
 					</div>
 					<div className="col-sm-6 col-md-4 col-lg-3">
-						<h2>Top Rookies</h2>
+						<h2>{college ? "Top Freshmen" : "Top Rookies"}</h2>
 						<PlayerList
 							challengeNoRatings={challengeNoRatings}
 							players={playersTopRookies}

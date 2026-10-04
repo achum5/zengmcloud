@@ -138,6 +138,37 @@ export const getRecruits = async () => {
 	return recruits;
 };
 
+// High school classes from before a fix were generated without ovr and pot,
+// so their rankings meant nothing. Rate them and rank them again, keeping
+// everything schools have done so far.
+const repairUnratedClass = async (recruits: Player[]) => {
+	const season = g.get("season");
+	const hs = recruits.filter(
+		(p) => p.tid === PLAYER.UNDRAFTED && p.draft.year === season,
+	);
+	if (!hs.some((p) => last(p.ratings).ovr === 0 && last(p.ratings).pot === 0)) {
+		return;
+	}
+	for (const p of hs) {
+		const ratings = last(p.ratings);
+		if (ratings.ovr === 0 && ratings.pot === 0) {
+			await player.develop(p, 0);
+			await player.updateValues(p);
+		}
+	}
+	const nilScale = g.get("collegeNilScale");
+	const sorted = [...hs].sort((a, b) => b.value - a.value);
+	for (const [i, p] of sorted.entries()) {
+		const rec = p.recruiting!;
+		rec.rank = i + 1;
+		rec.stars = starsForRank(rec.rank, sorted.length);
+		rec.ask = roundNil(askForRank(rec.stars, rec.rank) * nilScale);
+		rec.askRange = nilRange(rec.ask);
+		p.collegeStars = rec.stars;
+	}
+	await idb.cache.players.putAll(hs);
+};
+
 // --- AI planning -------------------------------------------------------------
 
 type Plan = Map<
@@ -391,6 +422,7 @@ export const collegeRecruitingDay = async () => {
 	if (recruits.length === 0) {
 		return;
 	}
+	await repairUnratedClass(recruits);
 	const ctxs = await getTeamCtxs(recruits);
 
 	dayCounter += days;

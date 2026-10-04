@@ -67,6 +67,8 @@ const updateSeasonPreview = async (
 				"value",
 				"draft",
 				"injury",
+				"collegeYear0",
+				"collegeStars",
 			],
 			ratings: RATINGS,
 			season,
@@ -80,21 +82,30 @@ const updateSeasonPreview = async (
 			coarsenRatings: false,
 		});
 
-		const playersTopAll = orderBy(players, (p) => p.ratings.ovr, "desc");
+		// College: unsigned walk-ons aren't part of any team's season.
+		const college = g.get("college");
+		const playersTopAll = orderBy(
+			college ? players.filter((p) => p.tid >= 0) : players,
+			(p) => p.ratings.ovr,
+			"desc",
+		);
 
 		const playersTop = playersTopAll.slice(0, NUM_PLAYERS_TO_SHOW);
 		const playersImproving = orderBy(
-			players.filter((p) => p.ratings.dovr > 0),
+			playersTopAll.filter((p) => p.ratings.dovr > 0),
 			(p) => p.ratings.ovr + 2 * p.ratings.dovr,
 			"desc",
 		).slice(0, NUM_PLAYERS_TO_SHOW);
 		const playersDeclining = orderBy(
-			players.filter((p) => p.ratings.dovr < 0),
+			playersTopAll.filter((p) => p.ratings.dovr < 0),
 			(p) => p.ratings.ovr - 3 * p.ratings.dovr,
 			"desc",
 		).slice(0, NUM_PLAYERS_TO_SHOW);
+		// College: the freshmen.
 		const playersTopRookies = orderBy(
-			players.filter((p) => p.draft.year === season - 1),
+			playersTopAll.filter((p) =>
+				college ? p.collegeYear0 === season : p.draft.year === season - 1,
+			),
 			(p) => p.ratings.ovr,
 			"desc",
 		).slice(0, NUM_PLAYERS_TO_SHOW);
