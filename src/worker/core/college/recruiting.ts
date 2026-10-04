@@ -189,12 +189,30 @@ export const getTeamCtxs = async (recruits: Player[]) => {
 
 // --- Interest ----------------------------------------------------------------
 
+// Home state and position group, looked up once per player (AI planning
+// scores every player for every school).
+const infoCache = new WeakMap<
+	Player,
+	{ state: string | undefined; group: string }
+>();
+const playerInfo = (p: Player) => {
+	let info = infoCache.get(p);
+	if (!info) {
+		info = {
+			state: homeState(p.born.loc),
+			group: posGroup(last(p.ratings).pos),
+		};
+		infoCache.set(p, info);
+	}
+	return info;
+};
+
 export const baseInterest = (p: Player, ctx: TeamCtx) => {
 	const rec = p.recruiting!;
 	const starWeight = 0.4 + 0.2 * rec.stars;
 	let score = 40 + (ctx.prestige - 50) * 0.6 * starWeight;
 
-	const state = homeState(p.born.loc);
+	const { state, group } = playerInfo(p);
 	const teamState = ctx.t.state;
 	if (state && teamState) {
 		if (state === teamState) {
@@ -207,7 +225,6 @@ export const baseInterest = (p: Player, ctx: TeamCtx) => {
 	score += (ctx.winp - 0.5) * 20;
 
 	// Playing time: fewer returning players at his position is a selling point.
-	const group = posGroup(last(p.ratings).pos);
 	const depth = ctx.returningByPos[group] ?? 0;
 	score += helpers.bound(8 - 2 * depth, -4, 8);
 
@@ -242,10 +259,36 @@ let dayCounter = 0;
 const planKey = () => `${g.get("lid")}-${g.get("season")}-${g.get("phase")}`;
 
 // Each AI (or auto) school picks targets it can land - weighing how good a
-// player is against how interested he could get - spreads its hours over
-// them, and offers the ones it wants most.
+// player is against how it stacks up with the other schools that could want
+// him - spreads its hours over them, and offers the ones it wants most.
 const makePlan = (recruits: Player[], ctxs: Map<number, TeamCtx>) => {
 	const plan: Plan = new Map();
+	const shopping = [...ctxs.values()].filter((ctx) => ctx.open > 0);
+
+	// For each player, the interest of the second-best school competing for
+	// him. A school well behind that is unlikely to land him, so the best
+	// players are fought over by the best programs and everyone else looks
+	// further down the board.
+	const rival = new Map<number, number[]>();
+	for (const p of recruits) {
+		const rec = p.recruiting!;
+		if (rec.committed !== undefined) {
+			continue;
+		}
+		const top3 = [-Infinity, -Infinity, -Infinity];
+		for (const ctx of shopping) {
+			if (rec.portalFrom === ctx.t.tid) {
+				continue;
+			}
+			const x = interestFor(p, ctx);
+			if (x > top3[2]!) {
+				top3[2] = x;
+				top3.sort((a, b) => b - a);
+			}
+		}
+		rival.set(p.pid, top3);
+	}
+
 	for (const ctx of ctxs.values()) {
 		if (ctx.user && !ctx.auto) {
 			continue;
@@ -264,10 +307,14 @@ const makePlan = (recruits: Player[], ctxs: Map<number, TeamCtx>) => {
 			if (rec.portalFrom === ctx.t.tid) {
 				continue;
 			}
-			const interest = interestFor(p, ctx);
-			// Chance of landing him: how his interest here compares to his best.
-			const best = Math.max(0, ...Object.values(rec.interest));
-			const landing = helpers.sigmoid((interest - best + 10) / 8, 1, 0);
+			let landing = 1;
+			if (rec.committed === undefined) {
+				const interest = interestFor(p, ctx);
+				const top3 = rival.get(p.pid)!;
+				// Second best among the other schools.
+				const ref = interest >= top3[1]! ? top3[2]! : top3[1]!;
+				landing = helpers.sigmoid((interest - ref + 4) / 4, 1, 0);
+			}
 			scored.push({ p, score: (p.value ** 2 / 100) * landing });
 		}
 		scored.sort((a, b) => b.score - a.score);
