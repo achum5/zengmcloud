@@ -1,24 +1,15 @@
-// Class years for college leagues. A player's freshman season is stored as
-// collegeYear0; a redshirt year doesn't use up eligibility.
+// Class years for college leagues. Players get five seasons in five years
+// (the NCAA's rule from 2027): freshman through fifth-year senior, no
+// redshirts. A player's freshman season is stored as collegeYear0.
 
-export const COLLEGE_CLASSES = ["FR", "SO", "JR", "SR"] as const;
+export const COLLEGE_CLASSES = ["FR", "SO", "JR", "SR", "5TH"] as const;
+export const COLLEGE_SEASONS = COLLEGE_CLASSES.length;
 
-export const collegeYear = (
-	p: { collegeYear0?: number; redshirt?: number },
-	season: number,
-) => {
-	if (p.collegeYear0 === undefined) {
-		return undefined;
-	}
-	let year = season - p.collegeYear0 + 1;
-	if (p.redshirt !== undefined && p.redshirt < season) {
-		year -= 1;
-	}
-	return year;
-};
+export const collegeYear = (p: { collegeYear0?: number }, season: number) =>
+	p.collegeYear0 === undefined ? undefined : season - p.collegeYear0 + 1;
 
 export const collegeClassLabel = (
-	p: { collegeYear0?: number; redshirt?: number },
+	p: { collegeYear0?: number },
 	season: number,
 ) => {
 	const year = collegeYear(p, season);
@@ -28,21 +19,14 @@ export const collegeClassLabel = (
 	if (year < 1) {
 		return "HS";
 	}
-	const label = COLLEGE_CLASSES[Math.min(year, 4) - 1]!;
-	return p.redshirt !== undefined && p.redshirt < season
-		? `RS ${label}`
-		: label;
+	return COLLEGE_CLASSES[Math.min(year, COLLEGE_SEASONS) - 1]!;
 };
 
-// Last season he can play: four seasons from his freshman year, five with a
-// redshirt.
-export const collegeFinalSeason = (p: {
-	collegeYear0?: number;
-	redshirt?: number;
-}) =>
+// Last season he can play.
+export const collegeFinalSeason = (p: { collegeYear0?: number }) =>
 	p.collegeYear0 === undefined
 		? undefined
-		: p.collegeYear0 + 3 + (p.redshirt !== undefined ? 1 : 0);
+		: p.collegeYear0 + COLLEGE_SEASONS - 1;
 
 // Conference tournament progress, kept in game attributes while they run.
 export type CollegeConfTourney = {
@@ -58,18 +42,99 @@ export type CollegeConfTourney = {
 export const collegeSeedLine = (overallSeed: number) =>
 	Math.ceil(overallSeed / 4);
 
+// What a player looks for in a school. Every player weighs all of these, in
+// his own proportions; his top three are shown.
+export const COLLEGE_PRIORITIES = [
+	"prestige",
+	"winning",
+	"proximity",
+	"playingTime",
+	"proPotential",
+	"nil",
+	"conference",
+	"coachStability",
+	"facilities",
+] as const;
+export type CollegePriority = (typeof COLLEGE_PRIORITIES)[number];
+
+export const COLLEGE_PRIORITY_LABELS: Record<CollegePriority, string> = {
+	prestige: "Prestige",
+	winning: "Winning",
+	proximity: "Close to home",
+	playingTime: "Playing time",
+	proPotential: "Pro potential",
+	nil: "NIL",
+	conference: "Conference",
+	coachStability: "Coach stability",
+	facilities: "Facilities",
+};
+
+// A player's personality, from high school on.
+export type CollegeProfile = {
+	weights: Record<CollegePriority, number>; // sums to 1
+	// How many rounds of haggling he puts up with, 1-5.
+	patience: number;
+};
+
+export const collegeTopPriorities = (profile: CollegeProfile, n = 3) =>
+	[...COLLEGE_PRIORITIES]
+		.sort((a, b) => profile.weights[b] - profile.weights[a])
+		.slice(0, n);
+
+// NIL talks between one player and one school.
+export type CollegeTalks = {
+	// Rounds of patience left. At 0 his counter is final.
+	patience: number;
+	// His standing counteroffer, thousands per year.
+	counter?: number;
+	// Ended talks with this school.
+	walked?: true;
+	// Interest permanently lost over lowball offers.
+	penalty: number;
+};
+
+export type CollegePromiseType = "starter" | "minutes" | "nilRaise" | "noPosition";
+
+export const COLLEGE_PROMISE_LABELS: Record<CollegePromiseType, string> = {
+	starter: "Starter",
+	minutes: "Minutes",
+	nilRaise: "NIL raise",
+	noPosition: "No one at his position",
+};
+
+export type CollegePromise = {
+	type: CollegePromiseType;
+	tid: number;
+	// The season it's for: his first season for a recruit, next season for a
+	// returning player.
+	season: number;
+	// Minutes per game for "minutes"; the class (draft year) for "noPosition".
+	value?: number;
+	status?: "kept" | "broken";
+};
+
 // Recruiting state, kept on each high school recruit (and transfer portal
 // player) while he is being recruited.
 export type CollegeRecruiting = {
 	stars: number; // 1-5
 	rank: number; // national rank in his class
-	ask: number; // NIL he's looking for, thousands per year
+	// The NIL he's looking for, thousands per year. Schools only see a range.
+	ask: number;
+	askRange: [number, number];
+	// Scouting error in his ovr/pot, shrinking as a school spends hours on him.
+	fuzz: number;
+	// Hours each school has spent on him in total, which is also how well it
+	// has scouted him.
+	scout: Record<number, number>;
 	// Accumulated recruiting effort and resulting interest (0-100ish), only for
 	// schools that have engaged.
 	effort: Record<number, number>;
 	interest: Record<number, number>;
-	// Scholarship offers, with the NIL attached (thousands per year).
+	// Scholarship offers, with the agreed NIL (thousands per year).
 	offers: Record<number, number>;
+	talks: Record<number, CollegeTalks>;
+	// Promises attached to a school's offer.
+	promises: Record<number, CollegePromise[]>;
 	visits: number[];
 	// Hours per week user schools are spending on him.
 	hours: Record<number, number>;
@@ -78,14 +143,62 @@ export type CollegeRecruiting = {
 	portalFrom?: number;
 };
 
+// The offseason for a returning player: his NIL renegotiation and whether
+// he's thinking about the transfer portal.
+export type CollegeRetention = {
+	season: number;
+	// NIL he wants next season, thousands per year, and the range schools see.
+	demand: number;
+	demandRange: [number, number];
+	talks?: CollegeTalks;
+	// Chance he enters the portal, 0-1, and the reasons behind it.
+	risk: number;
+	reasons: string[];
+	// Settled for the year: new deal agreed (or nothing wanted).
+	settled?: true;
+};
+
+// The user as coach of his school.
+export type CollegeCoach = {
+	tid: number;
+	// First season at this school, and his contract's final season.
+	start: number;
+	exp: number;
+	// Job offers after the season, from other schools.
+	offers?: number[];
+};
+
+export type CollegePolls = {
+	season: number;
+	// Top 25 after each week, best first.
+	weeks: number[][];
+};
+
 export const RECRUITING_HOURS_PER_WEEK = 100;
 export const RECRUITING_MAX_HOURS = 25;
 export const RECRUITING_VISITS = 8;
+// Hours of attention it takes to know a player's ratings exactly.
+export const SCOUTING_HOURS_FULL = 50;
+
+export const scoutingProgress = (rec: CollegeRecruiting, tid: number) =>
+	Math.min(1, (rec.scout[tid] ?? 0) / SCOUTING_HOURS_FULL);
+
+// A rating as a school sees it: a range that narrows to the true value as it
+// scouts him.
+export const scoutedRange = (
+	value: number,
+	fuzz: number,
+	progress: number,
+): [number, number] => {
+	const center = value + fuzz * (1 - progress);
+	const half = 6 * (1 - progress);
+	return [Math.round(center - half), Math.round(center + half)];
+};
 
 // Yearly NIL budget (thousands) for a program of this prestige: about $12M at
 // the top, a few hundred thousand at the bottom.
-export const collegeNilBudget = (prestige: number) =>
-	Math.round((150 * 1.045 ** prestige) / 10) * 10;
+export const collegeNilBudget = (prestige: number, scale = 1) =>
+	Math.round((scale * 150 * 1.045 ** prestige) / 10) * 10;
 
 const STATES: Record<string, string> = {
 	Alabama: "AL",
@@ -166,18 +279,3 @@ export const homeState = (bornLoc: string) => {
 
 export const sameRegion = (a: string, b: string) =>
 	REGIONS.some((region) => region.includes(a) && region.includes(b));
-
-// How a player reacts to an NIL number, for the negotiation.
-export const nilReaction = (rec: { ask: number }, amount: number) => {
-	const ratio = amount / Math.max(1, rec.ask);
-	if (ratio >= 1.15) {
-		return "thrilled" as const;
-	}
-	if (ratio >= 0.95) {
-		return "happy" as const;
-	}
-	if (ratio >= 0.75) {
-		return "lukewarm" as const;
-	}
-	return "insulted" as const;
-};

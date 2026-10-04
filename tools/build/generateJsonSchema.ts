@@ -944,6 +944,33 @@ export const generateJsonSchema = (sport: Sport | "test") => {
 					college: {
 						type: "boolean",
 					},
+					collegePortalRate: {
+						type: "number",
+					},
+					collegeRetentionEase: {
+						type: "number",
+					},
+					collegeRecruitingDifficulty: {
+						type: "number",
+					},
+					collegeNilScale: {
+						type: "number",
+					},
+					collegeNilWeight: {
+						type: "number",
+					},
+					collegeDepartureRate: {
+						type: "number",
+					},
+					collegePrestigeRate: {
+						type: "number",
+					},
+					collegeCoachFiring: {
+						type: "boolean",
+					},
+					collegeJobOffers: {
+						type: "boolean",
+					},
 					goatFormula: {
 						type: "string",
 					},

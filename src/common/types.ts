@@ -1,5 +1,13 @@
 import type { TeamRotation } from "./rotation.ts";
-import type { CollegeConfTourney, CollegeRecruiting } from "./college.ts";
+import type {
+	CollegeCoach,
+	CollegeConfTourney,
+	CollegePolls,
+	CollegeProfile,
+	CollegePromise,
+	CollegeRecruiting,
+	CollegeRetention,
+} from "./college.ts";
 import type { GameFlow } from "./gameFlow.ts";
 import * as z from "zod";
 import type { FaceConfig } from "facesjs";
@@ -842,6 +850,21 @@ export type GameAttributesLeague = {
 	collegeConfTourney?: CollegeConfTourney;
 	// User schools whose recruiting runs on autopilot.
 	collegeAutoRecruit?: number[];
+	collegeCoach?: CollegeCoach;
+	collegePolls?: CollegePolls;
+	// Another league (a pro one) that departing players are sent to as draft
+	// prospects.
+	collegeLinkedLid?: number;
+	// College settings. Multipliers are 1 for realistic.
+	collegePortalRate: number;
+	collegeRetentionEase: number;
+	collegeRecruitingDifficulty: number;
+	collegeNilScale: number;
+	collegeNilWeight: number;
+	collegeDepartureRate: number;
+	collegePrestigeRate: number;
+	collegeCoachFiring: boolean;
+	collegeJobOffers: boolean;
 	godMode: boolean;
 	godModeInPast: boolean;
 	gracePeriodEnd: number;
@@ -1632,12 +1655,13 @@ export type PlayerWithoutKey<PlayerRatings = MinimalPlayerRatings> = {
 		loc: string;
 	};
 	college: string;
-	// College leagues only: season of his freshman year, and the season he
-	// redshirted (sat out without using a year of eligibility), if any.
+	// College leagues only: season of his freshman year.
 	collegeYear0?: number;
-	redshirt?: number;
 	// Why he left school, once he has.
 	collegeExit?: "graduated" | "draft";
+	collegeProfile?: CollegeProfile;
+	collegePromises?: CollegePromise[];
+	collegeRetention?: CollegeRetention;
 	recruiting?: CollegeRecruiting;
 	contract: PlayerContract & {
 		temp?: true; // Used only on import
@@ -2126,6 +2150,13 @@ export type Team = {
 	// College leagues only: program prestige (1-100) and home state.
 	prestige?: number;
 	state?: string;
+	// College: facilities (1-100), seasons the coach has been there, players
+	// sent to the pros in recent seasons (oldest first), and how well it keeps
+	// its promises (0-1).
+	collegeFacilities?: number;
+	collegeCoachYears?: number;
+	collegePros?: number[];
+	collegePromiseRep?: number;
 
 	adjustForInflation: boolean;
 	disabled: boolean;
