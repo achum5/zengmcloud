@@ -2,7 +2,17 @@ import { makeCourtRng } from "../courtRng.ts";
 import { project, type Camera } from "./camera.ts";
 import { BALL_R } from "./evaluate.ts";
 import { shade } from "./figure.ts";
-import { COURT_W, RIM_R, RIM_Z, type Pt3, type Side } from "./geometry.ts";
+import {
+	BENCH_SEATS,
+	BENCH_Y,
+	benchStart,
+	COURT_W,
+	RIM_R,
+	RIM_Z,
+	SEAT_GAP,
+	type Pt3,
+	type Side,
+} from "./geometry.ts";
 
 // THE BUILDING: the stands, the LED boards along their front, the scorer's
 // table and the benches - flat pictures painted once per game and stood up in
@@ -107,13 +117,11 @@ export const TABLE_FRONT = plane(
 	12,
 );
 // Each team's bench: a row of chairs beside the table.
-export const BENCH_Y = -8.6;
-export const BENCH_X: [number, number] = [14, 59];
-export const BENCH_LEN = 21;
+const BENCH_LEN = BENCH_SEATS * SEAT_GAP + 0.6;
 export const benchPlane = (t: Side) =>
 	plane(
 		`bench${t}`,
-		{ x: BENCH_X[t], y: BENCH_Y, z: 3.1 },
+		{ x: benchStart(t), y: BENCH_Y, z: 3.1 },
 		{ x: 1, y: 0, z: 0 },
 		{ x: 0, y: 0, z: -1 },
 		BENCH_LEN,
@@ -318,8 +326,8 @@ export const paintBench = (team: ArenaTeam | undefined): HTMLCanvasElement => {
 	const ctx = canvas.getContext("2d")!;
 	const px = p.w / BENCH_LEN;
 	const c = teamColor(team, 0, "#333a44");
-	for (let i = 0; i < 10; i++) {
-		const x = (0.6 + i * 2.05) * px;
+	for (let i = 0; i < BENCH_SEATS; i++) {
+		const x = (0.4 + i * SEAT_GAP) * px;
 		// Legs, seat, back.
 		ctx.fillStyle = "#111";
 		ctx.fillRect(x + 0.1 * px, p.h - 1.5 * px, 0.12 * px, 1.5 * px);

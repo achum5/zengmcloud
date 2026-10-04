@@ -341,9 +341,10 @@ describe("2.5D director", () => {
 						`pid ${tr.pid} move ${k}`,
 					);
 				}
+				// On the floor, or on his way to or from the bench.
 				for (const p of [m.from, m.to]) {
 					assert.isTrue(
-						p.x > -4 && p.x < 98 && p.y > -4 && p.y < 54,
+						p.x > -4 && p.x < 98 && p.y > -8.5 && p.y < 54,
 						`pid ${tr.pid} off the floor: ${p.x},${p.y}`,
 					);
 				}

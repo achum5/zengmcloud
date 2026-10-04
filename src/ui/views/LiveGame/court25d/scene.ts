@@ -1,7 +1,5 @@
 import {
 	ballAtRim,
-	BENCH_X,
-	BENCH_Y,
 	drawBall,
 	drawHoop,
 	drawShadow,
@@ -17,7 +15,7 @@ import {
 	type PlayerState,
 } from "./evaluate.ts";
 import { drawFigure, type Look } from "./figure.ts";
-import { COURT_W, RIM_Z, type Side } from "./geometry.ts";
+import { COURT_W, RIM_Z, seatSpot, type Side } from "./geometry.ts";
 import type { Body } from "./poses.ts";
 
 // ONE FRAME: everybody's reflection in the hardwood, their shadows, then the
@@ -95,16 +93,17 @@ const benchStates = (f: Frame, onFloor: Set<number>): PlayerState[] => {
 	const out: PlayerState[] = [];
 	const seat: [number, number] = [0, 0];
 	for (const p of f.roster) {
-		if (onFloor.has(p.pid) || seat[p.team] >= 10) {
+		const i = seat[p.team]++;
+		if (onFloor.has(p.pid)) {
 			continue;
 		}
-		const i = seat[p.team]++;
+		const at = seatSpot(p.team, i);
 		out.push({
 			pid: p.pid,
 			team: p.team,
 			shown: true,
-			x: BENCH_X[p.team] + 1.38 + i * 2.05,
-			y: BENCH_Y + 0.9,
+			x: at.x,
+			y: at.y,
 			z: 0,
 			yaw: Math.PI / 2,
 			anim: "sit",

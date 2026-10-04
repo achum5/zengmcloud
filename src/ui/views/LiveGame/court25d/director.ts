@@ -10,6 +10,7 @@ import {
 	attackDir,
 	benchX,
 	clampPt,
+	seatSpot,
 	COURT_H,
 	COURT_W,
 	dist,
@@ -233,6 +234,8 @@ class Director {
 	private readonly free = new Map<number, number>();
 	private readonly team = new Map<number, Side>();
 	private readonly rank = new Map<number, number>();
+	// Where each player's chair is on his bench.
+	private readonly seat = new Map<number, Pt>();
 	private readonly lineup: [number[], number[]] = [[], []];
 	readonly ball: BallSeg[] = [];
 	readonly fx: Fx[] = [];
@@ -276,9 +279,11 @@ class Director {
 		this.gid = gid;
 		this.gender = gender;
 		this.rng = makeCourtRng(`court|${gid ?? 0}`);
+		const seats: [number, number] = [0, 0];
 		for (const p of players) {
 			this.team.set(p.pid, p.team);
 			this.rank.set(p.pid, POS_RANK[p.pos ?? ""] ?? 4);
+			this.seat.set(p.pid, seatSpot(p.team, seats[p.team]++));
 		}
 
 		// Starters are announced as "gs" stats ahead of the first line.
@@ -309,7 +314,7 @@ class Director {
 			const slot = on ? this.slots(p.team).indexOf(p.pid) : 0;
 			const start = on
 				? { x: COURT_W / 2 + (p.team === 1 ? -9 : 9), y: 9 + slot * 8 }
-				: { ...TABLE };
+				: this.seatOf(p.pid);
 			this.tracks.set(p.pid, {
 				pid: p.pid,
 				team: p.team,
@@ -561,6 +566,10 @@ class Director {
 
 	private teamOf(pid: number): Side {
 		return this.team.get(pid) ?? 0;
+	}
+
+	private seatOf(pid: number): Pt {
+		return { ...(this.seat.get(pid) ?? TABLE) };
 	}
 
 	// ---- formations -----------------------------------------------------------
@@ -2140,22 +2149,17 @@ class Director {
 		off.forEach((pid, j) => {
 			const at = this.posOf(pid);
 			const incoming = on[j];
-			const gone = this.go(
-				pid,
-				{ x: TABLE.x + (j - 1) * 1.5, y: TABLE.y },
-				T + j * 80,
-				JOG,
-				"walk",
-			);
+			// Back to his chair, where he sits down.
+			const gone = this.go(pid, this.seatOf(pid), T + j * 80, JOG, "walk");
 			this.show(pid, gone, false);
 			if (incoming !== undefined) {
 				const tr = this.track(incoming);
 				if (tr) {
-					const enter = { x: TABLE.x + (j - 1) * 1.5, y: TABLE.y };
-					this.pos.set(incoming, enter);
+					// Up off the bench and out to take his man.
+					this.pos.set(incoming, this.seatOf(incoming));
 					this.free.set(incoming, T + j * 80);
 					this.show(incoming, T + j * 80, true);
-					this.go(incoming, at, T + j * 80, JOG, "walk");
+					this.go(incoming, at, T + j * 80, RUN * 0.8, "run");
 				}
 			}
 		});

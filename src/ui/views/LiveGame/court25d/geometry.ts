@@ -48,6 +48,18 @@ export const guardSpot = (offense: Side, man: Pt, gap = 0.3): Pt => ({
 // The scorer's table and the two benches sit along the far sideline, so a
 // substitution or a huddle walks toward the camera's back wall.
 export const TABLE: Pt = { x: COURT_W / 2, y: -2.2 };
+
+// Each team's bench runs from beside the scorer's table toward its end of the
+// floor, and every player keeps his own chair for the whole game - in roster
+// order - sitting in it while he is not on the floor.
+export const BENCH_SEATS = 15;
+export const SEAT_GAP = 2.05;
+export const BENCH_Y = -8.6;
+export const benchStart = (t: Side): number => (t === 0 ? 5.5 : 58);
+export const seatSpot = (t: Side, i: number): Pt => ({
+	x: benchStart(t) + 0.78 + Math.min(i, BENCH_SEATS - 1) * SEAT_GAP,
+	y: BENCH_Y + 0.9,
+});
 export const benchX = (t: Side): number => (t === 0 ? 31 : 63);
 export const huddleSpots = (t: Side): Pt[] => {
 	const cx = benchX(t);
