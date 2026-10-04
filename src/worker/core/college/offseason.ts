@@ -7,33 +7,37 @@ import { calibrateClass, genCollegePlayer } from "./createCollegePlayers.ts";
 import { recruitClassSize } from "./util.ts";
 import { initRecruitClass } from "./recruiting.ts";
 import type { Conditions, Player } from "../../../common/types.ts";
+import { last } from "../../../common/utils.ts";
 
 // The end of a college season: players out of eligibility move on, and the
 // best prospects leave early for the draft. Everyone who leaves is retired
 // from the league with a note of why; those who declared are the class a
 // linked pro league drafts from (see handoff.ts).
 
-// About as many players as a pro draft class has real prospects.
-export const DRAFT_CLASS_SIZE = 70;
+// How ready he is for the pros, on the pro rating scale: what he is now, or
+// for a young player with a high ceiling, what he projects to be.
+export const proReadiness = (p: Player) => {
+	const { ovr, pot } = last(p.ratings);
+	return Math.max(ovr, pot - 14);
+};
 
-// Chance a player with eligibility left declares, by where he ranks among
-// every college player: projected first rounders mostly go, second rounders
-// sometimes, others rarely. Older players are readier to leave.
-const declareChance = (rank: number, year: number) => {
+// Chance a player with eligibility left declares. By draft stock on the pro
+// scale, not by rank, so anyone who'd be a real pro prospect tends to go -
+// otherwise future pros pile up in college and keep developing there.
+// Older players are readier to leave.
+export const declareChance = (readiness: number, year: number) => {
 	let chance = 0;
-	if (rank <= 14) {
-		chance = 0.95;
-	} else if (rank <= 30) {
-		chance = 0.8;
-	} else if (rank <= 45) {
+	if (readiness >= 56) {
+		chance = 0.9;
+	} else if (readiness >= 53) {
 		chance = 0.5;
-	} else if (rank <= 60) {
-		chance = 0.3;
-	} else if (rank <= 90) {
-		chance = 0.08;
+	} else if (readiness >= 51) {
+		chance = 0.2;
+	} else if (readiness >= 49) {
+		chance = 0.05;
 	}
 	const yearFactor =
-		year <= 1 ? 0.85 : year === 2 ? 0.95 : year === 3 ? 1 : 1.05;
+		year <= 1 ? 0.75 : year === 2 ? 0.9 : year === 3 ? 1 : 1.05;
 	return helpers.bound(
 		chance * yearFactor * g.get("collegeDepartureRate"),
 		0,
@@ -43,31 +47,28 @@ const declareChance = (rank: number, year: number) => {
 
 export const collegeDepartures = async (conditions: Conditions) => {
 	const season = g.get("season");
-	const players = (
-		await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
-	).sort((a, b) => b.value - a.value);
+	const players = await idb.cache.players.indexGetAll("playersByTid", [
+		0,
+		Infinity,
+	]);
 
 	const departures = new Map<number, { p: Player; draft: boolean }[]>();
-	let numDraft = 0;
-	for (const [i, p] of players.entries()) {
+	for (const p of players) {
 		const year = collegeYear(p, season);
 		if (year === undefined) {
 			continue;
 		}
-		const rank = i + 1;
 		const final = collegeFinalSeason(p)!;
+		const readiness = proReadiness(p);
 
 		let draft = false;
 		if (final <= season) {
 			// Out of eligibility. The good ones head to the draft.
-			draft = rank <= 90 && numDraft < DRAFT_CLASS_SIZE;
-		} else if (Math.random() < declareChance(rank, year)) {
+			draft = readiness >= 51;
+		} else if (Math.random() < declareChance(readiness, year)) {
 			draft = true;
 		} else {
 			continue;
-		}
-		if (draft) {
-			numDraft += 1;
 		}
 
 		const tid = p.tid;

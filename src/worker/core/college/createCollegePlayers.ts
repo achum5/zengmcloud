@@ -12,6 +12,7 @@ import {
 } from "./util.ts";
 import { genCollegeProfile } from "./profile.ts";
 import { roundNil } from "./negotiation.ts";
+import { declareChance, proReadiness } from "./offseason.ts";
 import limitRating from "../player/limitRating.ts";
 import { last } from "../../../common/utils.ts";
 
@@ -76,7 +77,7 @@ export const calibrateClass = async (players: PlayerWithoutKey[]) => {
 		if (i < top) {
 			continue;
 		}
-		const offset = 13 * ((i - top) / Math.max(1, n - top)) ** 0.45;
+		const offset = 20 * ((i - top) / Math.max(1, n - top)) ** 0.4;
 		const ratings = last(p.ratings) as unknown as Record<string, unknown>;
 		for (const [key, value] of Object.entries(ratings)) {
 			if (
@@ -152,11 +153,10 @@ const createCollegePlayers = async ({
 
 	for (let classIndex = 0; classIndex < COLLEGE_SEASONS; classIndex++) {
 		const slots = perClass[classIndex]!;
-		// The best players of older classes have already left for the draft.
-		const numGonePro = Math.round((classIndex * 20 * activeTids.length) / 365);
-
+		// Older classes have already lost their pro prospects to the draft,
+		// by the same rule that applies every season.
 		const pool: PlayerWithoutKey[] = [];
-		for (let i = 0; i < classSize + numGonePro; i++) {
+		for (let i = 0; i < Math.round(classSize * (1 + 0.1 * classIndex)); i++) {
 			pool.push(
 				await genCollegePlayer(PLAYER.UNDRAFTED, classIndex, scoutingLevel),
 			);
@@ -166,11 +166,19 @@ const createCollegePlayers = async ({
 			await player.develop(p, classIndex, true);
 			p.value = player.value(p, { ovrMean: 47, ovrStd: 10 });
 		}
-		pool.sort((a, b) => b.value - a.value);
-		pool.splice(0, numGonePro);
+		const remaining = pool.filter(
+			(p) =>
+				classIndex === 0 ||
+				Math.random() >=
+					Math.min(
+						0.98,
+						declareChance(proReadiness(p as Player), classIndex) * classIndex,
+					),
+		);
+		remaining.sort((a, b) => b.value - a.value);
 
 		const openSlots = new Map(activeTids.map((tid) => [tid, slots]));
-		for (const [rank, p] of pool.entries()) {
+		for (const [rank, p] of remaining.entries()) {
 			const open = activeTids.filter((tid) => openSlots.get(tid)! > 0);
 			if (open.length === 0) {
 				break;
