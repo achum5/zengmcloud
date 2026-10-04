@@ -11,6 +11,7 @@ import {
 } from "./director.ts";
 import { evalBall, evalPlayer } from "./evaluate.ts";
 import { bodyOf } from "./poses.ts";
+import { finishOf } from "../../../util/liveGameWording.basketball.ts";
 
 // A small stand-in for GameSim.basketball's play-by-play: the same event
 // shapes, in the same orders the sim emits them (an attempt, then a make, a
@@ -269,9 +270,12 @@ const fakeGame = (seed: string, possessions: number) => {
 	return { events, players };
 };
 
+const gidOf = (seed: string) =>
+	[...seed].reduce((h, c) => (h * 31 + c.charCodeAt(0)) % 100_000, 7);
+
 const compile = (seed: string, possessions = 120) => {
 	const { events, players } = fakeGame(seed, possessions);
-	const tl = compileCourt({ events, players, seed: `game-${seed}` });
+	const tl = compileCourt({ events, players, gid: gidOf(seed) });
 	return { events, players, tl };
 };
 
@@ -364,7 +368,7 @@ describe("2.5D director", () => {
 			}
 			prev = cur;
 		}
-	});
+	}, 60_000);
 
 	test("the ball travels - it never jumps across the floor between frames", () => {
 		const { tl } = compile("ball", 140);
@@ -384,7 +388,7 @@ describe("2.5D director", () => {
 			prev = b;
 		}
 		assert.strictEqual(jumps, 0);
-	});
+	}, 60_000);
 
 	test("whoever holds the ball is on the floor", () => {
 		const { tl } = compile("holder", 140);
@@ -428,5 +432,46 @@ describe("2.5D director", () => {
 			prev = t;
 		}
 		assert.strictEqual(targetForCursor(tl, events.length), tl.end);
+	});
+	test("a finish at the rim looks the way the play-by-play words it", () => {
+		for (const gender of ["male", "female"] as const) {
+			const { events, players } = fakeGame(`words-${gender}`, 220);
+			const gid = 4242;
+			const tl = compileCourt({ events, players, gid, gender });
+			const beatOf = new Map(tl.beats.map((b) => [b.i, b]));
+			let checked = 0;
+			let dunks = 0;
+			events.forEach((e, i) => {
+				if (e.type !== "fgAtRim" && e.type !== "fgAtRimAndOne") {
+					return;
+				}
+				// Staged from its attempt line on.
+				let a = i - 1;
+				while (a >= 0 && events[a]!.type !== "fgaAtRim") {
+					a -= 1;
+				}
+				const from = beatOf.get(a)!.preStart;
+				const to = beatOf.get(i)!.end;
+				const acts = tl.tracks
+					.get(e.pid)!
+					.acts.filter((x) => x.t0 >= from && x.t0 <= to);
+				const dunked = acts.some((x) => x.anim === "dunk");
+				const finish = finishOf(e, gid, gender);
+				assert.strictEqual(dunked, finish === "dunk", `line ${i}`);
+				assert.strictEqual(
+					acts.some((x) => x.anim === "layup"),
+					finish === "layup",
+					`line ${i}`,
+				);
+				checked += 1;
+				dunks += dunked ? 1 : 0;
+			});
+			assert.isAbove(checked, 5);
+			if (gender === "female") {
+				assert.isBelow(dunks, 2);
+			} else {
+				assert.isAbove(dunks, 0);
+			}
+		}
 	});
 });

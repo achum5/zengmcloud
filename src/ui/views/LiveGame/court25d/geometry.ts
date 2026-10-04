@@ -11,7 +11,6 @@ export type Pt3 = { x: number; y: number; z: number };
 
 export const RIM_Z = 10;
 export const RIM_R = 0.75;
-export const BACKBOARD_INSET = 4;
 
 export const other = (t: Side): Side => (t === 0 ? 1 : 0);
 
@@ -32,11 +31,6 @@ export const spot = (t: Side, depth: number, across: number): Pt => ({
 });
 
 export const dist = (a: Pt, b: Pt): number => Math.hypot(a.x - b.x, a.y - b.y);
-
-export const lerpPt = (a: Pt, b: Pt, f: number): Pt => ({
-	x: a.x + (b.x - a.x) * f,
-	y: a.y + (b.y - a.y) * f,
-});
 
 // Keep a body on the hardwood (or just off it, for an inbounder).
 export const clampPt = (p: Pt, margin = 1): Pt => ({
@@ -81,40 +75,3 @@ export const FT_BACK: [number, number][] = [
 	[30, 20],
 	[30, 30],
 ];
-
-// The camera. A raised sideline camera, Hoop Land style: the floor is squashed
-// in depth, heights mostly survive, and the far side of the floor is a little
-// narrower than the near side. Units are screen pixels of the low-res buffer.
-export const VIEW_H = 216;
-export const K = 6.4; // px per foot along the court at the near sideline
-export const DEPTH = 0.4; // vertical squash of court depth
-export const ZF = 0.92; // vertical scale of height
-export const FAR_Y = 72; // buffer row of the far sideline
-export const PX_PER_FT = K * ZF; // sprite pixels per foot of height
-export const persp = (y: number): number => 0.84 + 0.16 * (y / COURT_H);
-
-// Narrower screens get a tighter camera, so the players are not specks on a
-// phone. Height is fixed; the width (how much floor is visible) changes.
-export const viewWidthFor = (cssWidth: number): number =>
-	cssWidth < 420 ? 288 : cssWidth < 700 ? 320 : 384;
-
-export const project = (
-	viewW: number,
-	camX: number,
-	x: number,
-	y: number,
-	z: number,
-): { x: number; y: number; s: number } => {
-	const s = persp(y);
-	return {
-		x: viewW / 2 + (x - camX) * K * s,
-		y: FAR_Y + y * K * DEPTH - z * PX_PER_FT,
-		s,
-	};
-};
-
-// How far the camera may pan before it would show past the stanchions.
-export const camLimits = (viewW: number): [number, number] => {
-	const half = viewW / 2 / (K * persp(COURT_H / 2));
-	return [half - 6, COURT_W - half + 6];
-};

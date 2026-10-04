@@ -8,6 +8,7 @@ import {
 } from "../courtSpots.ts";
 import {
 	attackDir,
+	benchX,
 	clampPt,
 	COURT_H,
 	COURT_W,
@@ -30,6 +31,10 @@ import {
 	type Side,
 } from "./geometry.ts";
 import type { AnimName } from "./poses.ts";
+import {
+	finishOf,
+	type Finish,
+} from "../../../util/liveGameWording.basketball.ts";
 
 // THE DIRECTOR.
 //
@@ -50,8 +55,10 @@ import type { AnimName } from "./poses.ts";
 // Beats tile the timeline with no gaps, so a playback cursor (events consumed)
 // maps to exactly one moment: the actionStart of the next line not yet shown.
 //
-// It is a pure function of the event list and a seed (the game id), so every
-// device in a multiplayer game - and every rewatch - stages the same game.
+// It is a pure function of the event list and the game, so every device in a
+// multiplayer game - and every rewatch - stages the same game. Where the
+// play-by-play says HOW a play finished ("throws it down", "the layup is
+// good", "rims out"), the court acts out exactly that (see liveGameWording).
 // Times are milliseconds at 1x speed.
 
 export type RawEvent = { type: string; [key: string]: any };
@@ -63,6 +70,9 @@ export type Move = {
 	from: Pt;
 	to: Pt;
 	anim: AnimName;
+	// Set when he was told which way to face on the way (a defender sliding
+	// with his man), rather than just running where he is going.
+	face?: 1 | -1;
 };
 export type Act = {
 	t0: number;
@@ -72,6 +82,9 @@ export type Act = {
 	// `peak` feet, or explicit height keys for a dunk's hang on the rim.
 	jump?: [number, number, number];
 	zKeys?: [number, number][];
+	// What he looks at while he does it: the rim he shoots at, the man he
+	// passes to.
+	look?: Pt;
 };
 export type Track = {
 	pid: number;
@@ -80,6 +93,9 @@ export type Track = {
 	moves: Move[];
 	acts: Act[];
 	faces: [number, 1 | -1][];
+	// From each moment until his next move, what he stands looking at (the
+	// middle of a huddle, the rim from the free throw line).
+	looks: [number, Pt][];
 	shown: [number, boolean][];
 };
 export type BallEnd = Pt3 | { pid: number; hand?: "near" | "both" };
@@ -204,6 +220,8 @@ type ShotPlan = {
 	assist?: number;
 	blocker?: number;
 	fouler?: number;
+	// How the line describes the finish, when it says.
+	finish?: Finish;
 };
 
 class Director {
@@ -237,6 +255,7 @@ class Director {
 				team: Side;
 				target: Pt3;
 				dunk: boolean;
+				finish?: Finish;
 				zone: Zone;
 				arrive: number;
 		  }
@@ -244,17 +263,19 @@ class Director {
 	private readonly score: [number, number] = [0, 0];
 
 	private readonly events: RawEvent[];
-	private readonly dunkRate: number;
+	private readonly gid: number | undefined;
+	private readonly gender: "female" | "male";
 
 	constructor(
 		events: RawEvent[],
 		players: CourtPlayer[],
-		seed: string,
-		dunkRate: number,
+		gid: number | undefined,
+		gender: "female" | "male",
 	) {
 		this.events = events;
-		this.dunkRate = dunkRate;
-		this.rng = makeCourtRng(`court|${seed}`);
+		this.gid = gid;
+		this.gender = gender;
+		this.rng = makeCourtRng(`court|${gid ?? 0}`);
 		for (const p of players) {
 			this.team.set(p.pid, p.team);
 			this.rank.set(p.pid, POS_RANK[p.pos ?? ""] ?? 4);
@@ -296,6 +317,7 @@ class Director {
 				moves: [],
 				acts: [],
 				faces: [[-Infinity, attackDir(p.team)]],
+				looks: [],
 				shown: [[-Infinity, on]],
 			});
 			this.pos.set(p.pid, start);
@@ -347,7 +369,14 @@ class Director {
 					? 1
 					: -1
 				: (this.face.get(pid) ?? 1));
-		tr.moves.push({ t0: start, t1: start + dur, from: { ...from }, to, anim });
+		tr.moves.push({
+			t0: start,
+			t1: start + dur,
+			from: { ...from },
+			to,
+			anim,
+			...(face === undefined ? {} : { face }),
+		});
 		tr.faces.push([start, f]);
 		this.pos.set(pid, to);
 		this.face.set(pid, f);
@@ -395,6 +424,10 @@ class Director {
 		if (face !== undefined) {
 			this.turn(pid, t0, face);
 		}
+	}
+
+	private lookAt(pid: number, t: number, at: Pt) {
+		this.track(pid)?.looks.push([t, { x: at.x, y: at.y }]);
 	}
 
 	private show(pid: number, t: number, on: boolean) {
@@ -516,6 +549,10 @@ class Director {
 		return lo + this.rng() * (hi - lo);
 	}
 
+	private finishFor(e: RawEvent | undefined): Finish | undefined {
+		return e ? finishOf(e, this.gid, this.gender) : undefined;
+	}
+
 	private slots(team: Side): number[] {
 		return [...this.lineup[team]].sort(
 			(a, b) => (this.rank.get(a) ?? 4) - (this.rank.get(b) ?? 4) || a - b,
@@ -574,12 +611,16 @@ class Director {
 		const start = Math.max(t, this.free.get(from) ?? 0);
 		const d = dist(this.posOf(from), this.posOf(to));
 		const toward = this.posOf(to).x >= this.posOf(from).x ? 1 : -1;
-		this.act(from, "pass", start, start + 300, { face: toward });
+		this.act(from, "pass", start, start + 300, {
+			face: toward,
+			look: { ...this.posOf(to) },
+		});
 		const release = start + 120;
 		const arrive = Math.max(release + passMs(d), (this.free.get(to) ?? 0) + 40);
 		this.fly(release, arrive, { pid: from }, { pid: to }, peak);
 		this.act(to, "catch", arrive - 90, arrive + 110, {
 			face: -toward as 1 | -1,
+			look: { ...this.posOf(from) },
 		});
 		this.hold(to, arrive, "hold");
 		this.free.set(from, Math.max(this.free.get(from) ?? 0, start + 300));
@@ -972,47 +1013,99 @@ class Director {
 			});
 
 		const gather = t + 60;
-		const dunk =
-			close &&
-			zone === "atRim" &&
-			plan.kind === "make" &&
-			this.rng() < this.dunkRate;
+		// A slam when the words say so: "throws it down", "blocked the dunk
+		// attempt", "blows the dunk".
+		const dunk = close && plan.kind !== "foul" && plan.finish === "dunk";
 		let decided: number;
 		let arrive: number;
 		let target: Pt3;
 		const faceRim = (rim.x >= P1.x ? 1 : -1) as 1 | -1;
+		const look = { x: rim.x, y: rim.y };
 
 		if (dunk) {
 			const dur = 1300;
+			// A made dunk hangs on the rim; one that is stuffed or rattles out
+			// comes straight back down.
+			const hang = plan.kind === "make";
 			this.act(shooter, "dunk", gather, gather + dur, {
 				face: faceRim,
-				zKeys: [
-					[0, 0],
-					[0.22, 0],
-					[0.45, 3.7],
-					[0.52, 3.55],
-					[0.68, 3.3],
-					[0.86, 0],
-					[1, 0],
-				],
+				look,
+				zKeys: hang
+					? [
+							[0, 0],
+							[0.22, 0],
+							[0.45, 3.7],
+							[0.52, 3.55],
+							[0.68, 3.3],
+							[0.86, 0],
+							[1, 0],
+						]
+					: [
+							[0, 0],
+							[0.22, 0],
+							[0.45, 3.5],
+							[0.62, 2.4],
+							[0.82, 0],
+							[1, 0],
+						],
 			});
 			const under = clampPt({ x: rim.x - dir * 0.9, y: 25 + 1.3 });
 			this.go(shooter, under, gather + 60, SPRINT, "run", faceRim);
-			decided = gather + dur * 0.5;
-			arrive = decided;
-			target = rimPt(team, 0.45);
+			if (plan.kind === "block" && plan.blocker !== undefined) {
+				// Met at the rim.
+				const contact = gather + dur * 0.42;
+				const b = plan.blocker;
+				this.goBy(
+					b,
+					clampPt({ x: rim.x - dir * 1.7, y: 25 - 1.1 }),
+					gather - 300,
+					contact - 300,
+					"run",
+					-faceRim as 1 | -1,
+				);
+				this.act(b, "block", contact - 330, contact + 420, {
+					face: -faceRim as 1 | -1,
+					look: { ...P1 },
+					jump: [0.1, 0.9, 3.3],
+				});
+				this.fly(
+					contact - 80,
+					contact,
+					{ pid: shooter },
+					{ pid: b, hand: "near" },
+					0,
+				);
+				decided = contact;
+				arrive = contact;
+				target = { x: rim.x - dir * 1.4, y: 25, z: RIM_Z - 0.3 };
+			} else if (plan.kind === "miss") {
+				// Hammered off the back iron.
+				decided = gather + dur * 0.47;
+				arrive = decided;
+				target = { x: rim.x + dir * (RIM_R + 0.1), y: 25, z: RIM_Z + 0.25 };
+				this.fly(decided - 90, decided, { pid: shooter }, target, RIM_Z + 0.9);
+			} else {
+				decided = gather + dur * 0.5;
+				arrive = decided;
+				target = rimPt(team, 0.45);
+			}
 		} else {
-			const anim: AnimName = close ? "layup" : "shoot";
+			// "Tips it in": a one-handed tap at the top of the jump.
+			const tip = zone === "tipIn" && plan.finish === "tip";
+			const anim: AnimName = tip ? "block" : close ? "layup" : "shoot";
 			const dur = close ? 760 : zone === "lowPost" ? 840 : 920;
-			const peak = close
-				? 2.4
-				: zone === "lowPost"
-					? 0.9
-					: zone === "midRange"
-						? 1.5
-						: 1.8;
+			const peak = tip
+				? 2.8
+				: close
+					? 2.4
+					: zone === "lowPost"
+						? 0.9
+						: zone === "midRange"
+							? 1.5
+							: 1.8;
 			this.act(shooter, anim, gather, gather + dur, {
 				face: faceRim,
+				look,
 				jump: [0.24, 0.93, peak],
 			});
 			if (close) {
@@ -1041,6 +1134,7 @@ class Director {
 				);
 				this.act(b, "block", contact - 300, contact + 420, {
 					face: -faceRim as 1 | -1,
+					look: { ...P1 },
 					jump: [0.1, 0.9, 2.7],
 				});
 				this.fly(
@@ -1066,6 +1160,7 @@ class Director {
 					);
 					this.act(f, "reach", release - 200, release + 260, {
 						face: -faceRim as 1 | -1,
+						look: { ...P1 },
 					});
 				}
 				target = { x: rim.x - dir * (RIM_R + 0.1), y: 24.7, z: RIM_Z + 0.1 };
@@ -1109,6 +1204,7 @@ class Director {
 					if (reach) {
 						this.act(guard, "contest", release - 260, release + 420, {
 							face: -faceRim as 1 | -1,
+							look: { ...P1 },
 							jump: [0.15, 0.9, close ? 2 : 1.3],
 						});
 					}
@@ -1117,7 +1213,7 @@ class Director {
 		}
 
 		// The bigs crash the glass while the ball is up.
-		if (!dunk && plan.kind !== "block") {
+		if ((!dunk || plan.kind === "miss") && plan.kind !== "block") {
 			for (const side of [team, other(team)] as const) {
 				const big = this.slots(side).at(-1);
 				if (big !== undefined && big !== shooter && big !== plan.fouler) {
@@ -1147,6 +1243,7 @@ class Director {
 		team: Side,
 		idx: number,
 		blocked: boolean,
+		hard = false,
 	): number {
 		const next = this.peek(idx, 3).find(
 			(x) => x.e.type !== "sub" && x.e.type !== "foulOut",
@@ -1162,12 +1259,17 @@ class Director {
 			const rp = this.posOf(r);
 			const toward = { x: rp.x - rim.x, y: rp.y - rim.y };
 			const l = Math.hypot(toward.x, toward.y) || 1;
-			const k = blocked ? this.rand(4, 7) : this.rand(4, 8);
+			const k = blocked
+				? this.rand(4, 7)
+				: hard
+					? this.rand(7, 11)
+					: this.rand(4, 8);
 			const catchAt = clampPt({
 				x: rim.x + (toward.x / l) * k - (blocked ? dir * 2 : 0),
 				y: rim.y + (toward.y / l) * k,
 			});
-			const catchT = t + (blocked ? 820 : this.rand(700, 900));
+			const catchT =
+				t + (blocked ? 820 : hard ? this.rand(950, 1150) : this.rand(700, 900));
 			const arrive = this.goBy(
 				r,
 				catchAt,
@@ -1179,15 +1281,23 @@ class Director {
 			const jumpStart = Math.max(arrive, catchT - 420);
 			this.act(r, "rebound", jumpStart, jumpStart + 800, {
 				face: (rim.x >= catchAt.x ? 1 : -1) as 1 | -1,
+				look: { x: rim.x, y: rim.y },
 				jump: [0.12, 0.88, blocked ? 1.2 : 2.4],
 			});
-			this.fly(t, catchT, from, { pid: r }, blocked ? 6 : RIM_Z + 3.5);
+			this.fly(
+				t,
+				catchT,
+				from,
+				{ pid: r },
+				blocked ? 6 : hard ? RIM_Z + 6.5 : RIM_Z + 3.5,
+			);
 			// Somebody from the other side goes up for it too.
 			const rival = this.slots(other(this.teamOf(r))).sort(
 				(a, b) => dist(this.posOf(a), catchAt) - dist(this.posOf(b), catchAt),
 			)[0];
 			if (rival !== undefined && !blocked) {
 				this.act(rival, "rebound", jumpStart + 60, jumpStart + 760, {
+					look: { x: rim.x, y: rim.y },
 					jump: [0.15, 0.9, 1.6],
 				});
 			}
@@ -1255,6 +1365,7 @@ class Director {
 								blocker: r.kind === "block" ? next?.pid : undefined,
 								fouler:
 									typeof next?.pidFoul === "number" ? next.pidFoul : undefined,
+								finish: this.finishFor(next),
 							}
 						: { kind: "miss" };
 			const heave =
@@ -1270,6 +1381,7 @@ class Director {
 				team: d,
 				target: shot.target,
 				dunk: shot.dunk,
+				finish: plan.finish,
 				zone,
 				arrive: shot.arrive,
 			};
@@ -1293,6 +1405,7 @@ class Director {
 					assist: typeof e.pidAst === "number" ? e.pidAst : undefined,
 					blocker: result.kind === "block" ? e.pid : undefined,
 					fouler: typeof e.pidFoul === "number" ? e.pidFoul : undefined,
+					finish: this.finishFor(e),
 				};
 				const shot = this.stageShot(
 					shooterTeam,
@@ -1308,6 +1421,7 @@ class Director {
 					team: shooterTeam,
 					target: shot.target,
 					dunk: shot.dunk,
+					finish: plan.finish,
 					zone: result.zone,
 					arrive: shot.arrive,
 				};
@@ -1446,7 +1560,14 @@ class Director {
 				for (const t of [0, 1] as const) {
 					const spots = huddleSpots(t);
 					this.slots(t).forEach((pid, j) => {
-						this.go(pid, spots[j] ?? spots[0]!, T + 150 + j * 70, JOG, "walk");
+						const at = this.go(
+							pid,
+							spots[j] ?? spots[0]!,
+							T + 150 + j * 70,
+							JOG,
+							"walk",
+						);
+						this.lookAt(pid, at, { x: benchX(t), y: 1.6 });
 					});
 				}
 				this.beat(i, type, T, T + (type === "timeout" ? 2400 : 2000));
@@ -1516,7 +1637,14 @@ class Director {
 				for (const t of [0, 1] as const) {
 					const spots = huddleSpots(t);
 					this.slots(t).forEach((pid, j) => {
-						this.go(pid, spots[j] ?? spots[0]!, T + j * 60, JOG, "walk");
+						const at = this.go(
+							pid,
+							spots[j] ?? spots[0]!,
+							T + j * 60,
+							JOG,
+							"walk",
+						);
+						this.lookAt(pid, at, { x: benchX(t), y: 1.6 });
 					});
 				}
 				this.deadBall(T);
@@ -1545,36 +1673,67 @@ class Director {
 				this.hold(pid, T, "hold");
 				this.act(pid, "shoot", T + 100, T + 1020, {
 					face: 1,
+					look: { x: rimX(1), y: 25 },
 					jump: [0.24, 0.93, 1.6],
 				});
 				const release = T + 100 + 920 * 0.55;
 				const made = e.made === true;
+				const finish = this.finishFor(e);
+				const edge = { x: rimX(1) - RIM_R - 0.05, y: 25, z: RIM_Z + 0.12 };
 				const target = made
-					? rimPt(1, 0.35)
-					: { x: rimX(1) - RIM_R - 0.05, y: 25, z: RIM_Z + 0.12 };
+					? finish === "rattle"
+						? edge
+						: rimPt(1, 0.35)
+					: finish === "airball"
+						? { x: rimX(1) - 2.6, y: 25 + this.rand(-1, 1), z: RIM_Z - 1.5 }
+						: edge;
 				const flight = 620 + dist(P1, rimPt(1)) * 22;
 				this.fly(release, release + flight, { pid }, target, RIM_Z + 8);
 				const at = release + flight;
 				if (made) {
-					this.fly(at, at + 140, target, rimPt(1, -2.3), 0);
+					let t = at;
+					if (finish === "rattle") {
+						this.effect("clank", at, { rim: 1 });
+						({ t } = this.rollAround(1, at, edge));
+						this.fly(t, t + 90, this.ballAt, rimPt(1, 0.2), 0);
+						t += 90;
+					}
+					this.fly(t, t + 140, rimPt(1, 0.2), rimPt(1, -2.3), 0);
 					this.bounce(
-						at + 140,
-						at + 800,
+						t + 140,
+						t + 800,
 						rimPt(1, -2.3),
 						{ x: rimX(1) - 3, y: 26 },
 						2,
 						1.8,
 					);
-					this.effect("swish", at + 20, { rim: 1 });
-				} else {
-					this.effect("clank", at, { rim: 1 });
+					this.effect("swish", t + 20, { rim: 1 });
+				} else if (finish === "airball") {
 					this.bounce(
 						at,
-						at + 1000,
+						at + 900,
 						target,
-						{ x: rimX(1) - 9, y: 25 + this.rand(-8, 8) },
+						{ x: rimX(1) + 2, y: 25 + this.rand(-6, 6) },
 						2,
-						3,
+						1.6,
+					);
+				} else {
+					this.effect("clank", at, { rim: 1 });
+					let from: Pt3 = target;
+					let t = at;
+					if (finish === "rimOut") {
+						({ t, at: from } = this.rollAround(1, at, edge));
+					}
+					this.bounce(
+						t,
+						t + 1000,
+						from,
+						{
+							x: rimX(1) - (finish === "brick" ? 14 : 9),
+							y: 25 + this.rand(-8, 8),
+						},
+						2,
+						finish === "brick" ? 4.5 : 3,
 					);
 				}
 				this.beat(i, type, at, at + 900);
@@ -1588,11 +1747,39 @@ class Director {
 		}
 	}
 
+	// The ball goes around the iron before it decides: "rims out", "rolls out",
+	// "rattles around". Returns when and where it leaves the rim.
+	private rollAround(team: Side, t: number, from: Pt3): { t: number; at: Pt3 } {
+		const rim = rimPt(team);
+		const a0 = Math.atan2(from.y - rim.y, from.x - rim.x);
+		const turn = (this.rng() < 0.5 ? 1 : -1) * this.rand(2.4, 4.4);
+		const steps = 5;
+		let at = from;
+		for (let k = 1; k <= steps; k++) {
+			const a = a0 + (turn * k) / steps;
+			const p = {
+				x: rim.x + Math.cos(a) * RIM_R,
+				y: rim.y + Math.sin(a) * RIM_R,
+				z: RIM_Z + 0.42,
+			};
+			this.fly(t, t + 95, at, p, 0);
+			at = p;
+			t += 95;
+		}
+		return { t, at };
+	}
+
 	private beatShotResult(
 		e: RawEvent,
 		i: number,
 		kind: "make" | "miss" | "block",
-		shot: { pid: number; team: Side; target: Pt3; dunk: boolean },
+		shot: {
+			pid: number;
+			team: Side;
+			target: Pt3;
+			dunk: boolean;
+			finish?: Finish;
+		},
 		at: number,
 	) {
 		const team = shot.team;
@@ -1631,7 +1818,23 @@ class Director {
 		}
 		if (kind === "miss") {
 			this.effect("clank", at, { rim: team });
-			const next = this.afterMiss(at, shot.target, team, i, false);
+			let from = shot.target;
+			let t = at;
+			if (
+				!shot.dunk &&
+				(shot.finish === "rimOut" || shot.finish === "rollOut")
+			) {
+				({ t, at: from } = this.rollAround(team, at, from));
+				this.effect("clank", t, { rim: team });
+			}
+			const next = this.afterMiss(
+				t,
+				from,
+				team,
+				i,
+				false,
+				shot.dunk || shot.finish === "brick",
+			);
 			this.beat(i, e.type, at, next);
 			this.phase = "loose";
 			return;
@@ -1674,9 +1877,10 @@ class Director {
 				);
 			const def = tall(other(team));
 			const off = tall(team).filter((p) => p !== shooter);
+			const rimSpot = { x: rimX(team), y: 25 };
 			def.forEach((pid, j) => {
 				const [dd, ac] = j < 3 ? FT_DEFENSE[j]! : FT_BACK[j - 3]!;
-				this.go(
+				const at = this.go(
 					pid,
 					spot(team, dd, ac),
 					T + j * 50,
@@ -1684,12 +1888,22 @@ class Director {
 					"walk",
 					-dir as 1 | -1,
 				);
+				this.lookAt(pid, at, j < 3 ? rimSpot : line);
 			});
 			off.forEach((pid, j) => {
 				const [dd, ac] = j < 2 ? FT_OFFENSE[j]! : FT_BACK[j]!;
-				this.go(pid, spot(team, dd, ac), T + j * 60, JOG, "walk", dir);
+				const at = this.go(
+					pid,
+					spot(team, dd, ac),
+					T + j * 60,
+					JOG,
+					"walk",
+					dir,
+				);
+				this.lookAt(pid, at, j < 2 ? rimSpot : line);
 			});
 			ready = this.go(shooter, line, T, JOG, "walk", dir);
+			this.lookAt(shooter, ready, rimSpot);
 		}
 		if (this.holder !== shooter) {
 			this.fly(
@@ -1705,7 +1919,10 @@ class Director {
 		this.hold(shooter, ready + 100, "dribble");
 		const set = ready + 600;
 		this.hold(shooter, set, "hold");
-		this.act(shooter, "shoot", set, set + 900, { face: dir });
+		this.act(shooter, "shoot", set, set + 900, {
+			face: dir,
+			look: { x: rimX(team), y: 25 },
+		});
 		const release = set + 900 * 0.55;
 		const target = made
 			? rimPt(team, 0.35)
@@ -1861,17 +2078,16 @@ class Director {
 		let ready = T;
 		for (const t of [0, 1] as const) {
 			const j0 = t === winnerTeam ? jumper : loser;
-			ready = Math.max(
-				ready,
-				this.go(
-					j0,
-					{ x: c.x + side(t) * 1.3, y: c.y },
-					T,
-					JOG,
-					"walk",
-					attackDir(t),
-				),
+			const atCircle = this.go(
+				j0,
+				{ x: c.x + side(t) * 1.3, y: c.y },
+				T,
+				JOG,
+				"walk",
+				attackDir(t),
 			);
+			this.lookAt(j0, atCircle, c);
+			ready = Math.max(ready, atCircle);
 			const rest = this.slots(t).filter((p) => p !== j0);
 			rest.forEach((pid, j) => {
 				const a = ((j + 0.5) / rest.length) * Math.PI - Math.PI / 2;
@@ -1879,10 +2095,16 @@ class Director {
 					x: c.x + side(t) * (7 + Math.cos(a) * 3),
 					y: c.y + Math.sin(a) * 9,
 				};
-				ready = Math.max(
-					ready,
-					this.go(pid, target, T + j * 60, JOG, "walk", attackDir(t)),
+				const arrived = this.go(
+					pid,
+					target,
+					T + j * 60,
+					JOG,
+					"walk",
+					attackDir(t),
 				);
+				this.lookAt(pid, arrived, c);
+				ready = Math.max(ready, arrived);
 			});
 		}
 		const toss = Math.max(T + 600, ready + 200);
@@ -1977,6 +2199,7 @@ class Director {
 			tr.moves.sort(byT0);
 			tr.acts.sort(byT0);
 			tr.faces.sort((a, b) => a[0] - b[0]);
+			tr.looks.sort((a, b) => a[0] - b[0]);
 			tr.shown.sort((a, b) => a[0] - b[0]);
 		}
 		this.ball.sort(byT0);
@@ -1995,15 +2218,17 @@ class Director {
 export const compileCourt = ({
 	events,
 	players,
-	seed,
-	dunkRate = 0.55,
+	gid,
+	gender = "male",
 }: {
 	events: RawEvent[];
 	players: CourtPlayer[];
-	seed: string;
-	dunkRate?: number;
+	// The game, which seeds everything the sim leaves open (where the shooter
+	// stood, who boxed out) and picks the play-by-play's wording.
+	gid: number | undefined;
+	gender?: "female" | "male";
 }): CourtTimeline => {
-	const d = new Director(events, players, seed, dunkRate);
+	const d = new Director(events, players, gid, gender);
 	for (let i = 0; i < events.length; i++) {
 		const e = events[i];
 		if (!e || typeof e.type !== "string") {

@@ -1,13 +1,11 @@
-import { PX_PER_FT } from "./geometry.ts";
-
 // THE BODY AND HOW IT MOVES.
 //
-// A player is a small skeleton - hips, knees, shoulders, elbows - posed
-// by a handful of joint angles and drawn as chunky pixels around it. Angles are
-// in degrees for a player facing RIGHT: 0 points straight down, positive swings
-// forward (toward where he faces). A knee bends backward from its thigh, an
-// elbow forward from its upper arm. N is the near limb (toward the camera), F
-// the far one.
+// A player is a skeleton - hips, knees, shoulders, elbows - posed by a
+// handful of joint angles, then turned to face wherever he faces on the floor.
+// Angles are in degrees in the plane he faces along: 0 points straight down,
+// positive swings forward. A knee bends backward from its thigh, an elbow
+// forward from its upper arm. N is his right side (his shooting and dribbling
+// hand), F his left.
 //
 // Everything here is plain arithmetic, so the director and the tests can ask
 // where a hand is without a canvas.
@@ -22,6 +20,11 @@ export type Pose = {
 	shF: number;
 	elF: number;
 	lean: number;
+	// How far each arm swings out from his side (degrees), and how far apart
+	// his feet are spread (feet) - a defensive stance is wide and arms out.
+	abN: number;
+	abF: number;
+	wide: number;
 };
 
 const BASE: Pose = {
@@ -34,6 +37,9 @@ const BASE: Pose = {
 	shF: 26,
 	elF: 44,
 	lean: 6,
+	abN: 9,
+	abF: 9,
+	wide: 0.08,
 };
 const pose = (o: Partial<Pose>): Pose => ({ ...BASE, ...o });
 
@@ -68,6 +74,9 @@ const P = {
 		shF: 48,
 		elF: 28,
 		lean: 22,
+		abN: 38,
+		abF: 38,
+		wide: 0.55,
 	}),
 	hold: pose({
 		hipN: -12,
@@ -153,6 +162,9 @@ const runPose = (ph: number, mode: RunMode): Pose => {
 			elN: 22,
 			shF: 46,
 			elF: 30,
+			abN: 34,
+			abF: 34,
+			wide: 0.4,
 		});
 	}
 	const legs = {
@@ -230,29 +242,29 @@ export const ANIMS = {
 				elF: 40,
 			}),
 	},
-	run: { kind: "cycle", n: 6, stride: 5.4, pose: (i) => runPose(i / 6, "run") },
+	run: { kind: "cycle", n: 6, stride: 8.6, pose: (i) => runPose(i / 6, "run") },
 	dribble: {
 		kind: "cycle",
 		n: 6,
-		stride: 5.2,
+		stride: 8.2,
 		pose: (i) => runPose(i / 6, "dribble"),
 	},
 	back: {
 		kind: "cycle",
 		n: 6,
-		stride: 3.4,
+		stride: 4.6,
 		pose: (i) => runPose(i / 6, "back"),
 	},
 	walk: {
 		kind: "cycle",
 		n: 6,
-		stride: 3.2,
+		stride: 4.8,
 		pose: (i) => runPose(i / 6, "walk"),
 	},
 	carry: {
 		kind: "cycle",
 		n: 6,
-		stride: 3.2,
+		stride: 4.6,
 		pose: (i) => runPose(i / 6, "carry"),
 	},
 	shoot: {
@@ -587,6 +599,27 @@ export const ANIMS = {
 			[1, P.hold],
 		],
 	},
+	// On the bench.
+	sit: {
+		kind: "loop",
+		n: 2,
+		fps: 0.4,
+		pose: (i) =>
+			pose({
+				hipN: 88,
+				kneeN: 94,
+				hipF: 84,
+				kneeF: 90,
+				shN: 30 + i * 4,
+				elN: 52,
+				shF: 26,
+				elF: 56,
+				lean: -6 + i,
+				abN: 14,
+				abF: 14,
+				wide: 0.35,
+			}),
+	},
 	celebrate: {
 		kind: "loop",
 		n: 2,
@@ -616,6 +649,23 @@ export const poseFor = (anim: AnimName, frame: number): Pose => {
 	return a.pose(frame);
 };
 
+// The pose partway through an animation - an act from start (0) to finish
+// (1), a cycle or loop through one turn - blended between its key frames, so
+// a body moves smoothly instead of stepping frame to frame.
+export const poseAt = (anim: AnimName, phase: number): Pose => {
+	const a: Anim = ANIMS[anim];
+	if (a.kind === "act") {
+		return keyed(a.keys, Math.min(1, Math.max(0, phase)));
+	}
+	const p = (((phase % 1) + 1) % 1) * a.n;
+	if (a.kind === "cycle") {
+		// Cycles are written as continuous strides.
+		return a.pose(p);
+	}
+	const i0 = Math.floor(p);
+	return lerpPose(a.pose(i0), a.pose((i0 + 1) % a.n), p - i0);
+};
+
 // Which frame of an animation shows at a moment: an act by how far through it
 // is, a cycle by how far the body has run, a loop by the clock.
 export const actFrame = (anim: AnimName, u: number): number => {
@@ -633,111 +683,169 @@ export const loopFrame = (anim: AnimName, ms: number, phase = 0): number => {
 	return Math.floor((ms / 1000) * fps + phase) % a.n;
 };
 
-// A player's build in sprite pixels. Height drives everything; weight adds
-// width. Proportions are a little chunky (bigger head, wider torso) - that is
-// what reads at thirty-odd pixels tall.
+// A player's build, in feet. Height drives everything; weight adds girth.
+// Proportions are real ones, except the head, which is drawn a touch big so a
+// face still reads from the broadcast camera.
 export type Body = {
 	H: number;
-	leg: number;
+	hipH: number;
+	ankleH: number;
 	thigh: number;
 	shin: number;
+	foot: number;
 	torso: number;
-	headH: number;
-	headW: number;
+	neck: number;
+	headR: number;
 	upper: number;
 	fore: number;
-	torsoW: number;
-	legT: number;
-	armT: number;
+	shoulderW: number;
+	hipW: number;
+	depth: number;
+	thighR: number;
+	kneeR: number;
+	calfR: number;
+	ankleR: number;
+	upperR: number;
+	foreR: number;
+	handR: number;
 };
 
 export const DEFAULT_HGT = 78;
 export const DEFAULT_WEIGHT = 215;
 
 export const bodyOf = (hgt = DEFAULT_HGT, weight = DEFAULT_WEIGHT): Body => {
-	const H = (hgt / 12) * PX_PER_FT;
-	const girth = Math.min(
-		1.15,
-		Math.max(0.9, 1 + ((weight - DEFAULT_WEIGHT) / DEFAULT_WEIGHT) * 0.6),
+	const H = hgt / 12;
+	const g = Math.min(
+		1.18,
+		Math.max(0.9, 1 + ((weight - DEFAULT_WEIGHT) / DEFAULT_WEIGHT) * 0.7),
 	);
 	return {
 		H,
-		leg: H * 0.44,
-		thigh: H * 0.225,
-		shin: H * 0.205,
-		torso: H * 0.29,
-		headH: Math.round(H * 0.22),
-		headW: Math.round(H * 0.2),
-		upper: H * 0.19,
-		fore: H * 0.175,
-		torsoW: Math.max(8, Math.round(H * 0.26 * girth)),
-		legT: Math.max(3, Math.round(H * 0.08 * girth)),
-		armT: H * girth > 42 ? 3 : 2,
+		hipH: H * 0.525,
+		ankleH: H * 0.045,
+		thigh: H * 0.245,
+		shin: H * 0.235,
+		foot: H * 0.15,
+		torso: H * 0.285,
+		neck: H * 0.045,
+		headR: H * 0.068,
+		upper: H * 0.185,
+		fore: H * 0.2,
+		shoulderW: H * 0.118 * g,
+		hipW: H * 0.066 * g,
+		depth: H * 0.1 * g,
+		thighR: H * 0.046 * g,
+		kneeR: H * 0.034 * g,
+		calfR: H * 0.035 * g,
+		ankleR: H * 0.021,
+		upperR: H * 0.03 * g,
+		foreR: H * 0.025 * g,
+		handR: H * 0.024,
 	};
 };
 
-type V = { x: number; y: number };
+// A point on the body: f forward, s to his left, u up - feet, with his feet
+// on the floor at the origin.
+export type V3 = { f: number; s: number; u: number };
+export type Limb = { root: V3; mid: V3; end: V3; tip?: V3 };
 export type Skeleton = {
-	hip: V;
-	shoulder: V;
-	headC: V;
-	legF: { knee: V; ankle: V };
-	legN: { knee: V; ankle: V };
-	armF: { s0: V; elbow: V; hand: V };
-	armN: { s0: V; elbow: V; hand: V };
+	pelvis: V3;
+	chest: V3;
+	head: V3;
+	// Right (the shooting hand, the dribbling hand) and left.
+	legR: Limb;
+	legL: Limb;
+	armR: Limb;
+	armL: Limb;
 };
 
-// Joint positions in sprite pixels: origin between the feet, x forward, y up.
-// The body is set down so its lowest sole touches y = 0; a jump is z on top.
+const v3 = (f: number, s: number, u: number): V3 => ({ f, s, u });
+
+// The pose's angles live in the plane he faces along; arms swing out from
+// his sides a little (more in a stance), feet spread with the knees.
 export const skeleton = (b: Body, q: Pose): Skeleton => {
-	const dv = (deg: number): V => {
-		const r = (deg * Math.PI) / 180;
-		return { x: Math.sin(r), y: -Math.cos(r) };
+	const rad = Math.PI / 180;
+	// An angle in the facing plane: 0 straight down, 90 straight ahead.
+	const dir = (deg: number) => ({
+		f: Math.sin(deg * rad),
+		u: -Math.cos(deg * rad),
+	});
+	const wide = q.wide;
+	const leg = (hipDeg: number, kneeDeg: number, side: 1 | -1) => {
+		const a = dir(hipDeg);
+		const c = dir(hipDeg - kneeDeg);
+		const root = v3(0, side * b.hipW, b.hipH);
+		const mid = v3(
+			a.f * b.thigh,
+			side * (b.hipW + wide * 0.5),
+			b.hipH + a.u * b.thigh,
+		);
+		const end = v3(
+			mid.f + c.f * b.shin,
+			side * (b.hipW + wide),
+			mid.u + c.u * b.shin,
+		);
+		return { root, mid, end };
 	};
-	const leg = (h: number, k: number) => {
-		const a = dv(h);
-		const s = dv(h - k);
-		const knee = { x: a.x * b.thigh, y: b.leg + a.y * b.thigh };
-		return {
-			knee,
-			ankle: { x: knee.x + s.x * b.shin, y: knee.y + s.y * b.shin },
-		};
-	};
-	const legF = leg(q.hipF, q.kneeF);
-	const legN = leg(q.hipN, q.kneeN);
-	const off = -(Math.min(legF.ankle.y, legN.ankle.y) - 2);
-	for (const l of [legF, legN]) {
-		l.knee.y += off;
-		l.ankle.y += off;
+	const legR = leg(q.hipN, q.kneeN, -1);
+	const legL = leg(q.hipF, q.kneeF, 1);
+	// Down onto the floor: the lower ankle sits at ankle height.
+	const off = b.ankleH - Math.min(legR.end.u, legL.end.u);
+	for (const l of [legR, legL]) {
+		l.root.u += off;
+		l.mid.u += off;
+		l.end.u += off;
+		(l as Limb).tip = v3(
+			l.end.f + b.foot * 0.72,
+			l.end.s,
+			Math.max(b.ankleR, l.end.u - b.ankleH * 0.55),
+		);
 	}
-	const hip = { x: 0, y: b.leg + off };
-	const L = (q.lean * Math.PI) / 180;
-	const shoulder = {
-		x: hip.x + Math.sin(L) * b.torso,
-		y: hip.y + Math.cos(L) * b.torso,
-	};
-	const headC = {
-		x: shoulder.x + Math.sin(L) * (1 + b.headH / 2) + 0.5,
-		y: shoulder.y + Math.cos(L) * (1 + b.headH / 2),
-	};
-	const arm = (sh: number, el: number, dx: number) => {
-		const s0 = { x: shoulder.x + dx, y: shoulder.y - 1.5 };
-		const u = dv(sh);
-		const f = dv(sh + el);
-		const elbow = { x: s0.x + u.x * b.upper, y: s0.y + u.y * b.upper };
-		return {
-			s0,
-			elbow,
-			hand: { x: elbow.x + f.x * b.fore, y: elbow.y + f.y * b.fore },
+	const L = q.lean * rad;
+	const pelvis = v3(0, 0, b.hipH + off);
+	const chest = v3(
+		pelvis.f + Math.sin(L) * b.torso,
+		0,
+		pelvis.u + Math.cos(L) * b.torso,
+	);
+	const up = b.neck + b.headR;
+	const head = v3(
+		chest.f + Math.sin(L) * up + b.headR * 0.12,
+		0,
+		chest.u + Math.cos(L) * up,
+	);
+	const arm = (shDeg: number, elDeg: number, abDeg: number, side: 1 | -1) => {
+		const ab = abDeg * rad;
+		const along = (deg: number) => {
+			const d = dir(deg);
+			return {
+				f: d.f * Math.cos(ab),
+				s: side * Math.sin(ab),
+				u: d.u * Math.cos(ab),
+			};
 		};
+		const root = v3(chest.f, side * b.shoulderW, chest.u - b.H * 0.022);
+		const a = along(shDeg);
+		const mid = v3(
+			root.f + a.f * b.upper,
+			root.s + a.s * b.upper,
+			root.u + a.u * b.upper,
+		);
+		const c = along(shDeg + elDeg);
+		const end = v3(
+			mid.f + c.f * b.fore,
+			mid.s + c.s * b.fore,
+			mid.u + c.u * b.fore,
+		);
+		return { root, mid, end };
 	};
 	return {
-		hip,
-		shoulder,
-		headC,
-		legF,
-		legN,
-		armF: arm(q.shF, q.elF, 1),
-		armN: arm(q.shN, q.elN, -0.5),
+		pelvis,
+		chest,
+		head,
+		legR,
+		legL,
+		armR: arm(q.shN, q.elN, q.abN, -1),
+		armL: arm(q.shF, q.elF, q.abF, 1),
 	};
 };

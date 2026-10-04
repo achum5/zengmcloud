@@ -9,20 +9,42 @@ import {
 } from "react";
 import { useLocal } from "../../../util/local.ts";
 import { usePlayerFace, type PlayerFace } from "../../../util/playerFaces.ts";
+import LiveCourt from "../LiveCourt.tsx";
+import {
+	benchPlane,
+	FLOOR,
+	LED_WALL,
+	paintBench,
+	paintStands,
+	paintTable,
+	paintWall,
+	STANDS,
+	TABLE_FRONT,
+	TABLE_TOP,
+	type Plane,
+} from "./arena.ts";
+import { makeCamera, planeTransform, type Camera } from "./camera.ts";
+import {
+	buildClocks,
+	formatGameClock,
+	gameClockAt,
+	shotClockAt,
+} from "./clock.ts";
 import {
 	compileCourt,
 	snapForCursor,
 	targetForCursor,
 	type CourtPlayer,
 } from "./director.ts";
-import { evalBall } from "./evaluate.ts";
-import { VIEW_H, viewWidthFor, type Side } from "./geometry.ts";
+import { headColors, loadHead, type HeadSprite } from "./faces.ts";
+import { kitsFor, shade, type Look } from "./figure.ts";
+import { COURT_H, COURT_W, type Side } from "./geometry.ts";
 import { bodyOf, type Body } from "./poses.ts";
-import { buildArena, cameraTarget, drawFrame } from "./render.ts";
-import { lookFor, SpriteCache, uniformsFor, type Look } from "./sprites.ts";
+import { aimFor, drawFrame, momentAt } from "./scene.ts";
 
-// THE 2.5D COURT: players acting out the play-by-play from a raised
-// sideline camera, in place of the 2D court when this device has chosen it.
+// THE 2.5D COURT: the game as a broadcast - the home team's own floor, the
+// players with their faces, a camera that follows the ball - acting out the
+// play-by-play, in place of the 2D court when this device has chosen it.
 //
 // The whole game is staged up front (see director.ts), so playback is a clock
 // running along that timeline. The page's playback cursor (events consumed)
@@ -36,6 +58,17 @@ const DEFAULT_SPEED = 7;
 // A touch quicker than the timeline's own clock, so a game watched at the
 // default speed takes about twenty minutes.
 const BASE_RATE = 1.3;
+// The court picture from LiveCourt, in px per foot. Big, so the lines stay
+// sharp when the camera zooms in.
+const COURT_PX = 16;
+const COURT_PLANE: Plane = {
+	key: "court",
+	origin: { x: -5, y: -2.5, z: 0 },
+	alongX: { x: 1 / COURT_PX, y: 0, z: 0 },
+	alongY: { x: 0, y: 1 / COURT_PX, z: 0 },
+	w: (COURT_W + 10) * COURT_PX,
+	h: (COURT_H + 5) * COURT_PX,
+};
 
 const FaceLoader = ({
 	pid,
@@ -57,13 +90,42 @@ const FaceLoader = ({
 	return null;
 };
 
-const lastNameTag = (name: string | undefined): string => {
-	const parts = (name ?? "").trim().split(/\s+/);
-	return (parts.length > 1 ? parts.slice(1).join(" ") : (parts[0] ?? ""))
-		.toUpperCase()
-		.replaceAll(/[^\d '.A-Z-]/g, "")
-		.slice(0, 12);
-};
+// A painted canvas, mounted as is.
+const Painted = ({
+	canvas,
+	plane,
+	setRef,
+}: {
+	canvas: HTMLCanvasElement;
+	plane: Plane;
+	setRef: (key: string, el: HTMLDivElement | null) => void;
+}) => (
+	<div
+		ref={(el) => {
+			setRef(plane.key, el);
+			if (el && el.firstChild !== canvas) {
+				canvas.style.display = "block";
+				canvas.style.width = "100%";
+				canvas.style.height = "100%";
+				el.replaceChildren(canvas);
+			}
+		}}
+		style={planeStyle(plane)}
+	/>
+);
+
+const planeStyle = (plane: Plane) =>
+	({
+		position: "absolute",
+		left: 0,
+		top: 0,
+		width: plane.w,
+		height: plane.h,
+		transformOrigin: "0 0",
+		willChange: "transform",
+		backfaceVisibility: "hidden",
+		visibility: "hidden",
+	}) as const;
 
 type Props = {
 	// The game's full play-by-play, never consumed.
@@ -122,82 +184,112 @@ const Court25D = ({
 	const timeline = useMemo(
 		() =>
 			events && events.length > 0
-				? compileCourt({
-						events,
-						players: roster,
-						seed: String(gid ?? 0),
-						dunkRate: gender === "female" ? 0.03 : 0.55,
-					})
+				? compileCourt({ events, players: roster, gid, gender })
 				: undefined,
 		[events, roster, gid, gender],
 	);
-
-	const arena = useMemo(
-		() =>
-			buildArena(
-				{ abbrev: away?.abbrev, name: away?.name, colors: away?.colors },
-				{ abbrev: home?.abbrev, name: home?.name, colors: home?.colors },
-			),
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-		[gid],
+	const clocks = useMemo(
+		() => (timeline && events ? buildClocks(timeline, events) : undefined),
+		[timeline, events],
 	);
-	const uniforms = useMemo(
-		() => uniformsFor(away?.colors, home?.colors),
+
+	const kits = useMemo(
+		() => kitsFor(away?.colors, home?.colors),
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[gid],
 	);
 
-	// Faces arrive asynchronously; until then a player wears his uniform with a
-	// stock skin tone and haircut, and an average build.
+	// The building, painted once a game.
+	const paint = useMemo(() => {
+		const a = {
+			abbrev: away?.abbrev,
+			name: away?.name,
+			region: away?.region,
+			colors: away?.colors,
+		};
+		const h = {
+			abbrev: home?.abbrev,
+			name: home?.name,
+			region: home?.region,
+			colors: home?.colors,
+		};
+		const table = paintTable(h, a);
+		return {
+			stands: paintStands(h, a, String(gid ?? 0)),
+			wall: paintWall(h),
+			tableTop: table.top,
+			tableFront: table.front,
+			bench0: paintBench(a),
+			bench1: paintBench(h),
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [gid]);
+
+	// Faces arrive asynchronously; until then a player has a plain head and an
+	// average build.
 	const faces = useRef(new Map<number, PlayerFace | null>());
+	const heads = useRef(
+		new Map<number, { sprite?: HeadSprite; skin?: string }>(),
+	);
 	const [facesVersion, setFacesVersion] = useState(0);
-	const onFace = useCallback((pid: number, face: PlayerFace | null) => {
-		if (faces.current.get(pid) !== face) {
+	const onFace = useCallback(
+		(pid: number, face: PlayerFace | null) => {
+			if (faces.current.get(pid) === face) {
+				return;
+			}
 			faces.current.set(pid, face);
 			setFacesVersion((v) => v + 1);
-		}
-	}, []);
+			const team = roster.find((p) => p.pid === pid)?.team;
+			const colors = team === 0 ? away?.colors : home?.colors;
+			void loadHead(face?.face, face?.imgURL, face?.colors ?? colors).then(
+				(head) => {
+					if (faces.current.get(pid) === face) {
+						heads.current.set(pid, head);
+						setFacesVersion((v) => v + 1);
+					}
+				},
+			);
+		},
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[roster],
+	);
 
 	const appearance = useMemo(() => {
-		const nextLooks = new Map<number, Look>();
-		const nextBodies = new Map<number, Body>();
+		const looks = new Map<number, Look>();
+		const bodies = new Map<number, Body>();
 		for (const p of roster) {
 			const f = faces.current.get(p.pid) ?? undefined;
-			nextLooks.set(
-				p.pid,
-				lookFor({
-					pid: p.pid,
-					face: f?.face,
-					uniform: uniforms[p.team as Side],
-					jerseyNumber: f?.jerseyNumber ?? p.jerseyNumber,
-				}),
-			);
-			nextBodies.set(p.pid, bodyOf(f?.hgt, f?.weight));
+			const head = heads.current.get(p.pid);
+			const colors = headColors(f?.face);
+			looks.set(p.pid, {
+				kit: kits[p.team as Side],
+				skin: head?.skin ?? colors.skin,
+				hair: f?.imgURL ? "#1f1612" : colors.hair,
+				jerseyNumber: f?.jerseyNumber ?? p.jerseyNumber ?? "",
+				head: head?.sprite,
+			});
+			bodies.set(p.pid, bodyOf(f?.hgt, f?.weight));
 		}
-		return { looks: nextLooks, bodies: nextBodies };
+		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [roster, uniforms, facesVersion]);
+	}, [roster, kits, facesVersion]);
 	// Read by the animation loop, which outlives any one render.
 	const looks = useRef(appearance.looks);
 	const bodies = useRef(appearance.bodies);
 	looks.current = appearance.looks;
 	bodies.current = appearance.bodies;
-	const tags = useMemo(
-		() => new Map(roster.map((p) => [p.pid, lastNameTag(p.name)])),
-		[roster],
-	);
 
-	// How much floor fits: a tighter camera on a narrow screen.
+	// The picture's size: 16:9, or 4:3 on a phone so the players stay big.
 	const wrapRef = useRef<HTMLDivElement | null>(null);
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
-	const [viewW, setViewW] = useState(384);
+	const [size, setSize] = useState({ w: 640, h: 360 });
 	useLayoutEffect(() => {
 		const el = wrapRef.current;
 		if (!el) {
 			return;
 		}
 		const measure = () => {
-			setViewW(viewWidthFor(el.clientWidth));
+			setSize({ w: el.clientWidth, h: el.clientHeight });
 		};
 		measure();
 		const observer = new ResizeObserver(measure);
@@ -206,16 +298,31 @@ const Court25D = ({
 			observer.disconnect();
 		};
 	}, []);
+	const narrow = size.w < 560;
+
+	const planes = useRef(new Map<string, HTMLDivElement>());
+	const setPlaneRef = useCallback((key: string, el: HTMLDivElement | null) => {
+		if (el) {
+			planes.current.set(key, el);
+		} else {
+			planes.current.delete(key);
+		}
+	}, []);
+	const clockRef = useRef<HTMLSpanElement | null>(null);
+	const shotRef = useRef<HTMLSpanElement | null>(null);
 
 	const play = useRef({
 		t: 0,
-		camX: 47,
+		camX: COURT_W / 2,
+		camW: 60,
 		snapCam: true,
 		last: undefined as number | undefined,
 		readyFor: -1,
 		stepping: false,
 		prevCursor: -1,
 		prevPaused: paused,
+		clockText: "",
+		shotText: "",
 	});
 
 	// Follow the page's cursor: run on to the next line normally; cut straight
@@ -247,6 +354,16 @@ const Court25D = ({
 		s.prevPaused = paused;
 	}, [cursor, paused, timeline]);
 
+	const homePad = home?.colors?.[0] ?? "#8c1d40";
+	const warmups = useMemo(
+		(): [string, string] => [
+			shade(kits[0].jersey, -0.3),
+			shade(kits[1].trim, -0.2),
+		],
+		[kits],
+	);
+	const rosterRef = useRef(roster);
+	rosterRef.current = roster;
 	const live = useRef({
 		cursor,
 		paused,
@@ -254,8 +371,11 @@ const Court25D = ({
 		follower,
 		onReady,
 		timeline,
-		viewW,
-		arena,
+		clocks,
+		size,
+		narrow,
+		homePad,
+		warmups,
 		eventsLength: events?.length ?? 0,
 	});
 	live.current = {
@@ -265,18 +385,57 @@ const Court25D = ({
 		follower,
 		onReady,
 		timeline,
-		viewW,
-		arena,
+		clocks,
+		size,
+		narrow,
+		homePad,
+		warmups,
 		eventsLength: events?.length ?? 0,
 	};
 
-	const sprites = useMemo(() => new SpriteCache(), []);
-
 	useEffect(() => {
-		const buffer = document.createElement("canvas");
+		const gloss = document.createElement("canvas");
+		const glossCtx = gloss.getContext("2d");
 		const lookOf = (pid: number) => looks.current.get(pid)!;
 		const bodyOfPid = (pid: number) => bodies.current.get(pid) ?? bodyOf();
-		const tagOf = (pid: number) => tags.get(pid) ?? "";
+		const planeList: Plane[] = [
+			STANDS,
+			LED_WALL,
+			FLOOR,
+			COURT_PLANE,
+			TABLE_TOP,
+			TABLE_FRONT,
+			benchPlane(0),
+			benchPlane(1),
+		];
+		const shown = new Map<string, string | undefined>();
+
+		const place = (cam: Camera) => {
+			for (const pl of planeList) {
+				const el = planes.current.get(pl.key);
+				if (!el) {
+					continue;
+				}
+				const tf = planeTransform(
+					cam,
+					pl.origin,
+					pl.alongX,
+					pl.alongY,
+					pl.w,
+					pl.h,
+				);
+				if (tf === shown.get(pl.key)) {
+					continue;
+				}
+				shown.set(pl.key, tf);
+				if (tf) {
+					el.style.transform = tf;
+					el.style.visibility = "visible";
+				} else {
+					el.style.visibility = "hidden";
+				}
+			}
+		};
 
 		const tick = (now: number, draw: boolean) => {
 			const p = live.current;
@@ -316,49 +475,66 @@ const Court25D = ({
 			}
 
 			const canvas = canvasRef.current;
-			const ctx = buffer.getContext("2d");
-			if (!canvas || !ctx) {
+			const ctx = canvas?.getContext("2d");
+			if (!canvas || !ctx || !glossCtx) {
 				return;
 			}
-			if (buffer.width !== p.viewW || buffer.height !== VIEW_H) {
-				buffer.width = p.viewW;
-				buffer.height = VIEW_H;
-				s.snapCam = true;
+			const { w, h } = p.size;
+			const dpr = Math.min(2, window.devicePixelRatio || 1);
+			const cw = Math.round(w * dpr);
+			const ch = Math.round(h * dpr);
+			if (cw <= 0 || ch <= 0) {
+				return;
 			}
-			const ball = evalBall(tl, s.t, bodyOfPid);
-			const camTarget = cameraTarget(tl, s.t, ball, p.viewW);
-			s.camX = s.snapCam
-				? camTarget
-				: s.camX +
-					(camTarget - s.camX) *
-						(1 - Math.exp(-(dt / 1000) * 3.2 * Math.min(4, rate)));
-			s.snapCam = false;
+			if (canvas.width !== cw || canvas.height !== ch) {
+				canvas.width = cw;
+				canvas.height = ch;
+			}
+
+			const moment = momentAt(tl, s.t, rosterRef.current, bodyOfPid);
+			const aim = aimFor(moment, p.narrow);
+			if (s.snapCam) {
+				s.camX = aim.x;
+				s.camW = aim.width;
+				s.snapCam = false;
+			} else {
+				const secs = (dt / 1000) * Math.min(4, Math.max(1, rate));
+				s.camX += (aim.x - s.camX) * (1 - Math.exp(-secs * 2.6));
+				s.camW += (aim.width - s.camW) * (1 - Math.exp(-secs * 1.5));
+			}
+			const cam = makeCamera({ x: s.camX, width: s.camW, y: aim.y }, w, h);
+			place(cam);
+
+			let shotText = "";
+			let clockText = "";
+			if (p.clocks) {
+				const game = gameClockAt(p.clocks, s.t);
+				const shot = shotClockAt(p.clocks, s.t);
+				clockText = game === undefined ? "" : formatGameClock(game);
+				shotText = shot === undefined ? "" : String(Math.ceil(shot - 1e-6));
+			}
 			drawFrame({
 				ctx,
-				viewW: p.viewW,
-				camX: s.camX,
-				t: s.t,
+				glossCtx,
+				cam,
+				moment,
 				tl,
-				arena: p.arena,
-				sprites,
-				lookFor: lookOf,
+				roster: rosterRef.current,
 				bodyFor: bodyOfPid,
-				tagFor: tagOf,
+				lookFor: lookOf,
+				padColor: p.homePad,
+				warmups: p.warmups,
+				shotClock: shotText,
+				dpr,
 			});
-
-			const dpr = Math.min(3, window.devicePixelRatio || 1);
-			const w = Math.round(canvas.clientWidth * dpr);
-			const h = Math.round(canvas.clientHeight * dpr);
-			if (w > 0 && h > 0) {
-				if (canvas.width !== w || canvas.height !== h) {
-					canvas.width = w;
-					canvas.height = h;
-				}
-				const vctx = canvas.getContext("2d");
-				if (vctx) {
-					vctx.imageSmoothingEnabled = false;
-					vctx.drawImage(buffer, 0, 0, w, h);
-				}
+			if (clockText !== s.clockText && clockRef.current) {
+				s.clockText = clockText;
+				clockRef.current.textContent = clockText;
+			}
+			if (shotText !== s.shotText && shotRef.current) {
+				s.shotText = shotText;
+				shotRef.current.textContent = shotText;
+				shotRef.current.style.visibility = shotText ? "visible" : "hidden";
 			}
 		};
 
@@ -377,12 +553,11 @@ const Court25D = ({
 			cancelAnimationFrame(raf);
 			clearInterval(interval);
 		};
-	}, [sprites, tags]);
+	}, []);
 
 	const awayPts = away?.pts ?? 0;
 	const homePts = home?.pts ?? 0;
-	const clock =
-		`${boxScore?.quarterShort ?? ""} ${boxScore?.time ?? ""}`.trim();
+	const quarter = boxScore?.quarterShort ?? "";
 
 	return (
 		<div
@@ -391,11 +566,12 @@ const Court25D = ({
 			style={{
 				position: "relative",
 				width: "100%",
-				aspectRatio: `${viewW} / ${VIEW_H}`,
-				background: "#07060a",
+				aspectRatio: narrow ? "4 / 3" : "16 / 9",
+				background: "#040406",
 				borderRadius: 6,
 				overflow: "hidden",
 				containerType: "inline-size",
+				isolation: "isolate",
 			}}
 		>
 			{roster.map((p) => (
@@ -409,9 +585,64 @@ const Court25D = ({
 			))}
 			<style>
 				{
-					".court25d-caption .text-body-secondary { color: #b9b1c6 !important; }"
+					".court25d-caption .text-body-secondary { color: #c9c3d3 !important; }"
 				}
 			</style>
+			<div
+				aria-hidden
+				style={{
+					position: "absolute",
+					inset: 0,
+					overflow: "hidden",
+					pointerEvents: "none",
+				}}
+			>
+				<Painted canvas={paint.stands} plane={STANDS} setRef={setPlaneRef} />
+				<Painted canvas={paint.wall} plane={LED_WALL} setRef={setPlaneRef} />
+				<div
+					ref={(el) => {
+						setPlaneRef(FLOOR.key, el);
+					}}
+					style={{
+						...planeStyle(FLOOR),
+						background: "linear-gradient(#17130f, #2b241d 30%, #2b241d)",
+					}}
+				/>
+				<div
+					ref={(el) => {
+						setPlaneRef(COURT_PLANE.key, el);
+					}}
+					style={planeStyle(COURT_PLANE)}
+				>
+					<LiveCourt
+						scene={undefined}
+						teams={[away, home]}
+						finals={!!boxScore?.finals}
+						season={season}
+						sceneMs={undefined}
+					/>
+				</div>
+				<Painted
+					canvas={paint.tableTop}
+					plane={TABLE_TOP}
+					setRef={setPlaneRef}
+				/>
+				<Painted
+					canvas={paint.tableFront}
+					plane={TABLE_FRONT}
+					setRef={setPlaneRef}
+				/>
+				<Painted
+					canvas={paint.bench0}
+					plane={benchPlane(0)}
+					setRef={setPlaneRef}
+				/>
+				<Painted
+					canvas={paint.bench1}
+					plane={benchPlane(1)}
+					setRef={setPlaneRef}
+				/>
+			</div>
 			<canvas
 				ref={canvasRef}
 				role="img"
@@ -421,52 +652,70 @@ const Court25D = ({
 					inset: 0,
 					width: "100%",
 					height: "100%",
-					imageRendering: "pixelated",
 				}}
 			/>
 			<div
 				style={{
 					position: "absolute",
-					left: "1.8cqw",
-					top: "1.8cqw",
+					left: "2cqw",
+					top: "2cqw",
 					display: "flex",
-					fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+					alignItems: "stretch",
+					fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
 					fontWeight: 700,
-					fontSize: "clamp(9px, 2cqw, 15px)",
+					fontSize: "clamp(10px, 1.9cqw, 16px)",
 					lineHeight: 1,
-					boxShadow: "0 2px 0 rgba(0,0,0,.45)",
+					borderRadius: 4,
+					overflow: "hidden",
+					boxShadow: "0 2px 8px rgba(0,0,0,.45)",
 				}}
 			>
 				{[
-					[away?.abbrev, awayPts, uniforms[0]],
-					[home?.abbrev, homePts, uniforms[1]],
-				].map(([abbrev, pts, u]: any, i) => (
+					[away?.abbrev, awayPts, kits[0]],
+					[home?.abbrev, homePts, kits[1]],
+				].map(([abbrev, pts, kit]: any, i) => (
 					<span
 						key={i}
 						style={{
-							background: u.jersey,
-							color: u.numberColor,
-							padding: "0.45em 0.7em",
 							display: "flex",
-							gap: "0.6em",
+							alignItems: "center",
+							gap: "0.55em",
+							padding: "0.5em 0.7em",
+							background: i === 0 ? kit.jersey : kit.trim,
+							color: "#fff",
+							textShadow: "0 1px 1px rgba(0,0,0,.4)",
 						}}
 					>
 						{abbrev}
-						<span style={{ fontVariantNumeric: "tabular-nums" }}>{pts}</span>
+						<span
+							style={{
+								fontVariantNumeric: "tabular-nums",
+								fontSize: "1.15em",
+							}}
+						>
+							{pts}
+						</span>
 					</span>
 				))}
-				{clock ? (
+				<span
+					style={{
+						display: "flex",
+						alignItems: "center",
+						gap: "0.6em",
+						padding: "0.5em 0.7em",
+						background: "rgba(10, 10, 14, 0.9)",
+						color: "#f4f4f4",
+						fontVariantNumeric: "tabular-nums",
+					}}
+				>
+					{quarter}
+					<span ref={clockRef} />
 					<span
-						style={{
-							background: "#0b0a0f",
-							color: "#ffb547",
-							padding: "0.45em 0.7em",
-							fontVariantNumeric: "tabular-nums",
-						}}
-					>
-						{clock}
-					</span>
-				) : null}
+						ref={shotRef}
+						title="Shot clock"
+						style={{ color: "#ffb547", minWidth: "1.3em" }}
+					/>
+				</span>
 			</div>
 			{caption ? (
 				<div
@@ -474,17 +723,18 @@ const Court25D = ({
 					style={{
 						position: "absolute",
 						left: "50%",
-						bottom: "2.2cqw",
+						bottom: "2.6cqw",
 						transform: "translateX(-50%)",
 						width: "max-content",
-						maxWidth: "94%",
+						maxWidth: "92%",
 						textAlign: "center",
-						fontSize: "clamp(10px, 1.9cqw, 15px)",
+						fontSize: "clamp(10px, 1.85cqw, 16px)",
 						lineHeight: 1.35,
-						padding: "0.45em 0.9em",
-						background: "rgba(9, 8, 13, 0.82)",
-						color: "#ece6da",
-						border: "1px solid rgba(255,255,255,0.14)",
+						padding: "0.45em 1em",
+						background: "rgba(8, 8, 12, 0.84)",
+						color: "#f1ede6",
+						borderLeft: `4px solid ${home?.colors?.[0] ?? "#888"}`,
+						borderRadius: 3,
 					}}
 				>
 					{caption}

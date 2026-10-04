@@ -1,14 +1,19 @@
-import type { Act, BallSeg, FxKind, Fx, CourtTimeline } from "./director.ts";
-import { K, persp, PX_PER_FT, type Pt3, type Side } from "./geometry.ts";
+import type {
+	Act,
+	BallSeg,
+	FxKind,
+	Fx,
+	CourtTimeline,
+	Track,
+} from "./director.ts";
+import { rimX, type Pt, type Pt3, type Side } from "./geometry.ts";
 import {
-	actFrame,
 	ANIMS,
-	cycleFrame,
-	loopFrame,
-	poseFor,
+	poseAt,
 	skeleton,
 	type AnimName,
 	type Body,
+	type V3,
 } from "./poses.ts";
 
 // WHERE EVERYTHING IS AT A MOMENT.
@@ -44,9 +49,11 @@ export type PlayerState = {
 	x: number;
 	y: number;
 	z: number;
-	face: 1 | -1;
+	// Which way he faces on the floor, radians (0 = toward the right rim).
+	yaw: number;
 	anim: AnimName;
-	frame: number;
+	// How far through the animation (0 to 1).
+	phase: number;
 	moving: boolean;
 };
 
@@ -83,6 +90,166 @@ const jumpZ = (act: Act, u: number): number => {
 	return v <= 0 || v >= 1 ? 0 : 4 * peak * v * (1 - v);
 };
 
+// Where he is on the floor and what his feet are doing, without asking which
+// way he faces (which depends on where the ball is - see yawAt).
+type Spot = {
+	x: number;
+	y: number;
+	moveIndex: number;
+	moving: boolean;
+	traveled: number;
+};
+
+const spotAt = (tr: Track, t: number): Spot => {
+	const mi = lastIndex(tr.moves, t, (m) => m.t0);
+	const mv = mi >= 0 ? tr.moves[mi] : undefined;
+	if (!mv) {
+		return {
+			x: tr.start.x,
+			y: tr.start.y,
+			moveIndex: -1,
+			moving: false,
+			traveled: 0,
+		};
+	}
+	if (t < mv.t1) {
+		const e = ease((t - mv.t0) / (mv.t1 - mv.t0));
+		return {
+			x: mv.from.x + (mv.to.x - mv.from.x) * e,
+			y: mv.from.y + (mv.to.y - mv.from.y) * e,
+			moveIndex: mi,
+			moving: true,
+			traveled: Math.hypot(mv.to.x - mv.from.x, mv.to.y - mv.from.y) * e,
+		};
+	}
+	return {
+		x: mv.to.x,
+		y: mv.to.y,
+		moveIndex: mi,
+		moving: false,
+		traveled: 0,
+	};
+};
+
+// The act running now, if any (they rarely overlap; the later one wins).
+const actAt = (tr: Track, t: number): Act | undefined => {
+	const ai = lastIndex(tr.acts, t, (a) => a.t0);
+	for (let k = ai; k >= 0 && k >= ai - 3; k--) {
+		const a = tr.acts[k]!;
+		if (t < a.t1) {
+			return a;
+		}
+	}
+	return undefined;
+};
+
+// Roughly where the ball is - a holder's spot rather than his hands - for
+// deciding which way people look. (The hands depend on which way he looks.)
+const ballNear = (tl: CourtTimeline, t: number): Pt => {
+	const seg = ballSegAt(tl, t);
+	const at = (p: Pt3 | { pid: number }, when: number): Pt => {
+		if ("pid" in p) {
+			const tr = tl.tracks.get(p.pid);
+			return tr ? spotAt(tr, when) : { x: 47, y: 25 };
+		}
+		return p;
+	};
+	if (!seg) {
+		return { x: 47, y: 25 };
+	}
+	if (seg.kind === "hold") {
+		return at({ pid: seg.pid }, t);
+	}
+	if (seg.kind === "fly") {
+		const a = at(seg.from, seg.t0);
+		const b = at(seg.to, seg.t1);
+		const u = clamp01((t - seg.t0) / (seg.t1 - seg.t0));
+		return { x: a.x + (b.x - a.x) * u, y: a.y + (b.y - a.y) * u };
+	}
+	if (seg.kind === "bounce") {
+		const u = clamp01((t - seg.t0) / (seg.t1 - seg.t0));
+		return {
+			x: seg.from.x + (seg.to.x - seg.from.x) * u,
+			y: seg.from.y + (seg.to.y - seg.from.y) * u,
+		};
+	}
+	return seg.at;
+};
+
+const angleTo = (from: Pt, to: Pt, fallback: number): number => {
+	const dx = to.x - from.x;
+	const dy = to.y - from.y;
+	return dx * dx + dy * dy < 0.01 ? fallback : Math.atan2(dy, dx);
+};
+
+const unit = (from: Pt, to: Pt): Pt => {
+	const dx = to.x - from.x;
+	const dy = to.y - from.y;
+	const l = Math.hypot(dx, dy) || 1;
+	return { x: dx / l, y: dy / l };
+};
+
+// Which way he means to face at t: at what he is doing (a shot faces the rim),
+// where he is running, or - standing - at the ball.
+const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
+	const here = spotAt(tr, t);
+	const fi = lastIndex(tr.faces, t, (f) => f[0]);
+	const face = fi >= 0 ? tr.faces[fi]![1] : 1;
+	const fallback = face === 1 ? 0 : Math.PI;
+	const act = actAt(tr, t);
+	if (act?.look) {
+		return angleTo(here, act.look, fallback);
+	}
+	const mv = here.moveIndex >= 0 ? tr.moves[here.moveIndex] : undefined;
+	if (mv && here.moving) {
+		const dx = mv.to.x - mv.from.x;
+		const dy = mv.to.y - mv.from.y;
+		const d = Math.hypot(dx, dy);
+		if (d >= 3) {
+			const heading = Math.atan2(dy, dx);
+			if (mv.anim === "back") {
+				return heading + Math.PI;
+			}
+			// Told to face against where he is going: a slide with his man, or a
+			// backpedal - he keeps his eyes on the ball.
+			if (mv.face !== undefined && mv.face * dx < 0 && d < 14) {
+				return angleTo(here, ballNear(tl, t), fallback);
+			}
+			return heading;
+		}
+	}
+	const li = lastIndex(tr.looks, t, (l) => l[0]);
+	if (li >= 0 && (!mv || tr.looks[li]![0] >= mv.t0)) {
+		return angleTo(here, tr.looks[li]![1], fallback);
+	}
+	const ball = ballNear(tl, t);
+	const seg = ballSegAt(tl, t);
+	const rim = { x: rimX(tr.team), y: 25 };
+	if (seg?.kind === "hold" && seg.pid === tr.pid) {
+		return angleTo(here, rim, fallback);
+	}
+	if (offenseAt(tl, t) === tr.team) {
+		const a = unit(here, ball);
+		const b = unit(here, rim);
+		return Math.atan2(a.y * 0.65 + b.y * 0.35, a.x * 0.65 + b.x * 0.35);
+	}
+	return angleTo(here, ball, fallback);
+};
+
+// Turning takes a moment: the facing is the recent intentions, averaged.
+const YAW_SAMPLES = [0, 45, 90, 135, 180, 225];
+const yawAt = (tl: CourtTimeline, tr: Track, t: number): number => {
+	let sx = 0;
+	let sy = 0;
+	for (let k = 0; k < YAW_SAMPLES.length; k++) {
+		const a = yawTarget(tl, tr, t - YAW_SAMPLES[k]!);
+		const w = YAW_SAMPLES.length - k;
+		sx += Math.cos(a) * w;
+		sy += Math.sin(a) * w;
+	}
+	return Math.atan2(sy, sx);
+};
+
 export const evalPlayer = (
 	tl: CourtTimeline,
 	pid: number,
@@ -97,62 +264,34 @@ export const evalPlayer = (
 			x: 0,
 			y: 0,
 			z: 0,
-			face: 1,
+			yaw: 0,
 			anim: "ready",
-			frame: 0,
+			phase: 0,
 			moving: false,
 		};
 	}
 	const si = lastIndex(tr.shown, t, (s) => s[0]);
 	const shown = si >= 0 ? tr.shown[si]![1] : false;
-
-	const mi = lastIndex(tr.moves, t, (m) => m.t0);
-	const mv = mi >= 0 ? tr.moves[mi] : undefined;
-	let x = tr.start.x;
-	let y = tr.start.y;
-	let moving = false;
-	let traveled = 0;
-	if (mv) {
-		if (t < mv.t1) {
-			const e = ease((t - mv.t0) / (mv.t1 - mv.t0));
-			x = mv.from.x + (mv.to.x - mv.from.x) * e;
-			y = mv.from.y + (mv.to.y - mv.from.y) * e;
-			moving = true;
-			traveled = Math.hypot(mv.to.x - mv.from.x, mv.to.y - mv.from.y) * e;
-		} else {
-			x = mv.to.x;
-			y = mv.to.y;
-		}
-	}
-
-	const fi = lastIndex(tr.faces, t, (f) => f[0]);
-	const face = fi >= 0 ? tr.faces[fi]![1] : 1;
-
-	// The act running now, if any (they rarely overlap; the later one wins).
-	let act: Act | undefined;
-	const ai = lastIndex(tr.acts, t, (a) => a.t0);
-	for (let k = ai; k >= 0 && k >= ai - 3; k--) {
-		const a = tr.acts[k]!;
-		if (t < a.t1) {
-			act = a;
-			break;
-		}
-	}
+	const here = spotAt(tr, t);
+	const act = actAt(tr, t);
+	const mv = here.moveIndex >= 0 ? tr.moves[here.moveIndex] : undefined;
 
 	let anim: AnimName;
-	let frame: number;
+	let phase: number;
 	let z = 0;
 	if (act) {
 		const u = (t - act.t0) / (act.t1 - act.t0);
 		anim = act.anim;
-		frame =
-			ANIMS[anim].kind === "act"
-				? actFrame(anim, u)
-				: loopFrame(anim, t - act.t0);
+		const a = ANIMS[anim];
+		phase =
+			a.kind === "act"
+				? clamp01(u)
+				: ((t - act.t0) / 1000) * (a.kind === "loop" ? a.fps / a.n : 1);
 		z = jumpZ(act, u);
-	} else if (moving && mv) {
+	} else if (here.moving && mv) {
 		anim = mv.anim;
-		frame = cycleFrame(anim, traveled);
+		const a = ANIMS[anim];
+		phase = here.traveled / (a.kind === "cycle" ? a.stride : 5);
 	} else {
 		const seg = ballSegAt(tl, t);
 		if (seg && seg.kind === "hold" && seg.pid === pid) {
@@ -160,34 +299,59 @@ export const evalPlayer = (
 		} else {
 			anim = offenseAt(tl, t) === tr.team ? "ready" : "stance";
 		}
-		frame = loopFrame(anim, t, pid * 0.37);
+		const a = ANIMS[anim];
+		const fps = a.kind === "loop" ? a.fps : 2;
+		phase = (t / 1000) * (fps / a.n) + pid * 0.37;
 	}
-	return { pid, team: tr.team, shown, x, y, z, face, anim, frame, moving };
+	return {
+		pid,
+		team: tr.team,
+		shown,
+		x: here.x,
+		y: here.y,
+		z,
+		yaw: yawAt(tl, tr, t),
+		anim,
+		phase,
+		moving: here.moving,
+	};
 };
 
-// A hand, in world feet, from the sprite's own skeleton - so the ball sits in
-// the hands the sprite actually draws.
+// A point on his body, in world feet.
+export const bodyPoint = (st: PlayerState, v: V3): Pt3 => {
+	const c = Math.cos(st.yaw);
+	const s = Math.sin(st.yaw);
+	// Forward is (c, s); his left is (s, -c) - the floor's y runs toward the
+	// camera, so turning left from the right rim is turning away from it.
+	return {
+		x: st.x + v.f * c + v.s * s,
+		y: st.y + v.f * s - v.s * c,
+		z: st.z + v.u,
+	};
+};
+
+// A hand, in world feet, from his own skeleton - so the ball sits in the hands
+// the renderer draws.
 export const handWorld = (
 	st: PlayerState,
 	body: Body,
 	which: "near" | "both" = "both",
 ): Pt3 => {
-	const sk = skeleton(body, poseFor(st.anim, st.frame));
+	const sk = skeleton(body, poseAt(st.anim, st.phase));
+	const r = sk.armR.end;
+	const l = sk.armL.end;
 	const h =
 		which === "near"
-			? sk.armN.hand
-			: {
-					x: (sk.armN.hand.x + sk.armF.hand.x) / 2,
-					y: (sk.armN.hand.y + sk.armF.hand.y) / 2,
-				};
-	return {
-		x: st.x + (h.x * st.face) / (K * persp(st.y)),
-		y: st.y + 0.05,
-		z: st.z + h.y / PX_PER_FT,
-	};
+			? r
+			: { f: (r.f + l.f) / 2, s: (r.s + l.s) / 2, u: (r.u + l.u) / 2 };
+	// The ball rests just in front of the hands, not inside them.
+	return bodyPoint(st, { f: h.f + 0.28, s: h.s, u: h.u });
 };
 
 export type BallState = { x: number; y: number; z: number; holder?: number };
+
+// A basketball is 9.4 inches across.
+export const BALL_R = 0.39;
 
 export const evalBall = (
 	tl: CourtTimeline,
@@ -208,15 +372,19 @@ export const evalBall = (
 	if (seg.kind === "hold") {
 		const st = evalPlayer(tl, seg.pid, t);
 		if (seg.style === "dribble") {
-			const h = handWorld(st, bodyFor(seg.pid), "near");
+			const body = bodyFor(seg.pid);
+			const h = handWorld(st, body, "near");
 			const ph = (((t - seg.t0) / 1000) * (st.moving ? 2.4 : 1.9)) % 1;
 			const tri = 1 - Math.abs(2 * ph - 1);
-			const fx = st.x + st.face * 1.3;
-			const fy = st.y + 0.6;
+			// It hits the floor ahead of him and off his right foot.
+			const floor = bodyPoint(
+				{ ...st, z: 0 },
+				{ f: st.moving ? 1.6 : 0.9, s: -0.75, u: BALL_R },
+			);
 			return {
-				x: h.x + (fx - h.x) * tri,
-				y: h.y + (fy - h.y) * tri,
-				z: h.z * (1 - tri),
+				x: h.x + (floor.x - h.x) * tri,
+				y: h.y + (floor.y - h.y) * tri,
+				z: h.z + (floor.z - h.z) * tri,
 				holder: seg.pid,
 			};
 		}
@@ -234,9 +402,11 @@ export const evalBall = (
 		};
 	}
 	if (seg.kind === "bounce") {
-		// A drop from where it was, then shrinking hops, then a roll.
+		// A drop from where it was, then shrinking hops, then a roll. Heights
+		// are of the ball's middle, which sits a radius off the floor.
 		const u = clamp01((t - seg.t0) / (seg.t1 - seg.t0));
-		const hops = [Math.sqrt(Math.max(0.02, seg.from.z))];
+		const drop = Math.max(0, seg.from.z - BALL_R);
+		const hops = [Math.sqrt(Math.max(0.02, drop))];
 		for (let i = 0; i < seg.hops; i++) {
 			hops.push(2 * Math.sqrt(seg.h0 * 0.42 ** i));
 		}
@@ -248,7 +418,7 @@ export const evalBall = (
 				const v = w / hops[i]!;
 				z =
 					i === 0
-						? seg.from.z * (1 - v * v)
+						? drop * (1 - v * v)
 						: 4 * seg.h0 * 0.42 ** (i - 1) * v * (1 - v);
 				break;
 			}
@@ -258,7 +428,7 @@ export const evalBall = (
 		return {
 			x: seg.from.x + (seg.to.x - seg.from.x) * roll,
 			y: seg.from.y + (seg.to.y - seg.from.y) * roll,
-			z: Math.max(z, u >= 1 ? 0.4 : 0),
+			z: BALL_R + z,
 		};
 	}
 	return { ...seg.at };
