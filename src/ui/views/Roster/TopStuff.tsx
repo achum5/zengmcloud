@@ -149,6 +149,7 @@ const PayrollAndPenalties = ({
 
 const TopStuff = ({
 	abbrev,
+	collegeInfo,
 	conf,
 	currentSeason,
 	editable,
@@ -169,6 +170,7 @@ const TopStuff = ({
 }: Pick<
 	View<"roster">,
 	| "abbrev"
+	| "collegeInfo"
 	| "conf"
 	| "editable"
 	| "luxuryTaxAmount"
@@ -354,6 +356,14 @@ const TopStuff = ({
 						{payroll !== undefined && college ? (
 							<div>
 								NIL payroll: {helpers.formatCurrency(payroll / 1000, "M")}
+							</div>
+						) : null}
+						{collegeInfo ? (
+							<div>
+								Prestige: {collegeInfo.prestige}
+								{collegeInfo.coachExp !== undefined
+									? ` · Your contract thru ${collegeInfo.coachExp}`
+									: null}
 							</div>
 						) : null}
 						{payroll !== undefined && !college ? (

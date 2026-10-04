@@ -401,8 +401,20 @@ const updateRoster = async (
 			}
 		}
 
+		// College: program prestige, and your contract if it's your school.
+		let collegeInfo: { prestige: number; coachExp?: number } | undefined;
+		if (g.get("college")) {
+			const coach = g.get("collegeCoach");
+			const teamRow = await idb.cache.teams.get(inputs.tid);
+			collegeInfo = {
+				prestige: Math.round(teamRow?.prestige ?? 0),
+				coachExp: coach?.tid === inputs.tid ? coach.exp : undefined,
+			};
+		}
+
 		return {
 			abbrev: inputs.abbrev,
+			collegeInfo,
 			conf,
 			editable,
 			maxRosterSize: g.get("maxRosterSize"),

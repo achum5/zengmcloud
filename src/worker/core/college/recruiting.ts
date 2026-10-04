@@ -150,8 +150,7 @@ const makePlan = (recruits: Player[], ctxs: Map<number, TeamCtx>) => {
 	const reach = new Map(
 		byPrestige.map((ctx, i) => [
 			ctx.tid,
-			(i / byPrestige.length) * recruits.length * 1.5 +
-				0.04 * recruits.length,
+			(i / byPrestige.length) * recruits.length * 1.5 + 0.04 * recruits.length,
 		]),
 	);
 
@@ -292,12 +291,21 @@ const aiNegotiate = (p: Player, ctx: TeamCtx, maxPay: number) => {
 
 // Daily chance of committing, once a school is ahead: higher the more he likes
 // it and the bigger its lead, lower for the best players, who take their time.
-const commitChance = (rec: CollegeRecruiting, top: number, lead: number) =>
-	(0.02 *
-		(1 + (top - commitThreshold()) / 15) *
-		(1 + Math.min(lead, 16) / 8) *
-		((6 - rec.stars) / 3)) /
-	difficulty();
+const commitChance = (rec: CollegeRecruiting, top: number, lead: number) => {
+	// Takes a few weeks to start deciding, longer for the best players.
+	// Transfers have only the offseason weeks, so they move faster.
+	const ramp =
+		rec.portalFrom !== undefined ? 4 + 2 * rec.stars : 14 + 10 * rec.stars;
+	const ready = Math.min(1, (rec.days ?? 0) / ramp);
+	return (
+		(0.015 *
+			ready *
+			(1 + (top - commitThreshold()) / 15) *
+			(1 + Math.min(lead, 16) / 8) *
+			((6 - rec.stars) / 3)) /
+		difficulty()
+	);
+};
 
 const teamName = (ctx: TeamCtx) => `${ctx.t.region} ${ctx.t.name}`;
 
@@ -364,6 +372,7 @@ export const collegeRecruitingDay = async () => {
 
 	for (const p of recruits) {
 		const rec = p.recruiting!;
+		rec.days = (rec.days ?? 0) + 1;
 
 		// A seventh of the weekly hours each day: scouting, and effort with
 		// diminishing returns.
@@ -627,12 +636,11 @@ export const promiseText = (promise: CollegePromise) =>
 				? "NIL raise"
 				: "no one else at his position";
 
-// High school signing day, at the end of the offseason recruiting weeks.
+// Signing day, at the end of the offseason recruiting weeks: high schoolers,
+// and transfers still deciding, pick from their offers.
 export const collegeSigningDay = async () => {
 	const season = g.get("season");
-	const recruits = (await getRecruits()).filter(
-		(p) => p.tid === PLAYER.UNDRAFTED && p.draft.year === season,
-	);
+	const recruits = await getRecruits();
 	const ctxs = await getTeamCtxs(recruits);
 	await collegeSign(recruits, ctxs, PHASE.FREE_AGENCY);
 

@@ -5,6 +5,7 @@ import helpers from "../../util/helpers.ts";
 import local from "../../util/local.ts";
 import type { OwnerMood } from "../../../common/types.ts";
 import { COURT } from "../../../common/constants.ts";
+import { collegeContractReview } from "../college/coach.ts";
 
 const moodTexts = ["Horrible!", "Bad.", "Pretty good.", "Good.", "Excellent!"];
 
@@ -62,6 +63,11 @@ export const genMessage = async (
 			}
 		);
 	});
+
+	if (g.get("college")) {
+		await genCollegeMessage(moods.at(-1), deltas, cappedDeltas, moods);
+		return;
+	}
 
 	let m = "";
 	let fired = false;
@@ -212,6 +218,70 @@ export const genMessage = async (
 	await idb.cache.messages.add({
 		read: false,
 		from: "The Owner",
+		year: g.get("season"),
+		text: m,
+		subject: "Annual performance evaluation",
+		tid: g.get("userTid"),
+		ownerMoods: moods,
+	});
+};
+
+// College: the athletic director's evaluation, judged against what the
+// program expects (see college/coach.ts), with the coach's contract.
+const genCollegeMessage = async (
+	mood: OwnerMood | undefined,
+	deltas: OwnerMood,
+	cappedDeltas: OwnerMood,
+	moods: OwnerMood[],
+) => {
+	const currentTotal = mood ? mood.wins + mood.playoffs + mood.money : 0;
+	const graceOver =
+		g.get("season") >= g.get("gracePeriodEnd") && !g.get("godMode");
+	const review = await collegeContractReview(graceOver ? currentTotal : 0);
+	const fired =
+		(graceOver && g.get("collegeCoachFiring") && currentTotal <= -1) ||
+		review.fired;
+
+	let m = "";
+	if (!fired) {
+		const overall = !graceOver
+			? "It's too early to judge you."
+			: moodTexts[getMoodScore(currentTotal)];
+		const deltasTotal = deltas.wins + deltas.playoffs;
+		const cappedTotal = cappedDeltas.wins + cappedDeltas.playoffs;
+		const thisYear =
+			moodTexts[
+				Math.round(
+					(getMoodScore(deltasTotal, true) + getMoodScore(cappedTotal, true)) /
+						2,
+				)
+			];
+		m += `<p>This year: ${thisYear}</p><p>Overall: ${overall}</p><p>${review.text}</p>`;
+		if (graceOver && g.get("collegeCoachFiring")) {
+			if (currentTotal + deltasTotal < -1) {
+				m += "<p>Another season like that and you're done here.</p>";
+			} else if (currentTotal + 2 * deltasTotal < -1) {
+				m += "<p>You're on the hot seat.</p>";
+			}
+		}
+
+		const prob = helpers.bound(currentTotal, 0, 3) / 3;
+		await league.setGameAttributes({
+			otherTeamsWantToHire: g.get("collegeJobOffers") && Math.random() < prob,
+		});
+	} else {
+		m += `<p>${review.fired ? review.text : "It's not working out. You're fired."}</p>`;
+		m += `<p>A few other schools are looking for a coach. <a href="${helpers.leagueUrl(
+			["new_team"],
+		)}">Take a look.</a></p>`;
+		await league.setGameAttributes({
+			gameOver: true,
+		});
+	}
+
+	await idb.cache.messages.add({
+		read: false,
+		from: "The Athletic Director",
 		year: g.get("season"),
 		text: m,
 		subject: "Annual performance evaluation",

@@ -139,6 +139,8 @@ export type CollegeRecruiting = {
 	// Hours per week user schools are spending on him.
 	hours: Record<number, number>;
 	committed?: number;
+	// Days he's been recruited. Nobody decides right away.
+	days?: number;
 	// Transfer portal: the school he left.
 	portalFrom?: number;
 };

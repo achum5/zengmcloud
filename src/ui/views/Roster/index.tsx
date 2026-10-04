@@ -95,6 +95,7 @@ const handleRelease = async (
 };
 
 const Roster = ({
+	collegeInfo,
 	conf,
 	abbrev,
 	editable,
@@ -500,6 +501,7 @@ const Roster = ({
 
 			<TopStuff
 				abbrev={abbrev}
+				collegeInfo={collegeInfo}
 				conf={conf}
 				currentSeason={currentSeason}
 				editable={editable}

@@ -2,6 +2,7 @@ import { idb } from "../../db/index.ts";
 import { league } from "../index.ts";
 import { g, toUI } from "../../util/index.ts";
 import deleteUnreadMessages from "./deleteUnreadMessages.ts";
+import { getCollegeCoach } from "../college/coach.ts";
 import { PHASE } from "../../../common/constants.ts";
 
 const switchTo = async (tid: number, tids?: number[]) => {
@@ -22,6 +23,11 @@ const switchTo = async (tid: number, tids?: number[]) => {
 	});
 
 	league.updateMeta();
+
+	if (g.get("college")) {
+		// A new coaching job, with a new contract.
+		await getCollegeCoach();
+	}
 
 	// Reset prev and next team mood. Prev handles exporting and then importing with a new team. And next makes sure the new team is always 0 mood.
 	for (const tid2 of [prevTid, tid]) {

@@ -2,6 +2,7 @@ import { idb } from "../../db/index.ts";
 import { g, local } from "../../util/index.ts";
 import type { OwnerMood } from "../../../common/types.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
+import { collegeMoodDeltas } from "../college/coach.ts";
 
 /**
  * Update teamSeason.ownerMood based on performance this season, only for user's team.
@@ -71,17 +72,29 @@ const updateOwnerMood = async (): Promise<
 		hockey: 1,
 	});
 
-	const deltas = {
-		wins:
-			(winsFactor * (0.25 * (t.seasonAttrs.won - g.get("numGames") / 2))) /
-			(g.get("numGames") / 2),
-		playoffs: 0,
-		money: g.get("budget")
-			? (t.seasonAttrs.profit - expectedProfit) / (100 * salaryCapFactor)
-			: 0,
-	};
+	const t2 = g.get("college")
+		? await idb.cache.teams.get(g.get("userTid"))
+		: undefined;
+	const deltas = g.get("college")
+		? collegeMoodDeltas(
+				t2?.prestige ?? 30,
+				teamSeason.won,
+				teamSeason.lost,
+				teamSeason.playoffRoundsWon,
+			)
+		: {
+				wins:
+					(winsFactor * (0.25 * (t.seasonAttrs.won - g.get("numGames") / 2))) /
+					(g.get("numGames") / 2),
+				playoffs: 0,
+				money: g.get("budget")
+					? (t.seasonAttrs.profit - expectedProfit) / (100 * salaryCapFactor)
+					: 0,
+			};
 
-	if (t.seasonAttrs.playoffRoundsWon < 0) {
+	if (g.get("college")) {
+		// Set above, against what the program expects.
+	} else if (t.seasonAttrs.playoffRoundsWon < 0) {
 		deltas.playoffs = -0.2;
 	} else if (t.seasonAttrs.playoffRoundsWon < numPlayoffRounds) {
 		deltas.playoffs =

@@ -174,6 +174,33 @@ const updateTeamSelect = async (
 		if (expansion) {
 			// User team will always be first, cause expansion teams are at the end of the teams list
 			teams = teams.filter((t) => expansionTids.includes(t.tid));
+		} else if (
+			g.get("college") &&
+			(otherTeamsWantToHire || !g.get("godMode"))
+		) {
+			// College jobs: schools a step up when you're wanted, a step down when
+			// you've been fired. Deterministic, so the list doesn't change on
+			// reload.
+			const prestige =
+				(await idb.cache.teams.get(g.get("userTid")))?.prestige ?? 30;
+			const teamPrestige = new Map(
+				(await idb.cache.teams.getAll()).map((t2) => [
+					t2.tid,
+					t2.prestige ?? 30,
+				]),
+			);
+			const prestigeOf = (tid: number) => teamPrestige.get(tid) ?? 30;
+			const candidates = teams.filter((t2) =>
+				otherTeamsWantToHire
+					? prestigeOf(t2.tid) >= prestige - 10 &&
+						prestigeOf(t2.tid) <= prestige + 25
+					: prestigeOf(t2.tid) <= prestige - 10,
+			);
+			teams = orderBy(
+				candidates.length >= 5 ? candidates : teams,
+				(t2) => (t2.tid * 7919 + g.get("season")) % 101,
+				"asc",
+			).slice(0, 5);
 		} else if (otherTeamsWantToHire) {
 			// Deterministic random selection of teams
 			teams = orderBy(teams, (t) => t.seasonAttrs.revenue % 10, "asc").slice(

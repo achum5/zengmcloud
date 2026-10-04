@@ -12,6 +12,7 @@ import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import type { Player, Team } from "../../../common/types.ts";
 import { last } from "../../../common/utils.ts";
+import { userCoachStability } from "./coach.ts";
 
 // What a school offers a player, priority by priority, and the interest that
 // adds up to. Shared by recruiting, the portal and retention.
@@ -68,18 +69,6 @@ const recentWinp = async (tid: number, season: number) => {
 	return weight > 0 ? total / weight : 0.5;
 };
 
-// Coach stability as a player sees it: years the coach has been there, less
-// if he's on the hot seat.
-const coachScore = (t: Team) => {
-	const coach = g.get("collegeCoach");
-	if (coach && coach.tid === t.tid) {
-		const years = g.get("season") - coach.start;
-		const ownerMood = 1; // TODO hot seat
-		return helpers.bound(years / 8, 0.1, 1) * ownerMood;
-	}
-	return helpers.bound((t.collegeCoachYears ?? 3) / 10, 0.05, 1);
-};
-
 export const getTeamCtxs = async (recruits: Player[]) => {
 	const season = g.get("season");
 	const userTids = g.get("userTids");
@@ -121,7 +110,9 @@ export const getTeamCtxs = async (recruits: Player[]) => {
 				1,
 			),
 			proScore: 0.6 * Math.min(1, pros / 5) + 0.4 * (prestige / 100),
-			coachScore: coachScore(t),
+			coachScore:
+				(await userCoachStability(t.tid)) ??
+				helpers.bound((t.collegeCoachYears ?? 3) / 10, 0.05, 1),
 			facilities: (t.collegeFacilities ?? prestige) / 100,
 			rep: t.collegePromiseRep ?? 0.8,
 			open: Math.max(0, rosterLimit - returningPlayers.length),

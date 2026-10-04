@@ -421,7 +421,6 @@ const newPhaseBeforeDraft = async (
 
 	if (g.get("college")) {
 		await collegeJudgePromises();
-		await collegeUpdatePrestige();
 		await collegeDepartures(conditions);
 	}
 
@@ -512,6 +511,10 @@ const newPhaseBeforeDraft = async (
 		const response = await season.updateOwnerMood();
 		if (response) {
 			await genMessage(response.deltas, response.cappedDeltas);
+		}
+		// After the evaluation, which judges against last season's prestige.
+		if (g.get("college")) {
+			await collegeUpdatePrestige();
 		}
 
 		if (!repeatSeasonType) {
