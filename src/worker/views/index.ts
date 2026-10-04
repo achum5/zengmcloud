@@ -48,6 +48,7 @@ export { default as walkOns } from "./walkOns.ts";
 export { default as top25 } from "./top25.ts";
 export { default as bracketology } from "./bracketology.ts";
 export { default as recruitingClasses } from "./recruitingClasses.ts";
+export { default as proProspects } from "./proProspects.ts";
 export { default as exhibitionGame } from "./exhibitionGame.ts";
 export { default as intrasquad } from "./intrasquad.ts";
 export { default as intrasquadGame } from "./intrasquadGame.ts";

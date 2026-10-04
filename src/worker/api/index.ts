@@ -301,6 +301,10 @@ import {
 	collegeRetentionAction,
 	type RetentionAction,
 } from "../core/college/retention.ts";
+import {
+	collegeExportDraftClass,
+	collegeSendToLinkedLeague,
+} from "../core/college/handoff.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "../core/player/getNumPlayersTradedAwayNormalized.ts";
 import { getAdjustedTicketPrice } from "../../common/getAdjustedTicketPrice.ts";
 import { gameAttributesArrayToObject } from "../../common/gameAttributesArrayToObject.ts";
@@ -3023,6 +3027,20 @@ const collegeSignWalkOn = async (pid: number) => {
 	);
 	await idb.cache.players.put(p);
 	await toUI("realtimeUpdate", [["playerMovement"]]);
+};
+
+// The pro hand-off: export a draft class, or link a pro league.
+const collegeExportDraftClassApi = async (season: number) =>
+	collegeExportDraftClass(season);
+
+const collegeSetLinkedLeague = async (lid: number | undefined) => {
+	await league.setGameAttributes({ collegeLinkedLid: lid });
+	await toUI("realtimeUpdate", [["gameAttributes"]]);
+};
+
+const collegeSendToLinkedLeagueApi = async (season: number) => {
+	const error = await collegeSendToLinkedLeague(season);
+	return error;
 };
 
 // The retention period: NIL raises and playing time promises.
@@ -7836,6 +7854,9 @@ const api = {
 		collegeRecruitAction: collegeRecruitActionApi,
 		collegeRetentionAction: collegeRetentionActionApi,
 		collegeSignWalkOn,
+		collegeExportDraftClass: collegeExportDraftClassApi,
+		collegeSetLinkedLeague,
+		collegeSendToLinkedLeague: collegeSendToLinkedLeagueApi,
 		collegeSetAutoRecruit: collegeSetAutoRecruitApi,
 		getPlayerWatch,
 		getProjectedAttendance,

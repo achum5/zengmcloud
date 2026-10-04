@@ -443,6 +443,15 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 			},
 			{
 				type: "link",
+				active: (pageID) => pageID === "proProspects",
+				league: true,
+				commandPalette: true,
+				college: true,
+				path: ["pro_prospects"],
+				text: "Pro Prospects",
+			},
+			{
+				type: "link",
 				league: true,
 				commandPalette: true,
 				commandPaletteOnly: true,

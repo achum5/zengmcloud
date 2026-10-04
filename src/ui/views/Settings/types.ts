@@ -1,4 +1,13 @@
 export type Key =
+	| "collegePortalRate"
+	| "collegeRetentionEase"
+	| "collegeRecruitingDifficulty"
+	| "collegeNilScale"
+	| "collegeNilWeight"
+	| "collegeDepartureRate"
+	| "collegePrestigeRate"
+	| "collegeCoachFiring"
+	| "collegeJobOffers"
 	| "numGames"
 	| "numGamesDiv"
 	| "numGamesConf"
@@ -213,6 +222,7 @@ export type Category =
 	| "Game Modes"
 	| "Players"
 	| "Real Players"
+	| "College"
 	| "UI";
 
 export type FieldType =

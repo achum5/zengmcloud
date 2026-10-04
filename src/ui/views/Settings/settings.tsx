@@ -56,6 +56,7 @@ type Setting = {
 
 	// showOnlyIf is for hiding form elements that only make sense in some situations (like when creating a new league). hidden is for a setting where we're merging it with some other setting in the UI (probably with customForm) but still want to track it here so it gets updated properly.
 	showOnlyIf?: (params: {
+		college?: boolean;
 		hasPlayers?: boolean;
 		newLeague?: boolean;
 		realPlayers?: boolean;
@@ -81,6 +82,79 @@ type Setting = {
 
 export const settings: Setting[] = (
 	[
+		{
+			category: "College",
+			key: "collegeRecruitingDifficulty",
+			name: "Recruiting Difficulty",
+			showOnlyIf: ({ college }) => college,
+			type: "float",
+			description:
+				"How sharp AI schools are, and how slowly recruits commit. 1 is normal.",
+		},
+		{
+			category: "College",
+			key: "collegePortalRate",
+			name: "Transfer Portal Rate",
+			showOnlyIf: ({ college }) => college,
+			type: "float",
+			description: "How many players enter the portal. 1 is realistic.",
+		},
+		{
+			category: "College",
+			key: "collegeRetentionEase",
+			name: "Retention Ease",
+			showOnlyIf: ({ college }) => college,
+			type: "float",
+			description: "How much promises help keep players out of the portal.",
+		},
+		{
+			category: "College",
+			key: "collegeNilScale",
+			name: "NIL Scale",
+			showOnlyIf: ({ college }) => college,
+			type: "float",
+			description: "Size of NIL asks and budgets.",
+		},
+		{
+			category: "College",
+			key: "collegeNilWeight",
+			name: "NIL Importance",
+			showOnlyIf: ({ college }) => college,
+			type: "float",
+			description: "How much money matters to players compared to fit.",
+		},
+		{
+			category: "College",
+			key: "collegeDepartureRate",
+			name: "Early Departure Rate",
+			showOnlyIf: ({ college }) => college,
+			type: "float",
+			description:
+				"How often prospects leave early for the draft. 1 is realistic.",
+		},
+		{
+			category: "College",
+			key: "collegePrestigeRate",
+			name: "Prestige Change Rate",
+			showOnlyIf: ({ college }) => college,
+			type: "float",
+			description: "How fast program prestige moves.",
+		},
+		{
+			category: "College",
+			key: "collegeCoachFiring",
+			name: "Coach Can Be Fired",
+			showOnlyIf: ({ college }) => college,
+			type: "bool",
+		},
+		{
+			category: "College",
+			key: "collegeJobOffers",
+			name: "Job Offers",
+			showOnlyIf: ({ college }) => college,
+			type: "bool",
+			description: "Other schools can try to hire you.",
+		},
 		{
 			category: "New League",
 			key: "realStats",

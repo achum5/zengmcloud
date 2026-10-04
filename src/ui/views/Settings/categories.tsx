@@ -56,6 +56,9 @@ const categories: {
 		name: "Real Players",
 	},
 	{
+		name: "College",
+	},
+	{
 		name: "Teams",
 	},
 	{

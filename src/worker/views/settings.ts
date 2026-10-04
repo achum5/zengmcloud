@@ -11,6 +11,15 @@ import { defaultTragicDeaths } from "../util/defaultTragicDeaths.ts";
 import { defaultInjuries } from "../util/defaultInjuries.ts";
 
 type Key =
+	| "collegePortalRate"
+	| "collegeRetentionEase"
+	| "collegeRecruitingDifficulty"
+	| "collegeNilScale"
+	| "collegeNilWeight"
+	| "collegeDepartureRate"
+	| "collegePrestigeRate"
+	| "collegeCoachFiring"
+	| "collegeJobOffers"
 	| "godMode"
 	| "godModeInPast"
 	| "numGames"
@@ -275,6 +284,15 @@ const updateSettings = (inputs: unknown, updateEvents: UpdateEvents) => {
 			rookiesCanRefuse: g.get("rookiesCanRefuse"),
 			tragicDeathRate: g.get("tragicDeathRate"),
 			specializedDraftProspects: g.get("specializedDraftProspects"),
+			collegePortalRate: g.get("collegePortalRate"),
+			collegeRetentionEase: g.get("collegeRetentionEase"),
+			collegeRecruitingDifficulty: g.get("collegeRecruitingDifficulty"),
+			collegeNilScale: g.get("collegeNilScale"),
+			collegeNilWeight: g.get("collegeNilWeight"),
+			collegeDepartureRate: g.get("collegeDepartureRate"),
+			collegePrestigeRate: g.get("collegePrestigeRate"),
+			collegeCoachFiring: g.get("collegeCoachFiring"),
+			collegeJobOffers: g.get("collegeJobOffers"),
 			realisticFaces: g.get("realisticFaces"),
 			faceAging: g.get("faceAging"),
 			faceAgingPlayers: g.get("faceAgingPlayers"),

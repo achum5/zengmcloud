@@ -17,6 +17,42 @@ const getDefaultRealStats = () => {
 export type NewLeagueSettings = Omit<Settings, "confs" | "numActiveTeams">;
 export const getDefaultSettings = () => {
 	const defaultSettings: NewLeagueSettings = {
+		collegePortalRate: unwrapGameAttribute(
+			defaultGameAttributes,
+			"collegePortalRate",
+		),
+		collegeRetentionEase: unwrapGameAttribute(
+			defaultGameAttributes,
+			"collegeRetentionEase",
+		),
+		collegeRecruitingDifficulty: unwrapGameAttribute(
+			defaultGameAttributes,
+			"collegeRecruitingDifficulty",
+		),
+		collegeNilScale: unwrapGameAttribute(
+			defaultGameAttributes,
+			"collegeNilScale",
+		),
+		collegeNilWeight: unwrapGameAttribute(
+			defaultGameAttributes,
+			"collegeNilWeight",
+		),
+		collegeDepartureRate: unwrapGameAttribute(
+			defaultGameAttributes,
+			"collegeDepartureRate",
+		),
+		collegePrestigeRate: unwrapGameAttribute(
+			defaultGameAttributes,
+			"collegePrestigeRate",
+		),
+		collegeCoachFiring: unwrapGameAttribute(
+			defaultGameAttributes,
+			"collegeCoachFiring",
+		),
+		collegeJobOffers: unwrapGameAttribute(
+			defaultGameAttributes,
+			"collegeJobOffers",
+		),
 		godMode: unwrapGameAttribute(defaultGameAttributes, "godMode"),
 		godModeInPast: unwrapGameAttribute(defaultGameAttributes, "godModeInPast"),
 		numGames: unwrapGameAttribute(defaultGameAttributes, "numGames"),

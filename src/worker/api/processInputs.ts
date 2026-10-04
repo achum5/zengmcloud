@@ -215,6 +215,20 @@ const draftLottery = (params: RouteParams<"draftLottery">) => {
 	};
 };
 
+// College: players leave after the season, so before then show last year's.
+const proProspects = (params: RouteParams<"proProspects">) => {
+	const defaultSeason =
+		g.get("phase") >= PHASE.DRAFT_LOTTERY
+			? g.get("season")
+			: g.get("season") - 1;
+	return {
+		season:
+			params.season === undefined
+				? defaultSeason
+				: validateSeason(params.season),
+	};
+};
+
 const draftHistory = (params: RouteParams<"draftHistory">) => {
 	let season: number;
 
@@ -1210,6 +1224,7 @@ export default {
 	top25: () => ({}),
 	bracketology: () => ({}),
 	recruitingClasses: () => ({}),
+	proProspects,
 	customizePlayer,
 	comparePlayers,
 	dailySchedule,

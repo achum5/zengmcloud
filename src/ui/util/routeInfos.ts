@@ -209,6 +209,8 @@ export const routeInfos = {
 	"/l/:lid/top_25": "top25",
 	"/l/:lid/bracketology": "bracketology",
 	"/l/:lid/recruiting_classes": "recruitingClasses",
+	"/l/:lid/pro_prospects": "proProspects",
+	"/l/:lid/pro_prospects/:season": "proProspects",
 	"/l/:lid/franchise_outlook": "franchiseOutlook",
 	"/l/:lid/expansion_draft": "expansionDraft",
 	"/l/:lid/protect_players": "protectPlayers",

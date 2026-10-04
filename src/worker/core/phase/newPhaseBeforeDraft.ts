@@ -30,6 +30,7 @@ import { orderTeams } from "../../util/orderTeams.ts";
 import { collegeDepartures } from "../college/offseason.ts";
 import { collegeJudgePromises } from "../college/retention.ts";
 import { collegeUpdatePrestige } from "../college/prestige.ts";
+import { collegeSendToLinkedLeague } from "../college/handoff.ts";
 import { doAwards } from "../awards/doAwards.ts";
 
 const INFLATION_GAME_ATTRIBUTES = [
@@ -422,6 +423,9 @@ const newPhaseBeforeDraft = async (
 	if (g.get("college")) {
 		await collegeJudgePromises();
 		await collegeDepartures(conditions);
+		if (g.get("collegeLinkedLid") !== undefined) {
+			await collegeSendToLinkedLeague(g.get("season"));
+		}
 	}
 
 	if (repeatSeasonType !== "playersAndRosters") {

@@ -4,7 +4,7 @@ import { ActionButton } from "../../components/ActionButton.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
-import { localActions } from "../../util/local.ts";
+import { localActions, useLocal } from "../../util/local.ts";
 import { settings } from "./settings.tsx";
 import type { Key, Values } from "./types.ts";
 import type { Settings } from "../../../worker/views/settings.ts";
@@ -294,6 +294,9 @@ const SettingsForm = ({
 	}, []);
 
 	const [showGodModeSettings, setShowGodModeSettings] = useState(true);
+	// College settings only make sense in a college league.
+	const collegeLeague = useLocal(["college"]).college;
+	const college = collegeLeague && !newLeague;
 
 	const {
 		godMode,
@@ -347,6 +350,7 @@ const SettingsForm = ({
 			(!settingsShown || settingsShown.includes(setting.key)) &&
 			(!setting.showOnlyIf ||
 				setting.showOnlyIf({
+					college,
 					hasPlayers,
 					newLeague,
 					realPlayers,
