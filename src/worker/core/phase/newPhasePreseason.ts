@@ -34,6 +34,8 @@ import {
 } from "../trade/tradePosture.ts";
 import { SPORTSBOOK_PRESEASON_GRANT } from "../../../common/sportsbook.ts";
 import { collegePreseasonFill } from "../college/portal.ts";
+import { collegeSigningDay } from "../college/recruiting.ts";
+import { genCollegeRecruits } from "../college/offseason.ts";
 
 const newPhasePreseason = async (
 	conditions: Conditions,
@@ -44,7 +46,8 @@ const newPhasePreseason = async (
 	const repeatSeason = g.get("repeatSeason");
 	const forceHistoricalRosters = g.get("forceHistoricalRosters");
 	if (g.get("college")) {
-		await collegePreseasonFill();
+		await collegeSigningDay();
+		await collegePreseasonFill(conditions);
 	} else if (
 		repeatSeason?.type !== "playersAndRosters" &&
 		!forceHistoricalRosters
@@ -603,6 +606,11 @@ const newPhasePreseason = async (
 	}
 
 	await idb.cache.players.putAll(players);
+
+	// College: next year's high school class, recruited starting now.
+	if (g.get("college")) {
+		await genCollegeRecruits(newSeason);
+	}
 
 	await realRosters.checkDisableForceHistoricalRosters(
 		newSeason,

@@ -125,6 +125,21 @@ const generate = (tm: any): Team => {
 	if (typeof tm.state === "string") {
 		t.state = tm.state;
 	}
+	if (typeof tm.collegeFacilities === "number") {
+		t.collegeFacilities = tm.collegeFacilities;
+	}
+	if (typeof tm.collegeCoachYears === "number") {
+		t.collegeCoachYears = tm.collegeCoachYears;
+	}
+	if (Array.isArray(tm.collegePros)) {
+		t.collegePros = tm.collegePros;
+	}
+	if (typeof tm.collegePromiseRep === "number") {
+		t.collegePromiseRep = tm.collegePromiseRep;
+	}
+	if (typeof tm.collegePrestigeFloor === "number") {
+		t.collegePrestigeFloor = tm.collegePrestigeFloor;
+	}
 
 	return t;
 };

@@ -1,16 +1,26 @@
 import { player } from "../index.ts";
 import { PLAYER } from "../../../common/constants.ts";
+import { COLLEGE_SEASONS } from "../../../common/college.ts";
 import { g } from "../../util/index.ts";
 import type { Player, PlayerWithoutKey, Team } from "../../../common/types.ts";
 import { initRecruitClass } from "./recruiting.ts";
-import { getNumPlayersPerTeam } from "../league/create/createRandomPlayers.ts";
-import { collegeNilForPercentile, recruitClassSize } from "./util.ts";
-import { NUM_COLLEGE_SCHOOLS } from "../../../common/collegeSchools.ts";
+import {
+	collegeNilForPercentile,
+	collegeStarsForPercentile,
+	recruitClassSize,
+} from "./util.ts";
+import { genCollegeProfile } from "./profile.ts";
+import { roundNil } from "./negotiation.ts";
+import limitRating from "../player/limitRating.ts";
+import { last } from "../../../common/utils.ts";
 
-// Starting rosters for a college league: four classes (freshmen to seniors)
-// on every team. Each class is one big pool of players; the best ones land at
-// the biggest programs more often than not, so blue bloods start loaded and
-// low-majors start thin - but a sleeper can still turn up anywhere.
+// Starting rosters for a college league: five classes (freshmen to fifth-year
+// seniors) on every team. Each class is one big pool of players; the best
+// ones land at the biggest programs more often than not, so blue bloods start
+// loaded and low-majors start thin - but a sleeper can still turn up anywhere.
+//
+// Ratings are on the same scale as a pro league's draft prospects, so a
+// player who leaves for the draft is exactly what a pro league expects.
 
 const pickWeighted = <T>(items: T[], weight: (item: T) => number) => {
 	let total = 0;
@@ -44,9 +54,41 @@ export const genCollegePlayer = async (
 		scoutingLevel,
 		name,
 	);
-	await player.develop(p, classIndex, true);
 	p.collegeYear0 = g.get("season") - classIndex;
 	return p;
+};
+
+// Players generated the normal way are all pro prospects - a pro draft class
+// is only about 70 deep. A high school class is twenty times that, so beyond
+// the top of the class ratings drop off, down to walk-on level at the bottom.
+export const calibrateClass = async (players: PlayerWithoutKey[]) => {
+	for (const p of players) {
+		p.value = player.value(p, { ovrMean: 47, ovrStd: 10 });
+	}
+	const sorted = [...players].sort((a, b) => b.value - a.value);
+	const top = Math.round((70 * g.get("numActiveTeams")) / 365);
+	const n = sorted.length;
+	for (const [i, p] of sorted.entries()) {
+		if (i < top) {
+			continue;
+		}
+		const offset = 12 * ((i - top) / Math.max(1, n - top)) ** 0.6;
+		const ratings = last(p.ratings) as unknown as Record<string, unknown>;
+		for (const [key, value] of Object.entries(ratings)) {
+			if (
+				typeof value === "number" &&
+				key !== "hgt" &&
+				key !== "ovr" &&
+				key !== "pot" &&
+				key !== "season" &&
+				key !== "fuzz"
+			) {
+				ratings[key] = limitRating(value - offset);
+			}
+		}
+		await player.develop(p, 0);
+		p.value = player.value(p, { ovrMean: 47, ovrStd: 10 });
+	}
 };
 
 const createCollegePlayers = async ({
@@ -59,43 +101,41 @@ const createCollegePlayers = async ({
 	teams: Pick<Team, "tid" | "prestige" | "retiredJerseyNumbers">[];
 }) => {
 	const season = g.get("season");
-	const perTeam = getNumPlayersPerTeam();
+	const nilScale = g.get("collegeNilScale");
+	const rosterSize = g.get("maxRosterSize");
 	const prestigeByTid = new Map(teams.map((t) => [t.tid, t.prestige ?? 30]));
+	const classSize = recruitClassSize(activeTids.length);
 
-	// Roughly even classes, a few more underclassmen than seniors (transfers
-	// and early departures thin out the older classes).
-	const perClass = [0.27, 0.26, 0.24, 0.23].map((share) =>
-		Math.round(share * perTeam),
-	);
-	perClass[0]! += perTeam - perClass.reduce((a, b) => a + b, 0);
+	// Roughly even classes, a few more underclassmen (early departures and
+	// transfers thin out the older classes).
+	const shares = [0.22, 0.21, 0.2, 0.19, 0.18];
+	const perClass = shares.map((share) => Math.round(share * rosterSize));
+	perClass[0]! += rosterSize - perClass.reduce((a, b) => a + b, 0);
 
 	const players: PlayerWithoutKey[] = [];
 	const jerseyNumbers = new Map<number, string[]>();
-	const finalSeasons = new Map<PlayerWithoutKey, number>();
 
-	for (const [classIndex, slots] of perClass.entries()) {
-		// The best players of the older classes already left early for the pros
-		// (about 25 a year across D1), so generate them and drop them. Plus a
-		// little extra so the last teams still get a choice of players.
-		const numGonePro = Math.round(
-			(classIndex * 25 * activeTids.length) / NUM_COLLEGE_SCHOOLS,
-		);
-		const poolSize = Math.ceil(slots * activeTids.length * 1.05) + numGonePro;
+	for (let classIndex = 0; classIndex < COLLEGE_SEASONS; classIndex++) {
+		const slots = perClass[classIndex]!;
+		// The best players of older classes have already left for the draft.
+		const numGonePro = Math.round((classIndex * 15 * activeTids.length) / 365);
+
 		const pool: PlayerWithoutKey[] = [];
-		for (let i = 0; i < poolSize; i++) {
-			const p = await genCollegePlayer(
-				PLAYER.UNDRAFTED,
-				classIndex,
-				scoutingLevel,
+		for (let i = 0; i < classSize + numGonePro; i++) {
+			pool.push(
+				await genCollegePlayer(PLAYER.UNDRAFTED, classIndex, scoutingLevel),
 			);
+		}
+		await calibrateClass(pool);
+		for (const p of pool) {
+			await player.develop(p, classIndex, true);
 			p.value = player.value(p, { ovrMean: 47, ovrStd: 10 });
-			pool.push(p);
 		}
 		pool.sort((a, b) => b.value - a.value);
 		pool.splice(0, numGonePro);
 
 		const openSlots = new Map(activeTids.map((tid) => [tid, slots]));
-		for (const p of pool) {
+		for (const [rank, p] of pool.entries()) {
 			const open = activeTids.filter((tid) => openSlots.get(tid)! > 0);
 			if (open.length === 0) {
 				break;
@@ -106,45 +146,45 @@ const createCollegePlayers = async ({
 			openSlots.set(tid, openSlots.get(tid)! - 1);
 
 			p.tid = tid;
+			p.collegeProfile = genCollegeProfile(
+				collegeStarsForPercentile(rank / classSize),
+			);
 			const taken = jerseyNumbers.get(tid) ?? [];
 			jerseyNumbers.set(tid, taken);
 			player.setJerseyNumber(p, await player.genJerseyNumber(p, taken, []));
 			if (p.jerseyNumber !== undefined) {
 				taken.push(p.jerseyNumber);
 			}
-
-			// The NIL deal runs through his final season of eligibility.
-			finalSeasons.set(p, season + 3 - classIndex);
 			players.push(p);
 		}
 	}
 
 	// NIL deals go by where a player ranks in the whole league, on the same
-	// scale as recruits' asks.
+	// scale as recruits' asks. They run through his final season.
 	const ranked = [...players].sort((a, b) => b.value - a.value);
 	for (const [i, p] of ranked.entries()) {
 		player.setContract(
 			p,
 			{
-				amount: collegeNilForPercentile(i / ranked.length),
-				exp: finalSeasons.get(p)!,
+				amount: roundNil(collegeNilForPercentile(i / ranked.length) * nilScale),
+				exp: p.collegeYear0! + COLLEGE_SEASONS - 1,
 			},
 			true,
 		);
 	}
 
-	// Next year's high school class, waiting to be recruited.
+	// This year's high school class, waiting to be recruited.
 	const recruits: PlayerWithoutKey[] = [];
-	for (let i = 0; i < recruitClassSize(activeTids.length); i++) {
+	for (let i = 0; i < classSize; i++) {
 		const p = await genCollegePlayer(PLAYER.UNDRAFTED, 0, scoutingLevel);
 		// Still a high school senior: 17, enrolling next season. draft.year is
 		// the season they sign, at its end.
 		p.born.year = season - 17;
 		p.collegeYear0 = season + 1;
 		p.draft.year = season;
-		p.value = player.value(p, { ovrMean: 47, ovrStd: 10 });
 		recruits.push(p);
 	}
+	await calibrateClass(recruits);
 	initRecruitClass(recruits as Player[]);
 	players.push(...recruits);
 

@@ -211,7 +211,6 @@ const updateRoster = async (
 			"value",
 			"awards",
 			"collegeYear0",
-			"redshirt",
 			// For the writeup bubble beside each name: the section of his note for
 			// the season this roster is showing.
 			"note",

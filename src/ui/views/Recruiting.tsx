@@ -9,83 +9,64 @@ import { wrappedPlayerNameLabels } from "../components/PlayerNameLabels.tsx";
 import { CountryFlag } from "../components/CountryFlag.tsx";
 import { Modal } from "../components/Modal.tsx";
 import { Height } from "../components/Height.tsx";
-import { nilReaction } from "../../common/college.ts";
+import {
+	fmtNil,
+	fmtRange,
+	InterestBar,
+	NilNegotiation,
+	Stars,
+} from "../components/CollegeNil.tsx";
+import {
+	COLLEGE_PRIORITY_LABELS,
+	COLLEGE_PROMISE_LABELS,
+	type CollegePromiseType,
+} from "../../common/college.ts";
 import type { View } from "../../common/types.ts";
 import type { RecruitAction } from "../../worker/core/college/recruiting.ts";
 
-// The recruiting board. Spend your weekly hours, offer scholarships with NIL
-// money, and bring players in on official visits. Players commit when a
-// school with an offer pulls clearly ahead; signing day makes it official.
+// The recruiting board. Spend your weekly hours (which also scouts players),
+// negotiate scholarship offers with NIL money and promises, and bring players
+// in on official visits.
 
 type Recruit = Extract<
 	View<"recruiting">,
 	{ college: true }
 >["recruits"][number];
 
-const STAR_COLORS = ["", "#adb5bd", "#adb5bd", "#0d6efd", "#fd7e14", "#dc3545"];
-
-const Stars = ({ stars }: { stars: number }) => (
-	<span style={{ color: STAR_COLORS[stars], whiteSpace: "nowrap" }}>
-		{"★".repeat(stars)}
-		<span className="text-body-tertiary">{"★".repeat(5 - stars)}</span>
-	</span>
-);
-
-const InterestBar = ({ value }: { value: number }) => {
-	// Interest runs past 100 for a player a school has worked hard on.
-	const pct = helpers.bound(value / 1.25, 0, 100);
-	const color =
-		value >= 70 ? "bg-success" : value >= 50 ? "bg-warning" : "bg-secondary";
-	return (
-		<div className="d-flex align-items-center gap-1" style={{ minWidth: 90 }}>
-			<div className="progress flex-grow-1" style={{ height: 6 }}>
-				<div className={`progress-bar ${color}`} style={{ width: `${pct}%` }} />
-			</div>
-			<span className="small text-body-secondary" style={{ width: 22 }}>
-				{Math.round(value)}
-			</span>
-		</div>
-	);
-};
-
-const fmtNil = (amount: number) => helpers.formatCurrency(amount / 1000, "M");
-
 const act = async (action: RecruitAction) => {
-	const error = await toWorker("main", "collegeRecruitAction", action);
-	if (error) {
-		showNotification({ type: "error", text: error });
+	const result = await toWorker("main", "collegeRecruitAction", action);
+	if (result.error) {
+		showNotification({ type: "error", text: result.error });
 	}
+	return result.outcome;
 };
 
-const REACTION_TEXT = {
-	thrilled: { text: "Thrilled", className: "text-success" },
-	happy: { text: "Happy", className: "text-success" },
-	lukewarm: { text: "Lukewarm", className: "text-warning" },
-	insulted: { text: "Insulted", className: "text-danger" },
-};
+const PROMISE_TYPES: CollegePromiseType[] = [
+	"starter",
+	"minutes",
+	"nilRaise",
+	"noPosition",
+];
 
 const OfferModal = ({
 	recruit,
 	nilRoom,
 	onHide,
 }: {
-	recruit: Recruit | undefined;
+	recruit: Recruit;
 	nilRoom: number;
 	onHide: () => void;
 }) => {
-	const [amount, setAmount] = useState<string>("");
-	const [prevPid, setPrevPid] = useState<number | undefined>();
-	if (recruit && recruit.pid !== prevPid) {
-		setPrevPid(recruit.pid);
-		setAmount(String(recruit.offer ?? recruit.ask));
-	}
-	if (!recruit) {
-		return null;
-	}
-
-	const value = Number(amount);
-	const valid = Number.isFinite(value) && value >= 0;
-	const reaction = REACTION_TEXT[nilReaction(recruit, valid ? value : 0)];
+	const [promises, setPromises] = useState<Set<CollegePromiseType>>(
+		() => new Set(recruit.promises.map((promise) => promise.type)),
+	);
+	const [minutes, setMinutes] = useState(
+		recruit.promises.find((promise) => promise.type === "minutes")?.value ?? 20,
+	);
+	const promiseList = () =>
+		[...promises].map((type) =>
+			type === "minutes" ? { type, value: minutes } : { type },
+		);
 	const room =
 		nilRoom + (recruit.committed !== undefined ? (recruit.offer ?? 0) : 0);
 
@@ -95,54 +76,100 @@ const OfferModal = ({
 				{recruit.firstName} {recruit.lastName} <Stars stars={recruit.stars} />
 			</Modal.Header>
 			<Modal.Body>
-				<p>
-					Asking <b>{fmtNil(recruit.ask)}</b>/yr · <b>{fmtNil(room)}</b> left in
-					budget
-				</p>
-				<label className="form-label" htmlFor="recruit-nil">
-					NIL offer (thousands per year)
-				</label>
-				<div className="input-group mb-2">
-					<span className="input-group-text">$</span>
-					<input
-						id="recruit-nil"
-						type="number"
-						className="form-control"
-						min={0}
-						step={5}
-						value={amount}
-						onChange={(event) => setAmount(event.target.value)}
-					/>
-					<span className="input-group-text">k</span>
+				{recruit.priorities.length > 0 ? (
+					<p className="text-body-secondary">
+						{recruit.priorities
+							.map((key) => COLLEGE_PRIORITY_LABELS[key])
+							.join(" · ")}
+					</p>
+				) : null}
+				<NilNegotiation
+					key={recruit.pid}
+					range={recruit.askRange}
+					room={room}
+					current={recruit.offer}
+					counter={recruit.counter}
+					patience={recruit.patience}
+					walked={recruit.walked}
+					onOffer={(nil) =>
+						act({
+							type: "offer",
+							pid: recruit.pid,
+							nil,
+							promises: promiseList(),
+						})
+					}
+				/>
+				<div className="mt-3">
+					<div className="fw-bold mb-1">Promises</div>
+					{PROMISE_TYPES.map((type) => (
+						<div className="form-check form-check-inline" key={type}>
+							<input
+								className="form-check-input"
+								type="checkbox"
+								id={`promise-${type}`}
+								checked={promises.has(type)}
+								onChange={(event) => {
+									const next = new Set(promises);
+									if (event.target.checked) {
+										next.add(type);
+									} else {
+										next.delete(type);
+									}
+									setPromises(next);
+								}}
+							/>
+							<label className="form-check-label" htmlFor={`promise-${type}`}>
+								{COLLEGE_PROMISE_LABELS[type]}
+							</label>
+						</div>
+					))}
+					{promises.has("minutes") ? (
+						<select
+							className="form-select form-select-sm d-inline-block w-auto"
+							value={minutes}
+							onChange={(event) => setMinutes(Number(event.target.value))}
+						>
+							{[10, 15, 20, 25, 30].map((x) => (
+								<option key={x} value={x}>
+									{x}+ mpg
+								</option>
+							))}
+						</select>
+					) : null}
 				</div>
-				<div className={reaction.className}>{reaction.text}</div>
 			</Modal.Body>
 			<Modal.Footer>
 				{recruit.offer !== undefined ? (
-					<button
-						type="button"
-						className="btn btn-danger me-auto"
-						onClick={async () => {
-							await act({ type: "pull", pid: recruit.pid });
-							onHide();
-						}}
-					>
-						Pull offer
-					</button>
+					<>
+						<button
+							type="button"
+							className="btn btn-danger me-auto"
+							onClick={async () => {
+								await act({ type: "pull", pid: recruit.pid });
+								onHide();
+							}}
+						>
+							Pull offer
+						</button>
+						<button
+							type="button"
+							className="btn btn-light-bordered"
+							onClick={() =>
+								void act({
+									type: "offer",
+									pid: recruit.pid,
+									nil: recruit.offer!,
+									promises: promiseList(),
+								})
+							}
+						>
+							Save promises
+						</button>
+					</>
 				) : null}
 				<button type="button" className="btn btn-secondary" onClick={onHide}>
-					Cancel
-				</button>
-				<button
-					type="button"
-					className="btn btn-primary"
-					disabled={!valid}
-					onClick={async () => {
-						await act({ type: "offer", pid: recruit.pid, nil: value });
-						onHide();
-					}}
-				>
-					{recruit.offer !== undefined ? "Update offer" : "Offer scholarship"}
+					Close
 				</button>
 			</Modal.Footer>
 		</Modal>
@@ -186,6 +213,7 @@ const Recruiting = (props: View<"recruiting">) => {
 	useTitleBar({ title: "Recruiting" });
 	const [offerPid, setOfferPid] = useState<number | undefined>();
 	const [onlyBoard, setOnlyBoard] = useState(false);
+	const [onlyPortal, setOnlyPortal] = useState(false);
 
 	if (!props.college) {
 		return <p>Recruiting is only in college leagues.</p>;
@@ -194,11 +222,15 @@ const Recruiting = (props: View<"recruiting">) => {
 	const { recruits, team, userTid } = props;
 	const nilRoom = team.nilBudget - team.nilCommitted;
 	const commits = recruits.filter((r) => r.committed === userTid);
-	const shown = onlyBoard
-		? recruits.filter(
-				(r) => r.hours > 0 || r.offer !== undefined || r.committed === userTid,
-			)
-		: recruits;
+	const shown = recruits.filter(
+		(r) =>
+			(!onlyBoard ||
+				r.hours > 0 ||
+				r.offer !== undefined ||
+				r.committed === userTid) &&
+			(!onlyPortal || r.portalFrom !== undefined),
+	);
+	const offerRecruit = recruits.find((r) => r.pid === offerPid);
 
 	const cols: Col[] = [
 		{ title: "#", desc: "National Rank", sortType: "number" },
@@ -207,8 +239,19 @@ const Recruiting = (props: View<"recruiting">) => {
 		{ title: "Pos" },
 		{ title: "Ht", sortType: "number" },
 		{ title: "Home", desc: "Hometown" },
-		{ title: "Ovr", sortSequence: ["desc", "asc"], sortType: "number" },
-		{ title: "Pot", sortSequence: ["desc", "asc"], sortType: "number" },
+		{
+			title: "Ovr",
+			desc: "Overall rating, as well as you've scouted him",
+			sortSequence: ["desc", "asc"],
+			sortType: "number",
+		},
+		{
+			title: "Pot",
+			desc: "Potential rating, as well as you've scouted him",
+			sortSequence: ["desc", "asc"],
+			sortType: "number",
+		},
+		{ title: "Wants", desc: "His top priorities", noSearch: true },
 		{
 			title: "Interest",
 			desc: "Interest in your school",
@@ -252,9 +295,9 @@ const Recruiting = (props: View<"recruiting">) => {
 				pid: r.pid,
 				firstName: r.firstName,
 				lastName: r.lastName,
-				skills: r.ratings.skills,
+				skills: r.skills,
 			}),
-			r.ratings.pos,
+			r.pos,
 			{ value: <Height inches={r.hgt} />, sortValue: r.hgt },
 			{
 				value: (
@@ -266,8 +309,22 @@ const Recruiting = (props: View<"recruiting">) => {
 				sortValue: r.state ?? r.bornLoc,
 				searchValue: r.bornLoc,
 			},
-			r.ratings.ovr,
-			r.ratings.pot,
+			{
+				value: <span title={`${r.scouted}% scouted`}>{fmtRange(r.ovr)}</span>,
+				sortValue: (r.ovr[0] + r.ovr[1]) / 2,
+			},
+			{
+				value: <span title={`${r.scouted}% scouted`}>{fmtRange(r.pot)}</span>,
+				sortValue: (r.pot[0] + r.pot[1]) / 2,
+			},
+			{
+				value: (
+					<span className="small text-nowrap">
+						{r.priorities.map((key) => COLLEGE_PRIORITY_LABELS[key]).join(", ")}
+					</span>
+				),
+				sortValue: r.priorities.join(","),
+			},
 			{ value: <InterestBar value={r.interest} />, sortValue: r.interest },
 			{
 				value: (
@@ -309,10 +366,16 @@ const Recruiting = (props: View<"recruiting">) => {
 				value: (
 					<button
 						type="button"
-						className={`btn btn-xs ${r.offer !== undefined ? "btn-success" : "btn-light-bordered"}`}
+						className={`btn btn-xs ${r.offer !== undefined ? "btn-success" : r.walked ? "btn-outline-danger" : r.counter !== undefined ? "btn-warning" : "btn-light-bordered"}`}
 						onClick={() => setOfferPid(r.pid)}
 					>
-						{r.offer !== undefined ? fmtNil(r.offer) : "Offer"}
+						{r.offer !== undefined
+							? fmtNil(r.offer)
+							: r.walked
+								? "Done"
+								: r.counter !== undefined
+									? "Talks"
+									: "Offer"}
 					</button>
 				),
 				sortValue: r.offer ?? -1,
@@ -334,11 +397,14 @@ const Recruiting = (props: View<"recruiting">) => {
 
 	return (
 		<>
-			<OfferModal
-				recruit={recruits.find((r) => r.pid === offerPid)}
-				nilRoom={nilRoom}
-				onHide={() => setOfferPid(undefined)}
-			/>
+			{offerRecruit ? (
+				<OfferModal
+					key={offerRecruit.pid}
+					recruit={offerRecruit}
+					nilRoom={nilRoom}
+					onHide={() => setOfferPid(undefined)}
+				/>
+			) : null}
 
 			<div className="d-flex flex-wrap gap-2 mb-3">
 				<div className="trivia-tile">
@@ -366,6 +432,10 @@ const Recruiting = (props: View<"recruiting">) => {
 					<div className="trivia-tile-label">
 						NIL left of {fmtNil(team.nilBudget)}
 					</div>
+				</div>
+				<div className="trivia-tile" title="How well you keep promises">
+					<div className="trivia-tile-value">{Math.round(team.rep * 100)}</div>
+					<div className="trivia-tile-label">Promise rep</div>
 				</div>
 				<div className="form-check form-switch align-self-center ms-2">
 					<input
@@ -400,17 +470,33 @@ const Recruiting = (props: View<"recruiting">) => {
 				</p>
 			) : null}
 
-			<div className="form-check mb-2">
-				<input
-					className="form-check-input"
-					type="checkbox"
-					id="only-board"
-					checked={onlyBoard}
-					onChange={(event) => setOnlyBoard(event.target.checked)}
-				/>
-				<label className="form-check-label" htmlFor="only-board">
-					Only my board
-				</label>
+			<div className="d-flex gap-3 mb-2">
+				<div className="form-check">
+					<input
+						className="form-check-input"
+						type="checkbox"
+						id="only-board"
+						checked={onlyBoard}
+						onChange={(event) => setOnlyBoard(event.target.checked)}
+					/>
+					<label className="form-check-label" htmlFor="only-board">
+						Only my board
+					</label>
+				</div>
+				{props.portalOpen ? (
+					<div className="form-check">
+						<input
+							className="form-check-input"
+							type="checkbox"
+							id="only-portal"
+							checked={onlyPortal}
+							onChange={(event) => setOnlyPortal(event.target.checked)}
+						/>
+						<label className="form-check-label" htmlFor="only-portal">
+							Only portal
+						</label>
+					</div>
+				) : null}
 			</div>
 
 			<DataTable

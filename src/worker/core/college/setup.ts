@@ -1,5 +1,7 @@
 import { COLLEGE_CONFERENCES } from "../../../common/collegeSchools.ts";
 import type { Conf, Div } from "../../../common/types.ts";
+import { randInt, realGauss } from "../../../common/random.ts";
+import { helpers } from "../../util/index.ts";
 
 // Teams, conferences and rules for a brand new college league. Every
 // conference is one "conference" with a single division of the same name, so
@@ -21,6 +23,11 @@ export const getCollegeTeams = () => {
 		stadiumCapacity: number;
 		prestige: number;
 		state: string;
+		collegeFacilities: number;
+		collegeCoachYears: number;
+		collegePros: number[];
+		collegePromiseRep: number;
+		collegePrestigeFloor: number;
 	}[] = [];
 
 	for (const [cid, conference] of COLLEGE_CONFERENCES.entries()) {
@@ -46,6 +53,19 @@ export const getCollegeTeams = () => {
 				stadiumCapacity: Math.round(2500 + school.prestige * 180),
 				prestige: school.prestige,
 				state: school.state,
+				collegeFacilities: Math.round(
+					helpers.bound(school.prestige + realGauss(0, 8), 5, 99),
+				),
+				collegeCoachYears: randInt(0, 15),
+				// Players sent to the pros each of the last five seasons.
+				collegePros: Array.from({ length: 5 }, () =>
+					Math.round(
+						Math.max(0, (school.prestige - 55) / 12 + realGauss(0, 0.6)),
+					),
+				),
+				collegePromiseRep: 0.8,
+				collegePrestigeFloor:
+					school.prestige >= 85 ? 70 : school.prestige >= 75 ? 50 : 1,
 			});
 		}
 	}

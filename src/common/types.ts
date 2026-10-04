@@ -2157,6 +2157,8 @@ export type Team = {
 	collegeCoachYears?: number;
 	collegePros?: number[];
 	collegePromiseRep?: number;
+	// Blue bloods never fall below this.
+	collegePrestigeFloor?: number;
 
 	adjustForInflation: boolean;
 	disabled: boolean;

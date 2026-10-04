@@ -297,6 +297,10 @@ import {
 	collegeSetAutoRecruit,
 	type RecruitAction,
 } from "../core/college/recruiting.ts";
+import {
+	collegeRetentionAction,
+	type RetentionAction,
+} from "../core/college/retention.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "../core/player/getNumPlayersTradedAwayNormalized.ts";
 import { getAdjustedTicketPrice } from "../../common/getAdjustedTicketPrice.ts";
 import { gameAttributesArrayToObject } from "../../common/gameAttributesArrayToObject.ts";
@@ -2995,9 +2999,16 @@ const createCollegeLeague = async (
 
 // College recruiting: the user's moves on the recruiting board.
 const collegeRecruitActionApi = async (action: RecruitAction) => {
-	const error = await collegeRecruitAction(action);
+	const result = await collegeRecruitAction(action);
 	await toUI("realtimeUpdate", [["playerMovement"]]);
-	return error;
+	return result;
+};
+
+// The retention period: NIL raises and playing time promises.
+const collegeRetentionActionApi = async (action: RetentionAction) => {
+	const result = await collegeRetentionAction(action);
+	await toUI("realtimeUpdate", [["playerMovement"]]);
+	return result;
 };
 
 const collegeSetAutoRecruitApi = async ({ auto }: { auto: boolean }) => {
@@ -7802,6 +7813,7 @@ const api = {
 		triviaSpinQuestion,
 		createCollegeLeague,
 		collegeRecruitAction: collegeRecruitActionApi,
+		collegeRetentionAction: collegeRetentionActionApi,
 		collegeSetAutoRecruit: collegeSetAutoRecruitApi,
 		getPlayerWatch,
 		getProjectedAttendance,

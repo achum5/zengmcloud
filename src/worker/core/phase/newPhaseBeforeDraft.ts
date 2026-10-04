@@ -28,7 +28,8 @@ import { defaultGameAttributes } from "../../../common/defaultGameAttributes.ts"
 import { env } from "../../util/env.ts";
 import { orderTeams } from "../../util/orderTeams.ts";
 import { collegeDepartures } from "../college/offseason.ts";
-import { collegeTransferPortal } from "../college/portal.ts";
+import { collegeJudgePromises } from "../college/retention.ts";
+import { collegeUpdatePrestige } from "../college/prestige.ts";
 import { doAwards } from "../awards/doAwards.ts";
 
 const INFLATION_GAME_ATTRIBUTES = [
@@ -419,6 +420,8 @@ const newPhaseBeforeDraft = async (
 	const repeatSeasonType = g.get("repeatSeason")?.type;
 
 	if (g.get("college")) {
+		await collegeJudgePromises();
+		await collegeUpdatePrestige();
 		await collegeDepartures(conditions);
 	}
 
@@ -473,11 +476,6 @@ const newPhaseBeforeDraft = async (
 			}
 		}
 		await idb.cache.players.putAll(playersToSave);
-
-		// After the retirement checks, which would retire free agents.
-		if (g.get("college")) {
-			await collegeTransferPortal(conditions);
-		}
 
 		for (const [tid, retiredPlayers] of retiredPlayersByTeam) {
 			const text = retiredPlayers

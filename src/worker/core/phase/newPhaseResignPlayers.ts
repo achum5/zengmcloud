@@ -1,5 +1,5 @@
 import { PHASE, PLAYER, POSITION_COUNTS } from "../../../common/constants.ts";
-import { collegeSigningDay } from "../college/recruiting.ts";
+import { collegeStartRetention } from "../college/retention.ts";
 import {
 	contractNegotiation,
 	draft,
@@ -29,6 +29,8 @@ import {
 } from "../freeAgents/frontOffice.ts";
 
 export const FREE_AGENCY_DAYS = 30;
+// College: four weeks of offseason recruiting, then signing day.
+const COLLEGE_OFFSEASON_DAYS = 28;
 
 const newPhaseResignPlayers = async (
 	conditions: Conditions,
@@ -47,12 +49,23 @@ const newPhaseResignPlayers = async (
 		await idb.cache.negotiations.delete(negotiation.pid);
 	}
 
-	const repeatSeasonType = g.get("repeatSeason")?.type;
-
-	// College: this year's recruits sign before the rest become walk-ons.
+	// College: no contracts expire (players stay through their eligibility).
+	// Instead, the retention period: NIL renegotiations and portal decisions.
 	if (g.get("college")) {
-		await collegeSigningDay();
+		await collegeStartRetention();
+		await league.setGameAttributes({
+			daysLeft: COLLEGE_OFFSEASON_DAYS,
+		});
+		return {
+			redirect: {
+				url: helpers.leagueUrl(["retention"]),
+				text: "Retention",
+			},
+			updateEvents: ["playerMovement"],
+		};
 	}
+
+	const repeatSeasonType = g.get("repeatSeason")?.type;
 
 	// Reset contract demands of current free agents and undrafted players
 	// KeyRange only works because PLAYER.UNDRAFTED is -2 and PLAYER.FREE_AGENT is -1
@@ -583,8 +596,7 @@ const newPhaseResignPlayers = async (
 		}
 
 		// Generate a new draft class, while leaving existing players in that draft class in place
-		// (College: next year's high school class.)
-		await draft.genPlayers(g.get("season") + (g.get("college") ? 1 : 3));
+		await draft.genPlayers(g.get("season") + 3);
 	}
 
 	// Delete any old undrafted players that still somehow exist

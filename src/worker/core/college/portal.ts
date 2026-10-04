@@ -3,75 +3,46 @@ import { collegeFinalSeason } from "../../../common/college.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, logEvent } from "../../util/index.ts";
 import { player } from "../index.ts";
-import { getNumPlayersPerTeam } from "../league/create/createRandomPlayers.ts";
 import { collegeNilForPercentile, collegeStarsForPercentile } from "./util.ts";
-import { baseInterest, getTeamCtxs, newRecruiting } from "./recruiting.ts";
+import { newRecruiting } from "./recruiting.ts";
+import { roundNil } from "./negotiation.ts";
+import { baseInterest, getTeamCtxs } from "./teams.ts";
 import type { Conditions, Player } from "../../../common/types.ts";
 
 // THE TRANSFER PORTAL
 //
-// At the end of the season, after the seniors and early entrants are gone,
-// some players with eligibility left go looking for a new school: guys who
-// barely played, and standouts at small programs who think they can play
-// bigger. They're recruited over the offseason like high schoolers (same
-// board, same offers and NIL), and sign as soon as they commit. Whoever is
-// still unsigned when the preseason starts is a walk-on, if anyone has room.
+// When the retention period ends, each returning player rolls against his
+// portal risk (see retention.ts). Those who go are recruited over the
+// offseason weeks like high schoolers - same board, same negotiation - and
+// sign as soon as they commit. His old school can recruit him back.
+// Whoever is still unsigned when the preseason starts is a walk-on, if
+// anyone has room for him.
 
-const portalChance = (
-	p: Player,
-	mpg: number,
-	rankOnTeam: number,
-	prestige: number,
-) => {
-	let chance = 0.03;
-	if (mpg < 8) {
-		chance += 0.2;
-	} else if (mpg < 15) {
-		chance += 0.08;
-	}
-	// A star at a small school, hoping to move up.
-	if (rankOnTeam <= 1 && prestige < 45) {
-		chance += 0.12;
-	}
-	return chance;
-};
-
-export const collegeTransferPortal = async (conditions: Conditions) => {
+export const collegeOpenPortal = async (conditions: Conditions) => {
 	const season = g.get("season");
-	const teams = (await idb.cache.teams.getAll()).filter((t) => !t.disabled);
-
-	const entered: Player[] = [];
-	const everyone: Player[] = [];
-	for (const t of teams) {
-		const roster = (
-			await idb.cache.players.indexGetAll("playersByTid", t.tid)
-		).sort((a, b) => b.value - a.value);
-		everyone.push(...roster);
-		for (const [rankOnTeam, p] of roster.entries()) {
-			const final = collegeFinalSeason(p);
-			if (final !== undefined && final <= season) {
-				continue;
-			}
-			let min = 0;
-			let gp = 0;
-			for (const row of p.stats) {
-				if (row.season === season && !row.playoffs) {
-					min += row.min;
-					gp += row.gp;
-				}
-			}
-			const mpg = gp > 0 ? min / gp : 0;
-			if (Math.random() < portalChance(p, mpg, rankOnTeam, t.prestige ?? 30)) {
-				entered.push(p);
-			}
-		}
-	}
+	const nilScale = g.get("collegeNilScale");
+	const players = await idb.cache.players.indexGetAll("playersByTid", [
+		0,
+		Infinity,
+	]);
 
 	// Stars and asking price by where he ranks among every player in college.
-	everyone.sort((a, b) => b.value - a.value);
+	const everyone = [...players].sort((a, b) => b.value - a.value);
 	const pctByPid = new Map(
 		everyone.map((p, i) => [p.pid, i / everyone.length]),
 	);
+
+	const entered: Player[] = [];
+	for (const p of players) {
+		const r = p.collegeRetention;
+		if (r?.season === season && Math.random() < r.risk) {
+			entered.push(p);
+		}
+		if (r) {
+			delete p.collegeRetention;
+			await idb.cache.players.put(p);
+		}
+	}
 
 	entered.sort((a, b) => b.value - a.value);
 	const byTid = new Map<number, Player[]>();
@@ -82,12 +53,18 @@ export const collegeTransferPortal = async (conditions: Conditions) => {
 			...newRecruiting(
 				Math.max(2, collegeStarsForPercentile(pct)),
 				i + 1,
-				collegeNilForPercentile(pct),
+				roundNil(collegeNilForPercentile(pct) * nilScale),
 			),
 			portalFrom: oldTid,
 		};
+		// His old school knows exactly what he is.
+		p.recruiting.scout[oldTid] = 1000;
+		// Promises for next season don't follow him.
+		p.collegePromises = (p.collegePromises ?? []).filter(
+			(promise) => promise.season <= season,
+		);
 		p.tid = PLAYER.FREE_AGENT;
-		p.contract = { amount: p.recruiting.ask, exp: season };
+		p.contract = { amount: p.recruiting.ask, exp: season + 1 };
 		p.transactions ??= [];
 		await idb.cache.players.put(p);
 
@@ -118,59 +95,51 @@ export const collegeTransferPortal = async (conditions: Conditions) => {
 
 // Preseason: schools still short of a full roster take the best players left
 // in the portal or among the walk-ons, and the portal closes.
-export const collegePreseasonFill = async () => {
+export const collegePreseasonFill = async (conditions: Conditions) => {
 	const season = g.get("season");
 	const freeAgents = (
 		await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
 	).sort((a, b) => b.value - a.value);
 	const ctxs = await getTeamCtxs([]);
-	const scholarships = getNumPlayersPerTeam();
-
-	for (const ctx of ctxs.values()) {
-		const roster = await idb.cache.players.indexGetAll(
-			"playersByTid",
-			ctx.t.tid,
-		);
-		ctx.open = Math.max(0, scholarships - roster.length);
-	}
 
 	for (const p of freeAgents) {
 		const open = [...ctxs.values()].filter(
 			(ctx) =>
 				ctx.open > 0 &&
 				!(ctx.user && !ctx.auto) &&
-				p.recruiting?.portalFrom !== ctx.t.tid,
+				p.recruiting?.portalFrom !== ctx.tid,
 		);
 		if (open.length === 0) {
 			break;
 		}
-		if (!p.recruiting) {
-			p.recruiting = newRecruiting(1, 0, 5);
-		}
-		open.sort(
-			(a, b) =>
-				baseInterest(p, b) +
-				Math.random() * 10 -
-				(baseInterest(p, a) + Math.random() * 10),
-		);
-		const ctx = open[0]!;
+		const scored = open.map((ctx) => ({
+			ctx,
+			score: baseInterest(p, ctx, 5) + Math.random() * 10,
+		}));
+		scored.sort((a, b) => b.score - a.score);
+		const ctx = scored[0]!.ctx;
 		ctx.open -= 1;
 		await player.sign(
 			p,
-			ctx.t.tid,
-			{ amount: Math.min(p.recruiting.ask, 25), exp: season },
+			ctx.tid,
+			{ amount: 5, exp: season + 4 },
 			PHASE.PRESEASON,
 		);
 		delete p.recruiting;
 		await idb.cache.players.put(p);
 	}
 
-	// The portal closes.
+	// The portal closes. Walk-ons who have gone a whole year unsigned, or are
+	// out of eligibility, move on.
 	for (const p of await idb.cache.players.indexGetAll(
 		"playersByTid",
 		PLAYER.FREE_AGENT,
 	)) {
-		if (p.recruiting) {
+		const final = collegeFinalSeason(p);
+		if (p.yearsFreeAgent >= 1 || (final !== undefined && final <= season)) {
+			await player.retire(p, conditions, { logRetiredEvent: false });
+			await idb.cache.players.put(p);
+		} else if (p.recruiting) {
 			delete p.recruiting;
 			await idb.cache.players.put(p);
 		}

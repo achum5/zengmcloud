@@ -43,6 +43,7 @@ export { default as editTeamUniform } from "./editTeamUniform.ts";
 export { default as exhibition } from "./exhibition.ts";
 export { default as newCollegeLeague } from "./newCollegeLeague.ts";
 export { default as recruiting } from "./recruiting.ts";
+export { default as retention } from "./retention.ts";
 export { default as exhibitionGame } from "./exhibitionGame.ts";
 export { default as intrasquad } from "./intrasquad.ts";
 export { default as intrasquadGame } from "./intrasquadGame.ts";

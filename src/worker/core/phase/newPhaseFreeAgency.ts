@@ -1,11 +1,14 @@
 import { contractNegotiation, freeAgents, player } from "../index.ts";
 import { g, helpers } from "../../util/index.ts";
-import type { PhaseReturn } from "../../../common/types.ts";
+import type { Conditions, PhaseReturn } from "../../../common/types.ts";
+import { collegeOpenPortal } from "../college/portal.ts";
 import { idb } from "../../db/index.ts";
 import { PLAYER } from "../../../common/constants.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "../player/getNumPlayersTradedAwayNormalized.ts";
 
-const newPhaseFreeAgency = async (): Promise<PhaseReturn> => {
+const newPhaseFreeAgency = async (
+	conditions: Conditions,
+): Promise<PhaseReturn> => {
 	// In case some weird situation results in games still in the schedule, clear them
 	await idb.cache.schedule.clear();
 
@@ -13,6 +16,7 @@ const newPhaseFreeAgency = async (): Promise<PhaseReturn> => {
 	await contractNegotiation.cancelAll();
 
 	if (g.get("college")) {
+		await collegeOpenPortal(conditions);
 		return {
 			redirect: {
 				url: helpers.leagueUrl(["recruiting"]),

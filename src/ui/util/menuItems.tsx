@@ -407,6 +407,15 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 			},
 			{
 				type: "link",
+				active: (pageID) => pageID === "retention",
+				league: true,
+				commandPalette: true,
+				college: true,
+				path: ["retention"],
+				text: "Retention",
+			},
+			{
+				type: "link",
 				league: true,
 				commandPalette: true,
 				commandPaletteOnly: true,
