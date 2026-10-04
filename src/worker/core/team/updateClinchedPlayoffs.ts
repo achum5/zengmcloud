@@ -279,6 +279,12 @@ const updateClinchedPlayoffs = async (
 	finalStandings: boolean,
 	conditions: Conditions,
 ) => {
+	// College tournament bids come from conference tournaments and selection,
+	// so there's nothing to clinch during the season.
+	if (!finalStandings && g.get("college")) {
+		return;
+	}
+
 	const teamSeasons = await idb.cache.teamSeasons.indexGetAll(
 		"teamSeasonsBySeasonTid",
 		[[g.get("season")], [g.get("season"), "Z"]],

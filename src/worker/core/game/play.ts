@@ -4,6 +4,7 @@ import {
 	SAVE_REPLAYS_ALL_PLAYOFFS,
 	SAVE_REPLAYS_DRAMATIC,
 } from "../../../common/constants.ts";
+import { advanceCollegeConfTourneys } from "../college/tournaments.ts";
 import {
 	GameSim,
 	allStar,
@@ -139,7 +140,10 @@ const play = async (
 		const schedule = await season.getSchedule();
 		let newPhaseCalled = false;
 		if (g.get("phase") < PHASE.PLAYOFFS) {
-			if (schedule.length === 0) {
+			if (
+				schedule.length === 0 &&
+				!(g.get("college") && (await advanceCollegeConfTourneys(conditions)))
+			) {
 				await phase.newPhase(
 					PHASE.PLAYOFFS,
 					conditions,
@@ -219,8 +223,7 @@ const play = async (
 		// can have its records swept into this call's drain, leaving its own
 		// drain nothing to send - which is not the same as having arrived.
 		completeClaimedSimDayFence({
-			synced:
-				synced && (gidOneGame === undefined || (await outboxIsEmpty())),
+			synced: synced && (gidOneGame === undefined || (await outboxIsEmpty())),
 			singleGame: gidOneGame !== undefined,
 			gids: gidOneGame !== undefined ? [gidOneGame] : undefined,
 		});
@@ -1072,6 +1075,17 @@ const play = async (
 			await play(numDays - 1, conditions, false);
 		} else {
 			// This should also call cbNoGames after the playoffs end, because g.get("phase") will have been incremented by season.newSchedulePlayoffsDay after the previous day's games
+			// College: when the regular season runs out, the conference
+			// tournaments go on, a round at a time.
+			if (
+				schedule.length === 0 &&
+				g.get("phase") !== PHASE.PLAYOFFS &&
+				g.get("college") &&
+				(await advanceCollegeConfTourneys(conditions))
+			) {
+				schedule = await season.getSchedule(true);
+			}
+
 			if (schedule.length === 0 && g.get("phase") !== PHASE.PLAYOFFS) {
 				return cbNoGames();
 			}

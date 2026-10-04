@@ -205,7 +205,10 @@ const playMenu = {
 	},
 	untilPlayoffs: async (param: unknown, conditions: Conditions) => {
 		if (g.get("phase") < PHASE.PLAYOFFS) {
-			const numDays = await season.getDaysLeftSchedule();
+			// College: room for the conference tournaments, which are scheduled
+			// a round at a time once the regular season ends.
+			const numDays =
+				(await season.getDaysLeftSchedule()) + (g.get("college") ? 10 : 0);
 			game.play(numDays, conditions);
 		}
 	},

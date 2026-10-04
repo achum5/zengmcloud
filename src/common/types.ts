@@ -1,4 +1,5 @@
 import type { TeamRotation } from "./rotation.ts";
+import type { CollegeConfTourney } from "./college.ts";
 import type { GameFlow } from "./gameFlow.ts";
 import * as z from "zod";
 import type { FaceConfig } from "facesjs";
@@ -838,6 +839,7 @@ export type GameAttributesLeague = {
 	// College basketball league (set at creation, never toggled). Off for every
 	// pro league, so nothing college-specific ever runs there.
 	college: boolean;
+	collegeConfTourney?: CollegeConfTourney;
 	godMode: boolean;
 	godModeInPast: boolean;
 	gracePeriodEnd: number;

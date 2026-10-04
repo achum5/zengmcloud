@@ -43,3 +43,17 @@ export const collegeFinalSeason = (p: {
 	p.collegeYear0 === undefined
 		? undefined
 		: p.collegeYear0 + 3 + (p.redshirt !== undefined ? 1 : 0);
+
+// Conference tournament progress, kept in game attributes while they run.
+export type CollegeConfTourney = {
+	season: number;
+	// Seed order: alive[cid][0] is the top remaining seed.
+	alive: Record<number, number[]>;
+	champs: Record<number, number>;
+	// [home, away, cid] for games scheduled but not yet resolved.
+	pending: [number, number, number][];
+};
+
+// NCAA seeds: the field is seeded 1-64 overall, four teams per seed line.
+export const collegeSeedLine = (overallSeed: number) =>
+	Math.ceil(overallSeed / 4);

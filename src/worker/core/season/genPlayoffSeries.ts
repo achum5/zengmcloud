@@ -1,4 +1,5 @@
 import { g, logEvent } from "../../util/index.ts";
+import { orderCollegeTournamentField } from "../college/tournaments.ts";
 import type {
 	TeamFiltered,
 	PlayoffSeries,
@@ -279,7 +280,9 @@ export const genPlayoffSeriesFromTeams = async (
 		series = range(numRounds).map(() => []);
 
 		const { round, playIn } = await makeMatchups(
-			await orderTeams(teams, teams, orderTeamsOptions),
+			g.get("college")
+				? await orderCollegeTournamentField(teams, numPlayoffTeams)
+				: await orderTeams(teams, teams, orderTeamsOptions),
 			numPlayoffTeams,
 			numPlayoffByes,
 		);

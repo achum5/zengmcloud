@@ -74,6 +74,7 @@ export const COLLEGE_SETTINGS = {
 	numGamesPlayoffSeries: [1, 1, 1, 1, 1, 1],
 	numPlayoffByes: 0,
 	playIn: false,
+	neutralSite: "playoffs",
 	allStarGame: null,
 	tradeDeadline: 1,
 	budget: false,

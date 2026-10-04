@@ -3,6 +3,8 @@ import type { ByConf, View } from "../../common/types.ts";
 import { helpers } from "../util/helpers.ts";
 import type { ReactNode } from "react";
 import { ChampionshipBanner } from "./ChampionshipBanner.tsx";
+import { useLocal } from "../util/local.ts";
+import { collegeSeedLine } from "../../common/college.ts";
 
 type SeriesTeam = {
 	abbrev: string;
@@ -92,6 +94,9 @@ const Team = ({
 	lost: boolean;
 	gid?: number;
 }) => {
+	// Before any early return, because it is a hook.
+	const { college } = useLocal(["college"]);
+
 	if (!team) {
 		return null;
 	}
@@ -176,7 +181,12 @@ const Team = ({
 			})}
 		>
 			<TeamLogo team={team} lost={lost} />
-			<div className="mx-1 align-self-start">{team.seed}.</div>
+			<div className="mx-1 align-self-start">
+				{college && team.seed !== undefined
+					? collegeSeedLine(team.seed)
+					: team.seed}
+				.
+			</div>
 			{team.pendingPlayIn ? (
 				<div className="align-self-start">
 					{expandTeamName ? (
