@@ -246,6 +246,18 @@ export type NumPlayoffTeamsInfo =
 			state: "error" | "loading";
 	  };
 
+// Pro-only settings, which do nothing in a college league.
+const COLLEGE_HIDDEN_CATEGORIES = new Set<string>([
+	"Draft",
+	"Finances",
+	"All-Star",
+	"Inflation",
+	"Contracts",
+	"Rookie Contracts",
+	"Team Movement",
+	"Real Players",
+]);
+
 const SettingsForm = ({
 	onCancel,
 	onCancelDefaultSetting,
@@ -348,6 +360,7 @@ const SettingsForm = ({
 	const filteredSettings = settings.filter((setting) => {
 		return (
 			(!settingsShown || settingsShown.includes(setting.key)) &&
+			!(college && COLLEGE_HIDDEN_CATEGORIES.has(setting.category)) &&
 			(!setting.showOnlyIf ||
 				setting.showOnlyIf({
 					college,

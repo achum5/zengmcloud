@@ -3,6 +3,7 @@ import {
 	RECRUITING_HOURS_PER_WEEK,
 	RECRUITING_MAX_HOURS,
 	RECRUITING_VISITS,
+	scoutingProgress,
 	type CollegePromise,
 	type CollegePromiseType,
 	type CollegeRecruiting,
@@ -80,6 +81,19 @@ export const newRecruiting = (
 	hours: {},
 });
 
+// A recruit's ratings everywhere else in the game (his player page, lists)
+// are only as sharp as your scouting, like on the board.
+export const syncRecruitFuzz = (p: Player) => {
+	const rec = p.recruiting;
+	const ratings = last(p.ratings);
+	if (!rec) {
+		ratings.fuzz = 0;
+		return;
+	}
+	const progress = scoutingProgress(rec, g.get("userTid"));
+	ratings.fuzz = Math.round(rec.fuzz * (1 - progress) * 10) / 10;
+};
+
 // Rank a high school class and give every player his recruiting record.
 export const initRecruitClass = (players: Player[]) => {
 	const nilScale = g.get("collegeNilScale");
@@ -94,6 +108,7 @@ export const initRecruitClass = (players: Player[]) => {
 			rank,
 			roundNil(askForRank(stars, rank) * nilScale),
 		);
+		syncRecruitFuzz(p);
 	}
 };
 
@@ -427,6 +442,7 @@ export const collegeRecruitingDay = async () => {
 	for (const p of recruits) {
 		const rec = p.recruiting!;
 		rec.days = (rec.days ?? 0) + days;
+		syncRecruitFuzz(p);
 
 		// A seventh of the weekly hours each day: scouting, and effort with
 		// diminishing returns.
@@ -597,6 +613,7 @@ export const collegeSign = async (
 		}
 		await player.sign(p, tid, { amount: nil, exp: season + 4 }, phase);
 		delete p.recruiting;
+		syncRecruitFuzz(p);
 		await idb.cache.players.put(p);
 		if (ctx.user && phase === PHASE.FREE_AGENCY) {
 			logEvent({

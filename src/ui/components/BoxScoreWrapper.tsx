@@ -20,7 +20,8 @@ import { buildRecapLinks } from "../util/linkifyRecap.ts";
 import { TeamLogoInline } from "./TeamLogoInline.tsx";
 import { useKeyboardShortcuts } from "../util/keyboardShortcuts.ts";
 import { gradientStyleFactory } from "../util/gradientStyleFactory.ts";
-import { useLocal } from "../util/local.ts";
+import { local, useLocal } from "../util/local.ts";
+import { displaySeed } from "../../common/college.ts";
 import { useSimAuthorityLocked } from "../util/useSimAuthorityLocked.ts";
 import {
 	TEAM_NUMS_DISPLAY_ORDER,
@@ -149,7 +150,7 @@ const TeamNameAndScore = ({
 						paddingBottom: live && STARTING_NUM_TIMEOUTS !== undefined ? 8 : 1,
 					}}
 				>
-					{t.playoffs.seed}.&nbsp;
+					{displaySeed(t.playoffs.seed, local.getState().college)}.&nbsp;
 				</div>
 			) : null}
 			<div>

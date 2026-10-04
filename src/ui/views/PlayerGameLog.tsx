@@ -12,7 +12,8 @@ import { NoGamesMessage } from "./GameLog.tsx";
 import type { DataTableRow } from "../components/DataTable/index.tsx";
 import clsx from "clsx";
 import { InjuryIcon } from "../components/InjuryIcon.tsx";
-import { useLocal } from "../util/local.ts";
+import { local, useLocal } from "../util/local.ts";
+import { displaySeed } from "../../common/college.ts";
 import { HighlightsButton } from "../components/HighlightsButton.tsx";
 import {
 	gameLogAveragesRow,
@@ -234,7 +235,9 @@ const PlayerGameLog = ({
 			data: [
 				i + 1,
 				<>
-					{game.seed !== undefined ? `${game.seed}. ` : null}
+					{game.seed !== undefined
+						? `${displaySeed(game.seed, local.getState().college)}. `
+						: null}
 					<a
 						href={helpers.leagueUrl([
 							"roster",

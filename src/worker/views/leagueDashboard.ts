@@ -1,4 +1,5 @@
 import { confByCid } from "../../common/confs.ts";
+import { collegeSeat as getCollegeSeat } from "../core/college/coach.ts";
 import { collegeNilBudget as nilBudgetFor } from "../../common/college.ts";
 import { PHASE, PLAYER } from "../../common/constants.ts";
 import { season, team } from "../core/index.ts";
@@ -82,7 +83,14 @@ const updatePayroll = async (inputs: unknown, updateEvents: UpdateEvents) => {
 		// College: the NIL budget instead of finances.
 		let collegeNilBudget: number | undefined;
 		let collegePrestige: number | undefined;
+		let collegeCoachExp: number | undefined;
+		let collegeSeat: Awaited<ReturnType<typeof getCollegeSeat>> | undefined;
 		if (g.get("college")) {
+			const coach = g.get("collegeCoach");
+			if (coach?.tid === g.get("userTid")) {
+				collegeCoachExp = coach.exp;
+			}
+			collegeSeat = await getCollegeSeat(g.get("userTid"));
 			const t = await idb.cache.teams.get(g.get("userTid"));
 			collegePrestige = Math.round(t?.prestige ?? 0);
 			collegeNilBudget = nilBudgetFor(
@@ -92,8 +100,10 @@ const updatePayroll = async (inputs: unknown, updateEvents: UpdateEvents) => {
 		}
 
 		return {
+			collegeCoachExp,
 			collegeNilBudget,
 			collegePrestige,
+			collegeSeat,
 			payroll, // [millions of dollars]
 		};
 	}

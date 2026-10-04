@@ -1,7 +1,8 @@
 import clsx from "clsx";
 import { PHASE } from "../../../common/constants.ts";
 import { helpers } from "../../util/helpers.ts";
-import { useLocal } from "../../util/local.ts";
+import { local, useLocal } from "../../util/local.ts";
+import { displaySeed } from "../../../common/college.ts";
 import React, { memo, type ReactNode } from "react";
 import { TeamLogoInline } from "../TeamLogoInline.tsx";
 import { getGameSpread } from "../../../common/getGameSpread.ts";
@@ -413,7 +414,13 @@ export const ScoreBox = memo(
 									>
 										<div className="flex-grow-1 text-truncate p-1">
 											{t.playoffs ? (
-												<span className="text-dark">{t.playoffs.seed}. </span>
+												<span className="text-dark">
+													{displaySeed(
+														t.playoffs.seed,
+														local.getState().college,
+													)}
+													.{" "}
+												</span>
 											) : null}
 											<a
 												href={rosterURL}

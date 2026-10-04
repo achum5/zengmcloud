@@ -27,8 +27,10 @@ const LeagueDashboard = ({
 	numPlayersOnCourt,
 	otl,
 	payroll,
+	collegeCoachExp,
 	collegeNilBudget,
 	collegePrestige,
+	collegeSeat,
 	playoffRoundsWon,
 	playoffsByConf,
 	pointsFormula,
@@ -174,6 +176,33 @@ const LeagueDashboard = ({
 												NIL budget:{" "}
 												{helpers.formatCurrency(collegeNilBudget / 1000, "M")}
 												<br />
+												{collegeCoachExp !== undefined ? (
+													<>
+														Your contract thru {collegeCoachExp}
+														<br />
+													</>
+												) : null}
+												{collegeSeat ? (
+													<>
+														Job security:{" "}
+														<span
+															className={
+																collegeSeat === "Hot"
+																	? "text-danger"
+																	: collegeSeat === "Warm"
+																		? "text-warning"
+																		: "text-success"
+															}
+														>
+															{collegeSeat === "Hot"
+																? "Hot seat"
+																: collegeSeat === "Warm"
+																	? "Warm seat"
+																	: "Secure"}
+														</span>
+														<br />
+													</>
+												) : null}
 												<a href={helpers.leagueUrl(["recruiting"])}>
 													» Recruiting
 												</a>

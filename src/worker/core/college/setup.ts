@@ -2,6 +2,10 @@ import { COLLEGE_CONFERENCES } from "../../../common/collegeSchools.ts";
 import type { Conf, Div } from "../../../common/types.ts";
 import { randInt, realGauss } from "../../../common/random.ts";
 import { helpers } from "../../util/index.ts";
+import {
+	defaultAwards,
+	defaultAwardsBasketball,
+} from "../../../common/defaultGameAttributes.ts";
 
 // Teams, conferences and rules for a brand new college league. Every
 // conference is one "conference" with a single division of the same name, so
@@ -78,6 +82,32 @@ export const getCollegeTeams = () => {
 	return { confs, divs, teams };
 };
 
+// The college awards: national player of the year, the tournament's Most
+// Outstanding Player, All-Americans.
+export const COLLEGE_AWARDS = [
+	{
+		...defaultAwards.mvp,
+		shortName: "NPOY",
+		name: "National Player of the Year",
+	},
+	defaultAwardsBasketball.dpoy,
+	{
+		...defaultAwardsBasketball.roy,
+		shortName: "FOY",
+		name: "Freshman of the Year",
+	},
+	defaultAwardsBasketball.smoy,
+	defaultAwardsBasketball.mip,
+	{
+		...defaultAwards.fmvp,
+		shortName: "MOP",
+		name: "Most Outstanding Player",
+	},
+	{ ...defaultAwards.all, shortName: "AA", name: "All-American" },
+	defaultAwardsBasketball.def,
+	{ ...defaultAwards.alr, shortName: "ALF", name: "All-Freshman" },
+];
+
 // Rules that differ from the pro game. Halves instead of quarters, five fouls,
 // a bigger home court edge, no money, no trades, no All-Star Game.
 export const COLLEGE_SETTINGS = {
@@ -121,4 +151,5 @@ export const COLLEGE_SETTINGS = {
 	pace: 84,
 	minRosterSize: 10,
 	maxRosterSize: 15,
+	awards: COLLEGE_AWARDS,
 } as const;

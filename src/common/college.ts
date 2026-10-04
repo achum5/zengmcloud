@@ -51,6 +51,10 @@ export type CollegeConfTourney = {
 export const collegeSeedLine = (overallSeed: number) =>
 	Math.ceil(overallSeed / 4);
 
+// A playoff seed as shown: the seed line in college, the seed otherwise.
+export const displaySeed = (seed: number, college: boolean) =>
+	college ? collegeSeedLine(seed) : seed;
+
 // What a player looks for in a school. Every player weighs all of these, in
 // his own proportions; his top three are shown.
 export const COLLEGE_PRIORITIES = [

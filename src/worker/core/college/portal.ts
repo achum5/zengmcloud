@@ -4,7 +4,7 @@ import { idb } from "../../db/index.ts";
 import { g, helpers, logEvent } from "../../util/index.ts";
 import { player } from "../index.ts";
 import { collegeNilForPercentile, collegeStarsForPercentile } from "./util.ts";
-import { newRecruiting } from "./recruiting.ts";
+import { newRecruiting, syncRecruitFuzz } from "./recruiting.ts";
 import { roundNil } from "./negotiation.ts";
 import { baseInterest, getTeamCtxs } from "./teams.ts";
 import type { Conditions, Player } from "../../../common/types.ts";
@@ -59,6 +59,7 @@ export const collegeOpenPortal = async (conditions: Conditions) => {
 		};
 		// His old school knows exactly what he is.
 		p.recruiting.scout[oldTid] = 1000;
+		syncRecruitFuzz(p);
 		// Promises for next season don't follow him.
 		p.collegePromises = (p.collegePromises ?? []).filter(
 			(promise) => promise.season <= season,

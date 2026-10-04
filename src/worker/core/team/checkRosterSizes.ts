@@ -1,6 +1,7 @@
 import { PLAYER, POSITION_COUNTS } from "../../../common/constants.ts";
 import { player, freeAgents } from "../index.ts";
 import rosterAutoSort from "./rosterAutoSort.ts";
+import { genCollegeWalkOn } from "../college/createCollegePlayers.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local } from "../../util/index.ts";
 import type { Player } from "../../../common/types.ts";
@@ -283,7 +284,9 @@ const checkRosterSizes = async (
 					let p: any = minFreeAgents.shift();
 
 					if (!p) {
-						p = await player.genRandomFreeAgent();
+						p = g.get("college")
+							? await genCollegeWalkOn()
+							: await player.genRandomFreeAgent();
 					}
 
 					await player.sign(p, tid, p.contract, g.get("phase"));

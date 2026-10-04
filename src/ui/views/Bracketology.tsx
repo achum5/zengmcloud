@@ -101,6 +101,42 @@ const Bracketology = (props: View<"bracketology">) => {
 				</div>
 			) : null}
 
+			{props.confTourneys.length > 0 ? (
+				<>
+					<h2 className="mt-4">Conference tournaments</h2>
+					<table className="table table-sm table-striped w-auto">
+						<tbody>
+							{props.confTourneys.map((conf) => (
+								<tr key={conf.cid}>
+									<td>{conf.name}</td>
+									<td>
+										{conf.champ ? (
+											<>
+												<TeamLink
+													t={conf.champ}
+													season={season}
+													userTid={userTid}
+												/>{" "}
+												<span className="text-body-secondary small">
+													champion
+												</span>
+											</>
+										) : (
+											conf.alive.map((t, i) => (
+												<span key={t.tid}>
+													{i > 0 ? ", " : ""}
+													<TeamLink t={t} season={season} userTid={userTid} />
+												</span>
+											))
+										)}
+									</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+				</>
+			) : null}
+
 			{props.nit ? (
 				<>
 					<h2 className="mt-4">NIT</h2>

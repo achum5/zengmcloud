@@ -88,6 +88,25 @@ const updateBracketology = async (
 		seedLines[seed - 1]!.teams.push(await info(tid));
 	}
 
+	// Conference tournaments: champions, or who's still alive.
+	const tourney = g.get("collegeConfTourney");
+	const confTourneys =
+		tourney?.season === season
+			? await Promise.all(
+					confs.map(async (conf) => {
+						const champ = tourney.champs[conf.cid];
+						return {
+							cid: conf.cid,
+							name: conf.name,
+							champ: champ !== undefined ? await info(champ) : undefined,
+							alive: await Promise.all(
+								(tourney.alive[conf.cid] ?? []).map(info),
+							),
+						};
+					}),
+				)
+			: [];
+
 	const nitState = g.get("collegeNit");
 	const nit =
 		nitState?.season === season
@@ -107,6 +126,7 @@ const updateBracketology = async (
 		lastFourIn: await Promise.all(lastFourIn.map(info)),
 		firstFourOut: await Promise.all(firstFourOut.map(info)),
 		nit,
+		confTourneys,
 		userTid: g.get("userTid"),
 	};
 };

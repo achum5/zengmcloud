@@ -398,6 +398,30 @@ const formatCurrency = (
 	);
 };
 
+// The NCAA tournament's rounds, from the end: title game, Final Four, Elite
+// Eight, Sweet 16, then the opening rounds.
+const COLLEGE_ROUNDS_FROM_END = [
+	"national championship",
+	"Final Four",
+	"Elite Eight",
+	"Sweet 16",
+	"second round",
+	"first round",
+];
+
+const playoffRoundName = (
+	...args: Parameters<typeof commonHelpers.playoffRoundName>
+) => {
+	const [currentRound, numPlayoffRounds] = args;
+	if (Object.hasOwn(g, "college") && g.get("college") && currentRound >= 0) {
+		const name = COLLEGE_ROUNDS_FROM_END[numPlayoffRounds - 1 - currentRound];
+		if (name) {
+			return name;
+		}
+	}
+	return commonHelpers.playoffRoundName(...args);
+};
+
 const roundsWonText = ({
 	playoffRoundsWon,
 	numPlayoffRounds,
@@ -409,9 +433,18 @@ const roundsWonText = ({
 	playoffsByConf: ByConf;
 	showMissedPlayoffs?: boolean;
 }) => {
+	const college = Object.hasOwn(g, "college") && g.get("college");
 	if (playoffRoundsWon >= 0) {
 		if (playoffRoundsWon === numPlayoffRounds) {
-			return "league champs";
+			return college ? "national champions" : "league champs";
+		}
+		if (college) {
+			if (playoffRoundsWon === numPlayoffRounds - 1) {
+				return "made title game";
+			}
+			return playoffRoundsWon === 0
+				? "made NCAA tournament"
+				: `made ${playoffRoundName(playoffRoundsWon, numPlayoffRounds, playoffsByConf)}`;
 		}
 
 		const roundName = commonHelpers.playoffRoundName(
@@ -449,11 +482,16 @@ const roundsWonText = ({
 		return `made ${roundName}`;
 	}
 
-	return showMissedPlayoffs ? "missed playoffs" : "";
+	return showMissedPlayoffs
+		? college
+			? "missed NCAA tournament"
+			: "missed playoffs"
+		: "";
 };
 
 const helpers = {
 	...commonHelpers,
+	playoffRoundName,
 	augmentSeries,
 	calcWinp,
 	correctLinkLid,

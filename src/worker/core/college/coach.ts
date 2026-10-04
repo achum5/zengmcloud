@@ -109,3 +109,21 @@ export const collegeContractReview = async (moodTotal: number) => {
 		fired: false,
 	};
 };
+
+// How safe your job is, from the athletic director's running mood.
+export const collegeSeat = async (tid: number) => {
+	const ts = await idb.cache.teamSeasons.indexGet("teamSeasonsByTidSeason", [
+		tid,
+		g.get("season"),
+	]);
+	const mood = ts?.ownerMood;
+	const total = mood ? mood.wins + mood.playoffs + mood.money : 0;
+	if (
+		!g.get("collegeCoachFiring") ||
+		g.get("season") < g.get("gracePeriodEnd") ||
+		total >= 0
+	) {
+		return "Secure" as const;
+	}
+	return total > -0.5 ? ("Warm" as const) : ("Hot" as const);
+};

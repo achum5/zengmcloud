@@ -93,6 +93,13 @@ const ovr = (
 	// Translate from -15/15 to 0/100 scale
 	let rawOVR = (predictedMOV * 50) / 15 + 50;
 
+	// College teams are far below pro teams. Same scale (so spreads, which
+	// use differences, are unchanged), shifted so the best programs are in
+	// the 90s and an average one is in the 40s.
+	if (Object.hasOwn(g, "college") && g.get("college")) {
+		rawOVR += 125;
+	}
+
 	if (playoffs) {
 		rawOVR -= 40;
 	}

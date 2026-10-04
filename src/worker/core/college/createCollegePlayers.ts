@@ -1,4 +1,5 @@
 import { player } from "../index.ts";
+import { idb } from "../../db/index.ts";
 import { PLAYER } from "../../../common/constants.ts";
 import { COLLEGE_SEASONS } from "../../../common/college.ts";
 import { g } from "../../util/index.ts";
@@ -90,6 +91,37 @@ export const calibrateClass = async (players: PlayerWithoutKey[]) => {
 		await player.develop(p, 0);
 		p.value = player.value(p, { ovrMean: 47, ovrStd: 10 });
 	}
+};
+
+// A walk-on made up on the spot, for a school that somehow can't field a
+// roster: bottom-of-the-class ratings, any class year.
+export const genCollegeWalkOn = async () => {
+	const classIndex = Math.floor(Math.random() * 4);
+	const p = await genCollegePlayer(PLAYER.FREE_AGENT, classIndex, 0);
+	const ratings = last(p.ratings) as unknown as Record<string, unknown>;
+	for (const [key, value] of Object.entries(ratings)) {
+		if (
+			typeof value === "number" &&
+			!["hgt", "ovr", "pot", "season", "fuzz"].includes(key)
+		) {
+			ratings[key] = limitRating(value - 12);
+		}
+	}
+	await player.develop(p, classIndex, true);
+	p.collegeStars = 1;
+	p.collegeProfile = genCollegeProfile(1);
+	player.setContract(
+		p,
+		{
+			amount: g.get("minContract"),
+			exp: p.collegeYear0! + COLLEGE_SEASONS - 1,
+		},
+		false,
+	);
+	const pid = await idb.cache.players.add(p);
+	const added = (await idb.cache.players.get(pid))!;
+	await player.updateValues(added);
+	return added;
 };
 
 const createCollegePlayers = async ({

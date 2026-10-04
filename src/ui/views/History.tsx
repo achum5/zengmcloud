@@ -184,16 +184,8 @@ const History = (props: View<"history">) => {
 
 	const { teamAwards1, teamAwards2 } = splitTeamAwards(awards.teamAwards);
 
-	// College: one tournament MVP, the Most Outstanding Player.
 	const groupedIndividualAwardsPlayoffs = Object.values(
-		Object.groupBy(
-			college
-				? awards.individualAwardsPlayoffs
-						.filter((award) => award.name === "Finals MVP")
-						.map((award) => ({ ...award, name: "Most Outstanding Player" }))
-				: awards.individualAwardsPlayoffs,
-			(award) => award.shortName,
-		),
+		Object.groupBy(awards.individualAwardsPlayoffs, (award) => award.shortName),
 	);
 
 	const bestRecordConfs = Array.from(awards.bestRecordConfs.entries());
