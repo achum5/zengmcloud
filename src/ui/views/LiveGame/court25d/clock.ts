@@ -4,7 +4,8 @@ import type { CourtTimeline, RawEvent } from "./director.ts";
 //
 // Every play-by-play line carries the game clock when it happened; between
 // two lines the clock runs down while the court shows the lead-in, reaching
-// the line's time just as its text appears. The sim keeps no shot clock in
+// the line's time just as its text appears. It runs at real speed; where the
+// picture cuts past the walk up the floor, it jumps past that time too. The sim keeps no shot clock in
 // the play-by-play, so the one on screen is read off possession: 24 when a
 // team gets the ball, 14 after an offensive rebound, running with the game
 // clock - and off once the game clock is shorter.
@@ -42,6 +43,16 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 		// unless the clock went up, which is a new period starting.
 		if (last !== undefined && e.clock <= last) {
 			marks.push({ t: b.preStart, clock: last, period });
+			// A cut in the lead-in skips the time the sim spent there and the
+			// picture does not show, so the clock runs true on both sides of it.
+			const cut = lastCutIn(tl.cuts, b.preStart, b.actionStart);
+			const shown = (b.actionStart - b.preStart) / 1000;
+			if (cut !== undefined && last - e.clock > shown) {
+				marks.push(
+					{ t: cut - 1, clock: last - (cut - 1 - b.preStart) / 1000, period },
+					{ t: cut, clock: e.clock + (b.actionStart - cut) / 1000, period },
+				);
+			}
 		}
 		marks.push({ t: b.actionStart, clock: e.clock, period });
 		last = e.clock;
@@ -63,6 +74,24 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 	}
 	resets.sort((a, b) => a.t - b.t);
 	return { marks, resets };
+};
+
+// The last cut in [a, b), if any.
+const lastCutIn = (
+	cuts: number[],
+	a: number,
+	b: number,
+): number | undefined => {
+	let out: number | undefined;
+	for (const c of cuts) {
+		if (c >= b) {
+			break;
+		}
+		if (c >= a) {
+			out = c;
+		}
+	}
+	return out;
 };
 
 const lastAt = <T extends { t: number }>(list: T[], t: number): number => {

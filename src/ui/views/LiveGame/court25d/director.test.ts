@@ -282,6 +282,10 @@ const compile = (seed: string, possessions = 120) => {
 const body = bodyOf();
 const bodyFor = () => body;
 
+// Whether the picture cut between two moments (anyone may be anywhere after).
+const cutBetween = (tl: CourtTimeline, a: number, b: number) =>
+	tl.cuts.some((c) => c > a && c <= b);
+
 const sampleTimes = (tl: CourtTimeline, step: number) => {
 	const out: number[] = [];
 	for (let t = 0; t <= tl.end; t += step) {
@@ -356,13 +360,16 @@ describe("2.5D director", () => {
 		const { tl } = compile("glide", 140);
 		const pids = [...tl.tracks.keys()];
 		let prev = new Map<number, ReturnType<typeof evalPlayer>>();
+		let last = -Infinity;
 		for (const t of sampleTimes(tl, 20)) {
 			const cur = new Map<number, ReturnType<typeof evalPlayer>>();
+			const cut = cutBetween(tl, last, t);
+			last = t;
 			for (const pid of pids) {
 				const st = evalPlayer(tl, pid, t);
 				cur.set(pid, st);
 				const p = prev.get(pid);
-				if (p && p.shown && st.shown) {
+				if (p && p.shown && st.shown && !cut) {
 					const d = Math.hypot(st.x - p.x, st.y - p.y);
 					assert.isBelow(d, 2, `pid ${pid} jumped ${d.toFixed(2)}ft at t=${t}`);
 				}
@@ -375,12 +382,15 @@ describe("2.5D director", () => {
 		const { tl } = compile("ball", 140);
 		let prev: { x: number; y: number; z: number } | undefined;
 		let jumps = 0;
+		let last = -Infinity;
 		for (const t of sampleTimes(tl, 20)) {
 			const b = evalBall(tl, t, bodyFor);
 			assert.isTrue(
 				Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.z),
 			);
-			if (prev) {
+			const cut = cutBetween(tl, last, t);
+			last = t;
+			if (prev && !cut) {
 				const d = Math.hypot(b.x - prev.x, b.y - prev.y, b.z - prev.z);
 				if (d > 6) {
 					jumps += 1;
@@ -390,6 +400,35 @@ describe("2.5D director", () => {
 		}
 		assert.strictEqual(jumps, 0);
 	}, 60_000);
+
+	test("the picture cuts only between plays, to five a side", () => {
+		const { events, tl } = compile("cuts", 160);
+		assert.isAbove(tl.cuts.length, 40);
+		const pids = [...tl.tracks.keys()];
+		for (const c of tl.cuts) {
+			// Never in the middle of a line's action.
+			for (const b of tl.beats) {
+				assert.isFalse(
+					c > b.actionStart && c < b.end && /^(fg|miss|blk|tp)/.test(b.type),
+					`cut at ${c} inside ${b.type}`,
+				);
+			}
+			const on = [0, 0];
+			for (const pid of pids) {
+				const st = evalPlayer(tl, pid, c + 1);
+				if (st.shown) {
+					on[st.team]! += 1;
+				}
+			}
+			assert.deepStrictEqual(on, [5, 5], `at ${c}`);
+		}
+		// Cut times are in order and the game still tiles.
+		assert.deepStrictEqual(
+			tl.cuts,
+			[...tl.cuts].sort((a, b) => a - b),
+		);
+		assert.isAbove(events.length, 0);
+	});
 
 	test("whoever holds the ball is on the floor", () => {
 		const { tl } = compile("holder", 140);

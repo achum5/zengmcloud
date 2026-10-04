@@ -55,9 +55,32 @@ import { aimFor, drawFrame, momentAt } from "./scene.ts";
 
 // The speed slider value that plays the timeline at 1x (the page's default).
 const DEFAULT_SPEED = 7;
-// A touch quicker than the timeline's own clock, so a game watched at the
-// default speed takes about twenty minutes.
-const BASE_RATE = 1.3;
+// The timeline runs at real speed (it cuts past the dead time instead of
+// hurrying); a hair quicker than that brings a game watched at the default
+// speed in at about twenty minutes.
+const BASE_RATE = 1.05;
+// How long the picture dips to black either side of a cut (timeline ms).
+const DIP_MS = 130;
+
+// The cut nearest to t, by binary search.
+const nearestCut = (cuts: number[], t: number): number | undefined => {
+	let lo = 0;
+	let hi = cuts.length - 1;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (cuts[mid]! < t) {
+			lo = mid + 1;
+		} else {
+			hi = mid;
+		}
+	}
+	const a = cuts[lo];
+	const b = cuts[lo - 1];
+	if (a === undefined) {
+		return b;
+	}
+	return b !== undefined && t - b < a - t ? b : a;
+};
 // The court picture from LiveCourt, in px per foot. Big, so the lines stay
 // sharp when the camera zooms in.
 const COURT_PX = 16;
@@ -309,6 +332,7 @@ const Court25D = ({
 		}
 	}, []);
 	const clockRef = useRef<HTMLSpanElement | null>(null);
+	const dipRef = useRef<HTMLDivElement | null>(null);
 	const shotRef = useRef<HTMLSpanElement | null>(null);
 
 	const play = useRef({
@@ -455,8 +479,14 @@ const Court25D = ({
 					rate *= Math.min(6, 1 + (lag - 3000) / 2500);
 				}
 			}
+			const before = s.t;
 			if ((!p.paused || s.stepping) && s.t < target) {
 				s.t = Math.min(target, s.t + dt * rate);
+			}
+			// Through a cut: the camera starts fresh on the other side.
+			const cut = nearestCut(tl.cuts, s.t);
+			if (cut !== undefined && cut > before && cut <= s.t) {
+				s.snapCam = true;
 			}
 			if (s.t >= target) {
 				s.stepping = false;
@@ -504,6 +534,15 @@ const Court25D = ({
 			}
 			const cam = makeCamera({ x: s.camX, width: s.camW, y: aim.y }, w, h);
 			place(cam);
+
+			const dip = dipRef.current;
+			if (dip) {
+				const near = cut === undefined ? Infinity : Math.abs(s.t - cut);
+				const o = Math.max(0, 1 - near / DIP_MS);
+				if (dip.style.opacity !== String(o)) {
+					dip.style.opacity = String(o);
+				}
+			}
 
 			let shotText = "";
 			let clockText = "";
@@ -652,6 +691,17 @@ const Court25D = ({
 					inset: 0,
 					width: "100%",
 					height: "100%",
+				}}
+			/>
+			<div
+				ref={dipRef}
+				aria-hidden
+				style={{
+					position: "absolute",
+					inset: 0,
+					background: "#000",
+					opacity: 0,
+					pointerEvents: "none",
 				}}
 			/>
 			<div
