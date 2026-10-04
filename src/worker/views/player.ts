@@ -122,6 +122,8 @@ export const getPlayer = async (
 				| "imgURL"
 				| "injury"
 				| "college"
+				| "collegeYear0"
+				| "collegeStars"
 				| "relatives"
 				| "srID"
 		  > & {
@@ -184,6 +186,8 @@ export const getPlayer = async (
 			"imgURL",
 			"watch",
 			"college",
+			"collegeYear0",
+			"collegeStars",
 			"relatives",
 			"untradable",
 			"jerseyNumber",

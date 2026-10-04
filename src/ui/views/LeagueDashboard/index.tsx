@@ -27,6 +27,8 @@ const LeagueDashboard = ({
 	numPlayersOnCourt,
 	otl,
 	payroll,
+	collegeNilBudget,
+	collegePrestige,
 	playoffRoundsWon,
 	playoffsByConf,
 	pointsFormula,
@@ -160,38 +162,60 @@ const LeagueDashboard = ({
 								</div>
 								<div className="col-6">
 									<TeamStats teamStats={teamStats} />
-									<h2>Finances</h2>
-									<div className="mb-3">
-										Avg Attendance: {helpers.numberWithCommas(Math.round(att))}
-										<br />
-										Revenue (YTD): {helpers.formatCurrency(revenue, "M")}
-										<br />
-										Profit (YTD): {helpers.formatCurrency(profit, "M")}
-										<br />
-										Cash: {helpers.formatCurrency(cash / 1000, "M")}
-										<br />
-										Payroll: {helpers.formatCurrency(payroll / 1000, "M")}
-										<br />
-										{salaryCapType === "none" ? (
-											<>
-												Luxury Tax:{" "}
-												{helpers.formatCurrency(luxuryPayroll / 1000, "M")}
-											</>
-										) : (
-											<>
-												Salary Cap:{" "}
-												{helpers.formatCurrency(salaryCap / 1000, "M")}
-											</>
-										)}
-										<br />
-										<a href={helpers.leagueUrl(["team_finances"])}>
-											» Team Finances
-										</a>
-										<br />
-										<a href={helpers.leagueUrl(["league_finances"])}>
-											» League Finances
-										</a>
-									</div>
+									{collegeNilBudget !== undefined ? (
+										<>
+											<h2>Program</h2>
+											<div className="mb-3">
+												Prestige: {collegePrestige}
+												<br />
+												NIL payroll:{" "}
+												{helpers.formatCurrency(payroll / 1000, "M")}
+												<br />
+												NIL budget:{" "}
+												{helpers.formatCurrency(collegeNilBudget / 1000, "M")}
+												<br />
+												<a href={helpers.leagueUrl(["recruiting"])}>
+													» Recruiting
+												</a>
+											</div>
+										</>
+									) : (
+										<>
+											<h2>Finances</h2>
+											<div className="mb-3">
+												Avg Attendance:{" "}
+												{helpers.numberWithCommas(Math.round(att))}
+												<br />
+												Revenue (YTD): {helpers.formatCurrency(revenue, "M")}
+												<br />
+												Profit (YTD): {helpers.formatCurrency(profit, "M")}
+												<br />
+												Cash: {helpers.formatCurrency(cash / 1000, "M")}
+												<br />
+												Payroll: {helpers.formatCurrency(payroll / 1000, "M")}
+												<br />
+												{salaryCapType === "none" ? (
+													<>
+														Luxury Tax:{" "}
+														{helpers.formatCurrency(luxuryPayroll / 1000, "M")}
+													</>
+												) : (
+													<>
+														Salary Cap:{" "}
+														{helpers.formatCurrency(salaryCap / 1000, "M")}
+													</>
+												)}
+												<br />
+												<a href={helpers.leagueUrl(["team_finances"])}>
+													» Team Finances
+												</a>
+												<br />
+												<a href={helpers.leagueUrl(["league_finances"])}>
+													» League Finances
+												</a>
+											</div>
+										</>
+									)}
 								</div>
 							</div>
 						</div>

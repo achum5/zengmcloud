@@ -1,4 +1,7 @@
-import { collegeClassLabel } from "../../common/college.ts";
+import {
+	collegeClassLabel,
+	collegeFinalSeason,
+} from "../../common/college.ts";
 import { PHASE, PLAYER } from "../../common/constants.ts";
 import type { UpdateEvents } from "../../common/types.ts";
 import { idb } from "../db/index.ts";
@@ -25,7 +28,10 @@ const updateWalkOns = async (inputs: unknown, updateEvents: UpdateEvents) => {
 	const classSeason = g.get("phase") > PHASE.PLAYOFFS ? season + 1 : season;
 	const freeAgents = (
 		await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
-	).filter((p) => !p.recruiting);
+	).filter((p) => {
+		const final = collegeFinalSeason(p);
+		return !p.recruiting && (final === undefined || final >= classSeason);
+	});
 	const players = await idb.getCopies.playersPlus(freeAgents, {
 		attrs: ["pid", "firstName", "lastName", "age", "hgt", "injury"],
 		ratings: ["ovr", "pot", "pos", "skills"],

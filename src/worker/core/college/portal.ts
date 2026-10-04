@@ -64,6 +64,8 @@ export const collegeOpenPortal = async (conditions: Conditions) => {
 			(promise) => promise.season <= season,
 		);
 		p.tid = PLAYER.FREE_AGENT;
+		// His old deal ends with this season.
+		p.salaries = p.salaries.filter((row) => row.season <= season);
 		p.contract = { amount: p.recruiting.ask, exp: season + 1 };
 		p.transactions ??= [];
 		await idb.cache.players.put(p);
@@ -97,6 +99,20 @@ export const collegeOpenPortal = async (conditions: Conditions) => {
 // in the portal or among the walk-ons, and the portal closes.
 export const collegePreseasonFill = async (conditions: Conditions) => {
 	const season = g.get("season");
+
+	// Walk-ons who have gone a whole year unsigned, or are out of
+	// eligibility, move on first.
+	for (const p of await idb.cache.players.indexGetAll(
+		"playersByTid",
+		PLAYER.FREE_AGENT,
+	)) {
+		const final = collegeFinalSeason(p);
+		if (p.yearsFreeAgent >= 1 || (final !== undefined && final <= season)) {
+			await player.retire(p, conditions, { logRetiredEvent: false });
+			await idb.cache.players.put(p);
+		}
+	}
+
 	const freeAgents = (
 		await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
 	).sort((a, b) => b.value - a.value);
@@ -129,17 +145,12 @@ export const collegePreseasonFill = async (conditions: Conditions) => {
 		await idb.cache.players.put(p);
 	}
 
-	// The portal closes. Walk-ons who have gone a whole year unsigned, or are
-	// out of eligibility, move on.
+	// The portal closes.
 	for (const p of await idb.cache.players.indexGetAll(
 		"playersByTid",
 		PLAYER.FREE_AGENT,
 	)) {
-		const final = collegeFinalSeason(p);
-		if (p.yearsFreeAgent >= 1 || (final !== undefined && final <= season)) {
-			await player.retire(p, conditions, { logRetiredEvent: false });
-			await idb.cache.players.put(p);
-		} else if (p.recruiting) {
+		if (p.recruiting) {
 			delete p.recruiting;
 			await idb.cache.players.put(p);
 		}

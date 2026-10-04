@@ -169,7 +169,7 @@ const History = (props: View<"history">) => {
 			seasonsHistory: season,
 		},
 	});
-	const { userTid } = useLocal(["userTid"]);
+	const { college, userTid } = useLocal(["college", "userTid"]);
 
 	if (invalidSeason) {
 		return (
@@ -184,8 +184,16 @@ const History = (props: View<"history">) => {
 
 	const { teamAwards1, teamAwards2 } = splitTeamAwards(awards.teamAwards);
 
+	// College: one tournament MVP, the Most Outstanding Player.
 	const groupedIndividualAwardsPlayoffs = Object.values(
-		Object.groupBy(awards.individualAwardsPlayoffs, (award) => award.shortName),
+		Object.groupBy(
+			college
+				? awards.individualAwardsPlayoffs
+						.filter((award) => award.name === "Finals MVP")
+						.map((award) => ({ ...award, name: "Most Outstanding Player" }))
+				: awards.individualAwardsPlayoffs,
+			(award) => award.shortName,
+		),
 	);
 
 	const bestRecordConfs = Array.from(awards.bestRecordConfs.entries());
@@ -198,7 +206,7 @@ const History = (props: View<"history">) => {
 				<div className="col-md-3 col-sm-4 col-12">
 					<div className="row">
 						<div className="col-sm-12 col-6">
-							<h2>League Champs</h2>
+							<h2>{college ? "National Champion" : "League Champs"}</h2>
 							{champ ? (
 								<div>
 									<div className="mb-3">
@@ -221,7 +229,7 @@ const History = (props: View<"history">) => {
 										</span>
 										<br />
 										<a href={helpers.leagueUrl(["playoffs", season])}>
-											Playoff bracket
+											{college ? "Tournament bracket" : "Playoff bracket"}
 										</a>
 									</div>
 									{groupedIndividualAwardsPlayoffs.map((groupedAwards, i) => {

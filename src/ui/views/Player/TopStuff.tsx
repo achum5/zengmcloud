@@ -36,6 +36,7 @@ import {
 	useNegotiaionModal,
 } from "../../components/NegotiationModal.tsx";
 import { useLocal } from "../../util/local.ts";
+import { collegeClassLabel } from "../../../common/college.ts";
 import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
 
 const Relatives = ({
@@ -337,15 +338,25 @@ const TopStuff = ({
 	draftRecap?: SeasonNoteSection[];
 	noteLinksBySeason?: (season: number | undefined) => RecapLink[];
 }) => {
-	const { gender, godMode, phase, spectator, teamInfoCache, userTid } =
-		useLocal([
-			"gender",
-			"godMode",
-			"phase",
-			"spectator",
-			"teamInfoCache",
-			"userTid",
-		]);
+	const {
+		college: collegeLeague,
+		gender,
+		godMode,
+		phase,
+		season: currentLeagueSeason,
+		spectator,
+		teamInfoCache,
+		userTid,
+	} = useLocal([
+		"college",
+		"gender",
+		"godMode",
+		"phase",
+		"season",
+		"spectator",
+		"teamInfoCache",
+		"userTid",
+	]);
 
 	const [showGallery, setShowGallery] = useState(false);
 
@@ -364,8 +375,9 @@ const TopStuff = ({
 		player.tid !== PLAYER.UNDRAFTED &&
 		player.tid !== PLAYER.UNDRAFTED_FANTASY_TEMP &&
 		player.tid !== PLAYER.RETIRED;
-	const showTradeFor = player.tid !== userTid && player.tid >= 0;
-	const showTradingBlock = player.tid === userTid;
+	const showTradeFor =
+		!collegeLeague && player.tid !== userTid && player.tid >= 0;
+	const showTradingBlock = !collegeLeague && player.tid === userTid;
 
 	// The writeup about how he was picked, hung off the line that says he was
 	// picked. It reads as a caption to the draft line, which is what it is.
@@ -381,7 +393,18 @@ const TopStuff = ({
 		) : null;
 
 	let draftInfo: ReactNode = null;
-	if (player.draft.round > 0) {
+	if (collegeLeague) {
+		const classLabel = collegeClassLabel(player, season ?? currentLeagueSeason);
+		draftInfo = (
+			<>
+				{classLabel ? `Class: ${classLabel}` : null}
+				{player.collegeStars !== undefined
+					? `${classLabel ? " · " : ""}${player.collegeStars}-star recruit`
+					: null}
+				{classLabel || player.collegeStars !== undefined ? <br /> : null}
+			</>
+		);
+	} else if (player.draft.round > 0) {
 		draftInfo = (
 			<>
 				Draft:{" "}
@@ -427,7 +450,7 @@ const TopStuff = ({
 
 		contractInfo = (
 			<>
-				{freeAgent ? "Asking for" : "Contract"}:{" "}
+				{freeAgent ? "Asking for" : collegeLeague ? "NIL" : "Contract"}:{" "}
 				{amount !== undefined ? helpers.formatCurrency(amount, "M") : "???"}/yr
 				{exp !== undefined ? ` thru ${exp}` : null}
 				<br />
@@ -469,9 +492,10 @@ const TopStuff = ({
 					pid={player.pid}
 					defaultWatch={player.watch}
 				/>
-				{player.tid === PLAYER.FREE_AGENT ||
-				player.tid === PLAYER.UNDRAFTED ||
-				player.tid >= PLAYER.FREE_AGENT ? (
+				{!collegeLeague &&
+				(player.tid === PLAYER.FREE_AGENT ||
+					player.tid === PLAYER.UNDRAFTED ||
+					player.tid >= PLAYER.FREE_AGENT) ? (
 					<Mood
 						className="ms-2"
 						defaultType={
@@ -514,7 +538,7 @@ const TopStuff = ({
 					{showTradeFor ? "Trade for" : "Add to trading block"}
 				</button>
 			) : null}
-			{!spectator && freeAgent ? (
+			{!spectator && freeAgent && !collegeLeague ? (
 				<button
 					className="btn btn-light-bordered"
 					disabled={!willingToSign}
@@ -660,7 +684,8 @@ const TopStuff = ({
 								relatives={player.relatives}
 							/>
 							{draftInfo}
-							{__SPORT === "hockey" && college === "None" ? null : (
+							{(__SPORT === "hockey" && college === "None") ||
+							collegeLeague ? null : (
 								<>
 									College:{" "}
 									<a

@@ -73,10 +73,11 @@ export const MoreLinks = (
 	const { keepSelfLink, page } = props;
 
 	const {
+		college,
 		godMode,
 		rotationPlans,
 		season: currentSeason,
-	} = useLocal(["godMode", "rotationPlans", "season"]);
+	} = useLocal(["college", "godMode", "rotationPlans", "season"]);
 
 	let links: {
 		url: string | Readonly<LeagueUrlParts>;
@@ -91,15 +92,26 @@ export const MoreLinks = (
 				url: ["roster", `${abbrev}_${tid}`, season],
 				name: "Roster",
 			},
-			{
-				url: ["team_finances", `${abbrev}_${tid}`],
-				name: "Finances",
-			},
+			...(college
+				? []
+				: [
+						{
+							url: ["team_finances", `${abbrev}_${tid}`] as const,
+							name: "Finances",
+						},
+					]),
 			{
 				url: ["game_log", `${abbrev}_${tid}`, season],
 				name: "Game Log",
 			},
-			{ url: ["draft_picks", `${abbrev}_${tid}`], name: "Draft Picks" },
+			...(college
+				? []
+				: [
+						{
+							url: ["draft_picks", `${abbrev}_${tid}`] as const,
+							name: "Draft Picks",
+						},
+					]),
 			{
 				url: ["team_history", `${abbrev}_${tid}`],
 				name: "History",

@@ -3,6 +3,7 @@
 Decisions from the Q&A. Numbers marked **(default)** are my starting values. Change any of them.
 
 ## League basics
+
 - Every D1 school is a fictional stand-in (for example, Lexington Wildcats), and all of them are editable.
 - College is a runtime league mode. It never changes pro BBGM.
 - **Roster limit:** a league setting, default **15**. Every roster player can be on scholarship (House settlement rules).
@@ -13,6 +14,7 @@ Decisions from the Q&A. Numbers marked **(default)** are my starting values. Cha
   - Today's generated rosters run a bit hot. I'll recalibrate them.
 
 ## Calendar
+
 1. Regular season. High school recruiting runs weekly.
 2. Conference tournaments, then the NCAA tournament and the NIT.
 3. After the season:
@@ -24,6 +26,7 @@ Decisions from the Q&A. Numbers marked **(default)** are my starting values. Cha
 6. Preseason. Unsigned players walk on where there's room, and the portal closes.
 
 ## Recruiting (HS and portal)
+
 - **Effort:** a weekly hours pool (default **100/week, max 25 per recruit**). Hours build interest with diminishing returns.
 - **Official visits:** limited to **8 per year (default)**.
 - **Scouting:** hours spent on a recruit also sharpen his ratings, from a vague range to exact. Stars, position and height always show.
@@ -36,6 +39,7 @@ Decisions from the Q&A. Numbers marked **(default)** are my starting values. Cha
   - AI target choice is tiered: schools chase players they can realistically land, so the best programs fight over the top recruits and everyone else works further down the board.
 
 ## NIL
+
 - **Budget:** a yearly pool per school based on prestige. It's spent on recruits plus returning players.
 - **Negotiation is offer and counteroffer:**
   - You see only a rough range of his ask, never the exact number.
@@ -46,6 +50,7 @@ Decisions from the Q&A. Numbers marked **(default)** are my starting values. Cha
 - **Returning players renegotiate yearly.** Players who improved want raises, and a bad renegotiation raises portal risk.
 
 ## Promises
+
 - **Types:**
   - Starter (start X% of games).
   - Minutes (at least N per game).
@@ -54,6 +59,7 @@ Decisions from the Q&A. Numbers marked **(default)** are my starting values. Cha
 - A broken promise hurts his happiness, raises his portal risk, and costs your recruiting reputation with future recruits.
 
 ## Transfer portal
+
 - **Who enters, like real life:**
   - low playing time
   - underpaid or unhappy NIL
@@ -66,28 +72,33 @@ Decisions from the Q&A. Numbers marked **(default)** are my starting values. Cha
   - After they enter, you can recruit them back like anyone else, with a familiarity bonus.
 
 ## Early departures and the pro hand-off
+
 - **Players leave by draft stock:** projected first-rounders mostly go, and elite freshmen are often one-and-done. A slider tunes the rate.
 - **Two ways into a pro league:**
   - Export each year's departing class as a BBGM draft class file.
   - Link a pro league so departing players automatically become its draft prospects.
 
 ## You as coach
+
 - You're the only coach character. There are no coach ratings and no carousel.
 - You have a contract and a hot seat, and job offers come from other schools.
 - Firing and job offers can each be turned off in settings.
 
 ## Prestige
+
 - Moves slowly, based on results: wins, tournament runs, and recruiting class quality.
 - Blue bloods have a floor.
 - A slider sets how fast it moves.
 
 ## Rankings and postseason extras
+
 - Weekly Top 25 poll.
 - Bracketology during the season, then a Selection Sunday reveal.
 - The NIT for the best teams left out of the NCAA field.
 - Team recruiting class rankings.
 
 ## Customization sliders
+
 - Portal size and how easy retention is.
 - Recruiting difficulty: AI smarts, how hard recruits are to sway, and commit speed.
 - NIL scale and budgets, and how much NIL weighs against fit.
@@ -95,4 +106,5 @@ Decisions from the Q&A. Numbers marked **(default)** are my starting values. Cha
 - Roster limit, coach firing on/off, and job offers on/off.
 
 ## Not in v1
+
 - Coach ratings and the AI coaching carousel.

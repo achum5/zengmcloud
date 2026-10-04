@@ -1,4 +1,5 @@
 import { confByCid } from "../../common/confs.ts";
+import { collegeNilBudget as nilBudgetFor } from "../../common/college.ts";
 import { PHASE, PLAYER } from "../../common/constants.ts";
 import { season, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
@@ -77,7 +78,22 @@ const updatePayroll = async (inputs: unknown, updateEvents: UpdateEvents) => {
 		updateEvents.includes("playerMovement")
 	) {
 		const payroll = await team.getPayroll(g.get("userTid"));
+
+		// College: the NIL budget instead of finances.
+		let collegeNilBudget: number | undefined;
+		let collegePrestige: number | undefined;
+		if (g.get("college")) {
+			const t = await idb.cache.teams.get(g.get("userTid"));
+			collegePrestige = Math.round(t?.prestige ?? 0);
+			collegeNilBudget = nilBudgetFor(
+				t?.prestige ?? 30,
+				g.get("collegeNilScale"),
+			);
+		}
+
 		return {
+			collegeNilBudget,
+			collegePrestige,
 			payroll, // [millions of dollars]
 		};
 	}
@@ -298,6 +314,7 @@ const updatePlayers = async (inputs: unknown, updateEvents: UpdateEvents) => {
 						"injury",
 						"watch",
 						"jerseyNumber",
+						"collegeYear0",
 						"awards",
 					],
 					ratings: ["ovr", "pot", "dovr", "dpot", "skills", "pos"],

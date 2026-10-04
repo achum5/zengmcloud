@@ -96,17 +96,20 @@ const updatePlayMenu = async () => {
 			label: "View draft",
 		},
 		untilResignPlayers: {
-			label:
-				g.get("salaryCapType") === "hard" || !g.get("draftPickAutoContract")
+			label: g.get("college")
+				? "Until retention"
+				: g.get("salaryCapType") === "hard" || !g.get("draftPickAutoContract")
 					? "Re-sign players and sign rookies"
 					: "Re-sign players with expiring contracts",
 		},
 		untilFreeAgency: {
-			label: "Until free agency",
+			label: g.get("college")
+				? "Open the transfer portal"
+				: "Until free agency",
 			keyboardShortcut: "secondary",
 		},
 		untilPreseason: {
-			label: "Until preseason",
+			label: g.get("college") ? "Until signing day" : "Until preseason",
 			keyboardShortcut: "secondary",
 		},
 		untilRegularSeason: {
@@ -309,7 +312,9 @@ const updatePlayMenu = async () => {
 		keys = ["untilResignPlayers"];
 	} else if (g.get("phase") === PHASE.RESIGN_PLAYERS) {
 		// Offseason - re-sign players
-		keys = ["contractNegotiationList", "untilFreeAgency"];
+		keys = g.get("college")
+			? ["untilFreeAgency"]
+			: ["contractNegotiationList", "untilFreeAgency"];
 	} else if (g.get("phase") === PHASE.FREE_AGENCY) {
 		// Offseason - free agency
 		keys = ["day", "week", "untilPreseason"];

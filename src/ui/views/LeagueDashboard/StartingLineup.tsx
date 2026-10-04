@@ -7,6 +7,7 @@ import { Contract } from "../../components/contract.tsx";
 import { ResponsiveTableWrapper } from "../../components/ResponsiveTableWrapper.tsx";
 import { RatingWithChange } from "../../components/RatingWithChange.tsx";
 import { useLocal } from "../../util/local.ts";
+import { collegeClassLabel } from "../../../common/college.ts";
 
 const StartingLineup = ({
 	numPlayersOnCourt,
@@ -16,7 +17,11 @@ const StartingLineup = ({
 	View<"leagueDashboard">,
 	"numPlayersOnCourt" | "starters" | "startersStats"
 >) => {
-	const { challengeNoRatings } = useLocal(["challengeNoRatings"]);
+	const { challengeNoRatings, college, season } = useLocal([
+		"challengeNoRatings",
+		"college",
+		"season",
+	]);
 
 	const statCols = getCols(startersStats.map((stat) => `stat:${stat}`));
 
@@ -35,10 +40,10 @@ const StartingLineup = ({
 							<th>Name</th>
 							<th title="Position">Pos</th>
 							<th>Age</th>
-							<th title="Years With Team">YWT</th>
+							{college ? <th>Class</th> : <th title="Years With Team">YWT</th>}
 							<th title="Overall Rating">Ovr</th>
 							<th title="Potential Rating">Pot</th>
-							<th>Contract</th>
+							<th>{college ? "NIL" : "Contract"}</th>
 							{statCols.map(({ desc, title }) => (
 								<th key={title} title={desc}>
 									{title}
@@ -64,7 +69,11 @@ const StartingLineup = ({
 								</td>
 								<td>{p.ratings.pos}</td>
 								<td>{p.age}</td>
-								<td>{p.stats.yearsWithTeam}</td>
+								<td>
+									{college
+										? collegeClassLabel(p, season)
+										: p.stats.yearsWithTeam}
+								</td>
 								<td>
 									{!challengeNoRatings ? (
 										<RatingWithChange change={p.ratings.dovr}>

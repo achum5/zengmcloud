@@ -5,6 +5,7 @@ import { ActionButton } from "./ActionButton.tsx";
 import { downloadFile } from "../util/downloadFile.ts";
 import { getCol } from "../../common/getCol.ts";
 import { TEAM_AWARD_INFO } from "../../common/constants.ts";
+import { useLocal } from "../util/local.ts";
 
 export const RetiredPlayers = ({
 	retiredPlayers,
@@ -29,12 +30,13 @@ export const RetiredPlayers = ({
 	userTid: number;
 }) => {
 	const [exporting, setExporting] = useState(false);
+	const { college } = useLocal(["college"]);
 
 	const statCol = getCol(`stat:${retiredStat}`);
 
 	return (
 		<>
-			<h2>Retired Players</h2>
+			<h2>{college ? "Departures" : "Retired Players"}</h2>
 			<p
 				style={{
 					columns: "240px",

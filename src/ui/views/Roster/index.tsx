@@ -250,7 +250,9 @@ const Roster = ({
 				),
 			},
 			Release: {
-				titleReact: (
+				titleReact: college ? (
+					"Release"
+				) : (
 					<>
 						Release{" "}
 						<HelpPopover title="Release player">

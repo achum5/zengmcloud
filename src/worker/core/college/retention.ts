@@ -27,6 +27,17 @@ import { getTeamCtxs } from "./teams.ts";
 // programs, players on losing teams. Schools get one chance to change their
 // minds - an NIL raise or a playing time promise - and then the portal opens.
 
+// A new NIL deal for next season on: the contract and the salary rows ahead.
+const setNil = (p: Player, amount: number) => {
+	const season = g.get("season");
+	p.contract.amount = amount;
+	for (const row of p.salaries) {
+		if (row.season > season) {
+			row.amount = amount;
+		}
+	}
+};
+
 // Regular season line for a season.
 export const seasonLine = (p: Player, season: number) => {
 	let gp = 0;
@@ -198,7 +209,7 @@ export const collegeStartRetention = async () => {
 		if (raise) {
 			raise.status = "kept";
 			const amount = Math.max(roundNil(current * 1.15), demand);
-			p.contract.amount = amount;
+			setNil(p, amount);
 			demand = amount;
 			settled = true;
 		}
@@ -246,7 +257,7 @@ const aiRetention = async (pctByPid: Map<number, number>) => {
 						const outcome = respondToOffer(r.talks, r.demand, amount);
 						if (outcome.type === "accepted") {
 							ctx.nilCommitted += outcome.amount - p.contract.amount;
-							p.contract.amount = outcome.amount;
+							setNil(p, outcome.amount);
 							r.settled = true;
 							break;
 						}
@@ -313,7 +324,7 @@ export const collegeRetentionAction = async (
 		r.talks ??= openTalks(p.collegeProfile, 70, 0);
 		outcome = respondToOffer(r.talks, r.demand, nil);
 		if (outcome.type === "accepted") {
-			p.contract.amount = outcome.amount;
+			setNil(p, outcome.amount);
 			r.settled = true;
 		}
 	} else {

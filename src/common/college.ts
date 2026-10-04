@@ -28,6 +28,15 @@ export const collegeFinalSeason = (p: { collegeYear0?: number }) =>
 		? undefined
 		: p.collegeYear0 + COLLEGE_SEASONS - 1;
 
+// Phase names where the college calendar differs from the pro one.
+export const COLLEGE_PHASE_TEXT: Partial<Record<number, string>> = {
+	4: "after playoffs",
+	5: "after playoffs",
+	6: "after playoffs",
+	7: "retention",
+	8: "offseason recruiting",
+};
+
 // Conference tournament progress, kept in game attributes while they run.
 export type CollegeConfTourney = {
 	season: number;
@@ -93,7 +102,11 @@ export type CollegeTalks = {
 	penalty: number;
 };
 
-export type CollegePromiseType = "starter" | "minutes" | "nilRaise" | "noPosition";
+export type CollegePromiseType =
+	| "starter"
+	| "minutes"
+	| "nilRaise"
+	| "noPosition";
 
 export const COLLEGE_PROMISE_LABELS: Record<CollegePromiseType, string> = {
 	starter: "Starter",

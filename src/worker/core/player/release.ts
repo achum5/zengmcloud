@@ -16,8 +16,13 @@ import { getNumPlayersTradedAwayNormalizedAll } from "./getNumPlayersTradedAwayN
  * @return {Promise}
  */
 const release = async (p: Player, justDrafted: boolean) => {
+	// College: an NIL deal ends when he leaves.
+	if (g.get("college")) {
+		p.salaries = p.salaries.filter((row) => row.season < g.get("season"));
+	}
+
 	// Keep track of player salary even when he's off the team, but make an exception for players who were just drafted.
-	if (!justDrafted) {
+	if (!justDrafted && !g.get("college")) {
 		// ...and of course for players whose contracts have already expired.
 		if (
 			p.contract.exp > g.get("season") ||
