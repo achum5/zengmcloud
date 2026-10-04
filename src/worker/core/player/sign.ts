@@ -77,6 +77,12 @@ const sign = async (
 		score -= 7;
 	}
 	score = Math.round(helpers.bound(score, 0, Infinity));
+	if (g.get("college")) {
+		// College signings make the headlines by recruiting stars, not by the
+		// pro value scale (which rates every young player highly).
+		const stars = p.collegeStars ?? 1;
+		score = stars >= 5 ? 15 : stars === 4 ? 10 : 0;
+	}
 
 	// A college NIL deal runs through his last season of eligibility.
 	const finalSeason = g.get("college") ? collegeFinalSeason(p) : undefined;
@@ -114,7 +120,9 @@ const sign = async (
 		// board - see highUpsideSigningPot for who qualifies. Notification only
 		// (saveToDb: false): the freeAgent event above is already the recorded
 		// transaction.
-		const pot = highUpsideSigningPot(p.ratings.at(-1));
+		const pot = g.get("college")
+			? undefined
+			: highUpsideSigningPot(p.ratings.at(-1));
 		if (pot !== undefined) {
 			const t = g.get("teamInfoCache")[tid];
 			logEvent({
