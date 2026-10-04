@@ -55,7 +55,7 @@ import type { AnimName } from "./poses.ts";
 // Times are milliseconds at 1x speed.
 
 export type RawEvent = { type: string; [key: string]: any };
-export type RetroPlayer = { pid: number; team: Side; pos?: string };
+export type CourtPlayer = { pid: number; team: Side; pos?: string };
 
 export type Move = {
 	t0: number;
@@ -112,7 +112,7 @@ export type Beat = {
 	actionStart: number;
 	end: number;
 };
-export type RetroTimeline = {
+export type CourtTimeline = {
 	tracks: Map<number, Track>;
 	ball: BallSeg[];
 	fx: Fx[];
@@ -248,13 +248,13 @@ class Director {
 
 	constructor(
 		events: RawEvent[],
-		players: RetroPlayer[],
+		players: CourtPlayer[],
 		seed: string,
 		dunkRate: number,
 	) {
 		this.events = events;
 		this.dunkRate = dunkRate;
-		this.rng = makeCourtRng(`retro|${seed}`);
+		this.rng = makeCourtRng(`court|${seed}`);
 		for (const p of players) {
 			this.team.set(p.pid, p.team);
 			this.rank.set(p.pid, POS_RANK[p.pos ?? ""] ?? 4);
@@ -1971,7 +1971,7 @@ class Director {
 		}
 	}
 
-	finish(): RetroTimeline {
+	finish(): CourtTimeline {
 		const byT0 = (a: { t0: number }, b: { t0: number }) => a.t0 - b.t0;
 		for (const tr of this.tracks.values()) {
 			tr.moves.sort(byT0);
@@ -1992,17 +1992,17 @@ class Director {
 	}
 }
 
-export const compileRetro = ({
+export const compileCourt = ({
 	events,
 	players,
 	seed,
 	dunkRate = 0.55,
 }: {
 	events: RawEvent[];
-	players: RetroPlayer[];
+	players: CourtPlayer[];
 	seed: string;
 	dunkRate?: number;
-}): RetroTimeline => {
+}): CourtTimeline => {
 	const d = new Director(events, players, seed, dunkRate);
 	for (let i = 0; i < events.length; i++) {
 		const e = events[i];
@@ -2022,14 +2022,14 @@ export const compileRetro = ({
 // Where the animation should stand while the playback cursor (events consumed)
 // is at `cursor`: the moment the next unshown line happens. Past the last line,
 // the end of the game.
-export const targetForCursor = (tl: RetroTimeline, cursor: number): number => {
+export const targetForCursor = (tl: CourtTimeline, cursor: number): number => {
 	const beat = tl.beats.find((b) => b.i >= cursor);
 	return beat ? beat.actionStart : tl.end;
 };
 
 // Where to cut to when playback jumps (a rewind, a fast-forward, joining a
 // broadcast late): the end of the last line already shown.
-export const snapForCursor = (tl: RetroTimeline, cursor: number): number => {
+export const snapForCursor = (tl: CourtTimeline, cursor: number): number => {
 	let t = 0;
 	for (const b of tl.beats) {
 		if (b.i >= cursor) {

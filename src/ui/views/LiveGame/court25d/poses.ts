@@ -2,7 +2,7 @@ import { PX_PER_FT } from "./geometry.ts";
 
 // THE BODY AND HOW IT MOVES.
 //
-// A retro player is a tiny skeleton - hips, knees, shoulders, elbows - posed
+// A player is a small skeleton - hips, knees, shoulders, elbows - posed
 // by a handful of joint angles and drawn as chunky pixels around it. Angles are
 // in degrees for a player facing RIGHT: 0 points straight down, positive swings
 // forward (toward where he faces). A knee bends backward from its thigh, an

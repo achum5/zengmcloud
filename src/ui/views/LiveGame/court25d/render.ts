@@ -1,5 +1,5 @@
 import { makeCourtRng } from "../courtRng.ts";
-import type { RetroTimeline } from "./director.ts";
+import type { CourtTimeline } from "./director.ts";
 import {
 	evalBall,
 	evalPlayer,
@@ -80,7 +80,7 @@ export const buildFloor = (home: {
 	const g = floor.getContext("2d")!;
 	const X = (x: number) => (x - TX0) * R;
 	const Y = (y: number) => (y - TY0) * R;
-	const rng = makeCourtRng("retro-floor");
+	const rng = makeCourtRng("court-floor");
 	const colors = home.colors ?? ["#8c1d40", "#f2c14e", "#ffffff"];
 	const paint =
 		colors.find((c) => luminance(c) > 0.12 && luminance(c) < 0.75) ?? colors[0];
@@ -184,7 +184,7 @@ export type Fan = {
 // Rows of pixel fans behind the far sideline, mostly in the home colors. Each
 // row sits deeper, so it pans a little slower - parallax for free.
 export const buildCrowd = (homeColors: string[] | undefined): Fan[] => {
-	const rng = makeCourtRng("retro-crowd");
+	const rng = makeCourtRng("court-crowd");
 	const shirts = [
 		...(homeColors ?? []),
 		...(homeColors ?? []),
@@ -284,7 +284,7 @@ export type FrameInput = {
 	viewW: number;
 	camX: number;
 	t: number;
-	tl: RetroTimeline;
+	tl: CourtTimeline;
 	arena: Arena;
 	sprites: SpriteCache;
 	lookFor: (pid: number) => Look;
@@ -295,7 +295,7 @@ export type FrameInput = {
 // Where the camera wants to be: on the ball, leaning toward the rim the
 // offense attacks.
 export const cameraTarget = (
-	tl: RetroTimeline,
+	tl: CourtTimeline,
 	t: number,
 	ball: BallState,
 	viewW: number,
@@ -566,7 +566,7 @@ const shadow = (f: FrameInput, x: number, y: number, z: number, w: number) => {
 };
 
 const SPARKS = (() => {
-	const rng = makeCourtRng("retro-sparks");
+	const rng = makeCourtRng("court-sparks");
 	return Array.from({ length: 14 }, () => ({
 		a: rng() * Math.PI * 2,
 		v: 0.5 + rng(),

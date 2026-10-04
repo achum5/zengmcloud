@@ -1399,6 +1399,9 @@ export type MpLiveBroadcast = {
 	cursor: number;
 	paused: boolean;
 	gameOver: boolean;
+	// The picture the simmer is watching in ("classic" / "2.5d"), so followers
+	// see the same one. Absent from older builds: classic.
+	view?: string;
 };
 
 // Ready-up state for the header control, for whichever gated stage the league

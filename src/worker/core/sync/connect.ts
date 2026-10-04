@@ -695,6 +695,9 @@ export const startLiveBroadcast = async (gid: number, playByPlay: any[]) => {
 			startedAt,
 			chunkCount,
 			expiresAt: Date.now() + LIVE_BROADCAST_LEASE_MS,
+			// Until the simmer's first heartbeat says otherwise - and so a view
+			// left on the shared doc by an earlier broadcast never carries over.
+			view: "classic",
 		});
 
 		// Tell our own UI it's broadcasting, so the LiveGame view heartbeats the
@@ -726,6 +729,7 @@ export const updateLiveBroadcast = async (update: {
 	paused: boolean;
 	speed: number;
 	gameOver: boolean;
+	view?: string;
 }) => {
 	const transport = currentTransport;
 	const broadcast = activeBroadcast;
@@ -757,6 +761,7 @@ export const updateLiveBroadcast = async (update: {
 			speed: update.speed,
 			gameOver: update.gameOver,
 			expiresAt: Date.now() + LIVE_BROADCAST_LEASE_MS,
+			view: update.view,
 		});
 	} catch {
 		// A dropped heartbeat is harmless - the next one re-stamps the lease.
@@ -896,6 +901,7 @@ const pushFollowerState = (meta: LiveBroadcastMeta) => {
 				cursor: meta.cursor,
 				paused: meta.paused,
 				gameOver: meta.gameOver,
+				view: meta.view,
 			},
 		},
 	]);

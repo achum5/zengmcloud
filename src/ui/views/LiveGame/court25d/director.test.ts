@@ -1,13 +1,13 @@
 import { assert, describe, test } from "vitest";
 import { makeCourtRng } from "../courtRng.ts";
 import {
-	compileRetro,
+	compileCourt,
 	isLineItem,
 	snapForCursor,
 	targetForCursor,
 	type RawEvent,
-	type RetroPlayer,
-	type RetroTimeline,
+	type CourtPlayer,
+	type CourtTimeline,
 } from "./director.ts";
 import { evalBall, evalPlayer } from "./evaluate.ts";
 import { bodyOf } from "./poses.ts";
@@ -25,7 +25,7 @@ const fakeGame = (seed: string, possessions: number) => {
 		[1, 2, 3, 4, 5, 6, 7, 8],
 		[11, 12, 13, 14, 15, 16, 17, 18],
 	];
-	const players: RetroPlayer[] = [];
+	const players: CourtPlayer[] = [];
 	for (const raw of [0, 1] as const) {
 		roster[raw].forEach((pid, j) => {
 			players.push({ pid, team: raw === 0 ? 1 : 0, pos: POS[j] });
@@ -271,14 +271,14 @@ const fakeGame = (seed: string, possessions: number) => {
 
 const compile = (seed: string, possessions = 120) => {
 	const { events, players } = fakeGame(seed, possessions);
-	const tl = compileRetro({ events, players, seed: `game-${seed}` });
+	const tl = compileCourt({ events, players, seed: `game-${seed}` });
 	return { events, players, tl };
 };
 
 const body = bodyOf();
 const bodyFor = () => body;
 
-const sampleTimes = (tl: RetroTimeline, step: number) => {
+const sampleTimes = (tl: CourtTimeline, step: number) => {
 	const out: number[] = [];
 	for (let t = 0; t <= tl.end; t += step) {
 		out.push(t);
@@ -286,7 +286,7 @@ const sampleTimes = (tl: RetroTimeline, step: number) => {
 	return out;
 };
 
-describe("retro director", () => {
+describe("2.5D director", () => {
 	test("every play-by-play line gets one beat, in order, tiling the timeline", () => {
 		for (const seed of ["a", "b", "c"]) {
 			const { events, tl } = compile(seed);

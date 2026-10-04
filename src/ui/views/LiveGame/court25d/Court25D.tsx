@@ -10,10 +10,10 @@ import {
 import { useLocal } from "../../../util/local.ts";
 import { usePlayerFace, type PlayerFace } from "../../../util/playerFaces.ts";
 import {
-	compileRetro,
+	compileCourt,
 	snapForCursor,
 	targetForCursor,
-	type RetroPlayer,
+	type CourtPlayer,
 } from "./director.ts";
 import { evalBall } from "./evaluate.ts";
 import { VIEW_H, viewWidthFor, type Side } from "./geometry.ts";
@@ -21,7 +21,7 @@ import { bodyOf, type Body } from "./poses.ts";
 import { buildArena, cameraTarget, drawFrame } from "./render.ts";
 import { lookFor, SpriteCache, uniformsFor, type Look } from "./sprites.ts";
 
-// THE RETRO COURT: pixel players acting out the play-by-play from a raised
+// THE 2.5D COURT: players acting out the play-by-play from a raised
 // sideline camera, in place of the 2D court when this device has chosen it.
 //
 // The whole game is staged up front (see director.ts), so playback is a clock
@@ -80,7 +80,7 @@ type Props = {
 	onReady: () => void;
 };
 
-const RetroCourt = ({
+const Court25D = ({
 	events,
 	cursor,
 	boxScore,
@@ -100,7 +100,7 @@ const RetroCourt = ({
 
 	// The roster is fixed for the game - read it once.
 	const roster = useMemo(() => {
-		const out: (RetroPlayer & { name: string; jerseyNumber?: string })[] = [];
+		const out: (CourtPlayer & { name: string; jerseyNumber?: string })[] = [];
 		const teams: [any, any] = [away, home];
 		for (const t of [0, 1] as const) {
 			for (const p of teams[t]?.players ?? []) {
@@ -122,7 +122,7 @@ const RetroCourt = ({
 	const timeline = useMemo(
 		() =>
 			events && events.length > 0
-				? compileRetro({
+				? compileCourt({
 						events,
 						players: roster,
 						seed: String(gid ?? 0),
@@ -409,7 +409,7 @@ const RetroCourt = ({
 			))}
 			<style>
 				{
-					".retro-court-caption .text-body-secondary { color: #b9b1c6 !important; }"
+					".court25d-caption .text-body-secondary { color: #b9b1c6 !important; }"
 				}
 			</style>
 			<canvas
@@ -470,7 +470,7 @@ const RetroCourt = ({
 			</div>
 			{caption ? (
 				<div
-					className="retro-court-caption"
+					className="court25d-caption"
 					style={{
 						position: "absolute",
 						left: "50%",
@@ -494,4 +494,4 @@ const RetroCourt = ({
 	);
 };
 
-export default RetroCourt;
+export default Court25D;

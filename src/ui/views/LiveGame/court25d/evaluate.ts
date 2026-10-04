@@ -1,4 +1,4 @@
-import type { Act, BallSeg, FxKind, Fx, RetroTimeline } from "./director.ts";
+import type { Act, BallSeg, FxKind, Fx, CourtTimeline } from "./director.ts";
 import { K, persp, PX_PER_FT, type Pt3, type Side } from "./geometry.ts";
 import {
 	actFrame,
@@ -50,12 +50,12 @@ export type PlayerState = {
 	moving: boolean;
 };
 
-export const offenseAt = (tl: RetroTimeline, t: number): Side => {
+export const offenseAt = (tl: CourtTimeline, t: number): Side => {
 	const i = lastIndex(tl.poss, t, (p) => p[0]);
 	return i >= 0 ? tl.poss[i]![1] : 1;
 };
 
-const ballSegAt = (tl: RetroTimeline, t: number): BallSeg | undefined => {
+const ballSegAt = (tl: CourtTimeline, t: number): BallSeg | undefined => {
 	const i = lastIndex(tl.ball, t, (s) => s.t0);
 	return i >= 0 ? tl.ball[i] : tl.ball[0];
 };
@@ -84,7 +84,7 @@ const jumpZ = (act: Act, u: number): number => {
 };
 
 export const evalPlayer = (
-	tl: RetroTimeline,
+	tl: CourtTimeline,
 	pid: number,
 	t: number,
 ): PlayerState => {
@@ -190,7 +190,7 @@ export const handWorld = (
 export type BallState = { x: number; y: number; z: number; holder?: number };
 
 export const evalBall = (
-	tl: RetroTimeline,
+	tl: CourtTimeline,
 	t: number,
 	bodyFor: (pid: number) => Body,
 ): BallState => {
@@ -266,7 +266,7 @@ export const evalBall = (
 
 // The most recent effect of a kind (optionally on one rim) within `windowMs`.
 export const recentFx = (
-	tl: RetroTimeline,
+	tl: CourtTimeline,
 	t: number,
 	kinds: FxKind[],
 	windowMs: number,

@@ -57,7 +57,7 @@ import LiveCourt, {
 	type CourtZone,
 } from "./LiveCourt.tsx";
 import LiveField, { type FieldScene } from "./LiveField.tsx";
-import { getLiveGameView } from "./retro/setting.ts";
+import { getLiveGameView, parseLiveGameView } from "./court25d/setting.ts";
 import {
 	buildFieldScene,
 	newFieldSceneCtx,
@@ -353,8 +353,8 @@ const STOPPAGE_TYPES = new Set([
 
 const DEFAULT_SPEED = 7;
 
-// The retro court is only downloaded by a device that chose it.
-const RetroCourt = lazy(() => import("./retro/RetroCourt.tsx"));
+// The 2.5D court is only downloaded by a device that shows it.
+const Court25D = lazy(() => import("./court25d/Court25D.tsx"));
 
 const speedToMs = (speed: number) => {
 	return 4000 / 1.2 ** speed;
@@ -377,14 +377,16 @@ const getNavigateWarning = (
 export const LiveGame = (props: View<"liveGame">) => {
 	const [paused, setPaused] = useState(false);
 	const pausedRef = useRef(paused);
-	// This device's choice of picture for basketball: the 2D court, or the retro
+	// This device's choice of picture for basketball: the 2D court, or the 2.5D
 	// court. Read once - a game does not switch pictures halfway through. In
-	// retro the court sets the pace: it asks for each line when its animation
-	// reaches it (onRetroReady), instead of the timer below firing.
-	const [retro] = useState(
-		() => __SPORT === "basketball" && getLiveGameView() === "retro",
+	// 2.5D the court sets the pace: it asks for each line when its animation
+	// reaches it (onCourt25DReady), instead of the timer below firing. Someone
+	// following a multiplayer broadcast sees whatever the device in charge of
+	// simming chose instead (see court25d below).
+	const [ownView] = useState(() =>
+		__SPORT === "basketball" ? getLiveGameView() : "classic",
 	);
-	const retroRef = useRef(retro);
+	const court25dRef = useRef(ownView === "2.5d");
 	const [speed, setSpeed] = useLocalStorageState("live-game-speed", {
 		defaultValue: String(DEFAULT_SPEED),
 	});
@@ -1510,6 +1512,14 @@ export const LiveGame = (props: View<"liveGame">) => {
 		!!mpLiveBroadcast?.active && !mpLiveBroadcast.isBroadcaster;
 	const isBroadcaster =
 		!!mpLiveBroadcast?.active && mpLiveBroadcast.isBroadcaster;
+	// A follower is stepped by the simmer's cursor and never paces playback
+	// itself, so its picture can follow the simmer's at any moment.
+	const court25d =
+		__SPORT === "basketball" &&
+		(isFollower
+			? parseLiveGameView(mpLiveBroadcast?.view) === "2.5d"
+			: ownView === "2.5d");
+	court25dRef.current = court25d;
 	const followerRef = useRef(isFollower);
 	followerRef.current = isFollower;
 	// The broadcast this page is actually rendering, so unmounting can report
@@ -1603,8 +1613,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 			//
 			// Real-time auto-play ONLY (never fast-forward, rewind, or a multiplayer
 			// follower - `!force` gates that), where an extra display beat is
-			// harmless. The retro court stages its own.
-			if (__SPORT === "basketball" && !force && !retroRef.current) {
+			// harmless. The 2.5D court stages its own.
+			if (__SPORT === "basketball" && !force && !court25dRef.current) {
 				const next = events.current[0];
 				const nextAction =
 					next && typeof next.type === "string"
@@ -1810,7 +1820,11 @@ export const LiveGame = (props: View<"liveGame">) => {
 			if (events.current && events.current.length > 0) {
 				// A follower never self-schedules: its playback is stepped only by the
 				// simmer's cursor (see the follower effect below), so it can't run ahead.
-				if (!pausedRef.current && !followerRef.current && !retroRef.current) {
+				if (
+					!pausedRef.current &&
+					!followerRef.current &&
+					!court25dRef.current
+				) {
 					setTimeout(() => {
 						processToNextPause();
 						setPlayIndex((prev) => prev + 1);
@@ -1899,8 +1913,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const startLiveGame = useCallback(
 		(events2: any[]) => {
 			events.current = events2;
-			if (retroRef.current) {
-				// The retro court asks for the first line once the floor is set.
+			if (court25dRef.current) {
+				// The 2.5D court asks for the first line once the floor is set.
 				return;
 			}
 			setTimeout(() => {
@@ -2025,6 +2039,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 				paused,
 				speed: speedRef.current,
 				gameOver,
+				view: court25dRef.current ? "2.5d" : "classic",
 			});
 		};
 
@@ -2056,9 +2071,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 		// Without pausedRef check, this was a race condition and could lead to incorrect post-game records (counting as 2 or more wins)
 		if (pausedRef.current) {
 			pausedRef.current = false;
-			// The retro court picks the animation back up and asks for the next
+			// The 2.5D court picks the animation back up and asks for the next
 			// line itself.
-			if (!retroRef.current) {
+			if (!court25dRef.current) {
 				processToNextPause();
 			}
 		}
@@ -2066,7 +2081,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 		setPlayIndex((prev) => prev + 1);
 	}, [processToNextPause]);
 
-	const onRetroReady = useCallback(() => {
+	const onCourt25DReady = useCallback(() => {
 		if (
 			pausedRef.current ||
 			followerRef.current ||
@@ -2784,7 +2799,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 									/>
 								</div>
 							) : null}
-							{__SPORT === "basketball" && retro ? (
+							{court25d ? (
 								<Suspense
 									fallback={
 										<div
@@ -2797,7 +2812,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 										/>
 									}
 								>
-									<RetroCourt
+									<Court25D
 										events={props.events}
 										cursor={
 											initialEventCount.current - (events.current?.length ?? 0)
@@ -2807,11 +2822,11 @@ export const LiveGame = (props: View<"liveGame">) => {
 										paused={paused}
 										speed={Number.parseInt(speed)}
 										follower={isFollower}
-										onReady={onRetroReady}
+										onReady={onCourt25DReady}
 									/>
 								</Suspense>
 							) : null}
-							{__SPORT === "basketball" && !retro ? (
+							{__SPORT === "basketball" && !court25d ? (
 								<div>
 									<LiveCourt
 										scene={courtScene.current}

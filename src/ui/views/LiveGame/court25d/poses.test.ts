@@ -1,7 +1,7 @@
 import { assert, describe, test } from "vitest";
 import { ANIMS, bodyOf, poseFor, skeleton, type AnimName } from "./poses.ts";
 
-describe("retro poses", () => {
+describe("2.5D poses", () => {
 	// A sprite is anchored at its feet and jumps are added on top, so every
 	// frame of every animation has to stand on the floor - otherwise a body
 	// would sink through the hardwood or hover between steps.

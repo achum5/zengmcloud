@@ -938,6 +938,7 @@ export class FirebaseTransport implements SyncTransport {
 								typeof data.chunkCount === "number" ? data.chunkCount : 0,
 							expiresAt:
 								typeof data.expiresAt === "number" ? data.expiresAt : 0,
+							view: typeof data.view === "string" ? data.view : undefined,
 						});
 					} else {
 						onChange(undefined);

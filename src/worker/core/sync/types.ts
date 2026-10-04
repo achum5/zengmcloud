@@ -89,6 +89,9 @@ export type LiveBroadcastMeta = {
 	// considered live. Re-stamped on every heartbeat; once it passes with no
 	// update, followers treat the broadcast as ended (crash recovery).
 	expiresAt: number;
+	// Which picture the device in charge of simming is watching this game in
+	// ("classic" or "2.5d"); everyone following sees the same one.
+	view?: string;
 };
 
 // The subset of LiveBroadcastMeta a single write sets. Every write merges onto
@@ -110,6 +113,7 @@ export type LiveBroadcastUpdate = {
 	startedAt?: number;
 	chunkCount?: number;
 	expiresAt?: number;
+	view?: string;
 };
 
 // A live draft-lottery reveal in progress. Whoever runs the lottery (the

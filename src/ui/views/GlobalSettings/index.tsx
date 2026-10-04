@@ -20,7 +20,7 @@ import {
 	getLiveGameView,
 	setLiveGameView,
 	type LiveGameView,
-} from "../LiveGame/retro/setting.ts";
+} from "../LiveGame/court25d/setting.ts";
 
 const GlobalSettings = (props: View<"globalSettings">) => {
 	const [state, setState] = useState(() => {
@@ -226,7 +226,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 								value={state.liveGameView}
 							>
 								<option value="classic">Classic</option>
-								<option value="retro">Retro</option>
+								<option value="2.5d">2.5D</option>
 							</select>
 						</div>
 					) : null}
