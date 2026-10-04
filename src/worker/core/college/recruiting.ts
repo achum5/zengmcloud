@@ -166,6 +166,22 @@ const makePlan = (recruits: Player[], ctxs: Map<number, TeamCtx>) => {
 		]),
 	);
 
+	// Interest of each school in each player, computed at most once.
+	const index = new Map(recruits.map((p, i) => [p.pid, i]));
+	const interestCache = new Map<number, Float64Array>();
+	const interestOf = (p: Player, ctx: TeamCtx) => {
+		let row = interestCache.get(ctx.tid);
+		if (!row) {
+			row = new Float64Array(recruits.length).fill(Number.NaN);
+			interestCache.set(ctx.tid, row);
+		}
+		const i = index.get(p.pid)!;
+		if (Number.isNaN(row[i]!)) {
+			row[i] = interestFor(p, ctx);
+		}
+		return row[i]!;
+	};
+
 	// For each player, the interest of the best three schools that could go
 	// after him. A school well behind the second best of the others is
 	// unlikely to land him, so the best players are fought over by the best
@@ -182,7 +198,7 @@ const makePlan = (recruits: Player[], ctxs: Map<number, TeamCtx>) => {
 			if (rec.talks[ctx.tid]?.walked || reach.get(ctx.tid)! < rank) {
 				continue;
 			}
-			const x = interestFor(p, ctx);
+			const x = interestOf(p, ctx);
 			if (x > top3[2]!) {
 				top3[2] = x;
 				top3.sort((a, b) => b - a);
@@ -200,6 +216,9 @@ const makePlan = (recruits: Player[], ctxs: Map<number, TeamCtx>) => {
 			continue;
 		}
 
+		// Players well below its level aren't worth its time, unless it's
+		// already recruiting them.
+		const maxRank = reach.get(ctx.tid)! * 1.3 + 50;
 		const scored: { p: Player; score: number }[] = [];
 		for (const p of recruits) {
 			const rec = p.recruiting!;
@@ -209,9 +228,16 @@ const makePlan = (recruits: Player[], ctxs: Map<number, TeamCtx>) => {
 			if (rec.talks[ctx.tid]?.walked) {
 				continue;
 			}
+			if (
+				valueRank.get(p.pid)! > maxRank &&
+				rec.effort[ctx.tid] === undefined &&
+				rec.offers[ctx.tid] === undefined
+			) {
+				continue;
+			}
 			let landing = 1;
 			if (rec.committed === undefined) {
-				const interest = interestFor(p, ctx);
+				const interest = interestOf(p, ctx);
 				const top3 = rival.get(p.pid)!;
 				const ref = interest >= top3[1]! ? top3[2]! : top3[1]!;
 				landing = helpers.sigmoid((interest - ref + 4) / 4, 1, 0);
@@ -228,7 +254,7 @@ const makePlan = (recruits: Player[], ctxs: Map<number, TeamCtx>) => {
 		}
 		scored.sort((a, b) => b.score - a.score);
 
-		const numTargets = Math.min(scored.length, ctx.open * 3);
+		const numTargets = Math.min(scored.length, ctx.open * 4);
 		const targets = scored.slice(0, numTargets);
 		const hours = new Map<number, number>();
 		const perTarget = Math.min(
@@ -245,7 +271,7 @@ const makePlan = (recruits: Player[], ctxs: Map<number, TeamCtx>) => {
 				roundNil(p.recruiting!.askRange[1] * (1 + 0.1 * difficulty())),
 			);
 		}
-		const offers = targets.slice(0, ctx.open * 2).map(({ p }) => p.pid);
+		const offers = targets.slice(0, ctx.open * 3).map(({ p }) => p.pid);
 		plan.set(ctx.tid, { hours, offers, maxPay });
 	}
 	return plan;
@@ -317,7 +343,7 @@ const commitChance = (rec: CollegeRecruiting, top: number, lead: number) => {
 		rec.portalFrom !== undefined ? 4 + 2 * rec.stars : 14 + 10 * rec.stars;
 	const ready = Math.min(1, (rec.days ?? 0) / ramp);
 	return (
-		(0.015 *
+		(0.025 *
 			ready *
 			(1 + (top - commitThreshold()) / 15) *
 			(1 + Math.min(lead, 16) / 8) *
@@ -439,6 +465,20 @@ export const collegeRecruitingDay = async () => {
 			const ctx = ctxs.get(tid);
 			if (ctx) {
 				rec.interest[tid] = Math.round(interestFor(p, ctx) * 10) / 10;
+			}
+		}
+
+		// AI schools that have filled up pull their other offers.
+		for (const tid of Object.keys(rec.offers).map(Number)) {
+			const ctx = ctxs.get(tid);
+			if (
+				ctx &&
+				ctx.open <= 0 &&
+				rec.committed !== tid &&
+				!(ctx.user && !ctx.auto)
+			) {
+				delete rec.offers[tid];
+				delete rec.promises[tid];
 			}
 		}
 

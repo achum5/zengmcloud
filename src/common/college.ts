@@ -219,9 +219,10 @@ export const scoutedRange = (
 };
 
 // Yearly NIL budget (thousands) for a program of this prestige: about $12M at
-// the top, a few hundred thousand at the bottom.
+// the top, under $1M at the bottom - always some room over what a program
+// like it pays its returning players.
 export const collegeNilBudget = (prestige: number, scale = 1) =>
-	Math.round((scale * 150 * 1.045 ** prestige) / 10) * 10;
+	Math.round((scale * (450 + 300 * 1.037 ** prestige)) / 10) * 10;
 
 const STATES: Record<string, string> = {
 	Alabama: "AL",

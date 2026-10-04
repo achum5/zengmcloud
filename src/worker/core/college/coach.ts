@@ -23,9 +23,13 @@ export const getCollegeCoach = async (): Promise<CollegeCoach> => {
 	if (coach && coach.tid === userTid) {
 		return coach;
 	}
-	// New job (or a league from before coaches existed).
-	const start =
-		g.get("phase") >= PHASE.PLAYOFFS ? g.get("season") + 1 : g.get("season");
+	// Your first job is the one you started the league with. A new job starts
+	// next season if you take it after this one's games are over.
+	const start = !coach
+		? g.get("startingSeason")
+		: g.get("phase") >= PHASE.PLAYOFFS
+			? g.get("season") + 1
+			: g.get("season");
 	const next = {
 		tid: userTid,
 		start,
