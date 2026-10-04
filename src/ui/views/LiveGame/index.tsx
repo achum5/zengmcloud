@@ -12,6 +12,8 @@ import {
 	memo,
 	type MutableRefObject,
 	Fragment,
+	lazy,
+	Suspense,
 } from "react";
 import { TeamLogoInline } from "../../components/TeamLogoInline.tsx";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
@@ -55,6 +57,7 @@ import LiveCourt, {
 	type CourtZone,
 } from "./LiveCourt.tsx";
 import LiveField, { type FieldScene } from "./LiveField.tsx";
+import { getLiveGameView } from "./retro/setting.ts";
 import {
 	buildFieldScene,
 	newFieldSceneCtx,
@@ -350,6 +353,9 @@ const STOPPAGE_TYPES = new Set([
 
 const DEFAULT_SPEED = 7;
 
+// The retro court is only downloaded by a device that chose it.
+const RetroCourt = lazy(() => import("./retro/RetroCourt.tsx"));
+
 const speedToMs = (speed: number) => {
 	return 4000 / 1.2 ** speed;
 };
@@ -371,6 +377,14 @@ const getNavigateWarning = (
 export const LiveGame = (props: View<"liveGame">) => {
 	const [paused, setPaused] = useState(false);
 	const pausedRef = useRef(paused);
+	// This device's choice of picture for basketball: the 2D court, or the retro
+	// court. Read once - a game does not switch pictures halfway through. In
+	// retro the court sets the pace: it asks for each line when its animation
+	// reaches it (onRetroReady), instead of the timer below firing.
+	const [retro] = useState(
+		() => __SPORT === "basketball" && getLiveGameView() === "retro",
+	);
+	const retroRef = useRef(retro);
 	const [speed, setSpeed] = useLocalStorageState("live-game-speed", {
 		defaultValue: String(DEFAULT_SPEED),
 	});
@@ -1589,8 +1603,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 			//
 			// Real-time auto-play ONLY (never fast-forward, rewind, or a multiplayer
 			// follower - `!force` gates that), where an extra display beat is
-			// harmless.
-			if (__SPORT === "basketball" && !force) {
+			// harmless. The retro court stages its own.
+			if (__SPORT === "basketball" && !force && !retroRef.current) {
 				const next = events.current[0];
 				const nextAction =
 					next && typeof next.type === "string"
@@ -1796,7 +1810,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 			if (events.current && events.current.length > 0) {
 				// A follower never self-schedules: its playback is stepped only by the
 				// simmer's cursor (see the follower effect below), so it can't run ahead.
-				if (!pausedRef.current && !followerRef.current) {
+				if (!pausedRef.current && !followerRef.current && !retroRef.current) {
 					setTimeout(() => {
 						processToNextPause();
 						setPlayIndex((prev) => prev + 1);
@@ -1885,6 +1899,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const startLiveGame = useCallback(
 		(events2: any[]) => {
 			events.current = events2;
+			if (retroRef.current) {
+				// The retro court asks for the first line once the floor is set.
+				return;
+			}
 			setTimeout(() => {
 				processToNextPause();
 				setPlayIndex((prev) => prev + 1);
@@ -2038,9 +2056,26 @@ export const LiveGame = (props: View<"liveGame">) => {
 		// Without pausedRef check, this was a race condition and could lead to incorrect post-game records (counting as 2 or more wins)
 		if (pausedRef.current) {
 			pausedRef.current = false;
-			processToNextPause();
+			// The retro court picks the animation back up and asks for the next
+			// line itself.
+			if (!retroRef.current) {
+				processToNextPause();
+			}
 		}
 
+		setPlayIndex((prev) => prev + 1);
+	}, [processToNextPause]);
+
+	const onRetroReady = useCallback(() => {
+		if (
+			pausedRef.current ||
+			followerRef.current ||
+			!events.current ||
+			events.current.length === 0
+		) {
+			return;
+		}
+		processToNextPause();
 		setPlayIndex((prev) => prev + 1);
 	}, [processToNextPause]);
 
@@ -2749,7 +2784,34 @@ export const LiveGame = (props: View<"liveGame">) => {
 									/>
 								</div>
 							) : null}
-							{__SPORT === "basketball" ? (
+							{__SPORT === "basketball" && retro ? (
+								<Suspense
+									fallback={
+										<div
+											className="mb-3"
+											style={{
+												aspectRatio: "384 / 216",
+												background: "#07060a",
+												borderRadius: 6,
+											}}
+										/>
+									}
+								>
+									<RetroCourt
+										events={props.events}
+										cursor={
+											initialEventCount.current - (events.current?.length ?? 0)
+										}
+										boxScore={boxScore.current}
+										caption={playByPlayEntries.current[0]?.text}
+										paused={paused}
+										speed={Number.parseInt(speed)}
+										follower={isFollower}
+										onReady={onRetroReady}
+									/>
+								</Suspense>
+							) : null}
+							{__SPORT === "basketball" && !retro ? (
 								<div>
 									<LiveCourt
 										scene={courtScene.current}

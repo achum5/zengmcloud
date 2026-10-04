@@ -16,6 +16,11 @@ import { useBlocker } from "../../hooks/useBlocker.ts";
 import { HelpPopover } from "../../components/HelpPopover.tsx";
 import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
 import { local, localActions } from "../../util/local.ts";
+import {
+	getLiveGameView,
+	setLiveGameView,
+	type LiveGameView,
+} from "../LiveGame/retro/setting.ts";
 
 const GlobalSettings = (props: View<"globalSettings">) => {
 	const [state, setState] = useState(() => {
@@ -46,6 +51,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 				? "show"
 				: ("hide" as const),
 			scoresBar: local.getState().showLeagueTopBar ? "show" : ("hide" as const),
+			liveGameView: getLiveGameView() as LiveGameView,
 			phaseChangeRedirects: props.phaseChangeRedirects,
 			realPlayerPhotos: props.realPlayerPhotos,
 			realTeamInfo: props.realTeamInfo,
@@ -93,6 +99,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		// rather than sent to the worker with the options below.
 		localActions.setLeagueTickerEnabled(state.leagueTicker === "show");
 		localActions.setShowLeagueTopBar(state.scoresBar === "show");
+		setLiveGameView(state.liveGameView);
 
 		const units = state.units === "default" ? undefined : state.units;
 		try {
@@ -203,6 +210,26 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 							<option value="hide">Hide</option>
 						</select>
 					</div>
+					{__SPORT === "basketball" ? (
+						<div className="col-sm-3 col-6 mb-3">
+							<label
+								className="form-label"
+								htmlFor="options-liveGameView"
+								title="On this device only"
+							>
+								Live Game View
+							</label>
+							<select
+								id="options-liveGameView"
+								className="form-select"
+								onChange={handleChange("liveGameView")}
+								value={state.liveGameView}
+							>
+								<option value="classic">Classic</option>
+								<option value="retro">Retro</option>
+							</select>
+						</div>
+					) : null}
 					<div className="col-sm-3 col-6 mb-3">
 						<label className="form-label" htmlFor="options-units">
 							Units
