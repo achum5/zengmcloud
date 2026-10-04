@@ -187,6 +187,19 @@ export type CollegeCoach = {
 	offers?: number[];
 };
 
+// A team's rank in the latest poll, if it's ranked.
+export const pollRank = (
+	polls: { season: number; weeks: number[][] } | undefined,
+	season: number,
+	tid: number,
+) => {
+	if (!polls || polls.season !== season) {
+		return undefined;
+	}
+	const index = polls.weeks.at(-1)?.indexOf(tid) ?? -1;
+	return index >= 0 ? index + 1 : undefined;
+};
+
 export type CollegePolls = {
 	season: number;
 	// Top 25 after each week (the first is the preseason poll), best first.

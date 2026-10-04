@@ -9,7 +9,8 @@ import {
 	wrappedPlayerNameLabels,
 } from "../components/PlayerNameLabels.tsx";
 import { TeamLogoInline } from "../components/TeamLogoInline.tsx";
-import { useLocal } from "../util/local.ts";
+import { local, useLocal } from "../util/local.ts";
+import { displaySeed } from "../../common/college.ts";
 
 const awardName = (
 	award: {
@@ -78,7 +79,9 @@ const formatTeam = (
 			<div className="d-flex align-items-center">
 				<TeamLogoInline imgURL={t.imgURL} imgURLSmall={t.imgURLSmall} />
 				<div className="ms-1 me-auto">
-					{t.seed !== undefined ? `${t.seed}. ` : null}
+					{t.seed !== undefined
+						? `${displaySeed(t.seed, local.getState().college)}. `
+						: null}
 					{teamName(t, season)}
 				</div>
 				<CountBadge count={t.count} />

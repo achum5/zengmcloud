@@ -4,6 +4,7 @@ export const gameAttributesSyncedToUi = [
 	"challengeNoRatings",
 	"challengeNoTrades",
 	"college",
+	"collegePolls",
 	"currencyFormat",
 	"draftType",
 	"fantasyPoints",

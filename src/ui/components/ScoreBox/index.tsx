@@ -2,7 +2,7 @@ import clsx from "clsx";
 import { PHASE } from "../../../common/constants.ts";
 import { helpers } from "../../util/helpers.ts";
 import { local, useLocal } from "../../util/local.ts";
-import { displaySeed } from "../../../common/college.ts";
+import { displaySeed, pollRank } from "../../../common/college.ts";
 import React, { memo, type ReactNode } from "react";
 import { TeamLogoInline } from "../TeamLogoInline.tsx";
 import { getGameSpread } from "../../../common/getGameSpread.ts";
@@ -109,6 +109,7 @@ export const ScoreBox = memo(
 	}) => {
 		const {
 			challengeNoRatings,
+			collegePolls,
 			hideTeamRatings,
 			homeCourtAdvantage,
 			neutralSite,
@@ -120,6 +121,7 @@ export const ScoreBox = memo(
 			userTid,
 		} = useLocal([
 			"challengeNoRatings",
+			"collegePolls",
 			"hideTeamRatings",
 			"homeCourtAdvantage",
 			"neutralSite",
@@ -293,6 +295,7 @@ export const ScoreBox = memo(
 								scoreClassForceWin = scoreClass;
 							}
 
+							const rank = pollRank(collegePolls, season, t.tid);
 							let imgURL;
 							let teamName;
 							let rosterURL;
@@ -421,6 +424,8 @@ export const ScoreBox = memo(
 													)}
 													.{" "}
 												</span>
+											) : rank !== undefined ? (
+												<span className="text-body-secondary">#{rank} </span>
 											) : null}
 											<a
 												href={rosterURL}
