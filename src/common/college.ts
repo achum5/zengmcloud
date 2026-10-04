@@ -172,9 +172,30 @@ export type CollegeCoach = {
 
 export type CollegePolls = {
 	season: number;
-	// Top 25 after each week, best first.
+	// Top 25 after each week (the first is the preseason poll), best first.
 	weeks: number[][];
+	// Game days since the last poll.
+	days: number;
 };
+
+// The NIT: the best 32 teams left out of the NCAA tournament, single
+// elimination alongside it.
+export type CollegeNit = {
+	season: number;
+	// Seed order, best first.
+	field: number[];
+	alive: number[];
+	pending: [number, number][];
+	champ?: number;
+};
+
+// Points for a recruiting class: stars, counting a school's best signees most.
+export const STAR_POINTS = [0, 5, 20, 40, 70, 100];
+
+export const classPoints = (stars: number[]) =>
+	[...stars]
+		.sort((a, b) => b - a)
+		.reduce((total, s, i) => total + STAR_POINTS[s]! * 0.9 ** i, 0);
 
 export const RECRUITING_HOURS_PER_WEEK = 100;
 export const RECRUITING_MAX_HOURS = 25;

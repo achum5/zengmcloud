@@ -2,6 +2,7 @@ import type { TeamRotation } from "./rotation.ts";
 import type {
 	CollegeCoach,
 	CollegeConfTourney,
+	CollegeNit,
 	CollegePolls,
 	CollegeProfile,
 	CollegePromise,
@@ -852,6 +853,7 @@ export type GameAttributesLeague = {
 	collegeAutoRecruit?: number[];
 	collegeCoach?: CollegeCoach;
 	collegePolls?: CollegePolls;
+	collegeNit?: CollegeNit;
 	// Another league (a pro one) that departing players are sent to as draft
 	// prospects.
 	collegeLinkedLid?: number;
@@ -1660,6 +1662,8 @@ export type PlayerWithoutKey<PlayerRatings = MinimalPlayerRatings> = {
 	// Why he left school, once he has.
 	collegeExit?: "graduated" | "draft";
 	collegeProfile?: CollegeProfile;
+	// Recruiting stars coming out of high school.
+	collegeStars?: number;
 	collegePromises?: CollegePromise[];
 	collegeRetention?: CollegeRetention;
 	recruiting?: CollegeRecruiting;

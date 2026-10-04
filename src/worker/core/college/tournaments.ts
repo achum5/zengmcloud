@@ -187,8 +187,10 @@ export const computeCollegeRatings = async (season: number) => {
 	return ratings;
 };
 
-// The tournament field, best seed first, followed by everyone left out.
-export const orderCollegeTournamentField = async <
+// The tournament field: automatic bids (tournament champions, or before the
+// tournaments are done, each conference's best team by rating) plus the best
+// at-large teams by rating, seeded by rating.
+export const projectCollegeField = async <
 	T extends { tid: number; seasonAttrs: { cid: number } },
 >(
 	teams: T[],
@@ -198,8 +200,6 @@ export const orderCollegeTournamentField = async <
 	const ratings = await computeCollegeRatings(season);
 	const rating = (t: T) => ratings.get(t.tid) ?? -Infinity;
 
-	// Automatic bids: tournament champions, or (before the tournaments are
-	// done, for projections) each conference's best team by rating.
 	const state = g.get("collegeConfTourney");
 	const champs =
 		state && state.season === season
@@ -221,15 +221,124 @@ export const orderCollegeTournamentField = async <
 
 	const sorted = [...teams].sort((a, b) => rating(b) - rating(a));
 	const field = sorted.filter((t) => autobids.has(t.tid));
+	const atLarge: T[] = [];
+	const out: T[] = [];
 	for (const t of sorted) {
-		if (field.length >= numPlayoffTeams) {
-			break;
+		if (autobids.has(t.tid)) {
+			continue;
 		}
-		if (!autobids.has(t.tid)) {
+		if (field.length < numPlayoffTeams) {
 			field.push(t);
+			atLarge.push(t);
+		} else {
+			out.push(t);
 		}
 	}
 	field.sort((a, b) => rating(b) - rating(a));
-	const fieldTids = new Set(field.map((t) => t.tid));
-	return [...field, ...sorted.filter((t) => !fieldTids.has(t.tid))];
+	return {
+		field,
+		autobids,
+		lastFourIn: atLarge.slice(-4),
+		firstFourOut: out.slice(0, 4),
+		rest: out,
+	};
+};
+
+// The tournament field, best seed first, followed by everyone left out.
+export const orderCollegeTournamentField = async <
+	T extends { tid: number; seasonAttrs: { cid: number } },
+>(
+	teams: T[],
+	numPlayoffTeams: number,
+) => {
+	const { field, rest } = await projectCollegeField(teams, numPlayoffTeams);
+	return [...field, ...rest];
+};
+
+// --- The NIT -----------------------------------------------------------------
+
+// The best 32 teams left out of the NCAA field, by power rating.
+export const collegeStartNit = async (
+	ncaaTids: number[],
+	conditions: Conditions,
+) => {
+	const season = g.get("season");
+	const ratings = await computeCollegeRatings(season);
+	const inNcaa = new Set(ncaaTids);
+	const teams = (await idb.cache.teams.getAll()).filter(
+		(t) => !t.disabled && !inNcaa.has(t.tid),
+	);
+	const field = teams
+		.sort((a, b) => (ratings.get(b.tid) ?? -999) - (ratings.get(a.tid) ?? -999))
+		.slice(0, 32)
+		.map((t) => t.tid);
+	await league.setGameAttributes({
+		collegeNit: { season, field, alive: field, pending: [] },
+	});
+	if (field.includes(g.get("userTid"))) {
+		logEvent(
+			{
+				type: "madePlayoffs",
+				text: `You made the NIT.`,
+				showNotification: true,
+				tids: [g.get("userTid")],
+				score: 0,
+			},
+			conditions,
+		);
+	}
+};
+
+// Each NCAA tournament day: settle the last NIT round, then add the next one
+// to the day's games. Returns the NIT games to play.
+export const collegeNitDay = async (
+	ncaaGamesToday: boolean,
+): Promise<[number, number][]> => {
+	const season = g.get("season");
+	const state = g.get("collegeNit");
+	if (!state || state.season !== season || state.champ !== undefined) {
+		return [];
+	}
+
+	let alive = state.alive;
+	if (state.pending.length > 0) {
+		const games = await idb.getCopies.games({ season }, "noCopyCache");
+		const losers = new Set<number>();
+		for (const [home, away] of state.pending) {
+			const game = latestGame(games, home, away);
+			losers.add(game ? game.lost.tid : away);
+		}
+		alive = alive.filter((tid) => !losers.has(tid));
+	}
+
+	let champ: number | undefined;
+	const matchups: [number, number][] = [];
+	if (alive.length === 1) {
+		champ = alive[0];
+		const t =
+			champ !== undefined ? await idb.cache.teams.get(champ) : undefined;
+		if (t) {
+			logEvent({
+				type: "playoffs",
+				text: `The <a href="${helpers.leagueUrl([
+					"roster",
+					`${t.abbrev}_${t.tid}`,
+					season,
+				])}">${t.region} ${t.name}</a> won the NIT.`,
+				showNotification: t.tid === g.get("userTid"),
+				tids: [t.tid],
+				score: 10,
+			});
+		}
+	} else if (ncaaGamesToday) {
+		// Best remaining seed hosts the worst.
+		for (let i = 0; i < alive.length / 2; i++) {
+			matchups.push([alive[i]!, alive[alive.length - 1 - i]!]);
+		}
+	}
+
+	await league.setGameAttributes({
+		collegeNit: { ...state, alive, pending: matchups, champ },
+	});
+	return matchups;
 };

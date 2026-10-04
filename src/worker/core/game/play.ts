@@ -6,6 +6,7 @@ import {
 } from "../../../common/constants.ts";
 import { advanceCollegeConfTourneys } from "../college/tournaments.ts";
 import { collegeRecruitingDay } from "../college/recruiting.ts";
+import { collegePollDay } from "../college/polls.ts";
 import {
 	GameSim,
 	allStar,
@@ -473,6 +474,9 @@ const play = async (
 				// College: no in-season signings or trades, but recruiting goes on
 				// all season.
 				await collegeRecruitingDay();
+				if (phase !== PHASE.PLAYOFFS) {
+					await collegePollDay();
+				}
 			} else {
 				if (
 					phase === PHASE.REGULAR_SEASON ||

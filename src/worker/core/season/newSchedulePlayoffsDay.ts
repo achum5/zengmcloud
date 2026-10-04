@@ -6,6 +6,7 @@ import { season } from "../index.ts";
 import { betterSeedHome } from "../../../common/sportsbookOdds.ts";
 import { chunk, groupByUnique } from "../../../common/utils.ts";
 import { orderTeams } from "../../util/orderTeams.ts";
+import { collegeNitDay } from "../college/tournaments.ts";
 
 // Play 2 home (true) then 2 away (false) and repeat, but ensure that the better
 // team always gets the last game. betterSeedHome lives in
@@ -174,6 +175,9 @@ const newSchedulePlayoffsDay = async (): Promise<boolean> => {
 			}
 		}
 
+		if (g.get("college")) {
+			tids.push(...(await collegeNitDay(true)));
+		}
 		await setSchedule(tids);
 		return false;
 	}

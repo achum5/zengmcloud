@@ -7,6 +7,7 @@ import type {
 	PlayoffSeries,
 } from "../../../common/types.ts";
 import { PHASE } from "../../../common/constants.ts";
+import { collegeStartNit } from "../college/tournaments.ts";
 
 const newPhasePlayoffs = async (
 	conditions: Conditions,
@@ -47,7 +48,7 @@ const newPhasePlayoffs = async (
 					}</a> made the <a href="${helpers.leagueUrl([
 						"playoffs",
 						g.get("season"),
-					])}">${type}</a>.`,
+					])}">${g.get("college") ? "NCAA tournament" : type}</a>.`,
 					showNotification: tid === g.get("userTid"),
 					tids: [tid],
 					score: 0,
@@ -68,6 +69,10 @@ const newPhasePlayoffs = async (
 		playoffSeries.playIns = playIns;
 	}
 	await idb.cache.playoffSeries.put(playoffSeries);
+
+	if (g.get("college")) {
+		await collegeStartNit(tidPlayoffs, conditions);
+	}
 
 	// Add row to team stats and team season attributes
 	const teamSeasons = await idb.cache.teamSeasons.indexGetAll(

@@ -1,4 +1,5 @@
 import { season } from "../index.ts";
+import { collegePreseasonPoll } from "../college/polls.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local, logEvent, toUI } from "../../util/index.ts";
 import type { Conditions, Game, PhaseReturn } from "../../../common/types.ts";
@@ -251,6 +252,10 @@ const newPhaseRegularSeason = async (
 				}
 			}
 		}
+	}
+
+	if (g.get("college")) {
+		await collegePreseasonPoll();
 	}
 
 	let redirect;

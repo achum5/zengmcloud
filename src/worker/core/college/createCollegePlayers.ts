@@ -147,9 +147,8 @@ const createCollegePlayers = async ({
 			openSlots.set(tid, openSlots.get(tid)! - 1);
 
 			p.tid = tid;
-			p.collegeProfile = genCollegeProfile(
-				collegeStarsForPercentile(rank / classSize),
-			);
+			p.collegeStars = collegeStarsForPercentile(rank / classSize);
+			p.collegeProfile = genCollegeProfile(p.collegeStars);
 			const taken = jerseyNumbers.get(tid) ?? [];
 			jerseyNumbers.set(tid, taken);
 			player.setJerseyNumber(p, await player.genJerseyNumber(p, taken, []));

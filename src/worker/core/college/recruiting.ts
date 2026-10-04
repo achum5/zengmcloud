@@ -88,6 +88,7 @@ export const initRecruitClass = (players: Player[]) => {
 		const rank = i + 1;
 		const stars = starsForRank(rank, sorted.length);
 		p.collegeProfile ??= genCollegeProfile(stars);
+		p.collegeStars = stars;
 		p.recruiting = newRecruiting(
 			stars,
 			rank,
@@ -132,6 +133,17 @@ let planCache: { key: string; day: number; plan: Plan } | undefined;
 let dayCounter = 0;
 
 const planKey = () => `${g.get("lid")}-${g.get("season")}-${g.get("phase")}`;
+
+// A standard normal number fixed for a school and a player.
+const stableGauss = (tid: number, pid: number) => {
+	let total = 0;
+	for (let i = 0; i < 4; i++) {
+		const x = Math.sin(tid * 12.9898 + pid * 78.233 + i * 37.719) * 43758.5453;
+		total += x - Math.floor(x);
+	}
+	// Sum of four uniforms: mean 2, variance 1/3.
+	return (total - 2) * Math.sqrt(3);
+};
 
 // Each AI (or auto) school picks targets it can land - weighing how good a
 // player is against how it stacks up with the other schools that could want
@@ -204,8 +216,15 @@ const makePlan = (recruits: Player[], ctxs: Map<number, TeamCtx>) => {
 				const ref = interest >= top3[1]! ? top3[2]! : top3[1]!;
 				landing = helpers.sigmoid((interest - ref + 4) / 4, 1, 0);
 			}
-			const jitter = noise > 0 ? Math.exp(realGauss(0, noise)) : 1;
-			scored.push({ p, score: (p.value ** 2 / 100) * landing * jitter });
+			// Same jitter every week, so a school's board doesn't reshuffle.
+			const jitter =
+				noise > 0 ? Math.exp(noise * stableGauss(ctx.tid, p.pid)) : 1;
+			// Players it has already put time into stay on its board.
+			const sticky = 1 + (rec.effort[ctx.tid] ?? 0) / 8;
+			scored.push({
+				p,
+				score: (p.value ** 2 / 100) * landing * jitter * sticky,
+			});
 		}
 		scored.sort((a, b) => b.score - a.score);
 
@@ -315,16 +334,25 @@ const playerLink = (p: Player) =>
 const canAfford = (ctx: TeamCtx, amount: number) =>
 	ctx.open > 0 && ctx.nilCommitted + amount <= ctx.nilBudget;
 
-// One day of recruiting: scouting and effort from every school, AI offers and
-// visits, then commitments and flips.
+// Calendar days per game day: in season, teams play about twice a week, so
+// each game day covers a few days of recruiting. Offseason days are days.
+export const collegeCalendarDays = () =>
+	g.get("phase") === PHASE.FREE_AGENCY ? 1 : 4;
+
+// Chance of something with a daily chance happening over several days.
+const overDays = (daily: number, days: number) => 1 - (1 - daily) ** days;
+
+// A day (or a few) of recruiting: scouting and effort from every school, AI
+// offers and visits, then commitments and flips.
 export const collegeRecruitingDay = async () => {
+	const days = collegeCalendarDays();
 	const recruits = await getRecruits();
 	if (recruits.length === 0) {
 		return;
 	}
 	const ctxs = await getTeamCtxs(recruits);
 
-	dayCounter += 1;
+	dayCounter += days;
 	if (
 		!planCache ||
 		planCache.key !== planKey() ||
@@ -362,7 +390,7 @@ export const collegeRecruitingDay = async () => {
 			}
 			const rec = byPid.get(pid)?.recruiting;
 			if (rec && rec.offers[tid] !== undefined && !rec.visits.includes(tid)) {
-				if (Math.random() < 0.05) {
+				if (Math.random() < overDays(0.05, days)) {
 					rec.visits.push(tid);
 					ctx.visitsUsed += 1;
 				}
@@ -372,7 +400,7 @@ export const collegeRecruitingDay = async () => {
 
 	for (const p of recruits) {
 		const rec = p.recruiting!;
-		rec.days = (rec.days ?? 0) + 1;
+		rec.days = (rec.days ?? 0) + days;
 
 		// A seventh of the weekly hours each day: scouting, and effort with
 		// diminishing returns.
@@ -394,10 +422,12 @@ export const collegeRecruitingDay = async () => {
 				continue;
 			}
 			rec.scout[tid] =
-				Math.round(((rec.scout[tid] ?? 0) + hours / 7) * 10) / 10;
-			const effort = rec.effort[tid] ?? 0;
-			rec.effort[tid] =
-				effort + (hours / 7) * 0.07 * Math.max(0, 1 - effort / EFFORT_CAP);
+				Math.round(((rec.scout[tid] ?? 0) + (hours / 7) * days) * 10) / 10;
+			let effort = rec.effort[tid] ?? 0;
+			for (let i = 0; i < days; i++) {
+				effort += (hours / 7) * 0.07 * Math.max(0, 1 - effort / EFFORT_CAP);
+			}
+			rec.effort[tid] = effort;
 		}
 
 		// Interest for every school that has engaged.
@@ -429,7 +459,8 @@ export const collegeRecruitingDay = async () => {
 				canAfford(ctx, rec.offers[top.tid]!) &&
 				top.interest >= commitThreshold() &&
 				top.interest - second >= COMMIT_MARGIN &&
-				Math.random() < commitChance(rec, top.interest, top.interest - second)
+				Math.random() <
+					overDays(commitChance(rec, top.interest, top.interest - second), days)
 			) {
 				rec.committed = top.tid;
 				ctx.open -= 1;
@@ -457,7 +488,7 @@ export const collegeRecruitingDay = async () => {
 				ctx &&
 				challenger.interest >= currentInterest + DECOMMIT_MARGIN &&
 				canAfford(ctx, rec.offers[challenger.tid]!) &&
-				Math.random() < 0.03
+				Math.random() < overDays(0.03, days)
 			) {
 				current.open += 1;
 				current.nilCommitted -= rec.offers[current.tid] ?? 0;
