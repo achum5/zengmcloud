@@ -240,8 +240,28 @@ export const drawFrame = (f: Frame) => {
 // WHERE THE CAMERA LOOKS: mostly at the ball, pulled toward the middle of
 // the ten players, and wide enough to keep them - tight on a half-court set,
 // wide when the whole floor is running.
-export const aimFor = (m: Moment, narrow: boolean): Shot => {
+const SHOOTING = new Set([
+	"shoot",
+	"fade",
+	"hook",
+	"layup",
+	"dunk",
+	"dunk1",
+	"tomahawk",
+]);
+
+export const aimFor = (m: Moment, narrow: boolean, tl: CourtTimeline): Shot => {
 	const { ball } = m;
+	// Free throws: tight on the shooter, the line and the rim.
+	const beat = beatAt(tl, m.t);
+	if (beat && (beat.type === "ft" || beat.type === "missFt")) {
+		const left = ball.x < COURT_W / 2;
+		return {
+			x: left ? 12.5 : COURT_W - 12.5,
+			width: narrow ? 30 : 36,
+			y: 24,
+		};
+	}
 	let minX = ball.x;
 	let maxX = ball.x;
 	let sum = 0;
@@ -258,12 +278,47 @@ export const aimFor = (m: Moment, narrow: boolean): Shot => {
 	const mid = n > 0 ? sum / n : ball.x;
 	const minW = narrow ? 42 : 52;
 	const maxW = narrow ? 70 : 86;
-	const width = Math.min(maxW, Math.max(minW, maxX - minX + 18));
+	let width = Math.min(maxW, Math.max(minW, maxX - minX + 18));
 	let x = ball.x * 0.62 + mid * 0.38;
+	// A shot going up: push in on the shooter.
+	const shooter = m.players.find((p) => SHOOTING.has(p.anim));
+	if (shooter) {
+		width *= 0.86;
+		x = x * 0.6 + shooter.x * 0.4;
+	}
 	const room = width / 2 - 7;
 	x = Math.min(ball.x + room, Math.max(ball.x - room, x));
 	x = Math.min(COURT_W + 12 - width / 2, Math.max(width / 2 - 12, x));
 	return { x, width, y: 23 };
+};
+
+// The play-by-play line being played out at t.
+const beatAt = (tl: CourtTimeline, t: number) => {
+	let lo = 0;
+	let hi = tl.beats.length - 1;
+	let ans = -1;
+	while (lo <= hi) {
+		const mid = (lo + hi) >> 1;
+		if (tl.beats[mid]!.preStart <= t) {
+			ans = mid;
+			lo = mid + 1;
+		} else {
+			hi = mid - 1;
+		}
+	}
+	return ans >= 0 ? tl.beats[ans] : undefined;
+};
+
+// The slow-motion replay of a dunk: close on him and the rim, from
+// courtside, looking up at the iron.
+export const replayAim = (m: Moment, narrow: boolean): Shot => {
+	const rimX = m.ball.x < COURT_W / 2 ? 5.25 : COURT_W - 5.25;
+	return {
+		x: m.ball.x * 0.55 + rimX * 0.45,
+		width: narrow ? 22 : 26,
+		y: 25,
+		z: 6.5,
+	};
 };
 
 // Whether a point is on screen, for skipping work.

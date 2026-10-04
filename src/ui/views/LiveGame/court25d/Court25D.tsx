@@ -23,7 +23,13 @@ import {
 	TABLE_TOP,
 	type Plane,
 } from "./arena.ts";
-import { makeCamera, planeTransform, type Camera } from "./camera.ts";
+import {
+	makeCamera,
+	MAIN_RIG,
+	planeTransform,
+	REPLAY_RIG,
+	type Camera,
+} from "./camera.ts";
 import {
 	buildClocks,
 	formatGameClock,
@@ -40,7 +46,7 @@ import { headColors, loadHead, type HeadSprite } from "./faces.ts";
 import { kitsFor, shade, type Look } from "./figure.ts";
 import { COURT_H, COURT_W, type Side } from "./geometry.ts";
 import { bodyOf, type Body } from "./poses.ts";
-import { aimFor, drawFrame, momentAt } from "./scene.ts";
+import { aimFor, drawFrame, momentAt, replayAim } from "./scene.ts";
 
 // THE 2.5D COURT: the game as a broadcast - the home team's own floor, the
 // players with their faces, a camera that follows the ball - acting out the
@@ -61,6 +67,14 @@ const DEFAULT_SPEED = 7;
 const BASE_RATE = 1.1;
 // How long the picture dips to black either side of a cut (timeline ms).
 const DIP_MS = 130;
+// A dunk's replay: from just before he takes off to just after, in slow
+// motion, once its own play is over.
+const REPLAY_FROM = 1700;
+const REPLAY_TO = 450;
+const REPLAY_AFTER = 1150;
+const REPLAY_SPEED = 0.42;
+// Replay-time ms the picture takes to come up out of black and go back down.
+const REPLAY_DIP = 70;
 
 // The cut nearest to t, by binary search.
 const nearestCut = (cuts: number[], t: number): number | undefined => {
@@ -333,6 +347,7 @@ const Court25D = ({
 	}, []);
 	const clockRef = useRef<HTMLSpanElement | null>(null);
 	const dipRef = useRef<HTMLDivElement | null>(null);
+	const replayRef = useRef<HTMLDivElement | null>(null);
 	const shotRef = useRef<HTMLSpanElement | null>(null);
 
 	const play = useRef({
@@ -347,6 +362,9 @@ const Court25D = ({
 		prevPaused: paused,
 		clockText: "",
 		shotText: "",
+		// The dunk replay showing now, and the next dunk that would get one.
+		replay: undefined as { at: number; from: number; to: number } | undefined,
+		nextDunk: 0,
 	});
 
 	// Follow the page's cursor: run on to the next line normally; cut straight
@@ -373,6 +391,12 @@ const Court25D = ({
 		}
 		if (s.prevPaused && !paused) {
 			s.readyFor = -1;
+		}
+		if (s.snapCam) {
+			s.replay = undefined;
+			s.nextDunk = timeline.fx.findIndex(
+				(f) => f.kind === "dunk" && !!f.big && f.t + REPLAY_AFTER > s.t,
+			);
 		}
 		s.prevCursor = cursor;
 		s.prevPaused = paused;
@@ -480,15 +504,60 @@ const Court25D = ({
 				}
 			}
 			const before = s.t;
-			if ((!p.paused || s.stepping) && s.t < target) {
+			// A replay holds the live clock while it plays.
+			const r = s.replay;
+			if (r) {
+				if (!p.paused) {
+					r.at += dt * rate * REPLAY_SPEED;
+				}
+				if (r.at >= r.to) {
+					s.replay = undefined;
+					s.snapCam = true;
+				}
+			} else if ((!p.paused || s.stepping) && s.t < target) {
 				s.t = Math.min(target, s.t + dt * rate);
+			}
+			// A dunk just finished: show it again - unless this device is only
+			// following, stepping play by play, or watching on fast.
+			const fx = tl.fx;
+			while (
+				s.nextDunk >= 0 &&
+				s.nextDunk < fx.length &&
+				(fx[s.nextDunk]!.kind !== "dunk" ||
+					!fx[s.nextDunk]!.big ||
+					fx[s.nextDunk]!.t + REPLAY_AFTER <= before)
+			) {
+				s.nextDunk += 1;
+			}
+			const dunk = fx[s.nextDunk];
+			if (
+				!s.replay &&
+				dunk &&
+				dunk.t + REPLAY_AFTER > before &&
+				dunk.t + REPLAY_AFTER <= s.t
+			) {
+				s.nextDunk += 1;
+				if (
+					!p.follower &&
+					!p.paused &&
+					!s.stepping &&
+					p.speed <= DEFAULT_SPEED + 3
+				) {
+					s.t = dunk.t + REPLAY_AFTER;
+					s.replay = {
+						at: dunk.t - REPLAY_FROM,
+						from: dunk.t - REPLAY_FROM,
+						to: dunk.t + REPLAY_TO,
+					};
+					s.snapCam = true;
+				}
 			}
 			// Through a cut: the camera starts fresh on the other side.
 			const cut = nearestCut(tl.cuts, s.t);
 			if (cut !== undefined && cut > before && cut <= s.t) {
 				s.snapCam = true;
 			}
-			if (s.t >= target) {
+			if (s.t >= target && !s.replay) {
 				s.stepping = false;
 				if (
 					!p.paused &&
@@ -521,8 +590,16 @@ const Court25D = ({
 				canvas.height = ch;
 			}
 
-			const moment = momentAt(tl, s.t, rosterRef.current, bodyOfPid);
-			const aim = aimFor(moment, p.narrow);
+			const replay = s.replay;
+			const moment = momentAt(
+				tl,
+				replay ? replay.at : s.t,
+				rosterRef.current,
+				bodyOfPid,
+			);
+			const aim = replay
+				? replayAim(moment, p.narrow)
+				: aimFor(moment, p.narrow, tl);
 			if (s.snapCam) {
 				s.camX = aim.x;
 				s.camW = aim.width;
@@ -532,15 +609,33 @@ const Court25D = ({
 				s.camX += (aim.x - s.camX) * (1 - Math.exp(-secs * 2.6));
 				s.camW += (aim.width - s.camW) * (1 - Math.exp(-secs * 1.5));
 			}
-			const cam = makeCamera({ x: s.camX, width: s.camW, y: aim.y }, w, h);
+			const cam = makeCamera(
+				{ x: s.camX, width: s.camW, y: aim.y, z: aim.z },
+				w,
+				h,
+				replay ? REPLAY_RIG : MAIN_RIG,
+			);
 			place(cam);
 
 			const dip = dipRef.current;
 			if (dip) {
-				const near = cut === undefined ? Infinity : Math.abs(s.t - cut);
-				const o = Math.max(0, 1 - near / DIP_MS);
+				let o: number;
+				if (replay) {
+					const edge = Math.min(replay.at - replay.from, replay.to - replay.at);
+					o = Math.max(0, 1 - edge / REPLAY_DIP);
+				} else {
+					const near = cut === undefined ? Infinity : Math.abs(s.t - cut);
+					o = Math.max(0, 1 - near / DIP_MS);
+				}
 				if (dip.style.opacity !== String(o)) {
 					dip.style.opacity = String(o);
+				}
+			}
+			const tag = replayRef.current;
+			if (tag) {
+				const show = replay ? "block" : "none";
+				if (tag.style.display !== show) {
+					tag.style.display = show;
 				}
 			}
 
@@ -704,6 +799,26 @@ const Court25D = ({
 					pointerEvents: "none",
 				}}
 			/>
+			<div
+				ref={replayRef}
+				style={{
+					display: "none",
+					position: "absolute",
+					right: "2cqw",
+					top: "2cqw",
+					padding: "0.35em 0.7em",
+					fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+					fontWeight: 800,
+					fontSize: "clamp(10px, 1.7cqw, 14px)",
+					letterSpacing: "0.08em",
+					color: "#fff",
+					background: "rgba(10, 10, 14, 0.85)",
+					borderLeft: `3px solid ${home?.colors?.[0] ?? "#888"}`,
+					borderRadius: 3,
+				}}
+			>
+				REPLAY
+			</div>
 			<div
 				style={{
 					position: "absolute",

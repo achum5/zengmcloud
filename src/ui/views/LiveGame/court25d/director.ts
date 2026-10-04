@@ -136,7 +136,15 @@ export type FxKind =
 	| "whistle"
 	| "cheer"
 	| "roar";
-export type Fx = { kind: FxKind; t: number; rim?: Side; team?: Side };
+// `big` marks a dunk worth a replay: on somebody, off a lob, or through
+// contact.
+export type Fx = {
+	kind: FxKind;
+	t: number;
+	rim?: Side;
+	team?: Side;
+	big?: boolean;
+};
 export type Beat = {
 	i: number;
 	type: string;
@@ -574,7 +582,11 @@ class Director {
 		this.offense = team;
 	}
 
-	private effect(kind: FxKind, t: number, o: { rim?: Side; team?: Side } = {}) {
+	private effect(
+		kind: FxKind,
+		t: number,
+		o: { rim?: Side; team?: Side; big?: boolean } = {},
+	) {
 		this.fx.push({ kind, t, ...o });
 	}
 
@@ -2119,7 +2131,13 @@ class Director {
 			const under = rimPt(team, -2.3);
 			if (shot.dunk) {
 				this.fly(at, at + 70, { pid: shot.pid }, top, RIM_Z + 0.6);
-				this.effect("dunk", at + 50, { rim: team });
+				this.effect("dunk", at + 50, {
+					rim: team,
+					big:
+						shot.finish === "poster" ||
+						shot.zone === "tipIn" ||
+						typeof e.pidFoul === "number",
+				});
 			}
 			const t0 = shot.dunk ? at + 70 : at;
 			this.fly(t0, t0 + 140, top, under, 0);

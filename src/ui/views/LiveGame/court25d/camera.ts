@@ -38,24 +38,32 @@ const norm = (a: Pt3): Pt3 => {
 export const CAM_BACK = 64;
 export const CAM_HIGH = 33;
 
+// Where the camera stands: the main broadcast camera high above the near
+// sideline, or the low replay camera courtside. `slide` is how far it tracks
+// along the sideline with the play (the rest it pans).
+export type Rig = { back: number; high: number; slide: number };
+export const MAIN_RIG: Rig = { back: CAM_BACK, high: CAM_HIGH, slide: 0.55 };
+export const REPLAY_RIG: Rig = { back: 24, high: 8.5, slide: 0.92 };
+
 // Where the camera looks: a point on the court (x), how wide a slice of the
-// floor fits across the screen there (feet), and how far across the court the
-// middle of the picture is (y).
-export type Shot = { x: number; width: number; y: number };
+// floor fits across the screen there (feet), how far across the court the
+// middle of the picture is (y), and how high (z, the floor if unset).
+export type Shot = { x: number; width: number; y: number; z?: number };
 
 export const makeCamera = (
 	shot: Shot,
 	viewW: number,
 	viewH: number,
+	rig: Rig = MAIN_RIG,
 ): Camera => {
 	// It slides along the sideline as well as panning, so the far end of the
 	// floor is never seen at too steep an angle.
 	const pos = {
-		x: COURT_W / 2 + (shot.x - COURT_W / 2) * 0.55,
-		y: COURT_H + CAM_BACK,
-		z: CAM_HIGH,
+		x: COURT_W / 2 + (shot.x - COURT_W / 2) * rig.slide,
+		y: COURT_H + rig.back,
+		z: rig.high,
 	};
-	const target = { x: shot.x, y: shot.y, z: 2 };
+	const target = { x: shot.x, y: shot.y, z: shot.z ?? 2 };
 	const fwd = norm(sub(target, pos));
 	// Level: right is horizontal, up is square to both.
 	const right = norm({ x: -fwd.y, y: fwd.x, z: 0 });
