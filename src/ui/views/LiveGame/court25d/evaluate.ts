@@ -297,7 +297,7 @@ export const evalPlayer = (
 	} else {
 		const seg = ballSegAt(tl, t);
 		if (seg && seg.kind === "hold" && seg.pid === pid) {
-			anim = seg.style === "dribble" ? "dribbleIdle" : "hold";
+			anim = seg.style === "hold" ? "hold" : "dribbleIdle";
 		} else {
 			anim = offenseAt(tl, t) === tr.team ? "ready" : "stance";
 		}
@@ -337,7 +337,7 @@ export const bodyPoint = (st: PlayerState, v: V3): Pt3 => {
 export const handWorld = (
 	st: PlayerState,
 	body: Body,
-	which: "near" | "both" = "both",
+	which: "near" | "far" | "both" = "both",
 ): Pt3 => {
 	const sk = skeleton(body, poseAt(st.anim, st.phase));
 	const r = sk.armR.end;
@@ -345,7 +345,9 @@ export const handWorld = (
 	const h =
 		which === "near"
 			? r
-			: { f: (r.f + l.f) / 2, s: (r.s + l.s) / 2, u: (r.u + l.u) / 2 };
+			: which === "far"
+				? l
+				: { f: (r.f + l.f) / 2, s: (r.s + l.s) / 2, u: (r.u + l.u) / 2 };
 	// The ball rests just in front of the hands, not inside them.
 	return bodyPoint(st, { f: h.f + 0.28, s: h.s, u: h.u });
 };
@@ -373,6 +375,24 @@ export const evalBall = (
 
 	if (seg.kind === "hold") {
 		const st = evalPlayer(tl, seg.pid, t);
+		if (seg.style === "cross") {
+			// Low and quick, hand to hand across in front of him.
+			const body = bodyFor(seg.pid);
+			const bounces = ((t - seg.t0) / 1000) * 3.2;
+			const k = Math.floor(bounces);
+			const ph = bounces - k;
+			const from = handWorld(st, body, k % 2 ? "far" : "near");
+			const to = handWorld(st, body, k % 2 ? "near" : "far");
+			const floor = bodyPoint({ ...st, z: 0 }, { f: 1.1, s: 0, u: BALL_R });
+			const tri = 1 - Math.abs(2 * ph - 1);
+			const h = ph < 0.5 ? from : to;
+			return {
+				x: h.x + (floor.x - h.x) * tri,
+				y: h.y + (floor.y - h.y) * tri,
+				z: h.z + (floor.z - h.z) * tri,
+				holder: seg.pid,
+			};
+		}
 		if (seg.style === "dribble") {
 			const body = bodyFor(seg.pid);
 			const h = handWorld(st, body, "near");

@@ -58,7 +58,7 @@ const DEFAULT_SPEED = 7;
 // The timeline runs at real speed (it cuts past the dead time instead of
 // hurrying); a hair quicker than that brings a game watched at the default
 // speed in at about twenty minutes.
-const BASE_RATE = 1.05;
+const BASE_RATE = 1.1;
 // How long the picture dips to black either side of a cut (timeline ms).
 const DIP_MS = 130;
 

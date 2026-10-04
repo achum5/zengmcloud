@@ -495,9 +495,15 @@ describe("2.5D director", () => {
 				const acts = tl.tracks
 					.get(e.pid)!
 					.acts.filter((x) => x.t0 >= from && x.t0 <= to);
-				const dunked = acts.some((x) => x.anim === "dunk");
+				const dunked = acts.some((x) =>
+					["dunk", "dunk1", "tomahawk"].includes(x.anim),
+				);
 				const finish = finishOf(e, gid, gender);
-				assert.strictEqual(dunked, finish === "dunk", `line ${i}`);
+				assert.strictEqual(
+					dunked,
+					finish === "dunk" || finish === "poster",
+					`line ${i}`,
+				);
 				assert.strictEqual(
 					acts.some((x) => x.anim === "layup"),
 					finish === "layup",

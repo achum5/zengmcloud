@@ -101,7 +101,13 @@ export type Track = {
 };
 export type BallEnd = Pt3 | { pid: number; hand?: "near" | "both" };
 export type BallSeg =
-	| { kind: "hold"; t0: number; pid: number; style: "hold" | "dribble" }
+	| {
+			kind: "hold";
+			t0: number;
+			pid: number;
+			// A crossover switches hands every bounce.
+			style: "hold" | "dribble" | "cross";
+	  }
 	| {
 			kind: "fly";
 			t0: number;
@@ -120,7 +126,16 @@ export type BallSeg =
 			h0: number;
 	  }
 	| { kind: "rest"; t0: number; at: Pt3 };
-export type FxKind = "swish" | "clank" | "dunk" | "block" | "whistle" | "cheer";
+// "roar" is a big play - a dunk, a three, an and-one - that brings the bench
+// and the crowd up.
+export type FxKind =
+	| "swish"
+	| "clank"
+	| "dunk"
+	| "block"
+	| "whistle"
+	| "cheer"
+	| "roar";
 export type Fx = { kind: FxKind; t: number; rim?: Side; team?: Side };
 export type Beat = {
 	i: number;
@@ -228,6 +243,9 @@ type ShotPlan = {
 	fouler?: number;
 	// How the line describes the finish, when it says.
 	finish?: Finish;
+	// Who he dunked on, and who lobbed it to him.
+	defender?: number;
+	lobber?: number;
 };
 
 class Director {
@@ -479,7 +497,11 @@ class Director {
 		return this.holder === undefined ? this.ballAt : { pid: this.holder };
 	}
 
-	private hold(pid: number, t: number, style: "hold" | "dribble" = "hold") {
+	private hold(
+		pid: number,
+		t: number,
+		style: "hold" | "dribble" | "cross" = "hold",
+	) {
 		this.pushBall({ kind: "hold", t0: t, pid, style });
 		this.holder = pid;
 	}
@@ -1005,6 +1027,134 @@ class Director {
 		);
 	}
 
+	// Off the dribble to his spot, with a move on the way.
+	private driveTo(
+		pid: number,
+		P: Pt,
+		t: number,
+		dir: 1 | -1,
+		style: "plain" | "crossover" | "euro" | "stepBack" | "fade" | "post",
+	): number {
+		const from = this.posOf(pid);
+		const dx = P.x - from.x;
+		const dy = P.y - from.y;
+		const d = Math.hypot(dx, dy) || 1;
+		// Across his path.
+		const ax = -dy / d;
+		const ay = dx / d;
+		if (style === "crossover") {
+			// A hesitation and a crossover, then the drive.
+			const jab = this.rng() < 0.5 ? 1.7 : -1.7;
+			this.hold(pid, t, "cross");
+			t = this.go(
+				pid,
+				clampPt({ x: from.x + ax * jab, y: from.y + ay * jab }),
+				t + 120,
+				6,
+				"dribble",
+				dir,
+			);
+			t += 120;
+		}
+		this.hold(pid, t, "dribble");
+		if (style === "euro") {
+			// One way, then the other, then up.
+			const side = this.rng() < 0.5 ? 1 : -1;
+			const k = Math.max(0, d - 6);
+			const a = clampPt({
+				x: from.x + (dx / d) * k + ax * side * 2,
+				y: from.y + (dy / d) * k + ay * side * 2,
+			});
+			t = this.go(pid, a, t, DRIBBLE, "dribble", dir);
+			this.hold(pid, t, "hold");
+			const b = clampPt({
+				x: P.x - (dx / d) * 2.2 - ax * side * 1.6,
+				y: P.y - (dy / d) * 2.2 - ay * side * 1.6,
+			});
+			t = this.go(pid, b, t, RUN * 0.8, "run", dir);
+			return this.go(pid, P, t, RUN * 0.8, "run", dir);
+		}
+		if (style === "stepBack") {
+			// Into his man, then a hop back to where he shoots from.
+			const inside = clampPt({
+				x: P.x + (dx / d) * 2.6,
+				y: P.y + (dy / d) * 2.6,
+			});
+			t = this.go(pid, inside, t, DRIBBLE, "dribble", dir);
+			this.hold(pid, t, "hold");
+			return this.go(pid, P, t + 40, 9, "back", dir);
+		}
+		t = this.go(pid, P, t, DRIBBLE, "dribble", dir);
+		if (style === "post") {
+			t = this.backDown(pid, t, dir);
+		}
+		return t;
+	}
+
+	// Back to the rim, a dribble or two to back his man down.
+	private backDown(pid: number, t: number, dir: 1 | -1): number {
+		const at = this.posOf(pid);
+		const to = clampPt({ x: at.x + dir * 2.2, y: at.y + (25 - at.y) * 0.15 });
+		this.hold(pid, t, "dribble");
+		const done = this.go(pid, to, t + 60, 2.6, "post", -dir as 1 | -1);
+		const guard = this.defenderOf(pid);
+		if (guard !== undefined) {
+			this.go(
+				guard,
+				clampPt({ x: to.x + dir * 1.5, y: to.y }),
+				t + 60,
+				2.6,
+				"back",
+				-dir as 1 | -1,
+			);
+		}
+		this.hold(pid, done, "hold");
+		return done;
+	}
+
+	// The lob's set-up: cut to the inbound, Y out of bounds with the ball near
+	// the frontcourt, X on the far wing - and X breaks for the rim.
+	private setUpLob(
+		team: Side,
+		shooter: number,
+		lobber: number,
+		t: number,
+	): number {
+		this.setOffense(t, team);
+		const tc = t + 120;
+		this.cutAt(tc);
+		const dir = attackDir(team);
+		const rim = rimPt(team);
+		const off = this.slots(team);
+		const def = this.slots(other(team));
+		const spots = this.setSpots(team, 0);
+		off.forEach((pid, j) => {
+			const s =
+				pid === lobber
+					? { x: rim.x - dir * 21, y: -1.4 }
+					: pid === shooter
+						? clampPt({ x: rim.x - dir * 17, y: 41 })
+						: (spots[j] ?? spots[0]!);
+			this.place(pid, s, tc, dir);
+		});
+		def.forEach((pid, j) => {
+			const man = this.posOf(off[j] ?? off[0]!);
+			this.place(pid, guardSpot(team, man, 0.25), tc, -dir as 1 | -1);
+		});
+		this.lookAt(lobber, tc + 1, { x: rim.x, y: rim.y });
+		this.hold(lobber, tc, "hold");
+		this.motionTeam = team;
+		this.motion = 0;
+		return this.go(
+			shooter,
+			clampPt({ x: rim.x - dir * 4.2, y: 25 + 2.4 }),
+			tc + 650,
+			SPRINT,
+			"run",
+			dir,
+		);
+	}
+
 	private defenderOf(pid: number): number | undefined {
 		const team = this.teamOf(pid);
 		const j = this.slots(team).indexOf(pid);
@@ -1038,7 +1188,20 @@ class Director {
 			? clampPt({ x: rim.x - dir * this.rand(2, 4), y: 25 + this.rand(-3, 3) })
 			: this.shotSpot(team, zone, heaveSecs);
 
-		if (!putback || this.holder !== shooter) {
+		// An alley-oop: "X cuts to the rim as Y lobs up the inbound pass".
+		const lob =
+			zone === "tipIn" &&
+			plan.lobber !== undefined &&
+			plan.lobber !== shooter &&
+			this.teamOf(plan.lobber) === team
+				? plan.lobber
+				: undefined;
+		// How he gets his own shot off.
+		let style: "plain" | "crossover" | "euro" | "stepBack" | "fade" | "post" =
+			"plain";
+		if (lob !== undefined) {
+			t = this.setUpLob(team, shooter, lob, t);
+		} else if (!putback || this.holder !== shooter) {
 			if (!putback) {
 				t = this.develop(team, t, gap);
 			} else {
@@ -1069,12 +1232,36 @@ class Director {
 				const send = Math.max(t, arrive - passMs(d) - 120);
 				const caught = this.passTo(handler, shooter, send, close ? 4 : 5.5);
 				t = Math.max(arrive, caught);
+				// An entry pass to the post: he backs his man down first.
+				if (zone === "lowPost" && this.rng() < 0.6) {
+					style = "post";
+					t = this.backDown(shooter, t, dir);
+				}
 			} else {
 				if (handler !== shooter) {
 					t = this.passTo(handler, shooter, t, 5);
 				}
-				this.hold(shooter, t, "dribble");
-				t = this.go(shooter, P, t, DRIBBLE, "dribble", dir);
+				// His own shot: a move to get it.
+				const r = this.rng();
+				style =
+					zone === "atRim"
+						? r < 0.35
+							? "crossover"
+							: r < 0.62 && plan.finish === "layup"
+								? "euro"
+								: "plain"
+						: zone === "lowPost"
+							? "post"
+							: zone === "midRange"
+								? r < 0.3
+									? "stepBack"
+									: r < 0.5
+										? "fade"
+										: "plain"
+								: zone === "three" && heaveSecs === undefined && r < 0.3
+									? "stepBack"
+									: "plain";
+				t = this.driveTo(shooter, P, t, dir, style);
 				this.hold(shooter, t, "hold");
 			}
 		}
@@ -1093,7 +1280,28 @@ class Director {
 		const gather = t + 60;
 		// A slam when the words say so: "throws it down", "blocked the dunk
 		// attempt", "blows the dunk".
-		const dunk = close && plan.kind !== "foul" && plan.finish === "dunk";
+		const dunk =
+			close &&
+			plan.kind !== "foul" &&
+			(plan.finish === "dunk" || plan.finish === "poster");
+		// The lob, timed to meet him at the top of his jump.
+		if (lob !== undefined) {
+			const catchT = gather + (dunk ? 1300 * 0.4 : 760 * 0.45);
+			const flight = Math.max(
+				700,
+				380 + dist(this.posOf(lob), rimPt(team)) * 20,
+			);
+			this.act(lob, "pass", catchT - flight - 120, catchT - flight + 200, {
+				look: { x: rim.x, y: rim.y },
+			});
+			this.fly(
+				catchT - flight,
+				catchT,
+				{ pid: lob },
+				{ pid: shooter },
+				RIM_Z + 4.5,
+			);
+		}
 		let decided: number;
 		let arrive: number;
 		let target: Pt3;
@@ -1105,7 +1313,39 @@ class Director {
 			// A made dunk hangs on the rim; one that is stuffed or rattles out
 			// comes straight back down.
 			const hang = plan.kind === "make";
-			this.act(shooter, "dunk", gather, gather + dur, {
+			const r = this.rng();
+			const anim: AnimName =
+				plan.finish === "poster"
+					? r < 0.5
+						? "dunk1"
+						: "tomahawk"
+					: r < 0.45
+						? "dunk"
+						: r < 0.8
+							? "dunk1"
+							: "tomahawk";
+			// Dunked on: his man meets him at the rim, and loses.
+			const victim = plan.defender;
+			if (
+				plan.finish === "poster" &&
+				victim !== undefined &&
+				this.teamOf(victim) !== team
+			) {
+				this.goBy(
+					victim,
+					clampPt({ x: rim.x - dir * 2.1, y: 25 + 0.7 }),
+					gather - 400,
+					gather + 200,
+					"run",
+					-faceRim as 1 | -1,
+				);
+				this.act(victim, "block", gather + 220, gather + 980, {
+					face: -faceRim as 1 | -1,
+					look: { ...P1 },
+					jump: [0.1, 0.9, 2.3],
+				});
+			}
+			this.act(shooter, anim, gather, gather + dur, {
 				face: faceRim,
 				look,
 				zKeys: hang
@@ -1170,8 +1410,28 @@ class Director {
 		} else {
 			// "Tips it in": a one-handed tap at the top of the jump.
 			const tip = zone === "tipIn" && plan.finish === "tip";
-			const anim: AnimName = tip ? "block" : close ? "layup" : "shoot";
+			let anim: AnimName = tip ? "block" : close ? "layup" : "shoot";
+			if (style === "post") {
+				// A hook, or a turnaround fadeaway.
+				anim = this.rng() < 0.55 ? "hook" : "fade";
+			} else if (style === "fade") {
+				anim = "fade";
+			}
 			const dur = close ? 760 : zone === "lowPost" ? 840 : 920;
+			if (anim === "fade") {
+				// Drifting back as he rises.
+				this.go(
+					shooter,
+					clampPt({
+						x: P1.x - (toRim.x / len) * 1.4,
+						y: P1.y - (toRim.y / len) * 1.4,
+					}),
+					gather + dur * 0.2,
+					4,
+					"run",
+					faceRim,
+				);
+			}
 			const peak = tip
 				? 2.8
 				: close
@@ -1444,8 +1704,15 @@ class Director {
 								fouler:
 									typeof next?.pidFoul === "number" ? next.pidFoul : undefined,
 								finish: this.finishFor(next),
+								defender:
+									typeof next?.pidDefense === "number"
+										? next.pidDefense
+										: undefined,
 							}
 						: { kind: "miss" };
+			if (typeof e.pidPass === "number") {
+				plan.lobber = e.pidPass;
+			}
 			const heave =
 				zone === "three" &&
 				e.desperation === true &&
@@ -1484,6 +1751,7 @@ class Director {
 					blocker: result.kind === "block" ? e.pid : undefined,
 					fouler: typeof e.pidFoul === "number" ? e.pidFoul : undefined,
 					finish: this.finishFor(e),
+					defender: typeof e.pidDefense === "number" ? e.pidDefense : undefined,
 				};
 				const shot = this.stageShot(
 					shooterTeam,
@@ -1839,6 +2107,7 @@ class Director {
 			target: Pt3;
 			dunk: boolean;
 			finish?: Finish;
+			zone?: Zone;
 		},
 		at: number,
 	) {
@@ -1867,10 +2136,25 @@ class Director {
 				this.act(e.pidFoul, "reach", at - 150, at + 300);
 				end = at + 1400;
 			}
+			// The big ones bring the bench up - and the scorer shows it.
+			const andOne = typeof e.pidFoul === "number";
+			const big = shot.dunk || shot.zone === "three" || andOne;
+			if (big) {
+				this.effect("roar", t0 + 100, { team });
+			}
 			const free = Math.max(at + 450, this.free.get(shot.pid) ?? 0);
-			this.act(shot.pid, "celebrate", free + 100, free + 800, {
-				face: -dir as 1 | -1,
-			});
+			if (big || this.rng() < 0.3) {
+				const cel: AnimName = shot.dunk
+					? this.rng() < 0.5
+						? "flex"
+						: "celebrate"
+					: andOne
+						? "flex"
+						: "point";
+				this.act(shot.pid, cel, free + 100, free + 900, {
+					face: -dir as 1 | -1,
+				});
+			}
 			this.beat(i, e.type, at, end);
 			this.offense = other(team);
 			this.phase = typeof e.pidFoul === "number" ? "ft" : "inboundBase";

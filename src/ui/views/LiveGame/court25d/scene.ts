@@ -92,12 +92,15 @@ const warmupLook = (look: Look, top: string): Look => {
 const benchStates = (f: Frame, onFloor: Set<number>): PlayerState[] => {
 	const out: PlayerState[] = [];
 	const seat: [number, number] = [0, 0];
+	// A big play brings the bench to its feet for a moment.
+	const roar = recentFx(f.tl, f.moment.t, ["roar"], 1800);
 	for (const p of f.roster) {
 		const i = seat[p.team]++;
 		if (onFloor.has(p.pid)) {
 			continue;
 		}
 		const at = seatSpot(p.team, i);
+		const up = roar?.team === p.team;
 		out.push({
 			pid: p.pid,
 			team: p.team,
@@ -106,8 +109,8 @@ const benchStates = (f: Frame, onFloor: Set<number>): PlayerState[] => {
 			y: at.y,
 			z: 0,
 			yaw: Math.PI / 2,
-			anim: "sit",
-			phase: (p.pid * 0.37) % 1,
+			anim: up ? "cheer" : "sit",
+			phase: (f.moment.t / 1000) * 1.5 + ((p.pid * 0.37) % 1),
 			moving: false,
 		});
 	}

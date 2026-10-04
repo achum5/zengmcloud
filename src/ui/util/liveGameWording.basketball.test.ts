@@ -25,7 +25,8 @@ const makeBoxScore = (gid: number) => {
 
 // What the words say, for each finish.
 const SAYS: Record<Finish, RegExp> = {
-	dunk: /throws it down|slams it home|blows the dunk|blocked the dunk/,
+	poster: /throws it down on/,
+	dunk: /slams it home|blows the dunk|blocked the dunk/,
 	layup:
 		/layup is good|lays it in|missed the layup|blows the layup|blocked the layup/,
 	tip: /tips it in/,

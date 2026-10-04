@@ -4,8 +4,10 @@
 // shown - live, rewound, replayed, followed in multiplayer - and the 2.5D court
 // can act out the finish the line describes.
 
-// What each wording says happened, in the order getText lists them.
+// What each wording says happened, in the order getText lists them. A
+// poster is a dunk on somebody ("throws it down on X").
 export type Finish =
+	| "poster"
 	| "dunk"
 	| "layup"
 	| "tip"
@@ -34,7 +36,7 @@ const PUT_BACK: Wording = {
 	weights: (gender) => (gender === "male" ? [1, 1] : [0, 1]),
 };
 const AT_RIM: Wording = {
-	finishes: ["dunk", "dunk", "layup"],
+	finishes: ["poster", "dunk", "layup"],
 	weights: (gender) => (gender === "male" ? [1, 2, 2] : [1, 10, 1000]),
 };
 const BLOCKED_AT_RIM: Wording = {
