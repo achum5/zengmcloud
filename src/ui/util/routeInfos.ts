@@ -201,6 +201,7 @@ export const routeInfos = {
 	"/l/:lid/82_0": "trivia82",
 	"/l/:lid/team_trivia": "triviaTeam",
 	"/l/:lid/higher_lower": "triviaHigherLower",
+	"/l/:lid/spin_streak": "triviaSpinStreak",
 	"/l/:lid/franchise_outlook": "franchiseOutlook",
 	"/l/:lid/expansion_draft": "expansionDraft",
 	"/l/:lid/protect_players": "protectPlayers",

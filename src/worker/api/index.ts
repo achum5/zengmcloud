@@ -243,6 +243,10 @@ import {
 } from "../core/trivia/teamTrivia.ts";
 import { getTriviaPlayerProfile } from "../core/trivia/playerProfile.ts";
 import {
+	generateSpinQuestion,
+	type SpinDifficulty,
+} from "../core/trivia/spinStreak.ts";
+import {
 	getRemoteTriviaScores,
 	publishTriviaScores,
 } from "../core/sync/triviaScores.ts";
@@ -2931,6 +2935,17 @@ const triviaNewTeamRound = async (options: TeamTriviaOptions | undefined) => {
 // per visit and cached in the UI - it only moves when a season finishes.
 const triviaTeamCatalog = async () => {
 	return getTeamTriviaCatalog();
+};
+
+// Spin Streak: one question per spin, so the reels always land on something
+// the league actually has an answer for.
+const triviaSpinQuestion = async (input: {
+	difficulty: SpinDifficulty;
+	streak: number;
+	recentPids: number[];
+	lastCategory?: string;
+}) => {
+	return generateSpinQuestion(input);
 };
 
 const triviaFaces = async ({ pids }: { pids: number[] }) => {
@@ -7716,6 +7731,7 @@ const api = {
 		triviaFaces,
 		triviaNewTeamRound,
 		triviaTeamCatalog,
+		triviaSpinQuestion,
 		getPlayerWatch,
 		getProjectedAttendance,
 		getRandomCollege,

@@ -1203,6 +1203,7 @@ export default {
 	triviaGrids: () => ({}),
 	triviaTeam: () => ({}),
 	triviaHigherLower: () => ({}),
+	triviaSpinStreak: () => ({}),
 	customizePlayer,
 	comparePlayers,
 	dailySchedule,

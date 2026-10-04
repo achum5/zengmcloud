@@ -41,6 +41,13 @@ export type TriviaPlayer = {
 	bornYear: number;
 	hof: boolean;
 	draft: { round: number; pick: number; year: number };
+	// Bio facts for Spin Streak's identity questions.
+	firstName: string;
+	lastName: string;
+	college: string;
+	bornLoc: string;
+	hgt: number; // inches
+	draftTid: number; // -1 or below when undrafted
 	awards: { season: number; type: string }[];
 	// Unique tids the player logged a regular-season game for (or is currently
 	// rostered on) - the "played for team X" predicate.
@@ -224,6 +231,12 @@ const buildPlayer = (
 		bornYear: p.born.year,
 		hof,
 		draft: { round: p.draft.round, pick: p.draft.pick, year: p.draft.year },
+		firstName: p.firstName,
+		lastName: p.lastName,
+		college: p.college ?? "",
+		bornLoc: p.born.loc ?? "",
+		hgt: p.hgt,
+		draftTid: p.draft.tid,
 		awards,
 		teamsPlayed: [...teamsPlayed],
 		rows,

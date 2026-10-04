@@ -721,6 +721,14 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 			},
 			{
 				type: "link",
+				active: (pageID) => pageID === "triviaSpinStreak",
+				league: true,
+				commandPalette: true,
+				path: ["spin_streak"],
+				text: "Spin Streak",
+			},
+			{
+				type: "link",
 				active: (pageID) => pageID === "trivia82",
 				league: true,
 				commandPalette: true,

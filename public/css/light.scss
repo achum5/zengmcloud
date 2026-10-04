@@ -3872,3 +3872,370 @@ body.has-league-ticker-collapsed .sidebar-inner {
 		#{$league-ticker-collapsed-height} + env(safe-area-inset-bottom, 0px)
 	);
 }
+
+// Spin Streak: a slot machine in BBGM colors. Three reels land on season,
+// player and category; three answer tiles below; a shot-clock bar between.
+.spin-machine {
+	position: relative;
+	max-width: 560px;
+	padding: 0.85rem;
+	border: 1px solid var(--bs-border-color);
+	border-radius: 1rem;
+	background: var(--bs-tertiary-bg);
+	box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.12);
+}
+.spin-header {
+	display: grid;
+	grid-template-columns: 1fr auto 1fr;
+	align-items: center;
+	margin-bottom: 0.65rem;
+	padding: 0 0.25rem;
+}
+.spin-title {
+	font-weight: 800;
+	font-size: 1.05rem;
+	text-transform: uppercase;
+	letter-spacing: -0.01em;
+	font-style: italic;
+}
+.spin-streak {
+	font-weight: 900;
+	font-size: 2.2rem;
+	line-height: 1;
+	color: var(--bs-success);
+	font-variant-numeric: tabular-nums;
+}
+.spin-best {
+	justify-self: end;
+	font-size: 0.85rem;
+	font-weight: 600;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--bs-secondary-color);
+}
+.spin-reels {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 0.5rem;
+}
+.spin-reel {
+	position: relative;
+	overflow: hidden;
+	border-radius: 0.75rem;
+	background: var(--bs-body-bg);
+	box-shadow:
+		inset 0 6px 10px -6px rgba(0, 0, 0, 0.35),
+		inset 0 -6px 10px -6px rgba(0, 0, 0, 0.35);
+	mask-image: linear-gradient(
+		to bottom,
+		transparent 0%,
+		#000 30%,
+		#000 70%,
+		transparent 100%
+	);
+}
+.spin-reel-strip {
+	will-change: transform;
+}
+.spin-reel-strip.is-spinning {
+	animation-name: spin-blur;
+	animation-timing-function: ease-out;
+	animation-fill-mode: both;
+}
+@keyframes spin-blur {
+	0% {
+		filter: blur(0);
+	}
+	12% {
+		filter: blur(2.5px);
+	}
+	70% {
+		filter: blur(1.5px);
+	}
+	100% {
+		filter: blur(0);
+	}
+}
+.spin-reel-item {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0 0.35rem;
+	text-align: center;
+	overflow: hidden;
+}
+.spin-reel-window {
+	position: absolute;
+	left: 6%;
+	right: 6%;
+	top: 50%;
+	transform: translateY(-50%);
+	border: 1px solid var(--bs-border-color);
+	border-radius: 0.5rem;
+	box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.04) inset;
+	background: rgba(127, 127, 127, 0.06);
+	pointer-events: none;
+}
+.spin-reel-big {
+	font-weight: 900;
+	font-size: clamp(1.3rem, 5.5vw, 1.75rem);
+	font-variant-numeric: tabular-nums;
+	letter-spacing: -0.02em;
+}
+.spin-reel-small {
+	font-size: 0.62rem;
+	font-weight: 700;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--bs-secondary-color);
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.spin-reel-name {
+	font-weight: 900;
+	font-size: clamp(0.9rem, 4vw, 1.2rem);
+	letter-spacing: -0.02em;
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	margin-top: 0.15rem;
+}
+.spin-reel-cat {
+	font-weight: 900;
+	font-size: clamp(0.72rem, 3.3vw, 0.98rem);
+	text-transform: uppercase;
+	letter-spacing: -0.01em;
+	line-height: 1.05;
+}
+.spin-timer {
+	height: 8px;
+	margin: 0.85rem 0.25rem;
+	border-radius: 999px;
+	background: var(--bs-secondary-bg);
+	overflow: hidden;
+}
+.spin-timer-fill {
+	height: 100%;
+	border-radius: 999px;
+	background: var(--bs-success);
+	transform-origin: left center;
+}
+.spin-timer-fill.is-running {
+	animation-name: spin-clock;
+	animation-timing-function: linear;
+	animation-fill-mode: forwards;
+}
+.spin-timer-fill.is-paused {
+	animation-play-state: paused;
+}
+@keyframes spin-clock {
+	0% {
+		transform: scaleX(1);
+		background: var(--bs-success);
+	}
+	65% {
+		background: var(--bs-success);
+	}
+	85% {
+		background: var(--bs-warning);
+	}
+	100% {
+		transform: scaleX(0);
+		background: var(--bs-danger);
+	}
+}
+.spin-options {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 0.5rem;
+}
+.spin-option {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4rem;
+	min-height: 150px;
+	padding: 0.6rem 0.4rem;
+	border: 2px solid var(--bs-border-color);
+	border-radius: 0.85rem;
+	background: var(--bs-body-bg);
+	color: var(--bs-body-color);
+	transition:
+		transform 0.12s ease,
+		box-shadow 0.12s ease,
+		border-color 0.12s ease,
+		opacity 0.2s ease;
+}
+.spin-option.is-shown {
+	animation: spin-deal 0.28s cubic-bezier(0.2, 0.8, 0.3, 1.2) both;
+}
+@keyframes spin-deal {
+	from {
+		opacity: 0;
+		transform: translateY(10px) scale(0.94);
+	}
+	to {
+		opacity: 1;
+		transform: none;
+	}
+}
+.spin-option:hover:not(:disabled) {
+	transform: translateY(-3px);
+	border-color: var(--bs-success);
+	box-shadow: 0 0.4rem 0.9rem rgba(0, 0, 0, 0.2);
+}
+.spin-option:disabled {
+	cursor: default;
+}
+.spin-option.is-right {
+	border-color: var(--bs-success);
+	box-shadow: 0 0 0 3px rgba(var(--bs-success-rgb), 0.35);
+}
+.spin-option.is-wrong {
+	border-color: var(--bs-danger);
+	box-shadow: 0 0 0 3px rgba(var(--bs-danger-rgb), 0.3);
+}
+.spin-option.is-dimmed {
+	opacity: 0.4;
+}
+.spin-badge {
+	position: absolute;
+	top: -10px;
+	right: -8px;
+	width: 30px;
+	height: 30px;
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-weight: 900;
+	color: #fff;
+	animation: trivia-pop 0.35s ease-out both;
+	box-shadow: 0 0.2rem 0.5rem rgba(0, 0, 0, 0.3);
+}
+.spin-badge.is-right {
+	background: var(--bs-success);
+}
+.spin-badge.is-wrong {
+	background: var(--bs-danger);
+}
+.spin-team-block {
+	width: 100%;
+	max-width: 120px;
+	aspect-ratio: 1;
+	border-radius: 0.75rem;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.18);
+}
+.spin-team-abbrev {
+	font-weight: 900;
+	font-size: clamp(1.3rem, 7vw, 2.3rem);
+	letter-spacing: -0.04em;
+	line-height: 1;
+}
+.spin-team-abbrev.is-long {
+	font-size: clamp(1rem, 5vw, 1.7rem);
+}
+.spin-flag.fi {
+	font-size: clamp(2.6rem, 11vw, 4rem);
+	line-height: 1;
+	border-radius: 0.3rem;
+	box-shadow: 0 0.15rem 0.4rem rgba(0, 0, 0, 0.25);
+}
+.spin-flag.flag-image {
+	height: clamp(2rem, 8vw, 3rem);
+}
+.spin-monogram {
+	width: clamp(54px, 15vw, 76px);
+	aspect-ratio: 1;
+	border-radius: 50%;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: #fff;
+	font-weight: 900;
+	font-size: clamp(1rem, 4.5vw, 1.4rem);
+	letter-spacing: -0.03em;
+	box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.2);
+}
+.spin-option-number {
+	font-weight: 900;
+	font-size: clamp(2rem, 10vw, 3.2rem);
+	line-height: 1;
+	letter-spacing: -0.03em;
+	font-variant-numeric: tabular-nums;
+}
+.spin-option-number.is-long {
+	font-size: clamp(1.3rem, 6vw, 2rem);
+}
+.spin-option-label {
+	font-weight: 700;
+	font-size: 0.85rem;
+	line-height: 1.15;
+	text-align: center;
+	overflow-wrap: anywhere;
+}
+.spin-option-sub {
+	font-size: 0.75rem;
+	line-height: 1.15;
+	color: var(--bs-secondary-color);
+	text-align: center;
+}
+.spin-option-name {
+	font-weight: 900;
+	font-size: clamp(1rem, 4.5vw, 1.35rem);
+	letter-spacing: -0.02em;
+	margin-top: 0.2rem;
+	overflow-wrap: anywhere;
+	text-align: center;
+}
+.spin-option-text {
+	font-weight: 800;
+	font-size: clamp(0.85rem, 3.8vw, 1.1rem);
+	line-height: 1.15;
+	text-align: center;
+	text-transform: uppercase;
+	letter-spacing: -0.01em;
+}
+.spin-overlay {
+	position: absolute;
+	left: 0.85rem;
+	right: 0.85rem;
+	bottom: 0.85rem;
+	height: 150px;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	border-radius: 0.85rem;
+	backdrop-filter: blur(2px);
+}
+.spin-chip-active {
+	border-color: var(--bs-success);
+	box-shadow: 0 0 0 2px rgba(var(--bs-success-rgb), 0.35);
+}
+.spin-summary {
+	max-width: 560px;
+}
+.spin-summary-lines {
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.01em;
+	line-height: 1.7;
+}
+.spin-summary-lines .btn-link {
+	font-weight: 700;
+	text-transform: uppercase;
+}
+@media (prefers-reduced-motion: reduce) {
+	.spin-reel-strip.is-spinning {
+		animation: none;
+	}
+}

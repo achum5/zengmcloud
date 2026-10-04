@@ -17,6 +17,7 @@ export { default as createCards } from "./createCards.ts";
 export { default as triviaGrids } from "./triviaGrids.ts";
 export { default as triviaTeam } from "./triviaTeam.ts";
 export { default as triviaHigherLower } from "./triviaHigherLower.ts";
+export { default as triviaSpinStreak } from "./triviaSpinStreak.ts";
 export { default as franchiseOutlook } from "./franchiseOutlook.ts";
 export { default as awardSettings } from "./awardSettings.ts";
 export { default as awardsRecords } from "./awardsRecords.ts";
