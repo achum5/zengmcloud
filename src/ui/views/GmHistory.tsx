@@ -23,10 +23,10 @@ const GmHistory = ({
 	totalWon,
 	worstRecord,
 }: View<"gmHistory">) => {
+	const { college, userTid } = useLocal(["college", "userTid"]);
 	useTitleBar({
-		title: "GM History",
+		title: college ? "Coach History" : "GM History",
 	});
-	const { userTid } = useLocal(["userTid"]);
 
 	const showOverall = teamHistories.length !== 1;
 
@@ -90,23 +90,31 @@ const GmHistory = ({
 					})}
 				</div>
 				<div className="col-sm-7 col-md-9 mt-3 mt-sm-0">
-					<p>
-						This GM History page is similar to the{" "}
-						<a href={helpers.leagueUrl(["team_history"])}>Team History page</a>,
-						except it's not just for one team. It's for every team you were the
-						GM of.
-					</p>
-					<p>
-						Currently, there are three ways to change teams: (1) do a really bad
-						job and the owner will fire you; (2) do a really good job and other
-						teams may try to hire you after the playoffs end; and (3) enable{" "}
-						<a href={helpers.leagueUrl(["god_mode"])}>God Mode</a> and go to
-						Tools &gt; Switch Team.
-					</p>
-					<p>
-						If you do change teams in God Mode, the one listed here for a given
-						season will be the team you controlled when the playoffs ended.
-					</p>
+					{college ? null : (
+						<>
+							<p>
+								This GM History page is similar to the{" "}
+								<a href={helpers.leagueUrl(["team_history"])}>
+									Team History page
+								</a>
+								, except it's not just for one team. It's for every team you
+								were the GM of.
+							</p>
+							<p>
+								Currently, there are three ways to change teams: (1) do a really
+								bad job and the owner will fire you; (2) do a really good job
+								and other teams may try to hire you after the playoffs end; and
+								(3) enable{" "}
+								<a href={helpers.leagueUrl(["god_mode"])}>God Mode</a> and go to
+								Tools &gt; Switch Team.
+							</p>
+							<p>
+								If you do change teams in God Mode, the one listed here for a
+								given season will be the team you controlled when the playoffs
+								ended.
+							</p>
+						</>
+					)}
 					<Championships
 						history={teamHistories.flatMap((row) => row.history)}
 					/>

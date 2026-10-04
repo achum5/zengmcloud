@@ -31,7 +31,7 @@ import { collegeDepartures } from "../college/offseason.ts";
 import { collegeJudgePromises } from "../college/retention.ts";
 import { collegeUpdatePrestige } from "../college/prestige.ts";
 import { collegeSendToLinkedLeague } from "../college/handoff.ts";
-import { COLLEGE_AWARDS } from "../college/setup.ts";
+import { collegeMigrate } from "../college/setup.ts";
 import { doAwards } from "../awards/doAwards.ts";
 
 const INFLATION_GAME_ATTRIBUTES = [
@@ -326,14 +326,7 @@ const newPhaseBeforeDraft = async (
 	// In case some weird situation results in games still in the schedule, clear them
 	await idb.cache.schedule.clear();
 
-	// College leagues made before college awards existed still have the pro
-	// set.
-	if (
-		g.get("college") &&
-		g.get("awards").some((award) => award.shortName === "SFMVP")
-	) {
-		await league.setGameAttributes({ awards: COLLEGE_AWARDS });
-	}
+	await collegeMigrate();
 
 	if (g.get("numGamesPlayoffSeries").length === 0) {
 		// Set champ of the league!

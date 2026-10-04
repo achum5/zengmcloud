@@ -376,8 +376,18 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 				active: (pageID) => pageID === "gmHistory",
 				league: true,
 				commandPalette: true,
+				pro: true,
 				path: ["gm_history"],
 				text: "GM History",
+			},
+			{
+				type: "link",
+				active: (pageID) => pageID === "gmHistory",
+				league: true,
+				commandPalette: true,
+				college: true,
+				path: ["gm_history"],
+				text: "Coach History",
 			},
 			{
 				type: "link",

@@ -1,7 +1,8 @@
 import { COLLEGE_CONFERENCES } from "../../../common/collegeSchools.ts";
 import type { Conf, Div } from "../../../common/types.ts";
 import { randInt, realGauss } from "../../../common/random.ts";
-import { helpers } from "../../util/index.ts";
+import { g, helpers } from "../../util/index.ts";
+import { league } from "../index.ts";
 import {
 	defaultAwards,
 	defaultAwardsBasketball,
@@ -153,3 +154,22 @@ export const COLLEGE_SETTINGS = {
 	maxRosterSize: 15,
 	awards: COLLEGE_AWARDS,
 } as const;
+
+// Bring a college league made by an earlier version up to date: the college
+// awards, and the stat tuning (only if it hasn't been customized).
+export const collegeMigrate = async () => {
+	if (!g.get("college")) {
+		return;
+	}
+	if (g.get("awards").some((award) => award.shortName === "SFMVP")) {
+		await league.setGameAttributes({ awards: COLLEGE_AWARDS });
+	}
+	if ([2.1, 2.6].includes(g.get("threePointTendencyFactor"))) {
+		await league.setGameAttributes({
+			threePointTendencyFactor: COLLEGE_SETTINGS.threePointTendencyFactor,
+			foulRateFactor: COLLEGE_SETTINGS.foulRateFactor,
+			ftAccuracyFactor: COLLEGE_SETTINGS.ftAccuracyFactor,
+			orbFactor: COLLEGE_SETTINGS.orbFactor,
+		});
+	}
+};
