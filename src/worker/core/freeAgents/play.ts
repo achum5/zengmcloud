@@ -12,6 +12,7 @@ import {
 	helpers,
 } from "../../util/index.ts";
 import type { Conditions } from "../../../common/types.ts";
+import { collegeRecruitingDay } from "../college/recruiting.ts";
 import { recomputeLocalUITeamOvrs } from "../../util/recomputeLocalUITeamOvrs.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { runAfterActionHook } from "../sync/afterActionHook.ts";
@@ -43,11 +44,15 @@ async function play(
 	const cbRunDay = async () => {
 		// This is called if there are remaining days to simulate
 		const cbYetAnother = async () => {
-			await decreaseDemands();
-			// Before anyone shops: a team that has agreed terms with a free agent
-			// it cannot fit gets to go and make room for him.
-			await clearSpaceForSignings();
-			await autoSign();
+			if (g.get("college")) {
+				await collegeRecruitingDay();
+			} else {
+				await decreaseDemands();
+				// Before anyone shops: a team that has agreed terms with a free agent
+				// it cannot fit gets to go and make room for him.
+				await clearSpaceForSignings();
+				await autoSign();
+			}
 			await league.setGameAttributes({
 				daysLeft: g.get("daysLeft") - 1,
 			});
@@ -56,7 +61,9 @@ async function play(
 				await toUI("realtimeUpdate", [["playerMovement"]]);
 				await recomputeLocalUITeamOvrs();
 				await updateStatus(helpers.daysLeft(true));
-				await trade.betweenAiTeams();
+				if (!g.get("college")) {
+					await trade.betweenAiTeams();
+				}
 				await play(numDays - 1, conditions, false);
 			} else {
 				await cbNoDays();

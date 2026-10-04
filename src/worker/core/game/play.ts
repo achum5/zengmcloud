@@ -5,6 +5,7 @@ import {
 	SAVE_REPLAYS_DRAMATIC,
 } from "../../../common/constants.ts";
 import { advanceCollegeConfTourneys } from "../college/tournaments.ts";
+import { collegeRecruitingDay } from "../college/recruiting.ts";
 import {
 	GameSim,
 	allStar,
@@ -468,15 +469,21 @@ const play = async (
 
 			// Do this stuff after injuries, so autoSign knows the injury status of players for the next game
 			const phase = g.get("phase");
-			if (
-				phase === PHASE.REGULAR_SEASON ||
-				phase === PHASE.AFTER_TRADE_DEADLINE
-			) {
-				await freeAgents.decreaseDemands();
-				await freeAgents.autoSign();
-			}
-			if (phase === PHASE.REGULAR_SEASON) {
-				await trade.betweenAiTeams();
+			if (g.get("college")) {
+				// College: no in-season signings or trades, but recruiting goes on
+				// all season.
+				await collegeRecruitingDay();
+			} else {
+				if (
+					phase === PHASE.REGULAR_SEASON ||
+					phase === PHASE.AFTER_TRADE_DEADLINE
+				) {
+					await freeAgents.decreaseDemands();
+					await freeAgents.autoSign();
+				}
+				if (phase === PHASE.REGULAR_SEASON) {
+					await trade.betweenAiTeams();
+				}
 			}
 
 			// One compact durable line for the whole league's countdown this day -

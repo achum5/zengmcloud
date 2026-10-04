@@ -1,5 +1,5 @@
 import type { TeamRotation } from "./rotation.ts";
-import type { CollegeConfTourney } from "./college.ts";
+import type { CollegeConfTourney, CollegeRecruiting } from "./college.ts";
 import type { GameFlow } from "./gameFlow.ts";
 import * as z from "zod";
 import type { FaceConfig } from "facesjs";
@@ -840,6 +840,8 @@ export type GameAttributesLeague = {
 	// pro league, so nothing college-specific ever runs there.
 	college: boolean;
 	collegeConfTourney?: CollegeConfTourney;
+	// User schools whose recruiting runs on autopilot.
+	collegeAutoRecruit?: number[];
 	godMode: boolean;
 	godModeInPast: boolean;
 	gracePeriodEnd: number;
@@ -1636,6 +1638,7 @@ export type PlayerWithoutKey<PlayerRatings = MinimalPlayerRatings> = {
 	redshirt?: number;
 	// Why he left school, once he has.
 	collegeExit?: "graduated" | "draft";
+	recruiting?: CollegeRecruiting;
 	contract: PlayerContract & {
 		temp?: true; // Used only on import
 	};

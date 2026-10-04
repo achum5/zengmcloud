@@ -1,5 +1,5 @@
 import { PHASE, PLAYER, POSITION_COUNTS } from "../../../common/constants.ts";
-import { collegeSigningDay } from "../college/offseason.ts";
+import { collegeSigningDay } from "../college/recruiting.ts";
 import {
 	contractNegotiation,
 	draft,

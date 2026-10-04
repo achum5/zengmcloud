@@ -1204,6 +1204,7 @@ export default {
 	triviaTeam: () => ({}),
 	triviaHigherLower: () => ({}),
 	triviaSpinStreak: () => ({}),
+	recruiting: () => ({}),
 	customizePlayer,
 	comparePlayers,
 	dailySchedule,

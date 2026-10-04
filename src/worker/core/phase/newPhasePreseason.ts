@@ -33,6 +33,7 @@ import {
 	getTradePosture,
 } from "../trade/tradePosture.ts";
 import { SPORTSBOOK_PRESEASON_GRANT } from "../../../common/sportsbook.ts";
+import { collegePreseasonFill } from "../college/portal.ts";
 
 const newPhasePreseason = async (
 	conditions: Conditions,
@@ -42,7 +43,12 @@ const newPhasePreseason = async (
 
 	const repeatSeason = g.get("repeatSeason");
 	const forceHistoricalRosters = g.get("forceHistoricalRosters");
-	if (repeatSeason?.type !== "playersAndRosters" && !forceHistoricalRosters) {
+	if (g.get("college")) {
+		await collegePreseasonFill();
+	} else if (
+		repeatSeason?.type !== "playersAndRosters" &&
+		!forceHistoricalRosters
+	) {
 		await freeAgents.autoSign();
 	}
 	const newSeason = g.get("season") + 1;

@@ -394,7 +394,16 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 				commandPalette: true,
 				college: true,
 				path: ["free_agents"],
-				text: "Recruits",
+				text: "Walk-ons",
+			},
+			{
+				type: "link",
+				active: (pageID) => pageID === "recruiting",
+				league: true,
+				commandPalette: true,
+				college: true,
+				path: ["recruiting"],
+				text: "Recruiting",
 			},
 			{
 				type: "link",

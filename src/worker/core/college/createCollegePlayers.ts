@@ -1,9 +1,10 @@
 import { player } from "../index.ts";
 import { PLAYER } from "../../../common/constants.ts";
 import { g } from "../../util/index.ts";
-import type { PlayerWithoutKey, Team } from "../../../common/types.ts";
+import type { Player, PlayerWithoutKey, Team } from "../../../common/types.ts";
+import { initRecruitClass } from "./recruiting.ts";
 import { getNumPlayersPerTeam } from "../league/create/createRandomPlayers.ts";
-import { collegeNilForValue, recruitClassSize } from "./util.ts";
+import { collegeNilForPercentile, recruitClassSize } from "./util.ts";
 import { NUM_COLLEGE_SCHOOLS } from "../../../common/collegeSchools.ts";
 
 // Starting rosters for a college league: four classes (freshmen to seniors)
@@ -70,6 +71,7 @@ const createCollegePlayers = async ({
 
 	const players: PlayerWithoutKey[] = [];
 	const jerseyNumbers = new Map<number, string[]>();
+	const finalSeasons = new Map<PlayerWithoutKey, number>();
 
 	for (const [classIndex, slots] of perClass.entries()) {
 		// The best players of the older classes already left early for the pros
@@ -112,20 +114,27 @@ const createCollegePlayers = async ({
 			}
 
 			// The NIL deal runs through his final season of eligibility.
-			player.setContract(
-				p,
-				{
-					amount: collegeNilForValue(p.value),
-					exp: season + 3 - classIndex,
-				},
-				true,
-			);
-
+			finalSeasons.set(p, season + 3 - classIndex);
 			players.push(p);
 		}
 	}
 
+	// NIL deals go by where a player ranks in the whole league, on the same
+	// scale as recruits' asks.
+	const ranked = [...players].sort((a, b) => b.value - a.value);
+	for (const [i, p] of ranked.entries()) {
+		player.setContract(
+			p,
+			{
+				amount: collegeNilForPercentile(i / ranked.length),
+				exp: finalSeasons.get(p)!,
+			},
+			true,
+		);
+	}
+
 	// Next year's high school class, waiting to be recruited.
+	const recruits: PlayerWithoutKey[] = [];
 	for (let i = 0; i < recruitClassSize(activeTids.length); i++) {
 		const p = await genCollegePlayer(PLAYER.UNDRAFTED, 0, scoutingLevel);
 		// Still a high school senior: 17, enrolling next season. draft.year is
@@ -133,8 +142,11 @@ const createCollegePlayers = async ({
 		p.born.year = season - 17;
 		p.collegeYear0 = season + 1;
 		p.draft.year = season;
-		players.push(p);
+		p.value = player.value(p, { ovrMean: 47, ovrStd: 10 });
+		recruits.push(p);
 	}
+	initRecruitClass(recruits as Player[]);
+	players.push(...recruits);
 
 	return players;
 };

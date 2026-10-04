@@ -367,14 +367,24 @@ const writeTeamStats = async (results: GameResults) => {
 			teamSeason.lastTen.pop();
 		}
 
+		// College conference tournament games count in the overall record but
+		// not in the conference standings.
+		const sameConf =
+			results.team[0].cid === results.team[1].cid &&
+			!(
+				g.get("college") &&
+				g.get("collegeConfTourney")?.season === g.get("season")
+			);
+		const sameDiv = results.team[0].did === results.team[1].did && sameConf;
+
 		if (won && g.get("phase") !== PHASE.PLAYOFFS) {
 			teamSeason.won += 1;
 
-			if (results.team[0].did === results.team[1].did) {
+			if (sameDiv) {
 				teamSeason.wonDiv += 1;
 			}
 
-			if (results.team[0].cid === results.team[1].cid) {
+			if (sameConf) {
 				teamSeason.wonConf += 1;
 			}
 
@@ -397,11 +407,11 @@ const writeTeamStats = async (results: GameResults) => {
 
 			teamSeason[lostOrOtl] += 1;
 
-			if (results.team[0].did === results.team[1].did) {
+			if (sameDiv) {
 				teamSeason[`${lostOrOtl}Div` as const] += 1;
 			}
 
-			if (results.team[0].cid === results.team[1].cid) {
+			if (sameConf) {
 				teamSeason[`${lostOrOtl}Conf` as const] += 1;
 			}
 

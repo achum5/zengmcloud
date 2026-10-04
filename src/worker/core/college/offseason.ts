@@ -1,11 +1,11 @@
-import { PHASE, PLAYER } from "../../../common/constants.ts";
+import { PLAYER } from "../../../common/constants.ts";
 import { collegeYear } from "../../../common/college.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, logEvent } from "../../util/index.ts";
 import { player } from "../index.ts";
 import { genCollegePlayer } from "./createCollegePlayers.ts";
-import { collegeNilForValue, recruitClassSize } from "./util.ts";
-import { getNumPlayersPerTeam } from "../league/create/createRandomPlayers.ts";
+import { recruitClassSize } from "./util.ts";
+import { initRecruitClass } from "./recruiting.ts";
 import type { Conditions, Player } from "../../../common/types.ts";
 import { last } from "../../../common/utils.ts";
 
@@ -85,6 +85,7 @@ export const genCollegeRecruits = async (draftYear: number) => {
 	).filter((p) => p.draft.year === draftYear);
 	const target = recruitClassSize(g.get("numActiveTeams"));
 
+	const added: Player[] = [];
 	for (let i = existing.length; i < target; i++) {
 		const p = await genCollegePlayer(PLAYER.UNDRAFTED, 0, 0);
 		p.collegeYear0 = draftYear + 1;
@@ -93,73 +94,11 @@ export const genCollegeRecruits = async (draftYear: number) => {
 		p.born.year = draftYear - 17;
 		await idb.cache.players.add(p);
 		await player.updateValues(p as Player);
-	}
-};
-
-// Signing day (stand-in until the full recruiting system): every school fills
-// its open scholarships from this year's high school class. The best recruits
-// lean heavily toward prestigious programs and teams that just won; nobody is
-// guaranteed anyone. Whoever is left unsigned becomes a walk-on.
-export const collegeSigningDay = async () => {
-	const season = g.get("season");
-	const recruits = (
-		await idb.cache.players.indexGetAll("playersByTid", PLAYER.UNDRAFTED)
-	)
-		.filter((p) => p.draft.year === season)
-		.sort((a, b) => b.value - a.value);
-
-	const teams = (await idb.cache.teams.getAll()).filter((t) => !t.disabled);
-	const teamSeasons = await idb.cache.teamSeasons.indexGetAll(
-		"teamSeasonsBySeasonTid",
-		[[season], [season, "Z"]],
-	);
-	const winpByTid = new Map<number, number>();
-	for (const ts of teamSeasons) {
-		const games = ts.won + ts.lost;
-		winpByTid.set(ts.tid, games > 0 ? ts.won / games : 0.5);
+		added.push(p as Player);
 	}
 
-	const scholarships = getNumPlayersPerTeam();
-	const openByTid = new Map<number, number>();
-	const scoreByTid = new Map<number, number>();
-	for (const t of teams) {
-		const roster = await idb.cache.players.indexGetAll("playersByTid", t.tid);
-		openByTid.set(t.tid, Math.max(0, scholarships - roster.length));
-		const winp = winpByTid.get(t.tid) ?? 0.5;
-		scoreByTid.set(t.tid, (t.prestige ?? 30) + 30 * (winp - 0.5));
-	}
-
-	for (const p of recruits) {
-		const open = teams.filter((t) => openByTid.get(t.tid)! > 0);
-		if (open.length === 0) {
-			break;
-		}
-		let total = 0;
-		const weights = open.map((t) => {
-			const w = Math.exp(scoreByTid.get(t.tid)! / 15);
-			total += w;
-			return w;
-		});
-		let r = Math.random() * total;
-		let tid = open.at(-1)!.tid;
-		for (let i = 0; i < open.length; i++) {
-			r -= weights[i]!;
-			if (r <= 0) {
-				tid = open[i]!.tid;
-				break;
-			}
-		}
-		openByTid.set(tid, openByTid.get(tid)! - 1);
-
-		await player.sign(
-			p,
-			tid,
-			{
-				amount: collegeNilForValue(p.value),
-				exp: season + 4,
-			},
-			PHASE.RESIGN_PLAYERS,
-		);
-		await idb.cache.players.put(p);
+	if (added.length > 0) {
+		initRecruitClass([...existing, ...added]);
+		await idb.cache.players.putAll([...existing, ...added]);
 	}
 };

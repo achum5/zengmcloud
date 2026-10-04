@@ -292,6 +292,11 @@ import {
 	type NewLeagueSettings,
 } from "../views/newLeague.ts";
 import { COLLEGE_SETTINGS, getCollegeTeams } from "../core/college/setup.ts";
+import {
+	collegeRecruitAction,
+	collegeSetAutoRecruit,
+	type RecruitAction,
+} from "../core/college/recruiting.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "../core/player/getNumPlayersTradedAwayNormalized.ts";
 import { getAdjustedTicketPrice } from "../../common/getAdjustedTicketPrice.ts";
 import { gameAttributesArrayToObject } from "../../common/gameAttributesArrayToObject.ts";
@@ -2986,6 +2991,18 @@ const createCollegeLeague = async (
 		},
 		conditions,
 	);
+};
+
+// College recruiting: the user's moves on the recruiting board.
+const collegeRecruitActionApi = async (action: RecruitAction) => {
+	const error = await collegeRecruitAction(action);
+	await toUI("realtimeUpdate", [["playerMovement"]]);
+	return error;
+};
+
+const collegeSetAutoRecruitApi = async ({ auto }: { auto: boolean }) => {
+	await collegeSetAutoRecruit(auto);
+	await toUI("realtimeUpdate", [["playerMovement"]]);
 };
 
 // Spin Streak: one question per spin, so the reels always land on something
@@ -7784,6 +7801,8 @@ const api = {
 		triviaTeamCatalog,
 		triviaSpinQuestion,
 		createCollegeLeague,
+		collegeRecruitAction: collegeRecruitActionApi,
+		collegeSetAutoRecruit: collegeSetAutoRecruitApi,
 		getPlayerWatch,
 		getProjectedAttendance,
 		getRandomCollege,

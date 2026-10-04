@@ -1,5 +1,5 @@
 import { contractNegotiation, freeAgents, player } from "../index.ts";
-import { helpers } from "../../util/index.ts";
+import { g, helpers } from "../../util/index.ts";
 import type { PhaseReturn } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { PLAYER } from "../../../common/constants.ts";
@@ -11,6 +11,16 @@ const newPhaseFreeAgency = async (): Promise<PhaseReturn> => {
 
 	// Delete all current negotiations to resign players
 	await contractNegotiation.cancelAll();
+
+	if (g.get("college")) {
+		return {
+			redirect: {
+				url: helpers.leagueUrl(["recruiting"]),
+				text: "View the transfer portal",
+			},
+			updateEvents: ["playerMovement"],
+		};
+	}
 
 	await freeAgents.ensureEnoughPlayers();
 
