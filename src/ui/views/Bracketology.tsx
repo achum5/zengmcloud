@@ -47,32 +47,34 @@ const Bracketology = (props: View<"bracketology">) => {
 					</a>
 				)}
 			</p>
-			<table className="table table-sm table-striped w-auto">
-				<thead>
-					<tr>
-						<th>Seed</th>
-						<th colSpan={4}>Teams</th>
-					</tr>
-				</thead>
-				<tbody>
-					{props.seedLines.map((line) => (
-						<tr key={line.seed}>
-							<td>{line.seed}</td>
-							{line.teams.map((t) => (
-								<td key={t.tid} className="text-nowrap">
-									<TeamLink t={t} season={season} userTid={userTid} />{" "}
-									<span className="text-body-secondary small">
-										{t.won}-{t.lost}
-										{props.projected && autobids.has(t.tid)
-											? ` · ${t.conf}`
-											: ""}
-									</span>
-								</td>
-							))}
+			<div className="table-responsive">
+				<table className="table table-sm table-striped w-auto">
+					<thead>
+						<tr>
+							<th>Seed</th>
+							<th colSpan={4}>Teams</th>
 						</tr>
-					))}
-				</tbody>
-			</table>
+					</thead>
+					<tbody>
+						{props.seedLines.map((line) => (
+							<tr key={line.seed}>
+								<td>{line.seed}</td>
+								{line.teams.map((t) => (
+									<td key={t.tid} className="text-nowrap">
+										<TeamLink t={t} season={season} userTid={userTid} />{" "}
+										<span className="text-body-secondary small">
+											{t.won}-{t.lost}
+											{props.projected && autobids.has(t.tid)
+												? ` · ${t.conf}`
+												: ""}
+										</span>
+									</td>
+								))}
+							</tr>
+						))}
+					</tbody>
+				</table>
+			</div>
 
 			{props.projected ? (
 				<div className="d-flex flex-wrap gap-5">
@@ -104,36 +106,38 @@ const Bracketology = (props: View<"bracketology">) => {
 			{props.confTourneys.length > 0 ? (
 				<>
 					<h2 className="mt-4">Conference tournaments</h2>
-					<table className="table table-sm table-striped w-auto">
-						<tbody>
-							{props.confTourneys.map((conf) => (
-								<tr key={conf.cid}>
-									<td>{conf.name}</td>
-									<td>
-										{conf.champ ? (
-											<>
-												<TeamLink
-													t={conf.champ}
-													season={season}
-													userTid={userTid}
-												/>{" "}
-												<span className="text-body-secondary small">
-													champion
-												</span>
-											</>
-										) : (
-											conf.alive.map((t, i) => (
-												<span key={t.tid}>
-													{i > 0 ? ", " : ""}
-													<TeamLink t={t} season={season} userTid={userTid} />
-												</span>
-											))
-										)}
-									</td>
-								</tr>
-							))}
-						</tbody>
-					</table>
+					<div className="table-responsive">
+						<table className="table table-sm table-striped w-auto">
+							<tbody>
+								{props.confTourneys.map((conf) => (
+									<tr key={conf.cid}>
+										<td>{conf.name}</td>
+										<td>
+											{conf.champ ? (
+												<>
+													<TeamLink
+														t={conf.champ}
+														season={season}
+														userTid={userTid}
+													/>{" "}
+													<span className="text-body-secondary small">
+														champion
+													</span>
+												</>
+											) : (
+												conf.alive.map((t, i) => (
+													<span key={t.tid}>
+														{i > 0 ? ", " : ""}
+														<TeamLink t={t} season={season} userTid={userTid} />
+													</span>
+												))
+											)}
+										</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					</div>
 				</>
 			) : null}
 

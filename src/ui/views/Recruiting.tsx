@@ -234,8 +234,8 @@ const Recruiting = (props: View<"recruiting">) => {
 
 	const cols: Col[] = [
 		{ title: "#", desc: "National Rank", sortType: "number" },
-		{ title: "Stars", sortSequence: ["desc", "asc"], sortType: "number" },
 		{ title: "Name", sortType: "name" },
+		{ title: "Stars", sortSequence: ["desc", "asc"], sortType: "number" },
 		{ title: "Pos" },
 		{ title: "Ht", sortType: "number" },
 		{ title: "Home", desc: "Hometown" },
@@ -290,17 +290,17 @@ const Recruiting = (props: View<"recruiting">) => {
 				// Transfers first while the portal is open.
 				sortValue: r.portalFrom !== undefined ? r.rank - 100000 : r.rank,
 			},
-			{
-				value: <Stars stars={r.stars} />,
-				sortValue: r.stars,
-				searchValue: `${r.stars}`,
-			},
 			wrappedPlayerNameLabels({
 				pid: r.pid,
 				firstName: r.firstName,
 				lastName: r.lastName,
 				skills: r.skills,
 			}),
+			{
+				value: <Stars stars={r.stars} />,
+				sortValue: r.stars,
+				searchValue: `${r.stars}`,
+			},
 			r.pos,
 			{ value: <Height inches={r.hgt} />, sortValue: r.hgt },
 			{
@@ -506,7 +506,7 @@ const Recruiting = (props: View<"recruiting">) => {
 			<DataTable
 				cols={cols}
 				defaultSort={[0, "asc"]}
-				defaultStickyCols={window.mobile ? 1 : 3}
+				defaultStickyCols={2}
 				name="Recruiting"
 				pagination
 				rows={rows}

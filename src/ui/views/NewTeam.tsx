@@ -105,6 +105,7 @@ const NewTeam = ({
 }: View<"newTeam">) => {
 	const {
 		challengeNoRatings,
+		college,
 		gameOver,
 		godMode,
 		phase,
@@ -112,6 +113,7 @@ const NewTeam = ({
 		userTid,
 	} = useLocal([
 		"challengeNoRatings",
+		"college",
 		"gameOver",
 		"godMode",
 		"phase",
@@ -157,7 +159,7 @@ const NewTeam = ({
 	} else if (expansion) {
 		title = "Switch To Expansion Team?";
 	} else if (otherTeamsWantToHire) {
-		title = "Job Offers From Other Teams";
+		title = college ? "Job Offers" : "Job Offers From Other Teams";
 	} else {
 		title = "Pick a New Team";
 	}
@@ -227,13 +229,20 @@ const NewTeam = ({
 			</p>
 		);
 	} else if (otherTeamsWantToHire) {
-		message = (
+		message = college ? (
+			<p>
+				Other schools want you as their head coach. Accept an offer below, or
+				stay where you are.
+			</p>
+		) : (
 			<p>
 				You've had so much success that some other teams are interested in
 				hiring you to be their GM. Accept an offer below, or ignore this to
 				continue with your current team.
 			</p>
 		);
+	} else if (college) {
+		message = <p>You've been fired. These schools are looking for a coach.</p>;
 	} else {
 		message = (
 			<p>
