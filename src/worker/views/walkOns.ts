@@ -1,7 +1,4 @@
-import {
-	collegeClassLabel,
-	collegeFinalSeason,
-} from "../../common/college.ts";
+import { collegeClassLabel, collegeFinalSeason } from "../../common/college.ts";
 import { PHASE, PLAYER } from "../../common/constants.ts";
 import type { UpdateEvents } from "../../common/types.ts";
 import { idb } from "../db/index.ts";
