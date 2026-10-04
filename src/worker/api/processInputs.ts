@@ -1206,6 +1206,7 @@ export default {
 	triviaSpinStreak: () => ({}),
 	recruiting: () => ({}),
 	retention: () => ({}),
+	walkOns: () => ({}),
 	customizePlayer,
 	comparePlayers,
 	dailySchedule,

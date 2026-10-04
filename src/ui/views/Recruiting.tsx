@@ -285,7 +285,11 @@ const Recruiting = (props: View<"recruiting">) => {
 		},
 		classNames: { "table-info": r.committed === userTid },
 		data: [
-			r.rank,
+			{
+				value: r.portalFrom !== undefined ? `P${r.rank}` : r.rank,
+				// Transfers first while the portal is open.
+				sortValue: r.portalFrom !== undefined ? r.rank - 100000 : r.rank,
+			},
 			{
 				value: <Stars stars={r.stars} />,
 				sortValue: r.stars,

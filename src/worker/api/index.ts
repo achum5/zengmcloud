@@ -3004,6 +3004,27 @@ const collegeRecruitActionApi = async (action: RecruitAction) => {
 	return result;
 };
 
+// Walk-ons: sign straight onto the roster, if there's room.
+const collegeSignWalkOn = async (pid: number) => {
+	const p = await idb.cache.players.get(pid);
+	if (!p || p.tid !== PLAYER.FREE_AGENT || p.recruiting) {
+		return "He isn't available.";
+	}
+	const userTid = g.get("userTid");
+	const roster = await idb.cache.players.indexGetAll("playersByTid", userTid);
+	if (roster.length >= g.get("maxRosterSize")) {
+		return "Your roster is full.";
+	}
+	await player.sign(
+		p,
+		userTid,
+		{ amount: g.get("minContract"), exp: g.get("season") },
+		g.get("phase"),
+	);
+	await idb.cache.players.put(p);
+	await toUI("realtimeUpdate", [["playerMovement"]]);
+};
+
 // The retention period: NIL raises and playing time promises.
 const collegeRetentionActionApi = async (action: RetentionAction) => {
 	const result = await collegeRetentionAction(action);
@@ -7814,6 +7835,7 @@ const api = {
 		createCollegeLeague,
 		collegeRecruitAction: collegeRecruitActionApi,
 		collegeRetentionAction: collegeRetentionActionApi,
+		collegeSignWalkOn,
 		collegeSetAutoRecruit: collegeSetAutoRecruitApi,
 		getPlayerWatch,
 		getProjectedAttendance,

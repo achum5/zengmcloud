@@ -142,6 +142,19 @@ const makePlan = (recruits: Player[], ctxs: Map<number, TeamCtx>) => {
 	// Sloppier target picking on easier settings.
 	const noise = Math.max(0, 0.5 * (1.5 - difficulty()));
 
+	// How far down the board each school realistically shops: the best
+	// programs only for the top of the class, everyone else further down.
+	const byValue = [...recruits].sort((a, b) => b.value - a.value);
+	const valueRank = new Map(byValue.map((p, i) => [p.pid, i]));
+	const byPrestige = [...ctxs.values()].sort((a, b) => b.prestige - a.prestige);
+	const reach = new Map(
+		byPrestige.map((ctx, i) => [
+			ctx.tid,
+			(i / byPrestige.length) * recruits.length * 1.5 +
+				0.04 * recruits.length,
+		]),
+	);
+
 	// For each player, the interest of the best three schools that could go
 	// after him. A school well behind the second best of the others is
 	// unlikely to land him, so the best players are fought over by the best
@@ -152,9 +165,10 @@ const makePlan = (recruits: Player[], ctxs: Map<number, TeamCtx>) => {
 		if (rec.committed !== undefined) {
 			continue;
 		}
+		const rank = valueRank.get(p.pid)!;
 		const top3 = [-Infinity, -Infinity, -Infinity];
 		for (const ctx of shopping) {
-			if (rec.talks[ctx.tid]?.walked) {
+			if (rec.talks[ctx.tid]?.walked || reach.get(ctx.tid)! < rank) {
 				continue;
 			}
 			const x = interestFor(p, ctx);

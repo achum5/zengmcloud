@@ -57,7 +57,7 @@ type RiskInput = {
 // Chance he enters the portal, and why.
 const portalRisk = (input: RiskInput) => {
 	const reasons: string[] = [];
-	let risk = 0.06;
+	let risk = 0.11;
 
 	let minutes = 0;
 	if (input.mpg < 8) {

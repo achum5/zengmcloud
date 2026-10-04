@@ -59,20 +59,21 @@ export const genCollegePlayer = async (
 };
 
 // Players generated the normal way are all pro prospects - a pro draft class
-// is only about 70 deep. A high school class is twenty times that, so beyond
-// the top of the class ratings drop off, down to walk-on level at the bottom.
+// is only about 70 deep, and those come from several college classes. A high
+// school class is twenty times that, so beyond the very top of the class
+// ratings drop off, down to walk-on level at the bottom.
 export const calibrateClass = async (players: PlayerWithoutKey[]) => {
 	for (const p of players) {
 		p.value = player.value(p, { ovrMean: 47, ovrStd: 10 });
 	}
 	const sorted = [...players].sort((a, b) => b.value - a.value);
-	const top = Math.round((70 * g.get("numActiveTeams")) / 365);
+	const top = Math.round((40 * g.get("numActiveTeams")) / 365);
 	const n = sorted.length;
 	for (const [i, p] of sorted.entries()) {
 		if (i < top) {
 			continue;
 		}
-		const offset = 12 * ((i - top) / Math.max(1, n - top)) ** 0.6;
+		const offset = 13 * ((i - top) / Math.max(1, n - top)) ** 0.45;
 		const ratings = last(p.ratings) as unknown as Record<string, unknown>;
 		for (const [key, value] of Object.entries(ratings)) {
 			if (
@@ -118,7 +119,7 @@ const createCollegePlayers = async ({
 	for (let classIndex = 0; classIndex < COLLEGE_SEASONS; classIndex++) {
 		const slots = perClass[classIndex]!;
 		// The best players of older classes have already left for the draft.
-		const numGonePro = Math.round((classIndex * 15 * activeTids.length) / 365);
+		const numGonePro = Math.round((classIndex * 20 * activeTids.length) / 365);
 
 		const pool: PlayerWithoutKey[] = [];
 		for (let i = 0; i < classSize + numGonePro; i++) {

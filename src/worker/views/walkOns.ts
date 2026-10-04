@@ -1,0 +1,54 @@
+import { collegeClassLabel } from "../../common/college.ts";
+import { PHASE, PLAYER } from "../../common/constants.ts";
+import type { UpdateEvents } from "../../common/types.ts";
+import { idb } from "../db/index.ts";
+import { g } from "../util/index.ts";
+
+// Unsigned players anyone can add to a roster with room: no recruiting, no
+// NIL to speak of.
+const updateWalkOns = async (inputs: unknown, updateEvents: UpdateEvents) => {
+	if (
+		!updateEvents.includes("firstRun") &&
+		!updateEvents.includes("playerMovement") &&
+		!updateEvents.includes("newPhase")
+	) {
+		return;
+	}
+
+	if (!g.get("college")) {
+		return { college: false as const };
+	}
+
+	const userTid = g.get("userTid");
+	const season = g.get("season");
+	// In the offseason, everyone is joining next season's team.
+	const classSeason = g.get("phase") > PHASE.PLAYOFFS ? season + 1 : season;
+	const freeAgents = (
+		await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
+	).filter((p) => !p.recruiting);
+	const players = await idb.getCopies.playersPlus(freeAgents, {
+		attrs: ["pid", "firstName", "lastName", "age", "hgt", "injury"],
+		ratings: ["ovr", "pot", "pos", "skills"],
+		season,
+		showNoStats: true,
+		showRookies: true,
+		fuzz: true,
+	});
+	const byPid = new Map(freeAgents.map((p) => [p.pid, p]));
+	const rosterSize = (
+		await idb.cache.players.indexGetAll("playersByTid", userTid)
+	).length;
+
+	return {
+		college: true as const,
+		season,
+		rosterSize,
+		maxRosterSize: g.get("maxRosterSize"),
+		players: players.map((p) => ({
+			...p,
+			classLabel: collegeClassLabel(byPid.get(p.pid)!, classSeason),
+		})),
+	};
+};
+
+export default updateWalkOns;

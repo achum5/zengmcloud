@@ -90,6 +90,12 @@ export const COLLEGE_SETTINGS = {
 	foulsNeededToFoulOut: 5,
 	foulsUntilBonus: [7, 4, 2],
 	homeCourtAdvantage: 1.5,
+	// Tuned to real D1 averages: at college talent levels the pro sim would
+	// take too few threes, foul too little and miss too many free throws.
+	threePointTendencyFactor: 2.6,
+	foulRateFactor: 1.45,
+	ftAccuracyFactor: 1.15,
+	orbFactor: 1.25,
 	// The tournament: 64 teams, single elimination.
 	numGamesPlayoffSeries: [1, 1, 1, 1, 1, 1],
 	numPlayoffByes: 0,

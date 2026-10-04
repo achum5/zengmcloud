@@ -228,13 +228,19 @@ const checkRosterSizes = async (
 					} have `;
 				}
 
-				userTeamSizeError += `more than the maximum number of players (${g.get(
-					"maxRosterSize",
-				)}). You must remove players (by <a href="${helpers.leagueUrl([
-					"roster",
-				])}">releasing them from your roster</a> or through <a href="${helpers.leagueUrl(
-					["trade"],
-				)}">trades</a>) before continuing.`;
+				userTeamSizeError += g.get("college")
+					? `more than the maximum number of players (${g.get(
+							"maxRosterSize",
+						)}). You must <a href="${helpers.leagueUrl([
+							"roster",
+						])}">release players</a> before continuing.`
+					: `more than the maximum number of players (${g.get(
+							"maxRosterSize",
+						)}). You must remove players (by <a href="${helpers.leagueUrl([
+							"roster",
+						])}">releasing them from your roster</a> or through <a href="${helpers.leagueUrl(
+							["trade"],
+						)}">trades</a>) before continuing.`;
 			} else {
 				const releasedPIDsTemp = await dropPlayers(
 					players,
@@ -253,17 +259,23 @@ const checkRosterSizes = async (
 					} have `;
 				}
 
-				userTeamSizeError += `less than the minimum number of players (${g.get(
-					"minRosterSize",
-				)}). You must add players (through <a href="${helpers.leagueUrl([
-					"free_agents",
-				])}">free agency</a> or <a href="${helpers.leagueUrl([
-					"trade",
-				])}">trades</a>) before continuing.<br><br>Reminder: you can always sign free agents to ${helpers.formatCurrency(
-					g.get("minContract") / 1000,
-					"M",
-					2,
-				)}/yr contracts, even if you're over the cap!`;
+				userTeamSizeError += g.get("college")
+					? `less than the minimum number of players (${g.get(
+							"minRosterSize",
+						)}). Sign <a href="${helpers.leagueUrl([
+							"walk_ons",
+						])}">walk-ons</a> before continuing.`
+					: `less than the minimum number of players (${g.get(
+							"minRosterSize",
+						)}). You must add players (through <a href="${helpers.leagueUrl([
+							"free_agents",
+						])}">free agency</a> or <a href="${helpers.leagueUrl([
+							"trade",
+						])}">trades</a>) before continuing.<br><br>Reminder: you can always sign free agents to ${helpers.formatCurrency(
+							g.get("minContract") / 1000,
+							"M",
+							2,
+						)}/yr contracts, even if you're over the cap!`;
 			} else {
 				// Auto-add players
 				while (numPlayersOnRoster < g.get("minRosterSize")) {

@@ -389,11 +389,11 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 			},
 			{
 				type: "link",
-				active: (pageID) => pageID === "freeAgents",
+				active: (pageID) => pageID === "walkOns",
 				league: true,
 				commandPalette: true,
 				college: true,
-				path: ["free_agents"],
+				path: ["walk_ons"],
 				text: "Walk-ons",
 			},
 			{
