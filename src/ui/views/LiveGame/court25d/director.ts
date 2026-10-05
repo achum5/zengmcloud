@@ -279,9 +279,9 @@ const POS_RANK: Record<string, number> = {
 
 // Speeds in feet per second, true to life: the timeline plays at real speed.
 // Where the sim's clock runs on with nothing worth watching - the walk up the
-// floor after a basket, the trip to the free throw line - the picture cuts
-// instead of hurrying (see cutAt). Animation cycles advance by distance
-// covered, so feet never skate.
+// floor after a basket, the trip to the free throw line - the picture runs
+// through it fast (see hurry) rather than anybody hurrying. Animation cycles
+// advance by distance covered, so feet never skate.
 const RUN = 21;
 const SPRINT = 26;
 const DRIBBLE = 19;
@@ -421,6 +421,28 @@ const BALL_SCREENS = new Set([
 ]);
 // The shortest a step of a set takes, milliseconds.
 const STEP_MIN = 600;
+// How far a defender leaves his man to help (feet): any farther and he
+// could not get back out to him.
+const HELP_REACH: [number, number] = [8, 14];
+// How long a defender takes to read a pass (ms), and how fast he closes out
+// once he has (feet a second) - breaking down for the last steps.
+const CLOSE_READ = 150;
+const CLOSE_RUN = 21;
+const CLOSE_CHOP = 8;
+const CLOSE_BREAK = 3.5;
+// How far round the arc from straight out a man spacing the floor goes
+// (radians): into the corner, and no farther.
+const ARC_EDGE = 1.62;
+// Where a man who has passed out of the lane gets back out to.
+const RESPACE_SPOTS = [
+	"L_corner",
+	"R_corner",
+	"L_wing",
+	"R_wing",
+	"L_slot",
+	"R_slot",
+	"top",
+];
 
 const unitVec = (from: Pt, to: Pt): Pt => {
 	const dx = to.x - from.x;
@@ -429,10 +451,10 @@ const unitVec = (from: Pt, to: Pt): Pt => {
 	return { x: dx / l, y: dy / l };
 };
 
-// How the offense gets from wherever the ball is into its next set: the
-// picture cuts to it (after a basket, a long walk up), to an inbound, a break
-// runs straight off the rebound or the steal, or the five flow into it.
-type Entry = "cut" | "inbound" | "break" | "flow";
+// How the offense gets from wherever the ball is into its next set: off an
+// inbound, on a break straight off the rebound or the steal, or the five
+// flowing into it as the ball comes up.
+type Entry = "inbound" | "break" | "flow";
 
 // How a ball screen is played: the big sits back in the paint, the two
 // defenders swap men, the big jumps out and recovers, or both go at the ball.
@@ -449,8 +471,9 @@ type Running = {
 	// What it ends in: a shot, or a turnover.
 	option?: PlayOption;
 	risk?: PlayRisk;
-	// The first step shown: the picture cuts in late, to the action that
-	// makes the play, with everybody where the steps before put them.
+	// The first step run: the five go straight to where the steps before it
+	// would have put them (the trip up the floor, run through fast), and the
+	// set picks up at the action that makes the play.
 	from: number;
 	// How much clock the trip took (seconds), when known.
 	gap?: number;
@@ -2127,15 +2150,92 @@ class Director {
 			}
 		}
 		for (const p of planted) {
-			// Planted until the step is over, or until he moves on in it.
-			const later = this.track(p.pid)?.moves.find((m) => m.t0 > p.t + 1);
+			// Planted until the step is over, or until he moves on in it (as he
+			// gets there, even: a handoff and away).
+			const later = this.track(p.pid)?.moves.find((m) => m.t0 >= p.t - 1);
 			const until = Math.min(Math.max(p.t + 450, end), later?.t0 ?? Infinity);
 			if (until > p.t + 100) {
 				this.act(p.pid, p.anim, p.t, until, { look: p.look });
 			}
 		}
+		this.spaceTheDrive(run, t0);
 		this.guardStep(run, acts, t0, end, before, k);
 		return end;
+	}
+
+	// SPACING THE DRIVE. The ball going hard at the rim, nobody off it stays
+	// rooted where he was: the men on the arc on its side slide along it,
+	// away from where the help comes from, into the driver's line of sight -
+	// one drifting down to the corner, one lifting up out of it - and a big
+	// in the way drops off to the dunker spot on the far side, under the
+	// help, for the dump-off.
+	private spaceTheDrive(run: Running, t0: number) {
+		const { team } = run;
+		const holder = this.holder;
+		if (holder === undefined) {
+			return;
+		}
+		const rim = { x: rimX(team), y: COURT_H / 2 };
+		const out = -attackDir(team);
+		const drive = this.track(holder)
+			?.moves.filter((m) => m.t0 >= t0 - 1)
+			.findLast((m) => dist(m.from, rim) - dist(m.to, rim) > 6);
+		if (!drive || dist(drive.to, rim) > 18) {
+			return;
+		}
+		const D = drive.to;
+		// Round the rim from straight out (0) toward either sideline.
+		const angle = (p: Pt) => Math.atan2(p.y - rim.y, (p.x - rim.x) * out);
+		const aD = angle(D);
+		const a = drive.t0 + (drive.t1 - drive.t0) * 0.25;
+		const b = drive.t1 + 150;
+		for (const pid of this.slots(team)) {
+			const tr = this.track(pid);
+			if (
+				pid === holder ||
+				!tr ||
+				(this.free.get(pid) ?? 0) > a ||
+				tr.acts.some((x) => x.t1 > a && x.t0 < b)
+			) {
+				continue;
+			}
+			const P = this.posOf(pid);
+			const r = dist(P, rim);
+			let Q: Pt | undefined;
+			if (r >= 21) {
+				// On the arc, on the ball's side of the floor: along it, away.
+				const aP = angle(P);
+				const diff = aP - aD;
+				if (Math.abs(diff) < 0.15 || Math.abs(diff) > 1.3) {
+					continue;
+				}
+				// (Out of room in the corner, with the drive coming baseline at
+				// him: he lifts up out of it instead.)
+				const step = this.rand(3.5, 5) / r;
+				const way =
+					Math.abs(aP + Math.sign(diff) * step) > ARC_EDGE
+						? -Math.sign(diff)
+						: Math.sign(diff);
+				const to = Math.max(-ARC_EDGE, Math.min(ARC_EDGE, aP + way * step));
+				Q = clampPt({
+					x: rim.x + Math.cos(to) * r * out,
+					y: rim.y + Math.sin(to) * r,
+				});
+			} else if (
+				r < 14 &&
+				((this.rank.get(pid) ?? 4) >= 6 ||
+					this.slots(team).indexOf(pid) >= 4) &&
+				dist(P, D) < 9
+			) {
+				// A big in the way: off to the dunker spot on the far side,
+				// along the baseline.
+				const side = D.y >= rim.y ? -1 : 1;
+				Q = clampPt({ x: rim.x - out * 2.5, y: rim.y + side * 8 });
+			}
+			if (Q && dist(P, Q) > 1.5) {
+				this.goBy(pid, Q, a, b, r >= 21 ? "drift" : "slide");
+			}
+		}
 	}
 
 	private playDribble(
@@ -2584,7 +2684,16 @@ class Director {
 				late.set(ud, 300);
 			}
 		}
-		// A drive at the rim: the nearest help steps in front of it.
+		// A drive at the rim - or round a screen to the elbow - and what the
+		// defense does about it.
+		const onBall = holder !== undefined ? this.defenderOf(holder) : undefined;
+		const D = holder !== undefined ? this.posOf(holder) : undefined;
+		const drive =
+			holder === undefined
+				? undefined
+				: this.track(holder)
+						?.moves.filter((m) => m.t0 >= t0 - 1)
+						.findLast((m) => dist(m.from, rim) - dist(m.to, rim) > 4);
 		const drove =
 			holder !== undefined &&
 			acts.some(
@@ -2593,27 +2702,118 @@ class Director {
 					run.roles[a.who] === holder &&
 					a.kind !== "retreat",
 			);
-		if (drove && holder !== undefined) {
-			const D = this.posOf(holder);
-			if (dist(D, rim) < 14) {
-				const onBall = this.defenderOf(holder);
-				let help: number | undefined;
-				let best = Infinity;
-				for (const [d, P] of targets) {
-					const dd = dist(P, D);
-					if (d !== onBall && dd < best) {
-						best = dd;
-						help = d;
-					}
+		// The man the ball goes out to next - kicked out of it, skipped across,
+		// dumped off to under the rim - is open because his man left him to
+		// help: in front of the drive, on the man rolling to the rim, or sunk
+		// into the lane. He pays for it on the closeout.
+		const o = run.option;
+		const last = o ? Math.min(o.after, run.play.steps.length - 1) : -1;
+		const kicked =
+			o &&
+			(o.pass === "kickout" || o.pass === "skip" || o.pass === "dump_off") &&
+			k === (o.branch.length > 0 ? last + 1 : last)
+				? run.roles[o.shooter]
+				: undefined;
+		const hd =
+			kicked === undefined || kicked === holder
+				? undefined
+				: this.defenderOf(kicked);
+		let help: { d: number; at: Pt; from: number; by: number } | undefined;
+		if (
+			kicked !== undefined &&
+			hd !== undefined &&
+			hd !== onBall &&
+			manOf.get(hd) === kicked &&
+			!via.has(hd) &&
+			!late.has(hd) &&
+			!run.help?.includes(hd)
+		) {
+			const M = this.posOf(kicked);
+			// What there is to help on: the ball, in close enough to matter, or
+			// a man rolling or cutting to the rim.
+			const threats: Pt[] = [];
+			if (D && dist(D, rim) < 21) {
+				threats.push(D);
+			}
+			for (const pid of this.slots(team)) {
+				const m = this.track(pid)?.moves.at(-1);
+				if (
+					pid !== holder &&
+					pid !== kicked &&
+					m &&
+					m.t0 >= t0 - 1 &&
+					dist(m.to, rim) < 9 &&
+					dist(m.from, rim) - dist(m.to, rim) > 4
+				) {
+					threats.push(m.to);
 				}
-				if (help !== undefined && best > 2.5) {
-					const u = unitVec(D, rim);
-					special(help, clampPt({ x: D.x + u.x * 3.2, y: D.y + u.y * 3.2 }));
+			}
+			const X = threats.sort((a, b) => dist(a, M) - dist(b, M))[0];
+			const N = targets.get(hd)!;
+			let H: Pt;
+			if (X) {
+				// In front of it, coming from his man's side.
+				const u = unitVec(X, rim);
+				const s = unitVec(X, M);
+				H = {
+					x: X.x + u.x * 2.6 + s.x * 1.2,
+					y: X.y + u.y * 2.6 + s.y * 1.2,
+				};
+			} else {
+				// Nothing there yet: sunk into the lane, off his man.
+				const u = unitVec(N, rim);
+				const kk = Math.min(5, dist(N, rim) * 0.35);
+				H = { x: N.x + u.x * kk, y: N.y + u.y * kk };
+			}
+			// Never so far off him he could not get back out to him: from a
+			// stunt - a hard step or two at the ball - all the way over (the
+			// far side's man, the skip pass coming).
+			const reach =
+				this.rand(HELP_REACH[0], HELP_REACH[1]) + (o?.pass === "skip" ? 2 : 0);
+			const far = dist(M, H);
+			if (far > reach) {
+				H = {
+					x: M.x + ((H.x - M.x) * reach) / far,
+					y: M.y + ((H.y - M.y) * reach) / far,
+				};
+			}
+			// Off his man as the drive gets going, there as it gets there.
+			const from = drive
+				? drive.t0 + (drive.t1 - drive.t0) * 0.4
+				: t0 + (t1 - t0) * 0.35;
+			const by = drive ? drive.t1 + 60 : Math.max(from + 450, t1 - 100);
+			help = { d: hd, at: clampPt(H), from, by };
+			// He had to come because the man on the ball was beaten: that one
+			// ends up on the driver's hip, not in front of him.
+			if (drive && D && onBall !== undefined && manOf.get(onBall) === holder) {
+				const u = unitVec(D, rim);
+				const side =
+					(help.at.x - D.x) * -u.y + (help.at.y - D.y) * u.x >= 0 ? 1 : -1;
+				targets.set(
+					onBall,
+					clampPt({
+						x: D.x + u.x * 0.5 + u.y * side * 1.9,
+						y: D.y + u.y * 0.5 - u.x * side * 1.9,
+					}),
+				);
+			}
+		} else if (drove && D && dist(D, rim) < 14) {
+			// Nobody to kick it to: the nearest help steps in front of it.
+			let near: number | undefined;
+			let best = Infinity;
+			for (const [d, P] of targets) {
+				const dd = dist(P, D);
+				if (d !== onBall && dd < best) {
+					best = dd;
+					near = d;
 				}
+			}
+			if (near !== undefined && best > 2.5) {
+				const u = unitVec(D, rim);
+				special(near, clampPt({ x: D.x + u.x * 3.2, y: D.y + u.y * 3.2 }));
 			}
 		}
 		// Whoever meets the shot drifts toward it, and is there for it.
-		const o = run.option;
 		if (o && run.help && run.help.length > 0) {
 			const S =
 				o.at === "rim"
@@ -2637,6 +2837,20 @@ class Director {
 			const v = via.get(d);
 			if (v) {
 				this.shadow(d, v.at, t0 + 80, v.by, team);
+			}
+			if (help?.d === d) {
+				// With his man, until he leaves him to help.
+				this.shadow(d, P, t0 + 120, help.from, team, manOf.get(d));
+				const n = dist(this.posOf(d), help.at);
+				this.goBy(
+					d,
+					help.at,
+					help.from,
+					help.by,
+					n > 9 ? "run" : "slide",
+					n > 9 ? undefined : (-attackDir(team) as 1 | -1),
+				);
+				continue;
 			}
 			this.shadow(
 				d,
@@ -2780,8 +2994,10 @@ class Director {
 		const to = clampPt({ x: at.x + dir * 2.2, y: at.y + (25 - at.y) * 0.15 });
 		this.hold(pid, t, "dribble");
 		const done = this.go(pid, to, t + 60, 2.6, "post", -dir as 1 | -1);
+		// His man gives ground with him - if he is on him, not off somewhere
+		// else (gone to meet the shot, say).
 		const guard = this.defenderOf(pid);
-		if (guard !== undefined) {
+		if (guard !== undefined && dist(this.posOf(guard), at) < 5) {
 			this.go(
 				guard,
 				clampPt({ x: to.x + dir * 1.5, y: to.y }),
@@ -2794,8 +3010,8 @@ class Director {
 		return Math.max(done, this.hold(pid, done, "hold"));
 	}
 
-	// The lob's set-up: cut to the inbound, Y out of bounds with the ball near
-	// the frontcourt, X on the far wing - and X breaks for the rim.
+	// The lob's set-up: the inbound, Y out of bounds with the ball near the
+	// frontcourt, X on the far wing - and X breaks for the rim.
 	private setUpLob(
 		team: Side,
 		shooter: number,
@@ -2908,6 +3124,9 @@ class Director {
 			}
 			if (from !== shooter) {
 				t = this.passTo(from, shooter, t, passStyleOf(o.pass, this.rng));
+				if (o.pass === "kickout" || o.pass === "skip") {
+					this.respace(team, from, shooter);
+				}
 			}
 		}
 		const P = this.posOf(shooter);
@@ -2982,6 +3201,48 @@ class Director {
 			style:
 				o.kind === "fadeaway" ? "fade" : o.kind === "hook" ? "hook" : "plain",
 		};
+	}
+
+	// Kicked out of the lane, the ball gone, the passer does not stand there
+	// watching it: he gets back out to the arc, to the open spot nearest him
+	// - and his man goes with him.
+	private respace(team: Side, pid: number, shooter: number) {
+		const rim = { x: rimX(team), y: COURT_H / 2 };
+		const P = this.posOf(pid);
+		// (A big stays in there, for the rebound.)
+		if (dist(P, rim) > 17 || (this.rank.get(pid) ?? 4) >= 6) {
+			return;
+		}
+		const mates = this.slots(team)
+			.filter((x) => x !== pid)
+			.map((x) => this.posOf(x));
+		let best: Pt | undefined;
+		let score = -Infinity;
+		for (const name of RESPACE_SPOTS) {
+			const S = this.spotFor(team, 1, name);
+			const room = Math.min(...mates.map((m) => dist(m, S)));
+			const sc = Math.min(room, 16) - dist(P, S) * 0.8;
+			if (room >= 10 && sc > score) {
+				score = sc;
+				best = S;
+			}
+		}
+		if (!best) {
+			return;
+		}
+		const start = (this.free.get(pid) ?? 0) + 60;
+		const there = this.go(pid, best, start, JOG + 3, "run");
+		const d = this.defenderOf(pid);
+		if (d !== undefined) {
+			this.shadow(
+				d,
+				this.defensePoint(team, best, this.posOf(shooter), false),
+				start + 200,
+				there + 250,
+				team,
+				pid,
+			);
+		}
 	}
 
 	// Stage everything up to the moment the ball reaches its target - the rim,
@@ -3075,6 +3336,7 @@ class Director {
 					const d = dist(this.posOf(handler), P);
 					const send = Math.max(t, arrive - passMs(d) - 120);
 					const caught = this.passTo(handler, shooter, send);
+					this.respace(team, handler, shooter);
 					t = Math.max(arrive, caught);
 					// An entry pass to the post: he backs his man down first.
 					if (zone === "lowPost" && this.rng() < 0.6) {
@@ -3405,22 +3667,14 @@ class Director {
 				decided = release + flight;
 				arrive = decided;
 				if (guard !== undefined) {
-					const reach = dist(this.posOf(guard), P1) < 9;
-					this.goBy(
+					this.closeOut(
 						guard,
+						shooter,
 						ahead(close ? 1.8 : 2.4),
-						gather - 200,
-						release - 60,
-						"run",
-						-faceRim as 1 | -1,
+						gather,
+						release,
+						close,
 					);
-					if (reach) {
-						this.act(guard, "contest", release - 260, release + 420, {
-							face: -faceRim as 1 | -1,
-							look: { ...P1 },
-							jump: [0.15, 0.9, close ? 2 : 1.3],
-						});
-					}
 				}
 			}
 		}
@@ -3432,6 +3686,63 @@ class Director {
 			]);
 		}
 		return { gather, decided, arrive, target, dunk };
+	}
+
+	// His man is going up with it: he gets out to him. From a step or two
+	// away he is just there, a hand up. From out in the lane - he had left
+	// him to help - he reads the pass, sprints out and breaks down into
+	// short, choppy steps, a hand high, and gets there when he gets there:
+	// up into the shot, or a hand in the shooter's face as it goes over him.
+	private closeOut(
+		d: number,
+		shooter: number,
+		C: Pt,
+		gather: number,
+		release: number,
+		close: boolean,
+	) {
+		const P = this.posOf(shooter);
+		const G = this.posOf(d);
+		const face = (P.x >= C.x ? 1 : -1) as 1 | -1;
+		const contest = (t: number, peak: number) =>
+			this.act(d, "contest", t, t + 680, {
+				face,
+				look: { ...P },
+				jump: [0.15, 0.9, peak],
+			});
+		// The pass out to him, if that is how he got it.
+		const pass = this.ball.findLast(
+			(s) => s.kind === "fly" && "pid" in s.to && s.to.pid === shooter,
+		);
+		const thrown =
+			pass?.kind === "fly" && pass.t1 > gather - 1200 ? pass.t0 : undefined;
+		const far = dist(G, C);
+		if (far < 7 || thrown === undefined) {
+			this.goBy(d, C, gather - 200, release - 60, "run", face);
+			if (dist(G, P) < 9) {
+				contest(release - 260, close ? 2 : 1.3);
+			}
+			return;
+		}
+		const u = unitVec(G, C);
+		const brk = clampPt({
+			x: C.x - u.x * CLOSE_BREAK,
+			y: C.y - u.y * CLOSE_BREAK,
+		});
+		const there = this.go(
+			d,
+			C,
+			this.go(d, brk, thrown + CLOSE_READ, CLOSE_RUN, "run"),
+			CLOSE_CHOP,
+			"closeout",
+			face,
+		);
+		if (there <= release + 100) {
+			contest(Math.max(there - 150, release - 260), close ? 1.8 : 1.1);
+		} else if (there < release + 700) {
+			// Late: a hand in his face as it goes up over him.
+			contest(there - 120, 0.5);
+		}
 	}
 
 	// The shot goes up and everybody plays it. The bigs crash the glass, and
@@ -3977,8 +4288,8 @@ class Director {
 			}
 			case "period":
 			case "overtime": {
-				// Still in the huddles; the next possession cuts to the inbound
-				// at half court.
+				// Still in the huddles; the next possession starts with the
+				// inbound at half court.
 				this.deadBall(T);
 				this.inboundAt = { x: COURT_W / 2, y: -1.4 };
 				this.phase = "inboundSide";
@@ -5923,6 +6234,35 @@ class Director {
 		}
 	}
 
+	// A man planted for something - a screen, a post-up - is planted no
+	// longer once he sets off: the pose ends as his next run starts, rather
+	// than him sliding off across the floor still in it.
+	private unplant() {
+		for (const tr of this.tracks.values()) {
+			let cut = false;
+			for (const a of tr.acts) {
+				if (a.anim !== "screen" && a.anim !== "postUp") {
+					continue;
+				}
+				for (const m of tr.moves) {
+					if (m.t0 >= a.t1) {
+						break;
+					}
+					if (m.t1 > a.t0 + 1 && dist(m.from, m.to) > 1.5) {
+						a.t1 = Math.max(a.t0, Math.min(a.t1, m.t0));
+						cut = true;
+					}
+				}
+			}
+			if (cut) {
+				tr.acts = tr.acts.filter(
+					(a) =>
+						(a.anim !== "screen" && a.anim !== "postUp") || a.t1 - a.t0 > 120,
+				);
+			}
+		}
+	}
+
 	finish(): CourtTimeline {
 		const byT0 = (a: { t0: number }, b: { t0: number }) => a.t0 - b.t0;
 		for (const tr of this.tracks.values()) {
@@ -5936,6 +6276,7 @@ class Director {
 		this.liveHands();
 		this.liven();
 		this.mark();
+		this.unplant();
 		this.fx.sort((a, b) => a.t - b.t);
 		// A look round the building runs on to the picture's next cut when
 		// that comes soon after (the substitutions over a timeout, the walk

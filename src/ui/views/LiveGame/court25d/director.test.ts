@@ -18,7 +18,7 @@ import {
 	withBody,
 } from "./evaluate.ts";
 import { crowdAt } from "./scene.ts";
-import { COURT_W, FT_LINE_DEPTH, RIM_Z } from "./geometry.ts";
+import { COURT_H, COURT_W, FT_LINE_DEPTH, RIM_Z, rimX } from "./geometry.ts";
 import { bodyOf, posed, skeleton } from "./poses.ts";
 import { compile, fakeGame, gidOf } from "./testGame.ts";
 import { finishOf } from "../../../util/liveGameWording.basketball.ts";
@@ -327,6 +327,116 @@ describe("2.5D director", () => {
 			assert.isAbove(running, 500);
 			assert.isBelow(left / running, 0.2, seed);
 		}
+	}, 60_000);
+
+	// Kicked out of the lane, the shooter is open because his man left him
+	// to help on the drive - a stunt at the ball, or all the way over - and
+	// by the time the shot goes up somebody has closed back out to him. The
+	// passer does not stay in there watching it: he gets back out (a big
+	// stays in, for the rebound).
+	test("a kick out of the lane: the help leaves the shooter and closes back out", () => {
+		const helps: number[] = [];
+		let closed = 0;
+		let passers = 0;
+		let backOut = 0;
+		for (const seed of ["a", "kick"]) {
+			const { tl, players } = compile(seed, 140);
+			const big = new Set(
+				players
+					.filter((p) => ["PF", "FC", "C"].includes(p.pos ?? ""))
+					.map((p) => p.pid),
+			);
+			const teamOf = (pid: number) => tl.tracks.get(pid)!.team;
+			const at = (pid: number, t: number) => evalPlayer(tl, pid, t);
+			// How far off him the nearest man guarding him is.
+			const room = (pid: number, t: number) => {
+				const p = at(pid, t);
+				let best = Infinity;
+				for (const tr of tl.tracks.values()) {
+					const q = at(tr.pid, t);
+					if (tr.team !== teamOf(pid) && q.shown) {
+						best = Math.min(best, Math.hypot(q.x - p.x, q.y - p.y));
+					}
+				}
+				return best;
+			};
+			tl.ball.forEach((pass, i) => {
+				if (
+					pass.kind !== "fly" ||
+					!("pid" in pass.from) ||
+					!("pid" in pass.to)
+				) {
+					return;
+				}
+				const passer = pass.from.pid;
+				const shooter = pass.to.pid;
+				const team = teamOf(shooter);
+				const shot = tl.ball.slice(i + 1).find((s) => s.kind !== "hold");
+				if (
+					teamOf(passer) !== team ||
+					shot?.kind !== "fly" ||
+					!("pid" in shot.from) ||
+					shot.from.pid !== shooter ||
+					("pid" in shot.to && teamOf(shot.to.pid) === team) ||
+					shot.t0 - pass.t1 > 1500
+				) {
+					return;
+				}
+				// Out of the lane, to a man who catches it and lets it go.
+				const P = at(passer, pass.t0);
+				const s0 = at(shooter, pass.t1);
+				const s1 = at(shooter, shot.t0);
+				if (
+					Math.hypot(P.x - rimX(team), P.y - COURT_H / 2) > 17 ||
+					Math.hypot(s1.x - s0.x, s1.y - s0.y) > 3
+				) {
+					return;
+				}
+				helps.push(room(shooter, pass.t0));
+				if (room(shooter, shot.t0) <= 4) {
+					closed += 1;
+				}
+				if (!big.has(passer)) {
+					passers += 1;
+					const Q = at(passer, pass.t0 + 1500);
+					if (Math.hypot(Q.x - P.x, Q.y - P.y) >= 4) {
+						backOut += 1;
+					}
+				}
+			});
+		}
+		assert.isAtLeast(helps.length, 20);
+		const left = helps.filter((d) => d >= 6);
+		assert.isAtLeast(left.length / helps.length, 0.6);
+		assert.isAtLeast(Math.max(...left) - Math.min(...left), 4);
+		assert.isAtLeast(closed / helps.length, 0.85);
+		assert.isAtLeast(backOut / passers, 0.6);
+	}, 60_000);
+
+	// A screen or a post-up is held where he set it: the pose ends as he
+	// sets off again, rather than him sliding away across the floor in it.
+	test("nobody slides off across the floor still set in a screen", () => {
+		let planted = 0;
+		for (const seed of ["a", "b"]) {
+			const { tl } = compile(seed, 140);
+			for (const tr of tl.tracks.values()) {
+				for (const a of tr.acts) {
+					if (a.anim !== "screen" && a.anim !== "postUp") {
+						continue;
+					}
+					planted += 1;
+					for (const m of tr.moves) {
+						const d = Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y);
+						if (d > 1.5 && m.t1 > a.t0 + 1 && m.t0 < a.t1 - 1) {
+							assert.fail(
+								`${seed}: ${tr.pid} ${a.anim} ${a.t0}-${a.t1} runs ${m.t0}-${m.t1}`,
+							);
+						}
+					}
+				}
+			}
+		}
+		assert.isAbove(planted, 50);
 	}, 60_000);
 
 	// From one move into the next - pulling up from a run, down into his
