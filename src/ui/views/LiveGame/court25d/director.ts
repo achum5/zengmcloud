@@ -151,7 +151,21 @@ export type FxKind =
 	| "block"
 	| "whistle"
 	| "cheer"
-	| "roar";
+	| "roar"
+	// The official throws the jump ball up.
+	| "toss";
+// What a whistle was for, for the officials to signal: a foul (on a shot,
+// or through one that counts), a travel, an offensive foul, the ball out of
+// bounds, the shot clock or five seconds, or play stopped.
+export type Call =
+	| "foul"
+	| "shootingFoul"
+	| "andOne"
+	| "travel"
+	| "offensive"
+	| "out"
+	| "clock"
+	| "stop";
 // `big` marks a dunk worth a replay: on somebody, off a lob, or through
 // contact. A roar says what it was for, for the boards to shout about.
 export type Fx = {
@@ -161,6 +175,9 @@ export type Fx = {
 	team?: Side;
 	big?: boolean;
 	what?: "three" | "dunk" | "andOne";
+	// A whistle's call, where it was, and (as `team`) who gets the ball.
+	call?: Call;
+	at?: Pt;
 };
 // A look round the building while play is stopped - before the opening tip,
 // through a timeout, between periods: the whole arena wide, or low in the
@@ -3248,7 +3265,7 @@ class Director {
 					toward,
 				);
 				this.act(fouler, "reach", hit - 120, hit + 320, { face: toward });
-				this.effect("whistle", hit);
+				this.effect("whistle", hit, { call: "foul", at: vp, team });
 				this.beat(i, type, hit, hit + 900);
 				this.inboundAt = {
 					x: vp.x,
@@ -3260,8 +3277,15 @@ class Director {
 			case "pfFG":
 			case "pfTP": {
 				// The shot already went up with the hand in his face (see stageShot).
-				this.effect("whistle", T);
 				const rimTeam = other(this.teamOf(e.pid));
+				this.effect("whistle", T, {
+					call: "shootingFoul",
+					at:
+						typeof e.pidShooting === "number"
+							? this.posOf(e.pidShooting)
+							: undefined,
+					team: rimTeam,
+				});
 				const target = inAir?.target ?? rimPt(rimTeam);
 				const hits = Math.max(T + 200, inAir?.arrive ?? T + 800);
 				const land = clampPt({
@@ -3291,9 +3315,13 @@ class Director {
 					);
 					t += 800;
 				}
-				this.effect("whistle", t);
 				const outOn: Side | undefined = d;
 				const nextTeam = outOn === undefined ? this.offense : other(outOn);
+				this.effect("whistle", t, {
+					call: "out",
+					at: { x: this.ballAt.x, y: this.ballAt.y },
+					team: nextTeam,
+				});
 				const b = this.ballAt;
 				this.inboundAt =
 					b.x < 0 || b.x > COURT_W
@@ -3317,7 +3345,7 @@ class Director {
 			}
 			case "timeout":
 			case "endOfPeriod": {
-				this.effect("whistle", T);
+				this.effect("whistle", T, { call: "stop", team: this.offense });
 				this.deadBall(T);
 				const ballX = this.ballAt.x;
 				// The whistle, then the picture cuts to the huddles.
@@ -3355,7 +3383,10 @@ class Director {
 			case "injury": {
 				const pid = e.pid as number;
 				this.deadBall(T);
-				this.effect("whistle", T + 200);
+				this.effect("whistle", T + 200, {
+					call: "stop",
+					at: this.posOf(pid),
+				});
 				this.act(pid, "hurt", T + 200, T + 2000);
 				this.beat(i, type, T + 200, T + 1800);
 				this.phase = "inboundSide";
@@ -3557,7 +3588,11 @@ class Director {
 			this.effect("cheer", t0 + 60, { team });
 			let end = at + 1100;
 			if (typeof e.pidFoul === "number") {
-				this.effect("whistle", at + 120);
+				this.effect("whistle", at + 120, {
+					call: "andOne",
+					at: this.posOf(shot.pid),
+					team,
+				});
 				this.act(e.pidFoul, "reach", at - 150, at + 300);
 				end = at + 1400;
 			}
@@ -3812,7 +3847,11 @@ class Director {
 					2,
 					1.4,
 				);
-				this.effect("whistle", hit + 800);
+				this.effect("whistle", hit + 800, {
+					call: "out",
+					at: { x: vp.x, y: outY },
+					team: other(team),
+				});
 				this.inboundAt = { x: vp.x, y: outY < 0 ? -1.4 : COURT_H + 1.4 };
 				this.offense = other(team);
 				this.phase = "inboundSide";
@@ -3840,6 +3879,11 @@ class Director {
 				1,
 				1,
 			);
+			this.effect("whistle", t + 900, {
+				call: "out",
+				at: to,
+				team: other(team),
+			});
 			this.inboundAt = { x: to.x, y: outY < 0 ? -1.4 : COURT_H + 1.4 };
 			this.beat(i, e.type, t, t + 1200);
 		} else {
@@ -3854,7 +3898,11 @@ class Director {
 				2,
 				1.2,
 			);
-			this.effect("whistle", t + 300);
+			this.effect("whistle", t + 300, {
+				call: "travel",
+				at: vp,
+				team: other(team),
+			});
 			this.inboundAt = {
 				x: vp.x,
 				y: vp.y < COURT_H / 2 ? -1.4 : COURT_H + 1.4,
@@ -3958,7 +4006,11 @@ class Director {
 			this.hold(h, t, "dribble");
 			const tw = t + 700;
 			this.hold(h, tw, "hold");
-			this.effect("whistle", tw);
+			this.effect("whistle", tw, {
+				call: "clock",
+				at: this.posOf(h),
+				team: other(team),
+			});
 			this.turnOver(team, this.posOf(h));
 			this.beat(i, e.type, tw, tw + 900);
 			return true;
@@ -3966,7 +4018,11 @@ class Director {
 		if (risk.kind === "fiveSeconds") {
 			// Nobody gets open for the inbound.
 			const tw = t + 1500;
-			this.effect("whistle", tw);
+			this.effect("whistle", tw, {
+				call: "clock",
+				at: this.posOf(victim),
+				team: other(team),
+			});
 			this.turnOver(team, this.posOf(victim));
 			this.beat(i, e.type, tw, tw + 900);
 			return true;
@@ -4001,7 +4057,11 @@ class Director {
 			if (this.holder !== undefined) {
 				this.hold(this.holder, hit, "hold");
 			}
-			this.effect("whistle", hit + 80);
+			this.effect("whistle", hit + 80, {
+				call: "offensive",
+				at: S,
+				team: other(team),
+			});
 			this.turnOver(team, S);
 			this.beat(i, e.type, hit + 80, hit + 950);
 			return true;
@@ -4065,7 +4125,11 @@ class Director {
 				this.fly(release, tI, { pid: victim }, I3);
 				const out = this.outPoint(I, unitVec(A, I));
 				this.bounce(tI, tI + 900, I3, out, 2, 1.4);
-				this.effect("whistle", tI + 800);
+				this.effect("whistle", tI + 800, {
+					call: "out",
+					at: out,
+					team: other(team),
+				});
 				this.turnOver(team, out);
 				this.beat(i, e.type, tI, tI + 1000);
 				return true;
@@ -4082,7 +4146,11 @@ class Director {
 				1,
 				1,
 			);
-			this.effect("whistle", tOut + 300);
+			this.effect("whistle", tOut + 300, {
+				call: "out",
+				at: out,
+				team: other(team),
+			});
 			this.turnOver(team, out);
 			this.beat(i, e.type, tOut, tOut + 700);
 			return true;
@@ -4140,7 +4208,11 @@ class Director {
 			}
 			const out = this.nearestOut(S);
 			this.bounce(tS, tS + 800, { ...S, z: 1.5 }, out, 2, 1.2);
-			this.effect("whistle", tS + 700);
+			this.effect("whistle", tS + 700, {
+				call: "out",
+				at: out,
+				team: other(team),
+			});
 			this.turnOver(team, out);
 			this.beat(i, e.type, tS, tS + 1000);
 			return true;
@@ -4182,7 +4254,11 @@ class Director {
 			);
 			this.act(helper, "fall", hit - 60, hit + 900, { look: A });
 			this.hold(victim, hit, "hold");
-			this.effect("whistle", hit + 120);
+			this.effect("whistle", hit + 120, {
+				call: "offensive",
+				at: E,
+				team: other(team),
+			});
 			this.turnOver(team, E);
 			this.beat(i, e.type, hit + 120, hit + 1000);
 			return true;
@@ -4203,7 +4279,11 @@ class Director {
 			"run",
 			dir,
 		);
-		this.effect("whistle", tt + 100);
+		this.effect("whistle", tt + 100, {
+			call: "travel",
+			at: G,
+			team: other(team),
+		});
 		this.turnOver(team, G);
 		this.beat(i, e.type, tt + 100, tt + 900);
 		return true;
@@ -4257,6 +4337,7 @@ class Director {
 		}
 		this.rest(T, { x: c.x, y: c.y, z: 5 });
 		const apex = { x: c.x, y: c.y, z: 12.3 };
+		this.effect("toss", toss);
 		this.fly(toss, toss + 520, { x: c.x, y: c.y, z: 5 }, apex);
 		this.act(jumper, "block", toss + 120, toss + 900, {
 			face: attackDir(winnerTeam),

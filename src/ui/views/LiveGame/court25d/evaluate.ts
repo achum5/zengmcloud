@@ -1,5 +1,6 @@
 import type {
 	Act,
+	ArenaShot,
 	BallSeg,
 	FxKind,
 	Fx,
@@ -535,4 +536,35 @@ export const recentFx = (
 		}
 	}
 	return undefined;
+};
+
+// The look round the building (see ArenaShot) showing at t, if any.
+export const arenaShotAt = (
+	tl: CourtTimeline,
+	t: number,
+): ArenaShot | undefined => {
+	const i = lastIndex(tl.shots, t, (s) => s.t0);
+	const s = i >= 0 ? tl.shots[i] : undefined;
+	return s && t < s.t1 ? s : undefined;
+};
+
+// Every moment the picture cuts: the director's cuts, and into and out of
+// each look round the building.
+const camCuts = new WeakMap<CourtTimeline, number[]>();
+export const cameraCuts = (tl: CourtTimeline): number[] => {
+	let out = camCuts.get(tl);
+	if (!out) {
+		out = [
+			...new Set([...tl.cuts, ...tl.shots.flatMap((s) => [s.t0, s.t1])]),
+		].sort((a, b) => a - b);
+		camCuts.set(tl, out);
+	}
+	return out;
+};
+
+// The last moment the picture cut, at or before t.
+export const lastCut = (tl: CourtTimeline, t: number): number => {
+	const cuts = cameraCuts(tl);
+	const i = lastIndex(cuts, t, (c) => c);
+	return i >= 0 ? cuts[i]! : -Infinity;
 };

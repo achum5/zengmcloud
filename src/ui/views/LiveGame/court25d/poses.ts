@@ -1231,6 +1231,244 @@ export const ANIMS = {
 				lean: 2,
 			}),
 	},
+
+	// ---- the officials ----
+	// The whistle: a fist straight up, the clock stopped.
+	signalUp: {
+		kind: "act",
+		n: 5,
+		keys: [
+			[0, P.ready],
+			[0.2, pose({ shN: 178, elN: 0, abN: 8, shF: 12, elF: 20, lean: -2 })],
+			[0.85, pose({ shN: 176, elN: 2, abN: 8, shF: 12, elF: 22, lean: -2 })],
+			[1, P.ready],
+		],
+	},
+	// An arm straight out to his right: the way the ball goes, the way the
+	// play is headed.
+	signalSide: {
+		kind: "act",
+		n: 5,
+		keys: [
+			[0, P.ready],
+			[0.25, pose({ shN: 90, elN: 0, abN: 86, shF: 14, elF: 22 })],
+			[0.85, pose({ shN: 92, elN: 2, abN: 84, shF: 14, elF: 22 })],
+			[1, P.ready],
+		],
+	},
+	// Three-point field goal: both arms up.
+	threeUp: {
+		kind: "act",
+		n: 5,
+		keys: [
+			[0, P.ready],
+			[
+				0.2,
+				pose({
+					shN: 176,
+					elN: 0,
+					abN: 12,
+					shF: 176,
+					elF: 0,
+					abF: 12,
+					lean: -3,
+				}),
+			],
+			[
+				0.85,
+				pose({
+					shN: 174,
+					elN: 4,
+					abN: 14,
+					shF: 174,
+					elF: 4,
+					abF: 14,
+					lean: -3,
+				}),
+			],
+			[1, P.ready],
+		],
+	},
+	// Traveling: the fists rolling over each other in front of him.
+	travel: {
+		kind: "loop",
+		n: 4,
+		fps: 5,
+		pose: (i) => {
+			const a = (i / 4) * Math.PI * 2;
+			return pose({
+				shN: 62 + 14 * Math.sin(a),
+				elN: 84 - 18 * Math.cos(a),
+				abN: 2,
+				shF: 62 - 14 * Math.sin(a),
+				elF: 84 + 18 * Math.cos(a),
+				abF: 2,
+				lean: 4,
+			});
+		},
+	},
+	// The jump ball: held out between the two of them, then thrown up.
+	toss: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, pose({ shN: 58, elN: 34, shF: 58, elF: 34, abN: 4, abF: 4 })],
+			[0.35, pose({ shN: 70, elN: 26, shF: 60, elF: 30, abN: 4, abF: 4 })],
+			[0.6, pose({ shN: 168, elN: 2, shF: 40, elF: 30, lean: -4 })],
+			[1, pose({ shN: 150, elN: 10, shF: 24, elF: 26, lean: -2 })],
+		],
+	},
+
+	// ---- the coaches ----
+	// Arms folded, watching.
+	crossed: {
+		kind: "loop",
+		n: 2,
+		fps: 0.5,
+		pose: (i) =>
+			pose({
+				shN: 26,
+				elN: 116,
+				abN: -14,
+				shF: 30,
+				elF: 112,
+				abF: -14,
+				lean: 1 + i,
+				kneeN: 8,
+				kneeF: 10,
+			}),
+	},
+	clap: {
+		kind: "loop",
+		n: 2,
+		fps: 4,
+		pose: (i) =>
+			pose({
+				shN: 64,
+				elN: 58,
+				abN: i ? 16 : -12,
+				shF: 64,
+				elF: 58,
+				abF: i ? 16 : -12,
+				lean: 2,
+			}),
+	},
+	// What was that? Arms out, palms up.
+	protest: {
+		kind: "act",
+		n: 5,
+		keys: [
+			[0, P.ready],
+			[
+				0.25,
+				pose({
+					shN: 44,
+					elN: 62,
+					abN: 42,
+					wrN: 46,
+					shF: 44,
+					elF: 62,
+					abF: 42,
+					wrF: 46,
+					lean: -6,
+				}),
+			],
+			[
+				0.8,
+				pose({
+					shN: 50,
+					elN: 56,
+					abN: 48,
+					wrN: 50,
+					shF: 50,
+					elF: 56,
+					abF: 48,
+					wrF: 50,
+					lean: -8,
+				}),
+			],
+			[1, P.ready],
+		],
+	},
+	// Bent over, hands on his knees.
+	crouch: {
+		kind: "loop",
+		n: 2,
+		fps: 0.6,
+		pose: (i) =>
+			pose({
+				hipN: 38,
+				kneeN: 52,
+				hipF: 42,
+				kneeF: 56,
+				lean: 40 + i * 2,
+				shN: 6,
+				elN: 8,
+				abN: 10,
+				shF: 8,
+				elF: 8,
+				abF: 10,
+				wide: 0.35,
+			}),
+	},
+	// Talking it over: one hand making the point.
+	talk: {
+		kind: "loop",
+		n: 4,
+		fps: 2.2,
+		pose: (i) =>
+			pose({
+				shN: [44, 58, 50, 62][i]!,
+				elN: [70, 54, 80, 48][i]!,
+				wrN: 20,
+				shF: 24,
+				elF: 96,
+				abF: -8,
+				lean: 4,
+			}),
+	},
+
+	// ---- the photographers ----
+	// Down on one knee on the baseline, the camera resting on the other.
+	kneel: {
+		kind: "loop",
+		n: 2,
+		fps: 0.3,
+		pose: (i) =>
+			pose({
+				hipN: -4,
+				kneeN: 96,
+				hipF: 84,
+				kneeF: 86,
+				lean: 8 + i,
+				shN: 38,
+				elN: 58,
+				shF: 44,
+				elF: 52,
+				wide: 0.2,
+			}),
+	},
+	// The camera up to his eye.
+	kneelShoot: {
+		kind: "loop",
+		n: 2,
+		fps: 0.3,
+		pose: (i) =>
+			pose({
+				hipN: -4,
+				kneeN: 96,
+				hipF: 84,
+				kneeF: 86,
+				lean: 6 + i,
+				shN: 74,
+				elN: 112,
+				abN: -6,
+				shF: 80,
+				elF: 104,
+				abF: -6,
+				wide: 0.2,
+			}),
+	},
 } satisfies Record<string, Anim>;
 
 export type AnimName = keyof typeof ANIMS;

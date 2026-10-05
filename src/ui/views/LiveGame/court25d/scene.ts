@@ -24,8 +24,9 @@ import {
 	type Shot,
 } from "./camera.ts";
 import { drawCourtLines } from "./courtLines.ts";
-import type { ArenaShot, CourtTimeline } from "./director.ts";
+import type { CourtTimeline } from "./director.ts";
 import {
+	arenaShotAt,
 	evalBall,
 	evalPlayer,
 	offenseAt,
@@ -34,7 +35,7 @@ import {
 	type PlayerState,
 } from "./evaluate.ts";
 import type { Look } from "./figure.ts";
-import { COURT_W, RIM_Z, seatSpot, type Side } from "./geometry.ts";
+import { COURT_W, RIM_Z, seatSpot, type Pt3, type Side } from "./geometry.ts";
 import { drawPixelText, pixelTextWidth } from "./pixelFont.ts";
 import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
 import type { Body } from "./poses.ts";
@@ -116,6 +117,10 @@ export type Frame = {
 	// How many picture pixels to a pixel of the lettering drawn into it, so a
 	// name reads at the same size on every screen.
 	textScale: number;
+	// The officials, the coaches and the photographers (see crew.ts), and
+	// any of their cameras going off.
+	crew?: { st: PlayerState; body: Body; look: Look }[];
+	flashes?: Pt3[];
 };
 
 const fxLevel = (
@@ -319,8 +324,9 @@ export const drawFrame = (f: Frame) => {
 	drawFlashes(ctx, cam, tl, t);
 	drawCourtLines(ctx, cam, f.lineColor);
 
+	const crew = f.crew ?? [];
 	// Shadows: soft pools under the feet, shrinking as they leave the floor.
-	for (const st of [...players, ...bench]) {
+	for (const st of [...players, ...bench, ...crew.map((c) => c.st)]) {
 		const lift = Math.min(1, st.z / 4);
 		drawShadow(ctx, cam, st.x, st.y, 1.25 * (1 - lift * 0.35), 1 - lift * 0.6);
 	}
@@ -369,6 +375,14 @@ export const drawFrame = (f: Frame) => {
 			},
 		});
 	}
+	for (const c of crew) {
+		items.push({
+			depth: depthOf(cam, { x: c.st.x, y: c.st.y, z: 3 }),
+			draw: () => {
+				drawSprite(ctx, f.scratch, cam, c.st, c.body, c.look, 1, f.sprites);
+			},
+		});
+	}
 	const spin = ball.roll ?? 0;
 	// In somebody's hands it is drawn with him (see drawSprite).
 	const inHands =
@@ -414,6 +428,19 @@ export const drawFrame = (f: Frame) => {
 	items.sort((a, b) => b.depth - a.depth);
 	for (const it of items) {
 		it.draw();
+	}
+	// A photographer's flash.
+	for (const at of f.flashes ?? []) {
+		const p = project(cam, at);
+		const r = Math.max(3, p.k * 1.1);
+		const g = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+		g.addColorStop(0, "rgba(255,255,255,1)");
+		g.addColorStop(0.3, "rgba(240,244,255,0.7)");
+		g.addColorStop(1, "rgba(220,230,255,0)");
+		ctx.fillStyle = g;
+		ctx.beginPath();
+		ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+		ctx.fill();
 	}
 
 	// Whoever has the ball, named under his feet.
@@ -551,26 +578,6 @@ export const boardAt = (tl: CourtTimeline, t: number): BoardScreen => {
 // from up high, panning slowly; or low in the seats, looking up at the
 // crowd and the banners.
 const ARENA_RIG: Rig = { back: 60, high: 22, slide: 0.5, upright: false };
-export const arenaShotAt = (
-	tl: CourtTimeline,
-	t: number,
-): ArenaShot | undefined => {
-	const shots = tl.shots;
-	let lo = 0;
-	let hi = shots.length - 1;
-	let ans = -1;
-	while (lo <= hi) {
-		const mid = (lo + hi) >> 1;
-		if (shots[mid]!.t0 <= t) {
-			ans = mid;
-			lo = mid + 1;
-		} else {
-			hi = mid - 1;
-		}
-	}
-	const s = ans >= 0 ? shots[ans] : undefined;
-	return s && t < s.t1 ? s : undefined;
-};
 export const arenaAim = (
 	tl: CourtTimeline,
 	t: number,
@@ -595,20 +602,6 @@ export const arenaAim = (
 		shot: { x: 26 + 42 * u, width: narrow ? 70 : 90, y: -14, z: 16 },
 		rig: ARENA_RIG,
 	};
-};
-
-// Every moment the picture cuts: the director's cuts, and into and out of
-// each look round the building.
-const camCuts = new WeakMap<CourtTimeline, number[]>();
-export const cameraCuts = (tl: CourtTimeline): number[] => {
-	let out = camCuts.get(tl);
-	if (!out) {
-		out = [
-			...new Set([...tl.cuts, ...tl.shots.flatMap((s) => [s.t0, s.t1])]),
-		].sort((a, b) => a - b);
-		camCuts.set(tl, out);
-	}
-	return out;
 };
 
 // Whether a point is on screen, for skipping work.

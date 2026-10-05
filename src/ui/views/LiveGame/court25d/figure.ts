@@ -46,9 +46,27 @@ export type Gear = {
 	sock: string;
 };
 
+// Not a uniform: what the people on the floor who don't play wear (see
+// crew.ts). Trousers are tights down both legs under shorts of the same
+// color; the rest is here.
+export type Outfit = {
+	// Shirt sleeves, in the shirt's color: to the elbow, or the wrist.
+	sleeves?: "short" | "long";
+	// Stripes down the shirt: a referee's.
+	stripes?: string;
+	// The shirt and tie in the open neck of a jacket: a coach's suit.
+	shirt?: string;
+	tie?: string;
+	// A camera in his hands: a photographer's.
+	camera?: boolean;
+};
+export const CAMERA_BODY = "#1c1d22";
+export const CAMERA_LENS = "#34363e";
+
 export type Look = {
 	kit: Kit;
 	gear?: Gear;
+	outfit?: Outfit;
 	skin: string;
 	hair: string;
 	jerseyNumber: string;
@@ -507,13 +525,14 @@ export const drawFigure = (
 			(p) => (p.x - cx) * LIGHT.x + (p.y - cyy) * LIGHT.y < 0,
 		);
 	})();
+	const jerseyPath = softPoly(jerseyPts);
 	parts.push({
 		depth: torsoDepth,
 		shapes: [
 			shaped(neck, skin, shade(skin, -0.2)),
 			{ path: polyPath(waistPts), fill: kit.shorts },
 			{
-				path: softPoly(jerseyPts),
+				path: jerseyPath,
 				fill: kit.jersey,
 				shadow: jerseyShadow
 					? {
@@ -525,9 +544,36 @@ export const drawFigure = (
 			},
 		],
 		detail: () => {
+			drawStripes();
 			drawCollar();
 		},
 	});
+
+	// A referee's stripes, down the shirt.
+	const drawStripes = () => {
+		const color = look.outfit?.stripes;
+		if (!color) {
+			return;
+		}
+		let x0 = Infinity;
+		let x1 = -Infinity;
+		let y0 = Infinity;
+		let y1 = -Infinity;
+		for (const q of jerseyPts) {
+			x0 = Math.min(x0, q.x);
+			x1 = Math.max(x1, q.x);
+			y0 = Math.min(y0, q.y);
+			y1 = Math.max(y1, q.y);
+		}
+		const w = Math.max(px, 0.17 * chest.k);
+		ctx.save();
+		ctx.clip(jerseyPath);
+		ctx.fillStyle = color;
+		for (let x = x0 + w * 0.5; x < x1; x += w * 2) {
+			ctx.fillRect(x, y0, w, y1 - y0);
+		}
+		ctx.restore();
+	};
 
 	// The neckline, in the trim color: a V at the front, a scoop at the back.
 	const drawCollar = () => {
@@ -549,6 +595,33 @@ export const drawFigure = (
 		});
 		const l = top(body.shoulderW * 0.42);
 		const r = top(-body.shoulderW * 0.42);
+		const outfit = look.outfit;
+		if (outfit?.shirt && front >= 0) {
+			// The open neck of his jacket: his shirt in a deep V, his tie down
+			// the middle of it.
+			const deep = at({
+				f: sk.chest.f + face * 1.12 + (sk.pelvis.f - sk.chest.f) * 0.4,
+				s: 0,
+				u: sk.chest.u - lift * 0.42,
+			});
+			ctx.fillStyle = outfit.shirt;
+			ctx.beginPath();
+			ctx.moveTo(l.x, l.y);
+			ctx.lineTo(deep.x, deep.y);
+			ctx.lineTo(r.x, r.y);
+			ctx.closePath();
+			ctx.fill();
+			if (outfit.tie) {
+				const knot = lerp2(lerp2(l, r, 0.5), deep, 0.12);
+				ctx.strokeStyle = outfit.tie;
+				ctx.lineWidth = Math.max(px, 0.16 * chest.k);
+				ctx.beginPath();
+				ctx.moveTo(knot.x, knot.y);
+				ctx.lineTo(deep.x, deep.y + 0.12 * chest.k);
+				ctx.stroke();
+			}
+			return;
+		}
 		ctx.beginPath();
 		ctx.moveTo(l.x, l.y);
 		if (front >= 0) {
@@ -567,8 +640,11 @@ export const drawFigure = (
 		const c = dim(skin, far);
 		// A sleeve over the arm (or just the forearm), a band at the wrist.
 		const sleeve = gear?.sleeve?.arms.includes(which) ? gear.sleeve : undefined;
-		const sl = sleeve ? dim(sleeve.color, far) : c;
-		const upperC = sleeve && !sleeve.elbow ? sl : c;
+		// Or the sleeves of his shirt (an official's, a coach's jacket).
+		const shirt = look.outfit?.sleeves;
+		const shirtC = dim(kit.jersey, far);
+		const sl = shirt === "long" ? shirtC : sleeve ? dim(sleeve.color, far) : c;
+		const upperC = shirt ? shirtC : sleeve && !sleeve.elbow ? sl : c;
 		const band = gear?.wrist?.arms.includes(which)
 			? dim(gear.wrist.color, far)
 			: undefined;
@@ -647,6 +723,33 @@ export const drawFigure = (
 	};
 	arm(sk.armR, !leftFar, "R");
 	arm(sk.armL, leftFar, "L");
+	if (look.outfit?.camera) {
+		// His camera, in both hands: the body between them, the long lens out
+		// the way he faces - up in front of his face when he is shooting.
+		const mid: V3 = {
+			f: (sk.armR.end.f + sk.armL.end.f) / 2 + 0.14,
+			s: (sk.armR.end.s + sk.armL.end.s) / 2,
+			u: (sk.armR.end.u + sk.armL.end.u) / 2 + 0.06,
+		};
+		const c0 = at(mid);
+		const tipC = at({ ...mid, f: mid.f + 0.8 });
+		const box = new Path2D();
+		box.rect(c0.x - 0.3 * c0.k, c0.y - 0.24 * c0.k, 0.6 * c0.k, 0.46 * c0.k);
+		parts.push({
+			depth: c0.depth - 0.05,
+			late: mid.u > sk.chest.u - 0.3 && c0.depth < headC.depth,
+			shapes: [
+				{ path: box, fill: CAMERA_BODY },
+				{
+					path: limbShape(c0, c0.k, tipC, tipC.k, [
+						[0, 0.17],
+						[1, 0.15],
+					]).path,
+					fill: CAMERA_LENS,
+				},
+			],
+		});
+	}
 	let ballAt: FigureAnchors["ball"];
 	if (held) {
 		// The ball in his hands: drawn with him, behind the near hand and in

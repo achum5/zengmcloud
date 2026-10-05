@@ -4,6 +4,8 @@ import {
 	BALL_SEAM,
 	BALL_SHADE,
 	BALL_ORANGE,
+	CAMERA_BODY,
+	CAMERA_LENS,
 	drawFigure,
 	drawHeadAt,
 	shade,
@@ -143,6 +145,14 @@ const paletteOf = (look: Look, ball = false): Palette => {
 						look.gear.tights?.color,
 						look.gear.wrist?.color,
 						look.gear.knee?.color,
+					].filter((c): c is string => c !== undefined)
+				: []),
+			...(look.outfit
+				? [
+						look.outfit.stripes,
+						look.outfit.shirt,
+						look.outfit.tie,
+						...(look.outfit.camera ? [CAMERA_BODY, CAMERA_LENS] : []),
 					].filter((c): c is string => c !== undefined)
 				: []),
 		]) {

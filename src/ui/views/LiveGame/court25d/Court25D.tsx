@@ -33,14 +33,15 @@ import {
 	targetForCursor,
 	type CourtPlayer,
 } from "./director.ts";
+import { crewAt, crewFor } from "./crew.ts";
 import { headColors, loadHead, type HeadSprite } from "./faces.ts";
 import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { bodyOf, type Body } from "./poses.ts";
+import { cameraCuts } from "./evaluate.ts";
 import {
 	aimFor,
 	arenaAim,
-	cameraCuts,
 	crowdUp,
 	drawFrame,
 	momentAt,
@@ -306,6 +307,64 @@ const Court25D = ({
 		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [roster, kits, facesVersion]);
+	// The officials, the coaches and the photographers, picked once a game,
+	// and their heads drawn from their faces as they come.
+	const crew = useMemo(
+		() => crewFor(gid ?? 0, away, home),
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[gid],
+	);
+	const crewHeads = useRef(
+		new Map<number, { sprite?: HeadSprite; skin?: string }>(),
+	);
+	const [crewVersion, setCrewVersion] = useState(0);
+	useEffect(() => {
+		let alive = true;
+		crewHeads.current = new Map();
+		void Promise.all(
+			crew.map(async (m) => {
+				const team =
+					m.role === "coach" ? (m.team === 0 ? away : home) : undefined;
+				crewHeads.current.set(
+					m.pid,
+					await loadHead(m.face, undefined, team?.colors),
+				);
+			}),
+		).then(() => {
+			if (alive) {
+				setCrewVersion((v) => v + 1);
+			}
+		});
+		return () => {
+			alive = false;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [crew]);
+	const crewLooks = useMemo(() => {
+		const out = new Map<number, { look: Look; body: Body }>();
+		for (const m of crew) {
+			const head = crewHeads.current.get(m.pid);
+			const c = headColors(m.face);
+			out.set(m.pid, {
+				look: {
+					...m.dress,
+					skin: head?.skin ?? c.skin,
+					hair: c.hair,
+					jerseyNumber: "",
+					name: "",
+					lastName: "",
+					wordmark: "",
+					head: head?.sprite,
+				},
+				body: bodyOf(m.hgt, m.weight),
+			});
+		}
+		return out;
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [crew, crewVersion]);
+	const crewRef = useRef({ crew, crewLooks });
+	crewRef.current = { crew, crewLooks };
+
 	// Read by the animation loop, which outlives any one render.
 	const looks = useRef(appearance.looks);
 	const bodies = useRef(appearance.bodies);
@@ -631,6 +690,8 @@ const Court25D = ({
 				shotText = shot === undefined ? "" : String(Math.ceil(shot - 1e-6));
 			}
 			const pt = paintRef.current;
+			const cr = crewRef.current;
+			const working = crewAt(tl, moment.t, cr.crew);
 			drawFrame({
 				ctx,
 				scratch,
@@ -660,6 +721,11 @@ const Court25D = ({
 				// Lettering about 10 CSS pixels tall: a 7-pixel font, each of
 				// its pixels this many picture pixels.
 				textScale: Math.max(1, Math.round(10 / ((7 * art) / dpr))),
+				crew: working.states.flatMap((st) => {
+					const c = cr.crewLooks.get(st.pid);
+					return c ? [{ st, body: c.body, look: c.look }] : [];
+				}),
+				flashes: working.flashes,
 			});
 
 			if (clockText !== s.clockText && clockRef.current) {
