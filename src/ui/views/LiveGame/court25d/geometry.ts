@@ -38,12 +38,30 @@ export const clampPt = (p: Pt, margin = 1): Pt => ({
 	y: Math.min(COURT_H + 1.5 - margin, Math.max(-1.5 + margin, p.y)),
 });
 
+// A defender meant for `p` against his man at `man`: where that would stand
+// him squarely in front of his man from the camera (which looks straight
+// across the floor from the near side), he plays him from the side instead -
+// a step across toward `endX` (the end he defends), half as far in front -
+// so both stay in sight.
+export const sideOn = (man: Pt, p: Pt, endX: number, across = 1.6): Pt =>
+	p.y > man.y && Math.abs(p.x - man.x) < across
+		? {
+				x: man.x + (endX >= man.x ? 1 : -1) * across,
+				y: man.y + (p.y - man.y) * 0.5,
+			}
+		: p;
+
 // Where a defender stands against his man: a step toward the rim he protects,
 // pinched toward the middle of the floor.
-export const guardSpot = (offense: Side, man: Pt, gap = 0.3): Pt => ({
-	x: man.x + (rimX(offense) - man.x) * gap,
-	y: man.y + (COURT_H / 2 - man.y) * 0.25,
-});
+export const guardSpot = (offense: Side, man: Pt, gap = 0.3): Pt =>
+	sideOn(
+		man,
+		{
+			x: man.x + (rimX(offense) - man.x) * gap,
+			y: man.y + (COURT_H / 2 - man.y) * 0.25,
+		},
+		rimX(offense),
+	);
 
 // The scorer's table and the two benches sit along the far sideline, so a
 // substitution or a huddle walks toward the camera's back wall.
@@ -81,6 +99,13 @@ export const FT_OFFENSE: [number, number][] = [
 	[11, 33.4],
 	[11, 16.6],
 ];
+// Where the official who hands the shooter the ball holds it out: a few
+// feet back from the line on the far side of the lane - off the shooter's
+// shoulder from the camera, clear of the players on the lane.
+export const ftOfficialBall = (t: Side): Pt3 => ({
+	...spot(t, FT_LINE_DEPTH + 3.2, 18.4),
+	z: 3.6,
+});
 export const FT_BACK: [number, number][] = [
 	[27, 12],
 	[27, 38],

@@ -19,7 +19,9 @@ import {
 	FT_DEFENSE,
 	FT_LINE_DEPTH,
 	FT_OFFENSE,
+	ftOfficialBall,
 	guardSpot,
+	sideOn,
 	huddleSpots,
 	other,
 	RIM_R,
@@ -32,6 +34,7 @@ import {
 	type Pt3,
 	type Side,
 } from "./geometry.ts";
+import { DRIBBLE_RATE } from "./evaluate.ts";
 import type { AnimName } from "./poses.ts";
 import {
 	callAny,
@@ -2053,7 +2056,9 @@ class Director {
 								? 5.9
 								: 8;
 			const k = Math.min(gap, toRim * 0.5);
-			return clampPt({ x: man.x + ur.x * k, y: man.y + ur.y * k });
+			return clampPt(
+				sideOn(man, { x: man.x + ur.x * k, y: man.y + ur.y * k }, rim.x),
+			);
 		}
 		const dBall = dist(man, ball);
 		const [off, sag] =
@@ -2081,7 +2086,7 @@ class Director {
 			const u = unitVec(rim, pr > 0.1 ? p : man);
 			return clampPt({ x: rim.x + u.x * 3, y: rim.y + u.y * 3 });
 		}
-		return clampPt(p);
+		return clampPt(sideOn(man, p, rim.x));
 	}
 
 	private placeDefense(run: Running, tc: number) {
@@ -2695,11 +2700,20 @@ class Director {
 		const P1 = this.posOf(shooter);
 		const toRim = { x: rim.x - P1.x, y: rim.y - P1.y };
 		const len = Math.hypot(toRim.x, toRim.y) || 1;
+		// Where his man meets the shot: between him and the rim - from the
+		// side, where that would hide the shooter from the camera.
 		const ahead = (k: number) =>
-			clampPt({
-				x: P1.x + (toRim.x / len) * k,
-				y: P1.y + (toRim.y / len) * k + 0.8,
-			});
+			clampPt(
+				sideOn(
+					P1,
+					{
+						x: P1.x + (toRim.x / len) * k,
+						y: P1.y + (toRim.y / len) * k,
+					},
+					rim.x,
+					1.9,
+				),
+			);
 
 		const gather = t + 60;
 		// A slam when the words say so: "throws it down", "blocked the dunk
@@ -3676,17 +3690,26 @@ class Director {
 		this.lastFtShooter = shooter;
 		this.setOffense(T, team);
 		const line = spot(team, FT_LINE_DEPTH, 25);
+		const rimSpot = { x: rimX(team), y: 25 };
+		const tall = (t: Side) =>
+			this.slots(t).sort(
+				(a, b) => (this.rank.get(b) ?? 4) - (this.rank.get(a) ?? 4) || a - b,
+			);
+		const def = tall(other(team));
+		const off = tall(team).filter((p) => p !== shooter);
+		const next = this.peek(i, 3).find(
+			(x) =>
+				x.e.type !== "sub" && x.e.type !== "timeout" && x.e.type !== "timeouts",
+		);
+		const more =
+			next &&
+			(next.e.type === "ft" || next.e.type === "missFt") &&
+			next.e.pid === shooter;
 		let ready = T;
+		const official = ftOfficialBall(team);
 		if (first) {
-			const tall = (t: Side) =>
-				this.slots(t).sort(
-					(a, b) => (this.rank.get(b) ?? 4) - (this.rank.get(a) ?? 4) || a - b,
-				);
-			const def = tall(other(team));
-			const off = tall(team).filter((p) => p !== shooter);
 			// Cut to the lineup: the defense on the blocks, the shooter at the
-			// line with the ball.
-			const rimSpot = { x: rimX(team), y: 25 };
+			// line, the official at the side of the lane with the ball.
 			const tc = T + 150;
 			this.cutAt(tc);
 			def.forEach((pid, j) => {
@@ -3701,27 +3724,42 @@ class Director {
 			});
 			this.place(shooter, line, tc, dir);
 			this.lookAt(shooter, tc + 1, rimSpot);
-			this.hold(shooter, tc, "hold");
-			ready = tc;
+			this.rest(tc, official);
+			ready = tc + 300;
+		} else if (dist(this.ballPoint(), official) > 1) {
+			// Tossed back out to the official.
+			this.fly(T, T + 650, this.ballOrigin(), official);
+			ready = T + 1000;
 		}
-		if (this.holder !== shooter) {
-			this.fly(
-				Math.max(T, ready - 420),
-				Math.max(T + 420, ready),
-				this.ballOrigin(),
-				{ pid: shooter },
-			);
-			ready = Math.max(T + 420, ready);
-		}
-		this.turn(shooter, ready, dir);
-		this.hold(shooter, ready + 100, "dribble");
-		const set = ready + 420;
-		this.hold(shooter, set, "hold");
-		this.act(shooter, "shoot", set, set + 900, {
+		// He bounces it in, and the shooter goes through his routine: a dribble
+		// or two - his own number, every trip to the line - then sets, shoots
+		// and holds the follow-through until it gets there.
+		const S = this.posOf(shooter);
+		const hit = {
+			x: official.x + (S.x - official.x) * 0.6,
+			y: official.y + (S.y - official.y) * 0.6,
+			z: BALL_R,
+		};
+		const caught = ready + 520;
+		this.fly(ready, ready + 300, official, hit);
+		this.fly(ready + 300, caught, hit, { pid: shooter });
+		this.act(shooter, "catch", caught - 90, caught + 110, {
 			face: dir,
-			look: { x: rimX(team), y: 25 },
+			look: { x: official.x, y: official.y },
 		});
-		const release = set + 900 * 0.55;
+		this.hold(shooter, caught, "hold");
+		this.lookAt(shooter, caught + 111, rimSpot);
+		const dribbles = 1 + (Math.abs(shooter * 7 + 3) % 2);
+		const bounce0 = caught + 160;
+		this.hold(shooter, bounce0, "dribble");
+		const set = bounce0 + (dribbles * 1000) / DRIBBLE_RATE;
+		this.hold(shooter, set, "hold");
+		const shotAt = set + 260;
+		this.act(shooter, "shoot", shotAt, shotAt + 900, {
+			face: dir,
+			look: rimSpot,
+		});
+		const release = shotAt + 900 * 0.55;
 		const target = made
 			? rimPt(team, 0.35)
 			: {
@@ -3731,15 +3769,34 @@ class Director {
 				};
 		const at = release + 720;
 		this.fly(release, at, { pid: shooter }, target);
-
-		const next = this.peek(i, 3).find(
-			(x) =>
-				x.e.type !== "sub" && x.e.type !== "timeout" && x.e.type !== "timeouts",
-		);
-		const more =
-			next &&
-			(next.e.type === "ft" || next.e.type === "missFt") &&
-			next.e.pid === shooter;
+		this.act(shooter, "follow", shotAt + 900, at + 260, {
+			face: dir,
+			look: rimSpot,
+		});
+		// On the lane: hands on their knees, until the last one - then set to
+		// box out.
+		for (const pid of [...def.slice(0, 3), ...off.slice(0, 2)]) {
+			this.act(pid, more ? "crouch" : "stance", Math.max(T, ready), release, {
+				look: rimSpot,
+			});
+		}
+		if (made && more) {
+			// A teammate comes over to slap hands, and goes back to the lane.
+			const mate = off[0];
+			if (mate !== undefined) {
+				const home = this.posOf(mate);
+				const meet = {
+					x: home.x + (S.x - home.x) * 0.62,
+					y: home.y + (S.y - home.y) * 0.62,
+				};
+				const met = this.go(mate, meet, at + 120, WALK * 1.6, "walk");
+				this.act(mate, "highFive", met, met + 420, { look: S });
+				this.act(shooter, "highFive", met, met + 420, { look: meet });
+				this.go(mate, home, met + 420, WALK * 1.6, "walk");
+				this.lookAt(mate, met + 421, rimSpot);
+				this.lookAt(shooter, met + 421, rimSpot);
+			}
+		}
 		if (made) {
 			const top = rimPt(team, 0.35);
 			this.fly(at, at + 140, top, rimPt(team, -2.3));

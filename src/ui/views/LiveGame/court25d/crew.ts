@@ -15,8 +15,11 @@ import {
 	benchX,
 	COURT_H,
 	COURT_W,
+	FT_LINE_DEPTH,
+	ftOfficialBall,
 	other,
 	RIM_Z,
+	spot,
 	type Pt,
 	type Pt3,
 	type Side,
@@ -342,6 +345,12 @@ const yawTo = (from: Pt, to: Pt) => Math.atan2(to.y - from.y, to.x - from.x);
 
 // ---- the officials ----------------------------------------------------------------
 
+// Where the official who hands the shooter the ball stands: just behind it.
+const ftAdminAt = (team: Side): Pt => {
+	const ball = ftOfficialBall(team);
+	return { x: ball.x, y: ball.y - 1.3 };
+};
+
 // The three of them, by crew position: the lead under the basket the ball is
 // going at, the trail behind the play on the far (table) side, the slot on
 // the near sideline. Lead and trail trade places every change of possession,
@@ -357,6 +366,18 @@ const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 			{ x: COURT_W / 2 + 2.4, y: 3.2 },
 			{ x: COURT_W / 2, y: 4.5 },
 		];
+	}
+	if (beat?.type === "ft" || beat?.type === "missFt") {
+		// Free throws: the trail hands the shooter the ball from the side of
+		// the lane, the lead is on the end line, the slot across from the line.
+		const team = offenseAt(tl, t);
+		const d = attackDir(team);
+		const X = (depth: number) => (d > 0 ? COURT_W - depth : depth);
+		const admin = ftAdminAt(team);
+		const lead = { x: X(-1.4), y: 33 };
+		const slot = { x: X(FT_LINE_DEPTH), y: COURT_H + 1.2 };
+		const k = lastIndex(tl.poss, t, (p) => p[0]);
+		return k % 2 === 0 ? [lead, admin, slot] : [admin, lead, slot];
 	}
 	if (beat?.type === "jumpBall") {
 		const toss = nextFx(tl, beat.preStart, "toss");
@@ -563,6 +584,39 @@ const signalsAt = (tl: CourtTimeline, t: number): (Signal | undefined)[] => {
 	return per.map((s) => (s && t < s.moves.at(-1)!.t1 + s.back ? s : undefined));
 };
 
+// The official at the line with the ball: catching it when it's tossed out
+// to him, holding it, bouncing it in to the shooter.
+const handingIn = (
+	tl: CourtTimeline,
+	t: number,
+): { anim: AnimName; phase: number } | undefined => {
+	const beat = beatAt(tl, t);
+	if (beat?.type !== "ft" && beat?.type !== "missFt") {
+		return undefined;
+	}
+	const ball = ftOfficialBall(offenseAt(tl, t));
+	const near = (p: BallEnd) =>
+		!("pid" in p) && Math.hypot(p.x - ball.x, p.y - ball.y) < 0.6;
+	const seg = tl.ball[lastIndex(tl.ball, t, (b) => b.t0)];
+	if (!seg) {
+		return undefined;
+	}
+	if (seg.kind === "fly" && near(seg.from)) {
+		return t < seg.t0 + 200
+			? { anim: "passBounce", phase: (t - seg.t0 + 120) / 300 }
+			: undefined;
+	}
+	if (seg.kind === "fly" && near(seg.to)) {
+		return t < seg.t1 + 150
+			? { anim: "catch", phase: clamp((t - seg.t1 + 200) / 350, 0, 1) }
+			: { anim: "hold", phase: loopPhase("hold", t, 0) };
+	}
+	if (seg.kind === "rest" && near(seg.at)) {
+		return { anim: "hold", phase: loopPhase("hold", t, 0) };
+	}
+	return undefined;
+};
+
 const refStates = (
 	tl: CourtTimeline,
 	t: number,
@@ -576,6 +630,11 @@ const refStates = (
 	const beat = beatAt(tl, t);
 	const toss =
 		beat?.type === "jumpBall" ? nextFx(tl, beat.preStart, "toss") : undefined;
+	const handing = handingIn(tl, t);
+	const ftTeam =
+		beat?.type === "ft" || beat?.type === "missFt"
+			? offenseAt(tl, t)
+			: undefined;
 	return refs.map((m, i) => {
 		let p = at[i]!;
 		const v = vel[i]!;
@@ -588,6 +647,13 @@ const refStates = (
 					? (t / 1000) * 1.1
 					: loopPhase(anim, t, i * 0.37);
 		let yaw = speed > 9 ? Math.atan2(v.y, v.x) : yawTo(p, ball);
+		if (ftTeam !== undefined && dist(p, ftAdminAt(ftTeam)) < 0.8) {
+			// The one with the ball at the line: facing the shooter.
+			yaw = yawTo(p, spot(ftTeam, FT_LINE_DEPTH, 25));
+			if (handing) {
+				({ anim, phase } = handing);
+			}
+		}
 		if (i === 2 && toss && t < toss.t + 600 && dist(p, TOSS) < 0.6) {
 			anim = "toss";
 			phase = t < toss.t ? 0 : (t - toss.t) / 600;

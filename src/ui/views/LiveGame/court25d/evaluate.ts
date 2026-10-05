@@ -67,7 +67,7 @@ export type PlayerState = {
 
 // Bounces a second on a dribble: one steady beat, walking or driving, so the
 // ball never skips a bounce when he starts or stops.
-const DRIBBLE_RATE = 2.1;
+export const DRIBBLE_RATE = 2.1;
 const dribblePhase = (t0: number, t: number): number =>
 	(((((t - t0) / 1000) * DRIBBLE_RATE) % 1) + 1) % 1;
 

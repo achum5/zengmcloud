@@ -395,6 +395,91 @@ describe("2.5D director", () => {
 		}
 	});
 
+	// From the camera (across the floor from the far sideline), a defender
+	// right in front of a shooter would hide his whole shot: he meets it from
+	// the side instead.
+	test("a contested jumper stays in sight", () => {
+		for (const seed of ["a", "b", "c"]) {
+			const { tl } = compile(seed);
+			const tracks = [...tl.tracks.values()];
+			let checked = 0;
+			for (const tr of tracks) {
+				for (const a of tr.acts) {
+					if (a.anim !== "contest") {
+						continue;
+					}
+					const mid = (a.t0 + a.t1) / 2;
+					const shooter = tracks.find(
+						(o) =>
+							o.team !== tr.team &&
+							o.acts.some(
+								(x) =>
+									(x.anim === "shoot" || x.anim === "fade") &&
+									x.t0 <= mid &&
+									x.t1 >= mid,
+							),
+					);
+					if (!shooter) {
+						continue;
+					}
+					const d = evalPlayer(tl, tr.pid, mid);
+					const sh = evalPlayer(tl, shooter.pid, mid);
+					if (d.y > sh.y) {
+						assert.isAtLeast(Math.abs(d.x - sh.x), 1.4, `${seed} ${mid}`);
+					}
+					checked += 1;
+				}
+			}
+			assert.isAbove(checked, 3);
+		}
+	});
+
+	// Every free throw: the official bounces him the ball, he dribbles, shoots
+	// and holds his follow-through until the ball gets to the rim.
+	test("a free throw has the shooter's routine", () => {
+		for (const seed of ["a", "b"]) {
+			const { events, tl } = compile(seed);
+			let checked = 0;
+			for (const b of tl.beats) {
+				const e = events[b.i]!;
+				if (e.type !== "ft" && e.type !== "missFt") {
+					continue;
+				}
+				const pid = e.pid as number;
+				const acts = tl.tracks
+					.get(pid)!
+					.acts.filter((a) => a.t0 >= b.preStart && a.t0 <= b.actionStart);
+				const shot = acts.find((a) => a.anim === "shoot");
+				const follow = acts.find((a) => a.anim === "follow");
+				assert.isDefined(shot, `${seed} ${b.i}`);
+				assert.isDefined(follow, `${seed} ${b.i}`);
+				assert.isAtLeast(follow!.t1, b.actionStart, `${seed} ${b.i}`);
+				// The ball: from the official's hands, a dribble, then up.
+				const segs = tl.ball.filter(
+					(g) => g.t0 >= b.preStart && g.t0 < shot!.t0,
+				);
+				assert.isTrue(
+					segs.some(
+						(g) => g.kind === "hold" && g.pid === pid && g.style === "dribble",
+					),
+					`${seed} ${b.i}`,
+				);
+				assert.isTrue(
+					segs.some(
+						(g) =>
+							g.kind === "fly" &&
+							!("pid" in g.from) &&
+							!("pid" in g.to) &&
+							g.from.z > 3,
+					),
+					`${seed} ${b.i}`,
+				);
+				checked += 1;
+			}
+			assert.isAbove(checked, 4);
+		}
+	});
+
 	// The camera goes off the floor only while nothing is happening on it: the
 	// game opens on the building and cuts in for the tip, and a timeout or the
 	// break between periods looks round it - but no shot, pass or tip-off is

@@ -1232,6 +1232,52 @@ export const ANIMS = {
 			}),
 	},
 
+	// Holding the follow-through - arm up, wrist snapped down - until the
+	// ball gets there, then down.
+	follow: {
+		kind: "act",
+		n: 5,
+		keys: [
+			[
+				0,
+				pose({
+					kneeN: 10,
+					kneeF: 14,
+					shN: 162,
+					elN: 14,
+					shF: 118,
+					elF: 36,
+					lean: -2,
+					wrN: -110,
+				}),
+			],
+			[
+				0.7,
+				pose({
+					kneeN: 8,
+					kneeF: 12,
+					shN: 158,
+					elN: 16,
+					shF: 96,
+					elF: 40,
+					lean: -1,
+					wrN: -104,
+				}),
+			],
+			[1, P.ready],
+		],
+	},
+	// A slap of the hands with a teammate.
+	highFive: {
+		kind: "act",
+		n: 5,
+		keys: [
+			[0, P.ready],
+			[0.4, pose({ shN: 148, elN: 22, abN: 18, wrN: 20, lean: -4 })],
+			[0.6, pose({ shN: 140, elN: 30, abN: 18, wrN: 10, lean: -3 })],
+			[1, P.ready],
+		],
+	},
 	// ---- the officials ----
 	// The whistle: a fist straight up, the clock stopped.
 	signalUp: {
