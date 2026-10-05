@@ -180,6 +180,22 @@ const photoSprite = async (
 	};
 };
 
+// How his hair sits on the back of his head, for drawing it from the side
+// and from behind: none; cropped close to his skull; standing up off it (an
+// afro, a high top, curls); or hanging down past his neck (dreads, long
+// hair).
+export type HairCut = "bald" | "short" | "big" | "long";
+const BIG_HAIR = /^(afro|high|juice|curly\d*$|blowout|shaggy|emo|messy$)/;
+const LONG_HAIR = /^(dreads|longHair|female|tied)/;
+export const hairCut = (id: string | undefined): HairCut =>
+	!id || id === "bald"
+		? "bald"
+		: LONG_HAIR.test(id)
+			? "long"
+			: BIG_HAIR.test(id)
+				? "big"
+				: "short";
+
 export type HeadLook = {
 	sprite?: HeadSprite;
 	skin: string;
@@ -193,12 +209,13 @@ const DEFAULT_HAIR = "#1f1612";
 // the sprite itself arrives later.
 export const headColors = (
 	face: FaceConfig | undefined,
-): { skin: string; hair: string } => {
+): { skin: string; hair: string; cut: HairCut } => {
 	const skin = face?.body?.color || DEFAULT_SKIN;
-	const bald = !face?.hair?.id || face.hair.id === "bald";
+	const cut = face ? hairCut(face.hair?.id) : "short";
 	return {
 		skin,
-		hair: bald ? skin : face.hair.color || DEFAULT_HAIR,
+		hair: cut === "bald" ? skin : face?.hair?.color || DEFAULT_HAIR,
+		cut,
 	};
 };
 

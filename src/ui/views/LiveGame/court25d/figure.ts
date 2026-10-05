@@ -1,7 +1,7 @@
 import { makeCourtRng } from "../courtRng.ts";
 import { project, type Camera, type Projected } from "./camera.ts";
 import { bodyPoint, onRim, poseOf, type PlayerState } from "./evaluate.ts";
-import type { HeadSprite } from "./faces.ts";
+import type { HairCut, HeadSprite } from "./faces.ts";
 import { holdBall, skeleton, type Body, type Limb, type V3 } from "./poses.ts";
 
 // ONE PLAYER, DRAWN - the body of his sprite (see sprite.ts).
@@ -62,6 +62,8 @@ export type Look = {
 	outfit?: Outfit;
 	skin: string;
 	hair: string;
+	// How his hair sits on the back of his head (short, if unsaid).
+	cut?: HairCut;
 	jerseyNumber: string;
 	// His full name, shown under him while he has the ball.
 	name: string;
@@ -86,6 +88,11 @@ const JAW = 1.04;
 
 // How far down the thigh the shorts reach: today's, to the top of the knee.
 const SHORTS_HEM = 0.94;
+
+// Every part of him is inked round, the cartoon way - like the line round
+// his face - this thick (feet, at his size on screen), in this.
+const OUTLINE = 0.05;
+const INK = "#17120f";
 
 const lerp2 = (a: P2, b: P2, f: number): P2 => ({
 	x: a.x + (b.x - a.x) * f,
@@ -506,17 +513,15 @@ export const drawFigure = (
 			{ x: hip.x - nx * wTop, y: hip.y - ny * wTop },
 		];
 		const shorts = softPoly(shortsPts);
-		shapes.push({
-			path: shorts,
-			fill: litOver(dim(kit.shorts, far), shortsPts),
-		});
+		shapes.push(
+			{ path: shoe.sole, fill: soleColor },
+			{ path: shorts, fill: litOver(dim(kit.shorts, far), shortsPts) },
+		);
 		parts.push({
 			// Under the torso, always - his shorts hang over his legs.
 			depth: Math.max(knee.depth, torsoDepth) + (far ? 0.6 : 0.3),
 			shapes,
 			detail: () => {
-				ctx.fillStyle = soleColor;
-				ctx.fill(shoe.sole);
 				// The stripe down the outside of the shorts - on them, never
 				// beside them.
 				const a = at(off(limb.root, 0, outer * body.thighR * 1.22));
@@ -631,12 +636,28 @@ export const drawFigure = (
 		...halfRing(0.03, sw * 0.83, dp * 0.48).reverse(),
 	];
 	const jerseyPath = softPoly(jerseyPts);
+	// The seat of his shorts, between his legs: one pair of shorts, not two
+	// tubes.
+	const hipL = at(sk.legL.root);
+	const hipR = at(sk.legR.root);
+	const kneeL = at(sk.legL.mid);
+	const kneeR = at(sk.legR.mid);
+	const seatPts = [
+		lerp2(hipL, hipR, -0.3),
+		lerp2(hipL, hipR, 1.3),
+		lerp2(hipR, kneeR, 0.5),
+		lerp2(lerp2(hipL, hipR, 0.5), lerp2(kneeL, kneeR, 0.5), 0.36),
+		lerp2(hipL, kneeL, 0.5),
+	];
 	parts.push({
 		depth: torsoDepth,
 		shapes: [
 			{ path: softPoly(yokePts), fill: litOver(skin, yokePts) },
 			shaped(neck, skin),
 			...(jawShade ? [{ path: jawShade.path, fill: shade(skin, -0.22) }] : []),
+			...(shirt
+				? []
+				: [{ path: softPoly(seatPts), fill: litOver(kit.shorts, seatPts) }]),
 			{ path: jerseyPath, fill: litOver(kit.jersey, jerseyPts) },
 			{ path: polyPath(waistPts), fill: litOver(kit.shorts, waistPts) },
 		],
@@ -841,8 +862,8 @@ export const drawFigure = (
 		let hx = tip.x - wrist.x;
 		let hy = tip.y - wrist.y;
 		const shown = Math.hypot(hx, hy);
-		const handLen = body.handR * 3.7 * wrist.k;
-		const handW = body.handR * 1.8 * wrist.k;
+		const handLen = body.handR * 4.3 * wrist.k;
+		const handW = body.handR * 2.35 * wrist.k;
 		if (shown < 0.08 * wrist.k) {
 			hx = wrist.x - el.x;
 			hy = wrist.y - el.y;
@@ -994,7 +1015,16 @@ export const drawFigure = (
 	}
 
 	parts.sort((p, q) => q.depth - p.depth);
+	// The ink round each part goes down first, twice as wide as it shows:
+	// its own colors cover the inner half, and every line inside it.
+	const ink = Math.max(px * 0.9, OUTLINE * chest.k);
 	const paint = (c: CanvasRenderingContext2D, p: Part) => {
+		c.strokeStyle = INK;
+		c.lineWidth = ink * 2;
+		c.lineJoin = "round";
+		for (const s of p.shapes) {
+			c.stroke(s.path);
+		}
 		for (const s of p.shapes) {
 			c.fillStyle = s.fill;
 			c.fill(s.path);
@@ -1092,7 +1122,16 @@ export const drawHeadAt = (
 	const front =
 		(Math.cos(st.yaw) * toCamX + Math.sin(st.yaw) * toCamY) / toCamL;
 	const headC = at(sk.head);
-	drawHead(ctx, headC, body.headR * headC.k, look, front, at, sk.head);
+	drawHead(
+		ctx,
+		headC,
+		body.headR * headC.k,
+		look,
+		front,
+		at,
+		sk.head,
+		OUTLINE * headC.k,
+	);
 };
 
 // A sneaker, from the ankle to the toe: the upper - low at the toe, high at
@@ -1157,39 +1196,147 @@ const drawHead = (
 	front: number,
 	at: (v: V3) => Projected,
 	head: V3,
+	// How thick the ink round the back of his head (px).
+	ink = 0,
 ) => {
 	const c = { x: middle.x, y: middle.y - r * FACE_LIFT };
 	// Which way his nose points on screen.
 	const ahead = at({ f: head.f + 1, s: head.s, u: head.u });
 	const turn = Math.sign(ahead.x - c.x) || 1;
 	const sprite = look.head;
-	// The back of his head - his hair over it, his ears either side - sized to
-	// the face that turns into it.
-	const back = (dx = 0) => {
+	const cut = look.cut ?? "short";
+	const hairy = cut !== "bald" && look.hair !== look.skin;
+	// The back of his head, sized to the face that turns into it: his skull,
+	// his hair over it down to the nape of his neck, his ears. `side` (0 to
+	// 1) is how side on he is: from behind, the hairline runs straight across
+	// and both ears show; side on, it rises toward his ear - the one on his
+	// face, just in front - so the hair is a cap on his skull, not a curtain
+	// hanging down behind his face.
+	const back = (dx = 0, side = 0) => {
 		const x = c.x + dx;
-		const p = new Path2D();
-		p.ellipse(x, c.y - r * 0.1, r * 0.96, r * 1.14, 0, 0, Math.PI * 2);
-		ctx.fillStyle = look.skin;
-		ctx.fill(p);
-		ctx.fillStyle = shade(look.skin, -0.1);
-		for (const s of [-1, 1]) {
-			ctx.beginPath();
-			ctx.ellipse(
-				x + s * r * 0.94,
-				c.y + r * 0.02,
-				r * 0.15,
-				r * 0.26,
+		const skull = new Path2D();
+		// Side on, the back of his skull rounds off above the nape and into
+		// his neck, rather than bulging down behind his jaw.
+		const top = c.y - r * (0.08 + 0.14 * side);
+		const tall = r * (1.1 - 0.14 * side);
+		skull.ellipse(x, top, r * 0.95, tall, 0, 0, Math.PI * 2);
+		const ears: { outer: Path2D; inner: Path2D }[] = [];
+		if (side < 0.5 && cut !== "big" && cut !== "long") {
+			for (const s of [-1, 1]) {
+				const ex = x + s * r * 0.93;
+				const outer = new Path2D();
+				outer.ellipse(
+					ex,
+					c.y + r * 0.04,
+					r * 0.16,
+					r * 0.27,
+					0,
+					0,
+					Math.PI * 2,
+				);
+				const inner = new Path2D();
+				inner.ellipse(
+					ex + s * r * 0.03,
+					c.y + r * 0.04,
+					r * 0.08,
+					r * 0.17,
+					0,
+					0,
+					Math.PI * 2,
+				);
+				ears.push({ outer, inner });
+			}
+		}
+		// Where his hair ends. From behind it comes down to the nape; side on
+		// - today's cut, short or faded at the sides and back - it stops above
+		// his ear, skin below it, so it reads as a man's haircut and not hair
+		// down to his jaw. (Long, it hangs past his neck either way.)
+		const nape =
+			c.y +
+			r *
+				(cut === "long"
+					? 1.15
+					: (cut === "big" ? 0.66 : 0.72) -
+						side * (cut === "big" ? 0.52 : 0.78));
+		const over = c.y - r * (cut === "long" ? 0.2 : 0.3);
+		const xBack = x - turn * r * 0.95;
+		const xEar = x + turn * r * 0.6;
+		const hairline = (px: number) => {
+			const u = Math.min(1, Math.max(0, (px - xBack) / (xEar - xBack)));
+			// (Seen from behind, it dips a little in the middle of his neck.)
+			const w = Math.max(0, 1 - ((px - x) / (r * 0.95)) ** 2);
+			return (
+				nape +
+				(over - nape) * side * u * u * (3 - 2 * u) +
+				r * 0.07 * (1 - side) * w
+			);
+		};
+		const cap = new Path2D();
+		const x0 = x - r * 1.5;
+		const x1 = x + r * 1.5;
+		cap.moveTo(x0, c.y - r * 2.5);
+		for (let k = 0; k <= 24; k++) {
+			const px = x0 + ((x1 - x0) * k) / 24;
+			cap.lineTo(px, hairline(px));
+		}
+		cap.lineTo(x1, c.y - r * 2.5);
+		cap.closePath();
+		// Cropped close it hugs his skull; with some to it, it stands off it.
+		const hair = new Path2D();
+		if (cut === "big") {
+			hair.ellipse(
+				x - turn * r * 0.1 * side,
+				c.y - r * 0.24,
+				r * 1.12,
+				r * 1.14,
 				0,
 				0,
 				Math.PI * 2,
 			);
-			ctx.fill();
+		} else if (cut === "long") {
+			hair.ellipse(x, c.y + r * 0.1, r * 1.0, r * 1.32, 0, 0, Math.PI * 2);
+		} else {
+			hair.ellipse(
+				x,
+				top - r * 0.02,
+				r * 0.99,
+				tall + r * 0.03,
+				0,
+				0,
+				Math.PI * 2,
+			);
 		}
-		if (look.hair !== look.skin) {
+		// Inked round like the rest of him: the line first, the colors over
+		// its inner half.
+		if (ink > 0) {
+			ctx.strokeStyle = INK;
+			ctx.lineWidth = ink * 2;
+			ctx.lineJoin = "round";
+			ctx.stroke(skull);
+			for (const e of ears) {
+				ctx.stroke(e.outer);
+			}
+			if (hairy) {
+				ctx.save();
+				ctx.clip(cap);
+				ctx.stroke(hair);
+				ctx.restore();
+			}
+		}
+		ctx.fillStyle = look.skin;
+		ctx.fill(skull);
+		for (const e of ears) {
+			ctx.fillStyle = look.skin;
+			ctx.fill(e.outer);
+			ctx.fillStyle = shade(look.skin, -0.18);
+			ctx.fill(e.inner);
+		}
+		if (hairy) {
+			ctx.save();
+			ctx.clip(hair);
 			ctx.fillStyle = look.hair;
-			ctx.beginPath();
-			ctx.ellipse(x, c.y - r * 0.26, r * 0.94, r * 1.0, 0, 0, Math.PI * 2);
-			ctx.fill();
+			ctx.fill(cap);
+			ctx.restore();
 		}
 	};
 	if (!sprite) {
@@ -1203,8 +1350,10 @@ const drawHead = (
 	} else if (front < 0.55) {
 		// Side on, the back of his skull shows behind his face, over the top of
 		// his neck.
-		const side = 1 - Math.max(0, (front - 0.1) / 0.45);
-		back(-turn * r * 0.3 * Math.min(1, side));
+		// (Most side on square to the camera, less as he turns either way.)
+		const side =
+			front >= 0.1 ? 1 - (front - 0.1) / 0.45 : 1 - (0.1 - front) / 0.26;
+		back(-turn * r * 0.24 * side, side);
 	}
 	// His face, cheated toward the camera the way a cartoon is: even side on,
 	// most of it shows, shifted the way he looks.
