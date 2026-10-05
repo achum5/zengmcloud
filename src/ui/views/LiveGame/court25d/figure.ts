@@ -1,3 +1,4 @@
+import { makeCourtRng } from "../courtRng.ts";
 import { project, type Camera, type Projected } from "./camera.ts";
 import { bodyPoint, type PlayerState } from "./evaluate.ts";
 import type { HeadSprite } from "./faces.ts";
@@ -32,8 +33,22 @@ export type Kit = {
 	sole: string;
 };
 
+// What a player wears besides the uniform, and makes him himself: a sleeve
+// on his shooting arm, tights down a leg, a wristband, a knee pad, his own
+// shoes and socks.
+export type Gear = {
+	sleeve?: { arms: "R" | "L" | "RL"; color: string; elbow: boolean };
+	tights?: { legs: "R" | "L" | "RL"; color: string };
+	wrist?: { arms: "R" | "L" | "RL"; color: string };
+	knee?: { legs: "R" | "L"; color: string };
+	shoe: string;
+	sole: string;
+	sock: string;
+};
+
 export type Look = {
 	kit: Kit;
+	gear?: Gear;
 	skin: string;
 	hair: string;
 	jerseyNumber: string;
@@ -297,6 +312,7 @@ export const drawFigure = (
 	const side = (sy * toCamX - cy * toCamY) / toCamL;
 
 	const kit = look.kit;
+	const gear = look.gear;
 	const skin = look.skin;
 	const pelvis = at(sk.pelvis);
 	const torsoDepth = (at(sk.chest).depth + pelvis.depth) / 2;
@@ -329,8 +345,14 @@ export const drawFigure = (
 		const knee = at(limb.mid);
 		const ankle = at(limb.end);
 		const toe = at(limb.tip ?? limb.end);
-		const sk0 = dim(skin, far);
+		const which = outer < 0 ? "R" : "L";
+		// Tights down the leg instead of bare skin, his own socks and shoes.
+		const tights = gear?.tights?.legs.includes(which) ? gear.tights : undefined;
+		const sk0 = dim(tights ? tights.color : skin, far);
 		const skinShadow = shade(sk0, -0.2);
+		const sockColor = gear?.sock ?? kit.sock;
+		const shoeColor = gear?.shoe ?? kit.shoe;
+		const soleColor = gear?.sole ?? kit.sole;
 		const shapes: Shape[] = [];
 		// Thigh, mostly under the shorts.
 		shapes.push(
@@ -360,6 +382,22 @@ export const drawFigure = (
 			behind,
 		);
 		shapes.push(shaped(shin, sk0, skinShadow));
+		if (gear?.knee?.legs === which) {
+			// A pad round the knee.
+			shapes.push({
+				path: limbShape(
+					lerp2(hip, knee, 0.86),
+					knee.k,
+					lerp2(knee, ankle, 0.18),
+					knee.k,
+					[
+						[0, body.kneeR * 1.22],
+						[1, body.kneeR * 1.16],
+					],
+				).path,
+				fill: dim(gear.knee.color, far),
+			});
+		}
 		// Crew socks, up to mid-calf.
 		const sockTop = lerp2(knee, ankle, 0.6);
 		shapes.push(
@@ -368,14 +406,14 @@ export const drawFigure = (
 					[0, body.calfR * 0.84],
 					[1, body.ankleR * 1.08],
 				]),
-				dim(kit.sock, far),
-				shade(dim(kit.sock, far), -0.18),
+				dim(sockColor, far),
+				shade(dim(sockColor, far), -0.18),
 			),
 		);
 		// The sneaker: a sole along the floor, a toe box, a high collar at the
 		// ankle.
 		const shoe = sneaker(ankle, toe, ankle.k, Math.abs(front) > 0.62);
-		shapes.push({ path: shoe.upper, fill: dim(kit.shoe, far) });
+		shapes.push({ path: shoe.upper, fill: dim(shoeColor, far) });
 		// Shorts: wide and loose to just above the knee.
 		const hem = lerp2(hip, knee, 0.74);
 		const tx = knee.x - hip.x;
@@ -400,7 +438,7 @@ export const drawFigure = (
 			depth: Math.max(knee.depth, torsoDepth) + (far ? 0.6 : 0.3),
 			shapes,
 			detail: () => {
-				ctx.fillStyle = kit.sole;
+				ctx.fillStyle = soleColor;
 				ctx.fill(shoe.sole);
 				// The stripe down the outside of the shorts.
 				const a = at(off(limb.root, 0, outer * body.thighR * 1.32));
@@ -522,12 +560,18 @@ export const drawFigure = (
 		ctx.stroke();
 	};
 
-	const arm = (limb: Limb, far: boolean) => {
+	const arm = (limb: Limb, far: boolean, which: "R" | "L") => {
 		const sh = at(limb.root);
 		const el = at(limb.mid);
 		const wrist = at(limb.end);
 		const c = dim(skin, far);
-		const cs = shade(c, -0.2);
+		// A sleeve over the arm (or just the forearm), a band at the wrist.
+		const sleeve = gear?.sleeve?.arms.includes(which) ? gear.sleeve : undefined;
+		const sl = sleeve ? dim(sleeve.color, far) : c;
+		const upperC = sleeve && !sleeve.elbow ? sl : c;
+		const band = gear?.wrist?.arms.includes(which)
+			? dim(gear.wrist.color, far)
+			: undefined;
 		// The hand: a mitt a little past the wrist, pointing the way the
 		// wrist bends it (along the forearm when it points at the camera).
 		const tip = at(limb.tip ?? limb.end);
@@ -567,8 +611,8 @@ export const drawFigure = (
 						[0.55, body.upperR * 1.0],
 						[1, body.foreR * 0.92],
 					]),
-					c,
-					cs,
+					upperC,
+					shade(upperC, -0.2),
 				),
 				shaped(
 					limbShape(el, el.k, wrist, wrist.k, [
@@ -577,15 +621,32 @@ export const drawFigure = (
 						[0.6, body.foreR * 0.86],
 						[1, body.foreR * 0.62],
 					]),
-					c,
-					cs,
+					sl,
+					shade(sl, -0.2),
 				),
+				...(band
+					? [
+							{
+								path: limbShape(
+									lerp2(el, wrist, 0.78),
+									wrist.k,
+									wrist,
+									wrist.k,
+									[
+										[0, body.foreR * 0.86],
+										[1, body.foreR * 0.78],
+									],
+								).path,
+								fill: band,
+							},
+						]
+					: []),
 				{ path: hand, fill: c },
 			],
 		});
 	};
-	arm(sk.armR, !leftFar);
-	arm(sk.armL, leftFar);
+	arm(sk.armR, !leftFar, "R");
+	arm(sk.armL, leftFar, "L");
 	let ballAt: FigureAnchors["ball"];
 	if (held) {
 		// The ball in his hands: drawn with him, behind the near hand and in
@@ -854,51 +915,135 @@ const luminance = (c: string): number => {
 const contrast = (a: string, b: string) =>
 	Math.abs(luminance(a) - luminance(b));
 
-// NBA style: home in white with the team's colors on it, the road team in its
-// main color - or its darkest one, if its main color is light too.
+// A team's uniforms, NBA style: white with its colors on it; its main color
+// (or its darkest, if the main one is light); a dark "statement" set; and a
+// "city" set in its second color.
+type Edition = "white" | "color" | "statement" | "city";
+
+const WHITE = "#f4f1ea";
+const INK_DARK = "#1b1b20";
+
+const uniform = (colors: [string, string, string], edition: Edition): Kit => {
+	const darkest = [...colors].sort((x, y) => luminance(x) - luminance(y))[0]!;
+	const main = luminance(colors[0]) < 0.6 ? colors[0] : darkest;
+	const base =
+		edition === "white"
+			? WHITE
+			: edition === "color"
+				? main
+				: edition === "statement"
+					? luminance(darkest) < 0.18
+						? darkest
+						: INK_DARK
+					: colors[1];
+	// The color on it: the team's own, as far from the base as it gets.
+	const accents = [...colors, WHITE, INK_DARK].filter((c) => c !== base);
+	const trim =
+		accents.find((c) => contrast(c, base) > 0.3) ??
+		accents.sort((x, y) => contrast(y, base) - contrast(x, base))[0]!;
+	const edge =
+		accents.find((c) => c !== trim && contrast(c, trim) > 0.2) ??
+		shade(base, -0.4);
+	const light = luminance(base) > 0.7;
+	return {
+		jersey: base,
+		trim,
+		number: trim,
+		numberEdge: edge,
+		shorts: base,
+		stripe: trim,
+		sock: light ? "#f1f1f1" : shade(base, -0.25),
+		shoe: light ? "#f4f4f4" : "#1d1d22",
+		sole: light ? trim : "#e9e6df",
+	};
+};
+
+// What the two teams wear tonight - picked by the game, so every viewing of
+// it shows the same: usually the home team in white and the visitors in
+// color, some nights the other way round, now and then a statement or city
+// set - never two that clash.
 export const kitsFor = (
 	away: [string, string, string] | undefined,
 	home: [string, string, string] | undefined,
+	seed = "",
 ): [Kit, Kit] => {
 	const a = away ?? ["#1d3461", "#f28c28", "#ffffff"];
 	const h = home ?? ["#8c1d40", "#f2c14e", "#ffffff"];
-	const darkest = [...a].sort((x, y) => luminance(x) - luminance(y))[0]!;
-	const road = luminance(a[0]) < 0.6 ? a[0] : darkest;
-	const roadTrim =
-		a.find((c) => c !== road && contrast(c, road) > 0.25) ?? "#ffffff";
-	const roadEdge =
-		a.find(
-			(c) => c !== road && c !== roadTrim && contrast(c, roadTrim) > 0.2,
-		) ?? road;
-	const homeMain =
-		luminance(h[0]) < 0.7
-			? h[0]
-			: (h.find((c) => luminance(c) < 0.6) ?? "#222222");
-	const homeEdge =
-		h.find((c) => c !== homeMain && contrast(c, "#f4f1ea") > 0.2) ?? homeMain;
-	const WHITE = "#f4f1ea";
-	return [
-		{
-			jersey: road,
-			trim: roadTrim,
-			number: roadTrim,
-			numberEdge: roadEdge === roadTrim ? shade(road, -0.4) : roadEdge,
-			shorts: road,
-			stripe: roadTrim,
-			sock: shade(road, -0.25),
-			shoe: "#1d1d22",
-			sole: "#e9e6df",
-		},
-		{
-			jersey: WHITE,
-			trim: homeMain,
-			number: homeMain,
-			numberEdge: homeEdge === homeMain ? shade(homeMain, -0.35) : homeEdge,
-			shorts: WHITE,
-			stripe: homeMain,
-			sock: "#f1f1f1",
-			shoe: "#f4f4f4",
-			sole: homeMain,
-		},
-	];
+	const rng = makeCourtRng(`kits|${seed}`);
+	const r = rng();
+	const homeEd: Edition =
+		r < 0.6 ? "white" : r < 0.82 ? "color" : r < 0.92 ? "statement" : "city";
+	const homeKit = uniform(h, homeEd);
+	const options: Edition[] =
+		homeEd === "white"
+			? ["color", "color", "color", "statement", "city"]
+			: ["white", "white", "white", "city"];
+	let awayKit = uniform(a, "white");
+	for (const ed of [options[Math.floor(rng() * options.length)]!, ...options]) {
+		const k = uniform(a, ed);
+		if (contrast(k.jersey, homeKit.jersey) > 0.28) {
+			awayKit = k;
+			break;
+		}
+	}
+	return [awayKit, homeKit];
+};
+
+// A player's own gear, the same every game he plays: decided by who he is,
+// in the colors of whatever his team wears tonight.
+export const gearFor = (pid: number, kit: Kit): Gear => {
+	const rng = makeCourtRng(`gear|${pid}`);
+	// Gear comes in his uniform's color, black or white.
+	const color = () => {
+		const r = rng();
+		return r < 0.45 ? kit.trim : r < 0.75 ? INK_DARK : WHITE;
+	};
+	const arms = (): "R" | "L" | "RL" => {
+		const r = rng();
+		return r < 0.7 ? "R" : r < 0.85 ? "L" : "RL";
+	};
+	const gear: Gear = {
+		shoe: kit.shoe,
+		sole: kit.sole,
+		sock: kit.sock,
+	};
+	const shoe = rng();
+	if (shoe < 0.3) {
+		gear.shoe = INK_DARK;
+		gear.sole = WHITE;
+	} else if (shoe < 0.55) {
+		gear.shoe = "#f4f4f4";
+		gear.sole = shoe < 0.42 ? kit.trim : INK_DARK;
+	} else if (shoe < 0.75) {
+		gear.shoe = kit.trim;
+		gear.sole = WHITE;
+	} else if (shoe < 0.83) {
+		// Loud ones.
+		gear.shoe = ["#e63946", "#f4b400", "#3ddc84", "#ff7a00"][
+			Math.floor(rng() * 4)
+		]!;
+		gear.sole = WHITE;
+	}
+	const sock = rng();
+	gear.sock = sock < 0.45 ? kit.sock : sock < 0.75 ? "#f1f1f1" : INK_DARK;
+	if (rng() < 0.3) {
+		gear.sleeve = { arms: arms(), color: color(), elbow: rng() < 0.35 };
+	}
+	if (rng() < 0.24) {
+		const r = rng();
+		gear.tights = {
+			legs: r < 0.45 ? "R" : r < 0.8 ? "L" : "RL",
+			color: color(),
+		};
+	}
+	if (rng() < 0.32) {
+		gear.wrist = { arms: arms(), color: color() };
+	}
+	if (rng() < 0.12) {
+		gear.knee = {
+			legs: rng() < 0.5 ? "R" : "L",
+			color: rng() < 0.5 ? INK_DARK : WHITE,
+		};
+	}
+	return gear;
 };

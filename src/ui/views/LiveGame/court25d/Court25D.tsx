@@ -28,7 +28,7 @@ import {
 	type CourtPlayer,
 } from "./director.ts";
 import { headColors, loadHead, type HeadSprite } from "./faces.ts";
-import { kitsFor, shade, type Look } from "./figure.ts";
+import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { bodyOf, type Body } from "./poses.ts";
 import { aimFor, crowdUp, drawFrame, momentAt, replayAim } from "./scene.ts";
@@ -182,7 +182,7 @@ const Court25D = ({
 	);
 
 	const kits = useMemo(
-		() => kitsFor(away?.colors, home?.colors),
+		() => kitsFor(away?.colors, home?.colors, String(gid ?? 0)),
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[gid],
 	);
@@ -270,6 +270,7 @@ const Court25D = ({
 			const team = p.team === 0 ? away : home;
 			looks.set(p.pid, {
 				kit: kits[p.team as Side],
+				gear: gearFor(p.pid, kits[p.team as Side]),
 				skin: head?.skin ?? colors.skin,
 				hair: f?.imgURL ? "#1f1612" : colors.hair,
 				jerseyNumber: f?.jerseyNumber ?? p.jerseyNumber ?? "",

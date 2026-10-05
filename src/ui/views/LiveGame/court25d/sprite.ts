@@ -134,6 +134,17 @@ const paletteOf = (look: Look, ball = false): Palette => {
 			k.shoe,
 			k.sole,
 			...(ball ? [BALL_ORANGE, BALL_SHADE, BALL_SEAM] : []),
+			...(look.gear
+				? [
+						look.gear.shoe,
+						look.gear.sole,
+						look.gear.sock,
+						look.gear.sleeve?.color,
+						look.gear.tights?.color,
+						look.gear.wrist?.color,
+						look.gear.knee?.color,
+					].filter((c): c is string => c !== undefined)
+				: []),
 		]) {
 			add(c);
 		}
