@@ -482,6 +482,50 @@ export const ANIMS = {
 			}),
 	},
 	hold: { kind: "loop", n: 1, fps: 1, pose: () => P.hold },
+	// Boxing out: his back into the man behind him, sat down low and wide,
+	// arms up and out to keep him there, eyes on the ball.
+	boxOut: {
+		kind: "loop",
+		n: 2,
+		fps: 2.2,
+		pose: (i) =>
+			pose({
+				hipN: 40,
+				kneeN: 76 + i * 6,
+				hipF: 44,
+				kneeF: 78 + i * 6,
+				lean: 22,
+				shN: 66 + i * 6,
+				elN: 104,
+				abN: 56,
+				shF: 66 - i * 6,
+				elF: 104,
+				abF: 56,
+				wide: 1.05,
+			}),
+	},
+	// Fighting a box-out: leaning into the man in front, one arm up over him
+	// for the ball, the other hand on his back.
+	fight: {
+		kind: "loop",
+		n: 2,
+		fps: 2.4,
+		pose: (i) =>
+			pose({
+				hipN: 18,
+				kneeN: 44,
+				hipF: 40,
+				kneeF: 52,
+				lean: 24 + i * 4,
+				shN: 150 + i * 8,
+				elN: 22,
+				abN: 18,
+				shF: 70,
+				elF: 56,
+				abF: 24,
+				wide: 0.5,
+			}),
+	},
 	// Sat in his triple threat, the ball on his hip, rocking a little.
 	triple: {
 		kind: "loop",

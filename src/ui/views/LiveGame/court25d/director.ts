@@ -3354,33 +3354,109 @@ class Director {
 			}
 		}
 
-		// The bigs crash the glass while the ball is up.
-		if ((!dunk || plan.kind === "miss") && plan.kind !== "block") {
-			for (const side of [team, other(team)] as const) {
-				const big = this.slots(side).at(-1);
-				// Not the man contesting the shot: he is busy.
-				if (
-					big !== undefined &&
-					big !== shooter &&
-					big !== plan.fouler &&
-					big !== guard
-				) {
-					const box = {
-						x: rim.x - dir * this.rand(4, 7),
-						y: 25 + (side === team ? -1 : 1) * this.rand(2, 5),
-					};
-					this.go(
-						big,
-						clampPt(box),
-						Math.max(gather, this.free.get(big) ?? 0),
-						JOG,
-						"run",
-						dir,
-					);
-				}
-			}
+		if (!dunk && !putback && plan.kind !== "block") {
+			this.crashTheGlass(team, shooter, gather, arrive, [
+				shooter,
+				...(plan.fouler === undefined ? [] : [plan.fouler]),
+			]);
 		}
 		return { gather, decided, arrive, target, dunk };
+	}
+
+	// The shot goes up and everybody plays it. The bigs crash the glass, and
+	// the rest of the offense follows them in or gets back; every defender
+	// turns and finds his man - backs into the one coming in and sits on him,
+	// arms out wide - or, his man leaving, goes in to the glass himself. All
+	// eyes on the ball, until it comes off the rim (`land`).
+	private crashTheGlass(
+		team: Side,
+		shooter: number,
+		gather: number,
+		land: number,
+		busy: number[],
+	) {
+		const go = Math.max(gather + 300, land - 1050);
+		const meet = Math.max(go + 320, land - 450);
+		const until = land + 150;
+		if (until - meet < 280) {
+			return;
+		}
+		const rim = { x: rimX(team), y: COURT_H / 2 };
+		const dir = attackDir(team);
+		// When he is free to: done running where he was going, done with what
+		// he was doing (a contest of the shot, say).
+		const readyAt = (pid: number): number => {
+			let t = Math.max(go, this.free.get(pid) ?? 0);
+			for (const a of this.track(pid)?.acts ?? []) {
+				if (a.t1 > t && a.t0 < meet) {
+					t = Math.max(t, a.t1);
+				}
+			}
+			return t;
+		};
+		// Who crashes and who gets back - and where the men crashing go.
+		const crash = new Map<number, Pt>();
+		this.slots(team).forEach((pid, j) => {
+			const r0 = readyAt(pid);
+			if (busy.includes(pid) || r0 > meet - 200) {
+				return;
+			}
+			const M = this.posOf(pid);
+			const out = dist(M, rim);
+			const big = (this.rank.get(pid) ?? 4) >= 6 || j >= 4;
+			const r = this.rng();
+			if (big ? r < 0.85 : out < 17 ? r < 0.45 : r < 0.18) {
+				const u = unitVec(M, rim);
+				const k = Math.max(0, Math.min(out - this.rand(5, 8), 9));
+				const C = clampPt({ x: M.x + u.x * k, y: M.y + u.y * k });
+				crash.set(pid, C);
+				const there = this.goBy(pid, C, r0, meet, "run");
+				if (there < until - 250) {
+					this.act(pid, "fight", Math.max(meet, there), until, { look: rim });
+				}
+			} else if (out < 30) {
+				// Back on defense, eyes on the shot.
+				const back = clampPt({
+					x: M.x - dir * this.rand(5, 9),
+					y: M.y + (COURT_H / 2 - M.y) * 0.3,
+				});
+				this.goBy(pid, back, r0, until + 300, "back");
+			}
+		});
+		for (const man of this.slots(team)) {
+			const d = this.defenderOf(man);
+			const r0 = d === undefined ? Infinity : readyAt(d);
+			if (d === undefined || busy.includes(d) || r0 > meet - 150) {
+				continue;
+			}
+			const C = crash.get(man);
+			const D0 = this.posOf(d);
+			let spot: Pt;
+			if (C) {
+				// Into him: a step in front of where he is coming, between him
+				// and the rim.
+				const u = unitVec(C, rim);
+				spot = clampPt({ x: C.x + u.x * 1.8, y: C.y + u.y * 1.8 });
+			} else {
+				// His man is gone: in to the glass himself.
+				const u = unitVec(rim, D0);
+				const k = Math.min(dist(D0, rim), this.rand(6, 9));
+				spot = clampPt({ x: rim.x + u.x * k, y: rim.y + u.y * k });
+			}
+			const there = this.goBy(d, spot, r0 + 80, meet, "run");
+			if (there < until - 250) {
+				this.act(d, "boxOut", Math.max(meet, there), until, { look: rim });
+			}
+		}
+	}
+
+	// He comes out of his box-out (or out of fighting one) at t.
+	private letGo(pid: number, t: number) {
+		for (const a of this.track(pid)?.acts ?? []) {
+			if ((a.anim === "boxOut" || a.anim === "fight") && a.t1 > t) {
+				a.t1 = Math.max(a.t0 + 1, t);
+			}
+		}
 	}
 
 	// The ball comes off the rim (or a blocker's hand) and goes to whatever the
@@ -3418,6 +3494,8 @@ class Director {
 			});
 			const catchT =
 				t + (blocked ? 820 : hard ? this.rand(950, 1150) : this.rand(700, 900));
+			// Out of his box-out (or his fight through one) and after it.
+			this.letGo(r, Math.max(t - 450, this.free.get(r) ?? 0));
 			const arrive = this.goBy(
 				r,
 				catchAt,
@@ -3441,6 +3519,7 @@ class Director {
 				(a, b) => dist(this.posOf(a), catchAt) - dist(this.posOf(b), catchAt),
 			)[0];
 			if (rival !== undefined && !blocked) {
+				this.letGo(rival, jumpStart + 60);
 				this.act(rival, "rebound", jumpStart + 60, jumpStart + 760, {
 					look: { x: rim.x, y: rim.y },
 					jump: [0.15, 0.9, 1.6],
@@ -5576,7 +5655,7 @@ class Director {
 					const on = B0.holder === who;
 					const R = on ? REACT_ON : REACT_OFF;
 					const { at: Bp, holder } = ballAt(t - R);
-					let aim =
+					const aim =
 						shownAt(who, t - R) || !last
 							? this.defensePoint(
 									this.teamOf(who),
@@ -5585,75 +5664,93 @@ class Director {
 									holder === who,
 								)
 							: last;
-					if (end && t > stop - SETTLE - 200) {
-						const u = Math.min(1, (t - (stop - SETTLE - 200)) / SETTLE);
-						const w = u * u * (3 - 2 * u);
-						aim = {
-							x: aim.x + (end.x - aim.x) * w,
-							y: aim.y + (end.y - aim.y) * w,
-						};
-					}
 					last = aim;
 					ticks.push({ t, aim, ball: B0.at, on, man: where(who, t) });
 				}
-				// Smoothed: a man's feet don't follow every flicker of the ball.
-				const smooth = ticks.map((x, i) => {
-					let sx = 0;
-					let sy = 0;
-					let sw = 0;
-					for (let d = -SMOOTH; d <= SMOOTH; d++) {
-						const y = ticks[i + d];
-						if (y) {
-							const w = Math.exp(-((d / (SMOOTH / 2)) ** 2) / 2);
-							sx += y.aim.x * w;
-							sy += y.aim.y * w;
-							sw += w;
+				// Following it, as fast and as quick as a defender's feet - and
+				// on to his mark in time for what comes next: setting off for it
+				// sooner, the farther it is.
+				const follow = (settle: number) => {
+					const aims = ticks.map((x) => {
+						if (!end || x.t <= stop - settle - 200) {
+							return x.aim;
 						}
-					}
-					return { x: sx / sw, y: sy / sw };
-				});
-				// Following it: as fast and as quick as a defender's feet.
-				let p = left ?? at(a);
-				let vx = 0;
-				let vy = 0;
-				let running = false;
-				const path: { t: number; p: Pt; ball: Pt; on: boolean; man: Pt }[] = [
-					{ ...ticks[0]!, p },
-				];
-				for (let i = 1; i < ticks.length; i++) {
-					const T = smooth[i]!;
-					const prev = smooth[i - 1]!;
-					// His man's pace, to keep up with.
-					const fx = (T.x - prev.x) / (DT / 1000);
-					const fy = (T.y - prev.y) / (DT / 1000);
-					const ex = T.x - p.x;
-					const ey = T.y - p.y;
-					const e = Math.hypot(ex, ey);
-					let wx = fx + ex * GAIN;
-					let wy = fy + ey * GAIN;
-					// Turning and running to cover ground, until he has caught up.
-					running = running ? e > 2.5 : e > 7;
-					const vmax = running ? RUN_MAX : SLIDE_MAX;
-					const w = Math.hypot(wx, wy);
-					if (w > vmax) {
-						wx *= vmax / w;
-						wy *= vmax / w;
-					}
-					let dx = wx - vx;
-					let dy = wy - vy;
-					const dv = Math.hypot(dx, dy);
-					const cap = (ACCEL * DT) / 1000;
-					if (dv > cap) {
-						dx *= cap / dv;
-						dy *= cap / dv;
-					}
-					vx += dx;
-					vy += dy;
-					p = clampPt({
-						x: p.x + (vx * DT) / 1000,
-						y: p.y + (vy * DT) / 1000,
+						const u = Math.min(1, (x.t - (stop - settle - 200)) / settle);
+						const w = u * u * (3 - 2 * u);
+						return {
+							x: x.aim.x + (end.x - x.aim.x) * w,
+							y: x.aim.y + (end.y - x.aim.y) * w,
+						};
 					});
-					path.push({ ...ticks[i]!, p });
+					// Smoothed: a man's feet don't follow every flicker of the ball.
+					const smooth = aims.map((_, i) => {
+						let sx = 0;
+						let sy = 0;
+						let sw = 0;
+						for (let d = -SMOOTH; d <= SMOOTH; d++) {
+							const y = aims[i + d];
+							if (y) {
+								const w = Math.exp(-((d / (SMOOTH / 2)) ** 2) / 2);
+								sx += y.x * w;
+								sy += y.y * w;
+								sw += w;
+							}
+						}
+						return { x: sx / sw, y: sy / sw };
+					});
+					let p = left ?? at(a);
+					let vx = 0;
+					let vy = 0;
+					let running = false;
+					const out: { t: number; p: Pt; ball: Pt; on: boolean; man: Pt }[] = [
+						{ ...ticks[0]!, p },
+					];
+					for (let i = 1; i < ticks.length; i++) {
+						const T = smooth[i]!;
+						const prev = smooth[i - 1]!;
+						// His man's pace, to keep up with.
+						const fx = (T.x - prev.x) / (DT / 1000);
+						const fy = (T.y - prev.y) / (DT / 1000);
+						const ex = T.x - p.x;
+						const ey = T.y - p.y;
+						const e = Math.hypot(ex, ey);
+						let wx = fx + ex * GAIN;
+						let wy = fy + ey * GAIN;
+						// Turning and running to cover ground, until he has caught up.
+						running = running ? e > 2.5 : e > 7;
+						const vmax = running ? RUN_MAX : SLIDE_MAX;
+						const w = Math.hypot(wx, wy);
+						if (w > vmax) {
+							wx *= vmax / w;
+							wy *= vmax / w;
+						}
+						let dx = wx - vx;
+						let dy = wy - vy;
+						const dv = Math.hypot(dx, dy);
+						const cap = (ACCEL * DT) / 1000;
+						if (dv > cap) {
+							dx *= cap / dv;
+							dy *= cap / dv;
+						}
+						vx += dx;
+						vy += dy;
+						p = clampPt({
+							x: p.x + (vx * DT) / 1000,
+							y: p.y + (vy * DT) / 1000,
+						});
+						out.push({ ...ticks[i]!, p });
+					}
+					return out;
+				};
+				let settle = SETTLE;
+				let path = follow(settle);
+				while (
+					end &&
+					dist(path.at(-1)!.p, end) > 2.5 &&
+					settle < stop - a - 200
+				) {
+					settle = Math.min(stop - a - 200, settle * 2);
+					path = follow(settle);
 				}
 				// The last of the way onto his mark exactly, if he is all but there.
 				const fin = path.at(-1)!;
