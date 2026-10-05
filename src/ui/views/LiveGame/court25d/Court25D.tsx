@@ -198,7 +198,7 @@ const Court25D = ({
 	);
 
 	const kits = useMemo(
-		() => kitsFor(away?.colors, home?.colors, String(gid ?? 0)),
+		() => kitsFor(away?.colors, home?.colors),
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[gid],
 	);

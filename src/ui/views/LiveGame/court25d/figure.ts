@@ -1018,10 +1018,10 @@ const luminance = (c: string): number => {
 const contrast = (a: string, b: string) =>
 	Math.abs(luminance(a) - luminance(b));
 
-// A team's uniforms, NBA style: white with its colors on it; its main color
-// (or its darkest, if the main one is light); a dark "statement" set; and a
-// "city" set in its second color.
-type Edition = "white" | "color" | "statement" | "city";
+// A team's two uniforms: at home, white with its main color on it; on the
+// road, its main color (or its darkest, if the main one is light) with white
+// on it.
+type Edition = "home" | "road";
 
 const WHITE = "#f4f1ea";
 const INK_DARK = "#1b1b20";
@@ -1029,25 +1029,18 @@ const INK_DARK = "#1b1b20";
 const uniform = (colors: [string, string, string], edition: Edition): Kit => {
 	const darkest = [...colors].sort((x, y) => luminance(x) - luminance(y))[0]!;
 	const main = luminance(colors[0]) < 0.6 ? colors[0] : darkest;
-	const base =
-		edition === "white"
-			? WHITE
-			: edition === "color"
-				? main
-				: edition === "statement"
-					? luminance(darkest) < 0.18
-						? darkest
-						: INK_DARK
-					: colors[1];
-	// The color on it: the team's own, as far from the base as it gets.
-	const accents = [...colors, WHITE, INK_DARK].filter((c) => c !== base);
-	const trim =
-		accents.find((c) => contrast(c, base) > 0.3) ??
-		accents.sort((x, y) => contrast(y, base) - contrast(x, base))[0]!;
+	const base = edition === "home" ? WHITE : main;
+	const trim = edition === "home" ? main : WHITE;
+	// Round the numbers, another of the team's colors where it shows on both.
 	const edge =
-		accents.find((c) => c !== trim && contrast(c, trim) > 0.2) ??
-		shade(base, -0.4);
-	const light = luminance(base) > 0.7;
+		colors.find(
+			(c) =>
+				c !== trim &&
+				c !== base &&
+				contrast(c, trim) > 0.2 &&
+				contrast(c, base) > 0.12,
+		) ?? shade(edition === "home" ? main : base, -0.4);
+	const light = edition === "home";
 	return {
 		jersey: base,
 		trim,
@@ -1061,36 +1054,15 @@ const uniform = (colors: [string, string, string], edition: Edition): Kit => {
 	};
 };
 
-// What the two teams wear tonight - picked by the game, so every viewing of
-// it shows the same: usually the home team in white and the visitors in
-// color, some nights the other way round, now and then a statement or city
-// set - never two that clash.
+// What the two teams wear: the home team in white, the visitors in their
+// color.
 export const kitsFor = (
 	away: [string, string, string] | undefined,
 	home: [string, string, string] | undefined,
-	seed = "",
-): [Kit, Kit] => {
-	const a = away ?? ["#1d3461", "#f28c28", "#ffffff"];
-	const h = home ?? ["#8c1d40", "#f2c14e", "#ffffff"];
-	const rng = makeCourtRng(`kits|${seed}`);
-	const r = rng();
-	const homeEd: Edition =
-		r < 0.6 ? "white" : r < 0.82 ? "color" : r < 0.92 ? "statement" : "city";
-	const homeKit = uniform(h, homeEd);
-	const options: Edition[] =
-		homeEd === "white"
-			? ["color", "color", "color", "statement", "city"]
-			: ["white", "white", "white", "city"];
-	let awayKit = uniform(a, "white");
-	for (const ed of [options[Math.floor(rng() * options.length)]!, ...options]) {
-		const k = uniform(a, ed);
-		if (contrast(k.jersey, homeKit.jersey) > 0.28) {
-			awayKit = k;
-			break;
-		}
-	}
-	return [awayKit, homeKit];
-};
+): [Kit, Kit] => [
+	uniform(away ?? ["#1d3461", "#f28c28", "#ffffff"], "road"),
+	uniform(home ?? ["#8c1d40", "#f2c14e", "#ffffff"], "home"),
+];
 
 // A player's own gear, the same every game he plays: decided by who he is,
 // in the colors of whatever his team wears tonight.
