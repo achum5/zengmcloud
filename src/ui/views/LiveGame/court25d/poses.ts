@@ -33,6 +33,9 @@ export type Pose = {
 	// Holding the ball in both hands, how far his elbows swing out wide
 	// (degrees) - a rebounder chinning it, keeping it away from hands.
 	flare: number;
+	// How much his hips flex to keep his feet under him as his knees bend
+	// (0 to 1): all the way standing or crouched, none mid-stride.
+	plant: number;
 };
 
 const BASE: Pose = {
@@ -51,6 +54,7 @@ const BASE: Pose = {
 	wrN: 0,
 	wrF: 0,
 	flare: 0,
+	plant: 1,
 };
 const pose = (o: Partial<Pose>): Pose => ({ ...BASE, ...o });
 
@@ -225,7 +229,7 @@ const TARGET: Partial<Pose> = {
 };
 
 type RunMode = "run" | "sprint" | "dribble" | "back" | "walk" | "carry";
-const runPose = (ph: number, mode: RunMode): Pose => {
+const stride = (ph: number, mode: RunMode): Pose => {
 	const a = Math.sin(2 * Math.PI * ph);
 	const c = Math.cos(2 * Math.PI * ph);
 	if (mode === "walk" || mode === "carry") {
@@ -289,6 +293,13 @@ const runPose = (ph: number, mode: RunMode): Pose => {
 	return pose({ ...legs, shN: -42 * a, elN: 78, shF: 42 * a, elF: 78 });
 };
 
+// Mid-stride, his feet are where his stride puts them - not planted under
+// him.
+const runPose = (ph: number, mode: RunMode): Pose => ({
+	...stride(ph, mode),
+	plant: 0,
+});
+
 // "loop" anims play on the clock, "cycle" ones on distance covered (so feet
 // never skate), "act" ones across their own span from 0 to 1.
 type Anim =
@@ -309,6 +320,25 @@ export const ANIMS = {
 		fps: 2.5,
 		pose: (i) =>
 			i ? { ...P.stance, hipN: 26, hipF: 28, shN: 72, shF: 40 } : P.stance,
+	},
+	// Up on the man with the ball: down low, feet wide, one hand up in his
+	// face and the other down at the ball - trading them as he goes.
+	guard: {
+		kind: "loop",
+		n: 2,
+		fps: 1.4,
+		pose: (i) =>
+			pose({
+				hipN: 34,
+				kneeN: 72,
+				hipF: 40,
+				kneeF: 74,
+				lean: 20,
+				wide: 0.95,
+				...(i
+					? { shN: 48, elN: 30, abN: 46, shF: 150, elF: 22, abF: 20 }
+					: { shN: 150, elN: 22, abN: 20, shF: 48, elF: 30, abF: 46 }),
+			}),
 	},
 	hold: { kind: "loop", n: 1, fps: 1, pose: () => P.hold },
 	dribbleIdle: {
@@ -1922,8 +1952,24 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		);
 		return { root, mid, end };
 	};
-	const legR = leg(q.hipN, q.kneeN, -1);
-	const legL = leg(q.hipF, q.kneeF, 1);
+	// Balanced: a bend at the knees is a bend at the hips too, the way a
+	// body crouches - so his feet stay under him instead of trailing behind.
+	const ankleF = (h: number, k: number) =>
+		b.thigh * Math.sin(h * rad) + b.shin * Math.sin((h - k) * rad);
+	const avgF = (d: number) =>
+		(ankleF(q.hipN + d, q.kneeN) + ankleF(q.hipF + d, q.kneeF)) / 2;
+	let flex = 0;
+	for (let i = 0; i < 4; i++) {
+		const f0 = avgF(flex);
+		const slope = avgF(flex + 1) - f0;
+		if (Math.abs(slope) < 1e-6) {
+			break;
+		}
+		flex -= f0 / slope;
+	}
+	flex = Math.max(-25, Math.min(25, flex)) * 0.8 * q.plant;
+	const legR = leg(q.hipN + flex, q.kneeN, -1);
+	const legL = leg(q.hipF + flex, q.kneeF, 1);
 	// Down onto the floor: the lower ankle sits at ankle height.
 	const off = b.ankleH - Math.min(legR.end.u, legL.end.u);
 	for (const l of [legR, legL]) {

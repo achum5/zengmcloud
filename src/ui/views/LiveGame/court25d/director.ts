@@ -285,6 +285,8 @@ const PASS_FTPS = 42;
 const BALL_R = 0.39;
 // One bounce of a crossover, from one hand to the other (see evaluate.ts).
 const CROSS_MS = 1000 / CROSS_RATE;
+// After a whistle, how long the official's signal holds the picture.
+const WHISTLE_HOLD = 950;
 // A rebound, from leaving the floor to the ball chinned once he is down.
 const REBOUND_MS = 1100;
 // A dunk, for a typical player (taller ones jump less to get there, shorter
@@ -292,6 +294,31 @@ const REBOUND_MS = 1100;
 // the middle of the rim he goes up.
 const DUNK_LEAP = 3;
 const DUNK_FROM = 1.8;
+
+// A spot clear behind the three-point line - his toes too - for a shooter
+// at `p`, or nothing if he already is: out along the corner, or straight
+// back from the rim round the arc.
+const THREE_CLEAR = 1.5;
+const behindArc = (team: Side, p: Pt): Pt | undefined => {
+	const rim = { x: rimX(team), y: COURT_H / 2 };
+	const depth = team === 0 ? p.x : COURT_W - p.x;
+	if (depth < 14) {
+		const across = Math.abs(p.y - rim.y);
+		if (across >= 22 + THREE_CLEAR) {
+			return undefined;
+		}
+		const side = p.y >= rim.y ? 1 : -1;
+		return { x: p.x, y: rim.y + side * (22 + THREE_CLEAR + 0.5) };
+	}
+	const d = dist(p, rim);
+	if (d >= 23.75 + THREE_CLEAR) {
+		return undefined;
+	}
+	// A real step, not a shuffle too small to take.
+	const u = unitVec(rim, p);
+	const r = 23.75 + THREE_CLEAR + 0.5;
+	return clampPt({ x: rim.x + u.x * r, y: rim.y + u.y * r });
+};
 
 const passMs = (d: number) =>
 	Math.min(900, Math.max(260, 180 + (d * 1000) / PASS_FTPS));
@@ -2112,16 +2139,18 @@ class Director {
 		const toRim = dist(man, rim);
 		const ur = unitVec(man, rim);
 		if (onBall) {
+			// Up on him: an arm's length at the arc, a step more out past it,
+			// picking him up loose only coming up the floor.
 			const gap =
 				toRim < 10
-					? 2.4
+					? 2.2
 					: toRim < 18
-						? 3.2
+						? 2.8
 						: toRim < 24
-							? 4.6
+							? 3.3
 							: toRim < 30
-								? 5.9
-								: 8;
+								? 3.9
+								: 5.5;
 			const k = Math.min(gap, toRim * 0.5);
 			return clampPt(
 				sideOn(man, { x: man.x + ur.x * k, y: man.y + ur.y * k }, rim.x),
@@ -2187,7 +2216,9 @@ class Director {
 		}
 		const secs = Math.max(0.3, (by - start) / 1000);
 		const speed = Math.min(SPRINT, Math.max(4, dd / secs));
-		const slide = dd < 9;
+		// He shuffles to stay with his man, square to him - turning and
+		// running only to cover real ground fast.
+		const slide = dd < 14 && speed <= 17;
 		this.go(
 			d,
 			P,
@@ -2362,7 +2393,7 @@ class Director {
 			return spot(
 				team,
 				this.rand(2.5, 9),
-				this.rng() < 0.5 ? this.rand(1.3, 1.9) : this.rand(48.1, 48.7),
+				this.rng() < 0.5 ? this.rand(1, 1.5) : this.rand(48.5, 49),
 			);
 		}
 		const [r0, r1, th0, th1] =
@@ -2372,7 +2403,7 @@ class Director {
 					? [4.5, 9.5, 30, 150]
 					: zone === "midRange"
 						? [11, 19, 20, 160]
-						: [25.1, 27, 32, 148];
+						: [25.4, 27.2, 32, 148];
 		const r = this.rand(r0, r1);
 		const th = (this.rand(th0, th1) * Math.PI) / 180;
 		const depth = Math.max(1.5, 5.25 + r * Math.sin(th));
@@ -2770,6 +2801,15 @@ class Director {
 			}
 		}
 
+		// A three goes up from behind the line: a man a step in front of it,
+		// or right on it, steps back out first.
+		if (zone === "three" && heaveSecs === undefined) {
+			const out = behindArc(team, this.posOf(shooter));
+			if (out) {
+				t = this.go(shooter, out, t, 9, "back", dir);
+			}
+		}
+
 		// The defense: his man closes out, or the blocker / fouler gets there.
 		const guard = this.defenderOf(shooter);
 		const P1 = this.posOf(shooter);
@@ -3075,7 +3115,13 @@ class Director {
 		if ((!dunk || plan.kind === "miss") && plan.kind !== "block") {
 			for (const side of [team, other(team)] as const) {
 				const big = this.slots(side).at(-1);
-				if (big !== undefined && big !== shooter && big !== plan.fouler) {
+				// Not the man contesting the shot: he is busy.
+				if (
+					big !== undefined &&
+					big !== shooter &&
+					big !== plan.fouler &&
+					big !== guard
+				) {
 					const box = {
 						x: rim.x - dir * this.rand(4, 7),
 						y: 25 + (side === team ? -1 : 1) * this.rand(2, 5),
@@ -3195,7 +3241,17 @@ class Director {
 	private beat(i: number, type: string, actionStart: number, end: number) {
 		const preStart = this.T;
 		const a = Math.max(preStart, actionStart);
-		const e = Math.max(a + 350, end);
+		let e = Math.max(a + 350, end);
+		// A whistle gets its signal seen before the picture moves on.
+		for (let k = this.fx.length - 1; k >= 0; k--) {
+			const f = this.fx[k]!;
+			if (f.t < preStart) {
+				break;
+			}
+			if (f.kind === "whistle" && f.call && f.t <= e) {
+				e = Math.max(e, f.t + WHISTLE_HOLD);
+			}
+		}
 		this.beats.push({ i, type, preStart, actionStart: a, end: e });
 		this.T = e;
 	}

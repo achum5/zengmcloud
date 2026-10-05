@@ -250,6 +250,8 @@ const ballNear = (tl: CourtTimeline, t: number): Pt => {
 	return seg.at;
 };
 
+const dist2 = (a: Pt, b: Pt) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+
 const angleTo = (from: Pt, to: Pt, fallback: number): number => {
 	const dx = to.x - from.x;
 	const dy = to.y - from.y;
@@ -390,8 +392,16 @@ export const evalPlayer = (
 		const seg = ballSegAt(tl, t);
 		if (seg && seg.kind === "hold" && seg.pid === pid) {
 			anim = seg.style === "hold" ? "hold" : "dribbleIdle";
+		} else if (offenseAt(tl, t) === tr.team) {
+			anim = "ready";
 		} else {
-			anim = offenseAt(tl, t) === tr.team ? "ready" : "stance";
+			// Up on the man with the ball, or set in his stance off it.
+			const man = seg?.kind === "hold" ? tl.tracks.get(seg.pid) : undefined;
+			const on =
+				man !== undefined &&
+				man.team !== tr.team &&
+				dist2(spotAt(man, t), here) < 7 * 7;
+			anim = on ? "guard" : "stance";
 		}
 		const a = ANIMS[anim];
 		const fps = a.kind === "loop" ? a.fps : 2;
