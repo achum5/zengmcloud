@@ -1358,7 +1358,13 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		chest.u + Math.cos(L) * up,
 	);
 	const arm = (shDeg: number, elDeg: number, abDeg: number, side: 1 | -1) => {
-		const ab = abDeg * rad;
+		// A cartoon's reach: an arm thrown up over his head stretches and swings
+		// a little wide, so the hand clears that big head instead of hiding
+		// behind it.
+		const up0 = Math.min(1, Math.max(0, (shDeg - 105) / 60));
+		const up = up0 * up0 * (3 - 2 * up0);
+		const reach = 1 + 0.32 * up;
+		const ab = (abDeg + Math.max(0, 22 - abDeg) * up) * rad;
 		const along = (deg: number) => {
 			const d = dir(deg);
 			return {
@@ -1369,17 +1375,15 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		};
 		const root = v3(chest.f, side * b.shoulderW, chest.u - b.H * 0.022);
 		const a = along(shDeg);
+		const upper = b.upper * reach;
+		const fore = b.fore * reach;
 		const mid = v3(
-			root.f + a.f * b.upper,
-			root.s + a.s * b.upper,
-			root.u + a.u * b.upper,
+			root.f + a.f * upper,
+			root.s + a.s * upper,
+			root.u + a.u * upper,
 		);
 		const c = along(shDeg + elDeg);
-		const end = v3(
-			mid.f + c.f * b.fore,
-			mid.s + c.s * b.fore,
-			mid.u + c.u * b.fore,
-		);
+		const end = v3(mid.f + c.f * fore, mid.s + c.s * fore, mid.u + c.u * fore);
 		return { root, mid, end };
 	};
 	return {

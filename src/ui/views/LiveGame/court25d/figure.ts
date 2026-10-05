@@ -227,6 +227,8 @@ type Shape = {
 type Part = {
 	depth: number;
 	shapes: Shape[];
+	// Drawn after his head: an arm thrown up in front of his face.
+	late?: boolean;
 	// Drawn over the part's colors: seams, stripes, lettering.
 	detail?: () => void;
 };
@@ -241,6 +243,9 @@ export type FigureAnchors = {
 	// there (screen px).
 	letters: { x: number; y: number; w: number };
 	front: number;
+	// What goes over his head once it is drawn: an arm raised in front of his
+	// face, which the head would otherwise hide.
+	over?: (ctx: CanvasRenderingContext2D) => void;
 };
 
 export const drawFigure = (
@@ -522,6 +527,9 @@ export const drawFigure = (
 		);
 		parts.push({
 			depth: (el.depth + wrist.depth) / 2 + (far ? 0.5 : -0.2),
+			late:
+				limb.end.u > limb.root.u + body.H * 0.08 &&
+				(el.depth + wrist.depth) / 2 < headC.depth,
 			shapes: [
 				// The deltoid capping the shoulder, the upper arm, the forearm
 				// swelling below the elbow and slimming to the wrist.
@@ -553,38 +561,53 @@ export const drawFigure = (
 	arm(sk.armL, leftFar);
 
 	parts.sort((p, q) => q.depth - p.depth);
-	for (const p of parts) {
+	const paint = (c: CanvasRenderingContext2D, p: Part) => {
 		for (const s of p.shapes) {
-			ctx.fillStyle = s.fill;
-			ctx.fill(s.path);
+			c.fillStyle = s.fill;
+			c.fill(s.path);
 			if (s.shadow && s.shadow.edge.length > 1) {
 				// The second tone: a band along the shadow side, kept inside.
-				ctx.save();
-				ctx.clip(s.path);
-				ctx.strokeStyle = s.shadow.color;
-				ctx.lineWidth = s.shadow.width;
-				ctx.lineJoin = "round";
-				ctx.lineCap = "round";
-				ctx.beginPath();
+				c.save();
+				c.clip(s.path);
+				c.strokeStyle = s.shadow.color;
+				c.lineWidth = s.shadow.width;
+				c.lineJoin = "round";
+				c.lineCap = "round";
+				c.beginPath();
 				s.shadow.edge.forEach((q, i) => {
 					if (i === 0) {
-						ctx.moveTo(q.x, q.y);
+						c.moveTo(q.x, q.y);
 					} else {
-						ctx.lineTo(q.x, q.y);
+						c.lineTo(q.x, q.y);
 					}
 				});
-				ctx.stroke();
-				ctx.restore();
+				c.stroke();
+				c.restore();
 			}
 		}
 		p.detail?.();
+	};
+	for (const p of parts) {
+		if (!p.late) {
+			paint(ctx, p);
+		}
 	}
+	const late = parts.filter((p) => p.late);
 
 	const anchors: FigureAnchors = {
 		head: { x: headC.x, y: headC.y, r: body.headR * headC.k },
 		number: { x: 0, y: 0, h: 0, side: 0 },
 		letters: { x: 0, y: 0, w: 0 },
 		front,
+		...(late.length > 0
+			? {
+					over: (c: CanvasRenderingContext2D) => {
+						for (const p of late) {
+							paint(c, p);
+						}
+					},
+				}
+			: {}),
 	};
 	if (Math.abs(front) >= 0.28) {
 		const lambda = 0.52;

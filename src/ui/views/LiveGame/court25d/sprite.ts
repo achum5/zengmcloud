@@ -161,6 +161,8 @@ const nearest = (pal: Palette, r: number, g: number, b: number): number => {
 export type Scratch = {
 	canvas: HTMLCanvasElement;
 	ctx: CanvasRenderingContext2D;
+	// A second sheet, for what goes over his head.
+	top?: Scratch;
 };
 export const makeScratch = (): Scratch => {
 	const canvas = document.createElement("canvas");
@@ -413,6 +415,36 @@ export const drawSprite = (
 	s.setTransform(1 / px, 0, 0, 1 / px, -ox / px, -oy / px);
 	drawHeadAt(s, cam, posed, body, look);
 	s.setTransform(1, 0, 0, 1, 0, 0);
+	if (anchors.over) {
+		// An arm up in front of his face goes over it: drawn on its own, in his
+		// palette, outlined so it reads against his face.
+		scratch.top ??= makeScratch();
+		const t = scratch.top;
+		if (t.canvas.width < w || t.canvas.height < h) {
+			t.canvas.width = Math.max(t.canvas.width, w);
+			t.canvas.height = Math.max(t.canvas.height, h);
+		}
+		t.ctx.setTransform(1, 0, 0, 1, 0, 0);
+		t.ctx.clearRect(0, 0, w, h);
+		t.ctx.setTransform(1 / px, 0, 0, 1 / px, -ox / px, -oy / px);
+		anchors.over(t.ctx);
+		t.ctx.setTransform(1, 0, 0, 1, 0, 0);
+		const top = t.ctx.getImageData(0, 0, w, h);
+		const td = top.data;
+		snapAlpha(td);
+		for (let i = 0; i < td.length; i += 4) {
+			if (td[i + 3] === 0) {
+				continue;
+			}
+			const c = pal.colors[nearest(pal, td[i]!, td[i + 1]!, td[i + 2]!)]!;
+			td[i] = c[0];
+			td[i + 1] = c[1];
+			td[i + 2] = c[2];
+		}
+		outline(td, w, h);
+		t.ctx.putImageData(top, 0, 0);
+		s.drawImage(t.canvas, 0, 0, w, h, 0, 0, w, h);
+	}
 	const img2 = s.getImageData(0, 0, w, h);
 	snapAlpha(img2.data);
 	outline(img2.data, w, h);
