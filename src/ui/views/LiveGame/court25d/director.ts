@@ -550,6 +550,9 @@ class Director {
 	// Who is guarding whom this possession, once a switch has changed it from
 	// position against position.
 	private readonly guarding = new Map<number, number>();
+	// The runs that take a defender to where his man has him be, and whose man
+	// that is: in the end (see mark) he follows his man every step of the way.
+	private readonly marking = new Map<Move, number>();
 
 	private readonly events: RawEvent[];
 	private readonly gid: number | undefined;
@@ -673,6 +676,14 @@ class Director {
 		this.face.set(pid, f);
 		this.free.set(pid, start + dur);
 		return start + dur;
+	}
+
+	// Whatever run `go` just gave him, he makes shadowing `man`.
+	private marks(d: number, man: number, before: number) {
+		const moves = this.track(d)?.moves;
+		if (moves && moves.length > before) {
+			this.marking.set(moves.at(-1)!, man);
+		}
 	}
 
 	// The same, but arriving no later than `by` if he can (a slower man takes
@@ -1018,7 +1029,17 @@ class Director {
 			const at = this.posAt(tr.pid, tc);
 			tr.moves = tr.moves
 				.filter((m) => m.t0 < tc)
-				.map((m) => (m.t1 > tc ? { ...m, t1: tc, to: at } : m));
+				.map((m) => {
+					if (m.t1 <= tc) {
+						return m;
+					}
+					const cut = { ...m, t1: tc, to: at };
+					const man = this.marking.get(m);
+					if (man !== undefined) {
+						this.marking.set(cut, man);
+					}
+					return cut;
+				});
 			tr.acts = tr.acts
 				.filter((a) => a.t0 < tc)
 				.map((a) => (a.t1 > tc ? { ...a, t1: tc } : a));
@@ -1173,6 +1194,7 @@ class Director {
 			}
 			const d = def[j];
 			if (d !== undefined && !except.includes(d)) {
+				const n = this.track(d)?.moves.length ?? 0;
 				this.goBy(
 					d,
 					guardSpot(team, target),
@@ -1180,6 +1202,7 @@ class Director {
 					by + 120,
 					"run",
 				);
+				this.marks(d, pid, n);
 				this.turn(d, Math.max(by + 120, this.free.get(d) ?? 0), -dir as 1 | -1);
 			}
 		});
@@ -2377,13 +2400,22 @@ class Director {
 		}
 	}
 
-	// A defender to his spot by `by`: sliding if it is close, running if not.
-	private shadow(d: number, P: Pt, from: number, by: number, team: Side) {
+	// A defender to his spot by `by`: sliding if it is close, running if not -
+	// shadowing `man`, if that is what the spot is for.
+	private shadow(
+		d: number,
+		P: Pt,
+		from: number,
+		by: number,
+		team: Side,
+		man?: number,
+	) {
 		const start = Math.max(from, this.free.get(d) ?? 0);
 		const dd = dist(this.posOf(d), P);
 		if (dd < 0.4) {
 			return;
 		}
+		const n = this.track(d)?.moves.length ?? 0;
 		const secs = Math.max(0.3, (by - start) / 1000);
 		const speed = Math.min(SPRINT, Math.max(4, dd / secs));
 		// He shuffles to stay with his man, square to him - turning and
@@ -2397,6 +2429,9 @@ class Director {
 			slide ? "slide" : "run",
 			slide ? (-attackDir(team) as 1 | -1) : undefined,
 		);
+		if (man !== undefined) {
+			this.marks(d, man, n);
+		}
 	}
 
 	// The defense through a step: every man's defender goes where the ball
@@ -2424,6 +2459,9 @@ class Director {
 		const holder = this.holder;
 		const ball = holder !== undefined ? this.posOf(holder) : this.ballAt;
 		const targets = new Map<number, Pt>();
+		// Whose man each defender's spot shadows - until something else (a
+		// screen to play, a drive to help on) takes him.
+		const manOf = new Map<number, number>();
 		for (const pid of this.slots(team)) {
 			const d = this.defenderOf(pid);
 			if (d !== undefined) {
@@ -2431,8 +2469,15 @@ class Director {
 					d,
 					this.defensePoint(team, this.posOf(pid), ball, pid === holder),
 				);
+				manOf.set(d, pid);
 			}
 		}
+		const special = (d: number | undefined, P: Pt) => {
+			if (d !== undefined) {
+				targets.set(d, P);
+				manOf.delete(d);
+			}
+		};
 		const via = new Map<number, { at: Pt; by: number }>();
 		const late = new Map<number, number>();
 		if (sc) {
@@ -2444,7 +2489,7 @@ class Director {
 					// Back in the paint, between the ball and the rim.
 					const u = unitVec(rim, U);
 					const kk = Math.min(12, Math.max(4, dist(U, rim) - 7));
-					targets.set(sd, { x: rim.x + u.x * kk, y: rim.y + u.y * kk });
+					special(sd, { x: rim.x + u.x * kk, y: rim.y + u.y * kk });
 				} else if (sc.coverage === "hedge") {
 					// Out at the ball for a beat, then back to his man.
 					const u = unitVec(sc.at, U);
@@ -2454,14 +2499,14 @@ class Director {
 					});
 				} else if (sc.coverage === "blitz" && ud !== undefined) {
 					const ur = unitVec(U, rim);
-					targets.set(
+					special(
 						sd,
 						clampPt({
 							x: U.x + ur.x * 2 - ur.y * 2,
 							y: U.y + ur.y * 2 + ur.x * 2,
 						}),
 					);
-					targets.set(
+					special(
 						ud,
 						clampPt({
 							x: U.x + ur.x * 2 + ur.y * 2,
@@ -2473,7 +2518,7 @@ class Director {
 			if (sc.coverage === "chase" && ud !== undefined && sc.user !== holder) {
 				// Over the top of the screen, a step behind him.
 				const u = unitVec(U, sc.at);
-				targets.set(ud, clampPt({ x: U.x + u.x * 2.6, y: U.y + u.y * 2.6 }));
+				special(ud, clampPt({ x: U.x + u.x * 2.6, y: U.y + u.y * 2.6 }));
 				late.set(ud, 300);
 			}
 		}
@@ -2501,10 +2546,7 @@ class Director {
 				}
 				if (help !== undefined && best > 2.5) {
 					const u = unitVec(D, rim);
-					targets.set(
-						help,
-						clampPt({ x: D.x + u.x * 3.2, y: D.y + u.y * 3.2 }),
-					);
+					special(help, clampPt({ x: D.x + u.x * 3.2, y: D.y + u.y * 3.2 }));
 				}
 			}
 		}
@@ -2519,7 +2561,7 @@ class Director {
 			const H = clampPt({ x: S.x + u.x * 2.4, y: S.y + u.y * 2.4 });
 			for (const d of run.help) {
 				const cur = targets.get(d);
-				targets.set(
+				special(
 					d,
 					k >= o.after || !cur
 						? H
@@ -2534,7 +2576,14 @@ class Director {
 			if (v) {
 				this.shadow(d, v.at, t0 + 80, v.by, team);
 			}
-			this.shadow(d, P, t0 + 120, t1 + lag + (late.get(d) ?? 0), team);
+			this.shadow(
+				d,
+				P,
+				t0 + 120,
+				t1 + lag + (late.get(d) ?? 0),
+				team,
+				manOf.get(d),
+			);
 		}
 	}
 
@@ -5100,10 +5149,15 @@ class Director {
 				if (best) {
 					const D = best.w.at;
 					const to = clampPt({ x: D.x + step.x, y: D.y + step.y });
-					added.push({
-						tr: best.tr,
-						move: { t0: s0, t1: s0 + dur, from: { ...D }, to, anim: "slide" },
-					});
+					const slide: Move = {
+						t0: s0,
+						t1: s0 + dur,
+						from: { ...D },
+						to,
+						anim: "slide",
+					};
+					added.push({ tr: best.tr, move: slide });
+					this.marking.set(slide, tr.pid);
 					setOff(best.tr, best.w.next, to);
 					take(best.tr, best.w);
 				}
@@ -5114,6 +5168,398 @@ class Director {
 		}
 		for (const tr of all) {
 			tr.moves.sort((a, b) => a.t0 - b.t0);
+		}
+	}
+
+	// THE DEFENSE, MAN TO MAN. Each step of a set sent a defender to where his
+	// man would have him be once it was done; here he gets there the way a
+	// defender does, following his man the whole way: between him and the rim,
+	// up on him with the ball and sagged off him without it, shading toward
+	// the ball wherever it goes - in the air on a pass too, so the whole
+	// defense shifts with it - a beat behind whatever his man does (a little
+	// more off the ball), and no faster than his feet allow. Square to the
+	// ball, he slides; to cover real ground he turns and runs; closing out on
+	// his man with the ball he chops his feet with a hand up.
+	private mark() {
+		// He is worked out a tick (ms) at a time.
+		const DT = 100;
+		// How far behind his man he reacts (ms): quicker up on the ball.
+		const REACT_ON = 160;
+		const REACT_OFF = 240;
+		// How fast he slides and runs (feet a second), how quickly he gets
+		// going (feet a second, a second), and how hard he goes after where he
+		// should be (a second).
+		const SLIDE_MAX = 14.5;
+		const RUN_MAX = 23;
+		const ACCEL = 30;
+		const GAIN = 3;
+		// Too short a stretch to follow anybody in (ms).
+		const SHORTEST = 250;
+		// The longest one run of his path (ms) and how far it bends (radians)
+		// before the next; how fast he must go to set off from standing, and
+		// how slow, once going, is standing again (feet a second).
+		const RUN_MS = 1000;
+		const BEND = 0.5;
+		const START = 1.2;
+		const KEEP = 0.45;
+		// How many ticks either way his aim is smoothed over.
+		const SMOOTH = 2;
+		const lastAt = <X>(list: X[], t: number, key: (x: X) => number): number => {
+			let lo = 0;
+			let hi = list.length - 1;
+			let found = -1;
+			while (lo <= hi) {
+				const mid = (lo + hi) >> 1;
+				if (key(list[mid]!) <= t) {
+					found = mid;
+					lo = mid + 1;
+				} else {
+					hi = mid - 1;
+				}
+			}
+			return found;
+		};
+		const whereIn = (tr: Track, t: number): Pt => {
+			const k = lastAt(tr.moves, t, (m) => m.t0);
+			if (k < 0) {
+				return tr.start;
+			}
+			const m = tr.moves[k]!;
+			if (t >= m.t1) {
+				return m.to;
+			}
+			const e = 0.5 - 0.5 * Math.cos((Math.PI * (t - m.t0)) / (m.t1 - m.t0));
+			return {
+				x: m.from.x + (m.to.x - m.from.x) * e,
+				y: m.from.y + (m.to.y - m.from.y) * e,
+			};
+		};
+		const where = (pid: number, t: number): Pt => {
+			const tr = this.track(pid);
+			return tr ? whereIn(tr, t) : { x: COURT_W / 2, y: COURT_H / 2 };
+		};
+		const shownAt = (pid: number, t: number): boolean => {
+			const sh = this.track(pid)?.shown ?? [];
+			const k = lastAt(sh, t, (x) => x[0]);
+			return k >= 0 && sh[k]![1];
+		};
+		const ball = this.ball;
+		const endOf = (e: BallEnd, t: number): Pt =>
+			"pid" in e ? where(e.pid, t) : { x: e.x, y: e.y };
+		const ballAt = (t: number): { at: Pt; holder?: number } => {
+			const s = ball[lastAt(ball, t, (x) => x.t0)];
+			if (!s) {
+				return { at: { x: this.ballAt.x, y: this.ballAt.y } };
+			}
+			if (s.kind === "hold") {
+				return { at: where(s.pid, t), holder: s.pid };
+			}
+			if (s.kind === "rest") {
+				return { at: { x: s.at.x, y: s.at.y } };
+			}
+			const u = Math.min(1, Math.max(0, (t - s.t0) / Math.max(1, s.t1 - s.t0)));
+			const A = s.kind === "fly" ? endOf(s.from, s.t0) : s.from;
+			const B = s.kind === "fly" ? endOf(s.to, s.t1) : s.to;
+			return { at: { x: A.x + (B.x - A.x) * u, y: A.y + (B.y - A.y) * u } };
+		};
+		const freeThrows = this.beats.filter(
+			(bt) => bt.type === "ft" || bt.type === "missFt",
+		);
+		// From t, how long the ball stays live: in a man's hands or passed
+		// between two - not shot, loose, or at the line.
+		const liveUntil = (t: number): number => {
+			let end = Infinity;
+			for (
+				let i = Math.max(
+					0,
+					lastAt(ball, t, (x) => x.t0),
+				);
+				i < ball.length;
+				i++
+			) {
+				const s = ball[i]!;
+				if (
+					!(
+						s.kind === "hold" ||
+						(s.kind === "fly" && "pid" in s.from && "pid" in s.to)
+					)
+				) {
+					end = Math.max(t, s.t0);
+					break;
+				}
+			}
+			for (const bt of freeThrows) {
+				if (bt.end > t && bt.preStart < end) {
+					end = Math.max(t, bt.preStart);
+				}
+			}
+			return end;
+		};
+		const firstAfter = (list: number[], t: number) => {
+			const k = lastAt(list, t, (x) => x);
+			return list[k + 1] ?? Infinity;
+		};
+		const cuts = [...this.cuts].sort((a, b) => a - b);
+		const changes = this.poss.map(([t]) => t).sort((a, b) => a - b);
+
+		// Into whatever comes next he arrives where the schedule had him: at
+		// the shot he contests, the help spot he steps into.
+		const SETTLE = 600;
+		for (const tr of this.tracks.values()) {
+			const moves = tr.moves;
+			if (!moves.some((m) => this.marking.has(m))) {
+				continue;
+			}
+			const planned = { ...tr, moves: [...moves] };
+			const acts = tr.acts.map((a) => a.t0);
+			const out: Move[] = [];
+			// Where the rewritten track has him at t.
+			const at = (t: number): Pt => {
+				const m = out.findLast((x) => x.t0 <= t);
+				if (!m) {
+					return tr.start;
+				}
+				if (t >= m.t1) {
+					return m.to;
+				}
+				const e = (t - m.t0) / (m.t1 - m.t0);
+				return {
+					x: m.from.x + (m.to.x - m.from.x) * e,
+					y: m.from.y + (m.to.y - m.from.y) * e,
+				};
+			};
+			// Where he is, when a run of his was rewritten: the next one he
+			// makes starts from there.
+			let left: Pt | undefined;
+			let i = 0;
+			while (i < moves.length) {
+				const m = moves[i]!;
+				const man = this.marking.get(m);
+				if (man === undefined) {
+					if (left && (m.t1 - m.t0 > 1 || dist(m.from, m.to) > 0.01)) {
+						m.from = { ...left };
+					}
+					left = undefined;
+					out.push(m);
+					i++;
+					continue;
+				}
+				const a = m.t0;
+				let hard = Infinity;
+				for (let j = i + 1; j < moves.length; j++) {
+					if (!this.marking.has(moves[j]!)) {
+						hard = moves[j]!.t0;
+						break;
+					}
+				}
+				const b = Math.min(
+					hard,
+					firstAfter(acts, a - 1),
+					firstAfter(cuts, a),
+					firstAfter(changes, a),
+					liveUntil(a),
+					a + 15000,
+				);
+				// The men he shadows through it, from when.
+				const men: [number, number][] = [];
+				let j = i;
+				for (; j < moves.length && moves[j]!.t0 < b; j++) {
+					const mm = this.marking.get(moves[j]!);
+					if (mm === undefined) {
+						break;
+					}
+					men.push([moves[j]!.t0, mm]);
+				}
+				if (
+					b - a < SHORTEST ||
+					!shownAt(tr.pid, a) ||
+					men.some(([, x]) => this.teamOf(x) === tr.team)
+				) {
+					// Too short to follow anybody in, or not his to follow: as
+					// scheduled.
+					if (left && (m.t1 - m.t0 > 1 || dist(m.from, m.to) > 0.01)) {
+						m.from = { ...left };
+					}
+					left = undefined;
+					out.push(m);
+					i++;
+					continue;
+				}
+				// Where the schedule had him getting to: if it had him still on
+				// his way when the next thing starts (into a contest, say), all
+				// the way there.
+				let stop = b;
+				const going = planned.moves[lastAt(planned.moves, b, (x) => x.t0)];
+				if (going && this.marking.has(going) && going.t1 > b) {
+					stop = Math.min(going.t1, hard, moves[j]?.t0 ?? Infinity);
+				}
+				const end = b === a + 15000 ? undefined : whereIn(planned, stop);
+				// Where he should be, tick by tick: where his man and the ball were
+				// a beat ago say.
+				const ticks: { t: number; aim: Pt; ball: Pt; on: boolean; man: Pt }[] =
+					[];
+				let k = 0;
+				let last: Pt | undefined;
+				for (let t = a; t <= stop + 0.5; t += DT) {
+					while (k + 1 < men.length && men[k + 1]![0] <= t) {
+						k++;
+					}
+					const who = men[k]![1];
+					const B0 = ballAt(t);
+					const on = B0.holder === who;
+					const R = on ? REACT_ON : REACT_OFF;
+					const { at: Bp, holder } = ballAt(t - R);
+					let aim =
+						shownAt(who, t - R) || !last
+							? this.defensePoint(
+									this.teamOf(who),
+									where(who, t - R),
+									Bp,
+									holder === who,
+								)
+							: last;
+					if (end && t > stop - SETTLE - 200) {
+						const u = Math.min(1, (t - (stop - SETTLE - 200)) / SETTLE);
+						const w = u * u * (3 - 2 * u);
+						aim = {
+							x: aim.x + (end.x - aim.x) * w,
+							y: aim.y + (end.y - aim.y) * w,
+						};
+					}
+					last = aim;
+					ticks.push({ t, aim, ball: B0.at, on, man: where(who, t) });
+				}
+				// Smoothed: a man's feet don't follow every flicker of the ball.
+				const smooth = ticks.map((x, i) => {
+					let sx = 0;
+					let sy = 0;
+					let sw = 0;
+					for (let d = -SMOOTH; d <= SMOOTH; d++) {
+						const y = ticks[i + d];
+						if (y) {
+							const w = Math.exp(-((d / (SMOOTH / 2)) ** 2) / 2);
+							sx += y.aim.x * w;
+							sy += y.aim.y * w;
+							sw += w;
+						}
+					}
+					return { x: sx / sw, y: sy / sw };
+				});
+				// Following it: as fast and as quick as a defender's feet.
+				let p = left ?? at(a);
+				let vx = 0;
+				let vy = 0;
+				let running = false;
+				const path: { t: number; p: Pt; ball: Pt; on: boolean; man: Pt }[] = [
+					{ ...ticks[0]!, p },
+				];
+				for (let i = 1; i < ticks.length; i++) {
+					const T = smooth[i]!;
+					const prev = smooth[i - 1]!;
+					// His man's pace, to keep up with.
+					const fx = (T.x - prev.x) / (DT / 1000);
+					const fy = (T.y - prev.y) / (DT / 1000);
+					const ex = T.x - p.x;
+					const ey = T.y - p.y;
+					const e = Math.hypot(ex, ey);
+					let wx = fx + ex * GAIN;
+					let wy = fy + ey * GAIN;
+					// Turning and running to cover ground, until he has caught up.
+					running = running ? e > 2.5 : e > 7;
+					const vmax = running ? RUN_MAX : SLIDE_MAX;
+					const w = Math.hypot(wx, wy);
+					if (w > vmax) {
+						wx *= vmax / w;
+						wy *= vmax / w;
+					}
+					let dx = wx - vx;
+					let dy = wy - vy;
+					const dv = Math.hypot(dx, dy);
+					const cap = (ACCEL * DT) / 1000;
+					if (dv > cap) {
+						dx *= cap / dv;
+						dy *= cap / dv;
+					}
+					vx += dx;
+					vy += dy;
+					p = clampPt({
+						x: p.x + (vx * DT) / 1000,
+						y: p.y + (vy * DT) / 1000,
+					});
+					path.push({ ...ticks[i]!, p });
+				}
+				// The last of the way onto his mark exactly, if he is all but there.
+				const fin = path.at(-1)!;
+				if (end && dist(fin.p, end) < 3) {
+					fin.p = { ...end };
+				}
+				// Into runs: each one heading one way at about one pace, and none
+				// where he barely moves.
+				const pace = (q: number) =>
+					dist(path[q]!.p, path[q + 1]!.p) / (DT / 1000);
+				const heading = (q: number) =>
+					Math.atan2(
+						path[q + 1]!.p.y - path[q]!.p.y,
+						path[q + 1]!.p.x - path[q]!.p.x,
+					);
+				let q = 0;
+				let moving = false;
+				while (q + 1 < path.length) {
+					// Off from standing at a step's pace; on the move, he keeps
+					// going down to a crawl.
+					if (pace(q) < (moving ? KEEP : START)) {
+						moving = false;
+						q++;
+						continue;
+					}
+					moving = true;
+					const h0 = heading(q);
+					let e = q + 1;
+					while (e + 1 < path.length && (e - q) * DT < RUN_MS) {
+						const v = pace(e);
+						const turn = Math.abs(
+							Math.atan2(Math.sin(heading(e) - h0), Math.cos(heading(e) - h0)),
+						);
+						const avg = dist(path[q]!.p, path[e]!.p) / (((e - q) * DT) / 1000);
+						if (v < KEEP || turn > BEND || v > avg * 1.8 || v < avg * 0.55) {
+							break;
+						}
+						e++;
+					}
+					const A = path[q]!;
+					const Z = path[e]!;
+					q = e;
+					const d = dist(A.p, Z.p);
+					if (d < 0.05) {
+						continue;
+					}
+					const secs = (Z.t - A.t) / 1000;
+					const speed = d / secs;
+					const ux = (Z.p.x - A.p.x) / d;
+					const uy = (Z.p.y - A.p.y) / d;
+					const tb = unitVec(A.p, A.ball);
+					const toBall = ux * tb.x + uy * tb.y;
+					// Closing out: at his man with the ball, who is set - not
+					// chasing him on a drive.
+					const set = dist(A.man, Z.man) / secs < 6;
+					const anim: AnimName =
+						speed >= SLIDE_MAX - 0.5
+							? "run"
+							: Z.on &&
+								  set &&
+								  toBall > 0.5 &&
+								  speed > 4 &&
+								  dist(A.p, A.man) > 4.5
+								? "closeout"
+								: toBall < -0.55
+									? "slide"
+									: "shuffle";
+					out.push({ t0: A.t, t1: Z.t, from: A.p, to: Z.p, anim });
+				}
+				left = path.at(-1)!.p;
+				i = j;
+			}
+			tr.moves = out;
 		}
 	}
 
@@ -5128,6 +5574,7 @@ class Director {
 		}
 		this.ball.sort(byT0);
 		this.liven();
+		this.mark();
 		this.fx.sort((a, b) => a.t - b.t);
 		// A look round the building runs on to the picture's next cut when
 		// that comes soon after (the substitutions over a timeout, the walk

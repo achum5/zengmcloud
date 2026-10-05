@@ -266,10 +266,49 @@ type RunMode =
 	| "back"
 	| "walk"
 	| "carry"
-	| "drift";
+	| "drift"
+	| "shuffle"
+	| "closeout";
 const stride = (ph: number, mode: RunMode): Pose => {
 	const a = Math.sin(2 * Math.PI * ph);
 	const c = Math.cos(2 * Math.PI * ph);
+	if (mode === "shuffle") {
+		// A defensive slide sideways: down in his stance, the lead foot stepping
+		// out and the other closing up behind it - never crossing - with his
+		// arms out wide.
+		return pose({
+			hipN: 30 + 4 * a,
+			hipF: 34 - 4 * a,
+			kneeN: 64 + 6 * c,
+			kneeF: 66 + 6 * c,
+			lean: 20,
+			shN: 52,
+			elN: 58,
+			shF: 48,
+			elF: 62,
+			abN: 50,
+			abF: 50,
+			wide: 0.78 + 0.32 * c,
+		});
+	}
+	if (mode === "closeout") {
+		// Closing out on a shooter: short, choppy steps to break down, one hand
+		// high at the shot and the other out at the drive.
+		return pose({
+			hipN: 18 + 12 * a,
+			hipF: 26 - 12 * a,
+			kneeN: 46 + 14 * Math.max(0, c),
+			kneeF: 48 + 14 * Math.max(0, -c),
+			lean: 12,
+			shN: 156,
+			elN: 16,
+			abN: 18,
+			shF: 50,
+			elF: 34,
+			abF: 50,
+			wide: 0.55,
+		});
+	}
 	if (mode === "walk" || mode === "carry" || mode === "drift") {
 		const legs = {
 			hipN: 20 * a,
@@ -542,6 +581,20 @@ export const ANIMS = {
 		n: 6,
 		stride: 3.8,
 		pose: (i) => runPose(i / 6, "drift"),
+	},
+	// A defender sliding sideways with his man, square to him.
+	shuffle: {
+		kind: "cycle",
+		n: 6,
+		stride: 3.4,
+		pose: (i) => runPose(i / 6, "shuffle"),
+	},
+	// Running at a shooter and breaking down in front of him, a hand up.
+	closeout: {
+		kind: "cycle",
+		n: 6,
+		stride: 2.6,
+		pose: (i) => runPose(i / 6, "closeout"),
 	},
 	shoot: {
 		kind: "act",

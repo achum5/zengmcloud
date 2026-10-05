@@ -12,6 +12,7 @@ import {
 	evalPlayer,
 	handWorld,
 	heldBall,
+	offenseAt,
 	poseOf,
 	tensionAt,
 	withBody,
@@ -243,19 +244,30 @@ describe("2.5D director", () => {
 							: Math.hypot(depth - 5.25, p.y - 25) - 23.75;
 					assert.isAbove(out, 0.5, `drift inside the line at ${m.t0}`);
 				}
-				if (
-					tracks.some(
-						(o) =>
-							o.team !== tr.team &&
-							o.moves.some(
-								(x) =>
-									x.anim === "slide" &&
-									Math.abs(x.t0 - m.t0 - 120) < 1 &&
-									Math.abs(x.t1 - x.t0 - (m.t1 - m.t0)) < 1,
-							),
-					)
-				) {
-					followed += 1;
+				// The man guarding him - the nearest of the other team - goes the
+				// same way he does.
+				const me = evalPlayer(tl, tr.pid, m.t0);
+				let guard: number | undefined;
+				let best = 12;
+				for (const o of tracks) {
+					const st = evalPlayer(tl, o.pid, m.t0);
+					const d = Math.hypot(st.x - me.x, st.y - me.y);
+					if (o.team !== tr.team && st.shown && d < best) {
+						best = d;
+						guard = o.pid;
+					}
+				}
+				if (guard !== undefined) {
+					const a = evalPlayer(tl, guard, m.t0);
+					const b = evalPlayer(tl, guard, m.t1 + 400);
+					const L = Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y);
+					const along =
+						((b.x - a.x) * (m.to.x - m.from.x) +
+							(b.y - a.y) * (m.to.y - m.from.y)) /
+						L;
+					if (along > L * 0.3) {
+						followed += 1;
+					}
 				}
 			}
 		}
@@ -263,6 +275,59 @@ describe("2.5D director", () => {
 		// (A man already on the move with the play goes his own way.)
 		assert.isAbove(followed, drifts * 0.25);
 	});
+
+	// A defender goes with his man: when a man on offense runs, the man
+	// guarding him (the nearest of the defense) is on the move too - not
+	// standing there until the next step of the set sends him.
+	test("defenders move with their men", () => {
+		for (const seed of ["a", "b"]) {
+			const { tl } = compile(seed, 140);
+			const tracks = [...tl.tracks.values()];
+			let running = 0;
+			let left = 0;
+			for (let t = 0; t < tl.end; t += 100) {
+				const seg = tl.ball[tl.ball.findLastIndex((x) => x.t0 <= t)];
+				if (seg?.kind !== "hold") {
+					continue;
+				}
+				const off = offenseAt(tl, t);
+				const b = evalBall(tl, t, bodyFor);
+				if (off === 1 ? b.x < 52 : b.x > 42) {
+					continue;
+				}
+				const now = tracks
+					.map((tr) => ({ tr, st: evalPlayer(tl, tr.pid, t) }))
+					.filter((x) => x.st.shown);
+				for (const o of now) {
+					if (o.tr.team !== off) {
+						continue;
+					}
+					const o2 = evalPlayer(tl, o.tr.pid, t + 100);
+					if (Math.hypot(o2.x - o.st.x, o2.y - o.st.y) < 0.6) {
+						continue;
+					}
+					let near: (typeof now)[number] | undefined;
+					let best = 12;
+					for (const d of now) {
+						const dd = Math.hypot(d.st.x - o.st.x, d.st.y - o.st.y);
+						if (d.tr.team !== off && dd < best) {
+							best = dd;
+							near = d;
+						}
+					}
+					if (near) {
+						running += 1;
+						const d2 = evalPlayer(tl, near.tr.pid, t + 100);
+						if (Math.hypot(d2.x - near.st.x, d2.y - near.st.y) < 0.15) {
+							left += 1;
+						}
+					}
+				}
+			}
+			assert.isAbove(running, 500);
+			assert.isBelow(left / running, 0.2, seed);
+		}
+	}, 60_000);
 
 	// From one move into the next - pulling up from a run, down into his
 	// stance, up for a catch - his body eases over rather than snapping

@@ -539,6 +539,14 @@ const unit = (from: Pt, to: Pt): Pt => {
 	return { x: dx / l, y: dy / l };
 };
 
+// Moving like this, he faces the ball, not where he is going.
+const EYES_ON_BALL = new Set<AnimName>([
+	"slide",
+	"shuffle",
+	"closeout",
+	"drift",
+]);
+
 // Which way he means to face at t: at what he is doing (a shot faces the rim),
 // where he is running, or - standing - at the ball.
 const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
@@ -553,7 +561,7 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 	const mv = here.moveIndex >= 0 ? tr.moves[here.moveIndex] : undefined;
 	// A defensive slide keeps his eyes on the ball whichever way he goes -
 	// and so does a man drifting along the arc for it.
-	if (mv && here.moving && (mv.anim === "slide" || mv.anim === "drift")) {
+	if (mv && here.moving && EYES_ON_BALL.has(mv.anim)) {
 		return angleTo(here, ballNear(tl, t), fallback);
 	}
 	if (mv && here.moving) {
