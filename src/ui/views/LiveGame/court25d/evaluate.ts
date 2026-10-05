@@ -356,6 +356,16 @@ export type BallState = { x: number; y: number; z: number; holder?: number };
 
 // A basketball is 9.4 inches across.
 export const BALL_R = 0.39;
+// Feet per second, per second.
+const GRAVITY = 32.2;
+
+// How far through one bounce of a dribble the ball is (0 at the hand, 1 at
+// the floor), for a point `ph` through the dribble: pushed down hard and
+// falling faster all the way to the floor, then rising off it and slowing
+// into the hand.
+const DOWN = 0.42;
+const dribbleDepth = (ph: number): number =>
+	ph < DOWN ? (ph / DOWN) ** 1.55 : (1 - (ph - DOWN) / (1 - DOWN)) ** 1.8;
 
 export const evalBall = (
 	tl: CourtTimeline,
@@ -384,8 +394,8 @@ export const evalBall = (
 			const from = handWorld(st, body, k % 2 ? "far" : "near");
 			const to = handWorld(st, body, k % 2 ? "near" : "far");
 			const floor = bodyPoint({ ...st, z: 0 }, { f: 1.1, s: 0, u: BALL_R });
-			const tri = 1 - Math.abs(2 * ph - 1);
-			const h = ph < 0.5 ? from : to;
+			const tri = dribbleDepth(ph);
+			const h = ph < DOWN ? from : to;
 			return {
 				x: h.x + (floor.x - h.x) * tri,
 				y: h.y + (floor.y - h.y) * tri,
@@ -397,7 +407,7 @@ export const evalBall = (
 			const body = bodyFor(seg.pid);
 			const h = handWorld(st, body, "near");
 			const ph = (((t - seg.t0) / 1000) * (st.moving ? 2.4 : 1.9)) % 1;
-			const tri = 1 - Math.abs(2 * ph - 1);
+			const tri = dribbleDepth(ph);
 			// It hits the floor ahead of him and off his right foot.
 			const floor = bodyPoint(
 				{ ...st, z: 0 },
@@ -413,14 +423,19 @@ export const evalBall = (
 		return { ...handWorld(st, bodyFor(seg.pid), "both"), holder: seg.pid };
 	}
 	if (seg.kind === "fly") {
+		// In flight it is a thrown ball: steady across the floor, and up and
+		// down under gravity - so a three climbs to fifteen feet in the second
+		// it takes, a chest pass barely rises, and a lob hangs for the dunker.
 		const a = resolve(seg.from, seg.t0);
 		const b = resolve(seg.to, seg.t1);
 		const u = clamp01((t - seg.t0) / (seg.t1 - seg.t0));
-		const arc = Math.max(0, seg.peak - (a.z + b.z) / 2);
+		const T = Math.max(0, seg.t1 - seg.t0) / 1000;
+		const tau = u * T;
+		const vz = T > 0 ? (b.z - a.z) / T + 0.5 * GRAVITY * T : 0;
 		return {
 			x: a.x + (b.x - a.x) * u,
 			y: a.y + (b.y - a.y) * u,
-			z: a.z + (b.z - a.z) * u + 4 * arc * u * (1 - u),
+			z: a.z + vz * tau - 0.5 * GRAVITY * tau * tau,
 		};
 	}
 	if (seg.kind === "bounce") {

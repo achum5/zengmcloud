@@ -361,6 +361,48 @@ describe("2.5D director", () => {
 		}
 	});
 
+	// Shots are thrown, not floated: under gravity a three from the arc
+	// climbs to about fifteen feet, the way real ones do.
+	test("a three arcs like a real one", () => {
+		const { tl } = compile("arcs", 200);
+		let threes = 0;
+		for (const seg of tl.ball) {
+			if (seg.kind !== "fly" || !("pid" in seg.from) || "pid" in seg.to) {
+				continue;
+			}
+			const a = evalBall(tl, seg.t0, bodyFor);
+			const b = evalBall(tl, seg.t1, bodyFor);
+			const across = Math.hypot(b.x - a.x, b.y - a.y);
+			if (across < 22 || b.z < 9.5) {
+				continue;
+			}
+			threes += 1;
+			let apex = 0;
+			for (let t = seg.t0; t <= seg.t1; t += 10) {
+				apex = Math.max(apex, evalBall(tl, t, bodyFor).z);
+			}
+			assert.isAbove(apex, 13, "a three gets up");
+			assert.isBelow(apex, 19, "a three is not a moonball");
+		}
+		assert.isAbove(threes, 0);
+	});
+
+	test("in the air, the ball falls at gravity's pace", () => {
+		const { tl } = compile("gravity", 120);
+		for (const seg of tl.ball) {
+			if (seg.kind !== "fly" || seg.t1 - seg.t0 < 300) {
+				continue;
+			}
+			// The second difference of height over equal steps is -g * dt^2.
+			const dt = 0.04;
+			const m = (seg.t0 + seg.t1) / 2;
+			const z = (t: number) => evalBall(tl, t, bodyFor).z;
+			const accel =
+				(z(m + dt * 1000) - 2 * z(m) + z(m - dt * 1000)) / (dt * dt);
+			assert.closeTo(accel, -32.2, 1.5);
+		}
+	});
+
 	test("a player's moves never overlap and stay near the floor", () => {
 		const { tl } = compile("moves", 160);
 		for (const tr of tl.tracks.values()) {

@@ -114,7 +114,6 @@ export type BallSeg =
 			t1: number;
 			from: BallEnd;
 			to: BallEnd;
-			peak: number;
 	  }
 	| {
 			kind: "bounce";
@@ -229,6 +228,8 @@ const DRIBBLE = 19;
 const JOG = 13;
 const WALK = 6;
 const PASS_FTPS = 42;
+// A basketball's radius, feet: its middle when it touches the floor.
+const BALL_R = 0.39;
 
 const passMs = (d: number) =>
 	Math.min(900, Math.max(260, 180 + (d * 1000) / PASS_FTPS));
@@ -514,14 +515,8 @@ class Director {
 		this.holder = pid;
 	}
 
-	private fly(
-		t0: number,
-		t1: number,
-		from: BallEnd,
-		to: BallEnd,
-		peak: number,
-	) {
-		this.pushBall({ kind: "fly", t0, t1, from, to, peak });
+	private fly(t0: number, t1: number, from: BallEnd, to: BallEnd) {
+		this.pushBall({ kind: "fly", t0, t1, from, to });
 		if ("pid" in to) {
 			this.holder = to.pid;
 		} else {
@@ -739,7 +734,7 @@ class Director {
 		});
 		this.lookAt(inbounder, tc + 1, this.posOf(receiver));
 		this.hold(inbounder, tc, "hold");
-		const tIn = this.passTo(inbounder, receiver, tc + 450, 4.5);
+		const tIn = this.passTo(inbounder, receiver, tc + 450);
 		this.settle(team, 0, tc + 300, tIn + 500, [receiver]);
 		this.motionTeam = team;
 		this.motion = 0;
@@ -789,18 +784,50 @@ class Director {
 
 	// ---- possession -------------------------------------------------------------
 
-	// A pass. Returns when the receiver has it.
-	private passTo(from: number, to: number, t: number, peak = 5.5): number {
+	// A pass - chest, bounce or overhead, by how far it goes. Returns when the
+	// receiver has it.
+	private passTo(from: number, to: number, t: number): number {
 		const start = Math.max(t, this.free.get(from) ?? 0);
-		const d = dist(this.posOf(from), this.posOf(to));
-		const toward = this.posOf(to).x >= this.posOf(from).x ? 1 : -1;
-		this.act(from, "pass", start, start + 300, {
-			face: toward,
-			look: { ...this.posOf(to) },
-		});
+		const a = this.posOf(from);
+		const b = this.posOf(to);
+		const d = dist(a, b);
+		const toward = b.x >= a.x ? 1 : -1;
+		const kind =
+			d >= 22 && this.rng() < 0.55
+				? "overhead"
+				: d >= 9 && d < 22 && this.rng() < 0.3
+					? "bounce"
+					: "chest";
+		this.act(
+			from,
+			kind === "overhead"
+				? "passOverhead"
+				: kind === "bounce"
+					? "passBounce"
+					: "pass",
+			start,
+			start + 300,
+			{
+				face: toward,
+				look: { ...b },
+			},
+		);
 		const release = start + 120;
-		const arrive = Math.max(release + passMs(d), (this.free.get(to) ?? 0) + 40);
-		this.fly(release, arrive, { pid: from }, { pid: to }, peak);
+		const flight = passMs(d) * (kind === "bounce" ? 1.15 : 1);
+		const arrive = Math.max(release + flight, (this.free.get(to) ?? 0) + 40);
+		if (kind === "bounce") {
+			// Off the floor two-thirds of the way there, up into his hands.
+			const hit = {
+				x: a.x + (b.x - a.x) * 0.64,
+				y: a.y + (b.y - a.y) * 0.64,
+				z: BALL_R,
+			};
+			const tHit = release + (arrive - release) * 0.58;
+			this.fly(release, tHit, { pid: from }, hit);
+			this.fly(tHit, arrive, hit, { pid: to });
+		} else {
+			this.fly(release, arrive, { pid: from }, { pid: to });
+		}
 		this.act(to, "catch", arrive - 90, arrive + 110, {
 			face: -toward as 1 | -1,
 			look: { ...this.posOf(from) },
@@ -827,7 +854,7 @@ class Director {
 				y: h.y < 25 ? 8 : 42,
 			});
 			this.go(pg, meet, t, RUN, "run");
-			t = this.passTo(this.holder, pg, t + 200, 5);
+			t = this.passTo(this.holder, pg, t + 200);
 		}
 		const top = this.setSpots(team, 0)[0]!;
 		const d = dist(this.posOf(pg), top);
@@ -854,7 +881,7 @@ class Director {
 				SPRINT,
 				"run",
 			);
-			t = this.passTo(handler, pg, t + 150, 6);
+			t = this.passTo(handler, pg, t + 150);
 			handler = pg;
 		}
 		const spots = TRANSITION_OFFENSE_SPOTS.map((s) =>
@@ -1235,14 +1262,14 @@ class Director {
 				passer !== handler &&
 				this.teamOf(passer) === team
 			) {
-				t = this.passTo(handler, passer, t, 5);
+				t = this.passTo(handler, passer, t);
 				handler = passer;
 			}
 			if (passer !== undefined && this.teamOf(passer) === team) {
 				const arrive = this.go(shooter, P, t, RUN, "run");
 				const d = dist(this.posOf(handler), P);
 				const send = Math.max(t, arrive - passMs(d) - 120);
-				const caught = this.passTo(handler, shooter, send, close ? 4 : 5.5);
+				const caught = this.passTo(handler, shooter, send);
 				t = Math.max(arrive, caught);
 				// An entry pass to the post: he backs his man down first.
 				if (zone === "lowPost" && this.rng() < 0.6) {
@@ -1251,7 +1278,7 @@ class Director {
 				}
 			} else {
 				if (handler !== shooter) {
-					t = this.passTo(handler, shooter, t, 5);
+					t = this.passTo(handler, shooter, t);
 				}
 				// His own shot: a move to get it.
 				const r = this.rng();
@@ -1306,13 +1333,7 @@ class Director {
 			this.act(lob, "pass", catchT - flight - 120, catchT - flight + 200, {
 				look: { x: rim.x, y: rim.y },
 			});
-			this.fly(
-				catchT - flight,
-				catchT,
-				{ pid: lob },
-				{ pid: shooter },
-				RIM_Z + 4.5,
-			);
+			this.fly(catchT - flight, catchT, { pid: lob }, { pid: shooter });
 		}
 		let decided: number;
 		let arrive: number;
@@ -1403,7 +1424,6 @@ class Director {
 					contact,
 					{ pid: shooter },
 					{ pid: b, hand: "near" },
-					0,
 				);
 				decided = contact;
 				arrive = contact;
@@ -1413,7 +1433,7 @@ class Director {
 				decided = gather + dur * 0.47;
 				arrive = decided;
 				target = { x: rim.x + dir * (RIM_R + 0.1), y: 25, z: RIM_Z + 0.25 };
-				this.fly(decided - 90, decided, { pid: shooter }, target, RIM_Z + 0.9);
+				this.fly(decided - 90, decided, { pid: shooter }, target);
 			} else {
 				decided = gather + dur * 0.5;
 				arrive = decided;
@@ -1487,13 +1507,7 @@ class Director {
 					look: { ...P1 },
 					jump: [0.1, 0.9, 2.7],
 				});
-				this.fly(
-					release,
-					contact,
-					{ pid: shooter },
-					{ pid: b, hand: "near" },
-					0,
-				);
+				this.fly(release, contact, { pid: shooter }, { pid: b, hand: "near" });
 				decided = contact;
 				arrive = contact;
 				target = { x: P1.x, y: P1.y, z: 9 };
@@ -1514,13 +1528,7 @@ class Director {
 					});
 				}
 				target = { x: rim.x - dir * (RIM_R + 0.1), y: 24.7, z: RIM_Z + 0.1 };
-				this.fly(
-					release,
-					release + flight,
-					{ pid: shooter },
-					target,
-					RIM_Z + 2 + d * 0.22,
-				);
+				this.fly(release, release + flight, { pid: shooter }, target);
 				decided = release + 130;
 				arrive = release + flight;
 			} else {
@@ -1532,13 +1540,7 @@ class Director {
 								y: 25 + this.rand(-0.5, 0.5),
 								z: RIM_Z + 0.12,
 							};
-				this.fly(
-					release,
-					release + flight,
-					{ pid: shooter },
-					target,
-					close ? RIM_Z + 1.3 : RIM_Z + 2.2 + d * 0.26,
-				);
+				this.fly(release, release + flight, { pid: shooter }, target);
 				decided = release + flight;
 				arrive = decided;
 				if (guard !== undefined) {
@@ -1634,13 +1636,7 @@ class Director {
 				look: { x: rim.x, y: rim.y },
 				jump: [0.12, 0.88, blocked ? 1.2 : 2.4],
 			});
-			this.fly(
-				t,
-				catchT,
-				from,
-				{ pid: r },
-				blocked ? 6 : hard ? RIM_Z + 6.5 : RIM_Z + 3.5,
-			);
+			this.fly(t, catchT, from, { pid: r });
 			// Somebody from the other side goes up for it too.
 			const rival = this.slots(other(this.teamOf(r))).sort(
 				(a, b) => dist(this.posOf(a), catchAt) - dist(this.posOf(b), catchAt),
@@ -2001,7 +1997,6 @@ class Director {
 					Math.max(T + 300, tArr),
 					this.ballOrigin(),
 					{ pid },
-					6,
 				);
 				this.hold(pid, tArr, "dribble");
 				this.beat(i, type, T, tArr + 300);
@@ -2028,17 +2023,17 @@ class Director {
 						? { x: rimX(1) - 2.6, y: 25 + this.rand(-1, 1), z: RIM_Z - 1.5 }
 						: edge;
 				const flight = 620 + dist(P1, rimPt(1)) * 22;
-				this.fly(release, release + flight, { pid }, target, RIM_Z + 8);
+				this.fly(release, release + flight, { pid }, target);
 				const at = release + flight;
 				if (made) {
 					let t = at;
 					if (finish === "rattle") {
 						this.effect("clank", at, { rim: 1 });
 						({ t } = this.rollAround(1, at, edge));
-						this.fly(t, t + 90, this.ballAt, rimPt(1, 0.2), 0);
+						this.fly(t, t + 90, this.ballAt, rimPt(1, 0.2));
 						t += 90;
 					}
-					this.fly(t, t + 140, rimPt(1, 0.2), rimPt(1, -2.3), 0);
+					this.fly(t, t + 140, rimPt(1, 0.2), rimPt(1, -2.3));
 					this.bounce(
 						t + 140,
 						t + 800,
@@ -2102,7 +2097,7 @@ class Director {
 				y: rim.y + Math.sin(a) * RIM_R,
 				z: RIM_Z + 0.42,
 			};
-			this.fly(t, t + 95, at, p, 0);
+			this.fly(t, t + 95, at, p);
 			at = p;
 			t += 95;
 		}
@@ -2130,7 +2125,7 @@ class Director {
 			const top = rimPt(team, 0.35);
 			const under = rimPt(team, -2.3);
 			if (shot.dunk) {
-				this.fly(at, at + 70, { pid: shot.pid }, top, RIM_Z + 0.6);
+				this.fly(at, at + 70, { pid: shot.pid }, top);
 				this.effect("dunk", at + 50, {
 					rim: team,
 					big:
@@ -2140,7 +2135,7 @@ class Director {
 				});
 			}
 			const t0 = shot.dunk ? at + 70 : at;
-			this.fly(t0, t0 + 140, top, under, 0);
+			this.fly(t0, t0 + 140, top, under);
 			const settle = clampPt({
 				x: rim.x - dir * this.rand(1.5, 4),
 				y: 25 + this.rand(-3, 3),
@@ -2211,7 +2206,7 @@ class Director {
 			}),
 			z: 0.3,
 		};
-		this.fly(at, at + 300, { pid: e.pid, hand: "near" }, down, 0);
+		this.fly(at, at + 300, { pid: e.pid, hand: "near" }, down);
 		const next = this.afterMiss(at + 300, down, team, i, true);
 		this.beat(i, e.type, at, next);
 		this.phase = "loose";
@@ -2265,7 +2260,6 @@ class Director {
 				Math.max(T + 420, ready),
 				this.ballOrigin(),
 				{ pid: shooter },
-				6,
 			);
 			ready = Math.max(T + 420, ready);
 		}
@@ -2286,7 +2280,7 @@ class Director {
 					z: RIM_Z + 0.12,
 				};
 		const at = release + 720;
-		this.fly(release, at, { pid: shooter }, target, RIM_Z + 3.2);
+		this.fly(release, at, { pid: shooter }, target);
 
 		const next = this.peek(i, 3).find(
 			(x) =>
@@ -2298,7 +2292,7 @@ class Director {
 			next.e.pid === shooter;
 		if (made) {
 			const top = rimPt(team, 0.35);
-			this.fly(at, at + 140, top, rimPt(team, -2.3), 0);
+			this.fly(at, at + 140, top, rimPt(team, -2.3));
 			this.bounce(
 				at + 140,
 				at + 800,
@@ -2343,7 +2337,7 @@ class Director {
 		const gap = this.clockGap(e);
 		let t = this.develop(team, T, gap);
 		if (this.holder !== victim) {
-			t = this.passTo(this.holder ?? this.slots(team)[0]!, victim, t, 5);
+			t = this.passTo(this.holder ?? this.slots(team)[0]!, victim, t);
 		}
 		const vp = this.posOf(victim);
 		const dir = attackDir(team);
@@ -2375,7 +2369,7 @@ class Director {
 				this.phase = "inboundSide";
 				this.beat(i, e.type, hit, hit + 1000);
 			} else {
-				this.fly(hit, hit + 160, { pid: victim }, { pid: thief }, 3);
+				this.fly(hit, hit + 160, { pid: victim }, { pid: thief });
 				this.hold(thief, hit + 160, "dribble");
 				this.setOffense(hit, other(team));
 				this.phase = "loose";
@@ -2388,7 +2382,7 @@ class Director {
 			const outY = vp.y < COURT_H / 2 ? -2.2 : COURT_H + 2.2;
 			const to = { x: vp.x + dir * this.rand(6, 14), y: outY };
 			this.act(victim, "pass", t, t + 300, { face: dir });
-			this.fly(t + 120, t + 700, { pid: victim }, { ...to, z: 3 }, 6);
+			this.fly(t + 120, t + 700, { pid: victim }, { ...to, z: 3 });
 			this.bounce(
 				t + 700,
 				t + 1300,
@@ -2464,7 +2458,7 @@ class Director {
 		const toss = Math.max(T + 600, ready + 200);
 		this.rest(T, { x: c.x, y: c.y, z: 5 });
 		const apex = { x: c.x, y: c.y, z: 12.3 };
-		this.fly(toss, toss + 520, { x: c.x, y: c.y, z: 5 }, apex, 12.5);
+		this.fly(toss, toss + 520, { x: c.x, y: c.y, z: 5 }, apex);
 		this.act(jumper, "block", toss + 120, toss + 900, {
 			face: attackDir(winnerTeam),
 			jump: [0.1, 0.9, 2.8],
@@ -2474,7 +2468,7 @@ class Director {
 			jump: [0.1, 0.9, 2.5],
 		});
 		const receiver = this.slots(winnerTeam).find((p) => p !== jumper) ?? jumper;
-		this.fly(toss + 520, toss + 1000, apex, { pid: receiver }, 12.4);
+		this.fly(toss + 520, toss + 1000, apex, { pid: receiver });
 		this.act(receiver, "catch", toss + 900, toss + 1080);
 		this.hold(receiver, toss + 1000, "hold");
 		this.setOffense(toss + 1000, winnerTeam);
