@@ -224,7 +224,7 @@ const TARGET: Partial<Pose> = {
 	wrF: 50,
 };
 
-type RunMode = "run" | "dribble" | "back" | "walk" | "carry";
+type RunMode = "run" | "sprint" | "dribble" | "back" | "walk" | "carry";
 const runPose = (ph: number, mode: RunMode): Pose => {
 	const a = Math.sin(2 * Math.PI * ph);
 	const c = Math.cos(2 * Math.PI * ph);
@@ -254,6 +254,20 @@ const runPose = (ph: number, mode: RunMode): Pose => {
 			abN: 34,
 			abF: 34,
 			wide: 0.4,
+		});
+	}
+	if (mode === "sprint") {
+		// Flat out: leaning into it, knees driving high, arms pumping.
+		return pose({
+			hipN: 42 * a,
+			hipF: -42 * a,
+			kneeN: 18 + 80 * Math.max(0, c) ** 1.3,
+			kneeF: 18 + 80 * Math.max(0, -c) ** 1.3,
+			lean: 18,
+			shN: -62 * a,
+			elN: 88,
+			shF: 62 * a,
+			elF: 88,
 		});
 	}
 	const legs = {
@@ -332,6 +346,12 @@ export const ANIMS = {
 			}),
 	},
 	run: { kind: "cycle", n: 6, stride: 8.6, pose: (i) => runPose(i / 6, "run") },
+	sprint: {
+		kind: "cycle",
+		n: 6,
+		stride: 12.4,
+		pose: (i) => runPose(i / 6, "sprint"),
+	},
 	dribble: {
 		kind: "cycle",
 		n: 6,
@@ -519,10 +539,10 @@ export const ANIMS = {
 			[
 				0.3,
 				pose({
-					hipN: 75,
-					kneeN: 95,
-					hipF: -12,
-					kneeF: 18,
+					hipN: 94,
+					kneeN: 102,
+					hipF: -16,
+					kneeF: 24,
 					shN: 120,
 					elN: 50,
 					shF: 60,
@@ -534,10 +554,10 @@ export const ANIMS = {
 			[
 				0.6,
 				pose({
-					hipN: 70,
-					kneeN: 100,
-					hipF: -6,
-					kneeF: 22,
+					hipN: 88,
+					kneeN: 106,
+					hipF: -10,
+					kneeF: 26,
 					shN: 168,
 					elN: 6,
 					shF: 70,
@@ -549,10 +569,10 @@ export const ANIMS = {
 			[
 				0.72,
 				pose({
-					hipN: 70,
-					kneeN: 100,
-					hipF: -6,
-					kneeF: 22,
+					hipN: 88,
+					kneeN: 106,
+					hipF: -10,
+					kneeF: 26,
 					shN: 168,
 					elN: 6,
 					shF: 70,
@@ -1600,6 +1620,14 @@ export const poseFor = (anim: AnimName, frame: number): Pose => {
 		return keyed(a.keys, a.n > 1 ? frame / (a.n - 1) : 0);
 	}
 	return a.pose(frame);
+};
+
+// Running, he leaves the floor between strides: how high (feet) at a point
+// through the stride, highest with his legs spread wide.
+const BOUNCE: Partial<Record<AnimName, number>> = { run: 0.1, sprint: 0.2 };
+export const bounceAt = (anim: AnimName, phase: number): number => {
+	const h = BOUNCE[anim];
+	return h ? h * Math.sin(2 * Math.PI * phase) ** 2 : 0;
 };
 
 // The pose partway through an animation - an act from start (0) to finish

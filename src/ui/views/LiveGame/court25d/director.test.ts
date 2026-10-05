@@ -553,6 +553,41 @@ describe("2.5D director", () => {
 		}
 	});
 
+	test("flat out, a player sprints - bounding off the floor stride to stride", () => {
+		const { tl } = compile("a");
+		let sprints = 0;
+		let jogs = 0;
+		for (const [pid, tr] of tl.tracks) {
+			for (const m of tr.moves) {
+				const d = Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y);
+				const secs = (m.t1 - m.t0) / 1000;
+				if (m.anim !== "run" || d < 20) {
+					continue;
+				}
+				let top = 0;
+				let low = Infinity;
+				for (let t = m.t0 + secs * 250; t < m.t1 - secs * 250; t += 20) {
+					const st = evalPlayer(tl, pid, t);
+					if (st.anim !== "sprint" && st.anim !== "run") {
+						continue;
+					}
+					assert.strictEqual(st.anim, d / secs >= 19 ? "sprint" : "run");
+					top = Math.max(top, st.z);
+					low = Math.min(low, st.z);
+				}
+				if (d / secs >= 19) {
+					sprints += 1;
+					assert.isAbove(top, 0.15);
+				} else {
+					jogs += 1;
+				}
+				assert.isBelow(low, 0.02);
+			}
+		}
+		assert.isAbove(sprints, 5);
+		assert.isAbove(jogs, 5);
+	});
+
 	test("a rebounder chins it before he goes anywhere with it", () => {
 		for (const seed of ["a", "b"]) {
 			const { tl } = compile(seed);

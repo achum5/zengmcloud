@@ -10,6 +10,7 @@ import type {
 import { rimX, type Pt, type Pt3, type Side } from "./geometry.ts";
 import {
 	ANIMS,
+	bounceAt,
 	holdBall,
 	posed,
 	skeleton,
@@ -192,6 +193,9 @@ const targetAt = (tl: CourtTimeline, pid: number, t: number): number => {
 	return 0;
 };
 
+// A run this fast or faster (feet a second, start to finish) is a sprint.
+const SPRINT_FTPS = 19;
+
 // The act running now, if any (they rarely overlap; the later one wins).
 const actAt = (tr: Track, t: number): Act | undefined => {
 	const ai = lastIndex(tr.acts, t, (a) => a.t0);
@@ -356,9 +360,15 @@ export const evalPlayer = (
 				: ((t - act.t0) / 1000) * (a.kind === "loop" ? a.fps / a.n : 1);
 		z = jumpZ(act, u);
 	} else if (here.moving && mv) {
-		anim = mv.anim;
+		anim =
+			mv.anim === "run" &&
+			Math.hypot(mv.to.x - mv.from.x, mv.to.y - mv.from.y) >=
+				(SPRINT_FTPS * (mv.t1 - mv.t0)) / 1000
+				? "sprint"
+				: mv.anim;
 		const a = ANIMS[anim];
 		phase = here.traveled / (a.kind === "cycle" ? a.stride : 5);
+		z = bounceAt(anim, phase);
 	} else {
 		const seg = ballSegAt(tl, t);
 		if (seg && seg.kind === "hold" && seg.pid === pid) {
