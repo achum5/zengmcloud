@@ -6391,16 +6391,47 @@ class Director {
 			cuts: this.cuts,
 			shots,
 			tension: this.tension,
-			fast: hurried(this.fast),
+			fast: hurried(this.fast, this.beats),
 			end: this.T,
 		};
 	}
 }
 
 // Fast stretches in order, overlapping ones run together.
-const hurried = (list: [number, number][]): [number, number][] => {
-	const out: [number, number][] = [];
+// Whatever just happened gets a moment at real speed before the picture
+// hurries on (ms after its line's action is over) - time to take it in: a
+// basket longest, the ball down through the net and the scorer turning back
+// up the floor.
+const TAKE_IN = 1000;
+const TAKE_IN_SCORE = 1600;
+const takeIn = (b: Beat): number =>
+	resultOf(b.type)?.kind === "make" || b.type === "ft"
+		? TAKE_IN_SCORE
+		: TAKE_IN;
+// The stretches the picture runs through fast, in order, run together where
+// they meet - each starting only once the line before it has sunk in.
+const hurried = (
+	list: [number, number][],
+	beats: Beat[],
+): [number, number][] => {
+	const ends = beats
+		.map((b) => [b.actionStart, b.end + takeIn(b)] as const)
+		.sort((x, y) => x[0] - y[0]);
+	const settled: [number, number][] = [];
+	let k = 0;
+	let seen = -Infinity;
 	for (const [a, b] of [...list].sort((x, y) => x[0] - y[0])) {
+		while (k < ends.length && ends[k]![0] <= a) {
+			seen = Math.max(seen, ends[k]![1]);
+			k++;
+		}
+		const from = Math.max(a, seen);
+		if (b - from >= 900) {
+			settled.push([from, b]);
+		}
+	}
+	const out: [number, number][] = [];
+	for (const [a, b] of settled) {
 		const last = out.at(-1);
 		if (last && a <= last[1]) {
 			last[1] = Math.max(last[1], b);

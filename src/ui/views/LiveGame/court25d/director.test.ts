@@ -587,6 +587,26 @@ describe("2.5D director", () => {
 		assert.isAbove(events.length, 0);
 	});
 
+	// What just happened gets a moment at real speed before the picture
+	// hurries on: a second, and longer after a basket - the ball down
+	// through the net, the scorer turning back up the floor.
+	test("after a play the picture holds a moment before it hurries on", () => {
+		const { tl } = compile("cuts", 160);
+		let afterScore = 0;
+		for (const [a] of tl.fast) {
+			const before = tl.beats.filter((b) => b.actionStart <= a);
+			for (const b of before) {
+				const score = /^(fg|tp)/.test(b.type) || b.type === "ft";
+				assert.isAtLeast(a - b.end, score ? 1600 : 1000, `${b.type}`);
+			}
+			const last = before.at(-1);
+			if (last && /^(fg|tp)/.test(last.type)) {
+				afterScore += 1;
+			}
+		}
+		assert.isAbove(afterScore, 10);
+	});
+
 	test("whoever holds the ball is on the floor", () => {
 		const { tl } = compile("holder", 140);
 		for (const t of sampleTimes(tl, 50)) {

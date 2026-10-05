@@ -1302,18 +1302,24 @@ export const recentFx = (
 	return undefined;
 };
 
-// Through a fast stretch the picture runs this many times over, getting up
-// to speed and back down again smoothly (timeline ms either end).
+// Through a fast stretch the picture runs this many times over: getting up
+// to speed gently, so it never lurches away from what just happened, and
+// back down crisply into what comes next (timeline ms).
 export const FAST = 8;
-const FAST_RAMP = 600;
+const FAST_IN = 1200;
+const FAST_OUT = 800;
 export const fastAt = (tl: CourtTimeline, t: number): number => {
 	const i = lastIndex(tl.fast, t, (f) => f[0]);
 	const f = i >= 0 ? tl.fast[i] : undefined;
 	if (!f || t >= f[1]) {
 		return 1;
 	}
-	const ramp = Math.min(FAST_RAMP, (f[1] - f[0]) / 2);
-	const u = Math.min(1, (t - f[0]) / ramp, (f[1] - t) / ramp);
+	const len = f[1] - f[0];
+	const u = Math.min(
+		1,
+		(t - f[0]) / Math.min(FAST_IN, len * 0.6),
+		(f[1] - t) / Math.min(FAST_OUT, len * 0.4),
+	);
 	return 1 + (FAST - 1) * u * u * (3 - 2 * u);
 };
 
