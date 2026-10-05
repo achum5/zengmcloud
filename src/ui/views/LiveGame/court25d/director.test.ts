@@ -403,32 +403,41 @@ describe("2.5D director", () => {
 		}
 	}, 120_000);
 
-	test("the picture cuts only between plays, to five a side", () => {
+	// The picture never cuts in play: the ball taken out after a basket and
+	// brought up, the walk to an inbound or to the line, are all played out -
+	// fast - rather than skipped. Never fast through a shot, and always five
+	// a side out there.
+	test("the picture never cuts: it runs through the dead time fast", () => {
 		const { events, tl } = compile("cuts", 160);
-		assert.isAbove(tl.cuts.length, 40);
+		assert.strictEqual(tl.cuts.length, 0);
+		assert.isAbove(tl.fast.length, 40);
 		const pids = [...tl.tracks.keys()];
-		for (const c of tl.cuts) {
-			// Never in the middle of a line's action.
-			for (const b of tl.beats) {
+		let last = -Infinity;
+		for (const [a, b] of tl.fast) {
+			assert.isAbove(b, a);
+			assert.isAtLeast(a, last, "in order, apart");
+			last = b;
+			for (const bt of tl.beats) {
 				assert.isFalse(
-					c > b.actionStart && c < b.end && /^(fg|miss|blk|tp)/.test(b.type),
-					`cut at ${c} inside ${b.type}`,
+					/^(fg|miss|blk|tp)/.test(bt.type) && a < bt.end && b > bt.actionStart,
+					`fast through ${bt.type} at ${bt.actionStart}`,
 				);
 			}
-			const on = [0, 0];
-			for (const pid of pids) {
-				const st = evalPlayer(tl, pid, c + 1);
-				if (st.shown) {
-					on[st.team]! += 1;
+			for (const t of [a, b]) {
+				const on = [0, 0];
+				for (const pid of pids) {
+					const st = evalPlayer(tl, pid, t);
+					if (st.shown) {
+						on[st.team]! += 1;
+					}
+				}
+				// (And whoever was subbed out, walking off to his bench.)
+				for (const n of on) {
+					assert.isAtLeast(n, 5, `at ${t}`);
+					assert.isAtMost(n, 7, `at ${t}`);
 				}
 			}
-			assert.deepStrictEqual(on, [5, 5], `at ${c}`);
 		}
-		// Cut times are in order and the game still tiles.
-		assert.deepStrictEqual(
-			tl.cuts,
-			[...tl.cuts].sort((a, b) => a - b),
-		);
 		assert.isAbove(events.length, 0);
 	});
 

@@ -3,6 +3,7 @@ import { makeCourtRng } from "../courtRng.ts";
 import type { BallEnd, CourtTimeline, Fx } from "./director.ts";
 import {
 	arenaShotAt,
+	cameraCuts,
 	evalPlayer,
 	lastCut,
 	offenseAt,
@@ -371,6 +372,34 @@ const withOfficial = (tl: CourtTimeline, t: number, team: Side): boolean => {
 	);
 };
 
+// Whether, since `from`, he has bounced the shooter the ball - and it is
+// gone from him.
+const handedOver = (
+	tl: CourtTimeline,
+	t: number,
+	team: Side,
+	from: number,
+): boolean => {
+	if (withOfficial(tl, t, team)) {
+		return false;
+	}
+	const ball = ftOfficialBall(team);
+	for (let i = lastIndex(tl.ball, t, (b) => b.t0); i >= 0; i--) {
+		const seg = tl.ball[i]!;
+		if (seg.t0 < from) {
+			break;
+		}
+		if (
+			seg.kind === "fly" &&
+			!("pid" in seg.from) &&
+			Math.hypot(seg.from.x - ball.x, seg.from.y - ball.y) < 0.6
+		) {
+			return true;
+		}
+	}
+	return false;
+};
+
 // The last of a trip to the line.
 const lastFreeThrow = (tl: CourtTimeline, t: number): boolean => {
 	const i = lastIndex(tl.beats, t, (b) => b.preStart);
@@ -403,7 +432,7 @@ const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 		const d = attackDir(team);
 		const X = (depth: number) => (d > 0 ? COURT_W - depth : depth);
 		const lead =
-			lastFreeThrow(tl, t) && !withOfficial(tl, t, team)
+			lastFreeThrow(tl, t) && handedOver(tl, t, team, beat.preStart)
 				? { x: X(-1.3), y: 36.5 }
 				: ftAdminAt(team);
 		const trail = { x: X(29), y: 3.2 };
@@ -433,47 +462,89 @@ const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 	return k % 2 === 0 ? [lead, trail, slot] : [trail, lead, slot];
 };
 
-// Where each official is: the places the game calls for, averaged over the
-// last couple of seconds, so they run from one to the next instead of
-// jumping - and settled at once at a cut. Sampled on a fixed clock and
-// blended between samples, so the glide is smooth at any frame rate.
+// Where each official is: running after the places the game calls for, as
+// fast as an official runs and no faster - even end to end in transition -
+// and settled at once where the picture cuts away. Worked out a step at a
+// time over the whole game, once, and blended between steps, so the glide
+// is smooth at any frame rate.
 const STEP = 250;
-const WINDOW = 13;
+// How hard he goes after his place (a second), how fast he can run (feet a
+// second) and how quickly he gets going (feet a second, a second).
+const REF_GAIN = 1.8;
+const REF_RUN = 24;
+const REF_ACCEL = 20;
 type Places = { at: Pt[]; vel: Pt[] };
-// The samples, kept: every frame wants nearly the same ones.
-const samples = new WeakMap<CourtTimeline, Map<number, [Pt, Pt, Pt]>>();
-const refPlaces = (tl: CourtTimeline, t: number): Places => {
-	const cut = Math.max(0, lastCut(tl, t));
-	const g = Math.floor(t / STEP);
-	let kept = samples.get(tl);
-	if (!kept || kept.size > 20_000) {
-		kept = new Map();
-		samples.set(tl, kept);
+const refPaths = new WeakMap<CourtTimeline, Pt[][]>();
+const refPath = (tl: CourtTimeline): Pt[][] => {
+	let out = refPaths.get(tl);
+	if (out) {
+		return out;
 	}
-	const target = (k: number) => {
-		const at = Math.max(cut, k * STEP);
-		let s = kept.get(at);
-		if (!s) {
-			s = refTargets(tl, at);
-			kept.set(at, s);
+	out = [];
+	const cuts = cameraCuts(tl);
+	let ci = 0;
+	const dt = STEP / 1000;
+	let at: Pt[] = refTargets(tl, 0).map((q) => ({ ...q }));
+	let vel: Pt[] = at.map(() => ({ x: 0, y: 0 }));
+	const n = Math.ceil(tl.end / STEP) + 2;
+	for (let k = 0; k < n; k++) {
+		const t = k * STEP;
+		const goal = refTargets(tl, t);
+		let cut = false;
+		while (ci < cuts.length && cuts[ci]! <= t) {
+			cut ||= cuts[ci]! > t - STEP;
+			ci++;
 		}
-		return s;
-	};
-	const avg = (g0: number): Pt[] => {
-		const sum = [0, 1, 2].map(() => ({ x: 0, y: 0 }));
-		for (let k = g0 - WINDOW + 1; k <= g0; k++) {
-			target(k).forEach((p, i) => {
-				sum[i]!.x += p.x;
-				sum[i]!.y += p.y;
+		if (cut) {
+			at = goal.map((q) => ({ ...q }));
+			vel = at.map(() => ({ x: 0, y: 0 }));
+		} else if (k > 0) {
+			at = at.map((p, i) => {
+				const g = goal[i]!;
+				let wx = (g.x - p.x) * REF_GAIN;
+				let wy = (g.y - p.y) * REF_GAIN;
+				const w = Math.hypot(wx, wy);
+				// No faster than he can pull up from by the time he gets there.
+				const most = Math.min(
+					REF_RUN,
+					Math.sqrt(2 * REF_ACCEL * Math.hypot(g.x - p.x, g.y - p.y)),
+				);
+				if (w > most) {
+					wx *= most / w;
+					wy *= most / w;
+				}
+				const v = vel[i]!;
+				let dx = wx - v.x;
+				let dy = wy - v.y;
+				const dv = Math.hypot(dx, dy);
+				if (dv > REF_ACCEL * dt) {
+					dx *= (REF_ACCEL * dt) / dv;
+					dy *= (REF_ACCEL * dt) / dv;
+				}
+				vel[i] = { x: v.x + dx, y: v.y + dy };
+				// Never out past where an official stands, off the floor.
+				return {
+					x: Math.min(COURT_W + 2.8, Math.max(-2.8, p.x + vel[i]!.x * dt)),
+					y: Math.min(COURT_H + 1.8, Math.max(-0.9, p.y + vel[i]!.y * dt)),
+				};
 			});
 		}
-		return sum.map((p) => ({ x: p.x / WINDOW, y: p.y / WINDOW }));
-	};
-	// Within a sample's span the blend runs from the last sample to the
-	// next; the newest is the moment itself, so a cut lands at once.
-	const a = avg(g);
-	const b = avg(g + 1);
-	const u = (t - g * STEP) / STEP;
+		out.push(at);
+	}
+	refPaths.set(tl, out);
+	return out;
+};
+const refPlaces = (tl: CourtTimeline, t: number): Places => {
+	const path = refPath(tl);
+	const g = Math.max(0, Math.min(path.length - 2, Math.floor(t / STEP)));
+	const a = path[g]!;
+	const b = path[g + 1]!;
+	let u = Math.max(0, Math.min(1, (t - g * STEP) / STEP));
+	// The picture cutting in between: settled at once, not slid there.
+	const cut = lastCut(tl, (g + 1) * STEP);
+	if (cut > g * STEP) {
+		u = t < cut ? 0 : 1;
+	}
 	return {
 		at: a.map((p, i) => lerp(p, b[i]!, u)),
 		vel: a.map((p, i) => ({
@@ -500,19 +571,23 @@ const pointing = (dir: number) => (dir > 0 ? -Math.PI / 2 : Math.PI / 2);
 
 // Where an official is while he signals: still where he made the call,
 // then running back to his place in the play.
-const signalPos = (s: Signal, t: number, live: Pt): Pt => {
+const signalPos = (s: Signal, t: number, liveAt: (when: number) => Pt): Pt => {
 	const t1 = s.moves.at(-1)!.t1;
 	if (t < t1) {
 		return s.still;
 	}
-	return t < t1 + s.back ? lerp(s.still, live, (t - t1) / s.back) : live;
+	// (Back to where the play will have him once he gets there.)
+	return t < t1 + s.back
+		? lerp(s.still, liveAt(t1 + s.back), (t - t1) / s.back)
+		: liveAt(t);
 };
 
 // Everything the officials have had to signal lately: each whistle's call,
 // a three going up (an arm raised while it is in the air) and going in
 // (both arms).
 type Cue = { at: Pt; t0: number; moves: Signal["moves"] };
-const CUE_MS = 6000;
+// (Long enough for the signal and the jog back to his place after it.)
+const CUE_MS = 11000;
 const cuesBefore = (tl: CourtTimeline, t: number): Cue[] => {
 	const out: Cue[] = [];
 	for (let i = lastIndex(tl.fx, t, (f) => f.t); i >= 0; i--) {
@@ -596,7 +671,7 @@ const signalsAt = (tl: CourtTimeline, t: number): (Signal | undefined)[] => {
 		const live = refPlaces(tl, cue.t0).at;
 		const pos = live.map((p, i) => {
 			const s = per[i];
-			return s ? signalPos(s, cue.t0, p) : p;
+			return s ? signalPos(s, cue.t0, (when) => refPlaces(tl, when).at[i]!) : p;
 		});
 		let ref = 0;
 		for (let i = 1; i < 3; i++) {
@@ -606,11 +681,16 @@ const signalsAt = (tl: CourtTimeline, t: number): (Signal | undefined)[] => {
 		}
 		const still = pos[ref]!;
 		const t1 = cue.moves.at(-1)!.t1;
-		const back = clamp(
-			(dist(still, refPlaces(tl, t1).at[ref]!) / 13) * 1000,
-			250,
-			2600,
-		);
+		// As long as it takes him to jog back to where the play will have him
+		// by then.
+		let back = 250;
+		for (let k = 0; k < 3; k++) {
+			back = clamp(
+				(dist(still, refPlaces(tl, t1 + back).at[ref]!) / 15) * 1000,
+				250,
+				6500,
+			);
+		}
 		per[ref] = { ref, t0: cue.t0, moves: cue.moves, still, back };
 	}
 	return per.map((s) => (s && t < s.moves.at(-1)!.t1 + s.back ? s : undefined));
@@ -695,7 +775,9 @@ const refStates = (
 		if (signal) {
 			const move = signal.moves.find((s) => t >= s.t0 && t < s.t1);
 			const live = p;
-			p = signalPos(signal, t, live);
+			p = signalPos(signal, t, (when) =>
+				when === t ? live : refPlaces(tl, when).at[i]!,
+			);
 			if (move) {
 				anim = move.anim;
 				const a = ANIMS[anim];

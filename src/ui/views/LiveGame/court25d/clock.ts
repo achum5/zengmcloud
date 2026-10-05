@@ -5,9 +5,10 @@ import type { CourtTimeline, RawEvent } from "./director.ts";
 // Every play-by-play line carries the game clock when it happened; between
 // two lines the clock runs down while the court shows the lead-in, reaching
 // the line's time just as its text appears. It runs at real speed; where the
-// picture cuts past the walk up the floor, it jumps past that time too. The sim keeps no shot clock in
-// the play-by-play, so the one on screen is read off possession: 24 when a
-// team gets the ball, 14 after an offensive rebound, running with the game
+// picture runs fast through the walk up the floor (or cuts past it), the
+// clock makes up the time the sim spent there. The sim keeps no shot clock
+// in the play-by-play, so the one on screen is read off possession: 24 when
+// a team gets the ball, 14 after an offensive rebound, running with the game
 // clock - and off once the game clock is shorter.
 
 const SHOT_CLOCK = 24;
@@ -43,11 +44,23 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 		// unless the clock went up, which is a new period starting.
 		if (last !== undefined && e.clock <= last) {
 			marks.push({ t: b.preStart, clock: last, period });
-			// A cut in the lead-in skips the time the sim spent there and the
-			// picture does not show, so the clock runs true on both sides of it.
+			// The time the sim spent in the lead-in that the picture runs through
+			// fast (or cuts past): the clock runs true on either side of it and
+			// makes up the rest there.
+			const fast = fastIn(tl.fast, b.preStart, b.actionStart);
 			const cut = lastCutIn(tl.cuts, b.preStart, b.actionStart);
 			const shown = (b.actionStart - b.preStart) / 1000;
-			if (cut !== undefined && last - e.clock > shown) {
+			if (fast) {
+				const [f0, f1] = fast;
+				const at0 = last - (f0 - b.preStart) / 1000;
+				const at1 = e.clock + (b.actionStart - f1) / 1000;
+				if (at0 >= at1 && at0 <= last && at1 >= e.clock) {
+					marks.push(
+						{ t: f0, clock: at0, period },
+						{ t: f1, clock: at1, period },
+					);
+				}
+			} else if (cut !== undefined && last - e.clock > shown) {
 				marks.push(
 					{ t: cut - 1, clock: last - (cut - 1 - b.preStart) / 1000, period },
 					{ t: cut, clock: e.clock + (b.actionStart - cut) / 1000, period },
@@ -74,6 +87,24 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 	}
 	resets.sort((a, b) => a.t - b.t);
 	return { marks, resets };
+};
+
+// The part of the last fast stretch in [a, b) that is in it, if any.
+const fastIn = (
+	fast: [number, number][],
+	a: number,
+	b: number,
+): [number, number] | undefined => {
+	let out: [number, number] | undefined;
+	for (const [f0, f1] of fast) {
+		if (f0 >= b) {
+			break;
+		}
+		if (f1 > a) {
+			out = [Math.max(a, f0), Math.min(b, f1)];
+		}
+	}
+	return out && out[1] - out[0] > 1 ? out : undefined;
 };
 
 // The last cut in [a, b), if any.

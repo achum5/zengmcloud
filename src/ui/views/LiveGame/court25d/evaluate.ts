@@ -160,7 +160,8 @@ const bounceOf = (tl: CourtTimeline, i: number, t: number): Bounce => {
 	// The hand the ball is in at a top: a dribble's, or the one a crossover
 	// off it starts in.
 	const handAt = (when: number): Hand | undefined => {
-		const s = tl.ball[ballIndexAt(tl, when)];
+		// (A dribble picked up on the beat starts a hair after it.)
+		const s = tl.ball[ballIndexAt(tl, when + 1)];
 		return s?.kind === "hold" &&
 			s.pid === pid &&
 			(s.style === "dribble" || s.style === "cross")
@@ -1299,6 +1300,21 @@ export const recentFx = (
 		}
 	}
 	return undefined;
+};
+
+// Through a fast stretch the picture runs this many times over, getting up
+// to speed and back down again smoothly (timeline ms either end).
+export const FAST = 8;
+const FAST_RAMP = 600;
+export const fastAt = (tl: CourtTimeline, t: number): number => {
+	const i = lastIndex(tl.fast, t, (f) => f[0]);
+	const f = i >= 0 ? tl.fast[i] : undefined;
+	if (!f || t >= f[1]) {
+		return 1;
+	}
+	const ramp = Math.min(FAST_RAMP, (f[1] - f[0]) / 2);
+	const u = Math.min(1, (t - f[0]) / ramp, (f[1] - t) / ramp);
+	return 1 + (FAST - 1) * u * u * (3 - 2 * u);
 };
 
 // The look round the building (see ArenaShot) showing at t, if any.

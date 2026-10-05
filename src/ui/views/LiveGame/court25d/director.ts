@@ -21,6 +21,7 @@ import {
 	FT_OFFENSE,
 	ftOfficialBall,
 	guardSpot,
+	OFFICIALS_SETTLE,
 	sideOn,
 	huddleSpots,
 	other,
@@ -216,6 +217,9 @@ export type CourtTimeline = {
 	// How tense the building is, over time (0 to 1): a close game late in
 	// the last period or in overtime.
 	tension: [number, number][];
+	// Stretches the picture runs through fast rather than cutting past: the
+	// ball taken out and brought up the floor, the walk to the line.
+	fast: [number, number][];
 	end: number;
 };
 
@@ -516,6 +520,7 @@ class Director {
 	readonly poss: [number, Side][] = [];
 	readonly cuts: number[] = [];
 	readonly tension: [number, number][] = [];
+	readonly fast: [number, number][] = [];
 	// The period being played, and whether it is overtime.
 	private periodNo = 1;
 	private overtime = false;
@@ -676,6 +681,14 @@ class Director {
 		this.face.set(pid, f);
 		this.free.set(pid, start + dur);
 		return start + dur;
+	}
+
+	// Nothing worth watching from t0 to t1 (the ball brought up, a walk to the
+	// line): the picture runs through it fast.
+	private hurry(t0: number, t1: number) {
+		if (t1 - t0 >= 900) {
+			this.fast.push([t0, t1]);
+		}
 	}
 
 	// Whatever run `go` just gave him, he makes shadowing `man`.
@@ -1014,118 +1027,159 @@ class Director {
 		return { ...(this.seat.get(pid) ?? TABLE) };
 	}
 
-	// ---- cuts -------------------------------------------------------------------
+	// ---- between plays -----------------------------------------------------------
 
-	// THE CUT, like a condensed game: everything in motion stops at tc, and
-	// whoever stages what comes next places the five on the floor where they
-	// would be by then. Everyone else sits back down on his bench.
-	private cutAt(tc: number) {
-		if (this.cuts.at(-1) === tc) {
-			return;
+	// THE PICTURE NEVER CUTS. Where it would have cut past dead time - the ball
+	// taken out after a basket and brought up, the walk to an inbound - the
+	// five on each side go there for real, and the picture runs through it
+	// fast (see hurry).
+
+	// The ball to him: handed on by whoever has it, or picked up off the floor
+	// by whoever is nearest and given to him. Returns when he has it.
+	private ballTo(pid: number, t: number): number {
+		const h = this.holder;
+		if (h === pid) {
+			return t;
 		}
-		this.cuts.push(tc);
-		this.guarding.clear();
-		for (const tr of this.tracks.values()) {
-			const at = this.posAt(tr.pid, tc);
-			tr.moves = tr.moves
-				.filter((m) => m.t0 < tc)
-				.map((m) => {
-					if (m.t1 <= tc) {
-						return m;
-					}
-					const cut = { ...m, t1: tc, to: at };
-					const man = this.marking.get(m);
-					if (man !== undefined) {
-						this.marking.set(cut, man);
-					}
-					return cut;
-				});
-			tr.acts = tr.acts
-				.filter((a) => a.t0 < tc)
-				.map((a) => (a.t1 > tc ? { ...a, t1: tc } : a));
-			tr.faces = tr.faces.filter((f) => f[0] < tc);
-			tr.looks = tr.looks.filter((l) => l[0] < tc);
-			tr.shown = tr.shown.filter((x) => x[0] < tc);
-			this.pos.set(tr.pid, at);
-			this.free.set(tr.pid, tc);
-			const on = this.lineup[tr.team].includes(tr.pid);
-			if (!on) {
-				this.place(tr.pid, this.seatOf(tr.pid), tc);
+		if (h !== undefined) {
+			return this.passTo(h, pid, Math.max(t, this.free.get(h) ?? 0), "chest");
+		}
+		const b = this.ballPoint();
+		const near = [...this.slots(0), ...this.slots(1)].sort(
+			(a, c) => dist(this.posOf(a), b) - dist(this.posOf(c), b),
+		)[0];
+		if (near === undefined) {
+			return t;
+		}
+		const got = this.pickUp(near, t, JOG);
+		return near === pid
+			? got + 300
+			: this.passTo(near, pid, got + 400, "chest");
+	}
+
+	// The ball tossed to a spot (an official's hands), by whoever has it - or
+	// by whoever picks it up off the floor. Returns when it gets there.
+	private tossTo(to: Pt3, t: number): number {
+		let pid = this.holder;
+		let start = t;
+		if (pid === undefined) {
+			const b = this.ballPoint();
+			pid = [...this.slots(0), ...this.slots(1)].sort(
+				(a, c) => dist(this.posOf(a), b) - dist(this.posOf(c), b),
+			)[0];
+			if (pid === undefined) {
+				this.fly(t, t + 650, this.ballOrigin(), to);
+				return t + 650;
 			}
-			this.show(tr.pid, tc, on);
+			start = this.pickUp(pid, t, JOG) + 350;
 		}
-		while (this.ball.length > 1 && this.ball.at(-1)!.t0 >= tc) {
-			this.ball.pop();
-		}
+		start = Math.max(start, this.free.get(pid) ?? 0);
+		const flight = Math.max(550, passMs(dist(this.posOf(pid), to)) * 1.4);
+		this.act(pid, "pass", start, start + 300, { look: { x: to.x, y: to.y } });
+		const thrown = Math.max(start + 120, this.gather(pid, start));
+		this.fly(thrown, thrown + flight, { pid }, to);
+		return thrown + flight;
 	}
 
-	// Put him somewhere at once - only ever at a cut.
-	private place(pid: number, at: Pt, t: number, face?: 1 | -1) {
-		const tr = this.track(pid);
-		if (!tr) {
-			return;
-		}
-		tr.moves.push({
-			t0: t,
-			t1: t + 1,
-			from: { ...at },
-			to: { ...at },
-			anim: "walk",
+	// Everyone to his spot - walking, or jogging if it is a long way - facing
+	// the way given when he gets there. Returns when the last of them is there.
+	private walkTo(
+		spots: { pid: number; at: Pt; face?: 1 | -1; man?: number }[],
+		t: number,
+	): number {
+		let done = t;
+		spots.forEach(({ pid, at, face, man }, j) => {
+			const n = this.track(pid)?.moves.length ?? 0;
+			const far = dist(this.posOf(pid), at) > 25;
+			const there = this.go(
+				pid,
+				at,
+				t + 80 + j * 60,
+				far ? JOG : WALK * 1.4,
+				far ? "run" : "walk",
+			);
+			if (man !== undefined) {
+				this.marks(pid, man, n);
+			}
+			if (face !== undefined) {
+				this.turn(pid, there, face);
+			}
+			done = Math.max(done, there);
 		});
-		if (face !== undefined) {
-			this.turn(pid, t, face);
-		}
-		this.pos.set(pid, { ...at });
-		this.free.set(pid, t + 1);
+		return done;
 	}
 
-	// Cut to the ball crossing half court, everyone a few steps short of
-	// their spots and the defense picking them up.
-	private cutToSet(team: Side, t: number): number {
-		const tc = t + 120;
-		this.cutAt(tc);
+	// After a basket: the ball out of the net, the nearest of his teammates
+	// takes it out of bounds behind the baseline and inbounds it to the point
+	// guard, who comes back for it - while the rest head up the floor and the
+	// team that scored gets back. Returns when the point guard has it.
+	private inboundAfterMake(team: Side, t: number): number {
 		const dir = attackDir(team);
 		const off = this.slots(team);
 		const def = this.slots(other(team));
+		const pg = off[0]!;
+		// Where the ball ends up, and when it gets there.
+		const b = this.ballPoint();
+		const last = this.ball.at(-1);
+		const still = last?.kind === "rest" ? last.t0 : t;
+		const inb =
+			off
+				.filter((p) => p !== pg)
+				.sort((a, c) => dist(this.posOf(a), b) - dist(this.posOf(c), b))[0] ??
+			pg;
+		const side = b.y < COURT_H / 2 ? -1 : 1;
+		const out = {
+			x: dir === 1 ? -1.4 : COURT_W + 1.4,
+			y: COURT_H / 2 + side * this.rand(4, 9),
+		};
+		const got = this.pickUp(inb, Math.max(t, still - 700), JOG);
+		const there = this.go(inb, out, got + 350, WALK * 1.5, "walk");
+		this.turn(inb, there, dir);
+		// The point guard comes back to a few strides in from him.
+		this.go(
+			pg,
+			clampPt({
+				x: out.x + dir * this.rand(11, 15),
+				y: out.y - side * this.rand(2, 6),
+			}),
+			t + 150,
+			JOG,
+			"run",
+		);
+		// The rest up the floor, getting there a beat before the ball does;
+		// the team that scored back down it.
 		const spots = this.setSpots(team, 0);
+		const upBy =
+			there +
+			600 +
+			(dist({ x: out.x + dir * 13, y: out.y }, spots[0]!) / DRIBBLE) * 1000;
 		off.forEach((pid, j) => {
-			const s = spots[j] ?? spots[0]!;
-			const back = j === 0 ? this.rand(5, 8) : this.rand(3, 7);
-			this.place(
-				pid,
-				clampPt({
-					x: s.x - dir * back,
-					y: s.y + (COURT_H / 2 - s.y) * 0.2,
-				}),
-				tc,
-				dir,
-			);
+			if (pid !== pg && pid !== inb) {
+				this.goBy(pid, spots[j] ?? spots[0]!, t + 200 + j * 90, upBy, "run");
+			}
 		});
 		def.forEach((pid, j) => {
-			const man = this.posOf(off[j] ?? off[0]!);
-			this.place(pid, guardSpot(team, man, 0.3), tc, -dir as 1 | -1);
+			const n = this.track(pid)?.moves.length ?? 0;
+			this.goBy(
+				pid,
+				guardSpot(team, spots[j] ?? spots[0]!),
+				t + 250 + j * 80,
+				t + 3600,
+				"run",
+			);
+			this.marks(pid, off[j] ?? pg, n);
 		});
-		const pg = off[0]!;
-		this.hold(pg, tc, "dribble");
-		const arrive = this.go(
-			pg,
-			spots[0]!,
-			tc + 60,
-			DRIBBLE * 0.75,
-			"dribble",
-			dir,
-		);
-		this.settle(team, 0, tc + 60, Math.max(tc + 1000, arrive - 150), [pg]);
-		this.motionTeam = team;
-		this.motion = 0;
-		return Math.max(arrive, tc + 600);
+		const tIn = this.passTo(inb, pg, there + 250);
+		this.hurry(t + 300, tIn);
+		return tIn;
 	}
 
-	// A dead ball in the frontcourt: cut to the inbounder at the spot with the
-	// ball and the rest in their places, then the inbound.
-	private cutToInbound(team: Side, t: number, at: Pt): number {
-		const tc = t + 120;
-		this.cutAt(tc);
+	// A dead ball: everybody to his place for the inbound - the inbounder out
+	// of bounds where it went out, with the ball - and it is thrown in. In the
+	// frontcourt they set up around it; back in the backcourt the point guard
+	// comes to get it and the rest go on up the floor. Returns when the man it
+	// is thrown to has it.
+	private inboundFrom(team: Side, t: number, at: Pt): number {
 		const dir = attackDir(team);
 		const off = this.slots(team);
 		const def = this.slots(other(team));
@@ -1140,26 +1194,63 @@ class Director {
 					x: Math.min(COURT_W - 3, Math.max(3, at.x)),
 					y: far ? -1.4 : COURT_H + 1.4,
 				};
+		const back = this.inBackcourt(team, oob);
 		const spots = this.setSpots(team, 0);
+		const target = (pid: number, j: number): Pt =>
+			pid === inbounder
+				? oob
+				: pid === receiver
+					? baseline
+						? clampPt({ x: oob.x - dir * 9, y: oob.y + (25 - oob.y) * 0.4 })
+						: clampPt({
+								x: oob.x + dir * (back ? 4 : 7),
+								y: far ? 9 : COURT_H - 9,
+							})
+					: (spots[j] ?? spots[0]!);
+		let ready = t;
 		off.forEach((pid, j) => {
-			const s =
-				pid === inbounder
-					? oob
-					: pid === receiver
-						? baseline
-							? clampPt({ x: oob.x - dir * 9, y: oob.y + (25 - oob.y) * 0.4 })
-							: clampPt({ x: oob.x + dir * 7, y: far ? 9 : COURT_H - 9 })
-						: (spots[j] ?? spots[0]!);
-			this.place(pid, s, tc, dir);
+			const P = target(pid, j);
+			const d = dist(this.posOf(pid), P);
+			const arrive = this.go(
+				pid,
+				P,
+				t + 80 + j * 70,
+				d > 25 ? JOG : WALK * 1.4,
+				d > 25 ? "run" : "walk",
+			);
+			this.turn(pid, arrive, dir);
+			if (pid === inbounder || pid === receiver || !back) {
+				ready = Math.max(ready, arrive);
+			}
 		});
 		def.forEach((pid, j) => {
-			const man = this.posOf(off[j] ?? off[0]!);
-			this.place(pid, guardSpot(team, man, 0.25), tc, -dir as 1 | -1);
+			const man = off[j] ?? off[0]!;
+			const P = guardSpot(team, target(man, j), 0.25);
+			const n = this.track(pid)?.moves.length ?? 0;
+			const d = dist(this.posOf(pid), P);
+			const arrive = this.go(
+				pid,
+				P,
+				t + 120 + j * 70,
+				d > 25 ? JOG : WALK * 1.4,
+				d > 25 ? "run" : "walk",
+			);
+			this.marks(pid, man, n);
+			this.turn(pid, arrive, -dir as 1 | -1);
 		});
-		this.lookAt(inbounder, tc + 1, this.posOf(receiver));
-		this.hold(inbounder, tc, "hold");
-		const tIn = this.passTo(inbounder, receiver, tc + 450);
-		this.settle(team, 0, tc + 300, tIn + 500, [receiver]);
+		// The ball to him, as he gets there.
+		const has = this.ballTo(
+			inbounder,
+			Math.max(t + 300, (this.free.get(inbounder) ?? t) - 1200),
+		);
+		this.hold(inbounder, Math.max(has, this.free.get(inbounder) ?? 0), "hold");
+		this.lookAt(inbounder, ready + 1, this.posOf(receiver));
+		const go = Math.max(ready, has) + 500;
+		this.hurry(t + 300, go - 200);
+		const tIn = this.passTo(inbounder, receiver, go);
+		if (!back) {
+			this.settle(team, 0, tIn - 600, tIn + 500, [receiver]);
+		}
 		this.motionTeam = team;
 		this.motion = 0;
 		return tIn;
@@ -1406,12 +1497,17 @@ class Director {
 		let transition = false;
 		let run: Running | undefined;
 
-		let cut = false;
+		// Brought up the floor or set up already by the time this is done - the
+		// ball inbounded after a basket, say - and from when (the dead time
+		// before the set, the picture runs through fast).
+		let into: "flow" | "set" | undefined;
+		const from = t;
 		if (phase === "inboundBase" && !changed) {
-			// After a basket: skip the inbound and the walk up the floor.
-			run = call?.("cut");
-			t = run ? this.cutToPlay(run, t) : this.cutToSet(team, t);
-			cut = true;
+			// After a basket: taken out under the basket and inbounded, then up
+			// the floor - every man back on his own man.
+			this.guarding.clear();
+			t = this.inboundAfterMake(team, t);
+			into = "flow";
 		} else if (phase === "loose" || phase === "tip" || phase === "set") {
 			if (this.holder === undefined || this.teamOf(this.holder) !== team) {
 				// Loose ball (or it was ours to take): the nearest man picks it up.
@@ -1427,36 +1523,30 @@ class Director {
 				gap !== undefined &&
 				gap < 7 &&
 				this.inBackcourt(team, handler);
-			if (
-				!transition &&
-				phase === "loose" &&
-				this.inBackcourt(team, handler) &&
-				Math.abs(handler.x - COURT_W / 2) > 18
-			) {
-				// No break on: he turns up the floor, and the picture cuts to the
-				// ball crossing half court.
-				run = call?.("cut");
-				t = run ? this.cutToPlay(run, t + 450) : this.cutToSet(team, t + 450);
-				cut = true;
-			}
+			// No break on: he turns and brings it up (fast, below).
 		} else {
-			// A dead ball: the inbound, from wherever it went dead.
+			// A dead ball: the inbound, from wherever it went dead - in the
+			// frontcourt into a set or a play drawn up for it, in the backcourt
+			// then up the floor.
 			const at = this.inboundAt;
+			this.guarding.clear();
 			if (at && !this.inBackcourt(team, at)) {
 				run = call?.("inbound");
 				if (run && (run.play.cat === "blob" || run.play.cat === "slob")) {
-					t = this.cutToInboundPlay(run, t);
+					t = this.inboundPlay(run, t);
 				} else {
-					t = this.cutToInbound(team, t, at);
+					t = this.inboundFrom(team, t, at);
 					if (run) {
 						t = this.flowToPlay(run, t);
 					}
 				}
+				into = "set";
 			} else {
-				run = call?.("cut");
-				t = run ? this.cutToPlay(run, t) : this.cutToSet(team, t);
+				t = at
+					? this.inboundFrom(team, t, at)
+					: this.ballTo(this.slots(team)[0]!, t);
+				into = "flow";
 			}
-			cut = true;
 		}
 
 		const handlerPos = this.posOf(this.holder ?? this.slots(team)[0]!);
@@ -1464,12 +1554,16 @@ class Director {
 			run = call?.("break");
 			t = run ? this.startBreak(run, t) : this.pushBreak(team, t);
 		} else if (
-			!cut &&
-			(this.inBackcourt(team, handlerPos) || this.motionTeam !== team)
+			into === "flow" ||
+			(into === undefined &&
+				(this.inBackcourt(team, handlerPos) || this.motionTeam !== team))
 		) {
 			run = call?.("flow");
+			const up = t;
 			t = run ? this.flowToPlay(run, t) : this.bringUp(team, t);
-		} else if (!cut && gap !== undefined && gap >= 7) {
+			// Up the floor, fast - until a beat before the set.
+			this.hurry(Math.max(from + 400, up - 200), t - 1000);
+		} else if (into === undefined && gap !== undefined && gap >= 7) {
 			// Still in the half court (an offensive rebound): kick it out and
 			// reset into a set - when there is time for one.
 			run = call?.("flow");
@@ -1760,46 +1854,6 @@ class Director {
 		return called ? this.running(team, called, entry, {}, gap) : undefined;
 	}
 
-	// Cut to the set: the five a step short of its spots with the ball coming
-	// up, the defense picking them up.
-	private cutToPlay(run: Running, t: number): number {
-		const tc = t + 120;
-		this.cutAt(tc);
-		const { team } = run;
-		const f = this.formation(run);
-		const dir = attackDir(team);
-		const bh = run.roles[f.ball]!;
-		run.roles.forEach((pid, r) => {
-			const S = this.at(run, f.at[r]!);
-			const back = pid === bh ? this.rand(3, 5) : this.rand(1.5, 3.5);
-			this.place(
-				pid,
-				clampPt({
-					x: S.x - dir * back,
-					y: S.y + (COURT_H / 2 - S.y) * 0.06,
-				}),
-				tc,
-				dir,
-			);
-		});
-		this.hold(bh, tc, "dribble");
-		this.placeDefense(run, tc);
-		let ready = tc + 200;
-		run.roles.forEach((pid, r) => {
-			const S = this.at(run, f.at[r]!);
-			ready = Math.max(
-				ready,
-				pid === bh
-					? this.go(pid, S, tc + 60, DRIBBLE * 0.7, "dribble", dir)
-					: this.go(pid, S, tc + 60 + r * 40, JOG * 0.7, "run"),
-			);
-		});
-		this.guardStep(run, [], tc + 80, ready);
-		this.motionTeam = team;
-		this.motion = 0;
-		return this.sizeUp(run, bh, ready + 60);
-	}
-
 	// SIZING HIM UP.
 	//
 	// Brought up the floor with time on the clock, the man with the ball does
@@ -1833,23 +1887,53 @@ class Director {
 		return back + 120;
 	}
 
-	// An inbound play: cut to it drawn up, the inbounder out of bounds with
-	// the ball.
-	private cutToInboundPlay(run: Running, t: number): number {
-		const tc = t + 120;
-		this.cutAt(tc);
+	// An inbound play: everybody to his spot in it as drawn up, the inbounder
+	// out of bounds with the ball, the defense picking them up - the walk
+	// there run through fast.
+	private inboundPlay(run: Running, t: number): number {
 		const { team, play } = run;
 		const dir = attackDir(team);
 		const bh = run.roles[play.ball]!;
-		run.roles.forEach((pid, r) => {
-			this.place(pid, this.at(run, play.start[r]!), tc, dir);
-		});
-		this.hold(bh, tc, "hold");
-		this.lookAt(bh, tc + 1, { x: rimX(team), y: COURT_H / 2 });
-		this.placeDefense(run, tc);
+		const ball = this.at(run, play.start[play.ball]!);
+		const ready = this.walkTo(
+			[
+				...run.roles.map((pid, r) => ({
+					pid,
+					at: this.at(run, play.start[r]!),
+					face: dir,
+				})),
+				...run.roles.flatMap((pid, r) => {
+					const d = this.defenderOf(pid);
+					return d === undefined
+						? []
+						: [
+								{
+									pid: d,
+									at: this.defensePoint(
+										team,
+										this.at(run, play.start[r]!),
+										ball,
+										pid === bh,
+									),
+									face: -dir as 1 | -1,
+									man: pid,
+								},
+							];
+				}),
+			],
+			t,
+		);
+		const has = this.ballTo(
+			bh,
+			Math.max(t + 300, (this.free.get(bh) ?? t) - 1200),
+		);
+		const set = Math.max(ready, has);
+		this.hold(bh, Math.max(has, this.free.get(bh) ?? 0), "hold");
+		this.lookAt(bh, set + 1, { x: rimX(team), y: COURT_H / 2 });
+		this.hurry(t + 300, set - 200);
 		this.motionTeam = team;
 		this.motion = 0;
-		return tc + 650;
+		return set + 650;
 	}
 
 	// No cut: from wherever they are into the set's spots, the ball brought
@@ -1893,7 +1977,7 @@ class Director {
 		this.guardStep(run, [], t + 150, ready);
 		this.motionTeam = team;
 		this.motion = 0;
-		return ready + 100;
+		return this.sizeUp(run, bh, ready + 100);
 	}
 
 	// A break runs from wherever they are when the ball is won; whoever the
@@ -2378,28 +2462,6 @@ class Director {
 		return clampPt(sideOn(man, p, rim.x));
 	}
 
-	private placeDefense(run: Running, tc: number) {
-		const dir = attackDir(run.team);
-		const ball =
-			this.holder !== undefined ? this.posOf(this.holder) : this.ballAt;
-		for (const pid of run.roles) {
-			const d = this.defenderOf(pid);
-			if (d !== undefined) {
-				this.place(
-					d,
-					this.defensePoint(
-						run.team,
-						this.posOf(pid),
-						ball,
-						pid === this.holder,
-					),
-					tc,
-					-dir as 1 | -1,
-				);
-			}
-		}
-	}
-
 	// A defender to his spot by `by`: sliding if it is close, running if not -
 	// shadowing `man`, if that is what the spot is for.
 	private shadow(
@@ -2741,34 +2803,43 @@ class Director {
 		t: number,
 	): number {
 		this.setOffense(t, team);
-		const tc = t + 120;
-		this.cutAt(tc);
 		const dir = attackDir(team);
 		const rim = rimPt(team);
 		const off = this.slots(team);
 		const def = this.slots(other(team));
 		const spots = this.setSpots(team, 0);
-		off.forEach((pid, j) => {
-			const s =
-				pid === lobber
-					? { x: rim.x - dir * 21, y: -1.4 }
-					: pid === shooter
-						? clampPt({ x: rim.x - dir * 17, y: 41 })
-						: (spots[j] ?? spots[0]!);
-			this.place(pid, s, tc, dir);
-		});
-		def.forEach((pid, j) => {
-			const man = this.posOf(off[j] ?? off[0]!);
-			this.place(pid, guardSpot(team, man, 0.25), tc, -dir as 1 | -1);
-		});
-		this.lookAt(lobber, tc + 1, { x: rim.x, y: rim.y });
-		this.hold(lobber, tc, "hold");
+		const target = (pid: number, j: number): Pt =>
+			pid === lobber
+				? { x: rim.x - dir * 21, y: -1.4 }
+				: pid === shooter
+					? clampPt({ x: rim.x - dir * 17, y: 41 })
+					: (spots[j] ?? spots[0]!);
+		const ready = this.walkTo(
+			[
+				...off.map((pid, j) => ({ pid, at: target(pid, j), face: dir })),
+				...def.map((pid, j) => ({
+					pid,
+					at: guardSpot(team, target(off[j] ?? off[0]!, j), 0.25),
+					face: -dir as 1 | -1,
+					man: off[j] ?? off[0]!,
+				})),
+			],
+			t,
+		);
+		const has = this.ballTo(
+			lobber,
+			Math.max(t + 300, (this.free.get(lobber) ?? t) - 1200),
+		);
+		const set = Math.max(ready, has);
+		this.hold(lobber, Math.max(has, this.free.get(lobber) ?? 0), "hold");
+		this.lookAt(lobber, set + 1, { x: rim.x, y: rim.y });
+		this.hurry(t + 300, set - 200);
 		this.motionTeam = team;
 		this.motion = 0;
 		return this.go(
 			shooter,
 			clampPt({ x: rim.x - dir * 4.2, y: 25 + 2.4 }),
-			tc + 650,
+			set + 650,
 			SPRINT,
 			"run",
 			dir,
@@ -3874,19 +3945,27 @@ class Director {
 				this.effect("whistle", T, { call: "stop", team: this.offense });
 				this.deadBall(T);
 				const ballX = this.ballAt.x;
-				// The whistle, then the picture cuts to the huddles.
-				const tc = T + 800;
-				this.cutAt(tc);
+				// The whistle, then off to the huddles - fast - and, over the
+				// break, a look round the building.
+				const there = this.walkTo(
+					([0, 1] as const).flatMap((t) => {
+						const spots = huddleSpots(t);
+						return this.slots(t).map((pid, j) => ({
+							pid,
+							at: spots[j] ?? spots[0]!,
+						}));
+					}),
+					T + 600,
+				);
 				for (const t of [0, 1] as const) {
-					const spots = huddleSpots(t);
-					this.slots(t).forEach((pid, j) => {
-						this.place(pid, spots[j] ?? spots[0]!, tc);
-						this.lookAt(pid, tc + 1, { x: benchX(t), y: 1.6 });
+					this.slots(t).forEach((pid) => {
+						this.lookAt(pid, there + 1, { x: benchX(t), y: 1.6 });
 					});
 				}
+				this.hurry(T + 800, there);
+				const tc = Math.max(T + 800, there);
 				const over = tc + (type === "timeout" ? 1700 : 1300);
 				this.beat(i, type, T, over);
-				// Over the break, a look round the building.
 				this.shots.push({ t0: tc, t1: over, kind: i % 3 ? "wide" : "crowd" });
 				const team = this.offense;
 				this.inboundAt =
@@ -4109,8 +4188,9 @@ class Director {
 				x: rim.x - dir * this.rand(1.5, 4),
 				y: 25 + this.rand(-3, 3),
 			});
-			// Out of the net and down to the floor, two bounces, and rolling.
-			this.bounce(t0 + 140, t0 + 2400, under, settle, 2, 2.2);
+			// Out of the net and down to the floor, a bounce, and taken out
+			// (see inboundAfterMake).
+			this.bounce(t0 + 140, t0 + 1350, under, settle, 1, 2.2);
 			this.effect("swish", t0 + 20, { rim: team });
 			this.effect("cheer", t0 + 60, { team });
 			let end = at + 1100;
@@ -4221,24 +4301,34 @@ class Director {
 		let ready = T;
 		const official = ftOfficialBall(team);
 		if (first) {
-			// Cut to the lineup: the defense on the blocks, the shooter at the
-			// line, the official at the side of the lane with the ball.
-			const tc = T + 150;
-			this.cutAt(tc);
+			// To the line: the defense on the blocks, the shooter at the line,
+			// the official at the side of the lane with the ball - the walk
+			// there run through fast.
+			const has = this.tossTo(official, T + 250);
+			const there = this.walkTo(
+				[
+					...def.map((pid, j) => {
+						const [dd, ac] = j < 3 ? FT_DEFENSE[j]! : FT_BACK[j - 3]!;
+						return { pid, at: spot(team, dd, ac), face: -dir as 1 | -1 };
+					}),
+					...off.map((pid, j) => {
+						const [dd, ac] = j < 2 ? FT_OFFENSE[j]! : FT_BACK[j]!;
+						return { pid, at: spot(team, dd, ac), face: dir };
+					}),
+					{ pid: shooter, at: line, face: dir },
+				],
+				T + 400,
+			);
 			def.forEach((pid, j) => {
-				const [dd, ac] = j < 3 ? FT_DEFENSE[j]! : FT_BACK[j - 3]!;
-				this.place(pid, spot(team, dd, ac), tc, -dir as 1 | -1);
-				this.lookAt(pid, tc + 1, j < 3 ? rimSpot : line);
+				this.lookAt(pid, there + 1, j < 3 ? rimSpot : line);
 			});
 			off.forEach((pid, j) => {
-				const [dd, ac] = j < 2 ? FT_OFFENSE[j]! : FT_BACK[j]!;
-				this.place(pid, spot(team, dd, ac), tc, dir);
-				this.lookAt(pid, tc + 1, j < 2 ? rimSpot : line);
+				this.lookAt(pid, there + 1, j < 2 ? rimSpot : line);
 			});
-			this.place(shooter, line, tc, dir);
-			this.lookAt(shooter, tc + 1, rimSpot);
-			this.rest(tc, official);
-			ready = tc + 300;
+			this.lookAt(shooter, there + 1, rimSpot);
+			// (And the official there to hand it to him.)
+			ready = Math.max(there, has, T + OFFICIALS_SETTLE) + 300;
+			this.hurry(T + 500, ready - 300);
 		} else if (dist(this.ballPoint(), official) > 1) {
 			// Tossed back out to the official.
 			this.fly(T, T + 650, this.ballOrigin(), official);
@@ -5276,6 +5366,8 @@ class Director {
 	private liveHands() {
 		const ball = this.ball;
 		const added: BallSeg[] = [];
+		// (Added once all are worked out: posAt reads his moves in order.)
+		const probes: [Track, Move, Move][] = [];
 		const freeThrows = this.beats.filter(
 			(bt) => bt.type === "ft" || bt.type === "missFt",
 		);
@@ -5401,16 +5493,20 @@ class Director {
 					y: P.y + (u.y * 0.8 + u.x * side * 0.6) * 2.6,
 				});
 				const m0 = td + 300 + this.rng() * Math.max(0, pick - td - 1700);
-				tr.moves.push(
+				probes.push([
+					tr,
 					{ t0: m0, t1: m0 + 420, from: { ...P }, to: Q, anim: "dribble" },
 					{ t0: m0 + 640, t1: m0 + 1160, from: Q, to: { ...P }, anim: "back" },
-				);
+				]);
 			}
 		}
 		for (const seg of added) {
 			ball.push(seg);
 		}
 		ball.sort((a, b) => a.t0 - b.t0);
+		for (const [tr, ...ms] of probes) {
+			tr.moves.push(...ms);
+		}
 		for (const tr of this.tracks.values()) {
 			tr.moves.sort((a, b) => a.t0 - b.t0);
 			tr.acts.sort((a, b) => a.t0 - b.t0);
@@ -5870,10 +5966,25 @@ class Director {
 			cuts: this.cuts,
 			shots,
 			tension: this.tension,
+			fast: hurried(this.fast),
 			end: this.T,
 		};
 	}
 }
+
+// Fast stretches in order, overlapping ones run together.
+const hurried = (list: [number, number][]): [number, number][] => {
+	const out: [number, number][] = [];
+	for (const [a, b] of [...list].sort((x, y) => x[0] - y[0])) {
+		const last = out.at(-1);
+		if (last && a <= last[1]) {
+			last[1] = Math.max(last[1], b);
+		} else {
+			out.push([a, b]);
+		}
+	}
+	return out;
+};
 
 export const compileCourt = ({
 	events,

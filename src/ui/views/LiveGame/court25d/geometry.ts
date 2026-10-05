@@ -101,6 +101,11 @@ export const FT_OFFENSE: [number, number][] = [
 	[11, 33.4],
 	[11, 16.6],
 ];
+// About how long the officials can take to get to where the game next
+// wants them (ms) - they run there (see crew.ts) - for whatever waits on
+// one: the ball handed to the shooter at the line.
+export const OFFICIALS_SETTLE = 4000;
+
 // The official who hands the shooter the ball - the lead, under the basket
 // - stands in the lane just in front of the rim, and holds it out toward
 // the line.

@@ -39,7 +39,7 @@ import { headColors, loadHead, type HeadSprite } from "./faces.ts";
 import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { bodyOf, type Body } from "./poses.ts";
-import { cameraCuts } from "./evaluate.ts";
+import { cameraCuts, fastAt } from "./evaluate.ts";
 import {
 	aimFor,
 	arenaAim,
@@ -531,7 +531,9 @@ const Court25D = ({
 			const dt = s.last === undefined ? 0 : Math.min(100, now - s.last);
 			s.last = now;
 			const target = targetForCursor(tl, p.cursor);
-			let rate = BASE_RATE * 1.2 ** (p.speed - DEFAULT_SPEED);
+			const base = BASE_RATE * 1.2 ** (p.speed - DEFAULT_SPEED);
+			// Through the dead stretches, fast.
+			let rate = base * fastAt(tl, s.t);
 			if (p.follower) {
 				// Behind the device in charge of simming: catch up, briskly.
 				const lag = target - s.t;
@@ -544,7 +546,7 @@ const Court25D = ({
 			const r = s.replay;
 			if (r) {
 				if (!p.paused) {
-					r.at += dt * rate * REPLAY_SPEED;
+					r.at += dt * base * REPLAY_SPEED;
 				}
 				if (r.at >= r.to) {
 					s.replay = undefined;
@@ -648,7 +650,7 @@ const Court25D = ({
 				s.camW = aim.width;
 				s.snapCam = false;
 			} else {
-				const secs = (dt / 1000) * Math.min(4, Math.max(1, rate));
+				const secs = (dt / 1000) * Math.min(10, Math.max(1, rate));
 				s.camX += (aim.x - s.camX) * (1 - Math.exp(-secs * 2.6));
 				s.camW += (aim.width - s.camW) * (1 - Math.exp(-secs * 1.5));
 			}
