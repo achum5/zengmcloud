@@ -20,6 +20,7 @@ import {
 	MAIN_RIG,
 	project,
 	type Camera,
+	type CourtFit,
 	type Rig,
 	type Shot,
 } from "./camera.ts";
@@ -485,17 +486,28 @@ const SHOOTING = new Set([
 	"tomahawk",
 ]);
 
-export const aimFor = (m: Moment, narrow: boolean, tl: CourtTimeline): Shot => {
+// Where the main camera looks - never tighter than `fit` lets it, so the
+// whole floor stays in the picture, sideline to sideline.
+export const aimFor = (
+	m: Moment,
+	narrow: boolean,
+	tl: CourtTimeline,
+	fit?: CourtFit,
+): Shot => {
+	const framed = (x: number, w: number): Shot => {
+		const width = Math.max(w, fit?.min ?? 0);
+		return {
+			x: Math.min(COURT_W + 12 - width / 2, Math.max(width / 2 - 12, x)),
+			width,
+			y: fit ? fit.y(width) : 24,
+		};
+	};
 	const { ball } = m;
-	// Free throws: tight on the shooter, the line and the rim.
+	// Free throws: on the shooter, the line and the rim.
 	const beat = beatAt(tl, m.t);
 	if (beat && (beat.type === "ft" || beat.type === "missFt")) {
 		const left = ball.x < COURT_W / 2;
-		return {
-			x: left ? 12.5 : COURT_W - 12.5,
-			width: narrow ? 26 : 32,
-			y: 25,
-		};
+		return framed(left ? 12.5 : COURT_W - 12.5, narrow ? 26 : 32);
 	}
 	let minX = ball.x;
 	let maxX = ball.x;
@@ -521,10 +533,10 @@ export const aimFor = (m: Moment, narrow: boolean, tl: CourtTimeline): Shot => {
 		width *= 0.86;
 		x = x * 0.6 + shooter.x * 0.4;
 	}
+	width = Math.max(width, fit?.min ?? 0);
 	const room = width / 2 - 7;
 	x = Math.min(ball.x + room, Math.max(ball.x - room, x));
-	x = Math.min(COURT_W + 12 - width / 2, Math.max(width / 2 - 12, x));
-	return { x, width, y: 24 };
+	return framed(x, width);
 };
 
 // The play-by-play line being played out at t.

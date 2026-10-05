@@ -6,8 +6,9 @@ import {
 	targetForCursor,
 	type CourtTimeline,
 } from "./director.ts";
-import { evalBall, evalPlayer } from "./evaluate.ts";
-import { bodyOf } from "./poses.ts";
+import { bodyPoint, evalBall, evalPlayer } from "./evaluate.ts";
+import { COURT_W, FT_LINE_DEPTH } from "./geometry.ts";
+import { bodyOf, posed, skeleton } from "./poses.ts";
 import { compile, fakeGame, gidOf } from "./testGame.ts";
 import { finishOf } from "../../../util/liveGameWording.basketball.ts";
 
@@ -436,6 +437,66 @@ describe("2.5D director", () => {
 
 	// Every free throw: the official bounces him the ball, he dribbles, shoots
 	// and holds his follow-through until the ball gets to the rim.
+	// A three is a three: both feet behind the line, toes and all, as he goes
+	// up - at the top, on the wings and in the corners, where the line runs
+	// 22 feet out along the sideline.
+	test("a three goes up with his feet behind the line", () => {
+		const past = (team: number, x: number, y: number) => {
+			const depth = team === 0 ? x : COURT_W - x;
+			return depth < 14
+				? Math.abs(y - 25) - 22
+				: Math.hypot(depth - 5.25, y - 25) - 23.75;
+		};
+		let threes = 0;
+		for (const seed of ["a", "b", "c"]) {
+			const { events, tl } = compile(seed);
+			for (const b of tl.beats) {
+				const e = events[b.i]!;
+				if (e.type !== "fgaTp") {
+					continue;
+				}
+				const pid = e.pid as number;
+				const tr = tl.tracks.get(pid)!;
+				const act = tr.acts.find(
+					(a) =>
+						(a.anim === "shoot" || a.anim === "fade") &&
+						a.t0 >= b.preStart &&
+						a.t0 <= b.end + 2000,
+				);
+				if (!act) {
+					continue;
+				}
+				threes += 1;
+				for (const u of [0, 0.15, 0.3]) {
+					const t = act.t0 + (act.t1 - act.t0) * u;
+					const st = evalPlayer(tl, pid, t);
+					const sk = skeleton(
+						body,
+						posed(st.anim, st.phase, st.dribble, st.dribbleHand),
+					);
+					for (const leg of [sk.legR, sk.legL]) {
+						const a = leg.end;
+						const tip = leg.tip!;
+						// The front of his shoe, a little past his toes.
+						for (const k of [-0.4, 1.3]) {
+							const p = bodyPoint(st, {
+								f: a.f + (tip.f - a.f) * k,
+								s: a.s + (tip.s - a.s) * k,
+								u: 0,
+							});
+							assert.isAbove(
+								past(tr.team, p.x, p.y),
+								0.05,
+								`${seed} ${b.i} at ${t}`,
+							);
+						}
+					}
+				}
+			}
+		}
+		assert.isAbove(threes, 30);
+	});
+
 	test("a free throw has the shooter's routine", () => {
 		for (const seed of ["a", "b"]) {
 			const { events, tl } = compile(seed);
@@ -464,16 +525,22 @@ describe("2.5D director", () => {
 					),
 					`${seed} ${b.i}`,
 				);
-				assert.isTrue(
-					segs.some(
-						(g) =>
-							g.kind === "fly" &&
-							!("pid" in g.from) &&
-							!("pid" in g.to) &&
-							g.from.z > 3,
-					),
-					`${seed} ${b.i}`,
+				const bounce = segs.find(
+					(g) =>
+						g.kind === "fly" &&
+						!("pid" in g.from) &&
+						!("pid" in g.to) &&
+						g.from.z > 3,
 				);
+				assert.isDefined(bounce, `${seed} ${b.i}`);
+				// Bounced in from under the basket, to a shooter behind the line.
+				const team = tl.tracks.get(pid)!.team;
+				const depth = (x: number) => (team === 0 ? x : COURT_W - x);
+				if (bounce?.kind === "fly" && !("pid" in bounce.from)) {
+					assert.isBelow(depth(bounce.from.x), 8, `${seed} ${b.i}`);
+				}
+				const st = evalPlayer(tl, pid, shot!.t0);
+				assert.isAbove(depth(st.x), FT_LINE_DEPTH + 0.8, `${seed} ${b.i}`);
 				checked += 1;
 			}
 			assert.isAbove(checked, 4);

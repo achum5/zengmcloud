@@ -38,6 +38,10 @@ const loadImage = (src: string, crossOrigin: boolean) =>
 		img.src = src;
 	});
 
+// Nobody plays in a cap (or a Santa hat): off it comes. Headbands and eye
+// black stay - they belong on a court.
+const CAPS = new Set(["hat", "hat2", "hat3", "santa-hat"]);
+
 const faceSprite = async (
 	face: FaceConfig,
 	colors: [string, string, string] | undefined,
@@ -46,6 +50,9 @@ const faceSprite = async (
 	const overrides: Record<string, unknown> = {};
 	if (colors) {
 		overrides.teamColors = colors;
+	}
+	if (CAPS.has(face.accessories?.id)) {
+		overrides.accessories = { id: "none" };
 	}
 	if (shave !== undefined) {
 		overrides.head = { shave };

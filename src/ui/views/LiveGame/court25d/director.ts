@@ -17,7 +17,7 @@ import {
 	dist,
 	FT_BACK,
 	FT_DEFENSE,
-	FT_LINE_DEPTH,
+	FT_SHOOTER_DEPTH,
 	FT_OFFENSE,
 	ftOfficialBall,
 	guardSpot,
@@ -2327,11 +2327,13 @@ class Director {
 				25 + this.rand(-10, 10),
 			);
 		}
+		// A three: far enough out that his toes are behind the line too - in
+		// the corner, the line runs 22 feet out along the sideline.
 		if (zone === "three" && this.rng() < 0.28) {
 			return spot(
 				team,
 				this.rand(2.5, 9),
-				this.rng() < 0.5 ? this.rand(1.6, 2.6) : this.rand(47.4, 48.4),
+				this.rng() < 0.5 ? this.rand(1.3, 1.9) : this.rand(48.1, 48.7),
 			);
 		}
 		const [r0, r1, th0, th1] =
@@ -2341,7 +2343,7 @@ class Director {
 					? [4.5, 9.5, 30, 150]
 					: zone === "midRange"
 						? [11, 19, 20, 160]
-						: [24.4, 26.4, 32, 148];
+						: [25.1, 27, 32, 148];
 		const r = this.rand(r0, r1);
 		const th = (this.rand(th0, th1) * Math.PI) / 180;
 		const depth = Math.max(1.5, 5.25 + r * Math.sin(th));
@@ -3742,7 +3744,7 @@ class Director {
 		);
 		this.lastFtShooter = shooter;
 		this.setOffense(T, team);
-		const line = spot(team, FT_LINE_DEPTH, 25);
+		const line = spot(team, FT_SHOOTER_DEPTH, 25);
 		const rimSpot = { x: rimX(team), y: 25 };
 		const tall = (t: Side) =>
 			this.slots(t).sort(

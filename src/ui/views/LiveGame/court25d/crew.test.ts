@@ -32,6 +32,12 @@ describe("2.5D crew", () => {
 			crew.filter((m) => m.role === role).length;
 		assert.strictEqual(count(a, "ref"), 3);
 		assert.strictEqual(count(a, "coach"), 2);
+		// No caps, Santa hats or headbands on officials and coaches.
+		for (const seed of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
+			for (const m of crewFor(seed, AWAY, HOME)) {
+				assert.strictEqual(m.face.accessories.id, "none", m.role);
+			}
+		}
 		assert.isAbove(count(a, "photo"), 3);
 		// A team's coach is its own, whoever and wherever it plays.
 		const b = crewFor(912, HOME, AWAY);
@@ -112,6 +118,34 @@ describe("2.5D crew", () => {
 			assert.isAbove(calls, 10);
 			assert.isAbove(threes, 0);
 		}
+	});
+
+	test("at the line, the official under the basket bounces the shooter the ball", () => {
+		const { tl, crew } = working("a");
+		let checked = 0;
+		for (const g of tl.ball) {
+			if (
+				g.kind !== "fly" ||
+				"pid" in g.from ||
+				"pid" in g.to ||
+				g.from.z < 3 ||
+				g.to.z > 1
+			) {
+				continue;
+			}
+			const from = g.from;
+			const refs = crewAt(tl, g.t0 - 60, crew).states.filter((s) =>
+				isRef(s.pid),
+			);
+			const near = Math.min(
+				...refs.map((r) => Math.hypot(r.x - from.x, r.y - from.y)),
+			);
+			assert.isBelow(near, 1.6, `at ${g.t0}`);
+			// Under the basket: nearer the end line than the line.
+			assert.isTrue(from.x < 9 || from.x > COURT_W - 9, `at ${g.t0}`);
+			checked += 1;
+		}
+		assert.isAbove(checked, 4);
 	});
 
 	test("the opening tip is thrown up by an official at center court", () => {

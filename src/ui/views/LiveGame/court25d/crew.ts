@@ -16,6 +16,8 @@ import {
 	COURT_H,
 	COURT_W,
 	FT_LINE_DEPTH,
+	FT_OFFICIAL,
+	FT_SHOOTER_DEPTH,
 	ftOfficialBall,
 	other,
 	RIM_Z,
@@ -60,12 +62,14 @@ type TeamLike = {
 };
 
 // faces.js draws on Math.random; seeded here, so the same people turn up
-// every time the game is shown.
+// every time the game is shown. Officials and coaches wear nothing on their
+// heads - no caps, no headbands.
 const faceFor = (seed: string, female: boolean): FaceConfig => {
 	const real = Math.random;
 	Math.random = makeCourtRng(`face|${seed}`);
 	try {
-		return generate(undefined, { gender: female ? "female" : "male" });
+		const face = generate(undefined, { gender: female ? "female" : "male" });
+		return { ...face, accessories: { ...face.accessories, id: "none" } };
 	} finally {
 		Math.random = real;
 	}
@@ -345,10 +349,32 @@ const yawTo = (from: Pt, to: Pt) => Math.atan2(to.y - from.y, to.x - from.x);
 
 // ---- the officials ----------------------------------------------------------------
 
-// Where the official who hands the shooter the ball stands: just behind it.
-const ftAdminAt = (team: Side): Pt => {
+// Where the official who hands the shooter the ball stands: under the
+// basket, in the lane, the ball held out in front of him.
+const ftAdminAt = (team: Side): Pt => spot(team, ...FT_OFFICIAL);
+
+// The ball still his at the line: resting in his hands, on its way to him,
+// or only just bounced in.
+const withOfficial = (tl: CourtTimeline, t: number, team: Side): boolean => {
 	const ball = ftOfficialBall(team);
-	return { x: ball.x, y: ball.y - 1.3 };
+	const near = (p: BallEnd) =>
+		!("pid" in p) && Math.hypot(p.x - ball.x, p.y - ball.y) < 0.6;
+	const seg = tl.ball[lastIndex(tl.ball, t, (b) => b.t0)];
+	if (!seg) {
+		return false;
+	}
+	return (
+		(seg.kind === "rest" && near(seg.at)) ||
+		(seg.kind === "fly" &&
+			(near(seg.to) || (near(seg.from) && t < seg.t0 + 250)))
+	);
+};
+
+// The last of a trip to the line.
+const lastFreeThrow = (tl: CourtTimeline, t: number): boolean => {
+	const i = lastIndex(tl.beats, t, (b) => b.preStart);
+	const next = tl.beats[i + 1];
+	return !next || (next.type !== "ft" && next.type !== "missFt");
 };
 
 // The three of them, by crew position: the lead under the basket the ball is
@@ -368,16 +394,21 @@ const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 		];
 	}
 	if (beat?.type === "ft" || beat?.type === "missFt") {
-		// Free throws: the trail hands the shooter the ball from the side of
-		// the lane, the lead is on the end line, the slot across from the line.
+		// Free throws: the lead, under the basket, bounces the shooter the
+		// ball from the lane - and once the last one is in his hands, steps
+		// out to the end line. The trail stands out by the arc on the table
+		// side, the slot across from the line.
 		const team = offenseAt(tl, t);
 		const d = attackDir(team);
 		const X = (depth: number) => (d > 0 ? COURT_W - depth : depth);
-		const admin = ftAdminAt(team);
-		const lead = { x: X(-1.4), y: 33 };
+		const lead =
+			lastFreeThrow(tl, t) && !withOfficial(tl, t, team)
+				? { x: X(-1.3), y: 36.5 }
+				: ftAdminAt(team);
+		const trail = { x: X(29), y: 3.2 };
 		const slot = { x: X(FT_LINE_DEPTH), y: COURT_H + 1.2 };
 		const k = lastIndex(tl.poss, t, (p) => p[0]);
-		return k % 2 === 0 ? [lead, admin, slot] : [admin, lead, slot];
+		return k % 2 === 0 ? [lead, trail, slot] : [trail, lead, slot];
 	}
 	if (beat?.type === "jumpBall") {
 		const toss = nextFx(tl, beat.preStart, "toss");
@@ -649,7 +680,7 @@ const refStates = (
 		let yaw = speed > 9 ? Math.atan2(v.y, v.x) : yawTo(p, ball);
 		if (ftTeam !== undefined && dist(p, ftAdminAt(ftTeam)) < 0.8) {
 			// The one with the ball at the line: facing the shooter.
-			yaw = yawTo(p, spot(ftTeam, FT_LINE_DEPTH, 25));
+			yaw = yawTo(p, spot(ftTeam, FT_SHOOTER_DEPTH, 25));
 			if (handing) {
 				({ anim, phase } = handing);
 			}

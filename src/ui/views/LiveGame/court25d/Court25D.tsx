@@ -18,7 +18,7 @@ import {
 	paintStands,
 	paintTable,
 } from "./arena.ts";
-import { makeCamera, MAIN_RIG, REPLAY_RIG } from "./camera.ts";
+import { courtFit, makeCamera, MAIN_RIG, REPLAY_RIG } from "./camera.ts";
 import { courtTexture } from "./courtTexture.ts";
 import { adjust, artFor, makeResolution } from "./resolution.ts";
 import { makeScratch, makeSpriteCache } from "./sprite.ts";
@@ -638,9 +638,11 @@ const Court25D = ({
 			);
 			// Over a break, a look round the building.
 			const view = replay ? undefined : arenaAim(tl, s.t, p.narrow);
+			// Following the play, the whole floor stays in the picture.
+			const fit = replay || view ? undefined : courtFit(fw / fh);
 			const aim = replay
 				? replayAim(moment, p.narrow)
-				: (view?.shot ?? aimFor(moment, p.narrow, tl));
+				: (view?.shot ?? aimFor(moment, p.narrow, tl, fit));
 			if (s.snapCam) {
 				s.camX = aim.x;
 				s.camW = aim.width;
@@ -651,7 +653,12 @@ const Court25D = ({
 				s.camW += (aim.width - s.camW) * (1 - Math.exp(-secs * 1.5));
 			}
 			const cam = makeCamera(
-				{ x: s.camX, width: s.camW, y: aim.y, z: aim.z },
+				{
+					x: s.camX,
+					width: s.camW,
+					y: fit ? fit.y(s.camW) : aim.y,
+					z: aim.z,
+				},
 				fw,
 				fh,
 				replay ? REPLAY_RIG : (view?.rig ?? MAIN_RIG),

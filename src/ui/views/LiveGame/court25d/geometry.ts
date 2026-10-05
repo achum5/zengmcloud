@@ -90,6 +90,8 @@ export const huddleSpots = (t: Side): Pt[] => {
 // Free throw alignment, by depth from the shooting team's baseline: the
 // defense takes the blocks nearest the rim, the offense the spots between.
 export const FT_LINE_DEPTH = 19;
+// The shooter toes the line from behind it.
+export const FT_SHOOTER_DEPTH = FT_LINE_DEPTH + 1.15;
 export const FT_DEFENSE: [number, number][] = [
 	[7, 16.6],
 	[7, 33.4],
@@ -99,11 +101,12 @@ export const FT_OFFENSE: [number, number][] = [
 	[11, 33.4],
 	[11, 16.6],
 ];
-// Where the official who hands the shooter the ball holds it out: a few
-// feet back from the line on the far side of the lane - off the shooter's
-// shoulder from the camera, clear of the players on the lane.
+// The official who hands the shooter the ball - the lead, under the basket
+// - stands in the lane just in front of the rim, and holds it out toward
+// the line.
+export const FT_OFFICIAL: [number, number] = [5.2, 25.4];
 export const ftOfficialBall = (t: Side): Pt3 => ({
-	...spot(t, FT_LINE_DEPTH + 3.2, 18.4),
+	...spot(t, FT_OFFICIAL[0] + 0.85, FT_OFFICIAL[1]),
 	z: 3.6,
 });
 export const FT_BACK: [number, number][] = [

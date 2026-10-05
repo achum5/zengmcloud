@@ -154,3 +154,74 @@ export const depthOf = (cam: Camera, p: Pt3): number =>
 	cam.upright
 		? dot({ x: p.x - cam.pos.x, y: p.y - cam.pos.y, z: -cam.pos.z }, cam.fwd)
 		: dot(sub(p, cam.pos), cam.fwd);
+
+// THE WHOLE FLOOR IN THE PICTURE.
+//
+// However the main camera follows the play, it never goes so tight that a
+// sideline leaves the picture: the near sideline sits just above the bottom
+// edge, and the far one, with the heads of the players on it, below the top.
+// For a picture of a given shape (width over height) that sets the narrowest
+// shot across the floor there can be, and - for any shot at least that wide -
+// the line across the floor to aim at.
+const FIT_TOP = 0.05;
+const FIT_BOTTOM = 0.985;
+
+const edgesAt = (aspect: number, width: number, y: number) => {
+	const cam = makeCamera({ x: COURT_W / 2, width, y }, aspect * 100, 100);
+	return {
+		top: project(cam, { x: COURT_W / 2, y: -0.5, z: 7 }).y / 100,
+		bottom: project(cam, { x: COURT_W / 2, y: COURT_H + 0.5, z: 0 }).y / 100,
+	};
+};
+
+// Aiming nearer the camera moves the floor up the picture: the aim that
+// puts the near sideline right at the bottom.
+const aimY = (aspect: number, width: number): number => {
+	let lo = -10;
+	let hi = COURT_H + 10;
+	for (let i = 0; i < 28; i++) {
+		const mid = (lo + hi) / 2;
+		if (edgesAt(aspect, width, mid).bottom > FIT_BOTTOM) {
+			lo = mid;
+		} else {
+			hi = mid;
+		}
+	}
+	return (lo + hi) / 2;
+};
+
+export type CourtFit = { min: number; y: (width: number) => number };
+const fits = new Map<number, CourtFit>();
+export const courtFit = (aspect: number): CourtFit => {
+	const key = Math.round(aspect * 100);
+	let fit = fits.get(key);
+	if (!fit) {
+		const a = key / 100;
+		// Wider shows the far side's heads lower in the picture.
+		let lo = 10;
+		let hi = 200;
+		for (let i = 0; i < 28; i++) {
+			const mid = (lo + hi) / 2;
+			if (edgesAt(a, mid, aimY(a, mid)).top < FIT_TOP) {
+				lo = mid;
+			} else {
+				hi = mid;
+			}
+		}
+		const ys = new Map<number, number>();
+		fit = {
+			min: hi,
+			y: (width) => {
+				const w = Math.round(Math.max(hi, width) * 4) / 4;
+				let y = ys.get(w);
+				if (y === undefined) {
+					y = aimY(a, w);
+					ys.set(w, y);
+				}
+				return y;
+			},
+		};
+		fits.set(key, fit);
+	}
+	return fit;
+};
