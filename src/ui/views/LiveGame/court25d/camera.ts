@@ -40,17 +40,20 @@ const norm = (a: Pt3): Pt3 => {
 // Where the camera stands: the main camera high above the near sideline,
 // looking down on the half court the way an arcade game does, or the low
 // replay camera courtside. `slide` is how far it tracks along the sideline
-// with the play (the rest it pans). The main camera is upright: from that
-// high, true perspective would squash every player into the floor, so the
-// floor alone keeps it and the players, the ball and the baskets stand up
-// on it at their full height - the way a cartoon court is drawn.
+// with the play (the rest it pans). The main camera slides all the way,
+// never turning - straight across the floor, like an arcade game's - which
+// also lets the floor and the stands be drawn a row at a time (see
+// planes.ts). It is upright: from that high, true perspective would squash
+// every player into the floor, so the floor alone keeps it and the players,
+// the ball and the baskets stand up on it at their full height - the way a
+// cartoon court is drawn.
 export type Rig = {
 	back: number;
 	high: number;
 	slide: number;
 	upright: boolean;
 };
-export const MAIN_RIG: Rig = { back: 70, high: 62, slide: 0.85, upright: true };
+export const MAIN_RIG: Rig = { back: 70, high: 62, slide: 1, upright: true };
 export const REPLAY_RIG: Rig = {
 	back: 24,
 	high: 8.5,

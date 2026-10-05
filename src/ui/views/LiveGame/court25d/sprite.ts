@@ -98,8 +98,9 @@ const parseColor = (c: string): RGB => {
 };
 
 // Everything his body is drawn in: each color, dimmed for the far side of
-// him, and in shadow.
-type Palette = { colors: RGB[]; memo: Map<number, number> };
+// him, and in shadow - and every color already matched to one of them (by
+// its first five bits a channel; -1 until asked).
+type Palette = { colors: RGB[]; memo: Int16Array };
 const palettes = new WeakMap<Look, Palette>();
 const ballPalettes = new WeakMap<Look, Palette>();
 const paletteOf = (look: Look, ball = false): Palette => {
@@ -159,27 +160,32 @@ const paletteOf = (look: Look, ball = false): Palette => {
 			add(c);
 		}
 		colors.push(OUTLINE);
-		pal = { colors, memo: new Map() };
+		pal = { colors, memo: new Int16Array(1 << 15).fill(-1) };
 		(ball ? ballPalettes : palettes).set(look, pal);
 	}
 	return pal;
 };
 
 const nearest = (pal: Palette, r: number, g: number, b: number): number => {
-	const key = (r << 16) | (g << 8) | b;
-	let i = pal.memo.get(key);
-	if (i === undefined) {
+	const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
+	let i = pal.memo[key]!;
+	if (i < 0) {
+		// Matched from the middle of its little cube of colors, so the answer
+		// is the same whichever pixel asks first.
+		const rc = (r & 0xf8) | 4;
+		const gc = (g & 0xf8) | 4;
+		const bc = (b & 0xf8) | 4;
 		let best = Infinity;
 		i = 0;
 		for (let j = 0; j < pal.colors.length; j++) {
 			const c = pal.colors[j]!;
-			const d = (c[0] - r) ** 2 + (c[1] - g) ** 2 + (c[2] - b) ** 2;
+			const d = (c[0] - rc) ** 2 + (c[1] - gc) ** 2 + (c[2] - bc) ** 2;
 			if (d < best) {
 				best = d;
 				i = j;
 			}
 		}
-		pal.memo.set(key, i);
+		pal.memo[key] = i;
 	}
 	return i;
 };
@@ -197,7 +203,6 @@ export const makeScratch = (): Scratch => {
 		ctx: canvas.getContext("2d", { willReadFrequently: true })!,
 	};
 };
-
 // Every pixel either there or not.
 const snapAlpha = (d: Uint8ClampedArray) => {
 	for (let i = 3; i < d.length; i += 4) {
@@ -206,8 +211,11 @@ const snapAlpha = (d: Uint8ClampedArray) => {
 };
 
 // A one-pixel outline round everything that is there.
+let solid = new Uint8Array(0);
 const outline = (d: Uint8ClampedArray, w: number, h: number) => {
-	const solid = new Uint8Array(w * h);
+	if (solid.length < w * h) {
+		solid = new Uint8Array(w * h * 2);
+	}
 	for (let i = 0; i < w * h; i++) {
 		solid[i] = d[i * 4 + 3]! > 0 ? 1 : 0;
 	}
@@ -222,6 +230,51 @@ const outline = (d: Uint8ClampedArray, w: number, h: number) => {
 				(x < w - 1 && solid[i + 1]) ||
 				(y > 0 && solid[i - w]) ||
 				(y < h - 1 && solid[i + w])
+			) {
+				d[i * 4] = OUTLINE[0];
+				d[i * 4 + 1] = OUTLINE[1];
+				d[i * 4 + 2] = OUTLINE[2];
+				d[i * 4 + 3] = 255;
+			}
+		}
+	}
+};
+
+// Hard edges on what was just drawn over a w x h box of a sprite whose
+// earlier pixels are `before` (bw wide, the box at x0, y0) - and a one-pixel
+// outline round it, wherever it was new: what was there already has its own.
+let fresh = new Uint8Array(0);
+const outlineNew = (
+	d: Uint8ClampedArray,
+	w: number,
+	h: number,
+	before: Uint8ClampedArray,
+	bw: number,
+	x0: number,
+	y0: number,
+) => {
+	if (fresh.length < w * h) {
+		fresh = new Uint8Array(w * h * 2);
+	}
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			const i = y * w + x;
+			const on = d[i * 4 + 3]! >= 120;
+			d[i * 4 + 3] = on ? 255 : 0;
+			fresh[i] = on && before[((y0 + y) * bw + x0 + x) * 4 + 3] === 0 ? 1 : 0;
+		}
+	}
+	for (let y = 0; y < h; y++) {
+		for (let x = 0; x < w; x++) {
+			const i = y * w + x;
+			if (d[i * 4 + 3] !== 0) {
+				continue;
+			}
+			if (
+				(x > 0 && fresh[i - 1]) ||
+				(x < w - 1 && fresh[i + 1]) ||
+				(y > 0 && fresh[i - w]) ||
+				(y < h - 1 && fresh[i + w])
 			) {
 				d[i * 4] = OUTLINE[0];
 				d[i * 4 + 1] = OUTLINE[1];
@@ -397,13 +450,15 @@ export const drawSprite = (
 	s.setTransform(1, 0, 0, 1, 0, 0);
 	const img = s.getImageData(0, 0, w, h);
 	const d = img.data;
-	snapAlpha(d);
-	// Every color pulled to his palette.
+	// Every pixel either there or not, and every color pulled to his
+	// palette.
 	const pal = paletteOf(look, anchors.holding);
 	for (let i = 0; i < d.length; i += 4) {
-		if (d[i + 3] === 0) {
+		if (d[i + 3]! < 120) {
+			d[i + 3] = 0;
 			continue;
 		}
+		d[i + 3] = 255;
 		const c = pal.colors[nearest(pal, d[i]!, d[i + 1]!, d[i + 2]!)]!;
 		d[i] = c[0];
 		d[i + 1] = c[1];
@@ -450,11 +505,26 @@ export const drawSprite = (
 			);
 		}
 	}
+	outline(d, w, h);
 	s.putImageData(img, 0, 0);
-	// His face, shrunk to the sprite's scale.
+	// His face, shrunk to the sprite's scale - then hard edges and the
+	// outline round it, just where it is new: the rest of him is done.
 	s.setTransform(1 / px, 0, 0, 1 / px, -ox / px, -oy / px);
 	drawHeadAt(s, cam, posed, body, look);
 	s.setTransform(1, 0, 0, 1, 0, 0);
+	const hr = anchors.head.r / px;
+	const hx0 = Math.max(
+		0,
+		Math.floor((anchors.head.x - ox) / px - hr * 1.9) - 2,
+	);
+	const hy0 = Math.max(0, Math.floor((anchors.head.y - oy) / px - hr * 2) - 2);
+	const hx1 = Math.min(w, Math.ceil((anchors.head.x - ox) / px + hr * 1.9) + 2);
+	const hy1 = Math.min(h, Math.ceil((anchors.head.y - oy) / px + hr * 1.6) + 2);
+	if (hx1 > hx0 && hy1 > hy0) {
+		const face = s.getImageData(hx0, hy0, hx1 - hx0, hy1 - hy0);
+		outlineNew(face.data, hx1 - hx0, hy1 - hy0, d, w, hx0, hy0);
+		s.putImageData(face, hx0, hy0);
+	}
 	if (anchors.over) {
 		// An arm up in front of his face goes over it: drawn on its own, in his
 		// palette, outlined so it reads against his face.
@@ -485,10 +555,6 @@ export const drawSprite = (
 		t.ctx.putImageData(top, 0, 0);
 		s.drawImage(t.canvas, 0, 0, w, h, 0, 0, w, h);
 	}
-	const img2 = s.getImageData(0, 0, w, h);
-	snapAlpha(img2.data);
-	outline(img2.data, w, h);
-	s.putImageData(img2, 0, 0);
 
 	// Kept for next time, as its own little canvas.
 	let src: HTMLCanvasElement = canvas;

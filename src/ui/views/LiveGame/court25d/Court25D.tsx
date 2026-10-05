@@ -20,6 +20,7 @@ import {
 } from "./arena.ts";
 import { makeCamera, MAIN_RIG, REPLAY_RIG } from "./camera.ts";
 import { courtTexture } from "./courtTexture.ts";
+import { adjust, artFor, makeResolution } from "./resolution.ts";
 import { makeScratch, makeSpriteCache } from "./sprite.ts";
 import {
 	buildClocks,
@@ -514,7 +515,9 @@ const Court25D = ({
 		// The picture is drawn small - pixel art - and the page blows it up
 		// without smoothing (see the canvas's style).
 		const scratch = makeScratch();
-		const sprites = makeSpriteCache();
+		let sprites = makeSpriteCache();
+		// How fine the picture is: as fine as this device can draw it.
+		const res = makeResolution(performance.now() + 1500);
 		const lookOf = (pid: number) => looks.current.get(pid)!;
 		const bodyOfPid = (pid: number) => bodies.current.get(pid) ?? bodyOf();
 
@@ -616,11 +619,9 @@ const Court25D = ({
 			if (w <= 0 || h <= 0) {
 				return;
 			}
-			// The picture: at most about 360 pixel-art pixels tall - chunky
-			// enough to read as pixel art, fine enough to show a hand on the
-			// ball, small enough to draw quickly - each a whole number of device
-			// pixels.
-			const art = Math.max(1, Math.ceil((h * dpr) / 360));
+			// The picture: fine (see resolution.ts), each of its pixels a whole
+			// number of the screen's.
+			const art = artFor(h * dpr, res);
 			const fw = Math.ceil((w * dpr) / art);
 			const fh = Math.ceil((h * dpr) / art);
 			if (canvas.width !== fw || canvas.height !== fh) {
@@ -692,6 +693,7 @@ const Court25D = ({
 			const pt = paintRef.current;
 			const cr = crewRef.current;
 			const working = crewAt(tl, moment.t, cr.crew);
+			const drawStart = performance.now();
 			drawFrame({
 				ctx,
 				scratch,
@@ -718,15 +720,19 @@ const Court25D = ({
 					bench: [pt.bench0, pt.bench1],
 				},
 				crowd: { up, wave },
-				// Lettering about 10 CSS pixels tall: a 7-pixel font, each of
+				// Lettering at least 10 CSS pixels tall: a 7-pixel font, each of
 				// its pixels this many picture pixels.
-				textScale: Math.max(1, Math.round(10 / ((7 * art) / dpr))),
+				textScale: Math.max(1, Math.ceil(10 / ((7 * art) / dpr))),
 				crew: working.states.flatMap((st) => {
 					const c = cr.crewLooks.get(st.pid);
 					return c ? [{ st, body: c.body, look: c.look }] : [];
 				}),
 				flashes: working.flashes,
 			});
+			if (adjust(res, h * dpr, dt, performance.now() - drawStart, now)) {
+				// Sprites drawn for the old size are no use at the new one.
+				sprites = makeSpriteCache();
+			}
 
 			if (clockText !== s.clockText && clockRef.current) {
 				s.clockText = clockText;
