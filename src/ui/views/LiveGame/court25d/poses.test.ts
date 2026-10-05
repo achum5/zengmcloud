@@ -1,5 +1,13 @@
 import { assert, describe, test } from "vitest";
-import { ANIMS, bodyOf, poseAt, skeleton, type AnimName } from "./poses.ts";
+import {
+	ANIMS,
+	bodyOf,
+	gripOf,
+	holdBall,
+	poseAt,
+	skeleton,
+	type AnimName,
+} from "./poses.ts";
 
 describe("2.5D poses", () => {
 	// A body is anchored at its feet and jumps are added on top, so every
@@ -28,6 +36,29 @@ describe("2.5D poses", () => {
 					// The head is on top of the shoulders.
 					assert.isAbove(sk.head.u, sk.chest.u, `${anim} ${k}`);
 				}
+			}
+		}
+	});
+
+	test("a held ball is in his hands, whatever the move", () => {
+		const body = bodyOf(80, 230);
+		for (const anim of Object.keys(ANIMS) as AnimName[]) {
+			for (let k = 0; k <= 12; k++) {
+				const { sk, ball } = holdBall(body, poseAt(anim, k / 12), anim);
+				const d = (h: { f: number; s: number; u: number }) =>
+					Math.hypot(h.f - ball.f, h.s - ball.s, h.u - ball.u);
+				// The shooting hand under it, or palming it - and in a two-hand
+				// hold the other hand on its side too. (Up on a jumper the guide
+				// hand only gets as close as a cartoon's short arm reaches.)
+				assert.isBelow(d(sk.armR.end), 0.75, `${anim} ${k}`);
+				if (gripOf(anim) === "two") {
+					assert.isBelow(d(sk.armL.end), 0.75, `${anim} ${k}`);
+				}
+				// Out in front of him or up over his head, not in his chest.
+				assert.isTrue(
+					ball.f > sk.chest.f + 0.2 || ball.u > sk.chest.u + 0.5,
+					`${anim} ${k}`,
+				);
 			}
 		}
 	});

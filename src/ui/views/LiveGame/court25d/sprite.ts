@@ -1,6 +1,9 @@
 import { project, type Camera } from "./camera.ts";
 import type { PlayerState } from "./evaluate.ts";
 import {
+	BALL_SEAM,
+	BALL_SHADE,
+	BALL_ORANGE,
 	drawFigure,
 	drawHeadAt,
 	shade,
@@ -96,8 +99,9 @@ const parseColor = (c: string): RGB => {
 // him, and in shadow.
 type Palette = { colors: RGB[]; memo: Map<number, number> };
 const palettes = new WeakMap<Look, Palette>();
-const paletteOf = (look: Look): Palette => {
-	let pal = palettes.get(look);
+const ballPalettes = new WeakMap<Look, Palette>();
+const paletteOf = (look: Look, ball = false): Palette => {
+	let pal = (ball ? ballPalettes : palettes).get(look);
 	if (!pal) {
 		const k = look.kit;
 		const seen = new Set<string>();
@@ -129,12 +133,13 @@ const paletteOf = (look: Look): Palette => {
 			k.sock,
 			k.shoe,
 			k.sole,
+			...(ball ? [BALL_ORANGE, BALL_SHADE, BALL_SEAM] : []),
 		]) {
 			add(c);
 		}
 		colors.push(OUTLINE);
 		pal = { colors, memo: new Map() };
-		palettes.set(look, pal);
+		(ball ? ballPalettes : palettes).set(look, pal);
 	}
 	return pal;
 };
@@ -271,6 +276,8 @@ export const makeSpriteCache = (): SpriteCache => ({
 });
 const KEEP = 700;
 const CYCLE_FRAMES = 8;
+// Steps through a bounce for the dribbling hand.
+const DRIBBLE_FRAMES = 8;
 const ACT_FRAMES = 12;
 const TURNS = 16;
 
@@ -287,6 +294,10 @@ const stepped = (st: PlayerState) => {
 		phase,
 		turn: ((turn % TURNS) + TURNS) % TURNS,
 		yaw: (turn * Math.PI * 2) / TURNS,
+		dribble:
+			st.dribble === undefined
+				? undefined
+				: Math.floor(st.dribble * DRIBBLE_FRAMES) / DRIBBLE_FRAMES,
 	};
 };
 
@@ -324,7 +335,7 @@ export const drawSprite = (
 		}
 		key = `${id}|${st.anim}|${pose.phase}|${pose.turn}|${Math.round(
 			Math.log(k) / Math.log(1.04),
-		)}|${px}`;
+		)}|${px}|${st.holding ? 1 : 0}|${pose.dribble ?? ""}`;
 		const kept = cache.kept.get(key);
 		if (kept) {
 			const smoothing = ctx.imageSmoothingEnabled;
@@ -346,6 +357,7 @@ export const drawSprite = (
 		z: 0,
 		phase: pose.phase,
 		yaw: pose.yaw,
+		dribble: pose.dribble,
 	};
 	const w = Math.max(4, Math.ceil((right - left) / px) + 2);
 	const h = Math.max(4, Math.ceil((lower - upper) / px) + 2);
@@ -366,7 +378,7 @@ export const drawSprite = (
 	const d = img.data;
 	snapAlpha(d);
 	// Every color pulled to his palette.
-	const pal = paletteOf(look);
+	const pal = paletteOf(look, anchors.holding);
 	for (let i = 0; i < d.length; i += 4) {
 		if (d[i + 3] === 0) {
 			continue;
@@ -376,7 +388,14 @@ export const drawSprite = (
 		d[i + 1] = c[1];
 		d[i + 2] = c[2];
 	}
-	if (anchors.number.side !== 0) {
+	// A ball held in front of his jersey hides the lettering behind it.
+	const b = anchors.ball;
+	const hidden =
+		b !== undefined &&
+		b.front &&
+		Math.abs(b.x - anchors.number.x) < b.r + anchors.number.h * 0.5 &&
+		Math.abs(b.y - anchors.number.y) < b.r + anchors.number.h * 0.9;
+	if (anchors.number.side !== 0 && !hidden) {
 		const color = parseColor(look.kit.number);
 		if (look.jerseyNumber) {
 			drawGlyphs(

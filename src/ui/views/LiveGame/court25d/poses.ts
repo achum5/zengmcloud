@@ -25,6 +25,11 @@ export type Pose = {
 	abN: number;
 	abF: number;
 	wide: number;
+	// The hand's bend at the wrist, the same way the elbow bends: positive
+	// tips the fingers back over the top (a hand cocked under the ball),
+	// negative folds them forward and down (a shooter's follow-through).
+	wrN: number;
+	wrF: number;
 };
 
 const BASE: Pose = {
@@ -40,6 +45,8 @@ const BASE: Pose = {
 	abN: 14,
 	abF: 14,
 	wide: 0.08,
+	wrN: 0,
+	wrF: 0,
 };
 const pose = (o: Partial<Pose>): Pose => ({ ...BASE, ...o });
 
@@ -405,6 +412,7 @@ export const ANIMS = {
 					shF: 130,
 					elF: 80,
 					lean: 2,
+					wrN: 50,
 				}),
 			],
 			[
@@ -419,6 +427,22 @@ export const ANIMS = {
 					shF: 150,
 					elF: 40,
 					lean: -2,
+					wrN: 15,
+				}),
+			],
+			[
+				0.63,
+				pose({
+					hipN: -4,
+					kneeN: 10,
+					hipF: 8,
+					kneeF: 32,
+					shN: 162,
+					elN: 14,
+					shF: 118,
+					elF: 36,
+					lean: -2,
+					wrN: -100,
 				}),
 			],
 			[
@@ -433,6 +457,7 @@ export const ANIMS = {
 					shF: 118,
 					elF: 36,
 					lean: -2,
+					wrN: -110,
 				}),
 			],
 			[1, P.land],
@@ -468,6 +493,7 @@ export const ANIMS = {
 					shF: 60,
 					elF: 70,
 					lean: 6,
+					wrN: 30,
 				}),
 			],
 			[
@@ -482,6 +508,22 @@ export const ANIMS = {
 					shF: 70,
 					elF: 60,
 					lean: 0,
+					wrN: 10,
+				}),
+			],
+			[
+				0.72,
+				pose({
+					hipN: 70,
+					kneeN: 100,
+					hipF: -6,
+					kneeF: 22,
+					shN: 168,
+					elN: 6,
+					shF: 70,
+					elF: 60,
+					lean: 0,
+					wrN: -70,
 				}),
 			],
 			[1, P.land],
@@ -799,6 +841,7 @@ export const ANIMS = {
 					shF: 130,
 					elF: 80,
 					lean: -6,
+					wrN: 50,
 				}),
 			],
 			[
@@ -813,6 +856,22 @@ export const ANIMS = {
 					shF: 150,
 					elF: 40,
 					lean: -16,
+					wrN: 15,
+				}),
+			],
+			[
+				0.63,
+				pose({
+					hipN: 22,
+					kneeN: 26,
+					hipF: 34,
+					kneeF: 46,
+					shN: 160,
+					elN: 16,
+					shF: 118,
+					elF: 36,
+					lean: -12,
+					wrN: -100,
 				}),
 			],
 			[
@@ -827,6 +886,7 @@ export const ANIMS = {
 					shF: 118,
 					elF: 36,
 					lean: -12,
+					wrN: -110,
 				}),
 			],
 			[1, P.land],
@@ -1357,42 +1417,239 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		0,
 		chest.u + Math.cos(L) * up,
 	);
-	const arm = (shDeg: number, elDeg: number, abDeg: number, side: 1 | -1) => {
-		// A cartoon's reach: an arm thrown up over his head stretches and swings
-		// a little wide, so the hand clears that big head instead of hiding
-		// behind it.
-		const up0 = Math.min(1, Math.max(0, (shDeg - 105) / 60));
-		const up = up0 * up0 * (3 - 2 * up0);
-		const reach = 1 + 0.32 * up;
-		const ab = (abDeg + Math.max(0, 22 - abDeg) * up) * rad;
-		const along = (deg: number) => {
-			const d = dir(deg);
-			return {
-				f: d.f * Math.cos(ab),
-				s: side * Math.sin(ab),
-				u: d.u * Math.cos(ab),
-			};
-		};
-		const root = v3(chest.f, side * b.shoulderW, chest.u - b.H * 0.022);
-		const a = along(shDeg);
-		const upper = b.upper * reach;
-		const fore = b.fore * reach;
-		const mid = v3(
-			root.f + a.f * upper,
-			root.s + a.s * upper,
-			root.u + a.u * upper,
-		);
-		const c = along(shDeg + elDeg);
-		const end = v3(mid.f + c.f * fore, mid.s + c.s * fore, mid.u + c.u * fore);
-		return { root, mid, end };
-	};
 	return {
 		pelvis,
 		chest,
 		head,
 		legR,
 		legL,
-		armR: arm(q.shN, q.elN, q.abN, -1),
-		armL: arm(q.shF, q.elF, q.abF, 1),
+		armR: armLimb(b, chest, q.shN, q.elN, q.abN, q.wrN, -1),
+		armL: armLimb(b, chest, q.shF, q.elF, q.abF, q.wrF, 1),
 	};
 };
+
+const RAD = Math.PI / 180;
+
+// An angle in the plane he faces along: 0 straight down, 90 straight ahead.
+const dirOf = (deg: number) => ({
+	f: Math.sin(deg * RAD),
+	u: -Math.cos(deg * RAD),
+});
+
+// A cartoon's reach: an arm thrown up over his head stretches and swings a
+// little wide, so the hand clears that big head instead of hiding behind it.
+const reachOf = (shDeg: number): number => {
+	const up0 = Math.min(1, Math.max(0, (shDeg - 105) / 60));
+	return up0 * up0 * (3 - 2 * up0);
+};
+
+const shoulderOf = (b: Body, chest: V3, side: 1 | -1): V3 =>
+	v3(chest.f, side * b.shoulderW, chest.u - b.H * 0.022);
+
+// An arm built from its angles - the upper arm swung `shDeg`, the elbow
+// bent `elDeg` more, the whole arm `abRad` out from his side (already
+// widened for a raised arm), each segment `reach` times its length - and
+// its hand bent `wrDeg` at the wrist.
+const buildArm = (
+	b: Body,
+	chest: V3,
+	shDeg: number,
+	elDeg: number,
+	abRad: number,
+	reach: number,
+	wrDeg: number,
+	side: 1 | -1,
+): Limb => {
+	const along = (deg: number) => {
+		const d = dirOf(deg);
+		return {
+			f: d.f * Math.cos(abRad),
+			s: side * Math.sin(abRad),
+			u: d.u * Math.cos(abRad),
+		};
+	};
+	const root = shoulderOf(b, chest, side);
+	const a = along(shDeg);
+	const upper = b.upper * reach;
+	const fore = b.fore * reach;
+	const mid = v3(
+		root.f + a.f * upper,
+		root.s + a.s * upper,
+		root.u + a.u * upper,
+	);
+	const c = along(shDeg + elDeg);
+	const end = v3(mid.f + c.f * fore, mid.s + c.s * fore, mid.u + c.u * fore);
+	const h = along(shDeg + elDeg + wrDeg);
+	const hand = b.handR * 2.2;
+	const tip = v3(end.f + h.f * hand, end.s + h.s * hand, end.u + h.u * hand);
+	return { root, mid, end, tip };
+};
+
+const armLimb = (
+	b: Body,
+	chest: V3,
+	shDeg: number,
+	elDeg: number,
+	abDeg: number,
+	wrDeg: number,
+	side: 1 | -1,
+): Limb => {
+	const up = reachOf(shDeg);
+	return buildArm(
+		b,
+		chest,
+		shDeg,
+		elDeg,
+		(abDeg + Math.max(0, 22 - abDeg) * up) * RAD,
+		1 + 0.32 * up,
+		wrDeg,
+		side,
+	);
+};
+
+// The arm that puts his wrist at `target`, worked back from the arm's own
+// geometry (the cartoon reach included): out from his side as far as the
+// target is, then shoulder and elbow from the triangle the two bones make.
+const armTo = (
+	b: Body,
+	chest: V3,
+	target: V3,
+	wrDeg: number,
+	side: 1 | -1,
+): Limb => {
+	const root = shoulderOf(b, chest, side);
+	let reach = 1;
+	let sh = 0;
+	let el = 0;
+	let ab = 0;
+	for (let it = 0; it < 3; it++) {
+		const L1 = b.upper * reach;
+		const L2 = b.fore * reach;
+		const out = (side * (target.s - root.s)) / (L1 + L2);
+		ab = Math.asin(Math.min(0.95, Math.max(-0.95, out)));
+		const c = Math.cos(ab);
+		const F = (target.f - root.f) / c;
+		const U = (target.u - root.u) / c;
+		const D = Math.min(
+			L1 + L2 - 0.01,
+			Math.max(Math.abs(L1 - L2) + 0.01, Math.hypot(F, U)),
+		);
+		el = Math.acos(
+			Math.min(1, Math.max(-1, (D * D - L1 * L1 - L2 * L2) / (2 * L1 * L2))),
+		);
+		sh =
+			Math.atan2(F, -U) - Math.atan2(L2 * Math.sin(el), L1 + L2 * Math.cos(el));
+		reach = 1 + 0.32 * reachOf(sh / RAD);
+	}
+	return buildArm(b, chest, sh / RAD, el / RAD, ab, reach, wrDeg, side);
+};
+
+// How a move holds the ball: in both hands, one on each side of it; up on
+// the shooting hand with the other guiding it; or palmed in one hand.
+export type Grip = "two" | "shot" | "palm";
+const GRIPS: Partial<Record<AnimName, Grip>> = {
+	shoot: "shot",
+	fade: "shot",
+	layup: "palm",
+	dunk: "palm",
+	dunk1: "palm",
+	tomahawk: "palm",
+	hook: "palm",
+};
+export const gripOf = (anim: AnimName): Grip => GRIPS[anim] ?? "two";
+
+// A basketball's radius, feet.
+const BALL_RADIUS = 0.39;
+
+// Where the ball is while he holds it, and his skeleton with his hands put
+// on it the way the move holds it - so the ball is in his hands, not
+// floating somewhere between them.
+export const holdBall = (
+	b: Body,
+	q: Pose,
+	anim: AnimName,
+): { sk: Skeleton; ball: V3 } => {
+	const sk = skeleton(b, q);
+	const grip = gripOf(anim);
+	const R = BALL_RADIUS;
+	const r = sk.armR;
+	const l = sk.armL;
+	const mix = (p: V3, o: V3, w: number): V3 =>
+		v3(p.f + (o.f - p.f) * w, p.s + (o.s - p.s) * w, p.u + (o.u - p.u) * w);
+	const side = (ball: V3, sgn: 1 | -1): V3 =>
+		v3(ball.f - 0.06, ball.s + sgn * R * 1.05, ball.u);
+	// Both hands: between where the move puts them, out in front of him.
+	const two = v3(
+		Math.max((r.end.f + l.end.f) / 2 + 0.3, sk.chest.f + R + 0.22),
+		((r.end.s + l.end.s) / 2) * 0.5,
+		(r.end.u + l.end.u) / 2,
+	);
+	if (grip === "two") {
+		return {
+			sk: {
+				...sk,
+				armR: armTo(b, sk.chest, side(two, -1), q.wrN, -1),
+				armL: armTo(b, sk.chest, side(two, 1), q.wrF, 1),
+			},
+			ball: two,
+		};
+	}
+	// One hand takes it as his arm comes up: two hands while the shooting
+	// hand is down by his chest, all his once it is up past the shoulder.
+	const up = Math.min(1, Math.max(0, (r.end.u - (r.root.u - 0.45)) / 0.9));
+	const w = up * up * (3 - 2 * up);
+	const tip = r.tip ?? r.end;
+	const len =
+		Math.hypot(tip.f - r.end.f, tip.s - r.end.s, tip.u - r.end.u) || 1;
+	const d = {
+		f: (tip.f - r.end.f) / len,
+		s: (tip.s - r.end.s) / len,
+		u: (tip.u - r.end.u) / len,
+	};
+	// Up on the shooting hand, or palmed out past the fingers' roots.
+	const k = grip === "shot" ? 0.75 : 1.15;
+	const one = v3(
+		r.end.f + d.f * R * k,
+		r.end.s + d.s * R * k,
+		r.end.u + d.u * R * k + (grip === "shot" ? R * 0.55 : 0),
+	);
+	const ball = mix(two, one, w);
+	const armR =
+		w >= 0.999
+			? r
+			: armTo(b, sk.chest, mix(side(two, -1), r.end, w), q.wrN, -1);
+	// The other hand guides a jumper all the way up; on a layup or a dunk it
+	// lets go.
+	const armL =
+		grip === "palm" && w >= 0.999
+			? l
+			: armTo(
+					b,
+					sk.chest,
+					grip === "shot" ? side(ball, 1) : mix(side(ball, 1), l.end, w),
+					q.wrF,
+					1,
+				);
+	return { sk: { ...sk, armR, armL }, ball };
+};
+
+// The dribbling hand through one bounce: on the ball at the top (0),
+// pushing it down until it leaves him, then back up to meet it (1).
+export const dribbleArm = (q: Pose, ph: number): Pose => {
+	const push = ph < 0.22 ? ph / 0.22 : 1 - (ph - 0.22) / 0.78;
+	const e = push * push * (3 - 2 * push);
+	return {
+		...q,
+		shN: 34 + 12 * e,
+		elN: 62 - 46 * e,
+		abN: 16,
+		wrN: 24 - 60 * e,
+	};
+};
+
+// His pose at a moment: the move's, with the dribbling hand on the bounce
+// when he is dribbling.
+export const posed = (anim: AnimName, phase: number, dribble?: number): Pose =>
+	dribble === undefined
+		? poseAt(anim, phase)
+		: dribbleArm(poseAt(anim, phase), dribble);

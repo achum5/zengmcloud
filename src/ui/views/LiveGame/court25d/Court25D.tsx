@@ -536,10 +536,11 @@ const Court25D = ({
 			if (w <= 0 || h <= 0) {
 				return;
 			}
-			// The picture: about 320 pixel-art pixels tall - chunky enough to
-			// read as pixel art, fine enough to show a hand on the ball - each a
-			// whole number of device pixels.
-			const art = Math.max(1, Math.round((h * dpr) / 320));
+			// The picture: at most about 360 pixel-art pixels tall - chunky
+			// enough to read as pixel art, fine enough to show a hand on the
+			// ball, small enough to draw quickly - each a whole number of device
+			// pixels.
+			const art = Math.max(1, Math.ceil((h * dpr) / 360));
 			const fw = Math.ceil((w * dpr) / art);
 			const fh = Math.ceil((h * dpr) / art);
 			if (canvas.width !== fw || canvas.height !== fh) {

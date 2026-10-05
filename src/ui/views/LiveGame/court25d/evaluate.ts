@@ -9,7 +9,8 @@ import type {
 import { rimX, type Pt, type Pt3, type Side } from "./geometry.ts";
 import {
 	ANIMS,
-	poseAt,
+	holdBall,
+	posed,
 	skeleton,
 	type AnimName,
 	type Body,
@@ -55,7 +56,19 @@ export type PlayerState = {
 	// How far through the animation (0 to 1).
 	phase: number;
 	moving: boolean;
+	// The ball in his hands - not bouncing on a dribble - so it is drawn with
+	// him, his hands on it.
+	holding?: boolean;
+	// How far through a bounce of his dribble (0 the ball in his hand at the
+	// top), when he is dribbling: his hand rides it.
+	dribble?: number;
 };
+
+// Bounces a second on a dribble: one steady beat, walking or driving, so the
+// ball never skips a bounce when he starts or stops.
+const DRIBBLE_RATE = 2.1;
+const dribblePhase = (t0: number, t: number): number =>
+	(((((t - t0) / 1000) * DRIBBLE_RATE) % 1) + 1) % 1;
 
 export const offenseAt = (tl: CourtTimeline, t: number): Side => {
 	const i = lastIndex(tl.poss, t, (p) => p[0]);
@@ -309,6 +322,8 @@ export const evalPlayer = (
 		const fps = a.kind === "loop" ? a.fps : 2;
 		phase = (t / 1000) * (fps / a.n) + pid * 0.37;
 	}
+	const seg = ballSegAt(tl, t);
+	const has = seg?.kind === "hold" && seg.pid === pid ? seg : undefined;
 	return {
 		pid,
 		team: tr.team,
@@ -320,6 +335,8 @@ export const evalPlayer = (
 		anim,
 		phase,
 		moving: here.moving,
+		holding: has?.style === "hold",
+		dribble: has?.style === "dribble" ? dribblePhase(has.t0, t) : undefined,
 	};
 };
 
@@ -343,7 +360,7 @@ export const handWorld = (
 	body: Body,
 	which: "near" | "far" | "both" = "both",
 ): Pt3 => {
-	const sk = skeleton(body, poseAt(st.anim, st.phase));
+	const sk = skeleton(body, posed(st.anim, st.phase, st.dribble));
 	const r = sk.armR.end;
 	const l = sk.armL.end;
 	const h =
@@ -356,7 +373,25 @@ export const handWorld = (
 	return bodyPoint(st, { f: h.f + 0.28, s: h.s, u: h.u });
 };
 
-export type BallState = { x: number; y: number; z: number; holder?: number };
+// The ball in his hands, held the way his move holds it.
+export const heldBall = (st: PlayerState, body: Body): Pt3 =>
+	bodyPoint(
+		st,
+		holdBall(body, posed(st.anim, st.phase, st.dribble), st.anim).ball,
+	);
+
+export type BallState = {
+	x: number;
+	y: number;
+	z: number;
+	holder?: number;
+	// How far it has turned (radians, positive rolling toward the right rim):
+	// backspin off a shooter's fingers or a passer's, a roll along the floor.
+	roll?: number;
+};
+
+// Turns a second of backspin on a ball thrown or shot.
+const BACKSPIN = 2;
 
 // A basketball is 9.4 inches across.
 export const BALL_R = 0.39;
@@ -381,7 +416,9 @@ export const evalBall = (
 		return { x: 47, y: 25, z: 0 };
 	}
 	const handOf = (pid: number, at: number, which: "near" | "both") =>
-		handWorld(evalPlayer(tl, pid, at), bodyFor(pid), which);
+		which === "both"
+			? heldBall(evalPlayer(tl, pid, at), bodyFor(pid))
+			: handWorld(evalPlayer(tl, pid, at), bodyFor(pid), which);
 	const resolve = (
 		p: Pt3 | { pid: number; hand?: "near" | "both" },
 		at: number,
@@ -410,7 +447,7 @@ export const evalBall = (
 		if (seg.style === "dribble") {
 			const body = bodyFor(seg.pid);
 			const h = handWorld(st, body, "near");
-			const ph = (((t - seg.t0) / 1000) * (st.moving ? 2.4 : 1.9)) % 1;
+			const ph = st.dribble ?? dribblePhase(seg.t0, t);
 			const tri = dribbleDepth(ph);
 			// It hits the floor ahead of him and off his right foot.
 			const floor = bodyPoint(
@@ -424,7 +461,7 @@ export const evalBall = (
 				holder: seg.pid,
 			};
 		}
-		return { ...handWorld(st, bodyFor(seg.pid), "both"), holder: seg.pid };
+		return { ...heldBall(st, bodyFor(seg.pid)), holder: seg.pid };
 	}
 	if (seg.kind === "fly") {
 		// In flight it is a thrown ball: steady across the floor, and up and
@@ -440,6 +477,7 @@ export const evalBall = (
 			x: a.x + (b.x - a.x) * u,
 			y: a.y + (b.y - a.y) * u,
 			z: a.z + vz * tau - 0.5 * GRAVITY * tau * tau,
+			roll: -Math.PI * 2 * BACKSPIN * tau * (Math.sign(b.x - a.x) || 1),
 		};
 	}
 	if (seg.kind === "bounce") {
@@ -466,10 +504,13 @@ export const evalBall = (
 			w -= hops[i]!;
 		}
 		const roll = 1 - (1 - Math.min(1, u / 0.85)) ** 1.5;
+		const along =
+			Math.hypot(seg.to.x - seg.from.x, seg.to.y - seg.from.y) * roll;
 		return {
 			x: seg.from.x + (seg.to.x - seg.from.x) * roll,
 			y: seg.from.y + (seg.to.y - seg.from.y) * roll,
 			z: BALL_R + z,
+			roll: (along / BALL_R) * (Math.sign(seg.to.x - seg.from.x) || 1),
 		};
 	}
 	return { ...seg.at };

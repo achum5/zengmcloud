@@ -453,6 +453,8 @@ export type HoopFx = {
 	swish: number;
 	clank: number;
 	dunk: number;
+	// A dunk worth a replay rattles the whole basket harder.
+	big?: boolean;
 	t: number;
 };
 
@@ -470,9 +472,15 @@ export const drawHoop = (
 	const sgn = side === 0 ? 1 : -1;
 	const base = side === 0 ? 0 : COURT_W;
 	const X = (d: number) => base + sgn * d;
+	// After a dunk the whole basket rings: the board and rim shake up and
+	// down and rock side to side, dying away over a second; while he hangs
+	// on it the rim is bent down.
+	const ringing = fx.dunk * fx.dunk * (fx.big ? 1.5 : 1);
 	const shake =
-		fx.clank * 0.06 * Math.sin(fx.t / 22) + fx.dunk * 0.1 * Math.sin(fx.t / 30);
-	const bend = fx.dunk * 0.22;
+		fx.clank * 0.06 * Math.sin(fx.t / 22) +
+		ringing * 0.42 * Math.sin(fx.t / 22);
+	const rock = ringing * 0.16 * Math.sin(fx.t / 31);
+	const bend = Math.max(0, (fx.dunk - 0.55) / 0.45) * 0.32;
 
 	// The stanchion: padded base behind the baseline, post, arm to the board.
 	const b0 = X(-9.5);
@@ -517,7 +525,7 @@ export const drawHoop = (
 		ctx,
 		cam,
 		{ x: X(-6.2), y: 25, z: 12.4 },
-		{ x: X(3.7), y: 25, z: 11.9 + shake },
+		{ x: X(3.7), y: 25 + rock, z: 11.9 + shake },
 		0.42,
 		"#4a4e57",
 	);
@@ -525,7 +533,7 @@ export const drawHoop = (
 		ctx,
 		cam,
 		{ x: X(-6.4), y: 25, z: 8.6 },
-		{ x: X(3.7), y: 25, z: 10.2 + shake },
+		{ x: X(3.7), y: 25 + rock, z: 10.2 + shake },
 		0.28,
 		"#4a4e57",
 	);
@@ -544,10 +552,10 @@ export const drawHoop = (
 	const bx = X(4);
 	const bz = shake;
 	const glass = [
-		{ x: bx, y: 22, z: 9.5 + bz },
-		{ x: bx, y: 28, z: 9.5 + bz },
-		{ x: bx, y: 28, z: 13 + bz },
-		{ x: bx, y: 22, z: 13 + bz },
+		{ x: bx, y: 22 + rock, z: 9.5 + bz },
+		{ x: bx, y: 28 + rock, z: 9.5 + bz },
+		{ x: bx, y: 28 + rock, z: 13 + bz },
+		{ x: bx, y: 22 + rock, z: 13 + bz },
 	];
 	const gk = project(cam, glass[0]!).k;
 	ctx.fillStyle = "rgba(214, 232, 244, 0.34)";
@@ -564,31 +572,31 @@ export const drawHoop = (
 	inkLine(
 		ctx,
 		cam,
-		{ x: bx, y: 22, z: 9.45 + bz },
-		{ x: bx, y: 28, z: 9.45 + bz },
+		{ x: bx, y: 22 + rock, z: 9.45 + bz },
+		{ x: bx, y: 28 + rock, z: 9.45 + bz },
 		0.3,
 		padColor,
 	);
 	ctx.strokeStyle = "rgba(255,255,255,0.92)";
 	ctx.lineWidth = Math.max(0.6, 0.12 * gk);
 	poly(ctx, cam, [
-		{ x: bx, y: 24, z: 10.05 + bz },
-		{ x: bx, y: 26, z: 10.05 + bz },
-		{ x: bx, y: 26, z: 11.5 + bz },
-		{ x: bx, y: 24, z: 11.5 + bz },
+		{ x: bx, y: 24 + rock, z: 10.05 + bz },
+		{ x: bx, y: 26 + rock, z: 10.05 + bz },
+		{ x: bx, y: 26 + rock, z: 11.5 + bz },
+		{ x: bx, y: 24 + rock, z: 11.5 + bz },
 	]);
 	ctx.stroke();
 	const sc = [
-		{ x: X(3.85), y: 24.15, z: 13.1 + bz },
-		{ x: X(3.85), y: 25.85, z: 13.1 + bz },
-		{ x: X(3.85), y: 25.85, z: 14.05 + bz },
-		{ x: X(3.85), y: 24.15, z: 14.05 + bz },
+		{ x: X(3.85), y: 24.15 + rock, z: 13.1 + bz },
+		{ x: X(3.85), y: 25.85 + rock, z: 13.1 + bz },
+		{ x: X(3.85), y: 25.85 + rock, z: 14.05 + bz },
+		{ x: X(3.85), y: 24.15 + rock, z: 14.05 + bz },
 	];
 	ctx.fillStyle = "#0d0d10";
 	poly(ctx, cam, sc);
 	ctx.fill();
 	if (shotClock) {
-		const c = project(cam, { x: X(3.8), y: 25, z: 13.58 + bz });
+		const c = project(cam, { x: X(3.8), y: 25 + rock, z: 13.58 + bz });
 		ctx.fillStyle = "#ff3b2f";
 		ctx.font = `700 ${Math.max(5, 0.72 * c.k)}px "Courier New", monospace`;
 		ctx.textAlign = "center";
@@ -605,14 +613,14 @@ export const drawHoop = (
 			const a = (i / N) * Math.PI * 2;
 			return {
 				x: rx + Math.cos(a) * r + sway,
-				y: 25 + Math.sin(a) * r,
+				y: 25 + rock + Math.sin(a) * r,
 				z,
 			};
 		});
 	const rim = ring(RIM_R, rz);
-	// After a make the net whips up and sways.
-	const lift = fx.swish * 0.75;
-	const sway = fx.swish * 0.12 * Math.sin(fx.t / 45);
+	// After a make the net whips up and sways; a dunk yanks it down first.
+	const lift = fx.swish * 0.75 - ringing * 0.5 * Math.cos(fx.t / 40);
+	const sway = (fx.swish * 0.12 + ringing * 0.1) * Math.sin(fx.t / 45);
 	const mid = ring(RIM_R * 0.78, rz - 0.75 + lift * 0.5, sway * 0.5);
 	const bottom = ring(RIM_R * 0.6, rz - 1.55 + lift, sway);
 	// Back half: the far side of the ring (smaller y is farther away).
@@ -651,8 +659,8 @@ export const drawHoop = (
 	inkLine(
 		ctx,
 		cam,
-		{ x: X(4.05), y: 25, z: rz - 0.25 },
-		{ x: X(4.55), y: 25, z: rz },
+		{ x: X(4.05), y: 25 + rock, z: rz - 0.25 },
+		{ x: X(4.55), y: 25 + rock, z: rz },
 		0.17,
 		"#c4501f",
 	);

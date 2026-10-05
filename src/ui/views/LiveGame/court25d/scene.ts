@@ -351,14 +351,19 @@ export const drawFrame = (f: Frame) => {
 			},
 		});
 	}
-	const spin = t * 0.011;
-	const rimSide = ballAtRim(ball);
+	const spin = ball.roll ?? 0;
+	// In somebody's hands it is drawn with him (see drawSprite).
+	const inHands =
+		ball.holder !== undefined &&
+		players.some((p) => p.pid === ball.holder && p.holding);
+	const rimSide = inHands ? undefined : ballAtRim(ball);
 	for (const side of [0, 1] as const) {
 		const rx = side === 0 ? 5.25 : COURT_W - 5.25;
 		const fx: HoopFx = {
 			swish: fxLevel(tl, t, "swish", 520, side),
 			clank: fxLevel(tl, t, "clank", 420, side),
-			dunk: fxLevel(tl, t, "dunk", 650, side),
+			dunk: fxLevel(tl, t, "dunk", 1100, side),
+			big: recentFx(tl, t, ["dunk"], 1100, side)?.big,
 			t,
 		};
 		items.push({
@@ -380,7 +385,7 @@ export const drawFrame = (f: Frame) => {
 			},
 		});
 	}
-	if (rimSide === undefined) {
+	if (rimSide === undefined && !inHands) {
 		items.push({
 			depth: depthOf(cam, ball) - 0.3,
 			draw: () => {

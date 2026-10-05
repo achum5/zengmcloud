@@ -1,7 +1,14 @@
 import { project, type Camera, type Projected } from "./camera.ts";
 import { bodyPoint, type PlayerState } from "./evaluate.ts";
 import type { HeadSprite } from "./faces.ts";
-import { poseAt, skeleton, type Body, type Limb, type V3 } from "./poses.ts";
+import {
+	holdBall,
+	posed,
+	skeleton,
+	type Body,
+	type Limb,
+	type V3,
+} from "./poses.ts";
 
 // ONE PLAYER, DRAWN - the body of his sprite (see sprite.ts).
 //
@@ -218,6 +225,13 @@ export const shade = (c: string, f: number): string => {
 	return out;
 };
 
+// The ball, when he has it in his hands: its leather, its shadow side, its
+// seams. (Kept in step with the loose ball's colors in arena.ts.)
+const HELD_BALL_R = 0.39;
+export const BALL_ORANGE = "#e2702a";
+export const BALL_SHADE = "#a44716";
+export const BALL_SEAM = "#3a1608";
+
 type Shape = {
 	path: Path2D;
 	fill: string | CanvasGradient;
@@ -229,8 +243,9 @@ type Part = {
 	shapes: Shape[];
 	// Drawn after his head: an arm thrown up in front of his face.
 	late?: boolean;
-	// Drawn over the part's colors: seams, stripes, lettering.
-	detail?: () => void;
+	// Drawn over the part's colors: seams, stripes, lettering - on the canvas
+	// the part is painted on.
+	detail?: (c: CanvasRenderingContext2D) => void;
 };
 
 // Where things landed on screen, for whatever is drawn over him.
@@ -243,6 +258,10 @@ export type FigureAnchors = {
 	// there (screen px).
 	letters: { x: number; y: number; w: number };
 	front: number;
+	// The ball is drawn in his hands - where on the picture, and whether it is
+	// in front of his jersey (hiding the lettering behind it).
+	holding: boolean;
+	ball?: { x: number; y: number; r: number; front: boolean };
 	// What goes over his head once it is drawn: an arm raised in front of his
 	// face, which the head would otherwise hide.
 	over?: (ctx: CanvasRenderingContext2D) => void;
@@ -257,7 +276,9 @@ export const drawFigure = (
 	// Screen pixels to a sprite pixel: the finest line worth drawing.
 	px: number,
 ): FigureAnchors => {
-	const sk = skeleton(body, poseAt(st.anim, st.phase));
+	const q = posed(st.anim, st.phase, st.dribble);
+	const held = st.holding ? holdBall(body, q, st.anim) : undefined;
+	const sk = held ? held.sk : skeleton(body, q);
 	const at = (v: V3): Projected => project(cam, bodyPoint(st, v));
 	const off = (v: V3, df: number, ds: number, du = 0): V3 => ({
 		f: v.f + df,
@@ -507,9 +528,15 @@ export const drawFigure = (
 		const wrist = at(limb.end);
 		const c = dim(skin, far);
 		const cs = shade(c, -0.2);
-		// The hand: a mitt a little past the wrist.
-		const hx = wrist.x - el.x;
-		const hy = wrist.y - el.y;
+		// The hand: a mitt a little past the wrist, pointing the way the
+		// wrist bends it (along the forearm when it points at the camera).
+		const tip = at(limb.tip ?? limb.end);
+		let hx = tip.x - wrist.x;
+		let hy = tip.y - wrist.y;
+		if (Math.hypot(hx, hy) < 0.08 * wrist.k) {
+			hx = wrist.x - el.x;
+			hy = wrist.y - el.y;
+		}
 		const hl = Math.hypot(hx, hy) || 1;
 		const handC = {
 			x: wrist.x + (hx / hl) * body.handR * 0.55 * wrist.k,
@@ -559,6 +586,46 @@ export const drawFigure = (
 	};
 	arm(sk.armR, !leftFar);
 	arm(sk.armL, leftFar);
+	let ballAt: FigureAnchors["ball"];
+	if (held) {
+		// The ball in his hands: drawn with him, behind the near hand and in
+		// front of the far one, its seams and its shadow side.
+		const c = at(held.ball);
+		const r = HELD_BALL_R * c.k;
+		const disc = new Path2D();
+		disc.arc(c.x, c.y, r, 0, Math.PI * 2);
+		const rim: P2[] = [];
+		for (let a = -0.2; a <= Math.PI * 0.85; a += 0.25) {
+			rim.push({ x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r });
+		}
+		ballAt = { x: c.x, y: c.y, r, front: c.depth < torsoDepth };
+		parts.push({
+			depth: c.depth,
+			// Up in front of his face, or up over his head: drawn over it.
+			late:
+				held.ball.u > sk.armR.root.u &&
+				(c.depth < headC.depth || held.ball.u > sk.head.u),
+			shapes: [
+				{
+					path: disc,
+					fill: BALL_ORANGE,
+					shadow: { edge: rim, width: r * 0.75, color: BALL_SHADE },
+				},
+			],
+			detail: (g) => {
+				g.strokeStyle = BALL_SEAM;
+				g.lineWidth = Math.max(px * 0.9, r * 0.16);
+				g.lineCap = "round";
+				g.beginPath();
+				g.moveTo(c.x - r * 0.92, c.y - r * 0.08);
+				g.lineTo(c.x + r * 0.92, c.y + r * 0.08);
+				g.stroke();
+				g.beginPath();
+				g.ellipse(c.x, c.y, r * 0.42, r * 0.95, 0.15, 0, Math.PI * 2);
+				g.stroke();
+			},
+		});
+	}
 
 	parts.sort((p, q) => q.depth - p.depth);
 	const paint = (c: CanvasRenderingContext2D, p: Part) => {
@@ -585,7 +652,7 @@ export const drawFigure = (
 				c.restore();
 			}
 		}
-		p.detail?.();
+		p.detail?.(c);
 	};
 	for (const p of parts) {
 		if (!p.late) {
@@ -599,6 +666,8 @@ export const drawFigure = (
 		number: { x: 0, y: 0, h: 0, side: 0 },
 		letters: { x: 0, y: 0, w: 0 },
 		front,
+		holding: held !== undefined,
+		...(ballAt ? { ball: ballAt } : {}),
 		...(late.length > 0
 			? {
 					over: (c: CanvasRenderingContext2D) => {
@@ -645,7 +714,7 @@ export const drawHeadAt = (
 	body: Body,
 	look: Look,
 ) => {
-	const sk = skeleton(body, poseAt(st.anim, st.phase));
+	const sk = skeleton(body, posed(st.anim, st.phase, st.dribble));
 	const at = (v: V3): Projected => project(cam, bodyPoint(st, v));
 	const toCamX = cam.pos.x - st.x;
 	const toCamY = cam.pos.y - st.y;
