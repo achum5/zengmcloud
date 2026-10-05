@@ -1,6 +1,6 @@
 import { makeCourtRng } from "../courtRng.ts";
 import { project, type Camera, type Projected } from "./camera.ts";
-import { bodyPoint, type PlayerState } from "./evaluate.ts";
+import { bodyPoint, onRim, type PlayerState } from "./evaluate.ts";
 import type { HeadSprite } from "./faces.ts";
 import {
 	holdBall,
@@ -325,7 +325,7 @@ export const drawFigure = (
 ): FigureAnchors => {
 	const q = posed(st.anim, st.phase, st.dribble, st.dribbleHand, st.target);
 	const held = st.holding ? holdBall(body, q, st.anim) : undefined;
-	const sk = held ? held.sk : skeleton(body, q);
+	const sk = held ? held.sk : onRim(skeleton(body, q), st, body);
 	const at = (v: V3): Projected => project(cam, bodyPoint(st, v));
 	const off = (v: V3, df: number, ds: number, du = 0): V3 => ({
 		f: v.f + df,

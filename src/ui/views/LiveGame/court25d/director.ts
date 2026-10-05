@@ -103,6 +103,10 @@ export type Act = {
 	// `peak` feet, or explicit height keys for a dunk's hang on the rim.
 	jump?: [number, number, number];
 	zKeys?: [number, number][];
+	// A dunk: the rim, and over the act how much his hands are on it (0 to
+	// 1). Its heights are a typical player's - a longer reach jumps less to
+	// get there, a shorter one more.
+	rim?: { at: Pt3; grip: [number, number][] };
 	// What he looks at while he does it: the rim he shoots at, the man he
 	// passes to.
 	look?: Pt;
@@ -283,6 +287,11 @@ const BALL_R = 0.39;
 const CROSS_MS = 1000 / CROSS_RATE;
 // A rebound, from leaving the floor to the ball chinned once he is down.
 const REBOUND_MS = 1100;
+// A dunk, for a typical player (taller ones jump less to get there, shorter
+// ones more - see withBody): how high he gets (feet), and how far out from
+// the middle of the rim he goes up.
+const DUNK_LEAP = 3;
+const DUNK_FROM = 1.8;
 
 const passMs = (d: number) =>
 	Math.min(900, Math.max(260, 180 + (d * 1000) / PASS_FTPS));
@@ -2847,6 +2856,17 @@ class Director {
 					jump: [0.1, 0.9, 2.3],
 				});
 			}
+			// He goes up in front of the rim, on the side he comes from, close
+			// enough that his hand goes over the front of it - and a make, he
+			// hangs there by both hands.
+			const back = unitVec(
+				rim,
+				P1.x === rim.x && P1.y === rim.y ? { x: rim.x - dir, y: rim.y } : P1,
+			);
+			const under = clampPt({
+				x: rim.x + back.x * DUNK_FROM,
+				y: rim.y + back.y * DUNK_FROM,
+			});
 			this.act(shooter, anim, gather, gather + dur, {
 				face: faceRim,
 				look,
@@ -2854,22 +2874,37 @@ class Director {
 					? [
 							[0, 0],
 							[0.22, 0],
-							[0.45, 3.7],
-							[0.52, 3.55],
-							[0.68, 3.3],
+							[0.42, DUNK_LEAP],
+							[0.47, DUNK_LEAP - 0.05],
+							[0.53, DUNK_LEAP - 0.55],
+							[0.7, DUNK_LEAP - 0.68],
 							[0.86, 0],
 							[1, 0],
 						]
 					: [
 							[0, 0],
 							[0.22, 0],
-							[0.45, 3.5],
-							[0.62, 2.4],
-							[0.82, 0],
+							[0.44, DUNK_LEAP],
+							[0.6, DUNK_LEAP - 0.8],
+							[0.8, 0],
 							[1, 0],
 						],
+				rim: {
+					at: {
+						x: rim.x + back.x * (RIM_R - 0.08),
+						y: rim.y + back.y * (RIM_R - 0.08),
+						z: RIM_Z + 0.05,
+					},
+					grip: hang
+						? [
+								[0.47, 0],
+								[0.53, 1],
+								[0.69, 1],
+								[0.74, 0],
+							]
+						: [],
+				},
 			});
-			const under = clampPt({ x: rim.x - dir * 0.9, y: 25 + 1.3 });
 			this.go(shooter, under, gather + 60, SPRINT, "run", faceRim);
 			if (plan.kind === "block" && plan.blocker !== undefined) {
 				// Met at the rim.
@@ -2904,7 +2939,8 @@ class Director {
 				target = { x: rim.x + dir * (RIM_R + 0.1), y: 25, z: RIM_Z + 0.25 };
 				this.fly(decided - 90, decided, { pid: shooter }, target);
 			} else {
-				decided = gather + dur * 0.5;
+				// Thrown down at the top of the slam.
+				decided = gather + dur * 0.47;
 				arrive = decided;
 				target = rimPt(team, 0.45);
 			}

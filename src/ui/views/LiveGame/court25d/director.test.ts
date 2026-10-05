@@ -6,8 +6,15 @@ import {
 	targetForCursor,
 	type CourtTimeline,
 } from "./director.ts";
-import { bodyPoint, evalBall, evalPlayer } from "./evaluate.ts";
-import { COURT_W, FT_LINE_DEPTH } from "./geometry.ts";
+import {
+	bodyPoint,
+	evalBall,
+	evalPlayer,
+	handWorld,
+	heldBall,
+	withBody,
+} from "./evaluate.ts";
+import { COURT_W, FT_LINE_DEPTH, RIM_Z } from "./geometry.ts";
 import { bodyOf, posed, skeleton } from "./poses.ts";
 import { compile, fakeGame, gidOf } from "./testGame.ts";
 import { finishOf } from "../../../util/liveGameWording.basketball.ts";
@@ -653,6 +660,54 @@ describe("2.5D director", () => {
 		}
 		assert.isAbove(sprints, 5);
 		assert.isAbove(jogs, 5);
+	});
+
+	// A dunk is a dunk: the ball goes up over the rim in his hand and is
+	// thrown down through it, and a make, he hangs there by both hands - a
+	// guard, a wing or a center alike.
+	test("a dunker gets it over the rim and hangs on it", () => {
+		let dunks = 0;
+		for (const seed of ["a", "b", "c"]) {
+			const { tl } = compile(seed);
+			for (const [pid, tr] of tl.tracks) {
+				for (const a of tr.acts) {
+					if (!a.rim || a.rim.grip.length === 0) {
+						continue;
+					}
+					dunks += 1;
+					const rim = a.rim.at;
+					const at = (u: number) => a.t0 + (a.t1 - a.t0) * u;
+					for (const hgt of [72, 79, 85]) {
+						const b = bodyOf(hgt, 220);
+						// Up over the rim with it as he throws it down.
+						let top = { x: 0, y: 0, z: 0 };
+						for (let u = 0.4; u <= 0.47; u += 0.01) {
+							const ball = heldBall(evalPlayer(tl, pid, at(u)), b);
+							if (ball.z > top.z) {
+								top = ball;
+							}
+						}
+						assert.isAbove(top.z, RIM_Z + 0.6, `${seed} ${pid} ${hgt}`);
+						assert.isBelow(
+							Math.hypot(top.x - rim.x, top.y - rim.y),
+							2.4,
+							`${seed} ${pid} ${hgt}`,
+						);
+						// Then both hands on the front of the rim.
+						const st = withBody(evalPlayer(tl, pid, at(0.6)), b);
+						for (const which of ["near", "far"] as const) {
+							const h = handWorld(st, b, which);
+							assert.isBelow(
+								Math.hypot(h.x - rim.x, h.y - rim.y, h.z - rim.z),
+								1.1,
+								`${seed} ${pid} ${hgt} ${which}`,
+							);
+						}
+					}
+				}
+			}
+		}
+		assert.isAbove(dunks, 2);
 	});
 
 	test("a rebounder chins it before he goes anywhere with it", () => {

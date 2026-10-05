@@ -105,10 +105,13 @@ const TURNS = 16;
 // The pose he is drawn in: his own, stepped to the sprite's frames and turns.
 const stepped = (st: PlayerState) => {
 	const a = ANIMS[st.anim];
+	// A long move (a dunk) gets more frames, so its quickest part - the slam
+	// - still shows.
+	const frames = Math.max(ACT_FRAMES, a.n * 2);
 	const phase =
 		a.kind === "act"
-			? Math.round(Math.min(1, Math.max(0, st.phase)) * (ACT_FRAMES - 1)) /
-				(ACT_FRAMES - 1)
+			? Math.round(Math.min(1, Math.max(0, st.phase)) * (frames - 1)) /
+				(frames - 1)
 			: Math.floor((((st.phase % 1) + 1) % 1) * CYCLE_FRAMES) / CYCLE_FRAMES;
 	const turn = Math.round(st.yaw / ((Math.PI * 2) / TURNS));
 	return {
@@ -142,7 +145,8 @@ export const drawSprite = (
 	const lift = Math.max(0, st.z) * k;
 	const left = base.x - half;
 	const right = base.x + half;
-	const upper = base.y - (body.H * 1.08 + 0.9) * k - lift;
+	// Arms thrown up over his head reach a third again over it.
+	const upper = base.y - (body.H * 1.4 + 0.5) * k - lift;
 	const lower = base.y + 0.9 * k - lift;
 	// Nothing of him on the picture: nothing to draw.
 	if (right < 0 || left > cam.viewW || lower < 0 || upper > cam.viewH) {

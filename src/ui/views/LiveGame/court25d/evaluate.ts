@@ -10,13 +10,18 @@ import type {
 import { rimX, type Pt, type Pt3, type Side } from "./geometry.ts";
 import {
 	ANIMS,
+	armTo,
+	bodyOf,
 	bounceAt,
 	holdBall,
 	posed,
 	skeleton,
+	standingReach,
 	type AnimName,
 	type Body,
 	type Hand,
+	type Limb,
+	type Skeleton,
 	type V3,
 } from "./poses.ts";
 
@@ -68,6 +73,10 @@ export type PlayerState = {
 	dribbleHand?: Hand;
 	// His hands up as a target for a pass on its way to him (0 to 1).
 	target?: number;
+	// Up for a dunk: the jump a typical player makes to throw it down (feet),
+	// the rim, and how much his hands are on it (0 to 1). His own build
+	// decides how high he really goes - see withBody.
+	dunk?: { leap: number; rim: Pt3; grip: number };
 };
 
 // Bounces a second on a dribble: one steady beat, walking or driving, so the
@@ -350,6 +359,7 @@ export const evalPlayer = (
 	let anim: AnimName;
 	let phase: number;
 	let z = 0;
+	let dunk: PlayerState["dunk"];
 	if (act) {
 		const u = (t - act.t0) / (act.t1 - act.t0);
 		anim = act.anim;
@@ -359,6 +369,13 @@ export const evalPlayer = (
 				? clamp01(u)
 				: ((t - act.t0) / 1000) * (a.kind === "loop" ? a.fps / a.n : 1);
 		z = jumpZ(act, u);
+		if (act.rim && act.zKeys) {
+			dunk = {
+				leap: Math.max(...act.zKeys.map((k) => k[1])),
+				rim: act.rim.at,
+				grip: keyAt(act.rim.grip, clamp01(u)),
+			};
+		}
 	} else if (here.moving && mv) {
 		anim =
 			mv.anim === "run" &&
@@ -410,6 +427,86 @@ export const evalPlayer = (
 				? (has.hand ?? "R")
 				: undefined,
 		target: act || has ? undefined : targetAt(tl, pid, t) || undefined,
+		...(dunk ? { dunk } : {}),
+	};
+};
+
+// A value through an act, from its keys (0 before the first, the last after
+// the last), eased between them.
+const keyAt = (keys: [number, number][], u: number): number => {
+	if (keys.length === 0 || u <= keys[0]![0]) {
+		return keys[0]?.[1] ?? 0;
+	}
+	for (let i = 1; i < keys.length; i++) {
+		const [u1, v1] = keys[i]!;
+		if (u <= u1) {
+			const [u0, v0] = keys[i - 1]!;
+			return v0 + (v1 - v0) * ease(u1 === u0 ? 1 : (u - u0) / (u1 - u0));
+		}
+	}
+	return keys.at(-1)![1];
+};
+
+// Up for a dunk, as high as his own reach needs: a typical player's jump,
+// less for a seven-footer, more for a guard - so every dunker's hands get
+// over the rim. Everything that draws him or puts the ball in his hands
+// asks this first; asking twice changes nothing.
+const TYPICAL_REACH = standingReach(bodyOf());
+export const withBody = (st: PlayerState, body: Body): PlayerState => {
+	const d = st.dunk;
+	if (!d || d.leap <= 0 || st.z <= 0) {
+		return st;
+	}
+	const scale = Math.max(
+		0.4,
+		(d.leap + TYPICAL_REACH - standingReach(body)) / d.leap,
+	);
+	return { ...st, z: st.z * scale, dunk: { ...d, leap: 0 } };
+};
+
+// A world point in his own frame - forward, to his left, up from his feet.
+const toBody = (st: PlayerState, p: Pt3): V3 => {
+	const c = Math.cos(st.yaw);
+	const s = Math.sin(st.yaw);
+	const dx = p.x - st.x;
+	const dy = p.y - st.y;
+	return { f: dx * c + dy * s, s: dx * s - dy * c, u: p.z - st.z };
+};
+
+const mixLimb = (a: Limb, b: Limb, w: number): Limb => {
+	const m = (p: V3, q: V3): V3 => ({
+		f: p.f + (q.f - p.f) * w,
+		s: p.s + (q.s - p.s) * w,
+		u: p.u + (q.u - p.u) * w,
+	});
+	return {
+		root: m(a.root, b.root),
+		mid: m(a.mid, b.mid),
+		end: m(a.end, b.end),
+		tip: m(a.tip ?? a.end, b.tip ?? b.end),
+	};
+};
+
+// Hanging on the rim after a dunk: both hands on the front of it, a
+// shoulder's width apart.
+export const onRim = (sk: Skeleton, st: PlayerState, body: Body): Skeleton => {
+	const d = st.dunk;
+	if (!d || d.grip <= 0) {
+		return sk;
+	}
+	const at = toBody(st, d.rim);
+	const hand = (side: 1 | -1) =>
+		armTo(
+			body,
+			sk.chest,
+			{ f: at.f, s: at.s + side * 0.42, u: at.u },
+			-30,
+			side,
+		);
+	return {
+		...sk,
+		armR: mixLimb(sk.armR, hand(-1), d.grip),
+		armL: mixLimb(sk.armL, hand(1), d.grip),
 	};
 };
 
@@ -429,13 +526,18 @@ export const bodyPoint = (st: PlayerState, v: V3): Pt3 => {
 // A hand, in world feet, from his own skeleton - so the ball sits in the hands
 // the renderer draws.
 export const handWorld = (
-	st: PlayerState,
+	st0: PlayerState,
 	body: Body,
 	which: "near" | "far" | "both" = "both",
 ): Pt3 => {
-	const sk = skeleton(
+	const st = withBody(st0, body);
+	const sk = onRim(
+		skeleton(
+			body,
+			posed(st.anim, st.phase, st.dribble, st.dribbleHand, st.target),
+		),
+		st,
 		body,
-		posed(st.anim, st.phase, st.dribble, st.dribbleHand, st.target),
 	);
 	const r = sk.armR.end;
 	const l = sk.armL.end;
@@ -450,8 +552,9 @@ export const handWorld = (
 };
 
 // The ball in his hands, held the way his move holds it.
-export const heldBall = (st: PlayerState, body: Body): Pt3 =>
-	bodyPoint(
+export const heldBall = (st0: PlayerState, body: Body): Pt3 => {
+	const st = withBody(st0, body);
+	return bodyPoint(
 		st,
 		holdBall(
 			body,
@@ -459,6 +562,7 @@ export const heldBall = (st: PlayerState, body: Body): Pt3 =>
 			st.anim,
 		).ball,
 	);
+};
 
 export type BallState = {
 	x: number;

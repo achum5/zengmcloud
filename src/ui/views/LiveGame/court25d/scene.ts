@@ -32,6 +32,7 @@ import {
 	evalPlayer,
 	offenseAt,
 	recentFx,
+	withBody,
 	type BallState,
 	type PlayerState,
 } from "./evaluate.ts";
@@ -64,7 +65,7 @@ export const momentAt = (
 	for (const p of roster) {
 		const st = evalPlayer(tl, p.pid, t);
 		if (st.shown) {
-			players.push(st);
+			players.push(withBody(st, bodyFor(p.pid)));
 		}
 	}
 	return { t, players, ball: evalBall(tl, t, bodyFor) };
