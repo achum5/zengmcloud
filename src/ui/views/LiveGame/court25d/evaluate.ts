@@ -15,6 +15,7 @@ import {
 	skeleton,
 	type AnimName,
 	type Body,
+	type Hand,
 	type V3,
 } from "./poses.ts";
 
@@ -61,13 +62,26 @@ export type PlayerState = {
 	// him, his hands on it.
 	holding?: boolean;
 	// How far through a bounce of his dribble (0 the ball in his hand at the
-	// top), when he is dribbling: his hand rides it.
+	// top), when he is dribbling: his hand rides it - this one.
 	dribble?: number;
+	dribbleHand?: Hand;
 };
 
 // Bounces a second on a dribble: one steady beat, walking or driving, so the
 // ball never skips a bounce when he starts or stops.
 export const DRIBBLE_RATE = 2.1;
+// A crossover's bounces, quicker: low and hand to hand.
+export const CROSS_RATE = 3.2;
+const otherHand = (h: Hand): Hand => (h === "R" ? "L" : "R");
+
+// Through a crossover: which bounce, how far through it, and the hand it
+// left - each bounce the other hand from the one before.
+const crossAt = (seg: { t0: number; hand?: Hand }, t: number) => {
+	const b = ((t - seg.t0) / 1000) * CROSS_RATE;
+	const k = Math.floor(b);
+	const from = k % 2 ? otherHand(seg.hand ?? "R") : (seg.hand ?? "R");
+	return { ph: b - k, from, to: otherHand(from) };
+};
 const dribblePhase = (t0: number, t: number): number =>
 	(((((t - t0) / 1000) * DRIBBLE_RATE) % 1) + 1) % 1;
 
@@ -325,6 +339,9 @@ export const evalPlayer = (
 	}
 	const seg = ballSegAt(tl, t);
 	const has = seg?.kind === "hold" && seg.pid === pid ? seg : undefined;
+	// The hand on the ball: on a crossover, the one it left for the first
+	// half of the bounce, the one it goes to for the second.
+	const cross = has?.style === "cross" ? crossAt(has, t) : undefined;
 	return {
 		pid,
 		team: tr.team,
@@ -337,7 +354,18 @@ export const evalPlayer = (
 		phase,
 		moving: here.moving,
 		holding: has?.style === "hold",
-		dribble: has?.style === "dribble" ? dribblePhase(has.t0, t) : undefined,
+		dribble: cross
+			? cross.ph
+			: has?.style === "dribble"
+				? dribblePhase(has.t0, t)
+				: undefined,
+		dribbleHand: cross
+			? cross.ph < 0.5
+				? cross.from
+				: cross.to
+			: has?.style === "dribble"
+				? (has.hand ?? "R")
+				: undefined,
 	};
 };
 
@@ -361,7 +389,10 @@ export const handWorld = (
 	body: Body,
 	which: "near" | "far" | "both" = "both",
 ): Pt3 => {
-	const sk = skeleton(body, posed(st.anim, st.phase, st.dribble));
+	const sk = skeleton(
+		body,
+		posed(st.anim, st.phase, st.dribble, st.dribbleHand),
+	);
 	const r = sk.armR.end;
 	const l = sk.armL.end;
 	const h =
@@ -378,7 +409,11 @@ export const handWorld = (
 export const heldBall = (st: PlayerState, body: Body): Pt3 =>
 	bodyPoint(
 		st,
-		holdBall(body, posed(st.anim, st.phase, st.dribble), st.anim).ball,
+		holdBall(
+			body,
+			posed(st.anim, st.phase, st.dribble, st.dribbleHand),
+			st.anim,
+		).ball,
 	);
 
 export type BallState = {
@@ -428,14 +463,16 @@ export const evalBall = (
 	if (seg.kind === "hold") {
 		const st = evalPlayer(tl, seg.pid, t);
 		if (seg.style === "cross") {
-			// Low and quick, hand to hand across in front of him.
+			// Low and quick, hand to hand across in front of him - or through
+			// his legs.
 			const body = bodyFor(seg.pid);
-			const bounces = ((t - seg.t0) / 1000) * 3.2;
-			const k = Math.floor(bounces);
-			const ph = bounces - k;
-			const from = handWorld(st, body, k % 2 ? "far" : "near");
-			const to = handWorld(st, body, k % 2 ? "near" : "far");
-			const floor = bodyPoint({ ...st, z: 0 }, { f: 1.1, s: 0, u: BALL_R });
+			const { ph, from: a, to: b } = crossAt(seg, t);
+			const from = handWorld(st, body, a === "R" ? "near" : "far");
+			const to = handWorld(st, body, b === "R" ? "near" : "far");
+			const floor = bodyPoint(
+				{ ...st, z: 0 },
+				{ f: seg.move === "legs" ? 0.15 : 1.1, s: 0, u: BALL_R },
+			);
 			const tri = dribbleDepth(ph);
 			const h = ph < DOWN ? from : to;
 			return {
@@ -447,13 +484,14 @@ export const evalBall = (
 		}
 		if (seg.style === "dribble") {
 			const body = bodyFor(seg.pid);
-			const h = handWorld(st, body, "near");
+			const left = seg.hand === "L";
+			const h = handWorld(st, body, left ? "far" : "near");
 			const ph = st.dribble ?? dribblePhase(seg.t0, t);
 			const tri = dribbleDepth(ph);
-			// It hits the floor ahead of him and off his right foot.
+			// It hits the floor ahead of him and off the foot on that side.
 			const floor = bodyPoint(
 				{ ...st, z: 0 },
-				{ f: st.moving ? 1.6 : 0.9, s: -0.75, u: BALL_R },
+				{ f: st.moving ? 1.6 : 0.9, s: left ? 0.75 : -0.75, u: BALL_R },
 			);
 			return {
 				x: h.x + (floor.x - h.x) * tri,

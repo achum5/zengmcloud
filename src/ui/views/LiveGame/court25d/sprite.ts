@@ -409,7 +409,7 @@ export const drawSprite = (
 		}
 		key = `${id}|${st.anim}|${pose.phase}|${pose.turn}|${Math.round(
 			Math.log(k) / Math.log(1.04),
-		)}|${px}|${st.holding ? 1 : 0}|${pose.dribble ?? ""}`;
+		)}|${px}|${st.holding ? 1 : 0}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}`;
 		const kept = cache.kept.get(key);
 		if (kept) {
 			const smoothing = ctx.imageSmoothingEnabled;

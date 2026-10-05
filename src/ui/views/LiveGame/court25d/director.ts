@@ -34,8 +34,8 @@ import {
 	type Pt3,
 	type Side,
 } from "./geometry.ts";
-import { DRIBBLE_RATE } from "./evaluate.ts";
-import type { AnimName } from "./poses.ts";
+import { CROSS_RATE, DRIBBLE_RATE } from "./evaluate.ts";
+import type { AnimName, Hand } from "./poses.ts";
 import {
 	callAny,
 	callShot,
@@ -127,6 +127,11 @@ export type BallSeg =
 			pid: number;
 			// A crossover switches hands every bounce.
 			style: "hold" | "dribble" | "cross";
+			// The hand he dribbles with (a crossover: starts in); right if
+			// unsaid. A crossover goes across in front of him or between his
+			// legs.
+			hand?: Hand;
+			move?: "front" | "legs";
 	  }
 	| {
 			kind: "fly";
@@ -274,6 +279,8 @@ const WALK = 6;
 const PASS_FTPS = 42;
 // A basketball's radius, feet: its middle when it touches the floor.
 const BALL_R = 0.39;
+// One bounce of a crossover, from one hand to the other (see evaluate.ts).
+const CROSS_MS = 1000 / CROSS_RATE;
 
 const passMs = (d: number) =>
 	Math.min(900, Math.max(260, 180 + (d * 1000) / PASS_FTPS));
@@ -457,8 +464,11 @@ class Director {
 	// `stretch`: may run on to the next cut (see finish).
 	readonly shots: (ArenaShot & { stretch?: boolean })[] = [];
 
-	// The ball at the end of everything scheduled so far.
+	// The ball at the end of everything scheduled so far - and which hand it
+	// is in, while he dribbles.
 	private holder: number | undefined;
+	private ballHand: Hand = "R";
+	private ballHandOf: number | undefined;
 	private ballAt: Pt3 = { x: COURT_W / 2, y: COURT_H / 2, z: 4 };
 	private offense: Side = 1;
 	private phase: Phase = "start";
@@ -695,9 +705,30 @@ class Director {
 		pid: number,
 		t: number,
 		style: "hold" | "dribble" | "cross" = "hold",
+		hand?: Hand,
+		move?: "front" | "legs",
 	) {
-		this.pushBall({ kind: "hold", t0: t, pid, style });
+		// The hand the ball is in, unless he is told otherwise - his strong
+		// one, once he has had it in both.
+		const h = hand ?? (this.ballHandOf === pid ? this.ballHand : "R");
+		this.pushBall({
+			kind: "hold",
+			t0: t,
+			pid,
+			style,
+			...(style !== "hold" ? { hand: h } : {}),
+			...(move ? { move } : {}),
+		});
 		this.holder = pid;
+		this.ballHand = style === "hold" ? "R" : h;
+		this.ballHandOf = pid;
+	}
+
+	// Which hand a ball handler going from `a` to `b`, facing the rim his
+	// team attacks, dribbles with: the one on the side he is going.
+	private handFor(a: Pt, b: Pt, dir: 1 | -1): Hand {
+		const lateral = (b.y - a.y) * dir;
+		return lateral < -1 ? "L" : lateral > 1 ? "R" : this.ballHand;
 	}
 
 	private fly(t0: number, t1: number, from: BallEnd, to: BallEnd) {
@@ -1811,7 +1842,12 @@ class Director {
 			this.hold(pid, t, "hold");
 			return t;
 		}
-		this.hold(pid, start, kind === "snake" ? "cross" : "dribble");
+		this.hold(
+			pid,
+			start,
+			kind === "snake" ? "cross" : "dribble",
+			kind === "snake" ? undefined : this.handFor(this.posOf(pid), P, dir),
+		);
 		let t = start;
 		if (kind === "snake") {
 			// Back across his man first, then around the corner.
@@ -2329,21 +2365,27 @@ class Director {
 		// Across his path.
 		const ax = -dy / d;
 		const ay = dx / d;
+		const goHand = this.handFor(from, P, dir);
 		if (style === "crossover") {
-			// A hesitation and a crossover, then the drive.
-			const jab = this.rng() < 0.5 ? 1.7 : -1.7;
-			this.hold(pid, t, "cross");
-			t = this.go(
+			// A hesitation with the ball in the other hand and a jab that way,
+			// then one quick bounce across - in front of him or between his
+			// legs - into the hand on the side he goes, and the drive.
+			const start: Hand = goHand === "R" ? "L" : "R";
+			this.hold(pid, t, "dribble", start);
+			// His right is toward the camera when he faces the right rim.
+			const jab = (start === "R" ? 1 : -1) * dir * 1.6;
+			const tc = this.go(
 				pid,
-				clampPt({ x: from.x + ax * jab, y: from.y + ay * jab }),
-				t + 120,
+				clampPt({ x: from.x, y: from.y + jab }),
+				t + 80,
 				6,
 				"dribble",
 				dir,
 			);
-			t += 120;
+			this.hold(pid, tc, "cross", start, this.rng() < 0.3 ? "legs" : "front");
+			t = tc + CROSS_MS;
 		}
-		this.hold(pid, t, "dribble");
+		this.hold(pid, t, "dribble", goHand);
 		if (style === "euro") {
 			// One way, then the other, then up.
 			const side = this.rng() < 0.5 ? 1 : -1;

@@ -309,7 +309,7 @@ export const drawFigure = (
 	// Screen pixels to a sprite pixel: the finest line worth drawing.
 	px: number,
 ): FigureAnchors => {
-	const q = posed(st.anim, st.phase, st.dribble);
+	const q = posed(st.anim, st.phase, st.dribble, st.dribbleHand);
 	const held = st.holding ? holdBall(body, q, st.anim) : undefined;
 	const sk = held ? held.sk : skeleton(body, q);
 	const at = (v: V3): Projected => project(cam, bodyPoint(st, v));
@@ -878,7 +878,10 @@ export const drawHeadAt = (
 	body: Body,
 	look: Look,
 ) => {
-	const sk = skeleton(body, posed(st.anim, st.phase, st.dribble));
+	const sk = skeleton(
+		body,
+		posed(st.anim, st.phase, st.dribble, st.dribbleHand),
+	);
 	const at = (v: V3): Projected => project(cam, bodyPoint(st, v));
 	const toCamX = cam.pos.x - st.x;
 	const toCamY = cam.pos.y - st.y;
