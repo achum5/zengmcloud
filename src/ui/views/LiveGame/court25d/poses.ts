@@ -70,7 +70,8 @@ const keyed = (keys: [number, Pose][], u: number): Pose => {
 };
 
 const P = {
-	ready: pose({}),
+	// Standing easy: arms hanging loose, a little bend at the elbows.
+	ready: pose({ shN: 8, elN: 24, shF: 12, elF: 28, abN: 12, abF: 12 }),
 	stance: pose({
 		hipN: 30,
 		kneeN: 62,
@@ -252,7 +253,7 @@ export const ANIMS = {
 		kind: "loop",
 		n: 2,
 		fps: 1.5,
-		pose: (i) => (i ? pose({ kneeN: 20, kneeF: 22 }) : P.ready),
+		pose: (i) => (i ? { ...P.ready, kneeN: 20, kneeF: 22 } : P.ready),
 	},
 	stance: {
 		kind: "loop",

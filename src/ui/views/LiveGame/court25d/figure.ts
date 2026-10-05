@@ -85,6 +85,9 @@ type P2 = { x: number; y: number };
 // other side of every limb is in shadow.
 const LIGHT = { x: -0.42, y: -0.91 };
 
+// How far down the thigh the shorts reach: today's, to the top of the knee.
+const SHORTS_HEM = 0.94;
+
 const lerp2 = (a: P2, b: P2, f: number): P2 => ({
 	x: a.x + (b.x - a.x) * f,
 	y: a.y + (b.y - a.y) * f,
@@ -432,15 +435,15 @@ export const drawFigure = (
 		// ankle.
 		const shoe = sneaker(ankle, toe, ankle.k, Math.abs(front) > 0.62);
 		shapes.push({ path: shoe.upper, fill: dim(shoeColor, far) });
-		// Shorts: wide and loose to just above the knee.
-		const hem = lerp2(hip, knee, 0.74);
+		// Shorts: long, wide and loose, down to the top of the knee.
+		const hem = lerp2(hip, knee, SHORTS_HEM);
 		const tx = knee.x - hip.x;
 		const ty = knee.y - hip.y;
 		const tl = Math.hypot(tx, ty) || 1;
 		const nx = -ty / tl;
 		const ny = tx / tl;
-		const wTop = body.thighR * 1.3 * hip.k;
-		const wHem = body.thighR * 1.4 * knee.k;
+		const wTop = body.thighR * 1.42 * hip.k;
+		const wHem = body.thighR * 1.56 * knee.k;
 		const hemL = { x: hem.x + nx * wHem, y: hem.y + ny * wHem };
 		const hemR = { x: hem.x - nx * wHem, y: hem.y - ny * wHem };
 		const shorts = softPoly([
@@ -458,26 +461,20 @@ export const drawFigure = (
 			detail: () => {
 				ctx.fillStyle = soleColor;
 				ctx.fill(shoe.sole);
-				// The stripe down the outside of the shorts.
-				const a = at(off(limb.root, 0, outer * body.thighR * 1.32));
-				const b = at(
-					off(
-						{
-							f: limb.root.f + (limb.mid.f - limb.root.f) * 0.76,
-							s: limb.root.s + (limb.mid.s - limb.root.s) * 0.76,
-							u: limb.root.u + (limb.mid.u - limb.root.u) * 0.76,
-						},
-						0,
-						outer * body.thighR * 1.4,
-					),
-				);
+				// The stripe down the outside of the shorts - on them, never
+				// beside them.
+				const a = at(off(limb.root, 0, outer * body.thighR * 1.22));
+				const b = at(off(limb.mid, 0, outer * body.thighR * 1.3));
+				ctx.save();
+				ctx.clip(shorts);
 				ctx.strokeStyle = dim(kit.stripe, far);
 				ctx.lineCap = "butt";
-				ctx.lineWidth = Math.max(px, 0.12 * hip.k);
+				ctx.lineWidth = Math.max(px, 0.14 * hip.k);
 				ctx.beginPath();
 				ctx.moveTo(a.x, a.y);
 				ctx.lineTo(b.x, b.y);
 				ctx.stroke();
+				ctx.restore();
 			},
 		});
 	};
@@ -502,10 +499,15 @@ export const drawFigure = (
 	const chest = at(sk.chest);
 	const headC = at(sk.head);
 	const neckBase = at(off(sk.chest, 0, 0, body.H * 0.01));
+	// A jersey is a tank top: narrow over the shoulders, cut away under the
+	// arms, so his shoulders show round beside it. A shirt (an official's,
+	// a coach's jacket) covers them.
+	const strap = look.outfit ? 0.8 : 0.66;
+	const pit = look.outfit ? 0.94 : 0.86;
 	const jerseyPts = hull([
-		...ring(1.0, body.shoulderW * 0.8, body.depth * 0.44),
-		...ring(0.82, body.shoulderW * 0.94, body.depth * 0.56),
-		...ring(0.5, body.hipW * 1.7, body.depth * 0.54),
+		...ring(1.0, body.shoulderW * strap, body.depth * 0.44),
+		...ring(0.82, body.shoulderW * pit, body.depth * 0.56),
+		...ring(0.5, body.hipW * 1.66, body.depth * 0.54),
 		...ring(0.06, body.hipW * 1.56, body.depth * 0.5),
 	]);
 	const waistPts = hull([
@@ -545,9 +547,40 @@ export const drawFigure = (
 		],
 		detail: () => {
 			drawStripes();
+			drawTrim();
 			drawCollar();
 		},
 	});
+
+	// The trim round the armholes and the back of the neck, seen from in
+	// front or behind.
+	const drawTrim = () => {
+		if (look.outfit || Math.abs(front) < 0.4) {
+			return;
+		}
+		let x0 = Infinity;
+		let x1 = -Infinity;
+		let y0 = Infinity;
+		for (const q of jerseyPts) {
+			x0 = Math.min(x0, q.x);
+			x1 = Math.max(x1, q.x);
+			y0 = Math.min(y0, q.y);
+		}
+		const armpit = at({
+			f: sk.pelvis.f + (sk.chest.f - sk.pelvis.f) * 0.6,
+			s: 0,
+			u: sk.pelvis.u + (sk.chest.u - sk.pelvis.u) * 0.6,
+		});
+		ctx.save();
+		ctx.clip(jerseyPath);
+		ctx.beginPath();
+		ctx.rect(x0 - px, y0 - px, x1 - x0 + 2 * px, armpit.y - y0 + px);
+		ctx.clip();
+		ctx.strokeStyle = kit.trim;
+		ctx.lineWidth = 2 * px;
+		ctx.stroke(jerseyPath);
+		ctx.restore();
+	};
 
 	// A referee's stripes, down the shirt.
 	const drawStripes = () => {
@@ -893,7 +926,8 @@ export const drawHeadAt = (
 };
 
 // A sneaker, from the ankle to the toe: the upper - low at the toe, high at
-// the collar - and the sole along its bottom.
+// the collar - on a thick sole along its bottom. Big and chunky, the way a
+// cartoon draws them.
 const sneaker = (
 	ankle: Projected,
 	toe: Projected,
@@ -903,16 +937,16 @@ const sneaker = (
 	const dx = toe.x - ankle.x;
 	const dy = toe.y - ankle.y;
 	const len = Math.hypot(dx, dy);
-	const h = 0.36 * k;
+	const h = 0.43 * k;
 	// Pointing at or away from the camera, a shoe is its rounded front: a toe
 	// box over a sole.
 	if (headOn || len < 0.42 * k) {
 		const c = lerp2(ankle, toe, 0.7);
-		const w = 0.3 * k;
+		const w = 0.36 * k;
 		const upper = new Path2D();
-		upper.ellipse(c.x, c.y + h * 0.1, w, h * 0.58, 0, 0, Math.PI * 2);
+		upper.ellipse(c.x, c.y + h * 0.06, w, h * 0.6, 0, 0, Math.PI * 2);
 		const sole = new Path2D();
-		sole.ellipse(c.x, c.y + h * 0.48, w * 0.96, h * 0.2, 0, 0, Math.PI * 2);
+		sole.ellipse(c.x, c.y + h * 0.46, w * 1.0, h * 0.22, 0, 0, Math.PI * 2);
 		return { upper, sole };
 	}
 	const along = len;
@@ -920,28 +954,28 @@ const sneaker = (
 	const uy = len > 0.01 ? dy / len : 0;
 	// Screen up for the shoe is straight up; the floor is below.
 	const heel = {
-		x: ankle.x - ux * along * 0.32,
-		y: ankle.y - uy * along * 0.32,
+		x: ankle.x - ux * along * 0.36,
+		y: ankle.y - uy * along * 0.36,
 	};
 	const tip = {
-		x: ankle.x + ux * along * 1.08,
-		y: ankle.y + uy * along * 1.08,
+		x: ankle.x + ux * along * 1.14,
+		y: ankle.y + uy * along * 1.14,
 	};
 	const floorY = (p: P2) => p.y + h * 0.42;
 	const instep = lerp2(heel, tip, 0.62);
 	const upper = softPoly([
 		{ x: heel.x, y: floorY(heel) },
 		{ x: tip.x, y: floorY(tip) },
-		{ x: tip.x + ux * h * 0.15, y: tip.y - h * 0.05 },
-		{ x: instep.x, y: instep.y - h * 0.42 },
-		{ x: ankle.x + ux * h * 0.08, y: ankle.y - h * 0.78 },
-		{ x: heel.x - ux * h * 0.12, y: heel.y - h * 0.62 },
+		{ x: tip.x + ux * h * 0.18, y: tip.y - h * 0.08 },
+		{ x: instep.x, y: instep.y - h * 0.46 },
+		{ x: ankle.x + ux * h * 0.1, y: ankle.y - h * 0.8 },
+		{ x: heel.x - ux * h * 0.14, y: heel.y - h * 0.64 },
 	]);
 	const sole = softPoly([
-		{ x: heel.x - ux * h * 0.06, y: floorY(heel) - h * 0.22 },
-		{ x: tip.x + ux * h * 0.12, y: floorY(tip) - h * 0.2 },
-		{ x: tip.x + ux * h * 0.1, y: floorY(tip) + h * 0.08 },
-		{ x: heel.x - ux * h * 0.04, y: floorY(heel) + h * 0.08 },
+		{ x: heel.x - ux * h * 0.08, y: floorY(heel) - h * 0.26 },
+		{ x: tip.x + ux * h * 0.14, y: floorY(tip) - h * 0.24 },
+		{ x: tip.x + ux * h * 0.12, y: floorY(tip) + h * 0.1 },
+		{ x: heel.x - ux * h * 0.06, y: floorY(heel) + h * 0.1 },
 	]);
 	return { upper, sole };
 };
