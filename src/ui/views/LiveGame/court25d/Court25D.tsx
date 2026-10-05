@@ -9,6 +9,7 @@ import {
 } from "react";
 import { useLocal } from "../../../util/local.ts";
 import { usePlayerFace, type PlayerFace } from "../../../util/playerFaces.ts";
+import type { ReplayLooks } from "../../../../common/types.ts";
 import LiveCourt from "../LiveCourt.tsx";
 import {
 	benchPlane,
@@ -202,7 +203,15 @@ const Court25D = ({
 	const { lid, gender } = useLocal(["lid", "gender"]);
 	const gid: number | undefined = boxScore?.gid;
 	const season: number | undefined = boxScore?.season;
-	const raw: any[] = Array.isArray(boxScore?.teams) ? boxScore.teams : [];
+	// A saved replay remembers how everyone looked that night.
+	const looksThen: ReplayLooks | undefined = boxScore?.replayLooks;
+	const raw: any[] = useMemo(() => {
+		const teams: any[] = Array.isArray(boxScore?.teams) ? boxScore.teams : [];
+		return teams.map((t) => {
+			const then = looksThen?.teams[t?.tid];
+			return then ? { ...t, ...then, court: then.court } : t;
+		});
+	}, [boxScore?.teams, looksThen]);
 	// Display order, same as the 2D court: [away (attacks left), home].
 	const away = raw[1];
 	const home = raw[0];
@@ -305,6 +314,19 @@ const Court25D = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[roster],
 	);
+
+	// A replay's faces are already here: no need to ask for today's.
+	useEffect(() => {
+		if (!looksThen) {
+			return;
+		}
+		for (const p of roster) {
+			const then = looksThen.players[p.pid];
+			if (then) {
+				onFace(p.pid, then);
+			}
+		}
+	}, [looksThen, roster, onFace]);
 
 	const appearance = useMemo(() => {
 		const looks = new Map<number, Look>();
@@ -418,6 +440,7 @@ const Court25D = ({
 	}, [cursor, paused, timeline]);
 
 	const homePad = home?.colors?.[0] ?? "#8c1d40";
+	const lineColor: string = home?.court?.lines || "#f8f5f0";
 	const warmups = useMemo(
 		(): [string, string] => [
 			shade(kits[0].jersey, -0.3),
@@ -438,6 +461,7 @@ const Court25D = ({
 		size,
 		narrow,
 		homePad,
+		lineColor,
 		warmups,
 		eventsLength: events?.length ?? 0,
 	});
@@ -452,6 +476,7 @@ const Court25D = ({
 		size,
 		narrow,
 		homePad,
+		lineColor,
 		warmups,
 		eventsLength: events?.length ?? 0,
 	};
@@ -683,6 +708,7 @@ const Court25D = ({
 				bodyFor: bodyOfPid,
 				lookFor: lookOf,
 				padColor: p.homePad,
+				lineColor: p.lineColor,
 				warmups: p.warmups,
 				shotClock: shotText,
 				dpr,
@@ -734,19 +760,22 @@ const Court25D = ({
 				isolation: "isolate",
 			}}
 		>
-			{roster.map((p) => (
-				<FaceLoader
-					key={p.pid}
-					pid={p.pid}
-					season={season}
-					lid={lid}
-					onFace={onFace}
-				/>
-			))}
+			{roster
+				.filter((p) => !looksThen?.players[p.pid])
+				.map((p) => (
+					<FaceLoader
+						key={p.pid}
+						pid={p.pid}
+						season={season}
+						lid={lid}
+						onFace={onFace}
+					/>
+				))}
 			<style>
-				{
-					".court25d-caption .text-body-secondary { color: #c9c3d3 !important; }"
-				}
+				{".court25d-caption .text-body-secondary { color: #c9c3d3 !important; }" +
+					// The floor picture's own lines (and the flat hoop drawn among
+					// them) - the court draws its lines itself (see courtLines).
+					' [data-court25d-floor] g[stroke-width="0.25"] { display: none; }'}
 			</style>
 			<div
 				aria-hidden
@@ -777,6 +806,7 @@ const Court25D = ({
 					ref={(el) => {
 						setPlaneRef(COURT_PLANE.key, el);
 					}}
+					data-court25d-floor
 					style={planeStyle(COURT_PLANE)}
 				>
 					<LiveCourt

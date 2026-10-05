@@ -34,6 +34,7 @@ import writePlayerStats, {
 	P_FATIGUE_DAILY_REDUCTION,
 } from "./writePlayerStats.ts";
 import writeTeamStats from "./writeTeamStats.ts";
+import { takeReplayLooks } from "./replayLooks.ts";
 import {
 	clearRosterBlockNotice,
 	notifyRosterBlockedSim,
@@ -593,10 +594,15 @@ const play = async (
 					continue;
 				}
 				try {
+					const tids = [result.team[0].id, result.team[1].id];
+					const pids = [...result.team[0].player, ...result.team[1].player].map(
+						(p: { id: number }) => p.id,
+					);
 					await idb.cache.liveGamePlayByPlay.put({
 						gid: result.gid,
 						season: g.get("season"),
 						playByPlay: result.playByPlay,
+						looks: await takeReplayLooks(tids, pids),
 					});
 				} catch (error) {
 					console.error("Failed to save game play-by-play", error);

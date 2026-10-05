@@ -332,6 +332,35 @@ describe("2.5D director", () => {
 		);
 	});
 
+	// A saved replay is the play-by-play read back out of the database and
+	// staged again, on whatever device, after whatever else was watched.
+	test("a saved replay stages exactly like the game did, every viewing", () => {
+		const live = compile("replay");
+		compile("another game in between");
+		// (IndexedDB stores a structured clone.)
+		const saved = structuredClone(live.events);
+		const again = compileCourt({
+			events: saved,
+			players: live.players,
+			gid: gidOf("replay"),
+		});
+		const dump = (tl: CourtTimeline) =>
+			JSON.stringify({ ...tl, tracks: [...tl.tracks.entries()] });
+		assert.strictEqual(dump(again), dump(live.tl));
+		for (const t of sampleTimes(live.tl, 250)) {
+			for (const p of live.players) {
+				assert.deepStrictEqual(
+					evalPlayer(again, p.pid, t),
+					evalPlayer(live.tl, p.pid, t),
+				);
+			}
+			assert.deepStrictEqual(
+				evalBall(again, t, bodyFor),
+				evalBall(live.tl, t, bodyFor),
+			);
+		}
+	});
+
 	test("a player's moves never overlap and stay near the floor", () => {
 		const { tl } = compile("moves", 160);
 		for (const tr of tl.tracks.values()) {

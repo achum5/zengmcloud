@@ -7,6 +7,7 @@ import {
 	type HoopFx,
 } from "./arena.ts";
 import { depthOf, project, type Camera, type Shot } from "./camera.ts";
+import { drawCourtLines } from "./courtLines.ts";
 import type { CourtTimeline } from "./director.ts";
 import {
 	evalBall,
@@ -57,6 +58,8 @@ export type Frame = {
 	bodyFor: (pid: number) => Body;
 	lookFor: (pid: number) => Look;
 	padColor: string;
+	// The home floor's line paint.
+	lineColor: string;
 	// The warm-up tops the bench wears, by team.
 	warmups: [string, string];
 	shotClock: string;
@@ -200,6 +203,7 @@ export const drawFrame = (f: Frame) => {
 	const bench = benchStates(f, onFloor);
 
 	drawFlashes(ctx, cam, tl, t);
+	drawCourtLines(ctx, cam, f.lineColor);
 
 	// Reflections in the polished floor.
 	const g = glossCtx;

@@ -392,7 +392,9 @@ const drawHead = (
 	const ahead = at({ f: head.f + 1, s: head.s, u: head.u });
 	const turn = Math.sign(ahead.x - c.x) || 1;
 	const sprite = look.head;
-	if (mirror || !sprite || front < -0.15) {
+	// Side on - a free throw seen from the sideline - his face is only part
+	// there, so the back of his head goes under it: the head never fades out.
+	if (mirror || !sprite || front < 0.25) {
 		// The back (or the reflection) of his head.
 		ctx.fillStyle = look.skin;
 		ctx.beginPath();
@@ -412,7 +414,7 @@ const drawHead = (
 			);
 			ctx.fill();
 		}
-		if (mirror || !sprite) {
+		if (mirror || !sprite || front < -0.15) {
 			return;
 		}
 	}

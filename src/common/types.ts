@@ -501,6 +501,34 @@ export type LiveGamePlayByPlay = {
 	// play index it was sent at, so a replay shows the conversation unfolding
 	// at the right moments. Travels with the league, exports included.
 	chat?: LiveGameChatMessage[];
+	// How everyone looked that night (see ReplayLooks). Missing on replays
+	// saved before it was kept.
+	looks?: ReplayLooks;
+};
+
+// HOW A GAME LOOKED THE NIGHT IT WAS PLAYED.
+//
+// A replay re-stages the saved play-by-play exactly, but a face ages with
+// the seasons and a team can change its floor, so a game rewatched years
+// later would star today's older faces on today's court. The 2.5D court
+// draws a saved replay from this instead.
+export type ReplayLooks = {
+	players: Record<
+		number,
+		{ face?: FaceConfig; imgURL?: string; hgt?: number; weight?: number }
+	>;
+	teams: Record<
+		number,
+		{
+			region?: string;
+			name?: string;
+			abbrev?: string;
+			imgURL?: string;
+			colors?: [string, string, string];
+			jersey?: string;
+			court?: CourtStyle;
+		}
+	>;
 };
 
 // One team's line in a contested free-agency roll: its mood-derived odds and

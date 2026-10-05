@@ -345,6 +345,17 @@ const updatePlayByPlay = async (
 				? `${boxScore.season} Playoffs`
 				: `${boxScore.season} Regular Season`;
 			(out.initialBoxScore as any).replayLabel = label;
+			// How everyone looked that night, for the 2.5D court.
+			try {
+				const row =
+					(await idb.cache.liveGamePlayByPlay.get(gid)) ??
+					(await (idb.league as any).get("liveGamePlayByPlay", gid));
+				if (row?.looks) {
+					(out.initialBoxScore as any).replayLooks = row.looks;
+				}
+			} catch {
+				// Cosmetic - today's looks it is.
+			}
 		}
 
 		return out;
