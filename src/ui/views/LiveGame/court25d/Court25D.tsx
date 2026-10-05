@@ -532,13 +532,14 @@ const Court25D = ({
 				return;
 			}
 			const { w, h } = p.size;
-			const dpr = Math.min(2, window.devicePixelRatio || 1);
+			const dpr = Math.min(3, window.devicePixelRatio || 1);
 			if (w <= 0 || h <= 0) {
 				return;
 			}
-			// The picture: about 240 pixel-art pixels tall, each a whole number
-			// of device pixels.
-			const art = Math.max(2, Math.round((h * dpr) / 240));
+			// The picture: about 320 pixel-art pixels tall - chunky enough to
+			// read as pixel art, fine enough to show a hand on the ball - each a
+			// whole number of device pixels.
+			const art = Math.max(1, Math.round((h * dpr) / 320));
 			const fw = Math.ceil((w * dpr) / art);
 			const fh = Math.ceil((h * dpr) / art);
 			if (canvas.width !== fw || canvas.height !== fh) {
@@ -631,6 +632,9 @@ const Court25D = ({
 					bench: [pt.bench0, pt.bench1],
 				},
 				crowd: { up, wave },
+				// Lettering about 10 CSS pixels tall: a 7-pixel font, each of
+				// its pixels this many picture pixels.
+				textScale: Math.max(1, Math.round(10 / ((7 * art) / dpr))),
 			});
 
 			if (clockText !== s.clockText && clockRef.current) {

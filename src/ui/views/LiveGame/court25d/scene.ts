@@ -100,6 +100,9 @@ export type Frame = {
 	arena: ArenaPaint;
 	// The crowd on its feet (0..1), and which way its arms are this instant.
 	crowd: { up: number; wave: boolean };
+	// How many picture pixels to a pixel of the lettering drawn into it, so a
+	// name reads at the same size on every screen.
+	textScale: number;
 };
 
 const fxLevel = (
@@ -396,7 +399,7 @@ export const drawFrame = (f: Frame) => {
 			? undefined
 			: players.find((p) => p.pid === ball.holder);
 	if (holder) {
-		drawNameTag(ctx, cam, holder, f.lookFor(holder.pid).name);
+		drawNameTag(ctx, cam, holder, f.lookFor(holder.pid).name, f.textScale);
 	}
 };
 
@@ -405,17 +408,18 @@ const drawNameTag = (
 	cam: Camera,
 	st: PlayerState,
 	name: string,
+	scale: number,
 ) => {
-	const w = pixelTextWidth(name);
+	const w = pixelTextWidth(name, scale);
 	if (w === 0) {
 		return;
 	}
 	const feet = project(cam, { x: st.x, y: st.y, z: 0 });
 	const x = Math.round(feet.x - w / 2);
-	const y = Math.round(feet.y + Math.max(3, 0.55 * feet.k));
+	const y = Math.round(feet.y + Math.max(3 * scale, 0.55 * feet.k));
 	ctx.fillStyle = "rgba(8, 8, 12, 0.72)";
-	ctx.fillRect(x - 2, y - 2, w + 4, 11);
-	drawPixelText(ctx, name, x, y, "#ffffff");
+	ctx.fillRect(x - 2 * scale, y - 2 * scale, w + 4 * scale, 11 * scale);
+	drawPixelText(ctx, name, x, y, "#ffffff", scale);
 };
 
 // WHERE THE CAMERA LOOKS: mostly at the ball, pulled toward the middle of

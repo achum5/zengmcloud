@@ -57,19 +57,20 @@ const clean = (text: string): string =>
 		.toUpperCase()
 		.replace(/[^\d '.A-Z-]/g, "");
 
-export const pixelTextWidth = (text: string): number => {
+export const pixelTextWidth = (text: string, scale = 1): number => {
 	const t = clean(text);
-	return t.length > 0 ? t.length * 6 - 1 : 0;
+	return t.length > 0 ? (t.length * 6 - 1) * scale : 0;
 };
 
-// Draws the text with its top left at (x, y), one font pixel to one canvas
-// pixel.
+// Draws the text with its top left at (x, y), each font pixel a `scale` by
+// `scale` square of canvas pixels.
 export const drawPixelText = (
 	ctx: CanvasRenderingContext2D,
 	text: string,
 	x: number,
 	y: number,
 	color: string,
+	scale = 1,
 ) => {
 	const t = clean(text);
 	ctx.fillStyle = color;
@@ -82,11 +83,11 @@ export const drawPixelText = (
 				const row = rows[r]!;
 				for (let c = 0; c < 5; c++) {
 					if (row[c] === "1") {
-						ctx.fillRect(cx + c, cy + r, 1, 1);
+						ctx.fillRect(cx + c * scale, cy + r * scale, scale, scale);
 					}
 				}
 			}
 		}
-		cx += 6;
+		cx += 6 * scale;
 	}
 };
