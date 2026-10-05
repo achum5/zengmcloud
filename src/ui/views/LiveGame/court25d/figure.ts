@@ -81,7 +81,7 @@ const LIGHT = { x: -0.42, y: -0.91 };
 // His face is drawn a little above the true middle of his head (in head
 // radii): from the camera up in the stands his chin would hide his neck, and
 // a cartoon shows it. His jaw is about JAW radii under the face's middle.
-const FACE_LIFT = 0.22;
+const FACE_LIFT = 0.15;
 const JAW = 1.04;
 
 // How far down the thigh the shorts reach: today's, to the top of the knee.
@@ -566,9 +566,9 @@ export const drawFigure = (
 	]);
 	const neckBase = at(off(sk.chest, 0, 0, body.H * 0.012));
 	const neckW: Station[] = [
-		[0, sw * 0.38],
-		[0.5, sw * 0.32],
-		[1, sw * 0.3],
+		[0, sw * 0.42],
+		[0.5, sw * 0.37],
+		[1, sw * 0.35],
 	];
 	const neck = limbShape(neckBase, neckBase.k, headC, headC.k, neckW);
 	// The shadow of his jaw across the top of his neck.
@@ -1165,16 +1165,17 @@ const drawHead = (
 	const sprite = look.head;
 	// The back of his head - his hair over it, his ears either side - sized to
 	// the face that turns into it.
-	const back = () => {
+	const back = (dx = 0) => {
+		const x = c.x + dx;
 		const p = new Path2D();
-		p.ellipse(c.x, c.y - r * 0.1, r * 0.96, r * 1.14, 0, 0, Math.PI * 2);
+		p.ellipse(x, c.y - r * 0.1, r * 0.96, r * 1.14, 0, 0, Math.PI * 2);
 		ctx.fillStyle = look.skin;
 		ctx.fill(p);
 		ctx.fillStyle = shade(look.skin, -0.1);
 		for (const s of [-1, 1]) {
 			ctx.beginPath();
 			ctx.ellipse(
-				c.x + s * r * 0.94,
+				x + s * r * 0.94,
 				c.y + r * 0.02,
 				r * 0.15,
 				r * 0.26,
@@ -1187,7 +1188,7 @@ const drawHead = (
 		if (look.hair !== look.skin) {
 			ctx.fillStyle = look.hair;
 			ctx.beginPath();
-			ctx.ellipse(c.x, c.y - r * 0.26, r * 0.94, r * 1.0, 0, 0, Math.PI * 2);
+			ctx.ellipse(x, c.y - r * 0.26, r * 0.94, r * 1.0, 0, 0, Math.PI * 2);
 			ctx.fill();
 		}
 	};
@@ -1199,6 +1200,11 @@ const drawHead = (
 	// he turns, so the head is never see-through).
 	if (front < -0.16) {
 		back();
+	} else if (front < 0.55) {
+		// Side on, the back of his skull shows behind his face, over the top of
+		// his neck.
+		const side = 1 - Math.max(0, (front - 0.1) / 0.45);
+		back(-turn * r * 0.3 * Math.min(1, side));
 	}
 	// His face, cheated toward the camera the way a cartoon is: even side on,
 	// most of it shows, shifted the way he looks.

@@ -2103,7 +2103,7 @@ export const bodyOf = (hgt = DEFAULT_HGT, weight = DEFAULT_WEIGHT): Body => {
 		shin: H * 0.18,
 		foot: H * 0.15,
 		torso: H * 0.235,
-		neck: H * 0.1,
+		neck: H * 0.08,
 		headR: H * 0.12,
 		upper: H * 0.13,
 		fore: H * 0.12,
