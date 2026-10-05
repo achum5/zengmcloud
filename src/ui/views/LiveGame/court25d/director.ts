@@ -35,7 +35,7 @@ import {
 	type Side,
 } from "./geometry.ts";
 import { CROSS_RATE, DRIBBLE_RATE } from "./evaluate.ts";
-import type { AnimName, Hand } from "./poses.ts";
+import { bodyOf, standingReach, type AnimName, type Hand } from "./poses.ts";
 import {
 	callAny,
 	callShot,
@@ -304,9 +304,9 @@ const WHISTLE_HOLD = 950;
 // A rebound, from leaving the floor to the ball chinned once he is down.
 const REBOUND_MS = 1100;
 // A dunk, for a typical player (taller ones jump less to get there, shorter
-// ones more - see withBody): how high he gets (feet), and how far out from
-// the middle of the rim he goes up.
-const DUNK_LEAP = 3;
+// ones more - see withBody): how high he gets (feet) - his hands well over
+// the rim - and how far out from the middle of the rim he goes up.
+const DUNK_LEAP = RIM_Z + 1.45 - standingReach(bodyOf());
 const DUNK_FROM = 1.8;
 
 // A spot clear behind the three-point line - his toes too - for a shooter

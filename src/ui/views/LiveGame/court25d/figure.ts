@@ -353,17 +353,18 @@ export const drawFigure = (
 	const behind = { x: -fwd2.x, y: -fwd2.y };
 
 	const parts: Part[] = [];
-	// Light falling across a shape, from `a` (lit) to `b` (in shadow): a
-	// little bright where it catches it, deepening round the far side - so
-	// an arm, a leg, a chest reads as round.
+	// Light falling across a shape, from `a` (lit) to `b` (in shadow), the
+	// cartoon way: two flat tones, the darker along the side away from the
+	// light - so an arm, a leg, a chest reads as round without a gradient.
 	const lit = (c: string, a: P2, b: P2): CanvasGradient | string => {
 		if (Math.hypot(b.x - a.x, b.y - a.y) < 0.5) {
 			return c;
 		}
 		const g = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
-		g.addColorStop(0, shade(c, 0.13));
-		g.addColorStop(0.38, c);
-		g.addColorStop(1, shade(c, -0.3));
+		g.addColorStop(0, c);
+		g.addColorStop(0.62, c);
+		g.addColorStop(0.62, shade(c, -0.2));
+		g.addColorStop(1, shade(c, -0.2));
 		return g;
 	};
 	// Across a set of points, the way the light falls.
@@ -631,8 +632,9 @@ export const drawFigure = (
 				s: 0,
 				u: sk.pelvis.u + (sk.chest.u - sk.pelvis.u) * lambda,
 			});
-		const c = at3(back ? 0.56 : 0.5);
-		const size = (back ? 0.78 : 0.62) * c.k;
+		// Big and bold, the cartoon way - most of the jersey.
+		const c = at3(back ? 0.46 : 0.44);
+		const size = (back ? 1.0 : 0.86) * c.k;
 		if (size < 4 * px) {
 			return;
 		}
@@ -652,7 +654,7 @@ export const drawFigure = (
 		ctx.fillText(look.jerseyNumber, 0, 0);
 		ctx.restore();
 		const word = back ? look.lastName : look.wordmark;
-		const top = at3(back ? 0.86 : 0.8);
+		const top = at3(0.9);
 		const small = 0.2 * top.k;
 		if (word && small >= 5 * px) {
 			ctx.save();

@@ -535,7 +535,7 @@ export const aimFor = (
 	const beat = beatAt(tl, m.t);
 	if (beat && (beat.type === "ft" || beat.type === "missFt")) {
 		const left = ball.x < COURT_W / 2;
-		return framed(left ? 12.5 : COURT_W - 12.5, narrow ? 26 : 32);
+		return framed(left ? 12.5 : COURT_W - 12.5, narrow ? 30 : 36);
 	}
 	let minX = ball.x;
 	let maxX = ball.x;
@@ -551,14 +551,16 @@ export const aimFor = (
 		n += 1;
 	}
 	const mid = n > 0 ? sum / n : ball.x;
-	const minW = narrow ? 34 : 44;
-	const maxW = narrow ? 54 : 68;
+	// Wide enough that the players read small on the floor, the way a
+	// cartoon game shows them.
+	const minW = narrow ? 56 : 72;
+	const maxW = narrow ? 68 : 88;
 	let width = Math.min(maxW, Math.max(minW, maxX - minX + 18));
 	let x = ball.x * 0.62 + mid * 0.38;
 	// A shot going up: push in on the shooter.
 	const shooter = m.players.find((p) => SHOOTING.has(p.anim));
 	if (shooter) {
-		width *= 0.86;
+		width *= 0.92;
 		x = x * 0.6 + shooter.x * 0.4;
 	}
 	width = Math.max(width, fit?.min ?? 0);

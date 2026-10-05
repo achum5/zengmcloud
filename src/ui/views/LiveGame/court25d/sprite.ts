@@ -36,7 +36,7 @@ export const makeScratch = (): Scratch => {
 // A dark rim, soft and a pixel wide, round the outside of what is there -
 // laid under the edge's own soft pixels, so the edge stays smooth. Only
 // round what `isNew` says was just drawn, when asked.
-const RIM_ALPHA = 0.62;
+const RIM_ALPHA = 1;
 const SOLID = 140;
 let solid = new Uint8Array(0);
 const rim = (
