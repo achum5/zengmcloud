@@ -2087,34 +2087,36 @@ export const girthOf = (hgt: number, weight: number): number => {
 	return Math.min(1.28, Math.max(0.84, (bmi / DEFAULT_BMI) ** 0.9));
 };
 
-// A cartoon athlete, Hoop Land style: a big head - a third of him - on a
-// short, sturdy body, with short legs and arms. His height and build still
-// tell: a center towers over a point guard, a big man is broad.
+// A cartoon athlete, Hoop Land style: a big head - a little over a quarter
+// of him - on a neck, over a compact body with sturdy legs and arms. His
+// height and build still tell: a center towers over a point guard, a big man
+// is broad. (His face is drawn a little bigger than headR: crown to chin is
+// 2.45 headR.)
 export const bodyOf = (hgt = DEFAULT_HGT, weight = DEFAULT_WEIGHT): Body => {
 	const H = (DEFAULT_HGT * (hgt / DEFAULT_HGT) ** 1.25) / 12;
 	const g = girthOf(hgt, weight);
 	return {
 		H,
-		hipH: H * 0.38,
+		hipH: H * 0.4,
 		ankleH: H * 0.03,
-		thigh: H * 0.18,
-		shin: H * 0.17,
-		foot: H * 0.16,
-		torso: H * 0.26,
-		neck: H * 0.01,
-		headR: H * 0.17,
-		upper: H * 0.12,
-		fore: H * 0.11,
-		shoulderW: H * 0.145 * g,
-		hipW: H * 0.085 * g,
-		depth: H * 0.15 * g,
-		thighR: H * 0.065 * g,
-		kneeR: H * 0.045 * g,
-		calfR: H * 0.048 * g,
-		ankleR: H * 0.03,
-		upperR: H * 0.042 * g,
-		foreR: H * 0.037 * g,
-		handR: H * 0.042,
+		thigh: H * 0.19,
+		shin: H * 0.18,
+		foot: H * 0.15,
+		torso: H * 0.235,
+		neck: H * 0.1,
+		headR: H * 0.12,
+		upper: H * 0.13,
+		fore: H * 0.12,
+		shoulderW: H * 0.128 * g,
+		hipW: H * 0.078 * g,
+		depth: H * 0.13 * g,
+		thighR: H * 0.057 * g,
+		kneeR: H * 0.04 * g,
+		calfR: H * 0.043 * g,
+		ankleR: H * 0.027,
+		upperR: H * 0.037 * g,
+		foreR: H * 0.032 * g,
+		handR: H * 0.036,
 	};
 };
 

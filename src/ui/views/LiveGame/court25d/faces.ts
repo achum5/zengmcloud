@@ -66,9 +66,11 @@ const faceSprite = async (
 	let svg: string;
 	try {
 		// display() writes the overrides into the face it is given.
+		// Just his head: no shoulders or jersey, no neck - the body draws its own.
 		display(holder, structuredClone(face), {
 			...overrides,
-			jersey: { id: "jersey" },
+			body: { id: "none" },
+			jersey: { id: "none" },
 		} as any);
 		svg = holder.innerHTML
 			.replace('width="100%"', 'width="400"')
@@ -99,13 +101,6 @@ const faceSprite = async (
 			canvas.width,
 			canvas.height,
 		);
-		// Keep the neck, lose the shoulders and jersey beside it.
-		ctx.globalCompositeOperation = "destination-out";
-		const neckL = (150 - CROP.x) * SCALE;
-		const neckR = (250 - CROP.x) * SCALE;
-		const below = (470 - CROP.y) * SCALE;
-		ctx.fillRect(0, below, neckL, canvas.height);
-		ctx.fillRect(neckR, below, canvas.width - neckR, canvas.height);
 		return {
 			img: canvas,
 			cx: (FACE_CENTER.x - CROP.x) * SCALE,

@@ -78,6 +78,12 @@ type P2 = { x: number; y: number };
 // other side of every limb is in shadow.
 const LIGHT = { x: -0.42, y: -0.91 };
 
+// His face is drawn a little above the true middle of his head (in head
+// radii): from the camera up in the stands his chin would hide his neck, and
+// a cartoon shows it. His jaw is about JAW radii under the face's middle.
+const FACE_LIFT = 0.22;
+const JAW = 1.04;
+
 // How far down the thigh the shorts reach: today's, to the top of the knee.
 const SHORTS_HEM = 0.94;
 
@@ -553,17 +559,40 @@ export const drawFigure = (
 	// Bare skin round a tank top: the slope of his shoulders up to his neck,
 	// the tops of his shoulders, his sides under his arms.
 	const yokePts = hull([
-		...ring(1.12, sw * 0.36, dp * 0.3),
+		...ring(1.07, sw * 0.36, dp * 0.3),
 		...ring(1.0, sw * 0.84, dp * 0.42),
 		...ring(0.82, sw * 0.97, dp * 0.52),
 		...ring(0.55, sw * 0.86, dp * 0.5),
 	]);
 	const neckBase = at(off(sk.chest, 0, 0, body.H * 0.012));
-	const neck = limbShape(neckBase, neckBase.k, headC, headC.k, [
+	const neckW: Station[] = [
 		[0, sw * 0.38],
 		[0.5, sw * 0.32],
 		[1, sw * 0.3],
-	]);
+	];
+	const neck = limbShape(neckBase, neckBase.k, headC, headC.k, neckW);
+	// The shadow of his jaw across the top of his neck.
+	const jawDrop = headC.y - neckBase.y;
+	const jawT =
+		jawDrop < -0.5
+			? Math.min(
+					1,
+					Math.max(
+						0,
+						1 + ((JAW - FACE_LIFT + 0.2) * body.headR * headC.k) / jawDrop,
+					),
+				)
+			: 1;
+	const jawShade =
+		jawT < 1
+			? limbShape(
+					lerp2(neckBase, headC, jawT),
+					neckBase.k + (headC.k - neckBase.k) * jawT,
+					headC,
+					headC.k,
+					neckW.map(([t, w]) => [t, w * 1.02] as Station),
+				)
+			: undefined;
 	// A jersey is a tank top: narrow straps over the shoulders, cut away
 	// under the arms, tucked into his shorts. A shirt (an official's, a
 	// coach's jacket) covers his shoulders.
@@ -607,6 +636,7 @@ export const drawFigure = (
 		shapes: [
 			{ path: softPoly(yokePts), fill: litOver(skin, yokePts) },
 			shaped(neck, skin),
+			...(jawShade ? [{ path: jawShade.path, fill: shade(skin, -0.22) }] : []),
 			{ path: jerseyPath, fill: litOver(kit.jersey, jerseyPts) },
 			{ path: polyPath(waistPts), fill: litOver(kit.shorts, waistPts) },
 		],
@@ -998,7 +1028,11 @@ export const drawFigure = (
 	const late = parts.filter((p) => p.late);
 
 	const anchors: FigureAnchors = {
-		head: { x: headC.x, y: headC.y, r: body.headR * headC.k },
+		head: {
+			x: headC.x,
+			y: headC.y - body.headR * headC.k * FACE_LIFT,
+			r: body.headR * headC.k,
+		},
 		number: { x: 0, y: 0, h: 0, side: 0 },
 		letters: { x: 0, y: 0, w: 0 },
 		front,
@@ -1117,13 +1151,14 @@ const sneaker = (
 
 const drawHead = (
 	ctx: CanvasRenderingContext2D,
-	c: Projected,
+	middle: Projected,
 	r: number,
 	look: Look,
 	front: number,
 	at: (v: V3) => Projected,
 	head: V3,
 ) => {
+	const c = { x: middle.x, y: middle.y - r * FACE_LIFT };
 	// Which way his nose points on screen.
 	const ahead = at({ f: head.f + 1, s: head.s, u: head.u });
 	const turn = Math.sign(ahead.x - c.x) || 1;
@@ -1132,17 +1167,17 @@ const drawHead = (
 	// the face that turns into it.
 	const back = () => {
 		const p = new Path2D();
-		p.ellipse(c.x, c.y + r * 0.04, r * 0.8, r * 0.98, 0, 0, Math.PI * 2);
+		p.ellipse(c.x, c.y - r * 0.1, r * 0.96, r * 1.14, 0, 0, Math.PI * 2);
 		ctx.fillStyle = look.skin;
 		ctx.fill(p);
 		ctx.fillStyle = shade(look.skin, -0.1);
 		for (const s of [-1, 1]) {
 			ctx.beginPath();
 			ctx.ellipse(
-				c.x + s * r * 0.78,
-				c.y + r * 0.12,
-				r * 0.13,
-				r * 0.22,
+				c.x + s * r * 0.94,
+				c.y + r * 0.02,
+				r * 0.15,
+				r * 0.26,
 				0,
 				0,
 				Math.PI * 2,
@@ -1152,7 +1187,7 @@ const drawHead = (
 		if (look.hair !== look.skin) {
 			ctx.fillStyle = look.hair;
 			ctx.beginPath();
-			ctx.ellipse(c.x, c.y - r * 0.1, r * 0.78, r * 0.86, 0, 0, Math.PI * 2);
+			ctx.ellipse(c.x, c.y - r * 0.26, r * 0.94, r * 1.0, 0, 0, Math.PI * 2);
 			ctx.fill();
 		}
 	};
