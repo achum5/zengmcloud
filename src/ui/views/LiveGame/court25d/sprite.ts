@@ -372,6 +372,8 @@ const stepped = (st: PlayerState) => {
 			st.dribble === undefined
 				? undefined
 				: Math.floor(st.dribble * DRIBBLE_FRAMES) / DRIBBLE_FRAMES,
+		// Hands coming up for a pass, in a few steps.
+		target: st.target ? Math.ceil(st.target * 3) / 3 : undefined,
 	};
 };
 
@@ -409,7 +411,7 @@ export const drawSprite = (
 		}
 		key = `${id}|${st.anim}|${pose.phase}|${pose.turn}|${Math.round(
 			Math.log(k) / Math.log(1.04),
-		)}|${px}|${st.holding ? 1 : 0}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}`;
+		)}|${px}|${st.holding ? 1 : 0}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}|${pose.target ?? ""}`;
 		const kept = cache.kept.get(key);
 		if (kept) {
 			const smoothing = ctx.imageSmoothingEnabled;
@@ -432,6 +434,7 @@ export const drawSprite = (
 		phase: pose.phase,
 		yaw: pose.yaw,
 		dribble: pose.dribble,
+		target: pose.target,
 	};
 	const w = Math.max(4, Math.ceil((right - left) / px) + 2);
 	const h = Math.max(4, Math.ceil((lower - upper) / px) + 2);

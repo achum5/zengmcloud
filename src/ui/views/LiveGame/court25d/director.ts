@@ -281,6 +281,8 @@ const PASS_FTPS = 42;
 const BALL_R = 0.39;
 // One bounce of a crossover, from one hand to the other (see evaluate.ts).
 const CROSS_MS = 1000 / CROSS_RATE;
+// A rebound, from leaving the floor to the ball chinned once he is down.
+const REBOUND_MS = 1100;
 
 const passMs = (d: number) =>
 	Math.min(900, Math.max(260, 180 + (d * 1000) / PASS_FTPS));
@@ -3078,11 +3080,14 @@ class Director {
 				(rim.x >= catchAt.x ? 1 : -1) as 1 | -1,
 			);
 			const jumpStart = Math.max(arrive, catchT - 420);
-			this.act(r, "rebound", jumpStart, jumpStart + 800, {
+			// Up for it, and once he lands, chinned - elbows out - a beat
+			// before he looks up the floor.
+			this.act(r, "board", jumpStart, jumpStart + REBOUND_MS, {
 				face: (rim.x >= catchAt.x ? 1 : -1) as 1 | -1,
 				look: { x: rim.x, y: rim.y },
-				jump: [0.12, 0.88, blocked ? 1.2 : 2.4],
+				jump: [96 / REBOUND_MS, 704 / REBOUND_MS, blocked ? 1.2 : 2.4],
 			});
+			this.free.set(r, Math.max(this.free.get(r) ?? 0, jumpStart + REBOUND_MS));
 			this.fly(t, catchT, from, { pid: r });
 			// Somebody from the other side goes up for it too.
 			const rival = this.slots(other(this.teamOf(r))).sort(
@@ -3261,7 +3266,13 @@ class Director {
 					this.hold(pid, tArr + 150, "hold");
 					this.beat(i, type, tArr + 150, tArr + 600);
 				} else {
-					this.beat(i, type, T, T + 650);
+					// Not before he has it chinned.
+					this.beat(
+						i,
+						type,
+						T,
+						Math.max(T + 650, (this.free.get(pid) ?? 0) + 60),
+					);
 				}
 				const team = this.teamOf(pid);
 				this.setOffense(T, team);

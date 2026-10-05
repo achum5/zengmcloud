@@ -30,6 +30,9 @@ export type Pose = {
 	// negative folds them forward and down (a shooter's follow-through).
 	wrN: number;
 	wrF: number;
+	// Holding the ball in both hands, how far his elbows swing out wide
+	// (degrees) - a rebounder chinning it, keeping it away from hands.
+	flare: number;
 };
 
 const BASE: Pose = {
@@ -47,6 +50,7 @@ const BASE: Pose = {
 	wide: 0.08,
 	wrN: 0,
 	wrF: 0,
+	flare: 0,
 };
 const pose = (o: Partial<Pose>): Pose => ({ ...BASE, ...o });
 
@@ -108,23 +112,25 @@ const P = {
 		elF: 30,
 		lean: 6,
 	}),
+	// Stepping into it: the left foot out toward him, the right behind.
 	passOut: pose({
-		hipN: -10,
-		kneeN: 24,
-		hipF: 16,
-		kneeF: 22,
+		hipN: -24,
+		kneeN: 16,
+		hipF: 38,
+		kneeF: 26,
 		shN: 92,
 		elN: 2,
 		shF: 86,
 		elF: 6,
-		lean: 14,
+		lean: 16,
+		wide: 0.16,
 	}),
 	// Winding up a pass: the ball pulled into his chest, a step coming.
 	passWind: pose({
-		hipN: -12,
-		kneeN: 32,
-		hipF: 18,
-		kneeF: 30,
+		hipN: -8,
+		kneeN: 34,
+		hipF: 12,
+		kneeF: 34,
 		shN: 30,
 		elN: 112,
 		shF: 26,
@@ -133,10 +139,10 @@ const P = {
 	}),
 	// A bounce pass let go: arms driven down and out, low over a bent knee.
 	passBounceOut: pose({
-		hipN: -14,
-		kneeN: 40,
-		hipF: 22,
-		kneeF: 38,
+		hipN: -26,
+		kneeN: 30,
+		hipF: 42,
+		kneeF: 46,
 		shN: 50,
 		elN: 0,
 		shF: 46,
@@ -156,10 +162,10 @@ const P = {
 		lean: -4,
 	}),
 	overheadOut: pose({
-		hipN: -10,
-		kneeN: 22,
-		hipF: 16,
-		kneeF: 22,
+		hipN: -22,
+		kneeN: 16,
+		hipF: 34,
+		kneeF: 24,
 		shN: 118,
 		elN: 4,
 		shF: 112,
@@ -188,6 +194,34 @@ const P = {
 		elF: 36,
 		lean: 8,
 	}),
+	// A rebound pulled down and chinned: feet wide, knees bent, the ball
+	// tight under his chin and his elbows out.
+	chin: pose({
+		hipN: -10,
+		kneeN: 42,
+		hipF: 12,
+		kneeF: 44,
+		shN: 0,
+		elN: 160,
+		shF: 0,
+		elF: 160,
+		lean: 10,
+		wide: 0.55,
+		flare: 62,
+	}),
+};
+
+// Hands up as a target for a pass on its way: out in front of his chest,
+// fingers up, palms to the ball.
+const TARGET: Partial<Pose> = {
+	shN: 50,
+	elN: 70,
+	shF: 46,
+	elF: 74,
+	abN: 18,
+	abF: 18,
+	wrN: 50,
+	wrF: 50,
 };
 
 type RunMode = "run" | "dribble" | "back" | "walk" | "carry";
@@ -1156,6 +1190,44 @@ export const ANIMS = {
 			[1, P.hold],
 		],
 	},
+	// Going up and coming down with it: pulled in and chinned once he lands.
+	board: {
+		kind: "act",
+		n: 9,
+		keys: [
+			[0, P.gather],
+			[
+				0.26,
+				pose({
+					hipN: -4,
+					kneeN: 20,
+					hipF: 10,
+					kneeF: 40,
+					shN: 172,
+					elN: 4,
+					shF: 168,
+					elF: 8,
+					lean: 0,
+				}),
+			],
+			[
+				0.5,
+				pose({
+					hipN: -6,
+					kneeN: 24,
+					hipF: 10,
+					kneeF: 42,
+					shN: 150,
+					elN: 50,
+					shF: 145,
+					elF: 55,
+					lean: 2,
+				}),
+			],
+			[0.66, P.chin],
+			[1, P.chin],
+		],
+	},
 	pickup: {
 		kind: "act",
 		n: 5,
@@ -1829,6 +1901,37 @@ const armTo = (
 	return buildArm(b, chest, sh / RAD, el / RAD, ab, reach, wrDeg, side);
 };
 
+// The arm with its elbow swung `deg` degrees out about the line from his
+// shoulder to his hand - the hand where it was, the elbow out wide.
+const flared = (arm: Limb, deg: number, side: 1 | -1): Limb => {
+	if (deg === 0) {
+		return arm;
+	}
+	const a = arm.root;
+	const ax = v3(arm.end.f - a.f, arm.end.s - a.s, arm.end.u - a.u);
+	const l = Math.hypot(ax.f, ax.s, ax.u) || 1;
+	const k = v3(ax.f / l, ax.s / l, ax.u / l);
+	const v = v3(arm.mid.f - a.f, arm.mid.s - a.s, arm.mid.u - a.u);
+	const kv = k.f * v.f + k.s * v.s + k.u * v.u;
+	const kxv = v3(
+		k.s * v.u - k.u * v.s,
+		k.u * v.f - k.f * v.u,
+		k.f * v.s - k.s * v.f,
+	);
+	const turn = (phi: number): V3 => {
+		const c = Math.cos(phi);
+		const s = Math.sin(phi);
+		return v3(
+			a.f + v.f * c + kxv.f * s + k.f * kv * (1 - c),
+			a.s + v.s * c + kxv.s * s + k.s * kv * (1 - c),
+			a.u + v.u * c + kxv.u * s + k.u * kv * (1 - c),
+		);
+	};
+	const one = turn(deg * RAD);
+	const two = turn(-deg * RAD);
+	return { ...arm, mid: side * one.s >= side * two.s ? one : two };
+};
+
 // How a move holds the ball: in both hands, one on each side of it; up on
 // the shooting hand with the other guiding it; or palmed in one hand.
 export type Grip = "two" | "shot" | "palm";
@@ -1873,8 +1976,8 @@ export const holdBall = (
 		return {
 			sk: {
 				...sk,
-				armR: armTo(b, sk.chest, side(two, -1), q.wrN, -1),
-				armL: armTo(b, sk.chest, side(two, 1), q.wrF, 1),
+				armR: flared(armTo(b, sk.chest, side(two, -1), q.wrN, -1), q.flare, -1),
+				armL: flared(armTo(b, sk.chest, side(two, 1), q.wrF, 1), q.flare, 1),
 			},
 			ball: two,
 		};
@@ -1949,13 +2052,25 @@ export const dribbleArm = (q: Pose, ph: number, hand: Hand = "R"): Pose => {
 };
 
 // His pose at a moment: the move's, with the dribbling hand on the bounce
-// when he is dribbling.
+// when he is dribbling, or - `target` of the way (0 to 1) - his hands up for
+// a pass on its way to him, whatever his feet are doing.
 export const posed = (
 	anim: AnimName,
 	phase: number,
 	dribble?: number,
 	hand?: Hand,
-): Pose =>
-	dribble === undefined
-		? poseAt(anim, phase)
-		: dribbleArm(poseAt(anim, phase), dribble, hand);
+	target = 0,
+): Pose => {
+	const q = poseAt(anim, phase);
+	if (dribble !== undefined) {
+		return dribbleArm(q, dribble, hand);
+	}
+	if (target <= 0) {
+		return q;
+	}
+	const out = { ...q };
+	for (const key of Object.keys(TARGET) as (keyof Pose)[]) {
+		out[key] = q[key] + (TARGET[key]! - q[key]) * Math.min(1, target);
+	}
+	return out;
+};

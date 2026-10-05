@@ -521,4 +521,58 @@ describe("2.5D director", () => {
 			}
 		}
 	});
+
+	// A pass coming his way: his hands come up for it before it gets there.
+	test("a receiver shows his hands for a pass", () => {
+		for (const seed of ["a", "b"]) {
+			const { tl } = compile(seed);
+			let passes = 0;
+			let shown = 0;
+			for (const seg of tl.ball) {
+				if (
+					seg.kind !== "fly" ||
+					!("pid" in seg.from) ||
+					!("pid" in seg.to) ||
+					seg.t1 - seg.t0 < 300
+				) {
+					continue;
+				}
+				const to = evalPlayer(tl, seg.to.pid, seg.t1 - 120);
+				if (to.team !== evalPlayer(tl, seg.from.pid, seg.t0).team) {
+					continue;
+				}
+				passes += 1;
+				if ((to.target ?? 0) > 0.9) {
+					shown += 1;
+				}
+				// Not once he has it.
+				assert.isUndefined(evalPlayer(tl, seg.to.pid, seg.t1 + 400).target);
+			}
+			assert.isAbove(passes, 20);
+			assert.isAbove(shown / passes, 0.9, seed);
+		}
+	});
+
+	test("a rebounder chins it before he goes anywhere with it", () => {
+		for (const seed of ["a", "b"]) {
+			const { tl } = compile(seed);
+			let boards = 0;
+			for (const [pid, tr] of tl.tracks) {
+				for (const a of tr.acts) {
+					if (a.anim !== "board") {
+						continue;
+					}
+					boards += 1;
+					// Down with it in both hands, not yet dribbling or passing.
+					for (const t of [a.t1 - 300, a.t1 - 20]) {
+						const st = evalPlayer(tl, pid, t);
+						assert.strictEqual(st.anim, "board", `${seed} ${t}`);
+						assert.isTrue(st.holding, `${seed} ${pid} at ${t}`);
+						assert.strictEqual(st.z, 0, `${seed} ${t}`);
+					}
+				}
+			}
+			assert.isAbove(boards, 10);
+		}
+	});
 });

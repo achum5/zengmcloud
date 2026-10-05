@@ -65,6 +65,8 @@ export type PlayerState = {
 	// top), when he is dribbling: his hand rides it - this one.
 	dribble?: number;
 	dribbleHand?: Hand;
+	// His hands up as a target for a pass on its way to him (0 to 1).
+	target?: number;
 };
 
 // Bounces a second on a dribble: one steady beat, walking or driving, so the
@@ -157,6 +159,37 @@ const spotAt = (tr: Track, t: number): Spot => {
 		moving: false,
 		traveled: 0,
 	};
+};
+
+// Hands up for the ball: from a moment before it leaves the passer (or
+// comes off the floor on its way) until it gets to him.
+const TARGET_LEAD = 240;
+const TARGET_RAMP = 180;
+const targetAt = (tl: CourtTimeline, pid: number, t: number): number => {
+	const i = Math.max(
+		0,
+		lastIndex(tl.ball, t, (s) => s.t0),
+	);
+	let from: number | undefined;
+	for (let k = i; k < tl.ball.length && k <= i + 2; k++) {
+		const s = tl.ball[k]!;
+		if (s.t0 > t + TARGET_LEAD) {
+			break;
+		}
+		if (s.kind !== "fly") {
+			from = undefined;
+			continue;
+		}
+		from ??= s.t0;
+		if ("pid" in s.to) {
+			if (s.to.pid !== pid || t >= s.t1) {
+				return 0;
+			}
+			const u = clamp01((t - from + TARGET_LEAD) / TARGET_RAMP);
+			return u * u * (3 - 2 * u);
+		}
+	}
+	return 0;
 };
 
 // The act running now, if any (they rarely overlap; the later one wins).
@@ -366,6 +399,7 @@ export const evalPlayer = (
 			: has?.style === "dribble"
 				? (has.hand ?? "R")
 				: undefined,
+		target: act || has ? undefined : targetAt(tl, pid, t) || undefined,
 	};
 };
 
@@ -391,7 +425,7 @@ export const handWorld = (
 ): Pt3 => {
 	const sk = skeleton(
 		body,
-		posed(st.anim, st.phase, st.dribble, st.dribbleHand),
+		posed(st.anim, st.phase, st.dribble, st.dribbleHand, st.target),
 	);
 	const r = sk.armR.end;
 	const l = sk.armL.end;
@@ -411,7 +445,7 @@ export const heldBall = (st: PlayerState, body: Body): Pt3 =>
 		st,
 		holdBall(
 			body,
-			posed(st.anim, st.phase, st.dribble, st.dribbleHand),
+			posed(st.anim, st.phase, st.dribble, st.dribbleHand, st.target),
 			st.anim,
 		).ball,
 	);
