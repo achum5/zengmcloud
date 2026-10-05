@@ -408,6 +408,32 @@ const line = (
 	ctx.stroke();
 };
 
+// The same, inked: a dark edge drawn first, the color down its middle.
+const INK = "rgba(22, 15, 13, 0.92)";
+const inkLine = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	a: Pt3,
+	b: Pt3,
+	width: number,
+	color: string,
+) => {
+	const p = project(cam, a);
+	const q = project(cam, b);
+	const k = (p.k + q.k) * 0.5;
+	const w = Math.max(0.8, width * k);
+	ctx.lineCap = "round";
+	ctx.beginPath();
+	ctx.moveTo(p.x, p.y);
+	ctx.lineTo(q.x, q.y);
+	ctx.strokeStyle = INK;
+	ctx.lineWidth = w + 2 * Math.max(1, 0.05 * k);
+	ctx.stroke();
+	ctx.strokeStyle = color;
+	ctx.lineWidth = w;
+	ctx.stroke();
+};
+
 const poly = (ctx: CanvasRenderingContext2D, cam: Camera, pts: Pt3[]) => {
 	ctx.beginPath();
 	pts.forEach((pt, i) => {
@@ -451,67 +477,66 @@ export const drawHoop = (
 	// The stanchion: padded base behind the baseline, post, arm to the board.
 	const b0 = X(-9.5);
 	const b1 = X(-5);
+	const inkW = Math.max(1, 0.05 * project(cam, { x: X(4), y: 25, z: 0 }).k);
 	const box = (y0: number, y1: number, z1: number) => {
 		const pts = (x: number, y: number, z: number): Pt3 => ({ x, y, z });
 		// Top, the face toward the court, the face toward the camera.
-		ctx.fillStyle = shade(padColor, -0.15);
-		poly(ctx, cam, [
-			pts(b0, y0, z1),
-			pts(b1, y0, z1),
-			pts(b1, y1, z1),
-			pts(b0, y1, z1),
-		]);
-		ctx.fill();
-		ctx.fillStyle = padColor;
-		poly(ctx, cam, [
-			pts(b1, y0, 0),
-			pts(b1, y1, 0),
-			pts(b1, y1, z1),
-			pts(b1, y0, z1),
-		]);
-		ctx.fill();
-		ctx.fillStyle = shade(padColor, -0.32);
-		poly(ctx, cam, [
-			pts(b0, y1, 0),
-			pts(b1, y1, 0),
-			pts(b1, y1, z1),
-			pts(b0, y1, z1),
-		]);
-		ctx.fill();
+		ctx.lineJoin = "round";
+		ctx.lineWidth = inkW * 2;
+		ctx.strokeStyle = INK;
+		for (const [fill, face] of [
+			[
+				shade(padColor, -0.15),
+				[pts(b0, y0, z1), pts(b1, y0, z1), pts(b1, y1, z1), pts(b0, y1, z1)],
+			],
+			[
+				padColor,
+				[pts(b1, y0, 0), pts(b1, y1, 0), pts(b1, y1, z1), pts(b1, y0, z1)],
+			],
+			[
+				shade(padColor, -0.32),
+				[pts(b0, y1, 0), pts(b1, y1, 0), pts(b1, y1, z1), pts(b0, y1, z1)],
+			],
+		] as const) {
+			poly(ctx, cam, [...face]);
+			ctx.stroke();
+			ctx.fillStyle = fill;
+			ctx.fill();
+		}
 	};
-	box(22.6, 27.4, 3.2);
-	ctx.strokeStyle = "#3d4048";
-	ctx.lineCap = "round";
-	line(
+	box(22.4, 27.6, 3.4);
+	inkLine(
 		ctx,
 		cam,
-		{ x: X(-6.6), y: 25, z: 3.2 },
+		{ x: X(-6.6), y: 25, z: 3.4 },
 		{ x: X(-6.2), y: 25, z: 12.4 },
-		0.5,
+		0.75,
+		"#3d4048",
 	);
-	ctx.strokeStyle = "#4a4e57";
-	line(
+	inkLine(
 		ctx,
 		cam,
 		{ x: X(-6.2), y: 25, z: 12.4 },
 		{ x: X(3.7), y: 25, z: 11.9 + shake },
-		0.32,
+		0.42,
+		"#4a4e57",
 	);
-	line(
+	inkLine(
 		ctx,
 		cam,
 		{ x: X(-6.4), y: 25, z: 8.6 },
 		{ x: X(3.7), y: 25, z: 10.2 + shake },
-		0.2,
+		0.28,
+		"#4a4e57",
 	);
 	// Padding round the bottom of the post.
-	ctx.strokeStyle = padColor;
-	line(
+	inkLine(
 		ctx,
 		cam,
-		{ x: X(-6.6), y: 25, z: 3.2 },
+		{ x: X(-6.6), y: 25, z: 3.4 },
 		{ x: X(-6.5), y: 25, z: 7.4 },
-		0.85,
+		1.15,
+		padColor,
 	);
 
 	// The backboard: glass in a white frame, the shooter's square, and the
@@ -524,15 +549,28 @@ export const drawHoop = (
 		{ x: bx, y: 28, z: 13 + bz },
 		{ x: bx, y: 22, z: 13 + bz },
 	];
-	ctx.fillStyle = "rgba(205, 226, 240, 0.2)";
+	const gk = project(cam, glass[0]!).k;
+	ctx.fillStyle = "rgba(214, 232, 244, 0.34)";
 	poly(ctx, cam, glass);
 	ctx.fill();
-	ctx.strokeStyle = "rgba(255,255,255,0.92)";
 	ctx.lineJoin = "round";
-	ctx.lineWidth = Math.max(0.8, 0.14 * project(cam, glass[0]!).k);
+	ctx.strokeStyle = INK;
+	ctx.lineWidth = Math.max(0.8, 0.22 * gk) + 2 * inkW;
 	ctx.stroke();
-	ctx.strokeStyle = "rgba(255,255,255,0.85)";
-	ctx.lineWidth = Math.max(0.6, 0.09 * project(cam, glass[0]!).k);
+	ctx.strokeStyle = "#ffffff";
+	ctx.lineWidth = Math.max(0.8, 0.22 * gk);
+	ctx.stroke();
+	// The padding along the bottom of the board.
+	inkLine(
+		ctx,
+		cam,
+		{ x: bx, y: 22, z: 9.45 + bz },
+		{ x: bx, y: 28, z: 9.45 + bz },
+		0.3,
+		padColor,
+	);
+	ctx.strokeStyle = "rgba(255,255,255,0.92)";
+	ctx.lineWidth = Math.max(0.6, 0.12 * gk);
 	poly(ctx, cam, [
 		{ x: bx, y: 24, z: 10.05 + bz },
 		{ x: bx, y: 26, z: 10.05 + bz },
@@ -580,36 +618,43 @@ export const drawHoop = (
 	// Back half: the far side of the ring (smaller y is farther away).
 	const isBack = (i: number) => Math.sin((i / N) * Math.PI * 2) < 0;
 	const netLines = (back: boolean) => {
-		ctx.strokeStyle = back ? "rgba(235,235,235,0.6)" : "rgba(250,250,250,0.92)";
+		ctx.strokeStyle = back ? "rgba(225,225,225,0.7)" : "rgba(252,252,252,0.95)";
+		ctx.lineCap = "round";
 		for (let i = 0; i < N; i++) {
 			if (isBack(i) !== back) {
 				continue;
 			}
 			const j = (i + 1) % N;
 			const k = (i + N - 1) % N;
-			line(ctx, cam, rim[i]!, mid[j]!, 0.035);
-			line(ctx, cam, rim[i]!, mid[k]!, 0.035);
-			line(ctx, cam, mid[i]!, bottom[j]!, 0.03);
-			line(ctx, cam, mid[i]!, bottom[k]!, 0.03);
+			line(ctx, cam, rim[i]!, mid[j]!, 0.055);
+			line(ctx, cam, rim[i]!, mid[k]!, 0.055);
+			line(ctx, cam, mid[i]!, bottom[j]!, 0.05);
+			line(ctx, cam, mid[i]!, bottom[k]!, 0.05);
 		}
 	};
 	const rimArc = (back: boolean) => {
-		ctx.strokeStyle = back ? "#b9481d" : "#e8622a";
 		for (let i = 0; i < N; i++) {
 			if (isBack(i) !== back) {
 				continue;
 			}
-			line(ctx, cam, rim[i]!, rim[(i + 1) % N]!, 0.1);
+			inkLine(
+				ctx,
+				cam,
+				rim[i]!,
+				rim[(i + 1) % N]!,
+				0.17,
+				back ? "#c4501f" : "#f06a2a",
+			);
 		}
 	};
 	// The bracket from the board to the rim.
-	ctx.strokeStyle = "#c4501f";
-	line(
+	inkLine(
 		ctx,
 		cam,
 		{ x: X(4.05), y: 25, z: rz - 0.25 },
 		{ x: X(4.55), y: 25, z: rz },
-		0.14,
+		0.17,
+		"#c4501f",
 	);
 	rimArc(true);
 	netLines(true);
@@ -650,12 +695,15 @@ export const drawBall = (
 		c.y,
 		r,
 	);
-	g.addColorStop(0, "#f7a25e");
-	g.addColorStop(0.55, "#dd6a24");
-	g.addColorStop(1, "#8f3b12");
-	ctx.fillStyle = g;
+	g.addColorStop(0, "#f9a964");
+	g.addColorStop(0.55, "#e2702a");
+	g.addColorStop(1, "#a44716");
 	ctx.beginPath();
 	ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+	ctx.strokeStyle = INK;
+	ctx.lineWidth = Math.max(1, 0.1 * c.k) * 2;
+	ctx.stroke();
+	ctx.fillStyle = g;
 	ctx.fill();
 	if (r > 3) {
 		ctx.save();

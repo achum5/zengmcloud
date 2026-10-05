@@ -20,7 +20,7 @@ export type HeadSprite = {
 const CROP = { x: 20, y: 60, w: 360, h: 445 };
 const FACE_CENTER = { x: 200, y: 300 };
 const FACE_H = 400;
-const SCALE = 0.34;
+const SCALE = 0.6;
 
 const loadImage = (src: string, crossOrigin: boolean) =>
 	new Promise<HTMLImageElement>((resolve, reject) => {

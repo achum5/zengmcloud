@@ -21,6 +21,9 @@ export type Camera = {
 	cy: number;
 	viewW: number;
 	viewH: number;
+	// Upright: the floor is seen in perspective, but everything standing on it
+	// rises straight up the screen at its full height (see project).
+	upright: boolean;
 };
 
 const sub = (a: Pt3, b: Pt3): Pt3 => ({
@@ -34,16 +37,26 @@ const norm = (a: Pt3): Pt3 => {
 	return { x: a.x / l, y: a.y / l, z: a.z / l };
 };
 
-// How far back from the near sideline and how high the camera sits.
-export const CAM_BACK = 64;
-export const CAM_HIGH = 33;
-
-// Where the camera stands: the main broadcast camera high above the near
-// sideline, or the low replay camera courtside. `slide` is how far it tracks
-// along the sideline with the play (the rest it pans).
-export type Rig = { back: number; high: number; slide: number };
-export const MAIN_RIG: Rig = { back: CAM_BACK, high: CAM_HIGH, slide: 0.55 };
-export const REPLAY_RIG: Rig = { back: 24, high: 8.5, slide: 0.92 };
+// Where the camera stands: the main camera high above the near sideline,
+// looking down on the half court the way an arcade game does, or the low
+// replay camera courtside. `slide` is how far it tracks along the sideline
+// with the play (the rest it pans). The main camera is upright: from that
+// high, true perspective would squash every player into the floor, so the
+// floor alone keeps it and the players, the ball and the baskets stand up
+// on it at their full height - the way a cartoon court is drawn.
+export type Rig = {
+	back: number;
+	high: number;
+	slide: number;
+	upright: boolean;
+};
+export const MAIN_RIG: Rig = { back: 70, high: 62, slide: 0.85, upright: true };
+export const REPLAY_RIG: Rig = {
+	back: 24,
+	high: 8.5,
+	slide: 0.92,
+	upright: false,
+};
 
 // Where the camera looks: a point on the court (x), how wide a slice of the
 // floor fits across the screen there (feet), how far across the court the
@@ -63,7 +76,10 @@ export const makeCamera = (
 		y: COURT_H + rig.back,
 		z: rig.high,
 	};
-	const target = { x: shot.x, y: shot.y, z: shot.z ?? 2 };
+	// Upright, the camera aims at the floor under the point it looks at, and
+	// the picture is moved down to bring the point itself to the middle.
+	const lift = shot.z ?? 2;
+	const target = { x: shot.x, y: shot.y, z: rig.upright ? 0 : lift };
 	const fwd = norm(sub(target, pos));
 	// Level: right is horizontal, up is square to both.
 	const right = norm({ x: -fwd.y, y: fwd.x, z: 0 });
@@ -76,19 +92,23 @@ export const makeCamera = (
 		up = { x: -up.x, y: -up.y, z: -up.z };
 	}
 	const depth = dot(sub(target, pos), fwd);
+	const f = (viewW * depth) / shot.width;
 	return {
 		pos,
 		right,
 		up: norm(up),
 		fwd,
-		f: (viewW * depth) / shot.width,
+		f,
 		cx: viewW / 2,
 		// The point it looks at sits a little below the middle of the picture,
 		// leaving room above for the rims and the stands - less so on a squarer
 		// (phone) picture, which would otherwise be mostly crowd.
-		cy: viewH * (viewW / viewH < 1.5 ? 0.47 : 0.56),
+		cy:
+			viewH * (viewW / viewH < 1.5 ? 0.47 : 0.56) +
+			(rig.upright ? (lift * f) / depth : 0),
 		viewW,
 		viewH,
+		upright: rig.upright,
 	};
 };
 
@@ -101,6 +121,19 @@ export type Projected = {
 };
 
 export const project = (cam: Camera, p: Pt3): Projected => {
+	if (cam.upright) {
+		// The spot on the floor beneath it, in perspective; then straight up
+		// the screen by its height, at the floor's scale there.
+		const d = { x: p.x - cam.pos.x, y: p.y - cam.pos.y, z: -cam.pos.z };
+		const depth = Math.max(0.5, dot(d, cam.fwd));
+		const k = cam.f / depth;
+		return {
+			x: cam.cx + dot(d, cam.right) * k,
+			y: cam.cy - (dot(d, cam.up) + p.z) * k,
+			depth,
+			k,
+		};
+	}
 	const d = sub(p, cam.pos);
 	const depth = Math.max(0.5, dot(d, cam.fwd));
 	const k = cam.f / depth;
@@ -112,65 +145,9 @@ export const project = (cam: Camera, p: Pt3): Projected => {
 	};
 };
 
-// How far in front of the camera a point is (negative: behind it).
+// How far in front of the camera a point is (negative: behind it) - upright,
+// the spot on the floor beneath it, so what stands nearer is drawn over.
 export const depthOf = (cam: Camera, p: Pt3): number =>
-	dot(sub(p, cam.pos), cam.fwd);
-
-// The CSS transform that lays a flat element (its top-left at `origin`, each
-// px along its width moving `alongX` in the world and each px down its height
-// moving `alongY`) where the camera sees that patch of the world. Undefined
-// when part of it would be behind the camera.
-export const planeTransform = (
-	cam: Camera,
-	origin: Pt3,
-	alongX: Pt3,
-	alongY: Pt3,
-	w: number,
-	h: number,
-): string | undefined => {
-	const o = sub(origin, cam.pos);
-	const row = (axis: Pt3) => [
-		dot(alongX, axis),
-		dot(alongY, axis),
-		dot(o, axis),
-	];
-	const [rx, ry, r1] = row(cam.right);
-	const [ux, uy, u1] = row(cam.up);
-	const [fx, fy, f1] = row(cam.fwd);
-	// Every corner must be well in front of the camera.
-	for (const [a, b] of [
-		[0, 0],
-		[w, 0],
-		[0, h],
-		[w, h],
-	] as const) {
-		if (fx! * a + fy! * b + f1! < 1) {
-			return undefined;
-		}
-	}
-	const { f, cx, cy } = cam;
-	const X = [f * rx! + cx * fx!, f * ry! + cx * fy!, f * r1! + cx * f1!];
-	const Y = [-f * ux! + cy * fx!, -f * uy! + cy * fy!, -f * u1! + cy * f1!];
-	const W = [fx!, fy!, f1!];
-	// Scaled so the numbers stay friendly to the compositor.
-	const s = 1 / W[2]!;
-	const m = [
-		X[0]! * s,
-		Y[0]! * s,
-		0,
-		W[0]! * s,
-		X[1]! * s,
-		Y[1]! * s,
-		0,
-		W[1]! * s,
-		0,
-		0,
-		1,
-		0,
-		X[2]! * s,
-		Y[2]! * s,
-		0,
-		W[2]! * s,
-	];
-	return `matrix3d(${m.map((v) => (Math.abs(v) < 1e-12 ? 0 : v).toPrecision(9)).join(",")})`;
-};
+	cam.upright
+		? dot({ x: p.x - cam.pos.x, y: p.y - cam.pos.y, z: -cam.pos.z }, cam.fwd)
+		: dot(sub(p, cam.pos), cam.fwd);

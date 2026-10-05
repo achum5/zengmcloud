@@ -11,26 +11,10 @@ import { useLocal } from "../../../util/local.ts";
 import { usePlayerFace, type PlayerFace } from "../../../util/playerFaces.ts";
 import type { ReplayLooks } from "../../../../common/types.ts";
 import LiveCourt from "../LiveCourt.tsx";
-import {
-	benchPlane,
-	FLOOR,
-	LED_WALL,
-	paintBench,
-	paintStands,
-	paintTable,
-	paintWall,
-	STANDS,
-	TABLE_FRONT,
-	TABLE_TOP,
-	type Plane,
-} from "./arena.ts";
-import {
-	makeCamera,
-	MAIN_RIG,
-	planeTransform,
-	REPLAY_RIG,
-	type Camera,
-} from "./camera.ts";
+import { paintBench, paintStands, paintTable, paintWall } from "./arena.ts";
+import { makeCamera, MAIN_RIG, REPLAY_RIG } from "./camera.ts";
+import { courtTexture } from "./courtTexture.ts";
+import { makeScratch, makeSpriteCache } from "./sprite.ts";
 import {
 	buildClocks,
 	formatGameClock,
@@ -45,7 +29,7 @@ import {
 } from "./director.ts";
 import { headColors, loadHead, type HeadSprite } from "./faces.ts";
 import { kitsFor, shade, type Look } from "./figure.ts";
-import { COURT_H, COURT_W, type Side } from "./geometry.ts";
+import { COURT_W, type Side } from "./geometry.ts";
 import { bodyOf, type Body } from "./poses.ts";
 import { aimFor, crowdUp, drawFrame, momentAt, replayAim } from "./scene.ts";
 
@@ -77,6 +61,13 @@ const REPLAY_SPEED = 0.42;
 // Replay-time ms the picture takes to come up out of black and go back down.
 const REPLAY_DIP = 70;
 
+// What goes across the back of his jersey: everything after his first name.
+const lastNameOf = (name: string | undefined): string => {
+	const n = (name ?? "").trim();
+	const i = n.indexOf(" ");
+	return i < 0 ? n : n.slice(i + 1);
+};
+
 // The cut nearest to t, by binary search.
 const nearestCut = (cuts: number[], t: number): number | undefined => {
 	let lo = 0;
@@ -96,18 +87,6 @@ const nearestCut = (cuts: number[], t: number): number | undefined => {
 	}
 	return b !== undefined && t - b < a - t ? b : a;
 };
-// The court picture from LiveCourt, in px per foot. Big, so the lines stay
-// sharp when the camera zooms in.
-const COURT_PX = 16;
-const COURT_PLANE: Plane = {
-	key: "court",
-	origin: { x: -5, y: -2.5, z: 0 },
-	alongX: { x: 1 / COURT_PX, y: 0, z: 0 },
-	alongY: { x: 0, y: 1 / COURT_PX, z: 0 },
-	w: (COURT_W + 10) * COURT_PX,
-	h: (COURT_H + 5) * COURT_PX,
-};
-
 const FaceLoader = ({
 	pid,
 	season,
@@ -127,53 +106,6 @@ const FaceLoader = ({
 	}, [face, onFace, pid]);
 	return null;
 };
-
-// A painted canvas, mounted as is - with more over it to fade in and out
-// (the crowd on its feet), if given.
-const Painted = ({
-	canvas,
-	over = [],
-	plane,
-	setRef,
-}: {
-	canvas: HTMLCanvasElement;
-	over?: HTMLCanvasElement[];
-	plane: Plane;
-	setRef: (key: string, el: HTMLDivElement | null) => void;
-}) => (
-	<div
-		ref={(el) => {
-			setRef(plane.key, el);
-			if (el && el.firstChild !== canvas) {
-				for (const c of [canvas, ...over]) {
-					c.style.display = "block";
-					c.style.position = "absolute";
-					c.style.inset = "0";
-					c.style.width = "100%";
-					c.style.height = "100%";
-				}
-				for (const c of over) {
-					c.style.opacity = "0";
-				}
-				el.replaceChildren(canvas, ...over);
-			}
-		}}
-		style={planeStyle(plane)}
-	/>
-);
-
-const planeStyle = (plane: Plane) =>
-	({
-		position: "absolute",
-		left: 0,
-		top: 0,
-		width: plane.w,
-		height: plane.h,
-		transformOrigin: "0 0",
-		willChange: "transform",
-		backfaceVisibility: "hidden",
-		visibility: "hidden",
-	}) as const;
 
 type Props = {
 	// The game's full play-by-play, never consumed.
@@ -335,11 +267,17 @@ const Court25D = ({
 			const f = faces.current.get(p.pid) ?? undefined;
 			const head = heads.current.get(p.pid);
 			const colors = headColors(f?.face);
+			const team = p.team === 0 ? away : home;
 			looks.set(p.pid, {
 				kit: kits[p.team as Side],
 				skin: head?.skin ?? colors.skin,
 				hair: f?.imgURL ? "#1f1612" : colors.hair,
 				jerseyNumber: f?.jerseyNumber ?? p.jerseyNumber ?? "",
+				name: p.name ?? "",
+				lastName: lastNameOf(p.name),
+				// NBA style: the team's name at home, the city on the road.
+				wordmark:
+					(p.team === 1 ? team?.name : team?.region) ?? team?.abbrev ?? "",
 				head: head?.sprite,
 			});
 			bodies.set(p.pid, bodyOf(f?.hgt, f?.weight));
@@ -374,14 +312,25 @@ const Court25D = ({
 	}, []);
 	const narrow = size.w < 560;
 
-	const planes = useRef(new Map<string, HTMLDivElement>());
-	const setPlaneRef = useCallback((key: string, el: HTMLDivElement | null) => {
-		if (el) {
-			planes.current.set(key, el);
-		} else {
-			planes.current.delete(key);
+	// The home floor as a picture, made from the 2D court's drawing of it.
+	const floorRef = useRef<HTMLDivElement | null>(null);
+	const courtPicture = useRef<HTMLCanvasElement | undefined>(undefined);
+	useEffect(() => {
+		courtPicture.current = undefined;
+		const svg = floorRef.current?.querySelector("svg");
+		if (!svg) {
+			return;
 		}
-	}, []);
+		let alive = true;
+		void courtTexture(svg, 10).then((canvas) => {
+			if (alive) {
+				courtPicture.current = canvas;
+			}
+		});
+		return () => {
+			alive = false;
+		};
+	}, [gid, home?.court, home?.colors, home?.imgURL, boxScore?.finals]);
 	const clockRef = useRef<HTMLSpanElement | null>(null);
 	const dipRef = useRef<HTMLDivElement | null>(null);
 	const replayRef = useRef<HTMLDivElement | null>(null);
@@ -482,48 +431,12 @@ const Court25D = ({
 	};
 
 	useEffect(() => {
-		const gloss = document.createElement("canvas");
-		const glossCtx = gloss.getContext("2d");
+		// The picture is drawn small - pixel art - and the page blows it up
+		// without smoothing (see the canvas's style).
+		const scratch = makeScratch();
+		const sprites = makeSpriteCache();
 		const lookOf = (pid: number) => looks.current.get(pid)!;
 		const bodyOfPid = (pid: number) => bodies.current.get(pid) ?? bodyOf();
-		const planeList: Plane[] = [
-			STANDS,
-			LED_WALL,
-			FLOOR,
-			COURT_PLANE,
-			TABLE_TOP,
-			TABLE_FRONT,
-			benchPlane(0),
-			benchPlane(1),
-		];
-		const shown = new Map<string, string | undefined>();
-
-		const place = (cam: Camera) => {
-			for (const pl of planeList) {
-				const el = planes.current.get(pl.key);
-				if (!el) {
-					continue;
-				}
-				const tf = planeTransform(
-					cam,
-					pl.origin,
-					pl.alongX,
-					pl.alongY,
-					pl.w,
-					pl.h,
-				);
-				if (tf === shown.get(pl.key)) {
-					continue;
-				}
-				shown.set(pl.key, tf);
-				if (tf) {
-					el.style.transform = tf;
-					el.style.visibility = "visible";
-				} else {
-					el.style.visibility = "hidden";
-				}
-			}
-		};
 
 		const tick = (now: number, draw: boolean) => {
 			const p = live.current;
@@ -615,19 +528,22 @@ const Court25D = ({
 
 			const canvas = canvasRef.current;
 			const ctx = canvas?.getContext("2d");
-			if (!canvas || !ctx || !glossCtx) {
+			if (!canvas || !ctx) {
 				return;
 			}
 			const { w, h } = p.size;
 			const dpr = Math.min(2, window.devicePixelRatio || 1);
-			const cw = Math.round(w * dpr);
-			const ch = Math.round(h * dpr);
-			if (cw <= 0 || ch <= 0) {
+			if (w <= 0 || h <= 0) {
 				return;
 			}
-			if (canvas.width !== cw || canvas.height !== ch) {
-				canvas.width = cw;
-				canvas.height = ch;
+			// The picture: about 240 pixel-art pixels tall, each a whole number
+			// of device pixels.
+			const art = Math.max(2, Math.round((h * dpr) / 240));
+			const fw = Math.ceil((w * dpr) / art);
+			const fh = Math.ceil((h * dpr) / art);
+			if (canvas.width !== fw || canvas.height !== fh) {
+				canvas.width = fw;
+				canvas.height = fh;
 			}
 
 			const replay = s.replay;
@@ -651,11 +567,10 @@ const Court25D = ({
 			}
 			const cam = makeCamera(
 				{ x: s.camX, width: s.camW, y: aim.y, z: aim.z },
-				w,
-				h,
+				fw,
+				fh,
 				replay ? REPLAY_RIG : MAIN_RIG,
 			);
-			place(cam);
 
 			const dip = dipRef.current;
 			if (dip) {
@@ -681,14 +596,6 @@ const Court25D = ({
 			// The crowd on its feet after a big play, arms going up and out.
 			const up = crowdUp(tl, moment.t);
 			const wave = Math.sin(now / 130) > 0;
-			const opacity = (c: HTMLCanvasElement, o: number) => {
-				const v = o.toFixed(2);
-				if (c.style.opacity !== v) {
-					c.style.opacity = v;
-				}
-			};
-			opacity(paintRef.current.standsUp, wave ? 0 : up);
-			opacity(paintRef.current.standsWave, wave ? up : 0);
 
 			let shotText = "";
 			let clockText = "";
@@ -698,9 +605,11 @@ const Court25D = ({
 				clockText = game === undefined ? "" : formatGameClock(game);
 				shotText = shot === undefined ? "" : String(Math.ceil(shot - 1e-6));
 			}
+			const pt = paintRef.current;
 			drawFrame({
 				ctx,
-				glossCtx,
+				scratch,
+				sprites,
 				cam,
 				moment,
 				tl,
@@ -711,8 +620,19 @@ const Court25D = ({
 				lineColor: p.lineColor,
 				warmups: p.warmups,
 				shotClock: shotText,
-				dpr,
+				arena: {
+					court: courtPicture.current,
+					stands: pt.stands,
+					standsUp: pt.standsUp,
+					standsWave: pt.standsWave,
+					wall: pt.wall,
+					tableTop: pt.tableTop,
+					tableFront: pt.tableFront,
+					bench: [pt.bench0, pt.bench1],
+				},
+				crowd: { up, wave },
 			});
+
 			if (clockText !== s.clockText && clockRef.current) {
 				s.clockText = clockText;
 				clockRef.current.textContent = clockText;
@@ -772,70 +692,31 @@ const Court25D = ({
 					/>
 				))}
 			<style>
-				{".court25d-caption .text-body-secondary { color: #c9c3d3 !important; }" +
-					// The floor picture's own lines (and the flat hoop drawn among
-					// them) - the court draws its lines itself (see courtLines).
-					' [data-court25d-floor] g[stroke-width="0.25"] { display: none; }'}
+				{
+					".court25d-caption .text-body-secondary { color: #c9c3d3 !important; }"
+				}
 			</style>
+			{/* The home floor as the 2D court draws it, out of sight: the 2.5D court
+			    makes its picture of the floor from it (see courtTexture). */}
 			<div
+				ref={floorRef}
 				aria-hidden
 				style={{
-					position: "absolute",
-					inset: 0,
-					overflow: "hidden",
+					position: "fixed",
+					left: -10000,
+					top: 0,
+					width: 1664,
+					height: 880,
+					visibility: "hidden",
 					pointerEvents: "none",
 				}}
 			>
-				<Painted
-					canvas={paint.stands}
-					over={[paint.standsUp, paint.standsWave]}
-					plane={STANDS}
-					setRef={setPlaneRef}
-				/>
-				<Painted canvas={paint.wall} plane={LED_WALL} setRef={setPlaneRef} />
-				<div
-					ref={(el) => {
-						setPlaneRef(FLOOR.key, el);
-					}}
-					style={{
-						...planeStyle(FLOOR),
-						background: "linear-gradient(#17130f, #2b241d 30%, #2b241d)",
-					}}
-				/>
-				<div
-					ref={(el) => {
-						setPlaneRef(COURT_PLANE.key, el);
-					}}
-					data-court25d-floor
-					style={planeStyle(COURT_PLANE)}
-				>
-					<LiveCourt
-						scene={undefined}
-						teams={[away, home]}
-						finals={!!boxScore?.finals}
-						season={season}
-						sceneMs={undefined}
-					/>
-				</div>
-				<Painted
-					canvas={paint.tableTop}
-					plane={TABLE_TOP}
-					setRef={setPlaneRef}
-				/>
-				<Painted
-					canvas={paint.tableFront}
-					plane={TABLE_FRONT}
-					setRef={setPlaneRef}
-				/>
-				<Painted
-					canvas={paint.bench0}
-					plane={benchPlane(0)}
-					setRef={setPlaneRef}
-				/>
-				<Painted
-					canvas={paint.bench1}
-					plane={benchPlane(1)}
-					setRef={setPlaneRef}
+				<LiveCourt
+					scene={undefined}
+					teams={[away, home]}
+					finals={!!boxScore?.finals}
+					season={season}
+					sceneMs={undefined}
 				/>
 			</div>
 			<canvas
@@ -847,6 +728,7 @@ const Court25D = ({
 					inset: 0,
 					width: "100%",
 					height: "100%",
+					imageRendering: "pixelated",
 				}}
 			/>
 			<div

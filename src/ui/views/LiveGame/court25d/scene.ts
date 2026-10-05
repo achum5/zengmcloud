@@ -1,9 +1,15 @@
 import {
 	ballAtRim,
+	benchPlane,
 	drawBall,
 	drawHoop,
 	drawShadow,
+	FLOOR,
+	LED_WALL,
+	STANDS,
 	standsPoint,
+	TABLE_FRONT,
+	TABLE_TOP,
 	type HoopFx,
 } from "./arena.ts";
 import { depthOf, project, type Camera, type Shot } from "./camera.ts";
@@ -16,13 +22,17 @@ import {
 	type BallState,
 	type PlayerState,
 } from "./evaluate.ts";
-import { drawFigure, type Look } from "./figure.ts";
+import type { Look } from "./figure.ts";
 import { COURT_W, RIM_Z, seatSpot, type Side } from "./geometry.ts";
+import { drawPixelText, pixelTextWidth } from "./pixelFont.ts";
+import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
 import type { Body } from "./poses.ts";
+import { drawSprite, type Scratch, type SpriteCache } from "./sprite.ts";
 
-// ONE FRAME: everybody's reflection in the hardwood, their shadows, then the
-// players, the two baskets and the ball from the back of the picture to the
-// front.
+// ONE FRAME, AS PIXEL ART: the building and the floor laid out in
+// perspective, the lines, the shadows, then the players, the two baskets and
+// the ball from the back of the picture to the front - all drawn small, on a
+// frame a few hundred pixels tall, for the page to blow up without smoothing.
 
 // Everybody on the floor and the ball at time t.
 export type Moment = {
@@ -47,10 +57,34 @@ export const momentAt = (
 	return { t, players, ball: evalBall(tl, t, bodyFor) };
 };
 
+// The building's pictures, painted once a game.
+export type ArenaPaint = {
+	// The home floor, from the 2D court's drawing (see courtTexture) - until it
+	// is ready, plain wood.
+	court?: HTMLCanvasElement;
+	stands: HTMLCanvasElement;
+	standsUp: HTMLCanvasElement;
+	standsWave: HTMLCanvasElement;
+	wall: HTMLCanvasElement;
+	tableTop: HTMLCanvasElement;
+	tableFront: HTMLCanvasElement;
+	bench: [HTMLCanvasElement, HTMLCanvasElement];
+};
+
+// The court picture's plane: the 2D court's own frame, in feet.
+const COURT_PICTURE: TexturedPlane = {
+	origin: { x: -5, y: -2.5, z: 0 },
+	alongX: { x: 1, y: 0, z: 0 },
+	alongY: { x: 0, y: 1, z: 0 },
+	w: COURT_W + 10,
+	h: 55,
+};
+
 export type Frame = {
+	// The frame being drawn: small, a pixel-art pixel to a canvas pixel.
 	ctx: CanvasRenderingContext2D;
-	// Scratch canvas the reflections are gathered on, so they fade as one.
-	glossCtx: CanvasRenderingContext2D;
+	scratch: Scratch;
+	sprites: SpriteCache;
 	cam: Camera;
 	moment: Moment;
 	tl: CourtTimeline;
@@ -63,8 +97,9 @@ export type Frame = {
 	// The warm-up tops the bench wears, by team.
 	warmups: [string, string];
 	shotClock: string;
-	// Pixel ratio of the canvases.
-	dpr: number;
+	arena: ArenaPaint;
+	// The crowd on its feet (0..1), and which way its arms are this instant.
+	crowd: { up: number; wave: boolean };
 };
 
 const fxLevel = (
@@ -86,6 +121,8 @@ const warmupLook = (look: Look, top: string): Look => {
 			...look,
 			kit: { ...look.kit, jersey: top, trim: top },
 			jerseyNumber: "",
+			lastName: "",
+			wordmark: "",
 		};
 		warmups.set(look, out);
 	}
@@ -190,47 +227,76 @@ const benchStates = (f: Frame, onFloor: Set<number>): PlayerState[] => {
 	return out;
 };
 
+// A plain quad on the floor, in one color.
+const floorQuad = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	x0: number,
+	y0: number,
+	x1: number,
+	y1: number,
+	color: string,
+) => {
+	ctx.fillStyle = color;
+	ctx.beginPath();
+	for (const [x, y] of [
+		[x0, y0],
+		[x1, y0],
+		[x1, y1],
+		[x0, y1],
+	] as const) {
+		const p = project(cam, { x, y, z: 0 });
+		ctx.lineTo(p.x, p.y);
+	}
+	ctx.closePath();
+	ctx.fill();
+};
+
 export const drawFrame = (f: Frame) => {
-	const { ctx, glossCtx, cam, tl } = f;
+	const { ctx, cam, tl, arena } = f;
 	const { t, players, ball } = f.moment;
-	const W = ctx.canvas.width;
-	const H = ctx.canvas.height;
 	ctx.setTransform(1, 0, 0, 1, 0, 0);
-	ctx.clearRect(0, 0, W, H);
-	ctx.setTransform(f.dpr, 0, 0, f.dpr, 0, 0);
+	ctx.fillStyle = "#07060a";
+	ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
 	const onFloor = new Set(players.map((p) => p.pid));
 	const bench = benchStates(f, onFloor);
 
+	// The building: the stands (on their feet after a big play), the LED
+	// ribbon, the floor round the court, the court, the table, the benches.
+	drawTexturedPlane(ctx, cam, STANDS, arena.stands, 24, 6);
+	if (f.crowd.up > 0.01) {
+		drawTexturedPlane(
+			ctx,
+			cam,
+			STANDS,
+			f.crowd.wave ? arena.standsWave : arena.standsUp,
+			24,
+			6,
+			f.crowd.up,
+		);
+	}
+	drawTexturedPlane(ctx, cam, LED_WALL, arena.wall, 24, 1);
+	floorQuad(
+		ctx,
+		cam,
+		FLOOR.origin.x,
+		FLOOR.origin.y,
+		FLOOR.origin.x + FLOOR.w * FLOOR.alongX.x,
+		FLOOR.origin.y + FLOOR.h * FLOOR.alongY.y,
+		"#241e18",
+	);
+	if (arena.court) {
+		drawTexturedPlane(ctx, cam, COURT_PICTURE, arena.court, 26, 12);
+	} else {
+		floorQuad(ctx, cam, 0, 0, COURT_W, 50, "#d8a865");
+	}
+	drawTexturedPlane(ctx, cam, TABLE_TOP, arena.tableTop, 4, 1);
+	drawTexturedPlane(ctx, cam, TABLE_FRONT, arena.tableFront, 4, 1);
+	drawTexturedPlane(ctx, cam, benchPlane(0), arena.bench[0], 6, 1);
+	drawTexturedPlane(ctx, cam, benchPlane(1), arena.bench[1], 6, 1);
 	drawFlashes(ctx, cam, tl, t);
 	drawCourtLines(ctx, cam, f.lineColor);
-
-	// Reflections in the polished floor.
-	const g = glossCtx;
-	if (g.canvas.width !== W || g.canvas.height !== H) {
-		g.canvas.width = W;
-		g.canvas.height = H;
-	}
-	g.setTransform(1, 0, 0, 1, 0, 0);
-	g.clearRect(0, 0, W, H);
-	g.setTransform(f.dpr, 0, 0, f.dpr, 0, 0);
-	for (const st of players) {
-		if (st.x > -3 && st.x < COURT_W + 3 && st.y > -2 && st.y < 52) {
-			drawFigure(
-				g,
-				cam,
-				st,
-				f.bodyFor(st.pid),
-				f.lookFor(st.pid),
-				"reflection",
-			);
-		}
-	}
-	ctx.save();
-	ctx.setTransform(1, 0, 0, 1, 0, 0);
-	ctx.globalAlpha = 0.17;
-	ctx.drawImage(g.canvas, 0, 0);
-	ctx.restore();
 
 	// Shadows: soft pools under the feet, shrinking as they leave the floor.
 	for (const st of [...players, ...bench]) {
@@ -252,7 +318,16 @@ export const drawFrame = (f: Frame) => {
 		items.push({
 			depth: depthOf(cam, { x: st.x, y: st.y, z: 3 }),
 			draw: () => {
-				drawFigure(ctx, cam, st, f.bodyFor(st.pid), f.lookFor(st.pid));
+				drawSprite(
+					ctx,
+					f.scratch,
+					cam,
+					st,
+					f.bodyFor(st.pid),
+					f.lookFor(st.pid),
+					1,
+					f.sprites,
+				);
 			},
 		});
 	}
@@ -260,12 +335,15 @@ export const drawFrame = (f: Frame) => {
 		items.push({
 			depth: depthOf(cam, { x: st.x, y: st.y, z: 3 }),
 			draw: () => {
-				drawFigure(
+				drawSprite(
 					ctx,
+					f.scratch,
 					cam,
 					st,
 					f.bodyFor(st.pid),
 					warmupLook(f.lookFor(st.pid), f.warmups[st.team]),
+					1,
+					f.sprites,
 				);
 			},
 		});
@@ -311,6 +389,33 @@ export const drawFrame = (f: Frame) => {
 	for (const it of items) {
 		it.draw();
 	}
+
+	// Whoever has the ball, named under his feet.
+	const holder =
+		ball.holder === undefined
+			? undefined
+			: players.find((p) => p.pid === ball.holder);
+	if (holder) {
+		drawNameTag(ctx, cam, holder, f.lookFor(holder.pid).name);
+	}
+};
+
+const drawNameTag = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	st: PlayerState,
+	name: string,
+) => {
+	const w = pixelTextWidth(name);
+	if (w === 0) {
+		return;
+	}
+	const feet = project(cam, { x: st.x, y: st.y, z: 0 });
+	const x = Math.round(feet.x - w / 2);
+	const y = Math.round(feet.y + Math.max(3, 0.55 * feet.k));
+	ctx.fillStyle = "rgba(8, 8, 12, 0.72)";
+	ctx.fillRect(x - 2, y - 2, w + 4, 11);
+	drawPixelText(ctx, name, x, y, "#ffffff");
 };
 
 // WHERE THE CAMERA LOOKS: mostly at the ball, pulled toward the middle of
@@ -334,8 +439,8 @@ export const aimFor = (m: Moment, narrow: boolean, tl: CourtTimeline): Shot => {
 		const left = ball.x < COURT_W / 2;
 		return {
 			x: left ? 12.5 : COURT_W - 12.5,
-			width: narrow ? 30 : 36,
-			y: 24,
+			width: narrow ? 26 : 32,
+			y: 25,
 		};
 	}
 	let minX = ball.x;
@@ -352,8 +457,8 @@ export const aimFor = (m: Moment, narrow: boolean, tl: CourtTimeline): Shot => {
 		n += 1;
 	}
 	const mid = n > 0 ? sum / n : ball.x;
-	const minW = narrow ? 42 : 52;
-	const maxW = narrow ? 70 : 86;
+	const minW = narrow ? 34 : 44;
+	const maxW = narrow ? 54 : 68;
 	let width = Math.min(maxW, Math.max(minW, maxX - minX + 18));
 	let x = ball.x * 0.62 + mid * 0.38;
 	// A shot going up: push in on the shooter.
@@ -365,7 +470,7 @@ export const aimFor = (m: Moment, narrow: boolean, tl: CourtTimeline): Shot => {
 	const room = width / 2 - 7;
 	x = Math.min(ball.x + room, Math.max(ball.x - room, x));
 	x = Math.min(COURT_W + 12 - width / 2, Math.max(width / 2 - 12, x));
-	return { x, width, y: 23 };
+	return { x, width, y: 24 };
 };
 
 // The play-by-play line being played out at t.
