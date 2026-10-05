@@ -225,6 +225,52 @@ const P = {
 		shF: 52,
 		elF: 62,
 	}),
+	// Triple threat: caught and facing up, knees bent, the ball on his hip -
+	// ready to shoot it, drive it or move it.
+	triple: pose({
+		hipN: -10,
+		kneeN: 46,
+		hipF: 24,
+		kneeF: 48,
+		lean: 16,
+		shN: 16,
+		elN: 92,
+		shF: 10,
+		elF: 100,
+		abN: 20,
+		abF: 8,
+		wide: 0.42,
+	}),
+	// A jab step: his lead foot stabbed out at his man, the ball ripped
+	// through low to his hip.
+	jabOut: pose({
+		hipN: -4,
+		kneeN: 44,
+		hipF: 50,
+		kneeF: 34,
+		lean: 22,
+		shN: 8,
+		elN: 96,
+		shF: 4,
+		elF: 104,
+		abN: 26,
+		abF: 6,
+		wide: 0.36,
+	}),
+	// A shot fake: the ball up to his eyes as if to shoot, heels down.
+	fakeUp: pose({
+		hipN: -8,
+		kneeN: 30,
+		hipF: 14,
+		kneeF: 32,
+		lean: 4,
+		shN: 128,
+		elN: 118,
+		shF: 120,
+		elF: 124,
+		wrN: 30,
+		wrF: 20,
+	}),
 	// Clapping for the ball: hands apart, and together.
 	clapOpen: pose({
 		shN: 70,
@@ -436,6 +482,36 @@ export const ANIMS = {
 			}),
 	},
 	hold: { kind: "loop", n: 1, fps: 1, pose: () => P.hold },
+	// Sat in his triple threat, the ball on his hip, rocking a little.
+	triple: {
+		kind: "loop",
+		n: 2,
+		fps: 1.6,
+		pose: (i) =>
+			i ? { ...P.triple, kneeN: 50, kneeF: 52, lean: 18 } : P.triple,
+	},
+	// A jab step at his man and back.
+	jab: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, P.triple],
+			[0.32, P.jabOut],
+			[0.6, P.jabOut],
+			[1, P.triple],
+		],
+	},
+	// Up as if to shoot, and back down.
+	shotFake: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, P.triple],
+			[0.34, P.fakeUp],
+			[0.56, P.fakeUp],
+			[1, P.triple],
+		],
+	},
 	dribbleIdle: {
 		kind: "loop",
 		n: 4,

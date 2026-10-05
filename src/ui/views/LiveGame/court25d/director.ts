@@ -4978,6 +4978,20 @@ class Director {
 			}
 			return end;
 		};
+		// Whether the ball is his at any time from a to b.
+		const hasBall = (pid: number, a: number, b: number): boolean => {
+			const i = Math.max(
+				0,
+				this.ball.findLastIndex((s) => s.t0 <= a),
+			);
+			for (let k = i; k < this.ball.length && this.ball[k]!.t0 < b; k++) {
+				const s = this.ball[k]!;
+				if (s.kind === "hold" && s.pid === pid) {
+					return true;
+				}
+			}
+			return false;
+		};
 		// Things a man does where the set put him to do them: a shot, a
 		// screen, a post-up, a contest of the shot.
 		const PLANTED = new Set<AnimName>([
@@ -5070,8 +5084,11 @@ class Director {
 				if (w.to - w.from < 1500 || !free(tr, w)) {
 					continue;
 				}
-				// The part of it with the ball in play.
+				// The part of it with the ball in play - and not in his hands.
 				const until = Math.min(w.to, liveUntil(w.from));
+				if (hasBall(tr.pid, w.from, until)) {
+					continue;
+				}
 				const team = atTime(this.poss, w.from, 1 as Side);
 				if (
 					until - w.from < 1500 ||
@@ -5168,6 +5185,156 @@ class Director {
 		}
 		for (const tr of all) {
 			tr.moves.sort((a, b) => a.t0 - b.t0);
+		}
+	}
+
+	// THE BALL IN HIS HANDS. Caught with nothing to do with it yet - the set
+	// still coming to him, a screen on its way - nobody stands there holding
+	// it like a statue: he faces up in his triple threat and jabs at his man
+	// or shows him a fake; given longer, he puts it on the floor and keeps his
+	// dribble alive, probing a hard dribble or two at his man and back, and
+	// picks it up as it comes up to him, in time for whatever he does next.
+	private liveHands() {
+		const ball = this.ball;
+		const added: BallSeg[] = [];
+		const freeThrows = this.beats.filter(
+			(bt) => bt.type === "ft" || bt.type === "missFt",
+		);
+		const teamAt = (t: number): Side => {
+			let side: Side = 1;
+			for (const [t0, x] of this.poss) {
+				if (t0 > t) {
+					break;
+				}
+				side = x;
+			}
+			return side;
+		};
+		for (let i = 0; i + 1 < ball.length; i++) {
+			const s = ball[i]!;
+			const next = ball[i + 1]!;
+			if (s.kind !== "hold" || s.style !== "hold") {
+				continue;
+			}
+			const pid = s.pid;
+			const tr = this.track(pid);
+			if (
+				!tr ||
+				tr.team !== teamAt(s.t0) ||
+				this.poss.some(([t0]) => t0 > s.t0 && t0 <= next.t0) ||
+				this.cuts.some((c) => c > s.t0 && c <= next.t0) ||
+				freeThrows.some((bt) => bt.end > s.t0 && bt.preStart < next.t0)
+			) {
+				continue;
+			}
+			// Out on the floor - not inbounding it.
+			const P = this.posAt(pid, s.t0);
+			const team = tr.team;
+			const dir = attackDir(team);
+			if (P.x < 1 || P.x > COURT_W - 1 || P.y < 1 || P.y > COURT_H - 1) {
+				continue;
+			}
+			// The time that is his: after he catches it, before whatever he
+			// does next with it - and standing the whole while.
+			let from = s.t0 + 200;
+			let to = next.t0;
+			for (const a of tr.acts) {
+				if (a.t1 <= s.t0 || a.t0 >= next.t0) {
+					continue;
+				}
+				if (a.t0 <= s.t0 + 250) {
+					from = Math.max(from, a.t1 + 60);
+				} else {
+					to = Math.min(to, a.t0 - 40);
+				}
+			}
+			if (
+				to - from < 700 ||
+				tr.moves.some((m) => m.t1 > from - 50 && m.t0 < to - 10)
+			) {
+				continue;
+			}
+			const own = next.kind === "hold" && next.pid === pid;
+			if ((P.x - COURT_W / 2) * dir < 2) {
+				// Back in his own end with it - an outlet, say - he puts it on
+				// the floor straight away to bring it up.
+				const start = from + 150;
+				if (own && next.t0 - start >= DRIBBLE_MS * 2) {
+					added.push({
+						kind: "hold",
+						t0:
+							next.t0 - Math.floor((next.t0 - start) / DRIBBLE_MS) * DRIBBLE_MS,
+						pid,
+						style: "dribble",
+						hand: "R",
+					});
+				}
+				continue;
+			}
+			const rim = { x: rimX(team), y: COURT_H / 2 };
+			// What comes next: his own dribble, or the ball out of his hands -
+			// a pass or a shot.
+			const throws =
+				next.kind === "fly" && "pid" in next.from && next.from.pid === pid;
+			const fake = (t: number): number => {
+				const anim = this.rng() < 0.55 ? "jab" : "shotFake";
+				const dur = anim === "jab" ? 520 : 640;
+				this.act(pid, anim, t, t + dur, { look: rim });
+				return dur;
+			};
+			if (to - from < 1900 || !(own || throws)) {
+				// A moment with it: facing up, one jab or fake.
+				this.act(pid, "triple", from, to, { look: rim });
+				if (to - from >= 900) {
+					fake(from + 120 + this.rng() * (to - from - 900));
+				}
+				continue;
+			}
+			// Longer: a beat facing up, then he puts it on the floor - on the
+			// beat of the dribble he goes on with, if he goes on dribbling.
+			let td = from + 760;
+			if (own) {
+				td = next.t0 - Math.floor((next.t0 - td) / DRIBBLE_MS) * DRIBBLE_MS;
+			}
+			let pick = to;
+			if (throws) {
+				const k = Math.floor((to - 120 - td) / DRIBBLE_MS);
+				if (k < 2) {
+					this.act(pid, "triple", from, to, { look: rim });
+					fake(from + 120);
+					continue;
+				}
+				pick = td + k * DRIBBLE_MS;
+			}
+			this.act(pid, "triple", from, td, { look: rim });
+			fake(from + 100);
+			added.push({ kind: "hold", t0: td, pid, style: "dribble", hand: "R" });
+			if (throws) {
+				added.push({ kind: "hold", t0: pick, pid, style: "hold" });
+				this.act(pid, "triple", pick, to, { look: rim });
+			}
+			// A probe: a hard dribble or two at his man, and back out.
+			if (pick - td >= 1700) {
+				const side = this.rng() < 0.5 ? 1 : -1;
+				const u = unitVec(P, rim);
+				const Q = clampPt({
+					x: P.x + (u.x * 0.8 - u.y * side * 0.6) * 2.6,
+					y: P.y + (u.y * 0.8 + u.x * side * 0.6) * 2.6,
+				});
+				const m0 = td + 300 + this.rng() * Math.max(0, pick - td - 1700);
+				tr.moves.push(
+					{ t0: m0, t1: m0 + 420, from: { ...P }, to: Q, anim: "dribble" },
+					{ t0: m0 + 640, t1: m0 + 1160, from: Q, to: { ...P }, anim: "back" },
+				);
+			}
+		}
+		for (const seg of added) {
+			ball.push(seg);
+		}
+		ball.sort((a, b) => a.t0 - b.t0);
+		for (const tr of this.tracks.values()) {
+			tr.moves.sort((a, b) => a.t0 - b.t0);
+			tr.acts.sort((a, b) => a.t0 - b.t0);
 		}
 	}
 
@@ -5573,6 +5740,7 @@ class Director {
 			tr.shown.sort((a, b) => a[0] - b[0]);
 		}
 		this.ball.sort(byT0);
+		this.liveHands();
 		this.liven();
 		this.mark();
 		this.fx.sort((a, b) => a.t - b.t);
