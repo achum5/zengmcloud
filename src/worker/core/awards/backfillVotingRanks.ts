@@ -23,6 +23,8 @@
 //     into a player's history.
 //   - Team awards (All-League, All-Rookie) are left alone. They already store
 //     every member of every team; there is no ballot behind them.
+//   - So are playoff series awards (Finals MVP and the like): they record their
+//     winner and nobody else (see isPlayoffSeriesAward).
 //
 // It is additive and idempotent: a season already carrying a full ballot is
 // skipped, and a player who already has the award is left as he is.
@@ -31,7 +33,10 @@ import { idb } from "../../db/index.ts";
 import { normalizeAwardsRow } from "../../db/normalizeAwardsRow.ts";
 import addAward from "../player/addAward.ts";
 import { getAwardCandidates } from "./getAwardCandidates.ts";
-import { NUM_PLAYERS_PER_INDIVIDUAL_AWARD } from "../../../common/awards.ts";
+import {
+	isPlayoffSeriesAward,
+	NUM_PLAYERS_PER_INDIVIDUAL_AWARD,
+} from "../../../common/awards.ts";
 import type { Award, AwardPlayer, PlayerAward } from "../../../common/types.ts";
 
 export type BackfillVotingRanksResult = {
@@ -158,6 +163,7 @@ const backfill = async (
 			const awards = normalizeAwardsRow(raw);
 			const needsFill = (award: Award) =>
 				award.numTeams === undefined &&
+				!isPlayoffSeriesAward(award) &&
 				award.winner.length < NUM_PLAYERS_PER_INDIVIDUAL_AWARD &&
 				award.winner[0]?.pid !== undefined;
 

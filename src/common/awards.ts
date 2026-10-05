@@ -16,6 +16,30 @@ import type {
 // the ballot stopped at five, so there was no sixth place to show.
 export const NUM_PLAYERS_PER_INDIVIDUAL_AWARD = 10;
 
+// A PLAYOFF SERIES AWARD HAS A WINNER AND NOBODY ELSE.
+//
+// A series MVP - Finals MVP, a conference finals MVP - is voted on by a panel
+// of nine or eleven writers, one vote each, and the vote rarely gets past two
+// names. A player page saying someone finished seventh in conference finals
+// MVP voting describes a vote that never happens. So only the winner of a
+// series award is written down, in the season's awards and in anybody's
+// history. The Award Races page still ranks the whole series from its box
+// scores, for as long as they are kept.
+export const isPlayoffSeriesAward = (award: {
+	statRange?: Award["statRange"];
+}): boolean => typeof award.statRange === "number";
+
+// A season's awards as they are written down when they are decided: each
+// series award cut to its winner.
+export const keepSeriesWinnersOnly = (awards: readonly Award[]): Award[] =>
+	awards.map((award) =>
+		award.numTeams === undefined &&
+		isPlayoffSeriesAward(award) &&
+		award.winner.length > 1
+			? { ...award, winner: award.winner.slice(0, 1) }
+			: award,
+	);
+
 // WHAT AN AWARD IS CALLED, ACCORDING TO THE SETTINGS, RIGHT NOW.
 //
 // A season writes down the label its awards were given at the time, and a

@@ -8,7 +8,10 @@ import {
 	updatePlayerAwards,
 } from "./awardsByPlayer.ts";
 import { orderTeams } from "../../util/orderTeams.ts";
-import { leaderAwardCategories } from "../../../common/awards.ts";
+import {
+	keepSeriesWinnersOnly,
+	leaderAwardCategories,
+} from "../../../common/awards.ts";
 
 const teamAwards = async (
 	teamsUnsorted: TeamFiltered<
@@ -121,7 +124,7 @@ export const doAwards = async (conditions: Conditions) => {
 		extraStatRanges: ["regularSeason"],
 		extraStats: leaderAwardCategories.map((row) => row.stat),
 	});
-	const flatRealizedAwards = realizedAwards.flat();
+	const flatRealizedAwards = keepSeriesWinnersOnly(realizedAwards.flat());
 
 	const awardsByPlayer = [
 		...getAwardsByPlayer(flatRealizedAwards, players),
