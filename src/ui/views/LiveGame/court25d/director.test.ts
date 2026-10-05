@@ -219,6 +219,50 @@ describe("2.5D director", () => {
 		}
 	}, 120_000);
 
+	// Off the ball nobody stands rooted to his spot: a man out on the
+	// perimeter drifts along the arc - staying behind the line - and his man,
+	// standing off him, slides with him.
+	test("off the ball, shooters drift along the arc and their men go too", () => {
+		const { tl } = compile("drift", 140);
+		const tracks = [...tl.tracks.values()];
+		let drifts = 0;
+		let followed = 0;
+		for (const tr of tracks) {
+			for (const m of tr.moves) {
+				if (m.anim !== "drift") {
+					continue;
+				}
+				drifts += 1;
+				for (const p of [m.from, m.to]) {
+					const team = tr.team;
+					const depth = team === 0 ? p.x : COURT_W - p.x;
+					const out =
+						depth < 14
+							? Math.abs(p.y - 25) - 22
+							: Math.hypot(depth - 5.25, p.y - 25) - 23.75;
+					assert.isAbove(out, 0.5, `drift inside the line at ${m.t0}`);
+				}
+				if (
+					tracks.some(
+						(o) =>
+							o.team !== tr.team &&
+							o.moves.some(
+								(x) =>
+									x.anim === "slide" &&
+									Math.abs(x.t0 - m.t0 - 120) < 1 &&
+									Math.abs(x.t1 - x.t0 - (m.t1 - m.t0)) < 1,
+							),
+					)
+				) {
+					followed += 1;
+				}
+			}
+		}
+		assert.isAbove(drifts, 40);
+		// (A man already on the move with the play goes his own way.)
+		assert.isAbove(followed, drifts * 0.25);
+	});
+
 	// Turning right round, he turns one way and keeps turning - he never
 	// flicks between facings from one frame to the next.
 	test("players turn smoothly - no snap in which way anybody faces", () => {

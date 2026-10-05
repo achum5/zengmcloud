@@ -539,8 +539,9 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 		return angleTo(here, act.look, fallback);
 	}
 	const mv = here.moveIndex >= 0 ? tr.moves[here.moveIndex] : undefined;
-	// A defensive slide keeps his eyes on the ball whichever way he goes.
-	if (mv && here.moving && mv.anim === "slide") {
+	// A defensive slide keeps his eyes on the ball whichever way he goes -
+	// and so does a man drifting along the arc for it.
+	if (mv && here.moving && (mv.anim === "slide" || mv.anim === "drift")) {
 		return angleTo(here, ballNear(tl, t), fallback);
 	}
 	if (mv && here.moving) {
@@ -651,6 +652,83 @@ const yawAt = (tl: CourtTimeline, tr: Track, t: number): number => {
 	return u <= 0 ? a : a + wrapAngle(yawOnBeat(tl, tr, g + TURN_STEP) - a) * u;
 };
 
+// OFF THE BALL.
+//
+// Standing his ground while the ball is in play somewhere else, a man is no
+// statue: a shooter sinks into his stance and shows his hands, a man calls
+// for it or claps for it; a defender works his hands into the lane, or
+// points out his man. Which, and when, comes from who he is and when he
+// stopped - the same every viewing.
+const OFF_BALL: Record<"ready" | "stance", [AnimName, number][]> = {
+	ready: [
+		["spotUp", 1500],
+		["callBall", 1100],
+		["clapCall", 900],
+		["spotUp", 1800],
+	],
+	stance: [
+		["stanceHands", 1100],
+		["stancePoint", 1000],
+		["stanceHands", 1400],
+	],
+};
+// A beat of standing (ms), with at most one of them in it.
+const LIFE_EVERY = 2300;
+const hash01 = (a: number, b: number): number => {
+	const x = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+	return x - Math.floor(x);
+};
+const offBall = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	base: "ready" | "stance",
+): { anim: AnimName; phase: number } | undefined => {
+	// Only with the ball in play: in a man's hands, or on its way between
+	// two - not at a free throw.
+	const seg = ballSegAt(tl, t);
+	if (
+		!(
+			seg?.kind === "hold" ||
+			(seg?.kind === "fly" && "pid" in seg.from && "pid" in seg.to)
+		)
+	) {
+		return undefined;
+	}
+	const beat = tl.beats[lastIndex(tl.beats, t, (b) => b.preStart)];
+	if (beat && (beat.type === "ft" || beat.type === "missFt")) {
+		return undefined;
+	}
+	// Since when he has stood here, and until he next moves or acts.
+	const mi = lastIndex(tr.moves, t, (m) => m.t0);
+	let since = mi >= 0 ? tr.moves[mi]!.t1 : 0;
+	let until = tr.moves[mi + 1]?.t0 ?? Infinity;
+	const ai = lastIndex(tr.acts, t, (a) => a.t0);
+	for (let k = ai; k >= 0 && k >= ai - 3; k--) {
+		since = Math.max(since, tr.acts[k]!.t1);
+	}
+	until = Math.min(until, tr.acts[ai + 1]?.t0 ?? Infinity);
+	const k = Math.floor((t - since - 300) / LIFE_EVERY);
+	if (k < 0) {
+		return undefined;
+	}
+	const h = hash01(tr.pid, since / 1000 + k);
+	if (h < 0.4) {
+		return undefined;
+	}
+	const list = OFF_BALL[base];
+	const [anim, dur] = list[Math.floor(h * 1000) % list.length]!;
+	const start =
+		since +
+		300 +
+		k * LIFE_EVERY +
+		hash01(tr.pid + 1, since / 1000 + k) * (LIFE_EVERY - dur - 200);
+	if (t < start || t >= start + dur || start + dur > until) {
+		return undefined;
+	}
+	return { anim, phase: (t - start) / dur };
+};
+
 export const evalPlayer = (
 	tl: CourtTimeline,
 	pid: number,
@@ -718,6 +796,14 @@ export const evalPlayer = (
 		const a = ANIMS[anim];
 		const fps = a.kind === "loop" ? a.fps : 2;
 		phase = (t / 1000) * (fps / a.n) + pid * 0.37;
+		const life =
+			anim === "ready" || anim === "stance"
+				? offBall(tl, tr, t, anim)
+				: undefined;
+		if (life) {
+			anim = life.anim;
+			phase = life.phase;
+		}
 	}
 	const bi = ballIndexAt(tl, t);
 	const seg = tl.ball[bi];

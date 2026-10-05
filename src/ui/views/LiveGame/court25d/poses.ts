@@ -213,6 +213,25 @@ const P = {
 		wide: 0.55,
 		flare: 62,
 	}),
+	// Clapping for the ball: hands apart, and together.
+	clapOpen: pose({
+		shN: 70,
+		elN: 56,
+		abN: 18,
+		shF: 70,
+		elF: 56,
+		abF: 18,
+		lean: 2,
+	}),
+	clapShut: pose({
+		shN: 72,
+		elN: 52,
+		abN: -10,
+		shF: 72,
+		elF: 52,
+		abF: -10,
+		lean: 2,
+	}),
 };
 
 // Hands up as a target for a pass on its way: out in front of his chest,
@@ -228,17 +247,42 @@ const TARGET: Partial<Pose> = {
 	wrF: 50,
 };
 
-type RunMode = "run" | "sprint" | "dribble" | "back" | "walk" | "carry";
+type RunMode =
+	| "run"
+	| "sprint"
+	| "dribble"
+	| "back"
+	| "walk"
+	| "carry"
+	| "drift";
 const stride = (ph: number, mode: RunMode): Pose => {
 	const a = Math.sin(2 * Math.PI * ph);
 	const c = Math.cos(2 * Math.PI * ph);
-	if (mode === "walk" || mode === "carry") {
+	if (mode === "walk" || mode === "carry" || mode === "drift") {
 		const legs = {
 			hipN: 20 * a,
 			hipF: -20 * a,
 			kneeN: 10 + 30 * Math.max(0, c),
 			kneeF: 10 + 30 * Math.max(0, -c),
 		};
+		if (mode === "drift") {
+			// Off the ball, sliding along the arc: knees bent, hands up ready
+			// for it.
+			return pose({
+				...legs,
+				kneeN: legs.kneeN + 14,
+				kneeF: legs.kneeF + 14,
+				lean: 9,
+				shN: 42,
+				elN: 58,
+				shF: 40,
+				elF: 60,
+				abN: 16,
+				abF: 16,
+				wrN: 20,
+				wrF: 20,
+			});
+		}
 		return mode === "carry"
 			? pose({ ...legs, lean: 6, shN: 36, elN: 92, shF: 30, elF: 98 })
 			: pose({ ...legs, lean: 4, shN: -16 * a, elN: 22, shF: 16 * a, elF: 26 });
@@ -479,6 +523,13 @@ export const ANIMS = {
 		n: 6,
 		stride: 4.6,
 		pose: (i) => runPose(i / 6, "carry"),
+	},
+	// Drifting along the arc off the ball, eyes on it.
+	drift: {
+		kind: "cycle",
+		n: 6,
+		stride: 3.8,
+		pose: (i) => runPose(i / 6, "drift"),
 	},
 	shoot: {
 		kind: "act",
@@ -1153,6 +1204,141 @@ export const ANIMS = {
 				}),
 			],
 			[1, P.ready],
+		],
+	},
+	// Off the ball and ready for it: down in his stance, hands up and out to
+	// show the passer a target.
+	spotUp: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.ready],
+			[
+				0.25,
+				pose({
+					hipN: 16,
+					kneeN: 40,
+					hipF: 22,
+					kneeF: 42,
+					lean: 14,
+					shN: 62,
+					elN: 64,
+					shF: 58,
+					elF: 66,
+					abN: 18,
+					abF: 18,
+					wrN: 30,
+					wrF: 30,
+					wide: 0.45,
+				}),
+			],
+			[
+				0.8,
+				pose({
+					hipN: 18,
+					kneeN: 44,
+					hipF: 24,
+					kneeF: 46,
+					lean: 15,
+					shN: 66,
+					elN: 60,
+					shF: 60,
+					elF: 64,
+					abN: 18,
+					abF: 18,
+					wrN: 30,
+					wrF: 30,
+					wide: 0.45,
+				}),
+			],
+			[1, P.ready],
+		],
+	},
+	// Calling for it, a hand up.
+	callBall: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.ready],
+			[
+				0.25,
+				pose({
+					shN: 158,
+					elN: 18,
+					abN: 16,
+					wrN: 20,
+					shF: 22,
+					elF: 34,
+					lean: 2,
+				}),
+			],
+			[
+				0.55,
+				pose({
+					shN: 148,
+					elN: 28,
+					abN: 24,
+					wrN: 26,
+					shF: 24,
+					elF: 36,
+					lean: 2,
+				}),
+			],
+			[
+				0.75,
+				pose({
+					shN: 160,
+					elN: 14,
+					abN: 14,
+					wrN: 16,
+					shF: 22,
+					elF: 34,
+					lean: 2,
+				}),
+			],
+			[1, P.ready],
+		],
+	},
+	// Two claps: here!
+	clapCall: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, P.ready],
+			[0.2, P.clapOpen],
+			[0.32, P.clapShut],
+			[0.46, P.clapOpen],
+			[0.58, P.clapShut],
+			[0.78, P.clapOpen],
+			[1, P.ready],
+		],
+	},
+	// Off the ball in his stance, his hands up and working into the lane.
+	stanceHands: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.stance],
+			[
+				0.3,
+				{ ...P.stance, shN: 122, elN: 28, abN: 30, shF: 108, elF: 34, abF: 34 },
+			],
+			[
+				0.7,
+				{ ...P.stance, shN: 104, elN: 38, abN: 36, shF: 128, elF: 26, abF: 28 },
+			],
+			[1, P.stance],
+		],
+	},
+	// Calling out his man - or the screen coming - pointing.
+	stancePoint: {
+		kind: "act",
+		n: 5,
+		keys: [
+			[0, P.stance],
+			[0.3, { ...P.stance, shN: 96, elN: 4, abN: 22 }],
+			[0.8, { ...P.stance, shN: 92, elN: 6, abN: 26 }],
+			[1, P.stance],
 		],
 	},
 	// One arm up, pointing at the crowd.
