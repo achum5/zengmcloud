@@ -7,6 +7,7 @@ import {
 	lastCut,
 	offenseAt,
 	recentFx,
+	tensionAt,
 	type PlayerState,
 } from "./evaluate.ts";
 import { shade, type Look } from "./figure.ts";
@@ -734,6 +735,8 @@ const refStates = (
 const PACE_MS = 6500;
 const COACH_Y = -2.7;
 const IDLE: AnimName[] = ["crossed", "crossed", "crouch", "ready", "talk"];
+// A tight finish: bent over watching every play, calling out to his five.
+const IDLE_TENSE: AnimName[] = ["crouch", "talk", "crouch", "talk", "point"];
 const coachState = (
 	tl: CourtTimeline,
 	t: number,
@@ -782,7 +785,8 @@ const coachState = (
 			moving: true,
 		};
 	}
-	let anim = IDLE[Math.floor(unit(j, team * 31 + 7) * IDLE.length)]!;
+	const idle = tensionAt(tl, t) >= 1 ? IDLE_TENSE : IDLE;
+	let anim = idle[Math.floor(unit(j, team * 31 + 7) * idle.length)]!;
 	let phase = loopPhase(anim, t, team * 0.5);
 	const roar = recentFx(tl, t, ["roar"], 1600);
 	const w = recentFx(tl, t, ["whistle"], 1600);

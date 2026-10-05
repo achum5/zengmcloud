@@ -43,7 +43,7 @@ import { cameraCuts } from "./evaluate.ts";
 import {
 	aimFor,
 	arenaAim,
-	crowdUp,
+	crowdAt,
 	drawFrame,
 	momentAt,
 	replayAim,
@@ -685,9 +685,9 @@ const Court25D = ({
 					tag.style.display = show;
 				}
 			}
-			// The crowd on its feet after a big play, arms going up and out.
-			const up = crowdUp(tl, moment.t);
-			const wave = Math.sin(now / 130) > 0;
+			// The crowd on its feet after a big play, arms going up and out -
+			// and the whole way through a tight finish.
+			const { up, wave } = crowdAt(tl, moment.t, now);
 
 			let shotText = "";
 			let clockText = "";

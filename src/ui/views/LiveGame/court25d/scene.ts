@@ -32,6 +32,7 @@ import {
 	evalPlayer,
 	offenseAt,
 	recentFx,
+	tensionAt,
 	withBody,
 	type BallState,
 	type PlayerState,
@@ -40,7 +41,7 @@ import type { Look } from "./figure.ts";
 import { COURT_W, RIM_Z, seatSpot, type Pt3, type Side } from "./geometry.ts";
 import { drawPixelText, pixelTextWidth } from "./pixelFont.ts";
 import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
-import type { Body } from "./poses.ts";
+import type { AnimName, Body } from "./poses.ts";
 import { drawSprite, type Scratch, type SpriteCache } from "./sprite.ts";
 
 // ONE FRAME, AS PIXEL ART: the building and the floor laid out in
@@ -221,12 +222,34 @@ export const crowdUp = (tl: CourtTimeline, t: number): number => {
 	return level * (fx.team === 1 ? 1 : 0.4);
 };
 
-// The players who are not in the game, sitting in order on their bench.
+// The crowd at t: on its feet for a big play, arms going - and in a tight
+// finish on its feet the whole way, arms going up now and then (`now` is
+// the wall clock, for the arms).
+export const crowdAt = (
+	tl: CourtTimeline,
+	t: number,
+	now: number,
+): { up: number; wave: boolean } => {
+	const roar = crowdUp(tl, t);
+	const tense = tensionAt(tl, t);
+	return {
+		up: Math.max(roar, tense >= 1 ? 0.9 : tense * 0.7),
+		wave:
+			roar > 0.3
+				? Math.sin(now / 130) > 0
+				: tense >= 1 && Math.sin(now / 520) > 0.55,
+	};
+};
+
+// The players who are not in the game, sitting in order on their bench -
+// up on their feet in a tight finish.
+const STANDING: AnimName[] = ["ready", "crossed", "ready", "crouch"];
 const benchStates = (f: Frame, onFloor: Set<number>): PlayerState[] => {
 	const out: PlayerState[] = [];
 	const seat: [number, number] = [0, 0];
 	// A big play brings the bench to its feet for a moment.
 	const roar = recentFx(f.tl, f.moment.t, ["roar"], 1800);
+	const tense = tensionAt(f.tl, f.moment.t) >= 1;
 	for (const p of f.roster) {
 		const i = seat[p.team]++;
 		if (onFloor.has(p.pid)) {
@@ -242,7 +265,11 @@ const benchStates = (f: Frame, onFloor: Set<number>): PlayerState[] => {
 			y: at.y,
 			z: 0,
 			yaw: Math.PI / 2,
-			anim: up ? "cheer" : "sit",
+			anim: up
+				? "cheer"
+				: tense
+					? STANDING[Math.abs(p.pid) % STANDING.length]!
+					: "sit",
 			phase: (f.moment.t / 1000) * 1.5 + ((p.pid * 0.37) % 1),
 			moving: false,
 		});
@@ -583,6 +610,10 @@ export const boardAt = (tl: CourtTimeline, t: number): BoardScreen => {
 	}
 	if (!arenaShotAt(tl, t) && offenseAt(tl, t) === 0) {
 		return Math.floor(t / 420) % 2 ? "defense2" : "defense";
+	}
+	// Crunch time with the ball: the building as loud as it gets.
+	if (!arenaShotAt(tl, t) && tensionAt(tl, t) >= 0.5) {
+		return Math.floor(t / 2600) % 2 ? "letsGo" : "noise";
 	}
 	return AMBIENT[Math.floor(t / 8000) % AMBIENT.length]!;
 };

@@ -12,8 +12,10 @@ import {
 	evalPlayer,
 	handWorld,
 	heldBall,
+	tensionAt,
 	withBody,
 } from "./evaluate.ts";
+import { crowdAt } from "./scene.ts";
 import { COURT_W, FT_LINE_DEPTH, RIM_Z } from "./geometry.ts";
 import { bodyOf, posed, skeleton } from "./poses.ts";
 import { compile, fakeGame, gidOf } from "./testGame.ts";
@@ -708,6 +710,32 @@ describe("2.5D director", () => {
 			}
 		}
 		assert.isAbove(dunks, 2);
+	});
+
+	// A close game late in the fourth (or in overtime) has the building on
+	// its feet; the first three periods never do.
+	test("a tight finish has the crowd on its feet", () => {
+		let tense = 0;
+		for (const seed of ["e", "f", "g"]) {
+			const { events, tl } = compile(seed);
+			const fourth = tl.beats.find((b) => {
+				const e = events[b.i]!;
+				return e.type === "period" && e.period === 4;
+			})!;
+			for (const [t, level] of tl.tension) {
+				if (level > 0) {
+					assert.isAtLeast(t, fourth.preStart, seed);
+				}
+			}
+			const close = tl.tension.find(([, level]) => level >= 1);
+			if (close) {
+				tense += 1;
+				const t = close[0] + 50;
+				assert.strictEqual(tensionAt(tl, t), 1);
+				assert.isAtLeast(crowdAt(tl, t, 0).up, 0.9);
+			}
+		}
+		assert.isAbove(tense, 1);
 	});
 
 	test("a rebounder chins it before he goes anywhere with it", () => {

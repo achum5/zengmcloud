@@ -205,6 +205,12 @@ const targetAt = (tl: CourtTimeline, pid: number, t: number): number => {
 // A run this fast or faster (feet a second, start to finish) is a sprint.
 const SPRINT_FTPS = 19;
 
+// How tense the building is at t (0 to 1): a close game, late.
+export const tensionAt = (tl: CourtTimeline, t: number): number => {
+	const i = lastIndex(tl.tension, t, (x) => x[0]);
+	return i >= 0 ? tl.tension[i]![1] : 0;
+};
+
 // The act running now, if any (they rarely overlap; the later one wins).
 const actAt = (tr: Track, t: number): Act | undefined => {
 	const ai = lastIndex(tr.acts, t, (a) => a.t0);

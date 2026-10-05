@@ -213,6 +213,9 @@ export type CourtTimeline = {
 	// Moments the picture cuts: everyone may be somewhere else just after.
 	cuts: number[];
 	shots: ArenaShot[];
+	// How tense the building is, over time (0 to 1): a close game late in
+	// the last period or in overtime.
+	tension: [number, number][];
 	end: number;
 };
 
@@ -499,6 +502,10 @@ class Director {
 	readonly beats: Beat[] = [];
 	readonly poss: [number, Side][] = [];
 	readonly cuts: number[] = [];
+	readonly tension: [number, number][] = [];
+	// The period being played, and whether it is overtime.
+	private periodNo = 1;
+	private overtime = false;
 	// `stretch`: may run on to the next cut (see finish).
 	readonly shots: (ArenaShot & { stretch?: boolean })[] = [];
 
@@ -3238,6 +3245,28 @@ class Director {
 		return out;
 	}
 
+	// Crunch time: a close game in the last minutes of the fourth or of
+	// overtime has the building on its feet - more so the closer it is.
+	private tensionNow(i: number): number {
+		const e = this.events[i];
+		if (e?.type === "period" || e?.type === "overtime") {
+			this.periodNo =
+				typeof e.period === "number" ? e.period : this.periodNo + 1;
+			this.overtime = e.type === "overtime";
+		}
+		if (!this.overtime && this.periodNo < 4) {
+			return 0;
+		}
+		const clock =
+			typeof e?.clock === "number" ? e.clock : (this.lastClock ?? 720);
+		const margin = Math.abs(this.score[0] - this.score[1]);
+		return clock <= 120 && margin <= 6
+			? 1
+			: clock <= 300 && margin <= 8
+				? 0.5
+				: 0;
+	}
+
 	private beat(i: number, type: string, actionStart: number, end: number) {
 		const preStart = this.T;
 		const a = Math.max(preStart, actionStart);
@@ -3253,6 +3282,10 @@ class Director {
 			}
 		}
 		this.beats.push({ i, type, preStart, actionStart: a, end: e });
+		const level = this.tensionNow(i);
+		if (level !== (this.tension.at(-1)?.[1] ?? 0)) {
+			this.tension.push([preStart, level]);
+		}
 		this.T = e;
 	}
 
@@ -4679,6 +4712,7 @@ class Director {
 			poss: this.poss,
 			cuts: this.cuts,
 			shots,
+			tension: this.tension,
 			end: this.T,
 		};
 	}
