@@ -448,6 +448,8 @@ type Running = {
 	// The first step shown: the picture cuts in late, to the action that
 	// makes the play, with everybody where the steps before put them.
 	from: number;
+	// How much clock the trip took (seconds), when known.
+	gap?: number;
 	// A little give in every spot, so no two trips down look stamped out.
 	jitter: Map<string, Pt>;
 	// Defenders the play-by-play has at the shot - the shot blocker, the man
@@ -1578,6 +1580,7 @@ class Director {
 			mirror: called.mirror,
 			jitter: new Map(),
 			from: Math.max(0, Math.min(upTo, play.steps.length) - keep + 1),
+			...(gap === undefined ? {} : { gap }),
 			...end,
 		};
 		if (entry === "break" || entry === "flow") {
@@ -1771,7 +1774,40 @@ class Director {
 		this.guardStep(run, [], tc + 80, ready);
 		this.motionTeam = team;
 		this.motion = 0;
-		return ready + 60;
+		return this.sizeUp(run, bh, ready + 60);
+	}
+
+	// SIZING HIM UP.
+	//
+	// Brought up the floor with time on the clock, the man with the ball does
+	// not run the set the instant everybody is in it: sometimes he calls it
+	// from the top, a hand up; sometimes he works his man first - a
+	// crossover, one between his legs - and then goes.
+	private sizeUp(run: Running, bh: number, t: number): number {
+		if (this.holder !== bh || (run.gap !== undefined && run.gap < 9)) {
+			return t;
+		}
+		const r = this.rng();
+		if (r < 0.4) {
+			return t;
+		}
+		if (r < 0.65) {
+			const dur = this.rand(850, 1150);
+			this.act(bh, "callPlay", t, t + dur);
+			return t + dur;
+		}
+		// On the next beat of his dribble, once or twice across.
+		const top = this.dribbleTop(bh, t) ?? t;
+		const tc = this.hold(
+			bh,
+			top < t - 1 ? top + DRIBBLE_MS : top,
+			"cross",
+			undefined,
+			this.rng() < 0.4 ? "legs" : "front",
+		);
+		const back = tc + (this.rng() < 0.5 ? 2 : 1) * CROSS_MS;
+		this.hold(bh, back, "dribble");
+		return back + 120;
 	}
 
 	// An inbound play: cut to it drawn up, the inbounder out of bounds with
@@ -2011,7 +2047,16 @@ class Director {
 			// The ball never got to him: he just goes.
 			return this.go(pid, P, start, 14, "run");
 		}
-		if (kind === "crossover" || kind === "hesitation") {
+		// A drive at his man - now and then with a move to get by him first.
+		if (
+			kind === "crossover" ||
+			kind === "hesitation" ||
+			((kind === "attack" ||
+				kind === "drive_baseline" ||
+				kind === "drive_middle") &&
+				dist(this.posOf(pid), P) > 9 &&
+				this.rng() < 0.22)
+		) {
 			const t = this.driveTo(pid, P, start, dir, "crossover");
 			this.hold(pid, t, "dribble");
 			return t;
@@ -2755,6 +2800,22 @@ class Director {
 				this.nearRim(team, P, 3),
 				t,
 				RUN * 0.85,
+				"dribble",
+				dir,
+			);
+		} else if (o.zone === "post" && out < 3.5) {
+			// Caught under the rim: a dribble back out to the block to shoot
+			// it from.
+			const u =
+				out > 0.5
+					? unitVec(rim, P)
+					: { x: -dir * 0.6, y: P.y >= rim.y ? 0.8 : -0.8 };
+			this.hold(shooter, t, "dribble");
+			t = this.go(
+				shooter,
+				clampPt({ x: rim.x + u.x * 6.5, y: rim.y + u.y * 6.5 }),
+				t,
+				DRIBBLE * 0.5,
 				"dribble",
 				dir,
 			);
@@ -4508,11 +4569,14 @@ class Director {
 					this.beat(i, e.type, tI, tI + 650);
 					return true;
 				}
-				// Got a hand on it - and it is gone out of bounds.
+				// Got a hand on it - and it is gone out of bounds: on along the
+				// pass, or, if that is the length of the floor away, off the
+				// nearest line.
 				const I3 = { ...I, z: 3.6 };
 				this.act(thief, "reach", tI - 150, tI + 250, { look: A });
 				this.fly(release, tI, { pid: victim }, I3);
-				const out = this.outPoint(I, unitVec(A, I));
+				const onward = this.outPoint(I, unitVec(A, I));
+				const out = dist(I, onward) <= 24 ? onward : this.nearestOut(I);
 				this.bounce(tI, tI + 900, I3, out, 2, 1.4);
 				this.effect("whistle", tI + 800, {
 					call: "out",

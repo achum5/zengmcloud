@@ -213,6 +213,18 @@ const P = {
 		wide: 0.55,
 		flare: 62,
 	}),
+	// Dribbling where he stands, low.
+	dribbling: pose({
+		hipN: -14,
+		kneeN: 34,
+		hipF: 16,
+		kneeF: 36,
+		lean: 12,
+		shN: 32,
+		elN: 18,
+		shF: 52,
+		elF: 62,
+	}),
 	// Clapping for the ball: hands apart, and together.
 	clapOpen: pose({
 		shN: 70,
@@ -1204,6 +1216,18 @@ export const ANIMS = {
 				}),
 			],
 			[1, P.ready],
+		],
+	},
+	// Calling the set from the top, the ball on the bounce: his free hand
+	// up.
+	callPlay: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.dribbling],
+			[0.22, { ...P.dribbling, shF: 166, elF: 16, abF: 16, wrF: 8 }],
+			[0.78, { ...P.dribbling, shF: 162, elF: 22, abF: 18, wrF: 10 }],
+			[1, P.dribbling],
 		],
 	},
 	// Off the ball and ready for it: down in his stance, hands up and out to
