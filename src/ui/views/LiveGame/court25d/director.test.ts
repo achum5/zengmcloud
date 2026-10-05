@@ -413,15 +413,26 @@ describe("2.5D director", () => {
 		assert.isAtLeast(backOut / passers, 0.6);
 	}, 60_000);
 
-	// A screen or a post-up is held where he set it: the pose ends as he
-	// sets off again, rather than him sliding away across the floor in it.
-	test("nobody slides off across the floor still set in a screen", () => {
+	// A screen, a post-up, a celebration, words with the official: each is
+	// done where he stands, and the pose ends as he sets off again rather
+	// than him sliding away across the floor in it.
+	test("nobody slides off across the floor still set in a screen or a celebration", () => {
+		const inPlace = new Set([
+			"screen",
+			"postUp",
+			"protest",
+			"hips",
+			"point",
+			"flex",
+			"celebrate",
+			"highFive",
+		]);
 		let planted = 0;
 		for (const seed of ["a", "b"]) {
 			const { tl } = compile(seed, 140);
 			for (const tr of tl.tracks.values()) {
 				for (const a of tr.acts) {
-					if (a.anim !== "screen" && a.anim !== "postUp") {
+					if (!inPlace.has(a.anim)) {
 						continue;
 					}
 					planted += 1;
@@ -437,6 +448,31 @@ describe("2.5D director", () => {
 			}
 		}
 		assert.isAbove(planted, 50);
+	}, 60_000);
+
+	// Nobody just walks off after a play: the scorer points out the man who
+	// found him, a call against a man gets words with the official, and at
+	// the buzzer the winners celebrate while the losers stand there, hands
+	// on their hips.
+	test("a basket, a call, the buzzer: the players react", () => {
+		const { tl } = compile("a", 140);
+		const count = (anim: string) =>
+			[...tl.tracks.values()].reduce(
+				(n, tr) => n + tr.acts.filter((a) => a.anim === anim).length,
+				0,
+			);
+		assert.isAtLeast(count("point"), 10);
+		assert.isAtLeast(count("protest"), 4);
+		const over = tl.beats.at(-1)!;
+		const at = (anim: string) =>
+			[...tl.tracks.values()].filter((tr) =>
+				tr.acts.some((a) => a.anim === anim && a.t0 >= over.preStart),
+			);
+		const winners = at("celebrate");
+		const losers = at("hips");
+		assert.strictEqual(winners.length, 5);
+		assert.isAtLeast(losers.length, 1);
+		assert.isTrue(losers.every((tr) => tr.team !== winners[0]!.team));
 	}, 60_000);
 
 	// From one move into the next - pulling up from a run, down into his

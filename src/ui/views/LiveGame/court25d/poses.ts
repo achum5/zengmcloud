@@ -2047,6 +2047,28 @@ export const ANIMS = {
 				lean: 2,
 			}),
 	},
+	// Hands on his hips, head down: scored on, a call gone against him, the
+	// game lost.
+	hips: {
+		kind: "loop",
+		n: 2,
+		fps: 0.8,
+		pose: (i) =>
+			pose({
+				shN: -10,
+				elN: 108,
+				abN: 56,
+				wrN: -14,
+				shF: -10,
+				elF: 108,
+				abF: 56,
+				wrF: -14,
+				lean: i ? 13 : 9,
+				kneeN: 8,
+				kneeF: 10,
+				wide: 0.3,
+			}),
+	},
 	// What was that? Arms out, palms up.
 	protest: {
 		kind: "act",

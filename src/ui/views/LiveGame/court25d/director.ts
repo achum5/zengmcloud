@@ -430,6 +430,18 @@ const CLOSE_READ = 150;
 const CLOSE_RUN = 21;
 const CLOSE_CHOP = 8;
 const CLOSE_BREAK = 3.5;
+// What a man does standing where he is - set in a screen or a post-up,
+// celebrating, having words - and stops doing once he moves.
+const IN_PLACE = new Set<AnimName>([
+	"screen",
+	"postUp",
+	"protest",
+	"hips",
+	"point",
+	"flex",
+	"celebrate",
+	"highFive",
+]);
 // How far round the arc from straight out a man spacing the floor goes
 // (radians): into the corner, and no farther.
 const ARC_EDGE = 1.62;
@@ -767,6 +779,23 @@ class Director {
 		if (face !== undefined) {
 			this.turn(pid, t0, face);
 		}
+	}
+
+	// Something to say about what just happened - at the official (out
+	// toward the sideline nearer him), or at whoever he means - for a moment
+	// before he goes on: he does not set off until he has said it.
+	private react(
+		pid: number,
+		anim: AnimName,
+		t: number,
+		dur: number,
+		look?: Pt,
+	) {
+		const P = this.posOf(pid);
+		this.act(pid, anim, t, t + dur, {
+			look: look ?? { x: P.x, y: P.y >= COURT_H / 2 ? COURT_H + 4 : -4 },
+		});
+		this.free.set(pid, Math.max(this.free.get(pid) ?? 0, t + dur));
 	}
 
 	private lookAt(pid: number, t: number, at: Pt) {
@@ -4174,6 +4203,9 @@ class Director {
 				);
 				this.act(fouler, "reach", hit - 120, hit + 320, { face: toward });
 				this.effect("whistle", hit, { call: "foul", at: vp, team });
+				if (this.rng() < 0.3) {
+					this.react(fouler, "protest", hit + 420, 950);
+				}
 				this.beat(i, type, hit, hit + 900);
 				this.inboundAt = {
 					x: vp.x,
@@ -4202,6 +4234,14 @@ class Director {
 				});
 				this.effect("clank", hits, { rim: rimTeam });
 				this.bounce(hits, hits + 700, target, land, 2, 2.5);
+				if (this.rng() < 0.4) {
+					this.react(
+						e.pid,
+						"protest",
+						Math.max(T + 300, this.free.get(e.pid) ?? 0),
+						950,
+					);
+				}
 				this.beat(i, type, T, T + 1100);
 				this.phase = "ft";
 				break;
@@ -4311,16 +4351,24 @@ class Director {
 			case "gameOver": {
 				const winner: Side = this.score[0] > this.score[1] ? 0 : 1;
 				this.deadBall(T);
+				// The winners celebrate where the buzzer found them; the losers
+				// stand there, hands on their hips. Then both to the middle.
 				for (const t of [0, 1] as const) {
 					this.slots(t).forEach((pid, j) => {
 						const target = {
 							x: COURT_W / 2 + (t === 0 ? -6 : 6) + (j - 2) * 2.5,
 							y: 18 + j * 3.5,
 						};
-						this.go(pid, target, T + j * 90, WALK, "walk");
+						const from = Math.max(T + 150 + j * 80, this.free.get(pid) ?? 0);
 						if (t === winner) {
-							this.act(pid, "celebrate", T + 900 + j * 80, T + 3600);
+							this.react(pid, "celebrate", from, 1700, {
+								x: COURT_W / 2,
+								y: COURT_H + 20,
+							});
+						} else if (this.rng() < 0.7) {
+							this.react(pid, "hips", from + 200, 1500);
 						}
+						this.go(pid, target, from + 400, WALK, "walk");
 					});
 				}
 				this.effect("cheer", T, { team: winner });
@@ -4524,7 +4572,14 @@ class Director {
 				});
 			}
 			const free = Math.max(at + 450, this.free.get(shot.pid) ?? 0);
-			if (big || this.rng() < 0.3) {
+			const assist =
+				typeof e.pidAst === "number" && e.pidAst !== shot.pid
+					? e.pidAst
+					: undefined;
+			if (!shot.dunk && !andOne && assist !== undefined && this.rng() < 0.55) {
+				// A finger at the man who found him.
+				this.react(shot.pid, "point", free + 100, 800, this.posOf(assist));
+			} else if (big || this.rng() < 0.3) {
 				const cel: AnimName = shot.dunk
 					? this.rng() < 0.5
 						? "flex"
@@ -4535,6 +4590,23 @@ class Director {
 				this.act(shot.pid, cel, free + 100, free + 900, {
 					face: -dir as 1 | -1,
 				});
+			}
+			// The man who fouled him wants to know what for; the man he dunked
+			// on stands there, hands on his hips.
+			if (andOne && this.rng() < 0.5) {
+				this.react(e.pidFoul, "protest", at + 450, 1000);
+			}
+			const victim =
+				shot.finish === "poster" && typeof e.pidDefense === "number"
+					? e.pidDefense
+					: undefined;
+			if (victim !== undefined && this.rng() < 0.6) {
+				this.react(
+					victim,
+					"hips",
+					Math.max(at + 500, this.free.get(victim) ?? 0),
+					1300,
+				);
 			}
 			this.beat(i, e.type, at, end);
 			this.offense = other(team);
@@ -4694,8 +4766,9 @@ class Director {
 				look: rimSpot,
 			});
 		}
-		if (made && more) {
-			// A teammate comes over to slap hands, and goes back to the lane.
+		if (more && (made || this.rng() < 0.5)) {
+			// A teammate comes over to slap hands - make or miss - and goes
+			// back to the lane.
 			const mate = off[0];
 			if (mate !== undefined) {
 				const home = this.posOf(mate);
@@ -4874,6 +4947,9 @@ class Director {
 				at: vp,
 				team: other(team),
 			});
+			if (this.rng() < 0.35) {
+				this.react(victim, "protest", t + 650, 900);
+			}
 			this.inboundAt = {
 				x: vp.x,
 				y: vp.y < COURT_H / 2 ? -1.4 : COURT_H + 1.4,
@@ -5033,6 +5109,9 @@ class Director {
 				at: S,
 				team: other(team),
 			});
+			if (this.rng() < 0.55) {
+				this.react(victim, "protest", hit + 450, 1000);
+			}
 			this.turnOver(team, S);
 			this.beat(i, e.type, hit + 80, hit + 950);
 			return true;
@@ -5239,6 +5318,9 @@ class Director {
 				at: E,
 				team: other(team),
 			});
+			if (this.rng() < 0.6) {
+				this.react(victim, "protest", hit + 500, 1000);
+			}
 			this.turnOver(team, E);
 			this.beat(i, e.type, hit + 120, hit + 1000);
 			return true;
@@ -5264,6 +5346,9 @@ class Director {
 			at: G,
 			team: other(team),
 		});
+		if (this.rng() < 0.35) {
+			this.react(victim, "protest", tt + 450, 900);
+		}
 		this.turnOver(team, G);
 		this.beat(i, e.type, tt + 100, tt + 900);
 		return true;
@@ -6234,14 +6319,14 @@ class Director {
 		}
 	}
 
-	// A man planted for something - a screen, a post-up - is planted no
-	// longer once he sets off: the pose ends as his next run starts, rather
-	// than him sliding off across the floor still in it.
+	// A man planted for something - a screen, a post-up, a word with the
+	// official - is planted no longer once he sets off: the pose ends as his
+	// next run starts, rather than him sliding off across the floor in it.
 	private unplant() {
 		for (const tr of this.tracks.values()) {
 			let cut = false;
 			for (const a of tr.acts) {
-				if (a.anim !== "screen" && a.anim !== "postUp") {
+				if (!IN_PLACE.has(a.anim)) {
 					continue;
 				}
 				for (const m of tr.moves) {
@@ -6256,8 +6341,7 @@ class Director {
 			}
 			if (cut) {
 				tr.acts = tr.acts.filter(
-					(a) =>
-						(a.anim !== "screen" && a.anim !== "postUp") || a.t1 - a.t0 > 120,
+					(a) => !IN_PLACE.has(a.anim) || a.t1 - a.t0 > 120,
 				);
 			}
 		}
