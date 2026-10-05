@@ -662,4 +662,46 @@ describe("2.5D director", () => {
 			}
 		}
 	});
+
+	// The camera goes off the floor only while nothing is happening on it: the
+	// game opens on the building and cuts in for the tip, and a timeout or the
+	// break between periods looks round it - but no shot, pass or tip-off is
+	// ever played out while it does.
+	test("a look round the building only ever covers dead time", () => {
+		for (const seed of ["a", "b", "c"]) {
+			const { events, tl } = compile(seed);
+			assert.isAbove(tl.shots.length, 1);
+			const first = tl.beats[0]!;
+			assert.strictEqual(events[first.i]!.type, "jumpBall");
+			assert.strictEqual(tl.shots[0]!.t0, first.preStart);
+			let prev = -Infinity;
+			for (const s of tl.shots) {
+				assert.isAbove(s.t1, s.t0);
+				assert.isAtLeast(s.t0, prev);
+				prev = s.t1;
+				for (const seg of tl.ball) {
+					if (seg.kind === "fly" && seg.t0 < s.t1 && seg.t1 > s.t0) {
+						assert.fail(`the ball flies during an arena shot at ${s.t0}`);
+					}
+				}
+				for (const b of tl.beats) {
+					if (b.actionStart > s.t0 && b.actionStart < s.t1) {
+						const type = events[b.i]!.type;
+						assert.include(
+							[
+								"timeout",
+								"endOfPeriod",
+								"period",
+								"overtime",
+								"sub",
+								"gameOver",
+							],
+							type,
+							`${type} at ${b.actionStart} in an arena shot`,
+						);
+					}
+				}
+			}
+		}
+	});
 });

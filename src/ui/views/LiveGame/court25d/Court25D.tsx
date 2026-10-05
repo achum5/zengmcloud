@@ -9,9 +9,15 @@ import {
 } from "react";
 import { useLocal } from "../../../util/local.ts";
 import { usePlayerFace, type PlayerFace } from "../../../util/playerFaces.ts";
-import type { ReplayLooks } from "../../../../common/types.ts";
+import type { ArenaLooks, ReplayLooks } from "../../../../common/types.ts";
 import LiveCourt from "../LiveCourt.tsx";
-import { paintBench, paintStands, paintTable, paintWall } from "./arena.ts";
+import {
+	paintBench,
+	paintBoards,
+	paintRafters,
+	paintStands,
+	paintTable,
+} from "./arena.ts";
 import { makeCamera, MAIN_RIG, REPLAY_RIG } from "./camera.ts";
 import { courtTexture } from "./courtTexture.ts";
 import { makeScratch, makeSpriteCache } from "./sprite.ts";
@@ -31,7 +37,15 @@ import { headColors, loadHead, type HeadSprite } from "./faces.ts";
 import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { bodyOf, type Body } from "./poses.ts";
-import { aimFor, crowdUp, drawFrame, momentAt, replayAim } from "./scene.ts";
+import {
+	aimFor,
+	arenaAim,
+	cameraCuts,
+	crowdUp,
+	drawFrame,
+	momentAt,
+	replayAim,
+} from "./scene.ts";
 
 // THE 2.5D COURT: the game as a broadcast - the home team's own floor, the
 // players with their faces, a camera that follows the ball - acting out the
@@ -202,11 +216,17 @@ const Court25D = ({
 			colors: home?.colors,
 		};
 		const table = paintTable(h, a);
+		// The home building that night: as full as the gate says, its banners
+		// in the rafters.
+		const building: ArenaLooks | undefined = boxScore?.arena;
+		const crowd = { att: boxScore?.att, capacity: building?.capacity };
+		const seed = String(gid ?? 0);
 		return {
-			stands: paintStands(h, a, String(gid ?? 0)),
-			standsUp: paintStands(h, a, String(gid ?? 0), 1),
-			standsWave: paintStands(h, a, String(gid ?? 0), 2),
-			wall: paintWall(h),
+			stands: paintStands(h, a, seed, 0, crowd),
+			standsUp: paintStands(h, a, seed, 1, crowd),
+			standsWave: paintStands(h, a, seed, 2, crowd),
+			boards: paintBoards(h),
+			rafters: paintRafters(h, building),
 			tableTop: table.top,
 			tableFront: table.front,
 			bench0: paintBench(a),
@@ -507,7 +527,7 @@ const Court25D = ({
 				}
 			}
 			// Through a cut: the camera starts fresh on the other side.
-			const cut = nearestCut(tl.cuts, s.t);
+			const cut = nearestCut(cameraCuts(tl), s.t);
 			if (cut !== undefined && cut > before && cut <= s.t) {
 				s.snapCam = true;
 			}
@@ -556,9 +576,11 @@ const Court25D = ({
 				rosterRef.current,
 				bodyOfPid,
 			);
+			// Over a break, a look round the building.
+			const view = replay ? undefined : arenaAim(tl, s.t, p.narrow);
 			const aim = replay
 				? replayAim(moment, p.narrow)
-				: aimFor(moment, p.narrow, tl);
+				: (view?.shot ?? aimFor(moment, p.narrow, tl));
 			if (s.snapCam) {
 				s.camX = aim.x;
 				s.camW = aim.width;
@@ -572,7 +594,7 @@ const Court25D = ({
 				{ x: s.camX, width: s.camW, y: aim.y, z: aim.z },
 				fw,
 				fh,
-				replay ? REPLAY_RIG : MAIN_RIG,
+				replay ? REPLAY_RIG : (view?.rig ?? MAIN_RIG),
 			);
 
 			const dip = dipRef.current;
@@ -628,7 +650,8 @@ const Court25D = ({
 					stands: pt.stands,
 					standsUp: pt.standsUp,
 					standsWave: pt.standsWave,
-					wall: pt.wall,
+					boards: pt.boards,
+					rafters: pt.rafters,
 					tableTop: pt.tableTop,
 					tableFront: pt.tableFront,
 					bench: [pt.bench0, pt.bench1],

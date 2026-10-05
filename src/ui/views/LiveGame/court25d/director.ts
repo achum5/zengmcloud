@@ -153,14 +153,20 @@ export type FxKind =
 	| "cheer"
 	| "roar";
 // `big` marks a dunk worth a replay: on somebody, off a lob, or through
-// contact.
+// contact. A roar says what it was for, for the boards to shout about.
 export type Fx = {
 	kind: FxKind;
 	t: number;
 	rim?: Side;
 	team?: Side;
 	big?: boolean;
+	what?: "three" | "dunk" | "andOne";
 };
+// A look round the building while play is stopped - before the opening tip,
+// through a timeout, between periods: the whole arena wide, or low in the
+// seats looking up at the crowd and the rafters. The picture cuts in and out
+// of it.
+export type ArenaShot = { t0: number; t1: number; kind: "wide" | "crowd" };
 export type Beat = {
 	i: number;
 	type: string;
@@ -177,6 +183,7 @@ export type CourtTimeline = {
 	poss: [number, Side][];
 	// Moments the picture cuts: everyone may be somewhere else just after.
 	cuts: number[];
+	shots: ArenaShot[];
 	end: number;
 };
 
@@ -427,6 +434,8 @@ class Director {
 	readonly beats: Beat[] = [];
 	readonly poss: [number, Side][] = [];
 	readonly cuts: number[] = [];
+	// `stretch`: may run on to the next cut (see finish).
+	readonly shots: (ArenaShot & { stretch?: boolean })[] = [];
 
 	// The ball at the end of everything scheduled so far.
 	private holder: number | undefined;
@@ -733,11 +742,7 @@ class Director {
 		this.offense = team;
 	}
 
-	private effect(
-		kind: FxKind,
-		t: number,
-		o: { rim?: Side; team?: Side; big?: boolean } = {},
-	) {
+	private effect(kind: FxKind, t: number, o: Omit<Fx, "kind" | "t"> = {}) {
 		this.fx.push({ kind, t, ...o });
 	}
 
@@ -3325,7 +3330,10 @@ class Director {
 						this.lookAt(pid, tc + 1, { x: benchX(t), y: 1.6 });
 					});
 				}
-				this.beat(i, type, T, tc + (type === "timeout" ? 1700 : 1300));
+				const over = tc + (type === "timeout" ? 1700 : 1300);
+				this.beat(i, type, T, over);
+				// Over the break, a look round the building.
+				this.shots.push({ t0: tc, t1: over, kind: i % 3 ? "wide" : "crowd" });
 				const team = this.offense;
 				this.inboundAt =
 					type === "timeout" && e.advancesBall
@@ -3557,7 +3565,10 @@ class Director {
 			const andOne = typeof e.pidFoul === "number";
 			const big = shot.dunk || shot.zone === "three" || andOne;
 			if (big) {
-				this.effect("roar", t0 + 100, { team });
+				this.effect("roar", t0 + 100, {
+					team,
+					what: shot.dunk ? "dunk" : shot.zone === "three" ? "three" : "andOne",
+				});
 			}
 			const free = Math.max(at + 450, this.free.get(shot.pid) ?? 0);
 			if (big || this.rng() < 0.3) {
@@ -3601,7 +3612,7 @@ class Director {
 			return;
 		}
 		// Blocked: it comes off his hand back toward the shooter and down.
-		this.effect("block", at);
+		this.effect("block", at, { team: other(team) });
 		const sp = this.posOf(shot.pid);
 		const down = {
 			...clampPt({
@@ -4237,7 +4248,13 @@ class Director {
 				ready = Math.max(ready, arrived);
 			});
 		}
-		const toss = Math.max(T + 600, ready + 200);
+		// The opening tip: the picture starts on the whole building while
+		// they take their places, then cuts in for the toss.
+		const opening = this.beats.length === 0 && this.shots.length === 0;
+		const toss = Math.max(T + 600, ready + 200, opening ? T + 3000 : 0);
+		if (opening) {
+			this.shots.push({ t0: T, t1: toss - 600, kind: "wide", stretch: false });
+		}
 		this.rest(T, { x: c.x, y: c.y, z: 5 });
 		const apex = { x: c.x, y: c.y, z: 12.3 };
 		this.fly(toss, toss + 520, { x: c.x, y: c.y, z: 5 }, apex);
@@ -4329,6 +4346,26 @@ class Director {
 		}
 		this.ball.sort(byT0);
 		this.fx.sort((a, b) => a.t - b.t);
+		// A look round the building runs on to the picture's next cut when
+		// that comes soon after (the substitutions over a timeout, the walk
+		// out for the next period), so the game picks up at a cut.
+		const shots: ArenaShot[] = [];
+		for (const sh of this.shots) {
+			const next = this.cuts.find((c) => c > sh.t0 + 1);
+			let t1 = sh.t1;
+			if (
+				next !== undefined &&
+				next < sh.t1 + (sh.stretch === false ? 0 : 4500)
+			) {
+				t1 = next;
+			}
+			const prev = shots.at(-1);
+			if (prev && sh.t0 < prev.t1) {
+				prev.t1 = Math.max(prev.t1, t1);
+			} else if (t1 > sh.t0 + 300) {
+				shots.push({ t0: sh.t0, t1, kind: sh.kind });
+			}
+		}
 		return {
 			tracks: this.tracks,
 			ball: this.ball,
@@ -4336,6 +4373,7 @@ class Director {
 			beats: this.beats,
 			poss: this.poss,
 			cuts: this.cuts,
+			shots,
 			end: this.T,
 		};
 	}

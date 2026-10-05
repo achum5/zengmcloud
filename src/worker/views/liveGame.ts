@@ -7,8 +7,10 @@ import {
 	setTeamInfo,
 	type TeamSeasonOverride,
 } from "./gameLog.ts";
+import { takeArenaLooks } from "../core/game/replayLooks.ts";
 import type {
 	AllStars,
+	ArenaLooks,
 	CourtStyle,
 	Game,
 	UpdateEvents,
@@ -339,6 +341,7 @@ const updatePlayByPlay = async (
 
 		// A rewatch of a saved game: flag it and build a small "2026 Playoffs" /
 		// "2026 Regular Season" label for the header.
+		let arenaThen: ArenaLooks | undefined;
 		if (inputs.replay) {
 			(out.initialBoxScore as any).replay = true;
 			const label = boxScore.playoffs
@@ -352,11 +355,17 @@ const updatePlayByPlay = async (
 					(await (idb.league as any).get("liveGamePlayByPlay", gid));
 				if (row?.looks) {
 					(out.initialBoxScore as any).replayLooks = row.looks;
+					arenaThen = row.looks.arena;
 				}
 			} catch {
 				// Cosmetic - today's looks it is.
 			}
 		}
+		// The home team's building, for the 2.5D court: as it was that night
+		// on a replay that kept it, otherwise as of the game's season.
+		(out.initialBoxScore as any).arena =
+			arenaThen ??
+			(await takeArenaLooks(boxScore.teams[0].tid, boxScore.season));
 
 		return out;
 	}

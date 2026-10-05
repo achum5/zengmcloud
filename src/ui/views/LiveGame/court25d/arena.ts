@@ -153,6 +153,34 @@ export const standsPoint = (x: number, up: number): Pt3 => ({
 	z: WALL_H + up * Math.sin(RAKE),
 });
 
+// The stands' rows, front to back, and the one given over to the ribbon
+// board between the lower and upper deck.
+const ROW_FT = 2.75;
+const RIBBON_ROW = 13;
+
+// The ribbon board, along the front of the upper deck.
+export const RIBBON = plane(
+	"ribbon",
+	standsPoint(X0, (RIBBON_ROW + 1) * ROW_FT),
+	{ x: 1, y: 0, z: 0 },
+	{ x: 0, y: Math.cos(RAKE), z: -Math.sin(RAKE) },
+	X1 - X0,
+	ROW_FT,
+	8,
+);
+
+// The rafters over the far stands: a truss across the building, its lights,
+// and the banners hanging from it.
+export const RAFTERS = plane(
+	"rafters",
+	{ x: X0, y: -58, z: 47 },
+	{ x: 1, y: 0, z: 0 },
+	{ x: 0, y: 0, z: -1 },
+	X1 - X0,
+	24,
+	8,
+);
+
 // The crowd, painted once - and twice more on its feet (`up` 1 and 2: arms
 // high, then waving wide), the same people in the same seats, for when the
 // building erupts.
@@ -161,6 +189,8 @@ export const paintStands = (
 	away: ArenaTeam | undefined,
 	seed: string,
 	up: 0 | 1 | 2 = 0,
+	// How many came, of how many it seats - a full house if unknown.
+	crowd?: { att?: number; capacity?: number },
 ): HTMLCanvasElement => {
 	const { w, h } = STANDS;
 	const px = w / (X1 - X0);
@@ -194,37 +224,68 @@ export const paintStands = (
 		return PALETTE[Math.floor(rng() * PALETTE.length)]!;
 	};
 	const skins = ["#f1c7a5", "#d9a77f", "#b07a52", "#8a5a3b", "#5e3b26"];
-	const rowFt = 2.75;
-	const rows = Math.floor(SLOPE / rowFt);
+	const rows = Math.floor(SLOPE / ROW_FT);
 	const aisle = 31;
-	// A ribbon board between the lower and upper deck.
-	const ribbonRow = 13;
+	// Who came: as many as bought tickets, in the best seats first - low and
+	// near half court - and the rest scattered up the upper deck. Even a
+	// sellout has a few seats empty.
+	const fill =
+		crowd?.att !== undefined && crowd.capacity
+			? Math.min(0.97, Math.max(0.04, crowd.att / crowd.capacity))
+			: 0.93;
+	const seatRng = makeCourtRng(`seats|${seed}`);
+	const seats: { r: number; xf: number; want: number }[] = [];
 	for (let r = 0; r < rows; r++) {
-		// Rows from the front (bottom of the picture) up.
-		const yb = h - r * rowFt * px;
-		if (r === ribbonRow) {
-			ctx.fillStyle = "#050507";
-			ctx.fillRect(0, yb - rowFt * px, w, rowFt * px);
-			ctx.fillStyle = homeC[0]!;
-			ctx.fillRect(0, yb - rowFt * px * 0.78, w, rowFt * px * 0.5);
-			ctx.fillStyle = "rgba(255,255,255,0.85)";
-			ctx.font = `800 ${Math.round(rowFt * px * 0.42)}px Arial, sans-serif`;
-			ctx.textBaseline = "middle";
-			const label = (home?.name || home?.abbrev || "").toUpperCase();
-			for (let x = 20; x < w; x += 26 * px) {
-				ctx.fillText(label, x, yb - rowFt * px * 0.53);
-			}
+		if (r === RIBBON_ROW) {
 			continue;
 		}
-		// Seat backs.
-		ctx.fillStyle = r % 2 ? "#22252c" : "#1d2026";
-		ctx.fillRect(0, yb - 0.9 * px, w, 0.9 * px);
 		for (let xf = X0 + 0.6; xf < X1 - 0.6; xf += 1.85) {
 			const mod = (((xf - X0) % aisle) + aisle) % aisle;
 			if (mod < 3) {
 				continue;
 			}
-			if (rng() > 0.9) {
+			seats.push({
+				r,
+				xf,
+				want:
+					(r / rows) * 0.9 +
+					Math.abs(xf - COURT_W / 2) / 150 +
+					seatRng() * 0.45,
+			});
+		}
+	}
+	const wants = seats.map((st) => st.want).sort((a, b) => a - b);
+	const taken =
+		wants[Math.min(wants.length - 1, Math.floor(fill * wants.length))]!;
+	// Seats in the team's color, or plain gray ones.
+	const seatColor = seatRng() < 0.55 ? shade(homeC[0]!, -0.28) : "#4b505b";
+	let next = 0;
+	for (let r = 0; r < rows; r++) {
+		// Rows from the front (bottom of the picture) up.
+		const yb = h - r * ROW_FT * px;
+		if (r === RIBBON_ROW) {
+			// The ribbon board goes here (see RIBBON).
+			ctx.fillStyle = "#050507";
+			ctx.fillRect(0, yb - ROW_FT * px, w, ROW_FT * px);
+			continue;
+		}
+		// Seat backs.
+		ctx.fillStyle = r % 2 ? "#22252c" : "#1d2026";
+		ctx.fillRect(0, yb - 0.9 * px, w, 0.9 * px);
+		for (; next < seats.length && seats[next]!.r === r; next++) {
+			const xf = seats[next]!.xf;
+			if (seats[next]!.want > taken) {
+				// An empty seat.
+				ctx.fillStyle = seatColor;
+				ctx.beginPath();
+				ctx.roundRect(
+					(xf - X0) * px - 0.62 * px,
+					yb - 1.55 * px,
+					1.24 * px,
+					1.2 * px,
+					0.25 * px,
+				);
+				ctx.fill();
 				continue;
 			}
 			const x = (xf - X0) * px + (rng() - 0.5) * 2;
@@ -290,7 +351,7 @@ export const paintStands = (
 		// The aisles.
 		ctx.fillStyle = "#2b2e35";
 		for (let xf = X0; xf < X1; xf += aisle) {
-			ctx.fillRect((xf - X0) * px, yb - rowFt * px, 2.4 * px, rowFt * px);
+			ctx.fillRect((xf - X0) * px, yb - ROW_FT * px, 2.4 * px, ROW_FT * px);
 		}
 	}
 	// The light falls on the court: the upper deck fades into the dark.
@@ -303,9 +364,46 @@ export const paintStands = (
 	return canvas;
 };
 
-export const paintWall = (home: ArenaTeam | undefined): HTMLCanvasElement => {
-	const { w, h } = LED_WALL;
-	const px = w / (X1 - X0);
+// ---- the LED boards --------------------------------------------------------
+
+// What the boards can show: the team, a chant for the crowd, DEFENSE while
+// the road team has it (blinking: two pictures), and a shout after a big
+// play by the home side.
+export const BOARD_SCREENS = [
+	"name",
+	"letsGo",
+	"noise",
+	"defense",
+	"defense2",
+	"three",
+	"dunk",
+	"andOne",
+	"block",
+] as const;
+export type BoardScreen = (typeof BOARD_SCREENS)[number];
+
+const luminance = (c: string): number => {
+	const m = /^#?([\da-f]{6})$/i.exec(c.trim());
+	if (!m) {
+		return 0.5;
+	}
+	const n = Number.parseInt(m[1]!, 16);
+	return (
+		(0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) /
+		255
+	);
+};
+// Lettering that reads on a background: white, or near-black on a light one.
+const inkOn = (bg: string) => (luminance(bg) > 0.62 ? "#111216" : "#ffffff");
+
+// One screen, painted across a board `w` x `h` px at `px` px to a foot.
+const paintScreen = (
+	w: number,
+	h: number,
+	px: number,
+	screen: BoardScreen,
+	home: ArenaTeam | undefined,
+): HTMLCanvasElement => {
 	const canvas = document.createElement("canvas");
 	canvas.width = w;
 	canvas.height = h;
@@ -314,18 +412,286 @@ export const paintWall = (home: ArenaTeam | undefined): HTMLCanvasElement => {
 	ctx.fillRect(0, 0, w, h);
 	const c0 = teamColor(home, 0, "#8c1d40");
 	const c1 = teamColor(home, 1, "#f2c14e");
+	// A second color too close to black reads as nothing on a dark board.
+	const accent = luminance(c1) < 0.16 ? "#f4f4f4" : c1;
 	const name = (home?.name || home?.abbrev || "").toUpperCase();
 	const region = (home?.region || "").toUpperCase();
-	const seg = 22 * px;
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
-	ctx.font = `800 ${Math.round(h * 0.5)}px Arial, sans-serif`;
-	for (let i = 0, x = 0; x < w; i++, x += seg) {
-		ctx.fillStyle = i % 2 ? c0 : "#0b0c10";
-		ctx.fillRect(x + 2, h * 0.12, seg - 4, h * 0.76);
-		ctx.fillStyle = i % 2 ? "#ffffff" : c1;
-		ctx.fillText(i % 2 || !region ? name : region, x + seg / 2, h * 0.52);
+	const font = (f: number) => {
+		ctx.font = `800 ${Math.max(6, Math.round(h * f))}px Arial, sans-serif`;
+	};
+	// Panels of `seg` feet across the board, each painted by `panel`.
+	const panels = (
+		seg: number,
+		panel: (i: number, x: number, sw: number) => void,
+	) => {
+		const sw = seg * px;
+		for (let i = 0, x = 0; x < w; i++, x += sw) {
+			panel(i, x, sw);
+		}
+	};
+	const block = (x: number, sw: number, bg: string) => {
+		ctx.fillStyle = bg;
+		ctx.fillRect(x + 2, h * 0.12, sw - 4, h * 0.76);
+	};
+	const text = (t: string, x: number, color: string, f = 0.5) => {
+		font(f);
+		ctx.fillStyle = color;
+		ctx.fillText(t, x, h * 0.53);
+	};
+	switch (screen) {
+		case "name":
+			panels(22, (i, x, sw) => {
+				block(x, sw, i % 2 ? c0 : "#0b0c10");
+				text(
+					i % 2 || !region ? name : region,
+					x + sw / 2,
+					i % 2 ? inkOn(c0) : accent,
+				);
+			});
+			break;
+		case "letsGo":
+			panels(30, (i, x, sw) => {
+				block(x, sw, c0);
+				text(`LET'S GO ${name}`, x + sw / 2, inkOn(c0), 0.46);
+			});
+			break;
+		case "noise":
+			panels(30, (i, x, sw) => {
+				// A level meter either side of the words.
+				for (let k = 0; k < 6; k++) {
+					const bh = h * (0.2 + 0.1 * ((k * 7 + i * 3) % 6));
+					ctx.fillStyle = k % 2 ? accent : c0;
+					ctx.fillRect(x + (1 + k) * px * 0.9, h - bh - h * 0.1, px * 0.6, bh);
+					ctx.fillRect(
+						x + sw - (2 + k) * px * 0.9,
+						h - bh - h * 0.1,
+						px * 0.6,
+						bh,
+					);
+				}
+				text("MAKE SOME NOISE", x + sw / 2, accent, 0.44);
+			});
+			break;
+		case "defense":
+		case "defense2": {
+			const lit = screen === "defense";
+			panels(18, (i, x, sw) => {
+				const bg = lit === (i % 2 === 0) ? c0 : "#0b0c10";
+				block(x, sw, bg);
+				text("DEFENSE", x + sw / 2, bg === c0 ? inkOn(c0) : accent, 0.56);
+			});
+			break;
+		}
+		case "three":
+		case "dunk":
+		case "andOne":
+		case "block": {
+			const word = {
+				three: "THREE!",
+				dunk: "SLAM DUNK!",
+				andOne: "AND ONE!",
+				block: "REJECTED!",
+			}[screen];
+			panels(20, (i, x, sw) => {
+				const bg = i % 2 ? accent : c0;
+				block(x, sw, bg);
+				text(word, x + sw / 2, inkOn(bg), 0.58);
+			});
+			break;
+		}
 	}
+	return canvas;
+};
+
+// Every screen, for the boards along the front of the stands and the ribbon
+// round the upper deck - painted once a game, switched between as it goes.
+export const paintBoards = (
+	home: ArenaTeam | undefined,
+): Record<"wall" | "ribbon", Record<BoardScreen, HTMLCanvasElement>> => {
+	const out = { wall: {}, ribbon: {} } as Record<
+		"wall" | "ribbon",
+		Record<BoardScreen, HTMLCanvasElement>
+	>;
+	for (const screen of BOARD_SCREENS) {
+		out.wall[screen] = paintScreen(
+			LED_WALL.w,
+			LED_WALL.h,
+			LED_WALL.w / (X1 - X0),
+			screen,
+			home,
+		);
+		out.ribbon[screen] = paintScreen(
+			RIBBON.w,
+			RIBBON.h,
+			RIBBON.w / (X1 - X0),
+			screen,
+			home,
+		);
+	}
+	return out;
+};
+
+// ---- the rafters -------------------------------------------------------------
+
+// What hangs there: the championships won, each year its own banner (or,
+// for a dynasty, a few years to a banner), and the numbers retired.
+export type RafterInfo = {
+	titles: number[];
+	retired: { number: string; name?: string }[];
+};
+
+export const paintRafters = (
+	home: ArenaTeam | undefined,
+	info: RafterInfo | undefined,
+): HTMLCanvasElement => {
+	const { w, h } = RAFTERS;
+	const px = w / (X1 - X0);
+	const canvas = document.createElement("canvas");
+	canvas.width = w;
+	canvas.height = h;
+	const ctx = canvas.getContext("2d")!;
+	const c0 = teamColor(home, 0, "#8c1d40");
+	const c1 = teamColor(home, 1, "#f2c14e");
+	const trim = luminance(c1) < 0.16 || c1 === c0 ? "#f4f4f4" : c1;
+	const X = (x: number) => (x - X0) * px;
+
+	// The truss: two chords and the lattice between them, and the lights.
+	const top = 0.6 * px;
+	const bottom = 2.2 * px;
+	ctx.strokeStyle = "#2a2d34";
+	ctx.lineWidth = Math.max(2, 0.28 * px);
+	ctx.beginPath();
+	ctx.moveTo(0, top);
+	ctx.lineTo(w, top);
+	ctx.moveTo(0, bottom);
+	ctx.lineTo(w, bottom);
+	for (let x = 0, k = 0; x < w; x += 3 * px, k++) {
+		ctx.moveTo(x, k % 2 ? top : bottom);
+		ctx.lineTo(x + 3 * px, k % 2 ? bottom : top);
+	}
+	ctx.stroke();
+	for (let x = 6; x < X1 - X0; x += 11) {
+		const cx = x * px;
+		const g = ctx.createRadialGradient(
+			cx,
+			bottom + 2,
+			0,
+			cx,
+			bottom + 2,
+			1.6 * px,
+		);
+		g.addColorStop(0, "rgba(255,250,232,0.95)");
+		g.addColorStop(0.35, "rgba(255,244,214,0.35)");
+		g.addColorStop(1, "rgba(255,244,214,0)");
+		ctx.fillStyle = g;
+		ctx.fillRect(cx - 1.6 * px, bottom - 1.4 * px, 3.2 * px, 3.2 * px);
+	}
+
+	const titles = info?.titles ?? [];
+	const retired = info?.retired ?? [];
+	// A dynasty's banners carry several years each, so they all fit.
+	const per = Math.max(1, Math.ceil(titles.length / 12));
+	const groups: number[][] = [];
+	for (let i = 0; i < titles.length; i += per) {
+		groups.push(titles.slice(i, i + per));
+	}
+	const n = groups.length + retired.length;
+	if (n === 0) {
+		return canvas;
+	}
+	const bw = 5;
+	const pitch = Math.min(6.8, 150 / n);
+	const x0 = COURT_W / 2 - (pitch * (n - 1)) / 2 - bw / 2;
+	const hang = bottom + 0.3 * px;
+	const banner = (
+		i: number,
+		tall: number,
+		paint: (x: number, bwPx: number, bh: number) => void,
+	) => {
+		const x = X(x0 + i * pitch);
+		const bwPx = Math.min(bw, pitch - 0.6) * px;
+		const bh = tall * px;
+		// The wires it hangs from.
+		ctx.strokeStyle = "rgba(160,160,170,0.6)";
+		ctx.lineWidth = 1;
+		ctx.beginPath();
+		ctx.moveTo(x + bwPx * 0.2, bottom);
+		ctx.lineTo(x + bwPx * 0.2, hang);
+		ctx.moveTo(x + bwPx * 0.8, bottom);
+		ctx.lineTo(x + bwPx * 0.8, hang);
+		ctx.stroke();
+		// The cloth, with a trim round it and a notched tail.
+		ctx.fillStyle = trim;
+		ctx.beginPath();
+		ctx.moveTo(x, hang);
+		ctx.lineTo(x + bwPx, hang);
+		ctx.lineTo(x + bwPx, hang + bh);
+		ctx.lineTo(x + bwPx / 2, hang + bh - bwPx * 0.22);
+		ctx.lineTo(x, hang + bh);
+		ctx.closePath();
+		ctx.fill();
+		const e = Math.max(1.5, 0.22 * px);
+		ctx.fillStyle = c0;
+		ctx.beginPath();
+		ctx.moveTo(x + e, hang + e);
+		ctx.lineTo(x + bwPx - e, hang + e);
+		ctx.lineTo(x + bwPx - e, hang + bh - e * 1.2);
+		ctx.lineTo(x + bwPx / 2, hang + bh - bwPx * 0.22 - e * 1.1);
+		ctx.lineTo(x + e, hang + bh - e * 1.2);
+		ctx.closePath();
+		ctx.fill();
+		paint(x, bwPx, bh);
+	};
+	const ink = inkOn(c0);
+	ctx.textAlign = "center";
+	ctx.textBaseline = "middle";
+	groups.forEach((years, i) => {
+		banner(i, 9.5, (x, bwPx, bh) => {
+			const cx = x + bwPx / 2;
+			// The trophy.
+			ctx.fillStyle = "#e8c24a";
+			const ty = hang + bh * 0.16;
+			ctx.beginPath();
+			ctx.moveTo(cx - bwPx * 0.18, ty - bwPx * 0.12);
+			ctx.lineTo(cx + bwPx * 0.18, ty - bwPx * 0.12);
+			ctx.lineTo(cx + bwPx * 0.08, ty + bwPx * 0.1);
+			ctx.lineTo(cx - bwPx * 0.08, ty + bwPx * 0.1);
+			ctx.closePath();
+			ctx.fill();
+			ctx.fillRect(cx - bwPx * 0.03, ty + bwPx * 0.1, bwPx * 0.06, bwPx * 0.08);
+			ctx.fillRect(cx - bwPx * 0.1, ty + bwPx * 0.17, bwPx * 0.2, bwPx * 0.05);
+			ctx.fillStyle = ink;
+			ctx.font = `800 ${Math.round(bwPx * 0.15)}px Arial, sans-serif`;
+			ctx.fillText("CHAMPIONS", cx, hang + bh * 0.36);
+			const big = years.length === 1 ? 0.3 : years.length <= 2 ? 0.22 : 0.17;
+			ctx.font = `800 ${Math.round(bwPx * big)}px Arial, sans-serif`;
+			years.forEach((y, k) => {
+				ctx.fillText(
+					String(y),
+					cx,
+					hang +
+						bh *
+							(0.53 +
+								(k - (years.length - 1) / 2) * big * 0.55 * (bwPx / bh) * 1.9),
+				);
+			});
+		});
+	});
+	retired.forEach((r, j) => {
+		banner(groups.length + j, 8, (x, bwPx, bh) => {
+			const cx = x + bwPx / 2;
+			ctx.fillStyle = ink;
+			if (r.name) {
+				const name = r.name.toUpperCase();
+				ctx.font = `800 ${Math.round(Math.min(bwPx * 0.17, (bwPx * 1.5) / Math.max(4, name.length)))}px Arial, sans-serif`;
+				ctx.fillText(name, cx, hang + bh * 0.17);
+			}
+			ctx.font = `800 ${Math.round(bwPx * (r.number.length > 2 ? 0.36 : 0.5))}px Arial, sans-serif`;
+			ctx.fillText(r.number, cx, hang + bh * 0.5);
+		});
+	});
 	return canvas;
 };
 

@@ -529,6 +529,18 @@ export type ReplayLooks = {
 			court?: CourtStyle;
 		}
 	>;
+	// The home team's building that night. Missing on replays saved before
+	// it was kept.
+	arena?: ArenaLooks;
+};
+
+// THE HOME BUILDING THE NIGHT OF A GAME: how many it seats, and what hangs in
+// its rafters - the championships won before that season, and the jersey
+// numbers retired by then.
+export type ArenaLooks = {
+	capacity?: number;
+	titles: number[];
+	retired: { number: string; name?: string }[];
 };
 
 // One team's line in a contested free-agency roll: its mood-derived odds and

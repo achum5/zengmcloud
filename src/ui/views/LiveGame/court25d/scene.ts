@@ -6,18 +6,29 @@ import {
 	drawShadow,
 	FLOOR,
 	LED_WALL,
+	RAFTERS,
+	RIBBON,
 	STANDS,
 	standsPoint,
 	TABLE_FRONT,
 	TABLE_TOP,
+	type BoardScreen,
 	type HoopFx,
 } from "./arena.ts";
-import { depthOf, project, type Camera, type Shot } from "./camera.ts";
+import {
+	depthOf,
+	MAIN_RIG,
+	project,
+	type Camera,
+	type Rig,
+	type Shot,
+} from "./camera.ts";
 import { drawCourtLines } from "./courtLines.ts";
-import type { CourtTimeline } from "./director.ts";
+import type { ArenaShot, CourtTimeline } from "./director.ts";
 import {
 	evalBall,
 	evalPlayer,
+	offenseAt,
 	recentFx,
 	type BallState,
 	type PlayerState,
@@ -65,7 +76,9 @@ export type ArenaPaint = {
 	stands: HTMLCanvasElement;
 	standsUp: HTMLCanvasElement;
 	standsWave: HTMLCanvasElement;
-	wall: HTMLCanvasElement;
+	// Every screen the LED boards can show (see boardAt).
+	boards: Record<"wall" | "ribbon", Record<BoardScreen, HTMLCanvasElement>>;
+	rafters: HTMLCanvasElement;
 	tableTop: HTMLCanvasElement;
 	tableFront: HTMLCanvasElement;
 	bench: [HTMLCanvasElement, HTMLCanvasElement];
@@ -279,7 +292,12 @@ export const drawFrame = (f: Frame) => {
 			f.crowd.up,
 		);
 	}
-	drawTexturedPlane(ctx, cam, LED_WALL, arena.wall, 24, 1);
+	// The ribbon round the upper deck and the banners over it, the boards
+	// along the front of the stands - showing what the moment calls for.
+	const screen = boardAt(tl, t);
+	drawTexturedPlane(ctx, cam, RIBBON, arena.boards.ribbon[screen], 24, 1);
+	drawTexturedPlane(ctx, cam, RAFTERS, arena.rafters, 24, 2);
+	drawTexturedPlane(ctx, cam, LED_WALL, arena.boards.wall[screen], 24, 1);
 	floorQuad(
 		ctx,
 		cam,
@@ -509,6 +527,88 @@ export const replayAim = (m: Moment, narrow: boolean): Shot => {
 		y: 25,
 		z: 6.5,
 	};
+};
+
+// WHAT THE BOARDS SHOW: a shout for the home side's big play, DEFENSE
+// (blinking) while the road team has the ball in play, otherwise the team
+// and the chants in turn.
+const AMBIENT: BoardScreen[] = ["name", "letsGo", "name", "noise"];
+export const boardAt = (tl: CourtTimeline, t: number): BoardScreen => {
+	const roar = recentFx(tl, t, ["roar"], 3200);
+	if (roar?.team === 1 && roar.what) {
+		return roar.what;
+	}
+	if (recentFx(tl, t, ["block"], 2400)?.team === 1) {
+		return "block";
+	}
+	if (!arenaShotAt(tl, t) && offenseAt(tl, t) === 0) {
+		return Math.floor(t / 420) % 2 ? "defense2" : "defense";
+	}
+	return AMBIENT[Math.floor(t / 8000) % AMBIENT.length]!;
+};
+
+// THE LOOK ROUND THE BUILDING over a break (see ArenaShot): the whole arena
+// from up high, panning slowly; or low in the seats, looking up at the
+// crowd and the banners.
+const ARENA_RIG: Rig = { back: 60, high: 22, slide: 0.5, upright: false };
+export const arenaShotAt = (
+	tl: CourtTimeline,
+	t: number,
+): ArenaShot | undefined => {
+	const shots = tl.shots;
+	let lo = 0;
+	let hi = shots.length - 1;
+	let ans = -1;
+	while (lo <= hi) {
+		const mid = (lo + hi) >> 1;
+		if (shots[mid]!.t0 <= t) {
+			ans = mid;
+			lo = mid + 1;
+		} else {
+			hi = mid - 1;
+		}
+	}
+	const s = ans >= 0 ? shots[ans] : undefined;
+	return s && t < s.t1 ? s : undefined;
+};
+export const arenaAim = (
+	tl: CourtTimeline,
+	t: number,
+	narrow: boolean,
+): { shot: Shot; rig: Rig } | undefined => {
+	const s = arenaShotAt(tl, t);
+	if (!s) {
+		return undefined;
+	}
+	const u = Math.min(1, Math.max(0, (t - s.t0) / Math.max(1, s.t1 - s.t0)));
+	if (s.kind === "wide") {
+		return {
+			shot: {
+				x: 40 + 14 * u,
+				width: narrow ? 132 : 158,
+				y: narrow ? -38 : -27,
+			},
+			rig: MAIN_RIG,
+		};
+	}
+	return {
+		shot: { x: 26 + 42 * u, width: narrow ? 70 : 90, y: -14, z: 16 },
+		rig: ARENA_RIG,
+	};
+};
+
+// Every moment the picture cuts: the director's cuts, and into and out of
+// each look round the building.
+const camCuts = new WeakMap<CourtTimeline, number[]>();
+export const cameraCuts = (tl: CourtTimeline): number[] => {
+	let out = camCuts.get(tl);
+	if (!out) {
+		out = [
+			...new Set([...tl.cuts, ...tl.shots.flatMap((s) => [s.t0, s.t1])]),
+		].sort((a, b) => a - b);
+		camCuts.set(tl, out);
+	}
+	return out;
 };
 
 // Whether a point is on screen, for skipping work.
