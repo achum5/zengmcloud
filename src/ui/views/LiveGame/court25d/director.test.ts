@@ -544,6 +544,77 @@ describe("2.5D director", () => {
 		}
 		assert.strictEqual(targetForCursor(tl, events.length), tl.end);
 	});
+	test("a shot goes up from the zone the sim says", () => {
+		const { events, tl } = compile("zones", 160);
+		const beatOf = new Map(tl.beats.map((b) => [b.i, b]));
+		const band: Record<string, [number, number]> = {
+			fgaAtRim: [0, 6],
+			fgaLowPost: [3, 13],
+			fgaMidRange: [7, 24],
+			fgaTp: [21.9, 40],
+		};
+		let checked = 0;
+		events.forEach((e, i) => {
+			const range = band[e.type];
+			if (!range) {
+				return;
+			}
+			const b = beatOf.get(i)!;
+			const st = evalPlayer(tl, e.pid, b.actionStart);
+			// Display team 0 is raw team 1, and attacks the left rim.
+			const rimX = e.t === 1 ? 5.25 : 94 - 5.25;
+			const d = Math.hypot(st.x - rimX, st.y - 25);
+			assert.isTrue(
+				d >= range[0] && d <= range[1],
+				`${e.type} by ${e.pid} from ${d.toFixed(1)}ft (line ${i})`,
+			);
+			checked += 1;
+		});
+		assert.isAbove(checked, 50);
+	});
+
+	test("an assisted basket's last pass comes from the man credited with it", () => {
+		const { events, tl } = compile("assists", 160);
+		const beatOf = new Map(tl.beats.map((b) => [b.i, b]));
+		let checked = 0;
+		events.forEach((e, i) => {
+			if (typeof e.pidAst !== "number" || !/^(fg|tp)/.test(e.type)) {
+				return;
+			}
+			let a = i - 1;
+			while (a >= 0 && !events[a]!.type.startsWith("fga")) {
+				a -= 1;
+			}
+			const attempt = beatOf.get(a);
+			if (!attempt || events[a]!.pid !== e.pid) {
+				return;
+			}
+			// The last ball into his hands before he gets it off.
+			const passes = tl.ball.filter(
+				(s) =>
+					s.kind === "fly" &&
+					"pid" in s.to &&
+					s.to.pid === e.pid &&
+					s.t1 <= attempt.actionStart + 1500 &&
+					s.t0 >= attempt.preStart,
+			);
+			let last = passes.at(-1);
+			assert.isDefined(last, `line ${i}`);
+			// A bounce pass comes up off the floor: who threw it down there?
+			while (last && last.kind === "fly" && !("pid" in last.from)) {
+				const t0: number = last.t0;
+				last = tl.ball.find((s) => s.kind === "fly" && s.t1 === t0);
+			}
+			assert.deepInclude(
+				last?.kind === "fly" ? last.from : {},
+				{ pid: e.pidAst },
+				`line ${i}`,
+			);
+			checked += 1;
+		});
+		assert.isAbove(checked, 10);
+	});
+
 	test("a finish at the rim looks the way the play-by-play words it", () => {
 		for (const gender of ["male", "female"] as const) {
 			const { events, players } = fakeGame(`words-${gender}`, 220);

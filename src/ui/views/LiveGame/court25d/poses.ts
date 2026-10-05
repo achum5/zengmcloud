@@ -325,6 +325,57 @@ export const ANIMS = {
 		stride: 4.6,
 		pose: (i) => runPose(i / 6, "back"),
 	},
+	// A defender sliding with his man: the same low steps, eyes on the ball
+	// whichever way he goes.
+	slide: {
+		kind: "cycle",
+		n: 6,
+		stride: 4.6,
+		pose: (i) => runPose(i / 6, "back"),
+	},
+	// Setting a screen: planted wide and low, arms folded in front to take
+	// the hit.
+	screen: {
+		kind: "loop",
+		n: 2,
+		fps: 1.2,
+		pose: (i) =>
+			pose({
+				hipN: -8,
+				kneeN: 30 + i * 4,
+				hipF: 12,
+				kneeF: 32 + i * 4,
+				lean: 6,
+				shN: 24,
+				elN: 74,
+				shF: 24,
+				elF: 74,
+				abN: -26,
+				abF: -26,
+				wide: 0.75,
+			}),
+	},
+	// Sealed in the post: low and wide, one arm holding his man off, the
+	// other up asking for the ball.
+	postUp: {
+		kind: "loop",
+		n: 2,
+		fps: 1.4,
+		pose: (i) =>
+			pose({
+				hipN: 20,
+				kneeN: 52,
+				hipF: 24,
+				kneeF: 54,
+				lean: 14,
+				shN: 138 + i * 8,
+				elN: 26,
+				shF: 66,
+				elF: 36,
+				abF: 46,
+				wide: 0.75,
+			}),
+	},
 	walk: {
 		kind: "cycle",
 		n: 6,
@@ -957,6 +1008,45 @@ export const ANIMS = {
 					shF: 60,
 					elF: 30,
 					lean: 26,
+				}),
+			],
+			[1, P.stance],
+		],
+	},
+	// Taking a charge: set, hit, knocked back on his heels, arms flung up.
+	fall: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.stance],
+			[
+				0.3,
+				pose({
+					hipN: 14,
+					kneeN: 30,
+					hipF: 24,
+					kneeF: 36,
+					shN: 120,
+					elN: 30,
+					shF: 130,
+					elF: 34,
+					lean: -22,
+					wide: 0.4,
+				}),
+			],
+			[
+				0.65,
+				pose({
+					hipN: 62,
+					kneeN: 96,
+					hipF: 48,
+					kneeF: 84,
+					shN: 70,
+					elN: 20,
+					shF: 84,
+					elF: 26,
+					lean: -34,
+					wide: 0.5,
 				}),
 			],
 			[1, P.stance],

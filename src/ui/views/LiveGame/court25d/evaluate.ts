@@ -201,6 +201,10 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 		return angleTo(here, act.look, fallback);
 	}
 	const mv = here.moveIndex >= 0 ? tr.moves[here.moveIndex] : undefined;
+	// A defensive slide keeps his eyes on the ball whichever way he goes.
+	if (mv && here.moving && mv.anim === "slide") {
+		return angleTo(here, ballNear(tl, t), fallback);
+	}
 	if (mv && here.moving) {
 		const dx = mv.to.x - mv.from.x;
 		const dy = mv.to.y - mv.from.y;
