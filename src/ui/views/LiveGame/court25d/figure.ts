@@ -1,15 +1,8 @@
 import { makeCourtRng } from "../courtRng.ts";
 import { project, type Camera, type Projected } from "./camera.ts";
-import { bodyPoint, onRim, type PlayerState } from "./evaluate.ts";
+import { bodyPoint, onRim, poseOf, type PlayerState } from "./evaluate.ts";
 import type { HeadSprite } from "./faces.ts";
-import {
-	holdBall,
-	posed,
-	skeleton,
-	type Body,
-	type Limb,
-	type V3,
-} from "./poses.ts";
+import { holdBall, skeleton, type Body, type Limb, type V3 } from "./poses.ts";
 
 // ONE PLAYER, DRAWN - the body of his sprite (see sprite.ts).
 //
@@ -323,7 +316,7 @@ export const drawFigure = (
 	// Screen pixels to a sprite pixel: the finest line worth drawing.
 	px: number,
 ): FigureAnchors => {
-	const q = posed(st.anim, st.phase, st.dribble, st.dribbleHand, st.target);
+	const q = poseOf(st);
 	const held = st.holding ? holdBall(body, q, st.anim) : undefined;
 	const sk = held ? held.sk : onRim(skeleton(body, q), st, body);
 	const at = (v: V3): Projected => project(cam, bodyPoint(st, v));
@@ -1055,10 +1048,7 @@ export const drawHeadAt = (
 	body: Body,
 	look: Look,
 ) => {
-	const sk = skeleton(
-		body,
-		posed(st.anim, st.phase, st.dribble, st.dribbleHand, st.target),
-	);
+	const sk = skeleton(body, poseOf(st));
 	const at = (v: V3): Projected => project(cam, bodyPoint(st, v));
 	const toCamX = cam.pos.x - st.x;
 	const toCamY = cam.pos.y - st.y;

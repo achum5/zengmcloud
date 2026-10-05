@@ -15,6 +15,7 @@ import {
 	bodyOf,
 	bounceAt,
 	holdBall,
+	lerpPose,
 	posed,
 	skeleton,
 	standingReach,
@@ -22,6 +23,7 @@ import {
 	type Body,
 	type Hand,
 	type Limb,
+	type Pose,
 	type Skeleton,
 	type V3,
 } from "./poses.ts";
@@ -78,6 +80,16 @@ export type PlayerState = {
 	// the rim, and how much his hands are on it (0 to 1). His own build
 	// decides how high he really goes - see withBody.
 	dunk?: { leap: number; rim: Pt3; grip: number };
+	// Just after a change of move: the last move as it was when it changed,
+	// and how much of his pose is still that (1 all, 0 none) - see poseOf.
+	from?: {
+		anim: AnimName;
+		phase: number;
+		dribble?: number;
+		dribbleHand?: Hand;
+		target?: number;
+		w: number;
+	};
 };
 
 // Bounces a second on a dribble: one steady beat, walking or driving, so the
@@ -729,31 +741,27 @@ const offBall = (
 	return { anim, phase: (t - start) / dur };
 };
 
-export const evalPlayer = (
+// What his body is doing at t - the move he makes, how far through it, the
+// ball in his hands and his dribble - apart from where he is and which way
+// he faces.
+type Doing = {
+	anim: AnimName;
+	phase: number;
+	z: number;
+	dunk?: PlayerState["dunk"];
+	holding: boolean;
+	dribble?: number;
+	dribbleHand?: Hand;
+	target?: number;
+};
+const doingAt = (
 	tl: CourtTimeline,
-	pid: number,
+	tr: Track,
 	t: number,
-): PlayerState => {
-	const tr = tl.tracks.get(pid);
-	if (!tr) {
-		return {
-			pid,
-			team: 0,
-			shown: false,
-			x: 0,
-			y: 0,
-			z: 0,
-			yaw: 0,
-			anim: "ready",
-			phase: 0,
-			moving: false,
-		};
-	}
-	const si = lastIndex(tr.shown, t, (s) => s[0]);
-	const shown = si >= 0 ? tr.shown[si]![1] : false;
-	const here = spotAt(tr, t);
+	here: Spot = spotAt(tr, t),
+): Doing => {
+	const pid = tr.pid;
 	const act = actAt(tr, t);
-
 	let anim: AnimName;
 	let phase: number;
 	let z = 0;
@@ -818,22 +826,107 @@ export const evalPlayer = (
 				? bounceOf(tl, bi, t)
 				: undefined;
 	return {
+		anim,
+		phase,
+		z,
+		...(dunk ? { dunk } : {}),
+		holding: has?.style === "hold",
+		dribble: beat?.ph,
+		dribbleHand: beat ? (beat.ph < DOWN ? beat.from : beat.to) : undefined,
+		target: act || has ? undefined : targetAt(tl, pid, t) || undefined,
+	};
+};
+
+// One move into the next eases in: for a moment after the change his body
+// is part the way from how the last move had it to how this one wants it -
+// not snapped there between one frame and the next.
+const BLEND_MS = 160;
+const blendInto = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	anim: AnimName,
+): PlayerState["from"] => {
+	let before = doingAt(tl, tr, t - BLEND_MS);
+	if (before.anim === anim) {
+		return undefined;
+	}
+	// When it changed.
+	let lo = t - BLEND_MS;
+	let hi = t;
+	for (let k = 0; k < 5; k++) {
+		const mid = (lo + hi) / 2;
+		const d = doingAt(tl, tr, mid);
+		if (d.anim === anim) {
+			hi = mid;
+		} else {
+			lo = mid;
+			before = d;
+		}
+	}
+	const u = Math.min(1, (t - hi) / BLEND_MS);
+	const w = 1 - u * u * (3 - 2 * u);
+	return w <= 0.02
+		? undefined
+		: {
+				anim: before.anim,
+				phase: before.phase,
+				dribble: before.dribble,
+				dribbleHand: before.dribbleHand,
+				target: before.target,
+				w,
+			};
+};
+
+export const evalPlayer = (
+	tl: CourtTimeline,
+	pid: number,
+	t: number,
+): PlayerState => {
+	const tr = tl.tracks.get(pid);
+	if (!tr) {
+		return {
+			pid,
+			team: 0,
+			shown: false,
+			x: 0,
+			y: 0,
+			z: 0,
+			yaw: 0,
+			anim: "ready",
+			phase: 0,
+			moving: false,
+		};
+	}
+	const si = lastIndex(tr.shown, t, (s) => s[0]);
+	const shown = si >= 0 ? tr.shown[si]![1] : false;
+	const here = spotAt(tr, t);
+	const now = doingAt(tl, tr, t, here);
+	const from = shown ? blendInto(tl, tr, t, now.anim) : undefined;
+	return {
 		pid,
 		team: tr.team,
 		shown,
 		x: here.x,
 		y: here.y,
-		z,
 		yaw: yawAt(tl, tr, t),
-		anim,
-		phase,
 		moving: here.moving,
-		holding: has?.style === "hold",
-		dribble: beat?.ph,
-		dribbleHand: beat ? (beat.ph < DOWN ? beat.from : beat.to) : undefined,
-		target: act || has ? undefined : targetAt(tl, pid, t) || undefined,
-		...(dunk ? { dunk } : {}),
+		...now,
+		...(from ? { from } : {}),
 	};
+};
+
+// His pose: his move's, eased in from the last one's just after a change.
+export const poseOf = (st: PlayerState): Pose => {
+	const q = posed(st.anim, st.phase, st.dribble, st.dribbleHand, st.target);
+	const f = st.from;
+	return f && f.w > 0
+		? lerpPose(
+				q,
+				posed(f.anim, f.phase, f.dribble, f.dribbleHand, f.target),
+				f.w,
+			)
+		: q;
 };
 
 // A value through an act, from its keys (0 before the first, the last after
@@ -936,14 +1029,7 @@ export const handWorld = (
 	which: "near" | "far" | "both" = "both",
 ): Pt3 => {
 	const st = withBody(st0, body);
-	const sk = onRim(
-		skeleton(
-			body,
-			posed(st.anim, st.phase, st.dribble, st.dribbleHand, st.target),
-		),
-		st,
-		body,
-	);
+	const sk = onRim(skeleton(body, poseOf(st)), st, body);
 	const r = sk.armR.end;
 	const l = sk.armL.end;
 	const h =
@@ -959,14 +1045,7 @@ export const handWorld = (
 // The ball in his hands, held the way his move holds it.
 export const heldBall = (st0: PlayerState, body: Body): Pt3 => {
 	const st = withBody(st0, body);
-	return bodyPoint(
-		st,
-		holdBall(
-			body,
-			posed(st.anim, st.phase, st.dribble, st.dribbleHand, st.target),
-			st.anim,
-		).ball,
-	);
+	return bodyPoint(st, holdBall(body, poseOf(st), st.anim).ball);
 };
 
 export type BallState = {

@@ -58,7 +58,7 @@ const BASE: Pose = {
 };
 const pose = (o: Partial<Pose>): Pose => ({ ...BASE, ...o });
 
-const lerpPose = (a: Pose, b: Pose, f: number): Pose => {
+export const lerpPose = (a: Pose, b: Pose, f: number): Pose => {
 	const out = { ...a };
 	for (const key of Object.keys(a) as (keyof Pose)[]) {
 		out[key] = a[key] + (b[key] - a[key]) * f;

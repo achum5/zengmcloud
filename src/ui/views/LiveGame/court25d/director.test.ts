@@ -12,6 +12,7 @@ import {
 	evalPlayer,
 	handWorld,
 	heldBall,
+	poseOf,
 	tensionAt,
 	withBody,
 } from "./evaluate.ts";
@@ -262,6 +263,51 @@ describe("2.5D director", () => {
 		// (A man already on the move with the play goes his own way.)
 		assert.isAbove(followed, drifts * 0.25);
 	});
+
+	// From one move into the next - pulling up from a run, down into his
+	// stance, up for a catch - his body eases over rather than snapping
+	// there between one frame and the next.
+	test("one move eases into the next", () => {
+		const { tl } = compile("ease", 140);
+		const pids = [...tl.tracks.keys()];
+		const joints = [
+			"hipN",
+			"kneeN",
+			"hipF",
+			"kneeF",
+			"shN",
+			"elN",
+			"shF",
+			"elF",
+			"lean",
+		] as const;
+		let prev = new Map<number, ReturnType<typeof evalPlayer>>();
+		let last = -Infinity;
+		let changes = 0;
+		let snaps = 0;
+		for (const t of sampleTimes(tl, 20)) {
+			const cut = cutBetween(tl, last, t);
+			last = t;
+			const cur = new Map<number, ReturnType<typeof evalPlayer>>();
+			for (const pid of pids) {
+				const st = evalPlayer(tl, pid, t);
+				cur.set(pid, st);
+				const p = prev.get(pid);
+				if (!p || !p.shown || !st.shown || cut || p.anim === st.anim) {
+					continue;
+				}
+				changes += 1;
+				const a = poseOf(p);
+				const b = poseOf(st);
+				if (Math.max(...joints.map((j) => Math.abs(a[j] - b[j]))) > 40) {
+					snaps += 1;
+				}
+			}
+			prev = cur;
+		}
+		assert.isAbove(changes, 1000);
+		assert.isBelow(snaps, changes * 0.05);
+	}, 120_000);
 
 	// Turning right round, he turns one way and keeps turning - he never
 	// flicks between facings from one frame to the next.

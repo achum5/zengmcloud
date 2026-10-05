@@ -6,7 +6,7 @@ import {
 	type FigureAnchors,
 	type Look,
 } from "./figure.ts";
-import { ANIMS, type Body } from "./poses.ts";
+import { ANIMS, type AnimName, type Body } from "./poses.ts";
 
 // THE PLAYERS, DRAWN.
 //
@@ -102,28 +102,45 @@ const DRIBBLE_FRAMES = 8;
 const ACT_FRAMES = 12;
 const TURNS = 16;
 
-// The pose he is drawn in: his own, stepped to the sprite's frames and turns.
-const stepped = (st: PlayerState) => {
-	const a = ANIMS[st.anim];
-	// A long move (a dunk) gets more frames, so its quickest part - the slam
-	// - still shows.
+// A move's frame: an act stepped through its frames (a long one - a dunk -
+// gets more, so its quickest part, the slam, still shows), a cycle or a loop
+// through its eight.
+const frameOf = (anim: AnimName, phase: number): number => {
+	const a = ANIMS[anim];
 	const frames = Math.max(ACT_FRAMES, a.n * 2);
-	const phase =
-		a.kind === "act"
-			? Math.round(Math.min(1, Math.max(0, st.phase)) * (frames - 1)) /
-				(frames - 1)
-			: Math.floor((((st.phase % 1) + 1) % 1) * CYCLE_FRAMES) / CYCLE_FRAMES;
+	return a.kind === "act"
+		? Math.round(Math.min(1, Math.max(0, phase)) * (frames - 1)) / (frames - 1)
+		: Math.floor((((phase % 1) + 1) % 1) * CYCLE_FRAMES) / CYCLE_FRAMES;
+};
+const dribbleFrame = (d: number | undefined) =>
+	d === undefined ? undefined : Math.floor(d * DRIBBLE_FRAMES) / DRIBBLE_FRAMES;
+// Hands coming up for a pass, in a few steps.
+const targetFrame = (t: number | undefined) =>
+	t ? Math.ceil(t * 3) / 3 : undefined;
+
+// The pose he is drawn in: his own, stepped to the sprite's frames and turns
+// - and, easing out of his last move, two steps of that.
+const stepped = (st: PlayerState) => {
 	const turn = Math.round(st.yaw / ((Math.PI * 2) / TURNS));
+	const f = st.from;
+	const w = f ? (f.w > 0.5 ? 2 / 3 : f.w > 0.12 ? 1 / 3 : 0) : 0;
 	return {
-		phase,
+		phase: frameOf(st.anim, st.phase),
 		turn: ((turn % TURNS) + TURNS) % TURNS,
 		yaw: (turn * Math.PI * 2) / TURNS,
-		dribble:
-			st.dribble === undefined
-				? undefined
-				: Math.floor(st.dribble * DRIBBLE_FRAMES) / DRIBBLE_FRAMES,
-		// Hands coming up for a pass, in a few steps.
-		target: st.target ? Math.ceil(st.target * 3) / 3 : undefined,
+		dribble: dribbleFrame(st.dribble),
+		target: targetFrame(st.target),
+		from:
+			f && w > 0
+				? {
+						anim: f.anim,
+						phase: frameOf(f.anim, f.phase),
+						dribble: dribbleFrame(f.dribble),
+						dribbleHand: f.dribbleHand,
+						target: targetFrame(f.target),
+						w,
+					}
+				: undefined,
 	};
 };
 
@@ -160,9 +177,14 @@ export const drawSprite = (
 			id = cache.next++;
 			cache.ids.set(look, id);
 		}
+		const f = pose.from;
 		key = `${id}|${st.anim}|${pose.phase}|${pose.turn}|${Math.round(
 			Math.log(k) / Math.log(1.04),
-		)}|${px}|${st.holding ? 1 : 0}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}|${pose.target ?? ""}`;
+		)}|${px}|${st.holding ? 1 : 0}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}|${pose.target ?? ""}${
+			f
+				? `|${f.anim}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.target ?? ""}~${f.w}`
+				: ""
+		}`;
 		const kept = cache.kept.get(key);
 		if (kept) {
 			const smoothing = ctx.imageSmoothingEnabled;
@@ -186,6 +208,7 @@ export const drawSprite = (
 		yaw: pose.yaw,
 		dribble: pose.dribble,
 		target: pose.target,
+		from: pose.from,
 	};
 	const w = Math.max(4, Math.ceil((right - left) / px) + 2);
 	const h = Math.max(4, Math.ceil((lower - upper) / px) + 2);
