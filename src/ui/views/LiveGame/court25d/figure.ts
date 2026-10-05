@@ -120,6 +120,9 @@ type Shaped = {
 	// The edge on the shadow side, for the second tone.
 	shadowEdge: P2[];
 	width: number;
+	// Across its middle, from the side the light falls on to the side in
+	// shadow - for shading it round.
+	across: [P2, P2];
 };
 
 // A limb's silhouette from a to b. `backDir` is the screen direction his
@@ -172,7 +175,15 @@ const limbShape = (
 	p.closePath();
 	// The shadow is on the side facing away from the light.
 	const lightSide = nx * LIGHT.x + ny * LIGHT.y;
-	return { path: p, shadowEdge: lightSide > 0 ? right : left, width: maxW };
+	const mid = Math.floor(stations.length / 2);
+	const litEdge = lightSide > 0 ? left : right;
+	const darkEdge = lightSide > 0 ? right : left;
+	return {
+		path: p,
+		shadowEdge: darkEdge,
+		width: maxW,
+		across: [litEdge[mid]!, darkEdge[mid]!],
+	};
 };
 
 const polyPath = (pts: P2[]): Path2D => {
@@ -349,16 +360,44 @@ export const drawFigure = (
 	const behind = { x: -fwd2.x, y: -fwd2.y };
 
 	const parts: Part[] = [];
-	const shaped = (
-		s: Shaped,
-		fill: string,
-		shadowColor: string | undefined,
-	): Shape => ({
+	// Light falling across a shape, from `a` (lit) to `b` (in shadow): a
+	// little bright where it catches it, deepening round the far side - so
+	// an arm, a leg, a chest reads as round.
+	const lit = (c: string, a: P2, b: P2): CanvasGradient | string => {
+		if (Math.hypot(b.x - a.x, b.y - a.y) < 0.5) {
+			return c;
+		}
+		const g = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
+		g.addColorStop(0, shade(c, 0.13));
+		g.addColorStop(0.38, c);
+		g.addColorStop(1, shade(c, -0.3));
+		return g;
+	};
+	// Across a set of points, the way the light falls.
+	const litOver = (c: string, pts: P2[]): CanvasGradient | string => {
+		let lo = Infinity;
+		let hi = -Infinity;
+		let cx = 0;
+		let cy = 0;
+		for (const q of pts) {
+			const d = q.x * LIGHT.x + q.y * LIGHT.y;
+			lo = Math.min(lo, d);
+			hi = Math.max(hi, d);
+			cx += q.x;
+			cy += q.y;
+		}
+		cx /= pts.length;
+		cy /= pts.length;
+		const m = cx * LIGHT.x + cy * LIGHT.y;
+		return lit(
+			c,
+			{ x: cx + LIGHT.x * (hi - m), y: cy + LIGHT.y * (hi - m) },
+			{ x: cx + LIGHT.x * (lo - m), y: cy + LIGHT.y * (lo - m) },
+		);
+	};
+	const shaped = (s: Shaped, fill: string, round: unknown = true): Shape => ({
 		path: s.path,
-		fill,
-		shadow: shadowColor
-			? { edge: s.shadowEdge, width: s.width * 0.55, color: shadowColor }
-			: undefined,
+		fill: round ? lit(fill, s.across[0], s.across[1]) : fill,
 	});
 
 	const leg = (limb: Limb, far: boolean, outer: 1 | -1) => {
@@ -434,7 +473,20 @@ export const drawFigure = (
 		// The sneaker: a sole along the floor, a toe box, a high collar at the
 		// ankle.
 		const shoe = sneaker(ankle, toe, ankle.k, Math.abs(front) > 0.62);
-		shapes.push({ path: shoe.upper, fill: dim(shoeColor, far) });
+		shapes.push({
+			path: shoe.upper,
+			fill: lit(
+				dim(shoeColor, far),
+				{
+					x: ankle.x + LIGHT.x * 0.3 * ankle.k,
+					y: ankle.y + LIGHT.y * 0.3 * ankle.k,
+				},
+				{
+					x: ankle.x - LIGHT.x * 0.3 * ankle.k,
+					y: ankle.y - LIGHT.y * 0.3 * ankle.k,
+				},
+			),
+		});
 		// Shorts: long, wide and loose, down to the top of the knee.
 		const hem = lerp2(hip, knee, SHORTS_HEM);
 		const tx = knee.x - hip.x;
@@ -446,14 +498,18 @@ export const drawFigure = (
 		const wHem = body.thighR * 1.56 * knee.k;
 		const hemL = { x: hem.x + nx * wHem, y: hem.y + ny * wHem };
 		const hemR = { x: hem.x - nx * wHem, y: hem.y - ny * wHem };
-		const shorts = softPoly([
+		const shortsPts = [
 			{ x: hip.x + nx * wTop, y: hip.y + ny * wTop },
 			hemL,
 			lerp2(hemL, hemR, 0.5),
 			hemR,
 			{ x: hip.x - nx * wTop, y: hip.y - ny * wTop },
-		]);
-		shapes.push({ path: shorts, fill: dim(kit.shorts, far) });
+		];
+		const shorts = softPoly(shortsPts);
+		shapes.push({
+			path: shorts,
+			fill: litOver(dim(kit.shorts, far), shortsPts),
+		});
 		parts.push({
 			// Under the torso, always - his shorts hang over his legs.
 			depth: Math.max(knee.depth, torsoDepth) + (far ? 0.6 : 0.3),
@@ -494,63 +550,135 @@ export const drawFigure = (
 		return out;
 	};
 
-	// The torso: broad through the chest and shoulders, tapering to the waist,
-	// the shorts' waistband under it, a thick neck above.
+	// The torso: an athlete's - broad across the chest and shoulders, tapering
+	// to a narrow waist - his neck rising out of the slope of his shoulders.
 	const chest = at(sk.chest);
 	const headC = at(sk.head);
-	const neckBase = at(off(sk.chest, 0, 0, body.H * 0.01));
-	// A jersey is a tank top: narrow over the shoulders, cut away under the
-	// arms, so his shoulders show round beside it. A shirt (an official's,
-	// a coach's jacket) covers them.
-	const strap = look.outfit ? 0.8 : 0.66;
-	const pit = look.outfit ? 0.94 : 0.86;
-	const jerseyPts = hull([
-		...ring(1.0, body.shoulderW * strap, body.depth * 0.44),
-		...ring(0.82, body.shoulderW * pit, body.depth * 0.56),
-		...ring(0.5, body.hipW * 1.66, body.depth * 0.54),
-		...ring(0.06, body.hipW * 1.56, body.depth * 0.5),
+	const sw = body.shoulderW;
+	const dp = body.depth;
+	// Bare skin round a tank top: the slope of his shoulders up to his neck,
+	// the tops of his shoulders, his sides under his arms.
+	const yokePts = hull([
+		...ring(1.12, sw * 0.36, dp * 0.3),
+		...ring(1.0, sw * 0.84, dp * 0.42),
+		...ring(0.82, sw * 0.97, dp * 0.52),
+		...ring(0.55, sw * 0.86, dp * 0.5),
 	]);
-	const waistPts = hull([
-		...ring(0.14, body.hipW * 1.62, body.depth * 0.52),
-		...ring(-0.18, body.hipW * 1.72, body.depth * 0.55),
-	]);
+	const neckBase = at(off(sk.chest, 0, 0, body.H * 0.012));
 	const neck = limbShape(neckBase, neckBase.k, headC, headC.k, [
-		[0, body.headR * 0.52],
-		[0.5, body.headR * 0.4],
-		[1, body.headR * 0.36],
+		[0, sw * 0.38],
+		[0.5, sw * 0.32],
+		[1, sw * 0.3],
 	]);
-	// The jersey's shadow side: the half of him turned from the light.
-	const jerseyShadow = (() => {
-		const cx = jerseyPts.reduce((s, p) => s + p.x, 0) / jerseyPts.length;
-		const cyy = jerseyPts.reduce((s, p) => s + p.y, 0) / jerseyPts.length;
-		return jerseyPts.filter(
-			(p) => (p.x - cx) * LIGHT.x + (p.y - cyy) * LIGHT.y < 0,
-		);
-	})();
+	// A jersey is a tank top: narrow straps over the shoulders, cut away
+	// under the arms, tucked into his shorts. A shirt (an official's, a
+	// coach's jacket) covers his shoulders.
+	const shirt = look.outfit !== undefined;
+	const jerseyPts = hull(
+		shirt
+			? [
+					...ring(1.0, sw * 0.88, dp * 0.42),
+					...ring(0.82, sw * 0.99, dp * 0.52),
+					...ring(0.45, sw * 0.9, dp * 0.5),
+					...ring(0.04, sw * 0.88, dp * 0.48),
+				]
+			: [
+					...ring(1.0, sw * 0.6, dp * 0.4),
+					...ring(0.8, sw * 0.93, dp * 0.55),
+					...ring(0.48, sw * 0.86, dp * 0.52),
+					...ring(0.24, sw * 0.79, dp * 0.47),
+					...ring(0.04, sw * 0.83, dp * 0.48),
+				],
+	);
+	// The shorts' waistband, over the jersey's hem: the half of the band
+	// round him that faces the camera.
+	const halfRing = (lambda: number, lat: number, dep: number): Projected[] => {
+		const f = sk.pelvis.f + (sk.chest.f - sk.pelvis.f) * lambda;
+		const u = sk.pelvis.u + (sk.chest.u - sk.pelvis.u) * lambda;
+		const toward = Math.atan2(side, front);
+		const out: Projected[] = [];
+		for (let i = 0; i <= 10; i++) {
+			const a = toward - Math.PI / 2 + (i / 10) * Math.PI;
+			out.push(at({ f: f + Math.cos(a) * dep, s: Math.sin(a) * lat, u }));
+		}
+		return out;
+	};
+	const waistPts = [
+		...halfRing(0.15, sw * 0.8, dp * 0.47),
+		...halfRing(0.03, sw * 0.83, dp * 0.48).reverse(),
+	];
 	const jerseyPath = softPoly(jerseyPts);
 	parts.push({
 		depth: torsoDepth,
 		shapes: [
-			shaped(neck, skin, shade(skin, -0.2)),
-			{ path: polyPath(waistPts), fill: kit.shorts },
-			{
-				path: jerseyPath,
-				fill: kit.jersey,
-				shadow: jerseyShadow
-					? {
-							edge: jerseyShadow,
-							width: body.depth * 0.5 * chest.k,
-							color: shade(kit.jersey, -0.12),
-						}
-					: undefined,
-			},
+			{ path: softPoly(yokePts), fill: litOver(skin, yokePts) },
+			shaped(neck, skin),
+			{ path: jerseyPath, fill: litOver(kit.jersey, jerseyPts) },
+			{ path: polyPath(waistPts), fill: litOver(kit.shorts, waistPts) },
 		],
 		detail: () => {
 			drawStripes();
 			drawTrim();
 			drawCollar();
+			drawLettering();
 		},
 	});
+
+	// His number, and his name over it on his back (the team's on his
+	// chest) - printed on the jersey, so an arm in front of it hides it.
+	const drawLettering = () => {
+		if (Math.abs(front) < 0.28 || !look.jerseyNumber || shirt) {
+			return;
+		}
+		const back = front < 0;
+		const face = (back ? -1 : 1) * dp * 0.56;
+		const at3 = (lambda: number) =>
+			at({
+				f: sk.pelvis.f + (sk.chest.f - sk.pelvis.f) * lambda + face,
+				s: 0,
+				u: sk.pelvis.u + (sk.chest.u - sk.pelvis.u) * lambda,
+			});
+		const c = at3(back ? 0.56 : 0.5);
+		const size = (back ? 0.78 : 0.62) * c.k;
+		if (size < 4 * px) {
+			return;
+		}
+		const squeeze = Math.min(1, Math.abs(front) * 1.1);
+		ctx.save();
+		ctx.clip(jerseyPath);
+		ctx.translate(c.x, c.y);
+		ctx.scale(squeeze, 1);
+		ctx.textAlign = "center";
+		ctx.textBaseline = "middle";
+		ctx.lineJoin = "round";
+		ctx.font = `bold ${size}px "Arial Narrow", "Helvetica Neue", Arial, sans-serif`;
+		ctx.strokeStyle = kit.numberEdge;
+		ctx.lineWidth = Math.max(px, size * 0.08);
+		ctx.strokeText(look.jerseyNumber, 0, 0);
+		ctx.fillStyle = kit.number;
+		ctx.fillText(look.jerseyNumber, 0, 0);
+		ctx.restore();
+		const word = back ? look.lastName : look.wordmark;
+		const top = at3(back ? 0.86 : 0.8);
+		const small = 0.2 * top.k;
+		if (word && small >= 5 * px) {
+			ctx.save();
+			ctx.clip(jerseyPath);
+			ctx.translate(top.x, top.y);
+			ctx.scale(squeeze, 1);
+			ctx.textAlign = "center";
+			ctx.textBaseline = "middle";
+			ctx.font = `bold ${small}px "Arial Narrow", "Helvetica Neue", Arial, sans-serif`;
+			ctx.fillStyle = kit.number;
+			ctx.fillText(
+				word.toUpperCase(),
+				0,
+				0,
+				(sw * 1.5 * top.k * Math.abs(front)) / squeeze,
+			);
+			ctx.restore();
+		}
+	};
 
 	// The trim round the armholes and the back of the neck, seen from in
 	// front or behind.
@@ -567,9 +695,9 @@ export const drawFigure = (
 			y0 = Math.min(y0, q.y);
 		}
 		const armpit = at({
-			f: sk.pelvis.f + (sk.chest.f - sk.pelvis.f) * 0.6,
+			f: sk.pelvis.f + (sk.chest.f - sk.pelvis.f) * 0.8,
 			s: 0,
-			u: sk.pelvis.u + (sk.chest.u - sk.pelvis.u) * 0.6,
+			u: sk.pelvis.u + (sk.chest.u - sk.pelvis.u) * 0.8,
 		});
 		ctx.save();
 		ctx.clip(jerseyPath);
@@ -681,26 +809,34 @@ export const drawFigure = (
 		const band = gear?.wrist?.arms.includes(which)
 			? dim(gear.wrist.color, far)
 			: undefined;
-		// The hand: a mitt a little past the wrist, pointing the way the
-		// wrist bends it (along the forearm when it points at the camera).
+		// The hand: palm and fingers out past the wrist, pointing the way the
+		// wrist bends it - shorter as it points at the camera (along the
+		// forearm when it points right at it).
 		const tip = at(limb.tip ?? limb.end);
 		let hx = tip.x - wrist.x;
 		let hy = tip.y - wrist.y;
-		if (Math.hypot(hx, hy) < 0.08 * wrist.k) {
+		const shown = Math.hypot(hx, hy);
+		const handLen = body.handR * 3.7 * wrist.k;
+		const handW = body.handR * 1.8 * wrist.k;
+		if (shown < 0.08 * wrist.k) {
 			hx = wrist.x - el.x;
 			hy = wrist.y - el.y;
 		}
 		const hl = Math.hypot(hx, hy) || 1;
+		const len = Math.max(
+			handW,
+			handLen * Math.min(1, shown / (body.handR * 2.2 * wrist.k)),
+		);
 		const handC = {
-			x: wrist.x + (hx / hl) * body.handR * 0.55 * wrist.k,
-			y: wrist.y + (hy / hl) * body.handR * 0.55 * wrist.k,
+			x: wrist.x + (hx / hl) * len * 0.42,
+			y: wrist.y + (hy / hl) * len * 0.42,
 		};
 		const hand = new Path2D();
 		hand.ellipse(
 			handC.x,
 			handC.y,
-			body.handR * 1.12 * wrist.k,
-			body.handR * 0.86 * wrist.k,
+			len * 0.52,
+			handW * 0.5,
 			Math.atan2(hy, hx),
 			0,
 			Math.PI * 2,
@@ -711,27 +847,29 @@ export const drawFigure = (
 				limb.end.u > limb.root.u + body.H * 0.08 &&
 				(el.depth + wrist.depth) / 2 < headC.depth,
 			shapes: [
-				// The deltoid capping the shoulder, the upper arm, the forearm
-				// swelling below the elbow and slimming to the wrist.
+				// The deltoid capping the shoulder, narrowing into the biceps,
+				// in to the elbow; the forearm swelling below it and slimming to
+				// the wrist.
 				shaped(
 					limbShape(sh, sh.k, el, el.k, [
-						[0, body.upperR * 1.28],
-						[0.22, body.upperR * 1.16],
-						[0.55, body.upperR * 1.0],
-						[1, body.foreR * 0.92],
+						[0, body.upperR * 1.34],
+						[0.16, body.upperR * 1.22],
+						[0.4, body.upperR * 0.98],
+						[0.62, body.upperR * 1.05],
+						[0.86, body.upperR * 0.84],
+						[1, body.foreR * 0.98],
 					]),
 					upperC,
-					shade(upperC, -0.2),
 				),
 				shaped(
 					limbShape(el, el.k, wrist, wrist.k, [
-						[0, body.foreR * 0.92],
-						[0.22, body.foreR * 1.1],
-						[0.6, body.foreR * 0.86],
-						[1, body.foreR * 0.62],
+						[0, body.foreR * 0.98],
+						[0.18, body.foreR * 1.14],
+						[0.5, body.foreR * 0.92],
+						[0.86, body.foreR * 0.68],
+						[1, body.foreR * 0.64],
 					]),
 					sl,
-					shade(sl, -0.2),
 				),
 				...(band
 					? [
@@ -750,7 +888,13 @@ export const drawFigure = (
 							},
 						]
 					: []),
-				{ path: hand, fill: c },
+				{
+					path: hand,
+					fill: lit(c, handC, {
+						x: handC.x - LIGHT.x * handW,
+						y: handC.y - LIGHT.y * handW,
+					}),
+				},
 			],
 		});
 	};
@@ -926,8 +1070,7 @@ export const drawHeadAt = (
 };
 
 // A sneaker, from the ankle to the toe: the upper - low at the toe, high at
-// the collar - on a thick sole along its bottom. Big and chunky, the way a
-// cartoon draws them.
+// the collar - on a thick sole along its bottom.
 const sneaker = (
 	ankle: Projected,
 	toe: Projected,
@@ -937,12 +1080,12 @@ const sneaker = (
 	const dx = toe.x - ankle.x;
 	const dy = toe.y - ankle.y;
 	const len = Math.hypot(dx, dy);
-	const h = 0.43 * k;
+	const h = 0.36 * k;
 	// Pointing at or away from the camera, a shoe is its rounded front: a toe
 	// box over a sole.
 	if (headOn || len < 0.42 * k) {
 		const c = lerp2(ankle, toe, 0.7);
-		const w = 0.36 * k;
+		const w = 0.29 * k;
 		const upper = new Path2D();
 		upper.ellipse(c.x, c.y + h * 0.06, w, h * 0.6, 0, 0, Math.PI * 2);
 		const sole = new Path2D();

@@ -1,194 +1,24 @@
 import { project, type Camera } from "./camera.ts";
 import type { PlayerState } from "./evaluate.ts";
 import {
-	BALL_SEAM,
-	BALL_SHADE,
-	BALL_ORANGE,
-	CAMERA_BODY,
-	CAMERA_LENS,
 	drawFigure,
 	drawHeadAt,
-	shade,
 	type FigureAnchors,
 	type Look,
 } from "./figure.ts";
 import { ANIMS, type Body } from "./poses.ts";
 
-// THE PLAYERS AS PIXEL ART.
+// THE PLAYERS, DRAWN.
 //
-// Each player is drawn small - a sprite pixel is several screen pixels - on a
-// canvas of his own, then made into pixel art: every edge snapped hard (no
-// soft, half-there pixels), every color pulled to his own little palette
-// (his skin, his kit, his shoes, each in its light and its shadow), and a
-// one-pixel outline round the outside. His face is his BBGM face, shrunk to
-// the sprite's scale. Then he is blown back up without smoothing, so the
-// pixels stay square.
+// Each player is drawn on a canvas of his own at the picture's resolution -
+// shaded round, edges smooth - with a soft dark rim round the outside so he
+// reads against the floor. His face is his BBGM face, shrunk to his size.
+// Then he is stamped into the picture, and kept for the next time the same
+// pose comes round.
 
 type RGB = [number, number, number];
 
 const OUTLINE: RGB = [22, 15, 13];
-
-// 3 x 5 digits, for the numbers on the jerseys.
-const DIGITS: Record<string, string[]> = {
-	"0": ["111", "101", "101", "101", "111"],
-	"1": ["010", "110", "010", "010", "111"],
-	"2": ["111", "001", "111", "100", "111"],
-	"3": ["111", "001", "011", "001", "111"],
-	"4": ["101", "101", "111", "001", "001"],
-	"5": ["111", "100", "111", "001", "111"],
-	"6": ["111", "100", "111", "101", "111"],
-	"7": ["111", "001", "010", "010", "010"],
-	"8": ["111", "101", "111", "101", "111"],
-	"9": ["111", "101", "111", "001", "111"],
-};
-
-// 3 x 5 capitals, for a name across his back (or the team's across his
-// chest) when he is close enough to have room for one.
-const LETTERS: Record<string, string> = {
-	A: "010 101 111 101 101",
-	B: "110 101 110 101 110",
-	C: "011 100 100 100 011",
-	D: "110 101 101 101 110",
-	E: "111 100 110 100 111",
-	F: "111 100 110 100 100",
-	G: "011 100 101 101 011",
-	H: "101 101 111 101 101",
-	I: "111 010 010 010 111",
-	J: "001 001 001 101 010",
-	K: "101 101 110 101 101",
-	L: "100 100 100 100 111",
-	M: "101 111 111 101 101",
-	N: "101 111 111 111 101",
-	O: "010 101 101 101 010",
-	P: "110 101 110 100 100",
-	Q: "010 101 101 111 011",
-	R: "110 101 110 101 101",
-	S: "011 100 010 001 110",
-	T: "111 010 010 010 010",
-	U: "101 101 101 101 111",
-	V: "101 101 101 101 010",
-	W: "101 101 111 111 101",
-	X: "101 101 010 101 101",
-	Y: "101 101 010 010 010",
-	Z: "111 001 010 100 111",
-	"-": "000 000 111 000 000",
-	".": "000 000 000 000 010",
-	"'": "010 010 000 000 000",
-	" ": "000 000 000 000 000",
-};
-const GLYPH5 = new Map<string, string[]>([
-	...Object.entries(DIGITS),
-	...Object.entries(LETTERS).map(([ch, rows]): [string, string[]] => [
-		ch,
-		rows.split(" "),
-	]),
-]);
-
-const parseColor = (c: string): RGB => {
-	const m = /^#?([\da-f]{6})$/i.exec(c.trim());
-	if (m) {
-		const n = Number.parseInt(m[1]!, 16);
-		return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-	}
-	const r = /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i.exec(c);
-	if (r) {
-		return [Number(r[1]), Number(r[2]), Number(r[3])];
-	}
-	return [128, 128, 128];
-};
-
-// Everything his body is drawn in: each color, dimmed for the far side of
-// him, and in shadow - and every color already matched to one of them (by
-// its first five bits a channel; -1 until asked).
-type Palette = { colors: RGB[]; memo: Int16Array };
-const palettes = new WeakMap<Look, Palette>();
-const ballPalettes = new WeakMap<Look, Palette>();
-const paletteOf = (look: Look, ball = false): Palette => {
-	let pal = (ball ? ballPalettes : palettes).get(look);
-	if (!pal) {
-		const k = look.kit;
-		const seen = new Set<string>();
-		const colors: RGB[] = [];
-		const add = (c: string) => {
-			for (const v of [
-				c,
-				shade(c, -0.14),
-				shade(c, -0.12),
-				shade(c, -0.18),
-				shade(c, -0.2),
-				shade(shade(c, -0.14), -0.18),
-				shade(shade(c, -0.14), -0.2),
-			]) {
-				const rgb = parseColor(v);
-				const key = rgb.join(",");
-				if (!seen.has(key)) {
-					seen.add(key);
-					colors.push(rgb);
-				}
-			}
-		};
-		for (const c of [
-			look.skin,
-			k.jersey,
-			k.trim,
-			k.shorts,
-			k.stripe,
-			k.sock,
-			k.shoe,
-			k.sole,
-			...(ball ? [BALL_ORANGE, BALL_SHADE, BALL_SEAM] : []),
-			...(look.gear
-				? [
-						look.gear.shoe,
-						look.gear.sole,
-						look.gear.sock,
-						look.gear.sleeve?.color,
-						look.gear.tights?.color,
-						look.gear.wrist?.color,
-						look.gear.knee?.color,
-					].filter((c): c is string => c !== undefined)
-				: []),
-			...(look.outfit
-				? [
-						look.outfit.stripes,
-						look.outfit.shirt,
-						look.outfit.tie,
-						...(look.outfit.camera ? [CAMERA_BODY, CAMERA_LENS] : []),
-					].filter((c): c is string => c !== undefined)
-				: []),
-		]) {
-			add(c);
-		}
-		colors.push(OUTLINE);
-		pal = { colors, memo: new Int16Array(1 << 15).fill(-1) };
-		(ball ? ballPalettes : palettes).set(look, pal);
-	}
-	return pal;
-};
-
-const nearest = (pal: Palette, r: number, g: number, b: number): number => {
-	const key = ((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3);
-	let i = pal.memo[key]!;
-	if (i < 0) {
-		// Matched from the middle of its little cube of colors, so the answer
-		// is the same whichever pixel asks first.
-		const rc = (r & 0xf8) | 4;
-		const gc = (g & 0xf8) | 4;
-		const bc = (b & 0xf8) | 4;
-		let best = Infinity;
-		i = 0;
-		for (let j = 0; j < pal.colors.length; j++) {
-			const c = pal.colors[j]!;
-			const d = (c[0] - rc) ** 2 + (c[1] - gc) ** 2 + (c[2] - bc) ** 2;
-			if (d < best) {
-				best = d;
-				i = j;
-			}
-		}
-		pal.memo[key] = i;
-	}
-	return i;
-};
 
 export type Scratch = {
 	canvas: HTMLCanvasElement;
@@ -203,26 +33,29 @@ export const makeScratch = (): Scratch => {
 		ctx: canvas.getContext("2d", { willReadFrequently: true })!,
 	};
 };
-// Every pixel either there or not.
-const snapAlpha = (d: Uint8ClampedArray) => {
-	for (let i = 3; i < d.length; i += 4) {
-		d[i] = d[i]! < 120 ? 0 : 255;
-	}
-};
-
-// A one-pixel outline round everything that is there.
+// A dark rim, soft and a pixel wide, round the outside of what is there -
+// laid under the edge's own soft pixels, so the edge stays smooth. Only
+// round what `isNew` says was just drawn, when asked.
+const RIM_ALPHA = 0.62;
+const SOLID = 140;
 let solid = new Uint8Array(0);
-const outline = (d: Uint8ClampedArray, w: number, h: number) => {
+const rim = (
+	d: Uint8ClampedArray,
+	w: number,
+	h: number,
+	isNew?: (i: number) => boolean,
+) => {
 	if (solid.length < w * h) {
 		solid = new Uint8Array(w * h * 2);
 	}
 	for (let i = 0; i < w * h; i++) {
-		solid[i] = d[i * 4 + 3]! > 0 ? 1 : 0;
+		solid[i] = d[i * 4 + 3]! >= SOLID && (!isNew || isNew(i)) ? 1 : 0;
 	}
 	for (let y = 0; y < h; y++) {
 		for (let x = 0; x < w; x++) {
 			const i = y * w + x;
-			if (solid[i]) {
+			const a = d[i * 4 + 3]! / 255;
+			if (a * 255 >= SOLID) {
 				continue;
 			}
 			if (
@@ -231,102 +64,16 @@ const outline = (d: Uint8ClampedArray, w: number, h: number) => {
 				(y > 0 && solid[i - w]) ||
 				(y < h - 1 && solid[i + w])
 			) {
-				d[i * 4] = OUTLINE[0];
-				d[i * 4 + 1] = OUTLINE[1];
-				d[i * 4 + 2] = OUTLINE[2];
-				d[i * 4 + 3] = 255;
-			}
-		}
-	}
-};
-
-// Hard edges on what was just drawn over a w x h box of a sprite whose
-// earlier pixels are `before` (bw wide, the box at x0, y0) - and a one-pixel
-// outline round it, wherever it was new: what was there already has its own.
-let fresh = new Uint8Array(0);
-const outlineNew = (
-	d: Uint8ClampedArray,
-	w: number,
-	h: number,
-	before: Uint8ClampedArray,
-	bw: number,
-	x0: number,
-	y0: number,
-) => {
-	if (fresh.length < w * h) {
-		fresh = new Uint8Array(w * h * 2);
-	}
-	for (let y = 0; y < h; y++) {
-		for (let x = 0; x < w; x++) {
-			const i = y * w + x;
-			const on = d[i * 4 + 3]! >= 120;
-			d[i * 4 + 3] = on ? 255 : 0;
-			fresh[i] = on && before[((y0 + y) * bw + x0 + x) * 4 + 3] === 0 ? 1 : 0;
-		}
-	}
-	for (let y = 0; y < h; y++) {
-		for (let x = 0; x < w; x++) {
-			const i = y * w + x;
-			if (d[i * 4 + 3] !== 0) {
-				continue;
-			}
-			if (
-				(x > 0 && fresh[i - 1]) ||
-				(x < w - 1 && fresh[i + 1]) ||
-				(y > 0 && fresh[i - w]) ||
-				(y < h - 1 && fresh[i + w])
-			) {
-				d[i * 4] = OUTLINE[0];
-				d[i * 4 + 1] = OUTLINE[1];
-				d[i * 4 + 2] = OUTLINE[2];
-				d[i * 4 + 3] = 255;
-			}
-		}
-	}
-};
-
-// Text in the 3 x 5 font, centered on (cx, cy), only where he is.
-const drawGlyphs = (
-	d: Uint8ClampedArray,
-	w: number,
-	h: number,
-	text: string,
-	cx: number,
-	cy: number,
-	color: RGB,
-	scale = 1,
-) => {
-	const glyphs = [...text.toUpperCase()]
-		.map((ch) => GLYPH5.get(ch))
-		.filter(Boolean);
-	if (glyphs.length === 0) {
-		return;
-	}
-	const total = (glyphs.length * 4 - 1) * scale;
-	const x0 = Math.round(cx - total / 2);
-	const y0 = Math.round(cy - 2.5 * scale);
-	glyphs.forEach((g, n) => {
-		for (let row = 0; row < 5 * scale; row++) {
-			for (let col = 0; col < 3 * scale; col++) {
-				if (g![Math.floor(row / scale)]![Math.floor(col / scale)] !== "1") {
-					continue;
+				// What is there, over the rim.
+				const b = RIM_ALPHA * (1 - a);
+				const out = a + b;
+				for (let c = 0; c < 3; c++) {
+					d[i * 4 + c] = (d[i * 4 + c]! * a + OUTLINE[c]! * b) / out;
 				}
-				const x = x0 + n * 4 * scale + col;
-				const y = y0 + row;
-				if (x < 0 || y < 0 || x >= w || y >= h) {
-					continue;
-				}
-				const i = (y * w + x) * 4;
-				// Only on the jersey, never off his body.
-				if (d[i + 3] === 0) {
-					continue;
-				}
-				d[i] = color[0];
-				d[i + 1] = color[1];
-				d[i + 2] = color[2];
+				d[i * 4 + 3] = out * 255;
 			}
 		}
-	});
+	}
 };
 
 // SPRITES ARE DRAWN ONCE AND KEPT.
@@ -453,65 +200,10 @@ export const drawSprite = (
 	s.setTransform(1, 0, 0, 1, 0, 0);
 	const img = s.getImageData(0, 0, w, h);
 	const d = img.data;
-	// Every pixel either there or not, and every color pulled to his
-	// palette.
-	const pal = paletteOf(look, anchors.holding);
-	for (let i = 0; i < d.length; i += 4) {
-		if (d[i + 3]! < 120) {
-			d[i + 3] = 0;
-			continue;
-		}
-		d[i + 3] = 255;
-		const c = pal.colors[nearest(pal, d[i]!, d[i + 1]!, d[i + 2]!)]!;
-		d[i] = c[0];
-		d[i + 1] = c[1];
-		d[i + 2] = c[2];
-	}
-	// A ball held in front of his jersey hides the lettering behind it.
-	const b = anchors.ball;
-	const hidden =
-		b !== undefined &&
-		b.front &&
-		Math.abs(b.x - anchors.number.x) < b.r + anchors.number.h * 0.5 &&
-		Math.abs(b.y - anchors.number.y) < b.r + anchors.number.h * 0.9;
-	if (anchors.number.side !== 0 && !hidden) {
-		const color = parseColor(look.kit.number);
-		if (look.jerseyNumber) {
-			drawGlyphs(
-				d,
-				w,
-				h,
-				look.jerseyNumber,
-				(anchors.number.x - ox) / px,
-				(anchors.number.y - oy) / px,
-				color,
-				// Bigger when he is close enough for it.
-				Math.max(1, Math.floor(anchors.number.h / px / 6)),
-			);
-		}
-		// His name across his back, the team's across his chest - when there
-		// is room for it.
-		const word = (anchors.number.side < 0 ? look.lastName : look.wordmark)
-			.normalize("NFD")
-			.replace(/[\u0300-\u036f]/g, "")
-			.toUpperCase()
-			.replace(/[^ '.A-Z-]/g, "");
-		if (word && word.length * 4 - 1 <= anchors.letters.w / px - 2) {
-			drawGlyphs(
-				d,
-				w,
-				h,
-				word,
-				(anchors.letters.x - ox) / px,
-				(anchors.letters.y - oy) / px,
-				color,
-			);
-		}
-	}
-	outline(d, w, h);
+	rim(d, w, h);
 	s.putImageData(img, 0, 0);
-	// His face, shrunk to the sprite's scale - then hard edges and the
-	// outline round it, just where it is new: the rest of him is done.
+	// His face, shrunk to the sprite's scale - and the rim round it, just
+	// where it is new: the rest of him is done.
 	s.setTransform(1 / px, 0, 0, 1 / px, -ox / px, -oy / px);
 	drawHeadAt(s, cam, posed, body, look);
 	s.setTransform(1, 0, 0, 1, 0, 0);
@@ -524,8 +216,15 @@ export const drawSprite = (
 	const hx1 = Math.min(w, Math.ceil((anchors.head.x - ox) / px + hr * 1.9) + 2);
 	const hy1 = Math.min(h, Math.ceil((anchors.head.y - oy) / px + hr * 1.6) + 2);
 	if (hx1 > hx0 && hy1 > hy0) {
-		const face = s.getImageData(hx0, hy0, hx1 - hx0, hy1 - hy0);
-		outlineNew(face.data, hx1 - hx0, hy1 - hy0, d, w, hx0, hy0);
+		const fw = hx1 - hx0;
+		const face = s.getImageData(hx0, hy0, fw, hy1 - hy0);
+		rim(
+			face.data,
+			fw,
+			hy1 - hy0,
+			(i) =>
+				d[((hy0 + Math.floor(i / fw)) * w + hx0 + (i % fw)) * 4 + 3]! < SOLID,
+		);
 		s.putImageData(face, hx0, hy0);
 	}
 	if (anchors.over) {
@@ -543,18 +242,7 @@ export const drawSprite = (
 		anchors.over(t.ctx);
 		t.ctx.setTransform(1, 0, 0, 1, 0, 0);
 		const top = t.ctx.getImageData(0, 0, w, h);
-		const td = top.data;
-		snapAlpha(td);
-		for (let i = 0; i < td.length; i += 4) {
-			if (td[i + 3] === 0) {
-				continue;
-			}
-			const c = pal.colors[nearest(pal, td[i]!, td[i + 1]!, td[i + 2]!)]!;
-			td[i] = c[0];
-			td[i + 1] = c[1];
-			td[i + 2] = c[2];
-		}
-		outline(td, w, h);
+		rim(top.data, w, h);
 		t.ctx.putImageData(top, 0, 0);
 		s.drawImage(t.canvas, 0, 0, w, h, 0, 0, w, h);
 	}

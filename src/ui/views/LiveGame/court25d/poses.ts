@@ -1664,9 +1664,10 @@ export const loopFrame = (anim: AnimName, ms: number, phase = 0): number => {
 	return Math.floor((ms / 1000) * fps + phase) % a.n;
 };
 
-// A player's build, in feet: a cartoon athlete's - a big head (his real face
-// has to read from up in the rafters) on a compact, powerful body. Height
-// drives everything, a little exaggerated so a seven-footer towers over a
+// A player's build, in feet: an athlete's, in true proportion - long legs,
+// broad shoulders tapering to a narrow waist, lean limbs - but for his head,
+// a little big, so his face still reads from up in the stands. Height drives
+// everything, a little exaggerated so a seven-footer towers over a
 // six-footer; girth comes from his weight for his height, so a 250-pound
 // center is long and lean and a 250-pound forward is thick.
 export type Body = {
@@ -1709,26 +1710,26 @@ export const bodyOf = (hgt = DEFAULT_HGT, weight = DEFAULT_WEIGHT): Body => {
 	const g = girthOf(hgt, weight);
 	return {
 		H,
-		hipH: H * 0.44,
+		hipH: H * 0.5,
 		ankleH: H * 0.035,
-		thigh: H * 0.205,
-		shin: H * 0.2,
-		foot: H * 0.17,
-		torso: H * 0.23,
-		neck: H * 0.02,
-		headR: H * 0.132,
-		upper: H * 0.155,
-		fore: H * 0.15,
-		shoulderW: H * 0.128 * g,
-		hipW: H * 0.076 * g,
-		depth: H * 0.13 * g,
-		thighR: H * 0.062 * g,
-		kneeR: H * 0.044 * g,
-		calfR: H * 0.048 * g,
-		ankleR: H * 0.028,
-		upperR: H * 0.042 * g,
-		foreR: H * 0.036 * g,
-		handR: H * 0.038,
+		thigh: H * 0.245,
+		shin: H * 0.235,
+		foot: H * 0.15,
+		torso: H * 0.285,
+		neck: H * 0.035,
+		headR: H * 0.074,
+		upper: H * 0.172,
+		fore: H * 0.158,
+		shoulderW: H * 0.098 * g,
+		hipW: H * 0.05 * g,
+		depth: H * 0.118 * g,
+		thighR: H * 0.05 * g,
+		kneeR: H * 0.033 * g,
+		calfR: H * 0.037 * g,
+		ankleR: H * 0.021,
+		upperR: H * 0.032 * g,
+		foreR: H * 0.027 * g,
+		handR: H * 0.026,
 	};
 };
 

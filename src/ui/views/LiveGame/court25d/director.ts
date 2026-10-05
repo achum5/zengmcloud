@@ -726,6 +726,25 @@ class Director {
 		this.ballHandOf = pid;
 	}
 
+	// He picks up his dribble by `by`: the ball caught at the top of its last
+	// bounce before then, so it comes up into his hands instead of jumping
+	// there off the floor.
+	private gather(pid: number, by: number) {
+		const last = this.ball.at(-1);
+		if (
+			!last ||
+			last.kind !== "hold" ||
+			last.pid !== pid ||
+			last.style !== "dribble" ||
+			last.t0 >= by
+		) {
+			return;
+		}
+		const period = 1000 / DRIBBLE_RATE;
+		const top = last.t0 + Math.floor((by - last.t0) / period) * period;
+		this.hold(pid, Math.max(last.t0 + 1, top), "hold");
+	}
+
 	// Which hand a ball handler going from `a` to `b`, facing the rim his
 	// team attacks, dribbles with: the one on the side he is going.
 	private handFor(a: Pt, b: Pt, dir: 1 | -1): Hand {
@@ -1035,6 +1054,7 @@ class Director {
 			this.free.get(from) ?? 0,
 			(this.free.get(to) ?? 0) + 40 - flight - 120,
 		);
+		this.gather(from, start);
 		this.act(
 			from,
 			kind === "overhead" || kind === "lob"
