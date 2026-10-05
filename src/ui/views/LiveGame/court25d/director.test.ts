@@ -191,28 +191,62 @@ describe("2.5D director", () => {
 		}
 	}, 60_000);
 
-	test("the ball travels - it never jumps across the floor between frames", () => {
-		const { tl } = compile("ball", 140);
-		let prev: { x: number; y: number; z: number } | undefined;
-		let jumps = 0;
+	// Picked up off the dribble, switched hand to hand, scooped off the
+	// floor, thrown off a dribble: from one move to the next the ball goes
+	// from wherever the last one left it - never faster than a thrown ball.
+	test("the ball travels - it never jumps between frames", () => {
+		for (const seed of ["ball", "a"]) {
+			const { tl } = compile(seed, 140);
+			let prev: { x: number; y: number; z: number } | undefined;
+			let last = -Infinity;
+			for (const t of sampleTimes(tl, 20)) {
+				const b = evalBall(tl, t, bodyFor);
+				assert.isTrue(
+					Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.z),
+				);
+				const cut = cutBetween(tl, last, t);
+				last = t;
+				if (prev && !cut) {
+					const d = Math.hypot(b.x - prev.x, b.y - prev.y, b.z - prev.z);
+					assert.isBelow(
+						d,
+						2,
+						`${seed}: ball jumped ${d.toFixed(2)}ft at ${t}`,
+					);
+				}
+				prev = b;
+			}
+		}
+	}, 120_000);
+
+	// Turning right round, he turns one way and keeps turning - he never
+	// flicks between facings from one frame to the next.
+	test("players turn smoothly - no snap in which way anybody faces", () => {
+		const { tl } = compile("turns", 140);
+		const pids = [...tl.tracks.keys()];
+		let prev = new Map<number, ReturnType<typeof evalPlayer>>();
 		let last = -Infinity;
 		for (const t of sampleTimes(tl, 20)) {
-			const b = evalBall(tl, t, bodyFor);
-			assert.isTrue(
-				Number.isFinite(b.x) && Number.isFinite(b.y) && Number.isFinite(b.z),
-			);
 			const cut = cutBetween(tl, last, t);
 			last = t;
-			if (prev && !cut) {
-				const d = Math.hypot(b.x - prev.x, b.y - prev.y, b.z - prev.z);
-				if (d > 6) {
-					jumps += 1;
+			const cur = new Map<number, ReturnType<typeof evalPlayer>>();
+			for (const pid of pids) {
+				const st = evalPlayer(tl, pid, t);
+				cur.set(pid, st);
+				const p = prev.get(pid);
+				if (p && p.shown && st.shown && !cut) {
+					let d = st.yaw - p.yaw;
+					d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+					assert.isBelow(
+						Math.abs(d),
+						0.25,
+						`pid ${pid} turned ${d.toFixed(2)} in a frame at ${t}`,
+					);
 				}
 			}
-			prev = b;
+			prev = cur;
 		}
-		assert.strictEqual(jumps, 0);
-	}, 60_000);
+	}, 120_000);
 
 	test("the picture cuts only between plays, to five a side", () => {
 		const { events, tl } = compile("cuts", 160);

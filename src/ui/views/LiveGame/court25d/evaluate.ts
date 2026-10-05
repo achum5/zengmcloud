@@ -5,6 +5,7 @@ import type {
 	FxKind,
 	Fx,
 	CourtTimeline,
+	Move,
 	Track,
 } from "./director.ts";
 import { rimX, type Pt, type Pt3, type Side } from "./geometry.ts";
@@ -94,17 +95,90 @@ const crossAt = (seg: { t0: number; hand?: Hand }, t: number) => {
 	const from = k % 2 ? otherHand(seg.hand ?? "R") : (seg.hand ?? "R");
 	return { ph: b - k, from, to: otherHand(from) };
 };
-const dribblePhase = (t0: number, t: number): number =>
-	(((((t - t0) / 1000) * DRIBBLE_RATE) % 1) + 1) % 1;
+// How far through one bounce of a dribble the ball is (0 at the hand, 1 at
+// the floor), for a point `ph` through the dribble: pushed down hard and
+// falling faster all the way to the floor, then rising off it and slowing
+// into the hand.
+const DOWN = 0.42;
+const dribbleDepth = (ph: number): number =>
+	ph < DOWN ? (ph / DOWN) ** 1.55 : (1 - (ph - DOWN) / (1 - DOWN)) ** 1.8;
 
 export const offenseAt = (tl: CourtTimeline, t: number): Side => {
 	const i = lastIndex(tl.poss, t, (p) => p[0]);
 	return i >= 0 ? tl.poss[i]![1] : 1;
 };
 
-const ballSegAt = (tl: CourtTimeline, t: number): BallSeg | undefined => {
-	const i = lastIndex(tl.ball, t, (s) => s.t0);
-	return i >= 0 ? tl.ball[i] : tl.ball[0];
+const ballIndexAt = (tl: CourtTimeline, t: number): number =>
+	Math.max(
+		0,
+		lastIndex(tl.ball, t, (s) => s.t0),
+	);
+const ballSegAt = (tl: CourtTimeline, t: number): BallSeg | undefined =>
+	tl.ball[ballIndexAt(tl, t)];
+
+// A bounce of his dribble. One man's dribbles back to back keep one beat -
+// a switch of hands or a new move does not start the bounce over - and a
+// switch goes down from one hand and comes up into the other.
+type Bounce = {
+	// How far through this bounce (0 the ball at the top, in his hand).
+	ph: number;
+	// The hand it left, and the hand it comes up to.
+	from: Hand;
+	to: Hand;
+	// The first bounce out of his hands, from holding it.
+	first: boolean;
+	// Where in the ball's path his dribble starts, and when.
+	start: number;
+	origin: number;
+};
+const DRIBBLE_MS = 1000 / DRIBBLE_RATE;
+const bounceOf = (tl: CourtTimeline, i: number, t: number): Bounce => {
+	const seg = tl.ball[i]!;
+	const pid = seg.kind === "hold" ? seg.pid : -1;
+	const dribbling = (s: BallSeg | undefined) =>
+		s?.kind === "hold" && s.pid === pid && s.style === "dribble";
+	let j = i;
+	while (j > 0 && dribbling(tl.ball[j - 1])) {
+		j--;
+	}
+	const origin = tl.ball[j]!.t0;
+	const b = Math.max(0, t - origin) / DRIBBLE_MS;
+	const k = Math.floor(b);
+	const top = origin + k * DRIBBLE_MS;
+	// The hand the ball is in at a top: a dribble's, or the one a crossover
+	// off it starts in.
+	const handAt = (when: number): Hand | undefined => {
+		const s = tl.ball[ballIndexAt(tl, when)];
+		return s?.kind === "hold" &&
+			s.pid === pid &&
+			(s.style === "dribble" || s.style === "cross")
+			? (s.hand ?? "R")
+			: undefined;
+	};
+	// (At the top his dribble ends on, the hand the bounce before came up
+	// into.)
+	const from =
+		handAt(top) ??
+		handAt(top - DRIBBLE_MS) ??
+		(seg.kind === "hold" ? seg.hand : "R") ??
+		"R";
+	const before = j > 0 ? tl.ball[j - 1] : undefined;
+	return {
+		ph: b - k,
+		from,
+		to: handAt(top + DRIBBLE_MS) ?? from,
+		start: j,
+		origin,
+		// Held, or just caught.
+		first:
+			k === 0 &&
+			((before?.kind === "hold" &&
+				before.pid === pid &&
+				before.style === "hold") ||
+				(before?.kind === "fly" &&
+					"pid" in before.to &&
+					before.to.pid === pid)),
+	};
 };
 
 const jumpZ = (act: Act, u: number): number => {
@@ -130,6 +204,158 @@ const jumpZ = (act: Act, u: number): number => {
 	return v <= 0 || v >= 1 ? 0 : 4 * peak * v * (1 - v);
 };
 
+// HOW HE RUNS.
+//
+// A run gets up to speed in a few strides, holds it, and eases off into
+// wherever it stops - not the cosine glide of a thing on a rail, which
+// would peak at half again his speed halfway. A run that follows on from
+// the last one (a beat after it, or none) carries its speed through the
+// join, as much as the turn allows - straight on at full tilt, a right
+// angle at a third of it - and the corner is rounded off, so he curves
+// through it. Only turning back the way he came does he plant and stop.
+const ACCEL_S = 0.45;
+const DECEL_S = 0.38;
+// A run starting within this long of the last one's end follows on from
+// it: the pause between them is taken up in the running.
+const FLOW_MS = 300;
+// How long either side of a join he spends coming round the corner: the
+// faster he goes through it, the wider he swings - up to this long.
+const ROUND_MS = 420;
+const ROUND_MS_PER_FTPS = 26;
+
+const lenOf = (m: Move) => Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y);
+
+// How fast (feet a second) he goes through the join from run a into run
+// b, if b follows on from a.
+const joinOf = (
+	a: Move | undefined,
+	b: Move | undefined,
+): number | undefined => {
+	if (!a || !b) {
+		return undefined;
+	}
+	const gap = b.t0 - a.t1;
+	if (gap < -1 || gap > FLOW_MS) {
+		return undefined;
+	}
+	const la = lenOf(a);
+	const lb = lenOf(b);
+	if (la < 0.3 || lb < 0.3 || dist2(a.to, b.from) > 0.25) {
+		return undefined;
+	}
+	const cos =
+		((a.to.x - a.from.x) * (b.to.x - b.from.x) +
+			(a.to.y - a.from.y) * (b.to.y - b.from.y)) /
+		(la * lb);
+	const keep = Math.max(0, cos * 0.5 + 0.5) ** 1.5;
+	if (keep < 0.1) {
+		return undefined;
+	}
+	const va = la / Math.max(0.05, (a.t1 - a.t0 + gap / 2) / 1000);
+	const vb = lb / Math.max(0.05, (b.t1 - b.t0 + gap / 2) / 1000);
+	return Math.min(va, vb) * keep;
+};
+
+// A run as he really runs it: when it starts and ends (sharing any pause
+// with a run it joins), and how fast he is going at each end.
+type Run = { mv: Move; s0: number; s1: number; v0: number; v1: number };
+const runOf = (tr: Track, k: number): Run => {
+	const mv = tr.moves[k]!;
+	const prev = tr.moves[k - 1];
+	const next = tr.moves[k + 1];
+	const vIn = joinOf(prev, mv);
+	const vOut = joinOf(mv, next);
+	return {
+		mv,
+		s0: vIn === undefined ? mv.t0 : (prev!.t1 + mv.t0) / 2,
+		s1: vOut === undefined ? mv.t1 : (mv.t1 + next!.t0) / 2,
+		v0: vIn ?? 0,
+		v1: vOut ?? 0,
+	};
+};
+
+// The area under an S-shaped ramp from 0 to 1, x of the way along it.
+const rampArea = (x: number) => x * x * x - (x * x * x * x) / 2;
+
+// How far along a run (feet) he is at t.
+const alongRun = ({ mv, s0, s1, v0, v1 }: Run, t: number): number => {
+	const L = lenOf(mv);
+	const T = (s1 - s0) / 1000;
+	const s = Math.min(T, Math.max(0, (t - s0) / 1000));
+	if (T <= 0.001) {
+		return L;
+	}
+	const ta = Math.min(T / 3, ACCEL_S);
+	const td = Math.min(T / 3, DECEL_S);
+	const vc = Math.max(
+		0,
+		(L - (v0 * ta) / 2 - (v1 * td) / 2) / (T - ta / 2 - td / 2),
+	);
+	let d: number;
+	if (s < ta) {
+		d = v0 * s + (vc - v0) * ta * rampArea(s / ta);
+	} else if (s < T - td) {
+		d = ((v0 + vc) * ta) / 2 + vc * (s - ta);
+	} else {
+		const r = s - (T - td);
+		d =
+			((v0 + vc) * ta) / 2 +
+			vc * (T - ta - td) +
+			vc * r +
+			(v1 - vc) * td * rampArea(r / td);
+	}
+	return Math.min(L, Math.max(0, d));
+};
+
+// Where a run has him at t - carried on past its end, or back before its
+// start, at the speed he goes through the join, for rounding a corner.
+const onRun = (run: Run, t: number): Pt => {
+	const { mv, s0, s1 } = run;
+	const L = lenOf(mv);
+	const ux = L > 0 ? (mv.to.x - mv.from.x) / L : 0;
+	const uy = L > 0 ? (mv.to.y - mv.from.y) / L : 0;
+	const d =
+		t > s1
+			? L + (run.v1 * (t - s1)) / 1000
+			: t < s0
+				? (-run.v0 * (s0 - t)) / 1000
+				: alongRun(run, t);
+	return { x: mv.from.x + ux * d, y: mv.from.y + uy * d };
+};
+
+// Off one run and onto the next, round a corner: the two runs, each
+// carried on through the join, blended from the one into the other - so he
+// curves through it with no kink in where he is or how fast he is going.
+const smooth = (u: number) => u * u * (3 - 2 * u);
+const rounded = (a: Run, b: Run, t: number): Pt | undefined => {
+	const tj = a.s1;
+	const d = Math.min(
+		ROUND_MS,
+		Math.max(80, a.v1 * ROUND_MS_PER_FTPS),
+		(a.s1 - a.s0) * 0.35,
+		(b.s1 - b.s0) * 0.35,
+	);
+	if (d <= 10 || Math.abs(t - tj) >= d) {
+		return undefined;
+	}
+	const w = smooth((t - (tj - d)) / (2 * d));
+	const pa = onRun(a, t);
+	const pb = onRun(b, t);
+	return { x: pa.x + (pb.x - pa.x) * w, y: pa.y + (pb.y - pa.y) * w };
+};
+
+// A run this fast or faster (feet a second, start to finish) is a sprint -
+// and a sprint's strides are longer.
+const SPRINT_FTPS = 19;
+const runAnim = ({ mv }: Run): AnimName =>
+	mv.anim === "run" && lenOf(mv) >= (SPRINT_FTPS * (mv.t1 - mv.t0)) / 1000
+		? "sprint"
+		: mv.anim;
+const strideOf = (anim: AnimName): number => {
+	const a = ANIMS[anim];
+	return a.kind === "cycle" ? a.stride : 5;
+};
+
 // Where he is on the floor and what his feet are doing, without asking which
 // way he faces (which depends on where the ball is - see yawAt).
 type Spot = {
@@ -137,38 +363,71 @@ type Spot = {
 	y: number;
 	moveIndex: number;
 	moving: boolean;
-	traveled: number;
+	// The run he is on, and which way he is heading along it (round a
+	// corner, the way the curve goes).
+	run?: Run;
+	hx: number;
+	hy: number;
 };
 
 const spotAt = (tr: Track, t: number): Spot => {
-	const mi = lastIndex(tr.moves, t, (m) => m.t0);
-	const mv = mi >= 0 ? tr.moves[mi] : undefined;
-	if (!mv) {
+	let k = lastIndex(tr.moves, t, (m) => m.t0);
+	if (k < 0) {
 		return {
 			x: tr.start.x,
 			y: tr.start.y,
 			moveIndex: -1,
 			moving: false,
-			traveled: 0,
+			hx: 0,
+			hy: 0,
 		};
 	}
-	if (t < mv.t1) {
-		const e = ease((t - mv.t0) / (mv.t1 - mv.t0));
-		return {
-			x: mv.from.x + (mv.to.x - mv.from.x) * e,
-			y: mv.from.y + (mv.to.y - mv.from.y) * e,
-			moveIndex: mi,
-			moving: true,
-			traveled: Math.hypot(mv.to.x - mv.from.x, mv.to.y - mv.from.y) * e,
-		};
+	let run = runOf(tr, k);
+	// Already on his way into the next run, in the pause before it.
+	if (t >= run.s1 && k + 1 < tr.moves.length) {
+		const next = runOf(tr, k + 1);
+		if (t >= next.s0) {
+			run = next;
+			k += 1;
+		}
 	}
-	return {
-		x: mv.to.x,
-		y: mv.to.y,
-		moveIndex: mi,
-		moving: false,
-		traveled: 0,
-	};
+	const { mv } = run;
+	if (t >= run.s1) {
+		return { ...mv.to, moveIndex: k, moving: false, hx: 0, hy: 0 };
+	}
+	let p = onRun(run, t);
+	let hx = mv.to.x - mv.from.x;
+	let hy = mv.to.y - mv.from.y;
+	// Coming round a corner: off the end of the last run and onto this one,
+	// or off this one onto the next - heading the way the curve goes.
+	const pair: [Run, Run] | undefined =
+		run.v0 > 0 && t - run.s0 < ROUND_MS
+			? [runOf(tr, k - 1), run]
+			: run.v1 > 0 && run.s1 - t < ROUND_MS
+				? [run, runOf(tr, k + 1)]
+				: undefined;
+	const q = pair && rounded(pair[0], pair[1], t);
+	if (pair && q) {
+		p = q;
+		const ahead = rounded(pair[0], pair[1], t + 8) ?? q;
+		const behind = rounded(pair[0], pair[1], t - 8) ?? q;
+		if (dist2(ahead, behind) > 1e-6) {
+			hx = ahead.x - behind.x;
+			hy = ahead.y - behind.y;
+		}
+	}
+	return { ...p, moveIndex: k, moving: true, run, hx, hy };
+};
+
+// How many strides into his run he is at t, counting the runs it follows
+// on from - so his legs keep their rhythm through a join.
+const stridesAt = (tr: Track, k: number, run: Run, t: number): number => {
+	let strides = alongRun(run, t) / strideOf(runAnim(run));
+	for (let j = k; j > 0 && runOf(tr, j).v0 > 0; j--) {
+		const before = runOf(tr, j - 1);
+		strides += lenOf(before.mv) / strideOf(runAnim(before));
+	}
+	return strides;
 };
 
 // Hands up for the ball: from a moment before it leaves the passer (or
@@ -201,9 +460,6 @@ const targetAt = (tl: CourtTimeline, pid: number, t: number): number => {
 	}
 	return 0;
 };
-
-// A run this fast or faster (feet a second, start to finish) is a sprint.
-const SPRINT_FTPS = 19;
 
 // How tense the building is at t (0 to 1): a close game, late.
 export const tensionAt = (tl: CourtTimeline, t: number): number => {
@@ -292,7 +548,10 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 		const dy = mv.to.y - mv.from.y;
 		const d = Math.hypot(dx, dy);
 		if (d >= 3) {
-			const heading = Math.atan2(dy, dx);
+			const heading =
+				here.hx * here.hx + here.hy * here.hy > 1e-6
+					? Math.atan2(here.hy, here.hx)
+					: Math.atan2(dy, dx);
 			if (mv.anim === "back") {
 				return heading + Math.PI;
 			}
@@ -322,20 +581,74 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 	return angleTo(here, ball, fallback);
 };
 
-// Turning takes a moment: from where he meant to face a little while ago,
-// he turns toward each newer intention no faster than a player can pivot.
-// Worked out afresh for every t (no state), so any frame can be asked for.
+// Turning takes a moment: he turns toward wherever he means to face no
+// faster than a player can pivot. Worked out step by step on a steady beat,
+// from a moment well enough back that he had settled - the same moment for
+// every frame near this one, so the next frame turns him the way this one
+// did - and eased between beats. No state that depends on which frames were
+// drawn before, so any frame can be asked for and every viewing agrees.
 const TURN_STEP = 40;
-const TURN_WINDOW = 360;
 const TURN_MAX = (Math.PI * 3 * TURN_STEP) / 1000;
-const yawAt = (tl: CourtTimeline, tr: Track, t: number): number => {
-	let yaw = yawTarget(tl, tr, t - TURN_WINDOW);
-	for (let k = TURN_WINDOW - TURN_STEP; k >= 0; k -= TURN_STEP) {
-		let d = yawTarget(tl, tr, t - k) - yaw;
-		d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
-		yaw += Math.max(-TURN_MAX, Math.min(TURN_MAX, d));
+const TURN_SETTLE = 1000;
+const TURN_ANCHOR = 2000;
+const TAU = Math.PI * 2;
+const wrapAngle = (d: number) => d - Math.round(d / TAU) * TAU;
+// A step of turning, and which way he is turning (0 once he faces where he
+// means to).
+type Turning = { yaw: number; sense: number };
+const turnStep = ({ yaw, sense }: Turning, target: number): Turning => {
+	let d = wrapAngle(target - yaw);
+	// Turning right round, he keeps on the way he was already turning; from
+	// a standstill, he comes round facing the camera - not whichever way a
+	// hair's difference happens to point.
+	if (Math.abs(d) > Math.PI * 0.8) {
+		const other = d - Math.sign(d) * TAU;
+		if (
+			sense !== 0
+				? Math.sign(other) === sense
+				: Math.sin(yaw + other / 2) > Math.sin(yaw + d / 2)
+		) {
+			d = other;
+		}
 	}
-	return yaw;
+	const step = Math.max(-TURN_MAX, Math.min(TURN_MAX, d));
+	return {
+		yaw: yaw + step,
+		sense: Math.abs(d) <= TURN_MAX ? 0 : Math.sign(step),
+	};
+};
+// Worked-out beats, kept per player: keyed by the beat and which settling
+// moment it was worked out from.
+const beatYaws = new WeakMap<Track, Map<number, Turning>>();
+const yawOnBeat = (tl: CourtTimeline, tr: Track, g: number): number => {
+	const from = Math.floor((g - TURN_SETTLE) / TURN_ANCHOR) * TURN_ANCHOR;
+	const tag = Math.abs(Math.round(from / TURN_ANCHOR)) % 2;
+	let kept = beatYaws.get(tr);
+	if (!kept) {
+		kept = new Map();
+		beatYaws.set(tr, kept);
+	}
+	const key = (k: number) => k * 2 + tag;
+	let k = g;
+	while (k > from && !kept.has(key(k))) {
+		k -= TURN_STEP;
+	}
+	let turning: Turning =
+		k > from ? kept.get(key(k))! : { yaw: yawTarget(tl, tr, from), sense: 0 };
+	if (kept.size > 4096) {
+		kept.clear();
+	}
+	for (k = Math.max(k, from) + TURN_STEP; k <= g; k += TURN_STEP) {
+		turning = turnStep(turning, yawTarget(tl, tr, k));
+		kept.set(key(k), turning);
+	}
+	return turning.yaw;
+};
+const yawAt = (tl: CourtTimeline, tr: Track, t: number): number => {
+	const g = Math.floor(t / TURN_STEP) * TURN_STEP;
+	const a = yawOnBeat(tl, tr, g);
+	const u = (t - g) / TURN_STEP;
+	return u <= 0 ? a : a + wrapAngle(yawOnBeat(tl, tr, g + TURN_STEP) - a) * u;
 };
 
 export const evalPlayer = (
@@ -362,7 +675,6 @@ export const evalPlayer = (
 	const shown = si >= 0 ? tr.shown[si]![1] : false;
 	const here = spotAt(tr, t);
 	const act = actAt(tr, t);
-	const mv = here.moveIndex >= 0 ? tr.moves[here.moveIndex] : undefined;
 
 	let anim: AnimName;
 	let phase: number;
@@ -384,15 +696,9 @@ export const evalPlayer = (
 				grip: keyAt(act.rim.grip, clamp01(u)),
 			};
 		}
-	} else if (here.moving && mv) {
-		anim =
-			mv.anim === "run" &&
-			Math.hypot(mv.to.x - mv.from.x, mv.to.y - mv.from.y) >=
-				(SPRINT_FTPS * (mv.t1 - mv.t0)) / 1000
-				? "sprint"
-				: mv.anim;
-		const a = ANIMS[anim];
-		phase = here.traveled / (a.kind === "cycle" ? a.stride : 5);
+	} else if (here.moving && here.run) {
+		anim = runAnim(here.run);
+		phase = stridesAt(tr, here.moveIndex, here.run, t);
 		z = bounceAt(anim, phase);
 	} else {
 		const seg = ballSegAt(tl, t);
@@ -413,11 +719,18 @@ export const evalPlayer = (
 		const fps = a.kind === "loop" ? a.fps : 2;
 		phase = (t / 1000) * (fps / a.n) + pid * 0.37;
 	}
-	const seg = ballSegAt(tl, t);
+	const bi = ballIndexAt(tl, t);
+	const seg = tl.ball[bi];
 	const has = seg?.kind === "hold" && seg.pid === pid ? seg : undefined;
-	// The hand on the ball: on a crossover, the one it left for the first
-	// half of the bounce, the one it goes to for the second.
-	const cross = has?.style === "cross" ? crossAt(has, t) : undefined;
+	// Where his dribble is, and the hand on the ball: through a bounce that
+	// changes hands, the one it left on the way down, the one it goes to on
+	// the way up.
+	const beat =
+		has?.style === "cross"
+			? crossAt(has, t)
+			: has?.style === "dribble"
+				? bounceOf(tl, bi, t)
+				: undefined;
 	return {
 		pid,
 		team: tr.team,
@@ -430,18 +743,8 @@ export const evalPlayer = (
 		phase,
 		moving: here.moving,
 		holding: has?.style === "hold",
-		dribble: cross
-			? cross.ph
-			: has?.style === "dribble"
-				? dribblePhase(has.t0, t)
-				: undefined,
-		dribbleHand: cross
-			? cross.ph < 0.5
-				? cross.from
-				: cross.to
-			: has?.style === "dribble"
-				? (has.hand ?? "R")
-				: undefined,
+		dribble: beat?.ph,
+		dribbleHand: beat ? (beat.ph < DOWN ? beat.from : beat.to) : undefined,
 		target: act || has ? undefined : targetAt(tl, pid, t) || undefined,
 		...(dunk ? { dunk } : {}),
 	};
@@ -598,23 +901,34 @@ export const BALL_R = 0.39;
 // Feet per second, per second.
 const GRAVITY = 32.2;
 
-// How far through one bounce of a dribble the ball is (0 at the hand, 1 at
-// the floor), for a point `ph` through the dribble: pushed down hard and
-// falling faster all the way to the floor, then rising off it and slowing
-// into the hand.
-const DOWN = 0.42;
-const dribbleDepth = (ph: number): number =>
-	ph < DOWN ? (ph / DOWN) ** 1.55 : (1 - (ph - DOWN) / (1 - DOWN)) ** 1.8;
+// The ball's hand-overs from one move to the next - a dribble picked up, a
+// ball scooped off the floor - take this long, eased from where the last
+// move left it, so it never jumps.
+const HANDOVER_MS = 140;
+const HANDOVER_REACH = 6;
+const BEFORE = 0.5;
 
 export const evalBall = (
 	tl: CourtTimeline,
 	t: number,
 	bodyFor: (pid: number) => Body,
+): BallState =>
+	tl.ball.length === 0
+		? { x: 47, y: 25, z: 0 }
+		: ballOn(tl, ballIndexAt(tl, t), t, bodyFor, 0);
+
+// Where the ball is at t, by the i-th piece of its path.
+const ballOn = (
+	tl: CourtTimeline,
+	i: number,
+	t: number,
+	bodyFor: (pid: number) => Body,
+	depth: number,
 ): BallState => {
-	const seg = ballSegAt(tl, t);
-	if (!seg) {
-		return { x: 47, y: 25, z: 0 };
-	}
+	const seg = tl.ball[i]!;
+	const prev = i > 0 && depth < 2 ? tl.ball[i - 1] : undefined;
+	// Where the piece before left it, the moment before this one took over.
+	const left = () => ballOn(tl, i - 1, seg.t0 - BEFORE, bodyFor, depth + 1);
 	const handOf = (pid: number, at: number, which: "near" | "both") =>
 		which === "both"
 			? heldBall(evalPlayer(tl, pid, at), bodyFor(pid))
@@ -626,10 +940,10 @@ export const evalBall = (
 
 	if (seg.kind === "hold") {
 		const st = evalPlayer(tl, seg.pid, t);
+		const body = bodyFor(seg.pid);
 		if (seg.style === "cross") {
 			// Low and quick, hand to hand across in front of him - or through
 			// his legs.
-			const body = bodyFor(seg.pid);
 			const { ph, from: a, to: b } = crossAt(seg, t);
 			const from = handWorld(st, body, a === "R" ? "near" : "far");
 			const to = handWorld(st, body, b === "R" ? "near" : "far");
@@ -647,15 +961,46 @@ export const evalBall = (
 			};
 		}
 		if (seg.style === "dribble") {
-			const body = bodyFor(seg.pid);
-			const left = seg.hand === "L";
-			const h = handWorld(st, body, left ? "far" : "near");
-			const ph = st.dribble ?? dribblePhase(seg.t0, t);
+			const { ph, from, to, first, start, origin } = bounceOf(tl, i, t);
+			const down = ph < DOWN;
+			const hand = down ? from : to;
+			// Out of both hands the first time, from where he had it - carried
+			// along with him.
+			const h =
+				first && down
+					? (() => {
+							const was =
+								start > 0 && depth < 2
+									? ballOn(tl, start - 1, origin - BEFORE, bodyFor, depth + 1)
+									: heldBall(
+											{
+												...st,
+												anim: "hold",
+												phase: 0,
+												dribble: undefined,
+												dribbleHand: undefined,
+											},
+											body,
+										);
+							const then = evalPlayer(tl, seg.pid, origin - BEFORE);
+							return {
+								x: was.x + st.x - then.x,
+								y: was.y + st.y - then.y,
+								z: was.z,
+							};
+						})()
+					: handWorld(st, body, hand === "L" ? "far" : "near");
 			const tri = dribbleDepth(ph);
-			// It hits the floor ahead of him and off the foot on that side.
+			// It hits the floor ahead of him and off the foot on that side -
+			// or, changing hands, between his feet.
+			const across = from !== to;
 			const floor = bodyPoint(
 				{ ...st, z: 0 },
-				{ f: st.moving ? 1.6 : 0.9, s: left ? 0.75 : -0.75, u: BALL_R },
+				{
+					f: across ? 1.1 : st.moving ? 1.6 : 0.9,
+					s: across ? 0 : hand === "L" ? 0.75 : -0.75,
+					u: BALL_R,
+				},
 			);
 			return {
 				x: h.x + (floor.x - h.x) * tri,
@@ -664,13 +1009,51 @@ export const evalBall = (
 				holder: seg.pid,
 			};
 		}
-		return { ...heldBall(st, bodyFor(seg.pid)), holder: seg.pid };
+		const held: BallState = { ...heldBall(st, body), holder: seg.pid };
+		// Taken into both hands - up off his dribble, off the floor, out of
+		// another move - it comes from where it was. (Not when the picture
+		// cut to him with it: that is no hand-over.)
+		const u = (t - seg.t0) / HANDOVER_MS;
+		if (
+			prev &&
+			u < 1 &&
+			((prev.kind === "hold" && prev.pid === seg.pid) ||
+				prev.kind === "rest" ||
+				prev.kind === "bounce")
+		) {
+			const was = left();
+			const then = evalPlayer(tl, seg.pid, seg.t0 - BEFORE);
+			const at = heldBall(then, body);
+			if (dist2(was, at) + (was.z - at.z) ** 2 < HANDOVER_REACH ** 2) {
+				// Carried along with him if it was already his.
+				const moved =
+					prev.kind === "hold"
+						? { x: st.x - then.x, y: st.y - then.y }
+						: { x: 0, y: 0 };
+				const e = ease(u);
+				return {
+					x: was.x + moved.x + (held.x - was.x - moved.x) * e,
+					y: was.y + moved.y + (held.y - was.y - moved.y) * e,
+					z: was.z + (held.z - was.z) * e,
+					holder: seg.pid,
+				};
+			}
+		}
+		return held;
 	}
 	if (seg.kind === "fly") {
 		// In flight it is a thrown ball: steady across the floor, and up and
 		// down under gravity - so a three climbs to fifteen feet in the second
 		// it takes, a chest pass barely rises, and a lob hangs for the dunker.
-		const a = resolve(seg.from, seg.t0);
+		// Out of a man's hands, it goes from wherever his last move had it.
+		// Caught, it stays in his hands until the ball's next move.
+		if (t >= seg.t1 && "pid" in seg.to) {
+			return { ...resolve(seg.to, t), holder: seg.to.pid };
+		}
+		const a =
+			prev?.kind === "hold" && "pid" in seg.from && prev.pid === seg.from.pid
+				? left()
+				: resolve(seg.from, seg.t0);
 		const b = resolve(seg.to, seg.t1);
 		const u = clamp01((t - seg.t0) / (seg.t1 - seg.t0));
 		const T = Math.max(0, seg.t1 - seg.t0) / 1000;
@@ -685,15 +1068,21 @@ export const evalBall = (
 	}
 	if (seg.kind === "bounce") {
 		// A drop from where it was, then shrinking hops, then a roll. Heights
-		// are of the ball's middle, which sits a radius off the floor.
+		// are of the ball's middle, which sits a radius off the floor. Lost
+		// out of a man's hands, it drops from where he had it.
+		const from = prev?.kind === "hold" ? left() : seg.from;
 		const u = clamp01((t - seg.t0) / (seg.t1 - seg.t0));
-		const drop = Math.max(0, seg.from.z - BALL_R);
-		const hops = [Math.sqrt(Math.max(0.02, drop))];
+		const drop = Math.max(0, from.z - BALL_R);
+		// Each fall and hop takes the time gravity gives it - squeezed only
+		// if the bounce has less (then it rolls the rest of the way).
+		const fall = (h: number) => Math.sqrt((2 * Math.max(0.01, h)) / GRAVITY);
+		const hops = [fall(drop)];
 		for (let i = 0; i < seg.hops; i++) {
-			hops.push(2 * Math.sqrt(seg.h0 * 0.42 ** i));
+			hops.push(2 * fall(seg.h0 * 0.42 ** i));
 		}
-		const total = hops.reduce((s, h) => s + h, 0) / 0.85;
-		let w = u * total;
+		const real = hops.reduce((s, h) => s + h, 0);
+		const span = Math.max(0.001, ((seg.t1 - seg.t0) / 1000) * 0.85);
+		let w = (u * (seg.t1 - seg.t0) * Math.max(1, real / span)) / 1000;
 		let z = 0;
 		for (let i = 0; i < hops.length; i++) {
 			if (w <= hops[i]!) {
@@ -707,13 +1096,12 @@ export const evalBall = (
 			w -= hops[i]!;
 		}
 		const roll = 1 - (1 - Math.min(1, u / 0.85)) ** 1.5;
-		const along =
-			Math.hypot(seg.to.x - seg.from.x, seg.to.y - seg.from.y) * roll;
+		const along = Math.hypot(seg.to.x - from.x, seg.to.y - from.y) * roll;
 		return {
-			x: seg.from.x + (seg.to.x - seg.from.x) * roll,
-			y: seg.from.y + (seg.to.y - seg.from.y) * roll,
+			x: from.x + (seg.to.x - from.x) * roll,
+			y: from.y + (seg.to.y - from.y) * roll,
 			z: BALL_R + z,
-			roll: (along / BALL_R) * (Math.sign(seg.to.x - seg.from.x) || 1),
+			roll: (along / BALL_R) * (Math.sign(seg.to.x - from.x) || 1),
 		};
 	}
 	return { ...seg.at };

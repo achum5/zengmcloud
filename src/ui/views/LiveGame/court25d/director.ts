@@ -286,8 +286,19 @@ const WALK = 6;
 const PASS_FTPS = 42;
 // A basketball's radius, feet: its middle when it touches the floor.
 const BALL_R = 0.39;
-// One bounce of a crossover, from one hand to the other (see evaluate.ts).
+// One bounce of a crossover, from one hand to the other, and one of a
+// dribble (see evaluate.ts).
 const CROSS_MS = 1000 / CROSS_RATE;
+const DRIBBLE_MS = 1000 / DRIBBLE_RATE;
+// A pass over the top goes up over his head first: this much longer from
+// the start of his throw to the ball leaving his hands.
+const OVERHEAD_WIND = 140;
+const RELEASE_MS = 120;
+// How far out in front of his feet a man bent to the floor has his hands.
+const PICKUP_REACH = 2.9;
+// How far through a bounce of his dribble the ball has come back up near
+// enough to his hands to take it in both (see evaluate.ts).
+const CATCH_UP = 0.7;
 // After a whistle, how long the official's signal holds the picture.
 const WHISTLE_HOLD = 950;
 // A rebound, from leaving the floor to the ball chinned once he is down.
@@ -324,7 +335,7 @@ const behindArc = (team: Side, p: Pt): Pt | undefined => {
 };
 
 const passMs = (d: number) =>
-	Math.min(900, Math.max(260, 180 + (d * 1000) / PASS_FTPS));
+	Math.min(1500, Math.max(260, 180 + (d * 1000) / PASS_FTPS));
 
 type PassStyle = "chest" | "bounce" | "overhead" | "lob";
 
@@ -698,6 +709,11 @@ class Director {
 			return;
 		}
 		const { face, ...rest } = o;
+		// A pass is thrown from both hands: off his dribble, he picks it up
+		// first.
+		if (anim === "pass" || anim === "passBounce" || anim === "passOverhead") {
+			this.gather(pid, t0);
+		}
 		tr.acts.push({ t0, t1, anim, ...rest });
 		if (face !== undefined) {
 			this.turn(pid, t0, face);
@@ -713,9 +729,10 @@ class Director {
 	}
 
 	// A newer instruction for the ball supersedes anything that had been
-	// scheduled for after it (a bounce that was still rolling, say).
+	// scheduled for after it (a bounce that was still rolling, say), or for
+	// the same moment.
 	private pushBall(seg: BallSeg) {
-		while (this.ball.length > 1 && this.ball.at(-1)!.t0 > seg.t0) {
+		while (this.ball.length > 1 && this.ball.at(-1)!.t0 >= seg.t0) {
 			this.ball.pop();
 		}
 		this.ball.push(seg);
@@ -746,16 +763,23 @@ class Director {
 		return this.holder === undefined ? this.ballAt : { pid: this.holder };
 	}
 
+	// The ball his from t - held, dribbled or crossed over. Returns when he
+	// really has it that way: off his dribble, not before it comes up to
+	// him (see offDribble).
 	private hold(
 		pid: number,
-		t: number,
+		t0: number,
 		style: "hold" | "dribble" | "cross" = "hold",
 		hand?: Hand,
 		move?: "front" | "legs",
-	) {
-		// The hand the ball is in, unless he is told otherwise - his strong
-		// one, once he has had it in both.
-		const h = hand ?? (this.ballHandOf === pid ? this.ballHand : "R");
+	): number {
+		const t = style === "dribble" ? t0 : this.offDribble(pid, t0, style);
+		// The hand the ball is in, unless he is told otherwise - the one his
+		// dribble has it in, or his strong one once he has had it in both.
+		const h =
+			hand ??
+			(t !== t0 ? this.dribbleHandAt(t) : undefined) ??
+			(this.ballHandOf === pid ? this.ballHand : "R");
 		this.pushBall({
 			kind: "hold",
 			t0: t,
@@ -767,25 +791,102 @@ class Director {
 		this.holder = pid;
 		this.ballHand = style === "hold" ? "R" : h;
 		this.ballHandOf = pid;
+		return t;
 	}
 
-	// He picks up his dribble by `by`: the ball caught at the top of its last
-	// bounce before then, so it comes up into his hands instead of jumping
-	// there off the floor.
-	private gather(pid: number, by: number) {
-		const last = this.ball.at(-1);
-		if (
-			!last ||
-			last.kind !== "hold" ||
-			last.pid !== pid ||
-			last.style !== "dribble" ||
-			last.t0 >= by
-		) {
-			return;
+	// When his dribble started, if he is dribbling at t: his dribbles back to
+	// back keep one beat from the first of them (see evaluate.ts).
+	private dribbleFrom(pid: number, t: number): number | undefined {
+		const dribbling = (s: BallSeg | undefined) =>
+			s?.kind === "hold" && s.pid === pid && s.style === "dribble";
+		let j = this.ball.length - 1;
+		if (!dribbling(this.ball[j]) || this.ball[j]!.t0 > t) {
+			return undefined;
 		}
-		const period = 1000 / DRIBBLE_RATE;
-		const top = last.t0 + Math.floor((by - last.t0) / period) * period;
-		this.hold(pid, Math.max(last.t0 + 1, top), "hold");
+		while (j > 0 && dribbling(this.ball[j - 1])) {
+			j--;
+		}
+		return this.ball[j]!.t0;
+	}
+
+	// The last top of a bounce of his dribble, at or before t, if he is
+	// dribbling then.
+	private dribbleTop(pid: number, t: number): number | undefined {
+		const from = this.dribbleFrom(pid, t);
+		return from === undefined
+			? undefined
+			: from + Math.floor((t - from) / DRIBBLE_MS + 1e-6) * DRIBBLE_MS;
+	}
+
+	// When he can take the ball out of his dribble, asked to at about t: in
+	// both hands as it comes up to him (or at the top), across into the
+	// other hand at the top - never on its way to the floor. Off his first
+	// bounce he waits for it; after that he takes it the bounce before.
+	private offDribble(pid: number, t: number, style: "hold" | "cross"): number {
+		const from = this.dribbleFrom(pid, t);
+		if (from === undefined) {
+			return t;
+		}
+		const b = (t - from) / DRIBBLE_MS + 1e-6;
+		const k = Math.floor(b);
+		const ph = b - k;
+		if (ph < 0.02 || (style === "hold" && ph >= CATCH_UP)) {
+			return t;
+		}
+		return k >= 1
+			? from + k * DRIBBLE_MS
+			: from + (style === "hold" ? CATCH_UP : 1) * DRIBBLE_MS;
+	}
+
+	// The hand his dribble has the ball in at t.
+	private dribbleHandAt(t: number): Hand | undefined {
+		for (let j = this.ball.length - 1; j >= 0; j--) {
+			const s = this.ball[j]!;
+			if (s.t0 <= t) {
+				return s.kind === "hold" ? s.hand : undefined;
+			}
+		}
+		return undefined;
+	}
+
+	// He picks up his dribble about `by`, as the ball comes up into his
+	// hands instead of jumping there off the floor. Returns when he has it
+	// (`by` if he was not dribbling).
+	private gather(pid: number, by: number): number {
+		return this.dribbleFrom(pid, by) === undefined
+			? by
+			: this.hold(pid, by, "hold");
+	}
+
+	// He gets to the ball on the floor and scoops it up - stopped a stride
+	// short of it, so it is under his hands as he bends - and comes up with
+	// it, or comes up dribbling. Returns when he gets to it; he has it up
+	// 300ms later.
+	private pickUp(
+		pid: number,
+		t: number,
+		speed: number,
+		style: "hold" | "dribble" = "hold",
+	): number {
+		const b = this.ballPoint();
+		const from = this.posOf(pid);
+		const stop =
+			dist(from, b) > PICKUP_REACH
+				? (() => {
+						const u = unitVec(from, b);
+						return clampPt({
+							x: b.x - u.x * PICKUP_REACH,
+							y: b.y - u.y * PICKUP_REACH,
+						});
+					})()
+				: from;
+		const got = this.go(pid, stop, t, speed, "run");
+		this.act(pid, "pickup", got, got + 300, { look: { x: b.x, y: b.y } });
+		this.hold(pid, got + 150, "hold");
+		if (style === "dribble") {
+			this.hold(pid, got + 300, "dribble");
+		}
+		return got;
 	}
 
 	// Which hand a ball handler going from `a` to `b`, facing the rim his
@@ -1092,27 +1193,26 @@ class Director {
 			kind === "lob"
 				? Math.max(750, passMs(d) * 1.7)
 				: passMs(d) * (kind === "bounce" ? 1.15 : 1);
-		const start = Math.max(
+		const over = kind === "overhead" || kind === "lob";
+		const wind = RELEASE_MS + (over ? OVERHEAD_WIND : 0);
+		const ready = Math.max(
 			t,
 			this.free.get(from) ?? 0,
-			(this.free.get(to) ?? 0) + 40 - flight - 120,
+			(this.free.get(to) ?? 0) + 40 - flight - wind,
 		);
-		this.gather(from, start);
+		// Off the dribble, once he has it in both hands.
+		const start = Math.max(ready, this.gather(from, ready));
 		this.act(
 			from,
-			kind === "overhead" || kind === "lob"
-				? "passOverhead"
-				: kind === "bounce"
-					? "passBounce"
-					: "pass",
+			over ? "passOverhead" : kind === "bounce" ? "passBounce" : "pass",
 			start,
-			start + 300,
+			start + wind + 180,
 			{
 				face: toward,
 				look: { ...b },
 			},
 		);
-		const release = start + 120;
+		const release = start + wind;
 		const arrive = release + flight;
 		if (kind === "bounce") {
 			// Off the floor two-thirds of the way there, up into his hands.
@@ -1132,7 +1232,7 @@ class Director {
 			look: { ...this.posOf(from) },
 		});
 		this.hold(to, arrive, "hold");
-		this.free.set(from, Math.max(this.free.get(from) ?? 0, start + 300));
+		this.free.set(from, Math.max(this.free.get(from) ?? 0, start + wind + 180));
 		this.free.set(to, Math.max(this.free.get(to) ?? 0, arrive + 110));
 		return arrive + 110;
 	}
@@ -1277,10 +1377,7 @@ class Director {
 				const near = this.slots(team).sort(
 					(a, c) => dist(this.posOf(a), b) - dist(this.posOf(c), b),
 				)[0]!;
-				const tArr = this.go(near, { x: b.x, y: b.y }, t, RUN, "run");
-				this.act(near, "pickup", tArr, tArr + 300);
-				this.hold(near, tArr + 150, "hold");
-				t = tArr + 300;
+				t = this.pickUp(near, t, RUN) + 300;
 			}
 			const handler = this.posOf(this.holder ?? 0);
 			transition =
@@ -2035,7 +2132,11 @@ class Director {
 			x: G.x + (R.x - G.x) * 0.15,
 			y: G.y + (R.y - G.y) * 0.15,
 		});
-		this.hold(giver, Math.max(t0, this.free.get(giver) ?? 0), "hold");
+		const held = this.hold(
+			giver,
+			Math.max(t0, this.free.get(giver) ?? 0),
+			"hold",
+		);
 		const there = this.go(
 			recv,
 			meet,
@@ -2043,7 +2144,7 @@ class Director {
 			12,
 			"run",
 		);
-		const tx = Math.max(there - 120, this.free.get(giver) ?? 0);
+		const tx = Math.max(there - 120, this.free.get(giver) ?? 0, held + 180);
 		this.act(giver, "pass", tx - 180, tx + 120, { look: meet });
 		this.fly(tx, tx + 130, { pid: giver }, { pid: recv });
 		this.act(recv, "catch", tx + 30, tx + 200);
@@ -2445,7 +2546,7 @@ class Director {
 			this.hold(pid, t, "dribble", start);
 			// His right is toward the camera when he faces the right rim.
 			const jab = (start === "R" ? 1 : -1) * dir * 1.6;
-			const tc = this.go(
+			const tj = this.go(
 				pid,
 				clampPt({ x: from.x, y: from.y + jab }),
 				t + 80,
@@ -2453,7 +2554,16 @@ class Director {
 				"dribble",
 				dir,
 			);
-			this.hold(pid, tc, "cross", start, this.rng() < 0.3 ? "legs" : "front");
+			// Across as the ball comes up into his hand: on the next beat of
+			// his dribble.
+			const top = this.dribbleTop(pid, tj) ?? tj;
+			const tc = this.hold(
+				pid,
+				top < tj - 1 ? top + DRIBBLE_MS : top,
+				"cross",
+				start,
+				this.rng() < 0.3 ? "legs" : "front",
+			);
 			t = tc + CROSS_MS;
 		}
 		this.hold(pid, t, "dribble", goHand);
@@ -2466,7 +2576,7 @@ class Director {
 				y: from.y + (dy / d) * k + ay * side * 2,
 			});
 			t = this.go(pid, a, t, DRIBBLE, "dribble", dir);
-			this.hold(pid, t, "hold");
+			t = Math.max(t, this.hold(pid, t, "hold"));
 			const b = clampPt({
 				x: P.x - (dx / d) * 2.2 - ax * side * 1.6,
 				y: P.y - (dy / d) * 2.2 - ay * side * 1.6,
@@ -2481,7 +2591,7 @@ class Director {
 				y: P.y + (dy / d) * 2.6,
 			});
 			t = this.go(pid, inside, t, DRIBBLE, "dribble", dir);
-			this.hold(pid, t, "hold");
+			t = Math.max(t, this.hold(pid, t, "hold"));
 			return this.go(pid, P, t + 40, 9, "back", dir);
 		}
 		t = this.go(pid, P, t, DRIBBLE, "dribble", dir);
@@ -2508,8 +2618,7 @@ class Director {
 				-dir as 1 | -1,
 			);
 		}
-		this.hold(pid, done, "hold");
-		return done;
+		return Math.max(done, this.hold(pid, done, "hold"));
 	}
 
 	// The lob's set-up: cut to the inbound, Y out of bounds with the ball near
@@ -2666,10 +2775,10 @@ class Director {
 				"dribble",
 				dir,
 			);
-			this.hold(shooter, t, "hold");
+			t = Math.max(t, this.hold(shooter, t, "hold"));
 			t = this.go(shooter, P, t + 40, 9, "back", dir);
 		}
-		this.hold(shooter, t, "hold");
+		t = Math.max(t, this.hold(shooter, t, "hold"));
 		return {
 			t,
 			style:
@@ -2735,11 +2844,7 @@ class Director {
 				this.setOffense(t, team);
 				if (this.holder === undefined) {
 					// It is lying loose: he gets to it first.
-					const b = this.ballPoint();
-					const got = this.go(shooter, { x: b.x, y: b.y }, t, RUN, "run");
-					this.act(shooter, "pickup", got, got + 300);
-					this.hold(shooter, got + 150, "hold");
-					t = got + 300;
+					t = this.pickUp(shooter, t, RUN) + 300;
 				}
 			}
 			if (run?.option) {
@@ -2803,7 +2908,7 @@ class Director {
 										? "stepBack"
 										: "plain";
 					t = this.driveTo(shooter, P, t, dir, style);
-					this.hold(shooter, t, "hold");
+					t = Math.max(t, this.hold(shooter, t, "hold"));
 				}
 			}
 		}
@@ -2845,8 +2950,12 @@ class Director {
 			plan.kind !== "foul" &&
 			(plan.finish === "dunk" || plan.finish === "poster");
 		// The lob, timed to meet him at the top of his jump.
+		const caught =
+			lobber === undefined
+				? -Infinity
+				: gather + (dunk ? 1300 * 0.4 : 760 * 0.45);
 		if (lobber !== undefined) {
-			const catchT = gather + (dunk ? 1300 * 0.4 : 760 * 0.45);
+			const catchT = caught;
 			const flight = Math.max(
 				700,
 				380 + dist(this.posOf(lobber), rimPt(team)) * 20,
@@ -2854,8 +2963,8 @@ class Director {
 			this.act(
 				lobber,
 				"passOverhead",
-				catchT - flight - 120,
-				catchT - flight + 200,
+				catchT - flight - RELEASE_MS - OVERHEAD_WIND,
+				catchT - flight + 180,
 				{ look: { x: rim.x, y: rim.y } },
 			);
 			this.fly(catchT - flight, catchT, { pid: lobber }, { pid: shooter });
@@ -2954,8 +3063,8 @@ class Director {
 			});
 			this.go(shooter, under, gather + 60, SPRINT, "run", faceRim);
 			if (plan.kind === "block" && plan.blocker !== undefined) {
-				// Met at the rim.
-				const contact = gather + dur * 0.42;
+				// Met at the rim - off a lob, once he has it.
+				const contact = Math.max(gather + dur * 0.42, caught + 100);
 				const b = plan.blocker;
 				this.goBy(
 					b,
@@ -3407,10 +3516,7 @@ class Director {
 				// The ball is already in his hands (the miss beat sent it there).
 				const pid = e.pid as number;
 				if (this.holder !== pid) {
-					const b = this.ballPoint();
-					const tArr = this.go(pid, { x: b.x, y: b.y }, T, RUN, "run");
-					this.act(pid, "pickup", tArr, tArr + 300);
-					this.hold(pid, tArr + 150, "hold");
+					const tArr = this.pickUp(pid, T, RUN);
 					this.beat(i, type, tArr + 150, tArr + 600);
 				} else {
 					// Not before he has it chinned.
@@ -3797,7 +3903,8 @@ class Director {
 				x: rim.x - dir * this.rand(1.5, 4),
 				y: 25 + this.rand(-3, 3),
 			});
-			this.bounce(t0 + 140, t0 + 800, under, settle, 2, 2);
+			// Out of the net and down to the floor, two bounces, and rolling.
+			this.bounce(t0 + 140, t0 + 2400, under, settle, 2, 2.2);
 			this.effect("swish", t0 + 20, { rim: team });
 			this.effect("cheer", t0 + 60, { team });
 			let end = at + 1100;
@@ -4341,16 +4448,24 @@ class Director {
 			const B = this.posOf(to);
 			const d = dist(A, B);
 			const flight = passMs(d);
+			const over = d >= 22;
+			const wind = RELEASE_MS + (over ? OVERHEAD_WIND : 0);
 			const start = Math.max(
 				t,
 				this.free.get(victim) ?? 0,
-				(this.free.get(to) ?? 0) + 40 - flight - 120,
+				(this.free.get(to) ?? 0) + 40 - flight - wind,
 			);
-			const release = start + 120;
-			this.act(victim, d >= 22 ? "passOverhead" : "pass", start, start + 300, {
-				face: B.x >= A.x ? 1 : -1,
-				look: { ...B },
-			});
+			const release = start + wind;
+			this.act(
+				victim,
+				over ? "passOverhead" : "pass",
+				start,
+				start + wind + 180,
+				{
+					face: B.x >= A.x ? 1 : -1,
+					look: { ...B },
+				},
+			);
 			const u = unitVec(A, B);
 			if (thief !== undefined) {
 				// He reads it and jumps the lane.
@@ -4455,9 +4570,7 @@ class Director {
 					y: S.y + u.y * 2.5 + u.x * side * 3,
 				});
 				this.bounce(tS, tS + 600, { ...S, z: 2 }, loose, 1, 1.2);
-				const got = this.go(thief, loose, tS + 120, SPRINT, "run");
-				this.act(thief, "pickup", got, got + 300);
-				this.hold(thief, got + 150, "dribble");
+				const got = this.pickUp(thief, tS + 120, SPRINT, "dribble");
 				this.setOffense(tS, other(team));
 				this.phase = "loose";
 				this.beat(i, e.type, tS, got + 450);
@@ -4526,7 +4639,7 @@ class Director {
 			y: A.y + (D.y - A.y) * 0.6,
 		});
 		let tt = this.go(victim, G, start, 16, "dribble", dir);
-		this.hold(victim, tt, "hold");
+		tt = Math.max(tt, this.hold(victim, tt, "hold"));
 		const u = unitVec(A, D);
 		tt = this.go(
 			victim,

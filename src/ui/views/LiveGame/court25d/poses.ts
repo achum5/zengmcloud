@@ -1356,14 +1356,16 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// Over the top: up over his head from his chest, then whipped out.
 	passOverhead: {
 		kind: "act",
-		n: 6,
+		n: 8,
 		keys: [
-			[0, P.overheadUp],
-			[0.28, P.overheadUp],
-			[0.46, P.overheadOut],
-			[0.74, P.overheadOut],
+			[0, P.hold],
+			[0.3, P.overheadUp],
+			[0.5, P.overheadUp],
+			[0.62, P.overheadOut],
+			[0.8, P.overheadOut],
 			[1, P.ready],
 		],
 	},
@@ -1413,23 +1415,28 @@ export const ANIMS = {
 			[1, P.chin],
 		],
 	},
+	// Down to the floor for it - knees bent deep, reaching out - and up
+	// with it in both hands.
 	pickup: {
 		kind: "act",
-		n: 5,
+		n: 6,
 		keys: [
 			[0, P.ready],
 			[
 				0.5,
 				pose({
-					hipN: -34,
-					kneeN: 76,
-					hipF: 24,
-					kneeF: 74,
+					hipN: 60,
+					kneeN: 120,
+					hipF: 84,
+					kneeF: 126,
 					shN: 30,
-					elN: 10,
-					shF: 24,
-					elF: 14,
-					lean: 42,
+					elN: 6,
+					shF: 26,
+					elF: 8,
+					abN: 6,
+					abF: 6,
+					lean: 70,
+					wide: 0.35,
 				}),
 			],
 			[1, P.hold],
@@ -2170,14 +2177,41 @@ export const gripOf = (anim: AnimName): Grip => GRIPS[anim] ?? "two";
 // A basketball's radius, feet.
 const BALL_RADIUS = 0.39;
 
+// On the move with the ball in both hands - not dribbling it - he carries
+// it at his chest, his arms still.
+const CARRIES = new Set<AnimName>([
+	"run",
+	"sprint",
+	"walk",
+	"back",
+	"slide",
+	"dribble",
+	"post",
+]);
+const carried = (q: Pose, anim: AnimName): Pose =>
+	CARRIES.has(anim)
+		? {
+				...q,
+				shN: P.hold.shN,
+				elN: P.hold.elN,
+				shF: P.hold.shF,
+				elF: P.hold.elF,
+				abN: P.hold.abN,
+				abF: P.hold.abF,
+				wrN: 0,
+				wrF: 0,
+			}
+		: q;
+
 // Where the ball is while he holds it, and his skeleton with his hands put
 // on it the way the move holds it - so the ball is in his hands, not
 // floating somewhere between them.
 export const holdBall = (
 	b: Body,
-	q: Pose,
+	q0: Pose,
 	anim: AnimName,
 ): { sk: Skeleton; ball: V3 } => {
+	const q = carried(q0, anim);
 	const sk = skeleton(b, q);
 	const grip = gripOf(anim);
 	const R = BALL_RADIUS;
