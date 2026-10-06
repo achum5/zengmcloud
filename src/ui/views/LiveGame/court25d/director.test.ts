@@ -1102,7 +1102,7 @@ describe("2.5D director", () => {
 	// the one on the ball - and the rest of him goes on as it was.
 	test("players talk with a hand on the move", () => {
 		const { tl } = compile("a", 140);
-		const kinds = { point: 0, hand: 0, wave: 0 };
+		const kinds = { point: 0, hand: 0, wave: 0, slap: 0 };
 		let onTheMove = 0;
 		for (const tr of tl.tracks.values()) {
 			tr.arms.forEach((g, i) => {
@@ -1144,6 +1144,9 @@ describe("2.5D director", () => {
 		assert.isAtLeast(kinds.point, 40);
 		assert.isAtLeast(kinds.hand, 40);
 		assert.isAtLeast(kinds.wave, 2);
+		// Two to a substitution: going on and coming off, they slap hands.
+		const subs = tl.beats.filter((b) => b.type === "sub").length;
+		assert.isAtLeast(kinds.slap, subs);
 		assert.isAtLeast(onTheMove, 60);
 	}, 60_000);
 

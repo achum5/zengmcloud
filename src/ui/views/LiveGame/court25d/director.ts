@@ -114,11 +114,12 @@ export type Act = {
 };
 // Something he says with an arm while the rest of him goes on with whatever
 // it is doing - running, sliding, dribbling: a point (at the man he has, or
-// the screen coming), a hand up calling for the ball, a wave to come on.
+// the screen coming), a hand up calling for the ball, a wave to come on, a
+// slap of hands with a teammate going by.
 export type Gesture = {
 	t0: number;
 	t1: number;
-	kind: "point" | "hand" | "wave";
+	kind: "point" | "hand" | "wave" | "slap";
 	// What he points or waves at: a man, wherever he is, or a spot.
 	at?: number | Pt;
 };
@@ -5736,6 +5737,20 @@ class Director {
 					this.free.set(incoming, t0);
 					this.show(incoming, t0, true);
 					this.go(incoming, at, t0, RUN * 0.8, "run");
+					// They slap hands going by.
+					let meet = t0;
+					let close = Infinity;
+					for (let t = t0; t <= t0 + 6000; t += 40) {
+						const d = dist(this.posAt(pid, t), this.posAt(incoming, t));
+						if (d < close) {
+							close = d;
+							meet = t;
+						}
+					}
+					if (close < 4.5) {
+						this.gesture(pid, "slap", meet - 260, meet + 260, incoming);
+						this.gesture(incoming, "slap", meet - 260, meet + 260, pid);
+					}
 				}
 			}
 		});
