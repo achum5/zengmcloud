@@ -57,7 +57,13 @@ import LiveCourt, {
 	type CourtZone,
 } from "./LiveCourt.tsx";
 import LiveField, { type FieldScene } from "./LiveField.tsx";
-import { getLiveGameView, parseLiveGameView } from "./court25d/setting.ts";
+import {
+	COURT25D_SPEEDS,
+	getLiveGameView,
+	parseCourt25DSpeed,
+	parseLiveGameView,
+	type Court25DSpeed,
+} from "./court25d/setting.ts";
 import {
 	buildFieldScene,
 	newFieldSceneCtx,
@@ -360,6 +366,30 @@ const speedToMs = (speed: number) => {
 	return 4000 / 1.2 ** speed;
 };
 
+// The 2.5D court's speeds, in place of the slider.
+const Court25DSpeeds = ({
+	value,
+	onChange,
+}: {
+	value: Court25DSpeed;
+	onChange: (speed: Court25DSpeed) => void;
+}) => (
+	<div className="btn-group btn-group-sm" role="group" title="Speed">
+		{COURT25D_SPEEDS.map((s) => (
+			<button
+				key={s}
+				type="button"
+				className={`btn ${s === value ? "btn-primary" : "btn-outline-primary"}`}
+				onClick={() => {
+					onChange(s);
+				}}
+			>
+				{s}x
+			</button>
+		))}
+	</div>
+);
+
 const getNavigateWarning = (
 	exhibition: boolean | undefined,
 	replay: boolean | undefined,
@@ -391,6 +421,12 @@ export const LiveGame = (props: View<"liveGame">) => {
 		defaultValue: String(DEFAULT_SPEED),
 	});
 	const speedRef = useRef(Number.parseInt(speed));
+	// The 2.5D court plays at one of a few set speeds instead: real time by
+	// default.
+	const [speed25d, setSpeed25d] = useLocalStorageState("live-game-speed-25d", {
+		defaultValue: "1",
+	});
+	const rate25d = parseCourt25DSpeed(speed25d);
 	const [playIndex, setPlayIndex] = useState(-1);
 	const [started, setStarted] = useState(false);
 	const [confetti, setConfetti] = useState<{
@@ -2728,16 +2764,25 @@ export const LiveGame = (props: View<"liveGame">) => {
 											// Since we have two PlayPauseNexts rendered, ignore shortcuts on one
 											ignoreKeyboardShortcuts
 										/>
-										<input
-											type="range"
-											className="form-range flex-grow-1"
-											min="1"
-											max="33"
-											step="1"
-											value={speed}
-											onChange={handleSpeedChange}
-											title="Speed"
-										/>
+										{court25d ? (
+											<Court25DSpeeds
+												value={rate25d}
+												onChange={(s) => {
+													setSpeed25d(String(s));
+												}}
+											/>
+										) : (
+											<input
+												type="range"
+												className="form-range flex-grow-1"
+												min="1"
+												max="33"
+												step="1"
+												value={speed}
+												onChange={handleSpeedChange}
+												title="Speed"
+											/>
+										)}
 									</div>
 								) : null}
 							</div>
@@ -2820,7 +2865,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 										boxScore={boxScore.current}
 										caption={playByPlayEntries.current[0]?.text}
 										paused={paused}
-										speed={Number.parseInt(speed)}
+										rate={rate25d}
 										follower={isFollower}
 										onReady={onCourt25DReady}
 									/>
@@ -2867,16 +2912,25 @@ export const LiveGame = (props: View<"liveGame">) => {
 									titlePause="Pause Simulation"
 									titleNext="Show Next Play"
 								/>
-								<input
-									type="range"
-									className="form-range flex-grow-1"
-									min="1"
-									max="33"
-									step="1"
-									value={speed}
-									onChange={handleSpeedChange}
-									title="Speed"
-								/>
+								{court25d ? (
+									<Court25DSpeeds
+										value={rate25d}
+										onChange={(s) => {
+											setSpeed25d(String(s));
+										}}
+									/>
+								) : (
+									<input
+										type="range"
+										className="form-range flex-grow-1"
+										min="1"
+										max="33"
+										step="1"
+										value={speed}
+										onChange={handleSpeedChange}
+										title="Speed"
+									/>
+								)}
 							</div>
 						) : null}
 						<PlayByPlay

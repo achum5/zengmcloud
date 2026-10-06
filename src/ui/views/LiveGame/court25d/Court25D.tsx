@@ -61,12 +61,10 @@ import {
 // animation, not a timer, sets the pace, and every line's text appears as its
 // play happens on screen.
 
-// The speed slider value that plays the timeline at 1x (the page's default).
-const DEFAULT_SPEED = 7;
-// The timeline runs at real speed (it runs through the dead time fast, see
-// fastAt); a hair quicker than that brings a game watched at the default
-// speed in at about half an hour.
-const BASE_RATE = 1.1;
+// The timeline is in real time: played at 1x, a second of it is a second
+// (bar the dead time it runs through fast - see fastAt). Watched quicker
+// than this, a dunk is not shown again.
+const REPLAY_RATE_MAX = 2;
 // How long the picture dips to black either side of a cut (timeline ms).
 const DIP_MS = 130;
 // A dunk's replay: from just before he takes off to just after, in slow
@@ -132,7 +130,8 @@ type Props = {
 	boxScore: any;
 	caption: ReactNode;
 	paused: boolean;
-	speed: number;
+	// How many times real time it plays at (1 is real time).
+	rate: number;
 	// A multiplayer follower is stepped by the device in charge of simming, so
 	// it never asks for the next line - it only keeps up.
 	follower: boolean;
@@ -145,7 +144,7 @@ const Court25D = ({
 	boxScore,
 	caption,
 	paused,
-	speed,
+	rate,
 	follower,
 	onReady,
 }: Props) => {
@@ -496,7 +495,7 @@ const Court25D = ({
 	const live = useRef({
 		cursor,
 		paused,
-		speed,
+		rate,
 		follower,
 		onReady,
 		timeline,
@@ -511,7 +510,7 @@ const Court25D = ({
 	live.current = {
 		cursor,
 		paused,
-		speed,
+		rate,
 		follower,
 		onReady,
 		timeline,
@@ -544,7 +543,7 @@ const Court25D = ({
 			const dt = s.last === undefined ? 0 : Math.min(100, now - s.last);
 			s.last = now;
 			const target = targetForCursor(tl, p.cursor);
-			const base = BASE_RATE * 1.2 ** (p.speed - DEFAULT_SPEED);
+			const base = p.rate;
 			// Through the dead stretches, fast.
 			let rate = base * fastAt(tl, s.t);
 			if (p.follower) {
@@ -592,7 +591,7 @@ const Court25D = ({
 					!p.follower &&
 					!p.paused &&
 					!s.stepping &&
-					p.speed <= DEFAULT_SPEED + 3
+					p.rate <= REPLAY_RATE_MAX
 				) {
 					s.t = dunk.t + REPLAY_AFTER;
 					s.replay = {

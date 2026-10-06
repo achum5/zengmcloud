@@ -23,3 +23,11 @@ export const setLiveGameView = (view: LiveGameView) => {
 		safeLocalStorage.removeItem(KEY);
 	}
 };
+
+// How fast the 2.5D court plays: 1x is real time - a second of the game in
+// a second (bar the dead time it runs through fast) - and quicker from there.
+export const COURT25D_SPEEDS = [1, 2, 4, 8] as const;
+export type Court25DSpeed = (typeof COURT25D_SPEEDS)[number];
+
+export const parseCourt25DSpeed = (value: unknown): Court25DSpeed =>
+	COURT25D_SPEEDS.find((s) => String(s) === String(value)) ?? 1;
