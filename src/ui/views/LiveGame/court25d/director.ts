@@ -7212,6 +7212,9 @@ const takeIn = (b: Beat): number =>
 	resultOf(b.type)?.kind === "make" || b.type === "ft"
 		? TAKE_IN_SCORE
 		: TAKE_IN;
+// Too short a stretch to bother hurrying through (ms): run through fast, it
+// would only be a lurch.
+const FAST_MIN = 3000;
 // The stretches the picture runs through fast, in order, run together where
 // they meet - each starting only once the line before it has sunk in.
 const hurried = (
@@ -7230,7 +7233,7 @@ const hurried = (
 			k++;
 		}
 		const from = Math.max(a, seen);
-		if (b - from >= 900) {
+		if (b > from) {
 			settled.push([from, b]);
 		}
 	}
@@ -7243,7 +7246,7 @@ const hurried = (
 			out.push([a, b]);
 		}
 	}
-	return out;
+	return out.filter(([a, b]) => b - a >= FAST_MIN);
 };
 
 export const compileCourt = ({
