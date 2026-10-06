@@ -506,6 +506,7 @@ const drawNameTag = (
 // wide when the whole floor is running.
 const SHOOTING = new Set([
 	"shoot",
+	"setShot",
 	"fade",
 	"hook",
 	"layup",

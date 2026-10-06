@@ -46,7 +46,15 @@ import {
 	type ShotPlay,
 	type ShotWant,
 } from "./physics.ts";
-import { bodyOf, standingReach, type AnimName, type Hand } from "./poses.ts";
+import {
+	bodyOf,
+	JUMPER,
+	releaseAt,
+	standingReach,
+	type AnimName,
+	type Hand,
+	type V3,
+} from "./poses.ts";
 import {
 	callAny,
 	callShot,
@@ -127,11 +135,12 @@ export type Act = {
 // Something he says with an arm while the rest of him goes on with whatever
 // it is doing - running, sliding, dribbling: a point (at the man he has, or
 // the screen coming), a hand up calling for the ball, a wave to come on, a
-// slap of hands with a teammate going by.
+// slap of hands with a teammate going by - or a shooter's follow-through,
+// held up after he lands till the ball gets there.
 export type Gesture = {
 	t0: number;
 	t1: number;
-	kind: "point" | "hand" | "wave" | "slap";
+	kind: "point" | "hand" | "wave" | "slap" | "follow";
 	// What he points or waves at: a man, wherever he is, or a spot.
 	at?: number | Pt;
 };
@@ -1279,6 +1288,8 @@ class Director {
 		this.act(pid, "pass", start, start + 300, { look: { x: to.x, y: to.y } });
 		const thrown = Math.max(start + 120, this.gather(pid, start));
 		this.fly(thrown, thrown + flight, { pid }, to);
+		// He goes nowhere till it is gone.
+		this.free.set(pid, Math.max(this.free.get(pid) ?? 0, start + 300));
 		return thrown + flight;
 	}
 
@@ -4101,6 +4112,8 @@ class Director {
 		let arrive: number;
 		let target: Pt3;
 		let atRim: AtRim | undefined;
+		// When he lands off a jumper, if that is what it is.
+		let landed: number | undefined;
 		const faceRim = (rim.x >= P1.x ? 1 : -1) as 1 | -1;
 		const look = { x: rim.x, y: rim.y };
 
@@ -4241,7 +4254,14 @@ class Director {
 			} else if (style === "hook") {
 				anim = "hook";
 			}
-			const dur = close ? 760 : zone === "lowPost" ? 840 : 920;
+			// A jumper takes a second from the dip to landing (the ball gone
+			// just past halfway: about two-thirds of a second off the catch,
+			// the league's typical catch-and-shoot).
+			const jumper = anim === "shoot" || anim === "fade";
+			const dur = close ? 760 : zone === "lowPost" ? 900 : 1000;
+			if (jumper) {
+				landed = gather + dur;
+			}
 			if (anim === "fade") {
 				// Drifting back as he rises.
 				this.go(
@@ -4250,25 +4270,31 @@ class Director {
 						x: P1.x - (toRim.x / len) * 1.4,
 						y: P1.y - (toRim.y / len) * 1.4,
 					}),
-					gather + dur * 0.2,
+					gather + dur * JUMPER.off - 40,
 					4,
 					"run",
 					faceRim,
 				);
 			}
+			// How high he gets up: up off the floor on a jumper as long as
+			// gravity takes for that - a little higher pulling up from mid-range
+			// than catching and shooting a three.
 			const peak = tip
 				? 2.8
 				: close
 					? 2.4
 					: zone === "lowPost"
-						? 0.9
+						? 1.1
 						: zone === "midRange"
-							? 1.5
-							: 1.8;
+							? 1.55
+							: 1.4;
+			const jump: [number, number, number] = jumper
+				? [JUMPER.off, JUMPER.land, peak]
+				: [0.24, 0.93, peak];
 			this.act(shooter, anim, gather, gather + dur, {
 				face: faceRim,
 				look,
-				jump: [0.24, 0.93, peak],
+				jump,
 			});
 			if (close) {
 				// A last stride in: up from a couple of feet out, where it can
@@ -4288,7 +4314,12 @@ class Director {
 					faceRim,
 				);
 			}
-			const release = gather + dur * (close ? 0.6 : 0.55);
+			const letGo = close ? 0.6 : jumper ? JUMPER.release : 0.55;
+			const release = gather + dur * letGo;
+			// The ball on his fingers then, as high as his jump has him.
+			const v = (letGo - jump[0]) / (jump[1] - jump[0]);
+			const fingers = releaseAt(anim, letGo);
+			fingers.u += v > 0 && v < 1 ? 4 * jump[2] * v * (1 - v) : 0;
 			const d = dist(P1, rim);
 			const flight = close ? 300 : 620 + d * 22;
 			if (plan.kind === "block" && plan.blocker !== undefined) {
@@ -4341,6 +4372,7 @@ class Director {
 					plan,
 					release,
 					close ? [380, 560] : [flight * 0.92, flight * 1.08],
+					fingers,
 				);
 				if (atRim) {
 					const p = atRim.found.play;
@@ -4373,6 +4405,19 @@ class Director {
 			}
 		}
 
+		// A shooter holds his follow-through after he lands, till the ball
+		// gets there - whatever his feet do next.
+		if (
+			landed !== undefined &&
+			(plan.kind === "make" || plan.kind === "miss")
+		) {
+			this.gesture(
+				shooter,
+				"follow",
+				landed,
+				Math.min(decided + 120, landed + 1200),
+			);
+		}
 		if (!dunk && !putback && plan.kind !== "block") {
 			const reads =
 				atRim?.falls &&
@@ -4414,6 +4459,8 @@ class Director {
 		plan: ShotPlan,
 		release: number,
 		flight: [number, number],
+		// The ball on his fingers as he lets it go, from his feet.
+		hand: V3,
 	): AtRim | undefined {
 		if (plan.kind !== "make" && plan.kind !== "miss") {
 			return undefined;
@@ -4421,21 +4468,10 @@ class Director {
 		const rim = rimPt(team);
 		const P = this.posOf(shooter);
 		const u = unitVec(P, rim);
-		// His hands as he lets it go (a typical player's): up over his
-		// shooting shoulder, out to the side of him - a touch in front of him
-		// but on a hook - and as high as the shot goes up from.
-		const [along, across, z] =
-			zone === "three"
-				? [0.19, 1.75, 8.22]
-				: zone === "midRange"
-					? [0.18, 1.75, 7.92]
-					: zone === "lowPost"
-						? [-0.03, 1.84, 7.2]
-						: [0.29, 1.8, 8.53];
 		const from = {
-			x: P.x + u.x * along - u.y * across,
-			y: P.y + u.y * along + u.x * across,
-			z,
+			x: P.x + u.x * hand.f + u.y * hand.s,
+			y: P.y + u.y * hand.f - u.x * hand.s,
+			z: hand.u,
 		};
 		const roll = hash01(shooter, release);
 		// From the side, at an angle to the glass, it is there to use.
@@ -5476,12 +5512,12 @@ class Director {
 				const pid = e.pid as number;
 				const P1 = this.posOf(pid);
 				this.hold(pid, T, "hold");
-				this.act(pid, "shoot", T + 100, T + 1020, {
+				this.act(pid, "shoot", T + 100, T + 1100, {
 					face: 1,
 					look: { x: rimX(1), y: 25 },
-					jump: [0.24, 0.93, 1.6],
+					jump: [JUMPER.off, JUMPER.land, 1.4],
 				});
-				const release = T + 100 + 920 * 0.55;
+				const release = T + 100 + 1000 * JUMPER.release;
 				const made = e.made === true;
 				const finish = this.finishFor(e);
 				const edge = { x: rimX(1) - RIM_R - 0.05, y: 25, z: RIM_Z + 0.12 };
@@ -5870,25 +5906,27 @@ class Director {
 		const set = bounce0 + (dribbles * 1000) / DRIBBLE_RATE;
 		this.hold(shooter, set, "hold");
 		const shotAt = set + 260;
-		this.act(shooter, "shoot", shotAt, shotAt + 900, {
+		const stroke = 1000;
+		this.act(shooter, "setShot", shotAt, shotAt + stroke, {
 			face: dir,
 			look: rimSpot,
 		});
-		const release = shotAt + 900 * 0.55;
-		// Off his fingers (a typical player's: up by his shooting shoulder,
-		// out to the side of him) and played out at the rim: in clean or
-		// rolled in; off the front of the rim or the back, or rattled out -
-		// the last one off toward whoever gets the rebound.
+		const release = shotAt + stroke * JUMPER.release;
+		// Off his fingers (a typical player's: up over his eyes, his elbow
+		// under it) and played out at the rim: in clean or rolled in; off the
+		// front of the rim or the back, or rattled out - the last one off
+		// toward whoever gets the rebound.
 		const u = unitVec(S, rimSpot);
+		const hand = releaseAt("setShot", JUMPER.release);
 		const roll = hash01(shooter * 3 + 1, release);
 		const reb = made || more ? undefined : this.reboundBy(i);
 		const play = this.playAtRim(
 			team,
 			shooter,
 			{
-				x: S.x + u.x * 0.19 - u.y * 1.75,
-				y: S.y + u.y * 0.19 + u.x * 1.75,
-				z: 6.43,
+				x: S.x + u.x * hand.f + u.y * hand.s,
+				y: S.y + u.y * hand.f - u.x * hand.s,
+				z: hand.u,
 			},
 			release,
 			// Up in a proper arc, three feet over the rim.
@@ -5922,7 +5960,7 @@ class Director {
 			at = release + 720;
 			this.fly(release, at, { pid: shooter }, target);
 		}
-		this.act(shooter, "follow", shotAt + 900, at + 260, {
+		this.act(shooter, "follow", shotAt + stroke, at + 260, {
 			face: dir,
 			look: rimSpot,
 		});
@@ -6808,6 +6846,7 @@ class Director {
 			"screen",
 			"postUp",
 			"shoot",
+			"setShot",
 			"fade",
 			"hook",
 			"layup",

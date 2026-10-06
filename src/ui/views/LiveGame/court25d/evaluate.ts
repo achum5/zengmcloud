@@ -18,6 +18,7 @@ import {
 	bounceAt,
 	holdBall,
 	lerpPose,
+	poseAt,
 	posed,
 	skeleton,
 	standingReach,
@@ -104,6 +105,8 @@ export type ArmPose = {
 	ab: number;
 	wr: number;
 	w: number;
+	// The elbow tucked in under it, as a shooter's is (see Pose).
+	tuck?: number;
 	// A finger out: pointing.
 	point?: boolean;
 };
@@ -921,6 +924,8 @@ const blendInto = (
 // else (a shot, a catch, a screen) or his hands are up for a pass coming.
 const ARM_IN = 0.22;
 const ARM_OUT = 0.25;
+// A jumper's follow-through as he lands, held on after.
+const FOLLOW = poseAt("shoot", 1);
 const smooth01 = (u: number) => {
 	const v = clamp01(u);
 	return v * v * (3 - 2 * v);
@@ -942,6 +947,22 @@ const armAt = (
 		return undefined;
 	}
 	const u = (t - g.t0) / (g.t1 - g.t0);
+	if (g.kind === "follow") {
+		// Held up from the moment he lands - his shooting hand, if it is
+		// free - and let down slowly at the end.
+		const w = smooth01((1 - u) / 0.45);
+		return free === "L" || w <= 0.02
+			? undefined
+			: {
+					hand: "R",
+					sh: FOLLOW.shN,
+					el: FOLLOW.elN,
+					ab: FOLLOW.abN,
+					wr: FOLLOW.wrN,
+					tuck: FOLLOW.tuck,
+					w,
+				};
+	}
 	const w = smooth01(u / ARM_IN) * smooth01((1 - u) / ARM_OUT);
 	if (w <= 0.02) {
 		return undefined;
@@ -1177,6 +1198,7 @@ export const poseOf = (st: PlayerState): Pose => {
 		return p;
 	}
 	const mix = (v: number, to: number) => v + (to - v) * a.w;
+	const tuck = a.tuck === undefined ? p.tuck : mix(p.tuck, a.tuck);
 	return a.hand === "R"
 		? {
 				...p,
@@ -1184,6 +1206,7 @@ export const poseOf = (st: PlayerState): Pose => {
 				elN: mix(p.elN, a.el),
 				abN: mix(p.abN, a.ab),
 				wrN: mix(p.wrN, a.wr),
+				tuck,
 			}
 		: {
 				...p,
@@ -1191,6 +1214,7 @@ export const poseOf = (st: PlayerState): Pose => {
 				elF: mix(p.elF, a.el),
 				abF: mix(p.abF, a.ab),
 				wrF: mix(p.wrF, a.wr),
+				tuck,
 			};
 };
 

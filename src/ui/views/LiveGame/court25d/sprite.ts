@@ -135,6 +135,7 @@ const armSteps = (a: PlayerState["arm"]): PlayerState["arm"] => {
 				wr: by(a.wr, 10),
 				w,
 				...(a.point ? { point: true } : {}),
+				...(a.tuck ? { tuck: Math.round(a.tuck * 4) / 4 } : {}),
 			}
 		: undefined;
 };
@@ -207,7 +208,7 @@ export const drawSprite = (
 			f
 				? `|${f.anim}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.target ?? ""}~${f.w}`
 				: ""
-		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
+		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 		const kept = cache.kept.get(key);
 		if (kept) {
 			const smoothing = ctx.imageSmoothingEnabled;

@@ -29,6 +29,17 @@ import { finishOf } from "../../../util/liveGameWording.basketball.ts";
 
 const body = bodyOf();
 const bodyFor = () => body;
+// What a man is doing as he lets a shot go.
+const SHOOTING = new Set<string>([
+	"shoot",
+	"fade",
+	"hook",
+	"layup",
+	"dunk",
+	"dunk1",
+	"tomahawk",
+	"block",
+]);
 
 // Whether the picture cut between two moments (anyone may be anywhere after).
 const cutBetween = (tl: CourtTimeline, a: number, b: number) =>
@@ -400,13 +411,15 @@ describe("2.5D director", () => {
 				) {
 					return;
 				}
-				// Out of the lane, to a man who catches it and lets it go.
+				// Out of the lane, to a man who catches it and lets it go - a
+				// shot, not a bounce pass on.
 				const P = at(passer, pass.t0);
 				const s0 = at(shooter, pass.t1);
 				const s1 = at(shooter, shot.t0);
 				if (
 					Math.hypot(P.x - rimX(team), P.y - COURT_H / 2) > 17 ||
-					Math.hypot(s1.x - s0.x, s1.y - s0.y) > 3
+					Math.hypot(s1.x - s0.x, s1.y - s0.y) > 3 ||
+					!SHOOTING.has(at(shooter, shot.t0 - 1).anim)
 				) {
 					return;
 				}
@@ -1286,7 +1299,7 @@ describe("2.5D director", () => {
 				const acts = tl.tracks
 					.get(pid)!
 					.acts.filter((a) => a.t0 >= b.preStart && a.t0 <= b.actionStart);
-				const shot = acts.find((a) => a.anim === "shoot");
+				const shot = acts.find((a) => a.anim === "setShot");
 				const follow = acts.find((a) => a.anim === "follow");
 				assert.isDefined(shot, `${seed} ${b.i}`);
 				assert.isDefined(follow, `${seed} ${b.i}`);
@@ -1398,11 +1411,12 @@ describe("2.5D director", () => {
 
 	// Running, sliding, dribbling, a man still talks with a hand: the
 	// screener's man points out the screen, a switch or a man getting back
-	// calls out who he has, an open man puts a hand up for it. One arm - never
+	// calls out who he has, an open man puts a hand up for it - and a shooter
+	// holds his follow-through up till his shot gets there. One arm - never
 	// the one on the ball - and the rest of him goes on as it was.
 	test("players talk with a hand on the move", () => {
 		const { tl } = compile("a", 140);
-		const kinds = { point: 0, hand: 0, wave: 0, slap: 0 };
+		const kinds = { point: 0, hand: 0, wave: 0, slap: 0, follow: 0 };
 		let onTheMove = 0;
 		for (const tr of tl.tracks.values()) {
 			tr.arms.forEach((g, i) => {
@@ -1447,6 +1461,7 @@ describe("2.5D director", () => {
 		// Two to a substitution: going on and coming off, they slap hands.
 		const subs = tl.beats.filter((b) => b.type === "sub").length;
 		assert.isAtLeast(kinds.slap, subs);
+		assert.isAtLeast(kinds.follow, 30);
 		assert.isAtLeast(onTheMove, 60);
 	}, 60_000);
 

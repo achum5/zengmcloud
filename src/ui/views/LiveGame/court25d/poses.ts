@@ -36,6 +36,15 @@ export type Pose = {
 	// How much his hips flex to keep his feet under him as his knees bend
 	// (0 to 1): all the way standing or crouched, none mid-stride.
 	plant: number;
+	// His elbows tucked in under the ball (0 to 1): a jumper's arms come up
+	// in front of his face, not out wide past his head.
+	tuck: number;
+	// On a jumper, how far his guide hand has come off the ball (0 to 1): on
+	// its side as he brings it up, then still in the air beside it while the
+	// shooting hand lets it go alone.
+	free: number;
+	// His toes pointed down (0 to 1): up off the floor in a jump.
+	toe: number;
 };
 
 const BASE: Pose = {
@@ -55,6 +64,9 @@ const BASE: Pose = {
 	wrF: 0,
 	flare: 0,
 	plant: 1,
+	tuck: 0,
+	free: 0,
+	toe: 0,
 };
 const pose = (o: Partial<Pose>): Pose => ({ ...BASE, ...o });
 
@@ -257,19 +269,24 @@ const P = {
 		abF: 6,
 		wide: 0.36,
 	}),
-	// A shot fake: the ball up to his eyes as if to shoot, heels down.
+	// A shot fake: the ball up on his shooting hand toward the set point, as
+	// if to shoot - his legs straightening, but his heels down.
 	fakeUp: pose({
-		hipN: -8,
-		kneeN: 30,
-		hipF: 14,
-		kneeF: 32,
-		lean: 4,
-		shN: 128,
-		elN: 118,
-		shF: 120,
-		elF: 124,
-		wrN: 30,
+		hipN: -2,
+		kneeN: 16,
+		hipF: 6,
+		kneeF: 18,
+		lean: 3,
+		wide: 0.3,
+		shN: 116,
+		elN: 56,
+		abN: -14,
+		wrN: 70,
+		shF: 108,
+		elF: 64,
+		abF: -10,
 		wrF: 20,
+		tuck: 1,
 	}),
 	// Clapping for the ball: hands apart, and together.
 	clapOpen: pose({
@@ -456,6 +473,143 @@ const runPose = (ph: number, mode: RunMode): Pose => ({
 	...stride(ph, mode),
 	plant: 0,
 });
+
+// A PURE JUMPER.
+//
+// Down into his legs with the ball at his hip, then up through it all in one
+// piece - legs and ball together, the ball up the middle of him on the
+// shooting hand, the guide hand on its side - to a set point over his eyes:
+// the elbow under the ball, the wrist cocked back. The guide hand comes off.
+// He lets it go just before the top of his jump, the arm up and out at the
+// rim, the wrist snapping through - and holds it there, a gooseneck, all the
+// way down.
+//
+// When, through the act: off the floor, back down on it, and the ball gone.
+// (Off the floor for 0.59 of it: in a one-second act, as long as gravity
+// keeps a jump of about a foot and a half in the air.)
+export const JUMPER = { off: 0.28, land: 0.87, release: 0.55 };
+// His arms through it - anything a key leaves out goes on as it was.
+const JUMPER_ARMS: [number, Partial<Pose>][] = [
+	[0, { shN: 30, elN: 100, shF: 28, elF: 104 }],
+	// The dip: the ball at his hip.
+	[0.1, { shN: -6, elN: 112, shF: -8, elF: 116, abN: 8, abF: 8, wrN: 20 }],
+	// Up the middle of him, the shooting hand getting under it.
+	[0.25, { shN: 72, elN: 108, abN: -9, wrN: 52, shF: 62, elF: 112, abF: -4 }],
+	[0.32, { shN: 89, elN: 78, abN: -18, wrN: 60, shF: 110, elF: 70, abF: -10 }],
+	// The set point; the guide hand comes away.
+	[
+		0.4,
+		{
+			shN: 123,
+			elN: 46,
+			abN: -14,
+			wrN: 72,
+			shF: 118,
+			elF: 56,
+			abF: -10,
+			wrF: 25,
+			free: 0.55,
+		},
+	],
+	[0.47, { shN: 126, elN: 42, free: 1 }],
+	// Up and out at the rim - and gone.
+	[0.51, { shN: 139, elN: 21, wrN: 50 }],
+	[0.55, { shN: 153, elN: 1, abN: -12, wrN: 12 }],
+	// The snap, and the gooseneck held.
+	[0.6, { shN: 154, elN: 2, wrN: -85 }],
+	[0.66, { elN: 3, wrN: -108, shF: 117, elF: 57, wrF: 22 }],
+	[0.84, { shN: 151, elN: 5, shF: 96, elF: 64, abF: -2, wrF: 12 }],
+	// Down: the guide hand drops to his side; the shooting hand stays up.
+	[0.92, { shN: 148, elN: 6, wrN: -104, shF: 18, elF: 52, abF: 12, wrF: 0 }],
+	[1, { shN: 146, elN: 7, shF: 6, elF: 30, abF: 12 }],
+];
+const ARM_FIELDS: (keyof Pose)[] = [
+	"shN",
+	"elN",
+	"shF",
+	"elF",
+	"abN",
+	"abF",
+	"wrN",
+	"wrF",
+	"tuck",
+	"free",
+];
+// Those arms over these legs, each on its own keys.
+const jumper = (legs: [number, Partial<Pose>][]): [number, Pose][] => {
+	let carry: Partial<Pose> = {};
+	const arms = JUMPER_ARMS.map(([u, a]): [number, Pose] => {
+		carry = {
+			...carry,
+			tuck: u < 0.2 ? 0 : u < 0.3 ? 0.65 : 1,
+			...a,
+		};
+		return [u, pose(carry)];
+	});
+	const feet = legs.map(([u, l]): [number, Pose] => [u, pose(l)]);
+	const times = [...new Set([...arms, ...feet].map(([u]) => u))].sort(
+		(a, b) => a - b,
+	);
+	return times.map((u) => {
+		const q = { ...keyed(feet, u) };
+		const a = keyed(arms, u);
+		for (const k of ARM_FIELDS) {
+			q[k] = a[k];
+		}
+		return [u, q];
+	});
+};
+// A jump shot: straight up and straight down, his toes pointed in the air,
+// landing where he took off.
+const AIR = { hipN: 2, hipF: -2, wide: 0.18, toe: 1 };
+const JUMP_SHOT = jumper([
+	[0, { hipN: -2, kneeN: 34, hipF: 4, kneeF: 36, lean: 8, wide: 0.2 }],
+	[0.1, { hipN: 0, kneeN: 56, hipF: -2, kneeF: 58, lean: 13, wide: 0.22 }],
+	[0.24, { hipN: 2, kneeN: 18, hipF: -2, kneeF: 20, lean: 4, wide: 0.2 }],
+	[0.28, { ...AIR, kneeN: 7, kneeF: 9, lean: 2, toe: 0 }],
+	[0.34, { ...AIR, kneeN: 6, kneeF: 8, lean: 1 }],
+	[0.8, { ...AIR, kneeN: 8, kneeF: 11, lean: 1 }],
+	[0.87, { ...AIR, hipN: 1, kneeN: 12, kneeF: 14, lean: 2, toe: 0 }],
+	[0.93, { hipN: 0, kneeN: 32, hipF: -2, kneeF: 34, lean: 6, wide: 0.22 }],
+	[1, { hipN: -2, kneeN: 26, hipF: 2, kneeF: 28, lean: 5, wide: 0.2 }],
+]);
+// A fadeaway: the same arms, but leaning back away from his man as he
+// rises, his legs out in front of him, landing a step back.
+const BACK = { plant: 0.3, toe: 1 };
+const FADEAWAY = jumper([
+	[0, { hipN: -2, kneeN: 34, hipF: 4, kneeF: 36, lean: 8, wide: 0.2 }],
+	[0.1, { hipN: 0, kneeN: 56, hipF: -2, kneeF: 58, lean: 11, wide: 0.22 }],
+	[0.24, { hipN: 6, kneeN: 18, hipF: 10, kneeF: 22, lean: -2, wide: 0.2 }],
+	[0.28, { hipN: 10, kneeN: 12, hipF: 16, kneeF: 20, lean: -5 }],
+	[0.36, { hipN: 20, kneeN: 18, hipF: 30, kneeF: 34, lean: -12, ...BACK }],
+	[0.5, { hipN: 26, kneeN: 22, hipF: 38, kneeF: 44, lean: -16, ...BACK }],
+	[0.7, { hipN: 24, kneeN: 23, hipF: 36, kneeF: 45, lean: -14, ...BACK }],
+	[
+		0.82,
+		{
+			hipN: 12,
+			kneeN: 18,
+			hipF: 20,
+			kneeF: 30,
+			lean: -7,
+			plant: 0.5,
+			toe: 0.6,
+		},
+	],
+	[0.87, { hipN: 2, kneeN: 16, hipF: 8, kneeF: 22, lean: -2 }],
+	[0.93, { hipN: -4, kneeN: 34, hipF: 10, kneeF: 38, lean: 2, wide: 0.24 }],
+	[1, { hipN: -4, kneeN: 28, hipF: 6, kneeF: 30, lean: 4, wide: 0.22 }],
+]);
+// A free throw: the same stroke off the floor - a bend of the knees, up
+// straight through them, the follow-through held.
+const SET_SHOT = jumper([
+	[0, { kneeN: 24, kneeF: 26, lean: 5, wide: 0.24 }],
+	[0.12, { kneeN: 44, kneeF: 46, lean: 9, wide: 0.24 }],
+	[0.3, { kneeN: 14, kneeF: 16, lean: 3, wide: 0.24 }],
+	[0.42, { kneeN: 4, kneeF: 6, lean: 0, wide: 0.24 }],
+	[0.75, { kneeN: 6, kneeF: 8, lean: 0, wide: 0.24 }],
+	[1, { kneeN: 10, kneeF: 12, lean: 1, wide: 0.24 }],
+]);
 
 // "loop" anims play on the clock, "cycle" ones on distance covered (so feet
 // never skate), "act" ones across their own span from 0 to 1.
@@ -777,74 +931,8 @@ export const ANIMS = {
 		stride: 2.6,
 		pose: (i) => runPose(i / 6, "closeout"),
 	},
-	shoot: {
-		kind: "act",
-		n: 8,
-		keys: [
-			[0, P.gather],
-			[
-				0.28,
-				pose({
-					hipN: -6,
-					kneeN: 18,
-					hipF: 6,
-					kneeF: 22,
-					shN: 140,
-					elN: 75,
-					shF: 130,
-					elF: 80,
-					lean: 2,
-					wrN: 50,
-				}),
-			],
-			[
-				0.55,
-				pose({
-					hipN: -4,
-					kneeN: 8,
-					hipF: 8,
-					kneeF: 30,
-					shN: 170,
-					elN: 4,
-					shF: 150,
-					elF: 40,
-					lean: -2,
-					wrN: 15,
-				}),
-			],
-			[
-				0.63,
-				pose({
-					hipN: -4,
-					kneeN: 10,
-					hipF: 8,
-					kneeF: 32,
-					shN: 162,
-					elN: 14,
-					shF: 118,
-					elF: 36,
-					lean: -2,
-					wrN: -100,
-				}),
-			],
-			[
-				0.8,
-				pose({
-					hipN: -4,
-					kneeN: 10,
-					hipF: 8,
-					kneeF: 32,
-					shN: 162,
-					elN: 14,
-					shF: 118,
-					elF: 36,
-					lean: -2,
-					wrN: -110,
-				}),
-			],
-			[1, P.land],
-		],
-	},
+	shoot: { kind: "act", n: 12, keys: JUMP_SHOT },
+	setShot: { kind: "act", n: 12, keys: SET_SHOT },
 	layup: {
 		kind: "act",
 		n: 7,
@@ -1341,74 +1429,7 @@ export const ANIMS = {
 		],
 	},
 	// A turnaround fadeaway: up and drifting back, legs out in front.
-	fade: {
-		kind: "act",
-		n: 8,
-		keys: [
-			[0, P.gather],
-			[
-				0.28,
-				pose({
-					hipN: 6,
-					kneeN: 16,
-					hipF: 14,
-					kneeF: 26,
-					shN: 140,
-					elN: 75,
-					shF: 130,
-					elF: 80,
-					lean: -6,
-					wrN: 50,
-				}),
-			],
-			[
-				0.55,
-				pose({
-					hipN: 26,
-					kneeN: 22,
-					hipF: 38,
-					kneeF: 44,
-					shN: 168,
-					elN: 6,
-					shF: 150,
-					elF: 40,
-					lean: -16,
-					wrN: 15,
-				}),
-			],
-			[
-				0.63,
-				pose({
-					hipN: 22,
-					kneeN: 26,
-					hipF: 34,
-					kneeF: 46,
-					shN: 160,
-					elN: 16,
-					shF: 118,
-					elF: 36,
-					lean: -12,
-					wrN: -100,
-				}),
-			],
-			[
-				0.8,
-				pose({
-					hipN: 22,
-					kneeN: 26,
-					hipF: 34,
-					kneeF: 46,
-					shN: 160,
-					elN: 16,
-					shF: 118,
-					elF: 36,
-					lean: -12,
-					wrN: -110,
-				}),
-			],
-			[1, P.land],
-		],
-	},
+	fade: { kind: "act", n: 12, keys: FADEAWAY },
 	// Arms up and bent: the flex after a big finish.
 	flex: {
 		kind: "act",
@@ -1947,32 +1968,8 @@ export const ANIMS = {
 		kind: "act",
 		n: 5,
 		keys: [
-			[
-				0,
-				pose({
-					kneeN: 10,
-					kneeF: 14,
-					shN: 162,
-					elN: 14,
-					shF: 118,
-					elF: 36,
-					lean: -2,
-					wrN: -110,
-				}),
-			],
-			[
-				0.7,
-				pose({
-					kneeN: 8,
-					kneeF: 12,
-					shN: 158,
-					elN: 16,
-					shF: 96,
-					elF: 40,
-					lean: -1,
-					wrN: -104,
-				}),
-			],
+			[0, SET_SHOT.at(-1)![1]],
+			[0.7, { ...SET_SHOT.at(-1)![1], shN: 140, elN: 10, wrN: -96 }],
 			[1, P.ready],
 		],
 	},
@@ -2454,14 +2451,19 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 	const legL = leg(q.hipF + flex, q.kneeF, 1);
 	// Down onto the floor: the lower ankle sits at ankle height.
 	const off = b.ankleH - Math.min(legR.end.u, legL.end.u);
+	// Pointed, a foot hangs from the ankle (only ever up in the air: his
+	// ankles still sit where they would on the floor).
+	const point = q.toe * 55 * rad;
+	const toe = b.foot * 0.72;
 	for (const l of [legR, legL]) {
 		l.root.u += off;
 		l.mid.u += off;
 		l.end.u += off;
+		const flat = Math.max(b.ankleR, l.end.u - b.ankleH * 0.55);
 		(l as Limb).tip = v3(
-			l.end.f + b.foot * 0.72,
+			l.end.f + toe * Math.cos(point),
 			l.end.s,
-			Math.max(b.ankleR, l.end.u - b.ankleH * 0.55),
+			flat + (l.end.u - toe - flat) * Math.sin(point),
 		);
 	}
 	const L = q.lean * rad;
@@ -2483,8 +2485,8 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		head,
 		legR,
 		legL,
-		armR: armLimb(b, chest, q.shN, q.elN, q.abN, q.wrN, -1),
-		armL: armLimb(b, chest, q.shF, q.elF, q.abF, q.wrF, 1),
+		armR: armLimb(b, chest, q.shN, q.elN, q.abN, q.wrN, -1, q.tuck),
+		armL: armLimb(b, chest, q.shF, q.elF, q.abF, q.wrF, 1, q.tuck),
 	};
 };
 
@@ -2501,6 +2503,16 @@ const dirOf = (deg: number) => ({
 const reachOf = (shDeg: number): number => {
 	const up0 = Math.min(1, Math.max(0, (shDeg - 105) / 60));
 	return up0 * up0 * (3 - 2 * up0);
+};
+
+// How far the arm stretches (1 its own length): a third again thrown up
+// over his head - and a jumper's tucked arm from as soon as it is up past
+// his shoulder, so the ball goes up over that big head on a bent elbow.
+const stretchOf = (shDeg: number, tuck: number): number => {
+	const lift = Math.min(1, Math.max(0, (shDeg - 75) / 55));
+	return (
+		1 + 0.32 * Math.max(reachOf(shDeg), tuck * lift * lift * (3 - 2 * lift))
+	);
 };
 
 const shoulderOf = (b: Body, chest: V3, side: 1 | -1): V3 =>
@@ -2553,6 +2565,7 @@ const armLimb = (
 	abDeg: number,
 	wrDeg: number,
 	side: 1 | -1,
+	tuck = 0,
 ): Limb => {
 	const up = reachOf(shDeg);
 	return buildArm(
@@ -2560,8 +2573,8 @@ const armLimb = (
 		chest,
 		shDeg,
 		elDeg,
-		(abDeg + Math.max(0, 22 - abDeg) * up) * RAD,
-		1 + 0.32 * up,
+		(abDeg + Math.max(0, 22 - abDeg) * up * (1 - tuck)) * RAD,
+		stretchOf(shDeg, tuck),
 		wrDeg,
 		side,
 	);
@@ -2576,6 +2589,7 @@ export const armTo = (
 	target: V3,
 	wrDeg: number,
 	side: 1 | -1,
+	tuck = 0,
 ): Limb => {
 	const root = shoulderOf(b, chest, side);
 	let reach = 1;
@@ -2599,7 +2613,7 @@ export const armTo = (
 		);
 		sh =
 			Math.atan2(F, -U) - Math.atan2(L2 * Math.sin(el), L1 + L2 * Math.cos(el));
-		reach = 1 + 0.32 * reachOf(sh / RAD);
+		reach = stretchOf(sh / RAD, tuck);
 	}
 	return buildArm(b, chest, sh / RAD, el / RAD, ab, reach, wrDeg, side);
 };
@@ -2640,7 +2654,9 @@ const flared = (arm: Limb, deg: number, side: 1 | -1): Limb => {
 export type Grip = "two" | "shot" | "palm";
 const GRIPS: Partial<Record<AnimName, Grip>> = {
 	shoot: "shot",
+	setShot: "shot",
 	fade: "shot",
+	shotFake: "shot",
 	layup: "palm",
 	dunk: "palm",
 	dunk1: "palm",
@@ -2724,32 +2740,41 @@ export const holdBall = (
 		s: (tip.s - r.end.s) / len,
 		u: (tip.u - r.end.u) / len,
 	};
-	// Up on the shooting hand, or palmed out past the fingers' roots.
-	const k = grip === "shot" ? 0.75 : 1.15;
+	// Up on the shooting hand - resting on his palm, cocked back under it,
+	// on his fingertips as his arm goes up - or palmed out past the fingers'
+	// roots.
+	const k = grip === "shot" ? 0.56 : 1.15;
 	const one = v3(
 		r.end.f + d.f * R * k,
 		r.end.s + d.s * R * k,
-		r.end.u + d.u * R * k + (grip === "shot" ? R * 0.55 : 0),
+		r.end.u + d.u * R * k + (grip === "shot" ? R * 0.92 : 0),
 	);
 	const ball = mix(two, one, w);
 	const armR =
 		w >= 0.999
 			? r
-			: armTo(b, sk.chest, mix(side(two, -1), r.end, w), q.wrN, -1);
-	// The other hand guides a jumper all the way up; on a layup or a dunk it
+			: armTo(b, sk.chest, mix(side(two, -1), r.end, w), q.wrN, -1, q.tuck);
+	// The other hand guides a jumper up, on the side of the ball, and comes
+	// off it before the shooting hand lets it go; on a layup or a dunk it
 	// lets go.
 	const armL =
-		grip === "palm" && w >= 0.999
+		(grip === "palm" && w >= 0.999) || (grip === "shot" && q.free >= 0.999)
 			? l
 			: armTo(
 					b,
 					sk.chest,
-					grip === "shot" ? side(ball, 1) : mix(side(ball, 1), l.end, w),
+					mix(side(ball, 1), l.end, grip === "shot" ? q.free : w),
 					q.wrF,
 					1,
+					q.tuck,
 				);
 	return { sk: { ...sk, armR, armL }, ball };
 };
+
+// Where the ball is on his fingers that far through a shot (`at`, 0 to 1) -
+// a typical player's: in front of him, to his left, up from his feet.
+export const releaseAt = (anim: AnimName, at: number, b = bodyOf()): V3 =>
+	holdBall(b, poseAt(anim, at), anim).ball;
 
 // The dribbling hand through one bounce: on the ball at the top (0),
 // pushing it down until it leaves him, then back up to meet it (1). With the
