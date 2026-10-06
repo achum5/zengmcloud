@@ -17,13 +17,19 @@ import {
 	bodyOf,
 	bounceAt,
 	holdBall,
+	isMove,
 	lerpPose,
+	MOVE_BALL,
+	moveAnim,
+	moveFloor,
 	poseAt,
 	posed,
 	skeleton,
 	standingReach,
+	underPalm,
 	type AnimName,
 	type Body,
+	type DribbleMove,
 	type Hand,
 	type Limb,
 	type Pose,
@@ -88,7 +94,9 @@ export type PlayerState = {
 	// goes (see withBody).
 	reach?: number;
 	// Just after a change of move: the last move as it was when it changed,
-	// and how much of his pose is still that (1 all, 0 none) - see poseOf.
+	// and how much of his pose is still that (1 all, 0 none) - and, if it
+	// differs, how much of his arms and the turn of his shoulders - see
+	// poseOf.
 	from?: {
 		anim: AnimName;
 		phase: number;
@@ -96,6 +104,7 @@ export type PlayerState = {
 		dribbleHand?: Hand;
 		target?: number;
 		w: number;
+		arms?: number;
 	};
 	// One arm saying something while the rest of him goes on (see armAt):
 	// which, its angles (as a pose has them), and how far into them it is
@@ -129,6 +138,28 @@ const crossAt = (seg: { t0: number; hand?: Hand }, t: number) => {
 	const k = Math.floor(b);
 	const from = k % 2 ? otherHand(seg.hand ?? "R") : (seg.hand ?? "R");
 	return { ph: b - k, from, to: otherHand(from) };
+};
+const CROSS_MS = 1000 / CROSS_RATE;
+// A bounce of a dribble move done as the move it is - between his legs,
+// behind his back - only if he stands through the whole of it. On the move,
+// any of them is a crossover in front, his legs running, the ball pushed
+// further out ahead of him.
+const crossMoveAt = (
+	tl: CourtTimeline,
+	seg: { t0: number; pid: number; hand?: Hand; move?: DribbleMove },
+	t: number,
+) => {
+	const c = crossAt(seg, t);
+	const tr = tl.tracks.get(seg.pid);
+	const b0 = t - c.ph * CROSS_MS;
+	// Setting off on a drive as it comes up into his hand still counts.
+	const still =
+		!tr ||
+		[0.02, 0.25, 0.5, 0.75, 0.95].every(
+			(u) => !spotAt(tr, b0 + u * CROSS_MS).moving,
+		);
+	const move: DribbleMove = still ? (seg.move ?? "front") : "front";
+	return { ...c, still, move };
 };
 // How far through one bounce of a dribble the ball is (0 at the hand, 1 at
 // the floor), for a point `ph` through the dribble: pushed down hard and
@@ -856,7 +887,14 @@ const doingAt = (
 		z = bounceAt(anim, phase);
 	} else {
 		const seg = ballSegAt(tl, t);
-		if (seg && seg.kind === "hold" && seg.pid === pid) {
+		// A dribble move: all of him through each bounce of it.
+		const move =
+			seg?.kind === "hold" && seg.pid === pid && seg.style === "cross"
+				? crossMoveAt(tl, seg, t)
+				: undefined;
+		if (move) {
+			anim = moveAnim(move.move, move.from);
+		} else if (seg && seg.kind === "hold" && seg.pid === pid) {
 			anim = seg.style === "hold" ? "hold" : "dribbleIdle";
 		} else if (offenseAt(tl, t) === tr.team) {
 			anim = "ready";
@@ -871,7 +909,7 @@ const doingAt = (
 		}
 		const a = ANIMS[anim];
 		const fps = a.kind === "loop" ? a.fps : 2;
-		phase = (t / 1000) * (fps / a.n) + pid * 0.37;
+		phase = move ? move.ph : (t / 1000) * (fps / a.n) + pid * 0.37;
 		const life =
 			anim === "ready" || anim === "stance"
 				? offBall(tl, tr, t, anim)
@@ -908,8 +946,11 @@ const doingAt = (
 
 // One move into the next eases in: for a moment after the change his body
 // is part the way from how the last move had it to how this one wants it -
-// not snapped there between one frame and the next.
+// not snapped there between one frame and the next. Into a dribble move his
+// hands and shoulders get there quicker than his feet: a bounce is over in a
+// third of a second, and the ball has to go where they take it.
 const BLEND_MS = 160;
+const MOVE_ARMS_MS = 60;
 const blendInto = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -933,8 +974,11 @@ const blendInto = (
 			before = d;
 		}
 	}
-	const u = Math.min(1, (t - hi) / BLEND_MS);
-	const w = 1 - u * u * (3 - 2 * u);
+	const ease = (ms: number) => {
+		const u = Math.min(1, (t - hi) / ms);
+		return 1 - u * u * (3 - 2 * u);
+	};
+	const w = ease(BLEND_MS);
 	return w <= 0.02
 		? undefined
 		: {
@@ -944,6 +988,7 @@ const blendInto = (
 				dribbleHand: before.dribbleHand,
 				target: before.target,
 				w,
+				...(isMove(anim) ? { arms: ease(MOVE_ARMS_MS) } : {}),
 			};
 };
 
@@ -1212,19 +1257,40 @@ export const evalPlayer = (
 	};
 };
 
+// The arms and the turn of his shoulders, which can ease into a move on
+// their own time (see blendInto).
+const UPPER: (keyof Pose)[] = [
+	"shN",
+	"elN",
+	"abN",
+	"wrN",
+	"shF",
+	"elF",
+	"abF",
+	"wrF",
+	"flare",
+	"tuck",
+	"free",
+	"twist",
+	"tilt",
+];
+const blendFrom = (q: Pose, f: NonNullable<PlayerState["from"]>): Pose => {
+	const was = posed(f.anim, f.phase, f.dribble, f.dribbleHand, f.target);
+	const p = lerpPose(q, was, f.w);
+	if (f.arms !== undefined) {
+		for (const key of UPPER) {
+			p[key] = q[key] + (was[key] - q[key]) * f.arms;
+		}
+	}
+	return p;
+};
+
 // His pose: his move's, eased in from the last one's just after a change -
 // and an arm in whatever it is saying.
 export const poseOf = (st: PlayerState): Pose => {
 	const q = posed(st.anim, st.phase, st.dribble, st.dribbleHand, st.target);
 	const f = st.from;
-	const p =
-		f && f.w > 0
-			? lerpPose(
-					q,
-					posed(f.anim, f.phase, f.dribble, f.dribbleHand, f.target),
-					f.w,
-				)
-			: q;
+	const p = f && f.w > 0 ? blendFrom(q, f) : q;
 	const a = st.arm;
 	if (!a || a.w <= 0) {
 		return p;
@@ -1403,6 +1469,43 @@ const HANDOVER_MS = 140;
 const HANDOVER_REACH = 6;
 const BEFORE = 0.5;
 
+// A move's ball through its bounce, in his frame: in the hand it leaves
+// (`under` - the ball under a hand at a point of the bounce) until it lets
+// go, then straight down to the floor, falling faster, then up off it into
+// the other hand, slowing as it gets there.
+export const moveBallAt = (
+	ph: number,
+	letGo: number,
+	floor: V3,
+	under: (at: number, hand: Hand) => V3,
+	from: Hand,
+	to: Hand,
+): V3 => {
+	const mix = (a: V3, b: V3, u: number): V3 => ({
+		f: a.f + (b.f - a.f) * u,
+		s: a.s + (b.s - a.s) * u,
+		u: a.u + (b.u - a.u) * u,
+	});
+	if (ph < letGo) {
+		return under(ph, from);
+	}
+	if (ph < DOWN) {
+		return mix(
+			under(letGo, from),
+			floor,
+			((ph - letGo) / (DOWN - letGo)) ** 1.35,
+		);
+	}
+	return mix(under(ph, to), floor, (1 - (ph - DOWN) / (1 - DOWN)) ** 1.8);
+};
+
+// The ball under a dribbling hand: just below the middle of his palm.
+const underHand = (st0: PlayerState, body: Body, hand: Hand): Pt3 => {
+	const st = withBody(st0, body);
+	const sk = skeleton(body, poseOf(st));
+	return bodyPoint(st, underPalm(hand === "R" ? sk.armR : sk.armL));
+};
+
 export const evalBall = (
 	tl: CourtTimeline,
 	t: number,
@@ -1437,21 +1540,29 @@ const ballOn = (
 		const st = evalPlayer(tl, seg.pid, t);
 		const body = bodyFor(seg.pid);
 		if (seg.style === "cross") {
-			// Low and quick, hand to hand across in front of him - or through
-			// his legs.
-			const { ph, from: a, to: b } = crossAt(seg, t);
-			const from = handWorld(st, body, a === "R" ? "near" : "far");
-			const to = handWorld(st, body, b === "R" ? "near" : "far");
-			const floor = bodyPoint(
-				{ ...st, z: 0 },
-				{ f: seg.move === "legs" ? 0.15 : 1.1, s: 0, u: BALL_R },
-			);
-			const tri = dribbleDepth(ph);
-			const h = ph < DOWN ? from : to;
+			// A move, low and quick: ridden down in the hand it leaves, let go,
+			// off the floor where the move puts it - across in front of him,
+			// between his feet, behind him by his far foot - and up into the
+			// other hand coming to meet it.
+			const { ph, from, to, move, still } = crossMoveAt(tl, seg, t);
+			const me = withBody(st, body);
+			const under = (at: number, hand: Hand): V3 => {
+				const sk = skeleton(body, poseOf({ ...me, phase: at }));
+				const p = underPalm(hand === "R" ? sk.armR : sk.armL);
+				return { ...p, u: p.u + me.z };
+			};
 			return {
-				x: h.x + (floor.x - h.x) * tri,
-				y: h.y + (floor.y - h.y) * tri,
-				z: h.z + (floor.z - h.z) * tri,
+				...bodyPoint(
+					{ ...me, z: 0 },
+					moveBallAt(
+						ph,
+						MOVE_BALL[move].letGo,
+						{ ...moveFloor(body, move, to, still), u: BALL_R },
+						under,
+						from,
+						to,
+					),
+				),
 				holder: seg.pid,
 			};
 		}
@@ -1484,7 +1595,7 @@ const ballOn = (
 								z: was.z,
 							};
 						})()
-					: handWorld(st, body, hand === "L" ? "far" : "near");
+					: underHand(st, body, hand);
 			const tri = dribbleDepth(ph);
 			// It hits the floor ahead of him and off the foot on that side -
 			// or, changing hands, between his feet.

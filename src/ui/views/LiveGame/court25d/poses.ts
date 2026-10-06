@@ -45,6 +45,11 @@ export type Pose = {
 	free: number;
 	// His toes pointed down (0 to 1): up off the floor in a jump.
 	toe: number;
+	// His shoulders turned on his hips about his spine (degrees, round to his
+	// left positive), and his upper body tipped to his side (degrees, his left
+	// shoulder down positive): a crossover's dip, an arm wrapped behind him.
+	twist: number;
+	tilt: number;
 };
 
 const BASE: Pose = {
@@ -67,8 +72,28 @@ const BASE: Pose = {
 	tuck: 0,
 	free: 0,
 	toe: 0,
+	twist: 0,
+	tilt: 0,
 };
 const pose = (o: Partial<Pose>): Pose => ({ ...BASE, ...o });
+
+// The same pose the other way round: his left doing what his right did.
+const SIDES: [keyof Pose, keyof Pose][] = [
+	["hipN", "hipF"],
+	["kneeN", "kneeF"],
+	["shN", "shF"],
+	["elN", "elF"],
+	["abN", "abF"],
+	["wrN", "wrF"],
+];
+export const mirror = (q: Pose): Pose => {
+	const out = { ...q, twist: -q.twist, tilt: -q.tilt };
+	for (const [n, f] of SIDES) {
+		out[n] = q[f];
+		out[f] = q[n];
+	}
+	return out;
+};
 
 export const lerpPose = (a: Pose, b: Pose, f: number): Pose => {
 	const out = { ...a };
@@ -619,6 +644,342 @@ const SET_SHOT = jumper([
 	[1, { kneeN: 10, kneeF: 12, lean: 1, wide: 0.24 }],
 ]);
 
+// DRIBBLE MOVES - one bounce each, keyed through it: 0 the ball in the hand
+// it leaves, about 0.42 on the floor, 1 up in the other hand. Written for the
+// ball leaving his right hand; the left-handed ones are their mirror images.
+// Low and wide, the off arm up as a bar - and the whole of him in it, not
+// just the ball changing hands. Each one's hands are placed so the ball's
+// path (evaluate.ts) goes round his legs, never through them.
+const MOVE_STANCE: Partial<Pose> = {
+	hipN: 24,
+	kneeN: 56,
+	hipF: 28,
+	kneeF: 58,
+	lean: 20,
+	wide: 0.55,
+};
+// A crossover: his right shoulder dipped to sell the right, the ball pushed
+// hard across in front of his knees, low, everything shifting left as it
+// comes up into his left hand - and his right arm up as the bar.
+const CROSS_FRONT: [number, Pose][] = [
+	[
+		0,
+		pose({
+			...MOVE_STANCE,
+			hipN: 18,
+			kneeN: 66,
+			tilt: -13,
+			twist: -17,
+			shN: 25,
+			elN: 46,
+			abN: 7,
+			wrN: 22,
+			shF: 50,
+			elF: 72,
+			abF: 30,
+		}),
+	],
+	[
+		0.12,
+		pose({
+			...MOVE_STANCE,
+			hipN: 22,
+			kneeN: 60,
+			tilt: -6,
+			twist: -7,
+			shN: 38,
+			elN: 11,
+			abN: 7,
+			wrN: -30,
+			shF: 46,
+			elF: 64,
+			abF: 26,
+		}),
+	],
+	[
+		0.42,
+		pose({
+			...MOVE_STANCE,
+			tilt: 3,
+			twist: 5,
+			shN: 32,
+			elN: 2,
+			abN: -7,
+			wrN: -20,
+			shF: 46,
+			elF: 3,
+			abF: 10,
+			wrF: 10,
+		}),
+	],
+	[
+		0.75,
+		pose({
+			...MOVE_STANCE,
+			hipF: 22,
+			kneeF: 62,
+			tilt: 8,
+			twist: 10,
+			shN: 32,
+			elN: 46,
+			abN: 6,
+			shF: 41,
+			elF: 0,
+			abF: 13,
+			wrF: 20,
+		}),
+	],
+	[
+		1,
+		pose({
+			...MOVE_STANCE,
+			hipF: 18,
+			kneeF: 66,
+			tilt: 11,
+			twist: 15,
+			shN: 46,
+			elN: 66,
+			abN: 28,
+			shF: 29,
+			elF: 38,
+			abF: 10,
+			wrF: 24,
+		}),
+	],
+];
+// Between his legs: his left foot well out in front, down low, the ball
+// pushed from beside his right knee through the gap between his legs and
+// taken in his left hand behind that front leg.
+const LEGS_STANCE: Partial<Pose> = {
+	hipN: -16,
+	kneeN: 58,
+	hipF: 42,
+	kneeF: 64,
+	lean: 22,
+	wide: 0.75,
+};
+const CROSS_LEGS: [number, Pose][] = [
+	[
+		0,
+		pose({
+			...LEGS_STANCE,
+			hipF: 34,
+			kneeF: 58,
+			twist: 6,
+			shN: -26,
+			elN: 68,
+			abN: 30,
+			wrN: 22,
+			shF: 50,
+			elF: 72,
+			abF: 30,
+		}),
+	],
+	[
+		0.14,
+		pose({
+			...LEGS_STANCE,
+			twist: 9,
+			shN: 5,
+			elN: 18,
+			abN: 26,
+			wrN: -34,
+			shF: 44,
+			elF: 60,
+			abF: 26,
+		}),
+	],
+	[
+		0.42,
+		pose({
+			...LEGS_STANCE,
+			twist: 10,
+			tilt: 2,
+			shN: 2,
+			elN: 2,
+			abN: 15,
+			wrN: -20,
+			shF: -28,
+			elF: 0,
+			abF: 30,
+			wrF: 8,
+		}),
+	],
+	[
+		0.72,
+		pose({
+			...LEGS_STANCE,
+			twist: 8,
+			tilt: 5,
+			shN: 30,
+			elN: 44,
+			abN: 16,
+			shF: -34,
+			elF: 2,
+			abF: 35,
+			wrF: 20,
+		}),
+	],
+	[
+		1,
+		pose({
+			...LEGS_STANCE,
+			twist: 6,
+			tilt: 5,
+			shN: 46,
+			elN: 66,
+			abN: 28,
+			shF: -38,
+			elF: 74,
+			abF: 29,
+			wrF: 24,
+		}),
+	],
+];
+// Behind his back: the ball drawn back along his right hip on the outside
+// of his hand, his right shoulder turned back so the arm can wrap behind his
+// seat and push it toward his left heel; it bounces behind him by that foot
+// and comes up into his left hand at his side.
+const BACK_STANCE: Partial<Pose> = { ...MOVE_STANCE, lean: 14, wide: 0.4 };
+const CROSS_BACK: [number, Pose][] = [
+	[
+		0,
+		pose({
+			...BACK_STANCE,
+			twist: -6,
+			shN: -2,
+			elN: 56,
+			abN: 22,
+			wrN: 14,
+			shF: 50,
+			elF: 72,
+			abF: 30,
+		}),
+	],
+	[
+		0.1,
+		pose({
+			...BACK_STANCE,
+			twist: -14,
+			shN: -27,
+			elN: 49,
+			abN: 24,
+			shF: 48,
+			elF: 70,
+			abF: 30,
+		}),
+	],
+	[
+		0.2,
+		pose({
+			...BACK_STANCE,
+			twist: -22,
+			tilt: -3,
+			shN: -27,
+			elN: 7,
+			abN: 13,
+			wrN: -20,
+			shF: 44,
+			elF: 64,
+			abF: 28,
+		}),
+	],
+	[
+		0.42,
+		pose({
+			...BACK_STANCE,
+			twist: -16,
+			tilt: -2,
+			shN: -35,
+			elN: 1,
+			abN: -5,
+			wrN: -30,
+			shF: -38,
+			elF: 32,
+			abF: 29,
+			wrF: 10,
+		}),
+	],
+	[
+		0.62,
+		pose({
+			...BACK_STANCE,
+			twist: -6,
+			tilt: 2,
+			shN: -38,
+			elN: 78,
+			abN: 14,
+			shF: -26,
+			elF: 0,
+			abF: 29,
+			wrF: 16,
+		}),
+	],
+	[
+		0.8,
+		pose({
+			...BACK_STANCE,
+			twist: 2,
+			tilt: 4,
+			shN: 30,
+			elN: 56,
+			abN: 24,
+			shF: -35,
+			elF: 58,
+			abF: 31,
+			wrF: 20,
+		}),
+	],
+	[
+		1,
+		pose({
+			...BACK_STANCE,
+			twist: 6,
+			tilt: 6,
+			shN: 46,
+			elN: 66,
+			abN: 28,
+			shF: -17,
+			elF: 77,
+			abF: 24,
+			wrF: 24,
+		}),
+	],
+];
+// Where each move lets go of the ball (how far through its bounce) and
+// where the ball hits the floor - in his frame, as a share of his height, for
+// the ball leaving his right hand (his left mirrors it): across in front of
+// his knees, or on the move further out, past his stride; in the gap between
+// his legs; behind him by the heel of the foot on the side it is going to.
+// The keys above put his hands round these, so the ball's path between them
+// (evaluate.ts) goes round his legs, never through them.
+export const MOVE_BALL: Record<
+	DribbleMove,
+	{ letGo: number; f: number; s: number }
+> = {
+	front: { letGo: 0.12, f: 0.22, s: 0 },
+	legs: { letGo: 0.14, f: 0.095, s: 0.048 },
+	back: { letGo: 0.2, f: -0.143, s: 0.08 },
+};
+const ON_THE_MOVE_F = 0.32;
+// Where a move's bounce hits the floor (feet, his frame): the ball going to
+// `to`, him standing through it or not.
+export const moveFloor = (
+	b: Body,
+	move: DribbleMove,
+	to: Hand,
+	still: boolean,
+): { f: number; s: number } => {
+	const m = MOVE_BALL[move];
+	return {
+		f: (move === "front" && !still ? ON_THE_MOVE_F : m.f) * b.H,
+		s: (to === "L" ? 1 : -1) * m.s * b.H,
+	};
+};
+
+const mirrorKeys = (keys: [number, Pose][]): [number, Pose][] =>
+	keys.map(([u, q]) => [u, mirror(q)]);
+
 // "loop" anims play on the clock, "cycle" ones on distance covered (so feet
 // never skate), "act" ones across their own span from 0 to 1.
 type Anim =
@@ -784,11 +1145,12 @@ export const ANIMS = {
 		fps: 7,
 		pose: (i) =>
 			pose({
-				hipN: -14,
-				kneeN: 34,
-				hipF: 16,
-				kneeF: 36,
-				lean: 12,
+				hipN: -6,
+				kneeN: 46,
+				hipF: 22,
+				kneeF: 48,
+				lean: 16,
+				wide: 0.3,
 				shN: 32,
 				elN: [34, 18, 8, 18][i]!,
 				shF: 52,
@@ -2423,7 +2785,41 @@ export const ANIMS = {
 				wide: 0.2,
 			}),
 	},
+	// Dribble moves, one bounce each (see CROSS_FRONT): the ball leaving his
+	// right hand, or his left.
+	crossFrontR: { kind: "act", n: 8, keys: CROSS_FRONT },
+	crossFrontL: { kind: "act", n: 8, keys: mirrorKeys(CROSS_FRONT) },
+	crossLegsR: { kind: "act", n: 8, keys: CROSS_LEGS },
+	crossLegsL: { kind: "act", n: 8, keys: mirrorKeys(CROSS_LEGS) },
+	crossBackR: { kind: "act", n: 8, keys: CROSS_BACK },
+	crossBackL: { kind: "act", n: 8, keys: mirrorKeys(CROSS_BACK) },
 } satisfies Record<string, Anim>;
+
+// The dribble moves, by move and the hand the ball leaves - each with his
+// whole body in it, his hands included (no bounce of the dribbling arm laid
+// over it).
+export type DribbleMove = "front" | "legs" | "back";
+export const moveAnim = (move: DribbleMove, from: Hand): AnimName =>
+	move === "legs"
+		? from === "R"
+			? "crossLegsR"
+			: "crossLegsL"
+		: move === "back"
+			? from === "R"
+				? "crossBackR"
+				: "crossBackL"
+			: from === "R"
+				? "crossFrontR"
+				: "crossFrontL";
+const MOVES = new Set<string>([
+	"crossFrontR",
+	"crossFrontL",
+	"crossLegsR",
+	"crossLegsL",
+	"crossBackR",
+	"crossBackL",
+]);
+export const isMove = (anim: string): boolean => MOVES.has(anim);
 
 export type AnimName = keyof typeof ANIMS;
 
@@ -2589,6 +2985,41 @@ export type Skeleton = {
 
 const v3 = (f: number, s: number, u: number): V3 => ({ f, s, u });
 
+// His upper body turned on his hips (see Pose): a point of it carried round
+// his spine by the twist, then tipped to his side by the tilt - `w` of the
+// way (his chest all of it, his hips none). Or, `back`, undone.
+export const turnUpper = (q: Pose, pelvis: V3, w = 1, back = false) => {
+	const rad = Math.PI / 180;
+	const L = q.lean * rad;
+	const df = Math.sin(L);
+	const du = Math.cos(L);
+	const tw = q.twist * rad * w * (back ? -1 : 1);
+	const tl = q.tilt * rad * w * (back ? -1 : 1);
+	const ct = Math.cos(tw);
+	const st = Math.sin(tw);
+	const cl = Math.cos(tl);
+	const sl = Math.sin(tl);
+	const twist = (v: V3): V3 => {
+		// Round the spine (Rodrigues), the spine leaning forward.
+		const along = v.f * df + v.u * du;
+		return v3(
+			v.f * ct + -du * v.s * st + df * along * (1 - ct),
+			v.s * ct + (du * v.f - df * v.u) * st,
+			v.u * ct + df * v.s * st + du * along * (1 - ct),
+		);
+	};
+	const tilt = (v: V3): V3 =>
+		v3(v.f, v.s * cl + v.u * sl, -v.s * sl + v.u * cl);
+	return (p: V3): V3 => {
+		if (tw === 0 && tl === 0) {
+			return p;
+		}
+		const v = v3(p.f - pelvis.f, p.s - pelvis.s, p.u - pelvis.u);
+		const r = back ? twist(tilt(v)) : tilt(twist(v));
+		return v3(pelvis.f + r.f, pelvis.s + r.s, pelvis.u + r.u);
+	};
+};
+
 // The pose's angles live in the plane he faces along; arms swing out from
 // his sides a little (more in a stance), feet spread with the knees.
 export const skeleton = (b: Body, q: Pose): Skeleton => {
@@ -2663,14 +3094,27 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		0,
 		chest.u + Math.cos(L) * up,
 	);
+	const armR = armLimb(b, chest, q.shN, q.elN, q.abN, q.wrN, -1, q.tuck);
+	const armL = armLimb(b, chest, q.shF, q.elF, q.abF, q.wrF, 1, q.tuck);
+	if (q.twist === 0 && q.tilt === 0) {
+		return { pelvis, chest, head, legR, legL, armR, armL };
+	}
+	// His shoulders, arms and head turned on his hips.
+	const turn = turnUpper(q, pelvis);
+	const limb = (l: Limb): Limb => ({
+		root: turn(l.root),
+		mid: turn(l.mid),
+		end: turn(l.end),
+		...(l.tip ? { tip: turn(l.tip) } : {}),
+	});
 	return {
 		pelvis,
-		chest,
-		head,
+		chest: turn(chest),
+		head: turn(head),
 		legR,
 		legL,
-		armR: armLimb(b, chest, q.shN, q.elN, q.abN, q.wrN, -1, q.tuck),
-		armL: armLimb(b, chest, q.shF, q.elF, q.abF, q.wrF, 1, q.tuck),
+		armR: limb(armR),
+		armL: limb(armL),
 	};
 };
 
@@ -2852,6 +3296,17 @@ export const gripOf = (anim: AnimName): Grip => GRIPS[anim] ?? "two";
 
 // A basketball's radius, feet.
 const BALL_RADIUS = 0.39;
+
+// The ball under a dribbling hand, in his frame: just below the middle of
+// his palm.
+export const underPalm = (arm: Limb): V3 => {
+	const tip = arm.tip ?? arm.end;
+	return v3(
+		arm.end.f + (tip.f - arm.end.f) * 0.55,
+		arm.end.s + (tip.s - arm.end.s) * 0.55,
+		arm.end.u + (tip.u - arm.end.u) * 0.55 - BALL_RADIUS * 0.95,
+	);
+};
 // On the palm of a hand: how far its middle is from the wrist, and how thick
 // the hand is either side of it (of his height).
 const PALM_AT = 0.044;
@@ -3028,7 +3483,7 @@ export const posed = (
 	target = 0,
 ): Pose => {
 	const q = poseAt(anim, phase);
-	if (dribble !== undefined) {
+	if (dribble !== undefined && !MOVES.has(anim)) {
 		return dribbleArm(q, dribble, hand);
 	}
 	if (target <= 0) {

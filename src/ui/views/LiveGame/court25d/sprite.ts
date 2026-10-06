@@ -141,7 +141,8 @@ const armSteps = (a: PlayerState["arm"]): PlayerState["arm"] => {
 const stepped = (st: PlayerState) => {
 	const turn = Math.round(st.yaw / ((Math.PI * 2) / TURNS));
 	const f = st.from;
-	const w = f ? (f.w > 0.5 ? 2 / 3 : f.w > 0.12 ? 1 / 3 : 0) : 0;
+	const step = (v: number) => (v > 0.5 ? 2 / 3 : v > 0.12 ? 1 / 3 : 0);
+	const w = f ? step(f.w) : 0;
 	return {
 		arm: armSteps(st.arm),
 		phase: frameOf(st.anim, st.phase),
@@ -158,6 +159,7 @@ const stepped = (st: PlayerState) => {
 						dribbleHand: f.dribbleHand,
 						target: targetFrame(f.target),
 						w,
+						...(f.arms === undefined ? {} : { arms: step(f.arms) }),
 					}
 				: undefined,
 	};
@@ -202,7 +204,7 @@ export const drawSprite = (
 			Math.log(k) / Math.log(1.04),
 		)}|${px}|${st.holding ? 1 : 0}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}|${pose.target ?? ""}${
 			f
-				? `|${f.anim}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.target ?? ""}~${f.w}`
+				? `|${f.anim}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}`
 				: ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 		const kept = cache.kept.get(key);

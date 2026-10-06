@@ -11,8 +11,10 @@ import {
 	gripOf,
 	holdBall,
 	skeleton,
+	turnUpper,
 	type Body,
 	type Limb,
+	type Pose,
 	type V3,
 } from "./poses.ts";
 
@@ -315,6 +317,9 @@ type Built = {
 	head: { x: number; y: number; r: number };
 	// Which way each palm faces.
 	pn: [V3, V3];
+	// Undoing his upper body's turn (see turnUpper), by how far up his
+	// torso: TURN_STEPS + 1 matrices about his hips, if he is turned.
+	untwist?: Float64Array;
 	// Sprite pixels to a foot, at his middle.
 	k: number;
 };
@@ -353,6 +358,32 @@ const gripFor = (st: PlayerState, which: "R" | "L", holding: boolean): Grip => {
 		return "fist";
 	}
 	return RELAXED.has(st.anim) ? "relaxed" : "open";
+};
+
+// How much of his upper body's turn a point of his torso t up his spine
+// (0 his hips, 1 his chest) takes.
+const turnShare = (t: number): number => {
+	const u = Math.min(1, Math.max(0, t));
+	return u * u * (3 - 2 * u);
+};
+
+// The turn undone, a matrix about his hips for each of these steps up his
+// torso (for painting what he wears where it was made to sit).
+const TURN_STEPS = 16;
+const untwistTable = (q: Pose, pel: V3): Float64Array => {
+	const out = new Float64Array((TURN_STEPS + 1) * 9);
+	for (let i = 0; i <= TURN_STEPS; i++) {
+		const back = turnUpper(q, pel, turnShare(i / TURN_STEPS), true);
+		const cols = [v3(1, 0, 0), v3(0, 1, 0), v3(0, 0, 1)].map((e) =>
+			subV(back(addV(pel, e)), pel),
+		);
+		for (let c = 0; c < 3; c++) {
+			out[i * 9 + c] = cols[c]!.f;
+			out[i * 9 + 3 + c] = cols[c]!.s;
+			out[i * 9 + 6 + c] = cols[c]!.u;
+		}
+	}
+	return out;
 };
 
 const HELD_BALL_R = 0.39;
@@ -433,17 +464,23 @@ const build = (
 	const dp = body.depth;
 	const H = body.H;
 	const pel = sk.pelvis;
-	const ch = sk.chest;
-	const T = Math.hypot(ch.f - pel.f, ch.u - pel.u) || body.torso;
-	const spine = v3((ch.f - pel.f) / T, 0, (ch.u - pel.u) / T);
+	// His torso as it would stand untwisted (see turnUpper): up his spine
+	// from his hips at his lean.
+	const T = body.torso;
+	const lean = (q.lean * Math.PI) / 180;
+	const spine = v3(Math.sin(lean), 0, Math.cos(lean));
 	const fwdT = v3(spine.u, 0, -spine.f);
-	// A point on his torso: t up the spine, s to his left, f forward.
-	const up = (t: number, s: number, f = 0): V3 =>
-		v3(
-			pel.f + (ch.f - pel.f) * t + fwdT.f * f,
+	const turned = q.twist !== 0 || q.tilt !== 0;
+	// A point on his torso: t up the spine, s to his left, f forward - turned
+	// on his hips as far up him as it is.
+	const up = (t: number, s: number, f = 0): V3 => {
+		const p = v3(
+			pel.f + spine.f * T * t + fwdT.f * f,
 			s,
-			pel.u + (ch.u - pel.u) * t + fwdT.u * f,
+			pel.u + spine.u * T * t + fwdT.u * f,
 		);
+		return turned ? turnUpper(q, pel, turnShare(t))(p) : p;
+	};
 
 	// The torso: belly and back, the chest out in front, the lats flaring
 	// up to his armpits, across the tops of his shoulders; hips and seat.
@@ -602,6 +639,14 @@ const build = (
 			palmN = onto;
 			const shooting = which === "R" && gripOf(st.anim) === "shot";
 			h = unit(square(shooting ? h : addV(h, upV, 1.4), onto), h);
+		}
+		// A pass let go: palms out, thumbs down.
+		if (
+			!held &&
+			(st.anim === "pass" || st.anim === "passBounce") &&
+			st.phase > 0.38
+		) {
+			palmN = unit(square(v3(0.2, sgn, -0.45), h), palmN);
 		}
 		const thumbSide = unit(cross(palmN, h), fwd);
 		const ts = v3(thumbSide.f * sgn, thumbSide.s * sgn, thumbSide.u * sgn);
@@ -923,6 +968,7 @@ const build = (
 		late,
 		headDepth: headC.depth - body.headR * 0.4,
 		pn,
+		...(turned ? { untwist: untwistTable(q, pel) } : {}),
 		head: {
 			x: headC.x,
 			y: headC.y - body.headR * headC.k * FACE_LIFT,
@@ -1422,9 +1468,27 @@ export const sculpt = (
 					const side = fc.side;
 					switch (fc.kind) {
 						case TORSO: {
-							const rf0 = Pf - pel.f;
-							const rs0 = Ps - pel.s;
-							const ru0 = Pu - pel.u;
+							let rf0 = Pf - pel.f;
+							let rs0 = Ps - pel.s;
+							let ru0 = Pu - pel.u;
+							const ut = b.untwist;
+							if (ut) {
+								// Where it sat before he turned.
+								const up0 = (rf0 * spine.f + ru0 * spine.u) / body.torso;
+								const k =
+									Math.min(
+										TURN_STEPS,
+										Math.max(0, Math.round(up0 * TURN_STEPS)),
+									) * 9;
+								const nf = ut[k]! * rf0 + ut[k + 1]! * rs0 + ut[k + 2]! * ru0;
+								const ns =
+									ut[k + 3]! * rf0 + ut[k + 4]! * rs0 + ut[k + 5]! * ru0;
+								const nu =
+									ut[k + 6]! * rf0 + ut[k + 7]! * rs0 + ut[k + 8]! * ru0;
+								rf0 = nf;
+								rs0 = ns;
+								ru0 = nu;
+							}
 							torsoAt(
 								rf0 * spine.f + ru0 * spine.u,
 								rs0,
