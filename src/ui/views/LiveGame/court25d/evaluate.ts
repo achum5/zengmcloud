@@ -981,6 +981,115 @@ const armAt = (
 	};
 };
 
+// ONE PASS AWAY.
+//
+// Up on his man one pass from the ball, a defender gets his arm out into the
+// passing lane - the arm on his man's side, reaching toward a point in the
+// lane between the ball and him. It comes in as he gets up on his man and
+// goes as the ball gets farther away (or so near the lane is gone), so it
+// eases rather than snaps - and never swaps arms while it is out.
+const DENY_FROM = new Set<AnimName>([
+	"stance",
+	"stanceHands",
+	"stancePoint",
+	"shuffle",
+	"slide",
+]);
+const denyArm = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	here: Pt,
+	yaw: number,
+	anim: AnimName,
+): ArmPose | undefined => {
+	if (!DENY_FROM.has(anim)) {
+		return undefined;
+	}
+	const bi = ballIndexAt(tl, t);
+	const seg = tl.ball[bi];
+	if (seg?.kind !== "hold") {
+		return undefined;
+	}
+	const holder = tl.tracks.get(seg.pid);
+	if (!holder || holder.team === tr.team) {
+		return undefined;
+	}
+	// Since the ball came to this man (and his last dribble aside), and until
+	// it leaves him.
+	let since = seg.t0;
+	for (let k = bi - 1; k >= 0; k--) {
+		const x = tl.ball[k]!;
+		if (x.kind !== "hold" || x.pid !== seg.pid) {
+			break;
+		}
+		since = x.t0;
+	}
+	let until = Infinity;
+	for (let k = bi + 1; k < tl.ball.length; k++) {
+		const x = tl.ball[k]!;
+		if (x.kind !== "hold" || x.pid !== seg.pid) {
+			until = x.t0;
+			break;
+		}
+	}
+	const B = spotAt(holder, t);
+	// His man: the nearest of theirs, the ball aside - and how sure that is
+	// (how much nearer than the next).
+	let man: Pt | undefined;
+	let near = Infinity;
+	let next = Infinity;
+	for (const o of tl.tracks.values()) {
+		if (o.team === tr.team || o === holder) {
+			continue;
+		}
+		const si = lastIndex(o.shown, t, (x) => x[0]);
+		if (si < 0 || !o.shown[si]![1]) {
+			continue;
+		}
+		const p = spotAt(o, t);
+		const d = Math.hypot(p.x - here.x, p.y - here.y);
+		if (d < near) {
+			next = near;
+			near = d;
+			man = p;
+		} else if (d < next) {
+			next = d;
+		}
+	}
+	if (!man) {
+		return undefined;
+	}
+	const far = Math.hypot(man.x - B.x, man.y - B.y);
+	const lane = { x: B.x + (man.x - B.x) * 0.7, y: B.y + (man.y - B.y) * 0.7 };
+	const bearing = wrapAngle(Math.atan2(lane.y - here.y, lane.x - here.x) - yaw);
+	const deg = (Math.abs(bearing) * 180) / Math.PI;
+	// (Down while he turns, or while it is not clear which man is his: it
+	// changes sides only then.)
+	const turning = Math.abs(wrapAngle(yaw - yawAt(tl, tr, t - 100)));
+	const w =
+		smooth01((7 - near) / 2.5) *
+		smooth01((26 - far) / 4) *
+		smooth01((far - 9) / 3) *
+		smooth01((deg - 10) / 20) *
+		smooth01((125 - deg) / 30) *
+		smooth01((0.22 - turning) / 0.12) *
+		smooth01((next - near) / 2) *
+		smooth01((t - since) / 350) *
+		smooth01((until - t) / 300);
+	if (w <= 0.05) {
+		return undefined;
+	}
+	return {
+		hand: bearing >= 0 ? "R" : "L",
+		sh: 90,
+		el: 12,
+		ab: Math.min(85, deg),
+		wr: 36,
+		w,
+	};
+};
+
 export const evalPlayer = (
 	tl: CourtTimeline,
 	pid: number,
@@ -1007,7 +1116,7 @@ export const evalPlayer = (
 	const now = doingAt(tl, tr, t, here);
 	const from = shown ? blendInto(tl, tr, t, now.anim) : undefined;
 	const yaw = yawAt(tl, tr, t);
-	const arm =
+	const said =
 		shown && tr.arms.length > 0
 			? armAt(
 					tl,
@@ -1024,6 +1133,8 @@ export const evalPlayer = (
 								: "both",
 				)
 			: undefined;
+	const arm =
+		said ?? (shown ? denyArm(tl, tr, t, here, yaw, now.anim) : undefined);
 	return {
 		pid,
 		team: tr.team,

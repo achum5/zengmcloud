@@ -1195,6 +1195,66 @@ describe("2.5D director", () => {
 		assert.isAtLeast(onTheMove, 60);
 	}, 60_000);
 
+	// One pass from the ball and up on his man, a defender has an arm out in
+	// the passing lane - and it comes and goes, never jumping from one arm
+	// to the other.
+	test("one pass away, a defender gets an arm in the lane", () => {
+		const { tl } = compile("a", 140);
+		let cand = 0;
+		let denied = 0;
+		let flips = 0;
+		const hand = new Map<number, string>();
+		const said = (pid: number, t: number) =>
+			tl.tracks.get(pid)!.arms.some((g) => g.t0 <= t + 1 && g.t1 >= t - 101);
+		for (let t = 0; t < tl.end / 2; t += 100) {
+			const b = evalBall(tl, t, bodyFor);
+			if (b.holder === undefined) {
+				hand.clear();
+				continue;
+			}
+			const h = evalPlayer(tl, b.holder, t);
+			const theirs = [...tl.tracks.values()]
+				.filter((o) => o.team === h.team && o.pid !== b.holder)
+				.map((o) => evalPlayer(tl, o.pid, t))
+				.filter((o) => o.shown);
+			for (const tr of tl.tracks.values()) {
+				if (tr.team === h.team) {
+					continue;
+				}
+				const st = evalPlayer(tl, tr.pid, t);
+				if (!st.shown) {
+					continue;
+				}
+				const was = hand.get(tr.pid);
+				if (st.arm && st.arm.w > 0.3 && !said(tr.pid, t)) {
+					if (was !== undefined && was !== st.arm.hand) {
+						flips += 1;
+					}
+					hand.set(tr.pid, st.arm.hand);
+				} else {
+					hand.delete(tr.pid);
+				}
+				if (st.anim !== "stance") {
+					continue;
+				}
+				const man = theirs
+					.map((o) => ({ o, d: Math.hypot(o.x - st.x, o.y - st.y) }))
+					.sort((x, y) => x.d - y.d)[0];
+				const far = man && Math.hypot(man.o.x - h.x, man.o.y - h.y);
+				if (!man || man.d > 5 || far! < 12 || far! > 21) {
+					continue;
+				}
+				cand += 1;
+				if (st.arm && st.arm.w > 0.3) {
+					denied += 1;
+				}
+			}
+		}
+		assert.isAbove(cand, 300);
+		assert.isAbove(denied / cand, 0.45);
+		assert.isBelow(flips, 15);
+	}, 120_000);
+
 	// A shot fake with a man up on him: he comes up out of his stance for
 	// it - off his feet if he bites, a hand up if he does not.
 	test("a defender up on a shot fake goes up for it", () => {
