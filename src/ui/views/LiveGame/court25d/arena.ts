@@ -1038,14 +1038,19 @@ export const drawHoop = (
 };
 
 // How close the ball is to going through a rim: drawn between the rim's back
-// and front halves when it is.
+// and front halves when it is - but not out on the front of the rim, or
+// coming down in front of the net, where it is in front of all of it.
 export const ballAtRim = (ball: Pt3): Side | undefined => {
 	for (const side of [0, 1] as const) {
 		const rx = side === 0 ? 5.25 : COURT_W - 5.25;
+		const dx = ball.x - rx;
+		const front =
+			Math.abs(dx) < RIM_R ? 25 + Math.sqrt(RIM_R * RIM_R - dx * dx) : 25;
 		if (
-			Math.hypot(ball.x - rx, ball.y - 25) < RIM_R + BALL_R + 0.5 &&
+			Math.hypot(dx, ball.y - 25) < RIM_R + BALL_R + 0.5 &&
 			ball.z > RIM_Z - 2.2 &&
-			ball.z < RIM_Z + 1.4
+			ball.z < RIM_Z + 1.4 &&
+			ball.y < front + 0.1
 		) {
 			return side;
 		}

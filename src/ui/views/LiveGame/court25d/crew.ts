@@ -28,6 +28,7 @@ import {
 	type Pt3,
 	type Side,
 } from "./geometry.ts";
+import { playAt } from "./physics.ts";
 import { ANIMS, type AnimName } from "./poses.ts";
 
 // THE PEOPLE ON THE FLOOR WHO DON'T PLAY: three officials working the game,
@@ -283,6 +284,8 @@ const ballSpot = (tl: CourtTimeline, t: number): Pt => {
 				seg.to,
 				clamp((t - seg.t0) / Math.max(1, seg.t1 - seg.t0), 0, 1),
 			);
+		case "path":
+			return playAt(seg.pts, t - seg.t0);
 	}
 };
 
@@ -297,7 +300,7 @@ const shotFrom = (tl: CourtTimeline, t: number): Pt | undefined => {
 		if (
 			seg.kind === "fly" &&
 			!("pid" in seg.to) &&
-			Math.abs(seg.to.z - RIM_Z) < 1.6
+			(tl.ball[i + 1]?.kind === "path" || Math.abs(seg.to.z - RIM_Z) < 1.6)
 		) {
 			return "pid" in seg.from
 				? (() => {

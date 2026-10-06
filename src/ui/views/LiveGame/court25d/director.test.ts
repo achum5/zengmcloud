@@ -804,6 +804,117 @@ describe("2.5D director", () => {
 		}
 	});
 
+	test("a shot is played out at the rim the way its line says it went - free throws too", () => {
+		const { events, tl } = compile("a", 140);
+		const beatOf = new Map(tl.beats.map((b) => [b.i, b]));
+		let made = 0;
+		let missed = 0;
+		let fts = 0;
+		events.forEach((e, i) => {
+			const make =
+				(/^(fg|tp)/.test(e.type) && !e.type.startsWith("fga")) ||
+				e.type === "ft";
+			const miss = e.type.startsWith("miss");
+			const b = beatOf.get(i);
+			if (!b || (!make && !miss)) {
+				return;
+			}
+			// What the ball does at the rim, there when the line shows.
+			const path = tl.ball.find(
+				(s) =>
+					s.kind === "path" &&
+					s.t0 <= b.actionStart &&
+					s.t1 >= b.actionStart - 1,
+			);
+			if (path?.kind !== "path") {
+				return;
+			}
+			const rx = rimX(path.pts[0]! < COURT_W / 2 ? 0 : 1);
+			let through = false;
+			for (let k = 0; k < path.pts.length; k += 3) {
+				const rho = Math.hypot(path.pts[k]! - rx, path.pts[k + 1]! - 25);
+				if (path.pts[k + 2]! < RIM_Z - 0.5 && rho < 0.63) {
+					through = true;
+				}
+			}
+			assert.strictEqual(through, make, `line ${i}`);
+			made += make ? 1 : 0;
+			missed += miss ? 1 : 0;
+			fts += e.type === "ft" || e.type === "missFt" ? 1 : 0;
+		});
+		assert.isAbove(made, 15);
+		assert.isAbove(missed, 15);
+		assert.isAbove(fts, 15);
+	});
+
+	test("up to the rim, off it and into the hands of the man who gets it, the ball never swerves", () => {
+		const { tl } = compile("a", 140);
+		const speed = (t: number) => {
+			const a = evalBall(tl, t, bodyFor);
+			const b = evalBall(tl, t + 5, bodyFor);
+			return {
+				x: (b.x - a.x) / 0.005,
+				y: (b.y - a.y) / 0.005,
+				z: (b.z - a.z) / 0.005,
+			};
+		};
+		const swerve = (t: number) => {
+			const a = speed(t - 6);
+			const b = speed(t + 1);
+			return Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+		};
+		const into: number[] = [];
+		const off: number[] = [];
+		tl.ball.forEach((p, k) => {
+			if (p.kind !== "path") {
+				return;
+			}
+			into.push(swerve(p.t0));
+			const next = tl.ball[k + 1];
+			if (next?.kind === "fly" && "pid" in next.to) {
+				off.push(swerve(p.t1));
+			}
+		});
+		const ok = (xs: number[]) => xs.filter((x) => x < 3).length / xs.length;
+		assert.isAbove(into.length, 60);
+		assert.isAbove(off.length, 20);
+		assert.isAbove(ok(into), 0.9);
+		assert.isAbove(ok(off), 0.9);
+	});
+
+	test("off the rim, the man who gets it mostly goes up and takes it in the air", () => {
+		const { events, tl } = compile("a", 140);
+		const beatOf = new Map(tl.beats.map((b) => [b.i, b]));
+		let air = 0;
+		let all = 0;
+		events.forEach((e, i) => {
+			if (e.type !== "drb" && e.type !== "orb") {
+				return;
+			}
+			const b = beatOf.get(i);
+			const k = tl.ball.findIndex(
+				(s) =>
+					s.kind === "path" &&
+					b &&
+					s.t1 <= b.actionStart &&
+					s.t1 > b.actionStart - 2600,
+			);
+			if (!b || k < 0) {
+				return;
+			}
+			const next = tl.ball[k + 1];
+			all += 1;
+			if (next?.kind === "fly" && "pid" in next.to && next.to.pid === e.pid) {
+				air += 1;
+				// Up for it, at the top of his jump.
+				const st = evalPlayer(tl, e.pid as number, next.t1);
+				assert.isAbove(st.z, 0.2, `line ${i}`);
+			}
+		});
+		assert.isAbove(all, 20);
+		assert.isAbove(air / all, 0.6);
+	});
+
 	test("the playback target only moves forward as lines are shown", () => {
 		const { events, tl } = compile("cursor", 60);
 		let prev = -1;
@@ -1309,7 +1420,7 @@ describe("2.5D director", () => {
 			}
 		}
 		assert.isAbove(close, 15);
-		assert.isAbove(rose / close, 0.35);
+		assert.isAbove(rose / close, 0.8);
 	}, 60_000);
 
 	test("flat out, a player sprints - bounding off the floor stride to stride", () => {

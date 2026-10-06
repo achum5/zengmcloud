@@ -124,11 +124,14 @@ describe("2.5D crew", () => {
 		const { tl, crew } = working("a");
 		let checked = 0;
 		for (const g of tl.ball) {
+			// A bounce pass from his hands (not a loose ball coming down off
+			// the rim).
 			if (
 				g.kind !== "fly" ||
 				"pid" in g.from ||
 				"pid" in g.to ||
 				g.from.z < 3 ||
+				g.from.z > 6 ||
 				g.to.z > 1
 			) {
 				continue;

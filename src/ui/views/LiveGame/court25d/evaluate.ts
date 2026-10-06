@@ -10,6 +10,7 @@ import type {
 	Track,
 } from "./director.ts";
 import { rimX, type Pt, type Pt3, type Side } from "./geometry.ts";
+import { playAt } from "./physics.ts";
 import {
 	ANIMS,
 	armTo,
@@ -536,6 +537,9 @@ const ballNear = (tl: CourtTimeline, t: number): Pt => {
 			x: seg.from.x + (seg.to.x - seg.from.x) * u,
 			y: seg.from.y + (seg.to.y - seg.from.y) * u,
 		};
+	}
+	if (seg.kind === "path") {
+		return playAt(seg.pts, t - seg.t0);
 	}
 	return seg.at;
 };
@@ -1314,12 +1318,12 @@ export type BallState = {
 };
 
 // Turns a second of backspin on a ball thrown or shot.
-const BACKSPIN = 2;
+export const BACKSPIN = 2;
 
 // A basketball is 9.4 inches across.
 export const BALL_R = 0.39;
 // Feet per second, per second.
-const GRAVITY = 32.2;
+export const GRAVITY = 32.2;
 
 // The ball's hand-overs from one move to the next - a dribble picked up, a
 // ball scooped off the floor - take this long, eased from where the last
@@ -1439,7 +1443,8 @@ const ballOn = (
 			u < 1 &&
 			((prev.kind === "hold" && prev.pid === seg.pid) ||
 				prev.kind === "rest" ||
-				prev.kind === "bounce")
+				prev.kind === "bounce" ||
+				prev.kind === "path")
 		) {
 			const was = left();
 			const then = evalPlayer(tl, seg.pid, seg.t0 - BEFORE);
@@ -1479,10 +1484,23 @@ const ballOn = (
 		const T = Math.max(0, seg.t1 - seg.t0) / 1000;
 		const tau = u * T;
 		const vz = T > 0 ? (b.z - a.z) / T + 0.5 * GRAVITY * T : 0;
+		// Into a play at the rim (see physics.ts), it comes in going just as
+		// the play has it, however high his hands let it go from: bent by
+		// as much as that takes - and not at all at either end.
+		const next = tl.ball[i + 1];
+		const bend =
+			next?.kind === "path" && next.t0 === seg.t1 && T > 0
+				? (u * u * u - u * u) * T
+				: 0;
+		const w = bend === 0 || next?.kind !== "path" ? undefined : next.v0;
 		return {
-			x: a.x + (b.x - a.x) * u,
-			y: a.y + (b.y - a.y) * u,
-			z: a.z + vz * tau - 0.5 * GRAVITY * tau * tau,
+			x: a.x + (b.x - a.x) * u + (w ? (w.x - (b.x - a.x) / T) * bend : 0),
+			y: a.y + (b.y - a.y) * u + (w ? (w.y - (b.y - a.y) / T) * bend : 0),
+			z:
+				a.z +
+				vz * tau -
+				0.5 * GRAVITY * tau * tau +
+				(w ? (w.z - (vz - GRAVITY * T)) * bend : 0),
 			roll: -Math.PI * 2 * BACKSPIN * tau * (Math.sign(b.x - a.x) || 1),
 		};
 	}
@@ -1495,8 +1513,10 @@ const ballOn = (
 		const drop = Math.max(0, from.z - BALL_R);
 		// Each fall and hop takes the time gravity gives it - squeezed only
 		// if the bounce has less (then it rolls the rest of the way).
+		// (Off the floor already, it goes straight up into its first hop.)
 		const fall = (h: number) => Math.sqrt((2 * Math.max(0.01, h)) / GRAVITY);
-		const hops = [fall(drop)];
+		const hops = drop > 0.005 ? [fall(drop)] : [];
+		const first = hops.length;
 		for (let i = 0; i < seg.hops; i++) {
 			hops.push(2 * fall(seg.h0 * 0.42 ** i));
 		}
@@ -1508,9 +1528,9 @@ const ballOn = (
 			if (w <= hops[i]!) {
 				const v = w / hops[i]!;
 				z =
-					i === 0
+					i < first
 						? drop * (1 - v * v)
-						: 4 * seg.h0 * 0.42 ** (i - 1) * v * (1 - v);
+						: 4 * seg.h0 * 0.42 ** (i - first) * v * (1 - v);
 				break;
 			}
 			w -= hops[i]!;
@@ -1522,6 +1542,16 @@ const ballOn = (
 			y: from.y + (seg.to.y - from.y) * roll,
 			z: BALL_R + z,
 			roll: (along / BALL_R) * (Math.sign(seg.to.x - from.x) || 1),
+		};
+	}
+	if (seg.kind === "path") {
+		// Off the iron and the glass and down through the net, the way it
+		// was worked out (see physics.ts), still turning the way it left his
+		// fingers.
+		const ms = Math.min(t, seg.t1) - seg.t0;
+		return {
+			...playAt(seg.pts, ms),
+			roll: seg.roll0 + (seg.spin * ms) / 1000,
 		};
 	}
 	return { ...seg.at };
