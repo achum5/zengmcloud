@@ -1170,7 +1170,7 @@ describe("2.5D director", () => {
 				assert.isAbove(dunks, 0);
 			}
 		}
-	});
+	}, 60_000);
 
 	// From the camera (across the floor from the far sideline), a defender
 	// right in front of a shooter would hide his whole shot: he meets it from

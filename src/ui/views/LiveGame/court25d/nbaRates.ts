@@ -202,11 +202,16 @@ export const playTypeOdds = (
 
 // The share of trips that get their shot up (or turn it over) inside six
 // seconds - run out on the break - by what started them (2024-25 play-by-
-// play): a defensive rebound, a steal, a made field goal at the other end.
+// play, 225,000 trips): a defensive rebound, a steal, a made field goal at
+// the other end (inside eight seconds there: the inbound runs the clock a
+// couple of seconds first). A break ends at the rim far more often than a
+// trip does, and almost never with a mid-range jumper: 46% of those first
+// shots in the restricted area, 11% in the paint short of it, 3% mid-range,
+// 40% from three - against 27%, 20%, 10% and 43% of all of them.
 export const BREAK_SHARE = {
 	board: 0.33,
 	steal: 0.63,
-	make: 0.08,
+	make: 0.06,
 };
 
 // What happens on the way, per possession (NBA.com tracking; ball screens

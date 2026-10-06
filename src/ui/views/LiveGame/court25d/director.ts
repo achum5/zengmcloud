@@ -487,19 +487,19 @@ const STEP_MIN = 600;
 // most of those off a steal - but only a few off a basket (see BREAK_SHARE in
 // nbaRates.ts). The sim's trips run longer than the league's, so it is the
 // same share of its quickest ones that break: its fastest third off a board,
-// not quite half off a steal (more would race the clock), one in twelve off
+// not quite half off a steal (more would race the clock), one in sixteen off
 // a basket.
-const BREAK_GAP = { board: 9.6, steal: 11, make: 7.6 };
-// And by where the shot came from: a break ends at the rim half again as
-// often as a trip does, and seldom with a floater or a pull-up from mid-range
-// (see ZONES in nbaRates.ts) - so a trip ending at the rim was a break on a
+const BREAK_GAP = { board: 9.6, steal: 11, make: 7.1 };
+// And by where the shot came from: a break ends at the rim far more often
+// than a trip does, seldom with a floater and hardly ever with a pull-up from
+// mid-range (see BREAK_SHARE) - so a trip ending at the rim was a break on a
 // longer clock than one ending in the paint short of it. The sim's clock
 // can't run far ahead of the picture: never over 12 seconds.
 const BREAK_FROM: Record<Zone, number> = {
-	atRim: 2,
-	lowPost: -1.6,
-	midRange: -1.2,
-	three: 0.3,
+	atRim: 2.4,
+	lowPost: -1.3,
+	midRange: -2.6,
+	three: 0.2,
 	tipIn: 0,
 	putBack: 0,
 };
@@ -6721,13 +6721,45 @@ class Director {
 			}
 			return v;
 		};
+		// A man's last run begun by t (his runs are in order by now too).
+		const runAt = (tr: Track, t: number): Move | undefined => {
+			let lo = 0;
+			let hi = tr.moves.length - 1;
+			let found: Move | undefined;
+			while (lo <= hi) {
+				const mid = (lo + hi) >> 1;
+				if (tr.moves[mid]!.t0 <= t) {
+					found = tr.moves[mid];
+					lo = mid + 1;
+				} else {
+					hi = mid - 1;
+				}
+			}
+			return found;
+		};
+		// The ball's schedule is in order by now: the last of it begun by t.
+		const ballAt = (t: number): number => {
+			let lo = 0;
+			let hi = this.ball.length - 1;
+			let k = 0;
+			while (lo <= hi) {
+				const mid = (lo + hi) >> 1;
+				if (this.ball[mid]!.t0 <= t) {
+					k = mid;
+					lo = mid + 1;
+				} else {
+					hi = mid - 1;
+				}
+			}
+			return k;
+		};
+		const freeThrows = this.beats.filter(
+			(bt) => bt.type === "ft" || bt.type === "missFt",
+		);
 		// How long from t the ball stays in play: in a man's hands, or on its
 		// way between two - and no free throw.
 		const liveUntil = (a: number): number => {
-			let i = Math.max(
-				0,
-				this.ball.findLastIndex((s) => s.t0 <= a),
-			);
+			let i = ballAt(a);
 			let end = Infinity;
 			for (; i < this.ball.length; i++) {
 				const s = this.ball[i]!;
@@ -6741,12 +6773,8 @@ class Director {
 					break;
 				}
 			}
-			for (const bt of this.beats) {
-				if (
-					(bt.type === "ft" || bt.type === "missFt") &&
-					bt.end > a &&
-					bt.preStart < end
-				) {
+			for (const bt of freeThrows) {
+				if (bt.end > a && bt.preStart < end) {
 					end = Math.max(a, bt.preStart);
 				}
 			}
@@ -6754,10 +6782,7 @@ class Director {
 		};
 		// Whether the ball is his at any time from a to b.
 		const hasBall = (pid: number, a: number, b: number): boolean => {
-			const i = Math.max(
-				0,
-				this.ball.findLastIndex((s) => s.t0 <= a),
-			);
+			const i = ballAt(a);
 			for (let k = i; k < this.ball.length && this.ball[k]!.t0 < b; k++) {
 				const s = this.ball[k]!;
 				if (s.kind === "hold" && s.pid === pid) {
@@ -6848,12 +6873,29 @@ class Director {
 		const shownAt = (tr: Track, a: number, b: number) =>
 			atTime(tr.shown, a, false) &&
 			!tr.shown.some(([t0, on]) => t0 > a && t0 < b && !on);
-		// One spell of drifting before any run of his: that run starts from
-		// where the drifting left him.
-		const taken = new Set<string>();
-		const take = (tr: Track, w: Still) => taken.add(`${tr.pid}:${w.next}`);
-		const free = (tr: Track, w: Still) =>
-			w.next !== undefined && !taken.has(`${tr.pid}:${w.next}`);
+		// Spells of drifting before a run of his: the run starts from where
+		// the last of them left him - and the next spell, from there.
+		const taken = new Map<string, Pt>();
+		const take = (tr: Track, w: Still, at: Pt) =>
+			taken.set(`${tr.pid}:${w.next}`, at);
+		const free = (_tr: Track, w: Still) => w.next !== undefined;
+		const startOf = (tr: Track, w: Still): Pt =>
+			taken.get(`${tr.pid}:${w.next}`) ?? w.at;
+		// From when the ball is in play again at or after t: a loose ball
+		// picked up, a rebound come down into somebody's hands.
+		const liveFrom = (t: number): number => {
+			const i = ballAt(t);
+			for (let k = i; k < this.ball.length; k++) {
+				const s = this.ball[k]!;
+				if (
+					s.kind === "hold" ||
+					(s.kind === "fly" && "pid" in s.from && "pid" in s.to)
+				) {
+					return Math.max(t, s.t0);
+				}
+			}
+			return Infinity;
+		};
 		const added: { tr: Track; move: Move }[] = [];
 		for (const tr of all) {
 			for (const w of still.get(tr.pid)!) {
@@ -6864,23 +6906,24 @@ class Director {
 				// and still his team's ball. Before something he does right
 				// where he stands (a catch and shoot), he is back on his spot,
 				// set, before the ball comes.
-				const live = Math.min(w.to, liveUntil(w.from));
-				const change = this.poss.find(([t0]) => t0 > w.from && t0 < live)?.[0];
+				const from = liveFrom(w.from);
+				const live = Math.min(w.to, liveUntil(from));
+				const change = this.poss.find(([t0]) => t0 > from && t0 < live)?.[0];
 				const until =
 					Math.min(live, change ?? Infinity) - (w.planted ? 700 : 0);
-				if (hasBall(tr.pid, w.from, until)) {
+				if (hasBall(tr.pid, from, until)) {
 					continue;
 				}
-				const team = atTime(this.poss, w.from, 1 as Side);
+				const team = atTime(this.poss, from, 1 as Side);
 				if (
-					until - w.from < 1500 ||
+					until - from < 1500 ||
 					team !== tr.team ||
 					!shownAt(tr, w.from, w.to)
 				) {
 					continue;
 				}
 				const rim = { x: rimX(team), y: COURT_H / 2 };
-				const P = w.at;
+				const P = startOf(tr, w);
 				// Left back at the other end while his team has it: he trails
 				// up the floor to the top of the play - if where he goes next
 				// is up there anyway, and he can still get there in time from
@@ -6889,7 +6932,7 @@ class Director {
 					const Q = clampPt(
 						spot(team, this.rand(27, 31), Math.min(38, Math.max(12, P.y))),
 					);
-					const t0 = w.from + 300 + this.rng() * 300;
+					const t0 = from + 300 + this.rng() * 300;
 					const room = until - t0;
 					const d = dist(P, Q);
 					const nm = w.next === undefined ? undefined : tr.moves[w.next];
@@ -6912,7 +6955,7 @@ class Director {
 							},
 						});
 						setOff(tr, w.next, Q);
-						take(tr, w);
+						take(tr, w, Q);
 					}
 					continue;
 				}
@@ -6930,7 +6973,7 @@ class Director {
 							o !== tr && o.team === tr.team && atTime(o.shown, w.from, false),
 					)
 					.map((o) => {
-						const m = o.moves.findLast((x) => x.t0 <= w.from);
+						const m = runAt(o, w.from);
 						return m ? m.to : o.start;
 					});
 				const room = (q: Pt) =>
@@ -6959,7 +7002,7 @@ class Director {
 						if (!ow || dist(ow.at, P) >= 10) {
 							continue;
 						}
-						const last = o.moves.findLast((m) => m.t0 <= s0);
+						const last = runAt(o, s0);
 						const his = last !== undefined && this.marking.get(last) === tr.pid;
 						if (
 							!best ||
@@ -6977,13 +7020,13 @@ class Director {
 				const steps: { t0: number; t1: number; from: Pt; to: Pt }[] = [];
 				let at = P;
 				let side: 1 | -1 | undefined;
-				let t = w.from + 400 + this.rng() * 700;
+				let t = from + 400 + this.rng() * 700;
 				for (let n = 0; n < 8; n++) {
 					let Q: Pt | undefined;
 					if (big && inLane(at)) {
 						// Out of the lane before the official counts three: a
 						// step outside the nearer lane line.
-						t = Math.max(t, w.from + 1100);
+						t = Math.max(t, from + 1100);
 						Q = {
 							x: at.x,
 							y: COURT_H / 2 + (at.y < COURT_H / 2 ? -1 : 1) * 9,
@@ -7055,12 +7098,12 @@ class Director {
 					});
 				}
 				setOff(tr, w.next, at);
-				take(tr, w);
+				take(tr, w, at);
 				// His man goes with him, each time he is still there to.
 				const s0 = steps[0]!.t0 + 120;
 				const best = marker(s0, steps[0]!.t1 - steps[0]!.t0 + 200);
 				if (best) {
-					let D = best.w.at;
+					let D = startOf(best.tr, best.w);
 					for (const st of steps) {
 						if (st.t1 + 320 > best.w.to) {
 							break;
@@ -7081,7 +7124,7 @@ class Director {
 						D = to;
 					}
 					setOff(best.tr, best.w.next, D);
-					take(best.tr, best.w);
+					take(best.tr, best.w, D);
 				}
 			}
 		}
