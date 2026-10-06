@@ -2558,6 +2558,34 @@ class Director {
 		if (!onBall) {
 			return Math.abs(rs - ru) <= 2 && r < 0.3 ? "switch" : "chase";
 		}
+		// Mostly, the way it was played is what the shot that came off it
+		// reads: the handler pulls up because the big sat back, the roller
+		// is open because the big came up to the ball, two on the ball leave
+		// a man open for the kick, a switch leaves a big on a guard.
+		const o = run.option;
+		if (o && r < 0.8) {
+			const shooter = run.roles[o.shooter];
+			const close = o.zone === "rim" || o.kind === "floater";
+			const read: Coverage =
+				shooter === user
+					? close && rs >= 5
+						? "switch"
+						: close
+							? "hedge"
+							: "drop"
+					: shooter === screener
+						? o.zone === "post"
+							? "switch"
+							: close
+								? this.rng() < 0.6
+									? "hedge"
+									: "blitz"
+								: "drop"
+						: this.rng() < 0.6
+							? "blitz"
+							: "hedge";
+			return read;
+		}
 		if (rs <= 4 && ru <= 4) {
 			return r < 0.65 ? "switch" : "chase";
 		}
@@ -6561,6 +6589,28 @@ class Director {
 					out.push(m);
 				}
 			}
+			// Nor does a run end inside one: it stops at his shoulder (and the
+			// next sets off from there).
+			out.forEach((m, i) => {
+				for (const w of theirs) {
+					const d = dist(m.to, w.at);
+					if (m.t1 < w.t0 || m.t1 > w.t1 || d >= BODY) {
+						continue;
+					}
+					const ref = d > 0.05 ? m.to : m.from;
+					const dd = dist(ref, w.at) || 1;
+					const was = m.to;
+					const to = clampPt({
+						x: w.at.x + ((ref.x - w.at.x) / dd) * BODY * 1.05,
+						y: w.at.y + ((ref.y - w.at.y) / dd) * BODY * 1.05,
+					});
+					out[i] = { ...m, to };
+					const next = out[i + 1];
+					if (next && dist(next.from, was) < 0.01) {
+						out[i + 1] = { ...next, from: { ...to } };
+					}
+				}
+			});
 			tr.moves = out;
 		}
 	}
