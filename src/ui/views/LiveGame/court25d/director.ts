@@ -7204,10 +7204,10 @@ class Director {
 // Fast stretches in order, overlapping ones run together.
 // Whatever just happened gets a moment at real speed before the picture
 // hurries on (ms after its line's action is over) - time to take it in: a
-// basket longest, the ball down through the net and the scorer turning back
-// up the floor.
-const TAKE_IN = 1000;
-const TAKE_IN_SCORE = 1600;
+// basket longest, the ball down through the net and both teams turning and
+// heading back up the floor.
+const TAKE_IN = 1200;
+const TAKE_IN_SCORE = 2400;
 const takeIn = (b: Beat): number =>
 	resultOf(b.type)?.kind === "make" || b.type === "ft"
 		? TAKE_IN_SCORE

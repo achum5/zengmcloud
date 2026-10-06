@@ -7,9 +7,11 @@ import {
 	type CourtTimeline,
 } from "./director.ts";
 import {
+	FAST,
 	bodyPoint,
 	evalBall,
 	evalPlayer,
+	fastAt,
 	handWorld,
 	heldBall,
 	offenseAt,
@@ -699,8 +701,10 @@ describe("2.5D director", () => {
 		for (const [a] of tl.fast) {
 			const before = tl.beats.filter((b) => b.actionStart <= a);
 			for (const b of before) {
-				const score = /^(fg|tp)/.test(b.type) || b.type === "ft";
-				assert.isAtLeast(a - b.end, (score ? 1600 : 1000) - 1e-6, `${b.type}`);
+				const score =
+					(/^(fg|tp)/.test(b.type) && !b.type.startsWith("fga")) ||
+					b.type === "ft";
+				assert.isAtLeast(a - b.end, (score ? 2400 : 1200) - 1e-6, `${b.type}`);
 			}
 			const last = before.at(-1);
 			if (last && /^(fg|tp)/.test(last.type)) {
@@ -708,6 +712,47 @@ describe("2.5D director", () => {
 			}
 		}
 		assert.isAbove(afterScore, 10);
+	});
+
+	// Watched at the usual speed: the ball down through the net and both
+	// teams heading back up the floor at real speed - a good three seconds of
+	// it - and only then does the picture build up speed, over most of a
+	// second, rather than lurching away.
+	test("after a basket the picture lets it sink in, then builds up speed", () => {
+		const { tl } = compile("cuts", 160);
+		let makes = 0;
+		for (const b of tl.beats) {
+			if (!/^(fg|tp)/.test(b.type) || b.type.startsWith("fga")) {
+				continue;
+			}
+			const swish = tl.fx.find(
+				(f) => f.kind === "swish" && Math.abs(f.t - b.actionStart) < 200,
+			);
+			const next = tl.fast.find(([, z]) => z > b.actionStart);
+			if (!swish || !next || next[1] - next[0] < 5000) {
+				continue;
+			}
+			makes += 1;
+			// The viewer's clock (ms), the picture's running at the multiplier.
+			let t = swish.t;
+			let seen = 0;
+			let off: number | undefined;
+			let full: number | undefined;
+			while (full === undefined && t < next[1]) {
+				const rate = fastAt(tl, t);
+				if (off === undefined && rate >= 1.5) {
+					off = seen;
+				}
+				if (rate >= FAST * 0.9) {
+					full = seen;
+				}
+				t += 10 * rate;
+				seen += 10;
+			}
+			assert.isAtLeast(off!, 3000, `${b.type} at ${b.actionStart}`);
+			assert.isAtLeast(full! - off!, 600, `${b.type} at ${b.actionStart}`);
+		}
+		assert.isAbove(makes, 10);
 	});
 
 	test("whoever holds the ball is on the floor", () => {

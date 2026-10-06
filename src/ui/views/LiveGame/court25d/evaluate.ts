@@ -1439,9 +1439,12 @@ export const recentFx = (
 
 // Through a fast stretch the picture runs this many times over: getting up
 // to speed gently, so it never lurches away from what just happened, and
-// back down crisply into what comes next (timeline ms).
+// back down crisply into what comes next (timeline ms). Up to speed in
+// step with the timeline is a steady build in the time the viewer sees -
+// the same few percent quicker every moment - about a second of it at the
+// usual speed.
 export const FAST = 8;
-const FAST_IN = 1200;
+const FAST_IN = 3600;
 const FAST_OUT = 800;
 export const fastAt = (tl: CourtTimeline, t: number): number => {
 	const i = lastIndex(tl.fast, t, (f) => f[0]);
@@ -1450,12 +1453,9 @@ export const fastAt = (tl: CourtTimeline, t: number): number => {
 		return 1;
 	}
 	const len = f[1] - f[0];
-	const u = Math.min(
-		1,
-		(t - f[0]) / Math.min(FAST_IN, len * 0.6),
-		(f[1] - t) / Math.min(FAST_OUT, len * 0.4),
-	);
-	return 1 + (FAST - 1) * u * u * (3 - 2 * u);
+	const up = Math.min(1, (t - f[0]) / Math.min(FAST_IN, len * 0.6));
+	const v = Math.min(1, (f[1] - t) / Math.min(FAST_OUT, len * 0.4));
+	return 1 + (FAST - 1) * Math.min(up, v * v * (3 - 2 * v));
 };
 
 // The look round the building (see ArenaShot) showing at t, if any.
