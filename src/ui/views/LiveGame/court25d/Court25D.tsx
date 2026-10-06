@@ -36,7 +36,7 @@ import {
 	type CourtPlayer,
 } from "./director.ts";
 import { crewAt, crewFor } from "./crew.ts";
-import { headColors, loadHead, type HeadSprite } from "./faces.ts";
+import { headColors, loadHead, profileOf, type HeadSprite } from "./faces.ts";
 import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { bodyOf, type Body } from "./poses.ts";
@@ -297,6 +297,7 @@ const Court25D = ({
 				skin: head?.skin ?? colors.skin,
 				hair: f?.imgURL ? "#1f1612" : colors.hair,
 				cut: f?.imgURL ? "short" : colors.cut,
+				...(f?.imgURL ? {} : { profile: profileOf(f?.face, team?.colors) }),
 				jerseyNumber: f?.jerseyNumber ?? p.jerseyNumber ?? "",
 				name: p.name ?? "",
 				lastName: lastNameOf(p.name),
@@ -354,6 +355,12 @@ const Court25D = ({
 					skin: head?.skin ?? c.skin,
 					hair: c.hair,
 					cut: c.cut,
+					profile: profileOf(
+						m.face,
+						m.role === "coach"
+							? (m.team === 0 ? away : home)?.colors
+							: undefined,
+					),
 					jerseyNumber: "",
 					name: "",
 					lastName: "",

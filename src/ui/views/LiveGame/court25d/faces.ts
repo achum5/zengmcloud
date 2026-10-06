@@ -196,6 +196,51 @@ export const hairCut = (id: string | undefined): HairCut =>
 				? "big"
 				: "short";
 
+// What of his face still shows side on, where the face itself does not: a
+// beard - along his jaw, on his chin, over his lip, or sideburns - a
+// headband (low on his brow, or high), eye black.
+export type Profile = {
+	jaw?: boolean;
+	chin?: boolean;
+	lip?: boolean;
+	burns?: boolean;
+	band?: { high: boolean; color: string; stripe: string };
+	eyeBlack?: boolean;
+};
+
+export const profileOf = (
+	face: FaceConfig | undefined,
+	colors?: [string, string, string],
+): Profile => {
+	const out: Profile = {};
+	const beard = face?.facialHair?.id ?? "none";
+	if (beard !== "none") {
+		const stache = /stache|^mustache|^beard|^fullgoatee/i.test(beard);
+		out.lip = stache;
+		out.jaw = /^(beard|neckbeard|honest-abe|chin-strap|logan|mutton)/.test(
+			beard,
+		);
+		out.chin =
+			/^(beard|fullgoatee|goatee|soul|neckbeard|honest-abe|chin-strap)/.test(
+				beard,
+			) || /goatee|soul/i.test(beard);
+		out.burns =
+			out.jaw || /^(sideburns|wilt|harl|mutton|logan)|SB\d/.test(beard);
+	}
+	const acc = face?.accessories?.id ?? "none";
+	if (acc === "headband" || acc === "headband-high") {
+		out.band = {
+			high: acc === "headband-high",
+			color: colors?.[0] ?? "#ffffff",
+			stripe: colors?.[1] ?? "#ffffff",
+		};
+	}
+	if (acc === "eye-black") {
+		out.eyeBlack = true;
+	}
+	return out;
+};
+
 export type HeadLook = {
 	sprite?: HeadSprite;
 	skin: string;
