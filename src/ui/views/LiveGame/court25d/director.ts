@@ -5776,11 +5776,15 @@ class Director {
 	// OFF THE BALL, ON THE MOVE.
 	//
 	// The set says where each man goes when his part in it comes. In
-	// between, a man out on the perimeter while the ball is worked somewhere
-	// else does not stand rooted to his spot for seconds on end: he drifts a
-	// few feet along the arc - away from the teammate nearest him - and his
-	// man slides with him. Never on his way into anything that needs him
-	// where the set put him (a shot, a screen, a catch), never inside the
+	// between, a man left out of it while the ball is worked somewhere else
+	// does not stand rooted to his spot for seconds on end. Out on the
+	// perimeter he drifts a few feet along the arc - away from the teammate
+	// nearest him - and after a moment back the other way, for as long as he
+	// is left there; a big in close shifts round the rim, and steps out of
+	// the lane before the count of three; a man left back at the other end
+	// trails up the floor. His man goes with him. Before anything that needs
+	// him where the set put him (a catch, a shot, a screen) he is back on
+	// his spot in time, and out on the perimeter he never steps inside the
 	// line.
 	private liven() {
 		const atTime = <X>(list: [number, X][], t: number, fallback: X): X => {
@@ -5838,9 +5842,11 @@ class Director {
 			}
 			return false;
 		};
-		// Things a man does where the set put him to do them: a shot, a
-		// screen, a post-up, a contest of the shot.
+		// Things a man does where the set put him to do them: a catch (the
+		// pass is thrown to where he stands), a shot, a screen, a post-up, a
+		// contest of the shot.
 		const PLANTED = new Set<AnimName>([
+			"catch",
 			"screen",
 			"postUp",
 			"shoot",
@@ -5918,20 +5924,26 @@ class Director {
 		const shownAt = (tr: Track, a: number, b: number) =>
 			atTime(tr.shown, a, false) &&
 			!tr.shown.some(([t0, on]) => t0 > a && t0 < b && !on);
-		// One drift before any run of his: that run starts from where the
-		// drift left him.
+		// One spell of drifting before any run of his: that run starts from
+		// where the drifting left him.
 		const taken = new Set<string>();
 		const take = (tr: Track, w: Still) => taken.add(`${tr.pid}:${w.next}`);
 		const free = (tr: Track, w: Still) =>
-			w.next !== undefined && !w.planted && !taken.has(`${tr.pid}:${w.next}`);
+			w.next !== undefined && !taken.has(`${tr.pid}:${w.next}`);
 		const added: { tr: Track; move: Move }[] = [];
 		for (const tr of all) {
 			for (const w of still.get(tr.pid)!) {
 				if (w.to - w.from < 1500 || !free(tr, w)) {
 					continue;
 				}
-				// The part of it with the ball in play - and not in his hands.
-				const until = Math.min(w.to, liveUntil(w.from));
+				// The part of it with the ball in play - and not in his hands -
+				// and still his team's ball. Before something he does right
+				// where he stands (a catch and shoot), he is back on his spot,
+				// set, before the ball comes.
+				const live = Math.min(w.to, liveUntil(w.from));
+				const change = this.poss.find(([t0]) => t0 > w.from && t0 < live)?.[0];
+				const until =
+					Math.min(live, change ?? Infinity) - (w.planted ? 700 : 0);
 				if (hasBall(tr.pid, w.from, until)) {
 					continue;
 				}
@@ -5939,22 +5951,55 @@ class Director {
 				if (
 					until - w.from < 1500 ||
 					team !== tr.team ||
-					this.poss.some(([t0]) => t0 > w.from && t0 < until) ||
 					!shownAt(tr, w.from, w.to)
 				) {
 					continue;
 				}
 				const rim = { x: rimX(team), y: COURT_H / 2 };
 				const P = w.at;
-				// Out on the perimeter, clear behind the line, in the frontcourt.
-				if (
-					behindArc(team, P) !== undefined ||
-					Math.abs(P.x - rim.x) > COURT_W / 2 - 6
-				) {
+				// Left back at the other end while his team has it: he trails
+				// up the floor to the top of the play - if where he goes next
+				// is up there anyway, and he can still get there in time from
+				// it.
+				if (!w.planted && this.inBackcourt(team, P)) {
+					const Q = clampPt(
+						spot(team, this.rand(27, 31), Math.min(38, Math.max(12, P.y))),
+					);
+					const t0 = w.from + 300 + this.rng() * 300;
+					const room = until - t0;
+					const d = dist(P, Q);
+					const nm = w.next === undefined ? undefined : tr.moves[w.next];
+					if (
+						nm &&
+						!this.inBackcourt(team, nm.to) &&
+						dist(Q, nm.to) / Math.max(0.3, (nm.t1 - nm.t0) / 1000) <= RUN &&
+						room > 400 &&
+						d / (room / 1000) <= SPRINT
+					) {
+						const speed = Math.max(JOG, d / (room / 1000));
+						added.push({
+							tr,
+							move: {
+								t0,
+								t1: t0 + (d / speed) * 1000,
+								from: { ...P },
+								to: Q,
+								anim: speed >= RUN ? "sprint" : "run",
+							},
+						});
+						setOff(tr, w.next, Q);
+						take(tr, w);
+					}
 					continue;
 				}
-				const u = unitVec(rim, P);
-				const L = this.rand(2, 4.2);
+				// Out on the perimeter, clear behind the line - or in close, a
+				// big around the rim - in the frontcourt.
+				const front = Math.abs(P.x - rim.x) <= COURT_W / 2 - 6;
+				const out = behindArc(team, P) === undefined;
+				const big = !out && dist(P, rim) < 17;
+				if (!front || (!out && !big)) {
+					continue;
+				}
 				const mates = all
 					.filter(
 						(o) =>
@@ -5966,62 +6011,152 @@ class Director {
 					});
 				const room = (q: Pt) =>
 					Math.min(Infinity, ...mates.map((m) => dist(m, q)));
-				const ends = [1, -1].map((side) => {
-					const q = clampPt({
-						x: P.x - u.y * side * L,
-						y: P.y + u.x * side * L,
-					});
-					return behindArc(team, q) ?? q;
-				});
-				const Q = room(ends[0]!) >= room(ends[1]!) ? ends[0]! : ends[1]!;
-				const d = dist(P, Q);
-				const dur = Math.max(300, (d / 6.5) * 1000);
-				const t0 = w.from + 400 + this.rng() * 700;
-				if (d < 1 || t0 + dur + 250 > until) {
+				// The lane, where he cannot stand three seconds.
+				const base = team === 0 ? 0 : COURT_W;
+				const inLane = (q: Pt) =>
+					Math.abs(q.x - base) < 19 && Math.abs(q.y - COURT_H / 2) < 8;
+				// His man: whoever is marking him then - or, failing that, the
+				// nearest of them standing there with him.
+				const marker = (s0: number, d0: number) => {
+					let best: { tr: Track; w: Still; his: boolean } | undefined;
+					for (const o of all) {
+						if (o.team === tr.team || !atTime(o.shown, s0, false)) {
+							continue;
+						}
+						const ow = still
+							.get(o.pid)!
+							.find(
+								(x) =>
+									x.from <= s0 &&
+									x.to >= s0 + d0 &&
+									free(o, x) &&
+									(!x.planted || w.planted),
+							);
+						if (!ow || dist(ow.at, P) >= 10) {
+							continue;
+						}
+						const last = o.moves.findLast((m) => m.t0 <= s0);
+						const his = last !== undefined && this.marking.get(last) === tr.pid;
+						if (
+							!best ||
+							(his && !best.his) ||
+							(his === best.his && dist(ow.at, P) < dist(best.w.at, P))
+						) {
+							best = { tr: o, w: ow, his };
+						}
+					}
+					return best;
+				};
+				// A few feet one way along the arc (or round the rim) - away from
+				// the teammate nearest him - and, after a moment, back the other:
+				// keeping himself alive for as long as he is left there.
+				const steps: { t0: number; t1: number; from: Pt; to: Pt }[] = [];
+				let at = P;
+				let side: 1 | -1 | undefined;
+				let t = w.from + 400 + this.rng() * 700;
+				for (let n = 0; n < 8; n++) {
+					let Q: Pt | undefined;
+					if (big && inLane(at)) {
+						// Out of the lane before the official counts three: a
+						// step outside the nearer lane line.
+						t = Math.max(t, w.from + 1100);
+						Q = {
+							x: at.x,
+							y: COURT_H / 2 + (at.y < COURT_H / 2 ? -1 : 1) * 9,
+						};
+					} else {
+						const u = unitVec(rim, at);
+						const L = this.rand(2, big ? 3.2 : 4.2);
+						// (Never out of bounds: in a corner, down to the baseline at
+						// most.)
+						const inside = (q: Pt): Pt => ({
+							x: Math.min(COURT_W - 1.5, Math.max(1.5, q.x)),
+							y: Math.min(COURT_H - 1, Math.max(1, q.y)),
+						});
+						const ends = ([1, -1] as const).map((s) => {
+							const q = {
+								x: at.x - u.y * s * L,
+								y: at.y + u.x * s * L,
+							};
+							return { s, q: inside(big ? q : (behindArc(team, q) ?? q)) };
+						});
+						const ok = ends.filter(
+							(e) =>
+								!inLane(e.q) &&
+								Math.abs(e.q.x - rim.x) <= COURT_W / 2 - 6 &&
+								dist(at, e.q) >= 1,
+						);
+						const back = side === undefined ? undefined : -side;
+						const pick =
+							back === undefined
+								? ok.sort((x, y) => room(y.q) - room(x.q))[0]
+								: (ok.find((e) => e.s === back) ?? ok[0]);
+						Q = pick?.q;
+						side = pick?.s;
+					}
+					// Back on his spot, every other time, if he has to be there.
+					if (w.planted && n % 2 === 1) {
+						Q = P;
+					}
+					if (!Q) {
+						break;
+					}
+					const d = dist(at, Q);
+					const dur = Math.max(300, (d / 6.5) * 1000);
+					if (d < 1 || t + dur + 250 > until) {
+						break;
+					}
+					steps.push({ t0: t, t1: t + dur, from: at, to: Q });
+					at = Q;
+					// A beat there - only a quick one on the way out and back.
+					t += dur + (w.planted ? this.rand(300, 700) : this.rand(900, 2000));
+				}
+				if (w.planted && steps.length % 2 === 1) {
+					steps.pop();
+					at = P;
+				}
+				if (steps.length === 0) {
 					continue;
 				}
-				const move: Move = {
-					t0,
-					t1: t0 + dur,
-					from: { ...P },
-					to: Q,
-					anim: "drift",
-				};
-				added.push({ tr, move });
-				setOff(tr, w.next, Q);
-				take(tr, w);
-				// His man goes with him.
-				const step = { x: (Q.x - P.x) * 0.85, y: (Q.y - P.y) * 0.85 };
-				const s0 = t0 + 120;
-				let best: { tr: Track; w: Still } | undefined;
-				for (const o of all) {
-					if (o.team === tr.team || !atTime(o.shown, s0, false)) {
-						continue;
-					}
-					const ow = still
-						.get(o.pid)!
-						.find((x) => x.from <= s0 && x.to >= s0 + dur + 200 && free(o, x));
-					if (
-						ow &&
-						dist(ow.at, P) < 10 &&
-						(!best || dist(ow.at, P) < dist(best.w.at, P))
-					) {
-						best = { tr: o, w: ow };
-					}
+				for (const st of steps) {
+					added.push({
+						tr,
+						move: {
+							t0: st.t0,
+							t1: st.t1,
+							from: { ...st.from },
+							to: st.to,
+							anim: "drift",
+						},
+					});
 				}
+				setOff(tr, w.next, at);
+				take(tr, w);
+				// His man goes with him, each time he is still there to.
+				const s0 = steps[0]!.t0 + 120;
+				const best = marker(s0, steps[0]!.t1 - steps[0]!.t0 + 200);
 				if (best) {
-					const D = best.w.at;
-					const to = clampPt({ x: D.x + step.x, y: D.y + step.y });
-					const slide: Move = {
-						t0: s0,
-						t1: s0 + dur,
-						from: { ...D },
-						to,
-						anim: "slide",
-					};
-					added.push({ tr: best.tr, move: slide });
-					this.marking.set(slide, tr.pid);
-					setOff(best.tr, best.w.next, to);
+					let D = best.w.at;
+					for (const st of steps) {
+						if (st.t1 + 320 > best.w.to) {
+							break;
+						}
+						const to = clampPt({
+							x: D.x + (st.to.x - st.from.x) * 0.85,
+							y: D.y + (st.to.y - st.from.y) * 0.85,
+						});
+						const slide: Move = {
+							t0: st.t0 + 120,
+							t1: st.t1 + 120,
+							from: { ...D },
+							to,
+							anim: "slide",
+						};
+						added.push({ tr: best.tr, move: slide });
+						this.marking.set(slide, tr.pid);
+						D = to;
+					}
+					setOff(best.tr, best.w.next, D);
 					take(best.tr, best.w);
 				}
 			}

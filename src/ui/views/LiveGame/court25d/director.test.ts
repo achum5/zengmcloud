@@ -235,14 +235,28 @@ describe("2.5D director", () => {
 					continue;
 				}
 				drifts += 1;
-				for (const p of [m.from, m.to]) {
-					const team = tr.team;
-					const depth = team === 0 ? p.x : COURT_W - p.x;
-					const out =
-						depth < 14
-							? Math.abs(p.y - 25) - 22
-							: Math.hypot(depth - 5.25, p.y - 25) - 23.75;
-					assert.isAbove(out, 0.5, `drift inside the line at ${m.t0}`);
+				// Out on the perimeter he stays behind the line; a big in close
+				// never shifts into the lane.
+				const depthOf = (p: { x: number }) =>
+					tr.team === 0 ? p.x : COURT_W - p.x;
+				const outside = (p: { x: number; y: number }) => {
+					const depth = depthOf(p);
+					return depth < 14
+						? Math.abs(p.y - 25) - 22
+						: Math.hypot(depth - 5.25, p.y - 25) - 23.75;
+				};
+				if (outside(m.from) > 0) {
+					assert.isAbove(
+						outside(m.to),
+						0.5,
+						`drift inside the line at ${m.t0}`,
+					);
+				} else if (depthOf(m.to) < 19 && Math.abs(m.to.y - 25) < 8) {
+					// (Only back to where he has to be - to set a screen, to
+					// catch it - having stepped out a moment.)
+					const before = tr.moves[tr.moves.indexOf(m) - 1];
+					assert.strictEqual(before?.anim, "drift", `into the lane at ${m.t0}`);
+					assert.deepEqual(before?.from, m.to);
 				}
 				// The man guarding him - the nearest of the other team - goes the
 				// same way he does.
@@ -454,6 +468,53 @@ describe("2.5D director", () => {
 		// And he is into somebody, often.
 		assert.isAbove(contact / screens, 0.25);
 	}, 60_000);
+
+	// Left out of the play while the ball is worked somewhere else, a man
+	// does not stand there like a statue for seconds on end: he drifts and
+	// comes back, lifts out of the corner and sinks into it again, steps out
+	// of the lane - or trails up from the other end.
+	test("off the ball, nobody stands frozen in place for long", () => {
+		const { tl } = compile("a", 140);
+		const STEP = 100;
+		const live: boolean[] = [];
+		const holder: (number | undefined)[] = [];
+		let k = 0;
+		for (let t = 0; t < tl.end; t += STEP) {
+			while (k + 1 < tl.ball.length && tl.ball[k + 1]!.t0 <= t) {
+				k++;
+			}
+			const s = tl.ball[k]!;
+			live.push(
+				s.kind === "hold" ||
+					(s.kind === "fly" && "pid" in s.from && "pid" in s.to),
+			);
+			holder.push(s.kind === "hold" ? s.pid : undefined);
+		}
+		const fast = (t: number) => tl.fast.some(([a, b]) => t >= a && t < b);
+		const frozen: number[] = [];
+		for (const tr of tl.tracks.values()) {
+			let run = 0;
+			for (let i = 0, t = 0; t < tl.end; i++, t += STEP) {
+				const st = evalPlayer(tl, tr.pid, t);
+				const off =
+					live[i] &&
+					st.shown &&
+					holder[i] !== tr.pid &&
+					offenseAt(tl, t) === tr.team &&
+					!fast(t);
+				if (off && !st.moving) {
+					run += STEP;
+				} else {
+					if (run >= 2500) {
+						frozen.push(run);
+					}
+					run = 0;
+				}
+			}
+		}
+		assert.isBelow(frozen.length, 60);
+		assert.isBelow(frozen.filter((x) => x >= 4000).length, 12);
+	}, 120_000);
 
 	// A screen, a post-up, a celebration, words with the official: each is
 	// done where he stands, and the pose ends as he sets off again rather
