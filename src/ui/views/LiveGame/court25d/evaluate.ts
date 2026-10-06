@@ -292,6 +292,28 @@ const joinOf = (
 	return Math.min(va, vb) * keep;
 };
 
+// Set in a screen or a post-up in the pause between two runs, he stops for
+// it - however short - rather than running on through it.
+const PLANTED = new Set<string>(["screen", "postUp"]);
+const plantedBetween = (
+	tr: Track,
+	a: Move | undefined,
+	b: Move | undefined,
+): boolean => {
+	if (!a || !b) {
+		return false;
+	}
+	const t = (a.t1 + b.t0) / 2;
+	const i = lastIndex(tr.acts, t, (x) => x.t0);
+	for (let k = i; k >= 0 && k >= i - 3; k--) {
+		const x = tr.acts[k]!;
+		if (t < x.t1 && PLANTED.has(x.anim)) {
+			return true;
+		}
+	}
+	return false;
+};
+
 // A run as he really runs it: when it starts and ends (sharing any pause
 // with a run it joins), and how fast he is going at each end.
 type Run = { mv: Move; s0: number; s1: number; v0: number; v1: number };
@@ -299,8 +321,8 @@ const runOf = (tr: Track, k: number): Run => {
 	const mv = tr.moves[k]!;
 	const prev = tr.moves[k - 1];
 	const next = tr.moves[k + 1];
-	const vIn = joinOf(prev, mv);
-	const vOut = joinOf(mv, next);
+	const vIn = plantedBetween(tr, prev, mv) ? undefined : joinOf(prev, mv);
+	const vOut = plantedBetween(tr, mv, next) ? undefined : joinOf(mv, next);
 	return {
 		mv,
 		s0: vIn === undefined ? mv.t0 : (prev!.t1 + mv.t0) / 2,

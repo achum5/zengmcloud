@@ -486,6 +486,77 @@ describe("2.5D director", () => {
 		assert.isAbove(contact / screens, 0.25);
 	}, 60_000);
 
+	// The ball brought over half court and the trip a few seconds old, the
+	// defense is back with it: nobody stays at the other end guarding
+	// nobody, or runs back there after a man left behind - and nobody on the
+	// offense stands around back there either (the trailer comes up).
+	test("once the ball is over half court, nobody is left at the other end", () => {
+		for (const seed of ["a", "b"]) {
+			const { tl } = compile(seed, 140);
+			const tracks = [...tl.tracks.values()];
+			const subs = tl.beats.filter((b) => b.type === "sub");
+			const mid = COURT_W / 2;
+			let k = 0;
+			let n = 0;
+			let back = 0;
+			let runD = 0;
+			let runO = 0;
+			let longD = 0;
+			let longO = 0;
+			for (let t = 0; t < tl.end; t += 100) {
+				while (k + 1 < tl.ball.length && tl.ball[k + 1]!.t0 <= t) {
+					k++;
+				}
+				const s = tl.ball[k]!;
+				const h = s.kind === "hold" ? tl.tracks.get(s.pid) : undefined;
+				const side = h ? Math.sign(rimX(h.team) - mid) : 0;
+				const H = s.kind === "hold" ? evalPlayer(tl, s.pid, t) : undefined;
+				const since = tl.poss.findLast(([t0]) => t0 <= t)?.[0] ?? 0;
+				if (
+					!h ||
+					!H ||
+					offenseAt(tl, t) !== h.team ||
+					(H.x - mid) * side < 4 ||
+					t - since < 3000 ||
+					subs.some((b) => t >= b.preStart - 500 && t <= b.end + 500)
+				) {
+					runD = 0;
+					runO = 0;
+					continue;
+				}
+				n++;
+				let d = 0;
+				let o = 0;
+				for (const tr of tracks) {
+					const st = evalPlayer(tl, tr.pid, t);
+					if (
+						tr === h ||
+						!st.shown ||
+						(st.x - mid) * side > -2 ||
+						tr.shown.some(([ts]) => Math.abs(ts - t) < 4000)
+					) {
+						continue;
+					}
+					if (tr.team !== h.team) {
+						d++;
+					} else if (!st.moving) {
+						o++;
+					}
+				}
+				back += d > 0 ? 1 : 0;
+				runD = d > 0 ? runD + 100 : 0;
+				runO = o > 0 ? runO + 100 : 0;
+				longD = Math.max(longD, runD);
+				longO = Math.max(longO, runO);
+			}
+			assert.isAbove(n, 5000, seed);
+			// (Getting back on a break, a step behind the ball.)
+			assert.isBelow(back / n, 0.03, seed);
+			assert.isAtMost(longD, 2000, seed);
+			assert.isAtMost(longO, 1600, seed);
+		}
+	}, 60_000);
+
 	// Left out of the play while the ball is worked somewhere else, a man
 	// does not stand there like a statue for seconds on end: he drifts and
 	// comes back, lifts out of the corner and sinks into it again, steps out

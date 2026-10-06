@@ -529,6 +529,11 @@ const BREAK_FROM: Record<Zone, number> = {
 // How far a defender leaves his man to help (feet): any farther and he
 // could not get back out to him.
 const HELP_REACH: [number, number] = [8, 14];
+// How far up the floor (feet out from the rim) an off-ball defender goes
+// with his man: a few strides out past the ball, and never back over half
+// court - always as far as the top of the play.
+const UP_FLOOR_PAST = 8;
+const UP_FLOOR_MIN = 33;
 // How long a defender takes to read a pass (ms), and how fast he closes out
 // once he has (feet a second) - breaking down for the last steps.
 const CLOSE_READ = 150;
@@ -699,6 +704,13 @@ class Director {
 	readonly fast: [number, number, number?][] = [];
 	// When each break got going: a break is played at real speed.
 	private readonly breaks: number[] = [];
+	// Each man subbed out: who came on for him, when he went off, when the
+	// man coming on was out there, and when he came back on himself (see
+	// mark).
+	private readonly replaced = new Map<
+		number,
+		{ by: number; from: number; on: number; until: number }[]
+	>();
 	// Room kept round a man going up for a dunk, for the one he dunks on:
 	// nobody else of theirs inside it from t0 to t1 (see keepClear).
 	private readonly clears: {
@@ -709,6 +721,8 @@ class Director {
 		t0: number;
 		t1: number;
 		except: number;
+		// Where and by when the man he dunks on meets him, facing him.
+		meet: { at: Pt; by: number; face: 1 | -1 };
 	}[] = [];
 	// The period being played, and whether it is overtime.
 	private periodNo = 1;
@@ -914,7 +928,54 @@ class Director {
 				);
 				tr.moves = kept.sort((x, y) => x.t0 - y.t0);
 			}
+			this.meetDunk(c.except, c.meet);
 		}
+	}
+
+	// The man dunked on is there for it, set, wherever following his man
+	// took him in the meantime: he leaves for it in time to get there flat
+	// out, if he has to.
+	private meetDunk(pid: number, meet: { at: Pt; by: number; face: 1 | -1 }) {
+		const tr = this.track(pid);
+		const { at: V, by } = meet;
+		if (!tr || dist(this.posAt(pid, by), V) < 0.5) {
+			return;
+		}
+		let t0 = by - 600;
+		for (let n = 0; n < 3; n++) {
+			const need = (dist(this.posAt(pid, t0), V) / SPRINT) * 1000 + 150;
+			if (by - t0 >= need) {
+				break;
+			}
+			t0 = by - need;
+		}
+		const P = this.posAt(pid, t0);
+		const kept: Move[] = [];
+		// (His next run after it sets off from there.)
+		let next = true;
+		for (const m of tr.moves) {
+			if (m.t1 <= t0) {
+				kept.push(m);
+			} else if (m.t0 >= by) {
+				kept.push(next ? { ...m, from: { ...V } } : m);
+				next = false;
+			} else if (m.t0 < t0) {
+				kept.push({ ...m, t1: t0, to: { ...P } });
+			} else if (m.t1 > by) {
+				kept.push({ ...m, t0: by, from: { ...V } });
+				next = false;
+			}
+		}
+		const d = dist(P, V);
+		kept.push({
+			t0,
+			t1: by,
+			from: { ...P },
+			to: { ...V },
+			anim: d > 6 ? "run" : "slide",
+			...(d > 6 ? {} : { face: meet.face }),
+		});
+		tr.moves = kept.sort((x, y) => x.t0 - y.t0);
 	}
 
 	// Whatever run he is on at t, he stops it there - to go somewhere else.
@@ -1321,6 +1382,10 @@ class Director {
 	private setOffense(t: number, team: Side) {
 		if (this.poss.at(-1)?.[1] !== team) {
 			this.poss.push([t, team]);
+		}
+		if (this.offense !== team) {
+			// A new trip: man for man again, whoever switched last time.
+			this.guarding.clear();
 		}
 		this.offense = team;
 	}
@@ -2494,9 +2559,18 @@ class Director {
 				going.add(a.who);
 			}
 		}
+		// (Never back down the floor to it, from farther up already: he goes on
+		// from where he is - see trailUp.)
+		const out = (p: Pt) => Math.abs(p.x - rimX(run.team));
 		run.roles.forEach((pid, r) => {
-			if (pid !== bh && !going.has(r)) {
-				this.go(pid, this.at(run, f.at[r]!), t, RUN, "run");
+			if (pid === bh || going.has(r)) {
+				return;
+			}
+			const S = this.at(run, f.at[r]!);
+			if (
+				!(this.inBackcourt(run.team, S) && out(this.posOf(pid)) < out(S) - 6)
+			) {
+				this.go(pid, S, t, RUN, "run");
 			}
 		});
 		this.motionTeam = run.team;
@@ -2651,9 +2725,60 @@ class Director {
 				this.act(p.pid, p.anim, p.t, until, { look: p.look });
 			}
 		}
+		this.trailUp(run, acts, next, t0);
 		this.spaceTheDrive(run, t0);
 		this.guardStep(run, acts, t0, end, before, k);
 		return end;
+	}
+
+	// THE TRAILER. A man the set leaves back up the floor - the big who took
+	// it out after a basket, the one who stayed home on the break - with no
+	// part in this step or the next does not stand and watch from back
+	// there: he runs up to the top of the play, to the side of it with the
+	// most room.
+	private trailUp(
+		run: Running,
+		acts: PlayAction[],
+		next: PlayAction[] | undefined,
+		t0: number,
+	) {
+		const { team } = run;
+		const busy = new Set<number>();
+		for (const a of [...acts, ...(next ?? [])]) {
+			if (a.type === "screen") {
+				a.who.forEach((w) => busy.add(w));
+				busy.add(a.for);
+			} else {
+				busy.add(a.who);
+				if (a.type === "pass" || a.type === "handoff") {
+					busy.add(a.to);
+				}
+			}
+		}
+		run.roles.forEach((pid, r) => {
+			const P = this.posOf(pid);
+			if (busy.has(r) || pid === this.holder || !this.inBackcourt(team, P)) {
+				return;
+			}
+			const mates = run.roles
+				.filter((o) => o !== pid)
+				.map((o) => this.posOf(o));
+			const depth = RIM_INSET + this.rand(27, 30);
+			const Q = [COURT_H / 2 - 12, COURT_H / 2, COURT_H / 2 + 12]
+				.map((y) => spot(team, depth, y + this.rand(-1.5, 1.5)))
+				.map((S) => ({
+					S,
+					room: Math.min(...mates.map((M) => dist(M, S))),
+				}))
+				.sort((a, b) => b.room - a.room)[0]!.S;
+			this.go(
+				pid,
+				clampPt(Q),
+				Math.max(t0 + this.rand(150, 450), this.free.get(pid) ?? 0),
+				RUN * 0.85,
+				"run",
+			);
+		});
 	}
 
 	// SPACING THE DRIVE. The ball going hard at the rim, nobody off it stays
@@ -2710,9 +2835,13 @@ class Director {
 						? -Math.sign(diff)
 						: Math.sign(diff);
 				const to = Math.max(-ARC_EDGE, Math.min(ARC_EDGE, aP + way * step));
+				// (Behind the line, he stays well behind it - his toes too.)
+				const deep = Math.abs(P.x - rim.x) + RIM_INSET;
+				const behind = deep < 14 ? Math.abs(P.y - rim.y) > 22 : r > 23.75;
+				const R = behind ? Math.max(r, 23.75 + 0.75) : r;
 				Q = clampPt({
-					x: rim.x + Math.cos(to) * r * out,
-					y: rim.y + Math.sin(to) * r,
+					x: rim.x + Math.cos(to) * R * out,
+					y: rim.y + Math.sin(to) * R,
 				});
 			} else if (
 				r < 14 &&
@@ -3067,8 +3196,26 @@ class Director {
 	// ball, between his man and the rim, tighter the nearer the rim; off it,
 	// sagged toward the rim and shaded toward the ball, more the farther his
 	// man is from it - so the weak side sinks into the paint.
-	private defensePoint(team: Side, man: Pt, ball: Pt, onBall: boolean): Pt {
+	private defensePoint(team: Side, at: Pt, ball: Pt, onBall: boolean): Pt {
 		const rim = { x: rimX(team), y: COURT_H / 2 };
+		// A man left back up the floor - trailing the play, or still at the
+		// other end - is nobody's worry yet: off the ball, his man stays with
+		// the play and picks him up as he comes.
+		const deep = Math.abs(at.x - rim.x);
+		const reach = Math.max(
+			UP_FLOOR_MIN,
+			Math.min(
+				Math.abs(ball.x - rim.x) + UP_FLOOR_PAST,
+				COURT_W / 2 - RIM_INSET,
+			),
+		);
+		const man =
+			!onBall && deep > reach
+				? {
+						x: rim.x + ((at.x - rim.x) * reach) / deep,
+						y: rim.y + ((at.y - rim.y) * reach) / deep,
+					}
+				: at;
 		const toRim = dist(man, rim);
 		const ur = unitVec(man, rim);
 		if (onBall) {
@@ -3844,15 +3991,33 @@ class Director {
 	}
 
 	// His man: position against position, unless a switch changed it.
+	// His man: whoever a switch put on him, or else his own number's man
+	// position for position - one man each, every defender on somebody.
 	private defenderOf(pid: number): number | undefined {
 		const team = this.teamOf(pid);
-		const g = this.guarding.get(pid);
-		if (g !== undefined && this.lineup[other(team)].includes(g)) {
-			return g;
-		}
-		const j = this.slots(team).indexOf(pid);
+		const men = this.slots(team);
 		const def = this.slots(other(team));
-		return def[j] ?? def[0];
+		const taken = new Set<number>();
+		const mine = new Map<number, number>();
+		for (const m of men) {
+			const g = this.guarding.get(m);
+			if (g !== undefined && def.includes(g) && !taken.has(g)) {
+				mine.set(m, g);
+				taken.add(g);
+			}
+		}
+		men.forEach((m, j) => {
+			if (!mine.has(m)) {
+				const d = [def[j], ...def].find(
+					(x) => x !== undefined && !taken.has(x),
+				);
+				if (d !== undefined) {
+					mine.set(m, d);
+					taken.add(d);
+				}
+			}
+		});
+		return mine.get(pid) ?? def[0];
 	}
 
 	// A set run to its shot: the steps it takes for the option to open, the
@@ -4305,6 +4470,7 @@ class Director {
 					t0: gather - 150,
 					t1: gather + 900,
 					except: victim,
+					meet: { at: V, by: gather + 60, face: -faceRim as 1 | -1 },
 				});
 				const had = this.defenderOf(shooter);
 				for (const d of this.slots(other(team))) {
@@ -6947,12 +7113,20 @@ class Director {
 		if (this.holder !== undefined && off.includes(this.holder)) {
 			this.deadBall(T);
 		}
+		// Play goes on once the men going off are off the floor and the men
+		// coming on are out there.
+		let ready = T + 1300;
 		off.forEach((pid, j) => {
 			const at = this.posOf(pid);
 			const incoming = on[j];
-			// Back to his chair, where he sits down.
-			const gone = this.go(pid, this.seatOf(pid), T + j * 80, WALK, "walk");
+			// Off the floor at a jog, back to his chair, where he sits down.
+			const seat = this.seatOf(pid);
+			const t0 = T + j * 80;
+			const gone = this.go(pid, seat, t0, JOG, "run");
 			this.show(pid, gone, false);
+			const offFloor =
+				at.y > 0 && seat.y < 0 ? at.y / (at.y - seat.y) : at.y <= 0 ? 0 : 1;
+			ready = Math.max(ready, t0 + (gone - t0) * offFloor + 150);
 			if (incoming !== undefined) {
 				const tr = this.track(incoming);
 				if (tr) {
@@ -6971,7 +7145,14 @@ class Director {
 					tr.shown = tr.shown.filter(([ts, on]) => on || ts <= t0);
 					this.free.set(incoming, t0);
 					this.show(incoming, t0, true);
-					this.go(incoming, at, t0, RUN * 0.8, "run");
+					const there = this.go(incoming, at, t0, RUN * 0.8, "run");
+					ready = Math.max(ready, there);
+					const list = this.replaced.get(pid) ?? [];
+					list.push({ by: incoming, from: T, on: there, until: Infinity });
+					this.replaced.set(pid, list);
+					for (const r of this.replaced.get(incoming) ?? []) {
+						r.until = Math.min(r.until, T);
+					}
 					// They slap hands going by.
 					let meet = t0;
 					let close = Infinity;
@@ -6993,7 +7174,7 @@ class Director {
 			...this.lineup[team].filter((p) => !off.includes(p)),
 			...on.filter((p) => !this.lineup[team].includes(p)),
 		];
-		this.beat(i, e.type, T, T + 1300);
+		this.beat(i, e.type, T, ready);
 	}
 
 	trackScore(e: RawEvent) {
@@ -7009,6 +7190,10 @@ class Director {
 			}
 			for (const pid of on) {
 				this.show(pid, this.T, true);
+				// (Back on: nobody is on in his place any more - see mark.)
+				for (const r of this.replaced.get(pid) ?? []) {
+					r.until = Math.min(r.until, this.T);
+				}
 			}
 			this.lineup[t] = [
 				...this.lineup[t].filter((p) => !off.includes(p)),
@@ -8382,13 +8567,28 @@ class Director {
 					while (k + 1 < men.length && men[k + 1]![0] <= t) {
 						k++;
 					}
-					const who = men[k]![1];
+					// (Subbed out, his man is gone: he stands his ground while the
+					// man coming on gets out there, then picks him up.)
+					let who = men[k]![1];
+					let waiting = false;
+					for (let n = 0; n < 4; n++) {
+						const r = this.replaced
+							.get(who)
+							?.find((x) => x.from <= t - REACT_OFF && t - REACT_OFF < x.until);
+						if (!r) {
+							break;
+						}
+						if (t - REACT_OFF < r.on) {
+							waiting = true;
+						}
+						who = r.by;
+					}
 					const B0 = ballAt(t);
 					const on = B0.holder === who;
 					const R = on ? REACT_ON : REACT_OFF;
 					const { at: Bp, holder } = ballAt(t - R);
 					const aim =
-						shownAt(who, t - R) || !last
+						(shownAt(who, t - R) && !waiting) || !last
 							? this.defensePoint(
 									this.teamOf(who),
 									where(who, t - R),
