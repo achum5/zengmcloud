@@ -158,6 +158,7 @@ const stepped = (st: PlayerState) => {
 						dribble: dribbleFrame(f.dribble),
 						dribbleHand: f.dribbleHand,
 						target: targetFrame(f.target),
+						...(f.mirror ? { mirror: true } : {}),
 						w,
 						...(f.arms === undefined ? {} : { arms: step(f.arms) }),
 					}
@@ -200,11 +201,11 @@ export const drawSprite = (
 		}
 		const f = pose.from;
 		const a = pose.arm;
-		key = `${id}|${st.anim}|${pose.phase}|${pose.turn}|${Math.round(
+		key = `${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}|${pose.turn}|${Math.round(
 			Math.log(k) / Math.log(1.04),
 		)}|${px}|${st.holding ? 1 : 0}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}|${pose.target ?? ""}${
 			f
-				? `|${f.anim}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}`
+				? `|${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}`
 				: ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 		const kept = cache.kept.get(key);

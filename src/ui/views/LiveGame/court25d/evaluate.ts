@@ -19,6 +19,7 @@ import {
 	holdBall,
 	isMove,
 	lerpPose,
+	mirror,
 	MOVE_BALL,
 	moveAnim,
 	moveFloor,
@@ -93,6 +94,8 @@ export type PlayerState = {
 	// get his hands there (feet) - his own reach decides how high he really
 	// goes (see withBody).
 	reach?: number;
+	// His move done the other way round: his left doing what its right does.
+	mirror?: boolean;
 	// Just after a change of move: the last move as it was when it changed,
 	// and how much of his pose is still that (1 all, 0 none) - and, if it
 	// differs, how much of his arms and the turn of his shoulders - see
@@ -103,6 +106,7 @@ export type PlayerState = {
 		dribble?: number;
 		dribbleHand?: Hand;
 		target?: number;
+		mirror?: boolean;
 		w: number;
 		arms?: number;
 	};
@@ -835,6 +839,78 @@ const offBall = (
 	return { anim, phase: (t - start) / dur };
 };
 
+// The hand the ball is in, with whoever has it at t: on its way down, the
+// hand it left; on its way up, the hand it goes to - and in both hands, as
+// good as his right.
+const ballHand = (tl: CourtTimeline, pid: number, t: number): Hand => {
+	const bi = ballIndexAt(tl, t);
+	const seg = tl.ball[bi];
+	if (seg?.kind !== "hold" || seg.pid !== pid || seg.style === "hold") {
+		return "R";
+	}
+	const beat = seg.style === "cross" ? crossAt(seg, t) : bounceOf(tl, bi, t);
+	return beat.ph < DOWN ? beat.from : beat.to;
+};
+// Up on the man with the ball, the hand on the ball's side is down at it
+// and the other up - his right hand the ball on the defender's left - and
+// they trade, a beat behind, when it goes across (see the guard loop: 0 his
+// left down, 0.5 his right).
+const guardHands = (tl: CourtTimeline, man: number, t: number): number => {
+	let left = 0;
+	for (const back of [260, 190, 120]) {
+		left += ballHand(tl, man, t - back) === "L" ? 1 : 0;
+	}
+	return (left / 3) * 0.5;
+};
+
+// How much of the way he is going is across the way he faces (0 straight
+// ahead or back, 1 square to his side).
+const across = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	here: Spot,
+): number => {
+	const h = Math.hypot(here.hx, here.hy);
+	if (h < 1e-6) {
+		return 0;
+	}
+	const yaw = yawAt(tl, tr, t);
+	return Math.abs(Math.cos(yaw) * here.hy - Math.sin(yaw) * here.hx) / h;
+};
+
+// Up on the ball, now and then he pokes at it - a quick swipe that gets
+// nothing - with the hand on its side as he starts it. Never the moment he
+// has got there.
+const SWIPE_EVERY = 2600;
+const SWIPE_MS = 420;
+const SWIPE_SHARE = 0.09;
+const swipeAt = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	man: number,
+): { anim: AnimName; phase: number; mirror?: boolean } | undefined => {
+	const k = Math.floor(t / SWIPE_EVERY);
+	if (hash01(tr.pid + 7, k) >= SWIPE_SHARE) {
+		return undefined;
+	}
+	const start =
+		k * SWIPE_EVERY + hash01(tr.pid + 3, k) * (SWIPE_EVERY - SWIPE_MS);
+	if (t < start || t >= start + SWIPE_MS) {
+		return undefined;
+	}
+	const mi = lastIndex(tr.moves, start, (m) => m.t0);
+	if (mi >= 0 && tr.moves[mi]!.t1 > start - 400) {
+		return undefined;
+	}
+	return {
+		anim: "poke",
+		phase: (t - start) / SWIPE_MS,
+		mirror: ballHand(tl, man, start) === "R",
+	};
+};
+
 // What his body is doing at t - the move he makes, how far through it, the
 // ball in his hands and his dribble - apart from where he is and which way
 // he faces.
@@ -842,6 +918,7 @@ type Doing = {
 	anim: AnimName;
 	phase: number;
 	z: number;
+	mirror?: boolean;
 	dunk?: PlayerState["dunk"];
 	reach?: number;
 	holding: boolean;
@@ -862,7 +939,9 @@ const doingAt = (
 	let z = 0;
 	let dunk: PlayerState["dunk"];
 	let reach: number | undefined;
+	let mirrored = false;
 	if (act) {
+		mirrored = act.mirror === true;
 		const u = (t - act.t0) / (act.t1 - act.t0);
 		anim = act.anim;
 		const a = ANIMS[anim];
@@ -884,6 +963,12 @@ const doingAt = (
 	} else if (here.moving && here.run) {
 		anim = runAnim(here.run);
 		phase = stridesAt(tr, here.moveIndex, here.run, t);
+		// Sliding with his man: push steps when he goes across the way he
+		// faces, drop steps when he gives ground or steps up.
+		if (anim === "slide" && across(tl, tr, t, here) > 0.6) {
+			phase *= strideOf("slide") / strideOf("shuffle");
+			anim = "shuffle";
+		}
 		z = bounceAt(anim, phase);
 	} else {
 		const seg = ballSegAt(tl, t);
@@ -909,14 +994,23 @@ const doingAt = (
 		}
 		const a = ANIMS[anim];
 		const fps = a.kind === "loop" ? a.fps : 2;
-		phase = move ? move.ph : (t / 1000) * (fps / a.n) + pid * 0.37;
-		const life =
+		phase = move
+			? move.ph
+			: anim === "guard" && seg?.kind === "hold"
+				? guardHands(tl, seg.pid, t)
+				: (t / 1000) * (fps / a.n) + pid * 0.37;
+		const life:
+			| { anim: AnimName; phase: number; mirror?: boolean }
+			| undefined =
 			anim === "ready" || anim === "stance"
 				? offBall(tl, tr, t, anim)
-				: undefined;
+				: anim === "guard" && seg?.kind === "hold"
+					? swipeAt(tl, tr, t, seg.pid)
+					: undefined;
 		if (life) {
 			anim = life.anim;
 			phase = life.phase;
+			mirrored = life.mirror === true;
 		}
 	}
 	const bi = ballIndexAt(tl, t);
@@ -935,6 +1029,7 @@ const doingAt = (
 		anim,
 		phase,
 		z,
+		...(mirrored ? { mirror: true } : {}),
 		...(dunk ? { dunk } : {}),
 		...(reach ? { reach } : {}),
 		holding: has?.style === "hold",
@@ -987,6 +1082,7 @@ const blendInto = (
 				dribble: before.dribble,
 				dribbleHand: before.dribbleHand,
 				target: before.target,
+				...(before.mirror ? { mirror: true } : {}),
 				w,
 				...(isMove(anim) ? { arms: ease(MOVE_ARMS_MS) } : {}),
 			};
@@ -1275,7 +1371,8 @@ const UPPER: (keyof Pose)[] = [
 	"tilt",
 ];
 const blendFrom = (q: Pose, f: NonNullable<PlayerState["from"]>): Pose => {
-	const was = posed(f.anim, f.phase, f.dribble, f.dribbleHand, f.target);
+	const as = posed(f.anim, f.phase, f.dribble, f.dribbleHand, f.target);
+	const was = f.mirror ? mirror(as) : as;
 	const p = lerpPose(q, was, f.w);
 	if (f.arms !== undefined) {
 		for (const key of UPPER) {
@@ -1288,7 +1385,8 @@ const blendFrom = (q: Pose, f: NonNullable<PlayerState["from"]>): Pose => {
 // His pose: his move's, eased in from the last one's just after a change -
 // and an arm in whatever it is saying.
 export const poseOf = (st: PlayerState): Pose => {
-	const q = posed(st.anim, st.phase, st.dribble, st.dribbleHand, st.target);
+	const own = posed(st.anim, st.phase, st.dribble, st.dribbleHand, st.target);
+	const q = st.mirror ? mirror(own) : own;
 	const f = st.from;
 	const p = f && f.w > 0 ? blendFrom(q, f) : q;
 	const a = st.arm;
@@ -1527,12 +1625,12 @@ const ballOn = (
 	const prev = i > 0 && depth < 2 ? tl.ball[i - 1] : undefined;
 	// Where the piece before left it, the moment before this one took over.
 	const left = () => ballOn(tl, i - 1, seg.t0 - BEFORE, bodyFor, depth + 1);
-	const handOf = (pid: number, at: number, which: "near" | "both") =>
+	const handOf = (pid: number, at: number, which: "near" | "far" | "both") =>
 		which === "both"
 			? heldBall(evalPlayer(tl, pid, at), bodyFor(pid))
 			: handWorld(evalPlayer(tl, pid, at), bodyFor(pid), which);
 	const resolve = (
-		p: Pt3 | { pid: number; hand?: "near" | "both" },
+		p: Pt3 | { pid: number; hand?: "near" | "far" | "both" },
 		at: number,
 	): Pt3 => ("pid" in p ? handOf(p.pid, at, p.hand ?? "both") : p);
 

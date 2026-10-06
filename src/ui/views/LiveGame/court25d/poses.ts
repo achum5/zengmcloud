@@ -371,43 +371,53 @@ const pump = (a: number, swing: number, bend: number, pump: number) => ({
 	elF: bend + pump * a,
 	abF: 12 - 6 * a,
 });
+// A defensive slide: how far he goes each step-and-close (feet), and how
+// far apart his feet are, closed up (see "shuffle").
+const SLIDE_STRIDE = 1.8;
+const SLIDE_NARROW = 0.35;
 const stride = (ph: number, mode: RunMode): Pose => {
 	const a = Math.sin(2 * Math.PI * ph);
 	const c = Math.cos(2 * Math.PI * ph);
 	if (mode === "shuffle") {
-		// A defensive slide sideways: down in his stance, the lead foot stepping
-		// out and the other closing up behind it - never crossing - with his
-		// arms out wide.
+		// A defensive slide, a push step: down in his stance, the lead foot
+		// stepping out while the trail foot stays planted, then the trail foot
+		// closing up behind it - never crossing, never touching. Over half a
+		// stride his feet spread as far as he goes (SLIDE_STRIDE), so each
+		// sits still on the floor while the other moves; his knees straighten
+		// a little as they spread, so his hips stay level the whole way.
+		const spread = ph < 0.5 ? ph * 2 : 2 - ph * 2;
+		const knee = 74 - 21 * spread * spread;
 		return pose({
-			hipN: 30 + 4 * a,
-			hipF: 34 - 4 * a,
-			kneeN: 64 + 6 * c,
-			kneeF: 66 + 6 * c,
-			lean: 20,
+			hipN: 30,
+			hipF: 34,
+			kneeN: knee,
+			kneeF: knee + 2,
+			lean: 18,
 			shN: 52,
 			elN: 58,
 			shF: 48,
 			elF: 62,
 			abN: 50,
 			abF: 50,
-			wide: 0.78 + 0.32 * c,
+			wide: SLIDE_NARROW + (SLIDE_STRIDE / 2) * spread,
 		});
 	}
 	if (mode === "closeout") {
-		// Closing out on a shooter: short, choppy steps to break down, one hand
-		// high at the shot and the other out at the drive.
+		// Closing out on a shooter: short, choppy steps to break down, his left
+		// hand high at the shot - face to face, the hand on the ball's side -
+		// and the right out at the drive.
 		return pose({
 			hipN: 18 + 12 * a,
 			hipF: 26 - 12 * a,
 			kneeN: 46 + 14 * Math.max(0, c),
 			kneeF: 48 + 14 * Math.max(0, -c),
 			lean: 12,
-			shN: 156,
-			elN: 16,
-			abN: 18,
-			shF: 50,
-			elF: 34,
-			abF: 50,
+			shN: 50,
+			elN: 34,
+			abN: 50,
+			shF: 156,
+			elF: 16,
+			abF: 18,
 			wide: 0.55,
 		});
 	}
@@ -958,7 +968,7 @@ export const MOVE_BALL: Record<
 	{ letGo: number; f: number; s: number }
 > = {
 	front: { letGo: 0.12, f: 0.22, s: 0 },
-	legs: { letGo: 0.14, f: 0.095, s: 0.048 },
+	legs: { letGo: 0.14, f: 0.08, s: 0.064 },
 	back: { letGo: 0.2, f: -0.143, s: 0.08 },
 };
 const ON_THE_MOVE_F = 0.32;
@@ -1291,7 +1301,7 @@ export const ANIMS = {
 	shuffle: {
 		kind: "cycle",
 		n: 6,
-		stride: 3.4,
+		stride: SLIDE_STRIDE,
 		pose: (i) => runPose(i / 6, "shuffle"),
 	},
 	// Running at a shooter and breaking down in front of him, a hand up.
@@ -2260,6 +2270,89 @@ export const ANIMS = {
 			[1, P.stance],
 		],
 	},
+	// A poke at the ball on a man's dribble: down low, a quick jab of the
+	// right hand at it - forward, down and across - from his stance, the
+	// other hand up, and back. (Mirrored for the left.)
+	poke: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 30,
+					kneeN: 64,
+					hipF: 36,
+					kneeF: 66,
+					lean: 20,
+					wide: 0.8,
+					shN: 46,
+					elN: 44,
+					abN: 40,
+					shF: 120,
+					elF: 30,
+					abF: 22,
+				}),
+			],
+			[
+				0.38,
+				pose({
+					hipN: 42,
+					kneeN: 66,
+					hipF: 30,
+					kneeF: 62,
+					lean: 30,
+					wide: 0.75,
+					tilt: -8,
+					twist: -10,
+					shN: 64,
+					elN: 4,
+					abN: -4,
+					wrN: -26,
+					shF: 116,
+					elF: 34,
+					abF: 24,
+				}),
+			],
+			[
+				0.6,
+				pose({
+					hipN: 40,
+					kneeN: 66,
+					hipF: 30,
+					kneeF: 62,
+					lean: 28,
+					wide: 0.75,
+					tilt: -5,
+					twist: -14,
+					shN: 56,
+					elN: 10,
+					abN: -18,
+					wrN: -10,
+					shF: 112,
+					elF: 36,
+					abF: 24,
+				}),
+			],
+			[
+				1,
+				pose({
+					hipN: 30,
+					kneeN: 64,
+					hipF: 36,
+					kneeF: 66,
+					lean: 20,
+					wide: 0.8,
+					shN: 46,
+					elN: 44,
+					abN: 40,
+					shF: 120,
+					elF: 30,
+					abF: 22,
+				}),
+			],
+		],
+	},
 	// Taking a charge: set, hit, knocked back on his heels, arms flung up.
 	fall: {
 		kind: "act",
@@ -3030,26 +3123,32 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		u: -Math.cos(deg * rad),
 	});
 	const wide = q.wide;
+	// Spread wide, his legs angle out from his hips - each bone its own
+	// length still, so a wide stance sits him lower instead of stretching him.
+	const inPlane = (len: number) =>
+		Math.sqrt(Math.max(len * len * 0.3, len * len - wide * wide * 0.25));
+	const thigh = inPlane(b.thigh);
+	const shin = inPlane(b.shin);
 	const leg = (hipDeg: number, kneeDeg: number, side: 1 | -1) => {
 		const a = dir(hipDeg);
 		const c = dir(hipDeg - kneeDeg);
 		const root = v3(0, side * b.hipW, b.hipH);
 		const mid = v3(
-			a.f * b.thigh,
+			a.f * thigh,
 			side * (b.hipW + wide * 0.5),
-			b.hipH + a.u * b.thigh,
+			b.hipH + a.u * thigh,
 		);
 		const end = v3(
-			mid.f + c.f * b.shin,
+			mid.f + c.f * shin,
 			side * (b.hipW + wide),
-			mid.u + c.u * b.shin,
+			mid.u + c.u * shin,
 		);
 		return { root, mid, end };
 	};
 	// Balanced: a bend at the knees is a bend at the hips too, the way a
 	// body crouches - so his feet stay under him instead of trailing behind.
 	const ankleF = (h: number, k: number) =>
-		b.thigh * Math.sin(h * rad) + b.shin * Math.sin((h - k) * rad);
+		thigh * Math.sin(h * rad) + shin * Math.sin((h - k) * rad);
 	const avgF = (d: number) =>
 		(ankleF(q.hipN + d, q.kneeN) + ankleF(q.hipF + d, q.kneeF)) / 2;
 	let flex = 0;

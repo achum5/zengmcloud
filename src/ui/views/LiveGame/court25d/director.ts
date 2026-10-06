@@ -135,6 +135,9 @@ export type Act = {
 	// What he looks at while he does it: the rim he shoots at, the man he
 	// passes to.
 	look?: Pt;
+	// Done the other way round: his left hand doing what the move does with
+	// his right - a block or a contest with the hand on the ball's side.
+	mirror?: true;
 };
 // Something he says with an arm while the rest of him goes on with whatever
 // it is doing - running, sliding, dribbling: a point (at the man he has, or
@@ -161,7 +164,7 @@ export type Track = {
 	looks: [number, Pt][];
 	shown: [number, boolean][];
 };
-export type BallEnd = Pt3 | { pid: number; hand?: "near" | "both" };
+export type BallEnd = Pt3 | { pid: number; hand?: "near" | "far" | "both" };
 export type BallSeg =
 	| {
 			kind: "hold";
@@ -1225,6 +1228,16 @@ class Director {
 	private crossMove(legs: number, back: number): DribbleMove {
 		const r = this.rng();
 		return r < legs ? "legs" : r < legs + back ? "back" : "front";
+	}
+
+	// Whether his left hand is the one on the ball's side, for a man at
+	// `from` going at a shooter at P as he lets it go: the ball up on the
+	// shooter's right, a little out from him - so, face to face, the left.
+	private leftToBall(from: Pt, shooter: number, P: Pt): boolean {
+		const f = unitVec(P, rimPt(this.teamOf(shooter)));
+		const B = { x: P.x - f.y * 0.7, y: P.y + f.x * 0.7 };
+		const g = unitVec(from, P);
+		return (B.x - from.x) * -g.y + (B.y - from.y) * g.x < 0;
 	}
 
 	// A run of `n` dribble moves as ball segments, from t and starting in
@@ -4688,16 +4701,22 @@ class Director {
 					"run",
 					-faceRim as 1 | -1,
 				);
+				const left = this.leftToBall(
+					{ x: rim.x - dir * 1.7, y: 25 - 1.1 },
+					shooter,
+					P1,
+				);
 				this.act(b, "block", contact - 330, contact + 420, {
 					face: -faceRim as 1 | -1,
 					look: { ...P1 },
 					jump: [0.1, 0.9, 3.3],
+					...(left ? { mirror: true as const } : {}),
 				});
 				this.fly(
 					contact - 80,
 					contact,
 					{ pid: shooter },
-					{ pid: b, hand: "near" },
+					{ pid: b, hand: left ? "far" : "near" },
 				);
 				decided = contact;
 				arrive = contact;
@@ -4808,12 +4827,20 @@ class Director {
 					-faceRim as 1 | -1,
 				);
 				const contact = Math.max(release + 110, there + 180);
+				// With the hand on the ball's side, straight up at it.
+				const left = this.leftToBall(this.posOf(b), shooter, P1);
 				this.act(b, "block", contact - 300, contact + 420, {
 					face: -faceRim as 1 | -1,
 					look: { ...P1 },
 					jump: [0.1, 0.9, 2.7],
+					...(left ? { mirror: true as const } : {}),
 				});
-				this.fly(release, contact, { pid: shooter }, { pid: b, hand: "near" });
+				this.fly(
+					release,
+					contact,
+					{ pid: shooter },
+					{ pid: b, hand: left ? "far" : "near" },
+				);
 				decided = contact;
 				arrive = contact;
 				target = { x: P1.x, y: P1.y, z: 9 };
@@ -5092,11 +5119,14 @@ class Director {
 		const P = this.posOf(shooter);
 		const G = this.posOf(d);
 		const face = (P.x >= C.x ? 1 : -1) as 1 | -1;
+		// With the hand on the ball's side.
+		const left = this.leftToBall(C, shooter, P);
 		const contest = (t: number, peak: number) =>
 			this.act(d, "contest", t, t + 680, {
 				face,
 				look: { ...P },
 				jump: [0.15, 0.9, peak],
+				...(left ? { mirror: true as const } : {}),
 			});
 		// The pass out to him, if that is how he got it.
 		const pass = this.ball.findLast(
@@ -6399,7 +6429,14 @@ class Director {
 				y: (back.y + back.x * off) * speed,
 				z: again ? this.rand(-2, 3) : this.rand(-7, 1),
 			},
-			{ pid: e.pid, hand: "near" },
+			// Off the hand he went up with.
+			{
+				pid: e.pid,
+				hand: this.track(e.pid)?.acts.findLast((a) => a.anim === "block")
+					?.mirror
+					? "far"
+					: "near",
+			},
 		);
 		this.beat(i, e.type, at, next);
 		this.phase = "loose";
@@ -6694,7 +6731,13 @@ class Director {
 				"run",
 				toward,
 			);
-			this.act(thief, "reach", hit - 150, hit + 300, { face: toward });
+			// A quick poke at it, with the hand on the ball's side.
+			this.act(thief, "poke", hit - 150, hit + 300, {
+				face: toward,
+				...(this.ballHandOf === victim && this.ballHand === "R"
+					? { mirror: true as const }
+					: {}),
+			});
 			if (e.outOfBounds) {
 				const outY = vp.y < COURT_H / 2 ? -1.8 : COURT_H + 1.8;
 				this.bounce(
@@ -7095,7 +7138,12 @@ class Director {
 					near ? "slide" : "run",
 					near ? (-dir as 1 | -1) : undefined,
 				);
-				this.act(who, "reach", tS - 160, tS + 260, { look: S });
+				this.act(who, "poke", tS - 160, tS + 260, {
+					look: S,
+					...(this.ballHandOf === victim && this.ballHand === "R"
+						? { mirror: true as const }
+						: {}),
+				});
 			}
 			if (thief !== undefined && !oob) {
 				const side = this.rng() < 0.5 ? 1 : -1;
