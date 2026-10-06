@@ -291,7 +291,7 @@ const loadGzip = (): boolean => {
 
 const storesByKey = {
 	players: ["players", "releasedPlayers", "awards"],
-	teamsBasic: ["teams", "gameAttributes"],
+	teamsBasic: ["teams", "gameAttributes", "jerseySkins"],
 	teams: ["teamSeasons", "teamStats"],
 	headToHead: ["headToHeads"],
 	schedule: ["schedule", "playoffSeries"],
@@ -446,6 +446,7 @@ const getExportInfo = (
 				imgURLSmall: t.imgURLSmall,
 				colors: t.colors,
 				jersey: t.jersey,
+				jerseySkins: t.jerseySkins,
 				cid: t.cid,
 				did: t.did,
 				pop: t.pop,

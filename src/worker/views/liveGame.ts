@@ -12,6 +12,7 @@ import type {
 	AllStars,
 	ArenaLooks,
 	CourtStyle,
+	JerseySkinIds,
 	Game,
 	UpdateEvents,
 	ViewInput,
@@ -194,16 +195,27 @@ export const boxScoreToLiveSim = async ({
 		if (__SPORT === "basketball") {
 			const override = teamSeasonOverrides?.[i];
 			let teamCourt: CourtStyle | undefined;
+			let worn: { jersey?: string; jerseySkins?: JerseySkinIds } | undefined;
 			// Only worth asking when the tid is a real team AND nothing has
 			// already said otherwise - the lookup is the whole fault above.
 			if (!override && t.tid >= 0) {
 				try {
-					teamCourt = (await idb.cache.teams.get(t.tid))?.court;
+					const team = await idb.cache.teams.get(t.tid);
+					teamCourt = team?.court;
+					worn = team;
 				} catch {
 					// Court styling is cosmetic; fall back to defaults.
 				}
 			}
 			t.court = liveSimCourt({ override, teamCourt });
+			// What the team wears in the 2.5D game: the jersey it has made its
+			// own, if it has, and its uniforms drawn from pictures.
+			if (worn?.jersey !== undefined) {
+				t.jersey = worn.jersey;
+			}
+			if (worn?.jerseySkins !== undefined) {
+				t.jerseySkins = worn.jerseySkins;
+			}
 		}
 		t.ptsQtrs = [];
 

@@ -118,6 +118,10 @@ const generate = (tm: any): Team => {
 		t.sportsbook = tm.sportsbook;
 	}
 
+	if (tm.jerseySkins !== undefined) {
+		t.jerseySkins = tm.jerseySkins;
+	}
+
 	// College leagues
 	if (typeof tm.prestige === "number") {
 		t.prestige = tm.prestige;

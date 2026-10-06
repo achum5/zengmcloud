@@ -87,6 +87,7 @@ export const takeReplayLooks = async (
 			colors: t.colors,
 			jersey: t.jersey,
 			court: t.court,
+			jerseySkins: t.jerseySkins,
 		};
 	}
 	// The first team is at home.

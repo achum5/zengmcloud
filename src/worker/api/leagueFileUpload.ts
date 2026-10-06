@@ -38,6 +38,7 @@ export const parseJSON = () => {
 		games: undefined,
 		headToHeads: undefined,
 		images: undefined,
+		jerseySkins: undefined,
 		liveGamePlayByPlay: undefined,
 		messages: undefined,
 		negotiations: undefined,

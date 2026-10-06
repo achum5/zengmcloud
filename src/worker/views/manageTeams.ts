@@ -16,6 +16,7 @@ const updateTeamInfo = async () => {
 					"imgURLSmall",
 					"colors",
 					"jersey",
+					"jerseySkins",
 					"did",
 					"pop",
 					"stadiumCapacity",
@@ -41,6 +42,7 @@ const updateTeamInfo = async () => {
 			pop: helpers.localeParseFloat(pop.toFixed(6)),
 			stadiumCapacity: t.stadiumCapacity ?? t.seasonAttrs.stadiumCapacity,
 			jersey: t.jersey ?? DEFAULT_JERSEY,
+			...(t.jerseySkins ? { jerseySkins: t.jerseySkins } : {}),
 			did: t.did,
 			disabled: t.disabled,
 		};

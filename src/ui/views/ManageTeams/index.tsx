@@ -1,14 +1,21 @@
-import { Fragment, useCallback, useReducer, type SubmitEvent } from "react";
+import {
+	Fragment,
+	useCallback,
+	useReducer,
+	useState,
+	type SubmitEvent,
+} from "react";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
 import AddRemove from "./AddRemove.tsx";
-import type { Phase, View } from "../../../common/types.ts";
+import type { JerseySkinIds, Phase, View } from "../../../common/types.ts";
 import { PHASE } from "../../../common/constants.ts";
 import TeamForm from "./TeamForm.tsx";
 import { useBlocker } from "../../hooks/useBlocker.ts";
 import { useLocal } from "../../util/local.ts";
+import JerseySkins from "./JerseySkins.tsx";
 
 export const nextSeasonWarning =
 	"Because the regular season is already over, changes will not be fully applied until next season.";
@@ -139,6 +146,17 @@ const ManageTeams = (props: View<"manageTeams">) => {
 	});
 
 	const { setDirty } = useBlocker();
+
+	// Teams' 2.5D jersey pictures, saved as they're changed rather than with
+	// the rest of the form.
+	const [skins, setSkins] = useState(
+		() => new Map(props.teams.map((t) => [t.tid, t.jerseySkins])),
+	);
+	const [skinsTid, setSkinsTid] = useState<number>();
+	const skinsTeam =
+		skinsTid === undefined
+			? undefined
+			: state.teams.find((t) => t.tid === skinsTid);
 
 	const dispatch: typeof dispatchUnwrapped = useCallback(
 		(action) => {
@@ -319,6 +337,15 @@ const ManageTeams = (props: View<"manageTeams">) => {
 									>
 										Customize jersey
 									</a>
+									<button
+										type="button"
+										className="btn btn-sm btn-light-bordered ms-2"
+										onClick={() => {
+											setSkinsTid(t.tid);
+										}}
+									>
+										2.5D jerseys
+									</button>
 								</div>
 							) : null}
 							<div className="col-12 d-lg-none" style={{ marginTop: -12 }}>
@@ -340,6 +367,18 @@ const ManageTeams = (props: View<"manageTeams">) => {
 					</div>
 				</div>
 			</form>
+			{skinsTeam ? (
+				<JerseySkins
+					t={skinsTeam}
+					ids={skins.get(skinsTeam.tid)}
+					onChange={(ids: JerseySkinIds) => {
+						setSkins((old) => new Map(old).set(skinsTeam.tid, ids));
+					}}
+					onHide={() => {
+						setSkinsTid(undefined);
+					}}
+				/>
+			) : null}
 		</>
 	);
 };

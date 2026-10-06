@@ -91,6 +91,7 @@ import {
 	type NonEmptyArray,
 	type CourtStyle,
 	type Image,
+	type JerseySkinIds,
 	type TradingCard,
 	realPlayerPhotosSchema,
 	realTeamInfoSchema,
@@ -6424,6 +6425,88 @@ const updateTeamCourt = async ({
 	return { ok: true };
 };
 
+// A 2.5D uniform picture by id. The store isn't kept in memory: a picture is
+// in the cache only if it was written lately, otherwise on disk.
+const jerseySkinById = async (id: string) =>
+	(await idb.cache.jerseySkins.get(id)) ??
+	(await idb.league.get("jerseySkins", id));
+
+// A team's home or away uniform for the 2.5D game, as a picture (a PNG data
+// URL, at most this long), or none. The picture is stored once, by a hash of
+// it, in the synced jerseySkins store - so it travels in the league file -
+// and the team record keeps only its id. A picture no team wears any more is
+// removed (a replay that wore it shows the team's current one instead).
+const JERSEY_SKIN_MAX = 700_000;
+const setJerseySkin = async ({
+	tid,
+	side,
+	url,
+}: {
+	tid: number;
+	side: keyof JerseySkinIds;
+	url: string | undefined;
+}) => {
+	const t = await idb.cache.teams.get(tid);
+	if (!t) {
+		throw new Error(`Team not found for tid ${tid}`);
+	}
+	let id: string | undefined;
+	if (url !== undefined) {
+		if (
+			url.length > JERSEY_SKIN_MAX ||
+			!/^data:image\/png;base64,[\w+/]+=*$/.test(url)
+		) {
+			throw new Error("Invalid picture");
+		}
+		const digest = await crypto.subtle.digest(
+			"SHA-256",
+			new TextEncoder().encode(url),
+		);
+		id = Array.from(new Uint8Array(digest).slice(0, 10), (b) =>
+			b.toString(16).padStart(2, "0"),
+		).join("");
+		if (!(await jerseySkinById(id))) {
+			await idb.cache.jerseySkins.put({ id, url, at: Date.now() });
+		}
+	}
+	const old = t.jerseySkins?.[side];
+	const skins: JerseySkinIds = { ...t.jerseySkins };
+	if (id === undefined) {
+		delete skins[side];
+	} else {
+		skins[side] = id;
+	}
+	if (skins.home === undefined && skins.away === undefined) {
+		delete t.jerseySkins;
+	} else {
+		t.jerseySkins = skins;
+	}
+	await idb.cache.teams.put(t);
+	if (old !== undefined && old !== id) {
+		const teams = await idb.cache.teams.getAll();
+		if (
+			!teams.some(
+				(t2) => t2.jerseySkins?.home === old || t2.jerseySkins?.away === old,
+			)
+		) {
+			await idb.cache.jerseySkins.delete(old);
+		}
+	}
+	return id;
+};
+
+// The pictures with these ids, by id - those there are.
+const getJerseySkins = async (ids: string[]) => {
+	const out: Record<string, string> = {};
+	for (const id of ids) {
+		const row = await jerseySkinById(id);
+		if (row) {
+			out[id] = row.url;
+		}
+	}
+	return out;
+};
+
 // Save a team's uniform. The spec travels inside the same jersey string the
 // Manage Teams dropdown writes, so it flows through season snapshots, sync and
 // export like any preset - this just validates it and updates the current
@@ -7986,6 +8069,8 @@ const api = {
 		updateScheduledEvent,
 		updateTeamCourt,
 		updateTeamUniform,
+		setJerseySkin,
+		getJerseySkins,
 		updateTeamInfo,
 		updateTrade,
 		upgrade65,

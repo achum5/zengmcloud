@@ -162,6 +162,8 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"getExportFilename",
 	// Read-only fetch of a player/team image gallery (see api getImages).
 	"getImages",
+	// Read-only fetch of teams' 2.5D uniform pictures.
+	"getJerseySkins",
 	// Read-only lookup of a saved live-game replay.
 	"getLiveGamePlayByPlay",
 	"getLiveGameChat",

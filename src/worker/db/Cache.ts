@@ -19,6 +19,7 @@ import type {
 	LiveGamePlayByPlay,
 	FaDayResults,
 	Image,
+	JerseySkin,
 	TradingCard,
 	Message,
 	MessageWithoutKey,
@@ -72,6 +73,7 @@ export type Store =
 	| "images"
 	| "tradingCards"
 	| "socialAccounts"
+	| "jerseySkins"
 	| "messages"
 	| "negotiations"
 	| "playerFeats"
@@ -112,6 +114,7 @@ export const STORES: Store[] = [
 	"images",
 	"tradingCards",
 	"socialAccounts",
+	"jerseySkins",
 	"messages",
 	"negotiations",
 	"playerFeats",
@@ -275,6 +278,13 @@ export const storeInfos: Record<Store, StoreInfo> = {
 		// Fully loaded: every player page filters all cards by pid in memory,
 		// and the sync capture path reads written rows back through the cache.
 		getData: (tx) => tx.objectStore("tradingCards").getAll(),
+	},
+	jerseySkins: {
+		pk: "id",
+		pkType: "string",
+		autoIncrement: false,
+		// No getData on purpose: each row is a whole picture, read only when a
+		// game or the team editor asks for it.
 	},
 	messages: {
 		pk: "mid",
@@ -571,6 +581,7 @@ class Cache {
 	images: StoreAPI<Image, Image, string>;
 	tradingCards: StoreAPI<TradingCard, TradingCard, string>;
 	socialAccounts: StoreAPI<SocialAccount, SocialAccount, string>;
+	jerseySkins: StoreAPI<JerseySkin, JerseySkin, string>;
 
 	messages: StoreAPI<MessageWithoutKey, Message, number>;
 
@@ -629,6 +640,7 @@ class Cache {
 		this.images = new StoreAPI(this, "images");
 		this.tradingCards = new StoreAPI(this, "tradingCards");
 		this.socialAccounts = new StoreAPI(this, "socialAccounts");
+		this.jerseySkins = new StoreAPI(this, "jerseySkins");
 		this.messages = new StoreAPI(this, "messages");
 		this.negotiations = new StoreAPI(this, "negotiations");
 		this.playerFeats = new StoreAPI(this, "playerFeats");

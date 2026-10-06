@@ -47,6 +47,7 @@ import type {
 	LiveGamePlayByPlay,
 	FaDayResults,
 	Image,
+	JerseySkin,
 	TradingCard,
 	Awards,
 } from "../../common/types.ts";
@@ -139,6 +140,12 @@ export interface LeagueDB extends DBSchema {
 	socialAccounts: {
 		key: string;
 		value: SocialAccount;
+	};
+	// Teams' uniforms for the 2.5D live game, as pictures (see JerseySkin).
+	// Keyed by a hash of the picture. Synced like any other store.
+	jerseySkins: {
+		key: string;
+		value: JerseySkin;
 	};
 	messages: {
 		key: number;
@@ -717,6 +724,10 @@ const create = (db: IDBPDatabase<LeagueDB>) => {
 	});
 
 	db.createObjectStore("socialAccounts", {
+		keyPath: "id",
+	});
+
+	db.createObjectStore("jerseySkins", {
 		keyPath: "id",
 	});
 };
@@ -1830,6 +1841,12 @@ const migrate = async ({
 	if (oldVersion < 78) {
 		slowUpgrade();
 		await migrate78(transaction);
+	}
+
+	if (oldVersion < 79) {
+		db.createObjectStore("jerseySkins", {
+			keyPath: "id",
+		});
 	}
 
 	// Next update - do similar to `oldVersion < 71` above for numPlayoffRounds and draftType, from loadGameAttributes

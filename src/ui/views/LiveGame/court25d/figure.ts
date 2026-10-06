@@ -1,7 +1,9 @@
+import { parseUniform } from "../../../../common/uniform.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import { project, type Camera, type Projected } from "./camera.ts";
 import { bodyPoint, poseOf, type PlayerState } from "./evaluate.ts";
 import type { HairCut, HeadSprite, Profile } from "./faces.ts";
+import type { KitArt } from "./kitArt.ts";
 import { skeleton, type Body, type V3 } from "./poses.ts";
 
 // WHAT HE LOOKS LIKE - and his head (see sprite.ts).
@@ -23,6 +25,12 @@ export type Kit = {
 	sock: string;
 	shoe: string;
 	sole: string;
+	// His name across his back, if not in his number's color.
+	name?: string;
+	// The team's name across his chest: its color, if not his number's, and
+	// what it says, if not the team's name (at home) or its city (away).
+	chest?: string;
+	chestText?: string;
 };
 
 // What a player wears besides the uniform, and makes him himself: a sleeve
@@ -57,6 +65,8 @@ export const CAMERA_LENS = "#34363e";
 
 export type Look = {
 	kit: Kit;
+	// The team's uniform drawn from a picture (see kitArt.ts).
+	kitArt?: KitArt;
 	gear?: Gear;
 	outfit?: Outfit;
 	skin: string;
@@ -718,14 +728,68 @@ const uniform = (colors: [string, string, string], edition: Edition): Kit => {
 	};
 };
 
+// #rgb, #rgba and #rrggbbaa as #rrggbb.
+const hex6 = (c: string): string => {
+	const h = c.replace("#", "");
+	if (h.length === 3 || h.length === 4) {
+		return `#${h[0]}${h[0]}${h[1]}${h[1]}${h[2]}${h[2]}`;
+	}
+	return `#${h.slice(0, 6)}`;
+};
+
+// What a team wears: its colors, and the jersey it has made its own (see
+// common/uniform.ts), if it has.
+export type TeamDress = {
+	colors?: [string, string, string];
+	jersey?: string;
+};
+
+// A team's uniform. Its own jersey, if it has made one, is worn on the side
+// its color suits - a light one at home, a dark one away - with the shorts,
+// trim, lettering and name across the chest it was made with; on the other
+// side the team wears the usual uniform in that jersey's color.
+const kitOf = (
+	dress: TeamDress | undefined,
+	fallback: [string, string, string],
+	edition: Edition,
+): Kit => {
+	const colors = dress?.colors ?? fallback;
+	const spec = parseUniform(dress?.jersey);
+	if (!spec) {
+		return uniform(colors, edition);
+	}
+	const base = hex6(spec.base ?? colors[0]);
+	if (luminance(base) >= 0.6 !== (edition === "home")) {
+		return uniform([base, colors[1], colors[2]], edition);
+	}
+	const auto = uniform(colors, edition);
+	const band = spec.collar?.at(-1) ?? spec.arm?.at(-1);
+	const trim = band ? hex6(band.color) : auto.trim;
+	const light = edition === "home";
+	return {
+		...auto,
+		jersey: base,
+		trim,
+		number: spec.number?.color ? hex6(spec.number.color) : trim,
+		numberEdge: spec.number?.outline
+			? hex6(spec.number.outline)
+			: auto.numberEdge,
+		shorts: spec.shorts?.base ? hex6(spec.shorts.base) : base,
+		stripe: spec.shorts?.side ? hex6(spec.shorts.side) : trim,
+		sock: light ? "#f1f1f1" : shade(base, -0.25),
+		...(spec.wordmark?.color ? { chest: hex6(spec.wordmark.color) } : {}),
+		...(spec.wordmark?.text ? { chestText: spec.wordmark.text } : {}),
+	};
+};
+
 // What the two teams wear: the home team in white, the visitors in their
 // color.
 export const kitsFor = (
-	away: [string, string, string] | undefined,
-	home: [string, string, string] | undefined,
+	away: TeamDress | undefined,
+	home: TeamDress | undefined,
 ): [Kit, Kit] => [
-	uniform(away ?? ["#1d3461", "#f28c28", "#ffffff"], "road"),
-	uniform(home ?? ["#8c1d40", "#f2c14e", "#ffffff"], "home"),
+	kitOf(away, ["#1d3461", "#f28c28", "#ffffff"], "road"),
+	kitOf(home, ["#8c1d40", "#f2c14e", "#ffffff"], "home"),
 ];
 
 // A player's own gear, the same every game he plays: decided by who he is,

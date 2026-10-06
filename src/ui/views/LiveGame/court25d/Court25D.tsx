@@ -8,6 +8,7 @@ import {
 	type ReactNode,
 } from "react";
 import { useLocal } from "../../../util/local.ts";
+import { toWorker } from "../../../util/toWorker.ts";
 import { usePlayerFace, type PlayerFace } from "../../../util/playerFaces.ts";
 import type { ArenaLooks, ReplayLooks } from "../../../../common/types.ts";
 import LiveCourt from "../LiveCourt.tsx";
@@ -38,6 +39,7 @@ import {
 import { crewAt, crewFor } from "./crew.ts";
 import { headColors, loadHead, profileOf, type HeadSprite } from "./faces.ts";
 import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
+import { dressKit, kitArtOf, type KitArt } from "./kitArt.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { bodyOf, type Body } from "./poses.ts";
 import { cameraCuts, fastAt } from "./evaluate.ts";
@@ -198,9 +200,58 @@ const Court25D = ({
 	);
 
 	const kits = useMemo(
-		() => kitsFor(away?.colors, home?.colors),
+		() => kitsFor(away, home),
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[gid],
+	);
+
+	// Each side's uniform drawn from a picture, if its team has one: the
+	// visitors' away one, the home team's home one. A replay wears the ones
+	// worn that night - or, where one of those has since been replaced, the
+	// team's own now.
+	const [arts, setArts] = useState<[KitArt?, KitArt?]>([]);
+	useEffect(() => {
+		const now: any[] = Array.isArray(boxScore?.teams) ? boxScore.teams : [];
+		const choices = [
+			[away?.jerseySkins?.away, now[1]?.jerseySkins?.away],
+			[home?.jerseySkins?.home, now[0]?.jerseySkins?.home],
+		].map((ids) => ids.filter((id): id is string => typeof id === "string"));
+		const ids = [...new Set(choices.flat())];
+		if (ids.length === 0) {
+			setArts([]);
+			return;
+		}
+		let alive = true;
+		void (async () => {
+			const urls = await toWorker("main", "getJerseySkins", ids);
+			const made = await Promise.all(
+				choices.map(async (side) => {
+					const id = side.find((choice) => urls?.[choice] !== undefined);
+					if (id === undefined) {
+						return undefined;
+					}
+					const img = new Image();
+					img.src = urls[id]!;
+					try {
+						await img.decode();
+					} catch {
+						return undefined;
+					}
+					return kitArtOf(img, id);
+				}),
+			);
+			if (alive) {
+				setArts([made[0], made[1]]);
+			}
+		})();
+		return () => {
+			alive = false;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [gid]);
+	const dressed = useMemo(
+		() => [dressKit(kits[0], arts[0]), dressKit(kits[1], arts[1])] as const,
+		[kits, arts],
 	);
 
 	// The building, painted once a game.
@@ -290,9 +341,12 @@ const Court25D = ({
 			const head = heads.current.get(p.pid);
 			const colors = headColors(f?.face);
 			const team = p.team === 0 ? away : home;
+			const kit = dressed[p.team as Side];
+			const art = arts[p.team as Side];
 			looks.set(p.pid, {
-				kit: kits[p.team as Side],
-				gear: gearFor(p.pid, kits[p.team as Side]),
+				kit,
+				...(art ? { kitArt: art } : {}),
+				gear: gearFor(p.pid, kit),
 				skin: head?.skin ?? colors.skin,
 				hair: f?.imgURL ? "#1f1612" : colors.hair,
 				cut: f?.imgURL ? "short" : colors.cut,
@@ -306,14 +360,17 @@ const Court25D = ({
 				lastName: lastNameOf(p.name),
 				// NBA style: the team's name at home, the city on the road.
 				wordmark:
-					(p.team === 1 ? team?.name : team?.region) ?? team?.abbrev ?? "",
+					kit.chestText ??
+					(p.team === 1 ? team?.name : team?.region) ??
+					team?.abbrev ??
+					"",
 				head: head?.sprite,
 			});
 			bodies.set(p.pid, bodyOf(f?.hgt, f?.weight));
 		}
 		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [roster, kits, facesVersion]);
+	}, [roster, dressed, arts, facesVersion]);
 	// The officials, the coaches and the photographers, picked once a game,
 	// and their heads drawn from their faces as they come.
 	const crew = useMemo(

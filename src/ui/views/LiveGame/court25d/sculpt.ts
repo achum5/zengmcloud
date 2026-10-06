@@ -1,4 +1,14 @@
 import { project, type Camera } from "./camera.ts";
+import {
+	ART_H,
+	ART_JERSEY,
+	ART_SHORTS,
+	ART_W,
+	artAt,
+	artColor,
+	artWrap,
+	type ArtWrap,
+} from "./kitArt.ts";
 import { bodyPoint, onRim, poseOf, type PlayerState } from "./evaluate.ts";
 import {
 	BALL_ORANGE,
@@ -156,6 +166,40 @@ const square = (a: V3, d: V3): V3 => addV(a, d, -dotV(a, d));
 
 // ---- his clothes, on him ----------------------------------------------------
 
+// Where his lettering goes, up his torso (in torso lengths) and how big (in
+// heights), and how wide it may be (in sheet half-widths): his number and
+// the team's name on his chest, his name and a bigger number on his back.
+export const LETTERING = {
+	number: { u: 0.48, size: 0.12, maxW: 1.15 },
+	wordmark: { u: 0.77, size: 0.036, maxW: 1.2 },
+	backNumber: { u: 0.47, size: 0.14, maxW: 1.25 },
+	name: { u: 0.85, size: 0.036, maxW: 1.25 },
+} as const;
+
+// Up his spine from his hips (feet): where his jersey tucks into his shorts,
+// and the tops of his shoulders.
+const tuckOf = (body: Body) => body.torso * 0.2 + body.H * 0.016;
+const shouldersOf = (body: Body) => body.torso + body.depth * 0.4;
+
+// How a uniform's picture wraps round his jersey and his shorts (see
+// kitArt.ts) - the shorts down to their hems, a little above his knees.
+export const wrapsFor = (body: Body): { jersey: ArtWrap; shorts: ArtWrap } => ({
+	jersey: artWrap(
+		body.shoulderW * 1.1,
+		body.depth * 0.5,
+		shouldersOf(body),
+		tuckOf(body),
+		ART_JERSEY,
+	),
+	shorts: artWrap(
+		body.hipW + body.thighR * 1.15,
+		body.depth * 0.5,
+		tuckOf(body),
+		-body.thigh * 0.84,
+		ART_SHORTS,
+	),
+});
+
 // The jersey's sheet: his number and lettering laid out flat, in feet round
 // his torso - across from his right side round to his left, the chest in the
 // middle and the back at the ends - for the jersey to be painted from.
@@ -213,6 +257,7 @@ const jerseySheet = (
 		size: number,
 		edge: boolean,
 		maxW: number,
+		color = kit.number,
 	) => {
 		if (!str) {
 			return;
@@ -230,30 +275,50 @@ const jerseySheet = (
 			g.strokeStyle = kit.numberEdge;
 			g.strokeText(str, 0, 0, maxW * ppf);
 		}
-		g.fillStyle = kit.number;
+		g.fillStyle = color;
 		g.fillText(str, 0, 0, maxW * ppf);
 		g.restore();
 	};
-	// The chest: the team's name over the number.
-	text(look.jerseyNumber, w / 2, T * 0.48, body.H * 0.12, true, aS * 1.15);
+	// The chest: the team's name over the number - unless his uniform is a
+	// picture, which has its own.
+	const L = LETTERING;
 	text(
-		look.wordmark.toUpperCase(),
+		look.jerseyNumber,
 		w / 2,
-		T * 0.77,
-		body.H * 0.036,
-		false,
-		aS * 1.2,
+		T * L.number.u,
+		body.H * L.number.size,
+		true,
+		aS * L.number.maxW,
 	);
+	if (!look.kitArt) {
+		text(
+			look.wordmark.toUpperCase(),
+			w / 2,
+			T * L.wordmark.u,
+			body.H * L.wordmark.size,
+			false,
+			aS * L.wordmark.maxW,
+			kit.chest,
+		);
+	}
 	// The back, across the ends of the sheet: his name over a bigger number.
 	for (const x of [0, w]) {
-		text(look.jerseyNumber, x, T * 0.47, body.H * 0.14, true, aS * 1.25);
+		text(
+			look.jerseyNumber,
+			x,
+			T * L.backNumber.u,
+			body.H * L.backNumber.size,
+			true,
+			aS * L.backNumber.maxW,
+		);
 		text(
 			look.lastName.toUpperCase(),
 			x,
-			T * 0.85,
-			body.H * 0.036,
+			T * L.name.u,
+			body.H * L.name.size,
 			false,
-			aS * 1.25,
+			aS * L.name.maxW,
+			kit.name,
 		);
 	}
 	const sheet = {
@@ -308,6 +373,9 @@ type Built = {
 	spine: V3;
 	fwd: V3;
 	sheet?: Sheet;
+	// A uniform drawn from a picture: how it wraps round his jersey and
+	// shorts.
+	wraps?: { jersey: ArtWrap; shorts: ArtWrap };
 	// Up in front of his face: these arms (and the ball), drawn over his head.
 	late: boolean[];
 	headDepth: number;
@@ -926,7 +994,7 @@ const build = (
 		band: H * 0.016,
 		strap: sw * 0.62,
 		side: sw * 1.32,
-		top: T + dp * 0.4,
+		top: shouldersOf(body),
 		pit: T - H * 0.075,
 		neckIn: sw * 0.42,
 		vAt: H * 0.068,
@@ -963,6 +1031,7 @@ const build = (
 		spine,
 		fwd: fwdT,
 		sheet: jerseySheet(look, body, kMid * 1.2, cut.waist),
+		...(look.kitArt && !look.outfit ? { wraps: wrapsFor(body) } : {}),
 		late,
 		headDepth: headC.depth - body.headR * 0.4,
 		pn,
@@ -1086,7 +1155,9 @@ export type Sculpted = {
 const TILE = 8;
 
 // His sprite, w x h of its pixels, each px screen pixels, its top left at
-// (ox, oy) on the screen.
+// (ox, oy) on the screen. Given `seen` (ART_W x ART_H), a uniform drawn
+// from a picture also marks which of the picture's pixels show on him: 1
+// where his jersey or shorts are, 2 where the trim goes over it.
 export const sculpt = (
 	cam: Camera,
 	st: PlayerState,
@@ -1097,6 +1168,7 @@ export const sculpt = (
 	oy: number,
 	w: number,
 	h: number,
+	seen?: Uint8Array,
 ): Sculpted => {
 	const b = build(cam, st, body, look, px, ox, oy);
 	const pal = paletteOf(look);
@@ -1166,6 +1238,38 @@ export const sculpt = (
 	const spine = b.spine;
 	const fw = b.fwd;
 	const sheet = b.sheet;
+	const wraps = b.wraps;
+	const art = look.kitArt;
+	const artXY = new Float64Array(2);
+	const artPx = new Float64Array(3);
+	const artRGB: RGB = [0, 0, 0];
+	const mark = (v: number) => {
+		const i = Math.round(artXY[1]!) * ART_W + Math.round(artXY[0]!);
+		if (seen && i >= 0 && i < ART_W * ART_H && seen[i]! < v) {
+			seen[i] = v;
+		}
+	};
+	// The team's picture at a point on his jersey or shorts, over the plain
+	// color c where the picture is clear.
+	const artOver = (
+		wrap: ArtWrap,
+		U: number,
+		S: number,
+		F: number,
+		notSide: boolean,
+		c: RGB,
+	): RGB => {
+		artAt(wrap, U, S, F, notSide, artXY);
+		mark(1);
+		const a = artColor(art!, artXY[0]!, artXY[1]!, artPx);
+		if (a <= 0) {
+			return c;
+		}
+		artRGB[0] = c[0] + (artPx[0]! - c[0]) * a;
+		artRGB[1] = c[1] + (artPx[1]! - c[1]) * a;
+		artRGB[2] = c[2] + (artPx[2]! - c[2]) * a;
+		return artRGB;
+	};
 	let cr = 0;
 	let cg = 0;
 	let cb = 0;
@@ -1181,11 +1285,13 @@ export const sculpt = (
 		const hem = pal.shirt ? -cut.waist : cut.waist;
 		if (U < hem) {
 			c = pal.shorts;
-			if (!outfit && Math.abs(F) < 0.08 && Math.abs(S) > cut.hipStripe) {
+			if (wraps) {
+				c = artOver(wraps.shorts, U, S, F, false, c);
+			} else if (!outfit && Math.abs(F) < 0.08 && Math.abs(S) > cut.hipStripe) {
 				c = pal.stripe;
 			}
 		} else if (U < cut.waist + cut.band && !pal.shirt) {
-			c = pal.band;
+			c = wraps ? artOver(wraps.shorts, U, S, F, false, pal.band) : pal.band;
 		} else {
 			const aS = Math.abs(S);
 			// The neck: a V in front, a scoop behind.
@@ -1225,6 +1331,10 @@ export const sculpt = (
 				cloth = false;
 			} else if (edge < cut.trim && !outfit) {
 				c = pal.trim;
+				if (seen && wraps) {
+					artAt(wraps.jersey, U, S, F, false, artXY);
+					mark(2);
+				}
 			} else {
 				c = pal.jersey;
 				if (outfit?.stripes && pal.stripes) {
@@ -1256,7 +1366,10 @@ export const sculpt = (
 					// A quarter-zip's zip.
 					c = pal.trim;
 				}
-				if (sheet && c === pal.jersey) {
+				if (wraps && c === pal.jersey) {
+					c = artOver(wraps.jersey, U, S, F, false, c);
+				}
+				if (sheet && (c === pal.jersey || c === artRGB)) {
 					// His number and lettering.
 					// Round his torso by how far across it the point is, not by how
 					// far forward his chest stands there - which would bend the
@@ -1517,10 +1630,40 @@ export const sculpt = (
 							os -= ls * along;
 							ou -= lu * along;
 							const ol = Math.hypot(of, os, ou) || 1;
-							const c =
+							let c =
 								!look.outfit && (os * (side === 0 ? -1 : 1)) / ol > 0.95
 									? pal.stripe
 									: pal.shorts;
+							if (wraps) {
+								// Where this would be on him standing straight: how
+								// far across him (square to his thigh) and ahead.
+								const ax = lf / ll;
+								const ay = ls / ll;
+								const az = lu / ll;
+								let xf = -ax * ay;
+								let xs = 1 - ay * ay;
+								let xu = -az * ay;
+								const xl = Math.hypot(xf, xs, xu) || 1;
+								xf /= xl;
+								xs /= xl;
+								xu /= xl;
+								const across = of * xf + os * xs + ou * xu;
+								const ahead =
+									of * (ay * xu - az * xs) +
+									os * (az * xf - ax * xu) +
+									ou * (ax * xs - ay * xf);
+								const out = side === 0 ? -1 : 1;
+								c = artOver(
+									wraps.shorts,
+									-(0.16 + 0.68 * (t + along)) * body.thigh,
+									out * body.hipW + across,
+									ahead,
+									// The inside of his leg faces the other one, not
+									// out to his side.
+									across * out < 0,
+									pal.shorts,
+								);
+							}
 							cr = c[0];
 							cg = c[1];
 							cb = c[2];

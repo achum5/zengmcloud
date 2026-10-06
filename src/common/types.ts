@@ -527,6 +527,7 @@ export type ReplayLooks = {
 			colors?: [string, string, string];
 			jersey?: string;
 			court?: CourtStyle;
+			jerseySkins?: JerseySkinIds;
 		}
 	>;
 	// The home team's building that night. Missing on replays saved before
@@ -607,6 +608,19 @@ export type FaDayResults = {
 	}[];
 	at: number;
 };
+
+// A TEAM'S UNIFORM FOR THE 2.5D LIVE GAME, AS A PICTURE (see
+// ui/views/LiveGame/court25d/kitArt.ts). The picture itself rides along as a
+// data URL, so it goes wherever the league file goes and syncs once, not with
+// every game its team plays - the team record, rewritten after each game,
+// holds only the id. Kept by what is in it: the id is a hash of the picture.
+export type JerseySkin = {
+	id: string;
+	url: string;
+	at: number;
+};
+
+export type JerseySkinIds = { home?: string; away?: string };
 
 // A user-attached image (uploaded to imgbb, referenced by URL), shown in a
 // player's or team's image gallery. `id` is a client-generated UUID so images
@@ -2248,6 +2262,10 @@ export type Team = {
 	// upgrade); when absent the court falls back to the team's colors + logo. All
 	// fields optional so a partial customization is fine. See common/court.ts.
 	court?: CourtStyle;
+
+	// Its home and away uniforms for the 2.5D live game, drawn from pictures:
+	// ids of JerseySkin rows. Optional (no upgrade).
+	jerseySkins?: JerseySkinIds;
 
 	// Play-money sportsbook wallet for this team (see worker/core/sportsbook).
 	// Purely a fun side feature, completely separate from the real game economy:
