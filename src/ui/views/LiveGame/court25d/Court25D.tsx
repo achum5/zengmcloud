@@ -30,6 +30,7 @@ import {
 } from "./clock.ts";
 import {
 	compileCourt,
+	linesBetween,
 	snapForCursor,
 	targetForCursor,
 	type CourtPlayer,
@@ -450,7 +451,10 @@ const Court25D = ({
 		} else if (cursor < s.prevCursor || target < s.t - 1) {
 			s.t = snapForCursor(timeline, cursor);
 			s.snapCam = true;
-		} else if (cursor - s.prevCursor > 2 && target - s.t > 9000) {
+		} else if (
+			linesBetween(timeline, s.prevCursor, cursor) > 2 &&
+			target - s.t > 9000
+		) {
 			s.t = snapForCursor(timeline, cursor);
 			s.snapCam = true;
 		}

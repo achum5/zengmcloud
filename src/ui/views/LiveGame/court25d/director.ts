@@ -7285,6 +7285,27 @@ export const targetForCursor = (tl: CourtTimeline, cursor: number): number => {
 
 // Where to cut to when playback jumps (a rewind, a fast-forward, joining a
 // broadcast late): the end of the last line already shown.
+// How many play-by-play lines the page showed going from one cursor to
+// another. A line can come with events that are not lines - a basket with the
+// points, rebounds and assists it adds up - so this, not how far the cursor
+// moved, says whether the page jumped ahead.
+export const linesBetween = (
+	tl: CourtTimeline,
+	from: number,
+	to: number,
+): number => {
+	let n = 0;
+	for (const b of tl.beats) {
+		if (b.i >= to) {
+			break;
+		}
+		if (b.i >= from) {
+			n += 1;
+		}
+	}
+	return n;
+};
+
 export const snapForCursor = (tl: CourtTimeline, cursor: number): number => {
 	let t = 0;
 	for (const b of tl.beats) {

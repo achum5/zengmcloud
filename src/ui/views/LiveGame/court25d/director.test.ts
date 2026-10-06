@@ -2,6 +2,7 @@ import { assert, describe, test } from "vitest";
 import {
 	compileCourt,
 	isLineItem,
+	linesBetween,
 	snapForCursor,
 	targetForCursor,
 	type CourtTimeline,
@@ -766,6 +767,22 @@ describe("2.5D director", () => {
 				);
 			}
 		}
+	});
+
+	// A basket's line comes with the points, rebounds and assists it adds up -
+	// events, not lines - so the page taking all of them at once is one line
+	// on, not a jump ahead to cut past.
+	test("a line and the stats that come with it are one line on", () => {
+		const { tl } = compile("a", 140);
+		for (let k = 0; k + 1 < tl.beats.length; k++) {
+			const a = tl.beats[k]!;
+			const b = tl.beats[k + 1]!;
+			// However many events after it the page took along with it.
+			for (let to = a.i + 1; to <= b.i; to++) {
+				assert.strictEqual(linesBetween(tl, a.i, to), 1);
+			}
+		}
+		assert.strictEqual(linesBetween(tl, tl.beats[0]!.i, tl.beats[6]!.i), 6);
 	});
 
 	test("a make swishes and a miss rattles, right when its line shows", () => {
