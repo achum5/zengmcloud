@@ -60,9 +60,11 @@ import {
 	type PlayOption,
 	type PlayRisk,
 	type PlayZone,
+	type Role,
 	type TurnoverKind,
 	spotXY,
 } from "./plays.ts";
+import { BREAK_SHARE } from "./nbaRates.ts";
 import {
 	finishOf,
 	type Finish,
@@ -413,6 +415,21 @@ const passStyleOf = (
 	}
 };
 
+// Whether the next step of a set (or the shot it springs) needs this man.
+const needed = (
+	run: { option?: PlayOption },
+	next: PlayAction[] | undefined,
+	who: Role,
+): boolean =>
+	run.option?.shooter === who ||
+	run.option?.assist === who ||
+	(next ?? []).some((a) =>
+		a.type === "screen"
+			? a.who.includes(who) || a.for === who
+			: a.who === who ||
+				((a.type === "pass" || a.type === "handoff") && a.to === who),
+	);
+
 // How fast each cut and each dribble in a set goes, feet per second: the
 // tracking numbers (a curl off a screen about 16, a pick-and-pop about 11),
 // sped up like the rest of the court so a set reads in the time it has.
@@ -441,6 +458,8 @@ const MOVE_SPEED: Record<string, number> = {
 };
 const DRIBBLE_SPEED: Record<string, number> = {
 	advance: 16,
+	// Up the floor on the break: as fast as a man goes with the ball.
+	push: 20,
 	attack: 20,
 	drive_baseline: 22,
 	drive_middle: 22,
@@ -462,6 +481,28 @@ const BALL_SCREENS = new Set([
 ]);
 // The shortest a step of a set takes, milliseconds.
 const STEP_MIN = 600;
+// Run out on the break: a trip that gets its shot up within this long (sim
+// seconds) of a defensive board, a steal, or a field goal at the other end.
+// In the league a third of the trips off a board end inside six seconds, and
+// most of those off a steal - but only a few off a basket (see BREAK_SHARE in
+// nbaRates.ts). The sim's trips run longer than the league's, so it is the
+// same share of its quickest ones that break: its fastest third off a board,
+// not quite half off a steal (more would race the clock), one in twelve off
+// a basket.
+const BREAK_GAP = { board: 9.6, steal: 11, make: 7.6 };
+// And by where the shot came from: a break ends at the rim half again as
+// often as a trip does, and seldom with a floater or a pull-up from mid-range
+// (see ZONES in nbaRates.ts) - so a trip ending at the rim was a break on a
+// longer clock than one ending in the paint short of it. The sim's clock
+// can't run far ahead of the picture: never over 12 seconds.
+const BREAK_FROM: Record<Zone, number> = {
+	atRim: 2,
+	lowPost: -1.6,
+	midRange: -1.2,
+	three: 0.3,
+	tipIn: 0,
+	putBack: 0,
+};
 // How far a defender leaves his man to help (feet): any farther and he
 // could not get back out to him.
 const HELP_REACH: [number, number] = [8, 14];
@@ -1069,7 +1110,12 @@ class Director {
 						});
 					})()
 				: from;
-		const got = this.go(pid, stop, t, speed, "run");
+		// (Not off a bounce: he takes it once it has come to rest.)
+		const last = this.ball.at(-1);
+		const got = Math.max(
+			this.go(pid, stop, t, speed, "run"),
+			last?.kind === "rest" ? last.t0 - 150 : -Infinity,
+		);
 		this.act(pid, "pickup", got, got + 300, { look: { x: b.x, y: b.y } });
 		this.hold(pid, got + 150, "hold");
 		if (style === "dribble") {
@@ -1259,7 +1305,7 @@ class Director {
 	// takes it out of bounds behind the baseline and inbounds it to the point
 	// guard, who comes back for it - while the rest head up the floor and the
 	// team that scored gets back. Returns when the point guard has it.
-	private inboundAfterMake(team: Side, t: number): number {
+	private inboundAfterMake(team: Side, t: number, quick = false): number {
 		const dir = attackDir(team);
 		const off = this.slots(team);
 		const def = this.slots(other(team));
@@ -1278,8 +1324,10 @@ class Director {
 			x: dir === 1 ? -1.4 : COURT_W + 1.4,
 			y: COURT_H / 2 + side * this.rand(4, 9),
 		};
-		const got = this.pickUp(inb, Math.max(t, still - 700), JOG);
-		const there = this.go(inb, out, got + 350, WALK * 1.5, "walk");
+		const got = this.pickUp(inb, Math.max(t, still - 700), quick ? RUN : JOG);
+		const there = quick
+			? this.go(inb, out, got + 120, JOG, "run")
+			: this.go(inb, out, got + 350, WALK * 1.5, "walk");
 		this.turn(inb, there, dir);
 		// The point guard comes back to a few strides in from him.
 		this.go(
@@ -1324,8 +1372,10 @@ class Director {
 				0.3,
 			);
 		});
-		const tIn = this.passTo(inb, pg, there + 250);
-		this.hurry(t + 300, tIn);
+		const tIn = this.passTo(inb, pg, there + (quick ? 60 : 250));
+		if (!quick) {
+			this.hurry(t + 300, tIn);
+		}
 		return tIn;
 	}
 
@@ -1659,6 +1709,9 @@ class Director {
 		t: number,
 		gap: number | undefined,
 		call?: (entry: Entry) => Running | undefined,
+		// Where the trip's shot comes from, if it ends in one - not a turnover
+		// or a whistle.
+		shot?: Zone,
 	): { t: number; run?: Running } {
 		const phase = this.phase;
 		const changed = this.offense !== team;
@@ -1674,11 +1727,24 @@ class Director {
 		// before the set, the picture runs through fast).
 		let into: "flow" | "set" | undefined;
 		const from = t;
+		// What the trip started from: a defensive board, a steal, a basket. A
+		// trip that ends in a shot is a break if the shot came quick enough
+		// (see BREAK_GAP); one that ends in a turnover or a whistle comes just
+		// as quick in the sim either way, so it breaks as often as the
+		// league's do.
+		const last = this.beats.at(-1)?.type ?? "";
+		const quick = (start: keyof typeof BREAK_GAP) =>
+			shot
+				? gap !== undefined &&
+					gap < Math.min(12, BREAK_GAP[start] + BREAK_FROM[shot])
+				: this.rng() < BREAK_SHARE[start];
 		if (phase === "inboundBase" && !changed) {
 			// After a basket: taken out under the basket and inbounded, then up
-			// the floor - every man back on his own man.
+			// the floor - every man back on his own man. Now and then - right
+			// after a field goal - in quick and pushed before the defense is back.
 			this.guarding.clear();
-			t = this.inboundAfterMake(team, t);
+			transition = resultOf(last)?.kind === "make" && quick("make");
+			t = this.inboundAfterMake(team, t, transition);
 			into = "flow";
 		} else if (phase === "loose" || phase === "tip" || phase === "set") {
 			if (this.holder === undefined || this.teamOf(this.holder) !== team) {
@@ -1692,9 +1758,8 @@ class Director {
 			const handler = this.posOf(this.holder ?? 0);
 			transition =
 				phase === "loose" &&
-				gap !== undefined &&
-				gap < 7 &&
-				this.inBackcourt(team, handler);
+				this.inBackcourt(team, handler) &&
+				quick(last === "stl" || last === "tov" ? "steal" : "board");
 			// No break on: he turns and brings it up (fast, below).
 		} else {
 			// A dead ball: the inbound, from wherever it went dead - in the
@@ -1731,15 +1796,29 @@ class Director {
 				(this.inBackcourt(team, handlerPos) || this.motionTeam !== team))
 		) {
 			run = call?.("flow");
+			const first = run && this.firstAction(team, run, gap);
 			const up = t;
-			t = run ? this.flowToPlay(run, t) : this.bringUp(team, t);
+			t = first
+				? this.flowToPlay(first.run, t)
+				: run
+					? this.flowToPlay(run, t)
+					: this.bringUp(team, t);
 			// Up the floor, fast - until a beat before the set.
 			this.hurry(Math.max(from + 400, up - 200), t - 1000);
+			if (first && run) {
+				t = this.runSteps(first.run, t, 0, first.steps - 1);
+				t = this.flowToPlay(run, t, false);
+			}
 		} else if (into === undefined && gap !== undefined && gap >= 7) {
 			// Still in the half court (an offensive rebound): kick it out and
 			// reset into a set - when there is time for one.
 			run = call?.("flow");
-			if (run) {
+			const first = run && this.firstAction(team, run, gap + 4);
+			if (first && run) {
+				t = this.flowToPlay(first.run, t);
+				t = this.runSteps(first.run, t, 0, first.steps - 1);
+				t = this.flowToPlay(run, t, false);
+			} else if (run) {
 				t = this.flowToPlay(run, t);
 			}
 		}
@@ -1853,15 +1932,21 @@ class Director {
 			: end.risk
 				? end.risk.step
 				: play.steps.length - 1;
-		// How much of it to show: the step that springs the shot, and the one
-		// before it when the trip took long enough to have run it. A break or an
-		// inbound play is shown whole.
+		// How much of it to show: the step that springs the shot, and the ones
+		// before it the trip took long enough to have run (on top of a first
+		// action - see firstAction). A break, early offense or an inbound play
+		// is shown whole.
 		const keep =
-			entry === "break" || play.cat === "blob" || play.cat === "slob"
+			entry === "break" ||
+			play.cat === "early" ||
+			play.cat === "blob" ||
+			play.cat === "slob"
 				? 99
-				: gap === undefined || gap < 12
+				: gap === undefined || gap < 10
 					? 1
-					: 2;
+					: gap < 18
+						? 2
+						: 3;
 		const run: Running = {
 			play,
 			team,
@@ -1904,8 +1989,10 @@ class Director {
 			(clock !== undefined && clock < 5)
 		) {
 			cats.late = 2.5;
-		} else if (gap !== undefined && gap < 10) {
-			cats.early = entry === "flow" ? 1.6 : 0.6;
+		} else if (gap !== undefined && gap < 11) {
+			// Pushed up and into something before the defense is set: a drag
+			// screen, a step-up, a handoff on the way.
+			cats.early = entry === "flow" ? 3 : 0.6;
 		}
 		if (entry === "inbound" && this.inboundAt) {
 			const at = this.inboundAt;
@@ -2026,6 +2113,57 @@ class Director {
 		return called ? this.running(team, called, entry, {}, gap) : undefined;
 	}
 
+	// THE FIRST ACTION.
+	//
+	// The set that gets the shot is seldom the first thing a trip runs: given
+	// the clock, the offense runs something first - a pick-and-roll the
+	// defense takes away, a pin-down, a handoff - and flows out of it into
+	// the next. A step of it on a trip of 12 seconds or more, two on one of
+	// 16 or more.
+	private firstAction(
+		team: Side,
+		run: Running,
+		gap: number | undefined,
+	): { run: Running; steps: number } | undefined {
+		const n = gap === undefined || gap < 12 ? 0 : gap < 16 ? 1 : 2;
+		if (
+			n === 0 ||
+			!run.option ||
+			(run.play.cat !== "half" && run.play.cat !== "late")
+		) {
+			return undefined;
+		}
+		// Most often a ball screen up top, or a handoff.
+		const called = callAny(this.rng, {
+			cats: { half: 1 },
+			five: this.five(team),
+			favor: (p) =>
+				p.steps[0]?.some(
+					(a) =>
+						a.type === "screen" && a.for === p.ball && BALL_SCREENS.has(a.kind),
+				)
+					? 3
+					: p.steps[0]?.some((a) => a.type === "handoff")
+						? 1.5
+						: 1,
+		});
+		if (!called || called.play.id === run.play.id) {
+			return undefined;
+		}
+		return {
+			run: {
+				play: called.play,
+				team,
+				roles: called.roles,
+				mirror: called.mirror,
+				jitter: new Map(),
+				from: 0,
+				...(gap === undefined ? {} : { gap }),
+			},
+			steps: Math.min(n, called.play.steps.length),
+		};
+	}
+
 	// SIZING HIM UP.
 	//
 	// Brought up the floor with time on the clock, the man with the ball does
@@ -2037,13 +2175,63 @@ class Director {
 			return t;
 		}
 		const r = this.rng();
-		if (r < 0.4) {
+		if (r < 0.2) {
 			return t;
 		}
-		if (r < 0.65) {
+		if (r < 0.38) {
 			const dur = this.rand(850, 1150);
 			this.act(bh, "callPlay", t, t + dur);
 			return t + dur;
+		}
+		if (r < 0.8 && (run.gap === undefined || run.gap >= 11)) {
+			// The ball out to a wing and back - a look at what the defense
+			// gives - before he goes.
+			const rim = { x: rimX(run.team), y: COURT_H / 2 };
+			const B = this.posOf(bh);
+			const mate = run.roles
+				.filter((p) => {
+					const P = this.posOf(p);
+					const d = dist(P, B);
+					return p !== bh && dist(P, rim) >= 17 && d >= 10 && d <= 32;
+				})
+				.sort((a, b) => dist(this.posOf(a), B) - dist(this.posOf(b), B))[0];
+			if (mate !== undefined) {
+				const out = this.passTo(bh, mate, t);
+				this.hold(mate, out, "hold");
+				this.guardStep(run, [], out, out + 500);
+				// Now and then on around the arc first, a man further on.
+				const M = this.posOf(mate);
+				const on =
+					run.gap === undefined || run.gap < 14 || this.rng() < 0.6
+						? undefined
+						: run.roles
+								.filter((p) => {
+									const P = this.posOf(p);
+									return (
+										p !== bh &&
+										p !== mate &&
+										dist(P, rim) >= 17 &&
+										dist(P, M) >= 10 &&
+										dist(P, M) <= 32 &&
+										dist(P, B) >= 10
+									);
+								})
+								.sort(
+									(a, b) => dist(this.posOf(a), M) - dist(this.posOf(b), M),
+								)[0];
+				let last = mate;
+				let at = out;
+				if (on !== undefined) {
+					at = this.passTo(mate, on, out + this.rand(250, 550));
+					this.hold(on, at, "hold");
+					this.guardStep(run, [], at, at + 500);
+					last = on;
+				}
+				const back = this.passTo(last, bh, at + this.rand(350, 750));
+				this.hold(bh, back, "dribble");
+				this.guardStep(run, [], back, back + 500);
+				return back + 150;
+			}
 		}
 		// On the next beat of his dribble, once or twice across.
 		const top = this.dribbleTop(bh, t) ?? t;
@@ -2110,7 +2298,7 @@ class Director {
 
 	// No cut: from wherever they are into the set's spots, the ball brought
 	// up or kicked out to whoever starts with it.
-	private flowToPlay(run: Running, t: number): number {
+	private flowToPlay(run: Running, t: number, sized = true): number {
 		const { team } = run;
 		const f = this.formation(run);
 		const dir = attackDir(team);
@@ -2149,7 +2337,7 @@ class Director {
 		this.guardStep(run, [], t + 150, ready);
 		this.motionTeam = team;
 		this.motion = 0;
-		return this.sizeUp(run, bh, ready + 100);
+		return sized ? this.sizeUp(run, bh, ready + 100) : ready + 100;
 	}
 
 	// A break runs from wherever they are when the ball is won; whoever the
@@ -2274,12 +2462,21 @@ class Director {
 				end = Math.max(end, this.playDribble(run, a.who, a.to, a.kind, t0));
 			} else if (a.type === "move") {
 				const pid = run.roles[a.who]!;
-				end = Math.max(
-					end,
+				const done =
 					this.holder === pid
 						? this.playDribble(run, a.who, a.to, "attack", t0)
-						: this.playMove(run, pid, a.to, a.style, t0, before),
-				);
+						: this.playMove(run, pid, a.to, a.style, t0, before);
+				// On the break nobody waits for the man trailing the play - not
+				// unless it comes to him.
+				if (
+					!(
+						run.play.cat === "break" &&
+						a.style === "jog" &&
+						!needed(run, next, a.who)
+					)
+				) {
+					end = Math.max(end, done);
+				}
 			} else if (a.type === "pass") {
 				const from = this.holder ?? run.roles[a.who]!;
 				const to = run.roles[a.to]!;
@@ -2456,11 +2653,12 @@ class Director {
 				"dribble",
 			);
 		}
+		const push = kind === "advance" && run.play.cat === "break";
 		return this.go(
 			pid,
 			P,
 			t,
-			DRIBBLE_SPEED[kind] ?? 16,
+			DRIBBLE_SPEED[push ? "push" : kind] ?? 16,
 			"dribble",
 			kind === "retreat" ? dir : undefined,
 		);
@@ -3745,6 +3943,7 @@ class Director {
 						? (entry) =>
 								this.callForShot(entry, team, shooter, zone, plan, gap, clock)
 						: undefined,
+					zone,
 				);
 				t = dev.t;
 				run = dev.run;
@@ -3820,6 +4019,17 @@ class Director {
 					t = Math.max(t, this.hold(shooter, t, "hold"));
 				}
 			}
+		}
+		// A putback off a long rebound - swatted out, say: he takes it back in
+		// to the rim first.
+		const drove =
+			putback &&
+			lob === undefined &&
+			this.holder === shooter &&
+			dist(this.posOf(shooter), P) > 6;
+		if (drove) {
+			t = this.driveTo(shooter, P, t, dir, "plain");
+			t = Math.max(t, this.hold(shooter, t, "hold"));
 		}
 
 		// A three goes up from behind the line: a man a step in front of it,
@@ -4012,7 +4222,7 @@ class Director {
 			}
 		} else {
 			// "Tips it in": a one-handed tap at the top of the jump.
-			const tip = zone === "tipIn" && plan.finish === "tip";
+			const tip = zone === "tipIn" && plan.finish === "tip" && !drove;
 			let anim: AnimName = tip ? "block" : close ? "layup" : "shoot";
 			if (style === "post") {
 				// A hook, or a turnaround fadeaway.
@@ -4073,16 +4283,18 @@ class Director {
 			const d = dist(P1, rim);
 			const flight = close ? 300 : 620 + d * 22;
 			if (plan.kind === "block" && plan.blocker !== undefined) {
-				const contact = release + 110;
 				const b = plan.blocker;
-				this.goBy(
+				// He gets there and goes up to meet it - later in its flight, if
+				// it takes him that long to get there.
+				const there = this.goBy(
 					b,
 					ahead(Math.min(2.6, Math.max(1.4, len - 1))),
-					gather - 300,
+					gather - 600,
 					release - 80,
 					"run",
 					-faceRim as 1 | -1,
 				);
+				const contact = Math.max(release + 110, there + 180);
 				this.act(b, "block", contact - 300, contact + 420, {
 					face: -faceRim as 1 | -1,
 					look: { ...P1 },
@@ -5527,7 +5739,17 @@ class Director {
 		const bp = this.posOf(e.pid);
 		const back = unitVec(rim, sp);
 		const off = this.rand(-0.45, 0.45);
-		const speed = this.rand(11, 19);
+		// Only knocked loose, if they get it back and put it straight back up.
+		const after = this.peek(i, 4).filter(
+			(x) => x.e.type !== "sub" && x.e.type !== "foulOut",
+		);
+		const again =
+			after[0]?.e.type === "orb" &&
+			[
+				ATTEMPT_ZONE[after[1]?.e.type ?? ""],
+				resultOf(after[1]?.e.type ?? "")?.zone,
+			].some((z) => z === "putBack" || z === "tipIn");
+		const speed = again ? this.rand(3, 6) : this.rand(11, 19);
 		const next = this.afterMiss(
 			at,
 			{
@@ -5542,7 +5764,7 @@ class Director {
 			{
 				x: (back.x - back.y * off) * speed,
 				y: (back.y + back.x * off) * speed,
-				z: this.rand(-7, 1),
+				z: again ? this.rand(-2, 3) : this.rand(-7, 1),
 			},
 			{ pid: e.pid, hand: "near" },
 		);
@@ -7276,7 +7498,12 @@ class Director {
 				if (going && this.marking.has(going) && going.t1 > b) {
 					stop = Math.min(going.t1, hard, moves[j]?.t0 ?? Infinity);
 				}
-				const end = b === a + 15000 ? undefined : whereIn(planned, stop);
+				// (Not if this is only as far as one stretch of following goes,
+				// with more of it to come: he picks that up from wherever he is.)
+				const end =
+					b === a + 15000 && moves[j] && this.marking.has(moves[j]!)
+						? undefined
+						: whereIn(planned, stop);
 				// Where he should be, tick by tick: where his man and the ball were
 				// a beat ago say.
 				const ticks: { t: number; aim: Pt; ball: Pt; on: boolean; man: Pt }[] =
@@ -7543,7 +7770,25 @@ class Director {
 									: "shuffle";
 					out.push({ t0: A.t, t1: Z.t, from: A.p, to: Z.p, anim });
 				}
-				left = path.at(-1)!.p;
+				// Following his man left him short of where the schedule has him
+				// next: on to it, as fast as he can - there before anything
+				// that counts on him being there (taking the ball out, say), if
+				// he can be.
+				left = fin.p;
+				const gone = end ? dist(fin.p, end) : 0;
+				if (end && gone > 0.5) {
+					const need = Math.max(240, (gone / RUN_MAX) * 1000);
+					const t1 = Math.min(fin.t + need, moves[j]?.t0 ?? Infinity);
+					if (t1 - fin.t >= 100) {
+						const k = Math.min(1, (t1 - fin.t) / need);
+						const to = {
+							x: fin.p.x + (end.x - fin.p.x) * k,
+							y: fin.p.y + (end.y - fin.p.y) * k,
+						};
+						out.push({ t0: fin.t, t1, from: fin.p, to, anim: "run" });
+						left = k >= 1 ? undefined : to;
+					}
+				}
 				i = j;
 			}
 			tr.moves = out;

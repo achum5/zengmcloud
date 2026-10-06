@@ -20,6 +20,7 @@ import {
 	tensionAt,
 	withBody,
 } from "./evaluate.ts";
+import { buildClocks, gameClockAt } from "./clock.ts";
 import { crowdAt } from "./scene.ts";
 import { COURT_H, COURT_W, FT_LINE_DEPTH, RIM_Z, rimX } from "./geometry.ts";
 import { bodyOf, posed, skeleton } from "./poses.ts";
@@ -755,6 +756,103 @@ describe("2.5D director", () => {
 		}
 		assert.isAbove(makes, 10);
 	});
+
+	// The clock on screen never stops while the ball is live - the shot in
+	// the air, the rebound - and stays stopped through a whistle.
+	test("the game clock runs on through live play and stops for a whistle", () => {
+		const { events, tl } = compile("clock", 160);
+		const clocks = buildClocks(tl, events);
+		let live = 0;
+		let whistles = 0;
+		tl.beats.forEach((b, j) => {
+			const e = events[b.i]!;
+			const next = tl.beats[j + 1];
+			const n = next ? events[next.i] : undefined;
+			if (
+				typeof e.clock !== "number" ||
+				typeof n?.clock !== "number" ||
+				b.end - b.actionStart < 400
+			) {
+				return;
+			}
+			const at = (t: number) => gameClockAt(clocks, t)!;
+			const mid = (b.actionStart + b.end) / 2;
+			if (/^fga/.test(e.type) && n.clock < e.clock - 0.3) {
+				// In the air: already running down to the result's reading.
+				assert.isBelow(at(mid), e.clock, `${e.type} at ${b.actionStart}`);
+				assert.isAtLeast(at(mid), n.clock);
+				live += 1;
+			} else if (/^(pf|ft|missFt)/.test(e.type) && n.clock === e.clock) {
+				assert.strictEqual(at(mid), e.clock, `${e.type} at ${b.actionStart}`);
+				whistles += 1;
+			}
+		});
+		assert.isAbove(live, 20);
+		assert.isAbove(whistles, 10);
+	});
+
+	// A quick trip off a defensive board or a steal is a fast break - run
+	// out at full speed, never fast-forwarded - and a long one walks it up
+	// (run through fast) and runs something first: a screen or a pass more
+	// before the action that gets the shot.
+	test("quick trips run out on the break; long ones run something first", () => {
+		let quick = 0;
+		let broke = 0;
+		const actions: Record<"short" | "long", number[]> = { short: [], long: [] };
+		for (const seed of ["break", "break2", "break3", "break4"]) {
+			const { events, tl } = compile(seed, 160);
+			tl.beats.forEach((b, j) => {
+				const e = events[b.i]!;
+				if (!/^fga/.test(e.type) || j === 0) {
+					return;
+				}
+				const prev = tl.beats[j - 1]!;
+				const p = events[prev.i]!;
+				if (typeof e.clock !== "number" || typeof p.clock !== "number") {
+					return;
+				}
+				const gap = p.clock - e.clock;
+				const fast = tl.fast.some(
+					([x, y]) => y > prev.actionStart && x < b.actionStart,
+				);
+				if ((p.type === "drb" || p.type === "stl") && gap < 6) {
+					quick += 1;
+					broke += fast ? 0 : 1;
+				}
+				if (p.type !== "drb" && !/^(fg|tp)/.test(p.type)) {
+					return;
+				}
+				// Screens set and passes thrown on the way to the shot.
+				let n = tl.ball.filter(
+					(s) =>
+						s.kind === "fly" &&
+						s.t0 > prev.actionStart &&
+						s.t0 < b.actionStart &&
+						"pid" in s.from &&
+						"pid" in s.to &&
+						s.t1 - s.t0 > 200,
+				).length;
+				for (const tr of tl.tracks.values()) {
+					n += tr.acts.filter(
+						(a) =>
+							a.anim === "screen" &&
+							a.t0 > prev.actionStart &&
+							a.t0 < b.actionStart,
+					).length;
+				}
+				if (gap < 9) {
+					actions.short.push(n);
+				} else if (gap >= 16) {
+					actions.long.push(n);
+				}
+			});
+		}
+		const mean = (xs: number[]) => xs.reduce((a, b) => a + b, 0) / xs.length;
+		assert.isAbove(quick, 10);
+		assert.isAbove(broke / quick, 0.75);
+		assert.isAbove(actions.long.length, 20);
+		assert.isAbove(mean(actions.long), mean(actions.short) + 2);
+	}, 120_000);
 
 	test("whoever holds the ball is on the floor", () => {
 		const { tl } = compile("holder", 140);

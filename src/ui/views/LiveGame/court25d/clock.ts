@@ -6,15 +6,25 @@ import type { CourtTimeline, RawEvent } from "./director.ts";
 // two lines the clock runs down while the court shows the lead-in, reaching
 // the line's time just as its text appears. It runs at real speed; where the
 // picture runs fast through the walk up the floor (or cuts past it), the
-// clock makes up the time the sim spent there. The sim keeps no shot clock
-// in the play-by-play, so the one on screen is read off possession: 24 when
-// a team gets the ball, 14 after an offensive rebound, running with the game
-// clock - and off once the game clock is shorter.
+// clock makes up the time the sim spent there. Through live play - a shot in
+// the air, a rebound, a steal - it never stops: it runs on from one line
+// straight into the next one's lead-in. After a whistle, a free throw or a
+// ball out of bounds it waits for the ball to be back in play. The sim keeps
+// no shot clock in the play-by-play, so the one on screen is read off
+// possession: 24 when a team gets the ball, 14 after an offensive rebound,
+// running with the game clock - and off once the game clock is shorter.
 
 const SHOT_CLOCK = 24;
 const RESET_ORB = 14;
 
 type Mark = { t: number; clock: number; period: number };
+
+// A line the ball stays live through.
+const runsOn = (e: RawEvent): boolean =>
+	(/^(fga|fg|tp|miss|blk|drb|orb)/.test(e.type) &&
+		!e.type.endsWith("AndOne")) ||
+	((e.type === "stl" || e.type === "tov") && e.outOfBounds !== true) ||
+	e.type === "jumpBall";
 
 export type Clocks = {
 	// Game clock marks in timeline order: at time t the clock read `clock`.
@@ -28,6 +38,9 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 	const resets: { t: number; from: number }[] = [];
 	let period = 1;
 	let last: number | undefined;
+	// From when the clock may run on toward the next line: the last line's
+	// moment, if the ball stayed live.
+	let live: number | undefined;
 	for (const b of tl.beats) {
 		const e = events[b.i];
 		if (!e) {
@@ -43,16 +56,17 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 		// The lead-in runs the clock from the last line's reading to this one's -
 		// unless the clock went up, which is a new period starting.
 		if (last !== undefined && e.clock <= last) {
-			marks.push({ t: b.preStart, clock: last, period });
+			const from = Math.min(live ?? b.preStart, b.preStart);
+			marks.push({ t: from, clock: last, period });
 			// The time the sim spent in the lead-in that the picture runs through
 			// fast (or cuts past): the clock runs true on either side of it and
 			// makes up the rest there.
-			const fast = fastIn(tl.fast, b.preStart, b.actionStart);
-			const cut = lastCutIn(tl.cuts, b.preStart, b.actionStart);
-			const shown = (b.actionStart - b.preStart) / 1000;
+			const fast = fastIn(tl.fast, from, b.actionStart);
+			const cut = lastCutIn(tl.cuts, from, b.actionStart);
+			const shown = (b.actionStart - from) / 1000;
 			if (fast) {
 				const [f0, f1] = fast;
-				const at0 = last - (f0 - b.preStart) / 1000;
+				const at0 = last - (f0 - from) / 1000;
 				const at1 = e.clock + (b.actionStart - f1) / 1000;
 				if (at0 >= at1 && at0 <= last && at1 >= e.clock) {
 					marks.push(
@@ -62,13 +76,14 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 				}
 			} else if (cut !== undefined && last - e.clock > shown) {
 				marks.push(
-					{ t: cut - 1, clock: last - (cut - 1 - b.preStart) / 1000, period },
+					{ t: cut - 1, clock: last - (cut - 1 - from) / 1000, period },
 					{ t: cut, clock: e.clock + (b.actionStart - cut) / 1000, period },
 				);
 			}
 		}
 		marks.push({ t: b.actionStart, clock: e.clock, period });
 		last = e.clock;
+		live = runsOn(e) ? b.actionStart : undefined;
 		if (e.type === "orb") {
 			resets.push({ t: b.actionStart, from: RESET_ORB });
 		} else if (

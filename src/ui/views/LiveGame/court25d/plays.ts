@@ -1,3 +1,4 @@
+import { playTypeOdds } from "./nbaRates.ts";
 import { PLAYBOOK, SPOTS, type PlaySource } from "./playbook.ts";
 
 // THE PLAYBOOK, READ: each set parsed into steps a director can run, and the
@@ -375,7 +376,34 @@ export const callShot = (
 			});
 		}
 	}
-	return choose(rng, cands);
+	if (call.cats.break !== undefined || cands.length === 0) {
+		return choose(rng, cands);
+	}
+	// How it was scored first - a pick-and-roll, a cut, a post-up, a catch
+	// on the perimeter - at the rate the league scores that way from there
+	// (see nbaRates.ts); then a set that scores it that way. Not a break, or
+	// an early look before the defense is set, unless that is what this is;
+	// not a putback, which is its own line.
+	const assisted =
+		call.assist !== undefined ? true : call.unassisted ? false : undefined;
+	const rank = call.five.find((c) => c.pid === call.shooter)?.rank ?? 4;
+	const types = [...new Set(cands.map((c) => c.pick.playType))];
+	const type = choose(
+		rng,
+		types.map((k) => ({
+			play: cands[0]!.play,
+			pick: k,
+			roles: [],
+			w:
+				(k === "Transition" && call.cats.early === undefined) || k === "Putback"
+					? 0
+					: playTypeOdds(k, call.zone, assisted, rank),
+		})),
+	)?.pick;
+	return choose(
+		rng,
+		type === undefined ? cands : cands.filter((c) => c.pick.playType === type),
+	);
 };
 
 export type TurnoverCall = {
@@ -449,6 +477,8 @@ export const callAny = (
 		cats: Partial<Record<PlayCategory, number>>;
 		five: Cast[];
 		holder?: number;
+		// How much more (or less) likely each set is than its usage says.
+		favor?: (play: Play) => number;
 	},
 	plays: Play[] = PLAYS,
 ): Called<undefined> | undefined => {
@@ -469,7 +499,11 @@ export const callAny = (
 				play,
 				pick: undefined,
 				roles: cast.roles,
-				w: catW * play.use * fitWeight(cast.cost),
+				w:
+					catW *
+					play.use *
+					fitWeight(cast.cost) *
+					(call.favor ? call.favor(play) : 1),
 			});
 		}
 	}
@@ -527,3 +561,61 @@ export const walkPlay = (
 
 export const spotXY = (name: string): readonly [number, number] =>
 	SPOTS[name] ?? [0, 20];
+
+// ATTACKING THE CLOSEOUT. A spot-up man doesn't only shoot it: caught on the
+// arc with his man flying out at him, he puts it on the floor - all the way
+// to the rim, into a floater, or a dribble in for a pull-up - a spot-up all
+// the same. Every catch-and-shoot spot-up three in the book can go each of
+// these ways too, off the pass or (driving past his man on his own) not.
+const closeouts = (play: Play): PlayOption[] => {
+	const out: PlayOption[] = [];
+	for (const o of play.options) {
+		if (
+			o.playType !== "Spotup" ||
+			o.zone !== "three" ||
+			o.kind !== "catch_and_shoot" ||
+			o.assist === undefined ||
+			o.branch.length > 0 ||
+			walkPlay(play, o.after + 1).holder !== o.assist
+		) {
+			continue;
+		}
+		const [x] = spotXY(o.at);
+		const side = x < 0 ? "L" : "R";
+		const pass: PlayAction = {
+			type: "pass",
+			who: o.assist,
+			to: o.shooter,
+			kind: o.pass ?? "kickout",
+		};
+		const reads: [PlayZone, string, string][] = [
+			["rim", "layup", "rim"],
+			["post", "floater", `${side}_lane`],
+			[
+				"mid",
+				"pull_up",
+				Math.abs(x) >= 18 ? `${side}_mid_wing` : `${side}_elbow`,
+			],
+		];
+		for (const [zone, kind, at] of reads) {
+			const own: PlayOption = {
+				shooter: o.shooter,
+				zone,
+				kind,
+				at,
+				after: o.after,
+				playType: o.playType,
+				weight: o.weight / 2,
+				branch: [
+					pass,
+					{ type: "dribble", who: o.shooter, to: at, kind: "attack" },
+				],
+			};
+			out.push({ ...own, assist: o.assist }, own);
+		}
+	}
+	return out;
+};
+for (const p of PLAYS) {
+	p.options.push(...closeouts(p));
+}

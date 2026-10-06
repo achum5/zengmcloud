@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import { makeCourtRng } from "../courtRng.ts";
+import { LEAGUE_PLAY_TYPES } from "./nbaRates.ts";
 import { PLAYBOOK, SPOTS } from "./playbook.ts";
 import {
 	callShot,
@@ -9,6 +10,7 @@ import {
 	PLAYS,
 	walkPlay,
 	type Cast,
+	type PlayZone,
 	type Role,
 } from "./plays.ts";
 
@@ -154,5 +156,66 @@ describe("2.5D playbook", () => {
 				five: FIVE,
 			});
 		assert.deepStrictEqual(call("same"), call("same"));
+	});
+
+	test("half-court shots are scored the ways the league scores them, as often", () => {
+		// The shots the sim's half court hands the court, per thousand (over a
+		// season of its games): where from, and off a pass, on his own, or a
+		// miss that says neither - by a guard, a wing, a big.
+		const SHOTS: Record<
+			PlayZone,
+			Record<"ast" | "own" | "miss", [number, number, number]>
+		> = {
+			rim: { ast: [10, 38, 33], own: [7, 23, 17], miss: [16, 48, 34] },
+			post: { ast: [13, 23, 19], own: [10, 19, 13], miss: [51, 81, 56] },
+			mid: { ast: [20, 19, 6], own: [13, 17, 4], miss: [45, 54, 16] },
+			three: { ast: [18, 28, 13], own: [11, 21, 9], miss: [62, 93, 42] },
+		};
+		const by = [[10, 20], [30], [40, 50]];
+		const rng = makeCourtRng("league");
+		const made: Record<string, number> = {};
+		let k = 0;
+		for (const [zone, kinds] of Object.entries(SHOTS)) {
+			for (const [kind, roles] of Object.entries(kinds)) {
+				roles.forEach((n, r) => {
+					for (let j = 0; j < n; j++, k++) {
+						const shooter = by[r]![j % by[r]!.length]!;
+						const call = callShot(rng, {
+							// A third of them early in the clock.
+							cats: k % 3 === 0 ? { half: 1, early: 3 } : { half: 1 },
+							zone: zone as PlayZone,
+							shooter,
+							...(kind === "ast" ? { assist: shooter === 10 ? 20 : 10 } : {}),
+							unassisted: kind === "own",
+							five: FIVE,
+						});
+						assert.isDefined(call, `${zone} ${kind} ${shooter}`);
+						const type = call!.pick.playType;
+						made[type] = (made[type] ?? 0) + 1;
+					}
+				});
+			}
+		}
+		// Against the league's mix of the same play types (NBA.com Synergy).
+		const types = [
+			"Spotup",
+			"PRBallHandler",
+			"Isolation",
+			"Cut",
+			"PRRollMan",
+			"Handoff",
+			"OffScreen",
+			"Postup",
+		] as const;
+		const n = types.reduce((sum, t) => sum + (made[t] ?? 0), 0);
+		const league = types.reduce((sum, t) => sum + LEAGUE_PLAY_TYPES[t], 0);
+		for (const t of types) {
+			assert.closeTo(
+				(made[t] ?? 0) / n,
+				LEAGUE_PLAY_TYPES[t] / league,
+				0.035,
+				t,
+			);
+		}
 	});
 });
