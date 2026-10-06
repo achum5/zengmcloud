@@ -163,11 +163,10 @@ type Sheet = {
 	data: Uint8ClampedArray;
 	w: number;
 	h: number;
-	// Sheet pixels to a foot; the half-width and half-depth of the torso it
-	// wraps round; how far up his spine its top edge is.
+	// Sheet pixels to a foot; the half-width of the torso it wraps round; how
+	// far up his spine its top edge is.
 	ppf: number;
 	aS: number;
-	bF: number;
 	u0: number;
 };
 const sheets = new WeakMap<Look, Map<number, Sheet | null>>();
@@ -194,7 +193,6 @@ const jerseySheet = (
 	}
 	const ppf = 1.25 ** step;
 	const aS = body.shoulderW * 1.1;
-	const bF = body.depth * 0.5;
 	const T = body.torso;
 	const u0 = T + body.H * 0.08;
 	const w = Math.max(8, Math.round(2 * Math.PI * aS * ppf));
@@ -237,25 +235,25 @@ const jerseySheet = (
 		g.restore();
 	};
 	// The chest: the team's name over the number.
-	text(look.jerseyNumber, w / 2, T * 0.48, body.H * 0.13, true, aS * 1.3);
+	text(look.jerseyNumber, w / 2, T * 0.48, body.H * 0.12, true, aS * 1.15);
 	text(
 		look.wordmark.toUpperCase(),
 		w / 2,
-		T * 0.8,
-		body.H * 0.04,
+		T * 0.77,
+		body.H * 0.036,
 		false,
-		aS * 1.5,
+		aS * 1.2,
 	);
 	// The back, across the ends of the sheet: his name over a bigger number.
 	for (const x of [0, w]) {
-		text(look.jerseyNumber, x, T * 0.47, body.H * 0.15, true, aS * 1.4);
+		text(look.jerseyNumber, x, T * 0.47, body.H * 0.14, true, aS * 1.25);
 		text(
 			look.lastName.toUpperCase(),
 			x,
 			T * 0.85,
-			body.H * 0.04,
+			body.H * 0.036,
 			false,
-			aS * 1.4,
+			aS * 1.25,
 		);
 	}
 	const sheet = {
@@ -264,7 +262,6 @@ const jerseySheet = (
 		h,
 		ppf,
 		aS,
-		bF,
 		u0,
 	};
 	byStep.set(step, sheet);
@@ -482,41 +479,42 @@ const build = (
 		return turned ? turnUpper(q, pel, turnShare(t))(p) : p;
 	};
 
-	// The torso: belly and back, the chest out in front, the lats flaring
-	// up to his armpits, across the tops of his shoulders; hips and seat.
+	// The torso: belly and back, the chest out in front, the lats widening a
+	// little up to his armpits, across the tops of his shoulders; hips and
+	// seat.
 	const torso = (A: V3, B: V3, prof: Station[]) =>
 		add(A, B, prof, TORSO, G_TORSO);
 	torso(up(0.04, 0), up(0.9, 0, -dp * 0.04), [
-		[0, dp * 0.5],
-		[0.45, dp * 0.47],
-		[1, dp * 0.55],
-	]);
-	torso(up(0.66, -sw * 0.42, dp * 0.12), up(0.66, sw * 0.42, dp * 0.12), [
 		[0, dp * 0.42],
-		[0.5, dp * 0.44],
-		[1, dp * 0.42],
+		[0.45, dp * 0.42],
+		[1, dp * 0.47],
+	]);
+	torso(up(0.66, -sw * 0.4, dp * 0.05), up(0.66, sw * 0.4, dp * 0.05), [
+		[0, dp * 0.36],
+		[0.5, dp * 0.38],
+		[1, dp * 0.36],
 	]);
 	for (const sd of [-1, 1]) {
-		torso(up(0.14, sd * sw * 0.4), up(0.74, sd * sw * 0.78), [
-			[0, dp * 0.4],
-			[1, dp * 0.5],
+		torso(up(0.2, sd * sw * 0.4), up(0.74, sd * sw * 0.55), [
+			[0, dp * 0.34],
+			[1, dp * 0.36],
 		]);
 	}
-	torso(up(0.86, -sw * 0.62), up(0.86, sw * 0.62), [
-		[0, dp * 0.42],
-		[0.5, dp * 0.48],
-		[1, dp * 0.42],
+	torso(up(0.86, -sw * 0.6), up(0.86, sw * 0.6), [
+		[0, dp * 0.38],
+		[0.5, dp * 0.42],
+		[1, dp * 0.38],
 	]);
 	torso(up(0, -body.hipW), up(0, body.hipW), [
-		[0, body.thighR * 1.32],
-		[1, body.thighR * 1.32],
+		[0, body.thighR * 1.15],
+		[1, body.thighR * 1.15],
 	]);
 	torso(
 		up(0.1, -body.hipW * 0.55, -dp * 0.1),
 		up(0.1, body.hipW * 0.55, -dp * 0.1),
 		[
-			[0, body.thighR * 1.2],
-			[1, body.thighR * 1.2],
+			[0, body.thighR * 1.08],
+			[1, body.thighR * 1.08],
 		],
 	);
 	// The neck, thick at the base, up into his head; the traps sloping up
@@ -525,9 +523,9 @@ const build = (
 		up(0.9, 0, -dp * 0.05),
 		v3(sk.head.f, 0, sk.head.u - body.headR * 0.6),
 		[
-			[0, sw * 0.44],
-			[0.5, sw * 0.36],
-			[1, sw * 0.33],
+			[0, sw * 0.45],
+			[0.5, sw * 0.39],
+			[1, sw * 0.37],
 		],
 		NECK,
 		G_NECK,
@@ -818,8 +816,8 @@ const build = (
 			lerpV(limb.root, limb.mid, 0.16),
 			lerpV(limb.root, limb.mid, 0.84),
 			[
-				[0, body.thighR * 1.26],
-				[1, body.thighR * 1.48],
+				[0, body.thighR * 1.2],
+				[1, body.thighR * 1.28],
 			],
 			SHORTS,
 			G_SHORTS + side,
@@ -931,7 +929,7 @@ const build = (
 		top: T + dp * 0.4,
 		pit: T - H * 0.075,
 		neckIn: sw * 0.42,
-		vAt: H * 0.075,
+		vAt: H * 0.068,
 		backAt: H * 0.03,
 		trim: Math.max(H * 0.0085, 1.2 / kMid),
 		sockTop: H * 0.115,
@@ -1260,7 +1258,14 @@ export const sculpt = (
 				}
 				if (sheet && c === pal.jersey) {
 					// His number and lettering.
-					const th = Math.atan2(S / sheet.aS, F / sheet.bF);
+					// Round his torso by how far across it the point is, not by how
+					// far forward his chest stands there - which would bend the
+					// uprights of his lettering over the curve of his chest.
+					const across = Math.max(-1, Math.min(1, S / sheet.aS));
+					const th =
+						F >= 0
+							? Math.asin(across)
+							: (across < 0 ? -Math.PI : Math.PI) - Math.asin(across);
 					let x = sheet.w / 2 + th * sheet.aS * sheet.ppf;
 					x = ((x % sheet.w) + sheet.w) % sheet.w;
 					const y = (sheet.u0 - U) * sheet.ppf;

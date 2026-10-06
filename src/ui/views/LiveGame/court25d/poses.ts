@@ -2972,9 +2972,10 @@ export const loopFrame = (anim: AnimName, ms: number, phase = 0): number => {
 	return Math.floor((ms / 1000) * fps + phase) % a.n;
 };
 
-// A player's build, in feet: an athlete's, in true proportion - long legs,
-// broad shoulders tapering to a narrow waist, lean limbs - but for his head,
-// a little big, so his face still reads from up in the stands. Height drives
+// A player's build, in feet: an athlete's, in true proportion - long legs, a
+// lean torso only a little wider at the chest than at the waist, lean limbs -
+// but for his head, a little big, so his face still reads from up in the
+// stands. Height drives
 // everything, a little exaggerated so a seven-footer towers over a
 // six-footer; girth comes from his weight for his height, so a 250-pound
 // center is long and lean and a 250-pound forward is thick.
@@ -3013,8 +3014,8 @@ export const girthOf = (hgt: number, weight: number): number => {
 	return Math.min(1.28, Math.max(0.84, (bmi / DEFAULT_BMI) ** 0.9));
 };
 
-// A cartoon athlete: a big head - a fifth of him - on a short, thick neck,
-// over an athlete's body, his arms in proportion to it (elbows at his waist,
+// A cartoon athlete: a big head - a fifth of him - on a short neck, over a
+// lean athlete's body, his arms in proportion to it (elbows at his waist,
 // wrists at his hips, fingertips halfway down his thighs). His height and
 // build still tell: a center towers over a point guard, a big man is broad.
 // (His face is drawn a little bigger than headR: crown to chin is 2.45
@@ -3034,15 +3035,15 @@ export const bodyOf = (hgt = DEFAULT_HGT, weight = DEFAULT_WEIGHT): Body => {
 		headR: H * 0.1,
 		upper: H * 0.14,
 		fore: H * 0.115,
-		shoulderW: H * 0.128 * g,
-		hipW: H * 0.078 * g,
-		depth: H * 0.13 * g,
-		thighR: H * 0.057 * g,
-		kneeR: H * 0.044 * g,
-		calfR: H * 0.048 * g,
-		ankleR: H * 0.03,
-		upperR: H * 0.045 * g,
-		foreR: H * 0.039 * g,
+		shoulderW: H * 0.1 * g,
+		hipW: H * 0.054 * g,
+		depth: H * 0.104 * g,
+		thighR: H * 0.043 * g,
+		kneeR: H * 0.03 * g,
+		calfR: H * 0.033 * g,
+		ankleR: H * 0.025,
+		upperR: H * 0.032 * g,
+		foreR: H * 0.027 * g,
 		handR: H * 0.036,
 	};
 };

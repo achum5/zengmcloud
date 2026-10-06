@@ -134,8 +134,8 @@ describe("2.5D poses", () => {
 						);
 						const sk = skeleton(body, poseAt(anim, ph));
 						const pel = sk.pelvis;
-						// His shorts' legs, knees, shins and shoes, hips and seat -
-						// about as thick as sculpt.ts makes them.
+						// His shorts' legs, knees, shins and shoes, hips and seat - a
+						// little thicker than sculpt.ts makes them.
 						const parts: [V3, V3, number][] = [
 							[
 								{ ...pel, s: -body.hipW },
