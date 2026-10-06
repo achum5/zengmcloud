@@ -374,12 +374,18 @@ const rounded = (a: Run, b: Run, t: number): Pt | undefined => {
 };
 
 // A run this fast or faster (feet a second, start to finish) is a sprint -
-// and a sprint's strides are longer.
+// and a sprint's strides are longer; one slower than a jog's pace is a jog,
+// with shorter ones.
 const SPRINT_FTPS = 19;
+const JOG_FTPS = 11;
 const runAnim = ({ mv }: Run): AnimName =>
-	mv.anim === "run" && lenOf(mv) >= (SPRINT_FTPS * (mv.t1 - mv.t0)) / 1000
-		? "sprint"
-		: mv.anim;
+	mv.anim !== "run"
+		? mv.anim
+		: lenOf(mv) >= (SPRINT_FTPS * (mv.t1 - mv.t0)) / 1000
+			? "sprint"
+			: lenOf(mv) < (JOG_FTPS * (mv.t1 - mv.t0)) / 1000
+				? "jog"
+				: "run";
 const strideOf = (anim: AnimName): number => {
 	const a = ANIMS[anim];
 	return a.kind === "cycle" ? a.stride : 5;

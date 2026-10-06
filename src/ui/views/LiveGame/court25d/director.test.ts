@@ -1550,7 +1550,7 @@ describe("2.5D director", () => {
 		assert.isAbove(rose / close, 0.8);
 	}, 60_000);
 
-	test("flat out, a player sprints - bounding off the floor stride to stride", () => {
+	test("flat out, a player sprints - bounding off the floor stride to stride; at an easy pace, he jogs", () => {
 		const { tl } = compile("a");
 		let sprints = 0;
 		let jogs = 0;
@@ -1565,10 +1565,13 @@ describe("2.5D director", () => {
 				let low = Infinity;
 				for (let t = m.t0 + secs * 250; t < m.t1 - secs * 250; t += 20) {
 					const st = evalPlayer(tl, pid, t);
-					if (st.anim !== "sprint" && st.anim !== "run") {
+					if (st.anim !== "sprint" && st.anim !== "run" && st.anim !== "jog") {
 						continue;
 					}
-					assert.strictEqual(st.anim, d / secs >= 19 ? "sprint" : "run");
+					assert.strictEqual(
+						st.anim,
+						d / secs >= 19 ? "sprint" : d / secs < 11 ? "jog" : "run",
+					);
 					top = Math.max(top, st.z);
 					low = Math.min(low, st.z);
 				}

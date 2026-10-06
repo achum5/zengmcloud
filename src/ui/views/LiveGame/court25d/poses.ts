@@ -307,6 +307,7 @@ const TARGET: Partial<Pose> = {
 
 type RunMode =
 	| "run"
+	| "jog"
 	| "sprint"
 	| "dribble"
 	| "back"
@@ -399,6 +400,21 @@ const stride = (ph: number, mode: RunMode): Pose => {
 			abN: 34,
 			abF: 34,
 			wide: 0.4,
+		});
+	}
+	if (mode === "jog") {
+		// An easy jog: a shorter stride than a run, more upright, the arms
+		// swinging loose.
+		return pose({
+			hipN: 24 * a,
+			hipF: -24 * a,
+			kneeN: 12 + 40 * Math.max(0, c) ** 1.3,
+			kneeF: 12 + 40 * Math.max(0, -c) ** 1.3,
+			lean: 6,
+			shN: -30 * a,
+			elN: 72,
+			shF: 30 * a,
+			elF: 72,
 		});
 	}
 	if (mode === "sprint") {
@@ -635,6 +651,7 @@ export const ANIMS = {
 			}),
 	},
 	run: { kind: "cycle", n: 6, stride: 8.6, pose: (i) => runPose(i / 6, "run") },
+	jog: { kind: "cycle", n: 6, stride: 6.2, pose: (i) => runPose(i / 6, "jog") },
 	sprint: {
 		kind: "cycle",
 		n: 6,
@@ -2245,7 +2262,11 @@ export const poseFor = (anim: AnimName, frame: number): Pose => {
 
 // Running, he leaves the floor between strides: how high (feet) at a point
 // through the stride, highest with his legs spread wide.
-const BOUNCE: Partial<Record<AnimName, number>> = { run: 0.1, sprint: 0.2 };
+const BOUNCE: Partial<Record<AnimName, number>> = {
+	jog: 0.05,
+	run: 0.1,
+	sprint: 0.2,
+};
 export const bounceAt = (anim: AnimName, phase: number): number => {
 	const h = BOUNCE[anim];
 	return h ? h * Math.sin(2 * Math.PI * phase) ** 2 : 0;
