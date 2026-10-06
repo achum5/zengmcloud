@@ -413,6 +413,48 @@ describe("2.5D director", () => {
 		assert.isAtLeast(backOut / passers, 0.6);
 	}, 60_000);
 
+	// A man set in a screen or sealing in the post is a body: whoever comes
+	// at him runs into him - held up a moment, fighting round him - rather
+	// than straight through him.
+	test("nobody runs straight through a man set in a screen", () => {
+		let screens = 0;
+		let contact = 0;
+		for (const seed of ["a", "b"]) {
+			const { tl } = compile(seed, 140);
+			const tracks = [...tl.tracks.values()];
+			for (const tr of tracks) {
+				for (const a of tr.acts) {
+					if (a.anim !== "screen" && a.anim !== "postUp") {
+						continue;
+					}
+					screens += 1;
+					let closest = Infinity;
+					// (From once he has stepped in to set it.)
+					for (let t = a.t0 + 200; t <= a.t1; t += 50) {
+						const S = evalPlayer(tl, tr.pid, t);
+						for (const o of tracks) {
+							const p = evalPlayer(tl, o.pid, t);
+							if (o.team !== tr.team && p.shown) {
+								closest = Math.min(closest, Math.hypot(p.x - S.x, p.y - S.y));
+							}
+						}
+					}
+					assert.isAtLeast(
+						closest,
+						1.3,
+						`${seed}: through ${tr.pid} at ${a.t0}`,
+					);
+					if (closest < 2.4) {
+						contact += 1;
+					}
+				}
+			}
+		}
+		assert.isAbove(screens, 40);
+		// And he is into somebody, often.
+		assert.isAbove(contact / screens, 0.25);
+	}, 60_000);
+
 	// A screen, a post-up, a celebration, words with the official: each is
 	// done where he stands, and the pose ends as he sets off again rather
 	// than him sliding away across the floor in it.
@@ -597,7 +639,7 @@ describe("2.5D director", () => {
 			const before = tl.beats.filter((b) => b.actionStart <= a);
 			for (const b of before) {
 				const score = /^(fg|tp)/.test(b.type) || b.type === "ft";
-				assert.isAtLeast(a - b.end, score ? 1600 : 1000, `${b.type}`);
+				assert.isAtLeast(a - b.end, (score ? 1600 : 1000) - 1e-6, `${b.type}`);
 			}
 			const last = before.at(-1);
 			if (last && /^(fg|tp)/.test(last.type)) {

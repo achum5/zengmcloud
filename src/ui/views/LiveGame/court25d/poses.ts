@@ -504,6 +504,50 @@ export const ANIMS = {
 				wide: 1.05,
 			}),
 	},
+	// Run into a screen: knocked back a step by it, then the shoulder down
+	// and fighting his way round it, back into his stance.
+	bump: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.stance],
+			[
+				0.22,
+				pose({
+					hipN: 12,
+					kneeN: 34,
+					hipF: 24,
+					kneeF: 38,
+					lean: -8,
+					shN: 78,
+					elN: 72,
+					abN: 30,
+					shF: 64,
+					elF: 84,
+					abF: 26,
+					wide: 0.45,
+				}),
+			],
+			[
+				0.62,
+				pose({
+					hipN: 22,
+					kneeN: 48,
+					hipF: 34,
+					kneeF: 52,
+					lean: 24,
+					shN: 58,
+					elN: 98,
+					abN: 42,
+					shF: 42,
+					elF: 102,
+					abF: 38,
+					wide: 0.55,
+				}),
+			],
+			[1, P.stance],
+		],
+	},
 	// Fighting a box-out: leaning into the man in front, one arm up over him
 	// for the ball, the other hand on his back.
 	fight: {

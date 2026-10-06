@@ -430,6 +430,12 @@ const CLOSE_READ = 150;
 const CLOSE_RUN = 21;
 const CLOSE_CHOP = 8;
 const CLOSE_BREAK = 3.5;
+// How close (feet, middle to middle) two men get before they are into each
+// other: a screen, a post-up.
+const BODY = 1.85;
+// A man set where he stands, for nobody to run through: in a screen, or
+// sealing in the post.
+type Body2 = { team: Side; t0: number; t1: number; at: Pt; post: boolean };
 // What a man does standing where he is - set in a screen or a post-up,
 // celebrating, having words - and stops doing once he moves.
 const IN_PLACE = new Set<AnimName>([
@@ -2095,8 +2101,8 @@ class Director {
 					const marked = this.at(run, a.at[j] ?? a.at[0]!);
 					let S: Pt;
 					if (onBall) {
-						// On the handler's man: between them, to the side he will
-						// turn the corner.
+						// On the handler's man: up against his shoulder - not on top
+						// of him - on the side the handler turns the corner.
 						const dribble = next?.find(
 							(x) => x.type === "dribble" && x.who === a.for,
 						);
@@ -2108,8 +2114,8 @@ class Director {
 						const cross = ur.x * (D.y - U.y) - ur.y * (D.x - U.x);
 						const side = (cross >= 0 ? 1 : -1) * (j === 0 ? 1 : -1);
 						S = {
-							x: U.x + ur.x * 2.8 - ur.y * side * 1.3,
-							y: U.y + ur.y * 2.8 + ur.x * side * 1.3,
+							x: U.x + ur.x * 2.8 - ur.y * side * 2.0,
+							y: U.y + ur.y * 2.8 + ur.x * side * 2.0,
 						};
 					} else {
 						// Off the ball: planted at its spot, a step toward the man
@@ -2348,6 +2354,40 @@ class Director {
 			to === "rim" ? this.nearRim(run.team, from, 3.6) : this.at(run, to);
 		const speed = MOVE_SPEED[style] ?? 13;
 		let t = Math.max(t0, this.free.get(pid) ?? 0);
+		// Still set in a screen: he holds it until the man it was for has come
+		// past his shoulder and the man chasing him has run into it - then
+		// rolls, or pops. (A slip leaves it early.)
+		const set = this.track(pid)?.acts.findLast((x) => x.anim === "screen");
+		if (
+			screen?.screeners.includes(pid) &&
+			style !== "slip" &&
+			set &&
+			set.t1 >= t0 - 60
+		) {
+			const user = this.track(screen.user)?.moves.findLast(
+				(m) => m.t0 >= t0 - 1,
+			);
+			let by = t0 + 450;
+			if (user) {
+				const dx = user.to.x - user.from.x;
+				const dy = user.to.y - user.from.y;
+				const L2 = dx * dx + dy * dy;
+				const u =
+					L2 > 0.01
+						? Math.min(
+								1,
+								Math.max(
+									0,
+									((from.x - user.from.x) * dx + (from.y - user.from.y) * dy) /
+										L2,
+								),
+							)
+						: 0;
+				by = user.t0 + (user.t1 - user.t0) * u + 450;
+			}
+			t = Math.max(t, Math.min(by, t0 + 1500));
+			set.t1 = Math.max(set.t1, t);
+		}
 		if (style === "v_cut" && dist(from, P) > 6) {
 			// In a few steps, then back out hard: the V.
 			const u = unitVec(from, rim);
@@ -2669,6 +2709,38 @@ class Director {
 				manOf.delete(d);
 			}
 		};
+		// A man posting up has his man on his body: behind him, between him
+		// and the rim, or fronting him three-quarters on the side of the ball.
+		for (const pid of this.slots(team)) {
+			const d = this.defenderOf(pid);
+			if (
+				d === undefined ||
+				pid === holder ||
+				manOf.get(d) !== pid ||
+				!this.track(pid)?.acts.some(
+					(a) => a.anim === "postUp" && a.t1 > t0 && a.t0 < t1,
+				)
+			) {
+				continue;
+			}
+			const M = this.posOf(pid);
+			const ur = unitVec(M, rim);
+			const ub = unitVec(M, ball);
+			const front = this.rng() < 0.4;
+			const u = front
+				? unitVec(
+						{ x: 0, y: 0 },
+						{ x: ub.x * 0.7 + ur.x * 0.3, y: ub.y * 0.7 + ur.y * 0.3 },
+					)
+				: unitVec(
+						{ x: 0, y: 0 },
+						{ x: ur.x * 0.8 + ub.x * 0.2, y: ur.y * 0.8 + ub.y * 0.2 },
+					);
+			targets.set(
+				d,
+				clampPt({ x: M.x + u.x * BODY * 1.05, y: M.y + u.y * BODY * 1.05 }),
+			);
+		}
 		const via = new Map<number, { at: Pt; by: number }>();
 		const late = new Map<number, number>();
 		if (sc) {
@@ -6040,6 +6112,11 @@ class Director {
 		const cuts = [...this.cuts].sort((a, b) => a - b);
 		const changes = this.poss.map(([t]) => t).sort((a, b) => a - b);
 
+		// Bodies he cannot run through (see bodies). Following his man round
+		// one, he runs into it, is held up a moment, and fights his way round.
+		const walls = this.bodies();
+		const bumped = new Set<Track>();
+
 		// Into whatever comes next he arrives where the schedule had him: at
 		// the shot he contests, the help spot he steps into.
 		const SETTLE = 600;
@@ -6162,7 +6239,14 @@ class Director {
 				// Following it, as fast and as quick as a defender's feet - and
 				// on to his mark in time for what comes next: setting off for it
 				// sooner, the farther it is.
+				// The bodies in his way through it - and, following, where he ran
+				// into one.
+				const inWay = walls.filter(
+					(w) => w.team !== tr.team && w.t1 > a && w.t0 < stop,
+				);
+				let hits: { t: number; at: Pt }[] = [];
 				const follow = (settle: number) => {
+					hits = [];
 					const aims = ticks.map((x) => {
 						if (!end || x.t <= stop - settle - 200) {
 							return x.aim;
@@ -6230,6 +6314,36 @@ class Director {
 							x: p.x + (vx * DT) / 1000,
 							y: p.y + (vy * DT) / 1000,
 						});
+						const now = ticks[i]!.t;
+						for (const w of inWay) {
+							if (now < w.t0 || now > w.t1) {
+								continue;
+							}
+							const ox = p.x - w.at.x;
+							const oy = p.y - w.at.y;
+							const d = Math.hypot(ox, oy);
+							if (d >= BODY) {
+								continue;
+							}
+							// Out to the edge of him, the way he was going round.
+							const sp = Math.hypot(vx, vy) || 1;
+							const nx = d > 0.05 ? ox / d : -vy / sp;
+							const ny = d > 0.05 ? oy / d : vx / sp;
+							p = { x: w.at.x + nx * BODY, y: w.at.y + ny * BODY };
+							const into = vx * nx + vy * ny;
+							if (into < 0) {
+								vx -= into * nx;
+								vy -= into * ny;
+							}
+							// Run into, it stops him in his tracks a moment - the
+							// harder, the more.
+							if (into < -1.2 && !hits.some((h) => h.at === w.at)) {
+								hits.push({ t: now, at: w.at });
+								const k = Math.max(0.3, 1 - -into / 10);
+								vx *= k;
+								vy *= k;
+							}
+						}
 						out.push({ ...ticks[i]!, p });
 					}
 					return out;
@@ -6243,6 +6357,55 @@ class Director {
 				) {
 					settle = Math.min(stop - a - 200, settle * 2);
 					path = follow(settle);
+				}
+				// On a man sealing him in the post: leaning into him, an arm on
+				// his back, fighting him for the spot.
+				for (const w of inWay) {
+					if (!w.post) {
+						continue;
+					}
+					let from: number | undefined;
+					const close = (q: number) => {
+						const x = path[q]!;
+						const v =
+							q + 1 < path.length ? dist(x.p, path[q + 1]!.p) / (DT / 1000) : 0;
+						return (
+							x.t >= w.t0 &&
+							x.t <= w.t1 &&
+							dist(x.p, w.at) < BODY * 1.4 &&
+							v < 5
+						);
+					};
+					for (let q = 0; q <= path.length; q++) {
+						const on = q < path.length && close(q);
+						if (on && from === undefined) {
+							from = path[q]!.t;
+						} else if (!on && from !== undefined) {
+							const to = path[q - 1]!.t;
+							if (
+								to - from >= 450 &&
+								!tr.acts.some((x) => x.t1 > from! && x.t0 < to)
+							) {
+								tr.acts.push({
+									t0: from,
+									t1: to,
+									anim: "fight",
+									look: { ...w.at },
+								});
+								bumped.add(tr);
+							}
+							from = undefined;
+						}
+					}
+				}
+				// Each screen he ran into: the jolt of it.
+				for (const h of hits) {
+					const t0 = h.t - 60;
+					const t1 = h.t + 360;
+					if (!tr.acts.some((x) => x.t1 > t0 && x.t0 < t1)) {
+						tr.acts.push({ t0, t1, anim: "bump", look: { ...h.at } });
+						bumped.add(tr);
+					}
 				}
 				// The last of the way onto his mark exactly, if he is all but there.
 				const fin = path.at(-1)!;
@@ -6317,6 +6480,89 @@ class Director {
 			}
 			tr.moves = out;
 		}
+		for (const tr of bumped) {
+			tr.acts.sort((x, y) => x.t0 - y.t0);
+		}
+	}
+
+	// Bodies nobody runs through: a man set in a screen, or sealing in the
+	// post, where he stands while he does it.
+	private bodies(): Body2[] {
+		const out: Body2[] = [];
+		for (const o of this.tracks.values()) {
+			for (const act of o.acts) {
+				if (act.anim === "screen" || act.anim === "postUp") {
+					const m = o.moves.findLast((x) => x.t0 <= act.t0);
+					out.push({
+						team: o.team,
+						t0: act.t0,
+						t1: act.t1,
+						at: m && act.t0 >= m.t1 ? { ...m.to } : this.posAt(o.pid, act.t0),
+						post: act.anim === "postUp",
+					});
+				}
+			}
+		}
+		return out;
+	}
+
+	// And a run of his that would take a man straight through one goes round
+	// him instead: bent out past his shoulder where it came closest.
+	private aroundBodies() {
+		const walls = this.bodies();
+		for (const tr of this.tracks.values()) {
+			const theirs = walls.filter((w) => w.team !== tr.team);
+			if (theirs.length === 0) {
+				continue;
+			}
+			const out: Move[] = [];
+			for (const m of tr.moves) {
+				const dx = m.to.x - m.from.x;
+				const dy = m.to.y - m.from.y;
+				const L2 = dx * dx + dy * dy;
+				let bend: { t: number; at: Pt } | undefined;
+				for (const w of L2 > 0.25 ? theirs : []) {
+					if (w.t1 <= m.t0 || w.t0 >= m.t1) {
+						continue;
+					}
+					const u = Math.min(
+						1,
+						Math.max(
+							0,
+							((w.at.x - m.from.x) * dx + (w.at.y - m.from.y) * dy) / L2,
+						),
+					);
+					const q = { x: m.from.x + dx * u, y: m.from.y + dy * u };
+					const tq = m.t0 + (m.t1 - m.t0) * u;
+					const d = dist(q, w.at);
+					if (tq < w.t0 || tq > w.t1 || d >= BODY) {
+						continue;
+					}
+					const L = Math.sqrt(L2);
+					const n =
+						d > 0.05
+							? { x: (q.x - w.at.x) / d, y: (q.y - w.at.y) / d }
+							: { x: -dy / L, y: dx / L };
+					bend = {
+						t: tq,
+						at: clampPt({
+							x: w.at.x + n.x * BODY * 1.05,
+							y: w.at.y + n.y * BODY * 1.05,
+						}),
+					};
+					break;
+				}
+				if (bend && bend.t - m.t0 > 60 && m.t1 - bend.t > 60) {
+					out.push(
+						{ ...m, t1: bend.t, to: bend.at },
+						{ ...m, t0: bend.t, from: bend.at },
+					);
+				} else {
+					out.push(m);
+				}
+			}
+			tr.moves = out;
+		}
 	}
 
 	// A man planted for something - a screen, a post-up, a word with the
@@ -6359,8 +6605,10 @@ class Director {
 		this.ball.sort(byT0);
 		this.liveHands();
 		this.liven();
+		this.unplant();
 		this.mark();
 		this.unplant();
+		this.aroundBodies();
 		this.fx.sort((a, b) => a.t - b.t);
 		// A look round the building runs on to the picture's next cut when
 		// that comes soon after (the substitutions over a timeout, the walk
