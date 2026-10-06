@@ -3093,6 +3093,74 @@ class Director {
 				});
 			}
 		}
+		// The screener rolling to the rim off a ball screen his own man
+		// jumped out on - a hedge, a blitz - is open going there: the low man
+		// (the help nearest where he is going) steps up into his path to tag
+		// him, then gets back out to his own man.
+		let tag: { d: number; at: Pt; from: number; peak: number } | undefined;
+		const roller =
+			sc?.ball && (sc.coverage === "hedge" || sc.coverage === "blitz")
+				? sc.screeners[0]
+				: undefined;
+		const roll =
+			roller === undefined
+				? undefined
+				: this.track(roller)
+						?.moves.filter((m) => m.t0 >= t0 - 1)
+						.findLast(
+							(m) =>
+								dist(m.from, rim) - dist(m.to, rim) > 6 && dist(m.to, rim) < 11,
+						);
+		if (roll && run.play.cat !== "break") {
+			let low: number | undefined;
+			let near = 17;
+			for (const [d, P] of targets) {
+				const man = manOf.get(d);
+				if (
+					man === undefined ||
+					man === holder ||
+					man === roller ||
+					d === help?.d ||
+					via.has(d) ||
+					late.has(d) ||
+					stunts.has(d)
+				) {
+					continue;
+				}
+				const away = dist(P, roll.to);
+				if (away < near) {
+					near = away;
+					low = d;
+				}
+			}
+			if (low !== undefined && this.rng() < 0.75) {
+				const P = targets.get(low)!;
+				// Off as the screen is set, in his path as he gets there: square
+				// in it, a step short of where he is going - or as far toward
+				// it as he can get.
+				const from = Math.max(t0 + 120, roll.t0 - 200);
+				const peak = Math.min(roll.t1 - 80, t1 + lag - 450);
+				const u = unitVec(roll.to, roll.from);
+				const want = clampPt({
+					x: roll.to.x + u.x * 2.4,
+					y: roll.to.y + u.y * 2.4,
+				});
+				const reach = Math.min(dist(P, want), ((peak - from) / 1000) * 19);
+				const w = unitVec(P, want);
+				if (
+					peak - from >= 300 &&
+					reach >= 3 &&
+					dist(this.posOf(low), P) <= ((from - t0 - 120) / 1000) * 18 + 1.5
+				) {
+					tag = {
+						d: low,
+						at: clampPt({ x: P.x + w.x * reach, y: P.y + w.y * reach }),
+						from,
+						peak,
+					};
+				}
+			}
+		}
 		// Whoever meets the shot drifts toward it, and is there for it.
 		if (o && run.help && run.help.length > 0) {
 			const S =
@@ -3130,6 +3198,21 @@ class Director {
 					-attackDir(team) as 1 | -1,
 				);
 				this.shadow(d, P, st.peak + 60, t1 + lag, team, manOf.get(d));
+				continue;
+			}
+			if (tag?.d === d && manOf.get(d) !== undefined) {
+				// With his man; in the roller's path; back out to his man.
+				this.shadow(d, P, t0 + 120, tag.from, team, manOf.get(d));
+				const n = dist(this.posOf(d), tag.at);
+				this.goBy(
+					d,
+					tag.at,
+					tag.from,
+					tag.peak,
+					n > 9 ? "run" : "slide",
+					n > 9 ? undefined : (-attackDir(team) as 1 | -1),
+				);
+				this.shadow(d, P, tag.peak + 120, t1 + lag + 250, team, manOf.get(d));
 				continue;
 			}
 			if (help?.d === d) {
@@ -6360,6 +6443,8 @@ class Director {
 		// should be (a second).
 		const SLIDE_MAX = 14.5;
 		const RUN_MAX = 23;
+		// Flat out, at the very most.
+		const FASTEST = SPRINT * 1.1;
 		const ACCEL = 30;
 		const GAIN = 3;
 		// Too short a stretch to follow anybody in (ms).
@@ -6503,17 +6588,31 @@ class Director {
 				};
 			};
 			// Where he is, when a run of his was rewritten: the next one he
-			// makes starts from there.
+			// makes starts from there - and gets no faster than his legs for
+			// it: if following his man left him farther off than the schedule
+			// had him, he goes as far as he can get (and the run after that
+			// sets off from there).
 			let left: Pt | undefined;
 			let i = 0;
 			while (i < moves.length) {
 				const m = moves[i]!;
 				const man = this.marking.get(m);
 				if (man === undefined) {
+					let short = false;
 					if (left && (m.t1 - m.t0 > 1 || dist(m.from, m.to) > 0.01)) {
 						m.from = { ...left };
+						const far = dist(m.from, m.to);
+						const most = (FASTEST * (m.t1 - m.t0)) / 1000;
+						if (far > most && far > 0.01) {
+							const k = most / far;
+							m.to = {
+								x: m.from.x + (m.to.x - m.from.x) * k,
+								y: m.from.y + (m.to.y - m.from.y) * k,
+							};
+							short = true;
+						}
 					}
-					left = undefined;
+					left = short ? { ...m.to } : undefined;
 					out.push(m);
 					i++;
 					continue;
