@@ -1035,6 +1035,57 @@ describe("2.5D director", () => {
 		}
 	});
 
+	// Running, sliding, dribbling, a man still talks with a hand: the
+	// screener's man points out the screen, a switch or a man getting back
+	// calls out who he has, an open man puts a hand up for it. One arm - never
+	// the one on the ball - and the rest of him goes on as it was.
+	test("players talk with a hand on the move", () => {
+		const { tl } = compile("a", 140);
+		const kinds = { point: 0, hand: 0, wave: 0 };
+		let onTheMove = 0;
+		for (const tr of tl.tracks.values()) {
+			tr.arms.forEach((g, i) => {
+				kinds[g.kind] += 1;
+				assert.isAbove(g.t1, g.t0);
+				// One thing at a time.
+				if (i > 0) {
+					assert.isAtLeast(g.t0, tr.arms[i - 1]!.t1);
+				}
+				const st = evalPlayer(tl, tr.pid, (g.t0 + g.t1) / 2);
+				if (!st.arm) {
+					return;
+				}
+				const q = poseOf(st);
+				const bare = poseOf({ ...st, arm: undefined });
+				const still =
+					st.arm.hand === "R"
+						? (["shF", "elF", "abF", "wrF"] as const)
+						: (["shN", "elN", "abN", "wrN"] as const);
+				for (const k of [
+					"hipN",
+					"kneeN",
+					"hipF",
+					"kneeF",
+					"lean",
+					...still,
+				] as const) {
+					assert.strictEqual(q[k], bare[k], k);
+				}
+				const moved = st.arm.hand === "R" ? q.shN - bare.shN : q.shF - bare.shF;
+				assert.notStrictEqual(moved, 0);
+				assert.notStrictEqual(st.arm.hand, st.dribbleHand);
+				assert.isNotTrue(st.holding);
+				if (st.moving) {
+					onTheMove += 1;
+				}
+			});
+		}
+		assert.isAtLeast(kinds.point, 40);
+		assert.isAtLeast(kinds.hand, 40);
+		assert.isAtLeast(kinds.wave, 2);
+		assert.isAtLeast(onTheMove, 60);
+	}, 60_000);
+
 	test("flat out, a player sprints - bounding off the floor stride to stride", () => {
 		const { tl } = compile("a");
 		let sprints = 0;

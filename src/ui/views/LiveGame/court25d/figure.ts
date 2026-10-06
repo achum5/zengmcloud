@@ -878,15 +878,41 @@ export const drawFigure = (
 			y: wrist.y + (hy / hl) * len * 0.42,
 		};
 		const hand = new Path2D();
-		hand.ellipse(
-			handC.x,
-			handC.y,
-			len * 0.52,
-			handW * 0.5,
-			Math.atan2(hy, hx),
-			0,
-			Math.PI * 2,
-		);
+		// Pointing: a fist, and a finger out of it the way the hand points.
+		const pointing =
+			st.arm?.point === true && st.arm.hand === which && st.arm.w > 0.5;
+		if (pointing) {
+			const ux = hx / hl;
+			const uy = hy / hl;
+			hand.ellipse(
+				wrist.x + ux * len * 0.3,
+				wrist.y + uy * len * 0.3,
+				len * 0.34,
+				handW * 0.46,
+				Math.atan2(hy, hx),
+				0,
+				Math.PI * 2,
+			);
+			hand.ellipse(
+				wrist.x + ux * len * 0.78,
+				wrist.y + uy * len * 0.78,
+				len * 0.36,
+				handW * 0.17,
+				Math.atan2(hy, hx),
+				0,
+				Math.PI * 2,
+			);
+		} else {
+			hand.ellipse(
+				handC.x,
+				handC.y,
+				len * 0.52,
+				handW * 0.5,
+				Math.atan2(hy, hx),
+				0,
+				Math.PI * 2,
+			);
+		}
 		parts.push({
 			depth: (el.depth + wrist.depth) / 2 + (far ? 0.5 : -0.2),
 			late:

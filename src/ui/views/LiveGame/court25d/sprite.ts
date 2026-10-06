@@ -118,6 +118,27 @@ const dribbleFrame = (d: number | undefined) =>
 const targetFrame = (t: number | undefined) =>
 	t ? Math.ceil(t * 3) / 3 : undefined;
 
+// An arm saying something, in steps: its angles to a few degrees, how far
+// into it in thirds.
+const armSteps = (a: PlayerState["arm"]): PlayerState["arm"] => {
+	if (!a) {
+		return undefined;
+	}
+	const w = a.w > 0.8 ? 1 : a.w > 0.45 ? 2 / 3 : a.w > 0.12 ? 1 / 3 : 0;
+	const by = (v: number, k: number) => Math.round(v / k) * k;
+	return w > 0
+		? {
+				hand: a.hand,
+				sh: by(a.sh, 6),
+				el: by(a.el, 8),
+				ab: by(a.ab, 10),
+				wr: by(a.wr, 10),
+				w,
+				...(a.point ? { point: true } : {}),
+			}
+		: undefined;
+};
+
 // The pose he is drawn in: his own, stepped to the sprite's frames and turns
 // - and, easing out of his last move, two steps of that.
 const stepped = (st: PlayerState) => {
@@ -125,6 +146,7 @@ const stepped = (st: PlayerState) => {
 	const f = st.from;
 	const w = f ? (f.w > 0.5 ? 2 / 3 : f.w > 0.12 ? 1 / 3 : 0) : 0;
 	return {
+		arm: armSteps(st.arm),
 		phase: frameOf(st.anim, st.phase),
 		turn: ((turn % TURNS) + TURNS) % TURNS,
 		yaw: (turn * Math.PI * 2) / TURNS,
@@ -178,13 +200,14 @@ export const drawSprite = (
 			cache.ids.set(look, id);
 		}
 		const f = pose.from;
+		const a = pose.arm;
 		key = `${id}|${st.anim}|${pose.phase}|${pose.turn}|${Math.round(
 			Math.log(k) / Math.log(1.04),
 		)}|${px}|${st.holding ? 1 : 0}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}|${pose.target ?? ""}${
 			f
 				? `|${f.anim}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.target ?? ""}~${f.w}`
 				: ""
-		}`;
+		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 		const kept = cache.kept.get(key);
 		if (kept) {
 			const smoothing = ctx.imageSmoothingEnabled;
@@ -209,6 +232,7 @@ export const drawSprite = (
 		dribble: pose.dribble,
 		target: pose.target,
 		from: pose.from,
+		arm: pose.arm,
 	};
 	const w = Math.max(4, Math.ceil((right - left) / px) + 2);
 	const h = Math.max(4, Math.ceil((lower - upper) / px) + 2);

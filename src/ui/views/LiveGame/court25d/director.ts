@@ -112,12 +112,23 @@ export type Act = {
 	// passes to.
 	look?: Pt;
 };
+// Something he says with an arm while the rest of him goes on with whatever
+// it is doing - running, sliding, dribbling: a point (at the man he has, or
+// the screen coming), a hand up calling for the ball, a wave to come on.
+export type Gesture = {
+	t0: number;
+	t1: number;
+	kind: "point" | "hand" | "wave";
+	// What he points or waves at: a man, wherever he is, or a spot.
+	at?: number | Pt;
+};
 export type Track = {
 	pid: number;
 	team: Side;
 	start: Pt;
 	moves: Move[];
 	acts: Act[];
+	arms: Gesture[];
 	faces: [number, 1 | -1][];
 	// From each moment until his next move, what he stands looking at (the
 	// middle of a huddle, the rim from the free throw line).
@@ -469,6 +480,17 @@ const unitVec = (from: Pt, to: Pt): Pt => {
 	return { x: dx / l, y: dy / l };
 };
 
+// A number from 0 to 1 that depends only on a and b (whole numbers, or
+// rounded to them) - the same on every device.
+const hash01 = (a: number, b: number): number => {
+	let h =
+		Math.imul(Math.round(a) | 0, 0x9e3779b1) ^
+		Math.imul(Math.round(b) | 0, 0x85ebca77);
+	h = Math.imul(h ^ (h >>> 16), 0x7feb352d);
+	h = Math.imul(h ^ (h >>> 15), 0x846ca68b);
+	return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+};
+
 // How the offense gets from wherever the ball is into its next set: off an
 // inbound, on a break straight off the rebound or the steal, or the five
 // flowing into it as the ball comes up.
@@ -656,6 +678,7 @@ class Director {
 				start,
 				moves: [],
 				acts: [],
+				arms: [],
 				faces: [[-Infinity, attackDir(p.team)]],
 				looks: [],
 				shown: [[-Infinity, on]],
@@ -802,6 +825,31 @@ class Director {
 			look: look ?? { x: P.x, y: P.y >= COURT_H / 2 ? COURT_H + 4 : -4 },
 		});
 		this.free.set(pid, Math.max(this.free.get(pid) ?? 0, t + dur));
+	}
+
+	// Said with an arm, on the way (see Gesture) - when the moment calls for
+	// it, about `p` of the time: decided by who and when, not drawn from the
+	// game's own luck, so whatever else happens stays as it was.
+	private gesture(
+		pid: number,
+		kind: Gesture["kind"],
+		t0: number,
+		t1: number,
+		at?: number | Pt,
+		p = 1,
+	) {
+		const tr = this.track(pid);
+		if (!tr || t1 - t0 < 300 || hash01(pid, t0) >= p) {
+			return;
+		}
+		tr.arms.push({
+			t0,
+			t1,
+			kind,
+			...(at === undefined
+				? {}
+				: { at: typeof at === "number" ? at : { x: at.x, y: at.y } }),
+		});
 	}
 
 	private lookAt(pid: number, t: number, at: Pt) {
@@ -1218,7 +1266,7 @@ class Director {
 		});
 		def.forEach((pid, j) => {
 			const n = this.track(pid)?.moves.length ?? 0;
-			this.goBy(
+			const back = this.goBy(
 				pid,
 				guardSpot(team, spots[j] ?? spots[0]!),
 				t + 250 + j * 80,
@@ -1226,6 +1274,15 @@ class Director {
 				"run",
 			);
 			this.marks(pid, off[j] ?? pg, n);
+			// Back down the floor, he calls out who he has.
+			this.gesture(
+				pid,
+				"point",
+				t + 700 + j * 110,
+				Math.min(back, t + 1600 + j * 110),
+				off[j] ?? pg,
+				0.3,
+			);
 		});
 		const tIn = this.passTo(inb, pg, there + 250);
 		this.hurry(t + 300, tIn);
@@ -1393,6 +1450,10 @@ class Director {
 		);
 		// Off the dribble, once he has it in both hands.
 		const start = Math.max(ready, this.gather(from, ready));
+		// Open, he calls for it: a hand up.
+		if (d >= 12) {
+			this.gesture(to, "hand", start - 700, start + wind - 60, undefined, 0.45);
+		}
 		this.act(
 			from,
 			over ? "passOverhead" : kind === "bounce" ? "passBounce" : "pass",
@@ -1505,7 +1566,20 @@ class Director {
 						x: (spots[j + 1] ?? spots[0]!).x - attackDir(team) * 7,
 						y: 25 + ((spots[j + 1] ?? spots[0]!).y - 25) * 0.8,
 					});
-			this.goBy(pid, target, t + 40 * j, arrive + 200, "run");
+			const back = this.goBy(pid, target, t + 40 * j, arrive + 200, "run");
+			// Getting back, he calls out who he has: the last man back the
+			// ball.
+			const his = rimGuard ? handler : others[j];
+			if (his !== undefined) {
+				this.gesture(
+					pid,
+					"point",
+					t + 350 + 90 * j,
+					Math.min(back, t + 1300 + 90 * j),
+					his,
+					rimGuard ? 0.6 : 0.3,
+				);
+			}
 			this.turn(
 				pid,
 				Math.max(arrive + 200, this.free.get(pid) ?? 0),
@@ -2126,13 +2200,25 @@ class Director {
 					}
 					S = clampPt(S);
 					first ??= S;
-					const there = this.go(
-						s,
-						S,
-						Math.max(t0, this.free.get(s) ?? 0),
-						16,
-						"run",
-					);
+					const off = Math.max(t0, this.free.get(s) ?? 0);
+					const far = dist(this.posOf(s), S);
+					const there = this.go(s, S, off, 16, "run");
+					// His man calls it out: where it is coming.
+					const sd = this.defenderOf(s);
+					if (sd !== undefined && there - off > 500) {
+						this.gesture(
+							sd,
+							"point",
+							off + 150,
+							Math.min(there + 150, off + 1100),
+							S,
+							0.65,
+						);
+					}
+					// The man with the ball waves him up.
+					if (onBall && far > 10) {
+						this.gesture(user, "wave", off, off + 900, s, 0.5);
+					}
 					planted.push({ pid: s, t: there, anim: "screen", look: U });
 					end = Math.max(end, there + 150);
 				});
@@ -2713,6 +2799,9 @@ class Director {
 			if (a !== undefined && b !== undefined && a !== b) {
 				this.guarding.set(sc.user, b);
 				this.guarding.set(sc.screeners[0]!, a);
+				// "Switch!" - each points out the man he has now.
+				this.gesture(a, "point", t0 + 40, t0 + 900, sc.screeners[0], 0.7);
+				this.gesture(b, "point", t0 + 80, t0 + 940, sc.user, 0.7);
 			}
 		}
 		const holder = this.holder;
@@ -6740,6 +6829,14 @@ class Director {
 		for (const tr of this.tracks.values()) {
 			tr.moves.sort(byT0);
 			tr.acts.sort(byT0);
+			// One thing at a time with his arm: the first he started.
+			const arms: Gesture[] = [];
+			for (const g of tr.arms.sort(byT0)) {
+				if (g.t0 >= (arms.at(-1)?.t1 ?? -Infinity)) {
+					arms.push(g);
+				}
+			}
+			tr.arms = arms;
 			tr.faces.sort((a, b) => a[0] - b[0]);
 			tr.looks.sort((a, b) => a[0] - b[0]);
 			tr.shown.sort((a, b) => a[0] - b[0]);

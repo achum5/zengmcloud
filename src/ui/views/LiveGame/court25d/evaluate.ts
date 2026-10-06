@@ -5,6 +5,7 @@ import type {
 	FxKind,
 	Fx,
 	CourtTimeline,
+	Gesture,
 	Move,
 	Track,
 } from "./director.ts";
@@ -90,6 +91,20 @@ export type PlayerState = {
 		target?: number;
 		w: number;
 	};
+	// One arm saying something while the rest of him goes on (see armAt):
+	// which, its angles (as a pose has them), and how far into them it is
+	// (0 to 1).
+	arm?: ArmPose;
+};
+export type ArmPose = {
+	hand: Hand;
+	sh: number;
+	el: number;
+	ab: number;
+	wr: number;
+	w: number;
+	// A finger out: pointing.
+	point?: boolean;
 };
 
 // Bounces a second on a dribble: one steady beat, walking or driving, so the
@@ -887,6 +902,81 @@ const blendInto = (
 			};
 };
 
+// WITH AN ARM, ON THE MOVE.
+//
+// Whatever his feet are doing - running, sliding, dribbling - a man can
+// still say something with a hand: point out the man he has or the screen
+// coming, put a hand up for the ball, wave a teammate on. With his free arm
+// (not the one on the ball), and never while all of him is in something
+// else (a shot, a catch, a screen) or his hands are up for a pass coming.
+const ARM_IN = 0.22;
+const ARM_OUT = 0.25;
+const smooth01 = (u: number) => {
+	const v = clamp01(u);
+	return v * v * (3 - 2 * v);
+};
+const armAt = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	here: Pt,
+	yaw: number,
+	// His free hand: either, the one not on the ball, or neither.
+	free: Hand | "both" | "none",
+): ArmPose | undefined => {
+	const list = tr.arms;
+	const gi = lastIndex(list, t, (g) => g.t0);
+	const g: Gesture | undefined =
+		gi >= 0 && t < list[gi]!.t1 ? list[gi] : undefined;
+	if (!g || free === "none") {
+		return undefined;
+	}
+	const u = (t - g.t0) / (g.t1 - g.t0);
+	const w = smooth01(u / ARM_IN) * smooth01((1 - u) / ARM_OUT);
+	if (w <= 0.02) {
+		return undefined;
+	}
+	// Which way it is from the way he faces: to his right, positive.
+	const bearingAt = (when: number, from: Pt, facing: number): number => {
+		if (g.at === undefined) {
+			return 0;
+		}
+		const who = typeof g.at === "number" ? tl.tracks.get(g.at) : undefined;
+		const P = typeof g.at === "number" ? who && spotAt(who, when) : g.at;
+		return P ? wrapAngle(Math.atan2(P.y - from.y, P.x - from.x) - facing) : 0;
+	};
+	const bearing = bearingAt(t, here, yaw);
+	// The arm on that side as he started, if it is free - the same arm all
+	// the way through.
+	const t0 = Math.min(g.t1, g.t0 + 120);
+	const side: Hand =
+		bearingAt(t0, spotAt(tr, t0), yawAt(tl, tr, t0)) >= 0 ? "R" : "L";
+	const hand: Hand = free === "both" ? side : free;
+	// Out from that shoulder (degrees): across his body, a little at most.
+	const out = Math.max(
+		-25,
+		Math.min(95, ((hand === "R" ? bearing : -bearing) * 180) / Math.PI),
+	);
+	if (g.kind === "point") {
+		return { hand, sh: 98, el: 4, ab: out, wr: 8, w, point: true };
+	}
+	if (g.kind === "hand") {
+		// Up high, open - pumped once or twice.
+		const pump = Math.sin(u * Math.PI * 4) * 7;
+		return { hand, sh: 160 + pump, el: 16, ab: 16, wr: 18, w };
+	}
+	// Come on: the forearm swept in at him and out again.
+	const s = Math.sin(u * Math.PI * 6);
+	return {
+		hand,
+		sh: 92,
+		el: 48 + 34 * s,
+		ab: Math.max(0, out),
+		wr: 22,
+		w,
+	};
+};
+
 export const evalPlayer = (
 	tl: CourtTimeline,
 	pid: number,
@@ -912,30 +1002,71 @@ export const evalPlayer = (
 	const here = spotAt(tr, t);
 	const now = doingAt(tl, tr, t, here);
 	const from = shown ? blendInto(tl, tr, t, now.anim) : undefined;
+	const yaw = yawAt(tl, tr, t);
+	const arm =
+		shown && tr.arms.length > 0
+			? armAt(
+					tl,
+					tr,
+					t,
+					here,
+					yaw,
+					actAt(tr, t) || now.holding || (now.target ?? 0) > 0
+						? "none"
+						: now.dribbleHand === "R"
+							? "L"
+							: now.dribbleHand === "L"
+								? "R"
+								: "both",
+				)
+			: undefined;
 	return {
 		pid,
 		team: tr.team,
 		shown,
 		x: here.x,
 		y: here.y,
-		yaw: yawAt(tl, tr, t),
+		yaw,
 		moving: here.moving,
 		...now,
 		...(from ? { from } : {}),
+		...(arm ? { arm } : {}),
 	};
 };
 
-// His pose: his move's, eased in from the last one's just after a change.
+// His pose: his move's, eased in from the last one's just after a change -
+// and an arm in whatever it is saying.
 export const poseOf = (st: PlayerState): Pose => {
 	const q = posed(st.anim, st.phase, st.dribble, st.dribbleHand, st.target);
 	const f = st.from;
-	return f && f.w > 0
-		? lerpPose(
-				q,
-				posed(f.anim, f.phase, f.dribble, f.dribbleHand, f.target),
-				f.w,
-			)
-		: q;
+	const p =
+		f && f.w > 0
+			? lerpPose(
+					q,
+					posed(f.anim, f.phase, f.dribble, f.dribbleHand, f.target),
+					f.w,
+				)
+			: q;
+	const a = st.arm;
+	if (!a || a.w <= 0) {
+		return p;
+	}
+	const mix = (v: number, to: number) => v + (to - v) * a.w;
+	return a.hand === "R"
+		? {
+				...p,
+				shN: mix(p.shN, a.sh),
+				elN: mix(p.elN, a.el),
+				abN: mix(p.abN, a.ab),
+				wrN: mix(p.wrN, a.wr),
+			}
+		: {
+				...p,
+				shF: mix(p.shF, a.sh),
+				elF: mix(p.elF, a.el),
+				abF: mix(p.abF, a.ab),
+				wrF: mix(p.wrF, a.wr),
+			};
 };
 
 // A value through an act, from its keys (0 before the first, the last after
