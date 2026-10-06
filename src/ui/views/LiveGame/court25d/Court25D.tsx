@@ -63,9 +63,9 @@ import {
 
 // The speed slider value that plays the timeline at 1x (the page's default).
 const DEFAULT_SPEED = 7;
-// The timeline runs at real speed (it cuts past the dead time instead of
-// hurrying); a hair quicker than that brings a game watched at the default
-// speed in at about twenty minutes.
+// The timeline runs at real speed (it runs through the dead time fast, see
+// fastAt); a hair quicker than that brings a game watched at the default
+// speed in at about half an hour.
 const BASE_RATE = 1.1;
 // How long the picture dips to black either side of a cut (timeline ms).
 const DIP_MS = 130;
@@ -656,7 +656,7 @@ const Court25D = ({
 				s.camW = aim.width;
 				s.snapCam = false;
 			} else {
-				const secs = (dt / 1000) * Math.min(10, Math.max(1, rate));
+				const secs = (dt / 1000) * Math.min(24, Math.max(1, rate));
 				s.camX += (aim.x - s.camX) * (1 - Math.exp(-secs * 2.6));
 				s.camW += (aim.width - s.camW) * (1 - Math.exp(-secs * 1.5));
 			}

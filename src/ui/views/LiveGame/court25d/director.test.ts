@@ -708,18 +708,30 @@ describe("2.5D director", () => {
 	}, 60_000);
 
 	// What just happened gets a moment at real speed before the picture
-	// hurries on: a second, and longer after a basket - the ball down
-	// through the net, the scorer turning back up the floor.
+	// hurries on, and longer after a basket - the ball down through the net,
+	// the scorer turning back up the floor. (Barely one between free throws,
+	// and none after a substitution.)
 	test("after a play the picture holds a moment before it hurries on", () => {
 		const { tl } = compile("cuts", 160);
+		const FT = /^(ft|missFt)$/;
 		let afterScore = 0;
 		for (const [a] of tl.fast) {
 			const before = tl.beats.filter((b) => b.actionStart <= a);
-			for (const b of before) {
-				const score =
-					(/^(fg|tp)/.test(b.type) && !b.type.startsWith("fga")) ||
-					b.type === "ft";
-				assert.isAtLeast(a - b.end, (score ? 2400 : 1200) - 1e-6, `${b.type}`);
+			for (const [j, b] of before.entries()) {
+				const next = tl.beats
+					.slice(tl.beats.indexOf(b) + 1)
+					.find((x) => x.type !== "sub");
+				if (b.type === "sub") {
+					continue;
+				}
+				const hold =
+					FT.test(b.type) && next && FT.test(next.type)
+						? 200
+						: (/^(fg|tp)/.test(b.type) && !b.type.startsWith("fga")) ||
+							  b.type === "ft"
+							? 1500
+							: 800;
+				assert.isAtLeast(a - b.end, hold - 1e-6, `${b.type} ${j}`);
 			}
 			const last = before.at(-1);
 			if (last && /^(fg|tp)/.test(last.type)) {
@@ -730,9 +742,9 @@ describe("2.5D director", () => {
 	}, 60_000);
 
 	// Watched at the usual speed: the ball down through the net and both
-	// teams heading back up the floor at real speed - a good three seconds of
-	// it - and only then does the picture build up speed, over most of a
-	// second, rather than lurching away.
+	// teams heading back up the floor at real speed - a good two and a half
+	// seconds of it - and only then does the picture build up speed, over
+	// the best part of half a second, rather than lurching away.
 	test("after a basket the picture lets it sink in, then builds up speed", () => {
 		const { tl } = compile("cuts", 160);
 		let makes = 0;
@@ -764,8 +776,8 @@ describe("2.5D director", () => {
 				t += 10 * rate;
 				seen += 10;
 			}
-			assert.isAtLeast(off!, 3000, `${b.type} at ${b.actionStart}`);
-			assert.isAtLeast(full! - off!, 600, `${b.type} at ${b.actionStart}`);
+			assert.isAtLeast(off!, 2500, `${b.type} at ${b.actionStart}`);
+			assert.isAtLeast(full! - off!, 400, `${b.type} at ${b.actionStart}`);
 		}
 		assert.isAbove(makes, 10);
 	}, 60_000);
@@ -1183,6 +1195,54 @@ describe("2.5D director", () => {
 				assert.isAbove(dunks, 0);
 			}
 		}
+	}, 60_000);
+
+	// "Dunks on him": the man the words name is the one who meets him at the
+	// rim - nearest him of anybody on the other side, right there, up with
+	// him - not someone else who happened to be in there.
+	test("a poster dunk is over the man the play-by-play says", () => {
+		const gid = 4242;
+		let posters = 0;
+		for (const seed of ["posters", "posters2"]) {
+			const { events, players } = fakeGame(seed, 400);
+			const tl = compileCourt({ events, players, gid });
+			const beatOf = new Map(tl.beats.map((b) => [b.i, b]));
+			events.forEach((e, i) => {
+				if (
+					(e.type !== "fgAtRim" && e.type !== "fgAtRimAndOne") ||
+					typeof e.pidDefense !== "number" ||
+					finishOf(e, gid, "male") !== "poster"
+				) {
+					return;
+				}
+				let a = i - 1;
+				while (a >= 0 && events[a]!.type !== "fgaAtRim") {
+					a -= 1;
+				}
+				// At the top of his slam.
+				const top = beatOf.get(a)!.actionStart + 1300 * 0.42;
+				const dunker = evalPlayer(tl, e.pid, top);
+				const near = [...tl.tracks.values()]
+					.filter((tr) => tr.team !== dunker.team)
+					.map((tr) => evalPlayer(tl, tr.pid, top))
+					.filter((st) => st.shown)
+					.sort(
+						(x, y) =>
+							Math.hypot(x.x - dunker.x, x.y - dunker.y) -
+							Math.hypot(y.x - dunker.x, y.y - dunker.y),
+					);
+				const victim = near[0]!;
+				assert.strictEqual(victim.pid, e.pidDefense, `line ${i}`);
+				assert.isBelow(
+					Math.hypot(victim.x - dunker.x, victim.y - dunker.y),
+					2.5,
+					`line ${i}`,
+				);
+				assert.isAbove(victim.z, 0.5, `line ${i}`);
+				posters += 1;
+			});
+		}
+		assert.isAbove(posters, 3);
 	}, 60_000);
 
 	// From the camera (across the floor from the far sideline), a defender

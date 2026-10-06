@@ -83,6 +83,10 @@ export type PlayerState = {
 	// the rim, and how much his hands are on it (0 to 1). His own build
 	// decides how high he really goes - see withBody.
 	dunk?: { leap: number; rim: Pt3; grip: number };
+	// Up for the ball where it will be: the jump a typical player makes to
+	// get his hands there (feet) - his own reach decides how high he really
+	// goes (see withBody).
+	reach?: number;
 	// Just after a change of move: the last move as it was when it changed,
 	// and how much of his pose is still that (1 all, 0 none) - see poseOf.
 	from?: {
@@ -786,6 +790,7 @@ type Doing = {
 	phase: number;
 	z: number;
 	dunk?: PlayerState["dunk"];
+	reach?: number;
 	holding: boolean;
 	dribble?: number;
 	dribbleHand?: Hand;
@@ -803,6 +808,7 @@ const doingAt = (
 	let phase: number;
 	let z = 0;
 	let dunk: PlayerState["dunk"];
+	let reach: number | undefined;
 	if (act) {
 		const u = (t - act.t0) / (act.t1 - act.t0);
 		anim = act.anim;
@@ -812,6 +818,9 @@ const doingAt = (
 				? clamp01(u)
 				: ((t - act.t0) / 1000) * (a.kind === "loop" ? a.fps / a.n : 1);
 		z = jumpZ(act, u);
+		if (act.reach && act.jump) {
+			reach = act.jump[2];
+		}
 		if (act.rim && act.zKeys) {
 			dunk = {
 				leap: Math.max(...act.zKeys.map((k) => k[1])),
@@ -867,6 +876,7 @@ const doingAt = (
 		phase,
 		z,
 		...(dunk ? { dunk } : {}),
+		...(reach ? { reach } : {}),
 		holding: has?.style === "hold",
 		dribble: beat?.ph,
 		dribbleHand: beat ? (beat.ph < DOWN ? beat.from : beat.to) : undefined,
@@ -1238,8 +1248,17 @@ const keyAt = (keys: [number, number][], u: number): number => {
 // less for a seven-footer, more for a guard - so every dunker's hands get
 // over the rim. Everything that draws him or puts the ball in his hands
 // asks this first; asking twice changes nothing.
-const TYPICAL_REACH = standingReach(bodyOf());
+const TYPICAL = bodyOf();
+const TYPICAL_REACH = standingReach(TYPICAL);
 export const withBody = (st: PlayerState, body: Body): PlayerState => {
+	const r = st.reach;
+	if (r !== undefined && r > 0 && st.z > 0) {
+		// Up for a rebound: his hands where a typical player's would get to.
+		const more =
+			holdBall(body, poseAt(st.anim, st.phase), st.anim).ball.u -
+			holdBall(TYPICAL, poseAt(st.anim, st.phase), st.anim).ball.u;
+		return { ...st, z: st.z * Math.max(0.3, (r - more) / r), reach: 0 };
+	}
 	const d = st.dunk;
 	if (!d || d.leap <= 0 || st.z <= 0) {
 		return st;
@@ -1612,10 +1631,10 @@ export const recentFx = (
 // to speed gently, so it never lurches away from what just happened, and
 // back down crisply into what comes next (timeline ms). Up to speed in
 // step with the timeline is a steady build in the time the viewer sees -
-// the same few percent quicker every moment - about a second of it at the
-// usual speed.
-export const FAST = 8;
-const FAST_IN = 3600;
+// the same few percent quicker every moment - about half a second of it at
+// the usual speed.
+export const FAST = 14;
+const FAST_IN = 2800;
 const FAST_OUT = 800;
 export const fastAt = (tl: CourtTimeline, t: number): number => {
 	const i = lastIndex(tl.fast, t, (f) => f[0]);

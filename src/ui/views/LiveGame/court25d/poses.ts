@@ -2021,6 +2021,44 @@ export const ANIMS = {
 			[1, P.chin],
 		],
 	},
+	// A loose ball taken out of the air on the hop: down to it, reaching
+	// out with both hands - and chinned.
+	snatch: {
+		kind: "act",
+		n: 7,
+		keys: [
+			[
+				0,
+				pose({
+					hipN: -6,
+					kneeN: 30,
+					hipF: 12,
+					kneeF: 34,
+					lean: 14,
+					shN: 50,
+					elN: 30,
+					shF: 46,
+					elF: 34,
+				}),
+			],
+			[
+				0.36,
+				pose({
+					hipN: 4,
+					kneeN: 54,
+					hipF: 22,
+					kneeF: 58,
+					lean: 26,
+					shN: 44,
+					elN: 14,
+					shF: 40,
+					elF: 16,
+					wide: 0.4,
+				}),
+			],
+			[1, P.chin],
+		],
+	},
 	// Down to the floor for it - knees bent deep, reaching out - and up
 	// with it in both hands.
 	pickup: {
