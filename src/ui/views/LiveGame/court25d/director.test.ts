@@ -1150,6 +1150,46 @@ describe("2.5D director", () => {
 		assert.isAtLeast(onTheMove, 60);
 	}, 60_000);
 
+	// A shot fake with a man up on him: he comes up out of his stance for
+	// it - off his feet if he bites, a hand up if he does not.
+	test("a defender up on a shot fake goes up for it", () => {
+		const { tl } = compile("a", 140);
+		let close = 0;
+		let rose = 0;
+		for (const tr of tl.tracks.values()) {
+			for (const a of tr.acts) {
+				if (a.anim !== "shotFake") {
+					continue;
+				}
+				const me = evalPlayer(tl, tr.pid, a.t0);
+				let guard: number | undefined;
+				let best = 7;
+				for (const o of tl.tracks.values()) {
+					const st = evalPlayer(tl, o.pid, a.t0);
+					const d = Math.hypot(st.x - me.x, st.y - me.y);
+					if (o.team !== tr.team && st.shown && d < best) {
+						best = d;
+						guard = o.pid;
+					}
+				}
+				if (guard === undefined) {
+					continue;
+				}
+				close += 1;
+				const o = tl.tracks.get(guard)!;
+				const soon = (t: number) => t >= a.t0 && t <= a.t0 + 300;
+				if (
+					o.acts.some((x) => x.anim === "contest" && soon(x.t0)) ||
+					o.arms.some((x) => x.kind === "hand" && soon(x.t0))
+				) {
+					rose += 1;
+				}
+			}
+		}
+		assert.isAbove(close, 15);
+		assert.isAbove(rose / close, 0.35);
+	}, 60_000);
+
 	test("flat out, a player sprints - bounding off the floor stride to stride", () => {
 		const { tl } = compile("a");
 		let sprints = 0;

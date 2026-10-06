@@ -3318,6 +3318,26 @@ class Director {
 				"dribble",
 				dir,
 			);
+			// His man, up on him, bites on it - a step the way it went - and
+			// is a step behind when it comes back across.
+			const guard = this.defenderOf(pid);
+			const G = guard === undefined ? undefined : this.posOf(guard);
+			const bit =
+				guard !== undefined &&
+				G !== undefined &&
+				dist(G, from) < 6.5 &&
+				dist(from, P) >= 8 &&
+				hash01(pid, t) < 0.7;
+			if (bit) {
+				this.go(
+					guard,
+					clampPt({ x: G.x, y: G.y + Math.sign(jab) * 2.4 }),
+					Math.max(t + 220, this.free.get(guard) ?? 0),
+					9,
+					"slide",
+					-dir as 1 | -1,
+				);
+			}
 			// Across as the ball comes up into his hand: on the next beat of
 			// his dribble.
 			const top = this.dribbleTop(pid, tj) ?? tj;
@@ -3329,6 +3349,18 @@ class Director {
 				this.rng() < 0.3 ? "legs" : "front",
 			);
 			t = tc + CROSS_MS;
+			if (bit) {
+				// Then turned, chasing him to the rim from behind.
+				const u = unitVec(from, P);
+				this.shadow(
+					guard,
+					clampPt({ x: P.x - u.x * 2.6, y: P.y - u.y * 2.6 }),
+					t + 80,
+					t + (dist(from, P) / DRIBBLE) * 1000 + 200,
+					this.teamOf(pid),
+					pid,
+				);
+			}
 		}
 		this.hold(pid, t, "dribble", goHand);
 		if (style === "euro") {
@@ -6291,6 +6323,24 @@ class Director {
 			}
 			return side;
 		};
+		// Whoever is up on him then: marking him, and close.
+		const guardOf = (pid: number, t: number): number | undefined => {
+			const at = this.posAt(pid, t);
+			let best: number | undefined;
+			let near = 7;
+			for (const o of this.tracks.values()) {
+				if (o.team === this.teamOf(pid)) {
+					continue;
+				}
+				const m = o.moves.findLast((x) => x.t0 <= t);
+				const d = dist(this.posAt(o.pid, t), at);
+				if (m && this.marking.get(m) === pid && d < near) {
+					near = d;
+					best = o.pid;
+				}
+			}
+			return best;
+		};
 		for (let i = 0; i + 1 < ball.length; i++) {
 			const s = ball[i]!;
 			const next = ball[i + 1]!;
@@ -6361,6 +6411,22 @@ class Director {
 				const anim = this.rng() < 0.55 ? "jab" : "shotFake";
 				const dur = anim === "jab" ? 520 : 640;
 				this.act(pid, anim, t, t + dur, { look: rim });
+				// His man, up on him, comes up out of his stance for the fake:
+				// off his feet, if he bites; a hand up, if he does not.
+				const g = anim === "shotFake" ? guardOf(pid, t) : undefined;
+				if (g !== undefined) {
+					const busy = this.track(g)?.acts.some(
+						(x) => x.t1 > t + 130 && x.t0 < t + 690,
+					);
+					if (!busy && hash01(g, t) < 0.45) {
+						this.act(g, "contest", t + 130, t + 130 + 560, {
+							look: P,
+							jump: [0.2, 0.8, 0.9],
+						});
+					} else {
+						this.gesture(g, "hand", t + 90, t + 640);
+					}
+				}
 				return dur;
 			};
 			if (to - from < 1900 || !(own || throws)) {
@@ -7078,6 +7144,14 @@ class Director {
 		for (const tr of this.tracks.values()) {
 			tr.moves.sort(byT0);
 			tr.acts.sort(byT0);
+			tr.faces.sort((a, b) => a[0] - b[0]);
+			tr.looks.sort((a, b) => a[0] - b[0]);
+			tr.shown.sort((a, b) => a[0] - b[0]);
+		}
+		this.ball.sort(byT0);
+		this.liveHands();
+		this.liven();
+		for (const tr of this.tracks.values()) {
 			// One thing at a time with his arm: the first he started.
 			const arms: Gesture[] = [];
 			for (const g of tr.arms.sort(byT0)) {
@@ -7086,13 +7160,7 @@ class Director {
 				}
 			}
 			tr.arms = arms;
-			tr.faces.sort((a, b) => a[0] - b[0]);
-			tr.looks.sort((a, b) => a[0] - b[0]);
-			tr.shown.sort((a, b) => a[0] - b[0]);
 		}
-		this.ball.sort(byT0);
-		this.liveHands();
-		this.liven();
 		this.unplant();
 		this.mark();
 		this.unplant();
