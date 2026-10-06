@@ -345,7 +345,7 @@ const DRIBBLE_MS = 1000 / DRIBBLE_RATE;
 const OVERHEAD_WIND = 140;
 const RELEASE_MS = 120;
 // How far out in front of his feet a man bent to the floor has his hands.
-const PICKUP_REACH = 2.9;
+const PICKUP_REACH = releaseAt("pickup", 0.5).f;
 // How far through a bounce of his dribble the ball has come back up near
 // enough to his hands to take it in both (see evaluate.ts).
 const CATCH_UP = 0.7;
@@ -8137,21 +8137,25 @@ class Director {
 				const dy = m.to.y - m.from.y;
 				const L2 = dx * dx + dy * dy;
 				let bend: { t: number; at: Pt; u: number } | undefined;
+				const dur = m.t1 - m.t0;
 				for (const w of L2 > 0.25 ? theirs : []) {
 					if (w.t1 <= m.t0 || w.t0 >= m.t1) {
 						continue;
 					}
+					// Where he comes closest to him while the man is there.
+					const lo = dur > 0 ? Math.max(0, (w.t0 - m.t0) / dur) : 0;
+					const hi = dur > 0 ? Math.min(1, (w.t1 - m.t0) / dur) : 1;
 					const u = Math.min(
-						1,
+						hi,
 						Math.max(
-							0,
+							lo,
 							((w.at.x - m.from.x) * dx + (w.at.y - m.from.y) * dy) / L2,
 						),
 					);
 					const q = { x: m.from.x + dx * u, y: m.from.y + dy * u };
-					const tq = m.t0 + (m.t1 - m.t0) * u;
+					const tq = m.t0 + dur * u;
 					const d = dist(q, w.at);
-					if (tq < w.t0 || tq > w.t1 || d >= BODY || (bend && bend.u <= u)) {
+					if (d >= BODY || (bend && bend.u <= u)) {
 						continue;
 					}
 					const L = Math.sqrt(L2);
@@ -8168,7 +8172,8 @@ class Director {
 						}),
 					};
 				}
-				if (!bend || bend.t - m.t0 <= 60 || m.t1 - bend.t <= 60) {
+				const edge = Math.min(60, dur * 0.3);
+				if (!bend || bend.t - m.t0 <= edge || m.t1 - bend.t <= edge) {
 					return [m];
 				}
 				const a = { ...m, t1: bend.t, to: bend.at };
@@ -8176,12 +8181,13 @@ class Director {
 				return depth >= 3 ? [a, b] : [a, ...split(b, depth + 1)];
 			};
 			const out: Move[] = tr.moves.flatMap((m) => split(m, 0));
-			// Nor does a run end inside one: it stops at his shoulder (and the
-			// next sets off from there).
+			// Nor does a run end inside one - nor a man stand where one is set:
+			// he stops at his shoulder (and the next run sets off from there).
 			out.forEach((m, i) => {
 				for (const w of theirs) {
 					const d = dist(m.to, w.at);
-					if (m.t1 < w.t0 || m.t1 > w.t1 || d >= BODY) {
+					const until = out[i + 1]?.t0 ?? Infinity;
+					if (until < w.t0 || m.t1 > w.t1 || d >= BODY) {
 						continue;
 					}
 					const ref = d > 0.05 ? m.to : m.from;

@@ -333,6 +333,19 @@ type RunMode =
 	| "drift"
 	| "shuffle"
 	| "closeout";
+// Arms swinging against the legs (`a` how far the right leg is forward, -1
+// to 1), `swing` degrees each way from the shoulder: the elbow closing as an
+// arm comes through - the hand up toward his chest - and opening as it goes
+// back past his hip, by `pump` degrees, round a bend of `bend`. The hands
+// come in a touch across him in front and go out a little behind.
+const pump = (a: number, swing: number, bend: number, pump: number) => ({
+	shN: -swing * a,
+	elN: bend - pump * a,
+	abN: 12 + 6 * a,
+	shF: swing * a,
+	elF: bend + pump * a,
+	abF: 12 - 6 * a,
+});
 const stride = (ph: number, mode: RunMode): Pose => {
 	const a = Math.sin(2 * Math.PI * ph);
 	const c = Math.cos(2 * Math.PI * ph);
@@ -400,7 +413,7 @@ const stride = (ph: number, mode: RunMode): Pose => {
 		}
 		return mode === "carry"
 			? pose({ ...legs, lean: 6, shN: 36, elN: 92, shF: 30, elF: 98 })
-			: pose({ ...legs, lean: 4, shN: -16 * a, elN: 22, shF: 16 * a, elF: 26 });
+			: pose({ ...legs, lean: 4, ...pump(a, 16, 24, 8) });
 	}
 	if (mode === "back") {
 		// A defensive slide / backpedal: low, short steps, hands active.
@@ -428,10 +441,7 @@ const stride = (ph: number, mode: RunMode): Pose => {
 			kneeN: 12 + 40 * Math.max(0, c) ** 1.3,
 			kneeF: 12 + 40 * Math.max(0, -c) ** 1.3,
 			lean: 6,
-			shN: -30 * a,
-			elN: 72,
-			shF: 30 * a,
-			elF: 72,
+			...pump(a, 30, 74, 16),
 		});
 	}
 	if (mode === "sprint") {
@@ -442,10 +452,7 @@ const stride = (ph: number, mode: RunMode): Pose => {
 			kneeN: 18 + 80 * Math.max(0, c) ** 1.3,
 			kneeF: 18 + 80 * Math.max(0, -c) ** 1.3,
 			lean: 18,
-			shN: -62 * a,
-			elN: 88,
-			shF: 62 * a,
-			elF: 88,
+			...pump(a, 62, 86, 24),
 		});
 	}
 	const legs = {
@@ -464,7 +471,7 @@ const stride = (ph: number, mode: RunMode): Pose => {
 			elF: 62,
 		});
 	}
-	return pose({ ...legs, shN: -42 * a, elN: 78, shF: 42 * a, elF: 78 });
+	return pose({ ...legs, ...pump(a, 42, 80, 22) });
 };
 
 // Mid-stride, his feet are where his stride puts them - not planted under
@@ -935,7 +942,7 @@ export const ANIMS = {
 	setShot: { kind: "act", n: 12, keys: SET_SHOT },
 	layup: {
 		kind: "act",
-		n: 7,
+		n: 10,
 		keys: [
 			[
 				0,
@@ -951,6 +958,7 @@ export const ANIMS = {
 					lean: 14,
 				}),
 			],
+			// Up off his left foot, the right knee driving.
 			[
 				0.3,
 				pose({
@@ -964,6 +972,7 @@ export const ANIMS = {
 					elF: 70,
 					lean: 6,
 					wrN: 30,
+					toe: 1,
 				}),
 			],
 			[
@@ -979,24 +988,72 @@ export const ANIMS = {
 					elF: 60,
 					lean: 0,
 					wrN: 10,
+					toe: 1,
 				}),
 			],
 			[
 				0.72,
 				pose({
-					hipN: 88,
-					kneeN: 106,
+					hipN: 84,
+					kneeN: 104,
 					hipF: -10,
 					kneeF: 26,
 					shN: 168,
 					elN: 6,
-					shF: 70,
+					shF: 66,
 					elF: 60,
 					lean: 0,
 					wrN: -70,
+					toe: 1,
 				}),
 			],
-			[1, P.land],
+			// Coming down: the knee lets down, the hand comes down past his
+			// face.
+			[
+				0.84,
+				pose({
+					hipN: 40,
+					kneeN: 56,
+					hipF: -4,
+					kneeF: 22,
+					shN: 132,
+					elN: 40,
+					shF: 44,
+					elF: 54,
+					lean: 3,
+					wrN: -40,
+					toe: 0.6,
+				}),
+			],
+			[
+				0.93,
+				pose({
+					hipN: 8,
+					kneeN: 34,
+					hipF: 6,
+					kneeF: 36,
+					shN: 66,
+					elN: 62,
+					shF: 24,
+					elF: 40,
+					lean: 8,
+					wrN: -10,
+				}),
+			],
+			[
+				1,
+				pose({
+					hipN: -2,
+					kneeN: 34,
+					hipF: 10,
+					kneeF: 38,
+					shN: 30,
+					elN: 40,
+					shF: 16,
+					elF: 32,
+					lean: 8,
+				}),
+			],
 		],
 	},
 	// Two hands: up with it over his head, cocked behind it at the top, then
@@ -1045,6 +1102,7 @@ export const ANIMS = {
 					shF: 166,
 					elF: 32,
 					lean: 2,
+					toe: 0.8,
 				}),
 			],
 			[
@@ -1059,6 +1117,7 @@ export const ANIMS = {
 					shF: 180,
 					elF: 32,
 					lean: -4,
+					toe: 1,
 				}),
 			],
 			[
@@ -1075,6 +1134,7 @@ export const ANIMS = {
 					wrN: -60,
 					wrF: -60,
 					lean: 12,
+					toe: 1,
 				}),
 			],
 			[
@@ -1089,6 +1149,7 @@ export const ANIMS = {
 					shF: 170,
 					elF: 8,
 					lean: 6,
+					toe: 1,
 				}),
 			],
 			[
@@ -1103,6 +1164,7 @@ export const ANIMS = {
 					shF: 172,
 					elF: 6,
 					lean: 2,
+					toe: 1,
 				}),
 			],
 			[
@@ -1117,6 +1179,7 @@ export const ANIMS = {
 					shF: 116,
 					elF: 34,
 					lean: 4,
+					toe: 0.5,
 				}),
 			],
 			[0.88, P.land],
@@ -1170,6 +1233,7 @@ export const ANIMS = {
 					elF: 50,
 					abF: 30,
 					lean: 2,
+					toe: 0.8,
 				}),
 			],
 			[
@@ -1185,6 +1249,7 @@ export const ANIMS = {
 					elF: 40,
 					abF: 34,
 					lean: -4,
+					toe: 1,
 				}),
 			],
 			[
@@ -1201,6 +1266,7 @@ export const ANIMS = {
 					abF: 30,
 					wrN: -70,
 					lean: 12,
+					toe: 1,
 				}),
 			],
 			[
@@ -1215,6 +1281,7 @@ export const ANIMS = {
 					shF: 170,
 					elF: 8,
 					lean: 6,
+					toe: 1,
 				}),
 			],
 			[
@@ -1229,6 +1296,7 @@ export const ANIMS = {
 					shF: 172,
 					elF: 6,
 					lean: 2,
+					toe: 1,
 				}),
 			],
 			[
@@ -1243,6 +1311,7 @@ export const ANIMS = {
 					shF: 116,
 					elF: 34,
 					lean: 4,
+					toe: 0.5,
 				}),
 			],
 			[0.88, P.land],
@@ -1294,6 +1363,7 @@ export const ANIMS = {
 					shF: 90,
 					elF: 50,
 					lean: 2,
+					toe: 0.8,
 				}),
 			],
 			[
@@ -1308,6 +1378,7 @@ export const ANIMS = {
 					shF: 70,
 					elF: 40,
 					lean: -4,
+					toe: 1,
 				}),
 			],
 			[
@@ -1323,6 +1394,7 @@ export const ANIMS = {
 					elF: 30,
 					wrN: -80,
 					lean: 12,
+					toe: 1,
 				}),
 			],
 			[
@@ -1337,6 +1409,7 @@ export const ANIMS = {
 					shF: 170,
 					elF: 8,
 					lean: 6,
+					toe: 1,
 				}),
 			],
 			[
@@ -1351,6 +1424,7 @@ export const ANIMS = {
 					shF: 172,
 					elF: 6,
 					lean: 2,
+					toe: 1,
 				}),
 			],
 			[
@@ -1365,6 +1439,7 @@ export const ANIMS = {
 					shF: 116,
 					elF: 34,
 					lean: 4,
+					toe: 0.5,
 				}),
 			],
 			[0.88, P.land],
@@ -1392,6 +1467,7 @@ export const ANIMS = {
 					elF: 70,
 					abF: 22,
 					lean: 6,
+					toe: 0.8,
 				}),
 			],
 			[
@@ -1408,6 +1484,7 @@ export const ANIMS = {
 					elF: 74,
 					abF: 22,
 					lean: -2,
+					toe: 1,
 				}),
 			],
 			[
@@ -1423,6 +1500,7 @@ export const ANIMS = {
 					shF: 70,
 					elF: 50,
 					lean: 0,
+					toe: 0.5,
 				}),
 			],
 			[1, P.land],
@@ -1658,6 +1736,7 @@ export const ANIMS = {
 					shF: 168,
 					elF: 8,
 					lean: 0,
+					toe: 1,
 				}),
 			],
 			[
@@ -1672,6 +1751,7 @@ export const ANIMS = {
 					shF: 145,
 					elF: 55,
 					lean: 2,
+					toe: 0.6,
 				}),
 			],
 			[1, P.hold],
@@ -1679,7 +1759,7 @@ export const ANIMS = {
 	},
 	block: {
 		kind: "act",
-		n: 7,
+		n: 8,
 		keys: [
 			[0, P.gather],
 			[
@@ -1694,6 +1774,7 @@ export const ANIMS = {
 					shF: 120,
 					elF: 30,
 					lean: 0,
+					toe: 1,
 				}),
 			],
 			[
@@ -1708,28 +1789,86 @@ export const ANIMS = {
 					shF: 110,
 					elF: 30,
 					lean: 8,
+					toe: 1,
+				}),
+			],
+			// Coming down, the arms with him.
+			[
+				0.82,
+				pose({
+					hipN: -2,
+					kneeN: 18,
+					hipF: 12,
+					kneeF: 30,
+					shN: 88,
+					elN: 32,
+					shF: 66,
+					elF: 38,
+					lean: 6,
+					toe: 0.4,
 				}),
 			],
 			[1, P.land],
 		],
 	},
+	// A hand straight up at the shot as he goes up with it - and kept up
+	// while it goes over him - the other hand down and out of the way.
 	contest: {
 		kind: "act",
-		n: 5,
+		n: 7,
 		keys: [
 			[0, P.ready],
 			[
-				0.4,
+				0.18,
 				pose({
 					hipN: -2,
-					kneeN: 16,
+					kneeN: 14,
 					hipF: 10,
-					kneeF: 30,
-					shN: 168,
-					elN: 6,
-					shF: 40,
+					kneeF: 24,
+					shN: 158,
+					elN: 12,
+					abN: 4,
+					shF: 34,
 					elF: 40,
+					abF: 26,
+					lean: -2,
+					tuck: 0.7,
+					toe: 0.6,
+				}),
+			],
+			[
+				0.62,
+				pose({
+					hipN: -2,
+					kneeN: 12,
+					hipF: 10,
+					kneeF: 22,
+					shN: 166,
+					elN: 6,
+					abN: 4,
+					shF: 30,
+					elF: 40,
+					abF: 28,
 					lean: -4,
+					tuck: 0.7,
+					toe: 1,
+				}),
+			],
+			[
+				0.84,
+				pose({
+					hipN: -4,
+					kneeN: 18,
+					hipF: 12,
+					kneeF: 28,
+					shN: 112,
+					elN: 38,
+					shF: 28,
+					elF: 38,
+					abF: 22,
+					lean: 2,
+					tuck: 0.4,
+					toe: 0.4,
 				}),
 			],
 			[1, P.land],
@@ -1860,6 +1999,7 @@ export const ANIMS = {
 					shF: 168,
 					elF: 8,
 					lean: 0,
+					toe: 1,
 				}),
 			],
 			[
@@ -1874,6 +2014,7 @@ export const ANIMS = {
 					shF: 145,
 					elF: 55,
 					lean: 2,
+					toe: 0.6,
 				}),
 			],
 			[0.66, P.chin],
@@ -1890,18 +2031,18 @@ export const ANIMS = {
 			[
 				0.5,
 				pose({
-					hipN: 60,
-					kneeN: 120,
-					hipF: 84,
-					kneeF: 126,
-					shN: 30,
-					elN: 6,
-					shF: 26,
-					elF: 8,
-					abN: 6,
-					abF: 6,
-					lean: 70,
-					wide: 0.35,
+					hipN: 44,
+					kneeN: 124,
+					hipF: 80,
+					kneeF: 132,
+					shN: 8,
+					elN: 8,
+					shF: 4,
+					elF: 10,
+					abN: 8,
+					abF: 8,
+					lean: 54,
+					wide: 0.42,
 				}),
 			],
 			[1, P.hold],

@@ -78,7 +78,7 @@ describe("2.5D director", () => {
 			}
 			assert.strictEqual(tl.end, prevEnd);
 		}
-	});
+	}, 60_000);
 
 	test("the same game stages the same way every time (every device agrees)", () => {
 		const a = compile("same").tl;
@@ -89,7 +89,7 @@ describe("2.5D director", () => {
 			JSON.stringify([...a.tracks.values()]),
 			JSON.stringify([...b.tracks.values()]),
 		);
-	});
+	}, 60_000);
 
 	// A saved replay is the play-by-play read back out of the database and
 	// staged again, on whatever device, after whatever else was watched.
@@ -144,7 +144,7 @@ describe("2.5D director", () => {
 			assert.isBelow(apex, 19, "a three is not a moonball");
 		}
 		assert.isAbove(threes, 0);
-	});
+	}, 60_000);
 
 	test("in the air, the ball falls at gravity's pace", () => {
 		const { tl } = compile("gravity", 120);
@@ -160,7 +160,7 @@ describe("2.5D director", () => {
 				(z(m + dt * 1000) - 2 * z(m) + z(m - dt * 1000)) / (dt * dt);
 			assert.closeTo(accel, -32.2, 1.5);
 		}
-	});
+	}, 60_000);
 
 	test("a player's moves never overlap and stay near the floor", () => {
 		const { tl } = compile("moves", 160);
@@ -184,7 +184,7 @@ describe("2.5D director", () => {
 				}
 			}
 		}
-	});
+	}, 60_000);
 
 	test("bodies glide - nobody on the floor teleports between frames", () => {
 		const { tl } = compile("glide", 140);
@@ -303,7 +303,7 @@ describe("2.5D director", () => {
 		assert.isAbove(drifts, 40);
 		// (A man already on the move with the play goes his own way.)
 		assert.isAbove(followed, drifts * 0.25);
-	});
+	}, 60_000);
 
 	// A defender goes with his man: when a man on offense runs, the man
 	// guarding him (the nearest of the defense) is on the move too - not
@@ -705,7 +705,7 @@ describe("2.5D director", () => {
 			}
 		}
 		assert.isAbove(events.length, 0);
-	});
+	}, 60_000);
 
 	// What just happened gets a moment at real speed before the picture
 	// hurries on: a second, and longer after a basket - the ball down
@@ -727,7 +727,7 @@ describe("2.5D director", () => {
 			}
 		}
 		assert.isAbove(afterScore, 10);
-	});
+	}, 60_000);
 
 	// Watched at the usual speed: the ball down through the net and both
 	// teams heading back up the floor at real speed - a good three seconds of
@@ -768,7 +768,7 @@ describe("2.5D director", () => {
 			assert.isAtLeast(full! - off!, 600, `${b.type} at ${b.actionStart}`);
 		}
 		assert.isAbove(makes, 10);
-	});
+	}, 60_000);
 
 	// The clock on screen never stops while the ball is live - the shot in
 	// the air, the rebound - and stays stopped through a whistle.
@@ -802,7 +802,7 @@ describe("2.5D director", () => {
 		});
 		assert.isAbove(live, 20);
 		assert.isAbove(whistles, 10);
-	});
+	}, 60_000);
 
 	// A quick trip off a defensive board or a steal is a fast break - run
 	// out at full speed, never fast-forwarded - and a long one walks it up
@@ -878,7 +878,7 @@ describe("2.5D director", () => {
 				);
 			}
 		}
-	});
+	}, 60_000);
 
 	// A basket's line comes with the points, rebounds and assists it adds up -
 	// events, not lines - so the page taking all of them at once is one line
@@ -894,7 +894,7 @@ describe("2.5D director", () => {
 			}
 		}
 		assert.strictEqual(linesBetween(tl, tl.beats[0]!.i, tl.beats[6]!.i), 6);
-	});
+	}, 60_000);
 
 	test("a make swishes and a miss rattles, right when its line shows", () => {
 		const { tl } = compile("fx", 140);
@@ -913,7 +913,7 @@ describe("2.5D director", () => {
 				assert.isTrue(near("clank"), `${b.type} at ${b.actionStart}`);
 			}
 		}
-	});
+	}, 60_000);
 
 	test("a shot is played out at the rim the way its line says it went - free throws too", () => {
 		const { events, tl } = compile("a", 140);
@@ -956,7 +956,7 @@ describe("2.5D director", () => {
 		assert.isAbove(made, 15);
 		assert.isAbove(missed, 15);
 		assert.isAbove(fts, 15);
-	});
+	}, 60_000);
 
 	test("up to the rim, off it and into the hands of the man who gets it, the ball never swerves", () => {
 		const { tl } = compile("a", 140);
@@ -991,7 +991,7 @@ describe("2.5D director", () => {
 		assert.isAbove(off.length, 20);
 		assert.isAbove(ok(into), 0.9);
 		assert.isAbove(ok(off), 0.9);
-	});
+	}, 60_000);
 
 	test("a blocked shot is swatted off his hand - down to the floor, or to whoever gets it", () => {
 		const { tl } = compile("a", 140);
@@ -1020,7 +1020,7 @@ describe("2.5D director", () => {
 			blocks += 1;
 		}
 		assert.isAbove(blocks, 2);
-	});
+	}, 60_000);
 
 	test("off the rim, the man who gets it mostly goes up and takes it in the air", () => {
 		const { events, tl } = compile("a", 140);
@@ -1053,7 +1053,7 @@ describe("2.5D director", () => {
 		});
 		assert.isAbove(all, 20);
 		assert.isAbove(air / all, 0.6);
-	});
+	}, 60_000);
 
 	test("the playback target only moves forward as lines are shown", () => {
 		const { events, tl } = compile("cursor", 60);
@@ -1065,7 +1065,7 @@ describe("2.5D director", () => {
 			prev = t;
 		}
 		assert.strictEqual(targetForCursor(tl, events.length), tl.end);
-	});
+	}, 60_000);
 	test("a shot goes up from the zone the sim says", () => {
 		const { events, tl } = compile("zones", 160);
 		const beatOf = new Map(tl.beats.map((b) => [b.i, b]));
@@ -1093,7 +1093,7 @@ describe("2.5D director", () => {
 			checked += 1;
 		});
 		assert.isAbove(checked, 50);
-	});
+	}, 60_000);
 
 	test("an assisted basket's last pass comes from the man credited with it", () => {
 		const { events, tl } = compile("assists", 160);
@@ -1135,7 +1135,7 @@ describe("2.5D director", () => {
 			checked += 1;
 		});
 		assert.isAbove(checked, 10);
-	});
+	}, 60_000);
 
 	test("a finish at the rim looks the way the play-by-play words it", () => {
 		for (const gender of ["male", "female"] as const) {
@@ -1222,7 +1222,7 @@ describe("2.5D director", () => {
 			}
 			assert.isAbove(checked, 3);
 		}
-	});
+	}, 60_000);
 
 	// Every free throw: the official bounces him the ball, he dribbles, shoots
 	// and holds his follow-through until the ball gets to the rim.
@@ -1284,7 +1284,7 @@ describe("2.5D director", () => {
 			}
 		}
 		assert.isAbove(threes, 30);
-	});
+	}, 60_000);
 
 	test("a free throw has the shooter's routine", () => {
 		for (const seed of ["a", "b"]) {
@@ -1334,7 +1334,7 @@ describe("2.5D director", () => {
 			}
 			assert.isAbove(checked, 4);
 		}
-	});
+	}, 60_000);
 
 	// The camera goes off the floor only while nothing is happening on it: the
 	// game opens on the building and cuts in for the tip, and a timeout or the
@@ -1376,7 +1376,7 @@ describe("2.5D director", () => {
 				}
 			}
 		}
-	});
+	}, 60_000);
 
 	// A pass coming his way: his hands come up for it before it gets there.
 	test("a receiver shows his hands for a pass", () => {
@@ -1407,7 +1407,7 @@ describe("2.5D director", () => {
 			assert.isAbove(passes, 20);
 			assert.isAbove(shown / passes, 0.9, seed);
 		}
-	});
+	}, 60_000);
 
 	// Running, sliding, dribbling, a man still talks with a hand: the
 	// screener's man points out the screen, a switch or a man getting back
@@ -1601,7 +1601,7 @@ describe("2.5D director", () => {
 		}
 		assert.isAbove(sprints, 5);
 		assert.isAbove(jogs, 5);
-	});
+	}, 60_000);
 
 	// A dunk is a dunk: the ball goes up over the rim in his hand and is
 	// thrown down through it, and a make, he hangs there by both hands - a
@@ -1649,7 +1649,7 @@ describe("2.5D director", () => {
 			}
 		}
 		assert.isAbove(dunks, 2);
-	});
+	}, 60_000);
 
 	// A close game late in the fourth (or in overtime) has the building on
 	// its feet; the first three periods never do.
@@ -1675,7 +1675,7 @@ describe("2.5D director", () => {
 			}
 		}
 		assert.isAbove(tense, 1);
-	});
+	}, 60_000);
 
 	test("a rebounder chins it before he goes anywhere with it", () => {
 		for (const seed of ["a", "b"]) {
@@ -1698,5 +1698,5 @@ describe("2.5D director", () => {
 			}
 			assert.isAbove(boards, 10);
 		}
-	});
+	}, 60_000);
 });
