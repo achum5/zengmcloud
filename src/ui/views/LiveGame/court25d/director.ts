@@ -360,18 +360,20 @@ const REBOUND_MS = 1100;
 const READ_MS = 180;
 // The last few inches onto a spot: a shuffle this long (ms).
 const SETTLE_MS = 160;
-// A loose ball on the hop is taken out of the air this high (feet) - about
-// where a man reaching for it has his hands (see the snatch in poses.ts) -
-// this far out in front of him.
-const SNATCH_LOW = 1.9;
-const SNATCH_HIGH = 3.3;
-const SNATCH_OUT = releaseAt("snatch", 0.36).f;
-// Up for a rebound, a typical player's hands are this high over his feet
-// (feet), and this far out in front of him; at the top of his jump, 400ms
-// after he leaves the floor.
-const BOARD_HANDS = 5.8;
-const BOARD_OUT = 0.63;
+// A loose ball on the hop is taken out of the air about where a man reaching
+// for it has his hands (see the snatch in poses.ts) - from a little under
+// them to a little over (feet) - this far out in front of him.
+const SNATCH_AT = releaseAt("snatch", 0.36);
+const SNATCH_LOW = SNATCH_AT.u - 0.6;
+const SNATCH_HIGH = SNATCH_AT.u + 0.8;
+const SNATCH_OUT = SNATCH_AT.f;
+// Up for a rebound, at the top of his jump - 400ms after he leaves the floor
+// - a typical player's hands are this high over his feet (feet), and this far
+// out in front of him.
 const BOARD_TOP = 400;
+const BOARD_AT = releaseAt("board", BOARD_TOP / REBOUND_MS);
+const BOARD_HANDS = BOARD_AT.u;
+const BOARD_OUT = BOARD_AT.f;
 // A dunk, for a typical player (taller ones jump less to get there, shorter
 // ones more - see withBody): how high he gets (feet) - his hands well over
 // the rim - and how far out from the middle of the rim he goes up.

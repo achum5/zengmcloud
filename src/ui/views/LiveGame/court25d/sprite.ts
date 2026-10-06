@@ -1,12 +1,8 @@
 import { project, type Camera } from "./camera.ts";
 import type { PlayerState } from "./evaluate.ts";
-import {
-	drawFigure,
-	drawHeadAt,
-	type FigureAnchors,
-	type Look,
-} from "./figure.ts";
+import { drawHeadAt, type Look } from "./figure.ts";
 import { ANIMS, type AnimName, type Body } from "./poses.ts";
+import { sculpt } from "./sculpt.ts";
 
 // THE PLAYERS, DRAWN.
 //
@@ -185,7 +181,7 @@ export const drawSprite = (
 	const lift = Math.max(0, st.z) * k;
 	const left = base.x - half;
 	const right = base.x + half;
-	// Arms thrown up over his head reach a third again over it.
+	// Arms thrown up over his head reach well over it.
 	const upper = base.y - (body.H * 1.4 + 0.5) * k - lift;
 	const lower = base.y + 0.9 * k - lift;
 	// Nothing of him on the picture: nothing to draw.
@@ -247,10 +243,8 @@ export const drawSprite = (
 	// Screen coordinates, shrunk to sprite pixels, with a pixel of margin.
 	const ox = left - px;
 	const oy = upper + lift - px;
-	s.setTransform(1 / px, 0, 0, 1 / px, -ox / px, -oy / px);
-	const anchors: FigureAnchors = drawFigure(s, cam, posed, body, look, px);
-	s.setTransform(1, 0, 0, 1, 0, 0);
-	const img = s.getImageData(0, 0, w, h);
+	const made = sculpt(cam, posed, body, look, px, ox, oy, w, h);
+	const img = made.img;
 	const d = img.data;
 	rim(d, w, h);
 	s.putImageData(img, 0, 0);
@@ -259,14 +253,12 @@ export const drawSprite = (
 	s.setTransform(1 / px, 0, 0, 1 / px, -ox / px, -oy / px);
 	drawHeadAt(s, cam, posed, body, look);
 	s.setTransform(1, 0, 0, 1, 0, 0);
-	const hr = anchors.head.r / px;
-	const hx0 = Math.max(
-		0,
-		Math.floor((anchors.head.x - ox) / px - hr * 1.9) - 2,
-	);
-	const hy0 = Math.max(0, Math.floor((anchors.head.y - oy) / px - hr * 2) - 2);
-	const hx1 = Math.min(w, Math.ceil((anchors.head.x - ox) / px + hr * 1.9) + 2);
-	const hy1 = Math.min(h, Math.ceil((anchors.head.y - oy) / px + hr * 1.6) + 2);
+	const head = made.head;
+	const hr = head.r;
+	const hx0 = Math.max(0, Math.floor(head.x - hr * 1.9) - 2);
+	const hy0 = Math.max(0, Math.floor(head.y - hr * 2) - 2);
+	const hx1 = Math.min(w, Math.ceil(head.x + hr * 1.9) + 2);
+	const hy1 = Math.min(h, Math.ceil(head.y + hr * 1.6) + 2);
 	if (hx1 > hx0 && hy1 > hy0) {
 		const fw = hx1 - hx0;
 		const face = s.getImageData(hx0, hy0, fw, hy1 - hy0);
@@ -279,7 +271,7 @@ export const drawSprite = (
 		);
 		s.putImageData(face, hx0, hy0);
 	}
-	if (anchors.over) {
+	if (made.over) {
 		// An arm up in front of his face goes over it: drawn on its own, in his
 		// palette, outlined so it reads against his face.
 		scratch.top ??= makeScratch();
@@ -290,10 +282,7 @@ export const drawSprite = (
 		}
 		t.ctx.setTransform(1, 0, 0, 1, 0, 0);
 		t.ctx.clearRect(0, 0, w, h);
-		t.ctx.setTransform(1 / px, 0, 0, 1 / px, -ox / px, -oy / px);
-		anchors.over(t.ctx);
-		t.ctx.setTransform(1, 0, 0, 1, 0, 0);
-		const top = t.ctx.getImageData(0, 0, w, h);
+		const top = made.over;
 		rim(top.data, w, h);
 		t.ctx.putImageData(top, 0, 0);
 		s.drawImage(t.canvas, 0, 0, w, h, 0, 0, w, h);

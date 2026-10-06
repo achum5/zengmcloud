@@ -296,7 +296,11 @@ const Court25D = ({
 				skin: head?.skin ?? colors.skin,
 				hair: f?.imgURL ? "#1f1612" : colors.hair,
 				cut: f?.imgURL ? "short" : colors.cut,
-				...(f?.imgURL ? {} : { profile: profileOf(f?.face, team?.colors) }),
+				// In the colors his face is drawn in, so a headband is the same
+				// one from every side.
+				...(f?.imgURL
+					? {}
+					: { profile: profileOf(f?.face, f?.colors ?? team?.colors) }),
 				jerseyNumber: f?.jerseyNumber ?? p.jerseyNumber ?? "",
 				name: p.name ?? "",
 				lastName: lastNameOf(p.name),

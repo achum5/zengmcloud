@@ -503,7 +503,7 @@ const JUMPER_ARMS: [number, Partial<Pose>][] = [
 	// Up the middle of him, the shooting hand getting under it.
 	[0.25, { shN: 72, elN: 108, abN: -9, wrN: 52, shF: 62, elF: 112, abF: -4 }],
 	[0.32, { shN: 89, elN: 78, abN: -18, wrN: 60, shF: 110, elF: 70, abF: -10 }],
-	// The set point; the guide hand comes away.
+	// The set point, the guide hand on the side of the ball.
 	[
 		0.4,
 		{
@@ -515,13 +515,14 @@ const JUMPER_ARMS: [number, Partial<Pose>][] = [
 			elF: 56,
 			abF: -10,
 			wrF: 25,
-			free: 0.55,
+			free: 0,
 		},
 	],
-	[0.47, { shN: 126, elN: 42, free: 1 }],
-	// Up and out at the rim - and gone.
-	[0.51, { shN: 139, elN: 21, wrN: 50 }],
-	[0.55, { shN: 153, elN: 1, abN: -12, wrN: 12 }],
+	[0.47, { shN: 126, elN: 42 }],
+	// Up and out at the rim - the guide hand still on it until the last
+	// instant - and gone.
+	[0.51, { shN: 139, elN: 21, wrN: 50, free: 0 }],
+	[0.55, { shN: 153, elN: 1, abN: -12, wrN: 12, free: 1 }],
 	// The snap, and the gooseneck held.
 	[0.6, { shN: 154, elN: 2, wrN: -85 }],
 	[0.66, { elN: 3, wrN: -108, shF: 117, elF: 57, wrF: 22 }],
@@ -2523,26 +2524,27 @@ export const girthOf = (hgt: number, weight: number): number => {
 	return Math.min(1.28, Math.max(0.84, (bmi / DEFAULT_BMI) ** 0.9));
 };
 
-// A cartoon athlete, Hoop Land style: a big head - a little over a quarter
-// of him - on a neck, over a compact body with sturdy legs and arms. His
-// height and build still tell: a center towers over a point guard, a big man
-// is broad. (His face is drawn a little bigger than headR: crown to chin is
-// 2.45 headR.)
+// A cartoon athlete: a big head - a fifth of him - on a short, thick neck,
+// over an athlete's body, his arms in proportion to it (elbows at his waist,
+// wrists at his hips, fingertips halfway down his thighs). His height and
+// build still tell: a center towers over a point guard, a big man is broad.
+// (His face is drawn a little bigger than headR: crown to chin is 2.45
+// headR.)
 export const bodyOf = (hgt = DEFAULT_HGT, weight = DEFAULT_WEIGHT): Body => {
 	const H = (DEFAULT_HGT * (hgt / DEFAULT_HGT) ** 1.25) / 12;
 	const g = girthOf(hgt, weight);
 	return {
 		H,
-		hipH: H * 0.4,
+		hipH: H * 0.45,
 		ankleH: H * 0.03,
-		thigh: H * 0.19,
-		shin: H * 0.18,
+		thigh: H * 0.215,
+		shin: H * 0.205,
 		foot: H * 0.15,
-		torso: H * 0.235,
-		neck: H * 0.08,
-		headR: H * 0.12,
-		upper: H * 0.13,
-		fore: H * 0.12,
+		torso: H * 0.27,
+		neck: H * 0.05,
+		headR: H * 0.1,
+		upper: H * 0.14,
+		fore: H * 0.115,
 		shoulderW: H * 0.128 * g,
 		hipW: H * 0.078 * g,
 		depth: H * 0.13 * g,
@@ -2556,6 +2558,9 @@ export const bodyOf = (hgt = DEFAULT_HGT, weight = DEFAULT_WEIGHT): Body => {
 	};
 };
 
+// A raised arm's cartoon stretch, over its own length (see stretchOf).
+const STRETCH = 0.16;
+
 // How high he reaches standing, arms straight up - shoulders, arms at a
 // raised arm's stretch, hand (feet).
 export const standingReach = (b: Body): number =>
@@ -2564,7 +2569,7 @@ export const standingReach = (b: Body): number =>
 	b.shin +
 	b.torso -
 	b.H * 0.022 +
-	(b.upper + b.fore) * 1.32 +
+	(b.upper + b.fore) * (1 + STRETCH) +
 	b.handR * 2.2;
 
 // A point on the body: f forward, s to his left, u up - feet, with his feet
@@ -2684,13 +2689,14 @@ const reachOf = (shDeg: number): number => {
 	return up0 * up0 * (3 - 2 * up0);
 };
 
-// How far the arm stretches (1 its own length): a third again thrown up
-// over his head - and a jumper's tucked arm from as soon as it is up past
-// his shoulder, so the ball goes up over that big head on a bent elbow.
+// How far the arm stretches (1 its own length): a little (STRETCH), thrown up
+// over his head - and a jumper's tucked arm from as soon as it is up past his
+// shoulder, so the ball goes up over that big head on a bent elbow - never so
+// far it stops looking his own.
 const stretchOf = (shDeg: number, tuck: number): number => {
 	const lift = Math.min(1, Math.max(0, (shDeg - 75) / 55));
 	return (
-		1 + 0.32 * Math.max(reachOf(shDeg), tuck * lift * lift * (3 - 2 * lift))
+		1 + STRETCH * Math.max(reachOf(shDeg), tuck * lift * lift * (3 - 2 * lift))
 	);
 };
 
@@ -2846,6 +2852,10 @@ export const gripOf = (anim: AnimName): Grip => GRIPS[anim] ?? "two";
 
 // A basketball's radius, feet.
 const BALL_RADIUS = 0.39;
+// On the palm of a hand: how far its middle is from the wrist, and how thick
+// the hand is either side of it (of his height).
+const PALM_AT = 0.044;
+const PALM_THICK = 0.016;
 
 // On the move with the ball in both hands - not dribbling it - he carries
 // it at his chest, his arms still.
@@ -2919,30 +2929,52 @@ export const holdBall = (
 		s: (tip.s - r.end.s) / len,
 		u: (tip.u - r.end.u) / len,
 	};
-	// Up on the shooting hand - resting on his palm, cocked back under it,
-	// on his fingertips as his arm goes up - or palmed out past the fingers'
-	// roots.
-	const k = grip === "shot" ? 0.56 : 1.15;
-	const one = v3(
-		r.end.f + d.f * R * k,
-		r.end.s + d.s * R * k,
-		r.end.u + d.u * R * k + (grip === "shot" ? R * 0.92 : 0),
-	);
+	// Up on the shooting hand: in front of his palm, his wrist cocked back
+	// under it and his fingers spread up the back of it - so it rests on the
+	// pads of his fingers and goes off his fingertips. (The palm faces the
+	// way the hand is cocked away from.) Or, on a layup or a dunk, palmed
+	// out past the fingers' roots.
+	let one: V3;
+	if (grip === "shot") {
+		const n = Math.hypot(d.u, d.f) || 1;
+		const pf = d.u / n;
+		const pu = -d.f / n;
+		const along = b.H * PALM_AT;
+		const out = R + b.H * PALM_THICK;
+		one = v3(
+			r.end.f + d.f * along + pf * out,
+			r.end.s + d.s * along,
+			r.end.u + d.u * along + pu * out,
+		);
+	} else {
+		one = v3(
+			r.end.f + d.f * R * 1.15,
+			r.end.s + d.s * R * 1.15,
+			r.end.u + d.u * R * 1.15,
+		);
+	}
 	const ball = mix(two, one, w);
 	const armR =
 		w >= 0.999
 			? r
 			: armTo(b, sk.chest, mix(side(two, -1), r.end, w), q.wrN, -1, q.tuck);
-	// The other hand guides a jumper up, on the side of the ball, and comes
-	// off it before the shooting hand lets it go; on a layup or a dunk it
-	// lets go.
+	// The other hand guides a jumper up - its palm flat on the side of the
+	// ball, fingers up - and comes off it in the instant before the shooting
+	// hand lets it go; on a layup or a dunk it lets go.
+	const guide = v3(
+		ball.f - R * 0.1,
+		ball.s + R + b.H * PALM_THICK,
+		ball.u - b.H * PALM_AT,
+	);
 	const armL =
 		(grip === "palm" && w >= 0.999) || (grip === "shot" && q.free >= 0.999)
 			? l
 			: armTo(
 					b,
 					sk.chest,
-					mix(side(ball, 1), l.end, grip === "shot" ? q.free : w),
+					grip === "shot"
+						? mix(mix(side(ball, 1), guide, w), l.end, q.free)
+						: mix(side(ball, 1), l.end, w),
 					q.wrF,
 					1,
 					q.tuck,

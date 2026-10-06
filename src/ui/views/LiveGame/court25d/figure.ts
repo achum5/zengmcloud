@@ -1,17 +1,16 @@
 import { makeCourtRng } from "../courtRng.ts";
 import { project, type Camera, type Projected } from "./camera.ts";
-import { bodyPoint, onRim, poseOf, type PlayerState } from "./evaluate.ts";
+import { bodyPoint, poseOf, type PlayerState } from "./evaluate.ts";
 import type { HairCut, HeadSprite, Profile } from "./faces.ts";
-import { holdBall, skeleton, type Body, type Limb, type V3 } from "./poses.ts";
+import { skeleton, type Body, type V3 } from "./poses.ts";
 
-// ONE PLAYER, DRAWN - the body of his sprite (see sprite.ts).
+// WHAT HE LOOKS LIKE - and his head (see sprite.ts).
 //
-// His skeleton is posed, turned to face where he faces, and every joint is
-// put through the camera. Then he is drawn small, shape by shape: each limb a
-// shaped silhouette rather than a tube - a deltoid capping the shoulder, a
-// forearm swelling below the elbow, a calf behind the shin - in two tones of
-// light. Shorts hang like cloth, sneakers are sneakers. Farthest parts first.
-// The sprite then makes pixel art of it, and puts his face on.
+// What a player wears - his team's uniform, his own gear - or an official, a
+// coach or a photographer his clothes; his skin, his hair. His body is
+// sculpted from it (see sculpt.ts); his head is drawn here: his BBGM face
+// when it turns to the camera, his head in profile side on, the back of his
+// head facing away.
 
 export type Kit = {
 	jersey: string;
@@ -78,21 +77,13 @@ export type Look = {
 
 type P2 = { x: number; y: number };
 
-// Where the light comes from on screen: up and a little to the left. The
-// other side of every limb is in shadow.
-const LIGHT = { x: -0.42, y: -0.91 };
-
 // His face is drawn a little above the true middle of his head (in head
 // radii): from the camera up in the stands his chin would hide his neck, and
-// a cartoon shows it. His jaw is about JAW radii under the face's middle.
+// a cartoon shows it.
 const FACE_LIFT = 0.15;
-const JAW = 1.04;
 
-// How far down the thigh the shorts reach: today's, to the top of the knee.
-const SHORTS_HEM = 0.94;
-
-// Every part of him is inked round, the cartoon way - like the line round
-// his face - this thick (feet, at his size on screen), in this.
+// His head is inked round, the cartoon way - the back of it like the line
+// round his face - this thick (feet, at his size on screen), in this.
 const OUTLINE = 0.05;
 const INK = "#17120f";
 
@@ -100,112 +91,6 @@ const lerp2 = (a: P2, b: P2, f: number): P2 => ({
 	x: a.x + (b.x - a.x) * f,
 	y: a.y + (b.y - a.y) * f,
 });
-
-// A smooth curve through points (quadratic, through the midpoints).
-const smoothThrough = (p: Path2D, pts: P2[], start: boolean) => {
-	if (pts.length === 0) {
-		return;
-	}
-	if (start) {
-		p.moveTo(pts[0]!.x, pts[0]!.y);
-	} else {
-		p.lineTo(pts[0]!.x, pts[0]!.y);
-	}
-	for (let i = 1; i < pts.length - 1; i++) {
-		const m = lerp2(pts[i]!, pts[i + 1]!, 0.5);
-		p.quadraticCurveTo(pts[i]!.x, pts[i]!.y, m.x, m.y);
-	}
-	const last = pts.at(-1)!;
-	p.lineTo(last.x, last.y);
-};
-
-// A station along a limb: how far along (0 at a, 1 at b), and its half-width
-// in feet - plus how much more it swells on the limb's back (a calf).
-type Station = [t: number, w: number, back?: number];
-
-type Shaped = {
-	path: Path2D;
-	// The edge on the shadow side, for the second tone.
-	shadowEdge: P2[];
-	width: number;
-	// Across its middle, from the side the light falls on to the side in
-	// shadow - for shading it round.
-	across: [P2, P2];
-};
-
-// A limb's silhouette from a to b. `backDir` is the screen direction his
-// limb's back faces (where a calf bulges), if it can be told.
-const limbShape = (
-	a: P2,
-	ka: number,
-	b: P2,
-	kb: number,
-	stations: Station[],
-	backDir?: P2,
-): Shaped => {
-	const dx = b.x - a.x;
-	const dy = b.y - a.y;
-	const L = Math.hypot(dx, dy);
-	const ux = L > 0.01 ? dx / L : 0;
-	const uy = L > 0.01 ? dy / L : 1;
-	const nx = -uy;
-	const ny = ux;
-	let backSign = 0;
-	if (backDir) {
-		const d = backDir.x * nx + backDir.y * ny;
-		const m = Math.hypot(backDir.x, backDir.y);
-		if (m > 0 && Math.abs(d) > 0.35 * m) {
-			backSign = Math.sign(d);
-		}
-	}
-	const left: P2[] = [];
-	const right: P2[] = [];
-	let maxW = 0;
-	for (const [t, w, back = 0] of stations) {
-		const k = ka + (kb - ka) * t;
-		const wl = (w + (backSign > 0 ? back : -back * 0.25)) * k;
-		const wr = (w + (backSign < 0 ? back : -back * 0.25)) * k;
-		maxW = Math.max(maxW, wl, wr);
-		const cx = a.x + dx * t;
-		const cy = a.y + dy * t;
-		left.push({ x: cx + nx * wl, y: cy + ny * wl });
-		right.push({ x: cx - nx * wr, y: cy - ny * wr });
-	}
-	const p = new Path2D();
-	smoothThrough(p, left, true);
-	// Round the far end.
-	const rEnd = stations.at(-1)![1] * kb + 0.001;
-	const angN = Math.atan2(ny, nx);
-	p.arc(b.x, b.y, rEnd, angN, angN - Math.PI, true);
-	smoothThrough(p, [...right].reverse(), false);
-	const rStart = stations[0]![1] * ka + 0.001;
-	p.arc(a.x, a.y, rStart, angN + Math.PI, angN, true);
-	p.closePath();
-	// The shadow is on the side facing away from the light.
-	const lightSide = nx * LIGHT.x + ny * LIGHT.y;
-	const mid = Math.floor(stations.length / 2);
-	const litEdge = lightSide > 0 ? left : right;
-	const darkEdge = lightSide > 0 ? right : left;
-	return {
-		path: p,
-		shadowEdge: darkEdge,
-		width: maxW,
-		across: [litEdge[mid]!, darkEdge[mid]!],
-	};
-};
-
-const polyPath = (pts: P2[]): Path2D => {
-	const p = new Path2D();
-	pts.forEach((q, i) => {
-		if (i === 0) {
-			p.moveTo(q.x, q.y);
-		} else {
-			p.lineTo(q.x, q.y);
-		}
-	});
-	p.closePath();
-	return p;
-};
 
 // A closed shape through points, smoothed - for cloth.
 const softPoly = (pts: P2[]): Path2D => {
@@ -221,34 +106,6 @@ const softPoly = (pts: P2[]): Path2D => {
 	}
 	p.closePath();
 	return p;
-};
-
-// Convex hull (monotone chain).
-const hull = (pts: P2[]): P2[] => {
-	const p = [...pts].sort((a, b) => a.x - b.x || a.y - b.y);
-	if (p.length < 3) {
-		return p;
-	}
-	const cross = (o: P2, a: P2, b: P2) =>
-		(a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
-	const lower: P2[] = [];
-	for (const q of p) {
-		while (lower.length >= 2 && cross(lower.at(-2)!, lower.at(-1)!, q) <= 0) {
-			lower.pop();
-		}
-		lower.push(q);
-	}
-	const upper: P2[] = [];
-	for (let i = p.length - 1; i >= 0; i--) {
-		const q = p[i]!;
-		while (upper.length >= 2 && cross(upper.at(-2)!, upper.at(-1)!, q) <= 0) {
-			upper.pop();
-		}
-		upper.push(q);
-	}
-	lower.pop();
-	upper.pop();
-	return [...lower, ...upper];
 };
 
 const parse = (c: string): [number, number, number] => {
@@ -280,859 +137,10 @@ export const shade = (c: string, f: number): string => {
 	return out;
 };
 
-// The ball, when he has it in his hands: its leather, its shadow side, its
-// seams. (Kept in step with the loose ball's colors in arena.ts.)
-const HELD_BALL_R = 0.39;
+// The ball, when he has it in his hands: its leather and its seams. (Kept
+// in step with the loose ball's colors in arena.ts.)
 export const BALL_ORANGE = "#e2702a";
-export const BALL_SHADE = "#a44716";
 export const BALL_SEAM = "#3a1608";
-
-type Shape = {
-	path: Path2D;
-	fill: string | CanvasGradient;
-	// The second tone, along the side away from the light.
-	shadow?: { edge: P2[]; width: number; color: string };
-};
-type Part = {
-	depth: number;
-	shapes: Shape[];
-	// Drawn after his head: an arm thrown up in front of his face.
-	late?: boolean;
-	// Drawn over the part's colors: seams, stripes, lettering - on the canvas
-	// the part is painted on.
-	detail?: (c: CanvasRenderingContext2D) => void;
-};
-
-// Where things landed on screen, for whatever is drawn over him.
-export type FigureAnchors = {
-	head: { x: number; y: number; r: number };
-	// The middle of the lettering on his chest or back, its size, and which
-	// side shows (1 chest, -1 back, 0 neither).
-	number: { x: number; y: number; h: number; side: 1 | -1 | 0 };
-	// Across the chest or back, above the number, and how wide the jersey is
-	// there (screen px).
-	letters: { x: number; y: number; w: number };
-	front: number;
-	// The ball is drawn in his hands - where on the picture, and whether it is
-	// in front of his jersey (hiding the lettering behind it).
-	holding: boolean;
-	ball?: { x: number; y: number; r: number; front: boolean };
-	// What goes over his head once it is drawn: an arm raised in front of his
-	// face, which the head would otherwise hide.
-	over?: (ctx: CanvasRenderingContext2D) => void;
-};
-
-export const drawFigure = (
-	ctx: CanvasRenderingContext2D,
-	cam: Camera,
-	st: PlayerState,
-	body: Body,
-	look: Look,
-	// Screen pixels to a sprite pixel: the finest line worth drawing.
-	px: number,
-): FigureAnchors => {
-	const q = poseOf(st);
-	const held = st.holding ? holdBall(body, q, st.anim) : undefined;
-	const sk = held ? held.sk : onRim(skeleton(body, q), st, body);
-	const at = (v: V3): Projected => project(cam, bodyPoint(st, v));
-	const off = (v: V3, df: number, ds: number, du = 0): V3 => ({
-		f: v.f + df,
-		s: v.s + ds,
-		u: v.u + du,
-	});
-
-	// Which way he faces relative to the camera: front > 0 shows his chest,
-	// side > 0 his left.
-	const toCamX = cam.pos.x - st.x;
-	const toCamY = cam.pos.y - st.y;
-	const toCamL = Math.hypot(toCamX, toCamY) || 1;
-	const cy = Math.cos(st.yaw);
-	const sy = Math.sin(st.yaw);
-	const front = (cy * toCamX + sy * toCamY) / toCamL;
-	const side = (sy * toCamX - cy * toCamY) / toCamL;
-
-	const kit = look.kit;
-	const gear = look.gear;
-	const skin = look.skin;
-	const pelvis = at(sk.pelvis);
-	const torsoDepth = (at(sk.chest).depth + pelvis.depth) / 2;
-	// The side turned away from the camera is in his own shadow.
-	const dim = (c: string, far: boolean) => (far ? shade(c, -0.14) : c);
-	const leftFar = side < 0;
-	// On screen, the way his body faces - so a calf can bulge behind his shin.
-	const fwd2 = (() => {
-		const a = at(sk.pelvis);
-		const b = at(off(sk.pelvis, 1, 0));
-		return { x: b.x - a.x, y: b.y - a.y };
-	})();
-	const behind = { x: -fwd2.x, y: -fwd2.y };
-
-	const parts: Part[] = [];
-	// Light falling across a shape, from `a` (lit) to `b` (in shadow), the
-	// cartoon way: two flat tones, the darker along the side away from the
-	// light - so an arm, a leg, a chest reads as round without a gradient.
-	const lit = (c: string, a: P2, b: P2): CanvasGradient | string => {
-		if (Math.hypot(b.x - a.x, b.y - a.y) < 0.5) {
-			return c;
-		}
-		const g = ctx.createLinearGradient(a.x, a.y, b.x, b.y);
-		g.addColorStop(0, c);
-		g.addColorStop(0.62, c);
-		g.addColorStop(0.62, shade(c, -0.2));
-		g.addColorStop(1, shade(c, -0.2));
-		return g;
-	};
-	// Across a set of points, the way the light falls.
-	const litOver = (c: string, pts: P2[]): CanvasGradient | string => {
-		let lo = Infinity;
-		let hi = -Infinity;
-		let cx = 0;
-		let cy = 0;
-		for (const q of pts) {
-			const d = q.x * LIGHT.x + q.y * LIGHT.y;
-			lo = Math.min(lo, d);
-			hi = Math.max(hi, d);
-			cx += q.x;
-			cy += q.y;
-		}
-		cx /= pts.length;
-		cy /= pts.length;
-		const m = cx * LIGHT.x + cy * LIGHT.y;
-		return lit(
-			c,
-			{ x: cx + LIGHT.x * (hi - m), y: cy + LIGHT.y * (hi - m) },
-			{ x: cx + LIGHT.x * (lo - m), y: cy + LIGHT.y * (lo - m) },
-		);
-	};
-	const shaped = (s: Shaped, fill: string, round: unknown = true): Shape => ({
-		path: s.path,
-		fill: round ? lit(fill, s.across[0], s.across[1]) : fill,
-	});
-
-	const leg = (limb: Limb, far: boolean, outer: 1 | -1) => {
-		const hip = at(limb.root);
-		const knee = at(limb.mid);
-		const ankle = at(limb.end);
-		const toe = at(limb.tip ?? limb.end);
-		const which = outer < 0 ? "R" : "L";
-		// Tights down the leg instead of bare skin, his own socks and shoes.
-		const tights = gear?.tights?.legs.includes(which) ? gear.tights : undefined;
-		const sk0 = dim(tights ? tights.color : skin, far);
-		const skinShadow = shade(sk0, -0.2);
-		const sockColor = gear?.sock ?? kit.sock;
-		const shoeColor = gear?.shoe ?? kit.shoe;
-		const soleColor = gear?.sole ?? kit.sole;
-		const shapes: Shape[] = [];
-		// Thigh, mostly under the shorts.
-		shapes.push(
-			shaped(
-				limbShape(hip, hip.k, knee, knee.k, [
-					[0, body.thighR * 1.05],
-					[0.45, body.thighR * 1.0],
-					[1, body.kneeR * 1.05],
-				]),
-				sk0,
-				skinShadow,
-			),
-		);
-		// Shin and calf: the calf swells high up behind the shin.
-		const shin = limbShape(
-			knee,
-			knee.k,
-			ankle,
-			ankle.k,
-			[
-				[0, body.kneeR * 1.02],
-				[0.2, body.calfR * 1.0, body.calfR * 0.3],
-				[0.45, body.calfR * 0.86, body.calfR * 0.12],
-				[0.8, body.ankleR * 1.12],
-				[1, body.ankleR],
-			],
-			behind,
-		);
-		shapes.push(shaped(shin, sk0, skinShadow));
-		if (gear?.knee?.legs === which) {
-			// A pad round the knee.
-			shapes.push({
-				path: limbShape(
-					lerp2(hip, knee, 0.86),
-					knee.k,
-					lerp2(knee, ankle, 0.18),
-					knee.k,
-					[
-						[0, body.kneeR * 1.22],
-						[1, body.kneeR * 1.16],
-					],
-				).path,
-				fill: dim(gear.knee.color, far),
-			});
-		}
-		// Crew socks, up to mid-calf.
-		const sockTop = lerp2(knee, ankle, 0.6);
-		shapes.push(
-			shaped(
-				limbShape(sockTop, knee.k, ankle, ankle.k, [
-					[0, body.calfR * 0.84],
-					[1, body.ankleR * 1.08],
-				]),
-				dim(sockColor, far),
-				shade(dim(sockColor, far), -0.18),
-			),
-		);
-		// The sneaker: a sole along the floor, a toe box, a high collar at the
-		// ankle.
-		const shoe = sneaker(ankle, toe, ankle.k, Math.abs(front) > 0.62);
-		shapes.push({
-			path: shoe.upper,
-			fill: lit(
-				dim(shoeColor, far),
-				{
-					x: ankle.x + LIGHT.x * 0.3 * ankle.k,
-					y: ankle.y + LIGHT.y * 0.3 * ankle.k,
-				},
-				{
-					x: ankle.x - LIGHT.x * 0.3 * ankle.k,
-					y: ankle.y - LIGHT.y * 0.3 * ankle.k,
-				},
-			),
-		});
-		// Shorts: long, wide and loose, down to the top of the knee.
-		const hem = lerp2(hip, knee, SHORTS_HEM);
-		const tx = knee.x - hip.x;
-		const ty = knee.y - hip.y;
-		const tl = Math.hypot(tx, ty) || 1;
-		const nx = -ty / tl;
-		const ny = tx / tl;
-		const wTop = body.thighR * 1.42 * hip.k;
-		const wHem = body.thighR * 1.56 * knee.k;
-		const hemL = { x: hem.x + nx * wHem, y: hem.y + ny * wHem };
-		const hemR = { x: hem.x - nx * wHem, y: hem.y - ny * wHem };
-		const shortsPts = [
-			{ x: hip.x + nx * wTop, y: hip.y + ny * wTop },
-			hemL,
-			lerp2(hemL, hemR, 0.5),
-			hemR,
-			{ x: hip.x - nx * wTop, y: hip.y - ny * wTop },
-		];
-		const shorts = softPoly(shortsPts);
-		shapes.push(
-			{ path: shoe.sole, fill: soleColor },
-			{ path: shorts, fill: litOver(dim(kit.shorts, far), shortsPts) },
-		);
-		parts.push({
-			// Under the torso, always - his shorts hang over his legs.
-			depth: Math.max(knee.depth, torsoDepth) + (far ? 0.6 : 0.3),
-			shapes,
-			detail: () => {
-				// The stripe down the outside of the shorts - on them, never
-				// beside them.
-				const a = at(off(limb.root, 0, outer * body.thighR * 1.22));
-				const b = at(off(limb.mid, 0, outer * body.thighR * 1.3));
-				ctx.save();
-				ctx.clip(shorts);
-				ctx.strokeStyle = dim(kit.stripe, far);
-				ctx.lineCap = "butt";
-				ctx.lineWidth = Math.max(px, 0.14 * hip.k);
-				ctx.beginPath();
-				ctx.moveTo(a.x, a.y);
-				ctx.lineTo(b.x, b.y);
-				ctx.stroke();
-				ctx.restore();
-			},
-		});
-	};
-	leg(sk.legR, !leftFar, -1);
-	leg(sk.legL, leftFar, 1);
-
-	// Rings round his middle at a height up the spine (0 hips, 1 shoulders):
-	// a torso or a waistband, seen from wherever the camera is.
-	const ring = (lambda: number, lat: number, dep: number): Projected[] => {
-		const f = sk.pelvis.f + (sk.chest.f - sk.pelvis.f) * lambda;
-		const u = sk.pelvis.u + (sk.chest.u - sk.pelvis.u) * lambda;
-		const out: Projected[] = [];
-		for (let i = 0; i < 16; i++) {
-			const a = (i / 16) * Math.PI * 2;
-			out.push(at({ f: f + Math.cos(a) * dep, s: Math.sin(a) * lat, u }));
-		}
-		return out;
-	};
-
-	// The torso: an athlete's - broad across the chest and shoulders, tapering
-	// to a narrow waist - his neck rising out of the slope of his shoulders.
-	const chest = at(sk.chest);
-	const headC = at(sk.head);
-	const sw = body.shoulderW;
-	const dp = body.depth;
-	// Bare skin round a tank top: the slope of his shoulders up to his neck,
-	// the tops of his shoulders, his sides under his arms.
-	const yokePts = hull([
-		...ring(1.07, sw * 0.36, dp * 0.3),
-		...ring(1.0, sw * 0.84, dp * 0.42),
-		...ring(0.82, sw * 0.97, dp * 0.52),
-		...ring(0.55, sw * 0.86, dp * 0.5),
-	]);
-	const neckBase = at(off(sk.chest, 0, 0, body.H * 0.012));
-	const neckW: Station[] = [
-		[0, sw * 0.42],
-		[0.5, sw * 0.37],
-		[1, sw * 0.35],
-	];
-	const neck = limbShape(neckBase, neckBase.k, headC, headC.k, neckW);
-	// The shadow of his jaw across the top of his neck.
-	const jawDrop = headC.y - neckBase.y;
-	const jawT =
-		jawDrop < -0.5
-			? Math.min(
-					1,
-					Math.max(
-						0,
-						1 + ((JAW - FACE_LIFT + 0.2) * body.headR * headC.k) / jawDrop,
-					),
-				)
-			: 1;
-	const jawShade =
-		jawT < 1
-			? limbShape(
-					lerp2(neckBase, headC, jawT),
-					neckBase.k + (headC.k - neckBase.k) * jawT,
-					headC,
-					headC.k,
-					neckW.map(([t, w]) => [t, w * 1.02] as Station),
-				)
-			: undefined;
-	// A jersey is a tank top: narrow straps over the shoulders, cut away
-	// under the arms, tucked into his shorts. A shirt (an official's, a
-	// coach's jacket) covers his shoulders.
-	const shirt = look.outfit !== undefined;
-	const jerseyPts = hull(
-		shirt
-			? [
-					...ring(1.0, sw * 0.88, dp * 0.42),
-					...ring(0.82, sw * 0.99, dp * 0.52),
-					...ring(0.45, sw * 0.9, dp * 0.5),
-					...ring(0.04, sw * 0.88, dp * 0.48),
-				]
-			: [
-					...ring(1.0, sw * 0.6, dp * 0.4),
-					...ring(0.8, sw * 0.93, dp * 0.55),
-					...ring(0.48, sw * 0.86, dp * 0.52),
-					...ring(0.24, sw * 0.79, dp * 0.47),
-					...ring(0.04, sw * 0.83, dp * 0.48),
-				],
-	);
-	// The shorts' waistband, over the jersey's hem: the half of the band
-	// round him that faces the camera.
-	const halfRing = (lambda: number, lat: number, dep: number): Projected[] => {
-		const f = sk.pelvis.f + (sk.chest.f - sk.pelvis.f) * lambda;
-		const u = sk.pelvis.u + (sk.chest.u - sk.pelvis.u) * lambda;
-		const toward = Math.atan2(side, front);
-		const out: Projected[] = [];
-		for (let i = 0; i <= 10; i++) {
-			const a = toward - Math.PI / 2 + (i / 10) * Math.PI;
-			out.push(at({ f: f + Math.cos(a) * dep, s: Math.sin(a) * lat, u }));
-		}
-		return out;
-	};
-	const waistPts = [
-		...halfRing(0.15, sw * 0.8, dp * 0.47),
-		...halfRing(0.03, sw * 0.83, dp * 0.48).reverse(),
-	];
-	const jerseyPath = softPoly(jerseyPts);
-	// The seat of his shorts, between his legs: one pair of shorts, not two
-	// tubes.
-	const hipL = at(sk.legL.root);
-	const hipR = at(sk.legR.root);
-	const kneeL = at(sk.legL.mid);
-	const kneeR = at(sk.legR.mid);
-	const seatPts = [
-		lerp2(hipL, hipR, -0.3),
-		lerp2(hipL, hipR, 1.3),
-		lerp2(hipR, kneeR, 0.5),
-		lerp2(lerp2(hipL, hipR, 0.5), lerp2(kneeL, kneeR, 0.5), 0.36),
-		lerp2(hipL, kneeL, 0.5),
-	];
-	parts.push({
-		depth: torsoDepth,
-		shapes: [
-			{ path: softPoly(yokePts), fill: litOver(skin, yokePts) },
-			shaped(neck, skin),
-			...(jawShade ? [{ path: jawShade.path, fill: shade(skin, -0.22) }] : []),
-			...(shirt
-				? []
-				: [{ path: softPoly(seatPts), fill: litOver(kit.shorts, seatPts) }]),
-			{ path: jerseyPath, fill: litOver(kit.jersey, jerseyPts) },
-			{ path: polyPath(waistPts), fill: litOver(kit.shorts, waistPts) },
-		],
-		detail: () => {
-			drawStripes();
-			drawTrim();
-			drawCollar();
-			drawLettering();
-		},
-	});
-
-	// His number, and his name over it on his back (the team's on his
-	// chest) - printed on the jersey, so an arm in front of it hides it.
-	const drawLettering = () => {
-		if (Math.abs(front) < 0.28 || !look.jerseyNumber || shirt) {
-			return;
-		}
-		const back = front < 0;
-		const face = (back ? -1 : 1) * dp * 0.56;
-		const at3 = (lambda: number) =>
-			at({
-				f: sk.pelvis.f + (sk.chest.f - sk.pelvis.f) * lambda + face,
-				s: 0,
-				u: sk.pelvis.u + (sk.chest.u - sk.pelvis.u) * lambda,
-			});
-		// Big and bold, the cartoon way - most of the jersey.
-		const c = at3(back ? 0.46 : 0.44);
-		const size = (back ? 1.0 : 0.86) * c.k;
-		if (size < 4 * px) {
-			return;
-		}
-		const squeeze = Math.min(1, Math.abs(front) * 1.1);
-		ctx.save();
-		ctx.clip(jerseyPath);
-		ctx.translate(c.x, c.y);
-		ctx.scale(squeeze, 1);
-		ctx.textAlign = "center";
-		ctx.textBaseline = "middle";
-		ctx.lineJoin = "round";
-		ctx.font = `bold ${size}px "Arial Narrow", "Helvetica Neue", Arial, sans-serif`;
-		ctx.strokeStyle = kit.numberEdge;
-		ctx.lineWidth = Math.max(px, size * 0.08);
-		ctx.strokeText(look.jerseyNumber, 0, 0);
-		ctx.fillStyle = kit.number;
-		ctx.fillText(look.jerseyNumber, 0, 0);
-		ctx.restore();
-		const word = back ? look.lastName : look.wordmark;
-		const top = at3(0.9);
-		const small = 0.2 * top.k;
-		if (word && small >= 5 * px) {
-			ctx.save();
-			ctx.clip(jerseyPath);
-			ctx.translate(top.x, top.y);
-			ctx.scale(squeeze, 1);
-			ctx.textAlign = "center";
-			ctx.textBaseline = "middle";
-			ctx.font = `bold ${small}px "Arial Narrow", "Helvetica Neue", Arial, sans-serif`;
-			ctx.fillStyle = kit.number;
-			ctx.fillText(
-				word.toUpperCase(),
-				0,
-				0,
-				(sw * 1.5 * top.k * Math.abs(front)) / squeeze,
-			);
-			ctx.restore();
-		}
-	};
-
-	// The trim round the armholes and the back of the neck, seen from in
-	// front or behind.
-	const drawTrim = () => {
-		if (look.outfit || Math.abs(front) < 0.4) {
-			return;
-		}
-		let x0 = Infinity;
-		let x1 = -Infinity;
-		let y0 = Infinity;
-		for (const q of jerseyPts) {
-			x0 = Math.min(x0, q.x);
-			x1 = Math.max(x1, q.x);
-			y0 = Math.min(y0, q.y);
-		}
-		const armpit = at({
-			f: sk.pelvis.f + (sk.chest.f - sk.pelvis.f) * 0.8,
-			s: 0,
-			u: sk.pelvis.u + (sk.chest.u - sk.pelvis.u) * 0.8,
-		});
-		ctx.save();
-		ctx.clip(jerseyPath);
-		ctx.beginPath();
-		ctx.rect(x0 - px, y0 - px, x1 - x0 + 2 * px, armpit.y - y0 + px);
-		ctx.clip();
-		ctx.strokeStyle = kit.trim;
-		ctx.lineWidth = 2 * px;
-		ctx.stroke(jerseyPath);
-		ctx.restore();
-	};
-
-	// A referee's stripes, down the shirt.
-	const drawStripes = () => {
-		const color = look.outfit?.stripes;
-		if (!color) {
-			return;
-		}
-		let x0 = Infinity;
-		let x1 = -Infinity;
-		let y0 = Infinity;
-		let y1 = -Infinity;
-		for (const q of jerseyPts) {
-			x0 = Math.min(x0, q.x);
-			x1 = Math.max(x1, q.x);
-			y0 = Math.min(y0, q.y);
-			y1 = Math.max(y1, q.y);
-		}
-		const w = Math.max(px, 0.17 * chest.k);
-		ctx.save();
-		ctx.clip(jerseyPath);
-		ctx.fillStyle = color;
-		for (let x = x0 + w * 0.5; x < x1; x += w * 2) {
-			ctx.fillRect(x, y0, w, y1 - y0);
-		}
-		ctx.restore();
-	};
-
-	// The neckline, in the trim color: a V at the front, a scoop at the back.
-	const drawCollar = () => {
-		if (Math.abs(front) <= 0.15) {
-			return;
-		}
-		ctx.strokeStyle = kit.trim;
-		ctx.lineCap = "round";
-		ctx.lineJoin = "round";
-		ctx.lineWidth = px;
-		const lift = sk.chest.u - sk.pelvis.u;
-		const face = (front >= 0 ? 1 : -1) * body.depth * 0.44;
-		const top = (s: number) =>
-			at({ f: sk.chest.f + face, s, u: sk.chest.u - 0.03 * lift });
-		const v = at({
-			f: sk.chest.f + face * 1.1 + (sk.pelvis.f - sk.chest.f) * 0.22,
-			s: 0,
-			u: sk.chest.u - lift * (front >= 0 ? 0.24 : 0.1),
-		});
-		const l = top(body.shoulderW * 0.42);
-		const r = top(-body.shoulderW * 0.42);
-		const outfit = look.outfit;
-		if (outfit?.shirt && front >= 0) {
-			// The open neck of his jacket: his shirt in a deep V, his tie down
-			// the middle of it.
-			const deep = at({
-				f: sk.chest.f + face * 1.12 + (sk.pelvis.f - sk.chest.f) * 0.4,
-				s: 0,
-				u: sk.chest.u - lift * 0.42,
-			});
-			ctx.fillStyle = outfit.shirt;
-			ctx.beginPath();
-			ctx.moveTo(l.x, l.y);
-			ctx.lineTo(deep.x, deep.y);
-			ctx.lineTo(r.x, r.y);
-			ctx.closePath();
-			ctx.fill();
-			if (outfit.tie) {
-				const knot = lerp2(lerp2(l, r, 0.5), deep, 0.12);
-				ctx.strokeStyle = outfit.tie;
-				ctx.lineWidth = Math.max(px, 0.16 * chest.k);
-				ctx.beginPath();
-				ctx.moveTo(knot.x, knot.y);
-				ctx.lineTo(deep.x, deep.y + 0.12 * chest.k);
-				ctx.stroke();
-			}
-			return;
-		}
-		ctx.beginPath();
-		ctx.moveTo(l.x, l.y);
-		if (front >= 0) {
-			ctx.lineTo(v.x, v.y);
-			ctx.lineTo(r.x, r.y);
-		} else {
-			ctx.quadraticCurveTo(v.x, v.y, r.x, r.y);
-		}
-		ctx.stroke();
-	};
-
-	const arm = (limb: Limb, far: boolean, which: "R" | "L") => {
-		const sh = at(limb.root);
-		const el = at(limb.mid);
-		const wrist = at(limb.end);
-		const c = dim(skin, far);
-		// A sleeve over the arm (or just the forearm), a band at the wrist.
-		const sleeve = gear?.sleeve?.arms.includes(which) ? gear.sleeve : undefined;
-		// Or the sleeves of his shirt (an official's, a coach's jacket).
-		const shirt = look.outfit?.sleeves;
-		const shirtC = dim(kit.jersey, far);
-		const sl = shirt === "long" ? shirtC : sleeve ? dim(sleeve.color, far) : c;
-		const upperC = shirt ? shirtC : sleeve && !sleeve.elbow ? sl : c;
-		const band = gear?.wrist?.arms.includes(which)
-			? dim(gear.wrist.color, far)
-			: undefined;
-		// The hand: palm and fingers out past the wrist, pointing the way the
-		// wrist bends it - shorter as it points at the camera (along the
-		// forearm when it points right at it).
-		const tip = at(limb.tip ?? limb.end);
-		let hx = tip.x - wrist.x;
-		let hy = tip.y - wrist.y;
-		const shown = Math.hypot(hx, hy);
-		const handLen = body.handR * 4.3 * wrist.k;
-		const handW = body.handR * 2.35 * wrist.k;
-		if (shown < 0.08 * wrist.k) {
-			hx = wrist.x - el.x;
-			hy = wrist.y - el.y;
-		}
-		const hl = Math.hypot(hx, hy) || 1;
-		const len = Math.max(
-			handW,
-			handLen * Math.min(1, shown / (body.handR * 2.2 * wrist.k)),
-		);
-		const handC = {
-			x: wrist.x + (hx / hl) * len * 0.42,
-			y: wrist.y + (hy / hl) * len * 0.42,
-		};
-		const hand = new Path2D();
-		// Pointing: a fist, and a finger out of it the way the hand points.
-		const pointing =
-			st.arm?.point === true && st.arm.hand === which && st.arm.w > 0.5;
-		if (pointing) {
-			const ux = hx / hl;
-			const uy = hy / hl;
-			hand.ellipse(
-				wrist.x + ux * len * 0.3,
-				wrist.y + uy * len * 0.3,
-				len * 0.34,
-				handW * 0.46,
-				Math.atan2(hy, hx),
-				0,
-				Math.PI * 2,
-			);
-			hand.ellipse(
-				wrist.x + ux * len * 0.78,
-				wrist.y + uy * len * 0.78,
-				len * 0.36,
-				handW * 0.17,
-				Math.atan2(hy, hx),
-				0,
-				Math.PI * 2,
-			);
-		} else {
-			hand.ellipse(
-				handC.x,
-				handC.y,
-				len * 0.52,
-				handW * 0.5,
-				Math.atan2(hy, hx),
-				0,
-				Math.PI * 2,
-			);
-		}
-		parts.push({
-			depth: (el.depth + wrist.depth) / 2 + (far ? 0.5 : -0.2),
-			late:
-				limb.end.u > limb.root.u + body.H * 0.08 &&
-				(el.depth + wrist.depth) / 2 < headC.depth,
-			shapes: [
-				// The deltoid capping the shoulder, narrowing into the biceps,
-				// in to the elbow; the forearm swelling below it and slimming to
-				// the wrist.
-				shaped(
-					limbShape(sh, sh.k, el, el.k, [
-						[0, body.upperR * 1.34],
-						[0.16, body.upperR * 1.22],
-						[0.4, body.upperR * 0.98],
-						[0.62, body.upperR * 1.05],
-						[0.86, body.upperR * 0.84],
-						[1, body.foreR * 0.98],
-					]),
-					upperC,
-				),
-				shaped(
-					limbShape(el, el.k, wrist, wrist.k, [
-						[0, body.foreR * 0.98],
-						[0.18, body.foreR * 1.14],
-						[0.5, body.foreR * 0.92],
-						[0.86, body.foreR * 0.68],
-						[1, body.foreR * 0.64],
-					]),
-					sl,
-				),
-				...(band
-					? [
-							{
-								path: limbShape(
-									lerp2(el, wrist, 0.78),
-									wrist.k,
-									wrist,
-									wrist.k,
-									[
-										[0, body.foreR * 0.86],
-										[1, body.foreR * 0.78],
-									],
-								).path,
-								fill: band,
-							},
-						]
-					: []),
-				{
-					path: hand,
-					fill: lit(c, handC, {
-						x: handC.x - LIGHT.x * handW,
-						y: handC.y - LIGHT.y * handW,
-					}),
-				},
-			],
-		});
-	};
-	arm(sk.armR, !leftFar, "R");
-	arm(sk.armL, leftFar, "L");
-	if (look.outfit?.camera) {
-		// His camera, in both hands: the body between them, the long lens out
-		// the way he faces - up in front of his face when he is shooting.
-		const mid: V3 = {
-			f: (sk.armR.end.f + sk.armL.end.f) / 2 + 0.14,
-			s: (sk.armR.end.s + sk.armL.end.s) / 2,
-			u: (sk.armR.end.u + sk.armL.end.u) / 2 + 0.06,
-		};
-		const c0 = at(mid);
-		const tipC = at({ ...mid, f: mid.f + 0.8 });
-		const box = new Path2D();
-		box.rect(c0.x - 0.3 * c0.k, c0.y - 0.24 * c0.k, 0.6 * c0.k, 0.46 * c0.k);
-		parts.push({
-			depth: c0.depth - 0.05,
-			late: mid.u > sk.chest.u - 0.3 && c0.depth < headC.depth,
-			shapes: [
-				{ path: box, fill: CAMERA_BODY },
-				{
-					path: limbShape(c0, c0.k, tipC, tipC.k, [
-						[0, 0.17],
-						[1, 0.15],
-					]).path,
-					fill: CAMERA_LENS,
-				},
-			],
-		});
-	}
-	let ballAt: FigureAnchors["ball"];
-	if (held) {
-		// The ball in his hands: drawn with him, behind the near hand and in
-		// front of the far one, its seams and its shadow side.
-		const c = at(held.ball);
-		const r = HELD_BALL_R * c.k;
-		const disc = new Path2D();
-		disc.arc(c.x, c.y, r, 0, Math.PI * 2);
-		const rim: P2[] = [];
-		for (let a = -0.2; a <= Math.PI * 0.85; a += 0.25) {
-			rim.push({ x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r });
-		}
-		ballAt = { x: c.x, y: c.y, r, front: c.depth < torsoDepth };
-		parts.push({
-			depth: c.depth,
-			// Up in front of his face, or up over his head: drawn over it.
-			late:
-				held.ball.u > sk.armR.root.u &&
-				(c.depth < headC.depth || held.ball.u > sk.head.u),
-			shapes: [
-				{
-					path: disc,
-					fill: BALL_ORANGE,
-					shadow: { edge: rim, width: r * 0.75, color: BALL_SHADE },
-				},
-			],
-			detail: (g) => {
-				g.strokeStyle = BALL_SEAM;
-				g.lineWidth = Math.max(px * 0.9, r * 0.16);
-				g.lineCap = "round";
-				g.beginPath();
-				g.moveTo(c.x - r * 0.92, c.y - r * 0.08);
-				g.lineTo(c.x + r * 0.92, c.y + r * 0.08);
-				g.stroke();
-				g.beginPath();
-				g.ellipse(c.x, c.y, r * 0.42, r * 0.95, 0.15, 0, Math.PI * 2);
-				g.stroke();
-			},
-		});
-	}
-
-	parts.sort((p, q) => q.depth - p.depth);
-	// The ink round each part goes down first, twice as wide as it shows:
-	// its own colors cover the inner half, and every line inside it.
-	const ink = Math.max(px * 0.9, OUTLINE * chest.k);
-	const paint = (c: CanvasRenderingContext2D, p: Part) => {
-		c.strokeStyle = INK;
-		c.lineWidth = ink * 2;
-		c.lineJoin = "round";
-		for (const s of p.shapes) {
-			c.stroke(s.path);
-		}
-		for (const s of p.shapes) {
-			c.fillStyle = s.fill;
-			c.fill(s.path);
-			if (s.shadow && s.shadow.edge.length > 1) {
-				// The second tone: a band along the shadow side, kept inside.
-				c.save();
-				c.clip(s.path);
-				c.strokeStyle = s.shadow.color;
-				c.lineWidth = s.shadow.width;
-				c.lineJoin = "round";
-				c.lineCap = "round";
-				c.beginPath();
-				s.shadow.edge.forEach((q, i) => {
-					if (i === 0) {
-						c.moveTo(q.x, q.y);
-					} else {
-						c.lineTo(q.x, q.y);
-					}
-				});
-				c.stroke();
-				c.restore();
-			}
-		}
-		p.detail?.(c);
-	};
-	for (const p of parts) {
-		if (!p.late) {
-			paint(ctx, p);
-		}
-	}
-	const late = parts.filter((p) => p.late);
-
-	const anchors: FigureAnchors = {
-		head: {
-			x: headC.x,
-			y: headC.y - body.headR * headC.k * FACE_LIFT,
-			r: body.headR * headC.k,
-		},
-		number: { x: 0, y: 0, h: 0, side: 0 },
-		letters: { x: 0, y: 0, w: 0 },
-		front,
-		holding: held !== undefined,
-		...(ballAt ? { ball: ballAt } : {}),
-		...(late.length > 0
-			? {
-					over: (c: CanvasRenderingContext2D) => {
-						for (const p of late) {
-							paint(c, p);
-						}
-					},
-				}
-			: {}),
-	};
-	if (Math.abs(front) >= 0.28) {
-		const lambda = 0.52;
-		const face = (front > 0 ? 1 : -1) * body.depth * 0.56;
-		const c = at({
-			f: sk.pelvis.f + (sk.chest.f - sk.pelvis.f) * lambda + face,
-			s: 0,
-			u: sk.pelvis.u + (sk.chest.u - sk.pelvis.u) * lambda,
-		});
-		anchors.number = {
-			x: c.x,
-			y: c.y,
-			h: 0.62 * c.k,
-			side: front > 0 ? 1 : -1,
-		};
-		const top = at({
-			f: sk.pelvis.f + (sk.chest.f - sk.pelvis.f) * 0.84 + face,
-			s: 0,
-			u: sk.pelvis.u + (sk.chest.u - sk.pelvis.u) * 0.84,
-		});
-		anchors.letters = {
-			x: top.x,
-			y: top.y,
-			w: body.shoulderW * 1.5 * top.k * Math.abs(front),
-		};
-	}
-	return anchors;
-};
 
 // His head on its own, for a sprite to draw over his body.
 export const drawHeadAt = (
@@ -1162,60 +170,6 @@ export const drawHeadAt = (
 	);
 };
 
-// A sneaker, from the ankle to the toe: the upper - low at the toe, high at
-// the collar - on a thick sole along its bottom.
-const sneaker = (
-	ankle: Projected,
-	toe: Projected,
-	k: number,
-	headOn: boolean,
-): { upper: Path2D; sole: Path2D } => {
-	const dx = toe.x - ankle.x;
-	const dy = toe.y - ankle.y;
-	const len = Math.hypot(dx, dy);
-	const h = 0.36 * k;
-	// Pointing at or away from the camera, a shoe is its rounded front: a toe
-	// box over a sole.
-	if (headOn || len < 0.42 * k) {
-		const c = lerp2(ankle, toe, 0.7);
-		const w = 0.29 * k;
-		const upper = new Path2D();
-		upper.ellipse(c.x, c.y + h * 0.06, w, h * 0.6, 0, 0, Math.PI * 2);
-		const sole = new Path2D();
-		sole.ellipse(c.x, c.y + h * 0.46, w * 1.0, h * 0.22, 0, 0, Math.PI * 2);
-		return { upper, sole };
-	}
-	const along = len;
-	const ux = len > 0.01 ? dx / len : 1;
-	const uy = len > 0.01 ? dy / len : 0;
-	// Screen up for the shoe is straight up; the floor is below.
-	const heel = {
-		x: ankle.x - ux * along * 0.36,
-		y: ankle.y - uy * along * 0.36,
-	};
-	const tip = {
-		x: ankle.x + ux * along * 1.14,
-		y: ankle.y + uy * along * 1.14,
-	};
-	const floorY = (p: P2) => p.y + h * 0.42;
-	const instep = lerp2(heel, tip, 0.62);
-	const upper = softPoly([
-		{ x: heel.x, y: floorY(heel) },
-		{ x: tip.x, y: floorY(tip) },
-		{ x: tip.x + ux * h * 0.18, y: tip.y - h * 0.08 },
-		{ x: instep.x, y: instep.y - h * 0.46 },
-		{ x: ankle.x + ux * h * 0.1, y: ankle.y - h * 0.8 },
-		{ x: heel.x - ux * h * 0.14, y: heel.y - h * 0.64 },
-	]);
-	const sole = softPoly([
-		{ x: heel.x - ux * h * 0.08, y: floorY(heel) - h * 0.26 },
-		{ x: tip.x + ux * h * 0.14, y: floorY(tip) - h * 0.24 },
-		{ x: tip.x + ux * h * 0.12, y: floorY(tip) + h * 0.1 },
-		{ x: heel.x - ux * h * 0.06, y: floorY(heel) + h * 0.1 },
-	]);
-	return { upper, sole };
-};
-
 // How far round to the camera he is (1 facing it, -1 away) when his head
 // shows in profile, and when his face comes in over it - over this much more.
 // (Drawn in sixteen turns, he shows his profile square on and a turn either
@@ -1223,6 +177,12 @@ const sneaker = (
 const PROFILE_FROM = -0.3;
 const FACE_FROM = 0.5;
 const FACE_IN = 0.04;
+
+// A headband, side on: how high (head radii above the middle of his face) its
+// top edge sits at his brow and at the back of his head, and how wide it is.
+const BAND_FRONT = -0.58;
+const BAND_BACK = -0.2;
+const BAND_WIDE = 0.24;
 
 // His head side on: the line of his brow, nose, lips and chin, an eye, his
 // ear, and his hair - and beard, headband - as they sit on his skull, in his
@@ -1413,19 +373,23 @@ const profileHead = (
 	}
 	if (pro.band) {
 		// Round his head at his brow (or up over his hair), his team's
-		// colors.
+		// colors - high on his forehead, sloping down over the tops of his
+		// ears to the back of his head, bowed a little where it rounds his
+		// skull toward the camera.
 		const lift = pro.band.high ? -0.32 : 0;
+		const edge = (v: number) => {
+			const a = P(0.98, BAND_FRONT + v + lift);
+			const m = P(-0.1, (BAND_FRONT + BAND_BACK) / 2 + v + lift + 0.06);
+			const b = P(-1.2, BAND_BACK + v + lift);
+			return { a, m, b };
+		};
+		const top = edge(0);
+		const bottom = edge(BAND_WIDE);
 		const band = new Path2D();
-		const pts = [
-			P(0.98, -0.54 + lift),
-			P(-1.2, -0.42 + lift),
-			P(-1.2, -0.2 + lift),
-			P(0.98, -0.3 + lift),
-		];
-		band.moveTo(pts[0]!.x, pts[0]!.y);
-		for (const q of pts.slice(1)) {
-			band.lineTo(q.x, q.y);
-		}
+		band.moveTo(top.a.x, top.a.y);
+		band.quadraticCurveTo(top.m.x, top.m.y, top.b.x, top.b.y);
+		band.lineTo(bottom.b.x, bottom.b.y);
+		band.quadraticCurveTo(bottom.m.x, bottom.m.y, bottom.a.x, bottom.a.y);
 		band.closePath();
 		ctx.save();
 		ctx.clip(grown);
@@ -1433,11 +397,10 @@ const profileHead = (
 		ctx.fill(band);
 		ctx.strokeStyle = pro.band.stripe;
 		ctx.lineWidth = r * 0.05;
+		const mid = edge(BAND_WIDE / 2);
 		ctx.beginPath();
-		const a = P(0.98, -0.42 + lift);
-		const b = P(-1.2, -0.31 + lift);
-		ctx.moveTo(a.x, a.y);
-		ctx.lineTo(b.x, b.y);
+		ctx.moveTo(mid.a.x, mid.a.y);
+		ctx.quadraticCurveTo(mid.m.x, mid.m.y, mid.b.x, mid.b.y);
 		ctx.stroke();
 		ctx.restore();
 	}
@@ -1646,6 +609,38 @@ const drawHead = (
 			ctx.clip(hair);
 			ctx.fillStyle = look.hair;
 			ctx.fill(cap);
+			ctx.restore();
+		}
+		const band = look.profile?.band;
+		if (band) {
+			// His headband, round the back of his head as high as it sits at
+			// the side - dipping a little in the middle, seen from above.
+			const lift = band.high ? -0.32 : 0;
+			const y0 = c.y + r * (BAND_BACK + 0.04 + lift);
+			const y1 = y0 + r * BAND_WIDE;
+			const sag = r * 0.12;
+			const strip = new Path2D();
+			strip.moveTo(x - r * 1.3, y0);
+			strip.quadraticCurveTo(x, y0 + sag, x + r * 1.3, y0);
+			strip.lineTo(x + r * 1.3, y1);
+			strip.quadraticCurveTo(x, y1 + sag, x - r * 1.3, y1);
+			strip.closePath();
+			const head = new Path2D();
+			head.addPath(skull);
+			if (hairy) {
+				head.addPath(hair);
+			}
+			ctx.save();
+			ctx.clip(head);
+			ctx.fillStyle = band.color;
+			ctx.fill(strip);
+			ctx.strokeStyle = band.stripe;
+			ctx.lineWidth = r * 0.05;
+			ctx.beginPath();
+			const mid = (y0 + y1) / 2;
+			ctx.moveTo(x - r * 1.3, mid);
+			ctx.quadraticCurveTo(x, mid + sag, x + r * 1.3, mid);
+			ctx.stroke();
 			ctx.restore();
 		}
 	};
