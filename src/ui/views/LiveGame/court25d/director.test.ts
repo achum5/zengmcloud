@@ -882,6 +882,35 @@ describe("2.5D director", () => {
 		assert.isAbove(ok(off), 0.9);
 	});
 
+	test("a blocked shot is swatted off his hand - down to the floor, or to whoever gets it", () => {
+		const { tl } = compile("a", 140);
+		let blocks = 0;
+		for (const f of tl.fx) {
+			if (f.kind !== "block") {
+				continue;
+			}
+			const swat = tl.ball.find(
+				(s) => s.kind === "fly" && Math.abs(s.t0 - f.t) < 1 && "pid" in s.from,
+			);
+			assert.isDefined(swat, `at ${f.t}`);
+			if (swat?.kind !== "fly") {
+				continue;
+			}
+			// Off the hand that got it.
+			const got = tl.ball.find(
+				(s) => s.kind === "fly" && Math.abs(s.t1 - f.t) < 1 && "pid" in s.to,
+			);
+			assert.deepEqual(
+				got?.kind === "fly" ? got.to : undefined,
+				swat.from,
+				`at ${f.t}`,
+			);
+			assert.isTrue("pid" in swat.to || swat.to.z < 0.5, `at ${f.t}`);
+			blocks += 1;
+		}
+		assert.isAbove(blocks, 2);
+	});
+
 	test("off the rim, the man who gets it mostly goes up and takes it in the air", () => {
 		const { events, tl } = compile("a", 140);
 		const beatOf = new Map(tl.beats.map((b) => [b.i, b]));

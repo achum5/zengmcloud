@@ -39,9 +39,11 @@ import { BACKSPIN, CROSS_RATE, DRIBBLE_RATE, GRAVITY } from "./evaluate.ts";
 import {
 	findShot,
 	playAt,
+	playShot,
 	SAMPLE_MS,
 	type FoundShot,
 	type ShotKind,
+	type ShotPlay,
 	type ShotWant,
 } from "./physics.ts";
 import { bodyOf, standingReach, type AnimName, type Hand } from "./poses.ts";
@@ -4313,14 +4315,14 @@ class Director {
 		}
 	}
 
-	// In: out of the net to the floor, up off it as hard as it came down
-	// (less what the hardwood takes), a smaller hop, and away to `settle`.
-	// Returns when it comes to rest.
-	private dropThrough(play: AtRim, settle: Pt): number {
-		const pts = play.found.play.pts;
+	// In: out of the net to the floor (the play at the rim from t0), up off
+	// it as hard as it came down (less what the hardwood takes), a smaller
+	// hop, and away to `settle`. Returns when it comes to rest.
+	private dropThrough(t0: number, play: ShotPlay, settle: Pt): number {
+		const pts = play.pts;
 		const n = pts.length;
-		const out = play.t0 + (n / 3 - 1) * SAMPLE_MS;
-		const down = 0.75 * play.found.play.end.v.z;
+		const out = t0 + (n / 3 - 1) * SAMPLE_MS;
+		const down = 0.75 * play.end.v.z;
 		const h0 = Math.max(0.8, Math.min(3.4, (down * down) / (2 * GRAVITY)));
 		const end = out + this.bounceSpan(h0, 2, 1150);
 		this.bounce(
@@ -4538,6 +4540,8 @@ class Director {
 		blocked: boolean,
 		hard = false,
 		vel?: Pt3,
+		// Where it really leaves from, if not `from` (a blocker's hand).
+		start?: BallEnd,
 	): number {
 		const next = this.peek(idx, 3).find(
 			(x) => x.e.type !== "sub" && x.e.type !== "foulOut",
@@ -4551,7 +4555,7 @@ class Director {
 		) {
 			const r = next.e.pid;
 			if (vel) {
-				return this.reboundOff(r, t, from, vel, team);
+				return this.reboundOff(r, t, from, vel, team, !blocked, start);
 			}
 			const rp = this.posOf(r);
 			const toward = { x: rp.x - rim.x, y: rp.y - rim.y };
@@ -4590,7 +4594,7 @@ class Director {
 			return catchT;
 		}
 		// Nobody's: off the rim on its own, down to the floor first.
-		const floor = vel ? this.toFloor(t, from, vel) : undefined;
+		const floor = vel ? this.toFloor(t, from, vel, start) : undefined;
 		const t0 = floor?.t ?? t;
 		if (next && next.e.type === "outOfBounds") {
 			// Off a hand and out: over the baseline, or the sideline.
@@ -4634,6 +4638,7 @@ class Director {
 		t: number,
 		from: Pt3,
 		vel: Pt3,
+		start?: BallEnd,
 	): { at: Pt3; t: number; h0: number } {
 		const fall =
 			(vel.z +
@@ -4644,7 +4649,7 @@ class Director {
 			y: from.y + vel.y * fall,
 			z: BALL_R,
 		};
-		this.fly(t, t + fall * 1000, from, at);
+		this.fly(t, t + fall * 1000, start ?? from, at);
 		const up = 0.7 * (GRAVITY * fall - vel.z);
 		return {
 			at,
@@ -4682,9 +4687,14 @@ class Director {
 			jump: [96 / REBOUND_MS, 704 / REBOUND_MS, peak],
 		});
 		this.free.set(r, Math.max(this.free.get(r) ?? 0, t + REBOUND_MS));
-		const rival = this.slots(other(this.teamOf(r))).sort(
-			(a, b) => dist(this.posOf(a), at) - dist(this.posOf(b), at),
-		)[0];
+		// (Not one still busy with something else - up with his own shot,
+		// say.)
+		const rival = this.slots(other(this.teamOf(r)))
+			.filter(
+				(p) =>
+					!this.track(p)?.acts.some((a) => a.t1 > t + 60 && a.t0 < t + 760),
+			)
+			.sort((a, b) => dist(this.posOf(a), at) - dist(this.posOf(b), at))[0];
 		if (rival !== undefined && contested) {
 			this.letGo(rival, t + 60);
 			this.act(rival, "rebound", t + 60, t + 760, {
@@ -4708,6 +4718,9 @@ class Director {
 		from: Pt3,
 		vel: Pt3,
 		team: Side,
+		contested: boolean,
+		// Where it really leaves from, if not `from`.
+		leaves?: BallEnd,
 	): number {
 		const rim = rimPt(team);
 		const start = Math.max(t - 600, this.free.get(r) ?? 0);
@@ -4739,23 +4752,31 @@ class Director {
 				continue;
 			}
 			const arrive = this.goBy(r, spot, start, up, "run", f);
-			this.goUpFor(r, Math.max(arrive, up), spot, team, h - BOARD_HANDS, true);
-			this.fly(t, top, from, { pid: r });
+			this.goUpFor(
+				r,
+				Math.max(arrive, up),
+				spot,
+				team,
+				h - BOARD_HANDS,
+				contested,
+			);
+			this.fly(t, top, leaves ?? from, { pid: r });
 			this.hold(r, top, "hold");
 			return top;
 		}
-		// Out of his reach before he can get there: down on the floor, and
-		// on the way it was going, slowing as it hops.
-		const { at: F, t: land, h0 } = this.toFloor(t, from, vel);
+		// Out of his reach before he can get there: down on the floor, up
+		// off it and on the way it was going, and he gathers it up where it
+		// comes to rest.
+		const { at: F, t: land, h0 } = this.toFloor(t, from, vel, leaves);
 		const hop = 2 * Math.sqrt((2 * h0) / GRAVITY);
 		const G = clampPt({
-			x: F.x + vel.x * hop * 1.2,
-			y: F.y + vel.y * hop * 1.2,
+			x: F.x + vel.x * hop * 0.8,
+			y: F.y + vel.y * hop * 0.8,
 		});
-		this.bounce(land, land + this.bounceSpan(h0, 2, 500), F, G, 2, h0);
-		// He goes and gets it - after its first hop at least.
+		const still = land + this.bounceSpan(h0, 1, 500);
+		this.bounce(land, still, F, G, 1, h0);
 		const run = (dist(R, G) / SPRINT) * 1000;
-		const got = this.pickUp(r, Math.max(start, land + hop * 900 - run), SPRINT);
+		const got = this.pickUp(r, Math.max(start, still - 150 - run), SPRINT);
 		return got + 150;
 	}
 
@@ -5375,9 +5396,24 @@ class Director {
 				y: 25 + this.rand(-3, 3),
 			});
 			// Out of the net and down to the floor, a bounce, and taken out
-			// (see inboundAfterMake).
+			// (see inboundAfterMake). Slammed, it goes down through the net
+			// hard.
+			const slam = shot.dunk
+				? playShot(team, top, { x: -dir * 1.2, y: 0, z: -15 })
+				: undefined;
 			if (play) {
-				this.dropThrough(play, settle);
+				this.dropThrough(play.t0, play.found.play, settle);
+			} else if (slam?.made) {
+				this.pushBall({
+					kind: "path",
+					t0,
+					t1: t0 + (slam.pts.length / 3 - 1) * SAMPLE_MS,
+					pts: slam.pts,
+					v0: { x: -dir * 1.2, y: 0, z: -15 },
+					roll0: 0,
+					spin: 0,
+				});
+				this.dropThrough(t0, slam, settle);
 			} else {
 				this.fly(t0, t0 + 140, top, under);
 				this.bounce(t0 + 140, t0 + 1350, under, settle, 1, 2.2);
@@ -5484,18 +5520,32 @@ class Director {
 			this.phase = "loose";
 			return;
 		}
-		// Blocked: it comes off his hand back toward the shooter and down.
+		// Blocked: swatted off his hand - back out the way it came, and down -
+		// and on, bouncing, to whoever gets it (see afterMiss).
 		this.effect("block", at, { team: other(team) });
 		const sp = this.posOf(shot.pid);
-		const down = {
-			...clampPt({
-				x: sp.x - dir * this.rand(2, 4),
-				y: sp.y + this.rand(-3, 3),
-			}),
-			z: 0.3,
-		};
-		this.fly(at, at + 300, { pid: e.pid, hand: "near" }, down);
-		const next = this.afterMiss(at + 300, down, team, i, true);
+		const bp = this.posOf(e.pid);
+		const back = unitVec(rim, sp);
+		const off = this.rand(-0.45, 0.45);
+		const speed = this.rand(11, 19);
+		const next = this.afterMiss(
+			at,
+			{
+				x: bp.x + (sp.x - bp.x) * 0.3,
+				y: bp.y + (sp.y - bp.y) * 0.3,
+				z: 9.8,
+			},
+			team,
+			i,
+			true,
+			false,
+			{
+				x: (back.x - back.y * off) * speed,
+				y: (back.y + back.x * off) * speed,
+				z: this.rand(-7, 1),
+			},
+			{ pid: e.pid, hand: "near" },
+		);
 		this.beat(i, e.type, at, next);
 		this.phase = "loose";
 	}
@@ -5674,7 +5724,7 @@ class Director {
 			const settle = { x: rimX(team) - dir * 2.5, y: 25 + this.rand(-2, 2) };
 			let still = at + 700;
 			if (play) {
-				still = this.dropThrough(play, settle);
+				still = this.dropThrough(play.t0, play.found.play, settle);
 			} else {
 				const top = rimPt(team, 0.35);
 				this.fly(at, at + 140, top, rimPt(team, -2.3));
