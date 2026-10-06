@@ -2942,6 +2942,67 @@ class Director {
 				special(near, clampPt({ x: D.x + u.x * 3.2, y: D.y + u.y * 3.2 }));
 			}
 		}
+		// The others near the drive stunt at it as it goes by: a hard step or
+		// two at the ball - to slow it, to make the driver look - and straight
+		// back out to his man.
+		const lag = run.play.cat === "break" ? 500 : 150;
+		const stunts = new Map<number, { at: Pt; from: number; peak: number }>();
+		if (
+			drive &&
+			holder !== undefined &&
+			run.play.cat !== "break" &&
+			dist(drive.from, rim) < 32
+		) {
+			const dx = drive.to.x - drive.from.x;
+			const dy = drive.to.y - drive.from.y;
+			const L2 = dx * dx + dy * dy || 1;
+			const dur = drive.t1 - drive.t0;
+			for (const [d, P] of targets) {
+				const man = manOf.get(d);
+				if (
+					man === undefined ||
+					man === holder ||
+					d === help?.d ||
+					via.has(d) ||
+					late.has(d)
+				) {
+					continue;
+				}
+				// The gap he stands in, off the drive's line.
+				const u = Math.min(
+					1,
+					Math.max(
+						0,
+						((P.x - drive.from.x) * dx + (P.y - drive.from.y) * dy) / L2,
+					),
+				);
+				const q = { x: drive.from.x + dx * u, y: drive.from.y + dy * u };
+				const off = dist(P, q);
+				if (off < 3 || off > 14 || this.rng() > 0.6) {
+					continue;
+				}
+				// With his man first, at the ball as it comes by, and back on
+				// his man by the time the step is done - if he has the time.
+				const from = Math.max(t0 + 120, drive.t0 + dur * (0.1 + u * 0.35));
+				const peak = Math.min(
+					drive.t0 + dur * (0.4 + u * 0.45),
+					t1 + lag - 400,
+				);
+				if (
+					peak - from < 180 ||
+					dist(this.posOf(d), P) > ((from - t0 - 120) / 1000) * 18 + 1.5
+				) {
+					continue;
+				}
+				const step = Math.min(3.2, off * 0.45, ((peak - from) / 1000) * 14);
+				const w = unitVec(P, q);
+				stunts.set(d, {
+					at: clampPt({ x: P.x + w.x * step, y: P.y + w.y * step }),
+					from,
+					peak,
+				});
+			}
+		}
 		// Whoever meets the shot drifts toward it, and is there for it.
 		if (o && run.help && run.help.length > 0) {
 			const S =
@@ -2961,11 +3022,25 @@ class Director {
 				late.delete(d);
 			}
 		}
-		const lag = run.play.cat === "break" ? 500 : 150;
 		for (const [d, P] of targets) {
 			const v = via.get(d);
 			if (v) {
 				this.shadow(d, v.at, t0 + 80, v.by, team);
+			}
+			const st = stunts.get(d);
+			if (st && manOf.get(d) !== undefined) {
+				// With his man; at the ball as it goes by; back on him.
+				this.shadow(d, P, t0 + 120, st.from, team, manOf.get(d));
+				this.goBy(
+					d,
+					st.at,
+					st.from,
+					st.peak,
+					"slide",
+					-attackDir(team) as 1 | -1,
+				);
+				this.shadow(d, P, st.peak + 60, t1 + lag, team, manOf.get(d));
+				continue;
 			}
 			if (help?.d === d) {
 				// With his man, until he leaves him to help.
@@ -5261,12 +5336,29 @@ class Director {
 						? ((T0.x - A.x) * (B.x - A.x) + (T0.y - A.y) * (B.y - A.y)) /
 							(d * d)
 						: 0.6;
-				const f = Math.min(0.85, Math.max(0.35, along));
-				const I = clampPt({
-					x: A.x + (B.x - A.x) * f,
-					y: A.y + (B.y - A.y) * f,
-				});
-				const tI = release + flight * f;
+				// Where he can get to it in time: farther along the pass if the
+				// lane is a long way off - and if even that is too far, the pass
+				// hangs in the air until he gets there.
+				const go = Math.max(start - 250, this.free.get(thief) ?? 0);
+				const lane = (f: number) => {
+					const I = clampPt({
+						x: A.x + (B.x - A.x) * f,
+						y: A.y + (B.y - A.y) * f,
+					});
+					return {
+						I,
+						tI: release + flight * f,
+						need: go + (dist(T0, I) / SPRINT) * 1000 + 40,
+					};
+				};
+				let f = Math.min(0.85, Math.max(0.35, along));
+				let pick = lane(f);
+				while (pick.need > pick.tI && f < 0.85) {
+					f = Math.min(0.85, f + 0.05);
+					pick = lane(f);
+				}
+				const I = pick.I;
+				const tI = Math.max(pick.tI, pick.need);
 				this.goBy(thief, I, start - 250, tI - 40, "run");
 				if (!oob) {
 					this.fly(release, tI, { pid: victim }, { pid: thief });
