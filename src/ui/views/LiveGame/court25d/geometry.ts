@@ -38,6 +38,15 @@ export const clampPt = (p: Pt, margin = 1): Pt => ({
 	y: Math.min(COURT_H + 1.5 - margin, Math.max(-1.5 + margin, p.y)),
 });
 
+// Keep a man in play inside the lines, feet and all: along the sideline as
+// deep in the corner as a shooter stands, under the rim a step in from the
+// baseline.
+export const SIDELINE_GAP = 1.6;
+export const inPlay = (p: Pt): Pt => ({
+	x: Math.min(COURT_W - 1, Math.max(1, p.x)),
+	y: Math.min(COURT_H - SIDELINE_GAP, Math.max(SIDELINE_GAP, p.y)),
+});
+
 // A defender meant for `p` against his man at `man`: where that would stand
 // him squarely in front of his man from the camera (which looks straight
 // across the floor from the near side), he plays him from the side instead -
@@ -79,11 +88,12 @@ export const seatSpot = (t: Side, i: number): Pt => ({
 	y: BENCH_Y + 0.9,
 });
 export const benchX = (t: Side): number => (t === 0 ? 31 : 63);
+export const HUDDLE_Y = 1.6;
 export const huddleSpots = (t: Side): Pt[] => {
 	const cx = benchX(t);
 	return [0, 1, 2, 3, 4].map((i) => {
 		const a = (i / 5) * Math.PI * 2 + 0.4;
-		return { x: cx + Math.cos(a) * 2.4, y: 1.6 + Math.sin(a) * 1.4 };
+		return { x: cx + Math.cos(a) * 2.6, y: HUDDLE_Y + Math.sin(a) * 1.7 };
 	});
 };
 

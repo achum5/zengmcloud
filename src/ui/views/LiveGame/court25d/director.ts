@@ -21,6 +21,8 @@ import {
 	FT_OFFENSE,
 	ftOfficialBall,
 	guardSpot,
+	HUDDLE_Y,
+	inPlay,
 	OFFICIALS_SETTLE,
 	sideOn,
 	huddleSpots,
@@ -563,6 +565,10 @@ const HELP_REACH: [number, number] = [8, 14];
 // court - always as far as the top of the play.
 const UP_FLOOR_PAST = 8;
 const UP_FLOOR_MIN = 33;
+// The man with the ball a long way back up the floor - taking it out under
+// the other basket, bringing it up - is picked up about three-quarter court
+// (feet from the rim defended), not chased down to the far baseline.
+const PICK_UP = 60;
 // How long a defender takes to read a pass (ms), and how fast he closes out
 // once he has (feet a second) - breaking down for the last steps.
 const CLOSE_READ = 150;
@@ -3218,7 +3224,7 @@ class Director {
 				const R = behind ? Math.max(r, 23.75 + 0.75) : r;
 				const along = (w: number) => {
 					const to = Math.max(-ARC_EDGE, Math.min(ARC_EDGE, aP + w * step));
-					return clampPt({
+					return inPlay({
 						x: rim.x + Math.cos(to) * R * out,
 						y: rim.y + Math.sin(to) * R,
 					});
@@ -3589,15 +3595,17 @@ class Director {
 		// other end - is nobody's worry yet: off the ball, his man stays with
 		// the play and picks him up as he comes.
 		const deep = Math.abs(at.x - rim.x);
-		const reach = Math.max(
-			UP_FLOOR_MIN,
-			Math.min(
-				Math.abs(ball.x - rim.x) + UP_FLOOR_PAST,
-				COURT_W / 2 - RIM_INSET,
-			),
-		);
+		const reach = onBall
+			? PICK_UP
+			: Math.max(
+					UP_FLOOR_MIN,
+					Math.min(
+						Math.abs(ball.x - rim.x) + UP_FLOOR_PAST,
+						COURT_W / 2 - RIM_INSET,
+					),
+				);
 		const man =
-			!onBall && deep > reach
+			deep > reach
 				? {
 						x: rim.x + ((at.x - rim.x) * reach) / deep,
 						y: rim.y + ((at.y - rim.y) * reach) / deep,
@@ -4171,7 +4179,7 @@ class Director {
 			return spot(
 				team,
 				this.rand(2.5, 9),
-				this.rng() < 0.5 ? this.rand(1, 1.5) : this.rand(48.5, 49),
+				this.rng() < 0.5 ? this.rand(1.6, 2.1) : this.rand(47.9, 48.4),
 			);
 		}
 		const [r0, r1, th0, th1] =
@@ -4221,7 +4229,7 @@ class Director {
 			const jab = (start === "R" ? 1 : -1) * dir * 1.6;
 			const tj = this.go(
 				pid,
-				clampPt({ x: from.x, y: from.y + jab }),
+				inPlay({ x: from.x, y: from.y + jab }),
 				t + 80,
 				6,
 				"dribble",
@@ -4240,7 +4248,7 @@ class Director {
 			if (bit) {
 				this.go(
 					guard,
-					clampPt({ x: G.x, y: G.y + Math.sign(jab) * 2.4 }),
+					inPlay({ x: G.x, y: G.y + Math.sign(jab) * 2.4 }),
 					Math.max(t + 220, this.free.get(guard) ?? 0),
 					9,
 					"slide",
@@ -4263,7 +4271,7 @@ class Director {
 				const u = unitVec(from, P);
 				this.shadow(
 					guard,
-					clampPt({ x: P.x - u.x * 2.6, y: P.y - u.y * 2.6 }),
+					inPlay({ x: P.x - u.x * 2.6, y: P.y - u.y * 2.6 }),
 					t + 80,
 					t + runMs(dist(from, P), DRIBBLE) + 200,
 					this.teamOf(pid),
@@ -4276,13 +4284,13 @@ class Director {
 			// One way, then the other, then up.
 			const side = this.rng() < 0.5 ? 1 : -1;
 			const k = Math.max(0, d - 6);
-			const a = clampPt({
+			const a = inPlay({
 				x: from.x + (dx / d) * k + ax * side * 2,
 				y: from.y + (dy / d) * k + ay * side * 2,
 			});
 			t = this.go(pid, a, t, DRIBBLE, "dribble", dir);
 			t = Math.max(t, this.hold(pid, t, "hold"));
-			const b = clampPt({
+			const b = inPlay({
 				x: P.x - (dx / d) * 2.2 - ax * side * 1.6,
 				y: P.y - (dy / d) * 2.2 - ay * side * 1.6,
 			});
@@ -4304,7 +4312,7 @@ class Director {
 				);
 				this.hold(pid, t, "dribble");
 			}
-			const inside = clampPt({
+			const inside = inPlay({
 				x: P.x + (dx / d) * 2.6,
 				y: P.y + (dy / d) * 2.6,
 			});
@@ -4968,17 +4976,26 @@ class Director {
 				faceRim,
 			);
 			if (plan.kind === "block" && plan.blocker !== undefined) {
-				// Met at the rim - off a lob, once he has it.
+				// Met at the rim - off a lob, once he has it. From a way off -
+				// chasing him down - he sets off for it in time to get there,
+				// whatever he was doing.
 				const contact = Math.max(gather + dur * 0.42, caught + 100);
 				const b = plan.blocker;
-				this.goBy(
-					b,
-					clampPt({ x: rim.x - dir * 1.7, y: 25 - 1.1 }),
-					gather - 300,
-					contact - 300,
-					"run",
-					-faceRim as 1 | -1,
-				);
+				const B = clampPt({ x: rim.x - dir * 1.7, y: 25 - 1.1 });
+				const by = contact - 300;
+				let from = gather - 300;
+				for (let n = 0; n < 4; n++) {
+					const need =
+						runMs(dist(this.posAt(b, from), B), SPRINT, 0, BURST) + 60;
+					if (by - from >= need) {
+						break;
+					}
+					from = by - need;
+				}
+				if ((this.free.get(b) ?? 0) > from) {
+					this.cutShort(b, from);
+				}
+				this.goBy(b, B, from, by, "run", -faceRim as 1 | -1, BURST);
 				const left = this.leftToBall(
 					{ x: rim.x - dir * 1.7, y: 25 - 1.1 },
 					shooter,
@@ -5956,8 +5973,12 @@ class Director {
 			if (inAir && (B.z < SNATCH_LOW || B.z > SNATCH_HIGH)) {
 				continue;
 			}
+			// (Got before it gets to the line: he is not off the floor for it.)
+			if (dist(inPlay(B), B) > 0.9) {
+				break;
+			}
 			const toward = unitVec(B, R);
-			const spot = clampPt({
+			const spot = inPlay({
 				x: B.x + toward.x * (inAir ? SNATCH_OUT : PICKUP_REACH),
 				y: B.y + toward.y * (inAir ? SNATCH_OUT : PICKUP_REACH),
 			});
@@ -6420,7 +6441,7 @@ class Director {
 				);
 				for (const t of [0, 1] as const) {
 					this.slots(t).forEach((pid) => {
-						this.lookAt(pid, there + 1, { x: benchX(t), y: 1.6 });
+						this.lookAt(pid, there + 1, { x: benchX(t), y: HUDDLE_Y });
 					});
 				}
 				this.hurry(T + 800, there);
@@ -6497,7 +6518,7 @@ class Director {
 							WALK,
 							"walk",
 						);
-						this.lookAt(pid, at, { x: benchX(t), y: 1.6 });
+						this.lookAt(pid, at, { x: benchX(t), y: HUDDLE_Y });
 					});
 				}
 				this.deadBall(T);
@@ -8408,7 +8429,7 @@ class Director {
 					let room = -Infinity;
 					for (const side of [near, -near]) {
 						for (const dx of [0, -3, 3]) {
-							const q = clampPt({
+							const q = inPlay({
 								x: at.x + dx,
 								y: COURT_H / 2 + side * 9,
 							});
@@ -10190,6 +10211,8 @@ class Director {
 			const k = r.shown(t);
 			return k >= 0 && r.tr.shown[k]![1];
 		};
+		const huddled = (team: Side, x: number, y: number) =>
+			Math.hypot(x - benchX(team), y - HUDDLE_Y) < 4.5;
 		const doing = (r: Reader, t: number): AnimName | undefined => {
 			const acts = r.tr.acts;
 			for (let k = r.act(t); k >= 0; k--) {
@@ -10340,6 +10363,15 @@ class Director {
 							if (ddx * ddx + ddy * ddy >= lim * lim) {
 								continue;
 							}
+							// (In a huddle, shoulder to shoulder is where they are
+							// meant to be.)
+							if (
+								mates &&
+								huddled(A.team, px[ia]!, py[ia]!) &&
+								huddled(A.team, px[ib]!, py[ib]!)
+							) {
+								continue;
+							}
 							const d = Math.sqrt(ddx * ddx + ddy * ddy);
 							// (What each is doing, only now it matters.)
 							const aa = actOf(ia, t);
@@ -10470,7 +10502,9 @@ class Director {
 					const P = posAt(r.a, mid);
 					const room = (dx: number, dy: number) => {
 						const Q = { x: P.x + dx, y: P.y + dy };
-						let worst = Infinity;
+						// (Not over a line, either.)
+						let worst = -Math.max(0, dist(inPlay(Q), Q) - dist(inPlay(P), P));
+						worst = worst < 0 ? worst - 1 : Infinity;
 						for (const o of tracks) {
 							if (o === r.a || !shownAtT(o, mid)) {
 								continue;
@@ -10497,6 +10531,30 @@ class Director {
 						}
 					}
 					[ux, uy] = best;
+					// However he goes, no farther over a line than he was.
+					const over = (s: number) =>
+						dist(inPlay({ x: P.x + ux * k * s, y: P.y + uy * k * s }), {
+							x: P.x + ux * k * s,
+							y: P.y + uy * k * s,
+						}) >
+						dist(inPlay(P), P) + 0.01;
+					if (over(1)) {
+						let lo = 0;
+						let hi = 1;
+						for (let n = 0; n < 10; n++) {
+							const m = (lo + hi) / 2;
+							if (over(m)) {
+								hi = m;
+							} else {
+								lo = m;
+							}
+						}
+						ux *= lo;
+						uy *= lo;
+					}
+				}
+				if (Math.hypot(ux, uy) * k < 0.3) {
+					continue;
 				}
 				// Off him again as he goes on his way - and back over before
 				// that takes him into anybody he would have gone clear of.
