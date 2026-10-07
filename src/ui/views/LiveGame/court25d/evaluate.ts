@@ -492,6 +492,10 @@ type Spot = {
 	run?: Run;
 	hx: number;
 	hy: number;
+	// Eased aside off a man (see spotAt): how fast that has him going
+	// (feet a second), and how far it has taken him all told.
+	nv?: number;
+	nd?: number;
 };
 
 // Where he is, eased aside off anybody he would be standing on (see
@@ -505,6 +509,9 @@ const spotAt = (tr: Track, t: number): Spot => {
 	}
 	let dx = 0;
 	let dy = 0;
+	let vx = 0;
+	let vy = 0;
+	let nd = 0;
 	for (let i = lastIndex(list, t, (n) => n.t0); i >= 0; i--) {
 		const n = list[i]!;
 		// (None lasts long: the ones begun long before are over.)
@@ -515,12 +522,25 @@ const spotAt = (tr: Track, t: number): Spot => {
 			continue;
 		}
 		const r = Math.min(NUDGE_RAMP, (n.t1 - n.t0) / 2);
-		const u = Math.min(1, (t - n.t0) / r, (n.t1 - t) / r);
+		const a = (t - n.t0) / r;
+		const b = (n.t1 - t) / r;
+		const u = Math.min(1, a, b);
 		const w = u * u * (3 - 2 * u);
 		dx += n.dx * w;
 		dy += n.dy * w;
+		// (Easing over, or back: how fast, and how far he has stepped.)
+		const len = Math.hypot(n.dx, n.dy);
+		if (u < 1) {
+			const dw = (6 * u * (1 - u) * 1000) / r;
+			const sign = a < b ? 1 : -1;
+			vx += n.dx * dw * sign;
+			vy += n.dy * dw * sign;
+		}
+		nd += a < b ? len * w : len * (2 - w);
 	}
-	return dx === 0 && dy === 0 ? s : { ...s, x: s.x + dx, y: s.y + dy };
+	return dx === 0 && dy === 0
+		? s
+		: { ...s, x: s.x + dx, y: s.y + dy, nv: Math.hypot(vx, vy), nd };
 };
 const NUDGE_LONGEST = 14000;
 const rawSpotAt = (tr: Track, t: number): Spot => {
@@ -1083,7 +1103,14 @@ const doingAt = (
 				: anim === "guard" && seg?.kind === "hold"
 					? swipeAt(tl, tr, t, seg.pid)
 					: undefined;
-		if (life) {
+		if (
+			(here.nv ?? 0) > 1 &&
+			(anim === "ready" || anim === "stance" || anim === "guard")
+		) {
+			// Eased aside off a man: he steps over, not slides.
+			anim = "shuffle";
+			phase = (here.nd ?? 0) / strideOf("shuffle");
+		} else if (life) {
 			anim = life.anim;
 			phase = life.phase;
 			mirrored = life.mirror === true;
