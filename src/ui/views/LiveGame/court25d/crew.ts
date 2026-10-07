@@ -428,14 +428,17 @@ const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 	}
 	if (beat?.type === "ft" || beat?.type === "missFt") {
 		// Free throws: the lead, under the basket, bounces the shooter the
-		// ball from the lane - and once the last one is in his hands, steps
-		// out to the end line. The trail stands out by the arc on the table
-		// side, the slot across from the line.
+		// ball from the lane - and once it is in his hands, steps out to the
+		// end line, out of the lane before the shot: for good after the last
+		// of them, otherwise back in for the ball as the shot comes down. The
+		// trail stands out by the arc on the table side, the slot across from
+		// the line.
 		const team = offenseAt(tl, t);
 		const d = attackDir(team);
 		const X = (depth: number) => (d > 0 ? COURT_W - depth : depth);
 		const lead =
-			lastFreeThrow(tl, t) && handedOver(tl, t, team, beat.preStart)
+			handedOver(tl, t, team, beat.preStart) &&
+			(lastFreeThrow(tl, t) || t < beat.end - 600)
 				? { x: X(-1.3), y: 36.5 }
 				: ftAdminAt(team);
 		const trail = { x: X(29), y: 3.2 };
