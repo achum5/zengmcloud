@@ -444,8 +444,9 @@ const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 		return k % 2 === 0 ? [lead, trail, slot] : [trail, lead, slot];
 	}
 	if (beat?.type === "jumpBall") {
+		// (The ball up out of his hands, he backs out of there.)
 		const toss = nextFx(tl, beat.preStart, "toss");
-		if (toss && t < toss.t + 450) {
+		if (toss && t < toss.t + 150) {
 			return [
 				{ x: COURT_W / 2 - 7, y: 0.9 },
 				{ x: COURT_W / 2 + 7, y: COURT_H + 1.2 },
