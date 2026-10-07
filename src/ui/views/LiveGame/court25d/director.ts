@@ -35,6 +35,7 @@ import {
 	type Pt3,
 	type Side,
 } from "./geometry.ts";
+import { BURST, keepThrough, paceFor, runMs } from "./motion.ts";
 import { BACKSPIN, CROSS_RATE, DRIBBLE_RATE, GRAVITY } from "./evaluate.ts";
 import {
 	findShot,
@@ -116,6 +117,11 @@ export type Move = {
 	// Set when he was told which way to face on the way (a defender sliding
 	// with his man), rather than just running where he is going.
 	face?: 1 | -1;
+	// How fast he is going (feet a second) as it starts and as it ends, where
+	// that is known - a defender's path worked out stride by stride (see
+	// mark) - rather than read off the runs either side of it.
+	v0?: number;
+	v1?: number;
 };
 export type Act = {
 	t0: number;
@@ -342,6 +348,8 @@ const SPRINT = 24;
 const DRIBBLE = 19;
 const JOG = 13;
 const WALK = 6;
+// Not a pace but a jab: one quick lunge of a step (see liven).
+const JAB = 0;
 const PASS_FTPS = 42;
 // A basketball's radius, feet: its middle when it touches the floor.
 const BALL_R = 0.39;
@@ -364,6 +372,11 @@ const WHISTLE_HOLD = 950;
 const REBOUND_MS = 1100;
 // How long a man takes to read a shot off the shooter's hand and go.
 const READ_MS = 180;
+// How long before a miss comes off the rim the man who gets it is after it
+// - reading it off the shot - and how long before the top of his jump for
+// it he can still be on his way there, the last stride carrying him up.
+const REBOUND_READ = 1200;
+const BOARD_CARRY = 150;
 // The last few inches onto a spot: a shuffle this long (ms).
 const SETTLE_MS = 160;
 // A loose ball on the hop is taken out of the air about where a man reaching
@@ -464,6 +477,9 @@ const needed = (
 // tracking numbers (a curl off a screen about 16, a pick-and-pop about 11),
 // sped up like the rest of the court so a set reads in the time it has - but
 // never past what the fastest men in the league reach.
+// The man trailing a break - the big who got the rebound and threw the
+// outlet - runs the floor behind it (feet a second).
+const TRAIL_SPEED = 16;
 const MOVE_SPEED: Record<string, number> = {
 	walk: 6,
 	jog: 12,
@@ -661,6 +677,8 @@ type Running = {
 	// Defenders the play-by-play has at the shot - the shot blocker, the man
 	// who fouls him, the one he dunks on - who work their way to it.
 	help?: number[];
+	// When the step before this one got going.
+	stepAt?: number;
 	// The screen set in the step before, for the defense to play.
 	screen?: {
 		screeners: number[];
@@ -887,6 +905,10 @@ class Director {
 		speed: number,
 		anim: AnimName = "run",
 		face?: 1 | -1,
+		// How hard he goes about it (BURST: all out, for a loose ball), and
+		// the pace he goes straight on at into whatever comes next, if he
+		// does not pull up at the end of it.
+		how: { effort?: number; onto?: number } = {},
 	): number {
 		const tr = this.track(pid);
 		if (!tr) {
@@ -901,7 +923,17 @@ class Director {
 			}
 			return start;
 		}
-		const dur = Math.max(240, (d / speed) * 1000);
+		// As long as it takes him to get going, get there and pull up.
+		const dur = Math.max(
+			240,
+			runMs(
+				d,
+				speed,
+				this.carried(pid, to, start, speed),
+				how.effort ?? 1,
+				how.onto ?? 0,
+			),
+		);
 		const f =
 			face ??
 			(Math.abs(to.x - from.x) > 0.4
@@ -977,7 +1009,7 @@ class Director {
 		}
 		let t0 = by - 600;
 		for (let n = 0; n < 3; n++) {
-			const need = (dist(this.posAt(pid, t0), V) / SPRINT) * 1000 + 150;
+			const need = runMs(dist(this.posAt(pid, t0), V), SPRINT) + 150;
 			if (by - t0 >= need) {
 				break;
 			}
@@ -1012,17 +1044,20 @@ class Director {
 		tr.moves = kept.sort((x, y) => x.t0 - y.t0);
 	}
 
-	// Whatever run he is on at t, he stops it there - to go somewhere else.
+	// Whatever run he is on at t, he stops it there - to go somewhere else -
+	// and any he was to go on after it, he never does.
 	private cutShort(pid: number, t: number) {
 		const tr = this.track(pid);
-		const m = tr?.moves.at(-1);
-		if (!tr || !m || m.t1 <= t) {
+		if (!tr) {
 			return;
 		}
-		if (m.t0 >= t) {
-			tr.moves.pop();
+		while ((tr.moves.at(-1)?.t0 ?? -Infinity) >= t) {
+			const m = tr.moves.pop()!;
 			this.pos.set(pid, { ...m.from });
-			this.free.set(pid, Math.max(t, m.t0));
+			this.free.set(pid, t);
+		}
+		const m = tr.moves.at(-1);
+		if (!m || m.t1 <= t) {
 			return;
 		}
 		const at = this.posAt(pid, t);
@@ -1080,14 +1115,90 @@ class Director {
 		by: number,
 		anim: AnimName = "run",
 		face?: 1 | -1,
+		effort = 1,
 	): number {
 		const start = Math.max(t0, this.free.get(pid) ?? 0);
 		const d = dist(this.posOf(pid), to);
 		const speed = Math.max(
 			JOG,
-			Math.min(SPRINT, d / Math.max(0.25, (by - start) / 1000)),
+			paceFor(
+				d,
+				Math.max(250, by - start),
+				this.carried(pid, to, start, SPRINT),
+				SPRINT,
+				effort,
+			),
 		);
-		return this.go(pid, to, start, speed, anim, face);
+		return this.go(pid, to, start, speed, anim, face, { effort });
+	}
+
+	// Carried somewhere as part of something he does - the gather and leap
+	// of a dunk, a fadeaway's drift, the last stride into a layup - in just
+	// the time it takes, at an even pace, rather than run there. Returns
+	// when he is there.
+	private carry(
+		pid: number,
+		to: Pt,
+		t0: number,
+		ms: number,
+		anim: AnimName = "run",
+		face?: 1 | -1,
+	): number {
+		const tr = this.track(pid);
+		if (!tr) {
+			return t0;
+		}
+		const from = this.posOf(pid);
+		const start = Math.max(t0, this.free.get(pid) ?? 0);
+		const d = dist(from, to);
+		if (d < 0.3) {
+			return start;
+		}
+		const pace = d / (ms / 1000);
+		tr.moves.push({
+			t0: start,
+			t1: start + ms,
+			from: { ...from },
+			to,
+			anim,
+			...(face === undefined ? {} : { face }),
+			v0: pace,
+			v1: pace,
+		});
+		if (face !== undefined) {
+			tr.faces.push([start, face]);
+			this.face.set(pid, face);
+		}
+		this.pos.set(pid, to);
+		this.free.set(pid, start + ms);
+		return start + ms;
+	}
+
+	// How fast a man is already going setting off for `to` at `start`: the
+	// pace he carries on with from a run that ends there and then, as much
+	// of it as the turn allows (see keepThrough) - none from standing.
+	private carried(pid: number, to: Pt, start: number, speed: number): number {
+		const last = this.track(pid)?.moves.at(-1);
+		const from = this.posOf(pid);
+		if (
+			!last ||
+			start - last.t1 > 300 ||
+			start < last.t1 - 1 ||
+			dist(last.to, from) > 0.5
+		) {
+			return 0;
+		}
+		const la = dist(last.from, last.to);
+		const lb = dist(from, to);
+		if (la < 0.3 || lb < 0.3) {
+			return 0;
+		}
+		const cos =
+			((last.to.x - last.from.x) * (to.x - from.x) +
+				(last.to.y - last.from.y) * (to.y - from.y)) /
+			(la * lb);
+		const pace = la / Math.max(0.05, (last.t1 - last.t0) / 1000);
+		return Math.min(pace, speed) * keepThrough(cos);
 	}
 
 	private turn(pid: number, t: number, f: 1 | -1) {
@@ -1417,6 +1528,7 @@ class Director {
 		t: number,
 		speed: number,
 		style: "hold" | "dribble" = "hold",
+		effort = 1,
 	): number {
 		const b = this.ballPoint();
 		const from = this.posOf(pid);
@@ -1433,7 +1545,7 @@ class Director {
 		// (Not off a bounce: he takes it once it has come to rest.)
 		const last = this.ball.at(-1);
 		const got = Math.max(
-			this.go(pid, stop, t, speed, "run"),
+			this.go(pid, stop, t, speed, "run", undefined, { effort }),
 			last?.kind === "rest" ? last.t0 - 150 : -Infinity,
 		);
 		this.act(pid, "pickup", got, got + 300, { look: { x: b.x, y: b.y } });
@@ -1698,7 +1810,7 @@ class Director {
 		const upBy =
 			there +
 			600 +
-			(dist({ x: out.x + dir * 13, y: out.y }, spots[0]!) / DRIBBLE) * 1000;
+			runMs(dist({ x: out.x + dir * 13, y: out.y }, spots[0]!), DRIBBLE);
 		off.forEach((pid, j) => {
 			if (pid !== pg && pid !== inb) {
 				this.goBy(pid, spots[j] ?? spots[0]!, t + 200 + j * 90, upBy, "run");
@@ -2030,7 +2142,15 @@ class Director {
 						x: (spots[j + 1] ?? spots[0]!).x - attackDir(team) * 7,
 						y: 25 + ((spots[j + 1] ?? spots[0]!).y - 25) * 0.8,
 					});
-			const back = this.goBy(pid, target, t + 40 * j, arrive + 200, "run");
+			const back = this.goBy(
+				pid,
+				target,
+				t + 40 * j,
+				arrive + 200,
+				"run",
+				undefined,
+				BURST,
+			);
 			// Getting back, he calls out who he has: the last man back the
 			// ball.
 			const his = rimGuard ? handler : others[j];
@@ -2794,6 +2914,8 @@ class Director {
 		let end = t0 + STEP_MIN;
 		const planted: { pid: number; t: number; anim: AnimName; look: Pt }[] = [];
 		const before = run.screen;
+		const prev = Math.min(t0, run.stepAt ?? t0);
+		run.stepAt = t0;
 		for (const a of acts) {
 			if (a.type === "screen") {
 				const user = run.roles[a.for]!;
@@ -2871,10 +2993,17 @@ class Director {
 				end = Math.max(end, this.playDribble(run, a.who, a.to, a.kind, since));
 			} else if (a.type === "move") {
 				const pid = run.roles[a.who]!;
+				// On the break, a man running the floor goes on as soon as he
+				// has done what he was doing - the outlet thrown, his lane
+				// filled - not once everybody has.
+				const since =
+					run.play.cat === "break" && this.holder !== pid
+						? Math.max(prev, Math.min(t0, this.free.get(pid) ?? 0))
+						: t0;
 				const done =
 					this.holder === pid
 						? this.playDribble(run, a.who, a.to, "attack", t0)
-						: this.playMove(run, pid, a.to, a.style, t0, before);
+						: this.playMove(run, pid, a.to, a.style, since, before);
 				// On the break nobody waits for the man trailing the play - not
 				// unless it comes to him.
 				if (
@@ -3175,7 +3304,11 @@ class Director {
 		const from = this.posOf(pid);
 		const P =
 			to === "rim" ? this.nearRim(run.team, from, 3.6) : this.at(run, to);
-		const speed = MOVE_SPEED[style] ?? 13;
+		// (Trailing the break is no jog: he runs the floor.)
+		const speed =
+			run.play.cat === "break" && style === "jog"
+				? TRAIL_SPEED
+				: (MOVE_SPEED[style] ?? 13);
 		let t = Math.max(t0, this.free.get(pid) ?? 0);
 		// Still set in a screen: he holds it until the man it was for has come
 		// past his shoulder and the man chasing him has run into it - then
@@ -4113,7 +4246,7 @@ class Director {
 					guard,
 					clampPt({ x: P.x - u.x * 2.6, y: P.y - u.y * 2.6 }),
 					t + 80,
-					t + (dist(from, P) / DRIBBLE) * 1000 + 200,
+					t + runMs(dist(from, P), DRIBBLE) + 200,
 					this.teamOf(pid),
 					pid,
 				);
@@ -4705,7 +4838,7 @@ class Director {
 				this.goBy(
 					victim,
 					V,
-					gather - Math.max(500, (d / SPRINT) * 1000 + 250),
+					gather - Math.max(500, runMs(d, SPRINT) + 250),
 					gather + 60,
 					d > 6 ? "run" : "slide",
 					-faceRim as 1 | -1,
@@ -4787,7 +4920,14 @@ class Director {
 						: [],
 				},
 			});
-			this.go(shooter, under, gather + 60, SPRINT, "run", faceRim);
+			this.carry(
+				shooter,
+				under,
+				gather + 60,
+				Math.max(240, (dist(this.posOf(shooter), under) / SPRINT) * 1000),
+				"run",
+				faceRim,
+			);
 			if (plan.kind === "block" && plan.blocker !== undefined) {
 				// Met at the rim - off a lob, once he has it.
 				const contact = Math.max(gather + dur * 0.42, caught + 100);
@@ -4854,14 +4994,14 @@ class Director {
 			}
 			if (anim === "fade") {
 				// Drifting back as he rises.
-				this.go(
+				this.carry(
 					shooter,
 					clampPt({
 						x: P1.x - (toRim.x / len) * 1.4,
 						y: P1.y - (toRim.y / len) * 1.4,
 					}),
 					gather + dur * JUMPER.off - 40,
-					4,
+					350,
 					"run",
 					faceRim,
 				);
@@ -4892,14 +5032,14 @@ class Director {
 				// from under it.
 				const out = 2.4 + 0.7 * hash01(shooter, gather);
 				const step = Math.max(0, Math.min(2.2, len - out));
-				this.go(
+				this.carry(
 					shooter,
 					clampPt({
 						x: P1.x + (toRim.x / len) * step,
 						y: P1.y + (toRim.y / len) * step,
 					}),
 					gather + 40,
-					RUN,
+					240,
 					"run",
 					faceRim,
 				);
@@ -5102,7 +5242,9 @@ class Director {
 			kinds,
 			...(plan.rebounder === undefined
 				? {}
-				: { toward: this.towardOf(team, plan.rebounder) }),
+				: {
+						toward: this.towardOf(team, plan.rebounder, dist(P, rim)),
+					}),
 		});
 	}
 
@@ -5193,12 +5335,13 @@ class Director {
 		return end;
 	}
 
-	// Off the rim toward a man, as far out his way as a miss comes.
-	private towardOf(team: Side, pid: number): Pt {
+	// Off the rim toward a man, as far out his way as a miss comes - the
+	// longer the shot, the longer it comes off (`from` feet out).
+	private towardOf(team: Side, pid: number, from = 0): Pt {
 		const rim = rimPt(team);
 		const R = this.posOf(pid);
 		const u = unitVec(rim, R);
-		const k = Math.min(dist(rim, R), 7);
+		const k = Math.min(dist(rim, R), 6 + Math.min(from, 26) * 0.22);
 		return { x: rim.x + u.x * k, y: rim.y + u.y * k };
 	}
 
@@ -5216,7 +5359,6 @@ class Director {
 		close: boolean,
 	) {
 		const P = this.posOf(shooter);
-		const G = this.posOf(d);
 		const face = (P.x >= C.x ? 1 : -1) as 1 | -1;
 		// With the hand on the ball's side.
 		const left = this.leftToBall(C, shooter, P);
@@ -5233,11 +5375,27 @@ class Director {
 		);
 		const thrown =
 			pass?.kind === "fly" && pass.t1 > gather - 1200 ? pass.t0 : undefined;
+		// Off whatever he was doing the moment he sees it coming: the pass
+		// out to his man, or his man going up with it.
+		const sees =
+			thrown === undefined
+				? gather - 200
+				: Math.min(gather - 200, thrown + CLOSE_READ);
+		if ((this.free.get(d) ?? 0) > sees) {
+			this.cutShort(d, sees);
+		}
+		const G = this.posOf(d);
 		const far = dist(G, C);
 		if (far < 7 || thrown === undefined) {
-			this.goBy(d, C, gather - 200, release - 60, "run", face);
-			if (dist(G, P) < 9) {
-				contest(release - 260, close ? 2 : 1.3);
+			const there = this.goBy(d, C, sees, release - 60, "run", face, BURST);
+			if (dist(G, P) >= 9) {
+				return;
+			}
+			if (there <= release + 100) {
+				contest(Math.max(there - 150, release - 260), close ? 2 : 1.3);
+			} else if (there < release + 700) {
+				// Late: a hand in his face as it goes up over him.
+				contest(there - 120, 0.5);
 			}
 			return;
 		}
@@ -5246,13 +5404,19 @@ class Director {
 			x: C.x - u.x * CLOSE_BREAK,
 			y: C.y - u.y * CLOSE_BREAK,
 		});
+		// Flat out to a few feet off him, then choppy steps the rest of the
+		// way in - straight on from the one into the other.
 		const there = this.go(
 			d,
 			C,
-			this.go(d, brk, thrown + CLOSE_READ, CLOSE_RUN, "run"),
+			this.go(d, brk, thrown + CLOSE_READ, CLOSE_RUN, "run", undefined, {
+				effort: BURST,
+				onto: CLOSE_CHOP,
+			}),
 			CLOSE_CHOP,
 			"closeout",
 			face,
+			{ effort: BURST },
 		);
 		if (there <= release + 100) {
 			contest(Math.max(there - 150, release - 260), close ? 1.8 : 1.1);
@@ -5319,7 +5483,15 @@ class Director {
 					r0 = Math.max(r0, a.t1);
 				}
 			}
-			const there = this.goBy(reads.pid, spot, r0, land - 350, "run");
+			const there = this.goBy(
+				reads.pid,
+				spot,
+				r0,
+				land - 350,
+				"run",
+				undefined,
+				BURST,
+			);
 			if (there < until - 250) {
 				this.act(
 					reads.pid,
@@ -5347,7 +5519,7 @@ class Director {
 				const k = Math.max(0, Math.min(out - this.rand(5, 8), 9));
 				const C = clampPt({ x: M.x + u.x * k, y: M.y + u.y * k });
 				crash.set(pid, C);
-				const there = this.goBy(pid, C, r0, meet, "run");
+				const there = this.goBy(pid, C, r0, meet, "run", undefined, BURST);
 				if (there < until - 250) {
 					this.act(pid, "fight", Math.max(meet, there), until, { look: rim });
 				}
@@ -5380,7 +5552,7 @@ class Director {
 				const k = Math.min(dist(D0, rim), this.rand(6, 9));
 				spot = clampPt({ x: rim.x + u.x * k, y: rim.y + u.y * k });
 			}
-			const there = this.goBy(d, spot, r0 + 80, meet, "run");
+			const there = this.goBy(d, spot, r0 + 80, meet, "run", undefined, BURST);
 			if (there < until - 250) {
 				this.act(d, "boxOut", Math.max(meet, there), until, { look: rim });
 			}
@@ -5590,9 +5762,35 @@ class Director {
 		leaves?: BallEnd,
 	): number {
 		const rim = rimPt(team);
-		const start = Math.max(t - 600, this.free.get(r) ?? 0);
-		this.letGo(r, start);
-		const R = this.posOf(r);
+		// He reads where it is coming down off the shot, and goes - once he
+		// is done with what he was doing (up contesting it, say; out of a
+		// box-out he just comes), off any run he was still on, after it.
+		let read = t - REBOUND_READ;
+		for (const a of [...(this.track(r)?.acts ?? [])].sort(
+			(x, y) => x.t0 - y.t0,
+		)) {
+			if (
+				a.anim !== "boxOut" &&
+				a.anim !== "fight" &&
+				a.t0 <= read &&
+				a.t1 > read
+			) {
+				read = a.t1;
+			}
+		}
+		// On from wherever he was already going (in to where it comes down,
+		// most likely), or - if that will not get him there in time - off
+		// it, straight there.
+		const plans = [
+			{
+				cut: false,
+				R: this.posOf(r),
+				start: Math.max(read, this.free.get(r) ?? 0),
+			},
+			...((this.free.get(r) ?? 0) > read
+				? [{ cut: true, R: this.posAt(r, read), start: read }]
+				: []),
+		];
 		for (let ms = 40; ms <= 1600; ms += 20) {
 			const tau = ms / 1000;
 			const h = from.z + vel.z * tau - 0.5 * GRAVITY * tau * tau;
@@ -5612,27 +5810,36 @@ class Director {
 			const f = (rim.x >= spot.x ? 1 : -1) as 1 | -1;
 			const top = t + ms;
 			const up = top - BOARD_TOP;
-			// (Set by the time he goes up: a shuffle of a few inches is quick,
-			// but no run is over in less than a quarter of a second.)
-			const d = dist(R, spot);
-			const need =
-				d < 0.02 ? 0 : d < 0.3 ? SETTLE_MS : Math.max(250, (d / SPRINT) * 1000);
-			if (start + need > up) {
+			// Off the floor in time to be at the top of his jump as it gets
+			// there - and there by just before then: the last stride of his
+			// way there carries him up into it. (A shuffle of a few inches is
+			// quick, but no run is over in less than a quarter of a second.)
+			const by = top - BOARD_CARRY;
+			const plan = plans.find(({ cut, R, start }) => {
+				const d = dist(R, spot);
+				// On the spot as his run in gets there: up off the end of it,
+				// the last stride carrying him into the jump.
+				if (d < 0.3) {
+					return start + (d < 0.02 ? 0 : SETTLE_MS) <= by;
+				}
+				const v0 = cut ? 0 : this.carried(r, spot, start, SPRINT);
+				const need = Math.max(250, runMs(d, SPRINT, v0, BURST));
+				return start <= up && start + need <= by;
+			});
+			if (!plan) {
 				continue;
 			}
-			const arrive = this.settleOn(
+			if (plan.cut) {
+				this.cutShort(r, read);
+			}
+			this.letGo(r, plan.start);
+			const d = dist(plan.R, spot);
+			this.settleOn(
 				r,
 				spot,
-				this.goBy(r, spot, start, up, "run", f),
+				this.goBy(r, spot, plan.start, d < 0.3 ? up : by, "run", f, BURST),
 			);
-			this.goUpFor(
-				r,
-				Math.max(arrive, up),
-				spot,
-				team,
-				h - BOARD_HANDS,
-				contested,
-			);
+			this.goUpFor(r, up, spot, team, h - BOARD_HANDS, contested);
 			this.fly(t, top, leaves ?? from, { pid: r });
 			this.hold(r, top, "hold");
 			return top;
@@ -5641,6 +5848,12 @@ class Director {
 		// he is on it as it comes up off the floor, taking it out of the air
 		// on the hop, or scooping it up as it rolls away; never standing over
 		// it, waiting for it to stop.
+		if ((this.free.get(r) ?? 0) > read) {
+			this.cutShort(r, read);
+		}
+		const start = Math.max(read, this.free.get(r) ?? 0);
+		this.letGo(r, start);
+		const R = this.posOf(r);
 		const { at: F, t: land, h0 } = this.toFloor(t, from, vel, leaves);
 		const caught = this.chaseDown(r, start, F, land, h0, vel);
 		if (caught !== undefined) {
@@ -5653,8 +5866,14 @@ class Director {
 		});
 		const still = land + this.bounceSpan(h0, 1, 500);
 		this.bounce(land, still, F, G, 1, h0);
-		const run = (dist(R, G) / SPRINT) * 1000;
-		const got = this.pickUp(r, Math.max(start, still - 150 - run), SPRINT);
+		const run = runMs(dist(R, G), SPRINT, 0, BURST);
+		const got = this.pickUp(
+			r,
+			Math.max(start, still - 150 - run),
+			SPRINT,
+			"hold",
+			BURST,
+		);
 		return got + 150;
 	}
 
@@ -5706,13 +5925,18 @@ class Director {
 			const d = dist(R, spot);
 			const tc = land + ms;
 			const by = tc - (inAir ? 140 : 170);
+			const v0 = this.carried(r, spot, start, SPRINT);
 			const need =
-				d < 0.02 ? 0 : d < 0.3 ? SETTLE_MS : Math.max(250, (d / SPRINT) * 1000);
+				d < 0.02
+					? 0
+					: d < 0.3
+						? SETTLE_MS
+						: Math.max(250, runMs(d, SPRINT, v0, BURST));
 			if (start + need > by) {
 				continue;
 			}
 			const f = (B.x >= spot.x ? 1 : -1) as 1 | -1;
-			this.settleOn(r, spot, this.goBy(r, spot, start, by, "run", f));
+			this.settleOn(r, spot, this.goBy(r, spot, start, by, "run", f, BURST));
 			if (inAir) {
 				this.act(r, "snatch", tc - 200, tc + 350, { look: { x: B.x, y: B.y } });
 				this.fly(land, tc, F, { pid: r });
@@ -5734,7 +5958,15 @@ class Director {
 					x: B.x + unitVec(B, this.posOf(rival)).x * 2.4,
 					y: B.y + unitVec(B, this.posOf(rival)).y * 2.4,
 				});
-				const there = this.goBy(rival, near, start + 120, tc + 160, "run");
+				const there = this.goBy(
+					rival,
+					near,
+					start + 120,
+					tc + 160,
+					"run",
+					undefined,
+					BURST,
+				);
 				// A hand at it as he gets there - unless he is too late to.
 				if (there <= tc + 200) {
 					this.act(rival, "reach", Math.max(tc - 60, there - 150), tc + 320, {
@@ -5751,6 +5983,19 @@ class Director {
 
 	// Who comes down with the ball after the line at `idx`, if the next line
 	// (subs aside) says somebody does.
+	// Whether the line before this one (past any substitutions) is an
+	// offensive board of theirs - `team` as the sim has it.
+	private offBoard(idx: number, team: unknown): boolean {
+		for (let i = idx - 1; i >= 0; i--) {
+			const e = this.events[i];
+			if (!e || !isLineItem(e) || e.type === "sub" || e.type === "foulOut") {
+				continue;
+			}
+			return e.type === "orb" && e.t === team;
+		}
+		return false;
+	}
+
 	private reboundBy(idx: number): number | undefined {
 		const next = this.peek(idx, 3).find(
 			(x) => x.e.type !== "sub" && x.e.type !== "foulOut",
@@ -5892,12 +6137,19 @@ class Director {
 			const shooterTeam = result.kind === "block" ? other(d) : d;
 			let pending = this.pending;
 			// No attempt line before it (the sim never logs one for a putback):
-			// shoot it now, in this beat's lead-in.
+			// shoot it now, in this beat's lead-in. (A putback with no board of
+			// theirs to put back - the period over in between, say - is a shot
+			// at the rim like any other, worked for first.)
 			if (!pending || (result.kind !== "block" && pending.pid !== e.pid)) {
 				const shooter =
 					result.kind === "block"
 						? (this.holder ?? this.slots(shooterTeam)[0]!)
 						: e.pid;
+				const zone =
+					(result.zone === "putBack" || result.zone === "tipIn") &&
+					!this.offBoard(i, e.t)
+						? "atRim"
+						: result.zone;
 				const plan: ShotPlan = {
 					kind: result.kind,
 					assist: typeof e.pidAst === "number" ? e.pidAst : undefined,
@@ -5910,7 +6162,7 @@ class Director {
 				const shot = this.stageShot(
 					shooterTeam,
 					shooter,
-					result.zone,
+					zone,
 					plan,
 					T,
 					gap,
@@ -5922,7 +6174,7 @@ class Director {
 					target: shot.target,
 					dunk: shot.dunk,
 					finish: plan.finish,
-					zone: result.zone,
+					zone,
 					arrive: shot.arrive,
 					...(shot.rim ? { rim: shot.rim } : {}),
 				};
@@ -7138,7 +7390,7 @@ class Director {
 					return {
 						I,
 						tI: release + flight * f,
-						need: go + (dist(T0, I) / SPRINT) * 1000 + 40,
+						need: go + runMs(dist(T0, I), SPRINT) + 40,
 					};
 				};
 				let f = Math.min(0.85, Math.max(0.35, along));
@@ -7226,7 +7478,7 @@ class Director {
 					? 0
 					: Math.max(start, this.free.get(who) ?? 0) -
 						start +
-						(dist(this.posOf(who), P) / SPRINT) * 1000 +
+						runMs(dist(this.posOf(who), P), SPRINT) +
 						160;
 			const tS = this.go(
 				victim,
@@ -7630,9 +7882,11 @@ class Director {
 		};
 		// Things a man does where the set put him to do them: a catch (the
 		// pass is thrown to where he stands), a shot, a screen, a post-up, a
-		// contest of the shot.
+		// contest of the shot - or picking up the ball where it lies.
 		const PLANTED = new Set<AnimName>([
 			"catch",
+			"pickup",
+			"snatch",
 			"screen",
 			"postUp",
 			"shoot",
@@ -7929,8 +8183,12 @@ class Director {
 				}[] = [];
 				let at = P;
 				let t = from + this.rand(150, 350);
+				// As long as getting there takes him (see motion.ts) - or, a
+				// jab, one quick lunge of a step.
 				const dur = (a: Pt, b: Pt, speed: number) =>
-					Math.max(240, (dist(a, b) / speed) * 1000);
+					speed === JAB
+						? 220 + 110 * dist(a, b)
+						: Math.max(240, runMs(dist(a, b), speed));
 				const room = (ms: number) => t + ms <= until - 100;
 				const step = (to: Pt, speed: number, anim: AnimName, pause = 0) => {
 					const t1 = t + dur(at, to, speed);
@@ -7960,13 +8218,14 @@ class Director {
 					pause: number,
 				): boolean => {
 					const u = unitVec(at, rim);
-					const L = this.rand(2.2, 3);
+					// (His weight goes a step's worth less far than his foot.)
+					const L = this.rand(2.2, 3) * 0.55;
 					const J = clampPt({ x: at.x + u.x * L, y: at.y + u.y * L });
 					const plant = this.rand(60, 110);
-					if (!room(dur(at, J, 8.5) + plant + dur(J, Q, speed))) {
+					if (!room(dur(at, J, JAB) + plant + dur(J, Q, speed))) {
 						return false;
 					}
-					step(J, 8.5, "run", plant);
+					step(J, JAB, "run", plant);
 					step(Q, speed, anim, pause);
 					return true;
 				};
@@ -8722,11 +8981,11 @@ class Director {
 		// How fast he slides and runs (feet a second), how quickly he gets
 		// going (feet a second, a second), and how hard he goes after where he
 		// should be (a second).
-		const SLIDE_MAX = 14.5;
+		const SLIDE_MAX = 10.5;
 		const RUN_MAX = 23;
 		// Flat out, at the very most.
 		const FASTEST = SPRINT * 1.1;
-		const ACCEL = 30;
+		const ACCEL = 24;
 		const GAIN = 3;
 		// Too short a stretch to follow anybody in (ms).
 		const SHORTEST = 250;
@@ -9040,9 +9299,14 @@ class Director {
 					let vx = 0;
 					let vy = 0;
 					let running = false;
-					const out: { t: number; p: Pt; ball: Pt; on: boolean; man: Pt }[] = [
-						{ ...ticks[0]!, p },
-					];
+					const out: {
+						t: number;
+						p: Pt;
+						v: number;
+						ball: Pt;
+						on: boolean;
+						man: Pt;
+					}[] = [{ ...ticks[0]!, p, v: 0 }];
 					for (let i = 1; i < ticks.length; i++) {
 						const T = smooth[i]!;
 						const prev = smooth[i - 1]!;
@@ -9106,7 +9370,7 @@ class Director {
 								vy *= k;
 							}
 						}
-						out.push({ ...ticks[i]!, p });
+						out.push({ ...ticks[i]!, p, v: Math.hypot(vx, vy) });
 					}
 					return out;
 				};
@@ -9174,10 +9438,14 @@ class Director {
 				if (end && dist(fin.p, end) < 3) {
 					fin.p = { ...end };
 				}
-				// Into runs: each one heading one way at about one pace, and none
-				// where he barely moves.
+				// Into runs: each one heading one way, getting quicker or slower
+				// but not both - so a whole burst, or the whole of pulling up, is
+				// one run - and none where he barely moves. Each starts and ends
+				// at the pace his feet had him going there.
 				const pace = (q: number) =>
 					dist(path[q]!.p, path[q + 1]!.p) / (DT / 1000);
+				const paceAt = (q: number) =>
+					q <= 0 || q >= path.length - 1 ? 0 : (pace(q - 1) + pace(q)) / 2;
 				const heading = (q: number) =>
 					Math.atan2(
 						path[q + 1]!.p.y - path[q]!.p.y,
@@ -9185,6 +9453,9 @@ class Director {
 					);
 				let q = 0;
 				let moving = false;
+				// Where the last run left him: the creep of his feet standing
+				// there is no run, so the next one sets off from there.
+				let was: Pt = path[0]!.p;
 				while (q + 1 < path.length) {
 					// Off from standing at a step's pace; on the move, he keeps
 					// going down to a crawl.
@@ -9193,22 +9464,37 @@ class Director {
 						q++;
 						continue;
 					}
+					const setOff = !moving;
 					moving = true;
 					const h0 = heading(q);
 					let e = q + 1;
+					let trend = 0;
 					while (e + 1 < path.length && (e - q) * DT < RUN_MS) {
 						const v = pace(e);
 						const turn = Math.abs(
 							Math.atan2(Math.sin(heading(e) - h0), Math.cos(heading(e) - h0)),
 						);
-						const avg = dist(path[q]!.p, path[e]!.p) / (((e - q) * DT) / 1000);
-						if (v < KEEP || turn > BEND || v > avg * 1.8 || v < avg * 0.55) {
+						if (v < KEEP || turn > BEND) {
 							break;
+						}
+						const dv = v - pace(e - 1);
+						const way = Math.abs(dv) < 0.4 ? 0 : Math.sign(dv);
+						if (trend !== 0 && way !== 0 && way !== trend) {
+							break;
+						}
+						if (way !== 0) {
+							trend = way;
 						}
 						e++;
 					}
-					const A = path[q]!;
+					const A = {
+						...path[q]!,
+						p: dist(was, path[q]!.p) < 1.5 ? was : path[q]!.p,
+					};
 					const Z = path[e]!;
+					const stops = e + 1 >= path.length || pace(e) < KEEP;
+					const v0 = setOff ? 0 : paceAt(q);
+					const v1 = stops ? 0 : paceAt(e);
 					q = e;
 					const d = dist(A.p, Z.p);
 					if (d < 0.05) {
@@ -9235,7 +9521,18 @@ class Director {
 								: toBall < -0.55
 									? "slide"
 									: "shuffle";
-					out.push({ t0: A.t, t1: Z.t, from: A.p, to: Z.p, anim });
+					out.push({
+						t0: A.t,
+						t1: Z.t,
+						from: A.p,
+						to: Z.p,
+						anim,
+						// (No faster at either end than covering it in the time
+						// allows.)
+						v0: Math.min(v0, 2 * speed),
+						v1: Math.min(v1, 2 * speed),
+					});
+					was = Z.p;
 				}
 				// Following his man left him short of where the schedule has him
 				// next: on to it, as fast as he can - there before anything
@@ -9244,7 +9541,7 @@ class Director {
 				left = fin.p;
 				const gone = end ? dist(fin.p, end) : 0;
 				if (end && gone > 0.5) {
-					const need = Math.max(240, (gone / RUN_MAX) * 1000);
+					const need = Math.max(240, runMs(gone, RUN_MAX));
 					const t1 = Math.min(fin.t + need, moves[j]?.t0 ?? Infinity);
 					if (t1 - fin.t >= 100) {
 						const k = Math.min(1, (t1 - fin.t) / need);
@@ -9507,15 +9804,16 @@ class Director {
 		// The lead-in to a play - the ball brought up, the set getting going
 		// - is run through fast, back at real speed for the last few seconds
 		// of it: whatever leads straight to the shot, the steal, the foul. A
-		// break is played at real speed all the way.
+		// break is played at real speed from the push up the floor on.
 		for (const b of this.beats) {
-			if (
-				!LIVE_PLAY.test(b.type) ||
-				this.breaks.some((t) => t >= b.preStart && t < b.actionStart)
-			) {
+			if (!LIVE_PLAY.test(b.type)) {
 				continue;
 			}
-			const to = b.actionStart - this.liveLead(b);
+			const to =
+				b.actionStart -
+				(this.breaks.some((t) => t >= b.preStart && t < b.actionStart)
+					? BREAK_LIVE
+					: this.liveLead(b));
 			if (to - b.preStart >= FAST_MIN) {
 				this.fast.push([b.preStart, to]);
 			}
@@ -9595,6 +9893,7 @@ const LIVE_PLAY = /^(fga|tov$|stl$|pfNonShooting$|pfBonus$)/;
 const LIVE_LEAD = 2600;
 const LIVE_MIN = 2200;
 const LIVE_MAX = 3400;
+const BREAK_LIVE = 5000;
 // The stretches the picture runs through fast, in order, run together where
 // they meet - each starting only once the line before it has sunk in.
 const hurried = (

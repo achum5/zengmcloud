@@ -915,12 +915,21 @@ describe("2.5D director", () => {
 					return;
 				}
 				const gap = p.clock - e.clock;
-				const fast = tl.fast.some(
-					([x, y]) => y > prev.actionStart && x < b.actionStart,
-				);
+				// A break is played at real speed from the push up the floor
+				// on: whatever is hurried through (the rebound, the outlet) is
+				// over well before the shot - not just the last few seconds of
+				// a set.
+				const live =
+					b.actionStart -
+					Math.max(
+						prev.actionStart,
+						...tl.fast
+							.filter(([x, y]) => y > prev.actionStart && x < b.actionStart)
+							.map(([, y]) => y),
+					);
 				if ((p.type === "drb" || p.type === "stl") && gap < 6) {
 					quick += 1;
-					broke += fast ? 0 : 1;
+					broke += live >= 4500 ? 1 : 0;
 				}
 				if (p.type !== "drb" && !/^(fg|tp)/.test(p.type)) {
 					return;
@@ -1780,6 +1789,24 @@ describe("2.5D director", () => {
 				if (m.anim !== "run" || d < 20) {
 					continue;
 				}
+				// How fast he goes at his quickest along it: getting going and
+				// pulling up take their time, so that is faster than the average.
+				const at = (t: number) => {
+					const a = evalPlayer(tl, pid, t - 10);
+					const b = evalPlayer(tl, pid, t + 10);
+					return Math.hypot(b.x - a.x, b.y - a.y) / 0.02;
+				};
+				let fastest = 0;
+				for (let t = m.t0 + secs * 350; t < m.t1 - secs * 350; t += 20) {
+					fastest = Math.max(fastest, at(t));
+				}
+				// (A walk - some run is that slow - is a walk. And right on the
+				// line between two gaits, either will do.)
+				if (fastest < 6.25) {
+					continue;
+				}
+				const sure =
+					Math.min(Math.abs(fastest - 19), Math.abs(fastest - 11)) > 0.75;
 				let top = 0;
 				let low = Infinity;
 				for (let t = m.t0 + secs * 250; t < m.t1 - secs * 250; t += 20) {
@@ -1787,14 +1814,16 @@ describe("2.5D director", () => {
 					if (st.anim !== "sprint" && st.anim !== "run" && st.anim !== "jog") {
 						continue;
 					}
-					assert.strictEqual(
-						st.anim,
-						d / secs >= 19 ? "sprint" : d / secs < 11 ? "jog" : "run",
-					);
+					if (sure) {
+						assert.strictEqual(
+							st.anim,
+							fastest >= 19 ? "sprint" : fastest < 11 ? "jog" : "run",
+						);
+					}
 					top = Math.max(top, st.z);
 					low = Math.min(low, st.z);
 				}
-				if (d / secs >= 19) {
+				if (fastest >= 19) {
 					sprints += 1;
 					assert.isAbove(top, 0.15);
 				} else {

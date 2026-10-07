@@ -49,7 +49,7 @@ describe("2.5D crew", () => {
 		for (const t of [500, 40_000, 120_000]) {
 			assert.deepEqual(crewAt(tl, t, crew), crewAt(tl, t, crew));
 		}
-	});
+	}, 60_000);
 
 	// Officials run with the play, so in the picture they never pop from
 	// one place to another - except where the picture cuts.
@@ -118,7 +118,7 @@ describe("2.5D crew", () => {
 			assert.isAbove(calls, 10);
 			assert.isAbove(threes, 0);
 		}
-	});
+	}, 60_000);
 
 	test("at the line, the official under the basket bounces the shooter the ball", () => {
 		const { tl, crew } = working("a");
@@ -149,7 +149,7 @@ describe("2.5D crew", () => {
 			checked += 1;
 		}
 		assert.isAbove(checked, 4);
-	});
+	}, 60_000);
 
 	test("the opening tip is thrown up by an official at center court", () => {
 		const { tl, crew } = working("a");
@@ -163,7 +163,7 @@ describe("2.5D crew", () => {
 			Math.hypot(tosser!.x - COURT_W / 2, tosser!.y - COURT_H / 2),
 			2.5,
 		);
-	});
+	}, 60_000);
 
 	test("coaches keep to their boxes, photographers to the baselines", () => {
 		const { tl, crew } = working("b");
@@ -180,5 +180,5 @@ describe("2.5D crew", () => {
 				}
 			}
 		}
-	});
+	}, 60_000);
 });

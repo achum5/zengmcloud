@@ -10,6 +10,7 @@ import type {
 	Track,
 } from "./director.ts";
 import { rimX, type Pt, type Pt3, type Side } from "./geometry.ts";
+import { alongShape, keepThrough, runShape, type RunShape } from "./motion.ts";
 import { playAt } from "./physics.ts";
 import {
 	ANIMS,
@@ -282,14 +283,12 @@ const jumpZ = (act: Act, u: number): number => {
 // HOW HE RUNS.
 //
 // A run gets up to speed in a few strides, holds it, and eases off into
-// wherever it stops - not the cosine glide of a thing on a rail, which
-// would peak at half again his speed halfway. A run that follows on from
+// wherever it stops, as hard as a man can and no harder (see motion.ts) -
+// not the cosine glide of a thing on a rail. A run that follows on from
 // the last one (a beat after it, or none) carries its speed through the
 // join, as much as the turn allows - straight on at full tilt, a right
 // angle at a third of it - and the corner is rounded off, so he curves
 // through it. Only turning back the way he came does he plant and stop.
-const ACCEL_S = 0.45;
-const DECEL_S = 0.38;
 // A run starting within this long of the last one's end follows on from
 // it: the pause between them is taken up in the running.
 const FLOW_MS = 300;
@@ -322,7 +321,7 @@ const joinOf = (
 		((a.to.x - a.from.x) * (b.to.x - b.from.x) +
 			(a.to.y - a.from.y) * (b.to.y - b.from.y)) /
 		(la * lb);
-	const keep = Math.max(0, cos * 0.5 + 0.5) ** 1.5;
+	const keep = keepThrough(cos);
 	if (keep < 0.1) {
 		return undefined;
 	}
@@ -360,49 +359,34 @@ const runOf = (tr: Track, k: number): Run => {
 	const mv = tr.moves[k]!;
 	const prev = tr.moves[k - 1];
 	const next = tr.moves[k + 1];
-	const vIn = plantedBetween(tr, prev, mv) ? undefined : joinOf(prev, mv);
-	const vOut = plantedBetween(tr, mv, next) ? undefined : joinOf(mv, next);
+	// Going as fast as his path was worked out to have him, where it was -
+	// otherwise as fast as the turn into it from the last run allows.
+	const vIn =
+		mv.v0 !== undefined
+			? undefined
+			: plantedBetween(tr, prev, mv)
+				? undefined
+				: joinOf(prev, mv);
+	const vOut =
+		mv.v1 !== undefined
+			? undefined
+			: plantedBetween(tr, mv, next)
+				? undefined
+				: joinOf(mv, next);
 	return {
 		mv,
 		s0: vIn === undefined ? mv.t0 : (prev!.t1 + mv.t0) / 2,
 		s1: vOut === undefined ? mv.t1 : (mv.t1 + next!.t0) / 2,
-		v0: vIn ?? 0,
-		v1: vOut ?? 0,
+		v0: mv.v0 ?? vIn ?? 0,
+		v1: mv.v1 ?? vOut ?? 0,
 	};
 };
 
-// The area under an S-shaped ramp from 0 to 1, x of the way along it.
-const rampArea = (x: number) => x * x * x - (x * x * x * x) / 2;
-
-// How far along a run (feet) he is at t.
-const alongRun = ({ mv, s0, s1, v0, v1 }: Run, t: number): number => {
-	const L = lenOf(mv);
-	const T = (s1 - s0) / 1000;
-	const s = Math.min(T, Math.max(0, (t - s0) / 1000));
-	if (T <= 0.001) {
-		return L;
-	}
-	const ta = Math.min(T / 3, ACCEL_S);
-	const td = Math.min(T / 3, DECEL_S);
-	const vc = Math.max(
-		0,
-		(L - (v0 * ta) / 2 - (v1 * td) / 2) / (T - ta / 2 - td / 2),
-	);
-	let d: number;
-	if (s < ta) {
-		d = v0 * s + (vc - v0) * ta * rampArea(s / ta);
-	} else if (s < T - td) {
-		d = ((v0 + vc) * ta) / 2 + vc * (s - ta);
-	} else {
-		const r = s - (T - td);
-		d =
-			((v0 + vc) * ta) / 2 +
-			vc * (T - ta - td) +
-			vc * r +
-			(v1 - vc) * td * rampArea(r / td);
-	}
-	return Math.min(L, Math.max(0, d));
-};
+// How far along a run (feet) he is at t: getting going, on at his pace and
+// pulling up the way a man does (see motion.ts) - worked out once a run.
+const shapes = new WeakMap<Move, { key: string; shape: RunShape }>();
+const alongRun = (run: Run, t: number): number =>
+	alongShape(shapeOf(run), (t - run.s0) / 1000);
 
 // Where a run has him at t - carried on past its end, or back before its
 // start, at the speed he goes through the join, for rounding a corner.
@@ -441,19 +425,56 @@ const rounded = (a: Run, b: Run, t: number): Pt | undefined => {
 	return { x: pa.x + (pb.x - pa.x) * w, y: pa.y + (pb.y - pa.y) * w };
 };
 
-// A run this fast or faster (feet a second, start to finish) is a sprint -
-// and a sprint's strides are longer; one slower than a jog's pace is a jog,
-// with shorter ones.
+// How he goes, by how fast he really goes (feet a second, at his quickest
+// along it): a sprint flat out, a run, a jog, a walk at a stroll - whatever
+// he was told to do. A defensive slide or a backpedal is for a step or two
+// at a man's side, not for covering ground: faster than a man can slide or
+// backpedal, he opens up and runs. And drifting for the ball at a run is a
+// run.
 const SPRINT_FTPS = 19;
 const JOG_FTPS = 11;
-const runAnim = ({ mv }: Run): AnimName =>
-	mv.anim !== "run"
-		? mv.anim
-		: lenOf(mv) >= (SPRINT_FTPS * (mv.t1 - mv.t0)) / 1000
-			? "sprint"
-			: lenOf(mv) < (JOG_FTPS * (mv.t1 - mv.t0)) / 1000
+const WALK_FTPS = 5.5;
+const SLIDE_FTPS = 11.5;
+const BACK_FTPS = 12.5;
+const DRIFT_FTPS = 9;
+const shapeOf = (run: Run): RunShape => {
+	const { mv, s0, s1, v0, v1 } = run;
+	const key = `${s0}:${s1}:${v0}:${v1}`;
+	let got = shapes.get(mv);
+	if (!got || got.key !== key) {
+		got = { key, shape: runShape(lenOf(mv), (s1 - s0) / 1000, v0, v1) };
+		shapes.set(mv, got);
+	}
+	return got.shape;
+};
+const gaitFor = (v: number): AnimName =>
+	v >= SPRINT_FTPS
+		? "sprint"
+		: v >= JOG_FTPS
+			? "run"
+			: v >= WALK_FTPS
 				? "jog"
-				: "run";
+				: "walk";
+const runAnim = (run: Run): AnimName => {
+	const anim = run.mv.anim;
+	const v = Math.max(shapeOf(run).vc, run.v0, run.v1);
+	switch (anim) {
+		case "run":
+		case "jog":
+			return gaitFor(v);
+		case "walk":
+			return v > WALK_FTPS + 2 ? gaitFor(v) : "walk";
+		case "slide":
+		case "shuffle":
+			return v > SLIDE_FTPS ? gaitFor(v) : anim;
+		case "back":
+			return v > BACK_FTPS ? gaitFor(v) : anim;
+		case "drift":
+			return v > DRIFT_FTPS ? gaitFor(v) : anim;
+		default:
+			return anim;
+	}
+};
 const strideOf = (anim: AnimName): number => {
 	const a = ANIMS[anim];
 	return a.kind === "cycle" ? a.stride : 5;
@@ -653,9 +674,11 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 		return angleTo(here, act.look, fallback);
 	}
 	const mv = here.moveIndex >= 0 ? tr.moves[here.moveIndex] : undefined;
+	// How he is going: a slide too fast to be one is a run, say.
+	const gait = here.run ? runAnim(here.run) : mv?.anim;
 	// A defensive slide keeps his eyes on the ball whichever way he goes -
 	// and so does a man drifting along the arc for it.
-	if (mv && here.moving && EYES_ON_BALL.has(mv.anim)) {
+	if (mv && here.moving && gait && EYES_ON_BALL.has(gait)) {
 		return angleTo(here, ballNear(tl, t), fallback);
 	}
 	if (mv && here.moving) {
@@ -667,12 +690,19 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 				here.hx * here.hx + here.hy * here.hy > 1e-6
 					? Math.atan2(here.hy, here.hx)
 					: Math.atan2(dy, dx);
-			if (mv.anim === "back") {
+			if (gait === "back") {
 				return heading + Math.PI;
 			}
 			// Told to face against where he is going: a slide with his man, or a
-			// backpedal - he keeps his eyes on the ball.
-			if (mv.face !== undefined && mv.face * dx < 0 && d < 14) {
+			// backpedal - he keeps his eyes on the ball, unless he has had to
+			// open up and run.
+			if (
+				mv.face !== undefined &&
+				mv.face * dx < 0 &&
+				d < 14 &&
+				gait !== "run" &&
+				gait !== "sprint"
+			) {
 				return angleTo(here, ballNear(tl, t), fallback);
 			}
 			return heading;
@@ -1869,7 +1899,7 @@ export const recentFx = (
 // step with the timeline is a steady build in the time the viewer sees -
 // the same few percent quicker every moment - about half a second of it at
 // the usual speed.
-export const FAST = 14;
+export const FAST = 18;
 const FAST_IN = 2800;
 const FAST_OUT = 800;
 export const fastAt = (tl: CourtTimeline, t: number): number => {
