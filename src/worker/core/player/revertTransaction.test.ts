@@ -40,6 +40,11 @@ const getPlayer = async (pid: number) => (await idb.cache.players.get(pid))!;
 
 const lastEvent = async () => (await idb.cache.events.getAll()).at(-1)!;
 
+// Make an event look like one logged before moves saved a snapshot.
+const stripSnapshot = (event: any) => {
+	delete event.revert;
+};
+
 const numEvents = async (type: string) =>
 	(await idb.cache.events.getAll()).filter((event) => event.type === type)
 		.length;
@@ -241,16 +246,38 @@ describe("revert a free agent signing", () => {
 		assert.isString(await revertTransaction(eid));
 	});
 
-	test("an event from before reverts existed is left alone", async () => {
+	test("a signing logged before moves saved a snapshot still reverts", async () => {
 		const p = await makeFreeAgent();
+		const before = state(p);
 		await player.sign(p, 0, { amount: 6000, exp: season + 2 }, g.get("phase"));
 		await idb.cache.players.put(p);
 		const event = await lastEvent();
-		if (event.type !== "freeAgent") {
-			throw new Error("unreachable");
-		}
-		delete event.revert;
-		await idb.cache.events.put(event);
+		stripSnapshot(event);
+
+		assert.strictEqual(await revertTransaction(event.eid), undefined);
+
+		// Everything the league still records comes back exactly. What he asked
+		// for as a free agent was never recorded, so he asks the market again.
+		const after = state(await getPlayer(0));
+		assert.strictEqual(after.tid, PLAYER.FREE_AGENT);
+		assert.deepEqual(after.salaries, before.salaries);
+		assert.deepEqual(after.transactions, before.transactions);
+		assert.strictEqual(await numEvents("freeAgent"), 0);
+	});
+
+	test("an older signing still refuses once he has moved on", async () => {
+		const p = await makeFreeAgent();
+		await player.sign(p, 0, { amount: 6000, exp: season + 2 }, g.get("phase"));
+		p.transactions!.push({
+			season,
+			phase: PHASE.REGULAR_SEASON,
+			tid: 0,
+			type: "trade",
+			fromTid: 1,
+		});
+		await idb.cache.players.put(p);
+		const event = await lastEvent();
+		stripSnapshot(event);
 
 		assert.isString(await revertTransaction(event.eid));
 		assert.strictEqual((await getPlayer(0)).tid, 0);
@@ -510,6 +537,44 @@ describe("revert a release", () => {
 		assert.lengthOf(await idb.cache.releasedPlayers.getAll(), 1);
 	});
 
+	test("a release logged before moves saved a snapshot still reverts", async () => {
+		const p = await makeRostered();
+		const before = state(p);
+		await player.release(p, false);
+		stripSnapshot(await lastEvent());
+		await freeAgents.normalizeContractDemands({
+			type: "dummyExpiringContracts",
+			pids: [0],
+		});
+
+		assert.strictEqual(
+			await revertTransaction((await lastEvent()).eid),
+			undefined,
+		);
+
+		// His contract comes back from the dead money row. Playing time was
+		// never recorded, so it's back to normal.
+		const after = state(await getPlayer(0));
+		assert.strictEqual(after.tid, 0);
+		assert.deepEqual(after.contract, before.contract);
+		assert.deepEqual(after.salaries, before.salaries);
+		assert.strictEqual(after.ptModifier, 1);
+		assert.lengthOf(await idb.cache.releasedPlayers.getAll(), 0);
+	});
+
+	test("an older release that cost nothing can't be rebuilt", async () => {
+		// No dead money row means nothing recorded his old contract.
+		const p = await makeRostered();
+		p.contract.rookie = true;
+		p.draft.year = season;
+		await idb.cache.players.put(p);
+		await player.release(p, true);
+		stripSnapshot(await lastEvent());
+
+		assert.isString(await revertTransaction((await lastEvent()).eid));
+		assert.strictEqual((await getPlayer(0)).tid, PLAYER.FREE_AGENT);
+	});
+
 	test("refuses once his old contract has run out", async () => {
 		const p = await makeRostered();
 		await player.release(p, false);
@@ -533,13 +598,16 @@ describe("revert a draft pick", () => {
 	const makeProspect = async () => {
 		const p = await getPlayer(0);
 		p.tid = PLAYER.UNDRAFTED;
+		// How player.generate makes a prospect.
 		p.draft = {
-			...p.draft,
-			year: season,
 			round: 0,
 			pick: 0,
 			tid: -1,
 			originalTid: -1,
+			year: season,
+			pot: 0,
+			ovr: 0,
+			skills: [],
 		};
 		p.contract = { amount: 1000, exp: season + 3, rookie: true };
 		p.salaries = [];
@@ -568,6 +636,23 @@ describe("revert a draft pick", () => {
 		assert.deepEqual(state(await getPlayer(0)), before);
 		assert.deepEqual(await idb.cache.draftPicks.get(5), dp);
 		assert.strictEqual(await numEvents("draft"), 0);
+	});
+
+	test("a pick logged before moves saved a snapshot still reverts", async () => {
+		const p = await makeProspect();
+		const before = state(p);
+		await draft.selectPlayer((await idb.cache.draftPicks.get(5))!, 0);
+		const event = await lastEvent();
+		stripSnapshot(event);
+
+		assert.strictEqual(await revertTransaction(event.eid), undefined);
+
+		const after = state(await getPlayer(0));
+		assert.strictEqual(after.tid, PLAYER.UNDRAFTED);
+		assert.deepEqual(after.salaries, before.salaries);
+		assert.deepEqual(after.transactions, before.transactions);
+		assert.deepEqual(after.draft, before.draft);
+		assert.deepEqual(await idb.cache.draftPicks.get(5), dp);
 	});
 
 	test("only during the draft", async () => {
@@ -633,6 +718,67 @@ describe("in a synced league", () => {
 	afterEach(() => {
 		changeTracker.disable();
 		changeTracker.reset();
+	});
+
+	// A move made on one device, as another device sees it: everything it
+	// changed arrives through the changeset, on top of that device's own log.
+	const madeElsewhere = async (move: () => Promise<void>) => {
+		const players = overTheWire(await idb.cache.players.getAll());
+		const teams = overTheWire(await idb.cache.teams.getAll());
+
+		changeTracker.enable();
+		changeTracker.reset();
+		await changeTracker.runCaptured(move);
+		const changeset = overTheWire(await captureChangeset());
+		changeTracker.disable();
+
+		const theirOwnEvents = [0, 1, 2, 3, 4, 5, 6].map((i) => ({
+			type: "award",
+			text: `Something else ${i}.`,
+			pids: [2],
+			tids: [1],
+			season,
+		}));
+		await resetCache({ players, teams, events: theirOwnEvents });
+		await applyChangeset(changeset, { refreshUI: false });
+		changeTracker.disable();
+	};
+
+	test("a signing made on another device can be reverted here", async () => {
+		const p = await makeFreeAgent();
+		const before = state(p);
+		await madeElsewhere(async () => {
+			await player.sign(
+				p,
+				0,
+				{ amount: 6000, exp: season + 2 },
+				g.get("phase"),
+			);
+			await idb.cache.players.put(p);
+		});
+
+		const event = (await idb.cache.events.getAll()).find(
+			(row) => row.type === "freeAgent",
+		)!;
+		assert.notProperty(await planTransactionRevert(event), "error");
+		assert.strictEqual(await revertTransaction(event.eid), undefined);
+		assert.deepEqual(state(await getPlayer(0)), before);
+	});
+
+	test("a release made on another device can be reverted here", async () => {
+		const p = await makeRostered();
+		const before = state(p);
+		await madeElsewhere(async () => {
+			await player.release(p, false);
+		});
+
+		const event = (await idb.cache.events.getAll()).find(
+			(row) => row.type === "release",
+		)!;
+		assert.notProperty(await planTransactionRevert(event), "error");
+		assert.strictEqual(await revertTransaction(event.eid), undefined);
+		assert.deepEqual(state(await getPlayer(0)), before);
+		assert.lengthOf(await idb.cache.releasedPlayers.getAll(), 0);
 	});
 
 	test("a reverted release is reverted on a device whose ids differ", async () => {

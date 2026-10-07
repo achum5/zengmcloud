@@ -15,6 +15,9 @@ import { actualPhase } from "../../util/actualPhase.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "./getNumPlayersTradedAwayNormalized.ts";
 import { getTeammateJerseyNumbers } from "./genJerseyNumber.ts";
 import { recomputeLocalUITeamOvrs } from "../../util/recomputeLocalUITeamOvrs.ts";
+import genContract from "./genContract.ts";
+import getRookieSalaries from "../draft/getRookieSalaries.ts";
+import getRookieContractLength from "../draft/getRookieContractLength.ts";
 
 type SigningEvent = Extract<EventBBGM, { type: "freeAgent" | "reSigned" }>;
 
@@ -193,6 +196,196 @@ const draftPickError = async (
 	}
 };
 
+// A move logged before moves saved how they found the player (or by a device
+// still on an older version) carries no snapshot. What it changed can mostly
+// be read back from what the league still records - his transactions log,
+// the dead money row a release left, the pick his draft info names - so it
+// gets a snapshot rebuilt from those, and then the same checks and the same
+// undo as any other move. What can't be read back is what he asked for as a
+// free agent and his playing time setting, so a rebuilt signing puts him back
+// in free agency asking what the market says now, and a rebuilt release puts
+// him back at normal playing time. Undefined when the move can't be rebuilt.
+const rebuildRevert = async (
+	event: EventBBGM,
+	p: Player,
+	tid: number,
+): Promise<TransactionRevert | undefined> => {
+	const transactions = p.transactions ?? [];
+
+	if (event.type === "freeAgent" || event.type === "reSigned") {
+		if (!event.contract) {
+			return;
+		}
+
+		let phase;
+		let salaryStart;
+		let numTransactions;
+		const entryIndex = transactions.findIndex(
+			(row) => row.type === "freeAgent" && row.eid === event.eid,
+		);
+		if (entryIndex >= 0) {
+			// A free agent signing dates itself with the entry it added.
+			const entry = transactions[entryIndex]!;
+			phase = entry.phase;
+			salaryStart =
+				entry.season + (entry.phase > PHASE.AFTER_TRADE_DEADLINE ? 1 : 0);
+			numTransactions = entryIndex;
+		} else if (
+			event.type === "reSigned" ||
+			(p.draft.year === event.season && p.draft.tid === tid)
+		) {
+			// Re-signings and a draft pick's first deal add no entry, and both
+			// come after the season, so the deal starts next season. Anything in
+			// his log from that point on means he has moved since.
+			phase = PHASE.RESIGN_PLAYERS;
+			salaryStart = event.season + 1;
+			const movedSince = transactions.some(
+				(row) =>
+					row.season > event.season ||
+					(row.season === event.season && row.phase >= PHASE.RESIGN_PLAYERS),
+			);
+			numTransactions = movedSince ? -1 : transactions.length;
+		} else {
+			return;
+		}
+
+		const revert: TransactionRevert = {
+			phase,
+			// Not a free agent as far as the undo is concerned: what he asked for
+			// then is gone, so he asks the market again.
+			before: {
+				tid,
+				contract: {
+					amount: event.contract.amount,
+					exp: event.contract.exp,
+				},
+				numDaysFreeAgent: 0,
+				gamesUntilTradable: 0,
+				ptModifier: 1,
+				yearsFreeAgent: p.yearsFreeAgent,
+			},
+			numTransactions,
+			salaryStart,
+		};
+		if (p.jerseyNumber !== undefined) {
+			revert.before.jerseyNumber = p.jerseyNumber;
+		}
+		if (event.type === "reSigned" && g.get("userTids").includes(tid)) {
+			revert.negotiationTid = tid;
+		}
+		return revert;
+	}
+
+	if (event.type === "release") {
+		// His old contract is the dead money row the release left - which only
+		// a release that cost something did.
+		const rows = (await idb.cache.releasedPlayers.getAll()).filter(
+			(row) => row.pid === p.pid && row.tid === tid,
+		);
+		if (rows.length !== 1) {
+			return;
+		}
+
+		// The last team his log has him joining must be this one, or he has
+		// been somewhere else since.
+		const last = transactions.at(-1);
+		const revert: TransactionRevert = {
+			phase: actualPhase(),
+			before: {
+				tid,
+				contract: {
+					amount: rows[0]!.contract.amount,
+					exp: rows[0]!.contract.exp,
+				},
+				numDaysFreeAgent: 0,
+				gamesUntilTradable: p.gamesUntilTradable,
+				ptModifier: 1,
+				yearsFreeAgent: 0,
+			},
+			numTransactions:
+				last === undefined || last.tid === tid ? transactions.length : -1,
+			deadMoney: true,
+		};
+		if (p.jerseyNumber !== undefined) {
+			revert.before.jerseyNumber = p.jerseyNumber;
+		}
+		return revert;
+	}
+
+	if (event.type === "draft") {
+		const entryIndex = transactions.findLastIndex(
+			(row) =>
+				row.type === "draft" &&
+				row.season === event.season &&
+				row.phase === PHASE.DRAFT,
+		);
+		const { dpid } = p.draft;
+		if (
+			entryIndex < 0 ||
+			dpid === undefined ||
+			p.draft.year !== event.season ||
+			p.draft.tid !== tid
+		) {
+			return;
+		}
+
+		// The contract the pick gave him, worked out the way the pick did.
+		let contract: PlayerContract;
+		if (!g.get("draftPickAutoContract")) {
+			contract = { amount: g.get("minContract"), exp: event.season };
+		} else {
+			const i =
+				p.draft.pick - 1 + g.get("numActiveTeams") * (p.draft.round - 1);
+			contract = {
+				amount: getRookieSalaries()[i]!,
+				exp:
+					event.season +
+					(g.get("salaryCapType") !== "hard"
+						? getRookieContractLength(p.draft.round)
+						: 0),
+				rookie: true,
+			};
+		}
+
+		const revert: TransactionRevert = {
+			phase: PHASE.DRAFT,
+			before: {
+				tid: PLAYER.UNDRAFTED,
+				contract: genContract(p, false),
+				numDaysFreeAgent: p.numDaysFreeAgent,
+				gamesUntilTradable: p.gamesUntilTradable,
+				ptModifier: p.ptModifier,
+				yearsFreeAgent: p.yearsFreeAgent,
+				draft: {
+					round: 0,
+					pick: 0,
+					tid: -1,
+					originalTid: -1,
+					year: event.season,
+					pot: 0,
+					ovr: 0,
+					skills: [],
+				},
+			},
+			numTransactions: entryIndex,
+			salaryStart: event.season + 1,
+			contract,
+			dp: {
+				dpid,
+				tid: p.draft.tid,
+				originalTid: p.draft.originalTid,
+				round: p.draft.round,
+				pick: p.draft.pick,
+				season: event.season,
+			},
+		};
+		if (p.jerseyNumber !== undefined) {
+			revert.before.jerseyNumber = p.jerseyNumber;
+		}
+		return revert;
+	}
+};
+
 // Whether the move behind an event can still be taken back, and the player it
 // moved if so. Like a trade, it's all-or-nothing: only while the player is
 // exactly where the move left him, under the deal it gave him, with nothing
@@ -228,10 +421,9 @@ export const planTransactionRevert = async (
 		return { error: "Moves can't be reverted during this draft." };
 	}
 
-	const revert = event.revert;
 	const pid = event.pids?.[0];
 	const tid = event.tids?.[0];
-	if (!revert || pid === undefined || tid === undefined) {
+	if (pid === undefined || tid === undefined) {
 		return { error: NO_DATA };
 	}
 
@@ -244,6 +436,11 @@ export const planTransactionRevert = async (
 	const p = await idb.cache.players.get(pid);
 	if (!p) {
 		return { error: "That player is no longer in the league." };
+	}
+
+	const revert = event.revert ?? (await rebuildRevert(event, p, tid));
+	if (!revert) {
+		return { error: NO_DATA };
 	}
 
 	const name = `${p.firstName} ${p.lastName}`;
