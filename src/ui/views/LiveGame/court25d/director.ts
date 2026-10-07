@@ -569,6 +569,9 @@ const UP_FLOOR_MIN = 33;
 // the other basket, bringing it up - is picked up about three-quarter court
 // (feet from the rim defended), not chased down to the far baseline.
 const PICK_UP = 60;
+// Lining up with the ball dead, everybody where he has to be.
+const DEAD_SETUPS =
+	/^(jumpBall|ft|missFt|sub|timeout|endOfPeriod|period|overtime|gameOver)/;
 // How long a defender takes to read a pass (ms), and how fast he closes out
 // once he has (feet a second) - breaking down for the last steps.
 const CLOSE_READ = 150;
@@ -9401,6 +9404,9 @@ class Director {
 			if (!moves.some((m) => this.marking.has(m))) {
 				continue;
 			}
+			// How much slower than the quickest of them he is to read what his
+			// man and the ball do (ms): each man his own.
+			const quick = 120 * hash01(tr.pid, 9241);
 			// His teammates - read off in time order as he is worked out.
 			const mates = [...this.tracks.values()]
 				.filter((o) => o !== tr && o.team === tr.team)
@@ -9566,7 +9572,7 @@ class Director {
 					}
 					const B0 = ballAt(t);
 					const on = B0.holder === who;
-					const R = on ? REACT_ON : REACT_OFF;
+					const R = (on ? REACT_ON : REACT_OFF) + quick;
 					const { at: Bp, holder } = ballAt(t - R);
 					const aim =
 						(shownAt(who, t - R) && !waiting) || !last
@@ -10632,6 +10638,104 @@ class Director {
 			: Math.max(LIVE_MIN, Math.min(LIVE_MAX, b.actionStart - thrown + 600));
 	}
 
+	// NOBODY GOES ON THE SAME COUNT. Three or more setting off from standing
+	// in the same instant - five running back the moment the ball changes
+	// hands, the whole floor moving as a shot goes up - is a drill, not a
+	// game: each sees it and goes in his own time. All but the first of them
+	// are a beat later getting going - each his own beat - and there that
+	// much later, if nothing waits on him; if something does (the ball, a
+	// screen, his next run), there just the same, a touch quicker.
+	private stagger() {
+		const WINDOW = 120;
+		// When the ball gets to each man.
+		const gets = new Map<number, number[]>();
+		for (const b of this.ball) {
+			const [pid, t] =
+				b.kind === "hold"
+					? [b.pid, b.t0]
+					: b.kind === "fly" && "pid" in b.to
+						? [b.to.pid, b.t1]
+						: [undefined, 0];
+			if (pid !== undefined) {
+				const list = gets.get(pid) ?? [];
+				list.push(t);
+				gets.set(pid, list);
+			}
+		}
+		// (Not lining up for something with the ball dead: the tip, a free
+		// throw, a sub, a timeout.)
+		const set = this.beats
+			.filter((b) => DEAD_SETUPS.test(b.type))
+			.map((b) => [b.preStart - 300, b.end] as const);
+		const starts: { tr: Track; k: number }[] = [];
+		for (const tr of this.tracks.values()) {
+			tr.moves.forEach((m, k) => {
+				const prev = tr.moves[k - 1];
+				if (
+					m.t1 - m.t0 < 450 ||
+					(m.v0 ?? 0) > 0 ||
+					dist(m.from, m.to) < 2 ||
+					(prev !== undefined && m.t0 - prev.t1 < 250) ||
+					set.some(([a, b]) => m.t1 > a && m.t0 < b)
+				) {
+					return;
+				}
+				starts.push({ tr, k });
+			});
+		}
+		const t0Of = (x: { tr: Track; k: number }) => x.tr.moves[x.k]!.t0;
+		starts.sort((a, b) => t0Of(a) - t0Of(b));
+		for (let i = 0; i < starts.length;) {
+			let n = 1;
+			while (
+				i + n < starts.length &&
+				t0Of(starts[i + n]!) - t0Of(starts[i]!) < WINDOW
+			) {
+				n++;
+			}
+			if (n >= 3) {
+				for (const { tr, k } of starts.slice(i + 1, i + n)) {
+					const m = tr.moves[k]!;
+					const late = 90 + 230 * hash01(tr.pid, m.t0);
+					const next = tr.moves[k + 1];
+					let room =
+						(m.v1 ?? 0) > 0 || (next !== undefined && next.t0 - m.t1 < 30)
+							? 0
+							: next
+								? next.t0 - m.t1 - 30
+								: Infinity;
+					for (const a of tr.acts) {
+						if (a.t0 >= m.t1 - 50 && a.t0 < m.t1 + late) {
+							room = Math.min(room, a.t0 - m.t1);
+						}
+					}
+					if (
+						(gets.get(tr.pid) ?? []).some(
+							(c) => c >= m.t0 && c <= m.t1 + late + 200,
+						)
+					) {
+						room = 0;
+					}
+					const shift = Math.max(0, Math.min(late, room));
+					m.t0 += shift;
+					m.t1 += shift;
+					// (Only where it is no hurry: well inside how quickly he could
+					// cover it.)
+					const quickest = runMs(dist(m.from, m.to), SPRINT, 0, 1, m.v1 ?? 0);
+					m.t0 += Math.max(
+						0,
+						Math.min(
+							late - shift,
+							(m.t1 - m.t0) * 0.2,
+							m.t1 - m.t0 - quickest * 1.4,
+						),
+					);
+				}
+			}
+			i += n;
+		}
+	}
+
 	// A shot fake: whoever is up on the man with it - where everybody really
 	// is, once all their runs are worked out - comes up out of his stance
 	// for it: off his feet, if he bites (and is not on the move); a hand up,
@@ -10685,6 +10789,7 @@ class Director {
 		this.liveHands();
 		this.keepDribbling();
 		this.liven();
+		this.stagger();
 		for (const tr of this.tracks.values()) {
 			// One thing at a time with his arm: the first he started.
 			const arms: Gesture[] = [];
@@ -10698,6 +10803,7 @@ class Director {
 		this.unplant();
 		this.mark();
 		this.unplant();
+		this.stagger();
 		this.keepClear();
 		this.aroundBodies();
 		this.biteOnFakes();
