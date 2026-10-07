@@ -494,7 +494,36 @@ type Spot = {
 	hy: number;
 };
 
+// Where he is, eased aside off anybody he would be standing on (see
+// keepApart in director.ts).
+const NUDGE_RAMP = 450;
 const spotAt = (tr: Track, t: number): Spot => {
+	const s = rawSpotAt(tr, t);
+	const list = tr.nudges;
+	if (!list || list.length === 0) {
+		return s;
+	}
+	let dx = 0;
+	let dy = 0;
+	for (let i = lastIndex(list, t, (n) => n.t0); i >= 0; i--) {
+		const n = list[i]!;
+		// (None lasts long: the ones begun long before are over.)
+		if (t - n.t0 > NUDGE_LONGEST) {
+			break;
+		}
+		if (t >= n.t1) {
+			continue;
+		}
+		const r = Math.min(NUDGE_RAMP, (n.t1 - n.t0) / 2);
+		const u = Math.min(1, (t - n.t0) / r, (n.t1 - t) / r);
+		const w = u * u * (3 - 2 * u);
+		dx += n.dx * w;
+		dy += n.dy * w;
+	}
+	return dx === 0 && dy === 0 ? s : { ...s, x: s.x + dx, y: s.y + dy };
+};
+const NUDGE_LONGEST = 14000;
+const rawSpotAt = (tr: Track, t: number): Spot => {
 	let k = lastIndex(tr.moves, t, (m) => m.t0);
 	if (k < 0) {
 		return {

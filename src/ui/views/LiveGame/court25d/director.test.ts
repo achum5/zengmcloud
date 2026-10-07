@@ -564,6 +564,84 @@ describe("2.5D director", () => {
 		}
 	}, 60_000);
 
+	// Two men are never on top of each other in play: teammates (two
+	// defenders helping off the same way, two men sent to the same spot)
+	// keep a step apart, and nobody stands inside his opponent - but for a
+	// screen, a post-up, a box-out, a rebound fight, a block at the rim.
+	test("nobody stands on top of anybody", () => {
+		const TOGETHER = new Set([
+			"screen",
+			"postUp",
+			"fight",
+			"boxOut",
+			"bump",
+			"highFive",
+			"reach",
+			"poke",
+			"block",
+			"dunk",
+			"dunk1",
+			"tomahawk",
+			"fall",
+			"hurt",
+			"rebound",
+			"board",
+			"snatch",
+			"pickup",
+			"contest",
+			"shoot",
+			"setShot",
+			"fade",
+			"hook",
+			"layup",
+			"catch",
+		]);
+		for (const seed of ["a", "b"]) {
+			const { tl } = compile(seed, 140);
+			const tracks = [...tl.tracks.values()];
+			const doing = (pid: number, t: number) =>
+				tl.tracks
+					.get(pid)!
+					.acts.some((a) => a.t0 <= t && a.t1 > t && TOGETHER.has(a.anim));
+			let live = 0;
+			let close = 0;
+			let prev = new Map<number, { x: number; y: number }>();
+			for (let t = 0; t < tl.end; t += 100) {
+				if (fastAt(tl, t) > 1.001) {
+					prev = new Map();
+					continue;
+				}
+				live += 1;
+				const here = tracks
+					.map((tr) => ({ tr, s: evalPlayer(tl, tr.pid, t) }))
+					.filter((x) => x.s.shown);
+				const now = new Map(here.map((x) => [x.tr.pid, x.s]));
+				for (let i = 0; i < here.length; i++) {
+					for (let j = i + 1; j < here.length; j++) {
+						const A = here[i]!;
+						const B = here[j]!;
+						const d = Math.hypot(A.s.x - B.s.x, A.s.y - B.s.y);
+						const mates = A.tr.team === B.tr.team;
+						if (d >= (mates ? 2 : 1)) {
+							continue;
+						}
+						// (Standing - not just going by.)
+						const still = [A, B].every((X) => {
+							const p = prev.get(X.tr.pid);
+							return p && Math.hypot(X.s.x - p.x, X.s.y - p.y) < 0.4;
+						});
+						if (still && !doing(A.tr.pid, t) && !doing(B.tr.pid, t)) {
+							close += 1;
+						}
+					}
+				}
+				prev = now;
+			}
+			assert.isAbove(live, 10_000, seed);
+			assert.isBelow(close / live, 0.015, seed);
+		}
+	}, 120_000);
+
 	// Left out of the play while the ball is worked somewhere else, a man
 	// does not stand there like a statue for seconds on end: he drifts and
 	// comes back, lifts out of the corner and sinks into it again, steps out
