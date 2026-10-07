@@ -714,6 +714,18 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 		const dx = mv.to.x - mv.from.x;
 		const dy = mv.to.y - mv.from.y;
 		const d = Math.hypot(dx, dy);
+		// Walking the ball a few steps, or backing out of an attack, a man
+		// with the ball stays squared up to his man and the rim.
+		if (
+			d < 8 &&
+			mv.face !== undefined &&
+			(mv.anim === "dribble" || mv.anim === "back")
+		) {
+			const own = ballSegAt(tl, t);
+			if (own?.kind === "hold" && own.pid === tr.pid && own.style !== "hold") {
+				return angleTo(here, { x: rimX(tr.team), y: 25 }, fallback);
+			}
+		}
 		if (d >= 3) {
 			const heading =
 				here.hx * here.hx + here.hy * here.hy > 1e-6

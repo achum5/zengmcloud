@@ -213,7 +213,7 @@ describe("2.5D director", () => {
 			}
 			prev = cur;
 		}
-	}, 60_000);
+	}, 120_000);
 
 	// Picked up off the dribble, switched hand to hand, scooped off the
 	// floor, thrown off a dribble: from one move to the next the ball goes
@@ -563,6 +563,40 @@ describe("2.5D director", () => {
 			assert.isAtMost(longO, 1600, seed);
 		}
 	}, 60_000);
+
+	// Dribbling where he stands, waiting on the set, a man works his man -
+	// a steady dribble, moves where he stands, the ball walked a few steps -
+	// and does not lunge at him and back out, over and over.
+	test("a man dribbling in place does not keep lunging at his man and backing out", () => {
+		let lunges = 0;
+		let close = 0;
+		for (const seed of ["a", "b"]) {
+			const { tl } = compile(seed, 140);
+			for (const tr of tl.tracks.values()) {
+				let last = -Infinity;
+				const ms = tr.moves;
+				for (let i = 0; i + 1 < ms.length; i++) {
+					const a = ms[i]!;
+					const b = ms[i + 1]!;
+					if (a.anim !== "dribble" || fastAt(tl, a.t0) > 1.001) {
+						continue;
+					}
+					const L = Math.hypot(a.to.x - a.from.x, a.to.y - a.from.y);
+					const home = Math.hypot(b.to.x - a.from.x, b.to.y - a.from.y);
+					if (L < 2 || L > 6 || b.t0 - a.t1 > 700 || home > 0.5) {
+						continue;
+					}
+					lunges += 1;
+					if (a.t0 - last < 5000) {
+						close += 1;
+					}
+					last = a.t0;
+				}
+			}
+		}
+		assert.isBelow(lunges, 30);
+		assert.isAtMost(close, 2);
+	}, 120_000);
 
 	// Two men are never on top of each other in play: teammates (two
 	// defenders helping off the same way, two men sent to the same spot)

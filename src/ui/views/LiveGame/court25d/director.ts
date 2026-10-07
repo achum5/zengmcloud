@@ -8793,12 +8793,19 @@ class Director {
 	}
 
 	// THE DRIBBLE ALIVE. A man dribbling where he stands - waiting on a
-	// screen, for the set to come together - doesn't stand still doing it: he
-	// rocks a step or two one way and back, the ball going with him, and is
-	// back on his spot for whatever he does next.
+	// screen, for the set to come together - works his man the way a
+	// ball handler does, never just lunging at him and backing out again
+	// and again: a low, steady dribble most of the time; now and then a
+	// run of moves where he stands (a crossover, between his legs, behind
+	// his back); walking the ball a few steps along the arc and back,
+	// facing his man the whole way, his man sliding with him; and, given
+	// the time, one hard attack past his man's shoulder that gets cut off
+	// - and a dribble back out. Whatever he does, he is back on his spot,
+	// on the beat of his dribble, for whatever he does next.
 	private keepDribbling() {
 		const ball = this.ball;
 		const added: [Track, Move][] = [];
+		const segs: BallSeg[] = [];
 		for (let i = 0; i < ball.length; i++) {
 			const s = ball[i]!;
 			if (s.kind !== "hold" || s.style !== "dribble") {
@@ -8835,6 +8842,10 @@ class Director {
 				...tr.acts.map((a) => [a.t0, a.t1] as const),
 				...this.fast.filter(([a, b]) => b > s.t0 && a < end),
 				...moves,
+				// (And the ball switching hands, as his dribble already has it.)
+				...ball
+					.slice(first + 1, j)
+					.map((x) => [x.t0 - 250, x.t0 + 250] as const),
 			].sort((x, y) => x[0] - y[0]);
 			let at = s.t0 + 250;
 			const gaps: [number, number][] = [];
@@ -8853,45 +8864,177 @@ class Director {
 			if (end - 150 - at >= 1400) {
 				gaps.push([at, end - 150]);
 			}
+			// The ball's own pieces of this dribble, and whether anything of
+			// his hands after the stretch says which hand it is in then.
+			const own = ball.slice(first, j);
 			for (const [g0, g1] of gaps) {
 				const P = this.posAt(s.pid, g0);
 				const rim = { x: rimX(tr.team), y: COURT_H / 2 };
 				const u = unitVec(P, rim);
+				// Along the arc, either way.
+				const v = { x: -u.y, y: u.x };
 				const face = attackDir(tr.team);
-				let t = g0 + this.rand(100, 400);
-				let side: 1 | -1 = this.rng() < 0.5 ? 1 : -1;
-				while (t < g1) {
-					// He probes: a hard dribble or two at his man - off one
-					// shoulder, then the other - a beat to see what it gets him,
-					// and back out, still facing him, to go again.
-					const L = this.rand(3.2, 4.8);
-					const Q = clampPt({
-						x: P.x + (u.x * 0.8 - u.y * side * 0.6) * L,
-						y: P.y + (u.y * 0.8 + u.x * side * 0.6) * L,
+				// The beat of his dribble: the top of each bounce, counted from
+				// where this run of plain dribbling began.
+				const k0 = own.findLastIndex((x) => x.t0 <= g0);
+				let k1 = k0;
+				while (
+					k1 > 0 &&
+					(own[k1 - 1] as { style: string }).style === "dribble"
+				) {
+					k1--;
+				}
+				const beat0 = own[Math.max(0, k1)]!.t0;
+				const onBeat = (t: number) =>
+					beat0 + Math.ceil((t - beat0) / DRIBBLE_MS - 1e-6) * DRIBBLE_MS;
+				// The hand the ball is in through it.
+				const hand: Hand =
+					(own[Math.max(0, k0)] as { hand?: Hand }).hand ?? "R";
+				// A later piece of this dribble that says its hand: his moves
+				// must leave the ball back in that one.
+				const keepHand = own.some(
+					(x) => x.t0 > g1 && (x as { style: string }).style !== "hold",
+				);
+				// Walking the ball: the side with the more room first.
+				const side: 1 | -1 =
+					Math.abs(P.y + v.y * 4 - COURT_H / 2) <
+					Math.abs(P.y - v.y * 4 - COURT_H / 2)
+						? 1
+						: -1;
+				let t = g0 + this.rand(250, 600);
+				let here: Pt = { ...P };
+				let attacked = false;
+				let walked = false;
+				let combos = 0;
+				const step = (to: Pt, ms: number, anim: AnimName) => {
+					added.push([
+						tr,
+						{ t0: t, t1: t + ms, from: { ...here }, to, anim, face },
+					]);
+					here = to;
+					t += ms;
+				};
+				// Time to get back on his spot from wherever he is.
+				const home = () =>
+					dist(here, P) < 0.1 ? 0 : Math.max(450, (dist(here, P) / 5) * 1000);
+				// Moves where he stands: three of them (two bounces' time), or
+				// six - the ball back in the hand it started in, if what comes
+				// after says so.
+				const combo = (): boolean => {
+					const n3 = keepHand ? 6 : this.rng() < 0.7 ? 3 : 6;
+					const tc = onBeat(t);
+					if (combos >= 2 || tc + n3 * CROSS_MS + home() > g1 - 300) {
+						return false;
+					}
+					// (In the hand his dribble has it in just then: the last
+					// piece of it begun, his own moves' included.)
+					const lastSeg = [
+						...own,
+						...segs.filter((x) => (x as { pid?: number }).pid === s.pid),
+					]
+						.filter((x) => x.t0 <= tc)
+						.sort((a, b) => a.t0 - b.t0)
+						.at(-1) as { hand?: Hand } | undefined;
+					const inHand: Hand = lastSeg?.hand ?? hand;
+					combos += 1;
+					const made = this.runOfMoves(s.pid, tc, n3, 0.3, 0.2, inHand);
+					// His man, up on him, gives with it: a shade the way the
+					// ball first goes across, and back as it comes back.
+					const guard = [...this.tracks.values()]
+						.filter((o) => o.team !== tr.team)
+						.map((o) => ({ o, d: dist(this.posAt(o.pid, tc), here) }))
+						.filter((x) => x.d < 7)
+						.sort((a, b) => a.d - b.d)[0]?.o;
+					if (guard) {
+						// (Across from his right to his left, or the other way.)
+						const way = inHand === "R" ? -1 : 1;
+						(guard.nudges ??= []).push({
+							t0: tc + 90,
+							t1: tc + n3 * CROSS_MS + 350,
+							dx: v.x * way * 0.9,
+							dy: v.y * way * 0.9,
+						});
+						guard.nudges.sort((a, b) => a.t0 - b.t0);
+					}
+					segs.push(...made.segs, {
+						kind: "hold",
+						t0: tc + n3 * CROSS_MS,
+						pid: s.pid,
+						style: "dribble",
+						hand: made.hand,
 					});
-					const go = Math.max(240, (dist(P, Q) / this.rand(11, 14)) * 1000);
-					const out = t + go;
-					const back = out + this.rand(150, 300);
-					const ret = Math.max(300, (dist(Q, P) / 8) * 1000);
-					if (back + ret > g1) {
+					t = tc + n3 * CROSS_MS;
+					wait(this.rand(500, 1000));
+					return true;
+				};
+				// (A pause, never so long he cannot get back on his spot.)
+				const wait = (ms: number) => {
+					t = Math.max(t, Math.min(t + ms, g1 - home()));
+				};
+				for (let n = 0; n < 8; n++) {
+					const left = g1 - t - home();
+					if (left < 700) {
 						break;
 					}
-					added.push(
-						[tr, { t0: t, t1: out, from: { ...P }, to: Q, anim: "dribble" }],
-						[
-							tr,
-							{
-								t0: back,
-								t1: back + ret,
-								from: Q,
-								to: { ...P },
-								anim: "dribble",
-								face,
-							},
-						],
+					const r = this.rng();
+					const L = this.rand(3.6, 4.8);
+					const go = Math.max(300, (L / 14) * 1000);
+					const out = Math.max(560, (L / 7) * 1000);
+					if (
+						!walked &&
+						!attacked &&
+						dist(here, P) < 0.1 &&
+						go + out + 1000 <= left &&
+						left >= 3000 &&
+						r < 0.2
+					) {
+						// One hard go past his man's shoulder - cut off - and a
+						// dribble back out, still facing him.
+						attacked = true;
+						const Q = clampPt({
+							x: P.x + (u.x * 0.75 + v.x * side * 0.66) * L,
+							y: P.y + (u.y * 0.75 + v.y * side * 0.66) * L,
+						});
+						step(Q, go, "dribble");
+						wait(this.rand(180, 320));
+						step({ ...P }, out, "back");
+						wait(this.rand(500, 900));
+						continue;
+					}
+					const W = clampPt({
+						x: P.x + v.x * side * (L - 1),
+						y: P.y + v.y * side * (L - 1),
+					});
+					const walk = Math.max(500, (dist(P, W) / this.rand(4.5, 6)) * 1000);
+					const back = Math.max(450, (dist(P, W) / 5) * 1000);
+					if (
+						!walked &&
+						dist(here, P) < 0.1 &&
+						walk + back + 900 <= left &&
+						r < 0.55
+					) {
+						// Walking it a few steps along the arc, squared up to his
+						// man - setting up the angle, back over in time.
+						walked = true;
+						step(W, walk, "dribble");
+						wait(this.rand(500, 1000));
+					} else if (r < 0.8 && combo()) {
+						// (Done.)
+					} else {
+						// Just his dribble, low and steady, a beat or three.
+						wait(this.rand(600, 1300));
+						if (t >= g1 - home() - 1) {
+							break;
+						}
+					}
+				}
+				if (dist(here, P) > 0.1) {
+					t = Math.max(t, g1 - home());
+					step(
+						{ ...P },
+						Math.max(250, Math.min(home(), g1 + 100 - t)),
+						"dribble",
 					);
-					t = back + ret + this.rand(400, 900);
-					side = -side as 1 | -1;
 				}
 			}
 		}
@@ -8901,19 +9044,21 @@ class Director {
 		for (const tr of this.tracks.values()) {
 			tr.moves.sort((a, b) => a.t0 - b.t0);
 		}
+		if (segs.length > 0) {
+			ball.push(...segs);
+			ball.sort((a, b) => a.t0 - b.t0);
+		}
 	}
 
 	// THE BALL IN HIS HANDS. Caught with nothing to do with it yet - the set
 	// still coming to him, a screen on its way - nobody stands there holding
 	// it like a statue: he faces up in his triple threat and jabs at his man
 	// or shows him a fake; given longer, he puts it on the floor and keeps his
-	// dribble alive, probing a hard dribble or two at his man and back, and
-	// picks it up as it comes up to him, in time for whatever he does next.
+	// dribble alive (see keepDribbling), and picks it up as it comes up to
+	// him, in time for whatever he does next.
 	private liveHands() {
 		const ball = this.ball;
 		const added: BallSeg[] = [];
-		// (Added once all are worked out: posAt reads his moves in order.)
-		const probes: [Track, Move, Move][] = [];
 		const freeThrows = this.beats.filter(
 			(bt) => bt.type === "ft" || bt.type === "missFt",
 		);
@@ -9074,33 +9219,12 @@ class Director {
 			if (throws) {
 				this.act(pid, "triple", pick, to, { look: rim });
 			}
-			// A probe: a hard dribble or two at his man, and back out - done
-			// before any moves.
-			const room = (moves ? moves.tc - 100 : pick) - td;
-			if (room >= 1700) {
-				const side = this.rng() < 0.5 ? 1 : -1;
-				const u = unitVec(P, rim);
-				const Q = clampPt({
-					x: P.x + (u.x * 0.8 - u.y * side * 0.6) * 2.6,
-					y: P.y + (u.y * 0.8 + u.x * side * 0.6) * 2.6,
-				});
-				const m0 = td + 300 + this.rng() * Math.max(0, room - 1700);
-				probes.push([
-					tr,
-					{ t0: m0, t1: m0 + 420, from: { ...P }, to: Q, anim: "dribble" },
-					{ t0: m0 + 640, t1: m0 + 1160, from: Q, to: { ...P }, anim: "back" },
-				]);
-			}
 		}
 		for (const seg of added) {
 			ball.push(seg);
 		}
 		ball.sort((a, b) => a.t0 - b.t0);
-		for (const [tr, ...ms] of probes) {
-			tr.moves.push(...ms);
-		}
 		for (const tr of this.tracks.values()) {
-			tr.moves.sort((a, b) => a.t0 - b.t0);
 			tr.acts.sort((a, b) => a.t0 - b.t0);
 		}
 	}
