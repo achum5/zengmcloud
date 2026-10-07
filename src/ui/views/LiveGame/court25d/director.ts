@@ -9764,10 +9764,21 @@ class Director {
 						bumped.add(tr);
 					}
 				}
-				// The last of the way onto his mark exactly, if he is all but there.
+				// The last of the way onto his mark exactly, if he is all but
+				// there: worked into his last few steps, not taken in one stride
+				// at the end (and never, having run on past it, a stride back).
 				const fin = path.at(-1)!;
 				if (end && dist(fin.p, end) < 3) {
-					fin.p = { ...end };
+					const ox = end.x - fin.p.x;
+					const oy = end.y - fin.p.y;
+					const span = Math.min(800, fin.t - path[0]!.t);
+					for (const x of path) {
+						const u = span > 0 ? (x.t - (fin.t - span)) / span : 1;
+						if (u > 0) {
+							const w = u >= 1 ? 1 : u * u * (3 - 2 * u);
+							x.p = { x: x.p.x + ox * w, y: x.p.y + oy * w };
+						}
+					}
 				}
 				// Into runs: each one heading one way, getting quicker or slower
 				// but not both - so a whole burst, or the whole of pulling up, is
@@ -9787,6 +9798,7 @@ class Director {
 				// Where the last run left him: the creep of his feet standing
 				// there is no run, so the next one sets off from there.
 				let was: Pt = path[0]!.p;
+				const first = out.length;
 				while (q + 1 < path.length) {
 					// Off from standing at a step's pace; on the move, he keeps
 					// going down to a crawl.
@@ -9864,6 +9876,28 @@ class Director {
 						v1: Math.min(v1, 2 * speed),
 					});
 					was = Z.p;
+				}
+				// Turning back on himself from one run to the next, he gets
+				// there pulling up, not at full tilt.
+				for (let k = first; k + 1 < out.length; k++) {
+					const x = out[k]!;
+					const y = out[k + 1]!;
+					if (y.t0 - x.t1 > 1 || !x.v1 || !y.v0) {
+						continue;
+					}
+					const lx = dist(x.from, x.to);
+					const ly = dist(y.from, y.to);
+					const cos =
+						lx > 0.05 && ly > 0.05
+							? ((x.to.x - x.from.x) * (y.to.x - y.from.x) +
+									(x.to.y - x.from.y) * (y.to.y - y.from.y)) /
+								(lx * ly)
+							: 1;
+					if (cos < 0) {
+						const k0 = keepThrough(cos) / keepThrough(0);
+						x.v1 *= k0;
+						y.v0 *= k0;
+					}
 				}
 				// Following his man left him short of where the schedule has him
 				// next: on to it, as fast as he can - there before anything
@@ -9971,8 +10005,11 @@ class Director {
 				if (!bend || bend.t - m.t0 <= edge || m.t1 - bend.t <= edge) {
 					return [m];
 				}
-				const a = { ...m, t1: bend.t, to: bend.at };
-				const b = { ...m, t0: bend.t, from: bend.at };
+				// (Going on round him, not pulling up for him: what pace he had
+				// coming in and going out stays at the ends of the whole run, and
+				// through the bend he goes as fast as the turn in it lets him.)
+				const a = { ...m, t1: bend.t, to: bend.at, v1: undefined };
+				const b = { ...m, t0: bend.t, from: bend.at, v0: undefined };
 				return depth >= 3 ? [a, b] : [a, ...split(b, depth + 1)];
 			};
 			// No run ends inside one - nor does a man stand where one is set:
@@ -10404,6 +10441,28 @@ class Director {
 					u = 1;
 				}
 				const k = ((mates ? MATES : OPPS) - r.near + 0.25) / u;
+				// Clear of anything of his own that needs him where he is: in
+				// it together with somebody, shooting, catching - or the ball
+				// in his hands.
+				let n0 = r.t0 - RAMP;
+				let n1 = r.t1 + STEP + RAMP;
+				const busy = [
+					...r.a.acts
+						.filter((a) => TOGETHER.has(a.anim) || HOLDS.has(a.anim))
+						.map((a) => [a.t0, a.t1] as const),
+					...(holds.get(r.a.pid) ?? []),
+				];
+				for (const [b0, b1] of busy) {
+					if (b0 > r.t1 && b0 < n1) {
+						n1 = b0;
+					}
+					if (b1 < r.t0 && b1 > n0) {
+						n0 = b1;
+					}
+				}
+				if (n1 - n0 < 400) {
+					continue;
+				}
 				// Aside to where nobody else is, either: the way away from the
 				// other if that is clear, else whichever side is clearest.
 				{
@@ -10439,27 +10498,26 @@ class Director {
 					}
 					[ux, uy] = best;
 				}
-				// Clear of anything of his own that needs him where he is: in
-				// it together with somebody, shooting, catching - or the ball
-				// in his hands.
-				let n0 = r.t0 - RAMP;
-				let n1 = r.t1 + STEP + RAMP;
-				const busy = [
-					...r.a.acts
-						.filter((a) => TOGETHER.has(a.anim) || HOLDS.has(a.anim))
-						.map((a) => [a.t0, a.t1] as const),
-					...(holds.get(r.a.pid) ?? []),
-				];
-				for (const [b0, b1] of busy) {
-					if (b0 > r.t1 && b0 < n1) {
-						n1 = b0;
+				// Off him again as he goes on his way - and back over before
+				// that takes him into anybody he would have gone clear of.
+				const ramp = Math.min(RAMP, (n1 - n0) / 2);
+				for (let t = r.t1 + STEP; t < n1; t += 100) {
+					const u1 = Math.min(1, (n1 - t) / ramp);
+					const w = u1 * u1 * (3 - 2 * u1);
+					const P = posAt(r.a, t);
+					const Q = { x: P.x + ux * k * w, y: P.y + uy * k * w };
+					const into = tracks.some((o) => {
+						if (o === r.a || !shownAtT(o, t)) {
+							return false;
+						}
+						const O = posAt(o, t);
+						const lim = o.team === r.a.team ? MATES : OPPS;
+						return dist(O, Q) < lim && dist(O, Q) < dist(O, P) - 0.01;
+					});
+					if (into) {
+						n1 = Math.max(t, n0 + 400);
+						break;
 					}
-					if (b1 < r.t0 && b1 > n0) {
-						n0 = b1;
-					}
-				}
-				if (n1 - n0 < 400) {
-					continue;
 				}
 				(r.a.nudges ??= []).push({
 					t0: n0,

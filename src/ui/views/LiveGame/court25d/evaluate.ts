@@ -407,22 +407,32 @@ const onRun = (run: Run, t: number): Pt => {
 // Off one run and onto the next, round a corner: the two runs, each
 // carried on through the join, blended from the one into the other - so he
 // curves through it with no kink in where he is or how fast he is going.
+// (Blended as they are, the two would swing him round hardest halfway, three
+// times as hard as an even turn; the swing is taken back out, so the way he
+// is going comes round smoothly from the one run's to the other's.)
 const smooth = (u: number) => u * u * (3 - 2 * u);
 const rounded = (a: Run, b: Run, t: number): Pt | undefined => {
 	const tj = a.s1;
 	const d = Math.min(
 		ROUND_MS,
 		Math.max(80, a.v1 * ROUND_MS_PER_FTPS),
-		(a.s1 - a.s0) * 0.35,
-		(b.s1 - b.s0) * 0.35,
+		(a.s1 - a.s0) * 0.5,
+		(b.s1 - b.s0) * 0.5,
 	);
 	if (d <= 10 || Math.abs(t - tj) >= d) {
 		return undefined;
 	}
-	const w = smooth((t - (tj - d)) / (2 * d));
+	const u = (t - (tj - d)) / (2 * d);
+	const w = smooth(u);
 	const pa = onRun(a, t);
 	const pb = onRun(b, t);
-	return { x: pa.x + (pb.x - pa.x) * w, y: pa.y + (pb.y - pa.y) * w };
+	const ua = unit(a.mv.from, a.mv.to);
+	const ub = unit(b.mv.from, b.mv.to);
+	const k = ((3 * d) / 1000) * u * u * (1 - u) * (1 - u);
+	return {
+		x: pa.x + (pb.x - pa.x) * w + (ub.x * b.v0 - ua.x * a.v1) * k,
+		y: pa.y + (pb.y - pa.y) * w + (ub.y * b.v0 - ua.y * a.v1) * k,
+	};
 };
 
 // How he goes, by how fast he really goes (feet a second, at his quickest
@@ -572,14 +582,18 @@ const rawSpotAt = (tr: Track, t: number): Spot => {
 	let hx = mv.to.x - mv.from.x;
 	let hy = mv.to.y - mv.from.y;
 	// Coming round a corner: off the end of the last run and onto this one,
-	// or off this one onto the next - heading the way the curve goes.
-	const pair: [Run, Run] | undefined =
-		run.v0 > 0 && t - run.s0 < ROUND_MS
-			? [runOf(tr, k - 1), run]
-			: run.v1 > 0 && run.s1 - t < ROUND_MS
-				? [run, runOf(tr, k + 1)]
-				: undefined;
-	const q = pair && rounded(pair[0], pair[1], t);
+	// or off this one onto the next - heading the way the curve goes. (A
+	// short run can be all corners, one at either end.)
+	let pair: [Run, Run] | undefined;
+	let q: Pt | undefined;
+	if (run.v0 > 0 && t - run.s0 < ROUND_MS) {
+		pair = [runOf(tr, k - 1), run];
+		q = rounded(pair[0], pair[1], t);
+	}
+	if (!q && run.v1 > 0 && run.s1 - t < ROUND_MS) {
+		pair = [run, runOf(tr, k + 1)];
+		q = rounded(pair[0], pair[1], t);
+	}
 	if (pair && q) {
 		p = q;
 		const ahead = rounded(pair[0], pair[1], t + 8) ?? q;
