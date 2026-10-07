@@ -30,6 +30,7 @@ import {
 } from "../../util/frontOfficeLog.ts";
 import { signingYears } from "./frontOffice.ts";
 import { cutOrder } from "../team/rosterCuts.ts";
+import { revertBefore } from "../player/revertSnapshot.ts";
 
 const toFaPlayer = (p: Player, season: number): FaPlayer => {
 	const ratings = last(p.ratings);
@@ -601,6 +602,10 @@ const autoSign = async () => {
 			// Remove from list of free agents
 			playersSorted = playersSorted.filter((p2) => p2 !== p);
 
+			// Him as he was before the plan below reshapes his asking contract,
+			// so reverting the signing hands back the deal he actually asked for.
+			const before = revertBefore(p);
+
 			// The plan decides the structure of the deal - see signingYears. Every
 			// sport: this was basketball-only for a while, and the football
 			// decades harness found the cost of the gap - football's dead money
@@ -628,7 +633,7 @@ const autoSign = async () => {
 				}
 			}
 
-			await player.sign(p, t.tid, p.contract, g.get("phase"));
+			await player.sign(p, t.tid, p.contract, g.get("phase"), before);
 			await idb.cache.players.put(p);
 			await team.rosterAutoSort(t.tid);
 		}

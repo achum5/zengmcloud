@@ -218,6 +218,7 @@ const isCloudTrackedCall = (type: string, name: string): boolean =>
 const SIM_CONFLICT_GATED = new Set([
 	"proposeTrade",
 	"revertTrade",
+	"revertTransaction",
 	"acceptContractNegotiation",
 	"reSignAll",
 	"releasePlayer",

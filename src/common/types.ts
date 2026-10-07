@@ -330,6 +330,50 @@ export type TradeEventTeams = [
 export type DiscriminateUnion<T, K extends keyof T, V extends T[K]> =
 	T extends Record<K, V> ? T : never;
 
+// What a signing, release or draft pick changed, saved on its event so God Mode
+// can take the move back exactly (core/player/revertTransaction.ts). Events
+// logged before this existed have none and can't be reverted.
+export type TransactionRevert = {
+	// The phase the move was made in.
+	phase: Phase;
+
+	// The player just before the move.
+	before: {
+		tid: number;
+		contract: PlayerContract;
+		numDaysFreeAgent: number;
+		gamesUntilTradable: number;
+		ptModifier: number;
+		yearsFreeAgent: number;
+		jerseyNumber?: string;
+
+		// Draft picks: his draft info as a prospect.
+		draft?: PlayerWithoutKey["draft"];
+
+		// Releases that dropped salary rows: the rows as they were.
+		salaries?: PlayerSalary[];
+	};
+
+	// Length of his transactions log before the move.
+	numTransactions: number;
+
+	// Signings and draft picks: the season the salary rows the move added start
+	// from (setContract appends one per contract season).
+	salaryStart?: number;
+
+	// Draft picks: the contract the pick gave him.
+	contract?: PlayerContract;
+
+	// Signings: the team whose re-signing talks the move closed.
+	negotiationTid?: number;
+
+	// Releases: the move booked dead money (a releasedPlayers row).
+	deadMoney?: true;
+
+	// Draft picks: the pick it spent.
+	dp?: DraftPick;
+};
+
 export type EventBBGMWithoutKey =
 	| {
 			type: Exclude<
@@ -346,6 +390,9 @@ export type EventBBGMWithoutKey =
 			// < 20: somewhat important
 			// >= 20: very important
 			score?: number;
+
+			// Releases and draft picks only.
+			revert?: TransactionRevert;
 	  }
 	| {
 			type: "sisyphus";
@@ -393,6 +440,8 @@ export type EventBBGMWithoutKey =
 			phase?: Phase;
 			score?: number;
 			contract?: PlayerContract;
+
+			revert?: TransactionRevert;
 
 			// Never defined, just for TypeScript
 			dpids?: number[];

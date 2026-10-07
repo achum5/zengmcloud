@@ -3,9 +3,10 @@ import { player, league, team } from "../index.ts";
 import getRookieSalaries from "./getRookieSalaries.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local, logEvent } from "../../util/index.ts";
-import type { DraftPick } from "../../../common/types.ts";
+import type { DraftPick, TransactionRevert } from "../../../common/types.ts";
 import getRookieContractLength from "./getRookieContractLength.ts";
 import { last } from "../../../common/utils.ts";
+import { revertBefore, salaryStartSeason } from "../player/revertSnapshot.ts";
 
 /**
  * Select a player for the current drafting team.
@@ -27,13 +28,31 @@ const selectPlayer = async (dp: DraftPick, pid: number) => {
 	if (!p) {
 		throw new Error("Invalid pid");
 	}
-	const prevTid = p.tid;
-	p.tid = dp.tid;
 
 	const expansionDraft = g.get("expansionDraft");
 
 	const fantasyOrExpansionDraft =
 		g.get("phase") === PHASE.FANTASY_DRAFT || expansionDraft.phase === "draft";
+
+	// Everything a pick in the real draft changes, so God Mode can take it back.
+	// (Fantasy and expansion drafts rebuild the whole league around themselves,
+	// so a single pick from one can't be undone on its own.)
+	let revert: TransactionRevert | undefined;
+	if (!fantasyOrExpansionDraft && !g.get("college")) {
+		revert = {
+			phase: g.get("phase"),
+			before: {
+				...revertBefore(p),
+				draft: helpers.deepCopy(p.draft),
+			},
+			numTransactions: p.transactions?.length ?? 0,
+			salaryStart: salaryStartSeason(),
+			dp: helpers.deepCopy(dp),
+		};
+	}
+
+	const prevTid = p.tid;
+	p.tid = dp.tid;
 
 	if (fantasyOrExpansionDraft) {
 		const fakeP = {
@@ -103,6 +122,10 @@ const selectPlayer = async (dp: DraftPick, pid: number) => {
 				},
 				true,
 			);
+		}
+
+		if (revert) {
+			revert.contract = helpers.deepCopy(p.contract);
 		}
 	}
 
@@ -198,6 +221,7 @@ const selectPlayer = async (dp: DraftPick, pid: number) => {
 		pids: [p.pid],
 		tids: eventTids,
 		score,
+		...(revert ? { revert } : {}),
 	});
 
 	if (g.get("userTids").includes(dp.tid) && !g.get("spectator")) {

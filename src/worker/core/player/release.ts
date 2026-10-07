@@ -1,9 +1,10 @@
 import addToFreeAgents from "./addToFreeAgents.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, logEvent } from "../../util/index.ts";
-import type { Player } from "../../../common/types.ts";
+import type { Player, TransactionRevert } from "../../../common/types.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "./getNumPlayersTradedAwayNormalized.ts";
+import { revertBefore } from "./revertSnapshot.ts";
 
 /**
  * Release player.
@@ -16,6 +17,14 @@ import { getNumPlayersTradedAwayNormalizedAll } from "./getNumPlayersTradedAwayN
  * @return {Promise}
  */
 const release = async (p: Player, justDrafted: boolean) => {
+	// Everything this release changes, so God Mode can take it back.
+	const revert: TransactionRevert = {
+		phase: g.get("phase"),
+		before: revertBefore(p),
+		numTransactions: p.transactions?.length ?? 0,
+	};
+	const salariesBefore = helpers.deepCopy(p.salaries);
+
 	// College: an NIL deal ends when he leaves.
 	if (g.get("college")) {
 		p.salaries = p.salaries.filter((row) => row.season < g.get("season"));
@@ -33,12 +42,17 @@ const release = async (p: Player, justDrafted: boolean) => {
 				tid: p.tid,
 				contract: helpers.deepCopy(p.contract),
 			});
+			revert.deadMoney = true;
 		}
 	}
 
 	if (justDrafted) {
 		// Clear player salary log if just drafted, because this won't be paid.
 		p.salaries = [];
+	}
+
+	if (p.salaries.length !== salariesBefore.length) {
+		revert.before.salaries = salariesBefore;
 	}
 
 	logEvent({
@@ -55,6 +69,8 @@ const release = async (p: Player, justDrafted: boolean) => {
 		showNotification: false,
 		pids: [p.pid],
 		tids: [p.tid],
+		// College moves can't be reverted, so they carry nothing to revert with.
+		...(g.get("college") ? {} : { revert }),
 	});
 	addToFreeAgents(p, await getNumPlayersTradedAwayNormalizedAll());
 	await idb.cache.players.put(p);

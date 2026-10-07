@@ -1,12 +1,19 @@
 import { PHASE } from "../../../common/constants.ts";
 import setContract from "./setContract.ts";
+import { idb } from "../../db/index.ts";
 import { g, helpers, logEvent } from "../../util/index.ts";
-import type { Phase, Player, PlayerContract } from "../../../common/types.ts";
+import type {
+	Phase,
+	Player,
+	PlayerContract,
+	TransactionRevert,
+} from "../../../common/types.ts";
 import fuzzRating from "./fuzzRating.ts";
 import genJerseyNumber from "./genJerseyNumber.ts";
 import setJerseyNumber from "./setJerseyNumber.ts";
 import { coarsenRating } from "../../../common/coarsenRating.ts";
 import { collegeFinalSeason } from "../../../common/college.ts";
+import { revertBefore, salaryStartSeason } from "./revertSnapshot.ts";
 
 // HOW HIGH A POTENTIAL IS WORTH ANNOUNCING, and the number to quote when one
 // is. Undefined means say nothing.
@@ -56,7 +63,22 @@ const sign = async (
 	tid: number,
 	contract: PlayerContract,
 	phase: Phase,
+	// The player as he stood before the caller started on this deal, when the
+	// caller has already changed him (autoSign trims the years he asked for).
+	before?: TransactionRevert["before"],
 ) => {
+	// Everything this signing changes, so God Mode can take it back.
+	const revert: TransactionRevert = {
+		phase,
+		before: before ?? revertBefore(p),
+		numTransactions: p.transactions?.length ?? 0,
+		salaryStart: salaryStartSeason(),
+	};
+	const negotiation = await idb.cache.negotiations.get(p.pid);
+	if (negotiation?.resigning) {
+		revert.negotiationTid = negotiation.tid;
+	}
+
 	const isRookie =
 		p.stats.length === 0 &&
 		p.draft.year === g.get("season") &&
@@ -94,13 +116,26 @@ const sign = async (
 	const resigning =
 		phase === PHASE.RESIGN_PLAYERS && p.draft.year !== g.get("season");
 	const eventType = resigning ? "reSigned" : "freeAgent";
+	// A copy of the contract, not the player's own object: that one gets edited
+	// in place later (the re-signing phase flags it, an AI raises its offer on
+	// it), which would rewrite this event in memory - and a synced event is
+	// deleted on other devices by matching its content.
+	const eventContract: PlayerContract = {
+		amount: p.contract.amount,
+		exp: p.contract.exp,
+	};
+	if (p.contract.rookie) {
+		eventContract.rookie = true;
+	}
 	const eid = await logEvent({
 		type: eventType,
 		showNotification: false,
 		pids: [p.pid],
 		tids: [p.tid],
 		score,
-		contract: p.contract,
+		contract: eventContract,
+		// College moves can't be reverted, so they carry nothing to revert with.
+		...(g.get("college") ? {} : { revert }),
 	});
 
 	const freeAgent = !resigning && !isRookie;

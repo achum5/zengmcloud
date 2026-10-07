@@ -330,6 +330,7 @@ import { allowCrossingNextSimStop } from "../core/sync/tradeDeadlineGate.ts";
 import { parseSimStopDays, stopsOnDay } from "../../common/simStopDays.ts";
 import { revertAppearance } from "../../common/playerAppearance.ts";
 import undoLog from "./undoLog.ts";
+import revertTransaction from "../core/player/revertTransaction.ts";
 import {
 	getAwardsByPlayer,
 	updatePlayerAwards,
@@ -4590,6 +4591,11 @@ const revertTrade = async (eid: number) => {
 	return trade.revertTrade(eid);
 };
 
+// God Mode: take back a signing, release or draft pick from the transaction log.
+const revertTransactionApi = async (eid: number) => {
+	return revertTransaction(eid);
+};
+
 const resetPlayingTime = async (tids: number[] | undefined) => {
 	const tids2 = tids ?? [g.get("userTid")];
 
@@ -8006,6 +8012,7 @@ const api = {
 		reorderRosterDrag,
 		resetPlayingTime,
 		revertTrade,
+		revertTransaction: revertTransactionApi,
 		simIntrasquadGame,
 		retiredJerseyNumberDelete,
 		retiredJerseyNumberUpsert,
