@@ -8188,11 +8188,13 @@ class Director {
 						)
 						.map((c) => c.at),
 				];
-				// Left back at the other end while his team has it: he trails
-				// up the floor to the top of the play - if where he goes next
-				// is up there anyway, and he can still get there in time from
-				// it - wherever up there nobody else is.
-				if (!w.planted && this.inBackcourt(team, P)) {
+				// In the frontcourt (see below) - or not.
+				const front = Math.abs(P.x - rim.x) <= COURT_W / 2 - 6;
+				// Left back at the other end while his team has it - or at half
+				// court, having thrown it ahead: he trails up the floor to the
+				// top of the play - if he can still get where he goes next in
+				// time from it - wherever up there nobody else is.
+				if (!w.planted && !front) {
 					const deep = this.rand(27, 31);
 					const y0 = Math.min(38, Math.max(12, P.y));
 					const others = othersAt(from + 1500);
@@ -8209,9 +8211,8 @@ class Director {
 					const d = dist(P, Q);
 					const nm = w.next === undefined ? undefined : tr.moves[w.next];
 					if (
-						nm &&
-						!this.inBackcourt(team, nm.to) &&
-						dist(Q, nm.to) / Math.max(0.3, (nm.t1 - nm.t0) / 1000) <= RUN &&
+						(!nm ||
+							dist(Q, nm.to) / Math.max(0.3, (nm.t1 - nm.t0) / 1000) <= RUN) &&
 						room > 400 &&
 						d / (room / 1000) <= SPRINT
 					) {
@@ -8233,7 +8234,6 @@ class Director {
 				}
 				// In the frontcourt: out on the perimeter (and kept behind the
 				// line), in close round the rim, or anywhere between.
-				const front = Math.abs(P.x - rim.x) <= COURT_W / 2 - 6;
 				const out = behindArc(team, P) === undefined;
 				const big = !out && dist(P, rim) < 17;
 				if (!front) {
