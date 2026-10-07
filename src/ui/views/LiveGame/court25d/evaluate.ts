@@ -178,6 +178,10 @@ export const offenseAt = (tl: CourtTimeline, t: number): Side => {
 	return i >= 0 ? tl.poss[i]![1] : 1;
 };
 
+// A jump ball not yet tipped: nobody's ball.
+const jumpBallAt = (tl: CourtTimeline, t: number): boolean =>
+	tl.jumps?.some(([t0, tip]) => t >= t0 && t < tip) ?? false;
+
 const ballIndexAt = (tl: CourtTimeline, t: number): number =>
 	Math.max(
 		0,
@@ -981,7 +985,7 @@ const doingAt = (
 			anim = moveAnim(move.move, move.from);
 		} else if (seg && seg.kind === "hold" && seg.pid === pid) {
 			anim = seg.style === "hold" ? "hold" : "dribbleIdle";
-		} else if (offenseAt(tl, t) === tr.team) {
+		} else if (jumpBallAt(tl, t) || offenseAt(tl, t) === tr.team) {
 			anim = "ready";
 		} else {
 			// Up on the man with the ball, or set in his stance off it.
@@ -1001,8 +1005,9 @@ const doingAt = (
 				: (t / 1000) * (fps / a.n) + pid * 0.37;
 		const life:
 			| { anim: AnimName; phase: number; mirror?: boolean }
-			| undefined =
-			anim === "ready" || anim === "stance"
+			| undefined = jumpBallAt(tl, t)
+			? undefined
+			: anim === "ready" || anim === "stance"
 				? offBall(tl, tr, t, anim)
 				: anim === "guard" && seg?.kind === "hold"
 					? swipeAt(tl, tr, t, seg.pid)

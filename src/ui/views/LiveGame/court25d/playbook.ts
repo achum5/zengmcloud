@@ -2026,7 +2026,7 @@ export const PLAYBOOK: PlaySource[] = [
 			"2 three catch_and_shoot R_corner 2 1 kickout Transition 2",
 			"3 three catch_and_shoot L_corner 2 1 skip Transition 1",
 			"5 three catch_and_shoot top 2 1 swing Transition 1",
-			"4 post hook L_lane 1 1 bounce Transition 1 | 4 move L_lane seal",
+			"4 post hook L_lane 2 1 bounce Transition 1 | 4 move L_lane seal",
 			"1 mid pull_up R_elbow 2 - - Transition 2 | 1 dribble R_elbow attack",
 			"1 post floater R_lane 2 - - Transition 2 | 1 dribble R_lane attack",
 			"5 mid catch_and_shoot R_elbow 2 1 swing Transition 1 | 5 move R_elbow jog",

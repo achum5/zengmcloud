@@ -22,7 +22,14 @@ import {
 } from "./evaluate.ts";
 import { buildClocks, gameClockAt } from "./clock.ts";
 import { crowdAt } from "./scene.ts";
-import { COURT_H, COURT_W, FT_LINE_DEPTH, RIM_Z, rimX } from "./geometry.ts";
+import {
+	attackDir,
+	COURT_H,
+	COURT_W,
+	FT_LINE_DEPTH,
+	RIM_Z,
+	rimX,
+} from "./geometry.ts";
 import { bodyOf, posed, skeleton } from "./poses.ts";
 import { compile, fakeGame, gidOf } from "./testGame.ts";
 import { finishOf } from "../../../util/liveGameWording.basketball.ts";
@@ -1466,6 +1473,72 @@ describe("2.5D director", () => {
 			assert.isAbove(checked, 4);
 		}
 	}, 60_000);
+
+	// At the tip-off both teams stand ready, nobody on offense or defense
+	// yet, till the ball is tipped - nobody gives away who wins it.
+	test("the tip-off gives nothing away before the ball is tipped", () => {
+		// (A game where the winners would otherwise set off early.)
+		const { tl } = compile("arena-lab", 70);
+		const toss = tl.fx.find((f) => f.kind === "toss")!.t;
+		const [, tip] = tl.jumps![0]!;
+		assert.isAbove(tip, toss);
+		for (const tr of tl.tracks.values()) {
+			const at = evalPlayer(tl, tr.pid, toss);
+			if (!at.shown) {
+				continue;
+			}
+			for (let t = toss; t < tip; t += 40) {
+				const st = evalPlayer(tl, tr.pid, t);
+				// Nobody on defense yet, and nobody off before the tip.
+				assert.notInclude(
+					[
+						"stance",
+						"guard",
+						"slide",
+						"shuffle",
+						"walk",
+						"jog",
+						"run",
+						"sprint",
+					],
+					st.anim,
+					`${tr.pid} at ${t}`,
+				);
+				assert.isBelow(
+					Math.hypot(st.x - at.x, st.y - at.y),
+					0.05,
+					`${tr.pid} at ${t}`,
+				);
+			}
+		}
+	});
+
+	// The man with the ball doesn't stand about with it back in his own half
+	// - waiting on a break that never gets going, or for a whistle: it is
+	// brought up the floor. (Seconds as they go by on screen.)
+	test("nobody stands with the ball in the backcourt", () => {
+		for (const seed of ["a", "b"]) {
+			const { tl } = compile(seed, 140);
+			let worst = 0;
+			tl.beats.forEach((b, k) => {
+				let run = 0;
+				for (let t = tl.beats[k - 1]?.end ?? 0; t < b.actionStart; t += 100) {
+					const h = evalBall(tl, t, bodyFor).holder;
+					if (h === undefined) {
+						run = 0;
+						continue;
+					}
+					const p0 = evalPlayer(tl, h, t);
+					const p1 = evalPlayer(tl, h, t + 100);
+					const back = (p0.x - COURT_W / 2) * attackDir(offenseAt(tl, t)) < 0;
+					const still = Math.hypot(p1.x - p0.x, p1.y - p0.y) < 0.35;
+					run = back && still ? run + 100 / fastAt(tl, t) : 0;
+					worst = Math.max(worst, run);
+				}
+			});
+			assert.isBelow(worst, 2500, seed);
+		}
+	}, 120_000);
 
 	// The camera goes off the floor only while nothing is happening on it: the
 	// game opens on the building and cuts in for the tip, and a timeout or the

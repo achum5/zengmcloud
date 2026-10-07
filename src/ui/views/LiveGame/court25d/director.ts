@@ -266,6 +266,8 @@ export type CourtTimeline = {
 	poss: [number, Side][];
 	// Moments the picture cuts: everyone may be somewhere else just after.
 	cuts: number[];
+	// Jump balls, until they are tipped: both teams just ready.
+	jumps?: [number, number][];
 	shots: ArenaShot[];
 	// How tense the building is, over time (0 to 1): a close game late in
 	// the last period or in overtime.
@@ -549,6 +551,28 @@ const CLOSE_BREAK = 3.5;
 // How close (feet, middle to middle) two men get before they are into each
 // other: a screen, a post-up.
 const BODY = 1.85;
+
+// How far along a run (0 to 1) a man is `u` of the way through its `ms`:
+// setting off from a standstill and pulling up at the end, the way the
+// court runs it (see alongRun in evaluate.ts).
+const runProgress = (ms: number, u: number): number => {
+	const T = ms / 1000;
+	if (T <= 0.001) {
+		return u;
+	}
+	const ta = Math.min(T / 3, 0.45);
+	const td = Math.min(T / 3, 0.38);
+	const vc = 1 / (T - ta / 2 - td / 2);
+	const ramp = (x: number) => x * x * x - (x * x * x * x) / 2;
+	const s = Math.min(T, Math.max(0, u * T));
+	const d =
+		s < ta
+			? vc * ta * ramp(s / ta)
+			: s < T - td
+				? (vc * ta) / 2 + vc * (s - ta)
+				: (vc * ta) / 2 + vc * (s - ta) - vc * td * ramp((s - (T - td)) / td);
+	return Math.min(1, Math.max(0, d));
+};
 // A man set where he stands, for nobody to run through: in a screen, or
 // sealing in the post.
 type Body2 = { team: Side; t0: number; t1: number; at: Pt; post: boolean };
@@ -710,6 +734,10 @@ class Director {
 	readonly fast: [number, number, number?][] = [];
 	// When each break got going: a break is played at real speed.
 	private readonly breaks: number[] = [];
+	// Each jump ball, from the players taking their places until it is
+	// tipped: nobody is on offense or defense yet, and nobody sets off
+	// before the tip - how they stood or went would give away who won it.
+	readonly jumps: [number, number][] = [];
 	// Each man subbed out: who came on for him, when he went off, when the
 	// man coming on was out there, and when he came back on himself (see
 	// mark).
@@ -1187,8 +1215,9 @@ class Director {
 	): number {
 		let t = style === "dribble" ? t0 : this.offDribble(pid, t0, style);
 		// Off a run of crossovers, he dribbles on once the ball comes up into
-		// a hand - the hand it comes up into.
-		const last = this.ball.at(-1);
+		// a hand - the hand it comes up into. (Off the last of the ball's moves
+		// begun before this one: any from then on, this takes the place of.)
+		const last = this.ball.findLast((s) => s.t0 < t);
 		let crossed: Hand | undefined;
 		if (
 			style === "dribble" &&
@@ -1544,6 +1573,32 @@ class Director {
 			: this.passTo(near, pid, got + 400, "chest");
 	}
 
+	// When the man with the ball is free to go somewhere with it: done with
+	// what he was doing, and the ball really in his hands by then - not still
+	// on its way to him, or bouncing loose for him to pick up.
+	private hasItFrom(pid: number): number {
+		return Math.max(this.free.get(pid) ?? 0, this.ball.at(-1)?.t0 ?? 0);
+	}
+
+	// The ball left on the floor at the whistle, before an inbound: whoever
+	// is nearest it now picks it up - before anyone sets off for his place,
+	// not whoever ends up nearest it once they are all there (from the far
+	// end of the floor, say, with the inbound to come to him there).
+	private pickUpLoose(t: number) {
+		if (this.holder !== undefined) {
+			return;
+		}
+		const b = this.ballPoint();
+		const near = [...this.slots(0), ...this.slots(1)].sort(
+			(a, c) => dist(this.posOf(a), b) - dist(this.posOf(c), b),
+		)[0];
+		if (near !== undefined) {
+			// Nowhere with it, nor rid of it, till he has it.
+			const got = this.pickUp(near, t, JOG);
+			this.free.set(near, Math.max(this.free.get(near) ?? 0, got + 300));
+		}
+	}
+
 	// The ball tossed to a spot (an official's hands), by whoever has it - or
 	// by whoever picks it up off the floor. Returns when it gets there.
 	private tossTo(to: Pt3, t: number): number {
@@ -1709,6 +1764,7 @@ class Director {
 								y: far ? 9 : COURT_H - 9,
 							})
 					: (spots[j] ?? spots[0]!);
+		this.pickUpLoose(t);
 		// Whoever has the ball gives it up to the inbounder before he goes
 		// anywhere himself - never off up the floor with it.
 		const holding = this.holder !== inbounder ? this.holder : undefined;
@@ -2591,6 +2647,7 @@ class Director {
 		const dir = attackDir(team);
 		const bh = run.roles[play.ball]!;
 		const ball = this.at(run, play.start[play.ball]!);
+		this.pickUpLoose(t);
 		const ready = this.walkTo(
 			[
 				...run.roles.map((pid, r) => ({
@@ -2804,7 +2861,14 @@ class Director {
 					coverage: this.coverageFor(run, screeners[0]!, user, onBall, next),
 				};
 			} else if (a.type === "dribble") {
-				end = Math.max(end, this.playDribble(run, a.who, a.to, a.kind, t0));
+				// Bringing it up, he goes as soon as he has it - not once the
+				// others have got where the last step sent them.
+				const pid = run.roles[a.who]!;
+				const since =
+					a.kind === "advance" && this.holder === pid
+						? Math.min(t0, this.hasItFrom(pid))
+						: t0;
+				end = Math.max(end, this.playDribble(run, a.who, a.to, a.kind, since));
 			} else if (a.type === "move") {
 				const pid = run.roles[a.who]!;
 				const done =
@@ -2826,6 +2890,9 @@ class Director {
 				const from = this.holder ?? run.roles[a.who]!;
 				const to = run.roles[a.to]!;
 				if (from !== to) {
+					if (run.play.cat === "break" && from === this.holder) {
+						this.pushAhead(team, from, to, t0);
+					}
 					end = Math.max(
 						end,
 						this.passTo(from, to, t0, passStyleOf(a.kind, this.rng)),
@@ -2865,6 +2932,38 @@ class Director {
 		this.spaceTheDrive(run, t0);
 		this.guardStep(run, acts, t0, end, before, k);
 		return end;
+	}
+
+	// THE PITCH AHEAD. On the break, the man with it does not stand in the
+	// backcourt waiting for the man he is throwing to to get out ahead: he
+	// pushes it up the floor until it is time to let it go - never past
+	// him, nor far over half court.
+	private pushAhead(team: Side, from: number, to: number, t0: number) {
+		const P = this.posOf(from);
+		if (!this.inBackcourt(team, P)) {
+			return;
+		}
+		const R = this.posOf(to);
+		const dir = attackDir(team);
+		const half = COURT_W / 2;
+		const Q = clampPt({
+			x:
+				dir === 1 ? Math.min(half + 4, R.x - 10) : Math.max(half - 4, R.x + 10),
+			y: P.y + (R.y - P.y) * 0.25,
+		});
+		if ((Q.x - P.x) * dir < 4) {
+			return;
+		}
+		// There as it is time to let it go, for it to get to him as he gets
+		// where he is going.
+		const start = Math.max(t0, this.hasItFrom(from));
+		const letGo =
+			(this.free.get(to) ?? 0) - passMs(dist(Q, R)) - RELEASE_MS - 80;
+		if (letGo - start < 700) {
+			return;
+		}
+		this.hold(from, start, "dribble");
+		this.goBy(from, Q, start, letGo, "dribble", dir);
 	}
 
 	// THE TRAILER. A man the set leaves back up the floor - the big who took
@@ -5889,13 +5988,22 @@ class Director {
 				);
 				let t = dev.t;
 				if (dev.run) {
-					const n = dev.run.play.steps.length - dev.run.from;
-					t = this.runSteps(
-						dev.run,
-						t,
-						dev.run.from,
-						dev.run.from + Math.floor(this.rng() * n) - 1,
-					);
+					const run = dev.run;
+					const steps = run.play.steps;
+					const last =
+						run.from + Math.floor(this.rng() * (steps.length - run.from)) - 1;
+					// However little of it he gets to, the ball is brought over
+					// half court first - never fouled where it was inbounded, the
+					// man with it waiting on a break that never got going.
+					for (let k = run.from; k < steps.length; k++) {
+						const back =
+							this.holder !== undefined &&
+							this.inBackcourt(team, this.posOf(this.holder));
+						if (k > last && !back) {
+							break;
+						}
+						t = this.runStep(run, steps[k]!, t, steps[k + 1], k);
+					}
 				}
 				const victim =
 					typeof e.pidShooting === "number"
@@ -7313,10 +7421,11 @@ class Director {
 			jump: [0.1, 0.9, 2.5],
 		});
 		const receiver = this.slots(winnerTeam).find((p) => p !== jumper) ?? jumper;
+		this.jumps.push([T, toss + 520]);
 		this.fly(toss + 520, toss + 1000, apex, { pid: receiver });
 		this.act(receiver, "catch", toss + 900, toss + 1080);
 		this.hold(receiver, toss + 1000, "hold");
-		this.setOffense(toss + 1000, winnerTeam);
+		this.setOffense(toss + 520, winnerTeam);
 		this.phase = "tip";
 		this.motionTeam = undefined;
 		this.beat(i, e.type, toss + 520, toss + 1300);
@@ -8114,10 +8223,23 @@ class Director {
 				}
 				setOff(tr, w.next, at);
 				take(tr, w, at);
-				// His man goes with him, each time he is still there to.
+				// His man goes with him, each time he is still there to - and
+				// can still make his own next run from where it takes him.
 				const s0 = steps[0]!.t0 + 120;
 				const best = marker(s0, steps[0]!.t1 - steps[0]!.t0 + 200);
 				if (best) {
+					const his =
+						best.w.next === undefined ? undefined : best.tr.moves[best.w.next];
+					const fitsHim = (Q: Pt): boolean => {
+						if (!his || his.t1 - his.t0 <= 1) {
+							return true;
+						}
+						const secs = (his.t1 - his.t0) / 1000;
+						return (
+							dist(Q, his.to) / secs <=
+							Math.max(dist(his.from, his.to) / secs, RUN)
+						);
+					};
 					let D = startOf(best.tr, best.w);
 					for (const st of steps) {
 						if (st.t1 + 320 > best.w.to) {
@@ -8127,6 +8249,9 @@ class Director {
 							x: D.x + (st.to.x - st.from.x) * 0.85,
 							y: D.y + (st.to.y - st.from.y) * 0.85,
 						});
+						if (!fitsHim(to)) {
+							break;
+						}
 						const slide: Move = {
 							t0: st.t0 + 120,
 							t1: st.t1 + 120,
@@ -8193,8 +8318,13 @@ class Director {
 				}
 			}
 		}
-		// Never sooner than a cut, or the ball changing hands.
-		const stops = [...this.cuts, ...this.poss.map(([t]) => t)];
+		// Never sooner than a cut, the ball changing hands, or a jump ball
+		// being tipped.
+		const stops = [
+			...this.cuts,
+			...this.poss.map(([t]) => t),
+			...this.jumps.map(([, tip]) => tip),
+		];
 		// Nor so slow that he goes by a man set in a screen while it is set
 		// (the schedule had him by it when it wasn't).
 		const walls = this.bodies();
@@ -9177,13 +9307,15 @@ class Director {
 					if (w.t1 <= m.t0 || w.t0 >= m.t1) {
 						continue;
 					}
-					// Where he comes closest to him while the man is there.
+					// Where he comes closest to him while the man is there - how
+					// far along it he is by then reckoned both at an even pace
+					// and getting going and pulling up, as he really runs it.
 					const lo = dur > 0 ? Math.max(0, (w.t0 - m.t0) / dur) : 0;
 					const hi = dur > 0 ? Math.min(1, (w.t1 - m.t0) / dur) : 1;
 					const u = Math.min(
-						hi,
+						Math.max(hi, runProgress(dur, hi)),
 						Math.max(
-							lo,
+							Math.min(lo, runProgress(dur, lo)),
 							((w.at.x - m.from.x) * dx + (w.at.y - m.from.y) * dy) / L2,
 						),
 					);
@@ -9215,13 +9347,14 @@ class Director {
 				const b = { ...m, t0: bend.t, from: bend.at };
 				return depth >= 3 ? [a, b] : [a, ...split(b, depth + 1)];
 			};
-			const out: Move[] = tr.moves.flatMap((m) => split(m, 0));
-			// Nor does a run end inside one - nor a man stand where one is set:
+			// No run ends inside one - nor does a man stand where one is set:
 			// he stops at his shoulder (and the next run sets off from there).
-			out.forEach((m, i) => {
+			// Then, those runs as they now go, round any in the way.
+			const ends = [...tr.moves];
+			ends.forEach((m, i) => {
 				for (const w of theirs) {
 					const d = dist(m.to, w.at);
-					const until = out[i + 1]?.t0 ?? Infinity;
+					const until = ends[i + 1]?.t0 ?? Infinity;
 					// (Getting there just as he steps out of it is too late too.)
 					if (until < w.t0 || m.t1 > w.t1 + 500 || d >= BODY) {
 						continue;
@@ -9233,14 +9366,14 @@ class Director {
 						x: w.at.x + ((ref.x - w.at.x) / dd) * BODY * 1.05,
 						y: w.at.y + ((ref.y - w.at.y) / dd) * BODY * 1.05,
 					});
-					out[i] = { ...m, to };
-					const next = out[i + 1];
+					ends[i] = { ...m, to };
+					const next = ends[i + 1];
 					if (next && dist(next.from, was) < 0.01) {
-						out[i + 1] = { ...next, from: { ...to } };
+						ends[i + 1] = { ...next, from: { ...to } };
 					}
 				}
 			});
-			tr.moves = out;
+			tr.moves = ends.flatMap((m) => split(m, 0));
 		}
 	}
 
@@ -9422,6 +9555,7 @@ class Director {
 			beats: this.beats,
 			poss: this.poss,
 			cuts: this.cuts,
+			jumps: this.jumps,
 			shots,
 			tension: this.tension,
 			fast: hurried(this.fast, this.beats),
