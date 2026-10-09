@@ -44,6 +44,13 @@ describe("3D picture resolution", () => {
 		assert.isAtMost(res.changes, 6);
 	});
 
+	test("slow frames that are not the drawing's doing leave it as fine as it is", () => {
+		const res = makeResolution(0);
+		run(res, 1620, 0, 30_000, 45, 5);
+		assert.strictEqual(artFor(1620, res), 3);
+		assert.strictEqual(res.changes, 0);
+	});
+
 	test("a device keeping up stays as fine as it gets", () => {
 		const res = makeResolution(0);
 		run(res, 720, 0, 30_000, 16.7, 9);

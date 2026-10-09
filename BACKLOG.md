@@ -80,9 +80,9 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
 
 ## D. Visual quality and performance
 
-- [ ] Still dropping frames fairly often. Optimize so the frame rate stays high
-      without lowering quality or making it look more pixelated (which also happens
-      fairly often).
+- [~] Still dropping frames fairly often. Optimize so the frame rate stays high
+  without lowering quality or making it look more pixelated (which also happens
+  fairly often).
 - [ ] Player head profiles should match their faces.js face much better.
 - [ ] Back of the head should match the faces.js face, including hair.
 - [x] Rims look like a bunch of circles. Make the rim and the whole basket look

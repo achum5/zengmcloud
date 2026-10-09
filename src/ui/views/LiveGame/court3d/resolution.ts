@@ -64,8 +64,11 @@ export const adjust = (
 	const art = artFor(deviceRows, res);
 	const { finest, coarsest } = bounds(deviceRows);
 	let next = res.coarser;
-	if (res.frameMs > 26 && art < coarsest) {
-		// Under about 40 frames a second.
+	if (res.frameMs > 26 && res.drawMs > 12 && art < coarsest) {
+		// Under about 40 frames a second - and the picture the reason: if
+		// drawing it is not what takes the time (something else on the page,
+		// the browser cleaning up after itself), a coarser one would only look
+		// worse, no faster.
 		next += 1;
 	} else if (
 		art > finest &&

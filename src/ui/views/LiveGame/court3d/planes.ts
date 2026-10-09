@@ -111,6 +111,20 @@ const drawRows = (
 		cam.cy - (cam.f * (up0 + upV * v)) / (dep0 + depV * v);
 	const yA = rowY(0);
 	const yB = rowY(plane.h);
+	if (Math.abs(depV) < 1e-9) {
+		// Upright and square to the camera (a wall, the front of the table):
+		// the same depth all the way down, so the whole of it is one picture
+		// stretched evenly - drawn at once, not a row at a time.
+		const k = cam.f / dep0;
+		const x0 = cam.cx + (o.x - p.x) * k;
+		const perU = ax.x * k;
+		ctx.save();
+		ctx.globalAlpha *= alpha;
+		ctx.transform(perU, 0, 0, (yB - yA) / plane.h, x0, yA);
+		ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, plane.w, plane.h);
+		ctx.restore();
+		return true;
+	}
 	const top = Math.max(0, Math.floor(Math.min(yA, yB)));
 	const bottom = Math.min(cam.viewH, Math.ceil(Math.max(yA, yB)));
 	const sx = img.width / plane.w;
