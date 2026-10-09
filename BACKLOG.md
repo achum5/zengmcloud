@@ -38,7 +38,7 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
 
 ## B. Replays
 
-- [ ] Individual player replays are a bit broken. Rework them overall so they cut
+- [x] Individual player replays are a bit broken. Rework them overall so they cut
       correctly to each play, with a very brief, visible cut at every switch so it
       reads as a new clip.
 

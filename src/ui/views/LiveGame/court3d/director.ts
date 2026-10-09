@@ -290,6 +290,9 @@ export type CourtTimeline = {
 	poss: [number, Side][];
 	// Moments the picture cuts: everyone may be somewhere else just after.
 	cuts: number[];
+	// Of those, the cuts from one clip of a highlight reel to the next: the
+	// picture dips to black across each.
+	clips?: number[];
 	// Jump balls, until they are tipped: both teams just ready.
 	jumps?: [number, number][];
 	shots: ArenaShot[];
@@ -861,6 +864,8 @@ class Director {
 	readonly beats: Beat[] = [];
 	readonly poss: [number, Side][] = [];
 	readonly cuts: number[] = [];
+	// The cuts between one clip of a highlight reel and the next.
+	readonly clips: number[] = [];
 	readonly tension: [number, number][] = [];
 	// Each with how short it may be and still be run through (ms; see
 	// hurried).
@@ -9163,6 +9168,64 @@ class Director {
 		}
 	}
 
+	// A HIGHLIGHT REEL'S NEXT CLIP (see filterPlayerHighlights): not however
+	// everybody got from the last one to here, but a cut - to the trip it
+	// comes from, under way: the offense in its set in the half court with
+	// the ball up top, every man on his man.
+	newClip(e: RawEvent) {
+		const pid =
+			typeof e.pid === "number" && this.team.has(e.pid) ? e.pid : undefined;
+		// (A line with nobody named - the ball out of bounds - names a team.)
+		const own: Side | undefined =
+			pid !== undefined
+				? this.teamOf(pid)
+				: e.t === 0
+					? 1
+					: e.t === 1
+						? 0
+						: undefined;
+		if (own === undefined) {
+			return;
+		}
+		const T = this.T;
+		const offense = /^blk|^stl$|^drb$/.test(e.type) ? other(own) : own;
+		this.cuts.push(T);
+		this.clips.push(T);
+		this.guarding.clear();
+		this.setOffense(T, offense);
+		const spots = this.setSpots(offense, 0);
+		const dir = attackDir(offense);
+		const warp = (q: number, to: Pt, face: 1 | -1) => {
+			const tr = this.track(q);
+			if (!tr) {
+				return;
+			}
+			tr.moves.push({
+				t0: T,
+				t1: T + 1,
+				from: { ...this.posOf(q) },
+				to: { ...to },
+				anim: "run",
+			});
+			tr.faces.push([T, face]);
+			this.pos.set(q, { ...to });
+			this.face.set(q, face);
+			this.free.set(q, Math.max(this.free.get(q) ?? 0, T + 1));
+		};
+		this.slots(offense).forEach((q, j) => {
+			warp(q, spots[j] ?? spots[0]!, dir);
+		});
+		this.slots(other(offense)).forEach((q, j) => {
+			warp(q, guardSpot(offense, spots[j] ?? spots[0]!), -dir as 1 | -1);
+		});
+		this.hold(this.slots(offense)[0]!, T + 1, "dribble");
+		this.phase = "set";
+		this.motionTeam = offense;
+		this.motion = 0;
+		this.inboundAt = undefined;
+		this.lastClock = undefined;
+	}
+
 	noteClock(e: RawEvent) {
 		if (typeof e.clock === "number") {
 			this.lastClock = e.clock;
@@ -10793,6 +10856,11 @@ class Director {
 				const man = this.marking.get(m);
 				if (man === undefined) {
 					let short = false;
+					// (Across a cut he is wherever it has him.)
+					const atCut = cuts.some((c) => Math.abs(c - m.t0) < 2);
+					if (atCut) {
+						left = undefined;
+					}
 					if (left && (m.t1 - m.t0 > 1 || dist(m.from, m.to) > 0.01)) {
 						m.from = { ...left };
 						const far = dist(m.from, m.to);
@@ -12199,6 +12267,7 @@ class Director {
 			beats: this.beats,
 			poss: this.poss,
 			cuts: this.cuts,
+			clips: this.clips,
 			jumps: this.jumps,
 			shots,
 			tension: this.tension,
@@ -12304,6 +12373,9 @@ export const compileCourt = ({
 			d.trackScore(e);
 			continue;
 		}
+		if (e.clipStart === true) {
+			d.newClip(e);
+		}
 		d.handle(e, i);
 		d.noteClock(e);
 	}
@@ -12313,6 +12385,20 @@ export const compileCourt = ({
 // Where the animation should stand while the playback cursor (events consumed)
 // is at `cursor`: the moment the next unshown line happens. Past the last line,
 // the end of the game.
+// How dark the picture is at t for a cut between clips of a highlight reel:
+// a quick dip to black and back across each.
+const CLIP_DIP = 170;
+export const clipDipAt = (tl: CourtTimeline, t: number): number => {
+	let dark = 0;
+	for (const c of tl.clips ?? []) {
+		const d = Math.abs(t - c);
+		if (d < CLIP_DIP) {
+			dark = Math.max(dark, 1 - d / CLIP_DIP);
+		}
+	}
+	return dark;
+};
+
 export const targetForCursor = (tl: CourtTimeline, cursor: number): number => {
 	const beat = tl.beats.find((b) => b.i >= cursor);
 	return beat ? beat.actionStart : tl.end;

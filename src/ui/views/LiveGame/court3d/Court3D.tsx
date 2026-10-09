@@ -31,6 +31,7 @@ import {
 	shotClockAt,
 } from "./clock.ts";
 import {
+	clipDipAt,
 	compileCourt,
 	linesBetween,
 	snapForCursor,
@@ -790,7 +791,8 @@ const Court3D = ({
 					o = Math.max(0, 1 - edge / REPLAY_DIP);
 				} else {
 					const near = cut === undefined ? Infinity : Math.abs(s.t - cut);
-					o = Math.max(0, 1 - near / DIP_MS);
+					// (And between clips of a highlight reel.)
+					o = Math.max(0, 1 - near / DIP_MS, clipDipAt(tl, s.t));
 				}
 				if (dip.style.opacity !== String(o)) {
 					dip.style.opacity = String(o);

@@ -135,8 +135,16 @@ export const filterPlayerHighlights = (
 		}
 	}
 
-	// Pass 2: keep housekeeping, every highlight, and the lead-in plays.
+	// Pass 2: keep housekeeping, every highlight, and the lead-in plays. The
+	// first play kept after any that were dropped starts a new clip, and says
+	// so (`clipStart`): the 3D court cuts to it rather than playing out how
+	// everybody got from the last clip to this one.
 	const out: any[] = [];
+	let skipped = false;
+	const keepPlay = (event: any) => {
+		out.push(skipped ? { ...event, clipStart: true } : event);
+		skipped = false;
+	};
 	for (let i = 0; i < n; i++) {
 		const event = playByPlay[i];
 		const type = event?.type;
@@ -156,7 +164,7 @@ export const filterPlayerHighlights = (
 			continue;
 		}
 		if (isPositivePlayForPid(event, pid)) {
-			out.push(event);
+			keepPlay(event);
 			continue;
 		}
 		// A lead-in: a play (not a sub/injury/stoppage) that comes before a
@@ -164,8 +172,12 @@ export const filterPlayerHighlights = (
 		if (typeof type === "string" && !NON_PLAY_DESCRIPTIVE.has(type)) {
 			const lastHi = lastHighlightIndex.get(possessionOf[i]!);
 			if (lastHi !== undefined && lastHi > i) {
-				out.push(event);
+				keepPlay(event);
+				continue;
 			}
+		}
+		if (typeof type === "string") {
+			skipped = true;
 		}
 	}
 	return out;
