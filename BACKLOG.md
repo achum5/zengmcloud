@@ -85,7 +85,7 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
       fairly often).
 - [ ] Player head profiles should match their faces.js face much better.
 - [ ] Back of the head should match the faces.js face, including hair.
-- [ ] Rims look like a bunch of circles. Make the rim and the whole basket look
+- [x] Rims look like a bunch of circles. Make the rim and the whole basket look
       better. Basketball should look like a real ball with correct lines.
 - [ ] Better-looking feet, and customizable shoes (like jerseys and courts).
 - [ ] Improve the look of the name tag under players.

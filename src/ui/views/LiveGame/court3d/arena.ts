@@ -1006,19 +1006,55 @@ export const drawHoop = (
 			line(ctx, cam, mid[i]!, bottom[k]!, 0.05);
 		}
 	};
+	// The ring itself, one solid tube of iron round each half - not a run of
+	// separate pieces with an edge round each - with the light along its top.
+	const R_N = 48;
+	const ringAt = (a: number, z = rz): Pt3 => ({
+		x: rx + Math.cos(a) * RIM_R,
+		y: 25 + rock + Math.sin(a) * RIM_R,
+		z,
+	});
 	const rimArc = (back: boolean) => {
-		for (let i = 0; i < N; i++) {
-			if (isBack(i) !== back) {
-				continue;
-			}
-			inkLine(
-				ctx,
-				cam,
-				rim[i]!,
-				rim[(i + 1) % N]!,
-				0.17,
-				back ? "#c4501f" : "#f06a2a",
+		const pts: { x: number; y: number }[] = [];
+		let k = 0;
+		const n = R_N / 2;
+		for (let i = 0; i <= n; i++) {
+			const a = (back ? Math.PI : 0) + (i / n) * Math.PI;
+			const p = project(cam, ringAt(a));
+			pts.push(p);
+			k += p.k;
+		}
+		k /= pts.length;
+		const w = Math.max(0.9, 0.17 * k);
+		const path = () => {
+			ctx.beginPath();
+			pts.forEach((p, i) =>
+				i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y),
 			);
+		};
+		ctx.lineCap = "round";
+		ctx.lineJoin = "round";
+		path();
+		ctx.strokeStyle = INK;
+		ctx.lineWidth = w + 2 * Math.max(1, 0.05 * k);
+		ctx.stroke();
+		ctx.strokeStyle = back ? "#c4501f" : "#ef6526";
+		ctx.lineWidth = w;
+		ctx.stroke();
+		if (!back && w > 2) {
+			ctx.beginPath();
+			for (let i = 0; i <= n; i++) {
+				const a = (i / n) * Math.PI;
+				const p = project(cam, ringAt(a, rz + 0.045));
+				if (i === 0) {
+					ctx.moveTo(p.x, p.y);
+				} else {
+					ctx.lineTo(p.x, p.y);
+				}
+			}
+			ctx.strokeStyle = "rgba(255, 196, 150, 0.75)";
+			ctx.lineWidth = Math.max(0.6, w * 0.3);
+			ctx.stroke();
 		}
 	};
 	// The bracket from the board to the rim.
@@ -1085,24 +1121,62 @@ export const drawBall = (
 	ctx.fillStyle = g;
 	ctx.fill();
 	if (r > 3) {
-		ctx.save();
-		ctx.beginPath();
-		ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
-		ctx.clip();
+		// The seams, on the side of it facing the camera: turned with its
+		// spin, about an axis tipped off level, so it rolls over as it goes.
+		const a = spin;
+		const ca = Math.cos(a);
+		const sa = Math.sin(a);
 		ctx.strokeStyle = "rgba(40, 16, 6, 0.85)";
-		ctx.lineWidth = Math.max(0.6, r * 0.11);
-		ctx.translate(c.x, c.y);
-		ctx.rotate(spin);
-		ctx.beginPath();
-		ctx.moveTo(-r, 0);
-		ctx.lineTo(r, 0);
-		ctx.stroke();
-		ctx.beginPath();
-		ctx.ellipse(0, 0, r * Math.abs(Math.cos(spin * 1.7)), r, 0, 0, Math.PI * 2);
-		ctx.stroke();
-		ctx.restore();
+		ctx.lineWidth = Math.max(0.6, r * 0.09);
+		ctx.lineCap = "round";
+		ctx.lineJoin = "round";
+		for (const seam of SEAMS) {
+			let drawing = false;
+			ctx.beginPath();
+			for (const [x0, y0, z0] of seam) {
+				// Spun about x, then set at its resting tilt.
+				const y1 = y0 * ca - z0 * sa;
+				const z1 = y0 * sa + z0 * ca;
+				const x2 = x0 * TILT_C + z1 * TILT_S;
+				const z2 = -x0 * TILT_S + z1 * TILT_C;
+				if (z2 < 0.02) {
+					drawing = false;
+					continue;
+				}
+				const px = c.x + x2 * r * 0.97;
+				const py = c.y - y1 * r * 0.97;
+				if (drawing) {
+					ctx.lineTo(px, py);
+				} else {
+					ctx.moveTo(px, py);
+					drawing = true;
+				}
+			}
+			ctx.stroke();
+		}
 	}
 };
+
+// A basketball's seams on a ball of radius 1: two great circles at right
+// angles, and the two curved seams - circles in planes either side of the
+// one, crossing only the other - that make its eight panels.
+const SEAMS: [number, number, number][][] = (() => {
+	const n = 56;
+	const circle = (
+		f: (a: number) => [number, number, number],
+	): [number, number, number][] =>
+		Array.from({ length: n + 1 }, (_, i) => f((i / n) * Math.PI * 2));
+	const d = 0.62;
+	const rr = Math.sqrt(1 - d * d);
+	return [
+		circle((a) => [Math.cos(a), Math.sin(a), 0]),
+		circle((a) => [0, Math.cos(a), Math.sin(a)]),
+		circle((a) => [d, rr * Math.cos(a), rr * Math.sin(a)]),
+		circle((a) => [-d, rr * Math.cos(a), rr * Math.sin(a)]),
+	];
+})();
+const TILT_C = Math.cos(0.55);
+const TILT_S = Math.sin(0.55);
 
 // A soft dark patch on the floor under something: a player's feet, the ball.
 export const drawShadow = (
