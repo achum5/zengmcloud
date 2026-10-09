@@ -89,6 +89,9 @@ const REPLAY_SPEED = 0.42;
 // Replay-time ms the picture takes to come up out of black and go back down.
 const REPLAY_DIP = 70;
 
+// Whether a game opens with its starting lineups (see intro.ts).
+const LINEUP_INTROS = false;
+
 // A player whose face is a photo is drawn in this, head to toe.
 const SILHOUETTE = "#101012";
 
@@ -216,9 +219,13 @@ const Court3D = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [gid]);
 
-	// Every game opens with its starting lineups called out - more of a
-	// show in the playoffs.
-	const introKind = boxScore?.playoffs ? "playoffs" : "regular";
+	// The starting lineups called out before the opening tip (see intro.ts):
+	// off for now, kept to come back to.
+	const introKind = LINEUP_INTROS
+		? boxScore?.playoffs
+			? "playoffs"
+			: "regular"
+		: undefined;
 	const timeline = useMemo(() => {
 		if (!events || events.length === 0) {
 			return undefined;
