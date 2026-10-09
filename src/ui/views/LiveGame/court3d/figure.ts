@@ -77,6 +77,9 @@ export type Look = {
 	cut?: HairCut;
 	// What shows of his face side on, beyond his skin and hair.
 	profile?: Profile;
+	// A player whose face is a photo: solid black, head to toe, no face -
+	// only his uniform on him.
+	silhouette?: boolean;
 	jerseyNumber: string;
 	// His full name, shown under him while he has the ball.
 	name: string;
@@ -421,6 +424,9 @@ const profileHead = (
 		ctx.quadraticCurveTo(mid.m.x, mid.m.y, mid.b.x, mid.b.y);
 		ctx.stroke();
 		ctx.restore();
+	}
+	if (look.silhouette) {
+		return;
 	}
 	// His eye, looking where his nose points, under his brow.
 	const eye = P(0.64, -0.06);

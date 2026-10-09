@@ -43,13 +43,37 @@ export type TeamSeasonOverride = {
 	court?: CourtStyle;
 };
 
+// A team's row for a season. The cache only holds the last few seasons, so a
+// game from further back - a box score or replay years later - reads its row
+// from the database. Missing that, it fell through to today's team: today's
+// name, logo and colors on a game from long ago.
+const teamSeasonThen = async (tid: number, season: number) => {
+	const cached = await idb.cache.teamSeasons.indexGet(
+		"teamSeasonsByTidSeason",
+		[tid, season],
+	);
+	if (cached || tid < 0) {
+		return cached;
+	}
+	try {
+		return await idb.league
+			.transaction("teamSeasons")
+			.store.index("season, tid")
+			.get([season, tid]);
+	} catch {
+		return undefined;
+	}
+};
+
+// Returns the season row (or override) the team's info came from, if any.
 export const setTeamInfo = async (
 	t: any,
 	i: number,
 	allStars: AllStars | undefined,
 	game: any,
 	teamSeasonOverride?: TeamSeasonOverride,
-) => {
+): Promise<(TeamSeasonOverride & { jersey?: string }) | undefined> => {
+	let used: (TeamSeasonOverride & { jersey?: string }) | undefined;
 	if (allStars) {
 		const ind = t.tid === -1 ? 0 : 1;
 
@@ -80,11 +104,8 @@ export const setTeamInfo = async (
 		}
 	} else {
 		const teamSeason =
-			teamSeasonOverride ??
-			(await idb.cache.teamSeasons.indexGet("teamSeasonsByTidSeason", [
-				t.tid,
-				game.season,
-			]));
+			teamSeasonOverride ?? (await teamSeasonThen(t.tid, game.season));
+		used = teamSeason;
 		if (teamSeason) {
 			t.region =
 				teamSeason.region ??
@@ -147,6 +168,8 @@ export const setTeamInfo = async (
 	if (!t.colors) {
 		t.colors = DEFAULT_TEAM_COLORS;
 	}
+
+	return used;
 };
 
 export const makeAbbrevsUnique = <T extends { abbrev: string }>(

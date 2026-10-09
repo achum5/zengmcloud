@@ -113,6 +113,46 @@ describe("team colours on a past-season box score", () => {
 		assert.deepStrictEqual(t.colors, throwback);
 	});
 
+	test("a game older than the cache reads that season's row from the database", async () => {
+		// The cache only holds the last few seasons. A replay from years back
+		// missed it and fell through to today's team: today's name and logo.
+		await setup({ seasonRowHasColors: true });
+		const row = (await idb.cache.teamSeasons.indexGet(
+			"teamSeasonsByTidSeason",
+			[0, PAST_SEASON],
+		))!;
+		await idb.cache.teamSeasons.delete(row.rid);
+		const then = {
+			...row,
+			region: "Seattle",
+			name: "SuperSonics",
+			abbrev: "SEA",
+			imgURL: "/img/logos-primary/SEA.svg",
+			colors: ["#00653a", "#ffc200", "#ffffff"] as [string, string, string],
+		};
+		const league = idb.league;
+		idb.league = {
+			transaction: () => ({
+				store: {
+					index: () => ({
+						get: async ([season, tid]: [number, number]) =>
+							season === PAST_SEASON && tid === 0 ? then : undefined,
+					}),
+				},
+			}),
+		} as any;
+		try {
+			const t = await runSetTeamInfo();
+			assert.strictEqual(t.region, "Seattle");
+			assert.strictEqual(t.name, "SuperSonics");
+			assert.strictEqual(t.abbrev, "SEA");
+			assert.strictEqual(t.imgURL, "/img/logos-primary/SEA.svg");
+			assert.deepStrictEqual(t.colors, then.colors);
+		} finally {
+			idb.league = league;
+		}
+	});
+
 	test("a team that no longer exists still gets something renderable", async () => {
 		// All-star and placeholder sides have no team record to read, and must not
 		// throw on the way to the default.

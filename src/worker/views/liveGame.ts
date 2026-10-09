@@ -197,7 +197,7 @@ export const boxScoreToLiveSim = async ({
 			}
 		}
 
-		await setTeamInfo(
+		const seasonRow = await setTeamInfo(
 			t,
 			i,
 			allStars,
@@ -236,10 +236,12 @@ export const boxScoreToLiveSim = async ({
 				}
 			}
 			t.court = liveSimCourt({ override, teamCourt });
-			// What the team wears in the 3D game: the jersey it has made its
-			// own, if it has, and its uniforms drawn from pictures.
-			if (worn?.jersey !== undefined) {
-				t.jersey = worn.jersey;
+			// What the team wears in the 3D game: the jersey it wore that
+			// season, or the one it has made its own now, and its uniforms
+			// drawn from pictures.
+			const jersey = seasonRow?.jersey ?? worn?.jersey;
+			if (jersey !== undefined) {
+				t.jersey = jersey;
 			}
 			if (worn?.jerseySkins !== undefined) {
 				t.jerseySkins = worn.jerseySkins;
@@ -365,7 +367,11 @@ export default defineView({
 			let allStars;
 
 			if (allStarGame) {
-				allStars = await idb.cache.allStars.get(g.get("season"));
+				// That season's, for a rewatched old All-Star game.
+				allStars = await idb.getCopy.allStars(
+					{ season: boxScore.season },
+					"noCopyCache",
+				);
 
 				if (!allStars) {
 					return redirectToMenu;

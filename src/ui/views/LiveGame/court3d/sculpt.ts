@@ -1066,6 +1066,7 @@ type Palette = {
 	band: RGB;
 	stripe: RGB;
 	skin: RGB;
+	palm: RGB;
 	sock: RGB;
 	shoe: RGB;
 	sole: RGB;
@@ -1103,6 +1104,7 @@ const paletteOf = (look: Look): Palette => {
 			: scaled(rgb(kit.shorts), 0.84),
 		stripe: rgb(kit.stripe),
 		skin,
+		palm: look.silhouette ? skin : PALM,
 		sock: rgb(gear?.sock ?? kit.sock),
 		shoe: rgb(gear?.shoe ?? kit.shoe),
 		sole: rgb(gear?.sole ?? kit.sole),
@@ -1771,9 +1773,9 @@ export const sculpt = (
 							const c = pal.skin;
 							const e =
 								inPalm > 0.15 ? Math.min(1, (inPalm - 0.15) / 0.25) * 0.42 : 0;
-							cr = c[0] + (PALM[0] - c[0]) * e;
-							cg = c[1] + (PALM[1] - c[1]) * e;
-							cb = c[2] + (PALM[2] - c[2]) * e;
+							cr = c[0] + (pal.palm[0] - c[0]) * e;
+							cg = c[1] + (pal.palm[1] - c[1]) * e;
+							cb = c[2] + (pal.palm[2] - c[2]) * e;
 							break;
 						}
 						default: {

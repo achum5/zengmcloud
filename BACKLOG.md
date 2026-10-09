@@ -41,6 +41,10 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
 - [x] Individual player replays are a bit broken. Rework them overall so they cut
       correctly to each play, with a very brief, visible cut at every switch so it
       reads as a new clip.
+- [x] Replays use every team attribute from that game's season (logo, name,
+      region, abbrev, colors, jersey), not today's team.
+- [x] A player whose face is a photo is drawn as a black silhouette in the 3D
+      game: head, arms and legs solid black, no face, the uniform still on.
 
 ## C. Game play realism (the 3D engine)
 
@@ -160,7 +164,7 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
 - [~] Later the same day: make the gameplay look as smooth and realistic as
   possible, as many animations as possible; then watch possession after
   possession and fix whatever looks off, over and over. Owner's top pick of
-  what bothers him: stiff animation.
+  what bothers them: stiff animation.
 
 ## G. Naming
 

@@ -1,8 +1,8 @@
 import { display, type FaceConfig } from "facesjs";
 import { stubbleShave } from "../../../../common/stubbleShade.ts";
 
-// EACH PLAYER'S HEAD, ready to draw: his faces.js face (or his photo) drawn
-// once into a small canvas, cropped to the head, so the court can stamp it on
+// EACH PLAYER'S HEAD, ready to draw: his faces.js face drawn once into a
+// small canvas, cropped to the head, so the court can stamp it on
 // his shoulders every frame for the cost of one image copy.
 
 export type HeadSprite = {
@@ -11,7 +11,6 @@ export type HeadSprite = {
 	cx: number;
 	cy: number;
 	h: number;
-	photo: boolean;
 };
 
 // faces.js draws in a 400 x 600 box: the head is centered near (200, 300),
@@ -104,73 +103,10 @@ const faceSprite = async (
 			cx: (FACE_CENTER.x - CROP.x) * SCALE,
 			cy: (FACE_CENTER.y - CROP.y) * SCALE,
 			h: FACE_H * SCALE,
-			photo: false,
 		};
 	} finally {
 		URL.revokeObjectURL(url);
 	}
-};
-
-// A photo is a head-and-shoulders shot: the face is in the upper middle.
-const photoSprite = async (
-	imgURL: string,
-): Promise<{ sprite: HeadSprite; skin?: string }> => {
-	// Only a picture the page is allowed to read: one from a site that
-	// won't share it (no CORS headers) would taint every canvas it is drawn
-	// into, and the sprites are made by reading theirs back - the game
-	// would stop on its first frame. Without it, he gets his drawn face.
-	const img = await loadImage(imgURL);
-	const size = 96;
-	const canvas = document.createElement("canvas");
-	canvas.width = size;
-	canvas.height = size;
-	const ctx = canvas.getContext("2d")!;
-	const w = img.naturalWidth || img.width;
-	const h = img.naturalHeight || img.height;
-	const side = Math.min(w * 0.62, h * 0.72);
-	const sx = (w - side) / 2;
-	const sy = Math.max(0, h * 0.04);
-	ctx.beginPath();
-	ctx.ellipse(size / 2, size / 2, size * 0.4, size / 2, 0, 0, Math.PI * 2);
-	ctx.clip();
-	ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
-	let skin: string | undefined;
-	try {
-		const d = ctx.getImageData(
-			size * 0.36,
-			size * 0.5,
-			size * 0.28,
-			size * 0.16,
-		).data;
-		let r = 0;
-		let g = 0;
-		let b = 0;
-		let n = 0;
-		for (let i = 0; i < d.length; i += 4) {
-			if (d[i + 3]! > 200) {
-				r += d[i]!;
-				g += d[i + 1]!;
-				b += d[i + 2]!;
-				n += 1;
-			}
-		}
-		if (n > 0) {
-			skin = `rgb(${Math.round(r / n)}, ${Math.round(g / n)}, ${Math.round(b / n)})`;
-		}
-	} catch {
-		// Not ours to read after all: no photo, his drawn face instead.
-		throw new Error("photo not readable");
-	}
-	return {
-		sprite: {
-			img: canvas,
-			cx: size / 2,
-			cy: size / 2,
-			h: size * 1.02,
-			photo: true,
-		},
-		skin,
-	};
 };
 
 // How his hair sits on the back of his head, for drawing it from the side
@@ -259,16 +195,8 @@ export const headColors = (
 
 export const loadHead = async (
 	face: FaceConfig | undefined,
-	imgURL: string | undefined,
 	colors: [string, string, string] | undefined,
 ): Promise<{ sprite?: HeadSprite; skin?: string }> => {
-	if (imgURL) {
-		try {
-			return await photoSprite(imgURL);
-		} catch {
-			// A photo that won't load, or that we may not read: his face.
-		}
-	}
 	try {
 		if (face) {
 			return { sprite: await faceSprite(face, colors) };

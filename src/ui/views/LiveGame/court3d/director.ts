@@ -2018,14 +2018,27 @@ class Director {
 		let done = t;
 		spots.forEach(({ pid, at, face, man }, j) => {
 			const n = this.track(pid)?.moves.length ?? 0;
-			const far = dist(this.posOf(pid), at) > 25;
-			const there = this.go(
-				pid,
-				at,
-				t + 80 + j * 60,
-				far ? JOG : WALK * 1.4,
-				far ? "run" : "walk",
-			);
+			const from = this.posOf(pid);
+			const d = dist(from, at);
+			const far = d > 25;
+			// Each at his own pace, off when he is ready - and, a long way to
+			// go, not on the same line as the man beside him.
+			const pace = (far ? JOG : WALK * 1.4) * (0.88 + 0.24 * hash01(pid, t));
+			const off = t + 80 + j * 60 + 260 * hash01(pid, t + 1);
+			let there: number;
+			if (d > 15) {
+				const u = unitVec(from, at);
+				const side = (hash01(pid, t + 2) - 0.5) * 5;
+				const W = clampPt({
+					x: from.x + (at.x - from.x) * 0.5 - u.y * side,
+					y: from.y + (at.y - from.y) * 0.5 + u.x * side,
+				});
+				const anim = far ? "run" : "walk";
+				there = this.go(pid, W, off, pace, anim, undefined, { onto: pace });
+				there = this.go(pid, at, there, pace, anim);
+			} else {
+				there = this.go(pid, at, off, pace, far ? "run" : "walk");
+			}
 			if (man !== undefined) {
 				this.marks(pid, man, n);
 			}
@@ -7717,12 +7730,20 @@ class Director {
 				const ballX = this.ballAt.x;
 				// The whistle, then off to the huddles - fast - and, over the
 				// break, a look round the building.
+				// Each to the place in the huddle on his side of it, so nobody
+				// walks across anybody to get there.
 				const there = this.walkTo(
 					([0, 1] as const).flatMap((t) => {
 						const spots = huddleSpots(t);
-						return this.slots(t).map((pid, j) => ({
+						const c = { x: benchX(t), y: HUDDLE_Y };
+						const angle = (p: Pt) => Math.atan2(p.y - c.y, p.x - c.x);
+						const men = [...this.slots(t)].sort(
+							(a, b) => angle(this.posOf(a)) - angle(this.posOf(b)),
+						);
+						const places = [...spots].sort((a, b) => angle(a) - angle(b));
+						return men.map((pid, j) => ({
 							pid,
-							at: spots[j] ?? spots[0]!,
+							at: places[j] ?? places[0]!,
 						}));
 					}),
 					T + 600,

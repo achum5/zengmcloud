@@ -83,6 +83,9 @@ const REPLAY_SPEED = 0.42;
 // Replay-time ms the picture takes to come up out of black and go back down.
 const REPLAY_DIP = 70;
 
+// A player whose face is a photo is drawn in this, head to toe.
+const SILHOUETTE = "#101012";
+
 // What goes across the back of his jersey: everything after his first name.
 const lastNameOf = (name: string | undefined): string => {
 	const n = (name ?? "").trim();
@@ -354,16 +357,19 @@ const Court3D = ({
 			}
 			faces.current.set(pid, face);
 			setFacesVersion((v) => v + 1);
+			// A photo face is drawn as a silhouette - no head to load.
+			if (face?.imgURL) {
+				heads.current.delete(pid);
+				return;
+			}
 			const team = roster.find((p) => p.pid === pid)?.team;
 			const colors = team === 0 ? away?.colors : home?.colors;
-			void loadHead(face?.face, face?.imgURL, face?.colors ?? colors).then(
-				(head) => {
-					if (faces.current.get(pid) === face) {
-						heads.current.set(pid, head);
-						setFacesVersion((v) => v + 1);
-					}
-				},
-			);
+			void loadHead(face?.face, face?.colors ?? colors).then((head) => {
+				if (faces.current.get(pid) === face) {
+					heads.current.set(pid, head);
+					setFacesVersion((v) => v + 1);
+				}
+			});
 		},
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[roster],
@@ -396,14 +402,22 @@ const Court3D = ({
 				kit,
 				...(art ? { kitArt: art } : {}),
 				gear: gearFor(p.pid, kit),
-				skin: head?.skin ?? colors.skin,
-				hair: f?.imgURL ? "#1f1612" : colors.hair,
-				cut: f?.imgURL ? "short" : colors.cut,
-				// In the colors his face is drawn in, so a headband is the same
-				// one from every side.
 				...(f?.imgURL
-					? {}
-					: { profile: profileOf(f?.face, f?.colors ?? team?.colors) }),
+					? // His face is a photo: a silhouette in the uniform.
+						{
+							skin: SILHOUETTE,
+							hair: SILHOUETTE,
+							cut: "short" as const,
+							silhouette: true,
+						}
+					: {
+							skin: head?.skin ?? colors.skin,
+							hair: colors.hair,
+							cut: colors.cut,
+							// In the colors his face is drawn in, so a headband is
+							// the same one from every side.
+							profile: profileOf(f?.face, f?.colors ?? team?.colors),
+						}),
 				jerseyNumber: f?.jerseyNumber ?? p.jerseyNumber ?? "",
 				name: p.name ?? "",
 				lastName: lastNameOf(p.name),
@@ -438,10 +452,7 @@ const Court3D = ({
 			crew.map(async (m) => {
 				const team =
 					m.role === "coach" ? (m.team === 0 ? away : home) : undefined;
-				crewHeads.current.set(
-					m.pid,
-					await loadHead(m.face, undefined, team?.colors),
-				);
+				crewHeads.current.set(m.pid, await loadHead(m.face, team?.colors));
 			}),
 		).then(() => {
 			if (alive) {
