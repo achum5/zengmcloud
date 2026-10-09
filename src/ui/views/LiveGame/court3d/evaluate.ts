@@ -444,6 +444,7 @@ const rounded = (a: Run, b: Run, t: number): Pt | undefined => {
 const SPRINT_FTPS = 19;
 const JOG_FTPS = 11;
 const WALK_FTPS = 5.5;
+const DRIBBLE_WALK_FTPS = 7;
 const SLIDE_FTPS = 11.5;
 const BACK_FTPS = 12.5;
 const DRIFT_FTPS = 9;
@@ -474,6 +475,9 @@ const runAnim = (run: Run): AnimName => {
 			return gaitFor(v);
 		case "walk":
 			return v > WALK_FTPS + 2 ? gaitFor(v) : "walk";
+		// Walking it, short steps; attacking, long ones.
+		case "dribble":
+			return v > DRIBBLE_WALK_FTPS ? "dribble" : "dribbleWalk";
 		case "slide":
 		case "shuffle":
 			return v > SLIDE_FTPS ? gaitFor(v) : anim;
@@ -1475,6 +1479,207 @@ const denyArm = (
 	};
 };
 
+// UP AGAINST HIS MAN.
+//
+// A man with the ball and the man on him are never two men who happen to be
+// near each other - nor is a cutter and the man chasing him. With his man
+// tight on him, a ball handler's free arm comes up as a bar between him and
+// the ball, and a cutter's comes up to fight him off; and on the move, the
+// man guarding either one rides him - a hand on his hip, feeling where he
+// goes. All of it eases in as the two close and out as they part.
+const ENGAGE_NEAR = 4.6;
+// Off the ball, only this close.
+const FIGHT_NEAR = 3.2;
+const RIDE_FROM = new Set<AnimName>([
+	"shuffle",
+	"slide",
+	"back",
+	"run",
+	"jog",
+	"sprint",
+	"stance",
+	"stanceHands",
+]);
+// How fast a man goes at t (feet a second).
+const speedAt = (tr: Track, t: number): number => {
+	const a = spotAt(tr, t - 150);
+	const b = spotAt(tr, t);
+	return Math.hypot(b.x - a.x, b.y - a.y) / 0.15;
+};
+// The nearest man on the floor of the other side to one at P.
+const nearestOf = (
+	tl: CourtTimeline,
+	team: Side,
+	P: Pt,
+	t: number,
+	but?: number,
+): { tr: Track; at: Pt; d: number } | undefined => {
+	let best: { tr: Track; at: Pt; d: number } | undefined;
+	for (const o of tl.tracks.values()) {
+		if (o.team === team || o.pid === but) {
+			continue;
+		}
+		const p = floorSpotOf(o, t);
+		if (!p) {
+			continue;
+		}
+		const d = Math.hypot(p.x - P.x, p.y - P.y);
+		if (!best || d < best.d) {
+			best = { tr: o, at: p, d };
+		}
+	}
+	return best;
+};
+// A defender's hand on the man he rides: on his side - let go as he
+// crosses in front, and only put back once he is past, on the other, so it
+// never swaps while it is on him.
+const rideArm = (
+	tl: CourtTimeline,
+	tr: Track,
+	him: Track,
+	t: number,
+	here: Pt,
+	yaw: number,
+	w0: number,
+): ArmPose | undefined => {
+	const H = spotAt(him, t);
+	const bearing = wrapAngle(Math.atan2(H.y - here.y, H.x - here.x) - yaw);
+	const deg = (Math.abs(bearing) * 180) / Math.PI;
+	const t0 = t - 250;
+	const me0 = spotAt(tr, t0);
+	const him0 = spotAt(him, t0);
+	const before = wrapAngle(
+		Math.atan2(him0.y - me0.y, him0.x - me0.x) - yawAt(tl, tr, t0),
+	);
+	if (Math.sign(before) !== Math.sign(bearing)) {
+		return undefined;
+	}
+	const w =
+		w0 *
+		smooth01((speedAt(him, t) - 4) / 3) *
+		smooth01((140 - deg) / 30) *
+		smooth01((deg - 15) / 20);
+	if (w <= 0.05) {
+		return undefined;
+	}
+	return {
+		hand: bearing >= 0 ? "R" : "L",
+		sh: 62,
+		el: 26,
+		ab: Math.min(80, deg),
+		wr: 12,
+		w,
+	};
+};
+// An attacker's free forearm up between him and the man on him: out toward
+// him on that arm's side, from straight ahead round to beside him - never
+// reaching back across his body.
+const barArm = (
+	free: Hand,
+	here: Pt,
+	yaw: number,
+	them: Pt,
+	w0: number,
+): ArmPose | undefined => {
+	const bearing = wrapAngle(Math.atan2(them.y - here.y, them.x - here.x) - yaw);
+	const deg = ((free === "R" ? bearing : -bearing) * 180) / Math.PI;
+	const w = w0 * smooth01((deg + 30) / 30) * smooth01((150 - deg) / 30);
+	if (w <= 0.05) {
+		return undefined;
+	}
+	return {
+		hand: free,
+		sh: 58,
+		el: 92,
+		ab: Math.max(18, Math.min(70, deg)),
+		wr: 0,
+		w,
+	};
+};
+const engageArm = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	here: Pt,
+	yaw: number,
+	now: { anim: AnimName; dribbleHand?: Hand; holding?: boolean },
+): ArmPose | undefined => {
+	const seg = ballSegAt(tl, t);
+	if (seg?.kind !== "hold" || actAt(tr, t)) {
+		return undefined;
+	}
+	const holder = tl.tracks.get(seg.pid);
+	if (!holder) {
+		return undefined;
+	}
+	const offense = holder.team;
+	if (tr === holder) {
+		// On his dribble, his man tight on him.
+		const free =
+			now.dribbleHand === "R" ? "L" : now.dribbleHand === "L" ? "R" : undefined;
+		if (seg.style === "hold" || !free || isMove(now.anim)) {
+			return undefined;
+		}
+		const D = nearestOf(tl, offense, here, t);
+		if (!D || D.d > ENGAGE_NEAR) {
+			return undefined;
+		}
+		return barArm(free, here, yaw, D.at, smooth01((ENGAGE_NEAR - D.d) / 1.4));
+	}
+	if (tr.team === offense) {
+		// Cutting, with his man on his hip: fighting him off.
+		if (speedAt(tr, t) < 8) {
+			return undefined;
+		}
+		const D = nearestOf(tl, offense, here, t);
+		if (!D || D.d > FIGHT_NEAR) {
+			return undefined;
+		}
+		const bearing = wrapAngle(
+			Math.atan2(D.at.y - here.y, D.at.x - here.x) - yaw,
+		);
+		const deg = (Math.abs(bearing) * 180) / Math.PI;
+		const arm = barArm(
+			bearing >= 0 ? "R" : "L",
+			here,
+			yaw,
+			D.at,
+			smooth01((FIGHT_NEAR - D.d) / 1) * smooth01((deg - 15) / 20),
+		);
+		return arm && { ...arm, sh: 70, el: 70 };
+	}
+	if (!RIDE_FROM.has(now.anim)) {
+		return undefined;
+	}
+	// On the man with the ball, as he goes somewhere with it.
+	if (seg.style !== "hold") {
+		const H = spotAt(holder, t);
+		const d = Math.hypot(H.x - here.x, H.y - here.y);
+		const D = nearestOf(tl, offense, H, t);
+		if (D?.tr === tr && d <= ENGAGE_NEAR) {
+			return rideArm(
+				tl,
+				tr,
+				holder,
+				t,
+				here,
+				yaw,
+				smooth01((ENGAGE_NEAR - d) / 1.4),
+			);
+		}
+	}
+	// On a cutter: the nearest of theirs to him, and him the nearest of
+	// ours to that one.
+	const A = nearestOf(tl, tr.team, here, t, holder.pid);
+	if (!A || A.d > FIGHT_NEAR) {
+		return undefined;
+	}
+	if (nearestOf(tl, offense, A.at, t)?.tr !== tr) {
+		return undefined;
+	}
+	return rideArm(tl, tr, A.tr, t, here, yaw, smooth01((FIGHT_NEAR - A.d) / 1));
+};
+
 // Just where he is on the floor at t, if he is on it - cheap, for asking
 // of every man at every step.
 export const floorSpotOf = (tr: Track, t: number): Pt | undefined => {
@@ -1530,7 +1735,11 @@ export const evalPlayer = (
 				)
 			: undefined;
 	const arm =
-		said ?? (shown ? denyArm(tl, tr, t, here, yaw, now.anim) : undefined);
+		said ??
+		(shown
+			? (denyArm(tl, tr, t, here, yaw, now.anim) ??
+				engageArm(tl, tr, t, here, yaw, now))
+			: undefined);
 	return {
 		pid,
 		team: tr.team,

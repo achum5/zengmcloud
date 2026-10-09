@@ -280,6 +280,21 @@ const P = {
 		shF: 52,
 		elF: 62,
 	}),
+	// Dribbling where he stands, sizing his man up: down in his legs, the
+	// other arm out, bent, between the ball and his man.
+	sizeUp: pose({
+		hipN: -2,
+		kneeN: 50,
+		hipF: 26,
+		kneeF: 52,
+		lean: 20,
+		wide: 0.42,
+		shN: 32,
+		elN: 18,
+		shF: 26,
+		elF: 74,
+		abF: 34,
+	}),
 	// Triple threat: caught and facing up, knees bent, the ball on his hip -
 	// ready to shoot it, drive it or move it.
 	triple: pose({
@@ -370,6 +385,7 @@ type RunMode =
 	| "jog"
 	| "sprint"
 	| "dribble"
+	| "dribbleWalk"
 	| "back"
 	| "walk"
 	| "carry"
@@ -439,6 +455,24 @@ const stride = (ph: number, mode: RunMode): Pose => {
 			elF: 16,
 			abF: 18,
 			wide: 0.55,
+		});
+	}
+	if (mode === "dribbleWalk") {
+		// Walking it up or working it a few steps: short steps, down in his
+		// legs and leaning over the ball, the other arm out between it and
+		// anybody near.
+		return pose({
+			hipN: 18 * a,
+			hipF: -18 * a,
+			kneeN: 30 + 26 * Math.max(0, c),
+			kneeF: 30 + 26 * Math.max(0, -c),
+			lean: 14,
+			shN: 30,
+			elN: 30,
+			shF: 28 + 6 * a,
+			elF: 74,
+			abF: 34,
+			wide: 0.2,
 		});
 	}
 	if (mode === "walk" || mode === "carry" || mode === "drift") {
@@ -518,17 +552,18 @@ const stride = (ph: number, mode: RunMode): Pose => {
 		lean: 10,
 	};
 	if (mode === "dribble") {
+		// Attacking: low, leaning into it, the other arm out, bent, between
+		// the ball and anybody coming.
 		return pose({
 			...legs,
-			kneeN: legs.kneeN + 6,
-			kneeF: legs.kneeF + 6,
-			lean: 15,
+			kneeN: legs.kneeN + 12,
+			kneeF: legs.kneeF + 12,
+			lean: 19,
 			shN: 34,
 			elN: 22 + 18 * Math.abs(a),
-			// The other arm out, bent, between the ball and anybody coming.
-			shF: 24,
-			elF: 72,
-			abF: 30,
+			shF: 32 + 6 * a,
+			elF: 70,
+			abF: 38,
 		});
 	}
 	return pose({ ...legs, ...pump(a, 42, 80, 22) });
@@ -1316,25 +1351,128 @@ export const ANIMS = {
 			[1, P.triple],
 		],
 	},
+	// Sizing his man up: down in his legs, rocking - weight forward as if
+	// to go, back on his heels, a dip of the shoulder - the other arm out,
+	// bent, between the ball and his man. (The dribbling arm rides the
+	// ball - see dribbleArm.)
 	dribbleIdle: {
 		kind: "loop",
 		n: 4,
-		fps: 7,
+		fps: 2.2,
 		pose: (i) =>
 			pose({
-				hipN: -2,
-				kneeN: 50,
-				hipF: 26,
-				kneeF: 52,
-				lean: 20,
-				wide: 0.42,
-				shN: 32,
-				elN: [34, 18, 8, 18][i]!,
-				// The other arm out, bent, between the ball and his man.
-				shF: 26,
-				elF: 74,
-				abF: 34,
+				...P.sizeUp,
+				...[
+					{},
+					{
+						hipN: 2,
+						kneeN: 56,
+						hipF: 30,
+						kneeF: 58,
+						lean: 25,
+						twist: 7,
+						shF: 36,
+						elF: 66,
+						abF: 40,
+					},
+					{ kneeN: 46, kneeF: 48, lean: 17 },
+					{
+						hipN: -4,
+						kneeN: 54,
+						hipF: 24,
+						kneeF: 56,
+						lean: 18,
+						twist: -6,
+						tilt: 3,
+						shF: 22,
+						elF: 82,
+						abF: 30,
+					},
+				][i],
 			}),
+	},
+	// A jab on the dribble: his foot stabbed at his man, his shoulder and
+	// head going with it as if he is gone - and back.
+	dribbleJab: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, P.sizeUp],
+			[
+				0.3,
+				pose({
+					...P.sizeUp,
+					hipN: 58,
+					kneeN: 74,
+					hipF: -6,
+					kneeF: 30,
+					lean: 32,
+					twist: 16,
+					tilt: -4,
+					shF: 44,
+					elF: 62,
+					abF: 46,
+					wide: 0.52,
+				}),
+			],
+			[
+				0.55,
+				pose({
+					...P.sizeUp,
+					hipN: 52,
+					kneeN: 72,
+					hipF: -2,
+					kneeF: 32,
+					lean: 29,
+					twist: 12,
+					shF: 40,
+					elF: 64,
+					abF: 44,
+					wide: 0.5,
+				}),
+			],
+			[1, P.sizeUp],
+		],
+	},
+	// A hesitation: up out of his stance as if he is pulling up - chest up,
+	// his eyes at the rim - and back down low.
+	dribbleHesi: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, P.sizeUp],
+			[
+				0.35,
+				pose({
+					...P.sizeUp,
+					hipN: 0,
+					kneeN: 26,
+					hipF: 14,
+					kneeF: 28,
+					lean: 6,
+					shF: 42,
+					elF: 84,
+					abF: 24,
+					wide: 0.38,
+				}),
+			],
+			[
+				0.55,
+				pose({
+					...P.sizeUp,
+					hipN: 0,
+					kneeN: 28,
+					hipF: 14,
+					kneeF: 30,
+					lean: 8,
+					shF: 40,
+					elF: 82,
+					abF: 26,
+					wide: 0.38,
+				}),
+			],
+			[1, P.sizeUp],
+		],
 	},
 	hurt: {
 		kind: "loop",
@@ -1477,6 +1615,12 @@ export const ANIMS = {
 		n: 6,
 		stride: 8.2,
 		pose: (i) => runPose(i / 6, "dribble"),
+	},
+	dribbleWalk: {
+		kind: "cycle",
+		n: 6,
+		stride: 4.4,
+		pose: (i) => runPose(i / 6, "dribbleWalk"),
 	},
 	// Backing his man down in the post: low and wide, his back to the rim,
 	// one arm out to keep him there.
@@ -3775,6 +3919,7 @@ const BOUNCE: Partial<Record<AnimName, number>> = {
 	jog: 0.05,
 	run: 0.1,
 	sprint: 0.2,
+	dribble: 0.08,
 };
 export const bounceAt = (anim: AnimName, phase: number): number => {
 	const h = BOUNCE[anim];
@@ -4266,6 +4411,7 @@ const CARRIES = new Set<AnimName>([
 	"back",
 	"slide",
 	"dribble",
+	"dribbleWalk",
 	"post",
 ]);
 const carried = (q: Pose, anim: AnimName): Pose =>
@@ -4439,7 +4585,13 @@ export const posed = (
 			q,
 			dribble,
 			hand,
-			anim === "dribble" || anim === "sprint" || anim === "run" ? 1 : 0,
+			anim === "dribble" || anim === "sprint" || anim === "run"
+				? 1
+				: anim === "dribbleWalk" ||
+					  anim === "dribbleJab" ||
+					  anim === "dribbleHesi"
+					? 0.5
+					: 0,
 		);
 	}
 	if (target <= 0) {

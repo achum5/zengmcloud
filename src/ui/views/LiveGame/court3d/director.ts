@@ -11923,8 +11923,17 @@ class Director {
 					// Closing out: at his man with the ball, who is set - not
 					// chasing him on a drive.
 					const set = dist(A.man, Z.man) / secs < 6;
+					// Beaten: his man going away from him the way he goes, a
+					// step and more ahead of him - he turns and runs with him,
+					// not slides along behind.
+					const gone = dist(A.man, Z.man);
+					const chasing =
+						gone / secs > 8 &&
+						((Z.man.x - A.man.x) * ux + (Z.man.y - A.man.y) * uy) / gone >
+							0.7 &&
+						(A.man.x - A.p.x) * ux + (A.man.y - A.p.y) * uy > 2.5;
 					const anim: AnimName =
-						speed >= SLIDE_MAX - 0.5
+						speed >= SLIDE_MAX - 0.5 || chasing
 							? "run"
 							: Z.on &&
 								  set &&
@@ -12951,6 +12960,120 @@ class Director {
 		}
 	}
 
+	// WORKING HIS MAN. Stood with the ball on his dribble in the half court,
+	// his man up on him, a ball handler is never just bouncing it: he jabs at
+	// him, or hesitates as if to pull up - and his man gives ground to the
+	// jab, and comes up at the hesitation.
+	private workHisMan() {
+		const ball = this.ball;
+		const added: Track[] = [];
+		for (let i = 0; i < ball.length; i++) {
+			const s = ball[i]!;
+			if (s.kind !== "hold" || s.style === "hold") {
+				continue;
+			}
+			let j = i + 1;
+			while (
+				j < ball.length &&
+				ball[j]!.kind === "hold" &&
+				(ball[j] as { pid: number }).pid === s.pid &&
+				(ball[j] as { style: string }).style !== "hold"
+			) {
+				j++;
+			}
+			const first = i;
+			i = j - 1;
+			const end = ball[j]?.t0 ?? Infinity;
+			const tr = this.track(s.pid);
+			if (!tr || !Number.isFinite(end) || end - s.t0 < 1400) {
+				continue;
+			}
+			const own = ball.slice(first, j);
+			const busy = [
+				...tr.moves.map((m) => [m.t0, m.t1] as const),
+				...tr.acts.map((a) => [a.t0, a.t1] as const),
+				...own.flatMap((x, k) =>
+					(x as { style: string }).style === "cross"
+						? [[x.t0, own[k + 1]?.t0 ?? end] as const]
+						: [],
+				),
+				...own.slice(1).map((x) => [x.t0 - 250, x.t0 + 250] as const),
+			].sort((x, y) => x[0] - y[0]);
+			const gaps: [number, number][] = [];
+			let at = s.t0 + 200;
+			for (const [b0, b1] of busy) {
+				if (b1 <= at) {
+					continue;
+				}
+				if (b0 >= end - 200) {
+					break;
+				}
+				if (b0 - 150 - at >= 1100) {
+					gaps.push([at, b0 - 150]);
+				}
+				at = Math.max(at, b1 + 150);
+			}
+			if (end - 200 - at >= 1100) {
+				gaps.push([at, end - 200]);
+			}
+			const face = attackDir(tr.team);
+			for (const [g0, g1] of gaps) {
+				let t = g0 + 250 + 350 * hash01(s.pid, g0);
+				for (let n = 0; n < 4; n++) {
+					const ms = 560 + 160 * hash01(s.pid, t + 1);
+					if (t + ms + 200 > g1) {
+						break;
+					}
+					const P = this.posAt(s.pid, t);
+					// (Bringing it up, he walks it - see keepDribbling.)
+					if ((P.x - COURT_W / 2) * face < 1) {
+						break;
+					}
+					let guard: Track | undefined;
+					let G: Pt | undefined;
+					let near = 7.5;
+					for (const o of this.tracks.values()) {
+						if (o.team === tr.team) {
+							continue;
+						}
+						const q = this.posAt(o.pid, t);
+						const d = dist(q, P);
+						if (d < near) {
+							near = d;
+							guard = o;
+							G = q;
+						}
+					}
+					if (!guard || !G) {
+						break;
+					}
+					const hesi = hash01(s.pid, t + 2) < 0.4;
+					tr.acts.push({
+						t0: t,
+						t1: t + ms,
+						anim: hesi ? "dribbleHesi" : "dribbleJab",
+						look: { ...G },
+					});
+					// Off him on the jab; up at him on the hesitation.
+					const u = unitVec(P, G);
+					const k = hesi ? -0.6 : 1.1;
+					(guard.nudges ??= []).push({
+						t0: t + 120,
+						t1: t + ms + 240,
+						dx: u.x * k,
+						dy: u.y * k,
+					});
+					added.push(guard, tr);
+					t += ms + 350 + 550 * hash01(s.pid, t + 3);
+				}
+			}
+		}
+		for (const tr of new Set(added)) {
+			tr.acts.sort((a, b) => a.t0 - b.t0);
+			tr.nudges?.sort((a, b) => a.t0 - b.t0);
+		}
+	}
+
 	finish(): CourtTimeline {
 		const byT0 = (a: { t0: number }, b: { t0: number }) => a.t0 - b.t0;
 		for (const tr of this.tracks.values()) {
@@ -12983,6 +13106,7 @@ class Director {
 		this.keepClear();
 		this.aroundBodies();
 		this.biteOnFakes();
+		this.workHisMan();
 		// The lead-in to a play - the ball brought up, the set getting going
 		// - is run through fast, back at real speed for the last few seconds
 		// of it: whatever leads straight to the shot, the steal, the foul. A
