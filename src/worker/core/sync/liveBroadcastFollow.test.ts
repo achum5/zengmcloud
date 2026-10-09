@@ -155,6 +155,20 @@ describe("decideFollowAction", () => {
 			"ignore",
 		);
 	});
+
+	test("watching theirs when its own sim starts: out to the pill, not stepped on through theirs", () => {
+		// The field report: watching a league-mate's game, clicked to watch
+		// their own - and the page froze, the league-mate's cursor still driving
+		// it with their own game on it.
+		assert.strictEqual(
+			decideFollowAction(live, { startedAt: 1000 }, true),
+			"pill",
+		);
+		assert.strictEqual(
+			decideFollowAction(finished, { startedAt: 1000 }, true),
+			"ignore",
+		);
+	});
 });
 
 describe("createFollowerHold", () => {

@@ -2964,13 +2964,33 @@ const LiveGameWrapper = (props: View<"liveGame">) => {
 	const { mpLiveBroadcast } = useLocal(["mpLiveBroadcast"]);
 	const remountKey = useRef(0);
 	const lastFollowedStartedAt = useRef<number | undefined>(undefined);
+	const lastGid = useRef<number | undefined>(undefined);
+	const propsGid = props.initialBoxScore?.gid;
+	let remount = false;
 	if (
 		mpLiveBroadcast?.active &&
 		!mpLiveBroadcast.isBroadcaster &&
 		mpLiveBroadcast.startedAt !== lastFollowedStartedAt.current &&
-		props.initialBoxScore?.gid === mpLiveBroadcast.gid
+		propsGid === mpLiveBroadcast.gid
 	) {
 		lastFollowedStartedAt.current = mpLiveBroadcast.startedAt;
+		remount = true;
+	}
+	// A different game landing on a page already showing one starts over too:
+	// a playback that has started never takes up new events, so this device's
+	// own live sim arriving on a page still playing a league-mate's game sat
+	// there frozen. (Not the first game into an empty page - that one loads.)
+	if (
+		propsGid !== undefined &&
+		lastGid.current !== undefined &&
+		propsGid !== lastGid.current
+	) {
+		remount = true;
+	}
+	if (propsGid !== undefined) {
+		lastGid.current = propsGid;
+	}
+	if (remount) {
 		remountKey.current += 1;
 	}
 

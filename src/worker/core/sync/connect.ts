@@ -469,8 +469,17 @@ let followedBroadcast:
 // releases with everything else. What this answers: never pull this device
 // into somebody else's broadcast, and never let a follow ending release the
 // spoiler hold that this sim owns.
+//
+// Requests to watch a game of this device's own live count from the click on:
+// the guard in front of the sim makes round trips to the cloud that can take
+// seconds, and a broadcast landing in that window used to pull the device into
+// somebody else's game just as its own was about to arrive (see
+// beginOwnLiveSimRequest).
+let ownLiveSimRequests = 0;
 const ownLiveSimUnderway = () =>
-	local.liveSimGid !== undefined || isLiveSimNotificationHoldActive();
+	ownLiveSimRequests > 0 ||
+	local.liveSimGid !== undefined ||
+	isLiveSimNotificationHoldActive();
 
 // Whether WE (as a follower) hold the header freeze (liveGameInProgress) for a
 // broadcast. Tracked separately from followedBroadcast so that if we bail out
@@ -956,6 +965,10 @@ const handleLiveBroadcastMeta = async (
 	if (followedBroadcast) {
 		followedBroadcast.expiresAt = meta.expiresAt;
 	}
+	// Still inside theirs as a live sim of this device's own got going: out.
+	if (action !== "cursor" && ownLiveSimUnderway()) {
+		stepOutForOwnSim();
+	}
 	setWatchablePill(action === "pill" ? meta : undefined);
 	if (action === "cursor") {
 		pushFollowerState(meta);
@@ -988,6 +1001,58 @@ export const leaveLiveBroadcast = (gid?: number) => {
 	) {
 		setWatchablePill(roomBroadcastMeta);
 	}
+};
+
+// Out of the broadcast this device is following, because a live sim of its
+// own is starting: the same as walking out (Leave) - the follow is remembered
+// as left so no heartbeat steps this page on through their game, and the pill
+// offers the way back - except that the spoiler freeze is the local sim's now.
+const stepOutForOwnSim = () => {
+	if (!followedBroadcast || followedBroadcast.left) {
+		return;
+	}
+	syncDebugLog("live:step-out-for-own-sim", {
+		gid: followedBroadcast.gid,
+		startedAt: followedBroadcast.startedAt,
+	});
+	followedBroadcast.left = true;
+	followedBroadcast.over = true;
+	releaseFollowerHold("own-live-sim");
+	// (Whether or not the hold was still this follow's to release, its game
+	// must not stay on as the broadcast this page follows.)
+	void toUI("updateLocal", [{ mpLiveBroadcast: undefined }]);
+	if (
+		roomBroadcastMeta &&
+		roomBroadcastMeta.active &&
+		!roomBroadcastMeta.gameOver &&
+		roomBroadcastMeta.expiresAt > Date.now()
+	) {
+		setWatchablePill(roomBroadcastMeta);
+	}
+};
+
+// A request to watch one of this device's own games live has come in: from
+// now until it is answered, this device counts as mid-way through a live sim
+// of its own (never pulled into a league-mate's), and any broadcast it is
+// inside is stepped out of. Returns the call to make when the request is done -
+// by then a sim that went ahead holds things on its own (liveSimGid), and one
+// that was refused leaves nothing to hold.
+export const beginOwnLiveSimRequest = (): (() => void) => {
+	ownLiveSimRequests += 1;
+	stepOutForOwnSim();
+	let done = false;
+	return () => {
+		if (done) {
+			return;
+		}
+		done = true;
+		ownLiveSimRequests = Math.max(0, ownLiveSimRequests - 1);
+		// Refused, or bailed on before it played: nothing owns the spoiler
+		// freeze a follow it stepped out of had taken.
+		if (!ownLiveSimUnderway() && !followerHold.isHeld()) {
+			void toUI("updateLocal", [{ liveGameInProgress: false }]);
+		}
+	};
 };
 
 // The header pill was clicked: (re)join the broadcast currently live. Rejoining

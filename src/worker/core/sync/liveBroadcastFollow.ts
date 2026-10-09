@@ -91,6 +91,13 @@ export const decideFollowAction = (
 	if (followed.left) {
 		return broadcast.gameOver ? "ignore" : "pill";
 	}
+	// Inside somebody else's game when a live sim of this device's own started:
+	// its page is about to play THAT game, so stepping it on through theirs is
+	// what froze it - their cursor driving a page with no game of theirs on it.
+	// The way back is the pill, the same as having walked out.
+	if (localSimActive) {
+		return broadcast.gameOver ? "ignore" : "pill";
+	}
 	return "cursor";
 };
 

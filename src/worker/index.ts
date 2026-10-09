@@ -23,6 +23,7 @@ import { setLiveBroadcastStartHook } from "./core/sync/liveBroadcastHook.ts";
 import { getSyncEngine } from "./core/sync/engineHolder.ts";
 import { getLeaguePosition } from "./core/sync/leaguePosition.ts";
 import {
+	beginOwnLiveSimRequest,
 	getSimSafety,
 	getSyncRequired,
 	restoreSyncRequiredFromMeta,
@@ -130,6 +131,11 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"updateLiveBroadcast",
 	"endLiveBroadcast",
 	"watchLiveBroadcast",
+	// Walking out of a league-mate's broadcast only changes this device's own
+	// record of it. Refused by the guard (still catching up, a slow ping), it
+	// never registered - and the next heartbeat stepped the page on through
+	// their game, over whatever this device went to watch instead.
+	"leaveLiveBroadcast",
 	// The watch/star list and the "untouchable" trade flag are PERSONAL
 	// preferences (the watch ones fan out via same-device crossTabEmit, not the
 	// league). They happen to live on the shared `players` record, so they can't
@@ -229,7 +235,10 @@ const SIM_CONFLICT_GATED = new Set([
 ]);
 
 // API functions should have at most 2 arguments. First argument is passed here from toWorker. If you need to pass multiple variables, use an object/array. Second argument is Conditions.
-promiseWorker.register(async ([type, name, param]: any, hostID) => {
+const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
+	[type, name, param]: any,
+	hostID,
+) => {
 	const conditions = {
 		hostID,
 	};
@@ -637,4 +646,19 @@ promiseWorker.register(async ([type, name, param]: any, hostID) => {
 				throw error;
 			},
 		);
+};
+
+promiseWorker.register(async (message: any, hostID) => {
+	// A request to watch one of this device's own games live counts from the
+	// click, not from whenever the guard in handleCall finishes its round trips
+	// to the cloud - see beginOwnLiveSimRequest.
+	if (message?.[0] === "actions" && message?.[1] === "liveGame") {
+		const done = beginOwnLiveSimRequest();
+		try {
+			return await handleCall(message, hostID);
+		} finally {
+			done();
+		}
+	}
+	return handleCall(message, hostID);
 });
