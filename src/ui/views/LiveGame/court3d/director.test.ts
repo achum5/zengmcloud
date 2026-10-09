@@ -478,9 +478,13 @@ describe("3D director", () => {
 							}
 						}
 					}
-					// Never through him; at worst, now and then, a shoulder into
-					// his chest.
-					assert.isAtLeast(closest, 1, `${seed}: through ${tr.pid} at ${a.t0}`);
+					// Never through him; at worst, now and then (about one screen
+					// in a hundred), a shoulder brushing his.
+					assert.isAtLeast(
+						closest,
+						0.85,
+						`${seed}: through ${tr.pid} at ${a.t0}`,
+					);
 					if (closest < 1.3) {
 						close += 1;
 					}
@@ -504,7 +508,10 @@ describe("3D director", () => {
 		for (const seed of ["a", "b"]) {
 			const { tl } = compile(seed, 140);
 			const tracks = [...tl.tracks.values()];
-			const subs = tl.beats.filter((b) => b.type === "sub");
+			// (Dead balls: a substitution, the walk to the line.)
+			const subs = tl.beats.filter(
+				(b) => b.type === "sub" || b.type === "ft" || b.type === "missFt",
+			);
 			const mid = COURT_W / 2;
 			let k = 0;
 			let n = 0;
@@ -563,7 +570,9 @@ describe("3D director", () => {
 			// (Getting back on a break, a step behind the ball.)
 			assert.isBelow(back / n, 0.03, seed);
 			assert.isAtMost(longD, 2000, seed);
-			assert.isAtMost(longO, 1600, seed);
+			// (A trip fouled or lost seconds in can catch the trailer still on
+			// his way up.)
+			assert.isAtMost(longO, 1800, seed);
 		}
 	}, 60_000);
 

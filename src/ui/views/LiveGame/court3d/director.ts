@@ -761,6 +761,8 @@ type ShotStyle =
 	| "post"
 	| "hook";
 
+type PostMove = "hook" | "fade" | "dropStep" | "upUnder";
+
 type Phase =
 	| "start"
 	| "tip"
@@ -4389,6 +4391,52 @@ class Director {
 		return t;
 	}
 
+	// The finish off a post-up that takes him round or under his man: a drop
+	// step - a pivot on the foot nearer the baseline and one long step round
+	// him, the ball swung through, to the rim - or a shot fake, his man up off
+	// his feet for it, and the step through under him. Returns when he is
+	// gathered at the rim to go up.
+	private postFinish(
+		pid: number,
+		team: Side,
+		t: number,
+		move: "dropStep" | "upUnder",
+	): number {
+		const rim = rimPt(team);
+		const P = this.posOf(pid);
+		const guard = this.defenderOf(pid);
+		const G = guard !== undefined ? this.posOf(guard) : undefined;
+		const toRim = unitVec(P, rim);
+		// Round him on the baseline side: the side away from the middle.
+		const base = P.y >= 25 ? 1 : -1;
+		const side = { x: -toRim.y, y: toRim.x };
+		const s = side.y * base >= 0 ? 1 : -1;
+		const to = clampPt({
+			x: rim.x - toRim.x * 2.6 + side.x * s * 1.6,
+			y: rim.y - toRim.y * 2.6 + side.y * s * 1.6,
+		});
+		const face = (rim.x >= P.x ? 1 : -1) as 1 | -1;
+		const start = Math.max(t, this.free.get(pid) ?? 0);
+		if (move === "upUnder") {
+			// Up as if to shoot - and his man goes with it.
+			this.act(pid, "shotFake", start, start + 640, { face, look: rim });
+			if (guard !== undefined && G && dist(G, P) < 6) {
+				this.act(guard, "contest", start + 140, start + 760, {
+					look: { x: P.x, y: P.y },
+					jump: [0.2, 0.8, 1.4],
+				});
+			}
+			t = start + 640;
+		} else {
+			// The pivot, the ball swung through low and away from him.
+			this.act(pid, "jab", start, start + 300, { face, look: rim });
+			t = start + 260;
+		}
+		// The long step through, round or under him, to the rim.
+		this.hold(pid, t, "hold");
+		return this.carry(pid, to, t, 380, "run", face);
+	}
+
 	// Back to the rim, a dribble or two to back his man down.
 	private backDown(pid: number, t: number, dir: 1 | -1): number {
 		const at = this.posOf(pid);
@@ -4401,7 +4449,7 @@ class Director {
 		if (guard !== undefined && dist(this.posOf(guard), at) < 5) {
 			this.go(
 				guard,
-				clampPt({ x: to.x + dir * 1.5, y: to.y }),
+				clampPt({ x: to.x + dir * BODY, y: to.y }),
 				t + 60,
 				2.6,
 				"back",
@@ -4635,6 +4683,13 @@ class Director {
 			t = this.go(shooter, P, t + 40, 9, "back", dir);
 		}
 		t = Math.max(t, this.hold(shooter, t, "hold"));
+		if (o.zone === "post" && o.kind !== "fadeaway" && o.kind !== "hook") {
+			// Fed in the post: he backs his man down and goes to work.
+			if (dist(this.posOf(shooter), rim) > 5.5) {
+				t = this.backDown(shooter, t, dir);
+			}
+			return { t, style: "post" };
+		}
 		return {
 			t,
 			style:
@@ -4706,7 +4761,7 @@ class Director {
 	} {
 		const dir = attackDir(team);
 		const rim = rimPt(team);
-		const close = zone === "atRim" || zone === "tipIn" || zone === "putBack";
+		let close = zone === "atRim" || zone === "tipIn" || zone === "putBack";
 		const putback = zone === "putBack" || zone === "tipIn";
 		const P = putback
 			? clampPt({ x: rim.x - dir * this.rand(2, 4), y: 25 + this.rand(-3, 3) })
@@ -4780,7 +4835,7 @@ class Director {
 					this.respace(team, handler, shooter);
 					t = Math.max(arrive, caught);
 					// An entry pass to the post: he backs his man down first.
-					if (zone === "lowPost" && this.rng() < 0.6) {
+					if (zone === "lowPost" && this.rng() < 0.9) {
 						style = "post";
 						t = this.backDown(shooter, t, dir);
 					}
@@ -4837,6 +4892,27 @@ class Director {
 			const out = behindArc(team, this.posOf(shooter));
 			if (out) {
 				t = this.go(shooter, out, t, 9, "back", dir);
+			}
+		}
+
+		// Down on the block, his back to the rim and his man backed down: the
+		// move. A hook over him, a turnaround fadeaway, a drop step round him
+		// to the rim, or the shot fake he bites on and the step through under
+		// him.
+		let postMove: PostMove | undefined;
+		if (style === "post") {
+			const r = this.rng();
+			postMove =
+				r < 0.36
+					? "hook"
+					: r < 0.6
+						? "fade"
+						: r < 0.82
+							? "dropStep"
+							: "upUnder";
+			if (postMove === "dropStep" || postMove === "upUnder") {
+				t = this.postFinish(shooter, team, t, postMove);
+				close = true;
 			}
 		}
 
@@ -5094,9 +5170,9 @@ class Director {
 			// "Tips it in": a one-handed tap at the top of the jump.
 			const tip = zone === "tipIn" && plan.finish === "tip" && !drove;
 			let anim: AnimName = tip ? "block" : close ? "layup" : "shoot";
-			if (style === "post") {
-				// A hook, or a turnaround fadeaway.
-				anim = this.rng() < 0.55 ? "hook" : "fade";
+			if (postMove) {
+				anim =
+					postMove === "hook" ? "hook" : postMove === "fade" ? "fade" : "layup";
 			} else if (style === "fade") {
 				anim = "fade";
 			} else if (style === "hook") {
@@ -5795,7 +5871,14 @@ class Director {
 		// Which way it is going when he knocks it: on the way it was going,
 		// turned - plainly - by his hand.
 		const away = (at: Pt3): Pt => {
-			const h = vel && Math.hypot(vel.x, vel.y) > 1 ? vel : undefined;
+			// (The way it was really going as it got to him: from where it
+			// left, if it has come any way since.)
+			const h =
+				dist(from, at) > 0.5
+					? { x: at.x - from.x, y: at.y - from.y }
+					: vel && Math.hypot(vel.x, vel.y) > 1
+						? vel
+						: undefined;
 			const u = h
 				? unitVec({ x: 0, y: 0 }, h)
 				: dist(rim, at) > 0.5
@@ -6064,7 +6147,7 @@ class Director {
 				x: u.x * Math.cos(a) - u.y * Math.sin(a),
 				y: u.x * Math.sin(a) + u.y * Math.cos(a),
 			};
-			if (dist(at, this.outPoint(at, v)) <= 20) {
+			if (dist(at, this.outPoint(at, v)) <= 30) {
 				way = v;
 				break;
 			}

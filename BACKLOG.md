@@ -74,7 +74,7 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
       and shoots. Rework.
 - [ ] Defense overall should look like it's genuinely trying to stop the offense.
       Defenders can get crossed up, confused, etc. when the offense does good things.
-- [ ] "Attempts low post shot" should usually be a real post move, not an awkward
+- [x] "Attempts low post shot" should usually be a real post move, not an awkward
       drive into a 6-foot jumper (currently close to 100% of the time).
 - [ ] Injuries need an animation that depends on the kind of injury.
 
