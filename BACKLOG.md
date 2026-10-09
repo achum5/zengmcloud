@@ -165,6 +165,13 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   possible, as many animations as possible; then watch possession after
   possession and fix whatever looks off, over and over. Owner's top pick of
   what bothers them: stiff animation.
+- [~] As a player drives he is engaged with his defender, and vice versa. No
+  player just casually dribbles around with no real animation. Defenders
+  really look like they're defending; offensive players really look like
+  they're working to get to their spot. (Done so far: jabs and hesitations
+  with the defender reacting, a living low dribble stance, walking vs
+  attacking dribbles, arm bars and hands on hips on drives and cuts,
+  beaten defenders turning to run.)
 
 ## G. Naming
 

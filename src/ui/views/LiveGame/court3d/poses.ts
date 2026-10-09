@@ -522,15 +522,16 @@ const stride = (ph: number, mode: RunMode): Pose => {
 		});
 	}
 	if (mode === "jog") {
-		// An easy jog: a shorter stride than a run, more upright, the arms
-		// swinging loose.
+		// Getting somewhere on the floor, not out for a jog: a shorter
+		// stride than a run, but down in his legs and leaning into it, the
+		// arms working tight at his sides.
 		return pose({
-			hipN: 24 * a,
-			hipF: -24 * a,
-			kneeN: 12 + 40 * Math.max(0, c) ** 1.3,
-			kneeF: 12 + 40 * Math.max(0, -c) ** 1.3,
-			lean: 6,
-			...pump(a, 30, 74, 16),
+			hipN: 26 * a,
+			hipF: -26 * a,
+			kneeN: 18 + 42 * Math.max(0, c) ** 1.3,
+			kneeF: 18 + 42 * Math.max(0, -c) ** 1.3,
+			lean: 10,
+			...pump(a, 32, 84, 18),
 		});
 	}
 	if (mode === "sprint") {
