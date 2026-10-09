@@ -822,6 +822,7 @@ const Court25D = ({
 					bench: [pt.bench0, pt.bench1],
 				},
 				crowd: { up, wave },
+				now,
 				// Lettering at least 10 CSS pixels tall: a 7-pixel font, each of
 				// its pixels this many picture pixels.
 				textScale: Math.max(1, Math.ceil(10 / ((7 * art) / dpr))),

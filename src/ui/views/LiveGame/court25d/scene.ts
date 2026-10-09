@@ -41,7 +41,7 @@ import type { Look } from "./figure.ts";
 import { COURT_W, RIM_Z, seatSpot, type Pt3, type Side } from "./geometry.ts";
 import { drawPixelText, pixelTextWidth } from "./pixelFont.ts";
 import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
-import type { AnimName, Body } from "./poses.ts";
+import { ANIMS, type AnimName, type Body } from "./poses.ts";
 import { drawSprite, type Scratch, type SpriteCache } from "./sprite.ts";
 
 // ONE FRAME, AS PIXEL ART: the building and the floor laid out in
@@ -117,6 +117,9 @@ export type Frame = {
 	arena: ArenaPaint;
 	// The crowd on its feet (0..1), and which way its arms are this instant.
 	crowd: { up: number; wave: boolean };
+	// The wall clock (ms), for what idles on its own time - the bench - rather
+	// than the game's, which races through a fast-forward and jumps at a cut.
+	now?: number;
 	// How many picture pixels to a pixel of the lettering drawn into it, so a
 	// name reads at the same size on every screen.
 	textScale: number;
@@ -241,6 +244,17 @@ export const crowdAt = (
 	};
 };
 
+// Where a bench player is in his idle loop: the loop at its own pace on the
+// wall clock, each man a little out of step with the next. It used to run
+// every pose at 1.5 cycles a second of GAME time, whatever pace the pose was
+// written for - so the whole bench rocked in its seats all night, and
+// twitched at eight times that through every fast-forward.
+export const benchPhase = (anim: AnimName, ms: number, pid: number): number => {
+	const a = ANIMS[anim];
+	const cyclesPerSecond = a.kind === "loop" ? a.fps / a.n : 0.25;
+	return (ms / 1000) * cyclesPerSecond + ((Math.abs(pid) * 0.37) % 1);
+};
+
 // The players who are not in the game, sitting in order on their bench -
 // up on their feet in a tight finish.
 const STANDING: AnimName[] = ["ready", "crossed", "ready", "crouch"];
@@ -257,6 +271,11 @@ const benchStates = (f: Frame, onFloor: Set<number>): PlayerState[] => {
 		}
 		const at = seatSpot(p.team, i);
 		const up = roar?.team === p.team;
+		const anim: AnimName = up
+			? "cheer"
+			: tense
+				? STANDING[Math.abs(p.pid) % STANDING.length]!
+				: "sit";
 		out.push({
 			pid: p.pid,
 			team: p.team,
@@ -265,12 +284,8 @@ const benchStates = (f: Frame, onFloor: Set<number>): PlayerState[] => {
 			y: at.y,
 			z: 0,
 			yaw: Math.PI / 2,
-			anim: up
-				? "cheer"
-				: tense
-					? STANDING[Math.abs(p.pid) % STANDING.length]!
-					: "sit",
-			phase: (f.moment.t / 1000) * 1.5 + ((p.pid * 0.37) % 1),
+			anim,
+			phase: benchPhase(anim, f.now ?? f.moment.t, p.pid),
 			moving: false,
 		});
 	}
