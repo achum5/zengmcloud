@@ -3993,9 +3993,21 @@ export const releaseAt = (anim: AnimName, at: number, b = bodyOf()): V3 =>
 // ball in his left hand the arms trade jobs: the right is the one held out
 // to keep his man off.
 export type Hand = "R" | "L";
-export const dribbleArm = (q: Pose, ph: number, hand: Hand = "R"): Pose => {
+// The ball worked at his hip, not held out in front of him: his upper arm
+// down by his side, his elbow bent, his forearm and wrist doing the pushing -
+// the hand cocked back over the top of it, then snapped down. On the move
+// (`ahead`, 0 to 1) it is pushed out a little in front of him.
+export const dribbleArm = (
+	q: Pose,
+	ph: number,
+	hand: Hand = "R",
+	ahead = 0,
+): Pose => {
 	const push = ph < 0.22 ? ph / 0.22 : 1 - (ph - 0.22) / 0.78;
 	const e = push * push * (3 - 2 * push);
+	const sh = 16 + 6 * e + 10 * ahead;
+	const el = 62 - 36 * e - 8 * ahead;
+	const wr = 18 - 58 * e;
 	if (hand === "L") {
 		return {
 			...q,
@@ -4003,19 +4015,13 @@ export const dribbleArm = (q: Pose, ph: number, hand: Hand = "R"): Pose => {
 			elN: q.elF,
 			abN: q.abF,
 			wrN: q.wrF,
-			shF: 34 + 12 * e,
-			elF: 62 - 46 * e,
-			abF: 16,
-			wrF: 24 - 60 * e,
+			shF: sh,
+			elF: el,
+			abF: 20,
+			wrF: wr,
 		};
 	}
-	return {
-		...q,
-		shN: 34 + 12 * e,
-		elN: 62 - 46 * e,
-		abN: 16,
-		wrN: 24 - 60 * e,
-	};
+	return { ...q, shN: sh, elN: el, abN: 20, wrN: wr };
 };
 
 // His pose at a moment: the move's, with the dribbling hand on the bounce
@@ -4030,7 +4036,12 @@ export const posed = (
 ): Pose => {
 	const q = poseAt(anim, phase);
 	if (dribble !== undefined && !MOVES.has(anim)) {
-		return dribbleArm(q, dribble, hand);
+		return dribbleArm(
+			q,
+			dribble,
+			hand,
+			anim === "dribble" || anim === "sprint" || anim === "run" ? 1 : 0,
+		);
 	}
 	if (target <= 0) {
 		return q;
