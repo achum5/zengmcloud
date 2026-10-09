@@ -3,6 +3,7 @@ import {
 	benchPlane,
 	drawBall,
 	drawHoop,
+	drawJumbo,
 	drawShadow,
 	FLOOR,
 	LED_WALL,
@@ -87,7 +88,9 @@ export type ArenaPaint = {
 	endStands?: [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement];
 	// Every screen the LED boards can show (see boardAt).
 	boards: Record<"wall" | "ribbon", Record<BoardScreen, HTMLCanvasElement>> &
-		Partial<Record<"end" | "table", Record<BoardScreen, HTMLCanvasElement>>>;
+		Partial<
+			Record<"end" | "table" | "jumbo", Record<BoardScreen, HTMLCanvasElement>>
+		>;
 	rafters: HTMLCanvasElement;
 	tableTop: HTMLCanvasElement;
 	tableFront: HTMLCanvasElement;
@@ -782,6 +785,13 @@ export const drawFrame = (f: Frame) => {
 	items.sort((a, b) => b.depth - a.depth);
 	for (const it of items) {
 		it.draw();
+	}
+	// The board over center court, when the picture takes it in.
+	const jumbo = arena.boards.jumbo?.[screen];
+	if (jumbo) {
+		drawJumbo(ctx, cam, jumbo, (plane, img) => {
+			drawTexturedPlane(ctx, cam, plane, img, 24, 1);
+		});
 	}
 	// A photographer's flash.
 	for (const at of f.flashes ?? []) {

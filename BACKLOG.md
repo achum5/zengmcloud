@@ -123,7 +123,7 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
 - [x] Stanchion: dark padded base with a lit ad panel.
 - [ ] Far sideline: bench, the scorer's table with a lit LED front, courtside
       seats, then the stands.
-- [ ] Center-hung scoreboard over the floor (MSG).
+- [x] Center-hung scoreboard over the floor (MSG).
 
 - [~] Bench players wear warm-ups with the team logo on the front and name and
   number on the back. Once a player has been in the game, back on the bench he

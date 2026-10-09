@@ -312,7 +312,7 @@ const Court3D = ({
 			endStands: [0, 1, 2].map((up) =>
 				paintStands(h, a, seed, up as 0 | 1 | 2, crowd, 0),
 			) as [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement],
-			boards: paintBoards(h),
+			boards: paintBoards(h, a),
 			rafters: paintRafters(h, building),
 			tableTop: table.top,
 			tableFront: table.front,
