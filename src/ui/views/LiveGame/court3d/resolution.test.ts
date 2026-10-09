@@ -18,14 +18,15 @@ const run = (
 };
 
 describe("3D picture resolution", () => {
-	test("as fine as a whole number of screen pixels allows", () => {
+	test("the screen's own resolution, sharp, unless it is huge", () => {
 		const res = makeResolution(0);
 		// A 720-pixel-tall picture: one screen pixel each.
 		assert.strictEqual(artFor(720, res), 1);
-		// A phone's 4:3 picture at 3x: two screen pixels each.
-		assert.strictEqual(artFor(877, res), 2);
-		// A big 2x screen: still about as fine.
-		assert.strictEqual(artFor(1620, res), 3);
+		// A phone's 4:3 picture at 3x: one screen pixel each, too.
+		assert.strictEqual(artFor(877, res), 1);
+		assert.strictEqual(artFor(1300, res), 1);
+		// A big picture on a 2x screen: two screen pixels each.
+		assert.strictEqual(artFor(1620, res), 2);
 		assert.strictEqual(artFor(300, res), 1);
 	});
 
@@ -33,7 +34,7 @@ describe("3D picture resolution", () => {
 		const res = makeResolution(0);
 		// Struggling (under 40 frames a second): coarser, a step at a time.
 		let t = run(res, 1620, 0, 20_000, 45, 30);
-		assert.isAbove(artFor(1620, res), 3);
+		assert.isAbove(artFor(1620, res), 2);
 		assert.isAtMost(artFor(1620, res), Math.ceil(1620 / 300));
 		const coarse = artFor(1620, res);
 		// Now with time to spare: finer again.
@@ -47,7 +48,7 @@ describe("3D picture resolution", () => {
 	test("slow frames that are not the drawing's doing leave it as fine as it is", () => {
 		const res = makeResolution(0);
 		run(res, 1620, 0, 30_000, 45, 5);
-		assert.strictEqual(artFor(1620, res), 3);
+		assert.strictEqual(artFor(1620, res), 2);
 		assert.strictEqual(res.changes, 0);
 	});
 

@@ -226,7 +226,7 @@ const jerseySheet = (
 	if (
 		(!look.jerseyNumber && !(warmup && look.wordmark)) ||
 		(look.outfit && !warmup) ||
-		typeof document === "undefined"
+		(typeof document === "undefined" && typeof OffscreenCanvas === "undefined")
 	) {
 		return undefined;
 	}
@@ -247,10 +247,14 @@ const jerseySheet = (
 	const u0 = T + body.H * 0.08;
 	const w = Math.max(8, Math.round(2 * Math.PI * aS * ppf));
 	const h = Math.max(8, Math.round((u0 - waist) * ppf) + 2);
-	const cv = document.createElement("canvas");
-	cv.width = w;
-	cv.height = h;
-	const g = cv.getContext("2d", { willReadFrequently: true });
+	// (On the page, or in a worker sculpting off it - see sculptPool.ts.)
+	const g =
+		typeof document === "undefined"
+			? new OffscreenCanvas(w, h).getContext("2d", { willReadFrequently: true })
+			: Object.assign(document.createElement("canvas"), {
+					width: w,
+					height: h,
+				}).getContext("2d", { willReadFrequently: true });
 	if (!g) {
 		byStep.set(step, null);
 		return undefined;

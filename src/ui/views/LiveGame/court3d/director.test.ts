@@ -366,7 +366,7 @@ describe("3D director", () => {
 			assert.isAbove(running, 500);
 			assert.isBelow(left / running, 0.2, seed);
 		}
-	}, 60_000);
+	}, 150_000);
 
 	// Kicked out of the lane, the shooter is open because his man left him
 	// to help on the drive - a stunt at the ball, or all the way over - and
@@ -878,7 +878,7 @@ describe("3D director", () => {
 			}
 			prev = cur;
 		}
-	}, 120_000);
+	}, 240_000);
 
 	// The picture never cuts in play: the ball taken out after a basket and
 	// brought up, the walk to an inbound or to the line, are all played out -

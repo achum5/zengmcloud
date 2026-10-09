@@ -2,13 +2,14 @@ import { Worker } from "node:worker_threads";
 import type { Spinners } from "./spinners.ts";
 import type { Update } from "./cli.ts";
 import type { Sport } from "../lib/getSport.ts";
+import { BUNDLES } from "../lib/rolldownConfig.ts";
 
 export const watchJs = (
 	initialSport: Sport,
 	update: Update,
 	eventEmitter: Spinners["eventEmitter"],
 ) => {
-	for (const name of ["ui", "worker"]) {
+	for (const name of BUNDLES) {
 		const filename = `build/gen/${name}.js`;
 
 		const worker = new Worker(new URL("watchJsWorker.ts", import.meta.url), {

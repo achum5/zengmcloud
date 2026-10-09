@@ -37,7 +37,9 @@ import {
 	snapForCursor,
 	targetForCursor,
 	type CourtPlayer,
+	type CourtTimeline,
 } from "./director.ts";
+import { compileAside } from "./sculptPool.ts";
 import { crewAt, crewFor } from "./crew.ts";
 import { courtsideFor } from "./courtside.ts";
 import { headColors, loadHead, profileOf, type HeadSprite } from "./faces.ts";
@@ -221,14 +223,22 @@ const Court3D = ({
 
 	// The starting lineups called out before the opening tip (see intro.ts):
 	// off for now, kept to come back to.
-	const introKind = LINEUP_INTROS
+	const introKind: "playoffs" | "regular" | undefined = LINEUP_INTROS
 		? boxScore?.playoffs
 			? "playoffs"
 			: "regular"
 		: undefined;
-	const timeline = useMemo(() => {
+	// The game staged from its play-by-play (see director.ts) - aside, off
+	// the page's own thread, where it can be (see sculptPool.ts): seconds of
+	// work that otherwise froze the whole page as a game opened.
+	const [staged, setStaged] = useState<{
+		events: unknown;
+		roster: unknown;
+		tl: CourtTimeline | undefined;
+	}>();
+	useEffect(() => {
 		if (!events || events.length === 0) {
-			return undefined;
+			return;
 		}
 		// THE EVENTS HAVE TO BE THIS GAME'S. When the game on this page changes
 		// under it - a league-mate starts another game while this device is
@@ -237,23 +247,50 @@ const Court3D = ({
 		// players on the floor that the court has never heard of (the field
 		// report: a crash in the free throw lineup). Wait for the two to agree.
 		if (!eventsMatchRoster(events, roster)) {
-			return undefined;
+			return;
 		}
-		try {
-			return compileCourt({
-				events,
-				players: roster,
-				gid,
-				gender,
-				intro: introKind,
-			});
-		} catch (error) {
-			// A broken staging must not take the whole page down with it - the
-			// play-by-play and box score still work without the court.
-			console.error("3D court failed to compile", error);
-			return undefined;
+		let live = true;
+		const input = { events, players: roster, gid, gender, intro: introKind };
+		const here = () => {
+			try {
+				return compileCourt(input);
+			} catch (error) {
+				// A broken staging must not take the whole page down with it - the
+				// play-by-play and box score still work without the court.
+				console.error("3D court failed to compile", error);
+				return undefined;
+			}
+		};
+		let landed: CourtTimeline | undefined;
+		const land = (tl: CourtTimeline | undefined) => {
+			landed = tl;
+			if (live) {
+				setStaged({ events, roster, tl });
+			}
+		};
+		if (
+			!compileAside(
+				input,
+				(tl) => land(tl ?? here()),
+				// Where its officials go all game, worked out aside too: until
+				// it comes, that is worked out here bit by bit as it plays.
+				(refs) => {
+					if (landed && refs && !landed.refs) {
+						landed.refs = refs;
+					}
+				},
+			)
+		) {
+			land(here());
 		}
+		return () => {
+			live = false;
+		};
 	}, [events, roster, gid, gender, introKind]);
+	const timeline =
+		staged && staged.events === events && staged.roster === roster
+			? staged.tl
+			: undefined;
 	const clocks = useMemo(
 		() => (timeline && events ? buildClocks(timeline, events) : undefined),
 		[timeline, events],

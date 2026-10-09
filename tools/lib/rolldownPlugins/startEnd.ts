@@ -2,13 +2,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import type { RolldownPlugin } from "rolldown";
-import { FOLDER } from "../rolldownConfig.ts";
+import { FOLDER, type BundleName } from "../rolldownConfig.ts";
 
 export const startEnd = ({
 	name,
 	postMessage,
 }: {
-	name: "ui" | "worker";
+	name: BundleName;
 	postMessage: (message: unknown) => void;
 }): RolldownPlugin => {
 	return {

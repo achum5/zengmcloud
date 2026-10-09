@@ -329,6 +329,9 @@ export type CourtTimeline = {
 	checkIns?: CheckIn[];
 	// The starting lineups called out before the opening tip (see intro.ts).
 	intro?: Intro;
+	// Where each of the three officials is, every quarter second of the game
+	// (see crew.ts) - worked out with the rest of it, where that is done aside.
+	refs?: Pt[][];
 	end: number;
 };
 

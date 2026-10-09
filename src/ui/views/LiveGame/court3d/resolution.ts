@@ -1,12 +1,15 @@
 // HOW FINE THE PICTURE IS.
 //
-// The court is drawn small and blown up without smoothing, each of its
-// pixels a whole number of the screen's (see Court3D) - as fine as about
-// ROWS of them top to bottom. A device that can't draw that many fast
-// enough steps a size coarser, never coarser than about MIN_ROWS, and back
-// finer once it has time to spare.
+// The court is drawn at the screen's own resolution - one of its pixels to
+// each of the screen's, sharp - up to about ROWS of them top to bottom (past
+// that, on a big high-density screen, two or more of the screen's to each,
+// blown up without smoothing). A device that can't draw that many fast
+// enough steps a size coarser - pixel art, the fallback - never coarser than
+// about MIN_ROWS, and back finer once it has time to spare. (Sculpting new
+// poses, the costliest part of a frame and the more so the finer it is, is
+// done off the page's thread where it can be - see sculptPool.ts.)
 
-export const ROWS = 760;
+export const ROWS = 1440;
 const MIN_ROWS = 300;
 // Settling in (faces loading, the first sprites drawn) before judging, and
 // between steps.
