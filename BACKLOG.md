@@ -28,7 +28,7 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
   section does. Where this text lives needs deciding as part of the broadcast
   work (score bug etc.).
 - [x] Bench players visibly stutter all game. Investigate and fix.
-- [ ] Watching a live game being simmed on another device is very choppy and
+- [x] Watching a live game being simmed on another device is very choppy and
       unwatchable. Work out how to send the seed/data so the viewing device plays it
       back smoothly and precisely.
 - [ ] Ball out of bounds should always be correct for which team it went off

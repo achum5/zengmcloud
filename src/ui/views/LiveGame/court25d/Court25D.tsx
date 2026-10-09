@@ -43,6 +43,7 @@ import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
 import { dressKit, kitArtOf, type KitArt } from "./kitArt.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
+import { advanceLead, followRate } from "./follow.ts";
 import { bodyOf, type Body } from "./poses.ts";
 import { cameraCuts, fastAt } from "./evaluate.ts";
 import {
@@ -517,6 +518,9 @@ const Court25D = ({
 		stepping: false,
 		prevCursor: -1,
 		prevPaused: paused,
+		// Following another device's sim: where its court is estimated to be
+		// (see follow.ts).
+		lead: 0,
 		clockText: "",
 		shotText: "",
 		// The dunk replay showing now, and the next dunk that would get one.
@@ -532,18 +536,22 @@ const Court25D = ({
 		}
 		const s = play.current;
 		const target = targetForCursor(timeline, cursor);
-		if (s.prevCursor < 0) {
+		const snap =
+			s.prevCursor < 0 ||
+			cursor < s.prevCursor ||
+			target < s.t - 1 ||
+			(linesBetween(timeline, s.prevCursor, cursor) > 2 && target - s.t > 9000);
+		if (snap) {
 			s.t = snapForCursor(timeline, cursor);
 			s.snapCam = true;
-		} else if (cursor < s.prevCursor || target < s.t - 1) {
-			s.t = snapForCursor(timeline, cursor);
-			s.snapCam = true;
-		} else if (
-			linesBetween(timeline, s.prevCursor, cursor) > 2 &&
-			target - s.t > 9000
-		) {
-			s.t = snapForCursor(timeline, cursor);
-			s.snapCam = true;
+		}
+		if (follower) {
+			// Where the other court is: just past the play it last reported
+			// (it reports one the moment it gets there) - or, after a cut,
+			// where this one now is.
+			s.lead = snap
+				? s.t
+				: Math.max(s.lead, s.t, targetForCursor(timeline, s.prevCursor));
 		}
 		if (paused && s.prevCursor >= 0 && cursor > s.prevCursor) {
 			// "Next play" while paused: show that one play, then hold.
@@ -560,7 +568,7 @@ const Court25D = ({
 		}
 		s.prevCursor = cursor;
 		s.prevPaused = paused;
-	}, [cursor, paused, timeline]);
+	}, [cursor, follower, paused, timeline]);
 
 	const homePad = home?.colors?.[0] ?? "#8c1d40";
 	const lineColor: string = home?.court?.lines || "#f8f5f0";
@@ -628,11 +636,18 @@ const Court25D = ({
 			// Through the dead stretches, fast.
 			let rate = base * fastAt(tl, s.t);
 			if (p.follower) {
-				// Behind the device in charge of simming: catch up, briskly.
-				const lag = target - s.t;
-				if (lag > 3000) {
-					rate *= Math.min(6, 1 + (lag - 3000) / 2500);
+				// Behind the device in charge of simming: hold a steady gap to
+				// where its court is, rather than running to the last play it
+				// reported and stopping there.
+				if (!p.paused) {
+					s.lead = advanceLead(
+						Math.max(s.lead, s.t),
+						target,
+						dt,
+						base * fastAt(tl, s.lead),
+					);
 				}
+				rate *= followRate(s.lead - s.t);
 			}
 			const before = s.t;
 			// A replay holds the live clock while it plays.
