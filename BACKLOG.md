@@ -88,7 +88,7 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
 - [x] Rims look like a bunch of circles. Make the rim and the whole basket look
       better. Basketball should look like a real ball with correct lines.
 - [ ] Better-looking feet, and customizable shoes (like jerseys and courts).
-- [ ] Improve the look of the name tag under players.
+- [x] Improve the look of the name tag under players.
 
 ## E. Customization system (jerseys, courts, score bug, shoes, banners)
 

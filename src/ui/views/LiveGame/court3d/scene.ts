@@ -493,7 +493,7 @@ export const drawFrame = (f: Frame) => {
 			? undefined
 			: players.find((p) => p.pid === ball.holder);
 	if (holder) {
-		drawNameTag(ctx, cam, holder, f.lookFor(holder.pid).name, f.textScale);
+		drawNameTag(ctx, cam, holder, f.lookFor(holder.pid), f.textScale);
 	}
 };
 
@@ -501,19 +501,47 @@ const drawNameTag = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,
 	st: PlayerState,
-	name: string,
+	look: Look,
 	scale: number,
 ) => {
-	const w = pixelTextWidth(name, scale);
+	const w = pixelTextWidth(look.name, scale);
 	if (w === 0) {
 		return;
 	}
+	// A broadcast's tag: his number in his team's colors, his name on a
+	// dark plate with the team's trim along its foot, and a notch up at him.
+	const num = look.jerseyNumber;
+	const nw = num ? pixelTextWidth(num, scale) + 6 * scale : 0;
+	const pad = 3 * scale;
+	const h = 13 * scale;
+	const total = nw + w + 2 * pad;
 	const feet = project(cam, { x: st.x, y: st.y, z: 0 });
-	const x = Math.round(feet.x - w / 2);
-	const y = Math.round(feet.y + Math.max(3 * scale, 0.55 * feet.k));
-	ctx.fillStyle = "rgba(8, 8, 12, 0.72)";
-	ctx.fillRect(x - 2 * scale, y - 2 * scale, w + 4 * scale, 11 * scale);
-	drawPixelText(ctx, name, x, y, "#ffffff", scale);
+	const x = Math.round(feet.x - total / 2);
+	const y = Math.round(feet.y + Math.max(5 * scale, 0.6 * feet.k));
+	// The notch.
+	ctx.fillStyle = "rgba(10, 10, 14, 0.82)";
+	ctx.beginPath();
+	ctx.moveTo(Math.round(feet.x) - 3 * scale, y);
+	ctx.lineTo(Math.round(feet.x), y - 3 * scale);
+	ctx.lineTo(Math.round(feet.x) + 3 * scale, y);
+	ctx.closePath();
+	ctx.fill();
+	ctx.fillRect(x + nw, y, w + 2 * pad, h);
+	if (num) {
+		ctx.fillStyle = look.kit.jersey;
+		ctx.fillRect(x, y, nw, h);
+		drawPixelText(
+			ctx,
+			num,
+			x + 3 * scale,
+			y + 3 * scale,
+			look.kit.number,
+			scale,
+		);
+	}
+	ctx.fillStyle = look.kit.trim;
+	ctx.fillRect(x, y + h - scale, total, scale);
+	drawPixelText(ctx, look.name, x + nw + pad, y + 3 * scale, "#ffffff", scale);
 };
 
 // WHERE THE CAMERA LOOKS: mostly at the ball, pulled toward the middle of
