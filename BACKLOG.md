@@ -135,9 +135,9 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
 - [~] Baseline and behind the basket like real life: courtside seats, crowd
   continuing behind the basket. Crowd as real people with faces.js faces and
   outfits supporting their team, or the opponent at least in away games.
-- [ ] Dynamic crowds based on the team's "hype" saved in the league file: smaller
-      crowds for less hype. Crowd coming back from halftime, home crowd while being
-      blown out, and any other "arena alive" ideas.
+- [~] Dynamic crowds based on the team's "hype" saved in the league file: smaller
+  crowds for less hype. Crowd coming back from halftime, home crowd while being
+  blown out, and any other "arena alive" ideas.
 - [~] End of game: players go around dapping each other up. Huge celebration for
   a game winner, and for winning a close game in general. Confetti when a
   championship is won at the buzzer, only if the home team wins it. Playoff wins

@@ -36,6 +36,7 @@ import {
 	evalPlayer,
 	offenseAt,
 	recentFx,
+	seatsAt,
 	tensionAt,
 	withBody,
 	type BallState,
@@ -84,6 +85,9 @@ export type ArenaPaint = {
 	stands: HTMLCanvasElement;
 	standsUp: HTMLCanvasElement;
 	standsWave: HTMLCanvasElement;
+	// The stands half empty (see seatsAt), side and ends.
+	standsSparse?: HTMLCanvasElement;
+	endStandsSparse?: HTMLCanvasElement;
 	// Behind each basket (the same pictures at both ends).
 	endStands?: [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement];
 	// Every screen the LED boards can show (see boardAt).
@@ -584,7 +588,17 @@ export const drawFrame = (f: Frame) => {
 
 	// The building: the stands (on their feet after a big play), the LED
 	// ribbon, the floor round the court, the court, the table, the benches.
-	drawTexturedPlane(ctx, cam, STANDS, arena.stands, 24, 6);
+	// Fewer in their seats: the half-empty stands, the full ones over them
+	// as faint as the seats are empty.
+	const full = seatsAt(tl, t);
+	const thin = full < 0.999 && arena.standsSparse !== undefined;
+	const fill = thin ? Math.max(0, (full - 0.55) / 0.45) : 1;
+	if (thin) {
+		drawTexturedPlane(ctx, cam, STANDS, arena.standsSparse!, 24, 6);
+	}
+	if (fill > 0.01) {
+		drawTexturedPlane(ctx, cam, STANDS, arena.stands, 24, 6, fill);
+	}
 	if (f.crowd.up > 0.01) {
 		drawTexturedPlane(
 			ctx,
@@ -614,7 +628,27 @@ export const drawFrame = (f: Frame) => {
 	// Round the ends: the stands, and the boards along their front.
 	for (const side of [0, 1] as const) {
 		if (arena.endStands) {
-			drawTexturedPlane(ctx, cam, END_STANDS[side], arena.endStands[0], 24, 6);
+			if (thin && arena.endStandsSparse) {
+				drawTexturedPlane(
+					ctx,
+					cam,
+					END_STANDS[side],
+					arena.endStandsSparse,
+					24,
+					6,
+				);
+			}
+			if (fill > 0.01) {
+				drawTexturedPlane(
+					ctx,
+					cam,
+					END_STANDS[side],
+					arena.endStands[0],
+					24,
+					6,
+					fill,
+				);
+			}
 			if (f.crowd.up > 0.01) {
 				drawTexturedPlane(
 					ctx,

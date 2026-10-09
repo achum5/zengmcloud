@@ -649,6 +649,12 @@ const targetAt = (tl: CourtTimeline, pid: number, t: number): number => {
 };
 
 // How tense the building is at t (0 to 1): a close game, late.
+export const seatsAt = (tl: CourtTimeline, t: number): number => {
+	const s = tl.seats ?? [];
+	const i = lastIndex(s, t, (x) => x[0]);
+	return i >= 0 ? s[i]![1] : 1;
+};
+
 export const tensionAt = (tl: CourtTimeline, t: number): number => {
 	const i = lastIndex(tl.tension, t, (x) => x[0]);
 	return i >= 0 ? tl.tension[i]![1] : 0;

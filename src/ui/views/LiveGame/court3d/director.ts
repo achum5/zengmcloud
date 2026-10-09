@@ -300,6 +300,10 @@ export type CourtTimeline = {
 	// How tense the building is, over time (0 to 1): a close game late in
 	// the last period or in overtime.
 	tension: [number, number][];
+	// How full the seats are, over time (1: everybody in them): emptier
+	// coming back from halftime, and as the home crowd heads for the exits
+	// in a blowout loss.
+	seats?: [number, number][];
 	// Stretches the picture runs through fast rather than cutting past: the
 	// ball taken out and brought up the floor, the walk to the line.
 	fast: [number, number][];
@@ -886,6 +890,7 @@ class Director {
 	// The cuts between one clip of a highlight reel and the next.
 	readonly clips: number[] = [];
 	readonly tension: [number, number][] = [];
+	readonly seats: [number, number][] = [];
 	// Each with how short it may be and still be run through (ms; see
 	// hurried).
 	readonly fast: [number, number, number?][] = [];
@@ -7181,6 +7186,26 @@ class Director {
 				: 0;
 	}
 
+	// The seats: half of them still empty as the third quarter starts,
+	// filling up over its first few minutes; and with the home team down big
+	// in the fourth, emptying as the clock runs.
+	private seatsNow(i: number): number {
+		const e = this.events[i];
+		const clock =
+			typeof e?.clock === "number" ? e.clock : (this.lastClock ?? 720);
+		let full = 1;
+		if (!this.overtime && this.periodNo === 3) {
+			full = 0.55 + 0.45 * Math.min(1, (720 - clock) / 240);
+		}
+		const down = this.score[0] - this.score[1];
+		if (!this.overtime && this.periodNo >= 4 && down >= 16) {
+			full =
+				1 -
+				0.45 * Math.min(1, (720 - clock) / 420) * Math.min(1, (down - 13) / 10);
+		}
+		return Math.round(full * 20) / 20;
+	}
+
 	private beat(i: number, type: string, actionStart: number, end: number) {
 		const preStart = this.T;
 		const a = Math.max(preStart, actionStart);
@@ -7199,6 +7224,10 @@ class Director {
 		const level = this.tensionNow(i);
 		if (level !== (this.tension.at(-1)?.[1] ?? 0)) {
 			this.tension.push([preStart, level]);
+		}
+		const full = this.seatsNow(i);
+		if (full !== (this.seats.at(-1)?.[1] ?? 1)) {
+			this.seats.push([preStart, full]);
 		}
 		this.T = e;
 	}
@@ -12650,6 +12679,7 @@ class Director {
 			jumps: this.jumps,
 			shots,
 			tension: this.tension,
+			seats: this.seats,
 			fast,
 			checkIns: this.checkIns,
 			end: this.T,

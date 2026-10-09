@@ -304,11 +304,22 @@ const Court3D = ({
 		// in the rafters.
 		const building: ArenaLooks | undefined = boxScore?.arena;
 		const crowd = { att: boxScore?.att, capacity: building?.capacity };
+		// Half of them, for when the seats are emptier (see seatsAt).
+		const sparse = {
+			att:
+				0.5 *
+				(crowd.att !== undefined && crowd.capacity
+					? Math.min(0.97, crowd.att / crowd.capacity)
+					: 0.93),
+			capacity: 1,
+		};
 		const seed = String(gid ?? 0);
 		return {
 			stands: paintStands(h, a, seed, 0, crowd),
 			standsUp: paintStands(h, a, seed, 1, crowd),
 			standsWave: paintStands(h, a, seed, 2, crowd),
+			standsSparse: paintStands(h, a, seed, 0, sparse),
+			endStandsSparse: paintStands(h, a, seed, 0, sparse, 0),
 			endStands: [0, 1, 2].map((up) =>
 				paintStands(h, a, seed, up as 0 | 1 | 2, crowd, 0),
 			) as [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement],
@@ -852,6 +863,8 @@ const Court3D = ({
 					stands: pt.stands,
 					standsUp: pt.standsUp,
 					standsWave: pt.standsWave,
+					standsSparse: pt.standsSparse,
+					endStandsSparse: pt.endStandsSparse,
 					endStands: pt.endStands,
 					boards: pt.boards,
 					rafters: pt.rafters,
