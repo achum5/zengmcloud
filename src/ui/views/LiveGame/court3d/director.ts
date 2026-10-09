@@ -5085,6 +5085,24 @@ class Director {
 					dist(S, rim) > 4 &&
 					dist(S, rim) < 15 &&
 					this.rng() < 0.85;
+				// Fed from the wing on his side - not handed it from a step away
+				// by a man down in the lane with him.
+				const F = this.posOf(from);
+				if (
+					entry &&
+					this.holder === from &&
+					(dist(F, S) < 11 || dist(F, rim) < 11)
+				) {
+					const side = S.y >= COURT_H / 2 ? 1 : -1;
+					this.hold(from, t, "dribble");
+					t = this.go(
+						from,
+						spot(team, 17.5, COURT_H / 2 + side * 19),
+						t,
+						DRIBBLE,
+						"dribble",
+					);
+				}
 				const held = entry
 					? this.seal(
 							shooter,
@@ -5341,12 +5359,25 @@ class Director {
 					handler = passer;
 				}
 				if (passer !== undefined && this.teamOf(passer) === team) {
-					const arrive = this.go(shooter, P, t, RUN, "run");
-					const d = dist(this.posOf(handler), P);
 					// An entry pass to the post: he seals his man first, a hand up
 					// for it, and it comes in to him as he has him sealed - then
 					// he backs him down.
 					const entry = zone === "lowPost" && this.rng() < 0.9;
+					// Fed from the wing on his side - not handed it from a step
+					// away by a man down in the lane with him.
+					const H = this.posOf(handler);
+					if (
+						entry &&
+						(dist(H, P) < 11 || dist(H, rim) < 11) &&
+						this.holder === handler
+					) {
+						const side = P.y >= COURT_H / 2 ? 1 : -1;
+						const W = spot(team, 17.5, COURT_H / 2 + side * 19);
+						this.hold(handler, t, "dribble");
+						t = this.go(handler, W, t, DRIBBLE, "dribble");
+					}
+					const arrive = this.go(shooter, P, t, RUN, "run");
+					const d = dist(this.posOf(handler), P);
 					const held = entry
 						? this.seal(shooter, handler, arrive, dir)
 						: undefined;

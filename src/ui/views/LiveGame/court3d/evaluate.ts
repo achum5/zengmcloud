@@ -110,6 +110,17 @@ export type PlayerState = {
 		mirror?: boolean;
 		w: number;
 		arms?: number;
+		// Changed again while still easing out of the move before: that one,
+		// and how much of it was still in him then.
+		from?: {
+			anim: AnimName;
+			phase: number;
+			dribble?: number;
+			dribbleHand?: Hand;
+			target?: number;
+			mirror?: boolean;
+			w: number;
+		};
 	};
 	// One arm saying something while the rest of him goes on (see armAt):
 	// which, its angles (as a pose has them), and how far into them it is
@@ -1015,18 +1026,26 @@ const guardHands = (tl: CourtTimeline, man: number, t: number): number => {
 
 // How much of the way he is going is across the way he faces (0 straight
 // ahead or back, 1 square to his side).
-const across = (
-	tl: CourtTimeline,
-	tr: Track,
-	t: number,
-	here: Spot,
-): number => {
-	const h = Math.hypot(here.hx, here.hy);
-	if (h < 1e-6) {
-		return 0;
+// Whether a slide goes across the way he faces (push steps) rather than
+// toward or away from it (drop steps): decided for the whole run, by how he
+// faces halfway along it, so his feet never switch from one to the other
+// mid-stride.
+const sidewaysRuns = new WeakMap<Run["mv"], boolean>();
+const sideways = (tl: CourtTimeline, tr: Track, run: Run): boolean => {
+	let s = sidewaysRuns.get(run.mv);
+	if (s === undefined) {
+		const dx = run.mv.to.x - run.mv.from.x;
+		const dy = run.mv.to.y - run.mv.from.y;
+		const d = Math.hypot(dx, dy);
+		if (d < 0.05) {
+			s = false;
+		} else {
+			const yaw = yawAt(tl, tr, (run.s0 + run.s1) / 2);
+			s = Math.abs(Math.cos(yaw) * dy - Math.sin(yaw) * dx) / d > 0.6;
+		}
+		sidewaysRuns.set(run.mv, s);
 	}
-	const yaw = yawAt(tl, tr, t);
-	return Math.abs(Math.cos(yaw) * here.hy - Math.sin(yaw) * here.hx) / h;
+	return s;
 };
 
 // Up on the ball, now and then he pokes at it - a quick swipe that gets
@@ -1131,7 +1150,7 @@ const doingAt = (
 		phase = stridesAt(tr, here.moveIndex, here.run, t);
 		// Sliding with his man: push steps when he goes across the way he
 		// faces, drop steps when he gives ground or steps up.
-		if (anim === "slide" && across(tl, tr, t, here) > 0.6) {
+		if (anim === "slide" && sideways(tl, tr, here.run)) {
 			phase *= strideOf("slide") / strideOf("shuffle");
 			anim = "shuffle";
 		}
@@ -1236,13 +1255,24 @@ const blendInto = (
 	tr: Track,
 	t: number,
 	anim: AnimName,
+	// (Looking back from inside another blend: no further.)
+	nested = false,
 ): PlayerState["from"] => {
-	let before = doingAt(tl, tr, t - BLEND_MS);
+	let lo = t - BLEND_MS;
+	let before = doingAt(tl, tr, lo);
 	if (before.anim === anim) {
-		return undefined;
+		// The same as a moment ago - but maybe something else in between,
+		// and back: out of that, then.
+		const flick = [40, 80, 120]
+			.map((back) => ({ at: t - back, d: doingAt(tl, tr, t - back) }))
+			.find((x) => x.d.anim !== anim);
+		if (!flick) {
+			return undefined;
+		}
+		lo = flick.at;
+		before = flick.d;
 	}
 	// When it changed.
-	let lo = t - BLEND_MS;
 	let hi = t;
 	for (let k = 0; k < 5; k++) {
 		const mid = (lo + hi) / 2;
@@ -1259,18 +1289,35 @@ const blendInto = (
 		return 1 - u * u * (3 - 2 * u);
 	};
 	const w = ease(BLEND_MS);
-	return w <= 0.02
-		? undefined
-		: {
-				anim: before.anim,
-				phase: before.phase,
-				dribble: before.dribble,
-				dribbleHand: before.dribbleHand,
-				target: before.target,
-				...(before.mirror ? { mirror: true } : {}),
-				w,
-				...(isMove(anim) ? { arms: ease(MOVE_ARMS_MS) } : {}),
-			};
+	if (w <= 0.02) {
+		return undefined;
+	}
+	// How he looked as it changed: the last move - itself, maybe, still
+	// easing out of the one before it.
+	const prior = nested ? undefined : blendInto(tl, tr, lo, before.anim, true);
+	return {
+		anim: before.anim,
+		phase: before.phase,
+		dribble: before.dribble,
+		dribbleHand: before.dribbleHand,
+		target: before.target,
+		...(before.mirror ? { mirror: true } : {}),
+		w,
+		...(isMove(anim) ? { arms: ease(MOVE_ARMS_MS) } : {}),
+		...(prior
+			? {
+					from: {
+						anim: prior.anim,
+						phase: prior.phase,
+						dribble: prior.dribble,
+						dribbleHand: prior.dribbleHand,
+						target: prior.target,
+						...(prior.mirror ? { mirror: true } : {}),
+						w: prior.w,
+					},
+				}
+			: {}),
+	};
 };
 
 // WITH AN ARM, ON THE MOVE.
@@ -1773,7 +1820,12 @@ const UPPER: (keyof Pose)[] = [
 ];
 const blendFrom = (q: Pose, f: NonNullable<PlayerState["from"]>): Pose => {
 	const as = posed(f.anim, f.phase, f.dribble, f.dribbleHand, f.target);
-	const was = f.mirror ? mirror(as) : as;
+	let was = f.mirror ? mirror(as) : as;
+	const g = f.from;
+	if (g && g.w > 0) {
+		const as2 = posed(g.anim, g.phase, g.dribble, g.dribbleHand, g.target);
+		was = lerpPose(was, g.mirror ? mirror(as2) : as2, g.w);
+	}
 	const p = lerpPose(q, was, f.w);
 	if (f.arms !== undefined) {
 		for (const key of UPPER) {

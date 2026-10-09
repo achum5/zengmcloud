@@ -162,6 +162,19 @@ const stepped = (st: PlayerState) => {
 						...(f.mirror ? { mirror: true } : {}),
 						w,
 						...(f.arms === undefined ? {} : { arms: step(f.arms) }),
+						...(f.from && step(f.from.w) > 0
+							? {
+									from: {
+										anim: f.from.anim,
+										phase: frameOf(f.from.anim, f.from.phase),
+										dribble: dribbleFrame(f.from.dribble),
+										dribbleHand: f.from.dribbleHand,
+										target: targetFrame(f.from.target),
+										...(f.from.mirror ? { mirror: true } : {}),
+										w: step(f.from.w),
+									},
+								}
+							: {}),
 					}
 				: undefined,
 	};
@@ -206,7 +219,11 @@ export const drawSprite = (
 			Math.log(k) / Math.log(1.04),
 		)}|${px}|${st.holding ? 1 : 0}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}|${pose.target ?? ""}${
 			f
-				? `|${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}`
+				? `|${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}${
+						f.from
+							? `<${f.from.anim}${f.from.mirror ? "m" : ""}${f.from.phase}${f.from.dribble ?? ""}${f.from.dribbleHand ?? ""}${f.from.target ?? ""}~${f.from.w}`
+							: ""
+					}`
 				: ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 		const kept = cache.kept.get(key);
