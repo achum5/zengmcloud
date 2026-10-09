@@ -115,8 +115,23 @@ const keyed = (keys: [number, Pose][], u: number): Pose => {
 };
 
 const P = {
-	// Standing easy: arms hanging loose, a little bend at the elbows.
-	ready: pose({ shN: 8, elN: 24, shF: 12, elF: 28, abN: 12, abF: 12 }),
+	// Standing easy but live, the way a man spaced out on the floor does:
+	// a little sunk at the knees, feet a shade wider than his hips and one
+	// a half step ahead, leaning into it, hands loose at his hips.
+	ready: pose({
+		hipN: 2,
+		kneeN: 26,
+		hipF: 14,
+		kneeF: 28,
+		lean: 10,
+		shN: 14,
+		elN: 30,
+		shF: 16,
+		elF: 34,
+		abN: 14,
+		abF: 16,
+		wide: 0.36,
+	}),
 	stance: pose({
 		hipN: 30,
 		kneeN: 62,
@@ -390,18 +405,20 @@ const stride = (ph: number, mode: RunMode): Pose => {
 		// a little as they spread, so his hips stay level the whole way.
 		const spread = ph < 0.5 ? ph * 2 : 2 - ph * 2;
 		const knee = 74 - 21 * spread * spread;
+		// His arms out wide to take up the lane, opening a little more with
+		// each push.
 		return pose({
 			hipN: 30,
 			hipF: 34,
 			kneeN: knee,
 			kneeF: knee + 2,
 			lean: 18,
-			shN: 52,
-			elN: 58,
-			shF: 48,
-			elF: 62,
-			abN: 50,
-			abF: 50,
+			shN: 42 + 4 * spread,
+			elN: 52,
+			shF: 38 + 4 * spread,
+			elF: 56,
+			abN: 50 + 10 * spread,
+			abF: 50 + 10 * spread,
 			wide: SLIDE_NARROW + (SLIDE_STRIDE / 2) * spread,
 		});
 	}
@@ -1079,18 +1096,81 @@ type Anim =
 	| { kind: "act"; n: number; keys: [number, Pose][] };
 
 export const ANIMS = {
+	// Never still: he settles down into his knees and back up, his
+	// shoulders swaying over his hips, his hands drifting - slowly.
 	ready: {
 		kind: "loop",
-		n: 2,
-		fps: 1.5,
-		pose: (i) => (i ? { ...P.ready, kneeN: 20, kneeF: 22 } : P.ready),
+		n: 4,
+		fps: 1.25,
+		pose: (i) =>
+			[
+				P.ready,
+				{
+					...P.ready,
+					hipN: 6,
+					kneeN: 32,
+					hipF: 18,
+					kneeF: 34,
+					lean: 12,
+					tilt: 2.5,
+					twist: 5,
+					shN: 10,
+					elN: 26,
+					shF: 20,
+					elF: 40,
+				},
+				{ ...P.ready, kneeN: 24, kneeF: 26, lean: 9, shN: 16, elN: 36 },
+				{
+					...P.ready,
+					hipN: 5,
+					kneeN: 31,
+					hipF: 17,
+					kneeF: 33,
+					lean: 11,
+					tilt: -2.5,
+					twist: -5,
+					shN: 18,
+					elN: 38,
+					shF: 12,
+					elF: 28,
+				},
+			][i]!,
 	},
+	// Live in his stance: hands working - one up into the lane, then the
+	// other - and his weight sinking into his heels and back up onto his toes.
 	stance: {
 		kind: "loop",
-		n: 2,
-		fps: 2.5,
+		n: 4,
+		fps: 2,
 		pose: (i) =>
-			i ? { ...P.stance, hipN: 26, hipF: 28, shN: 72, shF: 40 } : P.stance,
+			[
+				P.stance,
+				{
+					...P.stance,
+					hipN: 34,
+					kneeN: 68,
+					hipF: 40,
+					kneeF: 72,
+					shN: 70,
+					elN: 40,
+					shF: 40,
+					elF: 58,
+					twist: 4,
+				},
+				{ ...P.stance, hipN: 26, kneeN: 58, hipF: 32, kneeF: 62 },
+				{
+					...P.stance,
+					hipN: 33,
+					kneeN: 67,
+					hipF: 39,
+					kneeF: 71,
+					shN: 42,
+					elN: 56,
+					shF: 66,
+					elF: 42,
+					twist: -4,
+				},
+			][i]!,
 	},
 	// Up on the man with the ball: down low, feet wide, one hand up in his
 	// face and the other down at the ball - trading them as he goes.
