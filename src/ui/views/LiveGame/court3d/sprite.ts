@@ -95,7 +95,7 @@ const KEEP = 1600;
 const CYCLE_FRAMES = 8;
 // Steps through a bounce for the dribbling hand.
 const DRIBBLE_FRAMES = 8;
-const ACT_FRAMES = 12;
+const ACT_FRAMES = 20;
 const TURNS = 16;
 
 // A move's frame: an act stepped through its frames (a long one - a dunk -

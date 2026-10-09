@@ -3290,6 +3290,186 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// THE EURO STEP: the dribble picked up, a long step one way with the
+	// ball swung low and away to the hip, then a long step back across the
+	// other way with it carried high, and gathered to go up.
+	euroStep: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[
+				0,
+				pose({
+					shN: 40,
+					elN: 92,
+					shF: 40,
+					elF: 92,
+					hipN: 30,
+					kneeN: 30,
+					hipF: -12,
+					kneeF: 40,
+					lean: 12,
+				}),
+			],
+			[
+				0.4,
+				pose({
+					shN: 24,
+					elN: 60,
+					abN: 30,
+					shF: 46,
+					elF: 84,
+					abF: -24,
+					hipN: 58,
+					kneeN: 42,
+					hipF: -34,
+					kneeF: 28,
+					lean: 20,
+					wide: 0.7,
+				}),
+			],
+			[
+				0.8,
+				pose({
+					shN: 70,
+					elN: 70,
+					abN: -18,
+					shF: 58,
+					elF: 66,
+					abF: 30,
+					hipN: -30,
+					kneeN: 32,
+					hipF: 60,
+					kneeF: 46,
+					lean: 18,
+					wide: 0.7,
+				}),
+			],
+			[
+				1,
+				pose({
+					shN: 64,
+					elN: 82,
+					shF: 64,
+					elF: 82,
+					hipN: 34,
+					kneeN: 54,
+					hipF: 22,
+					kneeF: 48,
+					lean: 10,
+				}),
+			],
+		],
+	},
+	// THE STEP-BACK: planted on the front foot, a hop back off it with the
+	// ball pulled in to his chest, and down on both feet, balanced, to rise.
+	stepBack: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[
+				0,
+				pose({
+					shN: 40,
+					elN: 90,
+					shF: 40,
+					elF: 90,
+					hipN: 46,
+					kneeN: 52,
+					hipF: -6,
+					kneeF: 30,
+					lean: 22,
+				}),
+			],
+			[
+				0.45,
+				pose({
+					shN: 46,
+					elN: 96,
+					shF: 46,
+					elF: 96,
+					hipN: 34,
+					kneeN: 66,
+					hipF: 22,
+					kneeF: 62,
+					lean: -4,
+				}),
+			],
+			[
+				1,
+				pose({
+					shN: 52,
+					elN: 92,
+					shF: 52,
+					elF: 92,
+					hipN: 30,
+					kneeN: 46,
+					hipF: 26,
+					kneeF: 44,
+					lean: 4,
+					wide: 0.45,
+				}),
+			],
+		],
+	},
+	// A CHEST BUMP: a step in, up off both feet, chests together in the air
+	// with the arms flung back, and down.
+	chestBump: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, P.ready],
+			[
+				0.25,
+				pose({
+					shN: -20,
+					elN: 30,
+					abN: 20,
+					shF: -20,
+					elF: 30,
+					abF: 20,
+					hipN: 40,
+					kneeN: 70,
+					hipF: 40,
+					kneeF: 70,
+					lean: 18,
+				}),
+			],
+			[
+				0.5,
+				pose({
+					shN: -40,
+					elN: 20,
+					abN: 40,
+					shF: -40,
+					elF: 20,
+					abF: 40,
+					hipN: 10,
+					kneeN: 30,
+					hipF: 14,
+					kneeF: 36,
+					lean: -14,
+				}),
+			],
+			[
+				0.75,
+				pose({
+					shN: 20,
+					elN: 40,
+					abN: 30,
+					shF: 20,
+					elF: 40,
+					abF: 30,
+					hipN: 30,
+					kneeN: 50,
+					hipF: 30,
+					kneeF: 50,
+					lean: 6,
+				}),
+			],
+			[1, P.ready],
+		],
+	},
 	// Up off his knee at the table, arms crossed to the hem and the warm-up
 	// top pulled off over his head, then dropped.
 	strip: {

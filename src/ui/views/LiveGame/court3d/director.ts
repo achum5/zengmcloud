@@ -733,6 +733,7 @@ const IN_PLACE = new Set<AnimName>([
 	"celebrate",
 	"highFive",
 	"lowFive",
+	"chestBump",
 ]);
 // How far round the arc from straight out a man spacing the floor goes
 // (radians): into the corner, and no farther.
@@ -1380,6 +1381,39 @@ class Director {
 		tr.acts.push({ t0, t1, anim, ...rest });
 		if (face !== undefined) {
 			this.turn(pid, t0, face);
+		}
+	}
+
+	// Two teammates meet halfway and bump chests in the air.
+	private chestBump(a: number, b: number, t: number) {
+		const A = this.posOf(a);
+		const B = this.posOf(b);
+		const u = unitVec(A, B);
+		const mid = clampPt({ x: (A.x + B.x) / 2, y: (A.y + B.y) / 2 });
+		const start = Math.max(t, this.free.get(b) ?? 0);
+		const ta = this.go(
+			a,
+			clampPt({ x: mid.x - u.x * 1.15, y: mid.y - u.y * 1.15 }),
+			Math.max(t, this.free.get(a) ?? 0),
+			10,
+			"jog",
+		);
+		const tb = this.go(
+			b,
+			clampPt({ x: mid.x + u.x * 1.15, y: mid.y + u.y * 1.15 }),
+			start,
+			12,
+			"run",
+		);
+		const at = Math.max(ta, tb) + 60;
+		const face = (u.x >= 0 ? 1 : -1) as 1 | -1;
+		this.act(a, "chestBump", at, at + 900, { face, jump: [0.32, 0.72, 1.5] });
+		this.act(b, "chestBump", at, at + 900, {
+			face: -face as 1 | -1,
+			jump: [0.32, 0.72, 1.5],
+		});
+		for (const p of [a, b]) {
+			this.free.set(p, Math.max(this.free.get(p) ?? 0, at + 900));
 		}
 	}
 
@@ -4572,12 +4606,15 @@ class Director {
 			});
 			t = this.go(pid, a, t, DRIBBLE, "dribble", dir);
 			t = Math.max(t, this.hold(pid, t, "hold"));
+			const picked = t;
 			const b = inPlay({
 				x: P.x - (dx / d) * 2.2 - ax * side * 1.6,
 				y: P.y - (dy / d) * 2.2 - ay * side * 1.6,
 			});
 			t = this.go(pid, b, t, RUN * 0.8, "run", dir);
-			return this.go(pid, P, t, RUN * 0.8, "run", dir);
+			const there = this.go(pid, P, t, RUN * 0.8, "run", dir);
+			this.act(pid, "euroStep", picked, there, { face: dir });
+			return there;
 		}
 		if (style === "stepBack") {
 			// Often a move first - between his legs, a crossover - then into
@@ -4600,7 +4637,12 @@ class Director {
 			});
 			t = this.go(pid, inside, t, DRIBBLE, "dribble", dir);
 			t = Math.max(t, this.hold(pid, t, "hold"));
-			return this.go(pid, P, t + 40, 9, "back", dir);
+			const there = this.go(pid, P, t + 40, 9, "back", dir);
+			this.act(pid, "stepBack", t, there, {
+				face: dir,
+				jump: [0.25, 0.85, 0.7],
+			});
+			return there;
 		}
 		t = this.go(pid, P, t, DRIBBLE, "dribble", dir);
 		if (style === "post") {
@@ -7973,9 +8015,23 @@ class Director {
 					: andOne
 						? "flex"
 						: "point";
-				this.act(shot.pid, cel, free + 100, free + 900, {
-					face: -dir as 1 | -1,
-				});
+				// Or, after a dunk or an and-one, the nearest man on his team
+				// comes over and they meet in the air, chest to chest.
+				const S = this.posOf(shot.pid);
+				const mate =
+					(shot.dunk || andOne) && hash01(shot.pid, at) < 0.45
+						? this.slots(team)
+								.filter((p) => p !== shot.pid)
+								.map((p) => ({ p, d: dist(this.posOf(p), S) }))
+								.sort((a, b) => a.d - b.d)[0]
+						: undefined;
+				if (mate && mate.d < 16) {
+					this.chestBump(shot.pid, mate.p, free + 80);
+				} else {
+					this.act(shot.pid, cel, free + 100, free + 900, {
+						face: -dir as 1 | -1,
+					});
+				}
 			}
 			// The man who fouled him wants to know what for; the man he dunked
 			// on stands there, hands on his hips.
@@ -11921,6 +11977,7 @@ class Director {
 			"bump",
 			"highFive",
 			"lowFive",
+			"chestBump",
 			"reach",
 			"poke",
 			"block",
