@@ -6029,7 +6029,7 @@ class Director {
 		while (t + 380 < until - 80) {
 			// Around one side - or a second go at the same one.
 			const was = off;
-			off = side * this.rand(0.5, 1.1);
+			off = side * this.rand(0.6, 1.25);
 			if (Math.abs(off - was) < 0.4) {
 				off = was + side * 0.5;
 			}
@@ -6081,13 +6081,47 @@ class Director {
 		return "layup";
 	}
 
-	// He comes out of his box-out (or out of fighting one) at t.
-	private letGo(pid: number, t: number) {
+	// Done shadowing his man (see mark) by t, to go and do something of his
+	// own: from wherever that had him, back to where the plan has him - so
+	// what he does next starts from there.
+	private unshadow(pid: number, t: number) {
 		const tr = this.track(pid);
+		const P = this.posOf(pid);
+		const leave = Math.max(t - 450, this.free.get(pid) ?? 0);
+		if (tr && leave < t) {
+			tr.moves.push({
+				t0: leave,
+				t1: t,
+				from: { ...P },
+				to: { ...P },
+				anim: "run",
+			});
+			this.free.set(pid, t);
+		}
+	}
+
+	// He comes out of his box-out (or out of fighting one) at t.
+	private letGo(pid: number, t: number, free = false) {
+		const tr = this.track(pid);
+		let held = false;
 		for (const a of tr?.acts ?? []) {
 			if ((a.anim === "boxOut" || a.anim === "fight") && a.t1 > t) {
 				a.t1 = Math.max(a.t0 + 1, t);
+				held = true;
 			}
+		}
+		if (free && held && tr) {
+			// Free from then - whatever else he was still doing aside.
+			this.free.set(
+				pid,
+				Math.max(
+					t,
+					...tr.moves
+						.filter((m) => !this.jostles.has(m) || m.t0 < t)
+						.map((m) => Math.min(m.t1, this.jostles.has(m) ? t : m.t1)),
+					...tr.acts.map((a) => a.t1),
+				),
+			);
 		}
 		// Out of the battle for position where he is at that moment.
 		if (tr && tr.moves.some((m) => this.jostles.has(m) && m.t1 > t)) {
@@ -6266,6 +6300,21 @@ class Director {
 			return floor.t + span;
 		}
 		const knock = (at: Pt3, tt: number) => this.knockOut(tt, at, away(at));
+		if (blocked && start && "pid" in start && this.teamOf(start.pid) !== side) {
+			// Swatted straight back off the man nearest it on the other side -
+			// the shooter, mostly - and off him out of bounds.
+			const back = this.slots(side).sort(
+				(a, b) => dist(this.posOf(a), from) - dist(this.posOf(b), from),
+			)[0];
+			if (back !== undefined) {
+				const P = this.posOf(back);
+				const u = unitVec(P, from);
+				const at = { x: P.x + u.x * 0.3, y: P.y + u.y * 0.3, z: 4.2 };
+				const hit = t + Math.max(140, (dist(from, at) / 30) * 1000);
+				this.fly(t, hit, start, at);
+				return knock(at, hit);
+			}
+		}
 		// Where it comes down, near enough, for who is nearest it.
 		const lands: Pt = vel
 			? (() => {
@@ -6423,21 +6472,8 @@ class Director {
 		})();
 		if (lane) {
 			const { B, I, tI, m, go, release } = lane;
-			// Reading it: done shadowing his man (see mark) as he goes for it -
-			// from wherever that had him, to where the plan has him.
-			const tr = this.track(m);
-			const P = this.posOf(m);
-			const leave = Math.max(go - 450, this.free.get(m) ?? 0);
-			if (tr && leave < go) {
-				tr.moves.push({
-					t0: leave,
-					t1: go,
-					from: { ...P },
-					to: { ...P },
-					anim: "run",
-				});
-				this.free.set(m, go);
-			}
+			// Reading it: done shadowing his man as he goes for it.
+			this.unshadow(m, go);
 			this.act(h, "pass", start, release + 180, {
 				face: B.x >= A.x ? 1 : -1,
 				look: { ...B },
@@ -6690,6 +6726,8 @@ class Director {
 				read = a.t1;
 			}
 		}
+		// (Out of the box-out as he reads it.)
+		this.letGo(r, read, true);
 		// On from wherever he was already going (in to where it comes down,
 		// most likely), or - if that will not get him there in time - off
 		// it, straight there.
@@ -8823,39 +8861,74 @@ class Director {
 		const start = Math.max(t, this.free.get(victim) ?? 0);
 		this.hold(victim, start, "dribble");
 		if (kind === "lost") {
-			// Stripped on the way.
-			const S = clampPt({
-				x: A.x + (D.x - A.x) * 0.55,
-				y: A.y + (D.y - A.y) * 0.55,
-			});
+			// Stripped on the way: by his own man, in front of him - or, beaten,
+			// tapped away from behind as he goes by - or by a help man digging
+			// down on the drive from his side, where it comes past him.
 			const who = thief ?? this.defenderOf(victim);
+			const mine = this.defenderOf(victim);
+			const help = who !== undefined && who !== mine;
+			const uAD = unitVec(A, D);
+			const along = (() => {
+				if (!help) {
+					return 0.55;
+				}
+				const W = this.posOf(who);
+				const L2 = dist(A, D) ** 2 || 1;
+				const f = ((W.x - A.x) * (D.x - A.x) + (W.y - A.y) * (D.y - A.y)) / L2;
+				return Math.min(0.8, Math.max(0.35, f));
+			})();
+			const S = clampPt({
+				x: A.x + (D.x - A.x) * along,
+				y: A.y + (D.y - A.y) * along,
+			});
+			const behind = !help && this.rng() < 0.4;
 			const ur = unitVec(S, rim);
-			const P = clampPt({ x: S.x + ur.x * 1.5, y: S.y + ur.y * 1.5 });
-			// No faster than the man who strips him can be there for it.
-			const reach =
-				who === undefined
-					? 0
-					: Math.max(start, this.free.get(who) ?? 0) -
-						start +
-						runMs(dist(this.posOf(who), P), SPRINT) +
-						160;
-			const tS = this.go(
-				victim,
-				S,
-				start,
-				Math.max(5, Math.min(15, dist(A, S) / Math.max(0.25, reach / 1000))),
-				"dribble",
-				dir,
-			);
+			const P = help
+				? (() => {
+						const v = unitVec(S, this.posOf(who));
+						return clampPt({ x: S.x + v.x * 1.6, y: S.y + v.y * 1.6 });
+					})()
+				: behind
+					? clampPt({
+							x: S.x - uAD.x * 1.3 - uAD.y * 0.8,
+							y: S.y - uAD.y * 1.3 + uAD.x * 0.8,
+						})
+					: clampPt({ x: S.x + ur.x * 1.5, y: S.y + ur.y * 1.5 });
+			if (help && mine !== undefined) {
+				// His own man a step behind him all the way.
+				this.shadow(
+					mine,
+					clampPt({ x: S.x - uAD.x * 2.2, y: S.y - uAD.y * 2.2 }),
+					start + 100,
+					start + 100 + runMs(dist(A, S), 14),
+					team,
+				);
+			}
+			// The man who strips him gets there first, and the drive comes to
+			// him: no faster than he can be there for it.
+			let tS: number;
 			if (who !== undefined) {
+				this.unshadow(who, start);
 				const near = dist(this.posOf(who), P) < 9;
-				this.goBy(
+				const arr = this.go(
 					who,
 					P,
 					start,
-					tS - 60,
+					near ? 11 : SPRINT,
 					near ? "slide" : "run",
 					near ? (-dir as 1 | -1) : undefined,
+				);
+				const ms = Math.max(250, arr + 60 - start);
+				tS = Math.max(
+					arr + 60,
+					this.go(
+						victim,
+						S,
+						start,
+						Math.max(4, Math.min(15, dist(A, S) / (ms / 1000))),
+						"dribble",
+						dir,
+					),
 				);
 				this.act(who, "poke", tS - 160, tS + 260, {
 					look: S,
@@ -8863,6 +8936,8 @@ class Director {
 						? { mirror: true as const }
 						: {}),
 				});
+			} else {
+				tS = this.go(victim, S, start, 12, "dribble", dir);
 			}
 			if (thief !== undefined && !oob) {
 				const side = this.rng() < 0.5 ? 1 : -1;
@@ -8873,15 +8948,21 @@ class Director {
 				const Q = this.posOf(thief);
 				const toQ = dist(S, Q);
 				const loose =
-					thief === who
-						? clampPt({
-								x: S.x + u.x * 1.5 - u.y * side * 3,
-								y: S.y + u.y * 1.5 + u.x * side * 3,
+					thief === who && behind
+						? // Tapped on ahead of him, for the man behind to run onto.
+							clampPt({
+								x: S.x + u.x * 3.5 - u.y * side * 1.2,
+								y: S.y + u.y * 3.5 + u.x * side * 1.2,
 							})
-						: clampPt({
-								x: S.x + ((Q.x - S.x) / (toQ || 1)) * Math.min(toQ * 0.6, 9),
-								y: S.y + ((Q.y - S.y) / (toQ || 1)) * Math.min(toQ * 0.6, 9),
-							});
+						: thief === who
+							? clampPt({
+									x: S.x + u.x * 1.5 - u.y * side * 3,
+									y: S.y + u.y * 1.5 + u.x * side * 3,
+								})
+							: clampPt({
+									x: S.x + ((Q.x - S.x) / (toQ || 1)) * Math.min(toQ * 0.6, 9),
+									y: S.y + ((Q.y - S.y) / (toQ || 1)) * Math.min(toQ * 0.6, 9),
+								});
 				const off = thief === who ? tS + 260 : tS + 120;
 				const there =
 					Math.max(off, this.free.get(thief) ?? 0) +
