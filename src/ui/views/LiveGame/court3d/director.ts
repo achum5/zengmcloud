@@ -405,6 +405,14 @@ const BOARD_OUT = BOARD_AT.f;
 // Up for one he only gets a hand to - knocked away, not taken in: the same
 // jump, the arms up through it.
 const TIP_AT = releaseAt("rebound", BOARD_TOP / REBOUND_MS);
+// Two men slapping a low five stand this far apart (feet, middle to
+// middle): each one's hand out in front of him at the hip, meeting.
+const LOW_FIVE_APART = (() => {
+	const sk = skeleton(bodyOf(), poseAt("lowFive", 0.5));
+	return 2 * sk.armR.end.f + 0.3;
+})();
+// The ball held in front of him, both hands on it, at the line.
+const FT_HOLD = releaseAt("hold", 0);
 // A poke at a man's dribble, from the start of the jab to the hand back:
 // the jabbing hand at the end of its reach, a typical player's (forward,
 // to his side, up), and how far through the poke that is.
@@ -652,6 +660,7 @@ const IN_PLACE = new Set<AnimName>([
 	"flex",
 	"celebrate",
 	"highFive",
+	"lowFive",
 ]);
 // How far round the arc from straight out a man spacing the floor goes
 // (radians): into the corner, and no farther.
@@ -7278,6 +7287,55 @@ class Director {
 		this.phase = "loose";
 	}
 
+	// HIS ROUTINE AT THE LINE.
+	//
+	// Every man has his own, the same every trip: bounces it two or three
+	// times; flips it up to himself with backspin first; sits down into his
+	// legs, ball on his hip, and breathes before he bounces it; or one quick
+	// bounce and the flip. Quick, all of them. Returns when he is done with
+	// it, the ball in his hands.
+	private ftRoutine(shooter: number, t: number, S: Pt, rim: Pt): number {
+		const kind = Math.floor(hash01(shooter * 13 + 5, 7) * 4);
+		const many = 2 + Math.floor(hash01(shooter * 5 + 1, 11) * 2);
+		const dribble = (n: number) => {
+			this.hold(shooter, t, "dribble");
+			t += (n * 1000) / DRIBBLE_RATE;
+			this.hold(shooter, t, "hold");
+			t += 120;
+		};
+		const flip = () => {
+			// Up off his fingertips a foot or so, spinning back, and into his
+			// hands again.
+			const u = unitVec(S, rim);
+			const up = {
+				x: S.x + u.x * FT_HOLD.f,
+				y: S.y + u.y * FT_HOLD.f,
+				z: FT_HOLD.u + 1.1,
+			};
+			this.act(shooter, "hold", t, t + 500, { look: rim });
+			this.fly(t, t + 300, { pid: shooter }, up);
+			this.fly(t + 300, t + 600, up, { pid: shooter });
+			this.act(shooter, "catch", t + 510, t + 710, { look: rim });
+			this.hold(shooter, t + 600, "hold");
+			t += 720;
+		};
+		if (kind === 0) {
+			dribble(many);
+		} else if (kind === 1) {
+			flip();
+			dribble(1);
+		} else if (kind === 2) {
+			// Down into his legs, a breath, and up.
+			this.act(shooter, "triple", t, t + 750, { look: rim });
+			t += 800;
+			dribble(many - 1);
+		} else {
+			dribble(1);
+			flip();
+		}
+		return t;
+	}
+
 	private beatFreeThrow(e: RawEvent, i: number, made: boolean) {
 		const T = this.T;
 		const shooter = e.pid as number;
@@ -7361,10 +7419,7 @@ class Director {
 		});
 		this.hold(shooter, caught, "hold");
 		this.lookAt(shooter, caught + 111, rimSpot);
-		const dribbles = 1 + (Math.abs(shooter * 7 + 3) % 2);
-		const bounce0 = caught + 160;
-		this.hold(shooter, bounce0, "dribble");
-		const set = bounce0 + (dribbles * 1000) / DRIBBLE_RATE;
+		const set = this.ftRoutine(shooter, caught + 160, S, rimSpot) + 200;
 		this.hold(shooter, set, "hold");
 		if (!first) {
 			// The ball back out to the official and in to him again, and his
@@ -7432,29 +7487,65 @@ class Director {
 			face: dir,
 			look: rimSpot,
 		});
-		// On the lane: hands on their knees, until the last one - then set to
-		// box out.
-		for (const pid of [...def.slice(0, 3), ...off.slice(0, 2)]) {
-			this.act(pid, more ? "crouch" : "stance", Math.max(T, ready), release, {
-				look: rimSpot,
-			});
+		// On the lane: with another to come, stood easy - hands on hips or arms
+		// folded - watching it; on the last, down in a stance, and as it leaves
+		// his hand, in to box out.
+		const lane = [...def.slice(0, 3), ...off.slice(0, 2)];
+		for (const pid of lane) {
+			this.act(
+				pid,
+				more ? (hash01(pid, 17) < 0.5 ? "hips" : "crossed") : "stance",
+				Math.max(T, ready),
+				more ? at + 600 : release,
+				{ look: more ? S : rimSpot },
+			);
 		}
-		if (more && (made || this.rng() < 0.5)) {
-			// A teammate comes over to slap hands - make or miss - and goes
-			// back to the lane.
-			const mate = off[0];
-			if (mate !== undefined) {
+		if (!more) {
+			this.laneBattle(team, def, off, shooter, release, at);
+		}
+		// (Done with, before the next.)
+		let fives = at;
+		if (more && (made || this.rng() < 0.6)) {
+			// His men on the lane come in to him - make or miss - and slap him
+			// low fives, palm to palm at the hip, one and then the other, and
+			// walk back to their spaces. He takes a step to meet them.
+			const mates = off
+				.slice(0, 2)
+				.filter((_, j) => j === 0 || this.rng() < (made ? 0.75 : 0.45));
+			const toward = mates.length
+				? {
+						x: mates.reduce((a, p) => a + this.posOf(p).x, 0) / mates.length,
+						y: mates.reduce((a, p) => a + this.posOf(p).y, 0) / mates.length,
+					}
+				: S;
+			const step = unitVec(S, toward);
+			const S2 = { x: S.x + step.x * 0.8, y: S.y + step.y * 0.8 };
+			const stepped = this.go(shooter, S2, at + 250, WALK, "walk");
+			let t = at + 150;
+			mates.forEach((mate, j) => {
 				const home = this.posOf(mate);
+				const u = unitVec(S2, home);
+				// (Each a long arm's length out in front of himself: hands
+				// meeting halfway.)
 				const meet = {
-					x: home.x + (S.x - home.x) * 0.62,
-					y: home.y + (S.y - home.y) * 0.62,
+					x: S2.x + u.x * LOW_FIVE_APART,
+					y: S2.y + u.y * LOW_FIVE_APART,
 				};
-				const met = this.go(mate, meet, at + 120, WALK * 1.6, "walk");
-				this.act(mate, "highFive", met, met + 420, { look: S });
-				this.act(shooter, "highFive", met, met + 420, { look: meet });
-				this.go(mate, home, met + 420, WALK * 1.6, "walk");
-				this.lookAt(mate, met + 421, rimSpot);
-				this.lookAt(shooter, met + 421, rimSpot);
+				const met = Math.max(
+					this.go(mate, meet, t + j * 120, WALK * 1.5, "walk"),
+					stepped,
+					t + j * 520,
+				);
+				// (Once he is there: a planted pose ends as a run starts.)
+				this.act(mate, "lowFive", met + 20, met + 520, { look: S2 });
+				this.act(shooter, "lowFive", met + 20, met + 520, { look: meet });
+				this.go(mate, home, met + 560, WALK * 1.5, "walk");
+				this.lookAt(mate, met + 561, rimSpot);
+				t = met + 140;
+			});
+			if (mates.length) {
+				fives = this.go(shooter, S, t + 450, WALK, "walk");
+				this.lookAt(shooter, t + 451, rimSpot);
 			}
 		}
 		if (made) {
@@ -7469,7 +7560,12 @@ class Director {
 			}
 			this.effect("swish", at + 20, { rim: team });
 			// (Another to come: on once it has come to rest, to go back out.)
-			this.beat(i, e.type, at, more ? Math.max(at + 700, still) : at + 700);
+			this.beat(
+				i,
+				e.type,
+				at,
+				more ? Math.max(at + 700, still, fives) : at + 700,
+			);
 			this.phase = more ? "ft" : "inboundBase";
 			if (!more) {
 				this.offense = other(team);
@@ -7487,7 +7583,7 @@ class Director {
 				this.effect("clank", at, { rim: team });
 				this.bounce(at, at + 700, target, away, 2, 1.6);
 			}
-			this.beat(i, e.type, at, Math.max(at + 650, still));
+			this.beat(i, e.type, at, Math.max(at + 650, still, fives));
 			this.phase = "ft";
 		} else if (play) {
 			const end = play.found.play.end;
@@ -7508,6 +7604,61 @@ class Director {
 			this.beat(i, e.type, at, nextT);
 			this.phase = "loose";
 		}
+	}
+
+	// THE LAST FREE THROW: as it leaves his hand, the lane is open. The
+	// shooter's men on it step in for the ball; the defenders in the spaces
+	// below them step across into them first and sit on them, and the man in
+	// the space up top turns and finds the shooter. Held till it is decided
+	// at the rim (`at`) - and on, if it is a miss, till somebody has it.
+	private laneBattle(
+		team: Side,
+		def: number[],
+		off: number[],
+		shooter: number,
+		release: number,
+		at: number,
+	) {
+		const rim = { x: rimX(team), y: COURT_H / 2 };
+		const go = release + READ_MS;
+		const until = at + 500;
+		const coming = new Map<number, Pt>();
+		for (const pid of off.slice(0, 2)) {
+			const M = this.posOf(pid);
+			const u = unitVec(M, rim);
+			const C = clampPt({ x: M.x + u.x * 2.6, y: M.y + u.y * 2.6 });
+			coming.set(pid, C);
+			const there = this.goBy(
+				pid,
+				C,
+				go + 60,
+				go + 700,
+				"run",
+				undefined,
+				BURST,
+			);
+			this.act(pid, "fight", Math.min(there, at), until, { look: rim });
+		}
+		def.slice(0, 3).forEach((pid, j) => {
+			// The man on his side of the lane, or - up top - the shooter.
+			const D = this.posOf(pid);
+			const mine =
+				j < 2
+					? off
+							.slice(0, 2)
+							.find(
+								(o) => Math.sign(this.posOf(o).y - 25) === Math.sign(D.y - 25),
+							)
+					: shooter;
+			if (mine === undefined) {
+				return;
+			}
+			const C = coming.get(mine) ?? this.posOf(mine);
+			const u = unitVec(C, rim);
+			const spot = clampPt({ x: C.x + u.x * 1.8, y: C.y + u.y * 1.8 });
+			const there = this.goBy(pid, spot, go, go + 600, "run", undefined, BURST);
+			this.act(pid, "boxOut", Math.min(there, at), until, { look: rim });
+		});
 	}
 
 	private lastFtShooter: number | undefined;
@@ -10625,6 +10776,7 @@ class Director {
 			"boxOut",
 			"bump",
 			"highFive",
+			"lowFive",
 			"reach",
 			"poke",
 			"block",

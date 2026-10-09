@@ -100,17 +100,32 @@ export const huddleSpots = (t: Side): Pt[] => {
 // Free throw alignment, by depth from the shooting team's baseline: the
 // defense takes the blocks nearest the rim, the offense the spots between.
 export const FT_LINE_DEPTH = 19;
-// The shooter toes the line from behind it.
-export const FT_SHOOTER_DEPTH = FT_LINE_DEPTH + 1.15;
+// The line is two inches wide, the near edge 15 feet from the glass.
+export const FT_LINE_WIDTH = 2 / 12;
+// The shooter toes the line from behind it: his front foot, out in front of
+// him with the ball low on his dribble, an inch or two short of it.
+export const FT_SHOOTER_DEPTH = FT_LINE_DEPTH + FT_LINE_WIDTH + 1.4;
+// The lane spaces, marked off up each side of the lane: the block (7 to 8
+// feet out), then three feet each - the first for the defense, the second
+// for the offense, the third for the defense again. A man in one stands in
+// the middle of it, side on to the lane and his toes short of its line.
+export const LANE_SPACES: [number, number][] = [
+	[8, 11],
+	[11, 14],
+	[14, 17],
+];
+const LANE_EDGE = 8;
+const LANE_OUT = 1.7;
+const laneSpot = (space: number, side: 1 | -1): [number, number] => [
+	(LANE_SPACES[space]![0] + LANE_SPACES[space]![1]) / 2,
+	25 + side * (LANE_EDGE + LANE_OUT),
+];
 export const FT_DEFENSE: [number, number][] = [
-	[7, 16.6],
-	[7, 33.4],
-	[14.5, 16.6],
+	laneSpot(0, -1),
+	laneSpot(0, 1),
+	laneSpot(2, -1),
 ];
-export const FT_OFFENSE: [number, number][] = [
-	[11, 33.4],
-	[11, 16.6],
-];
+export const FT_OFFENSE: [number, number][] = [laneSpot(1, 1), laneSpot(1, -1)];
 // About how long the officials can take to get to where the game next
 // wants them (ms) - they run there (see crew.ts) - for whatever waits on
 // one: the ball handed to the shooter at the line.

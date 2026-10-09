@@ -2619,6 +2619,55 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// A low five: the hand swung down and out in front of him to meet the
+	// other man's, palm to palm at the hip, leaning into it a little - and
+	// through.
+	lowFive: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.ready],
+			[
+				0.3,
+				pose({
+					shN: 30,
+					elN: 34,
+					abN: -4,
+					wrN: 10,
+					kneeN: 14,
+					kneeF: 12,
+					lean: 6,
+				}),
+			],
+			// Palm to palm, out in front of him at his hip, across his body to
+			// meet the other man's.
+			[
+				0.5,
+				pose({
+					shN: 56,
+					elN: 8,
+					abN: -20,
+					wrN: -14,
+					kneeN: 16,
+					kneeF: 14,
+					lean: 9,
+				}),
+			],
+			[
+				0.68,
+				pose({
+					shN: 70,
+					elN: 14,
+					abN: -26,
+					wrN: -4,
+					kneeN: 12,
+					kneeF: 10,
+					lean: 6,
+				}),
+			],
+			[1, P.ready],
+		],
+	},
 	// ---- the officials ----
 	// The whistle: a fist straight up, the clock stopped.
 	signalUp: {

@@ -44,12 +44,12 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
 
 ## C. Game play realism (the 3D engine)
 
-- [ ] Free throws: shooter's feet still over the line. Make the free throw
+- [x] Free throws: shooter's feet still over the line. Make the free throw
       animation look nice, with a few different quick ready-up routines.
-- [ ] Free throws: players lined up along the key have their feet in the wrong
+- [x] Free throws: players lined up along the key have their feet in the wrong
       places. On the last free throw of a trip they box out and fight for the
       rebound; on earlier ones they stand casually and watch, like real life.
-- [ ] Free throw high fives: teammates should naturally come out and give the
+- [x] Free throw high fives: teammates should naturally come out and give the
       shooter a low five, like real life (research what it looks like).
 - [ ] Default dribbling animation needs a ton of work: currently arm out, ball
       bouncing, very basic. Make it realistic and dynamic with the player's movement.

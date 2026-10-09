@@ -613,6 +613,7 @@ describe("3D director", () => {
 			"boxOut",
 			"bump",
 			"highFive",
+			"lowFive",
 			"reach",
 			"poke",
 			"block",
@@ -739,6 +740,7 @@ describe("3D director", () => {
 			"flex",
 			"celebrate",
 			"highFive",
+			"lowFive",
 		]);
 		let planted = 0;
 		for (const seed of ["a", "b"]) {
