@@ -6,7 +6,7 @@ import {
 	PLAYER,
 } from "../../../common/constants.ts";
 import type { Team } from "../../../common/types.ts";
-import { range } from "../../../common/utils.ts";
+import { range, assertDefined } from "../../../common/utils.ts";
 import { idb } from "../../db/index.ts";
 import g from "../../util/g.ts";
 import helpers from "../../util/helpers.ts";
@@ -83,9 +83,7 @@ export const updateColaAfterPlayoffs = async () => {
 	);
 	for (const row of teamSeasons) {
 		const t = await idb.cache.teams.get(row.tid);
-		if (!t) {
-			throw new Error("Should never happen");
-		}
+		assertDefined(t);
 		if (t.draftLottery?.type !== "cola") {
 			t.draftLottery = {
 				type: "cola",
@@ -133,9 +131,7 @@ export const updateColaAfterLottery = async (tids: number[]) => {
 		}
 
 		const t = await idb.cache.teams.get(tid);
-		if (!t) {
-			throw new Error("Should never happen");
-		}
+		assertDefined(t);
 		if (t.draftLottery?.type !== "cola") {
 			t.draftLottery = {
 				type: "cola",
@@ -246,9 +242,7 @@ export const initializeCola = async () => {
 		for (const p of players) {
 			if (p.draft.round === 1 && p.draft.pick <= 4) {
 				const factor = DRAFT_LOTTERY_FACTORS[p.draft.pick - 1];
-				if (factor === undefined) {
-					throw new Error("Should never happen");
-				}
+				assertDefined(factor);
 				const tid = p.draft.tid;
 				colaByTid[tid] ??= 0;
 				colaByTid[tid] = Math.round(colaByTid[tid] * factor);

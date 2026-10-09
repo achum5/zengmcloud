@@ -136,7 +136,7 @@ const GamesList = ({
 								className={gm.gid === gid ? "table-info" : undefined}
 							>
 								<td className="game-log-cell">
-									<a href={url}>
+									<a href={url} data-no-scroll-reset>
 										{gm.neutralSite || home ? "" : "@"}
 										{oppAbbrev}
 									</a>
@@ -144,6 +144,7 @@ const GamesList = ({
 								<td className={clsx("game-log-cell")}>
 									<a
 										href={url}
+										data-no-scroll-reset
 										className={
 											gm.forceWin !== undefined ? "alert-god-mode" : undefined
 										}
@@ -152,7 +153,7 @@ const GamesList = ({
 									</a>
 								</td>
 								<td className="game-log-cell">
-									<a href={url}>
+									<a href={url} data-no-scroll-reset>
 										{formatScoreWithShootout(gm.teams[user], gm.teams[other])}
 										{overtimes}
 									</a>

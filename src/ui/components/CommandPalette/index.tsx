@@ -31,8 +31,8 @@ import {
 import { hiddenForLeagueType, menuItems } from "../../util/menuItems.tsx";
 import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
 import { local, useLocal } from "../../util/local.ts";
-import { realtimeUpdate } from "../../util/realtimeUpdate.ts";
 import { relativeTime } from "../../util/relativeTime.ts";
+import { router } from "../../router/index.ts";
 import { confirmPlayMenuAdvance } from "../../util/confirmPlayMenuAdvance.tsx";
 
 const TWO_MONTHS_IN_MILLISECONDS = 2 * 30 * 24 * 60 * 60 * 1000;
@@ -920,7 +920,9 @@ const CommandPaletteInner = ({ onHide }: { onHide: () => void }) => {
 											if (result.anchorProps.target) {
 												window.open(result.anchorProps.href);
 											} else {
-												realtimeUpdate([], result.anchorProps.href);
+												void router.navigate(result.anchorProps.href, {
+													scrollToTop: true,
+												});
 											}
 										}
 
