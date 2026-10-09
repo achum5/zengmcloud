@@ -8,25 +8,22 @@ import {
 	scoutingProgress,
 } from "../../common/college.ts";
 import { PHASE } from "../../common/constants.ts";
-import type { UpdateEvents } from "../../common/types.ts";
 import { getRecruits } from "../core/college/recruiting.ts";
 import { getTeamCtxs, interestFor } from "../core/college/teams.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
 
 // The recruiting board: this year's high school class (and, during the
 // offseason weeks, the transfer portal), as your school sees them - ratings
 // only as sharp as your scouting - with your standing for each player and
 // the schools leading for him.
-const updateRecruiting = async (
-	inputs: unknown,
-	updateEvents: UpdateEvents,
-) => {
+const updateRecruiting = async ({ updateEvents }: ViewArgs) => {
 	if (
-		!updateEvents.includes("firstRun") &&
-		!updateEvents.includes("playerMovement") &&
-		!updateEvents.includes("gameSim") &&
-		!updateEvents.includes("newPhase")
+		!updateEvents.has("firstRun") &&
+		!updateEvents.has("playerMovement") &&
+		!updateEvents.has("gameSim") &&
+		!updateEvents.has("newPhase")
 	) {
 		return;
 	}
@@ -145,4 +142,7 @@ const updateRecruiting = async (
 	};
 };
 
-export default updateRecruiting;
+export default defineView({
+	id: "recruiting",
+	load: updateRecruiting,
+});

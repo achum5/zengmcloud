@@ -1,6 +1,7 @@
-import type { TradingCard, UpdateEvents } from "../../common/types.ts";
+import type { TradingCard } from "../../common/types.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
 
 // The Create Cards page. Two things go over the wire: a light index of every
 // player who can appear on a card, and every card already made in the league.
@@ -38,16 +39,13 @@ export const attachPlayerNames = async (
 		.sort((a, b) => b.at - a.at);
 };
 
-const updateCreateCards = async (
-	inputs: unknown,
-	updateEvents: UpdateEvents,
-) => {
+const updateCreateCards = async ({ updateEvents }: ViewArgs) => {
 	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("playerMovement") ||
-		updateEvents.includes("gameSim") ||
-		updateEvents.includes("newPhase") ||
-		updateEvents.includes("tradingCards")
+		updateEvents.has("firstRun") ||
+		updateEvents.has("playerMovement") ||
+		updateEvents.has("gameSim") ||
+		updateEvents.has("newPhase") ||
+		updateEvents.has("tradingCards")
 	) {
 		const playersRaw = await idb.getCopies.players({ activeAndRetired: true });
 
@@ -78,4 +76,7 @@ const updateCreateCards = async (
 	}
 };
 
-export default updateCreateCards;
+export default defineView({
+	id: "createCards",
+	load: updateCreateCards,
+});

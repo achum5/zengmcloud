@@ -16,7 +16,6 @@ import type { PlayerAppearance } from "./playerAppearance.ts";
 import type { ReactNode } from "react";
 import type { LiveGameChatMessage } from "./liveGameChat.ts";
 import type { TickerItem } from "./ticker.ts";
-import type processInputs from "../worker/api/processInputs.ts";
 import type * as views from "../worker/views/index.ts";
 
 import {
@@ -69,6 +68,7 @@ export type Env = {
 
 declare global {
 	var bbgm: any; // Just for debugging, in worker and UI
+	var stream0: unknown; // Only in worker, see where it is assigned
 	interface Window {
 		bbgmVersion: string;
 		bugsnagKey: string;
@@ -86,6 +86,12 @@ declare global {
 
 	const __NODE_ENV: "development" | "production" | "test";
 	const __SPORT: "basketball" | "football" | "baseball" | "hockey";
+	const __JSON_URLS: {
+		names: string;
+		namesFemale: string;
+		realPlayerData: string;
+		realPlayerStats: string;
+	};
 }
 
 type ViewsKeys = keyof typeof views;
@@ -93,15 +99,10 @@ type ViewsKeys = keyof typeof views;
 export type View<Name extends ViewsKeys> = Exclude<
 	Awaited<
 		Name extends ViewsKeys
-			? ReturnType<(typeof views)[Name]>
+			? ReturnType<(typeof views)[Name]["load"]>
 			: Record<string, unknown>
 	>,
 	void | { redirectUrl: string } | { errorMessage: string }
->;
-
-export type ViewInput<T extends keyof typeof processInputs> = Exclude<
-	ReturnType<(typeof processInputs)[T]>,
-	{ redirectUrl: string }
 >;
 
 export type AchievementWhen =
@@ -140,7 +141,7 @@ type DunkResult = {
 	// Last attempt is the first successful one
 	attempts: DunkAttempt[];
 
-	// Undefind until a successful dunk or LOWEST_POSSIBLE_SCORE
+	// undefined until a successful dunk or LOWEST_POSSIBLE_SCORE
 	score?: number;
 	made: boolean;
 };
@@ -414,7 +415,7 @@ export type EventBBGMWithoutKey =
 			tids: [number, number];
 			season: number;
 
-			// These three will only be undefind in legacy events
+			// These three will only be undefined in legacy events
 			phase?: Phase;
 			score?: number;
 			teams?: TradeEventTeams;
@@ -436,7 +437,7 @@ export type EventBBGMWithoutKey =
 			tids: [number];
 			season: number;
 
-			// These three will only be undefind in legacy events
+			// These three will only be undefined in legacy events
 			phase?: Phase;
 			score?: number;
 			contract?: PlayerContract;
@@ -499,6 +500,10 @@ export type Game = {
 	// syncs/exports exactly like a game note. Read/written via setNote type:"day".
 	dayNote?: string;
 	dayNoteBool?: 1; // Keep in sync with dayNote
+	// Set on an exhibition game's box score (exhibition games live in their own
+	// database, not this league's), so league-only extras like the auto recap and
+	// saved replays aren't looked up for it.
+	exhibition?: boolean;
 	numGamesToWinSeries?: number;
 	numPeriods?: number; // Optional only for legacy, otherwise it's the number of periods in the game, defined at the start
 	numPlayersOnCourt?: number;
@@ -525,7 +530,7 @@ export type Game = {
 	spreadModel?: number;
 	playoffs?: boolean;
 	overtimes: number;
-	scoringSummary?: any;
+	scoringSummary?: unknown;
 	// How the game unfolded - lead changes, the last lead, the run, the late
 	// score - boiled down from the sim's score log. See common/gameFlow.ts.
 	// Basketball only, and absent on games from before it was recorded.
@@ -1650,6 +1655,7 @@ export type LocalStateUI = {
 	statusText: string;
 	units: "metric" | "us";
 	username?: string;
+	workerBusy: boolean;
 	title?: string;
 	hideNewWindow: boolean;
 	jumpTo: boolean;
@@ -1715,8 +1721,6 @@ export type PlayerFeat = PlayerFeatWithoutKey & {
 	fid: number;
 };
 
-export type PlayerFiltered = any;
-
 export type PlayerInjury = {
 	gamesRemaining: number;
 	type: string;
@@ -1728,9 +1732,28 @@ type PlayerSalary = {
 	season: number;
 };
 
-// jerseyNumber: string | undefined;
-// *Max: [number, number] | null | undefined; - null is for new value, not yet initialized. undefined is for upgraded rows from before this existed
-export type PlayerStats = any;
+type PlayerStatsCommon = {
+	jerseyNumber?: string;
+	playoffs: boolean;
+	season: number;
+	tid: number;
+	yearsWithTeam: number;
+};
+
+// Input to processPlayerStats. Not just PlayerStats, it can also be a box score row, player feat, or sums of multiple rows (with extra properties like hasTot), and old rows can be missing stats or have ones that are no longer stored. So it is too varied to type precisely
+export type PlayerStatsToProcess = any;
+
+// Stats row as stored in the database, in p.stats. Like PlayerStatsPlus, this has the stats from all sports, because there is no good way to make it depend on the current sport. Numeric stats can be undefined in historical data from before a stat was tracked (even gp and min)
+export type PlayerStats = Omit<
+	MergeBySport<
+		PlayerStatsBaseball,
+		PlayerStatsBasketball,
+		PlayerStatsFootball,
+		PlayerStatsHockey
+	>,
+	keyof PlayerStatsCommon
+> &
+	PlayerStatsCommon;
 
 export type RelativeType = "brother" | "father" | "son";
 
@@ -1747,8 +1770,9 @@ export type MinimalPlayerRatings = {
 	pos: string;
 	skills: string[];
 	season: number;
-	ovrs?: any;
-	pots?: any;
+	// Only in sports with position-specific ratings (not basketball), where they have a value for every position
+	ovrs?: Record<string, number>;
+	pots?: Record<string, number>;
 	injuryIndex?: number;
 	hgt: number;
 	spd: number;
@@ -1902,6 +1926,153 @@ export type Player<PlayerRatings = MinimalPlayerRatings> = {
 
 export type PlayerStatType = "per36" | "perGame" | "totals";
 
+// For keys present in multiple sports, the value type is the union of the types from each sport
+type MergeBySport<A, B, C, D> = {
+	[K in keyof A | keyof B | keyof C | keyof D]:
+		| (K extends keyof A ? A[K] : never)
+		| (K extends keyof B ? B[K] : never)
+		| (K extends keyof C ? C[K] : never)
+		| (K extends keyof D ? D[K] : never);
+};
+
+// Season rows are [value, gid]. Career rows add [abbrev, tid, season] of when the max happened. null means not yet initialized, undefined is for upgraded rows from before this existed
+export type PlayerStatMax =
+	| [number, number]
+	| [number, number, string, number, number]
+	| null
+	| undefined;
+
+// Not using a homomorphic mapped type, so optional properties become required but still include undefined, since playersPlus always sets the key
+type PlayerKey = keyof Player;
+type PlayerAllKeys = {
+	[K in PlayerKey]: Player[K];
+};
+
+// ratings and stats are excluded because they are handled separately by playersPlus, not as attrs
+type PlayerAttrsPlus<Contract = Player["contract"]> = Omit<
+	PlayerAllKeys,
+	| "contract"
+	| "diedYear"
+	| "draft"
+	| "hof"
+	| "jerseyNumber"
+	| "ratings"
+	| "salaries"
+	| "stats"
+	| "watch"
+> & {
+	abbrev: string;
+	age: number;
+	ageAtDeath: number | null;
+	cashOwed: number;
+	contract: Contract;
+	diedYear: number | null;
+	draft: Player["draft"] & {
+		abbrev: string;
+		age: number;
+		originalAbbrev: string;
+	};
+	draftPosition: number;
+	experience: number;
+	hof: boolean;
+	jerseyNumber: string | undefined;
+	lastSalary: number | undefined;
+	latestTransaction: string;
+	latestTransactionSeason: number | undefined;
+	name: string;
+	numAllStar: number;
+	numBrothers: number;
+	numFathers: number;
+	numSons: number;
+	salaries: {
+		amount: number;
+		season: number;
+		type: "past" | "current" | "future";
+	}[];
+	salariesTotal: number;
+	salary: number;
+	untradable: boolean;
+	watch: number;
+};
+export type PlayerAttr = keyof PlayerAttrsPlus;
+
+// Rating keys from all sports, like RATINGS
+export type PlayerRatingKey =
+	| RatingKeyBaseball
+	| RatingKeyBasketball
+	| RatingKeyFootball
+	| RatingKeyHockey;
+
+type PlayerRatingsPlus = Record<PlayerRatingKey, number> & {
+	abbrev: string;
+	age: number;
+	dovr: number;
+	dpot: number;
+	fuzz: number;
+	injuryIndex: number | undefined;
+	locked: boolean | undefined;
+	ovr: number;
+	pos: string;
+	pot: number;
+	season: number;
+	skills: string[];
+	tid: number | undefined;
+
+	// Not in basketball
+	ovrs: Record<PositionBaseball | PositionFootball | PositionHockey, number>;
+	pots: Record<PositionBaseball | PositionFootball | PositionHockey, number>;
+};
+export type PlayerRatingAttr = keyof PlayerRatingsPlus;
+
+type PlayerStatsPlusCommon = {
+	abbrev: string;
+	age: number;
+	jerseyNumber: string | undefined;
+	playoffs: boolean | "combined";
+	season: number;
+	tid: number;
+	yearsWithTeam: number;
+};
+type PlayerStatsPlus = Omit<
+	MergeBySport<
+		PlayerStatsPlusBaseball,
+		PlayerStatsPlusBasketball,
+		PlayerStatsPlusFootball,
+		PlayerStatsPlusHockey
+	>,
+	keyof PlayerStatsPlusCommon
+> &
+	PlayerStatsPlusCommon;
+export type PlayerStatAttr = keyof PlayerStatsPlus;
+
+export type PlayerStatsTables = Record<
+	string,
+	{
+		name: string;
+		onlyShowIf?: PlayerStatAttr[];
+
+		// "pos" is not a real stat, it's a column in baseball fielding tables filled in by expandFieldingStats
+		stats: (PlayerStatAttr | "pos")[];
+
+		superCols?: SuperCol[];
+	}
+>;
+
+export type PlayerSummary = Record<
+	string,
+	{
+		name: string;
+
+		// Positions, not stats
+		onlyShowIf?: string[];
+
+		stats: PlayerStatAttr[];
+		superCols?: SuperCol[];
+	}
+>;
+
+export type PlayerSeasonType = "regularSeason" | "playoffs" | "combined";
+
 export type PlayersPlusOptions = {
 	season?: number;
 	seasonRange?: [number, number];
@@ -1910,12 +2081,13 @@ export type PlayersPlusOptions = {
 	// careerStats.
 	seasons?: number[];
 	tid?: number;
-	attrs?: string[];
-	ratings?: string[];
-	stats?: string[];
-	playoffs?: boolean;
-	regularSeason?: boolean;
-	combined?: boolean;
+	attrs?: Readonly<PlayerAttr[]>;
+	ratings?: Readonly<PlayerRatingAttr[]>;
+	stats?: Readonly<PlayerStatAttr[]>;
+
+	// A single value means exactly one season type, so if season is also specified then stats will be a single object. An array means stats will always be an array. Default is "regularSeason"
+	seasonType?: PlayerSeasonType | Readonly<PlayerSeasonType[]>;
+
 	showNoStats?: boolean;
 	showRookies?: boolean;
 	showDraftProspectRookieRatings?: boolean;
@@ -1945,6 +2117,231 @@ export type PlayersPlusOptions = {
 	mergeStats?: "none" | "totOnly" | "totAndTeams";
 	disableAbbrevsCacheDatabaseAccess?: boolean;
 };
+
+// Is SeasonType one of the values in the seasonType option? Distributes over unions, so if seasonType is a union of single values (like "playoffs" | "regularSeason"), the result is boolean because it's not known which one it is
+type SeasonTypeIncluded<
+	SeasonTypeOption extends PlayersPlusOptions["seasonType"],
+	SeasonType extends PlayerSeasonType,
+> =
+	SeasonTypeOption extends Readonly<(infer Values)[]>
+		? SeasonType extends Values
+			? true
+			: false
+		: SeasonType extends SeasonTypeOption
+			? true
+			: false;
+
+// Single seasonType value means a single stats row, array means an array of stats rows
+type SeasonTypeSingle<
+	SeasonTypeOption extends PlayersPlusOptions["seasonType"],
+> = SeasonTypeOption extends Readonly<unknown[]> ? false : true;
+
+type RowOrRows<
+	Single extends boolean,
+	Row,
+	SingleExtra = never,
+> = Single extends true ? Row | SingleExtra : Row[];
+
+// Rows added by showNoStats have no playoffs value
+type PlayerStatsRow<
+	Stats extends Readonly<PlayerStatAttr[]>,
+	Combined extends boolean,
+	ShowNoStats extends boolean,
+> = Pick<PlayerStatsPlus, Stats[number]> & {
+	playoffs:
+		| boolean
+		| ([Combined] extends [false] ? never : "combined")
+		| ([ShowNoStats] extends [false] ? never : undefined);
+	hasTot?: true;
+};
+
+// playoffs has the same value as in the rows being summed - false for careerStats, true for careerStatsPlayoffs, "combined" for careerStatsCombined
+type PlayerCareerStatsRow<
+	Stats extends Readonly<PlayerStatAttr[]>,
+	PlayoffsValue extends boolean | "combined",
+> = Omit<Pick<PlayerStatsPlus, Stats[number]>, "playoffs"> & {
+	playoffs: PlayoffsValue;
+	hasTot?: true;
+};
+
+// Career stats are only present when season is undefined and the corresponding flag is true. If either is ambiguous, it's optional
+type CareerStatsKey<
+	Key extends string,
+	Row,
+	Season extends number | undefined,
+	Flag extends boolean,
+> = [Season] extends [number]
+	? unknown
+	: [Flag] extends [false]
+		? unknown
+		: [Season] extends [undefined]
+			? [Flag] extends [true]
+				? { [K in Key]: Row }
+				: { [K in Key]?: Row }
+			: { [K in Key]?: Row };
+
+// With seasonRange and no season, contract is the sum of salaries in the range, with exp set to the (undefined) season
+type PlayerContractFiltered<
+	Season extends number | undefined,
+	SeasonRange extends [number, number] | undefined,
+> = [SeasonRange] extends [undefined]
+	? Player["contract"]
+	: [Season] extends [number]
+		? Player["contract"]
+		: Omit<Player["contract"], "exp"> & { exp: number | undefined };
+
+type PlayerAttrsPart<
+	Attrs extends Readonly<PlayerAttr[]>,
+	Season extends number | undefined,
+	SeasonRange extends [number, number] | undefined,
+> = Pick<
+	PlayerAttrsPlus<PlayerContractFiltered<Season, SeasonRange>>,
+	Attrs[number]
+> &
+	("untradable" extends Attrs[number] ? { untradableMsg?: string } : unknown);
+
+type PlayerRatingsPart<
+	Ratings extends Readonly<PlayerRatingAttr[]>,
+	Season extends number | undefined,
+> = {
+	// Never empty, because playersPlus filters out players with no ratings rows
+	ratings: Season extends number
+		? Pick<PlayerRatingsPlus, Ratings[number]>
+		: NonEmptyArray<Pick<PlayerRatingsPlus, Ratings[number]>>;
+};
+
+// For a single season, stats can be undefined if showRookies kept a player with no stats rows. showNoStats prevents that by adding an empty row
+type PlayerStatsSingleUndefined<
+	ShowNoStats extends boolean,
+	ShowRookies extends boolean,
+> = [ShowRookies] extends [false]
+	? never
+	: [ShowNoStats] extends [true]
+		? never
+		: undefined;
+
+type PlayerStatsPart<
+	Stats extends Readonly<PlayerStatAttr[]>,
+	Season extends number | undefined,
+	Single extends boolean,
+	Playoffs extends boolean,
+	RegularSeason extends boolean,
+	Combined extends boolean,
+	ShowNoStats extends boolean,
+	ShowRookies extends boolean,
+> = {
+	stats: Season extends number
+		? RowOrRows<
+				Single,
+				PlayerStatsRow<Stats, Combined, ShowNoStats>,
+				PlayerStatsSingleUndefined<ShowNoStats, ShowRookies>
+			>
+		: PlayerStatsRow<Stats, Combined, ShowNoStats>[];
+} & CareerStatsKey<
+	"careerStats",
+	PlayerCareerStatsRow<Stats, false>,
+	Season,
+	RegularSeason
+> &
+	CareerStatsKey<
+		"careerStatsPlayoffs",
+		PlayerCareerStatsRow<Stats, true>,
+		Season,
+		Playoffs
+	> &
+	CareerStatsKey<
+		"careerStatsCombined",
+		PlayerCareerStatsRow<Stats, "combined">,
+		Season,
+		Combined
+	>;
+
+// If it's not known whether attrs/ratings/stats were requested (like the type includes undefined), then its properties are optional
+type PlayerFilteredInner<
+	Attrs extends Readonly<PlayerAttr[]> | undefined,
+	Ratings extends Readonly<PlayerRatingAttr[]> | undefined,
+	Stats extends Readonly<PlayerStatAttr[]> | undefined,
+	Season extends number | undefined,
+	SeasonRange extends [number, number] | undefined,
+	Single extends boolean,
+	Playoffs extends boolean,
+	RegularSeason extends boolean,
+	Combined extends boolean,
+	ShowNoStats extends boolean,
+	ShowRookies extends boolean,
+> = ([Attrs] extends [undefined]
+	? unknown
+	: [Attrs] extends [Readonly<PlayerAttr[]>]
+		? PlayerAttrsPart<Attrs, Season, SeasonRange>
+		: Partial<PlayerAttrsPart<NonNullable<Attrs>, Season, SeasonRange>>) &
+	// Empty ratings array is the same as not requesting ratings
+	([Ratings] extends [undefined]
+		? unknown
+		: [NonNullable<Ratings>[number]] extends [never]
+			? unknown
+			: [Ratings] extends [Readonly<PlayerRatingAttr[]>]
+				? PlayerRatingsPart<Ratings, Season>
+				: Partial<PlayerRatingsPart<NonNullable<Ratings>, Season>>) &
+	([Stats] extends [undefined]
+		? unknown
+		: [Stats] extends [Readonly<PlayerStatAttr[]>]
+			? PlayerStatsPart<
+					Stats,
+					Season,
+					Single,
+					Playoffs,
+					RegularSeason,
+					Combined,
+					ShowNoStats,
+					ShowRookies
+				>
+			: Partial<
+					PlayerStatsPart<
+						NonNullable<Stats>,
+						Season,
+						Single,
+						Playoffs,
+						RegularSeason,
+						Combined,
+						ShowNoStats,
+						ShowRookies
+					>
+				>);
+
+// Value of an option, or its default value if it may be missing. Uses Options[Key] rather than inferring from an optional property, because that would drop undefined from the type
+type PlayersPlusOptionValue<
+	Options,
+	Key extends keyof PlayersPlusOptions,
+	Default,
+> = Key extends keyof Options
+	?
+			| Exclude<Options[Key], undefined>
+			| (undefined extends Options[Key] ? Default : never)
+	: Default;
+
+type PlayerFilteredWithSeasonType<
+	Options extends PlayersPlusOptions,
+	SeasonTypeOption extends PlayersPlusOptions["seasonType"],
+> = PlayerFilteredInner<
+	PlayersPlusOptionValue<Options, "attrs", undefined>,
+	PlayersPlusOptionValue<Options, "ratings", undefined>,
+	PlayersPlusOptionValue<Options, "stats", undefined>,
+	PlayersPlusOptionValue<Options, "season", undefined>,
+	PlayersPlusOptionValue<Options, "seasonRange", undefined>,
+	SeasonTypeSingle<SeasonTypeOption>,
+	SeasonTypeIncluded<SeasonTypeOption, "playoffs">,
+	SeasonTypeIncluded<SeasonTypeOption, "regularSeason">,
+	SeasonTypeIncluded<SeasonTypeOption, "combined">,
+	PlayersPlusOptionValue<Options, "showNoStats", false>,
+	PlayersPlusOptionValue<Options, "showRookies", false>
+>;
+
+// Output of playersPlus for a given set of options
+export type PlayerFiltered<Options extends PlayersPlusOptions> =
+	PlayerFilteredWithSeasonType<
+		Options,
+		PlayersPlusOptionValue<Options, "seasonType", "regularSeason">
+	>;
 
 export type Race = "asian" | "black" | "brown" | "white";
 
@@ -2574,15 +2971,37 @@ type TeamSeasonPlus = Omit<TeamSeason, "lastTen"> & {
 export type TeamSeasonAttr = keyof TeamSeasonPlus;
 
 import type {
+	PlayerStats as PlayerStatsBaseball,
+	PlayerStatsPlus as PlayerStatsPlusBaseball,
+	Position as PositionBaseball,
+	RatingKey as RatingKeyBaseball,
 	TeamStatAttr as TeamStatAttrBaseball,
 	TeamStatAttrByPos as TeamStatAttrByPosBaseball,
 } from "./types.baseball.ts";
-import type { TeamStatAttr as TeamStatAttrBasketball } from "./types.basketball.ts";
-import type { TeamStatAttr as TeamStatAttrFootball } from "./types.football.ts";
-import type { TeamStatAttr as TeamStatAttrHockey } from "./types.hockey.ts";
+import type {
+	PlayerStats as PlayerStatsBasketball,
+	PlayerStatsPlus as PlayerStatsPlusBasketball,
+	RatingKey as RatingKeyBasketball,
+	TeamStatAttr as TeamStatAttrBasketball,
+} from "./types.basketball.ts";
+import type {
+	PlayerStats as PlayerStatsFootball,
+	PlayerStatsPlus as PlayerStatsPlusFootball,
+	Position as PositionFootball,
+	RatingKey as RatingKeyFootball,
+	TeamStatAttr as TeamStatAttrFootball,
+} from "./types.football.ts";
+import type {
+	PlayerStats as PlayerStatsHockey,
+	PlayerStatsPlus as PlayerStatsPlusHockey,
+	Position as PositionHockey,
+	RatingKey as RatingKeyHockey,
+	TeamStatAttr as TeamStatAttrHockey,
+} from "./types.hockey.ts";
 import type { TIEBREAKERS } from "./constants.ts";
 import type { DropdownOption } from "../ui/hooks/useDropdownOptions.tsx";
 import type { ScheduleRule } from "../ui/util/scheduleTime.ts";
+import type { SuperCol } from "../ui/components/DataTable/index.tsx";
 import type { LookingForState } from "../ui/views/TradingBlock/useLookingForState.ts";
 import type { ALWAYS_WRAP } from "../worker/core/league/loadGameAttributes.ts";
 import type {
@@ -2764,7 +3183,12 @@ type TradeSummaryTeam = {
 		desc: string;
 	}[];
 	total: number;
-	trade: PlayerFiltered[];
+	trade: PlayerFiltered<{
+		attrs: ["pid", "name", "contract", "draft"];
+		season: number;
+		showRookies: true;
+		showNoStats: true;
+	}>[];
 };
 
 export type TradeSummary = {
@@ -2790,7 +3214,7 @@ export type Trade = {
 	teams: TradeTeams;
 };
 
-export type UpdateEvents = (
+export type UpdateEvent =
 	| "account"
 	| "allStarDunk"
 	| "allStarThree"
@@ -2823,8 +3247,9 @@ export type UpdateEvents = (
 	// Background-simulated game spreads landed, so the sportsbook can re-render
 
 	// This should be used for things that do stuff like "select all players on watch list", not updating the watch property for individual players. crossTabEmit handles that automatically.
-	| "watchList"
-)[];
+	| "watchList";
+
+export type UpdateEvents = UpdateEvent[];
 
 export const realPlayerPhotosSchema = z.record(z.string(), z.string());
 export type RealPlayerPhotos = z.infer<typeof realPlayerPhotosSchema>;

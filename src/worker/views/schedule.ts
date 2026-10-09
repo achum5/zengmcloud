@@ -1,12 +1,7 @@
 import { player, season, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
-import type {
-	UpdateEvents,
-	ViewInput,
-	Game,
-	PlayerInjury,
-} from "../../common/types.ts";
+import type { Game, PlayerInjury } from "../../common/types.ts";
 import { PHASE } from "../../common/constants.ts";
 import { groupByUnique, last, orderBy } from "../../common/utils.ts";
 import {
@@ -27,6 +22,14 @@ import {
 	spreadBiasAdjustment,
 } from "../util/getTeamSpreadBias.ts";
 import { pregameLineupSynergyFromPlayers } from "../core/GameSim.basketball/synergy.ts";
+import { defineView, keepType, type ViewArgs } from "../util/defineView.ts";
+import type { RouteParams } from "../../ui/router/types.ts";
+import { validateAbbrev } from "../util/processInputs.ts";
+
+const processInputs = (params: RouteParams<"schedule">) => {
+	const [tid, abbrev] = validateAbbrev(params.abbrev);
+	return { abbrev, tid };
+};
 
 export const getUpcoming = async ({
 	cid,
@@ -327,12 +330,12 @@ export const getTopPlayers = async <T extends any[]>(
 				basketball: ["pts", "trb", "ast"],
 				football: undefined, // football keyStats is too long
 				hockey: ["keyStats"],
-			}),
+			} as const),
 			showNoStats: true,
 			showRookies: true,
 			tid,
 			fuzz: true,
-		};
+		} as const;
 	};
 
 	if (
@@ -351,7 +354,7 @@ export const getTopPlayers = async <T extends any[]>(
 		const playersByPid = groupByUnique(players, "pid");
 		const teams = await idb.cache.teams.getAll();
 		const processedPlayersByTid: Record<number, any[]> = {};
-		const processedPlayersByPid: Record<number, any> = {};
+		const processedPlayersByPid: Record<number, unknown> = {};
 
 		// Need to keep track of injury without mutating player objects (since injuries are shown in UI), to predict future day starters. Might as well track pFatigue here too, for clarity.
 		const extraInfo: Record<
@@ -476,7 +479,7 @@ export const getTopPlayers = async <T extends any[]>(
 				});
 			};
 
-			const getStarter = async (players: any[]) => {
+			const getStarter = async (players: unknown[]) => {
 				const augmentedPlayers = await addExtraInfo(players);
 				if (__SPORT === "baseball") {
 					return getStartingPitcher(augmentedPlayers, false);
@@ -580,19 +583,19 @@ export const getTopPlayers = async <T extends any[]>(
 	}
 };
 
-const updateUpcoming = async (
-	inputs: ViewInput<"schedule">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
+const updateUpcoming = async ({
+	inputs,
+	updateEvents,
+	prevInputs,
+}: ViewArgs<typeof processInputs>) => {
 	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("gameAttributes") ||
-		updateEvents.includes("gameSim") ||
+		updateEvents.has("firstRun") ||
+		updateEvents.has("gameAttributes") ||
+		updateEvents.has("gameSim") ||
 		// A background sim refined the point spreads, so the numbers next to
 		// each game changed.
-		updateEvents.includes("newPhase") ||
-		inputs.abbrev !== state.abbrev
+		updateEvents.has("newPhase") ||
+		inputs.abbrev !== prevInputs?.abbrev
 	) {
 		const upcoming = await getUpcoming({
 			tid: inputs.tid,
@@ -622,16 +625,18 @@ const updateUpcoming = async (
 	}
 };
 
+const keepPrevOutput = {
+	completed: keepType<Game[]>(),
+};
+
 // Based on views.gameLog.updateGamesList
-const updateCompleted = async (
-	inputs: ViewInput<"schedule">,
-	updateEvents: UpdateEvents,
-	state: {
-		abbrev: string;
-		completed: Game[];
-	},
-) => {
-	if (updateEvents.includes("firstRun") || inputs.abbrev !== state.abbrev) {
+const updateCompleted = async ({
+	inputs,
+	updateEvents,
+	prevInputs,
+	prevOutput,
+}: ViewArgs<typeof processInputs, typeof keepPrevOutput>) => {
+	if (updateEvents.has("firstRun") || inputs.abbrev !== prevInputs?.abbrev) {
 		// Load all games in list
 		const completed = await getProcessedGames({
 			tid: inputs.tid,
@@ -644,14 +649,14 @@ const updateCompleted = async (
 		};
 	}
 
-	if (updateEvents.includes("gameSim")) {
+	if (updateEvents.has("gameSim")) {
 		// Partial update of only new games
-		const completed = Array.isArray(state.completed) ? state.completed : [];
+		const completed = prevOutput.completed ?? [];
 
 		const games = await getProcessedGames({
 			tid: inputs.tid,
 			season: g.get("season"),
-			loadedGames: state.completed,
+			loadedGames: prevOutput.completed,
 			includeAllStarGame: true,
 		});
 
@@ -665,14 +670,15 @@ const updateCompleted = async (
 	}
 };
 
-export default async (
-	inputs: ViewInput<"schedule">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
-	return Object.assign(
-		{},
-		await updateUpcoming(inputs, updateEvents, state),
-		await updateCompleted(inputs, updateEvents, state),
-	);
-};
+export default defineView({
+	id: "schedule",
+	processInputs,
+	keepPrevOutput,
+	load: async (args) => {
+		return Object.assign(
+			{},
+			await updateUpcoming(args),
+			await updateCompleted(args),
+		);
+	},
+});

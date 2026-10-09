@@ -1,5 +1,12 @@
 import { m, AnimatePresence } from "framer-motion";
-import { useState, useReducer, useCallback, useEffect, useId } from "react";
+import {
+	useState,
+	useReducer,
+	useCallback,
+	useEffect,
+	useEffectEvent,
+	useId,
+} from "react";
 import {
 	DIFFICULTY,
 	PHASE,
@@ -739,12 +746,12 @@ const NewLeague = (props: View<"newLeague">) => {
 				phase = PHASE.PRESEASON;
 				// Can't set tid yet because we haven't loaded teams for this season - do it later with rebuildAbbrevPending
 			} else {
-				season = Number.parseInt(safeLocalStorage.getItem("prevSeason") as any);
+				season = Number.parseInt(safeLocalStorage.getItem("prevSeason") ?? "");
 				if (Number.isNaN(season)) {
 					season = REAL_PLAYERS_INFO?.MAX_SEASON ?? new Date().getFullYear();
 				}
 				phase = Number.parseInt(
-					safeLocalStorage.getItem("prevPhase") as any,
+					safeLocalStorage.getItem("prevPhase") ?? "",
 				) as any;
 				if (Number.isNaN(phase)) {
 					phase = PHASE.PRESEASON;
@@ -829,12 +836,11 @@ const NewLeague = (props: View<"newLeague">) => {
 			type: "submit",
 		});
 
-		const settings = settingsOverride ?? state.settings;
-
 		// If no settingsOverride, then use difficulty from state, since user may have selected a new value
-		if (!settingsOverride) {
-			settings.difficulty = state.difficulty;
-		}
+		const settings = settingsOverride ?? {
+			...state.settings,
+			difficulty: state.difficulty,
+		};
 
 		const actualShuffleRosters = state.keptKeys.includes("players")
 			? settings.randomization === "shuffle"
@@ -867,7 +873,7 @@ const NewLeague = (props: View<"newLeague">) => {
 			} else if (state.customize === "legends") {
 				getLeagueOptions = {
 					type: "legends",
-					decade: state.legend as LegendKey,
+					decade: state.legend,
 				};
 			}
 
@@ -1107,13 +1113,27 @@ const NewLeague = (props: View<"newLeague">) => {
 		}
 	};
 
-	// This handles initial load
-	useEffect(() => {
+	const generateInitialCrossEraTeams = useEffectEvent(() => {
 		if (state.customize === "crossEra") {
 			generateCrossEraTeams();
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+	});
+
+	// This handles initial load
+	useEffect(() => {
+		generateInitialCrossEraTeams();
 	}, []);
+
+	// Start loading historical stats before the league is actually created, since it's a large file
+	const prefetchRealPlayerStats =
+		state.customize === "real" &&
+		state.settings.realStats !== "none" &&
+		state.keptKeys.includes("players");
+	useEffect(() => {
+		if (prefetchRealPlayerStats) {
+			void toWorker("main", "prefetchRealPlayerStats", undefined);
+		}
+	}, [prefetchRealPlayerStats]);
 
 	let pageTitle = title;
 	if (currentScreen === "teams") {
@@ -1454,7 +1474,7 @@ const NewLeague = (props: View<"newLeague">) => {
 											]}
 											value2={state.phase}
 											values2={phases}
-											onNewValue2={(phase: any) => {
+											onNewValue2={(phase) => {
 												dispatch({
 													type: "setPhase",
 													phase,

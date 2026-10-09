@@ -1,14 +1,11 @@
-import type { UpdateEvents } from "../../common/types.ts";
 import { getTriviaPool } from "../core/trivia/pool.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
 
 // Spin Streak: questions are generated one at a time through the
 // triviaSpinQuestion API call. The view only says whether the league has
 // enough history to play.
-const updateTriviaSpinStreak = async (
-	inputs: unknown,
-	updateEvents: UpdateEvents,
-) => {
-	if (updateEvents.includes("firstRun")) {
+const updateTriviaSpinStreak = async ({ updateEvents }: ViewArgs) => {
+	if (updateEvents.has("firstRun")) {
 		let numPlayers = 0;
 		try {
 			const pool = await getTriviaPool();
@@ -20,4 +17,7 @@ const updateTriviaSpinStreak = async (
 	}
 };
 
-export default updateTriviaSpinStreak;
+export default defineView({
+	id: "triviaSpinStreak",
+	load: updateTriviaSpinStreak,
+});

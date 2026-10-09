@@ -1,5 +1,5 @@
 import { LazyMotion } from "framer-motion";
-import { memo, useCallback, useEffect } from "react";
+import { memo, useCallback, useEffect, type ReactNode } from "react";
 import { localActions, useLocal } from "../../util/local.ts";
 import { autoReconnectSync } from "../../util/autoReconnectSync.ts";
 import { rememberLidForPush } from "../../util/pushLid.ts";
@@ -35,7 +35,7 @@ const minWidth0 = {
 };
 
 type KeepPreviousRenderWhileUpdatingProps = {
-	children: any;
+	children: ReactNode;
 	updating: boolean;
 };
 const KeepPreviousRenderWhileUpdating = memo(

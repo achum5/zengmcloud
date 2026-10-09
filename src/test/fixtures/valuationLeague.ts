@@ -1,5 +1,5 @@
 import { vi } from "vitest";
-import { resetCache, resetG } from "../helpers.ts";
+import { resetCache, resetG, setLeagueSize } from "../helpers.ts";
 import { idb } from "../../worker/db/index.ts";
 import { g, local } from "../../worker/util/index.ts";
 import { PHASE, PLAYER } from "../../common/constants.ts";
@@ -164,8 +164,7 @@ const buildInner = async (extra: {
 }) => {
 	resetG();
 	nextPid = 1;
-	g.setWithoutSavingToDB("numTeams", NUM_TEAMS);
-	g.setWithoutSavingToDB("numActiveTeams", NUM_TEAMS);
+	setLeagueSize(NUM_TEAMS);
 	g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
 	g.setWithoutSavingToDB("userTid", USER_TID);
 	g.setWithoutSavingToDB("userTids", [USER_TID]);

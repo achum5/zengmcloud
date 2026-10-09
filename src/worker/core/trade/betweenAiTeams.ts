@@ -1143,7 +1143,8 @@ const betweenAiTeams = async () => {
 		return;
 	}
 
-	const valueChangeCalculator = new ValueChangeCalculator();
+	// This runs every day when simulating games, so it needs to be fast
+	const valueChangeCalculator = new ValueChangeCalculator({ quick: true });
 
 	// Every AI team's franchise posture, computed once for this batch of attempts.
 	// If this fails for any reason, skip trading this tick rather than deal blind.

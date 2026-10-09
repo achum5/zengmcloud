@@ -32,7 +32,7 @@ const ProProspects = (props: View<"proProspects">) => {
 		{ title: "Pot", sortSequence: ["desc", "asc"], sortType: "number" },
 	];
 
-	const rows: DataTableRow[] = players.map((p) => ({
+	const rows: DataTableRow<"player">[] = players.map((p) => ({
 		key: p.pid,
 		metadata: { type: "player", pid: p.pid, season, playoffs: "regularSeason" },
 		data: [

@@ -275,7 +275,7 @@ const Recruiting = (props: View<"recruiting">) => {
 		{ title: "Visit", desc: "Official visit" },
 	];
 
-	const rows: DataTableRow[] = shown.map((r) => ({
+	const rows: DataTableRow<"player">[] = shown.map((r) => ({
 		key: r.pid,
 		metadata: {
 			type: "player",

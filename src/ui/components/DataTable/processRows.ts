@@ -1,4 +1,4 @@
-import type { DataTableRow, Props, SortBy } from "./index.tsx";
+import type { DataTableRow, MetadataType, Props, SortBy } from "./index.tsx";
 import { normalizeIntl } from "../../../common/normalizeIntl.ts";
 import { orderBy } from "../../../common/utils.ts";
 import {
@@ -36,7 +36,7 @@ export const processRows = ({
 	// hidden digit.
 	coarseRatings?: boolean;
 	state: State;
-} & Pick<Props, "cols" | "rankCol" | "rows">) => {
+} & Pick<Props<MetadataType>, "cols" | "rankCol" | "rows">) => {
 	const filterFunctions = state.enableFilters
 		? state.filters.map((filter, i) =>
 				createFilterFunction(
@@ -108,10 +108,10 @@ export const processRows = ({
 			return i;
 		};
 
-		const valueOf = (row: DataTableRow, i: number) =>
+		const valueOf = (row: DataTableRow<MetadataType>, i: number) =>
 			getSortVal(row.data[i >= row.data.length ? 0 : i], cols[i]!.sortType);
 
-		const sortKeys: ((row: DataTableRow) => any)[] = [];
+		const sortKeys: ((row: DataTableRow<MetadataType>) => any)[] = [];
 		const orders: ("asc" | "desc")[] = [];
 
 		for (const sortBy of state.sortBys) {
@@ -133,7 +133,7 @@ export const processRows = ({
 				isCoarsenedRatingCol(cols[i]?.key) &&
 				rowsFiltered.some((row) => row.coarseExempt)
 			) {
-				const decade = (row: DataTableRow) => {
+				const decade = (row: DataTableRow<MetadataType>) => {
 					const value = valueOf(row, i);
 					if (row.coarseExempt && typeof value === "number") {
 						return coarsenRating(value);
@@ -176,11 +176,11 @@ export const processRows = ({
 
 		const tieBreakKey =
 			nameIndex >= 0
-				? (row: DataTableRow) =>
+				? (row: DataTableRow<MetadataType>) =>
 						getSortVal(row.data[nameIndex], cols[nameIndex]!.sortType)
 				: // No name to sort on, so fall back to scattering the tie. Never
 					// leave it to the incoming order, which is the leak.
-					(row: DataTableRow) => scrambleKey(row.key);
+					(row: DataTableRow<MetadataType>) => scrambleKey(row.key);
 
 		rowsOrdered = orderBy(
 			rowsFiltered,

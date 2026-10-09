@@ -317,6 +317,7 @@ const ScoringSummary = ({
 						event.inning !== prevInning ||
 						(event.t !== prevT && currentPeriod !== "Shootout")
 					) {
+						// eslint-disable-next-line react-hooks/immutability -- https://github.com/react/react/issues/31569
 						prevInning = event.inning;
 						prevT = event.t;
 						quarterHeader = (
@@ -452,7 +453,7 @@ const BoxScore = ({
 	boxScore: BoxScore;
 	forceRowUpdate: boolean;
 	sportState: SportState;
-	Row: any;
+	Row: unknown;
 }) => {
 	// Historical games will have boxScore.won.name and boxScore.lost.name so use that for ordering, but live games
 	// won't. This is hacky, because the existence of this property is just a historical coincidence, and maybe it'll
@@ -493,8 +494,7 @@ const BoxScore = ({
 							{t.season !== undefined ? `${t.season} ` : null}
 							{t.region} {t.name}
 						</h2>
-						{helpers.keys(PLAYER_GAME_STATS).map((type) => {
-							const info = PLAYER_GAME_STATS[type];
+						{helpers.entries(PLAYER_GAME_STATS).map(([type, info]) => {
 							return (
 								<StatsTable
 									key={type}

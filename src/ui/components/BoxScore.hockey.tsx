@@ -237,6 +237,7 @@ const ScoringSummary = ({
 					const currentPeriod =
 						event.type === "shootoutShot" ? "Shootout" : event.quarter;
 					if (currentPeriod !== prevQuarter) {
+						// eslint-disable-next-line react-hooks/immutability -- https://github.com/react/react/issues/31569
 						prevQuarter = currentPeriod;
 
 						let quarterText;
@@ -339,7 +340,7 @@ const BoxScore = ({
 }: {
 	boxScore: BoxScore;
 	forceRowUpdate: boolean;
-	Row: any;
+	Row: unknown;
 }) => {
 	const processedEvents = useMemo(
 		() => processEvents(boxScore.scoringSummary),
@@ -369,8 +370,7 @@ const BoxScore = ({
 							{t.season !== undefined ? `${t.season} ` : null}
 							{t.region} {t.name}
 						</h2>
-						{helpers.keys(PLAYER_GAME_STATS).map((type) => {
-							const info = PLAYER_GAME_STATS[type];
+						{helpers.entries(PLAYER_GAME_STATS).map(([type, info]) => {
 							return (
 								<StatsTable
 									key={type}

@@ -1,22 +1,29 @@
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
 import { DEFAULT_TEAM_COLORS } from "../../common/constants.ts";
-import type { UpdateEvents, ViewInput } from "../../common/types.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
+import type { RouteParams } from "../../ui/router/types.ts";
+import { validateAbbrev } from "../util/processInputs.ts";
 
 // The team's current roster, plus the color info needed to label the two
 // squads, so the front end can split them into a "Primary" and a "Secondary"
 // squad and run an intrasquad scrimmage (an exhibition game between two halves
 // of one team). Mirrors how the Roster page loads the active roster.
-const updateIntrasquad = async (
-	{ tid, abbrev }: ViewInput<"intrasquad">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
+const processInputs = (params: RouteParams<"intrasquad">) => {
+	const [tid, abbrev] = validateAbbrev(params.abbrev);
+	return { tid, abbrev };
+};
+
+const updateIntrasquad = async ({
+	inputs: { tid, abbrev },
+	updateEvents,
+	prevInputs,
+}: ViewArgs<typeof processInputs>) => {
 	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("playerMovement") ||
-		updateEvents.includes("gameSim") ||
-		tid !== state.tid
+		updateEvents.has("firstRun") ||
+		updateEvents.has("playerMovement") ||
+		updateEvents.has("gameSim") ||
+		tid !== prevInputs?.tid
 	) {
 		const season = g.get("season");
 
@@ -65,4 +72,8 @@ const updateIntrasquad = async (
 	}
 };
 
-export default updateIntrasquad;
+export default defineView({
+	id: "intrasquad",
+	processInputs,
+	load: updateIntrasquad,
+});

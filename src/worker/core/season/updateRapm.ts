@@ -90,7 +90,7 @@ const lastSeasonRatings = (
 			}
 			// A stats row with no minutes cannot be weighted by them, and has
 			// nothing behind its rating either.
-			const weight = ps.min > 0 ? ps.min : 0;
+			const weight = ps.min !== undefined && ps.min > 0 ? ps.min : 0;
 			off += weight * ps.orapm;
 			def += weight * (ps.drapm ?? 0);
 			min += weight;

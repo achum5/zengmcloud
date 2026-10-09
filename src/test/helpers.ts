@@ -160,3 +160,20 @@ export const resetG = () => {
 		numActiveTeams: teams.length,
 	});
 };
+
+// A small test league that also has playoffs it could actually hold. The
+// default bracket (16 teams plus a play-in) is invalid in a league of 8 or 12,
+// and the draft pick model plays the bracket out to price a pick, so it
+// refuses one that can't exist. Half the league makes it, rounded down to a
+// whole bracket, with no byes and no play-in.
+export const setLeagueSize = (numTeams: number) => {
+	g.setWithoutSavingToDB("numTeams", numTeams);
+	g.setWithoutSavingToDB("numActiveTeams", numTeams);
+	let rounds = 1;
+	while (2 ** (rounds + 1) <= numTeams / 2) {
+		rounds += 1;
+	}
+	g.setWithoutSavingToDB("numGamesPlayoffSeries", Array(rounds).fill(7));
+	g.setWithoutSavingToDB("numPlayoffByes", 0);
+	g.setWithoutSavingToDB("playIn", false);
+};

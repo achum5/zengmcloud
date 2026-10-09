@@ -3,13 +3,16 @@ import { capsForSeasons } from "../util/capsForSeasons.ts";
 import { draft, finances, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
-import type {
-	TeamSeason,
-	UpdateEvents,
-	ViewInput,
-} from "../../common/types.ts";
+import type { TeamSeason } from "../../common/types.ts";
+import {
+	defineView,
+	type ViewArgs,
+	type ViewInput,
+} from "../util/defineView.ts";
 import { getAutoTicketPriceByTid } from "../core/game/attendance.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
+import type { RouteParams } from "../../ui/router/types.ts";
+import { validateAbbrev } from "../util/processInputs.ts";
 import {
 	getProjectedContractAmounts,
 	projectNextContract,
@@ -20,18 +23,24 @@ import {
 	valueForPlayer,
 } from "../util/contractValues.ts";
 
-const updateTeamFinances = async (
-	inputs: ViewInput<"teamFinances">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
+const processInputs = (params: RouteParams<"teamFinances">) => {
+	const show = params.show ?? "10";
+	const [tid, abbrev] = validateAbbrev(params.abbrev);
+	return { abbrev, show, tid };
+};
+
+const updateTeamFinances = async ({
+	inputs,
+	updateEvents,
+	prevInputs,
+}: ViewArgs<typeof processInputs>) => {
 	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("gameSim") ||
-		updateEvents.includes("playerMovement") ||
-		updateEvents.includes("teamFinances") ||
-		inputs.tid !== state.tid ||
-		inputs.show !== state.show
+		updateEvents.has("firstRun") ||
+		updateEvents.has("gameSim") ||
+		updateEvents.has("playerMovement") ||
+		updateEvents.has("teamFinances") ||
+		inputs.tid !== prevInputs?.tid ||
+		inputs.show !== prevInputs?.show
 	) {
 		const contractsRaw = await team.getContracts(inputs.tid);
 		let payroll = await team.getPayroll(contractsRaw);
@@ -269,17 +278,17 @@ const updateTeamFinances = async (
 				| `revenues${Capitalize<keyof TeamSeason["revenues"]>}`,
 				number
 			>;
-			for (const key of helpers.keys(teamSeason.revenues)) {
+			for (const [key, value] of helpers.entries(teamSeason.revenues)) {
 				const outputKey = `revenues${helpers.upperCaseFirstLetter(
 					key,
 				)}` as const;
-				output[outputKey] = teamSeason.revenues[key];
+				output[outputKey] = value;
 			}
-			for (const key of helpers.keys(teamSeason.expenses)) {
+			for (const [key, value] of helpers.entries(teamSeason.expenses)) {
 				const outputKey = `expenses${helpers.upperCaseFirstLetter(
 					key,
 				)}` as const;
-				output[outputKey] = teamSeason.expenses[key];
+				output[outputKey] = value;
 			}
 			return output;
 		};
@@ -419,21 +428,21 @@ const updateTeamFinances = async (
 // check looser than this would put a league-mate's cap sheet on your screen
 // with their ticks in it. Every other team - human or not - reads as a plain
 // CPU team here.
-const updatePlan = (inputs: ViewInput<"teamFinances">) => ({
+const updatePlan = (inputs: ViewInput<typeof processInputs>) => ({
 	plan:
 		inputs.tid === g.get("userTid")
 			? g.get("teamFinancesPlan")[inputs.tid]
 			: undefined,
 });
 
-export default async (
-	inputs: ViewInput<"teamFinances">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
-	return Object.assign(
-		{},
-		await updateTeamFinances(inputs, updateEvents, state),
-		updatePlan(inputs),
-	);
-};
+export default defineView({
+	id: "teamFinances",
+	processInputs,
+	load: async (args) => {
+		return Object.assign(
+			{},
+			await updateTeamFinances(args),
+			updatePlan(args.inputs),
+		);
+	},
+});

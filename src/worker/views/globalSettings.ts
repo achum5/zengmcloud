@@ -1,36 +1,39 @@
 import { idb } from "../db/index.ts";
-import type { UpdateEvents } from "../../common/types.ts";
 import { getGlobalSettings } from "../util/getGlobalSettings.ts";
+import { defineView } from "../util/defineView.ts";
 
-const updateOptions = async (inputs: unknown, updateEvents: UpdateEvents) => {
-	if (updateEvents.includes("firstRun") || updateEvents.includes("options")) {
-		const options = await getGlobalSettings();
+export default defineView({
+	id: "globalSettings",
+	load: async ({ updateEvents }) => {
+		if (updateEvents.has("firstRun") || updateEvents.has("options")) {
+			const options = await getGlobalSettings();
 
-		const attributesStore = (await idb.meta.transaction("attributes")).store;
+			const attributesStore = (await idb.meta.transaction("attributes")).store;
 
-		// Don't assume these have the correct type, because even if they are invalid, we still should let the user edit
-		const realPlayerPhotos: unknown =
-			await attributesStore.get("realPlayerPhotos");
-		const realTeamInfo: unknown = await attributesStore.get("realTeamInfo");
+			// Don't assume these have the correct type, because even if they are invalid, we still should let the user edit
+			const realPlayerPhotos: unknown =
+				await attributesStore.get("realPlayerPhotos");
+			const realTeamInfo: unknown = await attributesStore.get("realTeamInfo");
 
-		return {
-			realPlayerPhotos:
-				realPlayerPhotos === undefined
-					? ""
-					: JSON.stringify(realPlayerPhotos, null, 2),
-			realTeamInfo:
-				realTeamInfo === undefined ? "" : JSON.stringify(realTeamInfo, null, 2),
-			units: options.units,
-			fullNames: !!options.fullNames,
-			phaseChangeRedirects: options.phaseChangeRedirects,
-			recapAIProvider: options.recapAIProvider ?? "claude",
-			recapMaxGames: options.recapMaxGames,
-			ownGameSimCutoffSeconds: options.ownGameSimCutoffSeconds,
-			achievementCardsDraftPicks: options.achievementCardsDraftPicks,
-			recapMaxPlayers: options.recapMaxPlayers,
-			recapMaxDays: options.recapMaxDays,
-		};
-	}
-};
-
-export default updateOptions;
+			return {
+				realPlayerPhotos:
+					realPlayerPhotos === undefined
+						? ""
+						: JSON.stringify(realPlayerPhotos, null, 2),
+				realTeamInfo:
+					realTeamInfo === undefined
+						? ""
+						: JSON.stringify(realTeamInfo, null, 2),
+				units: options.units,
+				fullNames: !!options.fullNames,
+				phaseChangeRedirects: options.phaseChangeRedirects,
+				recapAIProvider: options.recapAIProvider ?? "claude",
+				recapMaxGames: options.recapMaxGames,
+				ownGameSimCutoffSeconds: options.ownGameSimCutoffSeconds,
+				achievementCardsDraftPicks: options.achievementCardsDraftPicks,
+				recapMaxPlayers: options.recapMaxPlayers,
+				recapMaxDays: options.recapMaxDays,
+			};
+		}
+	},
+});

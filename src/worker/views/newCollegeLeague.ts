@@ -1,4 +1,5 @@
 import { getCollegeTeams } from "../core/college/setup.ts";
+import { defineView } from "../util/defineView.ts";
 
 // The school picker for a new college league.
 const updateNewCollegeLeague = async () => {
@@ -22,4 +23,7 @@ const updateNewCollegeLeague = async () => {
 	};
 };
 
-export default updateNewCollegeLeague;
+export default defineView({
+	id: "newCollegeLeague",
+	load: updateNewCollegeLeague,
+});

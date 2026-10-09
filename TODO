@@ -1,9 +1,4 @@
-add helpers.entries similar to helpers.keys, if possible
-- use in developSeason.basketball.ts
-
-Cache.indexGetAllByKey
-- similar to getAllByKey
-- use in getUpcoming for playersByTid
+hockey auto sort should play C/W out of position if that is the difference between being on the bench or not https://discord.com/channels/290013534023057409/1553484440796397708/1553484440796397708 - currently there is a bonus in `score` but maybe we should ignore that for players who are not in the starting lines
 
 seasonFraction maybe doesn't make much sense in basketball awards like MVP. gp/teamGp or gp/82 might be better - the former would max at 1 regardles of numGames, but the latter would give more or less weight to winp based on how long the season is, which would also scale them with EWA+VORP. fracWS should maybe also get multiplied by gp/82.
 - if we edit default, what to do about achievements?
@@ -200,8 +195,10 @@ move EventBBGM away from using string "text" property
 - use formatEventText for now, eventually move to something in ui to render them
 
 dev usability stuff
+- monorepo
+- oxfmt width
 - get rid of babel
-  - see nativeMagicString branch, but tests are broken and nativeMagicString is experimental
+  - see nativeMagicString branch, but nativeMagicString is experimental and vitest support is hacky
 - send message to any open tabs to pop up notification when a new worker process is built, then send message to worker to mark it as stale, then any new UI tab opened with stale worker show a popup with error message. to prevent accidentally having multiple tabs open
   - shared worker listen to websocket, use ws to send from server to worker, mark as stale and show error
 - use zod in various places, including to replace schema/types difference
@@ -490,7 +487,6 @@ use import with json attribute for loading json files, rather than special effor
   - or will rollup/rolldown handle something like this automatically, maybe converting into JS chunk? it seems to be trying to do that, but not succeeding completely.
     - currently rolldown handles it automatically (converting to js chunk) and rolldown kind of does but it doesn't work right unless you remove the import attribute https://github.com/rolldown/rolldown/issues/2758
   - https://chatgpt.com/c/68e53261-8960-8325-b295-c99adf21fb59 are some ideas, not sure if it's worth it really
-- realSchedules.football.json too
 
 add legends mode based on league to UI somehow
 - should be able to select from "New legends league" or "New custom league"
@@ -680,10 +676,6 @@ in late game critical situations (like tied, 0 outs, bases loaded) there should 
 zgmb should have more doubles and triples https://discord.com/channels/290013534023057409/944392892905037885/1332600467502661717
 
 bulk actions - tables should be aware that rows are players who have pids. add bulk/all/select operations at table-level through ... menu
-- some way in typescript to impose the type of metadata in a table - rows can only have one type of metadata (or no metadata in some rows is fine, like drafted players table) 
-  - if this was done, then most metadata type checks like `metadata.type === "player"` in BulkActions and ExportPlayers would not be needed, those are just for typescript
-  - something like this works, but is kind of annoying with the generic being needed in various places:
-    `type RowOfType<T extends RowMetadata["type"]> = T extends RowMetadata["type"] ? { metadata: Extract<RowMetadata, { type: T }>; other: string } : never;`
 - other places to use
   - re-signing player and free agents table - sign multiple players at the same time https://mail.google.com/mail/u/0/#inbox/FMfcgxwKkHjZVVXMJCrJkQVrDlmZjHph
     - button needs to be disabled if not allowed under the cap
@@ -731,11 +723,6 @@ for stat tables with gap placeholders (like on a player profile page, there's a 
 - somehow need to hide these based on table sort - how to propagate that info?
 
 Add https://mail.google.com/mail/u/0/#inbox/FMfcgzQXKhJZvwmSjwbthGLcdXGfCrJH to rebuilding/contending strategy rewrite
-
-vector logo generation
-- https://www.recraft.ai/ai-image-vectorizer
-- https://sagipolaczek.github.io/NeuralSVG/
-- https://neosvg.com/
 
 counter proposals too jumpy, get rid of that extra iteration at the end maybe?
 - https://discord.com/channels/290013534023057409/569726303926878219/840367834965213194
@@ -1544,7 +1531,7 @@ refactor game sim
 rank column on player stats page https://discord.com/channels/290013534023057409/331882115119448065/932355745616371813
 
 minors
-- add "type" property to stats row, could be playoffs, minors, or undefind (regular season)
+- add "type" property to stats row, could be playoffs, minors, or undefined (regular season)
   - or, add a "minors" flag?
   - same idea for regularSeason and playoffs flags in playersPlus
 - configurable # of slots. default 0

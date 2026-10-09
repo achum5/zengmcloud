@@ -269,9 +269,9 @@ const TeamForm = ({
 							{isUniformJersey(t.jersey) ? (
 								<option value={t.jersey}>Custom</option>
 							) : null}
-							{helpers.keys(JERSEYS).map((jersey) => (
+							{helpers.entries(JERSEYS).map(([jersey, jerseyName]) => (
 								<option key={jersey} value={jersey}>
-									{JERSEYS[jersey]}
+									{jerseyName}
 								</option>
 							))}
 						</select>

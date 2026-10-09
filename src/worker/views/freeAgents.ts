@@ -1,12 +1,7 @@
 import { PHASE, PLAYER } from "../../common/constants.ts";
-import type {
-	FaDayResults,
-	Phase,
-	Player,
-	UpdateEvents,
-	ViewInput,
-} from "../../common/types.ts";
-import { orderBy } from "../../common/utils.ts";
+import type { FaDayResults, Phase, Player } from "../../common/types.ts";
+import { defineView } from "../util/defineView.ts";
+import { groupByUnique, orderBy } from "../../common/utils.ts";
 import { player, team } from "../core/index.ts";
 import { faBoardActive, getMyFaBoard } from "../core/sync/index.ts";
 import { idb } from "../db/index.ts";
@@ -14,17 +9,68 @@ import { g } from "../util/index.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
 import { loadAbbrevs } from "./gameLog.ts";
 import { bySport } from "../../common/sportFunctions.ts";
+import type { RouteParams } from "../../ui/router/types.ts";
+import { helpers } from "../util/index.ts";
+import { validateSeason } from "../util/processInputs.ts";
 
-export const addMood = async (players: Player[]) => {
-	const moods: Awaited<ReturnType<(typeof player)["moodInfos"]>>[] = [];
-	for (const p of players) {
-		moods.push(await player.moodInfos(p));
+const processInputs = (params: RouteParams<"freeAgents">) => {
+	if (g.get("phase") === PHASE.RESIGN_PLAYERS) {
+		return {
+			redirectUrl: helpers.leagueUrl(["negotiation"]),
+		};
 	}
 
-	return players.map((p, i) => ({
-		...p,
-		mood: moods[i],
-	}));
+	let season: number | "current";
+	if (params.season && params.season !== "current") {
+		season = validateSeason(params.season);
+	} else {
+		season = "current";
+	}
+
+	let type: "available" | "signed" | "both";
+	if (season !== "current") {
+		// If this is a previous season, force type to be "both" because "available" will be none and "both" looks better when switching to current season than "signed"
+		type = "both";
+	} else if (params.type === "signed") {
+		type = "signed";
+	} else if (params.type === "both") {
+		type = "both";
+	} else {
+		type = "available";
+	}
+
+	return {
+		season,
+		type,
+	};
+};
+
+// Call this after playersPlus, with the raw player objects that were passed to playersPlus. getContractAmount can override the contract amount used for each player's mood
+export const addMood = async <T extends { pid: number }>(
+	players: T[],
+	playersRaw: Player[],
+	getContractAmount?: (p: T) => number,
+) => {
+	const playersRawByPid = groupByUnique(playersRaw, "pid");
+
+	const output: (T & {
+		mood: Awaited<ReturnType<(typeof player)["moodInfos"]>>;
+	})[] = [];
+	for (const p of players) {
+		const pRaw = playersRawByPid[p.pid];
+		if (!pRaw) {
+			throw new Error(`Raw player not found for pid ${p.pid}`);
+		}
+
+		output.push({
+			...p,
+			mood: await player.moodInfos(pRaw, {
+				contractAmount: getContractAmount?.(p),
+			}),
+		});
+	}
+
+	return output;
 };
 
 export const freeAgentStats = bySport({
@@ -32,7 +78,7 @@ export const freeAgentStats = bySport({
 	basketball: ["min", "pts", "trb", "ast", "per"],
 	football: ["gp", "keyStats", "av"],
 	hockey: ["gp", "keyStats", "ops", "dps", "ps"],
-});
+} as const);
 
 const isSeason = (
 	freeAgencySeason: number,
@@ -92,200 +138,214 @@ const getPlayers = async (
 		}
 	}
 
-	const processedSigned: (Player & {
-		freeAgentType: "signed";
+	const signedWithTransactions: {
+		p: Player;
 		freeAgentTransaction: FreeAgentTransaction;
-	})[] = [];
+	}[] = [];
 	for (const p of signed) {
 		const freeAgentTransaction = p.transactions?.findLast(
-			(row) => row.type === "freeAgent" && isSeason(freeAgencySeason, row),
+			(row): row is FreeAgentTransaction =>
+				row.type === "freeAgent" && isSeason(freeAgencySeason, row),
 		);
 		if (freeAgentTransaction) {
-			processedSigned.push({
-				...p,
-				freeAgentType: "signed",
-
-				// @ts-expect-error
-				freeAgentTransaction,
-			});
+			signedWithTransactions.push({ p, freeAgentTransaction });
 		}
 	}
 
 	return {
-		freeAgents: [
-			...(await addMood(
-				available.map((p) => {
-					return {
-						...p,
-						freeAgentType: "available",
-					};
-				}),
-			)),
-			...processedSigned,
-		],
+		available,
+		signed: signedWithTransactions,
 		user,
 	};
 };
 
-const updateFreeAgents = async (
-	{ season, type }: ViewInput<"freeAgents">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
-	if (
-		updateEvents.includes("firstRun") ||
-		season === "current" ||
-		(updateEvents.includes("newPhase") &&
-			g.get("phase") === PHASE.FREE_AGENCY) ||
-		season !== state.season ||
-		type !== state.type
-	) {
-		const userTid = g.get("userTid");
+export default defineView({
+	id: "freeAgents",
+	processInputs,
+	load: async ({ inputs: { season, type }, updateEvents, prevInputs }) => {
+		if (
+			updateEvents.has("firstRun") ||
+			season === "current" ||
+			(updateEvents.has("newPhase") && g.get("phase") === PHASE.FREE_AGENCY) ||
+			season !== prevInputs?.season ||
+			type !== prevInputs?.type
+		) {
+			const userTid = g.get("userTid");
 
-		let freeAgencySeason;
-		if (season === "current") {
-			if (g.get("phase") >= PHASE.PLAYOFFS) {
-				freeAgencySeason = g.get("season");
-			} else {
-				freeAgencySeason = g.get("season") - 1;
-			}
-		} else {
-			// Starting free agency in season, up until right before free agency in season + 1
-			freeAgencySeason = season;
-		}
-
-		const payroll = await team.getPayroll(userTid);
-		const playersByType = await getPlayers(season, freeAgencySeason, type);
-		const capSpace = (g.get("salaryCap") - payroll) / 1000;
-
-		let players = addFirstNameShort(
-			await idb.getCopies.playersPlus(playersByType.freeAgents, {
-				attrs: [
-					"pid",
-					"firstName",
-					"lastName",
-					"age",
-					"contract",
-					"injury",
-					"watch",
-					"jerseyNumber",
-					"mood",
-					"draft",
-
-					// Added in getPlayers
-					"freeAgentType",
-					"freeAgentTransaction",
-				],
-				ratings: ["ovr", "pot", "skills", "pos"],
-				stats: freeAgentStats,
-				season: season === "current" ? g.get("season") : freeAgencySeason,
-				showNoStats: true,
-				showRookies: true,
-				fuzz: true,
-				oldStats: true,
-				mergeStats: "totOnly",
-			}),
-		);
-
-		// Apply contract
-		let abbrevs;
-		for (const p of players) {
-			if (p.freeAgentType === "available") {
-				p.contract.amount = p.mood.user.contractAmount / 1000;
-			} else {
-				let event;
-				if (p.freeAgentTransaction.eid !== undefined) {
-					event = await idb.getCopy.events(
-						{ eid: p.freeAgentTransaction.eid },
-						"noCopyCache",
-					);
-				}
-				if (event && event.type === "freeAgent" && event.contract) {
-					p.contract = {
-						amount: event.contract.amount / 1000,
-						exp: event.contract.exp,
-					};
+			let freeAgencySeason;
+			if (season === "current") {
+				if (g.get("phase") >= PHASE.PLAYOFFS) {
+					freeAgencySeason = g.get("season");
 				} else {
-					p.contract = {
-						amount: 0,
-						exp: p.freeAgentTransaction.season,
-					};
+					freeAgencySeason = g.get("season") - 1;
 				}
-
-				if (!abbrevs) {
-					// + 1 because it should consider abbrevs from the next game actually played, which will be the following calendar year after free agency starts
-					abbrevs = await loadAbbrevs(freeAgencySeason + 1);
-				}
-				p.freeAgentTransaction.abbrev = abbrevs[p.freeAgentTransaction.tid];
+			} else {
+				// Starting free agency in season, up until right before free agency in season + 1
+				freeAgencySeason = season;
 			}
-		}
 
-		// Default sort, used for the compare players link
-		players = orderBy(players, (p) => p.contract.amount, "desc");
+			const payroll = await team.getPayroll(userTid);
+			const playersByType = await getPlayers(season, freeAgencySeason, type);
+			const capSpace = (g.get("salaryCap") - payroll) / 1000;
 
-		const userPlayers = await idb.getCopies.playersPlus(playersByType.user, {
-			attrs: [],
-			ratings: ["pos"],
-			stats: [],
-			season: g.get("season"),
-			showNoStats: true,
-			showRookies: true,
-		});
+			const getPlayersFiltered = (players: Player[]) =>
+				idb.getCopies.playersPlus(players, {
+					attrs: [
+						"pid",
+						"name",
+						"firstName",
+						"lastName",
+						"tid",
+						"age",
+						"contract",
+						"injury",
+						"watch",
+						"jerseyNumber",
+						"draft",
+					],
+					ratings: ["ovr", "pot", "skills", "pos"],
+					stats: freeAgentStats,
+					season: season === "current" ? g.get("season") : freeAgencySeason,
+					showNoStats: true,
+					showRookies: true,
+					fuzz: true,
+					oldStats: true,
+					mergeStats: "totOnly",
+				});
 
-		// Multiplayer free-agency board: this team's current ranks plus the most
-		// recent day's resolution record (odds, rolls, winners).
-		const boardActive = season === "current" && faBoardActive();
-		let faBoard;
-		if (boardActive) {
-			let results: FaDayResults | undefined;
-			try {
-				const currentSeason = g.get("season");
-				const all = [
-					...(await idb.cache.faDayResults.getAll()),
-					...((await (idb.league as any).getAll("faDayResults")) ?? []),
-				] as FaDayResults[];
-				for (const row of all) {
-					if (
-						row.season === currentSeason &&
-						(!results || row.daysLeft < results.daysLeft)
-					) {
-						results = row;
+			const availablePlayers = (
+				await addMood(
+					await getPlayersFiltered(playersByType.available),
+					playersByType.available,
+				)
+			).map((p) => ({
+				...p,
+				freeAgentType: "available" as const,
+			}));
+
+			const signedByPid = groupByUnique(
+				playersByType.signed,
+				(row) => row.p.pid,
+			);
+
+			// + 1 because it should consider abbrevs from the next game actually played, which will be the following calendar year after free agency starts
+			const abbrevs =
+				playersByType.signed.length > 0
+					? await loadAbbrevs(freeAgencySeason + 1)
+					: {};
+
+			const signedPlayers = (
+				await getPlayersFiltered(playersByType.signed.map((row) => row.p))
+			).map((p) => {
+				const row = signedByPid[p.pid];
+				if (!row) {
+					throw new Error(`Signed player not found for pid ${p.pid}`);
+				}
+				const freeAgentTransaction: FreeAgentTransaction & { abbrev: string } =
+					{
+						...row.freeAgentTransaction,
+						abbrev: abbrevs[row.freeAgentTransaction.tid] ?? "???",
+					};
+				return {
+					...p,
+					freeAgentType: "signed" as const,
+					freeAgentTransaction,
+				};
+			});
+
+			let players = addFirstNameShort([...availablePlayers, ...signedPlayers]);
+
+			// Apply contract
+			for (const p of players) {
+				if (p.freeAgentType === "available") {
+					p.contract.amount = p.mood.user.contractAmount / 1000;
+				} else {
+					let event;
+					if (p.freeAgentTransaction.eid !== undefined) {
+						event = await idb.getCopy.events(
+							{ eid: p.freeAgentTransaction.eid },
+							"noCopyCache",
+						);
+					}
+					if (event && event.type === "freeAgent" && event.contract) {
+						p.contract = {
+							amount: event.contract.amount / 1000,
+							exp: event.contract.exp,
+						};
+					} else {
+						p.contract = {
+							amount: 0,
+							exp: p.freeAgentTransaction.season,
+						};
 					}
 				}
-			} catch {
-				// No results yet.
-			}
-			// Drop board entries that are no longer free agents (signed yesterday,
-			// by us or anyone else), so a dead pid never occupies a slot.
-			const pids: number[] = [];
-			for (const pid of getMyFaBoard()) {
-				const boardP = await idb.cache.players.get(pid);
-				if (boardP && boardP.tid === PLAYER.FREE_AGENT) {
-					pids.push(pid);
-				}
 			}
 
-			faBoard = {
-				numSlots: g.get("userTids").length,
-				pids,
-				results,
+			// Default sort, used for the compare players link
+			players = orderBy(players, (p) => p.contract.amount, "desc");
+
+			const userPlayers = await idb.getCopies.playersPlus(playersByType.user, {
+				attrs: [],
+				ratings: ["pos"],
+				stats: [],
+				season: g.get("season"),
+				showNoStats: true,
+				showRookies: true,
+			});
+
+			// Multiplayer free-agency board: this team's current ranks plus the most
+			// recent day's resolution record (odds, rolls, winners).
+			const boardActive = season === "current" && faBoardActive();
+			let faBoard;
+			if (boardActive) {
+				let results: FaDayResults | undefined;
+				try {
+					const currentSeason = g.get("season");
+					const all = [
+						...(await idb.cache.faDayResults.getAll()),
+						...((await (idb.league as any).getAll("faDayResults")) ?? []),
+					] as FaDayResults[];
+					for (const row of all) {
+						if (
+							row.season === currentSeason &&
+							(!results || row.daysLeft < results.daysLeft)
+						) {
+							results = row;
+						}
+					}
+				} catch {
+					// No results yet.
+				}
+				// Drop board entries that are no longer free agents (signed yesterday,
+				// by us or anyone else), so a dead pid never occupies a slot.
+				const pids: number[] = [];
+				for (const pid of getMyFaBoard()) {
+					const boardP = await idb.cache.players.get(pid);
+					if (boardP && boardP.tid === PLAYER.FREE_AGENT) {
+						pids.push(pid);
+					}
+				}
+
+				faBoard = {
+					numSlots: g.get("userTids").length,
+					pids,
+					results,
+				};
+			}
+
+			return {
+				capSpace,
+				challengeNoFreeAgents: g.get("challengeNoFreeAgents"),
+				faBoard,
+				freeAgencySeason,
+				numRosterSpots: g.get("maxRosterSize") - userPlayers.length,
+				payroll: payroll / 1000,
+				players,
+				season,
+				stats: freeAgentStats,
+				type,
+				userPlayers,
 			};
 		}
-
-		return {
-			capSpace,
-			challengeNoFreeAgents: g.get("challengeNoFreeAgents"),
-			faBoard,
-			freeAgencySeason,
-			numRosterSpots: g.get("maxRosterSize") - userPlayers.length,
-			payroll: payroll / 1000,
-			players,
-			season,
-			stats: freeAgentStats,
-			type,
-			userPlayers,
-		};
-	}
-};
-
-export default updateFreeAgents;
+	},
+});

@@ -19,6 +19,7 @@ import type {
 import { helpers } from "../../util/helpers.ts";
 import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
+import { focusOnMount } from "../../util/refCallbacks.ts";
 import { getText, makeAnchorProps } from "../Controller/SideBar.tsx";
 import { REAL_PLAYERS_INFO } from "../../../common/constants.ts";
 import { Modal } from "../Modal.tsx";
@@ -213,7 +214,7 @@ const getResultsGroupedDefault = ({
 						toWorker("playMenu", option.id as any, undefined);
 					}
 				},
-			} as AnchorProps,
+			},
 		})),
 	);
 
@@ -268,7 +269,7 @@ const getResultsGroupedTeams = ({
 			anchorProps: {
 				href: helpers.leagueUrl(["roster", `${t.abbrev}_${tid}`]),
 				onClick: onHide,
-			} as AnchorProps,
+			},
 		}))
 		.filter((t) => !hideDisabledTeams || !t.disabled);
 
@@ -431,7 +432,7 @@ const getResultsGroupedPlayers = async ({
 				anchorProps: {
 					href: helpers.leagueUrl(["player", p.pid]),
 					onClick: onHide,
-				} as AnchorProps,
+				},
 			};
 		},
 	);
@@ -722,6 +723,7 @@ const SearchResults = memo(
 								{results.map((result, j) => {
 									const active = activeIndex === index;
 									const highlightedResult = highlightedResults[index];
+									// eslint-disable-next-line react-hooks/immutability -- https://github.com/react/react/issues/31569
 									index += 1;
 
 									return (
@@ -773,8 +775,6 @@ const ModeText = ({ inLeague }: { inLeague: boolean }) => {
 };
 
 const CommandPaletteInner = ({ onHide }: { onHide: () => void }) => {
-	const searchInputRef = useRef<HTMLInputElement | null>(null);
-
 	const {
 		challengeNoRatings,
 		godMode,
@@ -852,10 +852,6 @@ const CommandPaletteInner = ({ onHide }: { onHide: () => void }) => {
 	]);
 
 	useEffect(() => {
-		if (searchInputRef.current) {
-			searchInputRef.current.focus();
-		}
-
 		saveLastUsed();
 	}, []);
 
@@ -946,7 +942,7 @@ const CommandPaletteInner = ({ onHide }: { onHide: () => void }) => {
 							</span>
 						) : null}
 						<input
-							ref={searchInputRef}
+							ref={focusOnMount}
 							className="form-control shadow-none border-0 ps-1 pe-0"
 							type="text"
 							placeholder={`Search ${mode?.description ?? "pages"}...`}

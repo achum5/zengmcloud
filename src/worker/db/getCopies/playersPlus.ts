@@ -5,6 +5,8 @@ import { processPlayerStats as processPlayerStats2 } from "../../util/processPla
 import type {
 	Player,
 	PlayerFiltered,
+	PlayerSeasonType,
+	PlayerStatAttr,
 	PlayerStatType,
 	PlayersPlusOptions,
 } from "../../../common/types.ts";
@@ -32,6 +34,7 @@ type PlayersPlusOptionsRequired = Required<
 		| "season"
 		| "seasonRange"
 		| "seasons"
+		| "seasonType"
 		| "tid"
 	>
 > & {
@@ -39,6 +42,12 @@ type PlayersPlusOptionsRequired = Required<
 	seasonRange?: [number, number];
 	seasons?: number[];
 	tid?: number;
+
+	// Derived from seasonType
+	playoffs: boolean;
+	regularSeason: boolean;
+	combined: boolean;
+	singleSeasonType: boolean;
 };
 
 const getLatestTransaction = (
@@ -161,7 +170,7 @@ class AbbrevsCache {
 }
 
 const processAttrs = (
-	output: PlayerFiltered,
+	output: any,
 	p: Player,
 	{
 		attrs,
@@ -425,21 +434,22 @@ const processAttrs = (
 		} else if (attr === "experience") {
 			const seasons = new Set();
 			for (const row of p.stats) {
-				if (row.min > 0 && (season === undefined || row.season <= season)) {
+				// gp is for real player data before minutes were tracked
+				const played = (row.min ?? 0) > 0 || (row.gp ?? 0) > 0;
+				if (played && (season === undefined || row.season <= season)) {
 					seasons.add(row.season);
 				}
 			}
 			output.experience = seasons.size;
 		} else {
 			// Several other attrs are not primitive types, so deepCopy
-			// @ts-expect-error
 			output[attr] = helpers.deepCopy(p[attr]);
 		}
 	}
 };
 
 const processRatings = (
-	output: PlayerFiltered,
+	output: any,
 	p: Player,
 	playerRatingsInput: any[],
 	{
@@ -880,7 +890,7 @@ const getPlayerStats = (
 	type SeasonInfo = {
 		season: number;
 		seasonType: "regularSeason" | "playoffs" | "combined";
-		rows: any[];
+		rows: unknown[];
 	};
 	const seasonInfos: SeasonInfo[] = [];
 	const seasonInfosByKey: Record<string, SeasonInfo> = {};
@@ -1032,7 +1042,7 @@ const getPlayerStats = (
 const processPlayerStats = (
 	p: any,
 	statSums: any,
-	stats: string[],
+	stats: Readonly<PlayerStatAttr[]>,
 	statType: PlayerStatType,
 	keepWithNoStats: boolean,
 	season: number | "career" | undefined, // undefined means showNoStats was used with career totals, but this is an individual stat season so idk
@@ -1129,14 +1139,15 @@ const getAttrsToSum = (statsRows: any[]) => {
 };
 
 const processStats = (
-	output: PlayerFiltered,
+	output: any,
 	p: Player,
-	playerStatsInput: any[],
+	playerStatsInput: unknown[],
 	{
 		mergeStats,
 		playoffs,
 		regularSeason,
 		combined,
+		singleSeasonType,
 		season,
 		tid,
 		showNoStats,
@@ -1224,12 +1235,7 @@ const processStats = (
 		);
 	});
 
-	if (
-		season !== undefined &&
-		((playoffs && !regularSeason && !combined) ||
-			(!playoffs && regularSeason && !combined) ||
-			(!playoffs && !regularSeason && combined))
-	) {
+	if (season !== undefined && singleSeasonType) {
 		// Take last value, because unless mergeStats is enabled there could be multiple
 		output.stats = output.stats.at(-1);
 	} else if (season === undefined) {
@@ -1239,12 +1245,14 @@ const processStats = (
 			"tid",
 			"yearsWithTeam",
 			"jerseyNumber",
+			"playoffs",
 		]);
 
+		// playoffs has the same value as in the rows being summed
 		const statSums = {
-			regularSeason: {} as any,
-			playoffs: {} as any,
-			combined: {} as any,
+			regularSeason: { playoffs: false } as any,
+			playoffs: { playoffs: true } as any,
+			combined: { playoffs: "combined" } as any,
 		};
 
 		const statSumsExtra = {
@@ -1476,9 +1484,12 @@ const processPlayer = (
  * @param {string=} options.statType What type of stats to return, 'perGame', 'per36', or 'totals' (default is 'perGame).
  * @return {Object|Array.<Object>} Filtered player object or array of filtered player objects, depending on the first argument.
  */
-const getCopies = async (
+const getCopies = async <Options extends PlayersPlusOptions>(
 	players: Player[],
-	{
+	optionsInput: Options &
+		Record<Exclude<keyof Options, keyof PlayersPlusOptions>, never>,
+): Promise<PlayerFiltered<Options>[]> => {
+	const {
 		season,
 		seasonRange,
 		seasons,
@@ -1486,9 +1497,7 @@ const getCopies = async (
 		attrs = [],
 		ratings = [],
 		stats = [],
-		playoffs = false,
-		regularSeason = true,
-		combined = false,
+		seasonType = "regularSeason",
 		showNoStats = false,
 		showRookies = false,
 		showRetired = false,
@@ -1502,13 +1511,16 @@ const getCopies = async (
 		statType = "perGame",
 		mergeStats = "none",
 		disableAbbrevsCacheDatabaseAccess = false,
-	}: PlayersPlusOptions,
-): Promise<PlayerFiltered[]> => {
+	}: PlayersPlusOptions = optionsInput;
+
 	if (mergeStats === "totAndTeams" && season !== undefined) {
 		throw new Error(
 			"mergeStats totAndTeams is not supported for individual seasons",
 		);
 	}
+
+	const seasonTypes: Readonly<PlayerSeasonType[]> =
+		typeof seasonType === "string" ? [seasonType] : seasonType;
 
 	const options: PlayersPlusOptionsRequired = {
 		season,
@@ -1518,9 +1530,10 @@ const getCopies = async (
 		attrs,
 		ratings,
 		stats,
-		playoffs,
-		regularSeason,
-		combined,
+		playoffs: seasonTypes.includes("playoffs"),
+		regularSeason: seasonTypes.includes("regularSeason"),
+		combined: seasonTypes.includes("combined"),
+		singleSeasonType: typeof seasonType === "string",
 		showNoStats,
 		showRookies,
 		showDraftProspectRookieRatings,

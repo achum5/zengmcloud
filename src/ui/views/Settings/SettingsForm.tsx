@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { useState, type SubmitEvent, useEffect } from "react";
+import { useState, type ReactNode, type SubmitEvent, useEffect } from "react";
 import { ActionButton } from "../../components/ActionButton.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { showNotification } from "../../util/showNotification.ts";
@@ -87,7 +87,7 @@ export const encodeDecodeFunctions = {
 	},
 	string: {},
 	jsonString: {
-		stringify: (value: any) => JSON.stringify(value),
+		stringify: (value: unknown) => JSON.stringify(value),
 		parse: (value: string) => JSON.parse(value),
 	},
 	rangePercent: {
@@ -126,7 +126,7 @@ const GodModeSettingsButton = ({
 	disabled,
 	onClick,
 }: {
-	children: any;
+	children: ReactNode;
 	className?: string;
 	godMode: boolean;
 	disabled?: boolean;
@@ -324,7 +324,7 @@ const SettingsForm = ({
 	});
 
 	const handleGodModeToggle = async () => {
-		let proceed: any = true;
+		let proceed: unknown = true;
 		if (
 			!state.godMode &&
 			!state.godModeInPast &&
@@ -413,7 +413,7 @@ const SettingsForm = ({
 		event.preventDefault();
 		setSubmitting(true);
 
-		const output = {} as unknown as Settings;
+		const output = {} as Settings;
 		for (const primaryOption of filteredSettings) {
 			const options = [primaryOption];
 			if (primaryOption.partners) {

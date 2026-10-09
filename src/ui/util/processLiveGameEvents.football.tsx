@@ -982,7 +982,7 @@ const processLiveGameEvents = ({
 					const flagIndex = flagPlay.flags.indexOf(null);
 					if (flagIndex >= 0) {
 						flagPlay.flags[flagIndex] = {
-							text: text!,
+							text,
 							accept,
 						};
 

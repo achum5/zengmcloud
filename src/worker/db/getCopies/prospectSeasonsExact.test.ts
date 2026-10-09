@@ -55,8 +55,8 @@ describe("a drafted player's draft-year ratings", () => {
 				prospectSeasonsExact: true,
 			},
 		);
-		assert.strictEqual(out.ratings.ovr, raw.ovr);
-		assert.strictEqual(out.ratings.pot, raw.pot);
+		assert.strictEqual(out!.ratings.ovr, raw.ovr);
+		assert.strictEqual(out!.ratings.pot, raw.pot);
 	});
 
 	test("are coarsened without it, which is what the pick used to cost him", async () => {
@@ -71,8 +71,8 @@ describe("a drafted player's draft-year ratings", () => {
 				showNoStats: true,
 			},
 		);
-		assert.strictEqual(out.ratings.ovr, coarsenRating(raw.ovr));
-		assert.strictEqual(out.ratings.pot, coarsenRating(raw.pot));
+		assert.strictEqual(out!.ratings.ovr, coarsenRating(raw.ovr));
+		assert.strictEqual(out!.ratings.pot, coarsenRating(raw.pot));
 	});
 });
 
@@ -129,9 +129,9 @@ describe("a rookie's first pro season still reports progs", () => {
 		// 68 -> 71: the displayed rating goes 6 -> 7, so +1.
 		await drafted2005({ ovr2005: 68, ovr2006: 71 });
 		const out = await fetch();
-		assert.strictEqual(out.ratings.ovr, 7);
-		assert.strictEqual(out.ratings.dovr, 1);
-		assert.strictEqual(out.ratings.dpot, 1);
+		assert.strictEqual(out!.ratings.ovr, 7);
+		assert.strictEqual(out!.ratings.dovr, 1);
+		assert.strictEqual(out!.ratings.dpot, 1);
 	});
 
 	test("a prog inside one decade reports nothing, same as any other player", async () => {
@@ -139,14 +139,14 @@ describe("a rookie's first pro season still reports progs", () => {
 		// indicator stays quiet - exactly how it behaves for a veteran.
 		await drafted2005({ ovr2005: 61, ovr2006: 68 });
 		const out = await fetch();
-		assert.strictEqual(out.ratings.ovr, 6);
-		assert.strictEqual(out.ratings.dovr, 0);
+		assert.strictEqual(out!.ratings.ovr, 6);
+		assert.strictEqual(out!.ratings.dovr, 0);
 	});
 
 	test("a drop across the boundary is reported too, not swallowed", async () => {
 		await drafted2005({ ovr2005: 71, ovr2006: 68 });
 		const out = await fetch();
-		assert.strictEqual(out.ratings.ovr, 6);
-		assert.strictEqual(out.ratings.dovr, -1);
+		assert.strictEqual(out!.ratings.ovr, 6);
+		assert.strictEqual(out!.ratings.dovr, -1);
 	});
 });

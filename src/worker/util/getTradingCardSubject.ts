@@ -116,8 +116,7 @@ export const getTradingCardSubject = async (
 			"fta",
 		],
 		statType: "totals",
-		playoffs: false,
-		regularSeason: true,
+		seasonType: "regularSeason",
 		mergeStats: "totOnly",
 		fuzz: true,
 		// A card back is a record, so it shows real ratings-free numbers; nothing

@@ -214,7 +214,7 @@ const StatsTable = ({
 	boxScore,
 	type,
 }: {
-	Row: any;
+	Row: unknown;
 	boxScore: BoxScore;
 	type: keyof typeof PLAYER_GAME_STATS;
 }) => {
@@ -357,6 +357,7 @@ const ScoringSummary = memo(
 						const currentQuarter =
 							event.scoreType === "SH" ? "SH" : event.quarter;
 						if (currentQuarter !== prevQuarter) {
+							// eslint-disable-next-line react-hooks/immutability -- https://github.com/react/react/issues/31569
 							prevQuarter = currentQuarter;
 
 							let quarterText = "???";
@@ -444,7 +445,7 @@ const BoxScore = ({
 	// field owns the down, the drive and the play text now, so the box score
 	// itself no longer reads it.
 	sportState?: SportState;
-	Row: any;
+	Row: unknown;
 }) => {
 	return (
 		<div className="mb-3">
@@ -456,8 +457,7 @@ const BoxScore = ({
 				numPeriods={boxScore.numPeriods ?? 4}
 				teams={boxScore.teams}
 			/>
-			{helpers.keys(PLAYER_GAME_STATS).map((type) => {
-				const info = PLAYER_GAME_STATS[type];
+			{helpers.entries(PLAYER_GAME_STATS).map(([type, info]) => {
 				return (
 					<Fragment key={type}>
 						<h2>{info.name}</h2>

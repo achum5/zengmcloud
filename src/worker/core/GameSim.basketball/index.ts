@@ -1188,7 +1188,7 @@ class GameSim extends GameSimBase {
 				const p = this.playersOnCourt[t][pp]!;
 				const onCourtOvr = ovrs.get(p.id)!;
 				const onCourtIsIneligible = onCourtOvr === -Infinity;
-				this.playersOnCourt[t][pp]! = p; // Don't sub out guy shooting FTs!
+				this.playersOnCourt[t][pp] = p; // Don't sub out guy shooting FTs!
 
 				if (t === this.o && p === shooter) {
 					continue;

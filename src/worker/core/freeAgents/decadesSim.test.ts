@@ -1,5 +1,5 @@
 import { assert, beforeEach, describe, test } from "vitest";
-import { resetCache, resetG } from "../../../test/helpers.ts";
+import { resetCache, resetG, setLeagueSize } from "../../../test/helpers.ts";
 import { idb } from "../../db/index.ts";
 import { g, local } from "../../util/index.ts";
 import {
@@ -209,8 +209,7 @@ const stubLeagueDb = () => {
 
 const build = async () => {
 	resetG();
-	g.setWithoutSavingToDB("numActiveTeams", NUM_TEAMS);
-	g.setWithoutSavingToDB("numTeams", NUM_TEAMS);
+	setLeagueSize(NUM_TEAMS);
 	g.setWithoutSavingToDB("userTids", []);
 	g.setWithoutSavingToDB("userTid", 0);
 	g.setWithoutSavingToDB("realisticFaces", false);

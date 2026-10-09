@@ -1,6 +1,7 @@
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
-import type { DraftPick, UpdateEvents, ViewInput } from "../../common/types.ts";
+import type { DraftPick } from "../../common/types.ts";
+import { defineView } from "../util/defineView.ts";
 import { groupByUnique } from "../../common/utils.ts";
 import { addPowerRankingsStuffToTeams } from "./powerRankings.ts";
 import { getEstPicks } from "../core/team/ValueChangeCalculator.ts";
@@ -12,6 +13,17 @@ import {
 	projectPicks,
 	type PerformanceScore,
 } from "./draftPickProjection.ts";
+import type { RouteParams } from "../../ui/router/types.ts";
+import { validateAbbrev } from "../util/processInputs.ts";
+
+const processInputs = (params: RouteParams<"draftPicks">) => {
+	const [tid, abbrev] = validateAbbrev(params.abbrev);
+
+	return {
+		tid,
+		abbrev,
+	};
+};
 
 const adjustProjectedPick = ({
 	projectedPick,
@@ -110,7 +122,7 @@ export const processDraftPicks = async (draftPicksRaw: DraftPick[]) => {
 		});
 	}
 
-	let estPicksCache: Record<number, number> | undefined;
+	let estPicksCache: Awaited<ReturnType<typeof getEstPicks>> | undefined;
 	// Performance mode projects each season on its own (this season's record
 	// counts for less each year out, and the roster's age counts for more).
 	const performancePicks = new Map<number, Record<number, number>>();
@@ -155,10 +167,11 @@ export const processDraftPicks = async (draftPicksRaw: DraftPick[]) => {
 							};
 						})
 						.sort((a, b) => b.ovr - a.ovr);
-					const { estPicks } = await getEstPicks(teamOvrsSorted);
-					estPicksCache = estPicks;
+					estPicksCache = await getEstPicks(teamOvrsSorted);
 				}
-				basePick = estPicksCache[dp.originalTid]!;
+				basePick = (
+					dp.season > g.get("season") ? estPicksCache.future : estPicksCache
+				).estPicks[dp.originalTid]!;
 			}
 
 			projectedPick = adjustProjectedPick({
@@ -186,7 +199,7 @@ export const processDraftPicks = async (draftPicksRaw: DraftPick[]) => {
 					for (const i of [0, 1] as const) {
 						if (
 							event.teams[i].assets.some(
-								(asset) => (asset as any).dpid === dp.dpid,
+								(asset) => "dpid" in asset && asset.dpid === dp.dpid,
 							)
 						) {
 							tid = event.tids[i];
@@ -226,51 +239,49 @@ export const processDraftPicks = async (draftPicksRaw: DraftPick[]) => {
 	return { draftPicks, noGamesYet, teamOvr };
 };
 
-const updateDraftPicks = async (
-	{ abbrev, tid }: ViewInput<"draftPicks">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
-	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("gameSim") ||
-		updateEvents.includes("playerMovement") ||
-		updateEvents.includes("newPhase") ||
-		// Which columns exist depends on the team-ratings settings, so a change to
-		// them has to redraw the table rather than leave a stale one up.
-		updateEvents.includes("gameAttributes") ||
-		abbrev !== state.abbrev
-	) {
-		const draftPicksRaw = (await idb.cache.draftPicks.getAll()).filter(
-			(dp) => dp.tid === tid || dp.originalTid === tid,
-		);
+export default defineView({
+	id: "draftPicks",
+	processInputs,
+	load: async ({ inputs: { abbrev, tid }, updateEvents, prevInputs }) => {
+		if (
+			updateEvents.has("firstRun") ||
+			updateEvents.has("gameSim") ||
+			updateEvents.has("playerMovement") ||
+			updateEvents.has("newPhase") ||
+			// Which columns exist depends on the team-ratings settings, so a change to
+			// them has to redraw the table rather than leave a stale one up.
+			updateEvents.has("gameAttributes") ||
+			abbrev !== prevInputs?.abbrev
+		) {
+			const draftPicksRaw = (await idb.cache.draftPicks.getAll()).filter(
+				(dp) => dp.tid === tid || dp.originalTid === tid,
+			);
 
-		const {
-			draftPicks: draftPicksProcessed,
-			noGamesYet,
-			teamOvr,
-		} = await processDraftPicks(draftPicksRaw);
+			const {
+				draftPicks: draftPicksProcessed,
+				noGamesYet,
+				teamOvr,
+			} = await processDraftPicks(draftPicksRaw);
 
-		// Do this after processDraftPicks so processDraftPicks can use the same caches for both
-		const draftPicks = [];
-		const draftPicksOutgoing = [];
-		for (const dp of draftPicksProcessed) {
-			if (dp.tid === tid) {
-				draftPicks.push(dp);
-			} else if (dp.originalTid === tid) {
-				draftPicksOutgoing.push(dp);
+			// Do this after processDraftPicks so processDraftPicks can use the same caches for both
+			const draftPicks = [];
+			const draftPicksOutgoing = [];
+			for (const dp of draftPicksProcessed) {
+				if (dp.tid === tid) {
+					draftPicks.push(dp);
+				} else if (dp.originalTid === tid) {
+					draftPicksOutgoing.push(dp);
+				}
 			}
+
+			return {
+				abbrev,
+				draftPicks,
+				draftPicksOutgoing,
+				noGamesYet,
+				teamOvr,
+				tid,
+			};
 		}
-
-		return {
-			abbrev,
-			draftPicks,
-			draftPicksOutgoing,
-			noGamesYet,
-			teamOvr,
-			tid,
-		};
-	}
-};
-
-export default updateDraftPicks;
+	},
+});

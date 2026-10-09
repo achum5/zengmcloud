@@ -45,7 +45,7 @@ const Summary = ({
 
 	const mostStat = orderBy(
 		players,
-		(p) => p.careerStats[summaryStat],
+		(p) => p.careerStats[summaryStat] ?? -Infinity,
 		"desc",
 	).slice(0, 3);
 
@@ -138,7 +138,10 @@ const Summary = ({
 	for (const { key, title } of awards) {
 		const filtered = orderBy(
 			players.filter((p) => p.awardCounts[key] > 0),
-			[(p) => p.awardCounts[key], (p) => p.careerStats[summaryStat]],
+			[
+				(p) => p.awardCounts[key],
+				(p) => p.careerStats[summaryStat] ?? -Infinity,
+			],
 			["desc", "desc"],
 		);
 		const count = filtered.length;
@@ -301,7 +304,7 @@ const DraftHistory = ({
 	// to link.
 	const noteLinksBySeason = buildPlayerNoteLinks(teamInfoCache);
 
-	const rows: DataTableRow[] = players.map((p) => {
+	const rows: DataTableRow<"player">[] = players.map((p) => {
 		const showRatings = !challengeNoRatings || p.currentTid === PLAYER.RETIRED;
 
 		// Only the draft-year section: the rest of a career belongs on his page,

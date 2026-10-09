@@ -5,7 +5,7 @@ import { season, team } from "../core/index.ts";
 import { orderBy } from "../../common/utils.ts";
 import { getHistoryTeam } from "./teamHistory.ts";
 import { getPlayoffsByConfBySeason } from "./frivolitiesTeamSeasons.ts";
-import type { UpdateEvents } from "../../common/types.ts";
+import { defineView } from "../util/defineView.ts";
 import { getTeamOvrOverride } from "../util/delayedTeamOvrs.ts";
 
 export const getTeamOvr = async (tid: number) => {
@@ -117,152 +117,153 @@ const addHistoryAndPicksAndPlayers = async <T extends { tid: number }>(
 	return teamsAugmented;
 };
 
-const updateTeamSelect = async (
-	inputs: unknown,
-	updateEvents: UpdateEvents,
-) => {
-	// When switching teams, the "leagues" update event is sent out, so we want to ignore that because otherwise the UI flickers before redirecting
-	if (!updateEvents.includes("leagues")) {
-		const rawTeams = await idb.getCopies.teamsPlus(
-			{
-				attrs: [
-					"tid",
-					"region",
-					"name",
-					"pop",
-					"imgURL",
-					"imgURLSmall",
-					"cid",
-					"abbrev",
-				],
-				seasonAttrs: [
-					"winp",
-					"won",
-					"lost",
-					"tied",
-					"otl",
-					"season",
-					"playoffRoundsWon",
-					"revenue",
-				],
-				season: g.get("season"),
-				active: true,
-				addDummySeason: true,
-			},
-			"noCopyCache",
-		);
-
-		const teamsAll = helpers.addPopRank(rawTeams);
-
-		const numActiveTeams = teamsAll.length;
-
-		const expansionDraft = g.get("expansionDraft");
-		const expansion =
-			g.get("phase") === PHASE.EXPANSION_DRAFT &&
-			expansionDraft.phase === "protection" &&
-			expansionDraft.allowSwitchTeam;
-		const expansionTids =
-			expansionDraft.phase === "protection" ? expansionDraft.expansionTids : []; // TypeScript bullshit
-		const otherTeamsWantToHire = g.get("otherTeamsWantToHire");
-
-		const t = await idb.cache.teams.get(g.get("userTid"));
-		const disabled = t ? t.disabled : false;
-
-		// Remove user's team (no re-hiring immediately after firing)
-		let teams = teamsAll.filter((t) => t.tid !== g.get("userTid"));
-
-		if (expansion) {
-			// User team will always be first, cause expansion teams are at the end of the teams list
-			teams = teams.filter((t) => expansionTids.includes(t.tid));
-		} else if (
-			g.get("college") &&
-			(otherTeamsWantToHire || !g.get("godMode"))
-		) {
-			// College jobs: schools a step up when you're wanted, a step down when
-			// you've been fired. Deterministic, so the list doesn't change on
-			// reload.
-			const prestige =
-				(await idb.cache.teams.get(g.get("userTid")))?.prestige ?? 30;
-			const teamPrestige = new Map(
-				(await idb.cache.teams.getAll()).map((t2) => [
-					t2.tid,
-					t2.prestige ?? 30,
-				]),
+export default defineView({
+	id: "newTeam",
+	load: async ({ updateEvents }) => {
+		// When switching teams, the "leagues" update event is sent out, so we want to ignore that because otherwise the UI flickers before redirecting
+		if (!updateEvents.has("leagues")) {
+			const rawTeams = await idb.getCopies.teamsPlus(
+				{
+					attrs: [
+						"tid",
+						"region",
+						"name",
+						"pop",
+						"imgURL",
+						"imgURLSmall",
+						"cid",
+						"abbrev",
+					],
+					seasonAttrs: [
+						"winp",
+						"won",
+						"lost",
+						"tied",
+						"otl",
+						"season",
+						"playoffRoundsWon",
+						"revenue",
+					],
+					season: g.get("season"),
+					active: true,
+					addDummySeason: true,
+				},
+				"noCopyCache",
 			);
-			const prestigeOf = (tid: number) => teamPrestige.get(tid) ?? 30;
-			const candidates = teams.filter((t2) =>
-				otherTeamsWantToHire
-					? prestigeOf(t2.tid) >= prestige - 10 &&
-						prestigeOf(t2.tid) <= prestige + 25
-					: prestigeOf(t2.tid) <= prestige - 10,
-			);
-			teams = orderBy(
-				candidates.length >= 5 ? candidates : teams,
-				(t2) => (t2.tid * 7919 + g.get("season")) % 101,
-				"asc",
-			).slice(0, 5);
-		} else if (otherTeamsWantToHire) {
-			// Deterministic random selection of teams
-			teams = orderBy(teams, (t) => t.seasonAttrs.revenue % 10, "asc").slice(
-				0,
-				5,
-			);
-		} else if (!g.get("godMode")) {
-			// If not in god mode, user must have been fired or team folded
 
-			// Only get option of 5 worst
-			teams = orderBy(teams, (t) => t.seasonAttrs.winp, "asc").slice(0, 5);
-		}
+			const teamsAll = helpers.addPopRank(rawTeams);
 
-		let orderedTeams = orderBy(teams, ["region", "name", "tid"]);
-		if ((expansion && !g.get("gameOver")) || otherTeamsWantToHire) {
-			// User team first!
-			const userTeam = teamsAll.find((t) => t.tid === g.get("userTid"));
-			if (userTeam) {
-				orderedTeams = [
-					userTeam,
-					...orderedTeams.filter((t) => t !== userTeam),
-				];
+			const numActiveTeams = teamsAll.length;
+
+			const expansionDraft = g.get("expansionDraft");
+			const expansion =
+				g.get("phase") === PHASE.EXPANSION_DRAFT &&
+				expansionDraft.phase === "protection" &&
+				expansionDraft.allowSwitchTeam;
+			const expansionTids =
+				expansionDraft.phase === "protection"
+					? expansionDraft.expansionTids
+					: []; // TypeScript bullshit
+			const otherTeamsWantToHire = g.get("otherTeamsWantToHire");
+
+			const t = await idb.cache.teams.get(g.get("userTid"));
+			const disabled = t ? t.disabled : false;
+
+			// Remove user's team (no re-hiring immediately after firing)
+			let teams = teamsAll.filter((t) => t.tid !== g.get("userTid"));
+
+			if (expansion) {
+				// User team will always be first, cause expansion teams are at the end of the teams list
+				teams = teams.filter((t) => expansionTids.includes(t.tid));
+			} else if (
+				g.get("college") &&
+				(otherTeamsWantToHire || !g.get("godMode"))
+			) {
+				// College jobs: schools a step up when you're wanted, a step down when
+				// you've been fired. Deterministic, so the list doesn't change on
+				// reload.
+				const prestige =
+					(await idb.cache.teams.get(g.get("userTid")))?.prestige ?? 30;
+				const teamPrestige = new Map(
+					(await idb.cache.teams.getAll()).map((t2) => [
+						t2.tid,
+						t2.prestige ?? 30,
+					]),
+				);
+				const prestigeOf = (tid: number) => teamPrestige.get(tid) ?? 30;
+				const candidates = teams.filter((t2) =>
+					otherTeamsWantToHire
+						? prestigeOf(t2.tid) >= prestige - 10 &&
+							prestigeOf(t2.tid) <= prestige + 25
+						: prestigeOf(t2.tid) <= prestige - 10,
+				);
+				teams = orderBy(
+					candidates.length >= 5 ? candidates : teams,
+					(t2) => (t2.tid * 7919 + g.get("season")) % 101,
+					"asc",
+				).slice(0, 5);
+			} else if (otherTeamsWantToHire) {
+				// Deterministic random selection of teams
+				teams = orderBy(teams, (t) => t.seasonAttrs.revenue % 10, "asc").slice(
+					0,
+					5,
+				);
+			} else if (!g.get("godMode")) {
+				// If not in god mode, user must have been fired or team folded
+
+				// Only get option of 5 worst
+				teams = orderBy(teams, (t) => t.seasonAttrs.winp, "asc").slice(0, 5);
 			}
+
+			let orderedTeams = orderBy(teams, ["region", "name", "tid"]);
+			if ((expansion && !g.get("gameOver")) || otherTeamsWantToHire) {
+				// User team first!
+				const userTeam = teamsAll.find((t) => t.tid === g.get("userTid"));
+				if (userTeam) {
+					orderedTeams = [
+						userTeam,
+						...orderedTeams.filter((t) => t !== userTeam),
+					];
+				}
+			}
+
+			const numPlayoffRounds = g.get("numGamesPlayoffSeries", "current").length;
+
+			const playoffsByConf = await season.getPlayoffsByConf(g.get("season"));
+
+			const teamsWithOvr = orderedTeams.map((t) => ({
+				...t,
+				ovr: 0,
+				roundsWonText: helpers.roundsWonText({
+					playoffRoundsWon: t.seasonAttrs.playoffRoundsWon,
+					numPlayoffRounds,
+					playoffsByConf,
+				}),
+			}));
+			for (const t of teamsWithOvr) {
+				t.ovr = await getTeamOvr(t.tid);
+			}
+
+			// "Team Ratings Delay": picking a team is a current-rating screen, so when
+			// today's number is withheld it gets the newest one that isn't.
+			const { display: teamOvr, ovrs: delayedOvrs } =
+				await getTeamOvrOverride();
+			const teamsWithDelayed = teamsWithOvr.map((t) => ({
+				...t,
+				ovrDelayed: delayedOvrs.get(t.tid),
+			}));
+
+			const finalTeams = await addHistoryAndPicksAndPlayers(teamsWithDelayed);
+
+			return {
+				confs: g.get("confs", "current"),
+				disabled,
+				expansion,
+				numActiveTeams,
+				otherTeamsWantToHire,
+				teamOvr,
+				teams: finalTeams,
+			};
 		}
-
-		const numPlayoffRounds = g.get("numGamesPlayoffSeries", "current").length;
-
-		const playoffsByConf = await season.getPlayoffsByConf(g.get("season"));
-
-		const teamsWithOvr = orderedTeams.map((t) => ({
-			...t,
-			ovr: 0,
-			roundsWonText: helpers.roundsWonText({
-				playoffRoundsWon: t.seasonAttrs.playoffRoundsWon,
-				numPlayoffRounds,
-				playoffsByConf,
-			}),
-		}));
-		for (const t of teamsWithOvr) {
-			t.ovr = await getTeamOvr(t.tid);
-		}
-
-		// "Team Ratings Delay": picking a team is a current-rating screen, so when
-		// today's number is withheld it gets the newest one that isn't.
-		const { display: teamOvr, ovrs: delayedOvrs } = await getTeamOvrOverride();
-		const teamsWithDelayed = teamsWithOvr.map((t) => ({
-			...t,
-			ovrDelayed: delayedOvrs.get(t.tid),
-		}));
-
-		const finalTeams = await addHistoryAndPicksAndPlayers(teamsWithDelayed);
-
-		return {
-			confs: g.get("confs", "current"),
-			disabled,
-			expansion,
-			numActiveTeams,
-			otherTeamsWantToHire,
-			teamOvr,
-			teams: finalTeams,
-		};
-	}
-};
-
-export default updateTeamSelect;
+	},
+});

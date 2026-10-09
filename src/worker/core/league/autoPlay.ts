@@ -8,7 +8,7 @@ import {
 	expansionDraft,
 	team,
 } from "../index.ts";
-import { g, local } from "../../util/index.ts";
+import { g, local, lock } from "../../util/index.ts";
 import type { Conditions, Phase } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { choice } from "../../../common/random.ts";
@@ -99,7 +99,7 @@ const autoPlay = async (conditions: Conditions = {}) => {
 	} else if (currentPhase === PHASE.RESIGN_PLAYERS) {
 		await phase.newPhase(PHASE.FREE_AGENCY, conditions);
 	} else if (currentPhase === PHASE.FREE_AGENCY) {
-		// Purposely call without await, to break up the promise chain. Otherwise (at least in Chrome 85) causes a memory leak after playing like 50 seasons.
+		// Purposely call without await, to break up the promise chain. Otherwise the promise chain uses too much memory after many seasons (like 50+)
 		freeAgents.play(g.get("daysLeft"), conditions);
 	} else {
 		throw new Error(`Unknown phase: ${currentPhase}`);
@@ -116,6 +116,7 @@ export const cleanupAutoPlay = (error?: Error) => {
 			local.autoPlayUntil.resolve();
 		}
 		local.autoPlayUntil = undefined;
+		void lock.updateWorkerBusy();
 	}
 };
 
@@ -135,6 +136,7 @@ export const startAutoPlay = (
 		season,
 		start: Date.now(),
 	};
+	void lock.updateWorkerBusy();
 
 	autoPlay(conditions);
 

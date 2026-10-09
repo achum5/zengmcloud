@@ -6,7 +6,10 @@ import {
 	REAL_PLAYERS_INFO,
 	WEBSITE_PLAY,
 } from "../../common/constants.ts";
-import { DataTable } from "../components/DataTable/index.tsx";
+import {
+	DataTable,
+	type DataTableRow,
+} from "../components/DataTable/index.tsx";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { showNotification } from "../util/showNotification.ts";
 import { toWorker } from "../util/toWorker.ts";
@@ -18,6 +21,8 @@ import { confirm } from "../util/confirm.tsx";
 import { clearStoredSync } from "../util/autoReconnectSync.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { relativeTime } from "../util/relativeTime.ts";
+import { helpers } from "../util/helpers.ts";
+import type { BulkAction } from "../components/DataTable/BulkActions.tsx";
 
 // Re-rendering caused this to run multiple times after "Play" click, even with useRef or useMemo
 const randomOtherSport = bySport({
@@ -229,7 +234,7 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 		},
 	);
 
-	const rows = leagues.map((league) => {
+	const rows: DataTableRow<"league">[] = leagues.map((league) => {
 		const disabled =
 			deletingLID !== undefined ||
 			loadingLID !== undefined ||
@@ -237,6 +242,10 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 		const throbbing = loadingLID === league.lid;
 		return {
 			key: league.lid,
+			metadata: {
+				type: "league",
+				lid: league.lid,
+			},
 			data: [
 				<PlayButton
 					lid={league.lid}
@@ -370,9 +379,9 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 							<Dropdown.Item
 								onClick={async () => {
 									const proceed = await confirm(
-										`Are you absolutely sure you want to delete "${league.name}"? You will permanently lose any record of all seasons, players, and games from this league.`,
+										`Are you sure you want to delete "${league.name}"? You will permanently lose any record of all seasons, players, and games from this league.`,
 										{
-											okText: "Delete League",
+											okText: "Delete league",
 										},
 									);
 
@@ -397,6 +406,37 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 	});
 
 	const pagination = rows.length > 100;
+
+	const extraBulkActions: BulkAction<"league">[] = [
+		{
+			onClick: async (selectedRows) => {
+				const lids = Array.from(selectedRows.map.values()).map(
+					(metadata) => metadata.lid,
+				);
+
+				const proceed = await confirm(
+					`Are you sure you want to delete ${helpers.numberWithCommas(lids.length)} ${helpers.plural("league", lids.length)}? You will permanently lose any record of all seasons, players, and games from ${lids.length === 1 ? "this league" : "these leagues"}.`,
+					{
+						okText: helpers.plural("Delete league", lids.length),
+					},
+				);
+
+				if (proceed) {
+					try {
+						for (const lid of lids) {
+							setDeletingLID(lid);
+							await toWorker("main", "removeLeague", lid);
+						}
+					} finally {
+						setDeletingLID(undefined);
+						selectedRows.clear();
+					}
+				}
+			},
+			text: "Delete",
+			textLong: "Delete leagues",
+		},
+	];
 
 	return (
 		<>
@@ -510,6 +550,7 @@ const Dashboard = ({ leagues }: View<"dashboard">) => {
 				<DataTable
 					cols={cols}
 					disableSettingsCache
+					extraBulkActions={extraBulkActions}
 					defaultSort={[7, "desc"]}
 					defaultStickyCols={1}
 					name="Dashboard"

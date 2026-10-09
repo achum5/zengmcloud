@@ -1183,9 +1183,9 @@ export const BoxScoreWrapper = ({
 	playIndex?: number;
 	prevGid?: number;
 	showNextPrev?: boolean;
-	sportState: any;
+	sportState: unknown;
 	tid?: number;
-	Row: any;
+	Row: unknown;
 }) => {
 	const prevPlayIndex = useRef(playIndex);
 	useEffect(() => {

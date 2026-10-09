@@ -20,7 +20,7 @@ type Team = {
 	lost?: number;
 	tied?: number;
 	otl?: number;
-	players?: any[];
+	players?: unknown[];
 	playoffs?: {
 		seed: number;
 		won: number;
@@ -55,8 +55,7 @@ const getRecord = (t: Team) => {
 		return "";
 	}
 
-	// @ts-expect-error
-	return helpers.formatRecord(t);
+	return helpers.formatRecord({ ...t, won: t.won, lost: t.lost });
 };
 
 const smallStyle = {
@@ -342,9 +341,9 @@ export const ScoreBox = memo(
 											}`,
 											basketball: `${
 												!challengeNoRatings ? ", " : ""
-											}${p.stats.pts.toFixed(1)} / ${p.stats.trb.toFixed(
-												1,
-											)} / ${p.stats.ast.toFixed(1)}`,
+											}${(p.stats.pts ?? 0).toFixed(1)} / ${(
+												p.stats.trb ?? 0
+											).toFixed(1)} / ${(p.stats.ast ?? 0).toFixed(1)}`,
 											football: null,
 											hockey: `${!challengeNoRatings && p.stats.keyStats ? ", " : ""}${
 												p.stats.keyStats

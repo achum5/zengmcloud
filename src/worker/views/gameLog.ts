@@ -1,16 +1,33 @@
 import { idb } from "../db/index.ts";
 import { feedAbout } from "../util/socialFeed.ts";
 import { g, helpers } from "../util/index.ts";
-import type {
-	UpdateEvents,
-	ViewInput,
-	AllStars,
-	CourtStyle,
-	Game,
-} from "../../common/types.ts";
+import type { AllStars, CourtStyle, Game } from "../../common/types.ts";
+import {
+	defineView,
+	keepType,
+	type ViewArgs,
+	type ViewInput,
+} from "../util/defineView.ts";
 import { DEFAULT_TEAM_COLORS, PHASE } from "../../common/constants.ts";
 import { getProcessedGames } from "../util/getProcessedGames.ts";
 import { getAutoRecapForGid } from "../util/getDayGamesForRecap.ts";
+import type { RouteParams } from "../../ui/router/types.ts";
+import { validateAbbrev } from "../util/processInputs.ts";
+import { validateSeason } from "../util/processInputs.ts";
+
+const processInputs = (params: RouteParams<"gameLog">) => {
+	const [tid, abbrev] =
+		params.abbrev === "special"
+			? [-1, "special"]
+			: validateAbbrev(params.abbrev);
+
+	return {
+		gid: params.gid !== undefined ? Number.parseInt(params.gid) : -1,
+		season: validateSeason(params.season),
+		tid,
+		abbrev,
+	};
+};
 
 export type TeamSeasonOverride = {
 	region?: string;
@@ -40,7 +57,7 @@ export const setTeamInfo = async (
 			t.region = "";
 			t.name = allStars.teamNames[ind];
 		} else {
-			// Covers type==="draft" and undefind type, from when draft was the only option
+			// Covers type==="draft" and undefined type, from when draft was the only option
 			t.region = "Team";
 			t.name = allStars.teamNames[ind].replace("Team ", "");
 		}
@@ -269,7 +286,7 @@ const boxScore = async (gid: number) => {
 	return game2;
 };
 
-const updateTeamSeason = (inputs: ViewInput<"gameLog">) => {
+const updateTeamSeason = (inputs: ViewInput<typeof processInputs>) => {
 	return {
 		// Needed for dropdown
 		abbrev: inputs.abbrev,
@@ -286,18 +303,17 @@ const updateTeamSeason = (inputs: ViewInput<"gameLog">) => {
  * @memberOf views.gameLog
  * @param {number} inputs.gid Integer game ID for the box score (a negative number means no box score).
  */
-const updateBoxScore = async (
-	{ gid }: ViewInput<"gameLog">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
+const updateBoxScore = async ({
+	inputs: { gid },
+	updateEvents,
+	prevInputs,
+}: ViewArgs<typeof processInputs>) => {
 	if (
-		updateEvents.includes("firstRun") ||
+		updateEvents.has("firstRun") ||
 		// A game note may have been added/edited (locally or synced from another
 		// device) - reload so the box score picks it up.
-		updateEvents.includes("notes") ||
-		!state.boxScore ||
-		gid !== state.boxScore.gid
+		updateEvents.has("notes") ||
+		gid !== prevInputs?.gid
 	) {
 		const game = await boxScore(gid);
 		return { boxScore: game };
@@ -335,6 +351,16 @@ export const loadAbbrevs = async (season: number) => {
 	return abbrevs;
 };
 
+// The list of games is added to incrementally, rather than being recomputed every time
+const keepPrevOutput = {
+	gamesList: keepType<{
+		abbrevs: Record<number, string>;
+		games: Game[];
+		tid: number;
+		season: number;
+	}>(),
+};
+
 /**
  * Update the game log list, as necessary.
  *
@@ -345,26 +371,17 @@ export const loadAbbrevs = async (season: number) => {
  * @param {number} inputs.season Season for the list of games.
  * @param {number} inputs.gid Integer game ID for the box score (a negative number means no box score), which is used only for highlighting the relevant entry in the list.
  */
-const updateGamesList = async (
-	{ season, tid }: ViewInput<"gameLog">,
-	updateEvents: UpdateEvents,
-	{
-		gamesList,
-	}: {
-		gamesList?: {
-			abbrevs: Record<number, string>;
-			games: Game[];
-			tid: number;
-			season: number;
-		};
-	},
-) => {
+const updateGamesList = async ({
+	inputs: { season, tid },
+	updateEvents,
+	prevOutput: { gamesList },
+}: ViewArgs<typeof processInputs, typeof keepPrevOutput>) => {
 	if (
-		updateEvents.includes("firstRun") ||
+		updateEvents.has("firstRun") ||
 		!gamesList ||
 		tid !== gamesList.tid ||
 		season !== gamesList.season ||
-		(updateEvents.includes("gameSim") && season === g.get("season"))
+		(updateEvents.has("gameSim") && season === g.get("season"))
 	) {
 		let games: Game[];
 		let abbrevs: Record<number, string>;
@@ -410,16 +427,16 @@ const updateGamesList = async (
 
 // What the feed said about this game that night, when the league has the
 // feed on. Keyed on the game, so paging through box scores refreshes it.
-const updateReactions = async (
-	{ gid }: ViewInput<"gameLog">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
+const updateReactions = async ({
+	inputs: { gid },
+	updateEvents,
+	prevInputs,
+}: ViewArgs<typeof processInputs>) => {
 	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("gameSim") ||
-		updateEvents.includes("gameAttributes") ||
-		gid !== state.reactionsGid
+		updateEvents.has("firstRun") ||
+		updateEvents.has("gameSim") ||
+		updateEvents.has("gameAttributes") ||
+		gid !== prevInputs?.gid
 	) {
 		if (!g.get("socialFeed") || gid < 0) {
 			return { reactions: undefined, reactionsGid: gid };
@@ -443,20 +460,21 @@ const updateReactions = async (
 	}
 };
 
-export default async (
-	inputs: ViewInput<"gameLog">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
-	// Three sources at most per call, or Object.assign's typed overloads run
-	// out and the view becomes any.
-	return Object.assign(
-		Object.assign(
-			{},
-			await updateBoxScore(inputs, updateEvents, state),
-			await updateGamesList(inputs, updateEvents, state),
-			await updateTeamSeason(inputs),
-		),
-		await updateReactions(inputs, updateEvents, state),
-	);
-};
+export default defineView({
+	id: "gameLog",
+	processInputs,
+	keepPrevOutput,
+	load: async (args) => {
+		// Three sources at most per call, or Object.assign's typed overloads run
+		// out and the view becomes any.
+		return Object.assign(
+			Object.assign(
+				{},
+				await updateBoxScore(args),
+				await updateGamesList(args),
+				await updateTeamSeason(args.inputs),
+			),
+			await updateReactions(args),
+		);
+	},
+});

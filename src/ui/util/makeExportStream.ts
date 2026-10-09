@@ -133,7 +133,7 @@ const makeExportStream = async (
 	const tab = compressed ? "" : " ".repeat(NUM_SPACES_IN_TAB);
 	const newline = compressed ? "" : "\n";
 
-	const jsonStringify = (object: any, indentationLevels: number) => {
+	const jsonStringify = (object: unknown, indentationLevels: number) => {
 		if (compressed) {
 			return JSON.stringify(object);
 		}
@@ -151,7 +151,7 @@ const makeExportStream = async (
 	const writeRootObject = (
 		controller: ReadableStreamController<string>,
 		name: string,
-		object: any,
+		object: unknown,
 	) =>
 		controller.enqueue(
 			// @ts-expect-error Typescript 4.9 bug I think

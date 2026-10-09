@@ -14,13 +14,41 @@ import type {
 	CourtStyle,
 	JerseySkinIds,
 	Game,
-	UpdateEvents,
-	ViewInput,
 } from "../../common/types.ts";
+import { defineView } from "../util/defineView.ts";
 import { STARTING_NUM_TIMEOUTS } from "../../common/constants.ts";
 import { formatClock } from "../../common/formatClock.ts";
 import { getPeriodName } from "../../common/getPeriodName.ts";
 import { bySport } from "../../common/sportFunctions.ts";
+import type { RouteParams } from "../../ui/router/types.ts";
+
+const processInputs = (params: RouteParams<"liveGame">, ctxBBGM: any) => {
+	const obj: {
+		fromAction: boolean;
+		gid?: number;
+		playByPlay?: unknown[];
+		// A multiplayer follower watching someone else's live sim: the game record
+		// travels in the payload (rather than being read from idb) so the view
+		// doesn't depend on the separate changeset sync having landed it yet.
+		boxScore?: any;
+		mpFollower?: boolean;
+		// A rewatch of a saved live game (not a fresh sim). Shows a "Replay" label
+		// and doesn't set the live-sim-in-progress lock.
+		replay?: boolean;
+	} = {
+		fromAction: !!ctxBBGM.fromAction,
+	};
+
+	if (ctxBBGM.playByPlay !== undefined) {
+		obj.gid = ctxBBGM.gidOneGame;
+		obj.playByPlay = ctxBBGM.playByPlay;
+		obj.boxScore = ctxBBGM.boxScore;
+		obj.mpFollower = !!ctxBBGM.mpFollower;
+		obj.replay = !!ctxBBGM.replay;
+	}
+
+	return obj;
+};
 
 // IS THIS THE CHAMPIONSHIP? Drives the trophy at center court in the live-game
 // graphic, and the confetti when the series ends.
@@ -91,7 +119,7 @@ export const boxScoreToLiveSim = async ({
 	allStars: AllStars | undefined;
 	boxScore: Game;
 	confetti: boolean;
-	playByPlay: any[];
+	playByPlay: unknown[];
 	teamSeasonOverrides?: [TeamSeasonOverride, TeamSeasonOverride];
 }) => {
 	const otl = g.get("otl", "current");
@@ -280,107 +308,109 @@ export const boxScoreToLiveSim = async ({
 	};
 };
 
-const updatePlayByPlay = async (
-	inputs: ViewInput<"liveGame">,
-	updateEvents: UpdateEvents,
-) => {
-	const redirectToMenu = {
-		redirectUrl: helpers.leagueUrl(["daily_schedule"]),
-	};
+export default defineView({
+	id: "liveGame",
+	processInputs,
+	load: async ({ inputs, updateEvents }) => {
+		const redirectToMenu = {
+			redirectUrl: helpers.leagueUrl(["daily_schedule"]),
+		};
 
-	// A follower already parked on this page can miss the navigation that
-	// carries a new broadcast's payload (same-URL refreshes can be dropped by
-	// the view queue), leaving it replaying the PREVIOUS game's props. The sync
-	// layer caches the followed broadcast's payload, so a plain load of this
-	// page (or an explicit "mpLiveBroadcast" refresh from the recovery effect)
-	// can serve the current broadcast without the navigation.
-	let { gid, playByPlay } = inputs;
-	let inputBoxScore = inputs.boxScore;
-	if (
-		(playByPlay === undefined || playByPlay.length === 0) &&
-		(updateEvents.includes("firstRun") ||
-			updateEvents.includes("mpLiveBroadcast"))
-	) {
-		const payload = getFollowedBroadcastPayload();
-		if (payload) {
-			gid = payload.gid;
-			playByPlay = payload.playByPlay;
-			// boxScoreToLiveSim mutates the box score in place, so hand it a copy -
-			// a later load of this page needs the cached one pristine.
-			inputBoxScore = helpers.deepCopy(payload.boxScore);
-		}
-	}
-
-	if (
-		updateEvents.includes("firstRun") &&
-		!inputs.fromAction &&
-		(playByPlay === undefined || playByPlay.length === 0)
-	) {
-		return redirectToMenu;
-	}
-
-	if (gid !== undefined && playByPlay !== undefined && playByPlay.length > 0) {
-		// A multiplayer follower gets the game record in the broadcast payload, so
-		// it doesn't have to wait for the separate changeset sync to land the game
-		// row before it can render the live sim. Everyone else reads it from idb.
-		const boxScore = inputBoxScore ?? (await idb.getCopy.games({ gid }));
-
-		if (!boxScore) {
-			throw new Error("Invalid gid");
-		}
-
-		const allStarGame =
-			boxScore.teams[0].tid === -1 || boxScore.teams[1].tid === -1;
-		let allStars;
-
-		if (allStarGame) {
-			allStars = await idb.cache.allStars.get(g.get("season"));
-
-			if (!allStars) {
-				return redirectToMenu;
+		// A follower already parked on this page can miss the navigation that
+		// carries a new broadcast's payload (same-URL refreshes can be dropped by
+		// the view queue), leaving it replaying the PREVIOUS game's props. The sync
+		// layer caches the followed broadcast's payload, so a plain load of this
+		// page (or an explicit "mpLiveBroadcast" refresh from the recovery effect)
+		// can serve the current broadcast without the navigation.
+		let { gid, playByPlay } = inputs;
+		let inputBoxScore = inputs.boxScore;
+		if (
+			(playByPlay === undefined || playByPlay.length === 0) &&
+			(updateEvents.has("firstRun") || updateEvents.has("mpLiveBroadcast"))
+		) {
+			const payload = getFollowedBroadcastPayload();
+			if (payload) {
+				gid = payload.gid;
+				playByPlay = payload.playByPlay;
+				// boxScoreToLiveSim mutates the box score in place, so hand it a copy -
+				// a later load of this page needs the cached one pristine.
+				inputBoxScore = helpers.deepCopy(payload.boxScore);
 			}
 		}
 
-		const { finals, confetti } = championshipStakes(boxScore);
+		if (
+			updateEvents.has("firstRun") &&
+			!inputs.fromAction &&
+			(playByPlay === undefined || playByPlay.length === 0)
+		) {
+			return redirectToMenu;
+		}
 
-		const out = await boxScoreToLiveSim({
-			allStars,
-			boxScore,
-			confetti,
-			playByPlay,
-		});
-		(out.initialBoxScore as any).finals = finals;
+		if (
+			gid !== undefined &&
+			playByPlay !== undefined &&
+			playByPlay.length > 0
+		) {
+			// A multiplayer follower gets the game record in the broadcast payload, so
+			// it doesn't have to wait for the separate changeset sync to land the game
+			// row before it can render the live sim. Everyone else reads it from idb.
+			const boxScore = inputBoxScore ?? (await idb.getCopy.games({ gid }));
 
-		// A rewatch of a saved game: flag it and build a small "2026 Playoffs" /
-		// "2026 Regular Season" label for the header.
-		let arenaThen: ArenaLooks | undefined;
-		if (inputs.replay) {
-			(out.initialBoxScore as any).replay = true;
-			const label = boxScore.playoffs
-				? `${boxScore.season} Playoffs`
-				: `${boxScore.season} Regular Season`;
-			(out.initialBoxScore as any).replayLabel = label;
-			// How everyone looked that night, for the 2.5D court.
-			try {
-				const row =
-					(await idb.cache.liveGamePlayByPlay.get(gid)) ??
-					(await (idb.league as any).get("liveGamePlayByPlay", gid));
-				if (row?.looks) {
-					(out.initialBoxScore as any).replayLooks = row.looks;
-					arenaThen = row.looks.arena;
+			if (!boxScore) {
+				throw new Error("Invalid gid");
+			}
+
+			const allStarGame =
+				boxScore.teams[0].tid === -1 || boxScore.teams[1].tid === -1;
+			let allStars;
+
+			if (allStarGame) {
+				allStars = await idb.cache.allStars.get(g.get("season"));
+
+				if (!allStars) {
+					return redirectToMenu;
 				}
-			} catch {
-				// Cosmetic - today's looks it is.
 			}
+
+			const { finals, confetti } = championshipStakes(boxScore);
+
+			const out = await boxScoreToLiveSim({
+				allStars,
+				boxScore,
+				confetti,
+				playByPlay,
+			});
+			(out.initialBoxScore as any).finals = finals;
+
+			// A rewatch of a saved game: flag it and build a small "2026 Playoffs" /
+			// "2026 Regular Season" label for the header.
+			let arenaThen: ArenaLooks | undefined;
+			if (inputs.replay) {
+				(out.initialBoxScore as any).replay = true;
+				const label = boxScore.playoffs
+					? `${boxScore.season} Playoffs`
+					: `${boxScore.season} Regular Season`;
+				(out.initialBoxScore as any).replayLabel = label;
+				// How everyone looked that night, for the 2.5D court.
+				try {
+					const row =
+						(await idb.cache.liveGamePlayByPlay.get(gid)) ??
+						(await (idb.league as any).get("liveGamePlayByPlay", gid));
+					if (row?.looks) {
+						(out.initialBoxScore as any).replayLooks = row.looks;
+						arenaThen = row.looks.arena;
+					}
+				} catch {
+					// Cosmetic - today's looks it is.
+				}
+			}
+			// The home team's building, for the 2.5D court: as it was that night
+			// on a replay that kept it, otherwise as of the game's season.
+			(out.initialBoxScore as any).arena =
+				arenaThen ??
+				(await takeArenaLooks(boxScore.teams[0].tid, boxScore.season));
+
+			return out;
 		}
-		// The home team's building, for the 2.5D court: as it was that night
-		// on a replay that kept it, otherwise as of the game's season.
-		(out.initialBoxScore as any).arena =
-			arenaThen ??
-			(await takeArenaLooks(boxScore.teams[0].tid, boxScore.season));
-
-		return out;
-	}
-};
-
-export default updatePlayByPlay;
+	},
+});

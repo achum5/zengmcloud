@@ -450,7 +450,7 @@ const FreeAgents = ({
 			)
 		: players;
 
-	const rows: DataTableRow[] = shownPlayers.map((p) => {
+	const rows: DataTableRow<"player">[] = shownPlayers.map((p) => {
 		return {
 			key: p.pid,
 			metadata: {

@@ -26,7 +26,7 @@ import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
 import { TradingCardGallery } from "../../components/TradingCardGallery.tsx";
 import { wrappedSeasonAwards } from "./SeasonAwards.tsx";
 import Impact from "./Impact.tsx";
-import { orderBy } from "../../../common/utils.ts";
+import { last, orderBy } from "../../../common/utils.ts";
 import type { LeagueUrlParts } from "../../router/types.ts";
 
 const Player2 = ({
@@ -118,7 +118,7 @@ const Player2 = ({
 			if (player.stats.length > 0) {
 				gameLogSeason = player.stats.at(-1)!.season;
 			} else if (player.ratings.length > 0) {
-				gameLogSeason = player.ratings.at(-1)!.season;
+				gameLogSeason = last(player.ratings).season;
 			} else {
 				gameLogSeason = currentSeason;
 			}

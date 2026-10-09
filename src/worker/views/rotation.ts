@@ -1,6 +1,8 @@
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
-import type { UpdateEvents, ViewInput } from "../../common/types.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
+import type { RouteParams } from "../../ui/router/types.ts";
+import { validateAbbrev } from "../util/processInputs.ts";
 import { sanitizeRotation } from "../../common/rotation.ts";
 import {
 	generateRotation,
@@ -16,17 +18,22 @@ import addFirstNameShort from "../util/addFirstNameShort.ts";
 // sensible rather than a blank grid, and handing control back does not lose
 // what was drawn.
 
-const updateRotation = async (
-	{ abbrev, tid }: ViewInput<"rotation">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
+const processInputs = (params: RouteParams<"rotation">) => {
+	const [tid, abbrev] = validateAbbrev(params.abbrev);
+	return { abbrev, tid };
+};
+
+const updateRotation = async ({
+	inputs: { abbrev, tid },
+	updateEvents,
+	prevInputs,
+}: ViewArgs<typeof processInputs>) => {
 	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("gameAttributes") ||
-		updateEvents.includes("playerMovement") ||
-		updateEvents.includes("team") ||
-		tid !== state.tid
+		updateEvents.has("firstRun") ||
+		updateEvents.has("gameAttributes") ||
+		updateEvents.has("playerMovement") ||
+		updateEvents.has("team") ||
+		tid !== prevInputs?.tid
 	) {
 		const enabled = g.get("rotationPlans");
 		const numPeriods = g.get("numPeriods");
@@ -105,4 +112,8 @@ const updateRotation = async (
 	}
 };
 
-export default updateRotation;
+export default defineView({
+	id: "rotation",
+	processInputs,
+	load: updateRotation,
+});

@@ -33,7 +33,10 @@ export const getText = (
 	boxScore: {
 		gid?: number;
 		numPeriods: number;
-		teams: [{ pts: number; players: any[] }, { pts: number; players: any[] }];
+		teams: [
+			{ pts: number; players: unknown[] },
+			{ pts: number; players: unknown[] },
+		];
 	},
 ) => {
 	let texts: ReactNode[] | undefined;

@@ -10,9 +10,9 @@ import {
 	useState,
 	type ReactNode,
 	memo,
-	type MutableRefObject,
 	Fragment,
 	lazy,
+	type RefObject,
 	Suspense,
 } from "react";
 import { TeamLogoInline } from "../../components/TeamLogoInline.tsx";
@@ -298,9 +298,9 @@ const PlayByPlay = ({
 	entries,
 	playByPlayDivRef,
 }: {
-	boxScore: any;
+	boxScore: unknown;
 	entries: PlayByPlayEntryInfo[];
-	playByPlayDivRef: MutableRefObject<HTMLDivElement | null>;
+	playByPlayDivRef: RefObject<HTMLDivElement | null>;
 }) => {
 	useEffect(() => {
 		const setPlayByPlayDivHeight = () => {
@@ -323,8 +323,7 @@ const PlayByPlay = ({
 		return () => {
 			window.removeEventListener("optimizedResize", setPlayByPlayDivHeight);
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
+	}, [playByPlayDivRef]);
 
 	return (
 		<div
@@ -445,6 +444,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const quarters = useRef([]);
 	const possessionChange = useRef<boolean | undefined>(undefined);
 	const componentIsMounted = useRef(false);
+	// Live-sim events are loosely shaped objects (each sport has its own), and the
+	// court staging below peeks at their fields directly.
 	const events = useRef<any[] | undefined>(undefined);
 	const sportState = useRef(
 		DEFAULT_SPORT_STATE ? { ...DEFAULT_SPORT_STATE } : undefined,
@@ -1604,7 +1605,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 
 	// Make sure to call setPlayIndex after calling this! Can't be done inside because React is not always smart enough to batch renders
 	const processToNextPause = useCallback(
-		(force?: boolean): number => {
+		function processToNextPauseInner(force?: boolean): number {
 			if (
 				!componentIsMounted.current ||
 				(pausedRef.current && !force) ||
@@ -1862,7 +1863,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 					!court25dRef.current
 				) {
 					setTimeout(() => {
-						processToNextPause();
+						processToNextPauseInner();
 						setPlayIndex((prev) => prev + 1);
 					}, speedToMs(speedRef.current));
 				}
@@ -1947,7 +1948,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 	}, []);
 
 	const startLiveGame = useCallback(
-		(events2: any[]) => {
+		(events2: unknown[]) => {
 			events.current = events2;
 			if (court25dRef.current) {
 				// The 2.5D court asks for the first line once the floor is set.
@@ -2665,6 +2666,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 		boxScore.current.shootout,
 		quarters.current.length,
 		processToNextPause,
+		props.quarterLength,
 	]);
 
 	const scrollTop = useRef<HTMLDivElement>(null);

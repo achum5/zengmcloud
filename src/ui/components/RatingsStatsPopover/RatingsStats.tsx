@@ -8,7 +8,7 @@ import { exemptFromCoarseRatings } from "../../../common/coarsenRating.ts";
 
 export const RatingsStats = (props: {
 	ratings: any;
-	stats: any;
+	stats: unknown;
 	type?: "career" | "current" | "draft" | number;
 	// The subject's current team, so an undrafted prospect exempted from coarse
 	// ratings is coloured on the scale his numbers are actually on.

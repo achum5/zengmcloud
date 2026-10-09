@@ -3,299 +3,344 @@ import { getGlobalSettings } from "../util/getGlobalSettings.ts";
 import { DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS } from "../../common/ownGameSim.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
-import type { UpdateEvents, ViewInput } from "../../common/types.ts";
+import { defineView, keepType } from "../util/defineView.ts";
 import { getTopPlayers, getUpcoming } from "./schedule.ts";
 import { getAutoRecapsForDay } from "../util/getDayGamesForRecap.ts";
 import { PHASE } from "../../common/constants.ts";
 import { makeResponsiveDropdownOption } from "../../common/makeResponsiveDropdownOption.tsx";
 import { env } from "../util/env.ts";
+import type { RouteParams } from "../../ui/router/types.ts";
+import { validateSeason } from "../util/processInputs.ts";
 
-let prevInputsDay: number | undefined;
-const updateDailySchedule = async (
-	inputs: ViewInput<"dailySchedule">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
-	const currentSeason = g.get("season");
+const processInputs = (params: RouteParams<"dailySchedule">) => {
+	let cid;
+	if (params.cid !== undefined && params.cid !== "all") {
+		cid = Number.parseInt(params.cid);
+		if (Number.isNaN(cid)) {
+			cid = undefined;
+		}
+	}
 
-	if (
-		updateEvents.includes("firstRun") ||
-		(inputs.season === currentSeason && updateEvents.includes("gameSim")) ||
-		updateEvents.includes("newPhase") ||
-		// A game note was added/edited (e.g. an AI recap filed from this page), so
-		// the note under each game card needs to refresh.
-		updateEvents.includes("notes") ||
-		// A background sim refined the point spreads, so the numbers next to
-		// each game changed.
-		inputs.season !== state.season ||
-		inputs.day !== state.day ||
-		inputs.cid !== state.cid
-	) {
-		const process = async (inputsDayOverride?: number) => {
-			const games = await idb.getCopies.games(
-				{
-					season: inputs.season,
-				},
-				"noCopyCache",
-			);
+	if (params.season === "today") {
+		return {
+			cid,
+			day: undefined,
+			season: g.get("season"),
+			today: true,
+		};
+	}
 
-			const daysAndPlayoffs = new Map<number, boolean>();
-			for (const game of games) {
-				if (game.day !== undefined) {
-					daysAndPlayoffs.set(game.day, !!game.playoffs);
-				}
-			}
+	// The most recently played day (current day - 1), resolved by the view.
+	if (params.season === "yesterday") {
+		return {
+			cid,
+			day: undefined,
+			season: g.get("season"),
+			yesterday: true,
+		};
+	}
 
-			let isToday = false;
+	const season = validateSeason(params.season);
 
-			let day: number;
-			if (inputs.today) {
-				day = -1;
-			} else {
-				// What day is it? Get it from URL by default, but that could be undefined
-				day = inputsDayOverride ?? inputs.day ?? -1;
-				if (day === -1) {
-					if (updateEvents.includes("firstRun")) {
-						// If this is a new load of the view, initialize to the current day (current season) or day 1 (past season)
-						day = -1;
-					} else if (prevInputsDay !== undefined) {
-						// If this is a refresh and we're moving from day in URL to no day in URL, go to current day (current season) or day 1 (past season)
-						day = -1;
-					} else if (state.day !== undefined) {
-						// If this is a refresh and we already had a day loaded even with no day in the URL, keep that day the same
-						day = state.day;
-					}
-				}
-			}
+	let day = params.day === undefined ? undefined : Number.parseInt(params.day);
+	if (Number.isNaN(day)) {
+		day = 1;
+	}
 
-			prevInputsDay = inputs.day;
+	return {
+		cid,
+		day,
+		season,
+	};
+};
 
-			if (inputs.season === currentSeason) {
-				const schedule = await season.getSchedule();
+// The day actually shown, which can be different than inputs.day, such as when there is no day in the URL
+const keepPrevOutput = {
+	day: keepType<number>(),
+};
 
-				if (day === -1) {
-					if (schedule[0]?.day !== undefined) {
-						day = schedule[0].day;
-					}
-				}
-				if (day === -1) {
-					day = 1;
-				}
+export default defineView({
+	id: "dailySchedule",
+	processInputs,
+	keepPrevOutput,
+	load: async ({ inputs, updateEvents, prevInputs, prevOutput }) => {
+		const currentSeason = g.get("season");
 
-				if (inputs.yesterday) {
-					if (schedule[0]?.day !== undefined) {
-						day = Math.max(1, schedule[0].day - 1);
-					} else if (daysAndPlayoffs.size > 0) {
-						// Nothing left to play: "yesterday" is the last played day.
-						day = Math.max(...daysAndPlayoffs.keys());
-					}
-				}
-
-				const scheduleDay = schedule.filter((game) => game.day === day);
-				isToday = !!scheduleDay[0] && schedule[0]!.gid === scheduleDay[0].gid;
-
-				const isPlayoffs = g.get("phase") === PHASE.PLAYOFFS;
-
-				for (const game of schedule) {
-					if (game.day !== undefined) {
-						daysAndPlayoffs.set(game.day, isPlayoffs);
-					}
-				}
-			} else {
-				if (day === -1) {
-					day = 1;
-				}
-			}
-
-			// Allowing the games to be filtered by conference is really only particularly useful in large leagues, and on mobile it makes the title bar take up an extra row. So only show it for large league or non-mobile.
-			const showCids = g.get("numActiveTeams") >= 60 || !env.mobile;
-
-			const confs = g.get("confs", inputs.season);
-			let cid: number | undefined;
-			if (showCids && inputs.cid !== undefined) {
-				cid = confs.find((conf) => conf.cid === inputs.cid)?.cid;
-			}
-
-			let cidFilter:
-				| ((teams: [{ tid: number }, { tid: number }]) => boolean)
-				| undefined;
-			if (cid !== undefined) {
-				const tids = new Set(
-					(await idb.cache.teams.getAll())
-						.filter((t) => t.cid === cid)
-						.map((t) => t.tid),
+		if (
+			updateEvents.has("firstRun") ||
+			(inputs.season === currentSeason && updateEvents.has("gameSim")) ||
+			updateEvents.has("newPhase") ||
+			// A game note was added/edited (e.g. an AI recap filed from this page), so
+			// the note under each game card needs to refresh.
+			updateEvents.has("notes") ||
+			// A background sim refined the point spreads, so the numbers next to
+			// each game changed.
+			inputs.season !== prevInputs?.season ||
+			inputs.day !== prevOutput.day ||
+			inputs.cid !== prevInputs?.cid
+		) {
+			const process = async (inputsDayOverride?: number) => {
+				const games = await idb.getCopies.games(
+					{
+						season: inputs.season,
+					},
+					"noCopyCache",
 				);
 
-				cidFilter = (teams) => {
-					const homeTid = teams[0].tid;
-					const awayTid = teams[1].tid;
-					return (
-						(homeTid === -1 && awayTid === -2) ||
-						(homeTid === -3 && awayTid === -3) ||
-						tids.has(awayTid) ||
-						tids.has(homeTid)
-					);
-				};
-			}
-			const completed = games.filter(
-				(game) => game.day === day && (!cidFilter || cidFilter(game.teams)),
-			);
+				const daysAndPlayoffs = new Map<number, boolean>();
+				for (const game of games) {
+					if (game.day !== undefined) {
+						daysAndPlayoffs.set(game.day, !!game.playoffs);
+					}
+				}
 
-			let upcoming: Awaited<ReturnType<typeof getUpcoming>> = [];
-			if (inputs.season === currentSeason) {
-				// If it's the current season, get any upcoming games
-				upcoming = await getUpcoming({
-					cid,
-					day,
-				});
-			}
+				let isToday = false;
 
-			const cids = showCids
-				? [
-						{
-							key: "all",
-							value: makeResponsiveDropdownOption(
-								"All confs",
-								"All conferences",
-							),
-						},
-						...confs.map((conf) => {
-							// Shorten "Eastern Conference" to "Eastern Conf" on mobile
-							const value = conf.name.endsWith("onference")
-								? makeResponsiveDropdownOption(
-										conf.name.slice(0, -"erence".length),
-										conf.name,
-									)
-								: conf.name;
-
-							return {
-								key: conf.cid,
-								value,
-							};
-						}),
-					]
-				: [];
-
-			const days = Array.from(daysAndPlayoffs.entries())
-				.map(([day, playoffs]) => ({ day, playoffs }))
-				.sort((a, b) => a.day - b.day)
-				.map(({ day, playoffs }) => ({
-					key: day,
-					value: playoffs ? `${day} (playoffs)` : `${day}`,
-				}));
-
-			if (inputs.season !== currentSeason) {
-				// Add team branding info, in case that was different in past season. Otherwise, ScoreBox uses teamInfoCache for latest values
-				for (const [i, game] of completed.entries()) {
-					completed[i] = { ...game };
-
-					for (const t of game.teams) {
-						const teamSeason = await idb.getCopy.teamSeasons({
-							season: game.season,
-							tid: t.tid,
-						});
-
-						if (teamSeason) {
-							t.branding = {
-								region: teamSeason.region,
-								name: teamSeason.name,
-								abbrev: teamSeason.abbrev,
-								imgURL: teamSeason.imgURL,
-								imgURLSmall: teamSeason.imgURLSmall,
-							};
+				let day: number;
+				if (inputs.today) {
+					day = -1;
+				} else {
+					// What day is it? Get it from URL by default, but that could be undefined
+					day = inputsDayOverride ?? inputs.day ?? -1;
+					if (day === -1) {
+						if (updateEvents.has("firstRun")) {
+							// If this is a new load of the view, initialize to the current day (current season) or day 1 (past season)
+							day = -1;
+						} else if (prevInputs?.day !== undefined) {
+							// If this is a refresh and we're moving from day in URL to no day in URL, go to current day (current season) or day 1 (past season)
+							day = -1;
+						} else if (prevOutput.day !== undefined) {
+							// If this is a refresh and we already had a day loaded even with no day in the URL, keep that day the same
+							day = prevOutput.day;
 						}
 					}
 				}
-			}
 
-			// Put the user's own team's game(s) at the top of each list, so you never
-			// have to hunt for yours. Stable: everything else keeps its order.
-			const userTids = new Set(g.get("userTids"));
-			const isMine = (game: { teams: { tid: number }[] }) =>
-				game.teams.some((t) => userTids.has(t.tid));
-			const userFirst = (a: any, b: any) =>
-				(isMine(b) ? 1 : 0) - (isMine(a) ? 1 : 0);
-			completed.sort(userFirst);
-			upcoming.sort(userFirst);
+				if (inputs.season === currentSeason) {
+					const schedule = await season.getSchedule();
 
-			// Every completed game gets an automatic, procedural recap (headline +
-			// a couple of fact-anchored paragraphs) shown under its card, and the
-			// whole day gets an auto day recap. Both are generated fresh here
-			// (deterministic, never stored) and only fill in where there's no real
-			// note - a filed AI/manual recap always wins. The "Copy AI Prompt" flow
-			// reads the database note/dayNote, which these never touch, so it stays
-			// available as the on-demand upgrade.
-			let autoDayRecap = "";
-			if (completed.length > 0) {
-				const { notes, dayRecap } = await getAutoRecapsForDay({
-					season: inputs.season,
-					day,
-				});
-				autoDayRecap = dayRecap;
-				for (const [i, game] of completed.entries()) {
-					if (!game.note && notes[game.gid]) {
-						completed[i] = { ...game, note: notes[game.gid] };
+					if (day === -1) {
+						if (schedule[0]?.day !== undefined) {
+							day = schedule[0].day;
+						}
+					}
+					if (day === -1) {
+						day = 1;
+					}
+
+					if (inputs.yesterday) {
+						if (schedule[0]?.day !== undefined) {
+							day = Math.max(1, schedule[0].day - 1);
+						} else if (daysAndPlayoffs.size > 0) {
+							// Nothing left to play: "yesterday" is the last played day.
+							day = Math.max(...daysAndPlayoffs.keys());
+						}
+					}
+
+					const scheduleDay = schedule.filter((game) => game.day === day);
+					isToday = !!scheduleDay[0] && schedule[0]!.gid === scheduleDay[0].gid;
+
+					const isPlayoffs = g.get("phase") === PHASE.PLAYOFFS;
+
+					for (const game of schedule) {
+						if (game.day !== undefined) {
+							daysAndPlayoffs.set(game.day, isPlayoffs);
+						}
+					}
+				} else {
+					if (day === -1) {
+						day = 1;
 					}
 				}
+
+				// Allowing the games to be filtered by conference is really only particularly useful in large leagues, and on mobile it makes the title bar take up an extra row. So only show it for large league or non-mobile.
+				const showCids = g.get("numActiveTeams") >= 60 || !env.mobile;
+
+				const confs = g.get("confs", inputs.season);
+				let cid: number | undefined;
+				if (showCids && inputs.cid !== undefined) {
+					cid = confs.find((conf) => conf.cid === inputs.cid)?.cid;
+				}
+
+				let cidFilter:
+					| ((teams: [{ tid: number }, { tid: number }]) => boolean)
+					| undefined;
+				if (cid !== undefined) {
+					const tids = new Set(
+						(await idb.cache.teams.getAll())
+							.filter((t) => t.cid === cid)
+							.map((t) => t.tid),
+					);
+
+					cidFilter = (teams) => {
+						const homeTid = teams[0].tid;
+						const awayTid = teams[1].tid;
+						return (
+							(homeTid === -1 && awayTid === -2) ||
+							(homeTid === -3 && awayTid === -3) ||
+							tids.has(awayTid) ||
+							tids.has(homeTid)
+						);
+					};
+				}
+				const completed = games.filter(
+					(game) => game.day === day && (!cidFilter || cidFilter(game.teams)),
+				);
+
+				let upcoming: Awaited<ReturnType<typeof getUpcoming>> = [];
+				if (inputs.season === currentSeason) {
+					// If it's the current season, get any upcoming games
+					upcoming = await getUpcoming({
+						cid,
+						day,
+					});
+				}
+
+				const cids = showCids
+					? [
+							{
+								key: "all",
+								value: makeResponsiveDropdownOption(
+									"All confs",
+									"All conferences",
+								),
+							},
+							...confs.map((conf) => {
+								// Shorten "Eastern Conference" to "Eastern Conf" on mobile
+								const value = conf.name.endsWith("onference")
+									? makeResponsiveDropdownOption(
+											conf.name.slice(0, -"erence".length),
+											conf.name,
+										)
+									: conf.name;
+
+								return {
+									key: conf.cid,
+									value,
+								};
+							}),
+						]
+					: [];
+
+				const days = Array.from(daysAndPlayoffs.entries())
+					.map(([day, playoffs]) => ({ day, playoffs }))
+					.sort((a, b) => a.day - b.day)
+					.map(({ day, playoffs }) => ({
+						key: day,
+						value: playoffs ? `${day} (playoffs)` : `${day}`,
+					}));
+
+				if (inputs.season !== currentSeason) {
+					// Add team branding info, in case that was different in past season. Otherwise, ScoreBox uses teamInfoCache for latest values
+					for (const [i, game] of completed.entries()) {
+						completed[i] = { ...game };
+
+						for (const t of game.teams) {
+							const teamSeason = await idb.getCopy.teamSeasons({
+								season: game.season,
+								tid: t.tid,
+							});
+
+							if (teamSeason) {
+								t.branding = {
+									region: teamSeason.region,
+									name: teamSeason.name,
+									abbrev: teamSeason.abbrev,
+									imgURL: teamSeason.imgURL,
+									imgURLSmall: teamSeason.imgURLSmall,
+								};
+							}
+						}
+					}
+				}
+
+				// Put the user's own team's game(s) at the top of each list, so you never
+				// have to hunt for yours. Stable: everything else keeps its order.
+				const userTids = new Set(g.get("userTids"));
+				const isMine = (game: { teams: { tid: number }[] }) =>
+					game.teams.some((t) => userTids.has(t.tid));
+				const userFirst = (a: any, b: any) =>
+					(isMine(b) ? 1 : 0) - (isMine(a) ? 1 : 0);
+				completed.sort(userFirst);
+				upcoming.sort(userFirst);
+
+				// Every completed game gets an automatic, procedural recap (headline +
+				// a couple of fact-anchored paragraphs) shown under its card, and the
+				// whole day gets an auto day recap. Both are generated fresh here
+				// (deterministic, never stored) and only fill in where there's no real
+				// note - a filed AI/manual recap always wins. The "Copy AI Prompt" flow
+				// reads the database note/dayNote, which these never touch, so it stays
+				// available as the on-demand upgrade.
+				let autoDayRecap = "";
+				if (completed.length > 0) {
+					const { notes, dayRecap } = await getAutoRecapsForDay({
+						season: inputs.season,
+						day,
+					});
+					autoDayRecap = dayRecap;
+					for (const [i, game] of completed.entries()) {
+						if (!game.note && notes[game.gid]) {
+							completed[i] = { ...game, note: notes[game.gid] };
+						}
+					}
+				}
+
+				// The day's "Day in the League" recap is stored on its anchor game (the
+				// lowest-gid game of the day - see Game.dayNote / setNote). Resolve the
+				// anchor from ALL of the day's games, NOT the possibly conference-filtered
+				// `completed`, so it matches the write side (which sees every game) no
+				// matter which conference is being viewed.
+				const dayGames = games.filter((game) => game.day === day);
+				const anchorGame =
+					dayGames.length > 0
+						? dayGames.reduce((a, b) => (a.gid <= b.gid ? a : b))
+						: undefined;
+				// A filed "Day in the League" recap wins; otherwise fall back to the
+				// auto day recap (never persisted).
+				const dayNote = anchorGame?.dayNote ?? (autoDayRecap || undefined);
+
+				return {
+					cid,
+					cids,
+					completed,
+					day,
+					dayNote,
+					days,
+					isToday,
+					upcoming,
+				};
+			};
+
+			let info = await process();
+
+			if (
+				info.completed.length === 0 &&
+				info.upcoming.length === 0 &&
+				info.days.length > 0
+			) {
+				const dayAbove = info.days.find(({ key }) => key > info.day);
+
+				const newDay = dayAbove ? dayAbove.key : info.days.at(-1)!.key;
+
+				// No games at requested day, so just use the last day we actually have games for
+				info = await process(newDay);
 			}
 
-			// The day's "Day in the League" recap is stored on its anchor game (the
-			// lowest-gid game of the day - see Game.dayNote / setNote). Resolve the
-			// anchor from ALL of the day's games, NOT the possibly conference-filtered
-			// `completed`, so it matches the write side (which sees every game) no
-			// matter which conference is being viewed.
-			const dayGames = games.filter((game) => game.day === day);
-			const anchorGame =
-				dayGames.length > 0
-					? dayGames.reduce((a, b) => (a.gid <= b.gid ? a : b))
-					: undefined;
-			// A filed "Day in the League" recap wins; otherwise fall back to the
-			// auto day recap (never persisted).
-			const dayNote = anchorGame?.dayNote ?? (autoDayRecap || undefined);
+			const topPlayers = await getTopPlayers(undefined, 1, info.day);
 
 			return {
-				cid,
-				cids,
-				completed,
-				day,
-				dayNote,
-				days,
-				isToday,
-				upcoming,
+				...info,
+				// So the UI can grey the sim buttons with the SAME rule the worker
+				// enforces, instead of offering a button that is then refused.
+				ownGameSimCutoffSeconds:
+					(await getGlobalSettings()).ownGameSimCutoffSeconds ??
+					DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS,
+				elam: g.get("elam"),
+				elamASG: g.get("elamASG"),
+				season: inputs.season,
+				ties: season.hasTies("current"),
+				topPlayers,
 			};
-		};
-
-		let info = await process();
-
-		if (
-			info.completed.length === 0 &&
-			info.upcoming.length === 0 &&
-			info.days.length > 0
-		) {
-			const dayAbove = info.days.find(({ key }) => key > info.day);
-
-			const newDay = dayAbove ? dayAbove.key : info.days.at(-1)!.key;
-
-			// No games at requested day, so just use the last day we actually have games for
-			info = await process(newDay);
 		}
-
-		const topPlayers = await getTopPlayers(undefined, 1, info.day);
-
-		return {
-			...info,
-			// So the UI can grey the sim buttons with the SAME rule the worker
-			// enforces, instead of offering a button that is then refused.
-			ownGameSimCutoffSeconds:
-				(await getGlobalSettings()).ownGameSimCutoffSeconds ??
-				DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS,
-			elam: g.get("elam"),
-			elamASG: g.get("elamASG"),
-			season: inputs.season,
-			ties: season.hasTies("current"),
-			topPlayers,
-		};
-	}
-};
-
-export default updateDailySchedule;
+	},
+});

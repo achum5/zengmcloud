@@ -1,5 +1,5 @@
 import { assert, beforeEach, describe, test, vi } from "vitest";
-import { resetCache, resetG } from "../../../test/helpers.ts";
+import { resetCache, resetG, setLeagueSize } from "../../../test/helpers.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { PHASE, PLAYER } from "../../../common/constants.ts";
@@ -94,8 +94,7 @@ const buildLeague = async (
 	payrollBand: [number, number] = [0.45, 0.9],
 ) => {
 	resetG();
-	g.setWithoutSavingToDB("numTeams", NUM_TEAMS);
-	g.setWithoutSavingToDB("numActiveTeams", NUM_TEAMS);
+	setLeagueSize(NUM_TEAMS);
 	g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
 	g.setWithoutSavingToDB("daysLeft", FA_DAYS);
 	// No user team: every team is run by the AI, which is the point.

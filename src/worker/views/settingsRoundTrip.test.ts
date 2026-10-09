@@ -8,6 +8,15 @@ import loadGameAttributes from "../core/league/loadGameAttributes.ts";
 import { changeTracker } from "../db/changeTracker.ts";
 import updateSettings from "./settings.ts";
 
+const loadSettings = () =>
+	updateSettings.load({
+		inputs: {},
+		updateEvents: new Set(["firstRun"]),
+		prevInputs: undefined,
+		prevOutput: {},
+		conditions: {} as any,
+	});
+
 // A League Setting is only real if it survives the trip: shown by the view,
 // written by a save, and still there when the league is loaded again. This
 // pins that whole path for "Pause Sim On Days" (simStopDays), which is a
@@ -65,7 +74,7 @@ describe("a league setting survives the round trip", () => {
 
 		// Shown: the view has to actually return the key, or the form renders a
 		// blank field with nothing behind it.
-		const before: any = await updateSettings(undefined, ["firstRun"] as any);
+		const before: any = await loadSettings();
 		assert.ok(
 			Object.hasOwn(before.initialSettings, "simStopDays"),
 			"the settings view must return simStopDays",
@@ -84,7 +93,7 @@ describe("a league setting survives the round trip", () => {
 		assert.strictEqual(g.get("simStopDays"), "15, 41, deadline");
 
 		// And shown again, which is where the user looks.
-		const after: any = await updateSettings(undefined, ["firstRun"] as any);
+		const after: any = await loadSettings();
 		assert.strictEqual(after.initialSettings.simStopDays, "15, 41, deadline");
 	});
 
@@ -94,7 +103,7 @@ describe("a league setting survives the round trip", () => {
 	test("Face Aging and its player scope are shown, saved, and reloaded", async () => {
 		await build();
 
-		const before: any = await updateSettings(undefined, ["firstRun"] as any);
+		const before: any = await loadSettings();
 		for (const key of ["faceAging", "faceAgingPlayers"]) {
 			assert.ok(
 				Object.hasOwn(before.initialSettings, key),
@@ -119,7 +128,7 @@ describe("a league setting survives the round trip", () => {
 		assert.strictEqual(g.get("faceAging"), false);
 		assert.strictEqual(g.get("faceAgingPlayers"), "fictional");
 
-		const after: any = await updateSettings(undefined, ["firstRun"] as any);
+		const after: any = await loadSettings();
 		assert.strictEqual(after.initialSettings.faceAging, false);
 		assert.strictEqual(after.initialSettings.faceAgingPlayers, "fictional");
 	});

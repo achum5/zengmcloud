@@ -2,17 +2,24 @@ import { g } from "../util/index.ts";
 import { resolveFeedAccounts } from "../util/socialFeed.ts";
 import { idb } from "../db/index.ts";
 import { BUILT_IN_ARCHETYPES } from "../../common/socialPersonality.ts";
-import type { UpdateEvents, ViewInput } from "../../common/types.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
+import type { RouteParams } from "../../ui/router/types.ts";
 
-const updateSocialAccounts = async (
-	inputs: ViewInput<"socialAccounts">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
+const processInputs = (params: RouteParams<"socialAccounts">) => ({
+	// Optional: the manage page doubles as the editor, opening straight onto
+	// one account when a link points at it.
+	handle: params.handle,
+});
+
+const updateSocialAccounts = async ({
+	inputs,
+	updateEvents,
+	prevInputs,
+}: ViewArgs<typeof processInputs>) => {
 	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("gameSim") ||
-		state.handle !== inputs.handle
+		updateEvents.has("firstRun") ||
+		updateEvents.has("gameSim") ||
+		prevInputs?.handle !== inputs.handle
 	) {
 		if (!g.get("socialFeed")) {
 			return {
@@ -61,4 +68,8 @@ const updateSocialAccounts = async (
 	}
 };
 
-export default updateSocialAccounts;
+export default defineView({
+	id: "socialAccounts",
+	processInputs,
+	load: updateSocialAccounts,
+});

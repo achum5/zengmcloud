@@ -672,7 +672,7 @@ export const getSeasonRecapData = async (
 				],
 				season,
 				tid,
-				regularSeason: true,
+				seasonType: "regularSeason",
 				fuzz: false,
 				mergeStats: "totOnly",
 			});
@@ -682,14 +682,13 @@ export const getSeasonRecapData = async (
 				stats: ["gp", "pts", "trb", "ast"],
 				season,
 				tid,
-				playoffs: true,
-				regularSeason: false,
+				seasonType: "playoffs",
 				fuzz: false,
 				mergeStats: "totOnly",
 			});
 			const playoffByPid = new Map<number, any>();
 			for (const p of playoffPlus) {
-				if (p.stats && p.stats.gp > 0) {
+				if (p.stats && (p.stats.gp ?? 0) > 0) {
 					playoffByPid.set(p.pid, p.stats);
 				}
 			}
@@ -731,7 +730,7 @@ export const getSeasonRecapData = async (
 					age: typeof bornYear === "number" ? season - bornYear : undefined,
 					ovr: p.ratings?.ovr,
 					pot: p.ratings?.pot,
-					gp: st.gp,
+					gp: st.gp ?? 0,
 					min: Math.round((st.min ?? 0) * 10) / 10,
 					pts: Math.round((st.pts ?? 0) * 10) / 10,
 					trb: Math.round((st.trb ?? 0) * 10) / 10,
@@ -776,7 +775,7 @@ export const getSeasonRecapData = async (
 						row?.season !== season ||
 						row.playoffs ||
 						row.tid !== tid ||
-						!(row.gp > 0)
+						!((row.gp ?? 0) > 0)
 					) {
 						continue;
 					}
@@ -786,7 +785,7 @@ export const getSeasonRecapData = async (
 						gp: 0,
 						totals: {},
 					};
-					entry.gp += row.gp;
+					entry.gp += row.gp ?? 0;
 					for (const { stat } of RANK_STATS) {
 						const value =
 							stat === "trb"

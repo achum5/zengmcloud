@@ -1076,7 +1076,7 @@ class GameSim extends GameSimBase {
 			}
 			this.playByPlay.logEvent({
 				type: "stealEnd",
-				pid: p!.id,
+				pid: p.id,
 				to: (i + 2) as any,
 				out: !success,
 				throw: throwAt === i,
@@ -1553,7 +1553,7 @@ class GameSim extends GameSimBase {
 							putOutBaseIndexWeights,
 						);
 
-						// Undefind means put out is done by the same person who fielded the ball
+						// undefined means put out is done by the same person who fielded the ball
 						let posPutOut: PosNumbersDefense | undefined;
 						if (fieldersChoiceOrDoublePlayIndex === 2) {
 							// Out at home
@@ -1584,7 +1584,7 @@ class GameSim extends GameSimBase {
 				}
 
 				if (result === "throwOut") {
-					// Undefind means put out is done by the same person who fielded the ball
+					// undefined means put out is done by the same person who fielded the ball
 					let posPutOut: PosNumbersDefense | undefined;
 					if (hitTo === 3) {
 						if (Math.random() < 0.2) {
@@ -2390,7 +2390,7 @@ class GameSim extends GameSimBase {
 			}
 
 			// Probably will never happen, but just in case
-			return choice(this.team[t].depth.pitchers)!;
+			return choice(this.team[t].depth.pitchers);
 		}) as [PlayerGameSim, PlayerGameSim];
 
 		const reversedTeamNums = [1, 0] as const;

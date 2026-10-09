@@ -1,20 +1,17 @@
 import { collegeSeedLine } from "../../common/college.ts";
 import { PHASE } from "../../common/constants.ts";
-import type { UpdateEvents } from "../../common/types.ts";
 import { projectCollegeField } from "../core/college/tournaments.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
 
 // The projected NCAA field during the season (as if it were picked today),
 // and the real fields - NCAA and NIT - once the postseason starts.
-const updateBracketology = async (
-	inputs: unknown,
-	updateEvents: UpdateEvents,
-) => {
+const updateBracketology = async ({ updateEvents }: ViewArgs) => {
 	if (
-		!updateEvents.includes("firstRun") &&
-		!updateEvents.includes("gameSim") &&
-		!updateEvents.includes("newPhase")
+		!updateEvents.has("firstRun") &&
+		!updateEvents.has("gameSim") &&
+		!updateEvents.has("newPhase")
 	) {
 		return;
 	}
@@ -131,4 +128,7 @@ const updateBracketology = async (
 	};
 };
 
-export default updateBracketology;
+export default defineView({
+	id: "bracketology",
+	load: updateBracketology,
+});

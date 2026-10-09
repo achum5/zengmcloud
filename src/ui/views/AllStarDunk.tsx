@@ -2,7 +2,7 @@ import useTitleBar from "../hooks/useTitleBar.tsx";
 import { helpers } from "../util/helpers.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { useLocal } from "../util/local.ts";
-import type { DunkAttempt, Player, View } from "../../common/types.ts";
+import type { DunkAttempt, View } from "../../common/types.ts";
 import { PlayerNameLabels } from "../components/PlayerNameLabels.tsx";
 import { useEffect, useState } from "react";
 import SelectMultiple from "../components/SelectMultiple/index.tsx";
@@ -100,6 +100,13 @@ export const EditContestants = ({
 		</form>
 	);
 };
+
+type DunkContestPlayer = View<"allStarDunk">["players"][number];
+type ThreeContestPlayer = View<"allStarThree">["players"][number];
+type ContestPlayer = DunkContestPlayer | ThreeContestPlayer;
+
+const isThreeContestPlayer = (p: ContestPlayer): p is ThreeContestPlayer =>
+	"tp" in p.ratings;
 
 const alertStyle = {
 	maxWidth: 600,
@@ -493,7 +500,7 @@ export const ContestantProfiles = ({
 	challengeNoRatings: boolean;
 	contest: View<"allStarDunk">["dunk"] | View<"allStarThree">["three"];
 	godMode: boolean;
-	players: View<"allStarDunk">["players"];
+	players: ContestPlayer[];
 	season: number;
 	userTid: number;
 }) => {
@@ -520,7 +527,7 @@ export const ContestantProfiles = ({
 
 				const checkboxID = `control-player-${i}`;
 
-				const yearsWon = (p.awards as Player["awards"])
+				const yearsWon = p.awards
 					.filter(
 						(award) =>
 							award.type ===
@@ -583,27 +590,27 @@ export const ContestantProfiles = ({
 							{!challengeNoRatings ? (
 								<>
 									{p.ratings.ovr} ovr, {p.ratings.pot} pot,{" "}
-									{contestIsDunk ? (
+									{isThreeContestPlayer(p) ? (
+										<>{p.ratings.tp} tp</>
+									) : (
 										<>
 											{p.ratings.jmp} jmp, {p.ratings.dnk} dnk
 										</>
-									) : (
-										<>{p.ratings.tp} tp</>
 									)}
 									<br />
 								</>
 							) : null}
-							{contestIsDunk ? (
-								<>
-									{helpers.roundStat(p.stats.pts, "pts")} pts,{" "}
-									{helpers.roundStat(p.stats.trb, "trb")} trb,{" "}
-									{helpers.roundStat(p.stats.ast, "ast")} ast
-								</>
-							) : (
+							{isThreeContestPlayer(p) ? (
 								<>
 									{helpers.roundStat(p.stats.pts, "pts")} pts,{" "}
 									{helpers.roundStat(p.stats.tpa, "tpa")} 3pa,{" "}
 									{helpers.roundStat(p.stats.tpp, "tpp")}%
+								</>
+							) : (
+								<>
+									{helpers.roundStat(p.stats.pts, "pts")} pts,{" "}
+									{helpers.roundStat(p.stats.trb, "trb")} trb,{" "}
+									{helpers.roundStat(p.stats.ast, "ast")} ast
 								</>
 							)}
 						</div>
@@ -665,7 +672,7 @@ export const ScoreTable = ({
 }: {
 	centerResults?: boolean;
 	contest: View<"allStarDunk">["dunk"] | View<"allStarThree">["three"];
-	players: View<"allStarDunk">["players"];
+	players: ContestPlayer[];
 	resultsByRound:
 		| View<"allStarDunk">["resultsByRound"]
 		| View<"allStarThree">["resultsByRound"];
@@ -693,6 +700,7 @@ export const ScoreTable = ({
 								);
 							}
 
+							// eslint-disable-next-line react-hooks/immutability -- https://github.com/react/react/issues/31569
 							maxRoundCurrent += 1;
 							return <th key={i}>Round {maxRoundCurrent}</th>;
 						})}

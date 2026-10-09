@@ -3,19 +3,19 @@ import {
 	collegeTopPriorities,
 } from "../../common/college.ts";
 import { PHASE } from "../../common/constants.ts";
-import type { UpdateEvents } from "../../common/types.ts";
 import { seasonLine } from "../core/college/retention.ts";
 import { getTeamCtxs } from "../core/college/teams.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
 
 // The retention period, after the season: your returning players' NIL asks
 // and how likely each is to enter the transfer portal.
-const updateRetention = async (inputs: unknown, updateEvents: UpdateEvents) => {
+const updateRetention = async ({ updateEvents }: ViewArgs) => {
 	if (
-		!updateEvents.includes("firstRun") &&
-		!updateEvents.includes("playerMovement") &&
-		!updateEvents.includes("newPhase")
+		!updateEvents.has("firstRun") &&
+		!updateEvents.has("playerMovement") &&
+		!updateEvents.has("newPhase")
 	) {
 		return;
 	}
@@ -75,4 +75,7 @@ const updateRetention = async (inputs: unknown, updateEvents: UpdateEvents) => {
 	};
 };
 
-export default updateRetention;
+export default defineView({
+	id: "retention",
+	load: updateRetention,
+});

@@ -31,7 +31,7 @@ const DraftClass = ({
 
 	const cols = getCols(["#", "Name", "Pos", "Age", "Ovr", "Pot"]);
 
-	const rows: DataTableRow[] = players.map((p) => {
+	const rows: DataTableRow<"player">[] = players.map((p) => {
 		const wrappedName = wrappedPlayerNameLabels({
 			pid: p.pid,
 			season,

@@ -9,25 +9,34 @@ import {
 	type FeedDay,
 } from "../util/socialFeed.ts";
 import { isVerified } from "../../common/socialMetrics.ts";
-import type { UpdateEvents, ViewInput } from "../../common/types.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
+import type { RouteParams } from "../../ui/router/types.ts";
+import { validateSeason } from "../util/processInputs.ts";
 
 // How many days of the timeline to build at once. A feed is scrolled, not
 // paged, but each day is real work (the roster is resolved and every account
 // is scored against every event), so this is the batch a scroll asks for.
 const DAYS_PER_PAGE = 4;
 
-const updateSocialFeed = async (
-	inputs: ViewInput<"socialFeed">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
+const processInputs = (params: RouteParams<"socialFeed">) => ({
+	season: validateSeason(params.season),
+	// How far back the timeline has been scrolled, in days. Carried in the URL
+	// so a reload lands where the reader was rather than at the top.
+	days: params.days === undefined ? undefined : Number.parseInt(params.days),
+});
+
+const updateSocialFeed = async ({
+	inputs,
+	updateEvents,
+	prevInputs,
+}: ViewArgs<typeof processInputs>) => {
 	const season = inputs.season ?? g.get("season");
 	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("gameSim") ||
-		updateEvents.includes("newPhase") ||
-		state.season !== season ||
-		state.days !== inputs.days
+		updateEvents.has("firstRun") ||
+		updateEvents.has("gameSim") ||
+		updateEvents.has("newPhase") ||
+		prevInputs?.season !== season ||
+		prevInputs?.days !== inputs.days
 	) {
 		if (!g.get("socialFeed")) {
 			// The feed is opt-in, and a direct link should say so rather than
@@ -111,4 +120,8 @@ const updateSocialFeed = async (
 	}
 };
 
-export default updateSocialFeed;
+export default defineView({
+	id: "socialFeed",
+	processInputs,
+	load: updateSocialFeed,
+});

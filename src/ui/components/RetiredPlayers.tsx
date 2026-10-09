@@ -23,7 +23,7 @@ export const RetiredPlayers = ({
 			abbrev: string;
 			tid: number;
 		};
-		stat: number;
+		stat: number | undefined;
 	}[];
 	retiredStat: string;
 	season: number;

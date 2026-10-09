@@ -45,9 +45,9 @@ export const seasonLine = (p: Player, season: number) => {
 	let min = 0;
 	for (const row of p.stats) {
 		if (row.season === season && !row.playoffs && row.tid === p.tid) {
-			gp += row.gp;
-			gs += row.gs;
-			min += row.min;
+			gp += row.gp ?? 0;
+			gs += row.gs ?? 0;
+			min += row.min ?? 0;
 		}
 	}
 	return { gp, gs, min, mpg: gp > 0 ? min / gp : 0 };

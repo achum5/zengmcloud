@@ -1,31 +1,49 @@
 import { g, logEvent } from "../util/index.ts";
 import { idb } from "../db/index.ts";
-import type { SportsbookBet, UpdateEvents } from "../../common/types.ts";
+import type { SportsbookBet } from "../../common/types.ts";
+import { defineView, keepType, type ViewArgs } from "../util/defineView.ts";
+import type { RouteParams } from "../../ui/router/types.ts";
 import { getLines } from "../core/sportsbook/getLines.ts";
 import {
 	marketGid,
 	SPORTSBOOK_PRESEASON_GRANT,
+	SPORTSBOOK_TABS,
+	type SportsbookTab,
 } from "../../common/sportsbook.ts";
 
-const updateSportsbook = async (
-	inputs: { tab?: string },
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
+const processInputs = (params: RouteParams<"sportsbook">) => ({
+	// Each tab is its own URL, so the back button and a reload land where you
+	// left off instead of resetting to Games.
+	tab: SPORTSBOOK_TABS.includes(params.tab as any)
+		? (params.tab as SportsbookTab)
+		: "games",
+});
+
+// The priced board is reused across tab switches (see below).
+const keepPrevOutput = {
+	board: keepType<Awaited<ReturnType<typeof getLines>> | undefined>(),
+};
+
+const updateSportsbook = async ({
+	inputs,
+	updateEvents,
+	prevInputs,
+	prevOutput,
+}: ViewArgs<typeof processInputs, typeof keepPrevOutput>) => {
 	// Anything that can actually move a line or a balance.
 	const dataChanged =
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("gameSim") ||
-		updateEvents.includes("newPhase") ||
-		updateEvents.includes("playerMovement") ||
-		updateEvents.includes("gameAttributes") ||
+		updateEvents.has("firstRun") ||
+		updateEvents.has("gameSim") ||
+		updateEvents.has("newPhase") ||
+		updateEvents.has("playerMovement") ||
+		updateEvents.has("gameAttributes") ||
 		// Bets placed/settled bump this so the wallet + open bets refresh.
-		updateEvents.includes("watchList");
+		updateEvents.has("watchList");
 
 	// Switching tabs changes only the URL, so without this the view returns
 	// undefined, the UI keeps the props it already had, and the page stays on
 	// whatever tab it first rendered.
-	const tabChanged = inputs.tab !== state.tab;
+	const tabChanged = inputs.tab !== prevInputs?.tab;
 
 	if (dataChanged || tabChanged) {
 		// Catch-up settlement (a bet whose outcome is already known but that a
@@ -48,7 +66,7 @@ const updateSportsbook = async (
 		// moved.
 		let board: Awaited<ReturnType<typeof getLines>> | undefined = dataChanged
 			? undefined
-			: state.board;
+			: prevOutput.board;
 		try {
 			board ??= await getLines();
 		} catch (error) {
@@ -176,4 +194,9 @@ const updateSportsbook = async (
 	}
 };
 
-export default updateSportsbook;
+export default defineView({
+	id: "sportsbook",
+	processInputs,
+	keepPrevOutput,
+	load: updateSportsbook,
+});

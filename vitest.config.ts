@@ -6,6 +6,7 @@ import {
 import type { Sport } from "./tools/lib/getSport.ts";
 import type { ProjectConfig } from "vitest/node";
 import { playwright } from "@vitest/browser-playwright";
+import { jsonUrlsDefine } from "./tools/lib/jsonUrls.ts";
 import { sportFunctions } from "./tools/lib/rolldownPlugins/sportFunctions.ts";
 
 const footballTests = ["**/*.football/*.test.ts", "**/*.football.test.ts"];
@@ -20,6 +21,7 @@ const makeProject = (
 		define: {
 			__NODE_ENV: JSON.stringify("test"),
 			__SPORT: JSON.stringify(sport),
+			...jsonUrlsDefine(),
 		},
 		plugins: [
 			{
@@ -67,8 +69,7 @@ const benchmark = {
 
 export default defineConfig({
 	test: {
-		// Would like to fsModuleCache this, but it seems to not work properly even with defineCacheKeyGenerator in my plugin https://github.com/vitest-dev/vitest/issues/11281
-		fsModuleCache: false,
+		fsModuleCache: true,
 		isolate: false,
 		maxWorkers: 3,
 		projects: [

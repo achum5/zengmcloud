@@ -1,4 +1,10 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+	useEffectEvent,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { Modal } from "../components/Modal.tsx";
 import {
 	COURT,
@@ -104,7 +110,11 @@ export type ExhibitionLeagueWithSeasons =
 			seasonEnd: number;
 	  };
 
-const PlayerStatsSummary = ({ stats }: { stats: Player["stats"][number] }) => {
+const PlayerStatsSummary = ({
+	stats,
+}: {
+	stats: Player["stats"][number] | undefined;
+}) => {
 	if (!stats || stats.gp === undefined || stats.gp === 0) {
 		return <br />;
 	}
@@ -112,12 +122,12 @@ const PlayerStatsSummary = ({ stats }: { stats: Player["stats"][number] }) => {
 	if (__SPORT === "basketball") {
 		return (
 			<>
-				{helpers.roundStat(stats.pts / stats.gp, "pts")} pts /{" "}
+				{helpers.roundStat((stats.pts ?? 0) / stats.gp, "pts")} pts /{" "}
 				{helpers.roundStat(
 					((stats.trb ?? 0) + (stats.drb ?? 0) + (stats.orb ?? 0)) / stats.gp,
 					"trb",
 				)}{" "}
-				trb / {helpers.roundStat(stats.ast / stats.gp, "ast")} ast
+				trb / {helpers.roundStat((stats.ast ?? 0) / stats.gp, "ast")} ast
 			</>
 		);
 	}
@@ -231,17 +241,17 @@ const SelectTeam = ({
 
 		const newGameAttributes = getGameAttributes(newInfo.gameAttributes);
 
-		setTeams(newTeams as any);
+		setTeams(newTeams);
 		setTid(newTeam.tid);
 		setGameAttributes(newGameAttributes);
 		setLoadingTeams(false);
 
-		onChange(league, newTeam as any, newGameAttributes);
+		onChange(league, newTeam, newGameAttributes);
 	};
 
 	const awaitingInitialLoad = useRef(true);
-	useLayoutEffect(() => {
-		const run = async () => {
+	const loadInitialTeam = useEffectEvent(
+		async (leagues: ExhibitionLeague[]) => {
 			// We only want to do this once, on initial load ideally, but we may have to wait for leagues to be provided
 			if (
 				!awaitingInitialLoad.current ||
@@ -269,10 +279,11 @@ const SelectTeam = ({
 			const randomSeason = randInt(league.seasonStart, league.seasonEnd);
 			setSeason(randomSeason);
 			await loadTeams(league, randomSeason, "random");
-		};
+		},
+	);
 
-		run();
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+	useLayoutEffect(() => {
+		loadInitialTeam(leagues);
 	}, [leagues]);
 
 	const t = teams.find((t) => t.tid === tid);
@@ -341,7 +352,7 @@ const SelectTeam = ({
 							const newTid = Number.parseInt(event.target.value);
 							setTid(newTid);
 							const newTeam = teams.find((t) => t.tid === newTid);
-							onChange(league!, newTeam as any, gameAttributes);
+							onChange(league!, newTeam, gameAttributes);
 						}}
 						disabled={loadingTeams || disabled || !league}
 					>
@@ -495,7 +506,8 @@ const useLeagues = () => {
 
 const Exhibition = ({ defaultSettings, realTeamInfo }: View<"exhibition">) => {
 	// Default state comes from cache of last exhibition game, if possible
-	const defaultState = useMemo(() => {
+	// https://tkdodo.eu/blog/use-state-for-one-time-initializations
+	const [defaultState] = useState(() => {
 		let settings: CachedSettings | undefined;
 		try {
 			const json = safeLocalStorage.getItem(CACHE_KEY);
@@ -524,8 +536,7 @@ const Exhibition = ({ defaultSettings, realTeamInfo }: View<"exhibition">) => {
 			swapHomeAway: false,
 			teams: undefined,
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, []);
+	});
 
 	const leagues = useLeagues();
 	const [teams, setTeams] = useState<

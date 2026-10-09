@@ -362,10 +362,12 @@ export const getTeamOvrs = async (
 	teams: { tid: number }[],
 	season: number,
 ): Promise<Map<number, number>> => {
-	const ratings = ["ovr", "pos", "ovrs"];
-	if (__SPORT === "basketball") {
-		ratings.push(...RATINGS);
-	}
+	const ratings = [
+		"ovr",
+		"pos",
+		"ovrs",
+		...(__SPORT === "basketball" ? RATINGS : []),
+	] as const;
 
 	const ovrByTid = new Map<number, number>();
 	for (const t of teams) {

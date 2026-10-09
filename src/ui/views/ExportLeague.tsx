@@ -426,8 +426,10 @@ const getExportInfo = (
 	if (checked.players && !checked.gameHighs) {
 		forEach.players = (p) => {
 			for (const row of p.stats) {
+				// stats.max is not known statically
+				const rowRecord: Record<string, unknown> = row;
 				for (const stat of stats.max) {
-					delete row[stat];
+					delete rowRecord[stat];
 				}
 			}
 		};
@@ -545,7 +547,7 @@ const ExportLeague = ({ stats }: View<"exportLeague">) => {
 		safeLocalStorage.getItem("dropboxAccessToken"),
 	);
 
-	const handleSubmit = (type: "download" | "dropbox") => async () => {
+	const handleSubmit = async (type: "download" | "dropbox") => {
 		setStatus(undefined);
 		setState(type);
 		setAborting(false);
@@ -860,7 +862,7 @@ const ExportLeague = ({ stats }: View<"exportLeague">) => {
 						{state === "idle" || state === "download" ? (
 							<ActionButton
 								processing={state === "download"}
-								onClick={handleSubmit("download")}
+								onClick={() => handleSubmit("download")}
 							>
 								<span className="glyphicon glyphicon-download-alt" /> Download
 								file
@@ -874,7 +876,7 @@ const ExportLeague = ({ stats }: View<"exportLeague">) => {
 										className={state === "idle" ? "ms-2" : undefined}
 										maintainWidth={false}
 										processing={state === "dropbox"}
-										onClick={handleSubmit("dropbox")}
+										onClick={() => handleSubmit("dropbox")}
 									>
 										<span className="glyphicon glyphicon-cloud-upload" /> Save
 										to Dropbox

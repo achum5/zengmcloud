@@ -1,13 +1,13 @@
-import type { UpdateEvents } from "../../common/types.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
 
 // The weekly Top 25, with each team's movement since last week.
-const updateTop25 = async (inputs: unknown, updateEvents: UpdateEvents) => {
+const updateTop25 = async ({ updateEvents }: ViewArgs) => {
 	if (
-		!updateEvents.includes("firstRun") &&
-		!updateEvents.includes("gameSim") &&
-		!updateEvents.includes("newPhase")
+		!updateEvents.has("firstRun") &&
+		!updateEvents.has("gameSim") &&
+		!updateEvents.has("newPhase")
 	) {
 		return;
 	}
@@ -53,4 +53,7 @@ const updateTop25 = async (inputs: unknown, updateEvents: UpdateEvents) => {
 	};
 };
 
-export default updateTop25;
+export default defineView({
+	id: "top25",
+	load: updateTop25,
+});

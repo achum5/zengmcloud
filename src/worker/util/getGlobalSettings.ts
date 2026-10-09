@@ -11,7 +11,7 @@ import { DEFAULT_ACHIEVEMENT_DRAFT_PICKS } from "../../common/achievementCards.t
 
 export const getGlobalSettings = async () => {
 	const globalSettings = ((await idb.meta.get("attributes", "options")) ??
-		{}) as unknown as Options;
+		{}) as Options;
 
 	globalSettings.phaseChangeRedirects ??= DEFAULT_PHASE_CHANGE_REDIRECTS;
 	globalSettings.recapMaxGames ??= DEFAULT_RECAP_MAX_GAMES;

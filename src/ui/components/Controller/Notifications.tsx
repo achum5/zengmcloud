@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { m, AnimatePresence } from "framer-motion";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { emitter, type Message } from "../../util/notify.ts";
 import { SafeHtml } from "../SafeHtml.tsx";
 import { useLocal } from "../../util/local.ts";
@@ -23,6 +23,8 @@ const Notification = ({
 }: Message & { remove: () => void }) => {
 	const notificationElement = useRef<HTMLDivElement>(null);
 
+	const onRemove = useEffectEvent(remove);
+
 	useEffect(() => {
 		let timeoutID: number;
 		let timeoutStart: number;
@@ -31,7 +33,9 @@ const Notification = ({
 		const element = notificationElement.current;
 
 		const notificationTimeout = () => {
-			timeoutID = setTimeout(remove, timeoutRemaining);
+			timeoutID = setTimeout(() => {
+				onRemove();
+			}, timeoutRemaining);
 			timeoutStart = Date.now();
 		};
 
@@ -53,7 +57,7 @@ const Notification = ({
 				element.removeEventListener("mouseleave", notificationTimeout);
 			}
 		};
-	}, []); // eslint-disable-line react-hooks/exhaustive-deps
+	}, [persistent]);
 
 	return (
 		<div className={clsx("notification", extraClass)} ref={notificationElement}>

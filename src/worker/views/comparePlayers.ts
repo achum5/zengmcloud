@@ -1,6 +1,11 @@
 import { PLAYER, RATINGS } from "../../common/constants.ts";
 import { idb } from "../db/index.ts";
-import type { UpdateEvents, ViewInput } from "../../common/types.ts";
+import type {
+	Player,
+	PlayerRatingKey,
+	PlayerStatAttr,
+} from "../../common/types.ts";
+import { defineView, type ViewInput } from "../util/defineView.ts";
 import {
 	finalizePlayersRelativesList,
 	formatPlayerRelativesList,
@@ -9,29 +14,53 @@ import { shuffle } from "../../common/random.ts";
 import { g } from "../util/index.ts";
 import { last, maxBy } from "../../common/utils.ts";
 import { getPlayerProfileStats } from "./player.ts";
-import type { SeasonType } from "../api/processInputs.ts";
+import type { SeasonType } from "../util/processInputs.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { getTeamInfoBySeason } from "../util/getTeamInfoBySeason.ts";
+import type { RouteParams } from "../../ui/router/types.ts";
 import {
 	coarsenRating,
 	coarsenRatingsRow,
 	comparisonEntryExact,
 } from "../../common/coarsenRating.ts";
 
+const processInputs = (params: RouteParams<"comparePlayers">) => {
+	const players: {
+		pid: number;
+		season: number | "career";
+		playoffs: SeasonType;
+	}[] = [];
+
+	const info = params.info;
+	if (info !== undefined) {
+		players.push(
+			...info.split(",").map((pidSeasonPlayoffs) => {
+				const parts = pidSeasonPlayoffs.split("-");
+				return {
+					pid: Number.parseInt(parts[0]!),
+					season: parts[1] === "career" ? "career" : Number.parseInt(parts[1]!),
+					playoffs:
+						parts[2] === "c"
+							? "combined"
+							: parts[2] === "p"
+								? "playoffs"
+								: "regularSeason",
+				} as const;
+			}),
+		);
+	}
+
+	return {
+		players,
+	};
+};
+
 const hasPlayerInfoChanged = (
-	inputPlayers: ViewInput<"comparePlayers">["players"],
-	statePlayers:
-		| {
-				season: number;
-				p: {
-					pid: number;
-				};
-				playoffs: SeasonType;
-		  }[]
-		| undefined,
+	inputPlayers: ViewInput<typeof processInputs>["players"],
+	prevInputPlayers: ViewInput<typeof processInputs>["players"] | undefined,
 ) => {
 	// This just happens on initial render, which should never trigger because it checks firstRun before this, but let's just be careful
-	if (statePlayers === undefined) {
+	if (prevInputPlayers === undefined) {
 		return true;
 	}
 
@@ -40,17 +69,20 @@ const hasPlayerInfoChanged = (
 		return false;
 	}
 
-	if (inputPlayers.length !== statePlayers.length) {
+	if (inputPlayers.length !== prevInputPlayers.length) {
 		return true;
 	}
 
-	for (const [inputP, stateP] of Iterator.zip([inputPlayers, statePlayers], {
-		mode: "strict",
-	})) {
+	for (const [inputP, prevInputP] of Iterator.zip(
+		[inputPlayers, prevInputPlayers],
+		{
+			mode: "strict",
+		},
+	)) {
 		if (
-			inputP.pid !== stateP.p.pid ||
-			inputP.season !== stateP.season ||
-			inputP.playoffs !== stateP.playoffs
+			inputP.pid !== prevInputP.pid ||
+			inputP.season !== prevInputP.season ||
+			inputP.playoffs !== prevInputP.playoffs
 		) {
 			return true;
 		}
@@ -59,10 +91,12 @@ const hasPlayerInfoChanged = (
 	return false;
 };
 
-const getRatingsByPositions = (positions: string[]) => {
+const getRatingsByPositions = (
+	positions: string[],
+): (PlayerRatingKey | "ovr" | "pot")[] => {
 	const sportSpecific = bySport({
 		baseball: () => {
-			const ratings = ["hgt", "spd"];
+			const ratings: PlayerRatingKey[] = ["hgt", "spd"];
 			for (const pos of positions) {
 				if (pos === "SP" || pos === "RP") {
 					ratings.push("ppw", "ctl", "mov", "endu");
@@ -76,7 +110,7 @@ const getRatingsByPositions = (positions: string[]) => {
 			return new Set(RATINGS);
 		},
 		football: () => {
-			const ratings = ["hgt", "stre", "spd", "endu"];
+			const ratings: PlayerRatingKey[] = ["hgt", "stre", "spd", "endu"];
 			for (const pos of positions) {
 				if (pos === "QB") {
 					ratings.push("thv", "thp", "tha", "bsc");
@@ -99,7 +133,7 @@ const getRatingsByPositions = (positions: string[]) => {
 			return new Set(ratings);
 		},
 		hockey: () => {
-			const ratings = [];
+			const ratings: PlayerRatingKey[] = [];
 			for (const pos of positions) {
 				if (pos === "G") {
 					ratings.push("glk");
@@ -133,9 +167,9 @@ const getRatingsByPositions = (positions: string[]) => {
 };
 
 const getStatsByPositions = (positions: string[]) => {
-	const sportSpecific = bySport<() => Set<string> | string[]>({
+	const sportSpecific = bySport<() => Iterable<PlayerStatAttr>>({
 		baseball: () => {
-			const stats = [];
+			const stats: PlayerStatAttr[] = [];
 			for (const pos of positions) {
 				if (pos === "SP" || pos === "RP") {
 					stats.push(
@@ -165,7 +199,7 @@ const getStatsByPositions = (positions: string[]) => {
 					);
 				}
 			}
-			return new Set([...stats, "war"]);
+			return new Set<PlayerStatAttr>([...stats, "war"]);
 		},
 		basketball: () => {
 			return [
@@ -189,7 +223,7 @@ const getStatsByPositions = (positions: string[]) => {
 			];
 		},
 		football: () => {
-			const stats = ["gp"];
+			const stats: PlayerStatAttr[] = ["gp"];
 			for (const pos of positions) {
 				if (pos === "QB") {
 					stats.push(
@@ -272,10 +306,10 @@ const getStatsByPositions = (positions: string[]) => {
 					);
 				}
 			}
-			return new Set([...stats, "fp", "av"]);
+			return new Set<PlayerStatAttr>([...stats, "fp", "av"]);
 		},
 		hockey: () => {
-			const stats = [];
+			const stats: PlayerStatAttr[] = [];
 			for (const pos of positions) {
 				if (pos === "G") {
 					stats.push(
@@ -305,193 +339,229 @@ const getStatsByPositions = (positions: string[]) => {
 					);
 				}
 			}
-			return new Set([...stats, "ps"]);
+			return new Set<PlayerStatAttr>([...stats, "ps"]);
 		},
 	})();
 
 	return Array.from(sportSpecific);
 };
 
-const updateComparePlayers = async (
-	inputs: ViewInput<"comparePlayers">,
-	updateEvents: UpdateEvents,
-	state: any,
+// Returns a single ratings row and a single stats row, for either one season or career totals (with peak ratings)
+const getPlayer = async (
+	pRaw: Player,
+	season: number | "career",
+	playoffs: SeasonType,
+	allStats: PlayerStatAttr[],
 ) => {
-	if (
-		updateEvents.includes("firstRun") ||
-		hasPlayerInfoChanged(inputs.players, state.players)
-	) {
-		const currentPlayers = (await idb.cache.players.getAll()).filter((p) => {
-			// Don't include far future players
-			if (p.tid === PLAYER.UNDRAFTED && p.draft.year > g.get("season") + 2) {
-				return false;
-			}
+	const playersPlusOptions = {
+		attrs: [
+			"pid",
+			"firstName",
+			"lastName",
+			"born",
+			"watch",
+			"face",
+			"imgURL",
+			"awards",
+			"draft",
+			"tid",
+			"experience",
+			"contract",
+			"salaries",
+			"salariesTotal",
+		],
+		ratings: ["season", "pos", "ovr", "pot", ...RATINGS],
+		stats: allStats,
+		seasonType: playoffs,
+		showNoStats: true,
+		showRookies: true,
+		fuzz: true,
+		// Exact ratings here; whether this comparison displays coarse is
+		// decided below, for all its players at once.
+		coarsenRatings: false,
+		mergeStats: "totOnly",
+	} as const;
 
-			return true;
-		});
-
-		const playersToShow = [...inputs.players];
-
-		// If fewer than 2 players, pick some random ones
-		while (playersToShow.length < 2) {
-			let found = false;
-
-			const pidsToShow = new Set(playersToShow.map((p) => p.pid));
-
-			shuffle(currentPlayers);
-			for (const p of currentPlayers) {
-				if (pidsToShow.has(p.pid)) {
-					continue;
-				}
-				if (p.tid === PLAYER.UNDRAFTED) {
-					continue;
-				}
-
-				// Current season, if possible
-				const season =
-					p.ratings.findLast((row) => row.season === g.get("season"))?.season ??
-					last(p.ratings).season;
-
-				playersToShow.push({
-					pid: p.pid,
-					season,
-					playoffs: "regularSeason",
-				});
-				found = true;
-				break;
-			}
-
-			if (!found) {
-				break;
-			}
+	if (season === "career") {
+		const p = await idb.getCopy.playersPlus(pRaw, playersPlusOptions);
+		if (!p) {
+			return;
 		}
 
-		const allStats = getPlayerProfileStats();
+		const {
+			careerStats,
+			careerStatsPlayoffs,
+			careerStatsCombined,
+			ratings: allRatings,
+			stats: allSeasonStats,
+			...rest
+		} = p;
 
-		// Whether each shown entry could carry exact ratings on its own - the
-		// whole comparison goes coarse unless every one of them can.
-		const exactEligible: boolean[] = [];
+		const stats =
+			playoffs === "playoffs"
+				? careerStatsPlayoffs
+				: playoffs === "combined"
+					? careerStatsCombined
+					: careerStats;
+		if (!stats) {
+			return;
+		}
 
-		const players = [];
-		for (const { pid, season, playoffs } of playersToShow) {
-			const pRaw = await idb.getCopy.players({ pid }, "noCopyCache");
-			if (pRaw) {
-				const p = await idb.getCopy.playersPlus(pRaw, {
-					attrs: [
-						"pid",
-						"firstName",
-						"lastName",
-						"born",
-						"watch",
-						"face",
-						"imgURL",
-						"awards",
-						"draft",
-						"tid",
-						"experience",
-						"awards",
-						"contract",
-						"salaries",
-						"salariesTotal",
-					],
-					ratings: ["season", "pos", "ovr", "pot", ...RATINGS],
-					stats: allStats,
-					playoffs: playoffs === "playoffs",
-					regularSeason: playoffs === "regularSeason",
-					combined: playoffs === "combined",
-					season: season === "career" ? undefined : season,
-					showNoStats: true,
-					showRookies: true,
-					fuzz: true,
-					// Exact ratings here; whether this comparison displays coarse is
-					// decided below, for all its players at once.
-					coarsenRatings: false,
-					mergeStats: "totOnly",
-				});
+		// Peak ratings
+		const ratings = maxBy(allRatings, "ovr") ?? last(allRatings);
 
-				if (p) {
-					let teamInfo;
-					if (season === "career") {
-						const statsKey =
-							playoffs === "playoffs"
-								? "careerStatsPlayoffs"
-								: playoffs === "combined"
-									? "careerStatsCombined"
-									: "careerStats";
-						p.stats = p[statsKey];
-						delete p[statsKey];
+		const teamInfo = await getTeamInfoBySeason(p.tid, ratings.season);
 
-						// Peak ratings
-						p.ratings = maxBy(p.ratings, "ovr");
+		return {
+			...rest,
+			ratings,
+			stats,
+			colors: teamInfo?.colors,
+			jersey: teamInfo?.jersey,
+		};
+	}
 
-						teamInfo = await getTeamInfoBySeason(p.tid, p.ratings.season);
-					} else {
-						p.awards = (p.awards as any[]).filter(
-							(award) => award.season === season,
-						);
-						teamInfo = await getTeamInfoBySeason(p.tid, season);
+	const p = await idb.getCopy.playersPlus(pRaw, {
+		...playersPlusOptions,
+		season,
+	});
+	if (!p) {
+		return;
+	}
+
+	const teamInfo = await getTeamInfoBySeason(p.tid, season);
+
+	return {
+		...p,
+		awards: p.awards.filter((award) => award.season === season),
+		colors: teamInfo?.colors,
+		jersey: teamInfo?.jersey,
+	};
+};
+
+export default defineView({
+	id: "comparePlayers",
+	processInputs,
+	load: async ({ inputs, updateEvents, prevInputs }) => {
+		if (
+			updateEvents.has("firstRun") ||
+			hasPlayerInfoChanged(inputs.players, prevInputs?.players)
+		) {
+			const currentPlayers = (await idb.cache.players.getAll()).filter((p) => {
+				// Don't include far future players
+				if (p.tid === PLAYER.UNDRAFTED && p.draft.year > g.get("season") + 2) {
+					return false;
+				}
+
+				return true;
+			});
+
+			const playersToShow = [...inputs.players];
+
+			// If fewer than 2 players, pick some random ones
+			while (playersToShow.length < 2) {
+				let found = false;
+
+				const pidsToShow = new Set(playersToShow.map((p) => p.pid));
+
+				shuffle(currentPlayers);
+				for (const p of currentPlayers) {
+					if (pidsToShow.has(p.pid)) {
+						continue;
+					}
+					if (p.tid === PLAYER.UNDRAFTED) {
+						continue;
 					}
 
-					if (teamInfo) {
-						p.colors = teamInfo.colors;
-						p.jersey = teamInfo.jersey;
-					}
+					// Current season, if possible
+					const season =
+						p.ratings.findLast((row) => row.season === g.get("season"))
+							?.season ?? last(p.ratings).season;
 
-					exactEligible.push(
-						comparisonEntryExact(
-							pRaw.tid,
-							pRaw.draft.year,
-							season,
-							g.get("hideRatingsOnesDigitExceptProspects"),
-						),
-					);
-					players.push({
-						p,
+					playersToShow.push({
+						pid: p.pid,
 						season,
-						firstSeason: pRaw.ratings[0].season,
-						lastSeason: last(pRaw.ratings).season,
-						playoffs,
+						playoffs: "regularSeason",
 					});
+					found = true;
+					break;
+				}
+
+				if (!found) {
+					break;
 				}
 			}
-		}
 
-		// ONE SCALE FOR THE WHOLE COMPARISON. With "hide ratings ones digit" on,
-		// a row's scale depends on whose it is - a scouting row or a retired
-		// career reads exact, an active player's pro season reads coarse. Side by
-		// side that put 46 next to 5, so the page picks a single scale: exact
-		// only when every column reads exact on its own, coarse for everybody the
-		// moment an active player's pro season (or career) is in the mix.
-		if (g.get("hideRatingsOnesDigit") && !exactEligible.every(Boolean)) {
-			const ratingsList = ["season", "pos", "ovr", "pot", ...RATINGS];
-			for (const { p } of players) {
-				p.ratings = coarsenRatingsRow(p.ratings, ratingsList);
-				if (p.draft) {
-					for (const attr of ["ovr", "pot"]) {
-						if (typeof p.draft[attr] === "number") {
-							p.draft[attr] = coarsenRating(p.draft[attr]);
+			const allStats = getPlayerProfileStats();
+
+			// Whether each shown entry could carry exact ratings on its own - the
+			// whole comparison goes coarse unless every one of them can.
+			const exactEligible: boolean[] = [];
+
+			const players = [];
+			for (const { pid, season, playoffs } of playersToShow) {
+				const pRaw = await idb.getCopy.players({ pid }, "noCopyCache");
+				if (!pRaw) {
+					continue;
+				}
+
+				const p = await getPlayer(pRaw, season, playoffs, allStats);
+				if (!p) {
+					continue;
+				}
+
+				exactEligible.push(
+					comparisonEntryExact(
+						pRaw.tid,
+						pRaw.draft.year,
+						season,
+						g.get("hideRatingsOnesDigitExceptProspects"),
+					),
+				);
+				players.push({
+					p,
+					season,
+					firstSeason: pRaw.ratings[0].season,
+					lastSeason: last(pRaw.ratings).season,
+					playoffs,
+				});
+			}
+
+			// ONE SCALE FOR THE WHOLE COMPARISON. With "hide ratings ones digit" on,
+			// a row's scale depends on whose it is - a scouting row or a retired
+			// career reads exact, an active player's pro season reads coarse. Side by
+			// side that put 46 next to 5, so the page picks a single scale: exact
+			// only when every column reads exact on its own, coarse for everybody the
+			// moment an active player's pro season (or career) is in the mix.
+			if (g.get("hideRatingsOnesDigit") && !exactEligible.every(Boolean)) {
+				const ratingsList = ["season", "pos", "ovr", "pot", ...RATINGS];
+				for (const { p } of players) {
+					p.ratings = coarsenRatingsRow(p.ratings, ratingsList);
+					if (p.draft) {
+						for (const attr of ["ovr", "pot"] as const) {
+							if (typeof p.draft[attr] === "number") {
+								p.draft[attr] = coarsenRating(p.draft[attr]);
+							}
 						}
 					}
 				}
 			}
+
+			// In summary table show ratings/stats relevant to these players' positions
+			const positions = players.map((p) => p.p.ratings.pos);
+			const ratings = getRatingsByPositions(positions);
+			const stats = getStatsByPositions(positions);
+
+			const initialAvailablePlayers = finalizePlayersRelativesList(
+				currentPlayers.map(formatPlayerRelativesList),
+			);
+
+			return {
+				initialAvailablePlayers,
+				players,
+				ratings,
+				stats,
+			};
 		}
-
-		// In summary table show ratings/stats relevant to these players' positions
-		const positions = players.map((p) => p.p.ratings.pos);
-		const ratings = getRatingsByPositions(positions);
-		const stats = getStatsByPositions(positions);
-
-		const initialAvailablePlayers = finalizePlayersRelativesList(
-			currentPlayers.map(formatPlayerRelativesList),
-		);
-
-		return {
-			initialAvailablePlayers,
-			players,
-			ratings,
-			stats,
-		};
-	}
-};
-
-export default updateComparePlayers;
+	},
+});

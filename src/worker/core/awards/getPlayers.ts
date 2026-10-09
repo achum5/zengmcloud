@@ -4,6 +4,7 @@ import type {
 	NonEmptyArray,
 	Player,
 	PlayerAward,
+	PlayerStatAttr,
 } from "../../../common/types.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { g, helpers } from "../../util/index.ts";
@@ -15,6 +16,7 @@ import {
 	PHASE,
 	PLAYER,
 	PLAYER_STATS_TABLES,
+	getPlayerStatsTableStats,
 } from "../../../common/constants.ts";
 import { last } from "../../../common/utils.ts";
 import { getPosByGpF } from "../player/getPosByGpF.ts";
@@ -50,11 +52,13 @@ const BOTH_AWARD_STATS_SKIP = new Set(
 	}),
 );
 
-const AWARD_STATS = [
-	...(__SPORT === "basketball" ? [] : ["keyStats"]),
+const AWARD_STATS: PlayerStatAttr[] = [
+	...(__SPORT === "basketball" ? [] : (["keyStats"] as const)),
 
 	// Anything that appears in a player stats table
-	...Object.values(PLAYER_STATS_TABLES).flatMap((x) => x.stats),
+	...Object.values(PLAYER_STATS_TABLES).flatMap((x) =>
+		getPlayerStatsTableStats(x.stats),
+	),
 
 	// A few extra that don't
 	...bySport({
@@ -62,7 +66,7 @@ const AWARD_STATS = [
 		basketball: [],
 		football: ["totTD"],
 		hockey: ["gs"],
-	}),
+	} as const),
 ];
 const AWARD_STATS_SPECIAL = [
 	"age",
@@ -166,9 +170,9 @@ const getProcessedPlayers = async (
 		]),
 	);
 
-	const regularSeason = statRanges.has("regularSeason");
-	const playoffs = statRanges.has("playoffs");
-	const combined = statRanges.has("combined");
+	const seasonType = (
+		["regularSeason", "playoffs", "combined"] as const
+	).filter((seasonType) => statRanges.has(seasonType));
 
 	const players = (await idb.getCopies.playersPlus(playersAll, {
 		attrs: [
@@ -186,9 +190,7 @@ const getProcessedPlayers = async (
 		],
 		ratings: ["pos", "season", "ovr", "dovr", "pot", "skills"],
 		stats: ["abbrev", "tid", "jerseyNumber", "season", ...stats],
-		playoffs,
-		regularSeason,
-		combined,
+		seasonType,
 		fuzz: true,
 		mergeStats: "totOnly",
 	})) as unknown as (Pick<
@@ -288,8 +290,8 @@ const getPlayoffSeriesStats = async (
 						for (const [pidString, info] of Object.entries(statOverrides)) {
 							const pid = Number.parseInt(pidString);
 							rowsByPid[pid] = {
-								...info!,
-								abbrev: abbrevsByTid.get(info!.tid) ?? "???",
+								...info,
+								abbrev: abbrevsByTid.get(info.tid) ?? "???",
 								jerseyNumber: "", // Would be nice to get this from player stats, but whatever
 								season,
 								playoffs: "playoffSeries",
@@ -306,7 +308,7 @@ const getPlayoffSeriesStats = async (
 		number,
 		{
 			info: StatsRowDefined;
-			rawStats: Record<string, any>;
+			rawStats: Record<string, unknown>;
 		}
 	> = new Map();
 
@@ -446,7 +448,7 @@ export const getPlayers = async (
 	}
 
 	for (const p of players) {
-		p.currentStats = {} as any;
+		p.currentStats = {};
 		for (const statRange of statRanges) {
 			if (typeof statRange === "number") {
 				const row = playoffSeriesStats[statRange]?.[p.pid];

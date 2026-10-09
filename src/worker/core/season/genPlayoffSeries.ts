@@ -154,9 +154,18 @@ const myValidatePlayoffSettings = ({
 
 export const genPlayoffSeriesFromTeams = async (
 	teams: MyTeam[],
-	orderTeamsOptions?: {
+	{
+		byConf: byConfOverride,
+		divisionRanks,
+		skipTiebreakers,
+	}: {
+		// Pass this to skip looking it up, for when this is called many times
+		byConf?: ByConf;
+
+		// See orderTeams
+		divisionRanks?: Map<number, number>;
 		skipTiebreakers?: boolean;
-	},
+	} = {},
 ): Promise<{
 	byConf: ByConf;
 	playIns?: PlayoffSeries["playIns"];
@@ -175,8 +184,10 @@ export const genPlayoffSeriesFromTeams = async (
 		};
 	}
 
-	// Playoffs are split into two branches by conference only if there are exactly 2 conferences
-	let playoffsByConf = await getPlayoffsByConf(g.get("season"));
+	let playoffsByConf =
+		byConfOverride ?? (await getPlayoffsByConf(g.get("season")));
+
+	const orderTeamsOptions = { divisionRanks, skipTiebreakers };
 
 	let series: PlayoffSeries["series"] = range(numRounds).map(() => []);
 

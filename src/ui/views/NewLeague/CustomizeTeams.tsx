@@ -1,5 +1,5 @@
 import { normalizeConfImgURL } from "../../../common/confs.ts";
-import { useEffect, useId, useReducer, useRef, useState } from "react";
+import { useId, useReducer, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { NewLeagueTeamWithoutRank } from "./types.ts";
 import type {
@@ -15,6 +15,7 @@ import UpsertTeamModal from "./UpsertTeamModal.tsx";
 import { StickyBottomButtons } from "../../components/StickyBottomButtons.tsx";
 import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
+import { selectOnMount } from "../../util/refCallbacks.ts";
 import confirmDeleteWithChildren from "./confirmDeleteWithChildren.tsx";
 import { Dropdown, OverlayTrigger, Popover } from "react-bootstrap";
 import { applyRealTeamInfos } from "./index.tsx";
@@ -632,13 +633,6 @@ const CardHeader = ({
 	const [controlledImgURL, setControlledImgURL] = useState(
 		identity?.imgURL ?? "",
 	);
-	const inputRef = useRef<HTMLInputElement>(null);
-
-	useEffect(() => {
-		if (renaming && inputRef.current) {
-			inputRef.current.select();
-		}
-	}, [renaming]);
 
 	return (
 		<div className={clsx("card-header", renaming ? "p-1" : "px-2")}>
@@ -661,7 +655,7 @@ const CardHeader = ({
 					style={{ maxWidth: identity ? 640 : 300 }}
 				>
 					<input
-						ref={inputRef}
+						ref={selectOnMount}
 						type="text"
 						className="form-control"
 						placeholder="Name"

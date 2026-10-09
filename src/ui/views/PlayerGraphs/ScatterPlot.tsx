@@ -4,16 +4,16 @@ import { Circle, LinePath } from "@visx/shape";
 import { Group } from "@visx/group";
 import { useParentSize } from "@visx/responsive";
 import { useTooltip, TooltipWithBounds } from "@visx/tooltip";
-import { useRef, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
-export type TooltipData = {
+export type TooltipData<Row> = {
 	x: number;
 	y: number;
-	row: any;
+	row: Row;
 };
 
 type ScatterPlotProps<Row> = {
-	data: TooltipData[];
+	data: TooltipData<Row>[];
 	descShort: [string, string];
 	descLong: [string | undefined, string | undefined];
 	getImageUrl?: (row: Row) => string | undefined;
@@ -119,9 +119,7 @@ const ScatterPlot = <Row extends unknown>({
 		tooltipOpen,
 		tooltipTop,
 		tooltipLeft,
-	} = useTooltip<TooltipData>();
-
-	const svgRef = useRef(null);
+	} = useTooltip<TooltipData<Row>>();
 
 	const margin = { top: 10, left: 60, right: 10, bottom: 60 };
 	const width = totalWidth - margin.left - margin.right;
@@ -140,7 +138,7 @@ const ScatterPlot = <Row extends unknown>({
 		return m * x + b;
 	};
 
-	const handleMouseOver = (x: number, y: number, data: TooltipData) => {
+	const handleMouseOver = (x: number, y: number, data: TooltipData<Row>) => {
 		showTooltip({
 			tooltipLeft: x + margin.left,
 			tooltipTop: y + margin.top,
@@ -161,12 +159,7 @@ const ScatterPlot = <Row extends unknown>({
 
 	return (
 		<div>
-			hi
-			<svg
-				width={totalWidth}
-				height={HEIGHT + margin.top + margin.bottom}
-				ref={svgRef}
-			>
+			<svg width={totalWidth} height={HEIGHT + margin.top + margin.bottom}>
 				<Group transform={`translate(${margin.left},${margin.top})`}>
 					<AxisLeft
 						axisClassName="chart-axis"

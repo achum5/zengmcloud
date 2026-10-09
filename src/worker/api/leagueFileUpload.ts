@@ -124,11 +124,12 @@ let validators: ReturnType<typeof makeValidators> | undefined;
 
 export type BasicInfo = {
 	gameAttributes?: any;
-	meta?: any;
+	// A synced league's export also carries its sync checkpoint here.
+	meta?: { name?: string; syncCheckpoint?: unknown } & Record<string, unknown>;
 	startingSeason?: number;
 	version?: number;
 	teams?: any[];
-	players?: any[]; // Only with includePlayersInBasicInfo
+	players?: unknown[]; // Only with includePlayersInBasicInfo
 	keys: Set<string>;
 	maxGid: number;
 	hasRookieContracts: boolean;
@@ -442,7 +443,7 @@ const initialCheck = async (
 	const stream0 = stream;
 
 	// I HAVE NO IDEA WHY THIS LINE IS NEEDED, but without this, Firefox seems to cut the stream off early
-	(self as any).stream0 = stream0;
+	self.stream0 = stream0;
 
 	const stream2 = (
 		await decompressStreamIfNecessary(
@@ -458,7 +459,7 @@ const initialCheck = async (
 		conditions,
 	});
 
-	delete (self as any).stream0;
+	delete self.stream0;
 
 	return {
 		basicInfo,

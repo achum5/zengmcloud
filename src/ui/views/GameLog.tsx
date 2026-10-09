@@ -12,7 +12,14 @@ import { SocialEmbed } from "../components/SocialEmbed.tsx";
 import { BoxScoreRow } from "../components/BoxScoreRow.tsx";
 import { useLocal } from "../util/local.ts";
 
-const StatsRow = ({ p, ...props }: { i: number; p: any; season: number }) => {
+const StatsRow = ({
+	p,
+	...props
+}: {
+	i: number;
+	p: unknown;
+	season: number;
+}) => {
 	const { clicked, toggleClicked } = useClickable();
 
 	const classes = clsx({

@@ -1,5 +1,10 @@
 import { useState } from "react";
-import type { PlayerAward, View } from "../../../common/types.ts";
+import type {
+	PlayerAward,
+	PlayerStatAttr,
+	PlayerStatsTables,
+	View,
+} from "../../../common/types.ts";
 import { helpers } from "../../util/helpers.ts";
 import { getCols } from "../../../common/getCols.ts";
 import { highlightLeaderText, MaybeBold, SeasonLink } from "./common.tsx";
@@ -19,10 +24,14 @@ import { SeasonNoteButton } from "../../components/SeasonNoteButton.tsx";
 import type { SeasonNoteSection } from "../../../common/seasonNote.ts";
 import type { RecapLink } from "../../util/linkifyRecap.ts";
 import { wrappedSeasonAwards } from "./SeasonAwards.tsx";
+import { hasNonZeroStat } from "../../../common/statValue.ts";
 
 const hasStats = (
-	careerStats: View<"player">["player"]["careerStats"],
-	onlyShowIf: string[] | undefined,
+	careerStats: View<"player">["player"][
+		| "careerStats"
+		| "careerStatsPlayoffs"
+		| "careerStatsCombined"],
+	onlyShowIf: PlayerStatAttr[] | undefined,
 ) => {
 	// For careerStatPlayoffs gp is undefined if there are no stats rows, ugh
 	if (careerStats.gp === 0 || careerStats.gp === undefined) {
@@ -31,11 +40,7 @@ const hasStats = (
 
 	if (onlyShowIf !== undefined) {
 		for (const stat of onlyShowIf) {
-			if (
-				careerStats[stat]! > 0 ||
-				(Array.isArray(careerStats[stat]) &&
-					(careerStats[stat] as any).length > 0)
-			) {
+			if (hasNonZeroStat(careerStats[stat])) {
 				return true;
 			}
 		}
@@ -60,9 +65,9 @@ export const StatsTable = ({
 }: {
 	awardsBySeason: Map<number, PlayerAward[]>;
 	name: string;
-	onlyShowIf?: string[];
+	onlyShowIf?: PlayerStatAttr[];
 	p: View<"player">["player"];
-	stats: string[];
+	stats: PlayerStatsTables[string]["stats"];
 	superCols?: SuperCol[];
 	leaders: View<"player">["leaders"];
 	teamStats?: PlayerTeamStats;

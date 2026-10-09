@@ -1,16 +1,16 @@
 import { collegeClassLabel, collegeFinalSeason } from "../../common/college.ts";
 import { PHASE, PLAYER } from "../../common/constants.ts";
-import type { UpdateEvents } from "../../common/types.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
 
 // Unsigned players anyone can add to a roster with room: no recruiting, no
 // NIL to speak of.
-const updateWalkOns = async (inputs: unknown, updateEvents: UpdateEvents) => {
+const updateWalkOns = async ({ updateEvents }: ViewArgs) => {
 	if (
-		!updateEvents.includes("firstRun") &&
-		!updateEvents.includes("playerMovement") &&
-		!updateEvents.includes("newPhase")
+		!updateEvents.has("firstRun") &&
+		!updateEvents.has("playerMovement") &&
+		!updateEvents.has("newPhase")
 	) {
 		return;
 	}
@@ -54,4 +54,7 @@ const updateWalkOns = async (inputs: unknown, updateEvents: UpdateEvents) => {
 	};
 };
 
-export default updateWalkOns;
+export default defineView({
+	id: "walkOns",
+	load: updateWalkOns,
+});

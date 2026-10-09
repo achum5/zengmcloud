@@ -2,6 +2,7 @@ import { sanitizeRotation, type TeamRotation } from "../../common/rotation.ts";
 import { prospectUniform } from "../../common/prospectColors.ts";
 import { csvFormat, csvFormatRows } from "d3-dsv";
 import type { FaceConfig } from "facesjs";
+import type { PlayerStatAttr } from "../../common/types.ts";
 import {
 	GAME_ACRONYM,
 	PHASE,
@@ -18,6 +19,7 @@ import {
 	DEFAULT_RECAP_MAX_GAMES,
 	DEFAULT_RECAP_MAX_DAYS,
 	DEFAULT_RECAP_MAX_PLAYERS,
+	getPlayerStatsTableStats,
 } from "../../common/constants.ts";
 import { DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS } from "../../common/ownGameSim.ts";
 import actions from "./actions.ts";
@@ -27,7 +29,6 @@ import leagueFileUpload, {
 	emitProgressStream,
 	parseJSON,
 } from "./leagueFileUpload.ts";
-import processInputs from "./processInputs.ts";
 import {
 	allStar,
 	contractNegotiation,
@@ -70,6 +71,7 @@ import {
 	type LockName,
 	type Player,
 	type PlayerWithoutKey,
+	type UpdateEvent,
 	type UpdateEvents,
 	type TradeTeams,
 	type MinimalPlayerRatings,
@@ -166,7 +168,6 @@ import getRandomTeams from "./getRandomTeams.ts";
 import { withState } from "../core/player/name.ts";
 import { initDefaults, loadNames } from "../util/loadNames.ts";
 import type { PlayerRatings } from "../../common/types.basketball.ts";
-import createStreamFromLeagueObject from "../core/league/create/createStreamFromLeagueObject.ts";
 import type { IDBPIndex, IDBPObjectStore } from "@dumbmatter/idb";
 import {
 	upgradeGamesVersion65,
@@ -255,6 +256,7 @@ import type { SportsbookMarket } from "../../common/types.ts";
 import type { NoteInfo } from "../../ui/views/Player/Note.tsx";
 import { beforeLeague, beforeNonLeague } from "../util/beforeView.ts";
 import loadData from "../core/realRosters/loadData.basketball.ts";
+import loadStatsBasketball from "../core/realRosters/loadStats.basketball.ts";
 import formatPlayerFactory from "../core/realRosters/formatPlayerFactory.ts";
 import { applyRealPlayerPhotos } from "../core/league/processPlayerNewLeague.ts";
 import {
@@ -399,8 +401,8 @@ const addTeam = async () => {
 		did: t.did,
 		disabled: t.disabled,
 		jersey: t.jersey ?? DEFAULT_JERSEY,
-		pop: t.pop!, // See comment in types.ts about upgrade
-		stadiumCapacity: t.stadiumCapacity!, // See comment in types.ts about upgrade
+		pop: t.pop, // See comment in types.ts about upgrade
+		stadiumCapacity: t.stadiumCapacity, // See comment in types.ts about upgrade
 		colors: t.colors,
 	};
 };
@@ -907,9 +909,6 @@ const createLeague = async (
 		await toUI("resetLeague", []);
 	}
 
-	let actualTid = tid;
-	let stream: ReadableStream | undefined;
-
 	// A file exported from a synced league carries a checkpoint in its meta
 	// object: the room fingerprint it belongs to plus the change-log position
 	// its data already includes. Sniff it (and which stores the file contains)
@@ -937,179 +936,179 @@ const createLeague = async (
 		},
 	});
 
-	if (getLeagueOptions) {
-		const realLeague = await realRosters.getLeague(getLeagueOptions);
+	try {
+		let actualTid = tid;
+		let leagueData: ReadableStream | Record<string, unknown>;
+		if (getLeagueOptions) {
+			const realLeague = await realRosters.getLeague(getLeagueOptions);
 
-		if (getLeagueOptions.type === "real") {
-			if (getLeagueOptions.realStats === "all") {
-				keys.add("awards");
-				keys.add("playoffSeries");
+			if (getLeagueOptions.type === "real") {
+				if (getLeagueOptions.realStats === "all") {
+					keys.add("awards");
+					keys.add("playoffSeries");
+				}
+
+				if (getLeagueOptions.phase >= PHASE.PLAYOFFS) {
+					keys.add("awards");
+					keys.add("draftLotteryResults");
+					keys.add("draftPicks");
+					keys.add("playoffSeries");
+				}
 			}
 
-			if (getLeagueOptions.phase >= PHASE.PLAYOFFS) {
-				keys.add("awards");
-				keys.add("draftLotteryResults");
-				keys.add("draftPicks");
-				keys.add("playoffSeries");
+			// Since inactive teams are included if realStats=="all", need to translate tid and overwrite fromFile.teams
+			if (
+				getLeagueOptions.type === "real" &&
+				getLeagueOptions.realStats === "all"
+			) {
+				const srID = fromFile.teams![tid].srID;
+				actualTid = realLeague.teams.findIndex((t) => t.srID === srID);
+				if (!srID || actualTid < 0) {
+					throw new Error("Error finding tid");
+				}
 			}
-		}
 
-		// Since inactive teams are included if realStats=="all", need to translate tid and overwrite fromFile.teams
-		if (
-			getLeagueOptions.type === "real" &&
-			getLeagueOptions.realStats === "all"
-		) {
-			const srID = fromFile.teams![tid].srID;
-			actualTid = realLeague.teams.findIndex((t) => t.srID === srID);
-			if (!srID || actualTid < 0) {
-				throw new Error("Error finding tid");
+			// Definitley need this for realStats=="all", but maybe elsewhere too. This is needed because we don't know if we're keeping history or not when we call getLeagueInfo to display the team/settings in the UI.
+			fromFile.gameAttributes = realLeague.gameAttributes;
+			fromFile.startingSeason = realLeague.startingSeason;
+			fromFile.teams = realLeague.teams;
+
+			leagueData = realLeague;
+		} else if (file || url) {
+			let baseStream: ReadableStream;
+			let sizeInBytes: number | undefined;
+			if (file) {
+				baseStream = file.stream();
+				sizeInBytes = file.size;
+			} else {
+				const response = await fetch(url!);
+				if (!response.ok) {
+					throw new Error(`HTTP error ${response.status}`);
+				}
+				baseStream = response.body as ReadableStream;
+				const size = response.headers.get("content-length");
+				if (size) {
+					sizeInBytes = Number(size);
+				}
 			}
-		}
 
-		// Definitley need this for realStats=="all", but maybe elsewhere too. This is needed because we don't know if we're keeping history or not when we call getLeagueInfo to display the team/settings in the UI.
-		fromFile.gameAttributes = realLeague.gameAttributes;
-		fromFile.startingSeason = realLeague.startingSeason;
-		fromFile.teams = realLeague.teams;
+			const stream0 = baseStream;
 
-		stream = createStreamFromLeagueObject(realLeague);
-	} else if (file || url) {
-		let baseStream: ReadableStream;
-		let sizeInBytes: number | undefined;
-		if (file) {
-			baseStream = file.stream();
-			sizeInBytes = file.size;
-		} else {
-			const response = await fetch(url!);
-			if (!response.ok) {
-				throw new Error(`HTTP error ${response.status}`);
-			}
-			baseStream = response.body as ReadableStream;
-			const size = response.headers.get("content-length");
-			if (size) {
-				sizeInBytes = Number(size);
-			}
-		}
+			// I HAVE NO IDEA WHY THIS LINE IS NEEDED, but without this, Firefox seems to cut the stream off early
+			self.stream0 = stream0;
 
-		const stream0 = baseStream;
-
-		// I HAVE NO IDEA WHY THIS LINE IS NEEDED, but without this, Firefox seems to cut the stream off early
-		(self as any).stream0 = stream0;
-
-		stream = (
-			await decompressStreamIfNecessary(
-				stream0.pipeThrough(
-					emitProgressStream(leagueCreationID, sizeInBytes, conditions),
-				),
+			leagueData = (
+				await decompressStreamIfNecessary(
+					stream0.pipeThrough(
+						emitProgressStream(leagueCreationID, sizeInBytes, conditions),
+					),
+				)
 			)
-		)
-			.pipeThrough(new TextDecoderStream())
-			.pipeThrough(parseJSON())
-			.pipeThrough(sniffSyncCheckpoint);
-	} else {
-		stream = createStreamFromLeagueObject({});
-	}
-
-	if (!stream) {
-		throw new Error("No stream");
-	}
-
-	const lid = importLid ?? (await getNewLeagueLid());
-
-	await league.createStream(stream, {
-		conditions,
-		confs,
-		divs,
-		fromFile,
-		getLeagueOptions,
-		lid,
-		keptKeys: keys,
-		name,
-		setLeagueCreationStatus,
-		settings,
-		shuffleRosters,
-		startingSeasonFromInput,
-		teamsFromInput,
-		tid: actualTid,
-	});
-
-	delete (self as any).stream0;
-
-	// A (re)created league is a NEW file: it must never inherit a previous file's
-	// room session, watermark, or room binding. This lid can carry stale sync
-	// state two ways - importing over an existing league (importLid keeps its
-	// meta row), and lid reuse (new lid = newest lid + 1, so deleting the newest
-	// league recycles its lid).
-	const metaLeague = await idb.meta.get("leagues", lid);
-	if (metaLeague) {
-		delete metaLeague.syncCode;
-		delete metaLeague.syncIsHost;
-		delete metaLeague.syncWatermark;
-		delete metaLeague.syncLeagueId;
-
-		// If the file carried a sync checkpoint AND this import faithfully kept
-		// everything the file contains (no dropped stores, no roster shuffling),
-		// the new league IS the state that checkpoint describes - stamp the room
-		// fingerprint and watermark so joining the room catches up from there
-		// instead of replaying the whole history. Any deviation falls back to a
-		// full replay, which is slower but always converges (idempotent).
-		const missingStores = [...fileStoreKeys].filter(
-			(key) =>
-				key !== "gameAttributes" &&
-				key !== "startingSeason" &&
-				key !== "version" &&
-				!keys.has(key as any),
-		);
-		const keptEverything = missingStores.length === 0;
-		const applied =
-			!!syncCheckpoint &&
-			keptEverything &&
-			!shuffleRosters &&
-			!settings.giveMeWorstRoster;
-		if (applied) {
-			metaLeague.syncLeagueId = syncCheckpoint!.leagueId;
-			metaLeague.syncWatermark = syncCheckpoint!.watermark;
+				.pipeThrough(new TextDecoderStream())
+				.pipeThrough(parseJSON())
+				.pipeThrough(sniffSyncCheckpoint);
+		} else {
+			leagueData = {};
 		}
 
-		// One-time line so a re-import that still catches up from zero shows
-		// exactly why the checkpoint fast-forward was (not) applied.
-		syncDebugLog("import:checkpoint", {
-			applied,
-			hasCheckpoint: !!syncCheckpoint,
-			checkpointWatermark: syncCheckpoint?.watermark,
-			keptEverything,
-			missingStores,
-			fileStores: [...fileStoreKeys],
-			shuffleRosters,
-			worstRoster: !!settings.giveMeWorstRoster,
-		});
+		const lid = importLid ?? (await getNewLeagueLid());
 
-		await idb.meta.put("leagues", metaLeague);
-	} else {
-		// No meta row at this point means the checkpoint can't be stamped - the
-		// re-import would replay from zero. Logged so this case is distinguishable.
-		syncDebugLog("import:checkpoint", {
-			applied: false,
-			outcome: "no-meta-row",
-			hasCheckpoint: !!syncCheckpoint,
+		await league.createStream(leagueData, {
+			conditions,
+			confs,
+			divs,
+			fromFile,
+			getLeagueOptions,
 			lid,
+			keptKeys: keys,
+			name,
+			setLeagueCreationStatus,
+			settings,
+			shuffleRosters,
+			startingSeasonFromInput,
+			teamsFromInput,
+			tid: actualTid,
 		});
+
+		// A (re)created league is a NEW file: it must never inherit a previous file's
+		// room session, watermark, or room binding. This lid can carry stale sync
+		// state two ways - importing over an existing league (importLid keeps its
+		// meta row), and lid reuse (new lid = newest lid + 1, so deleting the newest
+		// league recycles its lid).
+		const metaLeague = await idb.meta.get("leagues", lid);
+		if (metaLeague) {
+			delete metaLeague.syncCode;
+			delete metaLeague.syncIsHost;
+			delete metaLeague.syncWatermark;
+			delete metaLeague.syncLeagueId;
+
+			// If the file carried a sync checkpoint AND this import faithfully kept
+			// everything the file contains (no dropped stores, no roster shuffling),
+			// the new league IS the state that checkpoint describes - stamp the room
+			// fingerprint and watermark so joining the room catches up from there
+			// instead of replaying the whole history. Any deviation falls back to a
+			// full replay, which is slower but always converges (idempotent).
+			const missingStores = [...fileStoreKeys].filter(
+				(key) =>
+					key !== "gameAttributes" &&
+					key !== "startingSeason" &&
+					key !== "version" &&
+					!keys.has(key as any),
+			);
+			const keptEverything = missingStores.length === 0;
+			const applied =
+				!!syncCheckpoint &&
+				keptEverything &&
+				!shuffleRosters &&
+				!settings.giveMeWorstRoster;
+			if (applied) {
+				metaLeague.syncLeagueId = syncCheckpoint!.leagueId;
+				metaLeague.syncWatermark = syncCheckpoint!.watermark;
+			}
+
+			// One-time line so a re-import that still catches up from zero shows
+			// exactly why the checkpoint fast-forward was (not) applied.
+			syncDebugLog("import:checkpoint", {
+				applied,
+				hasCheckpoint: !!syncCheckpoint,
+				checkpointWatermark: syncCheckpoint?.watermark,
+				keptEverything,
+				missingStores,
+				fileStores: [...fileStoreKeys],
+				shuffleRosters,
+				worstRoster: !!settings.giveMeWorstRoster,
+			});
+
+			await idb.meta.put("leagues", metaLeague);
+		} else {
+			// No meta row at this point means the checkpoint can't be stamped - the
+			// re-import would replay from zero. Logged so this case is distinguishable.
+			syncDebugLog("import:checkpoint", {
+				applied: false,
+				outcome: "no-meta-row",
+				hasCheckpoint: !!syncCheckpoint,
+				lid,
+			});
+		}
+
+		if (settings.giveMeWorstRoster) {
+			await league.swapWorstRoster(false);
+		}
+
+		return lid;
+	} finally {
+		delete self.stream0;
+
+		toUI(
+			"updateLocal",
+			[
+				{
+					leagueCreation: undefined,
+				},
+			],
+			conditions,
+		);
 	}
-
-	if (settings.giveMeWorstRoster) {
-		await league.swapWorstRoster(false);
-	}
-
-	toUI(
-		"updateLocal",
-		[
-			{
-				leagueCreation: undefined,
-			},
-		],
-		conditions,
-	);
-
-	return lid;
 };
 
 const deleteOldData = async (options: {
@@ -1129,7 +1128,7 @@ const deleteOldData = async (options: {
 		throw new Error("Delete Old Data is not available in a synced league.");
 	}
 
-	const transaction = idb.league.transaction(
+	const tx = idb.league.transaction(
 		[
 			"allStars",
 			"draftLotteryResults",
@@ -1146,29 +1145,29 @@ const deleteOldData = async (options: {
 	);
 
 	if (options.boxScores) {
-		transaction.objectStore("games").clear();
+		tx.objectStore("games").clear();
 		// Saved live-sim replays go with the box scores they belong to.
-		transaction.objectStore("liveGamePlayByPlay").clear();
+		tx.objectStore("liveGamePlayByPlay").clear();
 	}
 
 	if (options.teamHistory) {
-		for await (const cursor of transaction.objectStore("teamSeasons")) {
+		for await (const cursor of tx.objectStore("teamSeasons")) {
 			if (cursor.value.season < g.get("season")) {
 				await cursor.delete();
 			}
 		}
 
-		transaction.objectStore("draftLotteryResults").clear();
+		tx.objectStore("draftLotteryResults").clear();
 
-		transaction.objectStore("headToHeads").clear();
+		tx.objectStore("headToHeads").clear();
 
-		for await (const cursor of transaction.objectStore("allStars")) {
+		for await (const cursor of tx.objectStore("allStars")) {
 			if (cursor.value.season < g.get("season")) {
 				await cursor.delete();
 			}
 		}
 
-		for await (const cursor of transaction.objectStore("teams")) {
+		for await (const cursor of tx.objectStore("teams")) {
 			const t = cursor.value;
 			t.retiredJerseyNumbers = [];
 			await cursor.update(t);
@@ -1176,7 +1175,7 @@ const deleteOldData = async (options: {
 	}
 
 	if (options.teamStats) {
-		for await (const cursor of transaction.objectStore("teamStats")) {
+		for await (const cursor of tx.objectStore("teamStats")) {
 			if (cursor.value.season < g.get("season")) {
 				await cursor.delete();
 			}
@@ -1184,14 +1183,14 @@ const deleteOldData = async (options: {
 	}
 
 	if (options.retiredPlayers) {
-		for await (const cursor of transaction
+		for await (const cursor of tx
 			.objectStore("players")
 			.index("tid")
 			.iterate(PLAYER.RETIRED)) {
 			await cursor.delete();
 		}
 	} else if (options.retiredPlayersUnnotable) {
-		for await (const cursor of transaction
+		for await (const cursor of tx
 			.objectStore("players")
 			.index("tid")
 			.iterate(PLAYER.RETIRED)) {
@@ -1260,7 +1259,7 @@ const deleteOldData = async (options: {
 	};
 
 	if (options.playerStats) {
-		for await (const cursor of transaction.objectStore("players")) {
+		for await (const cursor of tx.objectStore("players")) {
 			const p = cursor.value;
 			const p2 = deletePlayerStats(p);
 			if (p2) {
@@ -1268,7 +1267,7 @@ const deleteOldData = async (options: {
 			}
 		}
 	} else if (options.playerStatsUnnotable) {
-		for await (const cursor of transaction.objectStore("players")) {
+		for await (const cursor of tx.objectStore("players")) {
 			const p = cursor.value;
 			if (p.awards.length === 0 && !p.statsTids.includes(g.get("userTid"))) {
 				const p2 = deletePlayerStats(p);
@@ -1280,10 +1279,10 @@ const deleteOldData = async (options: {
 	}
 
 	if (options.events) {
-		transaction.objectStore("events").clear();
+		tx.objectStore("events").clear();
 	}
 
-	await transaction.done;
+	await tx.done;
 
 	// Without this, cached values will still exist
 	await idb.cache.fill();
@@ -1821,21 +1820,17 @@ const exportPlayerAveragesCsv = async (season: number | "all") => {
 
 	const ratings = [...RATINGS, ...extraRatings];
 
-	let stats: string[] = [];
+	let stats: PlayerStatAttr[] = [];
 
 	for (const table of Object.values(PLAYER_STATS_TABLES)) {
 		if (table) {
 			stats.push(
-				...table.stats.filter((stat) => {
+				...getPlayerStatsTableStats(table.stats).filter((stat) => {
 					if (stat.endsWith("Max")) {
 						return false;
 					}
 
 					if (__SPORT === "baseball") {
-						if (stat === "pos") {
-							return false;
-						}
-
 						if (
 							statsBaseball.byPos &&
 							statsBaseball.byPos.includes(stat as any)
@@ -1853,7 +1848,7 @@ const exportPlayerAveragesCsv = async (season: number | "all") => {
 	// Ugh
 	const shotLocationsGetCols = (cols: string[]) => {
 		const colNames: string[] = [];
-		const overrides = {
+		const overrides: Record<string, string> = {
 			"stat:fgAtRim": "AtRimFG",
 			"stat:fgaAtRim": "AtRimFGA",
 			"stat:fgpAtRim": "AtRimFGP",
@@ -1865,9 +1860,7 @@ const exportPlayerAveragesCsv = async (season: number | "all") => {
 			"stat:fgpMidRange": "MidRangeFGP",
 		};
 		for (const col of cols) {
-			// @ts-expect-error
 			if (overrides[col]) {
-				// @ts-expect-error
 				colNames.push(overrides[col]);
 			} else {
 				const col2 = getCol(col);
@@ -1931,8 +1924,11 @@ const exportPlayerAveragesCsv = async (season: number | "all") => {
 				p.ratings.pot,
 				...RATINGS.map((rating) => p.ratings[rating]),
 				...(extraRatings.length
-					? ["ovrs", "pots"].flatMap((type) =>
-							POSITIONS.map((pos) => p.ratings[type][pos]),
+					? (["ovrs", "pots"] as const).flatMap((type) =>
+							// In sports with extraRatings, POSITIONS are the keys of ovrs/pots
+							(POSITIONS as (keyof typeof p.ratings.ovrs)[]).map(
+								(pos) => p.ratings[type][pos],
+							),
 						)
 					: []),
 			]);
@@ -2602,6 +2598,13 @@ const getGoatBreakdown = async ({
 	};
 };
 
+// Start downloading real player stats before the user clicks "Create League", since it's a big file. Not awaited by the UI, and errors are ignored here because they will be handled when the stats are actually needed
+const prefetchRealPlayerStats = () => {
+	if (__SPORT === "basketball") {
+		loadStatsBasketball().catch(() => {});
+	}
+};
+
 const getLeagueName = () => {
 	return league.getName();
 };
@@ -2619,9 +2622,9 @@ const getNegotiationProps = async (pid: number) => {
 	}
 
 	const p2 = await idb.cache.players.get(negotiation.pid);
-	let p;
+	let pFiltered;
 	if (p2) {
-		p = await idb.getCopy.playersPlus(p2, {
+		pFiltered = await idb.getCopy.playersPlus(p2, {
 			attrs: [
 				"pid",
 				"tid",
@@ -2646,12 +2649,15 @@ const getNegotiationProps = async (pid: number) => {
 	}
 
 	// This can happen if a negotiation is somehow started with a retired player, or a player was deleted
-	if (!p || !p2) {
+	if (!pFiltered || !p2) {
 		await contractNegotiation.cancel(negotiation.pid);
 		return "Invalid negotiation. Please try again.";
 	}
 
-	p.mood = await player.moodInfos(p2);
+	let p = {
+		...pFiltered,
+		mood: await player.moodInfos(p2),
+	};
 
 	const contractOptions = await generateContractOptions(
 		negotiation,
@@ -3415,7 +3421,7 @@ export const augmentOffers = async (offers: TradeTeams[]) => {
 		basketball: ["gp", "min", "pts", "trb", "ast", "per"],
 		football: ["gp", "keyStats", "av"],
 		hockey: ["gp", "keyStats", "ops", "dps", "ps"],
-	});
+	} as const);
 
 	// Take the pids and dpids in each offer and get the info needed to display the offer
 	return Promise.all(
@@ -3532,8 +3538,7 @@ const getTradingBlockOffers = async ({
 	let saveLookingFor;
 	let positionAndNotDraftPicks = false;
 	let draftPicksAndNothingElse = lookingFor.assets.draftPicks;
-	for (const type of helpers.keys(lookingFor)) {
-		const obj = lookingFor[type];
+	for (const [type, obj] of helpers.entries(lookingFor)) {
 		for (const [key, value] of Object.entries(obj)) {
 			if (value) {
 				saveLookingFor = true;
@@ -3703,7 +3708,7 @@ const handleUploadedDraftClass = async ({
 			uploadedFile.version,
 		);
 		p2.draft.year = draftYear;
-		p2.ratings.at(-1)!.season = draftYear;
+		last(p2.ratings).season = draftYear;
 		p2.tid = PLAYER.UNDRAFTED;
 
 		if (Object.hasOwn(p2, "pid")) {
@@ -4047,7 +4052,7 @@ const init = async (inputEnv: Env, conditions: Conditions) => {
 		})();
 	}
 
-	// Send options to all new tabs
+	// Send options and current state to all new tabs
 	const attributesStore = (await idb.meta.transaction("attributes")).store;
 	const options = ((await attributesStore.get("options")) ?? {}) as Options;
 	const keyboardShortcuts = (await attributesStore.get(
@@ -4058,8 +4063,10 @@ const init = async (inputEnv: Env, conditions: Conditions) => {
 		[
 			{
 				fullNames: options.fullNames,
+				gameSimInProgress: lock.get("gameSim"),
 				keyboardShortcuts,
 				units: options.units,
+				workerBusy: lock.isWorkerBusy(),
 				recapAIProvider: options.recapAIProvider ?? "claude",
 			},
 		],
@@ -4115,9 +4122,16 @@ const ratingsStatsPopoverInfo = async ({
 	season?: number;
 }) => {
 	const blankObj = {
+		abbrev: undefined,
+		age: undefined,
+		jerseyNumber: undefined,
 		name: undefined,
+		note: undefined,
 		ratings: undefined,
 		stats: undefined,
+		tid: undefined,
+		type: undefined,
+		coarseRatings: undefined,
 	};
 
 	if (Number.isNaN(pid) || typeof pid !== "number") {
@@ -4201,23 +4215,34 @@ const ratingsStatsPopoverInfo = async ({
 		],
 		football: ["keyStats"],
 		hockey: ["keyStatsWithGoalieGP"],
-	});
+	} as const);
 
 	// No "note" - the popover used to print the player's whole career writeup
 	// under his ratings, which is a lot of prose to hang off a hover. Season
 	// writeups are read from their own row in the stats table now.
-	const attrs = ["name", "jerseyNumber", "tid", "age"];
-	const ratings = ["pos", "ovr", "pot", "season", "tid", ...RATINGS];
-	if (!local.exhibitionGamePlayers && !eightyTwoZeroDraftPlayer) {
-		attrs.push("abbrev");
-		ratings.push("abbrev");
-	}
+	const includeAbbrev =
+		!local.exhibitionGamePlayers && !eightyTwoZeroDraftPlayer;
+	const attrs = [
+		"name",
+		"jerseyNumber",
+		"tid",
+		"age",
+		...(includeAbbrev ? (["abbrev"] as const) : []),
+	] as const;
+	const ratings = [
+		"pos",
+		"ovr",
+		"pot",
+		"season",
+		"tid",
+		...RATINGS,
+		...(includeAbbrev ? (["abbrev"] as const) : []),
+	] as const;
 
-	const p2 = await idb.getCopy.playersPlus(p, {
+	const playersPlusOptions = {
 		attrs,
 		ratings,
 		stats: ["tid", "season", "playoffs", ...stats],
-		season: actualSeason,
 		showNoStats: true,
 		showRetired: true,
 		oldStats: true,
@@ -4226,38 +4251,81 @@ const ratingsStatsPopoverInfo = async ({
 		// the Draft History and Draft Scouting tables, so it has to honour the
 		// "prospects exempt" option or the exemption may as well not exist.
 		prospectSeasonsExact: true,
-	});
-	if (actualSeason === undefined) {
-		if (draftProspect) {
-			p2.ratings = p2.ratings[0];
-		} else {
-			// Peak ratings. Which season peaked is decided from the TRUE ratings -
-			// a coarsened ovr ties a whole decade together, so picking the max off
-			// the processed rows would pick an arbitrary one - but the row that
-			// gets DISPLAYED is the processed one. Reading it straight off `p`
-			// showed raw ratings: no fuzz, and no coarsening either.
-			const peak = maxBy(p.ratings, "ovr");
-			p2.ratings =
-				p2.ratings.find((row: any) => row.season === peak?.season) ??
-				p2.ratings.at(-1);
-		}
-		p2.age = p2.ratings.season - p.born.year;
+	} as const;
 
-		p2.stats = p2.careerStats;
-		delete p2.careerStats;
+	let info;
+	if (actualSeason === undefined) {
+		// Career stats
+		const p2 = await idb.getCopy.playersPlus(p, playersPlusOptions);
+		if (!p2) {
+			return blankObj;
+		}
+
+		const { careerStats, ratings: allRatings, stats: allStats, ...rest } = p2;
+
+		// Draft prospect ratings, or peak ratings. Which season peaked is decided
+		// from the TRUE ratings - a coarsened ovr ties a whole decade together, so
+		// picking the max off the processed rows would pick an arbitrary one - but
+		// the row that gets DISPLAYED is the processed one. Reading it straight
+		// off `p` showed raw ratings: no fuzz, and no coarsening either.
+		const peakSeason = maxBy(p.ratings, (row) => row.ovr)?.season;
+		const ratingsRow = draftProspect
+			? allRatings[0]
+			: (allRatings.find((row) => row.season === peakSeason) ??
+				last(allRatings));
+
+		info = {
+			...rest,
+			age: ratingsRow.season - p.born.year,
+			ratingsRow,
+			statsRow: careerStats,
+		};
+	} else {
+		const p2 = await idb.getCopy.playersPlus(p, {
+			...playersPlusOptions,
+			season: actualSeason,
+		});
+		if (!p2) {
+			return blankObj;
+		}
+
+		const { ratings: ratingsRow, stats: statsRow, ...rest } = p2;
+		info = {
+			...rest,
+			ratingsRow,
+			statsRow,
+		};
 	}
+
+	// abbrev and tid in ratings/stats are only used to determine the team for past seasons, so remove them from the output
+	const {
+		abbrev: ratingsAbbrev,
+		tid: ratingsTid,
+		...ratingsOutput
+	} = info.ratingsRow;
+	const {
+		playoffs: statsPlayoffs,
+		season: statsSeason,
+		tid: statsTid,
+		...statsOutput
+	} = info.statsRow;
+	const {
+		ratingsRow,
+		statsRow,
+		abbrev: currentAbbrev,
+		tid: currentTid,
+		...rest
+	} = info;
+
+	let abbrev: string | undefined = currentAbbrev;
+	let tid: number | undefined = currentTid;
 	if (
 		!eightyTwoZeroDraftPlayer &&
 		(actualSeason === undefined || actualSeason < currentSeason)
 	) {
-		p2.abbrev = p2.ratings.abbrev;
-		p2.tid = p2.ratings.tid;
+		abbrev = ratingsAbbrev;
+		tid = ratingsTid;
 	}
-	delete p2.ratings.abbrev;
-	delete p2.ratings.tid;
-	delete p2.stats.playoffs;
-	delete p2.stats.season;
-	delete p2.stats.tid;
 
 	let type: "career" | "current" | "draft" | number;
 	if (draftProspect) {
@@ -4280,10 +4348,14 @@ const ratingsStatsPopoverInfo = async ({
 	const coarseRatings =
 		g.get("hideRatingsOnesDigit") &&
 		!exemptFromCoarseRatings(p.tid, exceptProspects) &&
-		!prospectRatingsSeason(p.draft.year, p2.ratings?.season, exceptProspects);
+		!prospectRatingsSeason(p.draft.year, ratingsRow?.season, exceptProspects);
 
 	return {
-		...p2,
+		...rest,
+		abbrev,
+		tid,
+		ratings: ratingsOutput,
+		stats: statsOutput,
 		type,
 		coarseRatings,
 	};
@@ -4744,55 +4816,71 @@ const runBefore = async (
 		params,
 		ctxBBGM,
 		updateEvents,
-		prevData,
+		prevOutput,
+		prevInputs,
 	}: {
 		viewId: string;
-		params: any;
-		ctxBBGM: any;
-		updateEvents: UpdateEvents;
-		prevData: any;
+		params: unknown;
+		ctxBBGM: unknown;
+		updateEvents: ReadonlySet<UpdateEvent>;
+		prevOutput: unknown;
+		prevInputs: unknown;
 	},
 	conditions: Conditions,
 ): Promise<void | {
-	[key: string]: any;
+	data: {
+		[key: string]: any;
+	};
+
+	// Sent back as prevInputs next time, if this page is still loaded
+	inputs?: unknown;
+
+	// Next time, prevOutput only needs to contain these properties
+	keepPrevOutputKeys?: string[];
 }> => {
 	// Special case for errors, so that the condition right below (when league is loading) does not cause no update
 	if (viewId === "error") {
-		return {};
+		return { data: {} };
 	}
 
 	if (typeof g.get("lid") === "number" && !local.leagueLoaded) {
 		return;
 	}
 
-	let inputs;
-	if (Object.hasOwn(processInputs, viewId)) {
-		// https://github.com/microsoft/TypeScript/issues/21732
-		// @ts-expect-error
-		inputs = processInputs[viewId](params, ctxBBGM);
-	}
-	if (inputs === undefined) {
-		// Return empty object rather than undefined
-		inputs = {};
-	}
-
-	if (typeof inputs.redirectUrl === "string") {
-		// Short circuit from processInputs alone
-		return {
-			redirectUrl: inputs.redirectUrl,
-		};
-	}
-
 	// https://github.com/microsoft/TypeScript/issues/21732
 	// @ts-expect-error
 	const view = views[viewId];
 
-	if (view) {
-		const data = await view(inputs, updateEvents, prevData, conditions);
-		return data ?? {};
+	// Return empty object rather than undefined
+	const inputs = view?.processInputs?.(params, ctxBBGM) ?? {};
+
+	if (typeof inputs.redirectUrl === "string") {
+		// Short circuit from processInputs alone
+		return {
+			data: {
+				redirectUrl: inputs.redirectUrl,
+			},
+		};
 	}
 
-	return {};
+	if (view) {
+		const data = await lock.runView(() =>
+			view.load({
+				inputs,
+				updateEvents,
+				prevInputs,
+				prevOutput,
+				conditions,
+			}),
+		);
+		return {
+			data: data ?? {},
+			inputs,
+			keepPrevOutputKeys: view.keepPrevOutputKeys,
+		};
+	}
+
+	return { data: {}, inputs };
 };
 
 const setForceWin = async ({
@@ -7828,6 +7916,12 @@ const setSyncDeviceName = async (name: string) => {
 	return { ok: true };
 };
 
+// Marks the worker as busy (which spins the logo in the UI) while function runs. For slow things.
+const whileWorkerBusy =
+	<Args extends unknown[], Return>(cb: (...args: Args) => Promise<Return>) =>
+	(...args: Args) =>
+		lock.whileWorkerBusy(() => cb(...args));
+
 const api = {
 	actions,
 	awardSettings,
@@ -7863,9 +7957,9 @@ const api = {
 		clearWatchList,
 		connectSharedLeague,
 		countNegotiations,
-		createLeague,
+		createLeague: whileWorkerBusy(createLeague),
 		createTrade,
-		deleteOldData,
+		deleteOldData: whileWorkerBusy(deleteOldData),
 		deleteScheduledEvent,
 		deleteScheduledEvents,
 		disconnectSharedLeague,
@@ -7980,6 +8074,7 @@ const api = {
 		getTeamGraphStat,
 		getTradingBlockOffers,
 		ping,
+		prefetchRealPlayerStats,
 		handleUploadedDraftClass,
 		idbCacheFlush,
 		importPlayers,
@@ -8004,7 +8099,7 @@ const api = {
 		releasePlayer,
 		expandVote,
 		relocateVote,
-		cloneLeague,
+		cloneLeague: whileWorkerBusy(cloneLeague),
 		removeLeague,
 		removePlayers,
 		reorderDepthDrag,

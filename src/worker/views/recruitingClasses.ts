@@ -1,20 +1,18 @@
 import { classPoints } from "../../common/college.ts";
 import { PLAYER } from "../../common/constants.ts";
-import type { Player, UpdateEvents } from "../../common/types.ts";
+import type { Player } from "../../common/types.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
 
 // Team recruiting class rankings: this cycle's commitments, and last year's
 // signed class.
-const updateRecruitingClasses = async (
-	inputs: unknown,
-	updateEvents: UpdateEvents,
-) => {
+const updateRecruitingClasses = async ({ updateEvents }: ViewArgs) => {
 	if (
-		!updateEvents.includes("firstRun") &&
-		!updateEvents.includes("playerMovement") &&
-		!updateEvents.includes("gameSim") &&
-		!updateEvents.includes("newPhase")
+		!updateEvents.has("firstRun") &&
+		!updateEvents.has("playerMovement") &&
+		!updateEvents.has("gameSim") &&
+		!updateEvents.has("newPhase")
 	) {
 		return;
 	}
@@ -76,4 +74,7 @@ const updateRecruitingClasses = async (
 	};
 };
 
-export default updateRecruitingClasses;
+export default defineView({
+	id: "recruitingClasses",
+	load: updateRecruitingClasses,
+});

@@ -140,7 +140,9 @@ const stringifyInfinity = (array: (number | string | boolean)[]) => {
 	return JSON.stringify(array);
 };
 const parseInfinity = (string: string) => {
-	return JSON.parse(string).map((val: any) => (val === null ? Infinity : val));
+	return JSON.parse(string).map((val: unknown) =>
+		val === null ? Infinity : val,
+	);
 };
 const getIndexKey = (
 	index: {
@@ -451,8 +453,7 @@ export const storeInfos: Record<Store, StoreInfo> = {
 };
 
 const index2store = {} as Record<Index, Store>;
-for (const store of helpers.keys(storeInfos)) {
-	const indexes = storeInfos[store].indexes;
+for (const [store, { indexes }] of helpers.entries(storeInfos)) {
 	if (indexes) {
 		for (const index of indexes) {
 			index2store[index.name] = store;
@@ -856,7 +857,7 @@ class Cache {
 		}
 
 		if (local.autoSave) {
-			this._data = {} as Record<Store, any>;
+			this._data = {} as Record<Store, unknown>;
 		}
 
 		for (const store of STORES) {
@@ -923,14 +924,12 @@ class Cache {
 			return { store, deletes, dirtyRecords };
 		});
 
-		let transaction:
-			| IDBPTransaction<LeagueDB, Store[], "readwrite">
-			| undefined;
+		let tx: IDBPTransaction<LeagueDB, Store[], "readwrite"> | undefined;
 		try {
-			transaction = idb.league.transaction(stores, "readwrite");
+			tx = idb.league.transaction(stores, "readwrite");
 
 			for (const { store, deletes, dirtyRecords } of pending) {
-				const objectStore = transaction.objectStore(store);
+				const objectStore = tx.objectStore(store);
 				for (const id of deletes) {
 					// This is synchronous to prevent any race condition
 					objectStore.delete(id);
@@ -947,11 +946,11 @@ class Cache {
 				}
 			}
 
-			await transaction.done;
+			await tx.done;
 		} catch (error) {
 			// If put or delete threw synchronously, the transaction is still active and would commit a partial write
 			try {
-				transaction?.abort();
+				tx?.abort();
 			} catch {}
 
 			// Deletes are applied before puts, and puts use the current value in the cache, so this is correct even if some of these records were updated or deleted while waiting for the transaction
@@ -1079,7 +1078,7 @@ class Cache {
 		}
 
 		const [min, max] = key;
-		const matches: { keyParsed: any; keyString: string }[] = [];
+		const matches: { keyParsed: unknown; keyString: string }[] = [];
 
 		for (const keyString of Object.keys(this._indexes[index])) {
 			let keyParsed;
@@ -1116,7 +1115,7 @@ class Cache {
 		// contract.
 		matches.sort((a, b) => cmp(a.keyParsed, b.keyParsed));
 
-		let output: any[] = [];
+		let output: unknown[] = [];
 		for (const match of matches) {
 			output = output.concat(this._indexes[index][match.keyString]);
 		}
@@ -1177,24 +1176,24 @@ class Cache {
 		return obj[pk];
 	}
 
-	async _add(store: Store, obj: any): Promise<number | string> {
+	async _add(store: Store, obj: unknown): Promise<number | string> {
 		await this._waitForStatus("full");
 		return this._storeObj("add", store, obj);
 	}
 
-	async _addAll(store: Store, objs: Iterable<any>): Promise<void> {
+	async _addAll(store: Store, objs: Iterable<unknown>): Promise<void> {
 		await this._waitForStatus("full");
 		for (const obj of objs) {
 			this._storeObj("add", store, obj);
 		}
 	}
 
-	async _put(store: Store, obj: any): Promise<number | string> {
+	async _put(store: Store, obj: unknown): Promise<number | string> {
 		await this._waitForStatus("full");
 		return this._storeObj("put", store, obj);
 	}
 
-	async _putAll(store: Store, objs: Iterable<any>): Promise<void> {
+	async _putAll(store: Store, objs: Iterable<unknown>): Promise<void> {
 		await this._waitForStatus("full");
 		for (const obj of objs) {
 			this._storeObj("put", store, obj);

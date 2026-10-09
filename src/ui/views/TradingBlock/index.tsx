@@ -84,6 +84,7 @@ const OfferPlayers = ({
 
 		let sumContracts = 0;
 		const rows = players.map((p) => {
+			// eslint-disable-next-line react-hooks/immutability -- https://github.com/react/react/issues/31569
 			sumContracts += p.contract.amount;
 			return {
 				key: p.pid,
@@ -888,7 +889,7 @@ const TradingBlock = ({
 									</>
 								),
 								searchValue: offer.players
-									.map((p) => `${p.name} ${p.ratings.pos}`)
+									.map((p) => `${p.firstName} ${p.lastName} ${p.ratings.pos}`)
 									.join(" "),
 								sortValue: playerScore(offer.players),
 							},

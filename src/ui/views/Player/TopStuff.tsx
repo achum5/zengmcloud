@@ -1,3 +1,4 @@
+import { last } from "../../../common/utils.ts";
 import { Fragment, useState } from "react";
 import type { ReactNode } from "react";
 import { WatchBlock } from "../../components/WatchBlock.tsx";
@@ -7,6 +8,7 @@ import type {
 	GameAttributesLeague,
 	Phase,
 	Player,
+	PlayerStatAttr,
 	View,
 } from "../../../common/types.ts";
 import { PHASE, PLAYER } from "../../../common/constants.ts";
@@ -106,7 +108,7 @@ const StatsSummary = ({
 	position: string;
 	currentSeason: number;
 	season?: number;
-	stats: string[];
+	stats: PlayerStatAttr[];
 }) => {
 	if (onlyShowIf !== undefined) {
 		if (!onlyShowIf.includes(position)) {
@@ -475,7 +477,7 @@ const TopStuff = ({
 			skills = player.ratings.find((row) => row.season === season)?.skills;
 		}
 		if (!skills) {
-			skills = player.ratings.at(-1)!.skills;
+			skills = last(player.ratings).skills;
 		}
 
 		statusInfo = (
@@ -557,7 +559,7 @@ const TopStuff = ({
 			<ComparePlayerButton
 				pid={player.pid}
 				randomDebutsForeverPids={randomDebutsForeverPids}
-				season={retired ? "career" : player.ratings.at(-1)!.season}
+				season={retired ? "career" : last(player.ratings).season}
 			/>
 		</>
 	);
@@ -781,7 +783,7 @@ const TopStuff = ({
 									key={name}
 									name={name}
 									onlyShowIf={onlyShowIf}
-									position={player.ratings.at(-1)!.pos}
+									position={last(player.ratings).pos}
 									phase={phase}
 									currentSeason={currentSeason}
 									season={season}

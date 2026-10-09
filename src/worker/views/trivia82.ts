@@ -1,5 +1,4 @@
 import { g } from "../util/index.ts";
-import type { UpdateEvents } from "../../common/types.ts";
 import {
 	buildMatchups,
 	getPoolAndTeams,
@@ -7,6 +6,7 @@ import {
 	type EightyTwoZeroMatchup,
 	type EightyTwoZeroPosition,
 } from "../core/trivia/eightyTwoZero.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
 
 // 82-0: everything the game needs to deal a round, sent once.
 //
@@ -39,10 +39,10 @@ export type Trivia82Data = {
 	matchups: Record<EightyTwoZeroPosition, EightyTwoZeroMatchup[]>;
 };
 
-const updateTrivia82 = async (inputs: unknown, updateEvents: UpdateEvents) => {
+const updateTrivia82 = async ({ updateEvents }: ViewArgs) => {
 	// A draft in progress shouldn't be reshuffled by a game simming in the
 	// background, so this is built once and left alone.
-	if (updateEvents.includes("firstRun")) {
+	if (updateEvents.has("firstRun")) {
 		let data: Trivia82Data | undefined;
 		try {
 			const { pool, tids, eras } = await getPoolAndTeams();
@@ -73,4 +73,7 @@ const updateTrivia82 = async (inputs: unknown, updateEvents: UpdateEvents) => {
 	}
 };
 
-export default updateTrivia82;
+export default defineView({
+	id: "trivia82",
+	load: updateTrivia82,
+});

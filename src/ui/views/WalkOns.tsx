@@ -26,7 +26,7 @@ const WalkOns = (props: View<"walkOns">) => {
 		{ title: "" },
 	];
 
-	const rows: DataTableRow[] = props.players.map((p) => ({
+	const rows: DataTableRow<"player">[] = props.players.map((p) => ({
 		key: p.pid,
 		metadata: {
 			type: "player",

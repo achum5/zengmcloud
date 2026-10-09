@@ -251,8 +251,9 @@ const copyValidValues = (
 	{
 		const sourceRatings = last(source.ratings);
 		const targetRatings = last(target.ratings);
+		const ratingKeys: readonly string[] = RATINGS;
 		for (const rating of Object.keys(sourceRatings)) {
-			if (RATINGS.includes(rating)) {
+			if (ratingKeys.includes(rating)) {
 				const val = helpers.bound(
 					Number.parseInt((sourceRatings as any)[rating]),
 					0,
@@ -408,7 +409,7 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 		}));
 
 		try {
-			const p = props.p;
+			const p = helpers.deepCopy(props.p);
 
 			// Copy over values from state, if they're valid
 			const recomputePosOvrPot = copyValidValues(

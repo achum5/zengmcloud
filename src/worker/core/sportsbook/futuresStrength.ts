@@ -88,10 +88,12 @@ export const getFuturesStrengths = async (
 	teams: { tid: number; horizonGames: number }[],
 	season: number,
 ): Promise<Map<number, FuturesTeamStrength>> => {
-	const ratings = ["ovr", "pos", "ovrs"];
-	if (__SPORT === "basketball") {
-		ratings.push(...RATINGS);
-	}
+	const ratings = [
+		"ovr",
+		"pos",
+		"ovrs",
+		...(__SPORT === "basketball" ? RATINGS : []),
+	] as const;
 
 	const byTid = new Map<number, FuturesTeamStrength>();
 	for (const t of teams) {

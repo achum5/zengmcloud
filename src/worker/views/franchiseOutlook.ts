@@ -2,12 +2,12 @@ import { g } from "../util/index.ts";
 import { idb } from "../db/index.ts";
 import { player } from "../core/index.ts";
 import { coarsenRating } from "../../common/coarsenRating.ts";
-import type { UpdateEvents } from "../../common/types.ts";
 import {
 	getLeagueTradeContext,
 	getTradePosture,
 	type TradeTier,
 } from "../core/trade/tradePosture.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
 
 // A one-line summary of what a team is shopping FOR, from its posture.
 const seekingText = (
@@ -42,16 +42,13 @@ const seekingText = (
 // positional needs, star gap, who they're shopping, cap posture). This does not
 // drive any trades yet - it's a window into the strategy engine so its
 // classifications can be eyeballed against a real league.
-const updateFranchiseOutlook = async (
-	inputs: unknown,
-	updateEvents: UpdateEvents,
-) => {
+const updateFranchiseOutlook = async ({ updateEvents }: ViewArgs) => {
 	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("gameSim") ||
-		updateEvents.includes("newPhase") ||
-		updateEvents.includes("playerMovement") ||
-		updateEvents.includes("gameAttributes")
+		updateEvents.has("firstRun") ||
+		updateEvents.has("gameSim") ||
+		updateEvents.has("newPhase") ||
+		updateEvents.has("playerMovement") ||
+		updateEvents.has("gameAttributes")
 	) {
 		const season = g.get("season");
 		const hideRatings = g.get("challengeNoRatings");
@@ -191,4 +188,7 @@ const updateFranchiseOutlook = async (
 	}
 };
 
-export default updateFranchiseOutlook;
+export default defineView({
+	id: "franchiseOutlook",
+	load: updateFranchiseOutlook,
+});

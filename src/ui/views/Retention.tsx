@@ -99,7 +99,7 @@ const Retention = (props: View<"retention">) => {
 		{ title: "Promise", desc: "Playing time promise for next season" },
 	];
 
-	const rows: DataTableRow[] = players.map((r) => ({
+	const rows: DataTableRow<"player">[] = players.map((r) => ({
 		key: r.pid,
 		metadata: {
 			type: "player",

@@ -1,10 +1,7 @@
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
-import type {
-	TeamFiltered,
-	UpdateEvents,
-	ViewInput,
-} from "../../common/types.ts";
+import type { TeamFiltered } from "../../common/types.ts";
+import { defineView } from "../util/defineView.ts";
 import { team } from "../core/index.ts";
 import {
 	NOT_REAL_POSITIONS,
@@ -18,6 +15,9 @@ import {
 	getTeamAtsRecords,
 } from "../util/getTeamAtsRecords.ts";
 import { getTeamOvrOverride } from "../util/delayedTeamOvrs.ts";
+import { PHASE } from "../../common/constants.ts";
+import type { RouteParams } from "../../ui/router/types.ts";
+import { validateSeason } from "../util/processInputs.ts";
 
 // How the ranking splits between what a team has DONE and what its roster
 // looks like. Performance reaches its full share after this many games, and
@@ -31,6 +31,21 @@ import { getTeamOvrOverride } from "../util/delayedTeamOvrs.ts";
 // games instead of a month.
 const MAX_PERF_WEIGHT = 0.92;
 const PERF_RAMP_GAMES = 12;
+
+const processInputs = (params: RouteParams<"powerRankings">) => {
+	let playoffs: "playoffs" | "regularSeason" =
+		g.get("phase") === PHASE.PLAYOFFS ? "playoffs" : "regularSeason";
+	if (params.playoffs === "playoffs") {
+		playoffs = "playoffs";
+	} else if (params.playoffs === "regularSeason") {
+		playoffs = "regularSeason";
+	}
+
+	return {
+		playoffs,
+		season: validateSeason(params.season),
+	};
+};
 
 const otherToRanks = (
 	teams: {
@@ -90,10 +105,12 @@ export const addPowerRankingsStuffToTeams = async <
 				);
 			}
 
-			const ratings = ["ovr", "pos", "ovrs"];
-			if (__SPORT === "basketball") {
-				ratings.push(...RATINGS);
-			}
+			const ratings = [
+				"ovr",
+				"pos",
+				"ovrs",
+				...(__SPORT === "basketball" ? RATINGS : []),
+			] as const;
 
 			teamPlayers = await idb.getCopies.playersPlus(teamPlayers, {
 				attrs: ["tid", "injury", "value", "age", "pid"],
@@ -212,90 +229,88 @@ export const addPowerRankingsStuffToTeams = async <
 	return teamsWithRankings;
 };
 
-const updatePowerRankings = async (
-	{ playoffs, season }: ViewInput<"powerRankings">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
-	if (
-		(season === g.get("season") && updateEvents.includes("gameSim")) ||
-		season !== state.season ||
-		playoffs !== state.playoffs
-	) {
-		const teams = await idb.getCopies.teamsPlus(
-			{
-				attrs: ["tid", "depth", "playThroughInjuries"],
-				seasonAttrs: [
-					"won",
-					"lost",
-					"tied",
-					"otl",
-					"lastTen",
-					"abbrev",
-					"region",
-					"name",
-					"cid",
-					"did",
-					"imgURL",
-					"imgURLSmall",
-				],
-				stats: ["gp", "mov", "pts", "oppPts"],
+export default defineView({
+	id: "powerRankings",
+	processInputs,
+	load: async ({ inputs: { playoffs, season }, updateEvents, prevInputs }) => {
+		if (
+			(season === g.get("season") && updateEvents.has("gameSim")) ||
+			season !== prevInputs?.season ||
+			playoffs !== prevInputs?.playoffs
+		) {
+			const teams = await idb.getCopies.teamsPlus(
+				{
+					attrs: ["tid", "depth", "playThroughInjuries"],
+					seasonAttrs: [
+						"won",
+						"lost",
+						"tied",
+						"otl",
+						"lastTen",
+						"abbrev",
+						"region",
+						"name",
+						"cid",
+						"did",
+						"imgURL",
+						"imgURLSmall",
+					],
+					stats: ["gp", "mov", "pts", "oppPts"],
+					season,
+					showNoStats: true,
+				},
+				"noCopyCache",
+			);
+
+			const teamsWithRankings = await addPowerRankingsStuffToTeams(
+				teams,
 				season,
-				showNoStats: true,
-			},
-			"noCopyCache",
-		);
+				playoffs,
+			);
 
-		const teamsWithRankings = await addPowerRankingsStuffToTeams(
-			teams,
-			season,
-			playoffs,
-		);
+			const atsRecords = await getTeamAtsRecords(season);
 
-		const atsRecords = await getTeamAtsRecords(season);
+			// "Team Ratings Delay": when this page may not show its own season's
+			// ratings, it shows the newest ones it is allowed to instead. The rankings
+			// themselves are untouched - they are still computed from the real current
+			// roster, because the delay is about what you can SEE, not about how good
+			// the teams actually are.
+			const { display: teamOvr, ovrs: delayedOvrs } =
+				await getTeamOvrOverride(season);
 
-		// "Team Ratings Delay": when this page may not show its own season's
-		// ratings, it shows the newest ones it is allowed to instead. The rankings
-		// themselves are untouched - they are still computed from the real current
-		// roster, because the delay is about what you can SEE, not about how good
-		// the teams actually are.
-		const { display: teamOvr, ovrs: delayedOvrs } =
-			await getTeamOvrOverride(season);
+			const teamsWithAts = teamsWithRankings.map((t) => ({
+				...t,
+				ats: formatAtsRecord(atsRecords.get(t.tid)),
+				powerRankings: {
+					...t.powerRankings,
+					ovrDelayed: delayedOvrs.get(t.tid),
+				},
+			}));
 
-		const teamsWithAts = teamsWithRankings.map((t) => ({
-			...t,
-			ats: formatAtsRecord(atsRecords.get(t.tid)),
-			powerRankings: {
-				...t.powerRankings,
-				ovrDelayed: delayedOvrs.get(t.tid),
-			},
-		}));
-
-		let ties = false;
-		let otl = false;
-		for (const t of teams) {
-			if (t.seasonAttrs.tied > 0) {
-				ties = true;
+			let ties = false;
+			let otl = false;
+			for (const t of teams) {
+				if (t.seasonAttrs.tied > 0) {
+					ties = true;
+				}
+				if (t.seasonAttrs.otl > 0) {
+					otl = true;
+				}
+				if (ties && otl) {
+					break;
+				}
 			}
-			if (t.seasonAttrs.otl > 0) {
-				otl = true;
-			}
-			if (ties && otl) {
-				break;
-			}
+
+			return {
+				confs: g.get("confs", season),
+				divs: g.get("divs", season),
+				playoffs,
+				season,
+				teams: teamsWithAts,
+				teamOvr,
+				ties: hasTies(season) || ties,
+				otl: g.get("otl", season) || otl,
+			};
 		}
-
-		return {
-			confs: g.get("confs", season),
-			divs: g.get("divs", season),
-			playoffs,
-			season,
-			teams: teamsWithAts,
-			teamOvr,
-			ties: hasTies(season) || ties,
-			otl: g.get("otl", season) || otl,
-		};
-	}
-};
-
-export default updatePowerRankings;
+	},
+});

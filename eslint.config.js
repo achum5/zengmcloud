@@ -72,7 +72,6 @@ export default defineConfig(
 			"react/no-unescaped-entities": "off",
 
 			// Would be nice to enable these
-			"react-hooks/immutability": "off",
 			"react-hooks/refs": "off",
 			"react-hooks/set-state-in-effect": "off",
 
@@ -86,7 +85,7 @@ export default defineConfig(
 			"unicorn/numeric-separators-style": "off",
 			"unicorn/prefer-string-replace-all": "off", // replaceAll fails in some cases, idk why, but shows up in error logs and someone complained
 			"unicorn/prefer-ternary": "off",
-			"unicorn/prefer-top-level-await": "off", // Chrome 89, Safari 27
+			"unicorn/prefer-top-level-await": "off", // Safari 27
 
 			// Nice for catching if(0){} but too many false positives for object checks that can't be disabled
 			/*"@typescript-eslint/strict-boolean-expressions": ["error", {
@@ -135,6 +134,7 @@ export default defineConfig(
 				...globals.sharedWorker,
 				__NODE_ENV: "readonly",
 				__SPORT: "readonly",
+				__JSON_URLS: "readonly",
 
 				// This is needed for no-undef
 				IDBValidKey: false,

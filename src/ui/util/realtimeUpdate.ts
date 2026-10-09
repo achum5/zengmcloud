@@ -1,5 +1,6 @@
 import type { UpdateEvents } from "../../common/types.ts";
 import { isRefreshNavigation } from "./refreshNavigation.ts";
+import { router } from "../router/index.ts";
 import { viewManager } from "./viewManager.tsx";
 
 /**
@@ -20,7 +21,7 @@ export const realtimeUpdate = async (
 ) => {
 	const refresh = isRefreshNavigation({
 		url,
-		pathname: window.location.pathname,
+		pathname: router.location.pathname,
 	});
 
 	await viewManager.fromRealtimeUpdate({

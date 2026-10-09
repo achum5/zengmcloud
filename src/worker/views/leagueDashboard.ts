@@ -6,15 +6,17 @@ import { season, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { feedAbout } from "../util/socialFeed.ts";
 import { g, helpers } from "../util/index.ts";
-import type { Player, UpdateEvents } from "../../common/types.ts";
+import type { Player } from "../../common/types.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
 import { processEvents } from "./news.ts";
 import { getMaxPlayoffSeed } from "./standings.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { orderTeams } from "../util/orderTeams.ts";
+import { getNumericStat } from "../../common/statValue.ts";
 
-const updateInbox = async (inputs: unknown, updateEvents: UpdateEvents) => {
-	if (updateEvents.includes("firstRun") || updateEvents.includes("newPhase")) {
+const updateInbox = async ({ updateEvents }: ViewArgs) => {
+	if (updateEvents.has("firstRun") || updateEvents.has("newPhase")) {
 		const messages = await idb.getCopies.messages(
 			{
 				limit: 2,
@@ -33,12 +35,12 @@ const updateInbox = async (inputs: unknown, updateEvents: UpdateEvents) => {
 	}
 };
 
-const updateTeam = async (inputs: unknown, updateEvents: UpdateEvents) => {
+const updateTeam = async ({ updateEvents }: ViewArgs) => {
 	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("gameSim") ||
-		updateEvents.includes("playerMovement") ||
-		updateEvents.includes("newPhase")
+		updateEvents.has("firstRun") ||
+		updateEvents.has("gameSim") ||
+		updateEvents.has("playerMovement") ||
+		updateEvents.has("newPhase")
 	) {
 		const t = await idb.cache.teams.get(g.get("userTid"));
 		const latestSeason = await idb.cache.teamSeasons.indexGet(
@@ -73,11 +75,8 @@ const updateTeam = async (inputs: unknown, updateEvents: UpdateEvents) => {
 	}
 };
 
-const updatePayroll = async (inputs: unknown, updateEvents: UpdateEvents) => {
-	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("playerMovement")
-	) {
+const updatePayroll = async ({ updateEvents }: ViewArgs) => {
+	if (updateEvents.has("firstRun") || updateEvents.has("playerMovement")) {
 		const payroll = await team.getPayroll(g.get("userTid"));
 
 		// College: the NIL budget instead of finances.
@@ -109,12 +108,12 @@ const updatePayroll = async (inputs: unknown, updateEvents: UpdateEvents) => {
 	}
 };
 
-const updateTeams = async (inputs: unknown, updateEvents: UpdateEvents) => {
+const updateTeams = async ({ updateEvents }: ViewArgs) => {
 	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("gameSim") ||
-		updateEvents.includes("playerMovement") ||
-		updateEvents.includes("newPhase")
+		updateEvents.has("firstRun") ||
+		updateEvents.has("gameSim") ||
+		updateEvents.has("playerMovement") ||
+		updateEvents.has("newPhase")
 	) {
 		const stats = bySport({
 			baseball: ["pts", "oppPts", "ops", "era"] as const,
@@ -238,25 +237,25 @@ const updateTeams = async (inputs: unknown, updateEvents: UpdateEvents) => {
 	}
 };
 
-const updatePlayers = async (inputs: unknown, updateEvents: UpdateEvents) => {
+const updatePlayers = async ({ updateEvents }: ViewArgs) => {
 	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("gameSim") ||
-		updateEvents.includes("playerMovement") ||
-		updateEvents.includes("newPhase")
+		updateEvents.has("firstRun") ||
+		updateEvents.has("gameSim") ||
+		updateEvents.has("playerMovement") ||
+		updateEvents.has("newPhase")
 	) {
 		const startersStats = bySport({
 			baseball: ["war", "hr", "ba", "ops", "era", "ip"],
 			basketball: ["gp", "min", "pts", "trb", "ast", "per"],
 			football: ["gp", "keyStats", "av"],
 			hockey: ["gp", "keyStats", "ops", "dps", "ps"],
-		});
+		} as const);
 		const leaderStats = bySport({
 			baseball: ["hr", "h", "w"],
 			basketball: ["pts", "trb", "ast"],
 			football: ["pssYds", "rusYds", "recYds"],
 			hockey: ["g", "a", "pts"],
-		});
+		} as const);
 		const playersAll = await idb.cache.players.indexGetAll("playersByTid", [
 			PLAYER.FREE_AGENT,
 			Infinity,
@@ -283,8 +282,12 @@ const updatePlayers = async (inputs: unknown, updateEvents: UpdateEvents) => {
 		}[] = [];
 
 		for (const stat of leaderStats) {
-			if (leaderPlayers.length > 0) {
-				leaderPlayers.sort((a, b) => b.stats[stat] - a.stats[stat]);
+			if (leaderPlayers[0]) {
+				leaderPlayers.sort(
+					(a, b) =>
+						(getNumericStat(b.stats[stat]) ?? 0) -
+						(getNumericStat(a.stats[stat]) ?? 0),
+				);
 				leagueLeaders.push({
 					abbrev: leaderPlayers[0].abbrev,
 					firstName: leaderPlayers[0].firstName,
@@ -292,7 +295,7 @@ const updatePlayers = async (inputs: unknown, updateEvents: UpdateEvents) => {
 					pid: leaderPlayers[0].pid,
 					stat,
 					tid: leaderPlayers[0].tid,
-					value: leaderPlayers[0].stats[stat],
+					value: getNumericStat(leaderPlayers[0].stats[stat]) ?? 0,
 				});
 			} else {
 				leagueLeaders.push({
@@ -354,15 +357,19 @@ const updatePlayers = async (inputs: unknown, updateEvents: UpdateEvents) => {
 		}[] = [];
 
 		for (const stat of leaderStats) {
-			if (userPlayers.length > 0) {
-				userPlayers.sort((a, b) => b.stats[stat] - a.stats[stat]);
+			if (userPlayers[0]) {
+				userPlayers.sort(
+					(a, b) =>
+						(getNumericStat(b.stats[stat]) ?? 0) -
+						(getNumericStat(a.stats[stat]) ?? 0),
+				);
 				teamLeaders.push({
 					firstName: userPlayers[0].firstName,
 					firstNameShort: userPlayers[0].firstNameShort,
 					lastName: userPlayers[0].lastName,
 					pid: userPlayers[0].pid,
 					stat,
-					value: userPlayers[0].stats[stat],
+					value: getNumericStat(userPlayers[0].stats[stat]) ?? 0,
 				});
 			} else {
 				teamLeaders.push({
@@ -417,11 +424,11 @@ const updatePlayers = async (inputs: unknown, updateEvents: UpdateEvents) => {
 	}
 };
 
-const updatePlayoffs = async (inputs: unknown, updateEvents: UpdateEvents) => {
+const updatePlayoffs = async ({ updateEvents }: ViewArgs) => {
 	if (
-		updateEvents.includes("firstRun") ||
-		(g.get("phase") >= PHASE.PLAYOFFS && updateEvents.includes("gameSim")) ||
-		(updateEvents.includes("newPhase") &&
+		updateEvents.has("firstRun") ||
+		(g.get("phase") >= PHASE.PLAYOFFS && updateEvents.has("gameSim")) ||
+		(updateEvents.has("newPhase") &&
 			(g.get("phase") === PHASE.PLAYOFFS || g.get("phase") === PHASE.PRESEASON))
 	) {
 		const playoffSeries = await idb.getCopy.playoffSeries({
@@ -512,8 +519,8 @@ const updatePlayoffs = async (inputs: unknown, updateEvents: UpdateEvents) => {
 	}
 };
 
-const updateStandings = async (inputs: unknown, updateEvents: UpdateEvents) => {
-	if (updateEvents.includes("firstRun") || updateEvents.includes("gameSim")) {
+const updateStandings = async ({ updateEvents }: ViewArgs) => {
+	if (updateEvents.has("firstRun") || updateEvents.has("gameSim")) {
 		const teams = await idb.getCopies.teamsPlus(
 			{
 				attrs: ["tid"],
@@ -614,12 +621,12 @@ const updateStandings = async (inputs: unknown, updateEvents: UpdateEvents) => {
 	}
 };
 
-const updateNewsFeed = async (inputs: unknown, updateEvents: UpdateEvents) => {
+const updateNewsFeed = async ({ updateEvents }: ViewArgs) => {
 	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("playerMovement") ||
-		updateEvents.includes("gameSim") ||
-		updateEvents.includes("newPhase")
+		updateEvents.has("firstRun") ||
+		updateEvents.has("playerMovement") ||
+		updateEvents.has("gameSim") ||
+		updateEvents.has("newPhase")
 	) {
 		const NUM_EVENTS = 8;
 
@@ -671,13 +678,13 @@ const updateNewsFeed = async (inputs: unknown, updateEvents: UpdateEvents) => {
 // The league feed, when the league has it on: the latest posts about the
 // user's team, so the dashboard reads like the morning after rather than a
 // spreadsheet. Best-effort - a feed that cannot be built is left off the page.
-const updateSocial = async (inputs: unknown, updateEvents: UpdateEvents) => {
+const updateSocial = async ({ updateEvents }: ViewArgs) => {
 	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("gameSim") ||
-		updateEvents.includes("playerMovement") ||
-		updateEvents.includes("newPhase") ||
-		updateEvents.includes("gameAttributes")
+		updateEvents.has("firstRun") ||
+		updateEvents.has("gameSim") ||
+		updateEvents.has("playerMovement") ||
+		updateEvents.has("newPhase") ||
+		updateEvents.has("gameAttributes")
 	) {
 		if (!g.get("socialFeed")) {
 			return { social: undefined };
@@ -697,28 +704,31 @@ const updateSocial = async (inputs: unknown, updateEvents: UpdateEvents) => {
 	}
 };
 
-export default async (inputs: unknown, updateEvents: UpdateEvents) => {
-	// Woo TypeScript, gotta break this up into 3 parts or it just says fuck it and calls it any
-	const part1 = Object.assign(
-		{},
-		await updateInbox(inputs, updateEvents),
-		await updateTeam(inputs, updateEvents),
-		await updatePayroll(inputs, updateEvents),
-	);
-	const part2 = Object.assign(
-		{},
-		await updateTeams(inputs, updateEvents),
-		await updateNewsFeed(inputs, updateEvents),
-	);
-	const part3 = Object.assign(
-		{},
-		await updatePlayers(inputs, updateEvents),
-		await updatePlayoffs(inputs, updateEvents),
-		await updateStandings(inputs, updateEvents),
-	);
-	// A fourth source is where Object.assign's typed overloads run out and
-	// the whole view becomes any, which is why it is its own part.
-	const part4 = Object.assign({}, await updateSocial(inputs, updateEvents));
+export default defineView({
+	id: "leagueDashboard",
+	load: async (args) => {
+		// Woo TypeScript, gotta break this up into 3 parts or it just says fuck it and calls it any
+		const part1 = Object.assign(
+			{},
+			await updateInbox(args),
+			await updateTeam(args),
+			await updatePayroll(args),
+		);
+		const part2 = Object.assign(
+			{},
+			await updateTeams(args),
+			await updateNewsFeed(args),
+		);
+		const part3 = Object.assign(
+			{},
+			await updatePlayers(args),
+			await updatePlayoffs(args),
+			await updateStandings(args),
+		);
+		// A fourth source is where Object.assign's typed overloads run out and
+		// the whole view becomes any, which is why it is its own part.
+		const part4 = Object.assign({}, await updateSocial(args));
 
-	return Object.assign({}, Object.assign({}, part1, part2, part3), part4);
-};
+		return Object.assign({}, Object.assign({}, part1, part2, part3), part4);
+	},
+});

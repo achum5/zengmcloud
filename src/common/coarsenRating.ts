@@ -192,7 +192,7 @@ const CHANGE_OF: Record<string, string> = {
 // One ratings row, coarsened for display. Returns a copy.
 export const coarsenRatingsRow = <T extends Record<string, any>>(
 	row: T,
-	ratings: string[],
+	ratings: readonly string[],
 ): T => {
 	const out: Record<string, any> = { ...row };
 	for (const attr of ratings) {
@@ -212,7 +212,7 @@ export const coarsenRatingsRow = <T extends Record<string, any>>(
 // them) and the draft-day ovr/pot that sits on the `draft` attr.
 export const coarsenPlayerForDisplay = <T extends Record<string, any>>(
 	p: T,
-	ratings: string[],
+	ratings: readonly string[],
 	// The "prospects exempt" option. Requires `tid` to have been requested.
 	exceptProspects = false,
 	// Whether a retired player reads exact here - only on his own page.

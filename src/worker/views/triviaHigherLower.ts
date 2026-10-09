@@ -1,13 +1,10 @@
-import type { UpdateEvents } from "../../common/types.ts";
 import { buildHigherLowerPool } from "../core/trivia/higherLower.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
 
 // Higher or Lower: the worker ships every player's category values once; the
 // whole streak game runs in the UI from that pool.
-const updateTriviaHigherLower = async (
-	inputs: unknown,
-	updateEvents: UpdateEvents,
-) => {
-	if (updateEvents.includes("firstRun")) {
+const updateTriviaHigherLower = async ({ updateEvents }: ViewArgs) => {
+	if (updateEvents.has("firstRun")) {
 		let players: Awaited<ReturnType<typeof buildHigherLowerPool>>;
 		try {
 			players = await buildHigherLowerPool();
@@ -20,4 +17,7 @@ const updateTriviaHigherLower = async (
 	}
 };
 
-export default updateTriviaHigherLower;
+export default defineView({
+	id: "triviaHigherLower",
+	load: updateTriviaHigherLower,
+});

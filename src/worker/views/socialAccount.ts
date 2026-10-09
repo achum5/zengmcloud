@@ -16,7 +16,8 @@ import {
 	reachOf,
 } from "../../common/socialMetrics.ts";
 import { hashSeed, rngFromSeed } from "../../common/phrasePool.ts";
-import type { UpdateEvents, ViewInput } from "../../common/types.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
+import type { RouteParams } from "../../ui/router/types.ts";
 
 // How far back one account's page reaches in a single load. Most accounts post
 // on a minority of nights, so this is a window rather than a history.
@@ -53,16 +54,20 @@ const followingOf = (account: {
 	return Math.round(base * (0.5 + rng() * 1.2));
 };
 
-const updateSocialAccount = async (
-	inputs: ViewInput<"socialAccount">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
+const processInputs = (params: RouteParams<"socialAccount">) => ({
+	handle: params.handle ?? "",
+});
+
+const updateSocialAccount = async ({
+	inputs,
+	updateEvents,
+	prevInputs,
+}: ViewArgs<typeof processInputs>) => {
 	const season = g.get("season");
 	if (
-		updateEvents.includes("firstRun") ||
-		updateEvents.includes("gameSim") ||
-		state.handle !== inputs.handle
+		updateEvents.has("firstRun") ||
+		updateEvents.has("gameSim") ||
+		prevInputs?.handle !== inputs.handle
 	) {
 		if (!g.get("socialFeed")) {
 			// The feed is opt-in, and a direct link should say so rather than
@@ -244,4 +249,8 @@ const updateSocialAccount = async (
 	}
 };
 
-export default updateSocialAccount;
+export default defineView({
+	id: "socialAccount",
+	processInputs,
+	load: updateSocialAccount,
+});

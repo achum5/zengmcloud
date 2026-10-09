@@ -63,9 +63,7 @@ export const RatingsStatsPopover = ({
 			endu: number;
 			season: number;
 		};
-		stats?: {
-			[key: string]: number;
-		};
+		stats?: Record<string, unknown>;
 		pid: number;
 		type?: "career" | "current" | "draft" | number;
 		// Whether the worker coarsened the ratings row above, so the gradient is

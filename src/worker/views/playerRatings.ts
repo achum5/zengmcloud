@@ -7,12 +7,14 @@ import {
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import type {
+	PlayerAttr,
+	PlayerRatingAttr,
+	PlayerStatAttr,
 	PlayInTournament,
 	PlayoffSeries,
 	PlayoffSeriesTeam,
-	UpdateEvents,
-	ViewInput,
 } from "../../common/types.ts";
+import { defineView, type ViewArgs } from "../util/defineView.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
 import {
 	loadContractValueContext,
@@ -22,13 +24,56 @@ import { buffOvrDH } from "./depth.ts";
 import { actualPhase } from "../util/actualPhase.ts";
 import { season } from "../core/index.ts";
 import { bySport } from "../../common/sportFunctions.ts";
+import type { RouteParams } from "../../ui/router/types.ts";
+import { validateAbbrev } from "../util/processInputs.ts";
+import { validateSeason } from "../util/processInputs.ts";
+
+export const processInputs = (
+	params: RouteParams<"playerBios"> | RouteParams<"playerRatings">,
+) => {
+	let abbrev;
+	let tid: number | undefined;
+
+	const [validatedTid, validatedAbbrev] = validateAbbrev(params.abbrev, true);
+
+	if (params.abbrev !== undefined && validatedAbbrev !== "???") {
+		abbrev = validatedAbbrev;
+		tid = validatedTid;
+	} else if (params.abbrev === "watch") {
+		abbrev = "watch";
+	} else if (
+		params.abbrev === "playoffs" &&
+		REMAINING_PLAYOFF_TEAMS_PHASES.has(actualPhase())
+	) {
+		abbrev = "playoffs";
+	} else {
+		abbrev = "all";
+	}
+
+	// The table's page lives in the URL so it can be linked to. Anything that
+	// isn't a positive integer means page 1 - the table clamps to the last real
+	// page itself, since how many there are depends on the per-page setting and
+	// any active filter, which the worker doesn't know about.
+	// Only the ratings routes carry a page; this handler also serves playerBios
+	const parsedPage = Number.parseInt(
+		("page" in params ? params.page : undefined) as string,
+	);
+	const page = Number.isNaN(parsedPage) || parsedPage < 1 ? 1 : parsedPage;
+
+	return {
+		abbrev,
+		page,
+		season: validateSeason(params.season),
+		tid,
+	};
+};
 
 export const extraRatings = bySport({
 	baseball: ["ovrs", "pots"],
 	basketball: [],
 	football: ["ovrs", "pots"],
 	hockey: ["ovrs", "pots"],
-});
+} as const);
 
 export const getActivePlayoffTids = async () => {
 	const tids = new Set<number>();
@@ -130,9 +175,9 @@ export const getActivePlayoffTids = async () => {
 export const getPlayers = async (
 	season: number,
 	abbrev: string,
-	attrs: string[],
-	ratings: string[],
-	stats: string[],
+	attrs: Readonly<PlayerAttr[]>,
+	ratings: Readonly<PlayerRatingAttr[]>,
+	stats: Readonly<PlayerStatAttr[]>,
 	tid: number | undefined,
 ) => {
 	let playersAll;
@@ -161,7 +206,7 @@ export const getPlayers = async (
 	// showNoStats for current season (so draft picks etc show up on their correct team) or for no team (so free agents show up)
 	const showNoStats = season === g.get("season") || tid === undefined;
 
-	let players = await idb.getCopies.playersPlus(playersAll, {
+	const playersMaybeWithoutStats = await idb.getCopies.playersPlus(playersAll, {
 		attrs: [
 			"pid",
 			"firstName",
@@ -184,6 +229,12 @@ export const getPlayers = async (
 		showRookies: true,
 		fuzz: true,
 	});
+
+	// stats can only be undefined with showRookies and no showNoStats. But showRookies only has an effect for the current season, when showNoStats is always true, so this doesn't actually remove anything. It's just to make the types work
+	let players = playersMaybeWithoutStats.filter(
+		(p): p is typeof p & { stats: NonNullable<(typeof p)["stats"]> } =>
+			p.stats !== undefined,
+	);
 
 	// idb.getCopies.playersPlus `tid` option doesn't work well enough (factoring in showNoStats and showRookies), so let's do it manually
 	// For the current season, use the current abbrev (including FA), not the last stats abbrev
@@ -210,19 +261,18 @@ export const getPlayers = async (
 	return players;
 };
 
-const updatePlayers = async (
-	inputs: ViewInput<"playerRatings">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
+const updatePlayers = async ({
+	inputs,
+	updateEvents,
+	prevInputs,
+}: ViewArgs<typeof processInputs>) => {
 	if (
-		updateEvents.includes("firstRun") ||
-		(inputs.season === g.get("season") &&
-			updateEvents.includes("playerMovement")) ||
-		(updateEvents.includes("newPhase") && g.get("phase") === PHASE.PRESEASON) ||
-		(inputs.abbrev === "playoffs" && updateEvents.includes("gameSim")) ||
-		inputs.season !== state.season ||
-		inputs.abbrev !== state.abbrev
+		updateEvents.has("firstRun") ||
+		(inputs.season === g.get("season") && updateEvents.has("playerMovement")) ||
+		(updateEvents.has("newPhase") && g.get("phase") === PHASE.PRESEASON) ||
+		(inputs.abbrev === "playoffs" && updateEvents.has("gameSim")) ||
+		inputs.season !== prevInputs?.season ||
+		inputs.abbrev !== prevInputs?.abbrev
 	) {
 		const ratings = bySport({
 			baseball: RATINGS,
@@ -282,9 +332,9 @@ const updatePlayers = async (
 				"diq",
 				"glk",
 			],
-		});
+		} as const);
 
-		const players = addFirstNameShort(
+		const playersRaw = addFirstNameShort(
 			await getPlayers(
 				inputs.season,
 				inputs.abbrev,
@@ -300,9 +350,10 @@ const updatePlayers = async (
 		// or the playoff field, and calibrating off a subset would re-price wins
 		// against that subset's own payroll.
 		const contractValueContext = await loadContractValueContext(inputs.season);
-		for (const p of players) {
-			p.contractValue = valueForPlayer(p, contractValueContext);
-		}
+		const players = playersRaw.map((p) => ({
+			...p,
+			contractValue: valueForPlayer(p, contractValueContext),
+		}));
 
 		return {
 			abbrev: inputs.abbrev,
@@ -313,21 +364,16 @@ const updatePlayers = async (
 	}
 };
 
-// The table's page comes from the URL, and changing it must not re-query every
-// player in the league - it's the same rows, just a different slice of them. So
-// it rides alongside updatePlayers rather than being part of its guard.
-const updatePage = (inputs: ViewInput<"playerRatings">) => ({
-	page: inputs.page,
+export default defineView({
+	id: "playerRatings",
+	processInputs,
+	load: async (args) => {
+		// The table's page comes from the URL, and changing it must not re-query
+		// every player in the league - it's the same rows, just a different slice
+		// of them. So it rides alongside the players rather than being part of
+		// their guard.
+		return Object.assign({}, await updatePlayers(args), {
+			page: args.inputs.page,
+		});
+	},
 });
-
-export default async (
-	inputs: ViewInput<"playerRatings">,
-	updateEvents: UpdateEvents,
-	state: any,
-) => {
-	return Object.assign(
-		{},
-		await updatePlayers(inputs, updateEvents, state),
-		updatePage(inputs),
-	);
-};
