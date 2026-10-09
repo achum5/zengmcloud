@@ -288,6 +288,7 @@ class GameSim extends GameSimBase {
 			neutralSite,
 		});
 		this.playByPlay = new PlayByPlayLogger(doPlayByPlay);
+		this.playByPlay.shotClockSource = () => SHOT_CLOCK - this.possessionLength;
 
 		this.team = teams; // If a team plays twice in a day, this needs to be a deep copy
 

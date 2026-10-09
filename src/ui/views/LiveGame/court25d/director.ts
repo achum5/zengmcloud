@@ -15,11 +15,10 @@ import {
 	COURT_H,
 	COURT_W,
 	dist,
-	FT_BACK,
-	FT_DEFENSE,
 	FT_SHOOTER_DEPTH,
-	FT_OFFENSE,
+	ftDefenseSpot,
 	ftOfficialBall,
+	ftOffenseSpot,
 	guardSpot,
 	HUDDLE_Y,
 	inPlay,
@@ -6905,11 +6904,11 @@ class Director {
 			const there = this.walkTo(
 				[
 					...def.map((pid, j) => {
-						const [dd, ac] = j < 3 ? FT_DEFENSE[j]! : FT_BACK[j - 3]!;
+						const [dd, ac] = ftDefenseSpot(j);
 						return { pid, at: spot(team, dd, ac), face: -dir as 1 | -1 };
 					}),
 					...off.map((pid, j) => {
-						const [dd, ac] = j < 2 ? FT_OFFENSE[j]! : FT_BACK[j]!;
+						const [dd, ac] = ftOffenseSpot(j);
 						return { pid, at: spot(team, dd, ac), face: dir };
 					}),
 					{ pid: shooter, at: line, face: dir },

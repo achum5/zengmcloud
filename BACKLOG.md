@@ -12,81 +12,81 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
 
 ## Before anything else
 
-- [~] Bring in the upstream zengm update (draft pick trade value accounts for
-  lottery and playoff settings, version 2026.10.07.0804) plus every other
-  upstream change we haven't merged yet, without breaking anything in the fork.
+- [x] Bring in the upstream zengm update (draft pick trade value accounts for
+      lottery and playoff settings, version 2026.10.07.0804) plus every other
+      upstream change we haven't merged yet, without breaking anything in the fork.
 
 ## A. Bugs and correctness
 
-- [ ] Replay score bug is broken: shows 0-0 for all games.
-- [ ] Crash when another league member starts their own game while I'm watching
-  a 3D sim: `TypeError: ... is not iterable at beatFreeThrow` (Hn.handle ->
-  beatFreeThrow).
-- [ ] Shot clock must always match the sim. Seen at 0 while play continues.
-- [ ] Play-by-play line on the 3D screen (bottom middle) only shows the home team
+- [x] Replay score bug is broken: shows 0-0 for all games.
+- [x] Crash when another league member starts their own game while I'm watching
+      a 3D sim: `TypeError: ... is not iterable at beatFreeThrow` (Hn.handle ->
+      beatFreeThrow).
+- [x] Shot clock must always match the sim. Seen at 0 while play continues.
+- [~] Play-by-play line on the 3D screen (bottom middle) only shows the home team
   color, at least on replays. Show the team logo next to it like the Plays
   section does. Where this text lives needs deciding as part of the broadcast
   work (score bug etc.).
 - [ ] Bench players visibly stutter all game. Investigate and fix.
 - [ ] Watching a live game being simmed on another device is very choppy and
-  unwatchable. Work out how to send the seed/data so the viewing device plays it
-  back smoothly and precisely.
+      unwatchable. Work out how to send the seed/data so the viewing device plays it
+      back smoothly and precisely.
 - [ ] Ball out of bounds should always be correct for which team it went off
-  last.
+      last.
 - [ ] Fast breaks and timing must always make sense given the shot clock / time
-  into the possession.
+      into the possession.
 
 ## B. Replays
 
 - [ ] Individual player replays are a bit broken. Rework them overall so they cut
-  correctly to each play, with a very brief, visible cut at every switch so it
-  reads as a new clip.
+      correctly to each play, with a very brief, visible cut at every switch so it
+      reads as a new clip.
 
 ## C. Game play realism (the 3D engine)
 
 - [ ] Free throws: shooter's feet still over the line. Make the free throw
-  animation look nice, with a few different quick ready-up routines.
+      animation look nice, with a few different quick ready-up routines.
 - [ ] Free throws: players lined up along the key have their feet in the wrong
-  places. On the last free throw of a trip they box out and fight for the
-  rebound; on earlier ones they stand casually and watch, like real life.
+      places. On the last free throw of a trip they box out and fight for the
+      rebound; on earlier ones they stand casually and watch, like real life.
 - [ ] Free throw high fives: teammates should naturally come out and give the
-  shooter a low five, like real life (research what it looks like).
+      shooter a low five, like real life (research what it looks like).
 - [ ] Default dribbling animation needs a ton of work: currently arm out, ball
-  bouncing, very basic. Make it realistic and dynamic with the player's movement.
+      bouncing, very basic. Make it realistic and dynamic with the player's movement.
 - [ ] Rebounding lead-up: when a shot goes up, players box out and fight for
-  position realistically. The jump itself is OK; the lead-up is clunky and
-  stagnant.
+      position realistically. The jump itself is OK; the lead-up is clunky and
+      stagnant.
 - [ ] Ball going out of bounds looks clunky. Make it physics based if possible.
 - [ ] Fouls are clunky: a player often just runs over to the ball handler and
-  gets fouled. The engine knows the result going into the possession, so set it
-  up so it looks natural.
+      gets fouled. The engine knows the result going into the possession, so set it
+      up so it looks natural.
 - [ ] Steals are ugly ("X stole the ball from Y": the ball goes way up in the air
-  and lands with the stealer). Like fouls, set it up from the start of the
-  possession: matchups, a drive with a help defender stripping it, etc. Many
-  (hundreds?) of possible outcomes, all natural and sleek.
+      and lands with the stealer). Like fouls, set it up from the start of the
+      possession: matchups, a drive with a help defender stripping it, etc. Many
+      (hundreds?) of possible outcomes, all natural and sleek.
 - [ ] Entry passes are often ugly and clunky. In general, possessions should look
-  like real basketball: defenders genuinely getting beaten by good offense.
+      like real basketball: defenders genuinely getting beaten by good offense.
 - [ ] Poor ball handlers who get the defensive rebound should usually hold it and
-  look to give it to a ball handler to bring it up. Exceptions: sets, urgency.
+      look to give it to a ball handler to bring it up. Exceptions: sets, urgency.
 - [ ] Layups: many natural, real-NBA-looking finishes (finger rolls, normal
-  layups, etc.) so it never looks pre-animated.
+      layups, etc.) so it never looks pre-animated.
 - [ ] Deep shots to end a period are ugly: the player just backs up to half court
-  and shoots. Rework.
+      and shoots. Rework.
 - [ ] Defense overall should look like it's genuinely trying to stop the offense.
-  Defenders can get crossed up, confused, etc. when the offense does good things.
+      Defenders can get crossed up, confused, etc. when the offense does good things.
 - [ ] "Attempts low post shot" should usually be a real post move, not an awkward
-  drive into a 6-foot jumper (currently close to 100% of the time).
+      drive into a 6-foot jumper (currently close to 100% of the time).
 - [ ] Injuries need an animation that depends on the kind of injury.
 
 ## D. Visual quality and performance
 
 - [ ] Still dropping frames fairly often. Optimize so the frame rate stays high
-  without lowering quality or making it look more pixelated (which also happens
-  fairly often).
+      without lowering quality or making it look more pixelated (which also happens
+      fairly often).
 - [ ] Player head profiles should match their faces.js face much better.
 - [ ] Back of the head should match the faces.js face, including hair.
 - [ ] Rims look like a bunch of circles. Make the rim and the whole basket look
-  better. Basketball should look like a real ball with correct lines.
+      better. Basketball should look like a real ball with correct lines.
 - [ ] Better-looking feet, and customizable shoes (like jerseys and courts).
 - [ ] Improve the look of the name tag under players.
 
@@ -98,58 +98,58 @@ them freely. Users will want to make these with AI help. Decide together before
 building.
 
 - [ ] Custom courts per team, potentially via image or SVG/code, so users can
-  recreate real courts. Revisit whether the current image-based approach (as for
-  jerseys) is right.
+      recreate real courts. Revisit whether the current image-based approach (as for
+      jerseys) is right.
 - [ ] Court decals, like the finals trophy at center court: fully customizable
-  for every court. Examples: an opening night image on every court, an uploadable
-  playoff decal on all playoff courts. Optionally season by season so each era
-  can look right.
+      for every court. Examples: an opening night image on every court, an uploadable
+      playoff decal on all playoff courts. Optionally season by season so each era
+      can look right.
 - [ ] TV-style score bug: a good generic default used at all times, fully
-  customizable so users can recreate ESPN, TNT, etc.
+      customizable so users can recreate ESPN, TNT, etc.
 - [ ] Arena banners should match the ones the game already draws on the playoffs
-  and team history pages, and be customizable.
+      and team history pages, and be customizable.
 
 ## F. Arena and broadcast atmosphere
 
 - [ ] Bench players wear warm-ups with the team logo on the front and name and
-  number on the back. Once a player has been in the game, back on the bench he
-  is in his uniform only, like real life.
+      number on the back. Once a player has been in the game, back on the bench he
+      is in his uniform only, like real life.
 - [ ] Scorer's table that looks real: people sitting with monitors. Players
-  about to sub in walk to the table ahead of time (the engine looks a few plays
-  ahead for substitutions), taking off the warm-up shirt and dropping it as they
-  go.
+      about to sub in walk to the table ahead of time (the engine looks a few plays
+      ahead for substitutions), taking off the warm-up shirt and dropping it as they
+      go.
 - [ ] Baseline and behind the basket like real life: courtside seats, crowd
-  continuing behind the basket. Crowd as real people with faces.js faces and
-  outfits supporting their team, or the opponent at least in away games.
+      continuing behind the basket. Crowd as real people with faces.js faces and
+      outfits supporting their team, or the opponent at least in away games.
 - [ ] Dynamic crowds based on the team's "hype" saved in the league file: smaller
-  crowds for less hype. Crowd coming back from halftime, home crowd while being
-  blown out, and any other "arena alive" ideas.
+      crowds for less hype. Crowd coming back from halftime, home crowd while being
+      blown out, and any other "arena alive" ideas.
 - [ ] End of game: players go around dapping each other up. Huge celebration for
-  a game winner, and for winning a close game in general. Confetti when a
-  championship is won at the buzzer, only if the home team wins it. Playoff wins
-  celebrated an appropriate amount.
+      a game winner, and for winning a close game in general. Confetti when a
+      championship is won at the buzzer, only if the home team wins it. Playoff wins
+      celebrated an appropriate amount.
 - [ ] Very brief pre-game cut scene on load: people with microphones on court
-  doing pre-game shows, players warming up at their baskets. Skip button to the
-  starting lineups (when those exist), then another to the opening tip. Quick
-  even without skipping.
+      doing pre-game shows, players warming up at their baskets. Skip button to the
+      starting lineups (when those exist), then another to the opening tip. Quick
+      even without skipping.
 - [ ] Starting lineup introductions to open a game, with a skip button: dark
-  lights, spotlights, neon, all the hype.
+      lights, spotlights, neon, all the hype.
 
 ## G. Naming
 
 - [ ] Rename "2.5D" to "3D" everywhere, front end and back end, and call it 3D
-  from now on.
+      from now on.
 
 ## H. Bottom of the list
 
 - [ ] Draft night: drafted players walk across the stage in the team's hat and
-  meet the commissioner.
+      meet the commissioner.
 - [ ] Free agent press conference: holding up the jersey with the front office.
-  Other small immersive moments like these.
+      Other small immersive moments like these.
 - [ ] Investigate adding some of what hoopsjunkie.io does with games, e.g.
-  https://hoopsjunkie.io/games/2026-10-08/bos-vs-cle#box-score
+      https://hoopsjunkie.io/games/2026-10-08/bos-vs-cle#box-score
 - [ ] Eventually a genuinely smart AI GM mode. The current one is probably far too
-  complicated and should likely be restarted. Very low priority.
+      complicated and should likely be restarted. Very low priority.
 
 ## Raw list (as sent, 2026-10-09)
 

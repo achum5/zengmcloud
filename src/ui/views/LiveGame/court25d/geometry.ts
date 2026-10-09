@@ -130,3 +130,23 @@ export const FT_BACK: [number, number][] = [
 	[30, 20],
 	[30, 30],
 ];
+
+// Where the j-th man not on the lane stands. FT_BACK covers a five-man game;
+// a league that puts more on the floor (Number of Players on Court is a
+// league setting) gets the extras spread out behind them, alternating sides,
+// rather than nowhere at all - which is what crashed the free throw.
+export const ftBackSpot = (k: number): [number, number] => {
+	const fixed = FT_BACK[k];
+	if (fixed) {
+		return fixed;
+	}
+	const extra = k - FT_BACK.length;
+	return [33 + 3 * Math.floor(extra / 2), extra % 2 === 0 ? 8 : 42];
+};
+
+// The j-th tallest defender and the j-th tallest of the shooter's teammates:
+// the lane spots first, then back behind the arc.
+export const ftDefenseSpot = (j: number): [number, number] =>
+	FT_DEFENSE[j] ?? ftBackSpot(j - FT_DEFENSE.length);
+export const ftOffenseSpot = (j: number): [number, number] =>
+	FT_OFFENSE[j] ?? ftBackSpot(j);

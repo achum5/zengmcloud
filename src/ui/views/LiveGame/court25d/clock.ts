@@ -19,6 +19,11 @@ const RESET_ORB = 14;
 
 type Mark = { t: number; clock: number; period: number };
 
+// A made basket (field goal or free throw; not an attempt - "fga..." - or a
+// miss). The clock is reset by it; between free throws it doesn't matter.
+const madeBasket = (e: RawEvent): boolean =>
+	/^fg(?!a)/.test(e.type) || /^tp/.test(e.type) || e.type === "ft";
+
 // A line the ball stays live through.
 const runsOn = (e: RawEvent): boolean =>
 	(/^(fga|fg|tp|miss|blk|drb|orb)/.test(e.type) &&
@@ -30,17 +35,28 @@ export type Clocks = {
 	// Game clock marks in timeline order: at time t the clock read `clock`.
 	marks: Mark[];
 	// When the shot clock restarted, and from what.
-	resets: { t: number; from: number }[];
+	// `hold`: the clock is reset but not running - a basket was made, and it
+	// starts again when the ball is inbounded (the next reset, at tl.poss).
+	resets: { t: number; from: number; hold?: true }[];
 };
 
 export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 	const marks: Mark[] = [];
-	const resets: { t: number; from: number }[] = [];
+	const resets: Clocks["resets"] = [];
 	let period = 1;
 	let last: number | undefined;
 	// From when the clock may run on toward the next line: the last line's
 	// moment, if the ball stayed live.
 	let live: number | undefined;
+	// The last line that carried the sim's shot clock.
+	let anchor:
+		| { t: number; clock: number; shot: number; period: number }
+		| undefined;
+	// Whether this game's lines carry the shot clock at all (older saved
+	// replays don't, and fall back to reading it off possession).
+	let exact = false;
+	const possStarts = tl.poss.map(([t]) => t).filter(Number.isFinite);
+	const possStartSet = new Set(possStarts);
 	for (const b of tl.beats) {
 		const e = events[b.i];
 		if (!e) {
@@ -82,9 +98,47 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 			}
 		}
 		marks.push({ t: b.actionStart, clock: e.clock, period });
+		const shot = typeof e.shotClock === "number" ? e.shotClock : undefined;
+		if (shot !== undefined) {
+			// The sim's own shot clock (games simmed since it started logging
+			// it). If it reads higher than the last line's, run down by the game
+			// clock between them, the clock was reset in between - an offensive
+			// rebound, a foul, a timeout, a new possession - and that happened
+			// on the earlier line, so it restarts there, not here.
+			// (A new possession already gets its fresh clock when the ball is
+			// inbounded - see tl.poss below - so it isn't restarted twice.)
+			if (
+				anchor !== undefined &&
+				anchor.period === period &&
+				shot > anchor.shot - (anchor.clock - e.clock) + 0.5 &&
+				!possStarts.some(
+					(t) => t > (anchor?.t ?? Infinity) && t <= b.actionStart,
+				)
+			) {
+				resets.push({
+					t: anchor.t,
+					from: Math.min(SHOT_CLOCK, shot + (anchor.clock - e.clock)),
+				});
+			}
+			// A line that hands the ball over (a defensive rebound, a steal)
+			// carries the clock of the possession that just ended; the new
+			// one starts fresh there (tl.poss), so it isn't an anchor for it.
+			if (!possStartSet.has(b.actionStart)) {
+				resets.push({ t: b.actionStart, from: shot });
+				anchor = { t: b.actionStart, clock: e.clock, shot, period };
+			}
+			exact = true;
+		}
 		last = e.clock;
 		live = runsOn(e) ? b.actionStart : undefined;
-		if (e.type === "orb") {
+		if (madeBasket(e)) {
+			// Reset by the make, and stopped until the inbound - it doesn't run
+			// on toward zero while the ball is dead.
+			resets.push({ t: b.actionStart, from: SHOT_CLOCK, hold: true });
+		}
+		if (exact) {
+			// Read off the sim, line by line - no guessing.
+		} else if (e.type === "orb") {
 			resets.push({ t: b.actionStart, from: RESET_ORB });
 		} else if (
 			e.type === "jumpBall" ||
@@ -100,6 +154,7 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 			resets.push({ t, from: SHOT_CLOCK });
 		}
 	}
+	// Stable, so at one moment the later entry - the more specific one - wins.
 	resets.sort((a, b) => a.t - b.t);
 	return { marks, resets };
 };
@@ -179,6 +234,9 @@ export const shotClockAt = (c: Clocks, t: number): number | undefined => {
 		return undefined;
 	}
 	const r = c.resets[i]!;
+	if (r.hold) {
+		return r.from > game ? undefined : r.from;
+	}
 	const start = gameClockAt(c, r.t);
 	if (start === undefined || start < game) {
 		return undefined;

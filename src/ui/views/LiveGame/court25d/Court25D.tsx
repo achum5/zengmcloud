@@ -12,6 +12,7 @@ import { toWorker } from "../../../util/toWorker.ts";
 import { usePlayerFace, type PlayerFace } from "../../../util/playerFaces.ts";
 import type { ArenaLooks, ReplayLooks } from "../../../../common/types.ts";
 import LiveCourt from "../LiveCourt.tsx";
+import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import {
 	paintBench,
 	paintBoards,
@@ -41,6 +42,7 @@ import { headColors, loadHead, profileOf, type HeadSprite } from "./faces.ts";
 import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
 import { dressKit, kitArtOf, type KitArt } from "./kitArt.ts";
 import { COURT_W, type Side } from "./geometry.ts";
+import { eventsMatchRoster } from "./rosterMatch.ts";
 import { bodyOf, type Body } from "./poses.ts";
 import { cameraCuts, fastAt } from "./evaluate.ts";
 import {
@@ -131,6 +133,8 @@ type Props = {
 	cursor: number;
 	boxScore: any;
 	caption: ReactNode;
+	// The box score team (0 home, 1 away) the caption's play belongs to, if any.
+	captionT?: 0 | 1;
 	paused: boolean;
 	// How many times real time it plays at (1 is real time).
 	rate: number;
@@ -145,6 +149,7 @@ const Court25D = ({
 	cursor,
 	boxScore,
 	caption,
+	captionT,
 	paused,
 	rate,
 	follower,
@@ -187,13 +192,28 @@ const Court25D = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [gid]);
 
-	const timeline = useMemo(
-		() =>
-			events && events.length > 0
-				? compileCourt({ events, players: roster, gid, gender })
-				: undefined,
-		[events, roster, gid, gender],
-	);
+	const timeline = useMemo(() => {
+		if (!events || events.length === 0) {
+			return undefined;
+		}
+		// THE EVENTS HAVE TO BE THIS GAME'S. When the game on this page changes
+		// under it - a league-mate starts another game while this device is
+		// following one - the new game's events can arrive a render ahead of its
+		// box score, and staging them against the previous game's roster puts
+		// players on the floor that the court has never heard of (the field
+		// report: a crash in the free throw lineup). Wait for the two to agree.
+		if (!eventsMatchRoster(events, roster)) {
+			return undefined;
+		}
+		try {
+			return compileCourt({ events, players: roster, gid, gender });
+		} catch (error) {
+			// A broken staging must not take the whole page down with it - the
+			// play-by-play and box score still work without the court.
+			console.error("3D court failed to compile", error);
+			return undefined;
+		}
+	}, [events, roster, gid, gender]);
 	const clocks = useMemo(
 		() => (timeline && events ? buildClocks(timeline, events) : undefined),
 		[timeline, events],
@@ -844,9 +864,16 @@ const Court25D = ({
 		};
 	}, []);
 
-	const awayPts = away?.pts ?? 0;
-	const homePts = home?.pts ?? 0;
+	// The score off the live box score, never off `away`/`home`: on a replay
+	// those are copies (that night's looks laid over each team), made once when
+	// the page opened - at 0-0 - and the box score's teams are updated in place
+	// as the game plays, so nothing ever tells the copies to refresh.
+	const awayPts: number = boxScore?.teams?.[1]?.pts ?? 0;
+	const homePts: number = boxScore?.teams?.[0]?.pts ?? 0;
 	const quarter = boxScore?.quarterShort ?? "";
+	// Who made the play the caption describes: the same team the Plays list
+	// marks with a logo. Taken off `raw` so a replay shows that night's logo.
+	const captionTeam = captionT === undefined ? undefined : raw[captionT];
 
 	return (
 		<div
@@ -1034,11 +1061,25 @@ const Court25D = ({
 						padding: "0.45em 1em",
 						background: "rgba(8, 8, 12, 0.84)",
 						color: "#f1ede6",
-						borderLeft: `4px solid ${home?.colors?.[0] ?? "#888"}`,
+						borderLeft: `4px solid ${
+							(captionTeam ?? home)?.colors?.[0] ?? "#888"
+						}`,
 						borderRadius: 3,
+						display: "flex",
+						alignItems: "center",
+						gap: "0.6em",
 					}}
 				>
-					{caption}
+					{captionTeam ? (
+						<TeamLogoInline
+							alt={captionTeam.abbrev}
+							className="flex-shrink-0"
+							imgURL={captionTeam.imgURL}
+							imgURLSmall={captionTeam.imgURLSmall}
+							includePlaceholderIfNoLogo
+						/>
+					) : null}
+					<div>{caption}</div>
 				</div>
 			) : null}
 		</div>

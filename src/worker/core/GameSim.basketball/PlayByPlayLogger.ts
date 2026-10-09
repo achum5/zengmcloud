@@ -197,9 +197,16 @@ type PlayByPlayEventInput =
 // Only add period to scoring events, since they are used for scoringSummary
 type PlayByPlayEventScore = PlayByPlayEventInputScore & { period: number };
 
-export type PlayByPlayEventOutput =
+// shotClock: seconds left on the shot clock when the event happened, on every
+// event that carries a game clock. The sim runs one (a possession can't use more
+// than SHOT_CLOCK seconds) but kept it to itself, so the live court had to guess
+// it from who had the ball - and guessed wrong whenever the sim gave a fresh
+// clock the court didn't know about (an offensive rebound, a foul, a timeout),
+// running the one on screen down to 0 with play going on.
+export type PlayByPlayEventOutput = (
 	| PlayByPlayEventScore
-	| PlayByPlayEventInputNoScore;
+	| PlayByPlayEventInputNoScore
+) & { shotClock?: number };
 
 const scoringTypes: Set<PlayByPlayEventInput["type"]> = new Set([
 	"fgAtRim",
@@ -221,6 +228,8 @@ const isScoringPlay = (
 
 class BasketballPlayByPlayLogger extends PlayByPlayLoggerBase<PlayByPlayEventOutput> {
 	private period = 1;
+	// Reads the sim's shot clock. Set by the game sim.
+	shotClockSource: (() => number) | undefined;
 	constructor(active: boolean) {
 		super(active);
 	}
@@ -234,13 +243,20 @@ class BasketballPlayByPlayLogger extends PlayByPlayLoggerBase<PlayByPlayEventOut
 			this.period = event.period;
 		}
 
+		const shotClock =
+			this.shotClockSource && "clock" in event
+				? Math.max(0, Math.round(this.shotClockSource() * 10) / 10)
+				: undefined;
+		const withShotClock = shotClock === undefined ? {} : { shotClock };
+
 		if (isScoringPlay(event)) {
 			this.playByPlay.push({
 				...event,
+				...withShotClock,
 				period: this.period,
 			});
 		} else {
-			this.playByPlay.push(event);
+			this.playByPlay.push({ ...event, ...withShotClock });
 		}
 	}
 }

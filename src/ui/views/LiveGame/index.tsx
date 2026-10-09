@@ -2866,6 +2866,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 										}
 										boxScore={boxScore.current}
 										caption={playByPlayEntries.current[0]?.text}
+										captionT={playByPlayEntries.current[0]?.t}
 										paused={paused}
 										rate={rate25d}
 										follower={isFollower}
