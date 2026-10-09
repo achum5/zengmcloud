@@ -41,14 +41,16 @@ import { ANIMS, type AnimName } from "./poses.ts";
 // to the plays, the photographers shoot what happens at their end. All of it
 // is read off the timeline at any moment, so a replay plays out the same.
 
-export type CrewRole = "ref" | "coach" | "photo" | "table";
+export type CrewRole = "ref" | "coach" | "photo" | "table" | "fan";
 export type CrewMember = {
 	// Never a player's: crew are numbered below zero.
 	pid: number;
 	role: CrewRole;
-	// A coach's team; a photographer's end of the floor (0 the left).
+	// A coach's team; a photographer's end of the floor (0 the left); the
+	// team a fan is for.
 	team: Side;
-	// A photographer's place on the baseline; a chair at the scorer's table.
+	// A photographer's place on the baseline; a chair at the scorer's table
+	// or behind a baseline.
 	spot?: Pt;
 	hgt: number;
 	weight: number;
@@ -240,8 +242,104 @@ export const crewFor = (
 			),
 		});
 	});
+	out.push(...fansFor(gid, away, home));
 	return out;
 };
+
+// THE BASELINE SEATS: two rows of folding chairs behind each baseline, past
+// the photographers, the front row broken for the basket's stanchion - full
+// of people in their team's colors, the home team's mostly. A handful of
+// faces go round them all (faces.js is slow to draw a great many).
+const FAN_FACES = 14;
+const FAN_GAP = 2.5;
+export const FAN_ROWS = [7.6, 10.4];
+const FAN_PANTS = ["#2b3a55", "#1c1c20", "#4b4334", "#3b4a6b", "#2e2e33"];
+const fansFor = (
+	gid: number,
+	away: TeamLike | undefined,
+	home: TeamLike | undefined,
+): CrewMember[] => {
+	const out: CrewMember[] = [];
+	const faces: FaceConfig[] = [];
+	for (let n = 0; n < FAN_FACES; n++) {
+		const seed = `fan|${teamKey(home)}|${gid}|${n}`;
+		faces.push(faceFor(seed, makeCourtRng(seed)() < 0.4));
+	}
+	const r = makeCourtRng(`fans|${teamKey(home)}|${gid}`);
+	let n = 0;
+	for (const end of [0, 1] as const) {
+		FAN_ROWS.forEach((back, row) => {
+			for (let y = 0.8; y <= COURT_H - 0.8; y += FAN_GAP) {
+				// The stanchion's padded base.
+				if (row === 0 && y > 20.5 && y < 29.5) {
+					continue;
+				}
+				// Not every seat sold.
+				if (r() < 0.08) {
+					continue;
+				}
+				const team: Side = r() < 0.78 ? 1 : 0;
+				const colors = (team === 1 ? home : away)?.colors;
+				const c =
+					colors?.[r() < 0.7 ? 0 : 1] ?? (team === 1 ? "#8c1d40" : "#1d3461");
+				const plain = r() < 0.3;
+				out.push({
+					pid: -101 - n,
+					role: "fan",
+					team,
+					spot: {
+						x: end === 0 ? -back : COURT_W + back,
+						y: y + (r() - 0.5) * 0.3,
+					},
+					hgt: 62 + r() * 14,
+					weight: 130 + r() * 100,
+					face: faces[Math.floor(r() * faces.length)]!,
+					dress: dress(
+						plain ? PHOTO_TOPS[Math.floor(r() * PHOTO_TOPS.length)]! : c,
+						FAN_PANTS[Math.floor(r() * FAN_PANTS.length)]!,
+						{ sleeves: r() < 0.6 ? "short" : "long" },
+						r() < 0.5 ? "#e6e6e2" : "#141416",
+					),
+				});
+				n += 1;
+			}
+		});
+	}
+	// And a row along the far side, behind the benches and the table.
+	let m = 0;
+	for (let x = -3.5; x <= COURT_W + 3.5; x += FAN_GAP * 0.92) {
+		if (r() < 0.06) {
+			continue;
+		}
+		const team: Side = r() < 0.78 ? 1 : 0;
+		const colors = (team === 1 ? home : away)?.colors;
+		const c =
+			colors?.[r() < 0.7 ? 0 : 1] ?? (team === 1 ? "#8c1d40" : "#1d3461");
+		const plain = r() < 0.45;
+		out.push({
+			pid: -301 - m,
+			role: "fan",
+			team,
+			spot: { x: x + (r() - 0.5) * 0.3, y: FAR_ROW },
+			hgt: 62 + r() * 14,
+			weight: 130 + r() * 100,
+			face: faces[Math.floor(r() * faces.length)]!,
+			dress: dress(
+				plain ? PHOTO_TOPS[Math.floor(r() * PHOTO_TOPS.length)]! : c,
+				FAN_PANTS[Math.floor(r() * FAN_PANTS.length)]!,
+				{ sleeves: r() < 0.6 ? "short" : "long" },
+				r() < 0.5 ? "#e6e6e2" : "#141416",
+			),
+		});
+		m += 1;
+	}
+	return out;
+};
+export const FAR_ROW = -10.8;
+export const isFan = (pid: number): boolean => pid <= -101;
+// The far side's row sits behind the benches and the table, and is drawn
+// before them.
+export const isFarFan = (pid: number): boolean => pid <= -301;
 
 // ---- reading the game ----------------------------------------------------------
 
@@ -953,6 +1051,45 @@ const tableState = (m: CrewMember, ball: Pt, t: number): PlayerState => {
 	};
 };
 
+// ---- the baseline seats ---------------------------------------------------------
+
+// In his seat watching the play; up on his feet when his team makes a big
+// play, and some of them in a tight finish.
+const fanState = (
+	tl: CourtTimeline,
+	t: number,
+	m: CrewMember,
+	ball: Pt,
+	roar: Fx | undefined,
+	tense: boolean,
+): PlayerState => {
+	const at = m.spot!;
+	const ahead = at.y < -9 ? Math.PI / 2 : at.x < 0 ? 0 : Math.PI;
+	// Turned toward the half of the floor the play is in - not following
+	// every bounce (each new angle is a new picture of him to draw).
+	let d = yawTo(at, ball) - ahead;
+	d = Math.atan2(Math.sin(d), Math.cos(d));
+	const yaw = ahead + (d < 0 ? -0.4 : 0.4);
+	const up =
+		(roar?.team === m.team && unit(Math.round(roar.t), m.pid) < 0.8) ||
+		(tense && unit(m.pid, 7) < 0.35);
+	const anim: AnimName = up ? (roar ? "cheer" : "clap") : "sit";
+	return {
+		pid: m.pid,
+		team: m.team,
+		shown: true,
+		x: at.x,
+		y: at.y,
+		z: 0,
+		yaw,
+		anim,
+		// Sitting, he sits still (a picture of him for each way he faces,
+		// not one for every moment of an idle loop, times a hundred fans).
+		phase: anim === "sit" ? unit(m.pid, 3) : loopPhase(anim, t, m.pid * 0.23),
+		moving: false,
+	};
+};
+
 // ---- the photographers ------------------------------------------------------
 
 // Down on a knee, the camera up when the play is at his end.
@@ -1036,9 +1173,13 @@ export const crewAt = (
 		states.push(...refStates(tl, t, refs, ball));
 	}
 	const flashes: Pt3[] = [];
+	const roar = recentFx(tl, t, ["roar"], 2200);
+	const tense = tensionAt(tl, t) >= 1;
 	for (const m of crew) {
 		if (m.role === "coach") {
 			states.push(coachState(tl, t, m, ball));
+		} else if (m.role === "fan") {
+			states.push(fanState(tl, t, m, ball, roar, tense));
 		} else if (m.role === "table") {
 			states.push(tableState(m, ball, t));
 		} else if (m.role === "photo") {

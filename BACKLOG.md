@@ -114,10 +114,10 @@ building.
 Reference photos from the owner (2026-10-09: MSG, Crypto.com Arena, Frost
 Bank Center, a 2K27 broadcast) - what the floor and building should look like:
 
-- [ ] Apron: the floor outside the lines painted in the home color all the
+- [x] Apron: the floor outside the lines painted in the home color all the
       way round, the team name big along each baseline, sponsor lettering down
       the sidelines.
-- [ ] Behind each basket: photographers sitting on the apron, a row or two of
+- [x] Behind each basket: photographers sitting on the apron, a row or two of
       courtside seats, then the stands rising straight up - the crowd wraps the
       whole floor.
 - [ ] Stanchion: dark padded base with a lit ad panel.
@@ -132,9 +132,9 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
       about to sub in walk to the table ahead of time (the engine looks a few plays
       ahead for substitutions), taking off the warm-up shirt and dropping it as they
       go.
-- [ ] Baseline and behind the basket like real life: courtside seats, crowd
-      continuing behind the basket. Crowd as real people with faces.js faces and
-      outfits supporting their team, or the opponent at least in away games.
+- [~] Baseline and behind the basket like real life: courtside seats, crowd
+  continuing behind the basket. Crowd as real people with faces.js faces and
+  outfits supporting their team, or the opponent at least in away games.
 - [ ] Dynamic crowds based on the team's "hype" saved in the league file: smaller
       crowds for less hype. Crowd coming back from halftime, home crowd while being
       blown out, and any other "arena alive" ideas.

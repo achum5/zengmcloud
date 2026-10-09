@@ -1,3 +1,4 @@
+import type { FaceConfig } from "facesjs";
 import {
 	useCallback,
 	useEffect,
@@ -308,6 +309,9 @@ const Court3D = ({
 			stands: paintStands(h, a, seed, 0, crowd),
 			standsUp: paintStands(h, a, seed, 1, crowd),
 			standsWave: paintStands(h, a, seed, 2, crowd),
+			endStands: [0, 1, 2].map((up) =>
+				paintStands(h, a, seed, up as 0 | 1 | 2, crowd, 0),
+			) as [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement],
 			boards: paintBoards(h),
 			rafters: paintRafters(h, building),
 			tableTop: table.top,
@@ -415,14 +419,18 @@ const Court3D = ({
 	useEffect(() => {
 		let alive = true;
 		crewHeads.current = new Map();
+		const shared = new Map<FaceConfig, ReturnType<typeof loadHead>>();
 		void Promise.all(
 			crew.map(async (m) => {
 				const team =
 					m.role === "coach" ? (m.team === 0 ? away : home) : undefined;
-				crewHeads.current.set(
-					m.pid,
-					await loadHead(m.face, undefined, team?.colors),
-				);
+				// The fans share a handful of faces: each drawn once.
+				let head = m.role === "fan" ? shared.get(m.face) : undefined;
+				if (!head) {
+					head = loadHead(m.face, undefined, team?.colors);
+					shared.set(m.face, head);
+				}
+				crewHeads.current.set(m.pid, await head);
 			}),
 		).then(() => {
 			if (alive) {
@@ -581,6 +589,7 @@ const Court3D = ({
 
 	const homePad = home?.colors?.[0] ?? "#8c1d40";
 	const lineColor: string = home?.court?.lines || "#f8f5f0";
+	const apron: string = home?.court?.apron || homePad;
 	const warmups = useMemo(
 		(): [string, string] => [
 			shade(kits[0].jersey, -0.3),
@@ -602,6 +611,7 @@ const Court3D = ({
 		narrow,
 		homePad,
 		lineColor,
+		apron,
 		warmups,
 		eventsLength: events?.length ?? 0,
 	});
@@ -617,6 +627,7 @@ const Court3D = ({
 		narrow,
 		homePad,
 		lineColor,
+		apron,
 		warmups,
 		eventsLength: events?.length ?? 0,
 	};
@@ -833,6 +844,7 @@ const Court3D = ({
 				lookFor: lookOf,
 				padColor: p.homePad,
 				lineColor: p.lineColor,
+				apron: p.apron,
 				warmups: p.warmups,
 				shotClock: shotText,
 				arena: {
@@ -840,6 +852,7 @@ const Court3D = ({
 					stands: pt.stands,
 					standsUp: pt.standsUp,
 					standsWave: pt.standsWave,
+					endStands: pt.endStands,
 					boards: pt.boards,
 					rafters: pt.rafters,
 					tableTop: pt.tableTop,

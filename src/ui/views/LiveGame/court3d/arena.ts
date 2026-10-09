@@ -93,6 +93,45 @@ export const FLOOR = plane(
 	62 - STANDS_Y,
 	2,
 );
+// BEHIND EACH BASKET: the stands go on round the ends - a wall of LED boards
+// this far behind the baseline, a row or two of courtside seats in front of
+// it, and the seats rising from its top, the way they do along the side.
+export const END_BACK = 13;
+const END_Y0 = STANDS_Y;
+const END_Y1 = 62;
+export const END_STANDS: [Plane, Plane] = [0, 1].map((side) => {
+	const s = side === 0 ? -1 : 1;
+	const x = side === 0 ? -END_BACK : COURT_W + END_BACK;
+	return plane(
+		`endStands${side}`,
+		{
+			x: x + s * SLOPE * Math.cos(RAKE),
+			y: side === 0 ? END_Y0 : END_Y1,
+			z: WALL_H + SLOPE * Math.sin(RAKE),
+		},
+		{ x: 0, y: side === 0 ? 1 : -1, z: 0 },
+		{ x: -s * Math.cos(RAKE), y: 0, z: -Math.sin(RAKE) },
+		END_Y1 - END_Y0,
+		SLOPE,
+		8,
+	);
+}) as [Plane, Plane];
+export const END_WALL: [Plane, Plane] = [0, 1].map((side) =>
+	plane(
+		`endWall${side}`,
+		{
+			x: side === 0 ? -END_BACK : COURT_W + END_BACK,
+			y: side === 0 ? END_Y0 : END_Y1,
+			z: WALL_H,
+		},
+		{ x: 0, y: side === 0 ? 1 : -1, z: 0 },
+		{ x: 0, y: 0, z: -1 },
+		END_Y1 - END_Y0,
+		WALL_H,
+		12,
+	),
+) as [Plane, Plane];
+
 export const TABLE_X0 = 37;
 export const TABLE_X1 = 57;
 const TABLE_Y = -5;
@@ -191,17 +230,22 @@ export const paintStands = (
 	up: 0 | 1 | 2 = 0,
 	// How many came, of how many it seats - a full house if unknown.
 	crowd?: { att?: number; capacity?: number },
+	// The stands behind a basket, not the long side.
+	end?: 0 | 1,
 ): HTMLCanvasElement => {
-	const { w, h } = STANDS;
-	const px = w / (X1 - X0);
+	const P = end === undefined ? STANDS : END_STANDS[end];
+	const A0 = end === undefined ? X0 : END_Y0;
+	const A1 = end === undefined ? X1 : END_Y1;
+	const { w, h } = P;
+	const px = w / (A1 - A0);
 	const canvas = document.createElement("canvas");
 	canvas.width = w;
 	canvas.height = h;
 	const ctx = canvas.getContext("2d")!;
-	const rng = makeCourtRng(`stands|${seed}`);
+	const rng = makeCourtRng(`stands|${seed}${end ?? ""}`);
 	// Who gets up is decided apart from who is there, so both pictures have
 	// the same crowd.
-	const rise = makeCourtRng(`stands-up|${seed}`);
+	const rise = makeCourtRng(`stands-up|${seed}${end ?? ""}`);
 	const g = ctx.createLinearGradient(0, 0, 0, h);
 	g.addColorStop(0, "#07080b");
 	g.addColorStop(1, "#1a1c22");
@@ -233,14 +277,14 @@ export const paintStands = (
 		crowd?.att !== undefined && crowd.capacity
 			? Math.min(0.97, Math.max(0.04, crowd.att / crowd.capacity))
 			: 0.93;
-	const seatRng = makeCourtRng(`seats|${seed}`);
+	const seatRng = makeCourtRng(`seats|${seed}${end ?? ""}`);
 	const seats: { r: number; xf: number; want: number }[] = [];
 	for (let r = 0; r < rows; r++) {
-		if (r === RIBBON_ROW) {
+		if (r === RIBBON_ROW && end === undefined) {
 			continue;
 		}
-		for (let xf = X0 + 0.6; xf < X1 - 0.6; xf += 1.85) {
-			const mod = (((xf - X0) % aisle) + aisle) % aisle;
+		for (let xf = A0 + 0.6; xf < A1 - 0.6; xf += 1.85) {
+			const mod = (((xf - A0) % aisle) + aisle) % aisle;
 			if (mod < 3) {
 				continue;
 			}
@@ -249,7 +293,7 @@ export const paintStands = (
 				xf,
 				want:
 					(r / rows) * 0.9 +
-					Math.abs(xf - COURT_W / 2) / 150 +
+					(end === undefined ? Math.abs(xf - COURT_W / 2) / 150 : 0.3) +
 					seatRng() * 0.45,
 			});
 		}
@@ -263,7 +307,7 @@ export const paintStands = (
 	for (let r = 0; r < rows; r++) {
 		// Rows from the front (bottom of the picture) up.
 		const yb = h - r * ROW_FT * px;
-		if (r === RIBBON_ROW) {
+		if (r === RIBBON_ROW && end === undefined) {
 			// The ribbon board goes here (see RIBBON).
 			ctx.fillStyle = "#050507";
 			ctx.fillRect(0, yb - ROW_FT * px, w, ROW_FT * px);
@@ -279,7 +323,7 @@ export const paintStands = (
 				ctx.fillStyle = seatColor;
 				ctx.beginPath();
 				ctx.roundRect(
-					(xf - X0) * px - 0.62 * px,
+					(xf - A0) * px - 0.62 * px,
 					yb - 1.55 * px,
 					1.24 * px,
 					1.2 * px,
@@ -288,7 +332,7 @@ export const paintStands = (
 				ctx.fill();
 				continue;
 			}
-			const x = (xf - X0) * px + (rng() - 0.5) * 2;
+			const x = (xf - A0) * px + (rng() - 0.5) * 2;
 			const bodyW = (1.25 + rng() * 0.35) * px;
 			const color = shirt();
 			const skin = skins[Math.floor(rng() * skins.length)]!;
@@ -350,8 +394,8 @@ export const paintStands = (
 		}
 		// The aisles.
 		ctx.fillStyle = "#2b2e35";
-		for (let xf = X0; xf < X1; xf += aisle) {
-			ctx.fillRect((xf - X0) * px, yb - ROW_FT * px, 2.4 * px, ROW_FT * px);
+		for (let xf = A0; xf < A1; xf += aisle) {
+			ctx.fillRect((xf - A0) * px, yb - ROW_FT * px, 2.4 * px, ROW_FT * px);
 		}
 	}
 	// The light falls on the court: the upper deck fades into the dark.
@@ -507,14 +551,39 @@ const paintScreen = (
 
 // Every screen, for the boards along the front of the stands and the ribbon
 // round the upper deck - painted once a game, switched between as it goes.
+export type BoardSet = "wall" | "ribbon" | "end" | "table";
 export const paintBoards = (
 	home: ArenaTeam | undefined,
-): Record<"wall" | "ribbon", Record<BoardScreen, HTMLCanvasElement>> => {
-	const out = { wall: {}, ribbon: {} } as Record<
-		"wall" | "ribbon",
+): Record<BoardSet, Record<BoardScreen, HTMLCanvasElement>> => {
+	const out = { wall: {}, ribbon: {}, end: {}, table: {} } as Record<
+		BoardSet,
 		Record<BoardScreen, HTMLCanvasElement>
 	>;
+	const trim = teamColor(home, 1, "#f2c14e");
 	for (const screen of BOARD_SCREENS) {
+		out.end[screen] = paintScreen(
+			END_WALL[0].w,
+			END_WALL[0].h,
+			END_WALL[0].w / (END_Y1 - END_Y0),
+			screen,
+			home,
+		);
+		// The scorer's table is one long LED board too, with a strip of the
+		// team's color along its top edge.
+		const table = paintScreen(
+			TABLE_FRONT.w,
+			TABLE_FRONT.h,
+			TABLE_FRONT.w / (TABLE_X1 - TABLE_X0),
+			screen,
+			home,
+		);
+		const tctx = table.getContext("2d")!;
+		const edge = Math.max(2, Math.round(TABLE_FRONT.h * 0.09));
+		tctx.fillStyle = "#0b0c10";
+		tctx.fillRect(0, 0, table.width, edge * 2);
+		tctx.fillStyle = trim;
+		tctx.fillRect(0, edge * 0.6, table.width, edge);
+		out.table[screen] = table;
 		out.wall[screen] = paintScreen(
 			LED_WALL.w,
 			LED_WALL.h,

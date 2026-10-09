@@ -1,5 +1,5 @@
 import { assert, describe, test } from "vitest";
-import { atTable, crewAt, crewFor, type CrewMember } from "./crew.ts";
+import { atTable, crewAt, crewFor, isFan, type CrewMember } from "./crew.ts";
 import { cameraCuts } from "./evaluate.ts";
 import { benchX, COURT_H, COURT_W } from "./geometry.ts";
 import { compile, gidOf } from "./testGame.ts";
@@ -173,10 +173,40 @@ describe("3D crew", () => {
 					const team = s.pid === -11 ? 0 : 1;
 					assert.isBelow(Math.abs(s.x - benchX(team)), 7, `${t}`);
 					assert.isTrue(s.y > -4 && s.y < 0.5, `${t}`);
-				} else if (s.pid <= -21 && !atTable(s.pid)) {
+				} else if (s.pid <= -21 && !atTable(s.pid) && !isFan(s.pid)) {
 					assert.isTrue(s.x < -2 || s.x > COURT_W + 2, `${t}`);
 					// Clear of the basket's stanchion and the lane under it.
 					assert.isTrue(s.y < 17 || s.y > 33, `${t}`);
+				}
+			}
+		}
+	}, 60_000);
+
+	// The courtside seats: behind each baseline, clear of the basket's
+	// stanchion, and along the far side - nobody on the floor, everybody
+	// facing it.
+	test("fans sit courtside, off the floor, facing it", () => {
+		const { tl, crew } = working("a");
+		const fans = crew.filter((m) => m.role === "fan");
+		assert.isAbove(fans.length, 60);
+		for (const t of [3000, tl.end / 2]) {
+			for (const s of crewAt(tl, t, crew).states) {
+				if (!fans.some((m) => m.pid === s.pid)) {
+					continue;
+				}
+				const behind = s.y > -9 && (s.x < -6 || s.x > COURT_W + 6);
+				assert.isTrue(behind || s.y < -10, `${s.pid}`);
+				if (behind) {
+					// Not on top of the stanchion's base.
+					assert.isFalse(
+						Math.abs(s.x < 0 ? s.x + 7.25 : s.x - COURT_W - 7.25) < 2.5 &&
+							s.y > 22 &&
+							s.y < 28,
+					);
+					// Facing the floor.
+					assert.isAbove(Math.cos(s.yaw) * (s.x < 0 ? 1 : -1), 0.6);
+				} else {
+					assert.isAbove(Math.sin(s.yaw), 0.6);
 				}
 			}
 		}

@@ -10,6 +10,8 @@ import {
 	RIBBON,
 	STANDS,
 	standsPoint,
+	END_STANDS,
+	END_WALL,
 	TABLE_FRONT,
 	TABLE_TOP,
 	type BoardScreen,
@@ -25,7 +27,7 @@ import {
 	type Shot,
 } from "./camera.ts";
 import { drawCourtLines } from "./courtLines.ts";
-import { atTable, TABLE_SEAT_Y } from "./crew.ts";
+import { atTable, isFan, isFarFan, TABLE_SEAT_Y } from "./crew.ts";
 import { STRIP_MS, type CheckIn, type CourtTimeline } from "./director.ts";
 import {
 	arenaShotAt,
@@ -38,7 +40,7 @@ import {
 	type BallState,
 	type PlayerState,
 } from "./evaluate.ts";
-import type { Look } from "./figure.ts";
+import { shade, type Look } from "./figure.ts";
 import { COURT_W, RIM_Z, seatSpot, type Pt3, type Side } from "./geometry.ts";
 import { drawPixelText, pixelTextWidth } from "./pixelFont.ts";
 import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
@@ -81,8 +83,11 @@ export type ArenaPaint = {
 	stands: HTMLCanvasElement;
 	standsUp: HTMLCanvasElement;
 	standsWave: HTMLCanvasElement;
+	// Behind each basket (the same pictures at both ends).
+	endStands?: [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement];
 	// Every screen the LED boards can show (see boardAt).
-	boards: Record<"wall" | "ribbon", Record<BoardScreen, HTMLCanvasElement>>;
+	boards: Record<"wall" | "ribbon", Record<BoardScreen, HTMLCanvasElement>> &
+		Partial<Record<"end" | "table", Record<BoardScreen, HTMLCanvasElement>>>;
 	rafters: HTMLCanvasElement;
 	tableTop: HTMLCanvasElement;
 	tableFront: HTMLCanvasElement;
@@ -112,6 +117,8 @@ export type Frame = {
 	padColor: string;
 	// The home floor's line paint.
 	lineColor: string;
+	// The floor round the court, past the lines (the court's apron color).
+	apron?: string;
 	// The warm-up tops the bench wears, by team.
 	warmups: [string, string];
 	shotClock: string;
@@ -480,6 +487,63 @@ const drawMonitors = (
 	}
 };
 
+// A folding chair behind a baseline, its back to the wall: the seat under
+// whoever sits at (x, y), the back behind him.
+const drawChair = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	x: number,
+	y: number,
+	color: string,
+) => {
+	// Off the picture: nothing to draw.
+	const base = project(cam, { x, y, z: 0 });
+	const r = 2.5 * base.k;
+	if (
+		base.x < -r ||
+		base.x > cam.viewW + r ||
+		base.y < -r * 2 ||
+		base.y > cam.viewH + r
+	) {
+		return;
+	}
+	// Facing the floor: from behind a baseline, or the far sideline.
+	const [fx, fy] = y < -9 ? [0, 1] : x < 0 ? [1, 0] : [-1, 0];
+	const at = (along: number, side: number, z: number): Pt3 => ({
+		x: x + fx * along - fy * side,
+		y: y + fy * along + fx * side,
+		z,
+	});
+	const quad = (pts: Pt3[], fill: string) => {
+		ctx.fillStyle = fill;
+		ctx.beginPath();
+		for (const p of pts) {
+			const q = project(cam, p);
+			ctx.lineTo(q.x, q.y);
+		}
+		ctx.closePath();
+		ctx.fill();
+	};
+	quad(
+		[
+			at(-0.9, -0.75, 0),
+			at(-0.9, 0.75, 0),
+			at(-0.9, 0.75, 3.3),
+			at(-0.9, -0.75, 3.3),
+		],
+		shade(color, -0.35),
+	);
+	quad(
+		[
+			at(-0.9, -0.75, 1.55),
+			at(-0.15, -0.75, 1.55),
+			at(-0.15, 0.75, 1.55),
+			at(-0.9, 0.75, 1.55),
+		],
+		shade(color, -0.2),
+	);
+};
+
 // A plain quad on the floor, in one color.
 const floorQuad = (
 	ctx: CanvasRenderingContext2D,
@@ -544,6 +608,30 @@ export const drawFrame = (f: Frame) => {
 		FLOOR.origin.y + FLOOR.h * FLOOR.alongY.y,
 		"#241e18",
 	);
+	// Round the ends: the stands, and the boards along their front.
+	for (const side of [0, 1] as const) {
+		if (arena.endStands) {
+			drawTexturedPlane(ctx, cam, END_STANDS[side], arena.endStands[0], 24, 6);
+			if (f.crowd.up > 0.01) {
+				drawTexturedPlane(
+					ctx,
+					cam,
+					END_STANDS[side],
+					arena.endStands[f.crowd.wave ? 2 : 1],
+					24,
+					6,
+					f.crowd.up,
+				);
+			}
+		}
+		const end = arena.boards.end?.[screen];
+		if (end) {
+			drawTexturedPlane(ctx, cam, END_WALL[side], end, 24, 1);
+		}
+	}
+	// The apron: the court's own color carried out past the lines, to the
+	// seats behind the baskets and the benches along the far side.
+	floorQuad(ctx, cam, -6.3, -5.4, COURT_W + 6.3, 58, f.apron ?? f.padColor);
 	if (arena.court) {
 		drawTexturedPlane(ctx, cam, COURT_PICTURE, arena.court, 26, 12);
 	} else {
@@ -552,26 +640,41 @@ export const drawFrame = (f: Frame) => {
 	// The scorer's table, the people behind it hidden from the waist down,
 	// their monitors on it.
 	const crewAll = f.crew ?? [];
-	for (const c of crewAll) {
-		if (atTable(c.st.pid)) {
-			drawSprite(ctx, f.scratch, cam, c.st, c.body, c.look, 1, f.sprites);
+	const behind = crewAll
+		.filter((c) => atTable(c.st.pid) || isFarFan(c.st.pid))
+		.sort(
+			(a, b) =>
+				depthOf(cam, { x: b.st.x, y: b.st.y, z: 3 }) -
+				depthOf(cam, { x: a.st.x, y: a.st.y, z: 3 }),
+		);
+	for (const c of behind) {
+		if (isFan(c.st.pid)) {
+			drawChair(ctx, cam, c.st.x, c.st.y, f.padColor);
 		}
+		drawSprite(ctx, f.scratch, cam, c.st, c.body, c.look, 1, f.sprites);
 	}
 	drawTexturedPlane(ctx, cam, TABLE_TOP, arena.tableTop, 4, 1);
 	drawMonitors(ctx, cam, crewAll);
-	drawTexturedPlane(ctx, cam, TABLE_FRONT, arena.tableFront, 4, 1);
+	drawTexturedPlane(
+		ctx,
+		cam,
+		TABLE_FRONT,
+		arena.boards.table?.[screen] ?? arena.tableFront,
+		4,
+		1,
+	);
 	drawTexturedPlane(ctx, cam, benchPlane(0), arena.bench[0], 6, 1);
 	drawTexturedPlane(ctx, cam, benchPlane(1), arena.bench[1], 6, 1);
 	drawFlashes(ctx, cam, tl, t);
 	drawCourtLines(ctx, cam, f.lineColor);
 	drawDroppedTops(ctx, cam, tl, t, f.warmups);
 
-	const crew = crewAll.filter((c) => !atTable(c.st.pid));
+	const crew = crewAll.filter((c) => !atTable(c.st.pid) && !isFarFan(c.st.pid));
 	// Shadows: soft pools under the feet, shrinking as they leave the floor.
 	for (const st of [
 		...players,
 		...bench.map((b) => b.st),
-		...crew.map((c) => c.st),
+		...crew.flatMap((c) => (isFan(c.st.pid) ? [] : [c.st])),
 	]) {
 		const lift = Math.min(1, st.z / 4);
 		drawShadow(ctx, cam, st.x, st.y, 1.25 * (1 - lift * 0.35), 1 - lift * 0.6);
@@ -623,9 +726,13 @@ export const drawFrame = (f: Frame) => {
 		});
 	}
 	for (const c of crew) {
+		const fan = isFan(c.st.pid);
 		items.push({
 			depth: depthOf(cam, { x: c.st.x, y: c.st.y, z: 3 }),
 			draw: () => {
+				if (fan) {
+					drawChair(ctx, cam, c.st.x, c.st.y, f.padColor);
+				}
 				drawSprite(ctx, f.scratch, cam, c.st, c.body, c.look, 1, f.sprites);
 			},
 		});

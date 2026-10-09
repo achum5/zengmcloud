@@ -91,7 +91,7 @@ export const makeSpriteCache = (): SpriteCache => ({
 	ids: new WeakMap(),
 	next: 0,
 });
-const KEEP = 700;
+const KEEP = 1600;
 const CYCLE_FRAMES = 8;
 // Steps through a bounce for the dribbling hand.
 const DRIBBLE_FRAMES = 8;
@@ -210,6 +210,9 @@ export const drawSprite = (
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 		const kept = cache.kept.get(key);
 		if (kept) {
+			// Kept longest are the ones still in use: to the back of the line.
+			cache.kept.delete(key);
+			cache.kept.set(key, kept);
 			const smoothing = ctx.imageSmoothingEnabled;
 			ctx.imageSmoothingEnabled = false;
 			ctx.drawImage(
