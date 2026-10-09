@@ -1107,6 +1107,68 @@ const STANDING = new Set<AnimName>([
 	"clap",
 	"talk",
 ]);
+// How his feet go on a run at t: the gait for its pace, and how far through
+// his strides he is.
+const gaitOf = (
+	tl: CourtTimeline,
+	tr: Track,
+	k: number,
+	run: Run,
+	t: number,
+): { anim: AnimName; phase: number } => {
+	let anim = runAnim(run);
+	let phase = stridesAt(tr, k, run, t);
+	// Sliding with his man: push steps when he goes across the way he
+	// faces, drop steps when he gives ground or steps up.
+	if (anim === "slide" && sideways(tl, tr, run)) {
+		phase *= strideOf("slide") / strideOf("shuffle");
+		anim = "shuffle";
+	}
+	// Going the way his back faces - easing off from the ball while he
+	// watches it - at no more than a backpedal's pace: he backpedals, not
+	// runs forward while he goes backward. (Decided for the whole run, by
+	// how he faces halfway along it, so his legs don't switch mid-stride.)
+	if (
+		(anim === "walk" || anim === "jog" || anim === "run") &&
+		backward(tl, tr, run)
+	) {
+		phase *= strideOf(anim) / strideOf("back");
+		anim = "back";
+	}
+	return { anim, phase };
+};
+
+// Between two runs with hardly a moment between them, he plants on the last
+// stride and goes - he does not stand up into his stance for a frame or two.
+const BRIDGE_MS = 220;
+const bridgeAt = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+): { anim: AnimName; phase: number } | undefined => {
+	const k = lastIndex(tr.moves, t, (m) => m.t0);
+	const m = k >= 0 ? tr.moves[k] : undefined;
+	const next = tr.moves[k + 1];
+	if (
+		!m ||
+		!next ||
+		t < m.t1 ||
+		t >= next.t0 ||
+		next.t0 - m.t1 > BRIDGE_MS ||
+		Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y) < 0.5
+	) {
+		return undefined;
+	}
+	// (Not through a move with the ball: that is all of him.)
+	const seg = ballSegAt(tl, t);
+	if (seg?.kind === "hold" && seg.pid === tr.pid && seg.style === "cross") {
+		return undefined;
+	}
+	const run = runOf(tr, k);
+	const g = gaitOf(tl, tr, k, run, Math.min(t, run.s1));
+	return ANIMS[g.anim].kind === "cycle" ? g : undefined;
+};
+
 const doingAt = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -1125,6 +1187,7 @@ const doingAt = (
 	let dunk: PlayerState["dunk"];
 	let reach: number | undefined;
 	let mirrored = false;
+	let bridged: { anim: AnimName; phase: number } | undefined;
 	if (act) {
 		mirrored = act.mirror === true;
 		const u = (t - act.t0) / (act.t1 - act.t0);
@@ -1146,26 +1209,10 @@ const doingAt = (
 			};
 		}
 	} else if (here.moving && here.run) {
-		anim = runAnim(here.run);
-		phase = stridesAt(tr, here.moveIndex, here.run, t);
-		// Sliding with his man: push steps when he goes across the way he
-		// faces, drop steps when he gives ground or steps up.
-		if (anim === "slide" && sideways(tl, tr, here.run)) {
-			phase *= strideOf("slide") / strideOf("shuffle");
-			anim = "shuffle";
-		}
-		// Going the way his back faces - easing off from the ball while he
-		// watches it - at no more than a backpedal's pace: he backpedals, not
-		// runs forward while he goes backward. (Decided for the whole run, by
-		// how he faces halfway along it, so his legs don't switch mid-stride.)
-		if (
-			(anim === "walk" || anim === "jog" || anim === "run") &&
-			backward(tl, tr, here.run)
-		) {
-			phase *= strideOf(anim) / strideOf("back");
-			anim = "back";
-		}
+		({ anim, phase } = gaitOf(tl, tr, here.moveIndex, here.run, t));
 		z = bounceAt(anim, phase);
+	} else if ((bridged = bridgeAt(tl, tr, t))) {
+		({ anim, phase } = bridged);
 	} else {
 		const seg = ballSegAt(tl, t);
 		// A dribble move: all of him through each bounce of it.
