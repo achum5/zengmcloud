@@ -82,6 +82,7 @@ import {
 	TEAM_NUMS_DISPLAY_ORDER,
 	teamsInDisplayOrder,
 } from "../../util/boxScoreDisplayOrder.ts";
+import { broadcastRole } from "./broadcastRole.ts";
 
 // The court, the field and everything that stages them work in DISPLAY order:
 // 0 is the away team (left rim, attacks left), 1 is home. Box score teams are
@@ -1548,10 +1549,11 @@ export const LiveGame = (props: View<"liveGame">) => {
 		// it - see liveBoxScoreLayout.ts.
 		"userTid",
 	]);
-	const isFollower =
-		!!mpLiveBroadcast?.active && !mpLiveBroadcast.isBroadcaster;
-	const isBroadcaster =
-		!!mpLiveBroadcast?.active && mpLiveBroadcast.isBroadcaster;
+	// (A replay on screen is never part of a broadcast - see broadcastRole.)
+	const { isFollower, isBroadcaster } = broadcastRole(
+		mpLiveBroadcast,
+		!!props.initialBoxScore?.replay,
+	);
 	// A follower is stepped by the simmer's cursor and never paces playback
 	// itself, so its picture can follow the simmer's at any moment.
 	const court3d =
@@ -2967,13 +2969,18 @@ const LiveGameWrapper = (props: View<"liveGame">) => {
 	const lastGid = useRef<number | undefined>(undefined);
 	const propsGid = props.initialBoxScore?.gid;
 	let remount = false;
+	const followed = broadcastRole(
+		mpLiveBroadcast,
+		!!props.initialBoxScore?.replay,
+	).isFollower
+		? mpLiveBroadcast
+		: undefined;
 	if (
-		mpLiveBroadcast?.active &&
-		!mpLiveBroadcast.isBroadcaster &&
-		mpLiveBroadcast.startedAt !== lastFollowedStartedAt.current &&
-		propsGid === mpLiveBroadcast.gid
+		followed &&
+		followed.startedAt !== lastFollowedStartedAt.current &&
+		propsGid === followed.gid
 	) {
-		lastFollowedStartedAt.current = mpLiveBroadcast.startedAt;
+		lastFollowedStartedAt.current = followed.startedAt;
 		remount = true;
 	}
 	// A different game landing on a page already showing one starts over too:
