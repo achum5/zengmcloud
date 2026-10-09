@@ -117,6 +117,8 @@ export type CourtPlayer = {
 	// The sim's skill tags ("B" a ball handler, "Ps" a passer, ...), where
 	// they are known.
 	skills?: string[];
+	// Hurt in this game: what it is, and how many games it keeps him out.
+	injury?: { type: string; games: number };
 };
 
 export type Move = {
@@ -339,6 +341,41 @@ const resultOf = (
 		zone,
 		kind: m[1] === "fg" ? "make" : m[1] === "miss" ? "miss" : "block",
 	};
+};
+
+// How a man goes down with what he hurt (the injury's name, as the game
+// gives it): a knee or an ankle bad enough to keep him out has him down on
+// the floor holding it; his face or head, bent over with his hands to it; a
+// hand or an arm, holding it; anything else, doubled over.
+const hurtFor = (
+	injury: { type: string; games: number } | undefined,
+): { anim: AnimName; down: boolean } => {
+	const type = injury?.type.toLowerCase() ?? "";
+	const bad = (injury?.games ?? 0) >= 3;
+	if (/knee|acl|mcl|pcl|menisc|patell/.test(type)) {
+		return bad
+			? { anim: "hurtKnee", down: true }
+			: { anim: "hurt", down: false };
+	}
+	if (/ankle|achilles|foot|toe|plantar|calf|leg|peroneal/.test(type)) {
+		return bad
+			? { anim: "hurtAnkle", down: true }
+			: { anim: "hurt", down: false };
+	}
+	if (
+		/head|concussion|orbital|cheek|jaw|nose|eye|face|facial|tooth|neck|whiplash|throat/.test(
+			type,
+		)
+	) {
+		return { anim: "hurtHead", down: false };
+	}
+	if (/hand|finger|thumb|wrist/.test(type)) {
+		return { anim: "hurtHand", down: false };
+	}
+	if (/shoulder|collarbone|bicep|tricep|elbow|arm|rotator/.test(type)) {
+		return { anim: "hurtArm", down: false };
+	}
+	return { anim: "hurt", down: false };
 };
 
 // Positions in the order a lineup fills its slots: guards out top, bigs low.
@@ -812,6 +849,10 @@ class Director {
 	private readonly team = new Map<number, Side>();
 	private readonly rank = new Map<number, number>();
 	private readonly skills = new Map<number, string[]>();
+	private readonly injuries = new Map<
+		number,
+		{ type: string; games: number }
+	>();
 	// Where each player's chair is on his bench.
 	private readonly seat = new Map<number, Pt>();
 	private readonly lineup: [number[], number[]] = [[], []];
@@ -914,6 +955,9 @@ class Director {
 			this.rank.set(p.pid, POS_RANK[p.pos ?? ""] ?? 4);
 			if (p.skills) {
 				this.skills.set(p.pid, p.skills);
+			}
+			if (p.injury) {
+				this.injuries.set(p.pid, p.injury);
 			}
 			this.seat.set(p.pid, seatSpot(p.team, seats[p.team]++));
 		}
@@ -7307,8 +7351,32 @@ class Director {
 					call: "stop",
 					at: this.posOf(pid),
 				});
-				this.act(pid, "hurt", T + 200, T + 2000);
-				this.beat(i, type, T + 200, T + 1800);
+				const { anim, down } = hurtFor(this.injuries.get(pid));
+				const dur = down ? 3800 : 2200;
+				this.act(pid, anim, T + 200, T + 200 + dur, {
+					face: this.face.get(pid) ?? 1,
+				});
+				// A teammate or two over to him; down, they bend over him.
+				const P = this.posOf(pid);
+				const team = this.teamOf(pid);
+				this.slots(team)
+					.filter((q) => q !== pid)
+					.sort((a, b) => dist(this.posOf(a), P) - dist(this.posOf(b), P))
+					.slice(0, down ? 2 : 1)
+					.forEach((q, j) => {
+						const u = unitVec(P, this.posOf(q));
+						const side = j === 0 ? 1 : -1;
+						const at = clampPt({
+							x: P.x + (u.x - u.y * side * 0.6) * 2.8,
+							y: P.y + (u.y + u.x * side * 0.6) * 2.8,
+						});
+						const there = this.go(q, at, T + 500 + j * 250, JOG, "jog");
+						this.lookAt(q, there, P);
+						if (down) {
+							this.act(q, "crouch", there, T + 200 + dur, { look: P });
+						}
+					});
+				this.beat(i, type, T + 200, T + dur);
 				this.phase = "inboundSide";
 				break;
 			}
@@ -11385,6 +11453,11 @@ class Director {
 			"tomahawk",
 			"fall",
 			"hurt",
+			"hurtKnee",
+			"hurtAnkle",
+			"hurtHead",
+			"hurtHand",
+			"hurtArm",
 			"rebound",
 			"board",
 			"snatch",

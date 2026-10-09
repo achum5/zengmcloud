@@ -184,6 +184,13 @@ const Court3D = ({
 						team: t,
 						pos: p.pos,
 						skills: Array.isArray(p.skills) ? p.skills : undefined,
+						injury:
+							p.injury?.newThisGame && typeof p.injury.type === "string"
+								? {
+										type: p.injury.type,
+										games: p.injury.gamesRemaining ?? 0,
+									}
+								: undefined,
 						name: p.name,
 						jerseyNumber: p.jerseyNumber,
 					});

@@ -76,7 +76,7 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
       Defenders can get crossed up, confused, etc. when the offense does good things.
 - [x] "Attempts low post shot" should usually be a real post move, not an awkward
       drive into a 6-foot jumper (currently close to 100% of the time).
-- [ ] Injuries need an animation that depends on the kind of injury.
+- [x] Injuries need an animation that depends on the kind of injury.
 
 ## D. Visual quality and performance
 

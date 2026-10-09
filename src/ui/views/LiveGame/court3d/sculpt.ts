@@ -406,6 +406,11 @@ const RELAXED = new Set<string>([
 	"sit",
 	"kneel",
 	"hurt",
+	"hurtKnee",
+	"hurtAnkle",
+	"hurtHead",
+	"hurtHand",
+	"hurtArm",
 	"fall",
 	"follow",
 ]);
