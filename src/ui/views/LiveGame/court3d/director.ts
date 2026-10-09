@@ -81,6 +81,17 @@ import {
 } from "./plays.ts";
 import { BREAK_SHARE } from "./nbaRates.ts";
 import {
+	callOrder,
+	INTRO_CALL,
+	INTRO_FIRST,
+	INTRO_HOLD,
+	INTRO_LIGHT,
+	rowSpot,
+	tunnelSpot,
+	type Intro,
+	type IntroCall,
+} from "./intro.ts";
+import {
 	finishOf,
 	type Finish,
 } from "../../../util/liveGameWording.basketball.ts";
@@ -316,6 +327,8 @@ export type CourtTimeline = {
 	fast: [number, number][];
 	// The men going to the scorer's table to check in, before each comes on.
 	checkIns?: CheckIn[];
+	// The starting lineups called out before the opening tip (see intro.ts).
+	intro?: Intro;
 	end: number;
 };
 
@@ -433,6 +446,8 @@ const RUN = 21;
 const SPRINT = 24;
 const DRIBBLE = 19;
 const JOG = 13;
+// Called out for the starting lineups: running out, pumped up.
+const INTRO_RUN = 17;
 const WALK = 6;
 // Not a pace but a jab: one quick lunge of a step (see liven).
 const JAB = 0;
@@ -935,6 +950,13 @@ class Director {
 	private overtime = false;
 	// `stretch`: may run on to the next cut (see finish).
 	readonly shots: (ArenaShot & { stretch?: boolean })[] = [];
+	// The starting lineups, when the game opens with them (see intro.ts).
+	intro: Intro | undefined;
+	private readonly introKind: "regular" | "playoffs" | undefined;
+	// Each side's starters in the order they are called.
+	private readonly introOrder: [number[], number[]] = [[], []];
+	// When the lineups started being called, until the tip they lead to.
+	private lineupsFrom: number | undefined;
 
 	// The ball at the end of everything scheduled so far - and which hand it
 	// is in, while he dribbles.
@@ -983,10 +1005,12 @@ class Director {
 		players: CourtPlayer[],
 		gid: number | undefined,
 		gender: "female" | "male",
+		intro?: "regular" | "playoffs",
 	) {
 		this.events = events;
 		this.gid = gid;
 		this.gender = gender;
+		this.introKind = intro;
 		this.rng = makeCourtRng(`court|${gid ?? 0}`);
 		const seats: [number, number] = [0, 0];
 		for (const p of players) {
@@ -1024,12 +1048,27 @@ class Director {
 			this.lineup[t] = starters[t];
 		}
 
+		// With the lineups to call, the starters wait in front of their
+		// benches.
+		if (intro) {
+			for (const t of [0, 1] as const) {
+				this.introOrder[t] = callOrder(
+					this.lineup[t].map((pid) => ({
+						pid,
+						pos: players.find((p) => p.pid === pid)?.pos,
+					})),
+				).map((p) => p.pid);
+			}
+		}
 		for (const p of players) {
 			const on = this.lineup[p.team].includes(p.pid);
 			const slot = on ? this.slots(p.team).indexOf(p.pid) : 0;
-			const start = on
-				? { x: COURT_W / 2 + (p.team === 1 ? -9 : 9), y: 9 + slot * 8 }
-				: this.seatOf(p.pid);
+			const called = this.introOrder[p.team].indexOf(p.pid);
+			const start = !on
+				? this.seatOf(p.pid)
+				: called >= 0
+					? tunnelSpot(p.team, called)
+					: { x: COURT_W / 2 + (p.team === 1 ? -9 : 9), y: 9 + slot * 8 };
 			this.tracks.set(p.pid, {
 				pid: p.pid,
 				team: p.team,
@@ -1038,7 +1077,7 @@ class Director {
 				acts: [],
 				arms: [],
 				faces: [[-Infinity, attackDir(p.team)]],
-				looks: [],
+				looks: called >= 0 ? [[-Infinity, { x: start.x, y: COURT_H / 2 }]] : [],
 				shown: [[-Infinity, on]],
 			});
 			this.pos.set(p.pid, start);
@@ -9639,8 +9678,87 @@ class Director {
 		return true;
 	}
 
+	// THE STARTING LINEUPS (see intro.ts), from t: the road team's starters
+	// called out one by one, then the home team's, each running out from in
+	// front of his bench to his place in his team's line - the man called
+	// before him turning to slap his hand as he gets there - and the rest
+	// of the line clapping him in. Returns when the lights are back up.
+	private callLineups(t0: number): number {
+		const big = this.introKind === "playoffs" ? 1 : 0;
+		const calls: IntroCall[] = [];
+		let t = t0 + INTRO_FIRST[big];
+		for (const team of [0, 1] as const) {
+			const order = this.introOrder[team];
+			const len = INTRO_CALL[team][big];
+			order.forEach((pid, k) => {
+				calls.push({ pid, team, t0: t, t1: t + len });
+				this.callOut(pid, team, k, t, len);
+				t += len;
+			});
+		}
+		// All ten out: back to the game's own picture for the lights coming up.
+		this.cuts.push(t);
+		const end = t + INTRO_HOLD[big] + INTRO_LIGHT;
+		this.intro = { t0, t1: end, big: big === 1, calls };
+		// Nobody on offense or defense yet: everybody just stands, the whole
+		// way through to the tip (see beatJumpBall).
+		this.lineupsFrom = t0;
+		return end;
+	}
+
+	// One man called: out to his place in the line, and turned to face the
+	// cameras once he is there.
+	private callOut(pid: number, team: Side, k: number, t: number, len: number) {
+		const order = this.introOrder[team];
+		const spot = rowSpot(team, k);
+		// Toward the middle of the floor, along the line.
+		const inward = team === 0 ? 1 : -1;
+		const cameras = { x: spot.x, y: COURT_H + 40 };
+		// Those already out clap him in.
+		for (let j = 0; j < k - 1; j++) {
+			this.act(order[j]!, "clap", t + 120 + j * 40, t + len - 60, {
+				look: spot,
+			});
+		}
+		const prev = k > 0 ? order[k - 1] : undefined;
+		if (prev === undefined) {
+			const there = this.go(pid, spot, t + 120, INTRO_RUN, "run");
+			this.react(pid, "flex", there, 900, cameras);
+			this.lookAt(pid, there + 900, cameras);
+			return;
+		}
+		// Hands slapped on the way past the man before him, then on into
+		// his own place.
+		const P = rowSpot(team, k - 1);
+		const meet = { x: P.x + inward * LOW_FIVE_APART, y: spot.y };
+		const met = this.go(pid, meet, t + 120, INTRO_RUN, "run") + 30;
+		const five = hash01(pid, t) < 0.5 ? "highFive" : "lowFive";
+		this.act(prev, five, met, met + 520, { look: meet });
+		this.act(pid, five, met, met + 520, { look: P });
+		this.lookAt(prev, met + 520, { x: P.x, y: COURT_H + 40 });
+		const there = this.go(pid, spot, met + 540, WALK, "walk");
+		// The last man called - the star, as often as not - plays to the crowd.
+		if (k === order.length - 1) {
+			this.react(
+				pid,
+				hash01(pid, t + 1) < 0.5 ? "flex" : "point",
+				there,
+				900,
+				cameras,
+			);
+		}
+		this.lookAt(pid, there + (k === order.length - 1 ? 900 : 0), cameras);
+	}
+
 	private beatJumpBall(e: RawEvent, i: number) {
-		const T = this.T;
+		// The opening tip: the picture starts on the whole building while
+		// they take their places, then cuts in for the toss - or, with the
+		// lineups to call first, on the starters waiting at their benches.
+		const opening = this.beats.length === 0 && this.shots.length === 0;
+		const T =
+			opening && this.introKind && this.clips.length === 0 && !this.intro
+				? this.callLineups(this.T)
+				: this.T;
 		const winnerTeam: Side = e.t === 0 ? 1 : 0;
 		const jumper = e.pid as number;
 		const loser = e.pid2 as number;
@@ -9678,11 +9796,12 @@ class Director {
 				ready = Math.max(ready, arrived);
 			});
 		}
-		// The opening tip: the picture starts on the whole building while
-		// they take their places, then cuts in for the toss.
-		const opening = this.beats.length === 0 && this.shots.length === 0;
-		const toss = Math.max(T + 600, ready + 200, opening ? T + 3000 : 0);
-		if (opening) {
+		const toss = Math.max(
+			T + 600,
+			ready + 200,
+			opening && !this.intro ? T + 3000 : 0,
+		);
+		if (opening && !this.intro) {
 			this.shots.push({ t0: T, t1: toss - 600, kind: "wide", stretch: false });
 		}
 		this.rest(T, { x: c.x, y: c.y, z: 5 });
@@ -9698,7 +9817,8 @@ class Director {
 			jump: [0.1, 0.9, 2.5],
 		});
 		const receiver = this.slots(winnerTeam).find((p) => p !== jumper) ?? jumper;
-		this.jumps.push([T, toss + 520]);
+		this.jumps.push([Math.min(T, this.lineupsFrom ?? T), toss + 520]);
+		this.lineupsFrom = undefined;
 		this.fly(toss + 520, toss + 1000, apex, { pid: receiver });
 		this.act(receiver, "catch", toss + 900, toss + 1080);
 		this.hold(receiver, toss + 1000, "hold");
@@ -13213,6 +13333,7 @@ class Director {
 			clips: this.clips,
 			jumps: this.jumps,
 			shots,
+			...(this.intro ? { intro: this.intro } : {}),
 			tension: this.tension,
 			seats: this.seats,
 			fast,
@@ -13306,15 +13427,18 @@ export const compileCourt = ({
 	players,
 	gid,
 	gender = "male",
+	intro,
 }: {
 	events: RawEvent[];
 	players: CourtPlayer[];
+	// The starting lineups to call before the opening tip (see intro.ts).
+	intro?: "regular" | "playoffs";
 	// The game, which seeds everything the sim leaves open (where the shooter
 	// stood, who boxed out) and picks the play-by-play's wording.
 	gid: number | undefined;
 	gender?: "female" | "male";
 }): CourtTimeline => {
-	const d = new Director(events, players, gid, gender);
+	const d = new Director(events, players, gid, gender, intro);
 	for (let i = 0; i < events.length; i++) {
 		const e = events[i];
 		if (!e || typeof e.type !== "string") {

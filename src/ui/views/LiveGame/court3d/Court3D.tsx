@@ -50,12 +50,15 @@ import { bodyOf, type Body } from "./poses.ts";
 import { cameraCuts, fastAt, offenseAt } from "./evaluate.ts";
 import { buildFouls, foulsAt } from "./scoreBug.ts";
 import { ScoreBug } from "./ScoreBug.tsx";
+import { IntroCard, IntroTitle } from "./IntroCard.tsx";
+import { callAt } from "./intro.ts";
 import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
 import {
 	aimFor,
 	arenaAim,
 	crowdAt,
 	drawFrame,
+	introAim,
 	momentAt,
 	replayAim,
 } from "./scene.ts";
@@ -213,6 +216,9 @@ const Court3D = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [gid]);
 
+	// Every game opens with its starting lineups called out - more of a
+	// show in the playoffs.
+	const introKind = boxScore?.playoffs ? "playoffs" : "regular";
 	const timeline = useMemo(() => {
 		if (!events || events.length === 0) {
 			return undefined;
@@ -227,14 +233,20 @@ const Court3D = ({
 			return undefined;
 		}
 		try {
-			return compileCourt({ events, players: roster, gid, gender });
+			return compileCourt({
+				events,
+				players: roster,
+				gid,
+				gender,
+				intro: introKind,
+			});
 		} catch (error) {
 			// A broken staging must not take the whole page down with it - the
 			// play-by-play and box score still work without the court.
 			console.error("3D court failed to compile", error);
 			return undefined;
 		}
-	}, [events, roster, gid, gender]);
+	}, [events, roster, gid, gender, introKind]);
 	const clocks = useMemo(
 		() => (timeline && events ? buildClocks(timeline, events) : undefined),
 		[timeline, events],
@@ -596,7 +608,13 @@ const Court3D = ({
 		// The dunk replay showing now, and the next dunk that would get one.
 		replay: undefined as { at: number; from: number; to: number } | undefined,
 		nextDunk: 0,
+		// The starting lineups: the man being called (his place in the
+		// order, -1 none), and whether they are on.
+		introCall: -1,
+		introOn: false,
+		introTitle: false,
 	});
+	const [intro, setIntro] = useState({ call: -1, on: false, title: false });
 
 	// Follow the page's cursor: run on to the next line normally; cut straight
 	// there on a rewind or a big jump ahead (fast-forward, joining late).
@@ -657,6 +675,15 @@ const Court3D = ({
 		],
 		[kits],
 	);
+	// Each side's colors [road, home], for the lights at the starting lineups.
+	const teamColors = useMemo(
+		(): [string, string][] =>
+			[away, home].map((t): [string, string] => [
+				t?.colors?.[0] ?? "#ffffff",
+				t?.colors?.[1] ?? "#ffffff",
+			]),
+		[away, home],
+	);
 	const rosterRef = useRef(roster);
 	rosterRef.current = roster;
 	const live = useRef({
@@ -674,6 +701,8 @@ const Court3D = ({
 		lineColor,
 		apron,
 		warmups,
+		teamColors,
+		setIntro,
 		eventsLength: events?.length ?? 0,
 	});
 	live.current = {
@@ -691,6 +720,8 @@ const Court3D = ({
 		lineColor,
 		apron,
 		warmups,
+		teamColors,
+		setIntro,
 		eventsLength: events?.length ?? 0,
 	};
 
@@ -828,8 +859,23 @@ const Court3D = ({
 				rosterRef.current,
 				bodyOfPid,
 			);
-			// Over a break, a look round the building.
-			const view = replay ? undefined : arenaAim(tl, s.t, p.narrow);
+			// Over a break, a look round the building; at the starting lineups,
+			// each man called.
+			const view = replay
+				? undefined
+				: (arenaAim(tl, s.t, p.narrow) ?? introAim(tl, moment, p.narrow));
+			const on = !!tl.intro && s.t >= tl.intro.t0 && s.t < tl.intro.t1;
+			const called = callAt(tl.intro, s.t);
+			const k = called ? tl.intro!.calls.indexOf(called) : -1;
+			// The title, as the lights go down.
+			const title =
+				on && s.t < (tl.intro!.calls[0]?.t0 ?? 0) && s.t - tl.intro!.t0 > 250;
+			if (on !== s.introOn || k !== s.introCall || title !== s.introTitle) {
+				s.introOn = on;
+				s.introCall = k;
+				s.introTitle = title;
+				p.setIntro({ call: k, on, title });
+			}
 			// Following the play, the whole floor stays in the picture.
 			const fit = replay || view ? undefined : courtFit(fw / fh);
 			const aim = replay
@@ -934,6 +980,7 @@ const Court3D = ({
 				}),
 				flashes: working.flashes,
 				courtside: cr.courtside,
+				teamColors: p.teamColors,
 			});
 			if (adjust(res, h * dpr, dt, performance.now() - drawStart, now)) {
 				// Sprites drawn for the old size are no use at the new one.
@@ -998,6 +1045,37 @@ const Court3D = ({
 	// those are copies (that night's looks laid over each team), made once when
 	// the page opened - at 0-0 - and the box score's teams are updated in place
 	// as the game plays, so nothing ever tells the copies to refresh.
+	// The starting lineups: the card for the man being called, and the way
+	// past them.
+	const introCard = useMemo(() => {
+		const c = intro.call >= 0 ? timeline?.intro?.calls[intro.call] : undefined;
+		if (!c) {
+			return undefined;
+		}
+		const p = roster.find((r) => r.pid === c.pid);
+		const team = c.team === 0 ? away : home;
+		const f = faces.current.get(c.pid) ?? undefined;
+		return {
+			name: p?.name ?? "",
+			jerseyNumber: f?.jerseyNumber ?? p?.jerseyNumber,
+			pos: p?.pos,
+			hgt: f?.hgt,
+			colors: team?.colors,
+			imgURL: team?.imgURL,
+			imgURLSmall: team?.imgURLSmall,
+			abbrev: team?.abbrev,
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [intro.call, timeline, roster, facesVersion]);
+	const skipIntro = useCallback(() => {
+		const s = play.current;
+		const end = timeline?.intro?.t1;
+		if (end !== undefined && s.t < end) {
+			s.t = end;
+			s.snapCam = true;
+		}
+	}, [timeline]);
+
 	const awayPts: number = boxScore?.teams?.[1]?.pts ?? 0;
 	const homePts: number = boxScore?.teams?.[0]?.pts ?? 0;
 	const quarter = boxScore?.quarterShort ?? "";
@@ -1110,7 +1188,33 @@ const Court3D = ({
 			>
 				REPLAY
 			</div>
+			{introCard ? <IntroCard info={introCard} callKey={intro.call} /> : null}
+			{intro.title ? <IntroTitle playoffs={!!timeline?.intro?.big} /> : null}
+			{intro.on && !follower ? (
+				<button
+					type="button"
+					onClick={skipIntro}
+					style={{
+						position: "absolute",
+						right: "2cqw",
+						bottom: "2cqw",
+						padding: "0.4em 0.9em",
+						fontFamily:
+							"system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+						fontWeight: 700,
+						fontSize: "clamp(10px, 1.6cqw, 14px)",
+						color: "#fff",
+						background: "rgba(10, 10, 14, 0.7)",
+						border: "1px solid rgba(255, 255, 255, 0.35)",
+						borderRadius: 999,
+						cursor: "pointer",
+					}}
+				>
+					Skip intro ›
+				</button>
+			) : null}
 			<ScoreBug
+				hidden={intro.on}
 				away={
 					away && {
 						abbrev: away.abbrev,

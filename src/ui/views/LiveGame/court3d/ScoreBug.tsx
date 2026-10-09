@@ -172,6 +172,7 @@ export const ScoreBug = ({
 	quarter,
 	totalTimeouts,
 	refs,
+	hidden,
 }: {
 	away: BugTeam | undefined;
 	home: BugTeam | undefined;
@@ -180,14 +181,16 @@ export const ScoreBug = ({
 	// pips.
 	totalTimeouts: number | undefined;
 	refs: BugRefs;
+	// Off the screen for now (the starting lineups), but kept up to date.
+	hidden?: boolean;
 }) => (
 	<div
 		style={{
+			display: hidden ? "none" : "flex",
 			position: "absolute",
 			left: "50%",
 			bottom: "1.6cqw",
 			transform: "translateX(-50%)",
-			display: "flex",
 			alignItems: "stretch",
 			fontFamily: FONT,
 			fontWeight: 700,

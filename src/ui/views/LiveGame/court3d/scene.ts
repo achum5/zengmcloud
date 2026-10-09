@@ -29,6 +29,8 @@ import {
 	type Shot,
 } from "./camera.ts";
 import { drawCourtLines } from "./courtLines.ts";
+import { callAt, rowSpot } from "./intro.ts";
+import { drawLights } from "./lights.ts";
 import { atTable, TABLE_SEAT_Y } from "./crew.ts";
 import { drawFolk, type Folk } from "./courtside.ts";
 import { STRIP_MS, type CheckIn, type CourtTimeline } from "./director.ts";
@@ -146,6 +148,9 @@ export type Frame = {
 	// The people in the courtside seats (see courtside.ts).
 	courtside?: Folk[];
 	flashes?: Pt3[];
+	// Each side's colors [road, home] (main, trim), for the lights swept over
+	// the floor at the starting lineups.
+	teamColors?: [string, string][];
 };
 
 const fxLevel = (
@@ -263,7 +268,11 @@ export const crowdAt = (
 	t: number,
 	now: number,
 ): { up: number; wave: boolean } => {
-	const roar = crowdUp(tl, t);
+	const roar = Math.max(
+		crowdUp(tl, t),
+		// On their feet for each of the home team's starters called out.
+		callAt(tl.intro, t)?.team === 1 ? 1 : 0,
+	);
 	const tense = tensionAt(tl, t);
 	return {
 		up: Math.max(roar, tense >= 1 ? 0.9 : tense * 0.7),
@@ -387,8 +396,10 @@ const benchStates = (
 	const out: { st: PlayerState; warm: boolean }[] = [];
 	const t = f.moment.t;
 	const seat: [number, number] = [0, 0];
-	// A big play brings the bench to its feet for a moment.
+	// A big play brings the bench to its feet for a moment - and so does
+	// each of its starters called out.
 	const roar = recentFx(f.tl, t, ["roar"], 1800);
+	const calling = callAt(f.tl.intro, t)?.team;
 	const tense = tensionAt(f.tl, t) >= 1;
 	for (const p of f.roster) {
 		const i = seat[p.team]++;
@@ -405,7 +416,7 @@ const benchStates = (
 			continue;
 		}
 		const at = seatSpot(p.team, i);
-		const up = roar?.team === p.team;
+		const up = roar?.team === p.team || calling === p.team;
 		const anim: AnimName = up
 			? "cheer"
 			: tense
@@ -804,6 +815,15 @@ export const drawFrame = (f: Frame) => {
 	for (const it of items) {
 		it.draw();
 	}
+	// The lights down for the starting lineups.
+	drawLights(
+		ctx,
+		cam,
+		tl.intro,
+		t,
+		players,
+		f.teamColors ?? DEFAULT_TEAM_COLORS,
+	);
 	// The board over center court, when the picture takes it in.
 	const jumbo = arena.boards.jumbo?.[screen];
 	if (jumbo) {
@@ -1032,6 +1052,37 @@ export const arenaAim = (
 	return {
 		shot: { x: 26 + 42 * u, width: narrow ? 70 : 90, y: -14, z: 16 },
 		rig: ARENA_RIG,
+	};
+};
+
+// THE STARTING LINEUPS (see intro.ts): in closer than the game's own
+// picture, on each man as he is called - his bench and his team's line both
+// in it - panning from one to the next. After the last man called, the
+// game's own picture.
+const DEFAULT_TEAM_COLORS: [string, string][] = [
+	["#ffffff", "#ffffff"],
+	["#ffffff", "#ffffff"],
+];
+export const introAim = (
+	tl: CourtTimeline,
+	m: Moment,
+	narrow: boolean,
+): { shot: Shot; rig: Rig } | undefined => {
+	const intro = tl.intro;
+	const first = intro?.calls[0];
+	const last = intro?.calls.at(-1);
+	if (!intro || !first || !last || m.t < intro.t0 || m.t >= last.t1) {
+		return undefined;
+	}
+	const c = callAt(intro, m.t) ?? first;
+	const st = m.players.find((p) => p.pid === c.pid);
+	return {
+		shot: {
+			x: st ? st.x : rowSpot(c.team, 0).x,
+			width: narrow ? 34 : 42,
+			y: 4,
+		},
+		rig: MAIN_RIG,
 	};
 };
 

@@ -30,6 +30,7 @@ import {
 	type Side,
 } from "./geometry.ts";
 import { playAt } from "./physics.ts";
+import { callAt, coachSpot } from "./intro.ts";
 import { ANIMS, type AnimName } from "./poses.ts";
 
 // THE PEOPLE ON THE FLOOR WHO DON'T PLAY: three officials working the game,
@@ -928,6 +929,21 @@ const coachState = (
 		shown: true,
 		z: 0,
 	};
+	// The starting lineups: off at the end of his line, clapping his own
+	// five out.
+	if (tl.intro && t >= tl.intro.t0 && t < tl.intro.t1) {
+		const at = coachSpot(team);
+		const ours = callAt(tl.intro, t)?.team === team;
+		return {
+			...base,
+			x: at.x,
+			y: at.y,
+			yaw: FACING_US,
+			anim: ours ? "clap" : "crossed",
+			phase: loopPhase(ours ? "clap" : "crossed", t, team * 0.5),
+			moving: false,
+		};
+	}
 	if (shot && shot !== tl.shots[0]) {
 		// In the huddle with his five.
 		return {
