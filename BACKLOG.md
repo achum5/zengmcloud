@@ -27,10 +27,11 @@ and shoes - every one eventually, none rushed to get to the next.
       a 3D sim: `TypeError: ... is not iterable at beatFreeThrow` (Hn.handle ->
       beatFreeThrow).
 - [x] Shot clock must always match the sim. Seen at 0 while play continues.
-- [~] Play-by-play line on the 3D screen (bottom middle) only shows the home team
-  color, at least on replays. Show the team logo next to it like the Plays
-  section does. Where this text lives needs deciding as part of the broadcast
-  work (score bug etc.). (Done: team logo. Open: placement, with the score bug.)
+- [x] Play-by-play line on the 3D screen (bottom middle) only shows the home team
+      color, at least on replays. Show the team logo next to it like the Plays
+      section does. Where this text lives needs deciding as part of the broadcast
+      work (score bug etc.). (Done: team logo; the line sits just above the new
+      bottom score bug.)
 - [x] Bench players visibly stutter all game. Investigate and fix.
 - [x] Watching a live game being simmed on another device is very choppy and
       unwatchable. Work out how to send the seed/data so the viewing device plays it
@@ -112,10 +113,13 @@ make with AI help).
       for every court. Examples: an opening night image on every court, an uploadable
       playoff decal on all playoff courts. Optionally season by season so each era
       can look right.
-- [ ] TV-style score bug: a good generic default used at all times, fully
-      customizable so users can recreate ESPN, TNT, etc. Decided: the default
-      is a wide bar along the bottom center (logos, scores, period, game clock,
-      shot clock, fouls/timeouts), with the play-by-play line just above it.
+- [~] TV-style score bug: a good generic default used at all times, fully
+  customizable so users can recreate ESPN, TNT, etc. Decided: the default
+  is a wide bar along the bottom center (logos, scores, period, game clock,
+  shot clock, fouls/timeouts), with the play-by-play line just above it.
+  (Done: the default bar - logos, team colors, scores, possession arrow,
+  timeouts, fouls and BONUS, period, game and shot clocks. Open: the
+  customization.)
 - [ ] Arena banners should match the ones the game already draws on the playoffs
       and team history pages, and be customizable.
 

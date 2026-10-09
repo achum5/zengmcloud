@@ -47,7 +47,10 @@ import { COURT_W, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
 import { advanceLead, followRate } from "./follow.ts";
 import { bodyOf, type Body } from "./poses.ts";
-import { cameraCuts, fastAt } from "./evaluate.ts";
+import { cameraCuts, fastAt, offenseAt } from "./evaluate.ts";
+import { buildFouls, foulsAt } from "./scoreBug.ts";
+import { ScoreBug } from "./ScoreBug.tsx";
+import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
 import {
 	aimFor,
 	arenaAim,
@@ -234,6 +237,20 @@ const Court3D = ({
 	}, [events, roster, gid, gender]);
 	const clocks = useMemo(
 		() => (timeline && events ? buildClocks(timeline, events) : undefined),
+		[timeline, events],
+	);
+	// Team fouls and the bonus through the game, for the score bug.
+	const fouls = useMemo(
+		() =>
+			timeline && events
+				? buildFouls(
+						timeline,
+						events,
+						boxScore?.foulsUntilBonus,
+						boxScore?.numPeriods,
+					)
+				: undefined,
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[timeline, events],
 	);
 
@@ -552,6 +569,11 @@ const Court3D = ({
 	const dipRef = useRef<HTMLDivElement | null>(null);
 	const replayRef = useRef<HTMLDivElement | null>(null);
 	const shotRef = useRef<HTMLSpanElement | null>(null);
+	// The score bug's fouls and possession marker, per side [visitors, home].
+	const foulsAwayRef = useRef<HTMLSpanElement | null>(null);
+	const foulsHomeRef = useRef<HTMLSpanElement | null>(null);
+	const ballAwayRef = useRef<HTMLSpanElement | null>(null);
+	const ballHomeRef = useRef<HTMLSpanElement | null>(null);
 
 	const play = useRef({
 		t: 0,
@@ -569,6 +591,8 @@ const Court3D = ({
 		lead: 0,
 		clockText: "",
 		shotText: "",
+		foulsText: ["", ""] as [string, string],
+		ballSide: -1,
 		// The dunk replay showing now, and the next dunk that would get one.
 		replay: undefined as { at: number; from: number; to: number } | undefined,
 		nextDunk: 0,
@@ -643,6 +667,7 @@ const Court3D = ({
 		onReady,
 		timeline,
 		clocks,
+		fouls,
 		size,
 		narrow,
 		homePad,
@@ -659,6 +684,7 @@ const Court3D = ({
 		onReady,
 		timeline,
 		clocks,
+		fouls,
 		size,
 		narrow,
 		homePad,
@@ -921,7 +947,33 @@ const Court3D = ({
 			if (shotText !== s.shotText && shotRef.current) {
 				s.shotText = shotText;
 				shotRef.current.textContent = shotText;
-				shotRef.current.style.visibility = shotText ? "visible" : "hidden";
+				// (Off once the game clock is shorter: gone from the bug.)
+				shotRef.current.style.display = shotText ? "flex" : "none";
+			}
+			// Each side's fouls this period - or BONUS - in the bug's order,
+			// visitors first (the marks are in box score order, home first).
+			if (p.fouls) {
+				const f = foulsAt(p.fouls, s.t);
+				const text = ([1, 0] as const).map((k) =>
+					f.bonus[k] ? "BONUS" : `FOULS ${f.fouls[k]}`,
+				);
+				[foulsAwayRef, foulsHomeRef].forEach((ref, i) => {
+					const el = ref.current;
+					if (el && text[i] !== s.foulsText[i]) {
+						s.foulsText[i] = text[i]!;
+						el.textContent = text[i]!;
+						el.style.color = text[i] === "BONUS" ? "#f2c14e" : "";
+					}
+				});
+			}
+			const ball = offenseAt(tl, s.t);
+			if (ball !== s.ballSide) {
+				s.ballSide = ball;
+				[ballAwayRef, ballHomeRef].forEach((ref, i) => {
+					if (ref.current) {
+						ref.current.style.visibility = i === ball ? "visible" : "hidden";
+					}
+				});
 			}
 		};
 
@@ -1058,76 +1110,44 @@ const Court3D = ({
 			>
 				REPLAY
 			</div>
-			<div
-				style={{
-					position: "absolute",
-					left: "2cqw",
-					top: "2cqw",
-					display: "flex",
-					alignItems: "stretch",
-					fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
-					fontWeight: 700,
-					fontSize: "clamp(10px, 1.9cqw, 16px)",
-					lineHeight: 1,
-					borderRadius: 4,
-					overflow: "hidden",
-					boxShadow: "0 2px 8px rgba(0,0,0,.45)",
+			<ScoreBug
+				away={
+					away && {
+						abbrev: away.abbrev,
+						colors: away.colors,
+						imgURL: away.imgURL,
+						imgURLSmall: away.imgURLSmall,
+						pts: awayPts,
+						timeouts: boxScore?.teams?.[1]?.timeouts,
+					}
+				}
+				home={
+					home && {
+						abbrev: home.abbrev,
+						colors: home.colors,
+						imgURL: home.imgURL,
+						imgURLSmall: home.imgURLSmall,
+						pts: homePts,
+						timeouts: boxScore?.teams?.[0]?.timeouts,
+					}
+				}
+				quarter={quarter}
+				totalTimeouts={STARTING_NUM_TIMEOUTS}
+				refs={{
+					clock: clockRef,
+					shot: shotRef,
+					fouls: [foulsAwayRef, foulsHomeRef],
+					ball: [ballAwayRef, ballHomeRef],
 				}}
-			>
-				{[
-					[away?.abbrev, awayPts, kits[0]],
-					[home?.abbrev, homePts, kits[1]],
-				].map(([abbrev, pts, kit]: any, i) => (
-					<span
-						key={i}
-						style={{
-							display: "flex",
-							alignItems: "center",
-							gap: "0.55em",
-							padding: "0.5em 0.7em",
-							background: i === 0 ? kit.jersey : kit.trim,
-							color: "#fff",
-							textShadow: "0 1px 1px rgba(0,0,0,.4)",
-						}}
-					>
-						{abbrev}
-						<span
-							style={{
-								fontVariantNumeric: "tabular-nums",
-								fontSize: "1.15em",
-							}}
-						>
-							{pts}
-						</span>
-					</span>
-				))}
-				<span
-					style={{
-						display: "flex",
-						alignItems: "center",
-						gap: "0.6em",
-						padding: "0.5em 0.7em",
-						background: "rgba(10, 10, 14, 0.9)",
-						color: "#f4f4f4",
-						fontVariantNumeric: "tabular-nums",
-					}}
-				>
-					{quarter}
-					<span ref={clockRef} />
-					<span
-						ref={shotRef}
-						title="Shot clock"
-						style={{ color: "#ffb547", minWidth: "1.3em" }}
-					/>
-				</span>
-			</div>
+			/>
 			{caption ? (
 				<div
 					className="court3d-caption"
 					style={{
 						position: "absolute",
 						left: "50%",
-						bottom: "2.6cqw",
+						// Just over the score bug.
+						bottom: "calc(2.4cqw + clamp(10px, 1.75cqw, 16px) * 3.3)",
 						transform: "translateX(-50%)",
 						width: "max-content",
 						maxWidth: "92%",

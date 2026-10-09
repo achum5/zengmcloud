@@ -141,6 +141,8 @@ export const boxScoreToLiveSim = async ({
 
 		initialBoxScore.elam = allStars ? g.get("elamASG") : g.get("elam");
 		initialBoxScore.elamOvertime = g.get("elamOvertime");
+		// When a team is in the bonus, for the 3D score bug.
+		initialBoxScore.foulsUntilBonus = g.get("foulsUntilBonus");
 	}
 
 	initialBoxScore.overtime = "";
