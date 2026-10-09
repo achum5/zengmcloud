@@ -2787,6 +2787,53 @@ export const ANIMS = {
 			[1, P.stance],
 		],
 	},
+	// Crossed up: his feet go out from under him the wrong way - knees
+	// buckling, arms flung out for balance, a hand nearly to the floor - and
+	// he catches himself and turns to chase.
+	stumble: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.stance],
+			[
+				0.35,
+				pose({
+					hipN: 40,
+					kneeN: 78,
+					hipF: 6,
+					kneeF: 30,
+					shN: 70,
+					elN: 20,
+					abN: 60,
+					shF: 30,
+					elF: 10,
+					abF: 70,
+					lean: 18,
+					tilt: 16,
+					wide: 0.75,
+				}),
+			],
+			[
+				0.6,
+				pose({
+					hipN: 46,
+					kneeN: 88,
+					hipF: 10,
+					kneeF: 40,
+					shN: 50,
+					elN: 14,
+					abN: 40,
+					shF: 20,
+					elF: 8,
+					abF: 30,
+					lean: 30,
+					tilt: 20,
+					wide: 0.7,
+				}),
+			],
+			[1, P.stance],
+		],
+	},
 	// A chest pass: pulled in, stepped into, arms snapped straight, thumbs
 	// down in the follow-through.
 	pass: {

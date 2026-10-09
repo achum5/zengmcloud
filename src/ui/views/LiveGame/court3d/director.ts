@@ -4486,13 +4486,27 @@ class Director {
 				start,
 			);
 			if (bit) {
+				// Now and then he is crossed up so badly his feet go out from
+				// under him - and he is that much later after it.
+				let late = 80;
+				if (hash01(guard, t) < 0.22) {
+					this.act(guard, "stumble", t - 60, t + 640, {
+						face: -dir as 1 | -1,
+						look: this.posOf(pid),
+					});
+					this.free.set(guard, Math.max(this.free.get(guard) ?? 0, t + 640));
+					late = 640;
+				}
 				// Then turned, chasing him to the rim from behind.
 				const u = unitVec(from, P);
 				this.shadow(
 					guard,
-					inPlay({ x: P.x - u.x * 2.6, y: P.y - u.y * 2.6 }),
-					t + 80,
-					t + runMs(dist(from, P), DRIBBLE) + 200,
+					inPlay({
+						x: P.x - u.x * (late > 80 ? 4.5 : 2.6),
+						y: P.y - u.y * (late > 80 ? 4.5 : 2.6),
+					}),
+					t + late,
+					t + runMs(dist(from, P), DRIBBLE) + 200 + late,
 					this.teamOf(pid),
 					pid,
 				);
