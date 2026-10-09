@@ -41,14 +41,14 @@ import { ANIMS, type AnimName } from "./poses.ts";
 // to the plays, the photographers shoot what happens at their end. All of it
 // is read off the timeline at any moment, so a replay plays out the same.
 
-export type CrewRole = "ref" | "coach" | "photo";
+export type CrewRole = "ref" | "coach" | "photo" | "table";
 export type CrewMember = {
 	// Never a player's: crew are numbered below zero.
 	pid: number;
 	role: CrewRole;
 	// A coach's team; a photographer's end of the floor (0 the left).
 	team: Side;
-	// A photographer's place on the baseline.
+	// A photographer's place on the baseline; a chair at the scorer's table.
 	spot?: Pt;
 	hgt: number;
 	weight: number;
@@ -114,6 +114,13 @@ const REF_DRESS = dress("#f2f2ef", "#16161a", {
 const SUITS = ["#1d2333", "#24262c", "#151517", "#3a3f4a", "#2f2924"];
 const PHOTO_TOPS = ["#18181c", "#262a33", "#3a3a3d", "#1f2a24", "#2d2230"];
 const PHOTO_PANTS = ["#18181a", "#4b4334", "#2b2e35", "#3c3f46"];
+
+const TABLE_TOPS = ["#16181d", "#22252c", "#1b2233", "#2a2a2e"];
+const TABLE_SEATS = [40.5, 45, 49.5, 54];
+export const TABLE_SEAT_Y = -8.1;
+// The people behind the scorer's table are drawn before it, which hides
+// them from the waist down.
+export const atTable = (pid: number): boolean => pid <= -41 && pid > -50;
 
 const teamKey = (t: TeamLike | undefined) =>
 	`${t?.region ?? ""}|${t?.name ?? t?.abbrev ?? ""}`;
@@ -210,6 +217,29 @@ export const crewFor = (
 			n += 1;
 		}
 	}
+	// At the scorer's table: the official scorer, the clock and the shot
+	// clock, the announcer - in the league's dark polos and jackets.
+	const tr = makeCourtRng(`table|${teamKey(home)}`);
+	TABLE_SEATS.forEach((x, n) => {
+		const seed = `table|${teamKey(home)}|${n}`;
+		const r = makeCourtRng(seed);
+		out.push({
+			pid: -41 - n,
+			role: "table",
+			team: 0,
+			spot: { x: x + (tr() - 0.5) * 0.4, y: TABLE_SEAT_Y },
+			hgt: 64 + r() * 10,
+			weight: 140 + r() * 80,
+			face: faceFor(seed, r() < 0.35),
+			dress: dress(
+				TABLE_TOPS[Math.floor(r() * TABLE_TOPS.length)]!,
+				"#1c1c20",
+				r() < 0.5
+					? { sleeves: "short" }
+					: { sleeves: "long", shirt: "#f2f2ee" },
+			),
+		});
+	});
 	return out;
 };
 
@@ -903,6 +933,26 @@ const coachState = (
 	};
 };
 
+// ---- the scorer's table ---------------------------------------------------------
+
+// Sitting at the table, turned toward the play.
+const tableState = (m: CrewMember, ball: Pt, t: number): PlayerState => {
+	const at = m.spot!;
+	const toBall = yawTo(at, ball);
+	return {
+		pid: m.pid,
+		team: m.team,
+		shown: true,
+		x: at.x,
+		y: at.y,
+		z: 0,
+		yaw: Math.PI / 2 + clamp(toBall - Math.PI / 2, -0.7, 0.7),
+		anim: "sit",
+		phase: loopPhase("sit", t, m.pid * 0.29),
+		moving: false,
+	};
+};
+
 // ---- the photographers ------------------------------------------------------
 
 // Down on a knee, the camera up when the play is at his end.
@@ -989,6 +1039,8 @@ export const crewAt = (
 	for (const m of crew) {
 		if (m.role === "coach") {
 			states.push(coachState(tl, t, m, ball));
+		} else if (m.role === "table") {
+			states.push(tableState(m, ball, t));
 		} else if (m.role === "photo") {
 			const st = photoState(tl, t, m, ball);
 			states.push(st);

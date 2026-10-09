@@ -12,6 +12,7 @@ import {
 	benchX,
 	clampPt,
 	seatSpot,
+	checkInPath,
 	COURT_H,
 	COURT_W,
 	dist,
@@ -302,8 +303,26 @@ export type CourtTimeline = {
 	// Stretches the picture runs through fast rather than cutting past: the
 	// ball taken out and brought up the floor, the walk to the line.
 	fast: [number, number][];
+	// The men going to the scorer's table to check in, before each comes on.
+	checkIns?: CheckIn[];
 	end: number;
 };
+
+// A sub on his way in: up out of his chair at t0, along the path to the
+// table, down on a knee there from kneel, pulling his warm-up top off from
+// strip, and on at t1 - from the end of the path.
+export type CheckIn = {
+	pid: number;
+	team: Side;
+	path: Pt[];
+	t0: number;
+	kneel: number;
+	strip: number;
+	t1: number;
+};
+// How long pulling the warm-up off takes.
+export const STRIP_MS = 1000;
+const CHECK_IN_WALK = 4.4;
 
 const NOT_A_LINE = new Set(["stat", "timeouts", "init"]);
 export const isLineItem = (e: RawEvent | undefined): boolean =>
@@ -876,6 +895,7 @@ class Director {
 	// tipped: nobody is on offense or defense yet, and nobody sets off
 	// before the tip - how they stood or went would give away who won it.
 	readonly jumps: [number, number][] = [];
+	readonly checkIns: CheckIn[] = [];
 	// Each man subbed out: who came on for him, when he went off, when the
 	// man coming on was out there, and when he came back on himself (see
 	// mark).
@@ -2165,6 +2185,22 @@ class Director {
 		t: number,
 		style?: PassStyle,
 	): number {
+		// Never back over half court: a man left back there comes up over it
+		// for the ball first.
+		const dir = attackDir(this.teamOf(from));
+		const R = this.posOf(to);
+		if (
+			(this.posOf(from).x - COURT_W / 2) * dir > 0 &&
+			(R.x - COURT_W / 2) * dir < 2
+		) {
+			this.go(
+				to,
+				clampPt({ x: COURT_W / 2 + dir * 5, y: R.y }),
+				Math.max(t, this.free.get(to) ?? 0),
+				RUN * 0.85,
+				"run",
+			);
+		}
 		const a = this.posOf(from);
 		const b = this.posOf(to);
 		const d = dist(a, b);
@@ -3541,8 +3577,16 @@ class Director {
 	): number {
 		const rim = { x: rimX(run.team), y: COURT_H / 2 };
 		const from = this.posOf(pid);
-		const P =
-			to === "rim" ? this.nearRim(run.team, from, 3.6) : this.at(run, to);
+		let P = to === "rim" ? this.nearRim(run.team, from, 3.6) : this.at(run, to);
+		// Once the ball is over half court nobody goes back over it - not to
+		// trail the play, not for a pass.
+		const dir = attackDir(run.team);
+		const ballOver =
+			this.holder !== undefined &&
+			(this.posAt(this.holder, t0).x - COURT_W / 2) * dir > 2;
+		if (ballOver && (P.x - COURT_W / 2) * dir < 3) {
+			P = { x: COURT_W / 2 + dir * 3.5, y: P.y };
+		}
 		// (Trailing the break is no jog: he runs the floor.)
 		const speed =
 			run.play.cat === "break" && style === "jog"
@@ -9357,6 +9401,51 @@ class Director {
 		this.beat(i, e.type, toss + 520, toss + 1300);
 	}
 
+	// A man coming on has been down at the scorer's table a while, waiting
+	// for the whistle - got there from his chair while play went on, if he
+	// has been sitting long enough to have.
+	private checkIn(
+		pid: number,
+		team: Side,
+		k: number,
+		t1: number,
+	): CheckIn | undefined {
+		const tr = this.track(pid);
+		const last = tr?.shown.filter(([ts]) => ts <= t1).at(-1);
+		if (!tr || last?.[1]) {
+			return undefined;
+		}
+		const sat = Math.max(
+			last?.[0] ?? 0,
+			this.checkIns.findLast((c) => c.pid === pid)?.t1 ?? 0,
+		);
+		const path = checkInPath(this.seatOf(pid), team, k);
+		let len = 0;
+		for (let n = 1; n < path.length; n++) {
+			len += dist(path[n - 1]!, path[n]!);
+		}
+		const walkMs = (len / CHECK_IN_WALK) * 1000;
+		const strip = t1 - STRIP_MS - 200;
+		const kneel = Math.max(
+			strip - 2500 - hash01(pid, t1) * 4000,
+			sat + 1500 + walkMs,
+		);
+		if (kneel > strip - 600) {
+			return undefined;
+		}
+		const ci: CheckIn = {
+			pid,
+			team,
+			path,
+			t0: kneel - walkMs,
+			kneel,
+			strip,
+			t1,
+		};
+		this.checkIns.push(ci);
+		return ci;
+	}
+
 	private beatSub(e: RawEvent, i: number, d: Side | undefined) {
 		const T = this.T;
 		const team: Side = d ?? 0;
@@ -9392,7 +9481,11 @@ class Director {
 						last.t1 = t0;
 						this.pos.set(incoming, here);
 					} else {
-						this.pos.set(incoming, this.seatOf(incoming));
+						const ci = this.checkIn(incoming, team, j, t0);
+						this.pos.set(
+							incoming,
+							ci ? ci.path.at(-1)! : this.seatOf(incoming),
+						);
 					}
 					tr.shown = tr.shown.filter(([ts, on]) => on || ts <= t0);
 					this.free.set(incoming, t0);
@@ -12558,6 +12651,7 @@ class Director {
 			shots,
 			tension: this.tension,
 			fast,
+			checkIns: this.checkIns,
 			end: this.T,
 		};
 	}

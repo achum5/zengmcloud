@@ -111,10 +111,24 @@ building.
 
 ## F. Arena and broadcast atmosphere
 
-- [ ] Bench players wear warm-ups with the team logo on the front and name and
-      number on the back. Once a player has been in the game, back on the bench he
-      is in his uniform only, like real life.
-- [ ] Scorer's table that looks real: people sitting with monitors. Players
+Reference photos from the owner (2026-10-09: MSG, Crypto.com Arena, Frost
+Bank Center, a 2K27 broadcast) - what the floor and building should look like:
+
+- [ ] Apron: the floor outside the lines painted in the home color all the
+      way round, the team name big along each baseline, sponsor lettering down
+      the sidelines.
+- [ ] Behind each basket: photographers sitting on the apron, a row or two of
+      courtside seats, then the stands rising straight up - the crowd wraps the
+      whole floor.
+- [ ] Stanchion: dark padded base with a lit ad panel.
+- [ ] Far sideline: bench, the scorer's table with a lit LED front, courtside
+      seats, then the stands.
+- [ ] Center-hung scoreboard over the floor (MSG).
+
+- [~] Bench players wear warm-ups with the team logo on the front and name and
+  number on the back. Once a player has been in the game, back on the bench he
+  is in his uniform only, like real life.
+- [x] Scorer's table that looks real: people sitting with monitors. Players
       about to sub in walk to the table ahead of time (the engine looks a few plays
       ahead for substitutions), taking off the warm-up shirt and dropping it as they
       go.

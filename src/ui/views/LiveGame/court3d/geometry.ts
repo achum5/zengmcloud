@@ -88,6 +88,20 @@ export const seatSpot = (t: Side, i: number): Pt => ({
 	y: BENCH_Y + 0.9,
 });
 export const benchX = (t: Side): number => (t === 0 ? 31 : 63);
+
+// Checking in: down on a knee in front of the scorer's table, on his own
+// team's half of it, the next man along beside him - got to from his chair
+// round the end of the table.
+export const CHECK_IN_Y = -3.9;
+export const checkInSpot = (t: Side, k: number): Pt => ({
+	x: COURT_W / 2 + (t === 0 ? -1 : 1) * (4.5 + Math.min(k, 3) * 2.3),
+	y: CHECK_IN_Y,
+});
+export const checkInPath = (seat: Pt, t: Side, k: number): Pt[] => [
+	seat,
+	{ x: t === 0 ? 36.2 : COURT_W - 36.2, y: -4.4 },
+	checkInSpot(t, k),
+];
 export const HUDDLE_Y = 1.6;
 export const huddleSpots = (t: Side): Pt[] => {
 	const cx = benchX(t);

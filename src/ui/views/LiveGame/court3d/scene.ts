@@ -25,7 +25,8 @@ import {
 	type Shot,
 } from "./camera.ts";
 import { drawCourtLines } from "./courtLines.ts";
-import type { CourtTimeline } from "./director.ts";
+import { atTable, TABLE_SEAT_Y } from "./crew.ts";
+import { STRIP_MS, type CheckIn, type CourtTimeline } from "./director.ts";
 import {
 	arenaShotAt,
 	evalBall,
@@ -255,18 +256,123 @@ export const benchPhase = (anim: AnimName, ms: number, pid: number): number => {
 	return (ms / 1000) * cyclesPerSecond + ((Math.abs(pid) * 0.37) % 1);
 };
 
+// When each man first came on the floor (Infinity: not yet tonight).
+const firstOn = new WeakMap<CourtTimeline, Map<number, number>>();
+const firstOnOf = (tl: CourtTimeline, pid: number): number => {
+	let m = firstOn.get(tl);
+	if (!m) {
+		m = new Map();
+		for (const [id, tr] of tl.tracks) {
+			m.set(id, tr.shown.find(([, on]) => on)?.[0] ?? Infinity);
+		}
+		firstOn.set(tl, m);
+	}
+	return m.get(pid) ?? Infinity;
+};
+
+// The check-in a man is on at t, if any.
+const checkInAt = (
+	tl: CourtTimeline,
+	pid: number,
+	t: number,
+): CheckIn | undefined =>
+	tl.checkIns?.find((c) => c.pid === pid && c.t0 <= t && t < c.t1);
+
+// Off the floor, a man is in his warm-up top until he has been on it - or
+// has pulled it off at the scorer's table on his way on.
+export const inWarmup = (
+	tl: CourtTimeline,
+	pid: number,
+	t: number,
+): boolean => {
+	if (t >= firstOnOf(tl, pid)) {
+		return false;
+	}
+	const ci = checkInAt(tl, pid, t);
+	return !ci || t < ci.strip + STRIP_MS * 0.55;
+};
+
+// Where a man checking in is at t: walking from his chair to the table,
+// down on a knee there, then up and pulling his top off.
+const checkInState = (
+	ci: CheckIn,
+	t: number,
+	// Whether he has a top to pull off: not if he has played already.
+	warmup: boolean,
+): PlayerState => {
+	const base = { pid: ci.pid, team: ci.team, shown: true, z: 0 };
+	if (t < ci.kneel) {
+		const total = ci.path.reduce(
+			(sum, p, n) =>
+				n === 0
+					? 0
+					: sum + Math.hypot(p.x - ci.path[n - 1]!.x, p.y - ci.path[n - 1]!.y),
+			0,
+		);
+		let along =
+			(total * Math.max(0, t - ci.t0)) / Math.max(1, ci.kneel - ci.t0);
+		const walked = along;
+		for (let n = 1; n < ci.path.length; n++) {
+			const a = ci.path[n - 1]!;
+			const b = ci.path[n]!;
+			const len = Math.hypot(b.x - a.x, b.y - a.y);
+			if (along <= len || n === ci.path.length - 1) {
+				const u = len > 0 ? Math.min(1, along / len) : 1;
+				return {
+					...base,
+					x: a.x + (b.x - a.x) * u,
+					y: a.y + (b.y - a.y) * u,
+					yaw: Math.atan2(b.y - a.y, b.x - a.x),
+					anim: "walk",
+					phase: walked / 4.8,
+					moving: true,
+				};
+			}
+			along -= len;
+		}
+	}
+	const at = ci.path.at(-1)!;
+	const still = { ...base, x: at.x, y: at.y, yaw: Math.PI / 2, moving: false };
+	if (t < ci.strip) {
+		return {
+			...still,
+			anim: "kneel",
+			phase: (t / 1000) * 0.15 + ci.pid * 0.37,
+		};
+	}
+	return {
+		...still,
+		anim: warmup && t < ci.strip + STRIP_MS ? "strip" : "ready",
+		phase: Math.min(1, (t - ci.strip) / STRIP_MS),
+	};
+};
+
 // The players who are not in the game, sitting in order on their bench -
-// up on their feet in a tight finish.
+// up on their feet in a tight finish - or on their way to the table to
+// check in.
 const STANDING: AnimName[] = ["ready", "crossed", "ready", "crouch"];
-const benchStates = (f: Frame, onFloor: Set<number>): PlayerState[] => {
-	const out: PlayerState[] = [];
+const benchStates = (
+	f: Frame,
+	onFloor: Set<number>,
+): { st: PlayerState; warm: boolean }[] => {
+	const out: { st: PlayerState; warm: boolean }[] = [];
+	const t = f.moment.t;
 	const seat: [number, number] = [0, 0];
 	// A big play brings the bench to its feet for a moment.
-	const roar = recentFx(f.tl, f.moment.t, ["roar"], 1800);
-	const tense = tensionAt(f.tl, f.moment.t) >= 1;
+	const roar = recentFx(f.tl, t, ["roar"], 1800);
+	const tense = tensionAt(f.tl, t) >= 1;
 	for (const p of f.roster) {
 		const i = seat[p.team]++;
 		if (onFloor.has(p.pid)) {
+			continue;
+		}
+		const warm = inWarmup(f.tl, p.pid, t);
+		const ci = checkInAt(f.tl, p.pid, t);
+		if (ci) {
+			out.push({
+				st: checkInState(ci, t, firstOnOf(f.tl, p.pid) > ci.strip),
+				warm,
+			});
 			continue;
 		}
 		const at = seatSpot(p.team, i);
@@ -277,19 +383,101 @@ const benchStates = (f: Frame, onFloor: Set<number>): PlayerState[] => {
 				? STANDING[Math.abs(p.pid) % STANDING.length]!
 				: "sit";
 		out.push({
-			pid: p.pid,
-			team: p.team,
-			shown: true,
-			x: at.x,
-			y: at.y,
-			z: 0,
-			yaw: Math.PI / 2,
-			anim,
-			phase: benchPhase(anim, f.now ?? f.moment.t, p.pid),
-			moving: false,
+			st: {
+				pid: p.pid,
+				team: p.team,
+				shown: true,
+				x: at.x,
+				y: at.y,
+				z: 0,
+				yaw: Math.PI / 2,
+				anim,
+				phase: benchPhase(anim, f.now ?? t, p.pid),
+				moving: false,
+			},
+			warm,
 		});
 	}
 	return out;
+};
+
+// The warm-up tops dropped at the table by the men who checked in, lying
+// there a while.
+const drawDroppedTops = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	tl: CourtTimeline,
+	t: number,
+	colors: [string, string],
+) => {
+	for (const ci of tl.checkIns ?? []) {
+		const down = ci.strip + STRIP_MS * 0.85;
+		if (t < down || t > ci.t1 + 25_000 || firstOnOf(tl, ci.pid) < ci.strip) {
+			continue;
+		}
+		const at = ci.path.at(-1)!;
+		const side = ci.team === 0 ? -1 : 1;
+		const cx = at.x + side * 1.1;
+		const cy = at.y - 0.5;
+		const r = 0.75;
+		ctx.fillStyle = colors[ci.team];
+		ctx.beginPath();
+		for (let n = 0; n < 7; n++) {
+			const a = (n / 7) * Math.PI * 2 + ci.pid;
+			const k = r * (0.65 + 0.35 * Math.abs(Math.sin(ci.pid * 3.1 + n * 1.7)));
+			const p = project(cam, {
+				x: cx + Math.cos(a) * k * 1.3,
+				y: cy + Math.sin(a) * k,
+				z: 0.05,
+			});
+			ctx.lineTo(p.x, p.y);
+		}
+		ctx.closePath();
+		ctx.fill();
+		ctx.fillStyle = "rgba(0,0,0,0.25)";
+		const a = project(cam, { x: cx - 0.5, y: cy, z: 0.06 });
+		const b = project(cam, { x: cx + 0.5, y: cy + 0.15, z: 0.06 });
+		ctx.fillRect(
+			Math.min(a.x, b.x),
+			a.y,
+			Math.max(1, Math.abs(b.x - a.x)),
+			Math.max(1, b.k * 0.1),
+		);
+	}
+};
+
+// A monitor on the table in front of each seat behind it, its back to the
+// floor and the glow of its screen on the edges.
+const drawMonitors = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	crew: { st: PlayerState }[],
+) => {
+	for (const { st } of crew) {
+		if (!atTable(st.pid)) {
+			continue;
+		}
+		const y = TABLE_SEAT_Y + 1.7;
+		const corners = (x0: number, x1: number, z0: number, z1: number) =>
+			[
+				[x0, z0],
+				[x1, z0],
+				[x1, z1],
+				[x0, z1],
+			].map(([x, z]) => project(cam, { x: x!, y, z: z! }));
+		const quad = (pts: { x: number; y: number }[], color: string) => {
+			ctx.fillStyle = color;
+			ctx.beginPath();
+			for (const p of pts) {
+				ctx.lineTo(p.x, p.y);
+			}
+			ctx.closePath();
+			ctx.fill();
+		};
+		quad(corners(st.x - 0.95, st.x + 0.95, 3.25, 4.45), "#9fc3ff");
+		quad(corners(st.x - 0.88, st.x + 0.88, 3.3, 4.38), "#101216");
+		quad(corners(st.x - 0.12, st.x + 0.12, 2.7, 3.3), "#202228");
+	}
 };
 
 // A plain quad on the floor, in one color.
@@ -361,16 +549,30 @@ export const drawFrame = (f: Frame) => {
 	} else {
 		floorQuad(ctx, cam, 0, 0, COURT_W, 50, "#d8a865");
 	}
+	// The scorer's table, the people behind it hidden from the waist down,
+	// their monitors on it.
+	const crewAll = f.crew ?? [];
+	for (const c of crewAll) {
+		if (atTable(c.st.pid)) {
+			drawSprite(ctx, f.scratch, cam, c.st, c.body, c.look, 1, f.sprites);
+		}
+	}
 	drawTexturedPlane(ctx, cam, TABLE_TOP, arena.tableTop, 4, 1);
+	drawMonitors(ctx, cam, crewAll);
 	drawTexturedPlane(ctx, cam, TABLE_FRONT, arena.tableFront, 4, 1);
 	drawTexturedPlane(ctx, cam, benchPlane(0), arena.bench[0], 6, 1);
 	drawTexturedPlane(ctx, cam, benchPlane(1), arena.bench[1], 6, 1);
 	drawFlashes(ctx, cam, tl, t);
 	drawCourtLines(ctx, cam, f.lineColor);
+	drawDroppedTops(ctx, cam, tl, t, f.warmups);
 
-	const crew = f.crew ?? [];
+	const crew = crewAll.filter((c) => !atTable(c.st.pid));
 	// Shadows: soft pools under the feet, shrinking as they leave the floor.
-	for (const st of [...players, ...bench, ...crew.map((c) => c.st)]) {
+	for (const st of [
+		...players,
+		...bench.map((b) => b.st),
+		...crew.map((c) => c.st),
+	]) {
 		const lift = Math.min(1, st.z / 4);
 		drawShadow(ctx, cam, st.x, st.y, 1.25 * (1 - lift * 0.35), 1 - lift * 0.6);
 	}
@@ -402,7 +604,8 @@ export const drawFrame = (f: Frame) => {
 			},
 		});
 	}
-	for (const st of bench) {
+	for (const { st, warm } of bench) {
+		const look = f.lookFor(st.pid);
 		items.push({
 			depth: depthOf(cam, { x: st.x, y: st.y, z: 3 }),
 			draw: () => {
@@ -412,7 +615,7 @@ export const drawFrame = (f: Frame) => {
 					cam,
 					st,
 					f.bodyFor(st.pid),
-					warmupLook(f.lookFor(st.pid), f.warmups[st.team]),
+					warm ? warmupLook(look, f.warmups[st.team]) : look,
 					1,
 					f.sprites,
 				);

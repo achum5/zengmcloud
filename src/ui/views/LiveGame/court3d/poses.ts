@@ -3290,6 +3290,72 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// Up off his knee at the table, arms crossed to the hem and the warm-up
+	// top pulled off over his head, then dropped.
+	strip: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[
+				0,
+				pose({
+					hipN: -4,
+					kneeN: 96,
+					hipF: 84,
+					kneeF: 86,
+					lean: 8,
+					shN: 38,
+					elN: 58,
+					shF: 44,
+					elF: 52,
+					wide: 0.2,
+				}),
+			],
+			[
+				0.25,
+				pose({
+					shN: 14,
+					elN: 34,
+					abN: -34,
+					shF: 14,
+					elF: 34,
+					abF: -34,
+					lean: 6,
+					kneeN: 10,
+					kneeF: 12,
+				}),
+			],
+			[
+				0.5,
+				pose({
+					shN: 150,
+					elN: 70,
+					abN: -18,
+					shF: 150,
+					elF: 70,
+					abF: -18,
+					lean: -2,
+				}),
+			],
+			[
+				0.7,
+				pose({
+					shN: 172,
+					elN: 18,
+					abN: 8,
+					shF: 172,
+					elF: 18,
+					abF: 8,
+					lean: -4,
+				}),
+			],
+			[
+				0.85,
+				pose({ shN: 70, elN: 20, abN: 34, shF: 20, elF: 30, abF: 10, lean: 2 }),
+			],
+			[1, P.ready],
+		],
+	},
 	// Bent over, hands on his knees.
 	crouch: {
 		kind: "loop",

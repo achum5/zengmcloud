@@ -1,5 +1,5 @@
 import { assert, describe, test } from "vitest";
-import { crewAt, crewFor, type CrewMember } from "./crew.ts";
+import { atTable, crewAt, crewFor, type CrewMember } from "./crew.ts";
 import { cameraCuts } from "./evaluate.ts";
 import { benchX, COURT_H, COURT_W } from "./geometry.ts";
 import { compile, gidOf } from "./testGame.ts";
@@ -173,7 +173,7 @@ describe("3D crew", () => {
 					const team = s.pid === -11 ? 0 : 1;
 					assert.isBelow(Math.abs(s.x - benchX(team)), 7, `${t}`);
 					assert.isTrue(s.y > -4 && s.y < 0.5, `${t}`);
-				} else if (s.pid <= -21) {
+				} else if (s.pid <= -21 && !atTable(s.pid)) {
 					assert.isTrue(s.x < -2 || s.x > COURT_W + 2, `${t}`);
 					// Clear of the basket's stanchion and the lane under it.
 					assert.isTrue(s.y < 17 || s.y > 33, `${t}`);

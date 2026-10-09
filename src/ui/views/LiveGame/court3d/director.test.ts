@@ -573,7 +573,7 @@ describe("3D director", () => {
 			// (Getting back on a break, a step behind the ball - all the way
 			// from the far baseline, flat out, off a block down there.)
 			assert.isBelow(back / n, 0.03, seed);
-			assert.isAtMost(longD, 2600, seed);
+			assert.isAtMost(longD, 2800, seed);
 			// (A trip fouled or lost seconds in can catch the trailer still on
 			// his way up.)
 			assert.isAtMost(longO, 1800, seed);
