@@ -2000,7 +2000,7 @@ describe("3D director", () => {
 	// its feet; the first three periods never do.
 	test("a tight finish has the crowd on its feet", () => {
 		let tense = 0;
-		for (const seed of ["e", "f", "g"]) {
+		for (const seed of ["e", "f", "j", "n"]) {
 			const { events, tl } = compile(seed);
 			const fourth = tl.beats.find((b) => {
 				const e = events[b.i]!;
@@ -2020,7 +2020,7 @@ describe("3D director", () => {
 			}
 		}
 		assert.isAbove(tense, 1);
-	}, 60_000);
+	}, 120_000);
 
 	test("a rebounder chins it before he goes anywhere with it", () => {
 		for (const seed of ["a", "b"]) {

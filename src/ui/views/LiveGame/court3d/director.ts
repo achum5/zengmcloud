@@ -51,7 +51,10 @@ import {
 import {
 	bodyOf,
 	JUMPER,
+	mirror as mirrorPose,
+	poseAt,
 	releaseAt,
+	skeleton,
 	standingReach,
 	type AnimName,
 	type DribbleMove,
@@ -399,6 +402,36 @@ const BOARD_TOP = 400;
 const BOARD_AT = releaseAt("board", BOARD_TOP / REBOUND_MS);
 const BOARD_HANDS = BOARD_AT.u;
 const BOARD_OUT = BOARD_AT.f;
+// Up for one he only gets a hand to - knocked away, not taken in: the same
+// jump, the arms up through it.
+const TIP_AT = releaseAt("rebound", BOARD_TOP / REBOUND_MS);
+// A poke at a man's dribble, from the start of the jab to the hand back:
+// the jabbing hand at the end of its reach, a typical player's (forward,
+// to his side, up), and how far through the poke that is.
+const POKE_MS = 450;
+const POKE_HIT = 0.42;
+// Reaching out for a ball going by (from the start of the reach to the
+// hands back): his hands - between them - at full reach, forward of him
+// and up, and how far through the reach that is.
+const REACH_MS = 400;
+const REACH_HIT = 0.45;
+const REACH_AT = (() => {
+	const sk = skeleton(bodyOf(), poseAt("reach", REACH_HIT));
+	return {
+		f: (sk.armR.end.f + sk.armL.end.f) / 2,
+		u: (sk.armR.end.u + sk.armL.end.u) / 2,
+	};
+})();
+// A catch, from hands up to it taken in: where the ball meets his hands, a
+// typical player's, and how far through the catch that is.
+const CATCH_MS = 200;
+const CATCH_HIT = 0.45;
+const CATCH_AT = releaseAt("catch", CATCH_HIT);
+const pokeHand = (mirrored: boolean): V3 => {
+	const q = poseAt("poke", POKE_HIT);
+	const sk = skeleton(bodyOf(), mirrored ? mirrorPose(q) : q);
+	return mirrored ? sk.armL.end : sk.armR.end;
+};
 // A dunk, for a typical player (taller ones jump less to get there, shorter
 // ones more - see withBody): how high he gets (feet) - his hands well over
 // the rim - and how far out from the middle of the rim he goes up.
@@ -640,6 +673,10 @@ const BIG_SPOTS = [
 	"R_elbow",
 	"high_post",
 ];
+
+// Past a line: out of bounds.
+const outOfPlay = (p: Pt) =>
+	p.x < 0 || p.x > COURT_W || p.y < 0 || p.y > COURT_H;
 
 const unitVec = (from: Pt, to: Pt): Pt => {
 	const dx = to.x - from.x;
@@ -5689,27 +5726,12 @@ class Director {
 			this.hold(r, catchT, "hold");
 			return catchT;
 		}
+		if (next && next.e.type === "outOfBounds") {
+			return this.missOut(t, from, team, next.e.t, blocked, vel, start);
+		}
 		// Nobody's: off the rim on its own, down to the floor first.
 		const floor = vel ? this.toFloor(t, from, vel, start) : undefined;
 		const t0 = floor?.t ?? t;
-		if (next && next.e.type === "outOfBounds") {
-			// Off a hand and out: over the baseline, or the sideline.
-			const outY = from.y < COURT_H / 2 ? -1.8 : COURT_H + 1.8;
-			const to =
-				this.rng() < 0.4
-					? { x: rim.x + dir * this.rand(6.6, 8), y: 25 + this.rand(-16, 16) }
-					: { x: from.x - dir * this.rand(6, 16), y: outY };
-			const span = floor ? this.bounceSpan(floor.h0, 2, 1100) : 1100;
-			this.bounce(
-				t0,
-				t0 + span,
-				floor?.at ?? from,
-				to,
-				2,
-				floor?.h0 ?? (blocked ? 1.6 : 3),
-			);
-			return t0 + span - 100;
-		}
 		// The period ran out, or nobody got it yet: it bounces free.
 		const to = clampPt({
 			x: rim.x - dir * this.rand(5, 10),
@@ -5725,6 +5747,327 @@ class Director {
 			floor?.h0 ?? (blocked ? 1.4 : 3.2),
 		);
 		return t0 + span - 100;
+	}
+
+	// OUT OFF A MISS.
+	//
+	// Out of bounds is out off whoever touched it last - and the sim says
+	// which side that was (`raw`, its team). Swatted straight out by the man
+	// who blocked it, if that is his side; otherwise one of theirs, the
+	// nearest where it comes down, gets only a hand to it - up for it in the
+	// air, or as he gets to it on the bounce - and it is knocked away, out.
+	// Returns when it is out.
+	private missOut(
+		t: number,
+		from: Pt3,
+		team: Side,
+		raw: unknown,
+		blocked: boolean,
+		vel?: Pt3,
+		start?: BallEnd,
+	): number {
+		const side: Side = raw === 0 ? 1 : raw === 1 ? 0 : other(team);
+		const rim = rimPt(team);
+		this.outOffMiss = true;
+		// Which way it is going when he knocks it: on the way it was going,
+		// turned some by his hand.
+		const away = (at: Pt3): Pt => {
+			const h = vel && Math.hypot(vel.x, vel.y) > 1 ? vel : undefined;
+			const u = h
+				? unitVec({ x: 0, y: 0 }, h)
+				: dist(rim, at) > 0.5
+					? unitVec(rim, at)
+					: { x: attackDir(team), y: 0 };
+			const a = this.rand(-0.7, 0.7);
+			return {
+				x: u.x * Math.cos(a) - u.y * Math.sin(a),
+				y: u.x * Math.sin(a) + u.y * Math.cos(a),
+			};
+		};
+		if (
+			blocked &&
+			vel &&
+			start &&
+			"pid" in start &&
+			this.teamOf(start.pid) === side
+		) {
+			// Swatted out: off his hand, down, and on out.
+			const floor = this.toFloor(t, from, vel, start);
+			if (outOfPlay(floor.at)) {
+				return floor.t;
+			}
+			const u =
+				Math.hypot(vel.x, vel.y) > 1
+					? unitVec({ x: 0, y: 0 }, vel)
+					: unitVec(rim, floor.at);
+			const out = this.rollsOut(
+				floor.at,
+				dist(floor.at, this.outPoint(floor.at, u)) <= 30
+					? u
+					: unitVec(floor.at, this.nearestOut(floor.at)),
+			);
+			const span = this.bounceSpan(floor.h0, 2, 400 + dist(floor.at, out) * 40);
+			this.bounce(floor.t, floor.t + span, floor.at, out, 2, floor.h0);
+			return floor.t + span;
+		}
+		const knock = (at: Pt3, tt: number) => this.knockOut(tt, at, away(at));
+		// Where it comes down, near enough, for who is nearest it.
+		const lands: Pt = vel
+			? (() => {
+					const fall =
+						(vel.z +
+							Math.sqrt(
+								vel.z * vel.z + 2 * GRAVITY * Math.max(0, from.z - BALL_R),
+							)) /
+						GRAVITY;
+					return clampPt({
+						x: from.x + vel.x * fall,
+						y: from.y + vel.y * fall,
+					});
+				})()
+			: from;
+		const r = this.slots(side)
+			.filter((p) => !(start && "pid" in start && start.pid === p))
+			.sort(
+				(a, b) => dist(this.posOf(a), lands) - dist(this.posOf(b), lands),
+			)[0];
+		if (r === undefined) {
+			const floor = vel ? this.toFloor(t, from, vel, start) : undefined;
+			return this.knockOut(floor?.t ?? t, floor?.at ?? from, away(from));
+		}
+		if (vel) {
+			return this.reboundOff(r, t, from, vel, team, !blocked, start, knock);
+		}
+		// Off the rim with no flight worked out: up for it where it comes off.
+		const rp = this.posOf(r);
+		const toward = unitVec(rim, rp);
+		const k = blocked ? this.rand(4, 7) : this.rand(4, 8);
+		const spot = clampPt({
+			x: rim.x + toward.x * (k + TIP_AT.f),
+			y: rim.y + toward.y * (k + TIP_AT.f),
+		});
+		this.letGo(r, Math.max(t - 450, this.free.get(r) ?? 0));
+		const arrive = this.goBy(
+			r,
+			spot,
+			t - 450,
+			t + this.rand(300, 500),
+			"run",
+			(rim.x >= spot.x ? 1 : -1) as 1 | -1,
+		);
+		const top = Math.max(arrive + BOARD_TOP, t + this.rand(700, 900));
+		const peak = 2.2;
+		this.goUpFor(r, top - BOARD_TOP, spot, team, peak, !blocked, "rebound");
+		const back = unitVec(spot, rim);
+		const at = {
+			x: spot.x + back.x * TIP_AT.f,
+			y: spot.y + back.y * TIP_AT.f,
+			z: TIP_AT.u + peak,
+		};
+		this.fly(t, top, start ?? from, at);
+		return knock(at, top);
+	}
+
+	// OUT IN THE HALF COURT.
+	//
+	// Some of a set, as long as the clock ran, and then the ball is gone
+	// out of bounds off `touched`: off a defender's hand - reaching in on
+	// the dribble, or a finger to a pass in the lane - or, if it is off
+	// the offense, off the man with it, lost off his foot. `team` keeps
+	// it (or gets it). Returns when it is out.
+	private knockedOut(
+		touched: Side,
+		team: Side,
+		T: number,
+		gap: number | undefined,
+		e: RawEvent,
+	): number {
+		const offense = other(touched) === team ? team : touched;
+		const dev = this.develop(offense, T, gap, (entry) =>
+			this.callForAny(
+				entry,
+				offense,
+				gap,
+				typeof e.clock === "number" ? e.clock : undefined,
+			),
+		);
+		let t = dev.t;
+		if (dev.run && (gap ?? 0) >= 4) {
+			const run = dev.run;
+			const steps = run.play.steps;
+			const last =
+				run.from + Math.floor(this.rng() * (steps.length - run.from)) - 1;
+			for (let k = run.from; k < steps.length && k <= last; k++) {
+				t = this.runStep(run, steps[k]!, t, steps[k + 1], k);
+			}
+		}
+		const h = this.holder;
+		if (h === undefined) {
+			const b = this.ballPoint();
+			return this.knockOut(t, b, unitVec(b, this.nearestOut(b)));
+		}
+		const start = Math.max(t, this.free.get(h) ?? 0);
+		const A = this.posOf(h);
+		const dir = attackDir(offense);
+		if (touched === offense) {
+			// Lost off his own foot on the dribble.
+			this.hold(h, start, "dribble");
+			const tf = start + 380;
+			const F = this.posAt(h, tf);
+			const at = { x: F.x + dir * 0.7, y: F.y + 0.5, z: 0.9 };
+			this.fly(tf - 110, tf, { pid: h }, at);
+			this.react(h, "protest", tf + 500, 800);
+			return this.knockOut(tf, at, unitVec(F, this.nearestOut(F)));
+		}
+		// A finger to the pass, in the lane - a pass of some length, that a
+		// defender can get to on its way.
+		const lane = (() => {
+			if (this.rng() >= 0.7) {
+				return undefined;
+			}
+			const release = start + RELEASE_MS;
+			for (const q of this.slots(offense)) {
+				const B = this.posOf(q);
+				const d = dist(A, B);
+				if (q === h || d < 10 || d > 30) {
+					continue;
+				}
+				for (let f = 0.4; f <= 0.8; f += 0.05) {
+					const I = clampPt({
+						x: A.x + (B.x - A.x) * f,
+						y: A.y + (B.y - A.y) * f,
+					});
+					const tI = release + passMs(d) * f;
+					for (const m of this.slots(touched)) {
+						const go = Math.max(start - 300, this.free.get(m) ?? 0);
+						if (go + runMs(dist(this.posOf(m), I), SPRINT) + 60 <= tI) {
+							return { B, I, tI, m, go, release };
+						}
+					}
+				}
+			}
+			return undefined;
+		})();
+		if (lane) {
+			const { B, I, tI, m, go, release } = lane;
+			this.act(h, "pass", start, release + 180, {
+				face: B.x >= A.x ? 1 : -1,
+				look: { ...B },
+			});
+			// He gets there with his hands out to it - a step off the lane.
+			const side = unitVec(I, this.posOf(m));
+			this.goBy(
+				m,
+				clampPt({
+					x: I.x + side.x * REACH_AT.f,
+					y: I.y + side.y * REACH_AT.f,
+				}),
+				go,
+				tI - 40,
+				"run",
+			);
+			const r0 = tI - REACH_MS * REACH_HIT;
+			this.act(m, "reach", r0, r0 + REACH_MS, { look: I });
+			const I3 = { ...I, z: REACH_AT.u };
+			this.fly(release, tI, { pid: h }, I3);
+			const u = unitVec(A, B);
+			const a = this.rand(-0.6, 0.6);
+			return this.knockOut(tI, I3, {
+				x: u.x * Math.cos(a) - u.y * Math.sin(a),
+				y: u.x * Math.sin(a) + u.y * Math.cos(a),
+			});
+		}
+		// Reaching in on his dribble, and it is knocked away off his hand.
+		const m = this.defenderOf(h) ?? this.slots(touched)[0]!;
+		this.hold(h, start, "dribble");
+		const toward = (A.x >= this.posOf(m).x ? 1 : -1) as 1 | -1;
+		const mirrored = this.ballHandOf === h && this.ballHand === "R";
+		// In front of him, at the length of his arm from the ball out on
+		// the dribble - a foot and more off the man with it.
+		const into = unitVec(A, this.posOf(m));
+		const reach = pokeHand(mirrored).f + 1.3;
+		const hit = this.goBy(
+			m,
+			clampPt({ x: A.x + into.x * reach, y: A.y + into.y * reach }),
+			start,
+			start + 420,
+			"slide",
+			toward,
+		);
+		const t0 = hit - POKE_MS * POKE_HIT;
+		this.act(m, "poke", t0, t0 + POKE_MS, {
+			face: toward,
+			look: { x: A.x, y: A.y },
+			...(mirrored ? { mirror: true as const } : {}),
+		});
+		// Off the end of his hand, at full reach - facing the man he pokes
+		// at (see bodyPoint in evaluate.ts).
+		const M = this.posOf(m);
+		const v = pokeHand(mirrored);
+		const th = Math.atan2(A.y - M.y, A.x - M.x);
+		const at = {
+			x: M.x + v.f * Math.cos(th) + v.s * Math.sin(th),
+			y: M.y + v.f * Math.sin(th) - v.s * Math.cos(th),
+			z: Math.max(1.2, v.u),
+		};
+		this.fly(hit - 100, hit, { pid: h }, at);
+		// Squirting away to his side and back - the side of him it was on,
+		// clear of him and his hands (he faces the rim with it).
+		const f = unitVec(A, rimPt(offense));
+		const sideways =
+			(at.x - A.x) * -f.y + (at.y - A.y) * f.x >= 0
+				? { x: -f.y, y: f.x }
+				: { x: f.y, y: -f.x };
+		const back = this.rand(0.1, 0.5);
+		return this.knockOut(
+			hit,
+			at,
+			unitVec(
+				{ x: 0, y: 0 },
+				{ x: sideways.x - f.x * back, y: sideways.y - f.y * back },
+			),
+		);
+	}
+
+	// Knocked loose at `at` - a hand to it in the air, or off him on the
+	// bounce - and on out of bounds along `u`, or, if that is the length of
+	// the floor away, off the nearest line. Returns when it is out.
+	private knockOut(t: number, at: Pt3, u: Pt): number {
+		// (Turned toward a nearer line, as little as it takes, if that one is
+		// the length of the floor away.)
+		let way = u;
+		for (const a of [0, 0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2]) {
+			const v = {
+				x: u.x * Math.cos(a) - u.y * Math.sin(a),
+				y: u.x * Math.sin(a) + u.y * Math.cos(a),
+			};
+			if (dist(at, this.outPoint(at, v)) <= 20) {
+				way = v;
+				break;
+			}
+			if (a === -1.2) {
+				way = unitVec(at, this.nearestOut(at));
+			}
+		}
+		const out = this.rollsOut(at, way);
+		const h0 = Math.max(0.8, Math.min(3, at.z * 0.35));
+		const span = this.bounceSpan(
+			h0,
+			2,
+			450 + dist(at, out) * 38,
+			Math.max(0, at.z - BALL_R),
+		);
+		this.bounce(t, t + span, at, out, 2, h0);
+		return t + span;
+	}
+
+	// Where a loose ball going from `p` along `u` comes to rest: on over the
+	// line, still rolling - a few feet past it, not stopped dead on it (and
+	// short of the scorer's table and the front row).
+	private rollsOut(p: Pt, u: Pt): Pt {
+		const over = this.outPoint(p, u);
+		const k = this.rand(1.2, 2.4);
+		return { x: over.x + u.x * k, y: over.y + u.y * k };
 	}
 
 	// Off the rim on its own, down to the floor where it comes down: where
@@ -5755,9 +6098,15 @@ class Director {
 	}
 
 	// How long a ball takes to bounce `hops` times from `h0` feet - in the
-	// time gravity gives it - and roll a little after (at least `least`).
-	private bounceSpan(h0: number, hops: number, least: number): number {
-		let s = 0;
+	// time gravity gives it - and roll a little after (at least `least`):
+	// after falling `drop` feet to the floor first, if it is up in the air.
+	private bounceSpan(
+		h0: number,
+		hops: number,
+		least: number,
+		drop = 0,
+	): number {
+		let s = drop > 0.005 ? Math.sqrt((2 * drop) / GRAVITY) : 0;
 		for (let k = 0; k < hops; k++) {
 			s += 2 * Math.sqrt((2 * h0 * 0.42 ** k) / GRAVITY);
 		}
@@ -5773,11 +6122,13 @@ class Director {
 		team: Side,
 		peak: number,
 		contested: boolean,
+		// Only a hand to it ("rebound"), not taken in.
+		anim: "board" | "rebound" = "board",
 	) {
 		const rim = rimPt(team);
 		// Up for it, and once he lands, chinned - elbows out - a beat before
 		// he looks up the floor.
-		this.act(r, "board", t, t + REBOUND_MS, {
+		this.act(r, anim, t, t + REBOUND_MS, {
 			face: (rim.x >= at.x ? 1 : -1) as 1 | -1,
 			look: { x: rim.x, y: rim.y },
 			jump: [96 / REBOUND_MS, 704 / REBOUND_MS, peak],
@@ -5818,8 +6169,12 @@ class Director {
 		contested: boolean,
 		// Where it really leaves from, if not `from`.
 		leaves?: BallEnd,
+		// He only gets a hand to it, and it is knocked away: where it is when
+		// he does, and when - and on from there (returns when that is over).
+		out?: (at: Pt3, t: number) => number,
 	): number {
 		const rim = rimPt(team);
+		const hands = out ? TIP_AT : BOARD_AT;
 		// He reads where it is coming down off the shot, and goes - once he
 		// is done with what he was doing (up contesting it, say; out of a
 		// box-out he just comes), off any run he was still on, after it.
@@ -5852,18 +6207,18 @@ class Director {
 		for (let ms = 40; ms <= 1600; ms += 20) {
 			const tau = ms / 1000;
 			const h = from.z + vel.z * tau - 0.5 * GRAVITY * tau * tau;
-			if (h > BOARD_HANDS + 2.6) {
+			if (h > hands.u + 2.6) {
 				continue;
 			}
-			if (h < BOARD_HANDS + 0.3) {
+			if (h < hands.u + 0.3) {
 				break;
 			}
 			// He takes it out in front of him, facing the rim.
 			const c = { x: from.x + vel.x * tau, y: from.y + vel.y * tau };
 			const back = unitVec(rim, c);
 			const spot = clampPt({
-				x: c.x + back.x * BOARD_OUT,
-				y: c.y + back.y * BOARD_OUT,
+				x: c.x + back.x * hands.f,
+				y: c.y + back.y * hands.f,
 			});
 			const f = (rim.x >= spot.x ? 1 : -1) as 1 | -1;
 			const top = t + ms;
@@ -5897,7 +6252,20 @@ class Director {
 				spot,
 				this.goBy(r, spot, plan.start, d < 0.3 ? up : by, "run", f, BURST),
 			);
-			this.goUpFor(r, up, spot, team, h - BOARD_HANDS, contested);
+			this.goUpFor(
+				r,
+				up,
+				spot,
+				team,
+				h - hands.u,
+				contested,
+				out ? "rebound" : "board",
+			);
+			if (out) {
+				const at = { ...c, z: h };
+				this.fly(t, top, leaves ?? from, at);
+				return out(at, top);
+			}
 			this.fly(t, top, leaves ?? from, { pid: r });
 			this.hold(r, top, "hold");
 			return top;
@@ -5913,9 +6281,13 @@ class Director {
 		this.letGo(r, start);
 		const R = this.posOf(r);
 		const { at: F, t: land, h0 } = this.toFloor(t, from, vel, leaves);
-		const caught = this.chaseDown(r, start, F, land, h0, vel);
+		const caught = this.chaseDown(r, start, F, land, h0, vel, out);
 		if (caught !== undefined) {
 			return caught;
+		}
+		if (out) {
+			// Nobody near it: on out off the floor where it lands.
+			return out(F, land);
 		}
 		const hop = 2 * Math.sqrt((2 * h0) / GRAVITY);
 		const G = clampPt({
@@ -5949,6 +6321,8 @@ class Director {
 		land: number,
 		h0: number,
 		vel: Pt3,
+		// Off his hands as he gets to it, not taken in (see reboundOff).
+		out?: (at: Pt3, t: number) => number,
 	): number | undefined {
 		const up = Math.sqrt(2 * GRAVITY * h0);
 		const hop = (2 * up) / GRAVITY;
@@ -5999,6 +6373,25 @@ class Director {
 			}
 			const f = (B.x >= spot.x ? 1 : -1) as 1 | -1;
 			this.settleOn(r, spot, this.goBy(r, spot, start, by, "run", f, BURST));
+			if (out) {
+				// A hand to it - and it squirts away off him.
+				if (inAir) {
+					this.act(r, "snatch", tc - 200, tc + 350, {
+						look: { x: B.x, y: B.y },
+					});
+				} else {
+					this.act(r, "pickup", tc - 150, tc + 150, {
+						look: { x: B.x, y: B.y },
+					});
+				}
+				if (inAir) {
+					this.fly(land, tc, F, B);
+				} else {
+					this.bounce(land, tc, F, B, 1, h0);
+				}
+				this.free.set(r, Math.max(this.free.get(r) ?? 0, tc + 250));
+				return out(B, tc);
+			}
 			if (inAir) {
 				this.act(r, "snatch", tc - 200, tc + 350, { look: { x: B.x, y: B.y } });
 				this.fly(land, tc, F, { pid: r });
@@ -6380,24 +6773,16 @@ class Director {
 				break;
 			}
 			case "outOfBounds": {
-				// The ball is already out if a miss sent it there; otherwise it
-				// squirts off somebody in the half court.
+				// Out off the side the sim says touched it last (`d`, its team):
+				// the other side's ball. Already out if a miss sent it there;
+				// otherwise it is knocked out in the half court.
+				const touched: Side = d ?? other(this.offense);
+				const nextTeam = other(touched);
 				let t = T;
-				if (this.holder !== undefined) {
-					const h = this.posOf(this.holder);
-					const outY = h.y < COURT_H / 2 ? -1.8 : COURT_H + 1.8;
-					this.bounce(
-						t + 100,
-						t + 900,
-						{ x: h.x, y: h.y, z: 3 },
-						{ x: h.x + this.rand(-6, 6), y: outY },
-						2,
-						1.5,
-					);
-					t += 800;
+				if (!this.outOffMiss) {
+					t = this.knockedOut(touched, nextTeam, T, gap, e);
 				}
-				const outOn: Side | undefined = d;
-				const nextTeam = outOn === undefined ? this.offense : other(outOn);
+				this.outOffMiss = false;
 				this.effect("whistle", t, {
 					call: "out",
 					at: { x: this.ballAt.x, y: this.ballAt.y },
@@ -7096,6 +7481,9 @@ class Director {
 	}
 
 	private lastFtShooter: number | undefined;
+	// The ball sent out of bounds off a miss already (see missOut): the
+	// out-of-bounds line after it needs only the whistle.
+	private outOffMiss = false;
 
 	private beatTurnover(e: RawEvent, i: number) {
 		const T = this.T;
@@ -7396,7 +7784,24 @@ class Director {
 			this.beat(i, e.type, hit + 80, hit + 950);
 			return true;
 		}
-		if (risk.kind === "pass") {
+		// Tipped out of bounds, a pass has to come off the man it was meant
+		// for - his side's turnover - so he has to be where the picture has
+		// him: not a man still shadowing somebody from the trip before (see
+		// mark). With nobody like that to throw to, it is stripped instead.
+		const settled = (q: number | undefined) =>
+			q !== undefined &&
+			q !== victim &&
+			!(this.track(q)?.moves ?? []).some(
+				(m) => this.marking.has(m) && m.t1 > t - 4000,
+			);
+		const kind =
+			risk.kind === "pass" &&
+			oob &&
+			thief !== undefined &&
+			!run.roles.some(settled)
+				? "lost"
+				: risk.kind;
+		if (kind === "pass") {
 			if (this.holder !== victim) {
 				t = this.passTo(this.holder ?? victim, victim, t);
 			}
@@ -7407,45 +7812,41 @@ class Director {
 			if (to === undefined || to === victim) {
 				to = run.roles.find((p) => p !== victim);
 			}
+			if (oob && thief !== undefined && !settled(to)) {
+				to = run.roles.find(settled);
+			}
 			if (to === undefined) {
 				return false;
 			}
 			const A = this.posOf(victim);
-			const B = this.posOf(to);
-			const d = dist(A, B);
-			const flight = passMs(d);
-			const over = d >= 22;
-			const wind = RELEASE_MS + (over ? OVERHEAD_WIND : 0);
-			const start = Math.max(
-				t,
-				this.free.get(victim) ?? 0,
-				(this.free.get(to) ?? 0) + 40 - flight - wind,
-			);
-			const release = start + wind;
-			this.act(
-				victim,
-				over ? "passOverhead" : "pass",
-				start,
-				start + wind + 180,
-				{
-					face: B.x >= A.x ? 1 : -1,
-					look: { ...B },
-				},
-			);
-			const u = unitVec(A, B);
-			if (thief !== undefined) {
-				// He reads it and jumps the lane.
-				const T0 = this.posOf(thief);
+			const T0 = thief !== undefined ? this.posOf(thief) : undefined;
+			// A pass to `q`, and - for a steal - where along it the thief
+			// gets to it: farther along if the lane is a long way off, and,
+			// if even that is too far, late (the pass hanging for him).
+			const throwTo = (q: number, read = 400) => {
+				const B = this.posOf(q);
+				const d = dist(A, B);
+				const flight = passMs(d);
+				const over = d >= 22;
+				const wind = RELEASE_MS + (over ? OVERHEAD_WIND : 0);
+				const start = Math.max(
+					t,
+					this.free.get(victim) ?? 0,
+					(this.free.get(q) ?? 0) + 40 - flight - wind,
+				);
+				const release = start + wind;
+				if (thief === undefined || T0 === undefined) {
+					return { B, d, flight, over, wind, start, release };
+				}
+				// He reads it a beat before it is thrown (or sits in the lane,
+				// waiting on it).
+				const go = Math.max(start - read, this.free.get(thief) ?? 0);
 				const along =
 					d > 0.1
 						? ((T0.x - A.x) * (B.x - A.x) + (T0.y - A.y) * (B.y - A.y)) /
 							(d * d)
 						: 0.6;
-				// Where he can get to it in time: farther along the pass if the
-				// lane is a long way off - and if even that is too far, the pass
-				// hangs in the air until he gets there.
-				const go = Math.max(start - 250, this.free.get(thief) ?? 0);
-				const lane = (f: number) => {
+				const at = (f: number) => {
 					const I = clampPt({
 						x: A.x + (B.x - A.x) * f,
 						y: A.y + (B.y - A.y) * f,
@@ -7457,14 +7858,58 @@ class Director {
 					};
 				};
 				let f = Math.min(0.85, Math.max(0.35, along));
-				let pick = lane(f);
+				let pick = at(f);
 				while (pick.need > pick.tI && f < 0.85) {
 					f = Math.min(0.85, f + 0.05);
-					pick = lane(f);
+					pick = at(f);
 				}
-				const I = pick.I;
-				const tI = Math.max(pick.tI, pick.need);
-				this.goBy(thief, I, start - 250, tI - 40, "run");
+				return {
+					B,
+					d,
+					flight,
+					over,
+					wind,
+					start,
+					release,
+					lane: { ...pick, go, late: pick.need > pick.tI },
+				};
+			};
+			let receiver: number = to;
+			let thrown = throwTo(receiver);
+			// The pass he jumps is one he can get to: another outlet of the
+			// man with it, if not the one the set had him make - or one he
+			// has been sitting in the lane for.
+			for (const read of [400, 1500]) {
+				for (const q of [receiver, ...run.roles] as (number | undefined)[]) {
+					if (!thrown.lane?.late) {
+						break;
+					}
+					if (q === undefined || q === victim || (oob && !settled(q))) {
+						continue;
+					}
+					const alt = throwTo(q, read);
+					if (alt.lane && !alt.lane.late) {
+						receiver = q;
+						thrown = alt;
+					}
+				}
+			}
+			const { B, over, wind, start, release } = thrown;
+			this.act(
+				victim,
+				over ? "passOverhead" : "pass",
+				start,
+				start + wind + 180,
+				{
+					face: B.x >= A.x ? 1 : -1,
+					look: { ...B },
+				},
+			);
+			const u = unitVec(A, B);
+			if (thief !== undefined && thrown.lane) {
+				const { I, go } = thrown.lane;
+				const tI = Math.max(thrown.lane.tI, thrown.lane.need);
+				this.goBy(thief, I, go, tI - 40, "run");
 				if (!oob) {
 					this.fly(release, tI, { pid: victim }, { pid: thief });
 					this.act(thief, "catch", tI - 90, tI + 110, { look: A });
@@ -7474,22 +7919,38 @@ class Director {
 					this.beat(i, e.type, tI, tI + 650);
 					return true;
 				}
-				// Got a hand on it - and it is gone out of bounds: on along the
-				// pass, or, if that is the length of the floor away, off the
-				// nearest line.
+				// Got a hand on it - and on it goes, off the hands of the man
+				// it was meant for (his the last touch, his side's turnover),
+				// and out of bounds.
 				const I3 = { ...I, z: 3.6 };
 				this.act(thief, "reach", tI - 150, tI + 250, { look: A });
 				this.fly(release, tI, { pid: victim }, I3);
-				const onward = this.outPoint(I, unitVec(A, I));
-				const out = dist(I, onward) <= 24 ? onward : this.nearestOut(I);
-				this.bounce(tI, tI + 900, I3, out, 2, 1.4);
-				this.effect("whistle", tI + 800, {
+				// He stops where he is to take it - and cannot hold it.
+				this.cutShort(receiver, tI - 200);
+				const R = this.posOf(receiver);
+				const tR = tI + Math.max(150, (dist(I, R) / 24) * 1000);
+				const back = unitVec(R, I);
+				const R3 = {
+					x: R.x + back.x * CATCH_AT.f,
+					y: R.y + back.y * CATCH_AT.f,
+					z: CATCH_AT.u,
+				};
+				this.fly(tI, tR, I3, R3);
+				const c0 = tR - CATCH_MS * CATCH_HIT;
+				this.act(receiver, "catch", c0, c0 + CATCH_MS, { look: I });
+				const a = this.rand(-0.7, 0.7);
+				const tOut = this.knockOut(tR, R3, {
+					x: -back.x * Math.cos(a) + back.y * Math.sin(a),
+					y: -back.x * Math.sin(a) - back.y * Math.cos(a),
+				});
+				const out = this.ballAt;
+				this.effect("whistle", tOut - 150, {
 					call: "out",
 					at: out,
 					team: other(team),
 				});
 				this.turnOver(team, out);
-				this.beat(i, e.type, tI, tI + 1000);
+				this.beat(i, e.type, tI, tOut);
 				return true;
 			}
 			// Thrown away: over his head and out.
@@ -7526,7 +7987,7 @@ class Director {
 				: this.nearRim(team, A, 6);
 		const start = Math.max(t, this.free.get(victim) ?? 0);
 		this.hold(victim, start, "dribble");
-		if (risk.kind === "lost") {
+		if (kind === "lost") {
 			// Stripped on the way.
 			const S = clampPt({
 				x: A.x + (D.x - A.x) * 0.55,
@@ -7588,15 +8049,24 @@ class Director {
 				this.beat(i, e.type, tS, got + 450);
 				return true;
 			}
-			const out = this.nearestOut(S);
-			this.bounce(tS, tS + 800, { ...S, z: 1.5 }, out, 2, 1.2);
-			this.effect("whistle", tS + 700, {
+			// Knocked down off his own knee - his the last hand on it, his
+			// the turnover - and away out of bounds.
+			const away = unitVec(P, S);
+			const knee = {
+				x: S.x + away.x * 0.6,
+				y: S.y + away.y * 0.6,
+				z: 1.4,
+			};
+			this.fly(tS, tS + 90, { pid: victim }, knee);
+			const tOut = this.knockOut(tS + 90, knee, unitVec(S, this.nearestOut(S)));
+			const out = this.ballAt;
+			this.effect("whistle", tOut - 150, {
 				call: "out",
 				at: out,
 				team: other(team),
 			});
 			this.turnOver(team, out);
-			this.beat(i, e.type, tS, tS + 1000);
+			this.beat(i, e.type, tS, tOut);
 			return true;
 		}
 		if (risk.kind === "charge") {

@@ -50,13 +50,16 @@ export const fakeGame = (seed: string, possessions: number) => {
 	const rebound = (shooterTeam: 0 | 1) => {
 		const r = rng();
 		if (r < 0.08) {
+			// Out off the team that touched it last (as in the sim, mostly the
+			// shooting team), and the other team's ball.
+			const t = (rng() < 0.9 ? shooterTeam : 1 - shooterTeam) as 0 | 1;
 			events.push({
 				type: "outOfBounds",
-				t: rng() < 0.5 ? shooterTeam : 1 - shooterTeam,
-				on: "offense",
+				t,
+				on: t === shooterTeam ? "offense" : "defense",
 				clock: tick(0.2, 1),
 			});
-			o = (1 - shooterTeam) as 0 | 1;
+			o = (1 - t) as 0 | 1;
 			return;
 		}
 		if (r < 0.75) {
@@ -234,6 +237,14 @@ export const fakeGame = (seed: string, possessions: number) => {
 				clock: tick(3, 12),
 			});
 			o = d;
+		} else if (r < 0.9) {
+			// Knocked out of bounds by the defense: still their ball.
+			events.push({
+				type: "outOfBounds",
+				t: d,
+				on: "defense",
+				clock: tick(0, 10),
+			});
 		} else if (r < 0.95) {
 			events.push({
 				type: "pfNonShooting",

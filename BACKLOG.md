@@ -31,7 +31,7 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
 - [x] Watching a live game being simmed on another device is very choppy and
       unwatchable. Work out how to send the seed/data so the viewing device plays it
       back smoothly and precisely.
-- [ ] Ball out of bounds should always be correct for which team it went off
+- [x] Ball out of bounds should always be correct for which team it went off
       last.
 - [ ] Fast breaks and timing must always make sense given the shot clock / time
       into the possession.
