@@ -268,15 +268,23 @@ export const drawSprite = (
 	const hy1 = Math.min(h, Math.ceil(head.y + hr * 1.6) + 2);
 	if (hx1 > hx0 && hy1 > hy0) {
 		const fw = hx1 - hx0;
-		const face = s.getImageData(hx0, hy0, fw, hy1 - hy0);
-		rim(
-			face.data,
-			fw,
-			hy1 - hy0,
-			(i) =>
-				d[((hy0 + Math.floor(i / fw)) * w + hx0 + (i % fw)) * 4 + 3]! < SOLID,
-		);
-		s.putImageData(face, hx0, hy0);
+		// (Never let a picture we may not read stop the game: no rim then.)
+		let face: ImageData | undefined;
+		try {
+			face = s.getImageData(hx0, hy0, fw, hy1 - hy0);
+		} catch {
+			face = undefined;
+		}
+		if (face) {
+			rim(
+				face.data,
+				fw,
+				hy1 - hy0,
+				(i) =>
+					d[((hy0 + Math.floor(i / fw)) * w + hx0 + (i % fw)) * 4 + 3]! < SOLID,
+			);
+			s.putImageData(face, hx0, hy0);
+		}
 	}
 	if (made.over) {
 		// An arm up in front of his face goes over it: drawn on its own, in his

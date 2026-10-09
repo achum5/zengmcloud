@@ -427,6 +427,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 	});
 	const rate3d = parseCourt3DSpeed(speed3d);
 	const [playIndex, setPlayIndex] = useState(-1);
+	// Each "next play" asked for: the 3D court cuts straight past the play
+	// shown rather than playing it out.
+	const [skips3d, setSkips3d] = useState(0);
 	const [started, setStarted] = useState(false);
 	const [confetti, setConfetti] = useState<{
 		colors?: [string, string, string];
@@ -2130,6 +2133,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const handleNextPlay = useCallback(() => {
 		processToNextPause(true);
 		setPlayIndex((prev) => prev + 1);
+		setSkips3d((prev) => prev + 1);
 	}, [processToNextPause]);
 
 	// Jump playback to a given cursor (number of events consumed). Going forward
@@ -2866,6 +2870,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 										paused={paused}
 										rate={rate3d}
 										follower={isFollower}
+										skips={skips3d}
 										onReady={onCourt3DReady}
 									/>
 								</Suspense>

@@ -144,6 +144,9 @@ type Props = {
 	// A multiplayer follower is stepped by the device in charge of simming, so
 	// it never asks for the next line - it only keeps up.
 	follower: boolean;
+	// How many times "next play" has been asked for: each cuts straight past
+	// the play it shows, like any other skip ahead.
+	skips?: number;
 	onReady: () => void;
 };
 
@@ -156,6 +159,7 @@ const Court3D = ({
 	paused,
 	rate,
 	follower,
+	skips = 0,
 	onReady,
 }: Props) => {
 	const { lid, gender } = useLocal(["lid", "gender"]);
@@ -548,6 +552,7 @@ const Court3D = ({
 		stepping: false,
 		prevCursor: -1,
 		prevPaused: paused,
+		prevSkips: skips,
 		// Following another device's sim: where its court is estimated to be
 		// (see follow.ts).
 		lead: 0,
@@ -566,13 +571,19 @@ const Court3D = ({
 		}
 		const s = play.current;
 		const target = targetForCursor(timeline, cursor);
+		// "Next play": past what is left of the play now shown, straight on to
+		// the next one - never back.
+		const skipped =
+			s.prevCursor >= 0 && skips !== s.prevSkips && cursor > s.prevCursor;
 		const snap =
 			s.prevCursor < 0 ||
 			cursor < s.prevCursor ||
 			target < s.t - 1 ||
+			skipped ||
 			(linesBetween(timeline, s.prevCursor, cursor) > 2 && target - s.t > 9000);
 		if (snap) {
-			s.t = snapForCursor(timeline, cursor);
+			const at = snapForCursor(timeline, cursor);
+			s.t = skipped ? Math.max(s.t, at) : at;
 			s.snapCam = true;
 		}
 		if (follower) {
@@ -583,7 +594,7 @@ const Court3D = ({
 				? s.t
 				: Math.max(s.lead, s.t, targetForCursor(timeline, s.prevCursor));
 		}
-		if (paused && s.prevCursor >= 0 && cursor > s.prevCursor) {
+		if (paused && s.prevCursor >= 0 && cursor > s.prevCursor && !skipped) {
 			// "Next play" while paused: show that one play, then hold.
 			s.stepping = true;
 		}
@@ -598,7 +609,8 @@ const Court3D = ({
 		}
 		s.prevCursor = cursor;
 		s.prevPaused = paused;
-	}, [cursor, follower, paused, timeline]);
+		s.prevSkips = skips;
+	}, [cursor, follower, paused, skips, timeline]);
 
 	const homePad = home?.colors?.[0] ?? "#8c1d40";
 	const lineColor: string = home?.court?.lines || "#f8f5f0";

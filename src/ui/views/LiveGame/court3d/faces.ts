@@ -22,12 +22,10 @@ const FACE_CENTER = { x: 200, y: 300 };
 const FACE_H = 400;
 const SCALE = 0.6;
 
-const loadImage = (src: string, crossOrigin: boolean) =>
+const loadImage = (src: string) =>
 	new Promise<HTMLImageElement>((resolve, reject) => {
 		const img = new Image();
-		if (crossOrigin) {
-			img.crossOrigin = "anonymous";
-		}
+		img.crossOrigin = "anonymous";
 		img.decoding = "async";
 		img.onload = () => {
 			resolve(img);
@@ -85,7 +83,7 @@ const faceSprite = async (
 		new Blob([svg], { type: "image/svg+xml;charset=utf-8" }),
 	);
 	try {
-		const img = await loadImage(url, false);
+		const img = await loadImage(url);
 		const canvas = document.createElement("canvas");
 		canvas.width = Math.round(CROP.w * SCALE);
 		canvas.height = Math.round(CROP.h * SCALE);
@@ -117,15 +115,11 @@ const faceSprite = async (
 const photoSprite = async (
 	imgURL: string,
 ): Promise<{ sprite: HeadSprite; skin?: string }> => {
-	let img: HTMLImageElement;
-	let readable = true;
-	try {
-		img = await loadImage(imgURL, true);
-	} catch {
-		// No CORS headers: still drawable, just not readable for a skin tone.
-		img = await loadImage(imgURL, false);
-		readable = false;
-	}
+	// Only a picture the page is allowed to read: one from a site that
+	// won't share it (no CORS headers) would taint every canvas it is drawn
+	// into, and the sprites are made by reading theirs back - the game
+	// would stop on its first frame. Without it, he gets his drawn face.
+	const img = await loadImage(imgURL);
 	const size = 96;
 	const canvas = document.createElement("canvas");
 	canvas.width = size;
@@ -141,32 +135,31 @@ const photoSprite = async (
 	ctx.clip();
 	ctx.drawImage(img, sx, sy, side, side, 0, 0, size, size);
 	let skin: string | undefined;
-	if (readable) {
-		try {
-			const d = ctx.getImageData(
-				size * 0.36,
-				size * 0.5,
-				size * 0.28,
-				size * 0.16,
-			).data;
-			let r = 0;
-			let g = 0;
-			let b = 0;
-			let n = 0;
-			for (let i = 0; i < d.length; i += 4) {
-				if (d[i + 3]! > 200) {
-					r += d[i]!;
-					g += d[i + 1]!;
-					b += d[i + 2]!;
-					n += 1;
-				}
+	try {
+		const d = ctx.getImageData(
+			size * 0.36,
+			size * 0.5,
+			size * 0.28,
+			size * 0.16,
+		).data;
+		let r = 0;
+		let g = 0;
+		let b = 0;
+		let n = 0;
+		for (let i = 0; i < d.length; i += 4) {
+			if (d[i + 3]! > 200) {
+				r += d[i]!;
+				g += d[i + 1]!;
+				b += d[i + 2]!;
+				n += 1;
 			}
-			if (n > 0) {
-				skin = `rgb(${Math.round(r / n)}, ${Math.round(g / n)}, ${Math.round(b / n)})`;
-			}
-		} catch {
-			// A tainted canvas: no sampling.
 		}
+		if (n > 0) {
+			skin = `rgb(${Math.round(r / n)}, ${Math.round(g / n)}, ${Math.round(b / n)})`;
+		}
+	} catch {
+		// Not ours to read after all: no photo, his drawn face instead.
+		throw new Error("photo not readable");
 	}
 	return {
 		sprite: {
@@ -269,10 +262,14 @@ export const loadHead = async (
 	imgURL: string | undefined,
 	colors: [string, string, string] | undefined,
 ): Promise<{ sprite?: HeadSprite; skin?: string }> => {
-	try {
-		if (imgURL) {
+	if (imgURL) {
+		try {
 			return await photoSprite(imgURL);
+		} catch {
+			// A photo that won't load, or that we may not read: his face.
 		}
+	}
+	try {
 		if (face) {
 			return { sprite: await faceSprite(face, colors) };
 		}
