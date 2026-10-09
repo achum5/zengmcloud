@@ -185,8 +185,15 @@ describe("3D free throws", () => {
 						if (!b) {
 							continue;
 						}
-						fives += 1;
 						const t = a.t0 + (a.t1 - a.t0) / 2;
+						// (The two slapping hands: face to face - not two others
+						// down a handshake line.)
+						const A = evalPlayer(tl, pid, t);
+						const B = evalPlayer(tl, q, t);
+						if (Math.hypot(A.x - B.x, A.y - B.y) > 4) {
+							continue;
+						}
+						fives += 1;
 						const ha = handWorld(evalPlayer(tl, pid, t), body, "near");
 						const hb = handWorld(evalPlayer(tl, q, t), body, "near");
 						assert.isBelow(

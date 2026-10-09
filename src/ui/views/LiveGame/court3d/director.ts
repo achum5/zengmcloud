@@ -7526,29 +7526,133 @@ class Director {
 			}
 			case "gameOver": {
 				const winner: Side = this.score[0] > this.score[1] ? 0 : 1;
+				const loser = other(winner);
+				const margin = Math.abs(this.score[0] - this.score[1]);
 				this.deadBall(T);
-				// The winners celebrate where the buzzer found them; the losers
-				// stand there, hands on their hips. Then both to the middle.
-				for (const t of [0, 1] as const) {
-					this.slots(t).forEach((pid, j) => {
-						const target = {
-							x: COURT_W / 2 + (t === 0 ? -6 : 6) + (j - 2) * 2.5,
-							y: 18 + j * 3.5,
-						};
-						const from = Math.max(T + 150 + j * 80, this.free.get(pid) ?? 0);
-						if (t === winner) {
-							this.react(pid, "celebrate", from, 1700, {
-								x: COURT_W / 2,
-								y: COURT_H + 20,
-							});
-						} else if (this.rng() < 0.7) {
-							this.react(pid, "hips", from + 200, 1500);
+				// A game-winner: the winning side's last basket, in the last
+				// seconds of a game it decided.
+				let hero: number | undefined;
+				for (let k = i - 1; k >= 0 && k > i - 16; k--) {
+					const ev = this.events[k];
+					if (!ev || !isLineItem(ev)) {
+						continue;
+					}
+					if (resultOf(ev.type)?.kind === "make") {
+						const side = ev.t === 0 ? 1 : ev.t === 1 ? 0 : undefined;
+						if (
+							side === winner &&
+							typeof ev.pid === "number" &&
+							typeof ev.clock === "number" &&
+							ev.clock <= 3 &&
+							margin <= 3
+						) {
+							hero = ev.pid;
 						}
-						this.go(pid, target, from + 400, WALK, "walk");
+						break;
+					}
+				}
+				const crowd = { x: COURT_W / 2, y: COURT_H + 20 };
+				let done = T + 2200;
+				// The winners: all over the man who won it - mobbed where he
+				// stands - or, a close one, celebrating where the buzzer found
+				// them; a blowout, a clap and that is all. The losers: hands on
+				// their hips, or - beaten at the buzzer - doubled over.
+				this.slots(winner).forEach((pid, j) => {
+					const from = Math.max(T + 150 + j * 80, this.free.get(pid) ?? 0);
+					if (hero !== undefined && pid !== hero && this.team.has(hero)) {
+						const H = this.posOf(hero);
+						const a = (j / 5) * Math.PI * 2;
+						const there = this.go(
+							pid,
+							clampPt({
+								x: H.x + Math.cos(a) * 2.4,
+								y: H.y + Math.sin(a) * 2.4,
+							}),
+							from,
+							SPRINT,
+							"run",
+						);
+						this.react(pid, "celebrate", there, 1800, H);
+						done = Math.max(done, there + 1800);
+					} else if (pid === hero) {
+						this.react(pid, "flex", from, 900, crowd);
+						this.react(pid, "celebrate", from + 900, 1800, crowd);
+						done = Math.max(done, from + 2700);
+					} else if (margin <= 6) {
+						this.react(pid, "celebrate", from, 1700, crowd);
+					} else {
+						this.react(pid, "clap", from, 1200, crowd);
+					}
+				});
+				this.slots(loser).forEach((pid, j) => {
+					const from = Math.max(T + 350 + j * 90, this.free.get(pid) ?? 0);
+					if (hero !== undefined && j < 2) {
+						this.react(pid, "crouch", from, 1800);
+					} else if (this.rng() < 0.75) {
+						this.react(pid, "hips", from, 1500);
+					}
+				});
+				// Then the handshake line at center court: each down the other
+				// team's line, a dap with one man and then the next.
+				const cx = COURT_W / 2;
+				const spot = (side: Side, k: number): Pt => ({
+					x: cx + (side === 0 ? -1 : 1) * (LOW_FIVE_APART / 2),
+					y: 14 + k * 4.4,
+				});
+				const W = this.slots(winner);
+				const L = this.slots(loser);
+				let t1 = done + 300;
+				for (const round of [0, 1]) {
+					let met = t1;
+					const fw = (winner === 0 ? 1 : -1) as 1 | -1;
+					const arrived = new Map<number, number>();
+					W.forEach((pid, j) => {
+						const k = (j + round) % W.length;
+						const a = this.go(
+							pid,
+							spot(winner, k),
+							t1 + j * 60,
+							WALK * 1.4,
+							"walk",
+						);
+						this.turn(pid, a, fw);
+						arrived.set(pid, a);
+						met = Math.max(met, a);
 					});
+					L.forEach((pid, j) => {
+						const a = this.go(
+							pid,
+							spot(loser, j),
+							t1 + j * 60,
+							WALK * 1.4,
+							"walk",
+						);
+						this.turn(pid, a, -fw as 1 | -1);
+						arrived.set(pid, a);
+						met = Math.max(met, a);
+					});
+					// (Turned to each other before the hands come up.)
+					met += 250;
+					const n = Math.min(W.length, L.length);
+					for (let j = 0; j < n; j++) {
+						const w = W[(j - round + W.length) % W.length]!;
+						const l = L[j]!;
+						const anim = (j + round) % 2 ? "lowFive" : "highFive";
+						for (const [p, them] of [
+							[w, spot(loser, j)],
+							[l, spot(winner, j)],
+						] as const) {
+							const a = arrived.get(p) ?? met;
+							if (met + 40 - a > 120) {
+								this.act(p, "ready", a, met + 40, { look: them });
+							}
+							this.act(p, anim, met + 40, met + 560, { look: them });
+						}
+					}
+					t1 = met + 700;
 				}
 				this.effect("cheer", T, { team: winner });
-				this.beat(i, type, T, T + 3600);
+				this.beat(i, type, T, t1 + 400);
 				this.phase = "dead";
 				break;
 			}

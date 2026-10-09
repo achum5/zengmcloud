@@ -124,10 +124,10 @@ building.
 - [ ] Dynamic crowds based on the team's "hype" saved in the league file: smaller
       crowds for less hype. Crowd coming back from halftime, home crowd while being
       blown out, and any other "arena alive" ideas.
-- [ ] End of game: players go around dapping each other up. Huge celebration for
-      a game winner, and for winning a close game in general. Confetti when a
-      championship is won at the buzzer, only if the home team wins it. Playoff wins
-      celebrated an appropriate amount.
+- [~] End of game: players go around dapping each other up. Huge celebration for
+  a game winner, and for winning a close game in general. Confetti when a
+  championship is won at the buzzer, only if the home team wins it. Playoff wins
+  celebrated an appropriate amount.
 - [ ] Very brief pre-game cut scene on load: people with microphones on court
       doing pre-game shows, players warming up at their baskets. Skip button to the
       starting lineups (when those exist), then another to the opening tip. Quick
