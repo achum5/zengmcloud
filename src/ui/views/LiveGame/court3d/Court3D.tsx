@@ -1,4 +1,3 @@
-import type { FaceConfig } from "facesjs";
 import {
 	useCallback,
 	useEffect,
@@ -40,6 +39,7 @@ import {
 	type CourtPlayer,
 } from "./director.ts";
 import { crewAt, crewFor } from "./crew.ts";
+import { courtsideFor } from "./courtside.ts";
 import { headColors, loadHead, profileOf, type HeadSprite } from "./faces.ts";
 import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
 import { dressKit, kitArtOf, type KitArt } from "./kitArt.ts";
@@ -430,18 +430,14 @@ const Court3D = ({
 	useEffect(() => {
 		let alive = true;
 		crewHeads.current = new Map();
-		const shared = new Map<FaceConfig, ReturnType<typeof loadHead>>();
 		void Promise.all(
 			crew.map(async (m) => {
 				const team =
 					m.role === "coach" ? (m.team === 0 ? away : home) : undefined;
-				// The fans share a handful of faces: each drawn once.
-				let head = m.role === "fan" ? shared.get(m.face) : undefined;
-				if (!head) {
-					head = loadHead(m.face, undefined, team?.colors);
-					shared.set(m.face, head);
-				}
-				crewHeads.current.set(m.pid, await head);
+				crewHeads.current.set(
+					m.pid,
+					await loadHead(m.face, undefined, team?.colors),
+				);
 			}),
 		).then(() => {
 			if (alive) {
@@ -482,8 +478,14 @@ const Court3D = ({
 		return out;
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [crew, crewVersion]);
-	const crewRef = useRef({ crew, crewLooks });
-	crewRef.current = { crew, crewLooks };
+	// The people in the courtside seats.
+	const courtside = useMemo(
+		() => courtsideFor(gid ?? 0, away, home),
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[gid],
+	);
+	const crewRef = useRef({ crew, crewLooks, courtside });
+	crewRef.current = { crew, crewLooks, courtside };
 
 	// Read by the animation loop, which outlives any one render.
 	const looks = useRef(appearance.looks);
@@ -882,6 +884,7 @@ const Court3D = ({
 					return c ? [{ st, body: c.body, look: c.look }] : [];
 				}),
 				flashes: working.flashes,
+				courtside: cr.courtside,
 			});
 			if (adjust(res, h * dpr, dt, performance.now() - drawStart, now)) {
 				// Sprites drawn for the old size are no use at the new one.

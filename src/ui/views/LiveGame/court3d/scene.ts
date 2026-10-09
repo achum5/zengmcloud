@@ -28,7 +28,8 @@ import {
 	type Shot,
 } from "./camera.ts";
 import { drawCourtLines } from "./courtLines.ts";
-import { atTable, isFan, isFarFan, TABLE_SEAT_Y } from "./crew.ts";
+import { atTable, TABLE_SEAT_Y } from "./crew.ts";
+import { drawFolk, type Folk } from "./courtside.ts";
 import { STRIP_MS, type CheckIn, type CourtTimeline } from "./director.ts";
 import {
 	arenaShotAt,
@@ -42,7 +43,7 @@ import {
 	type BallState,
 	type PlayerState,
 } from "./evaluate.ts";
-import { shade, type Look } from "./figure.ts";
+import { type Look } from "./figure.ts";
 import { COURT_W, RIM_Z, seatSpot, type Pt3, type Side } from "./geometry.ts";
 import { drawPixelText, pixelTextWidth } from "./pixelFont.ts";
 import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
@@ -141,6 +142,8 @@ export type Frame = {
 	// The officials, the coaches and the photographers (see crew.ts), and
 	// any of their cameras going off.
 	crew?: { st: PlayerState; body: Body; look: Look }[];
+	// The people in the courtside seats (see courtside.ts).
+	courtside?: Folk[];
 	flashes?: Pt3[];
 };
 
@@ -494,63 +497,6 @@ const drawMonitors = (
 	}
 };
 
-// A folding chair behind a baseline, its back to the wall: the seat under
-// whoever sits at (x, y), the back behind him.
-const drawChair = (
-	ctx: CanvasRenderingContext2D,
-	cam: Camera,
-	x: number,
-	y: number,
-	color: string,
-) => {
-	// Off the picture: nothing to draw.
-	const base = project(cam, { x, y, z: 0 });
-	const r = 2.5 * base.k;
-	if (
-		base.x < -r ||
-		base.x > cam.viewW + r ||
-		base.y < -r * 2 ||
-		base.y > cam.viewH + r
-	) {
-		return;
-	}
-	// Facing the floor: from behind a baseline, or the far sideline.
-	const [fx, fy] = y < -9 ? [0, 1] : x < 0 ? [1, 0] : [-1, 0];
-	const at = (along: number, side: number, z: number): Pt3 => ({
-		x: x + fx * along - fy * side,
-		y: y + fy * along + fx * side,
-		z,
-	});
-	const quad = (pts: Pt3[], fill: string) => {
-		ctx.fillStyle = fill;
-		ctx.beginPath();
-		for (const p of pts) {
-			const q = project(cam, p);
-			ctx.lineTo(q.x, q.y);
-		}
-		ctx.closePath();
-		ctx.fill();
-	};
-	quad(
-		[
-			at(-0.9, -0.75, 0),
-			at(-0.9, 0.75, 0),
-			at(-0.9, 0.75, 3.3),
-			at(-0.9, -0.75, 3.3),
-		],
-		shade(color, -0.35),
-	);
-	quad(
-		[
-			at(-0.9, -0.75, 1.55),
-			at(-0.15, -0.75, 1.55),
-			at(-0.15, 0.75, 1.55),
-			at(-0.9, 0.75, 1.55),
-		],
-		shade(color, -0.2),
-	);
-};
-
 // A plain quad on the floor, in one color.
 const floorQuad = (
 	ctx: CanvasRenderingContext2D,
@@ -677,18 +623,27 @@ export const drawFrame = (f: Frame) => {
 	// The scorer's table, the people behind it hidden from the waist down,
 	// their monitors on it.
 	const crewAll = f.crew ?? [];
-	const behind = crewAll
-		.filter((c) => atTable(c.st.pid) || isFarFan(c.st.pid))
-		.sort(
-			(a, b) =>
-				depthOf(cam, { x: b.st.x, y: b.st.y, z: 3 }) -
-				depthOf(cam, { x: a.st.x, y: a.st.y, z: 3 }),
-		);
-	for (const c of behind) {
-		if (isFan(c.st.pid)) {
-			drawChair(ctx, cam, c.st.x, c.st.y, f.padColor);
+	const folk = f.courtside ?? [];
+	// On their feet for a big play by their team, and some of them through
+	// a tight finish.
+	const roarNow = recentFx(tl, t, ["roar"], 2200);
+	const tenseNow = tensionAt(tl, t) >= 1;
+	const upOf = (p: Folk): number =>
+		(roarNow?.team === p.team && unitHash(p.x * 7, p.y * 13) < 0.8) ||
+		(tenseNow && unitHash(p.y * 5, p.x * 3) < 0.35)
+			? 1
+			: 0;
+	// The courtside row along the far side, and the people at the table,
+	// behind it and the benches - so drawn before them.
+	for (const p of folk) {
+		if (p.facing === "north") {
+			drawFolk(ctx, cam, p, upOf(p), f.padColor);
 		}
-		drawSprite(ctx, f.scratch, cam, c.st, c.body, c.look, 1, f.sprites);
+	}
+	for (const c of crewAll) {
+		if (atTable(c.st.pid)) {
+			drawSprite(ctx, f.scratch, cam, c.st, c.body, c.look, 1, f.sprites);
+		}
 	}
 	drawTexturedPlane(ctx, cam, TABLE_TOP, arena.tableTop, 4, 1);
 	drawMonitors(ctx, cam, crewAll);
@@ -706,12 +661,12 @@ export const drawFrame = (f: Frame) => {
 	drawCourtLines(ctx, cam, f.lineColor);
 	drawDroppedTops(ctx, cam, tl, t, f.warmups);
 
-	const crew = crewAll.filter((c) => !atTable(c.st.pid) && !isFarFan(c.st.pid));
+	const crew = crewAll.filter((c) => !atTable(c.st.pid));
 	// Shadows: soft pools under the feet, shrinking as they leave the floor.
 	for (const st of [
 		...players,
 		...bench.map((b) => b.st),
-		...crew.flatMap((c) => (isFan(c.st.pid) ? [] : [c.st])),
+		...crew.map((c) => c.st),
 	]) {
 		const lift = Math.min(1, st.z / 4);
 		drawShadow(ctx, cam, st.x, st.y, 1.25 * (1 - lift * 0.35), 1 - lift * 0.6);
@@ -762,14 +717,22 @@ export const drawFrame = (f: Frame) => {
 			},
 		});
 	}
+	// The courtside seats behind the baselines, among the photographers
+	// and in front of or behind the stanchion.
+	for (const p of folk) {
+		if (p.facing !== "north") {
+			items.push({
+				depth: depthOf(cam, { x: p.x, y: p.y, z: 3 }),
+				draw: () => {
+					drawFolk(ctx, cam, p, upOf(p), f.padColor);
+				},
+			});
+		}
+	}
 	for (const c of crew) {
-		const fan = isFan(c.st.pid);
 		items.push({
 			depth: depthOf(cam, { x: c.st.x, y: c.st.y, z: 3 }),
 			draw: () => {
-				if (fan) {
-					drawChair(ctx, cam, c.st.x, c.st.y, f.padColor);
-				}
 				drawSprite(ctx, f.scratch, cam, c.st, c.body, c.look, 1, f.sprites);
 			},
 		});
