@@ -183,6 +183,7 @@ const Court3D = ({
 						pid: p.pid,
 						team: t,
 						pos: p.pos,
+						skills: Array.isArray(p.skills) ? p.skills : undefined,
 						name: p.name,
 						jerseyNumber: p.jerseyNumber,
 					});

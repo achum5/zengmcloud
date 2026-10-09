@@ -11,6 +11,7 @@ export const fakeGame = (seed: string, possessions: number) => {
 	const rng = makeCourtRng(seed);
 	const pick = <T>(arr: T[]): T => arr[Math.floor(rng() * arr.length)]!;
 	const POS = ["PG", "SG", "SF", "PF", "C", "G", "F", "C"];
+	const SKILLS = [["B", "Ps"], ["3"], [], ["R"], ["Di", "R"], ["B"], [], ["R"]];
 	const roster: [number[], number[]] = [
 		[1, 2, 3, 4, 5, 6, 7, 8],
 		[11, 12, 13, 14, 15, 16, 17, 18],
@@ -18,7 +19,12 @@ export const fakeGame = (seed: string, possessions: number) => {
 	const players: CourtPlayer[] = [];
 	for (const raw of [0, 1] as const) {
 		roster[raw].forEach((pid, j) => {
-			players.push({ pid, team: raw === 0 ? 1 : 0, pos: POS[j] });
+			players.push({
+				pid,
+				team: raw === 0 ? 1 : 0,
+				pos: POS[j],
+				skills: SKILLS[j],
+			});
 		});
 	}
 	const onCourt: [number[], number[]] = [

@@ -39,7 +39,16 @@ describe("3D free throws", () => {
 				const team = tl.tracks.get(pid)!.team as Side;
 				const depthOf = (x: number) => (team === 0 ? x : COURT_W - x);
 				trips += 1;
-				for (let t = b.preStart; t <= b.actionStart; t += 40) {
+				// Once he has walked to the line (not wherever he was fouled,
+				// before it, if that happens to be near it).
+				const there = Math.max(
+					b.preStart,
+					...tl.tracks
+						.get(pid)!
+						.moves.filter((m) => m.t1 <= b.actionStart)
+						.map((m) => m.t1),
+				);
+				for (let t = there; t <= b.actionStart; t += 40) {
 					const st0 = evalPlayer(tl, pid, t);
 					const ball = evalBall(tl, t, bodyFor);
 					// At the line, from the catch to the shot.

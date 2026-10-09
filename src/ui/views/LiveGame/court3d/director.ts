@@ -110,7 +110,14 @@ import {
 // Times are milliseconds at 1x speed.
 
 export type RawEvent = { type: string; [key: string]: any };
-export type CourtPlayer = { pid: number; team: Side; pos?: string };
+export type CourtPlayer = {
+	pid: number;
+	team: Side;
+	pos?: string;
+	// The sim's skill tags ("B" a ball handler, "Ps" a passer, ...), where
+	// they are known.
+	skills?: string[];
+};
 
 export type Move = {
 	t0: number;
@@ -804,6 +811,7 @@ class Director {
 	private readonly free = new Map<number, number>();
 	private readonly team = new Map<number, Side>();
 	private readonly rank = new Map<number, number>();
+	private readonly skills = new Map<number, string[]>();
 	// Where each player's chair is on his bench.
 	private readonly seat = new Map<number, Pt>();
 	private readonly lineup: [number[], number[]] = [[], []];
@@ -901,6 +909,9 @@ class Director {
 		for (const p of players) {
 			this.team.set(p.pid, p.team);
 			this.rank.set(p.pid, POS_RANK[p.pos ?? ""] ?? 4);
+			if (p.skills) {
+				this.skills.set(p.pid, p.skills);
+			}
 			this.seat.set(p.pid, seatSpot(p.team, seats[p.team]++));
 		}
 
@@ -1707,10 +1718,44 @@ class Director {
 		return e ? finishOf(e, this.gid, this.gender) : undefined;
 	}
 
+	// A lineup in slot order: whoever brings the ball up at the top, then by
+	// position, guards out top and bigs low.
 	private slots(team: Side): number[] {
+		const byPos = this.byPos(team);
+		const pg = this.handlerOf(team, byPos);
+		return [pg, ...byPos.filter((p) => p !== pg)];
+	}
+
+	private byPos(team: Side): number[] {
 		return [...this.lineup[team]].sort(
 			(a, b) => (this.rank.get(a) ?? 4) - (this.rank.get(b) ?? 4) || a - b,
 		);
+	}
+
+	// Who on the floor brings the ball up: a ball handler by his skills, a
+	// guard where those aren't known - and, lacking either, the point.
+	private handlerOf(team: Side, slots = this.byPos(team)): number {
+		return (
+			slots.find((p) => this.skills.get(p)?.includes("B")) ??
+			slots.find((p) => !this.skills.has(p) && (this.rank.get(p) ?? 4) <= 2) ??
+			slots[0]!
+		);
+	}
+
+	// Whether he would bring it up himself rather than look for a guard: a
+	// ball handler, or, his skills unknown, anyone short of a big.
+	private handles(pid: number): boolean {
+		const skills = this.skills.get(pid);
+		return skills
+			? skills.includes("B") || pid === this.handlerOf(this.teamOf(pid))
+			: (this.rank.get(pid) ?? 4) < 5;
+	}
+
+	// Who pushes a break: the man who has it if he would bring it up himself,
+	// else the ball handler he gives it to.
+	private breakHolder(team: Side): number | undefined {
+		const h = this.holder;
+		return h === undefined || this.handles(h) ? h : this.handlerOf(team);
 	}
 
 	private teamOf(pid: number): Side {
@@ -2131,23 +2176,62 @@ class Director {
 		return arrive + 110;
 	}
 
+	// The outlet: the man who came down with it holds it, looking up the
+	// floor, while the ball handler comes back to the wing ahead of him
+	// calling for it - and gives it up as he gets there.
+	private outlet(
+		from: number,
+		to: number,
+		t: number,
+		speed: number,
+		ahead: number,
+	): number {
+		const team = this.teamOf(to);
+		const h = this.posOf(from);
+		const meet = clampPt({
+			x: h.x + attackDir(team) * ahead,
+			y: h.y < 25 ? Math.max(6, h.y - 8) : Math.min(44, h.y + 8),
+		});
+		const there = this.go(to, meet, t, speed, "run");
+		const pass = Math.max(t + 150, there - 450);
+		const still = Math.max(t, this.free.get(from) ?? 0);
+		const look = Math.min(pass, still + 800);
+		if (look - still > 200) {
+			this.act(from, "hold", still, look, {
+				face: attackDir(team),
+				look: { ...meet },
+			});
+		}
+		if (pass - look > 400) {
+			// A long way back for it: he puts it down and brings it a few
+			// dribbles toward him meanwhile.
+			const u = unitVec(h, meet);
+			const k = Math.min(dist(h, meet) - 6, ((pass - look) / 1000) * 8);
+			if (k > 1) {
+				this.hold(from, look, "dribble");
+				this.go(
+					from,
+					clampPt({ x: h.x + u.x * k, y: h.y + u.y * k }),
+					look,
+					8,
+					"dribble",
+					attackDir(team),
+				);
+			}
+		}
+		return this.passTo(from, to, pass);
+	}
+
 	private inBackcourt(team: Side, p: Pt): boolean {
 		return team === 1 ? p.x < COURT_W / 2 : p.x > COURT_W / 2;
 	}
 
 	// The point guard brings it up and the five settle into their set.
 	private bringUp(team: Side, t: number): number {
-		const slots = this.slots(team);
-		const pg = slots[0]!;
+		const pg = this.handlerOf(team);
 		if (this.holder !== pg && this.holder !== undefined) {
 			// Get it to the point guard first.
-			const h = this.posOf(this.holder);
-			const meet = clampPt({
-				x: h.x + attackDir(team) * 9,
-				y: h.y < 25 ? 8 : 42,
-			});
-			this.go(pg, meet, t, RUN, "run");
-			t = this.passTo(this.holder, pg, t + 200);
+			t = this.outlet(this.holder, pg, t, RUN, 9);
 		}
 		const top = this.setSpots(team, 0)[0]!;
 		const d = dist(this.posOf(pg), top);
@@ -2163,18 +2247,10 @@ class Director {
 	// fill the lanes, the defense sprints back with one man protecting the rim.
 	private pushBreak(team: Side, t: number): number {
 		const slots = this.slots(team);
-		let handler = this.holder ?? slots[0]!;
-		if ((this.rank.get(handler) ?? 4) >= 5 && slots[0] !== handler) {
-			const h = this.posOf(handler);
-			const pg = slots[0]!;
-			this.go(
-				pg,
-				clampPt({ x: h.x + attackDir(team) * 10, y: h.y < 25 ? 6 : 44 }),
-				t,
-				SPRINT,
-				"run",
-			);
-			t = this.passTo(handler, pg, t + 150);
+		const pg = this.handlerOf(team);
+		let handler = this.holder ?? pg;
+		if (!this.handles(handler) && pg !== handler) {
+			t = this.outlet(handler, pg, t, SPRINT, 10);
 			handler = pg;
 		}
 		const spots = TRANSITION_OFFENSE_SPOTS.map((s) =>
@@ -2616,7 +2692,7 @@ class Director {
 			this.teamOf(plan.assist) === team
 				? plan.assist
 				: undefined;
-		const holder = entry === "break" ? this.holder : undefined;
+		const holder = entry === "break" ? this.breakHolder(team) : undefined;
 		if (!on(shooter) || !on(assist) || !on(holder)) {
 			return undefined;
 		}
@@ -2654,7 +2730,7 @@ class Director {
 		clock: number | undefined,
 	): Running | undefined {
 		const five = this.five(team);
-		const holder = entry === "break" ? this.holder : undefined;
+		const holder = entry === "break" ? this.breakHolder(team) : undefined;
 		if (
 			!five.some((c) => c.pid === victim) ||
 			(holder !== undefined && !five.some((c) => c.pid === holder))
@@ -2678,7 +2754,7 @@ class Director {
 		clock: number | undefined,
 	): Running | undefined {
 		const five = this.five(team);
-		const holder = entry === "break" ? this.holder : undefined;
+		const holder = entry === "break" ? this.breakHolder(team) : undefined;
 		if (holder !== undefined && !five.some((c) => c.pid === holder)) {
 			return undefined;
 		}
@@ -2940,7 +3016,7 @@ class Director {
 	private startBreak(run: Running, t: number): number {
 		const bh = run.roles[run.play.ball]!;
 		if (this.holder !== undefined && this.holder !== bh) {
-			t = this.passTo(this.holder, bh, t + 100);
+			t = this.outlet(this.holder, bh, t, SPRINT, 10);
 		}
 		this.hold(bh, t, "dribble");
 		const f = this.formation(run);
@@ -6150,7 +6226,8 @@ class Director {
 			const I3 = { ...I, z: REACH_AT.u };
 			this.fly(release, tI, { pid: h }, I3);
 			const u = unitVec(A, B);
-			const a = this.rand(-0.6, 0.6);
+			// (Off line enough to see it was touched.)
+			const a = (this.rng() < 0.5 ? -1 : 1) * this.rand(0.3, 0.75);
 			return this.knockOut(tI, I3, {
 				x: u.x * Math.cos(a) - u.y * Math.sin(a),
 				y: u.x * Math.sin(a) + u.y * Math.cos(a),
@@ -6906,21 +6983,13 @@ class Director {
 						t = this.runStep(run, steps[k]!, t, steps[k + 1], k);
 					}
 				}
-				const victim =
-					typeof e.pidShooting === "number"
-						? e.pidShooting
-						: (this.holder ?? this.slots(team)[0]!);
-				const vp = this.posOf(victim);
-				const toward = (vp.x >= this.posOf(fouler).x ? 1 : -1) as 1 | -1;
-				const hit = this.goBy(
+				const { hit, at: vp } = this.stageFoul(
 					fouler,
-					clampPt({ x: vp.x - toward * 1.6, y: vp.y + 0.4 }),
+					team,
 					t,
-					t + 380,
-					"run",
-					toward,
+					typeof e.pidShooting === "number" ? e.pidShooting : undefined,
+					gap,
 				);
-				this.act(fouler, "reach", hit - 120, hit + 320, { face: toward });
 				this.effect("whistle", hit, { call: "foul", at: vp, team });
 				if (this.rng() < 0.3) {
 					this.react(fouler, "protest", hit + 420, 950);
@@ -7817,6 +7886,160 @@ class Director {
 		});
 	}
 
+	// THE FOUL AWAY FROM A SHOT, played out the way it comes about: a reach
+	// at the ball on his drive by the man guarding him, a help man a step
+	// late sliding over into it, a grab at a cutter going by - or, with
+	// next to no time gone, wrapped up on purpose as soon as it is in.
+	// `victim` is who the sim says was fouled, where it says. Returns the
+	// moment of contact and where it was.
+	private stageFoul(
+		fouler: number,
+		team: Side,
+		t: number,
+		victim: number | undefined,
+		gap: number | undefined,
+	): { hit: number; at: Pt } {
+		const dir = attackDir(team);
+		const rim = { x: rimX(team), y: COURT_H / 2 };
+		const manOf = this.slots(team).find((p) => this.defenderOf(p) === fouler);
+		let handler = this.holder ?? this.slots(team)[0]!;
+		// (A help man too far from the ball to have been in it grabs his own
+		// man instead.)
+		const far =
+			dist(this.posOf(fouler), this.posOf(handler)) > 20 &&
+			this.defenderOf(handler) !== fouler;
+		const offBall =
+			manOf !== undefined &&
+			manOf !== handler &&
+			(victim === undefined ? far || this.rng() < 0.4 : victim === manOf);
+		const fouled = offBall ? manOf : (victim ?? handler);
+		if (!offBall && fouled !== handler) {
+			t = this.passTo(handler, fouled, t);
+			handler = fouled;
+		}
+		const contact = (v: number, hit: number) => {
+			const V = this.posOf(v);
+			const F = this.posOf(fouler);
+			this.act(fouler, "reach", hit - 140, hit + 320, {
+				face: (V.x >= F.x ? 1 : -1) as 1 | -1,
+				look: { ...V },
+			});
+			if (this.holder !== undefined) {
+				this.hold(
+					this.holder,
+					Math.max(hit, this.free.get(this.holder) ?? 0),
+					"hold",
+				);
+			}
+			return { hit, at: V };
+		};
+		const start = (pid: number) => Math.max(t, this.free.get(pid) ?? 0);
+
+		if (gap !== undefined && gap < 4 && !offBall) {
+			// On purpose: straight at him, both arms round him.
+			const V = this.posOf(handler);
+			const u = unitVec(V, this.posOf(fouler));
+			const hit = this.go(
+				fouler,
+				clampPt({ x: V.x + u.x * BODY, y: V.y + u.y * BODY }),
+				start(fouler),
+				SPRINT,
+				"run",
+			);
+			return contact(handler, hit);
+		}
+
+		if (offBall) {
+			// A cut, and his man holding him up on it: there with him, a
+			// hand on him as he tries to go by.
+			const V = this.posOf(fouled);
+			const C = this.nearRim(team, V, Math.max(6, dist(V, rim) - 10));
+			const u = unitVec(C, V);
+			const set = this.go(
+				fouler,
+				clampPt({ x: C.x + u.x * BODY, y: C.y + u.y * BODY }),
+				start(fouler),
+				RUN,
+				"run",
+			);
+			const s0 = Math.max(start(fouled), set - runMs(dist(V, C), RUN) + 100);
+			const there = this.go(fouled, C, s0, RUN, "run");
+			return contact(fouled, Math.max(set, there - 150));
+		}
+
+		// On the ball: he puts it on the floor and goes.
+		const A = this.posOf(handler);
+		const D = this.nearRim(team, A, Math.max(7, dist(A, rim) - 11));
+		const mine = this.defenderOf(handler);
+		if (mine !== fouler) {
+			// A help man sliding over into his path - a step late. He goes
+			// as the drive does, and the drive is at its pace to get there
+			// as he does.
+			const H = clampPt({
+				x: D.x + unitVec(D, rim).x * BODY,
+				y: D.y + unitVec(D, rim).y * BODY,
+			});
+			const leave = Math.max(start(fouler), start(handler) - 400);
+			const set = this.go(fouler, H, leave, SPRINT, "run");
+			const L = dist(A, D);
+			const speed = Math.min(
+				15,
+				Math.max(8, L / Math.max(0.1, (set + 60 - (leave - 250)) / 1000)),
+			);
+			let s0 = Math.max(start(handler), set + 60 - (L / speed) * 1000);
+			this.hold(handler, start(handler), "dribble");
+			if (s0 - start(handler) > 300) {
+				// Working his man a moment first - a hesitation across.
+				const w = this.rng() < 0.5 ? -1 : 1;
+				s0 = Math.max(
+					s0,
+					this.go(
+						handler,
+						clampPt({ x: A.x - dir * 0.8, y: A.y + w * 2.5 }),
+						start(handler),
+						Math.max(4, Math.min(9, 2.6 / ((s0 - start(handler)) / 1000))),
+						"dribble",
+						dir,
+					),
+				);
+			}
+			const arrive = this.go(handler, D, s0, speed, "dribble", dir);
+			if (mine !== undefined) {
+				// His own man, a step behind.
+				const u = unitVec(D, A);
+				this.shadow(
+					mine,
+					clampPt({ x: D.x + u.x * 2.4, y: D.y + u.y * 2.4 }),
+					s0 + 100,
+					arrive,
+					team,
+				);
+			}
+			return contact(handler, Math.max(arrive, set));
+		}
+		const s0 = start(handler);
+		this.hold(handler, s0, "dribble");
+		const arrive = this.go(handler, D, s0, 15, "dribble", dir);
+		// Riding his hip all the way, and reaching across for it.
+		const side = Math.sign((A.y - D.y) * dir || 1);
+		const lat = { x: -unitVec(A, D).y * side, y: unitVec(A, D).x * side };
+		const r = unitVec(D, rim);
+		this.shadow(
+			fouler,
+			clampPt({
+				x: D.x + r.x * 1.2 + lat.x * 1.3,
+				y: D.y + r.y * 1.2 + lat.y * 1.3,
+			}),
+			s0 + 100,
+			arrive - 80,
+			team,
+		);
+		return contact(
+			handler,
+			Math.max(arrive - 120, (this.free.get(fouler) ?? 0) - 60),
+		);
+	}
+
 	private lastFtShooter: number | undefined;
 	// The ball sent out of bounds off a miss already (see missOut): the
 	// out-of-bounds line after it needs only the whistle.
@@ -8235,7 +8458,15 @@ class Director {
 					}
 				}
 			}
-			const { B, over, wind, start, release } = thrown;
+			// Still a step short of the lane, he gets there as it does: the
+			// pass is thrown a beat later, at its own pace - never floated
+			// up for him.
+			const wait = thrown.lane
+				? Math.max(0, thrown.lane.need - thrown.lane.tI)
+				: 0;
+			const { B, over, wind } = thrown;
+			const start = thrown.start + wait;
+			const release = thrown.release + wait;
 			this.act(
 				victim,
 				over ? "passOverhead" : "pass",
@@ -8249,7 +8480,7 @@ class Director {
 			const u = unitVec(A, B);
 			if (thief !== undefined && thrown.lane) {
 				const { I, go } = thrown.lane;
-				const tI = Math.max(thrown.lane.tI, thrown.lane.need);
+				const tI = thrown.lane.tI + wait;
 				this.goBy(thief, I, go, tI - 40, "run");
 				if (!oob) {
 					this.fly(release, tI, { pid: victim }, { pid: thief });
@@ -8373,18 +8604,38 @@ class Director {
 			if (thief !== undefined && !oob) {
 				const side = this.rng() < 0.5 ? 1 : -1;
 				const u = unitVec(A, D);
-				const loose = clampPt({
-					x: S.x + u.x * 2.5 - u.y * side * 3,
-					y: S.y + u.y * 2.5 + u.x * side * 3,
-				});
-				this.bounce(tS, tS + 600, { ...S, z: 2 }, loose, 1, 1.2);
-				// After it, once his hand is back from the swipe.
-				const got = this.pickUp(
-					thief,
-					thief === who ? tS + 260 : tS + 120,
-					SPRINT,
-					"dribble",
+				// Knocked loose past the man who poked it, he scoops it up in
+				// stride; poked away by somebody else, it squirts toward the man
+				// who comes up with it - still rolling as he gets there.
+				const Q = this.posOf(thief);
+				const toQ = dist(S, Q);
+				const loose =
+					thief === who
+						? clampPt({
+								x: S.x + u.x * 1.5 - u.y * side * 3,
+								y: S.y + u.y * 1.5 + u.x * side * 3,
+							})
+						: clampPt({
+								x: S.x + ((Q.x - S.x) / (toQ || 1)) * Math.min(toQ * 0.6, 9),
+								y: S.y + ((Q.y - S.y) / (toQ || 1)) * Math.min(toQ * 0.6, 9),
+							});
+				const off = thief === who ? tS + 260 : tS + 120;
+				const there =
+					Math.max(off, this.free.get(thief) ?? 0) +
+					runMs(Math.max(0, dist(Q, loose) - PICKUP_REACH), SPRINT);
+				this.bounce(
+					tS,
+					Math.min(
+						tS + 1600,
+						Math.max(there, tS + this.bounceSpan(1, 1, 450, 1)),
+					),
+					{ ...S, z: 2 },
+					loose,
+					1,
+					1,
 				);
+				// After it, once his hand is back from the swipe.
+				const got = this.pickUp(thief, off, SPRINT, "dribble");
 				this.setOffense(tS, other(team));
 				this.phase = "loose";
 				this.beat(i, e.type, tS, got + 450);
