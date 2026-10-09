@@ -917,7 +917,9 @@ export const drawHoop = (
 	const rock = ringing * 0.16 * Math.sin(fx.t / 31);
 	const bend = Math.max(0, (fx.dunk - 0.55) / 0.45) * 0.32;
 
-	// The stanchion: padded base behind the baseline, post, arm to the board.
+	// The stanchion: a dark padded base behind the baseline with a lit
+	// board in the team's color on its faces, the post, and the arm out to
+	// the board with a sign along it.
 	const b0 = X(-9.5);
 	const b1 = X(-5);
 	const inkW = Math.max(1, 0.05 * project(cam, { x: X(4), y: 25, z: 0 }).k);
@@ -929,15 +931,15 @@ export const drawHoop = (
 		ctx.strokeStyle = INK;
 		for (const [fill, face] of [
 			[
-				shade(padColor, -0.15),
+				"#24262c",
 				[pts(b0, y0, z1), pts(b1, y0, z1), pts(b1, y1, z1), pts(b0, y1, z1)],
 			],
 			[
-				padColor,
+				"#17181c",
 				[pts(b1, y0, 0), pts(b1, y1, 0), pts(b1, y1, z1), pts(b1, y0, z1)],
 			],
 			[
-				shade(padColor, -0.32),
+				"#101115",
 				[pts(b0, y1, 0), pts(b1, y1, 0), pts(b1, y1, z1), pts(b0, y1, z1)],
 			],
 		] as const) {
@@ -946,6 +948,22 @@ export const drawHoop = (
 			ctx.fillStyle = fill;
 			ctx.fill();
 		}
+		// The boards on its faces: the team's color, a bright band across.
+		const lit = (face: (u: number, v: number) => Pt3) => {
+			const quad = (v0: number, v1: number, fill: string) => {
+				ctx.fillStyle = fill;
+				poly(ctx, cam, [face(0, v0), face(1, v0), face(1, v1), face(0, v1)]);
+				ctx.fill();
+			};
+			quad(0.15, 0.85, padColor);
+			quad(0.44, 0.56, shade(padColor, 0.45));
+		};
+		const lo = 0.5;
+		const hi = z1 - 0.45;
+		lit((u, v) => pts(b1, y0 + 0.35 + u * (y1 - y0 - 0.7), lo + v * (hi - lo)));
+		lit((u, v) =>
+			pts(b0 + (b1 - b0) * (0.06 + u * 0.88), y1, lo + v * (hi - lo)),
+		);
 	};
 	box(22.4, 27.6, 3.4);
 	inkLine(
@@ -954,24 +972,53 @@ export const drawHoop = (
 		{ x: X(-6.6), y: 25, z: 3.4 },
 		{ x: X(-6.2), y: 25, z: 12.4 },
 		0.75,
-		"#3d4048",
+		"#24262c",
 	);
 	inkLine(
 		ctx,
 		cam,
 		{ x: X(-6.2), y: 25, z: 12.4 },
 		{ x: X(3.7), y: 25 + rock, z: 11.9 + shake },
-		0.42,
-		"#4a4e57",
+		0.48,
+		"#2a2c33",
 	);
 	inkLine(
 		ctx,
 		cam,
 		{ x: X(-6.4), y: 25, z: 8.6 },
 		{ x: X(3.7), y: 25 + rock, z: 10.2 + shake },
-		0.28,
-		"#4a4e57",
+		0.3,
+		"#2a2c33",
 	);
+	// The sign along the arm, on the side the camera sees.
+	{
+		const along = (d: number) => (d + 6.3) / 10;
+		const top = (d: number) => 12.4 + (11.9 + shake - 12.4) * along(d);
+		const low = (d: number) => 8.6 + (10.2 + shake - 8.6) * along(d);
+		const at = (d: number, z: number): Pt3 => ({
+			x: X(d),
+			y: 25.3 + rock * along(d),
+			z,
+		});
+		const [d0, d1] = [-4.3, 2.1];
+		ctx.fillStyle = padColor;
+		poly(ctx, cam, [
+			at(d0, low(d0) + 0.35),
+			at(d1, low(d1) + 0.35),
+			at(d1, top(d1) - 0.35),
+			at(d0, top(d0) - 0.35),
+		]);
+		ctx.fill();
+		ctx.fillStyle = "rgba(255,255,255,0.85)";
+		const mid = (d: number) => (low(d) + top(d)) / 2;
+		poly(ctx, cam, [
+			at(d0 + 0.6, mid(d0) - 0.18),
+			at(d1 - 0.6, mid(d1) - 0.18),
+			at(d1 - 0.6, mid(d1) + 0.18),
+			at(d0 + 0.6, mid(d0) + 0.18),
+		]);
+		ctx.fill();
+	}
 	// Padding round the bottom of the post.
 	inkLine(
 		ctx,
