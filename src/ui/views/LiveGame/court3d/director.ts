@@ -890,6 +890,9 @@ class Director {
 	private readonly marking = new Map<Move, number>();
 	// Shot fakes on the floor: who, when, and where.
 	private readonly fakes: { pid: number; t: number; at: Pt }[] = [];
+	// The little shoves of a battle for position (see jostle): cut short
+	// when he comes out of it (see letGo).
+	private readonly jostles = new Set<Move>();
 
 	private readonly events: RawEvent[];
 	private readonly gid: number | undefined;
@@ -3824,7 +3827,12 @@ class Director {
 		}
 		const n = this.track(d)?.moves.length ?? 0;
 		const secs = Math.max(0.3, (by - start) / 1000);
-		const speed = Math.min(SPRINT, Math.max(4, dd / secs));
+		// (A long way off - the other end of the floor - he runs there, not
+		// eases there over all the time there is.)
+		const speed = Math.min(
+			SPRINT,
+			Math.max(dd > 25 ? RUN : dd > 14 ? JOG : 4, dd / secs),
+		);
 		// He shuffles to stay with his man, square to him - turning and
 		// running only to cover real ground fast.
 		const slide = dd < 14 && speed <= 17;
@@ -5785,8 +5793,10 @@ class Director {
 		// When the shot left the shooter's hands: he reads it from then.
 		released?: number,
 	) {
-		const go = Math.max(gather + 300, land - 1050);
-		const meet = Math.max(go + 320, land - 450);
+		// Everybody plays it as it goes up: into each other well before it
+		// comes down.
+		const go = Math.max(gather + 250, land - 1500);
+		const meet = Math.max(go + 380, land - 900);
 		const until = land + 150;
 		if (until - meet < 280) {
 			return;
@@ -5848,6 +5858,7 @@ class Director {
 		}
 		// Who crashes and who gets back - and where the men crashing go.
 		const crash = new Map<number, Pt>();
+		const inAt = new Map<number, number>();
 		this.slots(team).forEach((pid, j) => {
 			const r0 = readyAt(pid);
 			if (busy.includes(pid) || r0 > meet - 200) {
@@ -5863,6 +5874,7 @@ class Director {
 				const C = clampPt({ x: M.x + u.x * k, y: M.y + u.y * k });
 				crash.set(pid, C);
 				const there = this.goBy(pid, C, r0, meet, "run", undefined, BURST);
+				inAt.set(pid, there);
 				if (there < until - 250) {
 					this.act(pid, "fight", Math.max(meet, there), until, { look: rim });
 				}
@@ -5898,15 +5910,98 @@ class Director {
 			const there = this.goBy(d, spot, r0 + 80, meet, "run", undefined, BURST);
 			if (there < until - 250) {
 				this.act(d, "boxOut", Math.max(meet, there), until, { look: rim });
+				if (C) {
+					this.jostle(
+						man,
+						d,
+						Math.max(meet, there, inAt.get(man) ?? until),
+						until,
+						rim,
+					);
+				}
 			}
+		}
+	}
+
+	// THE BATTLE FOR POSITION, once they are into each other: the man coming
+	// in leans one way and then the other, trying to get round, and the man
+	// on him slides with him to stay in front - backing him off the glass
+	// a little with each one - until the ball comes off the rim.
+	private jostle(o: number, d: number, from: number, until: number, rim: Pt) {
+		const O = this.posOf(o);
+		const D = this.posOf(d);
+		const u = unitVec(D, rim);
+		const lat = { x: -u.y, y: u.x };
+		let side: 1 | -1 = this.rng() < 0.5 ? 1 : -1;
+		let off = 0;
+		let back = 0;
+		let t = from + this.rand(80, 200);
+		const shove = (pid: number, to: Pt, t0: number, ms: number) => {
+			const tr = this.track(pid);
+			if (!tr) {
+				return;
+			}
+			const m: Move = {
+				t0,
+				t1: t0 + ms,
+				from: { ...this.posOf(pid) },
+				to: clampPt(to),
+				anim: "shuffle",
+			};
+			tr.moves.push(m);
+			this.jostles.add(m);
+			this.pos.set(pid, m.to);
+		};
+		while (t + 380 < until - 80) {
+			// Around one side - or a second go at the same one.
+			const was = off;
+			off = side * this.rand(0.5, 1.1);
+			if (Math.abs(off - was) < 0.4) {
+				off = was + side * 0.5;
+			}
+			back = Math.min(1.4, back + this.rand(0.15, 0.4));
+			const at = (P: Pt, k: number, extra = 0): Pt => ({
+				x: P.x + lat.x * off * k - u.x * (back + extra),
+				y: P.y + lat.y * off * k - u.y * (back + extra),
+			});
+			shove(o, at(O, 1, 0.1), t, 300);
+			shove(d, at(D, 0.9), t + 80, 300);
+			t += this.rand(480, 760);
+			if (this.rng() < 0.75) {
+				side = -side as 1 | -1;
+			}
+		}
+		for (const pid of [o, d]) {
+			this.free.set(pid, Math.max(this.free.get(pid) ?? 0, until));
 		}
 	}
 
 	// He comes out of his box-out (or out of fighting one) at t.
 	private letGo(pid: number, t: number) {
-		for (const a of this.track(pid)?.acts ?? []) {
+		const tr = this.track(pid);
+		for (const a of tr?.acts ?? []) {
 			if ((a.anim === "boxOut" || a.anim === "fight") && a.t1 > t) {
 				a.t1 = Math.max(a.t0 + 1, t);
+			}
+		}
+		// Out of the battle for position where he is at that moment.
+		if (tr && tr.moves.some((m) => this.jostles.has(m) && m.t1 > t)) {
+			tr.moves = tr.moves.filter((m) => !this.jostles.has(m) || m.t0 < t);
+			const m = tr.moves.findLast((m) => this.jostles.has(m));
+			if (m && m.t1 > t) {
+				const f = (t - m.t0) / (m.t1 - m.t0);
+				m.to = {
+					x: m.from.x + (m.to.x - m.from.x) * f,
+					y: m.from.y + (m.to.y - m.from.y) * f,
+				};
+				m.t1 = t;
+			}
+			const last = tr.moves.reduce<Move | undefined>(
+				(a, m) => (!a || m.t1 >= a.t1 ? m : a),
+				undefined,
+			);
+			if (last) {
+				this.pos.set(pid, { ...last.to });
 			}
 		}
 	}
@@ -6081,11 +6176,22 @@ class Director {
 					});
 				})()
 			: from;
-		const r = this.slots(side)
+		const near = this.slots(side)
 			.filter((p) => !(start && "pid" in start && start.pid === p))
-			.sort(
-				(a, b) => dist(this.posOf(a), lands) - dist(this.posOf(b), lands),
-			)[0];
+			.sort((a, b) => dist(this.posOf(a), lands) - dist(this.posOf(b), lands));
+		// (Not one still up with the shot it came off.)
+		const r =
+			near.find(
+				(p) =>
+					!this.track(p)?.acts.some(
+						(a) =>
+							a.t1 > t &&
+							a.anim !== "boxOut" &&
+							a.anim !== "fight" &&
+							a.anim !== "rebound" &&
+							a.anim !== "board",
+					),
+			) ?? near[0];
 		if (r === undefined) {
 			const floor = vel ? this.toFloor(t, from, vel, start) : undefined;
 			return this.knockOut(floor?.t ?? t, floor?.at ?? from, away(from));
@@ -6152,7 +6258,14 @@ class Director {
 			const steps = run.play.steps;
 			const last =
 				run.from + Math.floor(this.rng() * (steps.length - run.from)) - 1;
-			for (let k = run.from; k < steps.length && k <= last; k++) {
+			// (Over half court first, however little of it he gets to.)
+			for (let k = run.from; k < steps.length; k++) {
+				const back =
+					this.holder !== undefined &&
+					this.inBackcourt(offense, this.posOf(this.holder));
+				if (k > last && !back) {
+					break;
+				}
 				t = this.runStep(run, steps[k]!, t, steps[k + 1], k);
 			}
 		}
@@ -7848,6 +7961,7 @@ class Director {
 		const go = release + READ_MS;
 		const until = at + 500;
 		const coming = new Map<number, Pt>();
+		const inAt = new Map<number, number>();
 		for (const pid of off.slice(0, 2)) {
 			const M = this.posOf(pid);
 			const u = unitVec(M, rim);
@@ -7863,6 +7977,7 @@ class Director {
 				BURST,
 			);
 			this.act(pid, "fight", Math.min(there, at), until, { look: rim });
+			inAt.set(pid, Math.min(there, at));
 		}
 		def.slice(0, 3).forEach((pid, j) => {
 			// The man on his side of the lane, or - up top - the shooter.
@@ -7883,6 +7998,10 @@ class Director {
 			const spot = clampPt({ x: C.x + u.x * 1.8, y: C.y + u.y * 1.8 });
 			const there = this.goBy(pid, spot, go, go + 600, "run", undefined, BURST);
 			this.act(pid, "boxOut", Math.min(there, at), until, { look: rim });
+			const fights = inAt.get(mine);
+			if (fights !== undefined) {
+				this.jostle(mine, pid, Math.max(there, fights), until, rim);
+			}
 		});
 	}
 

@@ -1028,7 +1028,16 @@ describe("3D director", () => {
 		let quick = 0;
 		let broke = 0;
 		const actions: Record<"short" | "long", number[]> = { short: [], long: [] };
-		for (const seed of ["break", "break2", "break3", "break4"]) {
+		for (const seed of [
+			"break",
+			"break2",
+			"break3",
+			"break4",
+			"break5",
+			"break6",
+			"break7",
+			"break8",
+		]) {
 			const { events, tl } = compile(seed, 160);
 			tl.beats.forEach((b, j) => {
 				const e = events[b.i]!;

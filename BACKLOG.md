@@ -53,7 +53,7 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
       shooter a low five, like real life (research what it looks like).
 - [ ] Default dribbling animation needs a ton of work: currently arm out, ball
       bouncing, very basic. Make it realistic and dynamic with the player's movement.
-- [ ] Rebounding lead-up: when a shot goes up, players box out and fight for
+- [x] Rebounding lead-up: when a shot goes up, players box out and fight for
       position realistically. The jump itself is OK; the lead-up is clunky and
       stagnant.
 - [ ] Ball going out of bounds looks clunky. Make it physics based if possible.
