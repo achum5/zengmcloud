@@ -141,7 +141,7 @@ export interface LeagueDB extends DBSchema {
 		key: string;
 		value: SocialAccount;
 	};
-	// Teams' uniforms for the 2.5D live game, as pictures (see JerseySkin).
+	// Teams' uniforms for the 3D live game, as pictures (see JerseySkin).
 	// Keyed by a hash of the picture. Synced like any other store.
 	jerseySkins: {
 		key: string;

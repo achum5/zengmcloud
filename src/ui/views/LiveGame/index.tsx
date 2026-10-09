@@ -58,12 +58,12 @@ import LiveCourt, {
 } from "./LiveCourt.tsx";
 import LiveField, { type FieldScene } from "./LiveField.tsx";
 import {
-	COURT25D_SPEEDS,
+	COURT3D_SPEEDS,
 	getLiveGameView,
-	parseCourt25DSpeed,
+	parseCourt3DSpeed,
 	parseLiveGameView,
-	type Court25DSpeed,
-} from "./court25d/setting.ts";
+	type Court3DSpeed,
+} from "./court3d/setting.ts";
 import {
 	buildFieldScene,
 	newFieldSceneCtx,
@@ -358,23 +358,23 @@ const STOPPAGE_TYPES = new Set([
 
 const DEFAULT_SPEED = 7;
 
-// The 2.5D court is only downloaded by a device that shows it.
-const Court25D = lazy(() => import("./court25d/Court25D.tsx"));
+// The 3D court is only downloaded by a device that shows it.
+const Court3D = lazy(() => import("./court3d/Court3D.tsx"));
 
 const speedToMs = (speed: number) => {
 	return 4000 / 1.2 ** speed;
 };
 
-// The 2.5D court's speeds, in place of the slider.
-const Court25DSpeeds = ({
+// The 3D court's speeds, in place of the slider.
+const Court3DSpeeds = ({
 	value,
 	onChange,
 }: {
-	value: Court25DSpeed;
-	onChange: (speed: Court25DSpeed) => void;
+	value: Court3DSpeed;
+	onChange: (speed: Court3DSpeed) => void;
 }) => (
 	<div className="btn-group btn-group-sm" role="group" title="Speed">
-		{COURT25D_SPEEDS.map((s) => (
+		{COURT3D_SPEEDS.map((s) => (
 			<button
 				key={s}
 				type="button"
@@ -406,26 +406,26 @@ const getNavigateWarning = (
 export const LiveGame = (props: View<"liveGame">) => {
 	const [paused, setPaused] = useState(false);
 	const pausedRef = useRef(paused);
-	// This device's choice of picture for basketball: the 2D court, or the 2.5D
+	// This device's choice of picture for basketball: the 2D court, or the 3D
 	// court. Read once - a game does not switch pictures halfway through. In
-	// 2.5D the court sets the pace: it asks for each line when its animation
-	// reaches it (onCourt25DReady), instead of the timer below firing. Someone
+	// 3D the court sets the pace: it asks for each line when its animation
+	// reaches it (onCourt3DReady), instead of the timer below firing. Someone
 	// following a multiplayer broadcast sees whatever the device in charge of
-	// simming chose instead (see court25d below).
+	// simming chose instead (see court3d below).
 	const [ownView] = useState(() =>
 		__SPORT === "basketball" ? getLiveGameView() : "classic",
 	);
-	const court25dRef = useRef(ownView === "2.5d");
+	const court3dRef = useRef(ownView === "3d");
 	const [speed, setSpeed] = useLocalStorageState("live-game-speed", {
 		defaultValue: String(DEFAULT_SPEED),
 	});
 	const speedRef = useRef(Number.parseInt(speed));
-	// The 2.5D court plays at one of a few set speeds instead: real time by
+	// The 3D court plays at one of a few set speeds instead: real time by
 	// default.
-	const [speed25d, setSpeed25d] = useLocalStorageState("live-game-speed-25d", {
+	const [speed3d, setSpeed3d] = useLocalStorageState("live-game-speed-25d", {
 		defaultValue: "1",
 	});
-	const rate25d = parseCourt25DSpeed(speed25d);
+	const rate3d = parseCourt3DSpeed(speed3d);
 	const [playIndex, setPlayIndex] = useState(-1);
 	const [started, setStarted] = useState(false);
 	const [confetti, setConfetti] = useState<{
@@ -1551,12 +1551,12 @@ export const LiveGame = (props: View<"liveGame">) => {
 		!!mpLiveBroadcast?.active && mpLiveBroadcast.isBroadcaster;
 	// A follower is stepped by the simmer's cursor and never paces playback
 	// itself, so its picture can follow the simmer's at any moment.
-	const court25d =
+	const court3d =
 		__SPORT === "basketball" &&
 		(isFollower
-			? parseLiveGameView(mpLiveBroadcast?.view) === "2.5d"
-			: ownView === "2.5d");
-	court25dRef.current = court25d;
+			? parseLiveGameView(mpLiveBroadcast?.view) === "3d"
+			: ownView === "3d");
+	court3dRef.current = court3d;
 	const followerRef = useRef(isFollower);
 	followerRef.current = isFollower;
 	// The broadcast this page is actually rendering, so unmounting can report
@@ -1650,8 +1650,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 			//
 			// Real-time auto-play ONLY (never fast-forward, rewind, or a multiplayer
 			// follower - `!force` gates that), where an extra display beat is
-			// harmless. The 2.5D court stages its own.
-			if (__SPORT === "basketball" && !force && !court25dRef.current) {
+			// harmless. The 3D court stages its own.
+			if (__SPORT === "basketball" && !force && !court3dRef.current) {
 				const next = events.current[0];
 				const nextAction =
 					next && typeof next.type === "string"
@@ -1857,11 +1857,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 			if (events.current && events.current.length > 0) {
 				// A follower never self-schedules: its playback is stepped only by the
 				// simmer's cursor (see the follower effect below), so it can't run ahead.
-				if (
-					!pausedRef.current &&
-					!followerRef.current &&
-					!court25dRef.current
-				) {
+				if (!pausedRef.current && !followerRef.current && !court3dRef.current) {
 					setTimeout(() => {
 						processToNextPauseInner();
 						setPlayIndex((prev) => prev + 1);
@@ -1950,8 +1946,8 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const startLiveGame = useCallback(
 		(events2: unknown[]) => {
 			events.current = events2;
-			if (court25dRef.current) {
-				// The 2.5D court asks for the first line once the floor is set.
+			if (court3dRef.current) {
+				// The 3D court asks for the first line once the floor is set.
 				return;
 			}
 			setTimeout(() => {
@@ -2076,7 +2072,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 				paused,
 				speed: speedRef.current,
 				gameOver,
-				view: court25dRef.current ? "2.5d" : "classic",
+				view: court3dRef.current ? "3d" : "classic",
 			});
 		};
 
@@ -2108,9 +2104,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 		// Without pausedRef check, this was a race condition and could lead to incorrect post-game records (counting as 2 or more wins)
 		if (pausedRef.current) {
 			pausedRef.current = false;
-			// The 2.5D court picks the animation back up and asks for the next
+			// The 3D court picks the animation back up and asks for the next
 			// line itself.
-			if (!court25dRef.current) {
+			if (!court3dRef.current) {
 				processToNextPause();
 			}
 		}
@@ -2118,7 +2114,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 		setPlayIndex((prev) => prev + 1);
 	}, [processToNextPause]);
 
-	const onCourt25DReady = useCallback(() => {
+	const onCourt3DReady = useCallback(() => {
 		if (
 			pausedRef.current ||
 			followerRef.current ||
@@ -2766,11 +2762,11 @@ export const LiveGame = (props: View<"liveGame">) => {
 											// Since we have two PlayPauseNexts rendered, ignore shortcuts on one
 											ignoreKeyboardShortcuts
 										/>
-										{court25d ? (
-											<Court25DSpeeds
-												value={rate25d}
+										{court3d ? (
+											<Court3DSpeeds
+												value={rate3d}
 												onChange={(s) => {
-													setSpeed25d(String(s));
+													setSpeed3d(String(s));
 												}}
 											/>
 										) : (
@@ -2846,7 +2842,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 									/>
 								</div>
 							) : null}
-							{court25d ? (
+							{court3d ? (
 								<Suspense
 									fallback={
 										<div
@@ -2859,7 +2855,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 										/>
 									}
 								>
-									<Court25D
+									<Court3D
 										events={props.events}
 										cursor={
 											initialEventCount.current - (events.current?.length ?? 0)
@@ -2868,13 +2864,13 @@ export const LiveGame = (props: View<"liveGame">) => {
 										caption={playByPlayEntries.current[0]?.text}
 										captionT={playByPlayEntries.current[0]?.t}
 										paused={paused}
-										rate={rate25d}
+										rate={rate3d}
 										follower={isFollower}
-										onReady={onCourt25DReady}
+										onReady={onCourt3DReady}
 									/>
 								</Suspense>
 							) : null}
-							{__SPORT === "basketball" && !court25d ? (
+							{__SPORT === "basketball" && !court3d ? (
 								<div>
 									<LiveCourt
 										scene={courtScene.current}
@@ -2915,11 +2911,11 @@ export const LiveGame = (props: View<"liveGame">) => {
 									titlePause="Pause Simulation"
 									titleNext="Show Next Play"
 								/>
-								{court25d ? (
-									<Court25DSpeeds
-										value={rate25d}
+								{court3d ? (
+									<Court3DSpeeds
+										value={rate3d}
 										onChange={(s) => {
-											setSpeed25d(String(s));
+											setSpeed3d(String(s));
 										}}
 									/>
 								) : (

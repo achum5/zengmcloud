@@ -1,7 +1,7 @@
 // Some plays can be called more than one way: a make at the rim "throws it
 // down" or "the layup is good". Which wording a line gets is picked from the
 // play itself rather than at random, so a game reads the same every time it is
-// shown - live, rewound, replayed, followed in multiplayer - and the 2.5D court
+// shown - live, rewound, replayed, followed in multiplayer - and the 3D court
 // can act out the finish the line describes.
 
 // What each wording says happened, in the order getText lists them. A

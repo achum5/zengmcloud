@@ -55,7 +55,7 @@ import {
 	replayAim,
 } from "./scene.ts";
 
-// THE 2.5D COURT: the game as a broadcast - the home team's own floor, the
+// THE 3D COURT: the game as a broadcast - the home team's own floor, the
 // players with their faces, a camera that follows the ball - acting out the
 // play-by-play, in place of the 2D court when this device has chosen it.
 //
@@ -145,7 +145,7 @@ type Props = {
 	onReady: () => void;
 };
 
-const Court25D = ({
+const Court3D = ({
 	events,
 	cursor,
 	boxScore,
@@ -918,11 +918,9 @@ const Court25D = ({
 					/>
 				))}
 			<style>
-				{
-					".court25d-caption .text-body-secondary { color: #c9c3d3 !important; }"
-				}
+				{".court3d-caption .text-body-secondary { color: #c9c3d3 !important; }"}
 			</style>
-			{/* The home floor as the 2D court draws it, out of sight: the 2.5D court
+			{/* The home floor as the 2D court draws it, out of sight: the 3D court
 			    makes its picture of the floor from it (see courtTexture). */}
 			<div
 				ref={floorRef}
@@ -1063,7 +1061,7 @@ const Court25D = ({
 			</div>
 			{caption ? (
 				<div
-					className="court25d-caption"
+					className="court3d-caption"
 					style={{
 						position: "absolute",
 						left: "50%",
@@ -1102,4 +1100,4 @@ const Court25D = ({
 	);
 };
 
-export default Court25D;
+export default Court3D;

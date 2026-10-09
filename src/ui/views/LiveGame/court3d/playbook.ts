@@ -1,4 +1,4 @@
-// THE PLAYBOOK: real NBA sets, written down role by role, for the 2.5D
+// THE PLAYBOOK: real NBA sets, written down role by role, for the 3D
 // court to run on its way to whatever shot the sim says came next.
 //
 // Built from public breakdowns of the sets teams actually run (pick-and-roll

@@ -39,7 +39,7 @@ const away = (p: V3, a: V3, b: V3): number => {
 	return Math.hypot(p.f - q.f, p.s - q.s, p.u - q.u);
 };
 
-describe("2.5D poses", () => {
+describe("3D poses", () => {
 	// A body is anchored at its feet and jumps are added on top, so every
 	// moment of every animation has to stand on the floor - otherwise a body
 	// would sink through the hardwood or hover between steps.

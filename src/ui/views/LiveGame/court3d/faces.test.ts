@@ -2,7 +2,7 @@ import { assert, describe, test } from "vitest";
 import type { FaceConfig } from "facesjs";
 import { hairCut, profileOf } from "./faces.ts";
 
-describe("2.5D faces", () => {
+describe("3D faces", () => {
 	// Seen from the side or from behind, his hair is drawn the way it sits on
 	// his head: cropped close, standing up off it, or hanging down.
 	test("every haircut sits on the back of his head the way it should", () => {

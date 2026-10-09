@@ -1,6 +1,6 @@
 import { COURT_H, COURT_W, RIM_INSET } from "../courtSpots.ts";
 
-// The 2.5D court lives in the same world as the 2D court - feet, x along the
+// The 3D court lives in the same world as the 2D court - feet, x along the
 // 94ft length, y across the 50ft width, display team 0 (away) attacking the
 // LEFT rim and 1 (home) the RIGHT - plus z, the height off the floor.
 export { COURT_H, COURT_W };

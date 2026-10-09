@@ -1,7 +1,7 @@
 // HOW FINE THE PICTURE IS.
 //
 // The court is drawn small and blown up without smoothing, each of its
-// pixels a whole number of the screen's (see Court25D) - as fine as about
+// pixels a whole number of the screen's (see Court3D) - as fine as about
 // ROWS of them top to bottom. A device that can't draw that many fast
 // enough steps a size coarser, never coarser than about MIN_ROWS, and back
 // finer once it has time to spare.

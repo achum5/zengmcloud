@@ -17,7 +17,7 @@ const run = (
 	return t;
 };
 
-describe("2.5D picture resolution", () => {
+describe("3D picture resolution", () => {
 	test("as fine as a whole number of screen pixels allows", () => {
 		const res = makeResolution(0);
 		// A 720-pixel-tall picture: one screen pixel each.

@@ -147,7 +147,7 @@ const ManageTeams = (props: View<"manageTeams">) => {
 
 	const { setDirty } = useBlocker();
 
-	// Teams' 2.5D jersey pictures, saved as they're changed rather than with
+	// Teams' 3D jersey pictures, saved as they're changed rather than with
 	// the rest of the form.
 	const [skins, setSkins] = useState(
 		() => new Map(props.teams.map((t) => [t.tid, t.jerseySkins])),
@@ -344,7 +344,7 @@ const ManageTeams = (props: View<"manageTeams">) => {
 											setSkinsTid(t.tid);
 										}}
 									>
-										2.5D jerseys
+										3D jerseys
 									</button>
 								</div>
 							) : null}

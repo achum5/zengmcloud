@@ -16,7 +16,7 @@ import {
 
 // THE BUILDING: the stands, the LED boards along their front, the scorer's
 // table and the benches - flat pictures painted once per game and stood up in
-// the world where the camera sees them (see Court25D) - and the baskets, the
+// the world where the camera sees them (see Court3D) - and the baskets, the
 // one part of the building that moves, drawn every frame.
 
 export type ArenaTeam = {

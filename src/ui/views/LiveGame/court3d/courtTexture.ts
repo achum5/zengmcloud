@@ -3,9 +3,9 @@
 // The floor is whatever the 2D court draws for the home team - its wood, its
 // paint, its logos and lettering, every custom touch - so a team's own court
 // is its own court here too. That drawing is an SVG; it is turned into a
-// picture once a game, for the 2.5D court to lay on the floor in perspective.
+// picture once a game, for the 3D court to lay on the floor in perspective.
 //
-// Two things are left out of the SVG: its lines (the 2.5D court draws its
+// Two things are left out of the SVG: its lines (the 3D court draws its
 // own, see courtLines), and its pictures - an SVG drawn as an image is not
 // allowed to fetch anything, so each logo is drawn onto the picture
 // separately, exactly where the SVG puts it.

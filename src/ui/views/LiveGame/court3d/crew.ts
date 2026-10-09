@@ -53,7 +53,7 @@ export type CrewMember = {
 	hgt: number;
 	weight: number;
 	face: FaceConfig;
-	// What he wears (the head comes from his face; see Court25D).
+	// What he wears (the head comes from his face; see Court3D).
 	dress: Pick<Look, "kit" | "gear" | "outfit">;
 };
 

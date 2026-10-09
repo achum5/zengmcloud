@@ -8,12 +8,12 @@ import GameSim from "../GameSim.ts";
 import { processTeam } from "../game/loadTeams.ts";
 import createRandomPlayers from "../league/create/createRandomPlayers.ts";
 import { DEFAULT_LEVEL } from "../../../common/budgetLevels.ts";
-import { compileCourt } from "../../../ui/views/LiveGame/court25d/director.ts";
+import { compileCourt } from "../../../ui/views/LiveGame/court3d/director.ts";
 import {
 	buildClocks,
 	gameClockAt,
 	shotClockAt,
-} from "../../../ui/views/LiveGame/court25d/clock.ts";
+} from "../../../ui/views/LiveGame/court3d/clock.ts";
 
 // THE SHOT CLOCK ON THE 3D COURT IS THE SIM'S.
 //

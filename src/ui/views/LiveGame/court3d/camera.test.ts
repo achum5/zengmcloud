@@ -2,7 +2,7 @@ import { assert, describe, test } from "vitest";
 import { courtFit, makeCamera, MAIN_RIG, project } from "./camera.ts";
 import { COURT_H, COURT_W } from "./geometry.ts";
 
-describe("2.5D camera", () => {
+describe("3D camera", () => {
 	// However tight the play wants it, both sidelines stay in the picture:
 	// the near one above the bottom edge, the far one's players below the top.
 	test("the whole floor stays in the picture, sideline to sideline", () => {

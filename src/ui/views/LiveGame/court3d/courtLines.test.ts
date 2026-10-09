@@ -3,7 +3,7 @@ import { courtLineStrips } from "./courtLines.ts";
 import { COURT_H, COURT_W } from "./geometry.ts";
 import { RIM_INSET } from "../courtSpots.ts";
 
-describe("2.5D court lines", () => {
+describe("3D court lines", () => {
 	test("every line is on the floor", () => {
 		for (const strip of courtLineStrips()) {
 			for (const p of strip.pts) {

@@ -9,9 +9,9 @@ import {
 	ART_W,
 	artScaleOf,
 	clearGuides,
-} from "../LiveGame/court25d/kitArt.ts";
+} from "../LiveGame/court3d/kitArt.ts";
 
-const KitPreview = lazy(() => import("../LiveGame/court25d/KitPreview.tsx"));
+const KitPreview = lazy(() => import("../LiveGame/court3d/KitPreview.tsx"));
 
 type Side = keyof JerseySkinIds;
 
@@ -122,7 +122,7 @@ const JerseySkins = ({
 		setBusy("template");
 		try {
 			const { kitTemplate } =
-				await import("../LiveGame/court25d/kitTemplate.ts");
+				await import("../LiveGame/court3d/kitTemplate.ts");
 			const cv = await kitTemplate();
 			const blob = await new Promise<Blob | null>((resolve) => {
 				cv.toBlob(resolve, "image/png");
@@ -143,7 +143,7 @@ const JerseySkins = ({
 	return (
 		<Modal show onHide={onHide}>
 			<Modal.Header closeButton>
-				{t.region} {t.name} 2.5D jerseys
+				{t.region} {t.name} 3D jerseys
 			</Modal.Header>
 			<Modal.Body>
 				<div className="d-flex justify-content-center gap-4">

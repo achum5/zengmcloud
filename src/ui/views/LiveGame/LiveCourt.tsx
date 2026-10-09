@@ -548,7 +548,7 @@ const bodyScale = (
 });
 
 // A soft ground shadow under a body, so it reads as standing ON the floor
-// (a light 2.5D cue) rather than floating flat on the hardwood.
+// (a light 3D cue) rather than floating flat on the hardwood.
 const GROUND_SHADOW =
 	"radial-gradient(ellipse at center, rgba(0,0,0,0.42), rgba(0,0,0,0) 70%)";
 

@@ -23,7 +23,7 @@ const FIVE: Cast[] = [
 	{ pid: 50, rank: 8 },
 ];
 
-describe("2.5D playbook", () => {
+describe("3D playbook", () => {
 	test("every set reads, and only uses spots the court knows", () => {
 		assert.strictEqual(PLAYS.length, PLAYBOOK.length);
 		assert.isAbove(PLAYS.length, 100);

@@ -93,6 +93,10 @@ const makeRostered = async () => {
 
 beforeEach(async () => {
 	resetG();
+	// Cache only. Test files share a worker (isolate: false), and one that
+	// stubs out the league database would otherwise leave its stub here.
+	// @ts-expect-error
+	idb.league = undefined;
 	g.setWithoutSavingToDB("godMode", true);
 	g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
 

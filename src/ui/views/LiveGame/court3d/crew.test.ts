@@ -24,7 +24,7 @@ const working = (seed: string) => {
 	return { events, tl, crew: crewFor(gidOf(seed), AWAY, HOME) };
 };
 
-describe("2.5D crew", () => {
+describe("3D crew", () => {
 	test("the same people work a game every time it is shown", () => {
 		const a = crewFor(77, AWAY, HOME);
 		assert.deepEqual(crewFor(77, AWAY, HOME), a);

@@ -6516,13 +6516,13 @@ const updateTeamCourt = async ({
 	return { ok: true };
 };
 
-// A 2.5D uniform picture by id. The store isn't kept in memory: a picture is
+// A 3D uniform picture by id. The store isn't kept in memory: a picture is
 // in the cache only if it was written lately, otherwise on disk.
 const jerseySkinById = async (id: string) =>
 	(await idb.cache.jerseySkins.get(id)) ??
 	(await idb.league.get("jerseySkins", id));
 
-// A team's home or away uniform for the 2.5D game, as a picture (a PNG data
+// A team's home or away uniform for the 3D game, as a picture (a PNG data
 // URL, at most this long), or none. The picture is stored once, by a hash of
 // it, in the synced jerseySkins store - so it travels in the league file -
 // and the team record keeps only its id. A picture no team wears any more is

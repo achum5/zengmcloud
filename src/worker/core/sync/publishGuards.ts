@@ -73,7 +73,7 @@ export const SIM_INERT_STORES: ReadonlySet<string> = new Set([
 	// simmed would cost that league-mate the day - the same way a trading card
 	// used to, which is the incident the list above exists for.
 	"socialAccounts",
-	// Teams' uniforms for the 2.5D game, as pictures. Only what a game looks
+	// Teams' uniforms for the 3D game, as pictures. Only what a game looks
 	// like; the team record points at them.
 	"jerseySkins",
 ]);

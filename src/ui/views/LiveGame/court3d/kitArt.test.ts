@@ -150,7 +150,7 @@ describe("uniforms drawn from a picture", () => {
 	});
 });
 
-describe("a team's own jersey on the 2.5D floor", () => {
+describe("a team's own jersey on the 3D floor", () => {
 	const colors: [string, string, string] = ["#007a33", "#ba9653", "#ffffff"];
 
 	test("a dark custom jersey is worn away, its colors at home", () => {

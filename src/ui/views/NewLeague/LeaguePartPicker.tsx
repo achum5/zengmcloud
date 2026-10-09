@@ -23,7 +23,7 @@ const leaguePartDescriptions: Record<string, string> = {
 	savedTrades: "Saved trades",
 	savedTradingBlock: "Current trading block",
 	images: "Attached player and team images",
-	jerseySkins: "2.5D jersey skins",
+	jerseySkins: "3D jersey skins",
 };
 
 const LeaguePartPicker = ({

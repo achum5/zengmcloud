@@ -90,7 +90,7 @@ export type LiveBroadcastMeta = {
 	// update, followers treat the broadcast as ended (crash recovery).
 	expiresAt: number;
 	// Which picture the device in charge of simming is watching this game in
-	// ("classic" or "2.5d"); everyone following sees the same one.
+	// ("classic" or "3d"); everyone following sees the same one.
 	view?: string;
 };
 

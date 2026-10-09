@@ -36,7 +36,7 @@ const through = (pts: number[], side: Side) => {
 	return false;
 };
 
-describe("2.5D ball at the rim", () => {
+describe("3D ball at the rim", () => {
 	test("dropped through the middle of the hoop, it goes in clean - slowed by the net, down to the floor", () => {
 		const p = playShot(
 			0,

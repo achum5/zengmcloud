@@ -137,7 +137,7 @@ building.
 
 ## G. Naming
 
-- [ ] Rename "2.5D" to "3D" everywhere, front end and back end, and call it 3D
+- [x] Rename "2.5D" to "3D" everywhere, front end and back end, and call it 3D
       from now on.
 
 ## H. Bottom of the list

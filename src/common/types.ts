@@ -564,7 +564,7 @@ export type LiveGamePlayByPlay = {
 //
 // A replay re-stages the saved play-by-play exactly, but a face ages with
 // the seasons and a team can change its floor, so a game rewatched years
-// later would star today's older faces on today's court. The 2.5D court
+// later would star today's older faces on today's court. The 3D court
 // draws a saved replay from this instead.
 export type ReplayLooks = {
 	players: Record<
@@ -663,8 +663,8 @@ export type FaDayResults = {
 	at: number;
 };
 
-// A TEAM'S UNIFORM FOR THE 2.5D LIVE GAME, AS A PICTURE (see
-// ui/views/LiveGame/court25d/kitArt.ts). The picture itself rides along as a
+// A TEAM'S UNIFORM FOR THE 3D LIVE GAME, AS A PICTURE (see
+// ui/views/LiveGame/court3d/kitArt.ts). The picture itself rides along as a
 // data URL, so it goes wherever the league file goes and syncs once, not with
 // every game its team plays - the team record, rewritten after each game,
 // holds only the id. Kept by what is in it: the id is a hash of the picture.
@@ -1507,7 +1507,7 @@ export type MpLiveBroadcast = {
 	cursor: number;
 	paused: boolean;
 	gameOver: boolean;
-	// The picture the simmer is watching in ("classic" / "2.5d"), so followers
+	// The picture the simmer is watching in ("classic" / "3d"), so followers
 	// see the same one. Absent from older builds: classic.
 	view?: string;
 };
@@ -2709,7 +2709,7 @@ export type Team = {
 	// fields optional so a partial customization is fine. See common/court.ts.
 	court?: CourtStyle;
 
-	// Its home and away uniforms for the 2.5D live game, drawn from pictures:
+	// Its home and away uniforms for the 3D live game, drawn from pictures:
 	// ids of JerseySkin rows. Optional (no upgrade).
 	jerseySkins?: JerseySkinIds;
 

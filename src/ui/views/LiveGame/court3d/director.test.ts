@@ -60,7 +60,7 @@ const sampleTimes = (tl: CourtTimeline, step: number) => {
 	return out;
 };
 
-describe("2.5D director", () => {
+describe("3D director", () => {
 	test("every play-by-play line gets one beat, in order, tiling the timeline", () => {
 		for (const seed of ["a", "b", "c"]) {
 			const { events, tl } = compile(seed);

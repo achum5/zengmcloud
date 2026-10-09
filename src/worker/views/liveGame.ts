@@ -236,7 +236,7 @@ export const boxScoreToLiveSim = async ({
 				}
 			}
 			t.court = liveSimCourt({ override, teamCourt });
-			// What the team wears in the 2.5D game: the jersey it has made its
+			// What the team wears in the 3D game: the jersey it has made its
 			// own, if it has, and its uniforms drawn from pictures.
 			if (worn?.jersey !== undefined) {
 				t.jersey = worn.jersey;
@@ -391,7 +391,7 @@ export default defineView({
 					? `${boxScore.season} Playoffs`
 					: `${boxScore.season} Regular Season`;
 				(out.initialBoxScore as any).replayLabel = label;
-				// How everyone looked that night, for the 2.5D court.
+				// How everyone looked that night, for the 3D court.
 				try {
 					const row =
 						(await idb.cache.liveGamePlayByPlay.get(gid)) ??
@@ -404,7 +404,7 @@ export default defineView({
 					// Cosmetic - today's looks it is.
 				}
 			}
-			// The home team's building, for the 2.5D court: as it was that night
+			// The home team's building, for the 3D court: as it was that night
 			// on a replay that kept it, otherwise as of the game's season.
 			(out.initialBoxScore as any).arena =
 				arenaThen ??
