@@ -1459,6 +1459,17 @@ const denyArm = (
 	};
 };
 
+// Just where he is on the floor at t, if he is on it - cheap, for asking
+// of every man at every step.
+export const floorSpotOf = (tr: Track, t: number): Pt | undefined => {
+	const si = lastIndex(tr.shown, t, (x) => x[0]);
+	if (si < 0 || !tr.shown[si]![1]) {
+		return undefined;
+	}
+	const s = spotAt(tr, t);
+	return { x: s.x, y: s.y };
+};
+
 export const evalPlayer = (
 	tl: CourtTimeline,
 	pid: number,

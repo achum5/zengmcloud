@@ -5,6 +5,7 @@ import {
 	arenaShotAt,
 	cameraCuts,
 	evalPlayer,
+	floorSpotOf,
 	lastCut,
 	offenseAt,
 	recentFx,
@@ -440,6 +441,30 @@ const lastFreeThrow = (tl: CourtTimeline, t: number): boolean => {
 	return !next || (next.type !== "ft" && next.type !== "missFt");
 };
 
+// Out of the way: a man working along the line where an official means to
+// stand, the official gives him room - along the sideline, or the end line,
+// whichever he works.
+const ROOM = 4.5;
+const clearOfPlayers = (
+	tl: CourtTimeline,
+	t: number,
+	goal: [Pt, Pt, Pt],
+): [Pt, Pt, Pt] =>
+	goal.map((g) => {
+		const sideline = g.y < 2 || g.y > COURT_H - 2;
+		let q = { ...g };
+		for (const [, tr] of tl.tracks) {
+			const p = floorSpotOf(tr, t);
+			if (!p || Math.hypot(p.x - q.x, p.y - q.y) >= ROOM) {
+				continue;
+			}
+			q = sideline
+				? { x: p.x + (q.x >= p.x ? 1 : -1) * ROOM, y: q.y }
+				: { x: q.x, y: p.y + (q.y >= p.y ? 1 : -1) * ROOM };
+		}
+		return q;
+	}) as [Pt, Pt, Pt];
+
 // The three of them, by crew position: the lead under the basket the ball is
 // going at, the trail behind the play on the far (table) side, the slot on
 // the near sideline. Lead and trail trade places every change of possession,
@@ -496,7 +521,11 @@ const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 	const trail = { x: X(clamp(bd + 12, 26, 54)), y: 0.9 };
 	const slot = { x: X(clamp(bd + 2, 17, 47)), y: COURT_H + 1.2 };
 	const k = lastIndex(tl.poss, t, (p) => p[0]);
-	return k % 2 === 0 ? [lead, trail, slot] : [trail, lead, slot];
+	return clearOfPlayers(
+		tl,
+		t,
+		k % 2 === 0 ? [lead, trail, slot] : [trail, lead, slot],
+	);
 };
 
 // Where each official is: running after the places the game calls for, as
@@ -511,6 +540,25 @@ const REF_GAIN = 1.8;
 const REF_RUN = 24;
 const REF_ACCEL = 20;
 type Places = { at: Pt[]; vel: Pt[] };
+// Round the edge of the floor, not across it: from the sideline down to the
+// end line - or back up - by way of the corner.
+const viaCorner = (p: Pt, g: Pt): Pt => {
+	const side = (q: Pt) => q.y < 2 || q.y > COURT_H - 2;
+	const end = (q: Pt) => q.x < 0.5 || q.x > COURT_W - 0.5;
+	if (Math.abs(g.x - p.x) < 6) {
+		return g;
+	}
+	if (side(p) && end(g)) {
+		return {
+			x: g.x,
+			y: p.y < COURT_H / 2 ? Math.min(p.y, 0.9) : Math.max(p.y, COURT_H + 1.2),
+		};
+	}
+	if (end(p) && side(g) && Math.abs(p.y - g.y) > 6) {
+		return { x: p.x, y: g.y };
+	}
+	return g;
+};
 const refPaths = new WeakMap<CourtTimeline, Pt[][]>();
 const refPath = (tl: CourtTimeline): Pt[][] => {
 	let out = refPaths.get(tl);
@@ -538,14 +586,19 @@ const refPath = (tl: CourtTimeline): Pt[][] => {
 		} else if (k > 0) {
 			at = at.map((p, i) => {
 				const g = goal[i]!;
-				let wx = (g.x - p.x) * REF_GAIN;
-				let wy = (g.y - p.y) * REF_GAIN;
+				const W = viaCorner(p, g);
+				// (How far he has to go, round the corner if he goes that way.)
+				const d0 = dist(p, W);
+				const left = d0 + dist(W, g);
+				const u =
+					d0 > 0.01
+						? { x: (W.x - p.x) / d0, y: (W.y - p.y) / d0 }
+						: { x: 0, y: 0 };
+				let wx = u.x * left * REF_GAIN;
+				let wy = u.y * left * REF_GAIN;
 				const w = Math.hypot(wx, wy);
 				// No faster than he can pull up from by the time he gets there.
-				const most = Math.min(
-					REF_RUN,
-					Math.sqrt(2 * REF_ACCEL * Math.hypot(g.x - p.x, g.y - p.y)),
-				);
+				const most = Math.min(REF_RUN, Math.sqrt(2 * REF_ACCEL * left));
 				if (w > most) {
 					wx *= most / w;
 					wy *= most / w;

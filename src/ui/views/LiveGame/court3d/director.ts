@@ -2189,10 +2189,11 @@ class Director {
 				placeDef(pid, j, t + 120 + j * 70);
 			}
 		});
-		// The ball to him, as he gets there.
+		// The ball to him from the official - as he gets there, but not
+		// long before the rest are set: he doesn't stand holding it.
 		const has = this.ballTo(
 			inbounder,
-			Math.max(t + 300, (this.free.get(inbounder) ?? t) - 1200),
+			Math.max(t + 300, (this.free.get(inbounder) ?? t) - 1200, ready - 1500),
 		);
 		if (holding !== undefined) {
 			const j = off.indexOf(holding);
@@ -2286,6 +2287,7 @@ class Director {
 				"run",
 			);
 		}
+		this.backOut(from, to, t);
 		const a = this.posOf(from);
 		const b = this.posOf(to);
 		const d = dist(a, b);
@@ -2352,6 +2354,40 @@ class Director {
 	// The outlet: the man who came down with it holds it, looking up the
 	// floor, while the ball handler comes back to the wing ahead of him
 	// calling for it - and gives it up as he gets there.
+	// Into the lane on the dribble with the man he wants not there yet, he
+	// doesn't stand in it bouncing the ball: he dribbles back out, facing
+	// the rim, and throws it from there.
+	private backOut(from: number, to: number, t: number) {
+		const team = this.teamOf(from);
+		const dir = attackDir(team);
+		const rim = rimPt(team);
+		const A = this.posOf(from);
+		const start = Math.max(t, this.free.get(from) ?? 0);
+		if (dist(A, rim) > 15 || this.dribbleFrom(from, start) === undefined) {
+			return;
+		}
+		const wait =
+			(this.free.get(to) ?? 0) +
+			40 -
+			passMs(dist(A, this.posOf(to))) -
+			RELEASE_MS -
+			start;
+		const k = Math.min(9, ((wait - 500) / 1000) * DRIBBLE_SPEED.retreat!);
+		if (k < 3) {
+			return;
+		}
+		const out = unitVec(rim, A);
+		const u = unitVec({ x: 0, y: 0 }, { x: out.x - dir * 0.8, y: out.y });
+		this.go(
+			from,
+			inPlay({ x: A.x + u.x * k, y: A.y + u.y * k }),
+			start + 200,
+			DRIBBLE_SPEED.retreat!,
+			"dribble",
+			dir,
+		);
+	}
+
 	private outlet(
 		from: number,
 		to: number,
@@ -3149,18 +3185,23 @@ class Director {
 		const bh = run.roles[f.ball]!;
 		const had = this.holder;
 		let ready = t + 600;
+		// The length of the floor to go, the rest run it in their lanes.
+		const lanes: { pid: number; to: Pt; j: number }[] = [];
 		run.roles.forEach((pid, r) => {
 			if (pid === had && had !== bh) {
 				return;
 			}
 			const S = this.at(run, f.at[r]!);
-			const far = dist(this.posOf(pid), S) > 20;
+			const P = this.posOf(pid);
+			const far = dist(P, S) > 20;
 			if (pid === had) {
 				this.hold(pid, Math.max(t, this.free.get(pid) ?? 0), "dribble");
 				ready = Math.max(
 					ready,
 					this.go(pid, S, t, DRIBBLE * (far ? 0.85 : 0.6), "dribble", dir),
 				);
+			} else if ((S.x - P.x) * dir >= 30) {
+				lanes.push({ pid, to: S, j: r });
 			} else {
 				ready = Math.max(
 					ready,
@@ -3168,6 +3209,17 @@ class Director {
 				);
 			}
 		});
+		if (lanes.length > 0) {
+			const by =
+				t +
+				Math.max(
+					...lanes.map((m) =>
+						runMs(dist(this.posOf(m.pid), m.to) * 1.08, RUN * 0.85),
+					),
+				);
+			this.fillLanes(team, lanes, t, by);
+			ready = Math.max(ready, by);
+		}
 		if (had !== undefined && had !== bh) {
 			ready = Math.max(ready, this.passTo(had, bh, t + 150));
 			const r = run.roles.indexOf(had);
@@ -6899,6 +6951,18 @@ class Director {
 		anim: "board" | "rebound" = "board",
 	) {
 		const rim = rimPt(team);
+		// Back to him off his own shot that quickly, he goes up for it again
+		// once it is out of his hands - not before.
+		const shot = this.ball.findLast(
+			(s) =>
+				s.kind === "fly" &&
+				"pid" in s.from &&
+				s.from.pid === r &&
+				s.t0 > t - 100,
+		);
+		if (shot) {
+			t = Math.max(t, shot.t0 + 20);
+		}
 		// Up for it, and once he lands, chinned - elbows out - a beat before
 		// he looks up the floor.
 		this.act(r, anim, t, t + REBOUND_MS, {
@@ -11804,6 +11868,22 @@ class Director {
 					});
 					was = Z.p;
 				}
+				// His feet don't change step for a single tick between two of
+				// the same: a push step, a drop step, a push step is all push.
+				for (let k = first + 1; k + 1 < out.length; k++) {
+					const a = out[k - 1]!;
+					const b = out[k]!;
+					const c = out[k + 1]!;
+					if (
+						a.anim === c.anim &&
+						b.anim !== a.anim &&
+						b.t1 - b.t0 <= 150 &&
+						b.t0 - a.t1 < 1 &&
+						c.t0 - b.t1 < 1
+					) {
+						b.anim = a.anim;
+					}
+				}
 				// Turning back on himself from one run to the next, he gets
 				// there pulling up, not at full tilt.
 				for (let k = first; k + 1 < out.length; k++) {
@@ -12402,6 +12482,14 @@ class Director {
 				// in his hands.
 				let n0 = r.t0 - RAMP;
 				let n1 = r.t1 + STEP + RAMP;
+				// (Not before he is out there: coming on, he comes on where he
+				// comes on, and steps aside from there.)
+				{
+					const k = lastBy(r.a.shown, r.t0, (x) => x[0]);
+					if (k >= 0 && r.a.shown[k]![1]) {
+						n0 = Math.max(n0, r.a.shown[k]![0]);
+					}
+				}
 				const busy = [
 					...r.a.acts
 						.filter((a) => TOGETHER.has(a.anim) || HOLDS.has(a.anim))
@@ -12622,9 +12710,12 @@ class Director {
 							: next
 								? next.t0 - m.t1 - 30
 								: Infinity;
+					// (Not into anything he does as he gets there - nor out from
+					// under something timed to his getting there, a poke at the
+					// ball, a catch.)
 					for (const a of tr.acts) {
-						if (a.t0 >= m.t1 - 50 && a.t0 < m.t1 + late) {
-							room = Math.min(room, a.t0 - m.t1);
+						if (a.t1 > m.t1 - 50 && a.t0 < m.t1 + late) {
+							room = Math.min(room, Math.max(0, a.t0 - m.t1));
 						}
 					}
 					if (
