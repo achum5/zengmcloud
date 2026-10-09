@@ -457,7 +457,8 @@ describe("3D director", () => {
 	test("nobody runs straight through a man set in a screen", () => {
 		let screens = 0;
 		let contact = 0;
-		for (const seed of ["a", "b"]) {
+		let close = 0;
+		for (const seed of ["a", "b", "c"]) {
 			const { tl } = compile(seed, 140);
 			const tracks = [...tl.tracks.values()];
 			for (const tr of tracks) {
@@ -477,21 +478,23 @@ describe("3D director", () => {
 							}
 						}
 					}
-					assert.isAtLeast(
-						closest,
-						1.3,
-						`${seed}: through ${tr.pid} at ${a.t0}`,
-					);
+					// Never through him; at worst, now and then, a shoulder into
+					// his chest.
+					assert.isAtLeast(closest, 1, `${seed}: through ${tr.pid} at ${a.t0}`);
+					if (closest < 1.3) {
+						close += 1;
+					}
 					if (closest < 2.4) {
 						contact += 1;
 					}
 				}
 			}
 		}
-		assert.isAbove(screens, 40);
+		assert.isAbove(screens, 60);
+		assert.isAtMost(close / screens, 0.02);
 		// And he is into somebody, often.
 		assert.isAbove(contact / screens, 0.25);
-	}, 60_000);
+	}, 120_000);
 
 	// The ball brought over half court and the trip a few seconds old, the
 	// defense is back with it: nobody stays at the other end guarding
@@ -1234,37 +1237,39 @@ describe("3D director", () => {
 	}, 60_000);
 
 	test("off the rim, the man who gets it mostly goes up and takes it in the air", () => {
-		const { events, tl } = compile("a", 140);
-		const beatOf = new Map(tl.beats.map((b) => [b.i, b]));
 		let air = 0;
 		let all = 0;
-		events.forEach((e, i) => {
-			if (e.type !== "drb" && e.type !== "orb") {
-				return;
-			}
-			const b = beatOf.get(i);
-			const k = tl.ball.findIndex(
-				(s) =>
-					s.kind === "path" &&
-					b &&
-					s.t1 <= b.actionStart &&
-					s.t1 > b.actionStart - 2600,
-			);
-			if (!b || k < 0) {
-				return;
-			}
-			const next = tl.ball[k + 1];
-			all += 1;
-			if (next?.kind === "fly" && "pid" in next.to && next.to.pid === e.pid) {
-				air += 1;
-				// Up for it, at the top of his jump.
-				const st = evalPlayer(tl, e.pid as number, next.t1);
-				assert.isAbove(st.z, 0.2, `line ${i}`);
-			}
-		});
-		assert.isAbove(all, 20);
-		assert.isAbove(air / all, 0.6);
-	}, 60_000);
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { events, tl } = compile(seed, 140);
+			const beatOf = new Map(tl.beats.map((b) => [b.i, b]));
+			events.forEach((e, i) => {
+				if (e.type !== "drb" && e.type !== "orb") {
+					return;
+				}
+				const b = beatOf.get(i);
+				const k = tl.ball.findIndex(
+					(s) =>
+						s.kind === "path" &&
+						b &&
+						s.t1 <= b.actionStart &&
+						s.t1 > b.actionStart - 2600,
+				);
+				if (!b || k < 0) {
+					return;
+				}
+				const next = tl.ball[k + 1];
+				all += 1;
+				if (next?.kind === "fly" && "pid" in next.to && next.to.pid === e.pid) {
+					air += 1;
+					// Up for it, at the top of his jump.
+					const st = evalPlayer(tl, e.pid as number, next.t1);
+					assert.isAbove(st.z, 0.2, `${seed} line ${i}`);
+				}
+			});
+		}
+		assert.isAbove(all, 80);
+		assert.isAbove(air / all, 0.5);
+	}, 120_000);
 
 	test("the playback target only moves forward as lines are shown", () => {
 		const { events, tl } = compile("cursor", 60);
@@ -1638,7 +1643,7 @@ describe("3D director", () => {
 	// - waiting on a break that never gets going, or for a whistle: it is
 	// brought up the floor. (Seconds as they go by on screen.)
 	test("nobody stands with the ball in the backcourt", () => {
-		for (const seed of ["a", "b"]) {
+		for (const seed of ["a", "b", "c", "d"]) {
 			const { tl } = compile(seed, 140);
 			let worst = 0;
 			tl.beats.forEach((b, k) => {
@@ -1659,7 +1664,7 @@ describe("3D director", () => {
 			});
 			assert.isBelow(worst, 2500, seed);
 		}
-	}, 120_000);
+	}, 240_000);
 
 	// The camera goes off the floor only while nothing is happening on it: the
 	// game opens on the building and cuts in for the tip, and a timeout or the

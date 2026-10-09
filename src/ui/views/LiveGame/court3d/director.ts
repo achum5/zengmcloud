@@ -576,6 +576,9 @@ const STEP_MIN = 600;
 // not quite half off a steal (more would race the clock), one in sixteen off
 // a basket.
 const BREAK_GAP = { board: 9.6, steal: 11, make: 7.1 };
+// A trip ending in a turnover or a whistle sooner than this (seconds of the
+// sim's clock) has no time for the ball to be brought up and a set run.
+const RUSH_GAP = 6;
 // And by where the shot came from: a break ends at the rim far more often
 // than a trip does, seldom with a floater and hardly ever with a pull-up from
 // mid-range (see BREAK_SHARE) - so a trip ending at the rim was a break on a
@@ -2331,10 +2334,21 @@ class Director {
 		}
 
 		const handlerPos = this.posOf(this.holder ?? this.slots(team)[0]!);
+		// A trip the sim ends in a turnover or a whistle only seconds in -
+		// lost on the way up, fouled at once (on purpose, late in a game) -
+		// is over before any set: it happens where the ball is.
+		const rushed = !shot && !transition && gap !== undefined && gap < RUSH_GAP;
 		if (transition) {
 			this.breaks.push(t);
 			run = call?.("break");
 			t = run ? this.startBreak(run, t) : this.pushBreak(team, t);
+		} else if (rushed) {
+			// Up the floor if it isn't, fast - and no set.
+			if (this.inBackcourt(team, handlerPos)) {
+				const up = t;
+				t = this.bringUp(team, t);
+				this.hurry(Math.max(from + 400, up - 200), t - 1000);
+			}
 		} else if (
 			into === "flow" ||
 			(into === undefined &&
@@ -5336,7 +5350,7 @@ class Director {
 			made: plan.kind === "make",
 			kinds,
 			...(plan.rebounder === undefined
-				? {}
+				? { inPlay: true }
 				: {
 						toward: this.towardOf(team, plan.rebounder, dist(P, rim)),
 					}),
@@ -5770,7 +5784,7 @@ class Director {
 		const rim = rimPt(team);
 		this.outOffMiss = true;
 		// Which way it is going when he knocks it: on the way it was going,
-		// turned some by his hand.
+		// turned - plainly - by his hand.
 		const away = (at: Pt3): Pt => {
 			const h = vel && Math.hypot(vel.x, vel.y) > 1 ? vel : undefined;
 			const u = h
@@ -5778,7 +5792,7 @@ class Director {
 				: dist(rim, at) > 0.5
 					? unitVec(rim, at)
 					: { x: attackDir(team), y: 0 };
-			const a = this.rand(-0.7, 0.7);
+			const a = (this.rng() < 0.5 ? -1 : 1) * this.rand(0.5, 1.1);
 			return {
 				x: u.x * Math.cos(a) - u.y * Math.sin(a),
 				y: u.x * Math.sin(a) + u.y * Math.cos(a),
@@ -6058,7 +6072,17 @@ class Director {
 			Math.max(0, at.z - BALL_R),
 		);
 		this.bounce(t, t + span, at, out, 2, h0);
-		return t + span;
+		// When it crosses the line (see the roll of a bounce in evaluate.ts):
+		// the clock stops there, rolling on as it may.
+		const far = dist(at, out);
+		const frac =
+			far > 0.01
+				? Math.min(
+						1,
+						Math.max(0, (dist(at, this.outPoint(at, way)) - 1.6) / far),
+					)
+				: 1;
+		return t + 0.85 * (1 - (1 - frac) ** (2 / 3)) * span;
 	}
 
 	// Where a loose ball going from `p` along `u` comes to rest: on over the
@@ -6215,6 +6239,10 @@ class Director {
 			}
 			// He takes it out in front of him, facing the rim.
 			const c = { x: from.x + vel.x * tau, y: from.y + vel.y * tau };
+			// (A hand to it while it is still over the floor.)
+			if (out && outOfPlay(c)) {
+				break;
+			}
 			const back = unitVec(rim, c);
 			const spot = clampPt({
 				x: c.x + back.x * hands.f,
@@ -7378,7 +7406,9 @@ class Director {
 					: roll < 0.3
 						? ["rimOut", "rollOut"]
 						: ["off", "brick", "rimOut"],
-				...(reb === undefined ? {} : { toward: this.towardOf(team, reb) }),
+				...(reb === undefined
+					? { inPlay: true }
+					: { toward: this.towardOf(team, reb) }),
 			},
 		);
 		let target: Pt3;
@@ -7760,7 +7790,7 @@ class Director {
 				const u = unitVec(S, this.posOf(ud));
 				hit = this.goBy(
 					ud,
-					clampPt({ x: S.x + u.x * 1.4, y: S.y + u.y * 1.4 }),
+					clampPt({ x: S.x + u.x * BODY, y: S.y + u.y * BODY }),
 					end - 350,
 					end + 150,
 					"run",
@@ -7829,10 +7859,13 @@ class Director {
 				const flight = passMs(d);
 				const over = d >= 22;
 				const wind = RELEASE_MS + (over ? OVERHEAD_WIND : 0);
+				// (Picked off, it needn't wait on him to be there for it: not
+				// long, anyway.)
+				const ready = (this.free.get(q) ?? 0) + 40 - flight - wind;
 				const start = Math.max(
 					t,
 					this.free.get(victim) ?? 0,
-					(this.free.get(q) ?? 0) + 40 - flight - wind,
+					thief === undefined ? ready : Math.min(ready, t + 500),
 				);
 				const release = start + wind;
 				if (thief === undefined || T0 === undefined) {
@@ -7888,7 +7921,8 @@ class Director {
 						continue;
 					}
 					const alt = throwTo(q, read);
-					if (alt.lane && !alt.lane.late) {
+					// (One he can throw now, not one he has to wait on.)
+					if (alt.lane && !alt.lane.late && alt.start <= thrown.start + 250) {
 						receiver = q;
 						thrown = alt;
 					}
@@ -7944,7 +7978,7 @@ class Director {
 					y: -back.x * Math.sin(a) - back.y * Math.cos(a),
 				});
 				const out = this.ballAt;
-				this.effect("whistle", tOut - 150, {
+				this.effect("whistle", tOut + 150, {
 					call: "out",
 					at: out,
 					team: other(team),
@@ -8060,7 +8094,7 @@ class Director {
 			this.fly(tS, tS + 90, { pid: victim }, knee);
 			const tOut = this.knockOut(tS + 90, knee, unitVec(S, this.nearestOut(S)));
 			const out = this.ballAt;
-			this.effect("whistle", tOut - 150, {
+			this.effect("whistle", tOut + 150, {
 				call: "out",
 				at: out,
 				team: other(team),
@@ -10577,6 +10611,8 @@ class Director {
 		const STEP = 100;
 		const MATES = 2.6;
 		const OPPS = 1.4;
+		// In it together - a screen, a box-out - no nearer than this.
+		const TOUCH = 1.3;
 		// (Easing over and back, and the longest a step aside lasts.)
 		const RAMP = 450;
 		const LONGEST = 12000;
@@ -10851,7 +10887,12 @@ class Director {
 							// (What each is doing, only now it matters.)
 							const aa = actOf(ia, t);
 							const ab = actOf(ib, t);
-							if ((aa && TOGETHER.has(aa)) || (ab && TOGETHER.has(ab))) {
+							// Into each other is what they are doing - but never
+							// through each other.
+							const together =
+								(aa !== undefined && TOGETHER.has(aa)) ||
+								(ab !== undefined && TOGETHER.has(ab));
+							if (together && (mates || d >= TOUCH)) {
 								continue;
 							}
 							// Who gives way.
@@ -10859,7 +10900,7 @@ class Director {
 								A.pid === holder || (aa !== undefined && HOLDS.has(aa));
 							const fixB =
 								B.pid === holder || (ab !== undefined && HOLDS.has(ab));
-							const going = (i: number) => pv[i]! > MOVING;
+							const going = (i: number) => !together && pv[i]! > MOVING;
 							let im: number;
 							let io: number;
 							if (fixA !== fixB) {

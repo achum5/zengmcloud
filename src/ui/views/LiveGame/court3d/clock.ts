@@ -16,6 +16,9 @@ import type { CourtTimeline, RawEvent } from "./director.ts";
 
 const SHOT_CLOCK = 24;
 const RESET_ORB = 14;
+// The last seconds into a line run true even when the picture holds more
+// than the sim's time (see buildClocks).
+const LEAD_TRUE = 3.5;
 
 type Mark = { t: number; clock: number; period: number };
 
@@ -72,29 +75,47 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 		// The lead-in runs the clock from the last line's reading to this one's -
 		// unless the clock went up, which is a new period starting.
 		if (last !== undefined && e.clock <= last) {
-			const from = Math.min(live ?? b.preStart, b.preStart);
+			let from = Math.min(live ?? b.preStart, b.preStart);
+			if (live === undefined) {
+				// A dead ball: the clock waits for it to be put back in play -
+				// the inbound caught.
+				const inbound = inboundCaught(tl, from, b.actionStart);
+				if (inbound !== undefined) {
+					marks.push({ t: from, clock: last, period });
+					from = inbound;
+				}
+			}
 			marks.push({ t: from, clock: last, period });
 			// The time the sim spent in the lead-in that the picture runs through
 			// fast (or cuts past): the clock runs true on either side of it and
 			// makes up the rest there.
+			// Where the picture holds more than the sim's time, the play itself -
+			// what leads straight into the line - still runs true, and the
+			// clock takes less of the time before it (waiting, if it must).
 			const fast = fastIn(tl.fast, from, b.actionStart);
 			const cut = lastCutIn(tl.cuts, from, b.actionStart);
 			const shown = (b.actionStart - from) / 1000;
+			const gap = last - e.clock;
 			if (fast) {
 				const [f0, f1] = fast;
-				const at0 = last - (f0 - from) / 1000;
-				const at1 = e.clock + (b.actionStart - f1) / 1000;
-				if (at0 >= at1 && at0 <= last && at1 >= e.clock) {
-					marks.push(
-						{ t: f0, clock: at0, period },
-						{ t: f1, clock: at1, period },
-					);
-				}
-			} else if (cut !== undefined && last - e.clock > shown) {
+				const tail = Math.min((b.actionStart - f1) / 1000, gap);
+				const head = Math.min((f0 - from) / 1000, gap - tail);
+				marks.push(
+					{ t: f0, clock: last - head, period },
+					{ t: f1, clock: e.clock + tail, period },
+				);
+			} else if (cut !== undefined && gap > shown) {
 				marks.push(
 					{ t: cut - 1, clock: last - (cut - 1 - from) / 1000, period },
 					{ t: cut, clock: e.clock + (b.actionStart - cut) / 1000, period },
 				);
+			} else if (shown > gap + 0.05 && shown > LEAD_TRUE) {
+				const tail = Math.min(gap, LEAD_TRUE);
+				marks.push({
+					t: b.actionStart - tail * 1000,
+					clock: e.clock + tail,
+					period,
+				});
 			}
 		}
 		marks.push({ t: b.actionStart, clock: e.clock, period });
@@ -157,6 +178,35 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 	// Stable, so at one moment the later entry - the more specific one - wins.
 	resets.sort((a, b) => a.t - b.t);
 	return { marks, resets };
+};
+
+// When the first pass from one man to another in [a, b) - the inbound, after
+// a dead ball - is caught, if there is one.
+const inboundCaught = (
+	tl: CourtTimeline,
+	a: number,
+	b: number,
+): number | undefined => {
+	let lo = 0;
+	let hi = tl.ball.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (tl.ball[mid]!.t0 < a) {
+			lo = mid + 1;
+		} else {
+			hi = mid;
+		}
+	}
+	for (let i = lo; i < tl.ball.length; i++) {
+		const s = tl.ball[i]!;
+		if (s.t0 >= b) {
+			break;
+		}
+		if (s.kind === "fly" && "pid" in s.from && "pid" in s.to && s.t1 < b) {
+			return s.t1;
+		}
+	}
+	return undefined;
 };
 
 // The part of the last fast stretch in [a, b) that is in it, if any.

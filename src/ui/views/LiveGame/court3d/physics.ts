@@ -1,6 +1,7 @@
 import {
 	attackDir,
 	COURT_H,
+	COURT_W,
 	RIM_R,
 	RIM_Z,
 	rimX,
@@ -313,6 +314,9 @@ export type ShotWant = {
 	kinds?: ShotKind[];
 	// Off the rim, toward whom (where the rebound is caught).
 	toward?: Pt;
+	// A miss that has to leave the rim with the ball still over the floor -
+	// somebody gets a hand to it before it goes anywhere.
+	inPlay?: boolean;
 };
 
 export type FoundShot = {
@@ -429,6 +433,13 @@ export const findShot = (
 		const kind = kindOf(play);
 		// A miss that touches nothing is an air ball - only when it was one.
 		if (!want.made && kind === "air" && !want.kinds?.includes("air")) {
+			continue;
+		}
+		const e0 = play.end.p;
+		if (
+			want.inPlay &&
+			(e0.x < 1 || e0.x > COURT_W - 1 || e0.y < 1 || e0.y > COURT_H - 1)
+		) {
 			continue;
 		}
 		const f: FoundShot = {

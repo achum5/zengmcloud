@@ -33,7 +33,7 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
       back smoothly and precisely.
 - [x] Ball out of bounds should always be correct for which team it went off
       last.
-- [ ] Fast breaks and timing must always make sense given the shot clock / time
+- [x] Fast breaks and timing must always make sense given the shot clock / time
       into the possession.
 
 ## B. Replays
