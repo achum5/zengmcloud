@@ -163,13 +163,17 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
       doing pre-game shows, players warming up at their baskets. Skip button to the
       starting lineups (when those exist), then another to the opening tip. Quick
       even without skipping.
-- [x] Starting lineup introductions to open a game, with a skip button: dark
-      lights, spotlights, neon, all the hype. Decided: quick, every game -
-      about 15-20 seconds, lights down, a spotlight and name card per starter
-      (away, then home), skippable; a bigger version in the playoffs. (Done:
-      about 20 s, 27 s in the playoffs - each starter runs out from his bench
-      under a spotlight, slaps hands down his team's line, name card, home
-      crowd and benches up, team-color lights sweeping the floor.)
+- [~] Starting lineup introductions to open a game, with a skip button: dark
+  lights, spotlights, neon, all the hype. Decided: quick, every game -
+  about 15-20 seconds, lights down, a spotlight and name card per starter
+  (away, then home), skippable; a bigger version in the playoffs. (Done:
+  about 20 s, 27 s in the playoffs - each starter runs out from his bench
+  under a spotlight, slaps hands down his team's line, name card, home
+  crowd and benches up, team-color lights sweeping the floor.) Turned OFF
+  2026-10-09 at the owner's request (LINEUP_INTROS in Court3D.tsx): in the
+  real app it ran at about a frame a second, so a game or replay looked
+  frozen on a dark court. All the code is kept; find and fix that slowdown
+  before turning it back on.
 
 - [x] No fans directly behind the benches.
 - [x] The out-of-bounds hardwood keeps its color all the way back to the
