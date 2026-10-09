@@ -26,7 +26,7 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
 - [~] Play-by-play line on the 3D screen (bottom middle) only shows the home team
   color, at least on replays. Show the team logo next to it like the Plays
   section does. Where this text lives needs deciding as part of the broadcast
-  work (score bug etc.).
+  work (score bug etc.). (Done: team logo. Open: placement, with the score bug.)
 - [x] Bench players visibly stutter all game. Investigate and fix.
 - [x] Watching a live game being simmed on another device is very choppy and
       unwatchable. Work out how to send the seed/data so the viewing device plays it
@@ -121,33 +121,40 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
       courtside seats, then the stands rising straight up - the crowd wraps the
       whole floor.
 - [x] Stanchion: dark padded base with a lit ad panel.
-- [ ] Far sideline: bench, the scorer's table with a lit LED front, courtside
+- [x] Far sideline: bench, the scorer's table with a lit LED front, courtside
       seats, then the stands.
 - [x] Center-hung scoreboard over the floor (MSG).
 
 - [~] Bench players wear warm-ups with the team logo on the front and name and
   number on the back. Once a player has been in the game, back on the bench he
-  is in his uniform only, like real life.
+  is in his uniform only, like real life. (Done: warm-up until he has played.
+  Open: logo on the front, name and number on the back.)
 - [x] Scorer's table that looks real: people sitting with monitors. Players
       about to sub in walk to the table ahead of time (the engine looks a few plays
       ahead for substitutions), taking off the warm-up shirt and dropping it as they
       go.
-- [~] Baseline and behind the basket like real life: courtside seats, crowd
-  continuing behind the basket. Crowd as real people with faces.js faces and
-  outfits supporting their team, or the opponent at least in away games.
-- [~] Dynamic crowds based on the team's "hype" saved in the league file: smaller
-  crowds for less hype. Crowd coming back from halftime, home crowd while being
-  blown out, and any other "arena alive" ideas.
+- [x] Baseline and behind the basket like real life: courtside seats, crowd
+      continuing behind the basket. (Owner later: no faces.js fans - plain painted
+      courtside people and media, as in the reference photos.)
+- [x] Dynamic crowds based on the team's "hype" saved in the league file: smaller
+      crowds for less hype. Crowd coming back from halftime, home crowd while being
+      blown out, and any other "arena alive" ideas.
 - [~] End of game: players go around dapping each other up. Huge celebration for
   a game winner, and for winning a close game in general. Confetti when a
   championship is won at the buzzer, only if the home team wins it. Playoff wins
-  celebrated an appropriate amount.
+  celebrated an appropriate amount. (Done: dap-up line, mobbed game-winner,
+  close-win celebration. Open: confetti, playoff-sized celebrations.)
 - [ ] Very brief pre-game cut scene on load: people with microphones on court
       doing pre-game shows, players warming up at their baskets. Skip button to the
       starting lineups (when those exist), then another to the opening tip. Quick
       even without skipping.
 - [ ] Starting lineup introductions to open a game, with a skip button: dark
       lights, spotlights, neon, all the hype.
+
+- [~] Later the same day: make the gameplay look as smooth and realistic as
+  possible, as many animations as possible; then watch possession after
+  possession and fix whatever looks off, over and over. Owner's top pick of
+  what bothers him: stiff animation.
 
 ## G. Naming
 
