@@ -16,6 +16,10 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
       lottery and playoff settings, version 2026.10.07.0804) plus every other
       upstream change we haven't merged yet, without breaking anything in the fork.
 
+Order agreed 2026-10-09: keep improving the 3D gameplay throughout; then all
+of score bug + play-by-play placement, intros + pre-game, heads and hair, feet
+and shoes - every one eventually, none rushed to get to the next.
+
 ## A. Bugs and correctness
 
 - [x] Replay score bug is broken: shows 0-0 for all games.
@@ -96,10 +100,10 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
 
 ## E. Customization system (jerseys, courts, score bug, shoes, banners)
 
-These share one open design question: how users author assets. Options raised:
-image uploads, SVG, or a code block that can pull in image URLs and position
-them freely. Users will want to make these with AI help. Decide together before
-building.
+These share one design question: how users author assets. Decided
+(2026-10-09): both - a simple image upload for each slot, plus an advanced
+code/JSON box that can pull in image URLs and position pieces freely (easy to
+make with AI help).
 
 - [ ] Custom courts per team, potentially via image or SVG/code, so users can
       recreate real courts. Revisit whether the current image-based approach (as for
@@ -109,7 +113,9 @@ building.
       playoff decal on all playoff courts. Optionally season by season so each era
       can look right.
 - [ ] TV-style score bug: a good generic default used at all times, fully
-      customizable so users can recreate ESPN, TNT, etc.
+      customizable so users can recreate ESPN, TNT, etc. Decided: the default
+      is a wide bar along the bottom center (logos, scores, period, game clock,
+      shot clock, fouls/timeouts), with the play-by-play line just above it.
 - [ ] Arena banners should match the ones the game already draws on the playoffs
       and team history pages, and be customizable.
 
@@ -154,7 +160,9 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
       starting lineups (when those exist), then another to the opening tip. Quick
       even without skipping.
 - [ ] Starting lineup introductions to open a game, with a skip button: dark
-      lights, spotlights, neon, all the hype.
+      lights, spotlights, neon, all the hype. Decided: quick, every game -
+      about 15-20 seconds, lights down, a spotlight and name card per starter
+      (away, then home), skippable; a bigger version in the playoffs.
 
 - [x] No fans directly behind the benches.
 - [x] The out-of-bounds hardwood keeps its color all the way back to the
