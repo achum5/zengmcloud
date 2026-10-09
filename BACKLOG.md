@@ -68,7 +68,7 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
       like real basketball: defenders genuinely getting beaten by good offense.
 - [x] Poor ball handlers who get the defensive rebound should usually hold it and
       look to give it to a ball handler to bring it up. Exceptions: sets, urgency.
-- [ ] Layups: many natural, real-NBA-looking finishes (finger rolls, normal
+- [x] Layups: many natural, real-NBA-looking finishes (finger rolls, normal
       layups, etc.) so it never looks pre-animated.
 - [x] Deep shots to end a period are ugly: the player just backs up to half court
       and shoots. Rework.

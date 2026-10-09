@@ -990,6 +990,79 @@ export const moveFloor = (
 const mirrorKeys = (keys: [number, Pose][]): [number, Pose][] =>
 	keys.map(([u, q]) => [u, mirror(q)]);
 
+// Every finish at the rim off one foot starts and ends the same way: the
+// last stride in, and coming back down - the knee letting down, the arm
+// following through past his face.
+const LAYUP_START = pose({
+	hipN: 10,
+	kneeN: 40,
+	hipF: -20,
+	kneeF: 30,
+	shN: 45,
+	elN: 90,
+	shF: 40,
+	elF: 95,
+	lean: 14,
+});
+const LAYUP_DOWN: [number, Pose][] = [
+	[
+		0.84,
+		pose({
+			hipN: 40,
+			kneeN: 56,
+			hipF: -4,
+			kneeF: 22,
+			shN: 132,
+			elN: 40,
+			shF: 44,
+			elF: 54,
+			lean: 3,
+			wrN: -40,
+			toe: 0.6,
+		}),
+	],
+	[
+		0.93,
+		pose({
+			hipN: 8,
+			kneeN: 34,
+			hipF: 6,
+			kneeF: 36,
+			shN: 66,
+			elN: 62,
+			shF: 24,
+			elF: 40,
+			lean: 8,
+			wrN: -10,
+		}),
+	],
+	[
+		1,
+		pose({
+			hipN: -2,
+			kneeN: 34,
+			hipF: 10,
+			kneeF: 38,
+			shN: 30,
+			elN: 40,
+			shF: 16,
+			elF: 32,
+			lean: 8,
+		}),
+	],
+];
+// Up off the left foot, the right knee driving.
+const LAYUP_KNEE = { hipN: 94, kneeN: 102, hipF: -16, kneeF: 24, toe: 1 };
+
+// The finishes at the rim besides the plain layup (a layup's words cover
+// all of them).
+export const LAYUPS = new Set<string>([
+	"layup",
+	"fingerRoll",
+	"powerLayup",
+	"scoop",
+]);
+
 // "loop" anims play on the clock, "cycle" ones on distance covered (so feet
 // never skate), "act" ones across their own span from 0 to 1.
 type Anim =
@@ -1425,6 +1498,217 @@ export const ANIMS = {
 					shF: 16,
 					elF: 32,
 					lean: 8,
+				}),
+			],
+		],
+	},
+	// The finger roll: carried up under the ball, his arm reaching out long
+	// for the rim with his palm up under it - and rolled off his fingertips.
+	fingerRoll: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, LAYUP_START],
+			[
+				0.3,
+				pose({
+					...LAYUP_KNEE,
+					shN: 96,
+					elN: 72,
+					shF: 64,
+					elF: 72,
+					lean: 6,
+					wrN: 50,
+				}),
+			],
+			[
+				0.6,
+				pose({
+					...LAYUP_KNEE,
+					hipN: 88,
+					kneeN: 106,
+					shN: 146,
+					elN: 6,
+					shF: 52,
+					elF: 60,
+					lean: 0,
+					wrN: 46,
+				}),
+			],
+			[
+				0.72,
+				pose({
+					...LAYUP_KNEE,
+					hipN: 84,
+					kneeN: 104,
+					shN: 156,
+					elN: 4,
+					shF: 48,
+					elF: 58,
+					lean: 0,
+					wrN: 4,
+				}),
+			],
+			...LAYUP_DOWN,
+		],
+	},
+	// Low and quick under a man coming over to block it: the ball swung up
+	// from his hip, underhand, and lifted up off the glass.
+	scoop: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, { ...LAYUP_START, shN: 28, elN: 56, wrN: 30, lean: 18 }],
+			[
+				0.3,
+				pose({
+					...LAYUP_KNEE,
+					hipN: 80,
+					kneeN: 96,
+					shN: 66,
+					elN: 28,
+					abN: 20,
+					shF: 52,
+					elF: 74,
+					abF: 30,
+					lean: 14,
+					wrN: 56,
+				}),
+			],
+			[
+				0.6,
+				pose({
+					...LAYUP_KNEE,
+					hipN: 84,
+					kneeN: 100,
+					shN: 124,
+					elN: 12,
+					shF: 72,
+					elF: 50,
+					abF: 34,
+					lean: 6,
+					wrN: 44,
+				}),
+			],
+			[
+				0.72,
+				pose({
+					...LAYUP_KNEE,
+					hipN: 80,
+					kneeN: 100,
+					shN: 140,
+					elN: 8,
+					shF: 64,
+					elF: 52,
+					lean: 4,
+					wrN: 6,
+				}),
+			],
+			...LAYUP_DOWN,
+		],
+	},
+	// Strong to the rim: a jump stop, gathered low on both feet, and up off
+	// both with it in both hands - laid up over the front of the rim.
+	powerLayup: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 34,
+					kneeN: 72,
+					hipF: 34,
+					kneeF: 72,
+					shN: 46,
+					elN: 92,
+					shF: 46,
+					elF: 92,
+					lean: 20,
+					wide: 0.38,
+				}),
+			],
+			[
+				0.3,
+				pose({
+					hipN: 8,
+					kneeN: 18,
+					hipF: 8,
+					kneeF: 18,
+					shN: 118,
+					elN: 54,
+					shF: 116,
+					elF: 56,
+					lean: 6,
+					wide: 0.26,
+					toe: 0.6,
+				}),
+			],
+			[
+				0.6,
+				pose({
+					hipN: 2,
+					kneeN: 10,
+					hipF: 2,
+					kneeF: 12,
+					shN: 160,
+					elN: 14,
+					shF: 156,
+					elF: 16,
+					lean: 0,
+					wide: 0.2,
+					wrN: -6,
+					wrF: -6,
+					toe: 1,
+				}),
+			],
+			[
+				0.72,
+				pose({
+					hipN: 4,
+					kneeN: 12,
+					hipF: 4,
+					kneeF: 14,
+					shN: 162,
+					elN: 10,
+					shF: 150,
+					elF: 22,
+					lean: 0,
+					wide: 0.2,
+					wrN: -36,
+					wrF: -30,
+					toe: 1,
+				}),
+			],
+			[
+				0.86,
+				pose({
+					hipN: 24,
+					kneeN: 44,
+					hipF: 24,
+					kneeF: 46,
+					shN: 104,
+					elN: 40,
+					shF: 96,
+					elF: 44,
+					lean: 4,
+					wide: 0.3,
+					toe: 0.4,
+				}),
+			],
+			[
+				1,
+				pose({
+					hipN: 14,
+					kneeN: 38,
+					hipF: 14,
+					kneeF: 40,
+					shN: 36,
+					elN: 42,
+					shF: 32,
+					elF: 44,
+					lean: 9,
+					wide: 0.32,
 				}),
 			],
 		],
@@ -3436,6 +3720,8 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 	fade: "shot",
 	shotFake: "shot",
 	layup: "palm",
+	fingerRoll: "palm",
+	scoop: "palm",
 	dunk: "palm",
 	dunk1: "palm",
 	tomahawk: "palm",

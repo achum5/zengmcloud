@@ -30,7 +30,7 @@ import {
 	RIM_Z,
 	rimX,
 } from "./geometry.ts";
-import { bodyOf, posed, skeleton } from "./poses.ts";
+import { bodyOf, LAYUPS, posed, skeleton } from "./poses.ts";
 import { compile, fakeGame, gidOf } from "./testGame.ts";
 import { finishOf } from "../../../util/liveGameWording.basketball.ts";
 
@@ -42,6 +42,9 @@ const SHOOTING = new Set<string>([
 	"fade",
 	"hook",
 	"layup",
+	"fingerRoll",
+	"powerLayup",
+	"scoop",
 	"dunk",
 	"dunk1",
 	"tomahawk",
@@ -641,6 +644,9 @@ describe("3D director", () => {
 			"fade",
 			"hook",
 			"layup",
+			"fingerRoll",
+			"powerLayup",
+			"scoop",
 			"catch",
 		]);
 		for (const seed of ["a", "b"]) {
@@ -1279,7 +1285,13 @@ describe("3D director", () => {
 				}
 				const next = tl.ball[k + 1];
 				all += 1;
-				if (next?.kind === "fly" && "pid" in next.to && next.to.pid === e.pid) {
+				// (Not snatched up off the floor after a hop.)
+				if (
+					next?.kind === "fly" &&
+					"pid" in next.to &&
+					next.to.pid === e.pid &&
+					!("z" in next.from && next.from.z < 1)
+				) {
 					air += 1;
 					// Up for it, at the top of his jump.
 					const st = evalPlayer(tl, e.pid as number, next.t1);
@@ -1405,7 +1417,7 @@ describe("3D director", () => {
 					`line ${i}`,
 				);
 				assert.strictEqual(
-					acts.some((x) => x.anim === "layup"),
+					acts.some((x) => LAYUPS.has(x.anim)),
 					finish === "layup",
 					`line ${i}`,
 				);

@@ -3037,7 +3037,22 @@ class Director {
 		// from where he is - see trailUp.)
 		const out = (p: Pt) => Math.abs(p.x - rimX(run.team));
 		run.roles.forEach((pid, r) => {
-			if (pid === bh || going.has(r)) {
+			if (pid === bh) {
+				return;
+			}
+			if (going.has(r)) {
+				// His part comes in the first step; back in the backcourt, he
+				// is on his way up for it meanwhile.
+				const P = this.posOf(pid);
+				if (this.inBackcourt(run.team, P)) {
+					this.go(
+						pid,
+						clampPt({ x: COURT_W / 2 + attackDir(run.team) * 4, y: P.y }),
+						t,
+						RUN,
+						"run",
+					);
+				}
 				return;
 			}
 			const S = this.at(run, f.at[r]!);
@@ -5326,10 +5341,20 @@ class Director {
 		} else {
 			// "Tips it in": a one-handed tap at the top of the jump.
 			const tip = zone === "tipIn" && plan.finish === "tip" && !drove;
-			let anim: AnimName = tip ? "block" : close ? "layup" : "shoot";
+			let anim: AnimName = tip
+				? "block"
+				: close
+					? this.layupFor(shooter, gather, plan)
+					: "shoot";
 			if (postMove) {
 				anim =
-					postMove === "hook" ? "hook" : postMove === "fade" ? "fade" : "layup";
+					postMove === "hook"
+						? "hook"
+						: postMove === "fade"
+							? "fade"
+							: postMove === "dropStep"
+								? "powerLayup"
+								: "layup";
 			} else if (style === "fade") {
 				anim = "fade";
 			} else if (style === "hook") {
@@ -5976,6 +6001,37 @@ class Director {
 		}
 	}
 
+	// Which way he finishes at the rim: mostly laid up off the glass or
+	// rolled in off his fingertips; a big as often strong off two feet; now
+	// and then scooped up underhand under a man coming to block it.
+	private layupFor(shooter: number, t: number, plan: ShotPlan): AnimName {
+		const big = (this.rank.get(shooter) ?? 4) >= 6;
+		const r = hash01(shooter, Math.round(t / 7));
+		const under = plan.kind === "block" || plan.kind === "foul";
+		const odds: [AnimName, number][] = big
+			? [
+					["powerLayup", 0.42],
+					["layup", 0.36],
+					["fingerRoll", 0.12],
+					["scoop", 0.1],
+				]
+			: [
+					["layup", 0.36],
+					["fingerRoll", 0.3],
+					["powerLayup", 0.16],
+					["scoop", under ? 0.3 : 0.18],
+				];
+		const total = odds.reduce((a, [, w]) => a + w, 0);
+		let x = r * total;
+		for (const [anim, w] of odds) {
+			x -= w;
+			if (x <= 0) {
+				return anim;
+			}
+		}
+		return "layup";
+	}
+
 	// He comes out of his box-out (or out of fighting one) at t.
 	private letGo(pid: number, t: number) {
 		const tr = this.track(pid);
@@ -6318,6 +6374,21 @@ class Director {
 		})();
 		if (lane) {
 			const { B, I, tI, m, go, release } = lane;
+			// Reading it: done shadowing his man (see mark) as he goes for it -
+			// from wherever that had him, to where the plan has him.
+			const tr = this.track(m);
+			const P = this.posOf(m);
+			const leave = Math.max(go - 450, this.free.get(m) ?? 0);
+			if (tr && leave < go) {
+				tr.moves.push({
+					t0: leave,
+					t1: go,
+					from: { ...P },
+					to: { ...P },
+					anim: "run",
+				});
+				this.free.set(m, go);
+			}
 			this.act(h, "pass", start, release + 180, {
 				face: B.x >= A.x ? 1 : -1,
 				look: { ...B },
@@ -9138,6 +9209,9 @@ class Director {
 			"fade",
 			"hook",
 			"layup",
+			"fingerRoll",
+			"powerLayup",
+			"scoop",
 			"dunk",
 			"dunk1",
 			"tomahawk",
@@ -11322,6 +11396,9 @@ class Director {
 			"fade",
 			"hook",
 			"layup",
+			"fingerRoll",
+			"powerLayup",
+			"scoop",
 			"catch",
 			"pass",
 			"passBounce",
