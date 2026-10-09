@@ -56,7 +56,7 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
 - [x] Rebounding lead-up: when a shot goes up, players box out and fight for
       position realistically. The jump itself is OK; the lead-up is clunky and
       stagnant.
-- [ ] Ball going out of bounds looks clunky. Make it physics based if possible.
+- [x] Ball going out of bounds looks clunky. Make it physics based if possible.
 - [x] Fouls are clunky: a player often just runs over to the ball handler and
       gets fouled. The engine knows the result going into the possession, so set it
       up so it looks natural.
@@ -64,8 +64,8 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
       and lands with the stealer). Like fouls, set it up from the start of the
       possession: matchups, a drive with a help defender stripping it, etc. Many
       (hundreds?) of possible outcomes, all natural and sleek.
-- [ ] Entry passes are often ugly and clunky. In general, possessions should look
-      like real basketball: defenders genuinely getting beaten by good offense.
+- [~] Entry passes are often ugly and clunky. In general, possessions should look
+  like real basketball: defenders genuinely getting beaten by good offense.
 - [x] Poor ball handlers who get the defensive rebound should usually hold it and
       look to give it to a ball handler to bring it up. Exceptions: sets, urgency.
 - [x] Layups: many natural, real-NBA-looking finishes (finger rolls, normal

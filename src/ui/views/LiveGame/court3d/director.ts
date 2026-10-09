@@ -4829,7 +4829,32 @@ class Director {
 				return { t, style: "plain", lob: from };
 			}
 			if (from !== shooter) {
-				t = this.passTo(from, shooter, t, passStyleOf(o.pass, this.rng));
+				// Into the post: he seals his man for it first.
+				const S = this.posOf(shooter);
+				const entry =
+					o.zone === "post" &&
+					dist(S, rim) > 4 &&
+					dist(S, rim) < 15 &&
+					this.rng() < 0.85;
+				const held = entry
+					? this.seal(
+							shooter,
+							from,
+							Math.max(t, this.free.get(shooter) ?? 0),
+							dir,
+						)
+					: undefined;
+				t = this.passTo(
+					from,
+					shooter,
+					t,
+					entry
+						? this.rng() < 0.6
+							? "bounce"
+							: "chest"
+						: passStyleOf(o.pass, this.rng),
+				);
+				held?.(t - 110);
 				if (o.pass === "kickout" || o.pass === "skip") {
 					this.respace(team, from, shooter);
 				}
@@ -5051,12 +5076,24 @@ class Director {
 				if (passer !== undefined && this.teamOf(passer) === team) {
 					const arrive = this.go(shooter, P, t, RUN, "run");
 					const d = dist(this.posOf(handler), P);
+					// An entry pass to the post: he seals his man first, a hand up
+					// for it, and it comes in to him as he has him sealed - then
+					// he backs him down.
+					const entry = zone === "lowPost" && this.rng() < 0.9;
+					const held = entry
+						? this.seal(shooter, handler, arrive, dir)
+						: undefined;
 					const send = Math.max(t, arrive - passMs(d) - 120);
-					const caught = this.passTo(handler, shooter, send);
+					const caught = this.passTo(
+						handler,
+						shooter,
+						send,
+						entry ? (this.rng() < 0.6 ? "bounce" : "chest") : undefined,
+					);
+					held?.(caught - 110);
 					this.respace(team, handler, shooter);
 					t = Math.max(arrive, caught);
-					// An entry pass to the post: he backs his man down first.
-					if (zone === "lowPost" && this.rng() < 0.9) {
+					if (entry) {
 						style = "post";
 						t = this.backDown(shooter, t, dir);
 					}
@@ -6098,6 +6135,56 @@ class Director {
 			});
 			this.free.set(pid, t);
 		}
+	}
+
+	// THE SEAL, for an entry pass: his back into his man down on the block,
+	// wide, a hand up where he wants it - his man leaning on him, an arm up
+	// to keep it from him - held until the pass comes. (The pass, timed off
+	// him, comes in as he lets go.)
+	private seal(
+		pid: number,
+		passer: number,
+		t: number,
+		dir: 1 | -1,
+	): (caught: number) => void {
+		const P = this.posOf(pid);
+		const until = t + this.rand(550, 900);
+		const guard = this.defenderOf(pid);
+		const held: Act[] = [];
+		if (guard !== undefined && dist(this.posOf(guard), P) < 14) {
+			const there = this.goBy(
+				guard,
+				clampPt({ x: P.x + dir * BODY, y: P.y }),
+				t - 300,
+				t + 80,
+				"run",
+				-dir as 1 | -1,
+			);
+			this.act(guard, "fight", Math.max(there, t), until + 200, {
+				face: -dir as 1 | -1,
+				look: this.posOf(passer),
+			});
+			const g = this.track(guard)?.acts.at(-1);
+			if (g?.anim === "fight") {
+				held.push(g);
+			}
+			this.free.set(guard, Math.max(this.free.get(guard) ?? 0, until + 200));
+		}
+		this.act(pid, "postUp", t, until, {
+			face: -dir as 1 | -1,
+			look: this.posOf(passer),
+		});
+		this.free.set(pid, Math.max(this.free.get(pid) ?? 0, until));
+		const me = this.track(pid)?.acts.at(-1);
+		// However long the pass takes to come, he holds it until it does.
+		return (caught: number) => {
+			if (me?.anim === "postUp" && caught - 150 > me.t1) {
+				me.t1 = caught - 150;
+			}
+			for (const a of held) {
+				a.t1 = Math.max(a.t1, caught + 150);
+			}
+		};
 	}
 
 	// He comes out of his box-out (or out of fighting one) at t.
