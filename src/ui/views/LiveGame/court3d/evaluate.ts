@@ -1072,6 +1072,18 @@ type Doing = {
 	dribbleHand?: Hand;
 	target?: number;
 };
+// Stood watching - arms folded, hands on his hips - he doesn't glide off in
+// it: once he is on his way somewhere, he walks there.
+const STANDING = new Set<AnimName>([
+	"crossed",
+	"hips",
+	"flex",
+	"celebrate",
+	"protest",
+	"point",
+	"clap",
+	"talk",
+]);
 const doingAt = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -1079,7 +1091,11 @@ const doingAt = (
 	here: Spot = spotAt(tr, t),
 ): Doing => {
 	const pid = tr.pid;
-	const act = actAt(tr, t);
+	const standing = actAt(tr, t);
+	const act =
+		standing && STANDING.has(standing.anim) && here.moving && here.run
+			? undefined
+			: standing;
 	let anim: AnimName;
 	let phase: number;
 	let z = 0;

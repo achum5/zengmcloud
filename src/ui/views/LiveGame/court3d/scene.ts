@@ -12,6 +12,7 @@ import {
 	STANDS,
 	standsPoint,
 	END_STANDS,
+	FLOOR_EDGE,
 	END_WALL,
 	TABLE_FRONT,
 	TABLE_TOP,
@@ -43,7 +44,7 @@ import {
 	type BallState,
 	type PlayerState,
 } from "./evaluate.ts";
-import { type Look } from "./figure.ts";
+import { lightness, type Look } from "./figure.ts";
 import { COURT_W, RIM_Z, seatSpot, type Pt3, type Side } from "./geometry.ts";
 import { drawPixelText, pixelTextWidth } from "./pixelFont.ts";
 import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
@@ -158,17 +159,28 @@ const fxLevel = (
 	return f ? Math.max(0, 1 - (t - f.t) / ms) : 0;
 };
 
+// The bench's warm-up top: a long-sleeved shirt in the warm-up color, the
+// team's name across the front in whichever of its colors stands out on it -
+// no number, no name on the back, and not the uniform's own picture.
 const warmups = new WeakMap<Look, Look>();
 const warmupLook = (look: Look, top: string): Look => {
 	let out = warmups.get(look);
 	if (!out || out.kit.jersey !== top) {
-		out = {
+		const k = look.kit;
+		const logo = [k.chest ?? k.number, k.jersey, k.trim, "#f4f4f4"].sort(
+			(a, b) =>
+				Math.abs(lightness(b) - lightness(top)) -
+				Math.abs(lightness(a) - lightness(top)),
+		)[0]!;
+		const shirt: Look = {
 			...look,
-			kit: { ...look.kit, jersey: top, trim: top },
+			kit: { ...k, jersey: top, trim: top, chest: logo },
+			outfit: { sleeves: "long", plain: true },
 			jerseyNumber: "",
 			lastName: "",
-			wordmark: "",
 		};
+		delete shirt.kitArt;
+		out = shirt;
 		warmups.set(look, out);
 	}
 	return out;
@@ -612,9 +624,18 @@ export const drawFrame = (f: Frame) => {
 			drawTexturedPlane(ctx, cam, END_WALL[side], end, 24, 1);
 		}
 	}
-	// The apron: the court's own color carried out past the lines, to the
-	// seats behind the baskets and the benches along the far side.
-	floorQuad(ctx, cam, -6.3, -5.4, COURT_W + 6.3, 58, f.apron ?? f.padColor);
+	// The apron: the court's own color carried out past the lines all the
+	// way back to the stands - under the seats behind the baskets, the
+	// benches and the table along the far side.
+	floorQuad(
+		ctx,
+		cam,
+		FLOOR_EDGE.x0,
+		FLOOR_EDGE.y0,
+		FLOOR_EDGE.x1,
+		FLOOR_EDGE.y1,
+		f.apron ?? f.padColor,
+	);
 	if (arena.court) {
 		drawTexturedPlane(ctx, cam, COURT_PICTURE, arena.court, 26, 12);
 	} else {

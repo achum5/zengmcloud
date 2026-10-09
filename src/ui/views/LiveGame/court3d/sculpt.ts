@@ -221,7 +221,13 @@ const jerseySheet = (
 	ppf0: number,
 	waist: number,
 ): Sheet | undefined => {
-	if (!look.jerseyNumber || look.outfit || typeof document === "undefined") {
+	// (A warm-up top has the team's name on it and no number.)
+	const warmup = look.outfit?.plain === true;
+	if (
+		(!look.jerseyNumber && !(warmup && look.wordmark)) ||
+		(look.outfit && !warmup) ||
+		typeof document === "undefined"
+	) {
 		return undefined;
 	}
 	// Made at about the size he is drawn, in steps.
@@ -1363,6 +1369,7 @@ export const sculpt = (
 				} else if (
 					outfit &&
 					!outfit.shirt &&
+					!outfit.plain &&
 					outfit.sleeves === "long" &&
 					front &&
 					aS < cut.trim * 0.6 &&

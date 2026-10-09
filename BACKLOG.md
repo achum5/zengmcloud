@@ -127,8 +127,9 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
 
 - [~] Bench players wear warm-ups with the team logo on the front and name and
   number on the back. Once a player has been in the game, back on the bench he
-  is in his uniform only, like real life. (Done: warm-up until he has played.
-  Open: logo on the front, name and number on the back.)
+  is in his uniform only, like real life. (Done: a long-sleeve warm-up top
+  with the team's name across the front until he has played. Open: the team's
+  real logo image on the front, name and number on the back.)
 - [x] Scorer's table that looks real: people sitting with monitors. Players
       about to sub in walk to the table ahead of time (the engine looks a few plays
       ahead for substitutions), taking off the warm-up shirt and dropping it as they
@@ -151,6 +152,11 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
 - [ ] Starting lineup introductions to open a game, with a skip button: dark
       lights, spotlights, neon, all the hype.
 
+- [x] No fans directly behind the benches.
+- [x] The out-of-bounds hardwood keeps its color all the way back to the
+      stands; today it cuts to black/grey too early, which is ugly.
+- [x] Bench players still in warm-ups wear a long-sleeve shirt with the team
+      logo on the front, not the plain jersey look they have now.
 - [~] Later the same day: make the gameplay look as smooth and realistic as
   possible, as many animations as possible; then watch possession after
   possession and fix whatever looks off, over and over. Owner's top pick of

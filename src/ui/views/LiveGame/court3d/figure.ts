@@ -52,6 +52,8 @@ export type Gear = {
 export type Outfit = {
 	// Shirt sleeves, in the shirt's color: to the elbow, or the wrist.
 	sleeves?: "short" | "long";
+	// No zip at the neck of a long-sleeved top: a warm-up shirt.
+	plain?: boolean;
 	// Stripes down the shirt: a referee's.
 	stripes?: string;
 	// The shirt and tie in the open neck of a jacket: a coach's suit.
@@ -133,6 +135,12 @@ const parse = (c: string): [number, number, number] => {
 
 // A color a little darker (f < 0) or lighter (f > 0).
 const shades = new Map<string, string>();
+// How light a color is, 0 (black) to 1 (white).
+export const lightness = (c: string): number => {
+	const [r, g, b] = parse(c);
+	return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+};
+
 export const shade = (c: string, f: number): string => {
 	const key = `${c}|${f}`;
 	let out = shades.get(key);

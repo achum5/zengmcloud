@@ -100,6 +100,13 @@ export const FLOOR = plane(
 export const END_BACK = 13;
 const END_Y0 = STANDS_Y;
 const END_Y1 = 62;
+// The whole floor, out to the foot of the stands all round.
+export const FLOOR_EDGE = {
+	x0: -END_BACK,
+	y0: STANDS_Y,
+	x1: COURT_W + END_BACK,
+	y1: END_Y1,
+};
 export const END_STANDS: [Plane, Plane] = [0, 1].map((side) => {
 	const s = side === 0 ? -1 : 1;
 	const x = side === 0 ? -END_BACK : COURT_W + END_BACK;

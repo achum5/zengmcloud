@@ -1,12 +1,20 @@
 import { makeCourtRng } from "../courtRng.ts";
 import { project, type Camera } from "./camera.ts";
 import { shade } from "./figure.ts";
-import { COURT_H, COURT_W, type Side } from "./geometry.ts";
+import {
+	BENCH_SEATS,
+	benchStart,
+	COURT_H,
+	COURT_W,
+	SEAT_GAP,
+	type Side,
+} from "./geometry.ts";
 
 // THE COURTSIDE SEATS: two rows of chairs behind each baseline, past the
 // photographers on the floor (the front row broken for the basket's
-// stanchion), and a row along the far side behind the benches and the
-// table - the media in theirs, at their laptops, behind the table.
+// stanchion), and along the far side behind the table - the media there,
+// at their laptops - and past the ends of the benches. Nobody sits right
+// behind a bench.
 //
 // Not players, and nobody looks at them for long: each is a few flat
 // shapes in his team's colors (or plain clothes), drawn straight onto the
@@ -107,8 +115,13 @@ export const courtsideFor = (
 			}
 		});
 	}
+	const behindBench = (x: number) =>
+		([0, 1] as const).some(
+			(t) =>
+				x > benchStart(t) - 1 && x < benchStart(t) + BENCH_SEATS * SEAT_GAP + 1,
+		);
 	for (let x = -3.5; x <= COURT_W + 3.5; x += GAP * 0.92) {
-		if (r() < 0.06) {
+		if (r() < 0.06 || behindBench(x)) {
 			continue;
 		}
 		// Behind the table, the media.
