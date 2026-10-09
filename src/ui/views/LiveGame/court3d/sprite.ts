@@ -74,8 +74,8 @@ const rim = (
 
 // SPRITES ARE DRAWN ONCE AND KEPT.
 //
-// Like a sprite game's, his animation runs in frames - eight to a stride or
-// a loop, a dozen across a jump shot - and he turns in sixteen directions, so
+// Like a sprite game's, his animation runs in frames - a dozen to a stride
+// or a loop, twenty across a jump shot - and he turns in 24 directions, so
 // the same few pictures come round again and again. Each is made the first
 // time it is needed and kept; after that a player costs one image copy. He
 // still glides across the floor smoothly - only his pose steps, the way
@@ -91,16 +91,16 @@ export const makeSpriteCache = (): SpriteCache => ({
 	ids: new WeakMap(),
 	next: 0,
 });
-const KEEP = 1600;
-const CYCLE_FRAMES = 8;
+const KEEP = 2400;
+const CYCLE_FRAMES = 12;
 // Steps through a bounce for the dribbling hand.
 const DRIBBLE_FRAMES = 8;
 const ACT_FRAMES = 20;
-const TURNS = 16;
+const TURNS = 24;
 
 // A move's frame: an act stepped through its frames (a long one - a dunk -
 // gets more, so its quickest part, the slam, still shows), a cycle or a loop
-// through its eight.
+// through its dozen.
 const frameOf = (anim: AnimName, phase: number): number => {
 	const a = ANIMS[anim];
 	const frames = Math.max(ACT_FRAMES, a.n * 2);
@@ -137,11 +137,12 @@ const armSteps = (a: PlayerState["arm"]): PlayerState["arm"] => {
 };
 
 // The pose he is drawn in: his own, stepped to the sprite's frames and turns
-// - and, easing out of his last move, two steps of that.
+// - and, easing out of his last move, three steps of that.
 const stepped = (st: PlayerState) => {
 	const turn = Math.round(st.yaw / ((Math.PI * 2) / TURNS));
 	const f = st.from;
-	const step = (v: number) => (v > 0.5 ? 2 / 3 : v > 0.12 ? 1 / 3 : 0);
+	const step = (v: number) =>
+		v > 0.12 ? Math.min(3, Math.max(1, Math.round(v * 4))) / 4 : 0;
 	const w = f ? step(f.w) : 0;
 	return {
 		arm: armSteps(st.arm),

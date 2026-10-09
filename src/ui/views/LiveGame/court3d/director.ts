@@ -3192,13 +3192,38 @@ class Director {
 		const bh = run.roles[f.ball]!;
 		const had = this.holder;
 		let ready = t + 600;
+		// Where each goes - never two of them to the one spot: the man with
+		// the ball has his, and anybody the set puts on top of somebody
+		// already placed stands a few steps off him instead.
+		const spotOf = run.roles.map((_, r) => this.at(run, f.at[r]!));
+		{
+			const taken: Pt[] = [];
+			const order = run.roles
+				.map((_, r) => r)
+				.sort((a, b) => (a === f.ball ? -1 : b === f.ball ? 1 : a - b));
+			for (const r of order) {
+				let S = spotOf[r]!;
+				for (const q of taken) {
+					const d = dist(S, q);
+					if (d < 4) {
+						const u =
+							d > 0.1
+								? unitVec(q, S)
+								: unitVec({ x: 0, y: 0 }, { x: -dir, y: q.y < 25 ? 1 : -1 });
+						S = clampPt({ x: q.x + u.x * 6, y: q.y + u.y * 6 });
+					}
+				}
+				taken.push(S);
+				spotOf[r] = S;
+			}
+		}
 		// The length of the floor to go, the rest run it in their lanes.
 		const lanes: { pid: number; to: Pt; j: number }[] = [];
 		run.roles.forEach((pid, r) => {
 			if (pid === had && had !== bh) {
 				return;
 			}
-			const S = this.at(run, f.at[r]!);
+			const S = spotOf[r]!;
 			const P = this.posOf(pid);
 			const far = dist(P, S) > 20;
 			if (pid === had) {
@@ -3228,14 +3253,15 @@ class Director {
 			ready = Math.max(ready, by);
 		}
 		if (had !== undefined && had !== bh) {
+			// (Where the man coming for it was: if the set has no place of
+			// his own for the man with it, or puts him where it is coming to,
+			// that is where he goes once he gives it up.)
+			const came = this.posAt(bh, t);
 			ready = Math.max(ready, this.passTo(had, bh, t + 150));
 			const r = run.roles.indexOf(had);
-			if (r >= 0) {
-				ready = Math.max(
-					ready,
-					this.go(had, this.at(run, f.at[r]!), t, JOG, "run"),
-				);
-			}
+			const mine = r >= 0 ? spotOf[r] : undefined;
+			const D = mine && dist(mine, spotOf[f.ball]!) >= 4 ? mine : came;
+			ready = Math.max(ready, this.go(had, D, t, JOG, "run"));
 		}
 		this.guardStep(run, [], t + 150, ready);
 		this.motionTeam = team;
@@ -5807,7 +5833,9 @@ class Director {
 					this.closeOut(
 						guard,
 						shooter,
-						ahead(close ? 1.8 : 2.4),
+						// (An arm's length off him: his hand at the ball, not his
+						// body in the shooter's.)
+						ahead(close ? 2 : 3),
 						gather,
 						release,
 						close,
@@ -6601,14 +6629,21 @@ class Director {
 			// Swatted straight back off the man nearest it on the other side -
 			// the shooter, mostly - and off him out of bounds.
 			const back = this.slots(side).sort(
-				(a, b) => dist(this.posOf(a), from) - dist(this.posOf(b), from),
+				(a, b) => dist(this.posAt(a, t), from) - dist(this.posAt(b, t), from),
 			)[0];
 			if (back !== undefined) {
-				const P = this.posOf(back);
+				// (Off his chest, where he is then: plainly off him, whoever
+				// else is about.)
+				const P = this.posAt(back, t);
 				const u = unitVec(P, from);
-				const at = { x: P.x + u.x * 0.3, y: P.y + u.y * 0.3, z: 4.2 };
+				const at = { x: P.x + u.x * 0.1, y: P.y + u.y * 0.1, z: 4.2 };
 				const hit = t + Math.max(140, (dist(from, at) / 30) * 1000);
 				this.fly(t, hit, start, at);
+				// Hands up to it as it comes back at him - and off them.
+				this.act(back, "catch", hit - 200, hit + 160, {
+					face: from.x >= P.x ? 1 : -1,
+					look: { x: from.x, y: from.y },
+				});
 				return knock(at, hit);
 			}
 		}
@@ -10991,17 +11026,24 @@ class Director {
 						wait(this.rand(500, 900));
 						continue;
 					}
-					const W = clampPt({
-						x: P.x + v.x * side * (L - 1),
-						y: P.y + v.y * side * (L - 1),
-					});
+					// (Back of half court, he walks it up toward the line instead:
+					// never stood there with it.)
+					const behind = (P.x - COURT_W / 2) * face < 1;
+					const W = clampPt(
+						behind
+							? { x: P.x + u.x * (L - 1), y: P.y + u.y * (L - 1) }
+							: {
+									x: P.x + v.x * side * (L - 1),
+									y: P.y + v.y * side * (L - 1),
+								},
+					);
 					const walk = Math.max(500, (dist(P, W) / this.rand(4.5, 6)) * 1000);
 					const back = Math.max(450, (dist(P, W) / 5) * 1000);
 					if (
 						!walked &&
 						dist(here, P) < 0.1 &&
-						walk + back + 900 <= left &&
-						r < 0.55
+						walk + back + (behind ? 200 : 900) <= left &&
+						(r < 0.55 || behind)
 					) {
 						// Walking it a few steps along the arc, squared up to his
 						// man - setting up the angle, back over in time.

@@ -136,6 +136,12 @@ describe("3D crew", () => {
 			) {
 				continue;
 			}
+			// (At the line: not a ball knocked loose in a scramble.)
+			const t0 = g.t0;
+			const beat = tl.beats.findLast((b) => b.preStart <= t0);
+			if (beat?.type !== "ft" && beat?.type !== "missFt") {
+				continue;
+			}
 			const from = g.from;
 			const refs = crewAt(tl, g.t0 - 60, crew).states.filter((s) =>
 				isRef(s.pid),

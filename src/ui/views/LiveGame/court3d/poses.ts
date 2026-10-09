@@ -131,16 +131,19 @@ const P = {
 		abF: 44,
 		wide: 0.85,
 	}),
+	// The ball in both hands, live: knees bent and weight forward, ready
+	// to go with it - not stood up straight.
 	hold: pose({
-		hipN: -12,
-		kneeN: 30,
-		hipF: 14,
-		kneeF: 32,
+		hipN: -4,
+		kneeN: 40,
+		hipF: 22,
+		kneeF: 42,
 		shN: 36,
 		elN: 92,
 		shF: 30,
 		elF: 98,
-		lean: 10,
+		lean: 14,
+		wide: 0.3,
 	}),
 	catch: pose({
 		hipN: -8,
@@ -500,10 +503,15 @@ const stride = (ph: number, mode: RunMode): Pose => {
 	if (mode === "dribble") {
 		return pose({
 			...legs,
+			kneeN: legs.kneeN + 6,
+			kneeF: legs.kneeF + 6,
+			lean: 15,
 			shN: 34,
 			elN: 22 + 18 * Math.abs(a),
-			shF: 52,
-			elF: 62,
+			// The other arm out, bent, between the ball and anybody coming.
+			shF: 24,
+			elF: 72,
+			abF: 30,
 		});
 	}
 	return pose({ ...legs, ...pump(a, 42, 80, 22) });
@@ -1103,7 +1111,13 @@ export const ANIMS = {
 					: { shN: 150, elN: 22, abN: 20, shF: 48, elF: 30, abF: 46 }),
 			}),
 	},
-	hold: { kind: "loop", n: 1, fps: 1, pose: () => P.hold },
+	// (Breathing with it: never quite still.)
+	hold: {
+		kind: "loop",
+		n: 2,
+		fps: 1.3,
+		pose: (i) => (i ? { ...P.hold, kneeN: 44, kneeF: 46, lean: 15 } : P.hold),
+	},
 	// Boxing out: his back into the man behind him, sat down low and wide,
 	// arms up and out to keep him there, eyes on the ball.
 	boxOut: {
@@ -1228,16 +1242,18 @@ export const ANIMS = {
 		fps: 7,
 		pose: (i) =>
 			pose({
-				hipN: -6,
-				kneeN: 46,
-				hipF: 22,
-				kneeF: 48,
-				lean: 16,
-				wide: 0.3,
+				hipN: -2,
+				kneeN: 50,
+				hipF: 26,
+				kneeF: 52,
+				lean: 20,
+				wide: 0.42,
 				shN: 32,
 				elN: [34, 18, 8, 18][i]!,
-				shF: 52,
-				elF: 62,
+				// The other arm out, bent, between the ball and his man.
+				shF: 26,
+				elF: 74,
+				abF: 34,
 			}),
 	},
 	hurt: {
