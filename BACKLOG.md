@@ -70,7 +70,7 @@ Status key: `[ ]` not started, `[~]` in progress, `[x]` done.
       look to give it to a ball handler to bring it up. Exceptions: sets, urgency.
 - [ ] Layups: many natural, real-NBA-looking finishes (finger rolls, normal
       layups, etc.) so it never looks pre-animated.
-- [ ] Deep shots to end a period are ugly: the player just backs up to half court
+- [x] Deep shots to end a period are ugly: the player just backs up to half court
       and shoots. Rework.
 - [ ] Defense overall should look like it's genuinely trying to stop the offense.
       Defenders can get crossed up, confused, etc. when the offense does good things.

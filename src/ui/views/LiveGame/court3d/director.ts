@@ -587,6 +587,8 @@ const BREAK_GAP = { board: 9.6, steal: 11, make: 7.1 };
 // A trip ending in a turnover or a whistle sooner than this (seconds of the
 // sim's clock) has no time for the ball to be brought up and a set run.
 const RUSH_GAP = 6;
+// Flat out up the floor with it, a heave to beat the buzzer (feet a second).
+const HEAVE_RUN = 19;
 // And by where the shot came from: a break ends at the rim far more often
 // than a trip does, seldom with a floater and hardly ever with a pull-up from
 // mid-range (see BREAK_SHARE) - so a trip ending at the rim was a break on a
@@ -2270,6 +2272,9 @@ class Director {
 		// Where the trip's shot comes from, if it ends in one - not a turnover
 		// or a whistle.
 		shot?: Zone,
+		// A heave at the buzzer: just the ball in somebody's hands - no break
+		// to run, no set, nobody bringing it up for one.
+		heave = false,
 	): { t: number; run?: Running } {
 		const phase = this.phase;
 		const changed = this.offense !== team;
@@ -2292,10 +2297,11 @@ class Director {
 		// league's do.
 		const last = this.beats.at(-1)?.type ?? "";
 		const quick = (start: keyof typeof BREAK_GAP) =>
-			shot
+			!heave &&
+			(shot
 				? gap !== undefined &&
 					gap < Math.min(12, BREAK_GAP[start] + BREAK_FROM[shot])
-				: this.rng() < BREAK_SHARE[start];
+				: this.rng() < BREAK_SHARE[start]);
 		if (phase === "inboundBase" && !changed) {
 			// After a basket: taken out under the basket and inbounded, then up
 			// the floor - every man back on his own man. Now and then - right
@@ -2348,14 +2354,15 @@ class Director {
 		// A trip the sim ends in a turnover or a whistle only seconds in -
 		// lost on the way up, fouled at once (on purpose, late in a game) -
 		// is over before any set: it happens where the ball is.
-		const rushed = !shot && !transition && gap !== undefined && gap < RUSH_GAP;
+		const rushed =
+			heave || (!shot && !transition && gap !== undefined && gap < RUSH_GAP);
 		if (transition) {
 			this.breaks.push(t);
 			run = call?.("break");
 			t = run ? this.startBreak(run, t) : this.pushBreak(team, t);
 		} else if (rushed) {
 			// Up the floor if it isn't, fast - and no set.
-			if (this.inBackcourt(team, handlerPos)) {
+			if (!heave && this.inBackcourt(team, handlerPos)) {
 				const up = t;
 				t = this.bringUp(team, t);
 				this.hurry(Math.max(from + 400, up - 200), t - 1000);
@@ -4437,6 +4444,70 @@ class Director {
 		return this.carry(pid, to, t, 380, "run", face);
 	}
 
+	// THE HEAVE AT THE BUZZER.
+	//
+	// A second or two on the clock and the ball at the wrong end: whoever has
+	// it gets it to him, and he races up the floor with it, flat out, and lets
+	// it go from wherever he has got to as time runs out - from half court,
+	// or from well back of it. His man chases him. Returns when he is up to
+	// let it go.
+	private raceToHeave(
+		team: Side,
+		shooter: number,
+		t: number,
+		gap: number | undefined,
+	): number {
+		const t0 = t;
+		const rim = rimPt(team);
+		const dir = attackDir(team);
+		t = this.develop(team, t, gap, undefined, undefined, true).t;
+		const h = this.holder;
+		if (h === undefined) {
+			t = this.pickUp(shooter, t, SPRINT) + 150;
+		} else if (h !== shooter) {
+			// Run on ahead of it inside the arc, he comes back out to meet it.
+			const S0 = this.posOf(shooter);
+			if (dist(S0, rim) < 29) {
+				const out = unitVec(rim, S0);
+				this.goBy(
+					shooter,
+					clampPt({ x: rim.x + out.x * 31, y: rim.y + out.y * 31 }),
+					t,
+					t + 900,
+					"run",
+					dir,
+				);
+			}
+			t = this.passTo(h, shooter, t);
+		}
+		// What is left of the sim's time for the trip, on the run - never
+		// inside the arc.
+		const left = Math.max(0.5, (gap ?? 2) - (t - t0) / 1000);
+		const S = this.posOf(shooter);
+		const room = dist(S, rim) - 28;
+		const run = Math.max(0, Math.min(room, left * HEAVE_RUN));
+		if (run > 2) {
+			const u = unitVec(S, rim);
+			const P = clampPt({ x: S.x + u.x * run, y: S.y + u.y * run });
+			this.hold(shooter, t, "dribble");
+			const there = this.go(shooter, P, t, HEAVE_RUN, "dribble", dir);
+			// His man after him, a step behind.
+			const d = this.defenderOf(shooter);
+			if (d !== undefined) {
+				const back = unitVec(rim, P);
+				this.goBy(
+					d,
+					clampPt({ x: P.x + back.x * 4, y: P.y + back.y * 4 }),
+					t + 150,
+					there,
+					"run",
+				);
+			}
+			t = there;
+		}
+		return Math.max(t, this.hold(shooter, t, "hold"));
+	}
+
 	// Back to the rim, a dribble or two to back his man down.
 	private backDown(pid: number, t: number, dir: 1 | -1): number {
 		const at = this.posOf(pid);
@@ -4780,6 +4851,8 @@ class Director {
 		let lobber = lob;
 		if (lob !== undefined) {
 			t = this.setUpLob(team, shooter, lob, t);
+		} else if (heaveSecs !== undefined && !putback) {
+			t = this.raceToHeave(team, shooter, t, gap);
 		} else if (!putback || this.holder !== shooter) {
 			let run: Running | undefined;
 			if (!putback) {
