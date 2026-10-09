@@ -935,6 +935,12 @@ describe("3D director", () => {
 				if (b.type === "sub") {
 					continue;
 				}
+				// A timeout, the end of a period: the whistle is the play - the
+				// walk off to the huddles after it is hurried through.
+				if (/^(timeout|endOfPeriod)$/.test(b.type)) {
+					assert.isAtLeast(a - b.actionStart, 800 - 1e-6, `${b.type} ${j}`);
+					continue;
+				}
 				const hold =
 					FT.test(b.type) && next && FT.test(next.type)
 						? 200

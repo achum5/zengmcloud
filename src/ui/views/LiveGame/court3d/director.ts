@@ -5256,8 +5256,26 @@ class Director {
 		const rim = rimPt(team);
 		let close = zone === "atRim" || zone === "tipIn" || zone === "putBack";
 		const putback = zone === "putBack" || zone === "tipIn";
+		// A putback goes back up on his side of the rim - from between it and
+		// where he got the ball - not across the lane through everybody.
+		const from = this.holder === shooter ? this.posOf(shooter) : undefined;
 		const P = putback
-			? clampPt({ x: rim.x - dir * this.rand(2, 4), y: 25 + this.rand(-3, 3) })
+			? from && dist(from, rim) > 1
+				? (() => {
+						const u = unitVec(rim, from);
+						// (Never from behind the backboard.)
+						const ux = -dir * Math.max(0.35, -dir * u.x);
+						const L = Math.hypot(ux, u.y);
+						const r = Math.min(dist(from, rim), this.rand(2.5, 4.5));
+						return clampPt({
+							x: rim.x + (ux / L) * r,
+							y: rim.y + (u.y / L) * r,
+						});
+					})()
+				: clampPt({
+						x: rim.x - dir * this.rand(2, 4),
+						y: 25 + this.rand(-3, 3),
+					})
 			: this.shotSpot(team, zone, heaveSecs);
 
 		// An alley-oop: "X cuts to the rim as Y lobs up the inbound pass".
@@ -13184,15 +13202,21 @@ const TAKE_IN = 800;
 const TAKE_IN_SCORE = 1500;
 const TAKE_IN_FT = 200;
 const FT_LINE = /^(ft|missFt)$/;
+const HUDDLE_BEAT = /^(timeout|endOfPeriod)$/;
 const sunkIn = (b: Beat, next: Beat | undefined): number =>
 	b.type === "sub"
 		? b.actionStart
-		: b.end +
-			(FT_LINE.test(b.type) && next && FT_LINE.test(next.type)
-				? TAKE_IN_FT
-				: resultOf(b.type)?.kind === "make" || b.type === "ft"
-					? TAKE_IN_SCORE
-					: TAKE_IN);
+		: // A timeout, the end of a period: the whistle is what happened - the
+			// walk off to the huddles that is the rest of it is hurried on
+			// through.
+			HUDDLE_BEAT.test(b.type)
+			? b.actionStart + TAKE_IN
+			: b.end +
+				(FT_LINE.test(b.type) && next && FT_LINE.test(next.type)
+					? TAKE_IN_FT
+					: resultOf(b.type)?.kind === "make" || b.type === "ft"
+						? TAKE_IN_SCORE
+						: TAKE_IN);
 // Too short a stretch to bother hurrying through (ms): run through fast, it
 // would only be a lurch - except in the dead time around the free throws,
 // with nobody else moving.
