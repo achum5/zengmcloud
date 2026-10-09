@@ -52,8 +52,11 @@ describe("3D free throws", () => {
 					const st0 = evalPlayer(tl, pid, t);
 					const ball = evalBall(tl, t, bodyFor);
 					// At the line, from the catch to the shot.
+					// (Fouled right there, he hands the ball to the official
+					// first: not his routine yet.)
 					if (
 						!st0.shown ||
+						st0.anim === "pass" ||
 						Math.abs(depthOf(st0.x) - FT_SHOOTER_DEPTH) > 1.2 ||
 						Math.abs(st0.y - 25) > 2 ||
 						(ball.holder !== pid &&

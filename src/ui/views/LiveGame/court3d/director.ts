@@ -734,6 +734,7 @@ const IN_PLACE = new Set<AnimName>([
 	"highFive",
 	"lowFive",
 	"chestBump",
+	"waitFive",
 ]);
 // How far round the arc from straight out a man spacing the floor goes
 // (radians): into the corner, and no farther.
@@ -1285,6 +1286,48 @@ class Director {
 			),
 		);
 		return this.go(pid, to, start, speed, anim, face, { effort });
+	}
+
+	// UP THE FLOOR IN LANES. Not two men side by side: a wing runs out wide,
+	// down his side of the floor, a big down the middle, a second man on a
+	// side the lane inside him - and from half court each in to his spot.
+	private fillLanes(
+		team: Side,
+		men: { pid: number; to: Pt; j: number }[],
+		t0: number,
+		by: number,
+	) {
+		const dir = attackDir(team);
+		const rim = rimPt(team);
+		const taken = new Map<string, number>();
+		const lanes = men
+			.map((m) => {
+				const big = Math.abs(m.to.y - COURT_H / 2) < 9 && dist(m.to, rim) < 17;
+				const side = m.to.y < COURT_H / 2 ? -1 : 1;
+				return { ...m, big, side };
+			})
+			// Out wide first: whoever's spot is nearer his sideline has it.
+			.sort((a, b) => Math.abs(b.to.y - 25) - Math.abs(a.to.y - 25));
+		for (const m of lanes) {
+			const from = this.posOf(m.pid);
+			if ((m.to.x - from.x) * dir < 24) {
+				this.goBy(m.pid, m.to, t0 + m.j * 90, by, "run");
+				continue;
+			}
+			const key = m.big ? "mid" : String(m.side);
+			const n = taken.get(key) ?? 0;
+			taken.set(key, n + 1);
+			const laneY = m.big
+				? COURT_H / 2 + (n % 2 ? 3.5 : -3.5) * (m.side || 1)
+				: COURT_H / 2 + m.side * (n === 0 ? 19 : 10);
+			const W = clampPt({ x: from.x + (m.to.x - from.x) * 0.55, y: laneY });
+			const start = Math.max(t0 + m.j * 90, this.free.get(m.pid) ?? 0);
+			const d1 = dist(from, W);
+			const d2 = dist(W, m.to);
+			const mid = start + (by - start) * (d1 / Math.max(1, d1 + d2));
+			this.goBy(m.pid, W, start, mid, "run");
+			this.goBy(m.pid, m.to, mid, by, "run");
+		}
 	}
 
 	// Carried somewhere as part of something he does - the gather and leap
@@ -2033,11 +2076,14 @@ class Director {
 			there +
 			600 +
 			runMs(dist({ x: out.x + dir * 13, y: out.y }, spots[0]!), DRIBBLE);
-		off.forEach((pid, j) => {
-			if (pid !== pg && pid !== inb) {
-				this.goBy(pid, spots[j] ?? spots[0]!, t + 200 + j * 90, upBy, "run");
-			}
-		});
+		this.fillLanes(
+			team,
+			off
+				.map((pid, j) => ({ pid, to: spots[j] ?? spots[0]!, j }))
+				.filter(({ pid }) => pid !== pg && pid !== inb),
+			t + 200,
+			upBy,
+		);
 		def.forEach((pid, j) => {
 			const n = this.track(pid)?.moves.length ?? 0;
 			const back = this.goBy(
@@ -7759,7 +7805,7 @@ class Director {
 						] as const) {
 							const a = arrived.get(p) ?? met;
 							if (met + 40 - a > 120) {
-								this.act(p, "ready", a, met + 40, { look: them });
+								this.act(p, "waitFive", a, met + 40, { look: them });
 							}
 							this.act(p, anim, met + 40, met + 560, { look: them });
 						}
@@ -11978,6 +12024,7 @@ class Director {
 			"highFive",
 			"lowFive",
 			"chestBump",
+			"waitFive",
 			"reach",
 			"poke",
 			"block",

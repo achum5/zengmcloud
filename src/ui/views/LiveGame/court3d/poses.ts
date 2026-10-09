@@ -3412,6 +3412,16 @@ export const ANIMS = {
 			],
 		],
 	},
+	// Face to face down the handshake line, waiting on the man before to
+	// finish with him.
+	waitFive: {
+		kind: "act",
+		n: 2,
+		keys: [
+			[0, P.ready],
+			[1, P.ready],
+		],
+	},
 	// A CHEST BUMP: a step in, up off both feet, chests together in the air
 	// with the arms flung back, and down.
 	chestBump: {

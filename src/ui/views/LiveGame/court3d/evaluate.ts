@@ -490,6 +490,27 @@ const strideOf = (anim: AnimName): number => {
 	return a.kind === "cycle" ? a.stride : 5;
 };
 
+// Whether a run goes the way his back faces, slowly enough to backpedal:
+// asked halfway along it, once a run.
+const backwards = new WeakMap<Run["mv"], boolean>();
+const backward = (tl: CourtTimeline, tr: Track, run: Run): boolean => {
+	let b = backwards.get(run.mv);
+	if (b === undefined) {
+		const dx = run.mv.to.x - run.mv.from.x;
+		const dy = run.mv.to.y - run.mv.from.y;
+		const d = Math.hypot(dx, dy);
+		const v = Math.max(shapeOf(run).vc, run.v0, run.v1);
+		if (d < 0.5 || v > BACK_FTPS + 1) {
+			b = false;
+		} else {
+			const yaw = yawAt(tl, tr, (run.s0 + run.s1) / 2);
+			b = (dx * Math.cos(yaw) + dy * Math.sin(yaw)) / d < -0.4;
+		}
+		backwards.set(run.mv, b);
+	}
+	return b;
+};
+
 // Where he is on the floor and what his feet are doing, without asking which
 // way he faces (which depends on where the ball is - see yawAt).
 type Spot = {
@@ -579,6 +600,16 @@ const rawSpotAt = (tr: Track, t: number): Spot => {
 		return { ...mv.to, moveIndex: k, moving: false, hx: 0, hy: 0 };
 	}
 	let p = onRun(run, t);
+	// An inch or two over a second or more - creeping slower than any walk,
+	// not part of a run on through: he is standing there, not walking.
+	if (
+		!run.v0 &&
+		!run.v1 &&
+		lenOf(mv) < 1.5 &&
+		lenOf(mv) < (0.7 * (run.s1 - run.s0)) / 1000
+	) {
+		return { ...p, moveIndex: k, moving: false, hx: 0, hy: 0 };
+	}
 	let hx = mv.to.x - mv.from.x;
 	let hy = mv.to.y - mv.from.y;
 	// Coming round a corner: off the end of the last run and onto this one,
@@ -1083,6 +1114,17 @@ const doingAt = (
 		if (anim === "slide" && across(tl, tr, t, here) > 0.6) {
 			phase *= strideOf("slide") / strideOf("shuffle");
 			anim = "shuffle";
+		}
+		// Going the way his back faces - easing off from the ball while he
+		// watches it - at no more than a backpedal's pace: he backpedals, not
+		// runs forward while he goes backward. (Decided for the whole run, by
+		// how he faces halfway along it, so his legs don't switch mid-stride.)
+		if (
+			(anim === "walk" || anim === "jog" || anim === "run") &&
+			backward(tl, tr, here.run)
+		) {
+			phase *= strideOf(anim) / strideOf("back");
+			anim = "back";
 		}
 		z = bounceAt(anim, phase);
 	} else {
