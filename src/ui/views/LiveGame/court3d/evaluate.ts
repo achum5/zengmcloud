@@ -552,7 +552,7 @@ const spotAt = (tr: Track, t: number): Spot => {
 		if (t >= n.t1) {
 			continue;
 		}
-		const r = Math.min(NUDGE_RAMP, (n.t1 - n.t0) / 2);
+		const r = Math.min(n.ramp ?? NUDGE_RAMP, (n.t1 - n.t0) / 2);
 		const a = (t - n.t0) / r;
 		const b = (n.t1 - t) / r;
 		const u = Math.min(1, a, b);
@@ -573,7 +573,7 @@ const spotAt = (tr: Track, t: number): Spot => {
 		? s
 		: { ...s, x: s.x + dx, y: s.y + dy, nv: Math.hypot(vx, vy), nd };
 };
-const NUDGE_LONGEST = 14000;
+const NUDGE_LONGEST = 15000;
 const rawSpotAt = (tr: Track, t: number): Spot => {
 	let k = lastIndex(tr.moves, t, (m) => m.t0);
 	if (k < 0) {
