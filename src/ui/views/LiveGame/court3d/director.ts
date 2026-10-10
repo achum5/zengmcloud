@@ -5018,9 +5018,11 @@ class Director {
 		const rs = Math.hypot(dx, dy);
 		// His angle round the rim (90: straight out; 0 and 180, along the
 		// baseline) - right under it, either side.
+		// (Under the rim, or behind the line of it, he is on the baseline on
+		// his side.)
 		const at =
 			rs > 2
-				? (Math.atan2(dx, dy) * 180) / Math.PI
+				? (Math.atan2(Math.max(dx, 0.3), dy) * 180) / Math.PI
 				: dy >= 0
 					? this.rand(40, 80)
 					: this.rand(100, 140);
@@ -5176,7 +5178,19 @@ class Director {
 			});
 			return there;
 		}
-		t = this.go(pid, P, t, DRIBBLE, "dribble", dir);
+		// Out from the rim to where he shoots from - an offensive board taken
+		// back out to the line, say - he backs out facing it: a retreat
+		// dribble, not a drive's pace backwards.
+		const rim = rimPt(this.teamOf(pid));
+		const away = dist(P, rim) - dist(from, rim) > 3;
+		t = this.go(
+			pid,
+			P,
+			t,
+			away ? DRIBBLE_SPEED.retreat! + 2 : DRIBBLE,
+			"dribble",
+			dir,
+		);
 		if (style === "post") {
 			t = this.backDown(pid, t, dir);
 		}
