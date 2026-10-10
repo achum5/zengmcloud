@@ -10717,9 +10717,15 @@ class Director {
 		};
 		// A run from where he stood - unless it is the picture cutting to him
 		// somewhere else.
+		// (Where each run set off from before any of this moved its start:
+		// what is fast enough for it goes by that.)
+		const setFrom = new Map<Move, Pt>();
 		const setOff = (tr: Track, next: number | undefined, from: Pt) => {
 			const m = next === undefined ? undefined : tr.moves[next];
 			if (m && (m.t1 - m.t0 > 1 || dist(m.from, m.to) > 0.01)) {
+				if (!setFrom.has(m)) {
+					setFrom.set(m, m.from);
+				}
 				m.from = { ...from };
 			}
 		};
@@ -11072,7 +11078,7 @@ class Director {
 					const secs = (next.t1 - next.t0) / 1000;
 					return (
 						dist(Q, next.to) / secs <=
-						Math.max(dist(next.from, next.to) / secs, RUN)
+						Math.max(dist(setFrom.get(next) ?? next.from, next.to) / secs, RUN)
 					);
 				};
 				// The open spot the floor needs filled, from where he is: well
@@ -12245,11 +12251,23 @@ class Director {
 					men.some(([, x]) => this.teamOf(x) === tr.team)
 				) {
 					// Too short to follow anybody in, or not his to follow: as
-					// scheduled.
+					// scheduled - from wherever following left him, and no faster
+					// than his legs for that either.
+					let short = false;
 					if (left && (m.t1 - m.t0 > 1 || dist(m.from, m.to) > 0.01)) {
 						m.from = { ...left };
+						const far = dist(m.from, m.to);
+						const most = (FASTEST * (m.t1 - m.t0)) / 1000;
+						if (far > most && far > 0.01) {
+							const k = most / far;
+							m.to = {
+								x: m.from.x + (m.to.x - m.from.x) * k,
+								y: m.from.y + (m.to.y - m.from.y) * k,
+							};
+							short = true;
+						}
 					}
-					left = undefined;
+					left = short ? { ...m.to } : undefined;
 					out.push(m);
 					i++;
 					continue;
