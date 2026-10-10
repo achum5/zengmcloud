@@ -880,6 +880,9 @@ type Running = {
 	gap?: number;
 	// A little give in every spot, so no two trips down look stamped out.
 	jitter: Map<string, Pt>;
+	// Spots taken on the far side of the floor from the set's (see
+	// playDribble).
+	across?: Set<string>;
 	// Defenders the play-by-play has at the shot - the shot blocker, the man
 	// who fouls him, the one he dunks on - who work their way to it.
 	help?: number[];
@@ -3070,7 +3073,11 @@ class Director {
 	}
 
 	private at(run: Running, name: string): Pt {
-		const p = this.spotFor(run.team, run.mirror, name);
+		const p = this.spotFor(
+			run.team,
+			run.across?.has(name) ? (-run.mirror as 1 | -1) : run.mirror,
+			name,
+		);
 		if (name.startsWith("inbound") || name === "rim") {
 			return p;
 		}
@@ -4143,6 +4150,21 @@ class Director {
 	): number {
 		const pid = run.roles[who]!;
 		const dir = attackDir(run.team);
+		// Driven across the floor into the middle, he goes on into the lane
+		// the far side of it - not back the way he came.
+		if (/^[LR]_(lane|float)$/.test(to) && this.holder === pid) {
+			const last = this.track(pid)?.moves.at(-1);
+			if (last?.anim === "dribble") {
+				const across = last.to.y - last.from.y;
+				if (
+					Math.abs(across) >= 8 &&
+					across * (this.at(run, to).y - last.to.y) < 0
+				) {
+					(run.across ??= new Set()).add(to);
+					run.jitter.delete(to);
+				}
+			}
+		}
 		const P =
 			to === "rim" ? this.nearRim(run.team, this.posOf(pid)) : this.at(run, to);
 		const start = Math.max(t0, this.free.get(pid) ?? 0);
@@ -13725,6 +13747,31 @@ class Director {
 						continue;
 					}
 				}
+				// (Never into a man set in a screen or the post: he is a wall.)
+				{
+					const ramp = Math.min(r.par ? easeMs : RAMP, (n1 - n0) / 2);
+					let wall = false;
+					for (let t = n0; t < n1 && !wall; t += 100) {
+						const u1 = Math.min(1, (t - n0) / ramp, (n1 - t) / ramp);
+						const w = u1 * u1 * (3 - 2 * u1);
+						const P = posAt(r.a, t);
+						const Q = { x: P.x + ux * k * w, y: P.y + uy * k * w };
+						wall = tracks.some((o) => {
+							if (o.team === r.a.team || !shownAtT(o, t)) {
+								return false;
+							}
+							const act = o.acts.find((a) => a.t0 <= t && a.t1 > t);
+							if (!act || !SET.has(act.anim)) {
+								return false;
+							}
+							const O = posAt(o, t);
+							return dist(O, Q) < TOUCH && dist(O, Q) < dist(O, P) - 0.01;
+						});
+					}
+					if (wall) {
+						continue;
+					}
+				}
 				(r.a.nudges ??= []).push({
 					t0: n0,
 					t1: n1,
@@ -13759,7 +13806,7 @@ class Director {
 		if (!/^fga/.test(b.type) || typeof pid !== "number") {
 			return LIVE_LEAD;
 		}
-		let thrown: number | undefined;
+		let thrown: { t0: number; t1: number; from: number } | undefined;
 		for (let k = this.ball.length - 1; k >= 0; k--) {
 			const s = this.ball[k]!;
 			if (s.t0 < b.actionStart - LIVE_MAX) {
@@ -13772,15 +13819,33 @@ class Director {
 				s.to.pid === pid &&
 				"pid" in s.from
 			) {
-				thrown = s.t0;
+				thrown = { t0: s.t0, t1: s.t1, from: s.from.pid };
 				break;
 			}
 		}
 		if (thrown !== undefined) {
-			return Math.max(
+			const lead = Math.max(
 				LIVE_MIN,
-				Math.min(LIVE_MAX, b.actionStart - thrown + 600),
+				Math.min(LIVE_MAX, b.actionStart - thrown.t0 + 600),
 			);
+			// From the start of what got him it: his cut to it, the drive
+			// that drew the help off him - not the last stride of either.
+			const pass = thrown;
+			const long = (m: Move, l: number) => dist(m.from, m.to) >= l;
+			const cut = this.track(pid)?.moves.find(
+				(m) => m.t1 <= pass.t1 + 300 && m.t1 > pass.t1 - 1500 && long(m, 6),
+			);
+			const drive = this.track(pass.from)?.moves.find(
+				(m) =>
+					m.anim === "dribble" &&
+					m.t1 <= pass.t0 + 300 &&
+					m.t1 > pass.t0 - 1500 &&
+					long(m, 8),
+			);
+			const from = Math.min(cut?.t0 ?? Infinity, drive?.t0 ?? Infinity);
+			return Number.isFinite(from)
+				? Math.max(lead, Math.min(LIVE_ACTION, b.actionStart - from + 300))
+				: lead;
 		}
 		// Off the dribble, off a screen: from the screen being set - what he
 		// is going off, and why he goes where he goes - not just the last
@@ -14200,6 +14265,9 @@ const LIVE_MIN = 2200;
 const LIVE_MAX = 3400;
 // Off a screen, the soonest he goes up after it is set (ms).
 const SCREEN_USE = 450;
+// A catch: back at real speed for the start of his cut to it, or of the
+// drive that drew the help off him - as far back as this (ms).
+const LIVE_ACTION = 5000;
 // A jumper off a screen: back at real speed this long (ms) before the
 // screen is set - when it is set no further back than LIVE_SCREEN - and the
 // screener no farther from him than SCREEN_NEAR feet as it is.
