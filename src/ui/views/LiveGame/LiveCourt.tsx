@@ -22,7 +22,10 @@ import {
 	TRANSITION_OFFENSE_SPOTS,
 } from "./courtSpots.ts";
 import { useLocal } from "../../util/local.ts";
-import type { CourtImageSlot } from "../../../common/types.ts";
+import type {
+	CourtImageAdjust,
+	CourtImageSlot,
+} from "../../../common/types.ts";
 import { nextSpinDeg, rimReaction } from "./courtAnimation.ts";
 import { bodyRenderOrder } from "./bodyOrder.ts";
 import { usePlayerFace } from "../../util/playerFaces.ts";
@@ -1745,6 +1748,9 @@ const LiveCourt = ({
 	// repaint the floor constantly, and depending on nothing would leave a
 	// slider doing nothing at all. It is a handful of numbers.
 	const adjustKey = JSON.stringify(court?.adjust ?? null);
+	// The league's decals for this game (see CourtDecal), laid on at center
+	// court and moved from there - one on each half, mirrored, for a pair.
+	const decals = court?.decals;
 
 	// WHERE AN IMAGE ACTUALLY LANDS, once the team has had its say.
 	//
@@ -1753,18 +1759,17 @@ const LiveCourt = ({
 	// CENTER, so making a center-court logo bigger grows it outward from the
 	// middle instead of dragging it toward one corner - which is what anyone
 	// dragging a size slider expects.
-	const placed = (
-		slot: CourtImageSlot,
-		box: {
-			x: number;
-			y: number;
-			width: number;
-			height: number;
-			opacity: number;
-			fit?: "contain" | "fill";
-		},
-	) => {
-		const adjust = court?.adjust?.[slot];
+	type Box = {
+		x: number;
+		y: number;
+		width: number;
+		height: number;
+		opacity: number;
+		fit?: "contain" | "fill";
+	};
+	const placed = (slot: CourtImageSlot, box: Box) =>
+		placedBy(court?.adjust?.[slot], box);
+	const placedBy = (adjust: CourtImageAdjust | undefined, box: Box) => {
 		const scale = Math.min(Math.max(adjust?.scale ?? 1, 0.1), 6);
 		const cx = box.x + box.width / 2 + (adjust?.dx ?? 0);
 		const cy = box.y + box.height / 2 + (adjust?.dy ?? 0);
@@ -2384,6 +2389,31 @@ const LiveCourt = ({
 					</text>
 				) : null}
 
+				{decals?.flatMap((d, k) => {
+					const box = {
+						x: COURT_W / 2 - 10,
+						y: 25 - 10,
+						width: 20,
+						height: 20,
+						opacity: 0.92,
+					};
+					const one = (
+						<image key={k} href={d.href} {...placedBy(d.adjust, box)} />
+					);
+					if (!d.pair) {
+						return [one];
+					}
+					const mirrored: CourtImageAdjust = {
+						...d.adjust,
+						dx: -(d.adjust?.dx ?? 0),
+						rotate: -(d.adjust?.rotate ?? 0),
+					};
+					return [
+						one,
+						<image key={`${k}m`} href={d.href} {...placedBy(mirrored, box)} />,
+					];
+				})}
+
 				{/* Center-court script text (e.g. "The Finals"), above the center
 				    logo near the top sideline so it stays clear of the logo. */}
 				{centerText ? (
@@ -2482,6 +2512,7 @@ const LiveCourt = ({
 			benchImageURL,
 			railImageURL,
 			adjustKey,
+			decals,
 			court?.hideRailText,
 			centerText,
 			centerTextColor,

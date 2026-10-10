@@ -1,5 +1,7 @@
+import { parseCourtDecals } from "../../common/courtDecals.ts";
 import {
 	courtPictureIds,
+	decalPictureIds,
 	pictureById,
 	prunePictures,
 	storePicture,
@@ -6532,6 +6534,26 @@ const updateTeamCourt = async ({
 // courtPictures.ts): its id, for the court to name it by.
 const storeCourtPicture = (url: string) => storePicture(url);
 
+// The league's court decals, saved whole (see CourtDecal). Pictures they no
+// longer use, and any uploaded for them this time that they don't, are let
+// go.
+const updateCourtDecals = async ({
+	decals,
+	uploaded,
+}: {
+	decals: unknown;
+	uploaded?: string[];
+}) => {
+	const parsed = parseCourtDecals(decals);
+	if (typeof parsed === "string") {
+		throw new Error(parsed);
+	}
+	const before = decalPictureIds(g.get("courtDecals") ?? []);
+	await league.setGameAttributes({ courtDecals: parsed });
+	await prunePictures([...before, ...(uploaded ?? [])]);
+	return { ok: true };
+};
+
 // A team's home or away uniform for the 3D game, as a picture (a PNG data
 // URL, at most this long), or none. The picture is stored once, by a hash of
 // it, in the synced jerseySkins store - so it travels in the league file -
@@ -8157,6 +8179,7 @@ const api = {
 		updateScheduledEvent,
 		updateTeamCourt,
 		storeCourtPicture,
+		updateCourtDecals,
 		updateTeamUniform,
 		setJerseySkin,
 		getJerseySkins,

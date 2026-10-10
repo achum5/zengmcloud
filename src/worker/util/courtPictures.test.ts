@@ -7,6 +7,7 @@ import { changeTracker } from "../db/changeTracker.ts";
 import {
 	PIC,
 	courtPictureIds,
+	decalsForGame,
 	prunePictures,
 	resolveCourt,
 	storePicture,
@@ -94,5 +95,43 @@ describe("court pictures", () => {
 		assert.ok(await idb.cache.jerseySkins.get(kept));
 		assert.ok(await idb.cache.jerseySkins.get(worn));
 		assert.strictEqual(await idb.cache.jerseySkins.get(loose), undefined);
+	});
+
+	test("a game gets the decals for its occasion and season", async () => {
+		await setup();
+		const id = await storePicture(PNG(5));
+		g.setWithoutSavingToDB("courtDecals", [
+			{ image: "https://example.com/always.png", when: "always" },
+			{ image: `${PIC}${id}`, when: "openingNight", from: 2025, to: 2026 },
+			{
+				image: "https://example.com/playoffs.png",
+				when: "playoffs",
+				pair: true,
+			},
+			{ image: "https://example.com/finals.png", when: "finals", from: 2030 },
+		]);
+		const hrefs = async (game: Parameters<typeof decalsForGame>[0]) =>
+			(await decalsForGame(game)).map((d) => d.href);
+		assert.deepStrictEqual(await hrefs({ season: 2025, day: 1 }), [
+			"https://example.com/always.png",
+			PNG(5),
+		]);
+		assert.deepStrictEqual(await hrefs({ season: 2027, day: 1 }), [
+			"https://example.com/always.png",
+		]);
+		assert.deepStrictEqual(await hrefs({ season: 2025, day: 40 }), [
+			"https://example.com/always.png",
+		]);
+		assert.deepStrictEqual(
+			await hrefs({ season: 2031, day: 1, playoffs: true, finals: true }),
+			[
+				"https://example.com/always.png",
+				"https://example.com/playoffs.png",
+				"https://example.com/finals.png",
+			],
+		);
+		// And a picture a decal uses is kept.
+		await prunePictures([id]);
+		assert.ok(await idb.cache.jerseySkins.get(id));
 	});
 });

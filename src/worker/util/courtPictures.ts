@@ -1,5 +1,10 @@
 import { idb } from "../db/index.ts";
-import type { CourtStyle } from "../../common/types.ts";
+import g from "./g.ts";
+import type {
+	CourtDecal,
+	CourtDecalPlaced,
+	CourtStyle,
+} from "../../common/types.ts";
 
 // THE PICTURES A COURT IS PAINTED WITH.
 //
@@ -106,11 +111,65 @@ export const resolveCourt = async (
 	return out;
 };
 
+// The pictures the league's decals name.
+export const decalPictureIds = (decals: readonly CourtDecal[]): string[] =>
+	decals
+		.map((d) => d.image)
+		.filter((u) => u.startsWith(PIC))
+		.map((u) => u.slice(PIC.length));
+
+// THE LEAGUE'S DECALS FOR A GAME: those laid down on its occasion - every
+// game, opening night (the first day of the regular season), the playoffs,
+// the finals - in its season, their pictures filled in.
+export const decalsForGame = async (game: {
+	season: number;
+	day?: number;
+	playoffs?: boolean;
+	finals?: boolean;
+}): Promise<CourtDecalPlaced[]> => {
+	const all = g.get("courtDecals") ?? [];
+	const on = all.filter(
+		(d) =>
+			(d.from === undefined || game.season >= d.from) &&
+			(d.to === undefined || game.season <= d.to) &&
+			(d.when === "always" ||
+				(d.when === "openingNight" && !game.playoffs && game.day === 1) ||
+				(d.when === "playoffs" && game.playoffs === true) ||
+				(d.when === "finals" && game.finals === true)),
+	);
+	const out: CourtDecalPlaced[] = [];
+	for (const d of on) {
+		let href: string | undefined = d.image;
+		if (href.startsWith(PIC)) {
+			try {
+				href = (await pictureById(href.slice(PIC.length)))?.url;
+			} catch {
+				href = undefined;
+			}
+		}
+		if (href) {
+			out.push({
+				href,
+				...(d.adjust ? { adjust: d.adjust } : {}),
+				...(d.pair ? { pair: true } : {}),
+			});
+		}
+	}
+	return out;
+};
+
+// A court with the game's decals laid on it.
+export const withDecals = (
+	court: CourtStyle | undefined,
+	decals: CourtDecalPlaced[],
+): CourtStyle | undefined =>
+	decals.length === 0 ? court : { ...court, decals };
+
 // Of these pictures, remove any nothing uses any more - no team's uniform,
-// no team's court. (A replay that showed one goes without it.)
+// no team's court, no decal. (A replay that showed one goes without it.)
 export const prunePictures = async (ids: Iterable<string>) => {
 	const teams = await idb.cache.teams.getAll();
-	const used = new Set<string>();
+	const used = new Set<string>(decalPictureIds(g.get("courtDecals") ?? []));
 	for (const t of teams) {
 		for (const id of [t.jerseySkins?.home, t.jerseySkins?.away]) {
 			if (id !== undefined) {

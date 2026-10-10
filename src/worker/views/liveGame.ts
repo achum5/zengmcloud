@@ -1,4 +1,8 @@
-import { resolveCourt } from "../util/courtPictures.ts";
+import {
+	decalsForGame,
+	resolveCourt,
+	withDecals,
+} from "../util/courtPictures.ts";
 import { player, team } from "../core/index.ts";
 import { getFollowedBroadcastPayload } from "../core/sync/connect.ts";
 import { idb } from "../db/index.ts";
@@ -239,8 +243,12 @@ export const boxScoreToLiveSim = async ({
 					// Court styling is cosmetic; fall back to defaults.
 				}
 			}
-			// (Its uploaded pictures filled in, to draw.)
+			// (Its uploaded pictures filled in, to draw - and at home, the
+			// league's decals for the game laid on it.)
 			t.court = await resolveCourt(liveSimCourt({ override, teamCourt }));
+			if (i === 0) {
+				t.court = withDecals(t.court, await decalsForGame(boxScore));
+			}
 			// What the team wears in the 3D game: the jersey it wore that
 			// season, or the one it has made its own now, and its uniforms
 			// drawn from pictures.
@@ -410,15 +418,23 @@ export default defineView({
 					if (row?.looks) {
 						// (Each court's uploaded pictures filled in, to draw.)
 						const looks: ReplayLooks = row.looks;
+						const decals = await decalsForGame(boxScore);
+						const homeTid = boxScore.teams[0].tid;
 						const teams = Object.fromEntries(
 							await Promise.all(
-								Object.entries(looks.teams).map(
-									async ([tid, t]) =>
-										[
-											tid,
-											{ ...t, court: await resolveCourt(t.court) },
-										] as const,
-								),
+								Object.entries(looks.teams).map(async ([tid, t]) => {
+									const court = await resolveCourt(t.court);
+									return [
+										tid,
+										{
+											...t,
+											court:
+												Number(tid) === homeTid
+													? withDecals(court, decals)
+													: court,
+										},
+									] as const;
+								}),
 							),
 						);
 						(out.initialBoxScore as any).replayLooks = {

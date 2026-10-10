@@ -546,6 +546,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	numPlayoffByes: wrapFromStart(0),
 	aiTradesFactor: 1,
 	smartAiFrontOffice: true,
+	courtDecals: [],
 	stopOnInjury: false,
 	stopOnInjuryGames: 20,
 	// According to data/injuries.ods, 0.25 injuries occur every game. Divided over 10 players and ~200 possessions, that means each player on the court has P = 0.25 / 10 / 200 = 0.000125 probability of being injured this play.

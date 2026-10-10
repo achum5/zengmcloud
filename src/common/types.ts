@@ -867,6 +867,8 @@ type FootballOvertime = "suddenDeath" | "exceptFg" | "bothPossess";
 
 export type GameAttributesLeague = {
 	aiJerseyRetirement: boolean;
+	// Pictures laid on every court on an occasion (see CourtDecal).
+	courtDecals: CourtDecal[];
 	aiTradesFactor: number;
 	smartAiFrontOffice: boolean;
 	allStarGame: number | null;
@@ -2956,6 +2958,30 @@ export type CourtStyle = {
 	// Per-slot size/opacity/position, keyed by CourtImageSlot. Absent means
 	// every image sits where it was designed to.
 	adjust?: Partial<Record<CourtImageSlot, CourtImageAdjust>>;
+	// The league's decals laid on it for the game being shown (see
+	// CourtDecal) - put there by the game, never saved with a team.
+	decals?: CourtDecalPlaced[];
+};
+
+// A picture the league lays on every court on an occasion - opening night,
+// the playoffs, the finals, or every game - in the seasons given, if any:
+// an anniversary logo, a playoff decal, an era's look.
+export type CourtDecal = {
+	// A URL, or a picture uploaded to the league ("pic:<id>").
+	image: string;
+	when: "always" | "openingNight" | "playoffs" | "finals";
+	// The first and last seasons it is laid down in (either may be left open).
+	from?: number;
+	to?: number;
+	// Where it sits: at center court, moved, sized and turned as a court's
+	// own pictures are - and, with `pair`, one on each half, mirrored.
+	adjust?: CourtImageAdjust;
+	pair?: boolean;
+};
+export type CourtDecalPlaced = {
+	href: string;
+	adjust?: CourtImageAdjust;
+	pair?: boolean;
 };
 
 export type TeamAttr = keyof Team;

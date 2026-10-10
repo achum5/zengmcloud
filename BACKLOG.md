@@ -129,10 +129,14 @@ make with AI help).
       takes a URL or an uploaded picture, kept in the league like the 3D
       uniforms so it syncs and exports; and "Edit as JSON" shows the whole
       court as JSON to paste back in - easy to make with AI help.)
-- [ ] Court decals, like the finals trophy at center court: fully customizable
+- [x] Court decals, like the finals trophy at center court: fully customizable
       for every court. Examples: an opening night image on every court, an uploadable
       playoff decal on all playoff courts. Optionally season by season so each era
-      can look right.
+      can look right. (Manage Teams -> Court decals: any number of pictures, each
+      a URL or an upload, laid on every court for every game, opening night,
+      the playoffs or the finals, from and to the seasons given; sized, moved,
+      turned and faded freely, one at center or one on each half; previewed
+      per occasion, editable as JSON. On the 2D and 3D courts and replays.)
 - [~] TV-style score bug: a good generic default used at all times, fully
   customizable so users can recreate ESPN, TNT, etc. Decided: the default
   is a wide bar along the bottom center (logos, scores, period, game clock,
