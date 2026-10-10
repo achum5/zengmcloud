@@ -13708,9 +13708,35 @@ class Director {
 				break;
 			}
 		}
-		return thrown === undefined
-			? LIVE_LEAD
-			: Math.max(LIVE_MIN, Math.min(LIVE_MAX, b.actionStart - thrown + 600));
+		if (thrown !== undefined) {
+			return Math.max(
+				LIVE_MIN,
+				Math.min(LIVE_MAX, b.actionStart - thrown + 600),
+			);
+		}
+		// Off the dribble, off a screen: from the screen being set - what he
+		// is going off, and why he goes where he goes - not just the last
+		// strides of it.
+		const team = this.teamOf(pid);
+		let set: number | undefined;
+		for (const tr of this.tracks.values()) {
+			if (tr.pid === pid || tr.team !== team) {
+				continue;
+			}
+			for (const a of tr.acts) {
+				if (
+					a.anim === "screen" &&
+					a.t0 <= b.actionStart - LIVE_LEAD + SCREEN_SEEN &&
+					a.t0 >= b.actionStart - LIVE_SCREEN + SCREEN_SEEN &&
+					(set === undefined || a.t0 > set) &&
+					dist(this.posAt(tr.pid, a.t0 + 300), this.posAt(pid, a.t0 + 300)) <
+						SCREEN_NEAR
+				) {
+					set = a.t0;
+				}
+			}
+		}
+		return set === undefined ? LIVE_LEAD : b.actionStart - set + SCREEN_SEEN;
 	}
 
 	// NOBODY GOES ON THE SAME COUNT. Three or more setting off from standing
@@ -14104,6 +14130,12 @@ const LIVE_PLAY = /^(fga|tov$|stl$|pfNonShooting$|pfBonus$)/;
 const LIVE_LEAD = 2600;
 const LIVE_MIN = 2200;
 const LIVE_MAX = 3400;
+// A jumper off a screen: back at real speed this long (ms) before the
+// screen is set - when it is set no further back than LIVE_SCREEN - and the
+// screener no farther from him than SCREEN_NEAR feet as it is.
+const SCREEN_SEEN = 400;
+const LIVE_SCREEN = 6000;
+const SCREEN_NEAR = 9;
 const BREAK_LIVE = 5000;
 // The stretches the picture runs through fast, in order, run together where
 // they meet - each starting only once the line before it has sunk in.
