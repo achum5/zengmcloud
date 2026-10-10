@@ -12999,6 +12999,19 @@ class Director {
 			"snatch",
 			"pickup",
 		]);
+		const MATES_TOGETHER = new Set<AnimName>([
+			"highFive",
+			"lowFive",
+			"chestBump",
+			"waitFive",
+			"fall",
+			"hurt",
+			"hurtKnee",
+			"hurtAnkle",
+			"hurtHead",
+			"hurtHand",
+			"hurtArm",
+		]);
 		const HOLDS = new Set<AnimName>([
 			"shoot",
 			"setShot",
@@ -13269,11 +13282,17 @@ class Director {
 							const aa = actOf(ia, t);
 							const ab = actOf(ib, t);
 							// Into each other is what they are doing - but never
-							// through each other.
+							// through each other. (Two of a side are in it together
+							// only slapping hands: boxing out, going up for it, they
+							// are in it with the other side - not on top of each
+							// other.)
 							const together =
 								(aa !== undefined && TOGETHER.has(aa)) ||
 								(ab !== undefined && TOGETHER.has(ab));
-							if (together && (mates || d >= TOUCH)) {
+							const hands =
+								(aa !== undefined && MATES_TOGETHER.has(aa)) ||
+								(ab !== undefined && MATES_TOGETHER.has(ab));
+							if (mates ? hands : together && d >= TOUCH) {
 								continue;
 							}
 							// Who gives way.
@@ -13292,13 +13311,21 @@ class Director {
 							} else if (fixA) {
 								continue;
 							} else {
+								// (Of two of a side, the one in it with the other side
+								// - up to block, boxing out - holds his ground.)
+								const inA = aa !== undefined && TOGETHER.has(aa);
+								const inB = ab !== undefined && TOGETHER.has(ab);
 								[im, io] = !mates
 									? A.team === off
 										? [ib, ia]
 										: [ia, ib]
-									: A.pid > B.pid
-										? [ia, ib]
-										: [ib, ia];
+									: inA !== inB
+										? inA
+											? [ib, ia]
+											: [ia, ib]
+										: A.pid > B.pid
+											? [ia, ib]
+											: [ib, ia];
 								if (going(im)) {
 									if (going(io)) {
 										continue;
