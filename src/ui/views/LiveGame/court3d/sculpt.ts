@@ -175,6 +175,9 @@ export const LETTERING = {
 	backNumber: { u: 0.47, size: 0.14, maxW: 1.25 },
 	name: { u: 0.85, size: 0.036, maxW: 1.25 },
 } as const;
+// The team's logo on the front of a warm-up top: its middle up his torso,
+// and the most it may stand tall (in heights) and wide (in half-widths).
+const CREST = { u: 0.64, size: 0.11, maxW: 1.15 };
 
 // Up his spine from his hips (feet): where his jersey tucks into his shorts,
 // and the tops of his shoulders.
@@ -221,10 +224,11 @@ const jerseySheet = (
 	ppf0: number,
 	waist: number,
 ): Sheet | undefined => {
-	// (A warm-up top has the team's name on it and no number.)
+	// (A warm-up top has the team's logo or name on its front, his name and
+	// number on its back.)
 	const warmup = look.outfit?.plain === true;
 	if (
-		(!look.jerseyNumber && !(warmup && look.wordmark)) ||
+		(!look.jerseyNumber && !(warmup && (look.wordmark || look.crest))) ||
 		(look.outfit && !warmup) ||
 		typeof document === "undefined"
 	) {
@@ -286,17 +290,35 @@ const jerseySheet = (
 		g.restore();
 	};
 	// The chest: the team's name over the number - unless his uniform is a
-	// picture, which has its own.
+	// picture, which has its own. A warm-up top: the team's logo alone, or
+	// failing that its name.
 	const L = LETTERING;
-	text(
-		look.jerseyNumber,
-		w / 2,
-		T * L.number.u,
-		body.H * L.number.size,
-		true,
-		aS * L.number.maxW,
-	);
-	if (!look.kitArt) {
+	const crest = warmup ? look.crest : undefined;
+	if (!warmup) {
+		text(
+			look.jerseyNumber,
+			w / 2,
+			T * L.number.u,
+			body.H * L.number.size,
+			true,
+			aS * L.number.maxW,
+		);
+	}
+	if (crest && crest.width > 0 && crest.height > 0) {
+		const k = Math.min(
+			(aS * CREST.maxW * ppf) / crest.width,
+			(body.H * CREST.size * ppf) / crest.height,
+		);
+		const cw = crest.width * k;
+		const ch = crest.height * k;
+		g.drawImage(
+			crest,
+			w / 2 - cw / 2,
+			(u0 - T * CREST.u) * ppf - ch / 2,
+			cw,
+			ch,
+		);
+	} else if (!look.kitArt) {
 		text(
 			look.wordmark.toUpperCase(),
 			w / 2,
@@ -307,15 +329,17 @@ const jerseySheet = (
 			kit.chest,
 		);
 	}
-	// The back, across the ends of the sheet: his name over a bigger number.
+	// The back, across the ends of the sheet: his name over a bigger number
+	// (on a warm-up top, plain, in the color its front is lettered in).
 	for (const x of [0, w]) {
 		text(
 			look.jerseyNumber,
 			x,
 			T * L.backNumber.u,
 			body.H * L.backNumber.size,
-			true,
+			!warmup,
 			aS * L.backNumber.maxW,
+			warmup ? kit.chest : kit.number,
 		);
 		text(
 			look.lastName.toUpperCase(),
@@ -324,7 +348,7 @@ const jerseySheet = (
 			body.H * L.name.size,
 			false,
 			aS * L.name.maxW,
-			kit.name,
+			warmup ? kit.chest : kit.name,
 		);
 	}
 	const sheet = {

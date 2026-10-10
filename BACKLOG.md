@@ -155,11 +155,12 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
       seats, then the stands.
 - [x] Center-hung scoreboard over the floor (MSG).
 
-- [~] Bench players wear warm-ups with the team logo on the front and name and
-  number on the back. Once a player has been in the game, back on the bench he
-  is in his uniform only, like real life. (Done: a long-sleeve warm-up top
-  with the team's name across the front until he has played. Open: the team's
-  real logo image on the front, name and number on the back.)
+- [x] Bench players wear warm-ups with the team logo on the front and name and
+      number on the back. Once a player has been in the game, back on the bench he
+      is in his uniform only, like real life. (A long-sleeve warm-up top until
+      he has played: the team's own logo on the front - its name, if the logo
+      is a picture from a site that will not let it be read - and his name and
+      number on the back.)
 - [x] Scorer's table that looks real: people sitting with monitors. Players
       about to sub in walk to the table ahead of time (the engine looks a few plays
       ahead for substitutions), taking off the warm-up shirt and dropping it as they
@@ -209,6 +210,11 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   possible, as many animations as possible; then watch possession after
   possession and fix whatever looks off, over and over. Owner's top pick of
   what bothers them: stiff animation.
+  (2026-10-10: running, jogging, sprinting and walking rebuilt the way a body
+  moves - feet planted while down, no skating, heel kick, knee drive, arms
+  against the legs, hips turned toward where he goes when he looks elsewhere;
+  the dribble worked at his side away from his man, pushed out ahead on a
+  drive.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like

@@ -170,6 +170,43 @@ type Props = {
 	onFail?: () => void;
 };
 
+// A team's logo drawn into a small picture of its own - if it can be read
+// back (one from a site that will not say it may be is left off: its
+// warm-up tops keep the team's name).
+const CREST_PX = 128;
+const crestOf = async (
+	url: string | undefined,
+): Promise<HTMLCanvasElement | undefined> => {
+	if (!url || typeof document === "undefined") {
+		return undefined;
+	}
+	const img = new Image();
+	img.crossOrigin = "anonymous";
+	img.src = url;
+	try {
+		await img.decode();
+	} catch {
+		return undefined;
+	}
+	const w0 = img.naturalWidth || CREST_PX;
+	const h0 = img.naturalHeight || CREST_PX;
+	const k = CREST_PX / Math.max(w0, h0);
+	const cv = document.createElement("canvas");
+	cv.width = Math.max(1, Math.round(w0 * k));
+	cv.height = Math.max(1, Math.round(h0 * k));
+	const g = cv.getContext("2d", { willReadFrequently: true });
+	if (!g) {
+		return undefined;
+	}
+	g.drawImage(img, 0, 0, cv.width, cv.height);
+	try {
+		g.getImageData(0, 0, 1, 1);
+	} catch {
+		return undefined;
+	}
+	return cv;
+};
+
 const Court3D = ({
 	events,
 	cursor,
@@ -388,6 +425,24 @@ const Court3D = ({
 		[kits, arts],
 	);
 
+	// Each side's logo, drawn small, for the front of its warm-up tops.
+	const [crests, setCrests] = useState<
+		[HTMLCanvasElement?, HTMLCanvasElement?]
+	>([]);
+	const awayLogo = away?.imgURL || away?.imgURLSmall;
+	const homeLogo = home?.imgURL || home?.imgURLSmall;
+	useEffect(() => {
+		let alive = true;
+		void Promise.all([crestOf(awayLogo), crestOf(homeLogo)]).then((made) => {
+			if (alive) {
+				setCrests([made[0], made[1]]);
+			}
+		});
+		return () => {
+			alive = false;
+		};
+	}, [awayLogo, homeLogo]);
+
 	// The building, painted once a game.
 	const paint = useMemo(() => {
 		const a = {
@@ -494,9 +549,11 @@ const Court3D = ({
 			const team = p.team === 0 ? away : home;
 			const kit = dressed[p.team as Side];
 			const art = arts[p.team as Side];
+			const crest = crests[p.team as Side];
 			looks.set(p.pid, {
 				kit,
 				...(art ? { kitArt: art } : {}),
+				...(crest ? { crest } : {}),
 				gear: gearFor(p.pid, kit),
 				...(f?.imgURL
 					? // His face is a photo: a silhouette in the uniform.
@@ -530,7 +587,7 @@ const Court3D = ({
 		}
 		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [roster, dressed, arts, facesVersion]);
+	}, [roster, dressed, arts, crests, facesVersion]);
 	// The officials, the coaches and the photographers, picked once a game,
 	// and their heads drawn from their faces as they come.
 	const crew = useMemo(

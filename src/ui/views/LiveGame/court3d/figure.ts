@@ -91,6 +91,8 @@ export type Look = {
 	lastName: string;
 	// Across his chest: the team's name at home, the city on the road.
 	wordmark: string;
+	// The team's logo, drawn: on the front of his warm-up top.
+	crest?: HTMLCanvasElement;
 	head?: HeadSprite;
 };
 

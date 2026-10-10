@@ -165,8 +165,9 @@ const fxLevel = (
 };
 
 // The bench's warm-up top: a long-sleeved shirt in the warm-up color, the
-// team's name across the front in whichever of its colors stands out on it -
-// no number, no name on the back, and not the uniform's own picture.
+// team's logo on the front - or its name, in whichever of its colors stands
+// out on it - and his name and number on the back in that color; not the
+// uniform's own picture.
 const warmups = new WeakMap<Look, Look>();
 const warmupLook = (look: Look, top: string): Look => {
 	let out = warmups.get(look);
@@ -181,8 +182,6 @@ const warmupLook = (look: Look, top: string): Look => {
 			...look,
 			kit: { ...k, jersey: top, trim: top, chest: logo },
 			outfit: { sleeves: "long", plain: true },
-			jerseyNumber: "",
-			lastName: "",
 		};
 		delete shirt.kitArt;
 		out = shirt;
