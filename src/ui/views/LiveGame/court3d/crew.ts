@@ -532,8 +532,8 @@ const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 // Where each official is: running after the places the game calls for, as
 // fast as an official runs and no faster - even end to end in transition -
 // and settled at once where the picture cuts away. Worked out a step at a
-// time through the game (see refPath), and blended between steps, so the
-// glide is smooth at any frame rate.
+// time over the whole game, once, and blended between steps, so the glide
+// is smooth at any frame rate.
 const STEP = 250;
 // How hard he goes after his place (a second), how fast he can run (feet a
 // second) and how quickly he gets going (feet a second, a second).
@@ -560,57 +560,32 @@ const viaCorner = (p: Pt, g: Pt): Pt => {
 	}
 	return g;
 };
-// Seconds of work over a whole game - so done as the game is staged, aside,
-// where it can be (see sculptPool.ts), and carried on the timeline. Until
-// then, or without, it is worked out here a step at a time, only as far into
-// the game as it is asked about (and a little further).
-const AHEAD = 32;
-type RefSim = {
-	out: Pt[][];
-	at: Pt[];
-	vel: Pt[];
-	ci: number;
-	cuts: number[];
-	n: number;
-};
-const refSims = new WeakMap<CourtTimeline, RefSim>();
-const refPath = (tl: CourtTimeline, upTo = Infinity): Pt[][] => {
-	if (tl.refs) {
-		return tl.refs;
+const refPaths = new WeakMap<CourtTimeline, Pt[][]>();
+const refPath = (tl: CourtTimeline): Pt[][] => {
+	let out = refPaths.get(tl);
+	if (out) {
+		return out;
 	}
-	let sim = refSims.get(tl);
-	if (!sim) {
-		const at = refTargets(tl, 0).map((q) => ({ ...q }));
-		sim = {
-			out: [],
-			at,
-			vel: at.map(() => ({ x: 0, y: 0 })),
-			ci: 0,
-			cuts: cameraCuts(tl),
-			n: Math.ceil(tl.end / STEP) + 2,
-		};
-		refSims.set(tl, sim);
-	}
-	const { out, cuts } = sim;
+	out = [];
+	const cuts = cameraCuts(tl);
+	let ci = 0;
 	const dt = STEP / 1000;
-	const want = Math.min(
-		sim.n,
-		upTo === Infinity ? Infinity : Math.ceil(upTo / STEP) + 2 + AHEAD,
-	);
-	for (let k = out.length; k < want; k++) {
+	let at: Pt[] = refTargets(tl, 0).map((q) => ({ ...q }));
+	let vel: Pt[] = at.map(() => ({ x: 0, y: 0 }));
+	const n = Math.ceil(tl.end / STEP) + 2;
+	for (let k = 0; k < n; k++) {
 		const t = k * STEP;
 		const goal = refTargets(tl, t);
 		let cut = false;
-		while (sim.ci < cuts.length && cuts[sim.ci]! <= t) {
-			cut ||= cuts[sim.ci]! > t - STEP;
-			sim.ci++;
+		while (ci < cuts.length && cuts[ci]! <= t) {
+			cut ||= cuts[ci]! > t - STEP;
+			ci++;
 		}
 		if (cut) {
-			sim.at = goal.map((q) => ({ ...q }));
-			sim.vel = sim.at.map(() => ({ x: 0, y: 0 }));
+			at = goal.map((q) => ({ ...q }));
+			vel = at.map(() => ({ x: 0, y: 0 }));
 		} else if (k > 0) {
-			const vel = sim.vel;
-			sim.at = sim.at.map((p, i) => {
+			at = at.map((p, i) => {
 				const g = goal[i]!;
 				const W = viaCorner(p, g);
 				// (How far he has to go, round the corner if he goes that way.)
@@ -645,15 +620,13 @@ const refPath = (tl: CourtTimeline, upTo = Infinity): Pt[][] => {
 				};
 			});
 		}
-		out.push(sim.at);
+		out.push(at);
 	}
+	refPaths.set(tl, out);
 	return out;
 };
-export const stageRefs = (tl: CourtTimeline) => {
-	tl.refs = refPath(tl);
-};
 const refPlaces = (tl: CourtTimeline, t: number): Places => {
-	const path = refPath(tl, t);
+	const path = refPath(tl);
 	const g = Math.max(0, Math.min(path.length - 2, Math.floor(t / STEP)));
 	const a = path[g]!;
 	const b = path[g + 1]!;

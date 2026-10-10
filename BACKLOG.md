@@ -92,16 +92,16 @@ and shoes - every one eventually, none rushed to get to the next.
 - [~] Still dropping frames fairly often. Optimize so the frame rate stays high
   without lowering quality or making it look more pixelated (which also happens
   fairly often). 2026-10-09, the owner: the picture should rarely have to go
-  pixelated - sharp by default, pixel art only as the backup. (Done so far:
-  new sprite poses sculpted in background workers - about 4x less work on the
-  page per frame at 1080p; the game staged in a worker, so opening a game no
-  longer freezes the page for seconds; the officials' paths no longer stall the
-  first frame; full screen resolution allowed up to 1440 rows; the floor,
-  stands and boards drawn on the graphics card where there is a real one
-  (a layer under the canvas); the sharpness check no longer judged before the
-  first frame or by its start-up hitches - which had sent it to pixel art at
-  the start of nearly every game - and able to come back to sharp. Open:
-  staging speed, finishing sprites on the page; checking on a real phone.)
+  pixelated - sharp by default, pixel art only as the backup. 2026-10-10:
+  that work (sprites sculpted in background workers, the game staged in a
+  worker, a sharper default picture, the floor and stands on the graphics
+  card, a new sharpness check) dropped frames on the owner's phone - worst
+  when a shot went up - and was reverted at the owner's request, back to the
+  simple picture that goes coarser whenever it needs to. Found before the
+  revert: the shot hitches were new poses sculpted in the middle of a frame
+  when the background workers were full; drawing each man's last picture,
+  resized, until his new one is in, all but removed them. Revisit only if
+  asked.
 - [x] Player head profiles should match their faces.js face much better.
       The hair (see below), and his nose, ears and how full his face is.
 - [x] Back of the head should match the faces.js face, including hair.

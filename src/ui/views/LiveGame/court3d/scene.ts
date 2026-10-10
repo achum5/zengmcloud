@@ -49,7 +49,6 @@ import {
 import { lightness, type Look } from "./figure.ts";
 import { COURT_W, RIM_Z, seatSpot, type Pt3, type Side } from "./geometry.ts";
 import { drawPixelText, pixelTextWidth } from "./pixelFont.ts";
-import type { GlLayer } from "./glPlanes.ts";
 import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
 import { ANIMS, type AnimName, type Body } from "./poses.ts";
 import { drawSprite, type Scratch, type SpriteCache } from "./sprite.ts";
@@ -152,9 +151,6 @@ export type Frame = {
 	// Each side's colors [road, home] (main, trim), for the lights swept over
 	// the floor at the starting lineups.
 	teamColors?: [string, string][];
-	// A layer under the canvas, on the graphics card, for the building and
-	// the floor (see glPlanes.ts).
-	gl?: GlLayer;
 };
 
 const fxLevel = (
@@ -579,23 +575,6 @@ const drawMonitors = (
 	}
 };
 
-// Every picture drawFrame puts on its layer underneath (see Frame.gl), for it
-// to have them ready.
-export const buildingPictures = (arena: ArenaPaint): HTMLCanvasElement[] =>
-	[
-		arena.stands,
-		arena.court,
-		arena.rafters,
-		...Object.values(arena.boards.wall),
-		...Object.values(arena.boards.ribbon),
-		...Object.values(arena.boards.end ?? {}),
-		arena.standsUp,
-		arena.standsWave,
-		arena.standsSparse,
-		...(arena.endStands ?? []),
-		arena.endStandsSparse,
-	].filter((c) => c !== undefined);
-
 // CONFETTI down from the rafters over the floor, the home team champions -
 // fluttering as it falls, and lying where it lands. Each piece is its own
 // from the moment it was let go, so the same instant always looks the same.
@@ -671,43 +650,8 @@ export const drawFrame = (f: Frame) => {
 	const { ctx, cam, tl, arena } = f;
 	const { t, players, ball } = f.moment;
 	ctx.setTransform(1, 0, 0, 1, 0, 0);
-	// The building and the floor on the layer underneath, if there is one -
-	// but not with the lights down for the starting lineups, which work on
-	// what is drawn under them.
-	const gl = f.gl?.ok() && !tl.intro ? f.gl : undefined;
-	if (gl) {
-		gl.frame(ctx.canvas.width, ctx.canvas.height, "#07060a");
-		ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-	} else {
-		ctx.fillStyle = "#07060a";
-		ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-	}
-	const drawPlane = (
-		p: TexturedPlane,
-		img: HTMLCanvasElement,
-		cols: number,
-		rows: number,
-		alpha = 1,
-	) => {
-		if (gl) {
-			gl.plane(cam, p, img, alpha);
-		} else {
-			drawTexturedPlane(ctx, cam, p, img, cols, rows, alpha);
-		}
-	};
-	const drawFloor = (
-		x0: number,
-		y0: number,
-		x1: number,
-		y1: number,
-		color: string,
-	) => {
-		if (gl) {
-			gl.floor(cam, x0, y0, x1, y1, color);
-		} else {
-			floorQuad(ctx, cam, x0, y0, x1, y1, color);
-		}
-	};
+	ctx.fillStyle = "#07060a";
+	ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
 	const onFloor = new Set(players.map((p) => p.pid));
 	const bench = benchStates(f, onFloor);
@@ -720,13 +664,15 @@ export const drawFrame = (f: Frame) => {
 	const thin = full < 0.999 && arena.standsSparse !== undefined;
 	const fill = thin ? Math.max(0, (full - 0.55) / 0.45) : 1;
 	if (thin) {
-		drawPlane(STANDS, arena.standsSparse!, 24, 6);
+		drawTexturedPlane(ctx, cam, STANDS, arena.standsSparse!, 24, 6);
 	}
 	if (fill > 0.01) {
-		drawPlane(STANDS, arena.stands, 24, 6, fill);
+		drawTexturedPlane(ctx, cam, STANDS, arena.stands, 24, 6, fill);
 	}
 	if (f.crowd.up > 0.01) {
-		drawPlane(
+		drawTexturedPlane(
+			ctx,
+			cam,
 			STANDS,
 			f.crowd.wave ? arena.standsWave : arena.standsUp,
 			24,
@@ -737,10 +683,12 @@ export const drawFrame = (f: Frame) => {
 	// The ribbon round the upper deck and the banners over it, the boards
 	// along the front of the stands - showing what the moment calls for.
 	const screen = boardAt(tl, t);
-	drawPlane(RIBBON, arena.boards.ribbon[screen], 24, 1);
-	drawPlane(RAFTERS, arena.rafters, 24, 2);
-	drawPlane(LED_WALL, arena.boards.wall[screen], 24, 1);
-	drawFloor(
+	drawTexturedPlane(ctx, cam, RIBBON, arena.boards.ribbon[screen], 24, 1);
+	drawTexturedPlane(ctx, cam, RAFTERS, arena.rafters, 24, 2);
+	drawTexturedPlane(ctx, cam, LED_WALL, arena.boards.wall[screen], 24, 1);
+	floorQuad(
+		ctx,
+		cam,
 		FLOOR.origin.x,
 		FLOOR.origin.y,
 		FLOOR.origin.x + FLOOR.w * FLOOR.alongX.x,
@@ -751,13 +699,30 @@ export const drawFrame = (f: Frame) => {
 	for (const side of [0, 1] as const) {
 		if (arena.endStands) {
 			if (thin && arena.endStandsSparse) {
-				drawPlane(END_STANDS[side], arena.endStandsSparse, 24, 6);
+				drawTexturedPlane(
+					ctx,
+					cam,
+					END_STANDS[side],
+					arena.endStandsSparse,
+					24,
+					6,
+				);
 			}
 			if (fill > 0.01) {
-				drawPlane(END_STANDS[side], arena.endStands[0], 24, 6, fill);
+				drawTexturedPlane(
+					ctx,
+					cam,
+					END_STANDS[side],
+					arena.endStands[0],
+					24,
+					6,
+					fill,
+				);
 			}
 			if (f.crowd.up > 0.01) {
-				drawPlane(
+				drawTexturedPlane(
+					ctx,
+					cam,
 					END_STANDS[side],
 					arena.endStands[f.crowd.wave ? 2 : 1],
 					24,
@@ -768,13 +733,15 @@ export const drawFrame = (f: Frame) => {
 		}
 		const end = arena.boards.end?.[screen];
 		if (end) {
-			drawPlane(END_WALL[side], end, 24, 1);
+			drawTexturedPlane(ctx, cam, END_WALL[side], end, 24, 1);
 		}
 	}
 	// The apron: the court's own color carried out past the lines all the
 	// way back to the stands - under the seats behind the baskets, the
 	// benches and the table along the far side.
-	drawFloor(
+	floorQuad(
+		ctx,
+		cam,
 		FLOOR_EDGE.x0,
 		FLOOR_EDGE.y0,
 		FLOOR_EDGE.x1,
@@ -782,9 +749,9 @@ export const drawFrame = (f: Frame) => {
 		f.apron ?? f.padColor,
 	);
 	if (arena.court) {
-		drawPlane(COURT_PICTURE, arena.court, 26, 12);
+		drawTexturedPlane(ctx, cam, COURT_PICTURE, arena.court, 26, 12);
 	} else {
-		drawFloor(0, 0, COURT_W, 50, "#d8a865");
+		floorQuad(ctx, cam, 0, 0, COURT_W, 50, "#d8a865");
 	}
 	// The scorer's table, the people behind it hidden from the waist down,
 	// their monitors on it.

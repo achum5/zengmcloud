@@ -22,7 +22,6 @@ import {
 } from "./arena.ts";
 import { courtFit, makeCamera, MAIN_RIG, REPLAY_RIG } from "./camera.ts";
 import { courtTexture } from "./courtTexture.ts";
-import { makeGlLayer, type GlLayer } from "./glPlanes.ts";
 import { adjust, artFor, makeResolution } from "./resolution.ts";
 import { makeScratch, makeSpriteCache } from "./sprite.ts";
 import {
@@ -38,10 +37,8 @@ import {
 	snapForCursor,
 	targetForCursor,
 	type CourtPlayer,
-	type CourtTimeline,
 	type Stakes,
 } from "./director.ts";
-import { compileAside } from "./sculptPool.ts";
 import { crewAt, crewFor } from "./crew.ts";
 import { courtsideFor } from "./courtside.ts";
 import { headColors, loadHead, profileOf, type HeadSprite } from "./faces.ts";
@@ -60,13 +57,11 @@ import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
 import {
 	aimFor,
 	arenaAim,
-	buildingPictures,
 	crowdAt,
 	drawFrame,
 	introAim,
 	momentAt,
 	replayAim,
-	type ArenaPaint,
 } from "./scene.ts";
 
 // THE 3D COURT: the game as a broadcast - the home team's own floor, the
@@ -262,17 +257,9 @@ const Court3D = ({
 			? "playoffs"
 			: "regular"
 		: undefined;
-	// The game staged from its play-by-play (see director.ts) - aside, off
-	// the page's own thread, where it can be (see sculptPool.ts): seconds of
-	// work that otherwise froze the whole page as a game opened.
-	const [staged, setStaged] = useState<{
-		events: unknown;
-		roster: unknown;
-		tl: CourtTimeline | undefined;
-	}>();
-	useEffect(() => {
+	const timeline = useMemo(() => {
 		if (!events || events.length === 0) {
-			return;
+			return undefined;
 		}
 		// THE EVENTS HAVE TO BE THIS GAME'S. When the game on this page changes
 		// under it - a league-mate starts another game while this device is
@@ -281,57 +268,24 @@ const Court3D = ({
 		// players on the floor that the court has never heard of (the field
 		// report: a crash in the free throw lineup). Wait for the two to agree.
 		if (!eventsMatchRoster(events, roster)) {
-			return;
+			return undefined;
 		}
-		let live = true;
-		const input = {
-			events,
-			players: roster,
-			gid,
-			gender,
-			intro: introKind,
-			stakes,
-		};
-		const here = () => {
-			try {
-				return compileCourt(input);
-			} catch (error) {
-				// A broken staging must not take the whole page down with it - the
-				// play-by-play and box score still work without the court.
-				console.error("3D court failed to compile", error);
-				return undefined;
-			}
-		};
-		let landed: CourtTimeline | undefined;
-		const land = (tl: CourtTimeline | undefined) => {
-			landed = tl;
-			if (live) {
-				setStaged({ events, roster, tl });
-			}
-		};
-		if (
-			!compileAside(
-				input,
-				(tl) => land(tl ?? here()),
-				// Where its officials go all game, worked out aside too: until
-				// it comes, that is worked out here bit by bit as it plays.
-				(refs) => {
-					if (landed && refs && !landed.refs) {
-						landed.refs = refs;
-					}
-				},
-			)
-		) {
-			land(here());
+		try {
+			return compileCourt({
+				events,
+				players: roster,
+				gid,
+				gender,
+				intro: introKind,
+				stakes,
+			});
+		} catch (error) {
+			// A broken staging must not take the whole page down with it - the
+			// play-by-play and box score still work without the court.
+			console.error("3D court failed to compile", error);
+			return undefined;
 		}
-		return () => {
-			live = false;
-		};
 	}, [events, roster, gid, gender, introKind, stakes]);
-	const timeline =
-		staged && staged.events === events && staged.roster === roster
-			? staged.tl
-			: undefined;
 	const clocks = useMemo(
 		() => (timeline && events ? buildClocks(timeline, events) : undefined),
 		[timeline, events],
@@ -627,8 +581,6 @@ const Court3D = ({
 	// The picture's size: 16:9, or 4:3 on a phone so the players stay big.
 	const wrapRef = useRef<HTMLDivElement | null>(null);
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
-	// Under it, the building and the floor (see glPlanes.ts).
-	const glRef = useRef<HTMLCanvasElement | null>(null);
 	const [size, setSize] = useState({ w: 640, h: 360 });
 	useLayoutEffect(() => {
 		const el = wrapRef.current;
@@ -823,12 +775,6 @@ const Court3D = ({
 		const res = makeResolution(performance.now() + 1500);
 		const lookOf = (pid: number) => looks.current.get(pid)!;
 		const bodyOfPid = (pid: number) => bodies.current.get(pid) ?? bodyOf();
-		// undefined: not tried yet; null: none to be had.
-		let gl: GlLayer | null | undefined;
-		// The building's pictures still to put on the card, a frame at a time
-		// - and which they were.
-		let warm: HTMLCanvasElement[] = [];
-		let warmFor: unknown[] = [];
 
 		const tick = (now: number, draw: boolean) => {
 			const p = live.current;
@@ -946,12 +892,6 @@ const Court3D = ({
 				canvas.width = fw;
 				canvas.height = fh;
 			}
-			if (gl === undefined && glRef.current) {
-				gl = makeGlLayer(glRef.current) ?? null;
-				if (!gl) {
-					glRef.current.style.display = "none";
-				}
-			}
 
 			const replay = s.replay;
 			const moment = momentAt(
@@ -1040,20 +980,6 @@ const Court3D = ({
 			const pt = paintRef.current;
 			const cr = crewRef.current;
 			const working = crewAt(tl, moment.t, cr.crew);
-			const arena: ArenaPaint = {
-				court: courtPicture.current,
-				stands: pt.stands,
-				standsUp: pt.standsUp,
-				standsWave: pt.standsWave,
-				standsSparse: pt.standsSparse,
-				endStandsSparse: pt.endStandsSparse,
-				endStands: pt.endStands,
-				boards: pt.boards,
-				rafters: pt.rafters,
-				tableTop: pt.tableTop,
-				tableFront: pt.tableFront,
-				bench: [pt.bench0, pt.bench1],
-			};
 			const drawStart = performance.now();
 			drawFrame({
 				ctx,
@@ -1070,7 +996,20 @@ const Court3D = ({
 				apron: p.apron,
 				warmups: p.warmups,
 				shotClock: shotText,
-				arena,
+				arena: {
+					court: courtPicture.current,
+					stands: pt.stands,
+					standsUp: pt.standsUp,
+					standsWave: pt.standsWave,
+					standsSparse: pt.standsSparse,
+					endStandsSparse: pt.endStandsSparse,
+					endStands: pt.endStands,
+					boards: pt.boards,
+					rafters: pt.rafters,
+					tableTop: pt.tableTop,
+					tableFront: pt.tableFront,
+					bench: [pt.bench0, pt.bench1],
+				},
 				crowd: { up, wave },
 				now,
 				// Lettering at least 10 CSS pixels tall: a 7-pixel font, each of
@@ -1083,20 +1022,8 @@ const Court3D = ({
 				flashes: working.flashes,
 				courtside: cr.courtside,
 				teamColors: p.teamColors,
-				gl: gl ?? undefined,
 			});
-			const drawMs = performance.now() - drawStart;
-			if (gl) {
-				if (warmFor[0] !== pt || warmFor[1] !== arena.court) {
-					warmFor = [pt, arena.court];
-					warm = buildingPictures(arena);
-				}
-				const next = warm.pop();
-				if (next) {
-					gl.warm(next);
-				}
-			}
-			if (adjust(res, h * dpr, dt, drawMs, now)) {
+			if (adjust(res, h * dpr, dt, performance.now() - drawStart, now)) {
 				// Sprites drawn for the old size are no use at the new one.
 				sprites = makeSpriteCache();
 			}
@@ -1249,17 +1176,6 @@ const Court3D = ({
 					sceneMs={undefined}
 				/>
 			</div>
-			<canvas
-				ref={glRef}
-				aria-hidden
-				style={{
-					position: "absolute",
-					inset: 0,
-					width: "100%",
-					height: "100%",
-					imageRendering: "pixelated",
-				}}
-			/>
 			<canvas
 				ref={canvasRef}
 				role="img"

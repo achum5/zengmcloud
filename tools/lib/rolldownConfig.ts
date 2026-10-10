@@ -12,12 +12,9 @@ import { startEnd } from "./rolldownPlugins/startEnd.ts";
 
 export const FOLDER = "gen";
 
-export type BundleName = "ui" | "worker" | "court";
-export const BUNDLES: BundleName[] = ["ui", "worker", "court"];
-
 export const rolldownConfig = (
 	sport: Sport,
-	name: BundleName,
+	name: "ui" | "worker",
 	envOptions:
 		| {
 				nodeEnv: "development";
@@ -34,12 +31,11 @@ export const rolldownConfig = (
 				nodeEnv: "test";
 		  },
 ): BuildOptions => {
-	const infile =
-		name === "court"
-			? // The 3D court's workers: they stage a game and sculpt its sprites
-				// off the page's thread (see sculptPool.ts).
-				path.join("src", "ui", "views", "LiveGame", "court3d", "courtWorker.ts")
-			: path.join("src", name, `index.${name === "ui" ? "tsx" : "ts"}`);
+	const infile = path.join(
+		"src",
+		name,
+		`index.${name === "ui" ? "tsx" : "ts"}`,
+	);
 
 	const plugins: BuildOptions["plugins"] = [
 		sportFunctions(envOptions.nodeEnv, sport),
