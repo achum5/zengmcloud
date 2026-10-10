@@ -66,6 +66,7 @@ import {
 	callAny,
 	callShot,
 	callTurnover,
+	castPlay,
 	walkPlay,
 	type Called,
 	type Cast,
@@ -766,6 +767,43 @@ const IN_PLACE = new Set<AnimName>([
 // (radians): into the corner, and no farther.
 const ARC_EDGE = 1.62;
 // Where a man who has passed out of the lane gets back out to.
+// The ways round the five may take the motion set's spots (see fitSpots):
+// the point his own; the two wings either way; the two bigs either way.
+const SPOT_ORDERS = [
+	[0, 1, 2, 3, 4],
+	[0, 2, 1, 3, 4],
+	[0, 1, 2, 4, 3],
+	[0, 2, 1, 4, 3],
+];
+// Every way of putting n men with n others.
+const permsOf = (n: number): number[][] => {
+	const out: number[][] = [];
+	const walk = (left: number[], acc: number[]) => {
+		if (left.length === 0) {
+			out.push(acc);
+		}
+		for (const x of left) {
+			walk(
+				left.filter((y) => y !== x),
+				[...acc, x],
+			);
+		}
+	};
+	walk(
+		Array.from({ length: n }, (_, i) => i),
+		[],
+	);
+	return out;
+};
+const PERMS4 = permsOf(4);
+const PERMS5 = permsOf(5);
+// What a defender picking up a man a position away from his own costs, in
+// feet of running (see matchUp).
+const MATCH_RANK = 7;
+// What every foot a man has to go to get to his part in a set costs, against
+// how badly he fits it (see castPlay): thirty feet, about a guard's part
+// played by a forward.
+const TRAVEL_COST = 0.035;
 const RESPACE_SPOTS = [
 	"L_corner",
 	"R_corner",
@@ -975,6 +1013,11 @@ class Director {
 	private inboundAt: Pt | undefined;
 	private motion = 0;
 	private motionTeam: Side | undefined;
+	// The way round the five take the spots of the set they settle into this
+	// trip - mirrored side to side or not, and which wing and which of the
+	// two spots for the bigs each takes (`order`: the slot whose part each
+	// plays) - fitted to where they are when it starts (see fitSpots).
+	private spotFit?: { team: Side; flip: boolean; order: number[] };
 	private lastClock: number | undefined;
 	// Set by a shot attempt that is still in the air, for its result to pick up.
 	private pending:
@@ -2137,8 +2180,11 @@ class Director {
 			"run",
 		);
 		// The rest up the floor, getting there a beat before the ball does;
-		// the team that scored back down it.
+		// the team that scored back down it, each picking up the man nearest
+		// him.
+		this.fitSpots(team);
 		const spots = this.setSpots(team, 0);
+		this.matchUp(team, spots);
 		const upBy =
 			there +
 			600 +
@@ -2151,7 +2197,11 @@ class Director {
 			t + 200,
 			upBy,
 		);
-		def.forEach((pid, j) => {
+		off.forEach((man, j) => {
+			const pid = this.defenderOf(man);
+			if (pid === undefined || !def.includes(pid)) {
+				return;
+			}
 			const n = this.track(pid)?.moves.length ?? 0;
 			const back = this.goBy(
 				pid,
@@ -2160,14 +2210,14 @@ class Director {
 				t + 3600,
 				"run",
 			);
-			this.marks(pid, off[j] ?? pg, n);
+			this.marks(pid, man, n);
 			// Back down the floor, he calls out who he has.
 			this.gesture(
 				pid,
 				"point",
 				t + 700 + j * 110,
 				Math.min(back, t + 1600 + j * 110),
-				off[j] ?? pg,
+				man,
 				0.3,
 			);
 		});
@@ -2199,6 +2249,7 @@ class Director {
 					y: far ? -1.4 : COURT_H + 1.4,
 				};
 		const back = this.inBackcourt(team, oob);
+		this.fitSpots(team);
 		const spots = this.setSpots(team, 0);
 		// From the spot it goes in from, k feet into the floor.
 		const inward = baseline
@@ -2368,7 +2419,74 @@ class Director {
 	private setSpots(team: Side, motion: number): Pt[] {
 		const phase =
 			MOTION_OFFENSE_SPOTS[Math.min(MOTION_OFFENSE_SPOTS.length - 1, motion)]!;
-		return phase.map((s) => spot(team, s.depth, s.across));
+		const fit = this.spotFit?.team === team ? this.spotFit : undefined;
+		return phase.map((_, j) => {
+			const s = phase[fit?.order[j] ?? j] ?? phase[j]!;
+			return spot(team, s.depth, fit?.flip ? COURT_H - s.across : s.across);
+		});
+	}
+
+	// THE SIDE HE IS ON. Coming up the floor into the set, a man takes the
+	// spot on the side he is already on: the set is run to whichever side
+	// fits the five as they are, and the two wings - and the two bigs - take
+	// whichever of their two spots is nearer. Nobody runs the width of the
+	// floor across his teammates to get to his.
+	private fitSpots(team: Side) {
+		const men = this.slots(team);
+		const phase = MOTION_OFFENSE_SPOTS[0]!;
+		let best: { flip: boolean; order: number[]; cost: number } | undefined;
+		for (const flip of [false, true]) {
+			for (const order of SPOT_ORDERS) {
+				let cost = 0;
+				men.forEach((pid, j) => {
+					const s = phase[order[j]!] ?? phase[j]!;
+					const S = spot(team, s.depth, flip ? COURT_H - s.across : s.across);
+					const P = this.posOf(pid);
+					// (Across the floor counts double: up it, everybody goes.)
+					cost += dist(P, S) + Math.abs(P.y - S.y);
+				});
+				if (!best || cost < best.cost - 0.01) {
+					best = { flip, order, cost };
+				}
+			}
+		}
+		if (best) {
+			this.spotFit = { team, flip: best.flip, order: best.order };
+		}
+	}
+
+	// Who picks up whom, coming back: each defender the man nearest him -
+	// across the floor, mostly, since they all run its length - among those
+	// near his own size: a guard is not left on the center for the sake of a
+	// few strides.
+	private matchUp(team: Side, spots: Pt[]) {
+		const men = this.slots(team);
+		const def = this.slots(other(team));
+		if (men.length !== 5 || def.length !== 5) {
+			return;
+		}
+		let best: { perm: number[]; cost: number } | undefined;
+		for (const perm of PERMS5) {
+			let cost = 0;
+			for (let j = 0; j < 5; j++) {
+				const d = def[perm[j]!]!;
+				const D = this.posOf(d);
+				const S = spots[j] ?? spots[0]!;
+				cost +=
+					Math.abs(D.y - S.y) * 1.5 +
+					Math.abs(D.x - S.x) * 0.3 +
+					Math.abs((this.rank.get(d) ?? 4) - (this.rank.get(men[j]!) ?? 4)) *
+						MATCH_RANK;
+			}
+			if (!best || cost < best.cost - 0.01) {
+				best = { perm, cost };
+			}
+		}
+		if (best) {
+			men.forEach((m, j) => {
+				this.guarding.set(m, def[best.perm[j]!]!);
+			});
+		}
 	}
 
 	// Everybody but `except` into the half-court set at motion phase `motion`,
@@ -2382,7 +2500,6 @@ class Director {
 	) {
 		const spots = this.setSpots(team, motion);
 		const off = this.slots(team);
-		const def = this.slots(other(team));
 		const dir = attackDir(team);
 		off.forEach((pid, j) => {
 			const target = spots[j] ?? spots[0]!;
@@ -2390,7 +2507,7 @@ class Director {
 				this.goBy(pid, target, t0 + j * 40, by, "run");
 				this.turn(pid, Math.max(by, this.free.get(pid) ?? 0), dir);
 			}
-			const d = def[j];
+			const d = this.defenderOf(pid);
 			if (d !== undefined && !except.includes(d)) {
 				const n = this.track(d)?.moves.length ?? 0;
 				this.goBy(
@@ -2589,6 +2706,10 @@ class Director {
 			// Get it to the point guard first.
 			t = this.outlet(this.holder, pg, t, RUN, 9);
 		}
+		this.fitSpots(team);
+		if (this.guarding.size === 0) {
+			this.matchUp(team, this.setSpots(team, 0));
+		}
 		const top = this.setSpots(team, 0)[0]!;
 		const d = dist(this.posOf(pg), top);
 		this.hold(pg, t, "dribble");
@@ -2609,9 +2730,34 @@ class Director {
 			t = this.outlet(handler, pg, t, SPRINT, 10);
 			handler = pg;
 		}
-		const spots = TRANSITION_OFFENSE_SPOTS.map((s) =>
-			spot(team, s.depth, s.across),
-		);
+		// The lanes, filled by whoever is on that side already - the break
+		// run to whichever side fits them.
+		const others = slots.filter((p) => p !== handler);
+		const laneSpots = (flip: boolean, swap: boolean): Pt[] => {
+			const at = (k: number) => {
+				const s = TRANSITION_OFFENSE_SPOTS[k] ?? TRANSITION_OFFENSE_SPOTS[0]!;
+				return spot(team, s.depth, flip ? COURT_H - s.across : s.across);
+			};
+			return [
+				at(0),
+				...others.map((_, j) => at(swap && j < 2 ? 2 - j : j + 1)),
+			];
+		};
+		let spots = laneSpots(false, false);
+		let across = Infinity;
+		for (const flip of [false, true]) {
+			for (const swap of [false, true]) {
+				const S = laneSpots(flip, swap);
+				const c = others.reduce(
+					(sum, pid, j) => sum + Math.abs(this.posOf(pid).y - S[j + 1]!.y),
+					0,
+				);
+				if (c < across - 0.01) {
+					across = c;
+					spots = S;
+				}
+			}
+		}
 		this.hold(handler, t, "dribble");
 		const arrive = this.go(
 			handler,
@@ -2621,7 +2767,6 @@ class Director {
 			"dribble",
 			attackDir(team),
 		);
-		const others = slots.filter((p) => p !== handler);
 		others.forEach((pid, j) => {
 			this.goBy(
 				pid,
@@ -2631,7 +2776,28 @@ class Director {
 				"run",
 			);
 		});
-		const def = this.slots(other(team));
+		const def0 = this.slots(other(team));
+		const back4 = def0.slice(0, -1);
+		let def = def0;
+		if (back4.length === 4 && others.length === 4) {
+			let best = Infinity;
+			for (const perm of PERMS4) {
+				let c = 0;
+				for (let j = 0; j < 4; j++) {
+					const d = back4[perm[j]!]!;
+					c +=
+						Math.abs(this.posOf(d).y - spots[j + 1]!.y) +
+						Math.abs(
+							(this.rank.get(d) ?? 4) - (this.rank.get(others[j]!) ?? 4),
+						) *
+							MATCH_RANK;
+				}
+				if (c < best - 0.01) {
+					best = c;
+					def = [...perm.map((k) => back4[k]!), def0.at(-1)!];
+				}
+			}
+		}
 		def.forEach((pid, j) => {
 			const rimGuard = j === def.length - 1;
 			const target = rimGuard
@@ -2678,7 +2844,9 @@ class Director {
 	private swing(team: Side, t: number): number {
 		const m = Math.min(MOTION_OFFENSE_SPOTS.length - 1, this.motion + 1);
 		const slots = this.slots(team);
-		let receiver = slots[MOTION_HANDLER_SLOT[m] ?? 1];
+		const part = MOTION_HANDLER_SLOT[m] ?? 1;
+		const fit = this.spotFit?.team === team ? this.spotFit : undefined;
+		let receiver = slots[fit ? fit.order.indexOf(part) : part];
 		if (receiver === undefined || receiver === this.holder) {
 			receiver = slots.find((p) => p !== this.holder) ?? slots[0]!;
 		}
@@ -3326,6 +3494,7 @@ class Director {
 	// No cut: from wherever they are into the set's spots, the ball brought
 	// up or kicked out to whoever starts with it.
 	private flowToPlay(run: Running, t: number, sized = true): number {
+		this.castNearest(run);
 		const { team } = run;
 		const f = this.formation(run);
 		const dir = attackDir(team);
@@ -3409,9 +3578,57 @@ class Director {
 		return sized ? this.sizeUp(run, bh, ready + 100) : ready + 100;
 	}
 
+	// Who plays which part in a set is first who fits it - but of the men who
+	// could, the one already nearest it plays it, and the set is run to the
+	// side they are already on: two spot-up men don't trade corners, running
+	// the length of the baseline past each other, to get it started. (The
+	// man it ends with - the shooter, his passer, the man who loses it -
+	// keeps his part.)
+	private castNearest(run: Running, holder?: number) {
+		const five = this.five(run.team);
+		if (
+			five.length !== 5 ||
+			!run.roles.every((pid) => five.some((c) => c.pid === pid))
+		) {
+			return;
+		}
+		const pinned = new Map<number, Role>();
+		for (const r of [run.option?.shooter, run.option?.assist, run.risk?.who]) {
+			if (r !== undefined) {
+				pinned.set(run.roles[r]!, r);
+			}
+		}
+		// (On the break, the man pushing it keeps it.)
+		if (holder !== undefined && !pinned.has(holder)) {
+			if ([...pinned.values()].includes(run.play.ball)) {
+				return;
+			}
+			pinned.set(holder, run.play.ball);
+		}
+		const { at } = this.formation(run);
+		let best: { roles: number[]; mirror: 1 | -1; cost: number } | undefined;
+		for (const mirror of [run.mirror, -run.mirror as 1 | -1]) {
+			const spots = at.map((name) => this.spotFor(run.team, mirror, name));
+			const cast = castPlay(run.play, five, pinned, (pid, r) => {
+				// (Across the floor counts double: up it, everybody goes.)
+				const P = this.posOf(pid);
+				const S = spots[r]!;
+				return (dist(P, S) + Math.abs(P.y - S.y)) * TRAVEL_COST;
+			});
+			if (cast && (!best || cast.cost < best.cost)) {
+				best = { roles: cast.roles, mirror, cost: cast.cost };
+			}
+		}
+		if (best) {
+			run.roles = best.roles;
+			run.mirror = best.mirror;
+		}
+	}
+
 	// A break runs from wherever they are when the ball is won; whoever the
 	// set does not send somewhere right away runs the floor to his lane.
 	private startBreak(run: Running, t: number): number {
+		this.castNearest(run, run.roles[run.play.ball]);
 		const bh = run.roles[run.play.ball]!;
 		if (this.holder !== undefined && this.holder !== bh) {
 			t = this.outlet(this.holder, bh, t, SPRINT, 10);
@@ -10587,8 +10804,27 @@ class Director {
 		}[] = [];
 		const added: { tr: Track; move: Move }[] = [];
 		const addedActs: { tr: Track; act: Act }[] = [];
+		// A spell of standing can run on through the ball going dead and back
+		// in play - a shot, a block, the offensive board - and the play going
+		// on: he is no more rooted to the spot after it than before. One piece
+		// for each stretch of it with the ball in play; each starts where the
+		// last left him (see startOf).
+		const pieces = (w: Still): Still[] => {
+			const out: Still[] = [];
+			let a = w.from;
+			while (a < w.to && out.length < 8) {
+				const f = liveFrom(a);
+				if (f >= w.to) {
+					break;
+				}
+				const e = Math.min(w.to, liveUntil(f));
+				out.push({ ...w, from: a, to: e >= w.to - 1 ? w.to : e });
+				a = Math.max(e, f) + 50;
+			}
+			return out.length > 0 ? out : [w];
+		};
 		for (const tr of all) {
-			for (const w of still.get(tr.pid)!) {
+			for (const w of still.get(tr.pid)!.flatMap(pieces)) {
 				if (w.to - w.from < 1000 || !free(tr, w)) {
 					continue;
 				}

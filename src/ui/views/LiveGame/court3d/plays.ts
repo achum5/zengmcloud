@@ -236,11 +236,14 @@ const PERMS: Role[][] = (() => {
 })();
 
 // The cheapest way to put the five in the play's roles with some of them
-// pinned to a role already. Returns the pid in each role.
+// pinned to a role already - and, if given, what else it costs to put a man
+// in a role (how far he has to go to get to it, say). Returns the pid in
+// each role.
 export const castPlay = (
 	play: Play,
 	five: Cast[],
 	pinned: Map<number, Role>,
+	extra?: (pid: number, r: Role) => number,
 ): { roles: number[]; cost: number } | undefined => {
 	if (five.length !== 5) {
 		return undefined;
@@ -257,7 +260,7 @@ export const castPlay = (
 				ok = false;
 				break;
 			}
-			cost += roleCost(play, r, p.rank);
+			cost += roleCost(play, r, p.rank) + (extra?.(p.pid, r) ?? 0);
 		}
 		if (ok && (!best || cost < best.cost)) {
 			const roles: number[] = [];
