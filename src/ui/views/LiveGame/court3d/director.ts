@@ -810,6 +810,16 @@ const MATCH_RANK = 7;
 // how badly he fits it (see castPlay): thirty feet, about a guard's part
 // played by a forward.
 const TRAVEL_COST = 0.035;
+// Two going farther than this (feet) to their parts across each other's
+// path trade them, if that costs the set no more than this (see castPlay).
+const CROSS_RUN = 15;
+const CROSS_TRADE = 0.7;
+// Whether the runs from a to b and from c to d cross.
+const crossing = (a: Pt, b: Pt, c: Pt, d: Pt): boolean => {
+	const o = (p: Pt, q: Pt, r: Pt) =>
+		Math.sign((q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x));
+	return o(a, b, c) !== o(a, b, d) && o(c, d, a) !== o(c, d, b);
+};
 const RESPACE_SPOTS = [
 	"L_corner",
 	"R_corner",
@@ -1236,12 +1246,30 @@ class Director {
 				if (!inside) {
 					continue;
 				}
-				const a = c.t0 - 300;
-				const z = c.t1 + 300;
-				const A = this.posAt(tr.pid, a);
-				const Z = this.posAt(tr.pid, z);
+				let a = c.t0 - 300;
+				let A = this.posAt(tr.pid, a);
 				const u = dist(A, c.at) > 1 ? unitVec(c.at, A) : c.out;
 				const B = clampPt({ x: c.at.x + u.x * c.r, y: c.at.y + u.y * c.r });
+				// Out to the edge of it, and back on his way after, no faster
+				// than a man can go.
+				for (let n = 0; n < 3; n++) {
+					const need = c.t0 - 50 - Math.max(250, runMs(dist(A, B), SPRINT));
+					if (need >= a) {
+						break;
+					}
+					a = need;
+					A = this.posAt(tr.pid, a);
+				}
+				let z = c.t1 + 300;
+				let Z = this.posAt(tr.pid, z);
+				for (let n = 0; n < 3; n++) {
+					const need = c.t1 + Math.max(300, runMs(dist(B, Z), SPRINT));
+					if (need <= z) {
+						break;
+					}
+					z = need;
+					Z = this.posAt(tr.pid, z);
+				}
 				const kept: Move[] = [];
 				for (const m of tr.moves) {
 					if (m.t1 <= a || m.t0 >= z) {
@@ -3719,16 +3747,56 @@ class Director {
 		}
 		const { at } = this.formation(run);
 		let best: { roles: number[]; mirror: 1 | -1; cost: number } | undefined;
+		const travel = (spots: Pt[]) => (pid: number, r: number) => {
+			// (Across the floor counts double: up it, everybody goes.)
+			const P = this.posOf(pid);
+			const S = spots[r]!;
+			return (dist(P, S) + Math.abs(P.y - S.y)) * TRAVEL_COST;
+		};
 		for (const mirror of [run.mirror, -run.mirror as 1 | -1]) {
 			const spots = at.map((name) => this.spotFor(run.team, mirror, name));
-			const cast = castPlay(run.play, five, pinned, (pid, r) => {
-				// (Across the floor counts double: up it, everybody goes.)
-				const P = this.posOf(pid);
-				const S = spots[r]!;
-				return (dist(P, S) + Math.abs(P.y - S.y)) * TRAVEL_COST;
-			});
+			const cast = castPlay(run.play, five, pinned, travel(spots));
 			if (cast && (!best || cast.cost < best.cost)) {
 				best = { roles: cast.roles, mirror, cost: cast.cost };
+			}
+		}
+		// Two of them running across each other's path a long way - X-ing up
+		// the floor to the other's side of it - trade parts, if the set is
+		// little the worse for it.
+		if (best) {
+			const spots = at.map((name) =>
+				this.spotFor(run.team, best!.mirror, name),
+			);
+			for (let i = 0; i < 5; i++) {
+				for (let j = i + 1; j < 5; j++) {
+					const a = best.roles[i]!;
+					const b = best.roles[j]!;
+					const A = this.posOf(a);
+					const B = this.posOf(b);
+					if (
+						pinned.has(a) ||
+						pinned.has(b) ||
+						dist(A, spots[i]!) < CROSS_RUN ||
+						dist(B, spots[j]!) < CROSS_RUN ||
+						!crossing(A, spots[i]!, B, spots[j]!) ||
+						crossing(A, spots[j]!, B, spots[i]!)
+					) {
+						continue;
+					}
+					const all = new Map<number, Role>(
+						best.roles.map((pid, r) => [pid, r as Role]),
+					);
+					all.set(a, j as Role);
+					all.set(b, i as Role);
+					const traded = castPlay(run.play, five, all, travel(spots));
+					// (Two parts that need the same - two shooters - just trade.)
+					const same =
+						(run.play.needs[i] ?? []).join() ===
+						(run.play.needs[j] ?? []).join();
+					if (traded && (same || traded.cost - best.cost < CROSS_TRADE)) {
+						best = { ...best, roles: traded.roles, cost: traded.cost };
+					}
+				}
 			}
 		}
 		if (best) {
