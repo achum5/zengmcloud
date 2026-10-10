@@ -1,5 +1,6 @@
 import { idb } from "../db/index.ts";
 import { helpers } from "../util/index.ts";
+import { courtPictures } from "../util/courtPictures.ts";
 import { defineView, type ViewInput } from "../util/defineView.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 
@@ -32,6 +33,8 @@ const editTeamCourt = async (inputs: ViewInput<typeof processInputs>) => {
 		colors: t.colors,
 		imgURL: t.imgURL,
 		court: t.court,
+		// The pictures uploaded for it, by id (see courtPictures.ts).
+		pictures: await courtPictures(t.court),
 	};
 };
 

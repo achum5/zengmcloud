@@ -122,9 +122,13 @@ These share one design question: how users author assets. Decided
 code/JSON box that can pull in image URLs and position pieces freely (easy to
 make with AI help).
 
-- [ ] Custom courts per team, potentially via image or SVG/code, so users can
+- [x] Custom courts per team, potentially via image or SVG/code, so users can
       recreate real courts. Revisit whether the current image-based approach (as for
-      jerseys) is right.
+      jerseys) is right. (The court editor: colors, floor patterns and eight
+      picture slots, each sized, faded, moved and turned freely; each slot
+      takes a URL or an uploaded picture, kept in the league like the 3D
+      uniforms so it syncs and exports; and "Edit as JSON" shows the whole
+      court as JSON to paste back in - easy to make with AI help.)
 - [ ] Court decals, like the finals trophy at center court: fully customizable
       for every court. Examples: an opening night image on every court, an uploadable
       playoff decal on all playoff courts. Optionally season by season so each era

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { toWorker } from "../util/toWorker.ts";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
@@ -14,6 +14,153 @@ import LiveCourt from "./LiveGame/LiveCourt.tsx";
 
 const DEFAULT_FLOOR = "#c9a165";
 const DEFAULT_LINES = "#f8f5f0";
+
+// An uploaded picture, as a court names it (see courtPictures.ts).
+const PIC = "pic:";
+const PICTURE_KEYS = [
+	"logoURL",
+	"trophyURL",
+	"secondaryLogoURL",
+	"sidelineImageURL",
+	"baselineImageURL",
+	"cornerLogoURL",
+	"benchImageURL",
+	"railImageURL",
+] as const satisfies readonly (keyof CourtStyle)[];
+
+// The court as drawn: its uploaded pictures filled in.
+const withPictures = (
+	style: CourtStyle,
+	pictures: Record<string, string>,
+): CourtStyle => {
+	const out = { ...style };
+	for (const key of PICTURE_KEYS) {
+		const v = out[key];
+		if (typeof v === "string" && v.startsWith(PIC)) {
+			const url = pictures[v.slice(PIC.length)];
+			if (url === undefined) {
+				delete out[key];
+			} else {
+				out[key] = url;
+			}
+		}
+	}
+	return out;
+};
+
+// A picture file made into a PNG small enough to keep in the league - as
+// big as it can be and still fit.
+const PICTURE_MAX = 690_000;
+const pictureFromFile = async (file: File): Promise<string> => {
+	const src = URL.createObjectURL(file);
+	try {
+		const img = new Image();
+		img.src = src;
+		await img.decode();
+		const w0 = img.naturalWidth || 1024;
+		const h0 = img.naturalHeight || 1024;
+		for (const side of [1024, 768, 512, 384, 256]) {
+			const k = Math.min(1, side / Math.max(w0, h0));
+			const cv = document.createElement("canvas");
+			cv.width = Math.max(1, Math.round(w0 * k));
+			cv.height = Math.max(1, Math.round(h0 * k));
+			cv.getContext("2d")!.drawImage(img, 0, 0, cv.width, cv.height);
+			const url = cv.toDataURL("image/png");
+			if (url.length <= PICTURE_MAX) {
+				return url;
+			}
+		}
+		throw new Error("That picture is too big.");
+	} finally {
+		URL.revokeObjectURL(src);
+	}
+};
+
+const STYLE_STRINGS = new Set<string>([
+	"floor",
+	"lines",
+	"paint",
+	"apron",
+	"apronText",
+	"centerText",
+	"centerTextColor",
+	"benchText",
+	"benchTextColor",
+	...PICTURE_KEYS,
+]);
+const PATTERNS = new Set([
+	"hardwood",
+	"parquet",
+	"diagonal",
+	"chevron",
+	"solid",
+]);
+const SLOTS = new Set<string>([
+	"logo",
+	"trophy",
+	"secondary",
+	"sideline",
+	"bench",
+	"baseline",
+	"corner",
+	"rail",
+]);
+
+// A court typed or pasted in as JSON, checked field by field - or why not.
+const parseCourt = (text: string): CourtStyle | string => {
+	let raw: unknown;
+	try {
+		raw = JSON.parse(text);
+	} catch {
+		return "Not valid JSON.";
+	}
+	if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+		return "Expected a JSON object.";
+	}
+	for (const [key, value] of Object.entries(raw)) {
+		if (STYLE_STRINGS.has(key)) {
+			if (typeof value !== "string") {
+				return `"${key}" should be text.`;
+			}
+		} else if (key === "floorPattern") {
+			if (typeof value !== "string" || !PATTERNS.has(value)) {
+				return `"floorPattern" should be one of ${[...PATTERNS].join(", ")}.`;
+			}
+		} else if (key === "hideRailText") {
+			if (typeof value !== "boolean") {
+				return `"hideRailText" should be true or false.`;
+			}
+		} else if (key === "adjust") {
+			if (typeof value !== "object" || value === null) {
+				return `"adjust" should be an object.`;
+			}
+			for (const [slot, a] of Object.entries(value)) {
+				if (!SLOTS.has(slot)) {
+					return `Unknown slot "${slot}" in "adjust".`;
+				}
+				if (typeof a !== "object" || a === null) {
+					return `"adjust.${slot}" should be an object.`;
+				}
+				for (const [k, v] of Object.entries(a)) {
+					if (k === "fit") {
+						if (v !== "contain" && v !== "fill") {
+							return `"adjust.${slot}.fit" should be "contain" or "fill".`;
+						}
+					} else if (
+						!["scale", "opacity", "dx", "dy", "rotate"].includes(k) ||
+						typeof v !== "number" ||
+						!Number.isFinite(v)
+					) {
+						return `"adjust.${slot}.${k}" isn't a number setting.`;
+					}
+				}
+			}
+		} else {
+			return `Unknown field "${key}".`;
+		}
+	}
+	return raw as CourtStyle;
+};
 
 // A row of a color picker + optional "use default" reset, bound to one
 // CourtStyle field. Passing an empty value clears the field (fall back to
@@ -118,6 +265,8 @@ const ImageField = ({
 	adjust,
 	onAdjust,
 	defaultFit = "contain",
+	pictures,
+	onUpload,
 }: {
 	label: string;
 	hint?: string;
@@ -127,13 +276,18 @@ const ImageField = ({
 	adjust: CourtImageAdjust | undefined;
 	onAdjust: (slot: CourtImageSlot, next: CourtImageAdjust | undefined) => void;
 	defaultFit?: "contain" | "fill";
+	pictures: Record<string, string>;
+	onUpload: (file: File) => Promise<string | undefined>;
 }) => {
+	const uploaded = url.startsWith(PIC);
+	const shown = uploaded ? pictures[url.slice(PIC.length)] : url;
+	const [uploading, setUploading] = useState(false);
 	// A URL that does not resolve to an image draws nothing at all, which looks
 	// exactly like the feature being broken. Load it here and say so.
 	const [broken, setBroken] = useState(false);
 	useEffect(() => {
 		setBroken(false);
-		if (!url) {
+		if (!shown) {
 			return;
 		}
 		let stale = false;
@@ -143,11 +297,11 @@ const ImageField = ({
 				setBroken(true);
 			}
 		};
-		img.src = url;
+		img.src = shown;
 		return () => {
 			stale = true;
 		};
-	}, [url]);
+	}, [shown]);
 
 	const set = <K extends keyof CourtImageAdjust>(
 		key: K,
@@ -199,13 +353,64 @@ const ImageField = ({
 				{label}{" "}
 				{hint ? <span className="text-body-secondary">{hint}</span> : null}
 			</label>
-			<input
-				type="text"
-				className="form-control"
-				value={url}
-				placeholder="https://..."
-				onChange={(e) => onURL(e.target.value)}
-			/>
+			<div className="d-flex align-items-center gap-2">
+				{uploaded ? (
+					<>
+						{shown ? (
+							<img
+								src={shown}
+								alt=""
+								style={{ height: 32, maxWidth: 96, objectFit: "contain" }}
+							/>
+						) : null}
+						<span className="flex-grow-1 text-body-secondary">Uploaded</span>
+						<button
+							type="button"
+							className="btn btn-sm btn-light-bordered"
+							onClick={() => onURL("")}
+						>
+							Remove
+						</button>
+					</>
+				) : (
+					<>
+						<input
+							type="text"
+							className="form-control"
+							value={url}
+							placeholder="https://..."
+							onChange={(e) => onURL(e.target.value)}
+						/>
+						<label
+							className={`btn btn-sm btn-light-bordered mb-0 flex-shrink-0${uploading ? " disabled" : ""}`}
+						>
+							Upload
+							<input
+								type="file"
+								accept="image/*"
+								className="d-none"
+								disabled={uploading}
+								onChange={async (e) => {
+									const file = e.target.files?.[0];
+									e.target.value = "";
+									if (!file) {
+										return;
+									}
+									setUploading(true);
+									try {
+										const next = await onUpload(file);
+										if (next !== undefined) {
+											onURL(next);
+										}
+									} finally {
+										setUploading(false);
+									}
+								}}
+							/>
+						</label>
+					</>
+				)}
+			</div>
 			{broken ? (
 				<div className="text-danger small mt-1">
 					That URL didn&rsquo;t load as an image.
@@ -275,6 +480,7 @@ const EditTeamCourt = ({
 	colors,
 	imgURL,
 	court,
+	pictures: picturesSaved,
 }: View<"editTeamCourt">) => {
 	useTitleBar({
 		title: `Customize Court`,
@@ -284,6 +490,29 @@ const EditTeamCourt = ({
 	const [style, setStyle] = useState<CourtStyle>(court ?? {});
 	const [previewFinals, setPreviewFinals] = useState(false);
 	const [saving, setSaving] = useState(false);
+	// Pictures by id: the court's own, and any uploaded since.
+	const [pictures, setPictures] =
+		useState<Record<string, string>>(picturesSaved);
+	const [uploaded, setUploaded] = useState<string[]>([]);
+	const [json, setJSON] = useState<string | undefined>();
+	const [jsonError, setJSONError] = useState<string | undefined>();
+
+	const upload = async (file: File) => {
+		try {
+			const url = await pictureFromFile(file);
+			const id = await toWorker("main", "storeCourtPicture", url);
+			setPictures((p) => ({ ...p, [id]: url }));
+			setUploaded((u) => [...u, id]);
+			return `${PIC}${id}`;
+		} catch (error) {
+			showNotification({
+				type: "error",
+				text: `Could not upload: ${(error as Error).message}`,
+			});
+			return undefined;
+		}
+	};
+	const picture = { pictures, onUpload: upload };
 
 	// One image slot's size/position knobs.
 	const setAdjust = (
@@ -319,6 +548,10 @@ const EditTeamCourt = ({
 		});
 	};
 
+	const shownStyle = useMemo(
+		() => withPictures(style, pictures),
+		[style, pictures],
+	);
 	const homeTeam = {
 		tid,
 		abbrev,
@@ -326,7 +559,7 @@ const EditTeamCourt = ({
 		name,
 		colors,
 		imgURL,
-		court: style,
+		court: shownStyle,
 	};
 
 	const save = async () => {
@@ -335,7 +568,9 @@ const EditTeamCourt = ({
 			await toWorker("main", "updateTeamCourt", {
 				tid,
 				court: Object.keys(style).length > 0 ? style : undefined,
+				uploaded,
 			});
+			setUploaded([]);
 			showNotification({
 				type: "success",
 				text: "Court saved.",
@@ -473,6 +708,7 @@ const EditTeamCourt = ({
 						onURL={(v) => set("logoURL", v)}
 						adjust={style.adjust?.logo}
 						onAdjust={setAdjust}
+						{...picture}
 					/>
 
 					<ImageField
@@ -483,6 +719,7 @@ const EditTeamCourt = ({
 						onURL={(v) => set("trophyURL", v)}
 						adjust={style.adjust?.trophy}
 						onAdjust={setAdjust}
+						{...picture}
 					/>
 
 					<ImageField
@@ -493,6 +730,7 @@ const EditTeamCourt = ({
 						onURL={(v) => set("secondaryLogoURL", v)}
 						adjust={style.adjust?.secondary}
 						onAdjust={setAdjust}
+						{...picture}
 					/>
 
 					<ImageField
@@ -503,6 +741,7 @@ const EditTeamCourt = ({
 						onURL={(v) => set("sidelineImageURL", v)}
 						adjust={style.adjust?.sideline}
 						onAdjust={setAdjust}
+						{...picture}
 						defaultFit="fill"
 					/>
 
@@ -517,6 +756,7 @@ const EditTeamCourt = ({
 						onURL={(v) => set("railImageURL", v)}
 						adjust={style.adjust?.rail}
 						onAdjust={setAdjust}
+						{...picture}
 						defaultFit="fill"
 					/>
 
@@ -544,6 +784,7 @@ const EditTeamCourt = ({
 						onURL={(v) => set("baselineImageURL", v)}
 						adjust={style.adjust?.baseline}
 						onAdjust={setAdjust}
+						{...picture}
 					/>
 
 					<hr />
@@ -568,6 +809,7 @@ const EditTeamCourt = ({
 						onURL={(v) => set("cornerLogoURL", v)}
 						adjust={style.adjust?.corner}
 						onAdjust={setAdjust}
+						{...picture}
 					/>
 
 					<ImageField
@@ -578,6 +820,7 @@ const EditTeamCourt = ({
 						onURL={(v) => set("benchImageURL", v)}
 						adjust={style.adjust?.bench}
 						onAdjust={setAdjust}
+						{...picture}
 						defaultFit="fill"
 					/>
 
@@ -591,6 +834,49 @@ const EditTeamCourt = ({
 						colorFallback={style.apronText ?? colors[1]}
 						onColorChange={(v) => set("benchTextColor", v)}
 					/>
+
+					<hr />
+					<button
+						type="button"
+						className="btn btn-sm btn-light-bordered"
+						onClick={() => {
+							setJSONError(undefined);
+							setJSON(
+								json === undefined ? JSON.stringify(style, null, 2) : undefined,
+							);
+						}}
+					>
+						{json === undefined ? "Edit as JSON" : "Close JSON"}
+					</button>
+					{json !== undefined ? (
+						<div className="mt-2">
+							<textarea
+								className="form-control font-monospace small"
+								rows={12}
+								spellCheck={false}
+								value={json}
+								onChange={(e) => setJSON(e.target.value)}
+							/>
+							{jsonError ? (
+								<div className="text-danger small mt-1">{jsonError}</div>
+							) : null}
+							<button
+								type="button"
+								className="btn btn-sm btn-secondary mt-2"
+								onClick={() => {
+									const parsed = parseCourt(json);
+									if (typeof parsed === "string") {
+										setJSONError(parsed);
+									} else {
+										setJSONError(undefined);
+										setStyle(parsed);
+									}
+								}}
+							>
+								Apply
+							</button>
+						</div>
+					) : null}
 
 					<div className="d-flex gap-2 mt-3">
 						<button

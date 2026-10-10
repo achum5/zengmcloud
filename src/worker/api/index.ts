@@ -1,3 +1,9 @@
+import {
+	courtPictureIds,
+	pictureById,
+	prunePictures,
+	storePicture,
+} from "../util/courtPictures.ts";
 import { sanitizeRotation, type TeamRotation } from "../../common/rotation.ts";
 import { prospectUniform } from "../../common/prospectColors.ts";
 import { csvFormat, csvFormatRows } from "d3-dsv";
@@ -6496,31 +6502,35 @@ const updateTeamInfo = async ({
 // Save (or clear) a team's custom basketball court style. Writes the whole-team
 // record through the cache, so the change is captured and synced to the room -
 // every device draws the same custom court.
+// Pictures uploaded in the editor this time round that the court saved
+// does not use (`uploaded`) are let go, as are any it no longer does.
 const updateTeamCourt = async ({
 	tid,
 	court,
+	uploaded,
 }: {
 	tid: number;
 	court: CourtStyle | undefined;
+	uploaded?: string[];
 }) => {
 	const t = await idb.cache.teams.get(tid);
 	if (!t) {
 		throw new Error(`Team not found for tid ${tid}`);
 	}
+	const before = courtPictureIds(t.court);
 	if (court === undefined || Object.keys(court).length === 0) {
 		delete t.court;
 	} else {
 		t.court = court;
 	}
 	await idb.cache.teams.put(t);
+	await prunePictures([...before, ...(uploaded ?? [])]);
 	return { ok: true };
 };
 
-// A 3D uniform picture by id. The store isn't kept in memory: a picture is
-// in the cache only if it was written lately, otherwise on disk.
-const jerseySkinById = async (id: string) =>
-	(await idb.cache.jerseySkins.get(id)) ??
-	(await idb.league.get("jerseySkins", id));
+// A picture for one of a court's slots, kept in the league (see
+// courtPictures.ts): its id, for the court to name it by.
+const storeCourtPicture = (url: string) => storePicture(url);
 
 // A team's home or away uniform for the 3D game, as a picture (a PNG data
 // URL, at most this long), or none. The picture is stored once, by a hash of
@@ -6543,22 +6553,10 @@ const setJerseySkin = async ({
 	}
 	let id: string | undefined;
 	if (url !== undefined) {
-		if (
-			url.length > JERSEY_SKIN_MAX ||
-			!/^data:image\/png;base64,[\w+/]+=*$/.test(url)
-		) {
+		if (url.length > JERSEY_SKIN_MAX) {
 			throw new Error("Invalid picture");
 		}
-		const digest = await crypto.subtle.digest(
-			"SHA-256",
-			new TextEncoder().encode(url),
-		);
-		id = Array.from(new Uint8Array(digest).slice(0, 10), (b) =>
-			b.toString(16).padStart(2, "0"),
-		).join("");
-		if (!(await jerseySkinById(id))) {
-			await idb.cache.jerseySkins.put({ id, url, at: Date.now() });
-		}
+		id = await storePicture(url, /^data:image\/png;base64,[\w+/]+=*$/);
 	}
 	const old = t.jerseySkins?.[side];
 	const skins: JerseySkinIds = { ...t.jerseySkins };
@@ -6574,14 +6572,7 @@ const setJerseySkin = async ({
 	}
 	await idb.cache.teams.put(t);
 	if (old !== undefined && old !== id) {
-		const teams = await idb.cache.teams.getAll();
-		if (
-			!teams.some(
-				(t2) => t2.jerseySkins?.home === old || t2.jerseySkins?.away === old,
-			)
-		) {
-			await idb.cache.jerseySkins.delete(old);
-		}
+		await prunePictures([old]);
 	}
 	return id;
 };
@@ -6590,7 +6581,7 @@ const setJerseySkin = async ({
 const getJerseySkins = async (ids: string[]) => {
 	const out: Record<string, string> = {};
 	for (const id of ids) {
-		const row = await jerseySkinById(id);
+		const row = await pictureById(id);
 		if (row) {
 			out[id] = row.url;
 		}
@@ -8165,6 +8156,7 @@ const api = {
 		updatePlayoffTeams,
 		updateScheduledEvent,
 		updateTeamCourt,
+		storeCourtPicture,
 		updateTeamUniform,
 		setJerseySkin,
 		getJerseySkins,
