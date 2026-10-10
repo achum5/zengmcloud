@@ -110,12 +110,12 @@ const faceSprite = async (
 };
 
 // How his hair sits on the back of his head, for drawing it from the side
-// and from behind: none; cropped close to his skull; standing up off it (an
-// afro, a high top, curls); or hanging down past his neck (dreads, long
-// hair).
+// and from behind: none; cropped close to his skull (or standing up off the
+// top of it - see HairStyle); full round his head, over his ears (an afro,
+// a shag); or hanging down past his neck (long hair).
 export type HairCut = "bald" | "short" | "big" | "long";
-const BIG_HAIR = /^(afro|high|juice|curly\d*$|blowout|shaggy|emo|messy$)/;
-const LONG_HAIR = /^(dreads|longHair|female|tied)/;
+const BIG_HAIR = /^(afro$|shaggy|emo$)/;
+const LONG_HAIR = /^(longHair|female(?!8$))/;
 export const hairCut = (id: string | undefined): HairCut =>
 	!id || id === "bald"
 		? "bald"
@@ -124,6 +124,45 @@ export const hairCut = (id: string | undefined): HairCut =>
 			: BIG_HAIR.test(id)
 				? "big"
 				: "short";
+
+// The shape of his hair beyond that, as his face has it, for the side and
+// the back of his head to match: how high it stands off his skull (head
+// radii), and its top - smooth, curly, spiky, or cut flat (a high top). And
+// whether it is faded at the sides and back, or thin all over (a buzz);
+// in rows back over his skull (cornrows); a strip down the middle, the sides
+// faded (a faux-hawk); bald on top, round the sides only; or gathered up in
+// a bun (locs, tied up).
+export type HairStyle = {
+	height: number;
+	top: "smooth" | "curly" | "spiky" | "flat";
+	fade?: boolean;
+	thin?: boolean;
+	rows?: boolean;
+	strip?: boolean;
+	crown?: boolean;
+	bun?: boolean;
+};
+const STYLES: [RegExp, HairStyle][] = [
+	[/^afro$/, { height: 0.42, top: "curly" }],
+	[/^afro2$/, { height: 0.3, top: "spiky" }],
+	[/^blowoutFade$/, { height: 0.28, top: "spiky", fade: true }],
+	[/^cornrows$/, { height: 0.04, top: "smooth", rows: true }],
+	[/^crop-fade/, { height: 0.08, top: "smooth", fade: true }],
+	[/^curlyFade/, { height: 0.2, top: "curly", fade: true }],
+	[/^curly/, { height: 0.26, top: "curly" }],
+	[/^dreads$/, { height: 0.12, top: "curly", bun: true }],
+	[/^faux-?hawk/, { height: 0.34, top: "spiky", strip: true, fade: true }],
+	[/^female8$/, { height: 0.1, top: "smooth", bun: true }],
+	[/^(high|juice)$/, { height: 0.58, top: "flat" }],
+	[/^tall-fade$/, { height: 0.46, top: "flat", fade: true }],
+	[/^(messy|spike)/, { height: 0.24, top: "spiky" }],
+	[/^shaggy/, { height: 0.2, top: "spiky" }],
+	[/^short-bald$/, { height: 0.04, top: "smooth", crown: true }],
+	[/^short-fade/, { height: 0.02, top: "smooth", thin: true }],
+];
+const CROPPED: HairStyle = { height: 0.08, top: "smooth" };
+export const hairStyle = (id: string | undefined): HairStyle =>
+	STYLES.find(([re]) => re.test(id ?? ""))?.[1] ?? CROPPED;
 
 // What of his face still shows side on, where the face itself does not: a
 // beard - along his jaw, on his chin, over his lip, or sideburns - a
@@ -183,13 +222,14 @@ const DEFAULT_HAIR = "#1f1612";
 // the sprite itself arrives later.
 export const headColors = (
 	face: FaceConfig | undefined,
-): { skin: string; hair: string; cut: HairCut } => {
+): { skin: string; hair: string; cut: HairCut; style: HairStyle } => {
 	const skin = face?.body?.color || DEFAULT_SKIN;
 	const cut = face ? hairCut(face.hair?.id) : "short";
 	return {
 		skin,
 		hair: cut === "bald" ? skin : face?.hair?.color || DEFAULT_HAIR,
 		cut,
+		style: hairStyle(face?.hair?.id),
 	};
 };
 

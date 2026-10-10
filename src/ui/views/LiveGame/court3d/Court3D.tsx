@@ -490,6 +490,7 @@ const Court3D = ({
 							skin: head?.skin ?? colors.skin,
 							hair: colors.hair,
 							cut: colors.cut,
+							style: colors.style,
 							// In the colors his face is drawn in, so a headband is
 							// the same one from every side.
 							profile: profileOf(f?.face, f?.colors ?? team?.colors),
@@ -551,6 +552,7 @@ const Court3D = ({
 					skin: head?.skin ?? c.skin,
 					hair: c.hair,
 					cut: c.cut,
+					style: c.style,
 					profile: profileOf(
 						m.face,
 						m.role === "coach"

@@ -2,7 +2,7 @@ import { parseUniform } from "../../../../common/uniform.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import { project, type Camera, type Projected } from "./camera.ts";
 import { bodyPoint, poseOf, type PlayerState } from "./evaluate.ts";
-import type { HairCut, HeadSprite, Profile } from "./faces.ts";
+import type { HairCut, HairStyle, HeadSprite, Profile } from "./faces.ts";
 import type { KitArt } from "./kitArt.ts";
 import { skeleton, type Body, type V3 } from "./poses.ts";
 
@@ -73,8 +73,10 @@ export type Look = {
 	outfit?: Outfit;
 	skin: string;
 	hair: string;
-	// How his hair sits on the back of his head (short, if unsaid).
+	// How his hair sits on the back of his head (short, if unsaid), and its
+	// shape there (cropped close, if unsaid).
 	cut?: HairCut;
+	style?: HairStyle;
 	// What shows of his face side on, beyond his skin and hair.
 	profile?: Profile;
 	// A player whose face is a photo: solid black, head to toe, no face -
@@ -199,6 +201,160 @@ const PROFILE_FROM = -0.3;
 const FACE_FROM = 0.5;
 const FACE_IN = 0.04;
 
+// THE SHAPE OF HIS HAIR, side on and from behind (see HairStyle): round a
+// skull centered at (cx, cy), rx across and ry tall, it stands off his head
+// - the more the nearer the top - cut flat or curly or spiky at its edge, or
+// only in a strip down the middle. `fwd` is which way he faces on screen (0
+// from behind): spikes sweep back from it. `side` (0 to 1) is how side on he
+// is: a strip down the middle of his head is all of the top of it side on.
+// `big`: full round his head, out past his ears.
+const hairOutline = (
+	cx: number,
+	cy: number,
+	rx: number,
+	ry: number,
+	style: HairStyle,
+	fwd: number,
+	side: number,
+	big: boolean,
+): Path2D => {
+	const N = 96;
+	const h = style.height;
+	// (A flat top goes straight up from the sides of his head.)
+	const k = style.top === "flat" ? 0.12 : style.top === "smooth" ? 1.2 : 1;
+	// The top of a flat top.
+	const flat = cy - ry * (1.04 + h * 0.8);
+	const band = 0.5 + side * 2;
+	const pts: P2[] = [];
+	for (let i = 0; i < N; i++) {
+		const a = (i / N) * Math.PI * 2;
+		const up = Math.max(0, -Math.sin(a));
+		let grow = 1.04 + (big ? 0.14 * Math.max(0, 0.4 + 0.6 * up) : 0);
+		let lift = h * up ** k;
+		if (style.strip) {
+			lift *= Math.max(0, 1 - (Math.cos(a) / band) ** 2) * (0.6 + 0.4 * side);
+		}
+		if (style.top === "curly") {
+			grow += 0.07 * Math.abs(Math.sin(a * 9)) * up ** 0.5;
+		} else if (style.top === "spiky") {
+			// Spikes, swept back the way he isn't facing (from behind,
+			// standing straight up).
+			const t = (a * 7) / Math.PI;
+			const saw = fwd === 0 ? Math.abs((t % 2) - 1) : (t * Math.sign(fwd)) % 1;
+			lift += (0.12 + h * 0.3) * Math.abs(saw) * up ** 0.6;
+		}
+		const x = cx + rx * grow * Math.cos(a);
+		let y = cy + ry * grow * Math.sin(a) - lift * ry;
+		if (style.top === "flat") {
+			y = Math.max(y, flat);
+		}
+		pts.push({ x, y });
+	}
+	return softPoly(pts);
+};
+
+// A color part way to another.
+const mix = (a: string, b: string, f: number): string => {
+	const [r0, g0, b0] = parse(a);
+	const [r1, g1, b1] = parse(b);
+	const c = (x: number, y: number) =>
+		Math.round(x + (y - x) * f)
+			.toString(16)
+			.padStart(2, "0");
+	return `#${c(r0, r1)}${c(g0, g1)}${c(b0, b1)}`;
+};
+
+// His hair, filled in `hair` (its outline, over his skull) where `cap` lets
+// it (above his hairline): in his hair color - thin all over, or faded low at
+// the sides and back toward his skin from `fadeTop` down to `fadeBottom`;
+// for a strip down the middle, faded outside `strip` (x0 to x1) as well;
+// bald on top, inside `crown`.
+const fillHair = (
+	ctx: CanvasRenderingContext2D,
+	hair: Path2D,
+	cap: Path2D,
+	look: Look,
+	style: HairStyle | undefined,
+	fadeTop: number,
+	fadeBottom: number,
+	crown: { x: number; y: number; rx: number; ry: number },
+	strip?: { x0: number; x1: number },
+) => {
+	ctx.save();
+	ctx.clip(cap);
+	ctx.clip(hair);
+	if (style?.crown) {
+		const bald = new Path2D();
+		bald.rect(-1e4, -1e4, 2e4, 2e4);
+		bald.ellipse(crown.x, crown.y, crown.rx, crown.ry, 0, 0, Math.PI * 2);
+		ctx.clip(bald, "evenodd");
+	}
+	ctx.fillStyle =
+		style?.thin || style?.crown ? mix(look.skin, look.hair, 0.6) : look.hair;
+	ctx.fill(cap);
+	const skin = mix(look.skin, look.hair, 0.3);
+	if (style?.fade || style?.strip) {
+		const g = ctx.createLinearGradient(0, fadeTop, 0, fadeBottom);
+		g.addColorStop(0, `${skin}00`);
+		g.addColorStop(0.6, `${skin}b3`);
+		g.addColorStop(1, `${skin}d9`);
+		ctx.fillStyle = g;
+		ctx.fill(cap);
+	}
+	if (style?.strip && strip) {
+		// (Fading off either side of it.)
+		const soft = (strip.x1 - strip.x0) * 0.7;
+		const g = ctx.createLinearGradient(strip.x0 - soft, 0, strip.x1 + soft, 0);
+		const f = soft / (strip.x1 - strip.x0 + 2 * soft);
+		g.addColorStop(0, `${skin}b3`);
+		g.addColorStop(f, `${skin}00`);
+		g.addColorStop(1 - f, `${skin}00`);
+		g.addColorStop(1, `${skin}b3`);
+		ctx.fillStyle = g;
+		ctx.fill(cap);
+	}
+	ctx.restore();
+};
+
+// The rest of his hair, over what fillHair has done: the partings between
+// rows of it (cornrows) - `rows` drawn in them, inside `hair` - and a bun
+// (centered at `bun`, `br` across), inked like the rest of him.
+const hairExtras = (
+	ctx: CanvasRenderingContext2D,
+	hair: Path2D,
+	cap: Path2D,
+	look: Look,
+	style: HairStyle | undefined,
+	r: number,
+	rows: (p: Path2D) => void,
+	bun: P2,
+	ink: number,
+) => {
+	if (style?.rows) {
+		const p = new Path2D();
+		rows(p);
+		ctx.save();
+		ctx.clip(cap);
+		ctx.clip(hair);
+		ctx.strokeStyle = mix(look.skin, look.hair, 0.35);
+		ctx.lineWidth = Math.max(0.6, r * 0.08);
+		ctx.lineCap = "round";
+		ctx.stroke(p);
+		ctx.restore();
+	}
+	if (style?.bun) {
+		const p = new Path2D();
+		p.ellipse(bun.x, bun.y, r * 0.34, r * 0.3, 0, 0, Math.PI * 2);
+		if (ink > 0) {
+			ctx.strokeStyle = INK;
+			ctx.lineWidth = ink * 2;
+			ctx.stroke(p);
+		}
+		ctx.fillStyle = look.hair;
+		ctx.fill(p);
+	}
+};
+
 // A headband, side on: how high (head radii above the middle of his face) its
 // top edge sits at his brow and at the back of his head, and how wide it is.
 const BAND_FRONT = -0.58;
@@ -305,8 +461,14 @@ const profileHead = (
 		above.lineTo(q.x, q.y);
 	}
 	above.closePath();
+	const style = look.style;
+	const m = P(-0.04, -0.08);
 	const hair = new Path2D();
-	if (cut === "big") {
+	if (cut !== "long" && style) {
+		hair.addPath(
+			hairOutline(m.x, m.y, r, r * 1.04, style, turn, 1, cut === "big"),
+		);
+	} else if (cut === "big") {
 		const h = P(-0.16, -0.34);
 		hair.ellipse(h.x, h.y, r * 1.14, r * 1.02, 0, 0, Math.PI * 2);
 	} else if (cut === "long") {
@@ -333,7 +495,7 @@ const profileHead = (
 		ctx.lineJoin = "round";
 		ctx.stroke(head);
 		ctx.stroke(ear);
-		if (hairy) {
+		if (hairy && !style?.thin && !style?.crown) {
 			ctx.save();
 			ctx.clip(above);
 			ctx.stroke(hair);
@@ -386,11 +548,45 @@ const profileHead = (
 	ctx.fillStyle = shadow;
 	ctx.fill(inner);
 	if (hairy) {
-		ctx.save();
-		ctx.clip(above);
-		ctx.fillStyle = look.hair;
-		ctx.fill(hair);
-		ctx.restore();
+		// (Side on, a strip down the middle of his head is the whole top of
+		// it: faded below its crest.)
+		fillHair(
+			ctx,
+			hair,
+			above,
+			look,
+			style,
+			c.y + r * (style?.strip ? -1.0 : -0.5),
+			c.y + r * (style?.strip ? -0.45 : 0.3),
+			// (Bald from his brow back over the top of his head.)
+			{ ...P(0.3, -0.72), rx: r * 0.95, ry: r * 0.62 },
+		);
+		hairExtras(
+			ctx,
+			hair,
+			above,
+			look,
+			style,
+			r,
+			(p) => {
+				// Back over his skull, front to back, a row above the next.
+				for (const dv of [0.3, 0.62]) {
+					p.moveTo(m.x + turn * r, m.y + dv * r);
+					p.ellipse(
+						m.x,
+						m.y + dv * r,
+						r,
+						r * 1.04,
+						0,
+						turn > 0 ? 0 : Math.PI,
+						turn > 0 ? -Math.PI : 0,
+						turn > 0,
+					);
+				}
+			},
+			P(-0.46, -1.1 - (style?.height ?? 0)),
+			ink,
+		);
 	}
 	if (pro.band) {
 		// Round his head at his brow (or up over his hair), his team's
@@ -579,8 +775,22 @@ const drawHead = (
 		cap.lineTo(x1, c.y - r * 2.5);
 		cap.closePath();
 		// Cropped close it hugs his skull; with some to it, it stands off it.
+		const style = look.style;
 		const hair = new Path2D();
-		if (cut === "big") {
+		if (cut !== "long" && style) {
+			hair.addPath(
+				hairOutline(
+					x,
+					top - r * 0.02,
+					r * 0.95,
+					tall,
+					style,
+					turn * side,
+					side,
+					cut === "big",
+				),
+			);
+		} else if (cut === "big") {
 			hair.ellipse(
 				x - turn * r * 0.1 * side,
 				c.y - r * 0.24,
@@ -613,7 +823,7 @@ const drawHead = (
 			for (const e of ears) {
 				ctx.stroke(e.outer);
 			}
-			if (hairy) {
+			if (hairy && !style?.thin && !style?.crown) {
 				ctx.save();
 				ctx.clip(cap);
 				ctx.stroke(hair);
@@ -629,11 +839,35 @@ const drawHead = (
 			ctx.fill(e.inner);
 		}
 		if (hairy) {
-			ctx.save();
-			ctx.clip(hair);
-			ctx.fillStyle = look.hair;
-			ctx.fill(cap);
-			ctx.restore();
+			const w = r * (0.18 + side * 1.2);
+			fillHair(
+				ctx,
+				hair,
+				cap,
+				look,
+				style,
+				c.y - r * 0.3,
+				nape,
+				{ x, y: top - tall * 0.62, rx: r * 0.86, ry: tall * 0.62 },
+				{ x0: x - w, x1: x + w },
+			);
+			hairExtras(
+				ctx,
+				hair,
+				cap,
+				look,
+				style,
+				r,
+				(p) => {
+					// Down the back of his head to the nape of his neck.
+					for (const k of [-0.55, -0.18, 0.18, 0.55]) {
+						p.moveTo(x + k * r * 0.9, top - tall);
+						p.quadraticCurveTo(x + k * r * 1.15, c.y, x + k * r * 0.5, nape);
+					}
+				},
+				{ x, y: top - tall * (1 + (style?.height ?? 0)) },
+				ink,
+			);
 		}
 		const band = look.profile?.band;
 		if (band) {

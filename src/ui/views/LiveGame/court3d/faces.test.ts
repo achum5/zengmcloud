@@ -1,6 +1,6 @@
 import { assert, describe, test } from "vitest";
 import type { FaceConfig } from "facesjs";
-import { hairCut, profileOf } from "./faces.ts";
+import { hairCut, hairStyle, profileOf } from "./faces.ts";
 
 describe("3D faces", () => {
 	// Seen from the side or from behind, his hair is drawn the way it sits on
@@ -11,15 +11,38 @@ describe("3D faces", () => {
 		for (const id of ["crop", "crop-fade", "short", "short-fade", "cornrows"]) {
 			assert.strictEqual(hairCut(id), "short", id);
 		}
+		// Standing up off his head, but his ears showing.
 		for (const id of ["curlyFade1", "fauxhawk-fade", "spike2", "tall-fade"]) {
 			assert.strictEqual(hairCut(id), "short", id);
 		}
-		for (const id of ["afro", "afro2", "high", "curly", "curly3", "messy"]) {
+		for (const id of ["high", "curly", "curly3", "messy", "dreads"]) {
+			assert.strictEqual(hairCut(id), "short", id);
+		}
+		for (const id of ["afro", "shaggy1", "emo"]) {
 			assert.strictEqual(hairCut(id), "big", id);
 		}
-		for (const id of ["dreads", "longHair", "female3"]) {
+		for (const id of ["longHair", "female3", "female11"]) {
 			assert.strictEqual(hairCut(id), "long", id);
 		}
+		// Tied up in a bun.
+		assert.strictEqual(hairCut("female8"), "short");
+	});
+
+	// From the side and behind, the shape of it as his face has it.
+	test("his hair keeps its shape from every side", () => {
+		assert.strictEqual(hairStyle("high").top, "flat");
+		assert.isAbove(hairStyle("high").height, hairStyle("crop").height);
+		assert.isTrue(hairStyle("tall-fade").fade);
+		assert.strictEqual(hairStyle("curly2").top, "curly");
+		assert.strictEqual(hairStyle("spike3").top, "spiky");
+		assert.isTrue(hairStyle("faux-hawk").strip);
+		assert.isTrue(hairStyle("fauxhawk-fade").strip);
+		assert.isTrue(hairStyle("cornrows").rows);
+		assert.isTrue(hairStyle("short-bald").crown);
+		assert.isTrue(hairStyle("short-fade-2").thin);
+		assert.isTrue(hairStyle("dreads").bun);
+		assert.isTrue(hairStyle("female8").bun);
+		assert.deepEqual(hairStyle("parted"), hairStyle(undefined));
 	});
 
 	// Side on, his face in profile keeps what it has from the front: the
