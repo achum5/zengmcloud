@@ -114,8 +114,20 @@ describe("3D free throws", () => {
 						events[next.i]!.type === "missFt") &&
 					events[next.i]!.pid === shooter
 				);
-				// Just before he lets it go.
-				const t = b.actionStart - 1500;
+				// Just before he lets it go. (The beat's moment is the ball's at
+				// the rim - after a long rattle round it, well after it left
+				// his hand.)
+				const release =
+					tl.ball
+						.filter(
+							(s) =>
+								s.kind === "fly" &&
+								"pid" in s.from &&
+								s.from.pid === shooter &&
+								s.t0 <= b.actionStart,
+						)
+						.at(-1)?.t0 ?? b.actionStart - 850;
+				const t = Math.min(b.actionStart - 1500, release - 650);
 				for (const [pid, tr] of tl.tracks) {
 					const st0 = evalPlayer(tl, pid, t);
 					const lane = Math.abs(st0.y - 25);

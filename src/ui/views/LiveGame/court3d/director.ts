@@ -684,6 +684,12 @@ const BREAK_GAP = { board: 9.6, steal: 11, make: 7.1 };
 // A trip ending in a turnover or a whistle sooner than this (seconds of the
 // sim's clock) has no time for the ball to be brought up and a set run.
 const RUSH_GAP = 6;
+// The ball a long way back from where the set wants it (feet): the man with
+// it brings it up to about this far from there before he gives it up, and
+// never from farther out from the rim than this.
+const ENTRY_FAR = 34;
+const ENTRY_PASS = 18;
+const ENTRY_DEEP = 34;
 // Flat out up the floor with it, a heave to beat the buzzer (feet a second).
 const HEAVE_RUN = 19;
 // And by where the shot came from: a break ends at the rim far more often
@@ -3541,10 +3547,25 @@ class Director {
 				spotOf[r] = S;
 			}
 		}
+		// A long way back with it - the inbound caught in the backcourt, a
+		// board at the other end - it is brought up and the entry made from up
+		// the floor, not thrown the length of it to a man still on his way
+		// there. A big who has it gets it to a guard first (see outlet), and
+		// the guard brings it up - straight into the set, if it starts in his
+		// hands.
+		let up: number | undefined;
+		if (
+			had !== undefined &&
+			had !== bh &&
+			dist(this.posOf(had), spotOf[f.ball]!) > ENTRY_FAR
+		) {
+			const g = this.handlerOf(team);
+			up = this.handles(had) || !run.roles.includes(g) ? had : g;
+		}
 		// The length of the floor to go, the rest run it in their lanes.
 		const lanes: { pid: number; to: Pt; j: number }[] = [];
 		run.roles.forEach((pid, r) => {
-			if (pid === had && had !== bh) {
+			if ((pid === had && had !== bh) || (pid === up && up !== had)) {
 				return;
 			}
 			const S = spotOf[r]!;
@@ -3581,7 +3602,45 @@ class Director {
 			// his own for the man with it, or puts him where it is coming to,
 			// that is where he goes once he gives it up.)
 			const came = this.posAt(bh, t);
-			ready = Math.max(ready, this.passTo(had, bh, t + 150));
+			const B = spotOf[f.ball]!;
+			let from = had;
+			let at = t + 150;
+			if (up !== undefined && up !== had) {
+				at = this.outlet(had, up, t, RUN, 9);
+				from = up;
+				ready = Math.max(ready, at);
+			}
+			if (up !== undefined) {
+				// Up the floor on the dribble: into the set if it is his, else
+				// to a pass away from the man it starts with - never from back
+				// over the hash.
+				let E = B;
+				if (from !== bh) {
+					const u = unitVec(B, this.posOf(from));
+					const rx = rimX(team);
+					E = clampPt({
+						x: B.x + u.x * ENTRY_PASS,
+						y: B.y + u.y * ENTRY_PASS,
+					});
+					if (Math.abs(E.x - rx) > ENTRY_DEEP) {
+						E.x = rx - dir * ENTRY_DEEP;
+					}
+				}
+				this.hold(from, Math.max(at, this.free.get(from) ?? 0), "dribble");
+				ready = Math.max(
+					ready,
+					this.go(from, E, at, DRIBBLE * 0.85, "dribble", dir),
+				);
+			}
+			if (from !== bh) {
+				ready = Math.max(ready, this.passTo(from, bh, at));
+				if (from !== had) {
+					const G = spotOf[run.roles.indexOf(from)];
+					if (G) {
+						ready = Math.max(ready, this.go(from, G, at, JOG, "run"));
+					}
+				}
+			}
 			const r = run.roles.indexOf(had);
 			const mine = r >= 0 ? spotOf[r] : undefined;
 			const D = mine && dist(mine, spotOf[f.ball]!) >= 4 ? mine : came;
@@ -13032,6 +13091,10 @@ class Director {
 			"shotFake",
 			"follow",
 		]);
+		// Going up for the ball himself - off the rim, a hand to it, after it
+		// on the floor - he is where it comes to: nobody moves him off it,
+		// not even a man holding his own ground.
+		const ON_BALL = new Set<AnimName>(["rebound", "board", "snatch", "pickup"]);
 		const tracks = [...this.tracks.values()];
 		// Read off in time order: where each list is up to (the last of it
 		// begun by t), never going back.
@@ -13296,15 +13359,20 @@ class Director {
 								continue;
 							}
 							// Who gives way.
-							const fixA =
-								A.pid === holder || (aa !== undefined && HOLDS.has(aa));
-							const fixB =
-								B.pid === holder || (ab !== undefined && HOLDS.has(ab));
+							const ground = (pid: number, act: AnimName | undefined) =>
+								act !== undefined && ON_BALL.has(act)
+									? 2
+									: pid === holder || (act !== undefined && HOLDS.has(act))
+										? 1
+										: 0;
+							const ga = ground(A.pid, aa);
+							const gb = ground(B.pid, ab);
+							const fixA = ga > 0;
 							const going = (i: number) => !together && !par && pv[i]! > MOVING;
 							let im: number;
 							let io: number;
-							if (fixA !== fixB) {
-								[im, io] = fixA ? [ib, ia] : [ia, ib];
+							if (ga !== gb) {
+								[im, io] = ga > gb ? [ib, ia] : [ia, ib];
 								if (going(im)) {
 									continue;
 								}
