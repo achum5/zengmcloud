@@ -1257,6 +1257,23 @@ const Court3D = ({
 			>
 				REPLAY
 			</div>
+			{/* Still being staged (see stageCourt.ts): not stuck. */}
+			{!timeline && events && events.length > 0 ? (
+				<div
+					className="spinner-border text-light"
+					role="status"
+					aria-label="Loading"
+					style={{
+						position: "absolute",
+						left: "50%",
+						top: "50%",
+						marginLeft: "-1rem",
+						marginTop: "-1rem",
+						opacity: 0.7,
+						pointerEvents: "none",
+					}}
+				/>
+			) : null}
 			{introCard ? <IntroCard info={introCard} callKey={intro.call} /> : null}
 			{intro.title ? <IntroTitle playoffs={!!timeline?.intro?.big} /> : null}
 			{intro.on && !follower ? (
