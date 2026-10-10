@@ -893,6 +893,8 @@ type Running = {
 		at: Pt;
 		step: number;
 		coverage: Coverage;
+		// When the first of them is planted in it.
+		set: number;
 	};
 };
 
@@ -3156,13 +3158,31 @@ class Director {
 					: gap < 18
 						? 2
 						: 3;
+		let from = Math.max(0, Math.min(upTo, play.steps.length) - keep + 1);
+		// A man going off a screen is seen going off it: the step that sets
+		// it is never cut from the one he uses it in - else he just turns and
+		// goes, off nothing anybody can see.
+		if (from > 0 && from <= upTo) {
+			const going = new Set(
+				(play.steps[from] ?? [])
+					.filter((a) => a.type === "dribble" || a.type === "move")
+					.map((a) => a.who),
+			);
+			if (
+				(play.steps[from - 1] ?? []).some(
+					(a) => a.type === "screen" && going.has(a.for),
+				)
+			) {
+				from -= 1;
+			}
+		}
 		const run: Running = {
 			play,
 			team,
 			roles: called.roles,
 			mirror: called.mirror,
 			jitter: new Map(),
-			from: Math.max(0, Math.min(upTo, play.steps.length) - keep + 1),
+			from,
 			...(gap === undefined ? {} : { gap }),
 			...end,
 		};
@@ -3796,6 +3816,7 @@ class Director {
 				const screeners = a.who.map((r) => run.roles[r]!);
 				const U = this.posOf(user);
 				let first: Pt | undefined;
+				let set = Infinity;
 				screeners.forEach((s, j) => {
 					const marked = this.at(run, a.at[j] ?? a.at[0]!);
 					let S: Pt;
@@ -3845,6 +3866,7 @@ class Director {
 						this.gesture(user, "wave", off, off + 900, s, 0.5);
 					}
 					planted.push({ pid: s, t: there, anim: "screen", look: U });
+					set = Math.min(set, there);
 					end = Math.max(end, there + 150);
 				});
 				run.screen = {
@@ -3854,6 +3876,7 @@ class Director {
 					at: first ?? rim,
 					step: k,
 					coverage: this.coverageFor(run, screeners[0]!, user, onBall, next),
+					set: Number.isFinite(set) ? set : t0,
 				};
 			} else if (a.type === "dribble") {
 				// Bringing it up, he goes as soon as he has it - not once the
@@ -4350,6 +4373,7 @@ class Director {
 			at: S,
 			step: k,
 			coverage: this.coverageFor(run, giver, recv, true, next),
+			set,
 		};
 		return Math.max(tx + 350, set);
 	}
@@ -5604,10 +5628,14 @@ class Director {
 		// With it in his own hands at the end of it - pulling up off the
 		// screen, say - he goes up as he gets there: he doesn't dribble in
 		// place while the others finish what the step had them doing.
+		// (Never before the screen he is coming off is there to come off:
+		// behind it, he pulls up as his man goes under it.)
 		if (this.holder === shooter) {
 			const mine = this.hasItFrom(shooter);
 			if (mine < t - 150) {
-				t = Math.max(mine + 80, t - 1500);
+				const screen =
+					run.screen?.user === shooter ? run.screen.set + SCREEN_USE : 0;
+				t = Math.min(t, Math.max(mine + 80, screen, t - 1500));
 			}
 		}
 		const dunk =
@@ -6766,13 +6794,25 @@ class Director {
 		const face = (P.x >= C.x ? 1 : -1) as 1 | -1;
 		// With the hand on the ball's side.
 		const left = this.leftToBall(C, shooter, P);
-		const contest = (t: number, peak: number) =>
+		const contest = (t: number, peak: number) => {
+			// (Not once he is up for the rebound off it.)
+			if (
+				this.track(d)?.acts.some(
+					(a) =>
+						(a.anim === "board" || a.anim === "rebound") &&
+						a.t1 > t &&
+						a.t0 < t + 680,
+				)
+			) {
+				return;
+			}
 			this.act(d, "contest", t, t + 680, {
 				face,
 				look: { ...P },
 				jump: [0.15, 0.9, peak],
 				...(left ? { mirror: true as const } : {}),
 			});
+		};
 		// The pass out to him, if that is how he got it.
 		const pass = this.ball.findLast(
 			(s) => s.kind === "fly" && "pid" in s.to && s.to.pid === shooter,
@@ -7708,6 +7748,14 @@ class Director {
 		);
 		if (shot) {
 			t = Math.max(t, shot.t0 + 20);
+		}
+		// (Off any late hand up at the shot he was getting to: he goes up for
+		// the ball instead.)
+		const tr = this.track(r);
+		if (tr) {
+			tr.acts = tr.acts.filter(
+				(a) => a.anim !== "contest" || a.t0 < t || a.t0 >= t + REBOUND_MS,
+			);
 		}
 		// Up for it, and once he lands, chinned - elbows out - a beat before
 		// he looks up the floor.
@@ -13105,7 +13153,13 @@ class Director {
 		// Going up for the ball himself - off the rim, a hand to it, after it
 		// on the floor - he is where it comes to: nobody moves him off it,
 		// not even a man holding his own ground.
-		const ON_BALL = new Set<AnimName>(["rebound", "board", "snatch", "pickup"]);
+		const ON_BALL = new Set<AnimName>([
+			"rebound",
+			"board",
+			"snatch",
+			"pickup",
+			"poke",
+		]);
 		// Set - in a screen, sealing in the post - he is a wall: whoever
 		// comes by him, his own man off it included, goes round.
 		const SET = new Set<AnimName>(["screen", "postUp"]);
@@ -13383,7 +13437,10 @@ class Director {
 							const ga = ground(A.pid, aa);
 							const gb = ground(B.pid, ab);
 							const fixA = ga > 0;
-							const going = (i: number) => !together && !par && pv[i]! > MOVING;
+							// (On the move, he is only going by: a teammate's shoulder,
+							// or - not in it with him - an opponent's.)
+							const going = (i: number) =>
+								(mates || !together) && !par && pv[i]! > MOVING;
 							let im: number;
 							let io: number;
 							if (ga !== gb) {
@@ -13605,6 +13662,17 @@ class Director {
 				}
 				if (Math.hypot(ux, uy) * k < 0.3) {
 					continue;
+				}
+				// Back where he was by the time he gets a hand to the ball - a
+				// poke at it, a board: where it comes to is where he is.
+				const hand = r.a.acts.find(
+					(a) => ON_BALL.has(a.anim) && a.t1 > n0 && a.t0 < n1 + RAMP,
+				);
+				if (hand) {
+					if (hand.t0 <= n0 + 400) {
+						continue;
+					}
+					n1 = Math.min(n1, hand.t0);
 				}
 				// Off him again as he goes on his way - and back over before
 				// that takes him into anybody he would have gone clear of.
@@ -14130,6 +14198,8 @@ const LIVE_PLAY = /^(fga|tov$|stl$|pfNonShooting$|pfBonus$)/;
 const LIVE_LEAD = 2600;
 const LIVE_MIN = 2200;
 const LIVE_MAX = 3400;
+// Off a screen, the soonest he goes up after it is set (ms).
+const SCREEN_USE = 450;
 // A jumper off a screen: back at real speed this long (ms) before the
 // screen is set - when it is set no further back than LIVE_SCREEN - and the
 // screener no farther from him than SCREEN_NEAR feet as it is.
