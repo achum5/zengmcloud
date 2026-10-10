@@ -590,7 +590,7 @@ const closeouts = (play: Play): PlayOption[] => {
 		};
 		const reads: [PlayZone, string, string][] = [
 			["rim", "layup", "rim"],
-			["post", "floater", `${side}_lane`],
+			["post", "floater", Math.abs(x) >= 18 ? `${side}_float` : `${side}_lane`],
 			[
 				"mid",
 				"pull_up",

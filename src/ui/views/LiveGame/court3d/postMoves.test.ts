@@ -6,6 +6,8 @@ const SHOTS = new Set([
 	"fade",
 	"hook",
 	"layup",
+	"powerLayup",
+	"floater",
 	"dunk",
 	"dunk1",
 	"tomahawk",
@@ -14,12 +16,14 @@ const SHOTS = new Set([
 
 describe("3D post play", () => {
 	test(
-		"a low-post shot is a post move off a back-down, not a short jumper",
+		"a low-post shot is a floater off a drive, a hook off a roll or a cut, or a move off a back-down - not a short jumper",
 		{ timeout: 120_000 },
 		() => {
 			const moves = new Map<string, number>();
 			let shots = 0;
 			let backedDown = 0;
+			let floated = 0;
+			let floatedBackedDown = 0;
 			for (const seed of ["p1", "p2"]) {
 				const { tl, events } = compile(seed, 160);
 				for (const b of tl.beats) {
@@ -33,22 +37,27 @@ describe("3D post play", () => {
 					);
 					shots += 1;
 					moves.set(a?.anim ?? "none", (moves.get(a?.anim ?? "none") ?? 0) + 1);
-					if (
-						tr.moves.some(
-							(m) =>
-								m.anim === "post" && m.t1 > b.preStart && m.t0 < b.actionStart,
-						)
-					) {
+					const backed = tr.moves.some(
+						(m) =>
+							m.anim === "post" && m.t1 > b.preStart && m.t0 < b.actionStart,
+					);
+					if (a?.anim === "floater") {
+						floated += 1;
+						floatedBackedDown += backed ? 1 : 0;
+					} else if (backed) {
 						backedDown += 1;
 					}
 				}
 			}
 			assert.isAbove(shots, 30);
 			assert.isAtMost((moves.get("shoot") ?? 0) / shots, 0.1);
-			for (const kind of ["hook", "fade", "layup"]) {
+			for (const kind of ["hook", "fade", "floater"]) {
 				assert.isAbove(moves.get(kind) ?? 0, 0, kind);
 			}
-			assert.isAbove(backedDown / shots, 0.5);
+			// A floater is off the drive, never a back-down; post-ups back down.
+			assert.isAbove(floated, 0);
+			assert.equal(floatedBackedDown, 0);
+			assert.isAbove(backedDown, 0);
 		},
 	);
 });

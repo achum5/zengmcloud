@@ -1020,6 +1020,7 @@ const SHOOTING = new Set([
 	"hook",
 	"layup",
 	"fingerRoll",
+	"floater",
 	"powerLayup",
 	"scoop",
 	"dunk",

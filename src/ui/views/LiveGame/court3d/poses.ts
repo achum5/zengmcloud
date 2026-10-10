@@ -1904,6 +1904,59 @@ export const ANIMS = {
 			...LAYUP_DOWN,
 		],
 	},
+	// The floater: up off one foot short of the big, the ball brought up in
+	// front of his face and pushed up soft and high over him with one hand -
+	// let go early, on the way up, the wrist flicked after it.
+	floater: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, LAYUP_START],
+			[
+				0.3,
+				pose({
+					...LAYUP_KNEE,
+					hipN: 72,
+					kneeN: 92,
+					shN: 112,
+					elN: 84,
+					shF: 92,
+					elF: 74,
+					lean: 4,
+					wrN: 44,
+				}),
+			],
+			[
+				0.5,
+				pose({
+					...LAYUP_KNEE,
+					hipN: 80,
+					kneeN: 98,
+					shN: 148,
+					elN: 30,
+					shF: 66,
+					elF: 62,
+					lean: 0,
+					wrN: 30,
+				}),
+			],
+			[
+				0.64,
+				pose({
+					...LAYUP_KNEE,
+					hipN: 78,
+					kneeN: 98,
+					shN: 160,
+					elN: 8,
+					shF: 50,
+					elF: 56,
+					lean: -2,
+					wrN: -34,
+				}),
+			],
+			...LAYUP_DOWN,
+		],
+	},
 	// Low and quick under a man coming over to block it: the ball swung up
 	// from his hip, underhand, and lifted up off the glass.
 	scoop: {
@@ -4377,6 +4430,7 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 	shotFake: "shot",
 	layup: "palm",
 	fingerRoll: "palm",
+	floater: "palm",
 	scoop: "palm",
 	dunk: "palm",
 	dunk1: "palm",

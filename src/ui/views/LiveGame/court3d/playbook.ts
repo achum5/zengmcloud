@@ -48,6 +48,9 @@ export const SPOTS: Record<string, readonly [number, number]> = {
 	R_mid_wing: [13.5, 8],
 	L_lane: [-4, 7],
 	R_lane: [4, 7],
+	// A floater off a drive from out wide: on his own side of the lane.
+	L_float: [-7, 6],
+	R_float: [7, 6],
 	rim: [0, 0],
 	L_hash: [-15, 31],
 	R_hash: [15, 31],

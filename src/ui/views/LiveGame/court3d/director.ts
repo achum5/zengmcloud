@@ -859,7 +859,8 @@ type ShotStyle =
 	| "stepBack"
 	| "fade"
 	| "post"
-	| "hook";
+	| "hook"
+	| "floater";
 
 type PostMove = "hook" | "fade" | "dropStep" | "upUnder";
 
@@ -2199,6 +2200,14 @@ class Director {
 				};
 		const back = this.inBackcourt(team, oob);
 		const spots = this.setSpots(team, 0);
+		// From the spot it goes in from, k feet into the floor.
+		const inward = baseline
+			? { x: at.x < 0 ? 1 : -1, y: 0 }
+			: { x: 0, y: far ? 1 : -1 };
+		const inside = (k: number): Pt => ({
+			x: oob.x + inward.x * k,
+			y: oob.y + inward.y * k,
+		});
 		const target = (pid: number, j: number): Pt =>
 			pid === inbounder
 				? oob
@@ -2232,7 +2241,17 @@ class Director {
 		};
 		const placeDef = (pid: number, j: number, from: number) => {
 			const man = off[j] ?? off[0]!;
-			const P = guardSpot(team, target(man, j), 0.25);
+			// The man on the inbounder: a step inside the line, shading the side
+			// the pass wants to go, hands up at it.
+			const P =
+				man === inbounder
+					? baseline
+						? {
+								x: inside(3.4).x,
+								y: oob.y + (oob.y > COURT_H / 2 ? -1.4 : 1.4),
+							}
+						: { x: inside(3.4).x + dir * 1.4, y: inside(3.4).y }
+					: guardSpot(team, target(man, j), 0.25);
 			const n = this.track(pid)?.moves.length ?? 0;
 			const d = dist(this.posOf(pid), P);
 			const arrive = this.go(
@@ -2243,8 +2262,39 @@ class Director {
 				d > 25 ? "run" : "walk",
 			);
 			this.marks(pid, man, n);
-			this.turn(pid, arrive, -dir as 1 | -1);
+			if (man === inbounder) {
+				this.lookAt(pid, arrive, oob);
+			} else {
+				this.turn(pid, arrive, -dir as 1 | -1);
+			}
 		};
+		// Whoever picked it up doesn't stand on the spot it goes in from, for
+		// the inbounder to walk into: a step aside and in, and he gives it up
+		// from there.
+		if (holding !== undefined) {
+			const hp = this.posOf(holding);
+			if (dist(hp, oob) < 5) {
+				const side = baseline
+					? hp.y >= oob.y
+						? 1
+						: -1
+					: hp.x >= oob.x
+						? 1
+						: -1;
+				const step = inside(3);
+				this.go(
+					holding,
+					clampPt(
+						baseline
+							? { x: step.x, y: step.y + side * 4.5 }
+							: { x: step.x + side * 4.5, y: step.y },
+					),
+					t + 60,
+					WALK * 1.4,
+					"walk",
+				);
+			}
+		}
 		off.forEach((pid, j) => {
 			if (pid !== holding) {
 				placeOff(pid, j, t + 80 + j * 70);
@@ -2274,8 +2324,39 @@ class Director {
 		const go = Math.max(ready, has) + 500;
 		this.hurry(t + 300, go - 200);
 		const tIn = this.passTo(inbounder, receiver, go);
+		const guard = def[off.indexOf(inbounder)];
+		if (guard !== undefined) {
+			const up = Math.max(this.free.get(guard) ?? 0, go - 900);
+			const down = Math.min(go + 150, tIn - 650);
+			if (down - up > 300) {
+				this.act(guard, "guard", up, down, { look: oob });
+			}
+		}
+		// In after it, up the line - wide of the man he gave it to, not
+		// through him.
+		const stepIn = this.go(
+			inbounder,
+			clampPt(
+				baseline
+					? {
+							x: oob.x + inward.x * 3.5,
+							y: oob.y + (oob.y > COURT_H / 2 ? 4 : -4),
+						}
+					: { x: oob.x + dir * 4, y: oob.y + inward.y * 3.6 },
+			),
+			tIn - 100,
+			JOG,
+			"run",
+		);
 		if (!back) {
-			this.settle(team, 0, tIn - 600, tIn + 500, [receiver]);
+			this.settle(team, 0, tIn - 600, tIn + 500, [receiver, inbounder]);
+			const j = off.indexOf(inbounder);
+			this.go(inbounder, spots[j] ?? spots[0]!, stepIn, JOG, "run");
+			this.turn(
+				inbounder,
+				Math.max(tIn + 500, this.free.get(inbounder) ?? 0),
+				dir,
+			);
 		}
 		this.motionTeam = team;
 		this.motion = 0;
@@ -4692,6 +4773,50 @@ class Director {
 		);
 	}
 
+	// Where he shoots from, given where he is: the spot the shot calls for
+	// nearest him - round the rim from where he stands, a step or so either
+	// way, in from the line for a pull-up, out to it for a three - not
+	// anywhere at all on the floor, for him to go across the whole of it to
+	// get there.
+	private shotSpotNear(team: Side, zone: Zone, from: Pt): Pt {
+		const depth = team === 0 ? from.x : COURT_W - from.x;
+		const dx = depth - RIM_INSET;
+		const dy = from.y - COURT_H / 2;
+		// In the corner, a three is a corner three: down the line where he is.
+		if (zone === "three" && depth < 14 && Math.abs(dy) > 17) {
+			return spot(
+				team,
+				Math.min(9, Math.max(2.5, depth + this.rand(-1.5, 1.5))),
+				dy > 0 ? this.rand(47.9, 48.4) : this.rand(1.6, 2.1),
+			);
+		}
+		const [r0, r1, th0, th1] =
+			zone === "atRim" || zone === "tipIn" || zone === "putBack"
+				? [2.4, 4.6, 30, 150]
+				: zone === "lowPost"
+					? [4.5, 9.5, 30, 150]
+					: zone === "midRange"
+						? [11, 19, 20, 160]
+						: [25.4, 27.2, 32, 148];
+		const rs = Math.hypot(dx, dy);
+		// His angle round the rim (90: straight out; 0 and 180, along the
+		// baseline) - right under it, either side.
+		const at =
+			rs > 2
+				? (Math.atan2(dx, dy) * 180) / Math.PI
+				: dy >= 0
+					? this.rand(40, 80)
+					: this.rand(100, 140);
+		const th =
+			(Math.min(th1, Math.max(th0, at + this.rand(-12, 12))) * Math.PI) / 180;
+		const r = Math.min(r1, Math.max(r0, rs + this.rand(-1.5, 1.5)));
+		return spot(
+			team,
+			Math.min(44, Math.max(1.5, RIM_INSET + r * Math.sin(th))),
+			Math.min(47, Math.max(3, COURT_H / 2 + r * Math.cos(th))),
+		);
+	}
+
 	// Off the dribble to his spot, with a move on the way.
 	private driveTo(
 		pid: number,
@@ -5031,6 +5156,54 @@ class Director {
 	// Their board: the defense that went to the glass for it gets back out
 	// of there to its men - not left standing under the rim while the ball
 	// is kicked back out.
+	// Off an offensive board the rest don't stand round the rim watching
+	// him. Whoever went in after it and isn't a big gets back out to an open
+	// spot on the arc, for the kick-out; a big right on top of him steps off
+	// to the dunker spot or the short corner, there for the dump-off. (Their
+	// men go with them - see findMen.)
+	private spreadOut(team: Side, rebounder: number, t: number) {
+		const rim = { x: rimX(team), y: COURT_H / 2 };
+		const ball = this.posOf(rebounder);
+		// Nearest the rim first: the most crowded in, the first out.
+		const men = this.slots(team)
+			.filter((p) => p !== rebounder)
+			.sort((a, b) => dist(this.posOf(a), rim) - dist(this.posOf(b), rim));
+		men.forEach((pid, j) => {
+			const P = this.posOf(pid);
+			const big = (this.rank.get(pid) ?? 4) >= 6;
+			if (big ? dist(P, ball) > 8 : dist(P, rim) > 17) {
+				return;
+			}
+			const others = this.slots(team)
+				.filter((x) => x !== pid)
+				.map((x) => this.posOf(x));
+			let best: Pt | undefined;
+			let score = -Infinity;
+			for (const name of big
+				? ["L_dunker", "R_dunker", "L_short_corner", "R_short_corner"]
+				: RESPACE_SPOTS) {
+				const S = this.spotFor(team, 1, name);
+				const room = Math.min(...others.map((m) => dist(m, S)));
+				const sc = Math.min(room, 16) - dist(P, S) * 0.8;
+				if (room >= (big ? 7 : 10) && sc > score) {
+					score = sc;
+					best = S;
+				}
+			}
+			if (!best) {
+				return;
+			}
+			const there = this.go(
+				pid,
+				best,
+				Math.max(t + 200 + j * 150, this.free.get(pid) ?? 0),
+				JOG + 3,
+				"run",
+			);
+			this.lookAt(pid, there, ball);
+		});
+	}
+
 	private findMen(team: Side, t: number) {
 		const ball = this.ballPoint();
 		this.slots(team).forEach((man, j) => {
@@ -5082,7 +5255,7 @@ class Director {
 		run: Running,
 		t: number,
 		plan: ShotPlan,
-	): { t: number; style: ShotStyle; lob?: number } {
+	): { t: number; style: ShotStyle; lob?: number; move?: PostMove } {
 		const o = run.option!;
 		const { play, team } = run;
 		const dir = attackDir(team);
@@ -5240,12 +5413,22 @@ class Director {
 			t = this.go(shooter, P, t + 40, 9, "back", dir);
 		}
 		t = Math.max(t, this.hold(shooter, t, "hold"));
-		if (o.zone === "post" && o.kind !== "fadeaway" && o.kind !== "hook") {
-			// Fed in the post: he backs his man down and goes to work.
+		if (o.kind === "floater") {
+			// Off the drive, still going: up on one foot and floated over the
+			// big - not a stop, his back to the rim and a post move.
+			return { t, style: "floater" };
+		}
+		if (o.zone === "post" && o.playType === "Postup") {
+			// Fed in the post: he backs his man down and goes to work - mostly
+			// with the move the set is run for.
 			if (dist(this.posOf(shooter), rim) > 5.5) {
 				t = this.backDown(shooter, t, dir);
 			}
-			return { t, style: "post" };
+			return {
+				t,
+				style: "post",
+				move: o.kind === "fadeaway" ? "fade" : "hook",
+			};
 		}
 		return {
 			t,
@@ -5323,7 +5506,9 @@ class Director {
 		// A putback goes back up on his side of the rim - from between it and
 		// where he got the ball - not across the lane through everybody.
 		const from = this.holder === shooter ? this.posOf(shooter) : undefined;
-		const P = putback
+		// (A jump shot's spot is worked out once he gets the ball - see
+		// shotSpotNear.)
+		let P: Pt | undefined = putback
 			? from && dist(from, rim) > 1
 				? (() => {
 						const u = unitVec(rim, from);
@@ -5340,7 +5525,11 @@ class Director {
 						x: rim.x - dir * this.rand(2, 4),
 						y: 25 + this.rand(-3, 3),
 					})
-			: this.shotSpot(team, zone, heaveSecs);
+			: heaveSecs !== undefined
+				? this.shotSpot(team, zone, heaveSecs)
+				: undefined;
+		const spotNow = (): Pt =>
+			(P ??= this.shotSpotNear(team, zone, this.posOf(shooter)));
 
 		// An alley-oop: "X cuts to the rim as Y lobs up the inbound pass".
 		const lob =
@@ -5353,6 +5542,8 @@ class Director {
 		// How he gets his own shot off.
 		let style: ShotStyle = "plain";
 		let lobber = lob;
+		// The post move the set is run for, if it is.
+		let called: PostMove | undefined;
 		if (lob !== undefined) {
 			t = this.setUpLob(team, shooter, lob, t);
 		} else if (heaveSecs !== undefined && !putback) {
@@ -5384,6 +5575,7 @@ class Director {
 				t = shot.t;
 				style = shot.style;
 				lobber = shot.lob;
+				called = shot.move;
 			} else {
 				let handler = this.holder ?? this.slots(team)[0]!;
 				// Who sets him up: the real assister on a make; on a miss, the handler
@@ -5412,6 +5604,7 @@ class Director {
 					// Fed from the wing on his side - not handed it from a step
 					// away by a man down in the lane with him.
 					const H = this.posOf(handler);
+					const P = spotNow();
 					if (
 						entry &&
 						(dist(H, P) < 11 || dist(H, rim) < 11) &&
@@ -5471,7 +5664,7 @@ class Director {
 												? "crossover"
 												: "plain"
 										: "plain";
-					t = this.driveTo(shooter, P, t, dir, style);
+					t = this.driveTo(shooter, spotNow(), t, dir, style);
 					t = Math.max(t, this.hold(shooter, t, "hold"));
 				}
 			}
@@ -5482,8 +5675,9 @@ class Director {
 			putback &&
 			lob === undefined &&
 			this.holder === shooter &&
+			P !== undefined &&
 			dist(this.posOf(shooter), P) > 6;
-		if (drove) {
+		if (drove && P) {
 			t = this.driveTo(shooter, P, t, dir, "plain");
 			t = Math.max(t, this.hold(shooter, t, "hold"));
 		}
@@ -5504,8 +5698,13 @@ class Director {
 		let postMove: PostMove | undefined;
 		if (style === "post") {
 			const r = this.rng();
-			postMove =
-				r < 0.36
+			postMove = called
+				? r < 0.7
+					? called
+					: r < 0.86
+						? "dropStep"
+						: "upUnder"
+				: r < 0.36
 					? "hook"
 					: r < 0.6
 						? "fade"
@@ -5771,11 +5970,16 @@ class Director {
 		} else {
 			// "Tips it in": a one-handed tap at the top of the jump.
 			const tip = zone === "tipIn" && plan.finish === "tip" && !drove;
+			// A floater: one hand, off the wrong foot on the move, let go on the
+			// way up and lofted high.
+			const floater = style === "floater" && !close && !tip;
 			let anim: AnimName = tip
 				? "block"
 				: close
 					? this.layupFor(shooter, gather, plan)
-					: "shoot";
+					: floater
+						? "floater"
+						: "shoot";
 			if (postMove) {
 				anim =
 					postMove === "hook"
@@ -5794,7 +5998,7 @@ class Director {
 			// just past halfway: about two-thirds of a second off the catch,
 			// the league's typical catch-and-shoot).
 			const jumper = anim === "shoot" || anim === "fade";
-			const dur = close ? 760 : zone === "lowPost" ? 900 : 1000;
+			const dur = close || floater ? 760 : zone === "lowPost" ? 900 : 1000;
 			if (jumper) {
 				landed = gather + dur;
 			}
@@ -5819,11 +6023,13 @@ class Director {
 				? 2.8
 				: close
 					? 2.4
-					: zone === "lowPost"
-						? 1.1
-						: zone === "midRange"
-							? 1.55
-							: 1.4;
+					: floater
+						? 1.9
+						: zone === "lowPost"
+							? 1.1
+							: zone === "midRange"
+								? 1.55
+								: 1.4;
 			const jump: [number, number, number] = jumper
 				? [JUMPER.off, JUMPER.land, peak]
 				: [0.24, 0.93, peak];
@@ -5832,12 +6038,12 @@ class Director {
 				look,
 				jump,
 			});
-			if (close) {
+			if (close || floater) {
 				// A last stride in: up from a couple of feet out, where it can
 				// go up and over the front of the rim or off the glass - not
-				// from under it.
-				const out = 2.4 + 0.7 * hash01(shooter, gather);
-				const step = Math.max(0, Math.min(2.2, len - out));
+				// from under it. (A floater, a shorter one, well short of it.)
+				const out = floater ? 5.5 : 2.4 + 0.7 * hash01(shooter, gather);
+				const step = Math.max(0, Math.min(floater ? 1.4 : 2.2, len - out));
 				this.carry(
 					shooter,
 					clampPt({
@@ -5850,7 +6056,13 @@ class Director {
 					faceRim,
 				);
 			}
-			const letGo = close ? 0.6 : jumper ? JUMPER.release : 0.55;
+			const letGo = close
+				? 0.6
+				: floater
+					? 0.5
+					: jumper
+						? JUMPER.release
+						: 0.55;
 			const release = gather + dur * letGo;
 			letGoAt = release;
 			// The ball on his fingers then, as high as his jump has him.
@@ -5858,7 +6070,7 @@ class Director {
 			const fingers = releaseAt(anim, letGo);
 			fingers.u += v > 0 && v < 1 ? 4 * jump[2] * v * (1 - v) : 0;
 			const d = dist(P1, rim);
-			const flight = close ? 300 : 620 + d * 22;
+			const flight = close ? 300 : floater ? 760 + d * 24 : 620 + d * 22;
 			if (plan.kind === "block" && plan.blocker !== undefined) {
 				const b = plan.blocker;
 				// He gets there and goes up to meet it - later in its flight, if
@@ -7684,6 +7896,7 @@ class Director {
 				this.phase = type === "drb" ? "loose" : "set";
 				if (type === "orb") {
 					this.motionTeam = team;
+					this.spreadOut(team, pid, T);
 					this.findMen(team, T);
 				}
 				break;
@@ -10195,6 +10408,7 @@ class Director {
 			"hook",
 			"layup",
 			"fingerRoll",
+			"floater",
 			"powerLayup",
 			"scoop",
 			"dunk",
@@ -12441,6 +12655,7 @@ class Director {
 			"hook",
 			"layup",
 			"fingerRoll",
+			"floater",
 			"powerLayup",
 			"scoop",
 			"catch",
