@@ -29,9 +29,10 @@ import {
 } from "./liveChat.ts";
 import { setupTriviaScores, teardownTriviaScores } from "./triviaScores.ts";
 import { getSyncEngine, setSyncEngine } from "./engineHolder.ts";
-import { setLiveWatchGate } from "./liveWatchGate.ts";
+import { setLiveResultNotice, setLiveWatchGate } from "./liveWatchGate.ts";
 import {
 	createFollowerHold,
+	createLiveResultWait,
 	decideFollowAction,
 	shouldServeFollowedPayload,
 } from "./liveBroadcastFollow.ts";
@@ -459,8 +460,15 @@ let followedBroadcast:
 			expiresAt: number;
 			over?: boolean;
 			left?: boolean;
+			// The broadcast is gone - the simmer left their game - while this
+			// screen was still part way through it (see handleLiveBroadcastMeta).
+			ended?: boolean;
 	  }
 	| undefined;
+// A watch that outlived its broadcast still ends some time, even if the page
+// never says so (a tab that died): this gives up on it.
+const ENDED_WATCH_CAP_MS = 30 * 60 * 1000;
+let endedWatchTimer: ReturnType<typeof setTimeout> | undefined;
 
 // A live sim of this device's OWN game is underway: requested, being simmed,
 // or playing back. The gid is only known once the game is written, so the
@@ -539,12 +547,34 @@ const unfreezeFollower = () => {
 	}
 };
 
+// A league-mate's live result held until its broadcast is watched here - see
+// createLiveResultWait.
+const isWatchingABroadcast = () =>
+	followedBroadcast !== undefined &&
+	!followedBroadcast.over &&
+	!followedBroadcast.left;
+const liveResultWait = createLiveResultWait({
+	take: () => {
+		followerHold.take();
+	},
+	release: () => {
+		releaseFollowerHold("live-result-unwatched");
+	},
+	isFollowing: (gid) => followedBroadcast?.gid === gid,
+	isWatching: isWatchingABroadcast,
+	log: syncDebugLog,
+});
+const settleAwaitedLiveResult = liveResultWait.settle;
+setLiveResultNotice(liveResultWait.notice);
+
 // The apply layer asks this before repainting: remote data landing while this
-// device is watching a broadcast must not spoil the game mid-playback.
+// device is watching a broadcast - or holding a league-mate's live result for
+// one - must not spoil the game mid-playback.
 setLiveWatchGate(
 	() =>
 		(followedBroadcast !== undefined && !followedBroadcast.over) ||
-		followerHold.isHeld(),
+		followerHold.isHeld() ||
+		liveResultWait.pending(),
 );
 
 // The follower's live game page declared the playback over (final play reached,
@@ -564,6 +594,7 @@ export const markFollowedBroadcastOver = (gid?: number) => {
 	}
 	followedBroadcast.over = true;
 	followerHold.markOver();
+	settleAwaitedLiveResult(gid);
 };
 
 // The followed broadcast's game payload, kept for the liveGame view to serve on
@@ -938,6 +969,32 @@ const handleLiveBroadcastMeta = async (
 		roomBroadcastMeta = undefined;
 		setWatchablePill(undefined);
 		if (followedBroadcast || followerHold.isHeld()) {
+			// Still part way through it on this screen. The simmer leaving their
+			// game does not end it here: the page plays on at its own pace, and
+			// the result stays hidden until it reaches the final - or this
+			// device walks out of it, which is the one thing that may show it.
+			const watching = followedBroadcast;
+			if (watching && !watching.over && !watching.left) {
+				if (!watching.ended) {
+					watching.ended = true;
+					followedBroadcastPayload = undefined;
+					syncDebugLog("live:broadcast-ended-mid-watch", {
+						gid: watching.gid,
+					});
+					// Off the simmer's cursor: the page's own controls take over.
+					void toUI("updateLocal", [{ mpLiveBroadcast: undefined }]);
+					clearTimeout(endedWatchTimer);
+					endedWatchTimer = setTimeout(() => {
+						if (followedBroadcast === watching && !watching.over) {
+							watching.over = true;
+							settleAwaitedLiveResult(watching.gid);
+							releaseFollowerHold("watch-outlived-broadcast");
+						}
+					}, ENDED_WATCH_CAP_MS);
+				}
+				return;
+			}
+			clearTimeout(endedWatchTimer);
 			followedBroadcast = undefined;
 			followedBroadcastPayload = undefined;
 			releaseFollowerHold("broadcast-ended");
@@ -992,6 +1049,7 @@ export const leaveLiveBroadcast = (gid?: number) => {
 	}
 	followedBroadcast.left = true;
 	followedBroadcast.over = true;
+	settleAwaitedLiveResult(gid);
 	releaseFollowerHold("left");
 	if (
 		roomBroadcastMeta &&

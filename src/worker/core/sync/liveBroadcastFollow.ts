@@ -183,3 +183,98 @@ export const createFollowerHold = ({
 		},
 	};
 };
+
+// A LEAGUE-MATE'S LIVE GAME, ITS RESULT HERE BEFORE ITS BROADCAST.
+//
+// The result of a live-simmed game syncs in on its own, and usually lands
+// well ahead of the broadcast that pulls this device in to watch it - which
+// goes live only once the whole play-by-play has uploaded. Nothing was held in
+// that gap, so the score bar, the ticker and the status line repainted with
+// the final before the game had started on this screen. The apply layer now
+// says so the moment one arrives (noticeLiveResults), and this holds the paint
+// just as joining its broadcast would, and waits for that broadcast. The hold
+// ends the way any watch does - the game going final on this screen, or
+// walking out of it (settle) - or, if no broadcast ever gets this device
+// watching it (another was already live in the room, the join failed, its own
+// sim was playing), when waiting for one runs out: there is nothing here to
+// watch it on.
+//
+// Kept per game, not as one switch: a result arriving while another game is
+// being watched must not be released by THAT game's final buzzer.
+export const LIVE_RESULT_WAIT_MS = 90_000;
+const MAX_REMEMBERED_LIVE_RESULTS = 16;
+
+export const createLiveResultWait = ({
+	take,
+	release,
+	isFollowing,
+	isWatching,
+	log,
+	waitMs = LIVE_RESULT_WAIT_MS,
+	schedule = (fn: () => void, ms: number) => setTimeout(fn, ms),
+	cancel = (timer: unknown) => {
+		clearTimeout(timer as ReturnType<typeof setTimeout>);
+	},
+}: {
+	// Hold / let go the paint (the follower hold).
+	take: () => void;
+	release: () => void;
+	// This device is already inside (or has walked out of) the broadcast of
+	// this game.
+	isFollowing: (gid: number) => boolean;
+	// This device is watching some broadcast right now.
+	isWatching: () => boolean;
+	log?: (event: string, data: Record<string, unknown>) => void;
+	waitMs?: number;
+	schedule?: (fn: () => void, ms: number) => unknown;
+	cancel?: (timer: unknown) => void;
+}) => {
+	const awaited = new Map<number, unknown>();
+	// The ones already held for (gid -> liveAt), so the same result arriving
+	// twice - a re-delivered changeset - never holds it a second time.
+	const seen = new Map<number, number>();
+	const settle = (gid: number) => {
+		if (awaited.has(gid)) {
+			cancel(awaited.get(gid));
+			awaited.delete(gid);
+		}
+	};
+	return {
+		// Holding a result for a game not yet watched here.
+		pending: () => awaited.size > 0,
+		notice: (gid: number, liveAt: number) => {
+			if (seen.get(gid) === liveAt) {
+				return;
+			}
+			seen.delete(gid);
+			seen.set(gid, liveAt);
+			while (seen.size > MAX_REMEMBERED_LIVE_RESULTS) {
+				const oldest = seen.keys().next().value;
+				if (oldest === undefined) {
+					break;
+				}
+				seen.delete(oldest);
+			}
+			if (isFollowing(gid)) {
+				return;
+			}
+			log?.("live:result-held", { gid });
+			take();
+			settle(gid);
+			awaited.set(
+				gid,
+				schedule(() => {
+					awaited.delete(gid);
+					if (awaited.size > 0 || isWatching()) {
+						return;
+					}
+					log?.("live:result-hold-expired", { gid });
+					release();
+				}, waitMs),
+			);
+		},
+		// This game has been watched to the end here, or walked out of: its
+		// result may show.
+		settle,
+	};
+};

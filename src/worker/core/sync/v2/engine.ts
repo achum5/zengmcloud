@@ -24,6 +24,7 @@ import { syncDebugLog } from "../debugLog.ts";
 import {
 	beginCoalescedRefresh,
 	endCoalescedRefresh,
+	noticeLiveResults,
 	refreshAfterApply,
 	summarizeChangesetForRefresh,
 	type Changeset,
@@ -1749,6 +1750,9 @@ export class SyncEngineV2 {
 					redirect: false,
 				});
 			} else {
+				// A league-mate's live game among these: hold the paint before
+				// the refresh below can show its result.
+				await noticeLiveResults(changeset);
 				await refreshAfterApply({
 					...summarizeChangesetForRefresh(changeset),
 					refreshUI: true,

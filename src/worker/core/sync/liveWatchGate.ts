@@ -11,3 +11,18 @@ export const setLiveWatchGate = (fn: (() => boolean) | undefined) => {
 };
 
 export const isWatchingLiveBroadcast = (): boolean => gate?.() ?? false;
+
+// A league-mate's live-simmed result is landing on this device (see
+// noticeLiveResults): connect.ts decides whether to hold the paint for it the
+// way a watcher would. Wired the same way, for the same import-cycle reason.
+let liveResultNotice: ((gid: number, liveAt: number) => void) | undefined;
+
+export const setLiveResultNotice = (
+	fn: ((gid: number, liveAt: number) => void) | undefined,
+) => {
+	liveResultNotice = fn;
+};
+
+export const noticeLiveResult = (gid: number, liveAt: number) => {
+	liveResultNotice?.(gid, liveAt);
+};

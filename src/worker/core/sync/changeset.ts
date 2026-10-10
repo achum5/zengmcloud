@@ -18,7 +18,7 @@ import { getGlobalSettings } from "../../util/getGlobalSettings.ts";
 import { checkApplyGuard } from "./applyGuard.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import { getSyncEngine } from "./engineHolder.ts";
-import { isWatchingLiveBroadcast } from "./liveWatchGate.ts";
+import { isWatchingLiveBroadcast, noticeLiveResult } from "./liveWatchGate.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { initUILocalGames } from "../../util/initUILocalGames.ts";
 import {
@@ -1111,6 +1111,50 @@ export const repairAggregatesFromGames = async (
 	}
 };
 
+// A LEAGUE-MATE'S LIVE SIM, ARRIVING. Its result is meant to be watched, not
+// read: the device that simmed it stamps the game's replay row live (liveAt -
+// see play.ts) and that row travels with the result. The result usually lands
+// here well AHEAD of the broadcast that pulls this device in to watch it - the
+// broadcast goes live only once its whole play-by-play has uploaded - and a
+// result landing with nothing yet held repainted the score bar, the ticker and
+// the status line with the final before the game had even started on this
+// screen. So the moment one arrives, before anything repaints, connect.ts is
+// told and holds the paint as a watcher would.
+//
+// Only the result's own arrival (or the marker landing just ahead of it)
+// counts: the same row touched again later - the chat saved into it at the
+// final buzzer - must not freeze the header over a game long since over here.
+// Nor does a stale one, re-synced long after (a catch-up, a restore).
+const LIVE_RESULT_FRESH_MS = 30 * 60 * 1000;
+export const noticeLiveResults = async (changeset: Changeset) => {
+	for (const change of changeset.changes) {
+		if (change.store !== "liveGamePlayByPlay" || change.type !== "put") {
+			continue;
+		}
+		const gid = change.value?.gid;
+		const liveAt = change.value?.liveAt;
+		if (typeof gid !== "number" || typeof liveAt !== "number") {
+			continue;
+		}
+		if (Date.now() - liveAt > LIVE_RESULT_FRESH_MS) {
+			continue;
+		}
+		const carriesResult = changeset.changes.some(
+			(c) => c.store === "games" && c.type === "put" && c.id === gid,
+		);
+		if (!carriesResult) {
+			try {
+				if (await idb.cache.games.get(gid)) {
+					continue;
+				}
+			} catch {
+				continue;
+			}
+		}
+		noticeLiveResult(gid, liveAt);
+	}
+};
+
 // A remote-apply summary computed from a changeset's records: which refreshes
 // the receiving device owes. Same classification applyChangeset derives while
 // it applies, for callers (v2) that apply records elsewhere.
@@ -1189,6 +1233,9 @@ export const applyChangeset = async (
 	// because this is the one check made against the DATA rather than against
 	// the bookkeeping that failed.
 	await guardDayContiguity(changeset);
+
+	// A league-mate's live game among these: hold the paint before it lands.
+	await noticeLiveResults(changeset);
 
 	let touchedGameAttributes = false;
 	let touchedPhase = false;

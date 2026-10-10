@@ -268,6 +268,23 @@ const play = async (
 		}
 	};
 
+	// When this call's live sim was simmed (see LiveGamePlayByPlay.liveAt).
+	const liveAt = Date.now();
+	// A rewatchable replay of a game - stamped live if it is being watched.
+	const saveReplay = async (result: GameResults, live?: number) => {
+		const tids = [result.team[0].id, result.team[1].id];
+		const pids = [...result.team[0].player, ...result.team[1].player].map(
+			(p: { id: number }) => p.id,
+		);
+		await idb.cache.liveGamePlayByPlay.put({
+			gid: result.gid,
+			season: g.get("season"),
+			playByPlay: result.playByPlay,
+			looks: await takeReplayLooks(tids, pids),
+			...(live === undefined ? {} : { liveAt: live }),
+		});
+	};
+
 	// Saves a vector of results objects for a day, as is output from cbSimGames.
 	// simmedDay identifies the schedule day for the once-per-day gate below.
 	const cbSaveResults = async (
@@ -284,6 +301,21 @@ const play = async (
 			// everything it exists to hide (phase text, ready-up, the score ticker).
 			local.liveSimGid = gidOneGame;
 			await toUI("updateLocal", [{ liveGameInProgress: true }]);
+
+			// The replay row, stamped live, goes in BEFORE the result: it is how
+			// every other device in the room knows this result is to be watched,
+			// not read (see noticeLiveResults). Its broadcast reaches them only
+			// once the whole play-by-play has uploaded, the result's own sync
+			// usually well before that - and should anything drain the tracker
+			// partway through this, the marker is already out ahead of the score.
+			const liveResult = results.find((result) => result.gid === gidOneGame);
+			if (liveResult?.playByPlay !== undefined) {
+				try {
+					await saveReplay(liveResult, liveAt);
+				} catch (error) {
+					console.error("Failed to save game play-by-play", error);
+				}
+			}
 
 			// Run this before writing player stats
 			await setLiveSimRatingsStatsPopoverPlayers(results);
@@ -593,17 +625,12 @@ const play = async (
 				if (!wantedBeforeSim && !dramatic) {
 					continue;
 				}
+				// (The live game's went in first - see above.)
+				if (result.gid === gidOneGame && playByPlay) {
+					continue;
+				}
 				try {
-					const tids = [result.team[0].id, result.team[1].id];
-					const pids = [...result.team[0].player, ...result.team[1].player].map(
-						(p: { id: number }) => p.id,
-					);
-					await idb.cache.liveGamePlayByPlay.put({
-						gid: result.gid,
-						season: g.get("season"),
-						playByPlay: result.playByPlay,
-						looks: await takeReplayLooks(tids, pids),
-					});
+					await saveReplay(result);
 				} catch (error) {
 					console.error("Failed to save game play-by-play", error);
 				}

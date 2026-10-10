@@ -558,6 +558,10 @@ export type LiveGamePlayByPlay = {
 	// How everyone looked that night (see ReplayLooks). Missing on replays
 	// saved before it was kept.
 	looks?: ReplayLooks;
+	// When it was simmed LIVE (ms, the simming device's clock): its result is
+	// meant to be watched before it is read, on every device in the room (see
+	// noticeLiveResults). Missing on games that were not watched live.
+	liveAt?: number;
 };
 
 // HOW A GAME LOOKED THE NIGHT IT WAS PLAYED.
