@@ -85,6 +85,10 @@ export type SpriteCache = {
 	kept: Map<string, Kept>;
 	ids: WeakMap<Look, number>;
 	next: number;
+	// With time to spare on the device, his poses in finer steps - twice as
+	// many frames, turns and steps of a blend - so he moves the more smoothly
+	// (Court3D decides, by how long a frame takes to draw).
+	fine?: boolean;
 };
 export const makeSpriteCache = (): SpriteCache => ({
 	kept: new Map(),
@@ -97,31 +101,65 @@ const CYCLE_FRAMES = 12;
 const DRIBBLE_FRAMES = 8;
 const ACT_FRAMES = 20;
 const TURNS = 24;
+// How many times finer, with time to spare.
+const FINE = 2;
+
+type Steps = {
+	cycle: number;
+	dribble: number;
+	act: number;
+	turns: number;
+	// A blend (or the hands closing on the ball) in so many steps, an arm
+	// saying something in so many, and his hips' turn to so many degrees.
+	blend: number;
+	arm: number;
+	legs: number;
+};
+const COARSE_STEPS: Steps = {
+	cycle: CYCLE_FRAMES,
+	dribble: DRIBBLE_FRAMES,
+	act: ACT_FRAMES,
+	turns: TURNS,
+	blend: 4,
+	arm: 3,
+	legs: 8,
+};
+const FINE_STEPS: Steps = {
+	cycle: CYCLE_FRAMES * FINE,
+	dribble: DRIBBLE_FRAMES * FINE,
+	act: ACT_FRAMES * FINE,
+	turns: TURNS * FINE,
+	blend: 4 * FINE,
+	arm: 3 * FINE,
+	legs: 8 / FINE,
+};
 
 // A move's frame: an act stepped through its frames (a long one - a dunk -
 // gets more, so its quickest part, the slam, still shows), a cycle or a loop
 // through its dozen.
-const frameOf = (anim: AnimName, phase: number): number => {
+const frameOf = (anim: AnimName, phase: number, k: Steps): number => {
 	const a = ANIMS[anim];
-	const frames = Math.max(ACT_FRAMES, a.n * 2);
+	const frames = Math.max(k.act, a.n * 2 * (k.act / ACT_FRAMES));
 	return a.kind === "act"
 		? Math.round(Math.min(1, Math.max(0, phase)) * (frames - 1)) / (frames - 1)
-		: Math.floor((((phase % 1) + 1) % 1) * CYCLE_FRAMES) / CYCLE_FRAMES;
+		: Math.floor((((phase % 1) + 1) % 1) * k.cycle) / k.cycle;
 };
-const dribbleFrame = (d: number | undefined) =>
-	d === undefined ? undefined : Math.floor(d * DRIBBLE_FRAMES) / DRIBBLE_FRAMES;
+const dribbleFrame = (d: number | undefined, k: Steps) =>
+	d === undefined ? undefined : Math.floor(d * k.dribble) / k.dribble;
 // Hands coming up for a pass, in a few steps.
-const targetFrame = (t: number | undefined) =>
-	t ? Math.ceil(t * 3) / 3 : undefined;
+const targetFrame = (t: number | undefined, k: Steps) =>
+	t ? Math.ceil(t * k.arm) / k.arm : undefined;
 
 // An arm saying something, in steps: its angles to a few degrees, how far
-// into it in thirds.
-const armSteps = (a: PlayerState["arm"]): PlayerState["arm"] => {
+// into it in thirds (or finer).
+const armSteps = (a: PlayerState["arm"], k: Steps): PlayerState["arm"] => {
 	if (!a) {
 		return undefined;
 	}
-	const w = a.w > 0.8 ? 1 : a.w > 0.45 ? 2 / 3 : a.w > 0.12 ? 1 / 3 : 0;
-	const by = (v: number, k: number) => Math.round(v / k) * k;
+	const w = a.w > 0.12 ? Math.max(1, Math.round(a.w * k.arm)) / k.arm : 0;
+	const f = k.arm / 3;
+	const by = (v: number, step: number) =>
+		Math.round(v / (step / f)) * (step / f);
 	return w > 0
 		? {
 				hand: a.hand,
@@ -137,45 +175,53 @@ const armSteps = (a: PlayerState["arm"]): PlayerState["arm"] => {
 };
 
 // A move he is easing out of, in steps (and the one it was easing out of).
-const blendStep = (v: number) =>
-	v > 0.12 ? Math.min(3, Math.max(1, Math.round(v * 4))) / 4 : 0;
-const stepBlend = (f: Blend, w: number): Blend => {
+const blendStep = (v: number, k: Steps) =>
+	v > 0.12
+		? Math.min(k.blend - 1, Math.max(1, Math.round(v * k.blend))) / k.blend
+		: 0;
+const stepBlend = (f: Blend, w: number, k: Steps): Blend => {
 	const g = f.from;
-	const gw = g ? blendStep(g.w) : 0;
+	const gw = g ? blendStep(g.w, k) : 0;
 	return {
 		anim: f.anim,
-		phase: frameOf(f.anim, f.phase),
-		dribble: dribbleFrame(f.dribble),
+		phase: frameOf(f.anim, f.phase, k),
+		dribble: dribbleFrame(f.dribble, k),
 		dribbleHand: f.dribbleHand,
-		target: targetFrame(f.target),
+		target: targetFrame(f.target, k),
 		...(f.mirror ? { mirror: true } : {}),
 		w,
-		...(f.arms === undefined ? {} : { arms: blendStep(f.arms) }),
-		...(f.legs === undefined ? {} : { legs: Math.round(f.legs / 8) * 8 }),
-		...(g && gw > 0 ? { from: stepBlend(g, gw) } : {}),
+		...(f.arms === undefined ? {} : { arms: blendStep(f.arms, k) }),
+		...(f.legs === undefined
+			? {}
+			: { legs: Math.round(f.legs / k.legs) * k.legs }),
+		...(g && gw > 0 ? { from: stepBlend(g, gw, k) } : {}),
 	};
 };
 const blendKey = (f: Blend): string =>
 	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.legs ?? ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
 
 // The pose he is drawn in: his own, stepped to the sprite's frames and turns
-// - and, easing out of his last move, three steps of that.
-const stepped = (st: PlayerState) => {
-	const turn = Math.round(st.yaw / ((Math.PI * 2) / TURNS));
+// - and, easing out of his last move, a few steps of that.
+const stepped = (st: PlayerState, k: Steps) => {
+	const turn = Math.round(st.yaw / ((Math.PI * 2) / k.turns));
 	const f = st.from;
-	const w = f ? blendStep(f.w) : 0;
+	const w = f ? blendStep(f.w, k) : 0;
 	return {
-		arm: armSteps(st.arm),
+		arm: armSteps(st.arm, k),
 		// His hips' turn to a few degrees; his hands closing on the ball in
 		// steps.
-		legs: st.legs === undefined ? undefined : Math.round(st.legs / 8) * 8,
-		grip: st.grip === undefined ? undefined : Math.floor(st.grip * 4) / 4,
-		phase: frameOf(st.anim, st.phase),
-		turn: ((turn % TURNS) + TURNS) % TURNS,
-		yaw: (turn * Math.PI * 2) / TURNS,
-		dribble: dribbleFrame(st.dribble),
-		target: targetFrame(st.target),
-		from: f && w > 0 ? stepBlend(f, w) : undefined,
+		legs:
+			st.legs === undefined ? undefined : Math.round(st.legs / k.legs) * k.legs,
+		grip:
+			st.grip === undefined
+				? undefined
+				: Math.floor(st.grip * k.blend) / k.blend,
+		phase: frameOf(st.anim, st.phase, k),
+		turn: ((turn % k.turns) + k.turns) % k.turns,
+		yaw: (turn * Math.PI * 2) / k.turns,
+		dribble: dribbleFrame(st.dribble, k),
+		target: targetFrame(st.target, k),
+		from: f && w > 0 ? stepBlend(f, w, k) : undefined,
 	};
 };
 
@@ -204,7 +250,8 @@ export const drawSprite = (
 	if (right < 0 || left > cam.viewW || lower < 0 || upper > cam.viewH) {
 		return;
 	}
-	const pose = stepped(st);
+	const fine = cache?.fine === true;
+	const pose = stepped(st, fine ? FINE_STEPS : COARSE_STEPS);
 	let key: string | undefined;
 	if (cache) {
 		let id = cache.ids.get(look);
@@ -214,7 +261,7 @@ export const drawSprite = (
 		}
 		const f = pose.from;
 		const a = pose.arm;
-		key = `${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}|${pose.turn}|${Math.round(
+		key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}|${pose.turn}|${Math.round(
 			Math.log(k) / Math.log(1.04),
 		)}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}|${pose.target ?? ""}${
 			f ? `|${blendKey(f)}` : ""

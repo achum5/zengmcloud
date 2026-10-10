@@ -103,6 +103,13 @@ const LINEUP_INTROS = false;
 // How long the play-by-play may disagree with the roster before the court
 // gives up on the game (ms).
 const ROSTER_WAIT = 5000;
+// Drawing a frame in under this long (ms, smoothed), there is time for his
+// poses in finer steps (see sprite.ts); over that, back to the usual ones -
+// and not tried again for a while.
+const FINE_ON_MS = 5;
+const FINE_OFF_MS = 11;
+const FINE_RETRY_MS = 20_000;
+const FINE_SETTLE_MS = 3000;
 
 // A player whose face is a photo is drawn in this, head to toe.
 const SILHOUETTE = "#101012";
@@ -877,6 +884,10 @@ const Court3D = ({
 		// without smoothing (see the canvas's style).
 		const scratch = makeScratch();
 		let sprites = makeSpriteCache();
+		// When finer poses were last taken up, and last given up for want of
+		// time.
+		let fineOnAt = -Infinity;
+		let fineOffAt = -Infinity;
 		// How fine the picture is: as fine as this device can draw it.
 		const res = makeResolution(performance.now() + 1500);
 		const lookOf = (pid: number) => looks.current.get(pid)!;
@@ -1132,6 +1143,28 @@ const Court3D = ({
 			if (adjust(res, h * dpr, dt, performance.now() - drawStart, now)) {
 				// Sprites drawn for the old size are no use at the new one.
 				sprites = makeSpriteCache();
+			}
+			// Time to spare, at the finest picture: poses in finer steps - and
+			// back to the usual ones well before that costs a size.
+			const spare = res.drawMs;
+			if (res.coarser > 0 || spare === undefined) {
+				sprites.fine = false;
+			} else if (
+				!sprites.fine &&
+				spare < FINE_ON_MS &&
+				now - fineOffAt > FINE_RETRY_MS
+			) {
+				sprites.fine = true;
+				fineOnAt = now;
+			} else if (
+				sprites.fine &&
+				spare > FINE_OFF_MS &&
+				// (Not over the first few seconds of them: every pose is new then,
+				// and drawn for the first time.)
+				now - fineOnAt > FINE_SETTLE_MS
+			) {
+				sprites.fine = false;
+				fineOffAt = now;
 			}
 
 			if (clockText !== s.clockText && clockRef.current) {
