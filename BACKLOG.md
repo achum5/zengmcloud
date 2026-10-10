@@ -232,7 +232,13 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   moves - feet planted while down, no skating, heel kick, knee drive, arms
   against the legs, hips turned toward where he goes when he looks elsewhere;
   the dribble worked at his side away from his man, pushed out ahead on a
-  drive.)
+  drive. Later: defensive stance, slides and closeouts with one hand up at
+  the ball and the other low in the lane - no more arms held out flat; a
+  contest's hand stays up from the closeout; and a frame-by-frame audit of
+  every joint through whole games, with every jump it found smoothed out -
+  arm gestures easing in and out, hands closing on the ball after a catch,
+  the on-ball defender's hands trading smoothly, strides and hips carried
+  through run to run - about five times fewer pops.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like

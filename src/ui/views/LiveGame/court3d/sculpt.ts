@@ -9,7 +9,13 @@ import {
 	artWrap,
 	type ArtWrap,
 } from "./kitArt.ts";
-import { bodyPoint, onRim, poseOf, type PlayerState } from "./evaluate.ts";
+import {
+	bodyPoint,
+	gripped,
+	onRim,
+	poseOf,
+	type PlayerState,
+} from "./evaluate.ts";
 import {
 	BALL_ORANGE,
 	BALL_SEAM,
@@ -505,7 +511,9 @@ const build = (
 ): Built => {
 	const q = poseOf(st);
 	const held = st.holding ? holdBall(body, q, st.anim) : undefined;
-	const sk = held ? held.sk : onRim(skeleton(body, q), st, body);
+	const sk = held
+		? gripped(held.sk, st, body, q)
+		: onRim(skeleton(body, q), st, body);
 	const P = (v: V3) => {
 		const p = project(cam, bodyPoint(st, v));
 		return {

@@ -143,18 +143,23 @@ const P = {
 		abF: 16,
 		wide: 0.36,
 	}),
+	// Down in a defensive stance: one hand up at the ball, chest high and
+	// bent, the other low and out to the side in the lane - not both arms
+	// held out flat like a scarecrow.
 	stance: pose({
 		hipN: 30,
 		kneeN: 62,
 		hipF: 36,
 		kneeF: 66,
-		shN: 52,
-		elN: 48,
-		shF: 46,
-		elF: 52,
+		shN: 22,
+		elN: 40,
+		abN: 40,
+		wrN: -6,
+		shF: 58,
+		elF: 56,
+		abF: 18,
+		wrF: 16,
 		lean: 18,
-		abN: 44,
-		abF: 44,
 		wide: 0.85,
 	}),
 	// The ball in both hands, live: knees bent and weight forward, ready
@@ -834,40 +839,44 @@ const stride = (ph: number, mode: RunMode): Pose => {
 		// a little as they spread, so his hips stay level the whole way.
 		const spread = ph < 0.5 ? ph * 2 : 2 - ph * 2;
 		const knee = 74 - 21 * spread * spread;
-		// His arms out wide to take up the lane, opening a little more with
-		// each push.
+		// His hands active: one up at the ball, the other low and out in the
+		// lane, both working a little with each push.
 		return pose({
 			hipN: 30,
 			hipF: 34,
 			kneeN: knee,
 			kneeF: knee + 2,
 			lean: 18,
-			shN: 42 + 4 * spread,
-			elN: 52,
-			shF: 38 + 4 * spread,
-			elF: 56,
-			abN: 50 + 10 * spread,
-			abF: 50 + 10 * spread,
+			shN: 22 + 6 * spread,
+			elN: 38,
+			abN: 40 + 6 * spread,
+			wrN: -6,
+			shF: 54 + 6 * spread,
+			elF: 54,
+			abF: 18 + 4 * spread,
+			wrF: 14,
 			wide: SLIDE_NARROW + (SLIDE_STRIDE / 2) * spread,
 		});
 	}
 	if (mode === "closeout") {
-		// Closing out on a shooter: short, choppy steps to break down, his left
-		// hand high at the shot - face to face, the hand on the ball's side -
-		// and the right out at the drive.
+		// Closing out on a shooter: short, choppy steps to break down, sat
+		// down in his legs, his left hand high at the shot - face to face, the
+		// hand on the ball's side, reaching with each chop - and the right
+		// down at his hip and out to the side, a hand on the drive.
 		return pose({
-			hipN: 18 + 12 * a,
-			hipF: 26 - 12 * a,
-			kneeN: 46 + 14 * Math.max(0, c),
-			kneeF: 48 + 14 * Math.max(0, -c),
-			lean: 12,
-			shN: 50,
-			elN: 34,
+			hipN: 24 + 10 * a,
+			hipF: 30 - 10 * a,
+			kneeN: 54 + 12 * Math.max(0, c),
+			kneeF: 56 + 12 * Math.max(0, -c),
+			lean: 16,
+			shN: 14 + 5 * a,
+			elN: 30,
 			abN: 50,
-			shF: 156,
-			elF: 16,
-			abF: 18,
-			wide: 0.55,
+			wrN: -12,
+			shF: 152 + 4 * c,
+			elF: 18,
+			abF: 16,
+			wide: 0.6,
 		});
 	}
 	if (isGait(mode)) {
@@ -920,19 +929,20 @@ const stride = (ph: number, mode: RunMode): Pose => {
 		}
 		return q;
 	}
-	// A defensive slide / backpedal: low, short steps, hands active.
+	// A defensive slide / backpedal: low, short steps, hands active - one
+	// up at the ball, the other low and out.
 	return pose({
 		hipN: 10 - 18 * a,
 		hipF: 30 + 18 * a,
 		kneeN: 50 + 16 * Math.max(0, -c),
 		kneeF: 54 + 16 * Math.max(0, c),
 		lean: 18,
-		shN: 64,
-		elN: 22,
-		shF: 46,
-		elF: 30,
-		abN: 34,
-		abF: 34,
+		shN: 26 + 4 * a,
+		elN: 40,
+		abN: 36,
+		shF: 56 - 4 * a,
+		elF: 52,
+		abF: 18,
 		wide: 0.4,
 	});
 };
@@ -1554,10 +1564,11 @@ export const ANIMS = {
 					kneeN: 68,
 					hipF: 40,
 					kneeF: 72,
-					shN: 70,
-					elN: 40,
-					shF: 40,
-					elF: 58,
+					shN: 40,
+					elN: 52,
+					abN: 30,
+					shF: 46,
+					elF: 50,
 					twist: 4,
 				},
 				{ ...P.stance, hipN: 26, kneeN: 58, hipF: 32, kneeF: 62 },
@@ -1567,10 +1578,11 @@ export const ANIMS = {
 					kneeN: 67,
 					hipF: 39,
 					kneeF: 71,
-					shN: 42,
-					elN: 56,
-					shF: 66,
-					elF: 42,
+					shN: 18,
+					elN: 34,
+					abN: 44,
+					shF: 68,
+					elF: 60,
 					twist: -4,
 				},
 			][i]!,
@@ -1590,8 +1602,8 @@ export const ANIMS = {
 				lean: 20,
 				wide: 0.95,
 				...(i
-					? { shN: 48, elN: 30, abN: 46, shF: 150, elF: 22, abF: 20 }
-					: { shN: 150, elN: 22, abN: 20, shF: 48, elF: 30, abF: 46 }),
+					? { shN: 30, elN: 40, abN: 30, shF: 150, elF: 22, abF: 20 }
+					: { shN: 150, elN: 22, abN: 20, shF: 30, elF: 40, abF: 30 }),
 			}),
 	},
 	// (Breathing with it: never quite still.)
@@ -3241,12 +3253,31 @@ export const ANIMS = {
 		],
 	},
 	// A hand straight up at the shot as he goes up with it - and kept up
-	// while it goes over him - the other hand down and out of the way.
+	// while it goes over him - the other hand down and out of the way. Down
+	// in his legs to go, the hand already on its way up: off a closeout it
+	// stays up the whole way, never down past his face and back.
 	contest: {
 		kind: "act",
 		n: 7,
 		keys: [
-			[0, P.ready],
+			[
+				0,
+				pose({
+					...P.ready,
+					kneeN: 40,
+					kneeF: 42,
+					hipN: 10,
+					hipF: 20,
+					lean: 12,
+					shN: 146,
+					elN: 22,
+					abN: 6,
+					shF: 14,
+					elF: 30,
+					abF: 34,
+					tuck: 0.3,
+				}),
+			],
 			[
 				0.18,
 				pose({
@@ -3257,9 +3288,9 @@ export const ANIMS = {
 					shN: 158,
 					elN: 12,
 					abN: 4,
-					shF: 34,
-					elF: 40,
-					abF: 26,
+					shF: 10,
+					elF: 24,
+					abF: 30,
 					lean: -2,
 					tuck: 0.7,
 					toe: 0.6,
@@ -3275,9 +3306,9 @@ export const ANIMS = {
 					shN: 166,
 					elN: 6,
 					abN: 4,
-					shF: 30,
-					elF: 40,
-					abF: 28,
+					shF: 8,
+					elF: 22,
+					abF: 30,
 					lean: -4,
 					tuck: 0.7,
 					toe: 1,
@@ -3292,9 +3323,9 @@ export const ANIMS = {
 					kneeF: 28,
 					shN: 112,
 					elN: 38,
-					shF: 28,
-					elF: 38,
-					abF: 22,
+					shF: 14,
+					elF: 30,
+					abF: 26,
 					lean: 2,
 					tuck: 0.4,
 					toe: 0.4,

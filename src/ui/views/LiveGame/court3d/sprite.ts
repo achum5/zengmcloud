@@ -1,5 +1,5 @@
 import { project, type Camera } from "./camera.ts";
-import type { PlayerState } from "./evaluate.ts";
+import type { Blend, PlayerState } from "./evaluate.ts";
 import { drawHeadAt, type Look } from "./figure.ts";
 import { ANIMS, type AnimName, type Body } from "./poses.ts";
 import { sculpt } from "./sculpt.ts";
@@ -136,47 +136,46 @@ const armSteps = (a: PlayerState["arm"]): PlayerState["arm"] => {
 		: undefined;
 };
 
+// A move he is easing out of, in steps (and the one it was easing out of).
+const blendStep = (v: number) =>
+	v > 0.12 ? Math.min(3, Math.max(1, Math.round(v * 4))) / 4 : 0;
+const stepBlend = (f: Blend, w: number): Blend => {
+	const g = f.from;
+	const gw = g ? blendStep(g.w) : 0;
+	return {
+		anim: f.anim,
+		phase: frameOf(f.anim, f.phase),
+		dribble: dribbleFrame(f.dribble),
+		dribbleHand: f.dribbleHand,
+		target: targetFrame(f.target),
+		...(f.mirror ? { mirror: true } : {}),
+		w,
+		...(f.arms === undefined ? {} : { arms: blendStep(f.arms) }),
+		...(f.legs === undefined ? {} : { legs: Math.round(f.legs / 8) * 8 }),
+		...(g && gw > 0 ? { from: stepBlend(g, gw) } : {}),
+	};
+};
+const blendKey = (f: Blend): string =>
+	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.legs ?? ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
+
 // The pose he is drawn in: his own, stepped to the sprite's frames and turns
 // - and, easing out of his last move, three steps of that.
 const stepped = (st: PlayerState) => {
 	const turn = Math.round(st.yaw / ((Math.PI * 2) / TURNS));
 	const f = st.from;
-	const step = (v: number) =>
-		v > 0.12 ? Math.min(3, Math.max(1, Math.round(v * 4))) / 4 : 0;
-	const w = f ? step(f.w) : 0;
+	const w = f ? blendStep(f.w) : 0;
 	return {
 		arm: armSteps(st.arm),
+		// His hips' turn to a few degrees; his hands closing on the ball in
+		// steps.
+		legs: st.legs === undefined ? undefined : Math.round(st.legs / 8) * 8,
+		grip: st.grip === undefined ? undefined : Math.floor(st.grip * 4) / 4,
 		phase: frameOf(st.anim, st.phase),
 		turn: ((turn % TURNS) + TURNS) % TURNS,
 		yaw: (turn * Math.PI * 2) / TURNS,
 		dribble: dribbleFrame(st.dribble),
 		target: targetFrame(st.target),
-		from:
-			f && w > 0
-				? {
-						anim: f.anim,
-						phase: frameOf(f.anim, f.phase),
-						dribble: dribbleFrame(f.dribble),
-						dribbleHand: f.dribbleHand,
-						target: targetFrame(f.target),
-						...(f.mirror ? { mirror: true } : {}),
-						w,
-						...(f.arms === undefined ? {} : { arms: step(f.arms) }),
-						...(f.from && step(f.from.w) > 0
-							? {
-									from: {
-										anim: f.from.anim,
-										phase: frameOf(f.from.anim, f.from.phase),
-										dribble: dribbleFrame(f.from.dribble),
-										dribbleHand: f.from.dribbleHand,
-										target: targetFrame(f.from.target),
-										...(f.from.mirror ? { mirror: true } : {}),
-										w: step(f.from.w),
-									},
-								}
-							: {}),
-					}
-				: undefined,
+		from: f && w > 0 ? stepBlend(f, w) : undefined,
 	};
 };
 
@@ -217,14 +216,8 @@ export const drawSprite = (
 		const a = pose.arm;
 		key = `${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}|${pose.turn}|${Math.round(
 			Math.log(k) / Math.log(1.04),
-		)}|${px}|${st.holding ? 1 : 0}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}|${pose.target ?? ""}${
-			f
-				? `|${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}${
-						f.from
-							? `<${f.from.anim}${f.from.mirror ? "m" : ""}${f.from.phase}${f.from.dribble ?? ""}${f.from.dribbleHand ?? ""}${f.from.target ?? ""}~${f.from.w}`
-							: ""
-					}`
-				: ""
+		)}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}|${pose.target ?? ""}${
+			f ? `|${blendKey(f)}` : ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 		const kept = cache.kept.get(key);
 		if (kept) {
@@ -254,6 +247,8 @@ export const drawSprite = (
 		target: pose.target,
 		from: pose.from,
 		arm: pose.arm,
+		legs: pose.legs,
+		grip: pose.grip,
 	};
 	const w = Math.max(4, Math.ceil((right - left) / px) + 2);
 	const h = Math.max(4, Math.ceil((lower - upper) / px) + 2);

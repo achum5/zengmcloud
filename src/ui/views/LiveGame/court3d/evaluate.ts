@@ -83,6 +83,10 @@ export type PlayerState = {
 	// The ball in his hands - not bouncing on a dribble - so it is drawn with
 	// him, his hands on it.
 	holding?: boolean;
+	// Just after it came into his hands - caught, or picked up off his
+	// dribble - how far his hands have closed on it (0 to 1): they meet it,
+	// not snap to it.
+	grip?: number;
 	// How far through a bounce of his dribble (0 the ball in his hand at the
 	// top), when he is dribbling: his hand rides it - this one.
 	dribble?: number;
@@ -105,31 +109,27 @@ export type PlayerState = {
 	// and how much of his pose is still that (1 all, 0 none) - and, if it
 	// differs, how much of his arms and the turn of his shoulders - see
 	// poseOf.
-	from?: {
-		anim: AnimName;
-		phase: number;
-		dribble?: number;
-		dribbleHand?: Hand;
-		target?: number;
-		mirror?: boolean;
-		w: number;
-		arms?: number;
-		// Changed again while still easing out of the move before: that one,
-		// and how much of it was still in him then.
-		from?: {
-			anim: AnimName;
-			phase: number;
-			dribble?: number;
-			dribbleHand?: Hand;
-			target?: number;
-			mirror?: boolean;
-			w: number;
-		};
-	};
+	from?: Blend;
 	// One arm saying something while the rest of him goes on (see armAt):
 	// which, its angles (as a pose has them), and how far into them it is
 	// (0 to 1).
 	arm?: ArmPose;
+};
+// A move he is easing out of (see blendInto).
+export type Blend = {
+	anim: AnimName;
+	phase: number;
+	dribble?: number;
+	dribbleHand?: Hand;
+	target?: number;
+	mirror?: boolean;
+	w: number;
+	arms?: number;
+	// His legs turned under him as it changed (see legs).
+	legs?: number;
+	// Changed again while still easing out of the move before: that one,
+	// and how much of it was still in him then.
+	from?: Blend;
 };
 export type ArmPose = {
 	hand: Hand;
@@ -658,9 +658,18 @@ const rawSpotAt = (tr: Track, t: number): Spot => {
 
 // How many strides into his run he is at t, counting the runs it follows
 // on from - so his legs keep their rhythm through a join.
+// (A run straight on from the last - planted, but with hardly a moment
+// between - carries on his strides from where they were.)
+const STRIDE_ON_MS = 220;
 const stridesAt = (tr: Track, k: number, run: Run, t: number): number => {
 	let strides = alongRun(run, t) / strideOf(runAnim(run));
-	for (let j = k; j > 0 && runOf(tr, j).v0 > 0; j--) {
+	for (
+		let j = k;
+		j > 0 &&
+		(runOf(tr, j).v0 > 0 ||
+			tr.moves[j]!.t0 - tr.moves[j - 1]!.t1 <= STRIDE_ON_MS);
+		j--
+	) {
 		const before = runOf(tr, j - 1);
 		strides += lenOf(before.mv) / strideOf(runAnim(before));
 	}
@@ -679,7 +688,9 @@ const targetAt = (tl: CourtTimeline, pid: number, t: number): number => {
 	let from: number | undefined;
 	for (let k = i; k < tl.ball.length && k <= i + 2; k++) {
 		const s = tl.ball[k]!;
-		if (s.t0 > t + TARGET_LEAD) {
+		// (Once it is on its way - a bounce pass's first leg - the leg that
+		// gets to him counts from then, however late it starts.)
+		if (from === undefined && s.t0 > t + TARGET_LEAD) {
 			break;
 		}
 		if (s.kind !== "fly") {
@@ -1046,12 +1057,15 @@ const ballHand = (tl: CourtTimeline, pid: number, t: number): Hand => {
 // and the other up - his right hand the ball on the defender's left - and
 // they trade, a beat behind, when it goes across (see the guard loop: 0 his
 // left down, 0.5 his right).
+const GUARD_SAMPLES = 12;
 const guardHands = (tl: CourtTimeline, man: number, t: number): number => {
+	// How much of the last little while it has been in his left - eased, so
+	// the hands go across together and smoothly, never in jumps.
 	let left = 0;
-	for (const back of [260, 190, 120]) {
-		left += ballHand(tl, man, t - back) === "L" ? 1 : 0;
+	for (let i = 0; i < GUARD_SAMPLES; i++) {
+		left += ballHand(tl, man, t - 110 - i * 20) === "L" ? 1 : 0;
 	}
-	return (left / 3) * 0.5;
+	return smooth01(left / GUARD_SAMPLES) * 0.5;
 };
 
 // How much of the way he is going is across the way he faces (0 straight
@@ -1121,6 +1135,7 @@ type Doing = {
 	dunk?: PlayerState["dunk"];
 	reach?: number;
 	holding: boolean;
+	grip?: number;
 	dribble?: number;
 	dribbleHand?: Hand;
 	target?: number;
@@ -1199,6 +1214,8 @@ const bridgeAt = (
 	return ANIMS[g.anim].kind === "cycle" ? g : undefined;
 };
 
+// How long his hands take to close on the ball once it is his.
+const GRIP_MS = 110;
 const doingAt = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -1306,6 +1323,19 @@ const doingAt = (
 			: has?.style === "dribble"
 				? bounceOf(tl, bi, t)
 				: undefined;
+	// Since it came into his hands.
+	let grip = 1;
+	if (has?.style === "hold") {
+		let since = has.t0;
+		for (let k = bi - 1; k >= 0; k--) {
+			const x = tl.ball[k]!;
+			if (x.kind !== "hold" || x.pid !== pid || x.style !== "hold") {
+				break;
+			}
+			since = x.t0;
+		}
+		grip = smooth01((t - since) / GRIP_MS);
+	}
 	return {
 		anim,
 		phase,
@@ -1314,6 +1344,7 @@ const doingAt = (
 		...(dunk ? { dunk } : {}),
 		...(reach ? { reach } : {}),
 		holding: has?.style === "hold",
+		...(grip < 1 ? { grip } : {}),
 		dribble: beat?.ph,
 		dribbleHand: beat ? (beat.ph < DOWN ? beat.from : beat.to) : undefined,
 		target: act || has ? undefined : targetAt(tl, pid, t) || undefined,
@@ -1327,14 +1358,15 @@ const doingAt = (
 // third of a second, and the ball has to go where they take it.
 const BLEND_MS = 160;
 const MOVE_ARMS_MS = 60;
+const BLEND_DEPTH = 3;
 const blendInto = (
 	tl: CourtTimeline,
 	tr: Track,
 	t: number,
 	anim: AnimName,
-	// (Looking back from inside another blend: no further.)
-	nested = false,
-): PlayerState["from"] => {
+	// How far back inside other blends this is looking (see BLEND_DEPTH).
+	depth = 0,
+): Blend | undefined => {
 	let lo = t - BLEND_MS;
 	let before = doingAt(tl, tr, lo);
 	if (before.anim === anim) {
@@ -1370,8 +1402,15 @@ const blendInto = (
 		return undefined;
 	}
 	// How he looked as it changed: the last move - itself, maybe, still
-	// easing out of the one before it.
-	const prior = nested ? undefined : blendInto(tl, tr, lo, before.anim, true);
+	// easing out of the one before it, and that out of the one before (a
+	// few quick changes in a row must not drop any of them in a frame).
+	const prior =
+		depth + 1 < BLEND_DEPTH
+			? blendInto(tl, tr, lo, before.anim, depth + 1)
+			: undefined;
+	// The turn of his legs then, eased out of too - not snapped round.
+	const legs =
+		depth > 0 ? 0 : legsOf(spotAt(tr, lo), yawAt(tl, tr, lo), before.anim, lo);
 	return {
 		anim: before.anim,
 		phase: before.phase,
@@ -1380,20 +1419,9 @@ const blendInto = (
 		target: before.target,
 		...(before.mirror ? { mirror: true } : {}),
 		w,
+		...(legs !== 0 ? { legs } : {}),
 		...(isMove(anim) ? { arms: ease(MOVE_ARMS_MS) } : {}),
-		...(prior
-			? {
-					from: {
-						anim: prior.anim,
-						phase: prior.phase,
-						dribble: prior.dribble,
-						dribbleHand: prior.dribbleHand,
-						target: prior.target,
-						...(prior.mirror ? { mirror: true } : {}),
-						w: prior.w,
-					},
-				}
-			: {}),
+		...(prior ? { from: prior } : {}),
 	};
 };
 
@@ -1815,6 +1843,134 @@ export const floorSpotOf = (tr: Track, t: number): Pt | undefined => {
 	return { x: s.x, y: s.y };
 };
 
+// An arm saying something, or up against his man, at t - as it is worked out
+// at that very moment (see armAt, denyArm, engageArm).
+const armNow = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+): ArmPose | undefined => {
+	const si = lastIndex(tr.shown, t, (s) => s[0]);
+	if (si < 0 || !tr.shown[si]![1]) {
+		return undefined;
+	}
+	const here = spotAt(tr, t);
+	const now = doingAt(tl, tr, t, here);
+	const yaw = yawAt(tl, tr, t);
+	const said =
+		tr.arms.length > 0
+			? armAt(
+					tl,
+					tr,
+					t,
+					here,
+					yaw,
+					actAt(tr, t) || now.holding || (now.target ?? 0) > 0
+						? "none"
+						: now.dribbleHand === "R"
+							? "L"
+							: now.dribbleHand === "L"
+								? "R"
+								: "both",
+				)
+			: undefined;
+	return (
+		said ??
+		denyArm(tl, tr, t, here, yaw, now.anim) ??
+		engageArm(tl, tr, t, here, yaw, now)
+	);
+};
+// Each of those comes and goes on its own reasons - his man close enough,
+// his pace, the ball in a man's hands - and never snaps up or drops in a
+// frame for it: it is worked out every ARM_GRID ms (kept, so a moment is
+// worked out once), and what shows is the last ARM_TAPS of those, run
+// smoothly from one to the next - an arm a beat behind its reason, easing
+// in and out, the way a man's are.
+const ARM_GRID = 50;
+const ARM_TAPS = 2;
+const ARM_KEEP = 64;
+const armGrids = new WeakMap<
+	CourtTimeline,
+	Map<number, Map<number, ArmPose | null>>
+>();
+const armOnGrid = (
+	tl: CourtTimeline,
+	tr: Track,
+	k: number,
+): ArmPose | undefined => {
+	let byPid = armGrids.get(tl);
+	if (!byPid) {
+		byPid = new Map();
+		armGrids.set(tl, byPid);
+	}
+	let kept = byPid.get(tr.pid);
+	if (!kept) {
+		kept = new Map();
+		byPid.set(tr.pid, kept);
+	}
+	const had = kept.get(k);
+	if (had !== undefined) {
+		return had ?? undefined;
+	}
+	const a = armNow(tl, tr, k * ARM_GRID);
+	if (kept.size >= ARM_KEEP) {
+		kept.clear();
+	}
+	kept.set(k, a ?? null);
+	return a;
+};
+const easedArm = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+): ArmPose | undefined => {
+	const k = Math.floor(t / ARM_GRID);
+	const f = t / ARM_GRID - k;
+	// How much each grid moment counts: the last ARM_TAPS up to k, run on
+	// toward the ARM_TAPS up to k + 1.
+	const taps: { a: ArmPose; c: number }[] = [];
+	for (let j = k - ARM_TAPS + 1; j <= k + 1; j++) {
+		const c = (j === k - ARM_TAPS + 1 ? 1 - f : j === k + 1 ? f : 1) / ARM_TAPS;
+		const a = c > 0 ? armOnGrid(tl, tr, j) : undefined;
+		if (a && a.w > 0) {
+			taps.push({ a, c: c * a.w });
+		}
+	}
+	if (taps.length === 0) {
+		return undefined;
+	}
+	// The hand most of it is in, and its angles as they run.
+	let r = 0;
+	let l = 0;
+	for (const x of taps) {
+		if (x.a.hand === "R") {
+			r += x.c;
+		} else {
+			l += x.c;
+		}
+	}
+	const hand: Hand = r >= l ? "R" : "L";
+	const mine = taps.filter((x) => x.a.hand === hand);
+	const w = hand === "R" ? r : l;
+	if (w <= 0.02) {
+		return undefined;
+	}
+	const mean = (get: (a: ArmPose) => number) =>
+		mine.reduce((sum, x) => sum + get(x.a) * x.c, 0) / w;
+	const tucked = mine.some((x) => x.a.tuck !== undefined);
+	const last = mine.at(-1)!.a;
+	return {
+		hand,
+		sh: mean((a) => a.sh),
+		el: mean((a) => a.el),
+		ab: mean((a) => a.ab),
+		wr: mean((a) => a.wr),
+		w: Math.min(1, w),
+		...(tucked ? { tuck: mean((a) => a.tuck ?? 0) } : {}),
+		...(last.point ? { point: true } : {}),
+	};
+};
+
 export const evalPlayer = (
 	tl: CourtTimeline,
 	pid: number,
@@ -1842,29 +1998,7 @@ export const evalPlayer = (
 	const from = shown ? blendInto(tl, tr, t, now.anim) : undefined;
 	const yaw = yawAt(tl, tr, t);
 	const legs = legsOf(here, yaw, now.anim, t);
-	const said =
-		shown && tr.arms.length > 0
-			? armAt(
-					tl,
-					tr,
-					t,
-					here,
-					yaw,
-					actAt(tr, t) || now.holding || (now.target ?? 0) > 0
-						? "none"
-						: now.dribbleHand === "R"
-							? "L"
-							: now.dribbleHand === "L"
-								? "R"
-								: "both",
-				)
-			: undefined;
-	const arm =
-		said ??
-		(shown
-			? (denyArm(tl, tr, t, here, yaw, now.anim) ??
-				engageArm(tl, tr, t, here, yaw, now))
-			: undefined);
+	const arm = shown ? easedArm(tl, tr, t) : undefined;
 	return {
 		pid,
 		team: tr.team,
@@ -1883,9 +2017,10 @@ export const evalPlayer = (
 // Going one way while he looks another - a few steps aside with his eyes on
 // the ball, or not yet round from his last way - his legs go the way he
 // goes, his hips turned under him as far as hips turn; past that, they
-// give up on it, and right round (backing off) not at all. Eased in with
-// his pace, so he is square again as he pulls up.
+// give up on it, and right round (backing off) not at all. Eased in as he
+// gets going and out as he pulls up, so he is square again when he stops.
 const LEGS_TURN = 75;
+const LEGS_EASE_MS = 220;
 const LEGS_GIVE = 40;
 const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
 	const run = here.run;
@@ -1904,9 +2039,15 @@ const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
 	if (turn < 0.5) {
 		return 0;
 	}
-	const v = (alongRun(run, t + 10) - alongRun(run, t - 10)) / 0.02;
+	// Into it as he gets going from a standstill, out of it as he pulls up
+	// to one - on the clock, not his pace, which drops away too fast at
+	// the very end for his hips to follow.
+	const ease = Math.min(
+		run.v0 > 0 ? 1 : smooth01((t - run.s0) / LEGS_EASE_MS),
+		run.v1 > 0 ? 1 : smooth01((run.s1 - t) / LEGS_EASE_MS),
+	);
 	// (His left is the floor's clockwise.)
-	return -Math.sign(off) * turn * smooth01((v - 0.5) / 2);
+	return -Math.sign(off) * turn * ease;
 };
 
 // The arms and the turn of his shoulders, which can ease into a move on
@@ -1926,14 +2067,15 @@ const UPPER: (keyof Pose)[] = [
 	"twist",
 	"tilt",
 ];
-const blendFrom = (q: Pose, f: NonNullable<PlayerState["from"]>): Pose => {
+// The pose a blend shows: its move's, itself easing out of the one before.
+const blendPose = (f: Blend): Pose => {
 	const as = posed(f.anim, f.phase, f.dribble, f.dribbleHand, f.target);
-	let was = f.mirror ? mirror(as) : as;
+	const own = f.mirror ? mirror(as) : as;
 	const g = f.from;
-	if (g && g.w > 0) {
-		const as2 = posed(g.anim, g.phase, g.dribble, g.dribbleHand, g.target);
-		was = lerpPose(was, g.mirror ? mirror(as2) : as2, g.w);
-	}
+	return g && g.w > 0 ? lerpPose(own, blendPose(g), g.w) : own;
+};
+const blendFrom = (q: Pose, f: Blend): Pose => {
+	const was = blendPose(f);
 	const p = lerpPose(q, was, f.w);
 	if (f.arms !== undefined) {
 		for (const key of UPPER) {
@@ -1950,7 +2092,9 @@ export const poseOf = (st: PlayerState): Pose => {
 	const q = st.mirror ? mirror(own) : own;
 	const f = st.from;
 	const b = f && f.w > 0 ? blendFrom(q, f) : q;
-	const p = st.legs ? { ...b, legs: st.legs } : b;
+	const turned = st.legs ?? 0;
+	const legs = f && f.w > 0 ? turned + ((f.legs ?? 0) - turned) * f.w : turned;
+	const p = legs ? { ...b, legs } : b;
 	const a = st.arm;
 	if (!a || a.w <= 0) {
 		return p;
@@ -2038,6 +2182,26 @@ const mixLimb = (a: Limb, b: Limb, w: number): Limb => {
 		mid: m(a.mid, b.mid),
 		end: m(a.end, b.end),
 		tip: m(a.tip ?? a.end, b.tip ?? b.end),
+	};
+};
+
+// The ball just come into his hands: his arms part the way from where they
+// were to it (see grip).
+export const gripped = (
+	held: Skeleton,
+	st: PlayerState,
+	body: Body,
+	q: Pose,
+): Skeleton => {
+	const g = st.grip;
+	if (g === undefined || g >= 1) {
+		return held;
+	}
+	const free = onRim(skeleton(body, q), st, body);
+	return {
+		...held,
+		armR: mixLimb(free.armR, held.armR, g),
+		armL: mixLimb(free.armL, held.armL, g),
 	};
 };
 
