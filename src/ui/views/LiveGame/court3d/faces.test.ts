@@ -77,4 +77,21 @@ describe("3D faces", () => {
 		assert.isTrue(profileOf(face("none", "eye-black")).eyeBlack);
 		assert.isUndefined(profileOf(face("none", "eye-black")).band);
 	});
+
+	// And the shape of it: his nose as big as it is, his ears, how full.
+	test("his profile is as big-nosed and full-faced as his face", () => {
+		const face = (nose: string, size: number, fatness: number) =>
+			({
+				nose: { id: nose, size },
+				ear: { id: "ear1", size: 1.3 },
+				fatness,
+			}) as FaceConfig;
+		const small = profileOf(face("small", 0.5, 0.1));
+		const big = profileOf(face("nose4", 1.2, 0.9));
+		const honker = profileOf(face("honker", 1.2, 0.9));
+		assert.isBelow(small.nose!, big.nose!);
+		assert.isBelow(big.nose!, honker.nose!);
+		assert.isBelow(small.full!, big.full!);
+		assert.strictEqual(big.ear, 1.3);
+	});
 });

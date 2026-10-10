@@ -174,6 +174,11 @@ export type Profile = {
 	burns?: boolean;
 	band?: { high: boolean; color: string; stripe: string };
 	eyeBlack?: boolean;
+	// How big his nose and his ears are (1 about average), and how full his
+	// face (0 lean to 1).
+	nose?: number;
+	ear?: number;
+	full?: number;
 };
 
 export const profileOf = (
@@ -205,6 +210,18 @@ export const profileOf = (
 	}
 	if (acc === "eye-black") {
 		out.eyeBlack = true;
+	}
+	const nose = face?.nose;
+	if (nose && typeof nose.size === "number") {
+		out.nose =
+			(0.6 + 0.5 * nose.size) *
+			(nose.id === "honker" || nose.id === "pinocchio" ? 1.25 : 1);
+	}
+	if (face?.ear && typeof face.ear.size === "number") {
+		out.ear = face.ear.size;
+	}
+	if (typeof face?.fatness === "number") {
+		out.full = face.fatness;
 	}
 	return out;
 };

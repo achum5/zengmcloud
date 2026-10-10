@@ -102,15 +102,17 @@ and shoes - every one eventually, none rushed to get to the next.
   first frame or by its start-up hitches - which had sent it to pixel art at
   the start of nearly every game - and able to come back to sharp. Open:
   staging speed, finishing sprites on the page; checking on a real phone.)
-- [~] Player head profiles should match their faces.js face much better.
-  (Done: the hair - see below. Open: nose, head shape, ears.)
+- [x] Player head profiles should match their faces.js face much better.
+      The hair (see below), and his nose, ears and how full his face is.
 - [x] Back of the head should match the faces.js face, including hair.
       Side and back now follow each faces.js hair style: high tops cut flat,
       curly and spiky tops, fades and buzz cuts, cornrows, faux-hawks,
       balding, buns and tied-up locs, afros and long hair.
 - [x] Rims look like a bunch of circles. Make the rim and the whole basket look
       better. Basketball should look like a real ball with correct lines.
-- [ ] Better-looking feet, and customizable shoes (like jerseys and courts).
+- [~] Better-looking feet, and customizable shoes (like jerseys and courts).
+  (Done: a tread line under the sole, a stripe up the side in each player's
+  own accent color, laces. Open: customizable - see E.)
 - [x] Improve the look of the name tag under players.
 
 ## E. Customization system (jerseys, courts, score bug, shoes, banners)

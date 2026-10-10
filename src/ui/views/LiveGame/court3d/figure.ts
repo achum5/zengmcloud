@@ -43,6 +43,8 @@ export type Gear = {
 	knee?: { legs: "R" | "L"; color: string };
 	shoe: string;
 	sole: string;
+	// The stripe down the side of his shoes.
+	accent?: string;
 	sock: string;
 };
 
@@ -379,6 +381,11 @@ const profileHead = (
 	const cut = look.cut ?? "short";
 	const hairy = cut !== "bald" && look.hair !== look.skin;
 	const pro = look.profile ?? {};
+	// His nose out from his face, as big as his face has it; his jaw and
+	// chin fuller, lower, the fuller his face.
+	const nose = Math.min(1.5, Math.max(0.7, pro.nose ?? 1));
+	const N = (u: number, v: number) => P(0.9 + (u - 0.9) * nose, v);
+	const full = Math.min(1, Math.max(0, pro.full ?? 0.5)) - 0.5;
 	// Skull, brow, the bridge of his nose and its tip, lips, chin, the line
 	// of his jaw, and round the back of his head.
 	const head = softPoly([
@@ -388,18 +395,18 @@ const profileHead = (
 		P(0.86, -0.32),
 		P(0.92, -0.14),
 		P(0.8, -0.03),
-		P(0.94, 0.1),
-		P(1.12, 0.22),
-		P(0.92, 0.3),
+		N(0.94, 0.1),
+		N(1.12, 0.22),
+		N(0.92, 0.3),
 		P(0.9, 0.34),
 		P(0.94, 0.4),
 		P(0.84, 0.47),
 		P(0.92, 0.54),
 		P(0.8, 0.64),
-		P(0.9, 0.78),
-		P(0.7, 0.92),
-		P(0.26, 0.86),
-		P(-0.08, 0.64),
+		P(0.9 + full * 0.04, 0.78 + full * 0.06),
+		P(0.7, 0.92 + full * 0.1),
+		P(0.26, 0.86 + full * 0.16),
+		P(-0.08, 0.64 + full * 0.14),
 		P(-0.58, 0.5),
 		P(-1.0, 0.1),
 		P(-0.9, -0.62),
@@ -420,12 +427,13 @@ const profileHead = (
 		P(-1.07, 0.12),
 		P(-0.96, -0.66),
 	]);
+	const earK = 0.8 + 0.2 * Math.min(1.5, Math.max(0.5, pro.ear ?? 1));
 	const ear = new Path2D();
 	ear.ellipse(
 		P(-0.1, 0.08).x,
 		P(-0.1, 0.08).y,
-		r * 0.16,
-		r * 0.26,
+		r * 0.16 * earK,
+		r * 0.26 * earK,
 		0,
 		0,
 		Math.PI * 2,
@@ -434,8 +442,8 @@ const profileHead = (
 	inner.ellipse(
 		P(-0.08, 0.09).x,
 		P(-0.08, 0.09).y,
-		r * 0.08,
-		r * 0.16,
+		r * 0.08 * earK,
+		r * 0.16 * earK,
 		0,
 		0,
 		Math.PI * 2,
@@ -663,13 +671,13 @@ const profileHead = (
 	ctx.strokeStyle = shade(look.skin, -0.45);
 	ctx.lineWidth = Math.max(0.6, r * 0.045);
 	ctx.beginPath();
-	const n0 = P(0.84, 0.25);
+	const n0 = N(0.84, 0.25);
 	ctx.moveTo(n0.x, n0.y);
 	ctx.quadraticCurveTo(
-		P(0.9, 0.2).x,
-		P(0.9, 0.2).y,
-		P(0.96, 0.24).x,
-		P(0.96, 0.24).y,
+		N(0.9, 0.2).x,
+		N(0.9, 0.2).y,
+		N(0.96, 0.24).x,
+		N(0.96, 0.24).y,
 	);
 	ctx.stroke();
 	ctx.strokeStyle = INK;
@@ -1096,5 +1104,11 @@ export const gearFor = (pid: number, kit: Kit): Gear => {
 			color: rng() < 0.5 ? INK_DARK : WHITE,
 		};
 	}
+	// The stripe down the side of his shoes: his uniform's color, or black
+	// or white, whichever shows on them.
+	const accents = [kit.trim, INK_DARK, WHITE].filter(
+		(c) => contrast(c, gear.shoe) > 0.25,
+	);
+	gear.accent = accents[Math.floor(rng() * accents.length)] ?? WHITE;
 	return gear;
 };

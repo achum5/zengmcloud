@@ -1074,6 +1074,10 @@ type Palette = {
 	sock: RGB;
 	shoe: RGB;
 	sole: RGB;
+	// Under the sole, the stripe down the side, the laces.
+	tread: RGB;
+	accent: RGB;
+	laces: RGB;
 	legs: [RGB, RGB];
 	upper: [RGB, RGB];
 	fore: [RGB, RGB];
@@ -1084,6 +1088,16 @@ type Palette = {
 	stripes?: RGB;
 	lapel?: RGB;
 };
+
+// Laces a shade off the shoe: darker on a light one, lighter on a dark one.
+const lacesOn = (shoe: RGB): RGB =>
+	0.2126 * shoe[0] + 0.7152 * shoe[1] + 0.0722 * shoe[2] > 128
+		? scaled(shoe, 0.78)
+		: [
+				shoe[0] + (255 - shoe[0]) * 0.32,
+				shoe[1] + (255 - shoe[1]) * 0.32,
+				shoe[2] + (255 - shoe[2]) * 0.32,
+			];
 
 const palettes = new WeakMap<Look, Palette>();
 const paletteOf = (look: Look): Palette => {
@@ -1112,6 +1126,9 @@ const paletteOf = (look: Look): Palette => {
 		sock: rgb(gear?.sock ?? kit.sock),
 		shoe: rgb(gear?.shoe ?? kit.shoe),
 		sole: rgb(gear?.sole ?? kit.sole),
+		tread: scaled(rgb(gear?.sole ?? kit.sole), 0.55),
+		accent: rgb(gear?.accent ?? gear?.sole ?? kit.sole),
+		laces: lacesOn(rgb(gear?.shoe ?? kit.shoe)),
 		legs: both((w) =>
 			gear?.tights?.legs.includes(w) ? rgb(gear.tights.color) : skin,
 		),
@@ -1735,7 +1752,40 @@ export const sculpt = (
 							break;
 						}
 						case SHOE: {
-							const c = Pu < cut.sole ? pal.sole : pal.shoe;
+							let c = Pu < cut.sole ? pal.sole : pal.shoe;
+							if (Pu < cut.sole * 0.35) {
+								c = pal.tread;
+							} else if (c === pal.shoe) {
+								// Round the shoe from its axis: up its side, or
+								// over the top of it - on the shoe itself, heel to
+								// toe, not the collar round his ankle.
+								const lf = fc.B.f - fc.A.f;
+								const ls = fc.B.s - fc.A.s;
+								const lu = fc.B.u - fc.A.u;
+								const ll = Math.hypot(lf, ls, lu) || 1;
+								if (ll > body.ankleR * 4) {
+									const of = Pf - fc.A.f - lf * t;
+									const os = Ps - fc.A.s - ls * t;
+									const ou = Pu - fc.A.u - lu * t;
+									const ol = Math.hypot(of, os, ou) || 1;
+									const up = ou / ol;
+									const out = Math.abs(of * ls - os * lf) / (ll * ol);
+									// The stripe sweeps up from the toe to the heel,
+									// widest in the middle.
+									const mid = 0.42 - (0.5 * (t - 0.15)) / 0.7;
+									const wide = 0.28 * (1 - Math.abs(t - 0.5) * 1.6);
+									if (
+										out > 0.5 &&
+										t > 0.15 &&
+										t < 0.85 &&
+										Math.abs(up - mid) < wide
+									) {
+										c = pal.accent;
+									} else if (up > 0.78 && t > 0.38 && t < 0.72) {
+										c = pal.laces;
+									}
+								}
+							}
 							cloth = true;
 							cr = c[0];
 							cg = c[1];
