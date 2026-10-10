@@ -96,8 +96,12 @@ and shoes - every one eventually, none rushed to get to the next.
   new sprite poses sculpted in background workers - about 4x less work on the
   page per frame at 1080p; the game staged in a worker, so opening a game no
   longer freezes the page for seconds; the officials' paths no longer stall the
-  first frame; full screen resolution allowed up to 1440 rows. Open: the arena
-  planes drawn a row at a time, staging speed, finishing sprites on the page.)
+  first frame; full screen resolution allowed up to 1440 rows; the floor,
+  stands and boards drawn on the graphics card where there is a real one
+  (a layer under the canvas); the sharpness check no longer judged before the
+  first frame or by its start-up hitches - which had sent it to pixel art at
+  the start of nearly every game - and able to come back to sharp. Open:
+  staging speed, finishing sprites on the page; checking on a real phone.)
 - [ ] Player head profiles should match their faces.js face much better.
 - [ ] Back of the head should match the faces.js face, including hair.
 - [x] Rims look like a bunch of circles. Make the rim and the whole basket look

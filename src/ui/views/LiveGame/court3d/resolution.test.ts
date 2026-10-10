@@ -52,6 +52,30 @@ describe("3D picture resolution", () => {
 		assert.strictEqual(res.changes, 0);
 	});
 
+	test("judged from the first frame drawn, after its first hitches", () => {
+		// Mounted at 0; the game staged and the first frame drawn at 8s, its
+		// first frames slow while every player is sculpted for the first time.
+		const res = makeResolution(1500);
+		const t = run(res, 1300, 8000, 500, 60, 80);
+		run(res, 1300, t, 20_000, 16.7, 6);
+		assert.strictEqual(artFor(1300, res), 1);
+		assert.strictEqual(res.changes, 0);
+	});
+
+	test("back to sharp once it can be, but not back and forth", () => {
+		const res = makeResolution(0);
+		let t = run(res, 1300, 0, 4000, 30, 14);
+		assert.strictEqual(artFor(1300, res), 2);
+		t = run(res, 1300, t, 6000, 16.7, 4.5);
+		assert.strictEqual(artFor(1300, res), 1);
+		// Too slow there again: coarser, and there it stays.
+		t = run(res, 1300, t, 2000, 30, 14);
+		assert.strictEqual(artFor(1300, res), 2);
+		run(res, 1300, t, 20_000, 16.7, 4.5);
+		assert.strictEqual(artFor(1300, res), 2);
+		assert.strictEqual(res.changes, 3);
+	});
+
 	test("a device keeping up stays as fine as it gets", () => {
 		const res = makeResolution(0);
 		run(res, 720, 0, 30_000, 16.7, 9);

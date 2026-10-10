@@ -22,6 +22,7 @@ import {
 } from "./arena.ts";
 import { courtFit, makeCamera, MAIN_RIG, REPLAY_RIG } from "./camera.ts";
 import { courtTexture } from "./courtTexture.ts";
+import { makeGlLayer, type GlLayer } from "./glPlanes.ts";
 import { adjust, artFor, makeResolution } from "./resolution.ts";
 import { makeScratch, makeSpriteCache } from "./sprite.ts";
 import {
@@ -58,11 +59,13 @@ import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
 import {
 	aimFor,
 	arenaAim,
+	buildingPictures,
 	crowdAt,
 	drawFrame,
 	introAim,
 	momentAt,
 	replayAim,
+	type ArenaPaint,
 } from "./scene.ts";
 
 // THE 3D COURT: the game as a broadcast - the home team's own floor, the
@@ -584,6 +587,8 @@ const Court3D = ({
 	// The picture's size: 16:9, or 4:3 on a phone so the players stay big.
 	const wrapRef = useRef<HTMLDivElement | null>(null);
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
+	// Under it, the building and the floor (see glPlanes.ts).
+	const glRef = useRef<HTMLCanvasElement | null>(null);
 	const [size, setSize] = useState({ w: 640, h: 360 });
 	useLayoutEffect(() => {
 		const el = wrapRef.current;
@@ -778,6 +783,12 @@ const Court3D = ({
 		const res = makeResolution(performance.now() + 1500);
 		const lookOf = (pid: number) => looks.current.get(pid)!;
 		const bodyOfPid = (pid: number) => bodies.current.get(pid) ?? bodyOf();
+		// undefined: not tried yet; null: none to be had.
+		let gl: GlLayer | null | undefined;
+		// The building's pictures still to put on the card, a frame at a time
+		// - and which they were.
+		let warm: HTMLCanvasElement[] = [];
+		let warmFor: unknown[] = [];
 
 		const tick = (now: number, draw: boolean) => {
 			const p = live.current;
@@ -895,6 +906,12 @@ const Court3D = ({
 				canvas.width = fw;
 				canvas.height = fh;
 			}
+			if (gl === undefined && glRef.current) {
+				gl = makeGlLayer(glRef.current) ?? null;
+				if (!gl) {
+					glRef.current.style.display = "none";
+				}
+			}
 
 			const replay = s.replay;
 			const moment = momentAt(
@@ -983,6 +1000,20 @@ const Court3D = ({
 			const pt = paintRef.current;
 			const cr = crewRef.current;
 			const working = crewAt(tl, moment.t, cr.crew);
+			const arena: ArenaPaint = {
+				court: courtPicture.current,
+				stands: pt.stands,
+				standsUp: pt.standsUp,
+				standsWave: pt.standsWave,
+				standsSparse: pt.standsSparse,
+				endStandsSparse: pt.endStandsSparse,
+				endStands: pt.endStands,
+				boards: pt.boards,
+				rafters: pt.rafters,
+				tableTop: pt.tableTop,
+				tableFront: pt.tableFront,
+				bench: [pt.bench0, pt.bench1],
+			};
 			const drawStart = performance.now();
 			drawFrame({
 				ctx,
@@ -999,20 +1030,7 @@ const Court3D = ({
 				apron: p.apron,
 				warmups: p.warmups,
 				shotClock: shotText,
-				arena: {
-					court: courtPicture.current,
-					stands: pt.stands,
-					standsUp: pt.standsUp,
-					standsWave: pt.standsWave,
-					standsSparse: pt.standsSparse,
-					endStandsSparse: pt.endStandsSparse,
-					endStands: pt.endStands,
-					boards: pt.boards,
-					rafters: pt.rafters,
-					tableTop: pt.tableTop,
-					tableFront: pt.tableFront,
-					bench: [pt.bench0, pt.bench1],
-				},
+				arena,
 				crowd: { up, wave },
 				now,
 				// Lettering at least 10 CSS pixels tall: a 7-pixel font, each of
@@ -1025,8 +1043,20 @@ const Court3D = ({
 				flashes: working.flashes,
 				courtside: cr.courtside,
 				teamColors: p.teamColors,
+				gl: gl ?? undefined,
 			});
-			if (adjust(res, h * dpr, dt, performance.now() - drawStart, now)) {
+			const drawMs = performance.now() - drawStart;
+			if (gl) {
+				if (warmFor[0] !== pt || warmFor[1] !== arena.court) {
+					warmFor = [pt, arena.court];
+					warm = buildingPictures(arena);
+				}
+				const next = warm.pop();
+				if (next) {
+					gl.warm(next);
+				}
+			}
+			if (adjust(res, h * dpr, dt, drawMs, now)) {
 				// Sprites drawn for the old size are no use at the new one.
 				sprites = makeSpriteCache();
 			}
@@ -1179,6 +1209,17 @@ const Court3D = ({
 					sceneMs={undefined}
 				/>
 			</div>
+			<canvas
+				ref={glRef}
+				aria-hidden
+				style={{
+					position: "absolute",
+					inset: 0,
+					width: "100%",
+					height: "100%",
+					imageRendering: "pixelated",
+				}}
+			/>
 			<canvas
 				ref={canvasRef}
 				role="img"

@@ -15,6 +15,11 @@ const MIN_ROWS = 300;
 // between steps.
 const SETTLE_MS = 2500;
 const MAX_CHANGES = 6;
+// A size found too slow this many times is not gone back to.
+const MAX_SLOW = 2;
+// A frame that hitched - a new pose sculpted on the spot, a face come in -
+// counts for no more than this (ms).
+const MAX_DRAW = 40;
 
 export type Resolution = {
 	// Steps coarser than the finest.
@@ -22,15 +27,19 @@ export type Resolution = {
 	// The time between frames and the time drawing one, smoothed (ms).
 	frameMs?: number;
 	drawMs?: number;
-	// When it last changed, and how many times it has.
+	// When it last changed (or the first frame was drawn), and how many
+	// times it has.
 	since: number;
 	changes: number;
+	// How many times each size (steps coarser) has been found too slow.
+	slow: Record<number, number>;
 };
 
 export const makeResolution = (now: number): Resolution => ({
 	coarser: 0,
 	since: now,
 	changes: 0,
+	slow: {},
 });
 
 const bounds = (deviceRows: number) => {
@@ -59,8 +68,13 @@ export const adjust = (
 ): boolean => {
 	const smooth = (old: number | undefined, v: number) =>
 		old === undefined ? v : old * 0.94 + v * 0.06;
+	if (res.frameMs === undefined) {
+		// The first frame at this size - or at all, which can be a while
+		// coming (the game staged first): settling in from here.
+		res.since = Math.max(res.since, now);
+	}
 	res.frameMs = smooth(res.frameMs, Math.min(100, frameMs));
-	res.drawMs = smooth(res.drawMs, drawMs);
+	res.drawMs = smooth(res.drawMs, Math.min(MAX_DRAW, drawMs));
 	if (now - res.since < SETTLE_MS || res.changes >= MAX_CHANGES) {
 		return false;
 	}
@@ -72,12 +86,15 @@ export const adjust = (
 		// drawing it is not what takes the time (something else on the page,
 		// the browser cleaning up after itself), a coarser one would only look
 		// worse, no faster.
+		res.slow[res.coarser] = (res.slow[res.coarser] ?? 0) + 1;
 		next += 1;
 	} else if (
 		art > finest &&
 		res.frameMs < 18.5 &&
-		// A size finer is that much more to draw.
-		res.drawMs * (art / (art - 1)) ** 2 < 11
+		// A size finer is more to draw - though not so much more as it has
+		// pixels, most of the work (the players sculpted) done elsewhere.
+		res.drawMs * (art / (art - 1)) < 11 &&
+		(res.slow[res.coarser - 1] ?? 0) < MAX_SLOW
 	) {
 		next -= 1;
 	}

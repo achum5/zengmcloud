@@ -110,6 +110,7 @@ export default defineConfig(
 
 				// This is needed for no-undef
 				AlgorithmIdentifier: false,
+				WebGLContextAttributes: false,
 				BufferSource: false,
 				HTMLCollectionOf: false,
 				ReadableStreamController: false,
