@@ -140,7 +140,8 @@ export const makeGlLayer = (canvas: HTMLCanvasElement): GlLayer | undefined => {
 	}
 	const maxSize = Number(g.getParameter(g.MAX_TEXTURE_SIZE)) || 2048;
 	let lost = false;
-	// A picture too big for the card: back to the canvas for good.
+	// A picture the card cannot take (too big, or not ours to read): back to
+	// the canvas for good.
 	let broken = false;
 	let textures = new WeakMap<HTMLCanvasElement, WebGLTexture>();
 	type Prog = {
@@ -213,7 +214,16 @@ export const makeGlLayer = (canvas: HTMLCanvasElement): GlLayer | undefined => {
 			return undefined;
 		}
 		g.bindTexture(g.TEXTURE_2D, t);
-		g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, img);
+		try {
+			g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, g.RGBA, g.UNSIGNED_BYTE, img);
+		} catch {
+			// A picture with something in it from another site that does not
+			// say it may be read - a team's logo, say, on its court: the card
+			// is not allowed it. Back to the canvas, which is.
+			g.deleteTexture(t);
+			broken = true;
+			return undefined;
+		}
 		g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_S, g.CLAMP_TO_EDGE);
 		g.texParameteri(g.TEXTURE_2D, g.TEXTURE_WRAP_T, g.CLAMP_TO_EDGE);
 		g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, g.LINEAR);
