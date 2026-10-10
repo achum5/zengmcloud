@@ -2296,6 +2296,12 @@ class Director {
 				ready = Math.max(ready, arrive);
 			}
 		};
+		// Each defender picks up the man nearest him, mostly across the floor
+		// (see matchUp), not a man on the far side past his teammates.
+		this.matchUp(
+			team,
+			off.map((pid, j) => target(pid, j)),
+		);
 		const placeDef = (pid: number, j: number, from: number) => {
 			const man = off[j] ?? off[0]!;
 			// The man on the inbounder: a step inside the line, shading the side
@@ -2357,8 +2363,9 @@ class Director {
 				placeOff(pid, j, t + 80 + j * 70);
 			}
 		});
-		def.forEach((pid, j) => {
-			if (pid !== holding) {
+		off.forEach((man, j) => {
+			const pid = this.defenderOf(man);
+			if (pid !== undefined && pid !== holding && def.includes(pid)) {
 				placeDef(pid, j, t + 120 + j * 70);
 			}
 		});
@@ -2373,7 +2380,8 @@ class Director {
 			if (j >= 0) {
 				placeOff(holding, j, has);
 			} else if (def.includes(holding)) {
-				placeDef(holding, def.indexOf(holding), has);
+				const k = off.findIndex((m) => this.defenderOf(m) === holding);
+				placeDef(holding, k >= 0 ? k : def.indexOf(holding), has);
 			}
 		}
 		this.hold(inbounder, Math.max(has, this.free.get(inbounder) ?? 0), "hold");
@@ -2381,7 +2389,7 @@ class Director {
 		const go = Math.max(ready, has) + 500;
 		this.hurry(t + 300, go - 200);
 		const tIn = this.passTo(inbounder, receiver, go);
-		const guard = def[off.indexOf(inbounder)];
+		const guard = this.defenderOf(inbounder);
 		if (guard !== undefined) {
 			const up = Math.max(this.free.get(guard) ?? 0, go - 900);
 			const down = Math.min(go + 150, tIn - 650);
@@ -2667,9 +2675,12 @@ class Director {
 	): number {
 		const team = this.teamOf(to);
 		const h = this.posOf(from);
+		// On his own side of him: he doesn't cut across in front of the man
+		// with it - and the men running their lanes - to get to the other.
+		const side = this.posOf(to).y < h.y ? -1 : 1;
 		const meet = clampPt({
 			x: h.x + attackDir(team) * ahead,
-			y: h.y < 25 ? Math.max(6, h.y - 8) : Math.min(44, h.y + 8),
+			y: Math.min(44, Math.max(6, h.y + side * 8)),
 		});
 		const there = this.go(to, meet, t, speed, "run");
 		const pass = Math.max(t + 150, there - 450);
@@ -13095,6 +13106,9 @@ class Director {
 		// on the floor - he is where it comes to: nobody moves him off it,
 		// not even a man holding his own ground.
 		const ON_BALL = new Set<AnimName>(["rebound", "board", "snatch", "pickup"]);
+		// Set - in a screen, sealing in the post - he is a wall: whoever
+		// comes by him, his own man off it included, goes round.
+		const SET = new Set<AnimName>(["screen", "postUp"]);
 		const tracks = [...this.tracks.values()];
 		// Read off in time order: where each list is up to (the last of it
 		// begun by t), never going back.
@@ -13362,7 +13376,8 @@ class Director {
 							const ground = (pid: number, act: AnimName | undefined) =>
 								act !== undefined && ON_BALL.has(act)
 									? 2
-									: pid === holder || (act !== undefined && HOLDS.has(act))
+									: pid === holder ||
+										  (act !== undefined && (HOLDS.has(act) || SET.has(act)))
 										? 1
 										: 0;
 							const ga = ground(A.pid, aa);
