@@ -38,7 +38,15 @@ import {
 	type Side,
 } from "./geometry.ts";
 import { BURST, keepThrough, paceFor, runMs } from "./motion.ts";
-import { BACKSPIN, CROSS_RATE, DRIBBLE_RATE, GRAVITY } from "./evaluate.ts";
+import {
+	BACKSPIN,
+	CROSS_RATE,
+	DRIBBLE_RATE,
+	GRAVITY,
+	PASS_TURN,
+	PASS_PICK_UP,
+	TURN_RATE,
+} from "./evaluate.ts";
 import {
 	findShot,
 	playAt,
@@ -566,6 +574,28 @@ const behindArc = (team: Side, p: Pt): Pt | undefined => {
 	const u = unitVec(rim, p);
 	const r = 23.75 + THREE_CLEAR + 0.5;
 	return clampPt({ x: rim.x + u.x * r, y: rim.y + u.y * r });
+};
+
+const PASS_ACTS = new Set<AnimName>(["pass", "passBounce", "passOverhead"]);
+
+// A step aside eases over and back this fast (ms each way) unless it says.
+const NUDGE_RAMP = 450;
+
+// The last of a list in time order begun by t (-1 if none yet).
+const lastBy = <X>(list: X[], t: number, key: (x: X) => number): number => {
+	let lo = 0;
+	let hi = list.length - 1;
+	let found = -1;
+	while (lo <= hi) {
+		const m = (lo + hi) >> 1;
+		if (key(list[m]!) <= t) {
+			found = m;
+			lo = m + 1;
+		} else {
+			hi = m - 1;
+		}
+	}
+	return found;
 };
 
 const passMs = (d: number) =>
@@ -13170,6 +13200,327 @@ class Director {
 	// are in it together (a screen, a post-up, a box-out, a high five). The
 	// man with the ball, or in the middle of a shot or a catch, holds his
 	// ground; of two others, the defender gives way, or the one standing.
+	// Where he is at t, his steps aside (see keepApart) and all.
+	private spotAt(tr: Track, t: number): Pt {
+		const k = lastBy(tr.moves, t, (m) => m.t0);
+		let x = tr.start.x;
+		let y = tr.start.y;
+		if (k >= 0) {
+			const m = tr.moves[k]!;
+			const e =
+				t >= m.t1
+					? 1
+					: 0.5 - 0.5 * Math.cos((Math.PI * (t - m.t0)) / (m.t1 - m.t0));
+			x = m.from.x + (m.to.x - m.from.x) * e;
+			y = m.from.y + (m.to.y - m.from.y) * e;
+		}
+		const list = tr.nudges ?? [];
+		for (let i = lastBy(list, t, (n) => n.t0); i >= 0; i--) {
+			const n = list[i]!;
+			if (t - n.t0 > 20000) {
+				break;
+			}
+			if (t >= n.t1) {
+				continue;
+			}
+			const q = Math.min(n.ramp ?? NUDGE_RAMP, (n.t1 - n.t0) / 2);
+			const u = Math.min(1, (t - n.t0) / q, (n.t1 - t) / q);
+			const w = u * u * (3 - 2 * u);
+			x += n.dx * w;
+			y += n.dy * w;
+		}
+		return { x, y };
+	}
+
+	// A pass never goes through a man in its way. With one in the lane -
+	// his own man up on him, a help defender in between - it is bounced by
+	// him, off the floor beside his feet; or, too far to bounce, thrown by
+	// his ear, the passer turned a little away from him (and a pivot step
+	// aside, if that is what it takes).
+	private aroundTheMan(fast: [number, number][]) {
+		// Out in front of him as it leaves his hands; the height it goes at,
+		// and how near a man's middle it can come and miss him.
+		const OUT = 2.3;
+		const CHEST = 4.1;
+		const LOW = 3;
+		const CATCH = 4;
+		const BODY = 6.9;
+		const NEAR = 1.1;
+		// Over the top, from up over his head.
+		const OUT_OVER = 1.6;
+		const HIGH = 5.4;
+		// Bounced only so far; his own man is no further off him than this.
+		const BOUNCE_MAX = 24;
+		const NEAR_PASSER = 7;
+		// A pivot step aside (feet), taken this quick (ms).
+		const PIVOT = 1.1;
+		const PIVOT_MS = 200;
+		// Off the floor this far to the side of him, a little past him - and
+		// not at the passer's feet. Each leg takes this long at least (ms).
+		const CLEAR = 1.8;
+		const PAST = 0.8;
+		const BOUNCE_NEAR = 4.8;
+		const LEG_MS = 150;
+		const inBounds = (p: Pt) =>
+			p.x > 0.5 && p.x < COURT_W - 0.5 && p.y > 0.5 && p.y < COURT_H - 0.5;
+		type Leg = { t0: number; t1: number; a: Pt3; b: Pt3 };
+		const ballAt = (legs: Leg[], t: number): Pt3 => {
+			const l = legs.find((g) => t < g.t1) ?? legs.at(-1)!;
+			const T = (l.t1 - l.t0) / 1000;
+			const tau = Math.max(0, Math.min(T, (t - l.t0) / 1000));
+			const u = T > 0 ? tau / T : 1;
+			const vz = T > 0 ? (l.b.z - l.a.z) / T + 0.5 * GRAVITY * T : 0;
+			return {
+				x: l.a.x + (l.b.x - l.a.x) * u,
+				y: l.a.y + (l.b.y - l.a.y) * u,
+				z: l.a.z + vz * tau - 0.5 * GRAVITY * tau * tau,
+			};
+		};
+		// The first man the ball would go through, and when.
+		const inTheWay = (
+			team: Side,
+			legs: Leg[],
+		): { tr: Track; t: number } | undefined => {
+			const t0 = legs[0]!.t0;
+			const t1 = legs.at(-1)!.t1;
+			for (let t = t0 + 60; t < t1 - 60; t += 30) {
+				const b = ballAt(legs, t);
+				if (b.z > BODY) {
+					continue;
+				}
+				for (const tr of this.tracks.values()) {
+					if (tr.team === team) {
+						continue;
+					}
+					const k = lastBy(tr.shown, t, (x) => x[0]);
+					if (k < 0 || !tr.shown[k]![1]) {
+						continue;
+					}
+					if (dist(this.spotAt(tr, t), b) < NEAR) {
+						return { tr, t };
+					}
+				}
+			}
+			return undefined;
+		};
+		const live = (t: number) => !fast.some(([a, b]) => t >= a && t < b);
+		for (let i = 0; i < this.ball.length; i++) {
+			const s = this.ball[i]!;
+			if (s.kind !== "fly" || !("pid" in s.from) || !live(s.t0)) {
+				continue;
+			}
+			// A bounce pass: to the floor, and up off it to him.
+			const after = this.ball[i + 1];
+			const next =
+				!("pid" in s.to) &&
+				after?.kind === "fly" &&
+				after.t0 === s.t1 &&
+				!("pid" in after.from) &&
+				"pid" in after.to
+					? { seg: after, to: after.to.pid }
+					: undefined;
+			const to = "pid" in s.to ? s.to.pid : next?.to;
+			const from = this.track(s.from.pid);
+			const recv = to === undefined ? undefined : this.track(to);
+			if (!from || !recv || recv === from || recv.team !== from.team) {
+				continue;
+			}
+			const release = s.t0;
+			const arrive = next ? next.seg.t1 : s.t1;
+			const act = from.acts.find(
+				(a) => PASS_ACTS.has(a.anim) && a.t0 <= release && a.t1 > release,
+			);
+			if (!act || arrive - release < 2 * LEG_MS + 60) {
+				continue;
+			}
+			const over = act.anim === "passOverhead";
+			const A = this.spotAt(from, release);
+			const B = this.spotAt(recv, arrive);
+			const L = dist(A, B);
+			if (L < 7) {
+				continue;
+			}
+			// Which way he faces as it goes: turned from where he was looking
+			// (whatever he did last, or the rim) toward it, as far as he
+			// gets by then (see yawTarget).
+			const before = from.acts.findLast(
+				(a) => a !== act && a.t0 < act.t0 && a.t1 > act.t0 - PASS_TURN,
+			);
+			// On the move up to it, he faces where he was going (squared up
+			// to the rim, walking it a few steps).
+			const mv = from.moves[lastBy(from.moves, act.t0, (m) => m.t0)];
+			const going =
+				mv && mv.t1 > act.t0 - PASS_TURN && dist(mv.from, mv.to) >= 3
+					? mv
+					: undefined;
+			const back = going?.anim === "back" ? -1 : 1;
+			const heading =
+				going &&
+				!(
+					going.anim === "dribble" &&
+					going.face !== undefined &&
+					dist(going.from, going.to) < 8
+				)
+					? {
+							x: A.x + (going.to.x - going.from.x) * back,
+							y: A.y + (going.to.y - going.from.y) * back,
+						}
+					: undefined;
+			const facing = before?.look ?? heading ?? rimPt(from.team);
+			const turnFrom = Math.max(
+				act.t0 - PASS_TURN,
+				before?.t1 ?? -Infinity,
+				going && !(PASS_PICK_UP.has(going.anim) && going.t1 <= act.t0 + 40)
+					? Math.min(going.t1, act.t0)
+					: -Infinity,
+			);
+			const was = Math.atan2(facing.y - A.y, facing.x - A.x);
+			const most = TURN_RATE * Math.max(0, release - turnFrom);
+			const legsVia = (look: Pt, hit?: Pt, step = { x: 0, y: 0 }): Leg[] => {
+				let d = Math.atan2(look.y - A.y, look.x - A.x) - was;
+				d -= Math.round(d / (2 * Math.PI)) * 2 * Math.PI;
+				const yaw = was + Math.max(-most, Math.min(most, d));
+				const out = over ? OUT_OVER : OUT;
+				const R = {
+					x: A.x + step.x + Math.cos(yaw) * out,
+					y: A.y + step.y + Math.sin(yaw) * out,
+				};
+				const Bz = { ...B, z: CATCH };
+				if (!hit) {
+					return [
+						{
+							t0: release,
+							t1: arrive,
+							a: { ...R, z: over ? HIGH : CHEST },
+							b: Bz,
+						},
+					];
+				}
+				const d1 = dist(R, hit);
+				const d2 = dist(hit, B);
+				// (Neither leg a flick: thrown down hard, or up off the floor
+				// into his hands.)
+				const tHit = Math.round(
+					Math.min(
+						arrive - LEG_MS,
+						Math.max(
+							release + LEG_MS,
+							release + ((arrive - release) * 0.9 * d1) / (d1 + d2 || 1),
+						),
+					),
+				);
+				const H = { x: hit.x, y: hit.y, z: BALL_R };
+				return [
+					{ t0: release, t1: tHit, a: { ...R, z: LOW }, b: H },
+					{ t0: tHit, t1: arrive, a: H, b: Bz },
+				];
+			};
+			const hit = inTheWay(
+				from.team,
+				next && !("pid" in s.to) ? legsVia(s.to, s.to) : legsVia(B),
+			);
+			if (!hit) {
+				continue;
+			}
+			const u = unitVec(A, B);
+			const n = { x: -u.y, y: u.x };
+			const D = this.spotAt(hit.tr, hit.t);
+			const along = (D.x - A.x) * u.x + (D.y - A.y) * u.y;
+			const side = (D.x - A.x) * n.x + (D.y - A.y) * n.y;
+			// A man closing out on the catch is no man in the way.
+			if (along > L - 4) {
+				continue;
+			}
+			const pref = side >= 0 ? -1 : 1;
+			// Bounced by him, off the floor beside his feet.
+			let done = false;
+			if (!over && (next || L <= BOUNCE_MAX) && along >= 2) {
+				const at = Math.min(L - 4, Math.max(BOUNCE_NEAR, along + PAST));
+				for (const sgn of [pref, -pref]) {
+					const off = side + sgn * CLEAR;
+					const P = {
+						x: A.x + u.x * at + n.x * off,
+						y: A.y + u.y * at + n.y * off,
+					};
+					if (!inBounds(P)) {
+						continue;
+					}
+					const legs = legsVia(P, P);
+					if (inTheWay(from.team, legs)) {
+						continue;
+					}
+					act.anim = "passBounce";
+					act.look = { ...P };
+					const H = legs[0]!.b;
+					const tHit = legs[0]!.t1;
+					if (next) {
+						s.t1 = tHit;
+						s.to = { ...H };
+						next.seg.t0 = tHit;
+						next.seg.from = { ...H };
+					} else {
+						this.ball.splice(
+							i,
+							1,
+							{
+								kind: "fly",
+								t0: release,
+								t1: tHit,
+								from: s.from,
+								to: { ...H },
+							},
+							{ kind: "fly", t0: tHit, t1: arrive, from: { ...H }, to: s.to },
+						);
+						i++;
+					}
+					done = true;
+					break;
+				}
+			}
+			// Or, his own man up on him, thrown by his ear: turned a little
+			// away from him to get it out past him - a pivot step away from
+			// him first, if that is what it takes.
+			if (done || next || along > NEAR_PASSER) {
+				continue;
+			}
+			turns: for (const [k, pivot] of [
+				[0.3, 0],
+				[0.5, 0],
+				[0.3, PIVOT],
+				[0.5, PIVOT],
+				[0.7, PIVOT],
+			] as const) {
+				for (const sgn of [pref, -pref]) {
+					// (Turned toward n, round to his left, for sgn 1.)
+					const yaw = Math.atan2(u.y, u.x) + sgn * k;
+					const look = {
+						x: A.x + Math.cos(yaw) * 10,
+						y: A.y + Math.sin(yaw) * 10,
+					};
+					const step = { x: n.x * sgn * pivot, y: n.y * sgn * pivot };
+					if (pivot > 0 && !inBounds({ x: A.x + step.x, y: A.y + step.y })) {
+						continue;
+					}
+					if (inTheWay(from.team, legsVia(look, undefined, step))) {
+						continue;
+					}
+					act.look = look;
+					if (pivot > 0) {
+						(from.nudges ??= []).push({
+							t0: act.t0 - PIVOT_MS,
+							t1: release + 500,
+							dx: step.x,
+							dy: step.y,
+							ramp: PIVOT_MS,
+						});
+						from.nudges.sort((a, b) => a.t0 - b.t0);
+					}
+					break turns;
+				}
+			}
+		}
+	}
+
 	private keepApart(fast: [number, number][]) {
 		const STEP = 100;
 		const MATES = 2.6;
@@ -13177,7 +13528,7 @@ class Director {
 		// In it together - a screen, a box-out - no nearer than this.
 		const TOUCH = 1.3;
 		// (Easing over and back, and the longest a step aside lasts.)
-		const RAMP = 450;
+		const RAMP = NUDGE_RAMP;
 		const LONGEST = 12000;
 		// Going faster than this (feet a second), he is only passing by.
 		const MOVING = 4;
@@ -13345,21 +13696,6 @@ class Director {
 		};
 		// Where a man is at any t, and whether he is on the floor (read
 		// straight off his runs, for the few times it is needed).
-		const lastBy = <X>(list: X[], t: number, key: (x: X) => number): number => {
-			let lo = 0;
-			let hi = list.length - 1;
-			let found = -1;
-			while (lo <= hi) {
-				const m = (lo + hi) >> 1;
-				if (key(list[m]!) <= t) {
-					found = m;
-					lo = m + 1;
-				} else {
-					hi = m - 1;
-				}
-			}
-			return found;
-		};
 		const posAt = (tr: Track, t: number): Pt => {
 			const r: Reader = {
 				tr,
@@ -14261,6 +14597,7 @@ class Director {
 		this.fx.sort((a, b) => a.t - b.t);
 		const fast = hurried(this.fast, this.beats);
 		this.keepApart(fast);
+		this.aroundTheMan(fast);
 		// A look round the building runs on to the picture's next cut when
 		// that comes soon after (the substitutions over a timeout, the walk
 		// out for the next period), so the game picks up at a cut.

@@ -777,6 +777,14 @@ const EYES_ON_BALL = new Set<AnimName>([
 	"drift",
 ]);
 
+const PASSES = new Set<AnimName>(["pass", "passBounce", "passOverhead"]);
+export const PASS_TURN = 250;
+export const PASS_PICK_UP = new Set<AnimName>([
+	"dribble",
+	"dribbleWalk",
+	"back",
+]);
+
 // Which way he means to face at t: at what he is doing (a shot faces the rim),
 // where he is running, or - standing - at the ball.
 const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
@@ -789,6 +797,22 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 		return angleTo(here, act.look, fallback);
 	}
 	const mv = here.moveIndex >= 0 ? tr.moves[here.moveIndex] : undefined;
+	// About to pass it - standing, or picking up his dribble for it - he
+	// squares up to where it goes first, not round on it as it leaves his
+	// hands.
+	if (!act) {
+		const nx = tr.acts[lastIndex(tr.acts, t + PASS_TURN, (a) => a.t0)];
+		if (
+			nx &&
+			nx.t0 > t &&
+			nx.look &&
+			PASSES.has(nx.anim) &&
+			(!here.moving ||
+				(mv !== undefined && PASS_PICK_UP.has(mv.anim) && mv.t1 <= nx.t0 + 40))
+		) {
+			return angleTo(here, nx.look, fallback);
+		}
+	}
 	// How he is going: a slide too fast to be one is a run, say.
 	const gait = here.run ? runAnim(here.run) : mv?.anim;
 	// A defensive slide keeps his eyes on the ball whichever way he goes -
@@ -860,7 +884,9 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 // did - and eased between beats. No state that depends on which frames were
 // drawn before, so any frame can be asked for and every viewing agrees.
 const TURN_STEP = 40;
-const TURN_MAX = (Math.PI * 3 * TURN_STEP) / 1000;
+// (Radians a ms.)
+export const TURN_RATE = (Math.PI * 3) / 1000;
+const TURN_MAX = TURN_RATE * TURN_STEP;
 const TURN_SETTLE = 1000;
 const TURN_ANCHOR = 2000;
 const TAU = Math.PI * 2;
