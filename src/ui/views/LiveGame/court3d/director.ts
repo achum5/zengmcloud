@@ -5402,6 +5402,16 @@ class Director {
 	// Their board: the defense that went to the glass for it gets back out
 	// of there to its men - not left standing under the rim while the ball
 	// is kicked back out.
+	// Who he kicks it out to from in under the rim: the nearest of his
+	// teammates out on the perimeter.
+	private kickOutTo(team: Side, pid: number): number | undefined {
+		const rim = rimPt(team);
+		const P = this.posOf(pid);
+		return this.slots(team)
+			.filter((m) => m !== pid && dist(this.posOf(m), rim) > 19)
+			.sort((a, b) => dist(this.posOf(a), P) - dist(this.posOf(b), P))[0];
+	}
+
 	// Off an offensive board the rest don't stand round the rim watching
 	// him. Whoever went in after it and isn't a big gets back out to an open
 	// spot on the arc, for the kick-out; a big right on top of him steps off
@@ -5891,6 +5901,53 @@ class Director {
 						style = "post";
 						t = this.backDown(shooter, t, dir);
 					}
+				} else if (
+					handler === shooter &&
+					plan.kind !== "make" &&
+					heaveSecs === undefined &&
+					(zone === "three" || zone === "midRange") &&
+					dist(this.posOf(shooter), rim) < 12 &&
+					this.kickOutTo(team, shooter) !== undefined
+				) {
+					// In under the rim with it himself, his shot a jumper out at
+					// the line - off an offensive board, say - and nothing on the
+					// line to say he got it up on his own: he kicks it out and
+					// goes out to get it back, rather than dribbling all the way
+					// back out. His man goes with him.
+					const mate = this.kickOutTo(team, shooter)!;
+					t = this.passTo(shooter, mate, t);
+					// Out to an open spot, not to where he threw it.
+					const S0 = this.posOf(shooter);
+					const others = this.slots(team)
+						.filter((m) => m !== shooter)
+						.map((m) => this.posOf(m));
+					const Q =
+						(zone === "three"
+							? RESPACE_SPOTS
+							: ["L_elbow", "R_elbow", "L_mid_wing", "R_mid_wing", "high_post"]
+						)
+							.map((name) => this.spotFor(team, 1, name))
+							.filter((X) => others.every((m) => dist(m, X) >= 10))
+							.sort((a, b) => dist(a, S0) - dist(b, S0))[0] ?? spotNow();
+					P = Q;
+					const arrive = this.go(shooter, Q, t, RUN, "run");
+					const g = this.defenderOf(shooter);
+					if (g !== undefined) {
+						this.shadow(
+							g,
+							this.defensePoint(team, Q, this.posOf(mate), false),
+							t + 200,
+							arrive + 250,
+							team,
+							shooter,
+						);
+					}
+					const send = Math.max(
+						t + 250,
+						arrive - passMs(dist(this.posOf(mate), Q)) - 250,
+					);
+					t = Math.max(arrive, this.passTo(mate, shooter, send));
+					t = Math.max(t, this.hold(shooter, t, "hold"));
 				} else {
 					if (handler !== shooter) {
 						t = this.passTo(handler, shooter, t);
