@@ -262,7 +262,11 @@ export type FxKind =
 	| "cheer"
 	| "roar"
 	// The official throws the jump ball up.
-	| "toss";
+	| "toss"
+	// The game won a playoff series (`big`: the championship), and confetti
+	// down from the rafters.
+	| "clinch"
+	| "confetti";
 // What a whistle was for, for the officials to signal: a foul (on a shot,
 // or through one that counts), a travel, an offensive foul, the ball out of
 // bounds, the shot clock or five seconds, or play stopped.
@@ -956,6 +960,7 @@ class Director {
 	// The starting lineups, when the game opens with them (see intro.ts).
 	intro: Intro | undefined;
 	private readonly introKind: "regular" | "playoffs" | undefined;
+	private readonly stakes: Stakes | undefined;
 	// Each side's starters in the order they are called.
 	private readonly introOrder: [number[], number[]] = [[], []];
 	// When the lineups started being called, until the tip they lead to.
@@ -1009,11 +1014,13 @@ class Director {
 		gid: number | undefined,
 		gender: "female" | "male",
 		intro?: "regular" | "playoffs",
+		stakes?: Stakes,
 	) {
 		this.events = events;
 		this.gid = gid;
 		this.gender = gender;
 		this.introKind = intro;
+		this.stakes = stakes;
 		this.rng = makeCourtRng(`court|${gid ?? 0}`);
 		const seats: [number, number] = [0, 0];
 		for (const p of players) {
@@ -7932,13 +7939,40 @@ class Director {
 				}
 				const crowd = { x: COURT_W / 2, y: COURT_H + 20 };
 				let done = T + 2200;
+				// A playoff game: won, a series won, the championship.
+				const stakes = this.stakes;
+				const clinch = !!stakes && stakes.won[winner] + 1 >= stakes.toWin;
+				const title = clinch && stakes.finals;
+				const mob = clinch && hero === undefined;
 				// The winners: all over the man who won it - mobbed where he
 				// stands - or, a close one, celebrating where the buzzer found
 				// them; a blowout, a clap and that is all. The losers: hands on
 				// their hips, or - beaten at the buzzer - doubled over.
+				// A series won and not at the buzzer: together at center court,
+				// all over each other.
+				const middle = { x: COURT_W / 2, y: COURT_H / 2 };
 				this.slots(winner).forEach((pid, j) => {
 					const from = Math.max(T + 150 + j * 80, this.free.get(pid) ?? 0);
-					if (hero !== undefined && pid !== hero && this.team.has(hero)) {
+					if (mob) {
+						const a = (j / 5) * Math.PI * 2;
+						const there = this.go(
+							pid,
+							{
+								x: middle.x + Math.cos(a) * 2.2,
+								y: middle.y + Math.sin(a) * 2.2,
+							},
+							from,
+							SPRINT,
+							"run",
+						);
+						const long = title ? 4200 : 2600;
+						this.react(pid, "celebrate", there, long, middle);
+						done = Math.max(done, there + long);
+					} else if (
+						hero !== undefined &&
+						pid !== hero &&
+						this.team.has(hero)
+					) {
 						const H = this.posOf(hero);
 						const a = (j / 5) * Math.PI * 2;
 						const there = this.go(
@@ -7951,13 +7985,16 @@ class Director {
 							SPRINT,
 							"run",
 						);
-						this.react(pid, "celebrate", there, 1800, H);
-						done = Math.max(done, there + 1800);
+						const long = clinch ? (title ? 4200 : 2600) : 1800;
+						this.react(pid, "celebrate", there, long, H);
+						done = Math.max(done, there + long);
 					} else if (pid === hero) {
+						const long = clinch ? (title ? 3300 : 1700) : 1800;
 						this.react(pid, "flex", from, 900, crowd);
-						this.react(pid, "celebrate", from + 900, 1800, crowd);
-						done = Math.max(done, from + 2700);
-					} else if (margin <= 6) {
+						this.react(pid, "celebrate", from + 900, long, crowd);
+						done = Math.max(done, from + 900 + long);
+					} else if (margin <= (stakes ? 14 : 6)) {
+						// (Any playoff win but a rout.)
 						this.react(pid, "celebrate", from, 1700, crowd);
 					} else {
 						this.react(pid, "clap", from, 1200, crowd);
@@ -8031,7 +8068,18 @@ class Director {
 					t1 = met + 700;
 				}
 				this.effect("cheer", T, { team: winner });
-				this.beat(i, type, T, t1 + 400);
+				if (stakes) {
+					// The bench and the building up for it.
+					this.effect("roar", T, { team: winner });
+				}
+				if (clinch) {
+					this.effect("clinch", T, { team: winner, big: title });
+				}
+				// Confetti, for the home team winning it all - at home.
+				if (title && winner === 1) {
+					this.effect("confetti", T + 400, { team: winner });
+				}
+				this.beat(i, type, T, t1 + (title ? 5000 : 400));
 				this.phase = "dead";
 				break;
 			}
@@ -13425,23 +13473,34 @@ const hurried = (
 	return out.filter(([a, b, min]) => b - a >= min).map(([a, b]) => [a, b]);
 };
 
+// What a playoff game is for: the wins each side (away, home) had in the
+// series going in, how many it takes, and whether it is for the title.
+export type Stakes = {
+	won: [number, number];
+	toWin: number;
+	finals: boolean;
+};
+
 export const compileCourt = ({
 	events,
 	players,
 	gid,
 	gender = "male",
 	intro,
+	stakes,
 }: {
 	events: RawEvent[];
 	players: CourtPlayer[];
 	// The starting lineups to call before the opening tip (see intro.ts).
 	intro?: "regular" | "playoffs";
+	// A playoff game's (celebrated accordingly at the end).
+	stakes?: Stakes;
 	// The game, which seeds everything the sim leaves open (where the shooter
 	// stood, who boxed out) and picks the play-by-play's wording.
 	gid: number | undefined;
 	gender?: "female" | "male";
 }): CourtTimeline => {
-	const d = new Director(events, players, gid, gender, intro);
+	const d = new Director(events, players, gid, gender, intro, stakes);
 	for (let i = 0; i < events.length; i++) {
 		const e = events[i];
 		if (!e || typeof e.type !== "string") {

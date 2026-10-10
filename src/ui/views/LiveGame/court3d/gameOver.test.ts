@@ -1,9 +1,14 @@
 import { assert, describe, test } from "vitest";
-import { compileCourt, type CourtPlayer, type RawEvent } from "./director.ts";
+import {
+	compileCourt,
+	type CourtPlayer,
+	type RawEvent,
+	type Stakes,
+} from "./director.ts";
 import { evalPlayer } from "./evaluate.ts";
 
 // The last seconds of a game, the sim's way, won (or not) on the last shot.
-const ending = (lastShot: RawEvent[]) => {
+const ending = (lastShot: RawEvent[], stakes?: Stakes) => {
 	const players: CourtPlayer[] = [];
 	const POS = ["PG", "SG", "SF", "PF", "C"];
 	const events: RawEvent[] = [{ type: "init", boxScore: {} }];
@@ -26,7 +31,7 @@ const ending = (lastShot: RawEvent[]) => {
 		{ type: "endOfPeriod", t: 0, reason: "noShot", clock: 0 },
 		{ type: "gameOver" },
 	);
-	return compileCourt({ events, players, gid: 3 });
+	return compileCourt({ events, players, gid: 3, stakes });
 };
 
 describe("3D end of game", () => {
@@ -55,5 +60,55 @@ describe("3D end of game", () => {
 				).length;
 			assert.isAtLeast(daps, 2, `${pid}`);
 		}
+	});
+
+	// The playoffs: a series won is mobbed and its bench storms the floor; the
+	// championship, won at home, brings the confetti down.
+	test("a series won is celebrated, a title at home with confetti", () => {
+		const buzzer: RawEvent[] = [
+			{ type: "fgaTp", t: 0, pid: 2, clock: 1.4, desperation: false },
+			{ type: "tp", t: 0, pid: 2, clock: 0.6 },
+			{ type: "stat", t: 0, pid: 2, s: "pts", amt: 3 },
+		];
+		const kinds = (stakes?: Stakes) =>
+			ending(buzzer, stakes)
+				.fx.filter((f) => f.kind === "clinch" || f.kind === "confetti")
+				.map((f) => `${f.kind}${f.big ? "!" : ""}:${f.team}`);
+		// (Home, side 1, wins it.)
+		assert.deepEqual(kinds(), []);
+		assert.deepEqual(kinds({ won: [2, 2], toWin: 4, finals: false }), []);
+		assert.deepEqual(kinds({ won: [2, 3], toWin: 4, finals: false }), [
+			"clinch:1",
+		]);
+		assert.deepEqual(kinds({ won: [3, 3], toWin: 4, finals: true }), [
+			"clinch!:1",
+			"confetti:1",
+		]);
+		// The road team winning it all: no confetti in somebody else's building.
+		const away = ending(
+			[
+				{ type: "fgaTp", t: 1, pid: 12, clock: 1.4, desperation: false },
+				{ type: "tp", t: 1, pid: 12, clock: 0.6 },
+				{ type: "stat", t: 1, pid: 12, s: "pts", amt: 3 },
+			],
+			{ won: [3, 3], toWin: 4, finals: true },
+		);
+		assert.deepEqual(
+			away.fx
+				.filter((f) => f.kind === "clinch" || f.kind === "confetti")
+				.map((f) => `${f.kind}:${f.team}`),
+			["clinch:0"],
+		);
+		// And the title is celebrated longer.
+		const plain = ending(buzzer).beats.at(-1)!;
+		const title = ending(buzzer, {
+			won: [3, 3],
+			toWin: 4,
+			finals: true,
+		}).beats.at(-1)!;
+		assert.isAbove(
+			title.end - title.actionStart,
+			plain.end - plain.actionStart,
+		);
 	});
 });

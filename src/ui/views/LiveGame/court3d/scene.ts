@@ -393,6 +393,52 @@ const checkInState = (
 // up on their feet in a tight finish - or on their way to the table to
 // check in.
 const STANDING: AnimName[] = ["ready", "crossed", "ready", "crouch"];
+// A series won: the bench out onto the floor, round the men who won it in
+// their own half - running there, then all over each other.
+const STORM_SPEED = 17;
+const RUN = ANIMS.run;
+const stormState = (
+	pid: number,
+	team: Side,
+	i: number,
+	seat: { x: number; y: number },
+	from: number,
+	t: number,
+	now: number,
+): PlayerState | undefined => {
+	const start = from + 400 + (i % 8) * 140;
+	if (t < start) {
+		return undefined;
+	}
+	const c = { x: COURT_W / 2 + (team === 0 ? -8 : 8), y: 25 };
+	const a = (i / 9) * Math.PI * 2 + team;
+	const r = 3.4 + (i % 3) * 0.9;
+	const to = { x: c.x + Math.cos(a) * r, y: c.y + Math.sin(a) * r };
+	const d = Math.hypot(to.x - seat.x, to.y - seat.y);
+	const ran = ((t - start) / 1000) * STORM_SPEED;
+	const base = { pid, team, shown: true, z: 0 };
+	if (ran < d) {
+		const u = ran / d;
+		return {
+			...base,
+			x: seat.x + (to.x - seat.x) * u,
+			y: seat.y + (to.y - seat.y) * u,
+			yaw: Math.atan2(to.y - seat.y, to.x - seat.x),
+			anim: "run",
+			phase: ran / (RUN.kind === "cycle" ? RUN.stride : 8.6),
+			moving: true,
+		} as PlayerState;
+	}
+	return {
+		...base,
+		x: to.x,
+		y: to.y,
+		yaw: Math.atan2(c.y - to.y, c.x - to.x),
+		anim: "celebrate",
+		phase: benchPhase("celebrate", now, pid),
+		moving: false,
+	} as PlayerState;
+};
 const benchStates = (
 	f: Frame,
 	onFloor: Set<number>,
@@ -405,6 +451,7 @@ const benchStates = (
 	const roar = recentFx(f.tl, t, ["roar"], 1800);
 	const calling = callAt(f.tl.intro, t)?.team;
 	const tense = tensionAt(f.tl, t) >= 1;
+	const clinch = recentFx(f.tl, t, ["clinch"], 10 * 60_000);
 	for (const p of f.roster) {
 		const i = seat[p.team]++;
 		if (onFloor.has(p.pid)) {
@@ -420,6 +467,14 @@ const benchStates = (
 			continue;
 		}
 		const at = seatSpot(p.team, i);
+		const storm =
+			clinch?.team === p.team
+				? stormState(p.pid, p.team, i, at, clinch.t, t, f.now ?? t)
+				: undefined;
+		if (storm) {
+			out.push({ st: storm, warm });
+			continue;
+		}
 		const up = roar?.team === p.team || calling === p.team;
 		const anim: AnimName = up
 			? "cheer"
@@ -540,6 +595,52 @@ export const buildingPictures = (arena: ArenaPaint): HTMLCanvasElement[] =>
 		...(arena.endStands ?? []),
 		arena.endStandsSparse,
 	].filter((c) => c !== undefined);
+
+// CONFETTI down from the rafters over the floor, the home team champions -
+// fluttering as it falls, and lying where it lands. Each piece is its own
+// from the moment it was let go, so the same instant always looks the same.
+const CONFETTI = 900;
+const CONFETTI_FROM = 44;
+const drawConfetti = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	tl: CourtTimeline,
+	t: number,
+	colors: string[],
+	// Those still in the air, or those on the floor.
+	falling: boolean,
+) => {
+	const fx = recentFx(tl, t, ["confetti"], 30 * 60_000);
+	if (!fx) {
+		return;
+	}
+	for (let k = 0; k < CONFETTI; k++) {
+		const dt = (t - fx.t - unitHash(k, 1) * 12_000) / 1000;
+		if (dt < 0) {
+			continue;
+		}
+		const v = 3.2 + unitHash(k, 4) * 3.2;
+		const down = CONFETTI_FROM / v;
+		const air = dt < down;
+		if (air !== falling) {
+			continue;
+		}
+		const u = Math.min(dt, down);
+		const x =
+			-8 + unitHash(k, 2) * (COURT_W + 16) + Math.sin(u * 2.3 + k) * 1.4;
+		const y = -6 + unitHash(k, 3) * 62 + Math.cos(u * 1.7 + k) * 0.9;
+		const z = Math.max(0, CONFETTI_FROM - v * u);
+		const p = project(cam, { x, y, z });
+		if (p.x < -4 || p.y < -4 || p.x > cam.viewW + 4 || p.y > cam.viewH + 4) {
+			continue;
+		}
+		const size = Math.max(1.2, p.k * 0.5);
+		// Turning over as it falls: edge on, then flat.
+		const w = air ? size * Math.max(0.2, Math.abs(Math.sin(dt * 7 + k))) : size;
+		ctx.fillStyle = colors[k % colors.length]!;
+		ctx.fillRect(p.x - w / 2, p.y - size / 2, w, air ? size : size * 0.6);
+	}
+};
 
 // A plain quad on the floor, in one color.
 const floorQuad = (
@@ -725,6 +826,12 @@ export const drawFrame = (f: Frame) => {
 	drawFlashes(ctx, cam, tl, t);
 	drawCourtLines(ctx, cam, f.lineColor);
 	drawDroppedTops(ctx, cam, tl, t, f.warmups);
+	const confetti = [
+		...(f.teamColors?.[1] ?? DEFAULT_TEAM_COLORS[1]!),
+		"#ffffff",
+		"#f5cf4a",
+	];
+	drawConfetti(ctx, cam, tl, t, confetti, false);
 
 	const crew = crewAll.filter((c) => !atTable(c.st.pid));
 	// Shadows: soft pools under the feet, shrinking as they leave the floor.
@@ -848,6 +955,7 @@ export const drawFrame = (f: Frame) => {
 	for (const it of items) {
 		it.draw();
 	}
+	drawConfetti(ctx, cam, tl, t, confetti, true);
 	// The lights down for the starting lineups.
 	drawLights(
 		ctx,

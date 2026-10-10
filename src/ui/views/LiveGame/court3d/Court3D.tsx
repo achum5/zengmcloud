@@ -39,6 +39,7 @@ import {
 	targetForCursor,
 	type CourtPlayer,
 	type CourtTimeline,
+	type Stakes,
 } from "./director.ts";
 import { compileAside } from "./sculptPool.ts";
 import { crewAt, crewFor } from "./crew.ts";
@@ -226,6 +227,36 @@ const Court3D = ({
 
 	// The starting lineups called out before the opening tip (see intro.ts):
 	// off for now, kept to come back to.
+	// A playoff game's stakes, as they stood going into it - the box score's
+	// series records take this game in once it is over, so they are read
+	// once, and one won by now is taken back out.
+	const stakes = useMemo((): Stakes | undefined => {
+		const bs = boxScore as
+			| {
+					playoffs?: boolean;
+					finals?: boolean;
+					numGamesToWinSeries?: number;
+					gameOver?: boolean;
+					won?: { tid?: number };
+					teams?: { tid?: number; playoffs?: { won?: number } }[];
+			  }
+			| undefined;
+		if (!bs?.playoffs || typeof bs.numGamesToWinSeries !== "number") {
+			return undefined;
+		}
+		const won = (raw: 0 | 1) => {
+			const t = bs.teams?.[raw];
+			const w = Number(t?.playoffs?.won ?? 0);
+			return bs.gameOver && bs.won?.tid === t?.tid ? w - 1 : w;
+		};
+		// (Raw team 0 is home, side 1.)
+		return {
+			won: [won(1), won(0)],
+			toWin: bs.numGamesToWinSeries,
+			finals: !!bs.finals,
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [gid]);
 	const introKind: "playoffs" | "regular" | undefined = LINEUP_INTROS
 		? boxScore?.playoffs
 			? "playoffs"
@@ -253,7 +284,14 @@ const Court3D = ({
 			return;
 		}
 		let live = true;
-		const input = { events, players: roster, gid, gender, intro: introKind };
+		const input = {
+			events,
+			players: roster,
+			gid,
+			gender,
+			intro: introKind,
+			stakes,
+		};
 		const here = () => {
 			try {
 				return compileCourt(input);
@@ -289,7 +327,7 @@ const Court3D = ({
 		return () => {
 			live = false;
 		};
-	}, [events, roster, gid, gender, introKind]);
+	}, [events, roster, gid, gender, introKind, stakes]);
 	const timeline =
 		staged && staged.events === events && staged.roster === roster
 			? staged.tl
