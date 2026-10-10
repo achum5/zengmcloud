@@ -5492,6 +5492,15 @@ class Director {
 		const shooter = run.roles[o.shooter]!;
 		const passer = o.assist === undefined ? undefined : run.roles[o.assist];
 		const rim = { x: rimX(team), y: COURT_H / 2 };
+		// With it in his own hands at the end of it - pulling up off the
+		// screen, say - he goes up as he gets there: he doesn't dribble in
+		// place while the others finish what the step had them doing.
+		if (this.holder === shooter) {
+			const mine = this.hasItFrom(shooter);
+			if (mine < t - 150) {
+				t = Math.max(mine + 80, t - 1500);
+			}
+		}
 		const dunk =
 			o.zone === "rim" && (plan.finish === "dunk" || plan.finish === "poster");
 		if (this.holder !== shooter) {
