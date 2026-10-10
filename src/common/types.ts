@@ -595,7 +595,15 @@ export type ReplayLooks = {
 export type ArenaLooks = {
 	capacity?: number;
 	titles: number[];
-	retired: { number: string; name?: string }[];
+	// How the team looked the season of each title (in step with titles), for
+	// its banner.
+	titleLooks?: { colors: [string, string, string]; imgURL?: string }[];
+	retired: {
+		number: string;
+		name?: string;
+		// The colors of the jersey it is shown in.
+		colors?: [string, string, string];
+	}[];
 };
 
 // One team's line in a contested free-agency roll: its mood-derived odds and

@@ -794,15 +794,28 @@ export const drawJumbo = (
 // ---- the rafters -------------------------------------------------------------
 
 // What hangs there: the championships won, each year its own banner (or,
-// for a dynasty, a few years to a banner), and the numbers retired.
+// for a dynasty, a few years to a banner), and the numbers retired - each in
+// the colors (and a title's with the logo) the team had then.
 export type RafterInfo = {
 	titles: number[];
-	retired: { number: string; name?: string }[];
+	titleLooks?: { colors: [string, string, string]; imgURL?: string }[];
+	retired: {
+		number: string;
+		name?: string;
+		colors?: [string, string, string];
+	}[];
 };
+
+// A banner as the game draws one on the playoffs and team history pages,
+// in its own units (see ChampionshipBanner): 164 across its top bar, a
+// field in the team's first color edged in its third, the bar across the
+// top, and a notched tail.
+const BANNER_W = 164;
 
 export const paintRafters = (
 	home: ArenaTeam | undefined,
 	info: RafterInfo | undefined,
+	logos?: Map<string, HTMLCanvasElement>,
 ): HTMLCanvasElement => {
 	const { w, h } = RAFTERS;
 	const px = w / (X1 - X0);
@@ -851,9 +864,11 @@ export const paintRafters = (
 	const retired = info?.retired ?? [];
 	// A dynasty's banners carry several years each, so they all fit.
 	const per = Math.max(1, Math.ceil(titles.length / 12));
-	const groups: number[][] = [];
+	const titleLooks = info?.titleLooks ?? [];
+	const groups: { years: number[]; look?: (typeof titleLooks)[number] }[] = [];
 	for (let i = 0; i < titles.length; i += per) {
-		groups.push(titles.slice(i, i + per));
+		const last = Math.min(titles.length, i + per) - 1;
+		groups.push({ years: titles.slice(i, i + per), look: titleLooks[last] });
 	}
 	const n = groups.length + retired.length;
 	if (n === 0) {
@@ -863,91 +878,139 @@ export const paintRafters = (
 	const pitch = Math.min(6.8, 150 / n);
 	const x0 = COURT_W / 2 - (pitch * (n - 1)) / 2 - bw / 2;
 	const hang = bottom + 0.3 * px;
+	const own = [c0, c1, trim] as const;
+	// Its colors: [field, lettering, edge] - lettering that reads on the
+	// field whatever they were.
+	const colorsOf = (colors: readonly string[] | undefined) => {
+		const field = colors?.[0] || own[0];
+		const edge = colors?.[2] || own[2];
+		const letters = colors?.[1] || own[1];
+		return [
+			field,
+			Math.abs(luminance(letters) - luminance(field)) < 0.2
+				? inkOn(field)
+				: letters,
+			edge,
+		] as const;
+	};
 	const banner = (
 		i: number,
-		tall: number,
-		paint: (x: number, bwPx: number, bh: number) => void,
+		colors: readonly string[] | undefined,
+		paint: (
+			at: (x: number, y: number) => [number, number],
+			s: number,
+			ink: string,
+		) => void,
 	) => {
-		const x = X(x0 + i * pitch);
-		const bwPx = Math.min(bw, pitch - 0.6) * px;
-		const bh = tall * px;
+		const [field, ink, edge] = colorsOf(colors);
+		const s = (Math.min(bw, pitch - 0.6) * px) / BANNER_W;
+		const left = X(x0 + i * pitch) - 9 * s;
+		const top = hang - 16 * s;
+		const at = (x: number, y: number): [number, number] => [
+			left + x * s,
+			top + y * s,
+		];
 		// The wires it hangs from.
 		ctx.strokeStyle = "rgba(160,160,170,0.6)";
 		ctx.lineWidth = 1;
 		ctx.beginPath();
-		ctx.moveTo(x + bwPx * 0.2, bottom);
-		ctx.lineTo(x + bwPx * 0.2, hang);
-		ctx.moveTo(x + bwPx * 0.8, bottom);
-		ctx.lineTo(x + bwPx * 0.8, hang);
+		for (const x of [15, 167]) {
+			ctx.moveTo(...at(x, 0));
+			ctx.lineTo(at(x, 0)[0], bottom);
+		}
 		ctx.stroke();
-		// The cloth, with a trim round it and a notched tail.
-		ctx.fillStyle = trim;
-		ctx.beginPath();
-		ctx.moveTo(x, hang);
-		ctx.lineTo(x + bwPx, hang);
-		ctx.lineTo(x + bwPx, hang + bh);
-		ctx.lineTo(x + bwPx / 2, hang + bh - bwPx * 0.22);
-		ctx.lineTo(x, hang + bh);
-		ctx.closePath();
+		const path = (pts: [number, number][]) => {
+			ctx.beginPath();
+			pts.forEach(([x, y], k) => {
+				if (k === 0) {
+					ctx.moveTo(...at(x, y));
+				} else {
+					ctx.lineTo(...at(x, y));
+				}
+			});
+			ctx.closePath();
+		};
+		ctx.fillStyle = field;
+		path([
+			[12, 23],
+			[170, 23],
+			[170, 222.9],
+			[91, 247],
+			[12, 222.9],
+		]);
 		ctx.fill();
-		const e = Math.max(1.5, 0.22 * px);
-		ctx.fillStyle = c0;
+		ctx.strokeStyle = edge;
+		ctx.lineWidth = Math.max(1, 4 * s);
+		path([
+			[14, 25],
+			[168, 25],
+			[168, 221.4],
+			[91, 244.9],
+			[14, 221.4],
+		]);
+		ctx.stroke();
+		ctx.fillStyle = field;
+		ctx.lineWidth = Math.max(1, 3 * s);
 		ctx.beginPath();
-		ctx.moveTo(x + e, hang + e);
-		ctx.lineTo(x + bwPx - e, hang + e);
-		ctx.lineTo(x + bwPx - e, hang + bh - e * 1.2);
-		ctx.lineTo(x + bwPx / 2, hang + bh - bwPx * 0.22 - e * 1.1);
-		ctx.lineTo(x + e, hang + bh - e * 1.2);
-		ctx.closePath();
+		ctx.roundRect(...at(9, 16), 164 * s, 16 * s, 6 * s);
 		ctx.fill();
-		paint(x, bwPx, bh);
+		ctx.stroke();
+		paint(at, s, ink);
 	};
-	const ink = inkOn(c0);
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
-	groups.forEach((years, i) => {
-		banner(i, 9.5, (x, bwPx, bh) => {
-			const cx = x + bwPx / 2;
-			// The trophy.
-			ctx.fillStyle = "#e8c24a";
-			const ty = hang + bh * 0.16;
-			ctx.beginPath();
-			ctx.moveTo(cx - bwPx * 0.18, ty - bwPx * 0.12);
-			ctx.lineTo(cx + bwPx * 0.18, ty - bwPx * 0.12);
-			ctx.lineTo(cx + bwPx * 0.08, ty + bwPx * 0.1);
-			ctx.lineTo(cx - bwPx * 0.08, ty + bwPx * 0.1);
-			ctx.closePath();
-			ctx.fill();
-			ctx.fillRect(cx - bwPx * 0.03, ty + bwPx * 0.1, bwPx * 0.06, bwPx * 0.08);
-			ctx.fillRect(cx - bwPx * 0.1, ty + bwPx * 0.17, bwPx * 0.2, bwPx * 0.05);
+	groups.forEach(({ years, look }, i) => {
+		banner(i, look?.colors, (at, s, ink) => {
+			const [cx] = at(91, 0);
+			// The year (a dynasty's, stacked), the logo, and the words.
 			ctx.fillStyle = ink;
-			ctx.font = `800 ${Math.round(bwPx * 0.15)}px Arial, sans-serif`;
-			ctx.fillText("CHAMPIONS", cx, hang + bh * 0.36);
-			const big = years.length === 1 ? 0.3 : years.length <= 2 ? 0.22 : 0.17;
-			ctx.font = `800 ${Math.round(bwPx * big)}px Arial, sans-serif`;
+			const big = years.length === 1 ? 36 : years.length === 2 ? 22 : 15;
 			years.forEach((y, k) => {
+				ctx.font = `600 ${Math.max(1, Math.round(big * s))}px Arial, sans-serif`;
 				ctx.fillText(
 					String(y),
 					cx,
-					hang +
-						bh *
-							(0.53 +
-								(k - (years.length - 1) / 2) * big * 0.55 * (bwPx / bh) * 1.9),
+					at(0, 68 + (k - (years.length - 1) / 2) * big * 1.05)[1],
 				);
 			});
+			const logo = look?.imgURL ? logos?.get(look.imgURL) : undefined;
+			const [, y0] = at(0, 102);
+			if (logo) {
+				const k = Math.min((136 * s) / logo.width, (74 * s) / logo.height);
+				const lw = logo.width * k;
+				const lh = logo.height * k;
+				ctx.drawImage(logo, cx - lw / 2, y0 + (74 * s - lh) / 2, lw, lh);
+			} else {
+				// No logo to be had: the trophy.
+				const ty = y0 + 26 * s;
+				const u = 40 * s;
+				ctx.fillStyle = "#e8c24a";
+				ctx.beginPath();
+				ctx.moveTo(cx - u * 0.5, ty - u * 0.35);
+				ctx.lineTo(cx + u * 0.5, ty - u * 0.35);
+				ctx.lineTo(cx + u * 0.22, ty + u * 0.3);
+				ctx.lineTo(cx - u * 0.22, ty + u * 0.3);
+				ctx.closePath();
+				ctx.fill();
+				ctx.fillRect(cx - u * 0.08, ty + u * 0.3, u * 0.16, u * 0.25);
+				ctx.fillRect(cx - u * 0.3, ty + u * 0.52, u * 0.6, u * 0.14);
+			}
+			ctx.fillStyle = ink;
+			ctx.font = `600 ${Math.max(1, Math.round(16 * s))}px Arial, sans-serif`;
+			ctx.fillText("League Champions", cx, at(0, 194)[1], 150 * s);
 		});
 	});
 	retired.forEach((r, j) => {
-		banner(groups.length + j, 8, (x, bwPx, bh) => {
-			const cx = x + bwPx / 2;
+		banner(groups.length + j, r.colors, (at, s, ink) => {
+			const [cx] = at(91, 0);
 			ctx.fillStyle = ink;
 			if (r.name) {
-				const name = r.name.toUpperCase();
-				ctx.font = `800 ${Math.round(Math.min(bwPx * 0.17, (bwPx * 1.5) / Math.max(4, name.length)))}px Arial, sans-serif`;
-				ctx.fillText(name, cx, hang + bh * 0.17);
+				ctx.font = `600 ${Math.max(1, Math.round(22 * s))}px Arial, sans-serif`;
+				ctx.fillText(r.name.toUpperCase(), cx, at(0, 62)[1], 140 * s);
 			}
-			ctx.font = `800 ${Math.round(bwPx * (r.number.length > 2 ? 0.36 : 0.5))}px Arial, sans-serif`;
-			ctx.fillText(r.number, cx, hang + bh * 0.5);
+			const digits = r.number.length;
+			ctx.font = `700 ${Math.max(1, Math.round((digits > 2 ? 64 : 92) * s))}px Arial, sans-serif`;
+			ctx.fillText(r.number, cx, at(0, 140)[1], 140 * s);
 		});
 	});
 	return canvas;

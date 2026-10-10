@@ -44,6 +44,7 @@ import { courtsideFor } from "./courtside.ts";
 import { headColors, loadHead, profileOf, type HeadSprite } from "./faces.ts";
 import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
 import { dressKit, kitArtOf, type KitArt } from "./kitArt.ts";
+import { logoPicture } from "./logoPicture.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
 import { stageCourt } from "./stageCourt.ts";
@@ -168,43 +169,6 @@ type Props = {
 	onReady: () => void;
 	// The court cannot play this game: the page goes on without it.
 	onFail?: () => void;
-};
-
-// A team's logo drawn into a small picture of its own - if it can be read
-// back (one from a site that will not say it may be is left off: its
-// warm-up tops keep the team's name).
-const CREST_PX = 128;
-const crestOf = async (
-	url: string | undefined,
-): Promise<HTMLCanvasElement | undefined> => {
-	if (!url || typeof document === "undefined") {
-		return undefined;
-	}
-	const img = new Image();
-	img.crossOrigin = "anonymous";
-	img.src = url;
-	try {
-		await img.decode();
-	} catch {
-		return undefined;
-	}
-	const w0 = img.naturalWidth || CREST_PX;
-	const h0 = img.naturalHeight || CREST_PX;
-	const k = CREST_PX / Math.max(w0, h0);
-	const cv = document.createElement("canvas");
-	cv.width = Math.max(1, Math.round(w0 * k));
-	cv.height = Math.max(1, Math.round(h0 * k));
-	const g = cv.getContext("2d", { willReadFrequently: true });
-	if (!g) {
-		return undefined;
-	}
-	g.drawImage(img, 0, 0, cv.width, cv.height);
-	try {
-		g.getImageData(0, 0, 1, 1);
-	} catch {
-		return undefined;
-	}
-	return cv;
 };
 
 const Court3D = ({
@@ -433,11 +397,13 @@ const Court3D = ({
 	const homeLogo = home?.imgURL || home?.imgURLSmall;
 	useEffect(() => {
 		let alive = true;
-		void Promise.all([crestOf(awayLogo), crestOf(homeLogo)]).then((made) => {
-			if (alive) {
-				setCrests([made[0], made[1]]);
-			}
-		});
+		void Promise.all([logoPicture(awayLogo), logoPicture(homeLogo)]).then(
+			(made) => {
+				if (alive) {
+					setCrests([made[0], made[1]]);
+				}
+			},
+		);
 		return () => {
 			alive = false;
 		};
@@ -482,7 +448,6 @@ const Court3D = ({
 				paintStands(h, a, seed, up as 0 | 1 | 2, crowd, 0),
 			) as [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement],
 			boards: paintBoards(h, a),
-			rafters: paintRafters(h, building),
 			tableTop: table.top,
 			tableFront: table.front,
 			bench0: paintBench(a),
@@ -491,8 +456,59 @@ const Court3D = ({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [gid]);
 
-	const paintRef = useRef(paint);
-	paintRef.current = paint;
+	// The banners in the rafters - each title's in the team's colors and logo
+	// that season - painted again once the logos are in.
+	const [bannerLogos, setBannerLogos] = useState<
+		Map<string, HTMLCanvasElement>
+	>(() => new Map());
+	useEffect(() => {
+		const building: ArenaLooks | undefined = boxScore?.arena;
+		const urls = [
+			...new Set(
+				(building?.titleLooks ?? [])
+					.map((l) => l.imgURL)
+					.filter((u): u is string => u !== undefined),
+			),
+		];
+		if (urls.length === 0) {
+			return;
+		}
+		let alive = true;
+		void Promise.all(urls.map((u) => logoPicture(u))).then((pics) => {
+			if (alive) {
+				const got = new Map<string, HTMLCanvasElement>();
+				urls.forEach((u, i) => {
+					const pic = pics[i];
+					if (pic) {
+						got.set(u, pic);
+					}
+				});
+				setBannerLogos(got);
+			}
+		});
+		return () => {
+			alive = false;
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [gid]);
+	const rafters = useMemo(
+		() =>
+			paintRafters(
+				{
+					abbrev: home?.abbrev,
+					name: home?.name,
+					region: home?.region,
+					colors: home?.colors,
+				},
+				boxScore?.arena,
+				bannerLogos,
+			),
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[gid, bannerLogos],
+	);
+	const painted = useMemo(() => ({ ...paint, rafters }), [paint, rafters]);
+	const paintRef = useRef(painted);
+	paintRef.current = painted;
 
 	// Faces arrive asynchronously; until then a player has a plain head and an
 	// average build.

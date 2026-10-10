@@ -1,5 +1,6 @@
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
+import { DEFAULT_TEAM_COLORS } from "../../../common/constants.ts";
 import type { ArenaLooks, ReplayLooks } from "../../../common/types.ts";
 
 // The home team's building for a game in `season` (see ArenaLooks): its
@@ -16,6 +17,14 @@ export const takeArenaLooks = async (
 	try {
 		const looks: ArenaLooks = { titles: [], retired: [] };
 		const teamSeasons = await idb.getCopies.teamSeasons({ tid }, "noCopyCache");
+		const t = await idb.cache.teams.get(tid);
+		// Each title's banner as the team was that season (see the team
+		// history page's).
+		const won: {
+			season: number;
+			colors: [string, string, string];
+			imgURL?: string;
+		}[] = [];
 		for (const ts of teamSeasons) {
 			if (ts.season === season) {
 				looks.capacity = ts.stadiumCapacity;
@@ -24,11 +33,21 @@ export const takeArenaLooks = async (
 				ts.playoffRoundsWon >= 0 &&
 				ts.playoffRoundsWon === g.get("numGamesPlayoffSeries", ts.season).length
 			) {
-				looks.titles.push(ts.season);
+				const imgURL =
+					ts.imgURL || ts.imgURLSmall || t?.imgURL || t?.imgURLSmall;
+				won.push({
+					season: ts.season,
+					colors: ts.colors ?? t?.colors ?? DEFAULT_TEAM_COLORS,
+					...(imgURL ? { imgURL } : {}),
+				});
 			}
 		}
-		looks.titles.sort((a, b) => a - b);
-		const t = await idb.cache.teams.get(tid);
+		won.sort((a, b) => a.season - b.season);
+		looks.titles = won.map((w) => w.season);
+		looks.titleLooks = won.map(({ colors, imgURL }) => ({
+			colors,
+			...(imgURL ? { imgURL } : {}),
+		}));
 		for (const row of t?.retiredJerseyNumbers ?? []) {
 			if (row.seasonRetired > season) {
 				continue;
@@ -42,7 +61,13 @@ export const takeArenaLooks = async (
 			if (name === undefined && row.text && row.text.length <= 14) {
 				name = row.text;
 			}
-			looks.retired.push({ number: row.number, name });
+			const shown = teamSeasons.find((ts) => ts.season === row.seasonTeamInfo);
+			const colors = shown?.colors ?? t?.colors;
+			looks.retired.push({
+				number: row.number,
+				name,
+				...(colors ? { colors } : {}),
+			});
 		}
 		return looks;
 	} catch {

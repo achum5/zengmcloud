@@ -136,8 +136,12 @@ make with AI help).
   (Done: the default bar - logos, team colors, scores, possession arrow,
   timeouts, fouls and BONUS, period, game and shot clocks. Open: the
   customization.)
-- [ ] Arena banners should match the ones the game already draws on the playoffs
-      and team history pages, and be customizable.
+- [~] Arena banners should match the ones the game already draws on the playoffs
+  and team history pages, and be customizable. (Done: the rafters' banners
+  are drawn like the game's - the bar across the top, the year, the logo,
+  "League Champions", the notched tail - each title in the team's colors and
+  logo the season it won it, each retired number in the colors of the jersey
+  it is shown in. Open: the customization.)
 
 ## F. Arena and broadcast atmosphere
 
