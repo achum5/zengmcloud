@@ -3,11 +3,19 @@
 // The court is drawn at the screen's own resolution - one of its pixels to
 // each of the screen's, sharp - up to about ROWS of them top to bottom (past
 // that, on a big high-density screen, two or more of the screen's to each,
-// blown up without smoothing). A device that can't draw that many fast
-// enough steps a size coarser - pixel art, the fallback - never coarser than
-// about MIN_ROWS, and back finer once it has time to spare. (Sculpting new
-// poses, the costliest part of a frame and the more so the finer it is, is
-// done off the page's thread where it can be - see sculptPool.ts.)
+// blown up without smoothing). A device that can't keep the frames coming
+// fast enough steps a size coarser - pixel art, the fallback - never coarser
+// than about MIN_ROWS, and back finer once it has time to spare.
+//
+// It goes by how often the frames come, not by how long the page's own
+// drawing takes: on a phone much of the cost of a bigger picture - putting
+// its pixels on the screen - is paid outside it. But a coarser picture is
+// only kept if the frames come faster for it: one that doesn't help (the
+// screen held to 30 frames a second to save the battery, say, or something
+// else on the page taking the time) goes straight back, and the size is
+// left alone from then on. (Sculpting new poses, the costliest part of
+// drawing, is done off the page's thread where it can be - see
+// sculptPool.ts.)
 
 export const ROWS = 1440;
 const MIN_ROWS = 300;
@@ -17,6 +25,12 @@ const SETTLE_MS = 2500;
 const MAX_CHANGES = 6;
 // A size found too slow this many times is not gone back to.
 const MAX_SLOW = 2;
+// Too slow: under about 40 frames a second (ms between frames).
+const SLOW_MS = 26;
+// Time to spare: over about 54 a second.
+const SPARE_MS = 18.5;
+// A coarser picture kept only if the frames come at least this much faster.
+const HELPED = 0.85;
 // A frame that hitched - a new pose sculpted on the spot, a face come in -
 // counts for no more than this (ms).
 const MAX_DRAW = 40;
@@ -33,6 +47,12 @@ export type Resolution = {
 	changes: number;
 	// How many times each size (steps coarser) has been found too slow.
 	slow: Record<number, number>;
+	// The size just left for being too slow, and how far apart its frames
+	// came - to be gone back to if the coarser one is no faster.
+	left?: { coarser: number; frameMs: number };
+	// Left alone for good: the size of the picture isn't what holds the
+	// frames back.
+	settled?: boolean;
 };
 
 export const makeResolution = (now: number): Resolution => ({
@@ -75,22 +95,36 @@ export const adjust = (
 	}
 	res.frameMs = smooth(res.frameMs, Math.min(100, frameMs));
 	res.drawMs = smooth(res.drawMs, Math.min(MAX_DRAW, drawMs));
-	if (now - res.since < SETTLE_MS || res.changes >= MAX_CHANGES) {
+	if (
+		now - res.since < SETTLE_MS ||
+		res.changes >= MAX_CHANGES ||
+		res.settled
+	) {
 		return false;
 	}
 	const art = artFor(deviceRows, res);
 	const { finest, coarsest } = bounds(deviceRows);
 	let next = res.coarser;
-	if (res.frameMs > 26 && res.drawMs > 12 && art < coarsest) {
-		// Under about 40 frames a second - and the picture the reason: if
-		// drawing it is not what takes the time (something else on the page,
-		// the browser cleaning up after itself), a coarser one would only look
-		// worse, no faster.
+	const left = res.left;
+	res.left = undefined;
+	if (
+		left &&
+		left.coarser === res.coarser - 1 &&
+		// (Under 10 frames a second there, it can't be told how much faster:
+		// kept.)
+		left.frameMs < 95 &&
+		res.frameMs > left.frameMs * HELPED
+	) {
+		// Coarser and no faster: back to how it was, and left there.
+		next = left.coarser;
+		res.settled = true;
+	} else if (res.frameMs > SLOW_MS && art < coarsest) {
 		res.slow[res.coarser] = (res.slow[res.coarser] ?? 0) + 1;
+		res.left = { coarser: res.coarser, frameMs: res.frameMs };
 		next += 1;
 	} else if (
 		art > finest &&
-		res.frameMs < 18.5 &&
+		res.frameMs < SPARE_MS &&
 		// A size finer is more to draw - though not so much more as it has
 		// pixels, most of the work (the players sculpted) done elsewhere.
 		res.drawMs * (art / (art - 1)) < 11 &&
