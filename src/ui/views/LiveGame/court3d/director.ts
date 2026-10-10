@@ -2722,7 +2722,12 @@ class Director {
 
 	// A fast break: outlet if a big has it, the ball handler pushes, the wings
 	// fill the lanes, the defense sprints back with one man protecting the rim.
-	private pushBreak(team: Side, t: number): number {
+	private pushBreak(
+		team: Side,
+		t: number,
+		shot?: Zone,
+		shooter?: number,
+	): number {
 		const slots = this.slots(team);
 		const pg = this.handlerOf(team);
 		let handler = this.holder ?? pg;
@@ -2759,9 +2764,15 @@ class Director {
 			}
 		}
 		this.hold(handler, t, "dribble");
+		// Pushing it himself into a pull-up: he pulls up on the way, where he
+		// shoots it from - not all the way in to the rim and back out.
+		const pullUp =
+			shooter === handler && (shot === "three" || shot === "midRange")
+				? this.shotSpotNear(team, shot, this.posOf(handler))
+				: undefined;
 		const arrive = this.go(
 			handler,
-			spots[0]!,
+			pullUp ?? spots[0]!,
 			t,
 			SPRINT - 3,
 			"dribble",
@@ -2875,6 +2886,8 @@ class Director {
 		// A heave at the buzzer: just the ball in somebody's hands - no break
 		// to run, no set, nobody bringing it up for one.
 		heave = false,
+		// Who takes the shot, if it is known.
+		shooter?: number,
 	): { t: number; run?: Running } {
 		const phase = this.phase;
 		const changed = this.offense !== team;
@@ -2959,7 +2972,9 @@ class Director {
 		if (transition) {
 			this.breaks.push(t);
 			run = call?.("break");
-			t = run ? this.startBreak(run, t) : this.pushBreak(team, t);
+			t = run
+				? this.startBreak(run, t)
+				: this.pushBreak(team, t, shot, shooter);
 		} else if (rushed) {
 			// Up the floor if it isn't, fast - and no set.
 			if (!heave && this.inBackcourt(team, handlerPos)) {
@@ -5800,6 +5815,8 @@ class Director {
 								this.callForShot(entry, team, shooter, zone, plan, gap, clock)
 						: undefined,
 					zone,
+					false,
+					shooter,
 				);
 				t = dev.t;
 				run = dev.run;
