@@ -78,8 +78,25 @@ const gradientCellStyle = (
 	};
 };
 
-// How far apart ratings, and ages, are for the gap to count as big.
-const RATING_GAP = 15;
+// A rating shaded by where it falls on the 0-100 scale: red low, yellow in
+// the middle, green high - full red at 25 and below, full green at 75 and
+// above, the way the ratings popover reads them.
+const RATING_LOW = 25;
+const RATING_HIGH = 75;
+const ratingCellStyle = (value: number) => {
+	if (!Number.isFinite(value)) {
+		return;
+	}
+	const t = Math.min(
+		1,
+		Math.max(0, (value - RATING_LOW) / (RATING_HIGH - RATING_LOW)),
+	);
+	return {
+		backgroundColor: `hsla(${Math.round(t * 120)}, 75%, 45%, 0.5)`,
+	};
+};
+
+// How far apart ages are for the gap to count as big.
 const AGE_GAP = 4;
 
 const InfoRow = ({
@@ -88,6 +105,7 @@ const InfoRow = ({
 	sortAsc,
 	sortType,
 	scale,
+	rating,
 }: {
 	col: {
 		desc?: string | undefined;
@@ -97,6 +115,8 @@ const InfoRow = ({
 	sortAsc?: boolean;
 	sortType?: SortType;
 	scale?: number;
+	// A 0-100 rating: shaded on that scale, not against the others.
+	rating?: boolean;
 }) => {
 	let bestSortValue = -Infinity;
 	let worstSortValue = Infinity;
@@ -155,6 +175,14 @@ const InfoRow = ({
 					return (
 						<td key="legend" title={col.desc}>
 							{col.title}
+						</td>
+					);
+				}
+
+				if (rating) {
+					return (
+						<td key={i} style={ratingCellStyle(Number(value))}>
+							{value}
 						</td>
 					);
 				}
@@ -548,7 +576,7 @@ const ComparePlayers = ({
 														(p) => p.ratings[rating],
 													)}
 													sortType="number"
-													scale={RATING_GAP}
+													rating
 												/>
 											);
 										})}
