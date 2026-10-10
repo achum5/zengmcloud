@@ -714,6 +714,9 @@ const BREAK_GAP = { board: 9.6, steal: 11, make: 7.1 };
 // A trip ending in a turnover or a whistle sooner than this (seconds of the
 // sim's clock) has no time for the ball to be brought up and a set run.
 const RUSH_GAP = 6;
+// A shot this soon (game clock seconds) after the ball is inbounded in the
+// frontcourt comes straight off the catch.
+const QUICK_IN = 2.5;
 // The ball a long way back from where the set wants it (feet): the man with
 // it brings it up to about this far from there before he gives it up, and
 // never from farther out from the rim than this.
@@ -1073,6 +1076,9 @@ class Director {
 	// plays) - fitted to where they are when it starts (see fitSpots).
 	private spotFit?: { team: Side; flip: boolean; order: number[] };
 	private lastClock: number | undefined;
+	// The man the ball just went in to off an inbound with no time for
+	// anything but his shot (see develop).
+	private quickIn?: number;
 	// Set by a shot attempt that is still in the air, for its result to pick up.
 	private pending:
 		| {
@@ -2305,12 +2311,20 @@ class Director {
 	// frontcourt they set up around it; back in the backcourt the point guard
 	// comes to get it and the rest go on up the floor. Returns when the man it
 	// is thrown to has it.
-	private inboundFrom(team: Side, t: number, at: Pt): number {
+	private inboundFrom(
+		team: Side,
+		t: number,
+		at: Pt,
+		// In to him, there, rather than to the point guard come back for it.
+		to?: { pid: number; at: Pt },
+	): number {
 		const dir = attackDir(team);
 		const off = this.slots(team);
 		const def = this.slots(other(team));
-		const receiver = off[0]!;
-		const inbounder = off[2] ?? off[1] ?? off.at(-1)!;
+		const receiver = to?.pid ?? off[0]!;
+		const inbounder = [off[2], off[1], off.at(-1), off[0]].find(
+			(pid) => pid !== undefined && pid !== receiver,
+		)!;
 		const far = at.y < COURT_H / 2;
 		// From behind the baseline, or from the sideline.
 		const baseline = at.x < 0 || at.x > COURT_W;
@@ -2335,12 +2349,14 @@ class Director {
 			pid === inbounder
 				? oob
 				: pid === receiver
-					? baseline
-						? clampPt({ x: oob.x - dir * 9, y: oob.y + (25 - oob.y) * 0.4 })
-						: clampPt({
-								x: oob.x + dir * (back ? 4 : 7),
-								y: far ? 9 : COURT_H - 9,
-							})
+					? to
+						? clampPt(to.at)
+						: baseline
+							? clampPt({ x: oob.x - dir * 9, y: oob.y + (25 - oob.y) * 0.4 })
+							: clampPt({
+									x: oob.x + dir * (back ? 4 : 7),
+									y: far ? 9 : COURT_H - 9,
+								})
 					: (spots[j] ?? spots[0]!);
 		this.pickUpLoose(t);
 		// Whoever has the ball gives it up to the inbounder before he goes
@@ -2978,6 +2994,7 @@ class Director {
 			this.guarding.clear();
 		}
 		this.setOffense(t, team);
+		this.quickIn = undefined;
 		let transition = false;
 		let run: Running | undefined;
 
@@ -3028,14 +3045,32 @@ class Director {
 			const at = this.inboundAt;
 			this.guarding.clear();
 			if (at && !this.inBackcourt(team, at)) {
-				run = call?.("inbound");
+				// Next to no clock for it - a shot right off the inbound (a
+				// putback the sim has after a timeout, say): the ball goes in to
+				// the man who shoots it, where he shoots it from. No set.
+				const quickTo =
+					shot !== undefined &&
+					shooter !== undefined &&
+					gap !== undefined &&
+					gap < QUICK_IN
+						? shooter
+						: undefined;
+				run = quickTo === undefined ? call?.("inbound") : undefined;
 				if (run && (run.play.cat === "blob" || run.play.cat === "slob")) {
 					t = this.inboundPlay(run, t);
 				} else {
-					t = this.inboundFrom(team, t, at);
+					t = this.inboundFrom(
+						team,
+						t,
+						at,
+						quickTo === undefined
+							? undefined
+							: { pid: quickTo, at: this.quickSpot(team, shot!, at) },
+					);
 					if (run) {
 						t = this.flowToPlay(run, t);
 					}
+					this.quickIn = quickTo;
 				}
 				into = "set";
 			} else {
@@ -3111,6 +3146,21 @@ class Director {
 		this.phase = "set";
 		this.inboundAt = undefined;
 		return { t, run };
+	}
+
+	// Where the ball goes in to a man who shoots it straight off the catch:
+	// in close for a shot at the rim, on the block for a post shot, out at
+	// his spot for a jumper - on the side it comes in from.
+	private quickSpot(team: Side, zone: Zone, at: Pt): Pt {
+		const side = at.y < COURT_H / 2 ? -1 : 1;
+		if (zone === "atRim" || zone === "tipIn" || zone === "putBack") {
+			return spot(team, this.rand(5, 7), COURT_H / 2 + side * this.rand(3, 6));
+		}
+		if (zone === "lowPost") {
+			return spot(team, this.rand(7, 9), COURT_H / 2 + side * this.rand(6, 8));
+		}
+		const P = this.shotSpot(team, zone);
+		return (P.y - COURT_H / 2) * side >= 0 ? P : { x: P.x, y: COURT_H - P.y };
 	}
 
 	// ---- sets -----------------------------------------------------------------
@@ -6066,13 +6116,18 @@ class Director {
 				called = shot.move;
 			} else {
 				let handler = this.holder ?? this.slots(team)[0]!;
+				// In to him off the inbound with no time for anything else: he
+				// goes straight up with it.
+				const quickIn = this.quickIn === shooter && handler === shooter;
+				this.quickIn = undefined;
 				// Who sets him up: the real assister on a make; on a miss, the handler
 				// about half the time, so a pass never gives the result away.
-				let passer =
-					plan.assist ??
-					(plan.kind !== "make" && handler !== shooter && this.rng() < 0.55
-						? handler
-						: undefined);
+				let passer = quickIn
+					? undefined
+					: (plan.assist ??
+						(plan.kind !== "make" && handler !== shooter && this.rng() < 0.55
+							? handler
+							: undefined));
 				if (passer === shooter) {
 					passer = undefined;
 				}
@@ -6123,6 +6178,7 @@ class Director {
 						t = this.backDown(shooter, t, dir);
 					}
 				} else if (
+					!quickIn &&
 					handler === shooter &&
 					plan.kind !== "make" &&
 					heaveSecs === undefined &&
@@ -6179,8 +6235,9 @@ class Director {
 					}
 					// His own shot: a move to get it.
 					const r = this.rng();
-					style =
-						zone === "atRim"
+					style = quickIn
+						? "plain"
+						: zone === "atRim"
 							? r < 0.5
 								? "crossover"
 								: r < 0.72 && plan.finish === "layup"
