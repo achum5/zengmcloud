@@ -226,12 +226,20 @@ const ManageTeams = (props: View<"manageTeams">) => {
 	return (
 		<>
 			{__SPORT === "basketball" ? (
-				<a
-					className="btn btn-light-bordered mb-3"
-					href={helpers.leagueUrl(["court_decals"])}
-				>
-					Court decals
-				</a>
+				<div className="d-flex gap-2 mb-3">
+					<a
+						className="btn btn-light-bordered"
+						href={helpers.leagueUrl(["court_decals"])}
+					>
+						Court decals
+					</a>
+					<a
+						className="btn btn-light-bordered"
+						href={helpers.leagueUrl(["score_bug"])}
+					>
+						Score bug
+					</a>
+				</div>
 			) : null}
 			{!godMode ? (
 				<div>

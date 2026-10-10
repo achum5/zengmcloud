@@ -10,6 +10,7 @@ import {
 	decalsForGame,
 	prunePictures,
 	resolveCourt,
+	resolveScoreBug,
 	storePicture,
 } from "./courtPictures.ts";
 
@@ -131,6 +132,27 @@ describe("court pictures", () => {
 			],
 		);
 		// And a picture a decal uses is kept.
+		await prunePictures([id]);
+		assert.ok(await idb.cache.jerseySkins.get(id));
+	});
+
+	test("the league's score bug gets its pictures, and keeps them", async () => {
+		await setup();
+		const id = await storePicture(PNG(6));
+		const bug = {
+			width: 100,
+			height: 20,
+			image: `${PIC}${id}`,
+			pieces: [
+				{ show: "image" as const, x: 0, y: 0, w: 5, h: 5, image: `${PIC}gone` },
+				{ show: "clock" as const, x: 5, y: 0, w: 5, h: 5 },
+			],
+		};
+		g.setWithoutSavingToDB("scoreBug", bug);
+		const shown = await resolveScoreBug(bug);
+		assert.strictEqual(shown?.image, PNG(6));
+		assert.strictEqual(shown?.pieces[0]!.image, undefined);
+		assert.strictEqual(await resolveScoreBug(null), null);
 		await prunePictures([id]);
 		assert.ok(await idb.cache.jerseySkins.get(id));
 	});

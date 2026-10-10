@@ -40,6 +40,7 @@ export { default as editAwardWinners } from "./editAwardWinners.ts";
 export { default as eightyTwoZeroDraft } from "./eightyTwoZeroDraft.ts";
 export { default as editTeamCourt } from "./editTeamCourt.ts";
 export { default as courtDecals } from "./courtDecals.ts";
+export { default as scoreBug } from "./scoreBug.ts";
 export { default as editTeamUniform } from "./editTeamUniform.ts";
 export { default as exhibition } from "./exhibition.ts";
 export { default as newCollegeLeague } from "./newCollegeLeague.ts";

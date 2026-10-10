@@ -10,7 +10,11 @@ import {
 import { useLocal } from "../../../util/local.ts";
 import { toWorker } from "../../../util/toWorker.ts";
 import { usePlayerFace, type PlayerFace } from "../../../util/playerFaces.ts";
-import type { ArenaLooks, ReplayLooks } from "../../../../common/types.ts";
+import type {
+	ArenaLooks,
+	ReplayLooks,
+	ScoreBugStyle,
+} from "../../../../common/types.ts";
 import LiveCourt from "../LiveCourt.tsx";
 import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
 import {
@@ -52,7 +56,8 @@ import { advanceLead, followRate } from "./follow.ts";
 import { bodyOf, type Body } from "./poses.ts";
 import { cameraCuts, fastAt, offenseAt } from "./evaluate.ts";
 import { buildFouls, foulsAt } from "./scoreBug.ts";
-import { ScoreBug } from "./ScoreBug.tsx";
+import { ScoreBug, type BugRefs } from "./ScoreBug.tsx";
+import { CustomScoreBug, customBugHeight } from "./CustomScoreBug.tsx";
 import { IntroCard, IntroTitle } from "./IntroCard.tsx";
 import { callAt } from "./intro.ts";
 import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
@@ -1372,37 +1377,46 @@ const Court3D = ({
 					Skip intro ›
 				</button>
 			) : null}
-			<ScoreBug
-				hidden={intro.on}
-				away={
-					away && {
+			{(() => {
+				const bug = {
+					hidden: intro.on,
+					away: away && {
 						abbrev: away.abbrev,
+						region: away.region,
+						name: away.name,
 						colors: away.colors,
 						imgURL: away.imgURL,
 						imgURLSmall: away.imgURLSmall,
 						pts: awayPts,
 						timeouts: boxScore?.teams?.[1]?.timeouts,
-					}
-				}
-				home={
-					home && {
+					},
+					home: home && {
 						abbrev: home.abbrev,
+						region: home.region,
+						name: home.name,
 						colors: home.colors,
 						imgURL: home.imgURL,
 						imgURLSmall: home.imgURLSmall,
 						pts: homePts,
 						timeouts: boxScore?.teams?.[0]?.timeouts,
-					}
-				}
-				quarter={quarter}
-				totalTimeouts={STARTING_NUM_TIMEOUTS}
-				refs={{
-					clock: clockRef,
-					shot: shotRef,
-					fouls: [foulsAwayRef, foulsHomeRef],
-					ball: [ballAwayRef, ballHomeRef],
-				}}
-			/>
+					},
+					quarter,
+					totalTimeouts: STARTING_NUM_TIMEOUTS,
+					refs: {
+						clock: clockRef,
+						shot: shotRef,
+						fouls: [foulsAwayRef, foulsHomeRef] as BugRefs["fouls"],
+						ball: [ballAwayRef, ballHomeRef] as BugRefs["ball"],
+					},
+				};
+				// The league's own bug, if it has one (see ScoreBugStyle).
+				const own: ScoreBugStyle | null | undefined = boxScore?.scoreBug;
+				return own ? (
+					<CustomScoreBug style={own} {...bug} />
+				) : (
+					<ScoreBug {...bug} />
+				);
+			})()}
 			{caption ? (
 				<div
 					className="court3d-caption"
@@ -1410,7 +1424,9 @@ const Court3D = ({
 						position: "absolute",
 						left: "50%",
 						// Just over the score bug.
-						bottom: "calc(2.4cqw + clamp(10px, 1.75cqw, 16px) * 3.3)",
+						bottom: boxScore?.scoreBug
+							? `${2.4 + customBugHeight(boxScore.scoreBug)}cqw`
+							: "calc(2.4cqw + clamp(10px, 1.75cqw, 16px) * 3.3)",
 						transform: "translateX(-50%)",
 						width: "max-content",
 						maxWidth: "92%",

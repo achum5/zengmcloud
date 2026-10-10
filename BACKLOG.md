@@ -137,13 +137,19 @@ make with AI help).
       the playoffs or the finals, from and to the seasons given; sized, moved,
       turned and faded freely, one at center or one on each half; previewed
       per occasion, editable as JSON. On the 2D and 3D courts and replays.)
-- [~] TV-style score bug: a good generic default used at all times, fully
-  customizable so users can recreate ESPN, TNT, etc. Decided: the default
-  is a wide bar along the bottom center (logos, scores, period, game clock,
-  shot clock, fouls/timeouts), with the play-by-play line just above it.
-  (Done: the default bar - logos, team colors, scores, possession arrow,
-  timeouts, fouls and BONUS, period, game and shot clocks. Open: the
-  customization.)
+- [x] TV-style score bug: a good generic default used at all times, fully
+      customizable so users can recreate ESPN, TNT, etc. Decided: the default
+      is a wide bar along the bottom center (logos, scores, period, game clock,
+      shot clock, fouls/timeouts), with the play-by-play line just above it.
+      (The default bar - logos, team colors, scores, possession arrow,
+      timeouts, fouls and BONUS, period, game and shot clocks. Manage Teams ->
+      Score bug: keep the default or the league's own, started from a preset
+      (Bar, Corner box, Minimal) and edited as JSON - any number of pieces,
+      each a logo, abbrev, name, score, fouls, timeouts, possession arrow,
+      period, clock, shot clock, box, text or picture, placed and styled
+      freely in the bug's own units, team colors by name; a background
+      picture by upload or URL; bottom center, left or right at any width.
+      Previewed with sample data; used in every 3D game and replay.)
 - [~] Arena banners should match the ones the game already draws on the playoffs
   and team history pages, and be customizable. (Done: the rafters' banners
   are drawn like the game's - the bar across the top, the year, the logo,

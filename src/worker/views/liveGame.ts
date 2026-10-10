@@ -1,6 +1,7 @@
 import {
 	decalsForGame,
 	resolveCourt,
+	resolveScoreBug,
 	withDecals,
 } from "../util/courtPictures.ts";
 import { player, team } from "../core/index.ts";
@@ -400,6 +401,10 @@ export default defineView({
 				playByPlay,
 			});
 			(out.initialBoxScore as any).finals = finals;
+			// The league's own score bug, if it has one (see ScoreBugStyle).
+			(out.initialBoxScore as any).scoreBug = await resolveScoreBug(
+				g.get("scoreBug"),
+			);
 
 			// A rewatch of a saved game: flag it and build a small "2026 Playoffs" /
 			// "2026 Regular Season" label for the header.

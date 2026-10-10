@@ -1,4 +1,5 @@
 import { parseCourtDecals } from "../../common/courtDecals.ts";
+import { parseScoreBug, scoreBugPictureIds } from "../../common/scoreBug.ts";
 import {
 	courtPictureIds,
 	decalPictureIds,
@@ -10,7 +11,7 @@ import { sanitizeRotation, type TeamRotation } from "../../common/rotation.ts";
 import { prospectUniform } from "../../common/prospectColors.ts";
 import { csvFormat, csvFormatRows } from "d3-dsv";
 import type { FaceConfig } from "facesjs";
-import type { PlayerStatAttr } from "../../common/types.ts";
+import type { ScoreBugStyle, PlayerStatAttr } from "../../common/types.ts";
 import {
 	GAME_ACRONYM,
 	PHASE,
@@ -6534,6 +6535,30 @@ const updateTeamCourt = async ({
 // courtPictures.ts): its id, for the court to name it by.
 const storeCourtPicture = (url: string) => storePicture(url);
 
+// The league's own score bug for the 3D game (see ScoreBugStyle), or null
+// for the default. Pictures it no longer uses, and any uploaded for it this
+// time that it doesn't, are let go.
+const updateScoreBug = async ({
+	bug,
+	uploaded,
+}: {
+	bug: unknown;
+	uploaded?: string[];
+}) => {
+	let parsed: ScoreBugStyle | null = null;
+	if (bug !== null) {
+		const p = parseScoreBug(bug);
+		if (typeof p === "string") {
+			throw new Error(p);
+		}
+		parsed = p;
+	}
+	const before = scoreBugPictureIds(g.get("scoreBug"));
+	await league.setGameAttributes({ scoreBug: parsed });
+	await prunePictures([...before, ...(uploaded ?? [])]);
+	return { ok: true };
+};
+
 // The league's court decals, saved whole (see CourtDecal). Pictures they no
 // longer use, and any uploaded for them this time that they don't, are let
 // go.
@@ -8180,6 +8205,7 @@ const api = {
 		updateTeamCourt,
 		storeCourtPicture,
 		updateCourtDecals,
+		updateScoreBug,
 		updateTeamUniform,
 		setJerseySkin,
 		getJerseySkins,

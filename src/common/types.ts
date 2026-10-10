@@ -869,6 +869,8 @@ export type GameAttributesLeague = {
 	aiJerseyRetirement: boolean;
 	// Pictures laid on every court on an occasion (see CourtDecal).
 	courtDecals: CourtDecal[];
+	// The league's own score bug for the 3D game, or null for the default.
+	scoreBug: ScoreBugStyle | null;
 	aiTradesFactor: number;
 	smartAiFrontOffice: boolean;
 	allStarGame: number | null;
@@ -2978,6 +2980,66 @@ export type CourtDecal = {
 	adjust?: CourtImageAdjust;
 	pair?: boolean;
 };
+// THE LEAGUE'S OWN SCORE BUG for the 3D game, in place of the default: a
+// box `width` x `height` units, laid along the bottom of the picture
+// (`place`), spanning `span` of its width, with its pieces placed in those
+// units. Colors are any CSS color, or a team's own: "away0".."away2",
+// "home0".."home2".
+export type ScoreBugStyle = {
+	width: number;
+	height: number;
+	span?: number;
+	place?: "center" | "left" | "right";
+	background?: string;
+	// A picture behind it all: a URL, or one uploaded ("pic:<id>").
+	image?: string;
+	radius?: number;
+	pieces: ScoreBugPiece[];
+};
+export type ScoreBugShow =
+	| "awayLogo"
+	| "homeLogo"
+	| "awayAbbrev"
+	| "homeAbbrev"
+	| "awayRegion"
+	| "homeRegion"
+	| "awayName"
+	| "homeName"
+	| "awayScore"
+	| "homeScore"
+	| "awayFouls"
+	| "homeFouls"
+	| "awayTimeouts"
+	| "homeTimeouts"
+	| "awayBall"
+	| "homeBall"
+	| "period"
+	| "clock"
+	| "shotClock"
+	| "box"
+	| "text"
+	| "image";
+export type ScoreBugPiece = {
+	show: ScoreBugShow;
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	color?: string;
+	background?: string;
+	// Lettering: its size (in the bug's units), weight, font, alignment.
+	size?: number;
+	weight?: number;
+	font?: string;
+	align?: "left" | "center" | "right";
+	italic?: boolean;
+	radius?: number;
+	opacity?: number;
+	// For "text": what it says. For "image": a URL, or "pic:<id>".
+	text?: string;
+	image?: string;
+};
+
 export type CourtDecalPlaced = {
 	href: string;
 	adjust?: CourtImageAdjust;

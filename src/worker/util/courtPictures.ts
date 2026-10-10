@@ -4,7 +4,9 @@ import type {
 	CourtDecal,
 	CourtDecalPlaced,
 	CourtStyle,
+	ScoreBugStyle,
 } from "../../common/types.ts";
+import { scoreBugPictureIds } from "../../common/scoreBug.ts";
 
 // THE PICTURES A COURT IS PAINTED WITH.
 //
@@ -158,6 +160,35 @@ export const decalsForGame = async (game: {
 	return out;
 };
 
+// The league's score bug with its uploaded pictures filled in, to draw - or
+// null for the default.
+export const resolveScoreBug = async (
+	bug: ScoreBugStyle | null | undefined,
+): Promise<ScoreBugStyle | null> => {
+	if (!bug) {
+		return null;
+	}
+	const fill = async (u: string | undefined) => {
+		if (u === undefined || !u.startsWith(PIC)) {
+			return u;
+		}
+		try {
+			return (await pictureById(u.slice(PIC.length)))?.url;
+		} catch {
+			return undefined;
+		}
+	};
+	return {
+		...bug,
+		image: await fill(bug.image),
+		pieces: await Promise.all(
+			bug.pieces.map(async (p) =>
+				p.image === undefined ? p : { ...p, image: await fill(p.image) },
+			),
+		),
+	};
+};
+
 // A court with the game's decals laid on it.
 export const withDecals = (
 	court: CourtStyle | undefined,
@@ -169,7 +200,10 @@ export const withDecals = (
 // no team's court, no decal. (A replay that showed one goes without it.)
 export const prunePictures = async (ids: Iterable<string>) => {
 	const teams = await idb.cache.teams.getAll();
-	const used = new Set<string>(decalPictureIds(g.get("courtDecals") ?? []));
+	const used = new Set<string>([
+		...decalPictureIds(g.get("courtDecals") ?? []),
+		...scoreBugPictureIds(g.get("scoreBug")),
+	]);
 	for (const t of teams) {
 		for (const id of [t.jerseySkins?.home, t.jerseySkins?.away]) {
 			if (id !== undefined) {
