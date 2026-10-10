@@ -533,7 +533,9 @@ export default defineView({
 			// side that put 46 next to 5, so the page picks a single scale: exact
 			// only when every column reads exact on its own, coarse for everybody the
 			// moment an active player's pro season (or career) is in the mix.
-			if (g.get("hideRatingsOnesDigit") && !exactEligible.every(Boolean)) {
+			const coarseRatings =
+				!!g.get("hideRatingsOnesDigit") && !exactEligible.every(Boolean);
+			if (coarseRatings) {
 				const ratingsList = ["season", "pos", "ovr", "pot", ...RATINGS];
 				for (const { p } of players) {
 					p.ratings = coarsenRatingsRow(p.ratings, ratingsList);
@@ -561,6 +563,8 @@ export default defineView({
 				players,
 				ratings,
 				stats,
+				// Ratings shown 0-10 (coarse) rather than 0-100.
+				coarseRatings,
 			};
 		}
 	},

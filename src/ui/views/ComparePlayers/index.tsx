@@ -78,19 +78,14 @@ const gradientCellStyle = (
 	};
 };
 
-// A rating shaded by where it falls on the 0-100 scale: red low, yellow in
-// the middle, green high - full red at 25 and below, full green at 75 and
-// above, the way the ratings popover reads them.
-const RATING_LOW = 25;
-const RATING_HIGH = 75;
-const ratingCellStyle = (value: number) => {
+// A rating shaded by where it falls on its scale - 0-100, or 0-10 when the
+// ratings are shown coarse: red at the bottom, yellow in the middle, green at
+// the top.
+const ratingCellStyle = (value: number, max: number) => {
 	if (!Number.isFinite(value)) {
 		return;
 	}
-	const t = Math.min(
-		1,
-		Math.max(0, (value - RATING_LOW) / (RATING_HIGH - RATING_LOW)),
-	);
+	const t = Math.min(1, Math.max(0, value / max));
 	return {
 		backgroundColor: `hsla(${Math.round(t * 120)}, 75%, 45%, 0.5)`,
 	};
@@ -115,8 +110,9 @@ const InfoRow = ({
 	sortAsc?: boolean;
 	sortType?: SortType;
 	scale?: number;
-	// A 0-100 rating: shaded on that scale, not against the others.
-	rating?: boolean;
+	// A rating, shaded on its own scale (its top: 100, or 10 when coarse),
+	// not against the others.
+	rating?: number;
 }) => {
 	let bestSortValue = -Infinity;
 	let worstSortValue = Infinity;
@@ -179,9 +175,9 @@ const InfoRow = ({
 					);
 				}
 
-				if (rating) {
+				if (rating !== undefined) {
 					return (
-						<td key={i} style={ratingCellStyle(Number(value))}>
+						<td key={i} style={ratingCellStyle(Number(value), rating)}>
 							{value}
 						</td>
 					);
@@ -331,6 +327,7 @@ const ComparePlayers = ({
 	players,
 	ratings,
 	stats,
+	coarseRatings,
 }: View<"comparePlayers">) => {
 	useTitleBar({
 		title: "Compare Players",
@@ -576,7 +573,7 @@ const ComparePlayers = ({
 														(p) => p.ratings[rating],
 													)}
 													sortType="number"
-													rating
+													rating={coarseRatings ? 10 : 100}
 												/>
 											);
 										})}
