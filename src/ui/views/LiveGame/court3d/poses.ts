@@ -45,6 +45,10 @@ export type Pose = {
 	free: number;
 	// His toes pointed down (0 to 1): up off the floor in a jump.
 	toe: number;
+	// And each foot on its own (added to that): up on its toes, pushing off
+	// a stride.
+	toeN: number;
+	toeF: number;
 	// His shoulders turned on his hips about his spine (degrees, round to his
 	// left positive), and his upper body tipped to his side (degrees, his left
 	// shoulder down positive): a crossover's dip, an arm wrapped behind him.
@@ -72,6 +76,8 @@ const BASE: Pose = {
 	tuck: 0,
 	free: 0,
 	toe: 0,
+	toeN: 0,
+	toeF: 0,
 	twist: 0,
 	tilt: 0,
 };
@@ -283,12 +289,12 @@ const P = {
 	// Dribbling where he stands, sizing his man up: down in his legs, the
 	// other arm out, bent, between the ball and his man.
 	sizeUp: pose({
-		hipN: -2,
-		kneeN: 50,
-		hipF: 26,
-		kneeF: 52,
-		lean: 20,
-		wide: 0.42,
+		hipN: 2,
+		kneeN: 58,
+		hipF: 30,
+		kneeF: 60,
+		lean: 22,
+		wide: 0.48,
 		shN: 32,
 		elN: 18,
 		shF: 26,
@@ -392,23 +398,425 @@ type RunMode =
 	| "drift"
 	| "shuffle"
 	| "closeout";
-// Arms swinging against the legs (`a` how far the right leg is forward, -1
-// to 1), `swing` degrees each way from the shoulder: the elbow closing as an
-// arm comes through - the hand up toward his chest - and opening as it goes
-// back past his hip, by `pump` degrees, round a bend of `bend`. The hands
-// come in a touch across him in front and go out a little behind.
-const pump = (a: number, swing: number, bend: number, pump: number) => ({
-	shN: -swing * a,
-	elN: bend - pump * a,
-	abN: 12 + 6 * a,
-	shF: swing * a,
-	elF: bend + pump * a,
-	abF: 12 - 6 * a,
-});
 // A defensive slide: how far he goes each step-and-close (feet), and how
 // far apart his feet are, closed up (see "shuffle").
 const SLIDE_STRIDE = 1.8;
 const SLIDE_NARROW = 0.35;
+// HOW HE RUNS - AND WALKS.
+//
+// The way a body really goes: each foot planted while it is down, going
+// back under him exactly as fast as he goes forward, so it never skates -
+// rolling up onto its toes to push off - then folding up behind him, the
+// knee driven through and the foot reached out and pulled back to land. His
+// hips sink over each planted foot and spring up off it (on a run, up off
+// the floor between steps), and his arms swing against his legs. Worked out
+// on a typical player's legs: anybody else's are the same in proportion.
+type Gait = {
+	// Feet a stride (a step of each foot): the anim's.
+	stride: number;
+	// How much of a stride each foot is down: over half a walk (a foot always
+	// down), under half a run.
+	duty: number;
+	// How far ahead of his hips a foot lands, as a share of how far it goes
+	// back under him while it is down.
+	ahead: number;
+	// How high his hips ride (feet - a typical player's stand 2.93 up), and
+	// how far they rise and fall each step: lowest over the planted foot, or
+	// - negative, walking - highest, vaulting over it.
+	hips: number;
+	bob: number;
+	// How far through its time down a heel comes up, and how far up onto its
+	// toes the foot has rolled as it leaves the floor (degrees).
+	flat: number;
+	roll: number;
+	// Through the swing, keys of how far through it, hip and knee - the first
+	// key's hip and knee from where they were as the foot left the floor.
+	swing: [number, number, number][];
+	// Forward lean; how far the arms swing forward and back (degrees, about
+	// his side), the elbow's bend and how much more it bends in front; his
+	// shoulders turned with them; and his feet's spread.
+	lean: number;
+	armFwd: number;
+	armBack: number;
+	elbow: number;
+	pump: number;
+	twist: number;
+	wide: number;
+};
+type GaitMode =
+	| "run"
+	| "jog"
+	| "sprint"
+	| "dribble"
+	| "dribbleWalk"
+	| "walk"
+	| "carry"
+	| "drift";
+const GAITS: Record<GaitMode, Gait> = {
+	run: {
+		stride: 8.6,
+		duty: 0.3,
+		ahead: 0.32,
+		hips: 2.74,
+		bob: 0.16,
+		flat: 0.45,
+		roll: 40,
+		swing: [
+			[0.12, -4, 32],
+			[0.4, 6, 112],
+			[0.62, 36, 104],
+			[0.83, 48, 48],
+		],
+		lean: 13,
+		armFwd: 44,
+		armBack: 34,
+		elbow: 84,
+		pump: 18,
+		twist: 6,
+		wide: -0.04,
+	},
+	sprint: {
+		stride: 12.4,
+		duty: 0.25,
+		ahead: 0.28,
+		hips: 2.72,
+		bob: 0.14,
+		flat: 0.4,
+		roll: 46,
+		swing: [
+			[0.12, -4, 40],
+			[0.4, 12, 130],
+			[0.62, 56, 116],
+			[0.83, 66, 56],
+		],
+		lean: 17,
+		armFwd: 56,
+		armBack: 46,
+		elbow: 84,
+		pump: 16,
+		twist: 8,
+		wide: -0.06,
+	},
+	jog: {
+		stride: 6.2,
+		duty: 0.36,
+		ahead: 0.36,
+		hips: 2.78,
+		bob: 0.14,
+		flat: 0.5,
+		roll: 32,
+		swing: [
+			[0.14, -3, 26],
+			[0.42, 6, 82],
+			[0.66, 30, 62],
+			[0.86, 32, 24],
+		],
+		lean: 9,
+		armFwd: 32,
+		armBack: 24,
+		elbow: 82,
+		pump: 14,
+		twist: 5,
+		wide: -0.02,
+	},
+	dribble: {
+		stride: 8.2,
+		duty: 0.32,
+		ahead: 0.34,
+		hips: 2.62,
+		bob: 0.14,
+		flat: 0.45,
+		roll: 36,
+		swing: [
+			[0.12, -4, 34],
+			[0.4, 8, 104],
+			[0.64, 40, 94],
+			[0.85, 46, 42],
+		],
+		lean: 19,
+		armFwd: 44,
+		armBack: 34,
+		elbow: 84,
+		pump: 18,
+		twist: 4,
+		wide: 0.02,
+	},
+	dribbleWalk: {
+		stride: 4.4,
+		duty: 0.6,
+		ahead: 0.42,
+		hips: 2.6,
+		bob: -0.06,
+		flat: 0.55,
+		roll: 26,
+		swing: [
+			[0.12, 4, 18],
+			[0.36, 16, 66],
+			[0.66, 32, 50],
+			[0.88, 32, 30],
+		],
+		lean: 15,
+		armFwd: 16,
+		armBack: 12,
+		elbow: 40,
+		pump: 8,
+		twist: 3,
+		wide: 0.16,
+	},
+	walk: {
+		stride: 4.8,
+		duty: 0.6,
+		ahead: 0.4,
+		hips: 2.86,
+		bob: -0.1,
+		flat: 0.5,
+		roll: 32,
+		swing: [
+			[0.12, 4, 20],
+			[0.36, 12, 62],
+			[0.66, 28, 34],
+			[0.88, 27, 8],
+		],
+		lean: 4,
+		armFwd: 18,
+		armBack: 16,
+		elbow: 22,
+		pump: 10,
+		twist: 3,
+		wide: 0.04,
+	},
+	carry: {
+		stride: 4.6,
+		duty: 0.6,
+		ahead: 0.4,
+		hips: 2.84,
+		bob: -0.08,
+		flat: 0.5,
+		roll: 30,
+		swing: [
+			[0.12, 4, 20],
+			[0.36, 12, 62],
+			[0.66, 28, 36],
+			[0.88, 27, 10],
+		],
+		lean: 6,
+		armFwd: 0,
+		armBack: 0,
+		elbow: 0,
+		pump: 0,
+		twist: 0,
+		wide: 0.04,
+	},
+	drift: {
+		stride: 3.8,
+		duty: 0.6,
+		ahead: 0.42,
+		hips: 2.66,
+		bob: -0.05,
+		flat: 0.55,
+		roll: 24,
+		swing: [
+			[0.12, 4, 18],
+			[0.36, 16, 62],
+			[0.66, 30, 48],
+			[0.88, 30, 30],
+		],
+		lean: 9,
+		armFwd: 0,
+		armBack: 0,
+		elbow: 0,
+		pump: 0,
+		twist: 0,
+		wide: 0.1,
+	},
+};
+const isGait = (mode: string): mode is GaitMode => mode in GAITS;
+
+// A leg through its stride (`phi`, 0 as the foot lands): hip and knee, how
+// high the ankle is off the floor (feet), and the foot rolled onto its toes
+// (0 to 1, as `toe`).
+type Leg = { hip: number; knee: number; z: number; toe: number };
+type GaitFit = {
+	b: Body;
+	// Where the leg is as the foot leaves the floor and as it lands, and how
+	// fast its angles are going there (degrees through the whole swing).
+	off: Leg;
+	land: Leg;
+	hipKeys: [number, number][];
+	kneeKeys: [number, number][];
+	hipOut: number;
+	kneeOut: number;
+	hipIn: number;
+	kneeIn: number;
+};
+// The foot pointed down as `toe` 1 (see skeleton).
+const POINT = 55;
+// Hip and knee to put the ankle `f` ahead of the hip and `u` up from it
+// (negative, below).
+const legTo = (b: Body, f: number, u: number) => {
+	const T = b.thigh;
+	const S = b.shin;
+	const d = Math.max(1e-6, Math.min(Math.hypot(f, u), (T + S) * 0.9995));
+	const inner = Math.acos(
+		Math.max(-1, Math.min(1, (T * T + S * S - d * d) / (2 * T * S))),
+	);
+	const beta = Math.acos(
+		Math.max(-1, Math.min(1, (T * T + d * d - S * S) / (2 * T * d))),
+	);
+	return {
+		hip: (Math.atan2(f, -u) + beta) / RAD,
+		knee: 180 - inner / RAD,
+	};
+};
+// The hips' height through a leg's stride (the same for both legs: a step
+// is half a stride).
+const hipsAt = (g: Gait, phi: number) =>
+	g.hips - (g.bob / 2) * Math.cos(2 * Math.PI * (2 * phi - g.duty));
+// A foot while it is down: going back under him, and late on up onto its
+// toes - the toes staying put on the floor as the heel comes up.
+const plantedAt = (g: Gait, b: Body, phi: number): Leg => {
+	const toe = b.foot * 0.72;
+	// (The heel comes up so far before the foot need point - see skeleton.)
+	const lift = b.ankleR - b.ankleH * 0.45;
+	const drop = toe - b.ankleH * 0.55;
+	const r = Math.max(0, Math.min(1, (phi / g.duty - g.flat) / (1 - g.flat)));
+	const z = (lift + drop * Math.sin(g.roll * RAD)) * r * r;
+	const point = Math.asin(Math.min(1, Math.max(0, z - lift) / drop));
+	const f =
+		g.ahead * g.stride * g.duty - g.stride * phi + toe * (1 - Math.cos(point));
+	return {
+		...legTo(b, f, z + b.ankleH - hipsAt(g, phi)),
+		z,
+		toe: point / RAD / POINT,
+	};
+};
+const fits = new Map<GaitMode, GaitFit>();
+const gaitFit = (mode: GaitMode): GaitFit => {
+	let fit = fits.get(mode);
+	if (!fit) {
+		const g = GAITS[mode];
+		const b = bodyOf();
+		const off = plantedAt(g, b, g.duty);
+		const land = plantedAt(g, b, 0);
+		const e = 1e-4;
+		const before = plantedAt(g, b, g.duty - e);
+		const after = plantedAt(g, b, e);
+		const span = (1 - g.duty) / e;
+		const [first, ...rest] = g.swing;
+		fit = {
+			b,
+			off,
+			land,
+			hipKeys: [
+				[0, off.hip],
+				[first![0], off.hip + first![1]],
+				...rest.map((k): [number, number] => [k[0], k[1]]),
+				[1, land.hip],
+			],
+			kneeKeys: [
+				[0, off.knee],
+				[first![0], off.knee + first![2]],
+				...rest.map((k): [number, number] => [k[0], k[2]]),
+				[1, land.knee],
+			],
+			hipOut: (off.hip - before.hip) * span,
+			kneeOut: (off.knee - before.knee) * span,
+			hipIn: (after.hip - land.hip) * span,
+			kneeIn: (after.knee - land.knee) * span,
+		};
+		fits.set(mode, fit);
+	}
+	return fit;
+};
+// Smoothly through keys (Catmull-Rom), going `out` at the first and `into`
+// the last as fast as given.
+const spline = (
+	keys: [number, number][],
+	s: number,
+	out: number,
+	into: number,
+): number => {
+	let i = 0;
+	while (i < keys.length - 2 && s > keys[i + 1]![0]) {
+		i++;
+	}
+	const [s0, v0] = keys[i]!;
+	const [s1, v1] = keys[i + 1]!;
+	const slope = (j: number) =>
+		j === 0
+			? out
+			: j === keys.length - 1
+				? into
+				: (keys[j + 1]![1] - keys[j - 1]![1]) /
+					(keys[j + 1]![0] - keys[j - 1]![0]);
+	const h = s1 - s0;
+	const t = (s - s0) / h;
+	const t2 = t * t;
+	const t3 = t2 * t;
+	return (
+		(2 * t3 - 3 * t2 + 1) * v0 +
+		(t3 - 2 * t2 + t) * h * slope(i) +
+		(-2 * t3 + 3 * t2) * v1 +
+		(t3 - t2) * h * slope(i + 1)
+	);
+};
+const legAt = (mode: GaitMode, phi: number): Leg => {
+	const g = GAITS[mode];
+	const fit = gaitFit(mode);
+	if (phi < g.duty) {
+		return plantedAt(g, fit.b, phi);
+	}
+	const s = (phi - g.duty) / (1 - g.duty);
+	const hip = spline(fit.hipKeys, s, fit.hipOut, fit.hipIn);
+	const knee = spline(fit.kneeKeys, s, fit.kneeOut, fit.kneeIn);
+	const { b } = fit;
+	const u =
+		-b.thigh * Math.cos(hip * RAD) - b.shin * Math.cos((hip - knee) * RAD);
+	// The foot pointed as it came off the floor, then square with his shin
+	// - hanging toes down as his heel comes up behind him, level to land.
+	const w = Math.min(1, s / 0.2);
+	const square = Math.max(0, Math.min(1, (knee - hip + 10) / POINT));
+	return {
+		hip,
+		knee,
+		z: hipsAt(g, phi) + u - b.ankleH,
+		toe: fit.off.toe + (square - fit.off.toe) * w,
+	};
+};
+const frac = (x: number) => x - Math.floor(x);
+// How high off the floor he is (feet), `ph` through a stride: his lower
+// ankle's height (see skeleton, which puts it on the floor).
+const gaitLift = (mode: GaitMode, ph: number): number =>
+	Math.min(legAt(mode, frac(ph)).z, legAt(mode, frac(ph + 0.5)).z);
+const gaitPose = (mode: GaitMode, ph: number): Pose => {
+	const g = GAITS[mode];
+	const r = legAt(mode, frac(ph));
+	const l = legAt(mode, frac(ph + 0.5));
+	// How far forward his right arm is (-1 to 1): back as his right foot
+	// lands, forward as his left does - a beat behind his legs.
+	const a = -Math.cos(2 * Math.PI * (ph - 0.03));
+	const mid = (g.armFwd - g.armBack) / 2;
+	const amp = (g.armFwd + g.armBack) / 2;
+	return pose({
+		hipN: r.hip,
+		kneeN: r.knee,
+		hipF: l.hip,
+		kneeF: l.knee,
+		toeN: r.toe,
+		toeF: l.toe,
+		lean: g.lean,
+		wide: g.wide,
+		shN: mid + amp * a,
+		elN: g.elbow + g.pump * a,
+		abN: 10 - 4 * a,
+		shF: mid - amp * a,
+		elF: g.elbow - g.pump * a,
+		abF: 10 + 4 * a,
+		twist: g.twist * a,
+		plant: 0,
+	});
+};
+
 const stride = (ph: number, mode: RunMode): Pose => {
 	const a = Math.sin(2 * Math.PI * ph);
 	const c = Math.cos(2 * Math.PI * ph);
@@ -457,39 +865,44 @@ const stride = (ph: number, mode: RunMode): Pose => {
 			wide: 0.55,
 		});
 	}
-	if (mode === "dribbleWalk") {
-		// Walking it up or working it a few steps: short steps, down in his
-		// legs and leaning over the ball, the other arm out between it and
-		// anybody near.
-		return pose({
-			hipN: 18 * a,
-			hipF: -18 * a,
-			kneeN: 30 + 26 * Math.max(0, c),
-			kneeF: 30 + 26 * Math.max(0, -c),
-			lean: 14,
-			shN: 30,
-			elN: 30,
-			shF: 28 + 6 * a,
-			elF: 74,
-			abF: 34,
-			wide: 0.2,
-		});
-	}
-	if (mode === "walk" || mode === "carry" || mode === "drift") {
-		const legs = {
-			hipN: 20 * a,
-			hipF: -20 * a,
-			kneeN: 10 + 30 * Math.max(0, c),
-			kneeF: 10 + 30 * Math.max(0, -c),
-		};
+	if (isGait(mode)) {
+		const q = gaitPose(mode, ph);
+		// How far forward his left arm swings (-1 to 1).
+		const left = Math.cos(2 * Math.PI * (ph - 0.03));
+		if (mode === "dribble") {
+			// Pushing it up the floor: the other arm still swinging with his
+			// stride, bent and held out a little from him. (The dribbling arm
+			// rides the ball - see dribbleArm.)
+			return {
+				...q,
+				shN: 30,
+				elN: 30,
+				abN: 18,
+				shF: -2 + 22 * left,
+				elF: 86 + 8 * left,
+				abF: 24,
+			};
+		}
+		if (mode === "dribbleWalk") {
+			// Working it, a step at a time: the other arm up, bent, between
+			// the ball and his man.
+			return {
+				...q,
+				shN: 30,
+				elN: 30,
+				abN: 18,
+				shF: 30 + 4 * left,
+				elF: 58,
+				abF: 38,
+			};
+		}
+		if (mode === "carry") {
+			return { ...q, shN: 36, elN: 92, shF: 30, elF: 98 };
+		}
 		if (mode === "drift") {
-			// Off the ball, sliding along the arc: knees bent, hands up ready
-			// for it.
-			return pose({
-				...legs,
-				kneeN: legs.kneeN + 14,
-				kneeF: legs.kneeF + 14,
-				lean: 9,
+			// Off the ball, sliding along the arc: hands up ready for it.
+			return {
+				...q,
 				shN: 42,
 				elN: 58,
 				shF: 40,
@@ -498,76 +911,25 @@ const stride = (ph: number, mode: RunMode): Pose => {
 				abF: 16,
 				wrN: 20,
 				wrF: 20,
-			});
+			};
 		}
-		return mode === "carry"
-			? pose({ ...legs, lean: 6, shN: 36, elN: 92, shF: 30, elF: 98 })
-			: pose({ ...legs, lean: 4, ...pump(a, 16, 24, 8) });
+		return q;
 	}
-	if (mode === "back") {
-		// A defensive slide / backpedal: low, short steps, hands active.
-		return pose({
-			hipN: 10 - 18 * a,
-			hipF: 30 + 18 * a,
-			kneeN: 50 + 16 * Math.max(0, -c),
-			kneeF: 54 + 16 * Math.max(0, c),
-			lean: 18,
-			shN: 64,
-			elN: 22,
-			shF: 46,
-			elF: 30,
-			abN: 34,
-			abF: 34,
-			wide: 0.4,
-		});
-	}
-	if (mode === "jog") {
-		// Getting somewhere on the floor, not out for a jog: a shorter
-		// stride than a run, but down in his legs and leaning into it, the
-		// arms working tight at his sides.
-		return pose({
-			hipN: 26 * a,
-			hipF: -26 * a,
-			kneeN: 18 + 42 * Math.max(0, c) ** 1.3,
-			kneeF: 18 + 42 * Math.max(0, -c) ** 1.3,
-			lean: 10,
-			...pump(a, 32, 84, 18),
-		});
-	}
-	if (mode === "sprint") {
-		// Flat out: leaning into it, knees driving high, arms pumping.
-		return pose({
-			hipN: 42 * a,
-			hipF: -42 * a,
-			kneeN: 18 + 80 * Math.max(0, c) ** 1.3,
-			kneeF: 18 + 80 * Math.max(0, -c) ** 1.3,
-			lean: 18,
-			...pump(a, 62, 86, 24),
-		});
-	}
-	const legs = {
-		hipN: 30 * a,
-		hipF: -30 * a,
-		kneeN: 14 + 56 * Math.max(0, c) ** 1.3,
-		kneeF: 14 + 56 * Math.max(0, -c) ** 1.3,
-		lean: 10,
-	};
-	if (mode === "dribble") {
-		// Attacking: low, leaning into it, the other arm out, bent, between
-		// the ball and anybody coming.
-		return pose({
-			...legs,
-			kneeN: legs.kneeN + 12,
-			kneeF: legs.kneeF + 12,
-			lean: 19,
-			shN: 34,
-			elN: 22 + 18 * Math.abs(a),
-			shF: 32 + 6 * a,
-			elF: 70,
-			abF: 38,
-		});
-	}
-	return pose({ ...legs, ...pump(a, 42, 80, 22) });
+	// A defensive slide / backpedal: low, short steps, hands active.
+	return pose({
+		hipN: 10 - 18 * a,
+		hipF: 30 + 18 * a,
+		kneeN: 50 + 16 * Math.max(0, -c),
+		kneeF: 54 + 16 * Math.max(0, c),
+		lean: 18,
+		shN: 64,
+		elN: 22,
+		shF: 46,
+		elF: 30,
+		abN: 34,
+		abF: 34,
+		wide: 0.4,
+	});
 };
 
 // Mid-stride, his feet are where his stride puts them - not planted under
@@ -1366,23 +1728,23 @@ export const ANIMS = {
 				...[
 					{},
 					{
-						hipN: 2,
-						kneeN: 56,
-						hipF: 30,
-						kneeF: 58,
-						lean: 25,
+						hipN: 6,
+						kneeN: 64,
+						hipF: 34,
+						kneeF: 66,
+						lean: 27,
 						twist: 7,
 						shF: 36,
 						elF: 66,
 						abF: 40,
 					},
-					{ kneeN: 46, kneeF: 48, lean: 17 },
+					{ kneeN: 54, kneeF: 56, lean: 19 },
 					{
-						hipN: -4,
-						kneeN: 54,
-						hipF: 24,
-						kneeF: 56,
-						lean: 18,
+						hipN: 0,
+						kneeN: 62,
+						hipF: 28,
+						kneeF: 64,
+						lean: 20,
 						twist: -6,
 						tilt: 3,
 						shF: 22,
@@ -3967,18 +4329,11 @@ export const poseFor = (anim: AnimName, frame: number): Pose => {
 	return a.pose(frame);
 };
 
-// Running, he leaves the floor between strides: how high (feet) at a point
-// through the stride, highest with his legs spread wide.
-const BOUNCE: Partial<Record<AnimName, number>> = {
-	jog: 0.05,
-	run: 0.1,
-	sprint: 0.2,
-	dribble: 0.08,
-};
-export const bounceAt = (anim: AnimName, phase: number): number => {
-	const h = BOUNCE[anim];
-	return h ? h * Math.sin(2 * Math.PI * phase) ** 2 : 0;
-};
+// Running, he leaves the floor between strides - walking, he rolls up onto
+// his toes: how high his lower ankle is (feet) at a point through the
+// stride.
+export const bounceAt = (anim: AnimName, phase: number): number =>
+	isGait(anim) ? gaitLift(anim, phase) : 0;
 
 // The pose partway through an animation - an act from start (0) to finish
 // (1), a cycle or loop through one turn - blended between its key frames, so
@@ -4209,10 +4564,14 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 	// Down onto the floor: the lower ankle sits at ankle height.
 	const off = b.ankleH - Math.min(legR.end.u, legL.end.u);
 	// Pointed, a foot hangs from the ankle (only ever up in the air: his
-	// ankles still sit where they would on the floor).
-	const point = q.toe * 55 * rad;
+	// ankles still sit where they would on the floor) - or, up on its toes,
+	// rests on them.
 	const toe = b.foot * 0.72;
-	for (const l of [legR, legL]) {
+	for (const [l, own] of [
+		[legR, q.toeN],
+		[legL, q.toeF],
+	] as const) {
+		const point = Math.min(1, q.toe + own) * POINT * rad;
 		l.root.u += off;
 		l.mid.u += off;
 		l.end.u += off;
@@ -4354,14 +4713,7 @@ const armLimb = (
 // The arm that puts his wrist at `target`, worked back from the arm's own
 // geometry (the cartoon reach included): out from his side as far as the
 // target is, then shoulder and elbow from the triangle the two bones make.
-export const armTo = (
-	b: Body,
-	chest: V3,
-	target: V3,
-	wrDeg: number,
-	side: 1 | -1,
-	tuck = 0,
-): Limb => {
+const armAim = (b: Body, chest: V3, target: V3, side: 1 | -1, tuck = 0) => {
 	const root = shoulderOf(b, chest, side);
 	let reach = 1;
 	let sh = 0;
@@ -4386,6 +4738,17 @@ export const armTo = (
 			Math.atan2(F, -U) - Math.atan2(L2 * Math.sin(el), L1 + L2 * Math.cos(el));
 		reach = stretchOf(sh / RAD, tuck);
 	}
+	return { sh, el, ab, reach };
+};
+export const armTo = (
+	b: Body,
+	chest: V3,
+	target: V3,
+	wrDeg: number,
+	side: 1 | -1,
+	tuck = 0,
+): Limb => {
+	const { sh, el, ab, reach } = armAim(b, chest, target, side, tuck);
 	return buildArm(b, chest, sh / RAD, el / RAD, ab, reach, wrDeg, side);
 };
 
@@ -4593,21 +4956,68 @@ export const releaseAt = (anim: AnimName, at: number, b = bodyOf()): V3 =>
 // ball in his left hand the arms trade jobs: the right is the one held out
 // to keep his man off.
 export type Hand = "R" | "L";
-// The ball worked at his hip, not held out in front of him: his upper arm
-// down by his side, his elbow bent, his forearm and wrist doing the pushing -
-// the hand cocked back over the top of it, then snapped down. On the move
-// (`ahead`, 0 to 1) it is pushed out a little in front of him.
+// Where the hand works it (feet, from his hips: forward, out to that side,
+// up) - at the top of a bounce and as it lets it go. Where he stands, at his
+// hip, out to the side away from his man: his upper arm hanging, the
+// forearm and wrist doing the work, the arm reaching all but straight as it
+// pushes. On the move (`ahead`, 0 to 1), out in front of him, pushed on
+// ahead as he goes.
+const DRIBBLE_TOP = { f: 0.72, s: 1.12, u: 0.5 };
+const DRIBBLE_LOW = { f: 0.82, s: 1.18, u: 0.02 };
+const DRIBBLE_TOP_AHEAD = { f: 1.12, s: 1.02, u: 0.6 };
+const DRIBBLE_LOW_AHEAD = { f: 1.38, s: 1.06, u: 0.2 };
+// Through a bounce, how far down the hand has pushed (0 at the top, 1 at the
+// bottom): down hard, the ball gone at the bottom, then back up to wait for
+// it - riding it the last of the way up.
+const pushOf = (ph: number): number => {
+	const smooth = (x: number) => x * x * (3 - 2 * x);
+	return ph < 0.2
+		? smooth(ph / 0.2)
+		: 1 - smooth(Math.min(1, (ph - 0.2) / 0.6));
+};
+// How far out in front of him he works it, going as he is (see dribbleArm).
+export const dribbleAhead = (anim: AnimName): number =>
+	anim === "dribble" || anim === "sprint" || anim === "run"
+		? 1
+		: anim === "dribbleWalk" || anim === "dribbleJab" || anim === "dribbleHesi"
+			? 0.5
+			: 0;
+const DRIBBLER = (() => {
+	let b: Body | undefined;
+	return () => (b ??= bodyOf());
+})();
 export const dribbleArm = (
 	q: Pose,
 	ph: number,
 	hand: Hand = "R",
 	ahead = 0,
 ): Pose => {
-	const push = ph < 0.22 ? ph / 0.22 : 1 - (ph - 0.22) / 0.78;
-	const e = push * push * (3 - 2 * push);
-	const sh = 16 + 6 * e + 10 * ahead;
-	const el = 62 - 36 * e - 8 * ahead;
-	const wr = 18 - 58 * e;
+	const e = pushOf(ph);
+	const at = (k: "f" | "s" | "u") => {
+		const top =
+			DRIBBLE_TOP[k] + (DRIBBLE_TOP_AHEAD[k] - DRIBBLE_TOP[k]) * ahead;
+		const low =
+			DRIBBLE_LOW[k] + (DRIBBLE_LOW_AHEAD[k] - DRIBBLE_LOW[k]) * ahead;
+		return top + (low - top) * e;
+	};
+	const b = DRIBBLER();
+	const side = hand === "L" ? 1 : -1;
+	// (Worked out in his frame before his shoulders turn - as the skeleton
+	// builds his arms.)
+	const sk = skeleton(b, { ...q, twist: 0, tilt: 0 });
+	const arm = armAim(
+		b,
+		sk.chest,
+		v3(at("f"), side * at("s"), sk.pelvis.u + at("u")),
+		side,
+	);
+	const sh = arm.sh / RAD;
+	const el = arm.el / RAD;
+	// The hand over the top of it, fingers spread forward, snapped down
+	// through the push and opening back up to take it.
+	const snap = ph < 0.18 ? ph / 0.18 : 1 - Math.min(1, (ph - 0.18) / 0.5);
+	const wr = 74 - 62 * snap * snap * (3 - 2 * snap) - sh - el;
+	const ab = arm.ab / RAD;
 	if (hand === "L") {
 		return {
 			...q,
@@ -4617,11 +5027,11 @@ export const dribbleArm = (
 			wrN: q.wrF,
 			shF: sh,
 			elF: el,
-			abF: 20,
+			abF: ab,
 			wrF: wr,
 		};
 	}
-	return { ...q, shN: sh, elN: el, abN: 20, wrN: wr };
+	return { ...q, shN: sh, elN: el, abN: ab, wrN: wr };
 };
 
 // His pose at a moment: the move's, with the dribbling hand on the bounce
@@ -4636,18 +5046,7 @@ export const posed = (
 ): Pose => {
 	const q = poseAt(anim, phase);
 	if (dribble !== undefined && !MOVES.has(anim)) {
-		return dribbleArm(
-			q,
-			dribble,
-			hand,
-			anim === "dribble" || anim === "sprint" || anim === "run"
-				? 1
-				: anim === "dribbleWalk" ||
-					  anim === "dribbleJab" ||
-					  anim === "dribbleHesi"
-					? 0.5
-					: 0,
-		);
+		return dribbleArm(q, dribble, hand, dribbleAhead(anim));
 	}
 	if (target <= 0) {
 		return q;

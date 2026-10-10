@@ -17,6 +17,7 @@ import {
 	armTo,
 	bodyOf,
 	bounceAt,
+	dribbleAhead,
 	holdBall,
 	isMove,
 	lerpPose,
@@ -2221,14 +2222,17 @@ const ballOn = (
 						})()
 					: underHand(st, body, hand);
 			const tri = dribbleDepth(ph);
-			// It hits the floor ahead of him and off the foot on that side -
-			// or, changing hands, between his feet.
+			// It hits the floor beside him, out past the foot on that side -
+			// out ahead of him on the move - or, changing hands, between his
+			// feet.
 			const across = from !== to;
+			const ahead = dribbleAhead(st.anim);
+			const out = 1.22 - 0.12 * ahead;
 			const floor = bodyPoint(
 				{ ...st, z: 0 },
 				{
-					f: across ? 1.1 : st.moving ? 1.6 : 0.9,
-					s: across ? 0 : hand === "L" ? 0.75 : -0.75,
+					f: across ? 1.0 : 0.95 + ahead,
+					s: across ? 0 : hand === "L" ? out : -out,
 					u: BALL_R,
 				},
 			);
