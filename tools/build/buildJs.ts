@@ -3,7 +3,7 @@ import path from "node:path";
 import { Worker } from "node:worker_threads";
 import { fileHash } from "./fileHash.ts";
 import { replace } from "./replace.ts";
-import { FOLDER } from "../lib/rolldownConfig.ts";
+import { bundleNames, FOLDER } from "../lib/rolldownConfig.ts";
 import type { Sport } from "../lib/getSport.ts";
 import { JSON_FILENAMES, jsonKeys, type JsonHashes } from "../lib/jsonUrls.ts";
 
@@ -40,7 +40,7 @@ export const buildJs = async (sport: Sport, versionNumber: string) => {
 	const jsonHashes = await hashJsonFiles();
 
 	const promises: Promise<string[]>[] = [];
-	for (const name of ["ui", "worker"]) {
+	for (const name of bundleNames(sport)) {
 		promises.push(
 			new Promise((resolve) => {
 				const worker = new Worker(
@@ -56,7 +56,8 @@ export const buildJs = async (sport: Sport, versionNumber: string) => {
 				);
 
 				worker.on("message", (modulepreloadFilenames) => {
-					resolve(modulepreloadFilenames);
+					// (The court's worker is only wanted once a 3D game is on.)
+					resolve(name === "court" ? [] : modulepreloadFilenames);
 				});
 			}),
 		);

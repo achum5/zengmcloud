@@ -32,11 +32,11 @@ import {
 } from "./clock.ts";
 import {
 	clipDipAt,
-	compileCourt,
 	linesBetween,
 	snapForCursor,
 	targetForCursor,
 	type CourtPlayer,
+	type CourtTimeline,
 	type Stakes,
 } from "./director.ts";
 import { crewAt, crewFor } from "./crew.ts";
@@ -46,6 +46,7 @@ import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
 import { dressKit, kitArtOf, type KitArt } from "./kitArt.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
+import { stageCourt } from "./stageCourt.ts";
 import { advanceLead, followRate } from "./follow.ts";
 import { bodyOf, type Body } from "./poses.ts";
 import { cameraCuts, fastAt, offenseAt } from "./evaluate.ts";
@@ -92,6 +93,10 @@ const REPLAY_DIP = 70;
 
 // Whether a game opens with its starting lineups (see intro.ts).
 const LINEUP_INTROS = false;
+
+// How long the play-by-play may disagree with the roster before the court
+// gives up on the game (ms).
+const ROSTER_WAIT = 5000;
 
 // A player whose face is a photo is drawn in this, head to toe.
 const SILHOUETTE = "#101012";
@@ -161,6 +166,8 @@ type Props = {
 	// the play it shows, like any other skip ahead.
 	skips?: number;
 	onReady: () => void;
+	// The court cannot play this game: the page goes on without it.
+	onFail?: () => void;
 };
 
 const Court3D = ({
@@ -174,6 +181,7 @@ const Court3D = ({
 	follower,
 	skips = 0,
 	onReady,
+	onFail,
 }: Props) => {
 	const { lid, gender } = useLocal(["lid", "gender"]);
 	const gid: number | undefined = boxScore?.gid;
@@ -257,34 +265,54 @@ const Court3D = ({
 			? "playoffs"
 			: "regular"
 		: undefined;
-	const timeline = useMemo(() => {
+	// The game staged, off the page's thread (see stageCourt.ts) - the court
+	// stays dark until it is.
+	const [timeline, setTimeline] = useState<CourtTimeline | undefined>();
+	const onFailRef = useRef(onFail);
+	onFailRef.current = onFail;
+	useEffect(() => {
+		setTimeline(undefined);
 		if (!events || events.length === 0) {
-			return undefined;
+			return;
 		}
 		// THE EVENTS HAVE TO BE THIS GAME'S. When the game on this page changes
 		// under it - a league-mate starts another game while this device is
 		// following one - the new game's events can arrive a render ahead of its
 		// box score, and staging them against the previous game's roster puts
 		// players on the floor that the court has never heard of (the field
-		// report: a crash in the free throw lineup). Wait for the two to agree.
+		// report: a crash in the free throw lineup). Wait for the two to agree -
+		// and if they never do, give the game back to the page.
 		if (!eventsMatchRoster(events, roster)) {
-			return undefined;
+			const id = setTimeout(() => onFailRef.current?.(), ROSTER_WAIT);
+			return () => clearTimeout(id);
 		}
-		try {
-			return compileCourt({
-				events,
-				players: roster,
-				gid,
-				gender,
-				intro: introKind,
-				stakes,
-			});
-		} catch (error) {
-			// A broken staging must not take the whole page down with it - the
-			// play-by-play and box score still work without the court.
-			console.error("3D court failed to compile", error);
-			return undefined;
-		}
+		let alive = true;
+		stageCourt({
+			events,
+			players: roster,
+			gid,
+			gender,
+			intro: introKind,
+			stakes,
+		}).then(
+			(tl) => {
+				if (alive) {
+					setTimeline(tl);
+				}
+			},
+			(error: unknown) => {
+				// A broken staging must not take the whole page down with it, or
+				// leave it waiting on a court that will never play: the
+				// play-by-play and box score go on without it.
+				console.error("3D court failed to compile", error);
+				if (alive) {
+					onFailRef.current?.();
+				}
+			},
+		);
+		return () => {
+			alive = false;
+		};
 	}, [events, roster, gid, gender, introKind, stakes]);
 	const clocks = useMemo(
 		() => (timeline && events ? buildClocks(timeline, events) : undefined),

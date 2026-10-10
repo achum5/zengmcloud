@@ -192,7 +192,13 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   2026-10-09 at the owner's request (LINEUP_INTROS in Court3D.tsx): in the
   real app it ran at about a frame a second, so a game or replay looked
   frozen on a dark court. All the code is kept; find and fix that slowdown
-  before turning it back on.
+  before turning it back on. (2026-10-10: the dark court came back with the
+  intros off. Found: the whole game was staged on the page's own thread - 5 s
+  on a desktop - and the referees' path for the whole game worked out on
+  the first frame - 3 s more - with the page frozen through both. Now staged
+  in a worker of its own, the referees' path worked out as the game goes,
+  and a court that cannot stage a game hands it to the 2D court. Re-test
+  the intros on a phone before turning them back on.)
 
 - [x] No fans directly behind the benches.
 - [x] The out-of-bounds hardwood keeps its color all the way back to the

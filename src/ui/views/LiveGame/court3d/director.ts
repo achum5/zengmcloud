@@ -14399,14 +14399,7 @@ export type Stakes = {
 	finals: boolean;
 };
 
-export const compileCourt = ({
-	events,
-	players,
-	gid,
-	gender = "male",
-	intro,
-	stakes,
-}: {
+export type CourtInput = {
 	events: RawEvent[];
 	players: CourtPlayer[];
 	// The starting lineups to call before the opening tip (see intro.ts).
@@ -14417,7 +14410,16 @@ export const compileCourt = ({
 	// stood, who boxed out) and picks the play-by-play's wording.
 	gid: number | undefined;
 	gender?: "female" | "male";
-}): CourtTimeline => {
+};
+
+export const compileCourt = ({
+	events,
+	players,
+	gid,
+	gender = "male",
+	intro,
+	stakes,
+}: CourtInput): CourtTimeline => {
 	const d = new Director(events, players, gid, gender, intro, stakes);
 	for (let i = 0; i < events.length; i++) {
 		const e = events[i];

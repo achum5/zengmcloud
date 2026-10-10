@@ -417,6 +417,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 		__SPORT === "basketball" ? getLiveGameView() : "classic",
 	);
 	const court3dRef = useRef(ownView === "3d");
+	// The 3D court could not play this game (see Court3D's onFail): the 2D
+	// court plays it instead.
+	const [court3dLost, setCourt3dLost] = useState(false);
 	const [speed, setSpeed] = useLocalStorageState("live-game-speed", {
 		defaultValue: String(DEFAULT_SPEED),
 	});
@@ -1558,6 +1561,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// itself, so its picture can follow the simmer's at any moment.
 	const court3d =
 		__SPORT === "basketball" &&
+		!court3dLost &&
 		(isFollower
 			? parseLiveGameView(mpLiveBroadcast?.view) === "3d"
 			: ownView === "3d");
@@ -2130,6 +2134,26 @@ export const LiveGame = (props: View<"liveGame">) => {
 		}
 		processToNextPause();
 		setPlayIndex((prev) => prev + 1);
+	}, [processToNextPause]);
+
+	// The 3D court cannot play this game: on with the 2D court, paced like
+	// any other - not left waiting for a court that will never ask for the
+	// next line.
+	const onCourt3DFail = useCallback(() => {
+		if (!court3dRef.current) {
+			return;
+		}
+		court3dRef.current = false;
+		setCourt3dLost(true);
+		if (
+			!pausedRef.current &&
+			!followerRef.current &&
+			events.current &&
+			events.current.length > 0
+		) {
+			processToNextPause();
+			setPlayIndex((prev) => prev + 1);
+		}
 	}, [processToNextPause]);
 
 	const handleNextPlay = useCallback(() => {
@@ -2874,6 +2898,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 										follower={isFollower}
 										skips={skips3d}
 										onReady={onCourt3DReady}
+										onFail={onCourt3DFail}
 									/>
 								</Suspense>
 							) : null}

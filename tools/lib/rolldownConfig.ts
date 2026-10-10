@@ -12,9 +12,15 @@ import { startEnd } from "./rolldownPlugins/startEnd.ts";
 
 export const FOLDER = "gen";
 
+// The page, the game's worker, and (basketball only) the worker the 3D court
+// is staged in (src/court).
+export type BundleName = "ui" | "worker" | "court";
+export const bundleNames = (sport: Sport): BundleName[] =>
+	sport === "basketball" ? ["ui", "worker", "court"] : ["ui", "worker"];
+
 export const rolldownConfig = (
 	sport: Sport,
-	name: "ui" | "worker",
+	name: BundleName,
 	envOptions:
 		| {
 				nodeEnv: "development";

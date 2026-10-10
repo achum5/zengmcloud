@@ -560,32 +560,50 @@ const viaCorner = (p: Pt, g: Pt): Pt => {
 	}
 	return g;
 };
-const refPaths = new WeakMap<CourtTimeline, Pt[][]>();
-const refPath = (tl: CourtTimeline): Pt[][] => {
-	let out = refPaths.get(tl);
-	if (out) {
-		return out;
+// (Worked out as far as it is needed - the game so far, a step at a time as
+// it goes on - not the whole game at once before the first picture: that
+// takes seconds.)
+type RefRun = {
+	out: Pt[][];
+	at: Pt[];
+	vel: Pt[];
+	// The next camera cut to pass.
+	ci: number;
+	cuts: number[];
+	n: number;
+};
+const refRuns = new WeakMap<CourtTimeline, RefRun>();
+const refPath = (tl: CourtTimeline, upTo: number): Pt[][] => {
+	let run = refRuns.get(tl);
+	if (!run) {
+		const at = refTargets(tl, 0).map((q) => ({ ...q }));
+		run = {
+			out: [],
+			at,
+			vel: at.map(() => ({ x: 0, y: 0 })),
+			ci: 0,
+			cuts: cameraCuts(tl),
+			n: Math.ceil(tl.end / STEP) + 2,
+		};
+		refRuns.set(tl, run);
 	}
-	out = [];
-	const cuts = cameraCuts(tl);
-	let ci = 0;
+	const { out, cuts, n } = run;
+	const want = Math.min(n, upTo + 1);
 	const dt = STEP / 1000;
-	let at: Pt[] = refTargets(tl, 0).map((q) => ({ ...q }));
-	let vel: Pt[] = at.map(() => ({ x: 0, y: 0 }));
-	const n = Math.ceil(tl.end / STEP) + 2;
-	for (let k = 0; k < n; k++) {
+	for (let k = out.length; k < want; k++) {
 		const t = k * STEP;
 		const goal = refTargets(tl, t);
 		let cut = false;
-		while (ci < cuts.length && cuts[ci]! <= t) {
-			cut ||= cuts[ci]! > t - STEP;
-			ci++;
+		while (run.ci < cuts.length && cuts[run.ci]! <= t) {
+			cut ||= cuts[run.ci]! > t - STEP;
+			run.ci++;
 		}
 		if (cut) {
-			at = goal.map((q) => ({ ...q }));
-			vel = at.map(() => ({ x: 0, y: 0 }));
+			run.at = goal.map((q) => ({ ...q }));
+			run.vel = run.at.map(() => ({ x: 0, y: 0 }));
 		} else if (k > 0) {
-			at = at.map((p, i) => {
+			const vel = run.vel;
+			run.at = run.at.map((p, i) => {
 				const g = goal[i]!;
 				const W = viaCorner(p, g);
 				// (How far he has to go, round the corner if he goes that way.)
@@ -620,13 +638,12 @@ const refPath = (tl: CourtTimeline): Pt[][] => {
 				};
 			});
 		}
-		out.push(at);
+		out.push(run.at);
 	}
-	refPaths.set(tl, out);
 	return out;
 };
 const refPlaces = (tl: CourtTimeline, t: number): Places => {
-	const path = refPath(tl);
+	const path = refPath(tl, Math.max(1, Math.floor(t / STEP) + 1));
 	const g = Math.max(0, Math.min(path.length - 2, Math.floor(t / STEP)));
 	const a = path[g]!;
 	const b = path[g + 1]!;
