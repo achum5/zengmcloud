@@ -43,11 +43,51 @@ const getAllAwardsGrouped = (players: PlayerInfoAndLegend[]) => {
 	return groupAwards(allAwards, true);
 };
 
+// Each value tinted by where it falls between the worst and the best of the
+// players compared - green toward the best, red toward the worst - and only
+// as strongly as the gap between those is wide, so near-equal values look
+// near-equal and a marginal gap is only faintly tinted. A gap of `scale`
+// (in the row's own units) or more is tinted fully; without one, a gap of a
+// third of the bigger value is.
+const GRADIENT_SPAN = 1 / 3;
+const gradientCellStyle = (
+	value: number,
+	best: number,
+	worst: number,
+	twoPlayers: boolean,
+	scale: number | undefined,
+) => {
+	const gap = Math.abs(best - worst);
+	const full =
+		scale ?? GRADIENT_SPAN * Math.max(Math.abs(best), Math.abs(worst));
+	if (!(gap > 0) || !(full > 0)) {
+		return;
+	}
+	const strength = Math.min(1, gap / full);
+	// -1 the worst, 1 the best.
+	const along = (2 * (value - worst)) / (best - worst) - 1;
+	if (along < 0 && twoPlayers) {
+		return;
+	}
+	const alpha = Math.abs(along) * strength;
+	if (alpha < 0.02) {
+		return;
+	}
+	return {
+		backgroundColor: `rgba(var(--gradient-base-${along > 0 ? "success" : "danger"}), ${alpha.toFixed(3)})`,
+	};
+};
+
+// How far apart ratings, and ages, are for the gap to count as big.
+const RATING_GAP = 15;
+const AGE_GAP = 4;
+
 const InfoRow = ({
 	col,
 	values,
 	sortAsc,
 	sortType,
+	scale,
 }: {
 	col: {
 		desc?: string | undefined;
@@ -56,6 +96,7 @@ const InfoRow = ({
 	values: any[];
 	sortAsc?: boolean;
 	sortType?: SortType;
+	scale?: number;
 }) => {
 	let bestSortValue = -Infinity;
 	let worstSortValue = Infinity;
@@ -89,8 +130,21 @@ const InfoRow = ({
 		worstSortValue = Number.NaN;
 	}
 
+	// Numbers all round: shaded by how they compare (see gradientCellStyle).
+	const twoPlayers = values.length === 3;
+	const worstGraded = worstSortValue;
+	const graded =
+		sortValues !== undefined &&
+		Number.isFinite(bestSortValue) &&
+		Number.isFinite(worstSortValue) &&
+		values.every(
+			(value, i) =>
+				value === "legend" ||
+				(typeof sortValues![i] === "number" && Number.isFinite(sortValues![i])),
+		);
+
 	// If only 2 players, then don't highlight worst value because it's redundant. Length is 3 because of the legend column!
-	if (values.length === 3) {
+	if (twoPlayers) {
 		worstSortValue = Number.NaN;
 	}
 
@@ -101,6 +155,23 @@ const InfoRow = ({
 					return (
 						<td key="legend" title={col.desc}>
 							{col.title}
+						</td>
+					);
+				}
+
+				if (graded) {
+					return (
+						<td
+							key={i}
+							style={gradientCellStyle(
+								sortValues![i],
+								bestSortValue,
+								worstGraded,
+								twoPlayers,
+								scale,
+							)}
+						>
+							{value}
 						</td>
 					);
 				}
@@ -311,6 +382,7 @@ const ComparePlayers = ({
 			)}
 			sortType="number"
 			sortAsc
+			scale={AGE_GAP}
 		/>
 	);
 
@@ -476,6 +548,7 @@ const ComparePlayers = ({
 														(p) => p.ratings[rating],
 													)}
 													sortType="number"
+													scale={RATING_GAP}
 												/>
 											);
 										})}
