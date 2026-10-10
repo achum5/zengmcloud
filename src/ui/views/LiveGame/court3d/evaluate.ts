@@ -18,6 +18,7 @@ import {
 	bodyOf,
 	bounceAt,
 	dribbleAhead,
+	isGait,
 	holdBall,
 	isMove,
 	lerpPose,
@@ -98,6 +99,8 @@ export type PlayerState = {
 	reach?: number;
 	// His move done the other way round: his left doing what its right does.
 	mirror?: boolean;
+	// His legs turned under him from the way he faces (degrees - see Pose).
+	legs?: number;
 	// Just after a change of move: the last move as it was when it changed,
 	// and how much of his pose is still that (1 all, 0 none) - and, if it
 	// differs, how much of his arms and the turn of his shoulders - see
@@ -1838,6 +1841,7 @@ export const evalPlayer = (
 	const now = doingAt(tl, tr, t, here);
 	const from = shown ? blendInto(tl, tr, t, now.anim) : undefined;
 	const yaw = yawAt(tl, tr, t);
+	const legs = legsOf(here, yaw, now.anim, t);
 	const said =
 		shown && tr.arms.length > 0
 			? armAt(
@@ -1870,9 +1874,39 @@ export const evalPlayer = (
 		yaw,
 		moving: here.moving,
 		...now,
+		...(legs !== 0 ? { legs } : {}),
 		...(from ? { from } : {}),
 		...(arm ? { arm } : {}),
 	};
+};
+
+// Going one way while he looks another - a few steps aside with his eyes on
+// the ball, or not yet round from his last way - his legs go the way he
+// goes, his hips turned under him as far as hips turn; past that, they
+// give up on it, and right round (backing off) not at all. Eased in with
+// his pace, so he is square again as he pulls up.
+const LEGS_TURN = 75;
+const LEGS_GIVE = 40;
+const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
+	const run = here.run;
+	if (!here.moving || !run || !isGait(anim)) {
+		return 0;
+	}
+	if (here.hx * here.hx + here.hy * here.hy < 1e-6) {
+		return 0;
+	}
+	const off = (wrapAngle(Math.atan2(here.hy, here.hx) - yaw) * 180) / Math.PI;
+	const a = Math.abs(off);
+	const turn =
+		a <= LEGS_TURN
+			? a
+			: LEGS_TURN * Math.max(0, 1 - (a - LEGS_TURN) / LEGS_GIVE);
+	if (turn < 0.5) {
+		return 0;
+	}
+	const v = (alongRun(run, t + 10) - alongRun(run, t - 10)) / 0.02;
+	// (His left is the floor's clockwise.)
+	return -Math.sign(off) * turn * smooth01((v - 0.5) / 2);
 };
 
 // The arms and the turn of his shoulders, which can ease into a move on
@@ -1915,7 +1949,8 @@ export const poseOf = (st: PlayerState): Pose => {
 	const own = posed(st.anim, st.phase, st.dribble, st.dribbleHand, st.target);
 	const q = st.mirror ? mirror(own) : own;
 	const f = st.from;
-	const p = f && f.w > 0 ? blendFrom(q, f) : q;
+	const b = f && f.w > 0 ? blendFrom(q, f) : q;
+	const p = st.legs ? { ...b, legs: st.legs } : b;
 	const a = st.arm;
 	if (!a || a.w <= 0) {
 		return p;

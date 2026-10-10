@@ -49,6 +49,9 @@ export type Pose = {
 	// a stride.
 	toeN: number;
 	toeF: number;
+	// His hips and legs turned under him from the way he faces (degrees,
+	// round to his left positive): going one way while he looks another.
+	legs: number;
 	// His shoulders turned on his hips about his spine (degrees, round to his
 	// left positive), and his upper body tipped to his side (degrees, his left
 	// shoulder down positive): a crossover's dip, an arm wrapped behind him.
@@ -78,6 +81,7 @@ const BASE: Pose = {
 	toe: 0,
 	toeN: 0,
 	toeF: 0,
+	legs: 0,
 	twist: 0,
 	tilt: 0,
 };
@@ -91,9 +95,10 @@ const SIDES: [keyof Pose, keyof Pose][] = [
 	["elN", "elF"],
 	["abN", "abF"],
 	["wrN", "wrF"],
+	["toeN", "toeF"],
 ];
 export const mirror = (q: Pose): Pose => {
-	const out = { ...q, twist: -q.twist, tilt: -q.tilt };
+	const out = { ...q, twist: -q.twist, tilt: -q.tilt, legs: -q.legs };
 	for (const [n, f] of SIDES) {
 		out[n] = q[f];
 		out[f] = q[n];
@@ -293,7 +298,7 @@ const P = {
 		kneeN: 58,
 		hipF: 30,
 		kneeF: 60,
-		lean: 22,
+		lean: 17,
 		wide: 0.48,
 		shN: 32,
 		elN: 18,
@@ -630,7 +635,7 @@ const GAITS: Record<GaitMode, Gait> = {
 		wide: 0.1,
 	},
 };
-const isGait = (mode: string): mode is GaitMode => mode in GAITS;
+export const isGait = (mode: string): mode is GaitMode => mode in GAITS;
 
 // A leg through its stride (`phi`, 0 as the foot lands): hip and knee, how
 // high the ankle is off the floor (feet), and the foot rolled onto its toes
@@ -1732,19 +1737,19 @@ export const ANIMS = {
 						kneeN: 64,
 						hipF: 34,
 						kneeF: 66,
-						lean: 27,
+						lean: 21,
 						twist: 7,
 						shF: 36,
 						elF: 66,
 						abF: 40,
 					},
-					{ kneeN: 54, kneeF: 56, lean: 19 },
+					{ kneeN: 54, kneeF: 56, lean: 14 },
 					{
 						hipN: 0,
 						kneeN: 62,
 						hipF: 28,
 						kneeF: 64,
-						lean: 20,
+						lean: 15,
 						twist: -6,
 						tilt: 3,
 						shF: 22,
@@ -4581,6 +4586,24 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 			l.end.s,
 			flat + (l.end.u - toe - flat) * Math.sin(point),
 		);
+	}
+	// His legs turned under him, round his hips.
+	if (q.legs !== 0) {
+		const c = Math.cos(q.legs * rad);
+		const sn = Math.sin(q.legs * rad);
+		const spin = (p: V3) => {
+			const f = p.f * c - p.s * sn;
+			p.s = p.f * sn + p.s * c;
+			p.f = f;
+		};
+		for (const l of [legR, legL] as Limb[]) {
+			spin(l.root);
+			spin(l.mid);
+			spin(l.end);
+			if (l.tip) {
+				spin(l.tip);
+			}
+		}
 	}
 	const L = q.lean * rad;
 	const pelvis = v3(0, 0, b.hipH + off);
