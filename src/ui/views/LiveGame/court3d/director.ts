@@ -13232,6 +13232,233 @@ class Director {
 		return { x, y };
 	}
 
+	// Two of a side going by each other - crossing on their cuts, one running
+	// past another who stands - go by at each other's shoulder, not through
+	// each other: each veers a little as they pass (the one standing, if one
+	// is, takes the step). Too quick for keepApart to see, which lets men on
+	// the move go by.
+	private passBy(fast: [number, number][]) {
+		const STEP = 100;
+		// Clear of each other (feet, middle to middle) and how fast a man is
+		// going by (feet a second).
+		const BY = 1.5;
+		const MOVING = 4;
+		// Over and back again (ms).
+		const SPAN = 450;
+		const RAMP = 400;
+		// Nobody steps out of these for it.
+		const KEEP = new Set<AnimName>([
+			"screen",
+			"postUp",
+			"boxOut",
+			"fight",
+			"rebound",
+			"board",
+			"snatch",
+			"pickup",
+			"poke",
+			"block",
+			"highFive",
+			"lowFive",
+			"chestBump",
+			"waitFive",
+			"fall",
+			"hurt",
+			"hurtKnee",
+			"hurtAnkle",
+			"hurtHead",
+			"hurtHand",
+			"hurtArm",
+		]);
+		const busy = (tr: Track, t: number) =>
+			tr.acts.some(
+				(a) => a.t0 < t + SPAN && a.t1 > t - SPAN && KEEP.has(a.anim),
+			);
+		const shownAt = (tr: Track, t: number) => {
+			const k = lastBy(tr.shown, t, (x) => x[0]);
+			return k >= 0 && tr.shown[k]![1];
+		};
+		const tracks = [...this.tracks.values()].filter((tr) =>
+			tr.shown.some(([, on]) => on),
+		);
+		type Pass = {
+			a: Track;
+			b: Track;
+			t: number;
+			d: number;
+			dx: number;
+			dy: number;
+			va: number;
+			vb: number;
+		};
+		const found = new Map<string, Pass>();
+		const passes: Pass[] = [];
+		let from = 0;
+		const live: [number, number][] = [];
+		for (const [a, b] of fast) {
+			if (a > from) {
+				live.push([from, a]);
+			}
+			from = Math.max(from, b);
+		}
+		live.push([from, this.T]);
+		const N = tracks.length;
+		const ax = new Float64Array(N);
+		const ay = new Float64Array(N);
+		const aOn = new Uint8Array(N);
+		const bx = new Float64Array(N);
+		const by = new Float64Array(N);
+		const bOn = new Uint8Array(N);
+		for (const [l0, l1] of live) {
+			aOn.fill(0);
+			for (let t = l0; t < l1; t += STEP) {
+				// (b: now; a: a look ago.)
+				for (let i = 0; i < N; i++) {
+					const tr = tracks[i]!;
+					bOn[i] = 0;
+					if (shownAt(tr, t)) {
+						const P = this.spotAt(tr, t);
+						if (P.y > 0 && P.y < COURT_H && P.x > 0 && P.x < COURT_W) {
+							bx[i] = P.x;
+							by[i] = P.y;
+							bOn[i] = 1;
+						}
+					}
+				}
+				for (let i = 0; i < N; i++) {
+					if (!aOn[i] || !bOn[i]) {
+						continue;
+					}
+					const a = tracks[i]!;
+					for (let j = i + 1; j < N; j++) {
+						if (!aOn[j] || !bOn[j]) {
+							continue;
+						}
+						const b = tracks[j]!;
+						if (a.team !== b.team) {
+							continue;
+						}
+						// Nearest between the two looks: the gap between them
+						// closes along a line.
+						const rx = ax[i]! - ax[j]!;
+						const ry = ay[i]! - ay[j]!;
+						const wx = bx[i]! - bx[j]! - rx;
+						const wy = by[i]! - by[j]! - ry;
+						if (
+							Math.min(rx * rx + ry * ry, (rx + wx) ** 2 + (ry + wy) ** 2) >
+							(BY + Math.hypot(wx, wy)) ** 2
+						) {
+							continue;
+						}
+						const ww = wx * wx + wy * wy;
+						const u =
+							ww > 1e-9
+								? Math.max(0, Math.min(1, -(rx * wx + ry * wy) / ww))
+								: 0;
+						const dx = rx + wx * u;
+						const dy = ry + wy * u;
+						const d = Math.hypot(dx, dy);
+						if (d >= BY) {
+							continue;
+						}
+						const va =
+							(Math.hypot(bx[i]! - ax[i]!, by[i]! - ay[i]!) * 1000) / STEP;
+						const vb =
+							(Math.hypot(bx[j]! - ax[j]!, by[j]! - ay[j]!) * 1000) / STEP;
+						if (va < MOVING && vb < MOVING) {
+							continue;
+						}
+						const key = `${a.pid}:${b.pid}`;
+						const at = t - STEP + u * STEP;
+						const was = found.get(key);
+						if (was && at - was.t < SPAN * 2) {
+							if (d < was.d) {
+								Object.assign(was, { t: at, d, dx, dy, va, vb });
+							}
+							continue;
+						}
+						const p = { a, b, t: at, d, dx, dy, va, vb };
+						found.set(key, p);
+						passes.push(p);
+					}
+				}
+				ax.set(bx);
+				ay.set(by);
+				aOn.set(bOn);
+			}
+		}
+		for (const p of passes) {
+			const t = Math.round(p.t);
+			// Which way apart: the way they are already apart - or, right on
+			// each other, across the way they are going.
+			let ux = p.dx;
+			let uy = p.dy;
+			let u = Math.hypot(ux, uy);
+			if (u < 0.2) {
+				const A = this.spotAt(p.a, t + STEP);
+				const B = this.spotAt(p.b, t + STEP);
+				const vx = A.x - B.x;
+				const vy = A.y - B.y;
+				const v = Math.hypot(vx, vy) || 1;
+				ux = -vy / v;
+				uy = vx / v;
+				u = 1;
+			}
+			ux /= u;
+			uy /= u;
+			const k = BY - p.d;
+			const steps: [Track, number][] =
+				p.va >= MOVING && p.vb >= MOVING
+					? [
+							[p.a, k / 2],
+							[p.b, -k / 2],
+						]
+					: p.va < MOVING
+						? [[p.a, k]]
+						: [[p.b, -k]];
+			for (const [tr, by] of steps) {
+				if (busy(tr, t)) {
+					continue;
+				}
+				const P = this.spotAt(tr, t);
+				// On the move, square across the way he is going - a veer, no
+				// quicker or slower for it (his stride is his speed).
+				let sx = ux;
+				let sy = uy;
+				const P1 = this.spotAt(tr, t + 50);
+				const vx = P1.x - P.x;
+				const vy = P1.y - P.y;
+				const v = Math.hypot(vx, vy);
+				if ((v * 1000) / 50 >= MOVING) {
+					const side = Math.sign(-vy * ux + vx * uy) || 1;
+					sx = (-vy / v) * side;
+					sy = (vx / v) * side;
+				}
+				const Q = { x: P.x + sx * by, y: P.y + sy * by };
+				const into = tracks.some(
+					(o) =>
+						o !== tr &&
+						o !== p.a &&
+						o !== p.b &&
+						shownAt(o, t) &&
+						dist(this.spotAt(o, t), Q) < 1.2,
+				);
+				if (into || dist(inPlay(Q), Q) > dist(inPlay(P), P) + 0.01) {
+					continue;
+				}
+				const list = (tr.nudges ??= []);
+				list.push({
+					t0: t - SPAN,
+					t1: t + SPAN,
+					dx: sx * by,
+					dy: sy * by,
+					ramp: RAMP,
+				});
+				list.sort((x, y) => x.t0 - y.t0);
+			}
+		}
+	}
+
 	// A pass never goes through a man in its way. With one in the lane -
 	// his own man up on him, a help defender in between - it is bounced by
 	// him, off the floor beside his feet; or, too far to bounce, thrown by
@@ -13263,6 +13490,29 @@ class Director {
 		const LEG_MS = 150;
 		const inBounds = (p: Pt) =>
 			p.x > 0.5 && p.x < COURT_W - 0.5 && p.y > 0.5 && p.y < COURT_H - 0.5;
+		// A step off the ball's line (beyond missing him), taken this quick;
+		// and what nobody steps out of to do it.
+		const SHADE = 0.3;
+		const SHADE_MS = 350;
+		const BUSY = new Set<AnimName>([
+			"screen",
+			"postUp",
+			"boxOut",
+			"fight",
+			"rebound",
+			"board",
+			"snatch",
+			"pickup",
+			"poke",
+			"reach",
+			"block",
+			"contest",
+			"dunk",
+		]);
+		const shownAt = (tr: Track, t: number) => {
+			const k = lastBy(tr.shown, t, (x) => x[0]);
+			return k >= 0 && tr.shown[k]![1];
+		};
 		type Leg = { t0: number; t1: number; a: Pt3; b: Pt3 };
 		const ballAt = (legs: Leg[], t: number): Pt3 => {
 			const l = legs.find((g) => t < g.t1) ?? legs.at(-1)!;
@@ -13292,8 +13542,7 @@ class Director {
 					if (tr.team === team) {
 						continue;
 					}
-					const k = lastBy(tr.shown, t, (x) => x[0]);
-					if (k < 0 || !tr.shown[k]![1]) {
+					if (!shownAt(tr, t)) {
 						continue;
 					}
 					if (dist(this.spotAt(tr, t), b) < NEAR) {
@@ -13415,10 +13664,8 @@ class Director {
 					{ t0: tHit, t1: arrive, a: H, b: Bz },
 				];
 			};
-			const hit = inTheWay(
-				from.team,
-				next && !("pid" in s.to) ? legsVia(s.to, s.to) : legsVia(B),
-			);
+			const path = next && !("pid" in s.to) ? legsVia(s.to, s.to) : legsVia(B);
+			const hit = inTheWay(from.team, path);
 			if (!hit) {
 				continue;
 			}
@@ -13427,14 +13674,10 @@ class Director {
 			const D = this.spotAt(hit.tr, hit.t);
 			const along = (D.x - A.x) * u.x + (D.y - A.y) * u.y;
 			const side = (D.x - A.x) * n.x + (D.y - A.y) * n.y;
-			// A man closing out on the catch is no man in the way.
-			if (along > L - 4) {
-				continue;
-			}
 			const pref = side >= 0 ? -1 : 1;
 			// Bounced by him, off the floor beside his feet.
 			let done = false;
-			if (!over && (next || L <= BOUNCE_MAX) && along >= 2) {
+			if (!over && (next || L <= BOUNCE_MAX) && along >= 2 && along <= L - 4) {
 				const at = Math.min(L - 4, Math.max(BOUNCE_NEAR, along + PAST));
 				for (const sgn of [pref, -pref]) {
 					const off = side + sgn * CLEAR;
@@ -13480,16 +13723,15 @@ class Director {
 			// Or, his own man up on him, thrown by his ear: turned a little
 			// away from him to get it out past him - a pivot step away from
 			// him first, if that is what it takes.
-			if (done || next || along > NEAR_PASSER) {
-				continue;
-			}
-			turns: for (const [k, pivot] of [
-				[0.3, 0],
-				[0.5, 0],
-				[0.3, PIVOT],
-				[0.5, PIVOT],
-				[0.7, PIVOT],
-			] as const) {
+			turns: for (const [k, pivot] of done || next || along > NEAR_PASSER
+				? []
+				: ([
+						[0.3, 0],
+						[0.5, 0],
+						[0.3, PIVOT],
+						[0.5, PIVOT],
+						[0.7, PIVOT],
+					] as const)) {
 				for (const sgn of [pref, -pref]) {
 					// (Turned toward n, round to his left, for sgn 1.)
 					const yaw = Math.atan2(u.y, u.x) + sgn * k;
@@ -13515,8 +13757,49 @@ class Director {
 						});
 						from.nudges.sort((a, b) => a.t0 - b.t0);
 					}
+					done = true;
 					break turns;
 				}
+			}
+			// Or - closing out on the catch, or in the lane under a pass that
+			// goes over him - he is a step off its line as it goes by, not
+			// standing in it.
+			const busy = hit.tr.acts.some(
+				(a) =>
+					a.t0 < hit.t + SHADE_MS &&
+					a.t1 > hit.t - SHADE_MS &&
+					BUSY.has(a.anim),
+			);
+			if (done || busy) {
+				continue;
+			}
+			const b = ballAt(path, hit.t);
+			const legAt = path.find((g) => hit.t < g.t1) ?? path.at(-1)!;
+			const w = unitVec(legAt.a, legAt.b);
+			const off = (D.x - b.x) * -w.y + (D.y - b.y) * w.x;
+			const by = (off >= 0 ? 1 : -1) * (NEAR + SHADE - Math.abs(off));
+			const nudge = {
+				t0: hit.t - SHADE_MS - 100,
+				t1: hit.t + SHADE_MS + 200,
+				dx: -w.y * by,
+				dy: w.x * by,
+				ramp: SHADE_MS,
+			};
+			const stepTo = { x: D.x + nudge.dx, y: D.y + nudge.dy };
+			const crowded = [...this.tracks.values()].some(
+				(tr) =>
+					tr !== hit.tr &&
+					shownAt(tr, hit.t) &&
+					dist(this.spotAt(tr, hit.t), stepTo) < 1.3,
+			);
+			if (crowded || !inBounds(stepTo)) {
+				continue;
+			}
+			const list = (hit.tr.nudges ??= []);
+			list.push(nudge);
+			list.sort((a, c) => a.t0 - c.t0);
+			if (inTheWay(from.team, path)?.tr === hit.tr) {
+				list.splice(list.indexOf(nudge), 1);
 			}
 		}
 	}
@@ -14597,6 +14880,7 @@ class Director {
 		this.fx.sort((a, b) => a.t - b.t);
 		const fast = hurried(this.fast, this.beats);
 		this.keepApart(fast);
+		this.passBy(fast);
 		this.aroundTheMan(fast);
 		// A look round the building runs on to the picture's next cut when
 		// that comes soon after (the substitutions over a timeout, the walk
