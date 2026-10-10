@@ -812,6 +812,9 @@ const MATCH_RANK = 7;
 const TRAVEL_COST = 0.035;
 // Two going farther than this (feet) to their parts across each other's
 // path trade them, if that costs the set no more than this (see castPlay).
+// Out of his own board to an open spot, he goes where the ball can come back
+// to him in a pass about this long (feet), not one thrown across the floor.
+const KICK_BACK = 24;
 const CROSS_RUN = 15;
 const CROSS_TRADE = 0.7;
 // Whether the runs from a to b and from c to d cross.
@@ -6104,11 +6107,15 @@ class Director {
 					// back out. His man goes with him.
 					const mate = this.kickOutTo(team, shooter)!;
 					t = this.passTo(shooter, mate, t);
-					// Out to an open spot, not to where he threw it.
+					// Out to an open spot, not to where he threw it - and a pass
+					// away from him, not a throw back across the floor.
 					const S0 = this.posOf(shooter);
+					const M = this.posOf(mate);
 					const others = this.slots(team)
 						.filter((m) => m !== shooter)
 						.map((m) => this.posOf(m));
+					const cost = (X: Pt) =>
+						dist(X, S0) + Math.max(0, dist(X, M) - KICK_BACK) * 0.8;
 					const Q =
 						(zone === "three"
 							? RESPACE_SPOTS
@@ -6116,7 +6123,7 @@ class Director {
 						)
 							.map((name) => this.spotFor(team, 1, name))
 							.filter((X) => others.every((m) => dist(m, X) >= 10))
-							.sort((a, b) => dist(a, S0) - dist(b, S0))[0] ?? spotNow();
+							.sort((a, b) => cost(a) - cost(b))[0] ?? spotNow();
 					P = Q;
 					const arrive = this.go(shooter, Q, t, RUN, "run");
 					const g = this.defenderOf(shooter);
