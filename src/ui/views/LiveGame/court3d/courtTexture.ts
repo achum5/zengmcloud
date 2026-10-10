@@ -10,10 +10,13 @@
 // allowed to fetch anything, so each logo is drawn onto the picture
 // separately, exactly where the SVG puts it.
 
-const load = (src: string) =>
+const loadAs = (src: string, cors: boolean) =>
 	new Promise<HTMLImageElement>((resolve, reject) => {
 		const img = new Image();
 		img.decoding = "async";
+		if (cors) {
+			img.crossOrigin = "anonymous";
+		}
 		img.onload = () => {
 			resolve(img);
 		};
@@ -22,6 +25,11 @@ const load = (src: string) =>
 		};
 		img.src = src;
 	});
+// A picture from another site is asked for with leave to read it, as most
+// sites give: drawn without it, it would leave the floor a picture the
+// graphics card may not have (see glPlanes.ts), drawn a slower way. Where
+// the site won't say, it is drawn all the same.
+const load = (src: string) => loadAs(src, true).catch(() => loadAs(src, false));
 
 type Pic = {
 	href: string;
