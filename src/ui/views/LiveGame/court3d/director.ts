@@ -12652,7 +12652,7 @@ class Director {
 					if (atCut) {
 						left = undefined;
 					}
-					if (left && (m.t1 - m.t0 > 1 || dist(m.from, m.to) > 0.01)) {
+					if (left) {
 						m.from = { ...left };
 						const far = dist(m.from, m.to);
 						const most = (FASTEST * (m.t1 - m.t0)) / 1000;
@@ -12705,7 +12705,7 @@ class Director {
 					// scheduled - from wherever following left him, and no faster
 					// than his legs for that either.
 					let short = false;
-					if (left && (m.t1 - m.t0 > 1 || dist(m.from, m.to) > 0.01)) {
+					if (left) {
 						m.from = { ...left };
 						const far = dist(m.from, m.to);
 						const most = (FASTEST * (m.t1 - m.t0)) / 1000;
