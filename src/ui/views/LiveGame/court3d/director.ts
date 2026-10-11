@@ -249,6 +249,9 @@ const besideShot = (P: Pt, p: Pt, toward: number): Pt => {
 		: p;
 };
 
+// How often a post-up set for the hook ends in a fadeaway instead.
+const POST_FADE = 0.3;
+
 export type BallEnd = Pt3 | { pid: number; hand?: "near" | "far" | "both" };
 export type BallSeg =
 	| {
@@ -4726,6 +4729,12 @@ class Director {
 							: toRim < 30
 								? 3.9
 								: 5.5;
+			// (Right under it with the ball, he is played from out in front
+			// of him, toward the floor - not from on top of him.)
+			if (toRim < 1.5) {
+				const out = unitVec(rim, { x: COURT_W / 2, y: COURT_H / 2 });
+				return clampPt({ x: man.x + out.x * 2.2, y: man.y + out.y * 2.2 });
+			}
 			const k = Math.min(gap, toRim * 0.5);
 			return clampPt(
 				sideOn(man, { x: man.x + ur.x * k, y: man.y + ur.y * k }, rim.x),
@@ -6006,10 +6015,15 @@ class Director {
 			if (dist(this.posOf(shooter), rim) > 5.5) {
 				t = this.backDown(shooter, t, dir);
 			}
+			// (A set run for the hook still ends, now and then, in the
+			// turnaround fadeaway over him.)
 			return {
 				t,
 				style: "post",
-				move: o.kind === "fadeaway" ? "fade" : "hook",
+				move:
+					o.kind === "fadeaway" || hash01(shooter, Math.round(t)) < POST_FADE
+						? "fade"
+						: "hook",
 			};
 		}
 		return {
@@ -7814,7 +7828,11 @@ class Director {
 		const mirrored = this.ballHandOf === h && this.ballHand === "R";
 		// In front of him, at the length of his arm from the ball out on
 		// the dribble - a foot and more off the man with it.
-		const into = unitVec(A, this.posOf(m));
+		// (Right on top of him, from out toward the floor.)
+		const into =
+			dist(A, this.posOf(m)) > 0.5
+				? unitVec(A, this.posOf(m))
+				: unitVec(A, { x: COURT_W / 2, y: COURT_H / 2 });
 		const reach = pokeHand(mirrored).f + 1.3;
 		const hit = this.goBy(
 			m,

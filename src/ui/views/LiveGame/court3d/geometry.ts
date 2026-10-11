@@ -48,17 +48,19 @@ export const inPlay = (p: Pt): Pt => ({
 });
 
 // A defender meant for `p` against his man at `man`: where that would stand
-// him squarely in front of his man from the camera (which looks straight
-// across the floor from the near side), he plays him from the side instead -
-// a step across toward `endX` (the end he defends), half as far in front -
-// so both stay in sight.
-export const sideOn = (man: Pt, p: Pt, endX: number, across = 1.6): Pt =>
-	p.y > man.y && Math.abs(p.x - man.x) < across
+// him in front of his man from the camera (which looks straight across the
+// floor from the near side), he plays him from the side instead - further
+// across toward `endX` (the end he defends), hardly in front at all - so
+// both stay in sight.
+export const sideOn = (man: Pt, p: Pt, endX: number, across = 1.6): Pt => {
+	const dx = Math.abs(p.x - man.x);
+	return p.y > man.y + 0.3 && dx < across + 1.2
 		? {
-				x: man.x + (endX >= man.x ? 1 : -1) * across,
-				y: man.y + (p.y - man.y) * 0.5,
+				x: man.x + (endX >= man.x ? 1 : -1) * Math.max(dx, across + 0.6),
+				y: man.y + (p.y - man.y) * 0.25,
 			}
 		: p;
+};
 
 // Where a defender stands against his man: a step toward the rim he protects,
 // pinched toward the middle of the floor.

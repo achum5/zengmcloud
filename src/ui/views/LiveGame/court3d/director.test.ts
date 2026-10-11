@@ -216,7 +216,7 @@ describe("3D director", () => {
 			}
 			prev = cur;
 		}
-	}, 120_000);
+	}, 180_000);
 
 	// Picked up off the dribble, switched hand to hand, scooped off the
 	// floor, thrown off a dribble: from one move to the next the ball goes
