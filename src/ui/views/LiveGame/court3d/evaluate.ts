@@ -540,13 +540,37 @@ const gaitFor = (v: number): AnimName =>
 			: v >= WALK_FTPS
 				? "jog"
 				: "walk";
-const runAnim = (run: Run): AnimName => {
+// How fast he really covers the ground through the middle of a run - the
+// run itself, and whatever eases him aside on top of it while he is on it
+// (see keepOff, keepApart in director.ts): his legs go at that, not slower.
+const groundSpeeds = new WeakMap<Run["mv"], number>();
+const groundSpeed = (tr: Track, run: Run): number => {
+	let v = groundSpeeds.get(run.mv);
+	if (v === undefined) {
+		v = 0;
+		const { s0, s1 } = run;
+		const aside =
+			(tr.sep ?? []).some(
+				(x) => x.t0 < s1 && x.t0 + x.dx.length * SEP_MS > s0,
+			) || (tr.nudges ?? []).some((x) => x.t0 < s1 && x.t1 > s0);
+		if (aside) {
+			for (let t = s0 + (s1 - s0) * 0.3; t <= s1 - (s1 - s0) * 0.3; t += 40) {
+				const p = spotAt(tr, t - 10, false);
+				const q = spotAt(tr, t + 10, false);
+				v = Math.max(v, Math.hypot(q.x - p.x, q.y - p.y) / 0.02);
+			}
+		}
+		groundSpeeds.set(run.mv, v);
+	}
+	return v;
+};
+const runAnim = (tr: Track, run: Run): AnimName => {
 	const anim = run.mv.anim;
 	const v = Math.max(shapeOf(run).vc, run.v0, run.v1);
 	switch (anim) {
 		case "run":
 		case "jog":
-			return gaitFor(v);
+			return gaitFor(Math.max(v, groundSpeed(tr, run)));
 		case "walk":
 			return v > WALK_FTPS + 2 ? gaitFor(v) : "walk";
 		// Walking it, short steps; attacking, long ones.
@@ -846,6 +870,7 @@ const STRIDE_START = 0.25;
 // comes off the floor on its way) until it gets to him.
 const TARGET_LEAD = 240;
 const TARGET_RAMP = 180;
+const CHAIN_GAP = 20;
 const targetAt = (tl: CourtTimeline, pid: number, t: number): number => {
 	const i = Math.max(
 		0,
@@ -870,14 +895,24 @@ const targetAt = (tl: CourtTimeline, pid: number, t: number): number => {
 			}
 			// From when it set off his way - and if that was knocked out of
 			// the air on its way to somebody else, he never saw it coming.
+			// (Not from before it stopped in somebody's hands on the way - an
+			// official's, say, handing it on.)
 			let j = k;
 			for (; j > 0; j--) {
 				const x = tl.ball[j - 1]!;
-				if (x.kind !== "fly" || "pid" in x.to) {
+				if (
+					x.kind !== "fly" ||
+					"pid" in x.to ||
+					x.t1 < tl.ball[j]!.t0 - CHAIN_GAP
+				) {
 					break;
 				}
 			}
-			const lead = tl.ball[j - 1]?.kind === "fly" ? 0 : TARGET_LEAD;
+			const was = tl.ball[j - 1];
+			const lead =
+				was?.kind === "fly" && was.t1 >= tl.ball[j]!.t0 - CHAIN_GAP
+					? 0
+					: TARGET_LEAD;
 			const u = clamp01((t - tl.ball[j]!.t0 + lead) / TARGET_RAMP);
 			return u * u * (3 - 2 * u);
 		}
@@ -1005,7 +1040,7 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 		}
 	}
 	// How he is going: a slide too fast to be one is a run, say.
-	const gait = here.run ? runAnim(here.run) : mv?.anim;
+	const gait = here.run ? runAnim(tr, here.run) : mv?.anim;
 	// A defensive slide keeps his eyes on the ball whichever way he goes -
 	// and so does a man drifting along the arc for it.
 	if (mv && here.moving && gait && EYES_ON_BALL.has(gait)) {
@@ -1398,7 +1433,7 @@ const gaitOf = (
 };
 // The steps he takes on a run.
 const stepsOf = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
-	const anim = runAnim(run);
+	const anim = runAnim(tr, run);
 	// Sliding with his man - or shuffling a step or two: push steps when he
 	// goes across the way he faces, drop steps when he gives ground, short
 	// steps up when he steps up.
