@@ -187,6 +187,7 @@ const stepBlend = (f: Blend, w: number, k: Steps): Blend => {
 		phase: frameOf(f.anim, f.phase, k),
 		dribble: dribbleFrame(f.dribble, k),
 		dribbleHand: f.dribbleHand,
+		...(f.dribbleFrom ? { dribbleFrom: f.dribbleFrom } : {}),
 		target: targetFrame(f.target, k),
 		...(f.mirror ? { mirror: true } : {}),
 		w,
@@ -198,7 +199,7 @@ const stepBlend = (f: Blend, w: number, k: Steps): Blend => {
 	};
 };
 const blendKey = (f: Blend): string =>
-	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.legs ?? ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
+	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.dribbleFrom ?? ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.legs ?? ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
 
 // The pose he is drawn in: his own, stepped to the sprite's frames and turns
 // - and, easing out of his last move, a few steps of that.
@@ -263,7 +264,7 @@ export const drawSprite = (
 		const a = pose.arm;
 		key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}|${pose.turn}|${Math.round(
 			Math.log(k) / Math.log(1.04),
-		)}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}|${pose.target ?? ""}${
+		)}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}|${pose.target ?? ""}${
 			f ? `|${blendKey(f)}` : ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 		const kept = cache.kept.get(key);

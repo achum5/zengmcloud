@@ -92,6 +92,8 @@ export type PlayerState = {
 	// top), when he is dribbling: his hand rides it - this one.
 	dribble?: number;
 	dribbleHand?: Hand;
+	// A bounce that takes it across to his other hand: the hand it leaves.
+	dribbleFrom?: Hand;
 	// His hands up as a target for a pass on its way to him (0 to 1).
 	target?: number;
 	// Up for a dunk: the jump a typical player makes to throw it down (feet),
@@ -122,6 +124,7 @@ export type Blend = {
 	phase: number;
 	dribble?: number;
 	dribbleHand?: Hand;
+	dribbleFrom?: Hand;
 	target?: number;
 	mirror?: boolean;
 	w: number;
@@ -1234,6 +1237,7 @@ type Doing = {
 	grip?: number;
 	dribble?: number;
 	dribbleHand?: Hand;
+	dribbleFrom?: Hand;
 	target?: number;
 };
 // Stood watching - arms folded, hands on his hips - he doesn't glide off in
@@ -1443,6 +1447,7 @@ const doingAt = (
 		...(grip < 1 ? { grip } : {}),
 		dribble: beat?.ph,
 		dribbleHand: beat ? (beat.ph < DOWN ? beat.from : beat.to) : undefined,
+		...(beat && beat.from !== beat.to ? { dribbleFrom: beat.from } : {}),
 		target: act || has ? undefined : targetAt(tl, pid, t) || undefined,
 	};
 };
@@ -1512,6 +1517,7 @@ const blendInto = (
 		phase: before.phase,
 		dribble: before.dribble,
 		dribbleHand: before.dribbleHand,
+		...(before.dribbleFrom ? { dribbleFrom: before.dribbleFrom } : {}),
 		target: before.target,
 		...(before.mirror ? { mirror: true } : {}),
 		w,
@@ -2045,14 +2051,17 @@ const easedArm = (
 			l += x.c;
 		}
 	}
+	// (Going over from one arm to the other, the one comes down before the
+	// other goes up.)
 	const hand: Hand = r >= l ? "R" : "L";
 	const mine = taps.filter((x) => x.a.hand === hand);
-	const w = hand === "R" ? r : l;
+	const w = Math.abs(r - l);
 	if (w <= 0.02) {
 		return undefined;
 	}
+	const all = hand === "R" ? r : l;
 	const mean = (get: (a: ArmPose) => number) =>
-		mine.reduce((sum, x) => sum + get(x.a) * x.c, 0) / w;
+		mine.reduce((sum, x) => sum + get(x.a) * x.c, 0) / all;
 	const tucked = mine.some((x) => x.a.tuck !== undefined);
 	const last = mine.at(-1)!.a;
 	return {
@@ -2165,7 +2174,14 @@ const UPPER: (keyof Pose)[] = [
 ];
 // The pose a blend shows: its move's, itself easing out of the one before.
 const blendPose = (f: Blend): Pose => {
-	const as = posed(f.anim, f.phase, f.dribble, f.dribbleHand, f.target);
+	const as = posed(
+		f.anim,
+		f.phase,
+		f.dribble,
+		f.dribbleHand,
+		f.target,
+		f.dribbleFrom,
+	);
 	const own = f.mirror ? mirror(as) : as;
 	const g = f.from;
 	return g && g.w > 0 ? lerpPose(own, blendPose(g), g.w) : own;
@@ -2184,7 +2200,14 @@ const blendFrom = (q: Pose, f: Blend): Pose => {
 // His pose: his move's, eased in from the last one's just after a change -
 // and an arm in whatever it is saying.
 export const poseOf = (st: PlayerState): Pose => {
-	const own = posed(st.anim, st.phase, st.dribble, st.dribbleHand, st.target);
+	const own = posed(
+		st.anim,
+		st.phase,
+		st.dribble,
+		st.dribbleHand,
+		st.target,
+		st.dribbleFrom,
+	);
 	const q = st.mirror ? mirror(own) : own;
 	const f = st.from;
 	const b = f && f.w > 0 ? blendFrom(q, f) : q;

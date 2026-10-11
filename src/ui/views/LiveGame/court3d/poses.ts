@@ -5045,6 +5045,8 @@ export const dribbleArm = (
 	ph: number,
 	hand: Hand = "R",
 	ahead = 0,
+	// A bounce that takes it across to his other hand: the hand it leaves.
+	leaves?: Hand,
 ): Pose => {
 	const e = pushOf(ph);
 	const at = (k: "f" | "s" | "u") => {
@@ -5055,37 +5057,65 @@ export const dribbleArm = (
 		return top + (low - top) * e;
 	};
 	const b = DRIBBLER();
-	const side = hand === "L" ? 1 : -1;
 	// (Worked out in his frame before his shoulders turn - as the skeleton
 	// builds his arms.)
 	const sk = skeleton(b, { ...q, twist: 0, tilt: 0 });
-	const arm = armAim(
-		b,
-		sk.chest,
-		v3(at("f"), side * at("s"), sk.pelvis.u + at("u")),
-		side,
-	);
-	const sh = arm.sh / RAD;
-	const el = arm.el / RAD;
 	// The hand over the top of it, fingers spread forward, snapped down
 	// through the push and opening back up to take it.
 	const snap = ph < 0.18 ? ph / 0.18 : 1 - Math.min(1, (ph - 0.18) / 0.5);
-	const wr = 74 - 62 * snap * snap * (3 - 2 * snap) - sh - el;
-	const ab = arm.ab / RAD;
-	if (hand === "L") {
+	const on = (h: Hand) => {
+		const side = h === "L" ? 1 : -1;
+		const arm = armAim(
+			b,
+			sk.chest,
+			v3(at("f"), side * at("s"), sk.pelvis.u + at("u")),
+			side,
+		);
+		const sh = arm.sh / RAD;
+		const el = arm.el / RAD;
 		return {
-			...q,
-			shN: q.shF,
-			elN: q.elF,
-			abN: q.abF,
-			wrN: q.wrF,
-			shF: sh,
-			elF: el,
-			abF: ab,
-			wrF: wr,
+			sh,
+			el,
+			ab: arm.ab / RAD,
+			wr: 74 - 62 * snap * snap * (3 - 2 * snap) - sh - el,
 		};
+	};
+	// The other arm as the move has it.
+	const free = { sh: q.shF, el: q.elF, ab: q.abF, wr: q.wrF };
+	let right: typeof free;
+	let left: typeof free;
+	if (leaves) {
+		// Across to the other hand: the one it leaves eases off it once it
+		// has pushed it down and over, and the one it goes to drops to take
+		// it on its way up - never a snap from one to the other.
+		const smooth = (x: number) => {
+			const u = Math.min(1, Math.max(0, x));
+			return u * u * (3 - 2 * u);
+		};
+		const mix = (a: typeof free, c: typeof free, w: number) => ({
+			sh: a.sh + (c.sh - a.sh) * w,
+			el: a.el + (c.el - a.el) * w,
+			ab: a.ab + (c.ab - a.ab) * w,
+			wr: a.wr + (c.wr - a.wr) * w,
+		});
+		const goes = leaves === "R" ? "L" : "R";
+		const off = mix(free, on(leaves), 1 - smooth((ph - 0.3) / 0.4));
+		const to = mix(free, on(goes), smooth((ph - 0.22) / 0.4));
+		[right, left] = leaves === "R" ? [off, to] : [to, off];
+	} else {
+		[right, left] = hand === "L" ? [free, on("L")] : [on("R"), free];
 	}
-	return { ...q, shN: sh, elN: el, abN: ab, wrN: wr };
+	return {
+		...q,
+		shN: right.sh,
+		elN: right.el,
+		abN: right.ab,
+		wrN: right.wr,
+		shF: left.sh,
+		elF: left.el,
+		abF: left.ab,
+		wrF: left.wr,
+	};
 };
 
 // His pose at a moment: the move's, with the dribbling hand on the bounce
@@ -5097,10 +5127,11 @@ export const posed = (
 	dribble?: number,
 	hand?: Hand,
 	target = 0,
+	leaves?: Hand,
 ): Pose => {
 	const q = poseAt(anim, phase);
 	if (dribble !== undefined && !MOVES.has(anim)) {
-		return dribbleArm(q, dribble, hand, dribbleAhead(anim));
+		return dribbleArm(q, dribble, hand, dribbleAhead(anim), leaves);
 	}
 	if (target <= 0) {
 		return q;
