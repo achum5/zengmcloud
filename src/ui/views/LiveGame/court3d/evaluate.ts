@@ -417,14 +417,16 @@ const workRun = (
 ): Run => {
 	// Going as fast as his path was worked out to have him, where it was -
 	// otherwise as fast as the turn into it from the last run allows.
+	// (Not into a pause the run either side has the measure of itself - it
+	// keeps to its own time there, and the two would not meet.)
 	const vIn =
-		mv.v0 !== undefined
+		mv.v0 !== undefined || prev?.v1 !== undefined
 			? undefined
 			: plantedBetween(tr, prev, mv)
 				? undefined
 				: joinOf(prev, mv);
 	const vOut =
-		mv.v1 !== undefined
+		mv.v1 !== undefined || next?.v0 !== undefined
 			? undefined
 			: plantedBetween(tr, mv, next)
 				? undefined
@@ -472,6 +474,10 @@ const onRun = (run: Run, t: number): Pt => {
 const smooth = (u: number) => u * u * (3 - 2 * u);
 const rounded = (a: Run, b: Run, t: number): Pt | undefined => {
 	const tj = a.s1;
+	// (Only where the one hands on to the other.)
+	if (Math.abs(b.s0 - tj) > 1) {
+		return undefined;
+	}
 	const d = Math.min(
 		ROUND_MS,
 		Math.max(80, a.v1 * ROUND_MS_PER_FTPS),
