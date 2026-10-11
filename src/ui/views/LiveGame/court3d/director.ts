@@ -223,6 +223,17 @@ export type Nudge = {
 	dy: number;
 	ramp?: number;
 };
+// Acts with nothing on the ball that can be cut down to a moment (see
+// finish).
+const GLIMPSE_MS = 60;
+const GLIMPSED = new Set<string>([
+	"fight",
+	"boxOut",
+	"bump",
+	"contest",
+	"reach",
+]);
+
 export type BallEnd = Pt3 | { pid: number; hand?: "near" | "far" | "both" };
 export type BallSeg =
 	| {
@@ -15704,6 +15715,14 @@ class Director {
 		this.biteOnFakes();
 		this.workHisMan();
 		this.joinUp();
+		// A fight for position or a box-out cut to a moment by what came
+		// after it never really shows - and left in, an arm thrown up for a
+		// frame is all it adds.
+		for (const tr of this.tracks.values()) {
+			tr.acts = tr.acts.filter(
+				(a) => a.t1 - a.t0 >= GLIMPSE_MS || !GLIMPSED.has(a.anim),
+			);
+		}
 		// The lead-in to a play - the ball brought up, the set getting going
 		// - is run through fast, back at real speed for the last few seconds
 		// of it: whatever leads straight to the shot, the steal, the foul. A

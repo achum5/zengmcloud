@@ -1607,6 +1607,57 @@ const doingAt = (
 const BLEND_MS = 160;
 const MOVE_ARMS_MS = 60;
 const BLEND_DEPTH = 3;
+// An arm thrown up - fighting for the ball, contesting, reaching - comes
+// back down on its own time, not snapped to his side with the rest of him
+// (unless what he goes into wants his hands: a catch, a shot).
+const ARMS_UP = new Set<AnimName>([
+	"fight",
+	"contest",
+	"block",
+	"rebound",
+	"reach",
+	"threeUp",
+	"signalUp",
+	"cheer",
+	"celebrate",
+]);
+const ARMS_DOWN_MS = 320;
+const armsComeDown = (tr: Track, t: number, from: AnimName, to: AnimName) =>
+	ARMS_UP.has(from) && !ARMS_UP.has(to) && !actAt(tr, t);
+// Still bringing them down after the rest of him has finished easing over.
+const armsDown = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	now: Doing,
+): Blend | undefined => {
+	const i = lastIndex(tr.acts, t, (a) => a.t0);
+	for (let k = i; k >= 0 && k >= i - 3; k--) {
+		const a = tr.acts[k]!;
+		if (a.t1 > t || t - a.t1 >= ARMS_DOWN_MS) {
+			continue;
+		}
+		if (!armsComeDown(tr, t, a.anim, now.anim)) {
+			return undefined;
+		}
+		const before = doingAt(tl, tr, a.t1 - 1);
+		// (As far up as they got: a moment's act hardly raised them.)
+		const arms =
+			(1 - smooth01((t - a.t1) / ARMS_DOWN_MS)) *
+			Math.min(1, (a.t1 - a.t0) / BLEND_MS);
+		return arms <= 0.02
+			? undefined
+			: {
+					anim: before.anim,
+					phase: before.phase,
+					target: before.target,
+					...(before.mirror ? { mirror: true } : {}),
+					w: 0,
+					arms,
+				};
+	}
+	return undefined;
+};
 const blendInto = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -1632,7 +1683,7 @@ const blendInto = (
 			.map((back) => ({ at: t - back, d: doingAt(tl, tr, t - back) }))
 			.find((x) => !same(x.d));
 		if (!flick) {
-			return undefined;
+			return armsDown(tl, tr, t, now);
 		}
 		lo = flick.at;
 		before = flick.d;
@@ -1654,7 +1705,8 @@ const blendInto = (
 		return 1 - u * u * (3 - 2 * u);
 	};
 	const w = ease(BLEND_MS);
-	if (w <= 0.02) {
+	const slowArms = armsComeDown(tr, t, before.anim, anim);
+	if (w <= 0.02 && !(slowArms && ease(ARMS_DOWN_MS) > 0.02)) {
 		return undefined;
 	}
 	// How he looked as it changed: the last move - itself, maybe, still
@@ -1689,7 +1741,11 @@ const blendInto = (
 		w,
 		...(legs !== 0 ? { legs } : {}),
 		...(pv ? { pivot: pv } : {}),
-		...(isMove(anim) ? { arms: ease(MOVE_ARMS_MS) } : {}),
+		...(isMove(anim)
+			? { arms: ease(MOVE_ARMS_MS) }
+			: slowArms
+				? { arms: ease(ARMS_DOWN_MS) }
+				: {}),
 		...(prior ? { from: prior } : {}),
 	};
 };
@@ -2465,7 +2521,7 @@ const blendPose = (f: Blend): Pose => {
 	const m = f.mirror ? mirror(as) : as;
 	const own = f.held ? carried(m, f.anim) : m;
 	const g = f.from;
-	return g && g.w > 0 ? lerpPose(own, blendPose(g), g.w) : own;
+	return g && (g.w > 0 || (g.arms ?? 0) > 0) ? blendFrom(own, g) : own;
 };
 const blendFrom = (q: Pose, f: Blend): Pose => {
 	const was = blendPose(f);
@@ -2496,7 +2552,7 @@ export const poseOf = (st: PlayerState): Pose => {
 	const carry = st.holding === true && st.grip === undefined;
 	const q = carry ? carried(m, st.anim) : m;
 	const f = st.from;
-	const b = f && f.w > 0 ? blendFrom(q, f) : q;
+	const b = f && (f.w > 0 || (f.arms ?? 0) > 0) ? blendFrom(q, f) : q;
 	const turned = st.legs ?? 0;
 	const legs = f && f.w > 0 ? turned + ((f.legs ?? 0) - turned) * f.w : turned;
 	let p = legs ? { ...b, legs } : b;

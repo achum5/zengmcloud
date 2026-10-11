@@ -243,7 +243,7 @@ const stepped = (st: PlayerState, k: Steps) => {
 		yaw: (turn * Math.PI * 2) / k.turns,
 		dribble: dribbleFrame(st.dribble, k),
 		target: targetFrame(st.target, k),
-		from: f && w > 0 ? stepBlend(f, w, k) : undefined,
+		from: f && (w > 0 || (f.arms ?? 0) > 0) ? stepBlend(f, w, k) : undefined,
 	};
 };
 
