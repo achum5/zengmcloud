@@ -233,6 +233,21 @@ const GLIMPSED = new Set<string>([
 	"contest",
 	"reach",
 ]);
+// Meeting a shot from the camera's side of the shooter (which looks across
+// the floor from the near side), a defender this near him across the floor
+// (feet) would stand in front of him in the picture: he comes at him from
+// the side instead - this far across, toward `toward`, level with him.
+const SIDE_ON = 2.8;
+const SIDE_AT = 2.2;
+const besideShot = (P: Pt, p: Pt, toward: number): Pt => {
+	const dx = Math.abs(p.x - P.x);
+	return p.y > P.y + 0.3 && dx < SIDE_ON
+		? {
+				x: P.x + (toward >= P.x ? 1 : -1) * Math.max(dx, SIDE_AT),
+				y: P.y + (p.y - P.y) * 0.2,
+			}
+		: p;
+};
 
 export type BallEnd = Pt3 | { pid: number; hand?: "near" | "far" | "both" };
 export type BallSeg =
@@ -6350,17 +6365,16 @@ class Director {
 		const toRim = { x: rim.x - P1.x, y: rim.y - P1.y };
 		const len = Math.hypot(toRim.x, toRim.y) || 1;
 		// Where his man meets the shot: between him and the rim - from the
-		// side, where that would hide the shooter from the camera.
+		// side, where in front of him would hide the shooter from the camera.
 		const ahead = (k: number) =>
 			clampPt(
-				sideOn(
+				besideShot(
 					P1,
 					{
 						x: P1.x + (toRim.x / len) * k,
 						y: P1.y + (toRim.y / len) * k,
 					},
 					rim.x,
-					1.9,
 				),
 			);
 
