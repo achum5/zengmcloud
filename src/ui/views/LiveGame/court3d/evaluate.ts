@@ -1384,10 +1384,10 @@ const gaitOf = (
 // The steps he takes on a run.
 const stepsOf = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
 	const anim = runAnim(run);
-	// Sliding with his man: push steps when he goes across the way he
-	// faces, drop steps when he gives ground, short steps up when he steps
-	// up.
-	if (anim === "slide") {
+	// Sliding with his man - or shuffling a step or two: push steps when he
+	// goes across the way he faces, drop steps when he gives ground, short
+	// steps up when he steps up.
+	if (anim === "slide" || anim === "shuffle") {
 		return sideways(tl, tr, run)
 			? "shuffle"
 			: givingGround(tl, tr, run)
@@ -1654,9 +1654,10 @@ const blendInto = (
 		depth + 1 < BLEND_DEPTH
 			? blendInto(tl, tr, lo, before, depth + 1)
 			: undefined;
-	// The turn of his legs then, eased out of too - not snapped round.
-	const legs =
-		depth > 0 ? 0 : legsOf(spotAt(tr, lo), yawAt(tl, tr, lo), before.anim, lo);
+	// The turn of his legs then, eased out of too - not snapped round (as
+	// they showed, part the way out of the move before, if they were).
+	const own = legsOf(spotAt(tr, lo), yawAt(tl, tr, lo), before.anim, lo);
+	const legs = prior ? own + ((prior.legs ?? 0) - own) * prior.w : own;
 	return {
 		anim: before.anim,
 		phase: before.phase,
@@ -2278,13 +2279,18 @@ const LEGS_GIVE = 40;
 const LEGS_FTPS = 2;
 const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
 	const run = here.run;
-	if (!here.moving || !run || !isGait(anim)) {
+	// (Backpedalling, his legs go back the way he goes.)
+	const back = anim === "back";
+	if (!here.moving || !run || !(isGait(anim) || back || anim === "slide")) {
 		return 0;
 	}
 	if (here.hx * here.hx + here.hy * here.hy < 1e-6) {
 		return 0;
 	}
-	const off = (wrapAngle(Math.atan2(here.hy, here.hx) - yaw) * 180) / Math.PI;
+	const off =
+		(wrapAngle(Math.atan2(here.hy, here.hx) - yaw + (back ? Math.PI : 0)) *
+			180) /
+		Math.PI;
 	const a = Math.abs(off);
 	const turn =
 		a <= LEGS_TURN
