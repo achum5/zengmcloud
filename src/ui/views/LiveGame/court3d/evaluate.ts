@@ -1014,6 +1014,31 @@ export const PASS_PICK_UP = new Set<AnimName>([
 	"dribbleWalk",
 	"back",
 ]);
+// On the move with a pass coming to him, he opens up to it - from as soon
+// as he can see it coming (ms) - round toward the ball as far as running on
+// lets him (radians off the way he goes).
+const CATCH_OPEN_MS = 400;
+const CATCH_OPEN_MAX = (95 * Math.PI) / 180;
+const passComing = (tl: CourtTimeline, pid: number, t: number): boolean => {
+	const i = ballIndexAt(tl, t);
+	for (let k = i; k <= i + 2 && k < tl.ball.length; k++) {
+		const s = tl.ball[k]!;
+		// (Not yet thrown, and not about to be.)
+		if (k > i && tl.ball[k - 1]!.kind !== "fly" && s.t0 - t > CATCH_OPEN_MS) {
+			return false;
+		}
+		if (s.kind !== "fly") {
+			if (k > i) {
+				return false;
+			}
+			continue;
+		}
+		if ("pid" in s.to) {
+			return s.to.pid === pid;
+		}
+	}
+	return false;
+};
 
 // Which way he means to face at t: at what he is doing (a shot faces the rim),
 // where he is running, or - standing - at the ball.
@@ -1045,6 +1070,20 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 	}
 	// How he is going: a slide too fast to be one is a run, say.
 	const gait = here.run ? runAnim(tr, here.run) : mv?.anim;
+	if (
+		mv &&
+		here.moving &&
+		gait !== "back" &&
+		!(gait && EYES_ON_BALL.has(gait)) &&
+		passComing(tl, tr.pid, t)
+	) {
+		const heading =
+			here.hx * here.hx + here.hy * here.hy > 1e-6
+				? Math.atan2(here.hy, here.hx)
+				: Math.atan2(mv.to.y - mv.from.y, mv.to.x - mv.from.x);
+		const d = wrapAngle(angleTo(here, ballNear(tl, t), heading) - heading);
+		return heading + Math.max(-CATCH_OPEN_MAX, Math.min(CATCH_OPEN_MAX, d));
+	}
 	// A defensive slide keeps his eyes on the ball whichever way he goes -
 	// and so does a man drifting along the arc for it.
 	if (mv && here.moving && gait && EYES_ON_BALL.has(gait)) {
