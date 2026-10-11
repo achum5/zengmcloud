@@ -829,8 +829,13 @@ const stridesAt = (
 		const before = runOf(tr, j - 1);
 		strides += lenOf(before.mv) / strideOf(stepsOf(tl, tr, before));
 	}
-	return strides;
+	return strides + STRIDE_START;
 };
+// Setting off, he is a quarter of a stride in: over the foot he pushes off
+// with, the other coming through under him - nearest how he stood, so his
+// legs ease out of that into the stride with his feet staying where they
+// are, not splayed apart across the floor in a frame or two.
+const STRIDE_START = 0.25;
 
 // Hands up for the ball: from a moment before it leaves the passer (or
 // comes off the floor on its way) until it gets to him.
