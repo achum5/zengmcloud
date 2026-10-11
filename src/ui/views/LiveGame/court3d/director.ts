@@ -11430,11 +11430,12 @@ class Director {
 									free(o, x) &&
 									(!x.planted || w.planted),
 							);
-						if (!ow || dist(ow.at, P) >= 10) {
-							continue;
-						}
 						const last = runAt(o, s0);
 						const his = last !== undefined && this.marking.get(last) === tr.pid;
+						// (The man marking him, sagged off him in help, goes too.)
+						if (!ow || dist(ow.at, P) >= (his ? 24 : 10)) {
+							continue;
+						}
 						if (
 							!best ||
 							(his && !best.his) ||
