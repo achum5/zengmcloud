@@ -15307,6 +15307,41 @@ class Director {
 		}
 	}
 
+	// Every run of his sets off from where the last one left him. Whatever
+	// reworked the one (following his man, say) but not the next, he gets
+	// over there in the time between - or, a hair off, or with no time to
+	// spare, the next sets off from where he is.
+	private joinUp() {
+		for (const tr of this.tracks.values()) {
+			const moves = tr.moves;
+			for (let k = 1; k < moves.length; k++) {
+				const a = moves[k - 1]!;
+				const b = moves[k]!;
+				const d = dist(a.to, b.from);
+				if (
+					d < 0.05 ||
+					this.cuts.some((c) => c >= a.t1 - 1 && c <= b.t0 + 1) ||
+					tr.shown.some(([t]) => t > a.t1 - 1 && t <= b.t0 + 1)
+				) {
+					continue;
+				}
+				const need = Math.max(250, (d / 6) * 1000);
+				if (d >= 0.3 && b.t0 - a.t1 >= need) {
+					moves.splice(k, 0, {
+						t0: b.t0 - need,
+						t1: b.t0,
+						from: { ...a.to },
+						to: { ...b.from },
+						anim: d < 3 ? "shuffle" : "run",
+					});
+					k++;
+				} else {
+					b.from = { ...a.to };
+				}
+			}
+		}
+	}
+
 	// How much of a play's lead-in is shown at real speed (ms): for a shot,
 	// from just before the pass that found him - however late that came in
 	// the play - within limits.
@@ -15668,6 +15703,7 @@ class Director {
 		this.aroundBodies();
 		this.biteOnFakes();
 		this.workHisMan();
+		this.joinUp();
 		// The lead-in to a play - the ball brought up, the set getting going
 		// - is run through fast, back at real speed for the last few seconds
 		// of it: whatever leads straight to the shot, the steal, the foul. A

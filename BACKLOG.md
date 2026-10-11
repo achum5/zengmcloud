@@ -241,7 +241,11 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   through run to run - about five times fewer pops. Then bodies: nobody
   runs through anybody any more - a beaten defender rides the driver's hip,
   and wherever two would still meet, one bends round the other; about
-  fifteen times less time with one man drawn inside another.)
+  fifteen times less time with one man drawn inside another. A loose ball
+  bounces round a man rather than through him; the ball going across to
+  the other hand, the hands coming off it after a shot or pass, and the
+  ball carried into a pull-up all ease over instead of snapping; and no
+  run sets off from anywhere but where the last one left him.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like
