@@ -1627,6 +1627,7 @@ const ARMS_UP = new Set<AnimName>([
 	"celebrate",
 ]);
 const ARMS_DOWN_MS = 320;
+const SLIVER_MS = 80;
 const armsComeDown = (tr: Track, t: number, from: AnimName, to: AnimName) =>
 	ARMS_UP.has(from) && !ARMS_UP.has(to) && !actAt(tr, t);
 // Still bringing them down after the rest of him has finished easing over.
@@ -1703,6 +1704,21 @@ const blendInto = (
 		} else {
 			lo = mid;
 			before = d;
+		}
+	}
+	// (A moment of something else between an arm thrown up and this - his
+	// feet catching up with him - is no change of its own: out of that arm,
+	// then, or it comes down in fits and starts.)
+	if (!ARMS_UP.has(before.anim)) {
+		const i = lastIndex(tr.acts, hi, (a) => a.t0);
+		for (let k = i; k >= 0 && k >= i - 3; k--) {
+			const a = tr.acts[k]!;
+			if (a.t1 <= hi && hi - a.t1 < SLIVER_MS && ARMS_UP.has(a.anim)) {
+				hi = a.t1;
+				lo = hi - 1;
+				before = doingAt(tl, tr, lo);
+				break;
+			}
 		}
 	}
 	const ease = (ms: number) => {
