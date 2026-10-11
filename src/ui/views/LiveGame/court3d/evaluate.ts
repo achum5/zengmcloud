@@ -1533,7 +1533,9 @@ const doingAt = (
 		}
 		const g = smooth01((t - since) / GRIP_MS);
 		grip = g < 1 ? g : undefined;
-	} else if (!has && seg && t - seg.t0 < LET_GO_MS) {
+	} else if (seg && t - seg.t0 < LET_GO_MS) {
+		// (Gone from him - or put on the floor: his hands come off it as he
+		// pushes it down, not out of the air.)
 		const was = tl.ball[bi - 1];
 		if (was?.kind === "hold" && was.pid === pid && was.style === "hold") {
 			grip = 1 - smooth01((t - seg.t0) / LET_GO_MS);
@@ -1568,14 +1570,18 @@ const blendInto = (
 	tl: CourtTimeline,
 	tr: Track,
 	t: number,
-	anim: AnimName,
-	// Stepping over off a man: the same feet as a shuffle, but not the same
-	// strides - one into the other is a change too.
-	aside: boolean,
+	now: Doing,
 	// How far back inside other blends this is looking (see BLEND_DEPTH).
 	depth = 0,
 ): Blend | undefined => {
-	const same = (d: Doing) => d.anim === anim && (d.aside === true) === aside;
+	// (A change of move - or, the same move, from stepping over off a man
+	// into strides he set off on, or from dribbling it into holding it: his
+	// feet and hands are not where they were either.)
+	const same = (d: Doing) =>
+		d.anim === now.anim &&
+		(d.aside === true) === (now.aside === true) &&
+		(d.dribble === undefined) === (now.dribble === undefined);
+	const anim = now.anim;
 	let lo = t - BLEND_MS;
 	let before = doingAt(tl, tr, lo);
 	if (same(before)) {
@@ -1615,7 +1621,7 @@ const blendInto = (
 	// few quick changes in a row must not drop any of them in a frame).
 	const prior =
 		depth + 1 < BLEND_DEPTH
-			? blendInto(tl, tr, lo, before.anim, before.aside === true, depth + 1)
+			? blendInto(tl, tr, lo, before, depth + 1)
 			: undefined;
 	// The turn of his legs then, eased out of too - not snapped round.
 	const legs =
@@ -2209,9 +2215,7 @@ export const evalPlayer = (
 	const shown = si >= 0 ? tr.shown[si]![1] : false;
 	const here = spotAt(tr, t);
 	const now = doingAt(tl, tr, t, here);
-	const from = shown
-		? blendInto(tl, tr, t, now.anim, now.aside === true)
-		: undefined;
+	const from = shown ? blendInto(tl, tr, t, now) : undefined;
 	const yaw = yawAt(tl, tr, t);
 	const legs = legsOf(here, yaw, now.anim, t);
 	const arm = shown ? easedArm(tl, tr, t) : undefined;
