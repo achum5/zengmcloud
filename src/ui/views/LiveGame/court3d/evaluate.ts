@@ -571,6 +571,10 @@ const runAnim = (tr: Track, run: Run): AnimName => {
 		case "run":
 		case "jog":
 			return gaitFor(Math.max(v, groundSpeed(tr, run)));
+		// Sent hard: no slower than a run - but a sprint only at a sprint's
+		// pace, not a sprinter's stride over a few quick steps.
+		case "sprint":
+			return gaitFor(Math.max(v, groundSpeed(tr, run), JOG_FTPS));
 		case "walk":
 			return v > WALK_FTPS + 2 ? gaitFor(v) : "walk";
 		// Walking it, short steps; attacking, long ones.
