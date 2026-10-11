@@ -510,7 +510,11 @@ const build = (
 	oy: number,
 ): Built => {
 	const q = poseOf(st);
-	const held = st.holding ? holdBall(body, q, st.anim) : undefined;
+	// (Just let go of it, his hands come off where it was.)
+	const held =
+		st.holding || st.grip !== undefined
+			? holdBall(body, q, st.anim)
+			: undefined;
 	const sk = held
 		? gripped(held.sk, st, body, q)
 		: onRim(skeleton(body, q), st, body);

@@ -86,7 +86,8 @@ export type PlayerState = {
 	holding?: boolean;
 	// Just after it came into his hands - caught, or picked up off his
 	// dribble - how far his hands have closed on it (0 to 1): they meet it,
-	// not snap to it.
+	// not snap to it. And just after he let it go - a shot, a pass - how
+	// much they are still where it was: they come off it, not snap away.
 	grip?: number;
 	// How far through a bounce of his dribble (0 the ball in his hand at the
 	// top), when he is dribbling: his hand rides it - this one.
@@ -1316,6 +1317,7 @@ const bridgeAt = (
 
 // How long his hands take to close on the ball once it is his.
 const GRIP_MS = 110;
+const LET_GO_MS = 140;
 const doingAt = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -1423,8 +1425,8 @@ const doingAt = (
 			: has?.style === "dribble"
 				? bounceOf(tl, bi, t)
 				: undefined;
-	// Since it came into his hands.
-	let grip = 1;
+	// Since it came into his hands - or went out of them.
+	let grip: number | undefined;
 	if (has?.style === "hold") {
 		let since = has.t0;
 		for (let k = bi - 1; k >= 0; k--) {
@@ -1434,7 +1436,13 @@ const doingAt = (
 			}
 			since = x.t0;
 		}
-		grip = smooth01((t - since) / GRIP_MS);
+		const g = smooth01((t - since) / GRIP_MS);
+		grip = g < 1 ? g : undefined;
+	} else if (!has && seg && t - seg.t0 < LET_GO_MS) {
+		const was = tl.ball[bi - 1];
+		if (was?.kind === "hold" && was.pid === pid && was.style === "hold") {
+			grip = 1 - smooth01((t - seg.t0) / LET_GO_MS);
+		}
 	}
 	return {
 		anim,
@@ -1444,7 +1452,7 @@ const doingAt = (
 		...(dunk ? { dunk } : {}),
 		...(reach ? { reach } : {}),
 		holding: has?.style === "hold",
-		...(grip < 1 ? { grip } : {}),
+		...(grip === undefined ? {} : { grip }),
 		dribble: beat?.ph,
 		dribbleHand: beat ? (beat.ph < DOWN ? beat.from : beat.to) : undefined,
 		...(beat && beat.from !== beat.to ? { dribbleFrom: beat.from } : {}),
