@@ -3755,6 +3755,21 @@ class Director {
 				spotOf[r] = S;
 			}
 		}
+		{
+			// The man the set starts with the ball isn't stood right under the
+			// rim with it, waiting on the rest: out on the block, the side he
+			// comes from.
+			const rim = { x: rimX(team), y: COURT_H / 2 };
+			const B = spotOf[f.ball]!;
+			if (dist(B, rim) < 6) {
+				const P = this.posOf(bh);
+				const u =
+					dist(P, rim) > 3
+						? unitVec(rim, P)
+						: unitVec(rim, { x: rim.x - dir * 6, y: B.y >= rim.y ? 32 : 18 });
+				spotOf[f.ball] = clampPt({ x: rim.x + u.x * 9, y: rim.y + u.y * 9 });
+			}
+		}
 		// A long way back with it - the inbound caught in the backcourt, a
 		// board at the other end - it is brought up and the entry made from up
 		// the floor, not thrown the length of it to a man still on his way
