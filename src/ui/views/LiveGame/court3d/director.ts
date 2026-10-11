@@ -13316,6 +13316,12 @@ class Director {
 				// the way from where he passes closest.)
 				const la = dist(m.from, bend.at);
 				const lb = dist(bend.at, m.to);
+				// (Not round him at all, a step too short to: the long way
+				// round would have it a dash. He is only kept off him.)
+				const L = Math.sqrt(L2);
+				if (la + lb > L * 1.2 && ((la + lb) * 1000) / Math.max(1, dur) > 12) {
+					return [m];
+				}
 				if (la + lb > 0.05) {
 					bend.t = m.t0 + (dur * la) / (la + lb);
 				}
