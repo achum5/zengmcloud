@@ -511,6 +511,9 @@ const DRIBBLE_MS = 1000 / DRIBBLE_RATE;
 // the start of his throw to the ball leaving his hands.
 const OVERHEAD_WIND = 140;
 const RELEASE_MS = 120;
+// A pass thrown away goes this far wide of the man it was meant for (feet,
+// out where he is): past his hands, not through him.
+const WIDE_OF = 3;
 // How far out in front of his feet a man bent to the floor has his hands.
 const PICKUP_REACH = releaseAt("pickup", 0.5).f;
 // How far through a bounce of his dribble the ball has come back up near
@@ -10411,9 +10414,19 @@ class Director {
 				this.beat(i, e.type, tI, tOut);
 				return true;
 			}
-			// Thrown away: over his head and out.
-			const out = this.outPoint(B, u);
+			// Thrown away: behind him, wide of where he is, and out - he
+			// reaches for it as it goes by, not a hand to it (not through him,
+			// either).
+			const side = hash01(victim, Math.round(release)) < 0.5 ? 1 : -1;
+			const W = clampPt({
+				x: B.x - u.y * side * WIDE_OF,
+				y: B.y + u.x * side * WIDE_OF,
+			});
+			const out = this.outPoint(W, unitVec(A, W));
 			const tOut = release + passMs(dist(A, out));
+			const tBy =
+				release + (tOut - release) * Math.min(1, dist(A, B) / dist(A, out));
+			this.act(receiver, "reach", tBy - 220, tBy + 200, { look: { ...W } });
 			this.fly(release, tOut, { pid: victim }, { ...out, z: 3 });
 			this.bounce(
 				tOut,
