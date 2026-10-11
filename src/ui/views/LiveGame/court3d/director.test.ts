@@ -511,10 +511,37 @@ describe("3D director", () => {
 		for (const seed of ["a", "b"]) {
 			const { tl } = compile(seed, 140);
 			const tracks = [...tl.tracks.values()];
-			// (Dead balls: a substitution, the walk to the line.)
-			const subs = tl.beats.filter(
-				(b) => b.type === "sub" || b.type === "ft" || b.type === "missFt",
-			);
+			// (Dead balls: a substitution, the walk to the line - and a timeout
+			// or the break between periods, the ball taken to the huddle, till
+			// it is inbounded from the sideline after it.)
+			const dead: [number, number][] = tl.beats
+				.filter(
+					(b) => b.type === "sub" || b.type === "ft" || b.type === "missFt",
+				)
+				.map((b) => [b.preStart, b.end]);
+			for (const b of tl.beats) {
+				if (
+					b.type !== "timeout" &&
+					b.type !== "endOfPeriod" &&
+					b.type !== "period" &&
+					b.type !== "overtime"
+				) {
+					continue;
+				}
+				const inbound = tl.ball.find((s) => {
+					if (
+						s.kind !== "fly" ||
+						s.t0 < b.preStart ||
+						!("pid" in s.from) ||
+						!("pid" in s.to)
+					) {
+						return false;
+					}
+					const P = evalPlayer(tl, s.from.pid, s.t0);
+					return P.y < 0 || P.y > COURT_H || P.x < 0 || P.x > COURT_W;
+				});
+				dead.push([b.preStart, inbound?.kind === "fly" ? inbound.t1 : b.end]);
+			}
 			const mid = COURT_W / 2;
 			let k = 0;
 			let n = 0;
@@ -538,7 +565,7 @@ describe("3D director", () => {
 					offenseAt(tl, t) !== h.team ||
 					(H.x - mid) * side < 4 ||
 					t - since < 3000 ||
-					subs.some((b) => t >= b.preStart - 500 && t <= b.end + 500)
+					dead.some(([a, z]) => t >= a - 500 && t <= z + 500)
 				) {
 					runD = 0;
 					runO = 0;

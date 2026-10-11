@@ -2151,7 +2151,13 @@ class Director {
 			return t;
 		}
 		if (h !== undefined) {
-			return this.passTo(h, pid, Math.max(t, this.free.get(h) ?? 0), "chest");
+			return this.passTo(
+				h,
+				pid,
+				Math.max(t, this.free.get(h) ?? 0),
+				"chest",
+				true,
+			);
 		}
 		const b = this.ballPoint();
 		const near = [...this.slots(0), ...this.slots(1)].sort(
@@ -2163,7 +2169,7 @@ class Director {
 		const got = this.pickUp(near, t, JOG);
 		return near === pid
 			? got + 300
-			: this.passTo(near, pid, got + 400, "chest");
+			: this.passTo(near, pid, got + 400, "chest", true);
 	}
 
 	// When the man with the ball is free to go somewhere with it: done with
@@ -2362,10 +2368,19 @@ class Director {
 		const dir = attackDir(team);
 		const off = this.slots(team);
 		const def = this.slots(other(team));
-		const receiver = to?.pid ?? off[0]!;
-		const inbounder = [off[2], off[1], off.at(-1), off[0]].find(
-			(pid) => pid !== undefined && pid !== receiver,
-		)!;
+		// One of theirs with it already - brought back from the huddle -
+		// takes it out himself (in to the next man, if it was to go in to
+		// him).
+		const h0 = this.holder;
+		const takes = h0 !== undefined && off.includes(h0) && h0 !== to?.pid;
+		const receiver =
+			to?.pid ?? (takes && h0 === off[0] ? (off[1] ?? off[0]!) : off[0]!);
+		const inbounder =
+			takes && h0 !== receiver
+				? h0
+				: [off[2], off[1], off.at(-1), off[0]].find(
+						(pid) => pid !== undefined && pid !== receiver,
+					)!;
 		const far = at.y < COURT_H / 2;
 		// From behind the baseline, or from the sideline.
 		const baseline = at.x < 0 || at.x > COURT_W;
@@ -2671,12 +2686,15 @@ class Director {
 		to: number,
 		t: number,
 		style?: PassStyle,
+		// Handed over at a dead ball - not a pass in play.
+		handOff = false,
 	): number {
 		// Never back over half court: a man left back there comes up over it
 		// for the ball first.
 		const dir = attackDir(this.teamOf(from));
 		const R = this.posOf(to);
 		if (
+			!handOff &&
 			(this.posOf(from).x - COURT_W / 2) * dir > 0 &&
 			(R.x - COURT_W / 2) * dir < 2
 		) {
@@ -8776,8 +8794,28 @@ class Director {
 			case "timeout":
 			case "endOfPeriod": {
 				this.effect("whistle", T, { call: "stop", team: this.offense });
-				this.deadBall(T);
-				const ballX = this.ballAt.x;
+				// (Where play stopped: where it comes back in from.)
+				const ballX = (
+					this.holder !== undefined ? this.posAt(this.holder, T) : this.ballAt
+				).x;
+				// The ball goes to the huddle with a man of the side that has it
+				// after the timeout - handed to him there and then, or picked up
+				// - or, at the end of a period, with whoever has it: not left
+				// lying out on the floor through the break.
+				const B = this.ballPoint();
+				const taker =
+					type === "timeout"
+						? [...this.slots(this.offense)].sort(
+								(a, b) => dist(this.posOf(a), B) - dist(this.posOf(b), B),
+							)[0]
+						: undefined;
+				if (taker !== undefined && taker !== this.holder) {
+					this.ballTo(taker, T + 200);
+				} else if (this.holder !== undefined) {
+					this.hold(this.holder, T, "hold");
+				} else {
+					this.pickUpLoose(T + 200);
+				}
 				// The whistle, then off to the huddles - fast - and, over the
 				// break, a look round the building.
 				// Each to the place in the huddle on his side of it, so nobody
@@ -8818,9 +8856,11 @@ class Director {
 			}
 			case "period":
 			case "overtime": {
-				// Still in the huddles; the next possession starts with the
-				// inbound at half court.
-				this.deadBall(T);
+				// Still in the huddles (the ball with whoever took it there);
+				// the next possession starts with the inbound at half court.
+				if (this.holder !== undefined) {
+					this.hold(this.holder, T, "hold");
+				}
 				this.inboundAt = { x: COURT_W / 2, y: -1.4 };
 				this.phase = "inboundSide";
 				this.beat(i, type, T, T + 1100);

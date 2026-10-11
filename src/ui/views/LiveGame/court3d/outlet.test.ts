@@ -18,17 +18,22 @@ describe("3D outlets", () => {
 				const handles = new Map(
 					players.map((p) => [p.pid, p.skills?.includes("B") ?? false]),
 				);
-				for (const beat of tl.beats) {
+				for (const [k, beat] of tl.beats.entries()) {
 					const e = events[beat.i]!;
 					if (e.type !== "drb" || handles.get(e.pid as number)) {
 						continue;
 					}
 					boards += 1;
-					// Who has it as it goes over half court.
+					// Who has it as it goes over half court - live, not taken to
+					// the huddle at a timeout or the end of the period.
+					const stop = tl.beats
+						.slice(k + 1)
+						.find((b) => b.type === "timeout" || b.type === "endOfPeriod");
 					let prevX: number | undefined;
 					for (
 						let t = beat.actionStart;
-						t < beat.actionStart + 15000;
+						t <
+						Math.min(beat.actionStart + 15000, stop?.actionStart ?? Infinity);
 						t += 100
 					) {
 						const b = evalBall(tl, t, () => body);
