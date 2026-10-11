@@ -5465,10 +5465,12 @@ class Director {
 				);
 				this.hold(pid, t, "dribble");
 			}
-			const inside = inPlay({
-				x: P.x + (dx / d) * 2.6,
-				y: P.y + (dy / d) * 2.6,
-			});
+			// (On his spot already, into his man is at the rim.)
+			const u =
+				Math.hypot(dx, dy) > 1
+					? { x: dx / d, y: dy / d }
+					: unitVec(P, rimPt(this.teamOf(pid)));
+			const inside = inPlay({ x: P.x + u.x * 2.6, y: P.y + u.y * 2.6 });
 			t = this.go(pid, inside, t, DRIBBLE, "dribble", dir);
 			t = Math.max(t, this.hold(pid, t, "hold"));
 			const there = this.go(pid, P, t + 40, 9, "back", dir);
@@ -5951,8 +5953,14 @@ class Director {
 				"back",
 				dir,
 			);
-		} else if (o.kind === "step_back") {
-			// Into his man, then the hop back to where he shoots from.
+		} else if (
+			o.kind === "step_back" &&
+			!this.track(shooter)?.acts.some(
+				(a) => a.anim === "stepBack" && a.t1 > t - 200,
+			)
+		) {
+			// Into his man, then the hop back to where he shoots from (unless
+			// the set's last dribble was just that).
 			const u = unitVec(P, rim);
 			this.hold(shooter, t, "dribble");
 			t = this.go(
@@ -5964,7 +5972,12 @@ class Director {
 				dir,
 			);
 			t = Math.max(t, this.hold(shooter, t, "hold"));
+			const hop = t;
 			t = this.go(shooter, P, t + 40, 9, "back", dir);
+			this.act(shooter, "stepBack", hop, t, {
+				face: dir,
+				jump: [0.25, 0.85, 0.7],
+			});
 		}
 		t = Math.max(t, this.hold(shooter, t, "hold"));
 		if (o.kind === "floater") {
