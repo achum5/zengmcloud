@@ -13270,7 +13270,18 @@ class Director {
 					};
 				}
 				const edge = Math.min(60, dur * 0.3);
-				if (!bend || bend.t - m.t0 <= edge || m.t1 - bend.t <= edge) {
+				if (!bend) {
+					return [m];
+				}
+				// (At an even pace round him: each leg of it takes the time its
+				// length does - out at his shoulder, the bend can sit well along
+				// the way from where he passes closest.)
+				const la = dist(m.from, bend.at);
+				const lb = dist(bend.at, m.to);
+				if (la + lb > 0.05) {
+					bend.t = m.t0 + (dur * la) / (la + lb);
+				}
+				if (bend.t - m.t0 <= edge || m.t1 - bend.t <= edge) {
 					return [m];
 				}
 				// (Going on round him, not pulling up for him: what pace he had
