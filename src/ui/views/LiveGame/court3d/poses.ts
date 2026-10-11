@@ -403,6 +403,7 @@ type RunMode =
 	| "dribble"
 	| "dribbleWalk"
 	| "back"
+	| "slide"
 	| "walk"
 	| "carry"
 	| "drift"
@@ -461,7 +462,10 @@ type GaitMode =
 	| "dribbleWalk"
 	| "walk"
 	| "carry"
-	| "drift";
+	| "drift"
+	| "backpedal";
+// Giving ground in his stance (see "back"): feet a stride.
+const BACKPEDAL_STRIDE = 3.8;
 const GAITS: Record<GaitMode, Gait> = {
 	run: {
 		stride: 8.6,
@@ -638,6 +642,31 @@ const GAITS: Record<GaitMode, Gait> = {
 		pump: 0,
 		twist: 0,
 		wide: 0.1,
+	},
+	// Low, short steps - played backward (see "back").
+	backpedal: {
+		stride: BACKPEDAL_STRIDE,
+		duty: 0.58,
+		ahead: 0.3,
+		hips: 2.45,
+		bob: -0.04,
+		flat: 0.5,
+		roll: 28,
+		// (Run backward, the end of the swing is the start: the foot picked
+		// up off the floor in front of him, not dragged back along it.)
+		swing: [
+			[0.12, 2, 16],
+			[0.36, 0, 70],
+			[0.66, 30, 84],
+			[0.88, 50, 74],
+		],
+		lean: 16,
+		armFwd: 0,
+		armBack: 0,
+		elbow: 0,
+		pump: 0,
+		twist: 0,
+		wide: 0.26,
 	},
 };
 export const isGait = (mode: string): mode is GaitMode => mode in GAITS;
@@ -929,29 +958,28 @@ const stride = (ph: number, mode: RunMode): Pose => {
 		}
 		return q;
 	}
-	// A defensive slide / backpedal: low, short steps, hands active - one
-	// up at the ball, the other low and out.
-	return pose({
-		hipN: 10 - 18 * a,
-		hipF: 30 + 18 * a,
-		kneeN: 50 + 16 * Math.max(0, -c),
-		kneeF: 54 + 16 * Math.max(0, c),
-		lean: 18,
+	// In his stance, low, short steps, hands active - one up at the ball, the
+	// other low and out. Giving ground, a walk's planted steps run backward:
+	// each foot landing behind him on its toes, coming forward under him as
+	// fast as he goes back, then swinging back past the other; stepping up
+	// (a slide), the same run forward.
+	return {
+		...gaitPose("backpedal", mode === "back" ? -ph : ph),
 		shN: 26 + 4 * a,
 		elN: 40,
 		abN: 36,
 		shF: 56 - 4 * a,
 		elF: 52,
 		abF: 18,
-		wide: 0.4,
-	});
+	};
 };
 
 // Mid-stride, his feet are where his stride puts them - not planted under
-// him.
+// him. (Sliding, they are: under him all the way, so as his knees
+// straighten with each push his feet don't creep forward along the floor.)
 const runPose = (ph: number, mode: RunMode): Pose => ({
 	...stride(ph, mode),
-	plant: 0,
+	plant: mode === "shuffle" ? 1.25 : 0,
 });
 
 // A PURE JUMPER.
@@ -2028,16 +2056,16 @@ export const ANIMS = {
 	back: {
 		kind: "cycle",
 		n: 6,
-		stride: 4.6,
+		stride: BACKPEDAL_STRIDE,
 		pose: (i) => runPose(i / 6, "back"),
 	},
-	// A defender sliding with his man: the same low steps, eyes on the ball
-	// whichever way he goes.
+	// A defender sliding with his man: the same low steps, eyes on the ball,
+	// stepping up (giving ground, he backpedals - see stepsOf).
 	slide: {
 		kind: "cycle",
 		n: 6,
-		stride: 4.6,
-		pose: (i) => runPose(i / 6, "back"),
+		stride: BACKPEDAL_STRIDE,
+		pose: (i) => runPose(i / 6, "slide"),
 	},
 	// Setting a screen: planted wide and low, arms folded in front to take
 	// the hit.

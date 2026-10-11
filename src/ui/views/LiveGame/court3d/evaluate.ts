@@ -1253,6 +1253,22 @@ const sideways = (tl: CourtTimeline, tr: Track, run: Run): boolean => {
 	return s;
 };
 
+// Whether a run takes him the way his back faces, by how he faces halfway
+// along it: once a run.
+const givingGrounds = new WeakMap<Run["mv"], boolean>();
+const givingGround = (tl: CourtTimeline, tr: Track, run: Run): boolean => {
+	let g = givingGrounds.get(run.mv);
+	if (g === undefined) {
+		const yaw = yawAt(tl, tr, (run.s0 + run.s1) / 2);
+		g =
+			(run.mv.to.x - run.mv.from.x) * Math.cos(yaw) +
+				(run.mv.to.y - run.mv.from.y) * Math.sin(yaw) <
+			0;
+		givingGrounds.set(run.mv, g);
+	}
+	return g;
+};
+
 // Up on the ball, now and then he pokes at it - a quick swipe that gets
 // nothing - with the hand on its side as he starts it. Never the moment he
 // has got there.
@@ -1369,9 +1385,14 @@ const gaitOf = (
 const stepsOf = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
 	const anim = runAnim(run);
 	// Sliding with his man: push steps when he goes across the way he
-	// faces, drop steps when he gives ground or steps up.
-	if (anim === "slide" && sideways(tl, tr, run)) {
-		return "shuffle";
+	// faces, drop steps when he gives ground, short steps up when he steps
+	// up.
+	if (anim === "slide") {
+		return sideways(tl, tr, run)
+			? "shuffle"
+			: givingGround(tl, tr, run)
+				? "back"
+				: "slide";
 	}
 	// Going the way his back faces - easing off from the ball while he
 	// watches it - at no more than a backpedal's pace: he backpedals, not
