@@ -7525,7 +7525,7 @@ class Director {
 		) {
 			const r = next.e.pid;
 			if (vel) {
-				return this.reboundOff(r, t, from, vel, team, !blocked, start);
+				return this.reboundOff(r, t, from, vel, team, blocked, start);
 			}
 			const rp = this.posOf(r);
 			const toward = { x: rp.x - rim.x, y: rp.y - rim.y };
@@ -7713,7 +7713,7 @@ class Director {
 			return this.knockOut(floor?.t ?? t, floor?.at ?? from, away(from));
 		}
 		if (vel) {
-			return this.reboundOff(r, t, from, vel, team, !blocked, start, knock);
+			return this.reboundOff(r, t, from, vel, team, blocked, start, knock);
 		}
 		// Off the rim with no flight worked out: up for it where it comes off.
 		const rp = this.posOf(r);
@@ -8087,7 +8087,8 @@ class Director {
 		from: Pt3,
 		vel: Pt3,
 		team: Side,
-		contested: boolean,
+		// Off a blocker's hand, not the rim.
+		blocked: boolean,
 		// Where it really leaves from, if not `from`.
 		leaves?: BallEnd,
 		// He only gets a hand to it, and it is knocked away: where it is when
@@ -8099,7 +8100,9 @@ class Director {
 		// He reads where it is coming down off the shot, and goes - once he
 		// is done with what he was doing (up contesting it, say; out of a
 		// box-out he just comes), off any run he was still on, after it.
-		let read = t - REBOUND_READ;
+		// (A block nobody reads before it happens: he goes once it is off
+		// the hand that blocked it.)
+		let read = blocked ? t + READ_MS : t - REBOUND_READ;
 		for (const a of [...(this.track(r)?.acts ?? [])].sort(
 			(x, y) => x.t0 - y.t0,
 		)) {
@@ -8185,7 +8188,7 @@ class Director {
 				spot,
 				team,
 				h - hands.u,
-				contested,
+				!blocked,
 				out ? "rebound" : "board",
 			);
 			if (out) {
@@ -9365,23 +9368,46 @@ class Director {
 				ATTEMPT_ZONE[after[1]?.e.type ?? ""],
 				resultOf(after[1]?.e.type ?? "")?.zone,
 			].some((z) => z === "putBack" || z === "tipIn");
-		const speed = again ? this.rand(3, 6) : this.rand(11, 19);
+		let speed = again ? this.rand(3, 6) : this.rand(11, 19);
+		const vz = again ? this.rand(-2, 3) : this.rand(-7, 1);
+		const B0 = {
+			x: bp.x + (sp.x - bp.x) * 0.3,
+			y: bp.y + (sp.y - bp.y) * 0.3,
+			z: 9.8,
+		};
+		let u = { x: back.x - back.y * off, y: back.y + back.x * off };
+		// Knocked away toward the man who comes up with it, down on the floor
+		// short of him: he goes after it once it is off the hand (see
+		// reboundOff), and gets to it on the bounce - not waiting where it
+		// comes down before it is ever blocked.
+		const r =
+			(after[0]?.e.type === "drb" || after[0]?.e.type === "orb") &&
+			typeof after[0].e.pid === "number"
+				? after[0].e.pid
+				: undefined;
+		if (r !== undefined) {
+			const R = this.posAt(r, at);
+			const D = dist(B0, R);
+			if (D > 3 && r !== e.pid) {
+				const fall =
+					(vz + Math.sqrt(vz * vz + 2 * GRAVITY * (B0.z - BALL_R))) / GRAVITY;
+				const wide = this.rand(-0.25, 0.25);
+				const d = unitVec(B0, R);
+				u = { x: d.x - d.y * wide, y: d.y + d.x * wide };
+				speed = Math.min(22, Math.max(5, (D - 3) / fall));
+			} else {
+				// (Right there - or his own block: only knocked down, not away.)
+				speed = Math.min(speed, this.rand(3, 6));
+			}
+		}
 		const next = this.afterMiss(
 			at,
-			{
-				x: bp.x + (sp.x - bp.x) * 0.3,
-				y: bp.y + (sp.y - bp.y) * 0.3,
-				z: 9.8,
-			},
+			B0,
 			team,
 			i,
 			true,
 			false,
-			{
-				x: (back.x - back.y * off) * speed,
-				y: (back.y + back.x * off) * speed,
-				z: again ? this.rand(-2, 3) : this.rand(-7, 1),
-			},
+			{ x: u.x * speed, y: u.y * speed, z: vz },
 			// Off the hand he went up with.
 			{
 				pid: e.pid,
