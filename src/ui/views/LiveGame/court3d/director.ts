@@ -1350,9 +1350,9 @@ class Director {
 					if (m.t1 <= a || m.t0 >= z) {
 						kept.push(m);
 					} else if (m.t0 < a) {
-						kept.push({ ...m, t1: a, to: { ...A } });
+						kept.push({ ...m, t1: a, to: { ...A }, v1: undefined });
 					} else if (m.t1 > z) {
-						kept.push({ ...m, t0: z, from: { ...Z } });
+						kept.push({ ...m, t0: z, from: { ...Z }, v0: undefined });
 					}
 				}
 				kept.push(
@@ -1390,12 +1390,12 @@ class Director {
 			if (m.t1 <= t0) {
 				kept.push(m);
 			} else if (m.t0 >= by) {
-				kept.push(next ? { ...m, from: { ...V } } : m);
+				kept.push(next ? { ...m, from: { ...V }, v0: undefined } : m);
 				next = false;
 			} else if (m.t0 < t0) {
-				kept.push({ ...m, t1: t0, to: { ...P } });
+				kept.push({ ...m, t1: t0, to: { ...P }, v1: undefined });
 			} else if (m.t1 > by) {
-				kept.push({ ...m, t0: by, from: { ...V } });
+				kept.push({ ...m, t0: by, from: { ...V }, v0: undefined });
 				next = false;
 			}
 		}
@@ -1430,6 +1430,8 @@ class Director {
 		const at = this.posAt(pid, t);
 		m.to = { ...at };
 		m.t1 = t;
+		// (Stopped there: whatever pace it was to end at, it doesn't.)
+		m.v1 = undefined;
 		this.pos.set(pid, { ...at });
 		this.free.set(pid, t);
 	}
@@ -7483,6 +7485,7 @@ class Director {
 					y: m.from.y + (m.to.y - m.from.y) * f,
 				};
 				m.t1 = t;
+				m.v1 = undefined;
 			}
 			const last = tr.moves.reduce<Move | undefined>(
 				(a, m) => (!a || m.t1 >= a.t1 ? m : a),

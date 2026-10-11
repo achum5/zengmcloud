@@ -474,8 +474,10 @@ const onRun = (run: Run, t: number): Pt => {
 const smooth = (u: number) => u * u * (3 - 2 * u);
 const rounded = (a: Run, b: Run, t: number): Pt | undefined => {
 	const tj = a.s1;
-	// (Only where the one hands on to the other.)
-	if (Math.abs(b.s0 - tj) > 1) {
+	// (Only where the one hands on to the other, going on through it - both
+	// of them: rounded on one side of the join and not the other, he would
+	// jump at it.)
+	if (Math.abs(b.s0 - tj) > 1 || a.v1 <= 0 || b.v0 <= 0) {
 		return undefined;
 	}
 	const d = Math.min(
