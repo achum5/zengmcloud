@@ -12145,6 +12145,36 @@ class Director {
 	// the time, one hard attack past his man's shoulder that gets cut off
 	// - and a dribble back out. Whatever he does, he is back on his spot,
 	// on the beat of his dribble, for whatever he does next.
+	// His man, up on him, gives with a run of dribble moves where he stands:
+	// a shade the way the ball first goes across, and back as it comes back.
+	private giveWith(tr: Track, here: Pt, tc: number, n: number, inHand: Hand) {
+		const guard = [...this.tracks.values()]
+			.filter((o) => o.team !== tr.team)
+			.map((o) => ({ o, d: dist(this.posAt(o.pid, tc), here) }))
+			.filter((x) => x.d < 7)
+			.sort((a, b) => a.d - b.d)[0]?.o;
+		if (!guard) {
+			return;
+		}
+		// Across from his right to his left, or the other way: square to the
+		// line from him to his man (or the rim, if they are on top of each
+		// other).
+		const G = this.posAt(guard.pid, tc);
+		const u =
+			dist(here, G) > 0.5
+				? unitVec(here, G)
+				: unitVec(here, { x: rimX(tr.team), y: COURT_H / 2 });
+		const v = { x: -u.y, y: u.x };
+		const way = inHand === "R" ? -1 : 1;
+		(guard.nudges ??= []).push({
+			t0: tc + 90,
+			t1: tc + n * CROSS_MS + 350,
+			dx: v.x * way * 0.9,
+			dy: v.y * way * 0.9,
+		});
+		guard.nudges.sort((a, b) => a.t0 - b.t0);
+	}
+
 	private keepDribbling() {
 		const ball = this.ball;
 		const added: [Track, Move][] = [];
@@ -12281,24 +12311,7 @@ class Director {
 					const inHand: Hand = lastSeg?.hand ?? hand;
 					combos += 1;
 					const made = this.runOfMoves(s.pid, tc, n3, 0.3, 0.2, inHand);
-					// His man, up on him, gives with it: a shade the way the
-					// ball first goes across, and back as it comes back.
-					const guard = [...this.tracks.values()]
-						.filter((o) => o.team !== tr.team)
-						.map((o) => ({ o, d: dist(this.posAt(o.pid, tc), here) }))
-						.filter((x) => x.d < 7)
-						.sort((a, b) => a.d - b.d)[0]?.o;
-					if (guard) {
-						// (Across from his right to his left, or the other way.)
-						const way = inHand === "R" ? -1 : 1;
-						(guard.nudges ??= []).push({
-							t0: tc + 90,
-							t1: tc + n3 * CROSS_MS + 350,
-							dx: v.x * way * 0.9,
-							dy: v.y * way * 0.9,
-						});
-						guard.nudges.sort((a, b) => a.t0 - b.t0);
-					}
+					this.giveWith(tr, here, tc, n3, inHand);
 					segs.push(...made.segs, {
 						kind: "hold",
 						t0: tc + n3 * CROSS_MS,
@@ -12560,6 +12573,7 @@ class Director {
 			if (moves) {
 				const made = this.runOfMoves(pid, moves.tc, n, 0.45, 0.2, start);
 				added.push(...made.segs);
+				this.giveWith(tr, P, moves.tc, n, start);
 				if (throws) {
 					added.push({ kind: "hold", t0: moves.end, pid, style: "hold" });
 				}
