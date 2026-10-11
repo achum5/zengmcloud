@@ -14645,10 +14645,17 @@ class Director {
 		const AHEAD = 6;
 		const SOFT = 3;
 		const ROUNDS = 4;
-		// (Eased in and out where the picture hurries on, samples.) Where
-		// they are is asked every few samples.
+		// (Too short a stretch to bother with, samples.) Where they are is
+		// asked every few samples.
 		const EDGE = 6;
 		const EVERY = 4;
+		// The picture only gets up to speed gently, and is back down a moment
+		// before it is over (see fastAt): kept off each other on into it, and
+		// from before the end of it, this far (ms) - eased back over it, so
+		// there is no hurry about it while it is still slow - and all through
+		// one too short to get going.
+		const INTO_FAST = 800;
+		const OUT_OF_FAST = 500;
 		// (How far off where he really is the schedule can have him, feet.)
 		const LOOSE = 3;
 		// Going faster than this (feet a second), he is on the move.
@@ -14738,12 +14745,21 @@ class Director {
 		const N = tracks.length;
 		const live: [number, number][] = [];
 		{
-			let from = 0;
+			const runs: [number, number][] = [];
 			for (const [a, b] of [...fast].sort((x, y) => x[0] - y[0])) {
-				if (a > from) {
-					live.push([from, a]);
+				const last = runs.at(-1);
+				if (last && a <= last[1]) {
+					last[1] = Math.max(last[1], b);
+				} else {
+					runs.push([a, b]);
 				}
-				from = Math.max(from, b);
+			}
+			let from = 0;
+			for (const [a, b] of runs) {
+				if (b - a > INTO_FAST + OUT_OF_FAST) {
+					live.push([from, a + INTO_FAST]);
+					from = b - OUT_OF_FAST;
+				}
 			}
 			live.push([from, this.T]);
 		}
@@ -15271,8 +15287,8 @@ class Director {
 				const ex = ox[i]!;
 				const ey = oy[i]!;
 				for (let s = 0; s < n; s++) {
-					const a = l0 > 0 ? s / EDGE : 1;
-					const b = l1 < this.T ? (n - 1 - s) / EDGE : 1;
+					const a = l0 > 0 ? (s * DT) / OUT_OF_FAST : 1;
+					const b = l1 < this.T ? ((n - 1 - s) * DT) / INTO_FAST : 1;
 					const u = Math.min(1, a, b);
 					if (u < 1) {
 						const w = u * u * (3 - 2 * u);

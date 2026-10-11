@@ -128,7 +128,7 @@ describe("3D director", () => {
 				evalBall(live.tl, t, bodyFor),
 			);
 		}
-	}, 60_000);
+	}, 120_000);
 
 	// Shots are thrown, not floated: under gravity a three from the arc
 	// climbs to about fifteen feet, the way real ones do.

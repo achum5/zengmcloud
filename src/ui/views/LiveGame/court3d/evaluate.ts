@@ -606,8 +606,10 @@ type Spot = {
 // Where he is, eased aside off anybody he would be standing on (see
 // keepApart in director.ts) - and kept off anybody he would still be in (see
 // keepOff).
-const spotAt = (tr: Track, t: number): Spot => {
-	const s = nudgedAt(tr, t);
+// (Without which way he is heading round a corner, where only where he is
+// is wanted.)
+const spotAt = (tr: Track, t: number, heading = true): Spot => {
+	const s = nudgedAt(tr, t, heading);
 	return tr.sep ? keptOff(tr.sep, s, t) : s;
 };
 
@@ -647,8 +649,8 @@ const keptOff = (list: Sep[], s: Spot, t: number): Spot => {
 };
 
 const NUDGE_RAMP = 450;
-const nudgedAt = (tr: Track, t: number): Spot => {
-	const s = rawSpotAt(tr, t);
+const nudgedAt = (tr: Track, t: number, heading = true): Spot => {
+	const s = rawSpotAt(tr, t, heading);
 	const list = tr.nudges;
 	if (!list || list.length === 0) {
 		return s;
@@ -741,7 +743,7 @@ const sepBase = (list: Sep[]): number[] => {
 	}
 	return base;
 };
-const rawSpotAt = (tr: Track, t: number): Spot => {
+const rawSpotAt = (tr: Track, t: number, heading = true): Spot => {
 	let k = lastIndex(tr.moves, t, (m) => m.t0);
 	if (k < 0) {
 		return {
@@ -794,6 +796,9 @@ const rawSpotAt = (tr: Track, t: number): Spot => {
 	}
 	if (pair && q) {
 		p = q;
+		if (!heading) {
+			return { ...p, moveIndex: k, moving: true, run, hx, hy };
+		}
 		const ahead = rounded(pair[0], pair[1], t + 8) ?? q;
 		const behind = rounded(pair[0], pair[1], t - 8) ?? q;
 		if (dist2(ahead, behind) > 1e-6) {
@@ -2164,7 +2169,7 @@ export const floorSpotOf = (tr: Track, t: number): Pt | undefined => {
 	if (si < 0 || !tr.shown[si]![1]) {
 		return undefined;
 	}
-	const s = spotAt(tr, t);
+	const s = spotAt(tr, t, false);
 	return { x: s.x, y: s.y };
 };
 
