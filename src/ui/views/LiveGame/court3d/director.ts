@@ -6522,6 +6522,43 @@ class Director {
 						});
 					}
 				}
+			} else if (
+				guard !== undefined &&
+				!(plan.kind === "block" && plan.blocker === guard)
+			) {
+				// Beaten to the rim, his man is still after him: in a stride
+				// behind him as he goes up, a hand swiped at it too late.
+				const G = this.posOf(guard);
+				if (dist(G, under) < 15) {
+					const away = dist(G, under) > 0.5 ? unitVec(under, G) : back;
+					const w = { x: away.x + back.x, y: away.y + back.y };
+					const L = Math.hypot(w.x, w.y);
+					const u = L > 0.5 ? { x: w.x / L, y: w.y / L } : away;
+					const B = clampPt({ x: under.x + u.x * 2.6, y: under.y + u.y * 2.6 });
+					if ((this.free.get(guard) ?? 0) > gather - 300) {
+						this.cutShort(guard, gather - 300);
+					}
+					const there = this.goBy(
+						guard,
+						B,
+						gather - 300,
+						gather + 380,
+						"run",
+						undefined,
+						BURST,
+					);
+					if (there < gather + 700) {
+						this.act(
+							guard,
+							"reach",
+							Math.max(there - 100, gather + 300),
+							gather + 760,
+							{
+								look: { x: rim.x, y: rim.y },
+							},
+						);
+					}
+				}
 			}
 			this.act(shooter, anim, gather, gather + dur, {
 				face: faceRim,

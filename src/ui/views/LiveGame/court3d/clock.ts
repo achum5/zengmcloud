@@ -110,7 +110,9 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 					{ t: cut, clock: e.clock + (b.actionStart - cut) / 1000, period },
 				);
 			} else if (shown > gap + 0.05 && shown > LEAD_TRUE) {
-				const tail = Math.min(gap, LEAD_TRUE);
+				// (The ball live all the while, it never stops: a little of it
+				// runs down before that too, slower.)
+				const tail = Math.min(live === undefined ? gap : gap * 0.75, LEAD_TRUE);
 				marks.push({
 					t: b.actionStart - tail * 1000,
 					clock: e.clock + tail,
