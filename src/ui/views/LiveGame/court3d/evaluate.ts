@@ -20,6 +20,7 @@ import {
 	bounceAt,
 	dribbleAhead,
 	isGait,
+	carried,
 	holdBall,
 	isMove,
 	lerpPose,
@@ -123,6 +124,8 @@ export type PlayerState = {
 export type Blend = {
 	anim: AnimName;
 	phase: number;
+	// The ball in his hands then: carried as that move carries it.
+	held?: true;
 	dribble?: number;
 	dribbleHand?: Hand;
 	dribbleFrom?: Hand;
@@ -1526,6 +1529,7 @@ const blendInto = (
 		dribble: before.dribble,
 		dribbleHand: before.dribbleHand,
 		...(before.dribbleFrom ? { dribbleFrom: before.dribbleFrom } : {}),
+		...(before.holding && before.grip === undefined ? { held: true } : {}),
 		target: before.target,
 		...(before.mirror ? { mirror: true } : {}),
 		w,
@@ -2190,7 +2194,8 @@ const blendPose = (f: Blend): Pose => {
 		f.target,
 		f.dribbleFrom,
 	);
-	const own = f.mirror ? mirror(as) : as;
+	const m = f.mirror ? mirror(as) : as;
+	const own = f.held ? carried(m, f.anim) : m;
 	const g = f.from;
 	return g && g.w > 0 ? lerpPose(own, blendPose(g), g.w) : own;
 };
@@ -2216,7 +2221,12 @@ export const poseOf = (st: PlayerState): Pose => {
 		st.target,
 		st.dribbleFrom,
 	);
-	const q = st.mirror ? mirror(own) : own;
+	const m = st.mirror ? mirror(own) : own;
+	// The ball in his hands - not just now coming into them - his arms
+	// carry it as the move does (and as the one before did, if he had it
+	// then), so going from the one to the other they ease over too.
+	const carry = st.holding === true && st.grip === undefined;
+	const q = carry ? carried(m, st.anim) : m;
 	const f = st.from;
 	const b = f && f.w > 0 ? blendFrom(q, f) : q;
 	const turned = st.legs ?? 0;
@@ -2392,7 +2402,10 @@ export const handWorld = (
 // The ball in his hands, held the way his move holds it.
 export const heldBall = (st0: PlayerState, body: Body): Pt3 => {
 	const st = withBody(st0, body);
-	return bodyPoint(st, holdBall(body, poseOf(st), st.anim).ball);
+	return bodyPoint(
+		st,
+		holdBall(body, poseOf(st), st.anim, st.grip !== undefined).ball,
+	);
 };
 
 export type BallState = {

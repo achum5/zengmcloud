@@ -513,7 +513,7 @@ const build = (
 	// (Just let go of it, his hands come off where it was.)
 	const held =
 		st.holding || st.grip !== undefined
-			? holdBall(body, q, st.anim)
+			? holdBall(body, q, st.anim, st.grip !== undefined)
 			: undefined;
 	const sk = held
 		? gripped(held.sk, st, body, q)

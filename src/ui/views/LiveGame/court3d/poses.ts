@@ -4886,7 +4886,7 @@ const CARRIES = new Set<AnimName>([
 	"dribbleWalk",
 	"post",
 ]);
-const carried = (q: Pose, anim: AnimName): Pose =>
+export const carried = (q: Pose, anim: AnimName): Pose =>
 	CARRIES.has(anim)
 		? {
 				...q,
@@ -4908,8 +4908,10 @@ export const holdBall = (
 	b: Body,
 	q0: Pose,
 	anim: AnimName,
+	// (Not if his pose has him carrying it already - see poseOf.)
+	carry = true,
 ): { sk: Skeleton; ball: V3 } => {
-	const q = carried(q0, anim);
+	const q = carry ? carried(q0, anim) : q0;
 	const sk = skeleton(b, q);
 	const grip = gripOf(anim);
 	const R = BALL_RADIUS;
