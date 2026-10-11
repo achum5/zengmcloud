@@ -9145,10 +9145,20 @@ class Director {
 				});
 			}
 			const t0 = shot.dunk ? at + 70 : at;
-			const settle = clampPt({
+			let settle = clampPt({
 				x: rim.x - dir * this.rand(1.5, 4),
 				y: 25 + this.rand(-3, 3),
 			});
+			// Not at the feet of the man who put it in, coming down under it:
+			// out the other side of the rim from him.
+			const S = this.posOf(shot.pid);
+			if (dist(settle, S) < 3) {
+				const side = S.y >= 25 ? -1 : 1;
+				settle = clampPt({
+					x: settle.x,
+					y: 25 + side * Math.max(2.5, Math.abs(settle.y - 25)),
+				});
+			}
 			// Out of the net and down to the floor, a bounce, and taken out
 			// (see inboundAfterMake). Slammed, it goes down through the net
 			// hard.
