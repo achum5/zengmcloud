@@ -975,7 +975,9 @@ const build = (
 	leg(sk.legR, 0);
 	leg(sk.legL, 1);
 
-	if (held) {
+	// (Letting go of it, his hands are only coming off where it was: it is
+	// gone from them, drawn where it is.)
+	if (held && st.holding) {
 		add(held.ball, held.ball, [[0, HELD_BALL_R]], BALL, G_BALL);
 	}
 	if (look.outfit?.camera) {
@@ -1060,7 +1062,7 @@ const build = (
 		const mid = P(lerpV(l.mid, l.end, 0.5));
 		return l.end.u > l.root.u + H * 0.08 && mid.depth < headC.depth;
 	});
-	if (held) {
+	if (held && st.holding) {
 		const c = P(held.ball);
 		late.push(
 			held.ball.u > sk.armR.root.u &&
