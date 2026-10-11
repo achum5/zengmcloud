@@ -7,6 +7,7 @@ import type {
 	CourtTimeline,
 	Gesture,
 	Move,
+	Sep,
 	Track,
 } from "./director.ts";
 import { rimX, type Pt, type Pt3, type Side } from "./geometry.ts";
@@ -399,7 +400,10 @@ const runOf = (tr: Track, k: number): Run => {
 
 // How far along a run (feet) he is at t: getting going, on at his pace and
 // pulling up the way a man does (see motion.ts) - worked out once a run.
-const shapes = new WeakMap<Move, { key: string; shape: RunShape }>();
+const shapes = new WeakMap<
+	Move,
+	{ s0: number; s1: number; v0: number; v1: number; shape: RunShape }
+>();
 const alongRun = (run: Run, t: number): number =>
 	alongShape(shapeOf(run), (t - run.s0) / 1000);
 
@@ -465,10 +469,25 @@ const BACK_FTPS = 12.5;
 const DRIFT_FTPS = 9;
 const shapeOf = (run: Run): RunShape => {
 	const { mv, s0, s1, v0, v1 } = run;
-	const key = `${s0}:${s1}:${v0}:${v1}`;
+	const L = lenOf(mv);
 	let got = shapes.get(mv);
-	if (!got || got.key !== key) {
-		got = { key, shape: runShape(lenOf(mv), (s1 - s0) / 1000, v0, v1) };
+	// (Worked out again if the run has changed since: the staging asks
+	// where men are while it is still moving them about.)
+	if (
+		!got ||
+		got.s0 !== s0 ||
+		got.s1 !== s1 ||
+		got.v0 !== v0 ||
+		got.v1 !== v1 ||
+		got.shape.L !== L
+	) {
+		got = {
+			s0,
+			s1,
+			v0,
+			v1,
+			shape: runShape(L, (s1 - s0) / 1000, v0, v1),
+		};
 		shapes.set(mv, got);
 	}
 	return got.shape;
@@ -549,9 +568,60 @@ type Spot = {
 };
 
 // Where he is, eased aside off anybody he would be standing on (see
-// keepApart in director.ts).
-const NUDGE_RAMP = 450;
+// keepApart in director.ts) - and kept off anybody he would still be in (see
+// keepOff).
 const spotAt = (tr: Track, t: number): Spot => {
+	const s = nudgedAt(tr, t);
+	return tr.sep ? keptOff(tr.sep, s, t) : s;
+};
+
+// Kept off a man: the way over, sampled every SEP_MS, eased through the
+// samples (Catmull-Rom) - where that has him, how fast it has him going, and
+// how far it has taken him.
+export const SEP_MS = 50;
+let crAt = 0;
+let crV = 0;
+const catmullRom = (a: number[], i: number, u: number) => {
+	const n = a.length;
+	const p0 = a[Math.max(0, i - 1)]!;
+	const p1 = a[i]!;
+	const p2 = a[Math.min(n - 1, i + 1)]!;
+	const p3 = a[Math.min(n - 1, i + 2)]!;
+	const c1 = 0.5 * (p2 - p0);
+	const c2 = p0 - 2.5 * p1 + 2 * p2 - 0.5 * p3;
+	const c3 = 0.5 * (p3 - p0) + 1.5 * (p1 - p2);
+	crAt = p1 + u * (c1 + u * (c2 + u * c3));
+	crV = ((c1 + u * (2 * c2 + 3 * u * c3)) * 1000) / SEP_MS;
+};
+const keptOff = (list: Sep[], s: Spot, t: number): Spot => {
+	const k = lastIndex(list, t, (x) => x.t0);
+	if (k < 0) {
+		return s;
+	}
+	const { t0, dx, dy, dl } = list[k]!;
+	const f = (t - t0) / SEP_MS;
+	if (f >= dx.length - 1) {
+		return s;
+	}
+	const i = Math.floor(f);
+	const u = f - i;
+	catmullRom(dx, i, u);
+	const x = crAt;
+	const vx = crV;
+	catmullRom(dy, i, u);
+	const y = crAt;
+	const vy = crV;
+	return {
+		...s,
+		x: s.x + x,
+		y: s.y + y,
+		nv: (s.nv ?? 0) + Math.hypot(vx, vy),
+		nd: (s.nd ?? 0) + dl[i]! + (dl[i + 1]! - dl[i]!) * u,
+	};
+};
+
+const NUDGE_RAMP = 450;
+const nudgedAt = (tr: Track, t: number): Spot => {
 	const s = rawSpotAt(tr, t);
 	const list = tr.nudges;
 	if (!list || list.length === 0) {

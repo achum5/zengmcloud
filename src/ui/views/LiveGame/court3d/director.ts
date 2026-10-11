@@ -45,7 +45,9 @@ import {
 	GRAVITY,
 	PASS_TURN,
 	PASS_PICK_UP,
+	SEP_MS,
 	TURN_RATE,
+	floorSpotOf,
 } from "./evaluate.ts";
 import {
 	findShot,
@@ -206,7 +208,12 @@ export type Track = {
 	// Eased aside off a man he would otherwise be standing on (see
 	// keepApart), in order of when each starts.
 	nudges?: Nudge[];
+	// Kept off a man he would still be in (see keepOff), in order.
+	sep?: Sep[];
 };
+// From t0, how far over he is kept (feet), every SEP_MS - and how far that
+// has taken him all told.
+export type Sep = { t0: number; dx: number[]; dy: number[]; dl: number[] };
 // A step aside: from t0 he eases over by (dx, dy), and back by t1 - over
 // `ramp` ms each way (by default, a quick step).
 export type Nudge = {
@@ -12380,8 +12387,10 @@ class Director {
 		const GAIN = 3;
 		// Too short a stretch to follow anybody in (ms).
 		const SHORTEST = 250;
-		// How far apart two of them keep (feet).
+		// How far apart two of them keep (feet) - and how near he lets his
+		// man come before he gives ground.
 		const APART = 3;
+		const GIVE = 2.4;
 		// The longest one run of his path (ms) and how far it bends (radians)
 		// before the next; how fast he must go to set off from standing, and
 		// how slow, once going, is standing again (feet a second).
@@ -12804,6 +12813,19 @@ class Director {
 						const e = Math.hypot(ex, ey);
 						let wx = fx + ex * GAIN;
 						let wy = fy + ey * GAIN;
+						// Up against his man he gives ground, as quick as his feet
+						// let him - never into him (or not for long: see keepOff).
+						{
+							const M = ticks[i]!.man;
+							const mx = p.x - M.x;
+							const my = p.y - M.y;
+							const md = Math.hypot(mx, my);
+							if (md < GIVE) {
+								const k = ((GIVE - md) * GAIN * 2) / Math.max(md, 0.3);
+								wx += mx * k;
+								wy += my * k;
+							}
+						}
 						// Turning and running to cover ground, until he has caught up.
 						running = running ? e > 2.5 : e > 7;
 						const vmax = running ? RUN_MAX : SLIDE_MAX;
@@ -14036,15 +14058,49 @@ class Director {
 		};
 		// Where a man is at any t, and whether he is on the floor (read
 		// straight off his runs, for the few times it is needed).
+		const anyTime = new Map<Track, Reader>();
 		const posAt = (tr: Track, t: number): Pt => {
-			const r: Reader = {
-				tr,
-				move: (u) => lastBy(tr.moves, u, (m) => m.t0),
-				shown: (u) => lastBy(tr.shown, u, (x) => x[0]),
-				act: (u) => lastBy(tr.acts, u, (a) => a.t0),
-				nudge: (u) => lastBy(tr.nudges ?? [], u, (n) => n.t0),
-			};
+			let r = anyTime.get(tr);
+			if (!r) {
+				r = {
+					tr,
+					move: (u) => lastBy(tr.moves, u, (m) => m.t0),
+					shown: (u) => lastBy(tr.shown, u, (x) => x[0]),
+					act: (u) => lastBy(tr.acts, u, (a) => a.t0),
+					nudge: (u) => lastBy(tr.nudges ?? [], u, (n) => n.t0),
+				};
+				anyTime.set(tr, r);
+			}
 			return at(r, t);
+		};
+		// The first of his acts (as listed) going on at t.
+		const byStart = new Map<
+			Track,
+			{ list: { a: Act; i: number }[]; span: number }
+		>();
+		const actAt = (tr: Track, t: number): Act | undefined => {
+			let got = byStart.get(tr);
+			if (!got) {
+				got = {
+					list: tr.acts
+						.map((a, i) => ({ a, i }))
+						.sort((x, y) => x.a.t0 - y.a.t0),
+					span: Math.max(0, ...tr.acts.map((a) => a.t1 - a.t0)),
+				};
+				byStart.set(tr, got);
+			}
+			const { list, span } = got;
+			let first: { a: Act; i: number } | undefined;
+			for (let k = lastBy(list, t, (x) => x.a.t0); k >= 0; k--) {
+				const x = list[k]!;
+				if (t - x.a.t0 > span) {
+					break;
+				}
+				if (x.a.t1 > t && (!first || x.i < first.i)) {
+					first = x;
+				}
+			}
+			return first?.a;
 		};
 		const shownAtT = (tr: Track, t: number) => {
 			const k = lastBy(tr.shown, t, (x) => x[0]);
@@ -14511,7 +14567,7 @@ class Director {
 							if (o.team === r.a.team || !shownAtT(o, t)) {
 								return false;
 							}
-							const act = o.acts.find((a) => a.t0 <= t && a.t1 > t);
+							const act = actAt(o, t);
 							if (!act || !SET.has(act.anim)) {
 								return false;
 							}
@@ -14546,6 +14602,561 @@ class Director {
 					}
 					return out;
 				}, []);
+		}
+	}
+
+	// Never one man drawn in another, however everything before left them:
+	// wherever two would still be in each other at real speed, the one not
+	// holding his ground is kept off him - both a little, if neither is -
+	// eased over a few steps before he gets there and back after, so he
+	// bends his way round rather than going through.
+	private keepOff(fast: [number, number][]) {
+		const DT = SEP_MS;
+		// Center to center (feet): up against each other, no nearer - and in
+		// it together (a screen, a box-out, the post), chest to chest.
+		const APART = 1.45;
+		const TOUCH = 1.25;
+		// How long before he gets to him he starts over, and after he is by
+		// he is back (samples); how smoothly (samples); how many goes at it.
+		const AHEAD = 6;
+		const SOFT = 3;
+		const ROUNDS = 4;
+		// (Eased in and out where the picture hurries on, samples.) Where
+		// they are is asked every few samples.
+		const EDGE = 6;
+		const EVERY = 4;
+		// (How far off where he really is the schedule can have him, feet.)
+		const LOOSE = 3;
+		// Going faster than this (feet a second), he is on the move.
+		const MOVING = 4;
+		// Where he is, he is: the ball in his hands or coming to them, up for
+		// it, at the rim, set in a screen or the post, down on the floor.
+		const FIXED = new Set<AnimName>([
+			"shoot",
+			"setShot",
+			"fade",
+			"hook",
+			"layup",
+			"fingerRoll",
+			"floater",
+			"powerLayup",
+			"scoop",
+			"euroStep",
+			"stepBack",
+			"dunk",
+			"dunk1",
+			"tomahawk",
+			"catch",
+			"pass",
+			"passBounce",
+			"passOverhead",
+			"triple",
+			"jab",
+			"shotFake",
+			"follow",
+			"rebound",
+			"board",
+			"snatch",
+			"pickup",
+			"poke",
+			"strip",
+			"block",
+			"screen",
+			"postUp",
+			"fall",
+			"hurt",
+			"hurtKnee",
+			"hurtAnkle",
+			"hurtHead",
+			"hurtHand",
+			"hurtArm",
+			"kneel",
+			"kneelShoot",
+			"sit",
+		]);
+		const TOGETHER = new Set<AnimName>([
+			"screen",
+			"postUp",
+			"fight",
+			"boxOut",
+			"bump",
+			"reach",
+			"poke",
+			"strip",
+			"block",
+			"contest",
+			"rebound",
+			"board",
+			"snatch",
+			"pickup",
+			"fall",
+		]);
+		const MATES_TOGETHER = new Set<AnimName>([
+			"highFive",
+			"lowFive",
+			"chestBump",
+			"waitFive",
+			"fall",
+			"hurt",
+			"hurtKnee",
+			"hurtAnkle",
+			"hurtHead",
+			"hurtHand",
+			"hurtArm",
+		]);
+		const tracks = [...this.tracks.values()];
+		const N = tracks.length;
+		const live: [number, number][] = [];
+		{
+			let from = 0;
+			for (const [a, b] of [...fast].sort((x, y) => x[0] - y[0])) {
+				if (a > from) {
+					live.push([from, a]);
+				}
+				from = Math.max(from, b);
+			}
+			live.push([from, this.T]);
+		}
+		const doing = (tr: Track, t: number): AnimName | undefined => {
+			for (let k = lastBy(tr.acts, t, (a) => a.t0); k >= 0; k--) {
+				const a = tr.acts[k]!;
+				if (a.t1 > t) {
+					return a.anim;
+				}
+				if (t - a.t0 > 4000) {
+					break;
+				}
+			}
+			return undefined;
+		};
+		const holderAt = (t: number): number | undefined => {
+			const b = this.ball[lastBy(this.ball, t, (x) => x.t0)];
+			return b?.kind === "hold" ? b.pid : undefined;
+		};
+		const offenseAt = (t: number): Side | undefined =>
+			this.poss[lastBy(this.poss, t, (x) => x[0])]?.[1];
+		// Over a few steps either side of him, as far as the most he needs
+		// to be over - and smoothly.
+		const R = 3 * SOFT;
+		const K: number[] = [];
+		for (let d = -R; d <= R; d++) {
+			K.push(Math.exp(-(d * d) / (2 * SOFT * SOFT)));
+		}
+		const kSum = K.reduce((a, b) => a + b, 0);
+		// Added into (ex, ey) round each bunch of samples he was in somebody
+		// at (in order).
+		const spread = (
+			cx: Float64Array,
+			cy: Float64Array,
+			at: number[],
+			ex: Float64Array,
+			ey: Float64Array,
+		) => {
+			const n = cx.length;
+			let k = 0;
+			while (k < at.length) {
+				let e = k;
+				while (e + 1 < at.length && at[e + 1]! - at[e]! <= 2 * (AHEAD + R)) {
+					e++;
+				}
+				const a = Math.max(0, at[k]! - AHEAD - R);
+				const b = Math.min(n - 1, at[e]! + AHEAD + R);
+				const m = b - a + 1;
+				const wx = new Float64Array(m);
+				const wy = new Float64Array(m);
+				for (let s = a; s <= b; s++) {
+					let best = 0;
+					const q1 = Math.min(b, s + AHEAD);
+					for (let q = Math.max(a, s - AHEAD); q <= q1; q++) {
+						const v = cx[q]! * cx[q]! + cy[q]! * cy[q]!;
+						if (v > best) {
+							best = v;
+							wx[s - a] = cx[q]!;
+							wy[s - a] = cy[q]!;
+						}
+					}
+				}
+				for (let s = a; s <= b; s++) {
+					let sx = 0;
+					let sy = 0;
+					for (let d = -R; d <= R; d++) {
+						const q = s + d - a;
+						if (q >= 0 && q < m) {
+							sx += wx[q]! * K[d + R]!;
+							sy += wy[q]! * K[d + R]!;
+						}
+					}
+					ex[s]! += sx / kSum;
+					ey[s]! += sy / kSum;
+				}
+				k = e + 1;
+			}
+		};
+		// Where the schedule has him, if he is out there (see mark): near
+		// enough to say who might be in whom.
+		const roughly = (tr: Track, t: number): Pt | undefined => {
+			const si = lastBy(tr.shown, t, (x) => x[0]);
+			if (si < 0 || !tr.shown[si]![1]) {
+				return undefined;
+			}
+			const m = tr.moves[lastBy(tr.moves, t, (x) => x.t0)];
+			if (!m) {
+				return tr.start;
+			}
+			if (t >= m.t1) {
+				return m.to;
+			}
+			const e = 0.5 - 0.5 * Math.cos((Math.PI * (t - m.t0)) / (m.t1 - m.t0));
+			return {
+				x: m.from.x + (m.to.x - m.from.x) * e,
+				y: m.from.y + (m.to.y - m.from.y) * e,
+			};
+		};
+		const catmull = (
+			p0: number,
+			p1: number,
+			p2: number,
+			p3: number,
+			u: number,
+		) =>
+			p1 +
+			u *
+				(0.5 * (p2 - p0) +
+					u *
+						(p0 -
+							2.5 * p1 +
+							2 * p2 -
+							0.5 * p3 +
+							u * (0.5 * (p3 - p0) + 1.5 * (p1 - p2))));
+		const out = new Map<Track, Sep[]>();
+		for (const [l0, l1] of live) {
+			const n = Math.floor((l1 - l0) / DT) + 1;
+			if (n < 2 * EDGE) {
+				continue;
+			}
+			// Who could be anywhere near anybody, and when: where the schedule
+			// has them (near enough), every few samples.
+			const xs = tracks.map(() => new Float64Array(n));
+			const ys = tracks.map(() => new Float64Array(n));
+			const on = tracks.map(() => new Uint8Array(n));
+			const need = tracks.map(() => new Uint8Array(n));
+			{
+				const near: (Pt | undefined)[] = [];
+				for (let s = 0; s < n; s += EVERY) {
+					const t = l0 + s * DT;
+					for (let i = 0; i < N; i++) {
+						near[i] = roughly(tracks[i]!, t);
+					}
+					for (let i = 0; i < N; i++) {
+						const P = near[i];
+						if (!P) {
+							continue;
+						}
+						for (let j = i + 1; j < N; j++) {
+							const Q = near[j];
+							if (
+								!Q ||
+								Math.abs(P.x - Q.x) > APART + LOOSE ||
+								Math.abs(P.y - Q.y) > APART + LOOSE ||
+								dist(P, Q) > APART + LOOSE
+							) {
+								continue;
+							}
+							const a = Math.max(0, s - 2 * EVERY);
+							const b = Math.min(n - 1, s + 2 * EVERY);
+							need[i]!.fill(1, a, b + 1);
+							need[j]!.fill(1, a, b + 1);
+						}
+					}
+				}
+			}
+			// Where those are, exactly: every few samples asked, the ones
+			// between run through those (Catmull-Rom) - where he is on the
+			// floor all through; asked, at each where he goes on or off it.
+			for (let i = 0; i < N; i++) {
+				const nd = need[i]!;
+				if (!nd.includes(1)) {
+					continue;
+				}
+				const x = xs[i]!;
+				const y = ys[i]!;
+				const o = on[i]!;
+				const asked = new Uint8Array(n);
+				const ask = (s: number) => {
+					asked[s] = 1;
+					const p = floorSpotOf(tracks[i]!, l0 + s * DT);
+					if (p) {
+						x[s] = p.x;
+						y[s] = p.y;
+						o[s] = 1;
+					}
+				};
+				for (let s0 = 0; s0 < n - 1; s0 += EVERY) {
+					const s1 = Math.min(n - 1, s0 + EVERY);
+					let any = false;
+					for (let s = s0; s <= s1 && !any; s++) {
+						any = nd[s] === 1;
+					}
+					if (!any) {
+						continue;
+					}
+					if (!asked[s0]) {
+						ask(s0);
+					}
+					ask(s1);
+					if (!o[s0] || !o[s1]) {
+						for (let s = s0 + 1; s < s1; s++) {
+							ask(s);
+						}
+						continue;
+					}
+					const sp = s0 - EVERY >= 0 && o[s0 - EVERY] ? s0 - EVERY : s0;
+					let sn = s1;
+					if (s1 + EVERY < n) {
+						if (!asked[s1 + EVERY]) {
+							ask(s1 + EVERY);
+						}
+						if (o[s1 + EVERY]) {
+							sn = s1 + EVERY;
+						}
+					}
+					for (let s = s0 + 1; s < s1; s++) {
+						const u = (s - s0) / (s1 - s0);
+						x[s] = catmull(x[sp]!, x[s0]!, x[s1]!, x[sn]!, u);
+						y[s] = catmull(y[sp]!, y[s0]!, y[s1]!, y[sn]!, u);
+						o[s] = 1;
+					}
+				}
+			}
+			// Who is out there, sample by sample.
+			const floor: number[][] = [];
+			for (let s = 0; s < n; s++) {
+				const list: number[] = [];
+				for (let i = 0; i < N; i++) {
+					if (on[i]![s]) {
+						list.push(i);
+					}
+				}
+				floor.push(list);
+			}
+			// What each is doing, asked only of men in each other.
+			const acts = new Map<number, AnimName | undefined>();
+			const actOf = (i: number, s: number) => {
+				const key = i * n + s;
+				if (!acts.has(key)) {
+					acts.set(key, doing(tracks[i]!, l0 + s * DT));
+				}
+				return acts.get(key);
+			};
+			const ox = tracks.map(() => new Float64Array(n));
+			const oy = tracks.map(() => new Float64Array(n));
+			const moved = new Set<number>();
+			for (let round = 0; round < ROUNDS; round++) {
+				const cx = new Map<number, Float64Array>();
+				const cy = new Map<number, Float64Array>();
+				const cat = new Map<number, number[]>();
+				const push = (i: number, s: number, x: number, y: number) => {
+					let ax = cx.get(i);
+					let ay = cy.get(i);
+					let at = cat.get(i);
+					if (!ax || !ay || !at) {
+						ax = new Float64Array(n);
+						ay = new Float64Array(n);
+						at = [];
+						cx.set(i, ax);
+						cy.set(i, ay);
+						cat.set(i, at);
+					}
+					if (at.at(-1) !== s) {
+						at.push(s);
+					}
+					// On the move, he goes round him - over across the way he
+					// is going, never on ahead or back (which would only have
+					// him going faster or slower than his legs).
+					const p = Math.max(0, s - 1);
+					const q = Math.min(n - 1, s + 1);
+					const vx = xs[i]![q]! - xs[i]![p]!;
+					const vy = ys[i]![q]! - ys[i]![p]!;
+					const v = Math.hypot(vx, vy);
+					if (v > (MOVING * (q - p) * DT) / 1000) {
+						const cx = -vy / v;
+						const cy = vx / v;
+						const along = x * cx + y * cy;
+						const sg =
+							Math.abs(along) > 0.01 ? Math.sign(along) : i % 2 ? 1 : -1;
+						const k = Math.hypot(x, y) * sg;
+						x = cx * k;
+						y = cy * k;
+					}
+					ax[s]! += x;
+					ay[s]! += y;
+				};
+				for (let s = 0; s < n; s++) {
+					const t = l0 + s * DT;
+					let holder: number | null | undefined = null;
+					let off: Side | undefined | null = null;
+					const L = floor[s]!;
+					for (let a = 0; a < L.length; a++) {
+						const i = L[a]!;
+						const xi = xs[i]![s]! + ox[i]![s]!;
+						const yi = ys[i]![s]! + oy[i]![s]!;
+						const still = ox[i]![s] === 0 && oy[i]![s] === 0;
+						for (let b = a + 1; b < L.length; b++) {
+							const j = L[b]!;
+							// (Neither kept off anybody yet, two found clear the
+							// first time through still are.)
+							if (round > 0 && still && ox[j]![s] === 0 && oy[j]![s] === 0) {
+								continue;
+							}
+							const ddx = xi - (xs[j]![s]! + ox[j]![s]!);
+							const ddy = yi - (ys[j]![s]! + oy[j]![s]!);
+							if (Math.abs(ddx) >= APART || Math.abs(ddy) >= APART) {
+								continue;
+							}
+							const d = Math.hypot(ddx, ddy);
+							if (d >= APART) {
+								continue;
+							}
+							const A = tracks[i]!;
+							const B = tracks[j]!;
+							const mates = A.team === B.team;
+							const aa = actOf(i, s);
+							const ab = actOf(j, s);
+							if (
+								mates &&
+								((aa !== undefined && MATES_TOGETHER.has(aa)) ||
+									(ab !== undefined && MATES_TOGETHER.has(ab)) ||
+									(Math.hypot(xi - benchX(A.team), yi - HUDDLE_Y) < 4.5 &&
+										Math.hypot(xi - ddx - benchX(A.team), yi - ddy - HUDDLE_Y) <
+											4.5))
+							) {
+								continue;
+							}
+							const lim =
+								!mates &&
+								((aa !== undefined && TOGETHER.has(aa)) ||
+									(ab !== undefined && TOGETHER.has(ab)))
+									? TOUCH
+									: APART;
+							if (d >= lim) {
+								continue;
+							}
+							// Who gives way, and how much.
+							if (holder === null) {
+								holder = holderAt(t);
+								off = offenseAt(t);
+							}
+							const give = (tr: Track, act: AnimName | undefined) =>
+								tr.pid === holder || (act !== undefined && FIXED.has(act))
+									? 0
+									: act === "contest"
+										? 0.3
+										: tr.team === off
+											? 0.5
+											: 1;
+							const ga = give(A, aa);
+							const gb = give(B, ab);
+							if (ga + gb === 0) {
+								continue;
+							}
+							let ux: number;
+							let uy: number;
+							if (d > 0.05) {
+								ux = ddx / d;
+								uy = ddy / d;
+							} else {
+								// Right on him: off to the side of the way they pass,
+								// the same way every time.
+								const p = Math.max(0, s - 1);
+								const q = Math.min(n - 1, s + 1);
+								const rx = xs[i]![q]! - xs[i]![p]! - (xs[j]![q]! - xs[j]![p]!);
+								const ry = ys[i]![q]! - ys[i]![p]! - (ys[j]![q]! - ys[j]![p]!);
+								const r = Math.hypot(rx, ry);
+								const sg = A.pid > B.pid ? 1 : -1;
+								ux = r > 0.01 ? (-ry / r) * sg : 0;
+								uy = r > 0.01 ? (rx / r) * sg : sg;
+							}
+							const short = lim - d + 0.05;
+							const fa = ga / (ga + gb);
+							if (fa > 0) {
+								push(i, s, ux * short * fa, uy * short * fa);
+							}
+							if (fa < 1) {
+								push(j, s, -ux * short * (1 - fa), -uy * short * (1 - fa));
+							}
+						}
+					}
+				}
+				if (cx.size === 0) {
+					break;
+				}
+				for (const [i, ax] of cx) {
+					spread(ax, cy.get(i)!, cat.get(i)!, ox[i]!, oy[i]!);
+					moved.add(i);
+				}
+			}
+			// Back to where he was by where the picture hurries on.
+			for (const i of moved) {
+				const ex = ox[i]!;
+				const ey = oy[i]!;
+				for (let s = 0; s < n; s++) {
+					const a = l0 > 0 ? s / EDGE : 1;
+					const b = l1 < this.T ? (n - 1 - s) / EDGE : 1;
+					const u = Math.min(1, a, b);
+					if (u < 1) {
+						const w = u * u * (3 - 2 * u);
+						ex[s]! *= w;
+						ey[s]! *= w;
+					}
+				}
+				// Kept as the stretches he is over at all, from and back to
+				// where he was.
+				const list = out.get(tracks[i]!) ?? [];
+				let s = 0;
+				while (s < n) {
+					if (Math.abs(ex[s]!) < 0.005 && Math.abs(ey[s]!) < 0.005) {
+						s++;
+						continue;
+					}
+					const a = Math.max(0, s - 1);
+					let b = s;
+					let quiet = 0;
+					while (b + 1 < n && quiet < 2 * AHEAD) {
+						b++;
+						quiet =
+							Math.abs(ex[b]!) < 0.005 && Math.abs(ey[b]!) < 0.005
+								? quiet + 1
+								: 0;
+					}
+					const dx: number[] = [];
+					const dy: number[] = [];
+					const dl: number[] = [];
+					let len = 0;
+					for (let q = a; q <= b; q++) {
+						const x = Math.round(ex[q]! * 1000) / 1000;
+						const y = Math.round(ey[q]! * 1000) / 1000;
+						if (dx.length > 0) {
+							len += Math.hypot(x - dx.at(-1)!, y - dy.at(-1)!);
+						}
+						dx.push(x);
+						dy.push(y);
+						dl.push(Math.round(len * 1000) / 1000);
+					}
+					// (Ending back where he was.)
+					dx.push(0);
+					dy.push(0);
+					len += Math.hypot(dx.at(-2)!, dy.at(-2)!);
+					dl.push(Math.round(len * 1000) / 1000);
+					list.push({ t0: l0 + a * DT, dx, dy, dl });
+					s = b + 1;
+				}
+				out.set(tracks[i]!, list);
+			}
+		}
+		for (const [tr, list] of out) {
+			if (list.length > 0) {
+				tr.sep = list.sort((a, b) => a.t0 - b.t0);
+			}
 		}
 	}
 
@@ -14939,6 +15550,7 @@ class Director {
 		this.keepApart(fast);
 		this.passBy(fast);
 		this.aroundTheMan(fast);
+		this.keepOff(fast);
 		// A look round the building runs on to the picture's next cut when
 		// that comes soon after (the substitutions over a timeout, the walk
 		// out for the next period), so the game picks up at a cut.

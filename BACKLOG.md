@@ -238,7 +238,10 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   every joint through whole games, with every jump it found smoothed out -
   arm gestures easing in and out, hands closing on the ball after a catch,
   the on-ball defender's hands trading smoothly, strides and hips carried
-  through run to run - about five times fewer pops.)
+  through run to run - about five times fewer pops. Then bodies: nobody
+  runs through anybody any more - a beaten defender rides the driver's hip,
+  and wherever two would still meet, one bends round the other; about
+  fifteen times less time with one man drawn inside another.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like

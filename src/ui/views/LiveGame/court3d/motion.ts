@@ -47,20 +47,6 @@ export type RunShape = {
 	L: number;
 };
 
-const covered = (T: number, v0: number, v1: number, vc: number, k: number) => {
-	const ta = ramp(v0, vc, k);
-	const td = ramp(vc, v1, k);
-	return {
-		ta,
-		td,
-		fits: ta + td <= T + 1e-9,
-		L:
-			((v0 + vc) / 2) * ta +
-			vc * Math.max(0, T - ta - td) +
-			((vc + v1) / 2) * td,
-	};
-};
-
 // The shape of a run L feet long taking T seconds, from pace v0 to pace v1:
 // the pace he cruises at between his ramps, found by trying them out - at
 // the usual push if that gets him there in time, harder if it has to be.
@@ -71,11 +57,20 @@ export const runShape = (L: number, T: number, v0 = 0, v1 = 0): RunShape => {
 		return { T: Math.max(T, 0.001), v0, v1, vc: 0, ta: 0, td: 0, L };
 	}
 	const STEPS = 80;
-	const fits = (vc: number, k: number) => covered(T, v0, v1, vc, k).fits;
-	const far = (vc: number, k: number) => covered(T, v0, v1, vc, k).L;
+	const fits = (vc: number, k: number) =>
+		ramp(v0, vc, k) + ramp(vc, v1, k) <= T + 1e-9;
+	const far = (vc: number, k: number) => {
+		const ta = ramp(v0, vc, k);
+		const td = ramp(vc, v1, k);
+		return (
+			((v0 + vc) / 2) * ta +
+			vc * Math.max(0, T - ta - td) +
+			((vc + v1) / 2) * td
+		);
+	};
 	// Between a cruise that fits (a) and one that doesn't (b), the edge.
 	const edge = (a: number, b: number, k: number) => {
-		for (let n = 0; n < 40; n++) {
+		for (let n = 0; n < 28; n++) {
 			const m = (a + b) / 2;
 			if (fits(m, k)) {
 				a = m;
@@ -109,11 +104,15 @@ export const runShape = (L: number, T: number, v0 = 0, v1 = 0): RunShape => {
 			last < STEPS
 				? edge((hi * last) / STEPS, (hi * (last + 1)) / STEPS, k)
 				: hi;
+		// Too little way even easing right off: he has to push harder.
+		if (far(slow, k) > L + 1e-6) {
+			continue;
+		}
 		// The cruise that gets him farthest in the time - past it, the ramps
 		// up to it and down from it eat more than it gives.
 		let p = slow;
 		let q = fast;
-		for (let n = 0; n < 60; n++) {
+		for (let n = 0; n < 40; n++) {
 			const m1 = p + (q - p) / 3;
 			const m2 = q - (q - p) / 3;
 			if (far(m1, k) < far(m2, k)) {
@@ -123,14 +122,13 @@ export const runShape = (L: number, T: number, v0 = 0, v1 = 0): RunShape => {
 			}
 		}
 		const best = (p + q) / 2;
-		// Too far to get even so, or too little way even easing right off:
-		// he has to push harder.
-		if (far(best, k) < L - 1e-6 || far(slow, k) > L + 1e-6) {
+		// Too far to get even so: he has to push harder.
+		if (far(best, k) < L - 1e-6) {
 			continue;
 		}
 		let a = slow;
 		let b = best;
-		for (let n = 0; n < 40; n++) {
+		for (let n = 0; n < 30; n++) {
 			const m = (a + b) / 2;
 			if (far(m, k) < L) {
 				a = m;
@@ -138,8 +136,7 @@ export const runShape = (L: number, T: number, v0 = 0, v1 = 0): RunShape => {
 				b = m;
 			}
 		}
-		const c = covered(T, v0, v1, b, k);
-		return { T, v0, v1, vc: b, ta: c.ta, td: c.td, L };
+		return { T, v0, v1, vc: b, ta: ramp(v0, b, k), td: ramp(b, v1, k), L };
 	}
 	// Nothing fits: straight there at an even pace.
 	return { T, v0: L / T, v1: L / T, vc: L / T, ta: 0, td: 0, L };
