@@ -853,7 +853,17 @@ const targetAt = (tl: CourtTimeline, pid: number, t: number): number => {
 			if (s.to.pid !== pid || t >= s.t1) {
 				return 0;
 			}
-			const u = clamp01((t - from + TARGET_LEAD) / TARGET_RAMP);
+			// From when it set off his way - and if that was knocked out of
+			// the air on its way to somebody else, he never saw it coming.
+			let j = k;
+			for (; j > 0; j--) {
+				const x = tl.ball[j - 1]!;
+				if (x.kind !== "fly" || "pid" in x.to) {
+					break;
+				}
+			}
+			const lead = tl.ball[j - 1]?.kind === "fly" ? 0 : TARGET_LEAD;
+			const u = clamp01((t - tl.ball[j]!.t0 + lead) / TARGET_RAMP);
 			return u * u * (3 - 2 * u);
 		}
 	}
@@ -2104,7 +2114,7 @@ const armNow = (
 // smoothly from one to the next - an arm a beat behind its reason, easing
 // in and out, the way a man's are.
 const ARM_GRID = 50;
-const ARM_TAPS = 2;
+const ARM_TAPS = 4;
 const ARM_KEEP = 64;
 const armGrids = new WeakMap<
 	CourtTimeline,
