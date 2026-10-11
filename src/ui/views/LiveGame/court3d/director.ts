@@ -14629,6 +14629,12 @@ class Director {
 		const LOOSE = 3;
 		// Going faster than this (feet a second), he is on the move.
 		const MOVING = 4;
+		// His middle no nearer the ball's than this (feet) - and how high
+		// off the floor (feet) the ball is in his way.
+		const BALL_APART = 1.05;
+		const BALL_HIGH = 6.3;
+		// The man who gets it to it, this long (ms) before it is his.
+		const GATHER_MS = 400;
 		// Where he is, he is: the ball in his hands or coming to them, up for
 		// it, at the rim, set in a screen or the post, down on the floor.
 		const FIXED = new Set<AnimName>([
@@ -14812,6 +14818,92 @@ class Director {
 				y: m.from.y + (m.to.y - m.from.y) * e,
 			};
 		};
+		// Where the ball is at t, if it is loose (or thrown to a spot, not
+		// to a man) and low enough to be in a man's way - who gets it next,
+		// and who let it go.
+		const nextHolder = new Map<number, { pid: number; t: number }>();
+		const handedFrom = new Map<number, Pt>();
+		const looseAt = (
+			t: number,
+		): { x: number; y: number; next: number; by: number } | undefined => {
+			const k = lastBy(this.ball, t, (x) => x.t0);
+			const seg = this.ball[k];
+			if (
+				!seg ||
+				seg.kind === "hold" ||
+				(seg.kind === "fly" && "pid" in seg.to)
+			) {
+				return undefined;
+			}
+			let got = nextHolder.get(k);
+			if (got === undefined) {
+				got = { pid: -1, t: Infinity };
+				for (let q = k + 1; q < this.ball.length; q++) {
+					const b = this.ball[q]!;
+					if (b.kind === "hold") {
+						got = { pid: b.pid, t: b.t0 };
+						break;
+					}
+				}
+				nextHolder.set(k, got);
+			}
+			// (The man who gets it is only in its way as he gathers it.)
+			const next = got.t - t < GATHER_MS ? got.pid : -1;
+			if (seg.kind === "rest") {
+				return { x: seg.at.x, y: seg.at.y, next, by: -1 };
+			}
+			if (seg.kind === "path") {
+				const q = playAt(seg.pts, Math.min(t, seg.t1) - seg.t0);
+				return q.z < BALL_HIGH ? { x: q.x, y: q.y, next, by: -1 } : undefined;
+			}
+			if (seg.kind === "fly") {
+				// Out of his hands at about his waist, up and down under
+				// gravity (see evalBall).
+				const tr = "pid" in seg.from ? this.track(seg.from.pid) : undefined;
+				const A =
+					"pid" in seg.from
+						? {
+								...((tr && floorSpotOf(tr, seg.t0)) ??
+									this.posAt(seg.from.pid, seg.t0)),
+								z: 4.5,
+							}
+						: seg.from;
+				const B = seg.to;
+				if ("pid" in B) {
+					return undefined;
+				}
+				const T = Math.max(0.001, (seg.t1 - seg.t0) / 1000);
+				const tau = Math.min(T, Math.max(0, (t - seg.t0) / 1000));
+				const vz = (B.z - A.z) / T + 0.5 * GRAVITY * T;
+				const z = A.z + vz * tau - 0.5 * GRAVITY * tau * tau;
+				if (z >= BALL_HIGH) {
+					return undefined;
+				}
+				const u = tau / T;
+				return {
+					x: A.x + (B.x - A.x) * u,
+					y: A.y + (B.y - A.y) * u,
+					next,
+					by: "pid" in seg.from ? seg.from.pid : -1,
+				};
+			}
+			// (Out of a man's hands, it drops from where he had it.)
+			let from = handedFrom.get(k);
+			if (!from) {
+				const prev = this.ball[k - 1];
+				const tr = prev?.kind === "hold" ? this.track(prev.pid) : undefined;
+				from = (tr && floorSpotOf(tr, seg.t0)) ?? seg.from;
+				handedFrom.set(k, from);
+			}
+			const u = Math.min(1, Math.max(0, (t - seg.t0) / (seg.t1 - seg.t0)));
+			const roll = 1 - (1 - Math.min(1, u / 0.85)) ** 1.5;
+			return {
+				x: from.x + (seg.to.x - from.x) * roll,
+				y: from.y + (seg.to.y - from.y) * roll,
+				next,
+				by: -1,
+			};
+		};
 		const catmull = (
 			p0: number,
 			p1: number,
@@ -14834,6 +14926,23 @@ class Director {
 			if (n < 2 * EDGE) {
 				continue;
 			}
+			// The ball loose and low - bouncing, rolling, lying there, down
+			// through the net - and who gets to it next.
+			const lx = new Float64Array(n);
+			const ly = new Float64Array(n);
+			const lon = new Uint8Array(n);
+			const lfor = new Float64Array(n).fill(-1);
+			const lby = new Float64Array(n).fill(-1);
+			for (let s = 0; s < n; s++) {
+				const B = looseAt(l0 + s * DT);
+				if (B) {
+					lx[s] = B.x;
+					ly[s] = B.y;
+					lon[s] = 1;
+					lfor[s] = B.next;
+					lby[s] = B.by;
+				}
+			}
 			// Who could be anywhere near anybody, and when: where the schedule
 			// has them (near enough), every few samples.
 			const xs = tracks.map(() => new Float64Array(n));
@@ -14851,6 +14960,16 @@ class Director {
 						const P = near[i];
 						if (!P) {
 							continue;
+						}
+						if (
+							lon[s] &&
+							Math.hypot(P.x - lx[s]!, P.y - ly[s]!) < BALL_APART + LOOSE
+						) {
+							need[i]!.fill(
+								1,
+								Math.max(0, s - 2 * EVERY),
+								Math.min(n - 1, s + 2 * EVERY) + 1,
+							);
 						}
 						for (let j = i + 1; j < N; j++) {
 							const Q = near[j];
@@ -14996,6 +15115,34 @@ class Director {
 					let holder: number | null | undefined = null;
 					let off: Side | undefined | null = null;
 					const L = floor[s]!;
+					// Nobody stands in the ball, either (but the man who gets
+					// to it next, or anybody playing it).
+					if (lon[s]) {
+						for (const i of L) {
+							if (
+								tracks[i]!.pid === lfor[s] ||
+								tracks[i]!.pid === lby[s] ||
+								(round > 0 && ox[i]![s] === 0 && oy[i]![s] === 0)
+							) {
+								continue;
+							}
+							const ddx = xs[i]![s]! + ox[i]![s]! - lx[s]!;
+							const ddy = ys[i]![s]! + oy[i]![s]! - ly[s]!;
+							const d = Math.hypot(ddx, ddy);
+							if (d >= BALL_APART) {
+								continue;
+							}
+							const act = actOf(i, s);
+							if (act !== undefined && (FIXED.has(act) || TOGETHER.has(act))) {
+								continue;
+							}
+							const sg = tracks[i]!.pid % 2 ? 1 : -1;
+							const ux = d > 0.05 ? ddx / d : 0;
+							const uy = d > 0.05 ? ddy / d : sg;
+							const short = BALL_APART - d + 0.05;
+							push(i, s, ux * short, uy * short);
+						}
+					}
 					for (let a = 0; a < L.length; a++) {
 						const i = L[a]!;
 						const xi = xs[i]![s]! + ox[i]![s]!;

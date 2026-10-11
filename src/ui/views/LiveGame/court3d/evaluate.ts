@@ -371,10 +371,36 @@ const plantedBetween = (
 // A run as he really runs it: when it starts and ends (sharing any pause
 // with a run it joins), and how fast he is going at each end.
 type Run = { mv: Move; s0: number; s1: number; v0: number; v1: number };
+// (Worked out once a run - again only if the runs either side of it, or its
+// times, are not what they were.)
+const runs = new WeakMap<
+	Move,
+	{ prev?: Move; next?: Move; t0: number; t1: number; run: Run }
+>();
 const runOf = (tr: Track, k: number): Run => {
 	const mv = tr.moves[k]!;
 	const prev = tr.moves[k - 1];
 	const next = tr.moves[k + 1];
+	const got = runs.get(mv);
+	if (
+		got &&
+		got.prev === prev &&
+		got.next === next &&
+		got.t0 === mv.t0 &&
+		got.t1 === mv.t1
+	) {
+		return got.run;
+	}
+	const run = workRun(tr, mv, prev, next);
+	runs.set(mv, { prev, next, t0: mv.t0, t1: mv.t1, run });
+	return run;
+};
+const workRun = (
+	tr: Track,
+	mv: Move,
+	prev: Move | undefined,
+	next: Move | undefined,
+): Run => {
 	// Going as fast as his path was worked out to have him, where it was -
 	// otherwise as fast as the turn into it from the last run allows.
 	const vIn =

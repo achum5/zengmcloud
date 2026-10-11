@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
-import { floorSpotOf } from "./evaluate.ts";
+import { evalBall, floorSpotOf } from "./evaluate.ts";
+import { bodyOf } from "./poses.ts";
 import { compile } from "./testGame.ts";
 
 // Wherever two men would end up in each other at real speed, one is kept off
@@ -34,6 +35,35 @@ describe("keeping bodies apart", () => {
 		// the runs fell, about one in twenty.)
 		assert.isAbove(live, 1000);
 		assert.isBelow(inside / live, 0.01);
+	});
+
+	test("a loose ball bounces round a man, not through him", () => {
+		const { tl } = compile("apart", 80);
+		const body = bodyOf();
+		const tracks = [...tl.tracks.values()];
+		const fast = (t: number) => tl.fast.some(([a, b]) => t >= a && t < b);
+		let loose = 0;
+		let inside = 0;
+		for (let t = 0; t < tl.end; t += 50) {
+			const seg = tl.ball.findLast((b) => b.t0 <= t);
+			if (fast(t) || (seg?.kind !== "bounce" && seg?.kind !== "rest")) {
+				continue;
+			}
+			const B = evalBall(tl, t, () => body);
+			if (B.z > 6.3) {
+				continue;
+			}
+			loose += 1;
+			for (const tr of tracks) {
+				const p = floorSpotOf(tr, t);
+				if (p && Math.hypot(p.x - B.x, p.y - B.y) < 0.6) {
+					inside += 1;
+				}
+			}
+		}
+		// (Left to where it fell, about one in fifty.)
+		assert.isAbove(loose, 100);
+		assert.isBelow(inside / loose, 0.008, `${inside} of ${loose}`);
 	});
 
 	test("kept off a man, he eases over and back - no jump", () => {
