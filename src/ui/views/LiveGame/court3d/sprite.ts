@@ -196,11 +196,21 @@ const stepBlend = (f: Blend, w: number, k: Steps): Blend => {
 		...(f.legs === undefined
 			? {}
 			: { legs: Math.round(f.legs / k.legs) * k.legs }),
+		...(f.pivot === undefined
+			? {}
+			: {
+					pivot: [
+						Math.round(f.pivot[0] / k.legs) * k.legs,
+						Math.round(f.pivot[1] / k.legs) * k.legs,
+						Math.round(f.pivot[2] * k.blend) / k.blend,
+						Math.round(f.pivot[3] * k.blend) / k.blend,
+					] as [number, number, number, number],
+				}),
 		...(g && gw > 0 ? { from: stepBlend(g, gw, k) } : {}),
 	};
 };
 const blendKey = (f: Blend): string =>
-	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.dribbleFrom ?? ""}${f.held ? "h" : ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.legs ?? ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
+	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.dribbleFrom ?? ""}${f.held ? "h" : ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.legs ?? ""}~${f.pivot ?? ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
 
 // The pose he is drawn in: his own, stepped to the sprite's frames and turns
 // - and, easing out of his last move, a few steps of that.
@@ -214,6 +224,16 @@ const stepped = (st: PlayerState, k: Steps) => {
 		// steps.
 		legs:
 			st.legs === undefined ? undefined : Math.round(st.legs / k.legs) * k.legs,
+		// Each leg turned on its own, and a foot up stepping round, the same.
+		pivot:
+			st.pivot === undefined
+				? undefined
+				: ([
+						Math.round(st.pivot[0] / k.legs) * k.legs,
+						Math.round(st.pivot[1] / k.legs) * k.legs,
+						Math.round(st.pivot[2] * k.blend) / k.blend,
+						Math.round(st.pivot[3] * k.blend) / k.blend,
+					] as [number, number, number, number]),
 		grip:
 			st.grip === undefined
 				? undefined
@@ -265,7 +285,7 @@ export const drawSprite = (
 		const a = pose.arm;
 		key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}|${pose.turn}|${Math.round(
 			Math.log(k) / Math.log(1.04),
-		)}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}|${pose.target ?? ""}${
+		)}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.pivot ? `p${pose.pivot}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}|${pose.target ?? ""}${
 			f ? `|${blendKey(f)}` : ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 		const kept = cache.kept.get(key);
@@ -297,6 +317,7 @@ export const drawSprite = (
 		from: pose.from,
 		arm: pose.arm,
 		legs: pose.legs,
+		pivot: pose.pivot,
 		grip: pose.grip,
 	};
 	const w = Math.max(4, Math.ceil((right - left) / px) + 2);

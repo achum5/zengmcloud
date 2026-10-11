@@ -52,6 +52,10 @@ export type Pose = {
 	// His hips and legs turned under him from the way he faces (degrees,
 	// round to his left positive): going one way while he looks another.
 	legs: number;
+	// And each leg on its own (added to that): turning where he stands, the
+	// foot he turns on left where it was, the other stepping round.
+	spinN: number;
+	spinF: number;
 	// His shoulders turned on his hips about his spine (degrees, round to his
 	// left positive), and his upper body tipped to his side (degrees, his left
 	// shoulder down positive): a crossover's dip, an arm wrapped behind him.
@@ -82,6 +86,8 @@ const BASE: Pose = {
 	toeN: 0,
 	toeF: 0,
 	legs: 0,
+	spinN: 0,
+	spinF: 0,
 	twist: 0,
 	tilt: 0,
 };
@@ -98,7 +104,14 @@ const SIDES: [keyof Pose, keyof Pose][] = [
 	["toeN", "toeF"],
 ];
 export const mirror = (q: Pose): Pose => {
-	const out = { ...q, twist: -q.twist, tilt: -q.tilt, legs: -q.legs };
+	const out = {
+		...q,
+		twist: -q.twist,
+		tilt: -q.tilt,
+		legs: -q.legs,
+		spinN: -q.spinF,
+		spinF: -q.spinN,
+	};
 	for (const [n, f] of SIDES) {
 		out[n] = q[f];
 		out[f] = q[n];
@@ -4646,22 +4659,28 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 			flat + (l.end.u - toe - flat) * Math.sin(point),
 		);
 	}
-	// His legs turned under him, round his hips.
-	if (q.legs !== 0) {
-		const c = Math.cos(q.legs * rad);
-		const sn = Math.sin(q.legs * rad);
+	// His legs turned under him, round his hips - each with its own turn on
+	// top.
+	for (const [l, own] of [
+		[legR, q.spinN],
+		[legL, q.spinF],
+	] as const) {
+		const turn = q.legs + own;
+		if (turn === 0) {
+			continue;
+		}
+		const c = Math.cos(turn * rad);
+		const sn = Math.sin(turn * rad);
 		const spin = (p: V3) => {
 			const f = p.f * c - p.s * sn;
 			p.s = p.f * sn + p.s * c;
 			p.f = f;
 		};
-		for (const l of [legR, legL] as Limb[]) {
-			spin(l.root);
-			spin(l.mid);
-			spin(l.end);
-			if (l.tip) {
-				spin(l.tip);
-			}
+		spin(l.root);
+		spin(l.mid);
+		spin(l.end);
+		if ((l as Limb).tip) {
+			spin((l as Limb).tip!);
 		}
 	}
 	const L = q.lean * rad;

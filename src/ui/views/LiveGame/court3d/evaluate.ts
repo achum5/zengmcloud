@@ -110,6 +110,10 @@ export type PlayerState = {
 	mirror?: boolean;
 	// His legs turned under him from the way he faces (degrees - see Pose).
 	legs?: number;
+	// Turning where he stands: each leg's own turn (degrees - see Pose) and
+	// how far each foot is up off the floor stepping round (0 to 1) - right,
+	// left; turn, turn, up, up.
+	pivot?: [number, number, number, number];
 	// Just after a change of move: the last move as it was when it changed,
 	// and how much of his pose is still that (1 all, 0 none) - and, if it
 	// differs, how much of his arms and the turn of his shoulders - see
@@ -133,8 +137,9 @@ export type Blend = {
 	mirror?: boolean;
 	w: number;
 	arms?: number;
-	// His legs turned under him as it changed (see legs).
+	// His legs turned under him as it changed (see legs, pivot).
 	legs?: number;
+	pivot?: [number, number, number, number];
 	// Changed again while still easing out of the move before: that one,
 	// and how much of it was still in him then.
 	from?: Blend;
@@ -1658,6 +1663,15 @@ const blendInto = (
 	// they showed, part the way out of the move before, if they were).
 	const own = legsOf(spotAt(tr, lo), yawAt(tl, tr, lo), before.anim, lo);
 	const legs = prior ? own + ((prior.legs ?? 0) - own) * prior.w : own;
+	const ownPv = pivotOf(tl, tr, yawAt(tl, tr, lo), before, lo);
+	const pv: [number, number, number, number] | undefined =
+		prior?.pivot || ownPv
+			? ([0, 1, 2, 3].map(
+					(i) =>
+						(ownPv?.[i] ?? 0) +
+						((prior?.pivot?.[i] ?? 0) - (ownPv?.[i] ?? 0)) * (prior?.w ?? 0),
+				) as [number, number, number, number])
+			: undefined;
 	return {
 		anim: before.anim,
 		phase: before.phase,
@@ -1669,6 +1683,7 @@ const blendInto = (
 		...(before.mirror ? { mirror: true } : {}),
 		w,
 		...(legs !== 0 ? { legs } : {}),
+		...(pv ? { pivot: pv } : {}),
 		...(isMove(anim) ? { arms: ease(MOVE_ARMS_MS) } : {}),
 		...(prior ? { from: prior } : {}),
 	};
@@ -2250,6 +2265,7 @@ export const evalPlayer = (
 	const from = shown ? blendInto(tl, tr, t, now) : undefined;
 	const yaw = yawAt(tl, tr, t);
 	const legs = legsOf(here, yaw, now.anim, t);
+	const pivot = shown ? pivotOf(tl, tr, yaw, now, t) : undefined;
 	const arm = shown ? easedArm(tl, tr, t) : undefined;
 	return {
 		pid,
@@ -2261,6 +2277,7 @@ export const evalPlayer = (
 		moving: here.moving,
 		...now,
 		...(legs !== 0 ? { legs } : {}),
+		...(pivot ? { pivot } : {}),
 		...(from ? { from } : {}),
 		...(arm ? { arm } : {}),
 	};
@@ -2308,6 +2325,109 @@ const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
 	);
 	// (His left is the floor's clockwise.)
 	return -Math.sign(off) * turn * ease;
+};
+
+// TURNING WHERE HE STANDS.
+//
+// Turned round on the spot, his feet don't spin under him with the rest of
+// him: one stays where it was, turned on, while the other steps round after
+// him - every PIVOT_MS the other way about, a PIVOT_STEP_MS step up off the
+// floor to where he will be facing by the end of it. (Only as far as hips
+// turn: past that, the planted foot goes round with him.)
+const PIVOT_MS = 200;
+const PIVOT_STEP_MS = 140;
+// A step's lift (degrees at the hip and knee, a full step of the turn), and
+// how far round a step is a full one (radians).
+const PIVOT_HIP = 16;
+const PIVOT_KNEE = 34;
+const PIVOT_FULL = 0.35;
+const PIVOTS = new Set<AnimName>([
+	"ready",
+	"stance",
+	"guard",
+	"hold",
+	"triple",
+	"dribbleIdle",
+	"boxOut",
+	"callPlay",
+	"spotUp",
+	"callBall",
+	"clapCall",
+	"stanceHands",
+	"stancePoint",
+	"point",
+	"crossed",
+	"clap",
+	"hips",
+	"talk",
+	"protest",
+	// (Hands at work, feet where they are.)
+	"contest",
+	"reach",
+	"poke",
+	"fight",
+	"bump",
+	"catch",
+	"pass",
+	"passBounce",
+	"passOverhead",
+	"shotFake",
+	"jab",
+	"strip",
+	"screen",
+	"highFive",
+	"lowFive",
+	"waitFive",
+	"signalUp",
+	"signalSide",
+	"threeUp",
+	"cheer",
+	"crouch",
+	"flex",
+]);
+const pivotOf = (
+	tl: CourtTimeline,
+	tr: Track,
+	yaw: number,
+	now: Doing,
+	t: number,
+): [number, number, number, number] | undefined => {
+	if (now.z > 0 || !PIVOTS.has(now.anim)) {
+		return undefined;
+	}
+	const k = Math.floor(t / PIVOT_MS);
+	const g = k * PIVOT_MS;
+	// (Right steps round on even beats, left on odd.)
+	const leg = (even: boolean): [number, number] => {
+		if ((k % 2 === 0) !== even) {
+			return [yawAt(tl, tr, g), 0];
+		}
+		const a = yawAt(tl, tr, g - PIVOT_MS);
+		const d = wrapAngle(yawAt(tl, tr, g + PIVOT_MS) - a);
+		const u = clamp01((t - (g + PIVOT_MS - PIVOT_STEP_MS)) / PIVOT_STEP_MS);
+		return [
+			a + d * smooth01(u),
+			Math.sin(Math.PI * u) * Math.min(1, Math.abs(d) / PIVOT_FULL),
+		];
+	};
+	const [rf, rl] = leg(true);
+	const [lf, ll] = leg(false);
+	// (As far as hips turn - and further round than that, back with him by
+	// the time he is facing the other way. His left is the floor's
+	// clockwise.)
+	const spin = (feet: number) => {
+		const d = (wrapAngle(feet - yaw) * 180) / Math.PI;
+		const a = Math.abs(d);
+		return (
+			-Math.sign(d) *
+			(a <= LEGS_TURN ? a : (LEGS_TURN * (180 - a)) / (180 - LEGS_TURN))
+		);
+	};
+	const r = spin(rf);
+	const l = spin(lf);
+	return Math.abs(r) < 0.5 && Math.abs(l) < 0.5 && rl < 0.01 && ll < 0.01
+		? undefined
+		: [r, l, rl, ll];
 };
 
 // The arms and the turn of his shoulders, which can ease into a move on
@@ -2374,7 +2494,24 @@ export const poseOf = (st: PlayerState): Pose => {
 	const b = f && f.w > 0 ? blendFrom(q, f) : q;
 	const turned = st.legs ?? 0;
 	const legs = f && f.w > 0 ? turned + ((f.legs ?? 0) - turned) * f.w : turned;
-	const p = legs ? { ...b, legs } : b;
+	let p = legs ? { ...b, legs } : b;
+	// Turning on the spot: a leg each (see pivotOf).
+	const pv = st.pivot;
+	const fp = f && f.w > 0 ? f.pivot : undefined;
+	if (pv || fp) {
+		const fw = f?.w ?? 0;
+		const at = (i: 0 | 1 | 2 | 3) =>
+			(pv?.[i] ?? 0) + ((fp?.[i] ?? 0) - (pv?.[i] ?? 0)) * fw;
+		p = {
+			...p,
+			spinN: at(0),
+			spinF: at(1),
+			hipN: p.hipN + PIVOT_HIP * at(2),
+			kneeN: p.kneeN + PIVOT_KNEE * at(2),
+			hipF: p.hipF + PIVOT_HIP * at(3),
+			kneeF: p.kneeF + PIVOT_KNEE * at(3),
+		};
+	}
 	const a = st.arm;
 	if (!a || a.w <= 0) {
 		return p;
