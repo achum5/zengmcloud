@@ -13385,6 +13385,9 @@ class Director {
 	// And a run of his that would take a man straight through one goes round
 	// him instead: bent out past his shoulder where it came closest.
 	private aroundBodies() {
+		// Out of one he has ended up inside, no quicker than this (feet a
+		// second).
+		const STEP_OUT = 10;
 		const walls = this.bodies();
 		for (const tr of this.tracks.values()) {
 			const theirs = walls.filter((w) => w.team !== tr.team);
@@ -13478,10 +13481,24 @@ class Director {
 					const ref = d > 0.05 ? m.to : m.from;
 					const dd = dist(ref, w.at) || 1;
 					const was = m.to;
-					const to = clampPt({
+					let to = clampPt({
 						x: w.at.x + ((ref.x - w.at.x) / dd) * BODY * 1.05,
 						y: w.at.y + ((ref.y - w.at.y) / dd) * BODY * 1.05,
 					});
+					// (No faster for it than a quick step: a run too short to
+					// take him all the way out takes him part of it, and the
+					// ones after it the rest.)
+					const most = Math.max(
+						dist(m.from, m.to),
+						((m.t1 - m.t0) / 1000) * STEP_OUT,
+					);
+					const len = dist(m.from, to);
+					if (len > most) {
+						to = {
+							x: m.from.x + ((to.x - m.from.x) * most) / len,
+							y: m.from.y + ((to.y - m.from.y) * most) / len,
+						};
+					}
 					ends[i] = { ...m, to };
 					const next = ends[i + 1];
 					if (next && dist(next.from, was) < 0.01) {
