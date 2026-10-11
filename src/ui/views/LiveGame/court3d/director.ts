@@ -13570,7 +13570,9 @@ class Director {
 			"hurtArm",
 		]);
 		// Standing in one of these - up contesting a shot, letting one go,
-		// taking a pass - he stays put: the man running by veers round him.
+		// taking a pass - or set in one of those above (a screen, say), he
+		// stays put: the man going by veers round him - off the screen at
+		// his shoulder, not through him.
 		const STAND = new Set<AnimName>([
 			"contest",
 			"shoot",
@@ -13730,10 +13732,10 @@ class Director {
 							[p.b, -k / 2],
 						]
 					: p.va < MOVING
-						? stands(p.a, t)
+						? stands(p.a, t) || busy(p.a, t)
 							? [[p.b, -k]]
 							: [[p.a, k]]
-						: stands(p.b, t)
+						: stands(p.b, t) || busy(p.b, t)
 							? [[p.a, k]]
 							: [[p.b, -k]];
 			for (const [tr, by] of steps) {
@@ -14497,13 +14499,16 @@ class Director {
 								continue;
 							}
 							// Who gives way.
+							// (The man with the ball, only dribbling it, gives way to
+							// one set in a screen or busy where he is.)
 							const ground = (pid: number, act: AnimName | undefined) =>
 								act !== undefined && ON_BALL.has(act)
 									? 2
-									: pid === holder ||
-										  (act !== undefined && (HOLDS.has(act) || SET.has(act)))
-										? 1
-										: 0;
+									: act !== undefined && (HOLDS.has(act) || SET.has(act))
+										? 1.5
+										: pid === holder
+											? 1
+											: 0;
 							const ga = ground(A.pid, aa);
 							const gb = ground(B.pid, ab);
 							const fixA = ga > 0;
