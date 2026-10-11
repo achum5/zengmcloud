@@ -328,7 +328,9 @@ const joinOf = (
 	a: Move | undefined,
 	b: Move | undefined,
 ): number | undefined => {
-	if (!a || !b) {
+	// (Not one his path has him pull up at the end of, or set off on from a
+	// standstill.)
+	if (!a || !b || a.v1 === 0 || b.v0 === 0) {
 		return undefined;
 	}
 	const gap = b.t0 - a.t1;
@@ -594,10 +596,6 @@ type Spot = {
 	run?: Run;
 	hx: number;
 	hy: number;
-	// Eased aside off a man (see spotAt): how fast that has him going
-	// (feet a second), and how far it has taken him all told.
-	nv?: number;
-	nd?: number;
 };
 
 // Where he is, eased aside off anybody he would be standing on (see
@@ -609,8 +607,7 @@ const spotAt = (tr: Track, t: number): Spot => {
 };
 
 // Kept off a man: the way over, sampled every SEP_MS, eased through the
-// samples (Catmull-Rom) - where that has him, how fast it has him going, and
-// how far it has taken him.
+// samples (Catmull-Rom).
 export const SEP_MS = 50;
 let crAt = 0;
 let crV = 0;
@@ -631,7 +628,7 @@ const keptOff = (list: Sep[], s: Spot, t: number): Spot => {
 	if (k < 0) {
 		return s;
 	}
-	const { t0, dx, dy, dl } = list[k]!;
+	const { t0, dx, dy } = list[k]!;
 	const f = (t - t0) / SEP_MS;
 	if (f >= dx.length - 1) {
 		return s;
@@ -640,17 +637,8 @@ const keptOff = (list: Sep[], s: Spot, t: number): Spot => {
 	const u = f - i;
 	catmullRom(dx, i, u);
 	const x = crAt;
-	const vx = crV;
 	catmullRom(dy, i, u);
-	const y = crAt;
-	const vy = crV;
-	return {
-		...s,
-		x: s.x + x,
-		y: s.y + y,
-		nv: (s.nv ?? 0) + Math.hypot(vx, vy),
-		nd: (s.nd ?? 0) + dl[i]! + (dl[i + 1]! - dl[i]!) * u,
-	};
+	return { ...s, x: s.x + x, y: s.y + crAt };
 };
 
 const NUDGE_RAMP = 450;
@@ -662,9 +650,6 @@ const nudgedAt = (tr: Track, t: number): Spot => {
 	}
 	let dx = 0;
 	let dy = 0;
-	let vx = 0;
-	let vy = 0;
-	let nd = 0;
 	for (let i = lastIndex(list, t, (n) => n.t0); i >= 0; i--) {
 		const n = list[i]!;
 		// (None lasts long: the ones begun long before are over.)
@@ -675,27 +660,82 @@ const nudgedAt = (tr: Track, t: number): Spot => {
 			continue;
 		}
 		const r = Math.min(n.ramp ?? NUDGE_RAMP, (n.t1 - n.t0) / 2);
+		const u = Math.min(1, (t - n.t0) / r, (n.t1 - t) / r);
+		const w = u * u * (3 - 2 * u);
+		dx += n.dx * w;
+		dy += n.dy * w;
+	}
+	return dx === 0 && dy === 0 ? s : { ...s, x: s.x + dx, y: s.y + dy };
+};
+const NUDGE_LONGEST = 15000;
+
+// Eased aside off a man - nudged (see nudgedAt) or kept off him (see
+// keptOff): how fast that has him going at t (feet a second), and how far
+// it has taken him all told, over and back. (Written here, not handed back:
+// it is asked for every man, every frame.)
+let asideV = 0;
+let asideD = 0;
+const asideAt = (tr: Track, t: number): void => {
+	let vx = 0;
+	let vy = 0;
+	let d = 0;
+	const list = tr.nudges ?? [];
+	for (let i = lastIndex(list, t, (n) => n.t0); i >= 0; i--) {
+		const n = list[i]!;
+		if (t - n.t0 > NUDGE_LONGEST) {
+			break;
+		}
+		const len = Math.hypot(n.dx, n.dy);
+		if (t >= n.t1) {
+			d += 2 * len;
+			continue;
+		}
+		const r = Math.min(n.ramp ?? NUDGE_RAMP, (n.t1 - n.t0) / 2);
 		const a = (t - n.t0) / r;
 		const b = (n.t1 - t) / r;
 		const u = Math.min(1, a, b);
 		const w = u * u * (3 - 2 * u);
-		dx += n.dx * w;
-		dy += n.dy * w;
-		// (Easing over, or back: how fast, and how far he has stepped.)
-		const len = Math.hypot(n.dx, n.dy);
 		if (u < 1) {
-			const dw = (6 * u * (1 - u) * 1000) / r;
-			const sign = a < b ? 1 : -1;
-			vx += n.dx * dw * sign;
-			vy += n.dy * dw * sign;
+			const dw = ((6 * u * (1 - u) * 1000) / r) * (a < b ? 1 : -1);
+			vx += n.dx * dw;
+			vy += n.dy * dw;
 		}
-		nd += a < b ? len * w : len * (2 - w);
+		d += a < b ? len * w : len * (2 - w);
 	}
-	return dx === 0 && dy === 0
-		? s
-		: { ...s, x: s.x + dx, y: s.y + dy, nv: Math.hypot(vx, vy), nd };
+	asideV = Math.hypot(vx, vy);
+	const sep = tr.sep;
+	const k = sep ? lastIndex(sep, t, (x) => x.t0) : -1;
+	if (sep && k >= 0) {
+		const base = sepBase(sep);
+		const { t0, dx, dy, dl } = sep[k]!;
+		const f = (t - t0) / SEP_MS;
+		if (f >= dx.length - 1) {
+			d += base[k + 1]!;
+		} else {
+			const i = Math.floor(f);
+			const u = f - i;
+			catmullRom(dx, i, u);
+			const sx = crV;
+			catmullRom(dy, i, u);
+			asideV += Math.hypot(sx, crV);
+			d += base[k]! + dl[i]! + (dl[i + 1]! - dl[i]!) * u;
+		}
+	}
+	asideD = d;
 };
-const NUDGE_LONGEST = 15000;
+// How far he had been kept off men before each time it starts.
+const sepBases = new WeakMap<Sep[], number[]>();
+const sepBase = (list: Sep[]): number[] => {
+	let base = sepBases.get(list);
+	if (base?.length !== list.length + 1) {
+		base = [0];
+		for (const x of list) {
+			base.push(base.at(-1)! + (x.dl.at(-1) ?? 0));
+		}
+		sepBases.set(list, base);
+	}
+	return base;
+};
 const rawSpotAt = (tr: Track, t: number): Spot => {
 	let k = lastIndex(tr.moves, t, (m) => m.t0);
 	if (k < 0) {
@@ -760,12 +800,20 @@ const rawSpotAt = (tr: Track, t: number): Spot => {
 };
 
 // How many strides into his run he is at t, counting the runs it follows
-// on from - so his legs keep their rhythm through a join.
+// on from - so his legs keep their rhythm through a join. (Each run's at
+// the stride of the steps he takes on it - a slide he pushes across in is
+// a shuffle's - so where one hands on to the next they come out the same.)
 // (A run straight on from the last - planted, but with hardly a moment
 // between - carries on his strides from where they were.)
 const STRIDE_ON_MS = 220;
-const stridesAt = (tr: Track, k: number, run: Run, t: number): number => {
-	let strides = alongRun(run, t) / strideOf(runAnim(run));
+const stridesAt = (
+	tl: CourtTimeline,
+	tr: Track,
+	k: number,
+	run: Run,
+	t: number,
+): number => {
+	let strides = alongRun(run, t) / strideOf(stepsOf(tl, tr, run));
 	for (
 		let j = k;
 		j > 0 &&
@@ -774,7 +822,7 @@ const stridesAt = (tr: Track, k: number, run: Run, t: number): number => {
 		j--
 	) {
 		const before = runOf(tr, j - 1);
-		strides += lenOf(before.mv) / strideOf(runAnim(before));
+		strides += lenOf(before.mv) / strideOf(stepsOf(tl, tr, before));
 	}
 	return strides;
 };
@@ -1243,6 +1291,46 @@ type Doing = {
 	dribbleHand?: Hand;
 	dribbleFrom?: Hand;
 	target?: number;
+	// Stepping over off a man (not a shuffle he set off on).
+	aside?: true;
+};
+// Eased aside off a man fast enough that he steps over (feet a second) - and
+// once he is stepping, a moment's slowing between one push and the next
+// doesn't stand him up for a frame or two. (Whether a slowing is that short
+// is asked on a grid, so it comes out the same all through it - never on
+// and off frame to frame.)
+const STEP_FTPS = 1;
+const STEP_GRID = 50;
+const STEP_HOLD_MS = 150;
+const fastAsideAt = (tr: Track, t: number): boolean => {
+	asideAt(tr, t);
+	return asideV > STEP_FTPS;
+};
+const steppingAt = (tr: Track, t: number): boolean => {
+	if (!tr.nudges && !tr.sep) {
+		return false;
+	}
+	if (fastAsideAt(tr, t)) {
+		return true;
+	}
+	const g = Math.floor(t / STEP_GRID) * STEP_GRID;
+	let last = g;
+	while (!fastAsideAt(tr, last)) {
+		last -= STEP_GRID;
+		if (last <= g - STEP_HOLD_MS) {
+			return false;
+		}
+	}
+	for (
+		let next = g + STEP_GRID;
+		next <= last + STEP_HOLD_MS;
+		next += STEP_GRID
+	) {
+		if (fastAsideAt(tr, next)) {
+			return true;
+		}
+	}
+	return false;
 };
 // Stood watching - arms folded, hands on his hips - he doesn't glide off in
 // it: once he is on his way somewhere, he walks there.
@@ -1265,13 +1353,15 @@ const gaitOf = (
 	run: Run,
 	t: number,
 ): { anim: AnimName; phase: number } => {
-	let anim = runAnim(run);
-	let phase = stridesAt(tr, k, run, t);
+	return { anim: stepsOf(tl, tr, run), phase: stridesAt(tl, tr, k, run, t) };
+};
+// The steps he takes on a run.
+const stepsOf = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
+	const anim = runAnim(run);
 	// Sliding with his man: push steps when he goes across the way he
 	// faces, drop steps when he gives ground or steps up.
 	if (anim === "slide" && sideways(tl, tr, run)) {
-		phase *= strideOf("slide") / strideOf("shuffle");
-		anim = "shuffle";
+		return "shuffle";
 	}
 	// Going the way his back faces - easing off from the ball while he
 	// watches it - at no more than a backpedal's pace: he backpedals, not
@@ -1281,10 +1371,9 @@ const gaitOf = (
 		(anim === "walk" || anim === "jog" || anim === "run") &&
 		backward(tl, tr, run)
 	) {
-		phase *= strideOf(anim) / strideOf("back");
-		anim = "back";
+		return "back";
 	}
-	return { anim, phase };
+	return anim;
 };
 
 // Between two runs with hardly a moment between them, he plants on the last
@@ -1339,6 +1428,7 @@ const doingAt = (
 	let dunk: PlayerState["dunk"];
 	let reach: number | undefined;
 	let mirrored = false;
+	let aside = false;
 	let bridged: { anim: AnimName; phase: number } | undefined;
 	if (act) {
 		mirrored = act.mirror === true;
@@ -1404,12 +1494,14 @@ const doingAt = (
 					? swipeAt(tl, tr, t, seg.pid)
 					: undefined;
 		if (
-			(here.nv ?? 0) > 1 &&
-			(anim === "ready" || anim === "stance" || anim === "guard")
+			(anim === "ready" || anim === "stance" || anim === "guard") &&
+			steppingAt(tr, t)
 		) {
 			// Eased aside off a man: he steps over, not slides.
+			asideAt(tr, t);
 			anim = "shuffle";
-			phase = (here.nd ?? 0) / strideOf("shuffle");
+			phase = asideD / strideOf("shuffle");
+			aside = true;
 		} else if (life) {
 			anim = life.anim;
 			phase = life.phase;
@@ -1452,6 +1544,7 @@ const doingAt = (
 		phase,
 		z,
 		...(mirrored ? { mirror: true } : {}),
+		...(aside ? { aside: true } : {}),
 		...(dunk ? { dunk } : {}),
 		...(reach ? { reach } : {}),
 		holding: has?.style === "hold",
@@ -1476,17 +1569,21 @@ const blendInto = (
 	tr: Track,
 	t: number,
 	anim: AnimName,
+	// Stepping over off a man: the same feet as a shuffle, but not the same
+	// strides - one into the other is a change too.
+	aside: boolean,
 	// How far back inside other blends this is looking (see BLEND_DEPTH).
 	depth = 0,
 ): Blend | undefined => {
+	const same = (d: Doing) => d.anim === anim && (d.aside === true) === aside;
 	let lo = t - BLEND_MS;
 	let before = doingAt(tl, tr, lo);
-	if (before.anim === anim) {
+	if (same(before)) {
 		// The same as a moment ago - but maybe something else in between,
 		// and back: out of that, then.
 		const flick = [40, 80, 120]
 			.map((back) => ({ at: t - back, d: doingAt(tl, tr, t - back) }))
-			.find((x) => x.d.anim !== anim);
+			.find((x) => !same(x.d));
 		if (!flick) {
 			return undefined;
 		}
@@ -1498,7 +1595,7 @@ const blendInto = (
 	for (let k = 0; k < 5; k++) {
 		const mid = (lo + hi) / 2;
 		const d = doingAt(tl, tr, mid);
-		if (d.anim === anim) {
+		if (same(d)) {
 			hi = mid;
 		} else {
 			lo = mid;
@@ -1518,7 +1615,7 @@ const blendInto = (
 	// few quick changes in a row must not drop any of them in a frame).
 	const prior =
 		depth + 1 < BLEND_DEPTH
-			? blendInto(tl, tr, lo, before.anim, depth + 1)
+			? blendInto(tl, tr, lo, before.anim, before.aside === true, depth + 1)
 			: undefined;
 	// The turn of his legs then, eased out of too - not snapped round.
 	const legs =
@@ -2112,7 +2209,9 @@ export const evalPlayer = (
 	const shown = si >= 0 ? tr.shown[si]![1] : false;
 	const here = spotAt(tr, t);
 	const now = doingAt(tl, tr, t, here);
-	const from = shown ? blendInto(tl, tr, t, now.anim) : undefined;
+	const from = shown
+		? blendInto(tl, tr, t, now.anim, now.aside === true)
+		: undefined;
 	const yaw = yawAt(tl, tr, t);
 	const legs = legsOf(here, yaw, now.anim, t);
 	const arm = shown ? easedArm(tl, tr, t) : undefined;
@@ -2139,6 +2238,9 @@ export const evalPlayer = (
 const LEGS_TURN = 75;
 const LEGS_EASE_MS = 220;
 const LEGS_GIVE = 40;
+// (Into or out of a run he joins at hardly more than a standstill, the same:
+// at that pace which way it heads is no way to turn his hips.)
+const LEGS_FTPS = 2;
 const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
 	const run = here.run;
 	if (!here.moving || !run || !isGait(anim)) {
@@ -2160,8 +2262,8 @@ const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
 	// to one - on the clock, not his pace, which drops away too fast at
 	// the very end for his hips to follow.
 	const ease = Math.min(
-		run.v0 > 0 ? 1 : smooth01((t - run.s0) / LEGS_EASE_MS),
-		run.v1 > 0 ? 1 : smooth01((run.s1 - t) / LEGS_EASE_MS),
+		run.v0 > LEGS_FTPS ? 1 : smooth01((t - run.s0) / LEGS_EASE_MS),
+		run.v1 > LEGS_FTPS ? 1 : smooth01((run.s1 - t) / LEGS_EASE_MS),
 	);
 	// (His left is the floor's clockwise.)
 	return -Math.sign(off) * turn * ease;
