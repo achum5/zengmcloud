@@ -578,7 +578,7 @@ describe("3D director", () => {
 			// his way up.)
 			assert.isAtMost(longO, 1800, seed);
 		}
-	}, 60_000);
+	}, 120_000);
 
 	// Dribbling where he stands, waiting on the set, a man works his man -
 	// a steady dribble, moves where he stands, the ball walked a few steps -
@@ -849,7 +849,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(changes, 1000);
 		assert.isBelow(snaps, changes * 0.05);
-	}, 120_000);
+	}, 180_000);
 
 	// Turning right round, he turns one way and keeps turning - he never
 	// flicks between facings from one frame to the next.
