@@ -5050,7 +5050,9 @@ class Director {
 				);
 			}
 		} else if (drove && D && dist(D, rim) < 14) {
-			// Nobody to kick it to: the nearest help steps in front of it.
+			// Nobody to kick it to: the nearest help walls up in front of it,
+			// between it and the rim - with his man until the drive is on its
+			// way, then over (not off him from the start, his man left alone).
 			let near: number | undefined;
 			let best = Infinity;
 			for (const [d, P] of targets) {
@@ -5061,8 +5063,23 @@ class Director {
 				}
 			}
 			if (near !== undefined && best > 2.5) {
-				const u = unitVec(D, rim);
-				special(near, clampPt({ x: D.x + u.x * 3.2, y: D.y + u.y * 3.2 }));
+				const u = unitVec(rim, D);
+				const kk = Math.min(8, Math.max(3.5, dist(D, rim) - 3.2));
+				const at = clampPt({ x: rim.x + u.x * kk, y: rim.y + u.y * kk });
+				if (
+					manOf.has(near) &&
+					!via.has(near) &&
+					!late.has(near) &&
+					!run.help?.includes(near)
+				) {
+					const from = drive
+						? drive.t0 + (drive.t1 - drive.t0) * 0.4
+						: t0 + (t1 - t0) * 0.35;
+					const by = drive ? drive.t1 + 60 : Math.max(from + 450, t1 - 100);
+					help = { d: near, at, from, by };
+				} else {
+					special(near, at);
+				}
 			}
 		}
 		// The others near the drive stunt at it as it goes by: a hard step or
@@ -13512,9 +13529,26 @@ class Director {
 			"hurtHand",
 			"hurtArm",
 		]);
+		// Standing in one of these - up contesting a shot, letting one go,
+		// taking a pass - he stays put: the man running by veers round him.
+		const STAND = new Set<AnimName>([
+			"contest",
+			"shoot",
+			"setShot",
+			"fade",
+			"hook",
+			"catch",
+			"pass",
+			"passBounce",
+			"passOverhead",
+		]);
 		const busy = (tr: Track, t: number) =>
 			tr.acts.some(
 				(a) => a.t0 < t + SPAN && a.t1 > t - SPAN && KEEP.has(a.anim),
+			);
+		const stands = (tr: Track, t: number) =>
+			tr.acts.some(
+				(a) => a.t0 < t + SPAN && a.t1 > t - SPAN && STAND.has(a.anim),
 			);
 		const shownAt = (tr: Track, t: number) => {
 			const k = lastBy(tr.shown, t, (x) => x[0]);
@@ -13656,8 +13690,12 @@ class Director {
 							[p.b, -k / 2],
 						]
 					: p.va < MOVING
-						? [[p.a, k]]
-						: [[p.b, -k]];
+						? stands(p.a, t)
+							? [[p.b, -k]]
+							: [[p.a, k]]
+						: stands(p.b, t)
+							? [[p.a, k]]
+							: [[p.b, -k]];
 			for (const [tr, by] of steps) {
 				if (busy(tr, t)) {
 					continue;
