@@ -245,7 +245,11 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   bounces round a man rather than through him; the ball going across to
   the other hand, the hands coming off it after a shot or pass, and the
   ball carried into a pull-up all ease over instead of snapping; and no
-  run sets off from anywhere but where the last one left him.)
+  run sets off from anywhere but where the last one left him. 2026-10-11:
+  feet keep their stride through joins and steps aside, hands ease on and
+  off the ball between holding and dribbling - about half the pops again;
+  and a defender's backpedal and drop steps are real strides now, feet
+  planted on the floor instead of sliding back with him.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like
