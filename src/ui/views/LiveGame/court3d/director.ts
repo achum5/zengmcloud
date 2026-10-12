@@ -792,6 +792,10 @@ const PICK_UP = 60;
 // Lining up with the ball dead, everybody where he has to be.
 const DEAD_SETUPS =
 	/^(jumpBall|ft|missFt|sub|timeout|endOfPeriod|period|overtime|gameOver)/;
+// The last of the clock, ahead, dribbled out at real speed at the end of a
+// game (ms) - and, behind, the last look for a shot that never comes.
+const FINAL_DRIBBLE = 3600;
+const FINAL_LOOK = 1600;
 // How long a defender takes to read a pass (ms), and how fast he closes out
 // once he has (feet a second) - breaking down for the last steps.
 const CLOSE_READ = 150;
@@ -8808,6 +8812,13 @@ class Director {
 			}
 			case "timeout":
 			case "endOfPeriod": {
+				if (
+					type === "endOfPeriod" &&
+					this.peek(i, 1)[0]?.e.type === "gameOver"
+				) {
+					this.finalHorn(e, i, d ?? this.offense, gap);
+					break;
+				}
 				this.effect("whistle", T, { call: "stop", team: this.offense });
 				// (Where play stopped: where it comes back in from.)
 				const ballX = (
@@ -10854,6 +10865,38 @@ class Director {
 			);
 		}
 		this.lookAt(pid, there + (k === order.length - 1 ? 900 : 0), cameras);
+	}
+
+	// The last of the clock at the end of the game: the side with the ball
+	// gets it up the floor - fast - and dribbles out what is left of it (or,
+	// behind, is still looking for a shot when time runs out); then the horn,
+	// and it is over where they are - nobody off to the bench first, only to
+	// come back out for the handshakes (see gameOver).
+	private finalHorn(
+		e: RawEvent,
+		i: number,
+		team: Side,
+		gap: number | undefined,
+	) {
+		let t = this.T;
+		if (gap !== undefined && gap >= 2) {
+			const from = t;
+			t = this.develop(team, t, gap, undefined, undefined, true).t;
+			if (this.holder !== undefined && this.teamOf(this.holder) === team) {
+				t = this.bringUp(team, t);
+				// (What the clock has left once he is up the floor - and all of
+				// it run through fast but for the last of it.)
+				const out = e.reason === "noShot" ? FINAL_LOOK : FINAL_DRIBBLE;
+				t += Math.max(out, gap * 1000 - (t - from));
+				this.hurry(from, t - out);
+			}
+		}
+		this.effect("whistle", t, { call: "stop", team: this.offense });
+		if (this.holder !== undefined) {
+			this.hold(this.holder, t, "hold");
+		}
+		this.beat(i, e.type, t, t + 900);
+		this.phase = "dead";
 	}
 
 	private beatJumpBall(e: RawEvent, i: number) {

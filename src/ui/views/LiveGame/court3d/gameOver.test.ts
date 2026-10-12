@@ -6,9 +6,14 @@ import {
 	type Stakes,
 } from "./director.ts";
 import { evalPlayer } from "./evaluate.ts";
+import { benchX, HUDDLE_Y } from "./geometry.ts";
 
 // The last seconds of a game, the sim's way, won (or not) on the last shot.
-const ending = (lastShot: RawEvent[], stakes?: Stakes) => {
+const ending = (
+	lastShot: RawEvent[],
+	stakes?: Stakes,
+	horn: RawEvent = { type: "endOfPeriod", t: 0, reason: "noShot", clock: 0 },
+) => {
 	const players: CourtPlayer[] = [];
 	const POS = ["PG", "SG", "SF", "PF", "C"];
 	const events: RawEvent[] = [{ type: "init", boxScore: {} }];
@@ -28,7 +33,7 @@ const ending = (lastShot: RawEvent[], stakes?: Stakes) => {
 		{ type: "fgMidRange", t: 1, pid: 12, clock: 5.6 },
 		{ type: "stat", t: 1, pid: 12, s: "pts", amt: 2 },
 		...lastShot,
-		{ type: "endOfPeriod", t: 0, reason: "noShot", clock: 0 },
+		horn,
 		{ type: "gameOver" },
 	);
 	return compileCourt({ events, players, gid: 3, stakes });
@@ -42,12 +47,16 @@ describe("3D end of game", () => {
 			{ type: "stat", t: 0, pid: 2, s: "pts", amt: 3 },
 		]);
 		const over = tl.beats.at(-1)!;
-		// His teammates all over him.
-		const t = over.actionStart + 1800;
-		const H = evalPlayer(tl, 2, t);
+		// His teammates all over him - from wherever on the floor the horn
+		// found them.
 		for (const mate of [1, 3, 4, 5]) {
-			const M = evalPlayer(tl, mate, t);
-			assert.isBelow(Math.hypot(M.x - H.x, M.y - H.y), 4, `${mate}`);
+			let near = Infinity;
+			for (let t = over.actionStart; t <= over.actionStart + 4000; t += 100) {
+				const H = evalPlayer(tl, 2, t);
+				const M = evalPlayer(tl, mate, t);
+				near = Math.min(near, Math.hypot(M.x - H.x, M.y - H.y));
+			}
+			assert.isBelow(near, 4, `${mate}`);
 		}
 		// Everybody slaps hands with at least two of the other team.
 		for (const pid of [1, 2, 3, 4, 5, 11, 12, 13, 14, 15]) {
@@ -59,6 +68,39 @@ describe("3D end of game", () => {
 						a.t0 > over.actionStart,
 				).length;
 			assert.isAtLeast(daps, 2, `${pid}`);
+		}
+	});
+
+	// Ahead with the ball at the end: brought up and the last of the clock
+	// dribbled out - and at the horn it is over where they are, nobody off to
+	// the bench and back.
+	test("the clock is dribbled out, and the horn finds them on the floor", () => {
+		const tl = ending([], undefined, {
+			type: "endOfPeriod",
+			t: 0,
+			reason: "runOutClock",
+			clock: 0,
+		});
+		const n = tl.beats.length;
+		const horn = tl.beats[n - 2]!;
+		assert.strictEqual(horn.type, "endOfPeriod");
+		const s = tl.ball.findLast((b) => b.t0 <= horn.actionStart - 1000);
+		assert.isTrue(
+			s?.kind === "hold" && s.style !== "hold" && s.pid <= 5,
+			JSON.stringify(s),
+		);
+		const huddles = [benchX(0), benchX(1)].map((x) => ({ x, y: HUDDLE_Y }));
+		for (
+			let t = horn.preStart;
+			t <= tl.beats[n - 1]!.actionStart + 2000;
+			t += 100
+		) {
+			for (const pid of [1, 2, 3, 4, 5, 11, 12, 13, 14, 15]) {
+				const P = evalPlayer(tl, pid, t);
+				for (const h of huddles) {
+					assert.isAbove(Math.hypot(P.x - h.x, P.y - h.y), 3, `${pid} ${t}`);
+				}
+			}
 		}
 	});
 
