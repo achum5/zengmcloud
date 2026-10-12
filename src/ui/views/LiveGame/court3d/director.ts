@@ -25,6 +25,7 @@ import {
 	inPlay,
 	OFFICIALS_SETTLE,
 	sideOn,
+	SIDELINE_GAP,
 	huddleSpots,
 	other,
 	RIM_R,
@@ -5697,13 +5698,19 @@ class Director {
 		if (h === undefined) {
 			t = this.pickUp(shooter, t, SPRINT) + 150;
 		} else if (h !== shooter) {
-			// Run on ahead of it inside the arc, he comes back out to meet it.
+			// Run on ahead of it inside the arc, he comes back out to meet it -
+			// round it from the corner, not out over the sideline.
 			const S0 = this.posOf(shooter);
 			if (dist(S0, rim) < 29) {
 				const out = unitVec(rim, S0);
+				const lim = COURT_H / 2 - SIDELINE_GAP - 1;
+				const dy = Math.max(-lim, Math.min(lim, out.y * 31));
 				this.goBy(
 					shooter,
-					clampPt({ x: rim.x + out.x * 31, y: rim.y + out.y * 31 }),
+					clampPt({
+						x: rim.x - dir * Math.sqrt(31 * 31 - dy * dy),
+						y: rim.y + dy,
+					}),
 					t,
 					t + 900,
 					"run",
