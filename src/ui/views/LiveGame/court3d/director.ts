@@ -13639,8 +13639,35 @@ class Director {
 		// second).
 		const STEP_OUT = 10;
 		const walls = this.bodies();
-		for (const tr of this.tracks.values()) {
+		const tracks = [...this.tracks.values()];
+		for (const tr of tracks) {
 			const theirs = walls.filter((w) => w.team !== tr.team);
+			// And with the ball, a man of theirs just standing there in his way:
+			// round him too, not through him.
+			for (const m of tr.moves) {
+				if (m.anim !== "dribble") {
+					continue;
+				}
+				for (const o of tracks) {
+					if (o.team === tr.team) {
+						continue;
+					}
+					// (From when he stops there, if he does before it is over.)
+					const k = lastBy(o.moves, m.t1, (x) => x.t0);
+					const from = Math.max(m.t0, k >= 0 ? o.moves[k]!.t1 : -Infinity);
+					const si = lastBy(o.shown, from, (x) => x[0]);
+					if (from >= m.t1 - 100 || si < 0 || !o.shown[si]![1]) {
+						continue;
+					}
+					theirs.push({
+						team: o.team,
+						t0: from,
+						t1: m.t1,
+						at: k >= 0 ? { ...o.moves[k]!.to } : { ...o.start },
+						post: false,
+					});
+				}
+			}
 			if (theirs.length === 0) {
 				continue;
 			}
