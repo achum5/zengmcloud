@@ -516,7 +516,7 @@ const RELEASE_MS = 120;
 // out where he is): past his hands, not through him.
 const WIDE_OF = 3;
 // How far out in front of his feet a man bent to the floor has his hands.
-const PICKUP_REACH = releaseAt("pickup", 0.5).f;
+const PICKUP_REACH = releaseAt("pickup", 0.65).f;
 // How far through a bounce of his dribble the ball has come back up near
 // enough to his hands to take it in both (see evaluate.ts).
 const CATCH_UP = 0.7;
@@ -2041,7 +2041,8 @@ class Director {
 		);
 		// (Nowhere till he has it, there before it is still or not.)
 		this.free.set(pid, Math.max(this.free.get(pid) ?? 0, got));
-		this.act(pid, "pickup", got, got + 300, { look: { x: b.x, y: b.y } });
+		// (Bending for it as he comes in on it - see the pickup in poses.ts.)
+		this.act(pid, "pickup", got - 200, got + 300, { look: { x: b.x, y: b.y } });
 		this.hold(pid, got + 150, "hold");
 		if (style === "dribble") {
 			this.hold(pid, got + 300, "dribble");
@@ -8579,7 +8580,7 @@ class Director {
 						look: { x: B.x, y: B.y },
 					});
 				} else {
-					this.act(r, "pickup", tc - 150, tc + 150, {
+					this.act(r, "pickup", tc - 350, tc + 150, {
 						look: { x: B.x, y: B.y },
 					});
 				}
@@ -8595,7 +8596,7 @@ class Director {
 				this.act(r, "snatch", tc - 200, tc + 350, { look: { x: B.x, y: B.y } });
 				this.fly(land, tc, F, { pid: r });
 			} else {
-				this.act(r, "pickup", tc - 150, tc + 150, { look: { x: B.x, y: B.y } });
+				this.act(r, "pickup", tc - 350, tc + 150, { look: { x: B.x, y: B.y } });
 				this.bounce(land, tc, F, B, 1, h0);
 			}
 			this.hold(r, tc, "hold");
