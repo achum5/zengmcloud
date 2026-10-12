@@ -3112,13 +3112,29 @@ const ballOn = (
 		// if the bounce has less (then it rolls the rest of the way).
 		// (Off the floor already, it goes straight up into its first hop.)
 		const fall = (h: number) => Math.sqrt((2 * Math.max(0.01, h)) / GRAVITY);
-		const hops = drop > 0.005 ? [fall(drop)] : [];
+		const span = Math.max(0.001, ((seg.t1 - seg.t0) / 1000) * 0.85);
+		// With less time than its hops take, it hops lower - it never falls
+		// faster than it would (only, with no time for even the drop, is the
+		// whole of it hurried).
+		const dropT = drop > 0.005 ? fall(drop) : 0;
+		let hopsT = 0;
+		for (let i = 0; i < seg.hops; i++) {
+			hopsT += 2 * fall(seg.h0 * 0.42 ** i);
+		}
+		const room = span - dropT;
+		const low =
+			dropT + hopsT <= span || hopsT <= 0
+				? 1
+				: room > 0.05
+					? (room / hopsT) ** 2
+					: 1;
+		const h0 = seg.h0 * low;
+		const hops = drop > 0.005 ? [dropT] : [];
 		const first = hops.length;
 		for (let i = 0; i < seg.hops; i++) {
-			hops.push(2 * fall(seg.h0 * 0.42 ** i));
+			hops.push(2 * fall(h0 * 0.42 ** i));
 		}
 		const real = hops.reduce((s, h) => s + h, 0);
-		const span = Math.max(0.001, ((seg.t1 - seg.t0) / 1000) * 0.85);
 		let w = (u * (seg.t1 - seg.t0) * Math.max(1, real / span)) / 1000;
 		let z = 0;
 		for (let i = 0; i < hops.length; i++) {
@@ -3127,7 +3143,7 @@ const ballOn = (
 				z =
 					i < first
 						? drop * (1 - v * v)
-						: 4 * seg.h0 * 0.42 ** (i - first) * v * (1 - v);
+						: 4 * h0 * 0.42 ** (i - first) * v * (1 - v);
 				break;
 			}
 			w -= hops[i]!;

@@ -2001,6 +2001,8 @@ class Director {
 			this.go(pid, stop, t, speed, "run", undefined, { effort }),
 			last?.kind === "rest" ? last.t0 - 150 : -Infinity,
 		);
+		// (Nowhere till he has it, there before it is still or not.)
+		this.free.set(pid, Math.max(this.free.get(pid) ?? 0, got));
 		this.act(pid, "pickup", got, got + 300, { look: { x: b.x, y: b.y } });
 		this.hold(pid, got + 150, "hold");
 		if (style === "dribble") {
@@ -8762,7 +8764,8 @@ class Director {
 					y: 25 + this.rand(-6, 6),
 				});
 				this.effect("clank", hits, { rim: rimTeam });
-				this.bounce(hits, hits + 700, target, land, 2, 2.5);
+				// (Down off the rim from up there: as long as that takes.)
+				this.bounce(hits, hits + 2000, target, land, 2, 2.5);
 				if (this.rng() < 0.4) {
 					this.react(
 						e.pid,
@@ -12245,8 +12248,10 @@ class Director {
 					m.t0 - SOONER,
 					(tr.moves[i - 1]?.t1 ?? -Infinity) + 80,
 				);
+				// (One he sets off on as it starts - picking the ball up, say -
+				// he is still doing first, too.)
 				for (const a of tr.acts) {
-					if (a.t1 > t0 && a.t0 < m.t0) {
+					if (a.t1 > t0 && a.t0 <= m.t0) {
 						t0 = Math.max(t0, a.t1);
 					}
 				}
@@ -15054,11 +15059,14 @@ class Director {
 		// it together (a screen, a box-out, the post), chest to chest.
 		const APART = 1.45;
 		const TOUCH = 1.25;
+		// (Going by a man set in a screen, though, it is his shoulder he
+		// comes off - not through it.)
+		const BY_SCREEN = 1.35;
 		// How long before he gets to him he starts over, and after he is by
 		// he is back (samples); how smoothly (samples); how many goes at it.
 		const AHEAD = 6;
 		const SOFT = 3;
-		const ROUNDS = 4;
+		const ROUNDS = 8;
 		// (Too short a stretch to bother with, samples.) Where they are is
 		// asked every few samples.
 		const EDGE = 6;
@@ -15678,12 +15686,14 @@ class Director {
 							) {
 								continue;
 							}
-							const lim =
-								!mates &&
-								((aa !== undefined && TOGETHER.has(aa)) ||
-									(ab !== undefined && TOGETHER.has(ab)))
-									? TOUCH
-									: APART;
+							const lim = mates
+								? APART
+								: aa === "screen" || ab === "screen"
+									? BY_SCREEN
+									: (aa !== undefined && TOGETHER.has(aa)) ||
+										  (ab !== undefined && TOGETHER.has(ab))
+										? TOUCH
+										: APART;
 							if (d >= lim) {
 								continue;
 							}
