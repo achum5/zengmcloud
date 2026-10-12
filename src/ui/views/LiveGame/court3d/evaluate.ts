@@ -2544,7 +2544,10 @@ export const evalPlayer = (
 	const yaw = yawAt(tl, tr, t);
 	const legs = legsOf(here, yaw, now.anim, t);
 	const pivot = shown ? pivotOf(tl, tr, yaw, now, t) : undefined;
-	const arm = shown ? easedArm(tl, tr, t) : undefined;
+	// (An arm a beat behind its reason never takes the hand his dribble has
+	// just come over into.)
+	const eased = shown ? easedArm(tl, tr, t) : undefined;
+	const arm = eased?.hand === now.dribbleHand ? undefined : eased;
 	return {
 		pid,
 		team: tr.team,

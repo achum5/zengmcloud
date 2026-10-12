@@ -1537,7 +1537,7 @@ class Director {
 	// side the lane inside him - and from half court each in to his spot.
 	private fillLanes(
 		team: Side,
-		men: { pid: number; to: Pt; j: number }[],
+		men: { pid: number; to: Pt; j: number; by?: number }[],
 		t0: number,
 		by: number,
 	) {
@@ -1554,8 +1554,9 @@ class Director {
 			.sort((a, b) => Math.abs(b.to.y - 25) - Math.abs(a.to.y - 25));
 		for (const m of lanes) {
 			const from = this.posOf(m.pid);
+			const at = m.by ?? by;
 			if ((m.to.x - from.x) * dir < 24) {
-				this.goBy(m.pid, m.to, t0 + m.j * 90, by, "run");
+				this.goBy(m.pid, m.to, t0 + m.j * 90, at, "run");
 				continue;
 			}
 			const key = m.big ? "mid" : String(m.side);
@@ -1568,9 +1569,9 @@ class Director {
 			const start = Math.max(t0 + m.j * 90, this.free.get(m.pid) ?? 0);
 			const d1 = dist(from, W);
 			const d2 = dist(W, m.to);
-			const mid = start + (by - start) * (d1 / Math.max(1, d1 + d2));
+			const mid = start + (at - start) * (d1 / Math.max(1, d1 + d2));
 			this.goBy(m.pid, W, start, mid, "run");
-			this.goBy(m.pid, m.to, mid, by, "run");
+			this.goBy(m.pid, m.to, mid, at, "run");
 		}
 	}
 
@@ -4041,32 +4042,42 @@ class Director {
 		// (Never back down the floor to it, from farther up already: he goes on
 		// from where he is - see trailUp.)
 		const out = (p: Pt) => Math.abs(p.x - rimX(run.team));
+		const dir = attackDir(run.team);
+		// The length of the floor to go, in their lanes - not side by side
+		// straight up it from wherever the board left them.
+		const lanes: { pid: number; to: Pt; j: number; by: number }[] = [];
+		const lane = (pid: number, to: Pt, j: number) =>
+			lanes.push({
+				pid,
+				to,
+				j,
+				by: t + runMs(dist(this.posOf(pid), to) * 1.08, RUN),
+			});
 		run.roles.forEach((pid, r) => {
 			if (pid === bh) {
 				return;
 			}
+			const S = this.at(run, f.at[r]!);
+			const P = this.posOf(pid);
 			if (going.has(r)) {
 				// His part comes in the first step; back in the backcourt, he
-				// is on his way up for it meanwhile.
-				const P = this.posOf(pid);
+				// is on his way up for it meanwhile - on his side of the floor.
 				if (this.inBackcourt(run.team, P)) {
-					this.go(
-						pid,
-						clampPt({ x: COURT_W / 2 + attackDir(run.team) * 4, y: P.y }),
-						t,
-						RUN,
-						"run",
-					);
+					lane(pid, clampPt({ x: COURT_W / 2 + dir * 4, y: S.y }), r);
 				}
 				return;
 			}
-			const S = this.at(run, f.at[r]!);
-			if (
-				!(this.inBackcourt(run.team, S) && out(this.posOf(pid)) < out(S) - 6)
-			) {
-				this.go(pid, S, t, RUN, "run");
+			if (!(this.inBackcourt(run.team, S) && out(P) < out(S) - 6)) {
+				if ((S.x - P.x) * dir >= 30) {
+					lane(pid, S, r);
+				} else {
+					this.go(pid, S, t, RUN, "run");
+				}
 			}
 		});
+		if (lanes.length > 0) {
+			this.fillLanes(run.team, lanes, t, t);
+		}
 		this.motionTeam = run.team;
 		this.motion = 0;
 		return t;
