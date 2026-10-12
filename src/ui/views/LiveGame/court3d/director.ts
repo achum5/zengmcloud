@@ -8843,43 +8843,8 @@ class Director {
 								(a, b) => dist(this.posOf(a), B) - dist(this.posOf(b), B),
 							)[0]
 						: undefined;
-				if (taker !== undefined && taker !== this.holder) {
-					this.ballTo(taker, at + 200);
-				} else if (this.holder !== undefined) {
-					this.hold(this.holder, at, "hold");
-				} else {
-					this.pickUpLoose(at + 200);
-				}
-				// The whistle, then off to the huddles - fast - and, over the
-				// break, a look round the building.
-				// Each to the place in the huddle on his side of it, so nobody
-				// walks across anybody to get there.
-				const there = this.walkTo(
-					([0, 1] as const).flatMap((t) => {
-						const spots = huddleSpots(t);
-						const c = { x: benchX(t), y: HUDDLE_Y };
-						const angle = (p: Pt) => Math.atan2(p.y - c.y, p.x - c.x);
-						const men = [...this.slots(t)].sort(
-							(a, b) => angle(this.posOf(a)) - angle(this.posOf(b)),
-						);
-						const places = [...spots].sort((a, b) => angle(a) - angle(b));
-						return men.map((pid, j) => ({
-							pid,
-							at: places[j] ?? places[0]!,
-						}));
-					}),
-					at + 600,
-				);
-				for (const t of [0, 1] as const) {
-					this.slots(t).forEach((pid) => {
-						this.lookAt(pid, there + 1, { x: benchX(t), y: HUDDLE_Y });
-					});
-				}
-				this.hurry(at + 800, there);
-				const tc = Math.max(at + 800, there);
-				const over = tc + (type === "timeout" ? 1700 : 1300);
+				const over = this.toHuddles(i, at, type === "timeout", taker);
 				this.beat(i, type, at, over);
-				this.shots.push({ t0: tc, t1: over, kind: i % 3 ? "wide" : "crowd" });
 				const team = this.offense;
 				this.inboundAt =
 					type === "timeout" && e.advancesBall
@@ -8891,13 +8856,20 @@ class Director {
 			case "period":
 			case "overtime": {
 				// Still in the huddles (the ball with whoever took it there);
-				// the next possession starts with the inbound at half court.
-				if (this.holder !== undefined) {
+				// the next possession starts with the inbound at half court. A
+				// period that ended on a shot at the horn (or with free throws
+				// after it) has had no line for the break: the horn and the
+				// walk off to the huddles, then, before this one starts.
+				let over = T + 1100;
+				if (this.beats.at(-1)?.type !== "endOfPeriod") {
+					this.effect("whistle", T, { call: "stop", team: this.offense });
+					over = this.toHuddles(i, T, false);
+				} else if (this.holder !== undefined) {
 					this.hold(this.holder, T, "hold");
 				}
 				this.inboundAt = { x: COURT_W / 2, y: -1.4 };
 				this.phase = "inboundSide";
-				this.beat(i, type, T, T + 1100);
+				this.beat(i, type, T, over);
 				break;
 			}
 			case "injury": {
@@ -10902,6 +10874,53 @@ class Director {
 			);
 		}
 		this.lookAt(pid, there + (k === order.length - 1 ? 900 : 0), cameras);
+	}
+
+	// The whistle, then off to the huddles - fast - with the ball (handed to
+	// `taker` there and then if he is given, else with whoever has it, or
+	// picked up off the floor): not left lying out on the floor through the
+	// break. Over it, a look round the building. Returns when it is over.
+	private toHuddles(
+		i: number,
+		at: number,
+		long: boolean,
+		taker?: number,
+	): number {
+		if (taker !== undefined && taker !== this.holder) {
+			this.ballTo(taker, at + 200);
+		} else if (this.holder !== undefined) {
+			this.hold(this.holder, at, "hold");
+		} else {
+			this.pickUpLoose(at + 200);
+		}
+		// Each to the place in the huddle on his side of it, so nobody walks
+		// across anybody to get there.
+		const there = this.walkTo(
+			([0, 1] as const).flatMap((t) => {
+				const spots = huddleSpots(t);
+				const c = { x: benchX(t), y: HUDDLE_Y };
+				const angle = (p: Pt) => Math.atan2(p.y - c.y, p.x - c.x);
+				const men = [...this.slots(t)].sort(
+					(a, b) => angle(this.posOf(a)) - angle(this.posOf(b)),
+				);
+				const places = [...spots].sort((a, b) => angle(a) - angle(b));
+				return men.map((pid, j) => ({
+					pid,
+					at: places[j] ?? places[0]!,
+				}));
+			}),
+			at + 600,
+		);
+		for (const t of [0, 1] as const) {
+			this.slots(t).forEach((pid) => {
+				this.lookAt(pid, there + 1, { x: benchX(t), y: HUDDLE_Y });
+			});
+		}
+		this.hurry(at + 800, there);
+		const tc = Math.max(at + 800, there);
+		const over = tc + (long ? 1700 : 1300);
+		this.shots.push({ t0: tc, t1: over, kind: i % 3 ? "wide" : "crowd" });
+		return over;
 	}
 
 	// The last of the clock at the end of the game: the side with the ball
@@ -16273,7 +16292,7 @@ const TAKE_IN = 800;
 const TAKE_IN_SCORE = 1500;
 const TAKE_IN_FT = 200;
 const FT_LINE = /^(ft|missFt)$/;
-const HUDDLE_BEAT = /^(timeout|endOfPeriod)$/;
+const HUDDLE_BEAT = /^(timeout|endOfPeriod|period|overtime)$/;
 const sunkIn = (b: Beat, next: Beat | undefined): number =>
 	b.type === "sub"
 		? b.actionStart

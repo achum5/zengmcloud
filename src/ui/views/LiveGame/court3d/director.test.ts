@@ -962,9 +962,10 @@ describe("3D director", () => {
 				if (b.type === "sub") {
 					continue;
 				}
-				// A timeout, the end of a period: the whistle is the play - the
-				// walk off to the huddles after it is hurried through.
-				if (/^(timeout|endOfPeriod)$/.test(b.type)) {
+				// A timeout, the end of a period (or the next one starting, when
+				// the last ended on a shot at the horn): the whistle is the play
+				// - the walk off to the huddles after it is hurried through.
+				if (/^(timeout|endOfPeriod|period|overtime)$/.test(b.type)) {
 					assert.isAtLeast(a - b.actionStart, 800 - 1e-6, `${b.type} ${j}`);
 					continue;
 				}

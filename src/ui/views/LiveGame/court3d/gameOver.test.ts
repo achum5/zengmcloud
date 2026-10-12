@@ -138,6 +138,42 @@ describe("3D end of game", () => {
 		assert.isAbove((P.x - COURT_W / 2) * attackDir(1), 0);
 	});
 
+	// A quarter that ends on a shot at the horn has no line of its own for
+	// the break (the sim goes straight to the next period): it is had all
+	// the same, everybody off to his huddle.
+	test("a quarter ended by a shot at the horn still breaks at the benches", () => {
+		const players: CourtPlayer[] = [];
+		const events: RawEvent[] = [{ type: "init", boxScore: {} }];
+		for (const raw of [0, 1] as const) {
+			for (let j = 0; j < 5; j++) {
+				const pid = raw * 10 + j + 1;
+				players.push({ pid, team: raw === 0 ? 1 : 0, pos: "G" });
+				events.push({ type: "stat", t: raw, pid, s: "gs", amt: 1 });
+			}
+		}
+		events.push(
+			{ type: "jumpBall", t: 0, pid: 5, pid2: 15, clock: 14 },
+			{ type: "fgaTp", t: 1, pid: 12, clock: 0.4, desperation: true },
+			{ type: "missTp", t: 1, pid: 12, clock: 0 },
+			{ type: "period", period: 2, clock: 720 },
+			{ type: "fgaMidRange", t: 0, pid: 2, clock: 705, desperation: false },
+			{ type: "fgMidRange", t: 0, pid: 2, clock: 704.6 },
+			{ type: "endOfPeriod", t: 1, reason: "noShot", clock: 0 },
+			{ type: "gameOver" },
+		);
+		const tl = compileCourt({ events, players, gid: 6 });
+		const brk = tl.beats.find((b) => b.type === "period")!;
+		for (const pid of [1, 2, 3, 4, 5, 11, 12, 13, 14, 15]) {
+			const team = players.find((p) => p.pid === pid)!.team;
+			let near = Infinity;
+			for (let t = brk.preStart; t <= brk.end; t += 100) {
+				const P = evalPlayer(tl, pid, t);
+				near = Math.min(near, Math.hypot(P.x - benchX(team), P.y - HUDDLE_Y));
+			}
+			assert.isBelow(near, 5, `${pid}`);
+		}
+	});
+
 	// The playoffs: a series won is mobbed and its bench storms the floor; the
 	// championship, won at home, brings the confetti down.
 	test("a series won is celebrated, a title at home with confetti", () => {
