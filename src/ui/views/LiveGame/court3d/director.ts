@@ -931,6 +931,18 @@ const outOfPlay = (p: Pt) =>
 // no further.
 const OUT_CAP = 4;
 
+// A way off the rim a rebound really goes: out in front of it, or off to
+// its side - never back through the glass behind it (at most this far round
+// from straight out, radians).
+const OFF_RIM_SIDE = (75 * Math.PI) / 180;
+const offRimWay = (u: Pt, dir: 1 | -1): Pt =>
+	-dir * u.x >= Math.cos(OFF_RIM_SIDE)
+		? u
+		: {
+				x: -dir * Math.cos(OFF_RIM_SIDE),
+				y: (u.y < 0 ? -1 : 1) * Math.sin(OFF_RIM_SIDE),
+			};
+
 const unitVec = (from: Pt, to: Pt): Pt => {
 	const dx = to.x - from.x;
 	const dy = to.y - from.y;
@@ -7632,17 +7644,15 @@ class Director {
 			if (vel) {
 				return this.reboundOff(r, t, from, vel, team, blocked, start);
 			}
-			const rp = this.posOf(r);
-			const toward = { x: rp.x - rim.x, y: rp.y - rim.y };
-			const l = Math.hypot(toward.x, toward.y) || 1;
+			const toward = offRimWay(unitVec(rim, this.posOf(r)), dir);
 			const k = blocked
 				? this.rand(4, 7)
 				: hard
 					? this.rand(7, 11)
 					: this.rand(4, 8);
 			const catchAt = clampPt({
-				x: rim.x + (toward.x / l) * k - (blocked ? dir * 2 : 0),
-				y: rim.y + (toward.y / l) * k,
+				x: rim.x + toward.x * k - (blocked ? dir * 2 : 0),
+				y: rim.y + toward.y * k,
 			});
 			const catchT =
 				t + (blocked ? 820 : hard ? this.rand(950, 1150) : this.rand(700, 900));
@@ -7822,7 +7832,7 @@ class Director {
 		}
 		// Off the rim with no flight worked out: up for it where it comes off.
 		const rp = this.posOf(r);
-		const toward = unitVec(rim, rp);
+		const toward = offRimWay(unitVec(rim, rp), attackDir(team));
 		const k = blocked ? this.rand(4, 7) : this.rand(4, 8);
 		const spot = clampPt({
 			x: rim.x + toward.x * (k + TIP_AT.f),
