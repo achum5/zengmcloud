@@ -1549,6 +1549,23 @@ type Anim =
 	| { kind: "cycle"; n: number; stride: number; pose: (i: number) => Pose }
 	| { kind: "act"; n: number; keys: [number, Pose][] };
 
+// Down for a ball on the floor: knees bent deep, hands either side of it
+// where it lies (see PICKUP_REACH - his lean sets how far out that is).
+const PICKUP_LOW = pose({
+	hipN: 50,
+	kneeN: 134,
+	hipF: 86,
+	kneeF: 140,
+	shN: 8,
+	elN: 8,
+	shF: 4,
+	elF: 10,
+	abN: -8,
+	abF: -8,
+	lean: 54,
+	wide: 0.42,
+});
+
 export const ANIMS = {
 	// Never still: he settles down into his knees and back up, his
 	// shoulders swaying over his hips, his hands drifting - slowly.
@@ -3690,30 +3707,16 @@ export const ANIMS = {
 			[1, P.chin],
 		],
 	},
-	// Down to the floor for it - knees bent deep, reaching out - and up
+	// Down to the floor for it - knees bent deep, reaching out, a hand on
+	// either side of it where it lies - a moment there to take it, and up
 	// with it in both hands.
 	pickup: {
 		kind: "act",
 		n: 6,
 		keys: [
 			[0, P.ready],
-			[
-				0.5,
-				pose({
-					hipN: 44,
-					kneeN: 124,
-					hipF: 80,
-					kneeF: 132,
-					shN: 8,
-					elN: 8,
-					shF: 4,
-					elF: 10,
-					abN: 8,
-					abF: 8,
-					lean: 54,
-					wide: 0.42,
-				}),
-			],
+			[0.42, PICKUP_LOW],
+			[0.6, PICKUP_LOW],
 			[1, P.hold],
 		],
 	},

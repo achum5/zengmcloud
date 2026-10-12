@@ -1547,6 +1547,7 @@ const bridgeAt = (
 
 // How long his hands take to close on the ball once it is his.
 const GRIP_MS = 110;
+const GRIP_FLOOR_MS = 50;
 const LET_GO_MS = 140;
 const doingAt = (
 	tl: CourtTimeline,
@@ -1662,15 +1663,32 @@ const doingAt = (
 	let grip: number | undefined;
 	if (has?.style === "hold") {
 		let since = has.t0;
-		for (let k = bi - 1; k >= 0; k--) {
+		let k = bi - 1;
+		for (; k >= 0; k--) {
 			const x = tl.ball[k]!;
 			if (x.kind !== "hold" || x.pid !== pid || x.style !== "hold") {
 				break;
 			}
 			since = x.t0;
 		}
-		const g = smooth01((t - since) / GRIP_MS);
-		grip = g < 1 ? g : undefined;
+		// (Off the floor, his hands are on it already as he takes it; thrown
+		// to him, they came to it as it got to him - see below.)
+		const was = tl.ball[k];
+		if (!(was?.kind === "fly" && "pid" in was.to && was.to.pid === pid)) {
+			const off = was?.kind === "rest" ? GRIP_FLOOR_MS : GRIP_MS;
+			const g = smooth01((t - since) / off);
+			grip = g < 1 ? g : undefined;
+		}
+	} else if (
+		seg?.kind === "fly" &&
+		"pid" in seg.to &&
+		seg.to.pid === pid &&
+		seg.t1 - t < GRIP_MS
+	) {
+		// A pass coming to him: his hands come together to where it will be
+		// as it gets there.
+		const from = Math.max(seg.t0, seg.t1 - GRIP_MS);
+		grip = smooth01((t - from) / Math.max(1, seg.t1 - from));
 	} else if (seg && t - seg.t0 < LET_GO_MS) {
 		// (Gone from him - or put on the floor: his hands come off it as he
 		// pushes it down, not out of the air.)
@@ -2884,6 +2902,7 @@ export const GRAVITY = 32.2;
 // ball scooped off the floor - take this long, eased from where the last
 // move left it, so it never jumps.
 const HANDOVER_MS = 140;
+const HANDOVER_FLOOR_MS = 40;
 const HANDOVER_REACH = 6;
 const BEFORE = 0.5;
 
@@ -3040,7 +3059,9 @@ const ballOn = (
 		// Taken into both hands - up off his dribble, off the floor, out of
 		// another move - it comes from where it was. (Not when the picture
 		// cut to him with it: that is no hand-over.)
-		const u = (t - seg.t0) / HANDOVER_MS;
+		// (Off the floor, quicker: his hands come down to it where it lies.)
+		const u =
+			(t - seg.t0) / (prev?.kind === "rest" ? HANDOVER_FLOOR_MS : HANDOVER_MS);
 		if (
 			prev &&
 			u < 1 &&
