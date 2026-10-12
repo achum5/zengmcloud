@@ -12769,6 +12769,8 @@ class Director {
 		// Into whatever comes next he arrives where the schedule had him: at
 		// the shot he contests, the help spot he steps into.
 		const SETTLE = 600;
+		// The most a body he is inside puts him back out of it a tick (feet).
+		const PUSH_OUT = 0.5;
 		for (const tr of this.tracks.values()) {
 			const moves = tr.moves;
 			if (!moves.some((m) => this.marking.has(m))) {
@@ -13119,11 +13121,14 @@ class Director {
 							if (d >= BODY) {
 								continue;
 							}
-							// Out to the edge of him, the way he was going round.
+							// Out to the edge of him, the way he was going round - a
+							// step at a time if he finds himself well inside him (a
+							// screen set on top of him), not jumped there.
 							const sp = Math.hypot(vx, vy) || 1;
 							const nx = d > 0.05 ? ox / d : -vy / sp;
 							const ny = d > 0.05 ? oy / d : vx / sp;
-							p = { x: w.at.x + nx * BODY, y: w.at.y + ny * BODY };
+							const by = Math.min(BODY - d, PUSH_OUT);
+							p = clampPt({ x: p.x + nx * by, y: p.y + ny * by });
 							const into = vx * nx + vy * ny;
 							if (into < 0) {
 								vx -= into * nx;
