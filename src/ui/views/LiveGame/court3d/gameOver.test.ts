@@ -6,7 +6,7 @@ import {
 	type Stakes,
 } from "./director.ts";
 import { evalPlayer } from "./evaluate.ts";
-import { benchX, HUDDLE_Y } from "./geometry.ts";
+import { attackDir, benchX, COURT_W, HUDDLE_Y } from "./geometry.ts";
 
 // The last seconds of a game, the sim's way, won (or not) on the last shot.
 const ending = (
@@ -102,6 +102,40 @@ describe("3D end of game", () => {
 				}
 			}
 		}
+	});
+
+	// A quarter run out with no shot: the seconds left are played - the
+	// ball got up the floor and worked for a shot that never comes - before
+	// the horn and the walk to the benches.
+	test("a quarter's last seconds are played out before the horn", () => {
+		const players: CourtPlayer[] = [];
+		const events: RawEvent[] = [{ type: "init", boxScore: {} }];
+		for (const raw of [0, 1] as const) {
+			for (let j = 0; j < 5; j++) {
+				const pid = raw * 10 + j + 1;
+				players.push({ pid, team: raw === 0 ? 1 : 0, pos: "G" });
+				events.push({ type: "stat", t: raw, pid, s: "gs", amt: 1 });
+			}
+		}
+		events.push(
+			{ type: "jumpBall", t: 0, pid: 5, pid2: 15, clock: 14 },
+			{ type: "fgaMidRange", t: 1, pid: 12, clock: 9, desperation: false },
+			{ type: "missMidRange", t: 1, pid: 12, clock: 8.6 },
+			{ type: "drb", t: 0, pid: 4, clock: 8 },
+			{ type: "endOfPeriod", t: 0, reason: "noShot", clock: 0 },
+			{ type: "period", period: 2, clock: 720 },
+			{ type: "endOfPeriod", t: 1, reason: "noShot", clock: 0 },
+			{ type: "gameOver" },
+		);
+		const tl = compileCourt({ events, players, gid: 4 });
+		const horn = tl.beats.find((b) => b.type === "endOfPeriod")!;
+		assert.isAbove(horn.actionStart - horn.preStart, 3000);
+		const t = horn.actionStart - 400;
+		const s = tl.ball.findLast((b) => b.t0 <= t);
+		const pid = s?.kind === "hold" ? s.pid : undefined;
+		assert.isTrue(pid !== undefined && pid <= 5, JSON.stringify(s));
+		const P = evalPlayer(tl, pid!, t);
+		assert.isAbove((P.x - COURT_W / 2) * attackDir(1), 0);
 	});
 
 	// The playoffs: a series won is mobbed and its bench storms the floor; the

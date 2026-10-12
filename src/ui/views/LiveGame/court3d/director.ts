@@ -8819,10 +8819,16 @@ class Director {
 					this.finalHorn(e, i, d ?? this.offense, gap);
 					break;
 				}
-				this.effect("whistle", T, { call: "stop", team: this.offense });
+				// (The end of a period: whatever is left on the clock played out
+				// first.)
+				const at =
+					type === "endOfPeriod"
+						? this.playOutClock(e, d ?? this.offense, gap)
+						: T;
+				this.effect("whistle", at, { call: "stop", team: this.offense });
 				// (Where play stopped: where it comes back in from.)
 				const ballX = (
-					this.holder !== undefined ? this.posAt(this.holder, T) : this.ballAt
+					this.holder !== undefined ? this.posAt(this.holder, at) : this.ballAt
 				).x;
 				// The ball goes to the huddle with a man of the side that has it
 				// after the timeout - handed to him there and then, or picked up
@@ -8836,11 +8842,11 @@ class Director {
 							)[0]
 						: undefined;
 				if (taker !== undefined && taker !== this.holder) {
-					this.ballTo(taker, T + 200);
+					this.ballTo(taker, at + 200);
 				} else if (this.holder !== undefined) {
-					this.hold(this.holder, T, "hold");
+					this.hold(this.holder, at, "hold");
 				} else {
-					this.pickUpLoose(T + 200);
+					this.pickUpLoose(at + 200);
 				}
 				// The whistle, then off to the huddles - fast - and, over the
 				// break, a look round the building.
@@ -8860,17 +8866,17 @@ class Director {
 							at: places[j] ?? places[0]!,
 						}));
 					}),
-					T + 600,
+					at + 600,
 				);
 				for (const t of [0, 1] as const) {
 					this.slots(t).forEach((pid) => {
 						this.lookAt(pid, there + 1, { x: benchX(t), y: HUDDLE_Y });
 					});
 				}
-				this.hurry(T + 800, there);
-				const tc = Math.max(T + 800, there);
+				this.hurry(at + 800, there);
+				const tc = Math.max(at + 800, there);
 				const over = tc + (type === "timeout" ? 1700 : 1300);
-				this.beat(i, type, T, over);
+				this.beat(i, type, at, over);
 				this.shots.push({ t0: tc, t1: over, kind: i % 3 ? "wide" : "crowd" });
 				const team = this.offense;
 				this.inboundAt =
@@ -10878,25 +10884,39 @@ class Director {
 		team: Side,
 		gap: number | undefined,
 	) {
-		let t = this.T;
-		if (gap !== undefined && gap >= 2) {
-			const from = t;
-			t = this.develop(team, t, gap, undefined, undefined, true).t;
-			if (this.holder !== undefined && this.teamOf(this.holder) === team) {
-				t = this.bringUp(team, t);
-				// (What the clock has left once he is up the floor - and all of
-				// it run through fast but for the last of it.)
-				const out = e.reason === "noShot" ? FINAL_LOOK : FINAL_DRIBBLE;
-				t += Math.max(out, gap * 1000 - (t - from));
-				this.hurry(from, t - out);
-			}
-		}
+		const t = this.playOutClock(e, team, gap);
 		this.effect("whistle", t, { call: "stop", team: this.offense });
 		if (this.holder !== undefined) {
 			this.hold(this.holder, t, "hold");
 		}
 		this.beat(i, e.type, t, t + 900);
 		this.phase = "dead";
+	}
+
+	// The seconds left on the clock when a period runs out with no shot: the
+	// side with the ball gets it up the floor - fast - and dribbles out what
+	// is left of it (or, looking for a shot, never finds one). Returns when
+	// the horn goes.
+	private playOutClock(
+		e: RawEvent,
+		team: Side,
+		gap: number | undefined,
+	): number {
+		let t = this.T;
+		if (gap === undefined || gap < 2) {
+			return t;
+		}
+		const from = t;
+		t = this.develop(team, t, gap, undefined, undefined, true).t;
+		if (this.holder !== undefined && this.teamOf(this.holder) === team) {
+			t = this.bringUp(team, t);
+			// (What the clock has left once he is up the floor - and all of
+			// it run through fast but for the last of it.)
+			const out = e.reason === "noShot" ? FINAL_LOOK : FINAL_DRIBBLE;
+			t += Math.max(out, gap * 1000 - (t - from));
+			this.hurry(from, t - out);
+		}
+		return t;
 	}
 
 	private beatJumpBall(e: RawEvent, i: number) {
