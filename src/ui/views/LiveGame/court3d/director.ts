@@ -2875,10 +2875,19 @@ class Director {
 		const still = Math.max(t, this.free.get(from) ?? 0);
 		const look = Math.min(pass, still + 800);
 		if (look - still > 200) {
-			this.act(from, "hold", still, look, {
-				face: attackDir(team),
-				look: { ...meet },
-			});
+			// Looking up the floor for him - with it in his hands, or still on
+			// his dribble if he is (not holding it with the ball bouncing on
+			// under him).
+			const seg = this.ball.findLast((s) => s.t0 <= still);
+			if (seg?.kind === "hold" && seg.pid === from && seg.style !== "hold") {
+				this.turn(from, still, attackDir(team));
+				this.lookAt(from, still, { ...meet });
+			} else {
+				this.act(from, "hold", still, look, {
+					face: attackDir(team),
+					look: { ...meet },
+				});
+			}
 		}
 		if (pass - look > 400) {
 			// A long way back for it: he puts it down and brings it a few
