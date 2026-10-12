@@ -5710,7 +5710,51 @@ class Director {
 					dir,
 				);
 			}
+			// Not stood there with it while he gets out ahead: up the floor
+			// with it meanwhile, behind him, and it goes ahead when he is due.
+			const H = this.posOf(h);
+			const wait =
+				(this.free.get(shooter) ?? t) -
+				Math.max(t, this.free.get(h) ?? 0) -
+				900;
+			const ahead = (this.posOf(shooter).x - H.x) * dir - 14;
+			const push = Math.min(ahead, (HEAVE_RUN * 0.8 * wait) / 1000);
+			if (push > 4) {
+				this.hold(h, Math.max(t, this.free.get(h) ?? 0), "dribble");
+				this.go(
+					h,
+					clampPt({ x: H.x + dir * push, y: H.y + (COURT_H / 2 - H.y) * 0.3 }),
+					t,
+					HEAVE_RUN * 0.8,
+					"dribble",
+					dir,
+				);
+			}
 			t = this.passTo(h, shooter, t);
+		}
+		// The rest up the floor after it - out from under the far basket,
+		// not stood back there as it goes up - in a lane of their own, wide
+		// of the man who brought it up.
+		const by = h !== undefined && h !== shooter ? h : undefined;
+		for (const pid of this.slots(team)) {
+			const Q = this.posOf(pid);
+			if (pid === shooter || (Q.x - COURT_W / 2) * dir > -4) {
+				continue;
+			}
+			const B = by !== undefined && pid !== by ? this.posOf(by) : undefined;
+			const y =
+				B && Math.abs(Q.y - B.y) < 10 ? B.y + (Q.y < B.y ? -12 : 12) : Q.y;
+			this.go(
+				pid,
+				clampPt({
+					x: COURT_W / 2 + dir * this.rand(2, 8),
+					y: Math.min(COURT_H - 5, Math.max(5, y)),
+				}),
+				t0,
+				RUN,
+				"run",
+				dir,
+			);
 		}
 		// What is left of the sim's time for the trip, on the run - never
 		// inside the arc.
