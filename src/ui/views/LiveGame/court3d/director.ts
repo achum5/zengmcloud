@@ -795,6 +795,8 @@ const DEAD_SETUPS =
 // The last of the clock, ahead, dribbled out at real speed at the end of a
 // game (ms) - and, behind, the last look for a shot that never comes.
 const FINAL_DRIBBLE = 3600;
+// How high the man with it at the horn, winning, throws it (feet).
+const GAME_BALL_UP = 27;
 const FINAL_LOOK = 1600;
 // How long a defender takes to read a pass (ms), and how fast he closes out
 // once he has (feet a second) - breaking down for the last steps.
@@ -8938,7 +8940,36 @@ class Director {
 				const winner: Side = this.score[0] > this.score[1] ? 0 : 1;
 				const loser = other(winner);
 				const margin = Math.abs(this.score[0] - this.score[1]);
-				this.deadBall(T);
+				// The man with it at the horn, if his side won it: up into the
+				// air with it, as high as he can throw it. (Lost, he lets it go.)
+				const h = this.holder;
+				if (h !== undefined && this.teamOf(h) === winner) {
+					const P = this.posAt(h, T);
+					const t0 = Math.max(T + 150, this.free.get(h) ?? 0);
+					const up = t0 + 200;
+					const apex = clampPt({
+						x: P.x + this.rand(-2, 2),
+						y: P.y + this.rand(-2, 2),
+					});
+					const top = { ...apex, z: GAME_BALL_UP };
+					const fall = Math.sqrt((2 * (GAME_BALL_UP - 5)) / GRAVITY) * 1000;
+					this.act(h, "passOverhead", t0, t0 + 420, { look: apex });
+					this.fly(up, up + fall, { pid: h }, top);
+					this.bounce(
+						up + fall,
+						up + fall + 4400,
+						top,
+						clampPt({
+							x: apex.x + this.rand(-5, 5),
+							y: apex.y + this.rand(-5, 5),
+						}),
+						3,
+						5,
+					);
+					this.free.set(h, Math.max(this.free.get(h) ?? 0, t0 + 450));
+				} else {
+					this.deadBall(T);
+				}
 				// A game-winner: the winning side's last basket, in the last
 				// seconds of a game it decided.
 				let hero: number | undefined;
