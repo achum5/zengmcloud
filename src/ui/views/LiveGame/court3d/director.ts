@@ -12998,6 +12998,9 @@ class Director {
 		// man come before he gives ground.
 		const APART = 3;
 		const GIVE = 2.4;
+		// (Set further off the man with the ball, out from the rim: it is out
+		// in front of him, not to be run into his chest.)
+		const CUSHION = 3;
 		// The longest one run of his path (ms) and how far it bends (radians)
 		// before the next; how fast he must go to set off from standing, and
 		// how slow, once going, is standing again (feet a second).
@@ -13325,10 +13328,34 @@ class Director {
 							y: seen.y + (seen.y - was.y) * (R / DT) * lead,
 						};
 					}
-					const aim =
+					let aim =
 						(shownAt(who, t - R) && !waiting) || !last
 							? this.defensePoint(this.teamOf(who), seen, Bp, holder === who)
 							: last;
+					// Up on the man with it, out from the rim, never nearer him
+					// than the ball out in front of him leaves room for - unless
+					// that would back him into a screen set behind him.
+					if (aim !== last && holder === who) {
+						const rim = { x: rimX(this.teamOf(who)), y: COURT_H / 2 };
+						const d = dist(seen, aim);
+						if (d > 0.1 && d < CUSHION && dist(seen, rim) > 10) {
+							const C = clampPt({
+								x: seen.x + ((aim.x - seen.x) * CUSHION) / d,
+								y: seen.y + ((aim.y - seen.y) * CUSHION) / d,
+							});
+							if (
+								!walls.some(
+									(w) =>
+										w.team !== tr.team &&
+										w.t0 <= t + 600 &&
+										w.t1 >= t &&
+										dist(w.at, C) < 4,
+								)
+							) {
+								aim = C;
+							}
+						}
+					}
 					last = aim;
 					ticks.push({ t, aim, ball: B0.at, on, man: where(who, t) });
 				}
