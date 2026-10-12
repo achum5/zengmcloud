@@ -2748,7 +2748,20 @@ class Director {
 			(this.free.get(to) ?? 0) + 40 - flight - wind,
 		);
 		// Off the dribble, once he has it in both hands.
-		const start = Math.max(ready, this.gather(from, ready));
+		let start = Math.max(ready, this.gather(from, ready));
+		// Just caught facing the man who threw it, he turns to the man he
+		// throws it on to before it goes - not sending it off over his
+		// shoulder halfway round.
+		const caught = this.track(from)?.acts.findLast(
+			(x) => x.anim === "catch" && x.t0 < start && x.t1 >= start - 60,
+		);
+		if (caught?.look) {
+			let turn =
+				Math.atan2(b.y - a.y, b.x - a.x) -
+				Math.atan2(caught.look.y - a.y, caught.look.x - a.x);
+			turn = Math.abs(turn - Math.round(turn / (2 * Math.PI)) * 2 * Math.PI);
+			start += Math.max(0, (turn - 0.5) / TURN_RATE - wind);
+		}
 		// Open, he calls for it: a hand up.
 		if (d >= 12) {
 			this.gesture(to, "hand", start - 700, start + wind - 60, undefined, 0.45);

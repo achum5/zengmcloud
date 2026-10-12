@@ -1099,6 +1099,10 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 	if (mv && here.moving && gait && EYES_ON_BALL.has(gait)) {
 		return angleTo(here, ballNear(tl, t), fallback);
 	}
+	// Backing his man down in the post: his back to the rim.
+	if (mv && here.moving && gait === "post") {
+		return angleTo(here, { x: rimX(tr.team), y: 25 }, fallback) + Math.PI;
+	}
 	if (mv && here.moving) {
 		const dx = mv.to.x - mv.from.x;
 		const dy = mv.to.y - mv.from.y;
