@@ -1760,16 +1760,18 @@ const doingAt = (
 	// An act on the run with only his arms in it - a catch, a pass, a hand
 	// at the ball, a man fought off - his legs keep on with his stride, not
 	// stood still under him while he goes on at a run.
+	// Shoved aside in it - a box-out, a fight for the ball - he steps over.
 	// (Onto it or off it, he eases over - see blendInto.)
-	const stride: Stride | undefined =
-		act &&
-		STRIDE_ACTS.has(act.anim) &&
-		z <= 0 &&
-		here.moving &&
-		here.run &&
-		speedAt(tr, t) >= STRIDE_FTPS
-			? { ...gaitOf(tl, tr, here.moveIndex, here.run, t), w: 1 }
-			: undefined;
+	let stride: Stride | undefined;
+	if (act && STRIDE_ACTS.has(act.anim) && z <= 0) {
+		const run = here.moving ? here.run : undefined;
+		if (run && Math.max(shapeOf(run).vc, run.v0, run.v1) >= STRIDE_FTPS) {
+			stride = { ...gaitOf(tl, tr, here.moveIndex, run, t), w: 1 };
+		} else if (steppingAt(tr, t)) {
+			asideAt(tr, t);
+			stride = { anim: "shuffle", phase: asideD / strideOf("shuffle"), w: 1 };
+		}
+	}
 	const bi = ballIndexAt(tl, t);
 	const seg = tl.ball[bi];
 	const has = seg?.kind === "hold" && seg.pid === pid ? seg : undefined;
@@ -2806,7 +2808,7 @@ const UPPER: (keyof Pose)[] = [
 ];
 // Acts that are all arms - done on the run (from this fast, feet a second),
 // his legs keep on striding.
-const STRIDE_FTPS = 3.5;
+const STRIDE_FTPS = 3;
 const STRIDE_ACTS = new Set<AnimName>([
 	"catch",
 	"pass",
