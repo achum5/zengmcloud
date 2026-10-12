@@ -589,6 +589,9 @@ const pokeHand = (mirrored: boolean): V3 => {
 // the rim - and how far out from the middle of the rim he goes up.
 const DUNK_LEAP = RIM_Z + 1.45 - standingReach(bodyOf());
 const DUNK_FROM = 1.8;
+// The furthest round to the side of the rim he goes up from (radians off
+// straight in front of it) - for a dunk, or a finish off a post move.
+const DUNK_SIDE = (55 * Math.PI) / 180;
 
 // A spot clear behind the three-point line - his toes too - for a shooter
 // at `p`, or nothing if he already is: out along the corner, or straight
@@ -5613,10 +5616,19 @@ class Director {
 		const base = P.y >= 25 ? 1 : -1;
 		const side = { x: -toRim.y, y: toRim.x };
 		const s = side.y * base >= 0 ? 1 : -1;
-		const to = clampPt({
-			x: rim.x - toRim.x * 2.6 + side.x * s * 1.6,
-			y: rim.y - toRim.y * 2.6 + side.y * s * 1.6,
-		});
+		const off = {
+			x: -toRim.x * 2.6 + side.x * s * 1.6,
+			y: -toRim.y * 2.6 + side.y * s * 1.6,
+		};
+		// (Still in front of the rim, not round past it on the baseline -
+		// going up from behind the glass.)
+		const dir = attackDir(team);
+		const r = Math.hypot(off.x, off.y);
+		if (r > 0.01 && (-dir * off.x) / r < Math.cos(DUNK_SIDE)) {
+			off.x = -dir * r * Math.cos(DUNK_SIDE);
+			off.y = (off.y < 0 ? -1 : 1) * r * Math.sin(DUNK_SIDE);
+		}
+		const to = clampPt({ x: rim.x + off.x, y: rim.y + off.y });
 		const face = (rim.x >= P.x ? 1 : -1) as 1 | -1;
 		const start = Math.max(t, this.free.get(pid) ?? 0);
 		if (move === "upUnder") {
@@ -5703,10 +5715,16 @@ class Director {
 		return Math.max(t, this.hold(shooter, t, "hold"));
 	}
 
-	// Back to the rim, a dribble or two to back his man down.
+	// Back to the rim, a dribble or two to back his man down: in at the rim
+	// - not on along the baseline, round behind the glass - and no nearer
+	// it than a step off the block.
 	private backDown(pid: number, t: number, dir: 1 | -1): number {
 		const at = this.posOf(pid);
-		const to = clampPt({ x: at.x + dir * 2.2, y: at.y + (25 - at.y) * 0.15 });
+		const rim = rimPt(this.teamOf(pid));
+		const aim = { x: rim.x - dir, y: rim.y };
+		const u = unitVec(at, aim);
+		const k = Math.min(2.2, Math.max(0, dist(at, aim) - 4.5));
+		const to = clampPt({ x: at.x + u.x * k, y: at.y + u.y * k });
 		this.hold(pid, t, "dribble");
 		const done = this.go(pid, to, t + 60, 2.6, "post", -dir as 1 | -1);
 		// His man gives ground with him - if he is on him, not off somewhere
@@ -5715,7 +5733,7 @@ class Director {
 		if (guard !== undefined && dist(this.posOf(guard), at) < 5) {
 			this.go(
 				guard,
-				clampPt({ x: to.x + dir * BODY, y: to.y }),
+				clampPt({ x: to.x + u.x * BODY, y: to.y + u.y * BODY }),
 				t + 60,
 				2.6,
 				"back",
@@ -6519,10 +6537,19 @@ class Director {
 			// He goes up in front of the rim, on the side he comes from, close
 			// enough that his hand goes over the front of it - and a make, he
 			// hangs there by both hands.
-			const back = unitVec(
+			let back = unitVec(
 				rim,
 				P1.x === rim.x && P1.y === rim.y ? { x: rim.x - dir, y: rim.y } : P1,
 			);
+			// (In front of it, though, not round the side of it along the
+			// baseline: his hand comes down over the front of the rim, not
+			// back behind the glass.)
+			if (-dir * back.x < Math.cos(DUNK_SIDE)) {
+				back = {
+					x: -dir * Math.cos(DUNK_SIDE),
+					y: (back.y < 0 ? -1 : 1) * Math.sin(DUNK_SIDE),
+				};
+			}
 			const under = clampPt({
 				x: rim.x + back.x * DUNK_FROM,
 				y: rim.y + back.y * DUNK_FROM,
@@ -10571,7 +10598,10 @@ class Director {
 				this.fly(tI, tR, I3, R3);
 				const c0 = tR - CATCH_MS * CATCH_HIT;
 				this.act(receiver, "catch", c0, c0 + CATCH_MS, { look: I });
-				const a = this.rand(-0.7, 0.7);
+				// (Plainly off his hands: turned by them, not on through on the
+				// line it came in on.)
+				const r = this.rand(-1, 1);
+				const a = (r < 0 ? -1 : 1) * (0.35 + 0.45 * Math.abs(r));
 				const tOut = this.knockOut(tR, R3, {
 					x: -back.x * Math.cos(a) + back.y * Math.sin(a),
 					y: -back.x * Math.sin(a) - back.y * Math.cos(a),
@@ -15654,11 +15684,28 @@ class Director {
 						const cx = -vy / v;
 						const cy = vx / v;
 						const along = x * cx + y * cy;
-						const sg =
-							Math.abs(along) > 0.01 ? Math.sign(along) : i % 2 ? 1 : -1;
-						const k = Math.hypot(x, y) * sg;
-						x = cx * k;
-						y = cy * k;
+						let sg = Math.abs(along) > 0.01 ? Math.sign(along) : i % 2 ? 1 : -1;
+						const k = Math.hypot(x, y);
+						// (Not over into a man of theirs set in a screen, though,
+						// if the other way round is clear of him.)
+						const into = (g: number) => {
+							const px = xs[i]![s]! + ox[i]![s]! + cx * k * g;
+							const py = ys[i]![s]! + oy[i]![s]! + cy * k * g;
+							return floor[s]!.some(
+								(j) =>
+									tracks[j]!.team !== tracks[i]!.team &&
+									actOf(j, s) === "screen" &&
+									Math.hypot(
+										xs[j]![s]! + ox[j]![s]! - px,
+										ys[j]![s]! + oy[j]![s]! - py,
+									) < BY_SCREEN,
+							);
+						};
+						if (into(sg) && !into(-sg)) {
+							sg = -sg;
+						}
+						x = cx * k * sg;
+						y = cy * k * sg;
 					}
 					ax[s]! += x;
 					ay[s]! += y;
