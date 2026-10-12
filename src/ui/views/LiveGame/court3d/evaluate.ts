@@ -2872,6 +2872,67 @@ const blendFrom = (q: Pose, f: Blend): Pose => {
 	return p;
 };
 
+// Pulled up out of a run into where he stands, his feet step there - the
+// one with furthest to go first, then the other, each up off the floor and
+// back down - rather than sliding over to it as the one pose eases into the
+// other: `u` of the way (0 to 1), from `was` to `to`.
+const SETTLE_FROM = new Set<AnimName>([
+	"run",
+	"jog",
+	"sprint",
+	"walk",
+	"dribble",
+	"dribbleWalk",
+	"back",
+	"slide",
+	"shuffle",
+	"closeout",
+	"drift",
+	"carry",
+]);
+const SETTLE_HIP = 14;
+const SETTLE_KNEE = 30;
+// (A full step for a leg this far from where it is going - degrees at the
+// hip, half that again of its knee, and his feet's spread at so many a
+// foot.)
+const SETTLE_FULL = 30;
+const SETTLE_SPREAD = 40;
+// Each step's share of the way, overlapping.
+const SETTLE_STEP = 0.6;
+const settleStep = (p: Pose, to: Pose, was: Pose, u: number): Pose => {
+	const spread = Math.abs(was.wide - to.wide) * SETTLE_SPREAD;
+	const dn =
+		Math.abs(was.hipN - to.hipN) +
+		0.5 * Math.abs(was.kneeN - to.kneeN) +
+		spread;
+	const df =
+		Math.abs(was.hipF - to.hipF) +
+		0.5 * Math.abs(was.kneeF - to.kneeF) +
+		spread;
+	// (Each leg gets there only while it is up: not slid the rest of the
+	// way once it is down again.)
+	const leg = (d: number, from: number) => {
+		const v = clamp01((u - from) / SETTLE_STEP);
+		return {
+			on: smooth01(v),
+			up: Math.sin(Math.PI * v) * Math.min(1, d / SETTLE_FULL),
+		};
+	};
+	const first = dn >= df;
+	const n = leg(dn, first ? 0 : 1 - SETTLE_STEP);
+	const f = leg(df, first ? 1 - SETTLE_STEP : 0);
+	const at = (a: number, b: number, w: number) => a + (b - a) * w;
+	return {
+		...p,
+		hipN: at(was.hipN, to.hipN, n.on) + SETTLE_HIP * n.up,
+		kneeN: at(was.kneeN, to.kneeN, n.on) + SETTLE_KNEE * n.up,
+		toeN: at(was.toeN, to.toeN, n.on),
+		hipF: at(was.hipF, to.hipF, f.on) + SETTLE_HIP * f.up,
+		kneeF: at(was.kneeF, to.kneeF, f.on) + SETTLE_KNEE * f.up,
+		toeF: at(was.toeF, to.toeF, f.on),
+	};
+};
+
 // His pose: his move's, eased in from the last one's just after a change -
 // and an arm in whatever it is saying.
 export const poseOf = (st: PlayerState): Pose => {
@@ -2891,7 +2952,16 @@ export const poseOf = (st: PlayerState): Pose => {
 	const carry = st.holding === true && st.grip === undefined;
 	const q = carry ? carried(m, st.anim) : m;
 	const f = st.from;
-	const b = f && (f.w > 0 || (f.arms ?? 0) > 0) ? blendFrom(q, f) : q;
+	const eased = f && (f.w > 0 || (f.arms ?? 0) > 0) ? blendFrom(q, f) : q;
+	const b =
+		f &&
+		f.w > 0 &&
+		f.w < 1 &&
+		st.z <= 0 &&
+		PIVOTS.has(st.anim) &&
+		SETTLE_FROM.has(f.anim)
+			? settleStep(eased, q, blendPose(f), 1 - f.w)
+			: eased;
 	const turned = st.legs ?? 0;
 	const legs = f && f.w > 0 ? turned + ((f.legs ?? 0) - turned) * f.w : turned;
 	let p = legs ? { ...b, legs } : b;
