@@ -15380,7 +15380,9 @@ class Director {
 			if (t >= m.t1) {
 				return m.to;
 			}
-			const e = 0.5 - 0.5 * Math.cos((Math.PI * (t - m.t0)) / (m.t1 - m.t0));
+			// (Along it as he really runs it: on a long run he is at speed most
+			// of the way, not easing the whole length of it.)
+			const e = runProgress(m.t1 - m.t0, (t - m.t0) / (m.t1 - m.t0));
 			return {
 				x: m.from.x + (m.to.x - m.from.x) * e,
 				y: m.from.y + (m.to.y - m.from.y) * e,
