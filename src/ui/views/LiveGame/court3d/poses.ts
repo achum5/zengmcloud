@@ -4844,6 +4844,26 @@ const armAim = (b: Body, chest: V3, target: V3, side: 1 | -1, tuck = 0) => {
 	}
 	return { sh, el, ab, reach };
 };
+// The angles (degrees) that put his `hand` at `at` - in his own frame as
+// his arms are built, before his shoulders turn: forward, out to that
+// hand's side, and up over his hips (feet).
+export const armReaching = (
+	b: Body,
+	q: Pose,
+	hand: Hand,
+	at: { f: number; s: number; u: number },
+): { sh: number; el: number; ab: number } => {
+	const side = hand === "L" ? 1 : -1;
+	const sk = skeleton(b, { ...q, twist: 0, tilt: 0 });
+	const arm = armAim(
+		b,
+		sk.chest,
+		v3(at.f, side * at.s, sk.pelvis.u + at.u),
+		side,
+	);
+	return { sh: arm.sh / RAD, el: arm.el / RAD, ab: arm.ab / RAD };
+};
+
 export const armTo = (
 	b: Body,
 	chest: V3,

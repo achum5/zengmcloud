@@ -15,6 +15,7 @@ import { alongShape, keepThrough, runShape, type RunShape } from "./motion.ts";
 import { playAt } from "./physics.ts";
 import {
 	ANIMS,
+	armReaching,
 	armTo,
 	bodyOf,
 	bounceAt,
@@ -2190,6 +2191,28 @@ const nearestOf = (
 	}
 	return best;
 };
+// His hand out at a man `d` feet away, `deg` degrees round from straight
+// ahead to that hand's side, `up` feet over his hips: `them` short of the
+// middle of the other man (feet), and never further out than `most` - on
+// him, never into him, however close the two of them are.
+const ARM_BODY = bodyOf();
+const reachAt = (
+	q: Pose,
+	hand: Hand,
+	d: number,
+	deg: number,
+	them: number,
+	most: number,
+	up: number,
+): { sh: number; el: number; ab: number } => {
+	const r = Math.max(0.7, Math.min(most, d - them));
+	const a = (Math.max(0, Math.min(100, deg)) * Math.PI) / 180;
+	return armReaching(ARM_BODY, q, hand, {
+		f: r * Math.cos(a),
+		s: Math.max(0.45, r * Math.sin(a)),
+		u: up,
+	});
+};
 // A defender's hand on the man he rides: on his side - let go as he
 // crosses in front, and only put back once he is past, on the other, so it
 // never swaps while it is on him.
@@ -2201,6 +2224,7 @@ const rideArm = (
 	here: Pt,
 	yaw: number,
 	w0: number,
+	q: Pose,
 ): ArmPose | undefined => {
 	const H = spotAt(him, t);
 	const bearing = wrapAngle(Math.atan2(H.y - here.y, H.x - here.x) - yaw);
@@ -2222,14 +2246,9 @@ const rideArm = (
 	if (w <= 0.05) {
 		return undefined;
 	}
-	return {
-		hand: bearing >= 0 ? "R" : "L",
-		sh: 62,
-		el: 26,
-		ab: Math.min(80, deg),
-		wr: 12,
-		w,
-	};
+	const hand = bearing >= 0 ? "R" : "L";
+	const d = Math.hypot(H.x - here.x, H.y - here.y);
+	return { hand, ...reachAt(q, hand, d, deg, 0.65, 2, 0.4), wr: 12, w };
 };
 // An attacker's free forearm up between him and the man on him: out toward
 // him on that arm's side, from straight ahead round to beside him - never
@@ -2240,6 +2259,8 @@ const barArm = (
 	yaw: number,
 	them: Pt,
 	w0: number,
+	q: Pose,
+	up = 1.45,
 ): ArmPose | undefined => {
 	const bearing = wrapAngle(Math.atan2(them.y - here.y, them.x - here.x) - yaw);
 	const deg = ((free === "R" ? bearing : -bearing) * 180) / Math.PI;
@@ -2247,14 +2268,8 @@ const barArm = (
 	if (w <= 0.05) {
 		return undefined;
 	}
-	return {
-		hand: free,
-		sh: 58,
-		el: 92,
-		ab: Math.max(18, Math.min(70, deg)),
-		wr: 0,
-		w,
-	};
+	const d = Math.hypot(them.x - here.x, them.y - here.y);
+	return { hand: free, ...reachAt(q, free, d, deg, 0.85, 1.6, up), wr: 0, w };
 };
 const engageArm = (
 	tl: CourtTimeline,
@@ -2262,7 +2277,7 @@ const engageArm = (
 	t: number,
 	here: Pt,
 	yaw: number,
-	now: { anim: AnimName; dribbleHand?: Hand; holding?: boolean },
+	now: { anim: AnimName; phase: number; dribbleHand?: Hand; holding?: boolean },
 ): ArmPose | undefined => {
 	const seg = ballSegAt(tl, t);
 	if (seg?.kind !== "hold" || actAt(tr, t)) {
@@ -2272,6 +2287,7 @@ const engageArm = (
 	if (!holder) {
 		return undefined;
 	}
+	const q = poseAt(now.anim, now.phase);
 	const offense = holder.team;
 	if (tr === holder) {
 		// On his dribble, his man tight on him.
@@ -2284,7 +2300,14 @@ const engageArm = (
 		if (!D || D.d > ENGAGE_NEAR) {
 			return undefined;
 		}
-		return barArm(free, here, yaw, D.at, smooth01((ENGAGE_NEAR - D.d) / 1.4));
+		return barArm(
+			free,
+			here,
+			yaw,
+			D.at,
+			smooth01((ENGAGE_NEAR - D.d) / 1.4),
+			q,
+		);
 	}
 	if (tr.team === offense) {
 		// Cutting, with his man on his hip: fighting him off.
@@ -2299,14 +2322,15 @@ const engageArm = (
 			Math.atan2(D.at.y - here.y, D.at.x - here.x) - yaw,
 		);
 		const deg = (Math.abs(bearing) * 180) / Math.PI;
-		const arm = barArm(
+		return barArm(
 			bearing >= 0 ? "R" : "L",
 			here,
 			yaw,
 			D.at,
 			smooth01((FIGHT_NEAR - D.d) / 1) * smooth01((deg - 15) / 20),
+			q,
+			1.6,
 		);
-		return arm && { ...arm, sh: 70, el: 70 };
 	}
 	if (!RIDE_FROM.has(now.anim)) {
 		return undefined;
@@ -2325,6 +2349,7 @@ const engageArm = (
 				here,
 				yaw,
 				smooth01((ENGAGE_NEAR - d) / 1.4),
+				q,
 			);
 		}
 	}
@@ -2337,7 +2362,16 @@ const engageArm = (
 	if (nearestOf(tl, offense, A.at, t)?.tr !== tr) {
 		return undefined;
 	}
-	return rideArm(tl, tr, A.tr, t, here, yaw, smooth01((FIGHT_NEAR - A.d) / 1));
+	return rideArm(
+		tl,
+		tr,
+		A.tr,
+		t,
+		here,
+		yaw,
+		smooth01((FIGHT_NEAR - A.d) / 1),
+		q,
+	);
 };
 
 // Just where he is on the floor at t, if he is on it - cheap, for asking
