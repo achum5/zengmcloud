@@ -9031,13 +9031,18 @@ class Director {
 					const arrived = new Map<number, number>();
 					W.forEach((pid, j) => {
 						const k = (j + round) % W.length;
-						const a = this.go(
-							pid,
-							spot(winner, k),
-							t1 + j * 60,
-							WALK * 1.4,
-							"walk",
-						);
+						const S = spot(winner, k);
+						let off = t1 + j * 60;
+						if (k < j) {
+							// (Each on down the line a place - and the man at the end
+							// of it round the back of his own line to the head of it,
+							// not up through it.)
+							const back = (winner === 0 ? -1 : 1) * 3;
+							const P = this.posOf(pid);
+							off = this.go(pid, { x: S.x + back, y: P.y }, off, JOG, "run");
+							off = this.go(pid, { x: S.x + back, y: S.y }, off, JOG, "run");
+						}
+						const a = this.go(pid, S, off, WALK * 1.4, "walk");
 						this.turn(pid, a, fw);
 						arrived.set(pid, a);
 						met = Math.max(met, a);
