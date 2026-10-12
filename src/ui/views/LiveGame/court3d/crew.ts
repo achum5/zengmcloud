@@ -472,6 +472,36 @@ const clearOfPlayers = (
 // as a crew does in transition; the third keeps the near side. In a break
 // they gather by the table; for a jump ball the third throws it up.
 const TOSS = { x: COURT_W / 2, y: COURT_H / 2 - 1.65 };
+// (Out of the way at the top of the circle while they come out to it.)
+const TOSS_WAIT = { x: COURT_W / 2, y: COURT_H / 2 - 8.5 };
+const atCenter = (p: BallEnd) =>
+	!("pid" in p) && Math.hypot(p.x - COURT_W / 2, p.y - COURT_H / 2) < 0.6;
+// Whether the ball is in his hands there yet - not still on its way out
+// to him from the huddle.
+const tossBallIn = (tl: CourtTimeline, t: number): boolean => {
+	const seg = tl.ball[lastIndex(tl.ball, t, (b) => b.t0)];
+	return (
+		seg !== undefined &&
+		((seg.kind === "rest" && atCenter(seg.at)) ||
+			(seg.kind === "fly" &&
+				(atCenter(seg.from) || (atCenter(seg.to) && t >= seg.t1))))
+	);
+};
+// When the ball is given to him out there, if it is (from `t0` on).
+const tossBallSent = (tl: CourtTimeline, t0: number): number | undefined => {
+	for (let i = lastIndex(tl.ball, t0, (b) => b.t0); i < tl.ball.length; i++) {
+		const seg = tl.ball[i];
+		if (seg?.kind === "fly" && seg.t0 >= t0 && atCenter(seg.to)) {
+			return seg.t0;
+		}
+	}
+	return undefined;
+};
+// Which of the three throws it up: the one who is to be the trail once it
+// is tipped - out on the table side, where he stands to throw it - so he
+// backs straight out to his place, not through the two of them.
+const tosserOf = (tl: CourtTimeline, toss: Fx): number =>
+	lastIndex(tl.poss, toss.t + 600, (p) => p[0]) % 2 === 0 ? 1 : 0;
 const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 	const beat = beatAt(tl, t);
 	const shot = arenaShotAt(tl, t);
@@ -506,11 +536,17 @@ const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 		// (The ball up out of his hands, he backs out of there.)
 		const toss = nextFx(tl, beat.preStart, "toss");
 		if (toss && t < toss.t + 150) {
-			return [
+			// Out to the circle once they are there and the ball is coming
+			// out to him.
+			const sent = tossBallSent(tl, beat.preStart);
+			const out: [Pt, Pt, Pt] = [
+				{ x: COURT_W / 2 - 7, y: 0.9 },
 				{ x: COURT_W / 2 - 7, y: 0.9 },
 				{ x: COURT_W / 2 + 7, y: COURT_H + 1.2 },
-				TOSS,
 			];
+			out[tosserOf(tl, toss)] =
+				sent === undefined || t >= sent - 1500 ? TOSS : TOSS_WAIT;
+			return out;
 		}
 	}
 	const team = offenseAt(tl, t);
@@ -874,7 +910,13 @@ const refStates = (
 				({ anim, phase } = handing);
 			}
 		}
-		if (i === 2 && toss && t < toss.t + 600 && dist(p, TOSS) < 0.6) {
+		if (
+			toss &&
+			i === tosserOf(tl, toss) &&
+			t < toss.t + 600 &&
+			dist(p, TOSS) < 0.6 &&
+			(t >= toss.t || tossBallIn(tl, t))
+		) {
 			anim = "toss";
 			phase = t < toss.t ? 0 : (t - toss.t) / 600;
 			yaw = FACING_US;

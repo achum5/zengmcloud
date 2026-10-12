@@ -2,6 +2,7 @@ import { assert, describe, test } from "vitest";
 import { atTable, crewAt, crewFor, type CrewMember } from "./crew.ts";
 import { cameraCuts } from "./evaluate.ts";
 import { benchX, COURT_H, COURT_W } from "./geometry.ts";
+import { compileCourt, type CourtPlayer, type RawEvent } from "./director.ts";
 import { compile, gidOf } from "./testGame.ts";
 
 const AWAY = {
@@ -17,6 +18,42 @@ const HOME = {
 
 const SIGNALS = new Set(["signalUp", "signalSide", "threeUp", "travel"]);
 const isRef = (pid: number) => pid >= -3 && pid <= -1;
+
+// The end of regulation, the sim's way, and overtime started with a tip -
+// the man who has the ball in the huddle subbed out.
+const overtime = () => {
+	const players: CourtPlayer[] = [];
+	const POS = ["PG", "SG", "SF", "PF", "C", "F"];
+	const events: RawEvent[] = [{ type: "init", boxScore: {} }];
+	for (const raw of [0, 1] as const) {
+		for (let j = 0; j < 6; j++) {
+			const pid = raw * 10 + j + 1;
+			players.push({ pid, team: raw === 0 ? 1 : 0, pos: POS[j] });
+			if (j < 5) {
+				events.push({ type: "stat", t: raw, pid, s: "gs", amt: 1 });
+			}
+		}
+	}
+	events.push(
+		{ type: "jumpBall", t: 0, pid: 5, pid2: 15, clock: 12 },
+		{ type: "fgaMidRange", t: 1, pid: 12, clock: 6, desperation: false },
+		{ type: "missMidRange", t: 1, pid: 12, clock: 5.6 },
+		{ type: "drb", t: 0, pid: 4, clock: 5 },
+		{ type: "fgaTp", t: 0, pid: 2, clock: 1.4, desperation: false },
+		{ type: "missTp", t: 0, pid: 2, clock: 0.6 },
+		{ type: "drb", t: 1, pid: 14, clock: 0.1 },
+		{ type: "endOfPeriod", t: 1, reason: "noShot", clock: 0 },
+		{ type: "overtime", period: 5, clock: 300 },
+		{ type: "sub", t: 1, pids: [16], pidsOff: [14], clock: 300 },
+		{ type: "jumpBall", t: 1, pid: 15, pid2: 5, clock: 300 },
+		{ type: "fgaMidRange", t: 1, pid: 13, clock: 290, desperation: false },
+		{ type: "fgMidRange", t: 1, pid: 13, clock: 289.6 },
+		{ type: "stat", t: 1, pid: 13, s: "pts", amt: 2 },
+		{ type: "endOfPeriod", t: 0, reason: "noShot", clock: 0 },
+		{ type: "gameOver" },
+	);
+	return { events, tl: compileCourt({ events, players, gid: 5 }) };
+};
 
 // A game and everyone working it.
 const working = (seed: string) => {
@@ -169,6 +206,44 @@ describe("3D crew", () => {
 			Math.hypot(tosser!.x - COURT_W / 2, tosser!.y - COURT_H / 2),
 			2.5,
 		);
+	}, 60_000);
+
+	test("an overtime tip: the ball is brought out to the official, who throws it up and backs out", () => {
+		const { events, tl } = overtime();
+		const crew = crewFor(5, AWAY, HOME);
+		const beat = tl.beats.findLast((b) => events[b.i]?.type === "jumpBall")!;
+		const toss = tl.fx.find((f) => f.kind === "toss" && f.t > beat.preStart)!;
+		const center = (p: { x: number; y: number }) =>
+			Math.hypot(p.x - COURT_W / 2, p.y - COURT_H / 2);
+		// Handed to him by a man who brought it out - not there at the
+		// circle, up in the air on its own, from the start.
+		const given = tl.ball.find(
+			(s) =>
+				s.kind === "fly" &&
+				s.t0 >= beat.preStart &&
+				s.t1 <= toss.t &&
+				"pid" in s.from &&
+				!("pid" in s.to) &&
+				center(s.to) < 0.6,
+		);
+		assert.isDefined(given);
+		assert.isFalse(
+			tl.ball.some(
+				(s) => s.kind === "rest" && s.t0 >= beat.preStart && s.t0 < toss.t,
+			),
+		);
+		const refs = (t: number) =>
+			crewAt(tl, t, crew).states.filter((s) => isRef(s.pid));
+		// Holding it out once it is in his hands, not before.
+		assert.isFalse(refs(given!.t0 - 50).some((r) => r.anim === "toss"));
+		const tosser = refs(toss.t - 100).find((r) => r.anim === "toss");
+		assert.isDefined(tosser);
+		assert.isBelow(center(tosser!), 2.5);
+		// Then out of there on his own side, not through the two of them.
+		for (let t = toss.t; t < toss.t + 1500; t += 100) {
+			const r = refs(t).find((s) => s.pid === tosser!.pid)!;
+			assert.isBelow(r.y, COURT_H / 2 - 1, `${t}`);
+		}
 	}, 60_000);
 
 	test("coaches keep to their boxes, photographers to the baselines", () => {

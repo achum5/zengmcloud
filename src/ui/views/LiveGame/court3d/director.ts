@@ -10870,6 +10870,14 @@ class Director {
 		const loser = e.pid2 as number;
 		const c = { x: COURT_W / 2, y: COURT_H / 2 };
 		const side = (t: Side) => (t === 1 ? -1 : 1); // each team lines up on the side it defends
+		// Out of the huddles for overtime, the ball comes out with them:
+		// whoever has it - or picks it up off the floor - carries it out and
+		// gives it to the official at the circle once he is at his place.
+		if (!opening) {
+			this.pickUpLoose(T);
+		}
+		const carrier = opening ? undefined : this.holder;
+		let out = T;
 		let ready = T;
 		for (const t of [0, 1] as const) {
 			const j0 = t === winnerTeam ? jumper : loser;
@@ -10883,6 +10891,9 @@ class Director {
 			);
 			this.lookAt(j0, atCircle, c);
 			ready = Math.max(ready, atCircle);
+			if (j0 === carrier) {
+				out = atCircle;
+			}
 			const rest = this.slots(t).filter((p) => p !== j0);
 			rest.forEach((pid, j) => {
 				const a = ((j + 0.5) / rest.length) * Math.PI - Math.PI / 2;
@@ -10900,20 +10911,32 @@ class Director {
 				);
 				this.lookAt(pid, arrived, c);
 				ready = Math.max(ready, arrived);
+				if (pid === carrier) {
+					out = arrived;
+				}
 			});
+		}
+		const held = { x: c.x, y: c.y, z: 5 };
+		let handed = T;
+		if (carrier !== undefined) {
+			handed = this.tossTo(held, out + 150);
+			// (The walk out run through fast.)
+			this.hurry(T, Math.min(ready, out) - 1200, true);
+		} else {
+			this.rest(T, held);
 		}
 		const toss = Math.max(
 			T + 600,
 			ready + 200,
 			opening && !this.intro ? T + 3000 : 0,
+			handed + 800,
 		);
 		if (opening && !this.intro) {
 			this.shots.push({ t0: T, t1: toss - 600, kind: "wide", stretch: false });
 		}
-		this.rest(T, { x: c.x, y: c.y, z: 5 });
 		const apex = { x: c.x, y: c.y, z: 12.3 };
 		this.effect("toss", toss);
-		this.fly(toss, toss + 520, { x: c.x, y: c.y, z: 5 }, apex);
+		this.fly(toss, toss + 520, held, apex);
 		this.act(jumper, "block", toss + 120, toss + 900, {
 			face: attackDir(winnerTeam),
 			jump: [0.1, 0.9, 2.8],
