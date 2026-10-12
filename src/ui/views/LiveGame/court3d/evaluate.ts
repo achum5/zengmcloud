@@ -889,7 +889,9 @@ const targetAt = (tl: CourtTimeline, pid: number, t: number): number => {
 		lastIndex(tl.ball, t, (s) => s.t0),
 	);
 	let from: number | undefined;
-	for (let k = i; k < tl.ball.length && k <= i + 2; k++) {
+	// (Far enough on to see a bounce pass off the dribble coming: the
+	// dribble, the gather, and both legs of it.)
+	for (let k = i; k < tl.ball.length && k <= i + 4; k++) {
 		const s = tl.ball[k]!;
 		// (Once it is on its way - a bounce pass's first leg - the leg that
 		// gets to him counts from then, however late it starts.)
