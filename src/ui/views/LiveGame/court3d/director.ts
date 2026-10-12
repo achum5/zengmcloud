@@ -768,6 +768,9 @@ const ENTRY_PASS = 18;
 const ENTRY_DEEP = 34;
 // Flat out up the floor with it, a heave to beat the buzzer (feet a second).
 const HEAVE_RUN = 19;
+// Coming off a ball screen with the man who set it right in his way, he
+// goes round him this far off (feet) - the ball on the far side.
+const ROUND_SCREEN = 2.0;
 // And by where the shot came from: a break ends at the rim far more often
 // than a trip does, seldom with a floater and hardly ever with a pull-up from
 // mid-range (see BREAK_SHARE) - so a trip ending at the rim was a break on a
@@ -4441,6 +4444,34 @@ class Director {
 			// The ball never got to him: he just goes.
 			return this.go(pid, P, start, 14, "run");
 		}
+		// The hand on the side he goes (away from his man). Coming off a ball
+		// screen with the man who set it in the way on that side, he goes
+		// round his shoulder - not dribbles it into him going by.
+		const A = this.posOf(pid);
+		const hand = this.handFor(A, P, dir);
+		let around: Pt | undefined;
+		const sc = run.screen;
+		if (sc?.ball && sc.user === pid && dist(A, P) > 1) {
+			const u = unitVec(A, P);
+			// (His right is to the left of the way he faces, on this floor.)
+			const k = hand === "R" ? 1 : -1;
+			for (const s of sc.screeners) {
+				const S = this.posOf(s);
+				const ahead = (S.x - A.x) * u.x + (S.y - A.y) * u.y;
+				const side = u.x * (S.y - A.y) - u.y * (S.x - A.x);
+				if (
+					ahead > 1 &&
+					ahead < dist(A, P) - 1 &&
+					Math.abs(side) < ROUND_SCREEN &&
+					side * k > -1
+				) {
+					around = clampPt({
+						x: S.x - u.y * k * ROUND_SCREEN,
+						y: S.y + u.x * k * ROUND_SCREEN,
+					});
+				}
+			}
+		}
 		// A drive at his man - now and then with a move to get by him first.
 		if (
 			kind === "crossover" ||
@@ -4464,7 +4495,7 @@ class Director {
 			pid,
 			start,
 			kind === "snake" ? "cross" : "dribble",
-			kind === "snake" ? undefined : this.handFor(this.posOf(pid), P, dir),
+			kind === "snake" ? undefined : hand,
 		);
 		let t = start;
 		if (kind === "snake") {
@@ -4483,11 +4514,15 @@ class Director {
 			);
 		}
 		const push = kind === "advance" && run.play.cat === "break";
+		const speed = DRIBBLE_SPEED[push ? "push" : kind] ?? 16;
+		if (around && kind !== "snake") {
+			t = this.go(pid, around, t, speed, "dribble");
+		}
 		return this.go(
 			pid,
 			P,
 			t,
-			DRIBBLE_SPEED[push ? "push" : kind] ?? 16,
+			speed,
 			"dribble",
 			kind === "retreat" ? dir : undefined,
 		);
