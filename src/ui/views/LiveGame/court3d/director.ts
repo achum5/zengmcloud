@@ -15161,6 +15161,9 @@ class Director {
 		// (Going by a man set in a screen, though, it is his shoulder he
 		// comes off - not through it.)
 		const BY_SCREEN = 1.35;
+		// (And a man in front of the one with the ball, further: the ball is
+		// out in front of him, not in the other man's chest.)
+		const HOLD_APART = 2.7;
 		// How long before he gets to him he starts over, and after he is by
 		// he is back (samples); how smoothly (samples); how many goes at it.
 		const AHEAD = 6;
@@ -15780,16 +15783,54 @@ class Director {
 							}
 							const ddx = xi - (xs[j]![s]! + ox[j]![s]!);
 							const ddy = yi - (ys[j]![s]! + oy[j]![s]!);
-							if (Math.abs(ddx) >= APART || Math.abs(ddy) >= APART) {
+							if (Math.abs(ddx) >= HOLD_APART || Math.abs(ddy) >= HOLD_APART) {
 								continue;
 							}
 							const d = Math.hypot(ddx, ddy);
-							if (d >= APART) {
+							if (d >= HOLD_APART) {
 								continue;
 							}
 							const A = tracks[i]!;
 							const B = tracks[j]!;
 							const mates = A.team === B.team;
+							// (A man in front of the one with the ball - the ball out
+							// there between them - is kept further off: the more
+							// squarely in front of him, the further.)
+							let inFront = 0;
+							if (!mates) {
+								if (holder === null) {
+									holder = holderAt(t);
+									off = offenseAt(t);
+								}
+								const ih = A.pid === holder ? 1 : B.pid === holder ? -1 : 0;
+								if (ih !== 0) {
+									const H = ih === 1 ? A : B;
+									const hx = ih === 1 ? xi : xi - ddx;
+									const hy = ih === 1 ? yi : yi - ddy;
+									const rx = rimX(H.team) - hx;
+									const ry = COURT_H / 2 - hy;
+									const cos =
+										(-ih * ddx * rx - ih * ddy * ry) /
+										(d * (Math.hypot(rx, ry) || 1));
+									// (Set in front of him, not running at him: one on the
+									// move is only kept off him across the way he goes.)
+									const o = ih === 1 ? j : i;
+									const p0 = Math.max(0, s - 1);
+									const p1 = Math.min(n - 1, s + 1);
+									const v =
+										Math.hypot(
+											xs[o]![p1]! - xs[o]![p0]!,
+											ys[o]![p1]! - ys[o]![p0]!,
+										) / (((p1 - p0) * DT) / 1000 || 1);
+									inFront =
+										v > MOVING
+											? 0
+											: Math.min(1, Math.max(0, (cos - 0.2) / 0.5));
+								}
+							}
+							if (d >= APART + (HOLD_APART - APART) * inFront) {
+								continue;
+							}
 							const aa = actOf(i, s);
 							const ab = actOf(j, s);
 							if (
@@ -15809,7 +15850,7 @@ class Director {
 									: (aa !== undefined && TOGETHER.has(aa)) ||
 										  (ab !== undefined && TOGETHER.has(ab))
 										? TOUCH
-										: APART;
+										: APART + (HOLD_APART - APART) * inFront;
 							if (d >= lim) {
 								continue;
 							}
