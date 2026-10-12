@@ -924,6 +924,9 @@ const BIG_SPOTS = [
 // Past a line: out of bounds.
 const outOfPlay = (p: Pt) =>
 	p.x < 0 || p.x > COURT_W || p.y < 0 || p.y > COURT_H;
+// The furthest past a line a loose ball ends up (feet): into the front row,
+// no further.
+const OUT_CAP = 4;
 
 const unitVec = (from: Pt, to: Pt): Pt => {
 	const dx = to.x - from.x;
@@ -1985,14 +1988,18 @@ class Director {
 	): number {
 		const b = this.ballPoint();
 		const from = this.posOf(pid);
+		// (Off the floor for it if that is where it is.)
 		const stop =
 			dist(from, b) > PICKUP_REACH
 				? (() => {
 						const u = unitVec(from, b);
-						return clampPt({
-							x: b.x - u.x * PICKUP_REACH,
-							y: b.y - u.y * PICKUP_REACH,
-						});
+						return clampPt(
+							{
+								x: b.x - u.x * PICKUP_REACH,
+								y: b.y - u.y * PICKUP_REACH,
+							},
+							-OUT_CAP,
+						);
 					})()
 				: from;
 		// (Not off a bounce: he takes it once it has come to rest.)
@@ -8042,6 +8049,34 @@ class Director {
 			(vel.z +
 				Math.sqrt(vel.z * vel.z + 2 * GRAVITY * Math.max(0, from.z - BALL_R))) /
 			GRAVITY;
+		// (Out over the line and on into the front row - the scorer's table,
+		// the first seats - it stops there and drops, rather than carrying on
+		// into the crowd.)
+		const over = (p: number, v: number, hi: number) =>
+			v > 1e-6
+				? (hi + OUT_CAP - p) / v
+				: v < -1e-6
+					? (-OUT_CAP - p) / v
+					: Infinity;
+		const stop = Math.min(
+			over(from.x, vel.x, COURT_W),
+			over(from.y, vel.y, COURT_H),
+		);
+		if (stop > 0 && stop < fall) {
+			const hit = {
+				x: from.x + vel.x * stop,
+				y: from.y + vel.y * stop,
+				z: Math.max(
+					BALL_R,
+					from.z + vel.z * stop - 0.5 * GRAVITY * stop * stop,
+				),
+			};
+			const t1 = t + stop * 1000;
+			this.fly(t, t1, start ?? from, hit);
+			const span = this.bounceSpan(0.5, 1, 300, hit.z - BALL_R);
+			this.bounce(t1, t1 + span, hit, hit, 1, 0.5);
+			return { at: { ...hit, z: BALL_R }, t: t1 + span, h0: 0.4 };
+		}
 		const at = {
 			x: from.x + vel.x * fall,
 			y: from.y + vel.y * fall,
@@ -10130,7 +10165,10 @@ class Director {
 					hit,
 					hit + 900,
 					{ x: vp.x, y: vp.y, z: 2.5 },
-					{ x: vp.x + this.rand(-6, 6), y: outY },
+					{
+						x: Math.min(COURT_W - 1, Math.max(1, vp.x + this.rand(-6, 6))),
+						y: outY,
+					},
 					2,
 					1.4,
 				);
@@ -10155,7 +10193,12 @@ class Director {
 		// A turnover with no steal: thrown away out of bounds, or just lost.
 		if (e.outOfBounds) {
 			const outY = vp.y < COURT_H / 2 ? -2.2 : COURT_H + 2.2;
-			const to = { x: vp.x + dir * this.rand(6, 14), y: outY };
+			// (Out over the sideline - not on past the baseline into the
+			// crowd behind it.)
+			const to = {
+				x: Math.min(COURT_W - 5, Math.max(5, vp.x + dir * this.rand(6, 14))),
+				y: outY,
+			};
 			this.act(victim, "pass", t, t + 300, { face: dir });
 			this.fly(t + 120, t + 700, { pid: victim }, { ...to, z: 3 });
 			this.bounce(
@@ -10171,7 +10214,10 @@ class Director {
 				at: to,
 				team: other(team),
 			});
-			this.inboundAt = { x: to.x, y: outY < 0 ? -1.4 : COURT_H + 1.4 };
+			this.inboundAt = {
+				x: Math.min(COURT_W - 2, Math.max(2, to.x + dir * 3)),
+				y: outY < 0 ? -1.4 : COURT_H + 1.4,
+			};
 			this.beat(i, e.type, t, t + 1200);
 		} else {
 			this.bounce(
