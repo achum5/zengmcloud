@@ -1993,11 +1993,13 @@ describe("3D director", () => {
 					Math.min(Math.abs(fastest - 19), Math.abs(fastest - 11)) > 0.75;
 				let top = 0;
 				let low = Infinity;
+				let frames = 0;
 				for (let t = m.t0 + secs * 250; t < m.t1 - secs * 250; t += 20) {
 					const st = evalPlayer(tl, pid, t);
 					if (st.anim !== "sprint" && st.anim !== "run" && st.anim !== "jog") {
 						continue;
 					}
+					frames += 1;
 					if (sure) {
 						assert.strictEqual(
 							st.anim,
@@ -2013,7 +2015,12 @@ describe("3D director", () => {
 				} else {
 					jogs += 1;
 				}
-				assert.isBelow(low, 0.02);
+				// (Seen running for less than a step - the rest of it taken up
+				// doing something else, a reach - he can be in the air all of
+				// that.)
+				if (frames >= 20) {
+					assert.isBelow(low, 0.02);
+				}
 			}
 		}
 		assert.isAbove(sprints, 5);

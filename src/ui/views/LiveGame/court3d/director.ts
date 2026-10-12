@@ -11279,8 +11279,43 @@ class Director {
 		// Play goes on once the men going off are off the floor and the men
 		// coming on are out there.
 		let ready = T + 1300;
+		// Where each man coming on takes over: where the man he is in for
+		// stood - a step off anybody else stood there, not on top of him.
+		const taken: Pt[] = [];
+		const roomAt = (P: Pt): Pt => {
+			if (dist(inPlay(P), P) > 0.5) {
+				return P;
+			}
+			const near = [...this.lineup[0], ...this.lineup[1]]
+				.filter((q) => !off.includes(q))
+				.map((q) => this.posOf(q))
+				.concat(taken);
+			const clear = (Q: Pt) => near.every((o) => dist(o, Q) >= 3);
+			if (clear(P)) {
+				return P;
+			}
+			for (const r of [3, 4.5, 6]) {
+				let best: Pt | undefined;
+				for (let k = 0; k < 12; k++) {
+					const a = (k * Math.PI) / 6;
+					const Q = inPlay({
+						x: P.x + Math.cos(a) * r,
+						y: P.y + Math.sin(a) * r,
+					});
+					if (clear(Q) && (!best || dist(Q, P) < dist(best, P))) {
+						best = Q;
+					}
+				}
+				if (best) {
+					return best;
+				}
+			}
+			return P;
+		};
 		off.forEach((pid, j) => {
-			const at = this.posOf(pid);
+			const from = this.posOf(pid);
+			const at = roomAt(from);
+			taken.push(at);
 			const incoming = on[j];
 			// Off the floor at a jog, back to his chair, where he sits down.
 			const seat = this.seatOf(pid);
@@ -11288,7 +11323,11 @@ class Director {
 			const gone = this.go(pid, seat, t0, JOG, "run");
 			this.show(pid, gone, false);
 			const offFloor =
-				at.y > 0 && seat.y < 0 ? at.y / (at.y - seat.y) : at.y <= 0 ? 0 : 1;
+				from.y > 0 && seat.y < 0
+					? from.y / (from.y - seat.y)
+					: from.y <= 0
+						? 0
+						: 1;
 			ready = Math.max(ready, t0 + (gone - t0) * offFloor + 150);
 			if (incoming !== undefined) {
 				const tr = this.track(incoming);
@@ -11798,7 +11837,7 @@ class Director {
 							(c) =>
 								c.team === team &&
 								c.pid !== tr.pid &&
-								c.t0 <= tt + 1500 &&
+								c.t0 <= tt + 4000 &&
 								c.t1 >= tt,
 						)
 						.map((c) => c.at),
@@ -12023,6 +12062,7 @@ class Director {
 					if (
 						dist(S, at) < 2 ||
 						dist(S, B) < 7 ||
+						othersAt(t).some((m) => dist(m, S) < 4) ||
 						!room(dur(at, S, 9) + hold + dur(S, back, 8))
 					) {
 						return false;
@@ -12159,8 +12199,12 @@ class Director {
 						if (seal()) {
 							return true;
 						}
+						const t0 = t;
 						const Q = home ?? openSpot(t, at, 3, 12);
 						if (Q && dist(Q, at) > 1 && goTo(Q, 9, "run", 300)) {
+							if (!home) {
+								claim(Q, t0);
+							}
 							return true;
 						}
 						return jabTo(at, 8, "back", 300);
