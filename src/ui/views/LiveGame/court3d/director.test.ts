@@ -1300,7 +1300,9 @@ describe("3D director", () => {
 	test("off the rim, the man who gets it mostly goes up and takes it in the air", () => {
 		let air = 0;
 		let all = 0;
-		for (const seed of ["a", "b", "c", "d"]) {
+		// (Eight games: in four, the share swings by several points either
+		// way with any change to where men happen to be when it comes off.)
+		for (const seed of ["a", "b", "c", "d", "e", "f", "g", "h"]) {
 			const { events, tl } = compile(seed, 140);
 			const beatOf = new Map(tl.beats.map((b) => [b.i, b]));
 			events.forEach((e, i) => {
@@ -1334,7 +1336,7 @@ describe("3D director", () => {
 				}
 			});
 		}
-		assert.isAbove(all, 80);
+		assert.isAbove(all, 160);
 		assert.isAbove(air / all, 0.5);
 	}, 120_000);
 

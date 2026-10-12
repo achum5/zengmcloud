@@ -1534,10 +1534,11 @@ class Director {
 
 	// UP THE FLOOR IN LANES. Not two men side by side: a wing runs out wide,
 	// down his side of the floor, a big down the middle, a second man on a
-	// side the lane inside him - and from half court each in to his spot.
+	// side the lane inside him - and from half court each in to his spot (or,
+	// told to go only `upTo` so far up the floor for now, there in his lane).
 	private fillLanes(
 		team: Side,
-		men: { pid: number; to: Pt; j: number; by?: number }[],
+		men: { pid: number; to: Pt; j: number; by?: number; upTo?: number }[],
 		t0: number,
 		by: number,
 	) {
@@ -1547,16 +1548,22 @@ class Director {
 		const lanes = men
 			.map((m) => {
 				const big = Math.abs(m.to.y - COURT_H / 2) < 9 && dist(m.to, rim) < 17;
-				const side = m.to.y < COURT_H / 2 ? -1 : 1;
-				return { ...m, big, side };
+				// (Only going so far for now, he takes the side he is on - not
+				// across the others to his spot's.)
+				const y = m.upTo === undefined ? m.to.y : this.posOf(m.pid).y;
+				const side = y < COURT_H / 2 ? -1 : 1;
+				return { ...m, big, side, y };
 			})
-			// Out wide first: whoever's spot is nearer his sideline has it.
-			.sort((a, b) => Math.abs(b.to.y - 25) - Math.abs(a.to.y - 25));
+			// Out wide first: whoever is to go nearer his sideline has it.
+			.sort((a, b) => Math.abs(b.y - 25) - Math.abs(a.y - 25));
 		for (const m of lanes) {
 			const from = this.posOf(m.pid);
 			const at = m.by ?? by;
-			if ((m.to.x - from.x) * dir < 24) {
-				this.goBy(m.pid, m.to, t0 + m.j * 90, at, "run");
+			const endX = m.upTo ?? m.to.x;
+			if ((endX - from.x) * dir < 24) {
+				const end =
+					m.upTo === undefined ? m.to : clampPt({ x: endX, y: from.y });
+				this.goBy(m.pid, end, t0 + m.j * 90, at, "run");
 				continue;
 			}
 			const key = m.big ? "mid" : String(m.side);
@@ -1565,8 +1572,12 @@ class Director {
 			const laneY = m.big
 				? COURT_H / 2 + (n % 2 ? 3.5 : -3.5) * (m.side || 1)
 				: COURT_H / 2 + m.side * (n === 0 ? 19 : 10);
-			const W = clampPt({ x: from.x + (m.to.x - from.x) * 0.55, y: laneY });
 			const start = Math.max(t0 + m.j * 90, this.free.get(m.pid) ?? 0);
+			if (m.upTo !== undefined) {
+				this.goBy(m.pid, clampPt({ x: endX, y: laneY }), start, at, "run");
+				continue;
+			}
+			const W = clampPt({ x: from.x + (m.to.x - from.x) * 0.55, y: laneY });
 			const d1 = dist(from, W);
 			const d2 = dist(W, m.to);
 			const mid = start + (at - start) * (d1 / Math.max(1, d1 + d2));
@@ -4045,14 +4056,23 @@ class Director {
 		const dir = attackDir(run.team);
 		// The length of the floor to go, in their lanes - not side by side
 		// straight up it from wherever the board left them.
-		const lanes: { pid: number; to: Pt; j: number; by: number }[] = [];
-		const lane = (pid: number, to: Pt, j: number) =>
+		const lanes: {
+			pid: number;
+			to: Pt;
+			j: number;
+			by: number;
+			upTo?: number;
+		}[] = [];
+		const lane = (pid: number, to: Pt, j: number, upTo?: number) => {
+			const end = upTo === undefined ? to : { x: upTo, y: to.y };
 			lanes.push({
 				pid,
 				to,
 				j,
-				by: t + runMs(dist(this.posOf(pid), to) * 1.08, RUN),
+				by: t + runMs(dist(this.posOf(pid), end) * 1.08, RUN),
+				...(upTo !== undefined ? { upTo } : {}),
 			});
+		};
 		run.roles.forEach((pid, r) => {
 			if (pid === bh) {
 				return;
@@ -4063,7 +4083,7 @@ class Director {
 				// His part comes in the first step; back in the backcourt, he
 				// is on his way up for it meanwhile - on his side of the floor.
 				if (this.inBackcourt(run.team, P)) {
-					lane(pid, clampPt({ x: COURT_W / 2 + dir * 4, y: S.y }), r);
+					lane(pid, S, r, COURT_W / 2 + dir * 4);
 				}
 				return;
 			}
