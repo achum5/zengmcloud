@@ -531,6 +531,12 @@ const READ_MS = 180;
 // it he can still be on his way there, the last stride carrying him up.
 const REBOUND_READ = 1200;
 const BOARD_CARRY = 150;
+// The man of theirs who goes up with him for it: from this near where he goes
+// up (feet) he goes up where he is; from as far as RIVAL_IN, he gets in a step
+// or two first - seeing it coming this long before (ms).
+const RIVAL_UP = 4;
+const RIVAL_IN = 9;
+const RIVAL_STEP_MS = 450;
 // The last few inches onto a spot: a shuffle this long (ms).
 const SETTLE_MS = 160;
 // A loose ball on the hop is taken out of the air about where a man reaching
@@ -8326,21 +8332,73 @@ class Director {
 			reach: true,
 		});
 		this.free.set(r, Math.max(this.free.get(r) ?? 0, t + REBOUND_MS));
-		// (Not one still busy with something else - up with his own shot,
-		// say.)
-		const rival = this.slots(other(this.teamOf(r)))
-			.filter(
-				(p) =>
-					!this.track(p)?.acts.some((a) => a.t1 > t + 60 && a.t0 < t + 760),
-			)
-			.sort((a, b) => dist(this.posOf(a), at) - dist(this.posOf(b), at))[0];
-		if (rival !== undefined && contested) {
-			this.letGo(rival, t + 60);
-			this.act(rival, "rebound", t + 60, t + 760, {
-				look: { x: rim.x, y: rim.y },
-				jump: [0.15, 0.9, 1.6],
-			});
+		if (contested) {
+			this.goUpWith(r, t + 60, at, rim);
 		}
+	}
+
+	// The nearest of theirs to where he goes up for it goes up with him: out
+	// of his box-out, a step or two in first if he is not right there - only
+	// one near enough to get a hand near it, not one way out on the floor
+	// jumping at nothing. (Not one busy with something else - up with his own
+	// shot, say, or on his way somewhere.)
+	private goUpWith(r: number, up: number, at: Pt, rim: Pt) {
+		const sees = up - RIVAL_STEP_MS;
+		const busy = (p: number) => {
+			const tr = this.track(p);
+			return (
+				!tr ||
+				tr.acts.some(
+					(a) =>
+						a.anim !== "boxOut" &&
+						a.anim !== "fight" &&
+						a.t1 > sees &&
+						a.t0 < up + 700,
+				) ||
+				tr.moves.some(
+					(m) => !this.jostles.has(m) && m.t1 > sees && m.t0 < up + 700,
+				)
+			);
+		};
+		const far = (p: number) => dist(this.posAt(p, sees), at);
+		const rival = this.slots(other(this.teamOf(r)))
+			.filter((p) => !busy(p) && far(p) <= RIVAL_IN)
+			.sort((a, b) => far(a) - far(b))[0];
+		if (rival === undefined) {
+			return;
+		}
+		let t = up;
+		if (far(rival) > RIVAL_UP) {
+			this.letGo(rival, sees, true);
+			const u = unitVec(at, this.posOf(rival));
+			const spot = clampPt({
+				x: at.x + u.x * RIVAL_UP * 0.75,
+				y: at.y + u.y * RIVAL_UP * 0.75,
+			});
+			const there = this.goBy(
+				rival,
+				spot,
+				sees,
+				up,
+				"run",
+				(at.x >= spot.x ? 1 : -1) as 1 | -1,
+				BURST,
+			);
+			if (there > up + 200) {
+				// Too late to go up for it: a hand at it as he gets there.
+				this.act(rival, "reach", there - 150, there + 320, {
+					look: { x: at.x, y: at.y },
+				});
+				return;
+			}
+			t = Math.max(up, there - 60);
+		} else {
+			this.letGo(rival, up);
+		}
+		this.act(rival, "rebound", t, t + 700, {
+			look: { x: rim.x, y: rim.y },
+			jump: [0.15, 0.9, 1.6],
+		});
 	}
 
 	// OFF THE RIM ON ITS OWN.
@@ -8601,14 +8659,22 @@ class Director {
 			}
 			this.hold(r, tc, "hold");
 			this.free.set(r, Math.max(this.free.get(r) ?? 0, tc + 300));
-			// The nearest of theirs dives in after it, a step late.
+			// The nearest of theirs dives in after it, a step late - out of
+			// his box-out, if he was still in one.
 			const rival = this.slots(other(this.teamOf(r)))
 				.filter(
 					(p) =>
-						!this.track(p)?.acts.some((a) => a.t1 > start && a.t0 < tc + 300),
+						!this.track(p)?.acts.some(
+							(a) =>
+								a.anim !== "boxOut" &&
+								a.anim !== "fight" &&
+								a.t1 > start &&
+								a.t0 < tc + 300,
+						),
 				)
 				.sort((a, b) => dist(this.posOf(a), B) - dist(this.posOf(b), B))[0];
 			if (rival !== undefined && dist(this.posOf(rival), B) < 18) {
+				this.letGo(rival, start + 120, true);
 				const near = clampPt({
 					x: B.x + unitVec(B, this.posOf(rival)).x * 2.4,
 					y: B.y + unitVec(B, this.posOf(rival)).y * 2.4,
