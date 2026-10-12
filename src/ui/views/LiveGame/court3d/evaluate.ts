@@ -10,7 +10,7 @@ import type {
 	Sep,
 	Track,
 } from "./director.ts";
-import { rimX, type Pt, type Pt3, type Side } from "./geometry.ts";
+import { COURT_H, rimX, type Pt, type Pt3, type Side } from "./geometry.ts";
 import { alongShape, keepThrough, runShape, type RunShape } from "./motion.ts";
 import { playAt } from "./physics.ts";
 import {
@@ -96,6 +96,9 @@ export type PlayerState = {
 	dribbleHand?: Hand;
 	// A bounce that takes it across to his other hand: the hand it leaves.
 	dribbleFrom?: Hand;
+	// How tight on him the nearest of theirs in front of him is (0 to 1):
+	// up on him, his dribble is kept in by his hip, not out in front.
+	tight?: number;
 	// His hands up as a target for a pass on its way to him (0 to 1).
 	target?: number;
 	// Up for a dunk: the jump a typical player makes to throw it down (feet),
@@ -133,6 +136,7 @@ export type Blend = {
 	dribble?: number;
 	dribbleHand?: Hand;
 	dribbleFrom?: Hand;
+	tight?: number;
 	target?: number;
 	mirror?: boolean;
 	w: number;
@@ -1423,6 +1427,7 @@ type Doing = {
 	dribble?: number;
 	dribbleHand?: Hand;
 	dribbleFrom?: Hand;
+	tight?: number;
 	target?: number;
 	// Stepping over off a man (not a shuffle he set off on).
 	aside?: true;
@@ -1545,6 +1550,50 @@ const bridgeAt = (
 	return ANIMS[g.anim].kind === "cycle" ? g : undefined;
 };
 
+// A defender up on the man dribbling, in front of him (feet): from the
+// farther, he starts to keep the ball in; by the nearer, it is by his hip.
+const TIGHT_FAR = 3.4;
+const TIGHT_NEAR = 2.2;
+const tightAt = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	here: Spot,
+): number => {
+	// In front of him: the way he is going, or standing, toward the rim.
+	let fx = rimX(tr.team) - here.x;
+	let fy = COURT_H / 2 - here.y;
+	if (here.moving && Math.hypot(here.hx, here.hy) > 1e-6) {
+		fx = here.hx;
+		fy = here.hy;
+	}
+	const n = Math.hypot(fx, fy) || 1;
+	fx /= n;
+	fy /= n;
+	let most = 0;
+	for (const o of tl.tracks.values()) {
+		if (o.team === tr.team) {
+			continue;
+		}
+		const si = lastIndex(o.shown, t, (x) => x[0]);
+		if (si < 0 || !o.shown[si]![1]) {
+			continue;
+		}
+		const p = spotAt(o, t, false);
+		const dx = p.x - here.x;
+		const dy = p.y - here.y;
+		const d = Math.hypot(dx, dy);
+		if (d >= TIGHT_FAR || d < 0.01) {
+			continue;
+		}
+		const front = clamp01(((dx * fx + dy * fy) / d - 0.1) / 0.5);
+		most = Math.max(
+			most,
+			clamp01((TIGHT_FAR - d) / (TIGHT_FAR - TIGHT_NEAR)) * front,
+		);
+	}
+	return most;
+};
 // How long his hands take to close on the ball once it is his.
 const GRIP_MS = 110;
 const GRIP_FLOOR_MS = 50;
@@ -1659,6 +1708,7 @@ const doingAt = (
 			: has?.style === "dribble"
 				? bounceOf(tl, bi, t)
 				: undefined;
+	const tight = has?.style === "dribble" ? tightAt(tl, tr, t, here) : 0;
 	// Since it came into his hands - or went out of them.
 	let grip: number | undefined;
 	if (has?.style === "hold") {
@@ -1710,6 +1760,7 @@ const doingAt = (
 		dribble: beat?.ph,
 		dribbleHand: beat ? (beat.ph < DOWN ? beat.from : beat.to) : undefined,
 		...(beat && beat.from !== beat.to ? { dribbleFrom: beat.from } : {}),
+		...(tight > 0 ? { tight } : {}),
 		target: act || has ? undefined : targetAt(tl, pid, t) || undefined,
 	};
 };
@@ -1866,6 +1917,7 @@ const blendInto = (
 		dribble: before.dribble,
 		dribbleHand: before.dribbleHand,
 		...(before.dribbleFrom ? { dribbleFrom: before.dribbleFrom } : {}),
+		...(before.tight ? { tight: before.tight } : {}),
 		...(before.holding && before.grip === undefined ? { held: true } : {}),
 		target: before.target,
 		...(before.mirror ? { mirror: true } : {}),
@@ -2648,6 +2700,7 @@ const blendPose = (f: Blend): Pose => {
 		f.dribbleHand,
 		f.target,
 		f.dribbleFrom,
+		f.tight,
 	);
 	const m = f.mirror ? mirror(as) : as;
 	const own = f.held ? carried(m, f.anim) : m;
@@ -2675,6 +2728,7 @@ export const poseOf = (st: PlayerState): Pose => {
 		st.dribbleHand,
 		st.target,
 		st.dribbleFrom,
+		st.tight,
 	);
 	const m = st.mirror ? mirror(own) : own;
 	// The ball in his hands - not just now coming into them - his arms
@@ -3038,7 +3092,7 @@ const ballOn = (
 			// out ahead of him on the move - or, changing hands, between his
 			// feet.
 			const across = from !== to;
-			const ahead = dribbleAhead(st.anim);
+			const ahead = dribbleAhead(st.anim) * (1 - (st.tight ?? 0));
 			const out = 1.22 - 0.12 * ahead;
 			const floor = bodyPoint(
 				{ ...st, z: 0 },

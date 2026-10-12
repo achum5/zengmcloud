@@ -5180,10 +5180,18 @@ export const posed = (
 	hand?: Hand,
 	target = 0,
 	leaves?: Hand,
+	// Somebody up on him (0 to 1): his dribble kept in by his hip.
+	tight = 0,
 ): Pose => {
 	const q = poseAt(anim, phase);
 	if (dribble !== undefined && !MOVES.has(anim)) {
-		return dribbleArm(q, dribble, hand, dribbleAhead(anim), leaves);
+		return dribbleArm(
+			q,
+			dribble,
+			hand,
+			dribbleAhead(anim) * (1 - tight),
+			leaves,
+		);
 	}
 	if (target <= 0) {
 		return q;
