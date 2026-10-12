@@ -100,6 +100,9 @@ export type PlayerState = {
 	// How tight on him the nearest of theirs in front of him is (0 to 1):
 	// up on him, his dribble is kept in by his hip, not out in front.
 	tight?: number;
+	// Doing something with his arms on the run - a catch, a pass, a hand at
+	// the ball: the stride his legs keep on with under it (see STRIDE_ACTS).
+	stride?: Stride;
 	// His hands up as a target for a pass on its way to him (0 to 1).
 	target?: number;
 	// Up for a dunk: the jump a typical player makes to throw it down (feet),
@@ -128,6 +131,9 @@ export type PlayerState = {
 	// (0 to 1).
 	arm?: ArmPose;
 };
+// His legs on a stride - its gait and how far through it - for so much of
+// them (0 to 1) under whatever his arms are doing.
+export type Stride = { anim: AnimName; phase: number; w: number };
 // A move he is easing out of (see blendInto).
 export type Blend = {
 	anim: AnimName;
@@ -138,6 +144,7 @@ export type Blend = {
 	dribbleHand?: Hand;
 	dribbleFrom?: Hand;
 	tight?: number;
+	stride?: Stride;
 	target?: number;
 	mirror?: boolean;
 	w: number;
@@ -1476,6 +1483,7 @@ type Doing = {
 	dribbleHand?: Hand;
 	dribbleFrom?: Hand;
 	tight?: number;
+	stride?: Stride;
 	target?: number;
 	// Stepping over off a man (not a shuffle he set off on).
 	aside?: true;
@@ -1749,6 +1757,19 @@ const doingAt = (
 			mirrored = life.mirror === true;
 		}
 	}
+	// An act on the run with only his arms in it - a catch, a pass, a hand
+	// at the ball, a man fought off - his legs keep on with his stride, not
+	// stood still under him while he goes on at a run.
+	// (Onto it or off it, he eases over - see blendInto.)
+	const stride: Stride | undefined =
+		act &&
+		STRIDE_ACTS.has(act.anim) &&
+		z <= 0 &&
+		here.moving &&
+		here.run &&
+		speedAt(tr, t) >= STRIDE_FTPS
+			? { ...gaitOf(tl, tr, here.moveIndex, here.run, t), w: 1 }
+			: undefined;
 	const bi = ballIndexAt(tl, t);
 	const seg = tl.ball[bi];
 	const has = seg?.kind === "hold" && seg.pid === pid ? seg : undefined;
@@ -1814,6 +1835,7 @@ const doingAt = (
 		dribbleHand: beat ? (beat.ph < DOWN ? beat.from : beat.to) : undefined,
 		...(beat && beat.from !== beat.to ? { dribbleFrom: beat.from } : {}),
 		...(tight > 0 ? { tight } : {}),
+		...(stride ? { stride } : {}),
 		target: act || has ? undefined : targetAt(tl, pid, t) || undefined,
 	};
 };
@@ -1892,7 +1914,8 @@ const blendInto = (
 	const same = (d: Doing) =>
 		d.anim === now.anim &&
 		(d.aside === true) === (now.aside === true) &&
-		(d.dribble === undefined) === (now.dribble === undefined);
+		(d.dribble === undefined) === (now.dribble === undefined) &&
+		d.stride?.anim === now.stride?.anim;
 	const anim = now.anim;
 	let lo = t - BLEND_MS;
 	let before = doingAt(tl, tr, lo);
@@ -1971,6 +1994,7 @@ const blendInto = (
 		dribbleHand: before.dribbleHand,
 		...(before.dribbleFrom ? { dribbleFrom: before.dribbleFrom } : {}),
 		...(before.tight ? { tight: before.tight } : {}),
+		...(before.stride ? { stride: before.stride } : {}),
 		...(before.holding && before.grip === undefined ? { held: true } : {}),
 		target: before.target,
 		...(before.mirror ? { mirror: true } : {}),
@@ -2780,6 +2804,45 @@ const UPPER: (keyof Pose)[] = [
 	"twist",
 	"tilt",
 ];
+// Acts that are all arms - done on the run (from this fast, feet a second),
+// his legs keep on striding.
+const STRIDE_FTPS = 3.5;
+const STRIDE_ACTS = new Set<AnimName>([
+	"catch",
+	"pass",
+	"passBounce",
+	"passOverhead",
+	"reach",
+	"poke",
+	"callBall",
+	"contest",
+	"boxOut",
+	"fight",
+	"bump",
+]);
+const STRIDE_LEGS: (keyof Pose)[] = [
+	"hipN",
+	"kneeN",
+	"hipF",
+	"kneeF",
+	"wide",
+	"plant",
+	"toe",
+	"toeN",
+	"toeF",
+];
+// A pose with its legs on a stride (see Stride).
+const strode = (q: Pose, s: Stride | undefined): Pose => {
+	if (!s || s.w <= 0) {
+		return q;
+	}
+	const legs = poseAt(s.anim, s.phase);
+	const out = { ...q };
+	for (const k of STRIDE_LEGS) {
+		out[k] = q[k] + (legs[k] - q[k]) * s.w;
+	}
+	return out;
+};
 // The pose a blend shows: its move's, itself easing out of the one before.
 const blendPose = (f: Blend): Pose => {
 	const as = posed(
@@ -2791,7 +2854,7 @@ const blendPose = (f: Blend): Pose => {
 		f.dribbleFrom,
 		f.tight,
 	);
-	const m = f.mirror ? mirror(as) : as;
+	const m = strode(f.mirror ? mirror(as) : as, f.stride);
 	const own = f.held ? carried(m, f.anim) : m;
 	const g = f.from;
 	return g && (g.w > 0 || (g.arms ?? 0) > 0) ? blendFrom(own, g) : own;
@@ -2819,7 +2882,7 @@ export const poseOf = (st: PlayerState): Pose => {
 		st.dribbleFrom,
 		st.tight,
 	);
-	const m = st.mirror ? mirror(own) : own;
+	const m = strode(st.mirror ? mirror(own) : own, st.stride);
 	// The ball in his hands - not just now coming into them - his arms
 	// carry it as the move does (and as the one before did, if he had it
 	// then), so going from the one to the other they ease over too.
