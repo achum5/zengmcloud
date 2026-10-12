@@ -1064,7 +1064,25 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 	const fallback = face === 1 ? 0 : Math.PI;
 	const act = actAt(tr, t);
 	if (act?.look) {
-		return angleTo(here, act.look, fallback);
+		const to = angleTo(here, act.look, fallback);
+		// Caught on the run, he opens up to it only as far as running on lets
+		// him - not turned right round on it, carried on backward at a run.
+		if (
+			act.anim === "catch" &&
+			here.moving &&
+			here.hx * here.hx + here.hy * here.hy > 1e-6
+		) {
+			const was = spotAt(tr, t - TURN_STEP, false);
+			if (
+				Math.hypot(here.x - was.x, here.y - was.y) / (TURN_STEP / 1000) >=
+				RUSH_FTPS
+			) {
+				const heading = Math.atan2(here.hy, here.hx);
+				const d = wrapAngle(to - heading);
+				return heading + Math.max(-CATCH_OPEN_MAX, Math.min(CATCH_OPEN_MAX, d));
+			}
+		}
+		return to;
 	}
 	const mv = here.moveIndex >= 0 ? tr.moves[here.moveIndex] : undefined;
 	// About to pass it - standing, or picking up his dribble for it - he
@@ -1182,7 +1200,11 @@ const wrapAngle = (d: number) => d - Math.round(d / TAU) * TAU;
 // A step of turning, and which way he is turning (0 once he faces where he
 // means to).
 type Turning = { yaw: number; sense: number };
-const turnStep = ({ yaw, sense }: Turning, target: number): Turning => {
+const turnStep = (
+	{ yaw, sense }: Turning,
+	target: number,
+	max = TURN_MAX,
+): Turning => {
 	let d = wrapAngle(target - yaw);
 	// Turning right round, he keeps on the way he was already turning; from
 	// a standstill, he comes round facing the camera - not whichever way a
@@ -1197,11 +1219,31 @@ const turnStep = ({ yaw, sense }: Turning, target: number): Turning => {
 			d = other;
 		}
 	}
-	const step = Math.max(-TURN_MAX, Math.min(TURN_MAX, d));
+	const step = Math.max(-max, Math.min(max, d));
 	return {
 		yaw: yaw + step,
-		sense: Math.abs(d) <= TURN_MAX ? 0 : Math.sign(step),
+		sense: Math.abs(d) <= max ? 0 : Math.sign(step),
 	};
+};
+// Going at a pace one way while still facing well round from it - turned
+// back on himself - he plants and spins round onto it, quicker than a man
+// turns where he stands: not run on with his legs going the wrong way.
+const RUSH_TURN = 1.25;
+const RUSH_FTPS = 5;
+const rushed = (tr: Track, k: number, yaw: number, target: number): boolean => {
+	if (Math.abs(wrapAngle(target - yaw)) < Math.PI / 2) {
+		return false;
+	}
+	const b = spotAt(tr, k);
+	if (!b.moving || b.hx * b.hx + b.hy * b.hy < 1e-6) {
+		return false;
+	}
+	// (Only round onto the way he is going.)
+	if (Math.abs(wrapAngle(target - Math.atan2(b.hy, b.hx))) > 0.5) {
+		return false;
+	}
+	const a = spotAt(tr, k - TURN_STEP, false);
+	return Math.hypot(b.x - a.x, b.y - a.y) / (TURN_STEP / 1000) >= RUSH_FTPS;
 };
 // Worked-out beats, kept per player: keyed by the beat and which settling
 // moment it was worked out from.
@@ -1225,7 +1267,12 @@ const yawOnBeat = (tl: CourtTimeline, tr: Track, g: number): number => {
 		kept.clear();
 	}
 	for (k = Math.max(k, from) + TURN_STEP; k <= g; k += TURN_STEP) {
-		turning = turnStep(turning, yawTarget(tl, tr, k));
+		const target = yawTarget(tl, tr, k);
+		turning = turnStep(
+			turning,
+			target,
+			rushed(tr, k, turning.yaw, target) ? TURN_MAX * RUSH_TURN : TURN_MAX,
+		);
 		kept.set(key(k), turning);
 	}
 	return turning.yaw;
@@ -1508,11 +1555,16 @@ const stepsOf = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
 				: "slide";
 	}
 	// Going the way his back faces - easing off from the ball while he
-	// watches it - at no more than a backpedal's pace: he backpedals, not
-	// runs forward while he goes backward. (Decided for the whole run, by
-	// how he faces halfway along it, so his legs don't switch mid-stride.)
+	// watches it, or backing out with it squared up to the rim - at no more
+	// than a backpedal's pace: he backpedals, not runs forward while he goes
+	// backward. (Decided for the whole run, by how he faces halfway along it,
+	// so his legs don't switch mid-stride.)
 	if (
-		(anim === "walk" || anim === "jog" || anim === "run") &&
+		(anim === "walk" ||
+			anim === "jog" ||
+			anim === "run" ||
+			anim === "dribble" ||
+			anim === "dribbleWalk") &&
 		backward(tl, tr, run)
 	) {
 		return "back";
