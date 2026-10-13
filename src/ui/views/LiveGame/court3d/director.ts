@@ -568,6 +568,9 @@ const GLASS_TURN = 0.4;
 // (feet), this much nearer it - and over half court, as far as this from it
 // - to no nearer than this.
 const BACK_REACT = 250;
+// A basket, the team that scored turns and gets back this long (ms) after
+// it is through (see inboundAfterMake).
+const MADE_BACK_MS = 350;
 const BACK_FROM = 50;
 const BACK_FT = 30;
 const BACK_OVER = 40;
@@ -2425,16 +2428,31 @@ class Director {
 			t + 200,
 			upBy,
 		);
+		// (The team that scored on its way back from as soon as it is through
+		// - once each is done with what he is doing, the shooter coming down,
+		// a bump with a teammate - not stood at the wrong end till it is
+		// taken out.)
+		const made = this.beats.at(-1);
+		const scored =
+			made && resultOf(made.type)?.kind === "make"
+				? Math.min(t, made.actionStart + MADE_BACK_MS)
+				: t;
 		off.forEach((man, j) => {
 			const pid = this.defenderOf(man);
 			if (pid === undefined || !def.includes(pid)) {
 				return;
 			}
+			let from = scored + 250 + j * 80;
+			for (const a of this.track(pid)?.acts ?? []) {
+				if (a.t1 > from && a.t0 < t) {
+					from = Math.max(from, a.t1);
+				}
+			}
 			const n = this.track(pid)?.moves.length ?? 0;
 			const back = this.goBy(
 				pid,
 				guardSpot(team, spots[j] ?? spots[0]!),
-				t + 250 + j * 80,
+				Math.min(from, t + 250 + j * 80),
 				t + 3600,
 				"run",
 			);
