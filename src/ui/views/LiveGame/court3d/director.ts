@@ -568,16 +568,17 @@ const GLASS_APART = 3;
 const GLASS_TURN = 0.4;
 // The ball theirs, the other five turn and get back (see getBack): from this
 // long after (ms), anybody further than this from the rim at their end
-// (feet), this much nearer it - and over half court, as far as this from it
-// - to no nearer than this.
+// (feet), this much nearer it - and back in to the top of the key, not
+// stopped at half court where the ball comes up: as far as this from it -
+// to no nearer than this.
 const BACK_REACT = 250;
 // A basket, the team that scored turns and gets back this long (ms) after
 // it is through (see inboundAfterMake).
 const MADE_BACK_MS = 350;
 const BACK_FROM = 50;
 const BACK_FT = 30;
-const BACK_OVER = 40;
-const BACK_TO = 28;
+const BACK_OVER = 27;
+const BACK_TO = 22;
 // How far out from the rim (feet) a long rebound comes down: where a guard
 // or a wing with nobody to box out waits on it.
 const LONG_BOARD: [number, number] = [11, 16];
@@ -882,6 +883,13 @@ const CONTEST_FT = 6;
 // How close (feet, middle to middle) two men get before they are into each
 // other: a screen, a post-up.
 const BODY = 1.85;
+// The lanes up the floor (feet across it): out wide, in between, down the
+// middle. Two men never run the one lane, nor one the ball's - this far off
+// it at the least; and a man takes one across the floor from his side
+// only if it is this much nearer what he wants (feet).
+const LANES = [6, 15, 21.5, 28.5, 35, 44] as const;
+const LANE_OFF_BALL = 7;
+const LANE_ACROSS = 8;
 
 // How far along a run (0 to 1) a man is `u` of the way through its `ms`:
 // setting off from a standstill and pulling up at the end, the way the
@@ -1609,10 +1617,35 @@ class Director {
 		men: { pid: number; to: Pt; j: number; by?: number; upTo?: number }[],
 		t0: number,
 		by: number,
+		// Across the floor, where the ball comes up: nobody runs his lane.
+		ballY?: number,
 	) {
 		const dir = attackDir(team);
 		const rim = rimPt(team);
-		const taken = new Map<string, number>();
+		const taken: number[] = [];
+		// The lane he would run, or - that one gone, or the ball's - the
+		// nearest one free, his side of the ball for choice.
+		const laneFor = (want: number, side: number) => {
+			let best = want;
+			let cost = Infinity;
+			for (const y of LANES) {
+				if (
+					taken.some((q) => Math.abs(q - y) < 5) ||
+					(ballY !== undefined && Math.abs(y - ballY) < LANE_OFF_BALL)
+				) {
+					continue;
+				}
+				const c =
+					Math.abs(y - want) +
+					(Math.sign(y - COURT_H / 2) === -side ? LANE_ACROSS : 0);
+				if (c < cost) {
+					cost = c;
+					best = y;
+				}
+			}
+			taken.push(best);
+			return best;
+		};
 		const lanes = men
 			.map((m) => {
 				const big = Math.abs(m.to.y - COURT_H / 2) < 9 && dist(m.to, rim) < 17;
@@ -1634,12 +1667,7 @@ class Director {
 				this.goBy(m.pid, end, t0 + m.j * 90, at, "run");
 				continue;
 			}
-			const key = m.big ? "mid" : String(m.side);
-			const n = taken.get(key) ?? 0;
-			taken.set(key, n + 1);
-			const laneY = m.big
-				? COURT_H / 2 + (n % 2 ? 3.5 : -3.5) * (m.side || 1)
-				: COURT_H / 2 + m.side * (n === 0 ? 19 : 10);
+			const laneY = laneFor(COURT_H / 2 + m.side * (m.big ? 3.5 : 19), m.side);
 			const start = Math.max(t0 + m.j * 90, this.free.get(m.pid) ?? 0);
 			if (m.upTo !== undefined) {
 				this.goBy(m.pid, clampPt({ x: endX, y: laneY }), start, at, "run");
@@ -2430,16 +2458,11 @@ class Director {
 			: this.go(inb, out, got + 350, WALK * 1.5, "walk");
 		this.turn(inb, there, dir);
 		// The point guard comes back to a few strides in from him.
-		this.go(
-			pg,
-			clampPt({
-				x: out.x + dir * this.rand(11, 15),
-				y: out.y - side * this.rand(2, 6),
-			}),
-			readyAt(pg, scored + 150, t + 150),
-			JOG,
-			"run",
-		);
+		const gets = clampPt({
+			x: out.x + dir * this.rand(11, 15),
+			y: out.y - side * this.rand(2, 6),
+		});
+		this.go(pg, gets, readyAt(pg, scored + 150, t + 150), JOG, "run");
 		// The rest up the floor, getting there a beat before the ball does;
 		// the team that scored back down it, each picking up the man nearest
 		// him.
@@ -2464,6 +2487,7 @@ class Director {
 				.filter(({ pid }) => up.includes(pid)),
 			scored + 200,
 			upBy,
+			(gets.y + spots[0]!.y) / 2,
 		);
 		// (The team that scored on its way back from as soon as it is through
 		// - once each is done with what he is doing, the shooter coming down,
@@ -4020,7 +4044,14 @@ class Director {
 						runMs(dist(this.posOf(m.pid), m.to) * 1.08, RUN * 0.85),
 					),
 				);
-			this.fillLanes(team, lanes, t, by);
+			const ballMan = up ?? had ?? bh;
+			this.fillLanes(
+				team,
+				lanes,
+				t,
+				by,
+				(this.posOf(ballMan).y + spotOf[f.ball]!.y) / 2,
+			);
 			ready = Math.max(ready, by);
 		}
 		if (had !== undefined && had !== bh) {
@@ -4231,7 +4262,7 @@ class Director {
 			}
 		});
 		if (lanes.length > 0) {
-			this.fillLanes(run.team, lanes, t, t);
+			this.fillLanes(run.team, lanes, t, t, this.posOf(bh).y);
 		}
 		this.motionTeam = run.team;
 		this.motion = 0;
