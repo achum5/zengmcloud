@@ -563,6 +563,9 @@ const SCRAMBLE_NEAR = 2.6;
 // tried this much further round the rim (radians) till he is.
 const GLASS_APART = 3;
 const GLASS_TURN = 0.4;
+// How far out from the rim (feet) a long rebound comes down: where a guard
+// or a wing with nobody to box out waits on it.
+const LONG_BOARD: [number, number] = [11, 16];
 // The last few inches onto a spot: a shuffle this long (ms).
 const SETTLE_MS = 160;
 // A loose ball on the hop is taken out of the air about where a man reaching
@@ -7638,10 +7641,16 @@ class Director {
 				const u = unitVec(C, rim);
 				spot = clampPt({ x: C.x + u.x * 1.8, y: C.y + u.y * 1.8 });
 			} else {
-				// Nobody to put a body on: in to the glass himself, eyes on it.
+				// Nobody to put a body on: a big in to the glass himself, eyes
+				// on it; anybody else no further in than where a long one comes
+				// down.
 				const D0 = this.posOf(d);
 				const u = unitVec(rim, D0);
-				const k = Math.min(dist(D0, rim), this.rand(6, 9));
+				const big = (this.rank.get(d) ?? 4) >= 6;
+				const k = Math.min(
+					dist(D0, rim),
+					big ? this.rand(6, 9) : this.rand(LONG_BOARD[0], LONG_BOARD[1]),
+				);
 				spot = apart(clampPt({ x: rim.x + u.x * k, y: rim.y + u.y * k }));
 			}
 			const there = this.goBy(d, spot, r0 + 80, meet, "run", undefined, BURST);
@@ -7734,13 +7743,13 @@ class Director {
 					["powerLayup", 0.42],
 					["layup", 0.36],
 					["fingerRoll", 0.12],
-					["scoop", 0.1],
+					["scoop", 0.14],
 				]
 			: [
 					["layup", 0.36],
 					["fingerRoll", 0.3],
 					["powerLayup", 0.16],
-					["scoop", under ? 0.3 : 0.18],
+					["scoop", under ? 0.3 : 0.22],
 				];
 		const total = odds.reduce((a, [, w]) => a + w, 0);
 		let x = r * total;
