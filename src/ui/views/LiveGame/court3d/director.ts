@@ -2394,7 +2394,28 @@ class Director {
 			x: dir === 1 ? -1.4 : COURT_W + 1.4,
 			y: COURT_H / 2 + side * this.rand(4, 9),
 		};
-		const got = this.pickUp(inb, Math.max(t, still - 700), quick ? RUN : JOG);
+		// When it went through: everybody is on with what comes next from a
+		// moment after that - once he is done with what he is doing (coming
+		// down from the shot, a bump with a teammate).
+		const made = this.beats.at(-1);
+		const scored =
+			made && resultOf(made.type)?.kind === "make"
+				? Math.min(t, made.actionStart + MADE_BACK_MS)
+				: t;
+		// (No later than they would have been on with it anyway.)
+		const readyAt = (pid: number, from: number, most: number) => {
+			for (const a of this.track(pid)?.acts ?? []) {
+				if (a.t1 > from && a.t0 < t) {
+					from = Math.max(from, a.t1);
+				}
+			}
+			return Math.min(from, most);
+		};
+		const got = this.pickUp(
+			inb,
+			Math.max(readyAt(inb, scored + 150, t), still - 700),
+			quick ? RUN : JOG,
+		);
 		const there = quick
 			? this.go(inb, out, got + 120, JOG, "run")
 			: this.go(inb, out, got + 350, WALK * 1.5, "walk");
@@ -2406,7 +2427,7 @@ class Director {
 				x: out.x + dir * this.rand(11, 15),
 				y: out.y - side * this.rand(2, 6),
 			}),
-			t + 150,
+			readyAt(pg, scored + 150, t + 150),
 			JOG,
 			"run",
 		);
@@ -2420,39 +2441,35 @@ class Director {
 			there +
 			600 +
 			runMs(dist({ x: out.x + dir * 13, y: out.y }, spots[0]!), DRIBBLE);
+		const up = off.filter((pid) => pid !== pg && pid !== inb);
+		for (const pid of up) {
+			this.free.set(
+				pid,
+				Math.max(this.free.get(pid) ?? 0, readyAt(pid, scored + 200, t + 200)),
+			);
+		}
 		this.fillLanes(
 			team,
 			off
 				.map((pid, j) => ({ pid, to: spots[j] ?? spots[0]!, j }))
-				.filter(({ pid }) => pid !== pg && pid !== inb),
-			t + 200,
+				.filter(({ pid }) => up.includes(pid)),
+			scored + 200,
 			upBy,
 		);
 		// (The team that scored on its way back from as soon as it is through
 		// - once each is done with what he is doing, the shooter coming down,
 		// a bump with a teammate - not stood at the wrong end till it is
 		// taken out.)
-		const made = this.beats.at(-1);
-		const scored =
-			made && resultOf(made.type)?.kind === "make"
-				? Math.min(t, made.actionStart + MADE_BACK_MS)
-				: t;
 		off.forEach((man, j) => {
 			const pid = this.defenderOf(man);
 			if (pid === undefined || !def.includes(pid)) {
 				return;
 			}
-			let from = scored + 250 + j * 80;
-			for (const a of this.track(pid)?.acts ?? []) {
-				if (a.t1 > from && a.t0 < t) {
-					from = Math.max(from, a.t1);
-				}
-			}
 			const n = this.track(pid)?.moves.length ?? 0;
 			const back = this.goBy(
 				pid,
 				guardSpot(team, spots[j] ?? spots[0]!),
-				Math.min(from, t + 250 + j * 80),
+				readyAt(pid, scored + 250 + j * 80, t + 250 + j * 80),
 				t + 3600,
 				"run",
 			);
