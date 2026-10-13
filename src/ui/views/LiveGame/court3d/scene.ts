@@ -51,7 +51,12 @@ import { COURT_W, RIM_Z, seatSpot, type Pt3, type Side } from "./geometry.ts";
 import { drawPixelText, pixelTextWidth } from "./pixelFont.ts";
 import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
 import { ANIMS, type AnimName, type Body } from "./poses.ts";
-import { drawSprite, type Scratch, type SpriteCache } from "./sprite.ts";
+import {
+	drawSprite,
+	startFrame,
+	type Scratch,
+	type SpriteCache,
+} from "./sprite.ts";
 
 // ONE FRAME, AS PIXEL ART: the building and the floor laid out in
 // perspective, the lines, the shadows, then the players, the two baskets and
@@ -648,6 +653,7 @@ const floorQuad = (
 export const drawFrame = (f: Frame) => {
 	const { ctx, cam, tl, arena } = f;
 	const { t, players, ball } = f.moment;
+	startFrame(f.sprites);
 	ctx.setTransform(1, 0, 0, 1, 0, 0);
 	ctx.fillStyle = "#07060a";
 	ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);

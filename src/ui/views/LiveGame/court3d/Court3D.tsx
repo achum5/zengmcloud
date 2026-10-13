@@ -129,6 +129,9 @@ const FINE_ON_MS = 5;
 const FINE_OFF_MS = 11;
 const FINE_RETRY_MS = 20_000;
 const FINE_SETTLE_MS = 3000;
+// The most of a frame (ms) given to drawing players in poses not drawn
+// before; over that, a man waits a frame for his new one (see sprite.ts).
+const SPRITE_BUDGET_MS = 6;
 
 // A player whose face is a photo is drawn in this, head to toe.
 const SILHOUETTE = "#101012";
@@ -906,6 +909,7 @@ const Court3D = ({
 		// without smoothing (see the canvas's style).
 		const scratch = makeScratch();
 		let sprites = makeSpriteCache();
+		sprites.budget = SPRITE_BUDGET_MS;
 		// When finer poses were last taken up, and last given up for want of
 		// time.
 		let fineOnAt = -Infinity;
@@ -1176,6 +1180,7 @@ const Court3D = ({
 			if (adjust(res, h * dpr, dt, performance.now() - drawStart, now)) {
 				// Sprites drawn for the old size are no use at the new one.
 				sprites = makeSpriteCache();
+				sprites.budget = SPRITE_BUDGET_MS;
 			}
 			// Time to spare, at the finest picture: poses in finer steps - and
 			// back to the usual ones well before that costs a size.

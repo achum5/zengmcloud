@@ -40,15 +40,25 @@ const rim = (
 	w: number,
 	h: number,
 	isNew?: (i: number) => boolean,
+	// (Only round what is in this box: nothing is drawn outside it.)
+	box?: Box,
 ) => {
 	if (solid.length < w * h) {
 		solid = new Uint8Array(w * h * 2);
 	}
-	for (let i = 0; i < w * h; i++) {
-		solid[i] = d[i * 4 + 3]! >= SOLID && (!isNew || isNew(i)) ? 1 : 0;
+	const bx0 = box ? Math.max(0, box.x0 - 1) : 0;
+	const by0 = box ? Math.max(0, box.y0 - 1) : 0;
+	const bx1 = box ? Math.min(w - 1, box.x1 + 1) : w - 1;
+	const by1 = box ? Math.min(h - 1, box.y1 + 1) : h - 1;
+	// (What is solid a pixel further out too: the rim's edge asks.)
+	for (let y = Math.max(0, by0 - 1); y <= Math.min(h - 1, by1 + 1); y++) {
+		for (let x = Math.max(0, bx0 - 1); x <= Math.min(w - 1, bx1 + 1); x++) {
+			const i = y * w + x;
+			solid[i] = d[i * 4 + 3]! >= SOLID && (!isNew || isNew(i)) ? 1 : 0;
+		}
 	}
-	for (let y = 0; y < h; y++) {
-		for (let x = 0; x < w; x++) {
+	for (let y = by0; y <= by1; y++) {
+		for (let x = bx0; x <= bx1; x++) {
 			const i = y * w + x;
 			const a = d[i * 4 + 3]! / 255;
 			if (a * 255 >= SOLID) {
@@ -80,7 +90,18 @@ const rim = (
 // time it is needed and kept; after that a player costs one image copy. He
 // still glides across the floor smoothly - only his pose steps, the way
 // pixel art does.
-type Kept = { canvas: HTMLCanvasElement; dx: number; dy: number };
+//
+// Each is kept trimmed to what is drawn of him, not the whole box he might
+// reach into.
+type Box = { x0: number; y0: number; x1: number; y1: number };
+type Kept = {
+	canvas: HTMLCanvasElement;
+	w: number;
+	h: number;
+	// From where he stands, on the picture.
+	dx: number;
+	dy: number;
+};
 export type SpriteCache = {
 	kept: Map<string, Kept>;
 	ids: WeakMap<Look, number>;
@@ -89,13 +110,81 @@ export type SpriteCache = {
 	// many frames, turns and steps of a blend - so he moves the more smoothly
 	// (Court3D decides, by how long a frame takes to draw).
 	fine?: boolean;
+	// SO MUCH A FRAME. The frame being drawn (see startFrame), and the time
+	// spent on new pictures in it (ms). Once that is more than `budget`, a
+	// man with no picture yet for his new pose is drawn one more frame in
+	// the one he had - a frame behind, never more - and gets his new one
+	// first thing next frame: a frame that would have taken too long, taken
+	// in two.
+	frame: number;
+	spent: number;
+	budget?: number;
+	last: Map<
+		number,
+		{ kept: Kept; frame: number; behind: boolean; scale: number }
+	>;
 };
 export const makeSpriteCache = (): SpriteCache => ({
 	kept: new Map(),
 	ids: new WeakMap(),
 	next: 0,
+	frame: 0,
+	spent: 0,
+	last: new Map(),
 });
+// A new frame: none of its time spent yet.
+export const startFrame = (cache: SpriteCache) => {
+	cache.frame += 1;
+	cache.spent = 0;
+};
 const KEEP = 2400;
+const keep = (
+	cache: SpriteCache,
+	key: string,
+	from: HTMLCanvasElement,
+	fx: number,
+	fy: number,
+	w: number,
+	h: number,
+	dx: number,
+	dy: number,
+): Kept => {
+	const canvas = document.createElement("canvas");
+	canvas.width = w;
+	canvas.height = h;
+	canvas.getContext("2d")!.drawImage(from, fx, fy, w, h, 0, 0, w, h);
+	const k: Kept = { canvas, w, h, dx, dy };
+	cache.kept.set(key, k);
+	if (cache.kept.size > KEEP) {
+		// The oldest go first.
+		let n = cache.kept.size - KEEP + 100;
+		for (const old of cache.kept.keys()) {
+			cache.kept.delete(old);
+			if (--n <= 0) {
+				break;
+			}
+		}
+	}
+	return k;
+};
+const stamp = (
+	ctx: CanvasRenderingContext2D,
+	k: Kept,
+	x: number,
+	y: number,
+	px: number,
+) => {
+	const smoothing = ctx.imageSmoothingEnabled;
+	ctx.imageSmoothingEnabled = false;
+	ctx.drawImage(
+		k.canvas,
+		Math.round(x + k.dx),
+		Math.round(y + k.dy),
+		k.w * px,
+		k.h * px,
+	);
+	ctx.imageSmoothingEnabled = smoothing;
+};
 const CYCLE_FRAMES = 12;
 // Steps through a bounce for the dribbling hand.
 const DRIBBLE_FRAMES = 8;
@@ -288,17 +377,18 @@ export const drawSprite = (
 	const fine = cache?.fine === true;
 	const pose = stepped(st, fine ? FINE_STEPS : COARSE_STEPS);
 	let key: string | undefined;
+	let id = 0;
+	// His size on the picture, in steps of 4%.
+	const scale = Math.round(Math.log(k) / Math.log(1.04));
 	if (cache) {
-		let id = cache.ids.get(look);
-		if (id === undefined) {
-			id = cache.next++;
+		const known = cache.ids.get(look);
+		id = known ?? cache.next++;
+		if (known === undefined) {
 			cache.ids.set(look, id);
 		}
 		const f = pose.from;
 		const a = pose.arm;
-		key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}|${pose.turn}|${Math.round(
-			Math.log(k) / Math.log(1.04),
-		)}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.pivot ? `p${pose.pivot}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
+		key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.pivot ? `p${pose.pivot}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
 			f ? `|${blendKey(f)}` : ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 		const kept = cache.kept.get(key);
@@ -306,19 +396,33 @@ export const drawSprite = (
 			// Kept longest are the ones still in use: to the back of the line.
 			cache.kept.delete(key);
 			cache.kept.set(key, kept);
-			const smoothing = ctx.imageSmoothingEnabled;
-			ctx.imageSmoothingEnabled = false;
-			ctx.drawImage(
-				kept.canvas,
-				Math.round(base.x + kept.dx),
-				Math.round(base.y + kept.dy - lift),
-				kept.canvas.width * px,
-				kept.canvas.height * px,
-			);
-			ctx.imageSmoothingEnabled = smoothing;
+			stamp(ctx, kept, base.x, base.y - lift, px);
+			cache.last.set(id, {
+				kept,
+				frame: cache.frame,
+				behind: false,
+				scale,
+			});
+			return;
+		}
+		// Out of time this frame, and drawn a moment ago: as he was, once.
+		const was = cache.last.get(id);
+		if (
+			cache.budget !== undefined &&
+			cache.spent >= cache.budget &&
+			was &&
+			!was.behind &&
+			was.frame === cache.frame - 1 &&
+			// (Not much bigger or smaller since: no lurch at a cut.)
+			Math.abs(was.scale - scale) <= 1
+		) {
+			stamp(ctx, was.kept, base.x, base.y - lift, px);
+			was.frame = cache.frame;
+			was.behind = true;
 			return;
 		}
 	}
+	const began = cache ? performance.now() : 0;
 	// Drawn standing on the floor; a jump only moves the picture up.
 	const posed: PlayerState = {
 		...st,
@@ -350,7 +454,7 @@ export const drawSprite = (
 	const made = sculpt(cam, posed, body, look, px, ox, oy, w, h);
 	const img = made.img;
 	const d = img.data;
-	rim(d, w, h);
+	rim(d, w, h, undefined, made.box);
 	s.putImageData(img, 0, 0);
 	// His face, shrunk to the sprite's scale - and the rim round it, just
 	// where it is new: the rest of him is done.
@@ -395,35 +499,49 @@ export const drawSprite = (
 		t.ctx.setTransform(1, 0, 0, 1, 0, 0);
 		t.ctx.clearRect(0, 0, w, h);
 		const top = made.over;
-		rim(top.data, w, h);
+		rim(top.data, w, h, undefined, made.box);
 		t.ctx.putImageData(top, 0, 0);
 		s.drawImage(t.canvas, 0, 0, w, h, 0, 0, w, h);
 	}
 
-	// Kept for next time, as its own little canvas.
-	let src: HTMLCanvasElement = canvas;
+	// Kept for next time: just what is drawn of him (the rim round it, his
+	// head and all).
 	if (cache && key) {
-		const keep = document.createElement("canvas");
-		keep.width = w;
-		keep.height = h;
-		keep.getContext("2d")!.drawImage(canvas, 0, 0, w, h, 0, 0, w, h);
-		cache.kept.set(key, { canvas: keep, dx: ox - base.x, dy: oy - base.y });
-		if (cache.kept.size > KEEP) {
-			// The oldest go first.
-			let n = cache.kept.size - KEEP + 100;
-			for (const old of cache.kept.keys()) {
-				cache.kept.delete(old);
-				if (--n <= 0) {
-					break;
-				}
-			}
+		const box = made.box;
+		const x0 = Math.max(0, Math.min(box.x0 - 1, hx0));
+		const y0 = Math.max(0, Math.min(box.y0 - 1, hy0));
+		const x1 = Math.min(w, Math.max(box.x1 + 2, hx1));
+		const y1 = Math.min(h, Math.max(box.y1 + 2, hy1));
+		const kept =
+			x1 > x0 && y1 > y0
+				? keep(
+						cache,
+						key,
+						canvas,
+						x0,
+						y0,
+						x1 - x0,
+						y1 - y0,
+						ox + x0 * px - base.x,
+						oy + y0 * px - base.y,
+					)
+				: undefined;
+		cache.spent += performance.now() - began;
+		if (kept) {
+			cache.last.set(id, {
+				kept,
+				frame: cache.frame,
+				behind: false,
+				scale,
+			});
+			stamp(ctx, kept, base.x, base.y - lift, px);
+			return;
 		}
-		src = keep;
 	}
 	const smoothing = ctx.imageSmoothingEnabled;
 	ctx.imageSmoothingEnabled = false;
 	ctx.drawImage(
-		src,
+		canvas,
 		0,
 		0,
 		w,

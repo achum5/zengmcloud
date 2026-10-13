@@ -1218,6 +1218,9 @@ export type Sculpted = {
 	// his face, the ball held up there.
 	over?: ImageData;
 	head: { x: number; y: number; r: number };
+	// The box round everything drawn (sprite pixels, ends included); empty
+	// (x0 > x1) if nothing was.
+	box: { x0: number; y0: number; x1: number; y1: number };
 };
 
 const TILE = 8;
@@ -1342,6 +1345,10 @@ export const sculpt = (
 	let cg = 0;
 	let cb = 0;
 	let cloth = false;
+	let bx0 = w;
+	let by0 = h;
+	let bx1 = -1;
+	let by1 = -1;
 
 	// The jersey, shirt or jacket at a point on his torso (U, S, F): sets
 	// cr, cg, cb.
@@ -1909,6 +1916,18 @@ export const sculpt = (
 						bb += (cb * 0.38 - bb) * e;
 					}
 					const o = (y * w + x) * 4;
+					if (x < bx0) {
+						bx0 = x;
+					}
+					if (x > bx1) {
+						bx1 = x;
+					}
+					if (y < by0) {
+						by0 = y;
+					}
+					if (y > by1) {
+						by1 = y;
+					}
 					d[o] = r;
 					d[o + 1] = g;
 					d[o + 2] = bb;
@@ -1951,5 +1970,10 @@ export const sculpt = (
 			over = undefined;
 		}
 	}
-	return { img, ...(over ? { over } : {}), head: b.head };
+	return {
+		img,
+		...(over ? { over } : {}),
+		head: b.head,
+		box: { x0: bx0, y0: by0, x1: bx1, y1: by1 },
+	};
 };
