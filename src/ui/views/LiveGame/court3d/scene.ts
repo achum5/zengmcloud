@@ -1070,11 +1070,17 @@ export const aimFor = (
 	const maxW = narrow ? 68 : 88;
 	let width = Math.min(maxW, Math.max(minW, maxX - minX + 18));
 	let x = ball.x * 0.62 + mid * 0.38;
-	// A shot going up: push in on the shooter.
+	// A shot going up: push in on the shooter - eased in as he goes up and
+	// back out as he comes down, not a jump at either end.
 	const shooter = m.players.find((p) => SHOOTING.has(p.anim));
 	if (shooter) {
-		width *= 0.92;
-		x = x * 0.6 + shooter.x * 0.4;
+		const u = Math.max(
+			0,
+			Math.min(1, shooter.phase / 0.3, (1 - shooter.phase) / 0.3),
+		);
+		const k = u * u * (3 - 2 * u);
+		width *= 1 - 0.08 * k;
+		x = x * (1 - 0.4 * k) + shooter.x * 0.4 * k;
 	}
 	width = Math.max(width, fit?.min ?? 0);
 	const room = width / 2 - 7;

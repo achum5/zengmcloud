@@ -96,6 +96,25 @@ const REPLAY_AFTER = 1150;
 const REPLAY_SPEED = 0.42;
 // Replay-time ms the picture takes to come up out of black and go back down.
 const REPLAY_DIP = 70;
+// How quickly the camera pans and zooms after what it follows (per second):
+// as quick as a first look's lag would be, but getting going and pulling
+// up smoothly.
+const CAM_PAN = 5.6;
+const CAM_ZOOM = 3.2;
+// Critically damped: from where it is and how fast it is going (`v`), on
+// toward `to` over `secs` - exact, however long the step.
+const follow = (
+	x: number,
+	v: number,
+	to: number,
+	w: number,
+	secs: number,
+): [number, number] => {
+	const y = x - to;
+	const e = Math.exp(-w * secs);
+	const k = (v + w * y) * secs;
+	return [to + (y + k) * e, (v - w * k) * e];
+};
 
 // Whether a game opens with its starting lineups (see intro.ts).
 const LINEUP_INTROS = false;
@@ -745,6 +764,9 @@ const Court3D = ({
 		t: 0,
 		camX: COURT_W / 2,
 		camW: 60,
+		// (How fast the camera is panning and zooming, feet a second.)
+		camVX: 0,
+		camVW: 0,
 		snapCam: true,
 		last: undefined as number | undefined,
 		readyFor: -1,
@@ -1042,11 +1064,22 @@ const Court3D = ({
 			if (s.snapCam) {
 				s.camX = aim.x;
 				s.camW = aim.width;
+				s.camVX = 0;
+				s.camVW = 0;
 				s.snapCam = false;
 			} else {
+				// An operator's pan and zoom: eased into and out of, never a
+				// lurch when what it is following jumps.
 				const secs = (dt / 1000) * Math.min(24, Math.max(1, rate));
-				s.camX += (aim.x - s.camX) * (1 - Math.exp(-secs * 2.6));
-				s.camW += (aim.width - s.camW) * (1 - Math.exp(-secs * 1.5));
+				[s.camX, s.camVX] = follow(s.camX, s.camVX, aim.x, CAM_PAN, secs);
+				[s.camW, s.camVW] = follow(s.camW, s.camVW, aim.width, CAM_ZOOM, secs);
+				if (fit) {
+					s.camW = Math.max(s.camW, fit.min);
+				}
+				s.camX = Math.min(
+					COURT_W + 12 - s.camW / 2,
+					Math.max(s.camW / 2 - 12, s.camX),
+				);
 			}
 			const cam = makeCamera(
 				{
