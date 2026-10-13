@@ -1575,20 +1575,19 @@ const gaitOf = (
 			const off = Math.abs(
 				wrapAngle(yawAt(tl, tr, t) - Math.atan2(here.hy, here.hx)),
 			);
-			// (At the other gait's stride, so his feet stay planted.)
+			// (At the other gait's stride, so his feet stay planted - over
+			// this run only: where it starts, his feet are where the one
+			// before left them.)
+			const along = alongRun(run, t);
+			const restride = (from: AnimName, to: AnimName) =>
+				phase + along * (1 / strideOf(to) - 1 / strideOf(from));
 			if (anim !== "back" && off > OPEN_UP) {
-				return {
-					anim: "back",
-					phase: (phase * strideOf(anim)) / strideOf("back"),
-				};
+				return { anim: "back", phase: restride(anim, "back") };
 			}
 			if (anim === "back" && off < TURN_ROUND) {
 				const ahead = runAnim(tr, run);
 				const fwd = FORWARD.has(ahead) ? ahead : "slide";
-				return {
-					anim: fwd,
-					phase: (phase * strideOf("back")) / strideOf(fwd),
-				};
+				return { anim: fwd, phase: restride("back", fwd) };
 			}
 		}
 	}
@@ -2676,8 +2675,21 @@ export const evalPlayer = (
 	const si = lastIndex(tr.shown, t, (s) => s[0]);
 	const shown = si >= 0 ? tr.shown[si]![1] : false;
 	const here = spotAt(tr, t);
-	const now = doingAt(tl, tr, t, here);
-	const from = shown ? blendInto(tl, tr, t, now) : undefined;
+	const doing = doingAt(tl, tr, t, here);
+	const from = shown ? blendInto(tl, tr, t, doing) : undefined;
+	// (The bob of his stride comes in as his legs do - not all of him up
+	// off the floor in a frame, setting off from where he stood.)
+	const now =
+		from && from.w > 0 && isGait(doing.anim)
+			? {
+					...doing,
+					z:
+						doing.z +
+						((isGait(from.anim) ? bounceAt(from.anim, from.phase) : 0) -
+							doing.z) *
+							from.w,
+				}
+			: doing;
 	const yaw = yawAt(tl, tr, t);
 	const legs = legsOf(here, yaw, now.anim, t);
 	const pivot = shown ? pivotOf(tl, tr, yaw, now, t) : undefined;
