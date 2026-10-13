@@ -2738,8 +2738,8 @@ const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
 // him - every PIVOT_MS the other way about, a PIVOT_STEP_MS step up off the
 // floor to where he will be facing by the end of it. (Only as far as hips
 // turn: past that, the planted foot goes round with him.)
-const PIVOT_MS = 200;
-const PIVOT_STEP_MS = 140;
+const PIVOT_MS = 160;
+const PIVOT_STEP_MS = 110;
 // A step's lift (degrees at the hip and knee, a full step of the turn), and
 // how far round a step is a full one (radians).
 const PIVOT_HIP = 16;
