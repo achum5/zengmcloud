@@ -36,6 +36,7 @@ import {
 } from "./clock.ts";
 import {
 	clipDipAt,
+	compileCourt,
 	linesBetween,
 	snapForCursor,
 	targetForCursor,
@@ -93,6 +94,8 @@ import {
 // (bar the dead time it runs through fast - see fastAt). Watched quicker
 // than this, a dunk is not shown again.
 const REPLAY_RATE_MAX = 2;
+// The wide shot of the building while the game is still being staged (ms).
+const PREGAME_MS = 20_000;
 // How long the picture dips to black either side of a cut (timeline ms).
 const DIP_MS = 130;
 // Up out of black onto the next of the key plays (ms).
@@ -366,6 +369,20 @@ const Court3D = ({
 			alive = false;
 		};
 	}, [events, roster, gid, gender, introKind, stakes]);
+	// While it is: the building and the two teams lined up on the floor,
+	// from the wide shot - not a black screen. (Staged here: with no plays in
+	// it, it takes no time at all.)
+	const pregame = useMemo((): CourtTimeline | undefined => {
+		if (!events || events.length === 0 || !eventsMatchRoster(events, roster)) {
+			return undefined;
+		}
+		try {
+			const tl = compileCourt({ events: [], players: roster, gid, gender });
+			return { ...tl, shots: [{ t0: 0, t1: PREGAME_MS, kind: "wide" }] };
+		} catch {
+			return undefined;
+		}
+	}, [events, roster, gid, gender]);
 	const clocks = useMemo(
 		() => (timeline && events ? buildClocks(timeline, events) : undefined),
 		[timeline, events],
@@ -843,6 +860,13 @@ const Court3D = ({
 		introTitle: false,
 	});
 	const [intro, setIntro] = useState({ call: -1, on: false, title: false });
+	// Onto the game from the building (see pregame), up out of black.
+	useEffect(() => {
+		if (timeline) {
+			play.current.keyDip = performance.now();
+			play.current.snapCam = true;
+		}
+	}, [timeline]);
 
 	// Follow the page's cursor: run on to the next line normally; cut straight
 	// there on a rewind or a big jump ahead (fast-forward, joining late).
@@ -927,6 +951,7 @@ const Court3D = ({
 		onJump,
 		keyPlan,
 		timeline,
+		pregame,
 		clocks,
 		fouls,
 		size,
@@ -948,6 +973,7 @@ const Court3D = ({
 		onJump,
 		keyPlan,
 		timeline,
+		pregame,
 		clocks,
 		fouls,
 		size,
@@ -978,14 +1004,18 @@ const Court3D = ({
 
 		const tick = (now: number, draw: boolean) => {
 			const p = live.current;
-			const tl = p.timeline;
+			// (Still being staged: the building in the meantime - see pregame.)
+			const staging = !p.timeline;
+			const tl = p.timeline ?? p.pregame;
 			if (!tl) {
 				return;
 			}
 			const s = play.current;
 			const dt = s.last === undefined ? 0 : Math.min(100, now - s.last);
 			s.last = now;
-			const target = targetForCursor(tl, p.cursor);
+			const target = staging
+				? Math.min(PREGAME_MS, s.t + dt)
+				: targetForCursor(tl, p.cursor);
 			const base = p.rate;
 			// Through the dead stretches, fast.
 			let rate = base * fastAt(tl, s.t);
@@ -1079,7 +1109,7 @@ const Court3D = ({
 			if (s.jumpTo >= 0 && p.cursor >= s.jumpTo) {
 				s.jumpTo = -1;
 			}
-			if (s.t >= target && !s.replay) {
+			if (s.t >= target && !s.replay && !staging) {
 				s.stepping = false;
 				if (
 					!p.paused &&
