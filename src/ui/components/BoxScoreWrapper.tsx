@@ -18,7 +18,6 @@ import { OverlayTrigger, Popover } from "react-bootstrap";
 import Note from "../views/Player/Note.tsx";
 import { buildRecapLinks } from "../util/linkifyRecap.ts";
 import { TeamLogoInline } from "./TeamLogoInline.tsx";
-import { PlayButton } from "./PlayButton.tsx";
 import { useKeyboardShortcuts } from "../util/keyboardShortcuts.ts";
 import { gradientStyleFactory } from "../util/gradientStyleFactory.ts";
 import { local, useLocal } from "../util/local.ts";
@@ -840,7 +839,7 @@ const DetailedScore = ({
 }: {
 	abbrev?: string;
 	// Stacked under the Next button in the right-hand column - currently the
-	// "Watch replay" button, which used to sit centered below the score and cost
+	// "View Replay" button, which used to sit centered below the score and cost
 	// a whole row of height for one small button.
 	belowNext?: ReactNode;
 	boxScore: any;
@@ -1107,7 +1106,7 @@ const PlayoffRecord = ({
 	);
 };
 
-// "Watch replay" for a completed game whose live play-by-play was saved when it
+// "View Replay" for a completed game whose live play-by-play was saved when it
 // was first live-simmed. Shown only when a saved replay exists; clicking it
 // routes the stored play-by-play back through the live-game view (un-gated).
 const WatchReplayButton = ({ gid }: { gid: number }) => {
@@ -1153,7 +1152,16 @@ const WatchReplayButton = ({ gid }: { gid: number }) => {
 		}
 	};
 
-	return <PlayButton onClick={watch} disabled={loading} title="Watch replay" />;
+	return (
+		<button
+			type="button"
+			className="btn btn-secondary btn-sm text-nowrap"
+			onClick={watch}
+			disabled={loading}
+		>
+			View Replay
+		</button>
+	);
 };
 
 export const BoxScoreWrapper = ({
