@@ -1547,6 +1547,10 @@ const STANDING = new Set<AnimName>([
 // say - he backpedals on until his hips come round past this far off it,
 // rather than run forward with his back to where he goes.)
 const OPEN_UP = (110 * Math.PI) / 180;
+// (And turning round into one - dropping back off a jog, say - he runs on
+// the way he faces until his back comes round past this far off it, rather
+// than backpedal while he goes the way he faces.)
+const TURN_ROUND = (70 * Math.PI) / 180;
 const FORWARD = new Set<AnimName>([
 	"walk",
 	"jog",
@@ -1564,19 +1568,27 @@ const gaitOf = (
 ): { anim: AnimName; phase: number } => {
 	const anim = stepsOf(tl, tr, run);
 	const phase = stridesAt(tl, tr, k, run, t);
-	if (FORWARD.has(anim)) {
+	if (FORWARD.has(anim) || anim === "back") {
 		const here = spotAt(tr, t);
-		if (
-			here.moving &&
-			here.hx * here.hx + here.hy * here.hy > 1e-6 &&
-			Math.abs(wrapAngle(yawAt(tl, tr, t) - Math.atan2(here.hy, here.hx))) >
-				OPEN_UP
-		) {
-			// (At a backpedal's stride, so his feet stay planted.)
-			return {
-				anim: "back",
-				phase: (phase * strideOf(anim)) / strideOf("back"),
-			};
+		if (here.moving && here.hx * here.hx + here.hy * here.hy > 1e-6) {
+			const off = Math.abs(
+				wrapAngle(yawAt(tl, tr, t) - Math.atan2(here.hy, here.hx)),
+			);
+			// (At the other gait's stride, so his feet stay planted.)
+			if (anim !== "back" && off > OPEN_UP) {
+				return {
+					anim: "back",
+					phase: (phase * strideOf(anim)) / strideOf("back"),
+				};
+			}
+			if (anim === "back" && off < TURN_ROUND) {
+				const ahead = runAnim(tr, run);
+				const fwd = FORWARD.has(ahead) ? ahead : "slide";
+				return {
+					anim: fwd,
+					phase: (phase * strideOf("back")) / strideOf(fwd),
+				};
+			}
 		}
 	}
 	return { anim, phase };

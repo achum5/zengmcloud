@@ -576,11 +576,13 @@ const GAITS: Record<GaitMode, Gait> = {
 		bob: -0.06,
 		flat: 0.55,
 		roll: 26,
+		// (Low in his legs, the foot is carried clear of the floor, coming down
+		// onto it at the end - not skimming it through the second half.)
 		swing: [
 			[0.12, 4, 18],
-			[0.36, 16, 66],
-			[0.66, 32, 50],
-			[0.88, 32, 30],
+			[0.36, 22, 79],
+			[0.66, 47, 76],
+			[0.88, 49, 51],
 		],
 		lean: 15,
 		armFwd: 16,
@@ -644,9 +646,9 @@ const GAITS: Record<GaitMode, Gait> = {
 		roll: 24,
 		swing: [
 			[0.12, 4, 18],
-			[0.36, 16, 62],
-			[0.66, 30, 48],
-			[0.88, 30, 30],
+			[0.36, 24, 77],
+			[0.66, 44, 72],
+			[0.88, 45, 51],
 		],
 		lean: 9,
 		armFwd: 0,
@@ -669,9 +671,9 @@ const GAITS: Record<GaitMode, Gait> = {
 		// up off the floor in front of him, not dragged back along it.)
 		swing: [
 			[0.12, 2, 16],
-			[0.36, 0, 70],
-			[0.66, 30, 84],
-			[0.88, 50, 74],
+			[0.36, 19, 90],
+			[0.66, 54, 96],
+			[0.88, 60, 82],
 		],
 		lean: 16,
 		armFwd: 0,
