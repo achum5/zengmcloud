@@ -136,6 +136,10 @@ const NET_MS = 700;
 // on that alone, weighed at this much a whole game's worth.
 const SWING_MIN = 0.04;
 const SWING_W = 40;
+// Each play of a kind already in the reel counts for this much less than the
+// last; one from a period with none in it yet, this much more.
+const SAME_KIND = 0.82;
+const NEW_PERIOD = 1.35;
 // Two stretches this near each other (ms) run on as one.
 const JOIN_MS = 1500;
 
@@ -343,7 +347,14 @@ export const planKeyPlays = (
 		tl.fx.find(
 			(f) => f.kind === kind && f.t >= b.preStart - 1 && f.t <= b.end + 1,
 		);
-	const candidates: { k: number; w: number; t0: number; t1: number }[] = [];
+	const candidates: {
+		k: number;
+		w: number;
+		t0: number;
+		t1: number;
+		kind: string;
+		period: number;
+	}[] = [];
 	// (And, should there be time for more than the big plays, the rest - the
 	// ones that matter most first.)
 	const rest: { k: number; w: number; t0: number; t1: number }[] = [];
@@ -414,7 +425,16 @@ export const planKeyPlays = (
 		if (settings.mine && mine !== undefined && e?.t === mine) {
 			w += 1.5;
 		}
-		candidates.push({ k, w, t0, t1 });
+		const kind = dunk
+			? "dunk"
+			: type === "tp" || type === "tpAndOne"
+				? "three"
+				: type.startsWith("blk")
+					? "block"
+					: type === "stl"
+						? "steal"
+						: "basket";
+		candidates.push({ k, w, t0, t1, kind, period: st.period });
 	});
 
 	const budget = settings.minutes * 60_000 * Math.max(0.25, rate);
@@ -426,8 +446,40 @@ export const planKeyPlays = (
 	candidates.sort(
 		(a, b) => b.w - a.w || ((a.k * 7919) % 101) - ((b.k * 7919) % 101),
 	);
+	// The best of them one at a time: the more of a kind already in it, the
+	// less the next of that kind counts, and a play from a period not yet
+	// shown counts for more - the whole game in it, not five dunks from the
+	// second quarter.
+	const pool = candidates.map((c) => ({ ...c, cost: costOf(tl, c.t0, c.t1) }));
+	const kinds = new Map<string, number>();
+	const periods = new Set<number>();
+	for (;;) {
+		let best = -1;
+		let value = -Infinity;
+		pool.forEach((c, i) => {
+			if (spent + c.cost > budget) {
+				return;
+			}
+			const v =
+				c.w *
+				SAME_KIND ** (kinds.get(c.kind) ?? 0) *
+				(periods.has(c.period) ? 1 : NEW_PERIOD);
+			if (v > value) {
+				value = v;
+				best = i;
+			}
+		});
+		if (best < 0) {
+			break;
+		}
+		const c = pool.splice(best, 1)[0]!;
+		spent += c.cost;
+		picked.push({ t0: c.t0, t1: c.t1, close: false });
+		kinds.set(c.kind, (kinds.get(c.kind) ?? 0) + 1);
+		periods.add(c.period);
+	}
 	rest.sort((a, b) => b.w - a.w || a.k - b.k);
-	for (const c of [...candidates, ...rest]) {
+	for (const c of rest) {
 		const cost = costOf(tl, c.t0, c.t1);
 		if (spent + cost > budget) {
 			continue;

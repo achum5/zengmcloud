@@ -1041,7 +1041,10 @@ const Court3D = ({
 					!p.follower &&
 					!p.paused &&
 					!s.stepping &&
-					p.rate <= REPLAY_RATE_MAX
+					p.rate <= REPLAY_RATE_MAX &&
+					// (A reel of the key plays moves on to the next - but for a
+					// close finish, shown the way it happened.)
+					(!p.keyPlan || segmentAt(p.keyPlan, dunk.t).at?.close === true)
 				) {
 					s.t = dunk.t + REPLAY_AFTER;
 					s.replay = {
