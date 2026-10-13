@@ -824,6 +824,18 @@ const CLOSE_READ = 150;
 const CLOSE_RUN = 21;
 const CLOSE_CHOP = 8;
 const CLOSE_BREAK = 3.5;
+// How much room a jump shooter gets (by how far off him his man meets the
+// shot, feet): right on him, an arm's length, a step late - or none of it,
+// left all alone. Not every jumper has a hand in his face: the odds of each
+// (tight, contested, open, wide open), on a make and on a miss.
+const ROOM_FT = [2.2, 3.2, 4.8] as const;
+const ROOM_MADE = [0.12, 0.28, 0.34, 0.26] as const;
+const ROOM_MISSED = [0.24, 0.36, 0.27, 0.13] as const;
+// A step late - or, leaving him all alone, way late: that much longer
+// before he is there (ms), still on his way as it goes up.
+const CLOSE_LATE = [0, 0, 260, 650] as const;
+// All alone only if his man is this far off him already (feet).
+const ALONE_FT = 9;
 // How close (feet, middle to middle) two men get before they are into each
 // other: a screen, a post-up.
 const BODY = 1.85;
@@ -7103,16 +7115,34 @@ class Director {
 					decided = release + flight;
 					arrive = decided;
 				}
+				// How much room he gets: at the rim, a body on him; out on the
+				// floor, anything from a hand in his face to nobody near.
+				const odds = plan.kind === "make" ? ROOM_MADE : ROOM_MISSED;
+				let room = 0;
+				for (let x = hash01(shooter * 5 + 2, release); room < 3; room++) {
+					x -= odds[room]!;
+					if (x < 0) {
+						break;
+					}
+				}
+				if (
+					room === 3 &&
+					guard !== undefined &&
+					dist(this.posOf(guard), P1) < ALONE_FT
+				) {
+					room = 2;
+				}
 				if (guard !== undefined) {
 					this.closeOut(
 						guard,
 						shooter,
-						// (An arm's length off him: his hand at the ball, not his
-						// body in the shooter's.)
-						ahead(close ? 2 : 3),
+						// (An arm's length off him at the least: his hand at the
+						// ball, not his body in the shooter's.)
+						ahead(close ? 2 : ROOM_FT[Math.min(room, 2)]!),
 						gather,
 						release,
 						close,
+						close ? 0 : CLOSE_LATE[room]!,
 					);
 				}
 			}
@@ -7331,6 +7361,8 @@ class Director {
 		gather: number,
 		release: number,
 		close: boolean,
+		// How late he is (ms): still on his way as it goes up.
+		late = 0,
 	) {
 		const P = this.posOf(shooter);
 		const face = (P.x >= C.x ? 1 : -1) as 1 | -1;
@@ -7364,16 +7396,24 @@ class Director {
 		// Off whatever he was doing the moment he sees it coming: the pass
 		// out to his man, or his man going up with it.
 		const sees =
-			thrown === undefined
+			(thrown === undefined
 				? gather - 200
-				: Math.min(gather - 200, thrown + CLOSE_READ);
+				: Math.min(gather - 200, thrown + CLOSE_READ)) + late;
 		if ((this.free.get(d) ?? 0) > sees) {
 			this.cutShort(d, sees);
 		}
 		const G = this.posOf(d);
 		const far = dist(G, C);
 		if (far < 7 || thrown === undefined) {
-			const there = this.goBy(d, C, sees, release - 60, "run", face, BURST);
+			const there = this.goBy(
+				d,
+				C,
+				sees,
+				release - 60 + late,
+				"run",
+				face,
+				BURST,
+			);
 			if (dist(G, P) >= 9) {
 				return;
 			}
@@ -7395,7 +7435,7 @@ class Director {
 		const there = this.go(
 			d,
 			C,
-			this.go(d, brk, thrown + CLOSE_READ, CLOSE_RUN, "run", undefined, {
+			this.go(d, brk, sees, CLOSE_RUN, "run", undefined, {
 				effort: BURST,
 				onto: CLOSE_CHOP,
 			}),
