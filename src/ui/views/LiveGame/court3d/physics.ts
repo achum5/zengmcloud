@@ -436,11 +436,27 @@ export const findShot = (
 			continue;
 		}
 		const e0 = play.end.p;
-		if (
-			want.inPlay &&
-			(e0.x < 1 || e0.x > COURT_W - 1 || e0.y < 1 || e0.y > COURT_H - 1)
-		) {
-			continue;
+		if (want.inPlay) {
+			// (Not behind the glass, either - and still over the floor as it
+			// comes down to where a man can get a hand to it.)
+			const ev = play.end.v;
+			const drop = Math.max(0, e0.z - REACH);
+			const fall =
+				(ev.z + Math.sqrt(Math.max(0, ev.z * ev.z + 2 * GRAVITY * drop))) /
+				GRAVITY;
+			const down = { x: e0.x + ev.x * fall, y: e0.y + ev.y * fall };
+			if (
+				[e0, down].some(
+					(q) =>
+						q.x < 1 ||
+						q.x > COURT_W - 1 ||
+						q.y < 1 ||
+						q.y > COURT_H - 1 ||
+						(q.x - (cx + dir * BOARD_BACK)) * -dir < BALL_R,
+				)
+			) {
+				continue;
+			}
 		}
 		const f: FoundShot = {
 			aim,

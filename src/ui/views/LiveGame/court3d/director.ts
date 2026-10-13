@@ -577,6 +577,9 @@ const BACK_REACT = 250;
 // A basket, the team that scored turns and gets back this long (ms) after
 // it is through (see inboundAfterMake).
 const MADE_BACK_MS = 350;
+// The point guard taking it in after a basket: up the floor this far
+// (feet), then back to the ball.
+const COME_BACK = 7;
 const BACK_FROM = 50;
 const BACK_FT = 30;
 const BACK_OVER = 27;
@@ -2509,7 +2512,20 @@ class Director {
 			x: out.x + dir * this.rand(11, 15),
 			y: out.y - side * this.rand(2, 6),
 		});
-		this.go(pg, gets, readyAt(pg, scored + 150, t + 150), JOG, "run");
+		// (A few steps on up the floor first, then back to the ball as it
+		// is thrown in - not stood waiting on it.)
+		const away = clampPt({ x: gets.x + dir * COME_BACK, y: gets.y });
+		this.go(pg, away, readyAt(pg, scored + 150, t + 150), JOG, "run");
+		this.go(
+			pg,
+			gets,
+			Math.max(
+				this.free.get(pg) ?? 0,
+				there + (quick ? 60 : 250) - runMs(COME_BACK, JOG),
+			),
+			JOG,
+			"run",
+		);
 		// The rest up the floor, getting there a beat before the ball does;
 		// the team that scored back down it, each picking up the man nearest
 		// him.
@@ -14523,9 +14539,18 @@ class Director {
 			};
 			// No run ends inside one - nor does a man stand where one is set:
 			// he stops at his shoulder (and the next run sets off from there).
-			// Then, those runs as they now go, round any in the way.
+			// Then, those runs as they now go, round any in the way. (Not one
+			// that takes him to where he gets the ball - up for a board, say:
+			// that is where it comes down.)
+			const gets = this.ball.flatMap((s) =>
+				s.kind === "fly" && "pid" in s.to && s.to.pid === tr.pid ? [s.t1] : [],
+			);
 			const ends = [...tr.moves];
 			ends.forEach((m, i) => {
+				const next = ends[i + 1]?.t0 ?? Infinity;
+				if (gets.some((t) => t >= m.t1 && t <= Math.min(next, m.t1 + 1500))) {
+					return;
+				}
 				for (const w of theirs) {
 					const d = dist(m.to, w.at);
 					const until = ends[i + 1]?.t0 ?? Infinity;
@@ -16285,6 +16310,8 @@ class Director {
 			at: number[],
 			ex: Float64Array,
 			ey: Float64Array,
+			// (How much of it he takes, sample by sample: see held.)
+			pin?: Float64Array,
 		) => {
 			const n = cx.length;
 			let k = 0;
@@ -16320,8 +16347,9 @@ class Director {
 							sy += wy[q]! * K[d + R]!;
 						}
 					}
-					ex[s]! += sx / kSum;
-					ey[s]! += sy / kSum;
+					const w = pin ? pin[s]! : 1;
+					ex[s]! += (sx / kSum) * w;
+					ey[s]! += (sy / kSum) * w;
 				}
 				k = e + 1;
 			}
@@ -16477,6 +16505,42 @@ class Director {
 							2 * p2 -
 							0.5 * p3 +
 							u * (0.5 * (p3 - p0) + 1.5 * (p1 - p2))));
+		// Taking it off a rim or the floor, his hands are where it comes down
+		// - nobody eases him off that: whoever he would be in gives way, and
+		// what he was kept off before is eased away by then.
+		const CATCH_PRE = 150;
+		const CATCH_POST = 80;
+		const CATCH_RAMP = 400;
+		// (So too a hand that knocks it away - a poke at it, a block: where
+		// it is when it changes course.)
+		const KNOCKS = new Set<AnimName>(["poke", "strip", "block"]);
+		const catches = new Map<number, number[]>();
+		const pinAt = (pid: number, t: number) => {
+			const list = catches.get(pid) ?? [];
+			list.push(t);
+			catches.set(pid, list);
+		};
+		this.ball.forEach((b, k) => {
+			if (b.kind !== "fly") {
+				return;
+			}
+			if ("pid" in b.to) {
+				if (!("pid" in b.from)) {
+					pinAt(b.to.pid, b.t1);
+				}
+				return;
+			}
+			const next = this.ball[k + 1];
+			if (!next || next.t0 > b.t1 + 1) {
+				return;
+			}
+			for (const tr of tracks) {
+				const a = tr.acts[lastBy(tr.acts, b.t1, (x) => x.t0)];
+				if (a && a.t1 >= b.t1 && KNOCKS.has(a.anim)) {
+					pinAt(tr.pid, b.t1);
+				}
+			}
+		});
 		const out = new Map<Track, Sep[]>();
 		for (const [l0, l1] of live) {
 			const n = Math.floor((l1 - l0) / DT) + 1;
@@ -16634,6 +16698,30 @@ class Director {
 			const ox = tracks.map(() => new Float64Array(n));
 			const oy = tracks.map(() => new Float64Array(n));
 			const moved = new Set<number>();
+			const held = tracks.map((tr) => {
+				const list = catches.get(tr.pid);
+				if (!list?.some((t) => t > l0 - CATCH_POST && t < l1 + CATCH_PRE)) {
+					return undefined;
+				}
+				const w = new Float64Array(n).fill(1);
+				for (const tc of list) {
+					const a = Math.max(
+						0,
+						Math.floor((tc - CATCH_PRE - CATCH_RAMP - l0) / DT),
+					);
+					const b = Math.min(
+						n - 1,
+						Math.ceil((tc + CATCH_POST + CATCH_RAMP - l0) / DT),
+					);
+					for (let k = a; k <= b; k++) {
+						const t = l0 + k * DT;
+						const off = Math.max(0, tc - CATCH_PRE - t, t - tc - CATCH_POST);
+						const u = Math.min(1, off / CATCH_RAMP);
+						w[k] = Math.min(w[k]!, u * u * (3 - 2 * u));
+					}
+				}
+				return w;
+			});
 			// (And, last, one more for a man set in a screen or the post
 			// alone: kept off him in the end, whoever else he was kept off.)
 			for (let round = 0; round <= ROUNDS; round++) {
@@ -16834,16 +16922,18 @@ class Director {
 								holder = holderAt(t);
 								off = offenseAt(t);
 							}
-							const give = (tr: Track, act: AnimName | undefined) =>
-								tr.pid === holder || (act !== undefined && FIXED.has(act))
+							const give = (tr: Track, act: AnimName | undefined, k: number) =>
+								tr.pid === holder ||
+								(act !== undefined && FIXED.has(act)) ||
+								(held[k]?.[s] ?? 1) < 1
 									? 0
 									: act === "contest"
 										? 0.3
 										: tr.team === off
 											? 0.5
 											: 1;
-							const ga = give(A, aa);
-							const gb = give(B, ab);
+							const ga = give(A, aa, i);
+							const gb = give(B, ab, j);
 							if (ga + gb === 0) {
 								continue;
 							}
@@ -16879,7 +16969,7 @@ class Director {
 					break;
 				}
 				for (const [i, ax] of cx) {
-					spread(ax, cy.get(i)!, cat.get(i)!, ox[i]!, oy[i]!);
+					spread(ax, cy.get(i)!, cat.get(i)!, ox[i]!, oy[i]!, held[i]);
 					moved.add(i);
 				}
 			}
