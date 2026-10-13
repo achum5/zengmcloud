@@ -249,7 +249,13 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   feet keep their stride through joins and steps aside, hands ease on and
   off the ball between holding and dribbling - about half the pops again;
   and a defender's backpedal and drop steps are real strides now, feet
-  planted on the floor instead of sliding back with him.)
+  planted on the floor instead of sliding back with him. 2026-10-13: a step
+  with each foot pulling up out of a run, no hitch setting off into a
+  sprint or turning out of a backpedal - feet jumping between frames down
+  from about 600 to 130 in ten minutes of play; a pass goes by a
+  defender's shoulder, not through him; after a basket the ball is taken
+  out of the net on the hop; no pile-up at half court as the ball comes
+  up; threes as open as the league's.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like
