@@ -537,6 +537,13 @@ const BOARD_CARRY = 150;
 const RIVAL_UP = 4;
 const RIVAL_IN = 9;
 const RIVAL_STEP_MS = 450;
+// A defender whose man stays out goes in to the glass and puts a body on the
+// nearest man coming in that nobody else has - from this far off (feet).
+const GLASS_FIND = 10;
+// Men going in to the glass end up at least this far apart (feet) - each
+// tried this much further round the rim (radians) till he is.
+const GLASS_APART = 3;
+const GLASS_TURN = 0.4;
 // The last few inches onto a spot: a shuffle this long (ms).
 const SETTLE_MS = 160;
 // A loose ball on the hop is taken out of the air about where a man reaching
@@ -7484,6 +7491,26 @@ class Director {
 			}
 			busy.push(reads.pid);
 		}
+		// Where each man going in to the glass ends up: a step apart, never
+		// two on the one spot - round the rim from it, if it is taken.
+		const taken: Pt[] = reads && spot ? [spot] : [];
+		const apart = (P: Pt): Pt => {
+			const d = dist(P, rim);
+			const a0 = Math.atan2(P.y - rim.y, P.x - rim.x);
+			for (const k of [0, 1, -1, 2, -2, 3, -3]) {
+				const a = a0 + k * GLASS_TURN;
+				const Q = clampPt({
+					x: rim.x + Math.cos(a) * d,
+					y: rim.y + Math.sin(a) * d,
+				});
+				if (taken.every((T) => dist(T, Q) >= GLASS_APART)) {
+					taken.push(Q);
+					return Q;
+				}
+			}
+			taken.push(P);
+			return P;
+		};
 		// Who crashes and who gets back - and where the men crashing go.
 		const crash = new Map<number, Pt>();
 		const inAt = new Map<number, number>();
@@ -7499,13 +7526,9 @@ class Director {
 			if (big ? r < 0.85 : out < 17 ? r < 0.45 : r < 0.18) {
 				const u = unitVec(M, rim);
 				const k = Math.max(0, Math.min(out - this.rand(5, 8), 9));
-				const C = clampPt({ x: M.x + u.x * k, y: M.y + u.y * k });
+				const C = apart(clampPt({ x: M.x + u.x * k, y: M.y + u.y * k }));
 				crash.set(pid, C);
-				const there = this.goBy(pid, C, r0, meet, "run", undefined, BURST);
-				inAt.set(pid, there);
-				if (there < until - 250) {
-					this.act(pid, "fight", Math.max(meet, there), until, { look: rim });
-				}
+				inAt.set(pid, this.goBy(pid, C, r0, meet, "run", undefined, BURST));
 			} else if (out < 30) {
 				// Back on defense, eyes on the shot.
 				const back = clampPt({
@@ -7515,14 +7538,40 @@ class Director {
 				this.goBy(pid, back, r0, until + 300, "back");
 			}
 		});
-		for (const man of this.slots(team)) {
+		// Which of them his own man is free to put a body on.
+		const onHim = (man: number): number | undefined => {
 			const d = this.defenderOf(man);
-			const r0 = d === undefined ? Infinity : readyAt(d);
-			if (d === undefined || busy.includes(d) || r0 > meet - 150) {
+			return d === undefined || busy.includes(d) || readyAt(d) > meet - 150
+				? undefined
+				: d;
+		};
+		// Each man coming in with somebody on him: who.
+		const boxed = new Map<number, number>();
+		for (const man of this.slots(team)) {
+			const d = onHim(man);
+			if (d === undefined) {
 				continue;
 			}
-			const C = crash.get(man);
-			const D0 = this.posOf(d);
+			const r0 = readyAt(d);
+			let C = crash.get(man);
+			let mark = man;
+			if (!C) {
+				// His man is gone: the nearest man coming in that nobody else
+				// has, if there is one near enough to get a body on.
+				const D0 = this.posOf(d);
+				const other = [...crash.keys()]
+					.filter(
+						(o) =>
+							onHim(o) === undefined &&
+							!boxed.has(o) &&
+							dist(crash.get(o)!, D0) <= GLASS_FIND,
+					)
+					.sort((a, b) => dist(crash.get(a)!, D0) - dist(crash.get(b)!, D0))[0];
+				if (other !== undefined) {
+					C = crash.get(other)!;
+					mark = other;
+				}
+			}
 			let spot: Pt;
 			if (C) {
 				// Into him: a step in front of where he is coming, between him
@@ -7530,23 +7579,33 @@ class Director {
 				const u = unitVec(C, rim);
 				spot = clampPt({ x: C.x + u.x * 1.8, y: C.y + u.y * 1.8 });
 			} else {
-				// His man is gone: in to the glass himself.
+				// Nobody to put a body on: in to the glass himself, eyes on it.
+				const D0 = this.posOf(d);
 				const u = unitVec(rim, D0);
 				const k = Math.min(dist(D0, rim), this.rand(6, 9));
-				spot = clampPt({ x: rim.x + u.x * k, y: rim.y + u.y * k });
+				spot = apart(clampPt({ x: rim.x + u.x * k, y: rim.y + u.y * k }));
 			}
 			const there = this.goBy(d, spot, r0 + 80, meet, "run", undefined, BURST);
-			if (there < until - 250) {
+			if (C && there < until - 250) {
 				this.act(d, "boxOut", Math.max(meet, there), until, { look: rim });
-				if (C) {
-					this.jostle(
-						man,
-						d,
-						Math.max(meet, there, inAt.get(man) ?? until),
-						until,
-						rim,
-					);
-				}
+				boxed.set(mark, Math.max(meet, there));
+				this.jostle(
+					mark,
+					d,
+					Math.max(meet, there, inAt.get(mark) ?? until),
+					until,
+					rim,
+				);
+			}
+		}
+		// The men coming in fight whoever is on them for position - one with
+		// nobody on him just gets in there.
+		for (const [man, from] of boxed) {
+			const there = inAt.get(man) ?? until;
+			if (there < until - 250) {
+				this.act(man, "fight", Math.max(meet, there, from - 150), until, {
+					look: rim,
+				});
 			}
 		}
 	}
