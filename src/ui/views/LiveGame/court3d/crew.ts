@@ -826,14 +826,18 @@ const signalsAt = (tl: CourtTimeline, t: number): (Signal | undefined)[] => {
 		const still = pos[ref]!;
 		const t1 = cue.moves.at(-1)!.t1;
 		// As long as it takes him to jog back to where the play will have him
-		// by then.
+		// by then (longer, never shorter, till he can make it).
 		let back = 250;
-		for (let k = 0; k < 3; k++) {
-			back = clamp(
+		for (let k = 0; k < 8; k++) {
+			const need = clamp(
 				(dist(still, refPlaces(tl, t1 + back).at[ref]!) / 15) * 1000,
 				250,
 				6500,
 			);
+			if (need <= back) {
+				break;
+			}
+			back = need;
 		}
 		per[ref] = { ref, t0: cue.t0, moves: cue.moves, still, back };
 	}

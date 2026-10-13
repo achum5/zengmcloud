@@ -237,15 +237,18 @@ const GLIMPSED = new Set<string>([
 // Meeting a shot from the camera's side of the shooter (which looks across
 // the floor from the near side), a defender this near him across the floor
 // (feet) would stand in front of him in the picture: he comes at him from
-// the side instead - this far across, toward `toward`, level with him.
+// the side instead - this far across at the least, toward `toward`, level
+// with him (and as far off him as he would have been).
 const SIDE_ON = 2.8;
 const SIDE_AT = 2.2;
 const besideShot = (P: Pt, p: Pt, toward: number): Pt => {
 	const dx = Math.abs(p.x - P.x);
+	const dy = (p.y - P.y) * 0.2;
+	const off = Math.sqrt(Math.max(0, dist(P, p) ** 2 - dy * dy));
 	return p.y > P.y + 0.3 && dx < SIDE_ON
 		? {
-				x: P.x + (toward >= P.x ? 1 : -1) * Math.max(dx, SIDE_AT),
-				y: P.y + (p.y - P.y) * 0.2,
+				x: P.x + (toward >= P.x ? 1 : -1) * Math.max(dx, SIDE_AT, off),
+				y: P.y + dy,
 			}
 		: p;
 };
@@ -862,14 +865,20 @@ const CLOSE_BREAK = 3.5;
 // shot, feet): right on him, an arm's length, a step late - or none of it,
 // left all alone. Not every jumper has a hand in his face: the odds of each
 // (tight, contested, open, wide open), on a make and on a miss.
-const ROOM_FT = [2.2, 3.2, 4.8] as const;
+const ROOM_FT = [2.2, 3.2, 4.8, 6.8] as const;
 const ROOM_MADE = [0.12, 0.28, 0.34, 0.26] as const;
 const ROOM_MISSED = [0.24, 0.36, 0.27, 0.13] as const;
+// (A three, more often open: a third of them with nobody near, as the
+// league's tracking has them.)
+const ROOM_MADE_3 = [0.04, 0.2, 0.4, 0.36] as const;
+const ROOM_MISSED_3 = [0.08, 0.26, 0.38, 0.28] as const;
 // A step late - or, leaving him all alone, way late: that much longer
 // before he is there (ms), still on his way as it goes up.
 const CLOSE_LATE = [0, 0, 260, 650] as const;
 // All alone only if his man is this far off him already (feet).
 const ALONE_FT = 9;
+// A hand up at the shot from no farther off than this (feet).
+const CONTEST_FT = 6;
 // How close (feet, middle to middle) two men get before they are into each
 // other: a screen, a post-up.
 const BODY = 1.85;
@@ -7217,7 +7226,14 @@ class Director {
 				}
 				// How much room he gets: at the rim, a body on him; out on the
 				// floor, anything from a hand in his face to nobody near.
-				const odds = plan.kind === "make" ? ROOM_MADE : ROOM_MISSED;
+				const odds =
+					zone === "three"
+						? plan.kind === "make"
+							? ROOM_MADE_3
+							: ROOM_MISSED_3
+						: plan.kind === "make"
+							? ROOM_MADE
+							: ROOM_MISSED;
 				let room = 0;
 				for (let x = hash01(shooter * 5 + 2, release); room < 3; room++) {
 					x -= odds[room]!;
@@ -7238,7 +7254,7 @@ class Director {
 						shooter,
 						// (An arm's length off him at the least: his hand at the
 						// ball, not his body in the shooter's.)
-						ahead(close ? 2 : ROOM_FT[Math.min(room, 2)]!),
+						ahead(close ? 2 : ROOM_FT[room]!),
 						gather,
 						release,
 						close,
@@ -7469,8 +7485,9 @@ class Director {
 		// With the hand on the ball's side.
 		const left = this.leftToBall(C, shooter, P);
 		const contest = (t: number, peak: number) => {
-			// (Not once he is up for the rebound off it.)
+			// (Not from way off him, nor once he is up for the rebound off it.)
 			if (
+				dist(C, P) > CONTEST_FT ||
 				this.track(d)?.acts.some(
 					(a) =>
 						(a.anim === "board" || a.anim === "rebound") &&

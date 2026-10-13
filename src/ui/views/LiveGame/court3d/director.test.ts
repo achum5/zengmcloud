@@ -372,9 +372,9 @@ describe("3D director", () => {
 	// Kicked out of the lane, the shooter is open because his man left him
 	// to help on the drive - a stunt at the ball, or all the way over - and
 	// by the time the shot goes up somebody has closed back out to him: up
-	// on him, mostly, or a step late with a hand up. The
-	// passer does not stay in there watching it: he gets back out (a big
-	// stays in, for the rebound).
+	// on him now and then, a step late with a hand up mostly, or way late
+	// and still on his way. The passer does not stay in there watching it:
+	// he gets back out (a big stays in, for the rebound).
 	test("a kick out of the lane: the help leaves the shooter and closes back out", () => {
 		const helps: number[] = [];
 		let closed = 0;
@@ -436,9 +436,11 @@ describe("3D director", () => {
 				) {
 					return;
 				}
-				helps.push(room(shooter, pass.t0));
+				const off = room(shooter, pass.t0);
+				helps.push(off);
 				const late = room(shooter, shot.t0);
-				if (late <= 6.5) {
+				// (Or way late, but on his way.)
+				if (late <= 6.5 || (late <= 9 && late <= off - 3)) {
 					closed += 1;
 				}
 				if (late <= 4) {
@@ -458,7 +460,7 @@ describe("3D director", () => {
 		assert.isAtLeast(left.length / helps.length, 0.6);
 		assert.isAtLeast(Math.max(...left) - Math.min(...left), 4);
 		assert.isAtLeast(closed / helps.length, 0.85);
-		assert.isAtLeast(onHim / helps.length, 0.6);
+		assert.isAtLeast(onHim / helps.length, 0.2);
 		assert.isAtLeast(backOut / passers, 0.6);
 	}, 60_000);
 
