@@ -300,6 +300,132 @@ export const buildFiles = async (entries: SheetEntry[]) => {
 	return blobs;
 };
 
+// REVIEW SHEETS: each player's photo beside the face made from it, labelled
+// like the batch sheets, for a chat AI to check a finished class against the
+// faces' code. Same image budget as a batch sheet.
+
+export type ReviewEntry = {
+	label: string;
+	photo: string | undefined;
+	// The face as faces.js draws it, 400x600.
+	svg: string;
+};
+
+// The part of the 400x600 face worth looking at: head, hair and shoulders.
+const FACE_CROP = { x: 20, y: 50, w: 360, h: 530 };
+const FACE_SCALE = 2;
+
+const loadSvg = (svg: string) =>
+	new Promise<HTMLImageElement | undefined>((resolve) => {
+		// faces.js sizes its svg at 100%, which an image on its own has nothing
+		// to be 100% of: give it a real size.
+		const sized = svg.replace(/<svg[^>]*>/, (tag) =>
+			tag
+				.replaceAll(/\s(width|height)="[^"]*"/g, "")
+				.replace(
+					"<svg",
+					`<svg width="${400 * FACE_SCALE}" height="${600 * FACE_SCALE}"`,
+				),
+		);
+		const url = URL.createObjectURL(
+			new Blob([sized], { type: "image/svg+xml" }),
+		);
+		const img = new Image();
+		img.onload = () => {
+			URL.revokeObjectURL(url);
+			resolve(img);
+		};
+		img.onerror = () => {
+			URL.revokeObjectURL(url);
+			resolve(undefined);
+		};
+		img.src = url;
+	});
+
+// The photo box's width for a layout, as large as the budget allows. The face
+// box beside it is as tall as the photo box, cropped to FACE_CROP's shape.
+const reviewWidth = (cols: number, rows: number, aspect: number) => {
+	const faceRatio = (FACE_CROP.w / FACE_CROP.h) * aspect;
+	const k = cols * rows * (1 + faceRatio);
+	const a = k * aspect;
+	const b = k * LABEL_H;
+	let w = (-b + Math.sqrt(b * b + 4 * a * MAX_PIXELS)) / (2 * a);
+	w = Math.min(
+		w,
+		MAX_SIDE / (cols * (1 + faceRatio)),
+		(MAX_SIDE / rows - LABEL_H) / aspect,
+	);
+	return Math.floor(w);
+};
+
+export const buildReviewSheet = async (entries: ReviewEntry[]) => {
+	const [images, faces] = await Promise.all([
+		loadMany(entries.map((entry) => entry.photo)),
+		Promise.all(entries.map((entry) => loadSvg(entry.svg))),
+	]);
+	missedPhotos =
+		entries.filter((entry) => entry.photo).length -
+		images.filter((img) => img !== undefined).length;
+
+	const shapes = images
+		.filter((img): img is HTMLImageElement => img !== undefined)
+		.map((img) => img.naturalHeight / img.naturalWidth)
+		.sort((a, b) => a - b);
+	const median = shapes.length > 0 ? shapes[Math.floor(shapes.length / 2)]! : 0;
+	const aspect =
+		median > 0 ? Math.min(1.8, Math.max(0.6, median)) : TILE_H / TILE_W;
+
+	// Whichever column count gives each pair the most room.
+	let best = { cols: 1, rows: entries.length, w: 0 };
+	for (let cols = 1; cols <= Math.min(6, entries.length); cols++) {
+		const rows = Math.ceil(entries.length / cols);
+		const w = reviewWidth(cols, rows, aspect);
+		if (w > best.w) {
+			best = { cols, rows, w };
+		}
+	}
+	const { cols, rows, w } = best;
+	const h = Math.floor(aspect * w);
+	const fw = Math.floor((h * FACE_CROP.w) / FACE_CROP.h);
+	const tileW = w + fw;
+
+	const canvas = document.createElement("canvas");
+	canvas.width = cols * tileW;
+	canvas.height = rows * (h + LABEL_H);
+	const ctx = canvas.getContext("2d")!;
+	ctx.fillStyle = "#ffffff";
+	ctx.fillRect(0, 0, canvas.width, canvas.height);
+	for (const [i, entry] of entries.entries()) {
+		const x = (i % cols) * tileW;
+		const y = Math.floor(i / cols) * (h + LABEL_H);
+		drawTile(ctx, images[i], x, y, w, h, 0, "");
+		const face = faces[i];
+		if (face) {
+			ctx.drawImage(
+				face,
+				FACE_CROP.x * FACE_SCALE,
+				FACE_CROP.y * FACE_SCALE,
+				FACE_CROP.w * FACE_SCALE,
+				FACE_CROP.h * FACE_SCALE,
+				x + w,
+				y,
+				fw,
+				h,
+			);
+		}
+		ctx.fillStyle = "#ffffff";
+		ctx.fillRect(x, y + h, tileW, LABEL_H);
+		ctx.fillStyle = "#000000";
+		ctx.font = `bold ${Math.round(LABEL_H * 0.58)}px sans-serif`;
+		ctx.textBaseline = "middle";
+		ctx.fillText(entry.label, x + 6, y + h + LABEL_H / 2, tileW - 12);
+		ctx.strokeStyle = "#999999";
+		ctx.lineWidth = 1;
+		ctx.strokeRect(x + 0.5, y + 0.5, tileW - 1, h + LABEL_H - 1);
+	}
+	return toBlob(canvas);
+};
+
 export const copyImageToClipboard = async (blob: Blob) => {
 	await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
 };

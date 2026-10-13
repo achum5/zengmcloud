@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import clsx from "clsx";
-import type { FaceConfig } from "facesjs";
+import { display, type FaceConfig } from "facesjs";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { toWorker } from "../util/toWorker.ts";
 import { useLocal } from "../util/local.ts";
@@ -11,6 +11,9 @@ import { updatePlayerFaceData } from "../util/playerFaces.ts";
 import { PlayerPicture } from "../components/PlayerPicture.tsx";
 import { Modal } from "../components/Modal.tsx";
 import { FaceEditorControls } from "../components/PlayerFaceModal.tsx";
+import { faceOverrides } from "../components/MyFace.tsx";
+import { DEFAULT_JERSEY, DEFAULT_TEAM_COLORS } from "../../common/constants.ts";
+import { stubbleShave } from "../../common/stubbleShade.ts";
 import {
 	LABEL_H,
 	PhotoReadError,
@@ -20,6 +23,7 @@ import {
 	TILE_H,
 	TILE_W,
 	buildFiles,
+	buildReviewSheet,
 	buildSheet,
 	copyImageToClipboard,
 	saveBatchFiles,
@@ -44,6 +48,10 @@ import type { FaceConverterPlayer } from "../../worker/api/index.ts";
 //   3. Paste its reply. Every face in it is staged, not saved.
 //   4. Review the staged faces one by one - photo beside face, every slot
 //      editable - and approve each, which saves it to the player.
+//
+// A finished class can go back to the chat AI for a second look: Copy faces
+// gives every face's code in one block, and the review sheets show each photo
+// beside its face, numbered the same way. The reply pastes in like any other.
 //
 // Staged faces live in this browser's localStorage, per league, so a reload or
 // a closed tab mid-review loses nothing.
@@ -86,6 +94,48 @@ const statusOf = (
 		return "done";
 	}
 	return p.photo ? "todo" : "nophoto";
+};
+
+// The face a player has here: the staged one awaiting review, else the one
+// approved from his photo. A player still showing his photo has none.
+const shownFace = (
+	p: FaceConverterPlayer,
+	staged: Record<number, Staged>,
+): FaceConfig | undefined => {
+	const text = staged[p.pid]?.text;
+	if (text !== undefined) {
+		return parseFaceJson(text) as FaceConfig | undefined;
+	}
+	return p.converted ? p.face : undefined;
+};
+
+// Drawn the way MyFace draws it, into a hidden box on the page - faces.js
+// measures its parts as it draws, which needs them in the document. A copy
+// goes in, since faces.js edits the face it is given (a hat swaps the hair).
+// A face that can't be drawn leaves its tile blank.
+const faceSvg = (p: FaceConverterPlayer, face: FaceConfig) => {
+	const box = document.createElement("div");
+	box.style.cssText =
+		"position: absolute; left: -10000px; top: 0; width: 400px; height: 600px;";
+	document.body.append(box);
+	try {
+		display(
+			box,
+			structuredClone(face),
+			faceOverrides(
+				p.colors ?? DEFAULT_TEAM_COLORS,
+				p.jersey ?? DEFAULT_JERSEY,
+				stubbleShave(face.head?.shave, face.hair?.color),
+			) as any,
+		);
+		// Serialized as XML, so the svg keeps the namespace an image needs.
+		const svg = box.querySelector("svg");
+		return svg ? new XMLSerializer().serializeToString(svg) : "";
+	} catch {
+		return "";
+	} finally {
+		box.remove();
+	}
 };
 
 const STATUS_BADGE = {
@@ -395,6 +445,21 @@ const FaceConverter = () => {
 
 	const stagedHere = (players ?? []).filter((p) => staged[p.pid]);
 
+	// Every player with a face here, numbered in class order - the numbers on
+	// the review sheets.
+	const reviewList = useMemo(
+		() =>
+			(players ?? []).flatMap((p) => {
+				const face = shownFace(p, staged);
+				return face ? [{ p, face }] : [];
+			}),
+		[players, staged],
+	);
+	const reviewSheets: (typeof reviewList)[] = [];
+	for (let i = 0; i < reviewList.length; i += SHEET_MAX) {
+		reviewSheets.push(reviewList.slice(i, i + SHEET_MAX));
+	}
+
 	const yearIndex = classes?.findIndex((c) => c.year === year) ?? -1;
 
 	const copyText = async (text: string) => {
@@ -470,6 +535,48 @@ const FaceConverter = () => {
 
 		const queue = [...faces.keys()];
 		setReviewing({ pid: queue[0]!, queue });
+	};
+
+	// Every face in the class as one block, keyed by player id in sheet order -
+	// the same shape a chat AI's reply comes back in.
+	const copyFaces = async () => {
+		const lines = reviewList.map(
+			({ p, face }) => `"${p.pid}": ${JSON.stringify(face)}`,
+		);
+		const ok = await copyText(`\`\`\`json\n{\n${lines.join(",\n")}\n}\n\`\`\``);
+		if (ok) {
+			showNotification({
+				type: "success",
+				text: `${lines.length} faces copied.`,
+			});
+		}
+	};
+
+	const setPhoto = async (p: FaceConverterPlayer) => {
+		const value = await confirm("Photo link", {
+			defaultValue: p.photo ?? "",
+			okText: "Save",
+			title: p.name,
+		});
+		const url = value?.trim();
+		if (!url || url === p.photo) {
+			return;
+		}
+		if (!/^(https?:\/\/|data:image\/)/.test(url)) {
+			showNotification({ type: "error", text: "That isn't an image link." });
+			return;
+		}
+		await run("photo", async () => {
+			await toWorker("main", "faceConverterSetPhoto", { pid: p.pid, url });
+			if (!p.converted) {
+				updatePlayerFaceData(p.pid, p.face, url);
+			}
+			setPlayers((list) =>
+				list?.map((other) =>
+					other.pid === p.pid ? { ...other, photo: url } : other,
+				),
+			);
+		});
 	};
 
 	const approve = async (pid: number, face: FaceConfig) => {
@@ -585,6 +692,41 @@ const FaceConverter = () => {
 			remaining[(at + delta + remaining.length) % remaining.length];
 		setReviewing({ pid: nextPid!, queue: remaining });
 	};
+
+	const pasteBox = (title: string) => (
+		<>
+			<div className="d-flex gap-2 mb-1">
+				<span className="fw-bold">{title}</span>
+				<button
+					className="btn btn-light-bordered btn-xs"
+					onClick={async () => {
+						try {
+							takeReply(await navigator.clipboard.readText());
+						} catch {
+							showNotification({
+								type: "error",
+								text: "Couldn't read the clipboard.",
+							});
+						}
+					}}
+					type="button"
+				>
+					Paste
+				</button>
+			</div>
+			<textarea
+				className="form-control font-monospace"
+				onChange={(event) => {
+					takeReply(event.target.value);
+				}}
+				rows={2}
+				spellCheck={false}
+				style={{ fontSize: "0.8rem" }}
+				value={reply}
+			/>
+			{replyResult ? <div className="small mt-1">{replyResult}</div> : null}
+		</>
+	);
 
 	if (!classes) {
 		return <p>Loading...</p>;
@@ -799,40 +941,7 @@ const FaceConverter = () => {
 									)}
 								</div>
 
-								<div className="mb-3">
-									<div className="d-flex gap-2 mb-1">
-										<span className="fw-bold">3. Paste the reply</span>
-										<button
-											className="btn btn-light-bordered btn-xs"
-											onClick={async () => {
-												try {
-													takeReply(await navigator.clipboard.readText());
-												} catch {
-													showNotification({
-														type: "error",
-														text: "Couldn't read the clipboard.",
-													});
-												}
-											}}
-											type="button"
-										>
-											Paste
-										</button>
-									</div>
-									<textarea
-										className="form-control font-monospace"
-										onChange={(event) => {
-											takeReply(event.target.value);
-										}}
-										rows={2}
-										spellCheck={false}
-										style={{ fontSize: "0.8rem" }}
-										value={reply}
-									/>
-									{replyResult ? (
-										<div className="small mt-1">{replyResult}</div>
-									) : null}
-								</div>
+								<div className="mb-3">{pasteBox("3. Paste the reply")}</div>
 
 								<button
 									className="btn btn-sm btn-light-bordered mb-2"
@@ -876,6 +985,58 @@ const FaceConverter = () => {
 						</div>
 					) : null}
 
+					{reviewList.length > 0 ? (
+						<div className="card mb-3">
+							<div className="card-body">
+								<div className="d-flex flex-wrap gap-2 mb-3">
+									<button
+										className="btn btn-primary"
+										onClick={copyFaces}
+										type="button"
+									>
+										Copy faces
+									</button>
+									{reviewSheets.map((sheet, i) => (
+										<button
+											className="btn btn-primary"
+											disabled={busy !== undefined}
+											key={i}
+											onClick={() =>
+												run(`review${i}`, async () => {
+													const blob = await buildReviewSheet(
+														sheet.map(({ p, face }, j) => ({
+															label: batchLabel({
+																n: i * SHEET_MAX + j + 1,
+																pid: p.pid,
+																name: p.name,
+															}),
+															photo: p.photo,
+															svg: faceSvg(p, face),
+														})),
+													);
+													await copyImageToClipboard(blob);
+													showNotification({
+														type: missedPhotos > 0 ? "error" : "success",
+														text: `${reviewSheets.length > 1 ? `Review sheet ${i + 1}` : "Review sheet"} copied.${missedPhotos > 0 ? ` ${missedPhotos} photo${missedPhotos === 1 ? "" : "s"} couldn't be loaded.` : ""}`,
+													});
+												})
+											}
+											title={`#${i * SHEET_MAX + 1}-${i * SHEET_MAX + sheet.length}: photos beside their faces`}
+											type="button"
+										>
+											{busy === `review${i}`
+												? "Copying..."
+												: reviewSheets.length > 1
+													? `Copy review sheet ${i + 1}`
+													: "Copy review sheet"}
+										</button>
+									))}
+								</div>
+								{batch.length === 0 ? pasteBox("Paste faces") : null}
+							</div>
+						</div>
+					) : null}
+
 					{stagedHere.length > 0 ? (
 						<div className="d-flex gap-2 mb-2">
 							<button
@@ -910,58 +1071,71 @@ const FaceConverter = () => {
 					<div className="d-flex flex-wrap gap-2">
 						{players.map((p) => {
 							const status = statusOf(p, staged);
-							const stagedFace = staged[p.pid]
-								? (parseFaceJson(staged[p.pid]!.text) as FaceConfig | undefined)
-								: undefined;
-							const face =
-								stagedFace ?? (status === "done" ? p.face : undefined);
+							const face = shownFace(p, staged);
 							const [badge, badgeClass] = STATUS_BADGE[status];
 							return (
-								<button
-									className="btn btn-light-bordered p-1 text-start"
+								<div
+									className="border rounded p-1"
 									key={p.pid}
-									onClick={() => {
-										setReviewing({ pid: p.pid, queue: undefined });
-									}}
 									style={{ width: 164 }}
-									type="button"
 								>
-									<div className="d-flex gap-1" style={{ height: 90 }}>
-										<div
-											className="d-flex align-items-center justify-content-center"
-											style={{ width: 90 }}
+									<button
+										className="btn btn-link p-0 text-start text-reset text-decoration-none w-100"
+										onClick={() => {
+											setReviewing({ pid: p.pid, queue: undefined });
+										}}
+										type="button"
+									>
+										<div className="d-flex gap-1" style={{ height: 90 }}>
+											<div
+												className="d-flex align-items-center justify-content-center"
+												style={{ width: 90 }}
+											>
+												{p.photo ? (
+													<img
+														alt=""
+														loading="lazy"
+														src={p.photo}
+														style={{ maxWidth: 90, maxHeight: 90 }}
+													/>
+												) : null}
+											</div>
+											<div style={{ width: 60 }}>
+												{face ? (
+													<PlayerPicture
+														colors={p.colors}
+														face={face}
+														jersey={p.jersey}
+														lazy
+													/>
+												) : null}
+											</div>
+										</div>
+										<div className="small text-truncate">{p.name}</div>
+									</button>
+									<div className="d-flex align-items-center gap-1">
+										<span className={clsx("badge", badgeClass)}>{badge}</span>
+										{staged[p.pid]?.warnings.length ? (
+											<span
+												className="badge text-bg-danger"
+												title={staged[p.pid]!.warnings.join(" · ")}
+											>
+												!
+											</span>
+										) : null}
+										<button
+											className="btn btn-light-bordered btn-xs ms-auto"
+											disabled={busy !== undefined}
+											onClick={() => {
+												void setPhoto(p);
+											}}
+											title="Set a new photo link"
+											type="button"
 										>
-											{p.photo ? (
-												<img
-													alt=""
-													loading="lazy"
-													src={p.photo}
-													style={{ maxWidth: 90, maxHeight: 90 }}
-												/>
-											) : null}
-										</div>
-										<div style={{ width: 60 }}>
-											{face ? (
-												<PlayerPicture
-													colors={p.colors}
-													face={face}
-													jersey={p.jersey}
-													lazy
-												/>
-											) : null}
-										</div>
+											Photo
+										</button>
 									</div>
-									<div className="small text-truncate">{p.name}</div>
-									<span className={clsx("badge", badgeClass)}>{badge}</span>
-									{staged[p.pid]?.warnings.length ? (
-										<span
-											className="badge text-bg-danger ms-1"
-											title={staged[p.pid]!.warnings.join(" · ")}
-										>
-											!
-										</span>
-									) : null}
-								</button>
+								</div>
 							);
 						})}
 					</div>

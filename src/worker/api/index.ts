@@ -6089,6 +6089,29 @@ const faceConverterReset = async ({ pids }: { pids: number[] }) => {
 	await toUI("realtimeUpdate", [["playerMovement"]]);
 };
 
+// A new photo for one player, typed in by hand - for the ones whose photo is a
+// blank silhouette. A converted player keeps his face and the new photo
+// becomes the one it was made from; anyone else shows the new photo.
+const faceConverterSetPhoto = async ({
+	pid,
+	url,
+}: {
+	pid: number;
+	url: string;
+}) => {
+	const p = await idb.getCopy.players({ pid }, "noCopyCache");
+	if (!p) {
+		throw new Error("Player not found.");
+	}
+	if (!p.imgURL && p.faceSourceURL) {
+		p.faceSourceURL = url;
+	} else {
+		p.imgURL = url;
+	}
+	await idb.cache.players.put(p);
+	await toUI("realtimeUpdate", [["playerMovement"]]);
+};
+
 export type FaceConverterPlayer = {
 	pid: number;
 	name: string;
@@ -8196,6 +8219,7 @@ const api = {
 		faceConverterClasses,
 		faceConverterClass,
 		faceConverterReset,
+		faceConverterSetPhoto,
 		updatePlayerUntouchable,
 		updatePlayerWatch,
 		updatePlayersWatch,
