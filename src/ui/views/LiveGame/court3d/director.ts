@@ -14012,7 +14012,10 @@ class Director {
 				const onto = tr.acts.some(
 					(a) => a.t0 <= m.t1 + 300 && a.t1 >= m.t1 - 50,
 				);
-				return onto || (prev && prev.v1 === undefined && m.t0 - prev.t1 <= 300)
+				return onto ||
+					(prev &&
+						(prev.v1 === undefined || prev.v1 > 0) &&
+						m.t0 - prev.t1 <= 300)
 					? (FASTEST * (m.t1 - m.t0)) / 1000
 					: reachIn(m.t1 - m.t0, FASTEST, BURST);
 			};
@@ -14117,6 +14120,29 @@ class Director {
 					b === a + 15000 && moves[j] && this.marking.has(moves[j]!)
 						? undefined
 						: whereIn(planned, stop);
+				// Straight on into his next run, if it follows on from this at
+				// once (a closeout, crashing the glass): he goes into it at
+				// speed - as much as the turn into it lets him keep, and no
+				// faster than it goes - rather than pulling up for it first.
+				const nextUp = moves[j];
+				const into =
+					end &&
+					nextUp &&
+					!this.marking.has(nextUp) &&
+					Math.abs(nextUp.t0 - stop) <= 1 &&
+					!cuts.some((c) => Math.abs(c - nextUp.t0) < 2) &&
+					!acts.some((x) => Math.abs(x - stop) <= 1) &&
+					dist(end, nextUp.to) > 1
+						? nextUp
+						: undefined;
+				const intoDir = into && end ? unitVec(end, into.to) : undefined;
+				const intoPace =
+					into && end
+						? dist(end, into.to) / Math.max(0.2, (into.t1 - into.t0) / 1000)
+						: 0;
+				// (Carrying on from the last stretch of following: from where it
+				// ended - no pause between the two.)
+				const onT = carry && a - carry.t <= DT ? carry.t : undefined;
 				// Where he should be, tick by tick: where his man and the ball were
 				// a beat ago say.
 				const ticks: { t: number; aim: Pt; ball: Pt; on: boolean; man: Pt }[] =
@@ -14308,8 +14334,17 @@ class Director {
 						// Into what he does next he arrives standing (it sets off
 						// from there): no faster, as it nears, than he can pull up
 						// from in the time left - not stopped dead at the end.
+						// (Into a run straight on from it: down only to the pace he
+						// goes on into it at.)
+						const cur = Math.hypot(vx, vy);
+						const flow = intoDir
+							? Math.min(intoPace * 1.2, RUN_MAX) *
+								keepThrough(
+									cur > 0.5 ? (vx * intoDir.x + vy * intoDir.y) / cur : 1,
+								)
+							: 0;
 						const most = end
-							? ACCEL * 0.85 * Math.max(0, (stop - ticks[i]!.t) / 1000)
+							? flow + ACCEL * 0.85 * Math.max(0, (stop - ticks[i]!.t) / 1000)
 							: Infinity;
 						if (w > Math.min(vmax, most)) {
 							wx *= Math.min(vmax, most) / w;
@@ -14460,7 +14495,7 @@ class Director {
 					q <= 0
 						? path[0]!.v
 						: q >= path.length - 1
-							? end
+							? end && !into
 								? 0
 								: path.at(-1)!.v
 							: (pace(q - 1) + pace(q)) / 2;
@@ -14508,12 +14543,16 @@ class Director {
 					}
 					const A = {
 						...path[q]!,
+						t:
+							q === 0 && onT !== undefined
+								? Math.min(onT, path[0]!.t)
+								: path[q]!.t,
 						p: dist(was, path[q]!.p) < 1.5 ? was : path[q]!.p,
 					};
 					const Z = path[e]!;
 					const stops =
 						e + 1 >= path.length
-							? !!end || path.at(-1)!.v < KEEP
+							? (!!end && !into) || path.at(-1)!.v < KEEP
 							: pace(e) < KEEP;
 					const v0 = setOff ? 0 : paceAt(q);
 					const v1 = stops ? 0 : paceAt(e);
@@ -14609,6 +14648,26 @@ class Director {
 				// he can be.
 				left = fin.p;
 				carry = end ? undefined : { vx: fin.vx, vy: fin.vy, t: fin.t };
+				// On into his next run at the pace he got there at, straight on
+				// from the end of this - or, if that can't be, pulled up.
+				const lastRun = out.at(-1);
+				if (into && intoDir && lastRun?.v1) {
+					if (Math.abs(lastRun.t1 - fin.t) < 1) {
+						const lx = dist(lastRun.from, lastRun.to);
+						const cos =
+							lx > 0.05
+								? ((lastRun.to.x - lastRun.from.x) * intoDir.x +
+										(lastRun.to.y - lastRun.from.y) * intoDir.y) /
+									lx
+								: 1;
+						const v = Math.min(lastRun.v1 * keepThrough(cos), intoPace * 1.5);
+						lastRun.v1 = v;
+						into.v0 = v;
+						into.t0 = fin.t;
+					} else {
+						lastRun.v1 = 0;
+					}
+				}
 				const gone = end ? dist(fin.p, end) : 0;
 				if (end && gone > 0.5) {
 					const need = Math.max(240, runMs(gone, RUN_MAX));
