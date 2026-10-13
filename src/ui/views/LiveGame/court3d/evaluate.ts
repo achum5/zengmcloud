@@ -1543,6 +1543,18 @@ const STANDING = new Set<AnimName>([
 ]);
 // How his feet go on a run at t: the gait for its pace, and how far through
 // his strides he is.
+// (Not yet round to the way he is going - opening up out of a backpedal,
+// say - he backpedals on until his hips come round past this far off it,
+// rather than run forward with his back to where he goes.)
+const OPEN_UP = (110 * Math.PI) / 180;
+const FORWARD = new Set<AnimName>([
+	"walk",
+	"jog",
+	"run",
+	"sprint",
+	"dribble",
+	"dribbleWalk",
+]);
 const gaitOf = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -1550,7 +1562,24 @@ const gaitOf = (
 	run: Run,
 	t: number,
 ): { anim: AnimName; phase: number } => {
-	return { anim: stepsOf(tl, tr, run), phase: stridesAt(tl, tr, k, run, t) };
+	const anim = stepsOf(tl, tr, run);
+	const phase = stridesAt(tl, tr, k, run, t);
+	if (FORWARD.has(anim)) {
+		const here = spotAt(tr, t);
+		if (
+			here.moving &&
+			here.hx * here.hx + here.hy * here.hy > 1e-6 &&
+			Math.abs(wrapAngle(yawAt(tl, tr, t) - Math.atan2(here.hy, here.hx))) >
+				OPEN_UP
+		) {
+			// (At a backpedal's stride, so his feet stay planted.)
+			return {
+				anim: "back",
+				phase: (phase * strideOf(anim)) / strideOf("back"),
+			};
+		}
+	}
+	return { anim, phase };
 };
 // The steps he takes on a run.
 const stepsOf = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
