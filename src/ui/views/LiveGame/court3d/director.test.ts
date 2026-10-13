@@ -1267,7 +1267,10 @@ describe("3D director", () => {
 			}
 			into.push(swerve(p.t0));
 			const next = tl.ball[k + 1];
-			if (next?.kind === "fly" && "pid" in next.to) {
+			// (Through the net and down on the floor, it bounces: that it
+			// comes up off it into his hands is no swerve.)
+			const low = (p.pts.at(-1) ?? 0) < 1;
+			if (next?.kind === "fly" && "pid" in next.to && !low) {
 				off.push(swerve(p.t1));
 			}
 		});

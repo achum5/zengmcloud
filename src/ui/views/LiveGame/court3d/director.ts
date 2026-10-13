@@ -2102,6 +2102,52 @@ class Director {
 			: this.hold(pid, by, "hold");
 	}
 
+	// Through the net, down off the floor under it: the man taking it out
+	// gets to it and takes it on the hop - or scoops it up as it rolls - not
+	// stood over it till it lies still. Returns when he has it; undefined,
+	// the ball left as it was, if he can't get to it on its way.
+	private offTheHop(pid: number, start: number): number | undefined {
+		const n = this.ball.length;
+		const rest = this.ball[n - 1];
+		const drop = this.ball[n - 2];
+		if (rest?.kind !== "rest" || drop?.kind !== "bounce") {
+			return undefined;
+		}
+		// (Down to the floor first, if it isn't there already.)
+		const high = drop.from.z - BALL_R;
+		const land =
+			drop.t0 + (high > 0.3 ? Math.sqrt((2 * high) / GRAVITY) * 1000 : 0);
+		const F = { x: drop.from.x, y: drop.from.y, z: BALL_R };
+		const span = Math.max(0.3, (drop.t1 - land) / 1000);
+		const vel = {
+			x: (drop.to.x - F.x) / span,
+			y: (drop.to.y - F.y) / span,
+			z: 0,
+		};
+		if (land > drop.t0) {
+			this.fly(drop.t0, land, drop.from, F);
+		}
+		const got = this.chaseDown(
+			pid,
+			start,
+			F,
+			land,
+			drop.h0,
+			vel,
+			undefined,
+			true,
+		);
+		if (got === undefined) {
+			while (this.ball.length > n - 2) {
+				this.ball.pop();
+			}
+			this.ball.push(drop, rest);
+			this.holder = undefined;
+			this.ballAt = rest.at;
+		}
+		return got;
+	}
+
 	// He gets to the ball on the floor and scoops it up - stopped a stride
 	// short of it, so it is under his hands as he bends - and comes up with
 	// it, or comes up dribbling. Returns when he gets to it; he has it up
@@ -2448,11 +2494,10 @@ class Director {
 			}
 			return Math.min(from, most);
 		};
-		const got = this.pickUp(
-			inb,
-			Math.max(readyAt(inb, scored + 150, t), still - 700),
-			quick ? RUN : JOG,
-		);
+		const on = readyAt(inb, scored + 150, t);
+		const got =
+			this.offTheHop(inb, on) ??
+			this.pickUp(inb, Math.max(on, still - 700), quick ? RUN : JOG);
 		const there = quick
 			? this.go(inb, out, got + 120, JOG, "run")
 			: this.go(inb, out, got + 350, WALK * 1.5, "walk");
@@ -8907,7 +8952,11 @@ class Director {
 		vel: Pt3,
 		// Off his hands as he gets to it, not taken in (see reboundOff).
 		out?: (at: Pt3, t: number) => number,
+		// Nobody else's: no hurry, and nobody after it with him.
+		easy = false,
 	): number | undefined {
+		const pace = easy ? RUN : SPRINT;
+		const effort = easy ? 1 : BURST;
 		const up = Math.sqrt(2 * GRAVITY * h0);
 		const hop = (2 * up) / GRAVITY;
 		const vx = vel.x * 0.75;
@@ -8945,18 +8994,18 @@ class Director {
 			const d = dist(R, spot);
 			const tc = land + ms;
 			const by = tc - (inAir ? 140 : 170);
-			const v0 = this.carried(r, spot, start, SPRINT);
+			const v0 = this.carried(r, spot, start, pace);
 			const need =
 				d < 0.02
 					? 0
 					: d < 0.3
 						? SETTLE_MS
-						: Math.max(250, runMs(d, SPRINT, v0, BURST));
+						: Math.max(250, runMs(d, pace, v0, effort));
 			if (start + need > by) {
 				continue;
 			}
 			const f = (B.x >= spot.x ? 1 : -1) as 1 | -1;
-			this.settleOn(r, spot, this.goBy(r, spot, start, by, "run", f, BURST));
+			this.settleOn(r, spot, this.goBy(r, spot, start, by, "run", f, effort));
 			if (out) {
 				// A hand to it - and it squirts away off him.
 				if (inAir) {
@@ -8985,6 +9034,9 @@ class Director {
 			}
 			this.hold(r, tc, "hold");
 			this.free.set(r, Math.max(this.free.get(r) ?? 0, tc + 300));
+			if (easy) {
+				return tc;
+			}
 			// The nearest of theirs dives in after it, a step late - out of
 			// his box-out, if he was still in one.
 			const rival = this.slots(other(this.teamOf(r)))
