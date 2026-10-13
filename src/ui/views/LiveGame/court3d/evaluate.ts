@@ -19,6 +19,7 @@ import {
 	armTo,
 	bodyOf,
 	bounceAt,
+	flexOf,
 	dribbleAhead,
 	isGait,
 	carried,
@@ -2943,6 +2944,9 @@ const SETTLE_FULL = 30;
 const SETTLE_SPREAD = 40;
 // Each step's share of the way, overlapping.
 const SETTLE_STEP = 0.6;
+// (One foot this much higher than the other - in legs' lengths, about - is
+// up off the floor.)
+const SETTLE_UP = 0.12;
 const settleStep = (p: Pose, to: Pose, was: Pose, u: number): Pose => {
 	const spread = Math.abs(was.wide - to.wide) * SETTLE_SPREAD;
 	const dn =
@@ -2962,18 +2966,31 @@ const settleStep = (p: Pose, to: Pose, was: Pose, u: number): Pose => {
 			up: Math.sin(Math.PI * v) * Math.min(1, d / SETTLE_FULL),
 		};
 	};
-	const first = dn >= df;
+	// The foot already up off the floor first - then the one he stands on,
+	// or (both down) the one with furthest to go.
+	const wasFlex = flexOf(was);
+	const toFlex = flexOf(to);
+	const RAD = Math.PI / 180;
+	const lift = (hip: number, knee: number) =>
+		-Math.cos((hip + wasFlex) * RAD) - Math.cos((hip + wasFlex - knee) * RAD);
+	const up = lift(was.hipN, was.kneeN) - lift(was.hipF, was.kneeF);
+	const first = Math.abs(up) > SETTLE_UP ? up > 0 : dn >= df;
 	const n = leg(dn, first ? 0 : 1 - SETTLE_STEP);
 	const f = leg(df, first ? 1 - SETTLE_STEP : 0);
 	const at = (a: number, b: number, w: number) => a + (b - a) * w;
+	// (His hips' bend over his feet goes with each leg as it steps, not
+	// with both at once - which would slide the one still down.)
 	return {
 		...p,
-		hipN: at(was.hipN, to.hipN, n.on) + SETTLE_HIP * n.up,
+		plant: 0,
+		hipN: at(was.hipN + wasFlex, to.hipN + toFlex, n.on) + SETTLE_HIP * n.up,
 		kneeN: at(was.kneeN, to.kneeN, n.on) + SETTLE_KNEE * n.up,
 		toeN: at(was.toeN, to.toeN, n.on),
-		hipF: at(was.hipF, to.hipF, f.on) + SETTLE_HIP * f.up,
+		wideN: at(was.wide + was.wideN, to.wide + to.wideN, n.on) - p.wide,
+		hipF: at(was.hipF + wasFlex, to.hipF + toFlex, f.on) + SETTLE_HIP * f.up,
 		kneeF: at(was.kneeF, to.kneeF, f.on) + SETTLE_KNEE * f.up,
 		toeF: at(was.toeF, to.toeF, f.on),
+		wideF: at(was.wide + was.wideF, to.wide + to.wideF, f.on) - p.wide,
 	};
 };
 

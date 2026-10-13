@@ -25,6 +25,10 @@ export type Pose = {
 	abN: number;
 	abF: number;
 	wide: number;
+	// And each foot on its own (added to that): stepping out into a stance
+	// a foot at a time.
+	wideN: number;
+	wideF: number;
 	// The hand's bend at the wrist, the same way the elbow bends: positive
 	// tips the fingers back over the top (a hand cocked under the ball),
 	// negative folds them forward and down (a shooter's follow-through).
@@ -76,6 +80,8 @@ const BASE: Pose = {
 	abN: 14,
 	abF: 14,
 	wide: 0.08,
+	wideN: 0,
+	wideF: 0,
 	wrN: 0,
 	wrF: 0,
 	flare: 0,
@@ -102,6 +108,7 @@ const SIDES: [keyof Pose, keyof Pose][] = [
 	["abN", "abF"],
 	["wrN", "wrF"],
 	["toeN", "toeF"],
+	["wideN", "wideF"],
 ];
 export const mirror = (q: Pose): Pose => {
 	const out = {
@@ -4594,6 +4601,36 @@ export const turnUpper = (q: Pose, pelvis: V3, w = 1, back = false) => {
 	};
 };
 
+// Spread wide, his legs angle out from his hips - each bone its own length
+// still, so a wide stance sits him lower instead of stretching him.
+const inPlane = (len: number, wide: number) =>
+	Math.sqrt(Math.max(len * len * 0.3, len * len - wide * wide * 0.25));
+// Balanced: a bend at the knees is a bend at the hips too, the way a body
+// crouches - so his feet stay under him instead of trailing behind. (How
+// far, in degrees at both hips, as far as the pose plants him.)
+export const flexOf = (q: Pose, b: Body = bodyOf()): number => {
+	if (q.plant === 0) {
+		return 0;
+	}
+	const rad = Math.PI / 180;
+	const thigh = inPlane(b.thigh, q.wide);
+	const shin = inPlane(b.shin, q.wide);
+	const ankleF = (h: number, k: number) =>
+		thigh * Math.sin(h * rad) + shin * Math.sin((h - k) * rad);
+	const avgF = (d: number) =>
+		(ankleF(q.hipN + d, q.kneeN) + ankleF(q.hipF + d, q.kneeF)) / 2;
+	let flex = 0;
+	for (let i = 0; i < 4; i++) {
+		const f0 = avgF(flex);
+		const slope = avgF(flex + 1) - f0;
+		if (Math.abs(slope) < 1e-6) {
+			break;
+		}
+		flex -= f0 / slope;
+	}
+	return Math.max(-25, Math.min(25, flex)) * 0.8 * q.plant;
+};
+
 // The pose's angles live in the plane he faces along; arms swing out from
 // his sides a little (more in a stance), feet spread with the knees.
 export const skeleton = (b: Body, q: Pose): Skeleton => {
@@ -4603,14 +4640,10 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		f: Math.sin(deg * rad),
 		u: -Math.cos(deg * rad),
 	});
-	const wide = q.wide;
-	// Spread wide, his legs angle out from his hips - each bone its own
-	// length still, so a wide stance sits him lower instead of stretching him.
-	const inPlane = (len: number) =>
-		Math.sqrt(Math.max(len * len * 0.3, len * len - wide * wide * 0.25));
-	const thigh = inPlane(b.thigh);
-	const shin = inPlane(b.shin);
 	const leg = (hipDeg: number, kneeDeg: number, side: 1 | -1) => {
+		const wide = q.wide + (side < 0 ? q.wideN : q.wideF);
+		const thigh = inPlane(b.thigh, wide);
+		const shin = inPlane(b.shin, wide);
 		const a = dir(hipDeg);
 		const c = dir(hipDeg - kneeDeg);
 		const root = v3(0, side * b.hipW, b.hipH);
@@ -4626,22 +4659,7 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		);
 		return { root, mid, end };
 	};
-	// Balanced: a bend at the knees is a bend at the hips too, the way a
-	// body crouches - so his feet stay under him instead of trailing behind.
-	const ankleF = (h: number, k: number) =>
-		thigh * Math.sin(h * rad) + shin * Math.sin((h - k) * rad);
-	const avgF = (d: number) =>
-		(ankleF(q.hipN + d, q.kneeN) + ankleF(q.hipF + d, q.kneeF)) / 2;
-	let flex = 0;
-	for (let i = 0; i < 4; i++) {
-		const f0 = avgF(flex);
-		const slope = avgF(flex + 1) - f0;
-		if (Math.abs(slope) < 1e-6) {
-			break;
-		}
-		flex -= f0 / slope;
-	}
-	flex = Math.max(-25, Math.min(25, flex)) * 0.8 * q.plant;
+	const flex = flexOf(q, b);
 	const legR = leg(q.hipN + flex, q.kneeN, -1);
 	const legL = leg(q.hipF + flex, q.kneeF, 1);
 	// Down onto the floor: the lower ankle sits at ankle height.
