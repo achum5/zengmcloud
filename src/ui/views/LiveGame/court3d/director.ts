@@ -392,6 +392,9 @@ export type CourtTimeline = {
 	checkIns?: CheckIn[];
 	// The starting lineups called out before the opening tip (see intro.ts).
 	intro?: Intro;
+	// The warm-ups, before it is ready (see pregame.ts): the pre-game show
+	// on the floor.
+	warmup?: boolean;
 	end: number;
 };
 

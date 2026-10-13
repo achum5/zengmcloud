@@ -68,6 +68,10 @@ export type Moment = {
 	t: number;
 	players: PlayerState[];
 	ball: BallState;
+	// More balls than the one (the warm-ups - see pregame).
+	balls?: BallState[];
+	// Everyone on the floor in his warm-up top (the warm-ups).
+	warm?: boolean;
 };
 
 export const momentAt = (
@@ -815,14 +819,10 @@ export const drawFrame = (f: Frame) => {
 		const lift = Math.min(1, st.z / 4);
 		drawShadow(ctx, cam, st.x, st.y, 1.25 * (1 - lift * 0.35), 1 - lift * 0.6);
 	}
-	drawShadow(
-		ctx,
-		cam,
-		ball.x,
-		ball.y,
-		0.45,
-		Math.max(0, 1 - ball.z / 14) * 0.9,
-	);
+	const balls = [ball, ...(f.moment.balls ?? [])];
+	for (const b of balls) {
+		drawShadow(ctx, cam, b.x, b.y, 0.45, Math.max(0, 1 - b.z / 14) * 0.9);
+	}
 
 	type Item = { depth: number; draw: () => void };
 	const items: Item[] = [];
@@ -830,13 +830,14 @@ export const drawFrame = (f: Frame) => {
 		items.push({
 			depth: depthOf(cam, { x: st.x, y: st.y, z: 3 }),
 			draw: () => {
+				const look = f.lookFor(st.pid);
 				drawSprite(
 					ctx,
 					f.scratch,
 					cam,
 					st,
 					f.bodyFor(st.pid),
-					f.lookFor(st.pid),
+					f.moment.warm ? warmupLook(look, f.warmups[st.team]) : look,
 					1,
 					f.sprites,
 				);
@@ -881,12 +882,14 @@ export const drawFrame = (f: Frame) => {
 			},
 		});
 	}
-	const spin = ball.roll ?? 0;
-	// In somebody's hands it is drawn with him (see drawSprite).
-	const inHands =
-		ball.holder !== undefined &&
-		players.some((p) => p.pid === ball.holder && p.holding);
-	const rimSide = inHands ? undefined : ballAtRim(ball);
+	// In somebody's hands it is drawn with him (see drawSprite); at the rim,
+	// with the rim (in front of its back, behind its front).
+	const loose = balls.filter(
+		(b) =>
+			b.holder === undefined ||
+			!players.some((p) => p.pid === b.holder && p.holding),
+	);
+	const atRim = loose.map((b) => ballAtRim(b));
 	for (const side of [0, 1] as const) {
 		const rx = side === 0 ? 5.25 : COURT_W - 5.25;
 		const fx: HoopFx = {
@@ -906,23 +909,29 @@ export const drawFrame = (f: Frame) => {
 					f.padColor,
 					f.shotClock,
 					fx,
-					rimSide === side
+					atRim.includes(side)
 						? () => {
-								drawBall(ctx, cam, ball, spin);
+								loose.forEach((b, i) => {
+									if (atRim[i] === side) {
+										drawBall(ctx, cam, b, b.roll ?? 0);
+									}
+								});
 							}
 						: undefined,
 				);
 			},
 		});
 	}
-	if (rimSide === undefined && !inHands) {
-		items.push({
-			depth: depthOf(cam, ball) - 0.3,
-			draw: () => {
-				drawBall(ctx, cam, ball, spin);
-			},
-		});
-	}
+	loose.forEach((b, i) => {
+		if (atRim[i] === undefined) {
+			items.push({
+				depth: depthOf(cam, b) - 0.3,
+				draw: () => {
+					drawBall(ctx, cam, b, b.roll ?? 0);
+				},
+			});
+		}
+	});
 	items.sort((a, b) => b.depth - a.depth);
 	for (const it of items) {
 		it.draw();
@@ -960,7 +969,7 @@ export const drawFrame = (f: Frame) => {
 
 	// Whoever has the ball, named under his feet.
 	const holder =
-		ball.holder === undefined
+		ball.holder === undefined || f.moment.warm
 			? undefined
 			: players.find((p) => p.pid === ball.holder);
 	if (holder) {

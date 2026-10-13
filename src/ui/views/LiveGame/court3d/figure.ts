@@ -63,6 +63,8 @@ export type Outfit = {
 	tie?: string;
 	// A camera in his hands: a photographer's.
 	camera?: boolean;
+	// A microphone in his right hand: a reporter's.
+	mic?: boolean;
 };
 export const CAMERA_BODY = "#1c1d22";
 export const CAMERA_LENS = "#34363e";

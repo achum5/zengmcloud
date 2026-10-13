@@ -197,10 +197,17 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
       and crowd up; a series won mobbed at center court with the bench storming
       the floor; the title longer still, and confetti from the rafters - piling
       up on the floor - when the home team wins it.)
-- [ ] Very brief pre-game cut scene on load: people with microphones on court
-      doing pre-game shows, players warming up at their baskets. Skip button to the
-      starting lineups (when those exist), then another to the opening tip. Quick
-      even without skipping.
+- [~] Very brief pre-game cut scene on load: people with microphones on court
+  doing pre-game shows, players warming up at their baskets. Skip button to the
+  starting lineups (when those exist), then another to the opening tip. Quick
+  even without skipping. (2026-10-13: while a game is staged - about 3 s on a
+  desktop - both teams warm up at their baskets in their warm-up tops, a big
+  under each rim taking shots out of the net and feeding shooters round the
+  arc, a guard or two working on their handle near half court; the host of
+  the pre-game show, microphone in hand, the analyst and their camera in
+  front of the scorer's table; the picture drifting from one end to the
+  other. It lasts only as long as staging, so there is nothing to skip yet.
+  Open: a skip button once it is held for longer.)
 - [~] Starting lineup introductions to open a game, with a skip button: dark
   lights, spotlights, neon, all the hype. Decided: quick, every game -
   about 15-20 seconds, lights down, a spotlight and name card per starter

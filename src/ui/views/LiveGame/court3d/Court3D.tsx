@@ -36,7 +36,6 @@ import {
 } from "./clock.ts";
 import {
 	clipDipAt,
-	compileCourt,
 	linesBetween,
 	snapForCursor,
 	targetForCursor,
@@ -53,6 +52,13 @@ import { logoPicture } from "./logoPicture.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
 import { stageCourt } from "./stageCourt.ts";
+import {
+	stageWarmup,
+	warmupAim,
+	warmupMoment,
+	WARMUP_MS,
+	type Warmup,
+} from "./pregame.ts";
 import { advanceLead, followRate } from "./follow.ts";
 import {
 	planKeyPlays,
@@ -94,8 +100,6 @@ import {
 // (bar the dead time it runs through fast - see fastAt). Watched quicker
 // than this, a dunk is not shown again.
 const REPLAY_RATE_MAX = 2;
-// The wide shot of the building while the game is still being staged (ms).
-const PREGAME_MS = 20_000;
 // How long the picture dips to black either side of a cut (timeline ms).
 const DIP_MS = 130;
 // Up out of black onto the next of the key plays (ms).
@@ -369,20 +373,18 @@ const Court3D = ({
 			alive = false;
 		};
 	}, [events, roster, gid, gender, introKind, stakes]);
-	// While it is: the building and the two teams lined up on the floor,
-	// from the wide shot - not a black screen. (Staged here: with no plays in
-	// it, it takes no time at all.)
-	const pregame = useMemo((): CourtTimeline | undefined => {
+	// While it is: the two teams out warming up at their baskets - not a
+	// black screen. (Staged here: it takes no time at all.)
+	const pregame = useMemo((): Warmup | undefined => {
 		if (!events || events.length === 0 || !eventsMatchRoster(events, roster)) {
 			return undefined;
 		}
 		try {
-			const tl = compileCourt({ events: [], players: roster, gid, gender });
-			return { ...tl, shots: [{ t0: 0, t1: PREGAME_MS, kind: "wide" }] };
+			return stageWarmup(roster, gid ?? 0);
 		} catch {
 			return undefined;
 		}
-	}, [events, roster, gid, gender]);
+	}, [events, roster, gid]);
 	const clocks = useMemo(
 		() => (timeline && events ? buildClocks(timeline, events) : undefined),
 		[timeline, events],
@@ -1006,7 +1008,7 @@ const Court3D = ({
 			const p = live.current;
 			// (Still being staged: the building in the meantime - see pregame.)
 			const staging = !p.timeline;
-			const tl = p.timeline ?? p.pregame;
+			const tl = p.timeline ?? p.pregame?.tl;
 			if (!tl) {
 				return;
 			}
@@ -1014,7 +1016,7 @@ const Court3D = ({
 			const dt = s.last === undefined ? 0 : Math.min(100, now - s.last);
 			s.last = now;
 			const target = staging
-				? Math.min(PREGAME_MS, s.t + dt)
+				? Math.min(WARMUP_MS, s.t + dt)
 				: targetForCursor(tl, p.cursor);
 			const base = p.rate;
 			// Through the dead stretches, fast.
@@ -1147,12 +1149,15 @@ const Court3D = ({
 			}
 
 			const replay = s.replay;
-			const moment = momentAt(
-				tl,
-				replay ? replay.at : s.t,
-				rosterRef.current,
-				bodyOfPid,
-			);
+			const moment =
+				staging && p.pregame
+					? warmupMoment(p.pregame, s.t, bodyOfPid)
+					: momentAt(
+							tl,
+							replay ? replay.at : s.t,
+							rosterRef.current,
+							bodyOfPid,
+						);
 			// Over a break, a look round the building; at the starting lineups,
 			// each man called.
 			const view = replay
@@ -1174,7 +1179,10 @@ const Court3D = ({
 			const fit = replay || view ? undefined : courtFit(fw / fh);
 			const aim = replay
 				? replayAim(moment, p.narrow)
-				: (view?.shot ?? aimFor(moment, p.narrow, tl, fit));
+				: (view?.shot ??
+					(staging
+						? warmupAim(s.t, p.narrow, fit)
+						: aimFor(moment, p.narrow, tl, fit)));
 			if (s.snapCam) {
 				s.camX = aim.x;
 				s.camW = aim.width;

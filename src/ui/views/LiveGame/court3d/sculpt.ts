@@ -1007,6 +1007,35 @@ const build = (
 		);
 	}
 
+	if (look.outfit?.mic) {
+		// His microphone, up in his right hand toward his mouth: the handle,
+		// and the grille on top of it.
+		const hand = sk.armR.end;
+		// (Just in front of his mouth.)
+		const mouth = v3(
+			sk.head.f + body.headR * 1.25,
+			sk.head.s,
+			sk.head.u - body.headR * 0.45,
+		);
+		const toward = unit(subV(mouth, hand), v3(0, 0, 1));
+		const top = addV(
+			hand,
+			toward,
+			Math.min(0.5, lenV(subV(mouth, hand)) - 0.14),
+		);
+		add(
+			addV(hand, toward, -0.08),
+			top,
+			[
+				[0, 0.06],
+				[1, 0.08],
+			],
+			CAM_BODY,
+			G_CAMERA,
+		);
+		add(top, addV(top, toward, 0.12), [[0, 0.13]], CAM_LENS, G_CAMERA);
+	}
+
 	const joins: Built["joins"] = [];
 	const join = (a: number, b: number, at: V3, reachFt: number) => {
 		const p = P(at);

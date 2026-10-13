@@ -4371,6 +4371,43 @@ export const ANIMS = {
 				wide: 0.2,
 			}),
 	},
+	// ---- the pre-game show ----
+	// On his feet, the camera up to his eye.
+	shootStand: {
+		kind: "loop",
+		n: 2,
+		fps: 0.3,
+		pose: (i) =>
+			pose({
+				lean: 4 + i,
+				shN: 74,
+				elN: 112,
+				abN: -6,
+				shF: 80,
+				elF: 104,
+				abF: -6,
+				wide: 0.3,
+			}),
+	},
+	// Talking into a microphone held up at his chin, the other hand making
+	// the point.
+	mic: {
+		kind: "loop",
+		n: 4,
+		fps: 1.8,
+		pose: (i) =>
+			pose({
+				shN: 34,
+				elN: 104,
+				abN: -14,
+				wrN: 30,
+				shF: [10, 26, 16, 32][i]!,
+				elF: [24, 58, 36, 70][i]!,
+				abF: 6,
+				lean: 3,
+				wide: 0.25,
+			}),
+	},
 	// Dribble moves, one bounce each (see CROSS_FRONT): the ball leaving his
 	// right hand, or his left.
 	crossFrontR: { kind: "act", n: 8, keys: CROSS_FRONT },

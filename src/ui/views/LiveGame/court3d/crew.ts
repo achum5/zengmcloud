@@ -43,7 +43,7 @@ import { ANIMS, type AnimName } from "./poses.ts";
 // to the plays, the photographers shoot what happens at their end. All of it
 // is read off the timeline at any moment, so a replay plays out the same.
 
-export type CrewRole = "ref" | "coach" | "photo" | "table";
+export type CrewRole = "ref" | "coach" | "photo" | "table" | "media";
 export type CrewMember = {
 	// Never a player's: crew are numbered below zero.
 	pid: number;
@@ -242,8 +242,47 @@ export const crewFor = (
 			),
 		});
 	});
+	// The pre-game show, out on the floor in front of the table through the
+	// warm-ups: the host with the microphone, the analyst beside him, and
+	// their camera.
+	const mr = makeCourtRng(`media|${teamKey(home)}|${gid}`);
+	MEDIA.forEach((m, n) => {
+		const seed = `media|${teamKey(home)}|${gid}|${n}`;
+		const r = makeCourtRng(seed);
+		const suit = SUITS[Math.floor(mr() * SUITS.length)]!;
+		out.push({
+			pid: -51 - n,
+			role: "media",
+			team: 0,
+			spot: m.at,
+			hgt: 66 + r() * 10,
+			weight: 150 + r() * 60,
+			face: faceFor(seed, r() < 0.4),
+			dress:
+				m.anim === "shootStand"
+					? dress(
+							PHOTO_TOPS[Math.floor(r() * PHOTO_TOPS.length)]!,
+							PHOTO_PANTS[Math.floor(r() * PHOTO_PANTS.length)]!,
+							{ sleeves: "short", camera: true },
+						)
+					: dress(suit, suit, {
+							sleeves: "long",
+							shirt: r() < 0.7 ? "#f2f2ee" : "#cfdcef",
+							tie: TIES[Math.floor(r() * TIES.length)],
+							...(m.anim === "mic" ? { mic: true } : {}),
+						}),
+		});
+	});
 	return out;
 };
+
+// Where the pre-game show stands, and what each of them does.
+const MEDIA: { at: Pt; anim: AnimName }[] = [
+	{ at: { x: 45.6, y: 3.3 }, anim: "mic" },
+	{ at: { x: 48.4, y: 3.1 }, anim: "talk" },
+	{ at: { x: 52.6, y: 6.4 }, anim: "shootStand" },
+];
+const TIES = ["#7a1f2b", "#1f3f7a", "#2b2b2f", "#6b5a2a"];
 
 // ---- reading the game ----------------------------------------------------------
 
@@ -1191,6 +1230,29 @@ const photoState = (
 	};
 };
 
+// The pre-game show: the two on air turned to their camera, it on them.
+const mediaState = (m: CrewMember, t: number): PlayerState => {
+	const k = -51 - m.pid;
+	const at = m.spot!;
+	const cam = MEDIA[2]!.at;
+	const anim = MEDIA[k]!.anim;
+	return {
+		pid: m.pid,
+		team: m.team,
+		shown: true,
+		x: at.x,
+		y: at.y,
+		z: 0,
+		yaw:
+			anim === "shootStand"
+				? yawTo(at, { x: (MEDIA[0]!.at.x + MEDIA[1]!.at.x) / 2, y: 3.2 })
+				: yawTo(at, cam),
+		anim,
+		phase: loopPhase(anim, t, m.pid * 0.37),
+		moving: false,
+	};
+};
+
 // A camera going off at his end after a big play there: a few frames each,
 // at moments of their own.
 const flashOf = (
@@ -1251,6 +1313,10 @@ export const crewAt = (
 			states.push(coachState(tl, t, m, ball));
 		} else if (m.role === "table") {
 			states.push(tableState(m, ball, t));
+		} else if (m.role === "media") {
+			if (tl.warmup) {
+				states.push(mediaState(m, t));
+			}
 		} else if (m.role === "photo") {
 			const st = photoState(tl, t, m, ball);
 			states.push(st);
