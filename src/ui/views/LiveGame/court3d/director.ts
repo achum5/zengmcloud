@@ -38,7 +38,7 @@ import {
 	type Pt3,
 	type Side,
 } from "./geometry.ts";
-import { BURST, keepThrough, paceFor, runMs } from "./motion.ts";
+import { BURST, keepThrough, paceFor, pullUpFrom, runMs } from "./motion.ts";
 import {
 	BACKSPIN,
 	CROSS_RATE,
@@ -12821,6 +12821,127 @@ class Director {
 		}
 	}
 
+	// NO DASHES. A short run the schedule left only a moment for - him there
+	// just in time - would be taken flat out from a standstill and pulled up
+	// dead, a blink each way, the way nobody moves. Where he has nothing to
+	// do either side of it, he takes it easier: on into the time after it
+	// (nothing waiting on him getting there - nothing he does, no run of
+	// his, the ball not coming to him), and failing that, setting off sooner
+	// (not before the ball moves, a cut, the ball changing hands - what he
+	// goes on). And running on into a run he pulls up at the end of, he
+	// goes into it no faster than he can pull up in it.
+	private ease() {
+		// (Past this much harder than he usually goes, he takes it easier,
+		// as easy as he can.)
+		const HARD = BURST;
+		const FLAT_OUT = 26;
+		// Kept standing alone: further from his run either side than he runs
+		// one into the next (see evaluate).
+		const ALONE = 320;
+		const MARGIN = 60;
+		const edges: number[] = [];
+		for (const s of this.ball) {
+			edges.push(s.t0);
+			if (s.kind !== "hold" && s.kind !== "rest") {
+				edges.push(s.t1);
+			}
+		}
+		const stops = [
+			...this.cuts,
+			...this.poss.map(([t]) => t),
+			...this.jumps.map(([, tip]) => tip),
+		];
+		const his = (pid: number, s: BallSeg) =>
+			(s.kind === "hold" && s.pid === pid) ||
+			(s.kind === "fly" &&
+				(("pid" in s.from && s.from.pid === pid) ||
+					("pid" in s.to && s.to.pid === pid)));
+		for (const tr of this.tracks.values()) {
+			const mine: number[] = [];
+			for (const s of this.ball) {
+				if (his(tr.pid, s)) {
+					mine.push(s.t0);
+					if (s.kind === "fly") {
+						mine.push(s.t1);
+					}
+				}
+			}
+			const shown = tr.shown.map(([at]) => at);
+			// (What he has to be where he is for, after a run - and what he
+			// goes on, before one. Neither across a cut.)
+			const waits = [...mine, ...shown, ...this.cuts];
+			const cues = [...edges, ...stops, ...shown];
+			const moves = tr.moves;
+			for (let i = 0; i < moves.length; i++) {
+				const m = moves[i]!;
+				const prev = moves[i - 1];
+				const next = moves[i + 1];
+				const L = dist(m.from, m.to);
+				if (
+					L < 0.5 ||
+					m.t1 - m.t0 < 1 ||
+					this.cuts.some((c) => c > m.t0 - 1 && c < m.t1 + 1)
+				) {
+					continue;
+				}
+				const aloneIn = m.v0 === 0 || !prev || m.t0 - prev.t1 > ALONE;
+				const aloneOut = m.v1 === 0 || !next || next.t0 - m.t1 > ALONE;
+				if (!aloneOut) {
+					continue;
+				}
+				// Into one he pulls up at the end of, from the one before.
+				let v0 = 0;
+				if (!aloneIn) {
+					if (m.v0 === undefined || prev?.v1 === undefined) {
+						continue;
+					}
+					const most = pullUpFrom(L, HARD);
+					if (m.v0 > most) {
+						m.v0 = most;
+						prev.v1 = Math.min(prev.v1, most);
+					}
+					v0 = m.v0;
+				}
+				const speed = Math.max(FLAT_OUT, v0);
+				if (m.t1 - m.t0 >= runMs(L, speed, v0, HARD)) {
+					continue;
+				}
+				const want = runMs(L, speed, v0, 1);
+				// On into the time after it.
+				let t1 = Math.min(m.t0 + want, (next?.t0 ?? Infinity) - ALONE);
+				for (const a of tr.acts) {
+					if (a.t1 > m.t1 && a.t0 < t1) {
+						t1 = Math.min(t1, a.t0 - MARGIN);
+					}
+				}
+				for (const at of waits) {
+					if (at > m.t1 - 1 && at < t1 + MARGIN) {
+						t1 = Math.min(t1, at - MARGIN);
+					}
+				}
+				t1 = Math.max(t1, m.t1);
+				// Setting off sooner, from a standstill.
+				let t0 = m.t0;
+				if (aloneIn && t1 - m.t0 < want) {
+					t0 = Math.max(t1 - want, (prev?.t1 ?? -Infinity) + ALONE);
+					for (const a of tr.acts) {
+						if (a.t1 > t0 && a.t0 < m.t0) {
+							t0 = Math.max(t0, a.t1 + MARGIN);
+						}
+					}
+					for (const at of cues) {
+						if (at > t0 - MARGIN && at <= m.t0) {
+							t0 = Math.max(t0, at + MARGIN);
+						}
+					}
+					t0 = Math.min(t0, m.t0);
+				}
+				m.t0 = t0;
+				m.t1 = t1;
+			}
+		}
+	}
+
 	// THE DRIBBLE ALIVE. A man dribbling where he stands - waiting on a
 	// screen, for the set to come together - works his man the way a
 	// ball handler does, never just lunging at him and backing out again
@@ -16913,6 +17034,7 @@ class Director {
 			}
 		}
 		this.fx.sort((a, b) => a.t - b.t);
+		this.ease();
 		const fast = hurried(this.fast, this.beats);
 		this.keepApart(fast);
 		this.passBy(fast);

@@ -30,6 +30,7 @@ import {
 	RIM_Z,
 	rimX,
 } from "./geometry.ts";
+import { runMs } from "./motion.ts";
 import { bodyOf, LAYUPS, posed, skeleton } from "./poses.ts";
 import { compile, fakeGame, gidOf } from "./testGame.ts";
 import { finishOf } from "../../../util/liveGameWording.basketball.ts";
@@ -2132,4 +2133,37 @@ describe("3D director", () => {
 			assert.isAbove(boards, 10);
 		}
 	}, 60_000);
+
+	// A run with time either side of it is taken at a player's pace: not
+	// flat out from a standstill and pulled up dead, a blink each way.
+	test("a short run with nothing either side of it is no dash", () => {
+		for (const seed of ["a", "b"]) {
+			const { tl } = compile(seed);
+			let alone = 0;
+			let dashes = 0;
+			for (const tr of tl.tracks.values()) {
+				tr.moves.forEach((m, i) => {
+					const prev = tr.moves[i - 1];
+					const next = tr.moves[i + 1];
+					const L = Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y);
+					if (
+						L < 1 ||
+						(prev && m.t0 - prev.t1 < 320) ||
+						(next && next.t0 - m.t1 < 320)
+					) {
+						return;
+					}
+					alone += 1;
+					// (Twice as hard as he usually goes about it, and more.)
+					if (m.t1 - m.t0 < runMs(L, 26, 0, 2)) {
+						dashes += 1;
+					}
+				});
+			}
+			assert.isAbove(alone, 500);
+			// (The rest the moment he has to be there by, and what he does
+			// there, leave no more time for.)
+			assert.isBelow(dashes / alone, 0.025, seed);
+		}
+	}, 120_000);
 });

@@ -175,6 +175,11 @@ export const alongShape = (r: RunShape, s: number): number => {
 // the way a player bursts through a shuttle run.
 export const BURST = 1.3;
 
+// The pace (feet a second) he can pull up from in L feet, `effort` times as
+// hard as he usually brakes.
+export const pullUpFrom = (L: number, effort = 1): number =>
+	Math.sqrt(2 * BRAKE * effort * Math.max(0, L));
+
 // How long (ms) a run of L feet takes a man going for `speed`, already
 // going v0 as he sets off, and pulled up at the end of it - to v1, if he
 // goes straight on into something else - `effort` times as hard as he
