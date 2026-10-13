@@ -38,7 +38,15 @@ import {
 	type Pt3,
 	type Side,
 } from "./geometry.ts";
-import { BURST, keepThrough, paceFor, pullUpFrom, runMs } from "./motion.ts";
+import {
+	BURST,
+	keepThrough,
+	paceFor,
+	pullUpFrom,
+	pushFrom,
+	reachIn,
+	runMs,
+} from "./motion.ts";
 import {
 	BACKSPIN,
 	CROSS_RATE,
@@ -12906,7 +12914,39 @@ class Director {
 						}
 						return true;
 					}
-					// Nowhere better to be: in a step, and back out to his spot.
+					// Nowhere better to be: in a step, and back out to his spot -
+					// or, as often, a step or two along the line one way or the
+					// other, easy, keeping his spacing: not the same twitch over
+					// and over.
+					if (!home && this.rng() < 0.5) {
+						const u = unitVec(at, rim);
+						const others = othersAt(t);
+						const L = this.rand(2, 3.5);
+						// (Out behind the line, he stays behind it.)
+						const deep =
+							Math.abs(at.x - rim.x) < 14 - 5.25
+								? Math.abs(at.y - rim.y) >= 22
+								: dist(at, rim) >= 23.75;
+						const Q = [1, -1]
+							.map((side) => {
+								const q = clampPt({
+									x: at.x - u.y * side * L,
+									y: at.y + u.x * side * L,
+								});
+								return (deep ? behindArc(team, q) : undefined) ?? q;
+							})
+							.map((q) => ({
+								q,
+								room: Math.min(99, ...others.map((m) => dist(m, q))),
+							}))
+							.sort((a, b) => b.room - a.room)[0]!.q;
+						if (
+							fits(Q) &&
+							goTo(Q, this.rand(5, 7), "drift", this.rand(300, 600))
+						) {
+							return true;
+						}
+					}
 					return jabTo(at, this.rand(12, 15), "run", this.rand(300, 600));
 				};
 				const last = home && w.catching && !big ? until - 1000 : until;
@@ -13962,6 +14002,23 @@ class Director {
 			// had him, he goes as far as he can get (and the run after that
 			// sets off from there).
 			let left: Pt | undefined;
+			// How far he gets in a run of his set off from there: from
+			// standing - unless it follows straight on from a run of his he is
+			// still going at the end of, or takes him to the spot he does
+			// something on (the shot he contests from the side), however hard
+			// he has to go to get there.
+			const reach = (m: Move): number => {
+				const prev = out.at(-1);
+				const onto = tr.acts.some(
+					(a) => a.t0 <= m.t1 + 300 && a.t1 >= m.t1 - 50,
+				);
+				return onto || (prev && prev.v1 === undefined && m.t0 - prev.t1 <= 300)
+					? (FASTEST * (m.t1 - m.t0)) / 1000
+					: reachIn(m.t1 - m.t0, FASTEST, BURST);
+			};
+			// Following his man on from one stretch straight into the next, how
+			// fast he was going at the end of the last, and when that was.
+			let carry: { vx: number; vy: number; t: number } | undefined;
 			let i = 0;
 			while (i < moves.length) {
 				const m = moves[i]!;
@@ -13976,7 +14033,7 @@ class Director {
 					if (left) {
 						m.from = { ...left };
 						const far = dist(m.from, m.to);
-						const most = (FASTEST * (m.t1 - m.t0)) / 1000;
+						const most = reach(m);
 						if (far > most && far > 0.01) {
 							const k = most / far;
 							m.to = {
@@ -13987,6 +14044,7 @@ class Director {
 						}
 					}
 					left = short ? { ...m.to } : undefined;
+					carry = undefined;
 					out.push(m);
 					i++;
 					continue;
@@ -14029,7 +14087,7 @@ class Director {
 					if (left) {
 						m.from = { ...left };
 						const far = dist(m.from, m.to);
-						const most = (FASTEST * (m.t1 - m.t0)) / 1000;
+						const most = reach(m);
 						if (far > most && far > 0.01) {
 							const k = most / far;
 							m.to = {
@@ -14040,6 +14098,7 @@ class Director {
 						}
 					}
 					left = short ? { ...m.to } : undefined;
+					carry = undefined;
 					out.push(m);
 					i++;
 					continue;
@@ -14202,17 +14261,22 @@ class Director {
 						return { x: sx / sw, y: sy / sw };
 					});
 					let p = left ?? at(a);
-					let vx = 0;
-					let vy = 0;
-					let running = false;
+					// (Straight on from the last stretch of it: as fast as he was
+					// going.)
+					const on = carry && a - carry.t <= DT ? carry : undefined;
+					let vx = on?.vx ?? 0;
+					let vy = on?.vy ?? 0;
+					let running = Math.hypot(vx, vy) > SLIDE_MAX;
 					const out: {
 						t: number;
 						p: Pt;
 						v: number;
+						vx: number;
+						vy: number;
 						ball: Pt;
 						on: boolean;
 						man: Pt;
-					}[] = [{ ...ticks[0]!, p, v: 0 }];
+					}[] = [{ ...ticks[0]!, p, v: Math.hypot(vx, vy), vx, vy }];
 					for (let i = 1; i < ticks.length; i++) {
 						const T = smooth[i]!;
 						const prev = smooth[i - 1]!;
@@ -14241,14 +14305,27 @@ class Director {
 						running = running ? e > 2.5 : e > 7;
 						const vmax = running ? RUN_MAX : SLIDE_MAX;
 						const w = Math.hypot(wx, wy);
-						if (w > vmax) {
-							wx *= vmax / w;
-							wy *= vmax / w;
+						// Into what he does next he arrives standing (it sets off
+						// from there): no faster, as it nears, than he can pull up
+						// from in the time left - not stopped dead at the end.
+						const most = end
+							? ACCEL * 0.85 * Math.max(0, (stop - ticks[i]!.t) / 1000)
+							: Infinity;
+						if (w > Math.min(vmax, most)) {
+							wx *= Math.min(vmax, most) / w;
+							wy *= Math.min(vmax, most) / w;
 						}
 						let dx = wx - vx;
 						let dy = wy - vy;
 						const dv = Math.hypot(dx, dy);
-						const cap = (ACCEL * DT) / 1000;
+						// (Getting quicker, the less so the quicker he is already.)
+						const sp = Math.hypot(vx, vy);
+						const cap =
+							((Math.hypot(wx, wy) > sp
+								? Math.min(ACCEL, pushFrom(sp))
+								: ACCEL) *
+								DT) /
+							1000;
 						if (dv > cap) {
 							dx *= cap / dv;
 							dy *= cap / dv;
@@ -14292,7 +14369,7 @@ class Director {
 								vy *= k;
 							}
 						}
-						out.push({ ...ticks[i]!, p, v: Math.hypot(vx, vy) });
+						out.push({ ...ticks[i]!, p, v: Math.hypot(vx, vy), vx, vy });
 					}
 					return out;
 				};
@@ -14377,15 +14454,23 @@ class Director {
 				// at the pace his feet had him going there.
 				const pace = (q: number) =>
 					dist(path[q]!.p, path[q + 1]!.p) / (DT / 1000);
+				// (At either end, as fast as he goes on from the stretch before
+				// into the next - if he does.)
 				const paceAt = (q: number) =>
-					q <= 0 || q >= path.length - 1 ? 0 : (pace(q - 1) + pace(q)) / 2;
+					q <= 0
+						? path[0]!.v
+						: q >= path.length - 1
+							? end
+								? 0
+								: path.at(-1)!.v
+							: (pace(q - 1) + pace(q)) / 2;
 				const heading = (q: number) =>
 					Math.atan2(
 						path[q + 1]!.p.y - path[q]!.p.y,
 						path[q + 1]!.p.x - path[q]!.p.x,
 					);
 				let q = 0;
-				let moving = false;
+				let moving = path[0]!.v >= KEEP;
 				// Where the last run left him: the creep of his feet standing
 				// there is no run, so the next one sets off from there.
 				let was: Pt = path[0]!.p;
@@ -14426,7 +14511,10 @@ class Director {
 						p: dist(was, path[q]!.p) < 1.5 ? was : path[q]!.p,
 					};
 					const Z = path[e]!;
-					const stops = e + 1 >= path.length || pace(e) < KEEP;
+					const stops =
+						e + 1 >= path.length
+							? !!end || path.at(-1)!.v < KEEP
+							: pace(e) < KEEP;
 					const v0 = setOff ? 0 : paceAt(q);
 					const v1 = stops ? 0 : paceAt(e);
 					q = e;
@@ -14520,12 +14608,17 @@ class Director {
 				// that counts on him being there (taking the ball out, say), if
 				// he can be.
 				left = fin.p;
+				carry = end ? undefined : { vx: fin.vx, vy: fin.vy, t: fin.t };
 				const gone = end ? dist(fin.p, end) : 0;
 				if (end && gone > 0.5) {
 					const need = Math.max(240, runMs(gone, RUN_MAX));
 					const t1 = Math.min(fin.t + need, moves[j]?.t0 ?? Infinity);
 					if (t1 - fin.t >= 100) {
-						const k = Math.min(1, (t1 - fin.t) / need);
+						// (As far as he gets in the time there is, from standing.)
+						const k =
+							t1 - fin.t >= need
+								? 1
+								: Math.min(1, reachIn(t1 - fin.t, RUN_MAX) / gone);
 						const to = {
 							x: fin.p.x + (end.x - fin.p.x) * k,
 							y: fin.p.y + (end.y - fin.p.y) * k,

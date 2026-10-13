@@ -18,6 +18,11 @@ const TOP = 27;
 const TAU = 0.85;
 const BRAKE = 22;
 
+// How hard (feet a second, a second) a man going v can still speed up: the
+// quicker he already is, the less he has in hand.
+export const pushFrom = (v: number): number =>
+	(TOP - Math.min(Math.max(0, v), TOP - 0.5)) / TAU;
+
 // How fast a run that follows straight on from another carries its pace
 // through the join: all of it straight on, a third of it round a right
 // angle, none turning back.
@@ -241,4 +246,26 @@ export const paceFor = (
 		}
 	}
 	return b;
+};
+
+// The farthest (feet) a man going for `speed` gets in `ms` - from
+// standing, and pulled up at the end of it (see runMs).
+export const reachIn = (ms: number, speed: number, effort = 1): number => {
+	if (ms <= 0) {
+		return 0;
+	}
+	let a = 0;
+	let b = (Math.max(0.5, speed) * ms) / 1000;
+	if (runMs(b, speed, 0, effort) <= ms) {
+		return b;
+	}
+	for (let n = 0; n < 24; n++) {
+		const m = (a + b) / 2;
+		if (runMs(m, speed, 0, effort) <= ms) {
+			a = m;
+		} else {
+			b = m;
+		}
+	}
+	return a;
 };
