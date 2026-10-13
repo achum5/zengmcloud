@@ -122,6 +122,44 @@ describe("3D crew", () => {
 		}
 	}, 60_000);
 
+	// A jump ahead (the next key play, joining late) is worked out from ten
+	// seconds short of where it lands, not every step in between - and lands
+	// the officials where playing it all through would have. Gone back and
+	// played on into it, they never pop.
+	test("a jump ahead finds the officials where playing through would have", () => {
+		const { tl, crew } = working("crew");
+		const { tl: through } = working("crew");
+		const refsAt = (on: typeof tl, t: number) =>
+			crewAt(on, t, crew).states.filter((s) => isRef(s.pid));
+		const marks = [0.3, 0.55, 0.8].map((f) => Math.round(tl.end * f));
+		for (let t = 0; t <= marks.at(-1)!; t += 250) {
+			refsAt(through, t);
+		}
+		for (const t of marks) {
+			const want = refsAt(through, t);
+			refsAt(tl, t).forEach((r, i) => {
+				const p = want[i]!;
+				assert.isBelow(Math.hypot(r.x - p.x, r.y - p.y), 0.5, `${t} ${r.pid}`);
+			});
+		}
+		const cuts = cameraCuts(tl);
+		let prev = refsAt(tl, marks[1]! - 30_000);
+		for (let t = marks[1]! - 29_950; t <= marks[1]! + 5000; t += 50) {
+			const refs = refsAt(tl, t);
+			if (!cuts.some((c) => c > t - 50 && c <= t)) {
+				refs.forEach((r, i) => {
+					const p = prev[i]!;
+					assert.isBelow(
+						Math.hypot(r.x - p.x, r.y - p.y),
+						1.5,
+						`${t} ${r.pid}`,
+					);
+				});
+			}
+			prev = refs;
+		}
+	}, 60_000);
+
 	test("every whistle is signaled, and a made three gets both arms up", () => {
 		for (const seed of ["a", "b", "c"]) {
 			const { tl, crew } = working(seed);

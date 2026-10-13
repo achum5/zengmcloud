@@ -598,89 +598,167 @@ const viaCorner = (p: Pt, g: Pt): Pt => {
 };
 // (Worked out as far as it is needed - the game so far, a step at a time as
 // it goes on - not the whole game at once before the first picture: that
-// takes seconds.)
+// takes seconds. And after a jump ahead - on to the next key play, joining
+// late - from ten seconds short of where it lands, not every step of what
+// it jumped: the picture cuts there anyway, and that many steps would hold
+// it up most of a second.)
 type RefRun = {
-	out: Pt[][];
+	// The step it works out next, and where the officials are as of the one
+	// before.
+	k: number;
 	at: Pt[];
 	vel: Pt[];
 	// The next camera cut to pass.
 	ci: number;
+	// Starting afresh: everyone where the play has them.
+	fresh: boolean;
+	// Steps it has gone on over ones worked out from a later fresh start,
+	// till it meets up with them.
+	over: number;
+};
+type RefPath = {
+	out: (Pt[] | undefined)[];
+	runs: RefRun[];
 	cuts: number[];
 	n: number;
 };
-const refRuns = new WeakMap<CourtTimeline, RefRun>();
-const refPath = (tl: CourtTimeline, upTo: number): Pt[][] => {
-	let run = refRuns.get(tl);
-	if (!run) {
-		const at = refTargets(tl, 0).map((q) => ({ ...q }));
-		run = {
+// How far ahead (steps) a run goes on to rather than a fresh start, and how
+// far short of where it is wanted one starts.
+const JUMP = 40;
+const WARM = 40;
+const refPaths = new WeakMap<CourtTimeline, RefPath>();
+const refRunFrom = (track: RefPath, k: number): RefRun => {
+	let ci = 0;
+	while (ci < track.cuts.length && track.cuts[ci]! <= k * STEP) {
+		ci++;
+	}
+	return { k, at: [], vel: [], ci, fresh: true, over: 0 };
+};
+// The officials at the run's next step.
+const refStep = (tl: CourtTimeline, track: RefPath, run: RefRun): Pt[] => {
+	const { cuts } = track;
+	const t = run.k * STEP;
+	const dt = STEP / 1000;
+	const goal = refTargets(tl, t);
+	let cut = run.fresh;
+	while (run.ci < cuts.length && cuts[run.ci]! <= t) {
+		cut ||= cuts[run.ci]! > t - STEP;
+		run.ci++;
+	}
+	run.fresh = false;
+	run.k++;
+	if (cut) {
+		run.at = goal.map((q) => ({ ...q }));
+		run.vel = run.at.map(() => ({ x: 0, y: 0 }));
+		return run.at;
+	}
+	const vel = run.vel;
+	run.at = run.at.map((p, i) => {
+		const g = goal[i]!;
+		const W = viaCorner(p, g);
+		// (How far he has to go, round the corner if he goes that way.)
+		const d0 = dist(p, W);
+		const left = d0 + dist(W, g);
+		const u =
+			d0 > 0.01 ? { x: (W.x - p.x) / d0, y: (W.y - p.y) / d0 } : { x: 0, y: 0 };
+		let wx = u.x * left * REF_GAIN;
+		let wy = u.y * left * REF_GAIN;
+		const w = Math.hypot(wx, wy);
+		// No faster than he can pull up from by the time he gets there.
+		const most = Math.min(REF_RUN, Math.sqrt(2 * REF_ACCEL * left));
+		if (w > most) {
+			wx *= most / w;
+			wy *= most / w;
+		}
+		const v = vel[i]!;
+		let dx = wx - v.x;
+		let dy = wy - v.y;
+		const dv = Math.hypot(dx, dy);
+		if (dv > REF_ACCEL * dt) {
+			dx *= (REF_ACCEL * dt) / dv;
+			dy *= (REF_ACCEL * dt) / dv;
+		}
+		vel[i] = { x: v.x + dx, y: v.y + dy };
+		// Never out past where an official stands, off the floor.
+		return {
+			x: Math.min(COURT_W + 2.8, Math.max(-2.8, p.x + vel[i]!.x * dt)),
+			y: Math.min(COURT_H + 1.8, Math.max(-0.9, p.y + vel[i]!.y * dt)),
+		};
+	});
+	return run.at;
+};
+// Step `want` worked out: by the run that has got nearest it, if one is
+// near enough, or one started afresh a little short of it. A run that
+// catches up with steps a fresh start already worked out goes on over them
+// till it has the officials where they had them - no jump where they meet.
+const refFill = (tl: CourtTimeline, track: RefPath, want: number) => {
+	const { out, runs } = track;
+	for (let guard = 0; guard < 8; guard++) {
+		const have = out[want] !== undefined;
+		let run: RefRun | undefined;
+		for (const q of runs) {
+			if (
+				q.k <= want &&
+				want - q.k <= JUMP &&
+				(!have || out[q.k] !== undefined) &&
+				(!run || q.k > run.k)
+			) {
+				run = q;
+			}
+		}
+		if (!run) {
+			if (have) {
+				return;
+			}
+			run = refRunFrom(track, Math.max(0, want - WARM));
+			runs.push(run);
+		}
+		while (run.k <= want) {
+			const was = out[run.k];
+			const at = refStep(tl, track, run);
+			if (
+				was &&
+				(run.over >= JUMP || was.every((q, i) => dist(q, at[i]!) < 0.25))
+			) {
+				runs.splice(runs.indexOf(run), 1);
+				break;
+			}
+			if (was) {
+				run.over++;
+			}
+			out[run.k - 1] = at;
+			if (run.k >= track.n) {
+				runs.splice(runs.indexOf(run), 1);
+				break;
+			}
+			if (out[run.k] === undefined) {
+				// (Where the run it went on over had got to: this one goes on
+				// from here for it.)
+				run.over = 0;
+				for (let j = runs.length - 1; j >= 0; j--) {
+					if (runs[j] !== run && runs[j]!.k === run.k) {
+						runs.splice(j, 1);
+					}
+				}
+			}
+		}
+	}
+};
+const refPlaces = (tl: CourtTimeline, t: number): Places => {
+	let track = refPaths.get(tl);
+	if (!track) {
+		track = {
 			out: [],
-			at,
-			vel: at.map(() => ({ x: 0, y: 0 })),
-			ci: 0,
+			runs: [],
 			cuts: cameraCuts(tl),
 			n: Math.ceil(tl.end / STEP) + 2,
 		};
-		refRuns.set(tl, run);
+		refPaths.set(tl, track);
 	}
-	const { out, cuts, n } = run;
-	const want = Math.min(n, upTo + 1);
-	const dt = STEP / 1000;
-	for (let k = out.length; k < want; k++) {
-		const t = k * STEP;
-		const goal = refTargets(tl, t);
-		let cut = false;
-		while (run.ci < cuts.length && cuts[run.ci]! <= t) {
-			cut ||= cuts[run.ci]! > t - STEP;
-			run.ci++;
-		}
-		if (cut) {
-			run.at = goal.map((q) => ({ ...q }));
-			run.vel = run.at.map(() => ({ x: 0, y: 0 }));
-		} else if (k > 0) {
-			const vel = run.vel;
-			run.at = run.at.map((p, i) => {
-				const g = goal[i]!;
-				const W = viaCorner(p, g);
-				// (How far he has to go, round the corner if he goes that way.)
-				const d0 = dist(p, W);
-				const left = d0 + dist(W, g);
-				const u =
-					d0 > 0.01
-						? { x: (W.x - p.x) / d0, y: (W.y - p.y) / d0 }
-						: { x: 0, y: 0 };
-				let wx = u.x * left * REF_GAIN;
-				let wy = u.y * left * REF_GAIN;
-				const w = Math.hypot(wx, wy);
-				// No faster than he can pull up from by the time he gets there.
-				const most = Math.min(REF_RUN, Math.sqrt(2 * REF_ACCEL * left));
-				if (w > most) {
-					wx *= most / w;
-					wy *= most / w;
-				}
-				const v = vel[i]!;
-				let dx = wx - v.x;
-				let dy = wy - v.y;
-				const dv = Math.hypot(dx, dy);
-				if (dv > REF_ACCEL * dt) {
-					dx *= (REF_ACCEL * dt) / dv;
-					dy *= (REF_ACCEL * dt) / dv;
-				}
-				vel[i] = { x: v.x + dx, y: v.y + dy };
-				// Never out past where an official stands, off the floor.
-				return {
-					x: Math.min(COURT_W + 2.8, Math.max(-2.8, p.x + vel[i]!.x * dt)),
-					y: Math.min(COURT_H + 1.8, Math.max(-0.9, p.y + vel[i]!.y * dt)),
-				};
-			});
-		}
-		out.push(run.at);
-	}
-	return out;
-};
-const refPlaces = (tl: CourtTimeline, t: number): Places => {
-	const path = refPath(tl, Math.max(1, Math.floor(t / STEP) + 1));
-	const g = Math.max(0, Math.min(path.length - 2, Math.floor(t / STEP)));
+	const g = Math.max(0, Math.min(track.n - 2, Math.floor(t / STEP)));
+	refFill(tl, track, g);
+	refFill(tl, track, g + 1);
+	const path = track.out;
 	const a = path[g]!;
 	const b = path[g + 1]!;
 	let u = Math.max(0, Math.min(1, (t - g * STEP) / STEP));
