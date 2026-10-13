@@ -18,9 +18,32 @@ import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
 import { local, localActions } from "../../util/local.ts";
 import {
 	getLiveGameView,
+	getShowWinProb,
 	setLiveGameView,
+	setShowWinProb,
 	type LiveGameView,
 } from "../LiveGame/court3d/setting.ts";
+import {
+	getKeyPlays,
+	KEY_PLAY_LIMITS,
+	KEY_PLAY_PRESETS,
+	parseKeyPlays,
+	setKeyPlays,
+	type KeyPlaySettings,
+} from "../LiveGame/court3d/keyPlays.ts";
+
+// What can make the 3D key plays reel (see keyPlays.ts).
+const KEY_PLAY_KINDS: [keyof KeyPlaySettings, string][] = [
+	["swings", "Biggest swings"],
+	["dunks", "Dunks"],
+	["threes", "Threes"],
+	["blocks", "Blocks"],
+	["steals", "Steals"],
+	["andOnes", "And-ones"],
+	["leadChanges", "Lead changes"],
+	["buzzer", "Buzzer-beaters"],
+	["baskets", "Other baskets"],
+];
 
 const GlobalSettings = (props: View<"globalSettings">) => {
 	const [state, setState] = useState(() => {
@@ -52,6 +75,8 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 				: ("hide" as const),
 			scoresBar: local.getState().showLeagueTopBar ? "show" : ("hide" as const),
 			liveGameView: getLiveGameView() as LiveGameView,
+			keyPlays: getKeyPlays(),
+			winProb: getShowWinProb() ? "show" : ("hide" as const),
 			phaseChangeRedirects: props.phaseChangeRedirects,
 			realPlayerPhotos: props.realPlayerPhotos,
 			realTeamInfo: props.realTeamInfo,
@@ -83,6 +108,20 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 			setDirty(true);
 		};
 
+	// A length of game for the key plays not among the presets.
+	const [customLength, setCustomLength] = useState(
+		() =>
+			!(KEY_PLAY_PRESETS as readonly number[]).includes(state.keyPlays.minutes),
+	);
+
+	const setKeyPlay = (patch: Partial<KeyPlaySettings>) => {
+		setState((state2) => ({
+			...state2,
+			keyPlays: { ...state2.keyPlays, ...patch },
+		}));
+		setDirty(true);
+	};
+
 	const handleFormSubmit = async (event: SubmitEvent) => {
 		event.preventDefault();
 
@@ -100,6 +139,8 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		localActions.setLeagueTickerEnabled(state.leagueTicker === "show");
 		localActions.setShowLeagueTopBar(state.scoresBar === "show");
 		setLiveGameView(state.liveGameView);
+		setKeyPlays(parseKeyPlays(state.keyPlays));
+		setShowWinProb(state.winProb === "show");
 
 		const units = state.units === "default" ? undefined : state.units;
 		try {
@@ -228,6 +269,165 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 								<option value="classic">Classic</option>
 								<option value="3d">3D</option>
 							</select>
+						</div>
+					) : null}
+					{__SPORT === "basketball" ? (
+						<div className="col-sm-3 col-6 mb-3">
+							<label
+								className="form-label"
+								htmlFor="options-winProb"
+								title="Each team's chance of winning during live games. On this device only."
+							>
+								Win Probability
+							</label>
+							<select
+								id="options-winProb"
+								className="form-select"
+								onChange={handleChange("winProb")}
+								value={state.winProb}
+							>
+								<option value="show">Show</option>
+								<option value="hide">Hide</option>
+							</select>
+						</div>
+					) : null}
+					{__SPORT === "basketball" && state.liveGameView === "3d" ? (
+						<div className="col-12 mb-3">
+							<div className="row">
+								<div className="col-sm-3 col-6 mb-2">
+									<label
+										className="form-label"
+										htmlFor="options-keyPlays"
+										title="Only the big plays, and every play of a close finish. On this device only."
+									>
+										3D Key Plays
+									</label>
+									<select
+										id="options-keyPlays"
+										className="form-select"
+										onChange={(event) => {
+											setKeyPlay({ on: event.target.value === "on" });
+										}}
+										value={state.keyPlays.on ? "on" : "off"}
+									>
+										<option value="off">Off</option>
+										<option value="on">On</option>
+									</select>
+								</div>
+								<div className="col-sm-3 col-6 mb-2">
+									<label
+										className="form-label"
+										htmlFor="options-keyPlaysMinutes"
+										title="About how long a game takes to watch, at the speed it plays at"
+									>
+										Game Length (min)
+									</label>
+									<select
+										id="options-keyPlaysMinutes"
+										className="form-select"
+										value={
+											customLength ? "custom" : String(state.keyPlays.minutes)
+										}
+										onChange={(event) => {
+											const v = event.target.value;
+											setCustomLength(v === "custom");
+											if (v !== "custom") {
+												setKeyPlay({ minutes: Number(v) });
+											}
+										}}
+									>
+										{KEY_PLAY_PRESETS.map((m) => (
+											<option key={m} value={String(m)}>
+												{m} min
+											</option>
+										))}
+										<option value="custom">Custom</option>
+									</select>
+									{customLength ? (
+										<input
+											type="number"
+											className="form-control mt-1"
+											aria-label="Game length in minutes"
+											min={KEY_PLAY_LIMITS.minutes[0]}
+											max={KEY_PLAY_LIMITS.minutes[1]}
+											step={0.5}
+											value={state.keyPlays.minutes}
+											onChange={(event) => {
+												setKeyPlay({ minutes: Number(event.target.value) });
+											}}
+										/>
+									) : null}
+								</div>
+								<div className="col-sm-3 col-6 mb-2">
+									<label
+										className="form-label"
+										htmlFor="options-keyPlaysClosePoints"
+										title="Every play once it is this close late in the fourth or in overtime (0: never)"
+									>
+										Close Finish (pts)
+									</label>
+									<input
+										id="options-keyPlaysClosePoints"
+										type="number"
+										className="form-control"
+										min={KEY_PLAY_LIMITS.closePoints[0]}
+										max={KEY_PLAY_LIMITS.closePoints[1]}
+										step={1}
+										value={state.keyPlays.closePoints}
+										onChange={(event) => {
+											setKeyPlay({ closePoints: Number(event.target.value) });
+										}}
+									/>
+								</div>
+								<div className="col-sm-3 col-6 mb-2">
+									<label
+										className="form-label"
+										htmlFor="options-keyPlaysCloseMinutes"
+										title="How many minutes left in the fourth or in overtime a close finish starts"
+									>
+										Close Finish (min left)
+									</label>
+									<input
+										id="options-keyPlaysCloseMinutes"
+										type="number"
+										className="form-control"
+										min={KEY_PLAY_LIMITS.closeMinutes[0]}
+										max={KEY_PLAY_LIMITS.closeMinutes[1]}
+										step={0.5}
+										value={state.keyPlays.closeMinutes}
+										onChange={(event) => {
+											setKeyPlay({ closeMinutes: Number(event.target.value) });
+										}}
+									/>
+								</div>
+								<div className="col-12">
+									{[
+										...KEY_PLAY_KINDS,
+										["mine", "Your team first"] as [
+											keyof KeyPlaySettings,
+											string,
+										],
+									].map(([k, label]) => (
+										<div key={k} className="form-check form-check-inline">
+											<input
+												className="form-check-input"
+												type="checkbox"
+												id={`options-keyPlays-${k}`}
+												checked={!!state.keyPlays[k]}
+												onChange={(event) => {
+													setKeyPlay({ [k]: event.target.checked });
+												}}
+											/>
+											<label
+												className="form-check-label"
+												htmlFor={`options-keyPlays-${k}`}
+											>
+												{label}
+											</label>
+										</div>
+									))}
+								</div>
+							</div>
 						</div>
 					) : null}
 					<div className="col-sm-3 col-6 mb-3">

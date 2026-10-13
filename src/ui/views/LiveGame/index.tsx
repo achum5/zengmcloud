@@ -63,7 +63,15 @@ import {
 	parseCourt3DSpeed,
 	parseLiveGameView,
 	type Court3DSpeed,
+	getShowWinProb,
 } from "./court3d/setting.ts";
+import WinProbability from "./WinProbability.tsx";
+import {
+	getKeyPlays,
+	KEY_PLAY_PRESETS,
+	setKeyPlays,
+	type KeyPlaySettings,
+} from "./court3d/keyPlays.ts";
 import {
 	buildFieldScene,
 	newFieldSceneCtx,
@@ -390,6 +398,45 @@ const Court3DSpeeds = ({
 	</div>
 );
 
+// Every play, or only the key plays (see keyPlays.ts) in about so many
+// minutes a game - saved for next time.
+const KeyPlaysPicker = ({
+	value,
+	onChange,
+}: {
+	value: KeyPlaySettings;
+	onChange: (value: KeyPlaySettings) => void;
+}) => {
+	const lengths: number[] = [...KEY_PLAY_PRESETS];
+	if (!lengths.includes(value.minutes)) {
+		lengths.push(value.minutes);
+		lengths.sort((a, b) => a - b);
+	}
+	return (
+		<select
+			className="form-select form-select-sm w-auto ms-2"
+			title="Only the big plays, and every play of a close finish"
+			value={value.on ? String(value.minutes) : "all"}
+			onChange={(event) => {
+				const v = event.target.value;
+				const next =
+					v === "all"
+						? { ...value, on: false }
+						: { ...value, on: true, minutes: Number(v) };
+				setKeyPlays(next);
+				onChange(next);
+			}}
+		>
+			<option value="all">Every play</option>
+			{lengths.map((m) => (
+				<option key={m} value={String(m)}>
+					Key plays: {m} min
+				</option>
+			))}
+		</select>
+	);
+};
+
 const getNavigateWarning = (
 	exhibition: boolean | undefined,
 	replay: boolean | undefined,
@@ -430,6 +477,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 		defaultValue: "1",
 	});
 	const rate3d = parseCourt3DSpeed(speed3d);
+	// Only the key plays, in 3D (see keyPlays.ts).
+	const [keyPlays, setKeyPlaysState] = useState(getKeyPlays);
+	const [showWinProb] = useState(getShowWinProb);
 	const [playIndex, setPlayIndex] = useState(-1);
 	// Each "next play" asked for: the 3D court cuts straight past the play
 	// shown rather than playing it out.
@@ -1566,6 +1616,18 @@ export const LiveGame = (props: View<"liveGame">) => {
 			? parseLiveGameView(mpLiveBroadcast?.view) === "3d"
 			: ownView === "3d");
 	court3dRef.current = court3d;
+	// Which of the two teams in the box score is this device's, if either.
+	const mineIndex: number = Array.isArray(boxScore.current?.teams)
+		? boxScore.current.teams.findIndex((t: any) => t?.tid === userTid)
+		: -1;
+	const keyPlays3d = useMemo(
+		() => ({
+			settings: keyPlays,
+			mine:
+				mineIndex === 0 || mineIndex === 1 ? (mineIndex as 0 | 1) : undefined,
+		}),
+		[keyPlays, mineIndex],
+	);
 	const followerRef = useRef(isFollower);
 	followerRef.current = isFollower;
 	// The broadcast this page is actually rendering, so unmounting can report
@@ -2161,6 +2223,31 @@ export const LiveGame = (props: View<"liveGame">) => {
 		setPlayIndex((prev) => prev + 1);
 		setSkips3d((prev) => prev + 1);
 	}, [processToNextPause]);
+
+	// Key plays: the 3D court goes on past the plays it leaves out - every one
+	// of them still counted, in the box score and the play-by-play - and plays
+	// on from there.
+	const onCourt3DJump = useCallback(
+		(targetCursor: number) => {
+			if (
+				pausedRef.current ||
+				followerRef.current ||
+				!events.current ||
+				events.current.length === 0
+			) {
+				return;
+			}
+			const target = Math.min(targetCursor, initialEventCount.current);
+			while (
+				events.current.length > 0 &&
+				initialEventCount.current - events.current.length < target
+			) {
+				processToNextPause(true);
+			}
+			setPlayIndex((prev) => prev + 1);
+		},
+		[processToNextPause],
+	);
 
 	// Jump playback to a given cursor (number of events consumed). Going forward
 	// just steps ahead; going back resets to the opening box score and re-sims up
@@ -2775,7 +2862,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 									isStuck={isStuck}
 								/>
 								{!isFollower ? (
-									<div className="d-flex align-items-center d-md-none pt-2">
+									<div className="d-flex flex-wrap row-gap-2 align-items-center d-md-none pt-2">
 										<PlayPauseNext
 											className="me-2"
 											disabled={boxScore.current.gameOver}
@@ -2793,12 +2880,18 @@ export const LiveGame = (props: View<"liveGame">) => {
 											ignoreKeyboardShortcuts
 										/>
 										{court3d ? (
-											<Court3DSpeeds
-												value={rate3d}
-												onChange={(s) => {
-													setSpeed3d(String(s));
-												}}
-											/>
+											<>
+												<Court3DSpeeds
+													value={rate3d}
+													onChange={(s) => {
+														setSpeed3d(String(s));
+													}}
+												/>
+												<KeyPlaysPicker
+													value={keyPlays}
+													onChange={setKeyPlaysState}
+												/>
+											</>
 										) : (
 											<input
 												type="range"
@@ -2897,7 +2990,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 										rate={rate3d}
 										follower={isFollower}
 										skips={skips3d}
+										keyPlays={keyPlays3d}
 										onReady={onCourt3DReady}
+										onJump={onCourt3DJump}
 										onFail={onCourt3DFail}
 									/>
 								</Suspense>
@@ -2912,6 +3007,15 @@ export const LiveGame = (props: View<"liveGame">) => {
 										sceneMs={speedToMs(speedRef.current)}
 									/>
 								</div>
+							) : null}
+							{__SPORT === "basketball" && showWinProb ? (
+								<WinProbability
+									events={props.events}
+									cursor={
+										initialEventCount.current - (events.current?.length ?? 0)
+									}
+									boxScore={boxScore.current}
+								/>
 							) : null}
 							<BoxScoreWrapper
 								Row={PlayerRow}
@@ -2928,7 +3032,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 				<div className="col-md-3">
 					<div className="live-game-affix">
 						{!isFollower ? (
-							<div className="d-none d-md-flex align-items-center mb-3 pt-md-2">
+							<div className="d-none d-md-flex flex-wrap row-gap-2 align-items-center mb-3 pt-md-2">
 								<PlayPauseNext
 									className="me-2"
 									disabled={boxScore.current.gameOver}
@@ -2944,12 +3048,18 @@ export const LiveGame = (props: View<"liveGame">) => {
 									titleNext="Show Next Play"
 								/>
 								{court3d ? (
-									<Court3DSpeeds
-										value={rate3d}
-										onChange={(s) => {
-											setSpeed3d(String(s));
-										}}
-									/>
+									<>
+										<Court3DSpeeds
+											value={rate3d}
+											onChange={(s) => {
+												setSpeed3d(String(s));
+											}}
+										/>
+										<KeyPlaysPicker
+											value={keyPlays}
+											onChange={setKeyPlaysState}
+										/>
+									</>
 								) : (
 									<input
 										type="range"

@@ -53,6 +53,12 @@ import { COURT_W, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
 import { stageCourt } from "./stageCourt.ts";
 import { advanceLead, followRate } from "./follow.ts";
+import {
+	planKeyPlays,
+	segmentAt,
+	type KeyPlaySettings,
+	type KeySegment,
+} from "./keyPlays.ts";
 import { bodyOf, type Body } from "./poses.ts";
 import { cameraCuts, fastAt, offenseAt } from "./evaluate.ts";
 import { buildFouls, foulsAt } from "./scoreBug.ts";
@@ -88,6 +94,8 @@ import {
 const REPLAY_RATE_MAX = 2;
 // How long the picture dips to black either side of a cut (timeline ms).
 const DIP_MS = 130;
+// Up out of black onto the next of the key plays (ms).
+const KEY_DIP_MS = 320;
 // A dunk's replay: from just before he takes off to just after, in slow
 // motion, once its own play is over.
 const REPLAY_FROM = 1700;
@@ -200,7 +208,13 @@ type Props = {
 	// How many times "next play" has been asked for: each cuts straight past
 	// the play it shows, like any other skip ahead.
 	skips?: number;
+	// Watching only the key plays (see keyPlays.ts) - and which raw box
+	// score team is the viewer's own, if either.
+	keyPlays?: { settings: KeyPlaySettings; mine?: 0 | 1 };
 	onReady: () => void;
+	// Key plays: on past the plays left out, the page catching up to
+	// `cursor` events.
+	onJump?: (cursor: number) => void;
 	// The court cannot play this game: the page goes on without it.
 	onFail?: () => void;
 };
@@ -215,7 +229,9 @@ const Court3D = ({
 	rate,
 	follower,
 	skips = 0,
+	keyPlays,
 	onReady,
+	onJump,
 	onFail,
 }: Props) => {
 	const { lid, gender } = useLocal(["lid", "gender"]);
@@ -352,6 +368,29 @@ const Court3D = ({
 	const clocks = useMemo(
 		() => (timeline && events ? buildClocks(timeline, events) : undefined),
 		[timeline, events],
+	);
+	// Key plays only: the stretches of the game shown.
+	const numPeriods: number = boxScore?.numPeriods ?? 4;
+	const keyPlan = useMemo(
+		(): KeySegment[] | undefined =>
+			timeline && events && keyPlays?.settings.on && !follower
+				? planKeyPlays(timeline, events, keyPlays.settings, {
+						rate,
+						numPeriods,
+						mine: keyPlays.mine,
+						// (No home team on a neutral floor.)
+						...(boxScore?.neutralSite ? { edge: 0 } : {}),
+					})
+				: undefined,
+		[
+			timeline,
+			events,
+			keyPlays,
+			follower,
+			rate,
+			numPeriods,
+			boxScore?.neutralSite,
+		],
 	);
 	// Team fouls and the bonus through the game, for the score bug.
 	const fouls = useMemo(
@@ -774,6 +813,10 @@ const Court3D = ({
 		last: undefined as number | undefined,
 		readyFor: -1,
 		stepping: false,
+		// Key plays: the cursor the page is catching up to (-1 none), and when
+		// the picture last came up out of black onto the next one (ms).
+		jumpTo: -1,
+		keyDip: -Infinity,
 		prevCursor: -1,
 		prevPaused: paused,
 		prevSkips: skips,
@@ -807,12 +850,16 @@ const Court3D = ({
 		// the next one - never back.
 		const skipped =
 			s.prevCursor >= 0 && skips !== s.prevSkips && cursor > s.prevCursor;
+		// (Caught up to a key play it went on to: it is there already.)
+		const expected = s.jumpTo >= 0 && cursor <= s.jumpTo;
 		const snap =
-			s.prevCursor < 0 ||
-			cursor < s.prevCursor ||
-			target < s.t - 1 ||
-			skipped ||
-			(linesBetween(timeline, s.prevCursor, cursor) > 2 && target - s.t > 9000);
+			!expected &&
+			(s.prevCursor < 0 ||
+				cursor < s.prevCursor ||
+				target < s.t - 1 ||
+				skipped ||
+				(linesBetween(timeline, s.prevCursor, cursor) > 2 &&
+					target - s.t > 9000));
 		if (snap) {
 			const at = snapForCursor(timeline, cursor);
 			s.t = skipped ? Math.max(s.t, at) : at;
@@ -871,6 +918,8 @@ const Court3D = ({
 		rate,
 		follower,
 		onReady,
+		onJump,
+		keyPlan,
 		timeline,
 		clocks,
 		fouls,
@@ -890,6 +939,8 @@ const Court3D = ({
 		rate,
 		follower,
 		onReady,
+		onJump,
+		keyPlan,
 		timeline,
 		clocks,
 		fouls,
@@ -1000,11 +1051,31 @@ const Court3D = ({
 			if (cut !== undefined && cut > before && cut <= s.t) {
 				s.snapCam = true;
 			}
+			// Key plays only: past what is left out, straight on to the next
+			// stretch shown - the page catching the score and the lines up to
+			// it on the way.
+			const plan = p.keyPlan;
+			if (plan && !p.follower && !p.paused && !s.replay && s.jumpTo < 0) {
+				const { at, next } = segmentAt(plan, s.t);
+				if (!at && next) {
+					s.t = next.t0;
+					s.snapCam = true;
+					s.keyDip = now;
+					if (next.cursor > p.cursor && p.onJump) {
+						s.jumpTo = next.cursor;
+						p.onJump(next.cursor);
+					}
+				}
+			}
+			if (s.jumpTo >= 0 && p.cursor >= s.jumpTo) {
+				s.jumpTo = -1;
+			}
 			if (s.t >= target && !s.replay) {
 				s.stepping = false;
 				if (
 					!p.paused &&
 					!p.follower &&
+					s.jumpTo < 0 &&
 					p.cursor < p.eventsLength &&
 					s.readyFor !== p.cursor
 				) {
@@ -1105,8 +1176,13 @@ const Court3D = ({
 					o = Math.max(0, 1 - edge / REPLAY_DIP);
 				} else {
 					const near = cut === undefined ? Infinity : Math.abs(s.t - cut);
-					// (And between clips of a highlight reel.)
-					o = Math.max(0, 1 - near / DIP_MS, clipDipAt(tl, s.t));
+					// (And between clips of a highlight reel, and the key plays.)
+					o = Math.max(
+						0,
+						1 - near / DIP_MS,
+						clipDipAt(tl, s.t),
+						1 - (now - s.keyDip) / KEY_DIP_MS,
+					);
 				}
 				if (dip.style.opacity !== String(o)) {
 					dip.style.opacity = String(o);
