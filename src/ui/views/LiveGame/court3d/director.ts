@@ -48,7 +48,9 @@ import {
 	PASS_PICK_UP,
 	SEP_MS,
 	TURN_RATE,
+	evalBall,
 	floorSpotOf,
+	forgetTurns,
 } from "./evaluate.ts";
 import {
 	findShot,
@@ -14880,6 +14882,159 @@ class Director {
 		}
 	}
 
+	// Kept off a man (see keepOff), a defender can end up where a pass goes
+	// by after all: he takes a step off its line as it does - the ball by
+	// his shoulder, not through his chest. (Read off the finished picture,
+	// `view`: where the ball really goes, from hand to hand.)
+	private clearTheBall(view: CourtTimeline, fast: [number, number][]) {
+		// Over his head; how near his middle it can come and miss him - and
+		// the step's length past that, and how long (ms) he is over.
+		const BODY = 6.9;
+		const NEAR = 1.1;
+		const ROOM = 0.3;
+		const SPAN = 380;
+		const RAMP = 300;
+		const ROUGH = 2.5;
+		const ROUGH_MS = 30;
+		const OUT = 1.3;
+		const IN = 1;
+		const BUSY = new Set<AnimName>([
+			"screen",
+			"postUp",
+			"boxOut",
+			"fight",
+			"rebound",
+			"board",
+			"snatch",
+			"pickup",
+			"poke",
+			"reach",
+			"block",
+			"contest",
+			"fall",
+		]);
+		const body = bodyOf();
+		const bodyFor = () => body;
+		const live = (t: number) => !fast.some(([a, b]) => t >= a && t < b);
+		const tracks = [...this.tracks.values()];
+		for (let i = 0; i < this.ball.length; i++) {
+			const s = this.ball[i]!;
+			if (s.kind !== "fly" || !("pid" in s.from) || !live(s.t0)) {
+				continue;
+			}
+			// (A bounce pass: to the floor, and up off it to him.)
+			const after = this.ball[i + 1];
+			const last =
+				!("pid" in s.to) && after?.kind === "fly" && after.t0 === s.t1
+					? after
+					: s;
+			if (last.kind !== "fly" || !("pid" in last.to)) {
+				continue;
+			}
+			const team = this.teamOf(s.from.pid);
+			if (this.teamOf(last.to.pid) !== team) {
+				continue;
+			}
+			// (Only near a man anywhere near its way is where it goes worked
+			// out exactly: from the one man to the other, give or take.)
+			const from = this.track(s.from.pid);
+			const to = this.track(last.to.pid);
+			const A0 = from && floorSpotOf(from, s.t0);
+			const C0 = to && floorSpotOf(to, last.t1);
+			if (!A0 || !C0) {
+				continue;
+			}
+			// (Hand to hand: out in front of each.)
+			const L0 = dist(A0, C0) || 1;
+			const ux = (C0.x - A0.x) / L0;
+			const uy = (C0.y - A0.y) / L0;
+			const A = { x: A0.x + ux * OUT, y: A0.y + uy * OUT };
+			const C = { x: C0.x - ux * IN, y: C0.y - uy * IN };
+			const them = tracks.filter(
+				(tr) => tr.team !== team && floorSpotOf(tr, s.t0) !== undefined,
+			);
+			type Hit = { tr: Track; t: number; d: number; ux: number; uy: number };
+			let hit: Hit | undefined;
+			// Its way, exactly, once a man is anywhere near it: out of the
+			// one's hands and into the other's along a line (by way of the
+			// floor, a bounce pass), up and down under gravity.
+			let way: ((t: number) => Pt3) | undefined;
+			const wayOf = (): ((t: number) => Pt3) => {
+				const P0 = evalBall(view, s.t0, bodyFor);
+				const P1 = evalBall(view, last.t1, bodyFor);
+				const legs =
+					last === s
+						? [{ t0: s.t0, t1: s.t1, a: P0, b: P1 }]
+						: [
+								{ t0: s.t0, t1: s.t1, a: P0, b: s.to as Pt3 },
+								{ t0: last.t0, t1: last.t1, a: s.to as Pt3, b: P1 },
+							];
+				return (t: number) => {
+					const l = legs.find((g) => t < g.t1) ?? legs.at(-1)!;
+					const T = (l.t1 - l.t0) / 1000;
+					const tau = Math.max(0, Math.min(T, (t - l.t0) / 1000));
+					const u = T > 0 ? tau / T : 1;
+					const vz = T > 0 ? (l.b.z - l.a.z) / T + 0.5 * GRAVITY * T : 0;
+					return {
+						x: l.a.x + (l.b.x - l.a.x) * u,
+						y: l.a.y + (l.b.y - l.a.y) * u,
+						z: l.a.z + vz * tau - 0.5 * GRAVITY * tau * tau,
+					};
+				};
+			};
+			for (let t = s.t0 + 45; t < last.t1 - 45; t += ROUGH_MS) {
+				const u = (t - s.t0) / (last.t1 - s.t0);
+				const W = { x: A.x + (C.x - A.x) * u, y: A.y + (C.y - A.y) * u };
+				for (const tr of them) {
+					const P = floorSpotOf(tr, t);
+					if (P === undefined || dist(P, W) >= ROUGH) {
+						continue;
+					}
+					way ??= wayOf();
+					const B = way(t);
+					const d = dist(P, B);
+					if (B.z <= BODY && d < NEAR && (!hit || d < hit.d)) {
+						hit = { tr, t, d, ux, uy };
+					}
+				}
+			}
+			const got = hit;
+			if (
+				!got ||
+				got.tr.acts.some(
+					(a) => a.t0 < got.t + SPAN && a.t1 > got.t - SPAN && BUSY.has(a.anim),
+				)
+			) {
+				continue;
+			}
+			// Off to the side of its line he is on already (either, right on
+			// it).
+			const t = Math.round(got.t);
+			const P = floorSpotOf(got.tr, t)!;
+			const B = evalBall(view, t, bodyFor);
+			const side = Math.sign((P.x - B.x) * -got.uy + (P.y - B.y) * got.ux) || 1;
+			const k = NEAR + ROOM - got.d;
+			const dx = -got.uy * side * k;
+			const dy = got.ux * side * k;
+			const Q = { x: P.x + dx, y: P.y + dy };
+			if (
+				dist(inPlay(Q), Q) > 0.01 ||
+				tracks.some((o) => {
+					if (o === got.tr) {
+						return false;
+					}
+					const O = floorSpotOf(o, t);
+					return O !== undefined && dist(O, Q) < 1.2;
+				})
+			) {
+				continue;
+			}
+			const list = (got.tr.nudges ??= []);
+			list.push({ t0: t - SPAN, t1: t + SPAN, dx, dy, ramp: RAMP });
+			list.sort((x, y) => x.t0 - y.t0);
+		}
+	}
+
 	// A pass never goes through a man in its way. With one in the lane -
 	// his own man up on him, a help defender in between - it is bounced by
 	// him, off the floor beside his feet; or, too far to bounce, thrown by
@@ -17266,7 +17421,7 @@ class Director {
 				shots.push({ t0: sh.t0, t1, kind: sh.kind });
 			}
 		}
-		return {
+		const tl: CourtTimeline = {
 			tracks: this.tracks,
 			ball: this.ball,
 			fx: this.fx,
@@ -17283,6 +17438,12 @@ class Director {
 			checkIns: this.checkIns,
 			end: this.T,
 		};
+		// (Worked out on a look at it of its own, and the turns that look
+		// worked out forgotten after: where men face is read afresh off
+		// where they end up.)
+		this.clearTheBall({ ...tl }, fast);
+		forgetTurns(this.tracks.values());
+		return tl;
 	}
 }
 

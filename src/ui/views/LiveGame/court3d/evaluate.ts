@@ -1259,6 +1259,13 @@ const rushed = (tr: Track, k: number, yaw: number, target: number): boolean => {
 // Worked-out beats, kept per player: keyed by the beat and which settling
 // moment it was worked out from.
 const beatYaws = new WeakMap<Track, Map<number, Turning>>();
+// (Forgotten when where they are is changed after the fact - see
+// clearTheBall in director.ts.)
+export const forgetTurns = (tracks: Iterable<Track>) => {
+	for (const tr of tracks) {
+		beatYaws.delete(tr);
+	}
+};
 const yawOnBeat = (tl: CourtTimeline, tr: Track, g: number): number => {
 	const from = Math.floor((g - TURN_SETTLE) / TURN_ANCHOR) * TURN_ANCHOR;
 	const tag = Math.abs(Math.round(from / TURN_ANCHOR)) % 2;
