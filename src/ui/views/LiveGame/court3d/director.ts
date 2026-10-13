@@ -563,6 +563,15 @@ const SCRAMBLE_NEAR = 2.6;
 // tried this much further round the rim (radians) till he is.
 const GLASS_APART = 3;
 const GLASS_TURN = 0.4;
+// The ball theirs, the other five turn and get back (see getBack): from this
+// long after (ms), anybody further than this from the rim at their end
+// (feet), this much nearer it - and over half court, as far as this from it
+// - to no nearer than this.
+const BACK_REACT = 250;
+const BACK_FROM = 50;
+const BACK_FT = 30;
+const BACK_OVER = 40;
+const BACK_TO = 28;
 // How far out from the rim (feet) a long rebound comes down: where a guard
 // or a wing with nobody to box out waits on it.
 const LONG_BOARD: [number, number] = [11, 16];
@@ -2973,6 +2982,37 @@ class Director {
 		return team === 1 ? p.x < COURT_W / 2 : p.x > COURT_W / 2;
 	}
 
+	// The ball theirs in the open floor, the other five turn and get back at
+	// once - not stood in their stance at the wrong end until it is brought
+	// up: back over half court, as far as just outside the arc at their end
+	// (whatever they do next, they do from there) - flat out, if it is a
+	// break.
+	private getBack(def: Side, t: number, flatOut: boolean) {
+		const rx = rimX(other(def));
+		this.slots(def).forEach((pid, j) => {
+			const P = this.posOf(pid);
+			const out = Math.abs(P.x - rx);
+			if (out < BACK_FROM) {
+				return;
+			}
+			const side = Math.sign(P.x - rx) || 1;
+			const to = clampPt({
+				x: rx + side * Math.max(BACK_TO, Math.min(out - BACK_FT, BACK_OVER)),
+				y: P.y + (COURT_H / 2 - P.y) * 0.2,
+			});
+			// (On a break, flat out.)
+			this.go(
+				pid,
+				to,
+				t + BACK_REACT + j * 60,
+				flatOut ? SPRINT : RUN,
+				"run",
+				undefined,
+				{ effort: flatOut ? BURST : 1 },
+			);
+		});
+	}
+
 	// The point guard brings it up and the five settle into their set.
 	private bringUp(team: Side, t: number): number {
 		const pg = this.handlerOf(team);
@@ -3212,6 +3252,9 @@ class Director {
 				phase === "loose" &&
 				this.inBackcourt(team, handler) &&
 				quick(last === "stl" || last === "tov" ? "steal" : "board");
+			if (phase === "loose") {
+				this.getBack(other(team), t, transition);
+			}
 			// No break on: he turns and brings it up (fast, below).
 		} else {
 			// A dead ball: the inbound, from wherever it went dead - in the
@@ -15779,6 +15822,8 @@ class Director {
 	// bends his way round rather than going through.
 	private keepOff(fast: [number, number][]) {
 		const DT = SEP_MS;
+		// (Pushed over no faster than this, feet a sample.)
+		const SEP_STEP = 0.7;
 		// Center to center (feet): up against each other, no nearer - and in
 		// it together (a screen, a box-out, the post), chest to chest.
 		const APART = 1.45;
@@ -16560,6 +16605,23 @@ class Director {
 						const w = u * u * (3 - 2 * u);
 						ex[s]! *= w;
 						ey[s]! *= w;
+					}
+				}
+				// Never pushed over faster than a quick step aside, however
+				// fast whoever he is kept off comes at him: each way through
+				// it in turn, so he gives a little sooner and comes back a
+				// little later rather than jumping.
+				for (let pass = 0; pass < 2; pass++) {
+					for (let k = 1; k < n; k++) {
+						const s = pass === 0 ? k : n - 1 - k;
+						const r = pass === 0 ? s - 1 : s + 1;
+						const ddx = ex[s]! - ex[r]!;
+						const ddy = ey[s]! - ey[r]!;
+						const d = Math.hypot(ddx, ddy);
+						if (d > SEP_STEP) {
+							ex[s] = ex[r]! + (ddx * SEP_STEP) / d;
+							ey[s] = ey[r]! + (ddy * SEP_STEP) / d;
+						}
 					}
 				}
 				// Kept as the stretches he is over at all, from and back to
