@@ -18,6 +18,7 @@ import { OverlayTrigger, Popover } from "react-bootstrap";
 import Note from "../views/Player/Note.tsx";
 import { buildRecapLinks } from "../util/linkifyRecap.ts";
 import { TeamLogoInline } from "./TeamLogoInline.tsx";
+import { PlayButton } from "./PlayButton.tsx";
 import { useKeyboardShortcuts } from "../util/keyboardShortcuts.ts";
 import { gradientStyleFactory } from "../util/gradientStyleFactory.ts";
 import { local, useLocal } from "../util/local.ts";
@@ -1152,16 +1153,7 @@ const WatchReplayButton = ({ gid }: { gid: number }) => {
 		}
 	};
 
-	return (
-		<button
-			type="button"
-			className="btn btn-secondary btn-sm text-nowrap"
-			onClick={watch}
-			disabled={loading}
-		>
-			Watch replay
-		</button>
-	);
+	return <PlayButton onClick={watch} disabled={loading} title="Watch replay" />;
 };
 
 export const BoxScoreWrapper = ({

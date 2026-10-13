@@ -51,4 +51,25 @@ describe("3D highlight reels", () => {
 			}
 		}
 	}, 120_000);
+
+	// A reel cuts the game between his plays out - so a man can come into a
+	// clip already on the move, with nothing of his before it. The 3D court
+	// plays every player's reel (it used to throw on some, and the page fell
+	// back to the 2D court for them).
+	test("every player's reel plays on the 3D court", () => {
+		let reels = 0;
+		for (const seed of ["e", "h"]) {
+			const { events, players } = fakeGame(seed, 150);
+			for (const p of players) {
+				if (countPlayerHighlights(events, p.pid) === 0) {
+					continue;
+				}
+				const reel = filterPlayerHighlights(events, p.pid);
+				const tl = compileCourt({ events: reel, players, gid: 1 });
+				assert.isAbove(tl.end, 0, `${seed}: ${p.pid}`);
+				reels += 1;
+			}
+		}
+		assert.isAbove(reels, 20);
+	}, 120_000);
 });

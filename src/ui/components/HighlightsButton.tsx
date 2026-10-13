@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { PlayButton } from "./PlayButton.tsx";
 import { helpers } from "../util/helpers.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
@@ -47,15 +48,12 @@ export const HighlightsButton = ({
 
 	return (
 		<>
-			<button
-				type="button"
-				className="btn btn-secondary btn-sm p-0 px-1 ms-2"
+			<PlayButton
+				className="ms-2"
 				onClick={watch}
 				disabled={loading}
 				title="Watch this player's highlights from this game"
-			>
-				<span className="glyphicon glyphicon-film" />
-			</button>
+			/>
 			{note ? (
 				<span className="text-body-secondary small ms-1">{note}</span>
 			) : null}

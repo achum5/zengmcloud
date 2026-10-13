@@ -834,11 +834,14 @@ const rawSpotAt = (tr: Track, t: number, heading = true): Spot => {
 	// short run can be all corners, one at either end.)
 	let pair: [Run, Run] | undefined;
 	let q: Pt | undefined;
-	if (run.v0 > 0 && t - run.s0 < ROUND_MS) {
+	// (Only between two runs he has: the first or last of his - one he was
+	// set off on already going, a reel's cut to him, say - has nobody on
+	// the other side of it to round into.)
+	if (run.v0 > 0 && k > 0 && t - run.s0 < ROUND_MS) {
 		pair = [runOf(tr, k - 1), run];
 		q = rounded(pair[0], pair[1], t);
 	}
-	if (!q && run.v1 > 0 && run.s1 - t < ROUND_MS) {
+	if (!q && run.v1 > 0 && k + 1 < tr.moves.length && run.s1 - t < ROUND_MS) {
 		pair = [run, runOf(tr, k + 1)];
 		q = rounded(pair[0], pair[1], t);
 	}
