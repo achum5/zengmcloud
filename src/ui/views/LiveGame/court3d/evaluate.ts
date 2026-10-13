@@ -1893,6 +1893,9 @@ const doingAt = (
 // hands and shoulders get there quicker than his feet: a bounce is over in a
 // third of a second, and the ball has to go where they take it.
 const BLEND_MS = 160;
+// (Pulled up out of a run into where he stands, a step with each foot:
+// longer.)
+const SETTLE_MS = 300;
 const MOVE_ARMS_MS = 60;
 const BLEND_DEPTH = 3;
 // An arm thrown up - fighting for the ball, contesting, reaching - comes
@@ -1972,11 +1975,20 @@ const blendInto = (
 		const flick = [40, 80, 120]
 			.map((back) => ({ at: t - back, d: doingAt(tl, tr, t - back) }))
 			.find((x) => !same(x.d));
-		if (!flick) {
+		const settle = flick
+			? undefined
+			: PIVOTS.has(anim)
+				? doingAt(tl, tr, t - SETTLE_MS)
+				: undefined;
+		if (flick) {
+			lo = flick.at;
+			before = flick.d;
+		} else if (settle && !same(settle) && SETTLE_FROM.has(settle.anim)) {
+			lo = t - SETTLE_MS;
+			before = settle;
+		} else {
 			return armsDown(tl, tr, t, now);
 		}
-		lo = flick.at;
-		before = flick.d;
 	}
 	// When it changed.
 	let hi = t;
@@ -2009,7 +2021,9 @@ const blendInto = (
 		const u = Math.min(1, (t - hi) / ms);
 		return 1 - u * u * (3 - 2 * u);
 	};
-	const w = ease(BLEND_MS);
+	const w = ease(
+		PIVOTS.has(anim) && SETTLE_FROM.has(before.anim) ? SETTLE_MS : BLEND_MS,
+	);
 	const slowArms = armsComeDown(tr, t, before.anim, anim);
 	if (w <= 0.02 && !(slowArms && ease(ARMS_DOWN_MS) > 0.02)) {
 		return undefined;
