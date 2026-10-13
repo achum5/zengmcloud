@@ -531,6 +531,16 @@ const READ_MS = 180;
 // it he can still be on his way there, the last stride carrying him up.
 const REBOUND_READ = 1200;
 const BOARD_CARRY = 150;
+// The jump ball: round the circle a step outside it (feet from the middle),
+// at these angles (degrees, from along the floor, the far sideline side
+// left open for the official) - the two teams in turn - and one of each
+// back this far, behind his own jumper.
+const TIP_RING = 7.6;
+const TIP_SLOTS: Record<Side, readonly number[]> = {
+	0: [-40, 70, 155],
+	1: [25, 110, -140],
+};
+const TIP_BACK = 13;
 // The man of theirs who goes up with him for it: from this near where he goes
 // up (feet) he goes up where he is; from as far as RIVAL_IN, he gets in a step
 // or two first - seeing it coming this long before (ms).
@@ -11483,13 +11493,26 @@ class Director {
 			if (j0 === carrier) {
 				out = atCircle;
 			}
-			const rest = this.slots(t).filter((p) => p !== j0);
+			// Round the circle, a step outside it, the two teams in turn - the
+			// way the official backs out after the toss left clear - and the
+			// smallest man back behind his own jumper, in case it is lost.
+			const rest = this.slots(t)
+				.filter((p) => p !== j0)
+				.sort(
+					(a, b) => (this.rank.get(a) ?? 4) - (this.rank.get(b) ?? 4) || a - b,
+				);
 			rest.forEach((pid, j) => {
-				const a = ((j + 0.5) / rest.length) * Math.PI - Math.PI / 2;
-				const target = {
-					x: c.x + side(t) * (7 + Math.cos(a) * 3),
-					y: c.y + Math.sin(a) * 9,
-				};
+				const a = j > 0 ? TIP_SLOTS[t][j - 1] : undefined;
+				const target =
+					a === undefined
+						? {
+								x: c.x + side(t) * TIP_BACK,
+								y: c.y + (t === 0 ? 2.5 : -2.5),
+							}
+						: {
+								x: c.x + Math.cos((a * Math.PI) / 180) * TIP_RING,
+								y: c.y + Math.sin((a * Math.PI) / 180) * TIP_RING,
+							};
 				const arrived = this.go(
 					pid,
 					target,
