@@ -1380,7 +1380,17 @@ describe("3D director", () => {
 				return;
 			}
 			const b = beatOf.get(i)!;
-			const st = evalPlayer(tl, e.pid, b.actionStart);
+			// At the rim, where he is as it leaves his hands (driving in, he
+			// gathers it a few feet further out than that).
+			const shot = tl.ball.find(
+				(s) =>
+					e.type === "fgaAtRim" &&
+					s.kind === "fly" &&
+					"pid" in s.from &&
+					s.from.pid === e.pid &&
+					s.t0 >= b.actionStart - 1,
+			);
+			const st = evalPlayer(tl, e.pid, shot?.t0 ?? b.actionStart);
 			// Display team 0 is raw team 1, and attacks the left rim.
 			const rimX = e.t === 1 ? 5.25 : 94 - 5.25;
 			const d = Math.hypot(st.x - rimX, st.y - 25);

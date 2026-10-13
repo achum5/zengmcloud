@@ -574,6 +574,17 @@ const GLASS_TURN = 0.4;
 // stopped at half court where the ball comes up: as far as this from it -
 // to no nearer than this.
 const BACK_REACT = 250;
+// How long a pause (ms) a man's last stride up at the rim can follow on
+// from the end of his drive without his pulling up for it (see carry).
+const ON_FROM_MS = 700;
+// Driving to the rim, how far out (feet, from the middle of the rim) he
+// gathers it for a layup, and for a dunk; the most his last strides in to a
+// layup cover; and how fast he is still going (feet a second) as it leaves
+// his hand, carrying him on in the air.
+const LAYUP_GATHER = 7;
+const DUNK_GATHER = 6;
+const LAYUP_STRIDE = 4.5;
+const AIR_DRIFT = 3;
 // A basket, the team that scored turns and gets back this long (ms) after
 // it is through (see inboundAfterMake).
 const MADE_BACK_MS = 350;
@@ -1698,35 +1709,74 @@ class Director {
 		ms: number,
 		anim: AnimName = "run",
 		face?: 1 | -1,
+		how: {
+			// Straight on out of the run that brings him there (a drive to the
+			// rim into his last stride up), not pulled up dead at the end of
+			// it and off again: from the moment it ends, as fast as it has him
+			// going that way.
+			onFrom?: boolean;
+			// How fast he is still going at the end (feet a second), if not
+			// at the pace he went all along.
+			v1?: number;
+		} = {},
 	): number {
 		const tr = this.track(pid);
 		if (!tr) {
 			return t0;
 		}
 		const from = this.posOf(pid);
-		const start = Math.max(t0, this.free.get(pid) ?? 0);
+		let start = Math.max(t0, this.free.get(pid) ?? 0);
 		const d = dist(from, to);
 		if (d < 0.3) {
 			return start;
 		}
-		const pace = d / (ms / 1000);
+		const end = start + ms;
+		let v0: number | undefined;
+		const last = tr.moves.at(-1);
+		if (
+			how.onFrom &&
+			last &&
+			last.t1 <= start &&
+			start - last.t1 <= ON_FROM_MS &&
+			dist(last.to, from) < 0.25 &&
+			dist(last.from, last.to) >= 0.3
+		) {
+			const la = dist(last.from, last.to);
+			const cos =
+				((last.to.x - last.from.x) * (to.x - from.x) +
+					(last.to.y - last.from.y) * (to.y - from.y)) /
+				(la * d);
+			const keep = keepThrough(cos);
+			if (keep >= 0.1) {
+				start = last.t1;
+				// (As fast as he was going on it, as the turn allows - but not so
+				// fast this could not slow to how it ends and still take as long
+				// as it does.)
+				const avg = d / ((end - start) / 1000);
+				const out = how.v1 ?? avg;
+				const was = la / Math.max(0.05, (last.t1 - last.t0) / 1000);
+				v0 = Math.max(0, Math.min(was * keep, 2 * avg - out, 1.5 * avg));
+				last.v1 = v0;
+			}
+		}
+		const pace = d / ((end - start) / 1000);
 		tr.moves.push({
 			t0: start,
-			t1: start + ms,
+			t1: end,
 			from: { ...from },
 			to,
 			anim,
 			...(face === undefined ? {} : { face }),
-			v0: pace,
-			v1: pace,
+			v0: v0 ?? pace,
+			v1: how.v1 ?? pace,
 		});
 		if (face !== undefined) {
 			tr.faces.push([start, face]);
 			this.face.set(pid, face);
 		}
 		this.pos.set(pid, to);
-		this.free.set(pid, start + ms);
-		return start + ms;
+		this.free.set(pid, end);
+		return end;
 	}
 
 	// How fast a man is already going setting off for `to` at `start`: the
@@ -6841,6 +6891,59 @@ class Director {
 			}
 		}
 
+		// Driving in for a layup or a dunk, he gathers it a few feet out - and
+		// his last strides, at the pace he drove, take him in and up (see
+		// carry) - not right under the rim, pulled up there and gone up from
+		// a standstill.
+		const slam =
+			close &&
+			plan.kind !== "foul" &&
+			(plan.finish === "dunk" || plan.finish === "poster");
+		const drive = this.track(shooter)?.moves.at(-1);
+		if (
+			close &&
+			postMove === undefined &&
+			drive &&
+			(drive.anim === "dribble" || drive.anim === "run") &&
+			drive.t1 <= t &&
+			t - drive.t1 <= 120
+		) {
+			const la = dist(drive.from, drive.to);
+			const near = dist(drive.to, rim);
+			const back = Math.min(
+				(slam ? DUNK_GATHER : LAYUP_GATHER) - near,
+				la * 0.5,
+			);
+			if (la >= 4 && dist(drive.from, rim) - near >= 2 && back > 0.3) {
+				// Gathered there as he gets there, at the pace he drives - the
+				// rest of his way in is his last strides, the ball in his hands.
+				const ms = drive.t1 - drive.t0;
+				const f = (la - back) / la;
+				let lo = 0;
+				let hi = 1;
+				for (let k = 0; k < 24; k++) {
+					const mid = (lo + hi) / 2;
+					if (runProgress(ms, mid) < f) {
+						lo = mid;
+					} else {
+						hi = mid;
+					}
+				}
+				const u = unitVec(drive.from, drive.to);
+				const was = drive.t1;
+				drive.to = clampPt({
+					x: drive.to.x - u.x * back,
+					y: drive.to.y - u.y * back,
+				});
+				drive.t1 = drive.t0 + ms * ((lo + hi) / 2);
+				this.pos.set(shooter, { ...drive.to });
+				if ((this.free.get(shooter) ?? 0) <= was) {
+					this.free.set(shooter, drive.t1);
+				}
+				t = Math.max(drive.t1, this.hold(shooter, drive.t1, "hold"));
+			}
+		}
+
 		// The defense: his man closes out, or the blocker / fouler gets there.
 		const guard = this.defenderOf(shooter);
 		const P1 = this.posOf(shooter);
@@ -6863,10 +6966,7 @@ class Director {
 		const gather = t + 60;
 		// A slam when the words say so: "throws it down", "blocked the dunk
 		// attempt", "blows the dunk".
-		const dunk =
-			close &&
-			plan.kind !== "foul" &&
-			(plan.finish === "dunk" || plan.finish === "poster");
+		const dunk = slam;
 		// The lob, timed to meet him at the top of his jump.
 		const caught =
 			lobber === undefined
@@ -7079,9 +7179,16 @@ class Director {
 				shooter,
 				under,
 				gather + 60,
-				Math.max(240, (dist(this.posOf(shooter), under) / SPRINT) * 1000),
+				Math.max(
+					240,
+					(dist(this.posOf(shooter), under) / SPRINT) * 1000,
+					dur * 0.42 - 60,
+				),
 				"run",
 				faceRim,
+				// (Up off the end of it: all he had going into the rim goes into
+				// going up.)
+				{ onFrom: true, v1: 0 },
 			);
 			if (plan.kind === "block" && plan.blocker !== undefined) {
 				// Met at the rim - off a lob, once he has it. From a way off -
@@ -7207,24 +7314,6 @@ class Director {
 				look,
 				jump,
 			});
-			if (close || floater) {
-				// A last stride in: up from a couple of feet out, where it can
-				// go up and over the front of the rim or off the glass - not
-				// from under it. (A floater, a shorter one, well short of it.)
-				const out = floater ? 5.5 : 2.4 + 0.7 * hash01(shooter, gather);
-				const step = Math.max(0, Math.min(floater ? 1.4 : 2.2, len - out));
-				this.carry(
-					shooter,
-					clampPt({
-						x: P1.x + (toRim.x / len) * step,
-						y: P1.y + (toRim.y / len) * step,
-					}),
-					gather + 40,
-					240,
-					"run",
-					faceRim,
-				);
-			}
 			const letGo = close
 				? 0.6
 				: floater
@@ -7233,6 +7322,43 @@ class Director {
 						? JUMPER.release
 						: 0.55;
 			const release = gather + dur * letGo;
+			// Where it leaves his hand - and once it has, the last of his way
+			// in carries him on a foot or so in the air (see below).
+			let drift: Pt | undefined;
+			if (close || floater) {
+				// The last strides in: up from a couple of feet out, where it
+				// can go up and over the front of the rim or off the glass - not
+				// from under it. (A floater, a shorter one, well short of it.)
+				const out = floater ? 5.5 : 2.4 + 0.7 * hash01(shooter, gather);
+				const step = Math.max(
+					0,
+					Math.min(floater ? 1.4 : LAYUP_STRIDE, len - out),
+				);
+				const S = clampPt({
+					x: P1.x + (toRim.x / len) * step,
+					y: P1.y + (toRim.y / len) * step,
+				});
+				this.carry(
+					shooter,
+					S,
+					gather + 40,
+					Math.max(240, release - gather - 40),
+					"run",
+					faceRim,
+					{ onFrom: true, v1: AIR_DRIFT },
+				);
+				const room = Math.max(0, dist(S, rim) - 1.6);
+				const on = Math.min(
+					room,
+					((AIR_DRIFT / 2) * (dur * (jump[1] - letGo))) / 1000,
+				);
+				if (on > 0.3) {
+					drift = clampPt({
+						x: S.x + (toRim.x / len) * on,
+						y: S.y + (toRim.y / len) * on,
+					});
+				}
+			}
 			letGoAt = release;
 			// The ball on his fingers then, as high as his jump has him.
 			const v = (letGo - jump[0]) / (jump[1] - jump[0]);
@@ -7355,6 +7481,18 @@ class Director {
 						close ? 0 : CLOSE_LATE[room]!,
 					);
 				}
+			}
+			if (drift) {
+				// On in the air from where it left his hand, slowing to land.
+				this.carry(
+					shooter,
+					drift,
+					release,
+					Math.max(120, gather + dur * jump[1] - release),
+					"run",
+					faceRim,
+					{ onFrom: true, v1: 0 },
+				);
 			}
 		}
 
