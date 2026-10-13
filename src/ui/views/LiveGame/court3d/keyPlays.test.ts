@@ -48,6 +48,51 @@ describe("3D key plays", () => {
 		}
 	}, 60_000);
 
+	test("a basket is seen from the play that gets it up until it is down; no cut with the ball in the air", () => {
+		const plan = planKeyPlays(
+			tl,
+			events,
+			{ ...on, minutes: 4 },
+			{ rate: 1, numPeriods: 4 },
+		);
+		const ballAt = (t: number) => tl.ball.findLast((s) => s.t0 <= t);
+		const up = (t: number) => {
+			const s = ballAt(t);
+			return (
+				s?.kind === "path" ||
+				s?.kind === "bounce" ||
+				(s?.kind === "fly" && !("pid" in s.to))
+			);
+		};
+		let baskets = 0;
+		for (const s of plan.slice(0, -1)) {
+			// (Settled by the cut - or as good as: only a ball that went on
+			// bouncing after a basket, long after it went in.)
+			const k = tl.beats.findLastIndex((b) => b.actionStart < s.t1);
+			const made =
+				/^(fg|tp)/.test(tl.beats[k]?.type ?? "") &&
+				!/^fga/.test(tl.beats[k]?.type ?? "");
+			if (up(s.t1 - 1)) {
+				assert.strictEqual(ballAt(s.t1 - 1)?.kind, "bounce", `cut at ${s.t1}`);
+				assert.isTrue(made, `cut at ${s.t1}`);
+			}
+			// Every basket in a clip: its attempt, the shot up, in it too.
+			for (const [j, b] of tl.beats.entries()) {
+				if (
+					b.actionStart >= s.t0 &&
+					b.actionStart < s.t1 &&
+					/^(fg|tp)/.test(b.type) &&
+					!/^fga/.test(b.type) &&
+					/^fga/.test(tl.beats[j - 1]?.type ?? "")
+				) {
+					baskets += 1;
+					assert.isAtMost(s.t0, tl.beats[j - 1]!.actionStart);
+				}
+			}
+		}
+		assert.isAbove(baskets, 5);
+	}, 60_000);
+
 	test("a longer game shows more of it; faster, more again", () => {
 		const n = (minutes: number, rate: number) =>
 			watchMs(

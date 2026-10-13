@@ -139,6 +139,10 @@ export const CustomScoreBug = ({
 			case "homeScore":
 				inner = t?.pts ?? 0;
 				break;
+			case "awayRecord":
+			case "homeRecord":
+				inner = t?.record ?? "";
+				break;
 			case "awayFouls":
 			case "homeFouls":
 				inner = <span ref={refs.fouls[k]} />;

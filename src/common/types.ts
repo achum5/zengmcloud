@@ -3015,6 +3015,8 @@ export type ScoreBugShow =
 	| "homeFouls"
 	| "awayTimeouts"
 	| "homeTimeouts"
+	| "awayRecord"
+	| "homeRecord"
 	| "awayBall"
 	| "homeBall"
 	| "period"

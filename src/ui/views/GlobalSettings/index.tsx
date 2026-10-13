@@ -18,9 +18,7 @@ import { safeLocalStorage } from "../../util/safeLocalStorage.ts";
 import { local, localActions } from "../../util/local.ts";
 import {
 	getLiveGameView,
-	getShowWinProb,
 	setLiveGameView,
-	setShowWinProb,
 	type LiveGameView,
 } from "../LiveGame/court3d/setting.ts";
 import {
@@ -76,7 +74,6 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 			scoresBar: local.getState().showLeagueTopBar ? "show" : ("hide" as const),
 			liveGameView: getLiveGameView() as LiveGameView,
 			keyPlays: getKeyPlays(),
-			winProb: getShowWinProb() ? "show" : ("hide" as const),
 			phaseChangeRedirects: props.phaseChangeRedirects,
 			realPlayerPhotos: props.realPlayerPhotos,
 			realTeamInfo: props.realTeamInfo,
@@ -140,7 +137,6 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 		localActions.setShowLeagueTopBar(state.scoresBar === "show");
 		setLiveGameView(state.liveGameView);
 		setKeyPlays(parseKeyPlays(state.keyPlays));
-		setShowWinProb(state.winProb === "show");
 
 		const units = state.units === "default" ? undefined : state.units;
 		try {
@@ -268,26 +264,6 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 							>
 								<option value="classic">Classic</option>
 								<option value="3d">3D</option>
-							</select>
-						</div>
-					) : null}
-					{__SPORT === "basketball" ? (
-						<div className="col-sm-3 col-6 mb-3">
-							<label
-								className="form-label"
-								htmlFor="options-winProb"
-								title="Each team's chance of winning during live games. On this device only."
-							>
-								Win Probability
-							</label>
-							<select
-								id="options-winProb"
-								className="form-select"
-								onChange={handleChange("winProb")}
-								value={state.winProb}
-							>
-								<option value="show">Show</option>
-								<option value="hide">Hide</option>
 							</select>
 						</div>
 					) : null}

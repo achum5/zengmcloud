@@ -6,7 +6,8 @@ import { lightness } from "./figure.ts";
 // broadcasts carry it - each side's logo, abbreviation and score in its own
 // colors, then the period, the game clock and the shot clock. Under each side,
 // its timeouts left and its fouls this period, or BONUS once the other side has
-// fouled enough to put it there; the side with the ball is marked.
+// fouled enough to put it there; the side with the ball is marked. Each
+// side's record going in, small, under its abbreviation.
 //
 // The clocks, the fouls and the ball change every frame and are written
 // straight into the refs below by the court's own frame loop, not rendered.
@@ -19,6 +20,8 @@ export type BugTeam = {
 	pts: number;
 	// Timeouts left, if the game keeps them.
 	timeouts?: number;
+	// Its record going into the game ("41-12"), if it has one.
+	record?: string;
 };
 
 export type BugRefs = {
@@ -101,7 +104,28 @@ const Side = ({
 							visibility: "hidden",
 						}}
 					/>
-					{team?.abbrev ?? ""}
+					<span
+						style={{
+							display: "flex",
+							flexDirection: "column",
+							gap: "0.14em",
+						}}
+					>
+						<span>{team?.abbrev ?? ""}</span>
+						{team?.record ? (
+							<span
+								style={{
+									fontSize: "0.56em",
+									fontWeight: 600,
+									letterSpacing: "0.03em",
+									opacity: 0.82,
+									fontVariantNumeric: "tabular-nums",
+								}}
+							>
+								{team.record}
+							</span>
+						) : null}
+					</span>
 				</span>
 				<span
 					style={{

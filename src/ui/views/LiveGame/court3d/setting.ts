@@ -33,16 +33,3 @@ export type Court3DSpeed = (typeof COURT3D_SPEEDS)[number];
 
 export const parseCourt3DSpeed = (value: unknown): Court3DSpeed =>
 	COURT3D_SPEEDS.find((s) => String(s) === String(value)) ?? 1;
-
-// Whether the live game shows each team's chance of winning (see
-// WinProbability). Shown unless this browser said not to.
-const WIN_PROB_KEY = "bbgmWinProb";
-export const getShowWinProb = (): boolean =>
-	safeLocalStorage.getItem(WIN_PROB_KEY) !== "hide";
-export const setShowWinProb = (show: boolean) => {
-	if (show) {
-		safeLocalStorage.removeItem(WIN_PROB_KEY);
-	} else {
-		safeLocalStorage.setItem(WIN_PROB_KEY, "hide");
-	}
-};

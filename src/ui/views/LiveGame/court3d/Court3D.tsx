@@ -67,6 +67,7 @@ import { CustomScoreBug, customBugHeight } from "./CustomScoreBug.tsx";
 import { IntroCard, IntroTitle } from "./IntroCard.tsx";
 import { callAt } from "./intro.ts";
 import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
+import { helpers } from "../../../util/helpers.ts";
 import {
 	aimFor,
 	arenaAim,
@@ -378,7 +379,11 @@ const Court3D = ({
 						rate,
 						numPeriods,
 						mine: keyPlays.mine,
-						// (No home team on a neutral floor.)
+						// (Who was expected to win, by how much - see winProb.ts. No
+						// home team on a neutral floor.)
+						...(typeof boxScore?.spread === "number"
+							? { spread: boxScore.spread }
+							: {}),
 						...(boxScore?.neutralSite ? { edge: 0 } : {}),
 					})
 				: undefined,
@@ -389,6 +394,7 @@ const Court3D = ({
 			follower,
 			rate,
 			numPeriods,
+			boxScore?.spread,
 			boxScore?.neutralSite,
 		],
 	);
@@ -1525,6 +1531,11 @@ const Court3D = ({
 				</button>
 			) : null}
 			{(() => {
+				// (Its record, where the game keeps one.)
+				const recordOf = (t: any): string | undefined =>
+					typeof t?.won === "number" && typeof t?.lost === "number"
+						? helpers.formatRecord(t)
+						: undefined;
 				const bug = {
 					hidden: intro.on,
 					away: away && {
@@ -1536,6 +1547,7 @@ const Court3D = ({
 						imgURLSmall: away.imgURLSmall,
 						pts: awayPts,
 						timeouts: boxScore?.teams?.[1]?.timeouts,
+						record: recordOf(boxScore?.teams?.[1]),
 					},
 					home: home && {
 						abbrev: home.abbrev,
@@ -1546,6 +1558,7 @@ const Court3D = ({
 						imgURLSmall: home.imgURLSmall,
 						pts: homePts,
 						timeouts: boxScore?.teams?.[0]?.timeouts,
+						record: recordOf(boxScore?.teams?.[0]),
 					},
 					quarter,
 					totalTimeouts: STARTING_NUM_TIMEOUTS,

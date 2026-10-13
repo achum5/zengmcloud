@@ -1,17 +1,35 @@
-// WIN PROBABILITY. How likely each team is to win from where a game stands:
-// the margin, against how much the score can still move in the time left.
+// WIN PROBABILITY. How likely each team is to win from where a game stands -
+// worked out behind the scenes, for picking out the plays that mattered most
+// (see court3d/keyPlays.ts); never shown.
 //
-// Over a whole game the final margin wanders about NBA_SD points either side
-// of where it was expected to finish - each second about as much as any
-// other - so with `s` seconds to go it can still move about
-// NBA_SD * sqrt(s / GAME_S), and the chance the team ahead stays ahead is
-// how many of those it leads by (a normal curve). The home team's edge is
-// worth so many points over a game, as much of it as there is time left for.
-// Overtime is more of the same: a few minutes more of it.
+// What the score says at the end is where it stands now, plus what each team
+// was expected to do over the time still to play, plus luck:
+//
+// - Expected: the pregame spread (see getGameSpread - team strength and home
+//   court, stored on the game), as much of it as there is time left for. A
+//   good team down 5-0 a minute in is still the favorite: the first few
+//   possessions barely move it, because there is a whole game for the better
+//   team to be better in.
+// - Luck: over a whole game the final margin lands about MARGIN_SIGMA points
+//   either side of the spread, and the time still to play has its share of
+//   that - the square root of it (each stretch of a game as unpredictable as
+//   any other). Late, there is little left: a few points is everything.
+// - The ball: having it is worth about a possession's points more to whoever
+//   has it, which counts for nothing early and a great deal in the last
+//   minute.
+//
+// Overtime is more of the same: a few minutes more of it, from level.
 
-const NBA_SD = 13;
+// (Matching the sportsbook's own - common/sportsbookOdds.ts.)
+const MARGIN_SIGMA = 13;
+// Regulation in a league of the default length (seconds).
 const GAME_S = 48 * 60;
-const HOME_EDGE = 2;
+// Home court, when the game has no spread stored (points over a game).
+const HOME_EDGE = 3.35;
+// What having the ball is worth (points): about half a possession's - the
+// team with it gets, on average, half a possession more than the other in
+// what remains.
+const BALL_PTS = 0.55;
 
 // The normal curve's area below z.
 const phi = (z: number): number => {
@@ -28,19 +46,29 @@ const phi = (z: number): number => {
 	return z >= 0 ? (1 + y) / 2 : (1 - y) / 2;
 };
 
-// The chance team 0 wins, `margin` ahead (team 0's points less team 1's)
-// with `secondsLeft` to play, team 0 at home or not.
-export const winProb = (
-	margin: number,
-	secondsLeft: number,
-	home0 = true,
-	edge = HOME_EDGE,
-): number => {
-	const f = Math.max(0, secondsLeft) / GAME_S;
-	const mean = margin + (home0 ? edge : -edge) * Math.min(1, f);
-	const sd = NBA_SD * Math.sqrt(f);
+// The chance team 0 wins: `margin` ahead (team 0's points less team 1's)
+// with `left` of regulation still to play (1 at the tip, 0 at the end - an
+// overtime, a sliver of it), expected to outscore team 1 by `spread` over a
+// whole game, the game `length` times as long as 48 minutes, with the ball
+// (`ball` 1), without it (-1), or neither (0: between possessions).
+export const winProb = ({
+	margin,
+	left,
+	spread = 0,
+	length = 1,
+	ball = 0,
+}: {
+	margin: number;
+	left: number;
+	spread?: number;
+	length?: number;
+	ball?: -1 | 0 | 1;
+}): number => {
+	const f = Math.max(0, left);
+	const sd = MARGIN_SIGMA * Math.sqrt(Math.max(0.05, length) * f);
+	const mean = margin + spread * Math.min(1, f) + (f > 0 ? ball * BALL_PTS : 0);
 	if (sd < 0.05) {
-		return margin > 0 ? 1 : margin < 0 ? 0 : 0.5;
+		return mean > 0 ? 1 : mean < 0 ? 0 : 0.5;
 	}
 	return Math.min(0.999, Math.max(0.001, phi(mean / sd)));
 };
@@ -81,30 +109,84 @@ export const lengthsOf = (
 	return { regS, otS: ot > 0 ? up(ot) : Math.round((regS * 5) / 12) };
 };
 
+// Whose ball it is after an event (raw team 0 or 1), if that is settled -
+// and undefined while it is up for grabs (a shot or a free throw missed, a
+// period over).
+const ballAfter = (e: any, was: 0 | 1 | undefined): 0 | 1 | undefined => {
+	const type: unknown = e?.type;
+	const t = e?.t === 0 || e?.t === 1 ? (e.t as 0 | 1) : undefined;
+	if (typeof type !== "string") {
+		return was;
+	}
+	const other = t === undefined ? undefined : ((1 - t) as 0 | 1);
+	if (type === "jumpBall" || type === "drb" || type === "orb") {
+		return t;
+	}
+	// (Stolen: the stealing team's. Turned over, or knocked out of bounds by
+	// a team: the other's.)
+	if (type === "stl") {
+		return t;
+	}
+	if (type === "tov" || type === "outOfBounds") {
+		return other;
+	}
+	if (type === "ft") {
+		return other;
+	}
+	if (
+		type === "missFt" ||
+		type.startsWith("miss") ||
+		type.startsWith("blk") ||
+		type === "endOfPeriod" ||
+		type === "period" ||
+		type === "overtime"
+	) {
+		return undefined;
+	}
+	// A basket (and-ones: the free throw still to come - the ball the other
+	// team's once it is taken).
+	if (
+		/^(fg|tp)/.test(type) &&
+		!type.startsWith("fga") &&
+		!type.startsWith("fgaTp")
+	) {
+		return other;
+	}
+	return was;
+};
+
 export const momentsOf = (
 	events: any[],
 	{
 		numPeriods = 4,
 		home0 = true,
+		spread,
 		edge = HOME_EDGE,
 	}: {
 		numPeriods?: number;
 		home0?: boolean;
-		// (0 on a neutral floor.)
+		// The pregame spread: how many points team 0 was expected to win by
+		// (the game's stored one - see Game.spread; home court in it).
+		spread?: number;
+		// Failing that, home court alone (points over a game; 0 on a neutral
+		// floor).
 		edge?: number;
 	} = {},
 ): GameMoment[] => {
 	const { regS, otS } = lengthsOf(events, numPeriods);
-	// (A game of other than 48 minutes: the margin can move as much in it,
-	// over its length, as in one of 48.)
-	const scale = GAME_S / (regS * numPeriods);
+	const total = regS * numPeriods;
+	const expected =
+		spread !== undefined && Number.isFinite(spread)
+			? spread
+			: ((home0 ? 1 : -1) * edge * total) / GAME_S;
 	const out: GameMoment[] = [];
 	const score: [number, number] = [0, 0];
 	let period = 1;
 	let clock = regS;
+	let ball: 0 | 1 | undefined;
 	const left = () =>
-		(period <= numPeriods ? clock + (numPeriods - period) * regS : clock) *
-		scale;
+		(period <= numPeriods ? clock + (numPeriods - period) * regS : clock) /
+		total;
 	for (const e of events) {
 		if (e?.type === "period") {
 			period += 1;
@@ -117,7 +199,13 @@ export const momentsOf = (
 			period,
 			clock,
 			score: [score[0], score[1]],
-			p0: winProb(score[0] - score[1], left(), home0, edge),
+			p0: winProb({
+				margin: score[0] - score[1],
+				left: left(),
+				spread: expected,
+				length: total / GAME_S,
+				ball: ball === undefined ? 0 : ball === 0 ? 1 : -1,
+			}),
 		});
 		if (
 			e?.type === "stat" &&
@@ -127,23 +215,10 @@ export const momentsOf = (
 		) {
 			score[e.t as 0 | 1] += e.amt;
 		}
+		ball = ballAfter(e, ball);
 	}
 	// And once it is all over.
 	const decided = score[0] > score[1] ? 1 : score[0] < score[1] ? 0 : 0.5;
 	out.push({ period, clock: 0, score: [score[0], score[1]], p0: decided });
 	return out;
-};
-
-// How far into the game (0 to 1, more in overtime) a moment is.
-export const elapsedOf = (
-	m: GameMoment,
-	{ regS, otS }: { regS: number; otS: number },
-	numPeriods = 4,
-): number => {
-	const total = regS * numPeriods;
-	const s =
-		m.period <= numPeriods
-			? (m.period - 1) * regS + (regS - m.clock)
-			: total + (m.period - numPeriods - 1) * otS + (otS - m.clock);
-	return s / total;
 };

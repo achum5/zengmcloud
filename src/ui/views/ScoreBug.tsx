@@ -69,8 +69,8 @@ const ScoreBugPage = ({
 		] as [RefObject<HTMLSpanElement | null>, RefObject<HTMLSpanElement | null>],
 	};
 	const sides = {
-		away: away && { ...away, pts: 84, timeouts: 3 },
-		home: home && { ...home, pts: 87, timeouts: 5 },
+		away: away && { ...away, pts: 84, timeouts: 3, record: "38-21" },
+		home: home && { ...home, pts: 87, timeouts: 5, record: "44-15" },
 	};
 
 	const upload = async (file: File) => {

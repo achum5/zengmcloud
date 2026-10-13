@@ -127,9 +127,11 @@ export type KeySegment = {
 };
 
 // Into each play from this long (ms) before it happens, and on for this long
-// after it is over.
+// after it is over - but, at least, this long after a basket goes down
+// through the net.
 const LEAD_MS = 4500;
 const TAIL_MS = 900;
+const NET_MS = 700;
 // A play that moves the chance of winning by this much (0-1) makes the reel
 // on that alone, weighed at this much a whole game's worth.
 const SWING_MIN = 0.04;
@@ -140,6 +142,82 @@ const JOIN_MS = 1500;
 const MADE = /^(fg|tp)/;
 const isMade = (type: string) =>
 	MADE.test(type) && !type.startsWith("fga") && !type.startsWith("fgaTp");
+// Every shot comes as two lines: the attempt (the play that gets it up, and
+// the ball on its way) and what came of it - in, blocked, the rebound.
+const isAttempt = (type: string) => type.startsWith("fga");
+// What leads into a play, in the run of it: the shot it came of, the miss
+// or the block, the offensive board - all as much part of it as it is.
+const LEADS_IN = /^(fga|miss|blk|orb)/;
+// (Straight on from it: within this long, ms.)
+const CHAIN_MS = 300;
+// What a reel is made of: baskets, blocks, steals - not a free throw, a sub
+// or a timeout.
+const isPlay = (type: string) =>
+	isMade(type) || type.startsWith("blk") || type === "stl";
+// How long after the ball is in the air at the end of a clip it may yet take
+// to come down to somebody (ms): no longer than this.
+const SETTLE_MS = 4000;
+
+// The ball through a stretch of the game: where it is at t, and when it is
+// next in somebody's hands, or still.
+const ballOf = (tl: CourtTimeline) => {
+	const ball = tl.ball;
+	const at = (t: number): number => {
+		let lo = 0;
+		let hi = ball.length - 1;
+		let k = -1;
+		while (lo <= hi) {
+			const mid = (lo + hi) >> 1;
+			if (ball[mid]!.t0 <= t) {
+				k = mid;
+				lo = mid + 1;
+			} else {
+				hi = mid - 1;
+			}
+		}
+		return k;
+	};
+	// Up in the air or loose: shot, off the rim, bouncing.
+	const inAir = (k: number) => {
+		const s = ball[k];
+		return (
+			!!s &&
+			(s.kind === "path" ||
+				s.kind === "bounce" ||
+				(s.kind === "fly" && !("pid" in s.to)))
+		);
+	};
+	return {
+		// When the ball, up at t, comes down: in somebody's hands, or still -
+		// and when it last went down through the net on the way, if it did.
+		settle: (t: number): { t: number; net?: number } => {
+			let k = at(t);
+			let net: number | undefined;
+			while (inAir(k) && ball[k + 1] && ball[k + 1]!.t0 - t < SETTLE_MS) {
+				const s = ball[k]!;
+				if (s.kind === "path") {
+					net = s.t1;
+				}
+				k++;
+			}
+			return { t: inAir(k) ? t : Math.max(t, ball[k]?.t0 ?? t), net };
+		},
+		// The ball up on its way from a shot at or after t, if any.
+		shotFrom: (t: number): number | undefined => {
+			for (let k = Math.max(0, at(t)); k < ball.length; k++) {
+				const s = ball[k]!;
+				if (s.t0 >= t - 1 && inAir(k)) {
+					return s.t0;
+				}
+				if (s.t0 > t + 6000) {
+					break;
+				}
+			}
+			return undefined;
+		},
+		inAir: (t: number) => inAir(at(t)),
+	};
+};
 
 // How long a stretch takes to watch at 1x (ms): the dead time in it runs
 // fast (see fastAt).
@@ -159,13 +237,17 @@ export const planKeyPlays = (
 		rate,
 		numPeriods,
 		mine,
+		spread,
 		edge,
 	}: {
 		rate: number;
 		numPeriods: number;
 		// The raw box score team (0, 1) of the viewer's own team, if playing.
 		mine?: 0 | 1;
-		// The home team's edge (points over a game; 0 on a neutral floor).
+		// The pregame spread, the home team's (see Game.spread) - or, failing
+		// it, home court's edge alone (points over a game; 0 on a neutral
+		// floor).
+		spread?: number;
 		edge?: number;
 	},
 ): KeySegment[] => {
@@ -173,8 +255,48 @@ export const planKeyPlays = (
 	if (beats.length === 0) {
 		return [{ t0: 0, t1: tl.end, cursor: 0, close: false }];
 	}
+	const typeOf = (b: Beat): string => {
+		const e = events[b.i];
+		return typeof e?.type === "string" ? e.type : b.type;
+	};
+	const ball = ballOf(tl);
+	// A play's clip: from a few seconds before it - before the shot it came of,
+	// if it is what came of one - to when the ball is down: through the net
+	// and picked up to be taken out (and not on into that), a block run down.
+	const clipOf = (k: number): { t0: number; t1: number } => {
+		const b = beats[k]!;
+		// (A putback: from the miss, the board and all.)
+		let j = k;
+		while (
+			j > 0 &&
+			k - j < 4 &&
+			beats[j]!.preStart - beats[j - 1]!.end < CHAIN_MS &&
+			LEADS_IN.test(typeOf(beats[j - 1]!)) &&
+			!isAttempt(typeOf(beats[j]!))
+		) {
+			j--;
+		}
+		const from = beats[j]!;
+		const t0 = Math.max(from.preStart, from.actionStart - LEAD_MS);
+		let t1 = b.end + TAIL_MS;
+		// (The shot that went in: off the attempt just before it - or, a
+		// putback, straight up off the board.)
+		const prev = beats[k - 1];
+		const up = ball.shotFrom(
+			prev && isAttempt(typeOf(prev)) ? prev.actionStart : b.preStart,
+		);
+		if (isMade(typeOf(b)) && up !== undefined) {
+			const down = ball.settle(up);
+			t1 = Math.max(Math.min(t1, down.t), (down.net ?? up) + NET_MS);
+		} else {
+			const down = ball.settle(b.actionStart);
+			t1 = Math.max(t1, Math.min(down.t + 400, b.end + SETTLE_MS));
+		}
+		return { t0, t1 };
+	};
 	const before = momentsOf(events, {
 		numPeriods,
+		...(spread === undefined ? {} : { spread }),
 		...(edge === undefined ? {} : { edge }),
 	});
 	// How it stands once the play and what it brings are done: just before
@@ -230,9 +352,9 @@ export const planKeyPlays = (
 			return;
 		}
 		const e = events[b.i];
-		const type: string = typeof e?.type === "string" ? e.type : b.type;
+		const type = typeOf(b);
 		const st = before[b.i];
-		if (!st) {
+		if (!st || !isPlay(type)) {
 			return;
 		}
 		let w = 0;
@@ -277,8 +399,7 @@ export const planKeyPlays = (
 				w += swing * SWING_W;
 			}
 		}
-		const t0 = Math.max(b.preStart, b.actionStart - LEAD_MS);
-		const t1 = Math.min(b.end + TAIL_MS, beats[k + 1]?.actionStart ?? tl.end);
+		const { t0, t1 } = clipOf(k);
 		if (w === 0) {
 			rest.push({ k, w: Math.abs(after(k).p0 - st.p0), t0, t1 });
 			return;
@@ -315,7 +436,13 @@ export const planKeyPlays = (
 		picked.push({ t0: c.t0, t1: c.t1, close: false });
 	}
 
-	return merge(picked).map((p) => ({
+	return merge(
+		// (Never left with the ball in the air: on till it comes down.)
+		merge(picked).map((p) => ({
+			...p,
+			t1: ball.inAir(p.t1) ? ball.settle(p.t1).t + 300 : p.t1,
+		})),
+	).map((p) => ({
 		...p,
 		t1: Math.min(p.t1, tl.end),
 		cursor: beats.find((b) => b.actionStart >= p.t0)?.i ?? events.length,

@@ -63,9 +63,7 @@ import {
 	parseCourt3DSpeed,
 	parseLiveGameView,
 	type Court3DSpeed,
-	getShowWinProb,
 } from "./court3d/setting.ts";
-import WinProbability from "./WinProbability.tsx";
 import {
 	getKeyPlays,
 	KEY_PLAY_PRESETS,
@@ -479,7 +477,6 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const rate3d = parseCourt3DSpeed(speed3d);
 	// Only the key plays, in 3D (see keyPlays.ts).
 	const [keyPlays, setKeyPlaysState] = useState(getKeyPlays);
-	const [showWinProb] = useState(getShowWinProb);
 	const [playIndex, setPlayIndex] = useState(-1);
 	// Each "next play" asked for: the 3D court cuts straight past the play
 	// shown rather than playing it out.
@@ -2857,10 +2854,13 @@ export const LiveGame = (props: View<"liveGame">) => {
 										{boxScore.current.replayLabel}
 									</div>
 								) : null}
-								<HeadlineScoreLive
-									boxScore={boxScore.current}
-									isStuck={isStuck}
-								/>
+								{court3d ? null : (
+									// (The 3D court carries its own score bug.)
+									<HeadlineScoreLive
+										boxScore={boxScore.current}
+										isStuck={isStuck}
+									/>
+								)}
 								{!isFollower ? (
 									<div className="d-flex flex-wrap row-gap-2 align-items-center d-md-none pt-2">
 										<PlayPauseNext
@@ -3007,15 +3007,6 @@ export const LiveGame = (props: View<"liveGame">) => {
 										sceneMs={speedToMs(speedRef.current)}
 									/>
 								</div>
-							) : null}
-							{__SPORT === "basketball" && showWinProb ? (
-								<WinProbability
-									events={props.events}
-									cursor={
-										initialEventCount.current - (events.current?.length ?? 0)
-									}
-									boxScore={boxScore.current}
-								/>
 							) : null}
 							<BoxScoreWrapper
 								Row={PlayerRow}
