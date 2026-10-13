@@ -540,6 +540,15 @@ const RIVAL_STEP_MS = 450;
 // A defender whose man stays out goes in to the glass and puts a body on the
 // nearest man coming in that nobody else has - from this far off (feet).
 const GLASS_FIND = 10;
+// The rest of them near a rebound as it comes down - within this far of
+// where it is taken (feet) - play it too, from as it comes loose (but this
+// long before he has it at the least, this long at the most - ms): a step or
+// two at it, no nearer than this.
+const SCRAMBLE_FT = 8;
+const SCRAMBLE_MS = 450;
+const SCRAMBLE_MAX = 1400;
+const SCRAMBLE_STEP = 4;
+const SCRAMBLE_NEAR = 2.6;
 // Men going in to the glass end up at least this far apart (feet) - each
 // tried this much further round the rim (radians) till he is.
 const GLASS_APART = 3;
@@ -7807,10 +7816,17 @@ class Director {
 	private letGo(pid: number, t: number, free = false) {
 		const tr = this.track(pid);
 		let held = false;
-		for (const a of tr?.acts ?? []) {
+		const acts = tr?.acts ?? [];
+		for (let k = acts.length - 1; k >= 0; k--) {
+			const a = acts[k]!;
 			if ((a.anim === "boxOut" || a.anim === "fight") && a.t1 > t) {
-				a.t1 = Math.max(a.t0 + 1, t);
 				held = true;
+				// (One he was only to get into after then, he never does.)
+				if (a.t0 >= t) {
+					acts.splice(k, 1);
+				} else {
+					a.t1 = t;
+				}
 			}
 		}
 		if (free && held && tr) {
@@ -7908,6 +7924,7 @@ class Director {
 			);
 			this.fly(t, catchT, from, { pid: r });
 			this.hold(r, catchT, "hold");
+			this.scramble(r, catchT, catchAt, t);
 			return catchT;
 		}
 		if (next && next.e.type === "outOfBounds") {
@@ -8625,6 +8642,7 @@ class Director {
 			}
 			this.fly(t, top, leaves ?? from, { pid: r });
 			this.hold(r, top, "hold");
+			this.scramble(r, top, spot, t);
 			return top;
 		}
 		// Out of his reach before he can get there: down on the floor - and
@@ -8640,6 +8658,9 @@ class Director {
 		const { at: F, t: land, h0 } = this.toFloor(t, from, vel, leaves);
 		const caught = this.chaseDown(r, start, F, land, h0, vel, out);
 		if (caught !== undefined) {
+			if (!out) {
+				this.scramble(r, caught, this.posOf(r), t);
+			}
 			return caught;
 		}
 		if (out) {
@@ -8661,7 +8682,68 @@ class Director {
 			"hold",
 			BURST,
 		);
+		this.scramble(r, got, this.posOf(r), t);
 		return got + 150;
+	}
+
+	// Everybody else near it as it comes down plays it too - out of his
+	// box-out as it comes loose (`loose`), a step or two at it, a beat behind
+	// the man who gets it, theirs with a hand out at it - rather than stood
+	// there watching. (Not one busy with anything else, or on his way
+	// somewhere.)
+	private scramble(r: number, tc: number, at: Pt, loose: number) {
+		const t0 = Math.min(
+			tc - SCRAMBLE_MS,
+			Math.max(tc - SCRAMBLE_MAX, loose + READ_MS),
+		);
+		const mine = this.teamOf(r);
+		for (const p of [...this.slots(0), ...this.slots(1)]) {
+			const tr = this.track(p);
+			if (
+				p === r ||
+				!tr ||
+				tr.acts.some(
+					(a) =>
+						a.anim !== "boxOut" &&
+						a.anim !== "fight" &&
+						a.t1 > t0 &&
+						a.t0 < tc + 300,
+				) ||
+				tr.moves.some(
+					(m) =>
+						(!this.jostles.has(m) && m.t1 > t0 && m.t0 < tc + 300) ||
+						m.t0 >= tc + 300,
+				)
+			) {
+				continue;
+			}
+			const P = this.posAt(p, t0);
+			const d = dist(P, at);
+			if (d > SCRAMBLE_FT) {
+				continue;
+			}
+			this.letGo(p, t0, true);
+			const face = (at.x >= P.x ? 1 : -1) as 1 | -1;
+			if (d > SCRAMBLE_NEAR + 0.5) {
+				const u = unitVec(P, at);
+				const k = Math.min(SCRAMBLE_STEP, d - SCRAMBLE_NEAR);
+				this.goBy(
+					p,
+					clampPt({ x: P.x + u.x * k, y: P.y + u.y * k }),
+					t0,
+					tc - 80,
+					"run",
+					face,
+					BURST,
+				);
+			}
+			if (this.teamOf(p) !== mine) {
+				this.act(p, "reach", tc - 220, tc + 260, {
+					face,
+					look: { x: at.x, y: at.y },
+				});
+			}
+		}
 	}
 
 	// A loose ball, down on the floor at F at `land` and coming up off it
@@ -16064,7 +16146,10 @@ class Director {
 			const ox = tracks.map(() => new Float64Array(n));
 			const oy = tracks.map(() => new Float64Array(n));
 			const moved = new Set<number>();
-			for (let round = 0; round < ROUNDS; round++) {
+			// (And, last, one more for a man set in a screen or the post
+			// alone: kept off him in the end, whoever else he was kept off.)
+			for (let round = 0; round <= ROUNDS; round++) {
+				const walls = round === ROUNDS;
 				const cx = new Map<number, Float64Array>();
 				const cy = new Map<number, Float64Array>();
 				const cat = new Map<number, number[]>();
@@ -16135,7 +16220,7 @@ class Director {
 					const L = floor[s]!;
 					// Nobody stands in the ball, either (but the man who gets
 					// to it next, or anybody playing it).
-					if (lon[s]) {
+					if (lon[s] && !walls) {
 						for (const i of L) {
 							if (
 								tracks[i]!.pid === lfor[s] ||
@@ -16225,6 +16310,16 @@ class Director {
 							}
 							const aa = actOf(i, s);
 							const ab = actOf(j, s);
+							if (
+								walls &&
+								(mates ||
+									(aa !== "screen" &&
+										ab !== "screen" &&
+										aa !== "postUp" &&
+										ab !== "postUp"))
+							) {
+								continue;
+							}
 							if (
 								mates &&
 								((aa !== undefined && MATES_TOGETHER.has(aa)) ||
