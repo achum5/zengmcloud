@@ -12617,6 +12617,30 @@ class Director {
 		// (Where each run set off from before any of this moved its start:
 		// what is fast enough for it goes by that.)
 		const setFrom = new Map<Move, Pt>();
+		// From Q, can he still make run m in its time: no farther than it
+		// was to have him go, or than a man going for it gets in that long
+		// from standing - not an average pace that leaves no time to get going
+		// or to pull up.
+		const makes = (Q: Pt, m: Move | undefined): boolean =>
+			!m ||
+			m.t1 - m.t0 <= 1 ||
+			dist(Q, m.to) <=
+				Math.max(
+					dist(setFrom.get(m) ?? m.from, m.to),
+					reachIn(m.t1 - m.t0, RUN),
+				);
+		// (Out of the lane, or going with his man, it has to be done: then
+		// as long as it is no faster on average than a run.)
+		const makesAtAll = (Q: Pt, m: Move | undefined): boolean => {
+			if (!m || m.t1 - m.t0 <= 1) {
+				return true;
+			}
+			const secs = (m.t1 - m.t0) / 1000;
+			return (
+				dist(Q, m.to) / secs <=
+				Math.max(dist(setFrom.get(m) ?? m.from, m.to) / secs, RUN)
+			);
+		};
 		const setOff = (tr: Track, next: number | undefined, from: Pt) => {
 			const m = next === undefined ? undefined : tr.moves[next];
 			if (m && (m.t1 - m.t0 > 1 || dist(m.from, m.to) > 0.01)) {
@@ -12816,24 +12840,22 @@ class Director {
 					const deep = this.rand(27, 31);
 					const y0 = Math.min(38, Math.max(12, P.y));
 					const others = othersAt(from + 1500);
-					const Q = [y0, y0 - 8, y0 + 8, y0 - 14, y0 + 14]
+					const nm = w.next === undefined ? undefined : tr.moves[w.next];
+					// (Up there, he has to be: where his next run is still one a
+					// man makes, if anywhere is.)
+					const spots = [y0, y0 - 8, y0 + 8, y0 - 14, y0 + 14]
 						.filter((y) => y >= 8 && y <= COURT_H - 8)
 						.map((y) => clampPt(spot(team, deep, y)))
 						.map((q, k) => ({
 							q,
 							room: Math.min(9, ...others.map((m) => dist(m, q))) - k * 0.5,
 						}))
-						.sort((a, b) => b.room - a.room)[0]!.q;
+						.sort((a, b) => b.room - a.room);
+					const Q = (spots.find((x) => makes(x.q, nm)) ?? spots[0]!).q;
 					const t0 = from + 300 + this.rng() * 300;
 					const room = until - t0;
 					const d = dist(P, Q);
-					const nm = w.next === undefined ? undefined : tr.moves[w.next];
-					if (
-						(!nm ||
-							dist(Q, nm.to) / Math.max(0.3, (nm.t1 - nm.t0) / 1000) <= RUN) &&
-						room > 400 &&
-						d / (room / 1000) <= SPRINT
-					) {
+					if (makesAtAll(Q, nm) && room > 400 && d / (room / 1000) <= SPRINT) {
 						const speed = Math.max(JOG, d / (room / 1000));
 						added.push({
 							tr,
@@ -12969,16 +12991,7 @@ class Director {
 				// Somewhere he can still make his next run from, in its time -
 				// no faster than he would have gone anyway, or a hard run.
 				const next = w.next === undefined ? undefined : tr.moves[w.next];
-				const fits = (Q: Pt): boolean => {
-					if (!next || next.t1 - next.t0 <= 1) {
-						return true;
-					}
-					const secs = (next.t1 - next.t0) / 1000;
-					return (
-						dist(Q, next.to) / secs <=
-						Math.max(dist(setFrom.get(next) ?? next.from, next.to) / secs, RUN)
-					);
-				};
+				const fits = (Q: Pt): boolean => makes(Q, next);
 				// The open spot the floor needs filled, from where he is: well
 				// away from the ball and from his teammates, not far off, and on
 				// his way.
@@ -13074,7 +13087,7 @@ class Director {
 					inLane(at) &&
 					(w.planted
 						? until - (from + 500) - dur(at, outside, pace) - back > 300
-						: fits(outside))
+						: makesAtAll(outside, next))
 				) {
 					t = Math.max(t, from + (w.planted ? 500 : 900));
 					const t0 = t;
@@ -13308,16 +13321,7 @@ class Director {
 				if (best) {
 					const his =
 						best.w.next === undefined ? undefined : best.tr.moves[best.w.next];
-					const fitsHim = (Q: Pt): boolean => {
-						if (!his || his.t1 - his.t0 <= 1) {
-							return true;
-						}
-						const secs = (his.t1 - his.t0) / 1000;
-						return (
-							dist(Q, his.to) / secs <=
-							Math.max(dist(his.from, his.to) / secs, RUN)
-						);
-					};
+					const fitsHim = (Q: Pt): boolean => makesAtAll(Q, his);
 					let D = startOf(best.tr, best.w);
 					for (const st of steps) {
 						if (st.t1 + 320 > best.w.to) {
