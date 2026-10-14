@@ -113,22 +113,27 @@ export type SpriteCache = {
 	// SO MUCH A FRAME. The frame being drawn (see startFrame), and the time
 	// spent on new pictures in it (ms). Once that is more than `budget`, a
 	// man with no picture yet for his new pose is drawn one more frame in
-	// the one he had - a frame behind, never more - and gets his new one
-	// first thing next frame: a frame that would have taken too long, taken
-	// in two.
+	// the one he had - a few frames behind at most - and gets his new one
+	// as soon as there is time: a frame that would have taken too long,
+	// taken in several.
 	frame: number;
 	spent: number;
 	budget?: number;
-	// The picture as good as black (dipped between clips): out of time, a
-	// man with no picture yet is left out of this frame altogether rather
-	// than all of them made in one - and how many were.
+	// The picture as good as black (dipped between clips): more time a
+	// frame, and once that is spent a man with no picture yet at all is
+	// left out of the frame rather than all of them made in one - and how
+	// many were (see Court3D, which holds the black till none are).
 	dark?: boolean;
 	skipped: number;
 	last: Map<
 		number,
-		{ kept: Kept; frame: number; behind: boolean; scale: number }
+		{ kept: Kept; frame: number; behind: number; scale: number }
 	>;
 };
+// How many frames in a row a man may be drawn as he was; and how much
+// more time a frame may take on new pictures while the picture is black.
+const MAX_BEHIND = 3;
+const DARK_BUDGET = 8;
 export const makeSpriteCache = (): SpriteCache => ({
 	kept: new Map(),
 	ids: new WeakMap(),
@@ -407,32 +412,31 @@ export const drawSprite = (
 			cache.last.set(id, {
 				kept,
 				frame: cache.frame,
-				behind: false,
+				behind: 0,
 				scale,
 			});
 			return;
 		}
-		// Out of time this frame, and drawn a moment ago: as he was, once.
+		// Out of time this frame, and drawn a moment ago: as he was.
 		const was = cache.last.get(id);
-		if (
+		const over =
 			cache.budget !== undefined &&
-			cache.spent >= cache.budget &&
+			cache.spent >= cache.budget * (cache.dark ? DARK_BUDGET : 1);
+		if (
+			over &&
 			was &&
-			!was.behind &&
+			was.behind < MAX_BEHIND &&
 			was.frame === cache.frame - 1 &&
-			// (Not much bigger or smaller since: no lurch at a cut.)
-			Math.abs(was.scale - scale) <= 1
+			// (Not much bigger or smaller since: no lurch at a cut - unless
+			// the picture is black.)
+			(cache.dark || Math.abs(was.scale - scale) <= 1)
 		) {
 			stamp(ctx, was.kept, base.x, base.y - lift, px);
 			was.frame = cache.frame;
-			was.behind = true;
+			was.behind += 1;
 			return;
 		}
-		if (
-			cache.dark &&
-			cache.budget !== undefined &&
-			cache.spent >= cache.budget
-		) {
+		if (over && cache.dark) {
 			cache.skipped += 1;
 			return;
 		}
@@ -546,7 +550,7 @@ export const drawSprite = (
 			cache.last.set(id, {
 				kept,
 				frame: cache.frame,
-				behind: false,
+				behind: 0,
 				scale,
 			});
 			stamp(ctx, kept, base.x, base.y - lift, px);

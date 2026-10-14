@@ -845,6 +845,8 @@ const Court3D = ({
 		jumpTo: -1,
 		keyDip: -Infinity,
 		keyHold: -Infinity,
+		// The timeline last drawn (the warm-ups' or the game's).
+		shown: undefined as CourtTimeline | undefined,
 		prevCursor: -1,
 		prevPaused: paused,
 		prevSkips: skips,
@@ -865,10 +867,10 @@ const Court3D = ({
 		introTitle: false,
 	});
 	const [intro, setIntro] = useState({ call: -1, on: false, title: false });
-	// Onto the game from the building (see pregame), up out of black.
+	// Onto the game from the warm-ups (see pregame): a cut, up out of black
+	// (see tick).
 	useEffect(() => {
 		if (timeline) {
-			play.current.keyDip = performance.now();
 			play.current.snapCam = true;
 		}
 	}, [timeline]);
@@ -1016,6 +1018,13 @@ const Court3D = ({
 				return;
 			}
 			const s = play.current;
+			// Up out of black onto the first picture, and onto the game from
+			// the warm-ups - from this frame, before anybody in it is drawn.
+			if (s.shown !== tl) {
+				s.shown = tl;
+				s.keyDip = now;
+				s.keyHold = -Infinity;
+			}
 			const dt = s.last === undefined ? 0 : Math.min(100, now - s.last);
 			s.last = now;
 			const target = staging
@@ -1221,11 +1230,7 @@ const Court3D = ({
 			// Into the next of the key plays, the picture held black until
 			// everybody in it is ready to be drawn (see SpriteCache.dark) - a
 			// moment more of black, not a freeze halfway out of it.
-			if (
-				sprites.skipped > 0 &&
-				now - Math.max(s.keyDip, s.keyHold) < KEY_DIP_MS / 4 &&
-				now - s.keyDip < KEY_HOLD_MS
-			) {
+			if (sprites.skipped > 0 && sprites.dark && now - s.keyDip < KEY_HOLD_MS) {
 				s.keyHold = now;
 			}
 			const keyDark = 1 - (now - Math.max(s.keyDip, s.keyHold)) / KEY_DIP_MS;
