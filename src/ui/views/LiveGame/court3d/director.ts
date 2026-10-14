@@ -606,6 +606,13 @@ const BACK_FROM = 50;
 const BACK_FT = 30;
 const BACK_OVER = 27;
 const BACK_TO = 22;
+// Back down the floor no two nearer each other across it than this (feet),
+// nor nearer a sideline than this; a man starting this near one gone ahead
+// of him (feet) goes this long after him (ms).
+const BACK_LANES = 7;
+const BACK_SIDE = 5;
+const BACK_BESIDE = 5;
+const BACK_BEHIND = 300;
 // How far out from the rim (feet) a long rebound comes down: where a guard
 // or a wing with nobody to box out waits on it.
 const LONG_BOARD: [number, number] = [11, 16];
@@ -3245,6 +3252,7 @@ class Director {
 	// break.
 	private getBack(def: Side, t: number, flatOut: boolean) {
 		const rx = rimX(other(def));
+		const runs: { pid: number; P: Pt; to: Pt; at: number }[] = [];
 		this.slots(def).forEach((pid, j) => {
 			const P = this.posOf(pid);
 			const out = Math.abs(P.x - rx);
@@ -3252,15 +3260,43 @@ class Director {
 				return;
 			}
 			const side = Math.sign(P.x - rx) || 1;
-			const to = clampPt({
-				x: rx + side * Math.max(BACK_TO, Math.min(out - BACK_FT, BACK_OVER)),
-				y: P.y + (COURT_H / 2 - P.y) * 0.2,
+			runs.push({
+				pid,
+				P,
+				to: {
+					x: rx + side * Math.max(BACK_TO, Math.min(out - BACK_FT, BACK_OVER)),
+					y: P.y + (COURT_H / 2 - P.y) * 0.2,
+				},
+				at: t + BACK_REACT + j * 60,
 			});
+		});
+		// Each back down his own lane - two that went in to the glass
+		// together not run the length of the floor shoulder to shoulder -
+		// and the one going a beat after another beside him, a step behind.
+		const lanes = [...runs].sort((a, b) => a.to.y - b.to.y);
+		for (let k = 0; k < 12; k++) {
+			for (let i = 1; i < lanes.length; i++) {
+				const gap = lanes[i]!.to.y - lanes[i - 1]!.to.y;
+				if (gap < BACK_LANES) {
+					lanes[i - 1]!.to.y -= (BACK_LANES - gap) / 2;
+					lanes[i]!.to.y += (BACK_LANES - gap) / 2;
+				}
+			}
+			for (const r of lanes) {
+				r.to.y = Math.min(COURT_H - BACK_SIDE, Math.max(BACK_SIDE, r.to.y));
+			}
+		}
+		runs.forEach((r, i) => {
+			for (const q of runs.slice(0, i)) {
+				if (dist(q.P, r.P) < BACK_BESIDE) {
+					r.at = Math.max(r.at, q.at + BACK_BEHIND);
+				}
+			}
 			// (On a break, flat out.)
 			this.go(
-				pid,
-				to,
-				t + BACK_REACT + j * 60,
+				r.pid,
+				clampPt(r.to),
+				r.at,
 				flatOut ? SPRINT : RUN,
 				"run",
 				undefined,
@@ -16677,6 +16713,14 @@ class Director {
 		// (And a man in front of the one with the ball, further: the ball is
 		// out in front of him, not in the other man's chest.)
 		const HOLD_APART = 2.7;
+		// (Two of a side running the same way abreast - both going faster
+		// than this, feet a second, within this of the same way, cosine -
+		// a stride or so apart: not shoulder to shoulder the length of the
+		// floor.)
+		const RUN_APART = 3;
+		const RUN_FTPS = 8;
+		const RUN_SAME = 0.85;
+		const NEAREST = Math.max(HOLD_APART, RUN_APART);
 		// How long before he gets to him he starts over, and after he is by
 		// he is back (samples); how smoothly (samples); how many goes at it.
 		const AHEAD = 6;
@@ -17223,6 +17267,39 @@ class Director {
 				}
 				return acts.get(key);
 			};
+			// Two going the same way flat out, the one beside the other rather
+			// than on his heels.
+			const runAbreast = (
+				i: number,
+				j: number,
+				s: number,
+				ddx: number,
+				ddy: number,
+				d: number,
+			) => {
+				const p0 = Math.max(0, s - 1);
+				const p1 = Math.min(n - 1, s + 1);
+				if (!on[i]![p0] || !on[i]![p1] || !on[j]![p0] || !on[j]![p1]) {
+					return false;
+				}
+				const k = 1000 / ((p1 - p0) * DT || 1);
+				const ax = (xs[i]![p1]! - xs[i]![p0]!) * k;
+				const ay = (ys[i]![p1]! - ys[i]![p0]!) * k;
+				const bx = (xs[j]![p1]! - xs[j]![p0]!) * k;
+				const by = (ys[j]![p1]! - ys[j]![p0]!) * k;
+				const va = Math.hypot(ax, ay);
+				const vb = Math.hypot(bx, by);
+				if (va < RUN_FTPS || vb < RUN_FTPS) {
+					return false;
+				}
+				if ((ax * bx + ay * by) / (va * vb) < RUN_SAME) {
+					return false;
+				}
+				const wx = ax / va + bx / vb;
+				const wy = ay / va + by / vb;
+				const w = Math.hypot(wx, wy) || 1;
+				return Math.abs(ddx * wx + ddy * wy) / (w * (d || 1)) < 0.7;
+			};
 			const ox = tracks.map(() => new Float64Array(n));
 			const oy = tracks.map(() => new Float64Array(n));
 			const moved = new Set<number>();
@@ -17364,16 +17441,18 @@ class Director {
 							}
 							const ddx = xi - (xs[j]![s]! + ox[j]![s]!);
 							const ddy = yi - (ys[j]![s]! + oy[j]![s]!);
-							if (Math.abs(ddx) >= HOLD_APART || Math.abs(ddy) >= HOLD_APART) {
+							if (Math.abs(ddx) >= NEAREST || Math.abs(ddy) >= NEAREST) {
 								continue;
 							}
 							const d = Math.hypot(ddx, ddy);
-							if (d >= HOLD_APART) {
+							if (d >= NEAREST) {
 								continue;
 							}
 							const A = tracks[i]!;
 							const B = tracks[j]!;
 							const mates = A.team === B.team;
+							const abreast =
+								mates && d < RUN_APART && runAbreast(i, j, s, ddx, ddy, d);
 							// (A man in front of the one with the ball - the ball out
 							// there between them - is kept further off: the more
 							// squarely in front of him, the further.)
@@ -17409,7 +17488,10 @@ class Director {
 											: Math.min(1, Math.max(0, (cos - 0.2) / 0.5));
 								}
 							}
-							if (d >= APART + (HOLD_APART - APART) * inFront) {
+							if (
+								d >=
+								(abreast ? RUN_APART : APART + (HOLD_APART - APART) * inFront)
+							) {
 								continue;
 							}
 							const aa = actOf(i, s);
@@ -17435,7 +17517,9 @@ class Director {
 								continue;
 							}
 							const lim = mates
-								? APART
+								? abreast
+									? RUN_APART
+									: APART
 								: aa === "screen" || ab === "screen"
 									? BY_SCREEN
 									: (aa !== undefined && TOGETHER.has(aa)) ||
