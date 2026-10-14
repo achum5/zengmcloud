@@ -12648,13 +12648,31 @@ class Director {
 				Math.max(dist(setFrom.get(m) ?? m.from, m.to) / secs, RUN)
 			);
 		};
-		const setOff = (tr: Track, next: number | undefined, from: Pt) => {
+		// (Farther now than it was to have him go, he sets off for it as much
+		// sooner as he needs to make it - not before he is there to.)
+		const setOff = (
+			tr: Track,
+			next: number | undefined,
+			from: Pt,
+			there: number,
+		) => {
 			const m = next === undefined ? undefined : tr.moves[next];
 			if (m && (m.t1 - m.t0 > 1 || dist(m.from, m.to) > 0.01)) {
 				if (!setFrom.has(m)) {
 					setFrom.set(m, m.from);
 				}
 				m.from = { ...from };
+				const need = runMs(dist(from, m.to), RUN, 0, BURST);
+				if (m.t1 - m.t0 > 1 && m.t1 - m.t0 < need) {
+					// (Nor in the middle of something he is doing there.)
+					let t0 = Math.max(there + 60, m.t1 - need);
+					for (const a of tr.acts) {
+						if (a.t1 > t0 && a.t0 < m.t0) {
+							t0 = Math.max(t0, a.t1);
+						}
+					}
+					m.t0 = Math.min(m.t0, t0);
+				}
 			}
 		};
 		const all = [...this.tracks.values()];
@@ -12874,7 +12892,7 @@ class Director {
 								anim: speed >= RUN ? "sprint" : "run",
 							},
 						});
-						setOff(tr, w.next, Q);
+						setOff(tr, w.next, Q, t0 + (d / speed) * 1000);
 						take(tr, w, Q);
 					}
 					continue;
@@ -13319,7 +13337,7 @@ class Director {
 						},
 					});
 				}
-				setOff(tr, w.next, at);
+				setOff(tr, w.next, at, steps.at(-1)!.t1);
 				take(tr, w, at);
 				// His man goes with him, each time he is still there to - and
 				// can still make his own next run from where it takes him.
@@ -13330,6 +13348,7 @@ class Director {
 						best.w.next === undefined ? undefined : best.tr.moves[best.w.next];
 					const fitsHim = (Q: Pt): boolean => makesAtAll(Q, his);
 					let D = startOf(best.tr, best.w);
+					let slid = steps[0]!.t0;
 					for (const st of steps) {
 						if (st.t1 + 320 > best.w.to) {
 							break;
@@ -13351,8 +13370,9 @@ class Director {
 						added.push({ tr: best.tr, move: slide });
 						this.marking.set(slide, tr.pid);
 						D = to;
+						slid = slide.t1;
 					}
-					setOff(best.tr, best.w.next, D);
+					setOff(best.tr, best.w.next, D, slid);
 					take(best.tr, best.w, D);
 				}
 			}
