@@ -116,9 +116,13 @@ and shoes - every one eventually, none rushed to get to the next.
       balding, buns and tied-up locs, afros and long hair.
 - [x] Rims look like a bunch of circles. Make the rim and the whole basket look
       better. Basketball should look like a real ball with correct lines.
-- [~] Better-looking feet, and customizable shoes (like jerseys and courts).
-  (Done: a tread line under the sole, a stripe up the side in each player's
-  own accent color, laces. Open: customizable - see E.)
+- [x] Better-looking feet, and customizable shoes (like jerseys and courts).
+      (Done: a tread line under the sole, a stripe up the side in each player's
+      own accent color, laces. 2026-10-14: Manage Teams -> Customize jersey:
+      the team's own shoes - color, sole and side stripe - worn by everybody
+      home and away, or left to each player's own; previewed on a 3D player
+      turning beside the face, and kept with the uniform, so it syncs,
+      exports and is seen in replays like it.)
 - [x] Improve the look of the name tag under players.
 
 ## E. Customization system (jerseys, courts, score bug, shoes, banners)

@@ -2,7 +2,7 @@ import { assert, describe, test } from "vitest";
 import { STORES } from "../../../../worker/db/Cache.ts";
 import { SIM_INERT_STORES } from "../../../../worker/core/sync/publishGuards.ts";
 import { serializeUniform } from "../../../../common/uniform.ts";
-import { kitsFor } from "./figure.ts";
+import { gearFor, kitsFor } from "./figure.ts";
 import {
 	ART_H,
 	ART_JERSEY,
@@ -179,6 +179,26 @@ describe("a team's own jersey on the 3D floor", () => {
 		const [away, home] = kitsFor({ colors, jersey }, { colors, jersey });
 		assert.strictEqual(home.jersey, "#fafafa");
 		assert.notStrictEqual(away.jersey, "#fafafa");
+	});
+
+	test("the team's shoes, on everybody home and away", () => {
+		const jersey = serializeUniform({
+			shoes: { color: "#ff0000", sole: "#000000", stripe: "#ffffff" },
+		});
+		for (const kit of kitsFor({ colors, jersey }, { colors, jersey })) {
+			for (let pid = 1; pid < 40; pid++) {
+				const gear = gearFor(pid, kit);
+				assert.strictEqual(gear.shoe, "#ff0000");
+				assert.strictEqual(gear.sole, "#000000");
+				assert.strictEqual(gear.accent, "#ffffff");
+			}
+		}
+		// Otherwise, each his own.
+		const kit = kitsFor({ colors }, { colors })[1];
+		const own = new Set(
+			Array.from({ length: 40 }, (_, pid) => gearFor(pid, kit).shoe),
+		);
+		assert.isAbove(own.size, 2);
 	});
 
 	test("no custom jersey: the usual uniforms", () => {

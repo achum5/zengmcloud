@@ -1,4 +1,10 @@
-import { useLayoutEffect, useState, type ReactNode } from "react";
+import {
+	lazy,
+	Suspense,
+	useLayoutEffect,
+	useState,
+	type ReactNode,
+} from "react";
 import type { FaceConfig } from "facesjs";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { toWorker } from "../util/toWorker.ts";
@@ -15,6 +21,24 @@ import {
 	type UniformTrim,
 } from "../../common/uniform.ts";
 import { MyFace } from "../components/MyFace.tsx";
+
+const KitPreview = lazy(() => import("./LiveGame/court3d/KitPreview.tsx"));
+
+// Light enough to be worn at home (see kitOf in the 3D court's figure.ts).
+const isLight = (color: string) => {
+	let h = color.replace("#", "");
+	if (h.length <= 4) {
+		h = h.slice(0, 3).replaceAll(/(.)/g, "$1$1");
+	}
+	const n = Number.parseInt(h.slice(0, 6), 16);
+	return (
+		(0.2126 * ((n >> 16) & 255) +
+			0.7152 * ((n >> 8) & 255) +
+			0.0722 * (n & 255)) /
+			255 >=
+		0.6
+	);
+};
 
 // The uniform editor. Everything here edits a UniformSpec; the preview and the
 // save both go through the same serialized jersey string the rest of the app
@@ -272,6 +296,18 @@ const EditTeamUniform = ({
 								</div>
 							</div>
 						) : null}
+						<div className="mt-3">
+							<Suspense fallback={null}>
+								<KitPreview
+									dress={{ colors, jersey: previewJersey }}
+									side={isLight(spec.base ?? colors[0]) ? "home" : "away"}
+									url={undefined}
+									wordmark={name.toUpperCase()}
+									width={130}
+									height={200}
+								/>
+							</Suspense>
+						</div>
 						<div className="mt-3 d-flex gap-2">
 							<button
 								className="btn btn-primary"
@@ -646,6 +682,41 @@ const EditTeamUniform = ({
 							set("shorts", Object.keys(next).length > 0 ? next : undefined);
 						}}
 					/>
+
+					<ColorField
+						label="Shoes"
+						value={spec.shoes?.color}
+						fallback="#1b1b20"
+						offLabel="Players' own"
+						onChange={(v) => set("shoes", { ...spec.shoes, color: v })}
+						onClear={() => set("shoes", undefined)}
+					/>
+					{spec.shoes ? (
+						<div className="ps-2 border-start">
+							<ColorField
+								label="Sole"
+								value={spec.shoes.sole}
+								fallback="#f4f1ea"
+								onChange={(v) => set("shoes", { ...spec.shoes!, sole: v })}
+								onClear={() => {
+									const next = { ...spec.shoes! };
+									delete next.sole;
+									set("shoes", next);
+								}}
+							/>
+							<ColorField
+								label="Shoe stripe"
+								value={spec.shoes.stripe}
+								fallback={colors[1]}
+								onChange={(v) => set("shoes", { ...spec.shoes!, stripe: v })}
+								onClear={() => {
+									const next = { ...spec.shoes! };
+									delete next.stripe;
+									set("shoes", next);
+								}}
+							/>
+						</div>
+					) : null}
 				</div>
 			</div>
 		</>

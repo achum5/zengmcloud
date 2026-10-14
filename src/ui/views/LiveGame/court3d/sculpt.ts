@@ -1190,7 +1190,7 @@ const paletteOf = (look: Look): Palette => {
 		shoe: rgb(gear?.shoe ?? kit.shoe),
 		sole: rgb(gear?.sole ?? kit.sole),
 		tread: scaled(rgb(gear?.sole ?? kit.sole), 0.55),
-		accent: rgb(gear?.accent ?? gear?.sole ?? kit.sole),
+		accent: rgb(gear?.accent ?? kit.shoeStripe ?? gear?.sole ?? kit.sole),
 		laces: lacesOn(rgb(gear?.shoe ?? kit.shoe)),
 		legs: both((w) =>
 			gear?.tights?.legs.includes(w) ? rgb(gear.tights.color) : skin,

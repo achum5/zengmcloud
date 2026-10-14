@@ -28,6 +28,7 @@ describe("parse and serialize", () => {
 			shorts: { base: "#007a33", belt: "#ffffff", side: "#000000" },
 			wordmark: { text: "BOSTON", color: "#ffffff" },
 			number: { color: "#ffffff", outline: "#000000" },
+			shoes: { color: "#007a33", sole: "#ffffff", stripe: "#ba9653" },
 		};
 		assert.deepEqual(parseUniform(serializeUniform(spec)), spec);
 	});
@@ -57,6 +58,17 @@ describe("parse and serialize", () => {
 			yoke: "#007a33",
 			pinstripes: { color: "#123456", gap: 60 },
 		});
+	});
+
+	test("shoes need a color of their own", () => {
+		assert.deepEqual(
+			cleanUniformSpec({ shoes: { sole: "#ffffff", stripe: "red" } }),
+			{},
+		);
+		assert.deepEqual(
+			cleanUniformSpec({ shoes: { color: "#111", stripe: "red" } }),
+			{ shoes: { color: "#111" } },
+		);
 	});
 
 	test("wordmark text is trimmed and capped", () => {

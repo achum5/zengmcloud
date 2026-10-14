@@ -25,6 +25,10 @@ export type Kit = {
 	sock: string;
 	shoe: string;
 	sole: string;
+	// The team's own shoes, worn by everybody (see UniformSpec.shoes) - and
+	// the stripe down their side, if it has one.
+	teamShoes?: true;
+	shoeStripe?: string;
 	// His name across his back, if not in his number's color.
 	name?: string;
 	// The team's name across his chest: its color, if not his number's, and
@@ -1013,6 +1017,25 @@ const kitOf = (
 	fallback: [string, string, string],
 	edition: Edition,
 ): Kit => {
+	const kit = uniformOf(dress, fallback, edition);
+	// The team's shoes, home and away.
+	const shoes = parseUniform(dress?.jersey)?.shoes;
+	if (!shoes) {
+		return kit;
+	}
+	return {
+		...kit,
+		shoe: hex6(shoes.color),
+		sole: shoes.sole ? hex6(shoes.sole) : WHITE,
+		...(shoes.stripe ? { shoeStripe: hex6(shoes.stripe) } : {}),
+		teamShoes: true,
+	};
+};
+const uniformOf = (
+	dress: TeamDress | undefined,
+	fallback: [string, string, string],
+	edition: Edition,
+): Kit => {
 	const colors = dress?.colors ?? fallback;
 	const spec = parseUniform(dress?.jersey);
 	if (!spec) {
@@ -1070,7 +1093,8 @@ export const gearFor = (pid: number, kit: Kit): Gear => {
 		sole: kit.sole,
 		sock: kit.sock,
 	};
-	const shoe = rng();
+	// His own shoes - unless his team has its own, worn by everybody.
+	const shoe = kit.teamShoes ? 1 : rng();
 	if (shoe < 0.3) {
 		gear.shoe = INK_DARK;
 		gear.sole = WHITE;
@@ -1113,6 +1137,7 @@ export const gearFor = (pid: number, kit: Kit): Gear => {
 	const accents = [kit.trim, INK_DARK, WHITE].filter(
 		(c) => contrast(c, gear.shoe) > 0.25,
 	);
-	gear.accent = accents[Math.floor(rng() * accents.length)] ?? WHITE;
+	gear.accent =
+		kit.shoeStripe ?? accents[Math.floor(rng() * accents.length)] ?? WHITE;
 	return gear;
 };

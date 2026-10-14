@@ -53,6 +53,8 @@ export type UniformSpec = {
 	};
 	wordmark?: { text?: string; color?: string; outline?: string };
 	number?: { color?: string; outline?: string };
+	// Everybody's shoes (the 3D court): otherwise each player wears his own.
+	shoes?: { color: string; sole?: string; stripe?: string };
 };
 
 export const UNIFORM_JERSEY_PREFIX = "uniform1:";
@@ -239,6 +241,19 @@ export const cleanUniformSpec = (raw: unknown): UniformSpec => {
 		}
 		if (Object.keys(number).length > 0) {
 			out.number = number;
+		}
+	}
+
+	const shoe = safeColor((spec.shoes as any)?.color);
+	if (shoe !== undefined) {
+		out.shoes = { color: shoe };
+		const sole = safeColor((spec.shoes as any).sole);
+		const stripe = safeColor((spec.shoes as any).stripe);
+		if (sole !== undefined) {
+			out.shoes.sole = sole;
+		}
+		if (stripe !== undefined) {
+			out.shoes.stripe = stripe;
 		}
 	}
 
