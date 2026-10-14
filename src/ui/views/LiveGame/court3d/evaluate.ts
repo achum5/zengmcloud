@@ -3151,7 +3151,7 @@ const blendPose = (f: Blend): Pose => {
 	// went on into something else: from there - as he was - not from the two
 	// eased together, both feet slid over to it in a frame.)
 	return g.w > 0 && g.w < 1 && PIVOTS.has(f.anim) && SETTLE_FROM.has(g.anim)
-		? settleStep(eased, own, blendPose(g), 1 - g.w)
+		? settleStep(eased, own, blendPose(g), 1 - g.w, standRef(f))
 		: eased;
 };
 const blendFrom = (q: Pose, f: Blend): Pose => {
@@ -3163,6 +3163,28 @@ const blendFrom = (q: Pose, f: Blend): Pose => {
 		}
 	}
 	return p;
+};
+
+// Where he stands, as it starts: its pose at the top of its cycle.
+const standRef = (x: {
+	anim: AnimName;
+	dribble?: number;
+	dribbleHand?: Hand;
+	target?: number;
+	dribbleFrom?: Hand;
+	tight?: number;
+	mirror?: boolean;
+}): Pose => {
+	const q = posed(
+		x.anim,
+		0,
+		x.dribble,
+		x.dribbleHand,
+		x.target,
+		x.dribbleFrom,
+		x.tight,
+	);
+	return x.mirror ? mirror(q) : q;
 };
 
 // Pulled up out of a run into where he stands, his feet step there - the
@@ -3195,16 +3217,29 @@ const SETTLE_STEP = 0.6;
 // (One foot this much higher than the other - in legs' lengths, about - is
 // up off the floor.)
 const SETTLE_UP = 0.12;
-const settleStep = (p: Pose, to: Pose, was: Pose, u: number): Pose => {
-	const spread = Math.abs(was.wide - to.wide) * SETTLE_SPREAD;
-	const dn =
-		Math.abs(was.hipN - to.hipN) +
-		0.5 * Math.abs(was.kneeN - to.kneeN) +
-		spread;
-	const df =
-		Math.abs(was.hipF - to.hipF) +
-		0.5 * Math.abs(was.kneeF - to.kneeF) +
-		spread;
+const settleStep = (
+	p: Pose,
+	to: Pose,
+	was: Pose,
+	u: number,
+	// (Which goes first, reckoned against where he stands at the start of
+	// it - not the stand's own breathing, which would have them swap over
+	// halfway.)
+	toRef: Pose = to,
+): Pose => {
+	const away = (q: Pose) => {
+		const spread = Math.abs(was.wide - q.wide) * SETTLE_SPREAD;
+		return [
+			Math.abs(was.hipN - q.hipN) +
+				0.5 * Math.abs(was.kneeN - q.kneeN) +
+				spread,
+			Math.abs(was.hipF - q.hipF) +
+				0.5 * Math.abs(was.kneeF - q.kneeF) +
+				spread,
+		] as const;
+	};
+	const [dn, df] = away(to);
+	const [rn, rf] = toRef === to ? [dn, df] : away(toRef);
 	// (Each leg gets there only while it is up: not slid the rest of the
 	// way once it is down again.)
 	const leg = (d: number, from: number) => {
@@ -3222,7 +3257,7 @@ const settleStep = (p: Pose, to: Pose, was: Pose, u: number): Pose => {
 	const lift = (hip: number, knee: number) =>
 		-Math.cos((hip + wasFlex) * RAD) - Math.cos((hip + wasFlex - knee) * RAD);
 	const up = lift(was.hipN, was.kneeN) - lift(was.hipF, was.kneeF);
-	const first = Math.abs(up) > SETTLE_UP ? up > 0 : dn >= df;
+	const first = Math.abs(up) > SETTLE_UP ? up > 0 : rn >= rf;
 	const n = leg(dn, first ? 0 : 1 - SETTLE_STEP);
 	const f = leg(df, first ? 1 - SETTLE_STEP : 0);
 	const at = (a: number, b: number, w: number) => a + (b - a) * w;
@@ -3269,7 +3304,7 @@ export const poseOf = (st: PlayerState): Pose => {
 		st.z <= 0 &&
 		PIVOTS.has(st.anim) &&
 		SETTLE_FROM.has(f.anim)
-			? settleStep(eased, q, blendPose(f), 1 - f.w)
+			? settleStep(eased, q, blendPose(f), 1 - f.w, standRef(st))
 			: eased;
 	const turned = st.legs ?? 0;
 	const legs = f && f.w > 0 ? turned + ((f.legs ?? 0) - turned) * f.w : turned;

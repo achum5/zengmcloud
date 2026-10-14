@@ -3617,14 +3617,15 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
-	// Over the top: up over his head from his chest, then whipped out.
+	// Over the top: up over his head from his chest - taking the time a
+	// man does to get it up there - then whipped out.
 	passOverhead: {
 		kind: "act",
 		n: 8,
 		keys: [
 			[0, P.hold],
-			[0.3, P.overheadUp],
-			[0.5, P.overheadUp],
+			[0.38, P.overheadUp],
+			[0.46, P.overheadUp],
 			[0.62, P.overheadOut],
 			[0.8, P.overheadOut],
 			[1, P.ready],

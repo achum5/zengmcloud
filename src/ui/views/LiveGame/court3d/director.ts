@@ -2201,6 +2201,18 @@ class Director {
 	// hands instead of jumping there off the floor. Returns when he has it
 	// (`by` if he was not dribbling).
 	private gather(pid: number, by: number): number {
+		// (Off a crossover: as it comes up into a hand at the top of a
+		// bounce - the last before, or the first, if it is not up yet.)
+		const last = this.ball.at(-1);
+		if (
+			last?.kind === "hold" &&
+			last.pid === pid &&
+			last.style === "cross" &&
+			last.t0 < by
+		) {
+			const k = Math.max(1, Math.floor((by - last.t0) / CROSS_MS + 1e-6));
+			return this.hold(pid, last.t0 + k * CROSS_MS, "hold");
+		}
 		return this.dribbleFrom(pid, by) === undefined
 			? by
 			: this.hold(pid, by, "hold");
@@ -10013,14 +10025,14 @@ class Director {
 				if (h !== undefined && this.teamOf(h) === winner) {
 					const P = this.posAt(h, T);
 					const t0 = Math.max(T + 150, this.free.get(h) ?? 0);
-					const up = t0 + 200;
+					const up = t0 + RELEASE_MS + OVERHEAD_WIND;
 					const apex = clampPt({
 						x: P.x + this.rand(-2, 2),
 						y: P.y + this.rand(-2, 2),
 					});
 					const top = { ...apex, z: GAME_BALL_UP };
 					const fall = Math.sqrt((2 * (GAME_BALL_UP - 5)) / GRAVITY) * 1000;
-					this.act(h, "passOverhead", t0, t0 + 420, { look: apex });
+					this.act(h, "passOverhead", t0, up + 180, { look: apex });
 					this.fly(up, up + fall, { pid: h }, top);
 					this.bounce(
 						up + fall,
