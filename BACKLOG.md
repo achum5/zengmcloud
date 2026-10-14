@@ -101,7 +101,13 @@ and shoes - every one eventually, none rushed to get to the next.
   revert: the shot hitches were new poses sculpted in the middle of a frame
   when the background workers were full; drawing each man's last picture,
   resized, until his new one is in, all but removed them. Revisit only if
-  asked.
+  asked. (2026-10-14, on the simple picture, nothing moved off the page's
+  thread: no stall catching the officials up after a jump to the next key
+  play; the picture held black at a jump and at the start until everyone
+  in it can be drawn, instead of freezing halfway out of the dip; the
+  crew's heads drawn one at a time; and a player's pictures no longer all
+  made again each time somebody's face comes in. Longest frame starting
+  a game about 500 ms before, about 250 ms after.)
 - [x] Player head profiles should match their faces.js face much better.
       The hair (see below), and his nose, ears and how full his face is.
 - [x] Back of the head should match the faces.js face, including hair.

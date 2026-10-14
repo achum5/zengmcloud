@@ -655,6 +655,13 @@ const Court3D = ({
 		}
 	}, [looksThen, roster, onFace]);
 
+	// (Each man's look kept from one time to the next unless what makes it
+	// has changed: his pictures are kept by his look, and a new one for
+	// everybody each time somebody's face came in had every one of them
+	// made again.)
+	const kept = useRef(
+		new Map<number, { made: unknown[]; look: Look; body: Body }>(),
+	);
 	const appearance = useMemo(() => {
 		const looks = new Map<number, Look>();
 		const bodies = new Map<number, Body>();
@@ -666,6 +673,13 @@ const Court3D = ({
 			const kit = dressed[p.team as Side];
 			const art = arts[p.team as Side];
 			const crest = crests[p.team as Side];
+			const made = [f, head, kit, art, crest, team, p.name, p.jerseyNumber];
+			const was = kept.current.get(p.pid);
+			if (was && was.made.every((x, i) => x === made[i])) {
+				looks.set(p.pid, was.look);
+				bodies.set(p.pid, was.body);
+				continue;
+			}
 			looks.set(p.pid, {
 				kit,
 				...(art ? { kitArt: art } : {}),
@@ -700,6 +714,11 @@ const Court3D = ({
 				head: head?.sprite,
 			});
 			bodies.set(p.pid, bodyOf(f?.hgt, f?.weight));
+			kept.current.set(p.pid, {
+				made,
+				look: looks.get(p.pid)!,
+				body: bodies.get(p.pid)!,
+			});
 		}
 		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -718,17 +737,22 @@ const Court3D = ({
 	useEffect(() => {
 		let alive = true;
 		crewHeads.current = new Map();
-		void Promise.all(
-			crew.map(async (m) => {
+		// (One at a time, each a task of its own: all of them at once held
+		// up the first frames of the game.)
+		void (async () => {
+			for (const m of crew) {
+				if (!alive) {
+					return;
+				}
 				const team =
 					m.role === "coach" ? (m.team === 0 ? away : home) : undefined;
 				crewHeads.current.set(m.pid, await loadHead(m.face, team?.colors));
-			}),
-		).then(() => {
+				await new Promise((resolve) => setTimeout(resolve, 0));
+			}
 			if (alive) {
 				setCrewVersion((v) => v + 1);
 			}
-		});
+		})();
 		return () => {
 			alive = false;
 		};
