@@ -3223,6 +3223,9 @@ class Director {
 	// The point guard brings it up and the five settle into their set.
 	private bringUp(team: Side, t: number): number {
 		const pg = this.handlerOf(team);
+		// (The rest on their way up from now - not stood round the man with
+		// it till he has got it out.)
+		const t0 = t;
 		if (this.holder !== pg && this.holder !== undefined) {
 			// Get it to the point guard first.
 			t = this.outlet(this.holder, pg, t, RUN, 9);
@@ -3235,7 +3238,7 @@ class Director {
 		const d = dist(this.posOf(pg), top);
 		this.hold(pg, t, "dribble");
 		const arrive = this.go(pg, top, t, DRIBBLE, "dribble", attackDir(team));
-		this.settle(team, 0, t, Math.max(t + 900, arrive - 200), [pg]);
+		this.settle(team, 0, t0, Math.max(t + 900, arrive - 200), [pg]);
 		this.motionTeam = team;
 		this.motion = 0;
 		return Math.max(arrive, t + (d < 4 ? 300 : 0));
@@ -3252,6 +3255,8 @@ class Director {
 		const slots = this.slots(team);
 		const pg = this.handlerOf(team);
 		let handler = this.holder ?? pg;
+		// (The rest are off up the floor from now, as he gets it out.)
+		const t0 = t;
 		if (!this.handles(handler) && pg !== handler) {
 			t = this.outlet(handler, pg, t, SPRINT, 10);
 			handler = pg;
@@ -3303,7 +3308,7 @@ class Director {
 			this.goBy(
 				pid,
 				spots[j + 1] ?? spots[0]!,
-				t + j * 60,
+				t0 + j * 60,
 				arrive + j * 250,
 				"run",
 			);
@@ -4340,6 +4345,9 @@ class Director {
 	private startBreak(run: Running, t: number): number {
 		this.castNearest(run, run.roles[run.play.ball]);
 		const bh = run.roles[run.play.ball]!;
+		// (The rest are off up the floor from now - not stood round the man
+		// who has it till he has got it out.)
+		const t0 = t;
 		if (this.holder !== undefined && this.holder !== bh) {
 			t = this.outlet(this.holder, bh, t, SPRINT, 10);
 		}
@@ -4374,7 +4382,7 @@ class Director {
 				pid,
 				to,
 				j,
-				by: t + runMs(dist(this.posOf(pid), end) * 1.08, RUN),
+				by: t0 + runMs(dist(this.posOf(pid), end) * 1.08, RUN),
 				...(upTo !== undefined ? { upTo } : {}),
 			});
 		};
@@ -4396,12 +4404,12 @@ class Director {
 				if ((S.x - P.x) * dir >= 30) {
 					lane(pid, S, r);
 				} else {
-					this.go(pid, S, t, RUN, "run");
+					this.go(pid, S, t0, RUN, "run");
 				}
 			}
 		});
 		if (lanes.length > 0) {
-			this.fillLanes(run.team, lanes, t, t, this.posOf(bh).y);
+			this.fillLanes(run.team, lanes, t0, t0, this.posOf(bh).y);
 		}
 		this.motionTeam = run.team;
 		this.motion = 0;

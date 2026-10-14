@@ -486,8 +486,13 @@ describe("3D director", () => {
 					}
 					screens += 1;
 					let closest = Infinity;
-					// (From once he has stepped in to set it.)
+					// (From once he has stepped in to set it - as it shows: not
+					// run through at many times real speed, the picture hurrying
+					// on to the next play, when the men are let be.)
 					for (let t = a.t0 + 200; t <= a.t1; t += 50) {
+						if (fastAt(tl, t) > 2) {
+							continue;
+						}
 						const S = evalPlayer(tl, tr.pid, t);
 						for (const o of tracks) {
 							const p = evalPlayer(tl, o.pid, t);

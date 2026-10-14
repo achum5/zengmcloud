@@ -650,6 +650,8 @@ type Spot = {
 	run?: Run;
 	hx: number;
 	hy: number;
+	// How fast he is going round a corner, if he is (feet a second).
+	round?: number;
 };
 
 // Where he is, eased aside off anybody he would be standing on (see
@@ -857,6 +859,8 @@ const rawSpotAt = (tr: Track, t: number, heading = true): Spot => {
 			hx = ahead.x - behind.x;
 			hy = ahead.y - behind.y;
 		}
+		const round = Math.sqrt(dist2(ahead, behind)) / 0.016;
+		return { ...p, moveIndex: k, moving: true, run, hx, hy, round };
 	}
 	return { ...p, moveIndex: k, moving: true, run, hx, hy };
 };
@@ -2111,21 +2115,25 @@ const blendInto = (
 		const flick = [g, g - FLICK_MS, g - 2 * FLICK_MS]
 			.map((at) => ({ at, d: doingAt(tl, tr, at) }))
 			.find((x) => !same(x.d));
-		const settle = flick
-			? undefined
-			: PIVOTS.has(anim)
-				? doingAt(tl, tr, t - SETTLE_MS)
-				: undefined;
+		// (Looked for the whole settle ago and halfway back to it: a step
+		// too short to span the gap between that and BLEND_MS ago is not
+		// lost in it for a few frames, and found again after.)
+		const settle =
+			flick || !PIVOTS.has(anim)
+				? undefined
+				: [t - SETTLE_MS, t - (SETTLE_MS + BLEND_MS) / 2]
+						.map((at) => ({ at, d: doingAt(tl, tr, at) }))
+						.find((x) => !same(x.d));
 		if (flick) {
 			lo = flick.at;
 			before = flick.d;
-		} else if (settle && !same(settle)) {
+		} else if (settle) {
 			// Still settling, maybe - out of whatever came last before this,
 			// found below: not whatever he was doing the whole settle ago (a
 			// moment's shuffle out of standing, and then a point, settles out
 			// of the shuffle all the way, not out of it and then all at once).
-			lo = t - SETTLE_MS;
-			before = settle;
+			lo = settle.at;
+			before = settle.d;
 			settling = true;
 		} else {
 			return armsDown(tl, tr, t, now);
@@ -2950,10 +2958,14 @@ const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
 	// Into it as he gets going from a standstill, out of it as he pulls up
 	// to one - on the clock, not his pace, which drops away too fast at
 	// the very end for his hips to follow.
-	const ease = Math.min(
-		run.v0 > LEGS_FTPS ? 1 : smooth01((t - run.s0) / LEGS_EASE_MS),
-		run.v1 > LEGS_FTPS ? 1 : smooth01((run.s1 - t) / LEGS_EASE_MS),
-	);
+	// (And round a corner, the pace he goes round it at: turned right back
+	// on himself, all but stood still at the turn, not swung round with
+	// it.)
+	const ease =
+		Math.min(
+			run.v0 > LEGS_FTPS ? 1 : smooth01((t - run.s0) / LEGS_EASE_MS),
+			run.v1 > LEGS_FTPS ? 1 : smooth01((run.s1 - t) / LEGS_EASE_MS),
+		) * (here.round === undefined ? 1 : smooth01(here.round / LEGS_FTPS));
 	// (His left is the floor's clockwise.)
 	return -Math.sign(off) * turn * ease;
 };
