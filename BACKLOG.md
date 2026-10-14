@@ -286,14 +286,21 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   loose done reaching once it is his, and feet stepping on through one
   stand into the next. The camera also eases over so the ball is never
   lost behind the score bug, and the ball handler's name stays in the
-  picture.)
+  picture. Later the same day: down to 23 in those four games, none over
+  a foot - a steal or a handoff caught in both hands before the dribble,
+  hips no longer swung round a turn back on himself, the settle out of a
+  short step not dropped for a frame or two; wide-open threes get a late
+  hand flying at them out of the help; the rest of the team off up the
+  floor at a defensive board, not stood round the outlet.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like
   they're working to get to their spot. (Done so far: jabs and hesitations
   with the defender reacting, a living low dribble stance, walking vs
   attacking dribbles, arm bars and hands on hips on drives and cuts,
-  beaten defenders turning to run.)
+  beaten defenders turning to run; the man on the ball stays on him while
+  he waits with it and goes with the drive when it goes, not off to the
+  rim ahead of it.)
 
 ## G. Naming
 
