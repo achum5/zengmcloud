@@ -230,7 +230,11 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   the first frame - 3 s more - with the page frozen through both. Now staged
   in a worker of its own, the referees' path worked out as the game goes,
   and a court that cannot stage a game hands it to the 2D court. Re-test
-  the intros on a phone before turning them back on.)
+  the intros on a phone before turning them back on. 2026-10-14, measured
+  in a browser at phone size with the CPU slowed 2x: through the intros the
+  picture runs as fast as the game's own or faster - a frame every 17-33 ms
+  against 33-50 ms once the game is on - so they no longer slow anything
+  down. Still off until tried on a real phone.)
 
 - [x] No fans directly behind the benches.
 - [x] The out-of-bounds hardwood keeps its color all the way back to the
