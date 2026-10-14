@@ -1559,6 +1559,8 @@ const OPEN_UP = (110 * Math.PI) / 180;
 // the way he faces until his back comes round past this far off it, rather
 // than backpedal while he goes the way he faces.)
 const TURN_ROUND = (70 * Math.PI) / 180;
+// (How long either side it has to hold, ms.)
+const GAIT_HOLD = 45;
 const FORWARD = new Set<AnimName>([
 	"walk",
 	"jog",
@@ -1579,9 +1581,20 @@ const gaitOf = (
 	if (FORWARD.has(anim) || anim === "back") {
 		const here = spotAt(tr, t);
 		if (here.moving && here.hx * here.hx + here.hy * here.hy > 1e-6) {
-			const off = Math.abs(
-				wrapAngle(yawAt(tl, tr, t) - Math.atan2(here.hy, here.hx)),
-			);
+			// (Turned that far from the way he goes for a moment either side,
+			// not just in passing - a wobble as one run gives way to the next
+			// is no backpedal for a frame.)
+			const heading = Math.atan2(here.hy, here.hx);
+			const offAt = (when: number) =>
+				Math.abs(wrapAngle(yawAt(tl, tr, when) - heading));
+			const off0 = offAt(t);
+			const off =
+				(anim !== "back" && off0 > OPEN_UP) ||
+				(anim === "back" && off0 < TURN_ROUND)
+					? anim === "back"
+						? Math.max(off0, offAt(t - GAIT_HOLD), offAt(t + GAIT_HOLD))
+						: Math.min(off0, offAt(t - GAIT_HOLD), offAt(t + GAIT_HOLD))
+					: off0;
 			// (At the other gait's stride, so his feet stay planted - over
 			// this run only: where it starts, his feet are where the one
 			// before left them.)
