@@ -658,6 +658,9 @@ const REACH_AT = (() => {
 const CATCH_MS = 200;
 const CATCH_HIT = 0.45;
 const CATCH_AT = releaseAt("catch", CATCH_HIT);
+// Caught and away on the dribble: both hands on it this long first (ms),
+// not out of the air straight down onto the floor.
+const GATHER_MS = 180;
 const pokeHand = (mirrored: boolean): V3 => {
 	const q = poseAt("poke", POKE_HIT);
 	const sk = skeleton(bodyOf(), mirrored ? mirrorPose(q) : q);
@@ -894,15 +897,26 @@ const CLOSE_BREAK = 3.5;
 // left all alone. Not every jumper has a hand in his face: the odds of each
 // (tight, contested, open, wide open), on a make and on a miss.
 const ROOM_FT = [2.2, 3.2, 4.8, 6.8] as const;
-const ROOM_MADE = [0.12, 0.28, 0.34, 0.26] as const;
-const ROOM_MISSED = [0.24, 0.36, 0.27, 0.13] as const;
-// (A three, more often open: a third of them with nobody near, as the
-// league's tracking has them.)
-const ROOM_MADE_3 = [0.04, 0.2, 0.4, 0.36] as const;
-const ROOM_MISSED_3 = [0.08, 0.26, 0.38, 0.28] as const;
-// A step late - or, leaving him all alone, way late: that much longer
-// before he is there (ms), still on his way as it goes up.
-const CLOSE_LATE = [0, 0, 260, 650] as const;
+const ROOM_MADE = [0.05, 0.32, 0.36, 0.27] as const;
+const ROOM_MISSED = [0.09, 0.42, 0.33, 0.16] as const;
+// (A three, more often open: nearly half of them with nobody within six
+// feet, as the league's tracking has them.)
+const ROOM_MADE_3 = [0.01, 0.07, 0.34, 0.58] as const;
+const ROOM_MISSED_3 = [0.02, 0.12, 0.38, 0.48] as const;
+// Left all alone off a pass, his man had sunk in to help as it was swung
+// to him: as far off him as he can get back out from in the time it takes
+// - though no farther than this (feet) - and there from this long before
+// the pass went (ms), at this pace (feet a second).
+const HELP_MAX = 17;
+const HELP_EARLY = 900;
+const HELP_FTPS = 11;
+// A step late: that much longer before he is there (ms), still on his way
+// as it goes up.
+const CLOSE_LATE = [0, 0, 260] as const;
+// Leaving him all alone, way late: still ROOM_FT[3] off him as it goes up,
+// and out there up to this long after (ms) - flying at him, a hand up as
+// it goes over, or never there in time even for that.
+const OPEN_LATE = 300;
 // All alone only if his man is this far off him already (feet).
 const ALONE_FT = 9;
 // A hand up at the shot from no farther off than this (feet).
@@ -1246,6 +1260,7 @@ class Director {
 	// plays) - fitted to where they are when it starts (see fitSpots).
 	private spotFit?: { team: Side; flip: boolean; order: number[] };
 	private lastClock: number | undefined;
+	private postUps = 0;
 	// The man the ball just went in to off an inbound with no time for
 	// anything but his shot (see develop).
 	private quickIn?: number;
@@ -5016,7 +5031,8 @@ class Director {
 		this.act(giver, "pass", tx - 180, tx + 120, { look: meet });
 		this.fly(tx, tx + 130, { pid: giver }, { pid: recv });
 		this.act(recv, "catch", tx + 30, tx + 200);
-		this.hold(recv, tx + 130, "dribble");
+		this.hold(recv, tx + 130, "hold");
+		this.hold(recv, tx + 130 + GATHER_MS, "dribble");
 		this.free.set(recv, Math.max(this.free.get(recv) ?? 0, tx + 200));
 		const u = unitVec(G, rim);
 		const S = clampPt({ x: G.x + u.x * 2.2, y: G.y + u.y * 2.2 });
@@ -6545,14 +6561,16 @@ class Director {
 				t = this.backDown(shooter, t, dir);
 			}
 			// (A set run for the hook still ends, now and then, in the
-			// turnaround fadeaway over him.)
+			// turnaround fadeaway over him: spread through the game's post-ups
+			// - the first of them, and every third or fourth after - not
+			// bunched up, or none at all, by the luck of the draw.)
+			const n = this.postUps++;
+			const fade =
+				Math.floor((n + 1) * POST_FADE + 0.7) > Math.floor(n * POST_FADE + 0.7);
 			return {
 				t,
 				style: "post",
-				move:
-					o.kind === "fadeaway" || hash01(shooter, Math.round(t)) < POST_FADE
-						? "fade"
-						: "hook",
+				move: o.kind === "fadeaway" || fade ? "fade" : "hook",
 			};
 		}
 		return {
@@ -7472,14 +7490,32 @@ class Director {
 						break;
 					}
 				}
+				const outAt =
+					guard === undefined
+						? release
+						: release + OPEN_LATE * hash01(guard * 7 + 3, release);
 				if (
 					room === 3 &&
 					guard !== undefined &&
+					!this.helpOff(guard, shooter, P1, rim, gather, outAt) &&
 					dist(this.posOf(guard), P1) < ALONE_FT
 				) {
 					room = 2;
 				}
-				if (guard !== undefined) {
+				if (guard !== undefined && room === 3 && !close) {
+					// Out of the help, or from wherever he was, flat out - only
+					// as it goes up: a hand up as it goes over him, if that.
+					this.closeOut(
+						guard,
+						shooter,
+						ahead(ROOM_FT[1]),
+						gather,
+						release,
+						close,
+						0,
+						outAt,
+					);
+				} else if (guard !== undefined) {
 					this.closeOut(
 						guard,
 						shooter,
@@ -7708,6 +7744,82 @@ class Director {
 		return { x: rim.x + u.x * k, y: rim.y + u.y * k };
 	}
 
+	// All alone off a pass: his man had sunk in to help - in toward the
+	// ball and the rim as it was swung out to him - and, flat out from the
+	// moment he reads it, is out there still well off him only at `outAt`
+	// (see closeOut). Not off the shooter's own dribble: with no pass to
+	// have helped on, he is open at most. Whether he did.
+	private helpOff(
+		guard: number,
+		shooter: number,
+		P: Pt,
+		rim: Pt,
+		gather: number,
+		outAt: number,
+	): boolean {
+		const pass = this.ball.findLast(
+			(s) => s.kind === "fly" && "pid" in s.to && s.to.pid === shooter,
+		);
+		if (
+			pass?.kind !== "fly" ||
+			pass.t1 <= gather - 1200 ||
+			!("pid" in pass.from)
+		) {
+			return false;
+		}
+		const ball = this.posAt(pass.from.pid, pass.t0);
+		const into = unitVec(P, {
+			x: (ball.x + rim.x) / 2,
+			y: (ball.y + rim.y) / 2,
+		});
+		const k = Math.min(
+			HELP_MAX,
+			ROOM_FT[3] +
+				reachIn(
+					outAt - Math.min(gather - 200, pass.t0 + CLOSE_READ),
+					CLOSE_RUN,
+					BURST,
+				),
+		);
+		const H = clampPt({ x: P.x + into.x * k, y: P.y + into.y * k });
+		if (dist(H, P) < ALONE_FT) {
+			return false;
+		}
+		// (Off him that far already.)
+		if (dist(this.posAt(guard, pass.t0), P) >= dist(H, P)) {
+			return true;
+		}
+		// (Sooner the farther in he goes: in there as the pass goes. But not
+		// before the man who threw it had it, nor back across a cut.)
+		let had = pass.t0;
+		for (let k = this.ball.indexOf(pass) - 1; k >= 0; k--) {
+			const s = this.ball[k]!;
+			if (s.kind !== "hold" || s.pid !== pass.from.pid) {
+				break;
+			}
+			had = s.t0;
+		}
+		const t0 = Math.max(
+			had,
+			...this.cuts.filter((c) => c <= pass.t0),
+			pass.t0 -
+				Math.min(
+					2 * HELP_EARLY,
+					Math.max(
+						HELP_EARLY,
+						runMs(dist(this.posAt(guard, pass.t0 - HELP_EARLY), H), HELP_FTPS) +
+							CLOSE_READ,
+					),
+				),
+		);
+		if (t0 > pass.t0 - HELP_EARLY / 2) {
+			return false;
+		}
+		this.cutShort(guard, t0);
+		this.go(guard, H, t0, HELP_FTPS);
+		return true;
+	}
+
 	// His man is going up with it: he gets out to him. From a step or two
 	// away he is just there, a hand up. From out in the lane - he had left
 	// him to help - he reads the pass, sprints out and breaks down into
@@ -7722,6 +7834,9 @@ class Director {
 		close: boolean,
 		// How late he is (ms): still on his way as it goes up.
 		late = 0,
+		// Or, leaving him all alone, when he is out there still ROOM_FT[3]
+		// off him, flat out to it and breaking down only then.
+		outAt?: number,
 	) {
 		const P = this.posOf(shooter);
 		const face = (P.x >= C.x ? 1 : -1) as 1 | -1;
@@ -7755,16 +7870,41 @@ class Director {
 			pass?.kind === "fly" && pass.t1 > gather - 1200 ? pass.t0 : undefined;
 		// Off whatever he was doing the moment he sees it coming: the pass
 		// out to his man, or his man going up with it.
-		const sees =
+		let sees =
 			(thrown === undefined
 				? gather - 200
 				: Math.min(gather - 200, thrown + CLOSE_READ)) + late;
+		// Where he breaks down from a run in from G.
+		const breakFrom = (G: Pt): Pt => {
+			const u = unitVec(G, C);
+			let s = CLOSE_BREAK;
+			let B = clampPt({ x: C.x - u.x * s, y: C.y - u.y * s });
+			while (
+				outAt !== undefined &&
+				dist(B, P) < ROOM_FT[3] &&
+				s < dist(G, C) - 0.5
+			) {
+				s += 0.25;
+				B = clampPt({ x: C.x - u.x * s, y: C.y - u.y * s });
+			}
+			return B;
+		};
+		if (outAt !== undefined) {
+			// On with whatever he was doing till he has to go.
+			for (let n = 0; n < 2; n++) {
+				const G = this.posAt(d, sees);
+				sees = Math.max(
+					sees,
+					outAt - runMs(dist(G, breakFrom(G)), CLOSE_RUN, 0, BURST, CLOSE_CHOP),
+				);
+			}
+		}
 		if ((this.free.get(d) ?? 0) > sees) {
 			this.cutShort(d, sees);
 		}
 		const G = this.posOf(d);
 		const far = dist(G, C);
-		if (far < 7 || thrown === undefined) {
+		if (outAt === undefined && (far < 7 || thrown === undefined)) {
 			const there = this.goBy(
 				d,
 				C,
@@ -7785,26 +7925,23 @@ class Director {
 			}
 			return;
 		}
-		const u = unitVec(G, C);
-		const brk = clampPt({
-			x: C.x - u.x * CLOSE_BREAK,
-			y: C.y - u.y * CLOSE_BREAK,
-		});
+		const brk = breakFrom(G);
 		// Flat out to a few feet off him, then choppy steps the rest of the
 		// way in - straight on from the one into the other.
-		const there = this.go(
-			d,
-			C,
-			this.go(d, brk, sees, CLOSE_RUN, "run", undefined, {
-				effort: BURST,
-				onto: CLOSE_CHOP,
-			}),
-			CLOSE_CHOP,
-			"closeout",
-			face,
-			{ effort: BURST },
-		);
-		if (there <= release + 100) {
+		const broke = this.go(d, brk, sees, CLOSE_RUN, "run", undefined, {
+			effort: BURST,
+			onto: CLOSE_CHOP,
+		});
+		const there = this.go(d, C, broke, CLOSE_CHOP, "closeout", face, {
+			effort: BURST,
+		});
+		if (outAt !== undefined) {
+			// Leaving him all alone: a hand flying up at it as it goes over,
+			// on his way in - if he is out there in time even for that.
+			if (broke < release + 450) {
+				contest(Math.max(broke + 100, release - 100), 0.4);
+			}
+		} else if (there <= release + 100) {
 			contest(Math.max(there - 150, release - 260), close ? 1.8 : 1.1);
 		} else if (there < release + 700) {
 			// Late: a hand in his face as it goes up over him.
@@ -10971,7 +11108,8 @@ class Director {
 				this.beat(i, e.type, hit, hit + 1000);
 			} else {
 				this.fly(hit, hit + 160, { pid: victim }, { pid: thief });
-				this.hold(thief, hit + 160, "dribble");
+				this.hold(thief, hit + 160, "hold");
+				this.hold(thief, hit + 160 + GATHER_MS, "dribble");
 				this.setOffense(hit, other(team));
 				this.phase = "loose";
 				this.beat(i, e.type, hit, hit + 650);
@@ -11334,7 +11472,8 @@ class Director {
 				if (!oob) {
 					this.fly(release, tI, { pid: victim }, { pid: thief });
 					this.act(thief, "catch", tI - 90, tI + 110, { look: A });
-					this.hold(thief, tI, "dribble");
+					this.hold(thief, tI, "hold");
+					this.hold(thief, tI + GATHER_MS, "dribble");
 					this.setOffense(tI, other(team));
 					this.phase = "loose";
 					this.beat(i, e.type, tI, tI + 650);
@@ -14022,6 +14161,31 @@ class Director {
 					? (FASTEST * (m.t1 - m.t0)) / 1000
 					: reachIn(m.t1 - m.t0, FASTEST, BURST);
 			};
+			// A run set off from farther back than it was planned from, no
+			// faster than his legs: all the way there, taking the time it
+			// takes, if nothing of his comes next before he could be - or as
+			// far as he gets (and false).
+			const getsThere = (m: Move, next: Move | undefined): boolean => {
+				const far = dist(m.from, m.to);
+				const most = reach(m);
+				if (far <= most || far <= 0.01) {
+					return true;
+				}
+				const t1 = m.t0 + runMs(far, FASTEST, 0, BURST);
+				if (
+					t1 <= (next?.t0 ?? Infinity) &&
+					!acts.some((a) => a > m.t1 && a <= t1)
+				) {
+					m.t1 = t1;
+					return true;
+				}
+				const k = most / far;
+				m.to = {
+					x: m.from.x + (m.to.x - m.from.x) * k,
+					y: m.from.y + (m.to.y - m.from.y) * k,
+				};
+				return false;
+			};
 			// Following his man on from one stretch straight into the next, how
 			// fast he was going at the end of the last, and when that was.
 			let carry: { vx: number; vy: number; t: number } | undefined;
@@ -14038,16 +14202,7 @@ class Director {
 					}
 					if (left) {
 						m.from = { ...left };
-						const far = dist(m.from, m.to);
-						const most = reach(m);
-						if (far > most && far > 0.01) {
-							const k = most / far;
-							m.to = {
-								x: m.from.x + (m.to.x - m.from.x) * k,
-								y: m.from.y + (m.to.y - m.from.y) * k,
-							};
-							short = true;
-						}
+						short = !getsThere(m, moves[i + 1]);
 					}
 					left = short ? { ...m.to } : undefined;
 					carry = undefined;
@@ -14092,16 +14247,7 @@ class Director {
 					let short = false;
 					if (left) {
 						m.from = { ...left };
-						const far = dist(m.from, m.to);
-						const most = reach(m);
-						if (far > most && far > 0.01) {
-							const k = most / far;
-							m.to = {
-								x: m.from.x + (m.to.x - m.from.x) * k,
-								y: m.from.y + (m.to.y - m.from.y) * k,
-							};
-							short = true;
-						}
+						short = !getsThere(m, moves[i + 1]);
 					}
 					left = short ? { ...m.to } : undefined;
 					carry = undefined;

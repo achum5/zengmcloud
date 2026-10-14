@@ -439,8 +439,13 @@ describe("3D director", () => {
 				const off = room(shooter, pass.t0);
 				helps.push(off);
 				const late = room(shooter, shot.t0);
-				// (Or way late, but on his way.)
-				if (late <= 6.5 || (late <= 9 && late <= off - 3)) {
+				// (Or way late, but on his way: well in off him already, or
+				// flying at him as it goes up - feet closer in a moment.)
+				if (
+					late <= 6.5 ||
+					(late <= 9 && late <= off - 3) ||
+					(late <= 12 && room(shooter, shot.t0 + 400) <= late - 2)
+				) {
 					closed += 1;
 				}
 				if (late <= 4) {

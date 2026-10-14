@@ -1100,14 +1100,14 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 	const mv = here.moveIndex >= 0 ? tr.moves[here.moveIndex] : undefined;
 	// About to pass it - standing, or picking up his dribble for it - he
 	// squares up to where it goes first, not round on it as it leaves his
-	// hands.
+	// hands. (Or to reach for it: round to it before his hand goes out.)
 	if (!act) {
 		const nx = tr.acts[lastIndex(tr.acts, t + PASS_TURN, (a) => a.t0)];
 		if (
 			nx &&
 			nx.t0 > t &&
 			nx.look &&
-			PASSES.has(nx.anim) &&
+			(PASSES.has(nx.anim) || GRABS.has(nx.anim)) &&
 			(!here.moving ||
 				(mv !== undefined && PASS_PICK_UP.has(mv.anim) && mv.t1 <= nx.t0 + 40))
 		) {
