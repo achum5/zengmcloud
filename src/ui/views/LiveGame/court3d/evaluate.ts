@@ -2014,11 +2014,35 @@ const armsDown = (
 		if (!armsComeDown(tr, t, a.anim, now.anim)) {
 			return undefined;
 		}
-		const before = doingAt(tl, tr, a.t1 - 1);
+		// When it ended: when he stopped doing it - cut short, set off at a
+		// run in the middle of it, then, not when it was meant to end (or
+		// the arms come down out of the run he was already on: not at all,
+		// the arms up there one frame and gone the next).
+		let end = a.t1;
+		let before = doingAt(tl, tr, end - 1);
+		if (before.anim !== a.anim) {
+			const first = doingAt(tl, tr, a.t0 + 1);
+			if (first.anim === a.anim) {
+				let lo = a.t0 + 1;
+				let hi = end - 1;
+				before = first;
+				for (let n = 0; n < 12 && hi - lo > 0.5; n++) {
+					const mid = (lo + hi) / 2;
+					const d = doingAt(tl, tr, mid);
+					if (d.anim === a.anim) {
+						lo = mid;
+						before = d;
+					} else {
+						hi = mid;
+					}
+				}
+				end = lo;
+			}
+		}
 		// (As far up as they got: a moment's act hardly raised them.)
 		const arms =
-			(1 - smooth01((t - a.t1) / ARMS_DOWN_MS)) *
-			Math.min(1, (a.t1 - a.t0) / BLEND_MS);
+			(1 - smooth01((t - end) / ARMS_DOWN_MS)) *
+			Math.min(1, (end - a.t0) / BLEND_MS);
 		return arms <= 0.02
 			? undefined
 			: {
@@ -2751,6 +2775,46 @@ const easedArm = (
 	};
 };
 
+// The hand his dribble is in at t (none, not dribbling it).
+const dribbleHandAt = (
+	tl: CourtTimeline,
+	pid: number,
+	t: number,
+): Hand | undefined => {
+	const bi = ballIndexAt(tl, t);
+	const seg = tl.ball[bi];
+	if (seg?.kind !== "hold" || seg.pid !== pid || seg.style === "hold") {
+		return undefined;
+	}
+	const beat = seg.style === "cross" ? crossAt(seg, t) : bounceOf(tl, bi, t);
+	return beat.ph < DOWN ? beat.from : beat.to;
+};
+// His dribble about to come over into the hand saying something: that arm
+// down out of the way as it comes, not gone in a frame when it gets there.
+const ARM_CLEAR_MS = 150;
+const clearOf = (
+	tl: CourtTimeline,
+	pid: number,
+	t: number,
+	arm: ArmPose | undefined,
+): ArmPose | undefined => {
+	if (!arm || dribbleHandAt(tl, pid, t + ARM_CLEAR_MS) !== arm.hand) {
+		return arm;
+	}
+	let lo = t;
+	let hi = t + ARM_CLEAR_MS;
+	for (let n = 0; n < 10; n++) {
+		const mid = (lo + hi) / 2;
+		if (dribbleHandAt(tl, pid, mid) === arm.hand) {
+			hi = mid;
+		} else {
+			lo = mid;
+		}
+	}
+	const w = arm.w * smooth01((hi - t) / ARM_CLEAR_MS);
+	return w > 0 ? { ...arm, w } : undefined;
+};
+
 export const evalPlayer = (
 	tl: CourtTimeline,
 	pid: number,
@@ -2795,7 +2859,12 @@ export const evalPlayer = (
 	// (An arm a beat behind its reason never takes the hand his dribble has
 	// just come over into.)
 	const eased = shown ? easedArm(tl, tr, t) : undefined;
-	const arm = eased?.hand === now.dribbleHand ? undefined : eased;
+	const arm =
+		eased?.hand === now.dribbleHand
+			? undefined
+			: now.dribbleHand === undefined
+				? eased
+				: clearOf(tl, pid, t, eased);
 	return {
 		pid,
 		team: tr.team,
