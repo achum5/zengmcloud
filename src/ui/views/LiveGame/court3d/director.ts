@@ -51,6 +51,7 @@ import {
 	BACKSPIN,
 	CROSS_RATE,
 	DRIBBLE_RATE,
+	FLOW_MS,
 	GRAVITY,
 	PASS_TURN,
 	PASS_PICK_UP,
@@ -950,14 +951,20 @@ const LANE_ACROSS = 8;
 
 // How far along a run (0 to 1) a man is `u` of the way through its `ms`:
 // setting off from a standstill and pulling up at the end, the way the
-// court runs it (see alongRun in evaluate.ts).
-const runProgress = (ms: number, u: number): number => {
+// court runs it (see alongRun in evaluate.ts) - or, already going at one
+// end or going on at the other, at his pace there.
+const runProgress = (
+	ms: number,
+	u: number,
+	setsOff = true,
+	pullsUp = true,
+): number => {
 	const T = ms / 1000;
 	if (T <= 0.001) {
 		return u;
 	}
-	const ta = Math.min(T / 3, 0.45);
-	const td = Math.min(T / 3, 0.38);
+	const ta = setsOff ? Math.min(T / 3, 0.45) : 0;
+	const td = pullsUp ? Math.min(T / 3, 0.38) : 0;
 	const vc = 1 / (T - ta / 2 - td / 2);
 	const ramp = (x: number) => x * x * x - (x * x * x * x) / 2;
 	const s = Math.min(T, Math.max(0, u * T));
@@ -15035,7 +15042,12 @@ class Director {
 			}
 			// Round each one in his way in turn - the first he comes to, then on
 			// from there.
-			const split = (m: Move, depth: number): Move[] => {
+			const split = (
+				m: Move,
+				depth: number,
+				before: Move | undefined,
+				after: Move | undefined,
+			): Move[] => {
 				const dx = m.to.x - m.from.x;
 				const dy = m.to.y - m.from.y;
 				const L2 = dx * dx + dy * dy;
@@ -15092,8 +15104,27 @@ class Director {
 				if (la + lb > L * 1.2 && ((la + lb) * 1000) / Math.max(1, dur) > 12) {
 					return [m];
 				}
+				// (Each leg the time it takes him there as he really runs it:
+				// the last of it, pulling up, slower than the rest.)
 				if (la + lb > 0.05) {
-					bend.t = m.t0 + (dur * la) / (la + lb);
+					const f = la / (la + lb);
+					const setsOff =
+						(m.v0 ?? 0) === 0 &&
+						(m.v0 === 0 || !before || m.t0 - before.t1 > FLOW_MS);
+					const pullsUp =
+						(m.v1 ?? 0) === 0 &&
+						(m.v1 === 0 || !after || after.t0 - m.t1 > FLOW_MS);
+					let lo = 0;
+					let hi = 1;
+					for (let k = 0; k < 24; k++) {
+						const mid = (lo + hi) / 2;
+						if (runProgress(dur, mid, setsOff, pullsUp) < f) {
+							lo = mid;
+						} else {
+							hi = mid;
+						}
+					}
+					bend.t = m.t0 + dur * ((lo + hi) / 2);
 				}
 				if (bend.t - m.t0 <= edge || m.t1 - bend.t <= edge) {
 					return [m];
@@ -15103,7 +15134,7 @@ class Director {
 				// through the bend he goes as fast as the turn in it lets him.)
 				const a = { ...m, t1: bend.t, to: bend.at, v1: undefined };
 				const b = { ...m, t0: bend.t, from: bend.at, v0: undefined };
-				return depth >= 3 ? [a, b] : [a, ...split(b, depth + 1)];
+				return depth >= 3 ? [a, b] : [a, ...split(b, depth + 1, a, after)];
 			};
 			// No run ends inside one - nor does a man stand where one is set:
 			// he stops at his shoulder (and the next run sets off from there).
@@ -15154,7 +15185,7 @@ class Director {
 					}
 				}
 			});
-			tr.moves = ends.flatMap((m) => split(m, 0));
+			tr.moves = ends.flatMap((m, i) => split(m, 0, ends[i - 1], ends[i + 1]));
 		}
 	}
 

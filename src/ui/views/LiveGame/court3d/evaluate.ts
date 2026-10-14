@@ -332,7 +332,7 @@ const jumpZ = (act: Act, u: number): number => {
 // through it. Only turning back the way he came does he plant and stop.
 // A run starting within this long of the last one's end follows on from
 // it: the pause between them is taken up in the running.
-const FLOW_MS = 300;
+export const FLOW_MS = 300;
 // How long either side of a join he spends coming round the corner: the
 // faster he goes through it, the wider he swings - up to this long.
 const ROUND_MS = 420;
