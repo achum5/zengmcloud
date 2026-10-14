@@ -883,8 +883,10 @@ const stridesAt = (
 			tr.moves[j]!.t0 - tr.moves[j - 1]!.t1 <= STRIDE_ON_MS);
 		j--
 	) {
+		// (Counted at the stride he was showing as it ended - backpedaling
+		// by then, say - so he goes on from where his feet were.)
 		const before = runOf(tr, j - 1);
-		strides += lenOf(before.mv) / strideOf(stepsOf(tl, tr, before));
+		strides += lenOf(before.mv) / strideOf(endStepsOf(tl, tr, j - 1, before));
 	}
 	return strides + STRIDE_START;
 };
@@ -1264,6 +1266,7 @@ const beatYaws = new WeakMap<Track, Map<number, Turning>>();
 export const forgetTurns = (tracks: Iterable<Track>) => {
 	for (const tr of tracks) {
 		beatYaws.delete(tr);
+		endSteps.delete(tr);
 	}
 };
 const yawOnBeat = (tl: CourtTimeline, tr: Track, g: number): number => {
@@ -1569,6 +1572,67 @@ const FORWARD = new Set<AnimName>([
 	"dribble",
 	"dribbleWalk",
 ]);
+// The steps he shows on a run at t: its own - or, turned far enough from
+// the way he goes, a backpedal; or, round far enough, forward again.
+const shownSteps = (
+	tl: CourtTimeline,
+	tr: Track,
+	run: Run,
+	t: number,
+	anim: AnimName,
+): AnimName => {
+	if (!FORWARD.has(anim) && anim !== "back") {
+		return anim;
+	}
+	const here = spotAt(tr, t);
+	if (!here.moving || here.hx * here.hx + here.hy * here.hy <= 1e-6) {
+		return anim;
+	}
+	// (Turned that far from the way he goes for a moment either side, not
+	// just in passing - a wobble as one run gives way to the next is no
+	// backpedal for a frame.)
+	const heading = Math.atan2(here.hy, here.hx);
+	const offAt = (when: number) =>
+		Math.abs(wrapAngle(yawAt(tl, tr, when) - heading));
+	const off0 = offAt(t);
+	const off =
+		(anim !== "back" && off0 > OPEN_UP) ||
+		(anim === "back" && off0 < TURN_ROUND)
+			? anim === "back"
+				? Math.max(off0, offAt(t - GAIT_HOLD), offAt(t + GAIT_HOLD))
+				: Math.min(off0, offAt(t - GAIT_HOLD), offAt(t + GAIT_HOLD))
+			: off0;
+	if (anim !== "back" && off > OPEN_UP) {
+		return "back";
+	}
+	if (anim === "back" && off < TURN_ROUND) {
+		const ahead = runAnim(tr, run);
+		return FORWARD.has(ahead) ? ahead : "slide";
+	}
+	return anim;
+};
+// The steps a run ends on (see stridesAt), worked out once - and, like
+// the turns, forgotten when where men are is changed after the fact.
+const endSteps = new WeakMap<Track, AnimName[]>();
+const endStepsOf = (
+	tl: CourtTimeline,
+	tr: Track,
+	j: number,
+	run: Run,
+): AnimName => {
+	let memo = endSteps.get(tr);
+	if (!memo) {
+		memo = [];
+		endSteps.set(tr, memo);
+	}
+	return (memo[j] ??= shownSteps(
+		tl,
+		tr,
+		run,
+		run.mv.t1 - 1,
+		stepsOf(tl, tr, run),
+	));
+};
 const gaitOf = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -1578,40 +1642,16 @@ const gaitOf = (
 ): { anim: AnimName; phase: number } => {
 	const anim = stepsOf(tl, tr, run);
 	const phase = stridesAt(tl, tr, k, run, t);
-	if (FORWARD.has(anim) || anim === "back") {
-		const here = spotAt(tr, t);
-		if (here.moving && here.hx * here.hx + here.hy * here.hy > 1e-6) {
-			// (Turned that far from the way he goes for a moment either side,
-			// not just in passing - a wobble as one run gives way to the next
-			// is no backpedal for a frame.)
-			const heading = Math.atan2(here.hy, here.hx);
-			const offAt = (when: number) =>
-				Math.abs(wrapAngle(yawAt(tl, tr, when) - heading));
-			const off0 = offAt(t);
-			const off =
-				(anim !== "back" && off0 > OPEN_UP) ||
-				(anim === "back" && off0 < TURN_ROUND)
-					? anim === "back"
-						? Math.max(off0, offAt(t - GAIT_HOLD), offAt(t + GAIT_HOLD))
-						: Math.min(off0, offAt(t - GAIT_HOLD), offAt(t + GAIT_HOLD))
-					: off0;
-			// (At the other gait's stride, so his feet stay planted - over
-			// this run only: where it starts, his feet are where the one
-			// before left them.)
-			const along = alongRun(run, t);
-			const restride = (from: AnimName, to: AnimName) =>
-				phase + along * (1 / strideOf(to) - 1 / strideOf(from));
-			if (anim !== "back" && off > OPEN_UP) {
-				return { anim: "back", phase: restride(anim, "back") };
-			}
-			if (anim === "back" && off < TURN_ROUND) {
-				const ahead = runAnim(tr, run);
-				const fwd = FORWARD.has(ahead) ? ahead : "slide";
-				return { anim: fwd, phase: restride("back", fwd) };
-			}
-		}
-	}
-	return { anim, phase };
+	const shown = shownSteps(tl, tr, run, t, anim);
+	// (At the other gait's stride, so his feet stay planted - over this run
+	// only: where it starts, his feet are where the one before left them.)
+	return shown === anim
+		? { anim, phase }
+		: {
+				anim: shown,
+				phase:
+					phase + alongRun(run, t) * (1 / strideOf(shown) - 1 / strideOf(anim)),
+			};
 };
 // The steps he takes on a run.
 const stepsOf = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
