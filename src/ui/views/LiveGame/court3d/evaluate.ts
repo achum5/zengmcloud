@@ -1783,6 +1783,11 @@ const tightAt = (
 const GRIP_MS = 110;
 const GRIP_FLOOR_MS = 50;
 const LET_GO_MS = 140;
+const GRABS = new Set<AnimName>(["poke", "reach"]);
+const ballIsHis = (tl: CourtTimeline, pid: number, t: number): boolean => {
+	const seg = ballSegAt(tl, t);
+	return seg?.kind === "hold" && seg.pid === pid;
+};
 // How far his hands have closed on the ball at t (1 all the way), held
 // since it came to him (the hold at `bi`, and any before it straight on).
 // (Off the floor, his hands are on it already as he takes it; thrown to him,
@@ -1818,7 +1823,11 @@ const doingAt = (
 	const pid = tr.pid;
 	const standing = actAt(tr, t);
 	const act =
-		standing && STANDING.has(standing.anim) && here.moving && here.run
+		standing &&
+		((STANDING.has(standing.anim) && here.moving && here.run) ||
+			// (A hand at the ball once it is his - the steal he poked at
+			// come into his hands and away on his dribble: done reaching.)
+			(GRABS.has(standing.anim) && ballIsHis(tl, pid, t)))
 			? undefined
 			: standing;
 	let anim: AnimName;
@@ -1946,10 +1955,12 @@ const doingAt = (
 		seg?.kind === "fly" &&
 		"pid" in seg.to &&
 		seg.to.pid === pid &&
-		seg.t1 - t < GRIP_MS
+		seg.t1 - t < GRIP_MS &&
+		ballIsHis(tl, pid, seg.t1 + 1)
 	) {
 		// A pass coming to him: his hands come together to where it will be
-		// as it gets there.
+		// as it gets there. (Not a shot he swats away, or a ball he tips on:
+		// both hands on it for a frame and off it the next.)
 		const from = Math.max(seg.t0, seg.t1 - GRIP_MS);
 		grip = smooth01((t - from) / Math.max(1, seg.t1 - from));
 	} else if (seg && t - seg.t0 < LET_GO_MS) {
@@ -2194,9 +2205,13 @@ const blendInto = (
 		...(before.tight ? { tight: before.tight } : {}),
 		...(before.stride ? { stride: before.stride } : {}),
 		// (His hands most of the way onto it as it changed - picked up as he
-		// went up into a floater, say - count as on it: not his arms back
-		// where his walk had them for a frame.)
-		...(before.holding && (before.grip ?? 1) >= 0.5 ? { held: true } : {}),
+		// went up into a floater, or a pass all but in them as he goes
+		// straight into his dribble - count as on it: not his arms back
+		// where they were before for a frame.)
+		...((before.holding || before.grip !== undefined) &&
+		(before.grip ?? 1) >= 0.5
+			? { held: true }
+			: {}),
 		target: before.target,
 		...(before.mirror ? { mirror: true } : {}),
 		w,
@@ -3116,7 +3131,16 @@ const blendPose = (f: Blend): Pose => {
 	const m = strode(f.mirror ? mirror(as) : as, f.stride);
 	const own = f.held ? carried(m, f.anim) : m;
 	const g = f.from;
-	return g && (g.w > 0 || (g.arms ?? 0) > 0) ? blendFrom(own, g) : own;
+	if (!g || (g.w <= 0 && (g.arms ?? 0) <= 0)) {
+		return own;
+	}
+	const eased = blendFrom(own, g);
+	// (Itself still settling out of a run, his feet stepping into it, as he
+	// went on into something else: from there - as he was - not from the two
+	// eased together, both feet slid over to it in a frame.)
+	return g.w > 0 && g.w < 1 && PIVOTS.has(f.anim) && SETTLE_FROM.has(g.anim)
+		? settleStep(eased, own, blendPose(g), 1 - g.w)
+		: eased;
 };
 const blendFrom = (q: Pose, f: Blend): Pose => {
 	const was = blendPose(f);
