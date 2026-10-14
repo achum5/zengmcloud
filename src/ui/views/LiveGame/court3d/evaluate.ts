@@ -3257,9 +3257,14 @@ const settleStep = (
 	const lift = (hip: number, knee: number) =>
 		-Math.cos((hip + wasFlex) * RAD) - Math.cos((hip + wasFlex - knee) * RAD);
 	const up = lift(was.hipN, was.kneeN) - lift(was.hipF, was.kneeF);
-	const first = Math.abs(up) > SETTLE_UP ? up > 0 : rn >= rf;
-	const n = leg(dn, first ? 0 : 1 - SETTLE_STEP);
-	const f = leg(df, first ? 1 - SETTLE_STEP : 0);
+	// (How surely the near one goes first: the foot that is up, the more
+	// clearly up it is - eased over into the one with furthest to go as
+	// both come down, not switched from one frame to the next.)
+	const byFar = rn >= rf ? 1 : 0;
+	const lifted = Math.min(1, Math.abs(up) / SETTLE_UP);
+	const first = byFar + ((up > 0 ? 1 : 0) - byFar) * lifted;
+	const n = leg(dn, (1 - first) * (1 - SETTLE_STEP));
+	const f = leg(df, first * (1 - SETTLE_STEP));
 	const at = (a: number, b: number, w: number) => a + (b - a) * w;
 	// (His hips' bend over his feet goes with each leg as it steps, not
 	// with both at once - which would slide the one still down.)
