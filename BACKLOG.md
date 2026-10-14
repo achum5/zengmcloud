@@ -272,7 +272,17 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   from about 600 to 130 in ten minutes of play; a pass goes by a
   defender's shoulder, not through him; after a basket the ball is taken
   out of the net on the hop; no pile-up at half court as the ball comes
-  up; threes as open as the league's.)
+  up; threes as open as the league's. 2026-10-14: joints jumping between
+  frames down from 89 to 52 in four ten-minute games - a stand eased out
+  of a moment's shuffle all the way, the arms of a man up on an inbounder
+  waving in and out of where his hands are, arms coming down from a
+  celebration cut short by a run, a free hand down before the dribble
+  comes over into it, hands that half-closed on the ball letting go from
+  there, a blocked shot swatted rather than caught, the man who poked it
+  loose done reaching once it is his, and feet stepping on through one
+  stand into the next. The camera also eases over so the ball is never
+  lost behind the score bug, and the ball handler's name stays in the
+  picture.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like
