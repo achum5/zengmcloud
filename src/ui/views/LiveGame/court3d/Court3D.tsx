@@ -24,7 +24,14 @@ import {
 	paintStands,
 	paintTable,
 } from "./arena.ts";
-import { courtFit, makeCamera, MAIN_RIG, REPLAY_RIG } from "./camera.ts";
+import {
+	type Camera,
+	courtFit,
+	makeCamera,
+	MAIN_RIG,
+	project,
+	REPLAY_RIG,
+} from "./camera.ts";
 import { courtTexture } from "./courtTexture.ts";
 import { adjust, artFor, makeResolution } from "./resolution.ts";
 import { makeScratch, makeSpriteCache } from "./sprite.ts";
@@ -49,7 +56,7 @@ import { headColors, loadHead, profileOf, type HeadSprite } from "./faces.ts";
 import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
 import { dressKit, kitArtOf, type KitArt } from "./kitArt.ts";
 import { logoPicture } from "./logoPicture.ts";
-import { COURT_W, type Side } from "./geometry.ts";
+import { COURT_H, COURT_W, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
 import { stageCourt } from "./stageCourt.ts";
 import {
@@ -132,6 +139,83 @@ const follow = (
 	const e = Math.exp(-w * secs);
 	const k = (v + w * y) * secs;
 	return [to + (y + k) * e, (v - w * k) * e];
+};
+
+// THE SCORE BUG IN THE WAY: the bug's box as shares of the picture, and how
+// far (feet, + to the right) the camera pans for the man with the ball to
+// stand clear of it - never so far that the basket at his end leaves the
+// picture, and the way it went last (`side`: -1 left, 1 right, 0 neither)
+// kept to unless the other way is much better.
+type BugBox = { x0: number; x1: number; y0: number };
+const bugBoxOf = (
+	wrap: HTMLElement | null,
+	holder: HTMLElement | null,
+): BugBox | undefined => {
+	const bug = holder?.firstElementChild;
+	if (!wrap || !bug) {
+		return undefined;
+	}
+	const w = wrap.getBoundingClientRect();
+	const b = bug.getBoundingClientRect();
+	if (w.width <= 0 || w.height <= 0 || b.width <= 0 || b.height <= 0) {
+		return undefined;
+	}
+	return {
+		x0: (b.left - w.left) / w.width,
+		x1: (b.right - w.left) / w.width,
+		y0: (b.top - w.top) / w.height,
+	};
+};
+const DODGE_MAX = 20;
+const dodgeFor = (
+	cam: Camera,
+	at: { x: number; y: number },
+	box: BugBox,
+	side: number,
+): [number, number] => {
+	const p = project(cam, { x: at.x, y: at.y, z: 3 });
+	// Eased in as he goes down behind its top edge.
+	const under = Math.min(1, Math.max(0, (p.y / cam.viewH - box.y0) / 0.07 + 1));
+	const m = 0.02 + (1.5 * p.k) / cam.viewW;
+	const fx = p.x / cam.viewW;
+	// How far across the picture he would go to come out its left side, or
+	// its right.
+	const left = fx - (box.x0 - m);
+	const right = box.x1 + m - fx;
+	if (under <= 0 || left <= 0 || right <= 0) {
+		return [0, 0];
+	}
+	// The camera moved d feet takes everything d * k across the other way.
+	const rim = project(cam, {
+		x: at.x < COURT_W / 2 ? 5.25 : COURT_W - 5.25,
+		y: COURT_H / 2,
+		z: 10,
+	});
+	const rimX = rim.x / cam.viewW;
+	const per = cam.viewW / rim.k;
+	const lo = Math.min(0, Math.max(-DODGE_MAX, (rimX - 0.92) * per));
+	const hi = Math.max(0, Math.min(DODGE_MAX, (rimX - 0.08) * per));
+	let best = 0;
+	let bestScore = Infinity;
+	for (const go of [-1, 1]) {
+		if (go < 0 ? box.x0 - m < 0.06 : box.x1 + m > 0.94) {
+			continue;
+		}
+		const need = (((go < 0 ? left : right) * cam.viewW) / p.k) * under;
+		const d = go < 0 ? Math.min(hi, need) : Math.max(lo, -need);
+		// Mostly how much of him is left behind it; then how far it pans.
+		const score =
+			3 * (need - Math.abs(d)) + Math.abs(d) - (go === side ? 6 : 0);
+		if (score < bestScore) {
+			bestScore = score;
+			best = go;
+		}
+	}
+	if (best === 0) {
+		return [0, 0];
+	}
+	const need = (((best < 0 ? left : right) * cam.viewW) / p.k) * under;
+	return [best < 0 ? Math.min(hi, need) : Math.max(lo, -need), best];
 };
 
 // Whether a game opens with its starting lineups (see intro.ts).
@@ -805,6 +889,7 @@ const Court3D = ({
 
 	// The picture's size: 16:9, or 4:3 on a phone so the players stay big.
 	const wrapRef = useRef<HTMLDivElement | null>(null);
+	const bugRef = useRef<HTMLDivElement | null>(null);
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
 	const [size, setSize] = useState({ w: 640, h: 360 });
 	useLayoutEffect(() => {
@@ -861,6 +946,16 @@ const Court3D = ({
 		camVX: 0,
 		camVW: 0,
 		snapCam: true,
+		// Panned clear of the score bug (see dodgeFor): by how much (feet),
+		// which way last, its box (measured now and then), and the man with
+		// the ball last and when (game ms).
+		dodge: 0,
+		dodgeV: 0,
+		dodgeSide: 0,
+		bugAt: -Infinity,
+		bugBox: undefined as BugBox | undefined,
+		heldBy: undefined as number | undefined,
+		heldAt: -Infinity,
 		last: undefined as number | undefined,
 		readyFor: -1,
 		stepping: false,
@@ -1219,7 +1314,9 @@ const Court3D = ({
 					(staging
 						? warmupAim(s.t, p.narrow, fit)
 						: aimFor(moment, p.narrow, tl, fit)));
-			if (s.snapCam) {
+			const snap = s.snapCam;
+			const secs = (dt / 1000) * Math.min(24, Math.max(1, rate));
+			if (snap) {
 				s.camX = aim.x;
 				s.camW = aim.width;
 				s.camVX = 0;
@@ -1228,7 +1325,6 @@ const Court3D = ({
 			} else {
 				// An operator's pan and zoom: eased into and out of, never a
 				// lurch when what it is following jumps.
-				const secs = (dt / 1000) * Math.min(24, Math.max(1, rate));
 				[s.camX, s.camVX] = follow(s.camX, s.camVX, aim.x, CAM_PAN, secs);
 				[s.camW, s.camVW] = follow(s.camW, s.camVW, aim.width, CAM_ZOOM, secs);
 				if (fit) {
@@ -1239,9 +1335,38 @@ const Court3D = ({
 					Math.max(s.camW / 2 - 12, s.camX),
 				);
 			}
+			// The man with the ball (or the ball, loose or in the air) never
+			// left behind the score bug: the camera eased over off him.
+			let dodge = 0;
+			if (fit && !staging) {
+				if (now - s.bugAt > 500) {
+					s.bugAt = now;
+					s.bugBox = bugBoxOf(wrapRef.current, bugRef.current);
+				}
+				const { ball } = moment;
+				const who =
+					(ball.holder === undefined
+						? undefined
+						: moment.players.find((pl) => pl.pid === ball.holder)) ?? ball;
+				if (s.bugBox) {
+					const plain = makeCamera(
+						{ x: s.camX, width: s.camW, y: fit.y(s.camW) },
+						fw,
+						fh,
+						MAIN_RIG,
+					);
+					[dodge, s.dodgeSide] = dodgeFor(plain, who, s.bugBox, s.dodgeSide);
+				}
+			}
+			if (snap) {
+				s.dodge = dodge;
+				s.dodgeV = 0;
+			} else {
+				[s.dodge, s.dodgeV] = follow(s.dodge, s.dodgeV, dodge, CAM_PAN, secs);
+			}
 			const cam = makeCamera(
 				{
-					x: s.camX,
+					x: s.camX + s.dodge,
 					width: s.camW,
 					y: fit ? fit.y(s.camW) : aim.y,
 					z: aim.z,
@@ -1651,10 +1776,14 @@ const Court3D = ({
 				};
 				// The league's own bug, if it has one (see ScoreBugStyle).
 				const own: ScoreBugStyle | null | undefined = boxScore?.scoreBug;
-				return own ? (
-					<CustomScoreBug style={own} {...bug} />
-				) : (
-					<ScoreBug {...bug} />
+				return (
+					<div ref={bugRef} style={{ display: "contents" }}>
+						{own ? (
+							<CustomScoreBug style={own} {...bug} />
+						) : (
+							<ScoreBug {...bug} />
+						)}
+					</div>
 				);
 			})()}
 			{caption ? (
