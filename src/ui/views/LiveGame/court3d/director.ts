@@ -658,6 +658,15 @@ const REACH_AT = (() => {
 const CATCH_MS = 200;
 const CATCH_HIT = 0.45;
 const CATCH_AT = releaseAt("catch", CATCH_HIT);
+// Stood waiting on a pass this long (feet) or longer, out this far from
+// the rim at the least (feet), he cuts to get open for it: a step in this
+// far (feet) from this long before it goes (ms), and back out to meet it
+// this far toward the man throwing it (feet).
+const V_CUT_PASS = 14;
+const V_CUT_OUT = 15;
+const V_CUT_IN = 2.6;
+const V_CUT_MS = 750;
+const V_CUT_MEET = 1.4;
 // Caught and away on the dribble: both hands on it this long first (ms),
 // not out of the air straight down onto the floor.
 const GATHER_MS = 180;
@@ -3057,6 +3066,46 @@ class Director {
 		// Open, he calls for it: a hand up.
 		if (d >= 12) {
 			this.gesture(to, "hand", start - 700, start + wind - 60, undefined, 0.45);
+		}
+		// Stood waiting on it out on the floor, he gets himself open for it:
+		// a step in at the rim, then back out to meet it as it comes - his
+		// eyes on the ball all the while.
+		const rim = { x: rimX(this.teamOf(to)), y: COURT_H / 2 };
+		if (
+			!handOff &&
+			d >= V_CUT_PASS &&
+			dist(b, rim) >= V_CUT_OUT &&
+			(this.free.get(to) ?? 0) < start - V_CUT_MS &&
+			(b.x - COURT_W / 2) * dir > 0
+		) {
+			const inn = unitVec(b, rim);
+			const inSpot = clampPt({
+				x: b.x + inn.x * V_CUT_IN,
+				y: b.y + inn.y * V_CUT_IN,
+			});
+			const back = unitVec(b, a);
+			const meet = clampPt({
+				x: b.x + back.x * V_CUT_MEET,
+				y: b.y + back.y * V_CUT_MEET,
+			});
+			const arrive0 = start + wind + flight;
+			const face = -toward as 1 | -1;
+			const inAt = this.goBy(
+				to,
+				inSpot,
+				start - V_CUT_MS,
+				start - V_CUT_MS + 380,
+				"run",
+				face,
+			);
+			this.goBy(
+				to,
+				meet,
+				Math.max(inAt, arrive0 - 480),
+				arrive0 - 40,
+				"run",
+				face,
+			);
 		}
 		this.act(
 			from,
