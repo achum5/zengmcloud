@@ -104,6 +104,8 @@ const REPLAY_RATE_MAX = 2;
 const DIP_MS = 130;
 // Up out of black onto the next of the key plays (ms).
 const KEY_DIP_MS = 320;
+// The longest it is held black for the picture to be ready (ms).
+const KEY_HOLD_MS = 900;
 // A dunk's replay: from just before he takes off to just after, in slow
 // motion, once its own play is over.
 const REPLAY_FROM = 1700;
@@ -842,6 +844,7 @@ const Court3D = ({
 		// the picture last came up out of black onto the next one (ms).
 		jumpTo: -1,
 		keyDip: -Infinity,
+		keyHold: -Infinity,
 		prevCursor: -1,
 		prevPaused: paused,
 		prevSkips: skips,
@@ -1215,6 +1218,18 @@ const Court3D = ({
 				replay ? REPLAY_RIG : (view?.rig ?? MAIN_RIG),
 			);
 
+			// Into the next of the key plays, the picture held black until
+			// everybody in it is ready to be drawn (see SpriteCache.dark) - a
+			// moment more of black, not a freeze halfway out of it.
+			if (
+				sprites.skipped > 0 &&
+				now - Math.max(s.keyDip, s.keyHold) < KEY_DIP_MS / 4 &&
+				now - s.keyDip < KEY_HOLD_MS
+			) {
+				s.keyHold = now;
+			}
+			const keyDark = 1 - (now - Math.max(s.keyDip, s.keyHold)) / KEY_DIP_MS;
+			sprites.dark = keyDark >= 0.75;
 			const dip = dipRef.current;
 			if (dip) {
 				let o: number;
@@ -1224,12 +1239,7 @@ const Court3D = ({
 				} else {
 					const near = cut === undefined ? Infinity : Math.abs(s.t - cut);
 					// (And between clips of a highlight reel, and the key plays.)
-					o = Math.max(
-						0,
-						1 - near / DIP_MS,
-						clipDipAt(tl, s.t),
-						1 - (now - s.keyDip) / KEY_DIP_MS,
-					);
+					o = Math.max(0, 1 - near / DIP_MS, clipDipAt(tl, s.t), keyDark);
 				}
 				if (dip.style.opacity !== String(o)) {
 					dip.style.opacity = String(o);

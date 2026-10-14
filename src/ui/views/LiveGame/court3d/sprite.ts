@@ -119,6 +119,11 @@ export type SpriteCache = {
 	frame: number;
 	spent: number;
 	budget?: number;
+	// The picture as good as black (dipped between clips): out of time, a
+	// man with no picture yet is left out of this frame altogether rather
+	// than all of them made in one - and how many were.
+	dark?: boolean;
+	skipped: number;
 	last: Map<
 		number,
 		{ kept: Kept; frame: number; behind: boolean; scale: number }
@@ -130,12 +135,14 @@ export const makeSpriteCache = (): SpriteCache => ({
 	next: 0,
 	frame: 0,
 	spent: 0,
+	skipped: 0,
 	last: new Map(),
 });
 // A new frame: none of its time spent yet.
 export const startFrame = (cache: SpriteCache) => {
 	cache.frame += 1;
 	cache.spent = 0;
+	cache.skipped = 0;
 };
 const KEEP = 2400;
 const keep = (
@@ -419,6 +426,14 @@ export const drawSprite = (
 			stamp(ctx, was.kept, base.x, base.y - lift, px);
 			was.frame = cache.frame;
 			was.behind = true;
+			return;
+		}
+		if (
+			cache.dark &&
+			cache.budget !== undefined &&
+			cache.spent >= cache.budget
+		) {
+			cache.skipped += 1;
 			return;
 		}
 	}
