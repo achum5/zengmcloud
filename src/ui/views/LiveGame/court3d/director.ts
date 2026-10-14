@@ -60,6 +60,7 @@ import {
 	evalBall,
 	floorSpotOf,
 	forgetTurns,
+	liveSeg,
 } from "./evaluate.ts";
 import {
 	findShot,
@@ -12520,14 +12521,8 @@ class Director {
 			let i = ballAt(a);
 			let end = Infinity;
 			for (; i < this.ball.length; i++) {
-				const s = this.ball[i]!;
-				if (
-					!(
-						s.kind === "hold" ||
-						(s.kind === "fly" && "pid" in s.from && "pid" in s.to)
-					)
-				) {
-					end = Math.max(a, s.t0);
+				if (!liveSeg(this.ball, i)) {
+					end = Math.max(a, this.ball[i]!.t0);
 					break;
 				}
 			}
@@ -12719,12 +12714,8 @@ class Director {
 		const liveFrom = (t: number): number => {
 			const i = ballAt(t);
 			for (let k = i; k < this.ball.length; k++) {
-				const s = this.ball[k]!;
-				if (
-					s.kind === "hold" ||
-					(s.kind === "fly" && "pid" in s.from && "pid" in s.to)
-				) {
-					return Math.max(t, s.t0);
+				if (liveSeg(this.ball, k)) {
+					return Math.max(t, this.ball[k]!.t0);
 				}
 			}
 			return Infinity;
@@ -14211,14 +14202,8 @@ class Director {
 				i < ball.length;
 				i++
 			) {
-				const s = ball[i]!;
-				if (
-					!(
-						s.kind === "hold" ||
-						(s.kind === "fly" && "pid" in s.from && "pid" in s.to)
-					)
-				) {
-					end = Math.max(t, s.t0);
+				if (!liveSeg(ball, i)) {
+					end = Math.max(t, ball[i]!.t0);
 					break;
 				}
 			}
@@ -14380,10 +14365,17 @@ class Director {
 				}
 				const a = m.t0;
 				let hard = Infinity;
+				// (A long stretch of it is worked out a piece at a time, each
+				// from the start of the run of his that begins the next - so
+				// one picks up just where the last leaves off.)
+				let cap = Infinity;
 				for (let j = i + 1; j < moves.length; j++) {
 					if (!this.marking.has(moves[j]!)) {
 						hard = moves[j]!.t0;
 						break;
+					}
+					if (cap === Infinity && moves[j]!.t0 >= a + 15000) {
+						cap = moves[j]!.t0;
 					}
 				}
 				const b = Math.min(
@@ -14392,7 +14384,7 @@ class Director {
 					firstAfter(cuts, a),
 					firstAfter(changes, a),
 					liveUntil(a),
-					a + 15000,
+					cap,
 				);
 				// The men he shadows through it, from when.
 				const men: [number, number][] = [];
@@ -14434,7 +14426,7 @@ class Director {
 				// (Not if this is only as far as one stretch of following goes,
 				// with more of it to come: he picks that up from wherever he is.)
 				const end =
-					b === a + 15000 && moves[j] && this.marking.has(moves[j]!)
+					b === cap && moves[j] && this.marking.has(moves[j]!)
 						? undefined
 						: whereIn(planned, stop);
 				// Straight on into his next run, if it follows on from this at

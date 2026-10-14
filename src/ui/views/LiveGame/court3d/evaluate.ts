@@ -232,6 +232,36 @@ const ballIndexAt = (tl: CourtTimeline, t: number): number =>
 const ballSegAt = (tl: CourtTimeline, t: number): BallSeg | undefined =>
 	tl.ball[ballIndexAt(tl, t)];
 
+// The ball in play at the i'th of its segments: in a man's hands, or on
+// its way from one to another - straight there, or off the floor between
+// them (a bounce pass is two flights, down to the floor and back up).
+export const liveSeg = (list: readonly BallSeg[], i: number): boolean => {
+	const s = list[i];
+	if (s?.kind === "hold") {
+		return true;
+	}
+	if (s?.kind !== "fly") {
+		return false;
+	}
+	// (Down at the floor: where a bounce pass hits it.)
+	const floor = (e: object): boolean => "z" in e && (e as Pt3).z < 1.5;
+	const p = list[i - 1];
+	const n = list[i + 1];
+	const fromOk =
+		"pid" in s.from ||
+		(floor(s.from) &&
+			p?.kind === "fly" &&
+			"pid" in p.from &&
+			Math.abs(p.t1 - s.t0) < 1);
+	const toOk =
+		"pid" in s.to ||
+		(floor(s.to) &&
+			n?.kind === "fly" &&
+			"pid" in n.to &&
+			Math.abs(n.t0 - s.t1) < 1);
+	return fromOk && toOk;
+};
+
 // A bounce of his dribble. One man's dribbles back to back keep one beat -
 // a switch of hands or a new move does not start the bounce over - and a
 // switch goes down from one hand and comes up into the other.
@@ -1343,13 +1373,7 @@ const offBall = (
 ): { anim: AnimName; phase: number } | undefined => {
 	// Only with the ball in play: in a man's hands, or on its way between
 	// two - not at a free throw.
-	const seg = ballSegAt(tl, t);
-	if (
-		!(
-			seg?.kind === "hold" ||
-			(seg?.kind === "fly" && "pid" in seg.from && "pid" in seg.to)
-		)
-	) {
+	if (!liveSeg(tl.ball, ballIndexAt(tl, t))) {
 		return undefined;
 	}
 	const beat = tl.beats[lastIndex(tl.beats, t, (b) => b.preStart)];
