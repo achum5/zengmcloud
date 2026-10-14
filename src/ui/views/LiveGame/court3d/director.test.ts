@@ -465,7 +465,9 @@ describe("3D director", () => {
 		assert.isAtLeast(left.length / helps.length, 0.6);
 		assert.isAtLeast(Math.max(...left) - Math.min(...left), 4);
 		assert.isAtLeast(closed / helps.length, 0.85);
-		assert.isAtLeast(onHim / helps.length, 0.2);
+		// (Up on him now and then: one kick-out in six or seven - a three,
+		// mostly, and the league's tight ones are about that.)
+		assert.isAtLeast(onHim / helps.length, 0.14);
 		assert.isAtLeast(backOut / passers, 0.6);
 	}, 60_000);
 

@@ -5412,6 +5412,13 @@ class Director {
 				: this.track(holder)
 						?.moves.filter((m) => m.t0 >= t0 - 1)
 						.findLast((m) => dist(m.from, rim) - dist(m.to, rim) > 4);
+		// The man on the ball goes with the drive when it goes - not off for
+		// where it ends up from the start of the step, his man still stood
+		// there with it.
+		const goes =
+			drive && onBall !== undefined && manOf.get(onBall) === holder
+				? drive.t0
+				: undefined;
 		const drove =
 			holder !== undefined &&
 			acts.some(
@@ -5742,6 +5749,31 @@ class Director {
 					help.by,
 					n > 9 ? "run" : "slide",
 					n > 9 ? undefined : (-attackDir(team) as 1 | -1),
+				);
+				continue;
+			}
+			if (
+				d === onBall &&
+				drive &&
+				goes !== undefined &&
+				goes - Math.max(t0, this.free.get(d) ?? 0) > 400
+			) {
+				// Up on him where he waits with it, then with him as he goes.
+				this.shadow(
+					d,
+					this.defensePoint(team, drive.from, drive.from, true),
+					t0 + 120,
+					goes,
+					team,
+					manOf.get(d),
+				);
+				this.shadow(
+					d,
+					P,
+					goes,
+					t1 + lag + (late.get(d) ?? 0),
+					team,
+					manOf.get(d),
 				);
 				continue;
 			}
