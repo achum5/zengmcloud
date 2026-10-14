@@ -1903,7 +1903,7 @@ const BLEND_MS = 160;
 // longer.)
 const SETTLE_MS = 300;
 const MOVE_ARMS_MS = 60;
-const BLEND_DEPTH = 3;
+const BLEND_DEPTH = 5;
 // An arm thrown up - fighting for the ball, contesting, reaching - comes
 // back down on its own time, not snapped to his side with the rest of him
 // (unless what he goes into wants his hands: a catch, a shot).
@@ -1996,9 +1996,13 @@ const blendInto = (
 			return armsDown(tl, tr, t, now);
 		}
 	}
-	// When it changed.
+	// When it changed - to the moment, and what he was doing the moment
+	// before: never something before that. (A sliver of something between
+	// two moves - the dribble picked up the instant before the pass goes -
+	// found some frames and missed in others, he flickers between easing
+	// out of it and out of what came before it.)
 	let hi = t;
-	for (let k = 0; k < 5; k++) {
+	for (let k = 0; k < 12 && hi - lo > 0.5; k++) {
 		const mid = (lo + hi) / 2;
 		const d = doingAt(tl, tr, mid);
 		if (same(d)) {
