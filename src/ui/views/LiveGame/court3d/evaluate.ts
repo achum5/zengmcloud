@@ -1917,6 +1917,7 @@ const BLEND_MS = 160;
 const SETTLE_MS = 300;
 const MOVE_ARMS_MS = 60;
 const BLEND_DEPTH = 5;
+const FLICK_MS = 40;
 // An arm thrown up - fighting for the ball, contesting, reaching - comes
 // back down on its own time, not snapped to his side with the rest of him
 // (unless what he goes into wants his hands: a catch, a shot).
@@ -1990,9 +1991,12 @@ const blendInto = (
 	let before = doingAt(tl, tr, lo);
 	if (same(before)) {
 		// The same as a moment ago - but maybe something else in between,
-		// and back: out of that, then.
-		const flick = [40, 80, 120]
-			.map((back) => ({ at: t - back, d: doingAt(tl, tr, t - back) }))
+		// and back: out of that, then. (Looked for at the same moments of
+		// the game whatever the frame - a sliver of something found some
+		// frames and missed in others, he flickers in and out of it.)
+		const g = Math.floor((t - FLICK_MS / 2) / FLICK_MS) * FLICK_MS;
+		const flick = [g, g - FLICK_MS, g - 2 * FLICK_MS]
+			.map((at) => ({ at, d: doingAt(tl, tr, at) }))
 			.find((x) => !same(x.d));
 		const settle = flick
 			? undefined
