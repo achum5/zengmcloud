@@ -291,7 +291,14 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   hips no longer swung round a turn back on himself, the settle out of a
   short step not dropped for a frame or two; wide-open threes get a late
   hand flying at them out of the help; the rest of the team off up the
-  floor at a defensive board, not stood round the outlet.)
+  floor at a defensive board, not stood round the outlet. Evening: back
+  down the floor each in his own lane, not shoulder to shoulder; runners
+  stopping dead from full tilt down from 421 to 239 in four games (off
+  the ball a man only goes where he can still make his next run, sets
+  off for it sooner when he has been moved, and a run bent round a man
+  in the way still pulls up at its end); an overhead pass picked up out
+  of a crossover and taken up over the head, and the step out of a run
+  into a stand no longer swapping feet halfway - pops 43 -> 27.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like
