@@ -1399,6 +1399,26 @@ const ballHand = (tl: CourtTimeline, pid: number, t: number): Hand => {
 // they trade, a beat behind, when it goes across (see the guard loop: 0 his
 // left down, 0.5 his right).
 const GUARD_SAMPLES = 12;
+// Up on an inbounder, his arms waving (an act of its own): from where his
+// hands were on the ball before it to where they are after, waving about as
+// long as it lasts in between - never both arms swapped over in a frame as
+// it starts or ends.
+const guardWave = (tl: CourtTimeline, act: Act, u: number): number => {
+	const a = ANIMS.guard;
+	const cycles =
+		((act.t1 - act.t0) / 1000) * (a.kind === "loop" ? a.fps / a.n : 1);
+	const at = (t: number) => {
+		const seg = ballSegAt(tl, t);
+		return seg?.kind === "hold" ? guardHands(tl, seg.pid, t) : 0;
+	};
+	const from = at(act.t0);
+	const to = at(act.t1);
+	let way = to - from + Math.round(cycles - (to - from));
+	if (way < 0) {
+		way += 1;
+	}
+	return from + u * way;
+};
 const guardHands = (tl: CourtTimeline, man: number, t: number): number => {
 	// How much of the last little while it has been in his left - eased, so
 	// the hands go across together and smoothly, never in jumps.
@@ -1791,7 +1811,9 @@ const doingAt = (
 		phase =
 			a.kind === "act"
 				? clamp01(u)
-				: ((t - act.t0) / 1000) * (a.kind === "loop" ? a.fps / a.n : 1);
+				: anim === "guard"
+					? guardWave(tl, act, u)
+					: ((t - act.t0) / 1000) * (a.kind === "loop" ? a.fps / a.n : 1);
 		z = jumpZ(act, u);
 		if (act.reach && act.jump) {
 			reach = act.jump[2];
@@ -2029,6 +2051,7 @@ const blendInto = (
 	const anim = now.anim;
 	let lo = t - BLEND_MS;
 	let before = doingAt(tl, tr, lo);
+	let settling = false;
 	if (same(before)) {
 		// The same as a moment ago - but maybe something else in between,
 		// and back: out of that, then. (Looked for at the same moments of
@@ -2046,9 +2069,14 @@ const blendInto = (
 		if (flick) {
 			lo = flick.at;
 			before = flick.d;
-		} else if (settle && !same(settle) && SETTLE_FROM.has(settle.anim)) {
+		} else if (settle && !same(settle)) {
+			// Still settling, maybe - out of whatever came last before this,
+			// found below: not whatever he was doing the whole settle ago (a
+			// moment's shuffle out of standing, and then a point, settles out
+			// of the shuffle all the way, not out of it and then all at once).
 			lo = t - SETTLE_MS;
 			before = settle;
+			settling = true;
 		} else {
 			return armsDown(tl, tr, t, now);
 		}
@@ -2068,6 +2096,9 @@ const blendInto = (
 			lo = mid;
 			before = d;
 		}
+	}
+	if (settling && !SETTLE_FROM.has(before.anim)) {
+		return armsDown(tl, tr, t, now);
 	}
 	// (A moment of something else between an arm thrown up and this - his
 	// feet catching up with him - is no change of its own: out of that arm,
