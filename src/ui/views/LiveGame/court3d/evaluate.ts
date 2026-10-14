@@ -1783,6 +1783,32 @@ const tightAt = (
 const GRIP_MS = 110;
 const GRIP_FLOOR_MS = 50;
 const LET_GO_MS = 140;
+// How far his hands have closed on the ball at t (1 all the way), held
+// since it came to him (the hold at `bi`, and any before it straight on).
+// (Off the floor, his hands are on it already as he takes it; thrown to him,
+// they came to it as it got to him - see doingAt.)
+const closedOn = (
+	tl: CourtTimeline,
+	pid: number,
+	bi: number,
+	t: number,
+): number => {
+	let since = tl.ball[bi]!.t0;
+	let k = bi - 1;
+	for (; k >= 0; k--) {
+		const x = tl.ball[k]!;
+		if (x.kind !== "hold" || x.pid !== pid || x.style !== "hold") {
+			break;
+		}
+		since = x.t0;
+	}
+	const was = tl.ball[k];
+	if (was?.kind === "fly" && "pid" in was.to && was.to.pid === pid) {
+		return 1;
+	}
+	const off = was?.kind === "rest" ? GRIP_FLOOR_MS : GRIP_MS;
+	return smooth01((t - since) / off);
+};
 const doingAt = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -1914,23 +1940,8 @@ const doingAt = (
 	// Since it came into his hands - or went out of them.
 	let grip: number | undefined;
 	if (has?.style === "hold") {
-		let since = has.t0;
-		let k = bi - 1;
-		for (; k >= 0; k--) {
-			const x = tl.ball[k]!;
-			if (x.kind !== "hold" || x.pid !== pid || x.style !== "hold") {
-				break;
-			}
-			since = x.t0;
-		}
-		// (Off the floor, his hands are on it already as he takes it; thrown
-		// to him, they came to it as it got to him - see below.)
-		const was = tl.ball[k];
-		if (!(was?.kind === "fly" && "pid" in was.to && was.to.pid === pid)) {
-			const off = was?.kind === "rest" ? GRIP_FLOOR_MS : GRIP_MS;
-			const g = smooth01((t - since) / off);
-			grip = g < 1 ? g : undefined;
-		}
+		const g = closedOn(tl, pid, bi, t);
+		grip = g < 1 ? g : undefined;
 	} else if (
 		seg?.kind === "fly" &&
 		"pid" in seg.to &&
@@ -1944,9 +1955,13 @@ const doingAt = (
 	} else if (seg && t - seg.t0 < LET_GO_MS) {
 		// (Gone from him - or put on the floor: his hands come off it as he
 		// pushes it down, not out of the air.)
+		// (From as far as they had closed on it: picked up and put straight
+		// back down, not all the way.)
 		const was = tl.ball[bi - 1];
 		if (was?.kind === "hold" && was.pid === pid && was.style === "hold") {
-			grip = 1 - smooth01((t - seg.t0) / LET_GO_MS);
+			grip =
+				closedOn(tl, pid, bi - 1, seg.t0) *
+				(1 - smooth01((t - seg.t0) / LET_GO_MS));
 		}
 	}
 	return {
@@ -2178,7 +2193,10 @@ const blendInto = (
 		...(before.dribbleFrom ? { dribbleFrom: before.dribbleFrom } : {}),
 		...(before.tight ? { tight: before.tight } : {}),
 		...(before.stride ? { stride: before.stride } : {}),
-		...(before.holding && before.grip === undefined ? { held: true } : {}),
+		// (His hands most of the way onto it as it changed - picked up as he
+		// went up into a floater, say - count as on it: not his arms back
+		// where his walk had them for a frame.)
+		...(before.holding && (before.grip ?? 1) >= 0.5 ? { held: true } : {}),
 		target: before.target,
 		...(before.mirror ? { mirror: true } : {}),
 		w,
