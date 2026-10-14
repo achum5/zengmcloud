@@ -996,16 +996,24 @@ const drawNameTag = (
 	const h = 13 * scale;
 	const total = nw + w + 2 * pad;
 	const feet = project(cam, { x: st.x, y: st.y, z: 0 });
-	const x = Math.round(feet.x - total / 2);
-	const y = Math.round(feet.y + Math.max(5 * scale, 0.6 * feet.k));
-	// The notch.
+	// Kept in the picture: at its edge, along from under him; down on the
+	// near sideline, up over his feet.
+	const x = Math.round(
+		Math.max(scale, Math.min(cam.viewW - total - scale, feet.x - total / 2)),
+	);
+	const y = Math.round(
+		Math.min(feet.y + Math.max(5 * scale, 0.6 * feet.k), cam.viewH - h - scale),
+	);
 	ctx.fillStyle = "rgba(10, 10, 14, 0.82)";
-	ctx.beginPath();
-	ctx.moveTo(Math.round(feet.x) - 3 * scale, y);
-	ctx.lineTo(Math.round(feet.x), y - 3 * scale);
-	ctx.lineTo(Math.round(feet.x) + 3 * scale, y);
-	ctx.closePath();
-	ctx.fill();
+	// The notch, if there is room below him for it.
+	if (y - 3 * scale >= feet.y) {
+		ctx.beginPath();
+		ctx.moveTo(Math.round(feet.x) - 3 * scale, y);
+		ctx.lineTo(Math.round(feet.x), y - 3 * scale);
+		ctx.lineTo(Math.round(feet.x) + 3 * scale, y);
+		ctx.closePath();
+		ctx.fill();
+	}
 	ctx.fillRect(x + nw, y, w + 2 * pad, h);
 	if (num) {
 		ctx.fillStyle = look.kit.jersey;
