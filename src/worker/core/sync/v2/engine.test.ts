@@ -2456,6 +2456,29 @@ describe("SyncEngineV2", () => {
 			engine.stop();
 		});
 
+		// Field capture: cycle at :23.9, deltas applied to :25.8, the next read
+		// timed out at :33.8 - 9.85s after the cycle, inside the 10s floor - and
+		// the device waited out a second 8s timeout before cycling.
+		test("a proven-healthy wedge cycles even inside 10s of the last remedy", async () => {
+			const room = new Room();
+			initRoom(room);
+			(idb as any).league = makeLeagueDb({ players: [] });
+			const transport = new V2Transport("B", room);
+			transport.fetchRoomV2State = () =>
+				Promise.reject(new Error("Timed out after 8000ms"));
+			let cycles = 0;
+			(transport as any).cycleNetwork = async () => {
+				cycles += 1;
+			};
+			const engine = new SyncEngineV2(transport);
+			(engine as any).lastNetworkCycleAt = Date.now() - 9_850;
+			(engine as any).lastRemoteApplyAt = Date.now() - 8_000;
+
+			assert.strictEqual(await engine.catchUp(), false);
+			assert.strictEqual(cycles, 1);
+			engine.stop();
+		});
+
 		test("a delta that applied BEFORE the last remedy proves nothing", async () => {
 			const room = new Room();
 			initRoom(room);

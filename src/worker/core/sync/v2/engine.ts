@@ -613,11 +613,22 @@ export class SyncEngineV2 {
 		// so it cost a second 8s timeout before the cycle that cured it in 3s.
 		// A delta applying after a remedy is proof that remedy worked and this
 		// wedge is a new one; it gets the same 10s leash, not the previous
-		// wedge's cool-down.
+		// wedge's cool-down. And when what failed is a timed-out catch-up read,
+		// the leash is only the read timeout: that read already sat that long,
+		// so cycles still come no closer than that. Field capture: cycle at
+		// :23.9, twenty-seven deltas applied, a new wedge timed out at :33.8 -
+		// inside the 10s floor by 0.15s, so it sat through a second 8s timeout
+		// on the same read before the cycle that cured it in 1.3s.
 		const provenSinceLastRemedy =
 			this.lastRemoteApplyAt > this.lastNetworkCycleAt;
 		const minGapMs =
-			this.sameStepFailureCount >= 2 || provenSinceLastRemedy ? 10_000 : 30_000;
+			provenSinceLastRemedy &&
+			source === "catchup" &&
+			this.lastCatchupFailureWasTimeout
+				? CATCHUP_READ_TIMEOUT_MS
+				: this.sameStepFailureCount >= 2 || provenSinceLastRemedy
+					? 10_000
+					: 30_000;
 		if (!eligible || Date.now() - this.lastNetworkCycleAt <= minGapMs) {
 			return false;
 		}

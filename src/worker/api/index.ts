@@ -6018,13 +6018,7 @@ const updatePlayerUntouchable = async ({
 // Set a player's cartoon face from a faces.js config. Clears any image URL,
 // because imgURL wins over face everywhere it's drawn - keeping it would save
 // the face and change nothing on screen.
-const updatePlayerFace = async ({
-	pid,
-	face,
-}: {
-	pid: number;
-	face: FaceConfig;
-}) => {
+const setPlayerFace = async (pid: number, face: FaceConfig) => {
 	const p = await idb.getCopy.players({ pid }, "noCopyCache");
 	if (!p) {
 		throw new Error("Player not found.");
@@ -6039,6 +6033,30 @@ const updatePlayerFace = async ({
 	// "" is how a player with no picture is stored (see player.generate).
 	p.imgURL = "";
 	await idb.cache.players.put(p);
+};
+
+const updatePlayerFace = async ({
+	pid,
+	face,
+}: {
+	pid: number;
+	face: FaceConfig;
+}) => {
+	await setPlayerFace(pid, face);
+	await toUI("realtimeUpdate", [["playerMovement"]]);
+};
+
+// Many faces in one call, so a multiplayer room gets them as one version.
+// One call per face put thousands of tiny versions on the room for every
+// other device to fetch one at a time.
+const updatePlayerFaces = async ({
+	faces,
+}: {
+	faces: { pid: number; face: FaceConfig }[];
+}) => {
+	for (const { pid, face } of faces) {
+		await setPlayerFace(pid, face);
+	}
 	await toUI("realtimeUpdate", [["playerMovement"]]);
 };
 
@@ -8216,6 +8234,7 @@ const api = {
 		updatePlayThroughInjuries,
 		revertPlayerFace,
 		updatePlayerFace,
+		updatePlayerFaces,
 		faceConverterClasses,
 		faceConverterClass,
 		faceConverterReset,

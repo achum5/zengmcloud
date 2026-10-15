@@ -67,6 +67,8 @@ const stagedKey = (lid: number) => `faceConverterStaged-${lid}`;
 const yearKey = (lid: number) => `faceConverterYear-${lid}`;
 const SIZE_KEY = "faceConverterBatchSize";
 const SOURCE_KEY = "faceConverterSource";
+// Faces saved per call by "Save all".
+const SAVE_ALL_CHUNK = 100;
 
 const readJson = <T,>(key: string, fallback: T): T => {
 	try {
@@ -607,12 +609,35 @@ const FaceConverter = () => {
 			return;
 		}
 		await run("approveAll", async () => {
-			let next = staged;
+			const faces: { pid: number; face: FaceConfig }[] = [];
 			for (const p of stagedHere) {
-				const face = parseFaceJson(next[p.pid]!.text);
+				const face = parseFaceJson(staged[p.pid]!.text);
 				if (face) {
-					next = await approve(p.pid, checkFace(face as any).face);
+					faces.push({ pid: p.pid, face: checkFace(face as any).face });
 				}
+			}
+			// A few calls, not one per face: each call is one version for
+			// everyone else in a multiplayer room to fetch.
+			for (let i = 0; i < faces.length; i += SAVE_ALL_CHUNK) {
+				const chunk = faces.slice(i, i + SAVE_ALL_CHUNK);
+				await toWorker("main", "updatePlayerFaces", { faces: chunk });
+				const saved = new Map(chunk.map(({ pid, face }) => [pid, face]));
+				for (const { pid, face } of chunk) {
+					updatePlayerFaceData(pid, face);
+				}
+				setPlayers((list) =>
+					list?.map((p) => {
+						const face = saved.get(p.pid);
+						return face
+							? { ...p, face, converted: p.converted || !!p.photo }
+							: p;
+					}),
+				);
+				const next = { ...stagedRef.current };
+				for (const { pid } of chunk) {
+					delete next[pid];
+				}
+				saveStaged(next);
 			}
 		});
 	};
