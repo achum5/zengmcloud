@@ -7187,11 +7187,20 @@ const toggleColaOptOut = async () => {
 	await toUI("realtimeUpdate", [["draftLottery"]]);
 };
 
+// God Mode: trading open again after the deadline (or shut again). A setting
+// like any other, not a change of phase, so any device can make it and it
+// syncs as an ordinary edit. Cleared by the next phase change.
+const setTradesAfterDeadline = async (tradesAfterDeadline: boolean) => {
+	await league.setGameAttributes({ tradesAfterDeadline });
+	await toUI("realtimeUpdate", [["gameAttributes"]]);
+};
+
 const toggleTradeDeadline = async () => {
 	const currentPhase = g.get("phase");
 	if (currentPhase === PHASE.AFTER_TRADE_DEADLINE) {
 		await league.setGameAttributes({
 			phase: PHASE.REGULAR_SEASON,
+			tradesAfterDeadline: false,
 		});
 
 		await updatePlayMenu();
@@ -7199,6 +7208,7 @@ const toggleTradeDeadline = async () => {
 	} else if (currentPhase === PHASE.REGULAR_SEASON) {
 		await league.setGameAttributes({
 			phase: PHASE.AFTER_TRADE_DEADLINE,
+			tradesAfterDeadline: false,
 		});
 
 		// Delete scheduled trade deadline
@@ -8208,6 +8218,7 @@ const api = {
 		threeSimNext,
 		toggleColaOptOut,
 		toggleTradeDeadline,
+		setTradesAfterDeadline,
 		tradeCounterOffer,
 		onLiveSimOver,
 		updateLiveBroadcast,

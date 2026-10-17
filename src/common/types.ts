@@ -916,6 +916,8 @@ export type GameAttributesLeague = {
 	hideTeamRatings: boolean;
 	teamRatingsDelaySeasons: number;
 	challengeNoTrades: boolean;
+	// God Mode: trading reopened after the deadline, until the next phase.
+	tradesAfterDeadline: boolean;
 	challengeLoseBestPlayer: boolean;
 	challengeFiredLuxuryTax: boolean;
 	challengeFiredMissPlayoffs: boolean;

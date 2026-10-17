@@ -22,6 +22,7 @@ import {
 import { syncDebugLog } from "../sync/debugLog.ts";
 import type { Conditions, Phase } from "../../../common/types.ts";
 import { cleanupAutoPlay } from "../league/autoPlay.ts";
+import setGameAttributes from "../league/setGameAttributes.ts";
 
 /**
  * Set a new phase of the game.
@@ -82,6 +83,11 @@ const newPhase = async (phase: Phase, conditions: Conditions, extra?: any) => {
 				await updateStatus("Processing...");
 			}
 			await updatePlayMenu();
+
+			// Trading reopened after the deadline is for that stretch only.
+			if (g.get("tradesAfterDeadline")) {
+				await setGameAttributes({ tradesAfterDeadline: false });
+			}
 
 			if (doPhaseChange[phase]) {
 				const result = await doPhaseChange[phase](conditions, extra);

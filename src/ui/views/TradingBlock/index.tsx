@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { PHASE } from "../../../common/constants.ts";
+import { tradesBlocked } from "../../../common/tradesBlocked.ts";
 import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
 import { toWorker } from "../../util/toWorker.ts";
@@ -513,6 +514,7 @@ const TradingBlock = ({
 		salaryCapType,
 		spectator,
 		teamInfoCache,
+		tradesAfterDeadline,
 	} = useLocal([
 		"challengeNoRatings",
 		"challengeNoTrades",
@@ -522,6 +524,7 @@ const TradingBlock = ({
 		"salaryCapType",
 		"spectator",
 		"teamInfoCache",
+		"tradesAfterDeadline",
 	]);
 
 	const [state, setState] = useState<{
@@ -658,7 +661,7 @@ const TradingBlock = ({
 	}
 
 	if (
-		(phase >= PHASE.AFTER_TRADE_DEADLINE && phase <= PHASE.PLAYOFFS) ||
+		tradesBlocked(phase, tradesAfterDeadline) ||
 		phase === PHASE.FANTASY_DRAFT ||
 		gameOver
 	) {

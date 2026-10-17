@@ -40,6 +40,7 @@ export const gameAttributesSyncedToUi = [
 	"spectator",
 	"startingSeason",
 	"teamInfoCache",
+	"tradesAfterDeadline",
 	"userTid",
 	"userTids",
 ] as const;

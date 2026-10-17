@@ -1,4 +1,5 @@
 import { PHASE } from "../../common/constants.ts";
+import { tradesBlocked } from "../../common/tradesBlocked.ts";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import type { View } from "../../common/types.ts";
 import { SummaryTeam } from "./Trade/Summary.tsx";
@@ -27,6 +28,7 @@ const SavedTrades = ({ offers }: View<"savedTrades">) => {
 		salaryCapType,
 		spectator,
 		teamInfoCache,
+		tradesAfterDeadline,
 	} = useLocal([
 		"challengeNoRatings",
 		"challengeNoTrades",
@@ -36,6 +38,7 @@ const SavedTrades = ({ offers }: View<"savedTrades">) => {
 		"salaryCapType",
 		"spectator",
 		"teamInfoCache",
+		"tradesAfterDeadline",
 	]);
 
 	const tradeOffersSwitch = useTradeOffersSwitch();
@@ -55,7 +58,7 @@ const SavedTrades = ({ offers }: View<"savedTrades">) => {
 	}
 
 	if (
-		(phase >= PHASE.AFTER_TRADE_DEADLINE && phase <= PHASE.PLAYOFFS) ||
+		tradesBlocked(phase, tradesAfterDeadline) ||
 		phase === PHASE.FANTASY_DRAFT ||
 		gameOver
 	) {

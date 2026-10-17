@@ -622,6 +622,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	hideTeamRatings: false, // display-only: hide team overall ratings (trades show the change instead)
 	teamRatingsDelaySeasons: 0, // display-only: when team ratings are hidden, show each team's rating from N seasons ago instead (0 = keep them hidden)
 	challengeNoTrades: false,
+	tradesAfterDeadline: false,
 	challengeLoseBestPlayer: false,
 	challengeFiredLuxuryTax: false,
 	challengeFiredMissPlayoffs: false,

@@ -16,7 +16,11 @@ const DangerZone = ({ autoSave }: View<"dangerZone">) => {
 		title: "Danger Zone",
 	});
 
-	const { godMode, phase } = useLocal(["godMode", "phase"]);
+	const { godMode, phase, tradesAfterDeadline } = useLocal([
+		"godMode",
+		"phase",
+		"tradesAfterDeadline",
+	]);
 
 	const [faceAgingScope, setFaceAgingScope] = useState<FaceAgingScope>("all");
 	const [agingFaces, setAgingFaces] = useState(false);
@@ -102,16 +106,33 @@ const DangerZone = ({ autoSave }: View<"dangerZone">) => {
 					) : null}
 
 					{phase === PHASE.AFTER_TRADE_DEADLINE ? (
-						<button
-							type="button"
-							className="btn btn-god-mode border-0"
-							disabled={!godMode}
-							onClick={() => {
-								toWorker("main", "toggleTradeDeadline", undefined);
-							}}
-						>
-							Switch to before trade deadline
-						</button>
+						<>
+							<button
+								type="button"
+								className="btn btn-god-mode border-0 me-2 mb-2"
+								disabled={!godMode}
+								title="Open until the playoffs. AI teams still won't trade."
+								onClick={() => {
+									toWorker(
+										"main",
+										"setTradesAfterDeadline",
+										!tradesAfterDeadline,
+									);
+								}}
+							>
+								{tradesAfterDeadline ? "Close trading" : "Reopen trading"}
+							</button>
+							<button
+								type="button"
+								className="btn btn-god-mode border-0 mb-2"
+								disabled={!godMode}
+								onClick={() => {
+									toWorker("main", "toggleTradeDeadline", undefined);
+								}}
+							>
+								Switch to before trade deadline
+							</button>
+						</>
 					) : (
 						<button
 							type="button"
