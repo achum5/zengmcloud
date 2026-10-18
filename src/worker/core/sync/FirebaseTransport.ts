@@ -28,6 +28,8 @@ import {
 import { getFirebaseApp } from "./firebaseApp.ts";
 import { ttlAtMsFor } from "../../../common/syncRetention.ts";
 import { range } from "../../../common/utils.ts";
+import { getAuth } from "firebase/auth";
+import { fetchDeltaOverRest } from "./v2/restDelta.ts";
 import {
 	decideAdvanceClaim,
 	type AdvanceClaimDoc,
@@ -1695,6 +1697,28 @@ export class FirebaseTransport implements SyncTransport {
 			action: typeof head.action === "string" ? head.action : "",
 			at: typeof head.at === "number" ? head.at : 0,
 		};
+	}
+
+	async fetchV2DeltaDirect(version: number, signal?: AbortSignal) {
+		const app = getFirebaseApp();
+		const projectId = app.options.projectId;
+		const user = getAuth(app).currentUser;
+		if (!projectId || !user) {
+			return undefined;
+		}
+		const token = await user.getIdToken();
+		const delta = await fetchDeltaOverRest({
+			projectId,
+			code: this.code,
+			token,
+			version,
+			docId: v2DeltaDocId,
+			signal,
+		});
+		if (delta) {
+			this.markContact();
+		}
+		return delta;
 	}
 
 	async publishV2Checkpoint(

@@ -150,6 +150,12 @@ const READY_TTL_MS = 60_000;
 // applies resets the streak, so a long healthy walk never backs off.
 const CATCHUP_BACKOFF_MS = [0, 1_000, 3_000, 8_000, 15_000, 30_000];
 
+// How long the walk waits on a delta read before fetching the same document
+// around the SDK's channel (see restDelta.ts). Every field stall is one read
+// that never came back while the ones around it took well under a second; a
+// read still out after this long is far more likely stuck than slow.
+const READ_RESCUE_AFTER_MS = 3_000;
+
 // After tearing the Firestore connection down and back up, give it a moment to
 // re-establish before reading through it. Reading immediately is how a cycle
 // turned into "client is offline" on the very next request.
@@ -252,6 +258,7 @@ export class SyncEngineV2 {
 	// had been torn down - and that read hung for the full 8s too. The settle
 	// timer's own pass, two seconds later, is the one meant to go through.
 	private readsResumeAt = 0;
+	private readRescueAfterMs = READ_RESCUE_AFTER_MS;
 	// When a remote delta last APPLIED. Only a delta counts - the head probe's
 	// pointer read succeeding is exactly the thing a wedge lets through - so this
 	// is the one signal that the channel was genuinely alive at that moment.
@@ -1300,6 +1307,65 @@ export class SyncEngineV2 {
 		return Date.now() < this.readsResumeAt;
 	}
 
+	// The walk's read of `version`, with a rescue: still out after
+	// readRescueAfterMs, the same document is fetched around the SDK's channel
+	// as well, and whichever brings it first wins. The SDK read still decides
+	// every failure (its timeout, its errors) - the rescue only ever brings a
+	// payload sooner. Timed from when the walk starts WAITING on it, not when
+	// it was prefetched: a read merely queued behind the ones before it is not
+	// stuck, and fetching it twice would only slow the line.
+	private rescueStalled<T>(
+		pending: Promise<T>,
+		version: number,
+		onRescued: () => void,
+	): Promise<T> {
+		const direct = this.transport.fetchV2DeltaDirect?.bind(this.transport);
+		if (!direct) {
+			return pending;
+		}
+		return new Promise<T>((resolve) => {
+			let done = false;
+			const controller = new AbortController();
+			const startedAt = Date.now();
+			const timer = setTimeout(() => {
+				if (done) {
+					return;
+				}
+				syncDebugLog("v2:read-rescue", { version });
+				direct(version, controller.signal).then(
+					(value) => {
+						if (done || value === undefined) {
+							return;
+						}
+						done = true;
+						syncDebugLog("v2:read-rescued", {
+							version,
+							ms: Date.now() - startedAt,
+						});
+						onRescued();
+						resolve(value as T);
+					},
+					() => {
+						// No rescue; the SDK read still decides.
+					},
+				);
+			}, this.readRescueAfterMs);
+			const nodeTimer = timer as unknown as { unref?: () => void };
+			if (typeof nodeTimer?.unref === "function") {
+				nodeTimer.unref();
+			}
+			void pending.then((value) => {
+				if (done) {
+					return;
+				}
+				done = true;
+				clearTimeout(timer);
+				controller.abort();
+				resolve(value);
+			});
+		});
+	}
+
 	// Every site that declares the catch-up healthy resets the whole failure
 	// picture through here, so the flag and the same-step counter can never
 	// outlive the failure they described.
@@ -1616,7 +1682,14 @@ export class SyncEngineV2 {
 						) {
 							prefetch(plan.versions[ahead]!);
 						}
-						const fetched = await prefetch(version);
+						let rescued = false;
+						const fetched = await this.rescueStalled(
+							prefetch(version),
+							version,
+							() => {
+								rescued = true;
+							},
+						);
 						prefetched.delete(version);
 						if (fetched && "prefetchError" in fetched) {
 							// Rethrown here so a timed-out read still lands in the catch
@@ -1671,6 +1744,22 @@ export class SyncEngineV2 {
 							this.reportCatchUpProgress(this.appliedMirror, this.roomVersion);
 						}
 						await this.afterRemoteApply(changeset);
+						if (rescued) {
+							// The read it stood in for is still stuck on the channel, and
+							// whatever comes next would queue behind it: the same cycle a
+							// timed-out read gets, minus the wait for the timeout. The
+							// settle timer's pass carries on from here.
+							this.lastCatchupFailureWasTimeout = true;
+							if (await this.maybeCycleNetwork("catchup")) {
+								if (this.appliedMirror >= this.roomVersion) {
+									this.notifiedFailingStep = undefined;
+									this.clearCatchUpProgress();
+									return true;
+								}
+								return false;
+							}
+							this.lastCatchupFailureWasTimeout = false;
+						}
 					}
 				} finally {
 					// Runs on every exit - the delta-missing return, the gap break,

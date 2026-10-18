@@ -1972,6 +1972,90 @@ describe("SyncEngineV2", () => {
 		engine.stop();
 	});
 
+	// Every field stall is one SDK read that never comes back. The same
+	// document fetched around the channel lands the version anyway, and the
+	// channel still gets the cycle a timed-out read would have earned.
+	test("a stuck delta read is rescued around the channel", async () => {
+		const room = new Room();
+		initRoom(room);
+		const seedTransport = new V2Transport("C", room);
+		await seedTransport.publishV2Delta(
+			{ version: 1, authorId: "C", action: "main.releasePlayer", at: 1 },
+			serializeChangeset(changesetOf(tradePut(1, 5))),
+		);
+		await seedTransport.commitV2Version(
+			{
+				version: 1,
+				authorId: "C",
+				byName: "C",
+				at: 1,
+				action: "main.releasePlayer",
+			},
+			0,
+		);
+
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("B", room);
+		const realFetchV2Delta = transport.fetchV2Delta.bind(transport);
+		transport.fetchV2Delta = () => new Promise(() => {});
+		let directReads = 0;
+		(transport as any).fetchV2DeltaDirect = (version: number) => {
+			directReads += 1;
+			return realFetchV2Delta(version);
+		};
+		let cycles = 0;
+		(transport as any).cycleNetwork = async () => {
+			cycles += 1;
+		};
+		const engine = new SyncEngineV2(transport);
+		(engine as any).readRescueAfterMs = 20;
+
+		assert.ok(await engine.catchUp());
+		assert.strictEqual(await readAppliedVersion(), 1);
+		assert.strictEqual(directReads, 1);
+		assert.strictEqual(cycles, 1, "the stuck read is still cleared off");
+		engine.stop();
+	});
+
+	test("a read that comes back in time is never fetched twice", async () => {
+		const room = new Room();
+		initRoom(room);
+		const seedTransport = new V2Transport("C", room);
+		await seedTransport.publishV2Delta(
+			{ version: 1, authorId: "C", action: "main.releasePlayer", at: 1 },
+			serializeChangeset(changesetOf(tradePut(1, 5))),
+		);
+		await seedTransport.commitV2Version(
+			{
+				version: 1,
+				authorId: "C",
+				byName: "C",
+				at: 1,
+				action: "main.releasePlayer",
+			},
+			0,
+		);
+
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("B", room);
+		let directReads = 0;
+		(transport as any).fetchV2DeltaDirect = async () => {
+			directReads += 1;
+			return undefined;
+		};
+		let cycles = 0;
+		(transport as any).cycleNetwork = async () => {
+			cycles += 1;
+		};
+		const engine = new SyncEngineV2(transport);
+
+		assert.ok(await engine.catchUp());
+		assert.strictEqual(await readAppliedVersion(), 1);
+		assert.strictEqual(directReads, 0);
+		assert.strictEqual(cycles, 0);
+		engine.stop();
+	});
+
 	// A deterministic failure (an unreadable checkpoint) fails identically on
 	// every attempt; after three in a row the engine must back off instead of
 	// hammering the network every second.

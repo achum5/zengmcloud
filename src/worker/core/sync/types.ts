@@ -388,6 +388,20 @@ export interface SyncTransport {
 		  }
 		| undefined
 	>;
+	// The same read, around the SDK's channel rather than through it - for
+	// rescuing a read stuck on that channel (see v2/restDelta.ts).
+	fetchV2DeltaDirect?(
+		version: number,
+		signal?: AbortSignal,
+	): Promise<
+		| {
+				serialized: string;
+				authorId: string;
+				action: string;
+				at: number;
+		  }
+		| undefined
+	>;
 	// Checkpoint chunks land at generation-unique doc ids and the pointer
 	// flips to them only at commit, so a reader can never see two publishes
 	// spliced together.
