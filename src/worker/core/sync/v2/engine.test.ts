@@ -1955,8 +1955,13 @@ describe("SyncEngineV2", () => {
 			"consecutive catch-up failures cycle the network even though probes succeed",
 		);
 
-		// The connection heals; the next pass lands the delta and clears the pill.
+		// The connection heals - but nothing reads through it while it settles
+		// after the cycle (the settle timer's own pass is the one due)...
 		deltaReadsFail = false;
+		assert.strictEqual(await engine.catchUp(), false);
+		assert.strictEqual(await readAppliedVersion(), 0);
+		// ...and once settled, the next pass lands the delta and clears the pill.
+		(engine as any).readsResumeAt = 0;
 		assert.ok(await engine.catchUp());
 		assert.strictEqual(await readAppliedVersion(), 1);
 		assert.strictEqual(
@@ -2371,6 +2376,35 @@ describe("SyncEngineV2", () => {
 				1,
 				"this is what the streak double-counting existed for; the flag keeps it",
 			);
+			engine.stop();
+		});
+
+		// Field capture: a cycle at :37.1 rebuilt the listener, whose first
+		// delivery started a pass at once, and that read hung for 8s as well.
+		test("nothing reads through a connection still settling after a cycle", async () => {
+			const room = new Room();
+			initRoom(room);
+			(idb as any).league = makeLeagueDb({ players: [] });
+			const transport = new V2Transport("B", room);
+			let reads = 0;
+			const realFetchState = transport.fetchRoomV2State.bind(transport);
+			transport.fetchRoomV2State = () => {
+				reads += 1;
+				return realFetchState();
+			};
+			(transport as any).cycleNetwork = async () => {};
+			const engine = new SyncEngineV2(transport);
+			(engine as any).lastNetworkCycleAt = 0;
+			(engine as any).lastCatchupFailureWasTimeout = true;
+
+			assert.ok(await (engine as any).maybeCycleNetwork("catchup"));
+			assert.strictEqual(await engine.catchUp(), false);
+			await engine.probeHead();
+			assert.strictEqual(reads, 0);
+
+			(engine as any).readsResumeAt = 0;
+			await engine.catchUp();
+			assert.ok(reads > 0, "settled, it reads again");
 			engine.stop();
 		});
 

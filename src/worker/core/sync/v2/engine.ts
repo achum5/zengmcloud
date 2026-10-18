@@ -246,6 +246,12 @@ export class SyncEngineV2 {
 	// of dead air on a delta the next pass applied in 130ms.
 	private catchupRetryTimer: ReturnType<typeof setTimeout> | undefined;
 	private lastNetworkCycleAt = 0;
+	// No read goes out before this: set while a cycle is under way and for the
+	// settle after it. Field capture: a cycle at :37.1 rebuilt the listener,
+	// whose first delivery started a pass at once - a second ago the channel
+	// had been torn down - and that read hung for the full 8s too. The settle
+	// timer's own pass, two seconds later, is the one meant to go through.
+	private readsResumeAt = 0;
 	// When a remote delta last APPLIED. Only a delta counts - the head probe's
 	// pointer read succeeding is exactly the thing a wedge lets through - so this
 	// is the one signal that the channel was genuinely alive at that moment.
@@ -517,7 +523,8 @@ export class SyncEngineV2 {
 			this.stopped ||
 			!this.transport.fetchRoomV2State ||
 			this.probing ||
-			this.catchingUp
+			this.catchingUp ||
+			this.settling()
 		) {
 			return;
 		}
@@ -635,6 +642,9 @@ export class SyncEngineV2 {
 		this.probeFailureStreak = 0;
 		this.resetCatchupFailureTracking();
 		this.lastNetworkCycleAt = Date.now();
+		// (Bounded, not open-ended: nothing that goes wrong mid-cycle can
+		// leave catch-up shut for good.)
+		this.readsResumeAt = Date.now() + NETWORK_CYCLE_SETTLE_MS + 15_000;
 
 		// First attempt on a fresh wedge cycles; every attempt after that, until
 		// something actually gets through, restarts the client outright. The
@@ -663,12 +673,14 @@ export class SyncEngineV2 {
 				// Even a failed cycle is followed by a fresh listener + catch-up.
 			}
 		}
+		this.readsResumeAt = Date.now() + NETWORK_CYCLE_SETTLE_MS;
 		this.subscribeState();
 		// Let the rebuilt connection settle before reading through it - but do
 		// NOT block on the wait. This runs inside the failing pass's catch, and
 		// awaiting here would add the settle to the latency of every failure,
 		// including the ones the pre-action guard is sitting on.
 		const settle = setTimeout(() => {
+			this.readsResumeAt = 0;
 			if (!this.stopped) {
 				void this.catchUp();
 			}
@@ -1258,7 +1270,9 @@ export class SyncEngineV2 {
 		// enough and the SDK stops trying and answers "client is offline" to
 		// everything - a red dot that no amount of further retrying recovers,
 		// because the retrying is what caused it.
-		if (this.backingOff()) {
+		// And never through a connection still settling after a cycle: the
+		// settle timer runs the pass that is due.
+		if (this.backingOff() || this.settling()) {
 			return Promise.resolve(false);
 		}
 		this.catchUpChain = this.catchUpChain
@@ -1272,8 +1286,18 @@ export class SyncEngineV2 {
 			// delta@174 spaced 8.019s and 8.022s apart, which is the read timeout
 			// exactly, i.e. each retry starting ~19ms after the previous one gave
 			// up, where the ladder should have spaced them 0s, 3s, 8s.
-			.then(() => (this.backingOff() ? false : this.doCatchUp(hintState)));
+			// (The settle the same: a pass queued behind the one that cycled
+			// would otherwise start the moment it finished.)
+			.then(() =>
+				this.backingOff() || this.settling()
+					? false
+					: this.doCatchUp(hintState),
+			);
 		return this.catchUpChain;
+	}
+
+	private settling(): boolean {
+		return Date.now() < this.readsResumeAt;
 	}
 
 	// Every site that declares the catch-up healthy resets the whole failure
