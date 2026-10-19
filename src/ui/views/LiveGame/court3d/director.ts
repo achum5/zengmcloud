@@ -1111,6 +1111,10 @@ const hash01 = (a: number, b: number): number => {
 	return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 };
 
+// Nobody of theirs within this far of a shooter as it left his hands
+// (feet): he was left alone for it.
+const WIDE_OPEN = 8;
+
 // LEFT-HANDERS. About one man in ten shoots it with his left - the same
 // men every game. A jumper, a hook, a one-handed dunk go up with his own
 // hand; a layup with the outside hand, the one on the side of the rim he
@@ -10738,6 +10742,35 @@ class Director {
 				}
 				end = at + 1400;
 			}
+			// Left all alone for it from out there, the man who had him turns
+			// to a teammate as it drops - that was yours - half the time.
+			if (!shot.dunk && (shot.zone === "three" || shot.zone === "midRange")) {
+				const rel = this.ball.findLast(
+					(s) =>
+						s.kind === "fly" &&
+						"pid" in s.from &&
+						s.from.pid === shot.pid &&
+						s.t0 <= at,
+				)?.t0;
+				const theirs = this.slots(other(team));
+				const S = rel === undefined ? undefined : this.posAt(shot.pid, rel);
+				const near =
+					rel === undefined || !S
+						? Infinity
+						: Math.min(...theirs.map((p) => dist(this.posAt(p, rel), S)));
+				const d = this.defenderOf(shot.pid);
+				if (near >= WIDE_OPEN && d !== undefined && theirs.includes(d)) {
+					const D = this.posAt(d, at);
+					const mate = theirs
+						.filter((p) => p !== d)
+						.sort(
+							(a, b) => dist(this.posAt(a, at), D) - dist(this.posAt(b, at), D),
+						)[0];
+					if (mate !== undefined) {
+						this.gesture(d, "point", at + 200, at + 1100, mate, 0.5);
+					}
+				}
+			}
 			// The big ones bring the bench up - and the scorer shows it.
 			const andOne = typeof e.pidFoul === "number";
 			const big = shot.dunk || shot.zone === "three" || andOne;
@@ -10756,13 +10789,17 @@ class Director {
 				// A finger at the man who found him.
 				this.react(shot.pid, "point", free + 100, 800, this.posOf(assist));
 			} else if (big || this.rng() < 0.3) {
+				// (A three: his own way of it, every time - a finger at the
+				// bench, or both arms up.)
 				const cel: AnimName = shot.dunk
 					? this.rng() < 0.5
 						? "flex"
 						: "celebrate"
 					: andOne
 						? "flex"
-						: "point";
+						: shot.zone === "three" && hash01(shot.pid, 5531) < 0.4
+							? "threeUp"
+							: "point";
 				// Or, after a dunk or an and-one, the nearest man on his team
 				// comes over and they meet in the air, chest to chest.
 				const S = this.posOf(shot.pid);
