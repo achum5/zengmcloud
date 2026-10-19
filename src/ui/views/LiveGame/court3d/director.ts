@@ -1925,6 +1925,11 @@ class Director {
 		return hash01(pid, 7211) < LEFTIES;
 	}
 
+	// The hand he goes to with it: his left, a left-hander.
+	private strongHand(pid: number): Hand {
+		return this.lefty(pid) ? "L" : "R";
+	}
+
 	// Whether he goes up with his left (see LEFTIES): at the rim (`look`), on
 	// the side of it he is on as he goes up.
 	private shootsLeft(
@@ -2115,7 +2120,7 @@ class Director {
 			crossed ??
 			hand ??
 			(t !== t0 ? this.dribbleHandAt(t) : undefined) ??
-			(this.ballHandOf === pid ? this.ballHand : "R");
+			(this.ballHandOf === pid ? this.ballHand : this.strongHand(pid));
 		this.pushBall({
 			kind: "hold",
 			t0: t,
@@ -2125,7 +2130,7 @@ class Director {
 			...(move ? { move } : {}),
 		});
 		this.holder = pid;
-		this.ballHand = style === "hold" ? "R" : h;
+		this.ballHand = style === "hold" ? this.strongHand(pid) : h;
 		this.ballHandOf = pid;
 		return t;
 	}
