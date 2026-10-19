@@ -1289,16 +1289,23 @@ const checkLotteryRevealLease = () => {
 
 // Called from the UI (on the simmer's device) whenever its auto-play schedule
 // changes, to broadcast it to the room. No-op if not connected.
+// Whether it reached the room - the scheduler sends it again if not.
 export const publishAutoPlayState = async (
 	state: import("../../../common/types.ts").SyncedAutoPlay,
-) => {
+): Promise<boolean> => {
+	// (Mid-reconnect there is nobody to send it to: not sent, not "sent".)
+	if (!currentTransport?.publishAutoPlay) {
+		return false;
+	}
 	try {
-		await currentTransport?.publishAutoPlay?.(state);
+		await currentTransport.publishAutoPlay(state);
+		return true;
 	} catch (error) {
 		// The schedule ride-along on the authority doc requires being in charge of simming;
 		// a stale writer (just stopped being in charge of simming) is denied - harmless, since claiming
 		// sim authority already cleared the old schedule.
 		console.error("publishAutoPlayState failed", error);
+		return false;
 	}
 };
 

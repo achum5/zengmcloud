@@ -116,11 +116,14 @@ const AutoPlayCountdown = () => {
 		enabled,
 		nextRunAt,
 		gated: gatedNow,
+		now,
 	});
 	useEffect(() => {
 		if (!active) {
 			return;
 		}
+		// Fresh on every start, so a clock coming back never opens on a stale now.
+		setNow(Date.now());
 		const id = setInterval(() => setNow(Date.now()), 1000);
 		return () => clearInterval(id);
 	}, [active]);

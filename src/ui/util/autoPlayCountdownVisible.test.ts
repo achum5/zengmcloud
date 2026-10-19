@@ -1,5 +1,8 @@
 import { assert, describe, test } from "vitest";
-import { autoPlayCountdownVisible } from "./autoPlayCountdownVisible.ts";
+import {
+	autoPlayCountdownVisible,
+	OVERDUE_GRACE_MS,
+} from "./autoPlayCountdownVisible.ts";
 
 // THE CLOCK MUST NOT PROMISE A SIM THAT CANNOT RUN.
 //
@@ -11,7 +14,7 @@ import { autoPlayCountdownVisible } from "./autoPlayCountdownVisible.ts";
 // so an 18-minute countdown ticked down beside the "Ready 0/3" that was the
 // only thing actually holding the league up.
 describe("autoPlayCountdownVisible", () => {
-	const base = { enabled: true, nextRunAt: 1000, gated: false };
+	const base = { enabled: true, nextRunAt: 1000, gated: false, now: 0 };
 
 	test("a live schedule shows its clock", () => {
 		assert.isTrue(autoPlayCountdownVisible(base));
@@ -33,5 +36,26 @@ describe("autoPlayCountdownVisible", () => {
 	test("off, or armed at nothing, still hides it", () => {
 		assert.isFalse(autoPlayCountdownVisible({ ...base, enabled: false }));
 		assert.isFalse(autoPlayCountdownVisible({ ...base, nextRunAt: undefined }));
+	});
+
+	// A follower watching a live playoff game holds the snapshot from tip-off;
+	// the sim it counted down to never comes (auto play stops when the regular
+	// season ends), and the header sat on "0:00" for the rest of the game.
+	test("at zero while the sim runs, it stays", () => {
+		assert.isTrue(autoPlayCountdownVisible({ ...base, now: 1000 }));
+		assert.isTrue(
+			autoPlayCountdownVisible({ ...base, now: 1000 + OVERDUE_GRACE_MS - 1 }),
+		);
+	});
+
+	test("long past zero, it goes", () => {
+		assert.isFalse(
+			autoPlayCountdownVisible({ ...base, now: 1000 + OVERDUE_GRACE_MS }),
+		);
+		// A held (frozen) snapshot hides the same way whether the schedule
+		// re-armed or stopped, so going says nothing about the game.
+		assert.isFalse(
+			autoPlayCountdownVisible({ ...base, now: 1000 + 10 * OVERDUE_GRACE_MS }),
+		);
 	});
 });

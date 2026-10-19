@@ -104,6 +104,8 @@ export type AutoPlayState = {
 };
 
 const DEFAULT_LOG_LIMIT = 50;
+// How many times a schedule snapshot that did not reach the room is sent again.
+const PUBLISH_TRIES = 5;
 
 const DEFAULT_SETTINGS = (): AutoPlaySettings => ({
 	enabled: false,
@@ -356,6 +358,8 @@ class AutoPlayScheduler {
 
 	// The last snapshot we broadcast, so we only send when it actually changes.
 	private lastPublished = "";
+	// Tries at a snapshot that did not reach the room (see publishToRoom).
+	private publishRetries = 0;
 	// True once we've broadcast as the simmer, so when we stop / lose sim control
 	// we send exactly ONE "off" snapshot (and don't otherwise write the room while
 	// idle, since only the simmer owns the shared schedule).
@@ -399,9 +403,30 @@ class AutoPlayScheduler {
 		if (serialized === this.lastPublished) {
 			return;
 		}
+		const wasSimmer = this.publishedAsSimmer;
 		this.lastPublished = serialized;
 		this.publishedAsSimmer = simming;
-		void toWorker("main", "publishAutoPlayState", snapshot);
+		void (async () => {
+			let sent = false;
+			try {
+				sent = await toWorker("main", "publishAutoPlayState", snapshot);
+			} catch {}
+			if (sent || this.lastPublished !== serialized) {
+				this.publishRetries = 0;
+				return;
+			}
+			// It never reached the room (offline, mid-reconnect), so send it again
+			// rather than counting it as said. Taken as sent, an "off" that never
+			// landed was never retried, and every other device counted down to a
+			// sim that was not coming.
+			this.lastPublished = "";
+			this.publishedAsSimmer = wasSimmer || simming;
+			if (this.publishRetries < PUBLISH_TRIES) {
+				const delay = 5000 * 2 ** this.publishRetries;
+				this.publishRetries += 1;
+				setTimeout(() => this.publishToRoom(), delay);
+			}
+		})();
 	}
 
 	private persist() {
