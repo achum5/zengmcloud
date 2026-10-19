@@ -1921,6 +1921,20 @@ class Director {
 		}
 	}
 
+	// How he throws it down, `r` of the way through his own odds: a big man
+	// two hands, mostly; an athlete up over his head, as often as not - and
+	// each man his own way of it, the same every game.
+	private dunkFor(pid: number, r: number): AnimName {
+		const big = (this.rank.get(pid) ?? 4) >= 6;
+		const athlete = this.skills.get(pid)?.includes("A") ?? false;
+		const own = hash01(pid, 9131);
+		const two = (big ? 0.6 : athlete ? 0.2 : 0.4) * (1.5 - own);
+		const one = 0.35;
+		const over = (big ? 0.05 : athlete ? 0.45 : 0.2) * (0.5 + own);
+		const x = r * (two + one + over);
+		return x < two ? "dunk" : x < two + one ? "dunk1" : "tomahawk";
+	}
+
 	private lefty(pid: number): boolean {
 		return hash01(pid, 7211) < LEFTIES;
 	}
@@ -7392,17 +7406,10 @@ class Director {
 			// A made dunk hangs on the rim; one that is stuffed or rattles out
 			// comes straight back down.
 			const hang = plan.kind === "make";
-			const r = this.rng();
+			// (On a man: one hand, or up over his head.)
+			const own = this.dunkFor(shooter, this.rng());
 			const anim: AnimName =
-				plan.finish === "poster"
-					? r < 0.5
-						? "dunk1"
-						: "tomahawk"
-					: r < 0.45
-						? "dunk"
-						: r < 0.8
-							? "dunk1"
-							: "tomahawk";
+				plan.finish === "poster" && own === "dunk" ? "dunk1" : own;
 			// He goes up in front of the rim, on the side he comes from, close
 			// enough that his hand goes over the front of it - and a make, he
 			// hangs there by both hands.
