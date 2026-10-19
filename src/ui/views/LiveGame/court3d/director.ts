@@ -6609,12 +6609,36 @@ class Director {
 		// place while the others finish what the step had them doing.
 		// (Never before the screen he is coming off is there to come off:
 		// behind it, he pulls up as his man goes under it.)
+		// (Caught on the move and not a dribble since, it is a catch-and-shoot:
+		// he goes up off the catch, however long the rest of the step has the
+		// others doing - not stood there with it for two seconds first.)
 		if (this.holder === shooter) {
 			const mine = this.hasItFrom(shooter);
 			if (mine < t - 150) {
 				const screen =
 					run.screen?.user === shooter ? run.screen.set + SCREEN_USE : 0;
-				t = Math.min(t, Math.max(mine + 80, screen, t - 1500));
+				let k = this.ball.length - 1;
+				for (; k >= 0; k--) {
+					const s = this.ball[k]!;
+					if (s.kind !== "hold" || s.pid !== shooter || s.style !== "hold") {
+						break;
+					}
+				}
+				const pass = this.ball[k];
+				const caught =
+					k < this.ball.length - 1 &&
+					pass?.kind === "fly" &&
+					"pid" in pass.to &&
+					pass.to.pid === shooter;
+				const tr = this.track(shooter);
+				const set = caught
+					? Math.max(
+							pass.t1 + 200,
+							tr?.moves.at(-1)?.t1 ?? 0,
+							tr?.acts.at(-1)?.t1 ?? 0,
+						)
+					: mine + 80;
+				t = Math.min(t, Math.max(set, screen, t - (caught ? 4000 : 1500)));
 			}
 		}
 		const dunk =
