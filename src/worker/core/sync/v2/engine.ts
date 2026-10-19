@@ -156,6 +156,27 @@ const CATCHUP_BACKOFF_MS = [0, 1_000, 3_000, 8_000, 15_000, 30_000];
 // read still out after this long is far more likely stuck than slow.
 const READ_RESCUE_AFTER_MS = 3_000;
 
+// Once a read has needed the rescue, the next one gets it after this instead:
+// the channel has just shown it is not delivering.
+const READ_RESCUE_SUSPECT_MS = 1_000;
+
+// How long a rescue already under way may keep going once the SDK read it
+// races has failed, counted from the rescue's own start. Field capture: the
+// same delta's rescue was cut off 5s in, four passes running, by the SDK
+// read's timeout - the one that was allowed to finish landed it 4.5s in.
+const RESCUE_MAX_MS = 12_000;
+
+// A rescue that came back within this proves the network itself is quick, so
+// a channel that still had not delivered is the one at fault. A slower one
+// means the link is just slow, and tearing the channel down cannot fix that:
+// in the same capture every cycle after a rescue cost ~5s before the next
+// read got through.
+const READ_RESCUE_QUICK_MS = 2_500;
+
+// A read back within this (from when it was sent) means the link is quick
+// again, and the walk goes back to its full read-ahead.
+const FAST_READ_MS = 1_500;
+
 // After tearing the Firestore connection down and back up, give it a moment to
 // re-establish before reading through it. Reading immediately is how a cycle
 // turned into "client is offline" on the very next request.
@@ -178,6 +199,14 @@ const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
 			},
 		);
 	});
+
+// Node keeps the test process alive on a pending timer; browsers have no unref.
+const unrefTimer = (timer: ReturnType<typeof setTimeout> | undefined) => {
+	const nodeTimer = timer as unknown as { unref?: () => void } | undefined;
+	if (typeof nodeTimer?.unref === "function") {
+		nodeTimer.unref();
+	}
+};
 
 const makeId = (): string =>
 	typeof crypto !== "undefined" && crypto.randomUUID
@@ -259,6 +288,13 @@ export class SyncEngineV2 {
 	// timer's own pass, two seconds later, is the one meant to go through.
 	private readsResumeAt = 0;
 	private readRescueAfterMs = READ_RESCUE_AFTER_MS;
+	private readRescueQuickMs = READ_RESCUE_QUICK_MS;
+	// The last delta read came around the channel instead of through it.
+	private lastReadRescued = false;
+	// Reads are coming back slowly: the walk keeps one read ahead instead of
+	// four, so the read it is waiting on is not sharing a slow link with the
+	// ones after it.
+	private slowReads = false;
 	// When a remote delta last APPLIED. Only a delta counts - the head probe's
 	// pointer read succeeding is exactly the thing a wedge lets through - so this
 	// is the one signal that the channel was genuinely alive at that moment.
@@ -648,6 +684,8 @@ export class SyncEngineV2 {
 		}
 		this.probeFailureStreak = 0;
 		this.resetCatchupFailureTracking();
+		// A fresh channel starts with a clean record.
+		this.lastReadRescued = false;
 		this.lastNetworkCycleAt = Date.now();
 		// (Bounded, not open-ended: nothing that goes wrong mid-cycle can
 		// leave catch-up shut for good.)
@@ -1309,59 +1347,98 @@ export class SyncEngineV2 {
 
 	// The walk's read of `version`, with a rescue: still out after
 	// readRescueAfterMs, the same document is fetched around the SDK's channel
-	// as well, and whichever brings it first wins. The SDK read still decides
-	// every failure (its timeout, its errors) - the rescue only ever brings a
-	// payload sooner. Timed from when the walk starts WAITING on it, not when
-	// it was prefetched: a read merely queued behind the ones before it is not
-	// stuck, and fetching it twice would only slow the line.
+	// as well, and whichever brings it first wins. Timed from when the walk
+	// starts WAITING on it, not when it was prefetched: a read merely queued
+	// behind the ones before it is not stuck, and fetching it twice would only
+	// slow the line.
+	//
+	// An SDK read that FAILS (`failed`: its timeout, its errors) does not end
+	// a rescue under way - that copy may be most of the way down - and gets
+	// one if none was sent yet. The failure stands only if the rescue brings
+	// nothing, or is still out RESCUE_MAX_MS after it started.
 	private rescueStalled<T>(
 		pending: Promise<T>,
 		version: number,
-		onRescued: () => void,
+		failed: (value: T) => boolean,
+		on: {
+			started: () => void;
+			rescued: (directMs: number) => void;
+		},
 	): Promise<T> {
 		const direct = this.transport.fetchV2DeltaDirect?.bind(this.transport);
 		if (!direct) {
 			return pending;
 		}
+		const after = this.lastReadRescued
+			? Math.min(this.readRescueAfterMs, READ_RESCUE_SUSPECT_MS)
+			: this.readRescueAfterMs;
 		return new Promise<T>((resolve) => {
 			let done = false;
+			let rescue: Promise<boolean> | undefined;
+			let directStartedAt = 0;
+			let grace: ReturnType<typeof setTimeout> | undefined;
 			const controller = new AbortController();
 			const startedAt = Date.now();
-			const timer = setTimeout(() => {
-				if (done) {
-					return;
-				}
-				syncDebugLog("v2:read-rescue", { version });
-				direct(version, controller.signal).then(
-					(value) => {
-						if (done || value === undefined) {
-							return;
-						}
-						done = true;
-						syncDebugLog("v2:read-rescued", {
-							version,
-							ms: Date.now() - startedAt,
-						});
-						onRescued();
-						resolve(value as T);
-					},
-					() => {
-						// No rescue; the SDK read still decides.
-					},
-				);
-			}, this.readRescueAfterMs);
-			const nodeTimer = timer as unknown as { unref?: () => void };
-			if (typeof nodeTimer?.unref === "function") {
-				nodeTimer.unref();
-			}
-			void pending.then((value) => {
+			const settle = (value: T) => {
 				if (done) {
 					return;
 				}
 				done = true;
 				clearTimeout(timer);
+				clearTimeout(grace);
 				controller.abort();
 				resolve(value);
+			};
+			// Resolves whether it delivered.
+			const startRescue = () => {
+				if (!rescue) {
+					syncDebugLog("v2:read-rescue", { version });
+					on.started();
+					directStartedAt = Date.now();
+					rescue = direct(version, controller.signal).then(
+						(value) => {
+							if (done || value === undefined) {
+								return false;
+							}
+							const directMs = Date.now() - directStartedAt;
+							syncDebugLog("v2:read-rescued", {
+								version,
+								ms: Date.now() - startedAt,
+								directMs,
+							});
+							on.rescued(directMs);
+							settle(value as T);
+							return true;
+						},
+						() => false,
+					);
+				}
+				return rescue;
+			};
+			const timer = setTimeout(() => {
+				if (!done) {
+					void startRescue();
+				}
+			}, after);
+			unrefTimer(timer);
+			void pending.then((value) => {
+				if (done) {
+					return;
+				}
+				if (!failed(value)) {
+					settle(value);
+					return;
+				}
+				void startRescue().then((delivered) => {
+					if (!delivered) {
+						settle(value);
+					}
+				});
+				grace = setTimeout(
+					() => settle(value),
+					Math.max(0, directStartedAt + RESCUE_MAX_MS - Date.now()),
+				);
+				unrefTimer(grace);
 			});
 		});
 	}
@@ -1603,7 +1680,8 @@ export class SyncEngineV2 {
 				// The window is deliberately modest: the same log showed the
 				// Firestore channel stalling outright about every eighth serial
 				// read, and the last thing a wedgy channel needs is a burst of
-				// unbounded parallel reads.
+				// unbounded parallel reads. And while reads are coming back slowly
+				// (see slowReads) it is one ahead, not four.
 				//
 				// Nothing about admission changes. A prefetch that fails or times
 				// out resolves undefined, the walk stops at that version exactly as
@@ -1624,6 +1702,8 @@ export class SyncEngineV2 {
 					>
 				>();
 				const PREFETCH_AHEAD = 4;
+				// How long each read that came back took, from when it was sent.
+				const readMs = new Map<number, number>();
 				const fetchDelta = (version: number) => {
 					// The head version's payload rides inline on the pointer doc when
 					// small (most interactive edits). Using it needs no read at all -
@@ -1640,20 +1720,27 @@ export class SyncEngineV2 {
 					if (!this.transport.fetchV2Delta) {
 						return Promise.resolve(undefined);
 					}
+					const sentAt = Date.now();
 					return withTimeout(
 						this.transport.fetchV2Delta(version),
 						CATCHUP_READ_TIMEOUT_MS,
-					).catch((error) => {
-						// Resolved, never rejected: a prefetch nobody has awaited yet
-						// must not become an unhandled rejection when the walk aborts
-						// on an earlier version. The error itself is KEPT, not
-						// swallowed - the walk rethrows it when this version's turn
-						// comes, because the catch block below is where the failure
-						// streak, the timed-out-read wedge signature and the
-						// network-cycle remedy all live. A timeout that quietly became
-						// "delta missing" would starve all three.
-						return { prefetchError: error as Error };
-					});
+					).then(
+						(value) => {
+							readMs.set(version, Date.now() - sentAt);
+							return value;
+						},
+						(error) => {
+							// Resolved, never rejected: a prefetch nobody has awaited yet
+							// must not become an unhandled rejection when the walk aborts
+							// on an earlier version. The error itself is KEPT, not
+							// swallowed - the walk rethrows it when this version's turn
+							// comes, because the catch block below is where the failure
+							// streak, the timed-out-read wedge signature and the
+							// network-cycle remedy all live. A timeout that quietly became
+							// "delta missing" would starve all three.
+							return { prefetchError: error as Error };
+						},
+					);
 				};
 				const prefetch = (version: number) => {
 					let promise = prefetched.get(version);
@@ -1675,22 +1762,35 @@ export class SyncEngineV2 {
 				try {
 					for (const [i, version] of plan.versions.entries()) {
 						step = `delta@${version}`;
+						const reach = this.slowReads ? 1 : PREFETCH_AHEAD;
 						for (
 							let ahead = i;
-							ahead < plan.versions.length && ahead <= i + PREFETCH_AHEAD;
+							ahead < plan.versions.length && ahead <= i + reach;
 							ahead++
 						) {
 							prefetch(plan.versions[ahead]!);
 						}
-						let rescued = false;
+						let rescueSent = false;
+						let rescuedMs: number | undefined;
 						const fetched = await this.rescueStalled(
 							prefetch(version),
 							version,
-							() => {
-								rescued = true;
+							(value) => value !== undefined && "prefetchError" in value,
+							{
+								started: () => {
+									rescueSent = true;
+								},
+								rescued: (ms) => {
+									rescuedMs = ms;
+								},
 							},
 						);
 						prefetched.delete(version);
+						if (rescueSent) {
+							this.slowReads = true;
+						} else if ((readMs.get(version) ?? Infinity) < FAST_READ_MS) {
+							this.slowReads = false;
+						}
 						if (fetched && "prefetchError" in fetched) {
 							// Rethrown here so a timed-out read still lands in the catch
 							// block exactly as it did when the fetch was awaited inline.
@@ -1744,11 +1844,23 @@ export class SyncEngineV2 {
 							this.reportCatchUpProgress(this.appliedMirror, this.roomVersion);
 						}
 						await this.afterRemoteApply(changeset);
-						if (rescued) {
-							// The read it stood in for is still stuck on the channel, and
-							// whatever comes next would queue behind it: the same cycle a
-							// timed-out read gets, minus the wait for the timeout. The
-							// settle timer's pass carries on from here.
+						const rescuedTwice = this.lastReadRescued;
+						if (rescuedMs !== undefined) {
+							this.lastReadRescued = true;
+						} else if (readMs.has(version)) {
+							this.lastReadRescued = false;
+						}
+						if (
+							rescuedMs !== undefined &&
+							rescuedTwice &&
+							rescuedMs <= this.readRescueQuickMs
+						) {
+							// Two reads in a row the channel never delivered, and the
+							// network brought this one quickly around it: the channel is
+							// what is stuck. The same cycle a timed-out read gets, minus the
+							// wait for the timeout. The settle timer's pass carries on
+							// from here. (After just one, the next read is rescued sooner
+							// instead - a cycle costs seconds before reads flow again.)
 							this.lastCatchupFailureWasTimeout = true;
 							if (await this.maybeCycleNetwork("catchup")) {
 								if (this.appliedMirror >= this.roomVersion) {
@@ -1796,6 +1908,9 @@ export class SyncEngineV2 {
 			// now its own flag; the streak counts failures honestly.
 			this.catchupFailureStreak += 1;
 			this.lastCatchupFailureWasTimeout = String(error).includes("Timed out");
+			if (this.lastCatchupFailureWasTimeout) {
+				this.slowReads = true;
+			}
 			if (step === this.lastFailedCatchupStep) {
 				this.sameStepFailureCount += 1;
 			} else {

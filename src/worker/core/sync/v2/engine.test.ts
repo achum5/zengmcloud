@@ -367,6 +367,28 @@ const initRoom = (room: Room) => {
 	});
 };
 
+// Versions 1..n, each a one-record delta, committed in order.
+const seedVersions = async (room: Room, n: number) => {
+	initRoom(room);
+	const seed = new V2Transport("C", room);
+	for (let v = 1; v <= n; v++) {
+		await seed.publishV2Delta(
+			{ version: v, authorId: "C", action: "main.releasePlayer", at: v },
+			serializeChangeset(changesetOf(tradePut(v, v * 10))),
+		);
+		await seed.commitV2Version(
+			{
+				version: v,
+				authorId: "C",
+				byName: "C",
+				at: v,
+				action: "main.releasePlayer",
+			},
+			v - 1,
+		);
+	}
+};
+
 // Give the room a restore point at version 0. Whether one exists is now part of
 // what a lost timeline advance decides on (publishGuards.ts): with a checkpoint
 // to snap back to, a stale advance is discarded as before; without one,
@@ -1973,26 +1995,11 @@ describe("SyncEngineV2", () => {
 	});
 
 	// Every field stall is one SDK read that never comes back. The same
-	// document fetched around the channel lands the version anyway, and the
-	// channel still gets the cycle a timed-out read would have earned.
+	// document fetched around the channel lands the version anyway. One rescue
+	// is not proof the channel is stuck - the next read is just rescued sooner.
 	test("a stuck delta read is rescued around the channel", async () => {
 		const room = new Room();
-		initRoom(room);
-		const seedTransport = new V2Transport("C", room);
-		await seedTransport.publishV2Delta(
-			{ version: 1, authorId: "C", action: "main.releasePlayer", at: 1 },
-			serializeChangeset(changesetOf(tradePut(1, 5))),
-		);
-		await seedTransport.commitV2Version(
-			{
-				version: 1,
-				authorId: "C",
-				byName: "C",
-				at: 1,
-				action: "main.releasePlayer",
-			},
-			0,
-		);
+		await seedVersions(room, 1);
 
 		(idb as any).league = makeLeagueDb({ players: [] });
 		const transport = new V2Transport("B", room);
@@ -2013,8 +2020,190 @@ describe("SyncEngineV2", () => {
 		assert.ok(await engine.catchUp());
 		assert.strictEqual(await readAppliedVersion(), 1);
 		assert.strictEqual(directReads, 1);
-		assert.strictEqual(cycles, 1, "the stuck read is still cleared off");
+		assert.strictEqual(cycles, 0, "one rescue is not a stuck channel");
+		assert.strictEqual((engine as any).lastReadRescued, true);
+		assert.strictEqual((engine as any).slowReads, true);
 		engine.stop();
+	});
+
+	test("two reads in a row rescued quickly cycle the stuck channel", async () => {
+		const room = new Room();
+		await seedVersions(room, 2);
+
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("B", room);
+		const realFetchV2Delta = transport.fetchV2Delta.bind(transport);
+		transport.fetchV2Delta = () => new Promise(() => {});
+		(transport as any).fetchV2DeltaDirect = (version: number) =>
+			realFetchV2Delta(version);
+		let cycles = 0;
+		(transport as any).cycleNetwork = async () => {
+			cycles += 1;
+		};
+		const engine = new SyncEngineV2(transport);
+		(engine as any).readRescueAfterMs = 20;
+
+		assert.ok(await engine.catchUp());
+		assert.strictEqual(await readAppliedVersion(), 2);
+		assert.strictEqual(cycles, 1);
+		assert.strictEqual(
+			(engine as any).lastReadRescued,
+			false,
+			"a fresh channel starts with a clean record",
+		);
+		engine.stop();
+	});
+
+	// Field capture: every cycle after a rescue cost ~5s before the next read
+	// got through. A rescue that was slow itself means the link is slow, and a
+	// new channel cannot fix that.
+	test("slow rescues never cycle the channel", async () => {
+		const room = new Room();
+		await seedVersions(room, 2);
+
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("B", room);
+		const realFetchV2Delta = transport.fetchV2Delta.bind(transport);
+		transport.fetchV2Delta = () => new Promise(() => {});
+		(transport as any).fetchV2DeltaDirect = async (version: number) => {
+			await new Promise((resolve) => {
+				setTimeout(resolve, 30);
+			});
+			return realFetchV2Delta(version);
+		};
+		let cycles = 0;
+		(transport as any).cycleNetwork = async () => {
+			cycles += 1;
+		};
+		const engine = new SyncEngineV2(transport);
+		(engine as any).readRescueAfterMs = 20;
+		(engine as any).readRescueQuickMs = 5;
+
+		assert.ok(await engine.catchUp());
+		assert.strictEqual(await readAppliedVersion(), 2);
+		assert.strictEqual(cycles, 0);
+		engine.stop();
+	});
+
+	// Field capture: the same delta's rescue was cut off 5s in by the SDK
+	// read's timeout, four passes running; the one allowed to finish landed it
+	// 4.5s in.
+	test("an SDK read that times out does not cut off the rescue under way", async () => {
+		const room = new Room();
+		await seedVersions(room, 1);
+
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("B", room);
+		const realFetchV2Delta = transport.fetchV2Delta.bind(transport);
+		transport.fetchV2Delta = () =>
+			new Promise((_resolve, reject) => {
+				setTimeout(() => reject(new Error("Timed out after 8000ms")), 40);
+			});
+		(transport as any).fetchV2DeltaDirect = async (version: number) => {
+			await new Promise((resolve) => {
+				setTimeout(resolve, 100);
+			});
+			return realFetchV2Delta(version);
+		};
+		const engine = new SyncEngineV2(transport);
+		(engine as any).readRescueAfterMs = 20;
+
+		assert.ok(await engine.catchUp());
+		assert.strictEqual(await readAppliedVersion(), 1);
+		engine.stop();
+	});
+
+	test("a failed SDK read is rescued at once", async () => {
+		const room = new Room();
+		await seedVersions(room, 1);
+
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("B", room);
+		const realFetchV2Delta = transport.fetchV2Delta.bind(transport);
+		transport.fetchV2Delta = () =>
+			Promise.reject(
+				new Error("Failed to get document because the client is offline."),
+			);
+		(transport as any).fetchV2DeltaDirect = (version: number) =>
+			realFetchV2Delta(version);
+		const engine = new SyncEngineV2(transport);
+		const startedAt = Date.now();
+
+		assert.ok(await engine.catchUp());
+		assert.strictEqual(await readAppliedVersion(), 1);
+		assert.ok(Date.now() - startedAt < 2_500, "not held until the stall timer");
+		engine.stop();
+	});
+
+	test("a rescue that brings nothing leaves the failure standing", async () => {
+		const room = new Room();
+		await seedVersions(room, 1);
+
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const transport = new V2Transport("B", room);
+		transport.fetchV2Delta = () => Promise.reject(new Error("unreadable"));
+		let directReads = 0;
+		(transport as any).fetchV2DeltaDirect = async () => {
+			directReads += 1;
+			return undefined;
+		};
+		const engine = new SyncEngineV2(transport);
+
+		assert.strictEqual(await engine.catchUp(), false);
+		assert.strictEqual(await readAppliedVersion(), 0);
+		assert.strictEqual(directReads, 1);
+		engine.stop();
+	});
+
+	// On a slow link the four reads ahead share the bandwidth with the one the
+	// walk is waiting on. Slow reads narrow the window to one ahead; the first
+	// quick read opens it again.
+	test("slow reads keep one read ahead, quick ones four", async () => {
+		const run = async (slow: boolean) => {
+			const room = new Room();
+			await seedVersions(room, 6);
+			(idb as any).league = makeLeagueDb({ players: [] });
+			const transport = new V2Transport("B", room);
+			const realFetchV2Delta = transport.fetchV2Delta.bind(transport);
+			const waiting: (() => void)[] = [];
+			const requested: number[] = [];
+			transport.fetchV2Delta = (version: number) => {
+				requested.push(version);
+				return new Promise((resolve) => {
+					waiting.push(() => resolve(realFetchV2Delta(version)));
+				});
+			};
+			const engine = new SyncEngineV2(transport);
+			(engine as any).slowReads = slow;
+			let finished = false;
+			const pass = engine.catchUp().then((ok) => {
+				finished = true;
+				return ok;
+			});
+			await new Promise((resolve) => {
+				setTimeout(resolve, 50);
+			});
+			const firstWindow = requested.length;
+			while (!finished) {
+				for (const go of waiting.splice(0)) {
+					go();
+				}
+				await new Promise((resolve) => {
+					setTimeout(resolve, 5);
+				});
+			}
+			assert.ok(await pass);
+			assert.strictEqual(await readAppliedVersion(), 6);
+			assert.strictEqual(
+				(engine as any).slowReads,
+				false,
+				"quick reads open the window again",
+			);
+			engine.stop();
+			return firstWindow;
+		};
+		assert.strictEqual(await run(true), 2);
+		assert.strictEqual(await run(false), 5);
 	});
 
 	test("a read that comes back in time is never fetched twice", async () => {
