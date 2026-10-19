@@ -73,6 +73,9 @@ const patchCache = async (
 // checkpoint), never worked around here.
 export const applyVersionedChangeset = async (
 	vcs: VersionedChangeset,
+	// How the catch-up got it here (waiting on the read, the read, unpacking
+	// it), carried onto the same log line.
+	timing?: Record<string, number | undefined>,
 ): Promise<ApplyDecision["type"]> => {
 	if (!checkApplyGuard()) {
 		throw new Error(
@@ -157,6 +160,7 @@ export const applyVersionedChangeset = async (
 		records: vcs.changeset.changes.length,
 		action: vcs.action,
 		ms,
+		...timing,
 	});
 	// A small delta has no business taking seconds; when it does (Safari
 	// IndexedDB stalling after idle is the known culprit), make the stall

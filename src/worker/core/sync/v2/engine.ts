@@ -200,6 +200,9 @@ const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
 		);
 	});
 
+const decodeDelta = async (serialized: string): Promise<Changeset> =>
+	deserializeChangeset(await decompressSerialized(serialized)) as Changeset;
+
 // Node keeps the test process alive on a pending timer; browsers have no unref.
 const unrefTimer = (timer: ReturnType<typeof setTimeout> | undefined) => {
 	const nodeTimer = timer as unknown as { unref?: () => void } | undefined;
@@ -1704,6 +1707,28 @@ export class SyncEngineV2 {
 				const PREFETCH_AHEAD = 4;
 				// How long each read that came back took, from when it was sent.
 				const readMs = new Map<number, number>();
+				// Each payload unpacked as soon as it lands, while the versions
+				// before it are still being written - not afterwards, in line, with
+				// nothing else going on: a sim day is hundreds of records to
+				// decompress and parse. (A payload that fails to unpack fails when
+				// its turn comes, exactly as it did when unpacked then.)
+				const decoded = new Map<number, Promise<Changeset>>();
+				const decodeAhead = (version: number, serialized: string) => {
+					if (!decoded.has(version)) {
+						const promise = decodeDelta(serialized);
+						promise.catch(() => {});
+						decoded.set(version, promise);
+					}
+				};
+				// Where the walk's time goes, for the summary at the end of it.
+				const spent = {
+					versions: 0,
+					waitMs: 0,
+					decodeMs: 0,
+					applyMs: 0,
+					afterMs: 0,
+				};
+				const walkStartedAt = Date.now();
 				const fetchDelta = (version: number) => {
 					// The head version's payload rides inline on the pointer doc when
 					// small (most interactive edits). Using it needs no read at all -
@@ -1727,6 +1752,9 @@ export class SyncEngineV2 {
 					).then(
 						(value) => {
 							readMs.set(version, Date.now() - sentAt);
+							if (value) {
+								decodeAhead(version, value.serialized);
+							}
 							return value;
 						},
 						(error) => {
@@ -1772,6 +1800,7 @@ export class SyncEngineV2 {
 						}
 						let rescueSent = false;
 						let rescuedMs: number | undefined;
+						const waitStartedAt = Date.now();
 						const fetched = await this.rescueStalled(
 							prefetch(version),
 							version,
@@ -1801,16 +1830,27 @@ export class SyncEngineV2 {
 							syncDebugLog("v2:delta-missing", { version });
 							return false;
 						}
-						const changeset = deserializeChangeset(
-							await decompressSerialized(delta.serialized),
-						) as Changeset;
-						const outcome = await applyVersionedChangeset({
-							version,
-							authorId: delta.authorId,
-							action: delta.action,
-							changeset,
-							at: delta.at,
-						});
+						const waitMs = Date.now() - waitStartedAt;
+						const decodeStartedAt = Date.now();
+						const changeset = await (decoded.get(version) ??
+							decodeDelta(delta.serialized));
+						decoded.delete(version);
+						const decodeMs = Date.now() - decodeStartedAt;
+						const applyStartedAt = Date.now();
+						const outcome = await applyVersionedChangeset(
+							{
+								version,
+								authorId: delta.authorId,
+								action: delta.action,
+								changeset,
+								at: delta.at,
+							},
+							{ waitMs, readMs: readMs.get(version), decodeMs },
+						);
+						spent.versions += 1;
+						spent.waitMs += waitMs;
+						spent.decodeMs += decodeMs;
+						spent.applyMs += Date.now() - applyStartedAt;
 						if (outcome === "gap") {
 							// The marker moved backwards relative to the plan - only possible
 							// if a checkpoint restore is needed after all. Re-plan.
@@ -1843,7 +1883,9 @@ export class SyncEngineV2 {
 						if (this.catchUpPillShown) {
 							this.reportCatchUpProgress(this.appliedMirror, this.roomVersion);
 						}
+						const afterStartedAt = Date.now();
 						await this.afterRemoteApply(changeset);
+						spent.afterMs += Date.now() - afterStartedAt;
 						const rescuedTwice = this.lastReadRescued;
 						if (rescuedMs !== undefined) {
 							this.lastReadRescued = true;
@@ -1879,6 +1921,16 @@ export class SyncEngineV2 {
 					// frozen on the state it started from.
 					if (coalesce) {
 						endCoalescedRefresh();
+					}
+					// Where a walk of any length spent its time - waiting on reads,
+					// unpacking, writing, refreshing - so a capture says which one
+					// to make faster.
+					if (spent.versions > 1) {
+						syncDebugLog("v2:walk-summary", {
+							...spent,
+							ms: Date.now() - walkStartedAt,
+							planned: plan.versions.length,
+						});
 					}
 				}
 				if (!progressed) {

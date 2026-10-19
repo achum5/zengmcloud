@@ -2158,6 +2158,21 @@ describe("SyncEngineV2", () => {
 	// On a slow link the four reads ahead share the bandwidth with the one the
 	// walk is waiting on. Slow reads narrow the window to one ahead; the first
 	// quick read opens it again.
+	// Payloads are unpacked as they land, ahead of their turn; one that cannot
+	// be unpacked still fails at its own turn, after the versions before it
+	// have applied - never earlier, never skipped.
+	test("a payload that can't be unpacked fails at its turn, not before", async () => {
+		const room = new Room();
+		await seedVersions(room, 3);
+		room.deltas.get(2)!.serialized = "GZ1:not a gzip payload";
+
+		(idb as any).league = makeLeagueDb({ players: [] });
+		const engine = new SyncEngineV2(new V2Transport("B", room));
+		assert.strictEqual(await engine.catchUp(), false);
+		assert.strictEqual(await readAppliedVersion(), 1);
+		engine.stop();
+	});
+
 	test("slow reads keep one read ahead, quick ones four", async () => {
 		const run = async (slow: boolean) => {
 			const room = new Room();
