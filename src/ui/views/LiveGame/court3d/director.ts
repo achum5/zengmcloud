@@ -14556,6 +14556,8 @@ class Director {
 		const BEND = 0.5;
 		const START = 1.2;
 		const KEEP = 0.45;
+		// (And back how many ticks, at most, to his first step.)
+		const SET_OFF = 5;
 		// How many ticks either way his aim is smoothed over.
 		const SMOOTH = 2;
 		const lastAt = <X>(list: X[], t: number, key: (x: X) => number): number => {
@@ -15300,6 +15302,8 @@ class Director {
 						path[q + 1]!.p.x - path[q]!.p.x,
 					);
 				let q = 0;
+				// (Where the last run ended.)
+				let ended = 0;
 				let moving = path[0]!.v >= KEEP;
 				// Where the last run left him: the creep of his feet standing
 				// there is no run, so the next one sets off from there.
@@ -15315,6 +15319,18 @@ class Director {
 					}
 					const setOff = !moving;
 					moving = true;
+					// Off from standing, from his first step - not from once he
+					// is already going a step's pace, the steps that got him going
+					// crammed into the rest of it.
+					let q0 = q;
+					while (
+						setOff &&
+						q0 > ended &&
+						q - q0 < SET_OFF &&
+						pace(q0 - 1) > 0.15
+					) {
+						q0--;
+					}
 					const h0 = heading(q);
 					let e = q + 1;
 					let trend = 0;
@@ -15337,12 +15353,12 @@ class Director {
 						e++;
 					}
 					const A = {
-						...path[q]!,
+						...path[q0]!,
 						t:
-							q === 0 && onT !== undefined
+							q0 === 0 && onT !== undefined
 								? Math.min(onT, path[0]!.t)
-								: path[q]!.t,
-						p: dist(was, path[q]!.p) < 1.5 ? was : path[q]!.p,
+								: path[q0]!.t,
+						p: dist(was, path[q0]!.p) < 1.5 ? was : path[q0]!.p,
 					};
 					const Z = path[e]!;
 					const stops =
@@ -15352,6 +15368,7 @@ class Director {
 					const v0 = setOff ? 0 : paceAt(q);
 					const v1 = stops ? 0 : paceAt(e);
 					q = e;
+					ended = e;
 					const d = dist(A.p, Z.p);
 					if (d < 0.05) {
 						continue;
