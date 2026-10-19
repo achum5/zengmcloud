@@ -5465,6 +5465,7 @@ class Director {
 		}
 		const via = new Map<number, { at: Pt; by: number }>();
 		const late = new Map<number, number>();
+		const chase = new Map<number, { man: number; at: Pt; from: number }>();
 		if (sc) {
 			const ud = this.defenderOf(sc.user);
 			const sd = this.defenderOf(sc.screeners[0]!);
@@ -5505,17 +5506,34 @@ class Director {
 				const u = unitVec(U, sc.at);
 				special(ud, clampPt({ x: U.x + u.x * 2.6, y: U.y + u.y * 2.6 }));
 				late.set(ud, 300);
+				// Not before his man goes: where the step takes him can come
+				// seconds into it - after he has given up the ball, say - and
+				// till then he is played where he is.
+				const off = this.track(sc.user)?.moves.find((m) => m.t0 >= t0 - 1);
+				if (off && off.t0 - t0 > 600) {
+					const seg = this.ball.findLast((b) => b.t0 <= t0 + 120);
+					const has = seg?.kind === "hold" && seg.pid === sc.user;
+					chase.set(ud, {
+						man: sc.user,
+						at: this.defensePoint(team, off.from, has ? off.from : ball, has),
+						from: off.t0,
+					});
+				}
 			}
 		}
 		// A drive at the rim - or round a screen to the elbow - and what the
 		// defense does about it.
 		const onBall = holder !== undefined ? this.defenderOf(holder) : undefined;
 		const D = holder !== undefined ? this.posOf(holder) : undefined;
+		// (One that starts in this step: a drive set off only once the step is
+		// done is the next step's to play - played here as well, it had the man
+		// on the ball off after it before the step was over, and still on his
+		// way when the next step wanted him somewhere else.)
 		const drive =
 			holder === undefined
 				? undefined
 				: this.track(holder)
-						?.moves.filter((m) => m.t0 >= t0 - 1)
+						?.moves.filter((m) => m.t0 >= t0 - 1 && m.t0 < t1)
 						.findLast((m) => dist(m.from, rim) - dist(m.to, rim) > 4);
 		// The man on the ball goes with the drive when it goes - not off for
 		// where it ends up from the start of the step, his man still stood
@@ -5790,15 +5808,28 @@ class Director {
 			}
 		}
 		// Whoever meets the shot drifts toward it, and is there for it.
+		const toShot = new Map<number, { man: number; at: Pt }>();
 		if (o && run.help && run.help.length > 0) {
+			const shooter = run.roles[o.shooter]!;
+			// (Once the step that gets him there is laid out, from where it
+			// has him - not where the set would have had him.)
+			const final = k === (o.branch.length > 0 ? last + 1 : last);
 			const S =
 				o.at === "rim"
-					? this.nearRim(team, this.posOf(run.roles[o.shooter]!))
-					: this.at(run, o.at);
+					? this.nearRim(team, this.posOf(shooter))
+					: final
+						? this.posOf(shooter)
+						: this.at(run, o.at);
 			const u = unitVec(S, rim);
 			const H = clampPt({ x: S.x + u.x * 2.4, y: S.y + u.y * 2.4 });
 			for (const d of run.help) {
 				const cur = targets.get(d);
+				const man = manOf.get(d);
+				// Up on the ball, he stays on it till the step it goes to the
+				// shot in.
+				if (cur && d === onBall && man === holder && k < o.after && !final) {
+					continue;
+				}
 				special(
 					d,
 					k >= o.after || !cur
@@ -5806,6 +5837,10 @@ class Director {
 						: { x: (cur.x + H.x) / 2, y: (cur.y + H.y) / 2 },
 				);
 				late.delete(d);
+				// (Not when an earlier step already had him there.)
+				if (cur && man !== undefined && final && k <= o.after) {
+					toShot.set(d, { man, at: cur });
+				}
 			}
 		}
 		for (const [d, P] of targets) {
@@ -5857,21 +5892,23 @@ class Director {
 				);
 				continue;
 			}
+			// (Only if he can be up on him there before he goes: still getting
+			// back down the floor, he would be sent to where the drive started
+			// long after it had gone.)
+			const upOn =
+				drive && this.defensePoint(team, drive.from, drive.from, true);
 			if (
 				d === onBall &&
 				drive &&
+				upOn &&
 				goes !== undefined &&
-				goes - Math.max(t0, this.free.get(d) ?? 0) > 400
+				goes - Math.max(t0, this.free.get(d) ?? 0) > 400 &&
+				Math.max(t0 + 120, this.free.get(d) ?? 0) +
+					runMs(dist(this.posOf(d), upOn), RUN) <
+					goes
 			) {
 				// Up on him where he waits with it, then with him as he goes.
-				this.shadow(
-					d,
-					this.defensePoint(team, drive.from, drive.from, true),
-					t0 + 120,
-					goes,
-					team,
-					manOf.get(d),
-				);
+				this.shadow(d, upOn, t0 + 120, goes, team, manOf.get(d));
 				this.shadow(
 					d,
 					P,
@@ -5880,6 +5917,28 @@ class Director {
 					team,
 					manOf.get(d),
 				);
+				continue;
+			}
+			// With his man as long as he can be and still get there.
+			const ts = toShot.get(d);
+			if (ts) {
+				const leave = t1 - runMs(dist(ts.at, P), RUN) - 150;
+				if (leave - Math.max(t0 + 120, this.free.get(d) ?? 0) > 400) {
+					this.shadow(d, ts.at, t0 + 120, leave, team, ts.man);
+					this.shadow(d, P, leave, t1 + lag, team);
+					continue;
+				}
+			}
+			const ch = chase.get(d);
+			if (ch && ch.from - Math.max(t0, this.free.get(d) ?? 0) > 400) {
+				if (ch.from >= t1) {
+					// His man only goes once the step is done: on him where he
+					// is, all of it - the chase is the next step's.
+					this.shadow(d, ch.at, t0 + 120, t1 + lag, team, ch.man);
+				} else {
+					this.shadow(d, ch.at, t0 + 120, ch.from, team, ch.man);
+					this.shadow(d, P, ch.from, t1 + lag + (late.get(d) ?? 0), team);
+				}
 				continue;
 			}
 			this.shadow(
@@ -6168,9 +6227,11 @@ class Director {
 		const base = P.y >= 25 ? 1 : -1;
 		const side = { x: -toRim.y, y: toRim.x };
 		const s = side.y * base >= 0 ? 1 : -1;
+		// (Gathered a stride out from the rim - a post finish, not one
+		// from under it.)
 		const off = {
-			x: -toRim.x * 2.6 + side.x * s * 1.6,
-			y: -toRim.y * 2.6 + side.y * s * 1.6,
+			x: -toRim.x * 2.9 + side.x * s * 1.6,
+			y: -toRim.y * 2.9 + side.y * s * 1.6,
 		};
 		// (Still in front of the rim, not round past it on the baseline -
 		// going up from behind the glass.)
