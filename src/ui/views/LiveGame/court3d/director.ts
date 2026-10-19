@@ -1111,6 +1111,26 @@ const hash01 = (a: number, b: number): number => {
 	return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 };
 
+// LEFT-HANDERS. About one man in ten shoots it with his left - the same
+// men every game. A jumper, a hook, a one-handed dunk go up with his own
+// hand; a layup with the outside hand, the one on the side of the rim he
+// comes in on: a left-hander's own nearly always, a right-hander's left
+// as often as not on his left (see shootsLeft).
+const LEFTIES = 0.1;
+const OWN_HAND = new Set<AnimName>([
+	"shoot",
+	"setShot",
+	"fade",
+	"shotFake",
+	"hook",
+	"floater",
+	"dunk1",
+	"tomahawk",
+]);
+const OUTSIDE_HAND = new Set<AnimName>(["layup", "fingerRoll", "scoop"]);
+// (From this far either side of the rim, feet, he is on that side of it.)
+const RIM_SIDE = 2;
+
 // How the offense gets from wherever the ball is into its next set: off an
 // inbound, on a break straight off the rebound or the steal, or the five
 // flowing into it as the ball comes up.
@@ -1887,10 +1907,60 @@ class Director {
 		if (anim === "pass" || anim === "passBounce" || anim === "passOverhead") {
 			this.gather(pid, t0);
 		}
-		tr.acts.push({ t0, t1, anim, ...rest });
+		const left =
+			rest.mirror === undefined && this.shootsLeft(pid, anim, t0, rest.look);
+		tr.acts.push({
+			t0,
+			t1,
+			anim,
+			...rest,
+			...(left ? { mirror: true as const } : {}),
+		});
 		if (face !== undefined) {
 			this.turn(pid, t0, face);
 		}
+	}
+
+	private lefty(pid: number): boolean {
+		return hash01(pid, 7211) < LEFTIES;
+	}
+
+	// Whether he goes up with his left (see LEFTIES): at the rim (`look`), on
+	// the side of it he is on as he goes up.
+	private shootsLeft(
+		pid: number,
+		anim: AnimName,
+		t: number,
+		look: Pt | undefined,
+	): boolean {
+		if (OWN_HAND.has(anim)) {
+			return this.lefty(pid);
+		}
+		if (!OUTSIDE_HAND.has(anim) || !look) {
+			return false;
+		}
+		const P = this.posAt(pid, t);
+		// (Facing the rim, his right is the way the floor's y runs, coming at
+		// it from the left of the floor.)
+		const side = (P.y - look.y) * Math.sign(look.x - P.x);
+		if (Math.abs(side) < RIM_SIDE) {
+			return this.lefty(pid);
+		}
+		const r = hash01(pid * 7 + 3, t);
+		return side < 0 ? this.lefty(pid) || r < 0.55 : this.lefty(pid) && r < 0.35;
+	}
+
+	// Whether the shot he has going up now (as last listed) is off his left.
+	private offHisLeft(pid: number): boolean {
+		return (
+			this.track(pid)?.acts.findLast(
+				(a) =>
+					OWN_HAND.has(a.anim) ||
+					OUTSIDE_HAND.has(a.anim) ||
+					a.anim === "dunk" ||
+					a.anim === "powerLayup",
+			)?.mirror === true
+		);
 	}
 
 	// Two teammates meet halfway and bump chests in the air.
@@ -2072,7 +2142,9 @@ class Director {
 	// shooter's right, a little out from him - so, face to face, the left.
 	private leftToBall(from: Pt, shooter: number, P: Pt): boolean {
 		const f = unitVec(P, rimPt(this.teamOf(shooter)));
-		const B = { x: P.x - f.y * 0.7, y: P.y + f.x * 0.7 };
+		// (Up in his right hand - or his left.)
+		const k = this.offHisLeft(shooter) ? -0.7 : 0.7;
+		const B = { x: P.x - f.y * k, y: P.y + f.x * k };
 		const g = unitVec(from, P);
 		return (B.x - from.x) * -g.y + (B.y - from.y) * g.x < 0;
 	}
@@ -7676,6 +7748,9 @@ class Director {
 			const v = (letGo - jump[0]) / (jump[1] - jump[0]);
 			const fingers = releaseAt(anim, letGo);
 			fingers.u += v > 0 && v < 1 ? 4 * jump[2] * v * (1 - v) : 0;
+			if (this.offHisLeft(shooter)) {
+				fingers.s = -fingers.s;
+			}
 			const d = dist(P1, rim);
 			const flight = close ? 300 : floater ? 760 + d * 24 : 620 + d * 22;
 			if (plan.kind === "block" && plan.blocker !== undefined) {
@@ -10977,6 +11052,9 @@ class Director {
 		// toward whoever gets the rebound.
 		const u = unitVec(S, rimSpot);
 		const hand = releaseAt("setShot", JUMPER.release);
+		if (this.offHisLeft(shooter)) {
+			hand.s = -hand.s;
+		}
 		const roll = hash01(shooter * 3 + 1, release);
 		const reb = made || more ? undefined : this.reboundBy(i);
 		const play = this.playAtRim(

@@ -4604,6 +4604,26 @@ export type Skeleton = {
 
 const v3 = (f: number, s: number, u: number): V3 => ({ f, s, u });
 
+// Side to side the other way round: his left for his right.
+const flipV = (v: V3): V3 => v3(v.f, -v.s, v.u);
+const flipLimb = (l: Limb): Limb => ({
+	root: flipV(l.root),
+	mid: flipV(l.mid),
+	end: flipV(l.end),
+	...(l.tip ? { tip: flipV(l.tip) } : {}),
+});
+// His skeleton the other way round - the skeleton of his pose the other way
+// round (see mirror).
+const mirrorSkeleton = (sk: Skeleton): Skeleton => ({
+	pelvis: flipV(sk.pelvis),
+	chest: flipV(sk.chest),
+	head: flipV(sk.head),
+	legR: flipLimb(sk.legL),
+	legL: flipLimb(sk.legR),
+	armR: flipLimb(sk.armL),
+	armL: flipLimb(sk.armR),
+});
+
 // His upper body turned on his hips (see Pose): a point of it carried round
 // his spine by the twist, then tipped to his side by the tilt - `w` of the
 // way (his chest all of it, his hips none). Or, `back`, undone.
@@ -5039,7 +5059,14 @@ export const holdBall = (
 	anim: AnimName,
 	// (Not if his pose has him carrying it already - see poseOf.)
 	carry = true,
+	// Done with his left (his move the other way round - see mirror): a
+	// right-hander's hold of it, turned back the other way.
+	left = false,
 ): { sk: Skeleton; ball: V3 } => {
+	if (left) {
+		const h = holdBall(b, mirror(q0), anim, carry);
+		return { sk: mirrorSkeleton(h.sk), ball: flipV(h.ball) };
+	}
 	const q = carry ? carried(q0, anim) : q0;
 	const sk = skeleton(b, q);
 	const grip = gripOf(anim);

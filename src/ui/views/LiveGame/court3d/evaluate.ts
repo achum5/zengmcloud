@@ -594,6 +594,8 @@ const gaitFor = (v: number): AnimName =>
 // How fast he really covers the ground through the middle of a run - the
 // run itself, and whatever eases him aside on top of it while he is on it
 // (see keepOff, keepApart in director.ts): his legs go at that, not slower.
+// (The middle third of it: a step aside eased back as he sets off is not
+// the pace he goes at.)
 const groundSpeeds = new WeakMap<Run["mv"], number>();
 const groundSpeed = (tr: Track, run: Run): number => {
 	let v = groundSpeeds.get(run.mv);
@@ -605,7 +607,7 @@ const groundSpeed = (tr: Track, run: Run): number => {
 				(x) => x.t0 < s1 && x.t0 + x.dx.length * SEP_MS > s0,
 			) || (tr.nudges ?? []).some((x) => x.t0 < s1 && x.t1 > s0);
 		if (aside) {
-			for (let t = s0 + (s1 - s0) * 0.3; t <= s1 - (s1 - s0) * 0.3; t += 40) {
+			for (let t = s0 + (s1 - s0) * 0.35; t <= s1 - (s1 - s0) * 0.35; t += 40) {
 				const p = spotAt(tr, t - 10, false);
 				const q = spotAt(tr, t + 10, false);
 				v = Math.max(v, Math.hypot(q.x - p.x, q.y - p.y) / 0.02);
@@ -3534,7 +3536,13 @@ export const heldBall = (st0: PlayerState, body: Body): Pt3 => {
 	const st = withBody(st0, body);
 	return bodyPoint(
 		st,
-		holdBall(body, poseOf(st), st.anim, st.grip !== undefined).ball,
+		holdBall(
+			body,
+			poseOf(st),
+			st.anim,
+			st.grip !== undefined,
+			st.mirror === true,
+		).ball,
 	);
 };
 
