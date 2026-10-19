@@ -180,6 +180,9 @@ export const alongShape = (r: RunShape, s: number): number => {
 // the way a player bursts through a shuttle run.
 export const BURST = 1.3;
 
+// As hard as a man pulls up (feet a second, a second): all out.
+export const HARDEST_PULL_UP = BRAKE * BURST;
+
 // The pace (feet a second) he can pull up from in L feet, `effort` times as
 // hard as he usually brakes.
 export const pullUpFrom = (L: number, effort = 1): number =>

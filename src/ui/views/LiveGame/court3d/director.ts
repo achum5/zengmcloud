@@ -40,6 +40,7 @@ import {
 } from "./geometry.ts";
 import {
 	BURST,
+	HARDEST_PULL_UP,
 	keepThrough,
 	paceFor,
 	pullUpFrom,
@@ -14579,6 +14580,60 @@ class Director {
 		const SETTLE = 600;
 		// The most a body he is inside puts him back out of it a tick (feet).
 		const PUSH_OUT = 0.5;
+		// A run of his, laid down at his pace and then told to end slower
+		// than that (or set off slower) - turning back on himself, say - goes
+		// no slower there than its length and time let him get to, as hard
+		// as a man can pull up (or get going): not stopped on a dime at the
+		// end of it. (What is left of the turn he takes going round it - see
+		// rounded in evaluate.ts.)
+		const farthest = (v0: number, v1: number, T: number, up: number) => {
+			const down = HARDEST_PULL_UP;
+			const k = Math.min(T, Math.max(0, (v1 - v0 + down * T) / (up + down)));
+			const top = v0 + up * k;
+			return ((v0 + top) / 2) * k + ((top + v1) / 2) * (T - k);
+		};
+		const slowest = (
+			want: number,
+			was: number,
+			gets: (v: number) => boolean,
+		): number => {
+			if (want >= was || gets(want)) {
+				return want;
+			}
+			if (!gets(was)) {
+				return was;
+			}
+			let lo = want;
+			let hi = was;
+			for (let n = 0; n < 12; n++) {
+				const mid = (lo + hi) / 2;
+				if (gets(mid)) {
+					hi = mid;
+				} else {
+					lo = mid;
+				}
+			}
+			return hi;
+		};
+		const slowestEnd = (m: Move, want: number): number => {
+			const T = (m.t1 - m.t0) / 1000;
+			const L = dist(m.from, m.to) - 0.05;
+			return slowest(
+				want,
+				m.v1 ?? 0,
+				(v) => farthest(m.v0 ?? 0, v, T, ACCEL * BURST) >= L,
+			);
+		};
+		const slowestStart = (m: Move, want: number): number => {
+			const T = (m.t1 - m.t0) / 1000;
+			const L = dist(m.from, m.to) - 0.05;
+			// (Run backwards, getting going is pulling up.)
+			return slowest(
+				want,
+				m.v0 ?? 0,
+				(v) => farthest(m.v1 ?? 0, v, T, HARDEST_PULL_UP) >= L,
+			);
+		};
 		for (const tr of this.tracks.values()) {
 			const moves = tr.moves;
 			if (!moves.some((m) => this.marking.has(m))) {
@@ -15295,8 +15350,8 @@ class Director {
 							: 1;
 					if (cos < 0) {
 						const k0 = keepThrough(cos) / keepThrough(0);
-						x.v1 *= k0;
-						y.v0 *= k0;
+						x.v1 = slowestEnd(x, x.v1 * k0);
+						y.v0 = slowestStart(y, y.v0 * k0);
 					}
 				}
 				// Following his man left him short of where the schedule has him
@@ -15318,7 +15373,7 @@ class Director {
 									lx
 								: 1;
 						const v = Math.min(lastRun.v1 * keepThrough(cos), intoPace * 1.5);
-						lastRun.v1 = v;
+						lastRun.v1 = slowestEnd(lastRun, v);
 						into.v0 = v;
 						into.t0 = fin.t;
 					} else {
@@ -16385,6 +16440,10 @@ class Director {
 		// (Easing over and back, and the longest a step aside lasts.)
 		const RAMP = NUDGE_RAMP;
 		const LONGEST = 12000;
+		// Stepping aside off a man he comes up on, he drifts over to it as he
+		// comes - not a quick sidestep on top of pulling up, the two stopping
+		// him dead together (ms).
+		const ASIDE = 800;
 		// Going faster than this (feet a second), he is only passing by.
 		const MOVING = 4;
 		// Two running the same way, though, keep this far apart (feet) - the
@@ -16894,7 +16953,7 @@ class Director {
 				// Clear of anything of his own that needs him where he is: in
 				// it together with somebody, shooting, catching - or the ball
 				// in his hands.
-				const easeMs = r.par ? DRIFT : RAMP;
+				const easeMs = r.par ? DRIFT : ASIDE;
 				let n0 = r.t0 - easeMs;
 				let n1 = r.t1 + STEP + easeMs;
 				// (Not before he is out there: coming on, he comes on where he
@@ -17080,7 +17139,7 @@ class Director {
 					t1: n1,
 					dx: ux * k,
 					dy: uy * k,
-					...(r.par ? { ramp: easeMs } : {}),
+					ramp: easeMs,
 				});
 			}
 			for (const tr of tracks) {
