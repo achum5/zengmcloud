@@ -1571,7 +1571,11 @@ class Director {
 				next = false;
 			} else if (m.t0 < t0) {
 				kept.push({ ...m, t1: t0, to: { ...P }, v1: undefined });
-			} else if (m.t1 > by) {
+			} else if (m.t1 > by && dist(V, m.to) <= (SPRINT * (m.t1 - by)) / 1000) {
+				// (On with a run he was on, from there - if there is the time to
+				// get where it was going. If not, he never goes on with it: he
+				// was going to be somewhere else, not at the rim, and the next
+				// sets off from the rim.)
 				kept.push({ ...m, t0: by, from: { ...V }, v0: undefined });
 				next = false;
 			}
@@ -2282,6 +2286,7 @@ class Director {
 	): number {
 		const b = this.ballPoint();
 		const from = this.posOf(pid);
+		this.ownRun(pid, t);
 		// (Off the floor for it if that is where it is.)
 		const stop =
 			dist(from, b) > PICKUP_REACH
@@ -4701,10 +4706,46 @@ class Director {
 				this.act(p.pid, p.anim, p.t, until, { look: p.look });
 			}
 		}
+		this.clearTheRim(run, next);
 		this.trailUp(run, acts, next, t0);
 		this.spaceTheDrive(run, t0);
 		this.guardStep(run, acts, t0, end, before, k);
 		return end;
+	}
+
+	// CLEARING THE RIM. A man who cut or rolled to the rim and was not hit
+	// doesn't park under it for the rest of the set, the paint clogged and a
+	// defender stood on him: a beat after he gets there, he clears out to the
+	// dunker spot on his side - there for a dump-off, out of the way of the
+	// next drive. (Not if the set still has a use for him there.)
+	private clearTheRim(run: Running, next: PlayAction[] | undefined) {
+		const { team } = run;
+		const rim = { x: rimX(team), y: COURT_H / 2 };
+		const out = -attackDir(team);
+		run.roles.forEach((pid, role) => {
+			if (pid === this.holder || needed(run, next, role as Role)) {
+				return;
+			}
+			const P = this.posOf(pid);
+			if (dist(P, rim) > 6.5 || Math.abs(P.y - rim.y) > 5) {
+				return;
+			}
+			const tr = this.track(pid);
+			const there = Math.max(
+				this.free.get(pid) ?? 0,
+				...(tr?.acts ?? []).map((a) => a.t1),
+			);
+			const side = P.y >= rim.y ? 1 : -1;
+			const spot = (k: number) =>
+				clampPt({ x: rim.x - out * 2.5, y: rim.y + k * 8.5 });
+			// (His own side, unless a teammate is there already.)
+			const Q = [spot(side), spot(-side)].find((q) =>
+				run.roles.every((o) => o === pid || dist(this.posOf(o), q) > 5),
+			);
+			if (Q) {
+				this.go(pid, Q, there + 450, 10, "jog");
+			}
+		});
 	}
 
 	// THE PITCH AHEAD. On the break, the man with it does not stand in the
@@ -8498,6 +8539,18 @@ class Director {
 		}
 	}
 
+	// The run that gets him to the ball - to pick it up, to poke it away - is
+	// his own from `t` back a little: not one reworked later to shadow his
+	// man (see mark) and left short of the spot, the ball then jumping to or
+	// off his hand from feet away.
+	private ownRun(pid: number, t: number) {
+		for (const m of this.track(pid)?.moves ?? []) {
+			if (m.t1 > t - 2500) {
+				this.marking.delete(m);
+			}
+		}
+	}
+
 	// Whatever he was to do from `at` on, he never does: his runs cut off
 	// there, his acts with them.
 	private dropFrom(pid: number, at: number) {
@@ -9018,14 +9071,19 @@ class Director {
 				? unitVec(A, this.posOf(m))
 				: unitVec(A, { x: COURT_W / 2, y: COURT_H / 2 });
 		const reach = pokeHand(mirrored).f + 1.3;
-		const hit = this.goBy(
-			m,
-			clampPt({ x: A.x + into.x * reach, y: A.y + into.y * reach }),
-			start,
-			start + 420,
-			"slide",
-			toward,
-		);
+		this.ownRun(m, start);
+		// (Set before he pokes, not mid-slide: a hand put out while he is still
+		// pulling up off his feet is short of the ball, and the hand left on
+		// it is the man's own.)
+		const hit =
+			this.goBy(
+				m,
+				clampPt({ x: A.x + into.x * reach, y: A.y + into.y * reach }),
+				start,
+				start + 420,
+				"slide",
+				toward,
+			) + 320;
 		const t0 = hit - POKE_MS * POKE_HIT;
 		this.act(m, "poke", t0, t0 + POKE_MS, {
 			face: toward,
