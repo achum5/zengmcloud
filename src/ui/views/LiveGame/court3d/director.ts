@@ -11294,12 +11294,69 @@ class Director {
 		if (this.holder !== victim) {
 			t = this.passTo(this.holder ?? this.slots(team)[0]!, victim, t);
 		}
-		const vp = this.posOf(victim);
+		let vp = this.posOf(victim);
 		const dir = attackDir(team);
 		if (stl) {
 			const thief = e.pid as number;
+			const rim = { x: rimX(team), y: COURT_H / 2 };
+			const T0 = this.posOf(thief);
+			let hit: number | undefined;
+			// Too far off him to be the man on him, and back between him and
+			// the rim: a help man, and the ball taken off a drive into him -
+			// he attacks, the help steps up and strips it where they meet. Not
+			// stood there holding it while a man runs at him from under the
+			// basket.
+			if (
+				this.holder === victim &&
+				dist(vp, T0) > 9 &&
+				dist(T0, rim) < dist(vp, rim) - 4
+			) {
+				const start = Math.max(t, this.free.get(victim) ?? 0);
+				const go = Math.max(t, this.free.get(thief) ?? 0);
+				const DRIVE = DRIBBLE * 0.75;
+				let best: { M: Pt; miss: number } | undefined;
+				for (let f = 0.2; f <= 0.75; f += 0.05) {
+					const M = clampPt({
+						x: vp.x + (rim.x - vp.x) * f,
+						y: vp.y + (rim.y - vp.y) * f,
+					});
+					const miss = Math.abs(
+						start + runMs(dist(vp, M), DRIVE) - (go + runMs(dist(T0, M), RUN)),
+					);
+					if (!best || miss < best.miss) {
+						best = { M, miss };
+					}
+				}
+				const M = best!.M;
+				const u = unitVec(vp, rim);
+				this.hold(victim, start, "dribble");
+				const arrive = this.go(victim, M, start, DRIVE, "dribble", dir);
+				const mine = this.defenderOf(victim);
+				if (mine !== undefined && mine !== thief) {
+					// His own man, a step behind.
+					this.shadow(
+						mine,
+						clampPt({ x: M.x - u.x * 2.4, y: M.y - u.y * 2.4 }),
+						start + 100,
+						arrive,
+						team,
+					);
+				}
+				hit = Math.max(
+					arrive,
+					this.goBy(
+						thief,
+						clampPt({ x: M.x + u.x * 1.6, y: M.y + u.y * 1.6 }),
+						go,
+						arrive - 60,
+						"run",
+						(M.x >= T0.x ? 1 : -1) as 1 | -1,
+					),
+				);
+				vp = M;
+			}
 			const toward = (vp.x >= this.posOf(thief).x ? 1 : -1) as 1 | -1;
-			const hit = this.goBy(
+			hit ??= this.goBy(
 				thief,
 				clampPt({ x: vp.x - dir * 1.4, y: vp.y + 0.6 }),
 				t,
