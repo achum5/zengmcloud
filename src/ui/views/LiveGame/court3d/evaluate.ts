@@ -617,7 +617,14 @@ const groundSpeed = (tr: Track, run: Run): number => {
 };
 const runAnim = (tr: Track, run: Run): AnimName => {
 	const anim = run.mv.anim;
-	const v = Math.max(shapeOf(run).vc, run.v0, run.v1);
+	// His legs go at the pace he holds most of the way: come in off a sprint
+	// and settled into a run for the length of the floor, he runs it. (Only a
+	// run that is mostly getting going or pulling up goes at the quicker end.)
+	const shape = shapeOf(run);
+	const v =
+		shape.T - shape.ta - shape.td >= shape.T / 2
+			? shape.vc
+			: Math.max(shape.vc, run.v0, run.v1);
 	switch (anim) {
 		case "run":
 		case "jog":

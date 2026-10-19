@@ -119,8 +119,9 @@ export const FT_LINE_DEPTH = 19;
 // The line is two inches wide, the near edge 15 feet from the glass.
 export const FT_LINE_WIDTH = 2 / 12;
 // The shooter toes the line from behind it: his front foot, out in front of
-// him with the ball low on his dribble, an inch or two short of it.
-export const FT_SHOOTER_DEPTH = FT_LINE_DEPTH + FT_LINE_WIDTH + 1.4;
+// him with the ball low on his dribble, a couple of inches short of it (a
+// tall man's longer stride too).
+export const FT_SHOOTER_DEPTH = FT_LINE_DEPTH + FT_LINE_WIDTH + 1.5;
 // The lane spaces, marked off up each side of the lane: the block (7 to 8
 // feet out), then three feet each - the first for the defense, the second
 // for the offense, the third for the defense again. A man in one stands in

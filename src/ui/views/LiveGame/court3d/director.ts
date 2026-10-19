@@ -9908,7 +9908,7 @@ class Director {
 					team,
 					t,
 					typeof e.pidShooting === "number" ? e.pidShooting : undefined,
-					gap,
+					gap !== undefined && gap < 4 && this.foulingToStopClock(fouler, e),
 				);
 				this.effect("whistle", hit, { call: "foul", at: vp, team });
 				if (this.rng() < 0.3) {
@@ -11084,12 +11084,25 @@ class Director {
 	// next to no time gone, wrapped up on purpose as soon as it is in.
 	// `victim` is who the sim says was fouled, where it says. Returns the
 	// moment of contact and where it was.
+	// Down late, fouling to stop the clock. (A foul straight after the last
+	// play otherwise is a reach on the way up, a hold off the ball - not a
+	// man jogging over to wrap up a handler stood waiting for him.)
+	private foulingToStopClock(fouler: number, e: RawEvent): boolean {
+		if (!this.overtime && this.periodNo < 4) {
+			return false;
+		}
+		const team = this.teamOf(fouler);
+		const down = this.score[other(team)] - this.score[team];
+		const clock = typeof e.clock === "number" ? e.clock : 720;
+		return clock <= 120 && down > 0 && down <= 12;
+	}
+
 	private stageFoul(
 		fouler: number,
 		team: Side,
 		t: number,
 		victim: number | undefined,
-		gap: number | undefined,
+		deliberate: boolean,
 	): { hit: number; at: Pt } {
 		const dir = attackDir(team);
 		const rim = { x: rimX(team), y: COURT_H / 2 };
@@ -11127,7 +11140,7 @@ class Director {
 		};
 		const start = (pid: number) => Math.max(t, this.free.get(pid) ?? 0);
 
-		if (gap !== undefined && gap < 4 && !offBall) {
+		if (deliberate && !offBall) {
 			// On purpose: straight at him, both arms round him.
 			const V = this.posOf(handler);
 			const u = unitVec(V, this.posOf(fouler));
