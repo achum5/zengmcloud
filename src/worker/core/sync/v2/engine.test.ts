@@ -1,5 +1,5 @@
 import "fake-indexeddb/auto";
-import { afterEach, assert, beforeEach, describe, test } from "vitest";
+import { afterEach, assert, beforeEach, describe, test, vi } from "vitest";
 import { resetCache, resetG } from "../../../../test/helpers.ts";
 import { g } from "../../../util/index.ts";
 import { idb } from "../../../db/index.ts";
@@ -122,7 +122,7 @@ class V2Transport implements SyncTransport {
 		return this.room.onAuthority(onChange);
 	}
 
-	async publishBusy() {}
+	async publishBusy(_busyUntil: number, _position?: unknown) {}
 
 	async publishNotification(
 		notification: SyncNotification & { authorId: string; authorName: string },
@@ -1258,6 +1258,79 @@ describe("SyncEngineV2", () => {
 		assert.strictEqual(await engine.pendingUploadCount(), 0);
 		await engine.catchUp();
 		engine.stop();
+	});
+
+	// The sim's "busy" stamp is cleared by the device that made it, even while
+	// its authority listener is reconnecting (when it cannot see that it holds
+	// the room) - a skipped clear held every follower for the whole lease.
+	test("the simmer clears its busy stamp through an authority blip", async () => {
+		const room = new Room();
+		initRoom(room);
+		room.setAuthority({ holderId: "A", holderName: "Alex" });
+		const transport = new V2Transport("A", room);
+		const writes: number[] = [];
+		transport.publishBusy = async (until: number) => {
+			writes.push(until);
+		};
+		const engine = new SyncEngineV2(transport);
+		engine.start();
+		engine.markRoomBusy();
+		room.setAuthority(undefined);
+		engine.clearRoomBusy();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.strictEqual(writes.length, 2);
+		assert.ok(writes[0]! > Date.now());
+		assert.strictEqual(writes[1], 0);
+		// Nothing marked since: a device that is not in charge leaves it alone.
+		engine.clearRoomBusy();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.strictEqual(writes.length, 2);
+		engine.stop();
+	});
+
+	test("a failed clear is tried again, but never over a newer sim's stamp", async () => {
+		vi.useFakeTimers();
+		try {
+			const room = new Room();
+			initRoom(room);
+			room.setAuthority({ holderId: "A", holderName: "Alex" });
+			const transport = new V2Transport("A", room);
+			const writes: number[] = [];
+			let fail = 1;
+			transport.publishBusy = async (until: number) => {
+				writes.push(until);
+				if (until === 0 && fail > 0) {
+					fail -= 1;
+					throw new Error("unavailable");
+				}
+			};
+			const engine = new SyncEngineV2(transport);
+			engine.start();
+			engine.markRoomBusy();
+			engine.clearRoomBusy();
+			await vi.advanceTimersByTimeAsync(5000);
+			assert.deepStrictEqual(
+				writes.map((w) => w === 0),
+				[false, true, true],
+				"cleared on the second try",
+			);
+
+			// A clear that fails, then a new sim starts before its retry is due:
+			// the retry stands down.
+			fail = 1;
+			engine.markRoomBusy();
+			engine.clearRoomBusy();
+			await vi.advanceTimersByTimeAsync(0);
+			engine.markRoomBusy();
+			await vi.advanceTimersByTimeAsync(20_000);
+			assert.deepStrictEqual(
+				writes.slice(3).map((w) => w === 0),
+				[false, true, false],
+			);
+			engine.stop();
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	// A follower does not publish into the middle of a sim. Racing the advance

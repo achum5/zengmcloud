@@ -203,6 +203,11 @@ const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
 const decodeDelta = async (serialized: string): Promise<Changeset> =>
 	deserializeChangeset(await decompressSerialized(serialized)) as Changeset;
 
+// How long a sim's "busy" stamp holds followers' publishes if it is never
+// cleared, and how many times a clear is tried.
+const BUSY_LEASE_MS = 3 * 60 * 1000;
+const BUSY_CLEAR_TRIES = 4;
+
 // Node keeps the test process alive on a pending timer; browsers have no unref.
 const unrefTimer = (timer: ReturnType<typeof setTimeout> | undefined) => {
 	const nodeTimer = timer as unknown as { unref?: () => void } | undefined;
@@ -243,6 +248,10 @@ export class SyncEngineV2 {
 	// the room is mid-sim. Nothing is wrong; the caller uses it to say so rather
 	// than reporting a connection problem.
 	private heldForSim = false;
+	// This device stamped the room busy and has not cleared it yet; and a
+	// count of marks and clears, so a retried clear knows it is stale.
+	private busyMarked = false;
+	private busyClears = 0;
 
 	// Readiness is a LEASE, not a latch. It used to be a one-way boolean: the
 	// first successful ping set it true and nothing ever set it back, so
@@ -947,17 +956,57 @@ export class SyncEngineV2 {
 		if (!this.isAuthority()) {
 			return;
 		}
-		void this.transport.publishBusy?.(
-			Date.now() + 3 * 60 * 1000,
-			position as any,
-		);
+		this.busyMarked = true;
+		// (A clear still being retried from the last advance must not wipe this
+		// one's lease.)
+		this.busyClears += 1;
+		const until = Date.now() + BUSY_LEASE_MS;
+		syncDebugLog("v2:busy-mark", { until: new Date(until).toISOString() });
+		this.transport.publishBusy?.(until, position as any).catch((error) => {
+			syncDebugLog("v2:busy-mark-failed", { error: String(error) });
+		});
 	}
 
+	// Cleared by the device that stamped it, whatever its view of the room
+	// says at that moment. It used to ask isAuthority() first, and that reads
+	// false for as long as the authority listener is reconnecting - so a blip
+	// at the end of an advance skipped the clear, and every follower sat out
+	// the rest of the three-minute lease, its changes held as "the league is
+	// simming" with nothing being simmed. (Writing it while somebody else
+	// holds the room is refused by the rules, so this only ever clears our
+	// own.) A write that fails is tried again, for the same reason.
 	clearRoomBusy(position?: unknown): void {
-		if (!this.isAuthority()) {
+		if (!this.busyMarked && !this.isAuthority()) {
 			return;
 		}
-		void this.transport.publishBusy?.(0, position as any);
+		this.busyMarked = false;
+		this.busyClears += 1;
+		const clear = this.busyClears;
+		const attempt = (n: number) => {
+			// (Stood down if the room was stamped again, or cleared again, since.)
+			if (this.stopped || clear !== this.busyClears) {
+				return;
+			}
+			const write = this.transport.publishBusy?.(0, position as any);
+			if (!write) {
+				return;
+			}
+			write.then(
+				() => {
+					syncDebugLog("v2:busy-clear", { attempt: n });
+				},
+				(error) => {
+					syncDebugLog("v2:busy-clear-failed", {
+						attempt: n,
+						error: String(error),
+					});
+					if (n < BUSY_CLEAR_TRIES) {
+						unrefTimer(setTimeout(() => attempt(n + 1), 1000 * 2 ** n));
+					}
+				},
+			);
+		};
+		attempt(1);
 	}
 
 	isRoomBusy(): boolean {
@@ -2166,7 +2215,14 @@ export class SyncEngineV2 {
 			const pendingCount = await this.pendingUploadCount();
 			if (pendingCount > 0) {
 				this.heldForSim = true;
-				syncDebugLog("v2:publish-held-for-sim", { pending: pendingCount });
+				// Who holds it, and for how much longer if nobody clears it: an
+				// overlong hold reads as a lease that ran out rather than a
+				// clear.
+				syncDebugLog("v2:publish-held-for-sim", {
+					pending: pendingCount,
+					holder: this.authority?.holderName,
+					busyForMs: Math.round((this.authority?.busyUntil ?? 0) - Date.now()),
+				});
 			}
 			return false;
 		}

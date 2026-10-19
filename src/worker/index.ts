@@ -586,22 +586,26 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 				// changeset was either confirmed uploaded or durably retained for retry.
 				// Otherwise a plain roster/depth edit can vanish while the connection dot
 				// still looks green.
-				const synced = await afterAction(type, name);
-				if (marksBusy) {
-					if (synced) {
-						// Stamp where the league now sits along with the lease release, so
-						// followers have a second opinion on how far the room has got - one
-						// that doesn't come from their own change log, which is exactly the
-						// thing that fails silently when a day goes missing.
-						getSyncEngine()?.clearRoomBusy(await getLeaguePosition());
-					} else {
-						// The advance is queued, NOT in the cloud. Stamping the new
-						// position now would announce a day whose data followers cannot
-						// fetch, and every one of them would grind recovery against a
-						// gap that is not there to download. Release the lease without
-						// a position; the outbox drain that finally lands the upload
-						// restamps (SyncEngine.doDrain).
-						getSyncEngine()?.clearRoomBusy();
+				let synced = false;
+				try {
+					synced = await afterAction(type, name);
+				} finally {
+					// Released however the handoff went - one that threw used to
+					// leave followers held for the rest of the lease.
+					if (marksBusy) {
+						// Stamp where the league now sits along with the lease release,
+						// so followers have a second opinion on how far the room has
+						// got - one that doesn't come from their own change log, which
+						// is exactly the thing that fails silently when a day goes
+						// missing. Not if the advance is only queued, NOT in the cloud:
+						// that would announce a day whose data followers cannot fetch,
+						// and every one of them would grind recovery against a gap
+						// that is not there to download. The outbox drain that finally
+						// lands the upload restamps (SyncEngine.doDrain).
+						const position = synced
+							? await getLeaguePosition().catch(() => undefined)
+							: undefined;
+						getSyncEngine()?.clearRoomBusy(position);
 					}
 				}
 				if (!synced) {
