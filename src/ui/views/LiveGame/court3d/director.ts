@@ -1944,6 +1944,26 @@ class Director {
 		return x < two ? "dunk" : x < two + one ? "dunk1" : "tomahawk";
 	}
 
+	// His move with it on the block, `r` of the way through his odds: a man
+	// has a go-to - the one he goes to half the time and more, the same every
+	// game - and the rest now and then.
+	private postMoveFor(pid: number, r: number): PostMove {
+		const odds: [PostMove, number][] = [
+			["hook", 0.36],
+			["fade", 0.24],
+			["dropStep", 0.22],
+			["upUnder", 0.18],
+		];
+		let k = hash01(pid, 2203);
+		const go = odds.find(([, w]) => (k -= w) < 0)?.[0] ?? "hook";
+		const own = odds.map(([m, w]): [PostMove, number] => [
+			m,
+			w + (m === go ? 0.6 : 0),
+		]);
+		let x = r * own.reduce((a, [, w]) => a + w, 0);
+		return own.find(([, w]) => (x -= w) < 0)?.[0] ?? go;
+	}
+
 	private lefty(pid: number): boolean {
 		return hash01(pid, 7211) < LEFTIES;
 	}
@@ -7290,13 +7310,7 @@ class Director {
 					: r < 0.86
 						? "dropStep"
 						: "upUnder"
-				: r < 0.36
-					? "hook"
-					: r < 0.6
-						? "fade"
-						: r < 0.82
-							? "dropStep"
-							: "upUnder";
+				: this.postMoveFor(shooter, r);
 			if (postMove === "dropStep" || postMove === "upUnder") {
 				t = this.postFinish(shooter, team, t, postMove);
 				close = true;
@@ -8600,17 +8614,20 @@ class Director {
 		const big = (this.rank.get(shooter) ?? 4) >= 6;
 		const r = hash01(shooter, Math.round(t / 7));
 		const under = plan.kind === "block" || plan.kind === "foul";
+		// (And each man his own touch: some roll it in off their fingers
+		// more, some go up strong with it more.)
+		const soft = 0.5 + hash01(shooter, 4409);
 		const odds: [AnimName, number][] = big
 			? [
-					["powerLayup", 0.42],
+					["powerLayup", 0.42 * (2 - soft)],
 					["layup", 0.36],
-					["fingerRoll", 0.12],
+					["fingerRoll", 0.12 * soft],
 					["scoop", 0.14],
 				]
 			: [
 					["layup", 0.36],
-					["fingerRoll", 0.3],
-					["powerLayup", 0.16],
+					["fingerRoll", 0.3 * soft],
+					["powerLayup", 0.16 * (2 - soft)],
 					["scoop", under ? 0.3 : 0.22],
 				];
 		const total = odds.reduce((a, [, w]) => a + w, 0);
