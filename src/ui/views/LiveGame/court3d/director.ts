@@ -519,7 +519,11 @@ const INTRO_RUN = 17;
 const WALK = 6;
 // Not a pace but a jab: one quick lunge of a step (see liven).
 const JAB = 0;
-const PASS_FTPS = 42;
+// A pass: this fast (feet a second) on top of a moment for it to get going.
+// Hand to hand that is 29-37 ft/s over 13-30 feet - 9-11 m/s, a good
+// player's chest pass, not a lob of one.
+const PASS_FTPS = 46;
+const PASS_BASE_MS = 100;
 // A basketball's radius, feet: its middle when it touches the floor.
 const BALL_R = 0.39;
 // One bounce of a crossover, from one hand to the other, and one of a
@@ -741,7 +745,7 @@ const lastBy = <X>(list: X[], t: number, key: (x: X) => number): number => {
 };
 
 const passMs = (d: number) =>
-	Math.min(1500, Math.max(260, 180 + (d * 1000) / PASS_FTPS));
+	Math.min(1500, Math.max(220, PASS_BASE_MS + (d * 1000) / PASS_FTPS));
 
 type PassStyle = "chest" | "bounce" | "overhead" | "lob";
 
@@ -4546,6 +4550,13 @@ class Director {
 		const before = run.screen;
 		const prev = Math.min(t0, run.stepAt ?? t0);
 		run.stepAt = t0;
+		// Down in the paint with it, he doesn't stand there bouncing it while
+		// the others finish what the last step had them doing - the roller
+		// still on his way in, say: he goes on from there as he gets there.
+		const deep = (pid: number) =>
+			this.holder === pid && dist(this.posOf(pid), rim) < 15
+				? Math.min(t0, Math.max(prev, this.hasItFrom(pid)))
+				: t0;
 		for (const a of acts) {
 			if (a.type === "screen") {
 				const user = run.roles[a.for]!;
@@ -4622,7 +4633,7 @@ class Director {
 				const since =
 					a.kind === "advance" && this.holder === pid
 						? Math.min(t0, this.hasItFrom(pid))
-						: t0;
+						: deep(pid);
 				end = Math.max(end, this.playDribble(run, a.who, a.to, a.kind, since));
 			} else if (a.type === "move") {
 				const pid = run.roles[a.who]!;
@@ -4635,7 +4646,7 @@ class Director {
 						: t0;
 				const done =
 					this.holder === pid
-						? this.playDribble(run, a.who, a.to, "attack", t0)
+						? this.playDribble(run, a.who, a.to, "attack", deep(pid))
 						: this.playMove(run, pid, a.to, a.style, since, before);
 				// On the break nobody waits for the man trailing the play - not
 				// unless it comes to him.
