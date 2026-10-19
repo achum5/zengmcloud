@@ -714,9 +714,13 @@ type GaitFit = {
 const POINT = 55;
 // Hip and knee to put the ankle `f` ahead of the hip and `u` up from it
 // (negative, below).
-const legTo = (b: Body, f: number, u: number) => {
-	const T = b.thigh;
-	const S = b.shin;
+const legTo = (
+	b: Body,
+	f: number,
+	u: number,
+	T: number = b.thigh,
+	S: number = b.shin,
+) => {
 	const d = Math.max(1e-6, Math.min(Math.hypot(f, u), (T + S) * 0.9995));
 	const inner = Math.acos(
 		Math.max(-1, Math.min(1, (T * T + S * S - d * d) / (2 * T * S))),
@@ -4687,6 +4691,50 @@ export const flexOf = (q: Pose, b: Body = bodyOf()): number => {
 		flex -= f0 / slope;
 	}
 	return Math.max(-25, Math.min(25, flex)) * 0.8 * q.plant;
+};
+
+// Pulled up mid-stride - or stood a moment between one run and the next -
+// the foot up off the floor comes down where it is, `w` of the way (0 to 1):
+// not left hanging in the air. (The one already down stays as it is.)
+export const footDown = (q: Pose, w: number, b: Body = bodyOf()): Pose => {
+	if (w <= 0) {
+		return q;
+	}
+	const flex = flexOf(q, b);
+	const at = (hip: number, knee: number, wide: number) => {
+		const T = inPlane(b.thigh, wide);
+		const S = inPlane(b.shin, wide);
+		const h = (hip + flex) * RAD;
+		const k = (hip + flex - knee) * RAD;
+		return {
+			f: T * Math.sin(h) + S * Math.sin(k),
+			u: -T * Math.cos(h) - S * Math.cos(k),
+			T,
+			S,
+		};
+	};
+	const n = at(q.hipN, q.kneeN, q.wide + q.wideN);
+	const l = at(q.hipF, q.kneeF, q.wide + q.wideF);
+	const near = n.u > l.u;
+	const up = near ? n : l;
+	const down = near ? l : n;
+	// (Where it can reach the floor from: reached too far out, it comes in
+	// under him as it comes down.)
+	const reach = (up.T + up.S) * 0.97;
+	const f =
+		Math.sign(up.f) *
+		Math.min(
+			Math.abs(up.f),
+			Math.sqrt(Math.max(0, reach * reach - down.u * down.u)),
+		);
+	const to = legTo(b, f, down.u, up.T, up.S);
+	const hip =
+		(near ? q.hipN : q.hipF) + (to.hip - flex - (near ? q.hipN : q.hipF)) * w;
+	const knee =
+		(near ? q.kneeN : q.kneeF) + (to.knee - (near ? q.kneeN : q.kneeF)) * w;
+	return near
+		? { ...q, hipN: hip, kneeN: knee, toeN: q.toeN * (1 - w) }
+		: { ...q, hipF: hip, kneeF: knee, toeF: q.toeF * (1 - w) };
 };
 
 // The pose's angles live in the plane he faces along; arms swing out from

@@ -20,6 +20,7 @@ import {
 	bodyOf,
 	bounceAt,
 	flexOf,
+	footDown,
 	dribbleAhead,
 	isGait,
 	carried,
@@ -84,6 +85,9 @@ export type PlayerState = {
 	// How far through the animation (0 to 1).
 	phase: number;
 	moving: boolean;
+	// Pulled up mid-stride: his foot up off the floor come down this far (0
+	// to 1 - see footDown).
+	down?: number;
 	// The ball in his hands - not bouncing on a dribble - so it is drawn with
 	// him, his hands on it.
 	holding?: boolean;
@@ -150,9 +154,12 @@ export type Blend = {
 	mirror?: boolean;
 	w: number;
 	arms?: number;
-	// His legs turned under him as it changed (see legs, pivot).
-	legs?: number;
+	// Turning where he stood as it changed (see pivot); each leg's turn under
+	// him as it showed then (see legs), right, left; and the way he faced.
 	pivot?: [number, number, number, number];
+	turns?: [number, number];
+	facing?: number;
+	down?: number;
 	// Changed again while still easing out of the move before: that one,
 	// and how much of it was still in him then.
 	from?: Blend;
@@ -1558,6 +1565,9 @@ type Doing = {
 	target?: number;
 	// Stepping over off a man (not a shuffle he set off on).
 	aside?: true;
+	// Pulling up, or stood a moment between runs: his foot up off the floor
+	// come down (see footDown).
+	down?: number;
 };
 // Eased aside off a man fast enough that he steps over (feet a second) - and
 // once he is stepping, a moment's slowing between one push and the next
@@ -1748,7 +1758,7 @@ const bridgeAt = (
 	tl: CourtTimeline,
 	tr: Track,
 	t: number,
-): { anim: AnimName; phase: number } | undefined => {
+): { anim: AnimName; phase: number; down: number } | undefined => {
 	const k = lastIndex(tr.moves, t, (m) => m.t0);
 	const m = k >= 0 ? tr.moves[k] : undefined;
 	const next = tr.moves[k + 1];
@@ -1768,9 +1778,21 @@ const bridgeAt = (
 		return undefined;
 	}
 	const run = runOf(tr, k);
-	const g = gaitOf(tl, tr, k, run, Math.min(t, run.s1));
-	return ANIMS[g.anim].kind === "cycle" ? g : undefined;
+	const at = Math.min(t, run.s1);
+	const g = gaitOf(tl, tr, k, run, at);
+	return ANIMS[g.anim].kind === "cycle"
+		? { ...g, down: footDownAt(run, at) }
+		: undefined;
 };
+// Pulling up to a stop, over the last of it his foot up off the floor comes
+// down - and setting off from one, it goes back up into his stride over the
+// first of it - rather than hanging in the air while he stands there.
+const STOP_STEP_MS = 140;
+const footDownAt = (run: Run, t: number): number =>
+	Math.max(
+		run.v1 < LEGS_FTPS ? smooth01(1 - (run.s1 - t) / STOP_STEP_MS) : 0,
+		run.v0 < LEGS_FTPS ? 1 - smooth01((t - run.s0) / STOP_STEP_MS) : 0,
+	);
 
 // A defender up on the man dribbling, in front of him (feet): from the
 // farther, he starts to keep the ball in; by the nearer, it is by his hip.
@@ -1874,7 +1896,8 @@ const doingAt = (
 	let reach: number | undefined;
 	let mirrored = false;
 	let aside = false;
-	let bridged: { anim: AnimName; phase: number } | undefined;
+	let bridged: { anim: AnimName; phase: number; down: number } | undefined;
+	let down = 0;
 	if (act) {
 		mirrored = act.mirror === true;
 		const u = (t - act.t0) / (act.t1 - act.t0);
@@ -1900,8 +1923,9 @@ const doingAt = (
 	} else if (here.moving && here.run) {
 		({ anim, phase } = gaitOf(tl, tr, here.moveIndex, here.run, t));
 		z = bounceAt(anim, phase);
+		down = footDownAt(here.run, t);
 	} else if ((bridged = bridgeAt(tl, tr, t))) {
-		({ anim, phase } = bridged);
+		({ anim, phase, down } = bridged);
 	} else {
 		const seg = ballSegAt(tl, t);
 		// A dribble move: all of him through each bounce of it.
@@ -2027,6 +2051,7 @@ const doingAt = (
 		...(beat && beat.from !== beat.to ? { dribbleFrom: beat.from } : {}),
 		...(tight > 0 ? { tight } : {}),
 		...(stride ? { stride } : {}),
+		...(down > 0 ? { down } : {}),
 		target: act || has ? undefined : targetAt(tl, pid, t) || undefined,
 	};
 };
@@ -2152,7 +2177,7 @@ const blendInto = (
 		// too short to span the gap between that and BLEND_MS ago is not
 		// lost in it for a few frames, and found again after.)
 		const settle =
-			flick || !PIVOTS.has(anim)
+			flick || !(PIVOTS.has(anim) || SETTLE_FROM.has(anim))
 				? undefined
 				: [t - SETTLE_MS, t - (SETTLE_MS + BLEND_MS) / 2]
 						.map((at) => ({ at, d: doingAt(tl, tr, at) }))
@@ -2188,7 +2213,7 @@ const blendInto = (
 			before = d;
 		}
 	}
-	if (settling && !SETTLE_FROM.has(before.anim)) {
+	if (settling && !stepsOver(before.anim, anim)) {
 		return armsDown(tl, tr, t, now);
 	}
 	// (A moment of something else between an arm thrown up and this - his
@@ -2210,9 +2235,7 @@ const blendInto = (
 		const u = Math.min(1, (t - hi) / ms);
 		return 1 - u * u * (3 - 2 * u);
 	};
-	const w = ease(
-		PIVOTS.has(anim) && SETTLE_FROM.has(before.anim) ? SETTLE_MS : BLEND_MS,
-	);
+	const w = ease(stepsOver(before.anim, anim) ? SETTLE_MS : BLEND_MS);
 	const slowArms = armsComeDown(tr, t, before.anim, anim);
 	if (w <= 0.02 && !(slowArms && ease(ARMS_DOWN_MS) > 0.02)) {
 		return undefined;
@@ -2225,10 +2248,17 @@ const blendInto = (
 			? blendInto(tl, tr, lo, before, depth + 1)
 			: undefined;
 	// The turn of his legs then, eased out of too - not snapped round (as
-	// they showed, part the way out of the move before, if they were).
-	const own = legsOf(spotAt(tr, lo), yawAt(tl, tr, lo), before.anim, lo);
-	const legs = prior ? own + ((prior.legs ?? 0) - own) * prior.w : own;
-	const ownPv = pivotOf(tl, tr, yawAt(tl, tr, lo), before, lo);
+	// they showed, part the way out of the move before, if they were: each
+	// foot still pointing where it pointed on the floor as that changed).
+	const facing = yawAt(tl, tr, lo);
+	const own = legsOf(spotAt(tr, lo), facing, before.anim, lo);
+	const ownPv = pivotOf(tl, tr, facing, before, lo);
+	const turns = ([0, 1] as const).map((i) => {
+		const to = own + (ownPv?.[i] ?? 0);
+		return prior && prior.w > 0
+			? to + (legTurnFrom(prior, i, facing, before.anim) - to) * prior.w
+			: to;
+	}) as [number, number];
 	const pv: [number, number, number, number] | undefined =
 		prior?.pivot || ownPv
 			? ([0, 1, 2, 3].map(
@@ -2245,6 +2275,7 @@ const blendInto = (
 		...(before.dribbleFrom ? { dribbleFrom: before.dribbleFrom } : {}),
 		...(before.tight ? { tight: before.tight } : {}),
 		...(before.stride ? { stride: before.stride } : {}),
+		...(before.down ? { down: before.down } : {}),
 		// (His hands most of the way onto it as it changed - picked up as he
 		// went up into a floater, or a pass all but in them as he goes
 		// straight into his dribble - count as on it: not his arms back
@@ -2256,8 +2287,9 @@ const blendInto = (
 		target: before.target,
 		...(before.mirror ? { mirror: true } : {}),
 		w,
-		...(legs !== 0 ? { legs } : {}),
 		...(pv ? { pivot: pv } : {}),
+		...(turns[0] || turns[1] ? { turns } : {}),
+		facing,
 		...(isMove(anim)
 			? { arms: ease(MOVE_ARMS_MS) }
 			: slowArms
@@ -3061,6 +3093,34 @@ const PIVOTS = new Set<AnimName>([
 	"crouch",
 	"flex",
 ]);
+// A leg turned under him from the way he faces (degrees): as far as hips
+// turn - and further round than that, back with him by the time he is
+// facing the other way.
+const hipsTurn = (d: number) => {
+	const w = ((((d + 180) % 360) + 360) % 360) - 180;
+	const a = Math.abs(w);
+	return (
+		Math.sign(w) *
+		(a <= LEGS_TURN ? a : (LEGS_TURN * (180 - a)) / (180 - LEGS_TURN))
+	);
+};
+// A leg's turn under him (degrees, right or left) as a move he is easing
+// out of had it, now that he faces `yaw`. Pulled up into where he stands,
+// where it pointed on the floor: turning round as he settles, he turns on
+// the foot he is down on, not with it slid round under him. (On the move,
+// with him.)
+export const legTurnFrom = (
+	f: Blend,
+	i: 0 | 1,
+	yaw: number,
+	to: AnimName,
+): number =>
+	hipsTurn(
+		(f.turns?.[i] ?? 0) +
+			(f.facing === undefined || !PIVOTS.has(to)
+				? 0
+				: (wrapAngle(yaw - f.facing) * 180) / Math.PI),
+	);
 const pivotOf = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -3174,7 +3234,7 @@ const blendPose = (f: Blend): Pose => {
 		f.tight,
 	);
 	const m = strode(f.mirror ? mirror(as) : as, f.stride);
-	const own = f.held ? carried(m, f.anim) : m;
+	const own = footDown(f.held ? carried(m, f.anim) : m, f.down ?? 0);
 	const g = f.from;
 	if (!g || (g.w <= 0 && (g.arms ?? 0) <= 0)) {
 		return own;
@@ -3183,7 +3243,7 @@ const blendPose = (f: Blend): Pose => {
 	// (Itself still settling out of a run, his feet stepping into it, as he
 	// went on into something else: from there - as he was - not from the two
 	// eased together, both feet slid over to it in a frame.)
-	return g.w > 0 && g.w < 1 && PIVOTS.has(f.anim) && SETTLE_FROM.has(g.anim)
+	return g.w > 0 && g.w < 1 && stepsOver(g.anim, f.anim)
 		? settleStep(eased, own, blendPose(g), 1 - g.w, standRef(f))
 		: eased;
 };
@@ -3238,6 +3298,12 @@ const SETTLE_FROM = new Set<AnimName>([
 	"drift",
 	"carry",
 ]);
+// (And from one way of moving his feet in his stance into another - a
+// slide into a drop step, say - each foot steps over, not both slid.)
+const FOOTWORK = new Set<AnimName>(["shuffle", "back", "slide"]);
+const stepsOver = (from: AnimName, to: AnimName) =>
+	(PIVOTS.has(to) && SETTLE_FROM.has(from)) ||
+	(FOOTWORK.has(from) && FOOTWORK.has(to));
 const SETTLE_HIP = 14;
 const SETTLE_KNEE = 30;
 // (A full step for a leg this far from where it is going - degrees at the
@@ -3250,8 +3316,8 @@ const SETTLE_STEP = 0.6;
 // (One foot this much higher than the other - in legs' lengths, about - is
 // up off the floor.)
 const SETTLE_UP = 0.12;
-const settleStep = (
-	p: Pose,
+type SettleLeg = { on: number; up: number };
+const settleLegs = (
 	to: Pose,
 	was: Pose,
 	u: number,
@@ -3259,7 +3325,7 @@ const settleStep = (
 	// it - not the stand's own breathing, which would have them swap over
 	// halfway.)
 	toRef: Pose = to,
-): Pose => {
+): { n: SettleLeg; f: SettleLeg } => {
 	const away = (q: Pose) => {
 		const spread = Math.abs(was.wide - q.wide) * SETTLE_SPREAD;
 		return [
@@ -3285,7 +3351,6 @@ const settleStep = (
 	// The foot already up off the floor first - then the one he stands on,
 	// or (both down) the one with furthest to go.
 	const wasFlex = flexOf(was);
-	const toFlex = flexOf(to);
 	const RAD = Math.PI / 180;
 	const lift = (hip: number, knee: number) =>
 		-Math.cos((hip + wasFlex) * RAD) - Math.cos((hip + wasFlex - knee) * RAD);
@@ -3296,8 +3361,21 @@ const settleStep = (
 	const byFar = rn >= rf ? 1 : 0;
 	const lifted = Math.min(1, Math.abs(up) / SETTLE_UP);
 	const first = byFar + ((up > 0 ? 1 : 0) - byFar) * lifted;
-	const n = leg(dn, (1 - first) * (1 - SETTLE_STEP));
-	const f = leg(df, first * (1 - SETTLE_STEP));
+	return {
+		n: leg(dn, (1 - first) * (1 - SETTLE_STEP)),
+		f: leg(df, first * (1 - SETTLE_STEP)),
+	};
+};
+const settleStep = (
+	p: Pose,
+	to: Pose,
+	was: Pose,
+	u: number,
+	toRef: Pose = to,
+): Pose => {
+	const { n, f } = settleLegs(to, was, u, toRef);
+	const wasFlex = flexOf(was);
+	const toFlex = flexOf(to);
 	const at = (a: number, b: number, w: number) => a + (b - a) * w;
 	// (His hips' bend over his feet goes with each leg as it steps, not
 	// with both at once - which would slide the one still down.)
@@ -3332,36 +3410,41 @@ export const poseOf = (st: PlayerState): Pose => {
 	// carry it as the move does (and as the one before did, if he had it
 	// then), so going from the one to the other they ease over too.
 	const carry = st.holding === true && st.grip === undefined;
-	const q = carry ? carried(m, st.anim) : m;
+	const q = footDown(carry ? carried(m, st.anim) : m, st.down ?? 0);
 	const f = st.from;
 	const eased = f && (f.w > 0 || (f.arms ?? 0) > 0) ? blendFrom(q, f) : q;
-	const b =
-		f &&
-		f.w > 0 &&
-		f.w < 1 &&
-		st.z <= 0 &&
-		PIVOTS.has(st.anim) &&
-		SETTLE_FROM.has(f.anim)
-			? settleStep(eased, q, blendPose(f), 1 - f.w, standRef(st))
-			: eased;
-	const turned = st.legs ?? 0;
-	const legs = f && f.w > 0 ? turned + ((f.legs ?? 0) - turned) * f.w : turned;
-	let p = legs ? { ...b, legs } : b;
-	// Turning on the spot: a leg each (see pivotOf).
+	const fw = f && f.w > 0 ? f.w : 0;
+	const was =
+		fw > 0 && fw < 1 && st.z <= 0 && stepsOver(f!.anim, st.anim)
+			? blendPose(f!)
+			: undefined;
+	const steps = was ? settleLegs(q, was, 1 - fw, standRef(st)) : undefined;
+	let p = steps ? settleStep(eased, q, was!, 1 - fw, standRef(st)) : eased;
+	// His legs turned under him - and turning on the spot, a leg each (see
+	// pivotOf). Easing out of the last move, each foot points where it
+	// pointed on the floor as it changed - not swung round with him as he
+	// turns - till it steps (or eases) round to where this one has it.
 	const pv = st.pivot;
-	const fp = f && f.w > 0 ? f.pivot : undefined;
-	if (pv || fp) {
-		const fw = f?.w ?? 0;
-		const at = (i: 0 | 1 | 2 | 3) =>
+	const fp = fw > 0 ? f!.pivot : undefined;
+	const turned = st.legs ?? 0;
+	const fromAt = (i: 0 | 1) =>
+		fw > 0 ? legTurnFrom(f!, i, st.yaw, st.anim) : 0;
+	if (turned || pv || fp || fromAt(0) || fromAt(1)) {
+		const legAt = (i: 0 | 1, on: number) => {
+			const to = turned + (pv?.[i] ?? 0);
+			return to + (fromAt(i) - to) * on;
+		};
+		const lift = (i: 2 | 3) =>
 			(pv?.[i] ?? 0) + ((fp?.[i] ?? 0) - (pv?.[i] ?? 0)) * fw;
 		p = {
 			...p,
-			spinN: at(0),
-			spinF: at(1),
-			hipN: p.hipN + PIVOT_HIP * at(2),
-			kneeN: p.kneeN + PIVOT_KNEE * at(2),
-			hipF: p.hipF + PIVOT_HIP * at(3),
-			kneeF: p.kneeF + PIVOT_KNEE * at(3),
+			legs: 0,
+			spinN: legAt(0, steps ? 1 - steps.n.on : fw),
+			spinF: legAt(1, steps ? 1 - steps.f.on : fw),
+			hipN: p.hipN + PIVOT_HIP * lift(2),
+			kneeN: p.kneeN + PIVOT_KNEE * lift(2),
+			hipF: p.hipF + PIVOT_HIP * lift(3),
+			kneeF: p.kneeF + PIVOT_KNEE * lift(3),
 		};
 	}
 	const a = st.arm;
