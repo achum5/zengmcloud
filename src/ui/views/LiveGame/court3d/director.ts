@@ -8409,7 +8409,8 @@ class Director {
 		let t = from + this.rand(80, 200);
 		const shove = (pid: number, to: Pt, t0: number, ms: number) => {
 			const tr = this.track(pid);
-			if (!tr) {
+			// (Still on his way in: no leaning on anybody until he is there.)
+			if (!tr || (tr.moves.at(-1)?.t1 ?? 0) > t0 + 1) {
 				return;
 			}
 			const m: Move = {
@@ -8495,6 +8496,43 @@ class Director {
 			});
 			this.free.set(pid, t);
 		}
+	}
+
+	// Whatever he was to do from `at` on, he never does: his runs cut off
+	// there, his acts with them.
+	private dropFrom(pid: number, at: number) {
+		if (at >= (this.free.get(pid) ?? 0)) {
+			return;
+		}
+		this.cutShort(pid, at);
+		const tr = this.track(pid);
+		if (tr) {
+			tr.acts = tr.acts.filter((a) => a.t0 < at);
+			for (const a of tr.acts) {
+				a.t1 = Math.min(a.t1, at);
+			}
+		}
+		this.free.set(pid, at);
+	}
+
+	// A help man a long way off the ball when it is to be taken off it: he
+	// has sagged in off his man already - a step or two from it by `by` -
+	// not run across the floor at the last moment.
+	private sagIn(pid: number, at: Pt, by: number, within = 7) {
+		const lead = 1400;
+		const W = this.posAt(pid, by - lead);
+		if (dist(W, at) <= within + 4) {
+			return;
+		}
+		const u = unitVec(at, W);
+		this.dropFrom(pid, by - lead);
+		this.goBy(
+			pid,
+			clampPt({ x: at.x + u.x * within, y: at.y + u.y * within }),
+			by - lead,
+			by - 100,
+			"run",
+		);
 	}
 
 	// THE SEAL, for an entry pass: his back into his man down on the block,
@@ -8939,8 +8977,13 @@ class Director {
 				face: B.x >= A.x ? 1 : -1,
 				look: { ...B },
 			});
-			// He gets there with his hands out to it - a step off the lane.
-			const side = unitVec(I, this.posOf(m));
+			// He gets there with his hands out to it - a step off the lane, to
+			// the side he came from: not stood on the line itself, where the
+			// pass would go through him on its way to his hands.
+			const u = unitVec(A, B);
+			const M0 = this.posOf(m);
+			const s = -u.y * (M0.x - I.x) + u.x * (M0.y - I.y) >= 0 ? 1 : -1;
+			const side = { x: -u.y * s, y: u.x * s };
 			this.goBy(
 				m,
 				clampPt({
@@ -8955,7 +8998,6 @@ class Director {
 			this.act(m, "reach", r0, r0 + REACH_MS, { look: I });
 			const I3 = { ...I, z: REACH_AT.u };
 			this.fly(release, tI, { pid: h }, I3);
-			const u = unitVec(A, B);
 			// (Off line enough to see it was touched.)
 			const a = (this.rng() < 0.5 ? -1 : 1) * this.rand(0.3, 0.75);
 			return this.knockOut(tI, I3, {
@@ -9022,23 +9064,25 @@ class Director {
 	// Knocked loose at `at` - a hand to it in the air, or off him on the
 	// bounce - and on out of bounds along `u`, or, if that is the length of
 	// the floor away, off the nearest line. Returns when it is out.
-	private knockOut(t: number, at: Pt3, u: Pt): number {
+	private knockOut(t: number, at: Pt3, u: Pt, came?: Pt): number {
 		// (Turned toward a nearer line, as little as it takes, if that one is
-		// the length of the floor away.)
-		let way = u;
+		// the length of the floor away - though never back onto the line it
+		// `came` in on, if it came off somebody's hands: it was turned there.)
+		let way: Pt | undefined;
 		for (const a of [0, 0.3, -0.3, 0.6, -0.6, 0.9, -0.9, 1.2, -1.2]) {
 			const v = {
 				x: u.x * Math.cos(a) - u.y * Math.sin(a),
 				y: u.x * Math.sin(a) + u.y * Math.cos(a),
 			};
+			if (came && v.x * came.x + v.y * came.y > Math.cos(0.3)) {
+				continue;
+			}
 			if (dist(at, this.outPoint(at, v)) <= 30) {
 				way = v;
 				break;
 			}
-			if (a === -1.2) {
-				way = unitVec(at, this.nearestOut(at));
-			}
 		}
+		way ??= unitVec(at, this.nearestOut(at));
 		const out = this.rollsOut(at, way);
 		const h0 = Math.max(0.8, Math.min(3, at.z * 0.35));
 		const span = this.bounceSpan(
@@ -11325,20 +11369,20 @@ class Director {
 			const rim = { x: rimX(team), y: COURT_H / 2 };
 			const T0 = this.posOf(thief);
 			let hit: number | undefined;
-			// Too far off him to be the man on him, and back between him and
-			// the rim: a help man, and the ball taken off a drive into him -
-			// he attacks, the help steps up and strips it where they meet. Not
-			// stood there holding it while a man runs at him from under the
-			// basket.
+			// Too far off him to be the man on him: a help man, and the ball
+			// taken off a drive - he attacks, the help steps up (or slides
+			// across, or runs him down from behind) and strips it where they
+			// meet. Not stood there holding it while a man runs at him from
+			// under the basket or across the floor.
+			const start = Math.max(t, this.free.get(victim) ?? 0);
+			const go = Math.max(t, this.free.get(thief) ?? 0);
+			const DRIVE = DRIBBLE * 0.75;
+			let best: { M: Pt; miss: number } | undefined;
 			if (
 				this.holder === victim &&
 				dist(vp, T0) > 9 &&
-				dist(T0, rim) < dist(vp, rim) - 4
+				dist(T0, rim) < dist(vp, rim) + 6
 			) {
-				const start = Math.max(t, this.free.get(victim) ?? 0);
-				const go = Math.max(t, this.free.get(thief) ?? 0);
-				const DRIVE = DRIBBLE * 0.75;
-				let best: { M: Pt; miss: number } | undefined;
 				for (let f = 0.2; f <= 0.75; f += 0.05) {
 					const M = clampPt({
 						x: vp.x + (rim.x - vp.x) * f,
@@ -11351,7 +11395,9 @@ class Director {
 						best = { M, miss };
 					}
 				}
-				const M = best!.M;
+			}
+			if (best && best.miss < 600) {
+				const M = best.M;
 				const u = unitVec(vp, rim);
 				this.hold(victim, start, "dribble");
 				const arrive = this.go(victim, M, start, DRIVE, "dribble", dir);
@@ -11378,6 +11424,9 @@ class Director {
 					),
 				);
 				vp = M;
+			}
+			if (hit === undefined && this.holder === victim) {
+				this.sagIn(thief, vp, t, 5);
 			}
 			const toward = (vp.x >= this.posOf(thief).x ? 1 : -1) as 1 | -1;
 			hit ??= this.goBy(
@@ -11614,15 +11663,82 @@ class Director {
 			const ud = this.defenderOf(user);
 			const S = this.posOf(victim);
 			let hit = end;
+			// Off the ball, it is as the man it frees comes by it that his man
+			// runs into it - not once the cut is run and done, the man with the
+			// ball stood waiting on the whistle all that while.
+			let from = end - 350;
+			let by = end + 150;
+			const set = run.screen?.set;
+			const off = user !== this.holder && set !== undefined;
+			if (off) {
+				let near = Infinity;
+				let past = set;
+				for (let q = set; q <= (this.free.get(user) ?? set); q += 50) {
+					const d = dist(this.posAt(user, q), S);
+					if (d < near - 0.01) {
+						near = d;
+						past = q;
+					}
+				}
+				const U = this.posAt(user, set - 150);
+				if (near > 4.5 && dist(U, S) < 26) {
+					// Not by it yet - his cut off it is the set's next step: he
+					// comes off it now, brushing the screener's shoulder, on his
+					// way to where it was to take him.
+					const cut = play.steps[risk.step + 1]?.find(
+						(a) => a.type === "move" && a.who === fail.for,
+					);
+					const on = unitVec(U, S);
+					const P =
+						cut?.type === "move"
+							? this.at(run, cut.to)
+							: clampPt({ x: S.x + on.x * 8, y: S.y + on.y * 8 });
+					const l = unitVec(U, P);
+					const side = l.x * (S.y - U.y) - l.y * (S.x - U.x) >= 0 ? -1 : 1;
+					const B = clampPt({
+						x: S.x - l.y * side * 2.2,
+						y: S.y + l.x * side * 2.2,
+					});
+					// (Timed to come by it as it goes up: off as the screener
+					// gets there, less the run.)
+					const leave = Math.max(
+						t,
+						set + 100 - runMs(dist(U, B), RUN, 0, 1, RUN),
+					);
+					this.dropFrom(user, leave);
+					past = this.go(user, B, leave, RUN, "run", undefined, {
+						onto: RUN,
+					});
+					// (A few strides on, until the whistle pulls him up.)
+					const w = unitVec(B, P);
+					const ahead = Math.min(6, dist(B, P));
+					this.go(
+						user,
+						clampPt({ x: B.x + w.x * ahead, y: B.y + w.y * ahead }),
+						past,
+						RUN,
+						"run",
+					);
+				}
+				by = Math.max(past, set + 150) + 50;
+				from = by - 550;
+			}
 			if (ud !== undefined) {
+				if (off) {
+					this.dropFrom(ud, from);
+				}
 				const u = unitVec(S, this.posOf(ud));
 				hit = this.goBy(
 					ud,
 					clampPt({ x: S.x + u.x * BODY, y: S.y + u.y * BODY }),
-					end - 350,
-					end + 150,
+					from,
+					by,
 					"run",
 				);
+				// (On the cutter's hip already, he bumps it as the cutter goes by.)
+				if (off) {
+					hit = Math.max(hit, by - 50);
+				}
 			}
 			this.act(victim, "reach", hit - 160, hit + 300, {
 				look: this.posOf(user),
@@ -11813,10 +11929,15 @@ class Director {
 				// line it came in on.)
 				const r = this.rand(-1, 1);
 				const a = (r < 0 ? -1 : 1) * (0.35 + 0.45 * Math.abs(r));
-				const tOut = this.knockOut(tR, R3, {
-					x: -back.x * Math.cos(a) + back.y * Math.sin(a),
-					y: -back.x * Math.sin(a) - back.y * Math.cos(a),
-				});
+				const tOut = this.knockOut(
+					tR,
+					R3,
+					{
+						x: -back.x * Math.cos(a) + back.y * Math.sin(a),
+						y: -back.x * Math.sin(a) - back.y * Math.cos(a),
+					},
+					{ x: -back.x, y: -back.y },
+				);
 				const out = this.ballAt;
 				this.effect("whistle", tOut + 150, {
 					call: "out",
@@ -11919,6 +12040,9 @@ class Director {
 			// him: no faster than he can be there for it.
 			let tS: number;
 			if (who !== undefined) {
+				if (help) {
+					this.sagIn(who, S, start);
+				}
 				this.unshadow(who, start);
 				const near = dist(this.posOf(who), P) < 9;
 				const arr = this.go(
