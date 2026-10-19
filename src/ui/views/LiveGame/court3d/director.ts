@@ -1111,6 +1111,11 @@ const hash01 = (a: number, b: number): number => {
 	return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 };
 
+// A shooter's own stroke: his jumper takes this much of the usual time,
+// from the quickest to the slowest.
+const FORM_LO = 0.93;
+const FORM_HI = 1.07;
+
 // Nobody of theirs within this far of a shooter as it left his hands
 // (feet): he was left alone for it.
 const WIDE_OPEN = 8;
@@ -7674,7 +7679,14 @@ class Director {
 			// just past halfway: about two-thirds of a second off the catch,
 			// the league's typical catch-and-shoot).
 			const jumper = anim === "shoot" || anim === "fade";
-			const dur = close || floater ? 760 : zone === "lowPost" ? 900 : 1000;
+			// (Each shooter his own stroke, every time: a quick one off a low
+			// lift, or a slower one rising higher - up as long as gravity
+			// takes for the height.)
+			const form = jumper
+				? FORM_LO + (FORM_HI - FORM_LO) * hash01(shooter, 6151)
+				: 1;
+			const dur =
+				(close || floater ? 760 : zone === "lowPost" ? 900 : 1000) * form;
 			if (jumper) {
 				landed = gather + dur;
 			}
@@ -7707,7 +7719,7 @@ class Director {
 								? 1.55
 								: 1.4;
 			const jump: [number, number, number] = jumper
-				? [JUMPER.off, JUMPER.land, peak]
+				? [JUMPER.off, JUMPER.land, peak * form * form]
 				: [0.24, 0.93, peak];
 			this.act(shooter, anim, gather, gather + dur, {
 				face: faceRim,
@@ -11089,7 +11101,9 @@ class Director {
 			this.hurry(T, set - 250, true);
 		}
 		const shotAt = set + 260;
-		const stroke = 1000;
+		// (His own stroke, as on his jumper.)
+		const stroke =
+			1000 * (FORM_LO + (FORM_HI - FORM_LO) * hash01(shooter, 6151));
 		this.act(shooter, "setShot", shotAt, shotAt + stroke, {
 			face: dir,
 			look: rimSpot,
