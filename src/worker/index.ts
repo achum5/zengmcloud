@@ -101,6 +101,11 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"sendLiveChatMessage",
 	"getSyncEngine",
 	"getSyncStatus",
+	// The Multiplayer Sync page's reads (this device's name, the teams it
+	// manages). Refused while reconnecting, they left the page blank - a league
+	// in a room shown as one that had never been in one.
+	"getSyncTeams",
+	"getSyncDeviceName",
 	"markSyncRequired",
 	"publishAutoPlayState",
 	"refreshSyncUIState",

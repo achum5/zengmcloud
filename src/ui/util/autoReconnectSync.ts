@@ -1,6 +1,7 @@
 import { toWorker } from "./toWorker.ts";
+import { local } from "./local.ts";
 import { safeLocalStorage } from "./safeLocalStorage.ts";
-import { ERROR_MESSAGE_SYNC_ROOM_MISMATCH } from "../../common/constants.ts";
+import { runReconnect, type ReconnectDeps } from "./reconnectLoop.ts";
 import { isValidFirebaseConfig } from "../../common/syncInvite.ts";
 import type { FirebaseConfig } from "../../common/firebaseConfig.ts";
 
@@ -65,79 +66,100 @@ export const clearStoredSync = (lid: number) => {
 	safeLocalStorage.removeItem(key(lid));
 };
 
-// Avoid firing a reconnect loop repeatedly for the same league within a session.
-let reconnectingLid: number | undefined;
+// A connect the worker never answers must not hold the loop for good either.
+const CONNECT_ANSWER_MS = 180_000;
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+// The league a reconnect loop is running for right now (not "ever tried": a
+// loop that ended clears it, so coming back to a league always tries again).
+let reconnectingLid: number | undefined;
+// Cuts the loop's current wait short.
+let wakeRetry: (() => void) | undefined;
+
+const wait = (ms: number) =>
+	new Promise<void>((resolve) => {
+		const done = () => {
+			clearTimeout(timer);
+			if (wakeRetry === done) {
+				wakeRetry = undefined;
+			}
+			resolve();
+		};
+		const timer = setTimeout(done, ms);
+		wakeRetry = done;
+	});
+
+const withAnswerDeadline = <T>(promise: Promise<T>) =>
+	new Promise<T | undefined>((resolve, reject) => {
+		const timer = setTimeout(() => {
+			resolve(undefined);
+		}, CONNECT_ANSWER_MS);
+		promise.then(
+			(value) => {
+				clearTimeout(timer);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(timer);
+				reject(error);
+			},
+		);
+	});
+
+const liveDeps: ReconnectDeps = {
+	markSyncRequired: async (session) =>
+		await toWorker("main", "markSyncRequired", session),
+	getSyncStatus: async () => await toWorker("main", "getSyncStatus", undefined),
+	refreshSyncUIState: async () =>
+		await toWorker("main", "refreshSyncUIState", undefined),
+	connect: async (session) =>
+		await withAnswerDeadline(
+			(async () =>
+				await toWorker("main", "connectSharedLeague", {
+					code: session.code,
+					isHost: session.isHost,
+					// A join the user chose at league creation runs its actual connect
+					// here, post-navigation - it still counts as explicit, once.
+					explicit: !!session.pendingJoin,
+					// Only the FIRST connect can create the room, so the protocol
+					// choice rides along with that one-shot join and is dropped after.
+					firebaseConfig: session.firebaseConfig,
+				}))(),
+		),
+	currentLid: () => {
+		const lid = local.getState().lid;
+		return typeof lid === "number" ? lid : undefined;
+	},
+	stored: getStoredSync,
+	setStored: setStoredSync,
+	clearStored: clearStoredSync,
+	wait,
+};
 
 export const autoReconnectSync = async (lid: number) => {
-	const session = getStoredSync(lid);
-	if (!session || reconnectingLid === lid) {
+	if (reconnectingLid === lid) {
+		// Already on it: if it is waiting to go round again, go now.
+		wakeRetry?.();
+		return;
+	}
+	if (!getStoredSync(lid)) {
 		return;
 	}
 	reconnectingLid = lid;
-
-	// Gate simming immediately - before we've (re)connected - so a refresh can't
-	// leave a window where this device sims offline and silently diverges from
-	// the league. The worker keeps sims paused until the connection is live.
 	try {
-		await toWorker("main", "markSyncRequired", session);
-	} catch {}
-
-	// Reconnect with a few backoff retries so a transient failure recovers on its
-	// own (otherwise the sim gate would strand the user offline).
-	for (let attempt = 0; attempt < 5; attempt++) {
-		try {
-			const status = await toWorker("main", "getSyncStatus", undefined);
-			if (status.connected) {
-				// The worker's engine is already connected (e.g. it outlived this UI
-				// reload), so no connect runs to push sync state to the fresh UI. Ask
-				// the worker to re-assert it, or the UI would sit showing "nobody
-				// simming" with an unlocked Play menu while really following.
-				await toWorker("main", "refreshSyncUIState", undefined);
-				return;
-			}
-			await toWorker("main", "connectSharedLeague", {
-				code: session.code,
-				isHost: session.isHost,
-				// A join the user chose at league creation runs its actual connect
-				// here, post-navigation - it still counts as explicit, once.
-				explicit: !!session.pendingJoin,
-				// Only the FIRST connect can create the room, so the protocol
-				// choice rides along with that one-shot join and is dropped after.
-				firebaseConfig: session.firebaseConfig,
-			});
-			if (session.pendingJoin) {
-				setStoredSync(lid, {
-					code: session.code,
-					isHost: session.isHost,
-					firebaseConfig: session.firebaseConfig,
-				});
-			}
-			return;
-		} catch (error) {
-			// The room belongs to a different league file: this stored session is
-			// stale/wrong (e.g. a recycled lid). Drop it and stop retrying - the
-			// worker has already released the sim gate.
-			if (
-				error instanceof Error &&
-				error.message.includes(ERROR_MESSAGE_SYNC_ROOM_MISMATCH)
-			) {
-				clearStoredSync(lid);
-				reconnectingLid = undefined;
-				return;
-			}
-			console.warn(`Auto-reconnect attempt ${attempt + 1} failed`, error);
-			await delay(1000 * (attempt + 1));
+		await runReconnect(lid, liveDeps);
+	} finally {
+		if (reconnectingLid === lid) {
+			reconnectingLid = undefined;
 		}
 	}
+};
 
-	// Still offline after retries: try again the moment the browser is back
-	// online, and allow future manual retries (e.g. revisiting the sync page).
-	reconnectingLid = undefined;
-	const onOnline = () => {
-		window.removeEventListener("online", onOnline);
+// The app back in front, or back online: a reconnect waiting out its backoff
+// goes now, and a league in a room with no reconnect running gets one (when
+// it is connected that is one status read and done).
+export const nudgeAutoReconnect = () => {
+	const lid = local.getState().lid;
+	if (typeof lid === "number") {
 		void autoReconnectSync(lid);
-	};
-	window.addEventListener("online", onOnline);
+	}
 };

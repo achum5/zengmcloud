@@ -1785,6 +1785,36 @@ export const resyncSharedLeague = async (): Promise<{
 // that already exists.
 let connectQueue: Promise<unknown> = Promise.resolve();
 
+// One step of a connect that never answers must not hold the connect - and
+// every connect queued behind it - open for the life of the page. Field
+// report: a league in a room, opened, showing as one that had never been in
+// one until a reload. Timing out fails the connect, and the auto-reconnect
+// goes round again.
+const CONNECT_STEP_MS = 20_000;
+// (The SDK's chunk, the first time round, can be a big download on a phone.)
+const CONNECT_LOAD_MS = 60_000;
+const connectStep = <T>(
+	promise: Promise<T>,
+	what: string,
+	ms = CONNECT_STEP_MS,
+): Promise<T> =>
+	new Promise((resolve, reject) => {
+		const timer = setTimeout(() => {
+			syncDebugLog("connect:step-timeout", { what, ms });
+			reject(new Error(`Timed out connecting (${what})`));
+		}, ms);
+		promise.then(
+			(value) => {
+				clearTimeout(timer);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(timer);
+				reject(error);
+			},
+		);
+	});
+
 export const connectSharedLeague = async (options: {
 	code: string;
 	isHost?: boolean;
@@ -1886,6 +1916,16 @@ const doConnectSharedLeague = async ({
 	// offline and diverge.
 	syncRequired = true;
 
+	// The teardown just told the screen this league is not in a room. It is,
+	// and is on its way back: say so through the whole reconnect, not only once
+	// it is through - otherwise every reconnect read "Not connected" while it
+	// ran, and one that never got through read that way for good.
+	if (!explicit) {
+		void toUI("updateLocal", [
+			{ mpSyncActive: true, mpSyncReady: false, mpSyncReconnecting: true },
+		]);
+	}
+
 	// Point Firebase at this room's project - a bring-your-own-Firestore project
 	// when the caller supplied one, or the built-in default otherwise - BEFORE
 	// the first Firebase touch (auth) below. With no custom config this resets to
@@ -1895,10 +1935,14 @@ const doConnectSharedLeague = async ({
 	// First touch of the Firebase SDK in this session, and the point its chunk is
 	// fetched. Everything above here runs in a league that never connects, which
 	// is why the import is deferred to exactly this line.
-	const backend = await loadSyncBackend();
+	const backend = await connectStep(
+		loadSyncBackend(),
+		"sync-backend",
+		CONNECT_LOAD_MS,
+	);
 
 	// Authenticate - the uid is our stable, rule-enforceable sync identity.
-	const clientId = await backend.ensureAnonymousAuth();
+	const clientId = await connectStep(backend.ensureAnonymousAuth(), "auth");
 
 	const lid = g.get("lid");
 	const lidNumber = typeof lid === "number" ? lid : undefined;
@@ -1932,9 +1976,29 @@ const doConnectSharedLeague = async ({
 	// allowCache: detection tolerates a briefly-unreachable server (a stale
 	// answer and no answer are equally harmless - a room's protocol never
 	// changes).
-	let v2State = await transport
-		.fetchRoomV2State({ allowCache: true })
-		.catch(() => undefined);
+	//
+	// A read that FAILED is not "no pointer yet", though: that path ends in
+	// tearing the session down (the room taken for one on the old protocol, or
+	// one that couldn't be set up), which on a reconnect dropped the league out
+	// of its room - sims ungated, the page "Not connected" - over one slow read
+	// at startup. Only a deliberate join gives up on it; a reconnect keeps the
+	// league in its room and goes round again.
+	let v2State;
+	try {
+		v2State = await connectStep(
+			transport.fetchRoomV2State({ allowCache: true }),
+			"room-state",
+		);
+	} catch (error) {
+		syncDebugLog("connect:room-state-failed", { error: String(error) });
+		if (explicit) {
+			await teardownSharedLeague({ clearPersisted: false });
+			void toUI("updateLocal", [{ mpSyncActive: false }]);
+		}
+		throw new Error(
+			"Couldn't reach the room. Check your connection and try again.",
+		);
+	}
 	if (v2State === undefined) {
 		// No pointer yet. Either a brand-new room, which gets one, or a room from
 		// before the chain existed, which cannot be converted in place: its
@@ -2140,7 +2204,8 @@ const doConnectSharedLeague = async ({
 	//   - Binding is recorded after connect succeeds (meta + room registry).
 	const metaLeagueId = await loadSyncLeagueId(lidNumber);
 	const priorSession = await loadPersistedSyncSession(lidNumber);
-	const roomLeagueId = (await transport.getRoomInfo())?.leagueId;
+	const roomLeagueId = (await connectStep(transport.getRoomInfo(), "room-info"))
+		?.leagueId;
 	const refuse = async () => {
 		// Only scrub the persisted session if it pointed at the room being
 		// refused - a failed explicit join to some OTHER room must not erase the

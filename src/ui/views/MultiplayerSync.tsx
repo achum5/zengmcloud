@@ -182,52 +182,64 @@ const MultiplayerSync = () => {
 	// On mount, reflect whatever the worker's sync engine is currently doing
 	// (it may already be connected from an auto-reconnect after refresh), and
 	// load the multi-team-mode teams for the team picker.
+	//
+	// The room this league is in comes from this device's own record of it,
+	// straight away - not only once the worker answers. While a reconnect is
+	// under way the worker can be slow to, and a page that waited on it showed
+	// a league in a room as one that had never been in one: no room, no name,
+	// no team, "Not connected". Each answer is used as it comes, one lost
+	// costs only itself, and it all runs again as the connection comes or goes.
+	useEffect(() => {
+		if (typeof lid === "number" && !mpSyncActive) {
+			const stored = getStoredSync(lid);
+			if (stored) {
+				setCode((current) => current || stored.code);
+				setIsHost(stored.isHost);
+			}
+		}
+	}, [lid, mpSyncActive]);
 	useEffect(() => {
 		let cancelled = false;
-		(async () => {
-			const [workerStatus, syncTeams, name] = await Promise.all([
-				toWorker("main", "getSyncStatus", undefined),
-				toWorker("main", "getSyncTeams", undefined),
-				toWorker("main", "getSyncDeviceName", undefined),
-			]);
-			if (cancelled) {
+		void (async () => {
+			const name = await toWorker("main", "getSyncDeviceName", undefined);
+			if (!cancelled && name) {
+				setDeviceName(name.stored);
+				setDeviceNamePlaceholder(name.effective);
+			}
+		})().catch(() => {});
+		void (async () => {
+			const syncTeams = await toWorker("main", "getSyncTeams", undefined);
+			if (!cancelled && syncTeams) {
+				setTeams(syncTeams.teams);
+				setUserTid(syncTeams.userTid);
+				setMultiTeamMode(syncTeams.multiTeamMode);
+			}
+		})().catch(() => {});
+		void (async () => {
+			const workerStatus = await toWorker("main", "getSyncStatus", undefined);
+			if (cancelled || !workerStatus?.connected) {
 				return;
 			}
-			setDeviceName(name.stored);
-			setDeviceNamePlaceholder(name.effective);
-			setTeams(syncTeams.teams);
-			setUserTid(syncTeams.userTid);
-			setMultiTeamMode(syncTeams.multiTeamMode);
-			if (workerStatus.connected) {
-				setCode(workerStatus.code ?? "");
-				setIsHost(!!workerStatus.isHost);
-				setStatus("connected");
-				// Restore the shareable invite if this is a bring-your-own-Firestore
-				// room (the config is only kept in localStorage, not the worker).
-				if (typeof lid === "number") {
-					const stored = getStoredSync(lid);
-					if (stored?.firebaseConfig && workerStatus.code) {
-						setInvite(
-							encodeSyncInvite(workerStatus.code, stored.firebaseConfig),
-						);
-					}
-				}
-				// Re-assert the shared sync state from the engine, in case this UI's
-				// local state drifted (e.g. a reset that fired after connect) and is
-				// showing a stale "nobody simming" / unlocked Play menu.
-				void toWorker("main", "refreshSyncUIState", undefined);
-			} else if (typeof lid === "number") {
+			setCode(workerStatus.code ?? "");
+			setIsHost(!!workerStatus.isHost);
+			setStatus("connected");
+			// Restore the shareable invite if this is a bring-your-own-Firestore
+			// room (the config is only kept in localStorage, not the worker).
+			if (typeof lid === "number") {
 				const stored = getStoredSync(lid);
-				if (stored) {
-					setCode(stored.code);
-					setIsHost(stored.isHost);
+				if (stored?.firebaseConfig && workerStatus.code) {
+					setInvite(encodeSyncInvite(workerStatus.code, stored.firebaseConfig));
 				}
 			}
-		})();
+			// Re-assert the shared sync state from the engine, in case this UI's
+			// local state drifted (e.g. a reset that fired after connect) and is
+			// showing a stale "nobody simming" / unlocked Play menu.
+			void toWorker("main", "refreshSyncUIState", undefined);
+		})().catch(() => {});
 		return () => {
 			cancelled = true;
 		};
-	}, [lid]);
+	}, [lid, mpSyncActive]);
 
 	// Detect push support once, and silently re-assert the token after a refresh
 	// if the user had already enabled it.
@@ -407,10 +419,11 @@ const MultiplayerSync = () => {
 		setAdminBusy(true);
 		setAdminMsg(undefined);
 		try {
-			await toWorker("main", "disconnectSharedLeague", undefined);
+			// (The stored room first, so a reconnect between tries sees it gone.)
 			if (typeof lid === "number") {
 				clearStoredSync(lid);
 			}
+			await toWorker("main", "disconnectSharedLeague", undefined);
 			setInvite(undefined);
 			setStatus("disconnected");
 			await toWorker("main", "deleteSyncRoom", room);
@@ -486,10 +499,11 @@ const MultiplayerSync = () => {
 	};
 
 	const disconnect = async () => {
-		await toWorker("main", "disconnectSharedLeague", undefined);
+		// (The stored room first, so a reconnect between tries sees it gone.)
 		if (typeof lid === "number") {
 			clearStoredSync(lid);
 		}
+		await toWorker("main", "disconnectSharedLeague", undefined);
 		setInvite(undefined);
 		setStatus("disconnected");
 	};
@@ -828,8 +842,16 @@ const MultiplayerSync = () => {
 										width: 10,
 									}}
 								/>
-								{mpSyncReady ? "Ready" : "Not ready"} for cloud upload to{" "}
-								<b>{code.trim()}</b>.
+								{mpSyncReconnecting && !mpSyncReady ? (
+									<>
+										Reconnecting to <b>{code.trim()}</b>…
+									</>
+								) : (
+									<>
+										{mpSyncReady ? "Ready" : "Not ready"} for cloud upload to{" "}
+										<b>{code.trim()}</b>.
+									</>
+								)}
 							</p>
 							<div className="d-flex align-items-center gap-2 flex-wrap">
 								<span>

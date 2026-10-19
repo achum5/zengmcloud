@@ -1,4 +1,5 @@
 import { toWorker } from "./toWorker.ts";
+import { nudgeAutoReconnect } from "./autoReconnectSync.ts";
 
 // The moment a user looks at the app again - tab switch, window focus, a PWA
 // resumed from the background - is exactly when the browser's parked network
@@ -20,6 +21,10 @@ export const initSyncForegroundNudge = () => {
 		void toWorker("main", "syncNudge", undefined).catch(() => {
 			// Not connected / worker busy - the health tick still covers it.
 		});
+		// A league in a room that is not connected - its reconnect still
+		// waiting out a backoff, or one that ended without getting through -
+		// tries again now, not at the next reload.
+		nudgeAutoReconnect();
 	};
 
 	document.addEventListener("visibilitychange", () => {
@@ -31,4 +36,5 @@ export const initSyncForegroundNudge = () => {
 	// pageshow covers a restore from the back/forward cache, which is how iOS
 	// often brings a suspended PWA back.
 	window.addEventListener("pageshow", nudge);
+	window.addEventListener("online", nudge);
 };
