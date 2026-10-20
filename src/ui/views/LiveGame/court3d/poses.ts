@@ -1211,6 +1211,52 @@ const JUMP_SHOT = jumper([
 	[0.93, { hipN: 0, kneeN: 32, hipF: -2, kneeF: 34, lean: 6, wide: 0.22 }],
 	[1, { hipN: -2, kneeN: 26, hipF: 2, kneeF: 28, lean: 5, wide: 0.2 }],
 ]);
+// The same jumper, each man his own way of it (see shotForm in
+// evaluate.ts): his other leg kicked out in front of him at the top -
+// the leg under the ball straight, so the ball goes up just as high -
+// or his feet split a little, one ahead of the other, landing wide.
+const KICK_SHOT = jumper([
+	[0, { hipN: -2, kneeN: 34, hipF: 4, kneeF: 36, lean: 8, wide: 0.2 }],
+	[0.1, { hipN: 0, kneeN: 56, hipF: -2, kneeF: 58, lean: 13, wide: 0.22 }],
+	[0.24, { hipN: 2, kneeN: 18, hipF: -2, kneeF: 20, lean: 4, wide: 0.2 }],
+	[0.28, { ...AIR, kneeN: 7, kneeF: 9, lean: 2, toe: 0 }],
+	[0.36, { ...AIR, kneeN: 6, hipF: 10, kneeF: 16, lean: 1 }],
+	[0.5, { ...AIR, kneeN: 5, hipF: 34, kneeF: 22, lean: 0, wide: 0.24 }],
+	[0.6, { ...AIR, kneeN: 6, hipF: 42, kneeF: 12, lean: -1, wide: 0.26 }],
+	[0.76, { ...AIR, kneeN: 8, hipF: 18, kneeF: 16, lean: 1 }],
+	[0.87, { ...AIR, hipN: 1, kneeN: 12, kneeF: 14, lean: 2, toe: 0 }],
+	[0.93, { hipN: 0, kneeN: 32, hipF: -2, kneeF: 34, lean: 6, wide: 0.22 }],
+	[1, { hipN: -2, kneeN: 26, hipF: 2, kneeF: 28, lean: 5, wide: 0.2 }],
+]);
+const SPLIT_SHOT = jumper([
+	[0, { hipN: -2, kneeN: 34, hipF: 4, kneeF: 36, lean: 8, wide: 0.2 }],
+	[0.1, { hipN: 0, kneeN: 56, hipF: -2, kneeF: 58, lean: 13, wide: 0.22 }],
+	[0.24, { hipN: 2, kneeN: 18, hipF: -2, kneeF: 20, lean: 4, wide: 0.22 }],
+	[0.28, { ...AIR, kneeN: 7, kneeF: 9, lean: 2, wide: 0.24, toe: 0 }],
+	[
+		0.4,
+		{ ...AIR, hipN: -6, kneeN: 10, hipF: 12, kneeF: 14, lean: 1, wide: 0.3 },
+	],
+	[
+		0.7,
+		{ ...AIR, hipN: -8, kneeN: 12, hipF: 14, kneeF: 16, lean: 1, wide: 0.32 },
+	],
+	[
+		0.87,
+		{
+			...AIR,
+			hipN: -4,
+			kneeN: 14,
+			hipF: 8,
+			kneeF: 16,
+			lean: 2,
+			wide: 0.3,
+			toe: 0,
+		},
+	],
+	[0.93, { hipN: -4, kneeN: 34, hipF: 6, kneeF: 36, lean: 6, wide: 0.3 }],
+	[1, { hipN: -4, kneeN: 28, hipF: 6, kneeF: 30, lean: 5, wide: 0.28 }],
+]);
 // A fadeaway: the same arms, but leaning back away from his man as he
 // rises, his legs out in front of him, landing a step back.
 const BACK = { plant: 0.3, toe: 1 };
@@ -2350,6 +2396,8 @@ export const ANIMS = {
 		pose: (i) => runPose(i / 6, "closeout"),
 	},
 	shoot: { kind: "act", n: 12, keys: JUMP_SHOT },
+	shootKick: { kind: "act", n: 12, keys: KICK_SHOT },
+	shootSplit: { kind: "act", n: 12, keys: SPLIT_SHOT },
 	setShot: { kind: "act", n: 12, keys: SET_SHOT },
 	layup: {
 		kind: "act",
@@ -5777,6 +5825,8 @@ const flared = (arm: Limb, deg: number, side: 1 | -1): Limb => {
 export type Grip = "two" | "shot" | "palm" | "push" | "pull" | "cup";
 const GRIPS: Partial<Record<AnimName, Grip>> = {
 	shoot: "shot",
+	shootKick: "shot",
+	shootSplit: "shot",
 	setShot: "shot",
 	fade: "shot",
 	shotFake: "shot",
@@ -5796,6 +5846,14 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 	spinMove: "pull",
 };
 export const gripOf = (anim: AnimName): Grip => GRIPS[anim] ?? "two";
+
+// Each man's own jumper, the same every game: most straight up and down,
+// some with a kick of the leg, some landing split (see KICK_SHOT).
+export const shotForm = (pid: number): AnimName => {
+	const x = Math.sin(pid * 91.7 + 13.1) * 43758.5453;
+	const r = x - Math.floor(x);
+	return r < 0.6 ? "shoot" : r < 0.8 ? "shootKick" : "shootSplit";
+};
 
 // A basketball's radius, feet.
 const BALL_RADIUS = 0.39;

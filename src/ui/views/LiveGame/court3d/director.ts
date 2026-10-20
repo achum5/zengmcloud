@@ -79,6 +79,7 @@ import {
 	mirror as mirrorPose,
 	poseAt,
 	releaseAt,
+	shotForm,
 	skeleton,
 	standingReach,
 	type AnimName,
@@ -8172,7 +8173,11 @@ class Director {
 			letGoAt = release;
 			// The ball on his fingers then, as high as his jump has him.
 			const v = (letGo - jump[0]) / (jump[1] - jump[0]);
-			let fingers = releaseAt(anim, letGo);
+			// (Up off his own jumper, the ball in his hand on it.)
+			let fingers = releaseAt(
+				anim === "shoot" ? shotForm(shooter) : anim,
+				letGo,
+			);
 			fingers.u += v > 0 && v < 1 ? 4 * jump[2] * v * (1 - v) : 0;
 			if (reverse) {
 				// (Facing along the baseline, not at the rim: put back as if he

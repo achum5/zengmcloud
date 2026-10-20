@@ -37,6 +37,7 @@ import {
 	moveFloor,
 	poseAt,
 	posed,
+	shotForm,
 	skeleton,
 	standingReach,
 	underPalm,
@@ -1952,7 +1953,8 @@ const doingAt = (
 	if (act) {
 		mirrored = act.mirror === true;
 		const u = (t - act.t0) / (act.t1 - act.t0);
-		anim = act.anim;
+		// (A jumper, each man his own way of it.)
+		anim = act.anim === "shoot" ? shotForm(pid) : act.anim;
 		const a = ANIMS[anim];
 		phase =
 			a.kind === "act"
