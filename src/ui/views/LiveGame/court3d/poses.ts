@@ -313,6 +313,40 @@ const P = {
 		twist: 10,
 		wide: 0.18,
 	}),
+	// The same pushed at the floor - a bounce pass off the dribble: the arm
+	// driven down and out, low over his front knee.
+	pushBounceOut: pose({
+		hipN: -24,
+		kneeN: 30,
+		hipF: 40,
+		kneeF: 44,
+		shN: 54,
+		elN: 8,
+		abN: 14,
+		wrN: 76,
+		shF: 34,
+		elF: 50,
+		abF: 34,
+		lean: 24,
+		twist: 10,
+		wide: 0.2,
+	}),
+	pushBounceFlick: pose({
+		hipN: -24,
+		kneeN: 30,
+		hipF: 40,
+		kneeF: 44,
+		shN: 50,
+		elN: 4,
+		abN: 14,
+		wrN: -28,
+		shF: 32,
+		elF: 50,
+		abF: 34,
+		lean: 23,
+		twist: 10,
+		wide: 0.2,
+	}),
 	// An overhead pass: the ball up over his head, then whipped forward.
 	overheadUp: pose({
 		hipN: -8,
@@ -1647,6 +1681,47 @@ const PICKUP_LOW = pose({
 	lean: 54,
 	wide: 0.42,
 });
+
+// An in-and-out on the dribble (the ball in his right hand): his right
+// shoulder and his weight going left as if he is crossing it over, his hand
+// working the ball in toward the middle - then out again, the ball still in
+// the same hand (see dribbleIn).
+const IN_OUT: [number, Pose][] = [
+	[0, P.sizeUp],
+	[
+		0.4,
+		pose({
+			...P.sizeUp,
+			hipN: 10,
+			kneeN: 50,
+			hipF: 22,
+			kneeF: 68,
+			lean: 21,
+			tilt: 7,
+			twist: 13,
+			shF: 40,
+			elF: 66,
+			abF: 36,
+		}),
+	],
+	[
+		0.56,
+		pose({
+			...P.sizeUp,
+			hipN: 8,
+			kneeN: 52,
+			hipF: 24,
+			kneeF: 66,
+			lean: 20,
+			tilt: 5,
+			twist: 10,
+			shF: 38,
+			elF: 68,
+			abF: 36,
+		}),
+	],
+	[1, P.sizeUp],
+];
 
 export const ANIMS = {
 	// Never still: he settles down into his knees and back up, his
@@ -3850,6 +3925,19 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// And at the floor, a bounce pass.
+	passBouncePush: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.pushLoad],
+			[0.18, P.pushLoad],
+			[0.4, P.pushBounceOut],
+			[0.55, P.pushBounceFlick],
+			[0.75, P.pushBounceFlick],
+			[1, P.ready],
+		],
+	},
 	passOverhead: {
 		kind: "act",
 		n: 8,
@@ -4648,6 +4736,8 @@ export const ANIMS = {
 	crossLegsL: { kind: "act", n: 8, keys: mirrorKeys(CROSS_LEGS) },
 	crossBackR: { kind: "act", n: 8, keys: CROSS_BACK },
 	crossBackL: { kind: "act", n: 8, keys: mirrorKeys(CROSS_BACK) },
+	dribbleInOutR: { kind: "act", n: 8, keys: IN_OUT },
+	dribbleInOutL: { kind: "act", n: 8, keys: mirrorKeys(IN_OUT) },
 } satisfies Record<string, Anim>;
 
 // The dribble moves, by move and the hand the ball leaves - each with his
@@ -5278,6 +5368,7 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 	tomahawk: "palm",
 	hook: "palm",
 	passPush: "push",
+	passBouncePush: "push",
 };
 export const gripOf = (anim: AnimName): Grip => GRIPS[anim] ?? "two";
 
@@ -5457,6 +5548,10 @@ const DRIBBLE_TOP = { f: 0.72, s: 1.12, u: 0.5 };
 const DRIBBLE_LOW = { f: 0.82, s: 1.18, u: 0.02 };
 const DRIBBLE_TOP_AHEAD = { f: 1.12, s: 1.02, u: 0.6 };
 const DRIBBLE_LOW_AHEAD = { f: 1.38, s: 1.06, u: 0.2 };
+// Worked all the way in on an in-and-out: how much nearer the middle of him
+// (of the way), and how much further out in front (feet).
+export const IN_BY = 0.72;
+export const IN_AHEAD = 0.2;
 // Through a bounce, how far down the hand has pushed (0 at the top, 1 at the
 // bottom): down hard, the ball gone at the bottom, then back up to wait for
 // it - riding it the last of the way up.
@@ -5470,9 +5565,25 @@ const pushOf = (ph: number): number => {
 export const dribbleAhead = (anim: AnimName): number =>
 	anim === "dribble" || anim === "sprint" || anim === "run"
 		? 1
-		: anim === "dribbleWalk" || anim === "dribbleJab" || anim === "dribbleHesi"
+		: anim === "dribbleWalk" ||
+			  anim === "dribbleJab" ||
+			  anim === "dribbleHesi" ||
+			  anim === "dribbleInOutR" ||
+			  anim === "dribbleInOutL"
 			? 0.5
 			: 0;
+// How far in toward the middle of him he has worked the ball (0 to 1), that
+// far through an in-and-out: in, held there a beat, and back out.
+export const dribbleIn = (anim: AnimName, phase: number): number => {
+	if (anim !== "dribbleInOutR" && anim !== "dribbleInOutL") {
+		return 0;
+	}
+	const smooth = (x: number) => {
+		const u = Math.min(1, Math.max(0, x));
+		return u * u * (3 - 2 * u);
+	};
+	return smooth((phase - 0.1) / 0.3) * (1 - smooth((phase - 0.56) / 0.32));
+};
 const DRIBBLER = (() => {
 	let b: Body | undefined;
 	return () => (b ??= bodyOf());
@@ -5484,6 +5595,8 @@ export const dribbleArm = (
 	ahead = 0,
 	// A bounce that takes it across to his other hand: the hand it leaves.
 	leaves?: Hand,
+	// Worked in toward the middle of him (see dribbleIn).
+	inward = 0,
 ): Pose => {
 	const e = pushOf(ph);
 	const at = (k: "f" | "s" | "u") => {
@@ -5491,7 +5604,12 @@ export const dribbleArm = (
 			DRIBBLE_TOP[k] + (DRIBBLE_TOP_AHEAD[k] - DRIBBLE_TOP[k]) * ahead;
 		const low =
 			DRIBBLE_LOW[k] + (DRIBBLE_LOW_AHEAD[k] - DRIBBLE_LOW[k]) * ahead;
-		return top + (low - top) * e;
+		const v = top + (low - top) * e;
+		return k === "s"
+			? v * (1 - IN_BY * inward)
+			: k === "f"
+				? v + IN_AHEAD * inward
+				: v;
 	};
 	const b = DRIBBLER();
 	// (Worked out in his frame before his shoulders turn - as the skeleton
@@ -5576,6 +5694,7 @@ export const posed = (
 			hand,
 			dribbleAhead(anim) * (1 - tight),
 			leaves,
+			dribbleIn(anim, phase),
 		);
 	}
 	if (target <= 0) {

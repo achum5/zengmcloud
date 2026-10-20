@@ -748,6 +748,7 @@ const PASS_ACTS = new Set<AnimName>([
 	"passBounce",
 	"passOverhead",
 	"passPush",
+	"passBouncePush",
 ]);
 
 // A step aside eases over and back this fast (ms each way) unless it says.
@@ -3273,10 +3274,10 @@ class Director {
 			(this.free.get(to) ?? 0) + 40 - flight - wind,
 		);
 		// Off a live dribble - on the move, mostly - a pass that is not up over
-		// the top or on the floor goes out of the hand he dribbles with, one
-		// hand behind it (see PUSH_SHARE).
+		// the top goes out of the hand he dribbles with, one hand behind it -
+		// a bounce pass pushed at the floor (see PUSH_SHARE).
 		const dribbled =
-			kind === "chest" && !handOff
+			(kind === "chest" || kind === "bounce") && !handOff
 				? this.dribbleFrom(from, ready) !== undefined
 				: false;
 		const pushHand = dribbled
@@ -3356,7 +3357,9 @@ class Director {
 			over
 				? "passOverhead"
 				: kind === "bounce"
-					? "passBounce"
+					? push
+						? "passBouncePush"
+						: "passBounce"
 					: push
 						? "passPush"
 						: "pass",
@@ -16020,6 +16023,7 @@ class Director {
 			"passBounce",
 			"passOverhead",
 			"passPush",
+			"passBouncePush",
 		]);
 		const busy = (tr: Track, t: number) =>
 			tr.acts.some(
@@ -16798,6 +16802,7 @@ class Director {
 			"passBounce",
 			"passOverhead",
 			"passPush",
+			"passBouncePush",
 			"contest",
 			"triple",
 			"jab",
@@ -17531,6 +17536,7 @@ class Director {
 			"passBounce",
 			"passOverhead",
 			"passPush",
+			"passBouncePush",
 			"triple",
 			"jab",
 			"shotFake",
@@ -18768,21 +18774,36 @@ class Director {
 					if (!guard || !G) {
 						break;
 					}
-					const hesi = hash01(s.pid, t + 2) < 0.4;
+					const pick = hash01(s.pid, t + 2);
+					const hesi = pick < 0.35;
+					const inOut = !hesi && pick < 0.6;
+					// (The hand it is in then.)
+					const hand =
+						(own.findLast((x) => x.t0 <= t) as { hand?: Hand } | undefined)
+							?.hand ?? "R";
 					tr.acts.push({
 						t0: t,
 						t1: t + ms,
-						anim: hesi ? "dribbleHesi" : "dribbleJab",
+						anim: hesi
+							? "dribbleHesi"
+							: inOut
+								? hand === "L"
+									? "dribbleInOutL"
+									: "dribbleInOutR"
+								: "dribbleJab",
 						look: { ...G },
 					});
-					// Off him on the jab; up at him on the hesitation.
+					// Off him on the jab; up at him on the hesitation; across with
+					// the ball on the in-and-out, to his left as it goes in from his
+					// right hand.
 					const u = unitVec(P, G);
-					const k = hesi ? -0.6 : 1.1;
+					const k = hesi ? -0.6 : inOut ? 0 : 1.1;
+					const side = inOut ? (hand === "L" ? -0.9 : 0.9) : 0;
 					(guard.nudges ??= []).push({
 						t0: t + 120,
 						t1: t + ms + 240,
-						dx: u.x * k,
-						dy: u.y * k,
+						dx: u.x * k + u.y * side,
+						dy: u.y * k - u.x * side,
 					});
 					added.push(guard, tr);
 					t += ms + 350 + 550 * hash01(s.pid, t + 3);

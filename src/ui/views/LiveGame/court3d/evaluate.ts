@@ -22,6 +22,9 @@ import {
 	flexOf,
 	footDown,
 	dribbleAhead,
+	dribbleIn,
+	IN_AHEAD,
+	IN_BY,
 	isGait,
 	carried,
 	holdBall,
@@ -1090,6 +1093,7 @@ const PASSES = new Set<AnimName>([
 	"passBounce",
 	"passOverhead",
 	"passPush",
+	"passBouncePush",
 ]);
 export const PASS_TURN = 250;
 export const PASS_PICK_UP = new Set<AnimName>([
@@ -3085,6 +3089,7 @@ const PIVOTS = new Set<AnimName>([
 	"passBounce",
 	"passOverhead",
 	"passPush",
+	"passBouncePush",
 	"shotFake",
 	"jab",
 	"strip",
@@ -3198,6 +3203,7 @@ const STRIDE_ACTS = new Set<AnimName>([
 	"passBounce",
 	"passOverhead",
 	"passPush",
+	"passBouncePush",
 	"reach",
 	"poke",
 	"callBall",
@@ -3795,11 +3801,13 @@ const ballOn = (
 			// feet.
 			const across = from !== to;
 			const ahead = dribbleAhead(st.anim) * (1 - (st.tight ?? 0));
-			const out = 1.22 - 0.12 * ahead;
+			// (Worked in toward the middle of him on an in-and-out.)
+			const inward = dribbleIn(st.anim, st.phase);
+			const out = (1.22 - 0.12 * ahead) * (1 - IN_BY * inward);
 			const floor = bodyPoint(
 				{ ...st, z: 0 },
 				{
-					f: across ? 1.0 : 0.95 + ahead,
+					f: across ? 1.0 : 0.95 + ahead + IN_AHEAD * inward,
 					s: across ? 0 : hand === "L" ? out : -out,
 					u: BALL_R,
 				},
