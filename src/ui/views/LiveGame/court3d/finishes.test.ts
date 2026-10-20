@@ -6,7 +6,7 @@ describe("3D finishes at the rim", () => {
 	test("layups come in every kind - never one canned move", () => {
 		const count = new Map<string, number>();
 		let all = 0;
-		for (const seed of ["f1", "f2", "f3"]) {
+		for (const seed of ["f1", "f2", "f3", "f4", "f5"]) {
 			const { tl } = compile(seed, 160);
 			for (const tr of tl.tracks.values()) {
 				for (const a of tr.acts) {

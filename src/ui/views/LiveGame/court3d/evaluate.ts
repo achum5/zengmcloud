@@ -21,6 +21,7 @@ import {
 	bounceAt,
 	flexOf,
 	footDown,
+	gripOf,
 	dribbleAhead,
 	dribbleIn,
 	IN_AHEAD,
@@ -56,6 +57,8 @@ import {
 // anywhere) and the tests can sample a whole game.
 
 const clamp01 = (u: number) => Math.min(1, Math.max(0, u));
+// The ways of holding it in one hand alone (see holdBall).
+const ONE_HAND_GRIPS = new Set(["push", "pull", "cup"]);
 const ease = (u: number) => 0.5 - 0.5 * Math.cos(Math.PI * clamp01(u));
 
 // Index of the last item with key <= t (items sorted by key), or -1.
@@ -2061,8 +2064,16 @@ const doingAt = (
 		// pushes it down, not out of the air.)
 		// (From as far as they had closed on it: picked up and put straight
 		// back down, not all the way.)
+		// (Not off one hand - pulled round in a spin, say - as if he had
+		// had it in both.)
 		const was = tl.ball[bi - 1];
-		if (was?.kind === "hold" && was.pid === pid && was.style === "hold") {
+		const by = actAt(tr, seg.t0 - 1);
+		if (
+			was?.kind === "hold" &&
+			was.pid === pid &&
+			was.style === "hold" &&
+			!(by && ONE_HAND_GRIPS.has(gripOf(by.anim)))
+		) {
 			grip =
 				closedOn(tl, pid, bi - 1, seg.t0) *
 				(1 - smooth01((t - seg.t0) / LET_GO_MS));
