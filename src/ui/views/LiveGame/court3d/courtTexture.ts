@@ -45,7 +45,8 @@ export const courtTexture = async (
 	const canvas = document.createElement("canvas");
 	canvas.width = Math.round(vb.width * pxPerUnit);
 	canvas.height = Math.round(vb.height * pxPerUnit);
-	const ctx = canvas.getContext("2d")!;
+	// (In plain memory, like the building's: see arena.ts.)
+	const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
 
 	// Where each picture sits, in the SVG's own units.
 	const root = svg.getScreenCTM();

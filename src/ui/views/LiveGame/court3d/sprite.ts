@@ -97,7 +97,11 @@ const rim = (
 // pixel art does.
 //
 // Each is kept trimmed to what is drawn of him, not the whole box he might
-// reach into.
+// reach into - and kept off the graphics card, in plain memory, so many
+// pictures never fill it: the browser itself puts on the card the ones being
+// drawn, as much as it has room for. (Thousands on the card, each its own
+// picture there - and thrown away by the thousand each time the picture
+// changes size - took the whole browser down: every window black.)
 type Box = { x0: number; y0: number; x1: number; y1: number };
 type Kept = {
 	canvas: HTMLCanvasElement;
@@ -109,6 +113,8 @@ type Kept = {
 };
 export type SpriteCache = {
 	kept: Map<string, Kept>;
+	// All of them together, in pixels.
+	area: number;
 	ids: WeakMap<Look, number>;
 	next: number;
 	// With time to spare on the device, his poses in finer steps - twice as
@@ -141,6 +147,7 @@ const MAX_BEHIND = 3;
 const DARK_BUDGET = 8;
 export const makeSpriteCache = (): SpriteCache => ({
 	kept: new Map(),
+	area: 0,
 	ids: new WeakMap(),
 	next: 0,
 	frame: 0,
@@ -155,6 +162,32 @@ export const startFrame = (cache: SpriteCache) => {
 	cache.skipped = 0;
 };
 const KEEP = 2400;
+// And no more than this many pixels of them (four bytes each): beyond about
+// this, more kept hardly saves drawing any.
+const KEEP_AREA = 8_000_000;
+// Done with: its memory let go of now, not whenever the page next tidies up
+// - and nothing still to be drawn from it as the last picture of a man.
+const drop = (cache: SpriteCache, k: Kept) => {
+	cache.area -= k.w * k.h;
+	for (const [id, was] of cache.last) {
+		if (was.kept === k) {
+			cache.last.delete(id);
+		}
+	}
+	k.canvas.width = 0;
+	k.canvas.height = 0;
+};
+// Every one of them let go of: the cache is done with (a new size, the game
+// off the screen).
+export const releaseSprites = (cache: SpriteCache) => {
+	for (const k of cache.kept.values()) {
+		k.canvas.width = 0;
+		k.canvas.height = 0;
+	}
+	cache.kept.clear();
+	cache.last.clear();
+	cache.area = 0;
+};
 const keep = (
 	cache: SpriteCache,
 	key: string,
@@ -169,18 +202,19 @@ const keep = (
 	const canvas = document.createElement("canvas");
 	canvas.width = w;
 	canvas.height = h;
-	canvas.getContext("2d")!.drawImage(from, fx, fy, w, h, 0, 0, w, h);
+	canvas
+		.getContext("2d", { willReadFrequently: true })!
+		.drawImage(from, fx, fy, w, h, 0, 0, w, h);
 	const k: Kept = { canvas, w, h, dx, dy };
 	cache.kept.set(key, k);
-	if (cache.kept.size > KEEP) {
-		// The oldest go first.
-		let n = cache.kept.size - KEEP + 100;
-		for (const old of cache.kept.keys()) {
-			cache.kept.delete(old);
-			if (--n <= 0) {
-				break;
-			}
+	cache.area += w * h;
+	// The oldest go first.
+	for (const [old, o] of cache.kept) {
+		if (o === k || (cache.kept.size <= KEEP && cache.area <= KEEP_AREA)) {
+			break;
 		}
+		cache.kept.delete(old);
+		drop(cache, o);
 	}
 	return k;
 };
@@ -191,6 +225,9 @@ const stamp = (
 	y: number,
 	px: number,
 ) => {
+	if (k.canvas.width === 0) {
+		return;
+	}
 	const smoothing = ctx.imageSmoothingEnabled;
 	ctx.imageSmoothingEnabled = false;
 	ctx.drawImage(

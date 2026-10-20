@@ -18,7 +18,9 @@ import {
 // THE BUILDING: the stands, the LED boards along their front, the scorer's
 // table and the benches - flat pictures painted once per game and stood up in
 // the world where the camera sees them (see Court3D) - and the baskets, the
-// one part of the building that moves, drawn every frame.
+// one part of the building that moves, drawn every frame. (Painted in plain
+// memory, off the graphics card - see sprite.ts - so that should the card be
+// reset, the building is still there after: not black where it was.)
 
 export type ArenaTeam = {
 	abbrev?: string;
@@ -266,7 +268,7 @@ export const paintStands = (
 	const canvas = document.createElement("canvas");
 	canvas.width = w;
 	canvas.height = h;
-	const ctx = canvas.getContext("2d")!;
+	const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
 	const rng = makeCourtRng(`stands|${seed}${end ?? ""}`);
 	// Who gets up is decided apart from who is there, so both pictures have
 	// the same crowd.
@@ -476,7 +478,7 @@ const paintScreen = (
 	const canvas = document.createElement("canvas");
 	canvas.width = w;
 	canvas.height = h;
-	const ctx = canvas.getContext("2d")!;
+	const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
 	ctx.fillStyle = "#06070a";
 	ctx.fillRect(0, 0, w, h);
 	const c0 = teamColor(home, 0, "#8c1d40");
@@ -603,7 +605,7 @@ export const paintBoards = (
 			screen,
 			home,
 		);
-		const tctx = table.getContext("2d")!;
+		const tctx = table.getContext("2d", { willReadFrequently: true })!;
 		const edge = Math.max(2, Math.round(TABLE_FRONT.h * 0.09));
 		tctx.fillStyle = "#0b0c10";
 		tctx.fillRect(0, 0, table.width, edge * 2);
@@ -641,7 +643,7 @@ const paintJumbo = (
 	const canvas = document.createElement("canvas");
 	canvas.width = w;
 	canvas.height = h;
-	const ctx = canvas.getContext("2d")!;
+	const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
 	ctx.fillStyle = "#0b0c10";
 	ctx.fillRect(0, 0, w, h);
 	const strip = Math.round(3 * px);
@@ -822,7 +824,7 @@ export const paintRafters = (
 	const canvas = document.createElement("canvas");
 	canvas.width = w;
 	canvas.height = h;
-	const ctx = canvas.getContext("2d")!;
+	const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
 	const c0 = teamColor(home, 0, "#8c1d40");
 	const c1 = teamColor(home, 1, "#f2c14e");
 	const trim = luminance(c1) < 0.16 || c1 === c0 ? "#f4f4f4" : c1;
@@ -1023,7 +1025,7 @@ export const paintTable = (
 	const front = document.createElement("canvas");
 	front.width = TABLE_FRONT.w;
 	front.height = TABLE_FRONT.h;
-	const ctx = front.getContext("2d")!;
+	const ctx = front.getContext("2d", { willReadFrequently: true })!;
 	const w = front.width;
 	const h = front.height;
 	ctx.fillStyle = "#0c0d11";
@@ -1045,7 +1047,7 @@ export const paintTable = (
 	const top = document.createElement("canvas");
 	top.width = TABLE_TOP.w;
 	top.height = TABLE_TOP.h;
-	const tctx = top.getContext("2d")!;
+	const tctx = top.getContext("2d", { willReadFrequently: true })!;
 	tctx.fillStyle = "#2a2c33";
 	tctx.fillRect(0, 0, top.width, top.height);
 	tctx.fillStyle = "#3a3d46";
@@ -1058,7 +1060,7 @@ export const paintBench = (team: ArenaTeam | undefined): HTMLCanvasElement => {
 	const canvas = document.createElement("canvas");
 	canvas.width = p.w;
 	canvas.height = p.h;
-	const ctx = canvas.getContext("2d")!;
+	const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
 	const px = p.w / BENCH_LEN;
 	const c = teamColor(team, 0, "#333a44");
 	for (let i = 0; i < BENCH_SEATS; i++) {

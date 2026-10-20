@@ -34,7 +34,7 @@ import {
 } from "./camera.ts";
 import { courtTexture } from "./courtTexture.ts";
 import { adjust, artFor, makeResolution } from "./resolution.ts";
-import { makeScratch, makeSpriteCache } from "./sprite.ts";
+import { makeScratch, makeSpriteCache, releaseSprites } from "./sprite.ts";
 import {
 	buildClocks,
 	formatGameClock,
@@ -1474,7 +1474,9 @@ const Court3D = ({
 				teamColors: p.teamColors,
 			});
 			if (adjust(res, h * dpr, dt, performance.now() - drawStart, now)) {
-				// Sprites drawn for the old size are no use at the new one.
+				// Sprites drawn for the old size are no use at the new one - let
+				// go of now.
+				releaseSprites(sprites);
 				sprites = makeSpriteCache();
 				sprites.budget = SPRITE_BUDGET_MS;
 			}
@@ -1552,6 +1554,7 @@ const Court3D = ({
 		return () => {
 			cancelAnimationFrame(raf);
 			clearInterval(interval);
+			releaseSprites(sprites);
 		};
 	}, []);
 
