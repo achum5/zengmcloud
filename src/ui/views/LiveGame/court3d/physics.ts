@@ -306,6 +306,9 @@ export const kindOf = (p: ShotPlay): ShotKind => {
 
 // About as high as a man going up for a rebound takes it.
 const REACH = 7.4;
+// A make goes down within this long of getting to the rim (ms): the odd one
+// rolls round it a moment, never for seconds.
+const MAKE_MS = 900;
 
 // What the sim says has to happen to a shot.
 export type ShotWant = {
@@ -470,8 +473,14 @@ export const findShot = (
 		fallback ??= f;
 		const right = !want.kinds || want.kinds.includes(kind);
 		if (want.made) {
-			if (right) {
+			if (right && play.decided <= MAKE_MS) {
 				return f;
+			}
+			// (Round and round the rim before it drops - or not the look asked
+			// for: only if nothing better goes in, and the quickest of them.)
+			const score = (right ? 0 : 1) + play.decided / 1000;
+			if (!best || score < best.score) {
+				best = { f, score };
 			}
 			continue;
 		}
