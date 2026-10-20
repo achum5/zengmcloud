@@ -1,4 +1,5 @@
 import { toWorker } from "./toWorker.ts";
+import { confirm } from "./confirm.tsx";
 import {
 	DAILY_SCHEDULE,
 	DEPTH_CHART_NAME,
@@ -766,15 +767,6 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 				path: ["sportsbook"],
 				text: "Sportsbook",
 			},
-			{
-				type: "link",
-				active: (pageID) => pageID === "franchiseOutlook",
-				league: true,
-				commandPalette: true,
-				pro: true,
-				path: ["franchise_outlook"],
-				text: "Franchise Outlook",
-			},
 		],
 	},
 	{
@@ -857,6 +849,14 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 				commandPalette: true,
 
 				async onClick() {
+					const proceed = await confirm("Are you sure you want to auto play?", {
+						danger: true,
+						okText: "Auto play",
+						cancelText: "Cancel",
+					});
+					if (!proceed) {
+						return;
+					}
 					const response = await toWorker(
 						"toolsMenu",
 						"autoPlaySeasons",
