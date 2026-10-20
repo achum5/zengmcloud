@@ -49,6 +49,7 @@ const SHOOTING = new Set<string>([
 	"dunk",
 	"dunk1",
 	"tomahawk",
+	"windmill",
 	"block",
 ]);
 
@@ -682,6 +683,7 @@ describe("3D director", () => {
 			"dunk",
 			"dunk1",
 			"tomahawk",
+			"windmill",
 			"fall",
 			"hurt",
 			"rebound",
@@ -1483,7 +1485,7 @@ describe("3D director", () => {
 					.get(e.pid)!
 					.acts.filter((x) => x.t0 >= from && x.t0 <= to);
 				const dunked = acts.some((x) =>
-					["dunk", "dunk1", "tomahawk"].includes(x.anim),
+					["dunk", "dunk1", "tomahawk", "windmill"].includes(x.anim),
 				);
 				const finish = finishOf(e, gid, gender);
 				assert.strictEqual(

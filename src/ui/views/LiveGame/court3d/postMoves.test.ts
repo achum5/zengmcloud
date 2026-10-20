@@ -11,6 +11,7 @@ const SHOTS = new Set([
 	"dunk",
 	"dunk1",
 	"tomahawk",
+	"windmill",
 	"block",
 ]);
 

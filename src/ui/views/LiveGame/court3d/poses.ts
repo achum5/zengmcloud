@@ -2993,6 +2993,182 @@ export const ANIMS = {
 			[1, P.land],
 		],
 	},
+	// A windmill: off two feet, the ball cupped in his right hand swung down
+	// past his hip, back, and up round over his head in one big circle -
+	// then thrown down, and hanging on the rim like any other.
+	windmill: {
+		kind: "act",
+		n: 12,
+		keys: [
+			[
+				0,
+				pose({
+					hipN: -20,
+					kneeN: 70,
+					hipF: 18,
+					kneeF: 72,
+					shN: 40,
+					elN: 95,
+					shF: 36,
+					elF: 98,
+					lean: 18,
+				}),
+			],
+			// Swung down by his hip as he loads,
+			[
+				0.12,
+				pose({
+					hipN: -14,
+					kneeN: 54,
+					hipF: 22,
+					kneeF: 62,
+					shN: 6,
+					elN: 14,
+					abN: 20,
+					shF: 56,
+					elF: 70,
+					abF: 18,
+					lean: 14,
+				}),
+			],
+			// back and out behind him as he goes up,
+			[
+				0.22,
+				pose({
+					hipN: -10,
+					kneeN: 32,
+					hipF: 30,
+					kneeF: 50,
+					shN: -46,
+					elN: 8,
+					abN: 50,
+					shF: 74,
+					elF: 56,
+					abF: 22,
+					lean: 8,
+				}),
+			],
+			// straight out from his side - (where it is all one which way
+			// round the arm has come: from here it has come up over the top)
+			[
+				0.28,
+				pose({
+					hipN: 10,
+					kneeN: 36,
+					hipF: 42,
+					kneeF: 80,
+					shN: -64,
+					elN: 4,
+					abN: 90,
+					shF: 84,
+					elF: 48,
+					abF: 28,
+					lean: 4,
+					toe: 0.8,
+				}),
+			],
+			[
+				0.3,
+				pose({
+					hipN: 10,
+					kneeN: 37,
+					hipF: 41,
+					kneeF: 79,
+					shN: 204,
+					elN: 4,
+					abN: 90,
+					shF: 82,
+					elF: 47,
+					abF: 29,
+					lean: 3,
+					toe: 0.85,
+				}),
+			],
+			// up past his ear and over the top,
+			[
+				0.4,
+				pose({
+					hipN: 6,
+					kneeN: 40,
+					hipF: 30,
+					kneeF: 70,
+					shN: 192,
+					elN: 12,
+					abN: 22,
+					shF: 72,
+					elF: 42,
+					abF: 34,
+					lean: -6,
+					toe: 1,
+				}),
+			],
+			// and down through the rim.
+			[
+				0.47,
+				pose({
+					hipN: 10,
+					kneeN: 30,
+					hipF: 20,
+					kneeF: 50,
+					shN: 148,
+					elN: 4,
+					shF: 60,
+					elF: 30,
+					abF: 30,
+					wrN: -70,
+					lean: 12,
+					toe: 1,
+				}),
+			],
+			[
+				0.53,
+				pose({
+					hipN: 4,
+					kneeN: 24,
+					hipF: 10,
+					kneeF: 36,
+					shN: 172,
+					elN: 6,
+					shF: 170,
+					elF: 8,
+					lean: 6,
+					toe: 1,
+				}),
+			],
+			[
+				0.7,
+				pose({
+					hipN: -2,
+					kneeN: 20,
+					hipF: 8,
+					kneeF: 30,
+					shN: 174,
+					elN: 4,
+					shF: 172,
+					elF: 6,
+					lean: 2,
+					toe: 1,
+				}),
+			],
+			[
+				0.78,
+				pose({
+					hipN: 0,
+					kneeN: 28,
+					hipF: 12,
+					kneeF: 34,
+					shN: 120,
+					elN: 30,
+					shF: 116,
+					elF: 34,
+					lean: 4,
+					toe: 0.5,
+				}),
+			],
+			[0.88, P.land],
+			[1, P.land],
+		],
+	},
 	// One hand, cocked way back behind his head and whipped over.
 	tomahawk: {
 		kind: "act",
@@ -5479,8 +5655,9 @@ const flared = (arm: Limb, deg: number, side: 1 | -1): Limb => {
 
 // How a move holds the ball: in both hands, one on each side of it; up on
 // the shooting hand with the other guiding it; palmed in one hand; pushed
-// out of one; or pulled along low under one.
-export type Grip = "two" | "shot" | "palm" | "push" | "pull";
+// out of one; pulled along low under one; or cupped in one the whole way
+// round.
+export type Grip = "two" | "shot" | "palm" | "push" | "pull" | "cup";
 const GRIPS: Partial<Record<AnimName, Grip>> = {
 	shoot: "shot",
 	setShot: "shot",
@@ -5493,6 +5670,7 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 	dunk: "palm",
 	dunk1: "palm",
 	tomahawk: "palm",
+	windmill: "cup",
 	hook: "palm",
 	reverseLayup: "palm",
 	passPush: "push",
@@ -5594,7 +5772,10 @@ export const holdBall = (
 	const up = Math.min(1, Math.max(0, (r.end.u - (r.root.u - 0.45)) / 0.9));
 	// (Pushed off the dribble, or pulled round low in a spin, it is his one
 	// hand's the whole way.)
-	const w = grip === "push" || grip === "pull" ? 1 : up * up * (3 - 2 * up);
+	const w =
+		grip === "push" || grip === "pull" || grip === "cup"
+			? 1
+			: up * up * (3 - 2 * up);
 	const tip = r.tip ?? r.end;
 	const len =
 		Math.hypot(tip.f - r.end.f, tip.s - r.end.s, tip.u - r.end.u) || 1;
@@ -5645,7 +5826,11 @@ export const holdBall = (
 		ball.u - b.H * PALM_AT,
 	);
 	const armL =
-		((grip === "palm" || grip === "push" || grip === "pull") && w >= 0.999) ||
+		((grip === "palm" ||
+			grip === "push" ||
+			grip === "pull" ||
+			grip === "cup") &&
+			w >= 0.999) ||
 		(grip === "shot" && q.free >= 0.999)
 			? l
 			: armTo(

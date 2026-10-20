@@ -1181,6 +1181,7 @@ const OWN_HAND = new Set<AnimName>([
 	"floater",
 	"dunk1",
 	"tomahawk",
+	"windmill",
 ]);
 const OUTSIDE_HAND = new Set<AnimName>(["layup", "fingerRoll", "scoop"]);
 // (From this far either side of the rim, feet, he is on that side of it.)
@@ -1986,8 +1987,16 @@ class Director {
 		const two = (big ? 0.6 : athlete ? 0.2 : 0.4) * (1.5 - own);
 		const one = 0.35;
 		const over = (big ? 0.05 : athlete ? 0.45 : 0.2) * (0.5 + own);
-		const x = r * (two + one + over);
-		return x < two ? "dunk" : x < two + one ? "dunk1" : "tomahawk";
+		// (A windmill takes a flier: an athlete, now and then, on his own.)
+		const mill = (big ? 0 : athlete ? 0.3 : 0.03) * own;
+		const x = r * (two + one + over + mill);
+		return x < two
+			? "dunk"
+			: x < two + one
+				? "dunk1"
+				: x < two + one + over
+					? "tomahawk"
+					: "windmill";
 	}
 
 	// His move with it on the block, `r` of the way through his odds: a man
@@ -13366,6 +13375,7 @@ class Director {
 			"dunk",
 			"dunk1",
 			"tomahawk",
+			"windmill",
 			"contest",
 			"block",
 		]);
@@ -16942,6 +16952,7 @@ class Director {
 			"dunk",
 			"dunk1",
 			"tomahawk",
+			"windmill",
 			"fall",
 			"takeCharge",
 			"helpUp",
@@ -17718,6 +17729,7 @@ class Director {
 			"dunk",
 			"dunk1",
 			"tomahawk",
+			"windmill",
 			"catch",
 			"pass",
 			"passBounce",

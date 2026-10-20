@@ -84,9 +84,12 @@ describe("3D poses", () => {
 				if (gripOf(anim) === "two") {
 					assert.isBelow(d(sk.armL.end), 0.75, `${anim} ${k}`);
 				}
-				// Out in front of him or up over his head, not in his chest.
+				// Out in front of him, up over his head or swung out wide of
+				// him - not in his chest.
 				assert.isTrue(
-					ball.f > sk.chest.f + 0.2 || ball.u > sk.chest.u + 0.5,
+					ball.f > sk.chest.f + 0.2 ||
+						ball.u > sk.chest.u + 0.5 ||
+						Math.abs(ball.s - sk.chest.s) > 1.6,
 					`${anim} ${k}`,
 				);
 			}
