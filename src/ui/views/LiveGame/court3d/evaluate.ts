@@ -2127,6 +2127,8 @@ const ARMS_UP = new Set<AnimName>([
 ]);
 const ARMS_DOWN_MS = 320;
 const SLIVER_MS = 80;
+// (And under a frame of it, a blip.)
+const BLIP_MS = 20;
 const armsComeDown = (tr: Track, t: number, from: AnimName, to: AnimName) =>
 	ARMS_UP.has(from) && !ARMS_UP.has(to) && !actAt(tr, t);
 // Still bringing them down after the rest of him has finished easing over.
@@ -2254,6 +2256,16 @@ const blendInto = (
 		} else {
 			lo = mid;
 			before = d;
+		}
+	}
+	// (Nor a sliver of this same move, only some way of it apart - the last
+	// instant of a stride as a pass starts, say: out of what came before
+	// that, or he eases out of the one some frames and the other in others.)
+	if (before.anim === anim) {
+		const back = doingAt(tl, tr, lo - BLIP_MS);
+		if (back.anim !== anim) {
+			lo -= BLIP_MS;
+			before = back;
 		}
 	}
 	if (settling && !stepsOver(before.anim, anim)) {

@@ -7696,7 +7696,12 @@ class Director {
 				if ((this.free.get(shooter) ?? 0) <= was) {
 					this.free.set(shooter, drive.t1);
 				}
-				t = Math.max(drive.t1, this.hold(shooter, drive.t1, "hold"));
+				// (Into his hands as he gets there - if it is in his hands: cut
+				// to the rim for a lob, it is still up in the air.)
+				t =
+					this.holder === shooter
+						? Math.max(drive.t1, this.hold(shooter, drive.t1, "hold"))
+						: drive.t1;
 			}
 		}
 
