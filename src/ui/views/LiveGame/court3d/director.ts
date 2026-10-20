@@ -535,6 +535,20 @@ const DRIBBLE_MS = 1000 / DRIBBLE_RATE;
 // the start of his throw to the ball leaving his hands.
 const OVERHEAD_WIND = 140;
 const RELEASE_MS = 120;
+// Down taking a charge (ms from the contact until he is back up); his
+// teammates there to help him up from this long after it, if no further off
+// than so far (feet).
+const CHARGE_DOWN_MS = 2400;
+const HELP_UP_AT = 1100;
+const HELP_UP_FROM = 18;
+// (Still down until so far into it, then up onto a knee - as a teammate's
+// hand gets to him, if one is coming: there by so long after the contact.)
+const CHARGE_UP_AT = 0.6;
+const HELP_UP_BY = 1700;
+// A helper's hand down to him so long (ms) after he gets there; the pull up
+// over so long after that.
+const HELP_HAND_MS = 300;
+const HELP_PULL_MS = 650;
 // Of passes off a live dribble, how many go one-handed: on the move, stood.
 const PUSH_SHARE: [number, number] = [0.9, 0.5];
 const PUSH_OFF_MS = 60;
@@ -2058,6 +2072,48 @@ class Director {
 	// Something to say about what just happened - at the official (out
 	// toward the sideline nearer him), or at whoever he means - for a moment
 	// before he goes on: he does not set off until he has said it.
+	// A man down on the floor at F, facing A: the nearest of his teammates
+	// (one, or two of them close) come over, stand over him to his side away
+	// from X, lean in and pull him up as he gets up.
+	// Returns when the first of them has a hand on him (the contact itself,
+	// if nobody comes).
+	private helpUp(down: number, F: Pt, A: Pt, X: Pt, hit: number): number {
+		const team = this.teamOf(down);
+		const near = this.slots(team)
+			.filter((p) => p !== down)
+			.map((p) => ({ p, d: dist(this.posOf(p), F) }))
+			.filter((x) => x.d < HELP_UP_FROM)
+			.sort((a, b) => a.d - b.d);
+		const n = near.length >= 2 && hash01(down, hit) < 0.4 ? 2 : 1;
+		const u = unitVec(F, A);
+		const side = { x: -u.y, y: u.x };
+		const away = (X.x - F.x) * side.x + (X.y - F.y) * side.y > 0 ? -1 : 1;
+		let first: number | undefined;
+		near.slice(0, n).forEach(({ p }, k) => {
+			const s = k === 0 ? away : -away;
+			const spot = clampPt({
+				x: F.x + side.x * s * 2.3 + u.x * 1.1,
+				y: F.y + side.y * s * 2.3 + u.y * 1.1,
+			});
+			const from = Math.max(hit + 200, this.free.get(p) ?? 0);
+			// (Only one who gets there while he is still down.)
+			const need = runMs(dist(this.posOf(p), spot), SPRINT);
+			if (from + need > hit + HELP_UP_BY) {
+				return;
+			}
+			const there = this.goBy(p, spot, from, from + need + 120, "run");
+			const t0 = Math.max(there, hit + HELP_UP_AT);
+			// (A hand down to him a moment after he gets there; a second man
+			// in the pull as it comes.)
+			const hand = t0 + HELP_HAND_MS;
+			first ??= hand;
+			const t1 = Math.max(hand, first) + HELP_PULL_MS;
+			this.act(p, "helpUp", t0, t1, { look: { ...F } });
+			this.free.set(p, Math.max(this.free.get(p) ?? 0, t1));
+		});
+		return first ?? hit;
+	}
+
 	private react(
 		pid: number,
 		anim: AnimName,
@@ -12435,7 +12491,15 @@ class Director {
 				"dribble",
 				dir,
 			);
-			this.act(helper, "fall", hit - 60, hit + 900, { look: A });
+			// Down on the floor with it - and a teammate or two over to give
+			// him a hand up: up off the floor as they pull him up.
+			const reach = this.helpUp(helper, C, A, E, hit);
+			const up = Math.max(
+				hit + CHARGE_DOWN_MS,
+				hit - 60 + (reach + 60 - hit) / CHARGE_UP_AT,
+			);
+			this.act(helper, "takeCharge", hit - 60, up, { look: A });
+			this.free.set(helper, Math.max(this.free.get(helper) ?? 0, up));
 			this.hold(victim, hit, "hold");
 			this.effect("whistle", hit + 120, {
 				call: "offensive",
@@ -12446,7 +12510,7 @@ class Director {
 				this.react(victim, "protest", hit + 500, 1000);
 			}
 			this.turnOver(team, E);
-			this.beat(i, e.type, hit + 120, hit + 1000);
+			this.beat(i, e.type, hit + 120, up - 300);
 			return true;
 		}
 		// A travel: the drive, the gather, a step too many.
@@ -15932,6 +15996,8 @@ class Director {
 			"chestBump",
 			"waitFive",
 			"fall",
+			"takeCharge",
+			"helpUp",
 			"hurt",
 			"hurtKnee",
 			"hurtAnkle",
@@ -16182,6 +16248,8 @@ class Director {
 			"block",
 			"contest",
 			"fall",
+			"takeCharge",
+			"helpUp",
 		]);
 		const body = bodyOf();
 		const bodyFor = () => body;
@@ -16687,6 +16755,8 @@ class Director {
 			"dunk1",
 			"tomahawk",
 			"fall",
+			"takeCharge",
+			"helpUp",
 			"hurt",
 			"hurtKnee",
 			"hurtAnkle",
@@ -16704,6 +16774,8 @@ class Director {
 			"chestBump",
 			"waitFive",
 			"fall",
+			"takeCharge",
+			"helpUp",
 			"hurt",
 			"hurtKnee",
 			"hurtAnkle",
@@ -17473,6 +17545,8 @@ class Director {
 			"screen",
 			"postUp",
 			"fall",
+			"takeCharge",
+			"helpUp",
 			"hurt",
 			"hurtKnee",
 			"hurtAnkle",
@@ -17499,6 +17573,8 @@ class Director {
 			"snatch",
 			"pickup",
 			"fall",
+			"takeCharge",
+			"helpUp",
 		]);
 		const MATES_TOGETHER = new Set<AnimName>([
 			"highFive",
@@ -17506,6 +17582,8 @@ class Director {
 			"chestBump",
 			"waitFive",
 			"fall",
+			"takeCharge",
+			"helpUp",
 			"hurt",
 			"hurtKnee",
 			"hurtAnkle",

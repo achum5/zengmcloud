@@ -145,6 +145,23 @@ const keyed = (keys: [number, Pose][], u: number): Pose => {
 	return keys.at(-1)![1];
 };
 
+// Sat down on the floor: legs out in front of him, leaning back on his
+// hands. (His ankles lowest, at the floor, sit him on it.)
+const SAT_DOWN = pose({
+	hipN: 92,
+	kneeN: 8,
+	hipF: 88,
+	kneeF: 20,
+	shN: -8,
+	elN: 46,
+	abN: 30,
+	shF: -12,
+	elF: 48,
+	abF: 30,
+	lean: -26,
+	wide: 0.5,
+	plant: 0,
+});
 const P = {
 	// Standing easy but live, the way a man spaced out on the floor does:
 	// a little sunk at the knees, feet a shade wider than his hips and one
@@ -3600,6 +3617,150 @@ export const ANIMS = {
 				}),
 			],
 			[1, P.stance],
+		],
+	},
+	// Taking a charge: set, chest out and arms in, he takes it and goes down
+	// on his backside - sat on the floor a moment, legs out, leaning back on
+	// his hands - then up onto a knee, into a crouch and back up.
+	takeCharge: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, P.stance],
+			[
+				0.06,
+				pose({
+					hipN: 10,
+					kneeN: 34,
+					hipF: 18,
+					kneeF: 36,
+					shN: 40,
+					elN: 124,
+					abN: 30,
+					shF: 40,
+					elF: 124,
+					abF: 30,
+					lean: -6,
+					wide: 0.42,
+				}),
+			],
+			[
+				0.16,
+				pose({
+					hipN: 56,
+					kneeN: 66,
+					hipF: 46,
+					kneeF: 58,
+					shN: 128,
+					elN: 30,
+					abN: 30,
+					shF: 136,
+					elF: 34,
+					abF: 30,
+					lean: -36,
+					wide: 0.46,
+					plant: 0,
+				}),
+			],
+			[0.26, SAT_DOWN],
+			[0.55, { ...SAT_DOWN, lean: -18, shN: 2, shF: -4 }],
+			[
+				0.68,
+				pose({
+					hipN: -4,
+					kneeN: 100,
+					hipF: 84,
+					kneeF: 90,
+					shN: 20,
+					elN: 30,
+					abN: 20,
+					shF: 64,
+					elF: 50,
+					abF: 16,
+					lean: 18,
+					wide: 0.24,
+					plant: 0,
+				}),
+			],
+			[
+				0.84,
+				pose({
+					hipN: 36,
+					kneeN: 70,
+					hipF: 40,
+					kneeF: 72,
+					shN: 40,
+					elN: 40,
+					shF: 46,
+					elF: 40,
+					lean: 22,
+					wide: 0.36,
+				}),
+			],
+			[1, P.ready],
+		],
+	},
+	// A teammate down: he stands over him, leans in and gives him a hand,
+	// and pulls him up.
+	helpUp: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, P.ready],
+			[
+				0.28,
+				pose({
+					hipN: 34,
+					kneeN: 52,
+					hipF: 22,
+					kneeF: 44,
+					shN: 46,
+					elN: 10,
+					abN: 8,
+					wrN: 20,
+					shF: 24,
+					elF: 40,
+					abF: 18,
+					lean: 44,
+					wide: 0.34,
+				}),
+			],
+			[
+				0.62,
+				pose({
+					hipN: 36,
+					kneeN: 54,
+					hipF: 24,
+					kneeF: 46,
+					shN: 50,
+					elN: 14,
+					abN: 8,
+					wrN: 20,
+					shF: 24,
+					elF: 40,
+					abF: 18,
+					lean: 42,
+					wide: 0.34,
+				}),
+			],
+			[
+				0.82,
+				pose({
+					hipN: 8,
+					kneeN: 30,
+					hipF: 4,
+					kneeF: 26,
+					shN: 52,
+					elN: 56,
+					abN: 8,
+					shF: 22,
+					elF: 40,
+					abF: 16,
+					lean: 6,
+					wide: 0.34,
+				}),
+			],
+			[1, P.ready],
 		],
 	},
 	// Crossed up: his feet go out from under him the wrong way - knees
