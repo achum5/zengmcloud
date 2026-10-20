@@ -1133,12 +1133,14 @@ const beatAt = (tl: CourtTimeline, t: number) => {
 };
 
 // The slow-motion replay of a dunk: close on him and the rim, from
-// courtside, looking up at the iron.
+// courtside, looking up at the iron. (Of a three, as wide as the ball and
+// the rim both stay in it - closing in on the rim as it gets there.)
 export const replayAim = (m: Moment, narrow: boolean): Shot => {
 	const rimX = m.ball.x < COURT_W / 2 ? 5.25 : COURT_W - 5.25;
+	const out = Math.hypot(m.ball.x - rimX, m.ball.y - 25);
 	return {
 		x: m.ball.x * 0.55 + rimX * 0.45,
-		width: narrow ? 22 : 26,
+		width: Math.max(narrow ? 22 : 26, out * 1.3 + 8),
 		y: 25,
 		z: 6.5,
 	};

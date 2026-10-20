@@ -345,7 +345,8 @@ export type Call =
 	| "clock"
 	| "stop";
 // `big` marks a dunk worth a replay: on somebody, off a lob, or through
-// contact. A roar says what it was for, for the boards to shout about.
+// contact - or, on a swish, a three in a tight finish or at the buzzer. A
+// roar says what it was for, for the boards to shout about.
 export type Fx = {
 	kind: FxKind;
 	t: number;
@@ -564,6 +565,8 @@ const BEHIND_AHEAD: [number, number] = [-0.45, 0.85];
 // this before it goes, ms.)
 const BEHIND_FTPS = 7;
 const BEHIND_STILL_MS = 150;
+// A three let go with no more than this left (seconds): at the buzzer.
+const BUZZER_SECS = 1.5;
 // A spin move (see spinBy): how often a drive with his man square in front
 // of him goes into one rather than a crossover, from how far out (feet), how
 // far short of his man he plants (feet), and how fast he goes round him
@@ -11213,7 +11216,14 @@ class Director {
 				this.fly(t0, t0 + 140, top, under);
 				this.bounce(t0 + 140, t0 + 1350, under, settle, 1, 2.2);
 			}
-			this.effect("swish", t0 + 20, { rim: team });
+			this.effect("swish", t0 + 20, {
+				rim: team,
+				...(shot.zone === "three" &&
+				((this.tension.at(-1)?.[1] ?? 0) >= 1 ||
+					(typeof e.clock === "number" && e.clock < BUZZER_SECS))
+					? { big: true }
+					: {}),
+			});
 			this.effect("cheer", t0 + 60, { team });
 			let end = at + 1100;
 			if (typeof e.pidFoul === "number") {

@@ -48,6 +48,7 @@ import {
 	targetForCursor,
 	type CourtPlayer,
 	type CourtTimeline,
+	type Fx,
 	type Stakes,
 } from "./director.ts";
 import { crewAt, crewFor } from "./crew.ts";
@@ -114,11 +115,16 @@ const KEY_DIP_MS = 320;
 // The longest it is held black for the picture to be ready (ms).
 const KEY_HOLD_MS = 900;
 // A dunk's replay: from just before he takes off to just after, in slow
-// motion, once its own play is over.
+// motion, once its own play is over. (A big three's from his gather -
+// longer before it goes in.)
 const REPLAY_FROM = 1700;
+const REPLAY_FROM_THREE = 2300;
 const REPLAY_TO = 450;
 const REPLAY_AFTER = 1150;
 const REPLAY_SPEED = 0.42;
+// Which plays are shown again: a big dunk, or a big three (see Fx).
+const replayed = (f: Fx) =>
+	!!f.big && (f.kind === "dunk" || f.kind === "swish");
 // Replay-time ms the picture takes to come up out of black and go back down.
 const REPLAY_DIP = 70;
 // How quickly the camera pans and zooms after what it follows (per second):
@@ -1039,7 +1045,7 @@ const Court3D = ({
 		if (s.snapCam) {
 			s.replay = undefined;
 			s.nextDunk = timeline.fx.findIndex(
-				(f) => f.kind === "dunk" && !!f.big && f.t + REPLAY_AFTER > s.t,
+				(f) => replayed(f) && f.t + REPLAY_AFTER > s.t,
 			);
 		}
 		s.prevCursor = cursor;
@@ -1186,8 +1192,7 @@ const Court3D = ({
 			while (
 				s.nextDunk >= 0 &&
 				s.nextDunk < fx.length &&
-				(fx[s.nextDunk]!.kind !== "dunk" ||
-					!fx[s.nextDunk]!.big ||
+				(!replayed(fx[s.nextDunk]!) ||
 					fx[s.nextDunk]!.t + REPLAY_AFTER <= before)
 			) {
 				s.nextDunk += 1;
@@ -1211,8 +1216,12 @@ const Court3D = ({
 				) {
 					s.t = dunk.t + REPLAY_AFTER;
 					s.replay = {
-						at: dunk.t - REPLAY_FROM,
-						from: dunk.t - REPLAY_FROM,
+						at:
+							dunk.t -
+							(dunk.kind === "swish" ? REPLAY_FROM_THREE : REPLAY_FROM),
+						from:
+							dunk.t -
+							(dunk.kind === "swish" ? REPLAY_FROM_THREE : REPLAY_FROM),
 						to: dunk.t + REPLAY_TO,
 					};
 					s.snapCam = true;
