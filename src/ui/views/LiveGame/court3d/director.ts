@@ -996,6 +996,11 @@ const BODY = 1.85;
 const LANES = [6, 15, 21.5, 28.5, 35, 44] as const;
 const LANE_OFF_BALL = 7;
 const LANE_ACROSS = 8;
+// A run at least this far up the floor (feet) is run in a lane.
+const LANE_RUN = 30;
+// A trailer's way up to the top of the play keeps this far (feet) off the
+// man bringing the ball up, if it can.
+const TRAIL_CLEAR = 8;
 
 // How far along a run (0 to 1) a man is `u` of the way through its `ms`:
 // setting off from a standstill and pulling up at the end, the way the
@@ -3215,22 +3220,30 @@ class Director {
 	}
 
 	// Everybody but `except` into the half-court set at motion phase `motion`,
-	// the defense shadowing them.
+	// the defense shadowing them. (The length of the floor to go, up it in
+	// their lanes - not straight up it beside the man bringing it up, where
+	// he comes up it `ballY` across the floor.)
 	private settle(
 		team: Side,
 		motion: number,
 		t0: number,
 		by: number,
 		except: number[] = [],
+		ballY?: number,
 	) {
 		const spots = this.setSpots(team, motion);
 		const off = this.slots(team);
 		const dir = attackDir(team);
+		const lanes: { pid: number; to: Pt; j: number }[] = [];
 		off.forEach((pid, j) => {
 			const target = spots[j] ?? spots[0]!;
 			if (!except.includes(pid)) {
-				this.goBy(pid, target, t0 + j * 40, by, "run");
-				this.turn(pid, Math.max(by, this.free.get(pid) ?? 0), dir);
+				if ((target.x - this.posOf(pid).x) * dir >= LANE_RUN) {
+					lanes.push({ pid, to: target, j });
+				} else {
+					this.goBy(pid, target, t0 + j * 40, by, "run");
+					this.turn(pid, Math.max(by, this.free.get(pid) ?? 0), dir);
+				}
 			}
 			const d = this.defenderOf(pid);
 			if (d !== undefined && !except.includes(d)) {
@@ -3246,6 +3259,12 @@ class Director {
 				this.turn(d, Math.max(by + 120, this.free.get(d) ?? 0), -dir as 1 | -1);
 			}
 		});
+		if (lanes.length > 0) {
+			this.fillLanes(team, lanes, t0, by, ballY);
+			for (const m of lanes) {
+				this.turn(m.pid, Math.max(by, this.free.get(m.pid) ?? 0), dir);
+			}
+		}
 	}
 
 	// ---- possession -------------------------------------------------------------
@@ -3597,9 +3616,10 @@ class Director {
 		}
 		const top = this.setSpots(team, 0)[0]!;
 		const d = dist(this.posOf(pg), top);
+		const ballY = (this.posOf(pg).y + top.y) / 2;
 		this.hold(pg, t, "dribble");
 		const arrive = this.go(pg, top, t, DRIBBLE, "dribble", attackDir(team));
-		this.settle(team, 0, t0, Math.max(t + 900, arrive - 200), [pg]);
+		this.settle(team, 0, t0, Math.max(t + 900, arrive - 200), [pg], ballY);
 		this.motionTeam = team;
 		this.motion = 0;
 		return Math.max(arrive, t + (d < 4 ? 300 : 0));
@@ -3657,23 +3677,30 @@ class Director {
 			shooter === handler && (shot === "three" || shot === "midRange")
 				? this.shotSpotNear(team, shot, this.posOf(handler))
 				: undefined;
+		const pushTo = pullUp ?? spots[0]!;
+		const ballY = (this.posOf(handler).y + pushTo.y) / 2;
 		const arrive = this.go(
 			handler,
-			pullUp ?? spots[0]!,
+			pushTo,
 			t,
 			SPRINT - 3,
 			"dribble",
 			attackDir(team),
 		);
+		// (The length of the floor to go, each up it in his lane, clear of
+		// the ball's - see fillLanes.)
+		const lanes: { pid: number; to: Pt; j: number; by: number }[] = [];
 		others.forEach((pid, j) => {
-			this.goBy(
-				pid,
-				spots[j + 1] ?? spots[0]!,
-				t0 + j * 60,
-				arrive + j * 250,
-				"run",
-			);
+			const S = spots[j + 1] ?? spots[0]!;
+			if ((S.x - this.posOf(pid).x) * attackDir(team) >= LANE_RUN) {
+				lanes.push({ pid, to: S, j, by: arrive + j * 250 });
+				return;
+			}
+			this.goBy(pid, S, t0 + j * 60, arrive + j * 250, "run");
 		});
+		if (lanes.length > 0) {
+			this.fillLanes(team, lanes, t0, arrive, ballY);
+		}
 		const def0 = this.slots(other(team));
 		const back4 = def0.slice(0, -1);
 		let def = def0;
@@ -4532,7 +4559,7 @@ class Director {
 					ready,
 					this.go(pid, S, t, DRIBBLE * (far ? 0.85 : 0.6), "dribble", dir),
 				);
-			} else if ((S.x - P.x) * dir >= 30) {
+			} else if ((S.x - P.x) * dir >= LANE_RUN) {
 				lanes.push({ pid, to: S, j: r });
 			} else {
 				ready = Math.max(
@@ -4776,7 +4803,7 @@ class Director {
 				return;
 			}
 			if (!(this.inBackcourt(run.team, S) && out(P) < out(S) - 6)) {
-				if ((S.x - P.x) * dir >= 30) {
+				if ((S.x - P.x) * dir >= LANE_RUN) {
 					lane(pid, S, r);
 				} else {
 					this.go(pid, S, t0, RUN, "run");
@@ -4784,7 +4811,26 @@ class Director {
 			}
 		});
 		if (lanes.length > 0) {
-			this.fillLanes(run.team, lanes, t0, t0, this.posOf(bh).y);
+			// (Clear of the ball's way up the floor: from him to where the
+			// set's first step dribbles it, if it does.)
+			const first = (run.play.steps[run.from] ?? []).find(
+				(a) =>
+					a.type === "dribble" && a.who === run.play.ball && a.to !== "rim",
+			);
+			const B = this.posOf(bh);
+			const ballY =
+				first?.type === "dribble"
+					? (B.y +
+							this.spotFor(
+								run.team,
+								run.across?.has(first.to)
+									? (-run.mirror as 1 | -1)
+									: run.mirror,
+								first.to,
+							).y) /
+						2
+					: B.y;
+			this.fillLanes(run.team, lanes, t0, t0, ballY);
 		}
 		this.motionTeam = run.team;
 		this.motion = 0;
@@ -5074,20 +5120,34 @@ class Director {
 				.filter((o) => o !== pid)
 				.map((o) => this.posOf(o));
 			const depth = RIM_INSET + this.rand(27, 30);
-			const Q = [COURT_H / 2 - 12, COURT_H / 2, COURT_H / 2 + 12]
-				.map((y) => spot(team, depth, y + this.rand(-1.5, 1.5)))
-				.map((S) => ({
-					S,
-					room: Math.min(...mates.map((M) => dist(M, S))),
-				}))
-				.sort((a, b) => b.room - a.room)[0]!.S;
-			this.go(
-				pid,
-				clampPt(Q),
-				Math.max(t0 + this.rand(150, 450), this.free.get(pid) ?? 0),
-				RUN * 0.85,
-				"run",
+			const spots = [COURT_H / 2 - 12, COURT_H / 2, COURT_H / 2 + 12].map((y) =>
+				spot(team, depth, y + this.rand(-1.5, 1.5)),
 			);
+			const start = Math.max(t0 + this.rand(150, 450), this.free.get(pid) ?? 0);
+			// The room he has there from the rest - and, all the way there,
+			// from the man bringing the ball up: not up the floor at his side.
+			const h = this.holder;
+			const room = (S: Pt) => {
+				let r = Math.min(...mates.map((M) => dist(M, S)));
+				if (h !== undefined && this.teamOf(h) === team) {
+					const ms = runMs(dist(P, S), RUN * 0.85);
+					for (let k = 1; k <= 6; k++) {
+						const u = k / 6;
+						const gap = dist(
+							{ x: P.x + (S.x - P.x) * u, y: P.y + (S.y - P.y) * u },
+							this.posAt(h, start + ms * u),
+						);
+						if (gap < TRAIL_CLEAR) {
+							r = Math.min(r, gap);
+						}
+					}
+				}
+				return r;
+			};
+			const Q = spots
+				.map((S) => ({ S, room: room(S) }))
+				.sort((a, b) => b.room - a.room)[0]!.S;
+			this.go(pid, clampPt(Q), start, RUN * 0.85, "run");
 		});
 	}
 
