@@ -635,6 +635,18 @@ const viaCorner = (p: Pt, g: Pt): Pt => {
 	}
 	return g;
 };
+// How far it is from p to g that way, and where he is a fraction `u` of the
+// way along it.
+const edgeDist = (p: Pt, g: Pt): number => {
+	const w = viaCorner(p, g);
+	return dist(p, w) + dist(w, g);
+};
+const alongEdge = (p: Pt, g: Pt, u: number): Pt => {
+	const w = viaCorner(p, g);
+	const a = dist(p, w);
+	const s = u * (a + dist(w, g));
+	return s < a ? lerp(p, w, s / a) : lerp(w, g, (s - a) / (dist(w, g) || 1));
+};
 // (Worked out as far as it is needed - the game so far, a step at a time as
 // it goes on - not the whole game at once before the first picture: that
 // takes seconds. And after a jump ahead - on to the next key play, joining
@@ -837,9 +849,10 @@ const signalPos = (s: Signal, t: number, liveAt: (when: number) => Pt): Pt => {
 	if (t < t1) {
 		return s.still;
 	}
-	// (Back to where the play will have him once he gets there.)
+	// (Back to where the play will have him once he gets there - round the
+	// edge of the floor, as he goes anywhere.)
 	return t < t1 + s.back
-		? lerp(s.still, liveAt(t1 + s.back), (t - t1) / s.back)
+		? alongEdge(s.still, liveAt(t1 + s.back), (t - t1) / s.back)
 		: liveAt(t);
 };
 
@@ -947,7 +960,7 @@ const signalsAt = (tl: CourtTimeline, t: number): (Signal | undefined)[] => {
 		let back = 250;
 		for (let k = 0; k < 8; k++) {
 			const need = clamp(
-				(dist(still, refPlaces(tl, t1 + back).at[ref]!) / 15) * 1000,
+				(edgeDist(still, refPlaces(tl, t1 + back).at[ref]!) / 15) * 1000,
 				250,
 				6500,
 			);
