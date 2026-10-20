@@ -560,6 +560,14 @@ const SPIN_SHARE = 0.3;
 const SPIN_FROM_FT = 11;
 const SPIN_SHORT = 2.6;
 const SPIN_FTPS = 10;
+// A reverse layup (see the finish at the rim): how often a finish come in
+// along the baseline goes on under the rim to the far side, and how far out
+// past the middle of it there he goes up (feet).
+const REVERSE_SHARE = 0.5;
+const REVERSE_OUT = 2.4;
+// The room round a man going up over another for a dunk (feet): nobody else
+// of theirs nearer him than that.
+const POSTER_ROOM = 3.2;
 // A drop step or an up-and-under goes up this far out (feet): a low-post
 // shot, not one from under the rim.
 const POST_FINISH_OUT = 3.4;
@@ -1075,6 +1083,10 @@ const MATCH_RANK = 7;
 // how badly he fits it (see castPlay): thirty feet, about a guard's part
 // played by a forward.
 const TRAVEL_COST = 0.035;
+// What it costs to have a man who is no ball handler bring it up himself as
+// the set's man with the ball, when it is in his hands back down the floor -
+// more than any other fit or any run to his spot (see castNearest).
+const OUTLET_COST = 4;
 // Two going farther than this (feet) to their parts across each other's
 // path trade them, if that costs the set no more than this (see castPlay).
 // Out of his own board to an open spot, he goes where the ball can come back
@@ -4620,13 +4632,27 @@ class Director {
 			}
 			pinned.set(holder, run.play.ball);
 		}
-		const { at } = this.formation(run);
+		const { at, ball } = this.formation(run);
 		let best: { roles: number[]; mirror: 1 | -1; cost: number } | undefined;
+		// A man with it back down the floor who is no ball handler - a big off
+		// the defensive glass - gives it up to one, not brings it up himself as
+		// the man the set starts with it (unless the set has him there).
+		const had = this.holder;
+		const outlet =
+			had !== undefined &&
+			this.teamOf(had) === run.team &&
+			!this.handles(had) &&
+			this.inBackcourt(run.team, this.posOf(had))
+				? had
+				: undefined;
 		const travel = (spots: Pt[]) => (pid: number, r: number) => {
 			// (Across the floor counts double: up it, everybody goes.)
 			const P = this.posOf(pid);
 			const S = spots[r]!;
-			return (dist(P, S) + Math.abs(P.y - S.y)) * TRAVEL_COST;
+			return (
+				(dist(P, S) + Math.abs(P.y - S.y)) * TRAVEL_COST +
+				(pid === outlet && r === ball ? OUTLET_COST : 0)
+			);
 		};
 		for (const mirror of [run.mirror, -run.mirror as 1 | -1]) {
 			const spots = at.map((name) => this.spotFor(run.team, mirror, name));
@@ -7691,7 +7717,7 @@ class Director {
 						x: under.x + back.x - across.x * s,
 						y: under.y + back.y - across.y * s,
 					}),
-					r: 3.2,
+					r: POSTER_ROOM,
 					t0: gather - 150,
 					t1: gather + 900,
 					except: victim,
@@ -7705,9 +7731,17 @@ class Director {
 					}
 					this.cutShort(d, gather - 150);
 					const away = dist(Q, under) > 0.5 ? unitVec(under, Q) : back;
+					// (Out at the edge of the room round it - never nearer him
+					// than the man he goes up over.)
+					const w = {
+						x: away.x + back.x - across.x * s,
+						y: away.y + back.y - across.y * s,
+					};
+					const L = Math.hypot(w.x, w.y);
+					const u = L > 0.3 ? { x: w.x / L, y: w.y / L } : away;
 					const B = clampPt({
-						x: under.x + (away.x + back.x - across.x * s) * 1.6,
-						y: under.y + (away.y + back.y - across.y * s) * 1.6,
+						x: under.x + u.x * POSTER_ROOM,
+						y: under.y + u.y * POSTER_ROOM,
 					});
 					this.goBy(d, B, gather - 150, gather + 420, "run");
 					if (d === had) {
@@ -7887,6 +7921,35 @@ class Director {
 			} else if (style === "hook") {
 				anim = "hook";
 			}
+			// Come in along the baseline, now and then he goes on under the rim
+			// and lays it in off the far side of it - a reverse - facing along
+			// the baseline the way he goes, his hand nearer the rim up and back
+			// at it.
+			const depth = Math.abs(P1.x - (rim.x + dir * RIM_INSET));
+			const across = Math.abs(P1.y - rim.y);
+			const reverse =
+				close &&
+				!tip &&
+				anim !== "powerLayup" &&
+				postMove === undefined &&
+				style !== "euro" &&
+				zone === "atRim" &&
+				(plan.kind === "make" || plan.kind === "miss") &&
+				depth < 8 &&
+				across >= 2 &&
+				across <= 11 &&
+				hash01(shooter, gather + 3) < REVERSE_SHARE;
+			const under = Math.sign(P1.y - rim.y) || 1;
+			const far = clampPt({
+				x: rim.x + dir * 0.5,
+				y: rim.y - under * REVERSE_OUT,
+			});
+			const going = unitVec(P1, far);
+			// (His left, going that way, and whether the rim is on it.)
+			const offLeft = (rim.x - far.x) * going.y - (rim.y - far.y) * going.x > 0;
+			if (reverse) {
+				anim = "reverseLayup";
+			}
 			// A jumper takes a second from the dip to landing (the ball gone
 			// just past halfway: about two-thirds of a second off the catch,
 			// the league's typical catch-and-shoot).
@@ -7935,8 +7998,11 @@ class Director {
 				: [0.24, 0.93, peak];
 			this.act(shooter, anim, gather, gather + dur, {
 				face: faceRim,
-				look,
+				look: reverse
+					? { x: far.x + going.x * 8, y: far.y + going.y * 8 }
+					: look,
 				jump,
+				...(reverse && offLeft ? { mirror: true as const } : {}),
 			});
 			const letGo = close
 				? 0.6
@@ -7963,10 +8029,12 @@ class Director {
 					0,
 					Math.min(floater ? 1.4 : LAYUP_STRIDE, len - out),
 				);
-				const S = clampPt({
-					x: P1.x + (toRim.x / len) * step,
-					y: P1.y + (toRim.y / len) * step,
-				});
+				const S = reverse
+					? far
+					: clampPt({
+							x: P1.x + (toRim.x / len) * step,
+							y: P1.y + (toRim.y / len) * step,
+						});
 				this.carry(
 					shooter,
 					S,
@@ -7976,24 +8044,38 @@ class Director {
 					faceRim,
 					{ onFrom: true, v1: AIR_DRIFT },
 				);
-				const room = Math.max(0, dist(S, rim) - 1.6);
+				const room = reverse ? 1.2 : Math.max(0, dist(S, rim) - 1.6);
 				const on = Math.min(
 					room,
 					((AIR_DRIFT / 2) * (dur * (jump[1] - letGo))) / 1000,
 				);
+				// (On a reverse, on the way he goes - out from under it.)
+				const way = reverse ? going : { x: toRim.x / len, y: toRim.y / len };
 				if (on > 0.3) {
 					drift = clampPt({
-						x: S.x + (toRim.x / len) * on,
-						y: S.y + (toRim.y / len) * on,
+						x: S.x + way.x * on,
+						y: S.y + way.y * on,
 					});
 				}
 			}
 			letGoAt = release;
 			// The ball on his fingers then, as high as his jump has him.
 			const v = (letGo - jump[0]) / (jump[1] - jump[0]);
-			const fingers = releaseAt(anim, letGo);
+			let fingers = releaseAt(anim, letGo);
 			fingers.u += v > 0 && v < 1 ? 4 * jump[2] * v * (1 - v) : 0;
-			if (this.offHisLeft(shooter)) {
+			if (reverse) {
+				// (Facing along the baseline, not at the rim: put back as if he
+				// faced it, as the shot from there is worked out.)
+				const s = offLeft ? -fingers.s : fingers.s;
+				const wx = going.x * fingers.f + going.y * s;
+				const wy = going.y * fingers.f - going.x * s;
+				const u = unitVec(far, rim);
+				fingers = {
+					f: wx * u.x + wy * u.y,
+					s: wx * u.y - wy * u.x,
+					u: fingers.u,
+				};
+			} else if (this.offHisLeft(shooter)) {
 				fingers.s = -fingers.s;
 			}
 			const d = dist(P1, rim);
@@ -13280,6 +13362,7 @@ class Director {
 			"floater",
 			"powerLayup",
 			"scoop",
+			"reverseLayup",
 			"dunk",
 			"dunk1",
 			"tomahawk",
@@ -16898,6 +16981,7 @@ class Director {
 			"floater",
 			"powerLayup",
 			"scoop",
+			"reverseLayup",
 			"catch",
 			"pass",
 			"passBounce",
@@ -17627,6 +17711,7 @@ class Director {
 			"floater",
 			"powerLayup",
 			"scoop",
+			"reverseLayup",
 			"euroStep",
 			"spinMove",
 			"stepBack",

@@ -19,7 +19,12 @@ describe("3D finishes at the rim", () => {
 		}
 		assert.isAbove(all, 60);
 		for (const anim of LAYUPS) {
-			assert.isAtLeast((count.get(anim) ?? 0) / all, 0.05, anim);
+			// (A reverse only off the baseline: fewer of them.)
+			assert.isAtLeast(
+				(count.get(anim) ?? 0) / all,
+				anim === "reverseLayup" ? 0.02 : 0.05,
+				anim,
+			);
 		}
 	}, 120_000);
 });

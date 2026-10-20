@@ -1045,6 +1045,7 @@ const SHOOTING = new Set([
 	"floater",
 	"powerLayup",
 	"scoop",
+	"reverseLayup",
 	"dunk",
 	"dunk1",
 	"tomahawk",

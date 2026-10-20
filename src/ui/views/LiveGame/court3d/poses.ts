@@ -1656,6 +1656,7 @@ export const LAYUPS = new Set<string>([
 	"fingerRoll",
 	"powerLayup",
 	"scoop",
+	"reverseLayup",
 ]);
 
 // "loop" anims play on the clock, "cycle" ones on distance covered (so feet
@@ -3943,6 +3944,66 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// A reverse (off his right hand; mirrored for his left): gone on under
+	// the rim along the baseline, up off his left foot with the rim behind
+	// him on his right - his arm up over his shoulder and back toward it,
+	// leaning away, the ball flipped up off his fingers.
+	reverseLayup: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, LAYUP_START],
+			[
+				0.3,
+				pose({
+					...LAYUP_KNEE,
+					shN: 128,
+					elN: 64,
+					abN: 18,
+					shF: 52,
+					elF: 72,
+					abF: 30,
+					lean: 4,
+					wrN: 30,
+				}),
+			],
+			[
+				0.6,
+				pose({
+					...LAYUP_KNEE,
+					hipN: 88,
+					kneeN: 106,
+					shN: 176,
+					elN: 10,
+					abN: 30,
+					shF: 58,
+					elF: 60,
+					abF: 42,
+					lean: -8,
+					twist: 12,
+					wrN: 24,
+				}),
+			],
+			[
+				0.72,
+				pose({
+					...LAYUP_KNEE,
+					hipN: 84,
+					kneeN: 104,
+					shN: 176,
+					elN: 8,
+					abN: 30,
+					shF: 56,
+					elF: 60,
+					abF: 42,
+					lean: -8,
+					twist: 12,
+					wrN: -56,
+				}),
+			],
+			...LAYUP_DOWN,
+		],
+	},
 	// A spin move (the ball in his right hand; mirrored for his left):
 	// planted, then down low and round, and out of it going. (He turns right
 	// round with it - see spinYawAt in evaluate.ts.)
@@ -5433,6 +5494,7 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 	dunk1: "palm",
 	tomahawk: "palm",
 	hook: "palm",
+	reverseLayup: "palm",
 	passPush: "push",
 	passBouncePush: "push",
 	spinMove: "pull",
