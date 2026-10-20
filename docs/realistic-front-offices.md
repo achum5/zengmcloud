@@ -1,6 +1,7 @@
 # Realistic Front Offices
 
-Status: design. Nothing built yet. Decisions below were made by the repo owner;
+Status: design. The old smart AI is gone and the arena (below) runs; the front
+office itself is not built yet. Decisions below were made by the repo owner;
 anything not written here is still open and gets asked, not assumed.
 
 ## Goal
@@ -16,9 +17,13 @@ with "the Pistons", not with a named person.
 ## Ground rules
 
 - **A separate league setting, "Realistic Front Offices" (on/off).** Off is stock
-  BBGM, and stock behaviour is not touched by this work. The owner plays a real
-  league on stock while this is built.
+  BBGM, and stock behaviour is not touched by this work - not even where stock
+  looks wrong (difficulty also changes what CPU teams ask of each other and how
+  readily their players re-sign; that stays). The owner plays a real league on
+  stock while this is built.
 - **Basketball only.** The setting does not appear in the other sports.
+- **Hidden until playable.** The setting does not appear in League Settings
+  until the mode is worth trying; until then it is tested in the arena.
 - **Existing leagues never switch on their own.** New leagues default to it only
   once the owner has played it and is happy with it.
 - **Difficulty does nothing when it is on.** The trade, signing and overall
@@ -31,6 +36,13 @@ with "the Pistons", not with a named person.
 
 ## What a team is trying to do
 
+- **No fixed point table.** A front office gives itself the best chance to be as
+  good as it possibly can - right away if it is in that spot, otherwise as soon
+  as it can be - the way a person runs a team. Title chances are the currency;
+  a deep playoff run only breaks ties between moves that leave title chances
+  the same, and the arena checks the result looks like real NBA behaviour.
+- **Patience:** each season out counts 90% of the one before, so a title five
+  years away is worth about 60% of one this season.
 - **Titles count most**, added up over roughly the next decade.
 - **Playoff runs count for something**, but never at the cost of real title
   chances later. Selling the future for a 2% title chance and a 75% chance at the
@@ -45,7 +57,8 @@ with "the Pistons", not with a named person.
 ## How players are judged
 
 - **True ratings.** CPU teams see them and never reveal them.
-- **By what a player adds to winning in this game's sim, not by ovr.** A 62 ovr
+- **By what a player adds to winning in this game's sim, not by ovr** - his
+  exact ratings run through simulated games, not this season's stats. A 62 ovr
   can be below league average in production while a 50 ovr is above it; humans
   exploit that gap today. The sim is ground truth and CPU teams can measure any
   ratings profile against it, including lineup fit (the sim's synergy).
@@ -115,8 +128,12 @@ Always played to win.
 
 Build the measuring tools before the front office.
 
-- **Arena:** whole leagues with real games, many seasons, many seeds. Stock is
-  the baseline.
+- **Arena** (`src/test/arena/`): real-players leagues starting in 2019 with the
+  owner's multiplayer settings, except that no team is hard-capped and every
+  team is run by the CPU. Played through the real game code season after
+  season, many leagues at once, then measured on winning, direction, trade
+  sanity and cap/roster use against real NBA numbers (2010-2026). Stock is the
+  baseline. Reports go to the owner in chat.
 - **Exploit list:** every known way to fleece the CPU becomes a test it has to
   pass. From the owner so far:
   - Aging but very good players pried off good teams for a few picks (a 20-5
@@ -140,7 +157,7 @@ Build the measuring tools before the front office.
 
 ## Build order
 
-1. Remove the old smart AI. Write this doc.
+1. Remove the old smart AI. Write this doc. (Done.)
 2. Arena and stock baseline.
 3. Player impact model and forecasting (players, team strength, cap).
 4. Trade judgment.
