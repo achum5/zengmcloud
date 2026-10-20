@@ -47,8 +47,8 @@ import {
 //   better player offered / asked for  - flattening zscore
 //   injury never worth more            - THE REAL DEFECT, and value zeroed
 //   age never worth more               - value zeroed
-//   bigger salary never an improvement - CONTRACT_FACTOR zeroed
-//   giving up one more good player     - CONTRACT_FACTOR zeroed
+//   bigger salary never an improvement - contractsFactor zeroed
+//   giving up one more good player     - contractsFactor zeroed
 //   picks: total and price-per-pick    - THE REAL DEFECT, and zscore flattened
 //
 // The exception is "receiving one more good player is never worse", which no
@@ -57,20 +57,13 @@ import {
 // guard against somebody adding one - which is exactly what went wrong on the
 // pick side - and not as evidence about the code as it stands.
 //
-// Two traps, both of which produced a confident wrong answer first time round:
-//
-//   THE FIXTURE'S TIER IS FRINGE, not buyer. Tier decides the multipliers, so a
-//   mutation aimed at the wrong row of a table changes nothing and reads as
-//   "the property cannot fail".
-//
-//   A BUYER'S AGE TABLE STOPS AT 24 and does not extend, so on a mid-table team
-//   an ageing player never touches it and an age sweep quietly measures BBGM's
-//   base value instead. The age property runs against a seller for that reason.
+// One trap: the AI team prices by its strategy flag, which is "rebuilding"
+// throughout this fixture. A mutation aimed at the contending row of an
+// adjustment changes nothing here and reads as "the property cannot fail".
 
 // ---------------------------------------------------------------------------
 
-// The AI's side of every swap: a real rotation player, deliberately under
-// coreValue so the untouchable guard stays out of the arithmetic.
+// The AI's side of every swap: a real rotation player.
 const TARGET: Spec = { ovr: 52, age: 29 };
 
 const dvFor = async ({
@@ -174,18 +167,16 @@ export const runValuationProperties = () => {
 
 		// Same shape, the other adjustment that multiplies a signed value.
 		//
-		// This has to run against a SELLER. The tiers do not share an age table and
-		// a buyer's stops at 24 without extending, so on a mid-table team an ageing
-		// player never touches the multiplier at all and the sweep quietly measures
-		// BBGM's base value instead - passing whatever the code does. A seller's
-		// table extends, which is what puts the adjustment under the sweep.
+		// This relies on the AI team rebuilding (team.generate's default). The
+		// contending age adjustments stop at 24, so against a contender an ageing
+		// player never touches them and the sweep would quietly measure BBGM's base
+		// value instead. The rebuilding ones extend past 29, which is what puts the
+		// adjustment under the sweep.
 		test("age never makes a player worth more, at any level of ability", async () => {
 			for (const ovr of [46, 54, 62]) {
 				const dvs = [];
 				for (const age of [26, 29, 32, 35, 38]) {
-					dvs.push(
-						await dvFor({ give: [{ ovr, age }], get: [TARGET], aiWon: 14 }),
-					);
+					dvs.push(await dvFor({ give: [{ ovr, age }], get: [TARGET] }));
 				}
 				assertMonotonic(dvs, "down", `${ovr} ovr got better by getting older`);
 			}

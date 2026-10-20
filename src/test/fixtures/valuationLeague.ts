@@ -23,12 +23,6 @@ import { DEFAULT_LEVEL } from "../../common/budgetLevels.ts";
 //    the cache. Pinning p.value by hand - as the older trade tests reasonably
 //    do, because they are testing guards rather than arithmetic - assumes age
 //    and potential out of the answer before the calculator ever sees them.
-//
-// And one thing worth knowing before writing a test against it: a buyer
-// protects EVERY player above coreValue outright (selectBuildingBlocks), so
-// asking one for a good player is answered by that guard before a single
-// number is compared. Anything meant to measure valuation has to ask for
-// somebody modest.
 // ---------------------------------------------------------------------------
 
 export const USER_TID = 0;
@@ -106,9 +100,10 @@ export const stubLeagueDb = () => {
 	};
 };
 
-// A plausible league: the AI team is a mid-table buyer with a normal roster,
-// the user has one too, and there are enough other teams for the league-wide
-// bars (star, starter, core) to mean something.
+// A plausible league: the AI team is mid-table with a normal roster, the user
+// has one too, and there are enough other teams for the league's ovr mean and
+// spread to mean something. Every team keeps team.generate's default strategy,
+// "rebuilding", so the AI prices by the rebuilding row of every adjustment.
 // SEEDED, and this one is load-bearing rather than tidy.
 //
 // player.generate rolls for everything a rating is made of, so two calls to
@@ -139,11 +134,7 @@ export const buildValuationLeague = async (extra: {
 	// season, so a pile of them is a pile of near-identical assets and any
 	// difference in what they are worth is the pile itself.
 	aiPicks?: number[];
-	// Wins for the AI team, which is what decides its tier. The default puts it
-	// mid-table, where it reads as a buyer; drop it and it becomes a seller,
-	// which matters because the tiers do not share an age table - a buyer's
-	// stops at 24 and does not extend, so an ageing player gets no tier-level
-	// penalty from it at all.
+	// Wins for the AI team, which feed the projection of its own draft picks.
 	aiWon?: number;
 }) => {
 	const spy = vi
@@ -168,7 +159,6 @@ const buildInner = async (extra: {
 	g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
 	g.setWithoutSavingToDB("userTid", USER_TID);
 	g.setWithoutSavingToDB("userTids", [USER_TID]);
-	g.setWithoutSavingToDB("smartAiFrontOffice", true);
 	g.setWithoutSavingToDB("realisticFaces", false);
 	g.setWithoutSavingToDB("faceAging", false);
 	g.setWithoutSavingToDB("sonRate", 0);
@@ -260,7 +250,7 @@ const buildInner = async (extra: {
 	for (let tid = 0; tid < NUM_TEAMS; tid++) {
 		const row: any = team.genSeasonRow((await idb.cache.teams.get(tid))!);
 		row.season = season;
-		// Middling records all round, so nobody is pushed to an extreme tier.
+		// Middling records all round, so no team's picks project to an extreme.
 		row.won =
 			tid === AI_TID && extra.aiWon !== undefined
 				? extra.aiWon

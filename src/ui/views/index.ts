@@ -129,7 +129,6 @@ export { default as TriviaGrids } from "./TriviaGrids.tsx";
 export { default as TriviaTeam } from "./TriviaTeam.tsx";
 export { default as TriviaHigherLower } from "./TriviaHigherLower.tsx";
 export { default as TriviaSpinStreak } from "./TriviaSpinStreak.tsx";
-export { default as FranchiseOutlook } from "./FranchiseOutlook.tsx";
 export { default as Standings } from "./Standings.tsx";
 export { default as TeamFinances } from "./TeamFinances/index.tsx";
 export { default as TeamGraphs } from "./TeamGraphs/index.tsx";

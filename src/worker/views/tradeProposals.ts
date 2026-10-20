@@ -7,22 +7,12 @@ import summary from "../core/trade/summary.ts";
 import { augmentOffers } from "../api/index.ts";
 import { shuffle, uniformSeed, choice } from "../../common/random.ts";
 import { ValueChangeCalculator } from "../core/team/ValueChangeCalculator.ts";
-import proposeToUser from "../core/trade/proposeToUser.ts";
 import { orderBy } from "../../common/utils.ts";
 import { defineView } from "../util/defineView.ts";
 
 const getOffers = async (seed: number) => {
 	const NUM_OFFERS = 5;
 	const NUM_TRIES_PER_TEAM = 10;
-
-	// The smart front office builds proposals from each team's actual plan -
-	// same brain, same guards as AI-AI trades. Anything less than a full slate
-	// falls through to the old random offers to top the list up.
-	const smartOffers =
-		(await proposeToUser({ numOffers: NUM_OFFERS, seed })) ?? [];
-	if (smartOffers.length >= NUM_OFFERS) {
-		return augmentOffers(smartOffers);
-	}
 
 	const userTid = g.get("userTid");
 
@@ -46,15 +36,11 @@ const getOffers = async (seed: number) => {
 		return [];
 	}
 
-	const offers: TradeTeams[] = [...smartOffers];
-	const smartTids = new Set(smartOffers.map((o) => o[1].tid));
+	const offers: TradeTeams[] = [];
 
 	const valueChangeCalculator = new ValueChangeCalculator();
 
 	for (const t of teams) {
-		if (smartTids.has(t.tid)) {
-			continue;
-		}
 		for (let i = 0; i < NUM_TRIES_PER_TEAM; i++) {
 			const seedBase = seed + NUM_TRIES_PER_TEAM * t.tid + i;
 			const r = uniformSeed(seedBase);

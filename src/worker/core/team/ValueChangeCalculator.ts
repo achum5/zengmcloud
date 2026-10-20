@@ -1,14 +1,9 @@
-import {
-	COLA_NUM_LOTTERY_PICKS,
-	DEFAULT_PLAY_THROUGH_INJURIES,
-	PHASE,
-} from "../../../common/constants.ts";
+import { PHASE } from "../../../common/constants.ts";
 import { draft, player, team, trade } from "../index.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local } from "../../util/index.ts";
 import type {
 	TradePickValues,
-	Player,
 	PlayerContract,
 	PlayerInjury,
 	DraftPick,
@@ -31,16 +26,6 @@ import {
 } from "./pickProbsCache.ts";
 import type { TeamSeasonRecord } from "./getHypotheticalTeam.ts";
 import { tradeDifficulty } from "../../util/difficulty.ts";
-import { tierFromRoster, type TradeTier } from "../trade/tradePosture.ts";
-import {
-	ageMultiplier,
-	CONTRACT_FACTOR,
-	injuryDiscount,
-	PICK_MULTIPLIER,
-	tierForLegacyStrategy,
-} from "./tierValuation.ts";
-import { colaAdjustedSlot, projectedSlot } from "../trade/futurePickOutlook.ts";
-import { presentHelpPremium } from "./presentHelp.ts";
 
 type Asset =
 	| {
@@ -61,31 +46,6 @@ type Asset =
 			draftPick: number;
 			draftYear: number;
 	  };
-
-// A player as team.ovr reads him, so what a trade does to a roster ON THE
-// FLOOR can be measured alongside what it does to its ledger.
-type OvrInput = {
-	pid: number;
-	injury: PlayerInjury;
-	value: number;
-	ratings: {
-		ovr: number;
-		ovrs: Record<string, number> | undefined;
-		pos: string;
-	};
-};
-
-const toOvrInput = (
-	p: Pick<Player, "pid" | "injury" | "value" | "ratings">,
-): OvrInput => {
-	const r = last(p.ratings);
-	return {
-		pid: p.pid,
-		injury: p.injury,
-		value: p.value,
-		ratings: { ovr: r.ovr, ovrs: r.ovrs, pos: r.pos },
-	};
-};
 
 const zscore = (value: number) =>
 	(value - local.playerOvrMean) / local.playerOvrStd;
@@ -246,7 +206,6 @@ const getPlayers = async ({
 	pidsRemove,
 	tid,
 	tradingPartnerTid,
-	floor,
 }: {
 	add: Asset[];
 	remove: Asset[];
@@ -254,8 +213,6 @@ const getPlayers = async ({
 	pidsRemove: number[];
 	tid: number;
 	tradingPartnerTid?: number;
-	// The same three groups, as team.ovr reads them - see presentHelp.
-	floor: { kept: OvrInput[]; removed: OvrInput[]; added: OvrInput[] };
 }) => {
 	const season = g.get("season");
 	const phase = g.get("phase");
@@ -276,11 +233,8 @@ const getPlayers = async ({
 
 	for (const p of players) {
 		if (!pidsRemove.includes(p.pid)) {
-			floor.kept.push(toOvrInput(p));
 			continue;
 		}
-
-		floor.removed.push(toOvrInput(p));
 
 		const value = zscore(p.value);
 
@@ -305,7 +259,6 @@ const getPlayers = async ({
 		const p = await idb.cache.players.get(pid);
 		if (p) {
 			const value = zscore(p.value);
-			floor.added.push(toOvrInput(p));
 
 			add.push({
 				type: "player",
@@ -365,10 +318,7 @@ const getPickNumber = async (
 	pidsAdd: number[],
 	pidsRemove: number[],
 	tid: number,
-	tradingPartnerTid: number | undefined,
-	// Whether this pick is one the team would be TAKING ON. Only COLA cares:
-	// acquiring a pick is what strips its lottery eligibility.
-	acquiring: boolean,
+	tradingPartnerTid?: number,
 ): Promise<PickNumber> => {
 	if (dp.pick > 0) {
 		return {
@@ -410,47 +360,8 @@ const getPickNumber = async (
 	// tid rather than originalTid, because it's about what the user can control
 	const usersPick = dp.tid === g.get("userTid");
 
-	// WHERE THIS PICK IS ACTUALLY HEADING.
-	//
-	// The old target was `(usersPick ? 0.75 : 0.25) * numPicksPerRound` - a
-	// constant, and a difficulty thumb rather than a projection, with a
-	// second explicit one applied below. So every AI's future pick regressed
-	// to a top-quarter slot whoever owned it, and the AI could not tell a
-	// teardown's 2029 first from a title favourite's.
-	//
-	// It is projected from the ORIGINAL team's own outlook now - the tier the
-	// rest of the front office runs on, tilted by roster age, pulled toward
-	// the middle of the round as the horizon grows. The user-difficulty
-	// adjustment is left exactly where it already was, below, so this is a
-	// projection and that is the handicap.
-	const outlook = g.get("smartAiFrontOffice")
-		? cache.tiers.get(dp.originalTid)
-		: undefined;
-	let regressionTarget = outlook
-		? projectedSlot({
-				tier: outlook.tier,
-				avgAge: outlook.avgAge,
-				seasons: Math.max(0, season - g.get("season")),
-				numPicksPerRound,
-			})
-		: (usersPick ? 0.75 : 0.25) * numPicksPerRound;
-
-	// UNDER COLA THAT PROJECTION IS ONLY HALF THE STORY. Where a pick lands
-	// is decided by an accumulated stockpile of chances rather than by last
-	// season, and a first that has changed hands is excluded from the
-	// lottery outright - so a pick being ACQUIRED is never eligible, whatever
-	// it was worth a moment earlier in its own team's hands. See
-	// colaAdjustedSlot.
-	if (cache.cola && outlook) {
-		const stock = cache.cola.chancesByTid.get(dp.originalTid) ?? 0;
-		regressionTarget = colaAdjustedSlot({
-			recordSlot: regressionTarget,
-			chancesShare: cache.cola.total > 0 ? stock / cache.cola.total : 0,
-			lotteryEligible: !acquiring && dp.tid === dp.originalTid,
-			numLotteryPicks: cache.cola.numLotteryPicks,
-			numPicksPerRound,
-		});
-	}
+	// For future draft picks, add some uncertainty.
+	const regressionTarget = (usersPick ? 0.75 : 0.25) * numPicksPerRound;
 
 	// Never let this improve the future projection of user's picks
 	let seasons = helpers.bound(season - g.get("season"), 0, 5);
@@ -467,13 +378,6 @@ const getPickNumber = async (
 	// regressionTarget is a pick, so do the regression on the pick this slot gets. They're only different if the best team picks first
 	const reverse = getRoundOrderRule(g.get("draftType"), dp.round) === "reverse";
 	const projectedPick = reverse ? numPicksPerRound + 1 - slot : slot;
-
-	// The outlook projection is a place in the order by how good the team is,
-	// worst first - a slot. In a round where the best team picks first, that
-	// slot's pick is at the other end.
-	if (outlook && reverse) {
-		regressionTarget = numPicksPerRound + 1 - regressionTarget;
-	}
 
 	// Weighted average of projectedPick and regressionTarget. No rounding, because rounding can result in a better team having a more valuable pick
 	const regressedPick =
@@ -722,8 +626,7 @@ const getPickInfo = async (
 	pidsAdd: number[],
 	pidsRemove: number[],
 	tid: number,
-	tradingPartnerTid: number | undefined,
-	acquiring: boolean,
+	tradingPartnerTid?: number,
 ): Promise<Asset> => {
 	const season =
 		dp.season === "fantasy" || dp.season === "expansion"
@@ -738,7 +641,6 @@ const getPickInfo = async (
 		pidsRemove,
 		tid,
 		tradingPartnerTid,
-		acquiring,
 	);
 
 	const numPicksBeforeRound = getNumPicksPerRound() * (dp.round - 1);
@@ -876,7 +778,6 @@ const getPicks = async ({
 				pidsRemove,
 				tid,
 				tradingPartnerTid,
-				true,
 			);
 			add.push(pickInfo);
 		}
@@ -895,7 +796,6 @@ const getPicks = async ({
 				pidsRemove,
 				tid,
 				tradingPartnerTid,
-				false,
 			);
 			remove.push(pickInfo);
 		}
@@ -947,13 +847,9 @@ const getPicks = async ({
 
 const sumValues = (
 	players: Asset[],
-	tier: TradeTier,
+	strategy: string,
 	tid: number,
 	includeInjuries = false,
-	// Whether the injury discount is scaled by what this team is trying to do.
-	// Off means the flat stock discount, so a league with the smart front
-	// office turned off values a hurt player exactly as BBGM always did.
-	weightInjuriesByTier = false,
 ) => {
 	if (players.length === 0) {
 		return 0;
@@ -968,48 +864,62 @@ const sumValues = (
 		const treatAsFutureDraftPick =
 			p.type === "pick" && (season !== p.draftYear || phase <= PHASE.PLAYOFFS);
 
-		// APPLYING A FACTOR TO A SIGNED DESIRABILITY.
-		//
-		// playerValue is a z-score, so roughly half the league is negative, and
-		// `playerValue *= 0.85` does the opposite of what it reads as down there:
-		// -0.5 becomes -0.425, so the penalty makes an unwanted player MORE
-		// wanted. The old code carried a comment saying these factors did not
-		// make sense for negative players; this is what it takes to make sense.
-		//
-		// Move by a share of the MAGNITUDE instead. For a positive player this is
-		// arithmetically identical to multiplying - v + v(f-1) is vf - so nothing
-		// changes for the assets most trades are about. For a negative one a
-		// penalty finally pushes him further down and a bonus lifts him, which is
-		// what both were always meant to do.
+		// Factors move playerValue by a share of its MAGNITUDE rather than
+		// multiplying it. playerValue is a z-score, so roughly half the league is
+		// negative, and multiplying there does the opposite of what it reads as:
+		// a 0.9 penalty would make an unwanted player MORE wanted. For a positive
+		// player this is the same as multiplying.
 		const applyFactor = (factor: number) => {
 			playerValue += Math.abs(playerValue) * (factor - 1);
 		};
 
-		// What this team wants, rather than what the league on average wants. Much
-		// of a young player's value is potential, which a team trying to win this
-		// season cannot spend - and all of a pick's value is. See
-		// team/tierValuation.ts, whose middle rows reproduce the old
-		// rebuilding/contending numbers exactly.
-		applyFactor(
-			treatAsFutureDraftPick
-				? PICK_MULTIPLIER[tier]
-				: ageMultiplier(tier, p.age),
-		);
+		if (strategy === "rebuilding") {
+			// Value young/cheap players and draft picks more. Penalize expensive/old players
+			if (treatAsFutureDraftPick) {
+				applyFactor(1.1);
+			} else if (p.age <= 19) {
+				applyFactor(1.075);
+			} else if (p.age === 20) {
+				applyFactor(1.05);
+			} else if (p.age === 21) {
+				applyFactor(1.0375);
+			} else if (p.age === 22) {
+				applyFactor(1.025);
+			} else if (p.age === 23) {
+				applyFactor(1.0125);
+			} else if (p.age === 27) {
+				applyFactor(0.975);
+			} else if (p.age === 28) {
+				applyFactor(0.95);
+			} else if (p.age >= 29) {
+				applyFactor(0.9);
+			}
+		} else if (strategy === "contending") {
+			// Much of the value for these players comes from potential, which we don't really care about
+			if (treatAsFutureDraftPick) {
+				applyFactor(0.825);
+			} else if (p.age <= 19) {
+				applyFactor(0.8);
+			} else if (p.age === 20) {
+				applyFactor(0.825);
+			} else if (p.age === 21) {
+				applyFactor(0.85);
+			} else if (p.age === 22) {
+				applyFactor(0.875);
+			} else if (p.age === 23) {
+				applyFactor(0.925);
+			} else if (p.age === 24) {
+				applyFactor(0.95);
+			}
+		}
 
-		// Normalize for injuries, by what the injury actually costs THIS team -
-		// see injuryDiscount in team/tierValuation.ts. An injured player is worth
-		// less than a healthy one at every level of ability, including below
-		// average, which is exactly the case the old form got backwards: a team
-		// preferred a hurt fringe player to a fit one.
-		if (includeInjuries && tid !== g.get("userTid")) {
-			applyFactor(
-				1 -
-					injuryDiscount({
-						tier,
-						gamesRemaining: p.injury.gamesRemaining,
-						weighted: weightInjuriesByTier,
-					}),
-			);
+		// Normalize for injuries
+		if (
+			includeInjuries &&
+			tid !== g.get("userTid") &&
+			p.injury.gamesRemaining > 0
+		) {
+			applyFactor(1 - Math.min(p.injury.gamesRemaining, 75) / 100);
 		}
 
 		// Really bad players will just get no PT, but don't to count them as 0 because then AI thinks it can't find a trade
@@ -1017,14 +927,15 @@ const sumValues = (
 			playerValue /= 20;
 		}
 
-		playerValue += CONTRACT_FACTOR[tier] * p.contractValue;
+		const contractsFactor = strategy === "rebuilding" ? 2 : 0.5;
+		playerValue += contractsFactor * p.contractValue;
 
 		// if a player was just drafted and can be released, they shouldn't have negative value
 		if (p.type === "player" && p.justDrafted) {
 			playerValue = Math.max(0, playerValue);
 		}
 
-		return memo + (playerValue > 1 ? playerValue ** EXPONENT : playerValue);
+		return memo + valueToTradeValue(playerValue);
 	}, 0);
 };
 
@@ -1110,89 +1021,6 @@ type PickEstimates = {
 	firstRoundSlotProbs?: ReturnType<typeof getFirstRoundSlotProbsCached>;
 };
 
-// Every team's tier, from data the cache has already gathered. The league bars
-// the tier read needs (what a "core" player is worth, what a "star" is worth)
-// are percentiles over every rostered player, which is the same list this
-// already holds - so the whole league costs one pass rather than one scan per
-// team.
-const computeTiers = (
-	playersByTid: Map<
-		number,
-		{ age?: number; value: number; born?: { year: number } }[]
-	>,
-	teamOvrs: { tid: number; ovr: number }[],
-	wps: { tid: number; wp: number }[],
-): Map<number, { tier: TradeTier; avgAge: number }> => {
-	const season = g.get("season");
-	const numActiveTeams = teamOvrs.length || g.get("numActiveTeams");
-
-	const values: number[] = [];
-	for (const players of playersByTid.values()) {
-		for (const p of players) {
-			values.push(p.value);
-		}
-	}
-	values.sort((a, b) => b - a);
-	const atRank = (rank: number, fallback: number) =>
-		values.length === 0
-			? fallback
-			: (values[
-					Math.min(values.length - 1, Math.max(0, Math.round(rank) - 1))
-				] ?? fallback);
-	// Same bars getLeagueTradeContext uses, so the two agree on what a core
-	// player and a star are.
-	const starValue = Math.max(60, atRank(numActiveTeams, 65));
-	const coreValue = Math.max(52, atRank(numActiveTeams * 3, 55));
-
-	const wpByTid = new Map(wps.map((w) => [w.tid, w.wp]));
-	const topTeamOvr = teamOvrs[0]?.ovr ?? 0;
-
-	const tiers = new Map<number, { tier: TradeTier; avgAge: number }>();
-	for (const [i, { tid, ovr }] of teamOvrs.entries()) {
-		const players = (playersByTid.get(tid) ?? []).map((p) => ({
-			age: season - (p.born?.year ?? season - 25),
-			value: p.value,
-		}));
-		const ovrRankPct =
-			numActiveTeams > 1 ? Math.min(1, i / (numActiveTeams - 1)) : 0;
-		const { tier, avgAge } = tierFromRoster({
-			players,
-			// getEstPicks already blends the actual record with a
-			// strength-implied win% early in the season, which is the same thing
-			// the posture module does for itself.
-			winp: wpByTid.get(tid) ?? 0.5,
-			ovrRankPct,
-			coreValue,
-			starValue,
-			teamOvr: ovr,
-			topTeamOvr,
-		});
-		tiers.set(tid, { tier, avgAge });
-	}
-	return tiers;
-};
-
-// Every team's COLA stockpile and what it adds up to, read once per cache
-// build. Only under COLA - every other draft type hands out chances by record
-// each year, which the tier projection already speaks for.
-const getColaChances = async () => {
-	if (g.get("draftType") !== "cola") {
-		return undefined;
-	}
-	const chancesByTid = new Map<number, number>();
-	let total = 0;
-	for (const t of await idb.cache.teams.getAll()) {
-		if (t.disabled) {
-			continue;
-		}
-		const chances =
-			t.draftLottery?.type === "cola" ? t.draftLottery.chances : 0;
-		chancesByTid.set(t.tid, chances);
-		total += chances;
-	}
-	return { chancesByTid, total, numLotteryPicks: COLA_NUM_LOTTERY_PICKS };
-};
-
 type ValueChangeCache = PickEstimates & {
 	estValues: TradePickValues;
 	future: PickEstimates;
@@ -1207,21 +1035,6 @@ type ValueChangeCache = PickEstimates & {
 		tid: number;
 		ovr: number;
 	}[];
-
-	// Every team's posture tier, so an offer is priced by what the franchise is
-	// actually doing rather than by BBGM's two-value, once-a-year `strategy`
-	// flag. Computed here because this is the one place that already has every
-	// player, every team OVR and every win% in hand - asking the posture module
-	// for it would re-scan the league once per team.
-	tiers: Map<number, { tier: TradeTier; avgAge: number }>;
-	// Under COLA, where a pick lands is decided by an accumulated stockpile of
-	// chances rather than by last season, so the stockpile has to be in hand to
-	// price a pick at all. Undefined under every other draft type.
-	cola?: {
-		chancesByTid: Map<number, number>;
-		total: number;
-		numLotteryPicks: number;
-	};
 };
 
 type ToUpdate = {
@@ -1305,15 +1118,12 @@ export class ValueChangeCalculator {
 			}
 			teamOvrs.sort((a, b) => b.ovr - a.ovr);
 
-			const estPicks = await getEstPicks(teamOvrs);
 			return {
-				...estPicks,
+				...(await getEstPicks(teamOvrs)),
 				currentFirstRoundPickProbs: undefined,
 				estValues,
 				quick: this.quick,
 				teamOvrs,
-				tiers: computeTiers(playersByTid, teamOvrs, estPicks.wps),
-				cola: await getColaChances(),
 			};
 		} else {
 			return {
@@ -1371,18 +1181,8 @@ export class ValueChangeCalculator {
 			throw new Error("Invalid team");
 		}
 
-		// The plan, not the flag. Falls back to the flag's own two values when the
-		// smart front office is off, or when this team somehow has no roster to
-		// read - see tierForLegacyStrategy.
-		const tier = g.get("smartAiFrontOffice")
-			? (this.cache?.tiers.get(tid)?.tier ?? tierForLegacyStrategy(t.strategy))
-			: tierForLegacyStrategy(t.strategy);
+		const strategy = t.strategy;
 
-		const floor = {
-			kept: [] as OvrInput[],
-			removed: [] as OvrInput[],
-			added: [] as OvrInput[],
-		};
 		await getPlayers({
 			add,
 			remove,
@@ -1390,7 +1190,6 @@ export class ValueChangeCalculator {
 			pidsRemove,
 			tid,
 			tradingPartnerTid,
-			floor,
 		});
 		await getPicks({
 			cache: this.cache,
@@ -1405,60 +1204,14 @@ export class ValueChangeCalculator {
 		});
 
 		// console.log("ADD");
-		const smartInjuries = g.get("smartAiFrontOffice");
-		const valuesAdd = sumValues(add, tier, tid, true, smartInjuries);
+		const valuesAdd = sumValues(add, strategy, tid, true);
 		// console.log("Total", valuesAdd);
 
 		// console.log("REMOVE");
-		const valuesRemove = sumValues(remove, tier, tid, false, smartInjuries);
+		const valuesRemove = sumValues(remove, strategy, tid);
 		// console.log("Total", valuesRemove);
 
-		let dv = valuesAdd - valuesRemove;
-
-		// WHAT THE DEAL DOES ON THE FLOOR THIS SEASON, for a team that is trying
-		// to win this season. Only ever a charge on what the team gives up - so
-		// a like-for-like swap, a consolidation, or spare depth going out costs
-		// nothing extra, and a selling team is charged nothing at all. See
-		// team/presentHelp.ts.
-		if (
-			g.get("smartAiFrontOffice") &&
-			floor.removed.length > 0 &&
-			valuesRemove > 0
-		) {
-			const premium = presentHelpPremium({
-				tier,
-				...this.floorStrength(t, floor),
-			});
-			if (premium > 0) {
-				dv -= premium * valuesRemove;
-			}
-		}
-
-		return dv;
-	}
-
-	// Team ovr with and without the deal, counting only the men who can play
-	// now: a starter out for the season is not helping the team win this
-	// season, so shipping him takes nothing off the floor.
-	private floorStrength(
-		t: { playThroughInjuries?: [number, number] },
-		floor: { kept: OvrInput[]; removed: OvrInput[]; added: OvrInput[] },
-	): { ovrBefore: number; ovrAfter: number } {
-		const accountForInjuredPlayers = {
-			numDaysInFuture: 0,
-			playThroughInjuries:
-				t.playThroughInjuries ?? DEFAULT_PLAY_THROUGH_INJURIES,
-		};
-		const playoffs = g.get("phase") === PHASE.PLAYOFFS;
-		const ovrBefore = team.ovr([...floor.kept, ...floor.removed], {
-			accountForInjuredPlayers,
-			playoffs,
-		});
-		const ovrAfter = team.ovr([...floor.kept, ...floor.added], {
-			accountForInjuredPlayers,
-			playoffs,
-		});
-		return { ovrBefore, ovrAfter };
+		return valuesAdd - valuesRemove;
 	}
 }
 

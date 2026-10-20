@@ -1,7 +1,6 @@
 import { PHASE } from "../../../common/constants.ts";
 import { league, phase, trade } from "../index.ts";
 import autoSign from "./autoSign.ts";
-import clearSpaceForSignings from "./clearSpace.ts";
 import decreaseDemands from "./decreaseDemands.ts";
 import {
 	g,
@@ -48,9 +47,6 @@ async function play(
 				await collegeRecruitingDay();
 			} else {
 				await decreaseDemands();
-				// Before anyone shops: a team that has agreed terms with a free agent
-				// it cannot fit gets to go and make room for him.
-				await clearSpaceForSignings();
 				await autoSign();
 			}
 			await league.setGameAttributes({

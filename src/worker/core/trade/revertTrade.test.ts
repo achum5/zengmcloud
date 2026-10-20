@@ -38,6 +38,9 @@ const makeTrade = async () => {
 
 beforeEach(async () => {
 	resetG();
+	// Cache only. Another test file can leave a stub league behind, since test
+	// files share a worker.
+	(idb as any).league = undefined;
 	g.setWithoutSavingToDB("numTeams", 3);
 	g.setWithoutSavingToDB("numActiveTeams", 3);
 	g.setWithoutSavingToDB("godMode", true);

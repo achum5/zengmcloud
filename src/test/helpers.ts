@@ -1,7 +1,6 @@
 import { Cache, idb } from "../worker/db/index.ts";
 import { STORES, type Store } from "../worker/db/Cache.ts";
 import { g, helpers, local } from "../worker/util/index.ts";
-import { forgetTiers } from "../worker/core/trade/tradePosture.ts";
 import {
 	defaultGameAttributes,
 	footballOverrides,
@@ -129,10 +128,8 @@ export const resetCache = async (
 };
 
 export const resetG = () => {
-	// The trade market remembers what it last read each team as, keyed by
-	// tid, and player valuation reads a league-wide rating mean it computed
-	// lazily, so one test file's league would otherwise leak into the next.
-	forgetTiers();
+	// Player valuation reads a league-wide rating mean it computed lazily, so
+	// one test file's league would otherwise leak into the next.
 	local.playerOvrMeanStdStale = true;
 	const season = 2016;
 	const teams = helpers.getTeamsDefault();

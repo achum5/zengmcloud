@@ -876,7 +876,6 @@ export type GameAttributesLeague = {
 	// The league's own score bug for the 3D game, or null for the default.
 	scoreBug: ScoreBugStyle | null;
 	aiTradesFactor: number;
-	smartAiFrontOffice: boolean;
 	allStarGame: number | null;
 	allStarNum: number;
 	allStarType: "draft" | "byConf" | "top";

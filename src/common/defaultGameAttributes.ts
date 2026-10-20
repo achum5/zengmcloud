@@ -545,7 +545,6 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	numGamesPlayoffSeries: wrapFromStart([7, 7, 7, 7]),
 	numPlayoffByes: wrapFromStart(0),
 	aiTradesFactor: 1,
-	smartAiFrontOffice: true,
 	courtDecals: [],
 	scoreBug: null,
 	stopOnInjury: false,

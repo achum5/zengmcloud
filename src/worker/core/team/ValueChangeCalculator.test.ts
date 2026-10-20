@@ -22,11 +22,6 @@ const dpids: number[][] = [];
 beforeAll(async () => {
 	resetG();
 	g.setWithoutSavingToDB("playIn", true);
-	// These pin down the draft pick model itself - the odds of landing each
-	// slot - so they run with the plain trade AI. The smart front office layers
-	// its own judgment on top (a contender's picks matter less to it, wherever
-	// they land), which is tested on its own in trade/.
-	g.setWithoutSavingToDB("smartAiFrontOffice", false);
 	const season = g.get("season");
 
 	const players = [];
