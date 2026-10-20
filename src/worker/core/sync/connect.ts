@@ -65,6 +65,7 @@ import { readRecoveryAttempt } from "./recoveryBreadcrumb.ts";
 import { endLotteryReveal } from "./notifications.ts";
 import {} from "../../../common/syncRetention.ts";
 import type { LiveBroadcastMeta } from "./types.ts";
+import type { LiveSync3D } from "../../../common/types.ts";
 
 // This device's catch-up watermark for a league, stored in the durable meta DB
 // so it survives refreshes - so we only replay what we missed.
@@ -762,15 +763,16 @@ export const startLiveBroadcast = async (gid: number, playByPlay: any[]) => {
 	}
 };
 
-// Heartbeat the broadcaster's playback position to the room. Called ~every
-// 400ms from the LiveGame view while broadcasting. Cheap merge write; no-op if
-// we're not actually broadcasting.
+// Heartbeat the broadcaster's playback position to the room. Called from the
+// LiveGame view's heartbeat while broadcasting - on a change, at most a few
+// times a second. Cheap merge write; no-op if we're not actually broadcasting.
 export const updateLiveBroadcast = async (update: {
 	cursor: number;
 	paused: boolean;
 	speed: number;
 	gameOver: boolean;
 	view?: string;
+	sync?: Omit<LiveSync3D, "of">;
 }) => {
 	const transport = currentTransport;
 	const broadcast = activeBroadcast;
@@ -803,6 +805,9 @@ export const updateLiveBroadcast = async (update: {
 			gameOver: update.gameOver,
 			expiresAt: Date.now() + LIVE_BROADCAST_LEASE_MS,
 			view: update.view,
+			sync: update.sync
+				? { ...update.sync, of: broadcast.startedAt }
+				: undefined,
 		});
 	} catch {
 		// A dropped heartbeat is harmless - the next one re-stamps the lease.
@@ -943,6 +948,9 @@ const pushFollowerState = (meta: LiveBroadcastMeta) => {
 				paused: meta.paused,
 				gameOver: meta.gameOver,
 				view: meta.view,
+				// (Only this broadcast's: the doc can still hold the last one's.)
+				sync: meta.sync?.of === meta.startedAt ? meta.sync : undefined,
+				recvAt: meta.recvAt,
 			},
 		},
 	]);

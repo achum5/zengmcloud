@@ -42,7 +42,7 @@ import { syncDebugLog } from "./debugLog.ts";
 // is a runaway guard, not a real limit (200k entries is far past any league).
 const FULL_LOG_PAGE_SIZE = 200;
 import { deserializeChangeset, serializeChangeset } from "./serialize.ts";
-import type { SyncedAutoPlay } from "../../../common/types.ts";
+import type { LiveSync3D, SyncedAutoPlay } from "../../../common/types.ts";
 import type { SyncNotification } from "./notifications.ts";
 import type { LiveGameChatMessage } from "../../../common/liveGameChat.ts";
 import { parseLeaguePosition, type LeaguePosition } from "./leaguePosition.ts";
@@ -97,6 +97,39 @@ const LOTTERY_REVEAL_DOC_ID = "lotteryReveal";
 
 // Keep each payload chunk well under Firestore's 1 MB/doc limit.
 const LIVE_BROADCAST_CHUNK_BYTES = 700_000;
+
+// Where the simmer's 3D court is (see LiveSync3D), if the doc says - whole,
+// or not at all.
+const parseLiveSync3D = (value: unknown): LiveSync3D | undefined => {
+	if (!value || typeof value !== "object") {
+		return undefined;
+	}
+	const v = value as Record<string, unknown>;
+	const num = (key: string) =>
+		typeof v[key] === "number" && Number.isFinite(v[key])
+			? (v[key] as number)
+			: undefined;
+	const of = num("of");
+	const t = num("t");
+	const w = num("w");
+	const rp = num("rp");
+	const at = num("at");
+	const rate = num("rate");
+	const mine = num("mine");
+	if (
+		of === undefined ||
+		t === undefined ||
+		w === undefined ||
+		rp === undefined ||
+		at === undefined ||
+		rate === undefined ||
+		mine === undefined ||
+		typeof v.keys !== "string"
+	) {
+		return undefined;
+	}
+	return { of, t, w, rp, at, rate, keys: v.keys, mine };
+};
 const ROOM_SNAPSHOT_DOC_ID = "roomSnapshot";
 
 // ---- Sync v2 (version chain) doc ids ----------------------------------------
@@ -941,6 +974,8 @@ export class FirebaseTransport implements SyncTransport {
 							expiresAt:
 								typeof data.expiresAt === "number" ? data.expiresAt : 0,
 							view: typeof data.view === "string" ? data.view : undefined,
+							sync: parseLiveSync3D(data.sync),
+							recvAt: Date.now(),
 						});
 					} else {
 						onChange(undefined);

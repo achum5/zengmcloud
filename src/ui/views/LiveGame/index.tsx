@@ -67,9 +67,11 @@ import {
 import {
 	getKeyPlays,
 	KEY_PLAY_PRESETS,
+	parseKeyPlays,
 	setKeyPlays,
 	type KeyPlaySettings,
 } from "./court3d/keyPlays.ts";
+import type { FollowReport, Shown } from "./court3d/follow.ts";
 import {
 	buildFieldScene,
 	newFieldSceneCtx,
@@ -1627,6 +1629,56 @@ export const LiveGame = (props: View<"liveGame">) => {
 	);
 	const followerRef = useRef(isFollower);
 	followerRef.current = isFollower;
+	// Following in 3D a device that says where its court is: this one plays
+	// the game along with it (see court3d/follow.ts) - at its speed, through
+	// its key plays - asking for its own lines rather than being stepped.
+	// (The game being broadcast, not a previous one still on screen.)
+	const sync3d =
+		isFollower && court3d && mpLiveBroadcast?.gid === props.initialBoxScore?.gid
+			? mpLiveBroadcast?.sync
+			: undefined;
+	const followCursor = mpLiveBroadcast?.cursor ?? 0;
+	const followPaused = !!mpLiveBroadcast?.paused;
+	const followRecv = mpLiveBroadcast?.recvAt;
+	const along = useMemo(
+		(): FollowReport | undefined =>
+			sync3d && followRecv !== undefined
+				? {
+						t: sync3d.t,
+						w: sync3d.w,
+						rp: sync3d.rp,
+						cursor: followCursor,
+						paused: followPaused,
+						at: sync3d.at,
+						recv: followRecv,
+					}
+				: undefined,
+		[sync3d, followCursor, followPaused, followRecv],
+	);
+	const playAlongRef = useRef(!!along);
+	playAlongRef.current = !!along;
+	const alongKeys = sync3d?.keys ?? "";
+	const alongMine = sync3d?.mine;
+	const alongKeyPlays = useMemo(() => {
+		if (!alongKeys) {
+			return undefined;
+		}
+		try {
+			return {
+				settings: parseKeyPlays(JSON.parse(alongKeys)),
+				mine:
+					alongMine === 0 || alongMine === 1 ? (alongMine as 0 | 1) : undefined,
+			};
+		} catch {
+			return undefined;
+		}
+	}, [alongKeys, alongMine]);
+	// On the device in charge of simming: what its court says, for them.
+	const court3dReport = useRef<Shown | undefined>(undefined);
+	const rate3dRef = useRef(rate3d);
+	rate3dRef.current = rate3d;
+	const keyPlays3dRef = useRef(keyPlays3d);
+	keyPlays3dRef.current = keyPlays3d;
 	// The broadcast this page is actually rendering, so unmounting can report
 	// that this device walked out of it. Undefined on the broadcaster, on a
 	// replay, and in the brief recovery window where the page still holds the
@@ -2074,8 +2126,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// when we first join mid-game). Pure catch-up - it never runs ahead of the
 	// simmer, so we always show exactly what they've shown.
 	const followerCursor = isFollower ? (mpLiveBroadcast?.cursor ?? 0) : 0;
+	const playAlong = !!along;
 	useEffect(() => {
-		if (!isFollower || !started || !events.current) {
+		// (Playing along, the court asks for its own lines.)
+		if (!isFollower || playAlong || !started || !events.current) {
 			return;
 		}
 		// The cursor belongs to the game being broadcast; never let it step
@@ -2098,6 +2152,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 		broadcastGid,
 		followerCursor,
 		isFollower,
+		playAlong,
 		propsGid,
 		started,
 		processToNextPause,
@@ -2107,8 +2162,20 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// stay in lockstep, and end the broadcast when we leave the page. Writes only
 	// on a real change, plus a slow keep-alive so the follower lease never lapses
 	// while we sit paused / on the final box score.
+	//
+	// In 3D it also says where the court is, and moving on is written at most
+	// once a second: whoever follows plays along between (see
+	// court3d/follow.ts). A pause, the end, or a change of how it is shown
+	// goes at once.
 	const lastBroadcastSent = useRef<
-		| { cursor: number; paused: boolean; gameOver: boolean; at: number }
+		| {
+				cursor: number;
+				paused: boolean;
+				gameOver: boolean;
+				w: number;
+				how: string;
+				at: number;
+		  }
 		| undefined
 	>(undefined);
 	useEffect(() => {
@@ -2124,27 +2191,51 @@ export const LiveGame = (props: View<"liveGame">) => {
 			const gameOver = !!boxScore.current.gameOver;
 			const last = lastBroadcastSent.current;
 			const now = Date.now();
+			const view = court3dRef.current ? "3d" : "classic";
+			const court = court3dReport.current;
+			const keyPlays = keyPlays3dRef.current;
+			const sync =
+				view === "3d"
+					? {
+							t: court?.t ?? 0,
+							w: court?.w ?? 0,
+							rp: court?.rp ?? -1,
+							at: now,
+							rate: rate3dRef.current,
+							keys: keyPlays.settings.on
+								? JSON.stringify(keyPlays.settings)
+								: "",
+							mine: keyPlays.mine ?? -1,
+						}
+					: undefined;
+			const w = sync?.w ?? 0;
+			const how = sync
+				? `${view} ${sync.rate} ${sync.mine} ${sync.keys}`
+				: view;
 			const changed =
 				!last ||
-				last.cursor !== cursor ||
 				last.paused !== paused ||
-				last.gameOver !== gameOver;
+				last.gameOver !== gameOver ||
+				last.how !== how ||
+				((last.cursor !== cursor || last.w !== w) &&
+					now - last.at >= (sync ? 1000 : 400));
 			// Re-stamp the lease at least every few seconds even when nothing moved.
 			const stale = !last || now - last.at > 4000;
 			if (!changed && !stale) {
 				return;
 			}
-			lastBroadcastSent.current = { cursor, paused, gameOver, at: now };
+			lastBroadcastSent.current = { cursor, paused, gameOver, w, how, at: now };
 			void toWorker("main", "updateLiveBroadcast", {
 				cursor,
 				paused,
 				speed: speedRef.current,
 				gameOver,
-				view: court3dRef.current ? "3d" : "classic",
+				view,
+				sync,
 			});
 		};
 
-		const interval = setInterval(sendHeartbeat, 400);
+		const interval = setInterval(sendHeartbeat, 200);
 		sendHeartbeat();
 
 		return () => {
@@ -2185,7 +2276,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const onCourt3DReady = useCallback(() => {
 		if (
 			pausedRef.current ||
-			followerRef.current ||
+			(followerRef.current && !playAlongRef.current) ||
 			!events.current ||
 			events.current.length === 0
 		) {
@@ -2228,7 +2319,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 		(targetCursor: number) => {
 			if (
 				pausedRef.current ||
-				followerRef.current ||
+				(followerRef.current && !playAlongRef.current) ||
 				!events.current ||
 				events.current.length === 0
 			) {
@@ -2987,10 +3078,12 @@ export const LiveGame = (props: View<"liveGame">) => {
 										caption={playByPlayEntries.current[0]?.text}
 										captionT={playByPlayEntries.current[0]?.t}
 										paused={paused}
-										rate={rate3d}
-										follower={isFollower}
+										rate={along && sync3d!.rate > 0 ? sync3d!.rate : rate3d}
+										follower={isFollower && !along}
+										along={along}
+										report={court3dReport}
 										skips={skips3d}
-										keyPlays={keyPlays3d}
+										keyPlays={along ? alongKeyPlays : keyPlays3d}
 										onReady={onCourt3DReady}
 										onJump={onCourt3DJump}
 										onFail={onCourt3DFail}

@@ -1528,6 +1528,31 @@ export type MpLiveBroadcast = {
 	// The picture the simmer is watching in ("classic" / "3d"), so followers
 	// see the same one. Absent from older builds: classic.
 	view?: string;
+	// Where the simmer's 3D court is, and when this device heard (its clock,
+	// ms) - see LiveSync3D.
+	sync?: LiveSync3D;
+	recvAt?: number;
+};
+
+// Where the 3D court of the device in charge of simming is, so a device
+// watching in 3D can play the game along with it rather than be stepped
+// line by line (see the 3D court's follow.ts). Absent from older builds.
+export type LiveSync3D = {
+	// The broadcast it belongs to (its startedAt): the doc it is merged onto
+	// can still hold the last one's.
+	of: number;
+	// Where the court is: in the game (timeline ms), in the show (ms of
+	// picture played) and in a replay (-1 none).
+	t: number;
+	w: number;
+	rp: number;
+	// When, by the simmer's clock (ms).
+	at: number;
+	// How fast it plays, the key plays it shows ("" the whole game, else the
+	// settings as JSON) and whose they are (0/1, -1 neither).
+	rate: number;
+	keys: string;
+	mine: number;
 };
 
 // Ready-up state for the header control, for whichever gated stage the league

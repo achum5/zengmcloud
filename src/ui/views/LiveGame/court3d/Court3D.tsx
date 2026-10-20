@@ -43,12 +43,8 @@ import {
 } from "./clock.ts";
 import {
 	clipDipAt,
-	linesBetween,
-	snapForCursor,
-	targetForCursor,
 	type CourtPlayer,
 	type CourtTimeline,
-	type Fx,
 	type Stakes,
 } from "./director.ts";
 import { crewAt, crewFor } from "./crew.ts";
@@ -64,18 +60,22 @@ import {
 	stageWarmup,
 	warmupAim,
 	warmupMoment,
-	WARMUP_MS,
 	type Warmup,
 } from "./pregame.ts";
-import { advanceLead, followRate } from "./follow.ts";
+import {
+	addReport,
+	makeFollow,
+	type FollowReport,
+	type Shown,
+} from "./follow.ts";
+import { onCursor, stepPlay } from "./playback.ts";
 import {
 	planKeyPlays,
-	segmentAt,
 	type KeyPlaySettings,
 	type KeySegment,
 } from "./keyPlays.ts";
 import { bodyOf, type Body } from "./poses.ts";
-import { cameraCuts, fastAt, offenseAt } from "./evaluate.ts";
+import { offenseAt } from "./evaluate.ts";
 import { buildFouls, foulsAt } from "./scoreBug.ts";
 import { ScoreBug, type BugRefs } from "./ScoreBug.tsx";
 import { CustomScoreBug, customBugHeight } from "./CustomScoreBug.tsx";
@@ -104,27 +104,12 @@ import {
 // animation, not a timer, sets the pace, and every line's text appears as its
 // play happens on screen.
 
-// The timeline is in real time: played at 1x, a second of it is a second
-// (bar the dead time it runs through fast - see fastAt). Watched quicker
-// than this, a dunk is not shown again.
-const REPLAY_RATE_MAX = 2;
 // How long the picture dips to black either side of a cut (timeline ms).
 const DIP_MS = 130;
 // Up out of black onto the next of the key plays (ms).
 const KEY_DIP_MS = 320;
 // The longest it is held black for the picture to be ready (ms).
 const KEY_HOLD_MS = 900;
-// A dunk's replay: from just before he takes off to just after, in slow
-// motion, once its own play is over. (A big three's from his gather -
-// longer before it goes in.)
-const REPLAY_FROM = 1700;
-const REPLAY_FROM_THREE = 2300;
-const REPLAY_TO = 450;
-const REPLAY_AFTER = 1150;
-const REPLAY_SPEED = 0.42;
-// Which plays are shown again: a big dunk, or a big three (see Fx).
-const replayed = (f: Fx) =>
-	!!f.big && (f.kind === "dunk" || f.kind === "swish");
 // Replay-time ms the picture takes to come up out of black and go back down.
 const REPLAY_DIP = 70;
 // How quickly the camera pans and zooms after what it follows (per second):
@@ -251,25 +236,6 @@ const lastNameOf = (name: string | undefined): string => {
 	return i < 0 ? n : n.slice(i + 1);
 };
 
-// The cut nearest to t, by binary search.
-const nearestCut = (cuts: number[], t: number): number | undefined => {
-	let lo = 0;
-	let hi = cuts.length - 1;
-	while (lo < hi) {
-		const mid = (lo + hi) >> 1;
-		if (cuts[mid]! < t) {
-			lo = mid + 1;
-		} else {
-			hi = mid;
-		}
-	}
-	const a = cuts[lo];
-	const b = cuts[lo - 1];
-	if (a === undefined) {
-		return b;
-	}
-	return b !== undefined && t - b < a - t ? b : a;
-};
 const FaceLoader = ({
 	pid,
 	season,
@@ -305,6 +271,12 @@ type Props = {
 	// A multiplayer follower is stepped by the device in charge of simming, so
 	// it never asks for the next line - it only keeps up.
 	follower: boolean;
+	// Watching a league-mate's live sim that says where its court is: this
+	// one plays the game along with it instead, a moment behind (see
+	// follow.ts) - the latest word of where it is.
+	along?: FollowReport;
+	// Where this court is, for anyone watching along (see follow.ts).
+	report?: { current: Shown | undefined };
 	// How many times "next play" has been asked for: each cuts straight past
 	// the play it shows, like any other skip ahead.
 	skips?: number;
@@ -328,6 +300,8 @@ const Court3D = ({
 	paused,
 	rate,
 	follower,
+	along,
+	report,
 	skips = 0,
 	keyPlays,
 	onReady,
@@ -978,6 +952,13 @@ const Court3D = ({
 		// Following another device's sim: where its court is estimated to be
 		// (see follow.ts).
 		lead: 0,
+		// How much of the show has been played (ms): the game played through
+		// at its own pace, and the replays, but none of what is cut past. Two
+		// devices playing the same game the same way agree on it, so it is
+		// how one plays along with the other (see follow.ts).
+		w: 0,
+		pace: 1,
+		paceAt: -1,
 		clockText: "",
 		shotText: "",
 		foulsText: ["", ""] as [string, string],
@@ -1000,58 +981,19 @@ const Court3D = ({
 		}
 	}, [timeline]);
 
-	// Follow the page's cursor: run on to the next line normally; cut straight
-	// there on a rewind or a big jump ahead (fast-forward, joining late).
+	// Follow the page's cursor (see playback.ts).
 	useEffect(() => {
-		if (!timeline) {
-			return;
+		if (timeline) {
+			onCursor(play.current, timeline, { cursor, paused, skips, follower });
 		}
-		const s = play.current;
-		const target = targetForCursor(timeline, cursor);
-		// "Next play": past what is left of the play now shown, straight on to
-		// the next one - never back.
-		const skipped =
-			s.prevCursor >= 0 && skips !== s.prevSkips && cursor > s.prevCursor;
-		// (Caught up to a key play it went on to: it is there already.)
-		const expected = s.jumpTo >= 0 && cursor <= s.jumpTo;
-		const snap =
-			!expected &&
-			(s.prevCursor < 0 ||
-				cursor < s.prevCursor ||
-				target < s.t - 1 ||
-				skipped ||
-				(linesBetween(timeline, s.prevCursor, cursor) > 2 &&
-					target - s.t > 9000));
-		if (snap) {
-			const at = snapForCursor(timeline, cursor);
-			s.t = skipped ? Math.max(s.t, at) : at;
-			s.snapCam = true;
-		}
-		if (follower) {
-			// Where the other court is: just past the play it last reported
-			// (it reports one the moment it gets there) - or, after a cut,
-			// where this one now is.
-			s.lead = snap
-				? s.t
-				: Math.max(s.lead, s.t, targetForCursor(timeline, s.prevCursor));
-		}
-		if (paused && s.prevCursor >= 0 && cursor > s.prevCursor && !skipped) {
-			// "Next play" while paused: show that one play, then hold.
-			s.stepping = true;
-		}
-		if (s.prevPaused && !paused) {
-			s.readyFor = -1;
-		}
-		if (s.snapCam) {
-			s.replay = undefined;
-			s.nextDunk = timeline.fx.findIndex(
-				(f) => replayed(f) && f.t + REPLAY_AFTER > s.t,
-			);
-		}
-		s.prevCursor = cursor;
-		s.prevPaused = paused;
-		s.prevSkips = skips;
 	}, [cursor, follower, paused, skips, timeline]);
+
+	const alongWith = useRef(makeFollow());
+	useEffect(() => {
+		if (along) {
+			addReport(alongWith.current, along);
+		}
+	}, [along]);
 
 	const homePad = home?.colors?.[0] ?? "#8c1d40";
 	const lineColor: string = home?.court?.lines || "#f8f5f0";
@@ -1079,6 +1021,8 @@ const Court3D = ({
 		paused,
 		rate,
 		follower,
+		along: !!along,
+		report,
 		onReady,
 		onJump,
 		keyPlan,
@@ -1101,6 +1045,8 @@ const Court3D = ({
 		paused,
 		rate,
 		follower,
+		along: !!along,
+		report,
 		onReady,
 		onJump,
 		keyPlan,
@@ -1150,120 +1096,15 @@ const Court3D = ({
 				s.keyDip = now;
 				s.keyHold = -Infinity;
 			}
-			const dt = s.last === undefined ? 0 : Math.min(100, now - s.last);
-			s.last = now;
-			const target = staging
-				? Math.min(WARMUP_MS, s.t + dt)
-				: targetForCursor(tl, p.cursor);
-			const base = p.rate;
-			// Through the dead stretches, fast.
-			let rate = base * fastAt(tl, s.t);
-			if (p.follower) {
-				// Behind the device in charge of simming: hold a steady gap to
-				// where its court is, rather than running to the last play it
-				// reported and stopping there.
-				if (!p.paused) {
-					s.lead = advanceLead(
-						Math.max(s.lead, s.t),
-						target,
-						dt,
-						base * fastAt(tl, s.lead),
-					);
-				}
-				rate *= followRate(s.lead - s.t);
-			}
-			const before = s.t;
-			// A replay holds the live clock while it plays.
-			const r = s.replay;
-			if (r) {
-				if (!p.paused) {
-					r.at += dt * base * REPLAY_SPEED;
-				}
-				if (r.at >= r.to) {
-					s.replay = undefined;
-					s.snapCam = true;
-				}
-			} else if ((!p.paused || s.stepping) && s.t < target) {
-				s.t = Math.min(target, s.t + dt * rate);
-			}
-			// A dunk just finished: show it again - unless this device is only
-			// following, stepping play by play, or watching on fast.
-			const fx = tl.fx;
-			while (
-				s.nextDunk >= 0 &&
-				s.nextDunk < fx.length &&
-				(!replayed(fx[s.nextDunk]!) ||
-					fx[s.nextDunk]!.t + REPLAY_AFTER <= before)
-			) {
-				s.nextDunk += 1;
-			}
-			const dunk = fx[s.nextDunk];
-			if (
-				!s.replay &&
-				dunk &&
-				dunk.t + REPLAY_AFTER > before &&
-				dunk.t + REPLAY_AFTER <= s.t
-			) {
-				s.nextDunk += 1;
-				if (
-					!p.follower &&
-					!p.paused &&
-					!s.stepping &&
-					p.rate <= REPLAY_RATE_MAX &&
-					// (A reel of the key plays moves on to the next - but for a
-					// close finish, shown the way it happened.)
-					(!p.keyPlan || segmentAt(p.keyPlan, dunk.t).at?.close === true)
-				) {
-					s.t = dunk.t + REPLAY_AFTER;
-					s.replay = {
-						at:
-							dunk.t -
-							(dunk.kind === "swish" ? REPLAY_FROM_THREE : REPLAY_FROM),
-						from:
-							dunk.t -
-							(dunk.kind === "swish" ? REPLAY_FROM_THREE : REPLAY_FROM),
-						to: dunk.t + REPLAY_TO,
-					};
-					s.snapCam = true;
-				}
-			}
-			// Through a cut: the camera starts fresh on the other side.
-			const cut = nearestCut(cameraCuts(tl), s.t);
-			if (cut !== undefined && cut > before && cut <= s.t) {
-				s.snapCam = true;
-			}
-			// Key plays only: past what is left out, straight on to the next
-			// stretch shown - the page catching the score and the lines up to
-			// it on the way.
-			const plan = p.keyPlan;
-			if (plan && !p.follower && !p.paused && !s.replay && s.jumpTo < 0) {
-				const { at, next } = segmentAt(plan, s.t);
-				if (!at && next) {
-					s.t = next.t0;
-					s.snapCam = true;
-					s.keyDip = now;
-					if (next.cursor > p.cursor && p.onJump) {
-						s.jumpTo = next.cursor;
-						p.onJump(next.cursor);
-					}
-				}
-			}
-			if (s.jumpTo >= 0 && p.cursor >= s.jumpTo) {
-				s.jumpTo = -1;
-			}
-			if (s.t >= target && !s.replay && !staging) {
-				s.stepping = false;
-				if (
-					!p.paused &&
-					!p.follower &&
-					s.jumpTo < 0 &&
-					p.cursor < p.eventsLength &&
-					s.readyFor !== p.cursor
-				) {
-					s.readyFor = p.cursor;
-					p.onReady();
-				}
-			}
+			const { dt, rate, cut } = stepPlay(
+				s,
+				p,
+				alongWith.current,
+				tl,
+				staging,
+				now,
+				Date.now(),
+			);
 			if (!draw) {
 				return;
 			}
@@ -1724,7 +1565,7 @@ const Court3D = ({
 			) : null}
 			{introCard ? <IntroCard info={introCard} callKey={intro.call} /> : null}
 			{intro.title ? <IntroTitle playoffs={!!timeline?.intro?.big} /> : null}
-			{intro.on && !follower ? (
+			{intro.on && !follower && !along ? (
 				<button
 					type="button"
 					onClick={skipIntro}

@@ -1,6 +1,6 @@
 import type { SimDayClaimDoc } from "./simDayClaimPolicy.ts";
 import type { Changeset } from "./changeset.ts";
-import type { SyncedAutoPlay } from "../../../common/types.ts";
+import type { LiveSync3D, SyncedAutoPlay } from "../../../common/types.ts";
 import type { SyncNotification } from "./notifications.ts";
 import type { LeaguePosition } from "./leaguePosition.ts";
 import type { LiveGameChatMessage } from "../../../common/liveGameChat.ts";
@@ -92,6 +92,10 @@ export type LiveBroadcastMeta = {
 	// Which picture the device in charge of simming is watching this game in
 	// ("classic" or "3d"); everyone following sees the same one.
 	view?: string;
+	// Where its 3D court is (see LiveSync3D).
+	sync?: LiveSync3D;
+	// When this device got the doc (its clock, ms) - not stored.
+	recvAt?: number;
 };
 
 // The subset of LiveBroadcastMeta a single write sets. Every write merges onto
@@ -114,6 +118,7 @@ export type LiveBroadcastUpdate = {
 	chunkCount?: number;
 	expiresAt?: number;
 	view?: string;
+	sync?: LiveSync3D;
 };
 
 // A live draft-lottery reveal in progress. Whoever runs the lottery (the
