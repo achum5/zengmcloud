@@ -1,5 +1,6 @@
 import {
 	draft,
+	expansionDraft,
 	freeAgents,
 	game,
 	league,
@@ -14,6 +15,7 @@ import { PHASE, PLAYER } from "../../common/constants.ts";
 import { getDefaultSettings } from "../../worker/views/newLeague.ts";
 import { last } from "../../common/utils.ts";
 import { defaultGameAttributes } from "../../common/defaultGameAttributes.ts";
+import { unwrapGameAttribute } from "../../common/unwrapGameAttribute.ts";
 import type { Conditions } from "../../common/types.ts";
 import { ARENA_SETTINGS, ARENA_START_SEASON } from "./settings.ts";
 
@@ -23,6 +25,9 @@ const conditions = {} as Conditions;
 // moment in the season (payrolls, cap space, who was a free agent).
 export type SeasonSnapshot = {
 	season: number;
+	// The cap rule as it stood that season - real leagues move it every year.
+	salaryCap: number;
+	luxuryPayroll: number;
 	// End of the regular season.
 	payrolls: number[];
 	deadMoney: number[];
@@ -53,14 +58,30 @@ export const createArenaLeague = async (lid: number) => {
 		realStats: "none" as const,
 		includePlayers: true,
 	};
+	// What the new league screen does for a real-players league: start from
+	// that season's own settings and teams, keep every store the real data has,
+	// then apply the owner's changes - all at creation, so real contracts are
+	// scaled to this cap rather than left sized for some other one.
+	const info = await realRosters.getLeagueInfo(getLeagueOptions);
 	const realLeague = await realRosters.getLeague(getLeagueOptions);
-
-	// Passed in at creation, like the new league screen does, so real contracts
-	// are scaled to this cap rather than left sized for the default one.
-	const defaults = getDefaultSettings();
-	const settings: Record<string, unknown> = { ...defaults };
+	const settings: Record<string, unknown> =
+		helpers.deepCopy(getDefaultSettings());
+	for (const key of Object.keys(settings)) {
+		if (
+			key === "noStartingInjuries" ||
+			key === "randomization" ||
+			key === "realStats" ||
+			key === "giveMeWorstRoster"
+		) {
+			continue;
+		}
+		const value = unwrapGameAttribute(info.gameAttributes as any, key as any);
+		if (value !== undefined) {
+			settings[key] = key === "repeatSeason" ? (value as any)?.type : value;
+		}
+	}
 	for (const [key, value] of Object.entries(ARENA_SETTINGS)) {
-		if (Object.hasOwn(defaults, key)) {
+		if (Object.hasOwn(settings, key)) {
 			settings[key] = value;
 		}
 	}
@@ -68,8 +89,12 @@ export const createArenaLeague = async (lid: number) => {
 	await league.createStream(
 		realLeague as any,
 		{
-			confs: last(defaultGameAttributes.confs).value,
-			divs: last(defaultGameAttributes.divs).value,
+			confs:
+				unwrapGameAttribute(info.gameAttributes as any, "confs") ??
+				last(defaultGameAttributes.confs).value,
+			divs:
+				unwrapGameAttribute(info.gameAttributes as any, "divs") ??
+				last(defaultGameAttributes.divs).value,
 			fromFile: {
 				gameAttributes: realLeague.gameAttributes,
 				hasRookieContracts: true,
@@ -79,14 +104,14 @@ export const createArenaLeague = async (lid: number) => {
 				version: undefined,
 			},
 			getLeagueOptions,
-			keptKeys: new Set(["startingSeason", "version"]) as any,
+			keptKeys: new Set([...info.stores, "startingSeason", "version"]) as any,
 			lid,
 			name: "Arena",
 			setLeagueCreationStatus: () => {},
 			settings,
 			shuffleRosters: false,
 			startingSeasonFromInput: undefined,
-			teamsFromInput: helpers.addPopRank(helpers.getTeamsDefault()),
+			teamsFromInput: helpers.addPopRank(info.teams as any),
 			tid: 0,
 		} as any,
 	);
@@ -142,9 +167,23 @@ export const advanceSeasons = async (numSeasons: number) => {
 		}
 
 		const currentPhase = g.get("phase");
+		// A real league holds the expansion drafts real history scheduled.
+		// Nothing changes phase after one, so this comes first, as in autoPlay.
+		if (currentPhase === PHASE.EXPANSION_DRAFT) {
+			if (g.get("expansionDraft").phase === "protection") {
+				await expansionDraft.start();
+			}
+			if (g.get("expansionDraft").phase === "draft") {
+				await draft.runPicks({ type: "untilEnd" }, conditions);
+			}
+			continue;
+		}
+
 		if (currentPhase === PHASE.PRESEASON) {
 			snapshot = {
 				season: g.get("season"),
+				salaryCap: 0,
+				luxuryPayroll: 0,
 				payrolls: [],
 				deadMoney: [],
 				tradesBeforeDeadlineWeek: 0,
@@ -165,7 +204,10 @@ export const advanceSeasons = async (numSeasons: number) => {
 		} else if (currentPhase === PHASE.AFTER_TRADE_DEADLINE) {
 			await game.play(await season.getDaysLeftSchedule(), conditions);
 		} else if (currentPhase === PHASE.PLAYOFFS) {
-			Object.assign(snapshot!, await payrollsAndDeadMoney());
+			Object.assign(snapshot!, await payrollsAndDeadMoney(), {
+				salaryCap: g.get("salaryCap"),
+				luxuryPayroll: g.get("luxuryPayroll"),
+			});
 			await game.play(100, conditions);
 		} else if (currentPhase === PHASE.DRAFT_LOTTERY) {
 			await phase.newPhase(PHASE.DRAFT, conditions);
@@ -185,9 +227,10 @@ export const advanceSeasons = async (numSeasons: number) => {
 			await phase.newPhase(PHASE.RESIGN_PLAYERS, conditions);
 		} else if (currentPhase === PHASE.RESIGN_PLAYERS) {
 			await phase.newPhase(PHASE.FREE_AGENCY, conditions);
+			// As a share of that summer's cap.
 			for (let tid = 0; tid < g.get("numTeams"); tid++) {
 				snapshot!.capSpace.push(
-					g.get("salaryCap") - (await team.getPayroll(tid)),
+					1 - (await team.getPayroll(tid)) / g.get("salaryCap"),
 				);
 			}
 		} else if (currentPhase === PHASE.FREE_AGENCY) {

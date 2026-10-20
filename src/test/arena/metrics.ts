@@ -380,12 +380,10 @@ export const computeMetrics = async (
 	}
 
 	// CAP & ROSTER
-	const luxuryPayroll = g.get("luxuryPayroll");
-	const salaryCap = g.get("salaryCap");
 	for (const snapshot of snapshots) {
 		if (snapshot.payrolls.length > 0) {
 			m.taxpayersPerSeason.push(
-				snapshot.payrolls.filter((p) => p > luxuryPayroll).length,
+				snapshot.payrolls.filter((p) => p > snapshot.luxuryPayroll).length,
 			);
 			for (const [tid, payroll] of snapshot.payrolls.entries()) {
 				if (payroll > 0) {
@@ -395,7 +393,7 @@ export const computeMetrics = async (
 		}
 		if (snapshot.capSpace.length > 0) {
 			m.capSpaceTeamsPerSummer.push(
-				snapshot.capSpace.filter((c) => c >= 0.15 * salaryCap).length,
+				snapshot.capSpace.filter((share) => share >= 0.15).length,
 			);
 		}
 		const top10 = [...snapshot.expiring]
