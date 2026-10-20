@@ -535,6 +535,9 @@ const DRIBBLE_MS = 1000 / DRIBBLE_RATE;
 // the start of his throw to the ball leaving his hands.
 const OVERHEAD_WIND = 140;
 const RELEASE_MS = 120;
+// Of passes off a live dribble, how many go one-handed: on the move, stood.
+const PUSH_SHARE: [number, number] = [0.9, 0.5];
+const PUSH_OFF_MS = 60;
 // A drop step or an up-and-under goes up this far out (feet): a low-post
 // shot, not one from under the rim.
 const POST_FINISH_OUT = 3.4;
@@ -726,7 +729,12 @@ const behindArc = (team: Side, p: Pt): Pt | undefined => {
 	return clampPt({ x: rim.x + u.x * r, y: rim.y + u.y * r });
 };
 
-const PASS_ACTS = new Set<AnimName>(["pass", "passBounce", "passOverhead"]);
+const PASS_ACTS = new Set<AnimName>([
+	"pass",
+	"passBounce",
+	"passOverhead",
+	"passPush",
+]);
 
 // A step aside eases over and back this fast (ms each way) unless it says.
 const NUDGE_RAMP = 450;
@@ -1915,8 +1923,8 @@ class Director {
 		}
 		const { face, ...rest } = o;
 		// A pass is thrown from both hands: off his dribble, he picks it up
-		// first.
-		if (anim === "pass" || anim === "passBounce" || anim === "passOverhead") {
+		// first. (Pushed off it one-handed, it comes up into his hand.)
+		if (PASS_ACTS.has(anim)) {
 			this.gather(pid, t0);
 		}
 		const left =
@@ -3208,8 +3216,22 @@ class Director {
 			this.free.get(from) ?? 0,
 			(this.free.get(to) ?? 0) + 40 - flight - wind,
 		);
-		// Off the dribble, once he has it in both hands.
-		let start = Math.max(ready, this.gather(from, ready));
+		// Off a live dribble - on the move, mostly - a pass that is not up over
+		// the top or on the floor goes out of the hand he dribbles with, one
+		// hand behind it (see PUSH_SHARE).
+		const dribbled =
+			kind === "chest" && !handOff
+				? this.dribbleFrom(from, ready) !== undefined
+				: false;
+		const pushHand = dribbled
+			? (this.dribbleHandAt(ready) ?? this.ballHand)
+			: undefined;
+		const onTheMove = (this.track(from)?.moves ?? []).some(
+			(m) => m.t0 <= ready && m.t1 > ready + 60,
+		);
+		// Off the dribble, once he has it in both hands (or in the one).
+		const got = this.gather(from, ready);
+		let start = Math.max(ready, got);
 		// Just caught facing the man who threw it, he turns to the man he
 		// throws it on to before it goes - not sending it off over his
 		// shoulder halfway round.
@@ -3223,6 +3245,12 @@ class Director {
 			turn = Math.abs(turn - Math.round(turn / (2 * Math.PI)) * 2 * Math.PI);
 			start += Math.max(0, (turn - 0.5) / TURN_RATE - wind);
 		}
+		// (Only straight off the bounce: not once he has held it a while in
+		// both hands.)
+		const push =
+			pushHand !== undefined &&
+			start - got <= PUSH_OFF_MS &&
+			hash01(from * 13 + 5, Math.floor(ready)) < PUSH_SHARE[onTheMove ? 0 : 1];
 		// Open, he calls for it: a hand up.
 		if (d >= 12) {
 			this.gesture(to, "hand", start - 700, start + wind - 60, undefined, 0.45);
@@ -3269,12 +3297,19 @@ class Director {
 		}
 		this.act(
 			from,
-			over ? "passOverhead" : kind === "bounce" ? "passBounce" : "pass",
+			over
+				? "passOverhead"
+				: kind === "bounce"
+					? "passBounce"
+					: push
+						? "passPush"
+						: "pass",
 			start,
 			start + wind + 180,
 			{
 				face: toward,
 				look: { ...b },
+				...(push && pushHand === "L" ? { mirror: true as const } : {}),
 			},
 		);
 		const release = start + wind;
@@ -15918,6 +15953,7 @@ class Director {
 			"pass",
 			"passBounce",
 			"passOverhead",
+			"passPush",
 		]);
 		const busy = (tr: Track, t: number) =>
 			tr.acts.some(
@@ -16689,6 +16725,7 @@ class Director {
 			"pass",
 			"passBounce",
 			"passOverhead",
+			"passPush",
 			"contest",
 			"triple",
 			"jab",
@@ -17421,6 +17458,7 @@ class Director {
 			"pass",
 			"passBounce",
 			"passOverhead",
+			"passPush",
 			"triple",
 			"jab",
 			"shotFake",

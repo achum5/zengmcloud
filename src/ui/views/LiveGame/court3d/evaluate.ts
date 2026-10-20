@@ -1085,7 +1085,12 @@ const EYES_ON_BALL = new Set<AnimName>([
 	"drift",
 ]);
 
-const PASSES = new Set<AnimName>(["pass", "passBounce", "passOverhead"]);
+const PASSES = new Set<AnimName>([
+	"pass",
+	"passBounce",
+	"passOverhead",
+	"passPush",
+]);
 export const PASS_TURN = 250;
 export const PASS_PICK_UP = new Set<AnimName>([
 	"dribble",
@@ -3079,6 +3084,7 @@ const PIVOTS = new Set<AnimName>([
 	"pass",
 	"passBounce",
 	"passOverhead",
+	"passPush",
 	"shotFake",
 	"jab",
 	"strip",
@@ -3191,6 +3197,7 @@ const STRIDE_ACTS = new Set<AnimName>([
 	"pass",
 	"passBounce",
 	"passOverhead",
+	"passPush",
 	"reach",
 	"poke",
 	"callBall",

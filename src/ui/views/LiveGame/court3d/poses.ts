@@ -244,6 +244,58 @@ const P = {
 		elF: 4,
 		lean: 24,
 	}),
+	// A pass pushed off the dribble with one hand: the ball come up into his
+	// right hand at his side, his palm behind it, wrist cocked back - then
+	// the arm driven out at the man, a step into it, the other arm out for
+	// balance.
+	pushLoad: pose({
+		hipN: -6,
+		kneeN: 32,
+		hipF: 14,
+		kneeF: 34,
+		shN: 18,
+		elN: 104,
+		abN: 30,
+		wrN: 70,
+		shF: 30,
+		elF: 54,
+		abF: 30,
+		lean: 12,
+		twist: -14,
+		wide: 0.3,
+	}),
+	pushOut: pose({
+		hipN: -22,
+		kneeN: 18,
+		hipF: 34,
+		kneeF: 28,
+		shN: 96,
+		elN: 10,
+		abN: 14,
+		wrN: 78,
+		shF: 36,
+		elF: 50,
+		abF: 34,
+		lean: 16,
+		twist: 10,
+		wide: 0.18,
+	}),
+	pushFlick: pose({
+		hipN: -22,
+		kneeN: 18,
+		hipF: 34,
+		kneeF: 28,
+		shN: 94,
+		elN: 6,
+		abN: 14,
+		wrN: -24,
+		shF: 34,
+		elF: 50,
+		abF: 34,
+		lean: 15,
+		twist: 10,
+		wide: 0.18,
+	}),
 	// An overhead pass: the ball up over his head, then whipped forward.
 	overheadUp: pose({
 		hipN: -8,
@@ -3623,6 +3675,20 @@ export const ANIMS = {
 	},
 	// Over the top: up over his head from his chest - taking the time a
 	// man does to get it up there - then whipped out.
+	// One-handed off the dribble (right hand; mirrored for the left): let go
+	// as his arm comes out straight, about four tenths of the way through.
+	passPush: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.pushLoad],
+			[0.18, P.pushLoad],
+			[0.4, P.pushOut],
+			[0.55, P.pushFlick],
+			[0.75, P.pushFlick],
+			[1, P.ready],
+		],
+	},
 	passOverhead: {
 		kind: "act",
 		n: 8,
@@ -5036,7 +5102,7 @@ const flared = (arm: Limb, deg: number, side: 1 | -1): Limb => {
 
 // How a move holds the ball: in both hands, one on each side of it; up on
 // the shooting hand with the other guiding it; or palmed in one hand.
-export type Grip = "two" | "shot" | "palm";
+export type Grip = "two" | "shot" | "palm" | "push";
 const GRIPS: Partial<Record<AnimName, Grip>> = {
 	shoot: "shot",
 	setShot: "shot",
@@ -5050,6 +5116,7 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 	dunk1: "palm",
 	tomahawk: "palm",
 	hook: "palm",
+	passPush: "push",
 };
 export const gripOf = (anim: AnimName): Grip => GRIPS[anim] ?? "two";
 
@@ -5144,7 +5211,8 @@ export const holdBall = (
 	// One hand takes it as his arm comes up: two hands while the shooting
 	// hand is down by his chest, all his once it is up past the shoulder.
 	const up = Math.min(1, Math.max(0, (r.end.u - (r.root.u - 0.45)) / 0.9));
-	const w = up * up * (3 - 2 * up);
+	// (Pushed off the dribble, it is his one hand's the whole way.)
+	const w = grip === "push" ? 1 : up * up * (3 - 2 * up);
 	const tip = r.tip ?? r.end;
 	const len =
 		Math.hypot(tip.f - r.end.f, tip.s - r.end.s, tip.u - r.end.u) || 1;
@@ -5156,10 +5224,11 @@ export const holdBall = (
 	// Up on the shooting hand: in front of his palm, his wrist cocked back
 	// under it and his fingers spread up the back of it - so it rests on the
 	// pads of his fingers and goes off his fingertips. (The palm faces the
-	// way the hand is cocked away from.) Or, on a layup or a dunk, palmed
-	// out past the fingers' roots.
+	// way the hand is cocked away from.) A pass pushed off the dribble the
+	// same, his palm behind it. Or, on a layup or a dunk, palmed out past the
+	// fingers' roots.
 	let one: V3;
-	if (grip === "shot") {
+	if (grip === "shot" || grip === "push") {
 		const n = Math.hypot(d.u, d.f) || 1;
 		const pf = d.u / n;
 		const pu = -d.f / n;
@@ -5191,7 +5260,8 @@ export const holdBall = (
 		ball.u - b.H * PALM_AT,
 	);
 	const armL =
-		(grip === "palm" && w >= 0.999) || (grip === "shot" && q.free >= 0.999)
+		((grip === "palm" || grip === "push") && w >= 0.999) ||
+		(grip === "shot" && q.free >= 0.999)
 			? l
 			: armTo(
 					b,
