@@ -918,9 +918,12 @@ describe("3D director", () => {
 				if (p && p.shown && st.shown && !cut) {
 					let d = st.yaw - p.yaw;
 					d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+					// (A spin move goes right round, quick - but round, all the
+					// same, not in a snap.)
+					const spin = st.anim === "spinMove" || p.anim === "spinMove";
 					assert.isBelow(
 						Math.abs(d),
-						0.25,
+						spin ? 0.5 : 0.25,
 						`pid ${pid} turned ${d.toFixed(2)} in a frame at ${t}`,
 					);
 				}

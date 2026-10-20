@@ -1723,6 +1723,24 @@ const IN_OUT: [number, Pose][] = [
 	[1, P.sizeUp],
 ];
 
+// Round in a spin move: down low, his back turning on his man, the ball
+// pulled round low at his right hip, his left arm up as a bar.
+const SPIN_LOW = pose({
+	hipN: 26,
+	kneeN: 50,
+	hipF: 30,
+	kneeF: 50,
+	shN: -20,
+	elN: 90,
+	abN: 10,
+	shF: 64,
+	elF: 78,
+	abF: 52,
+	lean: 14,
+	tilt: -6,
+	wide: 0.52,
+});
+
 export const ANIMS = {
 	// Never still: he settles down into his knees and back up, his
 	// shoulders swaying over his hips, his hands drifting - slowly.
@@ -3925,6 +3943,53 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// A spin move (the ball in his right hand; mirrored for his left):
+	// planted, then down low and round, and out of it going. (He turns right
+	// round with it - see spinYawAt in evaluate.ts.)
+	spinMove: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[
+				0,
+				pose({
+					hipN: -14,
+					kneeN: 46,
+					hipF: 36,
+					kneeF: 56,
+					shN: 22,
+					elN: 50,
+					abN: 18,
+					wrN: 20,
+					shF: 40,
+					elF: 70,
+					abF: 40,
+					lean: 20,
+					wide: 0.4,
+				}),
+			],
+			[0.25, SPIN_LOW],
+			[0.7, SPIN_LOW],
+			[
+				1,
+				pose({
+					hipN: 24,
+					kneeN: 40,
+					hipF: -14,
+					kneeF: 34,
+					shN: 30,
+					elN: 60,
+					abN: 14,
+					wrN: 10,
+					shF: 30,
+					elF: 60,
+					abF: 30,
+					lean: 22,
+					wide: 0.3,
+				}),
+			],
+		],
+	},
 	// And at the floor, a bounce pass.
 	passBouncePush: {
 		kind: "act",
@@ -5352,8 +5417,9 @@ const flared = (arm: Limb, deg: number, side: 1 | -1): Limb => {
 };
 
 // How a move holds the ball: in both hands, one on each side of it; up on
-// the shooting hand with the other guiding it; or palmed in one hand.
-export type Grip = "two" | "shot" | "palm" | "push";
+// the shooting hand with the other guiding it; palmed in one hand; pushed
+// out of one; or pulled along low under one.
+export type Grip = "two" | "shot" | "palm" | "push" | "pull";
 const GRIPS: Partial<Record<AnimName, Grip>> = {
 	shoot: "shot",
 	setShot: "shot",
@@ -5369,6 +5435,7 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 	hook: "palm",
 	passPush: "push",
 	passBouncePush: "push",
+	spinMove: "pull",
 };
 export const gripOf = (anim: AnimName): Grip => GRIPS[anim] ?? "two";
 
@@ -5463,8 +5530,9 @@ export const holdBall = (
 	// One hand takes it as his arm comes up: two hands while the shooting
 	// hand is down by his chest, all his once it is up past the shoulder.
 	const up = Math.min(1, Math.max(0, (r.end.u - (r.root.u - 0.45)) / 0.9));
-	// (Pushed off the dribble, it is his one hand's the whole way.)
-	const w = grip === "push" ? 1 : up * up * (3 - 2 * up);
+	// (Pushed off the dribble, or pulled round low in a spin, it is his one
+	// hand's the whole way.)
+	const w = grip === "push" || grip === "pull" ? 1 : up * up * (3 - 2 * up);
 	const tip = r.tip ?? r.end;
 	const len =
 		Math.hypot(tip.f - r.end.f, tip.s - r.end.s, tip.u - r.end.u) || 1;
@@ -5480,7 +5548,10 @@ export const holdBall = (
 	// same, his palm behind it. Or, on a layup or a dunk, palmed out past the
 	// fingers' roots.
 	let one: V3;
-	if (grip === "shot" || grip === "push") {
+	if (grip === "pull") {
+		// Pulled round: under his palm, as at the top of a dribble.
+		one = underPalm(r);
+	} else if (grip === "shot" || grip === "push") {
 		const n = Math.hypot(d.u, d.f) || 1;
 		const pf = d.u / n;
 		const pu = -d.f / n;
@@ -5512,7 +5583,7 @@ export const holdBall = (
 		ball.u - b.H * PALM_AT,
 	);
 	const armL =
-		((grip === "palm" || grip === "push") && w >= 0.999) ||
+		((grip === "palm" || grip === "push" || grip === "pull") && w >= 0.999) ||
 		(grip === "shot" && q.free >= 0.999)
 			? l
 			: armTo(

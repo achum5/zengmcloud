@@ -552,6 +552,14 @@ const HELP_PULL_MS = 650;
 // Of passes off a live dribble, how many go one-handed: on the move, stood.
 const PUSH_SHARE: [number, number] = [0.9, 0.5];
 const PUSH_OFF_MS = 60;
+// A spin move (see spinBy): how often a drive with his man square in front
+// of him goes into one rather than a crossover, from how far out (feet), how
+// far short of his man he plants (feet), and how fast he goes round him
+// (feet a second).
+const SPIN_SHARE = 0.3;
+const SPIN_FROM_FT = 11;
+const SPIN_SHORT = 2.6;
+const SPIN_FTPS = 10;
 // A drop step or an up-and-under goes up this far out (feet): a low-post
 // shot, not one from under the rim.
 const POST_FINISH_OUT = 3.4;
@@ -6315,6 +6323,83 @@ class Director {
 	}
 
 	// Off the dribble to his spot, with a move on the way.
+	// A spin: going at his man on the side the ball is on, he is cut off -
+	// so he plants, turns his back on him and spins away round him the
+	// other way, the ball pulled round with him in the hand it was in, and
+	// is by him to go on off the other one. His man, turned, chases him from
+	// behind. Returns when he is round.
+	private spinBy(
+		pid: number,
+		guard: number,
+		P: Pt,
+		t: number,
+		dir: 1 | -1,
+		goHand: Hand,
+	): number {
+		const from = this.posOf(pid);
+		const G = this.posOf(guard);
+		const u = unitVec(from, P);
+		const start: Hand = goHand === "R" ? "L" : "R";
+		// (The side the ball starts on - his right, or his left.)
+		const k = start === "R" ? 1 : -1;
+		const side = { x: -u.y * k, y: u.x * k };
+		const along = (G.x - from.x) * u.x + (G.y - from.y) * u.y;
+		const t0 = this.hold(pid, t, "dribble", start);
+		const A = inPlay({
+			x: from.x + u.x * (along - SPIN_SHORT) + side.x * 1.4,
+			y: from.y + u.y * (along - SPIN_SHORT) + side.y * 1.4,
+		});
+		// (There as the ball comes up into his hand: he takes it out of his
+		// dribble as he plants, not a bounce before.)
+		const beat = this.dribbleFrom(pid, t0) ?? t0;
+		const top =
+			beat +
+			Math.max(
+				1,
+				Math.ceil((t0 + runMs(dist(from, A), DRIBBLE) - beat) / DRIBBLE_MS),
+			) *
+				DRIBBLE_MS;
+		const ta = this.goBy(pid, A, t0, top, "dribble", dir);
+		// His man slides over to cut him off.
+		const cut = inPlay({ x: G.x + side.x * 1.2, y: G.y + side.y * 1.2 });
+		this.go(
+			guard,
+			cut,
+			Math.max(t + 150, this.free.get(guard) ?? 0),
+			9,
+			"slide",
+			-dir as 1 | -1,
+		);
+		const tg = Math.max(ta, this.hold(pid, Math.max(ta, top), "hold"));
+		// Round him, not through him: out to his side, then on by him.
+		const by = (a: number, b: number) =>
+			inPlay({
+				x: cut.x + u.x * a - side.x * b,
+				y: cut.y + u.y * a - side.y * b,
+			});
+		const B = by(0.6, 2.6);
+		const tm = this.go(pid, by(-1.8, 2.2), tg, SPIN_FTPS, "run", dir, {
+			onto: SPIN_FTPS,
+		});
+		const tb = this.go(pid, B, tm, SPIN_FTPS, "run", dir, {
+			onto: SPIN_FTPS,
+		});
+		this.act(pid, "spinMove", tg, tb, {
+			face: dir,
+			look: { ...P },
+			...(start === "L" ? { mirror: true as const } : {}),
+		});
+		this.shadow(
+			guard,
+			inPlay({ x: P.x - u.x * 3, y: P.y - u.y * 3 }),
+			tb + 120,
+			tb + runMs(dist(B, P), DRIBBLE) + 320,
+			this.teamOf(pid),
+			pid,
+		);
+		return tb;
+	}
+
 	private driveTo(
 		pid: number,
 		P: Pt,
@@ -6330,7 +6415,23 @@ class Director {
 		const ax = -dy / d;
 		const ay = dx / d;
 		const goHand = this.handFor(from, P, dir);
-		if (style === "crossover") {
+		// His man square in front of him, now and then he spins away round
+		// him rather than crossing over.
+		const cutOff = this.defenderOf(pid);
+		const C = cutOff === undefined ? undefined : this.posOf(cutOff);
+		const ahead = C ? ((C.x - from.x) * dx + (C.y - from.y) * dy) / d : 0;
+		if (
+			style === "crossover" &&
+			cutOff !== undefined &&
+			C !== undefined &&
+			d >= SPIN_FROM_FT &&
+			ahead > 3.5 &&
+			ahead < d - 3 &&
+			Math.abs((C.x - from.x) * ax + (C.y - from.y) * ay) < 3 &&
+			hash01(pid, t + 5) < SPIN_SHARE
+		) {
+			t = this.spinBy(pid, cutOff, P, t, dir, goHand);
+		} else if (style === "crossover") {
 			// A hesitation and a jab one way, then a quick move or a few -
 			// across in front of him, between his legs, behind his back - that
 			// end in the hand on the side he goes, and the drive.
@@ -17527,6 +17628,7 @@ class Director {
 			"powerLayup",
 			"scoop",
 			"euroStep",
+			"spinMove",
 			"stepBack",
 			"dunk",
 			"dunk1",

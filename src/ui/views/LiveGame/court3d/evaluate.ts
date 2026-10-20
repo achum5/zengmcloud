@@ -1363,6 +1363,28 @@ const yawAt = (tl: CourtTimeline, tr: Track, t: number): number => {
 	const u = (t - g) / TURN_STEP;
 	return u <= 0 ? a : a + wrapAngle(yawOnBeat(tl, tr, g + TURN_STEP) - a) * u;
 };
+// Round in a spin move: from the way he faces as he plants to the way he
+// faces coming out of it - the long way, right round, the way his right
+// hand takes him (turning to his right) or his left's (see spinBy in
+// director.ts).
+const SPIN_IN = 0.12;
+const SPIN_OUT = 0.86;
+const spinYawAt = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+): number | undefined => {
+	const a = actAt(tr, t);
+	if (a?.anim !== "spinMove") {
+		return undefined;
+	}
+	const y0 = yawAt(tl, tr, a.t0);
+	const turn = (a.mirror ? -TAU : TAU) + wrapAngle(yawAt(tl, tr, a.t1) - y0);
+	const u = clamp01(
+		((t - a.t0) / (a.t1 - a.t0) - SPIN_IN) / (SPIN_OUT - SPIN_IN),
+	);
+	return wrapAngle(y0 + turn * smooth01(u));
+};
 
 // OFF THE BALL.
 //
@@ -2968,7 +2990,7 @@ export const evalPlayer = (
 							from.w,
 				}
 			: doing;
-	const yaw = yawAt(tl, tr, t);
+	const yaw = spinYawAt(tl, tr, t) ?? yawAt(tl, tr, t);
 	const legs = legsOf(here, yaw, now.anim, t);
 	const pivot = shown ? pivotOf(tl, tr, yaw, now, t) : undefined;
 	// (An arm a beat behind its reason never takes the hand his dribble has
