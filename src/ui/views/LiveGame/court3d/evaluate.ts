@@ -57,8 +57,6 @@ import {
 // anywhere) and the tests can sample a whole game.
 
 const clamp01 = (u: number) => Math.min(1, Math.max(0, u));
-// The ways of holding it in one hand alone (see holdBall).
-const ONE_HAND_GRIPS = new Set(["push", "pull", "cup"]);
 const ease = (u: number) => 0.5 - 0.5 * Math.cos(Math.PI * clamp01(u));
 
 // Index of the last item with key <= t (items sorted by key), or -1.
@@ -2088,15 +2086,15 @@ const doingAt = (
 		// pushes it down, not out of the air.)
 		// (From as far as they had closed on it: picked up and put straight
 		// back down, not all the way.)
-		// (Not off one hand - pulled round in a spin, say - as if he had
-		// had it in both.)
+		// (Not off one hand - pulled round in a spin, laid up, say - as if
+		// he had had it in both.)
 		const was = tl.ball[bi - 1];
 		const by = actAt(tr, seg.t0 - 1);
 		if (
 			was?.kind === "hold" &&
 			was.pid === pid &&
 			was.style === "hold" &&
-			!(by && ONE_HAND_GRIPS.has(gripOf(by.anim)))
+			!(by && gripOf(by.anim) !== "two")
 		) {
 			grip =
 				closedOn(tl, pid, bi - 1, seg.t0) *
@@ -2272,6 +2270,19 @@ const blendInto = (
 	// found some frames and missed in others, he flickers between easing
 	// out of it and out of what came before it.)
 	let hi = t;
+	// (Looked for back from now a blip at a time first, not just bisected
+	// for: what he does can change and change back in between - a stride
+	// under a contest ended by the jump, say - and a bisection finds the
+	// one change some frames and the other in others.)
+	for (let at = t - BLIP_MS; at > lo; at -= BLIP_MS) {
+		const d = doingAt(tl, tr, at);
+		if (!same(d)) {
+			lo = at;
+			before = d;
+			break;
+		}
+		hi = at;
+	}
 	for (let k = 0; k < 12 && hi - lo > 0.5; k++) {
 		const mid = (lo + hi) / 2;
 		const d = doingAt(tl, tr, mid);

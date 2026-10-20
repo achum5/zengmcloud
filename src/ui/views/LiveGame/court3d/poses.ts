@@ -4606,14 +4606,27 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
-	// Three-point field goal: both arms up.
+	// Three-point field goal: both arms up - thrown up, the elbows bent on
+	// the way, not swung up stiff in a blink.
 	threeUp: {
 		kind: "act",
 		n: 5,
 		keys: [
 			[0, P.ready],
 			[
-				0.2,
+				0.12,
+				pose({
+					shN: 84,
+					elN: 70,
+					abN: 22,
+					shF: 84,
+					elF: 70,
+					abF: 22,
+					lean: -1,
+				}),
+			],
+			[
+				0.3,
 				pose({
 					shN: 176,
 					elN: 0,
