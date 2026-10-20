@@ -6,7 +6,10 @@ import { momentsOf } from "../winProb.ts";
 // KEY PLAYS. A game watched as its big moments: a reel of them - the dunks,
 // the threes, the blocks, the lead changing hands - in order, the score and
 // the clock moving on between them, to a length the viewer picks. And if it
-// is close at the end, every play of the finish, the way it happened.
+// is close at the end, every play of the finish, the way it happened - out
+// of that length, or on top of it (so a close finish takes nothing from the
+// rest of the game, and how quickly the early going passes never gives one
+// away).
 //
 // Saved in this browser only, like the choice of picture (see setting.ts).
 
@@ -19,6 +22,8 @@ export type KeyPlaySettings = {
 	// left in the fourth, or in overtime (either 0: never).
 	closePoints: number;
 	closeMinutes: number;
+	// A close finish shown on top of the length asked, not out of it.
+	closeOnTop: boolean;
 	// What makes the reel.
 	dunks: boolean;
 	threes: boolean;
@@ -39,6 +44,7 @@ export const KEY_PLAY_DEFAULTS: KeyPlaySettings = {
 	minutes: 3,
 	closePoints: 8,
 	closeMinutes: 3,
+	closeOnTop: false,
 	dunks: true,
 	threes: true,
 	blocks: true,
@@ -90,6 +96,7 @@ export const parseKeyPlays = (value: unknown): KeyPlaySettings => {
 			KEY_PLAY_LIMITS.closeMinutes,
 			d.closeMinutes,
 		),
+		closeOnTop: flag("closeOnTop"),
 		dunks: flag("dunks"),
 		threes: flag("threes"),
 		blocks: flag("blocks"),
@@ -441,6 +448,13 @@ export const planKeyPlays = (
 	let spent = 0;
 	for (const p of merge(picked)) {
 		spent += costOf(tl, p.t0, p.t1);
+	}
+	// (On top of it, a close finish: what it takes, the rest of the game
+	// still has.)
+	if (settings.closeOnTop) {
+		for (const p of merge(picked.filter((x) => x.close))) {
+			spent -= costOf(tl, p.t0, p.t1);
+		}
 	}
 	// (Among equals, spread through the game rather than bunched.)
 	candidates.sort(

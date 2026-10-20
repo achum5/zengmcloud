@@ -376,6 +376,28 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 										}}
 									/>
 								</div>
+								<div className="col-sm-3 col-6 mb-2">
+									<label
+										className="form-label"
+										htmlFor="options-keyPlaysCloseOnTop"
+										title="Extra: a close finish plays on top of the game length instead of using it up, so the pace never gives it away"
+									>
+										Close Finish Time
+									</label>
+									<select
+										id="options-keyPlaysCloseOnTop"
+										className="form-select"
+										onChange={(event) => {
+											setKeyPlay({
+												closeOnTop: event.target.value === "extra",
+											});
+										}}
+										value={state.keyPlays.closeOnTop ? "extra" : "included"}
+									>
+										<option value="included">In game length</option>
+										<option value="extra">Extra</option>
+									</select>
+								</div>
 								<div className="col-12">
 									{[
 										...KEY_PLAY_KINDS,

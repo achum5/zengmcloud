@@ -123,6 +123,37 @@ describe("3D key plays", () => {
 		});
 	}, 60_000);
 
+	test("a close finish on top of the length: the rest of the game still gets all of it", () => {
+		const minutes = 2;
+		const rest = (closeOnTop: boolean, closePoints: number) => {
+			const plan = planKeyPlays(
+				tl,
+				events,
+				{ ...on, minutes, closePoints, closeMinutes: 12, closeOnTop },
+				{ rate: 1, numPeriods: 4 },
+			);
+			return {
+				rest: watchMs(
+					tl,
+					plan.filter((s) => !s.close),
+				),
+				close: watchMs(
+					tl,
+					plan.filter((s) => s.close),
+				),
+			};
+		};
+		const none = rest(true, 0);
+		const onTop = rest(true, 30);
+		const outOf = rest(false, 30);
+		assert.isAbove(onTop.close, 0);
+		// Out of the length, the finish leaves the rest of the game little;
+		// on top of it, the rest gets what it gets with no close finish.
+		assert.isBelow(outOf.rest, none.rest * 0.5);
+		assert.isAbove(onTop.rest, none.rest * 0.8);
+		assert.isAbove(onTop.rest, minutes * 60_000 * 0.6);
+	}, 60_000);
+
 	test("settings read back whatever was saved, within bounds", () => {
 		const s = parseKeyPlays({
 			on: true,
@@ -135,6 +166,8 @@ describe("3D key plays", () => {
 		assert.strictEqual(s.closePoints, 0);
 		assert.isFalse(s.dunks);
 		assert.isTrue(s.threes);
+		assert.isFalse(s.closeOnTop);
+		assert.isTrue(parseKeyPlays({ closeOnTop: true }).closeOnTop);
 		assert.deepEqual(parseKeyPlays("junk"), KEY_PLAY_DEFAULTS);
 	});
 });
