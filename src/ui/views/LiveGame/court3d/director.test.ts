@@ -1393,6 +1393,45 @@ describe("3D director", () => {
 		assert.isAbove(held.R, 20);
 	}, 120_000);
 
+	test("a man contesting a shot in close is beside him - not stood in his way, the shooter going up through him", () => {
+		const CLOSE = new Set([
+			"layup",
+			"fingerRoll",
+			"powerLayup",
+			"scoop",
+			"reverseLayup",
+			"floater",
+		]);
+		let shots = 0;
+		for (const seed of ["a", "d"]) {
+			const { tl } = compile(seed, 150);
+			const tracks = [...tl.tracks.values()];
+			for (const tr of tracks) {
+				for (const a of tr.acts) {
+					if (!CLOSE.has(a.anim)) {
+						continue;
+					}
+					shots += 1;
+					for (let t = a.t0; t <= a.t1; t += 40) {
+						const S = evalPlayer(tl, tr.pid, t);
+						for (const o of tracks) {
+							if (o.team === tr.team) {
+								continue;
+							}
+							const Q = evalPlayer(tl, o.pid, t);
+							assert.isAtLeast(
+								Math.hypot(Q.x - S.x, Q.y - S.y),
+								1.2,
+								`${seed}: ${tr.pid} and ${o.pid} at ${t}`,
+							);
+						}
+					}
+				}
+			}
+		}
+		assert.isAbove(shots, 60);
+	}, 120_000);
+
 	test("off the rim, the man who gets it mostly goes up and takes it in the air", () => {
 		let air = 0;
 		let all = 0;

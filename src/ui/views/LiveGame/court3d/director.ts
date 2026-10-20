@@ -2085,6 +2085,20 @@ class Director {
 		return side < 0 ? this.lefty(pid) || r < 0.55 : this.lefty(pid) && r < 0.35;
 	}
 
+	// A man contesting a shot in close: an arm's length off where the
+	// shooter comes down, his own side of the way in, a little nearer the
+	// rim.
+	private besideLanding(d: number, down: Pt, toRim: Pt): Pt {
+		const L = Math.hypot(toRim.x, toRim.y) || 1;
+		const u = { x: toRim.x / L, y: toRim.y / L };
+		const D = this.posOf(d);
+		const s = (D.x - down.x) * -u.y + (D.y - down.y) * u.x >= 0 ? 1 : -1;
+		return clampPt({
+			x: down.x - u.y * s * 2 + u.x * 0.6,
+			y: down.y + u.x * s * 2 + u.y * 0.6,
+		});
+	}
+
 	// Whether the shot he has going up now (as last listed) is off his left.
 	private offHisLeft(pid: number): boolean {
 		return (
@@ -8359,8 +8373,12 @@ class Director {
 						guard,
 						shooter,
 						// (An arm's length off him at the least: his hand at the
-						// ball, not his body in the shooter's.)
-						ahead(close ? 2 : ROOM_FT[room]!),
+						// ball, not his body in the shooter's. In close, beside
+						// where he comes down - not stood in his way in, the
+						// shooter going up through him.)
+						close
+							? this.besideLanding(guard, drift ?? this.posOf(shooter), toRim)
+							: ahead(ROOM_FT[room]!),
 						gather,
 						release,
 						close,
