@@ -57,6 +57,7 @@ import {
 	flushDeferredRefreshAfterLive,
 	repairAggregatesFromGames,
 } from "./changeset.ts";
+import { stallTracker, withRescue } from "./connectRescue.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import { repairLeagueHistory } from "./historyRepair.ts";
 import { checkLeagueIntegrity } from "./leagueIntegrity.ts";
@@ -1800,12 +1801,18 @@ let connectQueue: Promise<unknown> = Promise.resolve();
 const CONNECT_STEP_MS = 20_000;
 // (The SDK's chunk, the first time round, can be a big download on a phone.)
 const CONNECT_LOAD_MS = 60_000;
+// The most a connect waits on cycling a quiet channel (see below).
+const CONNECT_CYCLE_MS = 5000;
+// (A step that took a while is logged with how long, so a capture of a slow
+// connect says where the time went.)
+const CONNECT_SLOW_STEP_MS = 1500;
 const connectStep = <T>(
 	promise: Promise<T>,
 	what: string,
 	ms = CONNECT_STEP_MS,
 ): Promise<T> =>
 	new Promise((resolve, reject) => {
+		const startedAt = Date.now();
 		const timer = setTimeout(() => {
 			syncDebugLog("connect:step-timeout", { what, ms });
 			reject(new Error(`Timed out connecting (${what})`));
@@ -1813,6 +1820,10 @@ const connectStep = <T>(
 		promise.then(
 			(value) => {
 				clearTimeout(timer);
+				const took = Date.now() - startedAt;
+				if (took >= CONNECT_SLOW_STEP_MS) {
+					syncDebugLog("connect:step-slow", { what, ms: took });
+				}
 				resolve(value);
 			},
 			(error) => {
@@ -1969,6 +1980,10 @@ const doConnectSharedLeague = async ({
 	const transport = new backend.FirebaseTransport(trimmed, clientId, {
 		sinceTs: watermark,
 	});
+	// The connect's reads on the SDK's channel go round it when it goes quiet
+	// (see connectRescue.ts) - and any of them still out once they have all
+	// been answered says the channel itself is stuck (see below).
+	const channel = stallTracker();
 
 	// THERE IS ONE PROTOCOL. Every room runs the version chain: a single integer
 	// in the cloud, every change claims N+1 by compare-and-set, every device
@@ -1993,7 +2008,12 @@ const doConnectSharedLeague = async ({
 	let v2State;
 	try {
 		v2State = await connectStep(
-			transport.fetchRoomV2State({ allowCache: true }),
+			withRescue(
+				transport.fetchRoomV2State({ allowCache: true }),
+				(signal) => transport.fetchRoomV2StateDirect(signal),
+				"room-state",
+				channel.stalled,
+			),
 			"room-state",
 		);
 	} catch (error) {
@@ -2075,8 +2095,22 @@ const doConnectSharedLeague = async ({
 		const outcome = await resolveLeagueIdentity({
 			localId: await readLocalLeagueId().catch(() => undefined),
 			explicit,
-			fetchRoomLeagueId: () => transport.fetchRoomLeagueId(),
-			claimRoomLeagueId: (id) => transport.claimRoomLeagueId(id),
+			fetchRoomLeagueId: () =>
+				withRescue(
+					transport.fetchRoomLeagueId(),
+					(signal) => transport.fetchRoomLeagueIdDirect(signal),
+					"league-id",
+					channel.stalled,
+				),
+			// (A binding already there is what the claim returns, so the rescue
+			// may answer for it; one not there yet leaves it to the claim.)
+			claimRoomLeagueId: (id) =>
+				withRescue(
+					transport.claimRoomLeagueId(id),
+					(signal) => transport.fetchRoomLeagueIdDirect(signal),
+					"league-claim",
+					channel.stalled,
+				),
 		});
 		if (outcome.action === "unverified") {
 			// Could not reach the binding doc. Connecting anyway is safe: the
@@ -2211,8 +2245,17 @@ const doConnectSharedLeague = async ({
 	//   - Binding is recorded after connect succeeds (meta + room registry).
 	const metaLeagueId = await loadSyncLeagueId(lidNumber);
 	const priorSession = await loadPersistedSyncSession(lidNumber);
-	const roomLeagueId = (await connectStep(transport.getRoomInfo(), "room-info"))
-		?.leagueId;
+	const roomLeagueId = (
+		await connectStep(
+			withRescue(
+				transport.getRoomInfo(),
+				(signal) => transport.getRoomInfoDirect(signal),
+				"room-info",
+				channel.stalled,
+			),
+			"room-info",
+		)
+	)?.leagueId;
 	const refuse = async () => {
 		// Only scrub the persisted session if it pointed at the room being
 		// refused - a failed explicit join to some OTHER room must not erase the
@@ -2243,6 +2286,20 @@ const doConnectSharedLeague = async ({
 		await refuse();
 	}
 	const boundLeagueId = metaLeagueId ?? roomLeagueId ?? makeLeagueId();
+
+	// A read the rescue had to answer for that the channel is STILL sitting on
+	// is a channel gone quiet, not a slow one. Cycle it once now, before the
+	// engine puts its listeners and its catch-up on it, rather than leave the
+	// walk to find out read by read - the remedy the engine itself applies
+	// to a quiet channel (see maybeCycleNetwork). Bounded: a cycle that hangs
+	// must not hold up the connect.
+	if (channel.stillOut()) {
+		syncDebugLog("connect:network-cycled", {});
+		await Promise.race([
+			transport.cycleNetwork().catch(() => {}),
+			new Promise((resolve) => setTimeout(resolve, CONNECT_CYCLE_MS)),
+		]);
+	}
 
 	const engine = new SyncEngineV2(transport, {
 		isHost,

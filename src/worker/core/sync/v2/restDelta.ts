@@ -43,6 +43,36 @@ export const fromRestFields = (doc: unknown): Record<string, unknown> => {
 	return out;
 };
 
+// One document's fields over plain HTTPS - `path` from the database root,
+// each segment encoded here - or undefined for anything but a document that is
+// there to read (missing, refused, a network failure). Same security rules as
+// the SDK read it stands in for.
+export const fetchDocOverRest = async ({
+	projectId,
+	path,
+	token,
+	fetchFn = fetch,
+	signal,
+}: {
+	projectId: string;
+	path: string[];
+	token: string;
+	fetchFn?: typeof fetch;
+	signal?: AbortSignal;
+}): Promise<Record<string, unknown> | undefined> => {
+	const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
+		projectId,
+	)}/databases/(default)/documents/${path.map(encodeURIComponent).join("/")}`;
+	const response = await fetchFn(url, {
+		headers: { Authorization: `Bearer ${token}` },
+		signal,
+	});
+	if (!response.ok) {
+		return undefined;
+	}
+	return fromRestFields(await response.json());
+};
+
 export type RestDelta = {
 	serialized: string;
 	authorId: string;

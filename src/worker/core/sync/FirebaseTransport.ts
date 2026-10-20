@@ -29,7 +29,7 @@ import { getFirebaseApp } from "./firebaseApp.ts";
 import { ttlAtMsFor } from "../../../common/syncRetention.ts";
 import { range } from "../../../common/utils.ts";
 import { getAuth } from "firebase/auth";
-import { fetchDeltaOverRest } from "./v2/restDelta.ts";
+import { fetchDeltaOverRest, fetchDocOverRest } from "./v2/restDelta.ts";
 import {
 	decideAdvanceClaim,
 	type AdvanceClaimDoc,
@@ -1697,6 +1697,62 @@ export class FirebaseTransport implements SyncTransport {
 			action: typeof head.action === "string" ? head.action : "",
 			at: typeof head.at === "number" ? head.at : 0,
 		};
+	}
+
+	// A room document read over plain HTTPS rather than the SDK's channel (see
+	// restDelta.ts) - for when a read on the channel has gone quiet. Its
+	// fields, or undefined unless it is there to read.
+	private async fetchDocDirect(
+		path: string[],
+		signal?: AbortSignal,
+	): Promise<Record<string, unknown> | undefined> {
+		const app = getFirebaseApp();
+		const projectId = app.options.projectId;
+		const user = getAuth(app).currentUser;
+		if (!projectId || !user) {
+			return undefined;
+		}
+		const token = await user.getIdToken();
+		const fields = await fetchDocOverRest({ projectId, path, token, signal });
+		if (fields) {
+			this.markContact();
+		}
+		return fields;
+	}
+
+	// The same reads as fetchRoomV2State, getRoomInfo and fetchRoomLeagueId,
+	// around the channel. Undefined (no answer) unless the document is there.
+	async fetchRoomV2StateDirect(
+		signal?: AbortSignal,
+	): Promise<V2StateDoc | undefined> {
+		const fields = await this.fetchDocDirect(
+			["leagues", this.code, "control", V2_STATE_DOC_ID],
+			signal,
+		);
+		return fields ? this.parseV2State(fields) : undefined;
+	}
+
+	async getRoomInfoDirect(
+		signal?: AbortSignal,
+	): Promise<{ leagueId?: string } | undefined> {
+		const fields = await this.fetchDocDirect(["leagues", this.code], signal);
+		return fields
+			? {
+					leagueId:
+						typeof fields.leagueId === "string" ? fields.leagueId : undefined,
+				}
+			: undefined;
+	}
+
+	async fetchRoomLeagueIdDirect(
+		signal?: AbortSignal,
+	): Promise<string | undefined> {
+		const fields = await this.fetchDocDirect(
+			["leagues", this.code, "control", "league"],
+			signal,
+		);
+		const value = fields?.leagueId;
+		return typeof value === "string" && value !== "" ? value : undefined;
 	}
 
 	async fetchV2DeltaDirect(version: number, signal?: AbortSignal) {
