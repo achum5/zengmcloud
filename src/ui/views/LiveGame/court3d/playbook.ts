@@ -1063,6 +1063,35 @@ export const PLAYBOOK: PlaySource[] = [
 		],
 		risks: ["0 1 pass", "1 1 lost", "2 1 lost", "2 1 charge"],
 	},
+	// Flow into a handoff: the trailer comes up into the top, takes it from
+	// the guard and dribbles at the wing for the handoff, the guard cutting
+	// through to the far corner - a trailer three, or the handoff and roll.
+	{
+		id: "trailer-dho",
+		cat: "early",
+		use: 4,
+		start: "top* R_wing R_corner L_wing backcourt_mid",
+		needs:
+			"ballHandler passer | shooter ballHandler | shooter | shooter spacer | handoffBig rollMan stretchBig",
+		steps: [
+			"5 move top jog; 1 dribble L_slot advance",
+			"1 pass 5 chest; 1 move L_corner clear_out",
+			"5 dribble R_slot advance; 2 move R_wing v_cut",
+			"5 handoff 2 get",
+			"2 dribble high_post drive_middle; 5 move rim roll",
+		],
+		options: [
+			"5 three catch_and_shoot top 1 1 chest Spotup 1",
+			"2 three pull_up R_slot 3 5 - Handoff 3",
+			"2 mid pull_up high_post 4 - - Handoff 2",
+			"2 rim layup rim 4 - - Handoff 2 | 2 dribble rim attack",
+			"5 rim dunk rim 4 2 pocket Cut 2",
+			"3 three catch_and_shoot R_corner 4 2 kickout Spotup 1",
+			"1 three catch_and_shoot L_corner 4 2 skip Spotup 1",
+			"4 three catch_and_shoot L_wing 4 2 skip Spotup 1",
+		],
+		risks: ["1 1 pass", "3 5 lost", "4 2 lost", "4 2 charge"],
+	},
 	{
 		id: "pistol-dho",
 		cat: "early",
@@ -1852,6 +1881,80 @@ export const PLAYBOOK: PlaySource[] = [
 			"3 three catch_and_shoot R_corner 0 1 kickout Spotup 1",
 		],
 		risks: ["0 4 screen"],
+	},
+	// Zoom: a pin-down into a handoff - the shooter comes up off the down
+	// screen straight into the ball, the big handing it to him on the move
+	// and rolling, the pin-down screener popping to the corner behind it.
+	{
+		id: "zoom-dho",
+		cat: "half",
+		use: 5,
+		start: "top* R_corner L_corner R_block R_elbow",
+		needs:
+			"passer ballHandler | shooter ballHandler offBallShooter | shooter spacer | screener big stretchBig | handoffBig rollMan passer",
+		steps: [
+			"1 pass 5 chest; 1 move L_wing clear_out",
+			"4 screen 2 R_block pin_down; 2 move R_wing sprint; 5 dribble R_slot advance",
+			"5 handoff 2 get",
+			"2 dribble high_post drive_middle; 5 move rim roll; 4 move R_corner pop",
+		],
+		options: [
+			"2 three pull_up R_slot 2 5 - Handoff 3",
+			"2 mid pull_up high_post 3 - - Handoff 2",
+			"2 rim layup rim 3 - - Handoff 2 | 2 dribble rim attack",
+			"2 post floater R_lane 3 - - Handoff 1 | 2 dribble R_lane attack",
+			"5 rim dunk rim 3 2 pocket Cut 2",
+			"2 three catch_and_shoot R_wing 1 5 chest OffScreen 1",
+			"4 three catch_and_shoot R_corner 3 2 kickout Spotup 1",
+			"3 three catch_and_shoot L_corner 3 2 skip Spotup 1",
+			"1 three catch_and_shoot L_wing 3 2 skip Spotup 1",
+		],
+		risks: ["0 1 pass", "1 4 screen", "2 2 lost", "3 2 charge"],
+	},
+	// The shuffle cut: the ball swung to the wing, the man on the far wing
+	// cuts off the high post's back screen to the block on the ball's side;
+	// then the screener is screened for himself and pops up top.
+	{
+		id: "shuffle-cut",
+		cat: "half",
+		use: 3,
+		start: "R_slot* L_wing R_wing L_elbow L_corner",
+		needs:
+			"passer screener | cutter slasher postScorer | passer shooter | screener stretchBig | shooter spacer",
+		steps: [
+			"1 pass 3 chest",
+			"4 screen 2 L_elbow back; 2 move rim rip_cut",
+			"2 move R_block seal; 1 screen 4 L_slot down; 4 move top pop",
+		],
+		options: [
+			"2 rim layup rim 1 3 bounce Cut 3",
+			"2 post hook R_block 2 3 entry Postup 2",
+			"4 three catch_and_shoot top 2 3 chest Spotup 2",
+			"3 mid pull_up R_mid_wing 1 - - Isolation 1 | 3 dribble R_mid_wing attack",
+			"1 three catch_and_shoot L_slot 2 3 skip Spotup 1",
+			"5 three catch_and_shoot L_corner 2 3 skip Spotup 1",
+		],
+		risks: ["0 1 pass", "1 4 screen", "1 3 pass"],
+	},
+	// Duck-in: as the ball is swung, the big on the block steps into the
+	// lane in front of his man and seals him there for the catch.
+	{
+		id: "duck-in",
+		cat: "half",
+		use: 3,
+		start: "L_slot* R_slot L_corner R_corner R_dunker",
+		needs:
+			"passer ballHandler | passer shooter | shooter | shooter stretchBig | postScorer big",
+		steps: ["1 pass 2 chest", "5 post R_lane seal", "2 pass 5 entry"],
+		options: [
+			"5 post hook R_lane 2 2 entry Postup 3",
+			"5 rim dunk rim 2 2 entry Cut 2 | 5 post rim drop_step",
+			"5 post fadeaway R_lane 2 2 entry Postup 1",
+			"4 three catch_and_shoot R_corner 2 5 kickout Spotup 1",
+			"3 three catch_and_shoot L_corner 2 5 skip Spotup 1",
+			"1 three catch_and_shoot L_slot 2 5 kickout Spotup 1",
+		],
+		risks: ["2 2 pass", "2 5 travel"],
 	},
 	{
 		id: "iso-top-clear",
