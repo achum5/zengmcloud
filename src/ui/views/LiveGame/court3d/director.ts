@@ -1993,6 +1993,19 @@ class Director {
 		}
 	}
 
+	// How he celebrates a three, his own way every time: both arms up, the
+	// goggles, a shimmy - or, most of all, a finger at the bench.
+	private threeCelebration(pid: number): AnimName {
+		const h = hash01(pid, 5531);
+		return h < 0.25
+			? "threeUp"
+			: h < 0.4
+				? "goggles"
+				: h < 0.52
+					? "shimmy"
+					: "point";
+	}
+
 	// How he throws it down, `r` of the way through his own odds: a big man
 	// two hands, mostly; an athlete up over his head, as often as not - and
 	// each man his own way of it, the same every game.
@@ -11227,8 +11240,8 @@ class Director {
 						: "celebrate"
 					: andOne
 						? "flex"
-						: shot.zone === "three" && hash01(shot.pid, 5531) < 0.4
-							? "threeUp"
+						: shot.zone === "three"
+							? this.threeCelebration(shot.pid)
 							: "point";
 				// Or, after a dunk or an and-one, the nearest man on his team
 				// comes over and they meet in the air, chest to chest.

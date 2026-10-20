@@ -4654,6 +4654,144 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// The goggles: a ring of finger and thumb up round each eye, elbows out -
+	// he saw that one all the way in.
+	goggles: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.ready],
+			[
+				0.2,
+				pose({
+					shN: 120,
+					elN: 45,
+					abN: -18,
+					wrN: 24,
+					shF: 120,
+					elF: 45,
+					abF: -18,
+					wrF: 24,
+					lean: -4,
+				}),
+			],
+			[
+				0.82,
+				pose({
+					shN: 118,
+					elN: 48,
+					abN: -16,
+					wrN: 20,
+					shF: 118,
+					elF: 48,
+					abF: -16,
+					wrF: 20,
+					lean: -6,
+				}),
+			],
+			[1, P.ready],
+		],
+	},
+	// A shimmy: arms out low, his shoulders shaken side to side.
+	shimmy: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, P.ready],
+			[
+				0.14,
+				pose({
+					shN: 42,
+					elN: 86,
+					abN: 54,
+					shF: 42,
+					elF: 86,
+					abF: 54,
+					lean: -2,
+					twist: 0,
+				}),
+			],
+			[
+				0.26,
+				pose({
+					shN: 44,
+					elN: 88,
+					abN: 56,
+					shF: 40,
+					elF: 84,
+					abF: 52,
+					lean: -3,
+					twist: 24,
+				}),
+			],
+			[
+				0.38,
+				pose({
+					shN: 40,
+					elN: 84,
+					abN: 52,
+					shF: 44,
+					elF: 88,
+					abF: 56,
+					lean: -3,
+					twist: -24,
+				}),
+			],
+			[
+				0.5,
+				pose({
+					shN: 44,
+					elN: 88,
+					abN: 56,
+					shF: 40,
+					elF: 84,
+					abF: 52,
+					lean: -3,
+					twist: 24,
+				}),
+			],
+			[
+				0.62,
+				pose({
+					shN: 40,
+					elN: 84,
+					abN: 52,
+					shF: 44,
+					elF: 88,
+					abF: 56,
+					lean: -3,
+					twist: -24,
+				}),
+			],
+			[
+				0.74,
+				pose({
+					shN: 44,
+					elN: 88,
+					abN: 56,
+					shF: 40,
+					elF: 84,
+					abF: 52,
+					lean: -2,
+					twist: 16,
+				}),
+			],
+			[
+				0.86,
+				pose({
+					shN: 42,
+					elN: 86,
+					abN: 54,
+					shF: 42,
+					elF: 86,
+					abF: 54,
+					lean: -1,
+					twist: 0,
+				}),
+			],
+			[1, P.ready],
+		],
+	},
 	// Three-point field goal: both arms up - thrown up, the elbows bent on
 	// the way, not swung up stiff in a blink.
 	threeUp: {
