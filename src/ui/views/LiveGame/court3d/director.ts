@@ -552,6 +552,15 @@ const HELP_PULL_MS = 650;
 // Of passes off a live dribble, how many go one-handed: on the move, stood.
 const PUSH_SHARE: [number, number] = [0.9, 0.5];
 const PUSH_OFF_MS = 60;
+// Of those on the move to a man out the side of his other hand - this far
+// off (feet), ahead of him or square to him - how many go behind his back.
+const BEHIND_SHARE = 0.45;
+const BEHIND_FT: [number, number] = [8, 30];
+const BEHIND_AHEAD: [number, number] = [-0.45, 0.85];
+// (On the move at this pace at least, feet a second, until no longer than
+// this before it goes, ms.)
+const BEHIND_FTPS = 7;
+const BEHIND_STILL_MS = 150;
 // A spin move (see spinBy): how often a drive with his man square in front
 // of him goes into one rather than a crossover, from how far out (feet), how
 // far short of his man he plants (feet), and how fast he goes round him
@@ -765,6 +774,7 @@ const PASS_ACTS = new Set<AnimName>([
 	"passOverhead",
 	"passPush",
 	"passBouncePush",
+	"passBehind",
 ]);
 
 // A step aside eases over and back this fast (ms each way) unless it says.
@@ -3356,6 +3366,31 @@ class Director {
 			pushHand !== undefined &&
 			start - got <= PUSH_OFF_MS &&
 			hash01(from * 13 + 5, Math.floor(ready)) < PUSH_SHARE[onTheMove ? 0 : 1];
+		// Now and then, on the move to a man out the side of his other hand -
+		// ahead of him, or square to him - behind his back: flipped round
+		// behind him with him going on the way he goes, his eyes up the floor.
+		// (On the move: still going, or let go of as he gets there.)
+		const going = this.track(from)?.moves.findLast(
+			(m) => m.t0 <= ready && m.t1 >= ready - BEHIND_STILL_MS,
+		);
+		const g =
+			going &&
+			dist(going.from, going.to) >= (BEHIND_FTPS * (going.t1 - going.t0)) / 1000
+				? unitVec(going.from, going.to)
+				: undefined;
+		const ahead = g ? ((b.x - a.x) * g.x + (b.y - a.y) * g.y) / (d || 1) : 0;
+		// (His left, going that way, and whether the man is on it.)
+		const onLeft = g ? (b.x - a.x) * g.y - (b.y - a.y) * g.x > 0 : false;
+		const behind =
+			push &&
+			kind === "chest" &&
+			g !== undefined &&
+			d >= BEHIND_FT[0] &&
+			d <= BEHIND_FT[1] &&
+			ahead > BEHIND_AHEAD[0] &&
+			ahead < BEHIND_AHEAD[1] &&
+			onLeft === (pushHand === "R") &&
+			hash01(from * 7 + 3, Math.floor(ready)) < BEHIND_SHARE;
 		// Open, he calls for it: a hand up.
 		if (d >= 12) {
 			this.gesture(to, "hand", start - 700, start + wind - 60, undefined, 0.45);
@@ -3402,20 +3437,22 @@ class Director {
 		}
 		this.act(
 			from,
-			over
-				? "passOverhead"
-				: kind === "bounce"
-					? push
-						? "passBouncePush"
-						: "passBounce"
-					: push
-						? "passPush"
-						: "pass",
+			behind
+				? "passBehind"
+				: over
+					? "passOverhead"
+					: kind === "bounce"
+						? push
+							? "passBouncePush"
+							: "passBounce"
+						: push
+							? "passPush"
+							: "pass",
 			start,
 			start + wind + 180,
 			{
-				face: toward,
-				look: { ...b },
+				face: behind && g ? (g.x >= 0 ? 1 : -1) : toward,
+				look: behind && g ? { x: a.x + g.x * 12, y: a.y + g.y * 12 } : { ...b },
 				...(push && pushHand === "L" ? { mirror: true as const } : {}),
 			},
 		);
@@ -16278,6 +16315,7 @@ class Director {
 			"passOverhead",
 			"passPush",
 			"passBouncePush",
+			"passBehind",
 		]);
 		const busy = (tr: Track, t: number) =>
 			tr.acts.some(
@@ -17059,6 +17097,7 @@ class Director {
 			"passOverhead",
 			"passPush",
 			"passBouncePush",
+			"passBehind",
 			"contest",
 			"triple",
 			"jab",
@@ -17796,6 +17835,7 @@ class Director {
 			"passOverhead",
 			"passPush",
 			"passBouncePush",
+			"passBehind",
 			"triple",
 			"jab",
 			"shotFake",

@@ -1094,6 +1094,7 @@ const PASSES = new Set<AnimName>([
 	"passOverhead",
 	"passPush",
 	"passBouncePush",
+	"passBehind",
 ]);
 export const PASS_TURN = 250;
 export const PASS_PICK_UP = new Set<AnimName>([
@@ -3226,6 +3227,7 @@ const STRIDE_ACTS = new Set<AnimName>([
 	"passOverhead",
 	"passPush",
 	"passBouncePush",
+	"passBehind",
 	"reach",
 	"poke",
 	"callBall",
