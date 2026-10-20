@@ -1327,6 +1327,72 @@ describe("3D director", () => {
 		assert.isAbove(blocks, 2);
 	}, 60_000);
 
+	test("a jump shot that is blocked is got as it leaves his hand - not hung up in the air till the blocker gets there", () => {
+		let blocks = 0;
+		for (const seed of ["a", "b", "c"]) {
+			const { tl } = compile(seed, 150);
+			for (const s of tl.ball) {
+				if (s.kind !== "fly" || !("pid" in s.from) || !("pid" in s.to)) {
+					continue;
+				}
+				const by = tl.tracks.get(s.to.pid);
+				const shooter = tl.tracks.get(s.from.pid);
+				if (
+					!by ||
+					!shooter ||
+					by.team === shooter.team ||
+					!by.acts.some(
+						(a) => a.anim === "block" && a.t0 <= s.t1 && a.t1 >= s.t1,
+					)
+				) {
+					continue;
+				}
+				assert.isAtMost(s.t1 - s.t0, 150, `${seed} at ${s.t0}`);
+				blocks += 1;
+			}
+		}
+		assert.isAbove(blocks, 8);
+	}, 120_000);
+
+	test("a left-hander's follow-through is held up with his left", () => {
+		const SHOTS = new Set(["shoot", "fade", "hook", "floater", "setShot"]);
+		const held = { L: 0, R: 0 };
+		for (const seed of ["a", "b"]) {
+			const { tl } = compile(seed, 150);
+			for (const tr of tl.tracks.values()) {
+				for (const g of tr.arms) {
+					if (g.kind !== "follow") {
+						continue;
+					}
+					const shot = tr.acts.findLast(
+						(a) => SHOTS.has(a.anim) && a.t0 < g.t0,
+					);
+					const st = evalPlayer(tl, tr.pid, g.t0 + (g.t1 - g.t0) * 0.25);
+					if (!shot || !st.arm) {
+						continue;
+					}
+					const hand = shot.mirror ? "L" : "R";
+					assert.strictEqual(st.arm.hand, hand, `${seed} at ${g.t0}`);
+					held[hand] += 1;
+				}
+				// And at the line: the arm he shot it with.
+				for (const a of tr.acts) {
+					if (a.anim !== "follow") {
+						continue;
+					}
+					const q = poseOf(evalPlayer(tl, tr.pid, a.t0 + (a.t1 - a.t0) * 0.4));
+					const [up, down] = a.mirror ? [q.shF, q.shN] : [q.shN, q.shF];
+					assert.isAbove(up, down + 40, `${seed} at ${a.t0}`);
+					if (a.mirror) {
+						held.L += 1;
+					}
+				}
+			}
+		}
+		assert.isAbove(held.L, 2);
+		assert.isAbove(held.R, 20);
+	}, 120_000);
+
 	test("off the rim, the man who gets it mostly goes up and takes it in the air", () => {
 		let air = 0;
 		let all = 0;

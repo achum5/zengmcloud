@@ -207,6 +207,8 @@ export type Gesture = {
 	kind: "point" | "hand" | "wave" | "slap" | "follow";
 	// What he points or waves at: a man, wherever he is, or a spot.
 	at?: number | Pt;
+	// A follow-through off his left hand.
+	mirror?: true;
 };
 export type Track = {
 	pid: number;
@@ -1191,6 +1193,7 @@ const LEFTIES = 0.1;
 const OWN_HAND = new Set<AnimName>([
 	"shoot",
 	"setShot",
+	"follow",
 	"fade",
 	"shotFake",
 	"hook",
@@ -2197,6 +2200,7 @@ class Director {
 		t1: number,
 		at?: number | Pt,
 		p = 1,
+		mirror = false,
 	) {
 		const tr = this.track(pid);
 		if (!tr || t1 - t0 < 300 || hash01(pid, t0) >= p) {
@@ -2209,6 +2213,7 @@ class Director {
 			...(at === undefined
 				? {}
 				: { at: typeof at === "number" ? at : { x: at.x, y: at.y } }),
+			...(mirror ? { mirror: true as const } : {}),
 		});
 	}
 
@@ -8211,15 +8216,35 @@ class Director {
 			const flight = close ? 300 : floater ? 760 + d * 24 : 620 + d * 22;
 			if (plan.kind === "block" && plan.blocker !== undefined) {
 				const b = plan.blocker;
-				// He gets there and goes up to meet it - later in its flight, if
-				// it takes him that long to get there.
+				// He is there as it goes up, and gets a hand on it as it leaves
+				// his - from a way off, setting off in time to get there,
+				// whatever he was doing (not still on his way as it flies, the
+				// ball hung up in the air till he gets to it).
+				// (Ahead of where he comes down, a floater carried on in the air
+				// - not where he took off, the shooter drifting into him.)
+				const on = dist(P1, drift ?? this.posOf(shooter));
+				const B = ahead(Math.min(2.6, Math.max(1.4, len - 1 - on)) + on);
+				const by = release - 80;
+				let from = gather - 600;
+				for (let n = 0; n < 4; n++) {
+					const need =
+						runMs(dist(this.posAt(b, from), B), SPRINT, 0, BURST) + 60;
+					if (by - from >= need) {
+						break;
+					}
+					from = by - need;
+				}
+				if ((this.free.get(b) ?? 0) > from) {
+					this.cutShort(b, from);
+				}
 				const there = this.goBy(
 					b,
-					ahead(Math.min(2.6, Math.max(1.4, len - 1))),
-					gather - 600,
-					release - 80,
+					B,
+					from,
+					by,
 					"run",
 					-faceRim as 1 | -1,
+					BURST,
 				);
 				const contact = Math.max(release + 110, there + 180);
 				// With the hand on the ball's side, straight up at it.
@@ -8358,7 +8383,8 @@ class Director {
 		}
 
 		// A shooter holds his follow-through after he lands, till the ball
-		// gets there - whatever his feet do next.
+		// gets there - whatever his feet do next. (With the hand he shot it
+		// with.)
 		if (
 			landed !== undefined &&
 			(plan.kind === "make" || plan.kind === "miss")
@@ -8368,6 +8394,9 @@ class Director {
 				"follow",
 				landed,
 				Math.min(decided + 120, landed + 1200),
+				undefined,
+				1,
+				this.offHisLeft(shooter),
 			);
 		}
 		if (!dunk && !putback && plan.kind !== "block") {

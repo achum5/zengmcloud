@@ -2428,10 +2428,11 @@ const armAt = (
 		// Held up from the moment he lands - his shooting hand, if it is
 		// free - and let down slowly at the end.
 		const w = smooth01((1 - u) / 0.45);
-		return free === "L" || w <= 0.02
+		const hand: Hand = g.mirror ? "L" : "R";
+		return free === otherHand(hand) || w <= 0.02
 			? undefined
 			: {
-					hand: "R",
+					hand,
 					sh: FOLLOW.shN,
 					el: FOLLOW.elN,
 					ab: FOLLOW.abN,
