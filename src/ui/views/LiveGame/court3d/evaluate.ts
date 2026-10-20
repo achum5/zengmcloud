@@ -1813,21 +1813,39 @@ const bridgeAt = (
 		return undefined;
 	}
 	const run = runOf(tr, k);
-	const at = Math.min(t, run.s1);
+	// (On the steps he was taking as it ended - a backpedal, say, not
+	// whatever stopped dead reads as - the ones the next run's strides
+	// count on from: see stridesAt.)
+	const at = Math.min(t, run.s1, run.mv.t1 - 1);
 	const g = gaitOf(tl, tr, k, run, at);
 	return ANIMS[g.anim].kind === "cycle"
-		? { ...g, down: footDownAt(run, at) }
+		? {
+				...g,
+				down: footDownAt(run, at, k > 0 ? runOf(tr, k - 1) : undefined),
+			}
 		: undefined;
 };
 // Pulling up to a stop, over the last of it his foot up off the floor comes
 // down - and setting off from one, it goes back up into his stride over the
 // first of it - rather than hanging in the air while he stands there.
 const STOP_STEP_MS = 140;
-const footDownAt = (run: Run, t: number): number =>
-	Math.max(
-		run.v1 < LEGS_FTPS ? smooth01(1 - (run.s1 - t) / STOP_STEP_MS) : 0,
-		run.v0 < LEGS_FTPS ? 1 - smooth01((t - run.s0) / STOP_STEP_MS) : 0,
+// (Where one run hands on to the next, as the two of them go through it
+// together: not planted at the end of the one and up in his stride at the
+// start of the other.)
+const footDownAt = (run: Run, t: number, before?: Run, after?: Run): number => {
+	const vIn =
+		before && Math.abs(before.s1 - run.s0) <= 1
+			? Math.max(run.v0, before.v1)
+			: run.v0;
+	const vOut =
+		after && Math.abs(run.s1 - after.s0) <= 1
+			? Math.max(run.v1, after.v0)
+			: run.v1;
+	return Math.max(
+		vOut < LEGS_FTPS ? smooth01(1 - (run.s1 - t) / STOP_STEP_MS) : 0,
+		vIn < LEGS_FTPS ? 1 - smooth01((t - run.s0) / STOP_STEP_MS) : 0,
 	);
+};
 
 // A defender up on the man dribbling, in front of him (feet): from the
 // farther, he starts to keep the ball in; by the nearer, it is by his hip.
@@ -1958,7 +1976,13 @@ const doingAt = (
 	} else if (here.moving && here.run) {
 		({ anim, phase } = gaitOf(tl, tr, here.moveIndex, here.run, t));
 		z = bounceAt(anim, phase);
-		down = footDownAt(here.run, t);
+		const k = here.moveIndex;
+		down = footDownAt(
+			here.run,
+			t,
+			k > 0 ? runOf(tr, k - 1) : undefined,
+			k + 1 < tr.moves.length ? runOf(tr, k + 1) : undefined,
+		);
 	} else if ((bridged = bridgeAt(tl, tr, t))) {
 		({ anim, phase, down } = bridged);
 	} else {
