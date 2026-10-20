@@ -535,6 +535,9 @@ const DRIBBLE_MS = 1000 / DRIBBLE_RATE;
 // the start of his throw to the ball leaving his hands.
 const OVERHEAD_WIND = 140;
 const RELEASE_MS = 120;
+// A drop step or an up-and-under goes up this far out (feet): a low-post
+// shot, not one from under the rim.
+const POST_FINISH_OUT = 3.4;
 // A pass thrown away goes this far wide of the man it was meant for (feet,
 // out where he is): past his hands, not through him.
 const WIDE_OF = 3;
@@ -7754,8 +7757,13 @@ class Director {
 			if (close || floater) {
 				// The last strides in: up from a couple of feet out, where it
 				// can go up and over the front of the rim or off the glass - not
-				// from under it. (A floater, a shorter one, well short of it.)
-				const out = floater ? 5.5 : 2.4 + 0.7 * hash01(shooter, gather);
+				// from under it. (A floater, a shorter one, well short of it; a
+				// finish off the block, from the stride out his move took him.)
+				const out = floater
+					? 5.5
+					: zone === "lowPost"
+						? POST_FINISH_OUT
+						: 2.4 + 0.7 * hash01(shooter, gather);
 				const step = Math.max(
 					0,
 					Math.min(floater ? 1.4 : LAYUP_STRIDE, len - out),
