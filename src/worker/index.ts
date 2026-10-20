@@ -141,6 +141,12 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	// never registered - and the next heartbeat stepped the page on through
 	// their game, over whatever this device went to watch instead.
 	"leaveLiveBroadcast",
+	// A live game's page reporting the game over: it only lets go of this
+	// device's own spoiler hold, repaints, and sends the notifications held
+	// back - no league write. Refused while catching up - a league opened as
+	// a live game was being played, the page jumping to its final at once -
+	// the header said "Live game in progress" for good.
+	"onLiveSimOver",
 	// The watch/star list and the "untouchable" trade flag are PERSONAL
 	// preferences (the watch ones fan out via same-device crossTabEmit, not the
 	// league). They happen to live on the shared `players` record, so they can't

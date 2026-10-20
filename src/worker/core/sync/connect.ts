@@ -2495,6 +2495,11 @@ const doConnectSharedLeague = async ({
 	// ignored (handled locally).
 	activeBroadcast = undefined;
 	followedBroadcast = undefined;
+	// (A hold some follow of the last session took goes with it - let go of,
+	// not just forgotten with the banner left up.)
+	if (followerHold.isHeld()) {
+		releaseFollowerHold("session-boundary");
+	}
 	followerHold.reset();
 	roomBroadcastMeta = undefined;
 	joinFailures.clear();
@@ -2620,6 +2625,9 @@ export const teardownSharedLeague = async ({
 	activeBroadcast = undefined;
 	followedBroadcast = undefined;
 	followedBroadcastPayload = undefined;
+	if (followerHold.isHeld()) {
+		releaseFollowerHold("session-boundary");
+	}
 	followerHold.reset();
 	roomBroadcastMeta = undefined;
 	joinFailures.clear();

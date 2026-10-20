@@ -34,13 +34,12 @@ describe("feed accounts across devices", () => {
 		// list is for bulk and read-only paths; an account editor is neither,
 		// and if one ever landed on that list the edit would stay on the device
 		// that made it with nothing to show for it.
-		const source: string = await import(
-			("node" + ":fs") as any
-		).then((fs: any) =>
-			fs.readFileSync(
-				new URL("../../index.ts", import.meta.url).pathname,
-				"utf8",
-			),
+		const source: string = await import(("node" + ":fs") as any).then(
+			(fs: any) =>
+				fs.readFileSync(
+					new URL("../../index.ts", import.meta.url).pathname,
+					"utf8",
+				),
 		);
 		const skipBlock = source.slice(
 			source.indexOf("SKIP_CHANGESET_CAPTURE"),
@@ -56,5 +55,9 @@ describe("feed accounts across devices", () => {
 		]) {
 			assert.notInclude(skipBlock, `"${name}"`, name);
 		}
+		// And a live game's page reporting it over is - it writes nothing to the
+		// league, and refused mid-catch-up it left "Live game in progress" up
+		// for good.
+		assert.include(skipBlock, '"onLiveSimOver"');
 	});
 });
