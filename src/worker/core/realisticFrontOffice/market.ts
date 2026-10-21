@@ -113,6 +113,9 @@ export const marketSettings = {
 	// helps this season, and when a deal put off for the deadline gets decided.
 	// 0 is off.
 	deadlineWindow: 0,
+	// Every team also shops once ratings have progressed in the preseason,
+	// before any games.
+	preseasonWindow: false,
 };
 
 // Where the time goes, for the arena's speed report.
@@ -715,8 +718,9 @@ const WINDOW_PHASES: readonly number[] = [
 
 export const tradeWindow = async () => {
 	if (
-		marketSettings.offseasonWindows &&
-		WINDOW_PHASES.includes(g.get("phase"))
+		(marketSettings.offseasonWindows &&
+			WINDOW_PHASES.includes(g.get("phase"))) ||
+		(marketSettings.preseasonWindow && g.get("phase") === PHASE.PRESEASON)
 	) {
 		await timed(() => shop(Infinity));
 	}

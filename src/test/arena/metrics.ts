@@ -50,6 +50,14 @@ const OFFSEASON_PHASES = new Set<number>([
 	PHASE.FREE_AGENCY,
 ]);
 
+// Trades in the preseason count as offseason ones too: no games have been
+// played, and the NBA counts training camp trades that way. Stock and the
+// default market make none there.
+const OFFSEASON_TRADE_PHASES = new Set<number>([
+	PHASE.PRESEASON,
+	...OFFSEASON_PHASES,
+]);
+
 const sd = (xs: number[]) => {
 	const mean = xs.reduce((a, x) => a + x, 0) / xs.length;
 	return Math.sqrt(xs.reduce((a, x) => a + (x - mean) ** 2, 0) / xs.length);
@@ -262,10 +270,10 @@ export const computeMetrics = async (
 	for (const snapshot of snapshots) {
 		const s = snapshot.season;
 		const inSeason = trades.filter(
-			(e) => e.season === s && !OFFSEASON_PHASES.has(e.phase as number),
+			(e) => e.season === s && !OFFSEASON_TRADE_PHASES.has(e.phase as number),
 		);
 		const offseason = trades.filter(
-			(e) => e.season === s && OFFSEASON_PHASES.has(e.phase as number),
+			(e) => e.season === s && OFFSEASON_TRADE_PHASES.has(e.phase as number),
 		);
 		m.tradesPerSeason.push(inSeason.length + offseason.length);
 		m.inSeasonTradesPerSeason.push(inSeason.length);
