@@ -89,12 +89,10 @@ const runOn = (
 			s.pace = base * fastAt(tl, s.t);
 			s.paceAt = k;
 		}
-		const step = Math.min(
-			left,
-			Math.max(1e-9, (k + 1) * STEP_MS - s.w),
-			(limit - s.t) / s.pace,
-		);
-		s.t = Math.min(limit, s.t + step * s.pace);
+		const there = (limit - s.t) / s.pace;
+		const step = Math.min(left, Math.max(1e-9, (k + 1) * STEP_MS - s.w), there);
+		// (Exactly there, not a rounding short of it.)
+		s.t = step === there ? limit : Math.min(limit, s.t + step * s.pace);
 		s.w += step;
 		left -= step;
 	}

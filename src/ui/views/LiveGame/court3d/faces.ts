@@ -86,7 +86,7 @@ const faceSprite = async (
 		const canvas = document.createElement("canvas");
 		canvas.width = Math.round(CROP.w * SCALE);
 		canvas.height = Math.round(CROP.h * SCALE);
-		const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+		const ctx = canvas.getContext("2d")!;
 		ctx.drawImage(
 			img,
 			CROP.x,

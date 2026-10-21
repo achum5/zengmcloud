@@ -97,11 +97,12 @@ const rim = (
 // pixel art does.
 //
 // Each is kept trimmed to what is drawn of him, not the whole box he might
-// reach into - and kept off the graphics card, in plain memory, so many
-// pictures never fill it: the browser itself puts on the card the ones being
-// drawn, as much as it has room for. (Thousands on the card, each its own
-// picture there - and thrown away by the thousand each time the picture
-// changes size - took the whole browser down: every window black.)
+// reach into - and only so many of them, let go of the moment they are done
+// with: they are pictures on the graphics card. (Thousands there, each its
+// own picture - and thrown away by the thousand each time the picture
+// changed size - took the whole browser down: every window black. Kept in
+// plain memory instead, every one drawn has to be copied over to the card
+// again and again, and the game slows to a crawl.)
 type Box = { x0: number; y0: number; x1: number; y1: number };
 type Kept = {
 	canvas: HTMLCanvasElement;
@@ -202,9 +203,7 @@ const keep = (
 	const canvas = document.createElement("canvas");
 	canvas.width = w;
 	canvas.height = h;
-	canvas
-		.getContext("2d", { willReadFrequently: true })!
-		.drawImage(from, fx, fy, w, h, 0, 0, w, h);
+	canvas.getContext("2d")!.drawImage(from, fx, fy, w, h, 0, 0, w, h);
 	const k: Kept = { canvas, w, h, dx, dy };
 	cache.kept.set(key, k);
 	cache.area += w * h;
