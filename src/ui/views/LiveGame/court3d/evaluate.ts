@@ -1980,12 +1980,17 @@ const doingAt = (
 		// (A jumper, each man his own way of it.)
 		anim = act.anim === "shoot" ? shotForm(pid) : act.anim;
 		const a = ANIMS[anim];
+		// (A loop on the same beat as when he does it standing of his own
+		// accord - so one held for a while and then just stood in, a
+		// defender's stance, say, goes on as it was, not to another frame.)
 		phase =
 			a.kind === "act"
 				? clamp01(u)
 				: anim === "guard"
 					? guardWave(tl, act, u)
-					: ((t - act.t0) / 1000) * (a.kind === "loop" ? a.fps / a.n : 1);
+					: a.kind === "loop"
+						? (t / 1000) * (a.fps / a.n) + pid * 0.37
+						: (t - act.t0) / 1000;
 		z = jumpZ(act, u);
 		if (act.reach && act.jump) {
 			reach = act.jump[2];
