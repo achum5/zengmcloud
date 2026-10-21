@@ -9,4 +9,4 @@ export const realisticFrontOfficesOn = () =>
 // same for every team, human or CPU (owner's call, in place of stock's extra
 // testing for CPU teams' players only). In player.moodInfo's units; tuned in
 // the arena so top free agents re-sign about as often as in the NBA (~57%).
-export const MARKET_TESTING = 8;
+export const MARKET_TESTING = 10;
