@@ -22,6 +22,7 @@ import {
 	FT_OFFICIAL,
 	FT_SHOOTER_DEPTH,
 	ftOfficialBall,
+	HUDDLE_Y,
 	other,
 	RIM_Z,
 	spot,
@@ -1138,11 +1139,12 @@ const coachState = (
 		};
 	}
 	if (shot && shot !== tl.shots[0]) {
-		// In the huddle with his five.
+		// In the huddle with his five, in the middle of them - not out on the
+		// edge of it by the bench, where a man coming off walks to.
 		return {
 			...base,
 			x: home,
-			y: -0.5,
+			y: HUDDLE_Y,
 			yaw: FACING_US,
 			anim: "talk",
 			phase: loopPhase("talk", t, team * 0.5),

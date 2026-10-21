@@ -1,7 +1,7 @@
 import { assert, describe, test } from "vitest";
 import { atTable, crewAt, crewFor, type CrewMember } from "./crew.ts";
 import { cameraCuts } from "./evaluate.ts";
-import { benchX, COURT_H, COURT_W } from "./geometry.ts";
+import { benchX, COURT_H, COURT_W, HUDDLE_Y } from "./geometry.ts";
 import { compileCourt, type CourtPlayer, type RawEvent } from "./director.ts";
 import { compile, gidOf } from "./testGame.ts";
 
@@ -291,7 +291,9 @@ describe("3D crew", () => {
 				if (s.pid === -11 || s.pid === -12) {
 					const team = s.pid === -11 ? 0 : 1;
 					assert.isBelow(Math.abs(s.x - benchX(team)), 7, `${t}`);
-					assert.isTrue(s.y > -4 && s.y < 0.5, `${t}`);
+					// (Out on the floor only in the middle of his huddle.)
+					const huddle = s.x === benchX(team) && s.y === HUDDLE_Y;
+					assert.isTrue(huddle || (s.y > -4 && s.y < 0.5), `${t}`);
 				} else if (s.pid <= -21 && !atTable(s.pid)) {
 					assert.isTrue(s.x < -2 || s.x > COURT_W + 2, `${t}`);
 					// Clear of the basket's stanchion and the lane under it.
