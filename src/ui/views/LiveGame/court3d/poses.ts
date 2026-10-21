@@ -4551,14 +4551,16 @@ export const ANIMS = {
 	// Down to the floor for it - knees bent deep, reaching out, a hand on
 	// either side of it where it lies - a moment there to take it, and up
 	// with it in both hands. (Most of it the way down, begun as he comes in
-	// on it: not a snap to the floor in a tenth of a second.)
+	// on it: not a snap to the floor in a tenth of a second. And up as soon
+	// as he has it - the director gives it him 0.7 of the way through - not
+	// a moment more down there and then up in a rush.)
 	pickup: {
 		kind: "act",
 		n: 6,
 		keys: [
 			[0, P.ready],
 			[0.58, PICKUP_LOW],
-			[0.76, PICKUP_LOW],
+			[0.7, PICKUP_LOW],
 			[1, P.hold],
 		],
 	},

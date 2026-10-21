@@ -3083,12 +3083,23 @@ export const evalPlayer = (
 	// (An arm a beat behind its reason never takes the hand his dribble has
 	// just come over into.)
 	const eased = shown ? easedArm(tl, tr, t) : undefined;
-	const arm =
+	const said =
 		eased?.hand === now.dribbleHand
 			? undefined
 			: now.dribbleHand === undefined
 				? eased
 				: clearOf(tl, pid, t, eased);
+	// (His hands on the ball, or closing on it, neither arm is out saying
+	// anything: an arm up against his man as he picks up his dribble comes
+	// in to the ball with the other - not still easing down as he goes up
+	// with it.)
+	const free = now.grip !== undefined ? 1 - now.grip : now.holding ? 0 : 1;
+	const arm =
+		said && free < 1
+			? said.w * free > 0.02
+				? { ...said, w: said.w * free }
+				: undefined
+			: said;
 	return {
 		pid,
 		team: tr.team,
@@ -3914,7 +3925,16 @@ const ballOn = (
 			// out ahead of him on the move - or, changing hands, between his
 			// feet.
 			const across = from !== to;
-			const ahead = dribbleAhead(st.anim) * (1 - (st.tight ?? 0));
+			// (Easing from one dribble into another - setting off from where he
+			// stood, say - the spot goes out ahead of him as his hand does,
+			// not a foot on in a frame.)
+			const was = st.from && st.from.w > 0 ? st.from : undefined;
+			const ahead =
+				(was
+					? dribbleAhead(st.anim) +
+						(dribbleAhead(was.anim) - dribbleAhead(st.anim)) * was.w
+					: dribbleAhead(st.anim)) *
+				(1 - (st.tight ?? 0));
 			// (Worked in toward the middle of him on an in-and-out.)
 			const inward = dribbleIn(st.anim, st.phase);
 			const out = (1.22 - 0.12 * ahead) * (1 - IN_BY * inward);
