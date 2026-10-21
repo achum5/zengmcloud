@@ -55,24 +55,36 @@ const PROJECTION_SAMPLES = 24;
 const iterationsFor = (y: number, iterations: number) =>
 	y <= 2 ? iterations : Math.ceil(iterations / 3);
 
-// Still playing that many seasons from now, by age - a stand-in until
-// retirement is modelled properly.
-const survival = (age: number) =>
-	age <= 31
-		? 0.99
-		: age === 32
-			? 0.96
-			: age === 33
-				? 0.92
-				: age === 34
-					? 0.86
-					: age === 35
-						? 0.78
-						: age === 36
-							? 0.68
-							: age === 37
-								? 0.58
-								: 0.45;
+// The chance a player retires when the season ends, by the game's own rule
+// (player.shouldRetire, basketball): nobody under 34 who is on a roster, and
+// after that the older and the less valuable, the likelier - his win shares
+// that season, or what his value says they should be if more. Win shares are
+// not projected, so this reads them off value alone, and a player who beats
+// his value retires a little later than this says. `value` and `ovr` are his
+// that season, `maxOvr` the best he has been.
+export const retireChance = (
+	age: number,
+	value: number,
+	ovr: number,
+	maxOvr: number,
+) => {
+	const forceRetireAge = g.get("forceRetireAge");
+	if (forceRetireAge >= g.get("draftAges")[1] && age >= forceRetireAge) {
+		return 1;
+	}
+	if (age < g.get("minRetireAge") || age <= 33) {
+		return 0;
+	}
+	const pot = 1.1 * value;
+	const estWS = (Math.max(pot, 37) - 37) ** 2 / 85.017;
+	const logit =
+		-1.4134 + (Math.max(age, 18) - 18) ** 2 / 175.19 - 0.971 * estWS;
+	const byValue = 1 / (1 + Math.exp(-logit));
+	// Aging stars well past their best.
+	const fraction = maxOvr > 0 ? ovr / maxOvr : 1;
+	const pastBest = fraction < 0.7 ? Math.min(1, 0.2 + (0.7 - fraction)) : 0;
+	return byValue + (1 - byValue) * pastBest;
+};
 
 // A player's chance of re-signing when his contract runs out is his chance of
 // taking his asking price from the team he would be re-signing with, against
@@ -210,8 +222,15 @@ const computeSeasonLine = (
 	const projection = projectPlayer(p, season);
 	const age = season - p.born.year;
 	let availability = 1;
-	for (let k = 1; k <= index; k++) {
-		availability *= survival(age + k);
+	// Every retirement check between now and then: one as each season ends,
+	// this season's too unless it is already behind us (the offseason).
+	let maxOvr = Math.max(...p.ratings.map((row) => row.ovr));
+	for (let c = offset; c < index; c++) {
+		const ovr = projection.ovr[c]!;
+		maxOvr = Math.max(maxOvr, ovr);
+		availability *=
+			1 -
+			retireChance(age + c, p.value + ovr - projection.ovr[0]!, ovr, maxOvr);
 	}
 	if (p.contract.exp < season + index) {
 		availability *= retention;
