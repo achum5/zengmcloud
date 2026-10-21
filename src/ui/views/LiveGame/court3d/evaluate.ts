@@ -3451,6 +3451,9 @@ const SETTLE_FULL = 30;
 const SETTLE_SPREAD = 40;
 // Each step's share of the way, overlapping.
 const SETTLE_STEP = 0.6;
+// Two legs this near to as far to go (degrees, see settleLegs) go over
+// from the one first to the other first gradually.
+const SETTLE_TIE = 6;
 // (One foot this much higher than the other - in legs' lengths, about - is
 // up off the floor.)
 const SETTLE_UP = 0.12;
@@ -3496,7 +3499,9 @@ const settleLegs = (
 	// (How surely the near one goes first: the foot that is up, the more
 	// clearly up it is - eased over into the one with furthest to go as
 	// both come down, not switched from one frame to the next.)
-	const byFar = rn >= rf ? 1 : 0;
+	// (Near enough the same way to go, neither leg first outright - eased
+	// from the one to the other, not switched as the two pass by a hair.)
+	const byFar = smooth01((rn - rf) / SETTLE_TIE + 0.5);
 	const lifted = Math.min(1, Math.abs(up) / SETTLE_UP);
 	const first = byFar + ((up > 0 ? 1 : 0) - byFar) * lifted;
 	return {
