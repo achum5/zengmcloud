@@ -216,6 +216,12 @@ test.runIf(env.ARENA_RUN === "1")(
 									) / 1000
 								: undefined;
 						}),
+						// What each side's record is worth this season, in points
+						// (outlookSettings.recordOdds).
+						recordEdge: deal.tids.map(
+							(tid) =>
+								Math.round((deal.outlook.recordEdge.get(tid) ?? 0) * 100) / 100,
+						),
 						breakdown: deal.breakdown,
 						tids: deal.tids,
 						gains: deal.gains.map((x) => Math.round(x * 10000) / 10000),
@@ -499,6 +505,7 @@ test.runIf(env.ARENA_RUN === "1")(
 										pts: stats?.pts ?? 0,
 										oppPts: stats?.oppPts ?? 0,
 										strength: Math.round(o.strength[0]! * 100) / 100,
+										recordEdge: outlook.recordEdge.get(t.tid) ?? 0,
 										title: o.title[0],
 										curveTitle: curveAt(outlook.titleCurves[0]!, o.strength[0]!),
 										// Partners it has a deal with that both would make.

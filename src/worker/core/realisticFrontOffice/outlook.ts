@@ -131,6 +131,10 @@ export type LeagueOutlook = {
 	progress: number;
 	// For weighing a deal now against waiting, until the trade deadline passes.
 	deadline?: DeadlineView;
+	// What each team's record so far is worth to its title chances this
+	// season, in points of strength (outlookSettings.recordOdds). Empty when
+	// off or out of season.
+	recordEdge: Map<number, number>;
 };
 
 // How far a team's true strength may be from our read of it, in points a game,
@@ -325,6 +329,10 @@ export const outlookSettings = {
 	// A player's chance of re-signing depends on the team: off, every team gets
 	// his chance with his current one.
 	teamRetention: true,
+	// This season's title odds count a team's record, not only its strength:
+	// two teams equally good, one with a lucky record and one with an unlucky
+	// one, do not have the same chances, and a deal is worth more to the first.
+	recordOdds: false,
 };
 
 export const ensureRetention = async (
@@ -729,7 +737,10 @@ export const teamStrengths = (
 	refill?: Parameters<typeof teamPoints>[5],
 ) =>
 	teamPoints(outlook, tid, players, picks, trading, refill).map(
-		(x, y) => x - outlook.meanPoints[y]!,
+		(x, y) =>
+			x -
+			outlook.meanPoints[y]! +
+			(y === 0 ? (outlook.recordEdge.get(tid) ?? 0) : 0),
 	);
 
 // Logistic fit of a probability against strength. Used to price a roster that
@@ -827,6 +838,7 @@ export const buildOutlook = async ({
 		retention: new Map<string, number>(),
 		meanPoints: [] as number[],
 		progress: inSeason ? progress : 0,
+		recordEdge: new Map<number, number>(),
 	};
 	for (const t of teams) {
 		await ensureRetention(base, rosters.get(t.tid)!, t.tid);
@@ -911,15 +923,36 @@ export const buildOutlook = async ({
 			o.title.push(r.title);
 			o.playoffs.push(r.playoffs);
 		}
+		// Wins banked beyond what the team as it stands would have won in the
+		// games played: luck, or a roster that has changed. Worth something in
+		// the standings; fit on every team's odds, then put in points.
+		if (y === 0 && inSeason && outlookSettings.recordOdds) {
+			const luck = (tid: number) => {
+				const r = records.get(tid)!;
+				return r.won - (r.won + r.lost) * winProbability(strengthOf(tid));
+			};
+			const [, b, c] = fitLogistic(
+				teams.map((t) => ({
+					x: [strengthOf(t.tid), luck(t.tid)],
+					p: sim.get(t.tid)!.title,
+				})),
+				[0, 0.3, 0],
+			);
+			if (b! > 0 && c! > 0) {
+				for (const t of teams) {
+					base.recordEdge.set(t.tid, (c! / b!) * luck(t.tid));
+				}
+			}
+		}
+		const x = (tid: number) =>
+			strengthOf(tid) + (y === 0 ? (base.recordEdge.get(tid) ?? 0) : 0);
 		titleCurves.push(
-			fitCurve(
-				teams.map((t) => ({ x: strengthOf(t.tid), p: sim.get(t.tid)!.title })),
-			),
+			fitCurve(teams.map((t) => ({ x: x(t.tid), p: sim.get(t.tid)!.title }))),
 		);
 		playoffCurves.push(
 			fitCurve(
 				teams.map((t) => ({
-					x: strengthOf(t.tid),
+					x: x(t.tid),
 					p: sim.get(t.tid)!.playoffs,
 				})),
 			),
