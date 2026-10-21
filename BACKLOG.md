@@ -108,6 +108,11 @@ and shoes - every one eventually, none rushed to get to the next.
   crew's heads drawn one at a time; and a player's pictures no longer all
   made again each time somebody's face comes in. Longest frame starting
   a game about 500 ms before, about 250 ms after.)
+  (2026-10-21: the floor, stands, boards and faces back on the graphics
+  card after a crash fix had moved them off it - that made the picture
+  coarse and the page slow to leave; each new pose of a player sculpted
+  about 14% quicker, the very same picture. In the real app at 1x: about
+  57 frames a second, none over 100 ms.)
 - [x] Player head profiles should match their faces.js face much better.
       The hair (see below), and his nose, ears and how full his face is.
 - [x] Back of the head should match the faces.js face, including hair.
@@ -299,6 +304,14 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   in the way still pulls up at its end); an overhead pass picked up out
   of a crossover and taken up over the head, and the step out of a run
   into a stand no longer swapping feet halfway - pops 43 -> 27.)
+  (2026-10-21: the ball in his hands moves as his hands do - an arm out
+  against his man no longer swings up with the ball as he goes up for a
+  layup, the bounce spot no longer leaps ahead setting off on a dribble,
+  a loose ball comes up as he takes it; going up for a finish the ball
+  goes over into the one hand as he rises - finishes with the ball
+  moving more than 0.6 ft in a frame about 20 a game down to 3 or 4. A
+  roar or a pound of the chest after a big finish; the man dunked on
+  steps back from it; the coach stands in the middle of his huddle.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like
