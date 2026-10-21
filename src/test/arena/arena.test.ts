@@ -121,6 +121,9 @@ test.runIf(env.ARENA_RUN === "1")(
 					tradeLog.push({
 						season: g.get("season"),
 						phase: g.get("phase"),
+						// Days of the regular season left, to place in-season trades.
+						daysLeft: g.get("daysLeft"),
+						breakdown: deal.breakdown,
 						tids: deal.tids,
 						gains: deal.gains.map((x) => Math.round(x * 10000) / 10000),
 						standing: deal.tids.map(standing),
@@ -387,6 +390,8 @@ test.runIf(env.ARENA_RUN === "1")(
 					freeAgents: snapshots.map((s) => ({
 						season: s.season,
 						rows: s.freeAgents,
+						// Each team's cap room as free agency opened, by tid.
+						capSpace: s.capSpace,
 					})),
 					expiring: snapshots.map((s) => ({
 						season: s.season,

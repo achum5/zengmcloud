@@ -428,6 +428,8 @@ export type EventBBGMWithoutKey =
 				tiers: [string, string];
 				dv: number;
 				motivation: string;
+				// Realistic front offices: the whole calculation.
+				frontOffice?: FrontOfficeBreakdown;
 			};
 	  }
 	| {
@@ -3512,3 +3514,67 @@ export type SavedTradingBlock = {
 };
 
 export type TeamNum = 0 | 1;
+
+// Realistic front offices: the whole calculation behind a CPU-to-CPU trade,
+// as it was made. Each array runs over `seasons`, the outlook's seasons.
+export type FrontOfficeAsset =
+	| {
+			kind: "player";
+			pid: number;
+			name: string;
+			age: number;
+			ovr: number;
+			amount: number;
+			exp: number;
+			// As the team it is listed for sees him: expected overall, and the
+			// chance he is on that team, each season.
+			ovrBySeason: number[];
+			hereBySeason: number[];
+			// His chance of re-signing with that team.
+			reSign: number;
+	  }
+	| {
+			kind: "pick";
+			dpid: number;
+			season: number;
+			round: number;
+			originalTid: number;
+			// Where in its round it is expected to land (0 for the first), and how
+			// far it may land from there.
+			place: number;
+			spread: number;
+			// The player it becomes: expected overall, and the chance he is worth
+			// a roster place, each season.
+			ovrBySeason: number[];
+			hereBySeason: number[];
+	  };
+
+export type FrontOfficeSide = {
+	tid: number;
+	// In titles, discounted, the trade penalty included.
+	gain: number;
+	margin: number;
+	// Strength (points a game against an average team) and title odds, without
+	// and with the deal, and what the change is worth, each season.
+	before: number[];
+	after: number[];
+	titleBefore: number[];
+	titleAfter: number[];
+	value: number[];
+	// Cap room (share of the cap) and the overall of each free agent it is
+	// expected to buy, each season, without and with the deal.
+	roomBefore: number[];
+	roomAfter: number[];
+	buysBefore: number[][];
+	buysAfter: number[][];
+	gets: FrontOfficeAsset[];
+	gives: FrontOfficeAsset[];
+	// Players traded away this season, last season and the one before.
+	tradedAway: [number, number, number];
+	reason: string;
+};
+
+export type FrontOfficeBreakdown = {
+	seasons: number[];
+	sides: [FrontOfficeSide, FrontOfficeSide];
+};

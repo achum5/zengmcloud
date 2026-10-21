@@ -95,13 +95,16 @@ const moodInfo = async (
 
 	// More AI players testing free agency. Not with realistic front offices,
 	// where players judge every team on the same terms - and every team's
-	// players test the market the same amount when their contracts run out.
+	// players test the market the same amount when their contracts run out,
+	// except those finishing rookie deals, who mostly stay (as with the NBA's
+	// restricted free agency).
 	if (realisticFrontOfficesOn()) {
 		if (
-			p.tid === tid ||
-			(resigning &&
-				p.tid === PLAYER.FREE_AGENT &&
-				(await hasActiveNegotiation(tid, p.pid)))
+			components.rookieContract <= 0 &&
+			(p.tid === tid ||
+				(resigning &&
+					p.tid === PLAYER.FREE_AGENT &&
+					(await hasActiveNegotiation(tid, p.pid))))
 		) {
 			sumAndStuff -= MARKET_TESTING;
 		}

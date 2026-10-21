@@ -354,7 +354,7 @@ export const draftPlaceSpread = (
 };
 
 // Where a pick is expected to land in its round, 0 for the first.
-const expectedPlace = (
+export const expectedPlace = (
 	outlook: Pick<LeagueOutlook, "draftPlace" | "season" | "offset" | "numTeams">,
 	dp: PickLike,
 ) => {
@@ -493,6 +493,9 @@ export const teamPoints = (
 	players: readonly Player[],
 	picks: readonly PickLike[],
 	trading?: { tradedAway: TradedAway; extra: number },
+	// For explaining a deal: the cap room each season, as a share of the cap,
+	// and the overall of each free agent it is expected to buy.
+	refill?: (y: number, room: number, signings: number[]) => void,
 ) => {
 	const retentionFor = (p: Player) => {
 		const r = retentionOf(outlook, p.pid, tid);
@@ -535,9 +538,15 @@ export const teamPoints = (
 					committed += row.amount;
 				}
 			}
-			for (const signing of signingsWith(g.get("salaryCap") - committed)) {
+			const signings = signingsWith(g.get("salaryCap") - committed);
+			for (const signing of signings) {
 				lines.push({ ...signing, availability: 1 });
 			}
+			refill?.(
+				y,
+				1 - committed / g.get("salaryCap"),
+				signings.map((x) => x.valueNoPot),
+			);
 		}
 		out.push(expectedRosterPoints(lines));
 	}
@@ -551,8 +560,9 @@ export const teamStrengths = (
 	players: readonly Player[],
 	picks: readonly PickLike[],
 	trading?: { tradedAway: TradedAway; extra: number },
+	refill?: (y: number, room: number, signings: number[]) => void,
 ) =>
-	teamPoints(outlook, tid, players, picks, trading).map(
+	teamPoints(outlook, tid, players, picks, trading, refill).map(
 		(x, y) => x - outlook.meanPoints[y]!,
 	);
 

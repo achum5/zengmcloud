@@ -664,6 +664,8 @@ export default defineView({
 				}),
 				seasonsToPlot,
 				usePts,
+				// Realistic front offices: how the CPU teams worked it out.
+				frontOffice: event.aiTrade?.frontOffice,
 			};
 		}
 	},

@@ -4,6 +4,7 @@ import { helpers } from "../../util/helpers.ts";
 import { PlayerNameLabels } from "../../components/PlayerNameLabels.tsx";
 import { PHASE, PHASE_TEXT } from "../../../common/constants.ts";
 import Charts from "./Charts.tsx";
+import FrontOfficeBreakdown from "./FrontOfficeBreakdown.tsx";
 import PickText from "./PickText.tsx";
 import type { PlayerOutcome } from "../../../worker/views/tradeSummary.ts";
 import { useLocal } from "../../util/local.ts";
@@ -96,6 +97,7 @@ const Outcome = ({ outcome }: { outcome: PlayerOutcome }) => {
 
 const TradeSummary = ({
 	eid,
+	frontOffice,
 	phase,
 	revertable,
 	season,
@@ -295,6 +297,12 @@ const TradeSummary = ({
 					/>
 				</div>
 			</div>
+			{frontOffice ? (
+				<FrontOfficeBreakdown
+					breakdown={frontOffice}
+					abbrevs={teams.map((t) => t.abbrev)}
+				/>
+			) : null}
 		</>
 	);
 };

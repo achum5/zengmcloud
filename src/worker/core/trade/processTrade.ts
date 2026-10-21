@@ -13,6 +13,7 @@ import {
 	type Player,
 	type Team,
 	type TeamSeason,
+	type FrontOfficeBreakdown,
 	type TradeEventTeams,
 	type TradeTeams,
 } from "../../../common/types.ts";
@@ -29,6 +30,7 @@ const processTrade = async (
 		tiers: [string, string];
 		dv: number;
 		motivation: string;
+		frontOffice?: FrontOfficeBreakdown;
 	},
 ) => {
 	const tids: [number, number] = [rawTeams[0].tid, rawTeams[1].tid];

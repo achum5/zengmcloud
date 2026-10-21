@@ -1,12 +1,18 @@
 import { PHASE } from "../../../common/constants.ts";
 import { makeSeededRandom } from "../../../common/random.ts";
-import type { DraftPick, Player, TradeTeams } from "../../../common/types.ts";
+import type {
+	DraftPick,
+	FrontOfficeBreakdown,
+	Player,
+	TradeTeams,
+} from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g, local } from "../../util/index.ts";
 import getPayroll from "../team/getPayroll.ts";
 import isUntradable from "../trade/isUntradable.ts";
 import processTrade from "../trade/processTrade.ts";
 import summary from "../trade/summary.ts";
+import { explainDeal, type ExplainSide } from "./explain.ts";
 import { draftPlaceMisread, sideMargin, type MovedPlayer } from "./margin.ts";
 import { valueOverReplacement } from "./strength.ts";
 import {
@@ -124,6 +130,7 @@ export const tradeWatchers: ((deal: {
 	rosters: [Player[], Player[]];
 	picks: [DraftPick[], DraftPick[]];
 	outlook: LeagueOutlook;
+	breakdown: FrontOfficeBreakdown;
 }) => void)[] = [];
 
 // Called with every outlook as it is built - for the arena, to measure its
@@ -684,26 +691,36 @@ const shop = async (numShoppers: number) => {
 				? `${o.strength[0]! >= 0 ? "+" : ""}${o.strength[0]!.toFixed(1)} now, ${(100 * o.title[0]!).toFixed(1)}% title`
 				: "";
 		};
+		const sides = [
+			await loadTeam(outlook, best.tids[0]),
+			await loadTeam(outlook, best.tids[1]),
+		] as const;
+		const assetsOf = (k: 0 | 1) => ({
+			players: best.assets[k].flatMap((x) =>
+				x.kind === "player" ? [x.p] : [],
+			),
+			picks: best.assets[k].flatMap((x) => (x.kind === "pick" ? [x.dp] : [])),
+		});
+		const sideFor = (k: 0 | 1): ExplainSide => ({
+			tid: best.tids[k],
+			players: sides[k].players,
+			picks: sides[k].picks,
+			tradedAway: sides[k].tradedAway,
+			gain: best.gains[k],
+			margin: best.margins[k],
+			gives: assetsOf(k),
+			gets: assetsOf(k === 0 ? 1 : 0),
+		});
+		const breakdown = explainDeal(outlook, [sideFor(0), sideFor(1)]);
 		for (const watch of tradeWatchers) {
 			watch({
 				tids: best.tids,
 				give: best.give,
 				gains: best.gains,
-				rosters: [
-					await idb.cache.players.indexGetAll("playersByTid", best.tids[0]),
-					await idb.cache.players.indexGetAll("playersByTid", best.tids[1]),
-				],
-				picks: [
-					await idb.cache.draftPicks.indexGetAll(
-						"draftPicksByTid",
-						best.tids[0],
-					),
-					await idb.cache.draftPicks.indexGetAll(
-						"draftPicksByTid",
-						best.tids[1],
-					),
-				],
+				rosters: [sides[0].players, sides[1].players],
+				picks: [sides[0].picks, sides[1].picks],
 				outlook,
+				breakdown,
 			});
 		}
 		await processTrade(teams, undefined, {
@@ -711,6 +728,7 @@ const shop = async (numShoppers: number) => {
 			tiers: [standing(best.tids[0]), standing(best.tids[1])],
 			dv: Math.round(Math.min(...best.gains) * 10_000) / 10_000,
 			motivation: `both gain: ${best.gains.map((x) => `+${(100 * x).toFixed(2)}`).join(" / ")} title-equivalents x100`,
+			frontOffice: breakdown,
 		});
 		marketClock.trades += 1;
 		// What these two teams' assets are worth has changed.
