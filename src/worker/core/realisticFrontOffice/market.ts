@@ -27,7 +27,7 @@ import {
 	teamStrengths,
 	type LeagueOutlook,
 } from "./outlook.ts";
-import { prefersWaiting } from "./timing.ts";
+import { waitingValues } from "./timing.ts";
 import type { TradedAway } from "./tradePenalty.ts";
 
 // CPU TEAMS TRADING WITH EACH OTHER. Every day a few teams work the phones:
@@ -131,6 +131,9 @@ export const tradeWatchers: ((deal: {
 	picks: [DraftPick[], DraftPick[]];
 	outlook: LeagueOutlook;
 	breakdown: FrontOfficeBreakdown;
+	margins: [number, number];
+	// Before the deadline, what waiting was worth to each side (waitingOf).
+	waiting?: ReturnType<typeof waitingOf>;
 }) => void)[] = [];
 
 // Called with every outlook as it is built - for the arena, to measure its
@@ -302,6 +305,22 @@ const packages = (assets: readonly Asset[], worth: (x: Asset) => number) => {
 const assetKey = (x: Asset) =>
 	x.kind === "player" ? `p${x.p.pid}` : `d${x.dp.dpid}`;
 
+// What a deal does to a team's franchise value.
+const priceFor = (
+	outlook: LeagueOutlook,
+	t: TeamState,
+	outgoing: readonly Asset[],
+	incoming: readonly Asset[],
+) => {
+	const after = applyTrade(t, outgoing, incoming);
+	return (
+		valueOf(outlook, t.tid, after.players, after.picks, {
+			tradedAway: t.tradedAway,
+			extra: count(outgoing),
+		}) - t.value
+	);
+};
+
 // The best deal between two teams, if there is one both would make. `single`
 // holds what one asset is worth to one team, gained or lost, for the day.
 export const bestDealWith = (
@@ -333,15 +352,7 @@ export const bestDealWith = (
 		t: TeamState,
 		outgoing: readonly Asset[],
 		incoming: readonly Asset[],
-	) => {
-		const after = applyTrade(t, outgoing, incoming);
-		return (
-			valueOf(outlook, t.tid, after.players, after.picks, {
-				tradedAway: t.tradedAway,
-				extra: count(outgoing),
-			}) - t.value
-		);
-	};
+	) => priceFor(outlook, t, outgoing, incoming);
 	const remember = (key: string, compute: () => number) => {
 		if (!single.has(key)) {
 			single.set(key, compute());
@@ -515,6 +526,61 @@ export const marginOf = (
 	return sideMargin(outlook, t.path, moved);
 };
 
+// A deal found earlier, as it stands today - for the arena, to see how long
+// deals stay on offer. Undefined if a side no longer has what it was to give,
+// or the deal no longer fits the rules.
+export const priceDeal = (
+	outlook: LeagueOutlook,
+	a: TeamState,
+	b: TeamState,
+	give: Deal["give"],
+) => {
+	const assetsOf = (t: TeamState, side: Deal["give"][number]) => {
+		const assets: Asset[] = [];
+		for (const pid of side.pids) {
+			const p = t.tradablePlayers.find((x) => x.pid === pid);
+			if (!p) {
+				return;
+			}
+			assets.push({ kind: "player", p });
+		}
+		for (const dpid of side.dpids) {
+			const dp = t.picks.find((x) => x.dpid === dpid);
+			if (!dp) {
+				return;
+			}
+			assets.push({ kind: "pick", dp });
+		}
+		return assets;
+	};
+	const giveA = assetsOf(a, give[0]);
+	const giveB = assetsOf(b, give[1]);
+	const maxRosterSize =
+		g.get("phase") === PHASE.REGULAR_SEASON ? g.get("maxRosterSize") : Infinity;
+	if (
+		!giveA ||
+		!giveB ||
+		a.players.length + count(giveB) - count(giveA) > maxRosterSize ||
+		b.players.length + count(giveA) - count(giveB) > maxRosterSize ||
+		!salariesWork(a, giveA, giveB) ||
+		!salariesWork(b, giveB, giveA)
+	) {
+		return;
+	}
+	return {
+		tids: [a.tid, b.tid] as [number, number],
+		assets: [giveA, giveB] as [Asset[], Asset[]],
+		gains: [
+			priceFor(outlook, a, giveA, giveB),
+			priceFor(outlook, b, giveB, giveA),
+		] as [number, number],
+		margins: [
+			marginOf(outlook, a, giveA, giveB),
+			marginOf(outlook, b, giveB, giveA),
+		] as [number, number],
+	};
+};
+
 const count = (assets: readonly Asset[]) =>
 	assets.filter((x) => x.kind === "player").length;
 
@@ -547,24 +613,25 @@ export const findBestDeal = async (
 // The outlook the market is working from today.
 export const currentOutlook = async () => getOutlook(await gamesPlayed());
 
-// Before the deadline: whether either team would rather decide on this deal
-// then than make it today (timing.ts).
-const eitherWouldWait = async (outlook: LeagueOutlook, deal: Deal) => {
+// Before the deadline: what the deal is worth to each team made today, and
+// decided on at the deadline (timing.ts). Either team that would rather wait
+// puts it off.
+export const waitingOf = (
+	outlook: LeagueOutlook,
+	deal: Pick<Deal, "tids" | "assets">,
+	sides: readonly [TeamState, TeamState],
+) => {
 	const view = outlook.deadline!;
-	const sides = [
-		await loadTeam(outlook, deal.tids[0]),
-		await loadTeam(outlook, deal.tids[1]),
-	];
-	for (const k of [0, 1] as const) {
-		const t = sides[k]!;
+	return ([0, 1] as const).map((k) => {
+		const t = sides[k];
 		const j = k === 0 ? 1 : 0;
-		const after = applyTrade(t, deal.assets[k], deal.assets[j]);
+		const traded = applyTrade(t, deal.assets[k], deal.assets[j]);
 		const pathBefore = teamStrengths(outlook, t.tid, t.players, t.picks);
 		const pathAfter = teamStrengths(
 			outlook,
 			t.tid,
-			after.players,
-			after.picks,
+			traded.players,
+			traded.picks,
 			{
 				tradedAway: t.tradedAway,
 				extra: count(deal.assets[k]),
@@ -575,19 +642,25 @@ const eitherWouldWait = async (outlook: LeagueOutlook, deal: Deal) => {
 			seasonValue(outlook, 0, pathAfter[0]!) -
 			(franchiseValue(outlook, pathBefore) -
 				seasonValue(outlook, 0, pathBefore[0]!));
-		if (
-			prefersWaiting({
-				view,
-				before: pathBefore[0]!,
-				after: pathAfter[0]!,
-				later,
-			})
-		) {
-			return true;
-		}
-	}
-	return false;
+		const before = pathBefore[0]!;
+		const after = pathAfter[0]!;
+		return {
+			before,
+			after,
+			later,
+			...waitingValues({ view, before, after, later }),
+		};
+	});
 };
+
+// Called with every deal put off because a side would rather wait - for the
+// arena, to see what is being left for the deadline.
+export const deferWatchers: ((deal: {
+	tids: [number, number];
+	gains: [number, number];
+	margins: [number, number];
+	waiting: ReturnType<typeof waitingOf>;
+}) => void)[] = [];
 
 const timed = async (work: () => Promise<void>) => {
 	const started = performance.now();
@@ -657,12 +730,26 @@ const shop = async (numShoppers: number) => {
 		if (!best) {
 			continue;
 		}
+		const sides = [
+			await loadTeam(outlook, best.tids[0]),
+			await loadTeam(outlook, best.tids[1]),
+		] as const;
+		const waiting = outlook.deadline
+			? waitingOf(outlook, best, sides)
+			: undefined;
 		if (
 			marketSettings.valueWaiting &&
-			outlook.deadline &&
-			(await eitherWouldWait(outlook, best))
+			waiting?.some((side) => side.wait > side.now)
 		) {
 			marketClock.deferred += 1;
+			for (const watch of deferWatchers) {
+				watch({
+					tids: best.tids,
+					gains: best.gains,
+					margins: best.margins,
+					waiting,
+				});
+			}
 			continue;
 		}
 		const teams: TradeTeams = [
@@ -693,10 +780,6 @@ const shop = async (numShoppers: number) => {
 				? `${o.strength[0]! >= 0 ? "+" : ""}${o.strength[0]!.toFixed(1)} now, ${(100 * o.title[0]!).toFixed(1)}% title`
 				: "";
 		};
-		const sides = [
-			await loadTeam(outlook, best.tids[0]),
-			await loadTeam(outlook, best.tids[1]),
-		] as const;
 		const assetsOf = (k: 0 | 1) => ({
 			players: best.assets[k].flatMap((x) =>
 				x.kind === "player" ? [x.p] : [],
@@ -723,6 +806,8 @@ const shop = async (numShoppers: number) => {
 				picks: [sides[0].picks, sides[1].picks],
 				outlook,
 				breakdown,
+				margins: best.margins,
+				waiting,
 			});
 		}
 		await processTrade(teams, undefined, {

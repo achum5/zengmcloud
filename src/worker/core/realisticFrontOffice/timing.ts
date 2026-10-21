@@ -150,20 +150,24 @@ const NORMAL_NODES = [
 	[3.750439717725742, 0.000548268855972],
 ] as const;
 
-// Whether a team would rather decide on a deal at the deadline than make it
-// today. `before` and `after` are this season's strength without and with the
-// deal; `later` is what it is worth in the seasons after this one, in titles.
-export const prefersWaiting = ({
-	view,
-	before,
-	after,
-	later,
-}: {
+export type WaitingInput = {
 	view: DeadlineView;
 	before: number;
 	after: number;
 	later: number;
-}) => {
+};
+
+// Whether a team would rather decide on a deal at the deadline than make it
+// today. `before` and `after` are this season's strength without and with the
+// deal; `later` is what it is worth in the seasons after this one, in titles.
+export const prefersWaiting = (input: WaitingInput) => {
+	const { now, wait } = waitingValues(input);
+	return wait > now;
+};
+
+// What the deal is worth made today, and decided on at the deadline (already
+// cut to the share of it still on offer then), in titles.
+export const waitingValues = ({ view, before, after, later }: WaitingInput) => {
 	// Of the regular-season games left, the share played after the deadline.
 	const afterDeadline =
 		view.daysLeft > 0
@@ -189,5 +193,5 @@ export const prefersWaiting = ({
 			later;
 		wait += weight * Math.max(0, atDeadline);
 	}
-	return stillThere * wait > now;
+	return { now, wait: stillThere * wait, stillThere };
 };

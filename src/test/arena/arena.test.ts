@@ -3,17 +3,24 @@ import { makeSeededRandom } from "../../common/random.ts";
 import { getTradeHistoryDump } from "../../worker/api/tradeHistoryDump.ts";
 import { league } from "../../worker/core/index.ts";
 import {
+	bestDealWith,
 	currentOutlook,
-	findBestDeal,
+	deferWatchers,
 	loadTeam,
 	marketClock,
+	priceDeal,
 	marketSettings,
 	outlookWatchers,
 	tradeWatchers,
+	waitingOf,
+	type TeamState,
 } from "../../worker/core/realisticFrontOffice/market.ts";
+import getDaysLeftSchedule from "../../worker/core/season/getDaysLeftSchedule.ts";
 import { marginSettings } from "../../worker/core/realisticFrontOffice/margin.ts";
 import { freeAgencyWatchers } from "../../worker/core/realisticFrontOffice/freeAgency.ts";
 import {
+	curveAt,
+	ensureRetention,
 	OUTLOOK_YEARS,
 	outlookSeason,
 	outlookSettings,
@@ -27,6 +34,7 @@ import type { Player } from "../../common/types.ts";
 import { last } from "../../common/utils.ts";
 import { idb } from "../../worker/db/index.ts";
 import { g, helpers } from "../../worker/util/index.ts";
+import { PHASE } from "../../common/constants.ts";
 import {
 	playerLine,
 	rosterPoints,
@@ -169,6 +177,7 @@ test.runIf(env.ARENA_RUN === "1")(
 			// Every trade the front offices make: who moved, and where each team
 			// stood (this season's strength, and its average over the next three).
 			const tradeLog: unknown[] = [];
+			const deferLog: unknown[] = [];
 			if (env.ARENA_FO === "1") {
 				tradeWatchers.push((deal) => {
 					const standing = (tid: number) => {
@@ -185,11 +194,28 @@ test.runIf(env.ARENA_RUN === "1")(
 								}
 							: undefined;
 					};
-					tradeLog.push({
+					const row: Record<string, unknown> = {
 						season: g.get("season"),
 						phase: g.get("phase"),
-						// Days of the regular season left, to place in-season trades.
+						// Free agency's days left (g.daysLeft); in season see the
+						// fields below.
 						daysLeft: g.get("daysLeft"),
+						// Each side's margin of error, and before the deadline what
+						// waiting was worth to it (market.ts waitingOf).
+						margins: deal.margins.map((x) => Math.round(x * 10000) / 10000),
+						waiting: deal.waiting?.map(roundWaiting),
+						// Each side's record and its title odds by the cross-team curve
+						// the market prices with, next to standing.title (the season
+						// sim's, record and all).
+						curveTitle: deal.tids.map((tid) => {
+							const o = deal.outlook.teams.get(tid);
+							return o
+								? Math.round(
+										curveAt(deal.outlook.titleCurves[0]!, o.strength[0]!) *
+											1000,
+									) / 1000
+								: undefined;
+						}),
 						breakdown: deal.breakdown,
 						tids: deal.tids,
 						gains: deal.gains.map((x) => Math.round(x * 10000) / 10000),
@@ -238,7 +264,24 @@ test.runIf(env.ARENA_RUN === "1")(
 								}),
 						),
 						picks: [deal.give[0].dpids.length, deal.give[1].dpids.length],
-					});
+					};
+					tradeLog.push(row);
+					// The schedule and records cannot change before this trade is
+					// processed, so these land on the row as of the trade.
+					if (g.get("phase") === PHASE.REGULAR_SEASON) {
+						void stampSeasonClock(row, deal.tids);
+					}
+				});
+				deferWatchers.push((deal) => {
+					const row: Record<string, unknown> = {
+						season: g.get("season"),
+						tids: deal.tids,
+						gains: deal.gains.map((x) => Math.round(x * 10000) / 10000),
+						margins: deal.margins.map((x) => Math.round(x * 10000) / 10000),
+						waiting: deal.waiting.map(roundWaiting),
+					};
+					deferLog.push(row);
+					void stampSeasonClock(row, deal.tids);
 				});
 			}
 			const suspicious: unknown[] = [];
@@ -330,21 +373,30 @@ test.runIf(env.ARENA_RUN === "1")(
 					});
 				});
 			}
-			// ARENA_DEAL_SURVEY=1: at stops before each deadline, every team's best
-			// deal with anyone, found but not made - how much of today's deal is
-			// still on offer later, for the deadline timing.
-			const survey: {
+			// ARENA_DEAL_SURVEY=1: at stops before each deadline (ARENA_SURVEY_AT,
+			// days to go), every team's best deal with anyone, found but not made -
+			// how much of today's deal is still on offer later, for the deadline
+			// timing. Each pair of teams is priced once, as both see it.
+			const survey: Record<string, unknown>[] = [];
+			// Each team's best deal at each stop, priced again at every later stop
+			// of the season: is that very deal still there, and still wanted by both?
+			const surveyBest: {
 				season: number;
 				daysToDeadline: number;
 				tid: number;
-				gain: number;
-				tradesSoFar: number;
+				tids: [number, number];
+				give: NonNullable<ReturnType<typeof bestDealWith>>["give"];
+				net: number;
 			}[] = [];
+			const revisits: Record<string, unknown>[] = [];
+			const surveyAt: number[] = JSON.parse(
+				env.ARENA_SURVEY_AT ?? "[56, 42, 28, 14, 7, 1]",
+			);
 			const snapshots = await advanceSeasons(
 				numSeasons,
 				env.ARENA_DEAL_SURVEY === "1"
 					? {
-							surveyAt: [56, 42, 28, 14, 7, 1],
+							surveyAt,
 							onSurvey: async (daysToDeadline) => {
 								const outlook = await currentOutlook();
 								const events = await idb.merged.events.getAll({
@@ -353,19 +405,123 @@ test.runIf(env.ARENA_RUN === "1")(
 								const teams = (await idb.cache.teams.getAll()).filter(
 									(t) => !t.disabled,
 								);
-								const single = new Map<string, number>();
+								const states = new Map<number, TeamState>();
 								for (const t of teams) {
-									const best = await findBestDeal(
-										outlook,
-										await loadTeam(outlook, t.tid),
-										teams.filter((x) => x.tid !== t.tid).map((x) => x.tid),
-										single,
+									states.set(t.tid, await loadTeam(outlook, t.tid));
+								}
+								type Found = NonNullable<ReturnType<typeof bestDealWith>>;
+								const deals: Found[] = [];
+								const single = new Map<string, number>();
+								for (const [i, x] of teams.entries()) {
+									for (const y of teams.slice(i + 1)) {
+										const a = states.get(x.tid)!;
+										const b = states.get(y.tid)!;
+										await ensureRetention(outlook, b.tradablePlayers, a.tid);
+										await ensureRetention(outlook, a.tradablePlayers, b.tid);
+										const deal = bestDealWith(outlook, a, b, single);
+										if (deal) {
+											deals.push(deal);
+										}
+									}
+								}
+								const net = (d: Pick<Found, "gains" | "margins">) =>
+									Math.min(
+										d.gains[0] - d.margins[0],
+										d.gains[1] - d.margins[1],
 									);
+								for (const earlier of surveyBest) {
+									if (earlier.season !== g.get("season")) {
+										continue;
+									}
+									const again = priceDeal(
+										outlook,
+										states.get(earlier.tids[0])!,
+										states.get(earlier.tids[1])!,
+										earlier.give,
+									);
+									const k = earlier.tids[0] === earlier.tid ? 0 : 1;
+									revisits.push({
+										season: earlier.season,
+										from: earlier.daysToDeadline,
+										at: daysToDeadline,
+										tid: earlier.tid,
+										netThen: earlier.net,
+										// Still possible (both still have what they give).
+										possible: again !== undefined,
+										net: again ? net(again) : undefined,
+										gain: again ? again.gains[k] : undefined,
+									});
+								}
+								for (const t of teams) {
+									const mine = deals.filter((d) => d.tids.includes(t.tid));
+									let best: Found | undefined;
+									for (const d of mine) {
+										if (!best || net(d) > net(best)) {
+											best = d;
+										}
+									}
+									const o = outlook.teams.get(t.tid)!;
+									const ts = await idb.cache.teamSeasons.indexGet(
+										"teamSeasonsBySeasonTid",
+										[g.get("season"), t.tid],
+									);
+									const k = best ? (best.tids[0] === t.tid ? 0 : 1) : 0;
+									if (best) {
+										surveyBest.push({
+											season: g.get("season"),
+											daysToDeadline,
+											tid: t.tid,
+											tids: best.tids,
+											give: best.give,
+											net: net(best),
+										});
+									}
+									const waiting =
+										best && outlook.deadline
+											? waitingOf(outlook, best, [
+													states.get(best.tids[0])!,
+													states.get(best.tids[1])!,
+												])
+											: undefined;
+									const stats = (await idb.cache.teamStats.indexGet(
+										"teamStatsByPlayoffsTid",
+										[false, t.tid],
+									)) as { gp?: number; pts?: number; oppPts?: number } | undefined;
 									survey.push({
 										season: g.get("season"),
 										daysToDeadline,
 										tid: t.tid,
-										gain: best ? best.gains[0] : 0,
+										won: ts?.won ?? 0,
+										lost: ts?.lost ?? 0,
+										// Points scored and allowed so far, to set the strength the
+										// market reads against what the team then does.
+										gp: stats?.gp ?? 0,
+										pts: stats?.pts ?? 0,
+										oppPts: stats?.oppPts ?? 0,
+										strength: Math.round(o.strength[0]! * 100) / 100,
+										title: o.title[0],
+										curveTitle: curveAt(outlook.titleCurves[0]!, o.strength[0]!),
+										// Partners it has a deal with that both would make.
+										partners: mine.length,
+										gain: best ? best.gains[k] : 0,
+										best: best
+											? {
+													partner: best.tids[k === 0 ? 1 : 0],
+													gains: [best.gains[k], best.gains[k === 0 ? 1 : 0]],
+													margins: [
+														best.margins[k],
+														best.margins[k === 0 ? 1 : 0],
+													],
+													net: net(best),
+													give: best.give[k],
+													get: best.give[k === 0 ? 1 : 0],
+													waiting: waiting
+														? [waiting[k]!, waiting[k === 0 ? 1 : 0]!].map(
+																roundWaiting,
+															)
+														: undefined,
+												}
+											: undefined,
 										tradesSoFar: events.filter(
 											(e) => e.type === "trade" && e.tids?.includes(t.tid),
 										).length,
@@ -388,6 +544,10 @@ test.runIf(env.ARENA_RUN === "1")(
 				await fs.writeFile(
 					`${out}/tradelog-${seed}.json`,
 					JSON.stringify(tradeLog),
+				);
+				await fs.writeFile(
+					`${out}/deferred-${seed}.json`,
+					JSON.stringify(deferLog),
 				);
 				// What became of every traded player: his overall each season, and
 				// the teams he played for.
@@ -440,7 +600,7 @@ test.runIf(env.ARENA_RUN === "1")(
 			if (env.ARENA_DEAL_SURVEY === "1") {
 				await fs.writeFile(
 					`${out}/survey-${seed}.json`,
-					JSON.stringify(survey),
+					JSON.stringify({ stops: survey, revisits }),
 				);
 			}
 			if (env.ARENA_DEBUG_GAINS !== undefined) {
@@ -482,6 +642,45 @@ test.runIf(env.ARENA_RUN === "1")(
 		}
 	},
 );
+
+const roundWaiting = (w: {
+	before: number;
+	after: number;
+	later: number;
+	now: number;
+	wait: number;
+	stillThere: number;
+}) => ({
+	before: Math.round(w.before * 100) / 100,
+	after: Math.round(w.after * 100) / 100,
+	later: Math.round(w.later * 100000) / 100000,
+	now: Math.round(w.now * 100000) / 100000,
+	wait: Math.round(w.wait * 100000) / 100000,
+	stillThere: Math.round(w.stillThere * 1000) / 1000,
+});
+
+// Where in the regular season a trade happened: days to the deadline and days
+// of games left, and each side's record.
+const stampSeasonClock = async (
+	row: Record<string, unknown>,
+	tids: readonly number[],
+) => {
+	try {
+		row.daysToDeadline = await getDaysLeftSchedule("tradeDeadline");
+	} catch {
+		row.daysToDeadline = null;
+	}
+	row.daysLeftSeason = await getDaysLeftSchedule();
+	const records = [];
+	for (const tid of tids) {
+		const ts = await idb.cache.teamSeasons.indexGet("teamSeasonsBySeasonTid", [
+			g.get("season"),
+			tid,
+		]);
+		records.push([ts?.won ?? 0, ts?.lost ?? 0]);
+	}
+	row.records = records;
+};
 
 type WatchedTrade = Parameters<(typeof tradeWatchers)[number]>[0] & {
 	season: number;
