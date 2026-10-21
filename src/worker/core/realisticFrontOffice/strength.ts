@@ -128,7 +128,7 @@ const MODEL = {
 };
 
 // Share of the game on the floor, by place in the pecking order.
-const SLOT_MINUTES = [
+export const SLOT_MINUTES = [
 	0.7619, 0.6977, 0.6552, 0.6204, 0.5825, 0.4598, 0.4015, 0.33, 0.2323, 0.1327,
 	0.0638, 0.0319, 0.019, 0.0123, 0.0085,
 ];

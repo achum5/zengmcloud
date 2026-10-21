@@ -166,6 +166,13 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   call): six weeks out, the best deal a team can make at the deadline is worth
   about 60% of its best today, so waiting rarely pays and trades stay spread
   through the season rather than bunching at the deadline as in the NBA.
+- **Deals clear the margin of error** (owner's call). A front office only
+  makes a deal if each side gains by more than the model's own error on that
+  gain: what a player's ratings are worth on the floor (measured against swap
+  tests), plus how much further careers land from the projections than their
+  own spread allows (measured on every player traded in arena leagues - the
+  projections are unbiased, and only a little wider in reality). The luck the
+  model already prices in, like a prospect's range of careers, is not error.
 - **Trade penalty** (player mood hit for a team that trades too much) is
   unchanged. CPU teams are subject to it and account for it. The hope is that the
   league can drop it once CPU teams are hard to fleece.

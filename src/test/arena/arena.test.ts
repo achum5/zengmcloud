@@ -12,6 +12,8 @@ import {
 } from "../../worker/core/realisticFrontOffice/market.ts";
 import {
 	OUTLOOK_YEARS,
+	outlookSeason,
+	projectPlayer,
 	retentionOf,
 	seasonLine,
 	teamStrengths,
@@ -102,14 +104,45 @@ test.runIf(env.ARENA_RUN === "1")(
 						moved: ([0, 1] as const).flatMap((k) =>
 							deal.rosters[k]
 								.filter((p) => deal.give[k].pids.includes(p.pid))
-								.map((p) => ({
-									pid: p.pid,
-									from: deal.tids[k],
-									age: g.get("season") - p.born.year,
-									ovr: last(p.ratings).ovr,
-									exp: p.contract.exp,
-									amount: p.contract.amount,
-								})),
+								.map((p) => {
+									const to = deal.tids[k === 0 ? 1 : 0];
+									const { outlook } = deal;
+									return {
+										pid: p.pid,
+										from: deal.tids[k],
+										age: g.get("season") - p.born.year,
+										ovr: last(p.ratings).ovr,
+										exp: p.contract.exp,
+										amount: p.contract.amount,
+										// What the buyer expected of him, season by season:
+										// overall, and his chance of still being there.
+										projected: [1, 2, 3].map((y) => {
+											const line = seasonLine(
+												outlook.lines,
+												p,
+												outlook.season,
+												outlook.offset,
+												y,
+												outlook.remaining.get(to) ?? 0,
+												retentionOf(outlook, p.pid, to),
+											);
+											return {
+												season: outlookSeason(outlook, y),
+												ovr: Math.round(line.valueNoPot * 10) / 10,
+												// The spread of his overall that season across
+												// simulated careers: luck the model already expects.
+												ovrSd:
+													Math.round(
+														projectPlayer(p, outlook.season).ovrSd[
+															y + outlook.offset
+														]! * 10,
+													) / 10,
+												availability:
+													Math.round(line.availability * 1000) / 1000,
+											};
+										}),
+									};
+								}),
 						),
 						picks: [deal.give[0].dpids.length, deal.give[1].dpids.length],
 					});
@@ -263,6 +296,29 @@ test.runIf(env.ARENA_RUN === "1")(
 				await fs.writeFile(
 					`${out}/tradelog-${seed}.json`,
 					JSON.stringify(tradeLog),
+				);
+				// What became of every traded player: his overall each season, and
+				// the teams he played for.
+				const pids = new Set(
+					(tradeLog as { moved: { pid: number }[] }[]).flatMap((t) =>
+						t.moved.map((m) => m.pid),
+					),
+				);
+				const realized: Record<number, unknown> = {};
+				for (const pid of pids) {
+					const p = await idb.getCopy.players({ pid }, "noCopyCache");
+					if (p) {
+						realized[pid] = {
+							ratings: p.ratings.map((r) => [r.season, r.ovr]),
+							teams: p.stats
+								.filter((row) => !row.playoffs && (row.gp ?? 0) > 0)
+								.map((row) => [row.season, row.tid]),
+						};
+					}
+				}
+				await fs.writeFile(
+					`${out}/realized-${seed}.json`,
+					JSON.stringify(realized),
 				);
 			}
 			if (env.ARENA_DEAL_SURVEY === "1") {

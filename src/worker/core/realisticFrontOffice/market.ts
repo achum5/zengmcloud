@@ -7,10 +7,14 @@ import getPayroll from "../team/getPayroll.ts";
 import isUntradable from "../trade/isUntradable.ts";
 import processTrade from "../trade/processTrade.ts";
 import summary from "../trade/summary.ts";
+import { sideMargin, type MovedPlayer } from "./margin.ts";
 import {
 	buildOutlook,
 	ensureRetention,
 	franchiseValue,
+	OUTLOOK_YEARS,
+	retentionOf,
+	seasonLine,
 	seasonValue,
 	teamStrengths,
 	type LeagueOutlook,
@@ -55,6 +59,8 @@ export type TeamState = {
 	// Players traded away this season, last season and the one before - the
 	// trade penalty's count.
 	tradedAway: TradedAway;
+	// Strength each season of the outlook, as the roster stands.
+	path: number[];
 	value: number;
 };
 
@@ -66,8 +72,14 @@ type Deal = {
 	];
 	tids: [number, number];
 	gains: [number, number];
+	// Each side's margin of error on its gain (margin.ts).
+	margins: [number, number];
 	assets: [Asset[], Asset[]];
 };
+
+// The smaller of the two sides' gains once each clears its margin of error.
+const netOf = (deal: Pick<Deal, "gains" | "margins">) =>
+	Math.min(deal.gains[0] - deal.margins[0], deal.gains[1] - deal.margins[1]);
 
 // For the arena, to measure what a behaviour is worth by turning it off.
 export const marketSettings = {
@@ -168,6 +180,7 @@ export const loadTeam = async (
 	const picks = (
 		await idb.cache.draftPicks.indexGetAll("draftPicksByTid", tid)
 	).filter((dp) => typeof dp.season === "number");
+	const path = teamStrengths(outlook, tid, players, picks);
 	return {
 		tid,
 		players,
@@ -175,7 +188,8 @@ export const loadTeam = async (
 		tradablePlayers: players.filter((p) => !isUntradable(p).untradable),
 		payroll: await getPayroll(tid),
 		tradedAway: await tradedAwayOf(tid),
-		value: valueOf(outlook, tid, players, picks),
+		path,
+		value: franchiseValue(outlook, path),
 	};
 };
 
@@ -366,20 +380,73 @@ export const bestDealWith = (
 			price(a, giveA, giveB),
 			price(b, giveB, giveA),
 		];
+		if (gains[0] < MIN_GAIN || gains[1] < MIN_GAIN) {
+			continue;
+		}
+		const margins: [number, number] = [
+			marginOf(outlook, a, giveA, giveB),
+			marginOf(outlook, b, giveB, giveA),
+		];
+		const candidate = { gains, margins };
 		if (
-			gains[0] >= MIN_GAIN &&
-			gains[1] >= MIN_GAIN &&
-			(!best || Math.min(...gains) > Math.min(...best.gains))
+			gains[0] - margins[0] >= MIN_GAIN &&
+			gains[1] - margins[1] >= MIN_GAIN &&
+			(!best || netOf(candidate) > netOf(best))
 		) {
 			best = {
 				tids: [a.tid, b.tid],
 				give: [split(giveA), split(giveB)],
 				gains,
+				margins,
 				assets: [giveA, giveB],
 			};
 		}
 	}
 	return best;
+};
+
+// The margin of error on a team's gain from a deal: every player it gives or
+// gets, at his place on the roster he is priced for.
+const marginOf = (
+	outlook: LeagueOutlook,
+	t: TeamState,
+	outgoing: readonly Asset[],
+	incoming: readonly Asset[],
+) => {
+	const after = applyTrade(t, outgoing, incoming).players;
+	const moved: MovedPlayer[] = [];
+	const add = (p: Player, roster: readonly Player[]) => {
+		const place = [...roster]
+			.sort((x, y) => y.valueNoPot - x.valueNoPot)
+			.indexOf(p);
+		moved.push({
+			place,
+			availability: Array.from(
+				{ length: OUTLOOK_YEARS + 1 },
+				(_, y) =>
+					seasonLine(
+						outlook.lines,
+						p,
+						outlook.season,
+						outlook.offset,
+						y,
+						outlook.remaining.get(t.tid) ?? 0,
+						retentionOf(outlook, p.pid, t.tid),
+					).availability,
+			),
+		});
+	};
+	for (const x of incoming) {
+		if (x.kind === "player") {
+			add(x.p, after);
+		}
+	}
+	for (const x of outgoing) {
+		if (x.kind === "player") {
+			add(x.p, t.players);
+		}
+	}
+	return sideMargin(outlook, t.path, moved);
 };
 
 const count = (assets: readonly Asset[]) =>
@@ -404,7 +471,7 @@ export const findBestDeal = async (
 		await ensureRetention(outlook, b.tradablePlayers, a.tid);
 		await ensureRetention(outlook, a.tradablePlayers, b.tid);
 		const deal = bestDealWith(outlook, a, b, single);
-		if (deal && (!best || Math.min(...deal.gains) > Math.min(...best.gains))) {
+		if (deal && (!best || netOf(deal) > netOf(best))) {
 			best = deal;
 		}
 	}
