@@ -9,12 +9,14 @@ import processTrade from "../trade/processTrade.ts";
 import summary from "../trade/summary.ts";
 import {
 	buildOutlook,
+	ensureRetention,
 	franchiseValue,
 	seasonValue,
 	teamStrengths,
 	type LeagueOutlook,
 } from "./outlook.ts";
 import { prefersWaiting } from "./timing.ts";
+import type { TradedAway } from "./tradePenalty.ts";
 
 // CPU TEAMS TRADING WITH EACH OTHER. Every day a few teams work the phones:
 // each prices what every other team has, and what it has itself, by what it
@@ -50,6 +52,9 @@ export type TeamState = {
 	picks: DraftPick[];
 	tradablePlayers: Player[];
 	payroll: number;
+	// Players traded away this season, last season and the one before - the
+	// trade penalty's count.
+	tradedAway: TradedAway;
 	value: number;
 };
 
@@ -137,13 +142,29 @@ const valueOf = (
 	tid: number,
 	players: readonly Player[],
 	picks: readonly DraftPick[],
-) => franchiseValue(outlook, teamStrengths(outlook, tid, players, picks));
+	trading?: { tradedAway: TradedAway; extra: number },
+) =>
+	franchiseValue(outlook, teamStrengths(outlook, tid, players, picks, trading));
+
+const tradedAwayOf = async (tid: number): Promise<TradedAway> => {
+	const season = g.get("season");
+	const count = async (s: number) =>
+		(await idb.cache.teamSeasons.indexGet("teamSeasonsBySeasonTid", [s, tid]))
+			?.numPlayersTradedAway ?? 0;
+	return [
+		await count(season),
+		await count(season - 1),
+		await count(season - 2),
+	];
+};
 
 export const loadTeam = async (
 	outlook: LeagueOutlook,
 	tid: number,
 ): Promise<TeamState> => {
 	const players = await idb.cache.players.indexGetAll("playersByTid", tid);
+	// Anyone who joined since the outlook was built.
+	await ensureRetention(outlook, players, tid);
 	const picks = (
 		await idb.cache.draftPicks.indexGetAll("draftPicksByTid", tid)
 	).filter((dp) => typeof dp.season === "number");
@@ -153,6 +174,7 @@ export const loadTeam = async (
 		picks,
 		tradablePlayers: players.filter((p) => !isUntradable(p).untradable),
 		payroll: await getPayroll(tid),
+		tradedAway: await tradedAwayOf(tid),
 		value: valueOf(outlook, tid, players, picks),
 	};
 };
@@ -263,7 +285,12 @@ export const bestDealWith = (
 		incoming: readonly Asset[],
 	) => {
 		const after = applyTrade(t, outgoing, incoming);
-		return valueOf(outlook, t.tid, after.players, after.picks) - t.value;
+		return (
+			valueOf(outlook, t.tid, after.players, after.picks, {
+				tradedAway: t.tradedAway,
+				extra: count(outgoing),
+			}) - t.value
+		);
 	};
 	const remember = (key: string, compute: () => number) => {
 		if (!single.has(key)) {
@@ -363,6 +390,30 @@ const split = (assets: readonly Asset[]) => ({
 	dpids: assets.flatMap((x) => (x.kind === "pick" ? [x.dp.dpid] : [])),
 });
 
+// The best deal this team can find with any of these teams, made or not.
+export const findBestDeal = async (
+	outlook: LeagueOutlook,
+	a: TeamState,
+	partners: readonly number[],
+	single: Map<string, number>,
+) => {
+	let best: Deal | undefined;
+	for (const otherTid of partners) {
+		const b = await loadTeam(outlook, otherTid);
+		// How each side's players would feel about re-signing with the other.
+		await ensureRetention(outlook, b.tradablePlayers, a.tid);
+		await ensureRetention(outlook, a.tradablePlayers, b.tid);
+		const deal = bestDealWith(outlook, a, b, single);
+		if (deal && (!best || Math.min(...deal.gains) > Math.min(...best.gains))) {
+			best = deal;
+		}
+	}
+	return best;
+};
+
+// The outlook the market is working from today.
+export const currentOutlook = async () => getOutlook(await gamesPlayed());
+
 // Before the deadline: whether either team would rather decide on this deal
 // then than make it today (timing.ts).
 const eitherWouldWait = async (outlook: LeagueOutlook, deal: Deal) => {
@@ -371,15 +422,21 @@ const eitherWouldWait = async (outlook: LeagueOutlook, deal: Deal) => {
 		await loadTeam(outlook, deal.tids[0]),
 		await loadTeam(outlook, deal.tids[1]),
 	];
-	const numPlayers = deal.assets
-		.flat()
-		.filter((x) => x.kind === "player").length;
 	for (const k of [0, 1] as const) {
 		const t = sides[k]!;
 		const j = k === 0 ? 1 : 0;
 		const after = applyTrade(t, deal.assets[k], deal.assets[j]);
 		const pathBefore = teamStrengths(outlook, t.tid, t.players, t.picks);
-		const pathAfter = teamStrengths(outlook, t.tid, after.players, after.picks);
+		const pathAfter = teamStrengths(
+			outlook,
+			t.tid,
+			after.players,
+			after.picks,
+			{
+				tradedAway: t.tradedAway,
+				extra: count(deal.assets[k]),
+			},
+		);
 		const later =
 			franchiseValue(outlook, pathAfter) -
 			seasonValue(outlook, 0, pathAfter[0]!) -
@@ -391,7 +448,6 @@ const eitherWouldWait = async (outlook: LeagueOutlook, deal: Deal) => {
 				before: pathBefore[0]!,
 				after: pathAfter[0]!,
 				later,
-				numPlayers,
 			})
 		) {
 			return true;
@@ -445,17 +501,7 @@ const tradeDayInner = async () => {
 		while (partners.length < PARTNERS_PER_SHOPPER && others.length > 0) {
 			partners.push(others.splice(Math.floor(random() * others.length), 1)[0]!);
 		}
-		let best: Deal | undefined;
-		for (const otherTid of partners) {
-			const b = await loadTeam(outlook, otherTid);
-			const deal = bestDealWith(outlook, a, b, single);
-			if (
-				deal &&
-				(!best || Math.min(...deal.gains) > Math.min(...best.gains))
-			) {
-				best = deal;
-			}
-		}
+		const best = await findBestDeal(outlook, a, partners, single);
 		if (!best) {
 			continue;
 		}

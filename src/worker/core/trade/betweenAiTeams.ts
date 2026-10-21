@@ -7,6 +7,7 @@ import summary from "./summary.ts";
 import type { TradeTeams } from "../../../common/types.ts";
 import { choice } from "../../../common/random.ts";
 import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
+import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
 import { tradeDay as realisticFrontOfficeTradeDay } from "../realisticFrontOffice/market.ts";
 
 const getAITids = async () => {
@@ -150,7 +151,7 @@ const betweenAiTeams = async () => {
 
 	// The new front offices run a market of their own
 	// (docs/realistic-front-offices.md).
-	if (__SPORT === "basketball" && g.get("realisticFrontOffices")) {
+	if (realisticFrontOfficesOn()) {
 		await realisticFrontOfficeTradeDay();
 		return false;
 	}

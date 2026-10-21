@@ -5,6 +5,7 @@ import {
 	game,
 	league,
 	phase,
+	player,
 	season,
 	team,
 } from "../../worker/core/index.ts";
@@ -15,6 +16,10 @@ import { getDefaultSettings } from "../../worker/views/newLeague.ts";
 import { last } from "../../common/utils.ts";
 import { defaultGameAttributes } from "../../common/defaultGameAttributes.ts";
 import type { Conditions } from "../../common/types.ts";
+import {
+	playerLine,
+	type ValueRatings,
+} from "../../worker/core/realisticFrontOffice/strength.ts";
 import { ARENA_SETTINGS } from "./settings.ts";
 
 const conditions = {} as Conditions;
@@ -42,6 +47,21 @@ export type SeasonSnapshot = {
 		tid: number;
 		value: number;
 		tidAfter?: number;
+		// His chance of being willing to re-sign with his team, by the mood
+		// model, as the re-signing phase opened.
+		probWilling: number;
+	}[];
+	// Everyone in the free agent pool as free agency opened, as the front
+	// office's value model sees him then (roleFree, offense, usage, overall),
+	// and the deal he got by the end of it - what a team's cap room buys.
+	freeAgents: {
+		pid: number;
+		age: number;
+		line: [number, number, number, number];
+		tidAfter?: number;
+		// As a share of that summer's cap.
+		amount?: number;
+		years?: number;
 	}[];
 };
 
@@ -114,7 +134,14 @@ const payrollsAndDeadMoney = async () => {
 // Auto play, one phase at a time and awaited, which is what league/autoPlay.ts
 // does - but driven from here so the harness can look at the league between
 // phases. It never sets local.autoPlayUntil, so finalize never re-enters.
-export const advanceSeasons = async (numSeasons: number) => {
+export const advanceSeasons = async (
+	numSeasons: number,
+	options: {
+		// Days before the trade deadline to stop at and call onSurvey.
+		surveyAt?: number[];
+		onSurvey?: (daysToDeadline: number) => Promise<void>;
+	} = {},
+) => {
 	const snapshots: SeasonSnapshot[] = [];
 	const targetSeason = g.get("season") + numSeasons;
 	let snapshot: SeasonSnapshot | undefined;
@@ -154,14 +181,27 @@ export const advanceSeasons = async (numSeasons: number) => {
 				tradesAtDeadline: 0,
 				capSpace: [],
 				expiring: [],
+				freeAgents: [],
 			};
 			snapshots.push(snapshot);
 			await phase.newPhase(PHASE.REGULAR_SEASON, conditions);
 		} else if (currentPhase === PHASE.REGULAR_SEASON) {
 			const daysToDeadline = await season.getDaysLeftSchedule("tradeDeadline");
-			if (daysToDeadline > 7) {
-				await game.play(daysToDeadline - 7, conditions);
-				snapshot!.tradesBeforeDeadlineWeek = await countTrades();
+			// Stops on the way to the deadline: the start of its final week, and
+			// any survey points.
+			const stops = [...new Set([7, ...(options.surveyAt ?? [])])]
+				.filter((d) => d > 0 && d < daysToDeadline)
+				.sort((a, b) => b - a);
+			let left = daysToDeadline;
+			for (const stop of stops) {
+				await game.play(left - stop, conditions);
+				left = stop;
+				if (stop === 7) {
+					snapshot!.tradesBeforeDeadlineWeek = await countTrades();
+				}
+				if (options.surveyAt?.includes(stop)) {
+					await options.onSurvey?.(stop);
+				}
 			}
 			await game.play(await season.getDaysLeftSchedule(), conditions);
 			snapshot!.tradesAtDeadline = await countTrades();
@@ -185,9 +225,17 @@ export const advanceSeasons = async (numSeasons: number) => {
 				0,
 				Infinity,
 			]);
-			snapshot!.expiring = players
-				.filter((p) => p.contract.exp === g.get("season"))
-				.map((p) => ({ pid: p.pid, tid: p.tid, value: p.value }));
+			snapshot!.expiring = [];
+			for (const p of players) {
+				if (p.contract.exp === g.get("season")) {
+					snapshot!.expiring.push({
+						pid: p.pid,
+						tid: p.tid,
+						value: p.value,
+						probWilling: (await player.moodInfo(p, p.tid)).probWilling,
+					});
+				}
+			}
 			await phase.newPhase(PHASE.RESIGN_PLAYERS, conditions);
 		} else if (currentPhase === PHASE.RESIGN_PLAYERS) {
 			await phase.newPhase(PHASE.FREE_AGENCY, conditions);
@@ -197,8 +245,30 @@ export const advanceSeasons = async (numSeasons: number) => {
 					1 - (await team.getPayroll(tid)) / g.get("salaryCap"),
 				);
 			}
+			for (const p of await idb.cache.players.indexGetAll(
+				"playersByTid",
+				PLAYER.FREE_AGENT,
+			)) {
+				const r = last(p.ratings);
+				const line = playerLine(r as unknown as ValueRatings);
+				snapshot!.freeAgents.push({
+					pid: p.pid,
+					age: g.get("season") - p.born.year,
+					line: [line.roleFree, line.offense, line.usage, r.ovr],
+				});
+			}
 		} else if (currentPhase === PHASE.FREE_AGENCY) {
+			const cap = g.get("salaryCap");
+			const season0 = g.get("season");
 			await freeAgents.play(g.get("daysLeft"), conditions);
+			for (const row of snapshot!.freeAgents) {
+				const p = await idb.cache.players.get(row.pid);
+				if (p && p.tid >= 0) {
+					row.tidAfter = p.tid;
+					row.amount = p.contract.amount / cap;
+					row.years = p.contract.exp - season0;
+				}
+			}
 			if (g.get("phase") === PHASE.FREE_AGENCY) {
 				await phase.newPhase(PHASE.PRESEASON, conditions);
 			}

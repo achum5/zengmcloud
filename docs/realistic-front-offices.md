@@ -162,9 +162,27 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   weighs a deal now against deciding at the deadline - when it knows better
   how good it is, but has lost those regular-season games with the new roster
   and may have lost the deal. Either side preferring to wait puts it off.
+  How much of a deal is still on offer later is measured, not assumed (owner's
+  call): six weeks out, the best deal a team can make at the deadline is worth
+  about 60% of its best today, so waiting rarely pays and trades stay spread
+  through the season rather than bunching at the deadline as in the NBA.
 - **Trade penalty** (player mood hit for a team that trades too much) is
   unchanged. CPU teams are subject to it and account for it. The hope is that the
   league can drop it once CPU teams are hard to fleece.
+
+## Re-signing
+
+- **Every team on the same terms** (owner's call, provisional): a player
+  judges a human team and a CPU team by the same mood factors. Stock's extra
+  free-agency testing for CPU teams' players, and its damping of their mood,
+  do not apply, and difficulty does not change mood.
+- **Every team's players test the market the same amount** when their
+  contracts run out (owner's call), tuned in the arena so top free agents
+  re-sign about as often as in the NBA (~57%). Human teams' players leave more
+  often than in stock as a result.
+- A front office prices each player's chance of re-signing with the game's own
+  mood model, with the team he would be re-signing with - so a player traded
+  for is valued on how he would feel about his new team.
 
 ## Free agency
 

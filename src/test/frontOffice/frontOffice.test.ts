@@ -7,6 +7,7 @@ import {
 	franchiseValue,
 	lineMeasure,
 	PATIENCE,
+	retentionOf,
 } from "../../worker/core/realisticFrontOffice/outlook.ts";
 import { DEFAULT_LEVEL } from "../../common/budgetLevels.ts";
 import { last } from "../../common/utils.ts";
@@ -17,6 +18,7 @@ import {
 	bestDealWith,
 	loadTeam,
 } from "../../worker/core/realisticFrontOffice/market.ts";
+import { league } from "../../worker/core/index.ts";
 import { createArenaLeague } from "../arena/runLeague.ts";
 
 // A look inside the new front offices' heads, on an arena league. Never
@@ -38,6 +40,7 @@ test.runIf(env.FO_OUTLOOK !== undefined)(
 		Math.random = makeSeededRandom(1);
 		try {
 			await createArenaLeague(1);
+			await league.setGameAttributes({ realisticFrontOffices: true });
 			const started = Date.now();
 			const outlook = await buildOutlook();
 			const seconds = (Date.now() - started) / 1000;
@@ -60,6 +63,13 @@ test.runIf(env.FO_OUTLOOK !== undefined)(
 						seconds,
 						titleCurves: outlook.titleCurves,
 						rows,
+						// Chance of re-signing with his own team, by overall.
+						retention: (
+							await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+						).map((p) => [
+							last(p.ratings).ovr,
+							retentionOf(outlook, p.pid, p.tid),
+						]),
 					},
 					null,
 					1,

@@ -8,6 +8,7 @@ import { getNegotiationPids } from "../../views/negotiationList.ts";
 import { getNumPlayersTradedAwayNormalized } from "./getNumPlayersTradedAwayNormalized.ts";
 import { defaultGameAttributes } from "../../../common/defaultGameAttributes.ts";
 import { signingDifficulty } from "../../util/difficulty.ts";
+import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
 
 const getMinFractionDiff = async (pid: number, tid: number) => {
 	if (__SPORT !== "basketball") {
@@ -333,7 +334,9 @@ const moodComponents = async (
 	const difficulty = g.get("spectator")
 		? defaultGameAttributes.difficulty
 		: signingDifficulty();
-	if (g.get("userTids").includes(tid) && !g.get("spectator")) {
+	if (realisticFrontOfficesOn()) {
+		// Every team on the same terms, human or CPU, and difficulty does nothing.
+	} else if (g.get("userTids").includes(tid) && !g.get("spectator")) {
 		if (difficulty !== 0) {
 			for (const key of helpers.keys(components)) {
 				if (key === "custom") {

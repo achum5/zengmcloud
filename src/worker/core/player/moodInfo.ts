@@ -6,6 +6,10 @@ import type { Player } from "../../../common/types.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { last } from "../../../common/utils.ts";
 import { uniformSeed } from "../../../common/random.ts";
+import {
+	MARKET_TESTING,
+	realisticFrontOfficesOn,
+} from "../realisticFrontOffice/isOn.ts";
 
 const hasActiveNegotiation = async (tid: number, pid: number) => {
 	return (await idb.cache.negotiations.getAll()).some(
@@ -89,8 +93,19 @@ const moodInfo = async (
 
 	const thisIsAUserTeam = g.get("userTids").includes(tid);
 
-	// More AI players testing free agency
-	if (!thisIsAUserTeam) {
+	// More AI players testing free agency. Not with realistic front offices,
+	// where players judge every team on the same terms - and every team's
+	// players test the market the same amount when their contracts run out.
+	if (realisticFrontOfficesOn()) {
+		if (
+			p.tid === tid ||
+			(resigning &&
+				p.tid === PLAYER.FREE_AGENT &&
+				(await hasActiveNegotiation(tid, p.pid)))
+		) {
+			sumAndStuff -= MARKET_TESTING;
+		}
+	} else if (!thisIsAUserTeam) {
 		sumAndStuff -= 3;
 	}
 

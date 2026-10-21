@@ -34,9 +34,33 @@ export type DeadlineView = {
 	// deadline, in points a game.
 	revealed: number;
 	curve: DeadlineCurve;
-	// Chance a given player is traded on any one day, from this season's trades
-	// so far: how likely a deal left for later is to have come apart.
-	playerTradeRate: number;
+};
+
+// How much of the best deal a team can make today is still to be had at the
+// deadline, by days to go - not that exact deal, but the best one on offer
+// then. Measured in arena leagues (ARENA_DEAL_SURVEY): at stops before each
+// deadline, every team's best deal with anyone, found but not made, against
+// its best at the deadline, for teams that made no trade in between.
+const STILL_ON_OFFER: readonly (readonly [number, number])[] = [
+	[0, 1],
+	[7, 0.89],
+	[14, 0.81],
+	[28, 0.64],
+	[42, 0.6],
+];
+
+export const stillOnOffer = (days: number) => {
+	const last = STILL_ON_OFFER.at(-1)!;
+	if (days >= last[0]) {
+		return last[1];
+	}
+	let i = 0;
+	while (STILL_ON_OFFER[i + 1]![0] < days) {
+		i += 1;
+	}
+	const [d0, v0] = STILL_ON_OFFER[i]!;
+	const [d1, v1] = STILL_ON_OFFER[i + 1]!;
+	return v0 + ((v1 - v0) * (days - d0)) / (d1 - d0);
 };
 
 // Teams are given made-up offsets between their regular-season and playoff
@@ -64,7 +88,6 @@ export const buildDeadlineView = ({
 	uncertaintyAtDeadline,
 	daysToDeadline,
 	daysLeft,
-	playerTradeRate,
 	seed,
 }: {
 	teams: readonly SeasonSimTeam[];
@@ -75,7 +98,6 @@ export const buildDeadlineView = ({
 	uncertaintyAtDeadline: number;
 	daysToDeadline: number;
 	daysLeft: number;
-	playerTradeRate: number;
 	seed: number;
 }): DeadlineView => {
 	const random = makeSeededRandom(seed);
@@ -114,7 +136,6 @@ export const buildDeadlineView = ({
 			Math.max(0, uncertaintyNow ** 2 - uncertaintyAtDeadline ** 2),
 		),
 		curve: fitDeadlineCurve(points),
-		playerTradeRate,
 	};
 };
 
@@ -131,29 +152,24 @@ const NORMAL_NODES = [
 
 // Whether a team would rather decide on a deal at the deadline than make it
 // today. `before` and `after` are this season's strength without and with the
-// deal; `later` is what it is worth in the seasons after this one, in titles;
-// `numPlayers` is how many players it moves.
+// deal; `later` is what it is worth in the seasons after this one, in titles.
 export const prefersWaiting = ({
 	view,
 	before,
 	after,
 	later,
-	numPlayers,
 }: {
 	view: DeadlineView;
 	before: number;
 	after: number;
 	later: number;
-	numPlayers: number;
 }) => {
 	// Of the regular-season games left, the share played after the deadline.
 	const afterDeadline =
 		view.daysLeft > 0
 			? Math.max(0, view.daysLeft - view.daysToDeadline) / view.daysLeft
 			: 0;
-	const stillThere = Math.exp(
-		-view.playerTradeRate * numPlayers * view.daysToDeadline,
-	);
+	const stillThere = stillOnOffer(view.daysToDeadline);
 	let now = 0;
 	let wait = 0;
 	for (const [z, weight] of NORMAL_NODES) {

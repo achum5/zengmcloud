@@ -7,8 +7,15 @@ import type {
 import { last } from "../../../common/utils.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
+import { marketSalary, pickSalary, signingsWith } from "./payroll.ts";
 import { pickPlayer } from "./pickValue.ts";
+import {
+	moodShiftFromTrading,
+	shiftRetention,
+	type TradedAway,
+} from "./tradePenalty.ts";
 import { projectRatings, type RatingsProjection } from "./projection.ts";
+import moodInfo from "../player/moodInfo.ts";
 import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
 import { simulateSeason } from "./seasonSim.ts";
 import { fitLogistic } from "./logistic.ts";
@@ -65,9 +72,12 @@ const survival = (age: number) =>
 								? 0.58
 								: 0.45;
 
-// Whether a player whose contract has run out is still here. A stand-in until
-// the team's own re-signing intentions feed back into this.
-const RETAINED_AFTER_CONTRACT = 0.5;
+// A player's chance of re-signing when his contract runs out is the game's own
+// mood model's (player.moodInfo's probWilling), with the team he would be
+// re-signing with - so a player traded for is priced on how he would feel
+// about his new team. Worked out once per outlook and kept here; this is only
+// for a player nobody asked about.
+const UNKNOWN_RETENTION = 0.5;
 
 export type Curve = { a: number; b: number };
 
@@ -94,8 +104,15 @@ export type LeagueOutlook = {
 	// Where each team's own pick is expected to land in each season's draft,
 	// 0 for the first, from its roster alone.
 	draftPlace: Map<number, number[]>;
+	// Money each team owes players it has released, and until when.
+	deadMoney: Map<number, { amount: number; exp: number }[]>;
+	// The first season whose free agency is still to come: from then on,
+	// teams refill with their cap room (payroll.ts).
+	firstRefillSeason: number;
 	// Season lines already worked out, for this outlook's lifetime.
 	lines: Map<string, StrengthPlayer & { availability: number }>;
+	// Chance each player re-signs with each team, by retentionKey.
+	retention: Map<string, number>;
 	teams: Map<number, TeamOutlook>;
 	// Roster points of the average team each season, so a hypothetical roster
 	// can be put on the same scale.
@@ -149,6 +166,7 @@ const computeSeasonLine = (
 	offset: number,
 	y: number,
 	gamesRemaining: number,
+	retention: number,
 ): StrengthPlayer & { availability: number } => {
 	const index = y + offset;
 	if (index === 0) {
@@ -169,7 +187,7 @@ const computeSeasonLine = (
 		availability *= survival(age + k);
 	}
 	if (p.contract.exp < season + index) {
-		availability *= RETAINED_AFTER_CONTRACT;
+		availability *= retention;
 	}
 	const [roleFree, offense, usage] = projection.measures[index]!;
 	return {
@@ -192,14 +210,42 @@ export const seasonLine = (
 	offset: number,
 	y: number,
 	gamesRemaining: number,
+	retention: number,
 ) => {
-	const key = `${p.pid}:${season}:${y}:${p.injury.gamesRemaining}:${gamesRemaining}:${p.contract.exp}:${last(p.ratings).ovr}`;
+	const key = `${p.pid}:${season}:${y}:${p.injury.gamesRemaining}:${gamesRemaining}:${p.contract.exp}:${last(p.ratings).ovr}:${retention}`;
 	let line = lines.get(key);
 	if (!line) {
-		line = computeSeasonLine(p, season, offset, y, gamesRemaining);
+		line = computeSeasonLine(p, season, offset, y, gamesRemaining, retention);
 		lines.set(key, line);
 	}
 	return line;
+};
+
+export const retentionKey = (pid: number, tid: number) => `${pid}:${tid}`;
+
+export const retentionOf = (
+	outlook: Pick<LeagueOutlook, "retention">,
+	pid: number,
+	tid: number,
+) => outlook.retention.get(retentionKey(pid, tid)) ?? UNKNOWN_RETENTION;
+
+// Works out, for any of these players not yet asked about, his chance of
+// re-signing with this team.
+export const ensureRetention = async (
+	outlook: Pick<LeagueOutlook, "retention">,
+	players: readonly Player[],
+	tid: number,
+) => {
+	for (const p of players) {
+		const key = retentionKey(p.pid, tid);
+		if (!outlook.retention.has(key)) {
+			const { probWilling } = await moodInfo(
+				p.tid === tid ? p : { ...p, tid },
+				tid,
+			);
+			outlook.retention.set(key, Math.round(probWilling * 1000) / 1000);
+		}
+	}
 };
 
 // Pick players are the same whoever holds the pick.
@@ -230,6 +276,7 @@ const pickLines = (
 		}
 	}
 	const lines: (StrengthPlayer & { availability: number })[] = [];
+	let salaries = 0;
 	for (const dp of all) {
 		if (typeof dp.season !== "number" || dp.season >= season) {
 			continue;
@@ -253,18 +300,62 @@ const pickLines = (
 			pickLineCache.set(key, line);
 		}
 		lines.push(line);
+		salaries += pickSalary({
+			slot,
+			round: dp.round,
+			years,
+			ovr: line.valueNoPot,
+		});
 	}
-	return lines;
+	return { lines, salaries };
+};
+
+// What a player is expected to be paid in a season of the outlook: his
+// contract while it runs, then what he would re-sign for - each only as far
+// as he is expected to be around.
+const salaryIn = (
+	p: Player,
+	season: number,
+	index: number,
+	line: { valueNoPot: number; availability: number },
+) => {
+	if (index === 0) {
+		return p.contract.amount;
+	}
+	return (
+		line.availability *
+		(p.contract.exp >= season
+			? p.contract.amount
+			: marketSalary(line.valueNoPot))
+	);
 };
 
 // Roster points of these players and picks, each season of the outlook, for a
 // team - any team, real or hypothetical (a trade, a signing).
+// `trading`, for a deal not yet made: how many players the team trades away
+// in it, and its count so far, so the trade penalty's cost is priced.
 export const teamPoints = (
 	outlook: Omit<LeagueOutlook, "teams" | "titleCurves" | "playoffCurves">,
 	tid: number,
 	players: readonly Player[],
 	picks: readonly PickLike[],
+	trading?: { tradedAway: TradedAway; extra: number },
 ) => {
+	const retentionFor = (p: Player) => {
+		const r = retentionOf(outlook, p.pid, tid);
+		return trading
+			? Math.round(
+					shiftRetention(
+						r,
+						moodShiftFromTrading(
+							trading.tradedAway,
+							trading.extra,
+							p.contract.exp - outlook.season,
+						),
+					) * 1000,
+				) / 1000
+			: r;
+	};
 	const out: number[] = [];
 	for (let y = 0; y <= OUTLOOK_YEARS; y++) {
 		const lines = players.map((p) =>
@@ -275,9 +366,26 @@ export const teamPoints = (
 				outlook.offset,
 				y,
 				outlook.remaining.get(tid) ?? 0,
+				retentionFor(p),
 			),
 		);
-		lines.push(...pickLines(outlook, tid, picks, y));
+		const fromPicks = pickLines(outlook, tid, picks, y);
+		lines.push(...fromPicks.lines);
+		const season = outlookSeason(outlook, y);
+		if (season >= outlook.firstRefillSeason) {
+			let committed = fromPicks.salaries;
+			for (const [i, p] of players.entries()) {
+				committed += salaryIn(p, season, y + outlook.offset, lines[i]!);
+			}
+			for (const row of outlook.deadMoney.get(tid) ?? []) {
+				if (row.exp >= season) {
+					committed += row.amount;
+				}
+			}
+			for (const signing of signingsWith(g.get("salaryCap") - committed)) {
+				lines.push({ ...signing, availability: 1 });
+			}
+		}
 		out.push(expectedRosterPoints(lines));
 	}
 	return out;
@@ -289,8 +397,9 @@ export const teamStrengths = (
 	tid: number,
 	players: readonly Player[],
 	picks: readonly PickLike[],
+	trading?: { tradedAway: TradedAway; extra: number },
 ) =>
-	teamPoints(outlook, tid, players, picks).map(
+	teamPoints(outlook, tid, players, picks, trading).map(
 		(x, y) => x - outlook.meanPoints[y]!,
 	);
 
@@ -327,6 +436,18 @@ export const buildOutlook = async ({
 			won: inSeason ? (ts?.won ?? 0) : 0,
 			lost: inSeason ? (ts?.lost ?? 0) + (ts?.tied ?? 0) + (ts?.otl ?? 0) : 0,
 		});
+	}
+	const deadMoney = new Map<number, { amount: number; exp: number }[]>();
+	for (const t of teams) {
+		deadMoney.set(
+			t.tid,
+			(
+				await idb.cache.releasedPlayers.indexGetAll(
+					"releasedPlayersByTid",
+					t.tid,
+				)
+			).map((rp) => ({ amount: rp.contract.amount, exp: rp.contract.exp })),
+		);
 	}
 	const rosters = new Map<number, Player[]>();
 	const picks = new Map<number, DraftPick[]>();
@@ -368,9 +489,15 @@ export const buildOutlook = async ({
 		numRounds: g.get("numDraftRounds"),
 		lastPickSeason,
 		draftPlace: new Map<number, number[]>(),
+		deadMoney,
+		firstRefillSeason: season + 1 + (phase === PHASE.FREE_AGENCY ? 1 : 0),
 		lines: new Map<string, StrengthPlayer & { availability: number }>(),
+		retention: new Map<string, number>(),
 		meanPoints: [] as number[],
 	};
+	for (const t of teams) {
+		await ensureRetention(base, rosters.get(t.tid)!, t.tid);
+	}
 
 	// Where each team's own pick lands, from its roster alone: worst first.
 	const rosterOnly = new Map(
@@ -467,31 +594,6 @@ export const buildOutlook = async ({
 			const progressAtDeadline =
 				progress + (1 - progress) * (daysToDeadline / daysLeft);
 
-			// How often a player has been traded this season, per day, with a
-			// little of a typical season mixed in while there is not much of
-			// this one yet.
-			const events = await idb.getCopies.events(
-				{ season } as any,
-				"noCopyCache",
-			);
-			const moved = events
-				.filter((e) => e.type === "trade")
-				.reduce((a, e) => a + (e.pids?.length ?? 0), 0);
-			const numPlayers = [...rosters.values()].reduce(
-				(a, r) => a + r.length,
-				0,
-			);
-			const meanRemaining =
-				teams.reduce((a, t) => a + remaining.get(t.tid)!, 0) /
-				Math.max(1, teams.length);
-			const daysPlayed =
-				(numGames - meanRemaining) * (daysLeft / Math.max(1, meanRemaining));
-			const PRIOR_RATE = 0.004;
-			const PRIOR_DAYS = 20;
-			const playerTradeRate =
-				(moved + PRIOR_RATE * PRIOR_DAYS * numPlayers) /
-				(Math.max(1, numPlayers) * (daysPlayed + PRIOR_DAYS));
-
 			deadline = buildDeadlineView({
 				teams: teams.map((t) => ({
 					tid: t.tid,
@@ -508,7 +610,6 @@ export const buildOutlook = async ({
 				uncertaintyAtDeadline: uncertaintyAt(progressAtDeadline),
 				daysToDeadline,
 				daysLeft,
-				playerTradeRate,
 				seed: season * 7919 + Math.round(progress * 1000),
 			});
 		}

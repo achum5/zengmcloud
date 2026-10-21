@@ -3,12 +3,16 @@ import { makeSeededRandom } from "../../common/random.ts";
 import { getTradeHistoryDump } from "../../worker/api/tradeHistoryDump.ts";
 import { league } from "../../worker/core/index.ts";
 import {
+	currentOutlook,
+	findBestDeal,
+	loadTeam,
 	marketClock,
 	marketSettings,
 	tradeWatchers,
 } from "../../worker/core/realisticFrontOffice/market.ts";
 import {
 	OUTLOOK_YEARS,
+	retentionOf,
 	seasonLine,
 	teamStrengths,
 } from "../../worker/core/realisticFrontOffice/outlook.ts";
@@ -70,6 +74,47 @@ test.runIf(env.ARENA_RUN === "1")(
 				marketSettings.valueWaiting = env.ARENA_NO_WAIT !== "1";
 			}
 			const watched: WatchedTrade[] = [];
+			// Every trade the front offices make: who moved, and where each team
+			// stood (this season's strength, and its average over the next three).
+			const tradeLog: unknown[] = [];
+			if (env.ARENA_FO === "1") {
+				tradeWatchers.push((deal) => {
+					const standing = (tid: number) => {
+						const o = deal.outlook.teams.get(tid);
+						return o
+							? {
+									now: Math.round(o.strength[0]! * 10) / 10,
+									next3:
+										Math.round(
+											((o.strength[1]! + o.strength[2]! + o.strength[3]!) / 3) *
+												10,
+										) / 10,
+									title: Math.round(o.title[0]! * 1000) / 1000,
+								}
+							: undefined;
+					};
+					tradeLog.push({
+						season: g.get("season"),
+						phase: g.get("phase"),
+						tids: deal.tids,
+						gains: deal.gains.map((x) => Math.round(x * 10000) / 10000),
+						standing: deal.tids.map(standing),
+						moved: ([0, 1] as const).flatMap((k) =>
+							deal.rosters[k]
+								.filter((p) => deal.give[k].pids.includes(p.pid))
+								.map((p) => ({
+									pid: p.pid,
+									from: deal.tids[k],
+									age: g.get("season") - p.born.year,
+									ovr: last(p.ratings).ovr,
+									exp: p.contract.exp,
+									amount: p.contract.amount,
+								})),
+						),
+						picks: [deal.give[0].dpids.length, deal.give[1].dpids.length],
+					});
+				});
+			}
 			const suspicious: unknown[] = [];
 			if (env.ARENA_DEBUG_GAINS !== undefined) {
 				const threshold = Number(env.ARENA_DEBUG_GAINS);
@@ -105,6 +150,7 @@ test.runIf(env.ARENA_RUN === "1")(
 									outlook.offset,
 									y,
 									outlook.remaining.get(deal.tids[k]) ?? 0,
+									retentionOf(outlook, p.pid, deal.tids[k]),
 								);
 								return [
 									Math.round(line.roleFree * 100) / 100,
@@ -158,7 +204,52 @@ test.runIf(env.ARENA_RUN === "1")(
 					});
 				});
 			}
-			const snapshots = await advanceSeasons(numSeasons);
+			// ARENA_DEAL_SURVEY=1: at stops before each deadline, every team's best
+			// deal with anyone, found but not made - how much of today's deal is
+			// still on offer later, for the deadline timing.
+			const survey: {
+				season: number;
+				daysToDeadline: number;
+				tid: number;
+				gain: number;
+				tradesSoFar: number;
+			}[] = [];
+			const snapshots = await advanceSeasons(
+				numSeasons,
+				env.ARENA_DEAL_SURVEY === "1"
+					? {
+							surveyAt: [56, 42, 28, 14, 7, 1],
+							onSurvey: async (daysToDeadline) => {
+								const outlook = await currentOutlook();
+								const events = await idb.getCopies.events(
+									{ season: g.get("season") } as any,
+									"noCopyCache",
+								);
+								const teams = (await idb.cache.teams.getAll()).filter(
+									(t) => !t.disabled,
+								);
+								const single = new Map<string, number>();
+								for (const t of teams) {
+									const best = await findBestDeal(
+										outlook,
+										await loadTeam(outlook, t.tid),
+										teams.filter((x) => x.tid !== t.tid).map((x) => x.tid),
+										single,
+									);
+									survey.push({
+										season: g.get("season"),
+										daysToDeadline,
+										tid: t.tid,
+										gain: best ? best.gains[0] : 0,
+										tradesSoFar: events.filter(
+											(e) => e.type === "trade" && e.tids?.includes(t.tid),
+										).length,
+									});
+								}
+							},
+						}
+					: {},
+			);
 			const metrics = await computeMetrics(snapshots);
 			const fs = await importNode("node:fs/promises");
 			await fs.mkdir(out, { recursive: true });
@@ -166,6 +257,18 @@ test.runIf(env.ARENA_RUN === "1")(
 				await fs.writeFile(
 					`${out}/trades-${seed}.txt`,
 					await getTradeHistoryDump(numSeasons + 1),
+				);
+			}
+			if (env.ARENA_FO === "1") {
+				await fs.writeFile(
+					`${out}/tradelog-${seed}.json`,
+					JSON.stringify(tradeLog),
+				);
+			}
+			if (env.ARENA_DEAL_SURVEY === "1") {
+				await fs.writeFile(
+					`${out}/survey-${seed}.json`,
+					JSON.stringify(survey),
 				);
 			}
 			if (env.ARENA_DEBUG_GAINS !== undefined) {
@@ -190,6 +293,14 @@ test.runIf(env.ARENA_RUN === "1")(
 					seconds: (Date.now() - started) / 1000,
 					market: env.ARENA_FO === "1" ? marketClock : undefined,
 					metrics,
+					freeAgents: snapshots.map((s) => ({
+						season: s.season,
+						rows: s.freeAgents,
+					})),
+					expiring: snapshots.map((s) => ({
+						season: s.season,
+						rows: s.expiring,
+					})),
 				}),
 			);
 		} finally {
