@@ -52,6 +52,12 @@ export type SeasonSnapshot = {
 		probWilling: number;
 		// Finishing a rookie deal.
 		rookie: boolean;
+		// What he was then: overall and age - and the deal he re-signed for,
+		// if he did (share of the cap, years), to set against what the front
+		// office expects him to cost.
+		ovr?: number;
+		age?: number;
+		reSigned?: { amount: number; years: number };
 	}[];
 	// Everyone in the free agent pool as free agency opened, as the front
 	// office's value model sees him then (roleFree, offense, usage, overall),
@@ -68,6 +74,17 @@ export type SeasonSnapshot = {
 	// Where each team's own first-round pick landed in this season's draft,
 	// 0 for the first, by original team.
 	draftOrder: number[];
+	// Everyone on a roster as the playoffs began: age, overall and value
+	// then, whether his contract ran past the season, and whether he had
+	// retired by the draft lottery - to set the front office's odds of a
+	// player still playing against the game's.
+	retirements: {
+		age: number;
+		ovr: number;
+		value: number;
+		underContract: boolean;
+		retired?: boolean;
+	}[];
 };
 
 // A random-players league with the owner's settings, built the way the new
@@ -147,6 +164,7 @@ export const advanceSeasons = async (
 	const snapshots: SeasonSnapshot[] = [];
 	const targetSeason = g.get("season") + numSeasons;
 	let snapshot: SeasonSnapshot | undefined;
+	let rostered: number[] = [];
 
 	let guard = 0;
 	while (
@@ -185,6 +203,7 @@ export const advanceSeasons = async (
 				expiring: [],
 				freeAgents: [],
 				draftOrder: [],
+				retirements: [],
 			};
 			snapshots.push(snapshot);
 			await phase.newPhase(PHASE.REGULAR_SEASON, conditions);
@@ -215,8 +234,25 @@ export const advanceSeasons = async (
 				salaryCap: g.get("salaryCap"),
 				luxuryPayroll: g.get("luxuryPayroll"),
 			});
+			rostered = (
+				await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+			).map((p) => p.pid);
+			snapshot!.retirements = [];
+			for (const pid of rostered) {
+				const p = (await idb.cache.players.get(pid))!;
+				snapshot!.retirements.push({
+					age: g.get("season") - p.born.year,
+					ovr: last(p.ratings).ovr,
+					value: p.value,
+					underContract: p.contract.exp > g.get("season"),
+				});
+			}
 			await game.play(100, conditions);
 		} else if (currentPhase === PHASE.DRAFT_LOTTERY) {
+			for (const [i, pid] of rostered.entries()) {
+				const p = await idb.cache.players.get(pid);
+				snapshot!.retirements[i]!.retired = !p || p.tid === PLAYER.RETIRED;
+			}
 			await phase.newPhase(PHASE.DRAFT, conditions);
 		} else if (currentPhase === PHASE.DRAFT) {
 			// Where each team's own first-round pick landed.
@@ -245,11 +281,22 @@ export const advanceSeasons = async (
 						tid: p.tid,
 						value: p.value,
 						probWilling: (await player.moodInfo(p, p.tid)).probWilling,
+						ovr: last(p.ratings).ovr,
+						age: g.get("season") - p.born.year,
 						rookie: !!p.contract.rookie,
 					});
 				}
 			}
 			await phase.newPhase(PHASE.RESIGN_PLAYERS, conditions);
+			for (const row of snapshot!.expiring) {
+				const p = await idb.cache.players.get(row.pid);
+				if (p && p.tid === row.tid && p.contract.exp > g.get("season")) {
+					row.reSigned = {
+						amount: p.contract.amount / g.get("salaryCap"),
+						years: p.contract.exp - g.get("season"),
+					};
+				}
+			}
 		} else if (currentPhase === PHASE.RESIGN_PLAYERS) {
 			await phase.newPhase(PHASE.FREE_AGENCY, conditions);
 			// As a share of that summer's cap.

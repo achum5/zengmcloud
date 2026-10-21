@@ -235,6 +235,15 @@ test.runIf(env.ARENA_RUN === "1")(
 						tids: deal.tids,
 						gains: deal.gains.map((x) => Math.round(x * 10000) / 10000),
 						standing: deal.tids.map(standing),
+						// Each side's payroll before the deal (players on the roster),
+						// as a share of the cap.
+						payroll: deal.rosters.map(
+							(roster) =>
+								Math.round(
+									(1000 * roster.reduce((a, p) => a + p.contract.amount, 0)) /
+										g.get("salaryCap"),
+								) / 1000,
+						),
 						moved: ([0, 1] as const).flatMap((k) =>
 							deal.rosters[k]
 								.filter((p) => deal.give[k].pids.includes(p.pid))
@@ -655,6 +664,10 @@ test.runIf(env.ARENA_RUN === "1")(
 					expiring: snapshots.map((s) => ({
 						season: s.season,
 						rows: s.expiring,
+					})),
+					retirements: snapshots.map((s) => ({
+						season: s.season,
+						rows: s.retirements,
 					})),
 				}),
 			);
