@@ -3572,6 +3572,9 @@ export type FrontOfficeAsset =
 			hereBySeason: number[];
 			// His chance of re-signing with that team.
 			reSign: number;
+			// What he alone changes about that team's strength each season: gained
+			// for what it gets, lost for what it gives.
+			effect: number[];
 	  }
 	| {
 			kind: "pick";
@@ -3587,6 +3590,7 @@ export type FrontOfficeAsset =
 			// a roster place, each season.
 			ovrBySeason: number[];
 			hereBySeason: number[];
+			effect: number[];
 	  };
 
 export type FrontOfficeSide = {
@@ -3601,12 +3605,12 @@ export type FrontOfficeSide = {
 	titleBefore: number[];
 	titleAfter: number[];
 	value: number[];
-	// Cap room (share of the cap) and the overall of each free agent it is
-	// expected to buy, each season, without and with the deal.
+	// Cap room (share of the cap), and each free agent it is expected to buy -
+	// his overall and the chance - each season, without and with the deal.
 	roomBefore: number[];
 	roomAfter: number[];
-	buysBefore: number[][];
-	buysAfter: number[][];
+	buysBefore: [number, number][][];
+	buysAfter: [number, number][][];
 	gets: FrontOfficeAsset[];
 	gives: FrontOfficeAsset[];
 	// Players traded away this season, last season and the one before.

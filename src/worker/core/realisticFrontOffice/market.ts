@@ -166,7 +166,7 @@ const getOutlook = async (games: number) => {
 	return cache.outlook;
 };
 
-const aiTids = async () => {
+export const aiTids = async () => {
 	const teams = await idb.cache.teams.getAll();
 	return teams
 		.filter(
@@ -224,7 +224,9 @@ export const loadTeam = async (
 	};
 };
 
-type Asset = { kind: "player"; p: Player } | { kind: "pick"; dp: DraftPick };
+export type Asset =
+	| { kind: "player"; p: Player }
+	| { kind: "pick"; dp: DraftPick };
 
 const salaryOf = (assets: readonly Asset[]) =>
 	assets.reduce(
@@ -446,7 +448,7 @@ export const bestDealWith = (
 // The margin of error on a team's gain from a deal: every player it gives or
 // gets, at his place on the roster he is priced for, and every pick as the
 // player it is expected to become.
-const marginOf = (
+export const marginOf = (
 	outlook: LeagueOutlook,
 	t: TeamState,
 	outgoing: readonly Asset[],

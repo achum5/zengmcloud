@@ -494,8 +494,18 @@ export const teamPoints = (
 	picks: readonly PickLike[],
 	trading?: { tradedAway: TradedAway; extra: number },
 	// For explaining a deal: the cap room each season, as a share of the cap,
-	// and the overall of each free agent it is expected to buy.
-	refill?: (y: number, room: number, signings: number[]) => void,
+	// and the free agents it is expected to buy.
+	refill?: (
+		y: number,
+		room: number,
+		signings: readonly { valueNoPot: number; availability: number }[],
+	) => void,
+	// For the arena's checks: everyone the team is expected to have each
+	// season, with the chance he is there.
+	roster?: (
+		y: number,
+		lines: readonly (StrengthPlayer & { availability: number })[],
+	) => void,
 ) => {
 	const retentionFor = (p: Player) => {
 		const r = retentionOf(outlook, p.pid, tid);
@@ -539,15 +549,10 @@ export const teamPoints = (
 				}
 			}
 			const signings = signingsWith(g.get("salaryCap") - committed);
-			for (const signing of signings) {
-				lines.push({ ...signing, availability: 1 });
-			}
-			refill?.(
-				y,
-				1 - committed / g.get("salaryCap"),
-				signings.map((x) => x.valueNoPot),
-			);
+			lines.push(...signings);
+			refill?.(y, 1 - committed / g.get("salaryCap"), signings);
 		}
+		roster?.(y, lines);
 		out.push(expectedRosterPoints(lines));
 	}
 	return out;
@@ -560,7 +565,7 @@ export const teamStrengths = (
 	players: readonly Player[],
 	picks: readonly PickLike[],
 	trading?: { tradedAway: TradedAway; extra: number },
-	refill?: (y: number, room: number, signings: number[]) => void,
+	refill?: Parameters<typeof teamPoints>[5],
 ) =>
 	teamPoints(outlook, tid, players, picks, trading, refill).map(
 		(x, y) => x - outlook.meanPoints[y]!,

@@ -10,6 +10,8 @@ import { useLocal } from "../../util/local.ts";
 const SEASONS_SHOWN = 6;
 
 const pct = (x: number) => `${(100 * x).toFixed(1)}%`;
+const buys = (signings: [number, number][]) =>
+	signings.map(([ovr, chance]) => `${ovr} (${pct(chance)})`).join(", ") || "-";
 const signed = (x: number, digits: number) =>
 	`${x >= 0 ? "+" : ""}${x.toFixed(digits)}`;
 
@@ -29,7 +31,8 @@ const AssetRows = ({
 						{asset.ovrBySeason[y] ? asset.ovrBySeason[y] : "-"}
 						<span className="text-body-secondary">
 							{" "}
-							{pct(asset.hereBySeason[y] ?? 0)}
+							{pct(asset.hereBySeason[y] ?? 0)}{" "}
+							{signed(asset.effect[y] ?? 0, 1)}
 						</span>
 					</td>
 				));
@@ -124,8 +127,7 @@ const FrontOfficeBreakdown = ({
 									<td>FA buys</td>
 									{side.buysBefore.map((x, y) => (
 										<td key={y}>
-											{x.join("/") || "-"} →{" "}
-											{side.buysAfter[y]!.join("/") || "-"}
+											{buys(x)} → {buys(side.buysAfter[y]!)}
 										</td>
 									))}
 								</tr>

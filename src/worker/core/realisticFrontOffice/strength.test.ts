@@ -120,3 +120,44 @@ test("a starter out for half the season costs half of him", () => {
 	);
 	assert.isAbove(full - without, 0);
 });
+
+test("a roster of players who may not be there is priced as it would play", () => {
+	const realRandom = Math.random;
+	Math.random = makeSeededRandom(11);
+	try {
+		// Varied players, so lineups and their synergy really differ.
+		const varied = Array.from({ length: 22 }, () => {
+			const ratings = last(
+				player.generate(PLAYER.UNDRAFTED, 26, 2020, true, DEFAULT_LEVEL)
+					.ratings,
+			) as unknown as ValueRatings;
+			return { ...playerLine(ratings), valueNoPot: ovr(ratings as any) };
+		});
+		// Ten we have; twelve who probably will not be there, as in a roster
+		// several seasons out.
+		const lines = varied.map((p, i) => ({
+			...p,
+			availability: i < 10 ? 1 : 0.02 + 0.03 * (i - 10),
+		}));
+		const simulate = (roster: typeof lines) => {
+			const random = makeSeededRandom(3);
+			const draws = 4000;
+			let total = 0;
+			for (let d = 0; d < draws; d++) {
+				total += rosterPoints(roster.filter((p) => random() < p.availability));
+			}
+			return total / draws;
+		};
+		assert.closeTo(expectedRosterPoints(lines), simulate(lines), 0.3);
+
+		// What losing one we have is worth, as the long shots would cover.
+		const without = lines.filter((_, i) => i !== 7);
+		assert.closeTo(
+			expectedRosterPoints(without) - expectedRosterPoints(lines),
+			simulate(without) - simulate(lines),
+			0.1,
+		);
+	} finally {
+		Math.random = realRandom;
+	}
+});

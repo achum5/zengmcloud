@@ -19,6 +19,7 @@ import {
 	projectPlayer,
 	retentionOf,
 	seasonLine,
+	teamPoints,
 	teamStrengths,
 } from "../../worker/core/realisticFrontOffice/outlook.ts";
 import type { Player } from "../../common/types.ts";
@@ -96,6 +97,58 @@ test.runIf(env.ARENA_RUN === "1")(
 							Math.max(1, outlook.remaining.size),
 						places: Object.fromEntries(outlook.draftPlace),
 					});
+				});
+			}
+			// ARENA_ROSTER_CHECK=1: for every player a CPU team trades away, each
+			// season, whether the roster without him looks better than with him
+			// by more than half a point - the lines of both, to reproduce.
+			const rosterChecks: unknown[] = [];
+			if (env.ARENA_ROSTER_CHECK === "1") {
+				tradeWatchers.push((deal) => {
+					const { outlook } = deal;
+					for (const k of [0, 1] as const) {
+						const tid = deal.tids[k];
+						const players = deal.rosters[k];
+						const capture = (list: Player[]) => {
+							const lines: unknown[][] = [];
+							teamPoints(
+								outlook,
+								tid,
+								list,
+								deal.picks[k],
+								undefined,
+								undefined,
+								(y, seasonLines) => {
+									lines[y] = seasonLines.map((x) => ({
+										roleFree: x.roleFree,
+										offense: x.offense,
+										usage: x.usage,
+										valueNoPot: x.valueNoPot,
+										availability: x.availability,
+									}));
+								},
+							);
+							return lines;
+						};
+						const full = teamPoints(outlook, tid, players, deal.picks[k]);
+						for (const pid of deal.give[k].pids) {
+							const without = players.filter((p) => p.pid !== pid);
+							const points = teamPoints(outlook, tid, without, deal.picks[k]);
+							for (const [y, x] of points.entries()) {
+								if (x - full[y]! > 0.5) {
+									rosterChecks.push({
+										season: g.get("season"),
+										tid,
+										pid,
+										y,
+										gain: x - full[y]!,
+										with: capture(players)[y],
+										without: capture(without)[y],
+									});
+								}
+							}
+						}
+					}
 				});
 			}
 			const watched: WatchedTrade[] = [];
@@ -356,6 +409,12 @@ test.runIf(env.ARENA_RUN === "1")(
 							order: s.draftOrder,
 						})),
 					}),
+				);
+			}
+			if (env.ARENA_ROSTER_CHECK === "1") {
+				await fs.writeFile(
+					`${out}/roster-checks-${seed}.json`,
+					JSON.stringify(rosterChecks),
 				);
 			}
 			if (env.ARENA_DEAL_SURVEY === "1") {

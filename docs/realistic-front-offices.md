@@ -81,6 +81,13 @@ with "the Pistons", not with a named person.
   usage, so two stars dilute each other: summing single-player values over a
   roster overstates the gaps between teams by about 40%. Rosters are priced
   whole, with each player's share of the ball, plus lineup synergy.
+- **A roster of players who may not be there is priced as it would play.**
+  Each place in the pecking order goes to whoever is likely to fill it, given
+  everyone's chance of being there; the most valuable uncertain players are
+  played out both ways exactly. Pricing everyone as there and taking each
+  absence off separately broke down on rosters seasons out, full of players
+  who may have left, picks and free agents a team may not land: removing a
+  bench prospect could look like it made a team two points better.
 
 ## Framework
 
@@ -154,6 +161,8 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   for this mode, with a notification so the user knows an offer is waiting. An
   offer stays until the CPU team no longer wants the deal. The user can accept,
   decline, dismiss or counter.
+- **The whole calculation behind each CPU-to-CPU trade** is on its trade
+  summary page, in God Mode only (owner's call): it shows true ratings.
 - **Talking (later).** CPU teams explain their side of a deal the way a real
   front office would, without giving their hand away.
 - **Trade volume: whatever the gains say** (owner's call). Every deal both
@@ -210,12 +219,36 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   contracts run out (owner's call), tuned in the arena so top free agents
   re-sign about as often as in the NBA (~57%). Human teams' players leave more
   often than in stock as a result.
+- **Except players finishing rookie deals**, who mostly stay, as with the NBA's
+  restricted free agency. Testing them too cancelled their rookie-contract
+  mood bonus: a bad team's best prospect was priced as leaving after three
+  seasons, so trading him for an old veteran looked smart.
 - A front office prices each player's chance of re-signing with the game's own
   mood model, with the team he would be re-signing with - so a player traded
   for is valued on how he would feel about his new team.
 
 ## Free agency
 
+- **Cap room is worth what teams with that much room actually sign** (measured
+  in the arena, by room as free agency opens), not what a signing at that price
+  gets: teams with room do better than that, and what they get rises smoothly
+  with room. Pricing it by the price of a signing gave clearing a max slot a
+  special value, so teams dumped prospects' future salaries for it.
+
+- **CPU judgment first, the board later** (owner's call): CPU teams decide whom
+  to re-sign and which free agents to sign with the same valuation they trade
+  with, inside today's mechanics; moving every team onto the board is its own
+  step.
+- **Signings clear the same margin of error as trades** (owner's call): picking
+  the best of many free agents favours the ones the model overrates.
+- **Teams value waiting in free agency** (owner's call): asking prices fall as
+  it goes on, so a team weighs signing now against signing later, given the
+  measured chance someone else signs him first.
+- **Contract length is chosen for the team** (owner's call): each length the
+  player would accept, priced, the best taken - as a human does in
+  negotiation.
+- **Players finishing rookie deals mostly stay; veterans' stay rate is tuned to
+  the NBA's unrestricted free agents** (owner's call).
 - **CPU teams join the existing free agency board.** A player has an ask; a team
   says it will pay it; the day sims; a mood-weighted roll decides between the
   teams that claimed him. One signing per team per day. Same terms as humans.

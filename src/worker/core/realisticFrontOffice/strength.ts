@@ -358,27 +358,103 @@ export const valueOverReplacement = (
 export const playerValue = (line: Pick<PlayerLine, "roleFree" | "offense">) =>
 	SLOT_MINUTES[5]! * valueOverReplacement(line);
 
-// Below this, a player we may not have counts in part; above it, in full. Saves
-// pricing every roster once per player for a 1% chance of retirement.
-const AVAILABILITY_CUTOFF = 0.97;
+// A roster of players we may not all have - injured for part of the season,
+// leaving in free agency, a pick who may not stick, a free agent the team may
+// not land - is priced place by place: each place in the pecking order goes to
+// whoever is likely to fill it, given everyone's chance of being there, and a
+// minimum player where nobody may. Pricing every player as there and then
+// taking each one's absence off separately, as this once did, went wrong
+// when a future roster held twenty players who might be there: the imaginary
+// lineup of all of them, and its synergy, swung by points when any one moved.
+// The most valuable players we may not have are played out both ways
+// exactly, so a single injured starter costs exactly his share.
+const byPlace = (
+	players: readonly (StrengthPlayer & { availability: number })[],
+) => {
+	const sorted = players.filter((p) => p.availability > 0).sort(byValueNoPot);
+	// The chance that exactly j of the players ahead are there.
+	let ahead = [1];
+	const places = Array.from({ length: ROSTER_PLACES }, () => ({
+		filled: 0,
+		roleFree: 0,
+		offense: 0,
+		usage: 0,
+		likeliest: undefined as StrengthPlayer | undefined,
+		likeliestChance: 0,
+	}));
+	for (const p of sorted) {
+		const a = Math.min(1, p.availability);
+		for (let k = 0; k < ahead.length && k < ROSTER_PLACES; k++) {
+			const chance = a * ahead[k]!;
+			const place = places[k]!;
+			place.filled += chance;
+			place.roleFree += chance * p.roleFree;
+			place.offense += chance * p.offense;
+			place.usage += chance * p.usage;
+			if (chance > place.likeliestChance) {
+				place.likeliestChance = chance;
+				place.likeliest = p;
+			}
+		}
+		const next = new Array<number>(
+			Math.min(ahead.length + 1, ROSTER_PLACES + 1),
+		).fill(0);
+		for (let j = 0; j < ahead.length; j++) {
+			next[j]! += ahead[j]! * (1 - a);
+			if (j + 1 < next.length) {
+				next[j + 1]! += ahead[j]! * a;
+			}
+		}
+		ahead = next;
+	}
+	const r = getReplacement();
+	return pointsOfSorted(
+		places.map((place) => {
+			const empty = Math.max(0, 1 - place.filled);
+			return {
+				roleFree: place.roleFree + empty * r.roleFree,
+				offense: place.offense + empty * r.offense,
+				usage: place.usage + empty * r.usage,
+				synergy:
+					place.likeliest && place.likeliestChance >= empty
+						? place.likeliest.synergy
+						: r.synergy,
+				valueNoPot: 0,
+			};
+		}),
+	);
+};
 
-// A player we expect to miss part of the season, or may not have at all,
-// counts for the share of it we expect him - measured as what the roster loses
-// without him.
+// Played out both ways, exactly: the best players we may or may not have.
+const ENUMERATED = 2;
+
 export const expectedRosterPoints = (
 	players: readonly (StrengthPlayer & { availability: number })[],
 ) => {
-	const sorted = [...players].sort(byValueNoPot);
-	const full = pointsOfSorted(sorted);
-	let expected = full;
-	// Only the men who make the rotation's places can change what it is worth.
-	for (let i = 0; i < sorted.length && i < ROSTER_PLACES; i++) {
-		const p = sorted[i]!;
-		if (p.availability < AVAILABILITY_CUTOFF) {
-			expected -= (1 - p.availability) * (full - pointsOfSorted(sorted, i));
+	const uncertain = players
+		.filter((p) => p.availability > 0 && p.availability < 1)
+		.sort(byValueNoPot)
+		.slice(0, ENUMERATED);
+	if (uncertain.length === 0) {
+		return byPlace(players);
+	}
+	let total = 0;
+	for (let mask = 0; mask < 1 << uncertain.length; mask++) {
+		let chance = 1;
+		const fixed = players.map((p) => {
+			const i = uncertain.indexOf(p);
+			if (i < 0) {
+				return p;
+			}
+			const there = (mask >> i) & 1;
+			chance *= there ? p.availability : 1 - p.availability;
+			return { ...p, availability: there };
+		});
+		if (chance > 0) {
+			total += chance * byPlace(fixed);
 		}
 	}
-	return expected;
+	return total;
 };
 
 export const HOME_COURT_POINTS = MODEL.home;

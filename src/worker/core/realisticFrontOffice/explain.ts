@@ -47,6 +47,7 @@ const playerAsset = (
 	outlook: LeagueOutlook,
 	p: Player,
 	tid: number,
+	effect: number[],
 ): FrontOfficeAsset => {
 	const reSign = retentionOf(outlook, p.pid, tid);
 	const lines = years.map((y) =>
@@ -71,10 +72,15 @@ const playerAsset = (
 		ovrBySeason: lines.map((line) => round(line.valueNoPot, 0)),
 		hereBySeason: lines.map((line) => round(line.availability, 2)),
 		reSign,
+		effect,
 	};
 };
 
-const pickAsset = (outlook: LeagueOutlook, dp: DraftPick): FrontOfficeAsset => {
+const pickAsset = (
+	outlook: LeagueOutlook,
+	dp: DraftPick,
+	effect: number[],
+): FrontOfficeAsset => {
 	const at = years.map((y) => pickLineAt(outlook, dp, y));
 	return {
 		kind: "pick",
@@ -86,6 +92,7 @@ const pickAsset = (outlook: LeagueOutlook, dp: DraftPick): FrontOfficeAsset => {
 		spread: round(draftPlaceSpread(outlook, dp), 1),
 		ovrBySeason: at.map((x) => (x ? round(x.line.valueNoPot, 0) : 0)),
 		hereBySeason: at.map((x) => (x ? round(x.line.availability, 2) : 0)),
+		effect,
 	};
 };
 
@@ -123,11 +130,22 @@ export const explainDeal = (
 			...side.gets.picks,
 		];
 		const room = [years.map(() => 0), years.map(() => 0)];
-		const buys: number[][][] = [years.map(() => []), years.map(() => [])];
+		const buys: [number, number][][][] = [
+			years.map(() => []),
+			years.map(() => []),
+		];
 		const refill =
-			(k: 0 | 1) => (y: number, share: number, signings: number[]) => {
+			(k: 0 | 1) =>
+			(
+				y: number,
+				share: number,
+				signings: readonly { valueNoPot: number; availability: number }[],
+			) => {
 				room[k]![y] = round(share, 3);
-				buys[k]![y] = signings.map((ovr) => round(ovr, 0));
+				buys[k]![y] = signings.map((x) => [
+					round(x.valueNoPot, 0),
+					round(x.availability, 2),
+				]);
 			};
 		const before = teamStrengths(
 			outlook,
@@ -148,6 +166,14 @@ export const explainDeal = (
 			},
 			refill(1),
 		);
+		// One asset at a time, against the roster as it stands.
+		const effectOf = (
+			players: readonly Player[],
+			picks: readonly DraftPick[],
+		) =>
+			teamStrengths(outlook, side.tid, players, picks).map((x, y) =>
+				round(x - before[y]!, 2),
+			);
 		const value = years.map(
 			(y) =>
 				seasonValue(outlook, y, after[y]!) -
@@ -169,12 +195,40 @@ export const explainDeal = (
 			buysBefore: buys[0]!,
 			buysAfter: buys[1]!,
 			gets: [
-				...side.gets.players.map((p) => playerAsset(outlook, p, side.tid)),
-				...side.gets.picks.map((dp) => pickAsset(outlook, dp)),
+				...side.gets.players.map((p) =>
+					playerAsset(
+						outlook,
+						p,
+						side.tid,
+						effectOf([...side.players, p], side.picks),
+					),
+				),
+				...side.gets.picks.map((dp) =>
+					pickAsset(outlook, dp, effectOf(side.players, [...side.picks, dp])),
+				),
 			],
 			gives: [
-				...side.gives.players.map((p) => playerAsset(outlook, p, side.tid)),
-				...side.gives.picks.map((dp) => pickAsset(outlook, dp)),
+				...side.gives.players.map((p) =>
+					playerAsset(
+						outlook,
+						p,
+						side.tid,
+						effectOf(
+							side.players.filter((x) => x.pid !== p.pid),
+							side.picks,
+						),
+					),
+				),
+				...side.gives.picks.map((dp) =>
+					pickAsset(
+						outlook,
+						dp,
+						effectOf(
+							side.players,
+							side.picks.filter((x) => x.dpid !== dp.dpid),
+						),
+					),
+				),
 			],
 			tradedAway: [...side.tradedAway],
 			reason: reasonFor(outlook, value, side.gain, side.margin),
