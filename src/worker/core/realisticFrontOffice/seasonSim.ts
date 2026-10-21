@@ -52,6 +52,36 @@ export const normalCdf = (x: number) => {
 export const winProbability = (margin: number) =>
 	normalCdf(margin / GAME_SIGMA);
 
+// Whether a game with this margin goes to the home side for this random
+// number: random < winProbability(margin), exactly. The chance only rises with
+// the margin, so it is nearly always settled by the chances at grid points
+// either side of it, and only worked out in full when the random number falls
+// between them.
+const GRID_PER_UNIT = 256;
+const GRID_FROM = -8;
+const GRID_POINTS = 16 * GRID_PER_UNIT;
+const gridP = new Float64Array(GRID_POINTS + 1);
+for (let k = 0; k <= GRID_POINTS; k++) {
+	gridP[k] = normalCdf(GRID_FROM + k / GRID_PER_UNIT);
+}
+// Far more than normalCdf's rounding could ever take it off its rise.
+const GRID_SLACK = 1e-9;
+const wins = (random: number, margin: number) => {
+	const x = margin / GAME_SIGMA;
+	// x is between grid points k and k + 1, give or take rounding, so
+	// certainly between k - 1 and k + 2.
+	const k = Math.floor((x - GRID_FROM) * GRID_PER_UNIT);
+	if (k >= 1 && k < GRID_POINTS - 1) {
+		if (random < gridP[k - 1]! - GRID_SLACK) {
+			return true;
+		}
+		if (random >= gridP[k + 2]! + GRID_SLACK) {
+			return false;
+		}
+	}
+	return random < normalCdf(x);
+};
+
 export const simulateSeason = ({
 	teams,
 	numGamesPlayoffSeries,
@@ -128,6 +158,10 @@ export const simulateSeason = ({
 			? home
 			: away;
 
+	const n = teams.length;
+	const strengths = new Float64Array(n);
+	const gamesRemaining = teams.map((t) => t.gamesRemaining);
+
 	for (let it = 0; it < iterations; it++) {
 		const sim = teams.map((t) => {
 			const error = uncertainty * gauss();
@@ -142,22 +176,27 @@ export const simulateSeason = ({
 		});
 
 		// The rest of the regular season, against the field.
-		for (const t of sim) {
-			const games = teams.find((x) => x.tid === t.tid)!.gamesRemaining;
+		for (let ti = 0; ti < n; ti++) {
+			strengths[ti] = sim[ti]!.strength;
+		}
+		for (let ti = 0; ti < n; ti++) {
+			const games = gamesRemaining[ti]!;
+			let won = 0;
 			for (let i = 0; i < games; i++) {
-				const opp = sim[Math.floor(random() * sim.length)]!;
-				if (opp === t) {
+				const oi = Math.floor(random() * n);
+				if (oi === ti) {
 					i -= 1;
 					continue;
 				}
 				const margin =
-					t.strength -
-					opp.strength +
+					strengths[ti]! -
+					strengths[oi]! +
 					(i % 2 === 0 ? 1 : -1) * HOME_COURT_POINTS;
-				if (random() < winProbability(margin)) {
-					t.wins += 1;
+				if (wins(random(), margin)) {
+					won += 1;
 				}
 			}
+			sim[ti]!.wins += won;
 		}
 
 		// Seeds within each group, then the play-in for the last two places.
