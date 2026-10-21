@@ -8,6 +8,7 @@ import type {
 } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g, local } from "../../util/index.ts";
+import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
 import getPayroll from "../team/getPayroll.ts";
 import isUntradable from "../trade/isUntradable.ts";
 import processTrade from "../trade/processTrade.ts";
@@ -107,6 +108,11 @@ export const marketSettings = {
 	// Picks moved count towards the margin of error, as the players they are
 	// expected to become.
 	pickMargins: true,
+	// On this many of the last trading days before the deadline, every team
+	// shops, as in the offseason windows: the last chance to make a deal that
+	// helps this season, and when a deal put off for the deadline gets decided.
+	// 0 is off.
+	deadlineWindow: 0,
 };
 
 // Where the time goes, for the arena's speed report.
@@ -677,11 +683,27 @@ export const tradeDay = () =>
 	timed(async () => {
 		const phase = g.get("phase");
 		if (phase === PHASE.REGULAR_SEASON) {
-			await shop(SHOPPERS_PER_DAY);
+			await shop((await inDeadlineWindow()) ? Infinity : SHOPPERS_PER_DAY);
 		} else if (phase === PHASE.FREE_AGENCY) {
 			await shop(marketSettings.freeAgencyShoppers);
 		}
 	});
+
+// The last days before the trade deadline (marketSettings.deadlineWindow).
+const inDeadlineWindow = async () => {
+	if (marketSettings.deadlineWindow <= 0) {
+		return false;
+	}
+	try {
+		return (
+			(await getDaysLeftSchedule("tradeDeadline")) <
+			marketSettings.deadlineWindow
+		);
+	} catch {
+		// No deadline left this season.
+		return false;
+	}
+};
 
 // The offseason's trading windows, as each of these phases opens: every team
 // gets to shop.
