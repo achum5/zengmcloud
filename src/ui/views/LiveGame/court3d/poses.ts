@@ -3450,6 +3450,64 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// A roar after a big finish: down in a wide crouch, fists low and out at
+	// his sides, leaning into it - and up out of it.
+	roar: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.land],
+			[
+				0.25,
+				pose({
+					hipN: 34,
+					kneeN: 62,
+					hipF: 38,
+					kneeF: 66,
+					shN: 14,
+					elN: 100,
+					abN: 32,
+					shF: 14,
+					elF: 100,
+					abF: 32,
+					lean: 22,
+					wide: 0.62,
+				}),
+			],
+			[
+				0.7,
+				pose({
+					hipN: 38,
+					kneeN: 66,
+					hipF: 42,
+					kneeF: 70,
+					shN: 10,
+					elN: 110,
+					abN: 36,
+					shF: 10,
+					elF: 110,
+					abF: 36,
+					lean: 26,
+					wide: 0.64,
+				}),
+			],
+			[1, P.ready],
+		],
+	},
+	// Pounding his chest with his fist, twice.
+	chestPound: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, P.land],
+			[0.18, pose({ shN: 30, elN: 108, abN: -26, lean: -4 })],
+			[0.32, pose({ shN: 42, elN: 84, abN: 8, lean: -5 })],
+			[0.46, pose({ shN: 30, elN: 108, abN: -26, lean: -4 })],
+			[0.6, pose({ shN: 42, elN: 84, abN: 8, lean: -5 })],
+			[0.74, pose({ shN: 30, elN: 108, abN: -26, lean: -6 })],
+			[1, P.ready],
+		],
+	},
 	// Calling the set from the top, the ball on the bounce: his free hand
 	// up.
 	callPlay: {

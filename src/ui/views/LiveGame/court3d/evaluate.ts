@@ -1669,6 +1669,8 @@ const STANDING = new Set<AnimName>([
 	"crossed",
 	"hips",
 	"flex",
+	"roar",
+	"chestPound",
 	"celebrate",
 	"protest",
 	"point",
@@ -3212,6 +3214,8 @@ const PIVOTS = new Set<AnimName>([
 	"cheer",
 	"crouch",
 	"flex",
+	"roar",
+	"chestPound",
 ]);
 // A leg turned under him from the way he faces (degrees): as far as hips
 // turn - and further round than that, back with him by the time he is

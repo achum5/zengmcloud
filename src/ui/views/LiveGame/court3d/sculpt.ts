@@ -460,7 +460,13 @@ const gripFor = (st: PlayerState, which: "R" | "L", holding: boolean): Grip => {
 	if (holding) {
 		return "ball";
 	}
-	if (st.anim === "run" || st.anim === "sprint" || st.anim === "flex") {
+	if (
+		st.anim === "run" ||
+		st.anim === "sprint" ||
+		st.anim === "flex" ||
+		st.anim === "roar" ||
+		st.anim === "chestPound"
+	) {
 		return "fist";
 	}
 	return RELAXED.has(st.anim) ? "relaxed" : "open";

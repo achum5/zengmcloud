@@ -583,6 +583,8 @@ const REVERSE_OUT = 2.4;
 // The room round a man going up over another for a dunk (feet): nobody else
 // of theirs nearer him than that.
 const POSTER_ROOM = 3.2;
+// How far off the dunker the man he dunked on is, once both are down (ft).
+const DUNKED_ON_ROOM = 3.4;
 // A drop step or an up-and-under goes up this far out (feet): a low-post
 // shot, not one from under the rim.
 const POST_FINISH_OUT = 3.4;
@@ -1057,6 +1059,8 @@ const IN_PLACE = new Set<AnimName>([
 	"hips",
 	"point",
 	"flex",
+	"roar",
+	"chestPound",
 	"celebrate",
 	"highFive",
 	"lowFive",
@@ -1353,8 +1357,9 @@ class Director {
 		t0: number;
 		t1: number;
 		except: number;
-		// Where and by when the man he dunks on meets him, facing him.
-		meet: { at: Pt; by: number; face: 1 | -1 };
+		// Where and by when the man he dunks on meets him, facing him - and
+		// where the dunker comes down.
+		meet: { at: Pt; by: number; face: 1 | -1; dunker: Pt };
 	}[] = [];
 	// The period being played, and whether it is overtime.
 	private periodNo = 1;
@@ -1644,7 +1649,10 @@ class Director {
 	// The man dunked on is there for it, set, wherever following his man
 	// took him in the meantime: he leaves for it in time to get there flat
 	// out, if he has to.
-	private meetDunk(pid: number, meet: { at: Pt; by: number; face: 1 | -1 }) {
+	private meetDunk(
+		pid: number,
+		meet: { at: Pt; by: number; face: 1 | -1; dunker: Pt },
+	) {
 		const tr = this.track(pid);
 		const { at: V, by } = meet;
 		if (!tr || dist(this.posAt(pid, by), V) < 0.5) {
@@ -1670,10 +1678,22 @@ class Director {
 				leave = a.t1;
 			}
 		}
-		let z = leave;
+		// Down again, he gives the man who dunked on him room: a step or so
+		// out from him, the way he is from him - not stood in his face while
+		// he lets everybody know about it.
+		const u = dist(meet.dunker, V) > 0.3 ? unitVec(meet.dunker, V) : undefined;
+		const R = u
+			? clampPt({
+					x: meet.dunker.x + u.x * DUNKED_ON_ROOM,
+					y: meet.dunker.y + u.y * DUNKED_ON_ROOM,
+				})
+			: V;
+		const stepped =
+			dist(V, R) > 0.3 ? leave + runMs(dist(V, R), 9, 0, 1) : leave;
+		let z = stepped;
 		let Z = this.posAt(pid, z);
 		for (let n = 0; n < 80; n++) {
-			if (runMs(dist(V, Z), SPRINT) + 100 <= z - leave) {
+			if (runMs(dist(R, Z), SPRINT) + 100 <= z - stepped) {
 				break;
 			}
 			z += 100;
@@ -1698,13 +1718,23 @@ class Director {
 			anim: d > 6 ? "run" : "slide",
 			...(d > 6 ? {} : { face: meet.face }),
 		});
-		if (z > leave && dist(V, Z) > 0.05) {
+		if (stepped > leave) {
 			kept.push({
 				t0: leave,
-				t1: z,
+				t1: stepped,
 				from: { ...V },
+				to: { ...R },
+				anim: "back",
+				face: meet.face,
+			});
+		}
+		if (z > stepped && dist(R, Z) > 0.05) {
+			kept.push({
+				t0: stepped,
+				t1: z,
+				from: { ...R },
 				to: { ...Z },
-				anim: dist(V, Z) > 6 ? "run" : "shuffle",
+				anim: dist(R, Z) > 6 ? "run" : "shuffle",
 			});
 		}
 		tr.moves = kept.sort((x, y) => x.t0 - y.t0);
@@ -2029,6 +2059,15 @@ class Director {
 				: h < 0.52
 					? "shimmy"
 					: "point";
+	}
+
+	// After a big finish, if it is his thing: down in a crouch with a roar,
+	// or a fist pounded on his chest - the same man the same way, most times.
+	private bigFinish(pid: number, at: number): AnimName | undefined {
+		const h = hash01(pid, 6151);
+		const his: AnimName | undefined =
+			h < 0.22 ? "roar" : h < 0.4 ? "chestPound" : undefined;
+		return his && hash01(pid, at) < 0.65 ? his : undefined;
 	}
 
 	// How he throws it down, `r` of the way through his own odds: a big man
@@ -7887,7 +7926,12 @@ class Director {
 					t0: gather - 150,
 					t1: gather + 900,
 					except: victim,
-					meet: { at: V, by: gather + 60, face: -faceRim as 1 | -1 },
+					meet: {
+						at: V,
+						by: gather + 60,
+						face: -faceRim as 1 | -1,
+						dunker: under,
+					},
 				});
 				const had = this.defenderOf(shooter);
 				for (const d of this.slots(other(team))) {
@@ -11309,13 +11353,16 @@ class Director {
 				this.react(shot.pid, "point", free + 100, 800, this.posOf(assist));
 			} else if (big || this.rng() < 0.3) {
 				// (A three: his own way of it, every time - a finger at the
-				// bench, or both arms up.)
+				// bench, or both arms up. A dunk or an and-one: a roar or a
+				// pound of the chest, for a man whose thing that is, more
+				// often than not.)
+				const own = this.bigFinish(shot.pid, at);
 				const cel: AnimName = shot.dunk
 					? this.rng() < 0.5
-						? "flex"
-						: "celebrate"
+						? (own ?? "flex")
+						: (own ?? "celebrate")
 					: andOne
-						? "flex"
+						? (own ?? "flex")
 						: shot.zone === "three"
 							? this.threeCelebration(shot.pid)
 							: "point";
