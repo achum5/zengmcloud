@@ -1809,6 +1809,16 @@ export const settings: Setting[] = (
 			description:
 				"In spectator mode, the AI controls all teams and you get to watch the league evolve. This is similar to Tools > Auto Play, but it lets you play through the season at your own pace.",
 		},
+		...(__SPORT === "basketball"
+			? [
+					{
+						category: "Game Modes",
+						key: "realisticFrontOffices",
+						name: "Realistic Front Offices",
+						type: "bool",
+					} as const,
+				]
+			: []),
 		{
 			category: "Schedule",
 			key: "tradeDeadline",

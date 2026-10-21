@@ -22,8 +22,10 @@ with "the Pistons", not with a named person.
   readily their players re-sign; that stays). The owner plays a real league on
   stock while this is built.
 - **Basketball only.** The setting does not appear in the other sports.
-- **Hidden until playable.** The setting does not appear in League Settings
-  until the mode is worth trying; until then it is tested in the arena.
+- **In League Settings** (Game Modes), off by default (owner's call, to try
+  the mode while it is built). What it changes so far: CPU-to-CPU trades,
+  free-agency testing and mood terms. Trades with humans, free agency
+  decisions, re-signing decisions and the draft are still stock.
 - **Existing leagues never switch on their own.** New leagues default to it only
   once the owner has played it and is happy with it.
 - **Difficulty does nothing when it is on.** The trade, signing and overall

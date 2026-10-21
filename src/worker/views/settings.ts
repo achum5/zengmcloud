@@ -209,6 +209,7 @@ type Key =
 	| "footballOvertime"
 	| "footballOvertimePlayoffs"
 	| "easterEggPlayers"
+	| "realisticFrontOffices"
 	| "fakeAgeProb";
 
 export type Settings = Pick<
@@ -458,6 +459,7 @@ export default defineView({
 				footballOvertime: g.get("footballOvertime"),
 				footballOvertimePlayoffs: g.get("footballOvertimePlayoffs"),
 				easterEggPlayers: g.get("easterEggPlayers"),
+				realisticFrontOffices: g.get("realisticFrontOffices"),
 				fakeAgeProb: g.get("fakeAgeProb"),
 
 				// Might as well be undefined, because it will never be saved from this form, only the new league form

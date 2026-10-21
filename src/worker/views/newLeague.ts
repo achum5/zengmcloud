@@ -560,6 +560,10 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"easterEggPlayers",
 		),
+		realisticFrontOffices: unwrapGameAttribute(
+			defaultGameAttributes,
+			"realisticFrontOffices",
+		),
 		fakeAgeProb: unwrapGameAttribute(defaultGameAttributes, "fakeAgeProb"),
 
 		// This can be undefined, but if the setting is ever displayed to the user, it should default to "rookie"
