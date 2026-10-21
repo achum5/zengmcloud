@@ -13,9 +13,11 @@ import {
 	playerLine,
 	ROSTER_PLACES,
 	rosterPoints,
+	typicalSynergy,
 	type StrengthPlayer,
 	type ValueRatings,
 } from "./strength.ts";
+import { synergySkillCounts } from "../GameSim.basketball/synergy.ts";
 
 let roster: StrengthPlayer[];
 let build: ValueRatings;
@@ -225,3 +227,20 @@ test("a long shot moves a roster by no more than his chance of playing", () => {
 		Math.random = realRandom;
 	}
 }, 30_000);
+
+test("a player whose skills are not known yet brings those of his overall", () => {
+	const skills = (ovr: number) =>
+		synergySkillCounts([{ compositeRating: typicalSynergy(ovr) }]);
+	const low = skills(43);
+	const high = skills(60);
+	for (const key of Object.keys(low) as (keyof typeof low)[]) {
+		assert.isAbove(high[key], low[key]);
+	}
+	// At the minimum player's overall, the minimum player's skills.
+	const replacement = synergySkillCounts([
+		{ compositeRating: getReplacement().synergy },
+	]);
+	for (const key of Object.keys(low) as (keyof typeof low)[]) {
+		assert.closeTo(low[key], replacement[key], 0.02);
+	}
+});

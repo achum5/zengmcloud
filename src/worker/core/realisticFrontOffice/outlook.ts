@@ -22,9 +22,9 @@ import { clearMarketView, stayChance } from "./offers.ts";
 import { buildDeadlineView, type DeadlineView } from "./timing.ts";
 import {
 	expectedRosterPoints,
-	getReplacement,
 	lineSynergy,
 	playerLine,
+	typicalSynergy,
 	type StrengthPlayer,
 	type ValueRatings,
 } from "./strength.ts";
@@ -601,8 +601,8 @@ const averagePick = (
 			roleFree: roleFree / kept,
 			offense: offense / kept,
 			usage: usage / kept,
-			// Who he is is not known yet, so no particular skills.
-			synergy: getReplacement().synergy,
+			// Who he is is not known yet: a typical player of his overall.
+			synergy: typicalSynergy(ovr / kept),
 			valueNoPot: ovr / kept,
 			availability: kept,
 		},

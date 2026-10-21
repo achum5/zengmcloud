@@ -5,6 +5,7 @@ import {
 	synergyTotal,
 	type SynergyCompositeRating,
 } from "../GameSim.basketball/synergy.ts";
+import ovr from "../player/ovr.ts";
 import {
 	IMPACT_RATINGS,
 	shotWeight,
@@ -267,6 +268,39 @@ export type StrengthPlayer = PlayerLine & {
 let replacement: StrengthPlayer | undefined;
 // A player worse than this is not worth a roster place.
 export const REPLACEMENT_OVR = REPLACEMENT_RATINGS.ovr;
+
+// The synergy composites of a player of this overall whose skills are not
+// known yet - a pick's player, a free agent the team may sign: the minimum
+// player's ratings, raised evenly until they rate that overall. The minimum
+// player's own skills, which these once had, are those of a 43: a projected
+// 60-overall starter cost his lineup about half a point of synergy.
+const typicalSynergies = new Map<number, SynergyCompositeRating>();
+export const typicalSynergy = (overall: number) => {
+	const target = Math.round(overall);
+	let synergy = typicalSynergies.get(target);
+	if (!synergy) {
+		const shifted = (shift: number) => {
+			const ratings = { ...REPLACEMENT_RATINGS };
+			for (const key of IMPACT_RATINGS) {
+				ratings[key] = REPLACEMENT_RATINGS[key] + shift;
+			}
+			return ratings;
+		};
+		let lo = -40;
+		let hi = 60;
+		for (let i = 0; i < 30; i++) {
+			const mid = (lo + hi) / 2;
+			if (ovr(shifted(mid) as any) < target) {
+				lo = mid;
+			} else {
+				hi = mid;
+			}
+		}
+		synergy = synergyCompositeRating(shifted(hi) as any);
+		typicalSynergies.set(target, synergy);
+	}
+	return synergy;
+};
 
 export const getReplacement = () => {
 	if (!replacement) {

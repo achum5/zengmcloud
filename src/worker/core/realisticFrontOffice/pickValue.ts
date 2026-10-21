@@ -1,5 +1,5 @@
 import type { SynergyCompositeRating } from "../GameSim.basketball/synergy.ts";
-import { getReplacement, type StrengthPlayer } from "./strength.ts";
+import { typicalSynergy, type StrengthPlayer } from "./strength.ts";
 
 // What a pick turns into, by place in the draft (both rounds of a 30-team
 // league), from draft day (0) through ten seasons on: roleFree, offense and
@@ -800,8 +800,8 @@ const TABLE_YEARS = PICK_TABLE[0]!.length - 1;
 // The player a pick is expected to become, `years` seasons after its draft (1
 // is his rookie season), as a roster sees him, and the chance he is on it. `slot` is the pick's place in
 // the whole draft, 0 for the first; leagues of another size are read at the
-// same fraction of the way through. His synergy is a minimum player's: a
-// prospect's skills are not known yet.
+// same fraction of the way through. His synergy is a typical player's of his
+// overall: a prospect's skills are not known yet.
 export const pickPlayer = ({
 	slot,
 	numPicks,
@@ -817,7 +817,7 @@ export const pickPlayer = ({
 	);
 	const [roleFree, offense, usage, ovr, kept] =
 		PICK_TABLE[row]![Math.min(TABLE_YEARS, Math.max(0, years))]!;
-	const synergy: SynergyCompositeRating = getReplacement().synergy;
+	const synergy: SynergyCompositeRating = typicalSynergy(ovr!);
 	return {
 		roleFree: roleFree!,
 		offense: offense!,
