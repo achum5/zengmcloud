@@ -14,7 +14,12 @@ import isUntradable from "../trade/isUntradable.ts";
 import processTrade from "../trade/processTrade.ts";
 import summary from "../trade/summary.ts";
 import { explainDeal, type ExplainSide } from "./explain.ts";
-import { draftPlaceMisread, sideMargin, type MovedPlayer } from "./margin.ts";
+import {
+	draftPlaceMisread,
+	placeBySeason,
+	sideMargin,
+	type MovedPlayer,
+} from "./margin.ts";
 import { valueOverReplacement } from "./strength.ts";
 import {
 	buildOutlook,
@@ -498,9 +503,6 @@ export const marginOf = (
 		moved.push({ place, availability, error });
 	};
 	const add = (p: Player, roster: readonly Player[]) => {
-		const place = [...roster]
-			.sort((x, y) => y.valueNoPot - x.valueNoPot)
-			.indexOf(p);
 		const lines = Array.from({ length: OUTLOOK_YEARS + 1 }, (_, y) =>
 			seasonLine(
 				outlook.lines,
@@ -512,10 +514,14 @@ export const marginOf = (
 				retentionOf(outlook, p.pid, t.tid),
 			),
 		);
+		const ovr = lines.map((line) => line.valueNoPot);
 		moved.push({
-			place,
+			place: placeBySeason(
+				roster.filter((x) => x !== p).map((x) => x.valueNoPot),
+				ovr,
+			),
 			availability: lines.map((line) => line.availability),
-			ovr: lines.map((line) => line.valueNoPot),
+			ovr,
 		});
 	};
 	for (const x of incoming) {

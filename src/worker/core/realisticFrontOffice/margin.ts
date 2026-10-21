@@ -55,8 +55,9 @@ const perOvr = (ovr: number) =>
 export const marginSettings = { z: 1 };
 
 export type MovedPlayer = {
-	// His place in the pecking order of the team he is priced for - each
-	// season of the outlook, for a pick's player.
+	// His place in the pecking order of the team he is priced for, 0 for the
+	// first - each season of the outlook (placeBySeason), or one place for
+	// every season.
 	place: number | readonly number[];
 	// His chance of being there, each season of the outlook.
 	availability: readonly number[];
@@ -99,6 +100,18 @@ export const draftPlaceMisread = (outlook: LeagueOutlook, dp: PickLike) => {
 	}
 	return near / 2;
 };
+
+// Where a player stands in the pecking order each season of the outlook: how
+// many of today's roster are better than he is expected to be then (today's
+// roster standing in for whoever holds those places by then, as for a pick).
+// A prospect's error is in the minutes he is expected to play once he is
+// good, not in the bench minutes he plays now - priced at today's place, a
+// prospect who will start in three seasons carried almost no doubt, so
+// trading him looked surer than trading the veteran he went for.
+export const placeBySeason = (
+	others: readonly number[],
+	ovr: readonly number[],
+) => ovr.map((mine) => others.filter((x) => x > mine).length);
 
 // One side's margin, in the same units as franchiseValue. `path` is the team's
 // strength each season, as it stands.

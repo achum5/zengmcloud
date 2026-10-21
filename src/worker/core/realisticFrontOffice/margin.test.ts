@@ -1,5 +1,5 @@
 import { assert, test } from "vitest";
-import { draftPlaceMisread, sideMargin } from "./margin.ts";
+import { draftPlaceMisread, placeBySeason, sideMargin } from "./margin.ts";
 import { OUTLOOK_YEARS, type LeagueOutlook } from "./outlook.ts";
 
 const outlook = {
@@ -105,4 +105,20 @@ test("a star's worth is less sure than a role player's", () => {
 			{ place: 2, availability: always, ovr: always.map(() => ovr) },
 		]);
 	assert.isAbove(at(72), 2 * at(52));
+});
+
+test("a prospect's doubt is in the minutes he will play once he is good", () => {
+	// Eight better players today, and a prospect on his way up past them.
+	const today = Array.from({ length: 8 }, (_, i) => 60 - i);
+	const ovr = always.map((_, y) => 42 + 4 * y);
+	const place = placeBySeason(today, ovr);
+	assert.strictEqual(place[0], 8);
+	assert.strictEqual(place[OUTLOOK_YEARS], 0);
+	const growing = sideMargin(outlook, contender, [
+		{ place, availability: always, ovr },
+	]);
+	const asToday = sideMargin(outlook, contender, [
+		{ place: 8, availability: always, ovr },
+	]);
+	assert.isAbove(growing, 2 * asToday);
 });
