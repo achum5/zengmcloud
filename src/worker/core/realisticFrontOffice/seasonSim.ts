@@ -20,6 +20,9 @@ export type SeasonSimTeam = {
 	cid: number;
 	// Points per game against an average team.
 	strength: number;
+	// In the playoffs, if different - a team that will change by then, like one
+	// trading at the deadline.
+	playoffStrength?: number;
 	won: number;
 	lost: number;
 	gamesRemaining: number;
@@ -87,7 +90,9 @@ export const simulateSeason = ({
 	// Teams per group that make the bracket proper.
 	const perGroup = Math.max(1, 2 ** numRounds / groups.length);
 
-	const playSeries = <T extends { tid: number; strength: number }>(
+	// Everything after the regular season - play-in and playoffs - is played at
+	// playoff strength.
+	const playSeries = <T extends { tid: number; playoffStrength: number }>(
 		better: T,
 		other: T,
 		bestOf: number,
@@ -96,8 +101,8 @@ export const simulateSeason = ({
 		// The better seed is at home for the larger half of the games.
 		const homeShare = needed / bestOf;
 		const p = winProbability(
-			better.strength -
-				other.strength +
+			better.playoffStrength -
+				other.playoffStrength +
 				HOME_COURT_POINTS * (2 * homeShare - 1),
 		);
 		let a = 0;
@@ -112,22 +117,29 @@ export const simulateSeason = ({
 		return a >= needed ? better : other;
 	};
 
-	const playGame = <T extends { tid: number; strength: number }>(
+	const playGame = <T extends { tid: number; playoffStrength: number }>(
 		home: T,
 		away: T,
 	) =>
-		random() < winProbability(home.strength - away.strength + HOME_COURT_POINTS)
+		random() <
+		winProbability(
+			home.playoffStrength - away.playoffStrength + HOME_COURT_POINTS,
+		)
 			? home
 			: away;
 
 	for (let it = 0; it < iterations; it++) {
-		const sim = teams.map((t) => ({
-			tid: t.tid,
-			cid: byConference ? t.cid : 0,
-			strength: t.strength + uncertainty * gauss(),
-			wins: t.won,
-			tiebreak: random(),
-		}));
+		const sim = teams.map((t) => {
+			const error = uncertainty * gauss();
+			return {
+				tid: t.tid,
+				cid: byConference ? t.cid : 0,
+				strength: t.strength + error,
+				playoffStrength: (t.playoffStrength ?? t.strength) + error,
+				wins: t.won,
+				tiebreak: random(),
+			};
+		});
 
 		// The rest of the regular season, against the field.
 		for (const t of sim) {

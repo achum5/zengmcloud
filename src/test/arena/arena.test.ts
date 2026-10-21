@@ -4,8 +4,14 @@ import { getTradeHistoryDump } from "../../worker/api/tradeHistoryDump.ts";
 import { league } from "../../worker/core/index.ts";
 import {
 	marketClock,
+	marketSettings,
 	tradeWatchers,
 } from "../../worker/core/realisticFrontOffice/market.ts";
+import {
+	OUTLOOK_YEARS,
+	seasonLine,
+	teamStrengths,
+} from "../../worker/core/realisticFrontOffice/outlook.ts";
 import type { Player } from "../../common/types.ts";
 import { last } from "../../common/utils.ts";
 import { idb } from "../../worker/db/index.ts";
@@ -60,8 +66,85 @@ test.runIf(env.ARENA_RUN === "1")(
 			await createArenaLeague(seed);
 			if (env.ARENA_FO === "1") {
 				await league.setGameAttributes({ realisticFrontOffices: true });
+				// ARENA_NO_WAIT=1: deals are made as soon as they are found.
+				marketSettings.valueWaiting = env.ARENA_NO_WAIT !== "1";
 			}
 			const watched: WatchedTrade[] = [];
+			const suspicious: unknown[] = [];
+			if (env.ARENA_DEBUG_GAINS !== undefined) {
+				const threshold = Number(env.ARENA_DEBUG_GAINS);
+				tradeWatchers.push((deal) => {
+					if (Math.max(...deal.gains) < threshold) {
+						return;
+					}
+					const { outlook } = deal;
+					const sides = ([0, 1] as const).map((k) => {
+						const j = k === 0 ? 1 : 0;
+						const outP = new Set(deal.give[k].pids);
+						const outD = new Set(deal.give[k].dpids);
+						const players = deal.rosters[k];
+						const picks = deal.picks[k];
+						const after = [
+							...players.filter((p) => !outP.has(p.pid)),
+							...deal.rosters[j].filter((p) =>
+								deal.give[j].pids.includes(p.pid),
+							),
+						];
+						const afterPicks = [
+							...picks.filter((dp) => !outD.has(dp.dpid)),
+							...deal.picks[j].filter((dp) =>
+								deal.give[j].dpids.includes(dp.dpid),
+							),
+						];
+						const lines = (p: Player) =>
+							Array.from({ length: OUTLOOK_YEARS + 1 }, (_, y) => {
+								const line = seasonLine(
+									outlook.lines,
+									p,
+									outlook.season,
+									outlook.offset,
+									y,
+									outlook.remaining.get(deal.tids[k]) ?? 0,
+								);
+								return [
+									Math.round(line.roleFree * 100) / 100,
+									Math.round(line.offense * 100) / 100,
+									Math.round(line.usage * 1000) / 1000,
+									Math.round(line.valueNoPot),
+									Math.round(line.availability * 100) / 100,
+								];
+							});
+						return {
+							tid: deal.tids[k],
+							gain: deal.gains[k],
+							rosterSize: [players.length, after.length],
+							before: teamStrengths(outlook, deal.tids[k], players, picks),
+							after: teamStrengths(outlook, deal.tids[k], after, afterPicks),
+							moved: deal.rosters[k]
+								.filter((p) => outP.has(p.pid))
+								.map((p) => ({
+									pid: p.pid,
+									age: g.get("season") - p.born.year,
+									ovr: last(p.ratings).ovr,
+									exp: p.contract.exp,
+									lines: lines(p),
+								})),
+							picksMoved: picks
+								.filter((dp) => outD.has(dp.dpid))
+								.map((dp) => [dp.season, dp.round, dp.pick, dp.originalTid]),
+						};
+					});
+					suspicious.push({
+						season: g.get("season"),
+						phase: g.get("phase"),
+						outlookSeason: outlook.season,
+						offset: outlook.offset,
+						meanPoints: outlook.meanPoints,
+						titleCurves: outlook.titleCurves,
+						sides,
+					});
+				});
+			}
 			if (env.ARENA_CHECK_TRADES !== undefined) {
 				tradeWatchers.push((deal) => {
 					watched.push({
@@ -83,6 +166,12 @@ test.runIf(env.ARENA_RUN === "1")(
 				await fs.writeFile(
 					`${out}/trades-${seed}.txt`,
 					await getTradeHistoryDump(numSeasons + 1),
+				);
+			}
+			if (env.ARENA_DEBUG_GAINS !== undefined) {
+				await fs.writeFile(
+					`${out}/suspicious-${seed}.json`,
+					JSON.stringify(suspicious),
 				);
 			}
 			if (env.ARENA_CHECK_TRADES !== undefined) {

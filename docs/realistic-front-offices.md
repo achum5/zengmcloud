@@ -128,7 +128,8 @@ sims as ground truth.
 
 Teams work the phones every day, all season. Sims get slower; how much slower is
 acceptable is decided once the real cost is measured against how much smarter
-it makes CPU teams, but it must not be egregious.
+it makes CPU teams, but it must not be egregious. Speed work waits until the
+behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
 
 ## Trades
 
@@ -153,10 +154,14 @@ it makes CPU teams, but it must not be egregious.
   decline, dismiss or counter.
 - **Talking (later).** CPU teams explain their side of a deal the way a real
   front office would, without giving their hand away.
-- **Trade volume.** Elite GMs who see the same truth only trade when their
-  situations differ (contender and rebuilder, fit, cap). If that gives far
-  fewer trades than the NBA, the numbers go to the owner before anything is
-  done about it.
+- **Trade volume: whatever the gains say** (owner's call). Every deal both
+  sides gain from by their own reckoning gets made; in the arena that is about
+  75-80 a season against the NBA's 55-62, and the trade checker confirms the
+  on-court gains are real. No minimum is tuned to match the NBA.
+- **Timing: teams value waiting** (owner's call). Before the deadline a team
+  weighs a deal now against deciding at the deadline - when it knows better
+  how good it is, but has lost those regular-season games with the new roster
+  and may have lost the deal. Either side preferring to wait puts it off.
 - **Trade penalty** (player mood hit for a team that trades too much) is
   unchanged. CPU teams are subject to it and account for it. The hope is that the
   league can drop it once CPU teams are hard to fleece.

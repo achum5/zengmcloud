@@ -9,7 +9,10 @@ import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { pickPlayer } from "./pickValue.ts";
 import { projectRatings, type RatingsProjection } from "./projection.ts";
+import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
 import { simulateSeason } from "./seasonSim.ts";
+import { fitLogistic } from "./logistic.ts";
+import { buildDeadlineView, type DeadlineView } from "./timing.ts";
 import {
 	expectedRosterPoints,
 	playerLine,
@@ -99,6 +102,8 @@ export type LeagueOutlook = {
 	meanPoints: number[];
 	titleCurves: Curve[];
 	playoffCurves: Curve[];
+	// For weighing a deal now against waiting, until the trade deadline passes.
+	deadline?: DeadlineView;
 };
 
 // The season outlook year y is about.
@@ -289,39 +294,14 @@ export const teamStrengths = (
 		(x, y) => x - outlook.meanPoints[y]!,
 	);
 
-// Logistic fit of a probability against strength, by Newton's method on the
-// cross-entropy. Used to price a roster that is not any team's actual roster.
-const fitCurve = (points: { x: number; p: number }[]): Curve => {
-	let a = 0;
-	let b = 0.3;
-	for (let iter = 0; iter < 50; iter++) {
-		let ga = 0;
-		let gb = 0;
-		let haa = 0;
-		let hab = 0;
-		let hbb = 0;
-		for (const { x, p } of points) {
-			const q = 1 / (1 + Math.exp(-(a + b * x)));
-			const w = q * (1 - q);
-			ga += q - p;
-			gb += (q - p) * x;
-			haa += w;
-			hab += w * x;
-			hbb += w * x * x;
-		}
-		const det = haa * hbb - hab * hab;
-		if (Math.abs(det) < 1e-12) {
-			break;
-		}
-		const da = (hbb * ga - hab * gb) / det;
-		const db = (haa * gb - hab * ga) / det;
-		a -= da;
-		b -= db;
-		if (Math.abs(da) + Math.abs(db) < 1e-9) {
-			break;
-		}
-	}
-	return { a, b };
+// Logistic fit of a probability against strength. Used to price a roster that
+// is not any team's actual roster.
+export const fitCurve = (points: { x: number; p: number }[]): Curve => {
+	const [a, b] = fitLogistic(
+		points.map(({ x, p }) => ({ x: [x], p })),
+		[0, 0.3],
+	);
+	return { a: a!, b: b! };
 };
 
 export const curveAt = (curve: Curve, x: number) =>
@@ -473,13 +453,82 @@ export const buildOutlook = async ({
 		);
 	}
 
+	let deadline: DeadlineView | undefined;
+	if (phase === PHASE.REGULAR_SEASON) {
+		let daysToDeadline: number | undefined;
+		try {
+			daysToDeadline = await getDaysLeftSchedule("tradeDeadline");
+		} catch {
+			// No deadline left this season.
+		}
+		const daysLeft = await getDaysLeftSchedule();
+		if (daysToDeadline !== undefined && daysToDeadline > 0 && daysLeft > 0) {
+			const uncertaintyAt = (p: number) => 1.5 + 2 * (1 - p);
+			const progressAtDeadline =
+				progress + (1 - progress) * (daysToDeadline / daysLeft);
+
+			// How often a player has been traded this season, per day, with a
+			// little of a typical season mixed in while there is not much of
+			// this one yet.
+			const events = await idb.getCopies.events(
+				{ season } as any,
+				"noCopyCache",
+			);
+			const moved = events
+				.filter((e) => e.type === "trade")
+				.reduce((a, e) => a + (e.pids?.length ?? 0), 0);
+			const numPlayers = [...rosters.values()].reduce(
+				(a, r) => a + r.length,
+				0,
+			);
+			const meanRemaining =
+				teams.reduce((a, t) => a + remaining.get(t.tid)!, 0) /
+				Math.max(1, teams.length);
+			const daysPlayed =
+				(numGames - meanRemaining) * (daysLeft / Math.max(1, meanRemaining));
+			const PRIOR_RATE = 0.004;
+			const PRIOR_DAYS = 20;
+			const playerTradeRate =
+				(moved + PRIOR_RATE * PRIOR_DAYS * numPlayers) /
+				(Math.max(1, numPlayers) * (daysPlayed + PRIOR_DAYS));
+
+			deadline = buildDeadlineView({
+				teams: teams.map((t) => ({
+					tid: t.tid,
+					cid: t.cid,
+					strength: outlooks.get(t.tid)!.strength[0]!,
+					won: records.get(t.tid)!.won,
+					lost: records.get(t.tid)!.lost,
+					gamesRemaining: remaining.get(t.tid)!,
+				})),
+				numGamesPlayoffSeries: g.get("numGamesPlayoffSeries", "current"),
+				playIn: g.get("playIn"),
+				byConference: g.get("playoffsByConf", "current") ?? true,
+				uncertaintyNow: uncertaintyAt(progress),
+				uncertaintyAtDeadline: uncertaintyAt(progressAtDeadline),
+				daysToDeadline,
+				daysLeft,
+				playerTradeRate,
+				seed: season * 7919 + Math.round(progress * 1000),
+			});
+		}
+	}
+
 	return {
 		...base,
 		teams: outlooks,
 		titleCurves,
 		playoffCurves,
+		deadline,
 	};
 };
+
+// What this season alone is worth at this strength, in the same units as
+// franchiseValue.
+export const seasonValue = (outlook: LeagueOutlook, y: number, s: number) =>
+	PATIENCE ** y *
+	(curveAt(outlook.titleCurves[y]!, s) +
+		PLAYOFF_TIEBREAK * curveAt(outlook.playoffCurves[y]!, s));
 
 // What a run of seasons at these strengths is worth to a franchise, in titles:
 // discounted title chances, plus a sliver for making the playoffs.

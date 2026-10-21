@@ -81,3 +81,14 @@ test("games already won count", () => {
 	assert.isAbove(results.get(3)!.playoffs, 0.99);
 	assert.isBelow(results.get(4)!.playoffs, 0.75);
 });
+
+test("a team stronger by the playoffs wins more titles, not more seeds", () => {
+	const base = run(league());
+	const boosted = run(
+		league().map((t) =>
+			t.tid === 25 ? { ...t, playoffStrength: t.strength + 4 } : t,
+		),
+	);
+	assert.isAbove(boosted.get(25)!.title, base.get(25)!.title + 0.03);
+	assert.closeTo(boosted.get(25)!.playoffs, base.get(25)!.playoffs, 0.02);
+});
