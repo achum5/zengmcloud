@@ -23,6 +23,7 @@ import { buildDeadlineView, type DeadlineView } from "./timing.ts";
 import {
 	expectedRosterPoints,
 	getReplacement,
+	lineSynergy,
 	playerLine,
 	type StrengthPlayer,
 	type ValueRatings,
@@ -205,18 +206,31 @@ const computeSeasonLine = (
 		availability *= retention;
 	}
 	const [roleFree, offense, usage] = projection.measures[index]!;
+	// One synergy per projected season, shared by all his lines for it, so a
+	// lineup is recognised as the same whatever his re-signing odds.
+	let synergies = projectedSynergy.get(projection);
+	if (!synergies) {
+		synergies = [];
+		projectedSynergy.set(projection, synergies);
+	}
+	const synergy = (synergies[index] ??= lineSynergy({
+		...(projection.ratings[index] as unknown as ValueRatings),
+		ovr: projection.ovr[index]!,
+	}));
 	return {
-		...playerLine({
-			...(projection.ratings[index] as unknown as ValueRatings),
-			ovr: projection.ovr[index]!,
-		}),
 		roleFree: roleFree!,
 		offense: offense!,
 		usage: usage!,
+		synergy,
 		valueNoPot: projection.ovr[index]!,
 		availability,
 	};
 };
+
+const projectedSynergy = new WeakMap<
+	RatingsProjection,
+	ReturnType<typeof lineSynergy>[]
+>();
 
 // A player's lines, by player and re-signing chance, then by what else they
 // depend on: his injury, his team's games left, his contract and his overall.
@@ -642,11 +656,11 @@ export const teamPoints = (
 		// The players its picks are expected to have become by then, and what
 		// they are paid.
 		let salaries = 0;
-		for (const [i, dp] of picks.entries()) {
+		for (let i = 0; i < picks.length; i++) {
 			const byYear = byPick[i]!.byYear;
 			let at = byYear[y];
 			if (at === undefined) {
-				at = pickLineAt(outlook, dp, y) ?? null;
+				at = pickLineAt(outlook, picks[i]!, y) ?? null;
 				byYear[y] = at;
 			}
 			if (at) {
@@ -663,9 +677,9 @@ export const teamPoints = (
 			salaryCap ??= g.get("salaryCap");
 			marketSalary ??= marketSalaries();
 			let committed = salaries;
-			for (const [i, p] of players.entries()) {
+			for (let i = 0; i < players.length; i++) {
 				committed += salaryIn(
-					p,
+					players[i]!,
 					season,
 					y + outlook.offset,
 					lines[i]!,

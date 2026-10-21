@@ -228,11 +228,14 @@ const evaluate = (
 	return value;
 };
 
+export const lineSynergy = (ratings: ValueRatings) =>
+	synergyCompositeRating(ratings as any);
+
 export const playerLine = (ratings: ValueRatings): PlayerLine => ({
 	roleFree: evaluate(MODEL.roleFree, ratings),
 	offense: evaluate(MODEL.offense, ratings),
 	usage: shotWeight(ratings),
-	synergy: synergyCompositeRating(ratings as any),
+	synergy: lineSynergy(ratings),
 });
 
 // A typical 43 overall, about what is always there for the minimum. A stand-in
