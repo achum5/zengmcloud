@@ -11,10 +11,14 @@ import type {
 	DraftType,
 	PlayInTournament,
 } from "../../../common/types.ts";
-import { genPlayoffSeriesFromTeams } from "../season/genPlayoffSeries.ts";
+import {
+	genPlayoffSeriesFromTeams,
+	InvalidPlayoffSettingsError,
+} from "../season/genPlayoffSeries.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { groupByUnique } from "../../../common/utils.ts";
 import { actualPhase } from "../../util/actualPhase.ts";
+import { team } from "../index.ts";
 
 /**
  * Differences across sports:
@@ -280,7 +284,7 @@ const getTeamsByRound = async (
 	draftType: DraftType,
 	draftPicksIndexed: DraftPickWithoutKey[][],
 ) => {
-	const allTeams = await idb.getCopies.teamsPlus({
+	const allTeams = await team.getFormattedAll({
 		attrs: ["tid", "draftLottery"],
 		seasonAttrs: [
 			"playoffRoundsWon",
@@ -313,7 +317,16 @@ const getTeamsByRound = async (
 	const phase = actualPhase();
 
 	const predictPlayoffs = async () => {
-		const info = await genPlayoffSeriesFromTeams(allTeams);
+		let info;
+		try {
+			info = await genPlayoffSeriesFromTeams(allTeams);
+		} catch (error) {
+			if (error instanceof InvalidPlayoffSettingsError) {
+				// Project the draft order as if no teams make the playoffs. The user will be told about the invalid settings when the playoffs are supposed to start
+				return;
+			}
+			throw error;
+		}
 		tidPlayoffs = info.tidPlayoffs;
 		if (draftType === "nba2027") {
 			nba2027Stuff = getNba2027PlayIn(info.playIns);

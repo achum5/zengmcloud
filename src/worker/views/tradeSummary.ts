@@ -75,7 +75,7 @@ type StatSumsBySeason = Record<
 type StatSumsBySeasons = [StatSumsBySeason, StatSumsBySeason];
 
 // A rating as this league displays it. The trade history is a rare player-facing
-// page that assembles ratings itself instead of going through playersPlus, so
+// page that assembles ratings itself instead of going through player.formatAll, so
 // the coarse-ratings rounding would otherwise pass it by.
 const showRating = (value: number, tid: number): number => {
 	if (
@@ -310,7 +310,7 @@ const getActualPlayerInfo = async (
 		name: `${p.firstName} ${p.lastName}`,
 		age: (draftPick ? p.draft.year : season) - p.born.year,
 		pos: ratings.pos,
-		// Hand-rolled rather than fetched through playersPlus, so the coarse-ratings
+		// Hand-rolled rather than fetched through player.formatAll, so the coarse-ratings
 		// rounding has to be applied here too.
 		ovr: showRating(player.fuzzRating(ratings.ovr, ratings.fuzz), p.tid),
 		pot: showRating(player.fuzzRating(ratings.pot, ratings.fuzz), p.tid),
@@ -371,13 +371,7 @@ const getSeasonsToPlot = async (
 			},
 		];
 		for (const [j, tid] of tids.entries()) {
-			const teamSeason = await idb.getCopy.teamSeasons(
-				{
-					season: i,
-					tid,
-				},
-				"noCopyCache",
-			);
+			const teamSeason = await idb.merged.teamSeasons.getByTidSeason(tid, i);
 
 			if (
 				teamSeason &&
@@ -487,7 +481,7 @@ export const processAssets = async (
 
 	for (const asset of event.teams[i].assets) {
 		if (assetIsPlayer(asset)) {
-			const p = await idb.getCopy.players({ pid: asset.pid }, "noCopyCache");
+			const p = await idb.merged.players.get(asset.pid);
 			const common = {
 				pid: asset.pid,
 				contract: asset.contract,
@@ -584,7 +578,7 @@ export default defineView({
 			updateEvents.has("playerMovement") ||
 			eid !== prevInputs?.eid
 		) {
-			const event = await idb.getCopy.events({ eid }, "noCopyCache");
+			const event = await idb.merged.events.get(eid);
 			if (
 				!event ||
 				event.type !== "trade" ||

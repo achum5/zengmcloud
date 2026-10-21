@@ -14,6 +14,7 @@ import newPhaseFantasyDraft from "./newPhaseFantasyDraft.ts";
 import newPhaseExpansionDraft from "./newPhaseExpansionDraft.ts";
 import {
 	g,
+	helpers,
 	lock,
 	logEvent,
 	updatePlayMenu,
@@ -23,6 +24,7 @@ import { syncDebugLog } from "../sync/debugLog.ts";
 import type { Conditions, Phase } from "../../../common/types.ts";
 import { cleanupAutoPlay } from "../league/autoPlay.ts";
 import setGameAttributes from "../league/setGameAttributes.ts";
+import { InvalidPlayoffSettingsError } from "../season/genPlayoffSeries.ts";
 
 /**
  * Set a new phase of the game.
@@ -97,30 +99,53 @@ const newPhase = async (phase: Phase, conditions: Conditions, extra?: any) => {
 				throw new Error(`Unknown phase number ${phase}`);
 			}
 		} catch (error) {
-			cleanupAutoPlay(error);
-			await lock.set("newPhase", false);
-			await updatePlayMenu();
-			// The toast only shows error.message; mirror the full stack into the
-			// page console (via the sync debug log) so a crash in the field is
-			// diagnosable from a pasted console log.
-			console.error("Critical error during phase change", error);
-			syncDebugLog("phase:critical-error", {
-				toPhase: phase,
-				fromPhase: g.get("phase"),
-				season: g.get("season"),
-				message: (error as Error).message,
-				stack: (error as Error).stack,
-			});
-			logEvent(
-				{
-					type: "error",
+			const handleError = async ({
+				rejectAutoPlay,
+				text,
+			}: {
+				// Rejecting the auto play promise means the error will be logged as unhandled
+				rejectAutoPlay: boolean;
+				text: string;
+			}) => {
+				logEvent(
+					{
+						type: "error",
+						text,
+						saveToDb: false,
+						persistent: true,
+					},
+					conditions,
+				);
+				cleanupAutoPlay(rejectAutoPlay ? error : undefined);
+				await lock.set("newPhase", false);
+				await updatePlayMenu();
+				await updateStatus();
+			};
+
+			if (error instanceof InvalidPlayoffSettingsError) {
+				// Not a bug, the user's settings just don't work for the teams in the league. So tell the user how to fix it, rather than treating it as an unexpected error
+				await handleError({
+					rejectAutoPlay: false,
+					text: `<p>Invalid playoff settings: ${error.message}</p><p>You can change playoff settings on the <a href="${helpers.leagueUrl(["settings"])}">League Settings</a> page.</p>`,
+				});
+			} else {
+				// The toast only shows error.message; mirror the full stack into the
+				// page console (via the sync debug log) so a crash in the field is
+				// diagnosable from a pasted console log.
+				console.error("Critical error during phase change", error);
+				syncDebugLog("phase:critical-error", {
+					toPhase: phase,
+					fromPhase: g.get("phase"),
+					season: g.get("season"),
+					message: (error as Error).message,
+					stack: (error as Error).stack,
+				});
+				await handleError({
+					rejectAutoPlay: true,
 					text: `<p>Critical error during phase change:</p><p>${error.message}</p><a href="https://${WEBSITE_ROOT}/manual/debugging/"><b>Read this to learn about debugging.</b></a>`,
-					saveToDb: false,
-					persistent: true,
-				},
-				conditions,
-			);
-			throw error;
+				});
+				throw error;
+			}
 		}
 	}
 };

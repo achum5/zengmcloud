@@ -12,9 +12,9 @@ import getLeaderRequirements, {
 	getLeaderRequirementsStats,
 } from "../season/getLeaderRequirements.ts";
 import { idb } from "../../db/index.ts";
+import { getActiveSeasonSelector } from "../../db/merged/players.ts";
 import {
 	PHASE,
-	PLAYER,
 	PLAYER_STATS_TABLES,
 	getPlayerStatsTableStats,
 } from "../../../common/constants.ts";
@@ -25,6 +25,8 @@ import { getPosByGpF } from "../player/getPosByGpF.ts";
 // (util/index -> ... -> getAwardCandidates -> here -> player/index -> util)
 // that left `player` undefined while this file was still being evaluated.
 import playerStats from "../player/stats.ts";
+// Only used at run time, so the cycle above doesn't matter for it.
+import player from "../player/index.ts";
 import { SKIP_PLAYER_STATS } from "../game/loadTeams.ts";
 import {
 	derivedPlayerStatKeys,
@@ -174,7 +176,7 @@ const getProcessedPlayers = async (
 		["regularSeason", "playoffs", "combined"] as const
 	).filter((seasonType) => statRanges.has(seasonType));
 
-	const players = (await idb.getCopies.playersPlus(playersAll, {
+	const players = (await player.formatAll(playersAll, {
 		attrs: [
 			"pid",
 			"name",
@@ -247,10 +249,7 @@ const getPlayoffSeriesStats = async (
 	statOverridesByMatchup: StatOverridesByMatchup | undefined,
 	variables: Set<string> | undefined,
 ) => {
-	const playoffSeries = await idb.getCopy.playoffSeries(
-		{ season },
-		"noCopyCache",
-	);
+	const playoffSeries = await idb.merged.playoffSeries.get(season);
 	if (!playoffSeries) {
 		return;
 	}
@@ -276,7 +275,7 @@ const getPlayoffSeriesStats = async (
 
 	const rowsByPid: Record<number, StatsRow> = {};
 
-	const games = await idb.getCopies.games({ gids }, "noCopyCache");
+	const games = await idb.merged.games.getAll({ gids });
 
 	// Some games couldn't be found, so instead see if statOverridesByMatchup has the info we need (from saved awards, like on Award Races)
 	if (games.length !== gids.length) {
@@ -368,20 +367,9 @@ export const getPlayers = async (
 	statOverridesByMatchup: StatOverridesByMatchup | undefined,
 	variables: FormulaEvaluators["variables"] | undefined,
 ) => {
-	let playersAll;
-	if (g.get("season") === season && g.get("phase") <= PHASE.PLAYOFFS) {
-		playersAll = await idb.cache.players.indexGetAll("playersByTid", [
-			PLAYER.FREE_AGENT,
-			Infinity,
-		]);
-	} else {
-		playersAll = await idb.getCopies.players(
-			{
-				activeSeason: season,
-			},
-			"noCopyCache",
-		);
-	}
+	const playersAll = await idb.merged.players.getAll(
+		getActiveSeasonSelector(season),
+	);
 
 	const players = await getProcessedPlayers(
 		playersAll,
@@ -390,12 +378,7 @@ export const getPlayers = async (
 	);
 
 	// Cache some stuff for later
-	const teamSeasons = await idb.getCopies.teamSeasons(
-		{
-			season,
-		},
-		"noCopyCache",
-	);
+	const teamSeasons = await idb.merged.teamSeasons.getAll({ season });
 	const teamInfos: Record<
 		number,
 		{

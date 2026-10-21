@@ -60,7 +60,7 @@ const updateSportsbook = async ({
 		// any reason, render an empty book (wallet + bets still work).
 		// Pricing the whole book is expensive - a 4000-iteration futures Monte
 		// Carlo, a playoff bracket sim, the award boards, and every player in the
-		// league through playersPlus. None of it can change just because you
+		// league through player.formatAll. None of it can change just because you
 		// clicked a different tab, and recomputing it on every tab click is what
 		// made this page feel slow. Reuse the board unless something actually
 		// moved.
@@ -167,7 +167,7 @@ const updateSportsbook = async ({
 		const teamInfoCache = g.get("teamInfoCache");
 		const gameLinks: Record<number, { abbrevTid: string; season: number }> = {};
 		for (const gid of gidsReferenced) {
-			const game = await idb.getCopy.games({ gid }, "noCopyCache");
+			const game = await idb.merged.games.get(gid);
 			if (!game || !game.won || !game.lost) {
 				continue; // not played yet, or box score pruned - nothing to link to
 			}

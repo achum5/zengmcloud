@@ -26,6 +26,7 @@ import {
 	spreadBiasAdjustment,
 	type SpreadBiasEntry,
 } from "../../util/getTeamSpreadBias.ts";
+import { player } from "../index.ts";
 
 // The moneyline / spread / total for a single upcoming game.
 //
@@ -144,7 +145,7 @@ export const buildGameLinePricer = async ({
 		0, // Active players have tid >= 0
 		Infinity,
 	]);
-	const players = await idb.getCopies.playersPlus(playersRaw, {
+	const players = await player.formatAll(playersRaw, {
 		attrs: ["injury", "pid", "value", "tid"],
 		ratings: ["ovr", "pos", "ovrs"],
 		season,
@@ -157,7 +158,7 @@ export const buildGameLinePricer = async ({
 		coarsenRatings: false,
 	});
 	const playersByTid = Map.groupBy(players, (p) => p.tid);
-	// The raw rows as well: the trimmed playersPlus rows above are all team.ovr
+	// The raw rows as well: the trimmed player.formatAll rows above are all team.ovr
 	// needs, but the synergy composites read the full ratings row.
 	const playersRawByTid = Map.groupBy(playersRaw, (p) => p.tid);
 
@@ -214,7 +215,7 @@ export const buildGameLinePricer = async ({
 			? (2 * totalPtsPerGame) / teamsWithGames
 			: bySport({ basketball: 220, football: 45, baseball: 9, hockey: 6 });
 
-	// teamsPlus returns PER-GAME stats by default, so pts/oppPts are already the
+	// team.getFormattedAll returns PER-GAME stats by default, so pts/oppPts are already the
 	// genuine per-game averages. Early in the season, regress toward the league
 	// mean (fully trusted after ~8 games) so a hot opening week doesn't swing
 	// totals wildly.

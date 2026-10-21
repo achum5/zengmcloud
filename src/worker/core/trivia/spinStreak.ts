@@ -190,7 +190,7 @@ const getTeamSeasons = async (season: number): Promise<TeamSeason[]> => {
 	}
 	let rows = tsCache.bySeason.get(season);
 	if (!rows) {
-		rows = await idb.getCopies.teamSeasons({ season }, "noCopyCache");
+		rows = await idb.merged.teamSeasons.getAll({ season });
 		tsCache.bySeason.set(season, rows);
 	}
 	return rows;
@@ -226,7 +226,7 @@ const teamOptions = async (
 	if (!correct) {
 		// A draft before the league's first season: use the earliest season that
 		// franchise has, and draw the others from that season too.
-		const all = await idb.getCopies.teamSeasons({ tid }, "noCopyCache");
+		const all = await idb.merged.teamSeasons.getAll({ tid });
 		const first = all.sort((a, b) => a.season - b.season)[0];
 		if (!first) {
 			return undefined;

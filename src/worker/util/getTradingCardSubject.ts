@@ -5,6 +5,7 @@ import type {
 import { idb } from "../db/index.ts";
 import { getTeamInfoBySeason } from "./getTeamInfoBySeason.ts";
 import g from "./g.ts";
+import { player } from "../core/index.ts";
 
 // Assembles everything a card prompt needs about one player as of one season.
 //
@@ -73,14 +74,14 @@ export const getTradingCardSubject = async (
 	pid: number,
 	season: number,
 ): Promise<CardSubject | undefined> => {
-	const raw = await idb.getCopy.players({ pid }, "noCopyCache");
+	const raw = await idb.merged.players.get(pid);
 	if (!raw) {
 		return undefined;
 	}
 
 	// Totals rather than per-game, so the career line through this season is a
 	// real weighted total and not an average of averages.
-	const p = await idb.getCopy.playersPlus(raw, {
+	const p = await player.format(raw, {
 		attrs: [
 			"pid",
 			"name",

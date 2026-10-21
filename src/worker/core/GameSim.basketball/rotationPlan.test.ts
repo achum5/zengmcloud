@@ -202,7 +202,7 @@ beforeAll(async () => {
 				g.get("season"),
 				tid,
 			]),
-			idb.getCopies.players({ tid }, "noCopyCache"),
+			idb.merged.players.getAll({ tid }),
 		]);
 		return processTeam(t!, teamSeason!, ps);
 	};

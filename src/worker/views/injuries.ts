@@ -83,14 +83,11 @@ export default defineView({
 			const rawPlayers = g.get("hideRatingsOnesDigit")
 				? new Map(
 						(
-							await idb.getCopies.players(
-								{
-									pids: players
-										.filter((p) => p.injuries.length > 0)
-										.map((p) => p.pid),
-								},
-								"noCopyCache",
-							)
+							await idb.merged.players.getAll({
+								pids: players
+									.filter((p) => p.injuries.length > 0)
+									.map((p) => p.pid),
+							})
 						).map((p) => [p.pid, p]),
 					)
 				: undefined;

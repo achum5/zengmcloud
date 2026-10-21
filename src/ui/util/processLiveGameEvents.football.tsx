@@ -1087,7 +1087,9 @@ const processLiveGameEvents = ({
 				e.type === "fieldGoal" ||
 				e.type === "extraPoint" ||
 				(e as any).safety ||
-				(e as any).twoPointConversionTeam !== undefined;
+				(e as any).twoPointConversionTeam !== undefined ||
+				// Needed for failed 2 point conversions that end with an event without twoPointConversionTeam, like an incomplete pass
+				e.type === "twoPointConversionFailed";
 
 			if (
 				e.type === "puntReturn" ||

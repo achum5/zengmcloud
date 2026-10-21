@@ -44,6 +44,7 @@ import {
 	simulatePlayoffBracket,
 	type BracketMatchup,
 } from "../../../common/sportsbookFutures.ts";
+import { player, team } from "../index.ts";
 
 // The 3 tiers an All-League/All-Defensive Team splits into, 5 players each -
 // matches worker/core/season/doAwards.basketball.ts's makeTeams().
@@ -320,7 +321,7 @@ export const priceFuture = (
 const PRESEASON_AWARD_POWER = 1.8;
 
 // A player's overall rating, from either an array of season ratings (getPlayers)
-// or a single season's ratings object (playersPlus with a fixed season).
+// or a single season's ratings object (player.formatAll with a fixed season).
 const ovrOf = (p: any): number => {
 	const r = Array.isArray(p.ratings) ? p.ratings.at(-1) : p.ratings;
 	return typeof r?.ovr === "number" ? r.ovr : 0;
@@ -375,7 +376,7 @@ export const getTeamOvrs = async (
 			"playersByTid",
 			t.tid,
 		);
-		const teamPlayers = await idb.getCopies.playersPlus(rawPlayers, {
+		const teamPlayers = await player.formatAll(rawPlayers, {
 			attrs: ["tid", "injury", "value"],
 			ratings,
 			stats: ["season", "tid"],
@@ -400,35 +401,32 @@ export const getLines = async () => {
 	const confs = g.get("confs");
 	const divs = g.get("divs");
 
-	const teams = await idb.getCopies.teamsPlus(
-		{
-			attrs: [
-				"tid",
-				"cid",
-				"did",
-				"abbrev",
-				"region",
-				"name",
-				"disabled",
-				"playThroughInjuries",
-			],
-			seasonAttrs: ["won", "lost", "tied", "otl"],
-			stats: ["pts", "oppPts", "gp"],
-			season,
-			// Without this, teams with no stats rows are dropped entirely - in a
-			// league with no games played yet (e.g. started in the playoffs) that's
-			// EVERY team, which blanked the whole board.
-			showNoStats: true,
-		},
-		"noCopyCache",
-	);
+	const teams = await team.getFormattedAll({
+		attrs: [
+			"tid",
+			"cid",
+			"did",
+			"abbrev",
+			"region",
+			"name",
+			"disabled",
+			"playThroughInjuries",
+		],
+		seasonAttrs: ["won", "lost", "tied", "otl"],
+		stats: ["pts", "oppPts", "gp"],
+		season,
+		// Without this, teams with no stats rows are dropped entirely - in a
+		// league with no games played yet (e.g. started in the playoffs) that's
+		// EVERY team, which blanked the whole board.
+		showNoStats: true,
+	});
 	const activeTeams = teams.filter((t) => !t.disabled);
 	const teamByTid = new Map(activeTeams.map((t) => [t.tid, t]));
 
 	// One sweep of the season's games feeds both: the against-the-spread record
 	// shown next to each team's W-L, and the per-team form correction the lines
 	// are priced with (getTeamSpreadBias.ts).
-	const seasonGames = await idb.getCopies.games({ season }, "noCopyCache");
+	const seasonGames = await idb.merged.games.getAll({ season });
 	const atsRecords = await getTeamAtsRecords(season, seasonGames);
 	const spreadBiases = await getTeamSpreadBias(season, seasonGames);
 
@@ -943,7 +941,7 @@ export const getLines = async () => {
 				PLAYER.FREE_AGENT,
 				Infinity,
 			]);
-			projectionPool = await idb.getCopies.playersPlus(rawPlayers, {
+			projectionPool = await player.formatAll(rawPlayers, {
 				attrs: ["pid", "name", "tid", "abbrev", "injury", "draft"],
 				ratings: ["ovr", "diq"],
 				stats: ["ewa", "ws"],
@@ -1177,8 +1175,7 @@ export const getLines = async () => {
 	// roster is actually selected - see worker/core/allStar/create.ts), so
 	// gated on its OWN existence check, independent of the awards board above.
 	let allStar: AwardCandidateRow[] = [];
-	const allStarsDecided =
-		(await idb.getCopy.allStars({ season }, "noCopyCache")) !== undefined;
+	const allStarsDecided = (await idb.merged.allStars.get(season)) !== undefined;
 	if (!allStarsDecided && __SPORT === "basketball") {
 		try {
 			// Same pool as the real selection (worker/core/allStar/create.ts) -

@@ -705,7 +705,7 @@ const revertTransaction = async (eid: number): Promise<string | undefined> => {
 		return "God Mode is required to revert a move.";
 	}
 
-	const event = await idb.getCopy.events({ eid }, "noCopyCache");
+	const event = await idb.merged.events.get(eid);
 	if (!event) {
 		return "Move not found.";
 	}

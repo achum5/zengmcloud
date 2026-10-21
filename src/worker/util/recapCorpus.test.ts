@@ -294,7 +294,7 @@ const runCorpus = async (writeFileSync: (p: string, d: string) => void) => {
 		const [t, teamSeason, ps] = await Promise.all([
 			idb.cache.teams.get(tid),
 			idb.cache.teamSeasons.indexGet("teamSeasonsBySeasonTid", [season, tid]),
-			idb.getCopies.players({ tid }, "noCopyCache"),
+			idb.merged.players.getAll({ tid }),
 		]);
 		if (!t || !teamSeason) {
 			return undefined;

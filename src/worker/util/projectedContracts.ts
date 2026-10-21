@@ -44,11 +44,11 @@ const getExpiringPids = async (): Promise<number[]> => {
 	const season = g.get("season");
 	const players =
 		g.get("phase") === PHASE.RESIGN_PLAYERS
-			? await idb.getCopies.players({ tid: PLAYER.FREE_AGENT })
-			: await idb.getCopies.players({
-					tid: [0, Infinity],
-					filter: (p) => p.contract.exp === season,
-				});
+			? await idb.merged.players.getAll({ tid: PLAYER.FREE_AGENT })
+			: await idb.merged.players.getAll(
+					{ tid: [0, Infinity] },
+					{ filter: (p) => p.contract.exp === season },
+				);
 	return players.map((p) => p.pid);
 };
 

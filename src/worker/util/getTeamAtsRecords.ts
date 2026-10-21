@@ -25,8 +25,7 @@ export const getTeamAtsRecords = async (
 	const numPeriodsDefault = g.get("numPeriods");
 	const quarterLength = g.get("quarterLength");
 
-	const games =
-		preloadedGames ?? (await idb.getCopies.games({ season }, "noCopyCache"));
+	const games = preloadedGames ?? (await idb.merged.games.getAll({ season }));
 
 	const records = new Map<number, AtsRecord>();
 	const bump = (tid: number, key: keyof AtsRecord) => {

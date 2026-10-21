@@ -4,6 +4,7 @@ import type { OwnerMood } from "../../../common/types.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { assertDefined } from "../../../common/utils.ts";
 import { collegeMoodDeltas } from "../college/coach.ts";
+import { team } from "../index.ts";
 
 /**
  * Update teamSeason.ownerMood based on performance this season, only for user's team.
@@ -29,14 +30,11 @@ const updateOwnerMood = async (): Promise<
 		return;
 	}
 
-	const t = await idb.getCopy.teamsPlus(
-		{
-			seasonAttrs: ["won", "playoffRoundsWon", "profit"],
-			season: g.get("season"),
-			tid: g.get("userTid"),
-		},
-		"noCopyCache",
-	);
+	const t = await team.getFormatted({
+		seasonAttrs: ["won", "playoffRoundsWon", "profit"],
+		season: g.get("season"),
+		tid: g.get("userTid"),
+	});
 
 	if (!t) {
 		return;

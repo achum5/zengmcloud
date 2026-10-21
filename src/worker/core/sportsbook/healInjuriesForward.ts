@@ -9,10 +9,10 @@
 // Both line-makers used to do it by writing the healed injury straight onto the
 // player objects they had loaded. Those come from
 //
-//     idb.getCopies.players({ tid }, "noCopyCache")
+//     idb.merged.players.getAll({ tid })
 //
-// and "noCopyCache" is the caller PROMISING not to mutate - it is what lets the
-// db layer hand back the live `idb.cache.players` rows instead of copies. So
+// which hands back the live `idb.cache.players` rows rather than copies, on the
+// caller's promise not to mutate them. So
 // pricing a game eight days out reached into the actual league and set every
 // injury with eight or fewer days left to `gamesRemaining: 0`, while leaving
 // the injury TYPE in place. Which is what made it so hard to see:

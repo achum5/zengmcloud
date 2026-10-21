@@ -104,14 +104,14 @@ export const getPlayer = async <
 	pRaw: Player,
 	seasonRange?: SeasonRange,
 	// Restrict the aggregated careerStats to a single team (for per-team career
-	// totals). Filters the stat rows exactly like the rest of playersPlus does.
+	// totals). Filters the stat rows exactly like the rest of player.formatAll does.
 	tid?: number,
 	// Restrict to an arbitrary set of seasons (for a selected-rows subtotal).
 	seasons?: number[],
 ) => {
 	const stats = getPlayerProfileStats();
 
-	const p = await idb.getCopy.playersPlus(pRaw, {
+	const p = await player.format(pRaw, {
 		attrs: [
 			"pid",
 			"name",
@@ -230,12 +230,7 @@ export const getCommon = async (
 		return returnValue;
 	}
 
-	const pRaw = await idb.getCopy.players(
-		{
-			pid,
-		},
-		"noCopyCache",
-	);
+	const pRaw = await idb.merged.players.get(pid);
 
 	if (!pRaw) {
 		// https://stackoverflow.com/a/59923262/786644
@@ -385,7 +380,7 @@ export const getCommon = async (
 	{
 		const gpBySeason: Record<number, number> = {};
 		for (const ps of p.stats) {
-			// The typeof checks matter: playersPlus rows can carry tid as
+			// The typeof checks matter: player.formatAll rows can carry tid as
 			// undefined, and undefined < 0 is false - an undefined smuggled into
 			// getTeamInfoBySeason becomes an invalid IndexedDB key, and that
 			// DataError killed the entire player page.
@@ -425,7 +420,7 @@ export const getCommon = async (
 		// and nothing else - and the gallery would show his newest season as
 		// "No team". The ratings rows carry a tid too, so they fill the gap.
 		//
-		// A ratings row's tid is DERIVED - playersPlus works it out from that
+		// A ratings row's tid is DERIVED - player.formatAll works it out from that
 		// season's stats rows, so for exactly the seasons this loop exists for
 		// (no stats yet) it is often undefined, and for a draft prospect it is
 		// undefined or negative. Both are genuinely "no team" and stay empty;
@@ -537,7 +532,7 @@ export const getCommon = async (
 			let description = `${age}yo`;
 
 			if (!g.get("challengeNoRatings")) {
-				// Assembled here rather than through playersPlus, so the coarse
+				// Assembled here rather than through player.formatAll, so the coarse
 				// rounding has to be applied by hand or this dropdown quietly shows
 				// exact ratings in a league that hides them.
 				const show = (value: number) => {
@@ -750,19 +745,9 @@ export default defineView({
 
 			const eventsAll = orderBy(
 				[
-					...(await idb.getCopies.events(
-						{
-							pid: topStuff.pid,
-						},
-						"noCopyCache",
-					)),
+					...(await idb.merged.events.getAll({ pid: topStuff.pid })),
 					...(p.draft.dpid !== undefined
-						? await idb.getCopies.events(
-								{
-									dpid: p.draft.dpid,
-								},
-								"noCopyCache",
-							)
+						? await idb.merged.events.getAll({ dpid: p.draft.dpid })
 						: []),
 				],
 				"eid",

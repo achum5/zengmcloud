@@ -52,15 +52,6 @@ if (__SPORT === "baseball") {
 	);
 }
 
-const scheduledEvents: MenuItemLink = {
-	type: "link",
-	active: (pageID) => pageID === "scheduledEvents",
-	league: true,
-	commandPalette: true,
-	path: ["scheduled_events"],
-	text: "Scheduled Events",
-};
-
 export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 	{
 		type: "link",
@@ -1019,7 +1010,14 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 				path: ["schedule_editor"],
 				text: "Schedule Editor",
 			},
-			...(__SPORT === "basketball" ? [scheduledEvents] : []),
+			{
+				type: "link",
+				active: (pageID) => pageID === "scheduledEvents",
+				league: true,
+				commandPalette: true,
+				path: ["scheduled_events"],
+				text: "Scheduled Events",
+			},
 			{
 				type: "link",
 				league: true,

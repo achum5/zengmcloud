@@ -28,7 +28,7 @@ const STAT_LABELS: Record<string, string> = {
 	keyStats: "Stats",
 };
 
-// playersPlus already returns per-game numbers (it is not in totals mode), so
+// player.formatAll already returns per-game numbers (it is not in totals mode), so
 // these are formatted, never divided - dividing again turned a 34-minute
 // starter into 0.6.
 const COUNTS = new Set(["gp", "gs"]);

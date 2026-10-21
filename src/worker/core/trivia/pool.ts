@@ -258,10 +258,9 @@ export const getTriviaPool = async (): Promise<TriviaPool> => {
 	}
 
 	const currentSeason = g.get("season");
-	const playersAll = await idb.getCopies.players(
-		{ activeAndRetired: true },
-		"noCopyCache",
-	);
+	const playersAll = await idb.merged.players.getAll({
+		activeAndRetired: true,
+	});
 
 	const players: TriviaPlayer[] = [];
 	for (const p of playersAll) {

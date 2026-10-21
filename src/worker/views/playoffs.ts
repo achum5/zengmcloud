@@ -1,45 +1,12 @@
 import { confByCid, type ConfIdentity } from "../../common/confs.ts";
-import { season } from "../core/index.ts";
+import { season, team } from "../core/index.ts";
+import { InvalidPlayoffSettingsError } from "../core/season/genPlayoffSeries.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
 import type { PlayoffSeries } from "../../common/types.ts";
 import { defineView } from "../util/defineView.ts";
 import { orderTeams } from "../util/orderTeams.ts";
 import { validateSeasonOnly } from "../util/processInputs.ts";
-
-type SeriesTeam = {
-	abbrev: string;
-	cid: number;
-	colors: [string, string, string];
-	imgURL?: string;
-	imgURLSmall?: string;
-	pendingPlayIn?: true;
-	pts?: number;
-	sPts?: number;
-	region: string;
-	regularSeason: {
-		won: number;
-		lost: number;
-		tied?: number;
-		otl?: number;
-	};
-	seed: number;
-	tid: number;
-	winp: number;
-	won?: number;
-};
-
-type PlayInMatchup = {
-	home: SeriesTeam;
-	away: SeriesTeam;
-};
-
-type PlayIns =
-	| (
-			| [PlayInMatchup, PlayInMatchup]
-			| [PlayInMatchup, PlayInMatchup, PlayInMatchup]
-	  )[]
-	| undefined;
 
 type TeamToEdit = {
 	tid: number;
@@ -72,15 +39,13 @@ export default defineView({
 				}[][];
 				numGamesPlayoffSeries: number[];
 				numGamesToWinSeries: number[];
-				playIns: PlayIns;
+				playIns: Awaited<ReturnType<typeof helpers.augmentPlayIns>> | undefined;
 				playoffsByConf: number | false;
 				season: number;
-				series: {
-					home: SeriesTeam;
-					away?: SeriesTeam;
-				}[][];
+				series: Awaited<ReturnType<typeof helpers.augmentSeries>>;
 				teamsToEdit: TeamToEdit[];
 		  }
+		| { errorMessage: string }
 		| undefined
 	> => {
 		if (
@@ -93,32 +58,32 @@ export default defineView({
 			let series: PlayoffSeries["series"];
 			let playIns: PlayoffSeries["playIns"];
 
-			const playoffSeries = await idb.getCopy.playoffSeries({
-				season: inputs.season,
-			});
+			const playoffSeries = await idb.merged.playoffSeries.get(inputs.season);
 
 			if (playoffSeries) {
 				series = playoffSeries.series;
 				playIns = playoffSeries.playIns;
 				finalMatchups = true;
 			} else {
-				const result = await season.genPlayoffSeries();
+				let result;
+				try {
+					result = await season.genPlayoffSeries();
+				} catch (error) {
+					if (error instanceof InvalidPlayoffSettingsError) {
+						return {
+							errorMessage: `Invalid playoff settings: ${error.message}`,
+						};
+					}
+					throw error;
+				}
 				series = result.series;
 				playIns = result.playIns;
 			}
 
-			await helpers.augmentSeries(series, inputs.season);
-
-			if (playIns) {
-				await helpers.augmentSeries(playIns, inputs.season);
-			}
-
-			// Because augmentSeries mutates series, this is for TypeScript
-			const series2 = series as {
-				home: SeriesTeam;
-				away?: SeriesTeam;
-			}[][];
-			const playIns2 = playIns as PlayIns;
+			const series2 = await helpers.augmentSeries(series, inputs.season);
+			const playIns2 = playIns
+				? await helpers.augmentPlayIns(playIns, inputs.season)
+				: undefined;
 
 			// Formatting for the table in playoffs.html
 			const matchups: {
@@ -190,34 +155,31 @@ export default defineView({
 
 			let teamsToEdit: TeamToEdit[] = [];
 			if (canEdit) {
-				const teamsUnsorted = await idb.getCopies.teamsPlus(
-					{
-						attrs: ["tid", "region", "name", "imgURL", "imgURLSmall"],
-						seasonAttrs: [
-							"cid",
-							"did",
-							"won",
-							"lost",
-							"tied",
-							"otl",
-							"winp",
-							"pts",
-							"wonDiv",
-							"lostDiv",
-							"tiedDiv",
-							"otlDiv",
-							"wonConf",
-							"lostConf",
-							"tiedConf",
-							"otlConf",
-						],
-						stats: ["pts", "oppPts", "gp"],
-						season: g.get("season"),
-						active: true,
-						showNoStats: true,
-					},
-					"noCopyCache",
-				);
+				const teamsUnsorted = await team.getFormattedAll({
+					attrs: ["tid", "region", "name", "imgURL", "imgURLSmall"],
+					seasonAttrs: [
+						"cid",
+						"did",
+						"won",
+						"lost",
+						"tied",
+						"otl",
+						"winp",
+						"pts",
+						"wonDiv",
+						"lostDiv",
+						"tiedDiv",
+						"otlDiv",
+						"wonConf",
+						"lostConf",
+						"tiedConf",
+						"otlConf",
+					],
+					stats: ["pts", "oppPts", "gp"],
+					season: g.get("season"),
+					active: true,
+					showNoStats: true,
+				});
 
 				// Sort teams by normal playoff order
 				let teams: typeof teamsUnsorted;
@@ -267,8 +229,8 @@ export default defineView({
 				finalMatchups,
 				matchups,
 				numGamesPlayoffSeries,
-				numGamesToWinSeries: numGamesPlayoffSeries.map(
-					helpers.numGamesToWinSeries,
+				numGamesToWinSeries: numGamesPlayoffSeries.map((numGames, round) =>
+					helpers.numGamesToWinRound(round, inputs.season),
 				),
 				playIns: playIns2,
 				playoffsByConf,

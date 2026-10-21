@@ -128,7 +128,7 @@ export const legacyAwardsWithNames = async (
 
 	const names = new Map<number, string>();
 	for (const pid of pids) {
-		const p = await idb.getCopy.players({ pid }, "noCopyCache");
+		const p = await idb.merged.players.get(pid);
 		if (p) {
 			names.set(pid, `${p.firstName} ${p.lastName}`.trim());
 		}

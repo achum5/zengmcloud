@@ -1,10 +1,9 @@
 import {
 	getPlayerStatsTableStats,
-	PHASE,
-	PLAYER,
 	PLAYER_STATS_TABLES,
 } from "../../common/constants.ts";
 import { idb } from "../db/index.ts";
+import { getActiveSeasonSelector } from "../db/merged/players.ts";
 import { g } from "../util/index.ts";
 import type { PlayerStatType } from "../../common/types.ts";
 import { defineView } from "../util/defineView.ts";
@@ -12,6 +11,7 @@ import { bySport } from "../../common/sportFunctions.ts";
 import { getNumericStat, hasNonZeroStat } from "../../common/statValue.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { validateSeason } from "../util/processInputs.ts";
+import { player } from "../core/index.ts";
 
 const processInputs = (params: RouteParams<"playerStatDists">) => {
 	const defaultStatType = bySport({
@@ -37,24 +37,9 @@ export default defineView({
 			inputs.season !== prevInputs?.season ||
 			inputs.statType !== prevInputs?.statType
 		) {
-			let players;
-
-			if (
-				g.get("season") === inputs.season &&
-				g.get("phase") <= PHASE.PLAYOFFS
-			) {
-				players = await idb.cache.players.indexGetAll("playersByTid", [
-					PLAYER.FREE_AGENT,
-					Infinity,
-				]);
-			} else {
-				players = await idb.getCopies.players(
-					{
-						activeSeason: inputs.season,
-					},
-					"noCopyCache",
-				);
-			}
+			const playersRaw = await idb.merged.players.getAll(
+				getActiveSeasonSelector(inputs.season),
+			);
 
 			let stats = undefined;
 			let statType: PlayerStatType = "perGame";
@@ -82,7 +67,7 @@ export default defineView({
 				}
 			}
 
-			players = await idb.getCopies.playersPlus(players, {
+			let players = await player.formatAll(playersRaw, {
 				ratings: ["skills"],
 				stats: getPlayerStatsTableStats(stats),
 				season: inputs.season,

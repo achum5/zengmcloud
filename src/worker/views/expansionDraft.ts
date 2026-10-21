@@ -30,7 +30,7 @@ export default defineView({
 		const currentTeams = g.get("teamInfoCache");
 		const allAbbrevs = getUnusedAbbrevs(currentTeams);
 
-		const divs = g.get("divs", "current");
+		const divs = g.get("divs");
 		const div = last(divs);
 		const param = allAbbrevs.map((abbrev) => ({
 			tid: -1,
@@ -55,9 +55,12 @@ export default defineView({
 			}),
 		);
 
-		const disabledTeams = (await idb.cache.teams.getAll()).filter(
-			(t) => t.disabled,
-		);
+		const allTeams = await idb.cache.teams.getAll();
+		const activeTeamDids = allTeams
+			.filter((t) => !t.disabled)
+			.map((t) => t.did);
+
+		const disabledTeams = allTeams.filter((t) => t.disabled);
 		for (const t of disabledTeams) {
 			builtInTeams.push({
 				abbrev: t.abbrev,
@@ -98,6 +101,7 @@ export default defineView({
 		});
 
 		return {
+			activeTeamDids,
 			builtInTeams: orderBy(builtInTeams, ["region", "name", "tid"]),
 			confs: g.get("confs"),
 			defaultNumProtectedPlayers,

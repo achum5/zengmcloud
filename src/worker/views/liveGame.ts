@@ -370,11 +370,15 @@ export default defineView({
 			// A multiplayer follower gets the game record in the broadcast payload, so
 			// it doesn't have to wait for the separate changeset sync to land the game
 			// row before it can render the live sim. Everyone else reads it from idb.
-			const boxScore = inputBoxScore ?? (await idb.getCopy.games({ gid }));
+			const boxScoreRaw = inputBoxScore ?? (await idb.merged.games.get(gid));
 
-			if (!boxScore) {
+			if (!boxScoreRaw) {
 				throw new Error("Invalid gid");
 			}
+
+			// Copy because boxScoreToLiveSim modifies the box score. The broadcast
+			// payload's box score is already a copy.
+			const boxScore: Game = inputBoxScore ?? helpers.deepCopy(boxScoreRaw);
 
 			const allStarGame =
 				boxScore.teams[0].tid === -1 || boxScore.teams[1].tid === -1;
@@ -382,10 +386,7 @@ export default defineView({
 
 			if (allStarGame) {
 				// That season's, for a rewatched old All-Star game.
-				allStars = await idb.getCopy.allStars(
-					{ season: boxScore.season },
-					"noCopyCache",
-				);
+				allStars = await idb.merged.allStars.get(boxScore.season);
 
 				if (!allStars) {
 					return redirectToMenu;

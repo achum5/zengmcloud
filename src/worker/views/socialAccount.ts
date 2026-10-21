@@ -187,7 +187,7 @@ const updateSocialAccount = async ({
 		const playerRow =
 			account.pid === undefined
 				? undefined
-				: await idb.getCopy.players({ pid: account.pid }, "noCopyCache");
+				: await idb.merged.players.get(account.pid);
 		const joined =
 			playerRow && playerRow.draft.year > 0
 				? playerRow.draft.year

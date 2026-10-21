@@ -4,6 +4,7 @@ import { DEFAULT_TEAM_COLORS } from "../../common/constants.ts";
 import { defineView, type ViewArgs } from "../util/defineView.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { validateAbbrev } from "../util/processInputs.ts";
+import { player, team } from "../core/index.ts";
 
 // The team's current roster, plus the color info needed to label the two
 // squads, so the front end can split them into a "Primary" and a "Secondary"
@@ -27,14 +28,11 @@ const updateIntrasquad = async ({
 	) {
 		const season = g.get("season");
 
-		const t = await idb.getCopy.teamsPlus(
-			{
-				season,
-				tid,
-				attrs: ["tid", "abbrev", "region", "name", "colors"],
-			},
-			"noCopyCache",
-		);
+		const t = await team.getFormatted({
+			season,
+			tid,
+			attrs: ["tid", "abbrev", "region", "name", "colors"],
+		});
 
 		if (!t) {
 			// Bad tid - bounce back to the league dashboard.
@@ -44,7 +42,7 @@ const updateIntrasquad = async ({
 		}
 
 		const playersAll = await idb.cache.players.indexGetAll("playersByTid", tid);
-		const players = await idb.getCopies.playersPlus(playersAll, {
+		const players = await player.formatAll(playersAll, {
 			attrs: ["pid", "firstName", "lastName", "age", "watch", "injury"],
 			ratings: ["ovr", "pos", "skills"],
 			stats: ["jerseyNumber"],

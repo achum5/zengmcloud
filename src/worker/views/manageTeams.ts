@@ -1,36 +1,33 @@
-import { idb } from "../db/index.ts";
 import { helpers, g } from "../util/index.ts";
 import { DEFAULT_JERSEY } from "../../common/constants.ts";
 import { orderBy } from "../../common/utils.ts";
 import { defineView } from "../util/defineView.ts";
+import { team } from "../core/index.ts";
 
 export default defineView({
 	id: "manageTeams",
 	load: async () => {
 		const teams = (
-			await idb.getCopies.teamsPlus(
-				{
-					attrs: [
-						"tid",
-						"abbrev",
-						"region",
-						"name",
-						"imgURL",
-						"imgURLSmall",
-						"colors",
-						"jersey",
-						"jerseySkins",
-						"did",
-						"pop",
-						"stadiumCapacity",
-						"disabled",
-					],
-					seasonAttrs: ["pop", "stadiumCapacity"],
-					season: g.get("season"),
-					addDummySeason: true,
-				},
-				"noCopyCache",
-			)
+			await team.getFormattedAll({
+				attrs: [
+					"tid",
+					"abbrev",
+					"region",
+					"name",
+					"imgURL",
+					"imgURLSmall",
+					"colors",
+					"jersey",
+					"jerseySkins",
+					"did",
+					"pop",
+					"stadiumCapacity",
+					"disabled",
+				],
+				seasonAttrs: ["pop", "stadiumCapacity"],
+				season: g.get("season"),
+				addDummySeason: true,
+			})
 		).map((t) => {
 			const pop = t.pop ?? t.seasonAttrs.pop;
 
@@ -53,7 +50,6 @@ export default defineView({
 
 		return {
 			autoRelocate: !!g.get("autoRelocate"),
-			defaultStadiumCapacity: g.get("defaultStadiumCapacity"),
 			confs: g.get("confs"),
 			divs: g.get("divs"),
 			teams: orderBy(teams, [

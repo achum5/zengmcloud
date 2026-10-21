@@ -175,7 +175,7 @@ export const simulateEightyTwoZeroSeason = async (
 
 	const drafted: Player[] = [];
 	for (const [i, pick] of picks.entries()) {
-		const p = await idb.getCopy.players({ pid: pick.pid }, "noCopyCache");
+		const p = await idb.merged.players.get(pick.pid);
 		if (!p) {
 			return undefined;
 		}

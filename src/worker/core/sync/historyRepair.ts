@@ -1,5 +1,5 @@
 import { idb } from "../../db/index.ts";
-import { g, helpers, logEvent } from "../../util/index.ts";
+import { g, logEvent } from "../../util/index.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { syncDebugLog } from "./debugLog.ts";
 
@@ -37,6 +37,21 @@ type SeriesMatchup = {
 	away?: SeriesTeam;
 };
 
+// Wins needed to take a series of this many games. A missing or invalid
+// length counts as best-of-seven.
+export const numGamesToWinSeries = (
+	numGamesPlayoffSeries: number | undefined,
+) => {
+	if (
+		typeof numGamesPlayoffSeries !== "number" ||
+		Number.isNaN(numGamesPlayoffSeries)
+	) {
+		return 4;
+	}
+
+	return Math.ceil(numGamesPlayoffSeries / 2);
+};
+
 // How many playoff rounds each team in the bracket won, derived from the
 // bracket alone. Appearing in round r proves r rounds won; winning a decided
 // round-r series proves r+1 (the champion has no later round to appear in, so
@@ -54,7 +69,7 @@ export const roundsWonFromSeries = (
 	};
 
 	for (const [r, round] of series.entries()) {
-		const numGamesToWin = helpers.numGamesToWinSeries(numGamesPlayoffSeries[r]);
+		const numGamesToWin = numGamesToWinSeries(numGamesPlayoffSeries[r]);
 		for (const matchup of round) {
 			const { home, away } = matchup;
 			// A pending play-in slot holds a placeholder, not a team that has made

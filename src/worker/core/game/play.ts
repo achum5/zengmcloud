@@ -127,7 +127,7 @@ const play = async (
 	const cbNoGames = async (playoffsOver: boolean = false) => {
 		// Settle any sportsbook game bets whose games just finished (no-op if
 		// nothing is bet). Wallet changes ride the sim's sync window to the room.
-		// This used to sit behind a flush; it doesn't need one - getCopy.games
+		// This used to sit behind a flush; it doesn't need one - idb.merged.games
 		// merges the cache with the database, so games just simmed are visible,
 		// and settlement flushes for itself after a wallet change. The flush
 		// upstream kept is below, skipped when a phase change is about to do it.

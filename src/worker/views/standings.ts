@@ -3,7 +3,7 @@ import { g, helpers } from "../util/index.ts";
 import type { ByConf } from "../../common/types.ts";
 import { defineView } from "../util/defineView.ts";
 import { getTiebreakers, orderTeams } from "../util/orderTeams.ts";
-import { season } from "../core/index.ts";
+import { season, team } from "../core/index.ts";
 import {
 	formatAtsRecord,
 	getTeamAtsRecords,
@@ -93,59 +93,53 @@ export default defineView({
 
 			// One load of the season's games, shared by both columns built from them -
 			// a season of box scores is not something to read twice per render.
-			const games = await idb.getCopies.games(
-				{ season: inputs.season },
-				"noCopyCache",
-			);
+			const games = await idb.merged.games.getAll({ season: inputs.season });
 			const atsRecords = await getTeamAtsRecords(inputs.season, games);
 			const over500Records = await getTeamOver500Records(inputs.season, games);
 			const sosByTid = await getStrengthOfSchedule(inputs.season);
 
 			const teams = (
-				await idb.getCopies.teamsPlus(
-					{
-						attrs: ["tid"],
-						seasonAttrs: [
-							"won",
-							"lost",
-							"tied",
-							"otl",
-							"winp",
-							"pts",
-							"ptsPct",
-							"wonHome",
-							"lostHome",
-							"tiedHome",
-							"otlHome",
-							"wonAway",
-							"lostAway",
-							"tiedAway",
-							"otlAway",
-							"wonDiv",
-							"lostDiv",
-							"tiedDiv",
-							"otlDiv",
-							"wonConf",
-							"lostConf",
-							"tiedConf",
-							"otlConf",
-							"lastTen",
-							"streak",
-							"cid",
-							"did",
-							"abbrev",
-							"region",
-							"name",
-							"clinchedPlayoffs",
-							"imgURL",
-							"imgURLSmall",
-						],
-						stats: ["pts", "oppPts", "gp"],
-						season: inputs.season,
-						showNoStats: true,
-					},
-					"noCopyCache",
-				)
+				await team.getFormattedAll({
+					attrs: ["tid"],
+					seasonAttrs: [
+						"won",
+						"lost",
+						"tied",
+						"otl",
+						"winp",
+						"pts",
+						"ptsPct",
+						"wonHome",
+						"lostHome",
+						"tiedHome",
+						"otlHome",
+						"wonAway",
+						"lostAway",
+						"tiedAway",
+						"otlAway",
+						"wonDiv",
+						"lostDiv",
+						"tiedDiv",
+						"otlDiv",
+						"wonConf",
+						"lostConf",
+						"tiedConf",
+						"otlConf",
+						"lastTen",
+						"streak",
+						"cid",
+						"did",
+						"abbrev",
+						"region",
+						"name",
+						"clinchedPlayoffs",
+						"imgURL",
+						"imgURLSmall",
+					],
+					stats: ["pts", "oppPts", "gp"],
+					season: inputs.season,
+					showNoStats: true,
+				})
 			).map((t) => ({
 				...t,
 				ats: formatAtsRecord(atsRecords.get(t.tid)),

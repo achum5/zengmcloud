@@ -200,10 +200,7 @@ export const generateTeamTriviaRound = async (
 		const { season, tid } =
 			candidates[Math.floor(Math.random() * candidates.length)]!;
 
-		const teamSeasons = await idb.getCopies.teamSeasons(
-			{ season },
-			"noCopyCache",
-		);
+		const teamSeasons = await idb.merged.teamSeasons.getAll({ season });
 		const ts = teamSeasons.find((row) => row.tid === tid);
 		if (!ts) {
 			continue;
@@ -275,7 +272,7 @@ export const generateTeamTriviaRound = async (
 		let playoffs: TeamTriviaRound["playoffs"];
 		const roundsWon = ts.playoffRoundsWon;
 		if (roundsWon !== undefined && (season < currentSeason || playoffsDone)) {
-			const series = await idb.getCopy.playoffSeries({ season }, "noCopyCache");
+			const series = await idb.merged.playoffSeries.get(season);
 			const numRounds =
 				series?.series.length ?? g.get("numGamesPlayoffSeries").length;
 			if (numRounds > 0) {

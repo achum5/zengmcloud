@@ -81,6 +81,8 @@ import {
 import { oldAwardsToNewAwards } from "../../db/migrations/78/oldAwardsToNewAwards.ts";
 import { getOldAwardsByPlayer } from "../../db/migrations/78/getOldAwardsByPlayer.ts";
 import { getNewAwardsByPlayer } from "../../db/migrations/78/getNewAwardsByPlayer.ts";
+import { migrateScheduledEvents80 } from "../../db/migrations/80/migrate.ts";
+import { unwrapGameAttribute } from "../../../common/unwrapGameAttribute.ts";
 
 export type TeamInfo = TeamBasic & {
 	disabled?: boolean;
@@ -778,8 +780,12 @@ const finalizeDBExceptPlayers = async ({
 	await Promise.all(promises);
 };
 
-const confirmSequential = (objs: any, key: string, objectName: string) => {
-	const values = new Set();
+const confirmSequential = <Key extends string>(
+	objs: Record<Key, unknown>[],
+	key: Key,
+	objectName: string,
+) => {
+	const values = new Set<number>();
 
 	for (const obj of objs) {
 		const value = obj[key];
@@ -798,8 +804,6 @@ const confirmSequential = (objs: any, key: string, objectName: string) => {
 			);
 		}
 	}
-
-	return values;
 };
 
 // Decide whether imported teamSeasons rows keep their `rid`s. Preservation is
@@ -934,7 +938,7 @@ const processTeamInfos = async ({
 	const teamSeasons: TeamSeasonWithoutKey[] = [];
 	const teamStats: TeamStatsWithoutKey[] = [];
 
-	const teamSeasonUniqueKeys = new Set();
+	const teamSeasonUniqueKeys = new Set<string>();
 	const teamSeasonUniqueKeyErrorCounts: Record<string, number> = {};
 
 	let scoutingLevel: number | undefined;
@@ -1010,7 +1014,7 @@ const processTeamInfos = async ({
 					}
 				}
 
-				// See similar code in teamsPlus
+				// See similar code in team.getFormattedAll
 				const copyFromTeamIfUndefined = [
 					// For upgrades, or manually edited league files
 					"cid",
@@ -1660,7 +1664,7 @@ const afterDBStream = async ({
 				});
 
 	// If players are specified for some team on import (from CustomizeTeams), replace the randomly generated players
-	const replaceTids = new Set();
+	const replaceTids = new Set<number>();
 	const extraActivePlayers: PlayerWithoutKey[] = [];
 	const draftPickAutoContract = g.get("draftPickAutoContract");
 	const rookieSalaries = draftPickAutoContract ? draft.getRookieSalaries() : [];
@@ -1816,6 +1820,20 @@ const afterDBStream = async ({
 		teamStats,
 		teams,
 	});
+
+	// Version 80 upgrade (upstream's 74, renumbered - and a file from this fork
+	// at 74-79 still has the old events; splitting again is a no-op)
+	// Needs to be done after all the scheduled events are in the database, because it depends on the order of them (okay could stream it but that'd be more complex)
+	if (fromFile.version !== undefined && fromFile.version < 80) {
+		await migrateScheduledEvents80({
+			confs: unwrapGameAttribute(gameAttributes, "confs"),
+			divs: unwrapGameAttribute(gameAttributes, "divs"),
+			scheduledEventsStore: idb.league.transaction(
+				"scheduledEvents",
+				"readwrite",
+			).store,
+		});
+	}
 
 	// Clear old game attributes from g, to make sure the new ones are saved to the db in setGameAttributes
 	helpers.resetG();

@@ -7,6 +7,7 @@ import addFirstNameShort from "../util/addFirstNameShort.ts";
 import { extraStats } from "./hallOfFame.ts";
 import { processPlayersHallOfFame } from "../util/processPlayersHallOfFame.ts";
 import { processInputs } from "./player.ts";
+import { player } from "../core/index.ts";
 
 const getRelationText = (
 	gender: GameAttributesLeague["gender"],
@@ -111,7 +112,28 @@ export default defineView({
 				hockey: ["gp", "keyStats", "ops", "dps", "ps"],
 			} as const);
 
-			let playersAll: Player[] = [];
+			const formatOptions = {
+				attrs: [
+					"pid",
+					"firstName",
+					"lastName",
+					"draft",
+					"retiredYear",
+					"statsTids",
+					"hof",
+					"relatives",
+					"numBrothers",
+					"numFathers",
+					"numSons",
+					"college",
+					"jerseyNumber",
+				],
+				ratings: ["season", "ovr", "pos"],
+				stats: ["season", "abbrev", "tid", ...stats, ...extraStats],
+				fuzz: true,
+			} as const;
+
+			let playersFiltered;
 			const generationsByPid = new Map<number, number>();
 
 			// Anyone who is directly a father or son of the initial player, and their fathers/sons
@@ -125,6 +147,7 @@ export default defineView({
 			const spousePids = new Set<number>();
 
 			if (typeof pid === "number") {
+				const playersAll: Player[] = [];
 				const pidsSeen = new Set();
 				fatherLinePids.add(pid);
 				sonLinePids.add(pid);
@@ -136,12 +159,9 @@ export default defineView({
 					}[],
 					initial: boolean,
 				) => {
-					const players = await idb.getCopies.players(
-						{
-							pids: infos.map((info) => info.pid),
-						},
-						"noCopyCache",
-					);
+					const players = await idb.merged.players.getAll({
+						pids: infos.map((info) => info.pid),
+					});
 
 					const infosNext: typeof infos = [];
 
@@ -225,35 +245,18 @@ export default defineView({
 					],
 					true,
 				);
-			} else {
-				playersAll = await idb.getCopies.players(
-					{
-						filter: (p) => p.relatives.length > 0,
-					},
-					"noCopyCache",
-				);
-			}
 
-			const playersFiltered = await idb.getCopies.playersPlus(playersAll, {
-				attrs: [
-					"pid",
-					"firstName",
-					"lastName",
-					"draft",
-					"retiredYear",
-					"statsTids",
-					"hof",
-					"relatives",
-					"numBrothers",
-					"numFathers",
-					"numSons",
-					"college",
-					"jerseyNumber",
-				],
-				ratings: ["season", "ovr", "pos"],
-				stats: ["season", "abbrev", "tid", ...stats, ...extraStats],
-				fuzz: true,
-			});
+				playersFiltered = await player.formatAll(playersAll, formatOptions);
+			} else {
+				const abbrevs = await player.loadAbbrevs(formatOptions);
+				const formatPlayer = player.createFormatter(formatOptions, abbrevs);
+				playersFiltered = (
+					await idb.merged.players.getAll(undefined, {
+						filter: (p) => p.relatives.length > 0,
+						map: formatPlayer,
+					})
+				).filter((p) => p !== undefined);
+			}
 
 			const players = playersFiltered.map((p) => {
 				const generation = generationsByPid.get(p.pid);

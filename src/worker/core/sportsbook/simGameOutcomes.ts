@@ -229,10 +229,10 @@ const loadSide = async (tid: number, daysInFuture: number) => {
 			tid,
 			g.get("season"),
 		]),
-		// NOT copies - "noCopyCache" is this caller promising not to mutate what
-		// it gets back, which is what lets the db hand over the live cache rows.
-		// Anything hypothetical has to be built alongside them, never onto them.
-		idb.getCopies.players({ tid }, "noCopyCache"),
+		// NOT copies - idb.merged hands over the live cache rows, on this
+		// caller's promise not to mutate what it gets back. Anything
+		// hypothetical has to be built alongside them, never onto them.
+		idb.merged.players.getAll({ tid }),
 	]);
 	if (!t || !teamSeason) {
 		return undefined;

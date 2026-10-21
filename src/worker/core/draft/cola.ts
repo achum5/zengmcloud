@@ -72,10 +72,7 @@ export const updateColaAfterPlayoffs = async () => {
 	}
 
 	const season = g.get("season");
-	const teamSeasons = await idb.getCopies.teamSeasons(
-		{ season },
-		"noCopyCache",
-	);
+	const teamSeasons = await idb.merged.teamSeasons.getAll({ season });
 	for (const row of teamSeasons) {
 		const t = await idb.cache.teams.get(row.tid);
 		assertDefined(t);
@@ -190,10 +187,7 @@ export const initializeCola = async () => {
 	const colaByTid: Record<number, number> = {};
 
 	for (const season of range(seasons[0], seasons[1] + 1)) {
-		const teamSeasons = await idb.getCopies.teamSeasons(
-			{ season },
-			"noCopyCache",
-		);
+		const teamSeasons = await idb.merged.teamSeasons.getAll({ season });
 		if (teamSeasons.length === 0) {
 			// No log of playoff history, so just skip this season
 			continue;
@@ -230,10 +224,7 @@ export const initializeCola = async () => {
 		}
 
 		// Decrease based on lotery success
-		const players = await idb.getCopies.players(
-			{ draftYear: season },
-			"noCopyCache",
-		);
+		const players = await idb.merged.players.getAll({ draftYear: season });
 		for (const p of players) {
 			if (p.draft.round === 1 && p.draft.pick <= 4) {
 				const factor = DRAFT_LOTTERY_FACTORS[p.draft.pick - 1];

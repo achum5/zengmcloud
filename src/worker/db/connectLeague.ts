@@ -60,6 +60,7 @@ import { gameAttributesArrayToObject } from "../../common/gameAttributesArrayToO
 import { unwrapGameAttribute } from "../../common/unwrapGameAttribute.ts";
 import { defaultGameAttributes } from "../../common/defaultGameAttributes.ts";
 import { migrate78 } from "./migrations/78/migrate.ts";
+import { migrate80 } from "./migrations/80/migrate.ts";
 
 export interface LeagueDB extends DBSchema {
 	allStars: {
@@ -1848,6 +1849,11 @@ const migrate = async ({
 		db.createObjectStore("jerseySkins", {
 			keyPath: "id",
 		});
+	}
+
+	// (Upstream's version 74, renumbered: a fork league is past 74 already.)
+	if (oldVersion < 80) {
+		await migrate80(transaction);
 	}
 
 	// Next update - do similar to `oldVersion < 71` above for numPlayoffRounds and draftType, from loadGameAttributes

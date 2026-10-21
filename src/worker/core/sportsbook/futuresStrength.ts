@@ -2,6 +2,7 @@ import { idb } from "../../db/index.ts";
 import teamOvr from "../team/ovr.ts";
 import { RATINGS } from "../../../common/constants.ts";
 import { pregameLineupSynergyFromPlayers } from "../GameSim.basketball/synergy.ts";
+import { player } from "../index.ts";
 
 // The team strength that drives every basketball futures market, built from the
 // SAME engine-measured model as the per-game spread (getGameSpread): overall
@@ -101,7 +102,7 @@ export const getFuturesStrengths = async (
 			"playersByTid",
 			t.tid,
 		);
-		const players = await idb.getCopies.playersPlus(rawPlayers, {
+		const players = await player.formatAll(rawPlayers, {
 			attrs: ["pid", "tid", "injury", "value"],
 			ratings,
 			stats: ["season", "tid"],

@@ -70,7 +70,7 @@ export const getNoteTeammates = async (
 	for (const tid of tids) {
 		let squad: Player[];
 		try {
-			squad = await idb.getCopies.players({ statsTid: tid }, "noCopyCache");
+			squad = await idb.merged.players.getAll({ statsTid: tid });
 		} catch {
 			// A link is a nicety; never break the page over one.
 			continue;

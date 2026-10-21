@@ -15,6 +15,7 @@ import {
 } from "./draftPickProjection.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { validateAbbrev } from "../util/processInputs.ts";
+import { team } from "../core/index.ts";
 
 const processInputs = (params: RouteParams<"draftPicks">) => {
 	const [tid, abbrev] = validateAbbrev(params.abbrev);
@@ -58,16 +59,13 @@ const adjustProjectedPick = ({
 export const processDraftPicks = async (draftPicksRaw: DraftPick[]) => {
 	const draftPicks = [];
 
-	const teamsRaw = await idb.getCopies.teamsPlus(
-		{
-			attrs: ["tid", "abbrev", "playThroughInjuries"],
-			seasonAttrs: ["lastTen", "won", "lost", "tied", "otl"],
-			stats: ["gp", "mov"],
-			season: g.get("season"),
-			showNoStats: true,
-		},
-		"noCopyCache",
-	);
+	const teamsRaw = await team.getFormattedAll({
+		attrs: ["tid", "abbrev", "playThroughInjuries"],
+		seasonAttrs: ["lastTen", "won", "lost", "tied", "otl"],
+		stats: ["gp", "mov"],
+		season: g.get("season"),
+		showNoStats: true,
+	});
 
 	const teamsWithRankings = await addPowerRankingsStuffToTeams(
 		teamsRaw,
@@ -103,10 +101,9 @@ export const processDraftPicks = async (draftPicksRaw: DraftPick[]) => {
 	});
 	let performance: PerformanceScore[] | undefined;
 	if (ratingsHidden) {
-		const lastSeason = await idb.getCopies.teamSeasons(
-			{ season: g.get("season") - 1 },
-			"noCopyCache",
-		);
+		const lastSeason = await idb.merged.teamSeasons.getAll({
+			season: g.get("season") - 1,
+		});
 		const byTid = new Map(lastSeason.map((ts) => [ts.tid, ts]));
 		performance = teamsWithRankings.map((t) => {
 			const ts = byTid.get(t.tid);
@@ -183,10 +180,10 @@ export const processDraftPicks = async (draftPicksRaw: DraftPick[]) => {
 
 		// Extra filter at the end is for TypeScript
 		const events = (
-			await idb.getCopies.events({
-				dpid: dp.dpid,
-				filter: (event) => event.type === "trade",
-			})
+			await idb.merged.events.getAll(
+				{ dpid: dp.dpid },
+				{ filter: (event) => event.type === "trade" },
+			)
 		).filter((row) => row.type === "trade");
 
 		let trades;

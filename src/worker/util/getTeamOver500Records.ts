@@ -27,8 +27,7 @@ export const getTeamOver500Records = async (
 	// Passing them in avoids pulling every box score a second time.
 	preloadedGames?: Game[],
 ): Promise<Map<number, Over500Record>> => {
-	const games =
-		preloadedGames ?? (await idb.getCopies.games({ season }, "noCopyCache"));
+	const games = preloadedGames ?? (await idb.merged.games.getAll({ season }));
 
 	const blank = (): Over500Record => ({ won: 0, lost: 0, tied: 0 });
 

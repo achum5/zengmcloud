@@ -9,7 +9,7 @@ import { GameSim, team } from "../core/index.ts";
 import { processTeam } from "../core/game/loadTeams.ts";
 import { gameSimToBoxScore } from "../core/game/writeGameStats.ts";
 import { idb } from "../db/index.ts";
-import { g, toUI } from "../util/index.ts";
+import { g, helpers, toUI } from "../util/index.ts";
 import { boxScoreToLiveSim } from "../views/liveGame.ts";
 import type { TeamSeasonOverride } from "../views/gameLog.ts";
 import { randInt } from "../../common/random.ts";
@@ -37,12 +37,11 @@ export const simIntrasquadGame = async (
 	}
 
 	// Fresh copies so the sim's mutations never touch the league's cached
-	// players. Deliberately NOT "noCopyCache": that flag is the caller promising
-	// not to mutate, and it hands back the live cache rows - so `collect` below,
-	// which rewrites rosterOrder to match the squads the user dragged together,
-	// was reordering the actual roster and publishing it to the room. A
-	// scrimmage is a friendly; none of it is meant to reach league state.
-	const allPlayers = await idb.getCopies.players({ tid });
+	// players. idb.merged hands back the live cache rows - so without the copy
+	// `collect` below, which rewrites rosterOrder to match the squads the user
+	// dragged together, would reorder the actual roster and publish it to the
+	// room. A scrimmage is a friendly; none of it is meant to reach league state.
+	const allPlayers = helpers.deepCopy(await idb.merged.players.getAll({ tid }));
 	const byPid = new Map(allPlayers.map((p) => [p.pid, p]));
 
 	const collect = (pids: number[]): Player[] => {
@@ -111,7 +110,6 @@ export const simIntrasquadGame = async (
 					},
 					{ won: 0, lost: 0, tied: 0, otl: 0, cid: 0, did: 0 },
 					players,
-					true,
 				);
 			}),
 		)) as [any, any];

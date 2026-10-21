@@ -3,12 +3,13 @@ import { g } from "../../util/index.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { getTeamInfoBySeason } from "../../util/getTeamInfoBySeason.ts";
 import type { PlayerStatAttr } from "../../../common/types.ts";
+import { player } from "../index.ts";
 
 // The player card the trivia games open when you tap a player you've named.
 //
 // A trimmed player page rather than a link to one: leaving the page mid-grid
 // loses the board, so the card comes to you. Everything here is display-only
-// and goes through playersPlus, which means fuzz and the hide-ones-digit mode
+// and goes through player.formatAll, which means fuzz and the hide-ones-digit mode
 // apply exactly as they do everywhere else.
 
 const PROFILE_STATS = bySport<PlayerStatAttr[]>({
@@ -34,14 +35,14 @@ export type TriviaPlayerProfile = Awaited<
 >;
 
 export const getTriviaPlayerProfile = async (pid: number) => {
-	const pRaw = await idb.getCopy.players({ pid }, "noCopyCache");
+	const pRaw = await idb.merged.players.get(pid);
 	if (!pRaw) {
 		return undefined;
 	}
 
 	// Every season's rows, read loosely below: the profile picks fields off
 	// whichever rows exist rather than relying on one season's shape.
-	const p: any = await idb.getCopy.playersPlus(pRaw, {
+	const p: any = await player.format(pRaw, {
 		attrs: [
 			"pid",
 			"name",

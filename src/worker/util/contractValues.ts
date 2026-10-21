@@ -1,7 +1,7 @@
 // League-side plumbing for the contract-value model in common/contractValue.ts.
 //
 // EVERYTHING HERE IS IN MILLIONS, not the thousands the league file stores
-// contracts in. That is because playersPlus already hands back `salary` in
+// contracts in. That is because player.formatAll already hands back `salary` in
 // millions, and it is what the tables display - converting once, here, beats
 // converting at four call sites and getting one of them wrong.
 
@@ -13,13 +13,14 @@ import {
 } from "../../common/contractValue.ts";
 import { idb } from "../db/index.ts";
 import { g } from "./index.ts";
+import { player } from "../core/index.ts";
 
 export type ContractValueContext = {
 	dollarsPerWin: number;
 	minContract: number;
 };
 
-// One priced player, as the views see them after playersPlus.
+// One priced player, as the views see them after player.formatAll.
 type PricedPlayer = {
 	pid: number;
 	salary?: number;
@@ -77,9 +78,9 @@ export const loadContractValueContext = async (
 					PLAYER.FREE_AGENT,
 					Infinity,
 				])
-			: await idb.getCopies.players({ activeSeason: season }, "noCopyCache");
+			: await idb.merged.players.getAll({ activeSeason: season });
 
-	const players = await idb.getCopies.playersPlus(playersAll, {
+	const players = await player.formatAll(playersAll, {
 		attrs: ["pid", "salary"],
 		stats: ["vorp", "gp"],
 		season,

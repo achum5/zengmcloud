@@ -1,6 +1,6 @@
 import { PHASE, PLAYER } from "../../common/constants.ts";
 import type { Player, PlayerStatAttr } from "../../common/types.ts";
-import { draft } from "../core/index.ts";
+import { draft, player } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers, local } from "../util/index.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
@@ -215,7 +215,7 @@ export default defineView({
 			}
 
 			const draftedPlayers = addFirstNameShort(
-				await idb.getCopies.playersPlus(draftedRaw, {
+				await player.formatAll(draftedRaw, {
 					attrs: [
 						"pid",
 						"tid",
@@ -326,7 +326,7 @@ export default defineView({
 
 			undraftedRaw.sort((a, b) => b.valueFuzz - a.valueFuzz);
 			const undraftedPlayers = addFirstNameShort(
-				await idb.getCopies.playersPlus(undraftedRaw, {
+				await player.formatAll(undraftedRaw, {
 					attrs: [
 						"pid",
 						"firstName",
@@ -367,7 +367,7 @@ export default defineView({
 				"playersByTid",
 				g.get("userTid"),
 			);
-			const userPlayers = await idb.getCopies.playersPlus(userPlayersAll, {
+			const userPlayers = await player.formatAll(userPlayersAll, {
 				attrs: [],
 				ratings: ["pos"],
 				stats: [],

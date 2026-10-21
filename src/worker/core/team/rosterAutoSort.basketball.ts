@@ -1,5 +1,6 @@
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
+import { player } from "../index.ts";
 
 /**
  * Given a list of players sorted by ability, find the starters.
@@ -86,7 +87,7 @@ export const getRosterOrderByPid = (
 		}
 	}
 
-	const rosterOrders = new Map();
+	const rosterOrders = new Map<number, number>();
 
 	for (const [i, p] of newPlayers.entries()) {
 		rosterOrders.set(p.pid, i);
@@ -113,7 +114,7 @@ const rosterAutoSort = async (tid: number, onlyNewPlayers?: boolean) => {
 		"playersByTid",
 		tid,
 	);
-	const players = await idb.getCopies.playersPlus(playersFromCache, {
+	const players = await player.formatAll(playersFromCache, {
 		attrs: ["pid", "valueNoPot", "valueNoPotFuzz"],
 		ratings: ["pos"],
 		season: g.get("season"),

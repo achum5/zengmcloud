@@ -1,12 +1,14 @@
 import {
-	PHASE,
-	PLAYER,
 	PLAYER_STATS_TABLES,
 	getPlayerStatsTableStats,
 } from "../../common/constants.ts";
 import { idb } from "../db/index.ts";
+import {
+	getActiveSeasonSelector,
+	type PlayersSelector,
+} from "../db/merged/players.ts";
 import { g, helpers } from "../util/index.ts";
-import type { PlayerStatType } from "../../common/types.ts";
+import type { Player, PlayerStatType } from "../../common/types.ts";
 import { defineView } from "../util/defineView.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
 import { getBestPos } from "../core/player/checkJerseyNumberRetirement.ts";
@@ -24,6 +26,7 @@ import { actualPhase } from "../util/actualPhase.ts";
 import { validateAbbrev } from "../util/processInputs.ts";
 import { validateSeason } from "../util/processInputs.ts";
 import { validateSeasonType } from "../util/processInputs.ts";
+import { player } from "../core/index.ts";
 
 const processInputs = (params: RouteParams<"playerStats">) => {
 	let abbrev;
@@ -139,31 +142,29 @@ export default defineView({
 				actualStats = getPlayerStatsTableStats(stats);
 			}
 
-			let playersAll;
-			if (
-				g.get("season") === inputs.season &&
-				g.get("phase") <= PHASE.PLAYOFFS
-			) {
-				playersAll = await idb.cache.players.indexGetAll("playersByTid", [
-					PLAYER.FREE_AGENT,
-					Infinity,
-				]);
-			} else {
-				playersAll = await idb.getCopies.players(
-					{
-						activeSeason:
-							typeof inputs.season === "number" ? inputs.season : undefined,
-					},
-					"noCopyCache",
-				);
-			}
-
 			let tid: number | undefined = g
 				.get("teamInfoCache")
 				.findIndex((t) => t.abbrev === inputs.abbrev);
 
 			if (tid < 0) {
 				tid = undefined;
+			}
+
+			// Applied while reading players, so players who won't be shown are not all held in memory. For a team, this keeps anyone with any stats for that team, and formatting does the exact filtering.
+			let filter: ((p: Player) => boolean) | undefined;
+			if (tid !== undefined) {
+				const season = inputs.season;
+				filter = (p) =>
+					p.stats.some(
+						(ps) =>
+							ps.tid === tid &&
+							(typeof season !== "number" || ps.season === season),
+					);
+			} else if (inputs.abbrev === "watch") {
+				filter = (p) => p.watch !== undefined;
+			} else if (inputs.abbrev === "playoffs") {
+				const playoffTids = await getActivePlayoffTids();
+				filter = (p) => playoffTids.has(p.tid);
 			}
 
 			let statType: PlayerStatType;
@@ -179,21 +180,13 @@ export default defineView({
 				statType = "totals";
 			}
 
-			if (tid === undefined) {
-				if (inputs.abbrev === "watch") {
-					playersAll = playersAll.filter((p) => p.watch);
-				} else if (inputs.abbrev === "playoffs") {
-					const playoffTids = await getActivePlayoffTids();
-					playersAll = playersAll.filter((p) => playoffTids.has(p.tid));
-				}
-			}
-
 			// Seasons each player actually stepped on the floor (min > 0), so we can
 			// show years of experience per row - as of that row's season for a single
 			// season or "all", or career total for the career view. Mirrors the
 			// "experience" attr's min>0 definition so it matches the rest of the game.
+			// Filled in while reading players, since they are not all kept in memory.
 			const playedSeasonsByPid = new Map<number, number[]>();
-			for (const p of playersAll) {
+			const recordPlayedSeasons = (p: Player) => {
 				const seasons = new Set<number>();
 				for (const row of (p.stats ?? []) as any[]) {
 					if (row.min > 0) {
@@ -201,7 +194,7 @@ export default defineView({
 					}
 				}
 				playedSeasonsByPid.set(p.pid, [...seasons]);
-			}
+			};
 			const experienceAsOf = (
 				pid: number,
 				season: number | undefined,
@@ -212,7 +205,7 @@ export default defineView({
 					: list.filter((s) => s <= season).length;
 			};
 
-			const playersPlusOptions = {
+			const formatOptions = {
 				attrs: [
 					"pid",
 					"firstName",
@@ -237,55 +230,104 @@ export default defineView({
 				mergeStats: "totOnly",
 			} as const;
 
+			// Reads players and turns each one into rows, using getRows to format the player. This runs while reading players, so the full player objects are not all held in memory at once.
+			const readRows = async <Row>(getRows: (p: Player) => Row[]) => {
+				let selector: PlayersSelector | undefined;
+				if (typeof inputs.season === "number") {
+					selector = getActiveSeasonSelector(inputs.season);
+				} else if (inputs.abbrev === "watch") {
+					// Only read players on the watch list, rather than all players
+					selector = { watch: true };
+				}
+
+				const rowsByPlayer = await idb.merged.players.getAll(selector, {
+					filter,
+					map: (p) => {
+						recordPlayedSeasons(p);
+						return getRows(p);
+					},
+				});
+				const rows: Row[] = [];
+				for (const playerRows of rowsByPlayer) {
+					rows.push(...playerRows);
+				}
+				return rows;
+			};
+
 			// Normalize to one row per player (or per player season, for "all") with a single stats row, regardless of inputs.season
 			let rows;
 			if (typeof inputs.season === "number") {
-				const players = await idb.getCopies.playersPlus(playersAll, {
-					...playersPlusOptions,
+				const seasonFormatOptions = {
+					...formatOptions,
 					season: inputs.season,
-				});
-				rows = players.map(({ ratings, ...p }) => ({
-					...p,
-					pos: ratings.pos,
-					skills: ratings.skills,
-				}));
-			} else {
-				const players = await idb.getCopies.playersPlus(
-					playersAll,
-					playersPlusOptions,
+				};
+				const abbrevs = await player.loadAbbrevs(seasonFormatOptions);
+				const formatPlayer = player.createFormatter(
+					seasonFormatOptions,
+					abbrevs,
 				);
+				rows = await readRows((pRaw) => {
+					const p = formatPlayer(pRaw);
+					if (!p) {
+						return [];
+					}
+
+					const { ratings, ...pRest } = p;
+					return [
+						{
+							...pRest,
+							pos: ratings.pos,
+							skills: ratings.skills,
+						},
+					];
+				});
+			} else {
+				const abbrevs = await player.loadAbbrevs(formatOptions);
+				const formatPlayer = player.createFormatter(formatOptions, abbrevs);
 
 				if (inputs.season === "all") {
-					rows = players.flatMap(
-						({
+					rows = await readRows((pRaw) => {
+						const p = formatPlayer(pRaw);
+						if (!p) {
+							return [];
+						}
+
+						const {
 							careerStats,
 							careerStatsPlayoffs,
 							careerStatsCombined,
 							ratings: allRatings,
 							stats: allStats,
-							...p
-						}) =>
-							allStats.map((stats) => {
-								const ratings =
-									allRatings.find((pr) => pr.season === stats.season) ??
-									last(allRatings);
+							...pRest
+						} = p;
+						return allStats.map((stats) => {
+							const ratings =
+								allRatings.find((pr) => pr.season === stats.season) ??
+								last(allRatings);
 
-								return {
-									...p,
-									pos: ratings.pos,
-									skills: ratings.skills,
-									stats,
-								};
-							}),
-					);
+							return {
+								...pRest,
+								pos: ratings.pos,
+								skills: ratings.skills,
+								stats,
+							};
+						});
+					});
 				} else {
-					rows = [];
-					for (const {
-						careerStats,
-						careerStatsPlayoffs,
-						careerStatsCombined,
-						...p
-					} of players) {
+					rows = await readRows((pRaw) => {
+						const p = formatPlayer(pRaw);
+						if (!p) {
+							return [];
+						}
+
+						const {
+							careerStats,
+							careerStatsPlayoffs,
+							careerStatsCombined,
+							ratings,
+							stats: allStats,
+							...pRest
+						} = p;
 						const stats =
 							inputs.playoffs === "playoffs"
 								? careerStatsPlayoffs
@@ -293,18 +335,18 @@ export default defineView({
 									? careerStatsCombined
 									: careerStats;
 						if (!stats) {
-							continue;
+							return [];
 						}
 
-						const { ratings, stats: allStats, ...pRest } = p;
-
-						rows.push({
-							...pRest,
-							pos: getBestPos({ ratings, stats: allStats }, tid),
-							skills: undefined,
-							stats,
-						});
-					}
+						return [
+							{
+								...pRest,
+								pos: getBestPos({ ratings, stats: allStats }, tid),
+								skills: undefined,
+								stats,
+							},
+						];
+					});
 				}
 			}
 

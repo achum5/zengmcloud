@@ -1,11 +1,11 @@
 import {
-	PHASE,
 	PLAYER,
 	PLAYER_STATS_TABLES,
 	RATINGS,
 	getPlayerStatsTableStats,
 } from "../../common/constants.ts";
 import { idb } from "../db/index.ts";
+import { getActiveSeasonSelector } from "../db/merged/players.ts";
 import { g, helpers } from "../util/index.ts";
 import type { PlayerStatType } from "../../common/types.ts";
 import { POS_NUMBERS } from "../../common/constants.baseball.ts";
@@ -20,6 +20,7 @@ import { defineView, type ViewArgs } from "../util/defineView.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { validateSeason } from "../util/processInputs.ts";
 import { validateSeasonType } from "../util/processInputs.ts";
+import { player } from "../core/index.ts";
 
 const processInputs = (params: RouteParams<"playerGraphs">) => {
 	const playoffsX = validateSeasonType(params.playoffsX);
@@ -63,7 +64,7 @@ const getPlayerStats = async (
 	season: number | "career",
 	playoffs: "playoffs" | "regularSeason" | "combined",
 ) => {
-	// This is the value form the form/URL (or a random one), which confusingly is not the same as statType passed to playersPlus
+	// This is the value form the form/URL (or a random one), which confusingly is not the same as statType passed to player.formatAll
 	const statTypePlus =
 		statTypeInput !== undefined && statTypes.includes(statTypeInput)
 			? statTypeInput
@@ -86,27 +87,11 @@ const getPlayerStats = async (
 		statType = "totals";
 	}
 
-	let playersAll;
-
-	if (g.get("season") === season && g.get("phase") <= PHASE.PLAYOFFS) {
-		playersAll = await idb.cache.players.indexGetAll("playersByTid", [
-			PLAYER.FREE_AGENT,
-			Infinity,
-		]);
-	} else {
-		playersAll = await idb.getCopies.players(
-			{
-				activeSeason: typeof season === "number" ? season : undefined,
-			},
-			"noCopyCache",
-		);
-	}
-
 	const statKeys = statsTable
 		? getPlayerStatsTableStats(statsTable.stats)
 		: (["gp"] as const);
 
-	const playersPlusOptions = {
+	const formatOptions = {
 		attrs: [
 			"pid",
 			"name",
@@ -144,35 +129,46 @@ const getPlayerStats = async (
 
 	let players;
 	if (season === "career") {
-		const playersRaw = await idb.getCopies.playersPlus(
-			playersAll,
-			playersPlusOptions,
-		);
-		players = playersRaw.map(
-			({
-				careerStats,
-				careerStatsPlayoffs,
-				careerStatsCombined,
-				ratings: allRatings,
-				stats: allStats,
-				...p
-			}) =>
-				toRow(
-					p,
-					// Show row from max ovr season. allRatings is only actually there if ratings were requested
-					ratings.length > 0
-						? (maxBy(allRatings, (row) => row.ovr) ?? last(allRatings))
-						: undefined,
-					playoffs === "playoffs"
-						? careerStatsPlayoffs
-						: playoffs === "combined"
-							? careerStatsCombined
-							: careerStats,
-				),
-		);
+		const abbrevs = await player.loadAbbrevs(formatOptions);
+		const formatPlayer = player.createFormatter(formatOptions, abbrevs);
+		players = (
+			await idb.merged.players.getAll(undefined, {
+				map: (pRaw) => {
+					const pFormatted = formatPlayer(pRaw);
+					if (!pFormatted) {
+						return;
+					}
+
+					const {
+						careerStats,
+						careerStatsPlayoffs,
+						careerStatsCombined,
+						ratings: allRatings,
+						stats: allStats,
+						...p
+					} = pFormatted;
+					return toRow(
+						p,
+						// Show row from max ovr season. allRatings is only actually there if ratings were requested
+						ratings.length > 0
+							? (maxBy(allRatings, (row) => row.ovr) ?? last(allRatings))
+							: undefined,
+						playoffs === "playoffs"
+							? careerStatsPlayoffs
+							: playoffs === "combined"
+								? careerStatsCombined
+								: careerStats,
+					);
+				},
+			})
+		).filter((row) => row !== undefined);
 	} else {
-		const playersRaw = await idb.getCopies.playersPlus(playersAll, {
-			...playersPlusOptions,
+		const playersAll = await idb.merged.players.getAll(
+			getActiveSeasonSelector(season),
+		);
+
+		const playersRaw = await player.formatAll(playersAll, {
+			...formatOptions,
 			season,
 		});
 		players = playersRaw.map(({ ratings: ratingsRow, stats: statsRow, ...p }) =>

@@ -83,7 +83,7 @@ export const advanceCollegeConfTourneys = async (conditions?: Conditions) => {
 			}
 		}
 	} else if (state.pending.length > 0) {
-		const games = await idb.getCopies.games({ season }, "noCopyCache");
+		const games = await idb.merged.games.getAll({ season });
 		for (const [home, away, cid] of state.pending) {
 			const game = latestGame(games, home, away);
 			const loser = game ? game.lost.tid : away;
@@ -154,7 +154,7 @@ export const advanceCollegeConfTourneys = async (conditions?: Conditions) => {
 // Power rating from margin of victory and schedule strength, solved by
 // iterating rating = average margin + average opponent rating.
 export const computeCollegeRatings = async (season: number) => {
-	const games = await idb.getCopies.games({ season }, "noCopyCache");
+	const games = await idb.merged.games.getAll({ season });
 	const margins = new Map<number, number[]>();
 	const opponents = new Map<number, number[]>();
 	const add = (tid: number, margin: number, opp: number) => {
@@ -302,7 +302,7 @@ export const collegeNitDay = async (
 
 	let alive = state.alive;
 	if (state.pending.length > 0) {
-		const games = await idb.getCopies.games({ season }, "noCopyCache");
+		const games = await idb.merged.games.getAll({ season });
 		const losers = new Set<number>();
 		for (const [home, away] of state.pending) {
 			const game = latestGame(games, home, away);

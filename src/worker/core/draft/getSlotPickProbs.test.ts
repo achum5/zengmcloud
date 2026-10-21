@@ -7,19 +7,15 @@ import { range } from "../../../common/utils.ts";
 
 const NUM_TEAMS = 30;
 
-const sum = (numbers: number[]) => {
-	return numbers.reduce((total, number) => total + number, 0);
-};
-
 // Each slot gets exactly one pick, and each pick goes to exactly one slot
 const assertValidProbs = (probs: number[][]) => {
 	assert.strictEqual(probs.length, NUM_TEAMS);
 	for (const row of probs) {
 		assert.strictEqual(row.length, NUM_TEAMS);
-		assert.closeTo(sum(row), 1, 1e-9);
+		assert.closeTo(Math.sumPrecise(row), 1, 1e-9);
 	}
 	for (let pick = 0; pick < NUM_TEAMS; pick++) {
-		assert.closeTo(sum(probs.map((row) => row[pick]!)), 1, 1e-9);
+		assert.closeTo(Math.sumPrecise(probs.map((row) => row[pick]!)), 1, 1e-9);
 	}
 };
 
@@ -42,6 +38,7 @@ describe("no lottery", () => {
 	for (const round of [1, 2]) {
 		test(`noLottery, round ${round}`, async () => {
 			const probs = await getSlotPickProbs({
+				season: g.get("season"),
 				draftType: "noLottery",
 				round,
 				numTeams: NUM_TEAMS,
@@ -52,6 +49,7 @@ describe("no lottery", () => {
 
 		test(`noLotteryReverse, round ${round}`, async () => {
 			const probs = await getSlotPickProbs({
+				season: g.get("season"),
 				draftType: "noLotteryReverse",
 				round,
 				numTeams: NUM_TEAMS,
@@ -62,6 +60,7 @@ describe("no lottery", () => {
 
 		test(`random, round ${round}`, async () => {
 			const probs = await getSlotPickProbs({
+				season: g.get("season"),
 				draftType: "random",
 				round,
 				numTeams: NUM_TEAMS,
@@ -79,6 +78,7 @@ describe("no lottery", () => {
 describe("nba2019", () => {
 	test("round 1", async () => {
 		const probs = await getSlotPickProbs({
+			season: g.get("season"),
 			draftType: "nba2019",
 			round: 1,
 			numTeams: NUM_TEAMS,
@@ -88,7 +88,7 @@ describe("nba2019", () => {
 		// Worst 3 teams each have a 14% chance at the top pick, and can't fall further than 4 spots
 		for (const slot of [0, 1, 2]) {
 			assert.closeTo(probs[slot]![0]!, 0.14, 1e-9);
-			assert.closeTo(sum(probs[slot]!.slice(slot + 5)), 0, 1e-9);
+			assert.closeTo(Math.sumPrecise(probs[slot]!.slice(slot + 5)), 0, 1e-9);
 		}
 
 		// Last lottery team has a small chance of moving up
@@ -103,6 +103,7 @@ describe("nba2019", () => {
 
 	test("round 2", async () => {
 		const probs = await getSlotPickProbs({
+			season: g.get("season"),
 			draftType: "nba2019",
 			round: 2,
 			numTeams: NUM_TEAMS,
@@ -115,6 +116,7 @@ describe("nba2019", () => {
 describe("nba2027", () => {
 	test("round 1", async () => {
 		const probs = await getSlotPickProbs({
+			season: g.get("season"),
 			draftType: "nba2027",
 			round: 1,
 			numTeams: NUM_TEAMS,
@@ -127,7 +129,7 @@ describe("nba2027", () => {
 
 		// Worst 3 teams can't fall past the 12th pick
 		for (const slot of [0, 1, 2]) {
-			assert.closeTo(sum(probs[slot]!.slice(12)), 0, 1e-9);
+			assert.closeTo(Math.sumPrecise(probs[slot]!.slice(12)), 0, 1e-9);
 		}
 
 		// Losers of the 7/8 play-in games are the last 2 lottery teams, with the worst chances
@@ -143,6 +145,7 @@ describe("nba2027", () => {
 
 	test("round 2", async () => {
 		const probs = await getSlotPickProbs({
+			season: g.get("season"),
 			draftType: "nba2027",
 			round: 2,
 			numTeams: NUM_TEAMS,

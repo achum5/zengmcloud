@@ -208,7 +208,7 @@ export const coarsenRatingsRow = <T extends Record<string, any>>(
 	return out as T;
 };
 
-// A playersPlus row coarsened for display: its ratings (one season or all of
+// A player.formatAll row coarsened for display: its ratings (one season or all of
 // them) and the draft-day ovr/pot that sits on the `draft` attr.
 export const coarsenPlayerForDisplay = <T extends Record<string, any>>(
 	p: T,

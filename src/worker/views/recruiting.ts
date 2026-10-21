@@ -10,9 +10,9 @@ import {
 import { PHASE } from "../../common/constants.ts";
 import { getRecruits } from "../core/college/recruiting.ts";
 import { getTeamCtxs, interestFor } from "../core/college/teams.ts";
-import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import { defineView, type ViewArgs } from "../util/defineView.ts";
+import { player } from "../core/index.ts";
 
 // The recruiting board: this year's high school class (and, during the
 // offseason weeks, the transfer portal), as your school sees them - ratings
@@ -39,7 +39,7 @@ const updateRecruiting = async ({ updateEvents }: ViewArgs) => {
 	const ctx = ctxs.get(userTid);
 	const teamInfoCache = g.get("teamInfoCache");
 
-	const players = await idb.getCopies.playersPlus(recruits, {
+	const players = await player.formatAll(recruits, {
 		attrs: ["pid", "firstName", "lastName", "age", "born", "hgt", "tid"],
 		ratings: ["ovr", "pot", "pos", "skills"],
 		season,

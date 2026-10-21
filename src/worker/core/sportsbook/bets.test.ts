@@ -61,7 +61,7 @@ describe("sportsbook bets", () => {
 		// A "games"/"awards"/etc. lookup that misses the cache falls through to
 		// idb.league - stub it out like the rest of the worker test suite does.
 		// mockIDBLeague() doesn't implement the single-record .get(store, key)
-		// form that getCopies/games.ts's gid lookup uses, so add a no-op for it
+		// form that idb.merged.games.get uses, so add a no-op for it
 		// (a league with nothing on disk always "misses").
 		idb.league = { ...mockIDBLeague(), get: async () => undefined } as any;
 	});

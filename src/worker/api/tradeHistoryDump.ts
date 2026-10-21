@@ -52,7 +52,7 @@ const getTeamAbbrev = async (tid: number, season: number): Promise<string> => {
 
 // A team's record + win% for one season, or undefined if it didn't play then.
 const seasonRecord = async (tid: number, season: number) => {
-	const ts = await idb.getCopy.teamSeasons({ season, tid }, "noCopyCache");
+	const ts = await idb.merged.teamSeasons.getByTidSeason(tid, season);
 	if (!ts || (ts.won === 0 && ts.lost === 0 && ts.tied === 0 && ts.otl === 0)) {
 		return undefined;
 	}
@@ -149,10 +149,7 @@ export const getTradeHistoryDump = async (numSeasons = 5): Promise<string> => {
 	// scanning the whole event log of a long-running league).
 	const events: TradeEvent[] = [];
 	for (let s = startSeason; s <= currentSeason; s++) {
-		const seasonEvents = await idb.getCopies.events(
-			{ season: s },
-			"noCopyCache",
-		);
+		const seasonEvents = await idb.merged.events.getAll({ season: s });
 		for (const event of seasonEvents) {
 			if (
 				event.type === "trade" &&

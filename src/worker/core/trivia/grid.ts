@@ -605,7 +605,7 @@ export const buildCustomGrid = async (input: {
 // (when the cell has one) styles the jersey; otherwise the player's own
 // current/most-played team does.
 export const getTriviaPlayerCard = async (pid: number, tid?: number) => {
-	const p = await idb.getCopy.players({ pid }, "noCopyCache");
+	const p = await idb.merged.players.get(pid);
 	if (!p) {
 		return undefined;
 	}
@@ -652,7 +652,7 @@ export const getTriviaPlayerCard = async (pid: number, tid?: number) => {
 export const getTriviaFaces = async (pids: number[]) => {
 	const out: { pid: number; face?: any; imgURL?: string }[] = [];
 	for (const pid of pids) {
-		const p = await idb.getCopy.players({ pid }, "noCopyCache");
+		const p = await idb.merged.players.get(pid);
 		if (p) {
 			out.push({ pid, face: p.face, imgURL: p.imgURL });
 		}

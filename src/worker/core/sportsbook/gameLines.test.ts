@@ -23,7 +23,7 @@ const ROSTER = 10;
 const teamOvrsForMatchup = async (playoffs = false) => {
 	const ovrOf = async (tid: number) => {
 		const raw = await idb.cache.players.indexGetAll("playersByTid", tid);
-		const players = await idb.getCopies.playersPlus(raw, {
+		const players = await player.formatAll(raw, {
 			attrs: ["injury", "pid", "value", "tid"],
 			ratings: ["ovr", "pos", "ovrs"],
 			season: g.get("season"),
@@ -270,7 +270,7 @@ describe("the spread", () => {
 });
 
 // The "hide ratings ones digit" display mode floors every rating to its tens
-// digit. That is for screens; playersPlus does it by default, and any caller
+// digit. That is for screens; player.formatAll does it by default, and any caller
 // doing ARITHMETIC with ratings has to opt out. The pricer didn't, so in a
 // league running that mode team.ovr was building team overalls out of 0-10
 // inputs: the ovr gap between two teams collapsed to nearly nothing, every

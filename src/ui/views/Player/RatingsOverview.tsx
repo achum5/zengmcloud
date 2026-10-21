@@ -33,7 +33,7 @@ export const RatingsOverview = ({
 			ratings.findLast((row) => row.season === season) ?? ratings.at(-1);
 	}
 
-	// `true`: this is the player's own page, where playersPlus hands back a
+	// `true`: this is the player's own page, where player.formatAll hands back a
 	// retired career at full resolution (retiredRatingsExact), so the colour
 	// scale has to be the 0-100 one.
 	const coarse = ratingsAreCoarse(tid, currentSeason?.season, draftYear, true);

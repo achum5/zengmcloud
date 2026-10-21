@@ -3,6 +3,7 @@ import { PHASE, PLAYER } from "../../common/constants.ts";
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import { defineView, type ViewArgs } from "../util/defineView.ts";
+import { player } from "../core/index.ts";
 
 // Unsigned players anyone can add to a roster with room: no recruiting, no
 // NIL to speak of.
@@ -29,7 +30,7 @@ const updateWalkOns = async ({ updateEvents }: ViewArgs) => {
 		const final = collegeFinalSeason(p);
 		return !p.recruiting && (final === undefined || final >= classSeason);
 	});
-	const players = await idb.getCopies.playersPlus(freeAgents, {
+	const players = await player.formatAll(freeAgents, {
 		attrs: ["pid", "firstName", "lastName", "age", "hgt", "injury"],
 		ratings: ["ovr", "pot", "pos", "skills"],
 		season,

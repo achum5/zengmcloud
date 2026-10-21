@@ -58,7 +58,14 @@ export default defineView({
 				new Set(Object.values(PLAYER_GAME_STATS).flatMap((x) => x.stats)),
 			);
 
-			const games = await idb.getCopies.games({ season }, "noCopyCache");
+			// Only keep games this player played in, rather than every game this season
+			const games = await idb.merged.games.getAll(
+				{ season },
+				{
+					filter: (game) =>
+						game.teams.some((t) => t.players.some((p) => p.pid === pid)),
+				},
+			);
 
 			// Which of these games have a saved live play-by-play, so the game log can
 			// offer a per-game "Highlights" reel (basketball only - the reel filters

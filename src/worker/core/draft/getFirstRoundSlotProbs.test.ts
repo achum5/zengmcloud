@@ -45,10 +45,6 @@ const getTeams = () => {
 	});
 };
 
-const sum = (numbers: number[]) => {
-	return numbers.reduce((total, number) => total + number, 0);
-};
-
 beforeAll(async () => {
 	resetG();
 	await resetCache({});
@@ -68,19 +64,20 @@ for (const playIn of [true, false]) {
 				teams,
 				draftType,
 				numSims: NUM_SIMS,
+				season: g.get("season"),
 			});
 
 			// Each team is in exactly one slot in each simulation
 			assert.strictEqual(probs.size, teams.length);
 			for (const row of probs.values()) {
 				assert.strictEqual(row.length, teams.length);
-				assert.closeTo(sum(row), 1, 1e-9);
+				assert.closeTo(Math.sumPrecise(row), 1, 1e-9);
 			}
 
 			// Each slot has exactly one team in each simulation
 			for (let slot = 0; slot < teams.length; slot++) {
 				assert.closeTo(
-					sum(Array.from(probs.values(), (row) => row[slot]!)),
+					Math.sumPrecise(Array.from(probs.values(), (row) => row[slot]!)),
 					1,
 					1e-9,
 				);
@@ -91,13 +88,14 @@ for (const playIn of [true, false]) {
 				teams,
 				draftType,
 				numSims: NUM_SIMS,
+				season: g.get("season"),
 			});
 			assert.deepStrictEqual(probs2, probs);
 
 			// 16 teams make the playoffs, and there is a smooth transition between teams projected to make it and teams projected to miss it
 			const teamsSorted = teams.toSorted((a, b) => a.winp - b.winp);
 			const probsNoPlayoffs = teamsSorted.map((t) =>
-				sum(probs.get(t.teamSeason.tid)!.slice(0, 14)),
+				Math.sumPrecise(probs.get(t.teamSeason.tid)!.slice(0, 14)),
 			);
 			assert.isAbove(probsNoPlayoffs[0]!, 0.9);
 			assert.isBelow(probsNoPlayoffs.at(-1)!, 0.1);
@@ -134,6 +132,7 @@ test("teams that already clinched can't change", async () => {
 		teams,
 		draftType: "nba2019",
 		numSims: NUM_SIMS,
+		season: g.get("season"),
 	});
 
 	assert.strictEqual(probs.get(teams[3]!.teamSeason.tid)!.at(-1), 1);
@@ -154,13 +153,14 @@ test("teams with no draft pick are not in the draft order", async () => {
 		teams,
 		draftType: "nba2019",
 		numSims: NUM_SIMS,
+		season: g.get("season"),
 	});
 
 	assert.strictEqual(probs.size, teams.length - 1);
 	assert.isFalse(probs.has(teams[0]!.teamSeason.tid));
 	for (const row of probs.values()) {
 		assert.strictEqual(row.length, teams.length - 1);
-		assert.closeTo(sum(row), 1, 1e-9);
+		assert.closeTo(Math.sumPrecise(row), 1, 1e-9);
 	}
 });
 
@@ -189,6 +189,7 @@ test("standings are based on points when there is a points formula", async () =>
 			teams,
 			draftType: "noLottery",
 			numSims: NUM_SIMS,
+			season: g.get("season"),
 		});
 		return probs.get(tid)!.indexOf(1);
 	};
@@ -200,4 +201,77 @@ test("standings are based on points when there is a points formula", async () =>
 	g.setWithoutSavingToDB("pointsFormula", "2*W+OTL+T");
 	assert.isAtLeast(await getSlot(), 14);
 	g.setWithoutSavingToDB("pointsFormula", "");
+});
+
+test("uses the playoff settings of the season it is for", async () => {
+	const season = g.get("season");
+	const numGamesPlayoffSeries = g.get("numGamesPlayoffSeries", "current");
+	assert.strictEqual(numGamesPlayoffSeries.length, 4);
+
+	// 4 rounds (8 teams per conference) this season, and no playoffs next season
+	g.setWithoutSavingToDB("numGamesPlayoffSeries", [
+		{ start: -Infinity, value: numGamesPlayoffSeries },
+		{ start: season + 1, value: [] },
+	]);
+
+	// Every team in one conference is worse than every team in the other conference
+	const counts = [0, 0];
+	const teams = getTeams().map((t) => {
+		const cid = t.teamSeason.cid;
+		const i = counts[cid]!;
+		counts[cid]! += 1;
+		return {
+			...t,
+			winp: (cid === 0 ? 0.6 : 0.2) + 0.01 * i,
+			winpStd: 0,
+		};
+	});
+	assert.deepStrictEqual(counts, [15, 15]);
+	const bestTeamInBadConf = teams.findLast((t) => t.teamSeason.cid === 1)!;
+
+	const getSlot = async (season: number) => {
+		const probs = await getFirstRoundSlotProbs({
+			teams,
+			draftType: "noLottery",
+			numSims: NUM_SIMS,
+			season,
+		});
+		return probs.get(bestTeamInBadConf.teamSeason.tid)!.indexOf(1);
+	};
+
+	// With playoffs, it is the best of the 8 playoff teams from its conference, which are after the 14 non-playoff teams
+	assert.strictEqual(await getSlot(season), 21);
+
+	// With no playoffs it's only by record, so it's after the 14 other teams in its conference
+	assert.strictEqual(await getSlot(season + 1), 14);
+
+	g.setWithoutSavingToDB("numGamesPlayoffSeries", numGamesPlayoffSeries);
+});
+
+test("assumes no playoffs if the playoff settings are not valid for the teams", async () => {
+	const numGamesPlayoffSeries = g.get("numGamesPlayoffSeries", "current");
+
+	// 4 rounds means 16 playoff teams, but there are only 10 teams, like if teams were removed in the offseason before the playoff settings change
+	const teams = getTeams()
+		.slice(0, 10)
+		.map((t, i) => {
+			return {
+				...t,
+				winp: 0.2 + 0.05 * i,
+				winpStd: 0,
+			};
+		});
+	assert.strictEqual(numGamesPlayoffSeries.length, 4);
+
+	const probs = await getFirstRoundSlotProbs({
+		teams,
+		draftType: "noLottery",
+		numSims: NUM_SIMS,
+		season: g.get("season"),
+	});
+
+	// Ordered by record
+	for (const [i, t] of teams.entries()) {
+		assert.strictEqual(probs.get(t.teamSeason.tid)!.indexOf(1), i);
+	}
 });

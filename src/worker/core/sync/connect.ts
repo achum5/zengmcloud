@@ -699,7 +699,7 @@ export const startLiveBroadcast = async (gid: number, playByPlay: any[]) => {
 		// The follower rebuilds the live sim from this exact game record (the same
 		// one liveGame.ts would load from idb), so include it in the payload rather
 		// than depend on the separate changeset sync having landed the game row yet.
-		const boxScore = await idb.getCopy.games({ gid });
+		const boxScore = await idb.merged.games.get(gid);
 		if (!boxScore) {
 			return;
 		}

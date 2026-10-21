@@ -19,7 +19,7 @@ import { revertBefore, salaryStartSeason } from "./revertSnapshot.ts";
 // is. Undefined means say nothing.
 export const HIGH_UPSIDE_POT = 60;
 
-// THE NUMBER IS THE SCOUTED ONE. playersPlus says it plainly - any user-facing
+// THE NUMBER IS THE SCOUTED ONE. player.formatAll says it plainly - any user-facing
 // rating is fuzzed, any internal one is not - and this used to read straight
 // off the ratings row, so a notification was worth more than the scouting
 // department that is supposed to produce it. The threshold reads the same

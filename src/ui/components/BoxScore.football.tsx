@@ -1,16 +1,10 @@
-import {
-	memo,
-	Fragment,
-	type MouseEvent,
-	type ReactNode,
-	useState,
-} from "react";
+import { memo, Fragment, type MouseEvent, type ReactNode } from "react";
 import { ResponsiveTableWrapper } from "./ResponsiveTableWrapper.tsx";
 import { getCols } from "../../common/getCols.ts";
 import { helpers } from "../util/helpers.ts";
 import { PLAYER_GAME_STATS } from "../../common/constants.football.ts";
 import type { Col, SortBy } from "./DataTable/index.tsx";
-import updateSortBys from "./DataTable/updateSortBys.ts";
+import { useBoxScoreSortBys } from "./useBoxScoreSortBys.ts";
 import { getSortClassName } from "./DataTable/Header.tsx";
 import {
 	getScoreInfo,
@@ -137,23 +131,12 @@ const StatsTableIndividual = ({
 	const stats = PLAYER_GAME_STATS[type].stats;
 	const cols = getCols(stats.map((stat) => `stat:${stat}`));
 
-	const [sortBys, setSortBys] = useState(() => {
-		return PLAYER_GAME_STATS[type].sortBy.map(
+	const { onClick, sortBys } = useBoxScoreSortBys({
+		cols,
+		defaultSortBys: PLAYER_GAME_STATS[type].sortBy.map(
 			(stat) => [stats.indexOf(stat), "desc"] as SortBy,
-		);
+		),
 	});
-
-	const onClick = (event: MouseEvent, i: number) => {
-		setSortBys(
-			(prevSortBys) =>
-				updateSortBys({
-					cols,
-					event,
-					i,
-					prevSortBys,
-				}) ?? [],
-		);
-	};
 
 	const allStarGame = t.tid === -1 || t.tid === -2;
 	const players = t.players

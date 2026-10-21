@@ -22,7 +22,7 @@ const switchTo = async (tid: number, tids?: number[]) => {
 		otherTeamsWantToHire: false,
 	});
 
-	league.updateMeta();
+	await league.updateMeta();
 
 	if (g.get("college")) {
 		// A new coaching job, with a new contract.

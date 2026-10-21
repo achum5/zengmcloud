@@ -2,3 +2,5 @@ allowBuilds:
   "@firebase/util": false
   protobufjs: false
   unrs-resolver: false
+minimumReleaseAgeExclude:
+  - promise-worker-bi@6.0.3 || 6.0.4

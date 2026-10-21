@@ -10,6 +10,7 @@ import {
 	leaderAwardCategories,
 } from "../../common/awards.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
+import { player } from "../core/index.ts";
 
 const processInputs = (params: RouteParams<"awardsRecords">) => {
 	return {
@@ -148,7 +149,6 @@ const getPlayerAwards = (p: LocalPlayer, key: string) => {
 		lastName: p.lastName,
 		pid: p.pid,
 		count: awards.length,
-		countText: awards.length.toString(),
 		years,
 		lastYear,
 		retired: p.retiredYear !== Infinity,
@@ -176,7 +176,7 @@ export default defineView({
 	load: async ({ inputs, updateEvents, prevInputs, prevOutput }) => {
 		let awardTypes: AwardType[];
 		if (!prevOutput.awardTypes) {
-			const awards = await idb.getCopies.awards(undefined, "noCopyCache");
+			const awards = await idb.merged.awards.getAll();
 			awards.reverse();
 			awardTypes = [];
 
@@ -213,36 +213,40 @@ export default defineView({
 			updateEvents.has("firstRun") ||
 			inputs.awardType !== prevInputs?.awardType
 		) {
-			const playersAll = await idb.getCopies.players(
-				{
-					activeAndRetired: true,
-					filter: (p) => p.awards.length > 0,
-				},
-				"noCopyCache",
-			);
-			const players: LocalPlayer[] = await idb.getCopies.playersPlus(
-				playersAll,
-				{
-					attrs: [
-						"awards",
-						"firstName",
-						"lastName",
-						"pid",
-						"retiredYear",
-						"hof",
-						"draft",
-					],
-					ratings: ["pos", "season"],
-					stats: ["abbrev", "season"],
-				},
-			);
+			const formatOptions = {
+				attrs: [
+					"awards",
+					"firstName",
+					"lastName",
+					"pid",
+					"retiredYear",
+					"hof",
+					"draft",
+				],
+				ratings: ["pos", "season"],
+				stats: ["abbrev", "season"],
+			} as const;
+			const abbrevs = await player.loadAbbrevs(formatOptions);
+			const formatPlayer = player.createFormatter(formatOptions, abbrevs);
 			const awardType = inputs.awardType;
 
-			const awardsRecords = addFirstNameShort(
-				players
-					.map((p) => getPlayerAwards(p, awardType))
-					.filter((p) => p !== undefined),
-			);
+			const playersAwards = (
+				await idb.merged.players.getAll(
+					{ activeAndRetired: true },
+					{
+						filter: (p) => p.awards.length > 0,
+						map: (pRaw) => {
+							const p: LocalPlayer | undefined = formatPlayer(pRaw);
+							if (!p) {
+								return;
+							}
+							return getPlayerAwards(p, awardType);
+						},
+					},
+				)
+			).filter((p) => p !== undefined);
+
+			const awardsRecords = addFirstNameShort(playersAwards);
 
 			const awardTypeOptions: DropdownOption[] = [
 				...awardTypes.flatMap((row) => {
@@ -277,7 +281,6 @@ export default defineView({
 				awardsRecords,
 				awardType,
 				awardTypeOptions,
-				playerCount: awardsRecords.length,
 
 				// This is just for prevOutput.awardTypes so it doesn't need to be recomputed every time
 				awardTypes,

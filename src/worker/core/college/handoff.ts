@@ -17,7 +17,7 @@ import type { Player } from "../../../common/types.ts";
 // ages and seasons shifted to the pro league's calendar.
 
 export const collegeDraftees = async (season: number) =>
-	(await idb.getCopies.players({ retiredYear: season }, "noCopyCache"))
+	(await idb.merged.players.getAll({ retiredYear: season }))
 		.filter((p) => p.collegeExit === "draft")
 		.sort((a, b) => b.value - a.value);
 

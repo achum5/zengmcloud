@@ -136,10 +136,7 @@ const getAwardRaceOdds = async (season: number) => {
 
 	if (live) {
 		const numGames = g.get("numGames");
-		const teamSeasons = await idb.getCopies.teamSeasons(
-			{ season },
-			"noCopyCache",
-		);
+		const teamSeasons = await idb.merged.teamSeasons.getAll({ season });
 		let maxTeamGp = 0;
 		for (const teamSeason of teamSeasons) {
 			const gp = helpers.getTeamSeasonGp(teamSeason);

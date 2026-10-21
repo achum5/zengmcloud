@@ -14,6 +14,7 @@ import type { RouteParams } from "../../ui/router/types.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { validateSeasonType } from "../util/processInputs.ts";
 import { validateStatType } from "../util/processInputs.ts";
+import { player } from "../core/index.ts";
 
 export const processInputs = (
 	params: RouteParams<"leadersProgressive"> | RouteParams<"leadersYears">,
@@ -73,13 +74,11 @@ export default defineView({
 				}))
 				.reverse();
 
+			const awardsSeasons = new Set(
+				await idb.merged.awards.getAll(undefined, { map: (row) => row.season }),
+			);
 			for (const row of allLeaders) {
-				const awards = await idb.getCopy.awards({
-					season: row.season,
-				});
-				if (awards) {
-					row.linkSeason = true;
-				}
+				row.linkSeason = awardsSeasons.has(row.season);
 			}
 
 			const leadersBySeason = groupByUnique(allLeaders, "season");
@@ -95,7 +94,32 @@ export default defineView({
 				);
 			}
 
-			await iterateAllPlayersWithStats("all", async (pRaw, season) => {
+			const formatOptions = {
+				attrs: [
+					"pid",
+					"firstName",
+					"lastName",
+					"injury",
+					"watch",
+					"jerseyNumber",
+					"hof",
+					"retiredYear",
+				],
+				ratings: ["skills", "pos"],
+				stats: ["tid", ...stats],
+				seasonType: inputs.playoffs,
+				mergeStats: "totOnly",
+				statType: inputs.statType,
+			} as const;
+			const abbrevs = await player.loadAbbrevs(formatOptions);
+			const createSeasonFormatter = (season: number) =>
+				player.createFormatter({ ...formatOptions, season }, abbrevs);
+			const seasonFormatters = new Map<
+				number,
+				ReturnType<typeof createSeasonFormatter>
+			>();
+
+			await iterateAllPlayersWithStats("all", (pRaw, season) => {
 				if (typeof season !== "number") {
 					throw new Error("Invalid season");
 				}
@@ -105,25 +129,11 @@ export default defineView({
 					return;
 				}
 
-				const p = await idb.getCopy.playersPlus(pRaw, {
-					attrs: [
-						"pid",
-						"firstName",
-						"lastName",
-						"injury",
-						"watch",
-						"jerseyNumber",
-						"hof",
-						"retiredYear",
-					],
-					ratings: ["skills", "pos"],
-					stats: ["abbrev", "tid", ...stats],
+				const formatSeason = seasonFormatters.getOrInsertComputed(
 					season,
-					seasonType: inputs.playoffs,
-					mergeStats: "totOnly",
-					statType: inputs.statType,
-					disableAbbrevsCacheDatabaseAccess: true,
-				});
+					createSeasonFormatter,
+				);
+				const p = formatSeason(pRaw);
 				if (!p) {
 					return;
 				}

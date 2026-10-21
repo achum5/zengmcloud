@@ -9,6 +9,7 @@ import {
 	type RotationCandidate,
 } from "../core/team/generateRotation.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
+import { player } from "../core/index.ts";
 
 // THE ROTATION PAGE: a team's plan, and the men it is drawn from.
 //
@@ -50,7 +51,7 @@ const updateRotation = async ({
 
 		const playersRaw = await idb.cache.players.indexGetAll("playersByTid", tid);
 		const players = addFirstNameShort(
-			await idb.getCopies.playersPlus(playersRaw, {
+			await player.formatAll(playersRaw, {
 				attrs: [
 					"pid",
 					"firstName",

@@ -1,6 +1,5 @@
 // Keep stuff in here that might be needed on worker console, or use registerGlobal
 
-export { default as achievement } from "./achievement.ts";
 export { default as g } from "./g.ts";
 export { default as helpers } from "./helpers.ts";
 export { default as local } from "./local.ts";
@@ -10,3 +9,7 @@ export { default as toUI } from "./toUI.ts";
 export { default as updatePhase } from "./updatePhase.ts";
 export { default as updatePlayMenu } from "./updatePlayMenu.ts";
 export { default as updateStatus } from "./updateStatus.ts";
+
+// Last, because it imports core (through achievements.ts), and core modules use
+// the exports above while they are being evaluated.
+export { default as achievement } from "./achievement.ts";

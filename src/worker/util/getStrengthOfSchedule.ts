@@ -46,7 +46,7 @@ export const getStrengthOfSchedule = async (
 
 	const [schedule, teamSeasons] = await Promise.all([
 		idb.cache.schedule.getAll(),
-		idb.getCopies.teamSeasons({ season }, "noCopyCache"),
+		idb.merged.teamSeasons.getAll({ season }),
 	]);
 
 	const strengthByTid = new Map<number, number>();

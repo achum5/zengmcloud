@@ -12,6 +12,7 @@ import {
 import addFirstNameShort from "../util/addFirstNameShort.ts";
 import { getNumericStat } from "../../common/statValue.ts";
 import { processInputs } from "./leadersYears.ts";
+import { player } from "../core/index.ts";
 
 type MyLeader = Omit<
 	Leader,
@@ -77,13 +78,11 @@ export default defineView({
 				singleSeason: undefined as MyLeader | undefined,
 			}));
 
+			const awardsSeasons = new Set(
+				await idb.merged.awards.getAll(undefined, { map: (row) => row.season }),
+			);
 			for (const row of allLeaders) {
-				const awards = await idb.getCopy.awards({
-					season: row.season,
-				});
-				if (awards) {
-					row.linkSeason = true;
-				}
+				row.linkSeason = awardsSeasons.has(row.season);
 			}
 
 			const leadersBySeason = groupByUnique(allLeaders, "season");
@@ -99,7 +98,34 @@ export default defineView({
 				);
 			}
 
-			await iterateAllPlayersWithStats("all", async (pRaw, season) => {
+			const formatOptions = {
+				attrs: [
+					"pid",
+					"firstName",
+					"lastName",
+					"injury",
+					"watch",
+					"jerseyNumber",
+					"hof",
+					"retiredYear",
+				],
+				ratings: ["skills", "pos"],
+				// season is for finding the team in the career stats rows
+				stats: ["season", "tid", ...stats],
+				seasonType: inputs.playoffs,
+				mergeStats: "totOnly",
+				statType: inputs.statType,
+			} as const;
+			const abbrevs = await player.loadAbbrevs(formatOptions);
+			const formatCareer = player.createFormatter(formatOptions, abbrevs);
+			const createSeasonFormatter = (season: number) =>
+				player.createFormatter({ ...formatOptions, season }, abbrevs);
+			const seasonFormatters = new Map<
+				number,
+				ReturnType<typeof createSeasonFormatter>
+			>();
+
+			await iterateAllPlayersWithStats("all", (pRaw, season) => {
 				if (typeof season !== "number") {
 					throw new Error("Invalid season");
 				}
@@ -109,32 +135,13 @@ export default defineView({
 					return;
 				}
 
-				const playersPlusArgs = {
-					attrs: [
-						"pid",
-						"firstName",
-						"lastName",
-						"injury",
-						"watch",
-						"jerseyNumber",
-						"hof",
-						"retiredYear",
-					],
-					ratings: ["skills", "pos"],
-					// season is for finding the team in the career stats rows
-					stats: ["abbrev", "season", "tid", ...stats],
-					seasonType: inputs.playoffs,
-					mergeStats: "totOnly",
-					statType: inputs.statType,
-					disableAbbrevsCacheDatabaseAccess: true,
-				} as const;
-
 				{
 					// Single season stats
-					const p = await idb.getCopy.playersPlus(pRaw, {
-						...playersPlusArgs,
+					const formatSeason = seasonFormatters.getOrInsertComputed(
 						season,
-					});
+						createSeasonFormatter,
+					);
+					const p = formatSeason(pRaw);
 					if (p) {
 						const value = p.stats[cat.stat];
 						if (typeof value !== "number") {
@@ -184,13 +191,10 @@ export default defineView({
 						(row) => row.season <= season,
 					);
 
-					const p = await idb.getCopy.playersPlus(
-						{
-							...pRaw,
-							stats: filteredStats,
-						},
-						playersPlusArgs,
-					);
+					const p = formatCareer({
+						...pRaw,
+						stats: filteredStats,
+					});
 					let playerStats;
 					if (p) {
 						if (inputs.playoffs === "playoffs") {

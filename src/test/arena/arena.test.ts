@@ -280,10 +280,9 @@ test.runIf(env.ARENA_RUN === "1")(
 							surveyAt: [56, 42, 28, 14, 7, 1],
 							onSurvey: async (daysToDeadline) => {
 								const outlook = await currentOutlook();
-								const events = await idb.getCopies.events(
-									{ season: g.get("season") } as any,
-									"noCopyCache",
-								);
+								const events = await idb.merged.events.getAll({
+									season: g.get("season"),
+								});
 								const teams = (await idb.cache.teams.getAll()).filter(
 									(t) => !t.disabled,
 								);
@@ -332,7 +331,7 @@ test.runIf(env.ARENA_RUN === "1")(
 				);
 				const realized: Record<number, unknown> = {};
 				for (const pid of pids) {
-					const p = await idb.getCopy.players({ pid }, "noCopyCache");
+					const p = await idb.merged.players.get(pid);
 					if (p) {
 						realized[pid] = {
 							ratings: p.ratings.map((r) => [r.season, r.ovr]),

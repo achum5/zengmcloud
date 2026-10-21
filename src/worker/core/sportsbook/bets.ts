@@ -20,6 +20,7 @@ import type {
 	SportsbookGameRef,
 	SportsbookMarket,
 } from "../../../common/types.ts";
+import { team } from "../index.ts";
 
 const HISTORY_LIMIT = 60;
 
@@ -523,7 +524,7 @@ const findGameForMarket = async (
 	season: number,
 	label?: string,
 ): Promise<{ game?: any; stillScheduled: boolean }> => {
-	const byGid = await idb.getCopy.games({ gid: m.gid }, "noCopyCache");
+	const byGid = await idb.merged.games.get(m.gid);
 	if (byGid?.won && byGid.lost) {
 		return { game: byGid, stillScheduled: false };
 	}
@@ -545,7 +546,7 @@ const findGameForMarket = async (
 		);
 		if (games.length === 0) {
 			try {
-				games = await idb.getCopies.games({ season }, "noCopyCache");
+				games = await idb.merged.games.getAll({ season });
 			} catch {
 				games = [];
 			}
@@ -647,10 +648,11 @@ const resolveMarket = async (
 		if (!regularSeasonDone(m.season)) {
 			return undefined;
 		}
-		const teamSeasons = await idb.getCopies.teamsPlus(
-			{ attrs: ["tid"], seasonAttrs: ["won"], season: m.season },
-			"noCopyCache",
-		);
+		const teamSeasons = await team.getFormattedAll({
+			attrs: ["tid"],
+			seasonAttrs: ["won"],
+			season: m.season,
+		});
 		const ts = teamSeasons.find((t) => t.tid === m.pickTid);
 		if (!ts) {
 			// Team no longer exists (contracted) - can't be resolved either way.
@@ -667,14 +669,11 @@ const resolveMarket = async (
 		if (!regularSeasonDone(m.season)) {
 			return undefined;
 		}
-		const teamSeasons = await idb.getCopies.teamsPlus(
-			{
-				attrs: ["tid", "did"],
-				seasonAttrs: ["won", "winp"],
-				season: m.season,
-			},
-			"noCopyCache",
-		);
+		const teamSeasons = await team.getFormattedAll({
+			attrs: ["tid", "did"],
+			seasonAttrs: ["won", "winp"],
+			season: m.season,
+		});
 		const inDiv = teamSeasons.filter((t) => t.did === m.did);
 		if (inDiv.length === 0) {
 			// The division has no teams left in it (e.g. all contracted, or
@@ -692,14 +691,11 @@ const resolveMarket = async (
 			return undefined;
 		}
 		const rounds = numPlayoffRounds();
-		const teamSeasons = await idb.getCopies.teamsPlus(
-			{
-				attrs: ["tid", "cid"],
-				seasonAttrs: ["playoffRoundsWon"],
-				season: m.season,
-			},
-			"noCopyCache",
-		);
+		const teamSeasons = await team.getFormattedAll({
+			attrs: ["tid", "cid"],
+			seasonAttrs: ["playoffRoundsWon"],
+			season: m.season,
+		});
 		if (m.type === "champion") {
 			const champ = teamSeasons.find(
 				(t) => t.seasonAttrs.playoffRoundsWon === rounds,
@@ -723,7 +719,7 @@ const resolveMarket = async (
 	}
 
 	if (m.type === "award") {
-		const awards = await idb.getCopy.awards({ season: m.season });
+		const awards = await idb.merged.awards.get(m.season);
 		if (!awards) {
 			return undefined; // not decided yet
 		}
@@ -737,7 +733,7 @@ const resolveMarket = async (
 	}
 
 	if (m.type === "allStarTeam") {
-		const allStars = await idb.getCopy.allStars({ season: m.season });
+		const allStars = await idb.merged.allStars.get(m.season);
 		if (!allStars) {
 			return undefined; // roster not selected yet
 		}
@@ -750,7 +746,7 @@ const resolveMarket = async (
 	}
 
 	if (m.type === "allLeagueTeam" || m.type === "allDefensiveTeam") {
-		const awards = await idb.getCopy.awards({ season: m.season });
+		const awards = await idb.merged.awards.get(m.season);
 		if (!awards) {
 			return undefined; // not decided yet
 		}
@@ -766,7 +762,7 @@ const resolveMarket = async (
 	}
 
 	if (m.type === "allRookieTeam") {
-		const awards = await idb.getCopy.awards({ season: m.season });
+		const awards = await idb.merged.awards.get(m.season);
 		if (!awards) {
 			return undefined; // not decided yet
 		}

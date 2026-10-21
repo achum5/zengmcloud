@@ -3,7 +3,7 @@ import { idb } from "../db/index.ts";
 
 export const getTeamInfoBySeason = async (tid: number, season: number) => {
 	// Belt and braces: the types say number, but callers feed this from loosely
-	// typed playersPlus rows, and an undefined here becomes an invalid
+	// typed player.formatAll rows, and an undefined here becomes an invalid
 	// IndexedDB key - a DataError that takes down the whole view instead of one
 	// lookup. No team info is the honest answer for a key that cannot exist.
 	if (!Number.isFinite(tid) || !Number.isFinite(season)) {
@@ -19,10 +19,6 @@ export const getTeamInfoBySeason = async (tid: number, season: number) => {
 		};
 	}
 
-	const teamSeasonsIndex = idb.league
-		.transaction("teamSeasons")
-		.store.index("tid, season");
-
 	let ts:
 		| {
 				abbrev: string;
@@ -33,12 +29,13 @@ export const getTeamInfoBySeason = async (tid: number, season: number) => {
 				name: string;
 				region: string;
 		  }
-		| undefined = await teamSeasonsIndex.get([tid, season]);
+		| undefined = await idb.merged.teamSeasons.getByTidSeason(tid, season);
 	if (!ts) {
 		// No team season entry for the requested season... is there an older one, somehow? If so, use the latest one before the requested season. If not, use the first we find (it is the oldest existing one, so assume that applies).
-		for await (const cursor of teamSeasonsIndex.iterate(
-			IDBKeyRange.bound([tid, -Infinity], [tid, Infinity]),
-		)) {
+		for await (const cursor of idb.league
+			.transaction("teamSeasons")
+			.store.index("tid, season")
+			.iterate(IDBKeyRange.bound([tid, -Infinity], [tid, Infinity]))) {
 			if (cursor.value.season > season && ts) {
 				break;
 			}

@@ -78,10 +78,7 @@ const processTrade = async (
 			undoInfoTeams[j].numPlayersTradedAway = teamSeason.numPlayersTradedAway;
 		}
 
-		const players = await idb.getCopies.players(
-			{ pids: pids[j] },
-			"noCopyCache",
-		);
+		const players = await idb.merged.players.getAll({ pids: pids[j] });
 		if (players.length !== pids[j].length) {
 			throw new Error("Invalid pid");
 		}
@@ -137,7 +134,11 @@ const processTrade = async (
 				statsIndex: p.stats.length - (duringSeason ? 0 : 1), // Used to always have 1 subtracted from it until addStatsRow was removed. This is kind of weird - statsIndex references the first stats row for the new team for trades before the playoffs end, and the last stats row for the old team for trades after the playoffs. This logic is kept just to maintain backwards compatibility, it's handled in tradeSummary.ts too.
 			});
 
-			if (teamSeason) {
+			// Players who were just drafted were never really part of the team, so they don't count either
+			if (
+				teamSeason &&
+				!helpers.justDrafted(p, g.get("phase"), g.get("season"))
+			) {
 				// Bad players do not actually count as a "player traded away"
 				teamSeason.numPlayersTradedAway += helpers.sigmoid(
 					p.valueNoPot / 100,
@@ -248,10 +249,7 @@ const processTrade = async (
 		const draftPicks: [DraftPick[], DraftPick[]] = [[], []];
 		for (const i of [0, 1] as const) {
 			const j = i === 0 ? 1 : 0;
-			players[i] = await idb.getCopies.players(
-				{ pids: pids[i] },
-				"noCopyCache",
-			);
+			players[i] = await idb.merged.players.getAll({ pids: pids[i] });
 			if (players[i].length !== pids[i].length) {
 				return false;
 			}

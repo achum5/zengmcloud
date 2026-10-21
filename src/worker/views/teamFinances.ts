@@ -243,7 +243,7 @@ const updateTeamFinances = async ({
 		// pending change and nothing after it, and handed that one number to
 		// every column from the second onward.
 		const gameAttributeEvents = (
-			await idb.getCopies.scheduledEvents(undefined, "noCopyCache")
+			await idb.merged.scheduledEvents.getAll()
 		).filter((event) => event.type === "gameAttributes");
 		const capsBySeason = capsForSeasons({
 			seasons: salariesSeasons,
@@ -260,17 +260,20 @@ const updateTeamFinances = async ({
 			phase: g.get("phase"),
 		});
 
-		const teamSeasons = await idb.getCopies.teamSeasons({
-			tid: inputs.tid,
-		});
-		teamSeasons.reverse(); // Most recent season first
-
-		// Add in luxuryTaxShare if it's missing
-		for (const teamSeason of teamSeasons) {
-			if (!teamSeason.revenues.luxuryTaxShare) {
-				teamSeason.revenues.luxuryTaxShare = 0;
-			}
-		}
+		const teamSeasons = (
+			await idb.merged.teamSeasons.getAll({ tid: inputs.tid })
+		)
+			.reverse() // Most recent season first
+			.map((teamSeason) => {
+				// Add in luxuryTaxShare if it's missing
+				return {
+					...teamSeason,
+					revenues: {
+						...teamSeason.revenues,
+						luxuryTaxShare: teamSeason.revenues.luxuryTaxShare ?? 0,
+					},
+				};
+			});
 
 		const formatRevenueExpenses = (teamSeason: TeamSeason) => {
 			const output = {} as Record<
@@ -330,16 +333,13 @@ const updateTeamFinances = async ({
 		}
 
 		// Get stuff for the finances form
-		const tTemp = await idb.getCopy.teamsPlus(
-			{
-				attrs: ["budget", "adjustForInflation", "autoTicketPrice"],
-				seasonAttrs: ["expenses"],
-				season: g.get("season"),
-				tid: inputs.tid,
-				addDummySeason: true,
-			},
-			"noCopyCache",
-		);
+		const tTemp = await team.getFormatted({
+			attrs: ["budget", "adjustForInflation", "autoTicketPrice"],
+			seasonAttrs: ["expenses"],
+			season: g.get("season"),
+			tid: inputs.tid,
+			addDummySeason: true,
+		});
 
 		if (!tTemp) {
 			throw new Error("Team not found");

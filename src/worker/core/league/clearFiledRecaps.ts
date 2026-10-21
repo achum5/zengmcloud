@@ -20,7 +20,7 @@ export type ClearedRecapCounts = {
 };
 
 export const clearFiledRecaps = async (): Promise<ClearedRecapCounts> => {
-	// A cursor, not getCopies(): a long league holds tens of thousands of full
+	// A cursor, not idb.merged: a long league holds tens of thousands of full
 	// box scores and this only needs one row in memory at a time. There is an
 	// index on noteBool but none on dayNoteBool, so the sweep has to see every
 	// game anyway.

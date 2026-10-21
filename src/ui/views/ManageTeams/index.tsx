@@ -12,7 +12,7 @@ import { toWorker } from "../../util/toWorker.ts";
 import AddRemove from "./AddRemove.tsx";
 import type { JerseySkinIds, Phase, View } from "../../../common/types.ts";
 import { PHASE } from "../../../common/constants.ts";
-import TeamForm from "./TeamForm.tsx";
+import TeamForm, { getNumTeamsByDid } from "./TeamForm.tsx";
 import { useBlocker } from "../../hooks/useBlocker.ts";
 import { useLocal } from "../../util/local.ts";
 import JerseySkins from "./JerseySkins.tsx";
@@ -223,6 +223,10 @@ const ManageTeams = (props: View<"manageTeams">) => {
 
 	const uniqueAbbrevsErrorMessage = getUniqueAbbrevsErrorMessage(teams);
 
+	const numTeamsByDid = getNumTeamsByDid(
+		teams.filter((t) => !t.disabled).map((t) => t.did),
+	);
+
 	return (
 		<>
 			{__SPORT === "basketball" ? (
@@ -337,6 +341,7 @@ const ManageTeams = (props: View<"manageTeams">) => {
 								disableStatus={disableStatus}
 								disableStadiumCapacity={!godMode}
 								moveButton
+								numTeamsByDid={numTeamsByDid}
 								t={t}
 							/>
 							{__SPORT === "basketball" ? (

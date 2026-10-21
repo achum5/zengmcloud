@@ -2,7 +2,7 @@ import { assert, describe, test } from "vitest";
 import { coarsenMostForDisplay } from "./most.ts";
 
 // Frivolities carry their headline number on `most`, which is an ATTR -
-// playersPlus copies it straight through, so unlike the Ovr column beside it
+// player.formatAll copies it straight through, so unlike the Ovr column beside it
 // nothing here ever met the display coarsening. In a league hiding the ones
 // digit these were the last place on the site printing exact 0-100 ratings, and
 // Best Progs was the worst of them: a difference of two ovrs leaks more than

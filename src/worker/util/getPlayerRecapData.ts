@@ -10,6 +10,7 @@ import {
 } from "../../common/constants.ts";
 import { getGlobalSettings } from "./getGlobalSettings.ts";
 import { hasSeasonNote } from "../../common/seasonNote.ts";
+import { team } from "../core/index.ts";
 
 // Data for the league-wide "Player Recaps" workflow: a short written recap of
 // one season for EVERY player in the league, filed into each player's own note.
@@ -784,9 +785,9 @@ const getRecapPlayers = async (season: number, filter: RecapFilter) => {
 	// year rather than by tid, so it works the same whether the draft has
 	// happened yet or the season is being backfilled years later.
 	const [activeAndRetired, thisClass, nextClass] = await Promise.all([
-		idb.getCopies.players({ activeAndRetired: true }, "noCopyCache"),
-		idb.getCopies.players({ draftYear: season }, "noCopyCache"),
-		idb.getCopies.players({ draftYear: season + 1 }, "noCopyCache"),
+		idb.merged.players.getAll({ activeAndRetired: true }),
+		idb.merged.players.getAll({ draftYear: season }),
+		idb.merged.players.getAll({ draftYear: season + 1 }),
 	]);
 	const byPid = new Map(activeAndRetired.map((p) => [p.pid, p]));
 	for (const p of [...thisClass, ...nextClass]) {
@@ -848,15 +849,12 @@ export const getPlayerRecapData = async ({
 		globalSettings.recapMaxPlayers ?? DEFAULT_RECAP_MAX_PLAYERS,
 	);
 
-	const teams = await idb.getCopies.teamsPlus(
-		{
-			attrs: ["tid"],
-			seasonAttrs: ["abbrev"],
-			season,
-			addDummySeason: true,
-		},
-		"noCopyCache",
-	);
+	const teams = await team.getFormattedAll({
+		attrs: ["tid"],
+		seasonAttrs: ["abbrev"],
+		season,
+		addDummySeason: true,
+	});
 	const abbrevByTid = new Map<number, string>();
 	for (const t of teams) {
 		abbrevByTid.set(t.tid, (t.seasonAttrs as any)?.abbrev ?? `T${t.tid}`);
@@ -940,7 +938,7 @@ export const getPlayerRecapData = async ({
 	for (let yr = earliestSeason; yr <= season; yr += 1) {
 		let rows: any[];
 		try {
-			rows = await idb.getCopies.teamSeasons({ season: yr }, "noCopyCache");
+			rows = await idb.merged.teamSeasons.getAll({ season: yr });
 		} catch {
 			continue;
 		}
@@ -1067,7 +1065,7 @@ export const getPlayerRecapData = async ({
 	// than per player.
 	const featsByPid = new Map<number, { season: number; text: string }[]>();
 	try {
-		const allFeats = await idb.getCopies.playerFeats(undefined, "noCopyCache");
+		const allFeats = await idb.merged.playerFeats.getAll();
 		for (const feat of allFeats as any[]) {
 			const list = featsByPid.get(feat.pid) ?? [];
 			list.push({

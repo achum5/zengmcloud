@@ -203,10 +203,7 @@ const readRoster = async (fingerprint: string): Promise<any[]> => {
 	if (rosterMemo?.fingerprint === fingerprint) {
 		return rosterMemo.players;
 	}
-	const players = await idb.getCopies.players(
-		{ activeAndRetired: true },
-		"noCopyCache",
-	);
+	const players = await idb.merged.players.getAll({ activeAndRetired: true });
 	rosterMemo = { fingerprint, players };
 	return players;
 };
@@ -311,12 +308,12 @@ let snapshotMemo: FeedSnapshot | undefined;
 export const getFeedSnapshot = async (
 	season: number,
 ): Promise<FeedSnapshot> => {
-	const games = (await idb.getCopies.games({ season }, "noCopyCache")).filter(
+	const games = (await idb.merged.games.getAll({ season })).filter(
 		(game: any) => game.won && game.lost,
 	);
 	let rows: any[] = [];
 	try {
-		rows = await idb.getCopies.events({ season }, "noCopyCache");
+		rows = await idb.merged.events.getAll({ season });
 	} catch {
 		// A league with no event log still gets a feed from its games.
 	}

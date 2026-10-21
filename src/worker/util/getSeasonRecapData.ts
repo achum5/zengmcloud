@@ -14,6 +14,7 @@ import {
 	type SeasonShape,
 	type TeamGameResult,
 } from "./seasonRecapStory.ts";
+import { player, team } from "../core/index.ts";
 
 // One player's season line for a team-season recap. Regular-season per-game
 // averages, plus the postseason line if they played in it.
@@ -319,10 +320,7 @@ const gatherMoves = async (
 		bucket: "offseason" | "inSeason",
 		eventSeason: number,
 	) => {
-		const events = await idb.getCopies.events(
-			{ season: eventSeason },
-			"noCopyCache",
-		);
+		const events = await idb.merged.events.getAll({ season: eventSeason });
 		for (const event of events) {
 			if (!TRANSACTION_EVENT_TYPES.has(event.type)) {
 				continue;
@@ -421,40 +419,36 @@ export const getSeasonRecapData = async (
 	}
 
 	// Per-team season attrs + team points for/against.
-	const teamsPlus = await idb.getCopies.teamsPlus(
-		{
-			attrs: ["tid"],
-			seasonAttrs: [
-				"abbrev",
-				"region",
-				"name",
-				"won",
-				"lost",
-				"tied",
-				"otl",
-				"playoffRoundsWon",
-				"cid",
-				"did",
-			],
-			stats: ["pts", "oppPts", "gp"],
-			season,
-			// Do NOT add dummy seasons - that would include teams that weren't active
-			// this season (not yet expanded, contracted, disabled), each showing up
-			// with an empty 0-0 record. Only teams with a real teamSeason for this
-			// year are returned.
-		},
-		"noCopyCache",
-	);
+	const teamsFormatted = await team.getFormattedAll({
+		attrs: ["tid"],
+		seasonAttrs: [
+			"abbrev",
+			"region",
+			"name",
+			"won",
+			"lost",
+			"tied",
+			"otl",
+			"playoffRoundsWon",
+			"cid",
+			"did",
+		],
+		stats: ["pts", "oppPts", "gp"],
+		season,
+		// Do NOT add dummy seasons - that would include teams that weren't active
+		// this season (not yet expanded, contracted, disabled), each showing up
+		// with an empty 0-0 record. Only teams with a real teamSeason for this
+		// year are returned.
+	});
 
 	// Franchise history uses the playoffs-by-conf map for the roundsWonText helper.
-	// Each team's own teamSeasons history is fetched per-tid below (getCopies
-	// requires a tid or season - it can't fetch the whole store at once).
+	// Each team's own teamSeasons history is fetched per-tid below.
 	const playoffsByConfBySeason = await getPlayoffsByConfBySeason();
 
 	// Playoff seeds for this season (first-round matchups carry the seeds). Use
-	// getCopy so it works for PAST seasons too (the cache only holds the current
+	// idb.merged so it works for PAST seasons too (the cache only holds the current
 	// one), which also feeds the per-team series results below.
-	const playoffSeries = await idb.getCopy.playoffSeries({ season });
+	const playoffSeries = await idb.merged.playoffSeries.get(season);
 	const seedByTid = new Map<number, number>();
 	const firstRound = playoffSeries?.series?.[0];
 	if (Array.isArray(firstRound)) {
@@ -473,7 +467,7 @@ export const getSeasonRecapData = async (
 
 	// tid → this season's abbrev, for labeling playoff opponents.
 	const abbrevByTid = new Map<number, string>();
-	for (const t of teamsPlus) {
+	for (const t of teamsFormatted) {
 		if (t.seasonAttrs?.abbrev) {
 			abbrevByTid.set(t.tid, t.seasonAttrs.abbrev);
 		}
@@ -529,7 +523,7 @@ export const getSeasonRecapData = async (
 	const { byTid: movesByTid, byPid: movesByPid } = await gatherMoves(season);
 
 	// League award winners this season.
-	const awardsStored = await idb.getCopy.awards({ season }, "noCopyCache");
+	const awardsStored = await idb.merged.awards.get(season);
 	const awardsRow = awardsStored
 		? await legacyAwardsWithNames(awardsStored)
 		: undefined;
@@ -555,16 +549,12 @@ export const getSeasonRecapData = async (
 	// This season's and last season's team rows for every team at once: roster
 	// strength on opening night, splits, conference and division, and last
 	// year's abbreviations for players' prior lines.
-	const teamSeasonsThis = await idb.getCopies.teamSeasons(
-		{ season },
-		"noCopyCache",
-	);
+	const teamSeasonsThis = await idb.merged.teamSeasons.getAll({ season });
 	const teamSeasonByTid = new Map(teamSeasonsThis.map((ts) => [ts.tid, ts]));
 	const priorAbbrevByTid = new Map<number, string>();
-	for (const ts of await idb.getCopies.teamSeasons(
-		{ season: season - 1 },
-		"noCopyCache",
-	)) {
+	for (const ts of await idb.merged.teamSeasons.getAll({
+		season: season - 1,
+	})) {
 		priorAbbrevByTid.set(ts.tid, ts.abbrev);
 	}
 
@@ -586,7 +576,7 @@ export const getSeasonRecapData = async (
 	// simply no season shape to report.
 	const resultsByTid = new Map<number, TeamGameResult[]>();
 	try {
-		const games = (await idb.getCopies.games({ season }, "noCopyCache"))
+		const games = (await idb.merged.games.getAll({ season }))
 			.filter((game) => !game.playoffs)
 			.sort((a, b) => (a.day ?? 0) - (b.day ?? 0) || a.gid - b.gid);
 		for (const game of games) {
@@ -626,7 +616,7 @@ export const getSeasonRecapData = async (
 	let champ: RecapSeasonData["champ"];
 	let runnerUp: RecapSeasonData["runnerUp"];
 
-	for (const t of teamsPlus) {
+	for (const t of teamsFormatted) {
 		try {
 			const sa = t.seasonAttrs;
 			// Guard: skip any team that wasn't actually active this season (no real
@@ -649,11 +639,8 @@ export const getSeasonRecapData = async (
 			}
 
 			// Roster: players who logged regular-season minutes for this team this year.
-			const playersRaw = await idb.getCopies.players(
-				{ statsTid: tid },
-				"noCopyCache",
-			);
-			const playersPlus = await idb.getCopies.playersPlus(playersRaw, {
+			const playersRaw = await idb.merged.players.getAll({ statsTid: tid });
+			const playersFormatted = await player.formatAll(playersRaw, {
 				attrs: ["pid", "firstName", "lastName", "born", "awards", "injuries"],
 				ratings: ["pos", "ovr", "pot"],
 				stats: [
@@ -677,7 +664,7 @@ export const getSeasonRecapData = async (
 				mergeStats: "totOnly",
 			});
 
-			const playoffPlus = await idb.getCopies.playersPlus(playersRaw, {
+			const playoffPlus = await player.formatAll(playersRaw, {
 				attrs: ["pid"],
 				stats: ["gp", "pts", "trb", "ast"],
 				season,
@@ -693,7 +680,7 @@ export const getSeasonRecapData = async (
 				}
 			}
 
-			// The raw rows carry salaries and retirement info that playersPlus
+			// The raw rows carry salaries and retirement info that player.formatAll
 			// doesn't surface, and we already have them - no extra reads.
 			const rawByPid = new Map<number, any>();
 			for (const p of playersRaw) {
@@ -716,7 +703,7 @@ export const getSeasonRecapData = async (
 			};
 
 			const players: RecapSeasonPlayer[] = [];
-			for (const p of playersPlus) {
+			for (const p of playersFormatted) {
 				const st = p.stats;
 				if (!st || st.gp === 0) {
 					continue;
@@ -848,9 +835,7 @@ export const getSeasonRecapData = async (
 				.map(nameOf);
 
 			// Franchise history (this team's seasons up to and including this one).
-			const teamSeasons = (
-				await idb.getCopies.teamSeasons({ tid }, "noCopyCache")
-			)
+			const teamSeasons = (await idb.merged.teamSeasons.getAll({ tid }))
 				.filter((ts) => ts.season <= season)
 				.sort((a, b) => a.season - b.season);
 			const fh = getHistoryTeam(teamSeasons, playoffsByConfBySeason);

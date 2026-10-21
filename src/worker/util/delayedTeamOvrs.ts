@@ -49,10 +49,7 @@ export const getDelayedTeamOvrs = async (
 		return ovrs;
 	}
 
-	const teamSeasons = await idb.getCopies.teamSeasons(
-		{ season },
-		"noCopyCache",
-	);
+	const teamSeasons = await idb.merged.teamSeasons.getAll({ season });
 	for (const teamSeason of teamSeasons) {
 		const ovr = teamSeason.ovrEnd ?? teamSeason.ovrStart;
 		if (typeof ovr === "number") {

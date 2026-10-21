@@ -8,9 +8,9 @@ const player = (pid: number, type: string, gamesRemaining: number) => ({
 
 describe("healedForward", () => {
 	// THE BUG THIS EXISTS FOR. The rows handed to the line-makers come from
-	// getCopies.players(..., "noCopyCache"), which returns the live cache
-	// records. Healing them in place put a hypothetical about next week into
-	// the actual league and published it to every device in the room.
+	// idb.merged.players.getAll, which returns the live cache records. Healing
+	// them in place put a hypothetical about next week into the actual league
+	// and published it to every device in the room.
 	test("never touches what it was given", () => {
 		const players = [
 			player(1, "Sprained Ankle", 8),

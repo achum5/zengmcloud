@@ -53,8 +53,9 @@
 import { bySport } from "../../../common/sportFunctions.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
-import { g, helpers } from "../../util/index.ts";
+import { g } from "../../util/index.ts";
 import teamStatsKeys from "../team/stats.ts";
+import { numGamesToWinSeries } from "./historyRepair.ts";
 
 // ---------------------------------------------------------------- RECORDS
 
@@ -689,7 +690,7 @@ export const rebuildSeasonAggregates = async ({
 		const numRounds = playoffSeries.series.length;
 		const floor = playoffRoundsWonFloor(
 			playoffSeries,
-			helpers.numGamesToWinSeries(
+			numGamesToWinSeries(
 				g.get("numGamesPlayoffSeries", "current")[numRounds - 1],
 			),
 		);

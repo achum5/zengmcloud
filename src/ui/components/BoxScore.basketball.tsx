@@ -3,7 +3,7 @@ import { SafeHtml } from "../components/SafeHtml.tsx";
 import { helpers } from "../util/helpers.ts";
 import { getCols } from "../../common/getCols.ts";
 import { sortByStats, StatsHeader } from "./BoxScore.football.tsx";
-import { type MouseEvent, useState } from "react";
+import { useState } from "react";
 import { useLocal } from "../util/local.ts";
 import {
 	canHideBoxScoreTeam,
@@ -11,8 +11,7 @@ import {
 	orderBoxScoreTeams,
 	setHideOtherBoxScore,
 } from "../util/liveBoxScoreLayout.ts";
-import type { SortBy } from "./DataTable/index.tsx";
-import updateSortBys from "./DataTable/updateSortBys.ts";
+import { useBoxScoreSortBys } from "./useBoxScoreSortBys.ts";
 import { teamsInDisplayOrder } from "../util/boxScoreDisplayOrder.ts";
 
 const StatsTable = ({
@@ -36,32 +35,6 @@ const StatsTable = ({
 	showHighlights?: boolean;
 	t: any;
 }) => {
-	const [sortBys, setSortBys] = useState<SortBy[]>([]);
-
-	const onClick = (event: MouseEvent, i: number) => {
-		setSortBys((prevSortBys) => {
-			const newSortBys =
-				updateSortBys({
-					cols,
-					event,
-					i,
-					prevSortBys,
-				}) ?? [];
-
-			if (
-				newSortBys.length === 1 &&
-				prevSortBys.length === 1 &&
-				newSortBys[0]![0] === prevSortBys[0]![0] &&
-				newSortBys[0]![1] === "desc"
-			) {
-				// User just clicked twice on the same column. Reset sort.
-				return [];
-			}
-
-			return newSortBys;
-		});
-	};
-
 	const stats = [
 		// Game score leads, ahead of minutes: it's the one-number summary of the
 		// line that follows, so it reads better at the front than tacked on the end.
@@ -95,6 +68,8 @@ const StatsTable = ({
 			},
 		},
 	);
+
+	const { onClick, sortBys } = useBoxScoreSortBys({ cols });
 
 	// This is used for two purposes - keeping injured/DNP at the bottom while sorting, and also sorting in general for live sim (was too hard to account for this stuff in default sort from backend)
 	const playersActiveOrPlayed = [];

@@ -1,5 +1,6 @@
 import { PHASE } from "../../common/constants.ts";
 import { idb } from "../db/index.ts";
+import { getActiveSeasonSelector } from "../db/merged/players.ts";
 import { g, helpers } from "../util/index.ts";
 import type {
 	Player,
@@ -8,9 +9,9 @@ import type {
 	PlayerStatType,
 } from "../../common/types.ts";
 import { defineView } from "../util/defineView.ts";
-import { groupByUnique, range } from "../../common/utils.ts";
+import { range } from "../../common/utils.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
-import { season } from "../core/index.ts";
+import { player, season, team } from "../core/index.ts";
 import { extraStats } from "./hallOfFame.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { processPlayersHallOfFame } from "../util/processPlayersHallOfFame.ts";
@@ -449,10 +450,7 @@ export class GamesPlayedCache {
 			// In the playoffs, if we're in the first round or later (not the play-in), set the number of games to the minimum number of games to win a first round series (or the number of games so far). That way you won't see someone who played like 1 game in the play-in tournament leading in points per game after the entire playoffs.
 			let minGpPlayoffs = 0;
 			if (playoffs) {
-				const playoffSeries = await idb.getCopy.playoffSeries(
-					{ season },
-					"noCopyCache",
-				);
+				const playoffSeries = await idb.merged.playoffSeries.get(season);
 
 				// This only matters if there is a play-in tournament
 				if (playoffSeries?.playIns) {
@@ -463,8 +461,9 @@ export class GamesPlayedCache {
 							const numGamesFirstRoundSoFar = series.home.won + series.away.won;
 
 							// Number of games in a first round sweep
-							const numGamesMinAfterFirstRound = helpers.numGamesToWinSeries(
-								g.get("numGamesPlayoffSeries", season)[0],
+							const numGamesMinAfterFirstRound = helpers.numGamesToWinRound(
+								0,
+								season,
 							);
 
 							minGpPlayoffs = Math.min(
@@ -479,7 +478,7 @@ export class GamesPlayedCache {
 				}
 			}
 
-			const teams = await idb.getCopies.teamsPlus({
+			const teams = await team.getFormattedAll({
 				attrs: ["tid"],
 				stats: ["gp"], // Use this only for playoffs, since seasonAttrs.gp does not increment for playoffs
 				seasonAttrs: ["gp"], // Use seasonAttrs.gp rather than stats.gp for real player historical data which has no team stats
@@ -556,69 +555,36 @@ export class GamesPlayedCache {
 				return gp;
 			}
 
-			return helpers.numGamesToWinSeries(
-				g.get("numGamesPlayoffSeries", season)[0],
-			);
+			return helpers.numGamesToWinRound(0, season);
 		}
 
 		return this.regularSeasonCache[season]?.[tid] ?? g.get("numGames", season);
 	}
 }
 
+// cb runs inside an IndexedDB transaction, so it must be synchronous
 export const iterateAllPlayersWithStats = async (
 	season: number | "all" | "career",
-	cb: (p: Player, season: number | "career") => Promise<void>,
+	cb: (p: Player, season: number | "career") => void,
 ) => {
-	// Even in past seasons, make sure we have latest info for players
-	const cachePlayers = await idb.cache.players.getAll();
-	const cachePlayersByPid = groupByUnique(cachePlayers, "pid");
-
-	const applyCB = async (p: Player) => {
-		const seasons = new Set(p.stats.map((row) => row.season));
-		if (season === "all") {
-			for (const season of seasons) {
-				await cb(p, season);
+	await idb.merged.players.forEach(
+		typeof season === "number" ? getActiveSeasonSelector(season) : undefined,
+		(p) => {
+			if (season === "all") {
+				const seasons = new Set(p.stats.map((row) => row.season));
+				for (const season of seasons) {
+					cb(p, season);
+				}
+			} else if (season === "career") {
+				// No need to look at career stats of player with no stats
+				if (p.stats.length > 0) {
+					cb(p, season);
+				}
+			} else if (p.stats.some((row) => row.season === season)) {
+				cb(p, season);
 			}
-		} else if (season === "career") {
-			// No need to look at career stats of player with no stats
-			if (p.stats.length > 0) {
-				await cb(p, season);
-			}
-		} else if (seasons.has(season)) {
-			await cb(p, season);
-		}
-	};
-
-	// For current season, assume everyone is cached, although this might not be true for tragic deaths and God Mode edited players
-	if (season === g.get("season") && g.get("phase") <= PHASE.PLAYOFFS) {
-		for (const p of cachePlayers) {
-			await applyCB(p);
-		}
-		return;
-	}
-
-	// This is similar to activeSeason from getCopies.players
-	const index = idb.league
-		.transaction("players")
-		.store.index("draft.year, retiredYear");
-
-	let range;
-	const useRange = typeof season === "number";
-	if (useRange) {
-		// -1 is because players drafted the year won't play until next year
-		range = IDBKeyRange.bound([-Infinity, season], [season - 1, Infinity]);
-	}
-
-	// https://gist.github.com/inexorabletash/704e9688f99ac12dd336
-	for await (const cursor of index.iterate(range)) {
-		const [draftYear, retiredYear] = cursor.key;
-		if (useRange && retiredYear < season) {
-			cursor.continue([draftYear, season]);
-		} else {
-			const p = cachePlayersByPid[cursor.value.pid] ?? cursor.value;
-			await applyCB(p);
-		}
-	}
+		},
+	);
 };
 
 type Category = ReturnType<typeof getCategoriesAndStats>["categories"][number];
@@ -816,19 +782,47 @@ export default defineView({
 			] as const;
 			const allStats = ["abbrev", "tid", ...stats, ...extraStats] as const;
 
-			// Returns the player, the stats row to use, and some values that differ between career and single season
-			const getPlayerInfo = async (pRaw: Player, season: number | "career") => {
-				if (season === "career") {
-					const p = await idb.getCopy.playersPlus(pRaw, {
+			const careerFormatOptions = {
+				attrs,
+				// season and ovr only needed for bestPos
+				ratings: ["season", "ovr", "skills", "pos"],
+				stats: allStats,
+				seasonType: inputs.playoffs,
+				mergeStats: "totOnly",
+				statType: inputs.statType,
+			} as const;
+
+			// Load abbrevs ahead of time, so there is no database access while iterating over players, which would make the IndexedDB transaction auto commit. For a single season, only load abbrevs for that season. Otherwise, the career options (with no season) load abbrevs for every season, which are shared by the career formatter and all the single season formatters.
+			const abbrevs = await player.loadAbbrevs(
+				typeof inputs.season === "number"
+					? { ...careerFormatOptions, season: inputs.season }
+					: careerFormatOptions,
+			);
+
+			const formatCareer = player.createFormatter(careerFormatOptions, abbrevs);
+
+			const createSeasonFormatter = (season: number) =>
+				player.createFormatter(
+					{
 						attrs,
-						// season and ovr only needed for bestPos
-						ratings: ["season", "ovr", "skills", "pos"],
+						ratings: ["skills", "pos"],
 						stats: allStats,
+						season,
 						seasonType: inputs.playoffs,
 						mergeStats: "totOnly",
 						statType: inputs.statType,
-						disableAbbrevsCacheDatabaseAccess: true,
-					});
+					},
+					abbrevs,
+				);
+			const seasonFormatters = new Map<
+				number,
+				ReturnType<typeof createSeasonFormatter>
+			>();
+
+			// Returns the player, the stats row to use, and some values that differ between career and single season
+			const getPlayerInfo = (pRaw: Player, season: number | "career") => {
+				if (season === "career") {
+					const p = formatCareer(pRaw);
 					if (!p) {
 						return;
 					}
@@ -866,16 +860,11 @@ export default defineView({
 					};
 				}
 
-				const p = await idb.getCopy.playersPlus(pRaw, {
-					attrs,
-					ratings: ["skills", "pos"],
-					stats: allStats,
+				const formatSeason = seasonFormatters.getOrInsertComputed(
 					season,
-					seasonType: inputs.playoffs,
-					mergeStats: "totOnly",
-					statType: inputs.statType,
-					disableAbbrevsCacheDatabaseAccess: true,
-				});
+					createSeasonFormatter,
+				);
+				const p = formatSeason(pRaw);
 				if (!p) {
 					return;
 				}
@@ -892,8 +881,8 @@ export default defineView({
 				};
 			};
 
-			await iterateAllPlayersWithStats(inputs.season, async (pRaw, season) => {
-				const info = await getPlayerInfo(pRaw, season);
+			await iterateAllPlayersWithStats(inputs.season, (pRaw, season) => {
+				const info = getPlayerInfo(pRaw, season);
 				if (!info) {
 					return;
 				}

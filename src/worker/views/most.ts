@@ -2,7 +2,12 @@ import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
 import type { Player } from "../../common/types.ts";
 import { defineView } from "../util/defineView.ts";
-import { omit, orderBy, type OrderBySortParams } from "../../common/utils.ts";
+import {
+	last,
+	omit,
+	orderBy,
+	type OrderBySortParams,
+} from "../../common/utils.ts";
 import { player } from "../core/index.ts";
 import { PLAYER } from "../../common/constants.ts";
 import { getValueStatsRow } from "../core/player/checkJerseyNumberRetirement.ts";
@@ -44,7 +49,7 @@ type MostShown = Omit<Most, "value"> & {
 
 // The rating-scale numbers each list carries on `most`.
 //
-// `most` is an ATTR, so playersPlus copies it through untouched - it never goes
+// `most` is an ATTR, so player.formatAll copies it through untouched - it never goes
 // near the coarsening that the Ovr column right beside it gets. In a league
 // that hides the ones digit these were the last place on the site printing
 // exact 0-100 ratings, and the differences leak more than a rating does: a
@@ -161,15 +166,23 @@ const getMostXPlayers = async ({
 		}
 
 		for (const row of mosts) {
+			const lastValue = playersAll.at(-1)?.most.value;
+			if (
+				playersAll.length >= LIMIT &&
+				lastValue !== undefined &&
+				row.value <= lastValue
+			) {
+				// Not good enough for the top LIMIT. Ties go to whoever was already in the list, like they would with a stable sort.
+				continue;
+			}
+
 			playersAll.push({
 				...p,
 				most: row,
 			});
+			playersAll.sort((a, b) => b.most.value - a.most.value);
+			playersAll = playersAll.slice(0, LIMIT);
 		}
-
-		playersAll.sort((a, b) => b.most.value - a.most.value);
-
-		playersAll = playersAll.slice(0, LIMIT);
 	}
 
 	const stats = bySport({
@@ -179,7 +192,7 @@ const getMostXPlayers = async ({
 		hockey: ["gp", "keyStats", "ops", "dps", "ps"],
 	} as const);
 
-	const playersFiltered = await idb.getCopies.playersPlus(playersAll, {
+	const playersFiltered = await player.formatAll(playersAll, {
 		attrs: [
 			"pid",
 			"firstName",
@@ -199,9 +212,9 @@ const getMostXPlayers = async ({
 		mergeStats: "totOnly",
 	});
 
-	// Match up most by index rather than pid, since a player can appear multiple times with different most values. This is safe because with no season or seasonRange, playersPlus returns every player
+	// Match up most by index rather than pid, since a player can appear multiple times with different most values. This is safe because with no season or seasonRange, player.formatAll returns every player
 	if (playersFiltered.length !== playersAll.length) {
-		throw new Error("playersPlus filtered out some players");
+		throw new Error("player.formatAll filtered out some players");
 	}
 	const players = playersFiltered.map((p, i) => ({
 		...p,
@@ -260,26 +273,25 @@ const tidAndSeasonToAbbrev = async (most: Most) => {
 	const extra = most.extra as any;
 	const tid = extra.tid;
 	const season = extra.bestSeasonOverride ?? extra.season;
-	const teamSeason = await idb.league
-		.transaction("teamSeasons")
-		.store.index("season, tid")
-		.get([season, tid]);
+	const teamSeason = await idb.merged.teamSeasons.getByTidSeason(tid, season);
 	if (teamSeason) {
 		abbrev = teamSeason.abbrev;
 	}
 
 	if (abbrev === undefined) {
 		if (season < g.get("startingSeason")) {
-			const teamSeason = await idb.league
-				.transaction("teamSeasons")
-				.store.index("season, tid")
-				.get([g.get("startingSeason"), tid]);
+			const teamSeason = await idb.merged.teamSeasons.getByTidSeason(
+				tid,
+				g.get("startingSeason"),
+			);
 			if (teamSeason) {
 				abbrev = teamSeason.abbrev;
 			}
 		}
 
-		abbrev = g.get("teamInfoCache")[tid]?.abbrev;
+		if (abbrev === undefined) {
+			abbrev = g.get("teamInfoCache")[tid]?.abbrev;
+		}
 	}
 
 	return {
@@ -406,8 +418,7 @@ export default defineView({
 					"These are the players who played the most career games while never making the playoffs.";
 
 				filter = (p) =>
-					p.stats.length > 0 &&
-					p.stats.filter((ps) => ps.playoffs).length === 0;
+					p.stats.length > 0 && !p.stats.some((ps) => ps.playoffs);
 				getValue = (p) => {
 					let sum = 0;
 					for (const ps of p.stats) {
@@ -930,10 +941,7 @@ export default defineView({
 
 					if (!oldest) {
 						// Skip players who are not yet 30 years old
-						const ratings = p.ratings.at(-1);
-						if (!ratings) {
-							return;
-						}
+						const ratings = last(p.ratings);
 						const age = ratings.season - p.born.year;
 						if (age < 30) {
 							return;

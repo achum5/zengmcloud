@@ -99,7 +99,7 @@ const revertTrade = async (eid: number): Promise<string | undefined> => {
 		return "God Mode is required to revert a trade.";
 	}
 
-	const event = await idb.getCopy.events({ eid }, "noCopyCache");
+	const event = await idb.merged.events.get(eid);
 	if (!event || event.type !== "trade") {
 		return "Trade not found.";
 	}

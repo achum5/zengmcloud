@@ -45,13 +45,11 @@ export default defineView({
 			g.get("season") === inputs.season;
 
 		const playersRaw = showActualFreeAgents
-			? await idb.getCopies.players({
-					tid: PLAYER.FREE_AGENT,
-				})
-			: await idb.getCopies.players({
-					tid: [0, Infinity],
-					filter: (p) => p.contract.exp === inputs.season,
-				});
+			? await idb.merged.players.getAll({ tid: PLAYER.FREE_AGENT })
+			: await idb.merged.players.getAll(
+					{ tid: [0, Infinity] },
+					{ filter: (p) => p.contract.exp === inputs.season },
+				);
 		const playersRawByPid = groupByUnique(playersRaw, "pid");
 
 		// The auction only knows about contracts expiring THIS season (that is the
@@ -70,7 +68,7 @@ export default defineView({
 				? await getProjectedContractAmounts()
 				: undefined;
 
-		const playersFiltered = await idb.getCopies.playersPlus(playersRaw, {
+		const playersFiltered = await player.formatAll(playersRaw, {
 			attrs: [
 				"pid",
 				"name",

@@ -113,12 +113,9 @@ export const createArenaLeague = async (lid: number) => {
 };
 
 const countTrades = async () =>
-	(
-		await idb.getCopies.events(
-			{ season: g.get("season") } as any,
-			"noCopyCache",
-		)
-	).filter((e) => e.type === "trade").length;
+	(await idb.merged.events.getAll({ season: g.get("season") })).filter(
+		(e) => e.type === "trade",
+	).length;
 
 const payrollsAndDeadMoney = async () => {
 	const payrolls: number[] = [];

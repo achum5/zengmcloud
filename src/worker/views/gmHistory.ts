@@ -1,7 +1,12 @@
 import { idb } from "../db/index.ts";
 import { g } from "../util/index.ts";
 import type { TeamSeason, Player } from "../../common/types.ts";
-import { getHistory, getHistoryTeam } from "./teamHistory.ts";
+import addFirstNameShort from "../util/addFirstNameShort.ts";
+import {
+	getHistoryPlayerProcessor,
+	getHistoryTeam,
+	historyStats,
+} from "./teamHistory.ts";
 import { getPlayoffsByConfBySeason } from "./frivolitiesTeamSeasons.ts";
 import { defineView } from "../util/defineView.ts";
 
@@ -15,9 +20,6 @@ export default defineView({
 		) {
 			const seasonsByTid: Record<number, Set<number>> = {};
 			const teamSeasonsByTeam: TeamSeason[][] = [];
-			const teamSeasonsIndex = idb.league
-				.transaction("teamSeasons")
-				.store.index("season, tid");
 			let prevTid: number | undefined;
 			for (
 				let season = g.get("startingSeason");
@@ -30,15 +32,7 @@ export default defineView({
 					teamSeasonsByTeam.push([]);
 				}
 
-				let ts;
-				if (season === g.get("season")) {
-					ts = await idb.cache.teamSeasons.indexGet("teamSeasonsByTidSeason", [
-						tid,
-						g.get("season"),
-					]);
-				} else {
-					ts = await teamSeasonsIndex.get([season, tid]);
-				}
+				const ts = await idb.merged.teamSeasons.getByTidSeason(tid, season);
 				if (ts) {
 					teamSeasonsByTeam.at(-1)!.push(ts);
 
@@ -65,53 +59,60 @@ export default defineView({
 
 			const tids = new Set(allTeamSeasons.map((ts) => ts.tid));
 
-			const players: Player[] = [];
-			const addPlayer = (p: Player) => {
-				p.stats = p.stats.filter((row) =>
-					seasonsByTid[row.tid]?.has(row.season),
-				);
-				players.push(p);
-			};
+			const teamHistory = getHistoryTeam(
+				allTeamSeasons,
+				playoffsByConfBySeason,
+			);
+			const processPlayer = getHistoryPlayerProcessor(
+				allTeamSeasons,
+				teamHistory.history,
+				true,
+			);
+
+			// Only keep stats from the user's seasons. This makes a new object, so the player in the cache is not changed.
+			const getRow = (p: Player) =>
+				processPlayer({
+					...p,
+					stats: p.stats.filter((row) =>
+						seasonsByTid[row.tid]?.has(row.season),
+					),
+				});
+
+			let players;
 
 			// Use statsTids to search for players, unless there are so many teams that it's maybe not worth it
 			if (tids.size <= g.get("numTeams") / 2) {
+				players = [];
 				const pids = new Set<number>();
 				for (const tid of tids) {
-					for await (const { value: p } of idb.league
-						.transaction("players")
-						.store.index("statsTids")
-						.iterate(tid)) {
-						if (pids.has(p.pid)) {
-							continue;
-						}
-
-						addPlayer(p);
+					// A player who played for several of these teams is found for each one, but only processed the first time. Players with no row are processed again, which is fine because they'll have no row again.
+					const playersTid = (
+						await idb.merged.players.getAll(
+							{ statsTid: tid },
+							{
+								filter: (p) => !pids.has(p.pid),
+								map: getRow,
+							},
+						)
+					).filter((p) => p !== undefined);
+					for (const p of playersTid) {
+						players.push(p);
 						pids.add(p.pid);
 					}
 				}
 			} else {
-				for await (const { value: p } of idb.league.transaction("players")
-					.store) {
-					let hasTid = false;
-					for (const tid of p.statsTids) {
-						if (tids.has(tid)) {
-							hasTid = true;
-							break;
-						}
-					}
-					if (hasTid) {
-						addPlayer(p);
-					}
-				}
+				players = (
+					await idb.merged.players.getAll(undefined, {
+						filter: (p) => p.statsTids.some((tid) => tids.has(tid)),
+						map: getRow,
+					})
+				).filter((p) => p !== undefined);
 			}
 
 			return {
-				...(await getHistory(
-					allTeamSeasons,
-					players,
-					playoffsByConfBySeason,
-					true,
-				)),
+				...teamHistory,
+				players: addFirstNameShort(players),
+				stats: historyStats,
 				teamHistories,
 			};
 		}

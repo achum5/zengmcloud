@@ -181,12 +181,9 @@ const getPlayoffInfos = async (game: Game) => {
 		},
 	] as const;
 
-	const numGamesToWinSeries =
-		playoffSeries.currentRound === -1
-			? 1
-			: helpers.numGamesToWinSeries(
-					g.get("numGamesPlayoffSeries", "current")[playoffSeries.currentRound],
-				);
+	const numGamesToWinSeries = helpers.numGamesToWinRound(
+		playoffSeries.currentRound,
+	);
 
 	return {
 		currentRound: playoffSeries.currentRound,
@@ -642,8 +639,7 @@ const writeGameStats = async (
 						: g.get("numGamesPlayoffSeries", "current")[currentRound]!;
 
 				if (numGamesThisRound > 1) {
-					const numGamesToWinSeries =
-						helpers.numGamesToWinSeries(numGamesThisRound);
+					const numGamesToWinSeries = helpers.numGamesToWinRound(currentRound);
 					if (playoffInfos[indTeam].won === numGamesToWinSeries) {
 						endPart += `, winning the ${round}${
 							numGamesToWinSeries > 1

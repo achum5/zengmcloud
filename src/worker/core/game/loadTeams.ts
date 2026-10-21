@@ -159,7 +159,6 @@ export const processTeam = async (
 		did: number;
 	},
 	players: Player[],
-	exhibitionGame?: boolean,
 ) => {
 	if (!playerStats) {
 		playerStats = Object.fromEntries([
@@ -268,7 +267,7 @@ export const processTeam = async (
 	if (SEASON_STATS_KEYS !== undefined) {
 		// Only look at regular season stats for All-Star Game, in case All-Star Game is in playoffs
 		const regularSeason = allStarGame || g.get("phase") < PHASE.PLAYOFFS;
-		const rows = await idb.getCopies.playersPlus(players, {
+		const rows = await player.formatAll(players, {
 			attrs: ["pid"],
 			stats: SEASON_STATS_KEYS,
 			season: g.get("season"),

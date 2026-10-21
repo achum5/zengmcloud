@@ -1,4 +1,5 @@
 import type { GameFlow } from "../../common/gameFlow.ts";
+import type { Game } from "../../common/types.ts";
 import { idb } from "../db/index.ts";
 import {
 	addTotals,
@@ -156,7 +157,7 @@ const titleHistoryFor = async (
 	if (hit) {
 		return hit;
 	}
-	const rows = await idb.getCopies.teamSeasons({ tid }, "noCopyCache");
+	const rows = await idb.merged.teamSeasons.getAll({ tid });
 	const titles: number[] = [];
 	let seasons = 0;
 	for (const ts of rows) {
@@ -745,12 +746,12 @@ export const getDayGamesForRecap = async ({
 	const maxRecapGames = globalSettings.recapMaxGames ?? DEFAULT_RECAP_MAX_GAMES;
 	const maxRecapDays = globalSettings.recapMaxDays ?? DEFAULT_RECAP_MAX_DAYS;
 
-	const allGames = await idb.getCopies.games({ season }, "noCopyCache");
+	const allGames = await idb.merged.games.getAll({ season });
 
 	// The All-Star Game is a normal game record with sentinel team ids (-1 home,
 	// -2 away). Its MVP and the weekend contests live on the separate allStars
 	// object, which we fold into that game's recap below.
-	const allStars = await idb.getCopy.allStars({ season });
+	const allStars = await idb.merged.allStars.get(season);
 	const isAllStarGame = (game: { teams: { tid: number }[] }): boolean =>
 		game.teams[0]?.tid === -1 && game.teams[1]?.tid === -2;
 
@@ -1354,9 +1355,9 @@ export const getDayGamesForRecap = async ({
 // written to the database. Career lines - which only the AI prompt uses - are
 // skipped to avoid the per-player lookups they'd cost.
 const createAutoRecapContext = async (season: number) => {
-	const allGames = await idb.getCopies.games({ season }, "noCopyCache");
+	const allGames = await idb.merged.games.getAll({ season });
 
-	const allStars = await idb.getCopy.allStars({ season });
+	const allStars = await idb.merged.allStars.get(season);
 	const isAllStarGame = (game: { teams: { tid: number }[] }): boolean =>
 		game.teams[0]?.tid === -1 && game.teams[1]?.tid === -2;
 	const allStarPayload = (): RecapGame["allStar"] => {
@@ -1925,7 +1926,7 @@ const createAutoRecapContext = async (season: number) => {
 const computeStandingsAsOf = async (
 	season: number,
 	day: number,
-	allGames: Awaited<ReturnType<typeof idb.getCopies.games>>,
+	allGames: Game[],
 ): Promise<RecapDayStandings> => {
 	const allTeams = (await idb.cache.teams.getAll()).filter((t) => !t.disabled);
 	const confs = g.get("confs", season);
@@ -2044,7 +2045,7 @@ export const getAutoRecapsForDay = async ({
 		: await computeStandingsAsOf(
 				season,
 				day,
-				await idb.getCopies.games({ season }, "noCopyCache"),
+				await idb.merged.games.getAll({ season }),
 			);
 	const dayRecap = getAutoDayRecap({ season, day, playoffs, games, standings });
 

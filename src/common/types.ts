@@ -71,7 +71,6 @@ declare global {
 	var stream0: unknown; // Only in worker, see where it is assigned
 	interface Window {
 		bbgmVersion: string;
-		bugsnagKey: string;
 		enableLogging: boolean;
 		freestar: any;
 		getTheme: () => "dark" | "light";
@@ -761,9 +760,38 @@ export type ScheduledEventTeamInfo = {
 	};
 };
 
-export type ScheduledEventWithoutKey =
+// Changing conferences and divisions requires also specifying which division each team is in. Also there is no way to edit confs/divs from SettingsForm
+type ScheduledEventConfsDivs = {
+	type: "confsDivs";
+	season: number;
+	phase: Phase;
+	info: {
+		confs: GameAttributesLeague["confs"];
+		divs: GameAttributesLeague["divs"];
+
+		// Teams not listed here keep the did they had before
+		teams: {
+			tid: number;
+			did: number;
+		}[];
+	};
+};
+
+// No way to edit awards from SettingsForm
+type ScheduledEventAwards = {
+	type: "awards";
+	season: number;
+	phase: Phase;
+	info: {
+		awards: GameAttributesLeague["awards"];
+	};
+};
+
+export type ScheduledEventWithoutKey = (
 	| ScheduledEventTeamInfo
 	| ScheduledEventGameAttributes
+	| ScheduledEventConfsDivs
+	| ScheduledEventAwards
 	| {
 			type: "expansionDraft";
 			season: number;
@@ -786,13 +814,22 @@ export type ScheduledEventWithoutKey =
 			};
 	  }
 	| {
+			type: "retirePlayer";
+			season: number;
+			phase: Phase;
+			info: {
+				pid: number;
+			};
+	  }
+	| {
 			type: "unretirePlayer";
 			season: number;
 			phase: Phase;
 			info: {
 				pid: number;
 			};
-	  };
+	  }
+) & { id?: number };
 
 export type ScheduledEvent = ScheduledEventWithoutKey & { id: number };
 
@@ -1989,13 +2026,12 @@ export type PlayerStatMax =
 	| null
 	| undefined;
 
-// Not using a homomorphic mapped type, so optional properties become required but still include undefined, since playersPlus always sets the key
+// Not using a homomorphic mapped type, so optional properties become required but still include undefined, since player.formatAll always sets the key
 type PlayerKey = keyof Player;
 type PlayerAllKeys = {
 	[K in PlayerKey]: Player[K];
 };
 
-// ratings and stats are excluded because they are handled separately by playersPlus, not as attrs
 type PlayerAttrsPlus<Contract = Player["contract"]> = Omit<
 	PlayerAllKeys,
 	| "contract"
@@ -2120,7 +2156,7 @@ export type PlayerSummary = Record<
 
 export type PlayerSeasonType = "regularSeason" | "playoffs" | "combined";
 
-export type PlayersPlusOptions = {
+export type PlayerFormatOptions = {
 	season?: number;
 	seasonRange?: [number, number];
 	// An arbitrary set of seasons to include (for a selected-rows subtotal). Like
@@ -2162,12 +2198,11 @@ export type PlayersPlusOptions = {
 	numGamesRemaining?: number;
 	statType?: PlayerStatType;
 	mergeStats?: "none" | "totOnly" | "totAndTeams";
-	disableAbbrevsCacheDatabaseAccess?: boolean;
 };
 
 // Is SeasonType one of the values in the seasonType option? Distributes over unions, so if seasonType is a union of single values (like "playoffs" | "regularSeason"), the result is boolean because it's not known which one it is
 type SeasonTypeIncluded<
-	SeasonTypeOption extends PlayersPlusOptions["seasonType"],
+	SeasonTypeOption extends PlayerFormatOptions["seasonType"],
 	SeasonType extends PlayerSeasonType,
 > =
 	SeasonTypeOption extends Readonly<(infer Values)[]>
@@ -2180,7 +2215,7 @@ type SeasonTypeIncluded<
 
 // Single seasonType value means a single stats row, array means an array of stats rows
 type SeasonTypeSingle<
-	SeasonTypeOption extends PlayersPlusOptions["seasonType"],
+	SeasonTypeOption extends PlayerFormatOptions["seasonType"],
 > = SeasonTypeOption extends Readonly<unknown[]> ? false : true;
 
 type RowOrRows<
@@ -2251,7 +2286,7 @@ type PlayerRatingsPart<
 	Ratings extends Readonly<PlayerRatingAttr[]>,
 	Season extends number | undefined,
 > = {
-	// Never empty, because playersPlus filters out players with no ratings rows
+	// Never empty, because player.formatAll filters out players with no ratings rows
 	ratings: Season extends number
 		? Pick<PlayerRatingsPlus, Ratings[number]>
 		: NonEmptyArray<Pick<PlayerRatingsPlus, Ratings[number]>>;
@@ -2356,9 +2391,9 @@ type PlayerFilteredInner<
 				>);
 
 // Value of an option, or its default value if it may be missing. Uses Options[Key] rather than inferring from an optional property, because that would drop undefined from the type
-type PlayersPlusOptionValue<
+type PlayerFormatOptionValue<
 	Options,
-	Key extends keyof PlayersPlusOptions,
+	Key extends keyof PlayerFormatOptions,
 	Default,
 > = Key extends keyof Options
 	?
@@ -2367,27 +2402,27 @@ type PlayersPlusOptionValue<
 	: Default;
 
 type PlayerFilteredWithSeasonType<
-	Options extends PlayersPlusOptions,
-	SeasonTypeOption extends PlayersPlusOptions["seasonType"],
+	Options extends PlayerFormatOptions,
+	SeasonTypeOption extends PlayerFormatOptions["seasonType"],
 > = PlayerFilteredInner<
-	PlayersPlusOptionValue<Options, "attrs", undefined>,
-	PlayersPlusOptionValue<Options, "ratings", undefined>,
-	PlayersPlusOptionValue<Options, "stats", undefined>,
-	PlayersPlusOptionValue<Options, "season", undefined>,
-	PlayersPlusOptionValue<Options, "seasonRange", undefined>,
+	PlayerFormatOptionValue<Options, "attrs", undefined>,
+	PlayerFormatOptionValue<Options, "ratings", undefined>,
+	PlayerFormatOptionValue<Options, "stats", undefined>,
+	PlayerFormatOptionValue<Options, "season", undefined>,
+	PlayerFormatOptionValue<Options, "seasonRange", undefined>,
 	SeasonTypeSingle<SeasonTypeOption>,
 	SeasonTypeIncluded<SeasonTypeOption, "playoffs">,
 	SeasonTypeIncluded<SeasonTypeOption, "regularSeason">,
 	SeasonTypeIncluded<SeasonTypeOption, "combined">,
-	PlayersPlusOptionValue<Options, "showNoStats", false>,
-	PlayersPlusOptionValue<Options, "showRookies", false>
+	PlayerFormatOptionValue<Options, "showNoStats", false>,
+	PlayerFormatOptionValue<Options, "showRookies", false>
 >;
 
-// Output of playersPlus for a given set of options
-export type PlayerFiltered<Options extends PlayersPlusOptions> =
+// Output of player.formatAll for a given set of options
+export type PlayerFiltered<Options extends PlayerFormatOptions> =
 	PlayerFilteredWithSeasonType<
 		Options,
-		PlayersPlusOptionValue<Options, "seasonType", "regularSeason">
+		PlayerFormatOptionValue<Options, "seasonType", "regularSeason">
 	>;
 
 export type Race = "asian" | "black" | "brown" | "white";
@@ -2558,6 +2593,13 @@ export type PlayoffSeriesTeam = {
 	// pts and sPts are basically only used when there is one game in the series, but they're tracked as the sum of all games for some reason. Beside the one game use case, pts is used in a couple places to identify if a series has started or not. Might be good to improve that some day.
 	pts?: number; // undefined means game hasn't happened yet
 	sPts?: number; // undefined means game hasn't happened yet or there was no shootout
+};
+
+export type PlayoffSeriesTeamAugmented = PlayoffSeriesTeam & {
+	abbrev: string;
+	colors: [string, string, string];
+	region: string;
+	regularSeason: NonNullable<PlayoffSeriesTeam["regularSeason"]>;
 };
 
 type PlayInMatchup = {
@@ -3480,8 +3522,6 @@ export type HeadToHead = {
 		>
 	>;
 };
-
-export type GetCopyType = "noCopyCache";
 
 export type SeasonLeaders = {
 	season: number;

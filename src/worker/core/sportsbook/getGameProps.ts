@@ -1,4 +1,3 @@
-import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import getSchedule from "../season/getSchedule.ts";
 import { buildGameLinePricer } from "./gameLines.ts";
@@ -17,6 +16,7 @@ import {
 	smoothedOverProb,
 	toHalfPointLine,
 } from "../../../common/sportsbookOdds.ts";
+import { team } from "../index.ts";
 
 // Per-game player/team prop odds - the "click into a game" deep board. Kept
 // SEPARATE from getLines()'s whole-league board on purpose: this prices ONE
@@ -148,22 +148,19 @@ export const getGameProps = async (gid: number) => {
 		return undefined;
 	}
 
-	const teams = await idb.getCopies.teamsPlus(
-		{
-			attrs: [
-				"tid",
-				"abbrev",
-				"region",
-				"name",
-				"disabled",
-				"playThroughInjuries",
-			],
-			stats: ["pts", "oppPts", "gp"],
-			season,
-			showNoStats: true,
-		},
-		"noCopyCache",
-	);
+	const teams = await team.getFormattedAll({
+		attrs: [
+			"tid",
+			"abbrev",
+			"region",
+			"name",
+			"disabled",
+			"playThroughInjuries",
+		],
+		stats: ["pts", "oppPts", "gp"],
+		season,
+		showNoStats: true,
+	});
 	const home = teams.find((t) => t.tid === matchup.homeTid);
 	const away = teams.find((t) => t.tid === matchup.awayTid);
 	if (!home || !away || home.disabled || away.disabled) {

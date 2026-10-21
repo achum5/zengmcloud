@@ -27,7 +27,7 @@ export const attachPlayerNames = async (
 	const names = new Map<number, string>();
 	for (const card of cards) {
 		if (!names.has(card.pid)) {
-			const p = await idb.getCopy.players({ pid: card.pid }, "noCopyCache");
+			const p = await idb.merged.players.get(card.pid);
 			names.set(
 				card.pid,
 				p ? `${p.firstName} ${p.lastName}`.trim() : "Unknown player",
@@ -47,7 +47,9 @@ const updateCreateCards = async ({ updateEvents }: ViewArgs) => {
 		updateEvents.has("newPhase") ||
 		updateEvents.has("tradingCards")
 	) {
-		const playersRaw = await idb.getCopies.players({ activeAndRetired: true });
+		const playersRaw = await idb.merged.players.getAll({
+			activeAndRetired: true,
+		});
 
 		const players: CardPlayerIndexEntry[] = playersRaw.map((p) => {
 			const lastRatings = p.ratings.at(-1);

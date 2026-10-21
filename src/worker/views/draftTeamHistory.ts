@@ -11,6 +11,7 @@ import { bySport } from "../../common/sportFunctions.ts";
 import getNumPlayoffTeams from "../core/season/getNumPlayoffTeams.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { validateAbbrev } from "../util/processInputs.ts";
+import { player } from "../core/index.ts";
 
 const processInputs = (params: RouteParams<"draftTeamHistory">) => {
 	let [tid, abbrev] = validateAbbrev(params.abbrev);
@@ -44,13 +45,7 @@ export default defineView({
 			football: ["gp", "keyStats", "av"],
 			hockey: ["gp", "keyStats", "ops", "dps", "ps"],
 		} as const);
-		const playersAll2 = await idb.getCopies.players(
-			{
-				filter,
-			},
-			"noCopyCache",
-		);
-		const playersAll = await idb.getCopies.playersPlus(playersAll2, {
+		const formatOptions = {
 			attrs: [
 				"tid",
 				"abbrev",
@@ -71,7 +66,17 @@ export default defineView({
 			showNoStats: true,
 			showRookies: true,
 			fuzz: true,
-		});
+		} as const;
+		const abbrevs = await player.loadAbbrevs(formatOptions);
+		const formatPlayer = player.createFormatter(formatOptions, abbrevs);
+
+		const playersAll = (
+			await idb.merged.players.getAll(undefined, {
+				filter,
+				map: formatPlayer,
+			})
+		).filter((p) => p !== undefined);
+
 		const players = [];
 		for (const p of playersAll) {
 			const currentPr = last(p.ratings);
@@ -81,11 +86,8 @@ export default defineView({
 			let lotteryChange: number | undefined;
 			let lotteryProb: number | undefined;
 			if (p.draft.round === 1) {
-				const draftLottery = await idb.getCopy.draftLotteryResults(
-					{
-						season: p.draft.year,
-					},
-					"noCopyCache",
+				const draftLottery = await idb.merged.draftLotteryResults.get(
+					p.draft.year,
 				);
 				if (draftLottery) {
 					const lotteryRowIndex = draftLottery.result.findIndex(

@@ -16,7 +16,7 @@ export const takeArenaLooks = async (
 	}
 	try {
 		const looks: ArenaLooks = { titles: [], retired: [] };
-		const teamSeasons = await idb.getCopies.teamSeasons({ tid }, "noCopyCache");
+		const teamSeasons = await idb.merged.teamSeasons.getAll({ tid });
 		const t = await idb.cache.teams.get(tid);
 		// Each title's banner as the team was that season (see the team
 		// history page's).
@@ -54,7 +54,7 @@ export const takeArenaLooks = async (
 			}
 			let name: string | undefined;
 			if (row.pid !== undefined) {
-				const p = await idb.getCopy.players({ pid: row.pid }, "noCopyCache");
+				const p = await idb.merged.players.get(row.pid);
 				name = p?.lastName || undefined;
 			}
 			// A number retired for someone who never played here.
