@@ -2037,6 +2037,50 @@ describe("3D director", () => {
 		}
 	}, 240_000);
 
+	// Once it is over half court, the ball never goes back over: no set has
+	// the man with it dribble it back into the backcourt to start from there,
+	// no break has him bring it back to the spot it brings it up to.
+	test("over half court with it, nobody takes it back over", () => {
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl } = compile(seed, 150);
+			let k = 0;
+			for (const b of tl.beats) {
+				let side: number | undefined;
+				let over = false;
+				for (let t = b.preStart; t < b.actionStart; t += 100) {
+					while (k + 1 < tl.ball.length && tl.ball[k + 1]!.t0 <= t) {
+						k += 1;
+					}
+					const seg = tl.ball[k]!;
+					if (seg.kind !== "hold") {
+						if (seg.kind !== "fly") {
+							over = false;
+						}
+						continue;
+					}
+					const s = offenseAt(tl, t);
+					if (s !== side) {
+						side = s;
+						over = false;
+					}
+					const p = evalPlayer(tl, seg.pid, t);
+					const at = (p.x - COURT_W / 2) * attackDir(s);
+					const dribbling = tl.tracks
+						.get(seg.pid)!
+						.moves.some((m) => m.t0 <= t && t < m.t1 && m.anim === "dribble");
+					const caught = seg.t0 > t - 100 && tl.ball[k - 1]?.kind === "fly";
+					if (at > 2 && (dribbling || caught)) {
+						over = true;
+					}
+					assert.isFalse(
+						over && at < -2 && dribbling,
+						`${seed}: ${seg.pid} back over half court with it at ${Math.round(t)}`,
+					);
+				}
+			}
+		}
+	}, 240_000);
+
 	// A quick trip off a defensive board or a steal: the ball keeps coming up
 	// the floor - not brought up and stood there bouncing it, 2.5 s and more,
 	// waiting on the others to get down with him.

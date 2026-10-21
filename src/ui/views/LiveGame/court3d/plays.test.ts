@@ -1,5 +1,6 @@
 import { assert, describe, test } from "vitest";
 import { makeCourtRng } from "../courtRng.ts";
+import { COURT_W, RIM_INSET } from "../courtSpots.ts";
 import { LEAGUE_PLAY_TYPES } from "./nbaRates.ts";
 import { PLAYBOOK, SPOTS } from "./playbook.ts";
 import {
@@ -34,6 +35,25 @@ describe("3D playbook", () => {
 			}
 			assert.isAtLeast(p.steps.length, 1, p.id);
 			assert.isAtLeast(p.options.length, 1, p.id);
+		}
+	});
+
+	// Where a set starts the ball says when it can be run. Out of bounds:
+	// only off an inbound drawn up for it, from where it went out in the
+	// frontcourt. Back over half court: only on a trip still coming up the
+	// floor - a break, early offense - never a set for the half court or the
+	// end of the clock, which a team runs with the ball long since over.
+	test("a set starts with the ball where its trip has it", () => {
+		const half = COURT_W / 2 - RIM_INSET;
+		for (const p of PLAYS) {
+			const at = p.start[p.ball]!;
+			const [, depth] = SPOTS[at]!;
+			if (at.startsWith("inbound")) {
+				assert.include(["blob", "slob"], p.cat, p.id);
+				assert.isBelow(depth, half, p.id);
+			} else if (depth > half) {
+				assert.include(["break", "early"], p.cat, p.id);
+			}
 		}
 	});
 

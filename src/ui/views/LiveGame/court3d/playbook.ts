@@ -64,7 +64,6 @@ export const SPOTS: Record<string, readonly [number, number]> = {
 	own_R_outlet: [19, 70],
 	backcourt_L: [-17, 50],
 	backcourt_R: [17, 50],
-	inbound_own_baseline: [-6, 90],
 };
 
 export type PlaySource = {
@@ -2662,7 +2661,7 @@ export const PLAYBOOK: PlaySource[] = [
 	},
 	{
 		id: "two-for-one",
-		cat: "late",
+		cat: "early",
 		use: 3,
 		start: "backcourt_mid* R_hash backcourt_L backcourt_R own_L_outlet",
 		needs:
@@ -2716,24 +2715,6 @@ export const PLAYBOOK: PlaySource[] = [
 			"2 three step_back R_wing 0 - - OffScreen 1 | 1 pass 2 inbound",
 		],
 		risks: ["0 3 screen", "0 1 fiveSeconds"],
-	},
-	{
-		id: "full-court-home-run",
-		cat: "late",
-		use: 1,
-		start: "backcourt_L backcourt_R L_wing top inbound_own_baseline*",
-		needs:
-			"shooter | shooter | shooter | big postScorer | inbounder passer big",
-		steps: [
-			"4 move high_post flash; 3 move L_slot relocate; 1 move backcourt_mid sprint",
-			"5 pass 4 overhead",
-		],
-		options: [
-			"4 mid catch_and_shoot high_post 1 5 - Misc 2",
-			"3 three catch_and_shoot L_slot 1 4 chest Misc 1",
-			"1 three catch_and_shoot backcourt_mid 0 5 inbound Misc 3",
-		],
-		risks: ["1 5 pass", "1 5 shotClock"],
 	},
 	{
 		id: "horns-chin",

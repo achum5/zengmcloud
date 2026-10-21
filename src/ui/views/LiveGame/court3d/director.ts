@@ -92,6 +92,7 @@ import {
 	callShot,
 	callTurnover,
 	castPlay,
+	PLAYS,
 	walkPlay,
 	type Called,
 	type Cast,
@@ -966,6 +967,11 @@ const HELP_REACH: [number, number] = [8, 14];
 // On the break, the most (feet) a man already up the floor goes back down
 // it to his spot.
 const BREAK_NO_BACK = 4;
+// The sets there are to run with the ball over half court already: none
+// that starts with it back over (see setsFor).
+const OVER_SETS = PLAYS.filter(
+	(p) => spotXY(p.start[p.ball]!)[1] <= COURT_W / 2 - RIM_INSET,
+);
 // How far up the floor (feet out from the rim) an off-ball defender goes
 // with his man: out to the top of the key, a step past the arc. For every
 // foot his man is further out than that, he waits this much (feet) further
@@ -4469,6 +4475,21 @@ class Director {
 		return run;
 	}
 
+	// The sets there are to run from where the ball is. Over half court
+	// with it already - an offensive board kicked out, an inbound in the
+	// frontcourt, a steal picked up there - none that starts with it back
+	// over (a two-for-one pushed up from the backcourt): once it is over, it
+	// never goes back.
+	private setsFor(team: Side, entry: Entry): Play[] {
+		const h = this.holder;
+		const over =
+			entry === "inbound" ||
+			(entry === "flow" &&
+				h !== undefined &&
+				!this.inBackcourt(team, this.posOf(h)));
+		return over ? OVER_SETS : PLAYS;
+	}
+
 	// Which sets fit the moment: a break off a rebound or a steal, early
 	// offense on a quick trip, something for the end of the clock, a play
 	// drawn up for an inbound.
@@ -4540,16 +4561,21 @@ class Director {
 		if (!on(shooter) || !on(assist) || !on(holder)) {
 			return undefined;
 		}
+		const sets = this.setsFor(team, entry);
 		const ask = (cats: Partial<Record<PlayCategory, number>>) =>
-			callShot(this.rng, {
-				cats,
-				zone: pz,
-				shooter,
-				assist,
-				unassisted: plan.kind === "make" && assist === undefined,
-				holder,
-				five,
-			});
+			callShot(
+				this.rng,
+				{
+					cats,
+					zone: pz,
+					shooter,
+					assist,
+					unassisted: plan.kind === "make" && assist === undefined,
+					holder,
+					five,
+				},
+				sets,
+			);
 		const called =
 			ask(this.playCats(entry, gap, clock)) ??
 			(entry === "break" ? undefined : ask({ half: 1 }));
@@ -4581,8 +4607,9 @@ class Director {
 		) {
 			return undefined;
 		}
+		const sets = this.setsFor(team, entry);
 		const ask = (cats: Partial<Record<PlayCategory, number>>) =>
-			callTurnover(this.rng, { cats, victim, kinds, holder, five });
+			callTurnover(this.rng, { cats, victim, kinds, holder, five }, sets);
 		const called =
 			ask(this.playCats(entry, gap, clock)) ??
 			(entry === "break" ? undefined : ask({ half: 1 }));
@@ -4602,11 +4629,11 @@ class Director {
 		if (holder !== undefined && !five.some((c) => c.pid === holder)) {
 			return undefined;
 		}
-		const called = callAny(this.rng, {
-			cats: this.playCats(entry, gap, clock),
-			five,
-			holder,
-		});
+		const called = callAny(
+			this.rng,
+			{ cats: this.playCats(entry, gap, clock), five, holder },
+			this.setsFor(team, entry),
+		);
 		return called ? this.running(team, called, entry, {}, gap) : undefined;
 	}
 
@@ -5600,12 +5627,20 @@ class Director {
 				}
 			}
 		}
-		const P =
+		let P =
 			to === "rim" ? this.nearRim(run.team, this.posOf(pid)) : this.at(run, to);
 		const start = Math.max(t0, this.free.get(pid) ?? 0);
 		if (this.holder !== pid) {
 			// The ball never got to him: he just goes.
 			return this.go(pid, P, start, 14, "run");
+		}
+		// Over half court with it, he never takes it back over - not to the
+		// spot a break has him bringing it up to, from farther up already.
+		if (
+			(this.posOf(pid).x - COURT_W / 2) * dir > 2 &&
+			(P.x - COURT_W / 2) * dir < 3
+		) {
+			P = { x: COURT_W / 2 + dir * 3.5, y: P.y };
 		}
 		this.keepComing(pid, start);
 		// The hand on the side he goes (away from his man). Coming off a ball
