@@ -162,18 +162,26 @@ export const simulateSeason = ({
 	const strengths = new Float64Array(n);
 	const gamesRemaining = teams.map((t) => t.gamesRemaining);
 
+	// Each team's season, played again every iteration.
+	const sim = teams.map((t) => ({
+		tid: t.tid,
+		cid: byConference ? t.cid : 0,
+		strength: 0,
+		playoffStrength: 0,
+		wins: 0,
+		tiebreak: 0,
+	}));
+
 	for (let it = 0; it < iterations; it++) {
-		const sim = teams.map((t) => {
+		for (let ti = 0; ti < n; ti++) {
+			const t = teams[ti]!;
+			const s = sim[ti]!;
 			const error = uncertainty * gauss();
-			return {
-				tid: t.tid,
-				cid: byConference ? t.cid : 0,
-				strength: t.strength + error,
-				playoffStrength: (t.playoffStrength ?? t.strength) + error,
-				wins: t.won,
-				tiebreak: random(),
-			};
-		});
+			s.strength = t.strength + error;
+			s.playoffStrength = (t.playoffStrength ?? t.strength) + error;
+			s.wins = t.won;
+			s.tiebreak = random();
+		}
 
 		// The rest of the regular season, against the field.
 		for (let ti = 0; ti < n; ti++) {
