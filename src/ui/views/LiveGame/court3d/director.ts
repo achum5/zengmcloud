@@ -12316,6 +12316,8 @@ class Director {
 				SPRINT,
 				"run",
 			);
+			// (Bringing it up, he is still on his way as they get to him.)
+			this.keepComing(handler, hit);
 			return contact(handler, hit);
 		}
 
@@ -12334,7 +12336,13 @@ class Director {
 			);
 			const s0 = Math.max(start(fouled), set - runMs(dist(V, C), RUN) + 100);
 			const there = this.go(fouled, C, s0, RUN, "run");
-			return contact(fouled, Math.max(set, there - 150));
+			const hit = Math.max(set, there - 150);
+			// The man pushing it up the floor still coming as the whistle
+			// goes - not stood waiting on it.
+			if (this.holder !== undefined) {
+				this.keepComing(this.holder, hit);
+			}
+			return contact(fouled, hit);
 		}
 
 		// On the ball: he puts it on the floor and goes.

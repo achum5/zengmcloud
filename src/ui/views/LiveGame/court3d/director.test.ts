@@ -2083,7 +2083,8 @@ describe("3D director", () => {
 
 	// A quick trip off a defensive board or a steal: the ball keeps coming up
 	// the floor - not brought up and stood there bouncing it, 2.5 s and more,
-	// waiting on the others to get down with him.
+	// waiting on the others to get down with him, or on the whistle for a
+	// foul away from the ball.
 	test("off a board or a steal, the man with the ball keeps it coming", () => {
 		let trips = 0;
 		let stood = 0;
@@ -2093,7 +2094,7 @@ describe("3D director", () => {
 				const prev = tl.beats[k - 1];
 				if (
 					!prev ||
-					!b.type.startsWith("fga") ||
+					!/^(fga|pfNonShooting$)/.test(b.type) ||
 					(prev.type !== "drb" && prev.type !== "stl") ||
 					b.actionStart - prev.end > 12_000
 				) {
@@ -2120,7 +2121,7 @@ describe("3D director", () => {
 			});
 		}
 		assert.isAbove(trips, 25);
-		assert.isAtMost(stood, trips / 20, `${stood} of ${trips}`);
+		assert.isAtMost(stood, trips / 30, `${stood} of ${trips}`);
 	}, 240_000);
 
 	// The camera goes off the floor only while nothing is happening on it: the
