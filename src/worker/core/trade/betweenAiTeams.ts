@@ -7,6 +7,7 @@ import summary from "./summary.ts";
 import type { TradeTeams } from "../../../common/types.ts";
 import { choice } from "../../../common/random.ts";
 import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
+import { tradeDay as realisticFrontOfficeTradeDay } from "../realisticFrontOffice/market.ts";
 
 const getAITids = async () => {
 	const teams = await idb.cache.teams.getAll();
@@ -144,6 +145,13 @@ const DEFAULT_NUM_TEAMS = 30;
 
 const betweenAiTeams = async () => {
 	if (g.get("forceHistoricalRosters")) {
+		return false;
+	}
+
+	// The new front offices run a market of their own
+	// (docs/realistic-front-offices.md).
+	if (__SPORT === "basketball" && g.get("realisticFrontOffices")) {
+		await realisticFrontOfficeTradeDay();
 		return false;
 	}
 

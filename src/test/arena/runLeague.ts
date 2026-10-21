@@ -5,7 +5,6 @@ import {
 	game,
 	league,
 	phase,
-	realRosters,
 	season,
 	team,
 } from "../../worker/core/index.ts";
@@ -15,9 +14,8 @@ import { PHASE, PLAYER } from "../../common/constants.ts";
 import { getDefaultSettings } from "../../worker/views/newLeague.ts";
 import { last } from "../../common/utils.ts";
 import { defaultGameAttributes } from "../../common/defaultGameAttributes.ts";
-import { unwrapGameAttribute } from "../../common/unwrapGameAttribute.ts";
 import type { Conditions } from "../../common/types.ts";
-import { ARENA_SETTINGS, ARENA_START_SEASON } from "./settings.ts";
+import { ARENA_SETTINGS } from "./settings.ts";
 
 const conditions = {} as Conditions;
 
@@ -25,7 +23,7 @@ const conditions = {} as Conditions;
 // moment in the season (payrolls, cap space, who was a free agent).
 export type SeasonSnapshot = {
 	season: number;
-	// The cap rule as it stood that season - real leagues move it every year.
+	// The cap rule as it stood that season - a league's cap can move every year.
 	salaryCap: number;
 	luxuryPayroll: number;
 	// End of the regular season.
@@ -47,74 +45,40 @@ export type SeasonSnapshot = {
 	}[];
 };
 
+// A random-players league with the owner's settings, built the way the new
+// league screen builds one: no file, default teams, the settings passed in at
+// creation.
 export const createArenaLeague = async (lid: number) => {
-	const getLeagueOptions = {
-		type: "real" as const,
-		season: ARENA_START_SEASON,
-		phase: PHASE.PRESEASON,
-		randomDebuts: false,
-		randomDebutsKeepCurrent: false,
-		realDraftRatings: "rookie" as const,
-		realStats: "none" as const,
-		includePlayers: true,
-	};
-	// What the new league screen does for a real-players league: start from
-	// that season's own settings and teams, keep every store the real data has,
-	// then apply the owner's changes - all at creation, so real contracts are
-	// scaled to this cap rather than left sized for some other one.
-	const info = await realRosters.getLeagueInfo(getLeagueOptions);
-	const realLeague = await realRosters.getLeague(getLeagueOptions);
 	const settings: Record<string, unknown> =
 		helpers.deepCopy(getDefaultSettings());
-	for (const key of Object.keys(settings)) {
-		if (
-			key === "noStartingInjuries" ||
-			key === "randomization" ||
-			key === "realStats" ||
-			key === "giveMeWorstRoster"
-		) {
-			continue;
-		}
-		const value = unwrapGameAttribute(info.gameAttributes as any, key as any);
-		if (value !== undefined) {
-			settings[key] = key === "repeatSeason" ? (value as any)?.type : value;
-		}
-	}
 	for (const [key, value] of Object.entries(ARENA_SETTINGS)) {
 		if (Object.hasOwn(settings, key)) {
 			settings[key] = value;
 		}
 	}
 
-	await league.createStream(
-		realLeague as any,
-		{
-			confs:
-				unwrapGameAttribute(info.gameAttributes as any, "confs") ??
-				last(defaultGameAttributes.confs).value,
-			divs:
-				unwrapGameAttribute(info.gameAttributes as any, "divs") ??
-				last(defaultGameAttributes.divs).value,
-			fromFile: {
-				gameAttributes: realLeague.gameAttributes,
-				hasRookieContracts: true,
-				maxGid: undefined,
-				startingSeason: realLeague.startingSeason,
-				teams: realLeague.teams,
-				version: undefined,
-			},
-			getLeagueOptions,
-			keptKeys: new Set([...info.stores, "startingSeason", "version"]) as any,
-			lid,
-			name: "Arena",
-			setLeagueCreationStatus: () => {},
-			settings,
-			shuffleRosters: false,
-			startingSeasonFromInput: undefined,
-			teamsFromInput: helpers.addPopRank(info.teams as any),
-			tid: 0,
-		} as any,
-	);
+	await league.createStream({}, {
+		confs: last(defaultGameAttributes.confs).value,
+		divs: last(defaultGameAttributes.divs).value,
+		fromFile: {
+			gameAttributes: undefined,
+			hasRookieContracts: true,
+			maxGid: undefined,
+			startingSeason: undefined,
+			teams: undefined,
+			version: undefined,
+		},
+		getLeagueOptions: undefined,
+		keptKeys: new Set(),
+		lid,
+		name: "Arena",
+		setLeagueCreationStatus: () => {},
+		settings,
+		shuffleRosters: false,
+		startingSeasonFromInput: undefined,
+		teamsFromInput: helpers.addPopRank(helpers.getTeamsDefault()),
+		tid: 0,
+	} as any);
 	await league.loadGameAttributes();
 	await league.setGameAttributes({
 		...ARENA_SETTINGS,
@@ -167,7 +131,7 @@ export const advanceSeasons = async (numSeasons: number) => {
 		}
 
 		const currentPhase = g.get("phase");
-		// A real league holds the expansion drafts real history scheduled.
+		// A league can hold scheduled expansion drafts.
 		// Nothing changes phase after one, so this comes first, as in autoPlay.
 		if (currentPhase === PHASE.EXPANSION_DRAFT) {
 			if (g.get("expansionDraft").phase === "protection") {

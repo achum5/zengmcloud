@@ -876,6 +876,9 @@ export type GameAttributesLeague = {
 	// The league's own score bug for the 3D game, or null for the default.
 	scoreBug: ScoreBugStyle | null;
 	aiTradesFactor: number;
+	// CPU teams run by the new front office (docs/realistic-front-offices.md)
+	// instead of stock's. Basketball only, and not in League Settings yet.
+	realisticFrontOffices: boolean;
 	allStarGame: number | null;
 	allStarNum: number;
 	allStarType: "draft" | "byConf" | "top";

@@ -1,17 +1,16 @@
 import { test } from "vitest";
 import { makeSeededRandom, randInt } from "../../common/random.ts";
-import {
-	DEFAULT_PLAY_THROUGH_INJURIES,
-	PHASE,
-	PLAYER,
-} from "../../common/constants.ts";
+import { PHASE, PLAYER } from "../../common/constants.ts";
 import { getGameSpread } from "../../common/getGameSpread.ts";
 import type { Player } from "../../common/types.ts";
 import { idb } from "../../worker/db/index.ts";
 import { g, helpers } from "../../worker/util/index.ts";
-import { player } from "../../worker/core/index.ts";
-import GameSim from "../../worker/core/GameSim.ts";
-import { processTeam } from "../../worker/core/game/loadTeams.ts";
+import {
+	game as gameModule,
+	phase as phaseModule,
+	player,
+	season as seasonModule,
+} from "../../worker/core/index.ts";
 import {
 	pregameLineupSynergy,
 	synergyCompositeRating,
@@ -20,6 +19,7 @@ import {
 } from "../../worker/core/GameSim.basketball/synergy.ts";
 import { last } from "../../common/utils.ts";
 import {
+	IMPACT_RATINGS,
 	lineupFeatures,
 	NUM_LINEUP_FEATURES,
 	playerFeatures,
@@ -27,12 +27,19 @@ import {
 	shotWeight,
 	type ImpactRatings,
 } from "../../worker/core/realisticFrontOffice/playerImpact.ts";
+import {
+	HOME_COURT_POINTS,
+	playerLine,
+	rosterPoints,
+	type ValueRatings,
+} from "../../worker/core/realisticFrontOffice/strength.ts";
 import { createArenaLeague } from "../arena/runLeague.ts";
+import { play, setOrder, toSimTeam } from "./simTools.ts";
 
 // FITTING THE LINEUP MODEL (worker/core/realisticFrontOffice/playerImpact.ts)
 // on this game's own sim. Never part of the normal test run.
 //
-// 1. Generate, one process per seed: real 2019 rosters with random players
+// 1. Generate, one process per seed: arena league rosters with other players
 //    swapped in, so every kind of build gets minutes, playing real games. Every
 //    ten-man stint adds a row to running normal equations, and the run also
 //    records how often each rotation spot shares the floor with each other one.
@@ -68,8 +75,6 @@ const MAX_SLOTS = 30;
 
 const ratingsOf = (p: Player) => last(p.ratings) as unknown as ImpactRatings;
 
-type SimTeam = Awaited<ReturnType<typeof processTeam>>;
-
 type Model = {
 	coefficients: number[];
 	synergy: number;
@@ -80,7 +85,7 @@ type Model = {
 	together: number[][];
 };
 
-// A real league's rosters, plus a pool of other players to swap into them: the
+// An arena league's rosters, plus a pool of other players to swap into them: the
 // rest of the league, and draft prospects grown a random number of years so the
 // pool holds builds no current roster does.
 const buildWorld = async (seed: number) => {
@@ -118,12 +123,6 @@ const buildWorld = async (seed: number) => {
 	return { bases, pool };
 };
 
-const setOrder = (roster: Player[]) => {
-	for (const [i, p] of roster.entries()) {
-		p.rosterOrder = i;
-	}
-};
-
 const makeRoster = (
 	base: Player[],
 	pool: Player[],
@@ -153,30 +152,6 @@ const makeRoster = (
 	}
 	return roster;
 };
-
-const toSimTeam = async (tid: number, roster: Player[]) =>
-	processTeam(
-		{
-			tid,
-			playThroughInjuries: DEFAULT_PLAY_THROUGH_INJURIES,
-			depth: undefined,
-		} as any,
-		{ won: 0, lost: 0, tied: 0, otl: 0, cid: 0, did: 0 },
-		roster,
-	);
-
-let gid = 0;
-const play = (t0: SimTeam, t1: SimTeam) =>
-	new GameSim({
-		gid: gid++,
-		day: 1,
-		teams: [t0, t1] as any,
-		doPlayByPlay: false,
-		homeCourtFactor: 1,
-		neutralSite: false,
-		allStarGame: false,
-		baseInjuryRate: 0,
-	} as any).run() as any;
 
 // Per-player inputs, computed once each.
 const makeCaches = () => {
@@ -1015,7 +990,9 @@ test.runIf(env.IMPACT_CALIBRATE !== undefined)(
 		const dir = env.IMPACT_CALIBRATE!;
 		const numPlayers = Number(env.IMPACT_PLAYERS ?? 250);
 		const gamesPerPlayer = Number(env.IMPACT_SWAP_GAMES ?? 400);
-		const slot = 5;
+		const gameSeedOffset = Number(env.IMPACT_GAME_SEED ?? 0);
+		const slot = Number(env.IMPACT_SLOT ?? 5);
+		const minOvr = Number(env.IMPACT_MIN_OVR ?? 35);
 		const fs = await importNode("node:fs/promises");
 		await importNode("fake-indexeddb/auto");
 		const realRandom = Math.random;
@@ -1052,7 +1029,11 @@ test.runIf(env.IMPACT_CALIBRATE !== undefined)(
 					const opp = bases[oppTid]!.filter((q) => q.pid !== insert?.pid);
 					setOrder(opp);
 					const oppTeam = await toSimTeam(oppTid, opp);
-					Math.random = makeSeededRandom(hostTid * 1_000_003 + i);
+					// IMPACT_GAME_SEED replays a sample on different games, to measure
+					// how much of a player's number is the games he happened to get.
+					Math.random = makeSeededRandom(
+						hostTid * 1_000_003 + i + gameSeedOffset,
+					);
 					const homeGame = i % 2 === 0;
 					const result = homeGame
 						? play(helpers.deepCopy(team), oppTeam)
@@ -1073,7 +1054,7 @@ test.runIf(env.IMPACT_CALIBRATE !== undefined)(
 			// stream so processes measure different players.
 			const pick = makeSeededRandom(Number(env.IMPACT_SEED ?? 1));
 			const eligible = pool.filter(
-				(p) => !hostPids.has(p.pid) && last(p.ratings).ovr >= 35,
+				(p) => !hostPids.has(p.pid) && last(p.ratings).ovr >= minOvr,
 			);
 			const rows = [];
 			for (let n = 0; n < numPlayers; n++) {
@@ -1092,14 +1073,508 @@ test.runIf(env.IMPACT_CALIBRATE !== undefined)(
 							.map((k) => [k, r[k]]),
 					),
 					hostTid,
+					slot,
 					displacedOvr: last(bases[hostTid]![slot]!.ratings).ovr,
 					delta: margin - baselines.get(hostTid)!,
 				});
 			}
 			await fs.mkdir(dir, { recursive: true });
 			await fs.writeFile(
-				`${dir}/calib-${env.IMPACT_SEED ?? 1}.json`,
+				`${dir}/calib-${env.IMPACT_SEED ?? 1}${slot !== 5 ? `-slot${slot}` : ""}${gameSeedOffset ? `-replay${gameSeedOffset}` : ""}.json`,
 				JSON.stringify(rows),
+			);
+		} finally {
+			Math.random = realRandom;
+		}
+	},
+);
+
+// THE OWNER'S CASE: similar overalls, very different BPM. One regular season of
+// the arena league is played first so everyone has a BPM, then players at the
+// same position are paired where BPM says one thing and overall another, and
+// each pair is played out at an equal claim on minutes.
+test.runIf(env.IMPACT_BPM !== undefined)(
+	"impact: bpm vs overall",
+	{ timeout: 6 * 60 * 60 * 1000 },
+	async () => {
+		const dir = env.IMPACT_BPM!;
+		const numPairs = Number(env.IMPACT_PAIRS ?? 16);
+		const gamesPerSide = Number(env.IMPACT_SWAP_GAMES ?? 800);
+		const slot = 5;
+		const fs = await importNode("node:fs/promises");
+		await importNode("fake-indexeddb/auto");
+		const realRandom = Math.random;
+		const seed = Number(env.IMPACT_SEED ?? 321);
+		Math.random = makeSeededRandom(seed);
+		try {
+			await createArenaLeague(seed);
+			await phaseModule.newPhase(PHASE.REGULAR_SEASON, {} as any);
+			await gameModule.play(
+				await seasonModule.getDaysLeftSchedule(),
+				{} as any,
+			);
+			const season = g.get("season");
+			const players = await idb.cache.players.indexGetAll("playersByTid", [
+				0,
+				Infinity,
+			]);
+			const seasonRow = (p: Player) =>
+				p.stats.find((row) => row.season === season && !row.playoffs) as
+					| any
+					| undefined;
+			const bases: Player[][] = [];
+			for (let tid = 0; tid < g.get("numTeams"); tid++) {
+				const roster = players
+					.filter((p) => p.tid === tid)
+					.map((p) => {
+						const copy = helpers.deepCopy(p);
+						copy.injury = { type: "Healthy", gamesRemaining: 0 };
+						return copy;
+					})
+					.sort((a, b) => b.valueNoPot - a.valueNoPot);
+				setOrder(roster);
+				bases.push(roster);
+			}
+			g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+
+			const hostTid = 7;
+			const host = bases[hostTid]!;
+			const candidates = bases
+				.flat()
+				.filter((p) => p.tid !== hostTid)
+				.map((p) => {
+					const row = seasonRow(p);
+					return {
+						p,
+						ovr: last(p.ratings).ovr,
+						min: row?.min ?? 0,
+						bpm: (row?.obpm ?? 0) + (row?.dbpm ?? 0),
+					};
+				})
+				.filter((x) => x.min >= 1000);
+			const bucket = (p: Player) => {
+				const pos = last(p.ratings).pos;
+				return pos.includes("C") ? "C" : pos.includes("F") ? "F" : "G";
+			};
+
+			// Pairs: same position, the higher-BPM man no better than 3 overall
+			// points above the other and at least 4 BPM better - biggest BPM gaps
+			// relative to overall first.
+			const pairsAll: {
+				hi: (typeof candidates)[number];
+				lo: (typeof candidates)[number];
+				score: number;
+			}[] = [];
+			for (const hi of candidates) {
+				for (const lo of candidates) {
+					if (
+						hi !== lo &&
+						bucket(hi.p) === bucket(lo.p) &&
+						hi.bpm - lo.bpm >= 4 &&
+						hi.ovr - lo.ovr <= 0 &&
+						lo.ovr - hi.ovr <= 4
+					) {
+						pairsAll.push({
+							hi,
+							lo,
+							score: hi.bpm - lo.bpm + 2 * (lo.ovr - hi.ovr),
+						});
+					}
+				}
+			}
+			pairsAll.sort((a, b) => b.score - a.score);
+			const used = new Set<number>();
+			const pairs = [];
+			for (const pair of pairsAll) {
+				if (pairs.length >= numPairs) {
+					break;
+				}
+				if (used.has(pair.hi.p.pid) || used.has(pair.lo.p.pid)) {
+					continue;
+				}
+				used.add(pair.hi.p.pid);
+				used.add(pair.lo.p.pid);
+				pairs.push(pair);
+			}
+
+			const equalValue = host[slot]?.valueNoPot ?? 0;
+			const marginWith = async (p: Player, avoid: number[]) => {
+				const roster = [...host.slice(0, slot), p, ...host.slice(slot, 12)];
+				setOrder(roster);
+				const team = await toSimTeam(hostTid, roster);
+				const sp = team.player.find((q: any) => q.id === p.pid);
+				if (sp) {
+					sp.valueNoPot = equalValue;
+				}
+				let total = 0;
+				for (let i = 0; i < gamesPerSide; i++) {
+					const oppTid =
+						(hostTid + 1 + (i % (bases.length - 1))) % bases.length;
+					const opp = bases[oppTid]!.filter((q) => !avoid.includes(q.pid));
+					setOrder(opp);
+					const oppTeam = await toSimTeam(oppTid, opp);
+					Math.random = makeSeededRandom(seed * 1_000_003 + i);
+					const homeGame = i % 2 === 0;
+					const result = homeGame
+						? play(helpers.deepCopy(team), oppTeam)
+						: play(oppTeam, helpers.deepCopy(team));
+					const margin = result.team[0].stat.pts - result.team[1].stat.pts;
+					total += homeGame ? margin : -margin;
+				}
+				setOrder(host);
+				for (const roster2 of bases) {
+					setOrder(roster2);
+				}
+				return total / gamesPerSide;
+			};
+			const results = [];
+			for (const { hi, lo } of pairs) {
+				const avoid = [hi.p.pid, lo.p.pid];
+				const withHi = await marginWith(hi.p, avoid);
+				const withLo = await marginWith(lo.p, avoid);
+				results.push({
+					highBpm: {
+						name: `${hi.p.firstName} ${hi.p.lastName}`,
+						age: season - hi.p.born.year,
+						ovr: hi.ovr,
+						bpm: Math.round(hi.bpm * 10) / 10,
+					},
+					lowBpm: {
+						name: `${lo.p.firstName} ${lo.p.lastName}`,
+						age: season - lo.p.born.year,
+						ovr: lo.ovr,
+						bpm: Math.round(lo.bpm * 10) / 10,
+					},
+					highBpmBetterBy: Math.round((withHi - withLo) * 100) / 100,
+				});
+			}
+			await fs.mkdir(dir, { recursive: true });
+			await fs.writeFile(
+				`${dir}/bpm.json`,
+				JSON.stringify({ gamesPerSide, results }, null, 1),
+			);
+		} finally {
+			Math.random = realRandom;
+		}
+	},
+);
+
+const strengthPlayer = (p: Player, valueNoPot = p.valueNoPot) => {
+	const r = last(p.ratings);
+	return {
+		...playerLine(r as unknown as ValueRatings),
+		valueNoPot,
+	};
+};
+
+// What the strength model says replacing the man in roster spot `slot` with p
+// is worth, in points a game.
+const modelDelta = (host: Player[], slot: number, p: Player) =>
+	rosterPoints([
+		...host.slice(0, slot).map((q) => strengthPlayer(q)),
+		strengthPlayer(p, host[slot]!.valueNoPot),
+		...host.slice(slot + 1, 13).map((q) => strengthPlayer(q)),
+	]) - rosterPoints(host.slice(0, 13).map((q) => strengthPlayer(q)));
+
+// The strength model against the calibration swaps: IMPACT_MODELCHECK=<the
+// IMPACT_CALIBRATE directory> writes modelcheck.json, one row per swap.
+test.runIf(env.IMPACT_MODELCHECK !== undefined)(
+	"impact: strength model vs calibration swaps",
+	{ timeout: 60 * 60 * 1000 },
+	async () => {
+		const dir = env.IMPACT_MODELCHECK!;
+		const fs = await importNode("node:fs/promises");
+		await importNode("fake-indexeddb/auto");
+		const realRandom = Math.random;
+		Math.random = makeSeededRandom(4242);
+		try {
+			const { bases, pool } = await buildWorld(4242);
+			for (const roster of bases) {
+				roster.sort((a, b) => b.valueNoPot - a.valueNoPot);
+			}
+			const byPid = new Map(pool.map((p) => [p.pid, p]));
+			const synergyOf = async (tid: number, roster: Player[]) => {
+				setOrder(roster);
+				const team = await toSimTeam(tid, roster);
+				return pregameLineupSynergy(team.player) ?? 0;
+			};
+			const hostSynergy = new Map<number, number>();
+			const files = (await fs.readdir(dir)).filter((f: string) =>
+				/^calib-\d+(-slot\d+)?\.json$/.test(f),
+			);
+			const out = [];
+			for (const file of files) {
+				const rows = JSON.parse(await fs.readFile(`${dir}/${file}`, "utf8"));
+				for (const row of rows) {
+					const p = byPid.get(row.pid)!;
+					const host = bases[row.hostTid]!;
+					const slot = row.slot ?? 5;
+					if (!hostSynergy.has(row.hostTid)) {
+						hostSynergy.set(
+							row.hostTid,
+							await synergyOf(row.hostTid, host.slice(0, 13)),
+						);
+					}
+					const insertSynergy = await synergyOf(row.hostTid, [
+						...host.slice(0, slot),
+						p,
+						...host.slice(slot + 1, 13),
+					]);
+					setOrder(host);
+					out.push({
+						...row,
+						ratings: undefined,
+						pred: modelDelta(host, slot, p),
+						synergyDelta: insertSynergy - hostSynergy.get(row.hostTid)!,
+					});
+				}
+			}
+			await fs.writeFile(`${dir}/modelcheck.json`, JSON.stringify(out));
+			// The host rosters as the model sees them (valueNoPot, overall, then
+			// the ratings), so team-level fits can be tried offline.
+			const rosterRows = (roster: Player[]) =>
+				roster.map((p) => {
+					const r = ratingsOf(p);
+					return [
+						Math.round(p.valueNoPot * 100) / 100,
+						last(p.ratings).ovr,
+						...IMPACT_RATINGS.map((key) => r[key]),
+					];
+				});
+			await fs.writeFile(
+				`${dir}/hosts.json`,
+				JSON.stringify(
+					Object.fromEntries(
+						[...hostSynergy.keys()].map((tid) => [
+							tid,
+							{
+								roster: rosterRows(bases[tid]!.slice(0, 13)),
+								synergy: hostSynergy.get(tid),
+							},
+						]),
+					),
+				),
+			);
+		} finally {
+			Math.random = realRandom;
+		}
+	},
+);
+
+// Does a season's box score know anything the ratings do not? Plays one regular
+// season of the arena league, then measures every player with enough minutes
+// the way IMPACT_CALIBRATE does - dropped into the same spot of the same host
+// rosters - and records his BPM beside the result. Split across processes with
+// IMPACT_PART=0..IMPACT_PARTS-1.
+test.runIf(env.IMPACT_BPM_CALIB !== undefined)(
+	"impact: bpm calibration",
+	{ timeout: 6 * 60 * 60 * 1000 },
+	async () => {
+		const dir = env.IMPACT_BPM_CALIB!;
+		const part = Number(env.IMPACT_PART ?? 0);
+		const parts = Number(env.IMPACT_PARTS ?? 1);
+		const gamesPerPlayer = Number(env.IMPACT_SWAP_GAMES ?? 400);
+		const minMinutes = Number(env.IMPACT_MIN ?? 500);
+		const slot = 5;
+		const fs = await importNode("node:fs/promises");
+		await importNode("fake-indexeddb/auto");
+		const realRandom = Math.random;
+		const seed = Number(env.IMPACT_SEED ?? 321);
+		Math.random = makeSeededRandom(seed);
+		try {
+			await createArenaLeague(seed);
+			await phaseModule.newPhase(PHASE.REGULAR_SEASON, {} as any);
+			await gameModule.play(
+				await seasonModule.getDaysLeftSchedule(),
+				{} as any,
+			);
+			const season = g.get("season");
+			const players = await idb.cache.players.indexGetAll("playersByTid", [
+				0,
+				Infinity,
+			]);
+			const bases: Player[][] = [];
+			for (let tid = 0; tid < g.get("numTeams"); tid++) {
+				const roster = players
+					.filter((p) => p.tid === tid)
+					.map((p) => {
+						const copy = helpers.deepCopy(p);
+						copy.injury = { type: "Healthy", gamesRemaining: 0 };
+						return copy;
+					})
+					.sort((a, b) => b.valueNoPot - a.valueNoPot);
+				setOrder(roster);
+				bases.push(roster);
+			}
+			g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+
+			const hostTids = [3, 7, 12, 18, 25];
+			const playHost = async (hostTid: number, insert: Player | undefined) => {
+				const host = bases[hostTid]!;
+				const roster = insert
+					? [...host.slice(0, slot), insert, ...host.slice(slot + 1, 13)]
+					: host.slice(0, 13);
+				setOrder(roster);
+				const team = await toSimTeam(hostTid, roster);
+				if (insert) {
+					const sp = team.player.find((q: any) => q.id === insert.pid);
+					if (sp) {
+						sp.valueNoPot = host[slot]!.valueNoPot;
+					}
+				}
+				let total = 0;
+				for (let i = 0; i < gamesPerPlayer; i++) {
+					const oppTid =
+						(hostTid + 1 + (i % (bases.length - 1))) % bases.length;
+					const opp = bases[oppTid]!.filter((q) => q.pid !== insert?.pid);
+					setOrder(opp);
+					const oppTeam = await toSimTeam(oppTid, opp);
+					Math.random = makeSeededRandom(hostTid * 1_000_003 + i);
+					const homeGame = i % 2 === 0;
+					const result = homeGame
+						? play(helpers.deepCopy(team), oppTeam)
+						: play(oppTeam, helpers.deepCopy(team));
+					const margin = result.team[0].stat.pts - result.team[1].stat.pts;
+					total += homeGame ? margin : -margin;
+				}
+				for (const roster2 of bases) {
+					setOrder(roster2);
+				}
+				return total / gamesPerPlayer;
+			};
+			const baselines = new Map<number, number>();
+			for (const tid of hostTids) {
+				baselines.set(tid, await playHost(tid, undefined));
+			}
+
+			const box = (p: Player) => {
+				let min = 0;
+				let bpm = 0;
+				for (const row of p.stats as any[]) {
+					if (row.season === season && !row.playoffs && row.min > 0) {
+						min += row.min;
+						bpm += (row.obpm + row.dbpm) * row.min;
+					}
+				}
+				return { min, bpm: min > 0 ? bpm / min : 0 };
+			};
+			const eligible = bases
+				.flat()
+				.filter((p) => !hostTids.includes(p.tid) && box(p).min >= minMinutes)
+				.sort((a, b) => a.pid - b.pid)
+				.filter((_, i) => i % parts === part);
+			const rows = [];
+			for (const [n, p] of eligible.entries()) {
+				const hostTid = hostTids[(n * parts + part) % hostTids.length]!;
+				const margin = await playHost(hostTid, p);
+				const r = last(p.ratings);
+				rows.push({
+					pid: p.pid,
+					name: `${p.firstName} ${p.lastName}`,
+					age: season - p.born.year,
+					ovr: r.ovr,
+					pos: r.pos,
+					ratings: Object.fromEntries(
+						(Object.keys(r) as (keyof typeof r)[])
+							.filter((k) => typeof r[k] === "number")
+							.map((k) => [k, r[k]]),
+					),
+					...box(p),
+					hostTid,
+					displacedOvr: last(bases[hostTid]![slot]!.ratings).ovr,
+					pred: modelDelta(bases[hostTid]!, slot, p),
+					delta: margin - baselines.get(hostTid)!,
+				});
+			}
+			await fs.mkdir(dir, { recursive: true });
+			await fs.writeFile(`${dir}/bpmcalib-${part}.json`, JSON.stringify(rows));
+		} finally {
+			Math.random = realRandom;
+		}
+	},
+);
+
+// The strength model against whole matchups: league rosters with players swapped
+// in, each matchup played IMPACT_K times. IMPACT_EVAL_STRENGTH=<dir> writes
+// eval-strength-<seed>.json, with stock's pregame spread alongside.
+test.runIf(env.IMPACT_EVAL_STRENGTH !== undefined)(
+	"impact: evaluate strength model",
+	{ timeout: 6 * 60 * 60 * 1000 },
+	async () => {
+		const dir = env.IMPACT_EVAL_STRENGTH!;
+		const numMatchups = Number(env.IMPACT_MATCHUPS ?? 300);
+		const k = Number(env.IMPACT_K ?? 30);
+		const fs = await importNode("node:fs/promises");
+		await importNode("fake-indexeddb/auto");
+		const realRandom = Math.random;
+		const seed = Number(env.IMPACT_SEED ?? 999);
+		Math.random = makeSeededRandom(seed);
+		try {
+			const { bases, pool } = await buildWorld(seed);
+			const rows = [];
+			for (let n = 0; n < numMatchups; n++) {
+				const tid0 = randInt(0, bases.length - 1);
+				let tid1 = randInt(0, bases.length - 2);
+				if (tid1 >= tid0) {
+					tid1 += 1;
+				}
+				const used = new Set<number>();
+				const rosters = [
+					makeRoster(bases[tid0]!, pool, used, 6),
+					makeRoster(bases[tid1]!, pool, used, 6),
+				];
+				const teams = [
+					await toSimTeam(tid0, rosters[0]!),
+					await toSimTeam(tid1, rosters[1]!),
+				];
+				const syn = teams.map((t) => pregameLineupSynergy(t.player) ?? 0);
+				const margins: number[] = [];
+				for (let i = 0; i < k; i++) {
+					const result = play(
+						helpers.deepCopy(teams[0]!),
+						helpers.deepCopy(teams[1]!),
+					);
+					margins.push(result.team[0].stat.pts - result.team[1].stat.pts);
+				}
+				const mean = margins.reduce((a, x) => a + x, 0) / k;
+				const variance =
+					margins.reduce((a, x) => a + (x - mean) ** 2, 0) / (k - 1);
+				rows.push({
+					truth: mean,
+					noiseVar: variance / k,
+					ovr: getGameSpread({
+						ovr0: teams[0]!.ovr,
+						ovr1: teams[1]!.ovr,
+						homeCourtAdvantage: 1,
+						neutralSite: false,
+						numPeriods: g.get("numPeriods"),
+						quarterLength: g.get("quarterLength"),
+						synergyDiff: syn[0]! - syn[1]!,
+						playoffs: false,
+					})!,
+					strength:
+						rosterPoints(rosters[0]!.map((p) => strengthPlayer(p))) -
+						rosterPoints(rosters[1]!.map((p) => strengthPlayer(p))) +
+						HOME_COURT_POINTS,
+					synergy: syn,
+					// Each roster as the model sees it, so team-level fits can be
+					// tried offline: valueNoPot, overall, then the ratings.
+					rosters: rosters.map((roster) =>
+						roster.map((p) => {
+							const r = ratingsOf(p);
+							return [
+								Math.round(p.valueNoPot * 100) / 100,
+								last(p.ratings).ovr,
+								...IMPACT_RATINGS.map((key) => r[key]),
+							];
+						}),
+					),
+				});
+			}
+			await fs.mkdir(dir, { recursive: true });
+			await fs.writeFile(
+				`${dir}/eval-strength-${seed}.json`,
+				JSON.stringify({ numMatchups, k, rows }),
 			);
 		} finally {
 			Math.random = realRandom;

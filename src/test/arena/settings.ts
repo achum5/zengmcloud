@@ -1,10 +1,10 @@
 // The owner's multiplayer league, as a starting point for the arena: the
 // gameplay settings exported from it, minus anything that only affects one
-// device, the UI or the room. Applied on top of a real-players league, so the
-// salary cap numbers are that league's own.
+// device, the UI or the room. Applied to a random-players league (owner's call:
+// no real players in these tests).
 //
-// Two deliberate differences from the real league, both the owner's call:
-// nobody is under the secondary hard cap (in the real league it binds the human
+// Two deliberate differences from the owner's league, both the owner's call:
+// nobody is under the secondary hard cap (in the owner's league it binds the human
 // teams), and every team is run by the CPU.
 export const ARENA_SETTINGS = {
 	allStarType: "draft",
@@ -33,5 +33,3 @@ export const ARENA_SETTINGS = {
 	stealFactor: 1.1,
 	threePointTendencyFactor: 0.946,
 } as const;
-
-export const ARENA_START_SEASON = 2019;

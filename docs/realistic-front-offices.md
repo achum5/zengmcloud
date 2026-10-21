@@ -1,7 +1,7 @@
 # Realistic Front Offices
 
-Status: design. The old smart AI is gone and the arena (below) runs; the front
-office itself is not built yet. Decisions below were made by the repo owner;
+Status: design. The old smart AI is gone, the arena (below) runs and the
+framework is agreed; the front office itself is being built as a thin slice. Decisions below were made by the repo owner;
 anything not written here is still open and gets asked, not assumed.
 
 ## Goal
@@ -63,6 +63,56 @@ with "the Pistons", not with a named person.
   exploit that gap today. The sim is ground truth and CPU teams can measure any
   ratings profile against it, including lineup fit (the sim's synergy).
 - **Projected forward** with the game's own progression model.
+- **Learned ahead of time, never simmed live.** What a set of ratings is worth
+  is learned from millions of simulated games and shipped as a model; CPU teams
+  do not run sims of their own during play (owner's call: live sims would bog
+  the sim down, and a few hundred games is mostly noise - one 400-game swap test
+  carries about 0.8 points a game of luck).
+- **Any league settings.** The model is fit across a spread of sim settings
+  (pace, the shooting, steal, block, turnover, rebound and foul factors,
+  quarter length, ...), so it holds in any league, not just default or the
+  owner's.
+- **The box score adds nothing once the ratings are known.** Measured: a
+  season's BPM helps a model that only knows overall, and adds exactly zero to
+  one that reads the full ratings.
+- **Talent does not add up.** The sim hands each shot to one of the five by
+  usage, so two stars dilute each other: summing single-player values over a
+  roster overstates the gaps between teams by about 40%. Rosters are priced
+  whole, with each player's share of the ball, plus lineup synergy.
+
+## Framework
+
+One rule for every decision - trade, signing, re-signing, pick, cut, lineup:
+take the option with the most expected titles (each season out at 90%, deep
+runs as the tiebreak). No tiers and no "if rebuilding, do X" rules; contending,
+rebuilding, buying at the deadline and avoiding the middle come out of the
+math, because title chances rise steeply with strength and the same player is
+worth far more to a contender than to a lottery team.
+
+Five layers:
+
+1. **On-court value**, learned from mass sims: a whole roster (full ratings,
+   rotation, sim settings) in, points a game against an average team out.
+   Rosters are always evaluated whole, never as a sum of player values - that
+   is what stops consolidation exploits and prices fit and roster spots.
+2. **The future**, from the game's own code: progression and aging, injuries,
+   retirement, mood and contract demands, the lottery. CPU teams know the odds
+   of every outcome, never the outcome.
+3. **How teams fill holes**: picks become prospects, cap space becomes
+   signings, empty spots become minimum players. What those are worth depends
+   on how the league's GMs behave, so it is learned from arena leagues run with
+   the new front offices, and refreshed as they improve.
+4. **League outlook**: every team's strength each season for about a decade,
+   plus what each asset is still worth after that, turned into title and
+   playoff odds - and from it, what any asset is worth to any team and what the
+   market would pay for it.
+5. **Decisions**: candidate moves scored by their change in franchise value.
+   Deterministic, so every device agrees.
+
+Graded on results: each model against fresh mass sims, the arena against NBA
+numbers, version-against-version leagues (a change ships only if the new
+version wins more), and a shark bot that hunts for mispriced trades using the
+sims as ground truth.
 
 ## Direction without rigidity
 
@@ -77,7 +127,8 @@ with "the Pistons", not with a named person.
 ## Always on
 
 Teams work the phones every day, all season. Sims get slower; how much slower is
-acceptable is something the owner will feel out, but it must not be egregious.
+acceptable is decided once the real cost is measured against how much smarter
+it makes CPU teams, but it must not be egregious.
 
 ## Trades
 
@@ -102,6 +153,10 @@ acceptable is something the owner will feel out, but it must not be egregious.
   decline, dismiss or counter.
 - **Talking (later).** CPU teams explain their side of a deal the way a real
   front office would, without giving their hand away.
+- **Trade volume.** Elite GMs who see the same truth only trade when their
+  situations differ (contender and rebuilder, fit, cap). If that gives far
+  fewer trades than the NBA, the numbers go to the owner before anything is
+  done about it.
 - **Trade penalty** (player mood hit for a team that trades too much) is
   unchanged. CPU teams are subject to it and account for it. The hope is that the
   league can drop it once CPU teams are hard to fleece.
@@ -128,7 +183,7 @@ Always played to win.
 
 Build the measuring tools before the front office.
 
-- **Arena** (`src/test/arena/`): real-players leagues starting in 2019 with the
+- **Arena** (`src/test/arena/`): random-players leagues (owner's call) with the
   owner's multiplayer settings, except that no team is hard-capped and every
   team is run by the CPU. Played through the real game code season after
   season, many leagues at once, then measured on winning, direction, trade
@@ -141,6 +196,12 @@ Build the measuring tools before the front office.
   - Trading down in the draft for a haul - and then the CPU not even taking the
     player you wanted.
   - Trading up cheaply (picks 30 and 58 for pick 15).
+- **Trade checker** (`ARENA_CHECK_TRADES`): every trade the front offices make
+  is played out - both teams before and after, against the rest of the league -
+  next to what the model expected it to do for each side this season.
+- **Version against version:** leagues where half the teams run the new front
+  office and half the previous one, over many seeds. A change ships only if it
+  wins more.
 - **A "shark" bot** that plays like an expert human hunting for exploits.
 - **A front office log:** a plain-English reason for every move.
 
@@ -157,14 +218,17 @@ Build the measuring tools before the front office.
 
 ## Build order
 
+Thin slice first (owner's call): all five layers in rough form, end to end, so
+CPU-to-CPU trades run in the arena; then deepen whichever layer the arena and
+version-against-version tests show matters most.
+
 1. Remove the old smart AI. Write this doc. (Done.)
-2. Arena and stock baseline.
-3. Player impact model and forecasting (players, team strength, cap).
-4. Trade judgment.
-5. The market: shopping, matching windows, bidding, the rebuilt Trade Proposals
+2. Arena and stock baseline. (Done.)
+3. The thin slice, ending in CPU-to-CPU trades measured in the arena.
+4. The market: shopping, matching windows, bidding, the rebuilt Trade Proposals
    page.
-6. Free agency board, re-signing, draft, roster cuts, coaching.
-7. Explanations.
+5. Free agency board, re-signing, draft, roster cuts, coaching.
+6. Explanations.
 
 ## Open questions
 
