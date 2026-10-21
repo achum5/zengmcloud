@@ -934,6 +934,59 @@ describe("3D director", () => {
 		}
 	}, 240_000);
 
+	// And he gets going round and slows coming onto it, like a man - not
+	// turning flat out from a standstill in a frame and stopped dead in the
+	// next, like a turret.
+	test("turning eases in and out - never flat out from one frame to the next", () => {
+		const { tl } = compile("turns", 40);
+		const pids = [...tl.tracks.keys()];
+		const STEP = 16;
+		// Turning speed (radians a second) gained or lost in a frame.
+		const JERK = 4;
+		let prev = new Map<number, { yaw: number; rate?: number }>();
+		let frames = 0;
+		let jerks = 0;
+		let quick = 0;
+		for (let t = 0; t < Math.min(tl.end, 240_000); t += STEP) {
+			if (fastAt(tl, t) > 1 || cutBetween(tl, t - STEP, t)) {
+				prev = new Map();
+				continue;
+			}
+			const cur = new Map<number, { yaw: number; rate?: number }>();
+			for (const pid of pids) {
+				const st = evalPlayer(tl, pid, t);
+				if (!st.shown) {
+					continue;
+				}
+				const p = prev.get(pid);
+				let rate: number | undefined;
+				if (p) {
+					let d = st.yaw - p.yaw;
+					d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+					rate = (d * 1000) / STEP;
+					if (Math.abs(rate) > 6) {
+						quick += 1;
+					}
+					if (p.rate !== undefined && st.anim !== "spinMove") {
+						frames += 1;
+						if (Math.abs(rate - p.rate) > JERK) {
+							jerks += 1;
+						}
+					}
+				}
+				cur.set(
+					pid,
+					rate === undefined ? { yaw: st.yaw } : { yaw: st.yaw, rate },
+				);
+			}
+			prev = cur;
+		}
+		assert.isAbove(frames, 50_000);
+		// (Plenty of quick turns - just none begun or ended in a frame.)
+		assert.isAbove(quick, 1000, `${quick}`);
+		assert.isBelow(jerks, frames * 0.001, `${jerks} of ${frames}`);
+	}, 240_000);
+
 	// The picture never cuts in play: the ball taken out after a basket and
 	// brought up, the walk to an inbound or to the line, are all played out -
 	// fast - rather than skipped. Never fast through a shot, and always five

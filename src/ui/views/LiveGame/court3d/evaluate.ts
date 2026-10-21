@@ -1360,11 +1360,33 @@ const yawOnBeat = (tl: CourtTimeline, tr: Track, g: number): number => {
 	}
 	return turning.yaw;
 };
+// And a man gets going round and slows as he comes onto it - never from
+// stood still to turning flat out in a frame, nor stopped dead in the next,
+// like a turret. What shows is that turning run through a short bell, a
+// beat apart either side (each beat taken from this one, so it never goes
+// the long way round): a turn begins a touch before its reason and ends a
+// touch after, halfway round at the same moment - so he is as far round
+// by a pass or a shot as the director counted on (TURN_RATE).
+const TURN_EASE = [1, 4, 6, 4, 1];
+const TURN_EASE_SUM = 16;
+const yawEased = (tl: CourtTimeline, tr: Track, g: number): number => {
+	const c = yawOnBeat(tl, tr, g);
+	const half = (TURN_EASE.length - 1) / 2;
+	let off = 0;
+	for (let i = 0; i < TURN_EASE.length; i++) {
+		if (i !== half) {
+			off +=
+				TURN_EASE[i]! *
+				wrapAngle(yawOnBeat(tl, tr, g + (i - half) * TURN_STEP) - c);
+		}
+	}
+	return c + off / TURN_EASE_SUM;
+};
 const yawAt = (tl: CourtTimeline, tr: Track, t: number): number => {
 	const g = Math.floor(t / TURN_STEP) * TURN_STEP;
-	const a = yawOnBeat(tl, tr, g);
+	const a = yawEased(tl, tr, g);
 	const u = (t - g) / TURN_STEP;
-	return u <= 0 ? a : a + wrapAngle(yawOnBeat(tl, tr, g + TURN_STEP) - a) * u;
+	return u <= 0 ? a : a + wrapAngle(yawEased(tl, tr, g + TURN_STEP) - a) * u;
 };
 // Round in a spin move: from the way he faces as he plants to the way he
 // faces coming out of it - the long way, right round, the way his right
