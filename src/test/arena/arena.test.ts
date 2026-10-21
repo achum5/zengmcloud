@@ -12,6 +12,7 @@ import {
 	tradeWatchers,
 } from "../../worker/core/realisticFrontOffice/market.ts";
 import { marginSettings } from "../../worker/core/realisticFrontOffice/margin.ts";
+import { freeAgencyWatchers } from "../../worker/core/realisticFrontOffice/freeAgency.ts";
 import {
 	OUTLOOK_YEARS,
 	outlookSeason,
@@ -149,6 +150,19 @@ test.runIf(env.ARENA_RUN === "1")(
 							}
 						}
 					}
+				});
+			}
+			// ARENA_FA_SURVEY=1: each day of free agency (and of the season), the
+			// pool best first and who signed whom - how fast free agents go.
+			const faSurvey: unknown[] = [];
+			if (env.ARENA_FA_SURVEY === "1") {
+				freeAgencyWatchers.push((day) => {
+					faSurvey.push({
+						season: g.get("season"),
+						phase: g.get("phase"),
+						daysLeft: g.get("daysLeft"),
+						...day,
+					});
 				});
 			}
 			const watched: WatchedTrade[] = [];
@@ -415,6 +429,12 @@ test.runIf(env.ARENA_RUN === "1")(
 				await fs.writeFile(
 					`${out}/roster-checks-${seed}.json`,
 					JSON.stringify(rosterChecks),
+				);
+			}
+			if (env.ARENA_FA_SURVEY === "1") {
+				await fs.writeFile(
+					`${out}/fa-survey-${seed}.json`,
+					JSON.stringify(faSurvey),
 				);
 			}
 			if (env.ARENA_DEAL_SURVEY === "1") {

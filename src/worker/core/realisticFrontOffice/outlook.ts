@@ -145,7 +145,9 @@ export const outlookSeason = (
 	y: number,
 ) => outlook.season + outlook.offset + y;
 
+// Kept for the season they were made in, and dropped once it has passed.
 const projections = new Map<string, RatingsProjection>();
+let projectionsSeason = -Infinity;
 
 const seedFor = (pid: number, season: number) =>
 	(pid * 2_654_435_761 + season * 40_503) % 2_147_483_647;
@@ -157,6 +159,10 @@ export const lineMeasure = (ratings: MinimalPlayerRatings) => {
 };
 
 export const projectPlayer = (p: Player, season: number) => {
+	if (season !== projectionsSeason) {
+		projections.clear();
+		projectionsSeason = season;
+	}
 	const r = last(p.ratings);
 	const key = `${p.pid}:${season}:${r.season}:${r.ovr}:${r.pot}`;
 	let projection = projections.get(key);
@@ -233,13 +239,15 @@ const projectedSynergy = new WeakMap<
 >();
 
 // A player's lines, by player and re-signing chance, then by what else they
-// depend on: his injury, his team's games left, his contract and his overall.
+// depend on: his injury, his team's games left, his contract, his overall and
+// the value he is ranked by.
 type PlayerLines = {
 	season: number;
 	injury: number;
 	gamesRemaining: number;
 	exp: number;
 	ovr: number;
+	valueNoPot: number;
 	byYear: ((StrengthPlayer & { availability: number }) | undefined)[];
 };
 export type SeasonLines = Map<number, Map<number, PlayerLines[]>>;
@@ -264,18 +272,28 @@ const playerLines = (
 	const injury = p.injury.gamesRemaining;
 	const exp = p.contract.exp;
 	const ovr = last(p.ratings).ovr;
+	const valueNoPot = p.valueNoPot;
 	for (const entry of list) {
 		if (
 			entry.season === season &&
 			entry.injury === injury &&
 			entry.gamesRemaining === gamesRemaining &&
 			entry.exp === exp &&
-			entry.ovr === ovr
+			entry.ovr === ovr &&
+			entry.valueNoPot === valueNoPot
 		) {
 			return entry;
 		}
 	}
-	const entry = { season, injury, gamesRemaining, exp, ovr, byYear: [] };
+	const entry = {
+		season,
+		injury,
+		gamesRemaining,
+		exp,
+		ovr,
+		valueNoPot,
+		byYear: [],
+	};
 	list.push(entry);
 	return entry;
 };

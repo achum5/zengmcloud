@@ -7,6 +7,8 @@ import { getHardCap } from "../../util/getHardCap.ts";
 import { orderBy } from "../../../common/utils.ts";
 import { shuffle } from "../../../common/random.ts";
 import { revertBefore } from "../player/revertSnapshot.ts";
+import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import { freeAgencyDay as realisticFrontOfficeFreeAgencyDay } from "../realisticFrontOffice/freeAgency.ts";
 
 /**
  * AI teams sign free agents.
@@ -17,6 +19,12 @@ import { revertBefore } from "../player/revertSnapshot.ts";
  * @return {Promise}
  */
 const autoSign = async () => {
+	// Realistic front offices sign by their own valuation.
+	if (realisticFrontOfficesOn()) {
+		await realisticFrontOfficeFreeAgencyDay();
+		return;
+	}
+
 	const players = await idb.cache.players.indexGetAll(
 		"playersByTid",
 		PLAYER.FREE_AGENT,

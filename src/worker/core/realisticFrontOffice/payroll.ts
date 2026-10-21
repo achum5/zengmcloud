@@ -40,7 +40,7 @@ let memoKey = "";
 const salaryMemo = new Map<number, number>();
 let rookieSalaries: number[] = [];
 const memo = () => {
-	const key = `${g.get("minContract")}:${g.get("maxContract")}:${g.get("salaryCapType")}:${g.get("numActiveTeams")}:${g.get("numDraftRounds")}`;
+	const key = `${g.get("minContract")}:${g.get("maxContract")}:${g.get("salaryCapType")}:${g.get("numActiveTeams")}:${g.get("numDraftRounds")}:${g.get("draftPickAutoContractPercent")}:${g.get("draftPickAutoContractRounds")}`;
 	if (key !== memoKey) {
 		memoKey = key;
 		salaryMemo.clear();

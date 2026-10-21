@@ -24,8 +24,8 @@ with "the Pistons", not with a named person.
 - **Basketball only.** The setting does not appear in the other sports.
 - **In League Settings** (Game Modes), off by default (owner's call, to try
   the mode while it is built). What it changes so far: CPU-to-CPU trades,
-  free-agency testing and mood terms. Trades with humans, free agency
-  decisions, re-signing decisions and the draft are still stock.
+  CPU re-signing and free agency, free-agency testing and mood terms. Trades
+  with humans and the draft are still stock.
 - **Existing leagues never switch on their own.** New leagues default to it only
   once the owner has played it and is happy with it.
 - **Difficulty does nothing when it is on.** The trade, signing and overall
@@ -244,6 +244,11 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
 - **Teams value waiting in free agency** (owner's call): asking prices fall as
   it goes on, so a team weighs signing now against signing later, given the
   measured chance someone else signs him first.
+- **Prices follow the market** (owner's call): a free agent no team would pay
+  at his ask comes halfway down, each day, toward the most any team would pay
+  him - the same for every team, human or CPU. The game's own decay (about
+  $2M over a summer) left a quarter of the top free agents unsigned once CPU
+  teams stopped overpaying.
 - **Contract length is chosen for the team** (owner's call): each length the
   player would accept, priced, the best taken - as a human does in
   negotiation.

@@ -50,6 +50,8 @@ export type SeasonSnapshot = {
 		// His chance of being willing to re-sign with his team, by the mood
 		// model, as the re-signing phase opened.
 		probWilling: number;
+		// Finishing a rookie deal.
+		rookie: boolean;
 	}[];
 	// Everyone in the free agent pool as free agency opened, as the front
 	// office's value model sees him then (roleFree, offense, usage, overall),
@@ -243,6 +245,7 @@ export const advanceSeasons = async (
 						tid: p.tid,
 						value: p.value,
 						probWilling: (await player.moodInfo(p, p.tid)).probWilling,
+						rookie: !!p.contract.rookie,
 					});
 				}
 			}
