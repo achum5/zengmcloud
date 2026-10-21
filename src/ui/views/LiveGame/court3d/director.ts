@@ -663,9 +663,12 @@ const MADE_BACK_MS = 350;
 // (feet), then back to the ball.
 const COME_BACK = 7;
 const BACK_FROM = 50;
-const BACK_FT = 30;
-const BACK_OVER = 27;
-const BACK_TO = 22;
+// Back down the floor to the paint and round it: this far out from the rim
+// (feet) down the middle, and this much further for every foot across from
+// it; and drawn this much in toward the middle from the lane he came back in.
+const BACK_DEEP = 6;
+const BACK_WIDE = 0.55;
+const BACK_PINCH = 0.35;
 // Back down the floor no two nearer each other across it than this (feet),
 // nor nearer a sideline than this; a man starting this near one gone ahead
 // of him (feet) goes this long after him (ms).
@@ -952,10 +955,12 @@ const BREAK_FROM: Record<Zone, number> = {
 // could not get back out to him.
 const HELP_REACH: [number, number] = [8, 14];
 // How far up the floor (feet out from the rim) an off-ball defender goes
-// with his man: a few strides out past the ball, and never back over half
-// court - always as far as the top of the play.
-const UP_FLOOR_PAST = 8;
-const UP_FLOOR_MIN = 33;
+// with his man: out to the top of the key, a step past the arc. For every
+// foot his man is further out than that, he waits this much (feet) further
+// in - up to this far.
+const UP_FLOOR = 27;
+const SINK_PER_FT = 0.5;
+const SINK_MAX = 9;
 // The man with the ball a long way back up the floor - taking it out under
 // the other basket, bringing it up - is picked up about three-quarter court
 // (feet from the rim defended), not chased down to the far baseline.
@@ -3825,9 +3830,9 @@ class Director {
 
 	// The ball theirs in the open floor, the other five turn and get back at
 	// once - not stood in their stance at the wrong end until it is brought
-	// up: back over half court, as far as just outside the arc at their end
-	// (whatever they do next, they do from there) - flat out, if it is a
-	// break.
+	// up: back down the floor into the paint and round it, the way a
+	// defense gets back - the rim first, then the man (whatever they do
+	// next, they do from there) - flat out, if it is a break.
 	private getBack(def: Side, t: number, flatOut: boolean) {
 		const rx = rimX(other(def));
 		const runs: { pid: number; P: Pt; to: Pt; at: number }[] = [];
@@ -3837,14 +3842,10 @@ class Director {
 			if (out < BACK_FROM) {
 				return;
 			}
-			const side = Math.sign(P.x - rx) || 1;
 			runs.push({
 				pid,
 				P,
-				to: {
-					x: rx + side * Math.max(BACK_TO, Math.min(out - BACK_FT, BACK_OVER)),
-					y: P.y + (COURT_H / 2 - P.y) * 0.2,
-				},
+				to: { x: rx, y: P.y + (COURT_H / 2 - P.y) * BACK_PINCH },
 				at: t + BACK_REACT + j * 60,
 			});
 		});
@@ -3863,6 +3864,15 @@ class Director {
 			for (const r of lanes) {
 				r.to.y = Math.min(COURT_H - BACK_SIDE, Math.max(BACK_SIDE, r.to.y));
 			}
+		}
+		// Back into the paint and round it: the man down the middle back at
+		// the rim, the others out to the side of it a little higher - each
+		// as far out from it as he is across from the middle (BACK_DEEP and
+		// BACK_WIDE), the way a defense back in time sits waiting.
+		const side = Math.sign(COURT_W / 2 - rx);
+		for (const r of runs) {
+			const across = Math.abs(r.to.y - COURT_H / 2);
+			r.to.x = rx + side * (BACK_DEEP + BACK_WIDE * across);
 		}
 		runs.forEach((r, i) => {
 			for (const q of runs.slice(0, i)) {
@@ -5926,19 +5936,17 @@ class Director {
 	// man is from it - so the weak side sinks into the paint.
 	private defensePoint(team: Side, at: Pt, ball: Pt, onBall: boolean): Pt {
 		const rim = { x: rimX(team), y: COURT_H / 2 };
-		// A man left back up the floor - trailing the play, or still at the
-		// other end - is nobody's worry yet: off the ball, his man stays with
-		// the play and picks him up as he comes.
+		// A man still up the floor - coming up it, trailing the play, still at
+		// the other end - is nobody's worry yet: off the ball, his man waits
+		// on him back inside the arc - the farther up the floor he still is,
+		// the deeper, down in the paint for one a long way off - and picks him
+		// up as he comes. (Not stood out level with the ball, the five of
+		// them a line across the floor, nobody back at the rim.)
 		const deep = Math.abs(at.x - rim.x);
-		const reach = onBall
-			? PICK_UP
-			: Math.max(
-					UP_FLOOR_MIN,
-					Math.min(
-						Math.abs(ball.x - rim.x) + UP_FLOOR_PAST,
-						COURT_W / 2 - RIM_INSET,
-					),
-				);
+		const reach = onBall ? PICK_UP : UP_FLOOR;
+		const sink = onBall
+			? 0
+			: Math.min(SINK_MAX, Math.max(0, deep - UP_FLOOR) * SINK_PER_FT);
 		const man =
 			deep > reach
 				? {
@@ -5992,6 +6000,15 @@ class Director {
 			x: man.x + ur.x * s + ub.x * side,
 			y: man.y + ur.y * s + ub.y * side,
 		};
+		// (Further in, waiting on him.)
+		if (sink > 0) {
+			const u = unitVec(p, rim);
+			const k = Math.min(sink, dist(p, rim) - 3);
+			if (k > 0) {
+				p.x += u.x * k;
+				p.y += u.y * k;
+			}
+		}
 		// Never camped under the rim.
 		const pr = dist(p, rim);
 		if (pr < 3) {

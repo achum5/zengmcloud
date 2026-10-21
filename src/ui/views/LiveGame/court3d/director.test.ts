@@ -630,6 +630,63 @@ describe("3D director", () => {
 		}
 	}, 120_000);
 
+	// Coming back on defense, they get back the way a defense does: into the
+	// paint and round it, somebody at the rim, picking up their men as they
+	// come in - not five in a line across the floor out past the arc, level
+	// with the ball, nobody back. (As the ball is brought up to the top of
+	// the key, mostly somebody back within 15 feet of the rim.)
+	test("getting back, somebody is back at the rim - not five in a line out at the top", () => {
+		let n = 0;
+		let back = 0;
+		for (const seed of ["a", "b", "c"]) {
+			const { events, tl } = compile(seed, 140);
+			for (const b of tl.beats) {
+				const e = events[b.i];
+				if (!e || !/^fga/.test(e.type)) {
+					continue;
+				}
+				// (The rim the shot is at.)
+				const shot = tl.ball.find(
+					(s) =>
+						s.kind === "fly" &&
+						"pid" in s.from &&
+						s.from.pid === e.pid &&
+						!("pid" in s.to) &&
+						s.to.z > 6 &&
+						s.t0 >= b.preStart - 100 &&
+						s.t0 <= b.end + 200,
+				);
+				if (shot?.kind !== "fly" || "pid" in shot.to) {
+					continue;
+				}
+				const rx = shot.to.x < COURT_W / 2 ? rimX(0) : rimX(1);
+				const team = tl.tracks.get(e.pid)!.team;
+				for (let t = b.preStart; t < b.actionStart - 500; t += 200) {
+					const h = evalBall(tl, t, bodyFor).holder;
+					if (h === undefined || tl.tracks.get(h)!.team !== team) {
+						continue;
+					}
+					const H = evalPlayer(tl, h, t);
+					const out = Math.abs(H.x - rx);
+					if (out < 28 || out > 47) {
+						continue;
+					}
+					n += 1;
+					const near = [...tl.tracks.values()].some((tr) => {
+						if (tr.team === team) {
+							return false;
+						}
+						const st = evalPlayer(tl, tr.pid, t);
+						return st.shown && Math.hypot(st.x - rx, st.y - COURT_H / 2) < 15;
+					});
+					back += near ? 1 : 0;
+				}
+			}
+		}
+		assert.isAbove(n, 150);
+		assert.isAbove(back / n, 0.7);
+	}, 120_000);
+
 	// Dribbling where he stands, waiting on the set, a man works his man -
 	// a steady dribble, moves where he stands, the ball walked a few steps -
 	// and does not lunge at him and back out, over and over.
