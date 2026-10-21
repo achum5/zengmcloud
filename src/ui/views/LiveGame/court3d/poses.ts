@@ -6070,6 +6070,9 @@ export const underPalm = (arm: Limb): V3 => {
 // the hand is either side of it (of his height).
 const PALM_AT = 0.044;
 const PALM_THICK = 0.016;
+// How far his hand comes up (feet, from below his shoulder) as a finish at
+// the rim goes over into it (see holdBall).
+const PALM_TAKE = 1.4;
 
 // On the move with the ball in both hands - not dribbling it - he carries
 // it at his chest, his arms still.
@@ -6143,7 +6146,16 @@ export const holdBall = (
 	}
 	// One hand takes it as his arm comes up: two hands while the shooting
 	// hand is down by his chest, all his once it is up past the shoulder.
-	const up = Math.min(1, Math.max(0, (r.end.u - (r.root.u - 0.45)) / 0.9));
+	// (Going up to the rim with it, the other hand stays on it further up -
+	// off it by the time it is up over his head - so it goes over into the
+	// one hand as he rises, not swung across to it in a frame or two.)
+	const up = Math.min(
+		1,
+		Math.max(
+			0,
+			(r.end.u - (r.root.u - 0.45)) / (grip === "palm" ? PALM_TAKE : 0.9),
+		),
+	);
 	// (Pushed off the dribble, or pulled round low in a spin, it is his one
 	// hand's the whole way.)
 	const w =
