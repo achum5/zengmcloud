@@ -48,9 +48,7 @@ const memo = () => {
 	}
 };
 
-// What a player of this value would ask for, by the game's own formula.
-export const marketSalary = (value: number) => {
-	memo();
+const salaryFor = (value: number) => {
 	const v = Math.round(value * 10) / 10;
 	let amount = salaryMemo.get(v);
 	if (amount === undefined) {
@@ -61,6 +59,19 @@ export const marketSalary = (value: number) => {
 		salaryMemo.set(v, amount);
 	}
 	return amount;
+};
+
+// What a player of this value would ask for, by the game's own formula.
+export const marketSalary = (value: number) => {
+	memo();
+	return salaryFor(value);
+};
+
+// The same for many players at once, with the league's settings looked up
+// once - for as long as they cannot change, as while pricing one roster.
+export const marketSalaries = () => {
+	memo();
+	return salaryFor;
 };
 
 const haulAt = (share: number) => {
@@ -97,7 +108,7 @@ export const signingsWith = (
 // What a pick's player is paid in his n-th season after the draft (1 is his
 // rookie season): his rookie deal, then what a player of his expected overall
 // asks for.
-export const pickSalary = ({
+const pickSalaryFor = ({
 	slot,
 	round,
 	years,
@@ -109,11 +120,21 @@ export const pickSalary = ({
 	ovr: number;
 }) => {
 	if (years <= getRookieContractLength(round)) {
-		memo();
 		return (
 			rookieSalaries[Math.min(slot, rookieSalaries.length - 1)] ??
 			g.get("minContract")
 		);
 	}
-	return marketSalary(ovr);
+	return salaryFor(ovr);
+};
+
+export const pickSalary = (pick: Parameters<typeof pickSalaryFor>[0]) => {
+	memo();
+	return pickSalaryFor(pick);
+};
+
+// The same for many picks at once, like marketSalaries.
+export const pickSalaries = () => {
+	memo();
+	return pickSalaryFor;
 };

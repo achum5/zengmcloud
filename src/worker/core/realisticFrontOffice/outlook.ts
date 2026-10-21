@@ -7,7 +7,7 @@ import type {
 import { last } from "../../../common/utils.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
-import { marketSalary, pickSalary, signingsWith } from "./payroll.ts";
+import { marketSalaries, pickSalaries, signingsWith } from "./payroll.ts";
 import { pickPlayer } from "./pickValue.ts";
 import {
 	moodShiftFromTrading,
@@ -111,9 +111,13 @@ export type LeagueOutlook = {
 	// teams refill with their cap room (payroll.ts).
 	firstRefillSeason: number;
 	// Season lines already worked out, for this outlook's lifetime.
-	lines: Map<string, StrengthPlayer & { availability: number }>;
+	lines: SeasonLines;
 	// The same for picks (pickLineAt); null for a pick worth nothing.
 	pickLines: Map<string, PickAt | null>;
+	// Each pick's line every season of the outlook, as pickLineAt has it, and
+	// each team's picks in the drafts beyond the last that exists.
+	pickYears: WeakMap<PickLike, PickYears>;
+	futurePicks: Map<number, PickAt[][]>;
 	// Chance each player re-signs with each team, by retentionKey.
 	retention: Map<string, number>;
 	teams: Map<number, TeamOutlook>;
@@ -214,23 +218,65 @@ const computeSeasonLine = (
 	};
 };
 
+// A player's lines, by player and re-signing chance, then by what else they
+// depend on: his injury, his team's games left, his contract and his overall.
+type PlayerLines = {
+	season: number;
+	injury: number;
+	gamesRemaining: number;
+	exp: number;
+	ovr: number;
+	byYear: ((StrengthPlayer & { availability: number }) | undefined)[];
+};
+export type SeasonLines = Map<number, Map<number, PlayerLines[]>>;
+
+const playerLines = (
+	lines: SeasonLines,
+	p: Player,
+	season: number,
+	gamesRemaining: number,
+	retention: number,
+) => {
+	let byRetention = lines.get(p.pid);
+	if (!byRetention) {
+		byRetention = new Map();
+		lines.set(p.pid, byRetention);
+	}
+	let list = byRetention.get(retention);
+	if (!list) {
+		list = [];
+		byRetention.set(retention, list);
+	}
+	const injury = p.injury.gamesRemaining;
+	const exp = p.contract.exp;
+	const ovr = last(p.ratings).ovr;
+	for (const entry of list) {
+		if (
+			entry.season === season &&
+			entry.injury === injury &&
+			entry.gamesRemaining === gamesRemaining &&
+			entry.exp === exp &&
+			entry.ovr === ovr
+		) {
+			return entry;
+		}
+	}
+	const entry = { season, injury, gamesRemaining, exp, ovr, byYear: [] };
+	list.push(entry);
+	return entry;
+};
+
 export const seasonLine = (
-	lines: LeagueOutlook["lines"],
+	lines: SeasonLines,
 	p: Player,
 	season: number,
 	offset: number,
 	y: number,
 	gamesRemaining: number,
 	retention: number,
-) => {
-	const key = `${p.pid}:${season}:${y}:${p.injury.gamesRemaining}:${gamesRemaining}:${p.contract.exp}:${last(p.ratings).ovr}:${retention}`;
-	let line = lines.get(key);
-	if (!line) {
-		line = computeSeasonLine(p, season, offset, y, gamesRemaining, retention);
-		lines.set(key, line);
-	}
-	return line;
-};
+) =>
+	(playerLines(lines, p, season, gamesRemaining, retention).byYear[y] ??=
+		computeSeasonLine(p, season, offset, y, gamesRemaining, retention));
 
 export const retentionKey = (pid: number, tid: number) => `${pid}:${tid}`;
 
@@ -278,31 +324,71 @@ type PickAt = {
 	salary: number;
 };
 
-// The players a team's picks are expected to have become by outlook year y.
-// Picks in drafts beyond the last one that exists are the team's own.
-const pickLines = (
+// A pick's line each season of the outlook (null for none), for the pick as
+// it was when they were worked out.
+type PickYears = {
+	originalTid: number;
+	season: PickLike["season"];
+	round: number;
+	pick: number;
+	byYear: (PickAt | null | undefined)[];
+};
+
+const pickYearsOf = (
+	outlook: Omit<LeagueOutlook, "teams" | "titleCurves" | "playoffCurves">,
+	dp: PickLike,
+) => {
+	let entry = outlook.pickYears.get(dp);
+	if (
+		!entry ||
+		entry.originalTid !== dp.originalTid ||
+		entry.season !== dp.season ||
+		entry.round !== dp.round ||
+		entry.pick !== dp.pick
+	) {
+		entry = {
+			originalTid: dp.originalTid,
+			season: dp.season,
+			round: dp.round,
+			pick: dp.pick,
+			byYear: [],
+		};
+		outlook.pickYears.set(dp, entry);
+	}
+	return entry;
+};
+
+// The players a team's own picks in drafts beyond the last one that exists
+// are expected to have become by outlook year y.
+const futurePickLines = (
 	outlook: Omit<LeagueOutlook, "teams" | "titleCurves" | "playoffCurves">,
 	tid: number,
-	picks: readonly PickLike[],
 	y: number,
 ) => {
-	const season = outlookSeason(outlook, y);
-	const all: PickLike[] = [...picks];
-	for (let d = outlook.lastPickSeason + 1; d < season; d++) {
-		for (let round = 1; round <= outlook.numRounds; round++) {
-			all.push({ originalTid: tid, season: d, round, pick: 0 });
-		}
+	let byYear = outlook.futurePicks.get(tid);
+	if (!byYear) {
+		byYear = [];
+		outlook.futurePicks.set(tid, byYear);
 	}
-	const lines: (StrengthPlayer & { availability: number })[] = [];
-	let salaries = 0;
-	for (const dp of all) {
-		const at = pickLineAt(outlook, dp, y);
-		if (at) {
-			lines.push(at.line);
-			salaries += at.salary;
+	let lines = byYear[y];
+	if (!lines) {
+		lines = [];
+		const season = outlookSeason(outlook, y);
+		for (let d = outlook.lastPickSeason + 1; d < season; d++) {
+			for (let round = 1; round <= outlook.numRounds; round++) {
+				const at = pickLineAt(
+					outlook,
+					{ originalTid: tid, season: d, round, pick: 0 },
+					y,
+				);
+				if (at) {
+					lines.push(at);
+				}
+			}
 		}
+		byYear[y] = lines;
 	}
-	return { lines, salaries };
+	return lines;
 };
 
 // How many places in its round a pick lands from where the outlook expects,
@@ -428,6 +514,7 @@ const averagePick = (
 	let usage = 0;
 	let ovr = 0;
 	let salary = 0;
+	let pickSalary: ReturnType<typeof pickSalaries> | undefined;
 	for (const [k, w] of weights.entries()) {
 		if (w < 1e-4) {
 			continue;
@@ -444,6 +531,7 @@ const averagePick = (
 		usage += share * p.usage;
 		ovr += share * p.valueNoPot;
 		// Only the players worth keeping are paid.
+		pickSalary ??= pickSalaries();
 		salary += share * pickSalary({ slot, round, years, ovr: p.valueNoPot });
 	}
 	if (kept <= 0) {
@@ -471,6 +559,7 @@ const salaryIn = (
 	season: number,
 	index: number,
 	line: { valueNoPot: number; availability: number },
+	marketSalary: (value: number) => number,
 ) => {
 	if (index === 0) {
 		return p.contract.amount;
@@ -522,35 +611,75 @@ export const teamPoints = (
 				) / 1000
 			: r;
 	};
+	const gamesRemaining = outlook.remaining.get(tid) ?? 0;
+	const retention = players.map(retentionFor);
+	const byPlayer = players.map((p, i) =>
+		playerLines(
+			outlook.lines,
+			p,
+			outlook.season,
+			gamesRemaining,
+			retention[i]!,
+		),
+	);
+	const byPick = picks.map((dp) => pickYearsOf(outlook, dp));
+	// League settings, looked up once: nothing here can change them.
+	let salaryCap: number | undefined;
+	let marketSalary: ((value: number) => number) | undefined;
 	const out: number[] = [];
 	for (let y = 0; y <= OUTLOOK_YEARS; y++) {
-		const lines = players.map((p) =>
-			seasonLine(
-				outlook.lines,
-				p,
-				outlook.season,
-				outlook.offset,
-				y,
-				outlook.remaining.get(tid) ?? 0,
-				retentionFor(p),
-			),
+		const lines = players.map(
+			(p, i) =>
+				(byPlayer[i]!.byYear[y] ??= computeSeasonLine(
+					p,
+					outlook.season,
+					outlook.offset,
+					y,
+					gamesRemaining,
+					retention[i]!,
+				)),
 		);
-		const fromPicks = pickLines(outlook, tid, picks, y);
-		lines.push(...fromPicks.lines);
+		// The players its picks are expected to have become by then, and what
+		// they are paid.
+		let salaries = 0;
+		for (const [i, dp] of picks.entries()) {
+			const byYear = byPick[i]!.byYear;
+			let at = byYear[y];
+			if (at === undefined) {
+				at = pickLineAt(outlook, dp, y) ?? null;
+				byYear[y] = at;
+			}
+			if (at) {
+				lines.push(at.line);
+				salaries += at.salary;
+			}
+		}
+		for (const at of futurePickLines(outlook, tid, y)) {
+			lines.push(at.line);
+			salaries += at.salary;
+		}
 		const season = outlookSeason(outlook, y);
 		if (season >= outlook.firstRefillSeason) {
-			let committed = fromPicks.salaries;
+			salaryCap ??= g.get("salaryCap");
+			marketSalary ??= marketSalaries();
+			let committed = salaries;
 			for (const [i, p] of players.entries()) {
-				committed += salaryIn(p, season, y + outlook.offset, lines[i]!);
+				committed += salaryIn(
+					p,
+					season,
+					y + outlook.offset,
+					lines[i]!,
+					marketSalary,
+				);
 			}
 			for (const row of outlook.deadMoney.get(tid) ?? []) {
 				if (row.exp >= season) {
 					committed += row.amount;
 				}
 			}
-			const signings = signingsWith(g.get("salaryCap") - committed);
+			const signings = signingsWith(salaryCap - committed);
 			lines.push(...signings);
-			refill?.(y, 1 - committed / g.get("salaryCap"), signings);
+			refill?.(y, 1 - committed / salaryCap, signings);
 		}
 		roster?.(y, lines);
 		out.push(expectedRosterPoints(lines));
@@ -659,8 +788,10 @@ export const buildOutlook = async ({
 		draftPlace: new Map<number, number[]>(),
 		deadMoney,
 		firstRefillSeason: season + 1 + (phase === PHASE.FREE_AGENCY ? 1 : 0),
-		lines: new Map<string, StrengthPlayer & { availability: number }>(),
+		lines: new Map() as SeasonLines,
 		pickLines: new Map<string, PickAt | null>(),
+		pickYears: new WeakMap<PickLike, PickYears>(),
+		futurePicks: new Map<number, PickAt[][]>(),
 		retention: new Map<string, number>(),
 		meanPoints: [] as number[],
 		progress: inSeason ? progress : 0,
@@ -694,6 +825,9 @@ export const buildOutlook = async ({
 			base.draftPlace.get(t.tid)!.push(i);
 		}
 	}
+	// Picks' lines worked out before then had nowhere to land.
+	base.pickYears = new WeakMap();
+	base.futurePicks.clear();
 
 	const points = new Map(
 		teams.map((t) => [
