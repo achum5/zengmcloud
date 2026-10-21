@@ -91,7 +91,17 @@ with "the Pistons", not with a named person.
   played out both ways exactly. Pricing everyone as there and taking each
   absence off separately broke down on rosters seasons out, full of players
   who may have left, picks and free agents a team may not land: removing a
-  bench prospect could look like it made a team two points better.
+  bench prospect could look like it made a team two points better. A place's
+  lineup synergy is priced the same way, from the skills of everyone who may
+  play it by his chance of playing it: handing it the likeliest player's
+  skills made synergy jump whenever that changed hands, so a long shot with
+  a 5% chance of being there could move a roster by a point. A pick's player
+  or a free agent a team may sign, whose skills are not known yet, brings
+  those of a typical player of his overall - not a minimum player's, which
+  cost a lineup about half a point for every projected starter in it.
+- **Retirement by the game's own rule.** Nobody on a roster retires before
+  34; after that, the older and the less valuable, the likelier (a starter
+  at 35 almost never, the end of the bench often).
 
 ## Framework
 
@@ -199,8 +209,17 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   own spread allows (measured on every player traded in arena leagues - the
   projections are unbiased, and only a little wider in reality). The luck the
   model already prices in, like a prospect's range of careers, is not error.
+  Each moved player's error counts at the minutes he is expected to play each
+  season - a prospect's at the place he will hold once he is good, not at the
+  end of the bench where he sits today.
   With the margin, trades fell to ~23-32 a season against the NBA's 55-62,
-  but stars no longer churn (re-trades 63% -> 32-39%).
+  but stars no longer churn (re-trades 63% -> 32-39%). Pricing prospects'
+  doubt at their future minutes, with the roster fixes above, took trades
+  from 36 to 19 a season with the deadline rush on (arena, 4 leagues x 5
+  seasons: re-trades 36% -> 17%, stars moved by trade 6.4 -> 2.9 a season
+  against the NBA's ~3.6, a prospect given for a veteran of 30 or more 2.4%
+  -> 0.3% of trades); with the offer market, 43 -> 15 (owner's call: accept
+  the lower volume). The trade market takes about a third longer.
 - **Picks are priced over where they may land** (owner's call). How far a
   pick lands from where it is projected is measured in the arena (about 6
   places a season out, 9 three seasons out, the lottery included). Most of
