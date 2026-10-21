@@ -2162,7 +2162,7 @@ const BLEND_MS = 160;
 // longer.)
 const SETTLE_MS = 300;
 const MOVE_ARMS_MS = 60;
-const BLEND_DEPTH = 5;
+const BLEND_DEPTH = 8;
 const FLICK_MS = 40;
 // An arm thrown up - fighting for the ball, contesting, reaching - comes
 // back down on its own time, not snapped to his side with the rest of him
@@ -2266,12 +2266,17 @@ const blendInto = (
 	if (same(before)) {
 		// The same as a moment ago - but maybe something else in between,
 		// and back: out of that, then. (Looked for at the same moments of
-		// the game whatever the frame - a sliver of something found some
-		// frames and missed in others, he flickers in and out of it.)
+		// the game whatever the frame, and all the way back to BLEND_MS ago
+		// - a sliver of something found some frames and missed in others,
+		// he flickers in and out of it.)
 		const g = Math.floor((t - FLICK_MS / 2) / FLICK_MS) * FLICK_MS;
-		const flick = [g, g - FLICK_MS, g - 2 * FLICK_MS]
-			.map((at) => ({ at, d: doingAt(tl, tr, at) }))
-			.find((x) => !same(x.d));
+		let flick: { at: number; d: Doing } | undefined;
+		for (let at = g; at > lo - FLICK_MS && !flick; at -= FLICK_MS) {
+			const d = doingAt(tl, tr, at);
+			if (!same(d)) {
+				flick = { at, d };
+			}
+		}
 		// (Looked for the whole settle ago and halfway back to it: a step
 		// too short to span the gap between that and BLEND_MS ago is not
 		// lost in it for a few frames, and found again after.)
@@ -2305,8 +2310,13 @@ const blendInto = (
 	// (Looked for back from now a blip at a time first, not just bisected
 	// for: what he does can change and change back in between - a stride
 	// under a contest ended by the jump, say - and a bisection finds the
-	// one change some frames and the other in others.)
-	for (let at = t - BLIP_MS; at > lo; at -= BLIP_MS) {
+	// one change some frames and the other in others. At the same moments
+	// of the game whatever the frame, too: a sliver shorter than a blip.)
+	for (
+		let at = Math.floor((t - BLIP_MS / 2) / BLIP_MS) * BLIP_MS;
+		at > lo;
+		at -= BLIP_MS
+	) {
 		const d = doingAt(tl, tr, at);
 		if (!same(d)) {
 			lo = at;
