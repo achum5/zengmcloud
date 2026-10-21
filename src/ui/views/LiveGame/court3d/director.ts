@@ -1659,24 +1659,34 @@ class Director {
 			t0 = by - need;
 		}
 		const P = this.posAt(pid, t0);
+		// Back from the rim: there through whatever he goes up for at it,
+		// then flat out to where he was to be - picking up where following
+		// his man takes him at the first moment a run from the rim gets him
+		// there, not off across the floor in the blink of an eye.
+		// (The block he goes up for begins just after he is there.)
+		let leave = by;
+		for (const a of tr.acts) {
+			if (a.t0 <= by + 300 && a.t1 > leave && a.t1 < by + 1500) {
+				leave = a.t1;
+			}
+		}
+		let z = leave;
+		let Z = this.posAt(pid, z);
+		for (let n = 0; n < 80; n++) {
+			if (runMs(dist(V, Z), SPRINT) + 100 <= z - leave) {
+				break;
+			}
+			z += 100;
+			Z = this.posAt(pid, z);
+		}
 		const kept: Move[] = [];
-		// (His next run after it sets off from there.)
-		let next = true;
 		for (const m of tr.moves) {
-			if (m.t1 <= t0) {
+			if (m.t1 <= t0 || m.t0 >= z) {
 				kept.push(m);
-			} else if (m.t0 >= by) {
-				kept.push(next ? { ...m, from: { ...V }, v0: undefined } : m);
-				next = false;
 			} else if (m.t0 < t0) {
 				kept.push({ ...m, t1: t0, to: { ...P }, v1: undefined });
-			} else if (m.t1 > by && dist(V, m.to) <= (SPRINT * (m.t1 - by)) / 1000) {
-				// (On with a run he was on, from there - if there is the time to
-				// get where it was going. If not, he never goes on with it: he
-				// was going to be somewhere else, not at the rim, and the next
-				// sets off from the rim.)
-				kept.push({ ...m, t0: by, from: { ...V }, v0: undefined });
-				next = false;
+			} else if (m.t1 > z) {
+				kept.push({ ...m, t0: z, from: { ...Z }, v0: undefined });
 			}
 		}
 		const d = dist(P, V);
@@ -1688,6 +1698,15 @@ class Director {
 			anim: d > 6 ? "run" : "slide",
 			...(d > 6 ? {} : { face: meet.face }),
 		});
+		if (z > leave && dist(V, Z) > 0.05) {
+			kept.push({
+				t0: leave,
+				t1: z,
+				from: { ...V },
+				to: { ...Z },
+				anim: dist(V, Z) > 6 ? "run" : "shuffle",
+			});
+		}
 		tr.moves = kept.sort((x, y) => x.t0 - y.t0);
 	}
 

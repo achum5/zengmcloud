@@ -2356,4 +2356,33 @@ describe("3D director", () => {
 			assert.isBelow(dashes / alone, 0.025, seed);
 		}
 	}, 120_000);
+
+	test("nobody on the floor goes faster than a man can run - not even back from meeting a dunk", () => {
+		// (Seed 55: the man dunked on, there under the rim for the block,
+		// was off to his man 18 ft away in a fifth of a second.)
+		for (const [seed, n] of [
+			["55", 150],
+			["a", 120],
+			["b", 120],
+		] as const) {
+			const { tl } = compile(seed, n);
+			// (Through a cut or a stretch run through fast, anything goes.)
+			const skipped = (a: number, b: number) =>
+				tl.fast.some(([x, y]) => a < y && b > x) ||
+				tl.cuts.some((c) => c >= a && c <= b);
+			for (const [pid, tr] of tl.tracks) {
+				for (const m of tr.moves) {
+					const L = Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y);
+					if (L < 1 || skipped(m.t0, m.t1)) {
+						continue;
+					}
+					assert.isAtMost(
+						L / ((m.t1 - m.t0) / 1000),
+						34,
+						`${seed}: ${pid} at ${Math.round(m.t0)}`,
+					);
+				}
+			}
+		}
+	}, 120_000);
 });
