@@ -710,6 +710,15 @@ const FT_HOLD = releaseAt("hold", 0);
 // the jabbing hand at the end of its reach, a typical player's (forward,
 // to his side, up), and how far through the poke that is.
 const POKE_MS = 450;
+// Pushing it up for a man still on his way, he takes longer about it rather
+// than stand waiting longer than this (ms) - on a push of this far (feet)
+// at the least (see keepComing).
+const PUSH_WAIT = 600;
+const PUSH_FT = 15;
+// A man farther off than this (feet) from the ball he pokes away comes to
+// meet it: the man with it brings it on at him, this much of the way.
+const POKE_FAR = 12;
+const POKE_MEET = 0.4;
 const POKE_HIT = 0.42;
 // Reaching out for a ball going by (from the start of the reach to the
 // hands back): his hands - between them - at full reach, forward of him
@@ -954,6 +963,9 @@ const BREAK_FROM: Record<Zone, number> = {
 // How far a defender leaves his man to help (feet): any farther and he
 // could not get back out to him.
 const HELP_REACH: [number, number] = [8, 14];
+// On the break, the most (feet) a man already up the floor goes back down
+// it to his spot.
+const BREAK_NO_BACK = 4;
 // How far up the floor (feet out from the rim) an off-ball defender goes
 // with his man: out to the top of the key, a step past the arc. For every
 // foot his man is further out than that, he waits this much (feet) further
@@ -3582,6 +3594,9 @@ class Director {
 			this.free.get(from) ?? 0,
 			(this.free.get(to) ?? 0) + 40 - flight - wind,
 		);
+		if (!handOff) {
+			this.keepComing(from, ready);
+		}
 		// Off a live dribble - on the move, mostly - a pass that is not up over
 		// the top goes out of the hand he dribbles with, one hand behind it -
 		// a bounce pass pushed at the floor (see PUSH_SHARE).
@@ -3730,6 +3745,30 @@ class Director {
 		this.free.set(from, Math.max(this.free.get(from) ?? 0, start + wind + 180));
 		this.free.set(to, Math.max(this.free.get(to) ?? 0, arrive + 110));
 		return arrive + 110;
+	}
+
+	// Pushing it up the floor with nothing for him to do yet when he gets
+	// where he is going - the man he throws to still on his way, the wings
+	// not up with him for what comes next - he doesn't get there and stand
+	// bouncing it: he takes longer about getting there (up to half his
+	// pace), still coming as they get there. Until `t`, if he has the ball,
+	// his last run was a push of it up the floor, and nothing since.
+	private keepComing(pid: number, t: number) {
+		const tr = this.track(pid);
+		const came = tr?.moves.at(-1);
+		if (
+			!tr ||
+			!came ||
+			this.holder !== pid ||
+			came.anim !== "dribble" ||
+			t - came.t1 <= PUSH_WAIT ||
+			dist(came.from, came.to) < PUSH_FT ||
+			tr.acts.some((a) => a.t1 > came.t1 && a.t0 < t)
+		) {
+			return;
+		}
+		came.t1 = Math.min(t - 150, came.t0 + (came.t1 - came.t0) * 2);
+		came.v1 = undefined;
 	}
 
 	// The outlet: the man who came down with it holds it, looking up the
@@ -5568,6 +5607,7 @@ class Director {
 			// The ball never got to him: he just goes.
 			return this.go(pid, P, start, 14, "run");
 		}
+		this.keepComing(pid, start);
 		// The hand on the side he goes (away from his man). Coming off a ball
 		// screen with the man who set it in the way on that side, he goes
 		// round his shoulder - not dribbles it into him going by.
@@ -5671,6 +5711,17 @@ class Director {
 			(this.posAt(this.holder, t0).x - COURT_W / 2) * dir > 2;
 		if (ballOver && (P.x - COURT_W / 2) * dir < 3) {
 			P = { x: COURT_W / 2 + dir * 3.5, y: P.y };
+		}
+		// On the break, nobody runs back down the floor to the spot the play
+		// has him trailing in, from farther up it already - the big who beat
+		// everybody down after the basket, say: he holds where he is (over
+		// to its side of the floor, if it is a way across), and the ball is
+		// not held up waiting on him.
+		if (run.play.cat === "break" && (P.x - from.x) * dir < -BREAK_NO_BACK) {
+			if (Math.abs(P.y - from.y) < BREAK_NO_BACK) {
+				return Math.max(t0, this.free.get(pid) ?? 0);
+			}
+			P = { x: from.x, y: P.y };
 		}
 		// (Trailing the break is no jog: he runs the floor.)
 		const speed =
@@ -9885,45 +9936,74 @@ class Director {
 				y: u.x * Math.sin(a) + u.y * Math.cos(a),
 			});
 		}
-		// Reaching in on his dribble, and it is knocked away off his hand.
-		const m = this.defenderOf(h) ?? this.slots(touched)[0]!;
+		// Reaching in on his dribble, and it is knocked away off his hand -
+		// by whoever of theirs is nearest him: not his own man sprinting the
+		// length of the floor to get to it, the ball held up waiting on him.
+		const away = (p: number) => dist(A, this.posAt(p, start));
+		let m = this.defenderOf(h) ?? this.slots(touched)[0]!;
+		const nearest = [...this.slots(touched)].sort(
+			(p, q) => away(p) - away(q),
+		)[0];
+		if (
+			nearest !== undefined &&
+			away(m) > POKE_FAR &&
+			away(nearest) < away(m)
+		) {
+			m = nearest;
+		}
 		this.hold(h, start, "dribble");
-		const toward = (A.x >= this.posOf(m).x ? 1 : -1) as 1 | -1;
+		// (Off whatever he was on his way to do, for the ball.)
+		if ((this.free.get(m) ?? 0) > start) {
+			this.cutShort(m, start);
+		}
+		// Still a way up the floor from him: he brings it on up at him, and
+		// is met on the way.
+		let S = start;
+		let P = A;
+		const D = this.posAt(m, start);
+		if (dist(A, D) > POKE_FAR && (D.x - A.x) * dir > 0) {
+			P = clampPt({
+				x: A.x + (D.x - A.x) * POKE_MEET,
+				y: A.y + (D.y - A.y) * POKE_MEET,
+			});
+			S = this.go(h, P, start, DRIBBLE * 0.8, "dribble", dir);
+		}
+		const toward = (P.x >= this.posOf(m).x ? 1 : -1) as 1 | -1;
 		const mirrored = this.ballHandOf === h && this.ballHand === "R";
 		// In front of him, at the length of his arm from the ball out on
 		// the dribble - a foot and more off the man with it.
 		// (Right on top of him, from out toward the floor.)
 		const into =
-			dist(A, this.posOf(m)) > 0.5
-				? unitVec(A, this.posOf(m))
-				: unitVec(A, { x: COURT_W / 2, y: COURT_H / 2 });
+			dist(P, this.posOf(m)) > 0.5
+				? unitVec(P, this.posOf(m))
+				: unitVec(P, { x: COURT_W / 2, y: COURT_H / 2 });
 		const reach = pokeHand(mirrored).f + 1.3;
 		// (All his way there this trip: where he pokes from is the side of
 		// the man that way had him on.)
-		this.ownRun(m, start, T);
+		this.ownRun(m, S, T);
 		// (Set before he pokes, not mid-slide: a hand put out while he is still
 		// pulling up off his feet is short of the ball, and the hand left on
-		// it is the man's own.)
+		// it is the man's own. Off to meet him as he comes, if he does.)
 		const hit =
 			this.goBy(
 				m,
-				clampPt({ x: A.x + into.x * reach, y: A.y + into.y * reach }),
+				clampPt({ x: P.x + into.x * reach, y: P.y + into.y * reach }),
 				start,
-				start + 420,
+				S + 420,
 				"slide",
 				toward,
 			) + 320;
 		const t0 = hit - POKE_MS * POKE_HIT;
 		this.act(m, "poke", t0, t0 + POKE_MS, {
 			face: toward,
-			look: { x: A.x, y: A.y },
+			look: { x: P.x, y: P.y },
 			...(mirrored ? { mirror: true as const } : {}),
 		});
 		// Off the end of his hand, at full reach - facing the man he pokes
 		// at (see bodyPoint in evaluate.ts).
 		const M = this.posOf(m);
 		const v = pokeHand(mirrored);
-		const th = Math.atan2(A.y - M.y, A.x - M.x);
+		const th = Math.atan2(P.y - M.y, P.x - M.x);
 		const at = {
 			x: M.x + v.f * Math.cos(th) + v.s * Math.sin(th),
 			y: M.y + v.f * Math.sin(th) - v.s * Math.cos(th),
@@ -9932,9 +10012,9 @@ class Director {
 		this.fly(hit - 100, hit, { pid: h }, at);
 		// Squirting away to his side and back - the side of him it was on,
 		// clear of him and his hands (he faces the rim with it).
-		const f = unitVec(A, rimPt(offense));
+		const f = unitVec(P, rimPt(offense));
 		const sideways =
-			(at.x - A.x) * -f.y + (at.y - A.y) * f.x >= 0
+			(at.x - P.x) * -f.y + (at.y - P.y) * f.x >= 0
 				? { x: -f.y, y: f.x }
 				: { x: f.y, y: -f.x };
 		const back = this.rand(0.1, 0.5);

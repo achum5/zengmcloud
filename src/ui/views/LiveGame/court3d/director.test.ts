@@ -2037,6 +2037,48 @@ describe("3D director", () => {
 		}
 	}, 240_000);
 
+	// A quick trip off a defensive board or a steal: the ball keeps coming up
+	// the floor - not brought up and stood there bouncing it, 2.5 s and more,
+	// waiting on the others to get down with him.
+	test("off a board or a steal, the man with the ball keeps it coming", () => {
+		let trips = 0;
+		let stood = 0;
+		for (const seed of ["a", "b", "c"]) {
+			const { tl } = compile(seed, 150);
+			tl.beats.forEach((b, k) => {
+				const prev = tl.beats[k - 1];
+				if (
+					!prev ||
+					!b.type.startsWith("fga") ||
+					(prev.type !== "drb" && prev.type !== "stl") ||
+					b.actionStart - prev.end > 12_000
+				) {
+					return;
+				}
+				trips += 1;
+				let run = 0;
+				let worst = 0;
+				for (let t = prev.end; t < b.actionStart - 300; t += 100) {
+					const h = evalBall(tl, t, bodyFor).holder;
+					if (h === undefined) {
+						run = 0;
+						continue;
+					}
+					const p0 = evalPlayer(tl, h, t);
+					const p1 = evalPlayer(tl, h, t + 100);
+					const still = Math.hypot(p1.x - p0.x, p1.y - p0.y) < 0.35;
+					run = still ? run + 100 / fastAt(tl, t) : 0;
+					worst = Math.max(worst, run);
+				}
+				if (worst >= 2500) {
+					stood += 1;
+				}
+			});
+		}
+		assert.isAbove(trips, 25);
+		assert.isAtMost(stood, trips / 20, `${stood} of ${trips}`);
+	}, 240_000);
+
 	// The camera goes off the floor only while nothing is happening on it: the
 	// game opens on the building and cuts in for the tip, and a timeout or the
 	// break between periods looks round it - but no shot, pass or tip-off is
