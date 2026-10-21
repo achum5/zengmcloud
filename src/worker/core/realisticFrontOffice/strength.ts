@@ -282,59 +282,107 @@ export const ROSTER_PLACES = SLOT_MINUTES.length;
 const STARTER_SYNERGY = 0.7;
 
 // A player's synergy skills are worked out once per line: rosters are priced
-// many thousands of times a day, and the lines are cached upstream.
-const synergyInputs = new WeakMap<
-	SynergyCompositeRating,
-	{ compositeRating: SynergyCompositeRating }
->();
+// many thousands of times a day, and the lines are cached upstream. So is each
+// lineup's synergy, by the lines in it, for the lineups seen most recently.
+type SynergyInput = { compositeRating: SynergyCompositeRating; id: number };
+const synergyInputs = new WeakMap<SynergyCompositeRating, SynergyInput>();
 const synergySkills = new WeakMap<object, SynergySkills>();
+let nextSynergyId = 0;
 const synergyInput = (synergy: SynergyCompositeRating) => {
 	let input = synergyInputs.get(synergy);
 	if (!input) {
-		input = { compositeRating: synergy };
+		input = { compositeRating: synergy, id: nextSynergyId };
+		nextSynergyId = (nextSynergyId + 1) | 0;
 		synergyInputs.set(synergy, input);
 	}
 	return input;
 };
+const LINEUP_SLOTS = 1 << 15;
+const lineupInputs: (SynergyInput | undefined)[] = new Array(
+	5 * LINEUP_SLOTS,
+).fill(undefined);
+const lineupSynergy = new Float64Array(LINEUP_SLOTS);
 
-const unitSynergy = (five: readonly StrengthPlayer[]) =>
-	synergyTotal(
-		synergyForLineup(
-			five.map((p) => synergyInput(p.synergy)),
-			synergySkills,
-		),
+// Synergy of the five lineups starting at `from`.
+const unitSynergy = (synergy: readonly SynergyInput[], from: number) => {
+	const s0 = synergy[from]!;
+	const s1 = synergy[from + 1]!;
+	const s2 = synergy[from + 2]!;
+	const s3 = synergy[from + 3]!;
+	const s4 = synergy[from + 4]!;
+	let hash = s0.id;
+	hash = Math.imul(hash ^ s1.id, 0x9e3779b1);
+	hash = Math.imul(hash ^ s2.id, 0x9e3779b1);
+	hash = Math.imul(hash ^ s3.id, 0x9e3779b1);
+	hash = Math.imul(hash ^ s4.id, 0x9e3779b1);
+	const slot = (hash ^ (hash >>> 15)) & (LINEUP_SLOTS - 1);
+	const at = 5 * slot;
+	if (
+		lineupInputs[at] === s0 &&
+		lineupInputs[at + 1] === s1 &&
+		lineupInputs[at + 2] === s2 &&
+		lineupInputs[at + 3] === s3 &&
+		lineupInputs[at + 4] === s4
+	) {
+		return lineupSynergy[slot]!;
+	}
+	const value = synergyTotal(
+		synergyForLineup([s0, s1, s2, s3, s4], synergySkills),
 	);
+	lineupInputs[at] = s0;
+	lineupInputs[at + 1] = s1;
+	lineupInputs[at + 2] = s2;
+	lineupInputs[at + 3] = s3;
+	lineupInputs[at + 4] = s4;
+	lineupSynergy[slot] = value;
+	return value;
+};
 
 const byValueNoPot = (a: StrengthPlayer, b: StrengthPlayer) =>
 	b.valueNoPot - a.valueNoPot;
 
-// The roster's places from players already in pecking order, leaving one out.
-const pointsOfSorted = (sorted: readonly StrengthPlayer[], skip = -1) => {
-	const roster: StrengthPlayer[] = [];
-	for (let i = 0; i < sorted.length && roster.length < ROSTER_PLACES; i++) {
-		if (i !== skip) {
-			roster.push(sorted[i]!);
-		}
-	}
-	while (roster.length < ROSTER_PLACES) {
-		roster.push(getReplacement());
-	}
+const TOGETHER_FLAT = Float64Array.from(TOGETHER.flat());
+
+// The roster's places, one array per part of a player's line.
+const placeRoleFree = new Float64Array(ROSTER_PLACES);
+const placeOffense = new Float64Array(ROSTER_PLACES);
+const placeUsage = new Float64Array(ROSTER_PLACES);
+const placeSynergy: SynergyInput[] = [];
+
+// Points of the roster in placeRoleFree, placeOffense, placeUsage and
+// placeSynergy.
+const pointsOfPlaces = () => {
 	let total = 0;
 	for (let k = 0; k < ROSTER_PLACES; k++) {
-		const p = roster[k]!;
+		const row = k * ROSTER_PLACES;
 		let others = 0;
-		for (let j = 0; j < ROSTER_PLACES; j++) {
-			if (j !== k) {
-				others += TOGETHER[k]![j]! * roster[j]!.usage;
-			}
+		for (let j = 0; j < k; j++) {
+			others += TOGETHER_FLAT[row + j]! * placeUsage[j]!;
 		}
-		const share = p.usage / (p.usage + others);
-		total += SLOT_MINUTES[k]! * (p.roleFree + share * p.offense);
+		for (let j = k + 1; j < ROSTER_PLACES; j++) {
+			others += TOGETHER_FLAT[row + j]! * placeUsage[j]!;
+		}
+		const usage = placeUsage[k]!;
+		const share = usage / (usage + others);
+		total += SLOT_MINUTES[k]! * (placeRoleFree[k]! + share * placeOffense[k]!);
 	}
 	const synergy =
-		STARTER_SYNERGY * unitSynergy(roster.slice(0, 5)) +
-		(1 - STARTER_SYNERGY) * unitSynergy(roster.slice(5, 10));
+		STARTER_SYNERGY * unitSynergy(placeSynergy, 0) +
+		(1 - STARTER_SYNERGY) * unitSynergy(placeSynergy, 5);
 	return total + MODEL.synergy * synergy;
+};
+
+// The roster's places from players already in pecking order.
+const pointsOfSorted = (sorted: readonly StrengthPlayer[]) => {
+	const r = getReplacement();
+	for (let k = 0; k < ROSTER_PLACES; k++) {
+		const p = sorted[k] ?? r;
+		placeRoleFree[k] = p.roleFree;
+		placeOffense[k] = p.offense;
+		placeUsage[k] = p.usage;
+		placeSynergy[k] = synergyInput(p.synergy);
+	}
+	return pointsOfPlaces();
 };
 
 // Points per game the roster is worth, before subtracting the league average.
@@ -368,61 +416,186 @@ export const playerValue = (line: Pick<PlayerLine, "roleFree" | "offense">) =>
 // lineup of all of them, and its synergy, swung by points when any one moved.
 // The most valuable players we may not have are played out both ways
 // exactly, so a single injured starter costs exactly his share.
-const byPlace = (
-	players: readonly (StrengthPlayer & { availability: number })[],
+//
+// The players who may be there are laid out in pecking order in the arrays
+// below, each with his chance of being there. The enumerated ones (0 and 1)
+// are there for sure if their bit of `mask` is set, and not at all if not.
+let capacity = 0;
+let sortedAvailability = new Float64Array(0);
+let sortedRoleFree = new Float64Array(0);
+let sortedOffense = new Float64Array(0);
+let sortedUsage = new Float64Array(0);
+let sortedEnumerated = new Int8Array(0);
+const sortedSynergy: SynergyCompositeRating[] = [];
+const sortedSynergyInput: (SynergyInput | undefined)[] = [];
+
+const layOut = (
+	sorted: readonly (StrengthPlayer & { availability: number })[],
+	enumerated: readonly StrengthPlayer[],
 ) => {
-	const sorted = players.filter((p) => p.availability > 0).sort(byValueNoPot);
-	// The chance that exactly j of the players ahead are there.
-	let ahead = [1];
-	const places = Array.from({ length: ROSTER_PLACES }, () => ({
-		filled: 0,
-		roleFree: 0,
-		offense: 0,
-		usage: 0,
-		likeliest: undefined as StrengthPlayer | undefined,
-		likeliestChance: 0,
-	}));
-	for (const p of sorted) {
-		const a = Math.min(1, p.availability);
-		for (let k = 0; k < ahead.length && k < ROSTER_PLACES; k++) {
+	const n = sorted.length;
+	if (n > capacity) {
+		capacity = Math.max(n, 2 * capacity);
+		sortedAvailability = new Float64Array(capacity);
+		sortedRoleFree = new Float64Array(capacity);
+		sortedOffense = new Float64Array(capacity);
+		sortedUsage = new Float64Array(capacity);
+		sortedEnumerated = new Int8Array(capacity);
+	}
+	for (let i = 0; i < n; i++) {
+		const p = sorted[i]!;
+		sortedAvailability[i] = Math.min(1, p.availability);
+		sortedRoleFree[i] = p.roleFree;
+		sortedOffense[i] = p.offense;
+		sortedUsage[i] = p.usage;
+		sortedSynergy[i] = p.synergy;
+		sortedSynergyInput[i] = undefined;
+		sortedEnumerated[i] =
+			p === enumerated[0] ? 0 : p === enumerated[1] ? 1 : -1;
+	}
+};
+
+// Everyone up to the last enumerated player is usually there for sure or not
+// at all, so each of them just takes the next place. Who fills the places
+// after them depends only on how many of them are there, not on which, so
+// those places are worked out once, as if they started at the first, and
+// moved down into place for each way of playing it out.
+const ahead = new Float64Array(ROSTER_PLACES + 1);
+const restFilled = new Float64Array(ROSTER_PLACES);
+const restRoleFree = new Float64Array(ROSTER_PLACES);
+const restOffense = new Float64Array(ROSTER_PLACES);
+const restUsage = new Float64Array(ROSTER_PLACES);
+const restLikeliestChance = new Float64Array(ROSTER_PLACES);
+const restLikeliest = new Int32Array(ROSTER_PLACES);
+
+const fillRest = (from: number, n: number, mask: number) => {
+	// The chance that exactly j of the players ahead are there, nonzero only
+	// from lo to hi.
+	ahead.fill(0);
+	ahead[0] = 1;
+	let lo = 0;
+	let hi = 0;
+	restFilled.fill(0);
+	restRoleFree.fill(0);
+	restOffense.fill(0);
+	restUsage.fill(0);
+	restLikeliestChance.fill(0);
+	restLikeliest.fill(-1);
+	for (let i = from; i < n; i++) {
+		let a;
+		const e = sortedEnumerated[i]!;
+		if (e >= 0) {
+			if (((mask >> e) & 1) === 0) {
+				continue;
+			}
+			a = 1;
+		} else {
+			a = sortedAvailability[i]!;
+		}
+		const roleFree = sortedRoleFree[i]!;
+		const offense = sortedOffense[i]!;
+		const usage = sortedUsage[i]!;
+		const top = Math.min(hi, ROSTER_PLACES - 1);
+		for (let k = lo; k <= top; k++) {
 			const chance = a * ahead[k]!;
-			const place = places[k]!;
-			place.filled += chance;
-			place.roleFree += chance * p.roleFree;
-			place.offense += chance * p.offense;
-			place.usage += chance * p.usage;
-			if (chance > place.likeliestChance) {
-				place.likeliestChance = chance;
-				place.likeliest = p;
+			restFilled[k]! += chance;
+			restRoleFree[k]! += chance * roleFree;
+			restOffense[k]! += chance * offense;
+			restUsage[k]! += chance * usage;
+			if (chance > restLikeliestChance[k]!) {
+				restLikeliestChance[k] = chance;
+				restLikeliest[k] = i;
 			}
 		}
-		const next = new Array<number>(
-			Math.min(ahead.length + 1, ROSTER_PLACES + 1),
-		).fill(0);
-		for (let j = 0; j < ahead.length; j++) {
-			next[j]! += ahead[j]! * (1 - a);
-			if (j + 1 < next.length) {
-				next[j + 1]! += ahead[j]! * a;
+		for (let j = hi; j >= lo; j--) {
+			const x = ahead[j]!;
+			if (j < ROSTER_PLACES) {
+				ahead[j + 1]! += x * a;
 			}
+			ahead[j] = x * (1 - a);
 		}
-		ahead = next;
+		if (a === 1) {
+			lo += 1;
+		}
+		hi = Math.min(hi + 1, ROSTER_PLACES);
+	}
+};
+
+const placeFilled = new Float64Array(ROSTER_PLACES);
+const likeliestChance = new Float64Array(ROSTER_PLACES);
+const likeliest = new Int32Array(ROSTER_PLACES);
+let replacementInput: SynergyInput | undefined;
+
+// The first `sure` players each take the next place if they are there; the
+// rest of the places are from fillRest.
+const byPlace = (sure: number, mask: number) => {
+	let next = 0;
+	for (let i = 0; i < sure; i++) {
+		const e = sortedEnumerated[i]!;
+		if (e >= 0 && ((mask >> e) & 1) === 0) {
+			continue;
+		}
+		if (next < ROSTER_PLACES) {
+			placeFilled[next] = 1;
+			placeRoleFree[next] = sortedRoleFree[i]!;
+			placeOffense[next] = sortedOffense[i]!;
+			placeUsage[next] = sortedUsage[i]!;
+			likeliestChance[next] = 1;
+			likeliest[next] = i;
+		}
+		next += 1;
+	}
+	for (let k = next; k < ROSTER_PLACES; k++) {
+		placeFilled[k] = restFilled[k - next]!;
+		placeRoleFree[k] = restRoleFree[k - next]!;
+		placeOffense[k] = restOffense[k - next]!;
+		placeUsage[k] = restUsage[k - next]!;
+		likeliestChance[k] = restLikeliestChance[k - next]!;
+		likeliest[k] = restLikeliest[k - next]!;
 	}
 	const r = getReplacement();
-	return pointsOfSorted(
-		places.map((place) => {
-			const empty = Math.max(0, 1 - place.filled);
-			return {
-				roleFree: place.roleFree + empty * r.roleFree,
-				offense: place.offense + empty * r.offense,
-				usage: place.usage + empty * r.usage,
-				synergy:
-					place.likeliest && place.likeliestChance >= empty
-						? place.likeliest.synergy
-						: r.synergy,
-				valueNoPot: 0,
-			};
-		}),
-	);
+	replacementInput ??= synergyInput(r.synergy);
+	for (let k = 0; k < ROSTER_PLACES; k++) {
+		const empty = Math.max(0, 1 - placeFilled[k]!);
+		placeRoleFree[k]! += empty * r.roleFree;
+		placeOffense[k]! += empty * r.offense;
+		placeUsage[k]! += empty * r.usage;
+		const i = likeliest[k]!;
+		placeSynergy[k] =
+			i >= 0 && likeliestChance[k]! >= empty
+				? (sortedSynergyInput[i] ??= synergyInput(sortedSynergy[i]!))
+				: replacementInput;
+	}
+	return pointsOfPlaces();
+};
+
+// Everyone who may be there, in pecking order: the same order as sorting by
+// valueNoPot keeps ties as they come, which an insertion sort does too.
+const order: (StrengthPlayer & { availability: number })[] = [];
+const orderValue: number[] = [];
+const inPeckingOrder = (
+	players: readonly (StrengthPlayer & { availability: number })[],
+) => {
+	order.length = 0;
+	orderValue.length = 0;
+	for (const p of players) {
+		if (!(p.availability > 0)) {
+			continue;
+		}
+		const v = p.valueNoPot;
+		if (!Number.isFinite(v)) {
+			return players.filter((x) => x.availability > 0).sort(byValueNoPot);
+		}
+		let j = order.length;
+		while (j > 0 && v > orderValue[j - 1]!) {
+			order[j] = order[j - 1]!;
+			orderValue[j] = orderValue[j - 1]!;
+			j -= 1;
+		}
+		order[j] = p;
+		orderValue[j] = v;
+	}
+	return order;
 };
 
 // Played out both ways, exactly: the best players we may or may not have.
@@ -431,27 +604,60 @@ const ENUMERATED = 2;
 export const expectedRosterPoints = (
 	players: readonly (StrengthPlayer & { availability: number })[],
 ) => {
-	const uncertain = players
-		.filter((p) => p.availability > 0 && p.availability < 1)
-		.sort(byValueNoPot)
-		.slice(0, ENUMERATED);
+	const sorted = inPeckingOrder(players);
+	const n = sorted.length;
+	const uncertain: (StrengthPlayer & { availability: number })[] = [];
+	for (const p of sorted) {
+		if (p.availability < 1) {
+			uncertain.push(p);
+			if (uncertain.length === ENUMERATED) {
+				break;
+			}
+		}
+	}
+	layOut(sorted, uncertain);
+	let sure = n;
+	if (uncertain.length > 0) {
+		sure = 0;
+		for (let i = 0; i < n; i++) {
+			if (sortedEnumerated[i]! >= 0) {
+				sure = i + 1;
+			}
+		}
+		for (let i = 0; i < sure; i++) {
+			if (sortedEnumerated[i]! < 0 && sortedAvailability[i] !== 1) {
+				sure = -1;
+				break;
+			}
+		}
+	}
+	if (sure >= 0) {
+		fillRest(sure, n, 0);
+	}
 	if (uncertain.length === 0) {
-		return byPlace(players);
+		return byPlace(sure, 0);
+	}
+	// Each enumerated player wherever he appears, in turn.
+	const which: number[] = [];
+	const odds: number[] = [];
+	for (const p of players) {
+		const i = uncertain.indexOf(p);
+		if (i >= 0) {
+			which.push(i);
+			odds.push(p.availability);
+		}
 	}
 	let total = 0;
 	for (let mask = 0; mask < 1 << uncertain.length; mask++) {
 		let chance = 1;
-		const fixed = players.map((p) => {
-			const i = uncertain.indexOf(p);
-			if (i < 0) {
-				return p;
-			}
-			const there = (mask >> i) & 1;
-			chance *= there ? p.availability : 1 - p.availability;
-			return { ...p, availability: there };
-		});
+		for (let j = 0; j < which.length; j++) {
+			chance *= (mask >> which[j]!) & 1 ? odds[j]! : 1 - odds[j]!;
+		}
 		if (chance > 0) {
-			total += chance * byPlace(fixed);
+			if (sure < 0) {
+				fillRest(0, n, mask);
+			}
+			total += chance * byPlace(Math.max(0, sure), mask);
 		}
 	}
 	return total;
