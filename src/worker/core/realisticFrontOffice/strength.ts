@@ -1,9 +1,9 @@
 import {
 	synergyCompositeRating,
-	synergyForLineup,
+	synergyFromSkillCounts,
+	synergySkillCounts,
 	synergyTotal,
 	type SynergyCompositeRating,
-	type SynergySkills,
 } from "../GameSim.basketball/synergy.ts";
 import {
 	IMPACT_RATINGS,
@@ -283,18 +283,27 @@ export const ROSTER_PLACES = SLOT_MINUTES.length;
 // Synergy the way the sim's pregame spread reads it: 70% the first five, 30%
 // the next five.
 const STARTER_SYNERGY = 0.7;
+const SYNERGY_PLACES = 10;
 
 // A player's synergy skills are worked out once per line: rosters are priced
-// many thousands of times a day, and the lines are cached upstream. So is each
-// lineup's synergy, by the lines in it, for the lineups seen most recently.
-type SynergyInput = { compositeRating: SynergyCompositeRating; id: number };
+// many thousands of times a day, and the lines are cached upstream. They are
+// kept as eight numbers in a row, in SKILLS order, so a place can add up its
+// share of everyone who may play it cheaply. A lineup of five each sure of
+// his place has its synergy remembered by the lines in it, for the lineups
+// seen most recently.
+const SKILLS = ["3", "A", "B", "Di", "Dp", "Po", "Ps", "R"] as const;
+const NUM_SKILLS = SKILLS.length;
+type SynergyInput = { skills: Float64Array; id: number };
 const synergyInputs = new WeakMap<SynergyCompositeRating, SynergyInput>();
-const synergySkills = new WeakMap<object, SynergySkills>();
 let nextSynergyId = 0;
 const synergyInput = (synergy: SynergyCompositeRating) => {
 	let input = synergyInputs.get(synergy);
 	if (!input) {
-		input = { compositeRating: synergy, id: nextSynergyId };
+		const counts = synergySkillCounts([{ compositeRating: synergy }]);
+		input = {
+			skills: Float64Array.from(SKILLS, (key) => counts[key]),
+			id: nextSynergyId,
+		};
 		nextSynergyId = (nextSynergyId + 1) | 0;
 		synergyInputs.set(synergy, input);
 	}
@@ -306,38 +315,113 @@ const lineupInputs: (SynergyInput | undefined)[] = new Array(
 ).fill(undefined);
 const lineupSynergy = new Float64Array(LINEUP_SLOTS);
 
-// Synergy of the five lineups starting at `from`.
-const unitSynergy = (synergy: readonly SynergyInput[], from: number) => {
-	const s0 = synergy[from]!;
-	const s1 = synergy[from + 1]!;
-	const s2 = synergy[from + 2]!;
-	const s3 = synergy[from + 3]!;
-	const s4 = synergy[from + 4]!;
-	let hash = s0.id;
-	hash = Math.imul(hash ^ s1.id, 0x9e3779b1);
-	hash = Math.imul(hash ^ s2.id, 0x9e3779b1);
-	hash = Math.imul(hash ^ s3.id, 0x9e3779b1);
-	hash = Math.imul(hash ^ s4.id, 0x9e3779b1);
-	const slot = (hash ^ (hash >>> 15)) & (LINEUP_SLOTS - 1);
-	const at = 5 * slot;
-	if (
-		lineupInputs[at] === s0 &&
-		lineupInputs[at + 1] === s1 &&
-		lineupInputs[at + 2] === s2 &&
-		lineupInputs[at + 3] === s3 &&
-		lineupInputs[at + 4] === s4
-	) {
-		return lineupSynergy[slot]!;
-	}
-	const value = synergyTotal(
-		synergyForLineup([s0, s1, s2, s3, s4], synergySkills),
+// The places' synergy skills: those of whoever is sure to hold a place (the
+// minimum player, if nobody may), in placeHeld, or else what the place is
+// expected to bring, in placeSkills.
+const placeHeld: (SynergyInput | undefined)[] = new Array(SYNERGY_PLACES).fill(
+	undefined,
+);
+const placeSkills = new Float64Array(SYNERGY_PLACES * NUM_SKILLS);
+
+// Synergy of a lineup whose skills add up to unitSkills.
+const unitSkills = new Float64Array(NUM_SKILLS);
+const synergyOfUnitSkills = () =>
+	synergyTotal(
+		synergyFromSkillCounts({
+			"3": unitSkills[0]!,
+			A: unitSkills[1]!,
+			B: unitSkills[2]!,
+			Di: unitSkills[3]!,
+			Dp: unitSkills[4]!,
+			Po: unitSkills[5]!,
+			Ps: unitSkills[6]!,
+			R: unitSkills[7]!,
+		}),
 	);
-	lineupInputs[at] = s0;
-	lineupInputs[at + 1] = s1;
-	lineupInputs[at + 2] = s2;
-	lineupInputs[at + 3] = s3;
-	lineupInputs[at + 4] = s4;
-	lineupSynergy[slot] = value;
+
+// A lineup with someone not sure of his place has its synergy remembered by
+// the skills it adds up to, for the lineups seen most recently: a roster is
+// priced again for every deal that leaves that season of it alone.
+const unitBits = new Int32Array(unitSkills.buffer);
+const MIXED_SLOTS = 1 << 14;
+const mixedSkills = new Float64Array(NUM_SKILLS * MIXED_SLOTS).fill(Number.NaN);
+const mixedSynergy = new Float64Array(MIXED_SLOTS);
+
+const addSkills = (skills: Float64Array, at: number) => {
+	for (let s = 0; s < NUM_SKILLS; s++) {
+		unitSkills[s]! += skills[at + s]!;
+	}
+};
+
+// Synergy of the five places starting at `from`.
+const unitSynergy = (from: number) => {
+	const s0 = placeHeld[from];
+	const s1 = placeHeld[from + 1];
+	const s2 = placeHeld[from + 2];
+	const s3 = placeHeld[from + 3];
+	const s4 = placeHeld[from + 4];
+	if (s0 && s1 && s2 && s3 && s4) {
+		let hash = s0.id;
+		hash = Math.imul(hash ^ s1.id, 0x9e3779b1);
+		hash = Math.imul(hash ^ s2.id, 0x9e3779b1);
+		hash = Math.imul(hash ^ s3.id, 0x9e3779b1);
+		hash = Math.imul(hash ^ s4.id, 0x9e3779b1);
+		const slot = (hash ^ (hash >>> 15)) & (LINEUP_SLOTS - 1);
+		const at = 5 * slot;
+		if (
+			lineupInputs[at] === s0 &&
+			lineupInputs[at + 1] === s1 &&
+			lineupInputs[at + 2] === s2 &&
+			lineupInputs[at + 3] === s3 &&
+			lineupInputs[at + 4] === s4
+		) {
+			return lineupSynergy[slot]!;
+		}
+		unitSkills.fill(0);
+		addSkills(s0.skills, 0);
+		addSkills(s1.skills, 0);
+		addSkills(s2.skills, 0);
+		addSkills(s3.skills, 0);
+		addSkills(s4.skills, 0);
+		const value = synergyOfUnitSkills();
+		lineupInputs[at] = s0;
+		lineupInputs[at + 1] = s1;
+		lineupInputs[at + 2] = s2;
+		lineupInputs[at + 3] = s3;
+		lineupInputs[at + 4] = s4;
+		lineupSynergy[slot] = value;
+		return value;
+	}
+	unitSkills.fill(0);
+	for (let k = from; k < from + 5; k++) {
+		const held = placeHeld[k];
+		if (held) {
+			addSkills(held.skills, 0);
+		} else {
+			addSkills(placeSkills, k * NUM_SKILLS);
+		}
+	}
+	let hash = 0;
+	for (let i = 0; i < unitBits.length; i++) {
+		hash = Math.imul(hash ^ unitBits[i]!, 0x9e3779b1);
+	}
+	const slot = (hash ^ (hash >>> 15)) & (MIXED_SLOTS - 1);
+	const at = NUM_SKILLS * slot;
+	if (
+		mixedSkills[at] === unitSkills[0] &&
+		mixedSkills[at + 1] === unitSkills[1] &&
+		mixedSkills[at + 2] === unitSkills[2] &&
+		mixedSkills[at + 3] === unitSkills[3] &&
+		mixedSkills[at + 4] === unitSkills[4] &&
+		mixedSkills[at + 5] === unitSkills[5] &&
+		mixedSkills[at + 6] === unitSkills[6] &&
+		mixedSkills[at + 7] === unitSkills[7]
+	) {
+		return mixedSynergy[slot]!;
+	}
+	const value = synergyOfUnitSkills();
+	mixedSkills.set(unitSkills, at);
+	mixedSynergy[slot] = value;
 	return value;
 };
 
@@ -350,10 +434,9 @@ const TOGETHER_FLAT = Float64Array.from(TOGETHER.flat());
 const placeRoleFree = new Float64Array(ROSTER_PLACES);
 const placeOffense = new Float64Array(ROSTER_PLACES);
 const placeUsage = new Float64Array(ROSTER_PLACES);
-const placeSynergy: SynergyInput[] = [];
 
-// Points of the roster in placeRoleFree, placeOffense, placeUsage and
-// placeSynergy.
+// Points of the roster in placeRoleFree, placeOffense, placeUsage, placeHeld
+// and placeSkills.
 const pointsOfPlaces = () => {
 	let total = 0;
 	for (let k = 0; k < ROSTER_PLACES; k++) {
@@ -370,8 +453,7 @@ const pointsOfPlaces = () => {
 		total += SLOT_MINUTES[k]! * (placeRoleFree[k]! + share * placeOffense[k]!);
 	}
 	const synergy =
-		STARTER_SYNERGY * unitSynergy(placeSynergy, 0) +
-		(1 - STARTER_SYNERGY) * unitSynergy(placeSynergy, 5);
+		STARTER_SYNERGY * unitSynergy(0) + (1 - STARTER_SYNERGY) * unitSynergy(5);
 	return total + MODEL.synergy * synergy;
 };
 
@@ -383,7 +465,9 @@ const pointsOfSorted = (sorted: readonly StrengthPlayer[]) => {
 		placeRoleFree[k] = p.roleFree;
 		placeOffense[k] = p.offense;
 		placeUsage[k] = p.usage;
-		placeSynergy[k] = synergyInput(p.synergy);
+		if (k < SYNERGY_PLACES) {
+			placeHeld[k] = synergyInput(p.synergy);
+		}
 	}
 	return pointsOfPlaces();
 };
@@ -458,6 +542,9 @@ const layOut = (
 	}
 };
 
+const sortedInput = (i: number) =>
+	(sortedSynergyInput[i] ??= synergyInput(sortedSynergy[i]!));
+
 // Everyone up to the last enumerated player is usually there for sure or not
 // at all, so each of them just takes the next place. Who fills the places
 // after them depends only on how many of them are there, not on which, so
@@ -468,8 +555,10 @@ const restFilled = new Float64Array(ROSTER_PLACES);
 const restRoleFree = new Float64Array(ROSTER_PLACES);
 const restOffense = new Float64Array(ROSTER_PLACES);
 const restUsage = new Float64Array(ROSTER_PLACES);
-const restLikeliestChance = new Float64Array(ROSTER_PLACES);
-const restLikeliest = new Int32Array(ROSTER_PLACES);
+// Each place's synergy skills, by everyone's chance of playing it, and who is
+// sure to play it (-1 if nobody is).
+const restSkills = new Float64Array(SYNERGY_PLACES * NUM_SKILLS);
+const restHeld = new Int32Array(SYNERGY_PLACES);
 
 const fillRest = (from: number, n: number, mask: number) => {
 	// The chance that exactly j of the players ahead are there, nonzero only
@@ -482,8 +571,8 @@ const fillRest = (from: number, n: number, mask: number) => {
 	restRoleFree.fill(0);
 	restOffense.fill(0);
 	restUsage.fill(0);
-	restLikeliestChance.fill(0);
-	restLikeliest.fill(-1);
+	restSkills.fill(0);
+	restHeld.fill(-1);
 	for (let i = from; i < n; i++) {
 		let a;
 		const e = sortedEnumerated[i]!;
@@ -505,9 +594,32 @@ const fillRest = (from: number, n: number, mask: number) => {
 			restRoleFree[k]! += chance * roleFree;
 			restOffense[k]! += chance * offense;
 			restUsage[k]! += chance * usage;
-			if (chance > restLikeliestChance[k]!) {
-				restLikeliestChance[k] = chance;
-				restLikeliest[k] = i;
+		}
+		if (lo < SYNERGY_PLACES) {
+			const skills = sortedInput(i).skills;
+			const s0 = skills[0]!;
+			const s1 = skills[1]!;
+			const s2 = skills[2]!;
+			const s3 = skills[3]!;
+			const s4 = skills[4]!;
+			const s5 = skills[5]!;
+			const s6 = skills[6]!;
+			const s7 = skills[7]!;
+			const last = Math.min(hi, SYNERGY_PLACES - 1);
+			for (let k = lo; k <= last; k++) {
+				const chance = a * ahead[k]!;
+				if (chance === 1) {
+					restHeld[k] = i;
+				}
+				const at = k * NUM_SKILLS;
+				restSkills[at]! += chance * s0;
+				restSkills[at + 1]! += chance * s1;
+				restSkills[at + 2]! += chance * s2;
+				restSkills[at + 3]! += chance * s3;
+				restSkills[at + 4]! += chance * s4;
+				restSkills[at + 5]! += chance * s5;
+				restSkills[at + 6]! += chance * s6;
+				restSkills[at + 7]! += chance * s7;
 			}
 		}
 		for (let j = hi; j >= lo; j--) {
@@ -525,12 +637,17 @@ const fillRest = (from: number, n: number, mask: number) => {
 };
 
 const placeFilled = new Float64Array(ROSTER_PLACES);
-const likeliestChance = new Float64Array(ROSTER_PLACES);
-const likeliest = new Int32Array(ROSTER_PLACES);
 let replacementInput: SynergyInput | undefined;
 
 // The first `sure` players each take the next place if they are there; the
 // rest of the places are from fillRest.
+//
+// Each place's synergy skills are those of whoever may play it, by his chance
+// of playing it, and the minimum player's for the rest - as with everything
+// else about the place. Handing the place the skills of whoever was likeliest
+// to fill it, as this once did, made a lineup's synergy jump whenever that
+// changed hands: a long shot with a 5% chance of being there could move a
+// roster by a point.
 const byPlace = (sure: number, mask: number) => {
 	let next = 0;
 	for (let i = 0; i < sure; i++) {
@@ -543,8 +660,9 @@ const byPlace = (sure: number, mask: number) => {
 			placeRoleFree[next] = sortedRoleFree[i]!;
 			placeOffense[next] = sortedOffense[i]!;
 			placeUsage[next] = sortedUsage[i]!;
-			likeliestChance[next] = 1;
-			likeliest[next] = i;
+			if (next < SYNERGY_PLACES) {
+				placeHeld[next] = sortedInput(i);
+			}
 		}
 		next += 1;
 	}
@@ -553,21 +671,34 @@ const byPlace = (sure: number, mask: number) => {
 		placeRoleFree[k] = restRoleFree[k - next]!;
 		placeOffense[k] = restOffense[k - next]!;
 		placeUsage[k] = restUsage[k - next]!;
-		likeliestChance[k] = restLikeliestChance[k - next]!;
-		likeliest[k] = restLikeliest[k - next]!;
 	}
 	const r = getReplacement();
-	replacementInput ??= synergyInput(r.synergy);
 	for (let k = 0; k < ROSTER_PLACES; k++) {
 		const empty = Math.max(0, 1 - placeFilled[k]!);
 		placeRoleFree[k]! += empty * r.roleFree;
 		placeOffense[k]! += empty * r.offense;
 		placeUsage[k]! += empty * r.usage;
-		const i = likeliest[k]!;
-		placeSynergy[k] =
-			i >= 0 && likeliestChance[k]! >= empty
-				? (sortedSynergyInput[i] ??= synergyInput(sortedSynergy[i]!))
-				: replacementInput;
+	}
+	replacementInput ??= synergyInput(r.synergy);
+	const replacementSkills = replacementInput.skills;
+	for (let k = next; k < SYNERGY_PLACES; k++) {
+		const rest = k - next;
+		const held = restHeld[rest]!;
+		const filled = restFilled[rest]!;
+		if (held >= 0) {
+			placeHeld[k] = sortedInput(held);
+		} else if (filled === 0) {
+			placeHeld[k] = replacementInput;
+		} else {
+			placeHeld[k] = undefined;
+			const empty = Math.max(0, 1 - filled);
+			const from = rest * NUM_SKILLS;
+			const to = k * NUM_SKILLS;
+			for (let s = 0; s < NUM_SKILLS; s++) {
+				placeSkills[to + s] =
+					restSkills[from + s]! + empty * replacementSkills[s]!;
+			}
+		}
 	}
 	return pointsOfPlaces();
 };

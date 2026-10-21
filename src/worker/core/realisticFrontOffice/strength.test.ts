@@ -139,12 +139,15 @@ test("a roster of players who may not be there is priced as it would play", () =
 			...p,
 			availability: i < 10 ? 1 : 0.02 + 0.03 * (i - 10),
 		}));
+		// The same draws for every roster, so a difference between two of them
+		// is not lost in the noise of each.
 		const simulate = (roster: typeof lines) => {
 			const random = makeSeededRandom(3);
 			const draws = 4000;
 			let total = 0;
 			for (let d = 0; d < draws; d++) {
-				total += rosterPoints(roster.filter((p) => random() < p.availability));
+				const there = new Set(lines.filter((p) => random() < p.availability));
+				total += rosterPoints(roster.filter((p) => there.has(p)));
 			}
 			return total / draws;
 		};
@@ -161,3 +164,64 @@ test("a roster of players who may not be there is priced as it would play", () =
 		Math.random = realRandom;
 	}
 });
+
+test("a long shot moves a roster by no more than his chance of playing", () => {
+	const realRandom = Math.random;
+	Math.random = makeSeededRandom(5);
+	try {
+		const pool = Array.from({ length: 120 }, () => {
+			const ratings = last(
+				player.generate(PLAYER.UNDRAFTED, 26, 2020, true, DEFAULT_LEVEL)
+					.ratings,
+			) as unknown as ValueRatings;
+			return { ...playerLine(ratings), valueNoPot: ovr(ratings as any) };
+		});
+		const random = makeSeededRandom(9);
+		let worst = 0;
+		for (let trial = 0; trial < 12; trial++) {
+			// A roster seasons out: a few players we will surely have, and many
+			// who may or may not be there - some of them long shots.
+			const lines = [...pool]
+				.sort(() => random() - 0.5)
+				.slice(0, 22)
+				.map((p, i) => ({
+					...p,
+					availability:
+						i < 6
+							? 0.97
+							: i < 12
+								? 0.02 + 0.06 * random()
+								: 0.1 + 0.6 * random(),
+				}));
+			const draws = 2000;
+			const there = Array.from({ length: draws }, () =>
+				lines.map(() => random()),
+			);
+			const index = new Map(lines.map((p, i) => [p, i]));
+			const simulate = (roster: typeof lines) => {
+				let total = 0;
+				for (const u of there) {
+					total += rosterPoints(
+						roster.filter((p) => u[index.get(p)!]! < p.availability),
+					);
+				}
+				return total / draws;
+			};
+			const full = simulate(lines);
+			for (let i = 6; i < 12; i++) {
+				const without = lines.filter((_, j) => j !== i);
+				const error =
+					expectedRosterPoints(without) -
+					expectedRosterPoints(lines) -
+					(simulate(without) - full);
+				worst = Math.max(worst, Math.abs(error));
+			}
+		}
+		// Synergy once went to whoever was likeliest to fill each place, so a
+		// player with a 5% chance of being there could move a roster by more
+		// than a point when that changed hands.
+		assert.isBelow(worst, 0.25);
+	} finally {
+		Math.random = realRandom;
+	}
+}, 30_000);
