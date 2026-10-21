@@ -1242,6 +1242,12 @@ const LIGHT = (() => {
 	return [l[0]! / n, l[1]! / n, l[2]! / n] as const;
 })();
 
+// Lengths, for every pixel: Math.hypot's care over huge and tiny numbers
+// is slow, and nothing here is either.
+const len2 = (a: number, b: number) => Math.sqrt(a * a + b * b);
+const len3 = (a: number, b: number, c: number) =>
+	Math.sqrt(a * a + b * b + c * c);
+
 const smin = (a: number, b: number, k: number) => {
 	const h = Math.max(k - Math.abs(a - b), 0) / k;
 	return Math.min(a, b) - (h * h * k) / 4;
@@ -1258,7 +1264,7 @@ export type Sculpted = {
 	box: { x0: number; y0: number; x1: number; y1: number };
 };
 
-const TILE = 8;
+const RUN = 8;
 
 // His sprite, w x h of its pixels, each px screen pixels, its top left at
 // (ox, oy) on the screen. Given `seen` (ART_W x ART_H), a uniform drawn
@@ -1284,42 +1290,6 @@ export const sculpt = (
 	const d = img.data;
 	const lineW = Math.max(0.7, 0.028 * b.k);
 	const margin = lineW * 3.5 + 1;
-	// Which masses each tile of the sprite need ask about.
-	const tw = Math.ceil(w / TILE);
-	const th = Math.ceil(h / TILE);
-	const lists: number[][] = Array.from({ length: tw * th }, () => []);
-	for (let i = 0; i < n; i++) {
-		const m = masses[i]!;
-		const reach = m.rmax + margin + TILE * 0.71;
-		const tx0 = Math.max(
-			0,
-			Math.floor((Math.min(m.ax, m.ax + m.dx) - reach) / TILE),
-		);
-		const tx1 = Math.min(
-			tw - 1,
-			Math.floor((Math.max(m.ax, m.ax + m.dx) + reach) / TILE),
-		);
-		const ty0 = Math.max(
-			0,
-			Math.floor((Math.min(m.ay, m.ay + m.dy) - reach) / TILE),
-		);
-		const ty1 = Math.min(
-			th - 1,
-			Math.floor((Math.max(m.ay, m.ay + m.dy) + reach) / TILE),
-		);
-		for (let ty = ty0; ty <= ty1; ty++) {
-			for (let tx = tx0; tx <= tx1; tx++) {
-				const cx = (tx + 0.5) * TILE;
-				const cy = (ty + 0.5) * TILE;
-				const raw =
-					m.l2 > 1e-6 ? ((cx - m.ax) * m.dx + (cy - m.ay) * m.dy) / m.l2 : 0;
-				const t = raw < 0 ? 0 : raw > 1 ? 1 : raw;
-				if (Math.hypot(cx - m.ax - m.dx * t, cy - m.ay - m.dy * t) < reach) {
-					lists[ty * tw + tx]!.push(i);
-				}
-			}
-		}
-	}
 	// Which joint, if any, melts two groups together.
 	const joinOf = new Int16Array(GROUPS * GROUPS).fill(-1);
 	b.joins.forEach((j, i) => {
@@ -1416,7 +1386,7 @@ export const sculpt = (
 				front && !outfit
 					? cut.vAt / cut.neckIn
 					: (2 * cut.backAt * wN) / cut.neckIn;
-			const below = (cut.top - neckDrop - U) / Math.hypot(1, slope);
+			const below = (cut.top - neckDrop - U) / len2(1, slope);
 			const dNeck =
 				aS >= cut.neckIn
 					? Math.max(aS - cut.neckIn, below)
@@ -1433,7 +1403,7 @@ export const sculpt = (
 				const gx = (sx - cut.side) / ea;
 				const gy = (uy - cut.top) / eb;
 				const g = gx * gx + gy * gy - 1;
-				dArm = g / (2 * Math.hypot(gx / ea, gy / eb) || 1);
+				dArm = g / (2 * len2(gx / ea, gy / eb) || 1);
 			}
 			const edge = Math.min(dArm, dNeck);
 			if (edge < 0) {
@@ -1540,436 +1510,489 @@ export const sculpt = (
 		cb = c[2];
 	};
 
-	for (let ty = 0; ty < th; ty++) {
-		for (let tx = 0; tx < tw; tx++) {
-			const list = lists[ty * tw + tx]!;
-			if (list.length === 0) {
+	// Row by row, each mass is asked about only along the stretch of the
+	// row it can reach - no further off its axis than its widest and the
+	// margin, and inside its box - and a pixel only if some mass can reach
+	// it: most of the sprite is open floor round his limbs. (Taken a short
+	// run of the row at a time, so each pixel asks just the few there.)
+	const rowMass = new Int32Array(n);
+	const rowLo = new Float64Array(n);
+	const rowHi = new Float64Array(n);
+	const rowDot = new Float64Array(n);
+	const runMass = new Int32Array(n);
+	const runLo = new Float64Array(n);
+	const runHi = new Float64Array(n);
+	const runDot = new Float64Array(n);
+	for (let y = 0; y < h; y++) {
+		const py = y + 0.5;
+		let na = 0;
+		let rowL = Infinity;
+		let rowR = -Infinity;
+		for (let i = 0; i < n; i++) {
+			const c = masses[i]!;
+			if (py < c.y0 - margin || py > c.y1 + margin) {
 				continue;
 			}
-			const yEnd = Math.min(h, (ty + 1) * TILE);
-			const xEnd = Math.min(w, (tx + 1) * TILE);
-			for (let y = ty * TILE; y < yEnd; y++) {
-				const py = y + 0.5;
-				for (let x = tx * TILE; x < xEnd; x++) {
-					const pxx = x + 0.5;
-					let m = 0;
-					let best = -1;
-					let bestZ = Infinity;
-					let least = -1;
-					let leastS = Infinity;
-					for (let li = 0; li < list.length; li++) {
-						const i = list[li]!;
-						const c = masses[i]!;
-						if (
-							pxx < c.x0 - margin ||
-							pxx > c.x1 + margin ||
-							py < c.y0 - margin ||
-							py > c.y1 + margin
-						) {
-							continue;
-						}
-						const raw =
-							c.l2 > 1e-6
-								? ((pxx - c.ax) * c.dx + (py - c.ay) * c.dy) / c.l2
-								: 0;
-						const t = raw < 0 ? 0 : raw > 1 ? 1 : raw;
-						const ex = pxx - (c.ax + c.dx * t);
-						const ey = py - (c.ay + c.dy * t);
-						let dist = Math.sqrt(ex * ex + ey * ey);
-						const fi = t * RS;
-						const i0 = fi | 0;
-						const r =
-							i0 >= RS
-								? c.rad[RS]!
-								: c.rad[i0]! + (c.rad[i0 + 1]! - c.rad[i0]!) * (fi - i0);
-						let s = dist - r;
-						if (c.flat && raw > 1) {
-							s = Math.max(s, (raw - 1) * c.len);
-							dist = Math.min(dist, r);
-						}
-						if (s > margin) {
-							continue;
-						}
-						const qn = dist < r ? dist / r : 1;
-						const nz = Math.sqrt(1 - qn * qn);
-						const z = c.za + (c.zb - c.za) * t - (nz * r * zs) / c.k;
-						const inv = dist > 1e-6 ? qn / dist : 0;
-						hs[m] = s;
-						hz[m] = z;
-						hx[m] = ex * inv;
-						hy[m] = ey * inv;
-						hn[m] = nz;
-						ht[m] = t;
-						hr[m] = r;
-						hi[m] = i;
-						if (s <= 0 && z < bestZ) {
-							bestZ = z;
-							best = m;
-						}
-						if (s < leastS) {
-							leastS = s;
-							least = m;
-						}
-						m++;
-					}
-					if (m === 0 || leastS > 0.5 + margin) {
+			let lo = c.x0 - margin;
+			let hi = c.x1 + margin;
+			if (c.dy > 1e-6 || c.dy < -1e-6) {
+				const mid = c.ax + ((py - c.ay) * c.dx) / c.dy;
+				// (A hair more, for rounding.)
+				const half = ((c.rmax + margin) * c.len) / Math.abs(c.dy) + 0.01;
+				lo = Math.max(lo, mid - half);
+				hi = Math.min(hi, mid + half);
+			}
+			if (lo > w || hi < 0 || lo > hi) {
+				continue;
+			}
+			rowMass[na] = i;
+			rowLo[na] = lo;
+			rowHi[na] = hi;
+			rowDot[na] = (py - c.ay) * c.dy;
+			na++;
+			rowL = Math.min(rowL, lo);
+			rowR = Math.max(rowR, hi);
+		}
+		if (na === 0) {
+			continue;
+		}
+		const rowTo = Math.min(w - 1, Math.floor(rowR - 0.5));
+		for (
+			let xStart = Math.max(0, Math.ceil(rowL - 0.5));
+			xStart <= rowTo;
+			xStart += RUN
+		) {
+			const xEnd = Math.min(rowTo + 1, xStart + RUN);
+			let nb = 0;
+			let runL = Infinity;
+			let runR = -Infinity;
+			for (let k = 0; k < na; k++) {
+				const lo = rowLo[k]!;
+				const hi = rowHi[k]!;
+				if (lo > xEnd || hi < xStart) {
+					continue;
+				}
+				runMass[nb] = rowMass[k]!;
+				runLo[nb] = lo;
+				runHi[nb] = hi;
+				runDot[nb] = rowDot[k]!;
+				nb++;
+				runL = Math.min(runL, lo);
+				runR = Math.max(runR, hi);
+			}
+			if (nb === 0) {
+				continue;
+			}
+			const xTo = Math.min(xEnd - 1, Math.floor(runR - 0.5));
+			for (let x = Math.max(xStart, Math.ceil(runL - 0.5)); x <= xTo; x++) {
+				const pxx = x + 0.5;
+				let m = 0;
+				let best = -1;
+				let bestZ = Infinity;
+				let least = -1;
+				let leastS = Infinity;
+				for (let k = 0; k < nb; k++) {
+					if (pxx < runLo[k]! || pxx > runHi[k]!) {
 						continue;
 					}
-					const f = best >= 0 ? best : least;
-					const fc = masses[hi[f]!]!;
-					let S = hs[f]!;
-					let nx = hx[f]!;
-					let ny = hy[f]!;
-					let nzs = hn[f]!;
-					let behind = false;
-					let shadow = 0;
-					for (let j = 0; j < m; j++) {
-						if (j === f) {
-							continue;
-						}
-						const c = masses[hi[j]!]!;
-						const dz = hz[j]! - hz[f]!;
-						let K = 0;
-						if (c.group === fc.group) {
-							K = Math.min(hr[j]!, hr[f]!) * 0.8;
-						} else {
-							const ji = joinOf[fc.group * GROUPS + c.group]!;
-							if (ji >= 0) {
-								const jn = b.joins[ji]!;
-								const dj = Math.hypot(pxx - jn.x, py - jn.y);
-								K = jn.reach * 0.45 * Math.max(0, 1 - dj / jn.reach);
-							}
-						}
-						if (K > 0 && dz < ZT && dz > -ZT) {
-							K *= 1 - Math.abs(dz) / ZT;
-							const before = S;
-							S = smin(S, hs[j]!, K);
-							const wgt = 1 - Math.abs(hs[j]! - before) / K;
-							if (wgt > 0) {
-								nx += hx[j]! * wgt;
-								ny += hy[j]! * wgt;
-								nzs += hn[j]! * wgt;
-							}
-						} else if (hs[j]! < 0 && dz > 0.05) {
-							behind = true;
-						} else if (dz < -0.05 && hs[j]! > 0) {
-							// Something just in front, beside: a little of its
-							// shadow.
-							const sw = lineW * 3.5;
-							if (hs[j]! < sw) {
-								shadow = Math.max(shadow, 1 - hs[j]! / sw);
-							}
-						}
+					const i = runMass[k]!;
+					const c = masses[i]!;
+					const raw =
+						c.l2 > 1e-6 ? ((pxx - c.ax) * c.dx + runDot[k]!) / c.l2 : 0;
+					const t = raw < 0 ? 0 : raw > 1 ? 1 : raw;
+					const ex = pxx - (c.ax + c.dx * t);
+					const ey = py - (c.ay + c.dy * t);
+					let dist = Math.sqrt(ex * ex + ey * ey);
+					const fi = t * RS;
+					const i0 = fi | 0;
+					const r =
+						i0 >= RS
+							? c.rad[RS]!
+							: c.rad[i0]! + (c.rad[i0 + 1]! - c.rad[i0]!) * (fi - i0);
+					let s = dist - r;
+					if (c.flat && raw > 1) {
+						s = Math.max(s, (raw - 1) * c.len);
+						dist = Math.min(dist, r);
 					}
-					const cover = 0.5 - S;
-					if (cover <= 0) {
+					if (s > margin) {
 						continue;
 					}
-					const nl = Math.hypot(nx, ny, nzs) || 1;
-					let sx = nx / nl;
-					let sy = ny / nl;
-					let sz = nzs / nl;
-					// The point on him this pixel shows (feet, his frame).
-					const t = ht[f]!;
-					const rf = hr[f]! / fc.k;
-					const ox3 = hx[f]! * rf;
-					const oy3 = hy[f]! * rf;
-					const oz3 = hn[f]! * rf;
-					const Pf =
-						fc.A.f +
-						(fc.B.f - fc.A.f) * t +
-						ox3 * rt.f +
-						oy3 * dn.f +
-						oz3 * tw3.f;
-					const Ps =
-						fc.A.s +
-						(fc.B.s - fc.A.s) * t +
-						ox3 * rt.s +
-						oy3 * dn.s +
-						oz3 * tw3.s;
-					const Pu =
-						fc.A.u +
-						(fc.B.u - fc.A.u) * t +
-						ox3 * rt.u +
-						oy3 * dn.u +
-						oz3 * (tw3.u + kap);
-					cloth = false;
-					const side = fc.side;
-					switch (fc.kind) {
-						case TORSO: {
-							let rf0 = Pf - pel.f;
-							let rs0 = Ps - pel.s;
-							let ru0 = Pu - pel.u;
-							const ut = b.untwist;
-							if (ut) {
-								// Where it sat before he turned.
-								const up0 = (rf0 * spine.f + ru0 * spine.u) / body.torso;
-								const k =
-									Math.min(
-										TURN_STEPS,
-										Math.max(0, Math.round(up0 * TURN_STEPS)),
-									) * 9;
-								const nf = ut[k]! * rf0 + ut[k + 1]! * rs0 + ut[k + 2]! * ru0;
-								const ns =
-									ut[k + 3]! * rf0 + ut[k + 4]! * rs0 + ut[k + 5]! * ru0;
-								const nu =
-									ut[k + 6]! * rf0 + ut[k + 7]! * rs0 + ut[k + 8]! * ru0;
-								rf0 = nf;
-								rs0 = ns;
-								ru0 = nu;
-							}
-							torsoAt(
-								rf0 * spine.f + ru0 * spine.u,
-								rs0,
-								rf0 * fw.f + ru0 * fw.u,
+					const qn = dist < r ? dist / r : 1;
+					const nz = Math.sqrt(1 - qn * qn);
+					const z = c.za + (c.zb - c.za) * t - (nz * r * zs) / c.k;
+					const inv = dist > 1e-6 ? qn / dist : 0;
+					hs[m] = s;
+					hz[m] = z;
+					hx[m] = ex * inv;
+					hy[m] = ey * inv;
+					hn[m] = nz;
+					ht[m] = t;
+					hr[m] = r;
+					hi[m] = i;
+					if (s <= 0 && z < bestZ) {
+						bestZ = z;
+						best = m;
+					}
+					if (s < leastS) {
+						leastS = s;
+						least = m;
+					}
+					m++;
+				}
+				if (m === 0 || leastS > 0.5 + margin) {
+					continue;
+				}
+				const f = best >= 0 ? best : least;
+				const fc = masses[hi[f]!]!;
+				let S = hs[f]!;
+				let nx = hx[f]!;
+				let ny = hy[f]!;
+				let nzs = hn[f]!;
+				let behind = false;
+				let shadow = 0;
+				for (let j = 0; j < m; j++) {
+					if (j === f) {
+						continue;
+					}
+					const c = masses[hi[j]!]!;
+					const dz = hz[j]! - hz[f]!;
+					let K = 0;
+					if (c.group === fc.group) {
+						K = Math.min(hr[j]!, hr[f]!) * 0.8;
+					} else {
+						const ji = joinOf[fc.group * GROUPS + c.group]!;
+						if (ji >= 0) {
+							const jn = b.joins[ji]!;
+							const dj = len2(pxx - jn.x, py - jn.y);
+							K = jn.reach * 0.45 * Math.max(0, 1 - dj / jn.reach);
+						}
+					}
+					if (K > 0 && dz < ZT && dz > -ZT) {
+						K *= 1 - Math.abs(dz) / ZT;
+						const before = S;
+						S = smin(S, hs[j]!, K);
+						const wgt = 1 - Math.abs(hs[j]! - before) / K;
+						if (wgt > 0) {
+							nx += hx[j]! * wgt;
+							ny += hy[j]! * wgt;
+							nzs += hn[j]! * wgt;
+						}
+					} else if (hs[j]! < 0 && dz > 0.05) {
+						behind = true;
+					} else if (dz < -0.05 && hs[j]! > 0) {
+						// Something just in front, beside: a little of its
+						// shadow.
+						const sw = lineW * 3.5;
+						if (hs[j]! < sw) {
+							shadow = Math.max(shadow, 1 - hs[j]! / sw);
+						}
+					}
+				}
+				const cover = 0.5 - S;
+				if (cover <= 0) {
+					continue;
+				}
+				const nl = len3(nx, ny, nzs) || 1;
+				let sx = nx / nl;
+				let sy = ny / nl;
+				let sz = nzs / nl;
+				// The point on him this pixel shows (feet, his frame).
+				const t = ht[f]!;
+				const rf = hr[f]! / fc.k;
+				const ox3 = hx[f]! * rf;
+				const oy3 = hy[f]! * rf;
+				const oz3 = hn[f]! * rf;
+				const Pf =
+					fc.A.f +
+					(fc.B.f - fc.A.f) * t +
+					ox3 * rt.f +
+					oy3 * dn.f +
+					oz3 * tw3.f;
+				const Ps =
+					fc.A.s +
+					(fc.B.s - fc.A.s) * t +
+					ox3 * rt.s +
+					oy3 * dn.s +
+					oz3 * tw3.s;
+				const Pu =
+					fc.A.u +
+					(fc.B.u - fc.A.u) * t +
+					ox3 * rt.u +
+					oy3 * dn.u +
+					oz3 * (tw3.u + kap);
+				cloth = false;
+				const side = fc.side;
+				switch (fc.kind) {
+					case TORSO: {
+						let rf0 = Pf - pel.f;
+						let rs0 = Ps - pel.s;
+						let ru0 = Pu - pel.u;
+						const ut = b.untwist;
+						if (ut) {
+							// Where it sat before he turned.
+							const up0 = (rf0 * spine.f + ru0 * spine.u) / body.torso;
+							const k =
+								Math.min(
+									TURN_STEPS,
+									Math.max(0, Math.round(up0 * TURN_STEPS)),
+								) * 9;
+							const nf = ut[k]! * rf0 + ut[k + 1]! * rs0 + ut[k + 2]! * ru0;
+							const ns = ut[k + 3]! * rf0 + ut[k + 4]! * rs0 + ut[k + 5]! * ru0;
+							const nu = ut[k + 6]! * rf0 + ut[k + 7]! * rs0 + ut[k + 8]! * ru0;
+							rf0 = nf;
+							rs0 = ns;
+							ru0 = nu;
+						}
+						torsoAt(
+							rf0 * spine.f + ru0 * spine.u,
+							rs0,
+							rf0 * fw.f + ru0 * fw.u,
+						);
+						break;
+					}
+					case SHORTS: {
+						cloth = true;
+						// The stripe down the outside of the leg: where the
+						// surface faces out from his side.
+						const lf = fc.B.f - fc.A.f;
+						const ls = fc.B.s - fc.A.s;
+						const lu = fc.B.u - fc.A.u;
+						const ll = len3(lf, ls, lu) || 1;
+						let of = Pf - fc.A.f - lf * t;
+						let os = Ps - fc.A.s - ls * t;
+						let ou = Pu - fc.A.u - lu * t;
+						const along = (of * lf + os * ls + ou * lu) / (ll * ll);
+						of -= lf * along;
+						os -= ls * along;
+						ou -= lu * along;
+						const ol = len3(of, os, ou) || 1;
+						let c =
+							!look.outfit && (os * (side === 0 ? -1 : 1)) / ol > 0.95
+								? pal.stripe
+								: pal.shorts;
+						if (wraps) {
+							// Where this would be on him standing straight: how
+							// far across him (square to his thigh) and ahead.
+							const ax = lf / ll;
+							const ay = ls / ll;
+							const az = lu / ll;
+							let xf = -ax * ay;
+							let xs = 1 - ay * ay;
+							let xu = -az * ay;
+							const xl = len3(xf, xs, xu) || 1;
+							xf /= xl;
+							xs /= xl;
+							xu /= xl;
+							const across = of * xf + os * xs + ou * xu;
+							const ahead =
+								of * (ay * xu - az * xs) +
+								os * (az * xf - ax * xu) +
+								ou * (ax * xs - ay * xf);
+							const out = side === 0 ? -1 : 1;
+							c = artOver(
+								wraps.shorts,
+								-(0.16 + 0.68 * (t + along)) * body.thigh,
+								out * body.hipW + across,
+								ahead,
+								// The inside of his leg faces the other one, not
+								// out to his side.
+								across * out < 0,
+								pal.shorts,
 							);
-							break;
 						}
-						case SHORTS: {
-							cloth = true;
-							// The stripe down the outside of the leg: where the
-							// surface faces out from his side.
+						cr = c[0];
+						cg = c[1];
+						cb = c[2];
+						break;
+					}
+					case UPPER:
+					case FORE: {
+						let c = fc.kind === UPPER ? pal.upper[side]! : pal.fore[side]!;
+						const band = pal.wrist[side];
+						if (
+							fc.kind === FORE &&
+							band &&
+							t > 0.76 &&
+							t < 0.97 &&
+							fc.len > 0
+						) {
+							c = band;
+						}
+						if (
+							look.outfit?.sleeves === "short" &&
+							fc.kind === UPPER &&
+							t > 0.55
+						) {
+							c = pal.skin;
+						}
+						cloth = c !== pal.skin;
+						cr = c[0];
+						cg = c[1];
+						cb = c[2];
+						break;
+					}
+					case THIGH:
+					case SHIN: {
+						let c = pal.legs[side]!;
+						if (fc.kind === SHIN && Pu < cut.sockTop) {
+							c = pal.sock;
+						}
+						// A pad round the knee.
+						const pad = pal.knee[side];
+						if (
+							pad &&
+							((fc.kind === THIGH && t > 0.82) || (fc.kind === SHIN && t < 0.2))
+						) {
+							c = pad;
+						}
+						cloth = c !== pal.skin;
+						cr = c[0];
+						cg = c[1];
+						cb = c[2];
+						break;
+					}
+					case SHOE: {
+						let c = Pu < cut.sole ? pal.sole : pal.shoe;
+						if (Pu < cut.sole * 0.35) {
+							c = pal.tread;
+						} else if (c === pal.shoe) {
+							// Round the shoe from its axis: up its side, or
+							// over the top of it - on the shoe itself, heel to
+							// toe, not the collar round his ankle.
 							const lf = fc.B.f - fc.A.f;
 							const ls = fc.B.s - fc.A.s;
 							const lu = fc.B.u - fc.A.u;
-							const ll = Math.hypot(lf, ls, lu) || 1;
-							let of = Pf - fc.A.f - lf * t;
-							let os = Ps - fc.A.s - ls * t;
-							let ou = Pu - fc.A.u - lu * t;
-							const along = (of * lf + os * ls + ou * lu) / (ll * ll);
-							of -= lf * along;
-							os -= ls * along;
-							ou -= lu * along;
-							const ol = Math.hypot(of, os, ou) || 1;
-							let c =
-								!look.outfit && (os * (side === 0 ? -1 : 1)) / ol > 0.95
-									? pal.stripe
-									: pal.shorts;
-							if (wraps) {
-								// Where this would be on him standing straight: how
-								// far across him (square to his thigh) and ahead.
-								const ax = lf / ll;
-								const ay = ls / ll;
-								const az = lu / ll;
-								let xf = -ax * ay;
-								let xs = 1 - ay * ay;
-								let xu = -az * ay;
-								const xl = Math.hypot(xf, xs, xu) || 1;
-								xf /= xl;
-								xs /= xl;
-								xu /= xl;
-								const across = of * xf + os * xs + ou * xu;
-								const ahead =
-									of * (ay * xu - az * xs) +
-									os * (az * xf - ax * xu) +
-									ou * (ax * xs - ay * xf);
-								const out = side === 0 ? -1 : 1;
-								c = artOver(
-									wraps.shorts,
-									-(0.16 + 0.68 * (t + along)) * body.thigh,
-									out * body.hipW + across,
-									ahead,
-									// The inside of his leg faces the other one, not
-									// out to his side.
-									across * out < 0,
-									pal.shorts,
-								);
-							}
-							cr = c[0];
-							cg = c[1];
-							cb = c[2];
-							break;
-						}
-						case UPPER:
-						case FORE: {
-							let c = fc.kind === UPPER ? pal.upper[side]! : pal.fore[side]!;
-							const band = pal.wrist[side];
-							if (
-								fc.kind === FORE &&
-								band &&
-								t > 0.76 &&
-								t < 0.97 &&
-								fc.len > 0
-							) {
-								c = band;
-							}
-							if (
-								look.outfit?.sleeves === "short" &&
-								fc.kind === UPPER &&
-								t > 0.55
-							) {
-								c = pal.skin;
-							}
-							cloth = c !== pal.skin;
-							cr = c[0];
-							cg = c[1];
-							cb = c[2];
-							break;
-						}
-						case THIGH:
-						case SHIN: {
-							let c = pal.legs[side]!;
-							if (fc.kind === SHIN && Pu < cut.sockTop) {
-								c = pal.sock;
-							}
-							// A pad round the knee.
-							const pad = pal.knee[side];
-							if (
-								pad &&
-								((fc.kind === THIGH && t > 0.82) ||
-									(fc.kind === SHIN && t < 0.2))
-							) {
-								c = pad;
-							}
-							cloth = c !== pal.skin;
-							cr = c[0];
-							cg = c[1];
-							cb = c[2];
-							break;
-						}
-						case SHOE: {
-							let c = Pu < cut.sole ? pal.sole : pal.shoe;
-							if (Pu < cut.sole * 0.35) {
-								c = pal.tread;
-							} else if (c === pal.shoe) {
-								// Round the shoe from its axis: up its side, or
-								// over the top of it - on the shoe itself, heel to
-								// toe, not the collar round his ankle.
-								const lf = fc.B.f - fc.A.f;
-								const ls = fc.B.s - fc.A.s;
-								const lu = fc.B.u - fc.A.u;
-								const ll = Math.hypot(lf, ls, lu) || 1;
-								if (ll > body.ankleR * 4) {
-									const of = Pf - fc.A.f - lf * t;
-									const os = Ps - fc.A.s - ls * t;
-									const ou = Pu - fc.A.u - lu * t;
-									const ol = Math.hypot(of, os, ou) || 1;
-									const up = ou / ol;
-									const out = Math.abs(of * ls - os * lf) / (ll * ol);
-									// The stripe sweeps up from the toe to the heel,
-									// widest in the middle.
-									const mid = 0.42 - (0.5 * (t - 0.15)) / 0.7;
-									const wide = 0.28 * (1 - Math.abs(t - 0.5) * 1.6);
-									if (
-										out > 0.5 &&
-										t > 0.15 &&
-										t < 0.85 &&
-										Math.abs(up - mid) < wide
-									) {
-										c = pal.accent;
-									} else if (up > 0.78 && t > 0.38 && t < 0.72) {
-										c = pal.laces;
-									}
+							const ll = len3(lf, ls, lu) || 1;
+							if (ll > body.ankleR * 4) {
+								const of = Pf - fc.A.f - lf * t;
+								const os = Ps - fc.A.s - ls * t;
+								const ou = Pu - fc.A.u - lu * t;
+								const ol = len3(of, os, ou) || 1;
+								const up = ou / ol;
+								const out = Math.abs(of * ls - os * lf) / (ll * ol);
+								// The stripe sweeps up from the toe to the heel,
+								// widest in the middle.
+								const mid = 0.42 - (0.5 * (t - 0.15)) / 0.7;
+								const wide = 0.28 * (1 - Math.abs(t - 0.5) * 1.6);
+								if (
+									out > 0.5 &&
+									t > 0.15 &&
+									t < 0.85 &&
+									Math.abs(up - mid) < wide
+								) {
+									c = pal.accent;
+								} else if (up > 0.78 && t > 0.38 && t < 0.72) {
+									c = pal.laces;
 								}
 							}
-							cloth = true;
-							cr = c[0];
-							cg = c[1];
-							cb = c[2];
-							break;
 						}
-						case BALL: {
-							// Its seams: round its middle, and a great circle
-							// across.
-							const nfx = hx[f]!;
-							const nfy = hy[f]!;
-							const nfz = hn[f]!;
-							const seam = Math.min(
-								Math.abs(nfy * 0.98 + nfx * 0.17),
-								Math.abs(nfx * 0.95 - nfz * 0.3),
-							);
-							const c = seam < 0.055 ? SEAM_RGB : BALL_RGB;
-							cr = c[0];
-							cg = c[1];
-							cb = c[2];
-							break;
-						}
-						case CAM_BODY:
-						case CAM_LENS: {
-							const c = fc.kind === CAM_BODY ? CAM_BODY_RGB : CAM_LENS_RGB;
-							cr = c[0];
-							cg = c[1];
-							cb = c[2];
-							break;
-						}
-						case HAND: {
-							// His palm, and the inside of his fingers, paler
-							// than the back of his hand.
-							const p = b.pn[side]!;
-							const nbf = hx[f]! * rt.f + hy[f]! * dn.f + hn[f]! * tw3.f;
-							const nbs = hx[f]! * rt.s + hy[f]! * dn.s + hn[f]! * tw3.s;
-							const nbu = hx[f]! * rt.u + hy[f]! * dn.u + hn[f]! * tw3.u;
-							const inPalm = nbf * p.f + nbs * p.s + nbu * p.u;
-							const c = pal.skin;
-							const e =
-								inPalm > 0.15 ? Math.min(1, (inPalm - 0.15) / 0.25) * 0.42 : 0;
-							cr = c[0] + (pal.palm[0] - c[0]) * e;
-							cg = c[1] + (pal.palm[1] - c[1]) * e;
-							cb = c[2] + (pal.palm[2] - c[2]) * e;
-							break;
-						}
-						default: {
-							cr = pal.skin[0];
-							cg = pal.skin[1];
-							cb = pal.skin[2];
-						}
+						cloth = true;
+						cr = c[0];
+						cg = c[1];
+						cb = c[2];
+						break;
 					}
-					// Cloth hangs smoother over him than skin does.
-					if (cloth) {
-						sz += 0.35;
-						const mm = Math.hypot(sx, sy, sz);
-						sx /= mm;
-						sy /= mm;
-						sz /= mm;
+					case BALL: {
+						// Its seams: round its middle, and a great circle
+						// across.
+						const nfx = hx[f]!;
+						const nfy = hy[f]!;
+						const nfz = hn[f]!;
+						const seam = Math.min(
+							Math.abs(nfy * 0.98 + nfx * 0.17),
+							Math.abs(nfx * 0.95 - nfz * 0.3),
+						);
+						const c = seam < 0.055 ? SEAM_RGB : BALL_RGB;
+						cr = c[0];
+						cg = c[1];
+						cb = c[2];
+						break;
 					}
-					const lam = sx * LIGHT[0] + sy * LIGHT[1] + sz * LIGHT[2];
-					// Two tones, the step between them soft.
-					const e = Math.min(1, Math.max(0, (lam - 0.34) / 0.16));
-					const lit = e * e * (3 - 2 * e);
-					const dark = 1 - 0.22 * shadow;
-					let r: number;
-					let g: number;
-					let bb: number;
-					if (cloth) {
-						const k = (0.79 + 0.21 * lit) * dark;
-						r = cr * k;
-						g = cg * k;
-						bb = cb * k;
-					} else {
-						// Skin in shadow warms.
-						const k = dark;
-						r = cr * (0.84 + 0.16 * lit) * k;
-						g = cg * (0.74 + 0.26 * lit) * k;
-						bb = cb * (0.72 + 0.28 * lit) * k;
+					case CAM_BODY:
+					case CAM_LENS: {
+						const c = fc.kind === CAM_BODY ? CAM_BODY_RGB : CAM_LENS_RGB;
+						cr = c[0];
+						cg = c[1];
+						cb = c[2];
+						break;
 					}
-					// A fine line where he passes in front of himself - and
-					// all round his hands, so they read.
-					if ((behind || fc.kind === HAND) && S > -lineW) {
-						const e = Math.min(1, (S + lineW) / lineW);
-						r += (cr * 0.38 - r) * e;
-						g += (cg * 0.38 - g) * e;
-						bb += (cb * 0.38 - bb) * e;
+					case HAND: {
+						// His palm, and the inside of his fingers, paler
+						// than the back of his hand.
+						const p = b.pn[side]!;
+						const nbf = hx[f]! * rt.f + hy[f]! * dn.f + hn[f]! * tw3.f;
+						const nbs = hx[f]! * rt.s + hy[f]! * dn.s + hn[f]! * tw3.s;
+						const nbu = hx[f]! * rt.u + hy[f]! * dn.u + hn[f]! * tw3.u;
+						const inPalm = nbf * p.f + nbs * p.s + nbu * p.u;
+						const c = pal.skin;
+						const e =
+							inPalm > 0.15 ? Math.min(1, (inPalm - 0.15) / 0.25) * 0.42 : 0;
+						cr = c[0] + (pal.palm[0] - c[0]) * e;
+						cg = c[1] + (pal.palm[1] - c[1]) * e;
+						cb = c[2] + (pal.palm[2] - c[2]) * e;
+						break;
 					}
-					const o = (y * w + x) * 4;
-					if (x < bx0) {
-						bx0 = x;
+					default: {
+						cr = pal.skin[0];
+						cg = pal.skin[1];
+						cb = pal.skin[2];
 					}
-					if (x > bx1) {
-						bx1 = x;
-					}
-					if (y < by0) {
-						by0 = y;
-					}
-					if (y > by1) {
-						by1 = y;
-					}
-					d[o] = r;
-					d[o + 1] = g;
-					d[o + 2] = bb;
-					d[o + 3] = cover >= 1 ? 255 : 255 * cover;
-					if (owner) {
-						owner[y * w + x] = fc.group;
-					}
+				}
+				// Cloth hangs smoother over him than skin does.
+				if (cloth) {
+					sz += 0.35;
+					const mm = len3(sx, sy, sz);
+					sx /= mm;
+					sy /= mm;
+					sz /= mm;
+				}
+				const lam = sx * LIGHT[0] + sy * LIGHT[1] + sz * LIGHT[2];
+				// Two tones, the step between them soft.
+				const e = Math.min(1, Math.max(0, (lam - 0.34) / 0.16));
+				const lit = e * e * (3 - 2 * e);
+				const dark = 1 - 0.22 * shadow;
+				let r: number;
+				let g: number;
+				let bb: number;
+				if (cloth) {
+					const k = (0.79 + 0.21 * lit) * dark;
+					r = cr * k;
+					g = cg * k;
+					bb = cb * k;
+				} else {
+					// Skin in shadow warms.
+					const k = dark;
+					r = cr * (0.84 + 0.16 * lit) * k;
+					g = cg * (0.74 + 0.26 * lit) * k;
+					bb = cb * (0.72 + 0.28 * lit) * k;
+				}
+				// A fine line where he passes in front of himself - and
+				// all round his hands, so they read.
+				if ((behind || fc.kind === HAND) && S > -lineW) {
+					const e = Math.min(1, (S + lineW) / lineW);
+					r += (cr * 0.38 - r) * e;
+					g += (cg * 0.38 - g) * e;
+					bb += (cb * 0.38 - bb) * e;
+				}
+				const o = (y * w + x) * 4;
+				if (x < bx0) {
+					bx0 = x;
+				}
+				if (x > bx1) {
+					bx1 = x;
+				}
+				if (y < by0) {
+					by0 = y;
+				}
+				if (y > by1) {
+					by1 = y;
+				}
+				d[o] = r;
+				d[o + 1] = g;
+				d[o + 2] = bb;
+				d[o + 3] = cover >= 1 ? 255 : 255 * cover;
+				if (owner) {
+					owner[y * w + x] = fc.group;
 				}
 			}
 		}

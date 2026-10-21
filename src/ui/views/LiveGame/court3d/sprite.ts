@@ -527,7 +527,16 @@ export const drawSprite = (
 	const img = made.img;
 	const d = img.data;
 	rim(d, w, h, undefined, made.box);
-	s.putImageData(img, 0, 0);
+	// Only what is drawn of him (and the rim round it) is put on the sheet:
+	// the rest of his box is clear already, and most of it.
+	const box = made.box;
+	const rx0 = Math.max(0, box.x0 - 1);
+	const ry0 = Math.max(0, box.y0 - 1);
+	const rw = Math.min(w, box.x1 + 2) - rx0;
+	const rh = Math.min(h, box.y1 + 2) - ry0;
+	if (rw > 0 && rh > 0) {
+		s.putImageData(img, 0, 0, rx0, ry0, rw, rh);
+	}
 	// His face, shrunk to the sprite's scale - and the rim round it, just
 	// where it is new: the rest of him is done.
 	s.setTransform(1 / px, 0, 0, 1 / px, -ox / px, -oy / px);
@@ -572,14 +581,15 @@ export const drawSprite = (
 		t.ctx.clearRect(0, 0, w, h);
 		const top = made.over;
 		rim(top.data, w, h, undefined, made.box);
-		t.ctx.putImageData(top, 0, 0);
-		s.drawImage(t.canvas, 0, 0, w, h, 0, 0, w, h);
+		if (rw > 0 && rh > 0) {
+			t.ctx.putImageData(top, 0, 0, rx0, ry0, rw, rh);
+			s.drawImage(t.canvas, rx0, ry0, rw, rh, rx0, ry0, rw, rh);
+		}
 	}
 
 	// Kept for next time: just what is drawn of him (the rim round it, his
 	// head and all).
 	if (cache && key) {
-		const box = made.box;
 		const x0 = Math.max(0, Math.min(box.x0 - 1, hx0));
 		const y0 = Math.max(0, Math.min(box.y0 - 1, hy0));
 		const x1 = Math.min(w, Math.max(box.x1 + 2, hx1));
