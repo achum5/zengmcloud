@@ -98,3 +98,11 @@ test("a pick's own error replaces a player's", () => {
 	]);
 	assert.strictEqual(sure, 0);
 });
+
+test("a star's worth is less sure than a role player's", () => {
+	const at = (ovr: number) =>
+		sideMargin(outlook, contender, [
+			{ place: 2, availability: always, ovr: always.map(() => ovr) },
+		]);
+	assert.isAbove(at(72), 2 * at(52));
+});

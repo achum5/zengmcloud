@@ -11,9 +11,11 @@ import {
 	outlookWatchers,
 	tradeWatchers,
 } from "../../worker/core/realisticFrontOffice/market.ts";
+import { marginSettings } from "../../worker/core/realisticFrontOffice/margin.ts";
 import {
 	OUTLOOK_YEARS,
 	outlookSeason,
+	outlookSettings,
 	projectPlayer,
 	retentionOf,
 	seasonLine,
@@ -77,6 +79,8 @@ test.runIf(env.ARENA_RUN === "1")(
 				marketSettings.valueWaiting = env.ARENA_NO_WAIT !== "1";
 				// ARENA_MARKET='{"oneSided":false}': any other market setting.
 				Object.assign(marketSettings, JSON.parse(env.ARENA_MARKET ?? "{}"));
+				Object.assign(outlookSettings, JSON.parse(env.ARENA_OUTLOOK ?? "{}"));
+				Object.assign(marginSettings, JSON.parse(env.ARENA_MARGIN ?? "{}"));
 			}
 			// ARENA_PICK_SURVEY=1: where every outlook expects each team's own
 			// picks to land, draft by draft, to set against where they do.

@@ -14,12 +14,14 @@ import { SLOT_MINUTES } from "./strength.ts";
 // young player's spread of careers, a coin-flip re-signing - but how wrong its
 // own reading can be:
 //
-//   - On-court value: what a player's ratings are worth, against fresh swap
-//     tests in the sim (src/test/impact): 0.37 points a game at the sixth
-//     man's minutes, about 0.8 per full game on the floor.
+//   - On-court value: what a player's ratings are worth, against the swap
+//     tests in the sim the model was fit on (src/test/impact), out of
+//     sample, less the sim's own noise. The better the player, the further
+//     off it can be.
 //   - Projections: how much further real careers land from the projection
 //     than its own spread allows for, by seasons ahead, measured on every
-//     player the front offices traded in arena leagues.
+//     player the front offices traded in arena leagues - in points of
+//     overall, worth more to the better player.
 //
 // Each moved player's error carries through every season he is expected to
 // be there, weighted by his minutes and by how much a point of strength moves
@@ -30,20 +32,27 @@ import { SLOT_MINUTES } from "./strength.ts";
 // over everywhere the pick may land, so the errors in those wash out. What
 // does not is a misread of how good its team will be.
 
-// Points a game, per full game on the floor.
-const VALUE_ERROR = 0.8;
+// Points a game per full game on the floor, by overall: about 0.4 up to 52,
+// then 0.037 more for each point (3,252 swaps at the sixth man's minutes:
+// 0.4 at 50-55, 0.85 at 60-65, 1.3 at 70 and up).
+const valueError = (ovr: number) => 0.4 + 0.037 * Math.max(0, ovr - 52);
 
-// Extra points a game per full game on the floor, by seasons ahead: real
-// careers land 1.0, 1.8 and 2.2 points of overall further from the projection
-// than its own spread allows, one to three seasons out (4,240 to 2,393
-// traded players), growing about 0.4 a season after that, at about 0.3 points
-// a game per full game for each point of overall.
+// Points of overall, by seasons ahead: real careers land 1.0, 1.8 and 2.2
+// points further from the projection than its own spread allows, one to
+// three seasons out (4,240 to 2,393 traded players), growing about 0.4 a
+// season after that.
 const PROJECTION_ERROR: readonly number[] = [
-	0, 0.3, 0.53, 0.66, 0.78, 0.9, 1.02, 1.14, 1.26, 1.38, 1.5,
+	0, 1, 1.8, 2.2, 2.6, 3, 3.4, 3.8, 4.2, 4.6, 5,
 ];
 
-// How many errors a gain must clear.
-const MARGIN_Z = 1;
+// Points a game per full game on the floor that a point of overall is worth,
+// by overall: the slope of what the same swaps were worth (0.23 at 50, 0.39 at
+// 60, 0.63 at 70).
+const perOvr = (ovr: number) =>
+	3 * 1.4946e-4 * ovr ** 2 - 2 * 1.67468e-2 * ovr + 0.781991;
+
+// How many errors a gain must clear. Settable for the arena.
+export const marginSettings = { z: 1 };
 
 export type MovedPlayer = {
 	// His place in the pecking order of the team he is priced for - each
@@ -51,6 +60,8 @@ export type MovedPlayer = {
 	place: number | readonly number[];
 	// His chance of being there, each season of the outlook.
 	availability: readonly number[];
+	// His expected overall, each season of the outlook.
+	ovr?: readonly number[];
 	// For a pick: how far off its value can be each season, in points per
 	// full game, in place of a player's errors.
 	error?: readonly number[];
@@ -105,12 +116,14 @@ export const sideMargin = (
 			const curve = outlook.titleCurves[y]!;
 			const q = curveAt(curve, path[y]!);
 			const slope = curve.b * q * (1 - q);
-			const projection = PROJECTION_ERROR[y] ?? PROJECTION_ERROR.at(-1)!;
+			const ovr = p.ovr?.[y] ?? 52;
+			const projection =
+				(PROJECTION_ERROR[y] ?? PROJECTION_ERROR.at(-1)!) * perOvr(ovr);
 			const error =
-				p.error?.[y] ?? Math.sqrt(VALUE_ERROR ** 2 + projection ** 2);
+				p.error?.[y] ?? Math.sqrt(valueError(ovr) ** 2 + projection ** 2);
 			sd += PATIENCE ** y * slope * minutes * (p.availability[y] ?? 0) * error;
 		}
 		variance += sd * sd;
 	}
-	return MARGIN_Z * Math.sqrt(variance);
+	return marginSettings.z * Math.sqrt(variance);
 };

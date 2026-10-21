@@ -472,21 +472,21 @@ const marginOf = (
 		const place = [...roster]
 			.sort((x, y) => y.valueNoPot - x.valueNoPot)
 			.indexOf(p);
+		const lines = Array.from({ length: OUTLOOK_YEARS + 1 }, (_, y) =>
+			seasonLine(
+				outlook.lines,
+				p,
+				outlook.season,
+				outlook.offset,
+				y,
+				outlook.remaining.get(t.tid) ?? 0,
+				retentionOf(outlook, p.pid, t.tid),
+			),
+		);
 		moved.push({
 			place,
-			availability: Array.from(
-				{ length: OUTLOOK_YEARS + 1 },
-				(_, y) =>
-					seasonLine(
-						outlook.lines,
-						p,
-						outlook.season,
-						outlook.offset,
-						y,
-						outlook.remaining.get(t.tid) ?? 0,
-						retentionOf(outlook, p.pid, t.tid),
-					).availability,
-			),
+			availability: lines.map((line) => line.availability),
+			ovr: lines.map((line) => line.valueNoPot),
 		});
 	};
 	for (const x of incoming) {

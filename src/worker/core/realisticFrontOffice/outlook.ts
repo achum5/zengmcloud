@@ -242,6 +242,13 @@ export const retentionOf = (
 
 // Works out, for any of these players not yet asked about, his chance of
 // re-signing with this team.
+// For the arena, to measure what a behaviour is worth by turning it off.
+export const outlookSettings = {
+	// A player's chance of re-signing depends on the team: off, every team gets
+	// his chance with his current one.
+	teamRetention: true,
+};
+
 export const ensureRetention = async (
 	outlook: Pick<LeagueOutlook, "retention">,
 	players: readonly Player[],
@@ -250,9 +257,10 @@ export const ensureRetention = async (
 	for (const p of players) {
 		const key = retentionKey(p.pid, tid);
 		if (!outlook.retention.has(key)) {
+			const asked = !outlookSettings.teamRetention && p.tid >= 0 ? p.tid : tid;
 			const { probWilling } = await moodInfo(
-				p.tid === tid ? p : { ...p, tid },
-				tid,
+				p.tid === asked ? p : { ...p, tid: asked },
+				asked,
 			);
 			outlook.retention.set(key, Math.round(probWilling * 1000) / 1000);
 		}
