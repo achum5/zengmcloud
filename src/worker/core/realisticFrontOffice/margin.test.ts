@@ -1,5 +1,5 @@
 import { assert, test } from "vitest";
-import { sideMargin } from "./margin.ts";
+import { draftPlaceMisread, sideMargin } from "./margin.ts";
 import { OUTLOOK_YEARS, type LeagueOutlook } from "./outlook.ts";
 
 const outlook = {
@@ -62,4 +62,39 @@ test("a pick's player carries doubt only once he is drafted", () => {
 	]);
 	assert.isAbove(soon, later);
 	assert.isAbove(later, 0);
+});
+
+test("a pick's team is misread less once its draft order is set", () => {
+	const teams = new Map(
+		Array.from({ length: 30 }, (_, tid) => [
+			tid,
+			{
+				tid,
+				strength: always.map(() => tid - 15),
+				title: [],
+				playoffs: [],
+			},
+		]),
+	);
+	const midSeason = {
+		...outlook,
+		season: 2030,
+		offset: 0,
+		progress: 0.5,
+		teams,
+	} as unknown as LeagueOutlook;
+	const pick = { originalTid: 15, season: 2030, round: 1, pick: 0 };
+	const later = draftPlaceMisread(midSeason, { ...pick, season: 2032 });
+	const now = draftPlaceMisread(midSeason, pick);
+	assert.isAbove(later, now);
+	assert.isAbove(now, 0);
+	assert.strictEqual(draftPlaceMisread(midSeason, { ...pick, pick: 3 }), 0);
+});
+
+test("a pick's own error replaces a player's", () => {
+	const place = always.map(() => 5);
+	const sure = sideMargin(outlook, contender, [
+		{ place, availability: always, error: always.map(() => 0) },
+	]);
+	assert.strictEqual(sure, 0);
 });

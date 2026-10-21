@@ -36,8 +36,10 @@ const PRICE_CURVE: readonly (readonly [
 // Free agents a team signs in one summer, at most, with its room.
 const MAX_SIGNINGS = 2;
 
-// Room smaller than this buys nothing worth counting.
-const MIN_SHARE = 0.05;
+// Room smaller than the cheapest signing buys nothing. Anything more buys
+// someone, if only a player barely better than the minimum - so cap room's
+// worth has no cliff a small salary could push a team over.
+const MIN_SHARE = PRICE_CURVE[0]![0];
 
 // Rosters are priced thousands of times a day, so these are remembered for
 // the league's contract settings of the moment.

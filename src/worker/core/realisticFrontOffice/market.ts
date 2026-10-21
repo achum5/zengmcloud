@@ -7,7 +7,8 @@ import getPayroll from "../team/getPayroll.ts";
 import isUntradable from "../trade/isUntradable.ts";
 import processTrade from "../trade/processTrade.ts";
 import summary from "../trade/summary.ts";
-import { sideMargin, type MovedPlayer } from "./margin.ts";
+import { draftPlaceMisread, sideMargin, type MovedPlayer } from "./margin.ts";
+import { valueOverReplacement } from "./strength.ts";
 import {
 	buildOutlook,
 	ensureRetention,
@@ -125,6 +126,10 @@ export const tradeWatchers: ((deal: {
 	outlook: LeagueOutlook;
 }) => void)[] = [];
 
+// Called with every outlook as it is built - for the arena, to measure its
+// projections.
+export const outlookWatchers: ((outlook: LeagueOutlook) => void)[] = [];
+
 // The outlook is rebuilt about once a week of games, keyed on league state
 // alone, so any device in charge of simming builds the same one.
 let cache: { key: string; outlook: LeagueOutlook } | undefined;
@@ -147,6 +152,9 @@ const getOutlook = async (games: number) => {
 		cache = { key, outlook: await buildOutlook() };
 		marketClock.outlooks += 1;
 		marketClock.outlookMs += performance.now() - started;
+		for (const watch of outlookWatchers) {
+			watch(cache.outlook);
+		}
 	}
 	return cache.outlook;
 };
@@ -439,17 +447,26 @@ const marginOf = (
 ) => {
 	const after = applyTrade(t, outgoing, incoming).players;
 	const moved: MovedPlayer[] = [];
+	// A pick: what it is worth if its team is misread a little either way.
 	const addPick = (dp: DraftPick, roster: readonly Player[]) => {
+		const spread = draftPlaceMisread(outlook, dp);
+		const worth = (at: ReturnType<typeof pickLineAt>) =>
+			at ? at.line.availability * valueOverReplacement(at.line) : 0;
 		const place: number[] = [];
 		const availability: number[] = [];
+		const error: number[] = [];
 		for (let y = 0; y <= OUTLOOK_YEARS; y++) {
 			const at = pickLineAt(outlook, dp, y);
+			const early = pickLineAt(outlook, dp, y, -spread);
+			const late = pickLineAt(outlook, dp, y, spread);
+			const line = (at ?? early ?? late)?.line;
 			place.push(
-				at ? roster.filter((p) => p.valueNoPot > at.line.valueNoPot).length : 0,
+				line ? roster.filter((p) => p.valueNoPot > line.valueNoPot).length : 0,
 			);
-			availability.push(at ? at.line.availability : 0);
+			availability.push(line ? 1 : 0);
+			error.push(Math.abs(worth(early) - worth(late)) / 2);
 		}
-		moved.push({ place, availability });
+		moved.push({ place, availability, error });
 	};
 	const add = (p: Player, roster: readonly Player[]) => {
 		const place = [...roster]

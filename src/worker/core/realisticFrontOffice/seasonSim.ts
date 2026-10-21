@@ -36,7 +36,7 @@ export type SeasonSimResult = {
 	roundsWon: number;
 };
 
-const normalCdf = (x: number) => {
+export const normalCdf = (x: number) => {
 	// Abramowitz and Stegun 7.1.26, good to 1e-7.
 	const t = 1 / (1 + 0.3275911 * (Math.abs(x) / Math.SQRT2));
 	const y =

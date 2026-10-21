@@ -17,11 +17,12 @@ import {
 import { projectRatings, type RatingsProjection } from "./projection.ts";
 import moodInfo from "../player/moodInfo.ts";
 import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
-import { simulateSeason } from "./seasonSim.ts";
+import { normalCdf, simulateSeason, winProbability } from "./seasonSim.ts";
 import { fitLogistic } from "./logistic.ts";
 import { buildDeadlineView, type DeadlineView } from "./timing.ts";
 import {
 	expectedRosterPoints,
+	getReplacement,
 	playerLine,
 	type StrengthPlayer,
 	type ValueRatings,
@@ -111,6 +112,8 @@ export type LeagueOutlook = {
 	firstRefillSeason: number;
 	// Season lines already worked out, for this outlook's lifetime.
 	lines: Map<string, StrengthPlayer & { availability: number }>;
+	// The same for picks (pickLineAt); null for a pick worth nothing.
+	pickLines: Map<string, PickAt | null>;
 	// Chance each player re-signs with each team, by retentionKey.
 	retention: Map<string, number>;
 	teams: Map<number, TeamOutlook>;
@@ -119,9 +122,17 @@ export type LeagueOutlook = {
 	meanPoints: number[];
 	titleCurves: Curve[];
 	playoffCurves: Curve[];
+	// Share of this season's games played, 0 in the offseason.
+	progress: number;
 	// For weighing a deal now against waiting, until the trade deadline passes.
 	deadline?: DeadlineView;
 };
+
+// How far a team's true strength may be from our read of it, in points a game,
+// outlook year y: surer once games have been played, less sure the further out
+// it reaches. `progress` is the share of the season played, for this season.
+export const strengthUncertainty = (y: number, progress: number) =>
+	Math.sqrt((1.5 + 2 * (1 - progress)) ** 2 + (1.6 * y) ** 2);
 
 // The season outlook year y is about.
 export const outlookSeason = (
@@ -248,16 +259,16 @@ export const ensureRetention = async (
 	}
 };
 
-// Pick players are the same whoever holds the pick.
-const pickLineCache = new Map<
-	string,
-	StrengthPlayer & { availability: number }
->();
-
 export type PickLike = Pick<
 	DraftPick,
 	"originalTid" | "season" | "round" | "pick"
 >;
+
+// A pick's player as a roster sees him, and what he is expected to be paid.
+type PickAt = {
+	line: StrengthPlayer & { availability: number };
+	salary: number;
+};
 
 // The players a team's picks are expected to have become by outlook year y.
 // Picks in drafts beyond the last one that exists are the team's own.
@@ -278,58 +289,170 @@ const pickLines = (
 	let salaries = 0;
 	for (const dp of all) {
 		const at = pickLineAt(outlook, dp, y);
-		if (!at) {
-			continue;
+		if (at) {
+			lines.push(at.line);
+			salaries += at.salary;
 		}
-		lines.push(at.line);
-		// Only the players worth keeping are paid.
-		salaries +=
-			at.line.availability *
-			pickSalary({
-				slot: at.slot,
-				round: dp.round,
-				years: at.years,
-				ovr: at.line.valueNoPot,
-			});
 	}
 	return { lines, salaries };
 };
 
+// How many places in its round a pick lands from where the outlook expects,
+// typically (root mean square), by seasons of games still to be played before
+// its draft order is set. Measured in arena leagues (ARENA_PICK_SURVEY): every
+// outlook's expected place for every team's own first-round pick, against
+// where it landed, the lottery included (35,400 of them). A guess at random
+// would be about 12 places off.
+const DRAFT_PLACE_SPREAD: readonly (readonly [number, number])[] = [
+	[0, 0],
+	[0.5, 4.9],
+	[0.75, 5],
+	[1, 6],
+	[1.5, 7.1],
+	[2, 7.7],
+	[3, 9.2],
+	[4, 10.1],
+	[5, 11.7],
+];
+
+const spreadAt = (seasons: number) => {
+	const last = DRAFT_PLACE_SPREAD.at(-1)!;
+	if (seasons >= last[0]) {
+		return last[1];
+	}
+	let i = 0;
+	while (DRAFT_PLACE_SPREAD[i + 1]![0] < seasons) {
+		i += 1;
+	}
+	const [s0, e0] = DRAFT_PLACE_SPREAD[i]!;
+	const [s1, e1] = DRAFT_PLACE_SPREAD[i + 1]!;
+	return e0 + ((e1 - e0) * (seasons - s0)) / (s1 - s0);
+};
+
+// How far a pick may land from where it is expected to, in places in its
+// round - none once the draft order is set.
+export const draftPlaceSpread = (
+	outlook: Pick<LeagueOutlook, "season" | "offset" | "progress">,
+	dp: PickLike,
+) => {
+	if (dp.pick > 0 || typeof dp.season !== "number") {
+		return 0;
+	}
+	const seasons =
+		outlook.offset === 0
+			? dp.season - outlook.season + 1 - outlook.progress
+			: dp.season - outlook.season;
+	return spreadAt(Math.max(0, seasons));
+};
+
+// Where a pick is expected to land in its round, 0 for the first.
+const expectedPlace = (
+	outlook: Pick<LeagueOutlook, "draftPlace" | "season" | "offset" | "numTeams">,
+	dp: PickLike,
+) => {
+	if (dp.pick > 0) {
+		return dp.pick - 1;
+	}
+	const places = outlook.draftPlace.get(dp.originalTid);
+	const yDraft = (dp.season as number) - outlookSeason(outlook, 0);
+	return (
+		places?.[Math.min(OUTLOOK_YEARS, Math.max(0, yDraft))] ??
+		Math.floor(outlook.numTeams / 2)
+	);
+};
+
 // The player one pick is expected to have become by outlook year y, if he has
-// been drafted by then, with the chance he is worth a roster place and so
-// still around (pickValue.ts).
+// been drafted by then: averaged over everywhere in the draft the pick may
+// land, and over whether he turns out worth a roster place (his availability;
+// pickValue.ts), with what he is expected to be paid. `shift` moves where the
+// pick is expected to land, to price how much a misread of that matters.
 export const pickLineAt = (
 	outlook: Omit<LeagueOutlook, "teams" | "titleCurves" | "playoffCurves">,
 	dp: PickLike,
 	y: number,
-) => {
+	shift = 0,
+): PickAt | undefined => {
 	const season = outlookSeason(outlook, y);
 	if (typeof dp.season !== "number" || dp.season >= season) {
 		return undefined;
 	}
-	const numPicks = outlook.numRounds * outlook.numTeams;
-	let place;
-	if (dp.pick > 0) {
-		place = dp.pick - 1;
-	} else {
-		const places = outlook.draftPlace.get(dp.originalTid);
-		const yDraft = dp.season - outlookSeason(outlook, 0);
-		place =
-			places?.[Math.min(OUTLOOK_YEARS, Math.max(0, yDraft))] ??
-			Math.floor(outlook.numTeams / 2);
-	}
-	const slot = (dp.round - 1) * outlook.numTeams + place;
+	const n = outlook.numTeams;
+	const center = Math.min(
+		n - 1,
+		Math.max(0, expectedPlace(outlook, dp) + shift),
+	);
+	const spread = Math.round(10 * draftPlaceSpread(outlook, dp)) / 10;
 	const years = season - dp.season;
-	const key = `${slot}:${numPicks}:${years}`;
-	let line = pickLineCache.get(key);
-	if (!line) {
-		line = pickPlayer({ slot, numPicks, years });
-		pickLineCache.set(key, line);
+	const key = `${dp.round}:${Math.round(10 * center) / 10}:${spread}:${years}`;
+	let at = outlook.pickLines.get(key);
+	if (at === undefined) {
+		at = averagePick(outlook, dp.round, center, spread, years);
+		outlook.pickLines.set(key, at);
 	}
-	if (line.availability <= 0) {
-		return undefined;
+	return at ?? undefined;
+};
+
+const averagePick = (
+	outlook: Pick<LeagueOutlook, "numTeams" | "numRounds">,
+	round: number,
+	center: number,
+	spread: number,
+	years: number,
+): PickAt | null => {
+	const n = outlook.numTeams;
+	const numPicks = outlook.numRounds * n;
+	// The chance of each place in the round, the ends taking what lies beyond.
+	const weights: number[] = [];
+	if (spread > 0) {
+		for (let k = 0; k < n; k++) {
+			const below = k === 0 ? 0 : normalCdf((k - 0.5 - center) / spread);
+			const above = k === n - 1 ? 1 : normalCdf((k + 0.5 - center) / spread);
+			weights.push(above - below);
+		}
+	} else {
+		for (let k = 0; k < n; k++) {
+			weights.push(k === Math.round(center) ? 1 : 0);
+		}
 	}
-	return { line, slot, years };
+	let kept = 0;
+	let roleFree = 0;
+	let offense = 0;
+	let usage = 0;
+	let ovr = 0;
+	let salary = 0;
+	for (const [k, w] of weights.entries()) {
+		if (w < 1e-4) {
+			continue;
+		}
+		const slot = (round - 1) * n + k;
+		const p = pickPlayer({ slot, numPicks, years });
+		const share = w * p.availability;
+		if (share <= 0) {
+			continue;
+		}
+		kept += share;
+		roleFree += share * p.roleFree;
+		offense += share * p.offense;
+		usage += share * p.usage;
+		ovr += share * p.valueNoPot;
+		// Only the players worth keeping are paid.
+		salary += share * pickSalary({ slot, round, years, ovr: p.valueNoPot });
+	}
+	if (kept <= 0) {
+		return null;
+	}
+	return {
+		line: {
+			roleFree: roleFree / kept,
+			offense: offense / kept,
+			usage: usage / kept,
+			// Who he is is not known yet, so no particular skills.
+			synergy: getReplacement().synergy,
+			valueNoPot: ovr / kept,
+			availability: kept,
+		},
+		salary,
+	};
 };
 
 // What a player is expected to be paid in a season of the outlook: his
@@ -514,23 +637,35 @@ export const buildOutlook = async ({
 		deadMoney,
 		firstRefillSeason: season + 1 + (phase === PHASE.FREE_AGENCY ? 1 : 0),
 		lines: new Map<string, StrengthPlayer & { availability: number }>(),
+		pickLines: new Map<string, PickAt | null>(),
 		retention: new Map<string, number>(),
 		meanPoints: [] as number[],
+		progress: inSeason ? progress : 0,
 	};
 	for (const t of teams) {
 		await ensureRetention(base, rosters.get(t.tid)!, t.tid);
 	}
 
-	// Where each team's own pick lands, from its roster alone: worst first.
+	// Where each team's own pick lands, from its roster alone: worst first -
+	// and this season's draft, once games are played, by the record it is
+	// heading for, the wins already banked included.
 	const rosterOnly = new Map(
 		teams.map((t) => [t.tid, teamPoints(base, t.tid, rosters.get(t.tid)!, [])]),
 	);
 	for (const t of teams) {
 		base.draftPlace.set(t.tid, []);
 	}
+	const meanNow =
+		teams.reduce((a, t) => a + rosterOnly.get(t.tid)![0]!, 0) /
+		Math.max(1, teams.length);
+	const finalWins = (tid: number) =>
+		records.get(tid)!.won +
+		remaining.get(tid)! * winProbability(rosterOnly.get(tid)![0]! - meanNow);
 	for (let y = 0; y <= OUTLOOK_YEARS; y++) {
-		const order = [...teams].sort(
-			(a, b) => rosterOnly.get(a.tid)![y]! - rosterOnly.get(b.tid)![y]!,
+		const order = [...teams].sort((a, b) =>
+			y === 0 && inSeason
+				? finalWins(a.tid) - finalWins(b.tid)
+				: rosterOnly.get(a.tid)![y]! - rosterOnly.get(b.tid)![y]!,
 		);
 		for (const [i, t] of order.entries()) {
 			base.draftPlace.get(t.tid)!.push(i);
@@ -557,10 +692,10 @@ export const buildOutlook = async ({
 			Math.max(1, teams.length);
 		base.meanPoints.push(mean);
 
-		// Our read of a team is surer once games have been played, and less sure
-		// the further out it reaches.
-		const now = 1.5 + 2 * (1 - (y === 0 && inSeason ? progress : 0));
-		const uncertainty = Math.sqrt(now ** 2 + (1.6 * y) ** 2);
+		const uncertainty = strengthUncertainty(
+			y,
+			y === 0 && inSeason ? progress : 0,
+		);
 
 		const strengthOf = (tid: number) => points.get(tid)![y]! - mean;
 		const sim = simulateSeason({

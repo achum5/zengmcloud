@@ -345,14 +345,18 @@ export const rosterPoints = (players: readonly StrengthPlayer[]) =>
 // What one player is worth as a single number: his points at the sixth man's
 // minutes with a typical share of the ball, over a minimum player's. For
 // ranking and explaining; rosters are always priced whole.
-export const playerValue = (line: Pick<PlayerLine, "roleFree" | "offense">) => {
+// Points a game a player adds over the minimum, per full game on the floor at
+// a typical share of the shots.
+export const valueOverReplacement = (
+	line: Pick<PlayerLine, "roleFree" | "offense">,
+) => {
 	const r = getReplacement();
 	const typicalShare = 0.2;
-	return (
-		SLOT_MINUTES[5]! *
-		(line.roleFree - r.roleFree + typicalShare * (line.offense - r.offense))
-	);
+	return line.roleFree - r.roleFree + typicalShare * (line.offense - r.offense);
 };
+
+export const playerValue = (line: Pick<PlayerLine, "roleFree" | "offense">) =>
+	SLOT_MINUTES[5]! * valueOverReplacement(line);
 
 // Below this, a player we may not have counts in part; above it, in full. Saves
 // pricing every roster once per player for a 1% chance of retirement.

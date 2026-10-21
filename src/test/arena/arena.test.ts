@@ -8,6 +8,7 @@ import {
 	loadTeam,
 	marketClock,
 	marketSettings,
+	outlookWatchers,
 	tradeWatchers,
 } from "../../worker/core/realisticFrontOffice/market.ts";
 import {
@@ -76,6 +77,22 @@ test.runIf(env.ARENA_RUN === "1")(
 				marketSettings.valueWaiting = env.ARENA_NO_WAIT !== "1";
 				// ARENA_MARKET='{"oneSided":false}': any other market setting.
 				Object.assign(marketSettings, JSON.parse(env.ARENA_MARKET ?? "{}"));
+			}
+			// ARENA_PICK_SURVEY=1: where every outlook expects each team's own
+			// picks to land, draft by draft, to set against where they do.
+			const pickSurvey: unknown[] = [];
+			if (env.ARENA_PICK_SURVEY === "1") {
+				outlookWatchers.push((outlook) => {
+					pickSurvey.push({
+						season: g.get("season"),
+						phase: g.get("phase"),
+						firstDraft: outlookSeason(outlook, 0),
+						gamesLeft:
+							[...outlook.remaining.values()].reduce((a, x) => a + x, 0) /
+							Math.max(1, outlook.remaining.size),
+						places: Object.fromEntries(outlook.draftPlace),
+					});
+				});
 			}
 			const watched: WatchedTrade[] = [];
 			// Every trade the front offices make: who moved, and where each team
@@ -321,6 +338,18 @@ test.runIf(env.ARENA_RUN === "1")(
 				await fs.writeFile(
 					`${out}/realized-${seed}.json`,
 					JSON.stringify(realized),
+				);
+			}
+			if (env.ARENA_PICK_SURVEY === "1") {
+				await fs.writeFile(
+					`${out}/pick-survey-${seed}.json`,
+					JSON.stringify({
+						projections: pickSurvey,
+						drafts: snapshots.map((s) => ({
+							season: s.season,
+							order: s.draftOrder,
+						})),
+					}),
 				);
 			}
 			if (env.ARENA_DEAL_SURVEY === "1") {

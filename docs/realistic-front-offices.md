@@ -173,9 +173,15 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   own spread allows (measured on every player traded in arena leagues - the
   projections are unbiased, and only a little wider in reality). The luck the
   model already prices in, like a prospect's range of careers, is not error.
-  A pick counts as the player it is expected to become. With the margin,
-  trades fell to ~23-32 a season against the NBA's 55-62, but stars no longer
-  churn (re-trades 63% -> 32-39%).
+  With the margin, trades fell to ~23-32 a season against the NBA's 55-62,
+  but stars no longer churn (re-trades 63% -> 32-39%).
+- **Picks are priced over where they may land** (owner's call). How far a
+  pick lands from where it is projected is measured in the arena (about 6
+  places a season out, 9 three seasons out, the lottery included). Most of
+  that is luck, so it goes into the pick's value, not its margin: a pick is
+  worth the average over every place it may land. Its margin of error is only
+  the misread of how good its team will be, by the outlook's own estimate of
+  that.
 - **Every kind of deal that happens in real life** (owner's call), as long as
   the CPU's judgment holds up: a side may give nothing (a player into another
   team's cap room, a salary dump), picks may go for picks, and every tradable

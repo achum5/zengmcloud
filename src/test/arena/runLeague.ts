@@ -63,6 +63,9 @@ export type SeasonSnapshot = {
 		amount?: number;
 		years?: number;
 	}[];
+	// Where each team's own first-round pick landed in this season's draft,
+	// 0 for the first, by original team.
+	draftOrder: number[];
 };
 
 // A random-players league with the owner's settings, built the way the new
@@ -182,6 +185,7 @@ export const advanceSeasons = async (
 				capSpace: [],
 				expiring: [],
 				freeAgents: [],
+				draftOrder: [],
 			};
 			snapshots.push(snapshot);
 			await phase.newPhase(PHASE.REGULAR_SEASON, conditions);
@@ -216,6 +220,15 @@ export const advanceSeasons = async (
 		} else if (currentPhase === PHASE.DRAFT_LOTTERY) {
 			await phase.newPhase(PHASE.DRAFT, conditions);
 		} else if (currentPhase === PHASE.DRAFT) {
+			// Where each team's own first-round pick landed.
+			for (const dp of await idb.cache.draftPicks.indexGetAll(
+				"draftPicksBySeason",
+				g.get("season"),
+			)) {
+				if (dp.round === 1 && dp.pick > 0) {
+					snapshot!.draftOrder[dp.originalTid] = dp.pick - 1;
+				}
+			}
 			await draft.runPicks({ type: "untilEnd" }, conditions);
 			if (g.get("phase") === PHASE.DRAFT) {
 				await phase.newPhase(PHASE.AFTER_DRAFT, conditions);
