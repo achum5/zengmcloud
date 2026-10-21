@@ -74,6 +74,8 @@ test.runIf(env.ARENA_RUN === "1")(
 				await league.setGameAttributes({ realisticFrontOffices: true });
 				// ARENA_NO_WAIT=1: deals are made as soon as they are found.
 				marketSettings.valueWaiting = env.ARENA_NO_WAIT !== "1";
+				// ARENA_MARKET='{"oneSided":false}': any other market setting.
+				Object.assign(marketSettings, JSON.parse(env.ARENA_MARKET ?? "{}"));
 			}
 			const watched: WatchedTrade[] = [];
 			// Every trade the front offices make: who moved, and where each team

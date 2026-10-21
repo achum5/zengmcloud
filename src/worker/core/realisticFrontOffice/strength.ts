@@ -262,6 +262,9 @@ export type StrengthPlayer = PlayerLine & {
 };
 
 let replacement: StrengthPlayer | undefined;
+// A player worse than this is not worth a roster place.
+export const REPLACEMENT_OVR = REPLACEMENT_RATINGS.ovr;
+
 export const getReplacement = () => {
 	if (!replacement) {
 		replacement = {

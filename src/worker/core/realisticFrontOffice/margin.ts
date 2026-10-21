@@ -20,7 +20,8 @@ import { SLOT_MINUTES } from "./strength.ts";
 //
 // Each moved player's error carries through every season he is expected to
 // be there, weighted by his minutes and by how much a point of strength moves
-// that team's title chances that season.
+// that team's title chances that season. A pick counts as the player it is
+// expected to become, from his draft on.
 
 // Points a game, per full game on the floor.
 const VALUE_ERROR = 0.8;
@@ -38,8 +39,9 @@ const PROJECTION_ERROR: readonly number[] = [
 const MARGIN_Z = 1;
 
 export type MovedPlayer = {
-	// His place in the pecking order of the team he is priced for.
-	place: number;
+	// His place in the pecking order of the team he is priced for - each
+	// season of the outlook, for a pick's player.
+	place: number | readonly number[];
 	// His chance of being there, each season of the outlook.
 	availability: readonly number[];
 };
@@ -53,9 +55,10 @@ export const sideMargin = (
 ) => {
 	let variance = 0;
 	for (const p of moved) {
-		const minutes = SLOT_MINUTES[Math.min(p.place, SLOT_MINUTES.length - 1)]!;
 		let sd = 0;
 		for (let y = 0; y <= OUTLOOK_YEARS; y++) {
+			const place = typeof p.place === "number" ? p.place : (p.place[y] ?? 0);
+			const minutes = SLOT_MINUTES[Math.min(place, SLOT_MINUTES.length - 1)]!;
 			const curve = outlook.titleCurves[y]!;
 			const q = curveAt(curve, path[y]!);
 			const slope = curve.b * q * (1 - q);

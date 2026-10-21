@@ -13,6 +13,7 @@ import {
 	ensureRetention,
 	franchiseValue,
 	OUTLOOK_YEARS,
+	pickLineAt,
 	retentionOf,
 	seasonLine,
 	seasonValue,
@@ -30,9 +31,10 @@ import type { TradedAway } from "./tradePenalty.ts";
 // means their situations differ: a contender buying now from a team building
 // for later, a team with two of something trading one for what it lacks.
 //
-// First version: players and picks, one to two assets a side; salaries must
-// match the way the trade screen requires. Cap room, the trade penalty and
-// re-signing intentions do not come into it yet.
+// Players and picks, up to two assets a side, or nothing at all on one side -
+// a player into another team's cap room. Salaries must match the way the
+// trade screen requires. In the offseason, when rosters turn over, every team
+// also gets to shop in a few windows (tradeWindow).
 
 // Teams looking for a deal each day, and how many other teams each one calls.
 const SHOPPERS_PER_DAY = 2;
@@ -84,6 +86,20 @@ const netOf = (deal: Pick<Deal, "gains" | "margins">) =>
 // For the arena, to measure what a behaviour is worth by turning it off.
 export const marketSettings = {
 	valueWaiting: true,
+	// Every team shops once the draft order is set, after the draft, and once
+	// teams have re-signed their own players.
+	offseasonWindows: true,
+	// Teams shopping each day of free agency.
+	freeAgencyShoppers: 4,
+	// One side may give nothing.
+	oneSided: true,
+	// Picks for picks, no player moving.
+	pickSwaps: true,
+	// Every tradable player on the table, not only each team's best.
+	wholeRoster: true,
+	// Picks moved count towards the margin of error, as the players they are
+	// expected to become.
+	pickMargins: true,
 };
 
 // Where the time goes, for the arena's speed report.
@@ -249,9 +265,12 @@ const applyTrade = (
 const PAIR_ASSETS = 10;
 
 // Every single asset, and every pair of the ones that matter most to their
-// team.
+// team - and nothing at all, for a one-sided deal.
 const packages = (assets: readonly Asset[], worth: (x: Asset) => number) => {
 	const out: Asset[][] = assets.map((x) => [x]);
+	if (marketSettings.oneSided) {
+		out.push([]);
+	}
 	const top = [...assets]
 		.sort((x, y) => worth(y) - worth(x))
 		.slice(0, PAIR_ASSETS);
@@ -277,7 +296,7 @@ export const bestDealWith = (
 	const assetsOf = (t: TeamState): Asset[] => [
 		...[...t.tradablePlayers]
 			.sort((x, y) => y.valueNoPot - x.valueNoPot)
-			.slice(0, PLAYERS_ON_TABLE)
+			.slice(0, marketSettings.wholeRoster ? undefined : PLAYERS_ON_TABLE)
 			.map((p) => ({ kind: "player" as const, p })),
 		...t.picks
 			.filter(
@@ -345,9 +364,10 @@ export const bestDealWith = (
 	const candidates: { giveA: Asset[]; giveB: Asset[]; screen: number }[] = [];
 	for (const pa of packagesA) {
 		for (const pb of packagesB) {
-			// At least one player moves: a straight swap of picks is not a
-			// basketball trade.
-			if (!pa.hasPlayer && !pb.hasPlayer) {
+			if (pa.assets.length === 0 && pb.assets.length === 0) {
+				continue;
+			}
+			if (!marketSettings.pickSwaps && !pa.hasPlayer && !pb.hasPlayer) {
 				continue;
 			}
 			const worst = Math.min(pa.cost + pb.worth, pb.cost + pa.worth);
@@ -358,7 +378,10 @@ export const bestDealWith = (
 	}
 	candidates.sort((x, y) => y.screen - x.screen);
 
-	const maxRosterSize = g.get("maxRosterSize");
+	// Rosters only have to fit once games are played; till then a team can
+	// carry extra players and cut the worst before the season.
+	const maxRosterSize =
+		g.get("phase") === PHASE.REGULAR_SEASON ? g.get("maxRosterSize") : Infinity;
 	let best: Deal | undefined;
 	let checked = 0;
 	for (const { giveA, giveB } of candidates) {
@@ -406,7 +429,8 @@ export const bestDealWith = (
 };
 
 // The margin of error on a team's gain from a deal: every player it gives or
-// gets, at his place on the roster he is priced for.
+// gets, at his place on the roster he is priced for, and every pick as the
+// player it is expected to become.
 const marginOf = (
 	outlook: LeagueOutlook,
 	t: TeamState,
@@ -415,6 +439,18 @@ const marginOf = (
 ) => {
 	const after = applyTrade(t, outgoing, incoming).players;
 	const moved: MovedPlayer[] = [];
+	const addPick = (dp: DraftPick, roster: readonly Player[]) => {
+		const place: number[] = [];
+		const availability: number[] = [];
+		for (let y = 0; y <= OUTLOOK_YEARS; y++) {
+			const at = pickLineAt(outlook, dp, y);
+			place.push(
+				at ? roster.filter((p) => p.valueNoPot > at.line.valueNoPot).length : 0,
+			);
+			availability.push(at ? at.line.availability : 0);
+		}
+		moved.push({ place, availability });
+	};
 	const add = (p: Player, roster: readonly Player[]) => {
 		const place = [...roster]
 			.sort((x, y) => y.valueNoPot - x.valueNoPot)
@@ -439,11 +475,15 @@ const marginOf = (
 	for (const x of incoming) {
 		if (x.kind === "player") {
 			add(x.p, after);
+		} else if (marketSettings.pickMargins) {
+			addPick(x.dp, after);
 		}
 	}
 	for (const x of outgoing) {
 		if (x.kind === "player") {
 			add(x.p, t.players);
+		} else if (marketSettings.pickMargins) {
+			addPick(x.dp, t.players);
 		}
 	}
 	return sideMargin(outlook, t.path, moved);
@@ -523,27 +563,46 @@ const eitherWouldWait = async (outlook: LeagueOutlook, deal: Deal) => {
 	return false;
 };
 
-export const tradeDay = async () => {
+const timed = async (work: () => Promise<void>) => {
 	const started = performance.now();
 	try {
-		await tradeDayInner();
+		await work();
 	} finally {
 		marketClock.days += 1;
 		marketClock.ms += performance.now() - started;
 	}
 };
 
-const tradeDayInner = async () => {
-	const phase = g.get("phase");
+// A day of the season, or of free agency.
+export const tradeDay = () =>
+	timed(async () => {
+		const phase = g.get("phase");
+		if (phase === PHASE.REGULAR_SEASON) {
+			await shop(SHOPPERS_PER_DAY);
+		} else if (phase === PHASE.FREE_AGENCY) {
+			await shop(marketSettings.freeAgencyShoppers);
+		}
+	});
+
+// The offseason's trading windows, as each of these phases opens: every team
+// gets to shop.
+const WINDOW_PHASES: readonly number[] = [
+	PHASE.DRAFT,
+	PHASE.AFTER_DRAFT,
+	PHASE.RESIGN_PLAYERS,
+];
+
+export const tradeWindow = async () => {
 	if (
-		phase !== PHASE.REGULAR_SEASON &&
-		phase !== PHASE.FREE_AGENCY &&
-		phase !== PHASE.RESIGN_PLAYERS &&
-		phase !== PHASE.AFTER_DRAFT &&
-		phase !== PHASE.PRESEASON
+		marketSettings.offseasonWindows &&
+		WINDOW_PHASES.includes(g.get("phase"))
 	) {
-		return;
+		await timed(() => shop(Infinity));
 	}
+};
+
+const shop = async (numShoppers: number) => {
+	const phase = g.get("phase");
 	const tids = await aiTids();
 	if (tids.length < 2) {
 		return;
@@ -556,7 +615,7 @@ const tradeDayInner = async () => {
 
 	const shoppers: number[] = [];
 	const pool = [...tids];
-	while (shoppers.length < SHOPPERS_PER_DAY && pool.length > 0) {
+	while (shoppers.length < numShoppers && pool.length > 0) {
 		shoppers.push(pool.splice(Math.floor(random() * pool.length), 1)[0]!);
 	}
 

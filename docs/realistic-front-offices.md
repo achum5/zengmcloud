@@ -173,6 +173,21 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   own spread allows (measured on every player traded in arena leagues - the
   projections are unbiased, and only a little wider in reality). The luck the
   model already prices in, like a prospect's range of careers, is not error.
+  A pick counts as the player it is expected to become. With the margin,
+  trades fell to ~23-32 a season against the NBA's 55-62, but stars no longer
+  churn (re-trades 63% -> 32-39%).
+- **Every kind of deal that happens in real life** (owner's call), as long as
+  the CPU's judgment holds up: a side may give nothing (a player into another
+  team's cap room, a salary dump), picks may go for picks, and every tradable
+  player is on the table, not just a team's best. A pick is never worth less
+  than nothing: a drafted player not worth a roster place is cut, which costs
+  nothing straight after the draft. Rosters only have to fit once games are
+  played.
+- **Offseason trading windows** (owner's call): every team shops once the
+  draft order is set, right after the draft, and once teams have re-signed
+  their own players, and free agency's days have more shopping. In the NBA
+  about half of all trades are in the offseason. Trading between picks while
+  the draft runs comes later, once the structure is settled.
 - **Trade penalty** (player mood hit for a team that trades too much) is
   unchanged. CPU teams are subject to it and account for it. The hope is that the
   league can drop it once CPU teams are hard to fleece.

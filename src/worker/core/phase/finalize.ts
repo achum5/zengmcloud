@@ -16,6 +16,8 @@ import { getGlobalSettings } from "../../util/getGlobalSettings.ts";
 import { processScheduledEvents } from "./processScheduledEvents.ts";
 import { settleBets } from "../sportsbook/bets.ts";
 import { cleanupAutoPlay } from "../league/autoPlay.ts";
+import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import { tradeWindow as realisticFrontOfficeTradeWindow } from "../realisticFrontOffice/market.ts";
 
 const save = async () => {
 	await updateStatus("Saving...");
@@ -42,6 +44,12 @@ const finalize = async (
 	await league.setGameAttributes({
 		phase,
 	});
+
+	// Realistic front offices trade as some offseason phases open, before the
+	// save below.
+	if (realisticFrontOfficesOn()) {
+		await realisticFrontOfficeTradeWindow();
+	}
 
 	let saved = false;
 	if (phase === PHASE.PRESEASON) {

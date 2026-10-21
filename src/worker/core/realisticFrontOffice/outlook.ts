@@ -268,7 +268,6 @@ const pickLines = (
 	y: number,
 ) => {
 	const season = outlookSeason(outlook, y);
-	const numPicks = outlook.numRounds * outlook.numTeams;
 	const all: PickLike[] = [...picks];
 	for (let d = outlook.lastPickSeason + 1; d < season; d++) {
 		for (let round = 1; round <= outlook.numRounds; round++) {
@@ -278,36 +277,59 @@ const pickLines = (
 	const lines: (StrengthPlayer & { availability: number })[] = [];
 	let salaries = 0;
 	for (const dp of all) {
-		if (typeof dp.season !== "number" || dp.season >= season) {
+		const at = pickLineAt(outlook, dp, y);
+		if (!at) {
 			continue;
 		}
-		let place;
-		if (dp.pick > 0) {
-			place = dp.pick - 1;
-		} else {
-			const places = outlook.draftPlace.get(dp.originalTid);
-			const yDraft = dp.season - outlookSeason(outlook, 0);
-			place =
-				places?.[Math.min(OUTLOOK_YEARS, Math.max(0, yDraft))] ??
-				Math.floor(outlook.numTeams / 2);
-		}
-		const slot = (dp.round - 1) * outlook.numTeams + place;
-		const years = season - dp.season;
-		const key = `${slot}:${numPicks}:${years}`;
-		let line = pickLineCache.get(key);
-		if (!line) {
-			line = { ...pickPlayer({ slot, numPicks, years }), availability: 1 };
-			pickLineCache.set(key, line);
-		}
-		lines.push(line);
-		salaries += pickSalary({
-			slot,
-			round: dp.round,
-			years,
-			ovr: line.valueNoPot,
-		});
+		lines.push(at.line);
+		// Only the players worth keeping are paid.
+		salaries +=
+			at.line.availability *
+			pickSalary({
+				slot: at.slot,
+				round: dp.round,
+				years: at.years,
+				ovr: at.line.valueNoPot,
+			});
 	}
 	return { lines, salaries };
+};
+
+// The player one pick is expected to have become by outlook year y, if he has
+// been drafted by then, with the chance he is worth a roster place and so
+// still around (pickValue.ts).
+export const pickLineAt = (
+	outlook: Omit<LeagueOutlook, "teams" | "titleCurves" | "playoffCurves">,
+	dp: PickLike,
+	y: number,
+) => {
+	const season = outlookSeason(outlook, y);
+	if (typeof dp.season !== "number" || dp.season >= season) {
+		return undefined;
+	}
+	const numPicks = outlook.numRounds * outlook.numTeams;
+	let place;
+	if (dp.pick > 0) {
+		place = dp.pick - 1;
+	} else {
+		const places = outlook.draftPlace.get(dp.originalTid);
+		const yDraft = dp.season - outlookSeason(outlook, 0);
+		place =
+			places?.[Math.min(OUTLOOK_YEARS, Math.max(0, yDraft))] ??
+			Math.floor(outlook.numTeams / 2);
+	}
+	const slot = (dp.round - 1) * outlook.numTeams + place;
+	const years = season - dp.season;
+	const key = `${slot}:${numPicks}:${years}`;
+	let line = pickLineCache.get(key);
+	if (!line) {
+		line = pickPlayer({ slot, numPicks, years });
+		pickLineCache.set(key, line);
+	}
+	if (line.availability <= 0) {
+		return undefined;
+	}
+	return { line, slot, years };
 };
 
 // What a player is expected to be paid in a season of the outlook: his

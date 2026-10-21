@@ -13,7 +13,10 @@ import { DEFAULT_LEVEL } from "../../common/budgetLevels.ts";
 import { last } from "../../common/utils.ts";
 import genPlayersWithoutSaving from "../../worker/core/draft/genPlayersWithoutSaving.ts";
 import { projectRatings } from "../../worker/core/realisticFrontOffice/projection.ts";
-import { playerValue } from "../../worker/core/realisticFrontOffice/strength.ts";
+import {
+	playerValue,
+	REPLACEMENT_OVR,
+} from "../../worker/core/realisticFrontOffice/strength.ts";
 import {
 	bestDealWith,
 	loadTeam,
@@ -100,8 +103,11 @@ test.runIf(env.FO_PICKS !== undefined)(
 			const numClasses = Number(env.FO_CLASSES ?? 50);
 			const numPicks = g.get("numDraftRounds") * g.get("numActiveTeams");
 			const years = 10;
+			// Per pick and season after the draft: the line summed over the
+			// players taken there who are worth a roster place then, and how many
+			// are - the rest are cut.
 			const sums = Array.from({ length: numPicks }, () =>
-				Array.from({ length: years + 1 }, () => [0, 0, 0, 0]),
+				Array.from({ length: years + 1 }, () => [0, 0, 0, 0, 0]),
 			);
 			for (let c = 0; c < numClasses; c++) {
 				const prospects = await genPlayersWithoutSaving(
@@ -135,11 +141,15 @@ test.runIf(env.FO_PICKS !== undefined)(
 				for (let k = 0; k < numPicks && k < board.length; k++) {
 					for (let y = 0; y <= years; y++) {
 						const { measures, ovr } = board[k]!.projection;
+						if (ovr[y]! < REPLACEMENT_OVR) {
+							continue;
+						}
 						const row = sums[k]![y]!;
 						for (let i = 0; i < 3; i++) {
 							row[i]! += measures[y]![i]!;
 						}
 						row[3]! += ovr[y]!;
+						row[4]! += 1;
 					}
 				}
 			}
@@ -150,10 +160,19 @@ test.runIf(env.FO_PICKS !== undefined)(
 				`${env.FO_PICKS}/picks.json`,
 				JSON.stringify({
 					numClasses,
-					// Per pick, per season after the draft: roleFree, offense, usage,
-					// overall.
+					// Per pick, per season after the draft: roleFree, offense, usage
+					// and overall of the players worth a roster place, and the share
+					// of players taken there who are.
 					picks: sums.map((rows) =>
-						rows.map((row) => row.map((x) => round(x / numClasses))),
+						rows.map((row) => {
+							const kept = row[4]!;
+							return kept > 0
+								? [
+										...row.slice(0, 4).map((x) => round(x / kept)),
+										round(kept / numClasses),
+									]
+								: [0, 0, 0, 0, 0];
+						}),
 					),
 				}),
 			);

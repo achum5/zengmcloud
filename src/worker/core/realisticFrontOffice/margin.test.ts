@@ -50,3 +50,16 @@ test("a player who will not be there carries no doubt", () => {
 		0,
 	);
 });
+
+test("a pick's player carries doubt only once he is drafted", () => {
+	const fromYear = (start: number) =>
+		Array.from({ length: OUTLOOK_YEARS + 1 }, (_, y) => (y >= start ? 1 : 0));
+	const soon = sideMargin(outlook, contender, [
+		{ place: always.map(() => 5), availability: fromYear(1) },
+	]);
+	const later = sideMargin(outlook, contender, [
+		{ place: always.map(() => 5), availability: fromYear(4) },
+	]);
+	assert.isAbove(soon, later);
+	assert.isAbove(later, 0);
+});
