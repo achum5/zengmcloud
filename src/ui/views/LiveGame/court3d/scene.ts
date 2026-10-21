@@ -22,7 +22,9 @@ import {
 import {
 	depthOf,
 	MAIN_RIG,
+	makeCamera,
 	project,
+	REPLAY_RIG,
 	type Camera,
 	type CourtFit,
 	type Rig,
@@ -49,6 +51,7 @@ import {
 import { lightness, type Look } from "./figure.ts";
 import { COURT_W, RIM_Z, seatSpot, type Pt3, type Side } from "./geometry.ts";
 import { drawPixelText, pixelTextWidth } from "./pixelFont.ts";
+import type { Replay } from "./playback.ts";
 import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
 import { ANIMS, type AnimName, type Body } from "./poses.ts";
 import {
@@ -1132,18 +1135,101 @@ const beatAt = (tl: CourtTimeline, t: number) => {
 	return ans >= 0 ? tl.beats[ans] : undefined;
 };
 
-// The slow-motion replay of a dunk: close on him and the rim, from
-// courtside, looking up at the iron. (Of a three, as wide as the ball and
-// the rim both stay in it - closing in on the rim as it gets there.)
-export const replayAim = (m: Moment, narrow: boolean): Shot => {
-	const rimX = m.ball.x < COURT_W / 2 ? 5.25 : COURT_W - 5.25;
-	const out = Math.hypot(m.ball.x - rimX, m.ball.y - 25);
-	return {
-		x: m.ball.x * 0.55 + rimX * 0.45,
-		width: Math.max(narrow ? 22 : 26, out * 1.3 + 8),
-		y: 25,
-		z: 6.5,
-	};
+// THE SLOW-MOTION REPLAY of a dunk, from courtside: on the man who put it
+// in and the rim he went to - all of him, his feet near the foot of the
+// picture and the iron near its top, as tight as that lets it be - not the
+// ball off in a wide picture, half of it the crowd over the rim and the
+// players along the bottom with their feet cut off. (Of a three, on him
+// till the ball leaves his hands; then on the ball and the rim, as wide as
+// both stay in it, closing in on the rim as it gets there.)
+//
+// `aspect` is the picture's width over its height.
+const REPLAY_ROOM = 5;
+// The most of the picture's height (floor to iron) and width what has to
+// be in it may take up, and how high over the floor the top of the rim is.
+const REPLAY_FILL = 0.8;
+// Where its middle goes (of 100, down the picture): a little low, for more
+// room over the iron than under his feet.
+const REPLAY_MIDDLE = 53;
+const IRON_Z = RIM_Z + 0.4;
+export const replayAim = (
+	m: Moment,
+	r: Replay | undefined,
+	aspect: number,
+): Shot => {
+	const { ball } = m;
+	const rim: Side = r?.rim ?? (ball.x < COURT_W / 2 ? 0 : 1);
+	const rimX = rim === 0 ? 5.25 : COURT_W - 5.25;
+	const him =
+		r?.pid === undefined ? undefined : m.players.find((p) => p.pid === r.pid);
+	// The ball, wherever it is - with whoever passes it to him, on its way
+	// up to him at the rim - and him while it is his, or once he is on his
+	// way in to the rim; not a shooter left behind out at the line once it
+	// has gone.
+	const onHim =
+		him !== undefined &&
+		(ball.holder === him.pid ||
+			Math.hypot(him.x - ball.x, him.y - ball.y) < 4 ||
+			Math.hypot(him.x - rimX, him.y - 25) < 17);
+	// What has to be in the picture: the floor under each (at the foot of
+	// it), and over each the rim, his head and the ball (at the top).
+	const feet: Pt3[] = [
+		{ x: rimX, y: 25, z: 0 },
+		{ x: ball.x, y: ball.y, z: 0 },
+	];
+	const tops: Pt3[] = [
+		{ x: rimX, y: 25, z: IRON_Z },
+		{ ...ball, z: ball.z + 0.6 },
+	];
+	if (onHim) {
+		feet.push({ x: him.x, y: him.y, z: 0 });
+		tops.push({ x: him.x, y: him.y, z: him.z + 7.2 });
+	}
+	let lo = Infinity;
+	let hi = -Infinity;
+	let ys = 0;
+	for (const p of feet) {
+		lo = Math.min(lo, p.x);
+		hi = Math.max(hi, p.x);
+		ys += p.y;
+	}
+	let x = (lo + hi) / 2;
+	const y = Math.min(44, Math.max(6, ys / feet.length));
+	// Never so tight that the floor and the iron can't both be in it.
+	let width = Math.max(18, IRON_Z * aspect * 1.45, hi - lo + 2 * REPLAY_ROOM);
+	let z = 5;
+	// Over, up or down until what has to be in it is in the middle of it,
+	// and wider if it doesn't fit (the picture 100 high).
+	const w = aspect * 100;
+	for (let i = 0; i < 4; i++) {
+		const cam = makeCamera({ x, width, y, z }, w, 100, REPLAY_RIG);
+		let left = Infinity;
+		let right = -Infinity;
+		let top = Infinity;
+		let bottom = -Infinity;
+		for (const p of [...feet, ...tops]) {
+			const q = project(cam, p);
+			// (Room for a man's arms either side.)
+			left = Math.min(left, q.x - 2 * q.k);
+			right = Math.max(right, q.x + 2 * q.k);
+			if (p.z === 0) {
+				bottom = Math.max(bottom, q.y);
+			} else {
+				top = Math.min(top, q.y);
+			}
+		}
+		const k = project(cam, { x, y, z }).k;
+		x += ((left + right) / 2 - w / 2) / k;
+		z -= ((top + bottom) / 2 - REPLAY_MIDDLE) / k;
+		const over = Math.max(
+			(right - left) / (w * REPLAY_FILL),
+			(bottom - top) / (100 * REPLAY_FILL),
+		);
+		if (over > 1) {
+			width *= over;
+		}
+	}
+	return { x, width, y, z };
 };
 
 // WHAT THE BOARDS SHOW: a shout for the home side's big play, DEFENSE

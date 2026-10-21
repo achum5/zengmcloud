@@ -20,6 +20,7 @@ import {
 } from "./follow.ts";
 import { segmentAt, type KeySegment } from "./keyPlays.ts";
 import { WARMUP_MS } from "./pregame.ts";
+import type { Side } from "./geometry.ts";
 
 // THE 3D COURT'S CLOCK, frame by frame: how far along the timeline the
 // picture is, run on toward the page's cursor (see Court3D) - fast through
@@ -42,9 +43,59 @@ const REPLAY_SPEED = 0.42;
 // Which plays are shown again: a big dunk, or a big three (see Fx).
 export const replayed = (f: Fx) =>
 	!!f.big && (f.kind === "dunk" || f.kind === "swish");
-const replayOf = (f: Fx) => {
+
+// A replay showing: where it is (`at`), from and to (timeline ms) - and who
+// it is of, the man who put the ball in, and the rim he put it in, for the
+// camera to stay on (see replayAim).
+export type Replay = {
+	at: number;
+	from: number;
+	to: number;
+	pid?: number;
+	rim?: Side;
+};
+
+// Who had the ball last at or before t: the man who dunked it (it leaves his
+// hands at the rim) or shot it.
+export const lastHolder = (
+	tl: CourtTimeline,
+	t: number,
+): number | undefined => {
+	const ball = tl.ball;
+	let lo = 0;
+	let hi = ball.length - 1;
+	let k = -1;
+	while (lo <= hi) {
+		const mid = (lo + hi) >> 1;
+		if (ball[mid]!.t0 <= t) {
+			k = mid;
+			lo = mid + 1;
+		} else {
+			hi = mid - 1;
+		}
+	}
+	for (; k >= 0; k--) {
+		const s = ball[k]!;
+		if (s.kind === "hold") {
+			return s.pid;
+		}
+		if (s.kind === "fly" && "pid" in s.from) {
+			return s.from.pid;
+		}
+	}
+	return undefined;
+};
+
+export const replayOf = (tl: CourtTimeline, f: Fx): Replay => {
 	const from = f.t - (f.kind === "swish" ? REPLAY_FROM_THREE : REPLAY_FROM);
-	return { at: from, from, to: f.t + REPLAY_TO };
+	const pid = lastHolder(tl, f.t);
+	return {
+		at: from,
+		from,
+		to: f.t + REPLAY_TO,
+		...(pid === undefined ? {} : { pid }),
+		...(f.rim === undefined ? {} : { rim: f.rim }),
+	};
 };
 
 // The cut nearest to t, by binary search.
@@ -116,7 +167,7 @@ export type PlayClock = {
 	// The last frame's clock (ms).
 	last: number | undefined;
 	// The dunk replay showing now, and the next dunk that would get one.
-	replay: { at: number; from: number; to: number } | undefined;
+	replay: Replay | undefined;
 	nextDunk: number;
 	snapCam: boolean;
 	// Key plays: the cursor the page is catching up to (-1 none), and when
@@ -226,7 +277,7 @@ const alignTo = (
 		r.rp >= 0
 			? tl.fx.find((x) => replayed(x) && Math.abs(x.t + REPLAY_AFTER - r.t) < 1)
 			: undefined;
-	s.replay = dunk ? { ...replayOf(dunk), at: r.rp } : undefined;
+	s.replay = dunk ? { ...replayOf(tl, dunk), at: r.rp } : undefined;
 	s.nextDunk = tl.fx.findIndex((x) => replayed(x) && x.t + REPLAY_AFTER > s.t);
 	s.snapCam = true;
 	if (dip) {
@@ -352,7 +403,7 @@ export const stepPlay = (
 		s.nextDunk += 1;
 		if (again) {
 			s.t = dunk.t + REPLAY_AFTER;
-			s.replay = replayOf(dunk);
+			s.replay = replayOf(tl, dunk);
 			s.snapCam = true;
 			s.paceAt = -1;
 		}

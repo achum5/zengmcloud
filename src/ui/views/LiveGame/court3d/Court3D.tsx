@@ -68,7 +68,7 @@ import {
 	type FollowReport,
 	type Shown,
 } from "./follow.ts";
-import { onCursor, stepPlay } from "./playback.ts";
+import { onCursor, stepPlay, type Replay } from "./playback.ts";
 import {
 	planKeyPlays,
 	type KeyPlaySettings,
@@ -925,6 +925,12 @@ const Court3D = ({
 		// (How fast the camera is panning and zooming, feet a second.)
 		camVX: 0,
 		camVW: 0,
+		// Off the floor's own framing (a replay): how far across the floor
+		// it looks and how high, and how fast those are moving.
+		camY: 25,
+		camZ: 2,
+		camVY: 0,
+		camVZ: 0,
 		snapCam: true,
 		// Panned clear of the score bug (see dodgeFor): by how much (feet),
 		// which way last, its box (measured now and then), and the man with
@@ -964,7 +970,7 @@ const Court3D = ({
 		foulsText: ["", ""] as [string, string],
 		ballSide: -1,
 		// The dunk replay showing now, and the next dunk that would get one.
-		replay: undefined as { at: number; from: number; to: number } | undefined,
+		replay: undefined as Replay | undefined,
 		nextDunk: 0,
 		// The starting lineups: the man being called (his place in the
 		// order, -1 none), and whether they are on.
@@ -1159,7 +1165,7 @@ const Court3D = ({
 			// Following the play, the whole floor stays in the picture.
 			const fit = replay || view ? undefined : courtFit(fw / fh);
 			const aim = replay
-				? replayAim(moment, p.narrow)
+				? replayAim(moment, replay, fw / fh)
 				: (view?.shot ??
 					(staging
 						? warmupAim(s.t, p.narrow, fit)
@@ -1169,14 +1175,22 @@ const Court3D = ({
 			if (snap) {
 				s.camX = aim.x;
 				s.camW = aim.width;
+				s.camY = aim.y;
+				s.camZ = aim.z ?? 2;
 				s.camVX = 0;
 				s.camVW = 0;
+				s.camVY = 0;
+				s.camVZ = 0;
 				s.snapCam = false;
 			} else {
 				// An operator's pan and zoom: eased into and out of, never a
 				// lurch when what it is following jumps.
 				[s.camX, s.camVX] = follow(s.camX, s.camVX, aim.x, CAM_PAN, secs);
 				[s.camW, s.camVW] = follow(s.camW, s.camVW, aim.width, CAM_ZOOM, secs);
+				// (And off the floor's own framing - a replay - up and down and
+				// in and out across the floor the same way.)
+				[s.camY, s.camVY] = follow(s.camY, s.camVY, aim.y, CAM_ZOOM, secs);
+				[s.camZ, s.camVZ] = follow(s.camZ, s.camVZ, aim.z ?? 2, CAM_ZOOM, secs);
 				if (fit) {
 					s.camW = Math.max(s.camW, fit.min);
 				}
@@ -1184,6 +1198,14 @@ const Court3D = ({
 					COURT_W + 12 - s.camW / 2,
 					Math.max(s.camW / 2 - 12, s.camX),
 				);
+			}
+			if (fit) {
+				// (Framed to the floor: where that has it look, for whatever
+				// comes next without a cut to start from.)
+				s.camY = fit.y(s.camW);
+				s.camZ = aim.z ?? 2;
+				s.camVY = 0;
+				s.camVZ = 0;
 			}
 			// The man with the ball (or the ball, loose or in the air) never
 			// left behind the score bug: the camera eased over off him.
@@ -1218,8 +1240,8 @@ const Court3D = ({
 				{
 					x: s.camX + s.dodge,
 					width: s.camW,
-					y: fit ? fit.y(s.camW) : aim.y,
-					z: aim.z,
+					y: s.camY,
+					z: s.camZ,
 				},
 				fw,
 				fh,
