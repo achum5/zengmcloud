@@ -1210,6 +1210,35 @@ const OWN_HAND = new Set<AnimName>([
 	"windmill",
 ]);
 const OUTSIDE_HAND = new Set<AnimName>(["layup", "fingerRoll", "scoop"]);
+// Up with his own shot, coming down: nobody goes up for the rebound off it
+// on top of him.
+const UP_WITH_SHOT = new Set<AnimName>([
+	"shoot",
+	"setShot",
+	"fade",
+	"hook",
+	"floater",
+	"layup",
+	"fingerRoll",
+	"powerLayup",
+	"scoop",
+	"reverseLayup",
+	"dunk",
+	"dunk1",
+	"tomahawk",
+	"windmill",
+]);
+// A man of theirs in his way in gives way this far off him (feet, middle to
+// middle) - from this long (ms) before he goes up - taking this long (ms)
+// about the step aside.
+const GIVE_WAY = 1.5;
+const GIVE_WAY_BEFORE = 400;
+const GIVE_WAY_MS = 300;
+// How near him (feet, middle to middle) a man going up for that rebound gets
+// - round him from where he would have taken it, by no more than this (feet
+// for every second it is in the air to him).
+const OFF_HIS_SHOT = 1.5;
+const BOARD_SHIFT_FTPS = 2.5;
 // (From this far either side of the rim, feet, he is on that side of it.)
 const RIM_SIDE = 2;
 
@@ -2160,6 +2189,127 @@ class Director {
 		});
 	}
 
+	// On his way to meet a shot, not through the shooter. Run straight to
+	// where he meets it, the shooter going on in and up meanwhile, a man
+	// chasing the drive from behind him - or cutting across his way in -
+	// would go right through him: he takes instead the nearest spot his own
+	// side of the shooter's way that he gets to clear of him - level with
+	// where he comes down (`down`), or a step or two behind, a hand at the
+	// ball from his hip. Runs him there (from t0, there by t1 if he can be)
+	// and returns where to, and when he gets there. (C as it was, if that is
+	// clear already - or if nothing is.)
+	private meetClear(
+		d: number,
+		shooter: number,
+		C: Pt,
+		t0: number,
+		t1: number,
+		down: Pt,
+	): { at: Pt; there: number } {
+		const CLEAR = 1.8;
+		// (Right on him to start with, how quick he gets clear: feet a
+		// second, across.)
+		const APART_FTPS = 4;
+		const P = this.posOf(shooter);
+		const run = (X: Pt) =>
+			this.goBy(d, X, t0, t1, "run", (P.x >= X.x ? 1 : -1) as 1 | -1, BURST);
+		const tr = this.track(d);
+		if (!tr) {
+			return { at: C, there: run(C) };
+		}
+		const G = this.posOf(d);
+		const was = {
+			moves: tr.moves.length,
+			faces: tr.faces.length,
+			face: this.face.get(d),
+			free: this.free.get(d),
+		};
+		const undo = () => {
+			tr.moves.length = was.moves;
+			tr.faces.length = was.faces;
+			this.pos.set(d, G);
+			if (was.face !== undefined) {
+				this.face.set(d, was.face);
+			}
+			if (was.free !== undefined) {
+				this.free.set(d, was.free);
+			}
+		};
+		// No nearer him than this on the way - read off the run as it is set
+		// down, and the shooter's own - or, right on him already, no nearer
+		// than that, and clear of him within a few strides.
+		const from = Math.max(t0, was.free ?? 0);
+		const d0 = dist(G, this.posAt(shooter, from));
+		// (How far clear of that he stays - below 0, into him.)
+		const room = (there: number) => {
+			let r = dist(this.posOf(d), down) - CLEAR;
+			for (let t = from + 40; t <= Math.max(there, t1) + 400; t += 40) {
+				const near = Math.min(
+					CLEAR,
+					d0 - 0.1 + (APART_FTPS * (t - from)) / 1000,
+				);
+				// (However either of them really paces his run.)
+				for (const a of [false, true]) {
+					for (const b of [false, true]) {
+						r = Math.min(
+							r,
+							dist(this.posAt(d, t, a), this.posAt(shooter, t, b)) - near,
+						);
+					}
+				}
+			}
+			return r;
+		};
+		// The shooter's way in, and which side of it he is (or C is, if he
+		// is right on it).
+		const S = this.posAt(shooter, from);
+		const u = dist(S, down) > 0.5 ? unitVec(S, down) : unitVec(G, down);
+		const across = (p: Pt) => (p.x - S.x) * -u.y + (p.y - S.y) * u.x;
+		const a = across(G);
+		const side = (Math.abs(a) > 0.3 ? a : across(C)) >= 0 ? 1 : -1;
+		// Behind him, chasing - or right on him, the drive going by him: never
+		// past him - from his hip, a step or two back from where he comes
+		// down.
+		const behind = (G.x - S.x) * u.x + (G.y - S.y) * u.y < -0.5 || d0 < 1.2;
+		const spots = behind ? [] : [C];
+		for (const back of behind ? [-1.2, -2, -2.8] : [0.6, -0.6, -1.6, -2.6]) {
+			for (const wide of behind ? [2.4, 3] : [2.2, 3]) {
+				spots.push(
+					clampPt({
+						x: down.x - u.y * side * wide + u.x * back,
+						y: down.y + u.x * side * wide + u.y * back,
+					}),
+				);
+			}
+		}
+		// The first of them he gets to clear of him - or, if none, the one
+		// that keeps him the most clear.
+		let best = { at: C, room: -Infinity };
+		for (const X of spots) {
+			const there = run(X);
+			const r = room(there);
+			if (r >= 0) {
+				return { at: X, there };
+			}
+			undo();
+			if (r > best.room) {
+				best = { at: X, room: r };
+			}
+		}
+		return { at: best.at, there: run(best.at) };
+	}
+
+	// In the lane off the drive or the roll, short of the rim: floated up
+	// over the big, or a hook in over him - a guard mostly the floater, a
+	// big mostly the hook, each man more one way than another, the same
+	// every game. (Never a jumper from in there.)
+	private laneFinish(pid: number, t: number): ShotStyle {
+		const rank = this.rank.get(pid) ?? 4;
+		const floats = rank >= 6 ? 0.3 : rank >= 3 ? 0.6 : 0.85;
+		const f = Math.min(0.95, floats * (0.75 + 0.5 * hash01(pid, 9137)));
+		return hash01(pid * 13 + 5, Math.round(t)) < f ? "floater" : "hook";
+	}
+
 	// Whether the shot he has going up now (as last listed) is off his left.
 	private offHisLeft(pid: number): boolean {
 		return (
@@ -2311,8 +2461,9 @@ class Director {
 	}
 
 	// Where a player is at a moment, read off his own schedule (the same easing
-	// the evaluator uses).
-	private posAt(pid: number, t: number): Pt {
+	// the evaluator uses - or, `even`, at an even pace along each run, as a
+	// man already going at either end of it more nearly goes).
+	private posAt(pid: number, t: number, even = false): Pt {
 		const moves = this.track(pid)?.moves ?? [];
 		for (let k = moves.length - 1; k >= 0; k--) {
 			const m = moves[k]!;
@@ -2320,7 +2471,8 @@ class Director {
 				if (t >= m.t1) {
 					return m.to;
 				}
-				const e = 0.5 - 0.5 * Math.cos((Math.PI * (t - m.t0)) / (m.t1 - m.t0));
+				const u = (t - m.t0) / (m.t1 - m.t0);
+				const e = even ? u : 0.5 - 0.5 * Math.cos(Math.PI * u);
 				return {
 					x: m.from.x + (m.to.x - m.from.x) * e,
 					y: m.from.y + (m.to.y - m.from.y) * e,
@@ -7378,8 +7530,9 @@ class Director {
 		t = Math.max(t, this.hold(shooter, t, "hold"));
 		if (o.kind === "floater") {
 			// Off the drive, still going: up on one foot and floated over the
-			// big - not a stop, his back to the rim and a post move.
-			return { t, style: "floater" };
+			// big - not a stop, his back to the rim and a post move. Or hooked
+			// in over him (see laneFinish).
+			return { t, style: this.laneFinish(shooter, t) };
 		}
 		if (o.zone === "post" && o.playType === "Postup") {
 			// Fed in the post: he backs his man down and goes to work - mostly
@@ -8449,6 +8602,8 @@ class Director {
 						release,
 						close,
 						close ? 0 : CLOSE_LATE[room]!,
+						undefined,
+						close ? (drift ?? this.posOf(shooter)) : undefined,
 					);
 				}
 			}
@@ -8764,11 +8919,13 @@ class Director {
 		// Or, leaving him all alone, when he is out there still ROOM_FT[3]
 		// off him, flat out to it and breaking down only then.
 		outAt?: number,
+		// Where the shooter comes down, if not where he goes up from.
+		down?: Pt,
 	) {
 		const P = this.posOf(shooter);
-		const face = (P.x >= C.x ? 1 : -1) as 1 | -1;
+		let face = (P.x >= C.x ? 1 : -1) as 1 | -1;
 		// With the hand on the ball's side.
-		const left = this.leftToBall(C, shooter, P);
+		let left = this.leftToBall(C, shooter, P);
 		const contest = (t: number, peak: number) => {
 			// (Not from way off him, nor once he is up for the rebound off it.)
 			if (
@@ -8832,15 +8989,17 @@ class Director {
 		const G = this.posOf(d);
 		const far = dist(G, C);
 		if (outAt === undefined && (far < 7 || thrown === undefined)) {
-			const there = this.goBy(
-				d,
-				C,
-				sees,
-				release - 60 + late,
-				"run",
-				face,
-				BURST,
-			);
+			const by = release - 60 + late;
+			// (In close, round the shooter going in and up - not through him.)
+			const met = down
+				? this.meetClear(d, shooter, C, sees, by, down)
+				: { at: C, there: this.goBy(d, C, sees, by, "run", face, BURST) };
+			if (met.at !== C) {
+				C = met.at;
+				face = (P.x >= C.x ? 1 : -1) as 1 | -1;
+				left = this.leftToBall(C, shooter, P);
+			}
+			const there = met.there;
 			if (dist(G, P) >= 9) {
 				return;
 			}
@@ -9188,12 +9347,15 @@ class Director {
 	}
 
 	// The run that gets him to the ball - to pick it up, to poke it away - is
-	// his own from `t` back a little: not one reworked later to shadow his
-	// man (see mark) and left short of the spot, the ball then jumping to or
-	// off his hand from feet away.
-	private ownRun(pid: number, t: number) {
+	// his own from `t` back a little (or from `since`, if that is further
+	// back): not one reworked later to shadow his man (see mark) and left
+	// short of the spot, the ball then jumping to or off his hand from feet
+	// away - or put on the far side of the man with it, to come back through
+	// him to get to it.
+	private ownRun(pid: number, t: number, since = t - 2500) {
+		const from = Math.min(t - 2500, since);
 		for (const m of this.track(pid)?.moves ?? []) {
-			if (m.t1 > t - 2500) {
+			if (m.t1 > from) {
 				this.marking.delete(m);
 			}
 		}
@@ -9719,7 +9881,9 @@ class Director {
 				? unitVec(A, this.posOf(m))
 				: unitVec(A, { x: COURT_W / 2, y: COURT_H / 2 });
 		const reach = pokeHand(mirrored).f + 1.3;
-		this.ownRun(m, start);
+		// (All his way there this trip: where he pokes from is the side of
+		// the man that way had him on.)
+		this.ownRun(m, start, T);
 		// (Set before he pokes, not mid-slide: a hand put out while he is still
 		// pulling up off his feet is short of the ball, and the hand left on
 		// it is the man's own.)
@@ -9938,6 +10102,54 @@ class Director {
 		}
 	}
 
+	// Where he takes a ball coming down at c, up for it over [t0, t1]: out
+	// in front of him, facing the rim (`back` the way out from it, `f` how
+	// far out in front of him his hands are). With a man still up with his
+	// own shot - or just down from it - right there, the shooter coming down
+	// under it, from round the side of him instead, reaching out for it if
+	// he has to: not up on top of him. Undefined if there is no taking it
+	// there clear of him. (`flight`: how long, ms, it is in the air off the
+	// rim till then.)
+	private boardSpot(
+		r: number,
+		c: Pt,
+		back: Pt,
+		f: number,
+		t0: number,
+		t1: number,
+		flight: number,
+	): Pt | undefined {
+		const up = [...this.tracks.values()].filter(
+			(tr) =>
+				tr.pid !== r &&
+				tr.acts.some((a) => UP_WITH_SHOT.has(a.anim) && a.t0 < t1 && a.t1 > t0),
+		);
+		const clear = (p: Pt) =>
+			up.every((tr) =>
+				[t0, (t0 + t1) / 2, t1].every(
+					(t) => dist(p, this.posAt(tr.pid, t)) >= OFF_HIS_SHOT,
+				),
+			);
+		// (Only as far round as the ball can still come to his hands in the
+		// time it is in the air off the rim - not swerving to them.)
+		const own = clampPt({ x: c.x + back.x * f, y: c.y + back.y * f });
+		const most = (BOARD_SHIFT_FTPS * flight) / 1000;
+		for (const reach of [f, f + 0.5, f + 0.9]) {
+			for (const deg of [0, 35, -35, 70, -70, 110, -110, 150, -150, 180]) {
+				const th = (deg * Math.PI) / 180;
+				const b = {
+					x: back.x * Math.cos(th) - back.y * Math.sin(th),
+					y: back.x * Math.sin(th) + back.y * Math.cos(th),
+				};
+				const spot = clampPt({ x: c.x + b.x * reach, y: c.y + b.y * reach });
+				if (dist(spot, own) <= most && clear(spot)) {
+					return spot;
+				}
+			}
+		}
+		return undefined;
+	}
+
 	// The nearest of theirs to where he goes up for it goes up with him: out
 	// of his box-out, a step or two in first if he is not right there - only
 	// one near enough to get a hand near it, not one way out on the floor
@@ -10074,14 +10286,13 @@ class Director {
 			if (out && outOfPlay(c)) {
 				break;
 			}
-			const back = unitVec(rim, c);
-			const spot = clampPt({
-				x: c.x + back.x * hands.f,
-				y: c.y + back.y * hands.f,
-			});
-			const f = (rim.x >= spot.x ? 1 : -1) as 1 | -1;
 			const top = t + ms;
 			const up = top - BOARD_TOP;
+			const spot = this.boardSpot(r, c, unitVec(rim, c), hands.f, up, top, ms);
+			if (!spot) {
+				continue;
+			}
+			const f = (rim.x >= spot.x ? 1 : -1) as 1 | -1;
 			// Off the floor in time to be at the top of his jump as it gets
 			// there - and there by just before then: the last stride of his
 			// way there carries him up into it. (A shuffle of a few inches is
@@ -17160,6 +17371,133 @@ class Director {
 		}
 	}
 
+	// The way in clear. Whatever everything before left him doing - beaten
+	// on the drive, walled up in front of it, in to the glass, on his way
+	// back to his man - a man of theirs whose schedule has him in the
+	// shooter's way as he goes in and up for a shot in close, or in him as
+	// he comes down, gives a step to the side of it as the shooter comes by,
+	// and is back after. (Not the man up to block it: he is meant to be
+	// right there - nor one knocking the ball away: where his hand is, it
+	// goes.)
+	private clearTheWayIn() {
+		const FOR_THE_BALL = new Set<AnimName>(["block", "poke", "strip"]);
+		const UP = new Set<AnimName>([
+			"layup",
+			"fingerRoll",
+			"powerLayup",
+			"scoop",
+			"reverseLayup",
+			"floater",
+		]);
+		const tracks = [...this.tracks.values()];
+		// Where he is - nudged aside already, too - running each run as the
+		// court does, or (`even`) at an even pace along it, as a man already
+		// going at either end of it more nearly does.
+		const at = (tr: Track, t: number, even: boolean): Pt => {
+			const P = this.spotAt(tr, t);
+			if (!even) {
+				return P;
+			}
+			const m = tr.moves[lastBy(tr.moves, t, (x) => x.t0)];
+			if (!m || t >= m.t1) {
+				return P;
+			}
+			const u = (t - m.t0) / (m.t1 - m.t0);
+			const e = 0.5 - 0.5 * Math.cos(Math.PI * u);
+			return {
+				x: P.x + (m.to.x - m.from.x) * (u - e),
+				y: P.y + (m.to.y - m.from.y) * (u - e),
+			};
+		};
+		// One step aside for him, if his schedule has him in the shooter's
+		// way over [t0, t1].
+		const aside = (sh: Track, tr: Track, t0: number, t1: number) => {
+			let worst: { d: number; t: number; O: Pt; S: Pt } | undefined;
+			let ta = Infinity;
+			let tb = -Infinity;
+			for (let t = t0; t <= t1; t += 40) {
+				for (const e of [false, true]) {
+					for (const f of [false, true]) {
+						const O = at(tr, t, e);
+						const S = at(sh, t, f);
+						const d = dist(O, S);
+						if (d < GIVE_WAY + 0.3) {
+							ta = Math.min(ta, t);
+							tb = Math.max(tb, t);
+						}
+						if (!worst || d < worst.d) {
+							worst = { d, t, O, S };
+						}
+					}
+				}
+			}
+			if (!worst || worst.d >= GIVE_WAY) {
+				return;
+			}
+			// Off to his side of the way the shooter is going then.
+			const A = this.spotAt(sh, worst.t - 120);
+			const B = this.spotAt(sh, worst.t + 120);
+			const u =
+				dist(A, B) > 0.2 ? unitVec(A, B) : unitVec(worst.S, rimPt(sh.team));
+			const n = { x: -u.y, y: u.x };
+			const off = (worst.O.x - worst.S.x) * n.x + (worst.O.y - worst.S.y) * n.y;
+			const s = Math.abs(off) > 0.1 ? Math.sign(off) : tr.pid % 2 ? 1 : -1;
+			const k = GIVE_WAY + 0.2 - Math.abs(off);
+			const n0 = ta - GIVE_WAY_MS;
+			let n1 = tb + GIVE_WAY_MS;
+			// (Back where he was by the time the ball is in the air to him -
+			// off the rim, say: where his hands are, it goes.)
+			const to = this.ball.find(
+				(b) =>
+					b.kind === "fly" &&
+					"pid" in b.to &&
+					b.to.pid === tr.pid &&
+					b.t1 > n0 &&
+					b.t0 < n1,
+			);
+			if (to) {
+				n1 = Math.min(n1, to.t0);
+				if (n1 - n0 < 2 * GIVE_WAY_MS) {
+					return;
+				}
+			}
+			(tr.nudges ??= []).push({
+				t0: n0,
+				t1: n1,
+				dx: n.x * s * k,
+				dy: n.y * s * k,
+				ramp: GIVE_WAY_MS,
+			});
+			tr.nudges.sort((x, y) => x.t0 - y.t0);
+		};
+		// (Again, from where that leaves everybody - the way the shooter goes
+		// turning under him, one step aside can leave him short.)
+		for (let round = 0; round < 3; round++) {
+			for (const sh of tracks) {
+				for (const a of sh.acts) {
+					if (!UP.has(a.anim)) {
+						continue;
+					}
+					const t0 = a.t0 - GIVE_WAY_BEFORE;
+					const t1 = a.t1 + 200;
+					for (const tr of tracks) {
+						if (
+							tr.team !== sh.team &&
+							!tr.acts.some(
+								(b) =>
+									FOR_THE_BALL.has(b.anim) &&
+									b.t0 < t1 + GIVE_WAY_MS + 1000 &&
+									b.t1 > t0 - GIVE_WAY_MS,
+							)
+						) {
+							aside(sh, tr, t0, t1);
+						}
+					}
+				}
+			}
+		}
+	}
+
 	private keepApart(fast: [number, number][]) {
 		const STEP = 100;
 		const MATES = 2.6;
@@ -19329,6 +19667,7 @@ class Director {
 		}
 		this.fx.sort((a, b) => a.t - b.t);
 		this.ease();
+		this.clearTheWayIn();
 		const fast = hurried(this.fast, this.beats);
 		this.keepApart(fast);
 		this.passBy(fast);

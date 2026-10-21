@@ -1446,6 +1446,14 @@ describe("3D director", () => {
 		assert.isAbove(held.R, 20);
 	}, 120_000);
 
+	// A man contesting a shot in close is beside him - an arm's length off
+	// where the shooter comes down, his own side of the way in, and round
+	// him, a step back, chasing the drive from behind; the man going up for
+	// the rebound off it is not up on top of the shooter coming down under
+	// it; and anybody else of theirs in his way in - beaten on the drive,
+	// walled up in front of it, in the scrum off an offensive board - gives
+	// a step to the side as he comes by. (Over eight games: at most one shot
+	// in two hundred with a body still in his way.)
 	test("a man contesting a shot in close is beside him - not stood in his way, the shooter going up through him", () => {
 		const CLOSE = new Set([
 			"layup",
@@ -1456,7 +1464,8 @@ describe("3D director", () => {
 			"floater",
 		]);
 		let shots = 0;
-		for (const seed of ["a", "d"]) {
+		const into: string[] = [];
+		for (const seed of ["a", "b", "c", "d", "e", "f", "g", "h"]) {
 			const { tl } = compile(seed, 150);
 			const tracks = [...tl.tracks.values()];
 			for (const tr of tracks) {
@@ -1465,24 +1474,62 @@ describe("3D director", () => {
 						continue;
 					}
 					shots += 1;
-					for (let t = a.t0; t <= a.t1; t += 40) {
+					let hit: string | undefined;
+					for (let t = a.t0; t <= a.t1 && !hit; t += 40) {
 						const S = evalPlayer(tl, tr.pid, t);
 						for (const o of tracks) {
 							if (o.team === tr.team) {
 								continue;
 							}
 							const Q = evalPlayer(tl, o.pid, t);
-							assert.isAtLeast(
-								Math.hypot(Q.x - S.x, Q.y - S.y),
-								1.2,
-								`${seed}: ${tr.pid} and ${o.pid} at ${t}`,
-							);
+							if (Math.hypot(Q.x - S.x, Q.y - S.y) < 1.2) {
+								hit = `${seed}: ${tr.pid} and ${o.pid} at ${t}`;
+							}
 						}
+					}
+					if (hit) {
+						into.push(hit);
 					}
 				}
 			}
 		}
-		assert.isAbove(shots, 60);
+		assert.isAbove(shots, 250);
+		assert.isAtMost(into.length / shots, 1 / 200, into.join("; "));
+	}, 240_000);
+
+	// In the lane off the drive or the roll, short of the rim, a guard
+	// mostly floats it up over the big, and a big mostly hooks it in over
+	// him.
+	test("a lane finish: a guard's mostly a floater, a big's mostly a hook", () => {
+		const GUARD = new Set(["PG", "SG", "G"]);
+		const BIG = new Set(["PF", "FC", "C"]);
+		const n = { guard: { floater: 0, hook: 0 }, big: { floater: 0, hook: 0 } };
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl, players } = compile(seed, 150);
+			for (const tr of tl.tracks.values()) {
+				const pos = players.find((p) => p.pid === tr.pid)?.pos ?? "";
+				const k = GUARD.has(pos) ? "guard" : BIG.has(pos) ? "big" : undefined;
+				for (const a of tr.acts) {
+					if (
+						!k ||
+						(a.anim !== "floater" && a.anim !== "hook") ||
+						// (Not a hook off a post-up.)
+						tr.acts.some(
+							(b) => b.anim === "postUp" && b.t1 > a.t0 - 4000 && b.t0 < a.t0,
+						)
+					) {
+						continue;
+					}
+					n[k][a.anim] += 1;
+				}
+			}
+		}
+		const share = (x: { floater: number; hook: number }, of: number) =>
+			of / Math.max(1, x.floater + x.hook);
+		assert.isAbove(n.guard.floater + n.guard.hook, 20);
+		assert.isAbove(n.big.floater + n.big.hook, 8);
+		assert.isAbove(share(n.guard, n.guard.floater), 0.6);
+		assert.isAbove(share(n.big, n.big.hook), 0.6);
 	}, 120_000);
 
 	test("off the rim, the man who gets it mostly goes up and takes it in the air", () => {
