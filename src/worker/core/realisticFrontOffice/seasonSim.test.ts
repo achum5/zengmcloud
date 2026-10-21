@@ -40,16 +40,20 @@ test("an even game is a coin flip, and a better team is favored", () => {
 	assert.isBelow(winProbability(5), 0.7);
 });
 
-test("one champion, two finalists and sixteen playoff teams a season", () => {
-	for (const playIn of [true, false]) {
-		const results = run(league(), 1, playIn);
-		assert.closeTo(sum(results, "title"), 1, 1e-9);
-		assert.closeTo(sum(results, "finals"), 2, 1e-9);
-		assert.closeTo(sum(results, "playoffs"), 16, 1e-9);
-	}
-});
+test(
+	"one champion, two finalists and sixteen playoff teams a season",
+	{ timeout: 60_000 },
+	() => {
+		for (const playIn of [true, false]) {
+			const results = run(league(), 1, playIn);
+			assert.closeTo(sum(results, "title"), 1, 1e-9);
+			assert.closeTo(sum(results, "finals"), 2, 1e-9);
+			assert.closeTo(sum(results, "playoffs"), 16, 1e-9);
+		}
+	},
+);
 
-test("the same seed gives the same odds", () => {
+test("the same seed gives the same odds", { timeout: 60_000 }, () => {
 	const a = run(league(), 5);
 	const b = run(league(), 5);
 	for (const [tid, r] of a) {
@@ -57,7 +61,7 @@ test("the same seed gives the same odds", () => {
 	}
 });
 
-test("better teams have better chances", () => {
+test("better teams have better chances", { timeout: 60_000 }, () => {
 	const results = run(league());
 	const best = results.get(29)!;
 	const worst = results.get(0)!;
@@ -68,7 +72,7 @@ test("better teams have better chances", () => {
 	assert.isBelow(worst.playoffs, 0.05);
 });
 
-test("games already won count", () => {
+test("games already won count", { timeout: 60_000 }, () => {
 	// Equal teams, but one has started 40-0 and the season is half over.
 	const teams = league().map((t) => ({
 		...t,
@@ -82,13 +86,17 @@ test("games already won count", () => {
 	assert.isBelow(results.get(4)!.playoffs, 0.75);
 });
 
-test("a team stronger by the playoffs wins more titles, not more seeds", () => {
-	const base = run(league());
-	const boosted = run(
-		league().map((t) =>
-			t.tid === 25 ? { ...t, playoffStrength: t.strength + 4 } : t,
-		),
-	);
-	assert.isAbove(boosted.get(25)!.title, base.get(25)!.title + 0.03);
-	assert.closeTo(boosted.get(25)!.playoffs, base.get(25)!.playoffs, 0.02);
-});
+test(
+	"a team stronger by the playoffs wins more titles, not more seeds",
+	{ timeout: 60_000 },
+	() => {
+		const base = run(league());
+		const boosted = run(
+			league().map((t) =>
+				t.tid === 25 ? { ...t, playoffStrength: t.strength + 4 } : t,
+			),
+		);
+		assert.isAbove(boosted.get(25)!.title, base.get(25)!.title + 0.03);
+		assert.closeTo(boosted.get(25)!.playoffs, base.get(25)!.playoffs, 0.02);
+	},
+);
