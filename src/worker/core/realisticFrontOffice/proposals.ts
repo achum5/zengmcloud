@@ -87,7 +87,11 @@ const publicOutlooks = new WeakMap<LeagueOutlook, LeagueOutlook>();
 const publicOutlookOf = (outlook: LeagueOutlook) => {
 	let out = publicOutlooks.get(outlook);
 	if (!out) {
-		out = { ...outlook, lines: new Map() as SeasonLines };
+		out = {
+			...outlook,
+			lines: new Map() as SeasonLines,
+			placeBase: new Map(),
+		};
 		publicOutlooks.set(outlook, out);
 	}
 	return out;
