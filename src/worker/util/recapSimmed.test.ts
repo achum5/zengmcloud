@@ -219,6 +219,8 @@ describe("simmed recaps", () => {
 				// attempts to 24, and play the Pacers next, at home."
 				/, and (?:host|visit|play|get) the [A-Z][\w ]* next\b/,
 				/\b[Ss]ore achilles|with (?:bruised|sore|strained) quadriceps/,
+				// Six in double figures is a third of all winners here.
+				/had six players score in double figures|got double figures out of six men\.|Six [A-Z][\w ]* reached double figures|- six in double figures/,
 			]) {
 				assert.notMatch(recap, bad, `gid ${gid}\n${recap}`);
 			}
@@ -373,7 +375,9 @@ describe("simmed recaps", () => {
 			const at = sents.findIndex((t) =>
 				/halftime|at the half\b|at the break|into the break/.test(t),
 			);
-			if (at < 0) {
+			// The lede may have told the second half already: "breaking it
+			// open with a 31-16 fourth quarter".
+			if (at < 0 || /(?:third|fourth) quarter|second half/.test(sents[0]!)) {
 				continue;
 			}
 			assert.match(sents.slice(at).join(" "), after, `gid ${gid}\n${recap}`);

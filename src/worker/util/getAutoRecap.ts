@@ -3100,7 +3100,10 @@ const statNote = (
 	}
 	// Six-plus is a genuinely balanced night; five is routine and was showing up
 	// in half the recaps on a given day.
-	if (w.dblFig >= 6 && !skipDblFig) {
+	// Seven: in this league six in double figures is a third of all winners,
+	// and "They had six players score in double figures" was the sentence
+	// most often repeated word for word.
+	if (w.dblFig >= 7 && !skipDblFig) {
 		add(
 			pick(
 				rng,
@@ -5235,7 +5238,9 @@ const balanceNote = (
 ): string | undefined => {
 	const w = teamStats(shape.winner);
 	const l = teamStats(shape.loser);
-	if (!told.dblFig && w.dblFig >= 5 && w.dblFig - l.dblFig >= 3) {
+	// Five in double figures is the median winner; six against three is a
+	// difference.
+	if (!told.dblFig && w.dblFig >= 6 && w.dblFig - l.dblFig >= 3) {
 		return pick(
 			rng,
 			[
