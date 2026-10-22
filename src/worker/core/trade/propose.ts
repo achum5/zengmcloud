@@ -9,6 +9,39 @@ import { idb } from "../../db/index.ts";
 import { hashSavedTrade } from "../../../common/hashSavedTrade.ts";
 import { tradesBlocked } from "../../../common/tradesBlocked.ts";
 import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
+import type { TradeTeams } from "../../../common/types.ts";
+import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import {
+	judgeHumanOffer as realisticFrontOfficeJudgeOffer,
+	verdictMessage as realisticFrontOfficeVerdictMessage,
+} from "../realisticFrontOffice/humanTrades.ts";
+
+const accept = async (teams: TradeTeams, tids: [number, number]) => {
+	const hash = hashSavedTrade(teams);
+	const undo = await processTrade(teams, hash);
+
+	await idb.cache.savedTrades.delete(hash);
+
+	await clear();
+
+	// Auto-sort team rosters
+	for (const tid of tids) {
+		const t = await idb.cache.teams.get(tid);
+		const onlyNewPlayers =
+			g.get("userTids").includes(tid) &&
+			!g.get("spectator") &&
+			t &&
+			!t.keepRosterSorted;
+
+		await team.rosterAutoSort(tid, onlyNewPlayers);
+	}
+
+	return {
+		accepted: true as const,
+		message: 'Trade accepted! "Nice doing business with you!"',
+		undo,
+	};
+};
 
 /**
  * Proposes the current trade in the database.
@@ -19,7 +52,12 @@ import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
  * @param {boolean} forceTrade When true (like in God Mode), this trade is accepted regardless of the AI
  * @return {Promise.<boolean, string>} Resolves to an array. The first argument is a boolean for whether the trade was accepted or not. The second argument is a string containing a message to be dispalyed to the user.
  */
-const propose = async (forceTrade: boolean = false) => {
+const propose = async (
+	forceTrade: boolean = false,
+): Promise<
+	| Awaited<ReturnType<typeof accept>>
+	| { accepted: false; message: string | null; undo?: undefined }
+> => {
 	if (tradesBlocked(g.get("phase"), g.get("tradesAfterDeadline"))) {
 		return {
 			accepted: false as const,
@@ -43,6 +81,22 @@ const propose = async (forceTrade: boolean = false) => {
 		return { accepted: false as const, message: null };
 	}
 
+	// Realistic front offices judge a human's offer by their own valuation.
+	if (
+		realisticFrontOfficesOn() &&
+		!forceTrade &&
+		!g.get("userTids").includes(teams[1].tid)
+	) {
+		const verdict = await realisticFrontOfficeJudgeOffer(teams[1], teams[0]);
+		if (verdict.kind !== "yes") {
+			return {
+				accepted: false as const,
+				message: realisticFrontOfficeVerdictMessage(verdict),
+			};
+		}
+		return accept(teams, tids);
+	}
+
 	const dv = await new ValueChangeCalculator().evaluate({
 		tid: teams[1].tid,
 		pidsAdd: teams[0].pids,
@@ -53,30 +107,7 @@ const propose = async (forceTrade: boolean = false) => {
 	});
 
 	if (dv > 0 || forceTrade) {
-		const hash = hashSavedTrade(teams);
-		const undo = await processTrade(teams, hash);
-
-		await idb.cache.savedTrades.delete(hash);
-
-		await clear();
-
-		// Auto-sort team rosters
-		for (const tid of tids) {
-			const t = await idb.cache.teams.get(tid);
-			const onlyNewPlayers =
-				g.get("userTids").includes(tid) &&
-				!g.get("spectator") &&
-				t &&
-				!t.keepRosterSorted;
-
-			await team.rosterAutoSort(tid, onlyNewPlayers);
-		}
-
-		return {
-			accepted: true as const,
-			message: 'Trade accepted! "Nice doing business with you!"',
-			undo,
-		};
+		return accept(teams, tids);
 	}
 
 	// Return a different rejection message based on how close we are to a deal. When dv < 0, the closer to 0, the better the trade for the AI.

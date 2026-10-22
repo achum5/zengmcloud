@@ -55,7 +55,7 @@ const PARTNERS_PER_SHOPPER = 6;
 
 // The smallest gain, in titles, that makes a trade worth making for either
 // side. Stops teams churning their rosters over rounding.
-const MIN_GAIN = 0.002;
+export const MIN_GAIN = 0.002;
 
 // Deals priced exactly per pair of teams, after a quick screen of many.
 const CANDIDATES_PER_PAIR = 10;
@@ -253,7 +253,7 @@ const salaryOf = (assets: readonly Asset[]) =>
 
 // The trade screen's salary rule: a team over the cap after the trade must
 // take back no more than softCapTradeSalaryMatch% of what it sends.
-const salariesWork = (
+export const salariesWork = (
 	t: TeamState,
 	outgoing: readonly Asset[],
 	incoming: readonly Asset[],
@@ -300,7 +300,10 @@ const PAIR_ASSETS = 10;
 
 // Every single asset, and every pair of the ones that matter most to their
 // team - and nothing at all, for a one-sided deal.
-const packages = (assets: readonly Asset[], worth: (x: Asset) => number) => {
+export const packages = (
+	assets: readonly Asset[],
+	worth: (x: Asset) => number,
+) => {
 	const out: Asset[][] = assets.map((x) => [x]);
 	if (marketSettings.oneSided) {
 		out.push([]);
@@ -316,11 +319,11 @@ const packages = (assets: readonly Asset[], worth: (x: Asset) => number) => {
 	return out;
 };
 
-const assetKey = (x: Asset) =>
+export const assetKey = (x: Asset) =>
 	x.kind === "player" ? `p${x.p.pid}` : `d${x.dp.dpid}`;
 
 // What a deal does to a team's franchise value.
-const priceFor = (
+export const priceFor = (
 	outlook: LeagueOutlook,
 	t: TeamState,
 	outgoing: readonly Asset[],
@@ -337,27 +340,30 @@ const priceFor = (
 
 // The best deal between two teams, if there is one both would make. `single`
 // holds what one asset is worth to one team, gained or lost, for the day.
+// What a team puts on the table: its tradable players, best first, and its
+// picks in the next few drafts.
+export const tableAssets = (t: TeamState): Asset[] => [
+	...[...t.tradablePlayers]
+		.sort((x, y) => y.valueNoPot - x.valueNoPot)
+		.slice(0, marketSettings.wholeRoster ? undefined : PLAYERS_ON_TABLE)
+		.map((p) => ({ kind: "player" as const, p })),
+	...t.picks
+		.filter(
+			(dp) =>
+				typeof dp.season === "number" &&
+				dp.season <= g.get("season") + PICK_DRAFTS_ON_TABLE,
+		)
+		.map((dp) => ({ kind: "pick" as const, dp })),
+];
+
 export const bestDealWith = (
 	outlook: LeagueOutlook,
 	a: TeamState,
 	b: TeamState,
 	single: Map<string, number>,
 ): Deal | undefined => {
-	const assetsOf = (t: TeamState): Asset[] => [
-		...[...t.tradablePlayers]
-			.sort((x, y) => y.valueNoPot - x.valueNoPot)
-			.slice(0, marketSettings.wholeRoster ? undefined : PLAYERS_ON_TABLE)
-			.map((p) => ({ kind: "player" as const, p })),
-		...t.picks
-			.filter(
-				(dp) =>
-					typeof dp.season === "number" &&
-					dp.season <= g.get("season") + PICK_DRAFTS_ON_TABLE,
-			)
-			.map((dp) => ({ kind: "pick" as const, dp })),
-	];
-	const assetsA = assetsOf(a);
-	const assetsB = assetsOf(b);
+	const assetsA = tableAssets(a);
+	const assetsB = tableAssets(b);
 
 	// One asset at a time, each way: what losing it costs its team and what
 	// gaining it is worth to the other. The screen adds these up; the deals
@@ -596,7 +602,7 @@ export const priceDeal = (
 	};
 };
 
-const count = (assets: readonly Asset[]) =>
+export const count = (assets: readonly Asset[]) =>
 	assets.filter((x) => x.kind === "player").length;
 
 const split = (assets: readonly Asset[]) => ({

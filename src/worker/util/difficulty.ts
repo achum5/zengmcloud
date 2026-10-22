@@ -1,9 +1,13 @@
 import g from "./g.ts";
+import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
 
 // The difficulty knob used for TRADES (AI valuation of your assets). Falls back
 // to the league's overall `difficulty` when no trade-specific override is set.
+// Not with realistic front offices, where difficulty does nothing.
 export const tradeDifficulty = (): number =>
-	g.get("difficultyTrade") ?? g.get("difficulty");
+	realisticFrontOfficesOn()
+		? 0
+		: (g.get("difficultyTrade") ?? g.get("difficulty"));
 
 // The difficulty knob used for SIGNINGS (free-agent mood / contract demands).
 // Falls back to the league's overall `difficulty` when no signing-specific

@@ -24,8 +24,10 @@ with "the Pistons", not with a named person.
 - **Basketball only.** The setting does not appear in the other sports.
 - **In League Settings** (Game Modes), off by default (owner's call, to try
   the mode while it is built). What it changes so far: CPU-to-CPU trades,
-  CPU re-signing and free agency, free-agency testing and mood terms. Trades
-  with humans and the draft are still stock.
+  how CPU teams judge a human's trade offer, re-signing and free agency for
+  every team, free-agency testing and mood terms. CPU teams' trade offers to
+  humans (counters, the trading block, Trade Proposals) and the draft are
+  still stock.
 - **Existing leagues never switch on their own.** New leagues default to it only
   once the owner has played it and is happy with it.
 - **Difficulty does nothing when it is on.** The trade, signing and overall
@@ -170,6 +172,15 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   a bid cannot be withdrawn. Everything is public - every team sees the bids.
 - **Which deals get a window** (every deal, or only notable ones) is a user
   setting.
+- **A higher bar for a human's deal** (owner's call): a human picks which
+  deals to offer, so finds the ones the model gets wrong in his favour; the
+  margin of error counts 1.5 times as much in a deal with a human, to be
+  tuned by the shark bot until hunting for such deals stops paying.
+- **What a no says** (owner's call): no, a better offer (shown in full), or
+  not before the deadline - never how close the offer came.
+- **Undo is unchanged** (owner's call).
+- **Difficulty does nothing to trades in this mode**: the CPU's read of a
+  deal is its own, and the trade screen no longer prints it to the console.
 - **Human-to-human trades are unchanged** (agreed in chat).
 - **CPU offers to humans** appear on the Trade Proposals page, which is rebuilt
   for this mode, with a notification so the user knows an offer is waiting. An
