@@ -548,9 +548,10 @@ const shootingFlourish = (p: RecapPlayer): string | undefined => {
 		return `on ${p.fg}-of-${p.fga} shooting`;
 	}
 	// A hot night from deep is told as the split when the attempts are
-	// known: "going 5-of-7 from three" says more than "on 5 threes".
+	// known: "5-of-7 from three" says more than "on 5 threes". Not "after
+	// going 5-of-7", which put the shooting before the points it made.
 	if (p.tp >= 4 && p.tpa >= p.tp && p.tp / p.tpa >= 0.55) {
-		return `after going ${p.tp}-of-${p.tpa} from three`;
+		return `including ${p.tp}-of-${p.tpa} from three`;
 	}
 	if (p.tp >= 4) {
 		// "on", not "with": every caller introduces the stat line with "with", and
@@ -565,12 +566,18 @@ const shootingFlourish = (p: RecapPlayer): string | undefined => {
 };
 
 // The line with its flourish: "38 points and 17 rebounds, including 13-of-17
-// from the line", "25 points after going 5-of-9 from three".
-const withFlourish = (line: string, flourish: string | undefined): string =>
+// from the line", "25 points, including 5-of-9 from three".
+// An "including" aside is closed with a comma when the sentence goes on:
+// "26 points, including 4-of-6 from three, as the Magic got past the Bucks".
+const withFlourish = (
+	line: string,
+	flourish: string | undefined,
+	continues = false,
+): string =>
 	flourish === undefined
 		? line
 		: flourish.startsWith("including")
-			? `${line}, ${flourish}`
+			? `${line}, ${flourish}${continues ? "," : ""}`
 			: `${line} ${flourish}`;
 
 // The verb that carries the LEAD sentence, scaled to how big the star's night
@@ -2673,7 +2680,7 @@ const leadSentence = (
 	if (omitResult) {
 		return `${subject} ${actionVerb} ${withFlourish(statText, flourish)}.`;
 	}
-	return `${subject} ${actionVerb} ${withFlourish(statText, flourish)} as ${theNick(
+	return `${subject} ${actionVerb} ${withFlourish(statText, flourish, true)} as ${theNick(
 		shape.winner,
 	)} ${verb} ${loserTag(game, shape, rng)}${scoreTold ? "" : ` ${scoreTag(shape)}`}${tail}.`;
 };
@@ -4138,7 +4145,7 @@ const loserSentence = (
 			rng,
 			[
 				`, but they shot just ${stats.fgp}% as a team`,
-				`, though nothing else fell - ${stats.fgp}% for the game`,
+				`, but the team shot ${stats.fgp}% from the floor`,
 				`, on a ${stats.fgp}% shooting night for the team`,
 			],
 			"loserFgp",
@@ -4777,7 +4784,7 @@ const threeNote = (
 			rng,
 			[
 				`${cap(theNick(shape.loser))} went ${l.tp}-of-${l.tpa} from three.`,
-				`Nothing fell from deep for ${theNick(shape.loser)} - ${l.tp}-of-${l.tpa}.`,
+				`${cap(theNick(shape.loser))} missed ${l.tpa - l.tp} of their ${l.tpa} threes.`,
 				`${cap(theNick(shape.loser))} shot ${l.tpp}% from three on ${l.tpa} attempts.`,
 				`${cap(theNick(shape.loser))} kept firing from outside and kept missing: ${l.tp}-of-${l.tpa}.`,
 			],
@@ -6554,7 +6561,9 @@ export const getAutoRecap = (game: RecapGame): string => {
 			first === supportText &&
 			!first.includes(nick(shape.winner))
 		) {
-			const cut = first.search(/, and |\.$/);
+			// The ", and" that starts the next man's clause, never the one
+			// inside a stat list ("18 points, 3 steals, and 2 blocks").
+			const cut = first.search(/, and (?=[A-Z])|\.$/);
 			const clause = first.slice(0, cut);
 			if (cut > 0 && !/ for | of his own/.test(clause)) {
 				para[0] = `${clause} for ${theNick(shape.winner)}${first.slice(cut)}`;
@@ -8505,6 +8514,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		const line = withFlourish(
 			statPhrase(topScorer.p),
 			shootingFlourish(topScorer.p),
+			true,
 		);
 		const topScore = scoreTag(analyzeShape(topScorer.game));
 		// The sentence before this one has just given the matchup and score

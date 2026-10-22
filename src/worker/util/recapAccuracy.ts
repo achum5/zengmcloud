@@ -305,6 +305,51 @@ export const verifyRecap = (
 			}
 		}
 
+		// --- threes ----------------------------------------------------------
+		//
+		// "They knocked down 18 threes", "made 7 more threes than", "13 threes
+		// to 4", "on 6 three-pointers": a team's makes or attempts, a man's
+		// makes, or the gap between the teams. "Missed 22 of their 29 threes"
+		// is one team's misses and attempts, exactly.
+		{
+			const teamTp = game.teams.map((t) => teamTotal(t, "tp"));
+			const teamTpa = game.teams.map((t) => teamTotal(t, "tpa"));
+			const ok = new Set<number>([
+				...teamTp,
+				...teamTpa,
+				Math.abs(teamTp[0]! - teamTp[1]!),
+				...game.teams.flatMap((t) => t.players.map((pl) => pl.tp)),
+			]);
+			for (const m of sentence.matchAll(
+				/(?<![\d.-])(\d+) (?:more )?(?:threes|three-pointers)\b/g,
+			)) {
+				if (SEASON_TALK.test(sentence) || /averag/.test(sentence)) {
+					continue;
+				}
+				if (!ok.has(Number(m[1]))) {
+					add("threes", `${m[1]} threes matches nothing`, sentence);
+				}
+			}
+			for (const m of sentence.matchAll(
+				/missed (\d+) of their (\d+) threes/g,
+			)) {
+				const missed = Number(m[1]);
+				const tried = Number(m[2]);
+				if (
+					!game.teams.some(
+						(_t, i) =>
+							teamTpa[i] === tried && teamTpa[i]! - teamTp[i]! === missed,
+					)
+				) {
+					add(
+						"threes",
+						`missed ${missed} of ${tried} matches no team`,
+						sentence,
+					);
+				}
+			}
+		}
+
 		// --- a named quarter's score -----------------------------------------
 		//
 		// The pair right before the quarter word ("a 36-22 first quarter") or

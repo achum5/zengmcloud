@@ -190,6 +190,26 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// Phrases that said something the game did not: "though nothing else
+	// fell - 35.9% for the game" after a man's line (the rest of his team
+	// scored 80), "Nothing fell from deep - 7-of-29" (seven did), "after
+	// going 4-of-7 from three" (the threes were part of the points, not
+	// before them), "18 points, 3 steals for the Trail Blazers, and 2
+	// blocks", and an "including" aside left open before "as".
+	test("no phrase says what the numbers do not", () => {
+		for (const { gid, recap } of pairs) {
+			for (const bad of [
+				/nothing else fell/,
+				/Nothing fell from deep/,
+				/after going \d+-of-\d+/,
+				/\d+ [a-z]+ for the [A-Z][\w ]*, and \d+ [a-z]/,
+				/including \d+-of-\d+ from (?:three|the line) (?:as|in)\b/,
+			]) {
+				assert.notMatch(recap, bad, `gid ${gid}\n${recap}`);
+			}
+		}
+	});
+
 	// Behind after three and won: the game was won in the fourth, and the
 	// story says so with the quarter's score - not just "the second half
 	// belonged to them".

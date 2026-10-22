@@ -921,3 +921,35 @@ describe("facts told once, in English", () => {
 		}
 	});
 });
+
+// The reader never counted threes: "They knocked down 18 threes" went
+// unchecked against a box score that has every make and attempt.
+describe("the accuracy reader counts threes", () => {
+	const home = squad(
+		{ tid: 1, name: "Hawks" },
+		{ name: "Ace Hawk", pid: 11, pts: 27, tp: 5, tpa: 9 },
+		110,
+	);
+	const away = squad(
+		{ tid: 2, name: "Bulls" },
+		{ name: "Bo Bull", pid: 21, pts: 24, tp: 2, tpa: 6 },
+		101,
+	);
+	const g = game([home, away]);
+	// Hawks 5-of-21 (the star 5-of-9, six others 0-of-2), Bulls 2-of-18.
+	const kinds = (text: string) =>
+		verifyRecap(`**x**\n\n${text}`, g).map((v) => v.kind);
+
+	test("a team's makes, a man's makes and the gap pass", () => {
+		assert.deepEqual(kinds("The Hawks knocked down 5 threes."), []);
+		assert.deepEqual(kinds("The Hawks made 3 more threes than the Bulls."), []);
+		assert.deepEqual(kinds("The Bulls missed 16 of their 18 threes."), []);
+	});
+
+	test("a count the box score does not have is caught", () => {
+		assert.deepEqual(kinds("The Hawks knocked down 17 threes."), ["threes"]);
+		assert.deepEqual(kinds("The Bulls missed 15 of their 18 threes."), [
+			"threes",
+		]);
+	});
+});
