@@ -931,6 +931,7 @@ describe("3D director", () => {
 		let late = 0;
 		for (const seed of ["a", "b", "c", "d"]) {
 			const { tl } = compile(seed, 150);
+			const set: { team: number; t0: number; used: boolean }[] = [];
 			for (const tr of tl.tracks.values()) {
 				for (const a of tr.acts) {
 					if (
@@ -964,11 +965,22 @@ describe("3D director", () => {
 							}
 						}
 					}
-					if (best > 5) {
-						unused += 1;
-					} else if (at < a.t0 - 100) {
+					set.push({ team: tr.team, t0: a.t0, used: best <= 5 });
+					if (best <= 5 && at < a.t0 - 100) {
 						late += 1;
 					}
+				}
+			}
+			// (Not one of two ways he has to go, the other taken - the far side
+			// of a Floppy, read and turned down: one set with it was used.)
+			for (const x of set) {
+				if (
+					!x.used &&
+					!set.some(
+						(o) => o.used && o.team === x.team && Math.abs(o.t0 - x.t0) < 800,
+					)
+				) {
+					unused += 1;
 				}
 			}
 		}

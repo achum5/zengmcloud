@@ -25,7 +25,9 @@ describe("3D post play", () => {
 			let backedDown = 0;
 			let floated = 0;
 			let floatedBackedDown = 0;
-			for (const seed of ["p1", "p2"]) {
+			// (Four games: a fadeaway is one low-post shot in twenty-five or so,
+			// and two games' worth can go without one.)
+			for (const seed of ["p1", "p2", "p3", "p4"]) {
 				const { tl, events } = compile(seed, 160);
 				for (const b of tl.beats) {
 					const e = events[b.i]!;
@@ -50,7 +52,7 @@ describe("3D post play", () => {
 					}
 				}
 			}
-			assert.isAbove(shots, 30);
+			assert.isAbove(shots, 60);
 			assert.isAtMost((moves.get("shoot") ?? 0) / shots, 0.1);
 			for (const kind of ["hook", "fade", "floater"]) {
 				assert.isAbove(moves.get(kind) ?? 0, 0, kind);
