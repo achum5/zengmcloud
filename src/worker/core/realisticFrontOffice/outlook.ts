@@ -433,7 +433,28 @@ export const outlookSettings = {
 	// Picks are expected to land back toward the middle of the draft by as
 	// much as they have in arena leagues (expectedPlace).
 	placeRegression: true,
+	// A player's re-sign chance is his chance of still being there after his
+	// contract, as measured (KEPT), not of taking his asking price.
+	keptCalibration: true,
 };
+
+// A player's chance of still being with his team the season after his
+// contract runs out, by his chance of taking its offer at his asking price
+// (stayChance): the team offers what is best for it, often more, and some who
+// test the market come back. Measured in 6 arena leagues (1,039 players of
+// 50 or better whose contract ran out with the team that had traded for
+// them): those given 7% stayed 40% of the time, those given 91% 82% - nearly
+// as often by the season the contract ran out as two or more seasons before.
+const KEPT: readonly (readonly [number, number])[] = [
+	[0, 0.37],
+	[0.07, 0.4],
+	[0.34, 0.56],
+	[0.65, 0.73],
+	[0.91, 0.82],
+	[1, 0.85],
+];
+
+export const keptChance = (stay: number) => tableAt(KEPT, stay);
 
 export const ensureRetention = async (
 	outlook: Pick<LeagueOutlook, "retention">,
@@ -445,9 +466,15 @@ export const ensureRetention = async (
 		if (!outlook.retention.has(key)) {
 			const asked = !outlookSettings.teamRetention && p.tid >= 0 ? p.tid : tid;
 			// His chance of taking his asking price from the team, against
-			// testing the market - as he chooses in the offer market.
+			// testing the market - as he chooses in the offer market - turned
+			// into his chance of still being there after (KEPT).
 			const stay = await stayChance(p, asked);
-			outlook.retention.set(key, Math.round(stay * 1000) / 1000);
+			outlook.retention.set(
+				key,
+				Math.round(
+					(outlookSettings.keptCalibration ? keptChance(stay) : stay) * 1000,
+				) / 1000,
+			);
 		}
 	}
 };
