@@ -81,6 +81,9 @@ export type TeamState = {
 	// Strength each season of the outlook, as the roster stands.
 	path: number[];
 	value: number;
+	// Its players and their injuries, for remembering what its assets are
+	// worth while the roster stands.
+	rosterKey: string;
 };
 
 type Deal = {
@@ -257,6 +260,10 @@ export const loadTeam = async (
 		tradedAway: await tradedAwayOf(tid),
 		path,
 		value: franchiseValue(outlook, path),
+		rosterKey: players
+			.map((p) => `${p.pid}.${p.injury.gamesRemaining}`)
+			.sort()
+			.join(),
 	};
 };
 
@@ -410,22 +417,31 @@ export const bestDealWith = (
 		outgoing: readonly Asset[],
 		incoming: readonly Asset[],
 	) => priceFor(outlook, t, outgoing, incoming);
-	const remember = (key: string, compute: () => number) => {
-		if (!single.has(key)) {
-			single.set(key, compute());
+	// Remembered while both the team's roster and the asset stand as they are.
+	const key = (t: TeamState, sign: "-" | "+", x: Asset) =>
+		`${t.tid}:${t.rosterKey}${sign}${assetKey(x)}${x.kind === "player" ? `.${x.p.injury.gamesRemaining}` : ""}`;
+	const remember = (
+		t: TeamState,
+		sign: "-" | "+",
+		x: Asset,
+		compute: () => number,
+	) => {
+		const k = key(t, sign, x);
+		if (!single.has(k)) {
+			single.set(k, compute());
 		}
 	};
 	for (const x of assetsA) {
-		remember(`${a.tid}-${assetKey(x)}`, () => price(a, [x], []));
-		remember(`${b.tid}+${assetKey(x)}`, () => price(b, [], [x]));
+		remember(a, "-", x, () => price(a, [x], []));
+		remember(b, "+", x, () => price(b, [], [x]));
 	}
 	for (const y of assetsB) {
-		remember(`${b.tid}-${assetKey(y)}`, () => price(b, [y], []));
-		remember(`${a.tid}+${assetKey(y)}`, () => price(a, [], [y]));
+		remember(b, "-", y, () => price(b, [y], []));
+		remember(a, "+", y, () => price(a, [], [y]));
 	}
 	const screen = (t: TeamState, outgoing: Asset[], incoming: Asset[]) =>
-		outgoing.reduce((s, x) => s + single.get(`${t.tid}-${assetKey(x)}`)!, 0) +
-		incoming.reduce((s, x) => s + single.get(`${t.tid}+${assetKey(x)}`)!, 0);
+		outgoing.reduce((s, x) => s + single.get(key(t, "-", x))!, 0) +
+		incoming.reduce((s, x) => s + single.get(key(t, "+", x))!, 0);
 
 	// Each package's screen once: what it costs the team giving it and what it
 	// is worth to the team getting it.
@@ -439,12 +455,12 @@ export const bestDealWith = (
 	const packagesA = summarize(
 		a,
 		b,
-		packages(assetsA, (x) => -single.get(`${a.tid}-${assetKey(x)}`)!),
+		packages(assetsA, (x) => -single.get(key(a, "-", x))!),
 	);
 	const packagesB = summarize(
 		b,
 		a,
-		packages(assetsB, (x) => -single.get(`${b.tid}-${assetKey(x)}`)!),
+		packages(assetsB, (x) => -single.get(key(b, "-", x))!),
 	);
 	const candidates: { giveA: Asset[]; giveB: Asset[]; screen: number }[] = [];
 	for (const pa of packagesA) {
@@ -787,6 +803,18 @@ export const tradeWindow = async () => {
 	}
 };
 
+// What one asset at a time is worth to each team, for the screens: kept for
+// the outlook's life, under each team's roster as it was (TeamState.rosterKey).
+const screens = new WeakMap<LeagueOutlook, Map<string, number>>();
+const screensOf = (outlook: LeagueOutlook) => {
+	let map = screens.get(outlook);
+	if (!map) {
+		map = new Map();
+		screens.set(outlook, map);
+	}
+	return map;
+};
+
 const shop = async (numShoppers: number) => {
 	const phase = g.get("phase");
 	const tids = await aiTids();
@@ -805,7 +833,7 @@ const shop = async (numShoppers: number) => {
 		shoppers.push(pool.splice(Math.floor(random() * pool.length), 1)[0]!);
 	}
 
-	const single = new Map<string, number>();
+	const single = screensOf(outlook);
 	for (const tid of shoppers) {
 		const a = await loadTeam(outlook, tid);
 		const others = tids.filter((x) => x !== tid);
@@ -905,16 +933,6 @@ const shop = async (numShoppers: number) => {
 			frontOffice: breakdown,
 		});
 		marketClock.trades += 1;
-		// What these two teams' assets are worth has changed.
-		for (const key of single.keys()) {
-			if (
-				best.tids.some(
-					(t) => key.startsWith(`${t}-`) || key.startsWith(`${t}+`),
-				)
-			) {
-				single.delete(key);
-			}
-		}
 	}
 
 	// Then what the day's first shopper would offer the human teams: one team
