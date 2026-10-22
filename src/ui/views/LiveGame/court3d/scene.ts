@@ -204,6 +204,14 @@ export type Frame = {
 	// How many picture pixels to a pixel of the lettering drawn into it, so a
 	// name reads at the same size on every screen.
 	textScale: number;
+	// A small picture - a phone's: the man with the ball named by his last
+	// name, as TV does, not his whole name across half of it.
+	shortNames?: boolean;
+	// What is laid over the picture - the score bug, the line over it - each
+	// a box (shares of the picture: across from x0 to x1, down from y0): the
+	// tag under the man with the ball goes over his head instead of behind
+	// one.
+	tagClear?: { x0: number; x1: number; y0: number }[];
 	// The officials, the coaches and the photographers (see crew.ts), and
 	// any of their cameras going off.
 	crew?: { st: PlayerState; body: Body; look: Look }[];
@@ -1026,8 +1034,23 @@ export const drawFrame = (f: Frame) => {
 			? undefined
 			: players.find((p) => p.pid === ball.holder);
 	if (holder) {
-		drawNameTag(ctx, cam, holder, f.lookFor(holder.pid), f.textScale);
+		const look = f.lookFor(holder.pid);
+		drawNameTag(
+			ctx,
+			cam,
+			holder,
+			f.shortNames ? { ...look, name: lastName(look.name) } : look,
+			f.textScale,
+			f.tagClear,
+		);
 	}
+};
+
+// Over his head: higher than the tallest man's (feet).
+const TAG_OVER = 7.6;
+const lastName = (name: string) => {
+	const i = name.indexOf(" ");
+	return i > 0 ? name.slice(i + 1) : name;
 };
 
 const drawNameTag = (
@@ -1036,6 +1059,7 @@ const drawNameTag = (
 	st: PlayerState,
 	look: Look,
 	scale: number,
+	clear: { x0: number; x1: number; y0: number }[] = [],
 ) => {
 	const w = pixelTextWidth(look.name, scale);
 	if (w === 0) {
@@ -1054,9 +1078,24 @@ const drawNameTag = (
 	const x = Math.round(
 		Math.max(scale, Math.min(cam.viewW - total - scale, feet.x - total / 2)),
 	);
-	const y = Math.round(
+	const under = Math.round(
 		Math.min(feet.y + Math.max(5 * scale, 0.6 * feet.k), cam.viewH - h - scale),
 	);
+	// (Behind the score bug or the line over it, over his head instead.)
+	const behind = clear.some(
+		(b) =>
+			x < b.x1 * cam.viewW &&
+			x + total > b.x0 * cam.viewW &&
+			under + h > b.y0 * cam.viewH,
+	);
+	const y = behind
+		? Math.max(
+				scale,
+				Math.round(
+					project(cam, { x: st.x, y: st.y, z: TAG_OVER }).y - h - 2 * scale,
+				),
+			)
+		: under;
 	ctx.fillStyle = "rgba(10, 10, 14, 0.82)";
 	// The notch, if there is room below him for it.
 	if (y - 3 * scale >= feet.y) {

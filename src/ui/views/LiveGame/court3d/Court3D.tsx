@@ -138,16 +138,15 @@ const follow = (
 // picture, and the way it went last (`side`: -1 left, 1 right, 0 neither)
 // kept to unless the other way is much better.
 type BugBox = { x0: number; x1: number; y0: number };
-const bugBoxOf = (
+const boxOf = (
 	wrap: HTMLElement | null,
-	holder: HTMLElement | null,
+	el: Element | null | undefined,
 ): BugBox | undefined => {
-	const bug = holder?.firstElementChild;
-	if (!wrap || !bug) {
+	if (!wrap || !el) {
 		return undefined;
 	}
 	const w = wrap.getBoundingClientRect();
-	const b = bug.getBoundingClientRect();
+	const b = el.getBoundingClientRect();
 	if (w.width <= 0 || w.height <= 0 || b.width <= 0 || b.height <= 0) {
 		return undefined;
 	}
@@ -157,6 +156,18 @@ const bugBoxOf = (
 		y0: (b.top - w.top) / w.height,
 	};
 };
+const bugBoxOf = (wrap: HTMLElement | null, holder: HTMLElement | null) =>
+	boxOf(wrap, holder?.firstElementChild);
+// The score bug and the line over it: what the tag under the man with the
+// ball keeps out from behind (see scene.ts).
+const coversOf = (
+	wrap: HTMLElement | null,
+	holder: HTMLElement | null,
+): BugBox[] =>
+	[
+		bugBoxOf(wrap, holder),
+		boxOf(wrap, wrap?.querySelector(".court3d-caption")),
+	].filter((b) => b !== undefined);
 const DODGE_MAX = 20;
 const dodgeFor = (
 	cam: Camera,
@@ -215,6 +226,9 @@ const LINEUP_INTROS = false;
 // How long the play-by-play may disagree with the roster before the court
 // gives up on the game (ms).
 const ROSTER_WAIT = 5000;
+// Narrower than this (CSS pixels) - a phone held upright - the man with the
+// ball is tagged by his last name (see scene.ts).
+const SHORT_NAMES_W = 560;
 // Drawing a frame in under this long (ms, smoothed), there is time for his
 // poses in finer steps (see sprite.ts); over that, back to the usual ones -
 // and not tried again for a while.
@@ -940,6 +954,8 @@ const Court3D = ({
 		dodgeSide: 0,
 		bugAt: -Infinity,
 		bugBox: undefined as BugBox | undefined,
+		covers: [] as BugBox[],
+		coversAt: -Infinity,
 		heldBy: undefined as number | undefined,
 		heldAt: -Infinity,
 		last: undefined as number | undefined,
@@ -1208,6 +1224,10 @@ const Court3D = ({
 				s.camVY = 0;
 				s.camVZ = 0;
 			}
+			if (now - s.coversAt > 500) {
+				s.coversAt = now;
+				s.covers = coversOf(wrapRef.current, bugRef.current);
+			}
 			// The man with the ball (or the ball, loose or in the air) never
 			// left behind the score bug: the camera eased over off him.
 			let dodge = 0;
@@ -1329,6 +1349,8 @@ const Court3D = ({
 				// Lettering at least 10 CSS pixels tall: a 7-pixel font, each of
 				// its pixels this many picture pixels.
 				textScale: Math.max(1, Math.ceil(10 / ((7 * art) / dpr))),
+				shortNames: w < SHORT_NAMES_W,
+				tagClear: s.covers,
 				crew: working.states.flatMap((st) => {
 					const c = cr.crewLooks.get(st.pid);
 					return c ? [{ st, body: c.body, look: c.look }] : [];
