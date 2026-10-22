@@ -20,6 +20,9 @@ export type FieldMoment = {
 	// it: for the camera to follow.
 	focus?: Pt3;
 	carrier?: Side;
+	// The flags thrown: in the air (turning over as it comes down), or down
+	// on the turf.
+	flags?: { at: Pt3; down: boolean; turn: number }[];
 };
 
 // From one move into the next, his pose eased over this long; and his
@@ -216,6 +219,22 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 		});
 	}
 	const { ball, focus, carrier } = ballAt(play.ball, t, players);
+	const flags = play.flags
+		.filter((f) => t >= f.t0)
+		.map((f) => {
+			// (Tossed up, and fluttering down slower than it went up.)
+			const u = clamp01((t - f.t0) / (f.t1 - f.t0));
+			const rise = u < 0.35 ? u / 0.35 : 1 - (u - 0.35) / 0.65;
+			return {
+				at: {
+					x: f.from.x + (f.to.x - f.from.x) * u,
+					y: f.from.y + (f.to.y - f.from.y) * u,
+					z: f.from.z * (1 - u) + FLAG_RISE * Math.sin((rise * Math.PI) / 2),
+				},
+				down: u >= 1,
+				turn: u >= 1 ? f.t0 % 6.28 : ((t - f.t0) / 1000) * 7,
+			};
+		});
 	return {
 		t,
 		play,
@@ -223,5 +242,9 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 		...(ball ? { ball } : {}),
 		...(focus ? { focus } : {}),
 		...(carrier !== undefined ? { carrier } : {}),
+		...(flags.length > 0 ? { flags } : {}),
 	};
 };
+
+// How high over his hand a flag goes.
+const FLAG_RISE = 5;

@@ -39,7 +39,14 @@ import {
 } from "./personnel.ts";
 import { moveKind, type Move } from "./poses.ts";
 import { actOut } from "./action.ts";
-import { stageCrew, type CrewPart } from "./crew.ts";
+import {
+	anyBall,
+	stageCrew,
+	type CrewInput,
+	type CrewPart,
+	type FlagFlight,
+} from "./crew.ts";
+import { foulsOf } from "./fouls.ts";
 
 // THE GAME STAGED: every snap of the play-by-play, in feet and milliseconds -
 // who is on the field for it, where each man lines up, the ball, and the
@@ -157,8 +164,9 @@ export type Play = {
 	// The formation the offense is in, for a play from scrimmage.
 	formation?: OffenseSetName;
 	parts: Part[];
-	// The officials (see crew.ts).
+	// The officials (see crew.ts), and the flags they throw.
 	crew: CrewPart[];
+	flags: FlagFlight[];
 	ball: BallSeg[];
 };
 
@@ -306,6 +314,10 @@ const ACTED = new Set<PlayKind>([
 	"onside",
 ]);
 const AFTER_WHISTLE = 3200;
+// The referee's call of a foul, from its line on (see crew.ts); a first
+// down signaled this long after the whistle.
+const CALL_MS = 2900;
+const FIRST_DOWN_AT = 1100;
 
 // The first thing said of a play after the snap: when it happened, by what
 // it was. (For a play that is not acted out - a kick, so far - a fair
@@ -782,26 +794,55 @@ class Director {
 			ball.push({ kind: "held", t0: over.t0, pid: center.pid });
 		}
 
-		// The play itself, from the snap.
-		const acted = ACTED.has(kind)
-			? actOut({
+		// The play itself, from the snap - or, a flag before it, the foul.
+		const flagged = events.slice(i0, i1).some((e) => e?.type === "flag");
+		const acted =
+			ACTED.has(kind) || flagged
+				? actOut({
+						kind,
+						offense,
+						dir,
+						losX,
+						ballY,
+						snap,
+						set: formation ? OFFENSE_SETS[formation] : undefined,
+						parts,
+						events,
+						stats,
+						i0,
+						i1,
+						r: this.rng(i0, "action"),
+					})
+				: undefined;
+		if (acted) {
+			ball.push(...acted.ball);
+		}
+		const whistle = acted ? acted.whistle : snap + 1200;
+		// The fouls in it: when each happened, and where.
+		const fouls = flagged
+			? foulsOf({
 					kind,
 					offense,
 					dir,
 					losX,
 					ballY,
+					set,
 					snap,
-					set: formation ? OFFENSE_SETS[formation] : undefined,
-					parts,
+					whistle,
 					events,
-					stats,
 					i0,
 					i1,
-					r: this.rng(i0, "action"),
+					parts,
+					ball,
+					pidOf: (side, name) => this.byName[side].get(name),
+					at: acted?.at ?? new Map(),
+					r: this.rng(i0, "fouls"),
 				})
-			: undefined;
-		if (acted) {
-			ball.push(...acted.ball);
+			: [];
+		// When the play has each line happen.
+		const timed = new Map(acted?.at ?? []);
+		for (const f of fouls) {
+			timed.set(f.flagI, f.t);
 		}
 
 		// The lines.
@@ -839,10 +880,11 @@ class Director {
 				}
 			} else if (e.type === "flag" && !afterSnap) {
 				// Before the snap: a false start, offside.
-				want = kindAt < 0 || i < kindAt ? set + 600 : snap + 1300;
+				want =
+					timed.get(i) ?? (kindAt < 0 || i < kindAt ? set + 600 : snap + 1300);
 				afterSnap = kindAt >= 0 && i > kindAt;
-			} else if (acted?.at.has(i)) {
-				want = acted.at.get(i)!;
+			} else if (timed.has(i)) {
+				want = timed.get(i)!;
 				afterSnap = true;
 				if (RESULTS.has(e.type)) {
 					results += 1;
@@ -864,10 +906,62 @@ class Director {
 			}
 			lastAt = this.line(i, e.type, want);
 		}
+		// What the officials signal: the referee's word on each foul as its
+		// line is said; a score, an incompletion, a kick good or not, a first
+		// down.
+		const calls: CrewInput["calls"] = [];
+		const signals: CrewInput["signals"] = [];
+		const spotAt = (t: number) =>
+			anyBall(ball, parts, t) ?? { x: losX, y: ballY };
+		let scored = false;
+		for (const b of this.beats) {
+			if (b.i < i0 || b.i >= i1) {
+				continue;
+			}
+			const e = events[b.i]!;
+			const t = b.actionStart;
+			if (e.type === "penalty") {
+				const foul = fouls.find((f) => f.penI === b.i);
+				if (foul) {
+					calls.push({ t, foul });
+				}
+			} else if (e.type === "fieldGoal" || e.type === "extraPoint") {
+				signals.push({ what: e.made ? "good" : "noGood", t, at: spotAt(t) });
+			} else if (e.td === true && RESULTS.has(e.type)) {
+				// (When he gets in, not when he got the ball.)
+				scored = true;
+				const at = Math.max(t, whistle);
+				signals.push({ what: "td", t: at, at: spotAt(at) });
+			} else if (e.safety === true && RESULTS.has(e.type)) {
+				scored = true;
+				const at = Math.max(t, whistle);
+				signals.push({ what: "safety", t: at, at: spotAt(at) });
+			} else if (e.type === "passIncomplete") {
+				signals.push({ what: "incomplete", t, at: spotAt(t) });
+			}
+		}
+		// (A new set of downs for the same side, by what it did - not a flag.)
+		const next = events[i1];
+		if (
+			(kind === "run" || kind === "pass") &&
+			!scored &&
+			fouls.length === 0 &&
+			next?.type === "clock" &&
+			next.down === 1 &&
+			next.t === clock.t &&
+			!events.slice(i0, i1).some((e) => e?.type === "interception" || e?.lost)
+		) {
+			signals.push({
+				what: "first",
+				t: whistle + FIRST_DOWN_AT,
+				at: spotAt(whistle),
+			});
+		}
 		const t1 = Math.max(
 			this.lastLine + TAIL,
 			snap + 1500,
 			acted ? acted.whistle + AFTER_WHISTLE : 0,
+			...calls.map((c) => c.t + CALL_MS),
 		);
 		// Each line of the play ends where its own action does; the last one,
 		// with the play.
@@ -912,7 +1006,7 @@ class Director {
 			set,
 			snap,
 			follow: acted?.follow ?? snap,
-			whistle: acted ? acted.whistle : snap + 1200,
+			whistle,
 			t1,
 			parts,
 			ball,
@@ -923,6 +1017,9 @@ class Director {
 				scrimmage >= 95 ||
 				(quarter === 2 && minutes <= 2) ||
 				(quarter >= this.numPeriods && minutes <= 5),
+			fouls,
+			calls,
+			signals,
 			r: this.rng(i0, "crew"),
 		});
 		this.plays.push({
@@ -941,7 +1038,8 @@ class Director {
 			follow: acted?.follow ?? snap,
 			...(formation ? { formation } : {}),
 			parts,
-			crew,
+			crew: crew.parts,
+			flags: crew.flags,
 			ball,
 		});
 		this.T = t1;

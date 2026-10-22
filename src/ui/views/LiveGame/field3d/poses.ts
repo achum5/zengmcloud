@@ -210,6 +210,31 @@ const chop = (i: number, n: number, lo: number, hi: number, knee: number) => {
 	};
 };
 
+// The officials' signals (the NFL's): a signal held a moment - up into it,
+// held, and back down - or one made over and over, from the one pose to the
+// other and back.
+const held = (o: Partial<Pose>): FieldAnim => ({
+	kind: "act",
+	keys: [
+		[0, BASE],
+		[0.18, pose(o)],
+		[0.84, pose(o)],
+		[1, BASE],
+	],
+});
+const over = (a: Partial<Pose>, b: Partial<Pose>): FieldAnim => ({
+	kind: "act",
+	keys: [
+		[0, BASE],
+		[0.14, pose(a)],
+		[0.32, pose(b)],
+		[0.5, pose(a)],
+		[0.68, pose(b)],
+		[0.86, pose(a)],
+		[1, BASE],
+	],
+});
+
 const FIELD_ANIMS = {
 	// Standing easy: between plays, on the sideline.
 	stand: { kind: "still", pose: BASE },
@@ -1145,6 +1170,73 @@ const FIELD_ANIMS = {
 			],
 		],
 	},
+
+	// ---- the officials ----
+	// The flag: a hand to it at his belt, up over his head, and thrown.
+	flagToss: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[0.25, pose({ shN: -20, elN: 70, abN: 30 })],
+			[0.55, pose({ shN: 165, elN: 40, abN: 10 })],
+			[0.75, pose({ shN: 120, elN: 8, abN: 6, wrN: -20 })],
+			[1, pose({ shN: 60, elN: 20, abN: 10 })],
+		],
+	},
+	// A score, a kick good: both arms straight up.
+	sigTD: held({ shN: 178, elN: 2, abN: 6, shF: 178, elF: 2, abF: 6 }),
+	// A safety: the palms together over his head.
+	sigSafety: held({ shN: 176, elN: 24, abN: -12, shF: 176, elF: 24, abF: -12 }),
+	// Incomplete, no good, declined: the arms swung across in front of him.
+	sigWave: over(
+		{ shN: 90, elN: 4, abN: 84, shF: 90, elF: 4, abF: 84 },
+		{ shN: 88, elN: 10, abN: -22, shF: 92, elF: 10, abF: -30 },
+	),
+	// An arm straight out to his right: the way the offense goes for a
+	// first down, at the side that fouled.
+	sigSide: held({ shN: 90, elN: 2, abN: 86 }),
+	// Holding: one wrist gripped in front of him, and pulled down.
+	sigHold: over(
+		{ shN: 52, elN: 84, abN: -24, shF: 48, elF: 96, abF: -16 },
+		{ shN: 34, elN: 80, abN: -24, shF: 30, elF: 92, abF: -16 },
+	),
+	// A false start, an illegal formation or shift: the forearms rolled over
+	// each other.
+	sigRoll: over(
+		{ shN: 62, elN: 96, abN: -10, shF: 50, elF: 110, abF: -10 },
+		{ shN: 48, elN: 110, abN: -10, shF: 64, elF: 96, abF: -10 },
+	),
+	// Offside, encroachment, the neutral zone: hands on hips.
+	sigHips: held({
+		shN: -14,
+		elN: 106,
+		abN: 48,
+		wrN: 10,
+		shF: -14,
+		elF: 106,
+		abF: 48,
+		wrF: 10,
+	}),
+	// Pass interference, a block in the back: both hands pushed out.
+	sigPush: over(
+		{ shN: 70, elN: 110, abN: 4, shF: 70, elF: 110, abF: 4 },
+		{ shN: 92, elN: 8, abN: 4, shF: 92, elF: 8, abF: 4 },
+	),
+	// A personal foul: one wrist struck down on the other over his head.
+	sigChop: over(
+		{ shN: 175, elN: 10, abN: -5, shF: 145, elF: 95, abF: -35 },
+		{ shN: 140, elN: 60, abN: -25, shF: 145, elF: 95, abF: -35 },
+	),
+	// The face mask: a hand to his own, pulled down.
+	sigMask: over({ shN: 70, elN: 150, abN: 4 }, { shN: 52, elN: 120, abN: 4 }),
+	// Unsportsmanlike conduct: the arms out wide, palms down.
+	sigT: held({ shN: 90, elN: 2, abN: 88, shF: 90, elF: 2, abF: 88 }),
+	// Delay of game: the arms folded across his chest.
+	sigFold: held({ shN: 46, elN: 124, abN: -34, shF: 50, elF: 120, abF: -34 }),
+	// Too many men, a man downfield who should not be: hands on his head.
+	sigHead: held({ shN: 160, elN: 128, abN: 34, shF: 160, elF: 128, abF: 34 }),
+	// Illegal contact, illegal use of the hands: an open hand out in front.
+	sigContact: held({ shN: 92, elN: 6, abN: 0, wrN: -40 }),
 } satisfies Record<string, FieldAnim>;
 
 export type FieldAnimName = keyof typeof FIELD_ANIMS;

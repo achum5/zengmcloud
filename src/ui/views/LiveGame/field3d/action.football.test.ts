@@ -188,6 +188,41 @@ describe("the plays acted out", () => {
 		assert.isAbove(checked, 50);
 	});
 
+	test("a touchdown when he gets in with it, not before", () => {
+		const bad: string[] = [];
+		let checked = 0;
+		eachPlay((play, seg, tl) => {
+			if (!ACTED.has(play.kind) || seg.some((e) => e.type === "flag")) {
+				return;
+			}
+			const k = seg.findIndex(
+				(x) =>
+					x.td === true &&
+					(x.type === "run" ||
+						x.type === "passComplete" ||
+						x.type === "interceptionReturn" ||
+						x.type === "kickoffReturn" ||
+						x.type === "puntReturn"),
+			);
+			if (k < 0) {
+				return;
+			}
+			const beat = tl.beats.find((b) => b.i === play.i + k)!;
+			const holder = play.ball.findLast(
+				(b): b is Extract<BallSeg, { kind: "held" }> =>
+					b.kind === "held" && b.t0 <= beat.actionStart + 1,
+			);
+			const m = momentAt(tl, beat.actionStart + 1);
+			const man = m.players.find((p) => p.id === holder?.pid);
+			// (In past the goal line: the end zone of whichever way he went.)
+			if (!man || (man.x > 30 + 1 && man.x < FIELD_L - 30 - 1)) {
+				bad.push(`not in on play ${play.i}`);
+			}
+			checked += 1;
+		});
+		assert.deepEqual(bad.slice(0, 5), []);
+		assert.isAbove(checked, 10);
+	});
 	test("a pick taken back from where the sim says, to where it says", () => {
 		let checked = 0;
 		eachPlay((play, seg, tl) => {
@@ -402,6 +437,71 @@ describe("the plays acted out", () => {
 			checked += 1;
 		});
 		assert.isAbove(checked, 10);
+	});
+	test("a flag thrown for every one the sim has, and the referee's call of each", () => {
+		const bad: string[] = [];
+		let flags = 0;
+		let early = 0;
+		eachPlay((play, seg) => {
+			const thrown = seg.filter((x) => x.type === "flag").length;
+			if (play.flags.length !== thrown) {
+				bad.push(`${play.flags.length} of ${thrown} flags on play ${play.i}`);
+			}
+			for (const f of play.flags) {
+				if (f.t0 < play.t0 || f.t1 > play.t1) {
+					bad.push(`a flag out of its play on play ${play.i}`);
+				}
+				if (
+					f.to.x < -4 ||
+					f.to.x > FIELD_L + 4 ||
+					f.to.y < -4 ||
+					f.to.y > 164
+				) {
+					bad.push(`a flag off the field on play ${play.i}`);
+				}
+			}
+			flags += thrown;
+			// The referee, after the play: each foul's signal, then which way
+			// it goes (or waved off, declined).
+			const calls = seg.filter((x) => x.type === "penalty").length;
+			const ref = play.crew.find((p) => p.pid === -1)!;
+			const sides = ref.legs.filter(
+				(l) =>
+					(l.arms === "sigSide" || l.arms === "sigWave") &&
+					l.armsSpan?.[0] === 0,
+			).length;
+			if (sides !== calls) {
+				bad.push(`${sides} of ${calls} calls on play ${play.i}`);
+			}
+			// A foul before the snap: no snap.
+			if (
+				thrown > 0 &&
+				!seg.some((x) =>
+					[
+						"dropback",
+						"handoff",
+						"run",
+						"kneel",
+						"punt",
+						"kickoff",
+						"fieldGoal",
+						"extraPoint",
+					].includes(x.type),
+				)
+			) {
+				early += 1;
+				if (
+					play.ball.some(
+						(b) => b.kind === "fly" || (b.kind === "held" && b.t0 > play.snap),
+					)
+				) {
+					bad.push(`snapped with a foul before it on play ${play.i}`);
+				}
+			}
+		});
+		assert.deepEqual(bad.slice(0, 5), []);
+		assert.isAbove(flags, 20);
+		assert.isAbove(early, 3);
 	});
 	test("the officials on every play: all seven, at a man's speed, on the field or just off it", () => {
 		const bad: string[] = [];

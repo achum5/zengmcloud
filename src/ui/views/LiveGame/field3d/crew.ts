@@ -1,5 +1,6 @@
 import { makeCourtRng } from "../courtRng.ts";
 import type { BallSeg, Leg, Part, PlayKind } from "./director.ts";
+import type { Foul } from "./fouls.ts";
 import {
 	END_ZONE,
 	FIELD_L,
@@ -9,6 +10,7 @@ import {
 	dist,
 	type Dir,
 	type Pt,
+	type Pt3,
 	type Side,
 } from "./geometry.ts";
 import type { Move } from "./poses.ts";
@@ -23,7 +25,10 @@ import type { Move } from "./poses.ts";
 // to the ball as the play goes - the men in the backfield behind it, the
 // deep men ahead of it, the wings level with it - and, the ball dead, in
 // toward where it is down: the wing on that side to mark it, the umpire to
-// spot it.
+// spot it. A foul, and the nearest of the men who would see it throws his
+// flag; after the play the referee faces the press box and gives the
+// signal for it. A score, an incompletion, a kick good or not, a first
+// down: the man nearest it signals that.
 
 export const CREW = ["R", "U", "DJ", "LJ", "SJ", "FJ", "BJ"] as const;
 export type Official = (typeof CREW)[number];
@@ -81,8 +86,25 @@ export type CrewInput = {
 	backToLine: boolean;
 	// The umpire over the ball, on the defense's side of it.
 	umpireDeep: boolean;
+	// The fouls called (see fouls.ts); the referee's word on each after the
+	// play, when its line is said; what else gets signaled, and when.
+	fouls: Foul[];
+	calls: { t: number; foul: Foul }[];
+	signals: { what: Signaled; t: number; at: Pt }[];
 	r: () => number;
 };
+
+export type Signaled =
+	| "td"
+	| "incomplete"
+	| "good"
+	| "noGood"
+	| "safety"
+	| "first";
+
+// A flag thrown: from his hand at t0, down on the turf at `to` at t1, lying
+// there from then on.
+export type FlagFlight = { t0: number; t1: number; from: Pt3; to: Pt };
 
 // Just off the field: the wings on the sidelines, the deep men a step in.
 const OFF_FIELD = 3;
@@ -96,6 +118,27 @@ const WALK = 4.6;
 const ACCEL = 20;
 const STEP_MS = 150;
 const REACT_MS = 250;
+// The flag: in his hand over his head (its height, feet) as it goes; at
+// most this far from him it comes down.
+const FLAG_Z = 7.2;
+const FLAG_REACH = 40;
+// The referee on the microphone: the signal, then the side that fouled (or
+// the wave of a call declined); stopped and faced to the press box a moment
+// before it.
+const CALL_SIGNAL_MS = 1500;
+const CALL_SIDE_MS = 1000;
+const SETTLE_MS = 600;
+// How long each other signal is held.
+const SIGNAL_MS: Record<Signaled, number> = {
+	td: 2000,
+	incomplete: 1300,
+	good: 2000,
+	noGood: 1300,
+	safety: 1800,
+	first: 1500,
+};
+// Facing the press box.
+const FACING_US = Math.PI / 2;
 
 // Where he keeps himself, along the field, to the ball (in the offense's
 // frame): no farther behind it than `lo` past where it is, no farther
@@ -161,7 +204,11 @@ const groundBall = (
 	return p ? posOf(p.legs, t) : undefined;
 };
 // And, wherever it is, where it is over the ground.
-const anyBall = (segs: BallSeg[], parts: Part[], t: number): Pt | undefined => {
+export const anyBall = (
+	segs: BallSeg[],
+	parts: Part[],
+	t: number,
+): Pt | undefined => {
 	let s: BallSeg | undefined;
 	for (const x of segs) {
 		if (x.t0 <= t) {
@@ -178,7 +225,66 @@ const anyBall = (segs: BallSeg[], parts: Part[], t: number): Pt | undefined => {
 	return s?.kind === "spot" ? s.at : groundBall(segs, parts, t);
 };
 
-export const stageCrew = (input: CrewInput): CrewPart[] => {
+// Stopped where he is, facing `yaw`, from t0 to t1 (to give a signal).
+type Hold = { o: Official; t0: number; t1: number; yaw: number };
+
+// The leg he is in at t made two, there.
+const splitAt = (legs: Leg[], t: number) => {
+	const k = legs.findIndex((l) => l.t0 < t && t < l.t1);
+	if (k < 0) {
+		return;
+	}
+	const l = legs[k]!;
+	const u = (t - l.t0) / (l.t1 - l.t0);
+	const mid = {
+		x: l.from.x + (l.to.x - l.from.x) * u,
+		y: l.from.y + (l.to.y - l.from.y) * u,
+	};
+	const [q0, q1] = l.armsSpan ?? [0, 1];
+	legs.splice(k + 1, 0, {
+		...l,
+		t0: t,
+		from: mid,
+		...(l.arms
+			? { armsSpan: [q0 + (q1 - q0) * u, q1] as [number, number] }
+			: {}),
+	});
+	l.t1 = t;
+	l.to = mid;
+	if (l.arms) {
+		l.armsSpan = [q0, q0 + (q1 - q0) * u];
+	}
+};
+
+// His arms through `move` over t0..t1, whatever the rest of him is doing -
+// with his left arm, `mirrored`.
+const armsOver = (
+	legs: Leg[],
+	move: Move,
+	t0: number,
+	t1: number,
+	mirrored = false,
+) => {
+	splitAt(legs, t0);
+	splitAt(legs, t1);
+	for (const l of legs) {
+		if (l.t0 >= t0 && l.t1 <= t1 && l.t1 > l.t0) {
+			l.arms = move;
+			l.armsSpan = [(l.t0 - t0) / (t1 - t0), (l.t1 - t0) / (t1 - t0)];
+			if (mirrored) {
+				l.mirrored = true;
+			}
+		}
+	}
+};
+
+// Whether, facing `yaw`, he points his left arm (rather than his right)
+// out to the side to point along the field `way` (+1 up it, -1 down it).
+const leftArm = (yaw: number, way: number) => -Math.sin(yaw) * way < 0;
+
+export const stageCrew = (
+	input: CrewInput,
+): { parts: CrewPart[]; flags: FlagFlight[] } => {
 	const { kind, dir, losX, ballY, r } = input;
 	const w = (p: OPt): Pt => ({ x: losX + dir * p.d, y: ballY + dir * p.a });
 	const of = (p: Pt): OPt => ({
@@ -307,7 +413,7 @@ export const stageCrew = (input: CrewInput): CrewPart[] => {
 			};
 		}
 		const far = dist(from, dead) || 1;
-		const keep = 24 + r() * 14;
+		const keep = 24 + keeps.get(o)! * 14;
 		return {
 			to:
 				far > keep
@@ -319,8 +425,8 @@ export const stageCrew = (input: CrewInput): CrewPart[] => {
 			fps: JOG - 2,
 		};
 	};
-	const out: CrewPart[] = [];
-	for (const p of posts) {
+	const keeps = new Map(posts.map((p) => [p.o, r()]));
+	const walk = (p: Post, holds: Hold[]): Leg[] => {
 		const legs: Leg[] = [];
 		const start = p.at;
 		const startO = of(start);
@@ -353,9 +459,12 @@ export const stageCrew = (input: CrewInput): CrewPart[] => {
 		for (let t = snap + REACT_MS; t < t1; t += STEP_MS) {
 			const t2 = Math.min(t1, t + STEP_MS);
 			const playing = t < whistle + 200;
+			const hold = holds.find((h) => t >= h.t0 && t < h.t1);
 			let target: Pt;
 			let fps = TOP;
-			if (playing) {
+			if (hold) {
+				target = at;
+			} else if (playing) {
 				const ball =
 					t >= follow ? groundBall(input.ball, input.parts, t) : undefined;
 				if (ball) {
@@ -411,7 +520,10 @@ export const stageCrew = (input: CrewInput): CrewPart[] => {
 			const going = Math.atan2(vy, vx);
 			let move: Move;
 			let yaw: number;
-			if (speed < 0.8) {
+			if (hold) {
+				move = speed < 0.8 ? "stand" : "walk";
+				yaw = hold.yaw;
+			} else if (speed < 0.8) {
 				move = "stand";
 				yaw = look;
 			} else if (speed > TURN_AND_RUN || !playing) {
@@ -457,9 +569,144 @@ export const stageCrew = (input: CrewInput): CrewPart[] => {
 				at = to;
 			}
 		}
-		out.push({ pid: officialId(p.o), team: input.offense, legs });
+		return legs;
+	};
+	const legsOf = new Map(posts.map((p) => [p.o, walk(p, [])]));
+	const where = (o: Official, t: number) => posOf(legsOf.get(o)!, t);
+	const nearest = (among: readonly Official[], pt: Pt, t: number) =>
+		[...among].sort(
+			(a, b) => dist(where(a, t), pt) - dist(where(b, t), pt),
+		)[0]!;
+
+	// Who signals what: the referee each call, stopped and faced to the
+	// press box; the man nearest anything else, stopped and faced in to
+	// the field - and what each does with his arms.
+	const holds: Hold[] = [];
+	const arms: {
+		o: Official;
+		move: Move;
+		t0: number;
+		t1: number;
+		left?: boolean;
+	}[] = [];
+	for (const c of input.calls) {
+		const { foul } = c;
+		holds.push({
+			o: "R",
+			t0: c.t - SETTLE_MS,
+			t1: c.t + CALL_SIGNAL_MS + CALL_SIDE_MS,
+			yaw: FACING_US,
+		});
+		arms.push({
+			o: "R",
+			move: foul.signal,
+			t0: c.t,
+			t1: c.t + CALL_SIGNAL_MS,
+		});
+		// (Toward the end the side that fouled defends.)
+		const way = (foul.side === input.offense ? -1 : 1) * dir;
+		arms.push({
+			o: "R",
+			move: foul.accepted ? "sigSide" : "sigWave",
+			t0: c.t + CALL_SIGNAL_MS,
+			t1: c.t + CALL_SIGNAL_MS + CALL_SIDE_MS,
+			left: foul.accepted && leftArm(FACING_US, way),
+		});
 	}
-	return out;
+	for (const sg of input.signals) {
+		const ms = SIGNAL_MS[sg.what];
+		const who: Official[] =
+			sg.what === "good" || sg.what === "noGood"
+				? ["FJ", "BJ"]
+				: sg.what === "td"
+					? [...CREW]
+							.filter((o) => o !== "R")
+							.sort(
+								(a, b) =>
+									dist(where(a, sg.t), sg.at) - dist(where(b, sg.t), sg.at),
+							)
+							.slice(0, 2)
+					: [
+							nearest(
+								sg.what === "first"
+									? ["DJ", "LJ"]
+									: CREW.filter((o) => o !== "R"),
+								sg.at,
+								sg.t,
+							),
+						];
+		for (const o of who) {
+			// (Busy with a call of his own: not this.)
+			if (holds.some((h) => h.o === o && h.t1 > sg.t && h.t0 < sg.t + ms)) {
+				continue;
+			}
+			// (Faced in to the field - under the posts, back out to the kick.)
+			const p = where(o, sg.t);
+			const yaw =
+				sg.what === "good" || sg.what === "noGood"
+					? dir === 1
+						? Math.PI
+						: 0
+					: p.y > MID_Y
+						? -Math.PI / 2
+						: Math.PI / 2;
+			holds.push({ o, t0: sg.t - 200, t1: sg.t + ms, yaw });
+			arms.push({
+				o,
+				move:
+					sg.what === "td" || sg.what === "good"
+						? "sigTD"
+						: sg.what === "safety"
+							? "sigSafety"
+							: sg.what === "first"
+								? "sigSide"
+								: "sigWave",
+				t0: sg.t,
+				t1: sg.t + ms,
+				left: sg.what === "first" && leftArm(yaw, dir),
+			});
+		}
+	}
+	for (const p of posts) {
+		const mine = holds.filter((h) => h.o === p.o);
+		if (mine.length > 0) {
+			legsOf.set(p.o, walk(p, mine));
+		}
+	}
+
+	// The flags: each thrown by the nearest of the men who would see it,
+	// toward where it was, high and down there.
+	const flags: FlagFlight[] = [];
+	for (const f of input.fouls) {
+		const o = nearest(f.by, f.at, f.t);
+		arms.push({ o, move: "flagToss", t0: f.t - 350, t1: f.t + 350 });
+		const t0 = f.t + 175;
+		const from = where(o, t0);
+		const far = dist(from, f.at);
+		const reach = Math.min(far, FLAG_REACH) / (far || 1);
+		const to = onField({
+			x: from.x + (f.at.x - from.x) * reach + (r() - 0.5) * 2,
+			y: from.y + (f.at.y - from.y) * reach + (r() - 0.5) * 2,
+		});
+		flags.push({
+			t0,
+			t1: t0 + Math.min(1300, 650 + dist(from, to) * 14),
+			from: { ...from, z: FLAG_Z },
+			to,
+		});
+	}
+	for (const a of arms) {
+		armsOver(legsOf.get(a.o)!, a.move, a.t0, a.t1, a.left);
+	}
+
+	return {
+		parts: posts.map((p) => ({
+			pid: officialId(p.o),
+			team: input.offense,
+			legs: legsOf.get(p.o)!,
+		})),
+		flags,
+	};
 };
 
 // Back inside the stadium's walls, if he would go out past an end line.

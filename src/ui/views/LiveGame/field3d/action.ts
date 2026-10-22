@@ -448,6 +448,15 @@ const HIT_MS = 280;
 // How much later than he would have been a carrier can be brought down, his
 // run slowed, for the man the sim says made the tackle to get there.
 const SLACK_MS = 700;
+// How far (feet) the man who jumps early before the snap goes, for the
+// foul: out of his stance, or over the line.
+const JUMP: Record<string, number> = {
+	"False start": 1.5,
+	"Illegal motion": 1.5,
+	"Illegal shift": 1,
+	"Neutral zone infraction": 3,
+	Encroachment: 3.5,
+};
 // The ball out of his hands this long after the hit that knocks it loose;
 // and what a man is doing on the turf, down.
 const POP_MS = 120;
@@ -641,6 +650,7 @@ class Action {
 					? "onsideKickRecovery"
 					: kind,
 		);
+		let snapped = false;
 		if (
 			kind === "kickoff" ||
 			kind === "punt" ||
@@ -648,29 +658,38 @@ class Action {
 			kind === "extraPoint" ||
 			kind === "onside"
 		) {
-			if (kicked < 0) {
-				return undefined;
-			}
-			if (kind === "kickoff") {
-				this.kickoff(kicked);
-			} else if (kind === "punt") {
-				this.punt(kicked);
-			} else if (kind === "onside") {
-				this.onside(kicked);
-			} else if (!this.fieldGoal(kicked)) {
-				return undefined;
+			if (kicked >= 0) {
+				snapped = true;
+				if (kind === "kickoff") {
+					this.kickoff(kicked);
+				} else if (kind === "punt") {
+					this.punt(kicked);
+				} else if (kind === "onside") {
+					this.onside(kicked);
+				} else if (!this.fieldGoal(kicked)) {
+					return undefined;
+				}
 			}
 		} else if (kind === "kneel" && kneel >= 0) {
+			snapped = true;
 			this.kneel(kneel);
 		} else if (kind === "pass" && drop >= 0) {
+			snapped = true;
 			this.pass(drop);
 		} else if ((kind === "run" && runI >= 0) || handoff >= 0) {
 			if (runI < 0) {
 				return undefined;
 			}
+			snapped = true;
 			this.runPlay(handoff, runI);
-		} else {
-			return undefined;
+		}
+		if (!snapped) {
+			// (Nothing but a flag: a foul before the snap.)
+			const flagI = this.find("flag");
+			if (flagI < 0) {
+				return undefined;
+			}
+			this.deadBall(flagI);
 		}
 		this.afterWhistle();
 		for (const x of this.reaches) {
@@ -683,6 +702,57 @@ class Action {
 			whistle: this.whistle,
 			...(this.follow !== undefined ? { follow: this.follow } : {}),
 		};
+	}
+
+	// A foul before the snap: the man who jumped early - over the line, or
+	// out of his stance - the flag, the whistle, and everybody up out of his
+	// stance, a few walking off a step or two.
+	deadBall(flagI: number) {
+		const { snap, offense } = this.input;
+		const r = this.r;
+		const pen = this.find("penalty", flagI);
+		const name = pen >= 0 ? this.ev(pen).penaltyName : undefined;
+		const t = name === "Delay of game" ? snap + 300 : snap - 150 - r() * 100;
+		const jumped = typeof name === "string" ? JUMP[name] : undefined;
+		const who = this.man(this.statPids("pen")[0]);
+		this.whistle = t + 400;
+		for (const m of this.men) {
+			m.cut(this.whistle);
+			m.hold(this.whistle);
+		}
+		if (who && jumped !== undefined) {
+			const way = who.team === offense ? 1 : -1;
+			const s = this.of(who.posAt(t));
+			who.cut(t);
+			who.go(
+				this.w({ d: s.d + way * jumped, a: s.a }),
+				t + 250,
+				"drive",
+				way === 1 ? this.ahead : this.behind,
+			);
+			who.hold(this.whistle, "drive");
+		}
+		this.at.set(flagI, t);
+		const spot = this.w({ d: 0, a: 0 });
+		this.ball.push({ kind: "spot", t0: this.whistle, at: { ...spot, z: 0 } });
+		for (const m of this.men) {
+			const up = this.whistle + 150 + r() * 450;
+			m.hold(up);
+			if (r() < 0.5) {
+				const s = this.of(m.at);
+				const back = m.team === offense ? -1 : 1;
+				m.go(
+					this.w({
+						d: s.d + back * (2 + r() * 5),
+						a: s.a + (r() - 0.5) * 4,
+					}),
+					up + 900 + r() * 700,
+					"walk",
+				);
+			}
+			m.hold(m.t + 400, "stand");
+			this.done.add(m.pid);
+		}
 	}
 
 	// The ball drawn with whoever has it, the way what he is doing holds it
@@ -1382,11 +1452,24 @@ class Action {
 
 	// When a man's legs take him over the line x = gx (or `fallback`).
 	crossing(m: Actor, gx: number, fallback: number): number {
+		return this.inWith(m, gx, this.input.dir, fallback);
+	}
+
+	// When `m`, with the ball, gets past the line at gx going `way` - not
+	// when he ran past it on his route before he had it; and had it past
+	// there (caught in the end zone), as soon as he had it.
+	inWith(m: Actor, gx: number, way: number, fallback: number): number {
+		const since =
+			this.ball.findLast((b) => b.kind === "held" && b.pid === m.pid)?.t0 ??
+			-Infinity;
+		if (since > -Infinity && (m.posAt(since).x - gx) * way >= 0) {
+			return since;
+		}
 		for (const l of m.legs) {
-			const a = (l.from.x - gx) * this.input.dir;
-			const b = (l.to.x - gx) * this.input.dir;
-			if (a < 0 && b >= 0) {
-				return l.t0 + ((l.t1 - l.t0) * -a) / (b - a);
+			const a = (l.from.x - gx) * way;
+			const b = (l.to.x - gx) * way;
+			if (l.t1 >= since && a < 0 && b >= 0) {
+				return Math.max(since, l.t0 + ((l.t1 - l.t0) * -a) / (b - a));
 			}
 		}
 		return fallback;
@@ -1698,14 +1781,7 @@ class Action {
 
 	crossingBack(m: Actor, fallback: number): number {
 		const gx = this.input.dir === 1 ? GOAL_L : GOAL_R;
-		for (const l of m.legs) {
-			const a = (l.from.x - gx) * -this.input.dir;
-			const b = (l.to.x - gx) * -this.input.dir;
-			if (a < 0 && b >= 0) {
-				return l.t0 + ((l.t1 - l.t0) * -a) / (b - a);
-			}
-		}
-		return fallback;
+		return this.inWith(m, gx, -this.input.dir, fallback);
 	}
 
 	// ---- the quarterback brought down, or away with it -------------------------------

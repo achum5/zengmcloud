@@ -28,6 +28,7 @@ import {
 import type { Body } from "../court3d/poses.ts";
 import { aimFor } from "./aim.ts";
 import { drawFlyingBall, drawLooseBall } from "./ball.ts";
+import { drawFlag } from "./flag.ts";
 import { footballBody, officialBody } from "./body.ts";
 import { makeFieldCamera } from "./camera.ts";
 import { compileField, type FieldTimeline } from "./director.ts";
@@ -455,6 +456,14 @@ const Field3D = ({
 						} else {
 							drawLooseBall(ctx, view, ball.at, ball.stood);
 						}
+					},
+				});
+			}
+			for (const f of moment.flags ?? []) {
+				items.push({
+					depth: depthOf(view, { ...f.at, z: 0 }),
+					draw: () => {
+						drawFlag(ctx, view, f.at, f.down, f.turn);
 					},
 				});
 			}
