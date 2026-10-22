@@ -39,7 +39,7 @@ export const humanTradeSettings = {
 // Packages from each other team priced in full when shopping.
 const SHOP_CANDIDATES = 6;
 
-type Verdict =
+export type Verdict =
 	| { kind: "yes" }
 	| { kind: "no" }
 	| { kind: "wait" }
@@ -51,7 +51,7 @@ type Verdict =
 			picks: DraftPick[];
 	  };
 
-const assetsFor = (
+export const assetsFor = (
 	t: TeamState,
 	pids: readonly number[],
 	dpids: readonly number[],
@@ -138,7 +138,7 @@ const bestElsewhere = async (
 
 // A CPU team's answer to a human's offer: it gives `cpu`'s assets for
 // `human`'s.
-type Side = {
+export type Side = {
 	tid: number;
 	pids: readonly number[];
 	dpids: readonly number[];

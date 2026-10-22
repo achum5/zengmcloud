@@ -20,6 +20,8 @@ import {
 } from "../../../common/types.ts";
 import { getTeammateJerseyNumbers } from "../player/genJerseyNumber.ts";
 import { recomputeLocalUITeamOvrs } from "../../util/recomputeLocalUITeamOvrs.ts";
+import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import { dropMovedProposals } from "../realisticFrontOffice/proposalStore.ts";
 
 const processTrade = async (
 	rawTeams: TradeTeams,
@@ -229,6 +231,12 @@ const processTrade = async (
 			fromTid: info.fromTid,
 			eid,
 		});
+	}
+
+	// Realistic front offices: CPU teams' proposals to humans that this trade
+	// took assets from are off.
+	if (realisticFrontOfficesOn()) {
+		await dropMovedProposals();
 	}
 
 	// Views wait for a phase change to finish (lock.runView), so a trade made

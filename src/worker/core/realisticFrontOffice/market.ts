@@ -20,6 +20,7 @@ import {
 	sideMargin,
 	type MovedPlayer,
 } from "./margin.ts";
+import { notifyProposal, refreshProposals } from "./proposals.ts";
 import { valueOverReplacement } from "./strength.ts";
 import {
 	buildOutlook,
@@ -864,6 +865,18 @@ const shop = async (numShoppers: number) => {
 				)
 			) {
 				single.delete(key);
+			}
+		}
+	}
+
+	// Then what the day's first shoppers would offer the human teams - the
+	// usual two a day even when every team shops, which would take seconds.
+	const humanTids = g.get("userTids").filter((tid) => !tids.includes(tid));
+	if (humanTids.length > 0) {
+		for (const tid of shoppers.slice(0, SHOPPERS_PER_DAY)) {
+			const fresh = await refreshProposals(outlook, tid, humanTids);
+			for (const humanTid of fresh) {
+				await notifyProposal(tid, humanTid);
 			}
 		}
 	}

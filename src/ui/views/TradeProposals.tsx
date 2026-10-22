@@ -16,7 +16,7 @@ import { useState } from "react";
 import { ActionButton } from "../components/ActionButton.tsx";
 import useTradeOffersSwitch from "../hooks/useTradeOffersSwitch.tsx";
 
-const TradeProposals = ({ offers, seed }: View<"tradeProposals">) => {
+const TradeProposals = ({ offers, seed, standing }: View<"tradeProposals">) => {
 	const {
 		challengeNoRatings,
 		challengeNoTrades,
@@ -121,22 +121,30 @@ const TradeProposals = ({ offers, seed }: View<"tradeProposals">) => {
 
 	return (
 		<>
-			<p>
-				These are trade proposals from up to 5 AI teams. New teams will appear
-				here every 10 games.
-			</p>
-			<ActionButton
-				onClick={async () => {
-					setRefreshing(true);
-					await toWorker("main", "incrementTradeProposalsSeed", undefined);
-					setRefreshing(false);
-				}}
-				processing={refreshing}
-				processingText="Loading"
-				variant="secondary"
-			>
-				Refresh trade proposals
-			</ActionButton>
+			{standing ? (
+				offers.length === 0 ? (
+					<p>No trade proposals right now.</p>
+				) : null
+			) : (
+				<>
+					<p>
+						These are trade proposals from up to 5 AI teams. New teams will
+						appear here every 10 games.
+					</p>
+					<ActionButton
+						onClick={async () => {
+							setRefreshing(true);
+							await toWorker("main", "incrementTradeProposalsSeed", undefined);
+							setRefreshing(false);
+						}}
+						processing={refreshing}
+						processingText="Loading"
+						variant="secondary"
+					>
+						Refresh trade proposals
+					</ActionButton>
+				</>
+			)}
 			{tradeOffersSwitch.toggle}
 			{tradeOffersSwitch.value === "table" ? (
 				<OfferTable

@@ -24,10 +24,9 @@ with "the Pistons", not with a named person.
 - **Basketball only.** The setting does not appear in the other sports.
 - **In League Settings** (Game Modes), off by default (owner's call, to try
   the mode while it is built). What it changes so far: CPU-to-CPU trades,
-  how CPU teams judge a human's trade offer, re-signing and free agency for
-  every team, the draft, free-agency testing and mood terms. CPU teams'
-  trade offers to humans (counters, the trading block, Trade Proposals) are
-  still stock.
+  how CPU teams judge a human's trade offer and what they offer humans
+  (counters, the trading block, Trade Proposals), re-signing and free agency
+  for every team, the draft, free-agency testing and mood terms.
 - **Existing leagues never switch on their own.** New leagues default to it only
   once the owner has played it and is happy with it.
 - **Difficulty does nothing when it is on.** The trade, signing and overall
@@ -186,8 +185,14 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   setting.
 - **A higher bar for a human's deal** (owner's call): a human picks which
   deals to offer, so finds the ones the model gets wrong in his favour; the
-  margin of error counts 1.5 times as much in a deal with a human, to be
-  tuned by the shark bot until hunting for such deals stops paying.
+  margin of error counts 1.5 times as much in a deal with a human, tuned by
+  the shark bot (src/test/shark): an expert human hunting each season for the
+  deals the judge takes that help him most, graded on the game's own sim.
+  At 1.5 the CPU team still comes out ahead by its own read after its misreads
+  (2.5 ± 0.8 hundredths of a title a deal, 7% of deals leaving it worse off,
+  4 leagues x 3 seasons); 1, 2 and 3 misread no less, so it stays at 1.5. What
+  the shark gains is mostly bought with its future, as a contender would.
+  The one blind spot it found, guards, is fixed (positions, above).
 - **What a no says** (owner's call): no, a better offer (shown in full), or
   not before the deadline - never how close the offer came.
 - **Undo is unchanged** (owner's call).
@@ -199,11 +204,21 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   user can accept, decline, dismiss or counter.
   - **What it asks** (owner's call): the deal best for the CPU team, fair by
     what the human can see - public ratings, not the true ones the CPU judges
-    by.
+    by. Best for it by its own read, over the same bar as a human's deal, so
+    it takes the deal when it is offered back; fair when the human's side
+    gains by the ratings he sees, scouting fuzz and all, through the same
+    projections and title odds. The same goes for "What would make this
+    work" (the deal best for it that keeps everything in the human's offer -
+    the offer itself if it would take that) and the trading block (what each
+    CPU team would give for the assets on it). Deals both sides gain from are
+    as rare as between CPU teams, so the trading block often comes back
+    empty.
   - **How many** (owner's call): no fixed count and no reroll. A CPU team
     makes an offer when it wants a deal, and the offer stays while it still
     does; it goes away once the team loses interest or finds something better
-    elsewhere.
+    elsewhere. Two teams a day look again at what they would offer each
+    human team, the day's first shoppers; an offer is off as soon as any of
+    its players or picks moves.
 - **The whole calculation behind each CPU-to-CPU trade** is on its trade
   summary page, in God Mode only (owner's call): it shows true ratings.
 - **Talking (later).** CPU teams explain their side of a deal the way a real

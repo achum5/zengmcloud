@@ -199,7 +199,9 @@ export const projectPlayer = (p: Player, season: number) => {
 		projectionsSeason = season;
 	}
 	const r = last(p.ratings);
-	const key = `${p.pid}:${season}:${r.season}:${r.ovr}:${r.pot}`;
+	// The fuzz too: a human's read of the player (proposals.ts) is projected
+	// from the ratings he sees, which can rate the same.
+	const key = `${p.pid}:${season}:${r.season}:${r.ovr}:${r.pot}:${r.fuzz}`;
 	let projection = projections.get(key);
 	if (!projection) {
 		projection = projectRatings({

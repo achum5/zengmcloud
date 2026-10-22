@@ -9,6 +9,8 @@ import { shuffle, uniformSeed, choice } from "../../common/random.ts";
 import { ValueChangeCalculator } from "../core/team/ValueChangeCalculator.ts";
 import { orderBy } from "../../common/utils.ts";
 import { defineView } from "../util/defineView.ts";
+import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
+import { proposalsTo } from "../core/realisticFrontOffice/proposalStore.ts";
 
 const getOffers = async (seed: number) => {
 	const NUM_OFFERS = 5;
@@ -162,6 +164,35 @@ export default defineView({
 			updateEvents.has("newPhase") ||
 			updateEvents.has("g.tradeProposalsSeed")
 		) {
+			// Realistic front offices: the deals CPU teams stand ready to make
+			// (realisticFrontOffice/proposals.ts), no refreshing for others.
+			if (realisticFrontOfficesOn()) {
+				const userTid = g.get("userTid");
+				const standing: TradeTeams[] = (await proposalsTo(userTid)).map((x) => [
+					{
+						tid: userTid,
+						pids: x.get.pids,
+						dpids: x.get.dpids,
+						pidsExcluded: [],
+						dpidsExcluded: [],
+					},
+					{
+						tid: x.tid,
+						pids: x.give.pids,
+						dpids: x.give.dpids,
+						pidsExcluded: [],
+						dpidsExcluded: [],
+					},
+				]);
+				return {
+					offers: (await augmentOffers(standing)).map((offer) =>
+						addInlinePlayerInfo(offer),
+					),
+					seed: 0,
+					standing: true,
+				};
+			}
+
 			const teamSeason = await idb.cache.teamSeasons.indexGet(
 				"teamSeasonsByTidSeason",
 				[g.get("userTid"), g.get("season")],
@@ -183,6 +214,7 @@ export default defineView({
 			return {
 				offers,
 				seed,
+				standing: false,
 			};
 		}
 	},

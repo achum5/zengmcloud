@@ -4,6 +4,8 @@ import makeItWork from "./makeItWork.ts";
 import summary from "./summary.ts";
 import get from "./get.ts";
 import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
+import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import { counterTeams } from "../realisticFrontOffice/proposals.ts";
 
 /**
  * Make a trade work
@@ -16,18 +18,26 @@ import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 const makeItWorkTrade = async () => {
 	const tr = await get();
 	const teams0 = tr.teams;
+	// Realistic front offices: a CPU team's own read of the deal
+	// (realisticFrontOffice/proposals.ts).
+	const frontOffice =
+		realisticFrontOfficesOn() && !g.get("userTids").includes(teams0[1].tid);
 	const valueChangeCalculator = new ValueChangeCalculator();
-	const teams = await makeItWork(helpers.deepCopy(teams0), {
-		holdUserConstant: false,
-		valueChangeCalculator,
-	});
+	const teams = frontOffice
+		? await counterTeams(helpers.deepCopy(teams0))
+		: await makeItWork(helpers.deepCopy(teams0), {
+				holdUserConstant: false,
+				valueChangeCalculator,
+			});
 
 	if (!teams) {
 		return {
 			changed: false,
-			message: `${
-				g.get("teamInfoCache")[teams0[1].tid]?.region
-			} GM: "I can't afford to give up so much."`,
+			message: `${g.get("teamInfoCache")[teams0[1].tid]?.region} GM: "${
+				frontOffice
+					? "I don't see a deal there."
+					: "I can't afford to give up so much."
+			}"`,
 		};
 	}
 

@@ -325,6 +325,7 @@ import { bySport } from "../../common/sportFunctions.ts";
 import { generateContractOptions } from "../core/contractNegotiation/generateContractOptions.ts";
 import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
 import { afterPick as realisticFrontOfficeAfterPick } from "../core/realisticFrontOffice/draft.ts";
+import { tradingBlockTeams } from "../core/realisticFrontOffice/proposals.ts";
 import {
 	decideReSignings as realisticFrontOfficeDecideReSignings,
 	makeOffer as realisticFrontOfficeMakeOffer,
@@ -3639,7 +3640,16 @@ const getTradingBlockOffers = async ({
 	dpids: number[];
 	lookingFor: LookingForState;
 }) => {
-	let offers = await getOffers(pids, dpids, toConciseLookingFor(lookingFor));
+	// Realistic front offices: each CPU team's own offer
+	// (realisticFrontOffice/proposals.ts).
+	let offers = realisticFrontOfficesOn()
+		? await tradingBlockTeams(
+				g.get("userTid"),
+				pids,
+				dpids,
+				toConciseLookingFor(lookingFor),
+			)
+		: await getOffers(pids, dpids, toConciseLookingFor(lookingFor));
 
 	let saveLookingFor;
 	let positionAndNotDraftPicks = false;
