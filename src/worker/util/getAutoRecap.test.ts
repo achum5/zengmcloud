@@ -245,6 +245,43 @@ describe("getAutoRecap", () => {
 		assert.ok(!/won the glass \d+-0\b/.test(recap), recap);
 	});
 
+	// "Cavaliers knock off the Clippers 132-98": an upset by 34 is a rout.
+	test("an upset by 30 is told as the rout it was", () => {
+		for (let gid = 3630; gid < 3645; gid++) {
+			const cavs = team({
+				tid: 5,
+				name: "Cavaliers",
+				abbrev: "CLE",
+				pts: 132,
+				ptsQtrs: [40, 30, 32, 30],
+				players: [player({ name: "Anthony Dunn", pts: 30, reb: 5 })],
+			});
+			const clips = team({
+				tid: 4,
+				name: "Clippers",
+				abbrev: "LAC",
+				pts: 98,
+				ptsQtrs: [27, 31, 20, 20],
+				players: [player({ name: "Zeke Foster", pts: 22, reb: 8 })],
+			});
+			const recap = getAutoRecap(
+				game({
+					gid,
+					teams: [cavs, clips],
+					winnerTid: 5,
+					spread: { favTid: 4, points: 8.5 },
+				}),
+			);
+			const headline = recap.split("\n")[0]!;
+			assert.doesNotMatch(
+				headline,
+				/knock off|get past|take down|top\b|\bbeat\b/,
+				recap,
+			);
+			assert.match(headline, /rout|blow out|run away|upset/, recap);
+		}
+	});
+
 	test("upset is framed as one when the underdog wins", () => {
 		const clippers = team({
 			tid: 4,

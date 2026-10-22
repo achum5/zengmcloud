@@ -1426,6 +1426,11 @@ const comebackSize = (shape: Shape): number =>
 
 const verbPool = (game: RecapGame, shape: Shape): string[] => {
 	if (isUpset(game, shape)) {
+		// An upset by 34 is a rout first: "Cavaliers knock off the Clippers
+		// 132-98" undersold it. The underdog part is told by the line note.
+		if (shape.margin >= 20) {
+			return ["rout", "blow out", "run away from"];
+		}
 		// "Stunned" and "shocked" belong to a real number. The day wrap has
 		// always held them back for a 7-point dog; the game recap was calling
 		// a 4.5-point dog's win a shock.
@@ -1972,8 +1977,10 @@ const buildHeadlineText = (
 			`${winnerN} ${verb} the ${loserN} ${scoreTag(shape)}${tag}`,
 			`${winnerN} pull the upset over the ${loserN} ${scoreTag(shape)}${tag}`,
 			// Most real upsets are not even labeled: "Jazz beat Bucks 98-91",
-			// "Mathis scores 27 as Jazz top Bucks".
-			`${winnerN} beat the ${loserN} ${scoreTag(shape)}${tag}`,
+			// "Mathis scores 27 as Jazz top Bucks". Not one by 30, though.
+			...(shape.margin >= 20
+				? []
+				: [`${winnerN} beat the ${loserN} ${scoreTag(shape)}${tag}`]),
 		];
 		if (star.pts >= 20) {
 			options.push(

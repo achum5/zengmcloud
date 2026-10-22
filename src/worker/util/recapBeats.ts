@@ -941,7 +941,9 @@ export const nextGameBeat = (
 				`${T} ${n.home ? "host" : "visit"} ${opp} next.`,
 				`Next up for ${tn} is ${opp}, ${n.home ? "at home" : "on the road"}.`,
 				`${T} get ${opp} next${n.home ? ", at home" : ""}.`,
-				`${cap(opp)} are next on the schedule for ${tn}.`,
+				// Not "The Heat are next on the schedule for the Trail Blazers":
+				// backwards, and the only shape that never said where.
+				`${T} play ${opp} next, ${n.home ? "at home" : "on the road"}.`,
 			],
 			"nextGame",
 		);

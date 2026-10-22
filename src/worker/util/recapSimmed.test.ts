@@ -213,6 +213,8 @@ describe("simmed recaps", () => {
 				/after the break to force overtime/,
 				// Soccer talk, and "and a loss" as an afterthought.
 				/aggregate favors|was no help to .*, and a loss/,
+				// Backwards, and never said where.
+				/are next on the schedule for/,
 			]) {
 				assert.notMatch(recap, bad, `gid ${gid}\n${recap}`);
 			}
