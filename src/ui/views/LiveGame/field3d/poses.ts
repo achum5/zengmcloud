@@ -801,6 +801,61 @@ const FIELD_ANIMS = {
 			[1, { ...PRONE, shN: 94, elN: 40, abN: 26, shF: 94, elF: 40, abF: 26 }],
 		],
 	},
+	// A loose ball picked up on the run: down low over it, both hands
+	// under it, and up with it into him.
+	scoop: {
+		kind: "act",
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 34,
+					kneeN: 46,
+					hipF: -6,
+					kneeF: 36,
+					lean: 26,
+					shN: 50,
+					elN: 40,
+					shF: 50,
+					elF: 40,
+				}),
+			],
+			[
+				0.4,
+				pose({
+					hipN: 84,
+					kneeN: 96,
+					hipF: 20,
+					kneeF: 70,
+					lean: 56,
+					shN: 66,
+					elN: 8,
+					abN: 10,
+					shF: 66,
+					elF: 8,
+					abF: 10,
+					wrN: 20,
+					wrF: 20,
+				}),
+			],
+			[
+				1,
+				pose({
+					hipN: 30,
+					kneeN: 40,
+					hipF: -4,
+					kneeF: 30,
+					lean: 20,
+					shN: 30,
+					elN: 104,
+					abN: 4,
+					shF: 30,
+					elF: 104,
+					abF: 4,
+				}),
+			],
+		],
+	},
 	// Up off the turf: a foot under him and his hands down, onto a knee,
 	// then his feet.
 	getUp: {

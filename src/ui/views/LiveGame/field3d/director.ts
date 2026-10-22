@@ -61,8 +61,9 @@ import { stageCrew, type CrewPart } from "./crew.ts";
 export type RawEvent = { type: string; [key: string]: any };
 
 // One thing a man did in a play, as the sim counts it: the stat, the man,
-// and his team (raw: 0 the home team).
-export type StatLine = { s: string; pid: number; t: number };
+// his team (raw: 0 the home team), and where in the events it is - just
+// before the line it goes with (read off a two-point try's line, at it).
+export type StatLine = { s: string; pid: number; t: number; i: number };
 
 export type PlayKind =
 	| "kickoff"
@@ -593,18 +594,20 @@ class Director {
 		const out: StatLine[] = [];
 		let isTry = false;
 		let onside: RawEvent | undefined;
+		let onsideAt = i0;
 		for (let i = i0; i < i1; i++) {
 			const e = this.events[i];
 			if (e?.type === "stat" && typeof e.pid === "number") {
-				out.push({ s: e.s, pid: e.pid, t: e.t });
+				out.push({ s: e.s, pid: e.pid, t: e.t, i });
 			} else if (e?.type === "twoPointConversion") {
 				isTry = true;
 			} else if (e?.type === "onsideKickRecovery") {
 				onside = e;
+				onsideAt = i;
 			}
 		}
 		if (onside) {
-			return this.onsideStats(out, onside);
+			return this.onsideStats(out, onside, onsideAt);
 		}
 		if (!isTry) {
 			return out;
@@ -627,7 +630,7 @@ class Director {
 					const pid = this.byName[(1 - t) as Side].get(name);
 					if (pid !== undefined) {
 						for (const s of stats) {
-							out.push({ s, pid, t });
+							out.push({ s, pid, t, i });
 						}
 						return;
 					}
@@ -641,7 +644,7 @@ class Director {
 	// calls it, if it was the hands team's; if the kicking team's, named in
 	// its line only (the kicker credited with it) - "onsRec", wherever he
 	// lines up, not back deep as a returner.
-	onsideStats(stats: StatLine[], e: RawEvent): StatLine[] {
+	onsideStats(stats: StatLine[], e: RawEvent, i: number): StatLine[] {
 		const t = e.t === 1 ? 1 : 0;
 		const name = Array.isArray(e.names) ? e.names[0] : undefined;
 		const pid =
@@ -651,7 +654,7 @@ class Director {
 				: undefined);
 		const out = stats.filter((x) => !RETURN_STATS.has(x.s));
 		if (pid !== undefined) {
-			out.push({ s: "onsRec", pid, t });
+			out.push({ s: "onsRec", pid, t, i });
 		}
 		return out;
 	}

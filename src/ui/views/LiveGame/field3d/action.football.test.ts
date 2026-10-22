@@ -29,6 +29,8 @@ beforeAll(async () => {
 			onsideFactor: 900,
 			onsideRecoveryFactor: 4,
 		})),
+		// (And a lot of fumbles.)
+		...(await simGames([31, 32], { fumbleFactor: 60 })),
 	];
 	staged = games.map((g, k) =>
 		compileField({ events: g.events, players: g.roster, gid: k }),
@@ -186,6 +188,41 @@ describe("the plays acted out", () => {
 		assert.isAbove(checked, 50);
 	});
 
+	test("a pick taken back from where the sim says, to where it says", () => {
+		let checked = 0;
+		eachPlay((play, seg, tl) => {
+			const pick = seg.find((e) => e.type === "interception");
+			const ret = seg.find((e) => e.type === "interceptionReturn");
+			if (
+				!pick ||
+				!ret ||
+				ret.td ||
+				ret.touchback ||
+				typeof pick.yds !== "number" ||
+				typeof ret.yds !== "number" ||
+				seg.some(
+					(e) =>
+						e.type === "fumble" || e.type === "penalty" || e.type === "flag",
+				)
+			) {
+				return;
+			}
+			const beat = tl.beats.find((b) => b.i === play.i + seg.indexOf(ret));
+			assert.isDefined(beat);
+			const m = momentAt(tl, beat!.actionStart);
+			assert.strictEqual(m.carrier, 1 - play.offense, `play ${play.i}`);
+			assert.isDefined(m.focus);
+			assert.closeTo(
+				(m.focus!.x - play.losX) * play.dir,
+				(pick.yds - ret.yds) * YD,
+				4,
+				`picked at ${pick.yds}, back ${ret.yds} on play ${play.i}`,
+			);
+			checked += 1;
+		});
+		assert.isAbove(checked, 3);
+	});
+
 	test("a pass to the man the sim says, caught by him", () => {
 		let caught = 0;
 		eachPlay((play, seg) => {
@@ -314,6 +351,57 @@ describe("the plays acted out", () => {
 		});
 		assert.isAbove(checked, 3);
 		assert.isAbove(got, 0);
+	});
+	test("a fumble loose on the turf, come up with by the man the sim says, down where it says", () => {
+		let checked = 0;
+		eachPlay((play, seg, tl) => {
+			const k = seg.findLastIndex((x) => x.type === "fumbleRecovery");
+			if (
+				k < 0 ||
+				!ACTED.has(play.kind) ||
+				seg.some((x) => x.type === "penalty" || x.type === "flag")
+			) {
+				return;
+			}
+			const e = seg[k]!;
+			const fum = seg.findLastIndex((x, j) => j < k && x.type === "fumble");
+			const out = tl.beats.find((b) => b.i === play.i + fum);
+			const beat = tl.beats.find((b) => b.i === play.i + k);
+			assert.isDefined(out, `play ${play.i}`);
+			assert.isDefined(beat, `play ${play.i}`);
+			// Out of his hands: on the turf, or in the air off it.
+			const loose = momentAt(tl, out!.actionStart + 200);
+			assert.isUndefined(loose.carrier, `loose on play ${play.i}`);
+			// Had by the side the sim says - the man it says, if it says.
+			const m = momentAt(tl, beat!.actionStart);
+			const side = 1 - (e.t === 1 ? 1 : 0);
+			assert.strictEqual(m.carrier, side, `whose on play ${play.i}`);
+			const rec = seg.findLast(
+				(x, j) => j > fum && j < k && x.type === "stat" && x.s === "defFmbRec",
+			)?.pid;
+			const holder = play.ball.findLast(
+				(b): b is Extract<BallSeg, { kind: "held" }> =>
+					b.kind === "held" && b.t0 <= beat!.actionStart,
+			);
+			if (rec !== undefined) {
+				assert.strictEqual(holder?.pid, rec, `who on play ${play.i}`);
+			}
+			// And down where the next snap is from.
+			const next = tl.plays[tl.plays.indexOf(play) + 1];
+			if (
+				next &&
+				next.quarter === play.quarter &&
+				!e.td &&
+				!e.safety &&
+				!e.touchback &&
+				m.focus &&
+				(next.kind === "pass" || next.kind === "run")
+			) {
+				assert.closeTo(m.focus.x, next.losX, 3.5, `where on play ${play.i}`);
+			}
+			checked += 1;
+		});
+		assert.isAbove(checked, 10);
 	});
 	test("the officials on every play: all seven, at a man's speed, on the field or just off it", () => {
 		const bad: string[] = [];

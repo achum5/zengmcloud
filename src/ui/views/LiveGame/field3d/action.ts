@@ -398,6 +398,7 @@ const IN_HANDS = new Set<Move>([
 	"handOff",
 	"kneelDown",
 	"catch",
+	"scoop",
 	"back",
 	"slide",
 	"walk",
@@ -447,6 +448,10 @@ const HIT_MS = 280;
 // How much later than he would have been a carrier can be brought down, his
 // run slowed, for the man the sim says made the tackle to get there.
 const SLACK_MS = 700;
+// The ball out of his hands this long after the hit that knocks it loose;
+// and what a man is doing on the turf, down.
+const POP_MS = 120;
+const DOWN = new Set<Move>(["tackled", "dive", "prone", "getUp"]);
 const CLOSE = 0.85;
 const FLAT_OUT = 0.97;
 // A receiver down his route, at this much of his top speed.
@@ -511,6 +516,11 @@ class Action {
 	follow?: number;
 	// A kick returned: the returner with room to run (see slow).
 	weave = false;
+	// The stats said of what is being acted out: those of its lines from
+	// just after `lo` through `hi` - the play up to the first time the ball
+	// is out, then each recovery in turn.
+	lo: number;
+	hi: number;
 
 	constructor(input: ActInput) {
 		this.input = input;
@@ -525,6 +535,9 @@ class Action {
 		this.goalD = ((dir === 1 ? GOAL_R : GOAL_L) - losX) * dir;
 		this.ownGoalD = ((dir === 1 ? GOAL_L : GOAL_R) - losX) * dir;
 		this.seen = input.snap + READ_MS;
+		this.lo = input.i0 - 1;
+		const fum = this.find("fumble");
+		this.hi = fum >= 0 ? fum : input.i1;
 	}
 
 	// The offense's frame to the field, and back.
@@ -561,13 +574,33 @@ class Action {
 		return this.input.events[i]!;
 	}
 	statPids(...names: string[]): number[] {
+		return this.statPidsIn(this.lo, this.hi, ...names);
+	}
+	statPidsIn(lo: number, hi: number, ...names: string[]): number[] {
 		const out: number[] = [];
 		for (const x of this.input.stats) {
-			if (names.includes(x.s) && !out.includes(x.pid)) {
+			if (
+				x.i > lo &&
+				x.i <= hi &&
+				names.includes(x.s) &&
+				!out.includes(x.pid)
+			) {
 				out.push(x.pid);
 			}
 		}
 		return out;
+	}
+	// The ball out again right after line i: the "fumble" line just after
+	// it, or -1.
+	fumbleAfter(i: number): number {
+		const { events, i1 } = this.input;
+		for (let k = i + 1; k < i1; k++) {
+			const type = events[k]?.type;
+			if (type !== "stat") {
+				return type === "fumble" ? k : -1;
+			}
+		}
+		return -1;
 	}
 	// A stat's amount over the play (the yards of a return the sim gives no
 	// line of its own).
@@ -777,11 +810,20 @@ class Action {
 		const blockers = this.o.filter(
 			(m) => OL.has(m.role) || (RECEIVERS.has(m.role) && !runners.includes(m)),
 		);
-		// The rush: the front, and a blitzer if one got home.
+		// The rush: the front, and a blitzer if one got home - but not the man
+		// the sim says picks it off, dropped off into coverage.
 		const sacker = sacked ? this.man(this.statPids("defSk")[0]) : undefined;
-		const rushers = this.d.filter((m) => DL.has(m.role) || m === sacker);
+		const picker =
+			first >= 0 && first === intI
+				? this.man(this.statPids("defInt")[0])
+				: undefined;
+		const rushers = this.d.filter(
+			(m) => (DL.has(m.role) || m === sacker) && m !== picker,
+		);
 		if (!sacker && r() < 0.22) {
-			const lb = this.d.find((m) => LB.has(m.role) && !rushers.includes(m));
+			const lb = this.d.find(
+				(m) => LB.has(m.role) && !rushers.includes(m) && m !== picker,
+			);
 			if (lb) {
 				rushers.push(lb);
 			}
@@ -795,11 +837,15 @@ class Action {
 			const e = events[first]!;
 			const yds = typeof e.yds === "number" ? e.yds : 0;
 			gain = yds;
-			airYds = this.airYards(
-				first === cmpI ? "complete" : "other",
-				yds,
-				e.td === true,
-			);
+			// (Picked off where the sim says: the next snap is from there.)
+			airYds =
+				first === intI
+					? yds
+					: this.airYards(
+							first === cmpI ? "complete" : "other",
+							yds,
+							e.td === true,
+						);
 		}
 		const catchD = Math.min(airYds * YD, this.goalD + 25);
 		// Sacked, where they get him.
@@ -1225,6 +1271,11 @@ class Action {
 		const down = this.downBy(carrier, end.pt, t, chasers, by);
 		this.at.set(i, down.t);
 		this.whistle = down.t;
+		const fumI = this.fumbleAfter(i);
+		if (fumI >= 0) {
+			this.fumbled(fumI, carrier, end.pt, down.t, down.by, chasers);
+			return;
+		}
 		this.tackle(carrier, down.by, end.pt, down.t);
 		this.pursue(chasers, end.pt, down.t, down.by);
 	}
@@ -1352,18 +1403,23 @@ class Action {
 	}
 
 	// Down at `pt` at t: the carrier going down with the first tackler
-	// round him, the second in on it.
-	tackle(carrier: Actor, by: Actor[], pt: Pt, t: number) {
+	// round him, the second in on it - or, `keptUp`, the two of them off
+	// their feet at him as he spins out of it.
+	tackle(carrier: Actor, by: Actor[], pt: Pt, t: number, keptUp = false) {
 		const r = this.r;
 		const fall = carrier.yaw;
 		const downAt = {
 			x: pt.x + Math.cos(fall) * 2.5,
 			y: pt.y + Math.sin(fall) * 2.5,
 		};
-		carrier.act("tackled", t + 450, fall, downAt);
-		carrier.hold(t + 450 + DOWN_MS, "prone");
-		carrier.act("getUp", t + 450 + DOWN_MS + GET_UP_MS);
-		this.done.add(carrier.pid);
+		if (keptUp) {
+			this.runOn(carrier, 450);
+		} else {
+			carrier.act("tackled", t + 450, fall, downAt);
+			carrier.hold(t + 450 + DOWN_MS, "prone");
+			carrier.act("getUp", t + 450 + DOWN_MS + GET_UP_MS);
+			this.done.add(carrier.pid);
+		}
 		const lead = t - HIT_MS;
 		by.forEach((m, k) => {
 			// From the way he comes at him: there at the hit.
@@ -1583,7 +1639,12 @@ class Action {
 		const retI = this.find("interceptionReturn", i);
 		const ret = retI >= 0 ? this.ev(retI) : undefined;
 		const yds = typeof ret?.yds === "number" ? ret.yds : 0;
-		const pickD = this.of(picker.at).d;
+		// (Taken back from where the sim says it was picked off.)
+		const at = this.ev(i).yds;
+		const pickD =
+			typeof at === "number"
+				? Math.min(at * YD, this.goalD + 25)
+				: this.of(picker.at).d;
 		const td = ret?.td === true;
 		let d = pickD - yds * YD;
 		if (td) {
@@ -1702,61 +1763,286 @@ class Action {
 		this.endCarry(i, qb, end, t, this.d);
 	}
 
-	// Stripped in the pocket: the ball on the ground behind the line, and
-	// somebody on it.
+	// Stripped in the pocket: the ball out of his hands as he is hit, where
+	// the sim says, and loose behind the line.
 	strip(i: number, qb: Actor, t: number) {
-		const forcer =
-			this.man(this.statPids("defFmbFrc")[0]) ??
-			this.nearest(this.d, qb.at, 1)[0];
-		qb.hold(t, "qbSet", this.ahead);
-		const down = this.downBy(qb, qb.at, t, this.d, forcer ? [forcer] : []);
+		const r = this.r;
+		const recI = this.find("fumbleRecovery", i);
+		const before = recI >= 0 ? this.ev(recI).ydsBefore : undefined;
+		const at =
+			typeof before === "number"
+				? this.w({
+						d: clamp(before * YD, this.ownGoalD - 20, -3),
+						a: clamp(
+							this.of(qb.at).a + (r() - 0.5) * 10,
+							this.bounds.left + 6,
+							this.bounds.right - 6,
+						),
+					})
+				: qb.at;
+		const forcer = this.man(this.statPids("defFmbFrc")[0]);
+		const step = (dist(qb.at, at) / (qb.top * 0.6)) * 1000;
+		qb.hold(Math.max(qb.t, t - Math.max(800, step)), "qbSet", this.ahead);
+		qb.go(at, t);
+		const down = this.downBy(qb, at, t, this.d, forcer ? [forcer] : undefined);
 		this.at.set(i, down.t);
-		this.tackle(qb, down.by, qb.at, down.t);
-		this.loose(i, qb.at, down.t);
+		this.whistle = down.t;
+		this.fumbled(i, qb, at, down.t, down.by, this.d);
 	}
 
-	// A fumble: the ball out on the ground from `pt` at t - and the
-	// recovery the sim says, fallen on.
-	loose(fumI: number, pt: Pt, t: number) {
-		const r = this.r;
+	// Hit at `pt` at t, and the ball out: the men on him (the one the sim
+	// says knocked it loose in on it first) taking him down - or, if he is
+	// the one the sim says comes up with it, only knocking it out - and
+	// everybody after it (see loose).
+	fumbled(
+		fumI: number,
+		carrier: Actor,
+		pt: Pt,
+		t: number,
+		by: Actor[],
+		chasers: Actor[],
+	) {
+		const { events } = this.input;
 		const recI = this.find("fumbleRecovery", fumI);
-		const ang = r() * Math.PI * 2;
-		const rest = {
-			x: pt.x + Math.cos(ang) * (5 + r() * 6),
-			y: pt.y + Math.sin(ang) * (5 + r() * 6),
-		};
-		this.ball.push(
-			{
-				kind: "fly",
-				t0: t,
-				t1: t + 500,
-				from: { ...pt, z: 2.5 },
-				to: { ...rest, z: 0 },
-				peak: 1.5,
-			},
-			{ kind: "spot", t0: t + 500, at: { ...rest, z: 0 } },
+		const rec =
+			recI >= 0
+				? this.man(this.statPidsIn(fumI, recI, "defFmbRec")[0])
+				: undefined;
+		let before = fumI - 1;
+		while (before > this.input.i0 && events[before]?.type === "stat") {
+			before -= 1;
+		}
+		const forcer = this.man(this.statPidsIn(before, fumI, "defFmbFrc")[0]);
+		let hitters = by.filter((m) => m !== rec);
+		if (
+			forcer &&
+			forcer !== rec &&
+			forcer.team !== carrier.team &&
+			!this.done.has(forcer.pid) &&
+			(hitters.includes(forcer) ||
+				this.canReach(forcer, pt) <= t - HIT_MS + SLACK_MS)
+		) {
+			hitters = [forcer, ...hitters.filter((m) => m !== forcer)].slice(0, 2);
+		}
+		this.tackle(
+			carrier,
+			hitters,
+			pt,
+			t,
+			rec === carrier || hitters.length === 0,
 		);
-		const rec = this.man(this.statPids("defFmbRec")[0]);
-		let onIt = t + 1100;
-		if (rec && !this.done.has(rec.pid)) {
-			const go = Math.max(this.seen, t - 200);
-			onIt = Math.max(
-				onIt,
-				go + (dist(rec.posAt(go), rest) / (rec.top * 0.9)) * 1000 + 350,
+		this.pursue(
+			chasers.filter((m) => m !== rec),
+			pt,
+			t,
+			hitters,
+		);
+		this.loose(fumI, recI, rec, carrier, t + POP_MS);
+	}
+
+	// The ball loose from the man who had it, at t: off the turf, and the
+	// recovery the sim says - by `rec`, going for it from wherever he is
+	// (up off the turf first, if he is down): fallen on where its yards
+	// leave it, the men near piling in, or picked up on the run and taken
+	// there, brought down (or into the end zone) - and, if the sim says so,
+	// out again. On the way, a ball he has a long way to go for is batted
+	// about by the men nearer it.
+	loose(
+		fumI: number,
+		recI: number,
+		rec: Actor | undefined,
+		from: Actor,
+		t: number,
+	) {
+		const r = this.r;
+		const pt = from.posAt(t);
+		this.at.set(fumI, t);
+		this.seen = Math.max(this.seen, t + BREAK_MS);
+		if (recI < 0) {
+			this.ball.push({ kind: "spot", t0: t, at: { ...pt, z: 0 } });
+			this.whistle = Math.max(this.whistle, t + 1500);
+			return;
+		}
+		const e = this.ev(recI);
+		const yds = typeof e.yds === "number" ? e.yds : 0;
+		// Whose it is, and which way (in the offense's frame) they go with
+		// it.
+		const side = (1 - (e.t === 1 ? 1 : 0)) as Side;
+		const way = side === this.input.offense ? 1 : -1;
+		const spot = this.of(pt);
+		// Where it ends up: its yards on from the spot - a score, in the end
+		// zone it goes for; a touchback or a safety, down in its own.
+		const own = way === 1 ? this.ownGoalD : this.goalD;
+		const theirs = way === 1 ? this.goalD : this.ownGoalD;
+		let endD = spot.d + way * yds * YD;
+		if (e.td === true) {
+			endD = theirs + way * (2 + r() * 9);
+		} else if (e.safety === true || e.touchback === true) {
+			endD = own - way * (2 + r() * 6);
+		}
+		endD = clamp(endD, this.ownGoalD - 27, this.goalD + 27);
+		const gain = (endD - spot.d) * way;
+		const again = this.fumbleAfter(recI);
+		// Picked up and run with (to be hit and lose it again, too) - or
+		// fallen on.
+		const scoop = gain > 9 || again >= 0;
+		// Where it gets to: up the field as far as it goes, or, picked up,
+		// a little way - and across, his way.
+		let a = spot.a + (r() - 0.5) * 10;
+		if (rec) {
+			a += clamp((this.of(rec.posAt(t)).a - a) * 0.5, -15, 15);
+		}
+		a = clamp(a, this.bounds.left + 3, this.bounds.right - 3);
+		const restD = !scoop
+			? endD
+			: gain > 9
+				? spot.d + way * clamp(gain * 0.3, 3, 9)
+				: endD - way * 3;
+		const restPt = this.w({ d: restD, a });
+		const restT = t + clamp((dist(pt, restPt) / 15) * 1000, 450, 1500);
+		const others = this.men.filter((m) => m !== rec);
+		if (!rec) {
+			this.hops({ ...pt, z: 3 }, { ...restPt, z: 0 }, t, restT);
+			this.ball.push({ kind: "spot", t0: restT, at: { ...restPt, z: 0 } });
+			this.whistle = restT + 1200;
+			this.at.set(recI, this.whistle);
+			return;
+		}
+
+		// After it.
+		let go = t + 150;
+		for (const l of rec.legs) {
+			if (l.t1 > go && DOWN.has(l.move)) {
+				go = l.t1;
+			}
+		}
+		rec.cut(go);
+		rec.hold(go);
+		const reach = go + (dist(rec.at, restPt) / (rec.top * 0.92)) * 1000;
+		const takeT = scoop
+			? Math.max(restT, reach)
+			: Math.max(restT + 100, reach + 350);
+		// It stops (or is in his hands) - batted on by the first men at it,
+		// if he has a long way to go for it.
+		const upTo = scoop ? takeT : takeT - 300;
+		const batted = upTo - restT > 700;
+		const stopT = batted ? upTo : restT;
+		const stopZ = scoop && takeT - stopT < 50 ? 1.2 : 0;
+		if (batted) {
+			const bat = this.w({
+				d: spot.d + (restD - spot.d) * 0.35 + (r() - 0.5) * 4,
+				a: spot.a + (a - spot.a) * 0.35 + (r() - 0.5) * 6,
+			});
+			const batT = t + clamp((dist(pt, bat) / 15) * 1000, 350, 900);
+			this.hops({ ...pt, z: 3 }, { ...bat, z: 0.5 }, t, batT);
+			this.hops({ ...bat, z: 0.5 }, { ...restPt, z: stopZ }, batT, stopT);
+			const near = this.nearest(
+				others.filter((m) => m !== from),
+				bat,
+				2,
 			);
-			rec.cut(go);
-			rec.hold(go);
-			rec.chase(rest, onIt - 350, rec.top * FLAT_OUT, "sprint");
-			rec.act("dive", onIt, rec.yaw, rest);
-			this.ball.push({ kind: "held", t0: onIt, pid: rec.pid });
-			rec.hold(onIt + 1400, "prone");
-			rec.act("getUp", onIt + 1400 + GET_UP_MS);
+			near.forEach((m, k) => {
+				const yaw = this.toward(m.posAt(this.seen), bat);
+				const short = {
+					x: bat.x - Math.cos(yaw) * 3.5,
+					y: bat.y - Math.sin(yaw) * 3.5,
+				};
+				const at = Math.max(batT + k * 160, this.canReach(m, short) + 300);
+				if (at > stopT - 200) {
+					return;
+				}
+				m.cut(this.seen);
+				m.hold(this.seen);
+				m.chase(short, at - 300, m.top * FLAT_OUT, "sprint");
+				m.act("dive", at, yaw, {
+					x: bat.x + Math.cos(yaw) * 1.5,
+					y: bat.y + Math.sin(yaw) * 1.5,
+				});
+				m.hold(at + 900, "prone");
+				m.act("getUp", at + 900 + GET_UP_MS);
+				this.done.add(m.pid);
+			});
+		} else {
+			this.hops({ ...pt, z: 3 }, { ...restPt, z: stopZ }, t, stopT);
+		}
+		if (takeT > stopT + 1) {
+			this.ball.push({ kind: "spot", t0: stopT, at: { ...restPt, z: 0 } });
+		}
+		this.ball.push({ kind: "held", t0: takeT, pid: rec.pid });
+		const yaw = this.toward(rec.at, restPt);
+
+		if (!scoop) {
+			// Fallen on, and everybody near in on top.
+			const short = {
+				x: restPt.x - Math.cos(yaw) * 4,
+				y: restPt.y - Math.sin(yaw) * 4,
+			};
+			rec.chase(short, takeT - 350, rec.top * FLAT_OUT, "sprint");
+			rec.act("dive", takeT, yaw, restPt);
+			rec.hold(takeT + 1400, "prone");
+			rec.act("getUp", takeT + 1400 + GET_UP_MS);
 			this.done.add(rec.pid);
+			this.whistle = takeT + 500;
+			this.at.set(recI, takeT + 200);
+			const touched = this.statPidsIn(fumI, recI, "defTckSolo", "defTckAst")
+				.map((pid) => this.man(pid))
+				.filter(
+					(m): m is Actor =>
+						!!m && m.team !== rec.team && !this.done.has(m.pid),
+				);
+			const pile = [
+				...touched,
+				...this.nearest(
+					others.filter((m) => !touched.includes(m)),
+					restPt,
+					6 - touched.length,
+				),
+			];
+			for (const m of pile) {
+				m.cut(this.seen);
+				m.hold(this.seen);
+			}
+			this.pileOn(pile, restPt, takeT);
+			return;
 		}
-		if (recI >= 0) {
-			this.at.set(recI, onIt + 200);
+
+		// Picked up on the run, and away with it.
+		rec.chase(restPt, takeT, rec.top * FLAT_OUT, "sprint");
+		const endPt = this.w({
+			d: endD,
+			a: clamp(
+				a + (r() - 0.5) * 16,
+				this.bounds.left + 6,
+				this.bounds.right - 6,
+			),
+		});
+		const on = Math.atan2(endPt.y - rec.at.y, endPt.x - rec.at.x);
+		rec.act("scoop", takeT + 380, on, {
+			x: rec.at.x + Math.cos(on) * 5,
+			y: rec.at.y + Math.sin(on) * 5,
+		});
+		const tEnd =
+			dist(rec.at, endPt) > 2
+				? rec.run(endPt, rec.top * 0.88, "sprint")
+				: rec.t;
+		// (Who brings him down: whoever the sim says did, for this carry.)
+		this.lo = fumI;
+		this.hi = recI;
+		const chasers = this.men.filter((m) => m.team !== rec.team);
+		if (way === 1) {
+			this.endCarry(recI, rec, { pt: endPt, td: e.td === true }, tEnd, chasers);
+		} else {
+			this.endReturn(recI, rec, endPt, tEnd, e.td === true, chasers);
 		}
-		this.whistle = onIt + 200;
+		for (const m of this.men) {
+			if (
+				m.team === rec.team &&
+				!this.done.has(m.pid) &&
+				m.t < this.whistle - 300
+			) {
+				this.trail(m, endPt);
+			}
+		}
 	}
 
 	// ---- the pass rush and the coverage --------------------------------------------
@@ -2870,31 +3156,10 @@ class Action {
 		this.whistle = hitT + 500;
 		this.at.set(i, this.whistle);
 		const pile = this.nearest(others, restPt, 7);
-		pile.forEach((m, n) => {
-			const t1 = hitT + 150 + n * 170 + r() * 200;
-			const ang =
-				Math.atan2(m.at.y - restPt.y, m.at.x - restPt.x) + (r() - 0.5) * 0.9;
-			const ring = 2.4 + n * 0.5 + r() * 1.5;
-			const hit = {
-				x: restPt.x + Math.cos(ang) * ring,
-				y: restPt.y + Math.sin(ang) * ring,
-			};
-			const inward = this.toward(hit, restPt);
+		for (const m of pile) {
 			m.hold(goOf(m));
-			if (n < 3) {
-				m.chase(hit, t1 - 400, m.top * FLAT_OUT, "sprint");
-				m.act("dive", t1, inward, {
-					x: restPt.x + Math.cos(ang) * 1.2,
-					y: restPt.y + Math.sin(ang) * 1.2,
-				});
-				m.hold(t1 + 1100 + n * 150, "prone");
-				m.act("getUp", t1 + 1100 + n * 150 + GET_UP_MS);
-			} else {
-				m.chase(hit, t1, m.top * 0.92);
-				m.hold(this.whistle + 700 + r() * 400, "engage", inward);
-			}
-			this.done.add(m.pid);
-		});
+		}
+		this.pileOn(pile, restPt, hitT);
 		const rest = others.filter((m) => !this.done.has(m.pid));
 		const locks = this.lockOn(rest, kickT, restPt, this.whistle);
 		this.release(locks, restPt);
@@ -2923,6 +3188,39 @@ class Action {
 			);
 		}
 		this.kickerAfter(k, at, this.whistle);
+	}
+
+	// Everybody near piling in on the ball at `pt`, one after another from
+	// `hitT`: the first few there off their feet into it, the rest at each
+	// other round it - each from where what he has been given so far leaves
+	// him.
+	pileOn(pile: Actor[], pt: Pt, hitT: number) {
+		const r = this.r;
+		pile.forEach((m, n) => {
+			const t1 = hitT + 150 + n * 170 + r() * 200;
+			const ang = Math.atan2(m.at.y - pt.y, m.at.x - pt.x) + (r() - 0.5) * 0.9;
+			const ring = 2.4 + n * 0.5 + r() * 1.5;
+			const hit = {
+				x: pt.x + Math.cos(ang) * ring,
+				y: pt.y + Math.sin(ang) * ring,
+			};
+			const inward = this.toward(hit, pt);
+			if (n < 3) {
+				m.chase(hit, t1 - 400, m.top * FLAT_OUT, "sprint");
+			}
+			if (n < 3 && dist(m.at, hit) < 3) {
+				m.act("dive", t1, inward, {
+					x: pt.x + Math.cos(ang) * 1.2,
+					y: pt.y + Math.sin(ang) * 1.2,
+				});
+				m.hold(t1 + 1100 + n * 150, "prone");
+				m.act("getUp", t1 + 1100 + n * 150 + GET_UP_MS);
+			} else {
+				m.chase(hit, t1, m.top * 0.92);
+				m.hold(this.whistle + 700 + r() * 400, "engage", inward);
+			}
+			this.done.add(m.pid);
+		});
 	}
 
 	// The hands team's men left each on a kicking team man coming at them,
