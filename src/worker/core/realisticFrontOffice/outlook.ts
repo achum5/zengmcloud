@@ -271,7 +271,7 @@ const computeSeasonLine = (
 	y: number,
 	gamesRemaining: number,
 	retention: number,
-): StrengthPlayer & { availability: number } => {
+): SeasonLine => {
 	const index = y + offset;
 	if (index === 0) {
 		const r = last(p.ratings);
@@ -313,7 +313,7 @@ const computeSeasonLine = (
 		...(projection.ratings[index] as unknown as ValueRatings),
 		ovr: projection.ovr[index]!,
 	}));
-	return {
+	const line: SeasonLine = {
 		roleFree: roleFree!,
 		offense: offense!,
 		usage: usage!,
@@ -323,7 +323,62 @@ const computeSeasonLine = (
 		valueNoPot: projection.ovr[index]!,
 		availability,
 	};
+	const halves = projection.halves[index];
+	if (
+		(outlookSettings.upside || teamOutlookSettings.size > 0) &&
+		halves &&
+		halves.ovr[1] - halves.ovr[0] >= UPSIDE_SPLIT
+	) {
+		let halfSynergies = projectedHalfSynergy.get(projection);
+		if (!halfSynergies) {
+			halfSynergies = [];
+			projectedHalfSynergy.set(projection, halfSynergies);
+		}
+		const pair = (halfSynergies[index] ??= [0, 1].map((k) =>
+			lineSynergy({
+				...(halves.ratings[k] as unknown as ValueRatings),
+				ovr: halves.ovr[k]!,
+			}),
+		));
+		line.halves = [0, 1].map((k) => {
+			const [roleFree, offense, usage, guard, forward] = halves.measures[k]!;
+			return {
+				roleFree: roleFree!,
+				offense: offense!,
+				usage: usage!,
+				synergy: pair[k]!,
+				guard: guard!,
+				forward: forward!,
+				valueNoPot: halves.ovr[k]!,
+				availability: availability / 2,
+			};
+		});
+	}
+	return line;
 };
+
+// A season of a player's: what he plays like and how likely he is to be
+// there - and where his future is uncertain enough, the same for the worse
+// and better half of his careers, each half as likely, for the roster to
+// play as it would play them (outlookSettings.upside).
+export type SeasonLine = StrengthPlayer & {
+	availability: number;
+	halves?: (StrengthPlayer & { availability: number })[];
+};
+
+// The gap between the halves' overalls below which a player is played as one.
+const UPSIDE_SPLIT = 4;
+
+// A roster's lines with each split player as his two halves.
+const asPlayed = (tid: number, lines: readonly SeasonLine[]) =>
+	outlookSettingFor(tid, "upside") && lines.some((line) => line.halves)
+		? lines.flatMap((line) => line.halves ?? [line])
+		: lines;
+
+const projectedHalfSynergy = new WeakMap<
+	RatingsProjection,
+	ReturnType<typeof lineSynergy>[][]
+>();
 
 const projectedSynergy = new WeakMap<
 	RatingsProjection,
@@ -340,7 +395,7 @@ type PlayerLines = {
 	exp: number;
 	ovr: number;
 	valueNoPot: number;
-	byYear: ((StrengthPlayer & { availability: number }) | undefined)[];
+	byYear: (SeasonLine | undefined)[];
 };
 export type SeasonLines = Map<number, Map<number, PlayerLines[]>>;
 
@@ -436,7 +491,22 @@ export const outlookSettings = {
 	// A player's re-sign chance is his chance of still being there after his
 	// contract, as measured (KEPT), not of taking his asking price.
 	keptCalibration: true,
+	// A player whose future is uncertain plays as the worse and the better
+	// half of his careers, not as their average (SeasonLine).
+	upside: true,
 };
+
+// For the arena's version-against-version leagues: settings for some teams'
+// own rosters, over outlookSettings - the ones a team's pricing alone reads.
+export const teamOutlookSettings = new Map<
+	number,
+	Partial<Pick<typeof outlookSettings, "upside" | "keptCalibration">>
+>();
+const outlookSettingFor = <K extends "upside" | "keptCalibration">(
+	tid: number,
+	key: K,
+): (typeof outlookSettings)[K] =>
+	teamOutlookSettings.get(tid)?.[key] ?? outlookSettings[key];
 
 // A player's chance of still being with his team the season after his
 // contract runs out, by his chance of taking its offer at his asking price
@@ -472,7 +542,9 @@ export const ensureRetention = async (
 			outlook.retention.set(
 				key,
 				Math.round(
-					(outlookSettings.keptCalibration ? keptChance(stay) : stay) * 1000,
+					(outlookSettingFor(tid, "keptCalibration")
+						? keptChance(stay)
+						: stay) * 1000,
 				) / 1000,
 			);
 		}
@@ -1165,7 +1237,7 @@ export const teamPoints = (
 			refill?.(y, 1 - committed / salaryCap, signings);
 		}
 		roster?.(y, lines);
-		let points = expectedRosterPoints(lines);
+		let points = expectedRosterPoints(asPlayed(tid, lines));
 		// This season's playoffs count with everyone back who will be by then
 		// (playoffWeight): a star out for the rest of the regular season is
 		// still worth his playoffs.
@@ -1190,7 +1262,8 @@ export const teamPoints = (
 				}
 			}
 			if (playoffLines) {
-				points += weight * (expectedRosterPoints(playoffLines) - points);
+				points +=
+					weight * (expectedRosterPoints(asPlayed(tid, playoffLines)) - points);
 			}
 		}
 		out.push(points);

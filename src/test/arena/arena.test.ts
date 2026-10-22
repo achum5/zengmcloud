@@ -32,6 +32,7 @@ import {
 	outlookSettings,
 	projectPlayer,
 	retentionOf,
+	teamOutlookSettings,
 	seasonLine,
 	teamPoints,
 	teamStrengths,
@@ -108,6 +109,15 @@ test.runIf(env.ARENA_RUN === "1")(
 					}
 				}
 				Object.assign(outlookSettings, JSON.parse(env.ARENA_OUTLOOK ?? "{}"));
+				// ARENA_SPLIT_OUTLOOK: these outlook settings for the odd teams'
+				// own pricing only (teamOutlookSettings), as ARENA_SPLIT.
+				teamOutlookSettings.clear();
+				if (env.ARENA_SPLIT_OUTLOOK) {
+					const split = JSON.parse(env.ARENA_SPLIT_OUTLOOK);
+					for (let tid = 1; tid < g.get("numTeams"); tid += 2) {
+						teamOutlookSettings.set(tid, split);
+					}
+				}
 				Object.assign(marginSettings, JSON.parse(env.ARENA_MARGIN ?? "{}"));
 				Object.assign(
 					freeAgencySettings,
@@ -648,7 +658,8 @@ test.runIf(env.ARENA_RUN === "1")(
 							seasons.push({
 								season: s,
 								tid,
-								split: teamMarketSettings.has(tid),
+								split:
+									teamMarketSettings.has(tid) || teamOutlookSettings.has(tid),
 								won: ts.won,
 								lost: ts.lost,
 								playoffRoundsWon: ts.playoffRoundsWon,

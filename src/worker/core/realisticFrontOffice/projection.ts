@@ -15,6 +15,15 @@ export type RatingsProjection = {
 	// the average ratings, which undersells anyone whose future is uncertain
 	// when value is convex. Empty without measure.
 	measures: number[][];
+	// Each season, the worse and the better half of the simulated careers by
+	// his overall then: their average ratings, overall and measure. A roster
+	// gives a player who turns out well the minutes of one who did, which an
+	// average of the two undersells. Empty without measure.
+	halves: {
+		ratings: [MinimalPlayerRatings, MinimalPlayerRatings];
+		ovr: [number, number];
+		measures: [number[], number[]];
+	}[];
 };
 
 // A player's ratings in the seasons ahead, played out with the game's own
@@ -48,6 +57,9 @@ export const projectRatings = ({
 	const ovrSums = new Array<number>(years + 1).fill(0);
 	const ovrSumSqs = new Array<number>(years + 1).fill(0);
 	const measureSums: number[][] = [];
+	// Every career's ratings, overall and measure each season, for the halves.
+	const careers: { ratings: number[]; ovr: number; measure: number[] }[][] =
+		Array.from({ length: years + 1 }, () => []);
 
 	const realRandom = Math.random;
 	Math.random = makeSeededRandom(seed);
@@ -70,6 +82,11 @@ export const projectRatings = ({
 					for (let i = 0; i < m.length; i++) {
 						sum[i]! += m[i]!;
 					}
+					careers[y]!.push({
+						ratings: RATINGS.map((key) => (copy as any)[key] as number),
+						ovr: o,
+						measure: m,
+					});
 				}
 			}
 		}
@@ -92,5 +109,36 @@ export const projectRatings = ({
 			Math.sqrt(Math.max(0, x / samples - (ovrSums[y]! / samples) ** 2)),
 		),
 		measures: measureSums.map((sum) => sum.map((x) => x / samples)),
+		halves: measure
+			? careers.map((season) => {
+					const sorted = [...season].sort((a, b) => a.ovr - b.ovr);
+					const mid = Math.floor(sorted.length / 2);
+					const half = (list: typeof sorted) => {
+						const n = Math.max(1, list.length);
+						return {
+							ratings: {
+								...ratings,
+								...Object.fromEntries(
+									RATINGS.map((key, i) => [
+										key,
+										list.reduce((a, c) => a + c.ratings[i]!, 0) / n,
+									]),
+								),
+							} as MinimalPlayerRatings,
+							ovr: list.reduce((a, c) => a + c.ovr, 0) / n,
+							measure: (list[0]?.measure ?? []).map(
+								(_, i) => list.reduce((a, c) => a + c.measure[i]!, 0) / n,
+							),
+						};
+					};
+					const lo = half(sorted.slice(0, mid));
+					const hi = half(sorted.slice(mid));
+					return {
+						ratings: [lo.ratings, hi.ratings],
+						ovr: [lo.ovr, hi.ovr],
+						measures: [lo.measure, hi.measure],
+					};
+				})
+			: [],
 	};
 };
