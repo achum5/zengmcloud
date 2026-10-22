@@ -3239,9 +3239,14 @@ const LEGS_GIVE = 40;
 const LEGS_FTPS = 2;
 const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
 	const run = here.run;
-	// (Backpedalling, his legs go back the way he goes.)
+	// (Backpedalling, his legs go back the way he goes; closing out, his
+	// chop steps go the way he goes.)
 	const back = anim === "back";
-	if (!here.moving || !run || !(isGait(anim) || back || anim === "slide")) {
+	if (
+		!here.moving ||
+		!run ||
+		!(isGait(anim) || back || anim === "slide" || anim === "closeout")
+	) {
 		return 0;
 	}
 	if (here.hx * here.hx + here.hy * here.hy < 1e-6) {

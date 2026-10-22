@@ -587,7 +587,8 @@ type GaitMode =
 	| "walk"
 	| "carry"
 	| "drift"
-	| "backpedal";
+	| "backpedal"
+	| "chop";
 // Giving ground in his stance (see "back"): feet a stride.
 const BACKPEDAL_STRIDE = 3.8;
 const GAITS: Record<GaitMode, Gait> = {
@@ -793,6 +794,29 @@ const GAITS: Record<GaitMode, Gait> = {
 		pump: 0,
 		twist: 0,
 		wide: 0.26,
+	},
+	// Closing out on a shooter: short, choppy steps, sat down in his legs.
+	chop: {
+		stride: 2.6,
+		duty: 0.55,
+		ahead: 0.3,
+		hips: 2.5,
+		bob: -0.03,
+		flat: 0.5,
+		roll: 28,
+		swing: [
+			[0.12, 2, 16],
+			[0.36, 19, 80],
+			[0.66, 44, 84],
+			[0.88, 46, 64],
+		],
+		lean: 16,
+		armFwd: 0,
+		armBack: 0,
+		elbow: 0,
+		pump: 0,
+		twist: 0,
+		wide: 0.5,
 	},
 };
 export const isGait = (mode: string): mode is GaitMode => mode in GAITS;
@@ -1046,12 +1070,8 @@ const stride = (ph: number, mode: RunMode): Pose => {
 		// down in his legs, his left hand high at the shot - face to face, the
 		// hand on the ball's side, reaching with each chop - and the right
 		// down at his hip and out to the side, a hand on the drive.
-		return pose({
-			hipN: 24 + 10 * a,
-			hipF: 30 - 10 * a,
-			kneeN: 54 + 12 * Math.max(0, c),
-			kneeF: 56 + 12 * Math.max(0, -c),
-			lean: 16,
+		return {
+			...gaitPose("chop", ph),
 			shN: 14 + 5 * a,
 			elN: 30,
 			abN: 50,
@@ -1059,8 +1079,7 @@ const stride = (ph: number, mode: RunMode): Pose => {
 			shF: 152 + 4 * c,
 			elF: 18,
 			abF: 16,
-			wide: 0.6,
-		});
+		};
 	}
 	if (isGait(mode)) {
 		const q = gaitPose(mode, ph);
@@ -2316,21 +2335,19 @@ export const ANIMS = {
 		kind: "cycle",
 		n: 6,
 		stride: 2.6,
+		// (Short, choppy steps back into him, each foot planted - see
+		// "closeout" - run backward.)
 		pose: (i) => {
 			const a = Math.sin((2 * Math.PI * i) / 6);
-			return pose({
-				hipN: 18 + 10 * a,
-				kneeN: 56 + 8 * a,
-				hipF: 26 - 10 * a,
-				kneeF: 60 - 8 * a,
+			return {
+				...gaitPose("chop", -i / 6),
 				shN: 34,
 				elN: 26 + 14 * Math.abs(a),
 				shF: 70,
 				elF: 50,
 				abF: 40,
 				lean: 24,
-				wide: 0.6,
-			});
+			};
 		},
 	},
 	back: {
