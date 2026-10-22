@@ -5,6 +5,8 @@ import { g } from "../util/index.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
 import { addMood, freeAgentStats } from "./freeAgents.ts";
 import { defineView } from "../util/defineView.ts";
+import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
+import { reSigningOffers } from "../core/realisticFrontOffice/offerScreen.ts";
 
 export const getNegotiationPids = async (tid: number) => {
 	const negotiations = await idb.cache.negotiations.getAll();
@@ -59,9 +61,18 @@ export default defineView({
 			fuzz: true,
 		});
 
+		// Realistic front offices: each player's offer and his chance of taking
+		// it (none for draft picks, who sign as in stock).
+		const offers = realisticFrontOfficesOn()
+			? await reSigningOffers(userTid, playersAll)
+			: undefined;
+
 		const players = addFirstNameShort(
 			await addMood(playersFiltered, playersAll),
-		);
+		).map((p) => ({
+			...p,
+			reSignOffer: offers?.get(p.pid),
+		}));
 
 		let sumContracts = 0;
 		for (const p of players) {

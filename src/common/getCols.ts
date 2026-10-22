@@ -3377,6 +3377,11 @@ const cols: {
 		sortSequence: ["desc", "asc"],
 		sortType: "number",
 	},
+	Offer: {
+		desc: "Your offer",
+		sortSequence: ["desc", "asc"],
+		sortType: "number",
+	},
 	Opp: {
 		desc: "Opponent",
 	},

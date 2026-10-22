@@ -86,12 +86,29 @@ const haulAt = (share: number) => {
 	return lo.map((x, k) => x + t * (hi[k]! - x));
 };
 
+// During free agency, how much of the market the coming season's room was
+// measured against is still out there: the quality of the free agents left
+// against the quality as free agency opened - set each day of free agency
+// (freeAgency.ts) and good for that day only.
+let poolLeft: { key: string; share: number } | undefined;
+
+const poolKey = () =>
+	`${g.get("season")}:${g.get("phase")}:${g.get("daysLeft")}`;
+
+export const setFreeAgentPoolLeft = (share: number) => {
+	poolLeft = { key: poolKey(), share };
+};
+
 // The free agents a team with this much room is expected to sign, each with
-// the chance it does.
+// the chance it does. `duringFreeAgency`: room in the free agency under way,
+// whose chances shrink as the best free agents sign.
 export const signingsWith = (
 	room: number,
+	duringFreeAgency?: boolean,
 ): (StrengthPlayer & { availability: number })[] => {
 	const h = haulAt(room / g.get("salaryCap"));
+	const left =
+		duringFreeAgency && poolLeft?.key === poolKey() ? poolLeft.share : 1;
 	return [h.slice(1, 6), h.slice(6, 11)].map(
 		([chance, roleFree, offense, usage, ovr]) => ({
 			roleFree: roleFree!,
@@ -100,7 +117,7 @@ export const signingsWith = (
 			// Who he is is not known yet, so no particular skills.
 			synergy: getReplacement().synergy,
 			valueNoPot: ovr!,
-			availability: chance!,
+			availability: chance! * left,
 		}),
 	);
 };

@@ -52,7 +52,11 @@ with "the Pistons", not with a named person.
 - **"Stuck in the middle with no direction" is a failure** we measure and test
   against.
 - **Money:** the luxury tax and profit are ignored. Cap room is used
-  strategically to chase free agents when that applies.
+  strategically to chase free agents when that applies. Reaffirmed with the
+  offer market (owner's call): a team re-signs its own players, over the cap
+  as far as it likes (Bird rights), whenever that is good for its outlook, and
+  clears room only for a free agent worth it - so players stay with their
+  teams more often than in the NBA, where the tax pushes role players out.
 - **No tanking through lineups.** A rebuilding team sells for the future through
   trades, but on the floor every team plays to win.
 
@@ -246,29 +250,76 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   with room. Pricing it by the price of a signing gave clearing a max slot a
   special value, so teams dumped prospects' future salaries for it.
 
-- **CPU judgment first, the board later** (owner's call): CPU teams decide whom
-  to re-sign and which free agents to sign with the same valuation they trade
-  with, inside today's mechanics; moving every team onto the board is its own
-  step.
-- **Signings clear the same margin of error as trades** (owner's call): picking
-  the best of many free agents favours the ones the model overrates.
-- **Teams value waiting in free agency** (owner's call): asking prices fall as
-  it goes on, so a team weighs signing now against signing later, given the
-  measured chance someone else signs him first.
-- **Prices follow the market** (owner's call): a free agent no team would pay
-  at his ask comes halfway down, each day, toward the most any team would pay
-  him - the same for every team, human or CPU. The game's own decay (about
-  $2M over a summer) left a quarter of the top free agents unsigned once CPU
-  teams stopped overpaying.
-- **Contract length is chosen for the team** (owner's call): each length the
-  player would accept, priced, the best taken - as a human does in
-  negotiation.
-- **Players finishing rookie deals mostly stay; veterans' stay rate is tuned to
-  the NBA's unrestricted free agents** (owner's call).
-- **CPU teams join the existing free agency board.** A player has an ask; a team
-  says it will pay it; the day sims; a mood-weighted roll decides between the
-  teams that claimed him. One signing per team per day. Same terms as humans.
-- **Single-player uses the same board**, the user against CPU teams.
+- **CPU teams sign by the valuation they trade with** (owner's call): what
+  signing a player on given terms adds to the team's title chances, less the
+  margin of error - picking the best of many free agents favours the ones the
+  model overrates.
+- _Superseded by the offer market below:_ signing at the player's ask with
+  teams weighing whether to wait for it to fall, asks brought halfway down each
+  day toward the most any team would pay, and the length picked for the team
+  from his asks. The market keeps the parts that held up: a CPU team offers the
+  money and length worth the most to it given its odds of landing him, and he
+  prices each length as contract negotiation does.
+- **Players finishing rookie deals mostly stay** (owner's call). Veterans'
+  stay rate was tuned to the NBA's unrestricted free agents; in the offer
+  market a player weighs his own team's offer against what testing the market
+  looks like it would bring - the teams he would like that could pay his ask -
+  with no extra pull either way, and teams that ignore money pay to keep him.
+- **An offer market, every team on the same terms** (owner's call, replacing
+  the board above): any team, human or CPU, offers whatever money and years it
+  likes, and the player chooses among his offers with odds - how much he likes
+  each one, fitted so the chances add up to 100%. An awful team with a bad
+  offer and a bad fit has next to no chance. A human's offer waits for his
+  decision like anyone else's; there is no instant signing.
+- **Players decide daily, stars early** (owner's call): each day a player with
+  offers may sign or wait for more, so the best go in the first days and role
+  players later, as in an NBA July.
+- **What a player weighs** (owner's call): money and years (pay against what he
+  is worth, and the length he wants at his age), winning, his role and minutes
+  with the team, and his existing mood traits.
+- **Blind bidding, with a daily suggested price** (owner's call): no team sees
+  another's offer. Each day the player's agent names a price for each length,
+  from a market formula: about the second-highest amount any team would pay
+  him (as an auction clears), so it falls as teams spend their room.
+- **Offers are ranked, not capped** (owner's call): a team may have out more
+  offers than it could afford together, ranked by priority. If two of its
+  targets say yes the same day, the higher one signs; an offer that no longer
+  fits falls through and that player chooses again.
+- **The offer screen shows your odds** (owner's call): your chance if he chose
+  today against the offers he has. CPU teams bid knowing the same.
+- **How the market is set up** (measured in the arena):
+  - A player weighs an offer by the log of its money against his ask for that
+    length, plus 0.04 per point of mood toward the team (its winning, hype,
+    market, facilities, his traits, and the role he would have there), with
+    a temperature of 0.1: a 10% better offer is about 2.6 times as likely to
+    be chosen, a point of mood about 1.5 times, as on the multiplayer board.
+    An offer at his ask from a team he is neutral on is worth the same to him
+    as waiting.
+  - The price is the auction's: the second-highest a team after him would
+    pay, where a team is after the few players it gains most from at today's
+    prices, as many as it has places, within the cap rules - so asks fall as
+    teams fill up and spend their room.
+  - A CPU team offers, for each length, the money that does the most for it
+    times its odds of landing him at that money, among offers that clear the
+    margin of error; the margin is a bar, not a cost (as a cost it made long
+    deals look worse than short ones). Every free agent is first looked at
+    for the length he wants and for a single season.
+  - Room in the free agency under way is priced, at what teams with that room
+    sign, shrinking as the best free agents go - left free, a one-year deal's
+    premium cost a team nothing and prime players got one-year deals half the
+    time.
+  - Testing the market, to a player re-signing, is worth what the three teams
+    he would like most could pay him: a role player many teams could pay
+    expects more from the market than a star few could.
+- **Re-signing stays its own phase, on the same odds** (owner's call): the old
+  team gets the first chance; he takes its offer or tests the market, weighing
+  it against what he expects free agency to bring.
+- **Re-signing shows the odds and lets you work them** (owner's call): in the
+  re-signing phase each of a human team's players shows his chance of taking a
+  default offer; raising or lowering the money or years moves it; one button
+  rolls them all and shows who stays. Unrolled offers are decided as free
+  agency opens. CPU teams' players decide when the sim reaches the phase. A
+  player's roll is fixed for the season, so deciding again changes nothing.
 
 ## Draft
 

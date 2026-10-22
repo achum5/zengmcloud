@@ -12,6 +12,11 @@ import { bySport } from "../../common/sportFunctions.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { helpers } from "../util/index.ts";
 import { validateSeason } from "../util/processInputs.ts";
+import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
+import {
+	lastChoices,
+	offersList,
+} from "../core/realisticFrontOffice/offerScreen.ts";
 
 const processInputs = (params: RouteParams<"freeAgents">) => {
 	if (g.get("phase") === PHASE.RESIGN_PLAYERS) {
@@ -252,10 +257,16 @@ export default defineView({
 
 			let players = addFirstNameShort([...availablePlayers, ...signedPlayers]);
 
+			// Realistic front offices: what he asks is the same for every team -
+			// how he feels about a team is in its odds.
+			const realistic = realisticFrontOfficesOn();
+
 			// Apply contract
 			for (const p of players) {
 				if (p.freeAgentType === "available") {
-					p.contract.amount = p.mood.user.contractAmount / 1000;
+					if (!realistic) {
+						p.contract.amount = p.mood.user.contractAmount / 1000;
+					}
 				} else {
 					let event;
 					if (p.freeAgentTransaction.eid !== undefined) {
@@ -289,7 +300,7 @@ export default defineView({
 
 			// Multiplayer free-agency board: this team's current ranks plus the most
 			// recent day's resolution record (odds, rolls, winners).
-			const boardActive = season === "current" && faBoardActive();
+			const boardActive = season === "current" && faBoardActive() && !realistic;
 			let faBoard;
 			if (boardActive) {
 				let results: FaDayResults | undefined;
@@ -327,10 +338,21 @@ export default defineView({
 				};
 			}
 
+			// Realistic front offices: the team's offers, in its order of
+			// priority, with their odds today, and the last day's signings.
+			let offers;
+			if (realistic && season === "current") {
+				offers = {
+					list: await offersList(userTid),
+					results: await lastChoices(),
+				};
+			}
+
 			return {
 				capSpace,
 				challengeNoFreeAgents: g.get("challengeNoFreeAgents"),
 				faBoard,
+				offers,
 				freeAgencySeason,
 				numRosterSpots: g.get("maxRosterSize") - userPlayers.length,
 				payroll: payroll / 1000,

@@ -22,6 +22,7 @@ import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
 import { g, toUI } from "../../util/index.ts";
 import { player, team } from "../index.ts";
+import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import type { FaBoardEntry, SyncTransport } from "./types.ts";
@@ -170,7 +171,9 @@ type Candidate = {
 // device that won the day-advance claim, right before freeAgentsPlay - so
 // exactly once per day, published with the day's changes.
 export const resolveFaBoards = async (): Promise<void> => {
-	if (g.get("phase") !== PHASE.FREE_AGENCY) {
+	// Realistic front offices decide every team's offers in the day's free
+	// agency (realisticFrontOffice/freeAgency.ts).
+	if (g.get("phase") !== PHASE.FREE_AGENCY || realisticFrontOfficesOn()) {
 		return;
 	}
 	const boards = boardsPerTeam();

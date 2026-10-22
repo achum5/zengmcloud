@@ -323,6 +323,19 @@ import { getAdjustedTicketPrice } from "../../common/getAdjustedTicketPrice.ts";
 import { gameAttributesArrayToObject } from "../../common/gameAttributesArrayToObject.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { generateContractOptions } from "../core/contractNegotiation/generateContractOptions.ts";
+import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
+import {
+	decideReSignings as realisticFrontOfficeDecideReSignings,
+	makeOffer as realisticFrontOfficeMakeOffer,
+	rankOffers as realisticFrontOfficeRankOffers,
+	withdrawOffer as realisticFrontOfficeWithdrawOffer,
+} from "../core/realisticFrontOffice/freeAgency.ts";
+import {
+	chanceOfOffer as realisticFrontOfficeChanceOfOffer,
+	instantSigningRefusal,
+	offerScreen as realisticFrontOfficeOfferScreen,
+	unsignedDraftPick,
+} from "../core/realisticFrontOffice/offerScreen.ts";
 import getRealTeamPlayerData from "../core/league/create/getRealTeamPlayerData.ts";
 import * as z from "zod";
 import { defaultTragicDeaths } from "../util/defaultTragicDeaths.ts";
@@ -360,6 +373,11 @@ const acceptContractNegotiation = async ({
 	amount: number;
 	exp: number;
 }) => {
+	const refusal = await instantSigningRefusal(pid);
+	if (refusal !== undefined) {
+		return refusal;
+	}
+
 	const negotiation = await contractNegotiation.get(pid);
 	if (typeof negotiation === "string") {
 		return negotiation;
@@ -629,6 +647,15 @@ const cancelContractNegotiation = async (pid: number) => {
 	await contractNegotiation.cancel(pid);
 
 	const tid = g.get("userTid");
+
+	// Realistic front offices: a re-signing offer to a player let go would
+	// otherwise stand as a free agency offer.
+	if (realisticFrontOfficesOn()) {
+		const t = await idb.cache.teams.get(tid);
+		if (t?.offerBoard?.some((offer) => offer.pid === pid)) {
+			await realisticFrontOfficeWithdrawOffer(tid, pid);
+		}
+	}
 
 	await toUI("realtimeUpdate", [["playerMovement"]]);
 
@@ -2585,8 +2612,167 @@ const getLeagues = () => {
 	return idb.meta.getAll("leagues");
 };
 
+// Realistic front offices: the offer screen in place of negotiation. No
+// instant signing - the player chooses among his offers - so the stock
+// refusals to negotiate don't apply.
+const getOfferProps = async (pid: number) => {
+	const userTid = g.get("userTid");
+	const offer = await realisticFrontOfficeOfferScreen(userTid, pid);
+	if (typeof offer === "string") {
+		return offer;
+	}
+
+	const p2 = await idb.cache.players.get(pid);
+	const pFiltered = p2
+		? await player.format(p2, {
+				attrs: [
+					"pid",
+					"tid",
+					"name",
+					"age",
+					"contract",
+					"face",
+					"imgURL",
+					"watch",
+				],
+				ratings: ["ovr", "pot"],
+				season: g.get("season"),
+				showNoStats: true,
+				showRookies: true,
+				fuzz: true,
+				coarsenRatings: false,
+			})
+		: undefined;
+	if (!pFiltered || !p2) {
+		return "Player not found.";
+	}
+	let p = {
+		...pFiltered,
+		mood: await player.moodInfos(p2),
+	};
+	if (g.get("hideRatingsOnesDigit")) {
+		p = coarsenPlayerForDisplay(
+			p,
+			["ovr", "pot"],
+			g.get("hideRatingsOnesDigitExceptProspects"),
+		);
+	}
+
+	const payroll = await team.getPayroll(userTid);
+	const t = await team.getFormatted({
+		tid: userTid,
+		attrs: ["colors", "jersey"],
+	});
+	assertDefined(t);
+
+	return {
+		capSpace: (g.get("salaryCap") - payroll) / 1000,
+		challengeNoRatings: g.get("challengeNoRatings"),
+		contractOptions: [] as Awaited<ReturnType<typeof generateContractOptions>>,
+		salaryCapType: g.get("salaryCapType"),
+		payroll: payroll / 1000,
+		p,
+		resigning: offer.reSigning,
+		salaryCap: g.get("salaryCap") / 1000,
+		t,
+		offer,
+	};
+};
+
+// The chance he takes this offer, for the offer screen's live odds.
+const getOfferChance = async ({
+	pid,
+	amount,
+	exp,
+}: {
+	pid: number;
+	amount: number;
+	exp: number;
+}) => {
+	if (!realisticFrontOfficesOn()) {
+		return undefined;
+	}
+	return realisticFrontOfficeChanceOfOffer(g.get("userTid"), {
+		pid,
+		amount,
+		exp,
+	});
+};
+
+// Make or change the user's offer to a free agent (or to his own player, while
+// re-signing). Returns an error message, or undefined.
+const makeFreeAgentOffer = async ({
+	pid,
+	amount,
+	exp,
+}: {
+	pid: number;
+	amount: number;
+	exp: number;
+}) => {
+	if (!realisticFrontOfficesOn()) {
+		return "Not available in this league.";
+	}
+	if (lock.get("gameSim")) {
+		return "Stop game simulation first.";
+	}
+	const error = await realisticFrontOfficeMakeOffer(g.get("userTid"), {
+		pid,
+		amount: helpers.roundContract(amount),
+		exp,
+	});
+	if (error === undefined) {
+		await toUI("realtimeUpdate", [["team"]]);
+	}
+	return error;
+};
+
+const withdrawFreeAgentOffer = async (pid: number) => {
+	if (!realisticFrontOfficesOn() || lock.get("gameSim")) {
+		return;
+	}
+	await realisticFrontOfficeWithdrawOffer(g.get("userTid"), pid);
+	await toUI("realtimeUpdate", [["team"]]);
+};
+
+// The user's offers in priority order: if two of them are accepted the same
+// day and both don't fit, the higher one signs.
+const rankFreeAgentOffers = async (pids: number[]) => {
+	if (!realisticFrontOfficesOn() || lock.get("gameSim")) {
+		return;
+	}
+	await realisticFrontOfficeRankOffers(g.get("userTid"), pids);
+	await toUI("realtimeUpdate", [["team"]]);
+};
+
+// Decide all of the user's re-signing offers now. Each player's roll is fixed
+// for the season, so deciding again changes nothing.
+const decideReSigningOffers = async () => {
+	if (!realisticFrontOfficesOn()) {
+		return [];
+	}
+	if (lock.get("gameSim")) {
+		return "Stop game simulation first.";
+	}
+	const userTid = g.get("userTid");
+	const decided = await realisticFrontOfficeDecideReSignings(userTid);
+	if (decided.some((row) => row.signed)) {
+		await contractNegotiation.afterAccept(userTid);
+	} else {
+		await toUI("realtimeUpdate", [["playerMovement"]]);
+	}
+	return decided;
+};
+
 const getNegotiationProps = async (pid: number) => {
 	const userTid = g.get("userTid");
+
+	if (realisticFrontOfficesOn()) {
+		const p = await idb.cache.players.get(pid);
+		if (!p || !unsignedDraftPick(p, await idb.cache.negotiations.get(pid))) {
+			return getOfferProps(pid);
+		}
+	}
 
 	const negotiation = await contractNegotiation.get(pid);
 	if (typeof negotiation === "string") {
@@ -2683,6 +2869,7 @@ const getNegotiationProps = async (pid: number) => {
 		resigning: negotiation.resigning,
 		salaryCap: g.get("salaryCap") / 1000,
 		t,
+		offer: undefined,
 	};
 };
 
@@ -5149,6 +5336,11 @@ const reSignAll = async (players: any[]) => {
 	if (negotiations.length > 0) {
 		for (const negotiation of negotiations) {
 			const p = players.find((p) => p.pid === negotiation.pid);
+
+			// Realistic front offices: no instant signing, except draft picks.
+			if (p && (await instantSigningRefusal(p.pid)) !== undefined) {
+				continue;
+			}
 
 			if (p && p.mood.user.willing) {
 				const response = await contractNegotiation.accept({
@@ -7904,6 +8096,7 @@ const api = {
 		autoSortRoster,
 		beforeView,
 		cancelContractNegotiation,
+		decideReSigningOffers,
 		checkAccount: checkAccount2,
 		checkSyncReady,
 		checkParticipationAchievement,
@@ -7967,6 +8160,7 @@ const api = {
 		liveSimBlocksDaySim,
 		getGoatBreakdown,
 		getNegotiationProps,
+		getOfferChance,
 		getNumPlayoffTeams,
 		getPlayerGraphStat,
 		getPlayersCommandPalette,
@@ -8043,13 +8237,16 @@ const api = {
 		initGold,
 		loadRetiredPlayers,
 		lockSet,
+		makeFreeAgentOffer,
 		markSyncRequired,
 		ovr,
 		proposeTrade,
+		rankFreeAgentOffers,
 		ratingsStatsPopoverInfo,
 		sendLiveChatMessage,
 		reSignAll,
 		realtimeUpdate,
+		withdrawFreeAgentOffer,
 		refreshSyncUIState,
 		syncNudge,
 		regenerateDraftClass,

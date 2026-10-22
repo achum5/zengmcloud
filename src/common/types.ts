@@ -659,6 +659,25 @@ export type FaDayResultItem =
 			name: string;
 			tid: number;
 			abbrev: string;
+	  }
+	| {
+			// Realistic front offices: he chose among his offers (or would have
+			// waited, with waitPct), on a 0-100 roll.
+			type: "choice";
+			pid: number;
+			name: string;
+			offers: {
+				tid: number;
+				abbrev: string;
+				amount: number;
+				exp: number;
+				oddsPct: number;
+			}[];
+			waitPct: number;
+			roll: number;
+			winnerTid: number;
+			amount: number;
+			exp: number;
 	  };
 
 // The full, transparent record of one multiplayer free-agency day: every
@@ -2797,6 +2816,10 @@ export type Team = {
 	// upgrade); when absent the court falls back to the team's colors + logo. All
 	// fields optional so a partial customization is fine. See common/court.ts.
 	court?: CourtStyle;
+
+	// Realistic front offices: the team's standing offers to free agents, best
+	// first (realisticFrontOffice/freeAgency.ts).
+	offerBoard?: { pid: number; amount: number; exp: number }[];
 
 	// Its home and away uniforms for the 3D live game, drawn from pictures:
 	// ids of JerseySkin rows. Optional (no upgrade).

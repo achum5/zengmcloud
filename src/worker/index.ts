@@ -201,6 +201,9 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"triviaNewTeamRound",
 	// Cloud-only write of this team's free-agency board (no league data).
 	"faBoardSet",
+	// Realistic front offices: the live odds on the offer screen, read as the
+	// user changes the offer.
+	"getOfferChance",
 	// Which of this device's teams it controls (userTid). userTid is per-device
 	// and never synced (see the changeset NEVER_SYNC set), so - unlike the general
 	// updateGameAttributes, which is sim-authority-locked - every league-mate must
@@ -247,6 +250,15 @@ const SIM_CONFLICT_GATED = new Set([
 	"reorderDepthDrag",
 	// The rotation plan is read by the sim exactly as the depth chart is.
 	"updateRotation",
+	// Realistic front offices: a team's offers live on its team record, which
+	// the day's sim reads and rewrites (it decides the offers, prunes the
+	// boards, and writes team stats after each game). Made only on the room's
+	// latest state and never during a sim, so an offer is always in what the
+	// next day decides, and the sim can never write over a newer one.
+	"makeFreeAgentOffer",
+	"withdrawFreeAgentOffer",
+	"rankFreeAgentOffers",
+	"decideReSigningOffers",
 ]);
 
 // API functions should have at most 2 arguments. First argument is passed here from toWorker. If you need to pass multiple variables, use an object/array. Second argument is Conditions.

@@ -37,6 +37,7 @@ import {
 	NegotiationModal,
 	useNegotiaionModal,
 } from "../../components/NegotiationModal.tsx";
+import { useRealisticFrontOffices } from "../../components/OfferEditor.tsx";
 import { useLocal } from "../../util/local.ts";
 import { collegeClassLabel } from "../../../common/college.ts";
 import { buildPlayerNoteLinks } from "../../util/linkifyRecap.ts";
@@ -521,6 +522,7 @@ const TopStuff = ({
 		player.college && player.college !== "" ? player.college : "None";
 
 	const negotiationModal = useNegotiaionModal();
+	const realisticFrontOffices = useRealisticFrontOffices();
 
 	const buttonsAvailableOutsideGodMode = (
 		<>
@@ -543,17 +545,17 @@ const TopStuff = ({
 			{!spectator && freeAgent && !collegeLeague ? (
 				<button
 					className="btn btn-light-bordered"
-					disabled={!willingToSign}
+					disabled={!willingToSign && !realisticFrontOffices}
 					onClick={async () => {
 						await negotiationModal.negotiate(player.pid);
 					}}
 					title={
-						willingToSign
+						willingToSign || realisticFrontOffices
 							? undefined
 							: `${player.name} refuses to negotiate with you`
 					}
 				>
-					Negotiate contract
+					{realisticFrontOffices ? "Make offer" : "Negotiate contract"}
 				</button>
 			) : null}
 			<ComparePlayerButton

@@ -13,6 +13,7 @@ import { useRef, useState } from "react";
 import type api from "../../worker/api/index.ts";
 import { showSignUndo } from "./NegotiateButtons.tsx";
 import { hardCapForTid } from "../../common/getHardCap.ts";
+import { OfferEditor } from "./OfferEditor.tsx";
 
 type NegotaitionModalProps = Exclude<
 	Awaited<ReturnType<typeof api.main.getNegotiationProps>>,
@@ -250,10 +251,12 @@ const Negotiation = ({
 
 export const NegotiationModal = ({
 	close,
+	loadId,
 	negotiationProps,
 	show,
 }: {
 	close: () => void;
+	loadId?: number;
 	negotiationProps: NegotaitionModalProps | undefined;
 	show: boolean;
 }) => {
@@ -274,7 +277,18 @@ export const NegotiationModal = ({
 				{negotiationProps ? (
 					<>
 						<NegotiationHeader {...negotiationProps} />
-						<Negotiation {...negotiationProps} close={close} />
+						{negotiationProps.offer ? (
+							<OfferEditor
+								key={`${negotiationProps.p.pid}-${loadId}`}
+								capSpace={negotiationProps.capSpace}
+								close={close}
+								name={negotiationProps.p.name}
+								offer={negotiationProps.offer}
+								pid={negotiationProps.p.pid}
+							/>
+						) : (
+							<Negotiation {...negotiationProps} close={close} />
+						)}
 					</>
 				) : null}
 			</Modal.Body>
@@ -288,6 +302,7 @@ export const useNegotiaionModal = () => {
 				status: "loaded";
 				props: NegotaitionModalProps;
 				show: boolean;
+				loadId: number;
 		  }
 		| {
 				status: "init";
@@ -312,6 +327,7 @@ export const useNegotiaionModal = () => {
 				});
 			}
 		},
+		loadId: state.status === "loaded" ? state.loadId : undefined,
 		negotiationProps: state.status === "loaded" ? state.props : undefined,
 		show,
 	};
@@ -333,11 +349,12 @@ export const useNegotiaionModal = () => {
 					text: newProps,
 				});
 			} else {
-				setState({
+				setState((state) => ({
 					status: "loaded",
 					props: newProps,
 					show: true,
-				});
+					loadId: (state.status === "loaded" ? state.loadId : 0) + 1,
+				}));
 			}
 		},
 		props,

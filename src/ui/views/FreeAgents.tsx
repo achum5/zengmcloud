@@ -29,6 +29,11 @@ import {
 	NegotiationModal,
 	useNegotiaionModal,
 } from "../components/NegotiationModal.tsx";
+import {
+	formatChance,
+	formatOfferAmount,
+	useRealisticFrontOffices,
+} from "../components/OfferEditor.tsx";
 
 const useSeasonsFreeAgents = () => {
 	const { phase, season, startingSeason } = useLocal([
@@ -123,6 +128,10 @@ const FaResultItem = ({ item }: { item: FaDayResultItemType }) => {
 				{item.abbrev} couldn't afford {item.name}
 			</div>
 		);
+	}
+	if (item.type === "choice") {
+		// Realistic front offices' signings are shown by OffersPanel.
+		return null;
 	}
 	if (item.type === "unopposed") {
 		return (
@@ -283,10 +292,177 @@ const FaBoardPanel = ({
 	);
 };
 
+type OffersProps = NonNullable<View<"freeAgents">["offers"]>;
+
+// Realistic front offices: one day's signing - who signed where, every offer
+// he had with its odds, and the roll.
+const ChoiceItem = ({
+	item,
+	userTid,
+}: {
+	item: NonNullable<OffersProps["results"]>["items"][number];
+	userTid: number;
+}) => {
+	const winner = item.offers.find((offer) => offer.tid === item.winnerTid);
+	const mine = item.offers.some((offer) => offer.tid === userTid);
+	return (
+		<div className="mb-2">
+			<div>
+				<a href={helpers.leagueUrl(["player", item.pid])}>{item.name}</a> →{" "}
+				<b
+					className={
+						mine
+							? item.winnerTid === userTid
+								? "text-success"
+								: "text-danger"
+							: undefined
+					}
+				>
+					{winner?.abbrev ?? "???"}
+				</b>
+				, {formatOfferAmount(item.amount)} thru {item.exp} · rolled{" "}
+				<b>{item.roll}</b>
+			</div>
+			<div className="text-body-secondary small">
+				{item.offers.map((offer, i) => (
+					<span
+						key={offer.tid}
+						className={offer.tid === userTid ? "fw-bold" : undefined}
+					>
+						{i > 0 ? " · " : null}
+						{offer.abbrev} {formatOfferAmount(offer.amount)} thru {offer.exp}{" "}
+						{offer.oddsPct}%
+					</span>
+				))}
+				{" · "}wait {item.waitPct}%
+			</div>
+		</div>
+	);
+};
+
+// Realistic front offices: the team's offers in priority order (if two are
+// accepted the same day and both don't fit, the higher one signs), with each
+// one's odds today, and the last day's signings.
+const OffersPanel = ({
+	disabled,
+	offers,
+	onEdit,
+}: {
+	disabled: boolean;
+	offers: OffersProps;
+	onEdit: (pid: number) => void;
+}) => {
+	const { userTid } = useLocal(["userTid"]);
+	const [order, setOrder] = useState(offers.list.map((row) => row.pid));
+	const orderKey = JSON.stringify(offers.list.map((row) => row.pid));
+	useEffect(() => {
+		setOrder(JSON.parse(orderKey));
+	}, [orderKey]);
+	const byPid = new Map(offers.list.map((row) => [row.pid, row]));
+	const rows = order.flatMap((pid) => byPid.get(pid) ?? []);
+
+	const move = (pid: number, dir: -1 | 1) => {
+		const i = order.indexOf(pid);
+		const j = i + dir;
+		if (i < 0 || j < 0 || j >= order.length) {
+			return;
+		}
+		const next = [...order];
+		[next[i], next[j]] = [next[j]!, next[i]!];
+		setOrder(next);
+		void toWorker("main", "rankFreeAgentOffers", next);
+	};
+
+	return (
+		<div className="row mb-3">
+			<div className="col-md-6 mb-3 mb-md-0">
+				<h3>Your offers</h3>
+				{rows.length === 0 ? (
+					<p className="text-body-secondary mb-0">No offers.</p>
+				) : (
+					<ul className="list-unstyled mb-0" data-testid="offers-list">
+						{rows.map((row, i) => (
+							<li
+								key={row.pid}
+								className="d-flex align-items-center gap-2 mb-1"
+							>
+								<span
+									className="text-body-secondary text-end"
+									style={{ width: 22 }}
+								>
+									{i + 1}.
+								</span>
+								<div className="btn-group">
+									<button
+										type="button"
+										className="btn btn-xs btn-light-bordered"
+										disabled={disabled || i === 0}
+										onClick={() => move(row.pid, -1)}
+										title="Move up"
+									>
+										▲
+									</button>
+									<button
+										type="button"
+										className="btn btn-xs btn-light-bordered"
+										disabled={disabled || i === rows.length - 1}
+										onClick={() => move(row.pid, 1)}
+										title="Move down"
+									>
+										▼
+									</button>
+								</div>
+								<a href={helpers.leagueUrl(["player", row.pid])}>{row.name}</a>
+								<span className="text-body-secondary text-nowrap">
+									{formatOfferAmount(row.amount)}, {row.years}{" "}
+									{helpers.plural("yr", row.years)}
+								</span>
+								<span className="fw-bold" title="Your odds">
+									{formatChance(row.chance)}
+								</span>
+								<button
+									type="button"
+									className="btn btn-xs btn-light-bordered ms-auto"
+									disabled={disabled}
+									onClick={() => onEdit(row.pid)}
+								>
+									Edit
+								</button>
+								<button
+									type="button"
+									className="btn btn-xs btn-light-bordered"
+									disabled={disabled}
+									onClick={() => {
+										void toWorker("main", "withdrawFreeAgentOffer", row.pid);
+									}}
+									title="Withdraw"
+								>
+									✕
+								</button>
+							</li>
+						))}
+					</ul>
+				)}
+			</div>
+			{offers.results ? (
+				<div className="col-md-6">
+					<h3>Last day</h3>
+					<div style={{ maxHeight: 320, overflowY: "auto" }}>
+						{offers.results.items.map((item) => (
+							<ChoiceItem key={item.pid} item={item} userTid={userTid} />
+						))}
+					</div>
+				</div>
+			) : null}
+		</div>
+	);
+};
+
 const FreeAgents = ({
 	capSpace,
 	challengeNoFreeAgents,
 	faBoard,
+	offers,
 	freeAgencySeason,
 	numRosterSpots,
 	payroll,
@@ -351,6 +527,11 @@ const FreeAgents = ({
 		useState<DataTableHandle | null>(null);
 
 	const negotiationModal = useNegotiaionModal();
+
+	const realistic = useRealisticFrontOffices();
+	const offerRanks = new Map(
+		(offers?.list ?? []).map((row, i) => [row.pid, i + 1]),
+	);
 
 	if (
 		((phase > PHASE.AFTER_TRADE_DEADLINE && phase <= PHASE.RESIGN_PLAYERS) ||
@@ -488,61 +669,90 @@ const FreeAgents = ({
 				p.freeAgentType === "available"
 					? spectator
 						? null
-						: faBoard
+						: realistic
 							? {
-									value: board.includes(p.pid) ? (
-										<button
-											type="button"
-											className="btn btn-sm btn-secondary"
-											onClick={() =>
-												updateBoard(board.filter((pid) => pid !== p.pid))
-											}
-										>
-											#{board.indexOf(p.pid) + 1} ✕
-										</button>
-									) : (
-										<button
-											type="button"
-											className="btn btn-sm btn-light-bordered"
-											disabled={
-												board.length >= faBoard.numSlots ||
-												!p.mood.user.willing ||
-												!canAffordBoard(p)
-											}
-											title={
-												!p.mood.user.willing
-													? "Refuses to sign with you"
-													: !canAffordBoard(p)
-														? "Can't afford"
-														: undefined
-											}
-											onClick={() => updateBoard([...board, p.pid])}
-										>
-											Board
-										</button>
-									),
-									searchValue: "Board",
-								}
-							: {
 									value: (
-										<NegotiateButtons
-											canGoOverCap={salaryCapType === "none"}
-											capSpace={capSpace}
+										<button
+											type="button"
+											className={`btn btn-xs ${
+												offerRanks.has(p.pid)
+													? "btn-secondary"
+													: "btn-light-bordered"
+											}`}
 											disabled={gameSimInProgress}
-											minContract={minContract}
-											onNegotiate={async () => {
+											onClick={async () => {
 												await negotiationModal.negotiate(p.pid);
 											}}
-											spectator={spectator}
-											p={p}
-											willingToNegotiate={p.mood.user.willing}
-										/>
+											title={
+												offerRanks.has(p.pid)
+													? "Your offer, by priority"
+													: undefined
+											}
+										>
+											{offerRanks.has(p.pid)
+												? `Offer #${offerRanks.get(p.pid)}`
+												: "Offer"}
+										</button>
 									),
-									classNames: "d-flex align-items-center gap-2",
-									searchValue: p.mood.user.willing
-										? "Negotiate Sign"
-										: "Refuses!",
+									searchValue: offerRanks.has(p.pid)
+										? `Offer #${offerRanks.get(p.pid)}`
+										: "Offer",
 								}
+							: faBoard
+								? {
+										value: board.includes(p.pid) ? (
+											<button
+												type="button"
+												className="btn btn-sm btn-secondary"
+												onClick={() =>
+													updateBoard(board.filter((pid) => pid !== p.pid))
+												}
+											>
+												#{board.indexOf(p.pid) + 1} ✕
+											</button>
+										) : (
+											<button
+												type="button"
+												className="btn btn-sm btn-light-bordered"
+												disabled={
+													board.length >= faBoard.numSlots ||
+													!p.mood.user.willing ||
+													!canAffordBoard(p)
+												}
+												title={
+													!p.mood.user.willing
+														? "Refuses to sign with you"
+														: !canAffordBoard(p)
+															? "Can't afford"
+															: undefined
+												}
+												onClick={() => updateBoard([...board, p.pid])}
+											>
+												Board
+											</button>
+										),
+										searchValue: "Board",
+									}
+								: {
+										value: (
+											<NegotiateButtons
+												canGoOverCap={salaryCapType === "none"}
+												capSpace={capSpace}
+												disabled={gameSimInProgress}
+												minContract={minContract}
+												onNegotiate={async () => {
+													await negotiationModal.negotiate(p.pid);
+												}}
+												spectator={spectator}
+												p={p}
+												willingToNegotiate={p.mood.user.willing}
+											/>
+										),
+										classNames: "d-flex align-items-center gap-2",
+										searchValue: p.mood.user.willing
+											? "Negotiate Sign"
+											: "Refuses!",
+									}
 					: signedFreeAgentWrapped(
 							p.freeAgentTransaction,
 							freeAgencySeason,
@@ -579,15 +789,27 @@ const FreeAgents = ({
 								: "Show players you can afford now"}
 						</button>
 					) : null}
-					<button
-						className="btn btn-secondary mb-3"
-						onClick={() => setHideRefusals((prev) => !prev)}
-					>
-						{hideRefusals
-							? "Show players who refuse to sign"
-							: "Hide players who refuse to sign"}
-					</button>
+					{!realistic ? (
+						<button
+							className="btn btn-secondary mb-3"
+							onClick={() => setHideRefusals((prev) => !prev)}
+						>
+							{hideRefusals
+								? "Show players who refuse to sign"
+								: "Hide players who refuse to sign"}
+						</button>
+					) : null}
 				</>
+			) : null}
+
+			{offers && !spectator ? (
+				<OffersPanel
+					disabled={gameSimInProgress}
+					offers={offers}
+					onEdit={async (pid) => {
+						await negotiationModal.negotiate(pid);
+					}}
+				/>
 			) : null}
 
 			{faBoard ? (

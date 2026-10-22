@@ -14,6 +14,7 @@ import {
 import { runDraft } from "./actions.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { cleanupAutoPlay } from "../core/league/autoPlay.ts";
+import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
 
 const getNumDaysThisRound = (playoffSeries: PlayoffSeries) => {
 	let numDaysThisRound = 0;
@@ -273,7 +274,24 @@ const playMenu = {
 
 			let proceed = true;
 
-			if (numRemaining > 0) {
+			if (numRemaining > 0 && realisticFrontOfficesOn()) {
+				// Realistic front offices: standing re-signing offers are decided as
+				// free agency opens.
+				const t = await idb.cache.teams.get(g.get("userTid"));
+				const offered = negotiations.filter((n) =>
+					t?.offerBoard?.some((offer) => offer.pid === n.pid),
+				).length;
+				proceed = await toUI(
+					"confirm",
+					[
+						`Proceed to free agency? ${offered} of your ${numRemaining} unsigned players will decide on your offers now, and the rest will become free agents.`,
+						{
+							okText: "Proceed",
+						},
+					],
+					conditions,
+				);
+			} else if (numRemaining > 0) {
 				// This function always returns a boolean if no defaultValue is supplied, but couldn't figure out how to get it to work correctly with TypeScript.
 				proceed = await toUI(
 					"confirm",

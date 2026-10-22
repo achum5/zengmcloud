@@ -33,6 +33,7 @@ export const gameAttributesSyncedToUi = [
 	"numWatchColors",
 	"phase",
 	"quarterLength",
+	"realisticFrontOffices",
 	"rotationPlans",
 	"salaryCap",
 	"salaryCapType",

@@ -17,7 +17,11 @@ import {
 } from "../../worker/core/realisticFrontOffice/market.ts";
 import getDaysLeftSchedule from "../../worker/core/season/getDaysLeftSchedule.ts";
 import { marginSettings } from "../../worker/core/realisticFrontOffice/margin.ts";
-import { freeAgencyWatchers } from "../../worker/core/realisticFrontOffice/freeAgency.ts";
+import {
+	freeAgencySettings,
+	freeAgencyWatchers,
+} from "../../worker/core/realisticFrontOffice/freeAgency.ts";
+import { offerSettings } from "../../worker/core/realisticFrontOffice/offers.ts";
 import {
 	curveAt,
 	ensureRetention,
@@ -91,6 +95,11 @@ test.runIf(env.ARENA_RUN === "1")(
 				Object.assign(marketSettings, JSON.parse(env.ARENA_MARKET ?? "{}"));
 				Object.assign(outlookSettings, JSON.parse(env.ARENA_OUTLOOK ?? "{}"));
 				Object.assign(marginSettings, JSON.parse(env.ARENA_MARGIN ?? "{}"));
+				Object.assign(
+					freeAgencySettings,
+					JSON.parse(env.ARENA_FREE_AGENCY ?? "{}"),
+				);
+				Object.assign(offerSettings, JSON.parse(env.ARENA_OFFERS ?? "{}"));
 			}
 			// ARENA_PICK_SURVEY=1: where every outlook expects each team's own
 			// picks to land, draft by draft, to set against where they do.
@@ -492,7 +501,9 @@ test.runIf(env.ARENA_RUN === "1")(
 									const stats = (await idb.cache.teamStats.indexGet(
 										"teamStatsByPlayoffsTid",
 										[false, t.tid],
-									)) as { gp?: number; pts?: number; oppPts?: number } | undefined;
+									)) as
+										| { gp?: number; pts?: number; oppPts?: number }
+										| undefined;
 									survey.push({
 										season: g.get("season"),
 										daysToDeadline,
@@ -507,7 +518,10 @@ test.runIf(env.ARENA_RUN === "1")(
 										strength: Math.round(o.strength[0]! * 100) / 100,
 										recordEdge: outlook.recordEdge.get(t.tid) ?? 0,
 										title: o.title[0],
-										curveTitle: curveAt(outlook.titleCurves[0]!, o.strength[0]!),
+										curveTitle: curveAt(
+											outlook.titleCurves[0]!,
+											o.strength[0]!,
+										),
 										// Partners it has a deal with that both would make.
 										partners: mine.length,
 										gain: best ? best.gains[k] : 0,

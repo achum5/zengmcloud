@@ -15,10 +15,10 @@ import {
 	type TradedAway,
 } from "./tradePenalty.ts";
 import { projectRatings, type RatingsProjection } from "./projection.ts";
-import moodInfo from "../player/moodInfo.ts";
 import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
 import { normalCdf, simulateSeason, winProbability } from "./seasonSim.ts";
 import { fitLogistic } from "./logistic.ts";
+import { clearMarketView, stayChance } from "./offers.ts";
 import { buildDeadlineView, type DeadlineView } from "./timing.ts";
 import {
 	expectedRosterPoints,
@@ -74,11 +74,12 @@ const survival = (age: number) =>
 								? 0.58
 								: 0.45;
 
-// A player's chance of re-signing when his contract runs out is the game's own
-// mood model's (player.moodInfo's probWilling), with the team he would be
-// re-signing with - so a player traded for is priced on how he would feel
-// about his new team. Worked out once per outlook and kept here; this is only
-// for a player nobody asked about.
+// A player's chance of re-signing when his contract runs out is his chance of
+// taking his asking price from the team he would be re-signing with, against
+// testing the market, as he chooses in the offer market (offers.ts) - so a
+// player traded for is priced on how he would feel about his new team. Worked
+// out once per outlook and kept here; this is only for a player nobody asked
+// about.
 const UNKNOWN_RETENTION = 0.5;
 
 export type Curve = { a: number; b: number };
@@ -108,8 +109,8 @@ export type LeagueOutlook = {
 	draftPlace: Map<number, number[]>;
 	// Money each team owes players it has released, and until when.
 	deadMoney: Map<number, { amount: number; exp: number }[]>;
-	// The first season whose free agency is still to come: from then on,
-	// teams refill with their cap room (payroll.ts).
+	// The first season whose free agency is still to come or under way: from
+	// then on, teams refill with their cap room (payroll.ts).
 	firstRefillSeason: number;
 	// Season lines already worked out, for this outlook's lifetime.
 	lines: SeasonLines;
@@ -344,11 +345,10 @@ export const ensureRetention = async (
 		const key = retentionKey(p.pid, tid);
 		if (!outlook.retention.has(key)) {
 			const asked = !outlookSettings.teamRetention && p.tid >= 0 ? p.tid : tid;
-			const { probWilling } = await moodInfo(
-				p.tid === asked ? p : { ...p, tid: asked },
-				asked,
-			);
-			outlook.retention.set(key, Math.round(probWilling * 1000) / 1000);
+			// His chance of taking his asking price from the team, against
+			// testing the market - as he chooses in the offer market.
+			const stay = await stayChance(p, asked);
+			outlook.retention.set(key, Math.round(stay * 1000) / 1000);
 		}
 	}
 };
@@ -717,7 +717,10 @@ export const teamPoints = (
 					committed += row.amount;
 				}
 			}
-			const signings = signingsWith(salaryCap - committed);
+			const signings = signingsWith(
+				salaryCap - committed,
+				y === 0 && outlook.offset === 1 && g.get("phase") === PHASE.FREE_AGENCY,
+			);
 			lines.push(...signings);
 			refill?.(y, 1 - committed / salaryCap, signings);
 		}
@@ -764,6 +767,8 @@ export const buildOutlook = async ({
 	const offset = phase > PHASE.PLAYOFFS ? 1 : 0;
 	const numGames = g.get("numGames");
 	const inSeason = offset === 0;
+	// What players feel about each team, as of now.
+	clearMarketView();
 
 	const teams = (await idb.cache.teams.getAll()).filter((t) => !t.disabled);
 	const records = new Map<number, { won: number; lost: number }>();
@@ -830,7 +835,9 @@ export const buildOutlook = async ({
 		lastPickSeason,
 		draftPlace: new Map<number, number[]>(),
 		deadMoney,
-		firstRefillSeason: season + 1 + (phase === PHASE.FREE_AGENCY ? 1 : 0),
+		// During free agency too: room not yet spent is worth what it can still
+		// buy, so money paid out this coming season is not free.
+		firstRefillSeason: season + 1,
 		lines: new Map() as SeasonLines,
 		pickLines: new Map<string, PickAt | null>(),
 		pickYears: new WeakMap<PickLike, PickYears>(),

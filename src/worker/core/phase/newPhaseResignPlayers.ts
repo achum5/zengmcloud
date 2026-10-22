@@ -17,7 +17,10 @@ import { bySport } from "../../../common/sportFunctions.ts";
 import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 import { getHardCap } from "../../util/getHardCap.ts";
 import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
-import { reSignOffer as realisticFrontOfficeReSignOffer } from "../realisticFrontOffice/freeAgency.ts";
+import {
+	defaultReSignOffer as realisticFrontOfficeDefaultReSignOffer,
+	reSignDecision as realisticFrontOfficeReSignDecision,
+} from "../realisticFrontOffice/freeAgency.ts";
 
 export const FREE_AGENCY_DAYS = 30;
 // College: four weeks of offseason recruiting, then signing day.
@@ -221,6 +224,10 @@ const newPhaseResignPlayers = async (
 				);
 			} else {
 				await idb.cache.negotiations.add(info);
+				// Draft picks sign as in stock, as CPU teams' do.
+				if (realisticFrontOfficesOn() && !draftPick) {
+					await realisticFrontOfficeDefaultReSignOffer(tid, p);
+				}
 			}
 		} else {
 			let reSignPlayer = true;
@@ -283,13 +290,14 @@ const newPhaseResignPlayers = async (
 					contractAmount: p.contract.amount,
 				});
 
-				// Player must be willing to sign (includes draft picks and first year after expansion, from moodInfo)
-				if (!mood.willing) {
-					reSignPlayer = false;
-				} else if (realisticFrontOfficesOn() && !draftPick) {
-					// Realistic front offices re-sign by their own valuation, on the
-					// terms it finds best.
-					const offer = await realisticFrontOfficeReSignOffer(p, payroll ?? 0);
+				if (realisticFrontOfficesOn() && !draftPick) {
+					// Realistic front offices offer what their own valuation finds
+					// best, and he takes it or tests the market, with odds - in
+					// place of his willingness.
+					const offer = await realisticFrontOfficeReSignDecision(
+						p,
+						payroll ?? 0,
+					);
 					if (offer) {
 						await player.sign(p, p.tid, offer, PHASE.RESIGN_PLAYERS);
 						if (payroll !== undefined) {
@@ -298,6 +306,9 @@ const newPhaseResignPlayers = async (
 					} else {
 						reSignPlayer = false;
 					}
+				} else if (!mood.willing) {
+					// Player must be willing to sign (includes draft picks and first year after expansion, from moodInfo)
+					reSignPlayer = false;
 				} else {
 					// Is team better off without him?
 					const dv = await valueChangeCalculator.evaluate({
