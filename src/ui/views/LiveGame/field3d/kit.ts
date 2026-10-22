@@ -1,0 +1,233 @@
+import { makeCourtRng } from "../courtRng.ts";
+import { luminance, shade } from "./color.ts";
+
+// WHAT A FOOTBALL PLAYER WEARS: his team's uniform - helmet, jersey, pants,
+// socks - and his own gear on top of it, decided by who he is and what he
+// plays: a lineman's cage of a facemask and taped hands, a receiver's open
+// mask and gloves, the quarterback's bare throwing hand.
+//
+// The pro way round: the home team in its color, the visitors in white -
+// both in the same helmet they always wear.
+
+export type FieldKit = {
+	helmet: string;
+	// Down the middle of the helmet, front to back: its color, and the thin
+	// edge either side of it (none, if unset).
+	helmetStripe?: string;
+	helmetStripeEdge?: string;
+	facemask: string;
+	jersey: string;
+	// The band round the neck.
+	collar: string;
+	number: string;
+	numberEdge: string;
+	// His name across his back.
+	name: string;
+	// Bands round each sleeve, from the shoulder down.
+	sleeveStripes: string[];
+	pants: string;
+	// Down the outside of each leg, from the front back.
+	pantsStripes: string[];
+	sock: string;
+	// Bands round the top of the socks.
+	sockStripes: string[];
+};
+
+// The facemask: two bars open in front (a quarterback, a receiver, a
+// kicker's), three with a strut up the middle (a back, a linebacker), or a
+// lineman's full cage.
+export type MaskStyle = "open" | "bars" | "cage";
+
+export type FieldGear = {
+	mask: MaskStyle;
+	// A tinted shield across his eyes - or a clear one, all but unseen.
+	visor?: "dark" | "clear";
+	cleat: string;
+	cleatSole: string;
+	// The swoosh of color up their side.
+	cleatAccent: string;
+	// Gloves, both hands - the palms a shade of their own - or his hands
+	// taped (a lineman's), or bare (his throwing hand, a kicker's).
+	glove?: { color: string; palm: string; hands: "R" | "L" | "RL" };
+	tape?: boolean;
+	// A sleeve down his arm, to the wrist, and a band round his wrist.
+	sleeve?: { arms: "R" | "L" | "RL"; color: string };
+	wrist?: { arms: "R" | "L" | "RL"; color: string };
+	// A towel tucked in his pants at the front.
+	towel?: boolean;
+};
+
+export type FieldLook = {
+	kit: FieldKit;
+	gear: FieldGear;
+	skin: string;
+	jerseyNumber: string;
+	lastName: string;
+	// The team's logo, for the sides of his helmet.
+	logo?: HTMLCanvasElement;
+};
+
+export type FieldTeamColors = [string, string, string];
+
+const WHITE = "#f4f2ec";
+const INK = "#18181c";
+const MASK_GRAY = "#a2a5ab";
+
+const contrast = (a: string, b: string) =>
+	Math.abs(luminance(a) - luminance(b));
+
+// The first of `colors` that shows on `on`, or `or`.
+const showing = (colors: string[], on: string, or: string, by = 0.2) =>
+	colors.find((c) => contrast(c, on) > by) ?? or;
+
+// A team's uniform: at home its jersey in its main color - its darkest, if
+// the main one is too light to be a home jersey - in white pants; on the
+// road a white jersey over pants in its main color. Its helmet the same
+// either way: its main color with a stripe down the middle in the others.
+export const fieldKit = (
+	colors: FieldTeamColors,
+	edition: "home" | "away",
+): FieldKit => {
+	const [c0, c1, c2] = colors;
+	const darkest = [...colors].sort((x, y) => luminance(x) - luminance(y))[0]!;
+	const main = luminance(c0) < 0.72 ? c0 : darkest;
+	const home = edition === "home";
+	const jersey = home ? main : WHITE;
+	const others = [c1, c2, c0].filter((c) => c !== jersey);
+	const number = home ? showing(others, jersey, WHITE, 0.25) : main;
+	const numberEdge = showing(
+		[c1, c2, c0, home ? WHITE : INK].filter(
+			(c) => c !== number && c !== jersey,
+		),
+		number,
+		shade(jersey, -0.45),
+		0.15,
+	);
+	// Light pants under a dark jersey at home - the team's second color if it
+	// is a light one, a gold or a silver, else white; on the road, the
+	// team's own color, or white if that is too light to tell from white.
+	const pants = home
+		? luminance(c1) > 0.5 && contrast(c1, jersey) > 0.25
+			? c1
+			: WHITE
+		: luminance(main) < 0.6
+			? main
+			: WHITE;
+	const stripeOn = (on: string) =>
+		[c0, c1, c2].filter((c) => contrast(c, on) > 0.18).slice(0, 2);
+	const helmetStripe = [c1, c2, WHITE].find((c) => contrast(c, c0) > 0.2);
+	const stripeEdge = [c2, c1, WHITE, INK].find(
+		(c) =>
+			c !== helmetStripe && helmetStripe && contrast(c, helmetStripe) > 0.2,
+	);
+	return {
+		helmet: c0,
+		...(helmetStripe ? { helmetStripe } : {}),
+		...(helmetStripe && stripeEdge ? { helmetStripeEdge: stripeEdge } : {}),
+		facemask: MASK_GRAY,
+		jersey,
+		collar: home ? showing([c1, c2, WHITE], jersey, WHITE) : main,
+		number,
+		numberEdge,
+		name: number,
+		sleeveStripes: stripeOn(jersey),
+		pants,
+		pantsStripes: stripeOn(pants),
+		sock: home ? main : luminance(main) < 0.6 ? main : darkest,
+		sockStripes: [],
+	};
+};
+
+// What the two teams wear, [away, home] as the court has them.
+export const fieldKitsFor = (
+	away: FieldTeamColors | undefined,
+	home: FieldTeamColors | undefined,
+): [FieldKit, FieldKit] => [
+	fieldKit(away ?? ["#1d3461", "#f28c28", "#ffffff"], "away"),
+	fieldKit(home ?? ["#8c1d40", "#f2c14e", "#ffffff"], "home"),
+];
+
+const LINEMEN = new Set(["OL", "DL"]);
+const BACKS = new Set(["RB", "TE", "LB"]);
+const KICKERS = new Set(["K", "P"]);
+
+// A player's own gear, the same every game: decided by who he is and what
+// he plays, in his team's colors that day.
+export const fieldGearFor = (
+	pid: number,
+	pos: string,
+	kit: FieldKit,
+): FieldGear => {
+	const rng = makeCourtRng(`fieldGear|${pid}`);
+	const pick = <T>(xs: T[]): T => xs[Math.floor(rng() * xs.length)]!;
+	const lineman = LINEMEN.has(pos);
+	const kicker = KICKERS.has(pos);
+	const mask: MaskStyle = lineman
+		? "cage"
+		: BACKS.has(pos)
+			? rng() < 0.75
+				? "bars"
+				: "cage"
+			: rng() < 0.85
+				? "open"
+				: "bars";
+	// Black cleats or white, the team's color up their side (or the other
+	// of black and white, if it would not show).
+	const cleat = rng() < 0.55 ? INK : WHITE;
+	const cleatAccent = showing(
+		[kit.jersey, kit.pants, kit.helmet],
+		cleat,
+		cleat === INK ? WHITE : INK,
+		0.25,
+	);
+	const gear: FieldGear = {
+		mask,
+		cleat,
+		cleatSole: cleat === INK ? "#2a2a2e" : "#dcdad4",
+		cleatAccent,
+	};
+	if (lineman) {
+		// Linemen: gloves in black or gray, or just tape round the hands.
+		if (rng() < 0.6) {
+			const color = rng() < 0.6 ? INK : "#6c6f75";
+			gear.glove = { color, palm: shade(color, 0.12), hands: "RL" };
+		} else {
+			gear.tape = true;
+		}
+	} else if (pos === "QB") {
+		// The quarterback's throwing hand bare - sometimes a glove on the
+		// other.
+		if (rng() < 0.35) {
+			gear.glove = {
+				color: rng() < 0.5 ? INK : WHITE,
+				palm: "#8a8d93",
+				hands: "L",
+			};
+		}
+	} else if (!kicker) {
+		// Everybody else in gloves: the team's color, black or white, the
+		// palms gray - grippy.
+		const color = pick([kit.jersey, INK, WHITE, kit.helmet]);
+		gear.glove = {
+			color,
+			palm: shade(color, luminance(color) > 0.5 ? -0.18 : 0.2),
+			hands: "RL",
+		};
+	}
+	if (!kicker && rng() < 0.32) {
+		gear.sleeve = {
+			arms: rng() < 0.75 ? "RL" : rng() < 0.5 ? "R" : "L",
+			color: pick([INK, WHITE, kit.jersey]),
+		};
+	}
+	if (!gear.sleeve && rng() < 0.25) {
+		gear.wrist = { arms: "RL", color: pick([INK, WHITE, kit.jersey]) };
+	}
+	if (!lineman && rng() < 0.22) {
+		gear.visor = rng() < 0.45 ? "dark" : "clear";
+	}
+	if (["QB", "RB", "WR", "CB", "S"].includes(pos) && rng() < 0.22) {
+		gear.towel = true;
+	}
+	return gear;
+};

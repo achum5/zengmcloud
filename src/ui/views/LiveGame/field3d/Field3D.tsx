@@ -1,0 +1,644 @@
+import {
+	useCallback,
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+	type ReactNode,
+} from "react";
+import { useLocal } from "../../../util/local.ts";
+import type { PlayerFace } from "../../../util/playerFaces.ts";
+import { TeamLogoInline } from "../../../components/TeamLogoInline.tsx";
+import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
+import { helpers } from "../../../util/helpers.ts";
+import { depthOf } from "../court3d/camera.ts";
+import { FaceLoader } from "../court3d/FaceLoader.tsx";
+import { headColors } from "../court3d/faces.ts";
+import { logoPicture } from "../court3d/logoPicture.ts";
+import { adjust, artFor, makeResolution } from "../court3d/resolution.ts";
+import { eventsMatchRoster } from "../court3d/rosterMatch.ts";
+import { ScoreBug, type BugRefs } from "../court3d/ScoreBug.tsx";
+import {
+	makeScratch,
+	makeSpriteCache,
+	releaseSprites,
+	startFrame,
+} from "../court3d/sprite.ts";
+import type { Body } from "../court3d/poses.ts";
+import { aimFor } from "./aim.ts";
+import { drawLooseBall } from "./ball.ts";
+import { footballBody } from "./body.ts";
+import { makeFieldCamera } from "./camera.ts";
+import { compileField, type FieldTimeline } from "./director.ts";
+import { momentAt, playAt } from "./evaluate.ts";
+import {
+	fieldStyleFor,
+	paintEndZone,
+	paintMidLogo,
+	paintNumbers,
+	paintTurf,
+	type FieldTeam,
+} from "./fieldPaint.ts";
+import { FIELD_L } from "./geometry.ts";
+import { fieldGearFor, fieldKitsFor, type FieldLook } from "./kit.ts";
+import type { RosterMan } from "./personnel.ts";
+import { makeFieldClock, onFieldCursor, stepField } from "./playback.ts";
+import { drawFieldFrame, type FieldPaint } from "./scene.ts";
+import { drawFieldPlayer } from "./sprite.ts";
+import { paintStadium } from "./stadium.ts";
+
+// THE 3D FIELD: the football game as a broadcast - the home team's stadium,
+// its field, the twenty-two in their uniforms, a camera up in the press box
+// - acting out the play-by-play, in place of the 2D field when this device
+// has chosen it. The 3D court's sister (see court3d/Court3D.tsx), and run
+// the same way: the whole game staged up front (see director.ts), playback a
+// clock running along it toward the page's cursor, asking the page for each
+// line when its moment comes (onReady) - so every line appears as its play
+// happens on screen.
+
+// How long the picture dips to black either side of a cut (timeline ms).
+const DIP_MS = 150;
+// How quickly the camera pans and zooms after what it follows (per second).
+const CAM_PAN = 3.2;
+const CAM_ZOOM = 2.4;
+// The most of a frame (ms) given to drawing players in poses not drawn
+// before; over that, a man waits a frame for his new one (see sprite.ts).
+const SPRITE_BUDGET_MS = 6;
+// How long the play-by-play may disagree with the roster before the field
+// gives up on the game (ms).
+const ROSTER_WAIT = 5000;
+// Narrower than this (CSS pixels), the picture is squarer.
+const NARROW_W = 560;
+
+// Critically damped: from where it is and how fast it is going (`v`), on
+// toward `to` - exact, however long the step.
+const follow = (
+	x: number,
+	v: number,
+	to: number,
+	w: number,
+	secs: number,
+): [number, number] => {
+	const y = x - to;
+	const e = Math.exp(-w * secs);
+	const k = (v + w * y) * secs;
+	return [to + (y + k) * e, (v - w * k) * e];
+};
+
+// What goes across the back of his jersey: everything after his first name.
+const lastNameOf = (name: string | undefined): string => {
+	const n = (name ?? "").trim();
+	const i = n.indexOf(" ");
+	return i < 0 ? n : n.slice(i + 1);
+};
+
+type Props = {
+	// The game's full play-by-play, never consumed.
+	events: any[] | undefined;
+	// How many of those the page has shown.
+	cursor: number;
+	boxScore: any;
+	caption: ReactNode;
+	// The box score team (0 home, 1 away) the caption's play belongs to.
+	captionT?: 0 | 1;
+	paused: boolean;
+	// How many times real time it plays at.
+	rate: number;
+	// Stepped by the device in charge of simming: never asks for a line.
+	follower: boolean;
+	// How many times "next play" has been asked for.
+	skips?: number;
+	onReady: () => void;
+	// The field cannot play this game: the page goes on without it.
+	onFail?: () => void;
+};
+
+const Field3D = ({
+	events,
+	cursor,
+	boxScore,
+	caption,
+	captionT,
+	paused,
+	rate,
+	follower,
+	skips = 0,
+	onReady,
+	onFail,
+}: Props) => {
+	const { lid } = useLocal(["lid"]);
+	const gid: number | undefined = boxScore?.gid;
+	const season: number | undefined = boxScore?.season;
+	const raw: any[] = useMemo(
+		() => (Array.isArray(boxScore?.teams) ? boxScore.teams : []),
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[gid],
+	);
+	// Display order, as on the 2D field: [away, home].
+	const away = raw[1];
+	const home = raw[0];
+
+	// The roster is fixed for the game - read it once.
+	const roster = useMemo(() => {
+		const out: (RosterMan & { name: string; jerseyNumber?: string })[] = [];
+		const teams: [any, any] = [away, home];
+		for (const t of [0, 1] as const) {
+			for (const p of teams[t]?.players ?? []) {
+				if (typeof p.pid === "number") {
+					out.push({
+						pid: p.pid,
+						team: t,
+						pos: typeof p.pos === "string" ? p.pos : "",
+						name: p.name,
+						jerseyNumber: p.jerseyNumber,
+					});
+				}
+			}
+		}
+		return out;
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [gid]);
+
+	// The game staged - in no time at all, so right here.
+	const onFailRef = useRef(onFail);
+	onFailRef.current = onFail;
+	const [matched, setMatched] = useState(false);
+	useEffect(() => {
+		setMatched(false);
+		if (!events || events.length === 0) {
+			return;
+		}
+		// THE EVENTS HAVE TO BE THIS GAME'S (see Court3D): wait for the two to
+		// agree, and if they never do, give the game back to the page.
+		if (!eventsMatchRoster(events, roster)) {
+			const id = setTimeout(() => onFailRef.current?.(), ROSTER_WAIT);
+			return () => clearTimeout(id);
+		}
+		setMatched(true);
+	}, [events, roster]);
+	const timeline = useMemo((): FieldTimeline | undefined => {
+		if (!matched || !events) {
+			return undefined;
+		}
+		try {
+			return compileField({
+				events,
+				players: roster,
+				gid,
+				numPeriods: boxScore?.numPeriods,
+			});
+		} catch (error) {
+			console.error("3D field failed to compile", error);
+			return undefined;
+		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [matched, events, roster, gid]);
+	useEffect(() => {
+		if (matched && !timeline) {
+			onFailRef.current?.();
+		}
+	}, [matched, timeline]);
+
+	// The stadium and the field, painted once a game.
+	const team = (t: any): FieldTeam => ({
+		abbrev: t?.abbrev,
+		name: t?.name,
+		region: t?.region,
+		colors: t?.colors,
+	});
+	const [logos, setLogos] = useState<[HTMLCanvasElement?, HTMLCanvasElement?]>(
+		[],
+	);
+	const awayLogo = away?.imgURL || away?.imgURLSmall;
+	const homeLogo = home?.imgURL || home?.imgURLSmall;
+	useEffect(() => {
+		let alive = true;
+		void Promise.all([logoPicture(awayLogo), logoPicture(homeLogo)]).then(
+			(made) => {
+				if (alive) {
+					setLogos([made[0], made[1]]);
+				}
+			},
+		);
+		return () => {
+			alive = false;
+		};
+	}, [awayLogo, homeLogo]);
+	const paint = useMemo((): FieldPaint => {
+		const h = team(home);
+		const a = team(away);
+		const style = fieldStyleFor(h, a);
+		const seed = String(gid ?? 0);
+		const mid = logos[1];
+		return {
+			style,
+			turf: paintTurf(style, seed),
+			endZones: [paintEndZone(style, 0), paintEndZone(style, 1)],
+			numbers: paintNumbers(style),
+			...(mid ? { logo: paintMidLogo(mid) } : {}),
+			stadium: paintStadium(
+				h,
+				a,
+				seed,
+				{ att: boxScore?.att, capacity: boxScore?.arena?.capacity },
+				mid,
+			),
+		};
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [gid, logos]);
+
+	// Faces arrive asynchronously; until then a player has a plain skin tone
+	// and an average build.
+	const faces = useRef(new Map<number, PlayerFace | null>());
+	const [facesVersion, setFacesVersion] = useState(0);
+	const onFace = useCallback((pid: number, face: PlayerFace | null) => {
+		if (faces.current.get(pid) === face) {
+			return;
+		}
+		faces.current.set(pid, face);
+		setFacesVersion((v) => v + 1);
+	}, []);
+
+	const kits = useMemo(
+		() => fieldKitsFor(away?.colors, home?.colors),
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[gid],
+	);
+	const appearance = useMemo(() => {
+		const looks = new Map<number, FieldLook>();
+		const bodies = new Map<number, Body>();
+		for (const p of roster) {
+			const f = faces.current.get(p.pid) ?? undefined;
+			const kit = kits[p.team];
+			looks.set(p.pid, {
+				kit,
+				gear: fieldGearFor(p.pid, p.pos, kit),
+				skin: headColors(f?.face).skin,
+				jerseyNumber: f?.jerseyNumber ?? p.jerseyNumber ?? "",
+				lastName: lastNameOf(p.name),
+				...(logos[p.team] ? { logo: logos[p.team] } : {}),
+			});
+			bodies.set(p.pid, footballBody(f?.hgt, f?.weight));
+		}
+		return { looks, bodies };
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [roster, kits, logos, facesVersion]);
+	const looks = useRef(appearance.looks);
+	const bodies = useRef(appearance.bodies);
+	looks.current = appearance.looks;
+	bodies.current = appearance.bodies;
+
+	const wrapRef = useRef<HTMLDivElement | null>(null);
+	const canvasRef = useRef<HTMLCanvasElement | null>(null);
+	const [size, setSize] = useState({ w: 640, h: 360 });
+	useLayoutEffect(() => {
+		const el = wrapRef.current;
+		if (!el) {
+			return;
+		}
+		const measure = () => {
+			const r = el.getBoundingClientRect();
+			setSize({ w: r.width, h: r.height });
+		};
+		measure();
+		const observer = new ResizeObserver(measure);
+		observer.observe(el);
+		return () => observer.disconnect();
+	}, []);
+	const narrow = size.w < NARROW_W;
+
+	const dipRef = useRef<HTMLDivElement | null>(null);
+	const clockRef = useRef<HTMLSpanElement | null>(null);
+	const shotRef = useRef<HTMLSpanElement | null>(null);
+	const downRef = useRef<HTMLSpanElement | null>(null);
+	const foulsAwayRef = useRef<HTMLSpanElement | null>(null);
+	const foulsHomeRef = useRef<HTMLSpanElement | null>(null);
+	const ballAwayRef = useRef<HTMLSpanElement | null>(null);
+	const ballHomeRef = useRef<HTMLSpanElement | null>(null);
+
+	const clock = useRef(makeFieldClock(paused, skips));
+	const cam = useRef({ x: FIELD_L / 2, vx: 0, w: 200, vw: 0, y: 80, vy: 0 });
+	const shown = useRef({ down: "", ball: -1 });
+	useEffect(() => {
+		if (timeline) {
+			onFieldCursor(clock.current, timeline, { cursor, paused, skips });
+		}
+	}, [cursor, paused, skips, timeline]);
+
+	const live = useRef({
+		cursor,
+		paused,
+		rate,
+		follower,
+		onReady,
+		timeline,
+		paint,
+		size,
+		eventsLength: events?.length ?? 0,
+	});
+	live.current = {
+		cursor,
+		paused,
+		rate,
+		follower,
+		onReady,
+		timeline,
+		paint,
+		size,
+		eventsLength: events?.length ?? 0,
+	};
+
+	useEffect(() => {
+		// The picture is drawn small - pixel art - and the page blows it up
+		// without smoothing (see the canvas's style).
+		const scratch = makeScratch();
+		let sprites = makeSpriteCache();
+		sprites.budget = SPRITE_BUDGET_MS;
+		const res = makeResolution(performance.now() + 1500);
+
+		const tick = (now: number, draw: boolean) => {
+			const p = live.current;
+			const tl = p.timeline;
+			if (!tl) {
+				return;
+			}
+			const s = clock.current;
+			const { dt, cut } = stepField(s, p, tl, now);
+			if (!draw) {
+				return;
+			}
+			const canvas = canvasRef.current;
+			const ctx = canvas?.getContext("2d");
+			const { w, h } = p.size;
+			if (!canvas || !ctx || w <= 0 || h <= 0) {
+				return;
+			}
+			const dpr = Math.min(3, window.devicePixelRatio || 1);
+			const art = artFor(h * dpr, res);
+			const fw = Math.ceil((w * dpr) / art);
+			const fh = Math.ceil((h * dpr) / art);
+			if (canvas.width !== fw || canvas.height !== fh) {
+				canvas.width = fw;
+				canvas.height = fh;
+			}
+			const moment = momentAt(tl, s.t);
+			const aim = aimFor(moment.play);
+			// (Squarer, the picture takes in a little more of the field.)
+			const width = aim.width * (fw / fh < 1.5 ? 0.8 : 1);
+			const c = cam.current;
+			if (s.snapCam) {
+				c.x = aim.x;
+				c.w = width;
+				c.y = aim.y;
+				c.vx = 0;
+				c.vw = 0;
+				c.vy = 0;
+				s.snapCam = false;
+			} else {
+				const secs = (dt / 1000) * Math.max(1, p.rate);
+				[c.x, c.vx] = follow(c.x, c.vx, aim.x, CAM_PAN, secs);
+				[c.w, c.vw] = follow(c.w, c.vw, width, CAM_ZOOM, secs);
+				[c.y, c.vy] = follow(c.y, c.vy, aim.y, CAM_ZOOM, secs);
+			}
+			const view = makeFieldCamera({ x: c.x, width: c.w, y: c.y }, fw, fh);
+			const look = (pid: number) => looks.current.get(pid);
+			const body = (pid: number) => bodies.current.get(pid) ?? footballBody();
+			const items: { depth: number; draw: () => void }[] = [];
+			for (const st of moment.players) {
+				const l = look(st.id);
+				if (!l) {
+					continue;
+				}
+				items.push({
+					depth: depthOf(view, { x: st.x, y: st.y, z: 0 }),
+					draw: () => {
+						drawFieldPlayer(ctx, scratch, view, st, body(st.id), l, 1, sprites);
+					},
+				});
+			}
+			const ball = moment.ball;
+			if (ball) {
+				items.push({
+					depth: depthOf(view, ball.at),
+					draw: () => {
+						drawLooseBall(ctx, view, ball.at, !!ball.tee);
+					},
+				});
+			}
+			startFrame(sprites);
+			const drawStart = performance.now();
+			drawFieldFrame({ ctx, cam: view, paint: p.paint, items });
+			if (adjust(res, h * dpr, dt, performance.now() - drawStart, now)) {
+				releaseSprites(sprites);
+				sprites = makeSpriteCache();
+				sprites.budget = SPRITE_BUDGET_MS;
+			}
+			// Into and out of black across a cut.
+			const dip = dipRef.current;
+			if (dip) {
+				const near = tl.cuts.reduce(
+					(m, x) => Math.min(m, Math.abs(s.t - x)),
+					Infinity,
+				);
+				const o = cut ? 1 : Math.max(0, 1 - near / DIP_MS);
+				if (dip.style.opacity !== String(o)) {
+					dip.style.opacity = String(o);
+				}
+			}
+			// The down and distance, and which side has the ball.
+			const play = playAt(tl, s.t);
+			const down = play?.situation ?? "";
+			if (down !== shown.current.down && downRef.current) {
+				shown.current.down = down;
+				downRef.current.textContent = down;
+			}
+			const side = play ? play.offense : -1;
+			if (side !== shown.current.ball) {
+				shown.current.ball = side;
+				[ballAwayRef, ballHomeRef].forEach((ref, i) => {
+					if (ref.current) {
+						ref.current.style.visibility = i === side ? "visible" : "hidden";
+					}
+				});
+			}
+		};
+
+		let raf = requestAnimationFrame(function frame(now) {
+			tick(now, true);
+			raf = requestAnimationFrame(frame);
+		});
+		// A background tab gets no animation frames. Keep the game moving anyway
+		// (nothing to draw), or a hidden tab would hold up everyone watching.
+		const interval = setInterval(() => {
+			if (document.hidden) {
+				tick(performance.now(), false);
+			}
+		}, 250);
+		return () => {
+			cancelAnimationFrame(raf);
+			clearInterval(interval);
+			releaseSprites(sprites);
+		};
+	}, []);
+
+	// The game clock, as the page keeps it (it moves on with each line).
+	const time: string = boxScore?.time ?? "";
+	useEffect(() => {
+		if (clockRef.current) {
+			clockRef.current.textContent = time;
+		}
+	}, [time]);
+
+	const awayPts: number = boxScore?.teams?.[1]?.pts ?? 0;
+	const homePts: number = boxScore?.teams?.[0]?.pts ?? 0;
+	const quarter = boxScore?.quarterShort ?? "";
+	const captionTeam = captionT === undefined ? undefined : raw[captionT];
+	const recordOf = (t: any): string | undefined =>
+		typeof t?.won === "number" && typeof t?.lost === "number"
+			? helpers.formatRecord(t)
+			: undefined;
+	const bugTeam = (t: any, pts: number, i: 0 | 1) =>
+		t && {
+			abbrev: t.abbrev,
+			colors: t.colors,
+			imgURL: t.imgURL,
+			imgURLSmall: t.imgURLSmall,
+			pts,
+			timeouts: boxScore?.teams?.[i]?.timeouts,
+			record: recordOf(boxScore?.teams?.[i]),
+		};
+	const refs: BugRefs = {
+		clock: clockRef,
+		shot: shotRef,
+		fouls: [foulsAwayRef, foulsHomeRef],
+		ball: [ballAwayRef, ballHomeRef],
+		down: downRef,
+	};
+
+	return (
+		<div
+			ref={wrapRef}
+			className="mb-3"
+			style={{
+				position: "relative",
+				width: "100%",
+				aspectRatio: narrow ? "4 / 3" : "16 / 9",
+				background: "#040406",
+				borderRadius: 6,
+				overflow: "hidden",
+				containerType: "inline-size",
+				isolation: "isolate",
+			}}
+		>
+			{roster.map((p) => (
+				<FaceLoader
+					key={p.pid}
+					pid={p.pid}
+					season={season}
+					lid={lid}
+					onFace={onFace}
+				/>
+			))}
+			<style>
+				{".court3d-caption .text-body-secondary { color: #c9c3d3 !important; }"}
+			</style>
+			<canvas
+				ref={canvasRef}
+				role="img"
+				aria-label="Live field"
+				style={{
+					position: "absolute",
+					inset: 0,
+					width: "100%",
+					height: "100%",
+					imageRendering: "pixelated",
+				}}
+			/>
+			<div
+				aria-hidden
+				style={{
+					position: "absolute",
+					inset: 0,
+					pointerEvents: "none",
+					background:
+						"radial-gradient(ellipse at 50% 55%, transparent 58%, rgba(0,0,0,0.32) 100%)",
+				}}
+			/>
+			<div
+				ref={dipRef}
+				aria-hidden
+				style={{
+					position: "absolute",
+					inset: 0,
+					background: "#000",
+					opacity: 0,
+					pointerEvents: "none",
+				}}
+			/>
+			{!timeline && events && events.length > 0 ? (
+				<div
+					className="spinner-border text-light"
+					role="status"
+					aria-label="Loading"
+					style={{
+						position: "absolute",
+						left: "50%",
+						top: "50%",
+						marginLeft: "-1rem",
+						marginTop: "-1rem",
+						opacity: 0.7,
+						pointerEvents: "none",
+					}}
+				/>
+			) : null}
+			<ScoreBug
+				away={bugTeam(away, awayPts, 1)}
+				home={bugTeam(home, homePts, 0)}
+				quarter={quarter}
+				totalTimeouts={STARTING_NUM_TIMEOUTS}
+				refs={refs}
+			/>
+			{caption ? (
+				<div
+					className="court3d-caption"
+					style={{
+						position: "absolute",
+						left: "50%",
+						// Just over the score bug.
+						bottom: "calc(2.4cqw + clamp(10px, 1.75cqw, 16px) * 3.3)",
+						transform: "translateX(-50%)",
+						width: "max-content",
+						maxWidth: "92%",
+						textAlign: "center",
+						fontSize: "clamp(10px, 1.85cqw, 16px)",
+						lineHeight: 1.35,
+						padding: "0.45em 1em",
+						background: "rgba(8, 8, 12, 0.84)",
+						color: "#f1ede6",
+						borderLeft: `4px solid ${
+							(captionTeam ?? home)?.colors?.[0] ?? "#888"
+						}`,
+						borderRadius: 3,
+						display: "flex",
+						alignItems: "center",
+						gap: "0.6em",
+					}}
+				>
+					{captionTeam ? (
+						<TeamLogoInline
+							alt={captionTeam.abbrev}
+							className="flex-shrink-0"
+							imgURL={captionTeam.imgURL}
+							imgURLSmall={captionTeam.imgURLSmall}
+							includePlaceholderIfNoLogo
+						/>
+					) : null}
+					<div>{caption}</div>
+				</div>
+			) : null}
+		</div>
+	);
+};
+
+export default Field3D;

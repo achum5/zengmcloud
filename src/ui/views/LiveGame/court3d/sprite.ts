@@ -40,7 +40,7 @@ export const makeScratch = (): Scratch => {
 const RIM_ALPHA = 1;
 const SOLID = 140;
 let solid = new Uint8Array(0);
-const rim = (
+export const rim = (
 	d: Uint8ClampedArray,
 	w: number,
 	h: number,
@@ -104,7 +104,7 @@ const rim = (
 // plain memory instead, every one drawn has to be copied over to the card
 // again and again, and the game slows to a crawl.)
 type Box = { x0: number; y0: number; x1: number; y1: number };
-type Kept = {
+export type Kept = {
 	canvas: HTMLCanvasElement;
 	w: number;
 	h: number;
@@ -116,7 +116,9 @@ export type SpriteCache = {
 	kept: Map<string, Kept>;
 	// All of them together, in pixels.
 	area: number;
-	ids: WeakMap<Look, number>;
+	// Each look's number in the keys (a court player's, or a football
+	// player's - see field3d/sprite.ts).
+	ids: WeakMap<object, number>;
 	next: number;
 	// With time to spare on the device, his poses in finer steps - twice as
 	// many frames, turns and steps of a blend - so he moves the more smoothly
@@ -189,7 +191,7 @@ export const releaseSprites = (cache: SpriteCache) => {
 	cache.last.clear();
 	cache.area = 0;
 };
-const keep = (
+export const keep = (
 	cache: SpriteCache,
 	key: string,
 	from: HTMLCanvasElement,
@@ -217,7 +219,7 @@ const keep = (
 	}
 	return k;
 };
-const stamp = (
+export const stamp = (
 	ctx: CanvasRenderingContext2D,
 	k: Kept,
 	x: number,

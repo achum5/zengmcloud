@@ -247,7 +247,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 							<option value="hide">Hide</option>
 						</select>
 					</div>
-					{__SPORT === "basketball" ? (
+					{__SPORT === "basketball" || __SPORT === "football" ? (
 						<div className="col-sm-3 col-6 mb-3">
 							<label
 								className="form-label"

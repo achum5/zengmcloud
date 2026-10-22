@@ -1,7 +1,8 @@
 import { safeLocalStorage } from "../../../util/safeLocalStorage.ts";
 
-// Which live-game picture this device shows for basketball: the classic 2D
-// court or the 3D one. Saved in this browser only, like the color scheme.
+// Which live-game picture this device shows for basketball (or football): the
+// classic 2D court (or field) or the 3D one. Saved in this browser only, like
+// the color scheme.
 // (In a multiplayer broadcast, everyone watching follows the device in charge
 // of simming instead - see LiveGame.)
 

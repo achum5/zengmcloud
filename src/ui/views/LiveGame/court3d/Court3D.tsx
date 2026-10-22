@@ -9,7 +9,7 @@ import {
 } from "react";
 import { useLocal } from "../../../util/local.ts";
 import { toWorker } from "../../../util/toWorker.ts";
-import { usePlayerFace, type PlayerFace } from "../../../util/playerFaces.ts";
+import type { PlayerFace } from "../../../util/playerFaces.ts";
 import type {
 	ArenaLooks,
 	ReplayLooks,
@@ -33,6 +33,7 @@ import {
 	REPLAY_RIG,
 } from "./camera.ts";
 import { courtTexture } from "./courtTexture.ts";
+import { FaceLoader } from "./FaceLoader.tsx";
 import { adjust, artFor, makeResolution } from "./resolution.ts";
 import { makeScratch, makeSpriteCache, releaseSprites } from "./sprite.ts";
 import {
@@ -248,26 +249,6 @@ const lastNameOf = (name: string | undefined): string => {
 	const n = (name ?? "").trim();
 	const i = n.indexOf(" ");
 	return i < 0 ? n : n.slice(i + 1);
-};
-
-const FaceLoader = ({
-	pid,
-	season,
-	lid,
-	onFace,
-}: {
-	pid: number;
-	season: number | undefined;
-	lid: number | undefined;
-	onFace: (pid: number, face: PlayerFace | null) => void;
-}) => {
-	const face = usePlayerFace(pid, season, lid);
-	useEffect(() => {
-		if (face !== undefined) {
-			onFace(pid, face);
-		}
-	}, [face, onFace, pid]);
-	return null;
 };
 
 type Props = {

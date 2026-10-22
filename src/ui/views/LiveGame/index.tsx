@@ -367,8 +367,9 @@ const STOPPAGE_TYPES = new Set([
 
 const DEFAULT_SPEED = 7;
 
-// The 3D court is only downloaded by a device that shows it.
+// The 3D court (and field) is only downloaded by a device that shows it.
 const Court3D = lazy(() => import("./court3d/Court3D.tsx"));
+const Field3D = lazy(() => import("./field3d/Field3D.tsx"));
 
 const speedToMs = (speed: number) => {
 	return 4000 / 1.2 ** speed;
@@ -454,14 +455,17 @@ const getNavigateWarning = (
 export const LiveGame = (props: View<"liveGame">) => {
 	const [paused, setPaused] = useState(false);
 	const pausedRef = useRef(paused);
-	// This device's choice of picture for basketball: the 2D court, or the 3D
-	// court. Read once - a game does not switch pictures halfway through. In
-	// 3D the court sets the pace: it asks for each line when its animation
-	// reaches it (onCourt3DReady), instead of the timer below firing. Someone
-	// following a multiplayer broadcast sees whatever the device in charge of
-	// simming chose instead (see court3d below).
+	// This device's choice of picture for basketball or football: the 2D
+	// court (or field), or the 3D one. Read once - a game does not switch
+	// pictures halfway through. In 3D the picture sets the pace: it asks for
+	// each line when its animation reaches it (onCourt3DReady), instead of the
+	// timer below firing. Someone following a multiplayer broadcast sees
+	// whatever the device in charge of simming chose instead (see court3d
+	// below).
 	const [ownView] = useState(() =>
-		__SPORT === "basketball" ? getLiveGameView() : "classic",
+		__SPORT === "basketball" || __SPORT === "football"
+			? getLiveGameView()
+			: "classic",
 	);
 	const court3dRef = useRef(ownView === "3d");
 	// The 3D court could not play this game (see Court3D's onFail): the 2D
@@ -1609,7 +1613,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// A follower is stepped by the simmer's cursor and never paces playback
 	// itself, so its picture can follow the simmer's at any moment.
 	const court3d =
-		__SPORT === "basketball" &&
+		(__SPORT === "basketball" || __SPORT === "football") &&
 		!court3dLost &&
 		(isFollower
 			? parseLiveGameView(mpLiveBroadcast?.view) === "3d"
@@ -1632,9 +1636,13 @@ export const LiveGame = (props: View<"liveGame">) => {
 	// Following in 3D a device that says where its court is: this one plays
 	// the game along with it (see court3d/follow.ts) - at its speed, through
 	// its key plays - asking for its own lines rather than being stepped.
-	// (The game being broadcast, not a previous one still on screen.)
+	// (The game being broadcast, not a previous one still on screen. The 3D
+	// field does not play along: it is stepped.)
 	const sync3d =
-		isFollower && court3d && mpLiveBroadcast?.gid === props.initialBoxScore?.gid
+		__SPORT === "basketball" &&
+		isFollower &&
+		court3d &&
+		mpLiveBroadcast?.gid === props.initialBoxScore?.gid
 			? mpLiveBroadcast?.sync
 			: undefined;
 	const followCursor = mpLiveBroadcast?.cursor ?? 0;
@@ -2978,10 +2986,12 @@ export const LiveGame = (props: View<"liveGame">) => {
 														setSpeed3d(String(s));
 													}}
 												/>
-												<KeyPlaysPicker
-													value={keyPlays}
-													onChange={setKeyPlaysState}
-												/>
+												{__SPORT === "basketball" ? (
+													<KeyPlaysPicker
+														value={keyPlays}
+														onChange={setKeyPlaysState}
+													/>
+												) : null}
 											</>
 										) : (
 											<input
@@ -3045,7 +3055,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 					) : null}
 					{boxScore.current.gid >= 0 ? (
 						<>
-							{__SPORT === "football" ? (
+							{__SPORT === "football" && !court3d ? (
 								<div>
 									<LiveField
 										scene={fieldScene.current}
@@ -3069,25 +3079,45 @@ export const LiveGame = (props: View<"liveGame">) => {
 										/>
 									}
 								>
-									<Court3D
-										events={props.events}
-										cursor={
-											initialEventCount.current - (events.current?.length ?? 0)
-										}
-										boxScore={boxScore.current}
-										caption={playByPlayEntries.current[0]?.text}
-										captionT={playByPlayEntries.current[0]?.t}
-										paused={paused}
-										rate={along && sync3d!.rate > 0 ? sync3d!.rate : rate3d}
-										follower={isFollower && !along}
-										along={along}
-										report={court3dReport}
-										skips={skips3d}
-										keyPlays={along ? alongKeyPlays : keyPlays3d}
-										onReady={onCourt3DReady}
-										onJump={onCourt3DJump}
-										onFail={onCourt3DFail}
-									/>
+									{__SPORT === "football" ? (
+										<Field3D
+											events={props.events}
+											cursor={
+												initialEventCount.current -
+												(events.current?.length ?? 0)
+											}
+											boxScore={boxScore.current}
+											caption={playByPlayEntries.current[0]?.text}
+											captionT={playByPlayEntries.current[0]?.t}
+											paused={paused}
+											rate={rate3d}
+											follower={isFollower}
+											skips={skips3d}
+											onReady={onCourt3DReady}
+											onFail={onCourt3DFail}
+										/>
+									) : (
+										<Court3D
+											events={props.events}
+											cursor={
+												initialEventCount.current -
+												(events.current?.length ?? 0)
+											}
+											boxScore={boxScore.current}
+											caption={playByPlayEntries.current[0]?.text}
+											captionT={playByPlayEntries.current[0]?.t}
+											paused={paused}
+											rate={along && sync3d!.rate > 0 ? sync3d!.rate : rate3d}
+											follower={isFollower && !along}
+											along={along}
+											report={court3dReport}
+											skips={skips3d}
+											keyPlays={along ? alongKeyPlays : keyPlays3d}
+											onReady={onCourt3DReady}
+											onJump={onCourt3DJump}
+											onFail={onCourt3DFail}
+										/>
+									)}
 								</Suspense>
 							) : null}
 							{__SPORT === "basketball" && !court3d ? (
@@ -3139,10 +3169,12 @@ export const LiveGame = (props: View<"liveGame">) => {
 												setSpeed3d(String(s));
 											}}
 										/>
-										<KeyPlaysPicker
-											value={keyPlays}
-											onChange={setKeyPlaysState}
-										/>
+										{__SPORT === "basketball" ? (
+											<KeyPlaysPicker
+												value={keyPlays}
+												onChange={setKeyPlaysState}
+											/>
+										) : null}
 									</>
 								) : (
 									<input

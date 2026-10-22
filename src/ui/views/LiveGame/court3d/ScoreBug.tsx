@@ -30,6 +30,8 @@ export type BugRefs = {
 	// Per side, in the bug's order: [visitors, home].
 	fouls: [RefObject<HTMLSpanElement | null>, RefObject<HTMLSpanElement | null>];
 	ball: [RefObject<HTMLSpanElement | null>, RefObject<HTMLSpanElement | null>];
+	// Football's down and distance, after the clock.
+	down?: RefObject<HTMLSpanElement | null>;
 };
 
 const FONT = "system-ui, -apple-system, Segoe UI, Roboto, sans-serif";
@@ -269,5 +271,20 @@ export const ScoreBug = ({
 				fontSize: "1.1em",
 			}}
 		/>
+		{refs.down ? (
+			<span
+				ref={refs.down}
+				title="Down and distance"
+				style={{
+					display: "flex",
+					alignItems: "center",
+					justifyContent: "center",
+					padding: "0 0.7em",
+					background: "#1c1408",
+					color: "#ffb547",
+					fontVariantNumeric: "tabular-nums",
+				}}
+			/>
+		) : null}
 	</div>
 );
