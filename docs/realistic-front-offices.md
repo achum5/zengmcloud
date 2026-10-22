@@ -421,6 +421,14 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
 - **Trading between picks comes later** (owner's call).
 - Teams understand whatever lottery system the league uses.
 
+## Roster cuts
+
+- **A CPU team over the roster limit releases whoever it can best do
+  without**: the player whose release leaves its franchise worth the most,
+  his salary still owed unless he was just drafted, his upside gone with him,
+  and the floor's positions as they are left. Stock cuts the lowest value,
+  salary and fit aside.
+
 ## Coaching
 
 Starters, rotation and minutes come from the same judgment of who helps win.

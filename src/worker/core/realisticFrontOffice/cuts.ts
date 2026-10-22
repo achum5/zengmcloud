@@ -1,0 +1,78 @@
+import type { Player } from "../../../common/types.ts";
+import { g, helpers } from "../../util/index.ts";
+import { player } from "../index.ts";
+import { currentOutlook, loadTeam } from "./market.ts";
+import {
+	franchiseValue,
+	teamStrengths,
+	type LeagueOutlook,
+} from "./outlook.ts";
+
+// CUTS. A CPU team over the roster limit releases whoever it can best do
+// without: the player whose release leaves its franchise worth the most - his
+// salary still owed unless he was just drafted, his upside gone with him, and
+// the floor's positions as they are left. Stock cuts the lowest value, salary
+// and fit aside.
+
+// What the team is worth without him.
+const worthWithout = (
+	outlook: LeagueOutlook,
+	tid: number,
+	players: readonly Player[],
+	picks: Parameters<typeof teamStrengths>[3],
+	p: Player,
+	free: boolean,
+) => {
+	const view = free
+		? outlook
+		: {
+				...outlook,
+				deadMoney: new Map(outlook.deadMoney).set(tid, [
+					...(outlook.deadMoney.get(tid) ?? []),
+					{ amount: p.contract.amount, exp: p.contract.exp },
+				]),
+			};
+	return franchiseValue(
+		view,
+		teamStrengths(
+			view,
+			tid,
+			players.filter((x) => x !== p),
+			picks,
+		),
+	);
+};
+
+// Releases this many of the team's players, and returns their pids.
+export const frontOfficeCuts = async (
+	players: readonly Player[],
+	numToDrop: number,
+) => {
+	const tid = players[0]?.tid;
+	if (tid === undefined || numToDrop <= 0) {
+		return [];
+	}
+	const outlook = await currentOutlook();
+	const phase = g.get("phase");
+	const season = g.get("season");
+	const released: number[] = [];
+	for (let k = 0; k < numToDrop; k++) {
+		const t = await loadTeam(outlook, tid);
+		let best: { p: Player; value: number; free: boolean } | undefined;
+		// Ties go to the lower pid, so every device in a shared league cuts the
+		// same player.
+		for (const p of [...t.players].sort((a, b) => a.pid - b.pid)) {
+			const free = helpers.justDrafted(p, phase, season);
+			const value = worthWithout(outlook, tid, t.players, t.picks, p, free);
+			if (!best || value > best.value) {
+				best = { p, value, free };
+			}
+		}
+		if (!best) {
+			break;
+		}
+		await player.release(best.p, best.free);
+		released.push(best.p.pid);
+	}
+	return released;
+};

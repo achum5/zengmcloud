@@ -8,6 +8,8 @@ import type { Player } from "../../../common/types.ts";
 import { KEY_POSITIONS_NEEDED } from "../freeAgents/getBest.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { last } from "../../../common/utils.ts";
+import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import { frontOfficeCuts } from "../realisticFrontOffice/cuts.ts";
 
 export const dropPlayers = async (players: Player[], numToDrop: number) => {
 	// Automatically drop lowest value players until we reach g.get("maxRosterSize")
@@ -174,10 +176,17 @@ const checkRosterSizes = async (
 							["trade"],
 						)}">trades</a>) before continuing.`;
 			} else {
-				const releasedPIDsTemp = await dropPlayers(
-					players,
-					numPlayersOnRoster - g.get("maxRosterSize"),
-				);
+				// Realistic front offices: whoever the team can best do without
+				// (realisticFrontOffice/cuts.ts).
+				const releasedPIDsTemp = realisticFrontOfficesOn()
+					? await frontOfficeCuts(
+							players,
+							numPlayersOnRoster - g.get("maxRosterSize"),
+						)
+					: await dropPlayers(
+							players,
+							numPlayersOnRoster - g.get("maxRosterSize"),
+						);
 				releasedPIDs.push(...releasedPIDsTemp);
 			}
 		} else if (numPlayersOnRoster < g.get("minRosterSize")) {
