@@ -40,6 +40,9 @@ export type LeagueMetrics = {
 	top10FaStayed: number;
 	top10FaLeft: number;
 	top10FaUnsigned: number;
+	// The same top 10, veterans only: not coming off a rookie deal.
+	top10VetFas: number;
+	top10VetFaStayed: number;
 };
 
 const OFFSEASON_PHASES = new Set<number>([
@@ -139,6 +142,8 @@ export const computeMetrics = async (
 		top10FaStayed: 0,
 		top10FaLeft: 0,
 		top10FaUnsigned: 0,
+		top10VetFas: 0,
+		top10VetFaStayed: 0,
 	};
 
 	// WINNING
@@ -415,6 +420,12 @@ export const computeMetrics = async (
 				m.top10FaUnsigned += 1;
 			} else {
 				m.top10FaLeft += 1;
+			}
+			if (!x.rookie) {
+				m.top10VetFas += 1;
+				if (x.tidAfter === x.tid) {
+					m.top10VetFaStayed += 1;
+				}
 			}
 		}
 	}

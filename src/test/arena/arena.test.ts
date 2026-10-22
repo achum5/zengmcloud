@@ -953,6 +953,10 @@ export const summarize = (leagues: LeagueMetrics[]) => {
 		capSpaceTeams: mean(pool("capSpaceTeamsPerSummer")),
 		deadMoneyMedian: median(pool("deadMoneyShares")),
 		top10FaStay: top10 > 0 ? sum("top10FaStayed") / top10 : Number.NaN,
+		top10VetFaStay:
+			sum("top10VetFas") > 0
+				? sum("top10VetFaStayed") / sum("top10VetFas")
+				: Number.NaN,
 	} satisfies Record<keyof typeof BENCHMARKS, number>;
 };
 

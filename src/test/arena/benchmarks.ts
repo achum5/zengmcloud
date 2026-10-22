@@ -162,4 +162,13 @@ export const BENCHMARKS = {
 		high: 0.7,
 		percent: true,
 	},
+	// Rookie deals ending are most of the top 10 by value, and stay more, as
+	// NBA players do on extensions and restricted free agency.
+	top10VetFaStay: {
+		label: "...veterans only, not off a rookie deal",
+		nba: "~57%",
+		low: 0.45,
+		high: 0.7,
+		percent: true,
+	},
 } satisfies Record<string, Benchmark>;
