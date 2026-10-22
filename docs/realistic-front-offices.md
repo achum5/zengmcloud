@@ -25,8 +25,8 @@ with "the Pistons", not with a named person.
 - **In League Settings** (Game Modes), off by default (owner's call, to try
   the mode while it is built). What it changes so far: CPU-to-CPU trades,
   how CPU teams judge a human's trade offer, re-signing and free agency for
-  every team, free-agency testing and mood terms. CPU teams' trade offers to
-  humans (counters, the trading block, Trade Proposals) and the draft are
+  every team, the draft, free-agency testing and mood terms. CPU teams'
+  trade offers to humans (counters, the trading block, Trade Proposals) are
   still stock.
 - **Existing leagues never switch on their own.** New leagues default to it only
   once the owner has played it and is happy with it.
@@ -361,6 +361,21 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
 
 - A pick is priced by the prospect the team expects to take there, from its own
   board, and the team drafts off that same board.
+- **The board is the prospect's value to the franchise** (owner's call): true
+  ratings through the same projections and title odds as everything else, on
+  the rookie deal of the pick, so talent rules and fit and timeline break
+  near-ties - a rebuilding team leans to upside.
+- **From the lottery on, the draft's picks are priced by the actual class**
+  (owner's call): by who would go there off a board of the class by what each
+  prospect is generally worth, kept up to date as players are taken - not by
+  what the slot usually yields, so a deep or a thin class moves its picks'
+  prices, and a human who knows the class is strong can't buy its picks at
+  the average.
+- Against stock's drafting (arena, 2 leagues x 5 seasons, 6 drafts judged
+  three seasons on): pick order predicts a player's overall a little better
+  (rank correlation 0.59 against 0.58), the top 5 picks rate 60 against 58,
+  and of each draft's 10 best players 5.8 went in the top 10 against 5.0.
+- **Trading between picks comes later** (owner's call).
 - Teams understand whatever lottery system the league uses.
 
 ## Coaching
