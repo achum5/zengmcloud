@@ -4,6 +4,7 @@ import { idb } from "../../db/index.ts";
 import {
 	g,
 	helpers,
+	lock,
 	logEvent,
 	toUI,
 	updatePlayMenu,
@@ -230,7 +231,16 @@ const processTrade = async (
 		});
 	}
 
-	await toUI("realtimeUpdate", [["playerMovement"]]);
+	// Views wait for a phase change to finish (lock.runView), so a trade made
+	// during one - realistic front offices trade as offseason phases open
+	// (phase/finalize.ts) - must not wait for the refresh: it would wait for the
+	// phase change, and the phase change for it. The refresh runs once the phase
+	// change is done.
+	if (lock.get("newPhase")) {
+		void toUI("realtimeUpdate", [["playerMovement"]]);
+	} else {
+		await toUI("realtimeUpdate", [["playerMovement"]]);
+	}
 	await recomputeLocalUITeamOvrs();
 
 	// If draft pick was changed...
