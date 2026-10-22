@@ -584,6 +584,9 @@ const REVERSE_OUT = 2.4;
 // The room round a man going up over another for a dunk (feet): nobody else
 // of theirs nearer him than that.
 const POSTER_ROOM = 3.2;
+// And out of his way in: at the least this far (feet) to the side of the
+// line he comes in on.
+const POSTER_LANE = 3;
 // How far off the dunker the man he dunked on is, once both are down (ft).
 const DUNKED_ON_ROOM = 3.4;
 // A drop step or an up-and-under goes up this far out (feet): a low-post
@@ -1356,6 +1359,34 @@ type ShotPlan = {
 // time.
 type AtRim = { t0: number; found: FoundShot; line: number; falls?: Pt };
 
+// A spot out at the edge of the room round a dunk (see keepClear) - moved
+// off to the side of the way the dunker comes in, if it is on it: a man
+// who trailed him in isn't stood where he comes through on his last
+// strides, to be shoved on in ahead of him, into the dunk. To the side it
+// was on; on the line, the side the room is cleared to.
+const offTheLane = (B: Pt, c: { at: Pt; out: Pt; r: number; lane: Pt }): Pt => {
+	const { at, lane } = c;
+	const along = (B.x - at.x) * lane.x + (B.y - at.y) * lane.y;
+	const off = (B.x - at.x) * -lane.y + (B.y - at.y) * lane.x;
+	if (along <= 0 || Math.abs(off) >= POSTER_LANE) {
+		return B;
+	}
+	const side =
+		Math.abs(off) > 0.1
+			? Math.sign(off)
+			: c.out.x * -lane.y + c.out.y * lane.x >= 0
+				? 1
+				: -1;
+	const a = Math.max(
+		along,
+		Math.sqrt(Math.max(0, c.r * c.r - POSTER_LANE * POSTER_LANE)),
+	);
+	return clampPt({
+		x: at.x + lane.x * a - lane.y * side * POSTER_LANE,
+		y: at.y + lane.y * a + lane.x * side * POSTER_LANE,
+	});
+};
+
 class Director {
 	T = 0;
 	private readonly rng: () => number;
@@ -1409,6 +1440,9 @@ class Director {
 		t0: number;
 		t1: number;
 		except: number;
+		// The way the dunker comes in to `at`: out from it, back along his
+		// way (unit).
+		lane: Pt;
 		// Where and by when the man he dunks on meets him, facing him - and
 		// where the dunker comes down.
 		meet: { at: Pt; by: number; face: 1 | -1; dunker: Pt };
@@ -1657,7 +1691,10 @@ class Director {
 				let a = c.t0 - 300;
 				let A = this.posAt(tr.pid, a);
 				const u = dist(A, c.at) > 1 ? unitVec(c.at, A) : c.out;
-				const B = clampPt({ x: c.at.x + u.x * c.r, y: c.at.y + u.y * c.r });
+				const B = offTheLane(
+					clampPt({ x: c.at.x + u.x * c.r, y: c.at.y + u.y * c.r }),
+					c,
+				);
 				// Out to the edge of it, and back on his way after, no faster
 				// than a man can go.
 				for (let n = 0; n < 3; n++) {
@@ -8182,6 +8219,7 @@ class Director {
 					t0: gather - 150,
 					t1: gather + 900,
 					except: victim,
+					lane: dist(P1, under) > 0.3 ? unitVec(under, P1) : back,
 					meet: {
 						at: V,
 						by: gather + 60,
@@ -8205,10 +8243,13 @@ class Director {
 					};
 					const L = Math.hypot(w.x, w.y);
 					const u = L > 0.3 ? { x: w.x / L, y: w.y / L } : away;
-					const B = clampPt({
-						x: under.x + u.x * POSTER_ROOM,
-						y: under.y + u.y * POSTER_ROOM,
-					});
+					const B = offTheLane(
+						clampPt({
+							x: under.x + u.x * POSTER_ROOM,
+							y: under.y + u.y * POSTER_ROOM,
+						}),
+						this.clears.at(-1)!,
+					);
 					this.goBy(d, B, gather - 150, gather + 420, "run");
 					if (d === had) {
 						this.act(d, "reach", gather + 360, gather + 760, {
