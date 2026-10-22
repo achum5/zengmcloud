@@ -315,4 +315,36 @@ describe("the plays acted out", () => {
 		assert.isAbove(checked, 3);
 		assert.isAbove(got, 0);
 	});
+	test("the officials on every play: all seven, at a man's speed, on the field or just off it", () => {
+		const bad: string[] = [];
+		eachPlay((play) => {
+			if (play.crew.length !== 7) {
+				bad.push(`${play.crew.length} officials on play ${play.i}`);
+			}
+			for (const part of play.crew) {
+				part.legs.forEach((l, k) => {
+					const prev = part.legs[k - 1];
+					if (
+						prev &&
+						(Math.abs(l.t0 - prev.t1) > 1e-6 || dist(l.from, prev.to) > 1e-6)
+					) {
+						bad.push(`official ${part.pid} jumps on play ${play.i}`);
+					}
+					const secs = (l.t1 - l.t0) / 1000;
+					if (secs > 0.05 && dist(l.from, l.to) / secs > 23) {
+						bad.push(`official ${part.pid} too fast on play ${play.i}`);
+					}
+					// (Under the posts, just past the end line.)
+					const p = l.to;
+					if (p.x < -4 || p.x > FIELD_L + 4 || p.y < -4 || p.y > 164) {
+						bad.push(`official ${part.pid} off the field on play ${play.i}`);
+					}
+				});
+				if (part.legs.at(-1)!.t1 < play.t1 - 1) {
+					bad.push(`official ${part.pid} gone early on play ${play.i}`);
+				}
+			}
+		});
+		assert.deepEqual(bad.slice(0, 5), []);
+	});
 });

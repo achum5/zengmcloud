@@ -292,8 +292,9 @@ const jerseySheet = (
 		g.restore();
 	};
 	const L = FIELD_LETTERING;
+	// (An official's number on his back only.)
 	text(
-		look.jerseyNumber,
+		look.official ? "" : look.jerseyNumber,
 		w / 2,
 		T * L.number.u,
 		body.H * L.number.size,
@@ -435,8 +436,11 @@ const untwistTable = (q: Pose, pel: V3): Float64Array => {
 };
 
 // His helmet, as big round his head as it is (head radii): a cartoon's
-// head, a cartoon's helmet.
+// head, a cartoon's helmet. (An official's bare head, in helmet radii.)
 const HELMET = 1.1;
+const OFFICIAL_HEAD = 0.9;
+// An official's shirt: its stripes, how wide (feet).
+const STRIPE_W = 0.15;
 
 // The bars of each facemask, in helmet radii in its own frame: forward,
 // to its left, up. Each bar runs from one side of the shell round the front
@@ -631,25 +635,35 @@ const build = (
 			[1, dp * 0.4],
 		]);
 	}
-	torso(up(0.9, -sw * 0.86), up(0.9, sw * 0.86), [
-		[0, dp * 0.42],
-		[0.5, dp * 0.55],
-		[1, dp * 0.42],
-	]);
-	// (The pads' plates stand out over his chest and his shoulder blades.)
-	torso(up(0.76, -sw * 0.55, dp * 0.24), up(0.76, sw * 0.55, dp * 0.24), [
-		[0, dp * 0.38],
-		[0.5, dp * 0.44],
-		[1, dp * 0.38],
-	]);
-	torso(up(0.8, -sw * 0.5, -dp * 0.2), up(0.8, sw * 0.5, -dp * 0.2), [
-		[0, dp * 0.38],
-		[0.5, dp * 0.42],
-		[1, dp * 0.38],
-	]);
-	for (const sd of [-1, 1]) {
-		const cap = up(0.94, sd * (sw + body.upperR * 0.4), -dp * 0.02);
-		torso(cap, cap, [[0, body.upperR * 1.7]]);
+	const official = look.official === true;
+	if (official) {
+		// (An official: no pads - just his shoulders under his shirt.)
+		torso(up(0.88, -sw * 0.72), up(0.88, sw * 0.72), [
+			[0, dp * 0.36],
+			[0.5, dp * 0.44],
+			[1, dp * 0.36],
+		]);
+	} else {
+		torso(up(0.9, -sw * 0.86), up(0.9, sw * 0.86), [
+			[0, dp * 0.42],
+			[0.5, dp * 0.55],
+			[1, dp * 0.42],
+		]);
+		// (The pads' plates stand out over his chest and his shoulder blades.)
+		torso(up(0.76, -sw * 0.55, dp * 0.24), up(0.76, sw * 0.55, dp * 0.24), [
+			[0, dp * 0.38],
+			[0.5, dp * 0.44],
+			[1, dp * 0.38],
+		]);
+		torso(up(0.8, -sw * 0.5, -dp * 0.2), up(0.8, sw * 0.5, -dp * 0.2), [
+			[0, dp * 0.38],
+			[0.5, dp * 0.42],
+			[1, dp * 0.38],
+		]);
+		for (const sd of [-1, 1]) {
+			const cap = up(0.94, sd * (sw + body.upperR * 0.4), -dp * 0.02);
+			torso(cap, cap, [[0, body.upperR * 1.7]]);
+		}
 	}
 	torso(up(0, -body.hipW), up(0, body.hipW), [
 		[0, body.thighR * 1.15],
@@ -679,56 +693,70 @@ const build = (
 		up(0.9, 0, -dp * 0.02),
 		at(-0.1, 0, -0.55),
 		[
-			[0, sw * 0.42],
-			[1, sw * 0.36],
+			[0, sw * (official ? 0.3 : 0.42)],
+			[1, sw * (official ? 0.26 : 0.36)],
 		],
 		NECK,
 		G_NECK,
 	);
-	// The shell: the dome, the back of it down over his neck, the jaw
-	// guards forward either side of his face.
-	add(at(-0.14, 0, 0.08), at(0.1, 0, 0.05), [[0, R]], SHELL, G_HELMET);
-	add(
-		at(-0.36, 0, -0.18),
-		at(-0.28, 0, -0.58),
-		[
-			[0, R * 0.66],
-			[1, R * 0.6],
-		],
-		SHELL,
-		G_HELMET,
-	);
-	for (const sd of [-1, 1]) {
+	if (official) {
+		// His bare head, a cap on it, and its brim out over his eyes.
+		add(at(0, 0, 0), at(0, 0, 0), [[0, R * OFFICIAL_HEAD]], SHELL, G_HELMET);
+		for (const sd of [-1, 1]) {
+			add(
+				at(0.6, sd * 0.26, 0.27),
+				at(1.12, sd * 0.2, 0.2),
+				[[0, R * 0.15]],
+				SHELL,
+				G_HELMET,
+			);
+		}
+	} else {
+		// The shell: the dome, the back of it down over his neck, the jaw
+		// guards forward either side of his face.
+		add(at(-0.14, 0, 0.08), at(0.1, 0, 0.05), [[0, R]], SHELL, G_HELMET);
 		add(
-			at(0.0, sd * 0.56, -0.22),
-			at(0.58, sd * 0.52, -0.6),
+			at(-0.36, 0, -0.18),
+			at(-0.28, 0, -0.58),
 			[
-				[0, R * 0.4],
-				[1, R * 0.33],
+				[0, R * 0.66],
+				[1, R * 0.6],
 			],
 			SHELL,
 			G_HELMET,
 		);
-	}
-	// The facemask's bars, and the chin cup under them.
-	const barR = R * 0.05;
-	const barLeast = 0.42;
-	for (const bar of MASKS[look.gear.mask]) {
-		for (let i = 1; i < bar.length; i++) {
-			const [f0, s0, u0] = bar[i - 1]!;
-			const [f1, s1, u1] = bar[i]!;
+		for (const sd of [-1, 1]) {
 			add(
-				at(f0, s0, u0),
-				at(f1, s1, u1),
-				[[0, barR]],
-				MASK,
-				G_MASK,
-				0,
-				barLeast,
+				at(0.0, sd * 0.56, -0.22),
+				at(0.58, sd * 0.52, -0.6),
+				[
+					[0, R * 0.4],
+					[1, R * 0.33],
+				],
+				SHELL,
+				G_HELMET,
 			);
 		}
+		// The facemask's bars, and the chin cup under them.
+		const barR = R * 0.05;
+		const barLeast = 0.42;
+		for (const bar of MASKS[look.gear.mask]) {
+			for (let i = 1; i < bar.length; i++) {
+				const [f0, s0, u0] = bar[i - 1]!;
+				const [f1, s1, u1] = bar[i]!;
+				add(
+					at(f0, s0, u0),
+					at(f1, s1, u1),
+					[[0, barR]],
+					MASK,
+					G_MASK,
+					0,
+					barLeast,
+				);
+			}
+		}
+		add(at(0.86, 0, -0.86), at(0.86, 0, -0.86), [[0, R * 0.17]], CHIN, G_MASK);
 	}
-	add(at(0.86, 0, -0.86), at(0.86, 0, -0.86), [[0, R * 0.17]], CHIN, G_MASK);
 
 	const fwd = v3(1, 0, 0);
 	const upV = v3(0, 0, 1);
@@ -1146,6 +1174,10 @@ type Palette = {
 	sleeve: [RGB | undefined, RGB | undefined];
 	wrist: [RGB | undefined, RGB | undefined];
 	visor?: RGB;
+	// An official's: the black of his striped shirt, and his hair under
+	// his cap.
+	stripes?: RGB;
+	hair: RGB;
 };
 
 const palettes = new WeakMap<FieldLook, Palette>();
@@ -1197,6 +1229,8 @@ const paletteOf = (look: FieldLook): Palette => {
 					: undefined,
 		),
 		...(gear.visor === "dark" ? { visor: [24, 26, 32] as RGB } : {}),
+		...(kit.stripes ? { stripes: rgb(kit.stripes) } : {}),
+		hair: scaled(skin, 0.38),
 	};
 	palettes.set(look, p);
 	return p;
@@ -1243,6 +1277,7 @@ export const sculptFigure = (
 ): Sculpted => {
 	const b = build(cam, fig, body, look, px, ox, oy);
 	const pal = paletteOf(look);
+	const official = look.official === true;
 	const masses = b.masses;
 	const n = masses.length;
 	const img = new ImageData(w, h);
@@ -1326,7 +1361,14 @@ export const sculptFigure = (
 			set(pal.collar);
 			return;
 		}
-		const c = pal.jersey;
+		let c = pal.jersey;
+		if (pal.stripes) {
+			// An official's shirt, striped up and down.
+			const arc = Math.atan2(S, F) * body.shoulderW * 1.15;
+			if ((Math.floor(arc / STRIPE_W) & 1) === 1) {
+				c = pal.stripes;
+			}
+		}
 		if (sheet) {
 			// His numbers and name: round his torso by how far across it the
 			// point is, so their uprights stay upright over his chest.
@@ -1396,6 +1438,35 @@ export const sculptFigure = (
 			((pf - l.mid.f) * lf + (ps - l.mid.s) * ls + (pu - l.mid.u) * lu) /
 			(lf * lf + ls * ls + lu * lu || 1)
 		);
+	};
+	// Which of an official's stripes a point on his sleeve is in, by how far
+	// round his arm it is.
+	const roundArm = (l: Limb, pf: number, ps: number, pu: number, a: number) => {
+		const lf = l.mid.f - l.root.f;
+		const ls = l.mid.s - l.root.s;
+		const lu = l.mid.u - l.root.u;
+		const ll = len3(lf, ls, lu) || 1;
+		const rf = pf - l.root.f - lf * a;
+		const rs = ps - l.root.s - ls * a;
+		const ru = pu - l.root.u - lu * a;
+		// Across the arm, level, and the other way round it.
+		let e1f = -ls / ll;
+		let e1s = lf / ll;
+		const e1l = Math.hypot(e1f, e1s);
+		if (e1l < 0.2) {
+			e1f = 0;
+			e1s = 1;
+		} else {
+			e1f /= e1l;
+			e1s /= e1l;
+		}
+		const e2f = -(lu / ll) * e1s;
+		const e2s = (lu / ll) * e1f;
+		const e2u = (lf / ll) * e1s - (ls / ll) * e1f;
+		const x = rf * e1f + rs * e1s;
+		const y = rf * e2f + rs * e2s + ru * e2u;
+		const arc = Math.atan2(y, x) * body.upperR;
+		return Math.floor(arc / (STRIPE_W * 0.8)) & 1;
 	};
 	// Bands round a sleeve or a sock: which, if any, at `at` (0 to 1 down
 	// the band's run), each band a share of it with a gap after.
@@ -1642,10 +1713,14 @@ export const sculptFigure = (
 						const a = fc.kind === UPPER ? alongOf(limb, Pf, Ps, Pu) : 1;
 						let c: RGB;
 						if (a < SLEEVE) {
-							// His jersey's sleeve, banded near its hem.
+							// His jersey's sleeve, banded near its hem - or, an
+							// official's, striped down the arm.
 							c =
 								bandOf(pal.sleeveStripes, (a - (SLEEVE - 0.17)) / 0.13) ??
 								pal.jersey;
+							if (pal.stripes && roundArm(limb, Pf, Ps, Pu, a) === 1) {
+								c = pal.stripes;
+							}
 							cloth = true;
 						} else {
 							c = pal.sleeve[side] ?? pal.skin;
@@ -1729,6 +1804,29 @@ export const sculptFigure = (
 						const lu = (qf * helm.u.f + qs * helm.u.s + qu * helm.u.u) / R;
 						gloss = 1;
 						let c = pal.helmet;
+						if (official) {
+							// His cap, and its brim; under it his face, his
+							// eyes in its shadow; his hair round the back.
+							gloss = 0;
+							cloth = true;
+							if (lu > 0.22 || lf > 0.96) {
+								set(c);
+								break;
+							}
+							cloth = false;
+							if (lf > 0.3) {
+								const eye =
+									lu > -0.08 &&
+									lu < 0.1 &&
+									Math.abs(ls) > 0.12 &&
+									Math.abs(ls) < 0.42;
+								c = scaled(pal.skin, eye ? 0.34 : lu > 0.06 ? 0.8 : 0.96);
+							} else {
+								c = lf < -0.2 || lu > 0.05 ? pal.hair : pal.skin;
+							}
+							set(c);
+							break;
+						}
 						if (lf > 0.42 && Math.abs(ls) < 0.62 && lu < 0.2 && lu > -0.9) {
 							// His face, in the shadow of the helmet - his eyes
 							// darker still under the brow, behind a dark visor if

@@ -38,3 +38,9 @@ export const footballBody = (
 		foreR: b.foreR * k * 1.08,
 	};
 };
+
+// An official: a man of ordinary build, in no pads.
+export const officialBody = (hgt = 72, weight = 205): Body => {
+	const b = footballBody(hgt, weight);
+	return { ...b, depth: b.depth / 1.18 };
+};

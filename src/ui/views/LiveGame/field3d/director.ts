@@ -39,6 +39,7 @@ import {
 } from "./personnel.ts";
 import { moveKind, type Move } from "./poses.ts";
 import { actOut } from "./action.ts";
+import { stageCrew, type CrewPart } from "./crew.ts";
 
 // THE GAME STAGED: every snap of the play-by-play, in feet and milliseconds -
 // who is on the field for it, where each man lines up, the ball, and the
@@ -155,6 +156,8 @@ export type Play = {
 	// The formation the offense is in, for a play from scrimmage.
 	formation?: OffenseSetName;
 	parts: Part[];
+	// The officials (see crew.ts).
+	crew: CrewPart[];
 	ball: BallSeg[];
 };
 
@@ -894,6 +897,31 @@ class Director {
 				});
 			}
 		}
+		// The officials, with the play.
+		const minutes = typeof clock.clock === "number" ? clock.clock : 15;
+		const crew = stageCrew({
+			kind,
+			offense,
+			dir,
+			losX,
+			ballY,
+			t0,
+			set,
+			snap,
+			follow: acted?.follow ?? snap,
+			whistle: acted ? acted.whistle : snap + 1200,
+			t1,
+			parts,
+			ball,
+			backToLine: events
+				.slice(i0, i1)
+				.some((e) => e?.type === "passIncomplete"),
+			umpireDeep:
+				scrimmage >= 95 ||
+				(quarter === 2 && minutes <= 2) ||
+				(quarter >= this.numPeriods && minutes <= 5),
+			r: this.rng(i0, "crew"),
+		});
 		this.plays.push({
 			i: i0,
 			kind,
@@ -910,6 +938,7 @@ class Director {
 			follow: acted?.follow ?? snap,
 			...(formation ? { formation } : {}),
 			parts,
+			crew,
 			ball,
 		});
 		this.T = t1;

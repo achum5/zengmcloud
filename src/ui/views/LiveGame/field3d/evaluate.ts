@@ -165,7 +165,7 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 		return { t, play, players: [] };
 	}
 	const players: FieldPlayerState[] = [];
-	for (const part of play.parts) {
+	for (const part of [...play.parts, ...play.crew]) {
 		const legs = part.legs;
 		if (legs.length === 0) {
 			continue;

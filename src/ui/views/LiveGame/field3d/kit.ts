@@ -31,6 +31,8 @@ export type FieldKit = {
 	sock: string;
 	// Bands round the top of the socks.
 	sockStripes: string[];
+	// An official's shirt: white, striped up and down in this.
+	stripes?: string;
 };
 
 // The facemask: two bars open in front (a quarterback, a receiver, a
@@ -65,6 +67,9 @@ export type FieldLook = {
 	lastName: string;
 	// The team's logo, for the sides of his helmet.
 	logo?: HTMLCanvasElement;
+	// One of the officials: a cap, not a helmet (in the kit's helmet color),
+	// no pads.
+	official?: true;
 };
 
 export type FieldTeamColors = [string, string, string];
@@ -230,4 +235,49 @@ export const fieldGearFor = (
 		gear.towel = true;
 	}
 	return gear;
+};
+
+// THE OFFICIALS: the striped shirt, black pants with a white stripe down
+// the leg, black shoes, and a cap - the referee's white, the rest black.
+const OFFICIAL_SKIN = [
+	"#f0c8a8",
+	"#e2b08a",
+	"#cc9670",
+	"#a87050",
+	"#7c5038",
+	"#5c3a28",
+];
+export const officialLook = (
+	referee: boolean,
+	number: string,
+	seed: string,
+): FieldLook => {
+	const rng = makeCourtRng(`official|${seed}`);
+	return {
+		kit: {
+			helmet: referee ? WHITE : INK,
+			facemask: INK,
+			jersey: WHITE,
+			collar: INK,
+			number: INK,
+			numberEdge: WHITE,
+			name: INK,
+			sleeveStripes: [],
+			pants: INK,
+			pantsStripes: [WHITE],
+			sock: INK,
+			sockStripes: [],
+			stripes: INK,
+		},
+		gear: {
+			mask: "open",
+			cleat: INK,
+			cleatSole: "#2a2a2e",
+			cleatAccent: INK,
+		},
+		skin: OFFICIAL_SKIN[Math.floor(rng() * OFFICIAL_SKIN.length)]!,
+		jerseyNumber: number,
+		lastName: "",
+		official: true,
+	};
 };

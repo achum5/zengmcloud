@@ -28,7 +28,7 @@ import {
 import type { Body } from "../court3d/poses.ts";
 import { aimFor } from "./aim.ts";
 import { drawFlyingBall, drawLooseBall } from "./ball.ts";
-import { footballBody } from "./body.ts";
+import { footballBody, officialBody } from "./body.ts";
 import { makeFieldCamera } from "./camera.ts";
 import { compileField, type FieldTimeline } from "./director.ts";
 import { momentAt, playAt } from "./evaluate.ts";
@@ -41,7 +41,13 @@ import {
 	type FieldTeam,
 } from "./fieldPaint.ts";
 import { FIELD_L } from "./geometry.ts";
-import { fieldGearFor, fieldKitsFor, type FieldLook } from "./kit.ts";
+import { crewFor } from "./crew.ts";
+import {
+	fieldGearFor,
+	fieldKitsFor,
+	officialLook,
+	type FieldLook,
+} from "./kit.ts";
 import type { RosterMan } from "./personnel.ts";
 import { makeFieldClock, onFieldCursor, stepField } from "./playback.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
@@ -280,6 +286,10 @@ const Field3D = ({
 				...(logos[p.team] ? { logo: logos[p.team] } : {}),
 			});
 			bodies.set(p.pid, footballBody(f?.hgt, f?.weight));
+		}
+		for (const o of crewFor(gid ?? 0)) {
+			looks.set(o.id, officialLook(o.o === "R", o.number, `${gid}|${o.o}`));
+			bodies.set(o.id, officialBody(o.hgt, o.weight));
 		}
 		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
