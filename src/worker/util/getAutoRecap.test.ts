@@ -9,6 +9,7 @@ import {
 	getAutoRecap,
 	hurtInGame,
 	pick,
+	varyHalfWords,
 } from "./getAutoRecap.ts";
 import type {
 	RecapAverages,
@@ -1773,6 +1774,44 @@ describe("getAutoDayRecap", () => {
 			/Vince Carter \(sprained ankle, out about five games\)/.test(recap),
 			recap,
 		);
+	});
+});
+
+describe("one word for halftime at a time", () => {
+	test("the sentence after one that named the break calls it something else", () => {
+		assert.deepEqual(
+			varyHalfWords([
+				"The Timberwolves took a 56-52 lead into the break.",
+				"After the break, they outscored the Pacers 56-43.",
+			]),
+			[
+				"The Timberwolves took a 56-52 lead into the break.",
+				"After halftime, they outscored the Pacers 56-43.",
+			],
+		);
+		assert.deepEqual(
+			varyHalfWords([
+				"The Mavericks led 64-51 at halftime.",
+				"The Thunder took over after halftime, winning the second half 63-39.",
+			])[1],
+			"The Thunder took over after the break, winning the second half 63-39.",
+		);
+		// The other word is in the sentence itself: the second half it is.
+		assert.deepEqual(
+			varyHalfWords([
+				"The 76ers led 44-43 at halftime.",
+				"After halftime it was all the Jazz, out of the break on a 12-0 run.",
+			])[1],
+			"In the second half it was all the Jazz, out of the break on a 12-0 run.",
+		);
+	});
+
+	test("a sentence with no echo is left alone", () => {
+		const s = [
+			"The Hornets led 67-52 at halftime.",
+			"They pushed on after the break and led by as many as 26.",
+		];
+		assert.deepEqual(varyHalfWords(s), s);
 	});
 });
 

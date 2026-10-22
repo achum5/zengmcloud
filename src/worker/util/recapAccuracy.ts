@@ -305,6 +305,21 @@ export const verifyRecap = (
 			}
 		}
 
+		// --- assisted baskets ------------------------------------------------
+		for (const m of sentence.matchAll(
+			/assisted on (\d+) of their (\d+) baskets/g,
+		)) {
+			const ast = Number(m[1]);
+			const fg = Number(m[2]);
+			if (
+				!game.teams.some(
+					(t) => teamTotal(t, "ast") === ast && teamTotal(t, "fg") === fg,
+				)
+			) {
+				add("assists", `${ast} of ${fg} baskets matches no team`, sentence);
+			}
+		}
+
 		// --- threes ----------------------------------------------------------
 		//
 		// "They knocked down 18 threes", "made 7 more threes than", "13 threes

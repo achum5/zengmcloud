@@ -995,6 +995,36 @@ describe("the deficit a comeback came from", () => {
 
 // "Sore achilles kept Anthony Lowry out": a singular tendon ending in s was
 // read as a plural, and a man's name lost its capital.
+// "The Heat assisted on 31 of their 41 baskets": one team's assists and
+// field goals, exactly.
+describe("assisted baskets", () => {
+	test("are held to one team's box score", () => {
+		const a = squad(
+			{ tid: 1, name: "Magic", ptsQtrs: [25, 25, 25, 25] },
+			{ name: "Obi Jackson", pid: 11, pts: 26, ast: 9, fg: 10, fga: 18 },
+			100,
+		);
+		const b = squad(
+			{ tid: 2, name: "Knicks", ptsQtrs: [24, 24, 24, 24] },
+			{ name: "Walker Ingram", pid: 21, pts: 27, ast: 4, fg: 11, fga: 22 },
+			96,
+		);
+		const g = game([a, b], { gid: 990 });
+		const ast = a.players.reduce((s, p) => s + p.ast, 0);
+		const fg = a.players.reduce((s, p) => s + p.fg, 0);
+		const kinds = (s: string) =>
+			verifyRecap(`**x**\n\n${s}`, g).map((v) => v.kind);
+		assert.deepStrictEqual(
+			kinds(`The Magic assisted on ${ast} of their ${fg} baskets.`),
+			[],
+		);
+		assert.deepStrictEqual(
+			kinds(`The Magic assisted on ${ast + 1} of their ${fg} baskets.`),
+			["assists"],
+		);
+	});
+});
+
 describe("injury names in prose", () => {
 	test("singular names ending in s keep their article", () => {
 		assert.strictEqual(injuryPhrase("Sore Achilles"), "a sore Achilles");

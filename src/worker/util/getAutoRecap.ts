@@ -3137,7 +3137,10 @@ const statNote = (
 				[
 					`${cap(theNick(shape.winner))} piled up ${w.ast} assists on the night.`,
 					`${cap(theNick(shape.winner))} finished with ${w.ast} assists.`,
-					`${cap(theNick(shape.winner))} shared it, ${w.ast} assists on the night.`,
+					// What the wire says of a passing night: how many of the
+					// baskets came off a pass. "Shared it, 31 assists on the
+					// night" was neither a sentence nor news.
+					`${cap(theNick(shape.winner))} assisted on ${w.ast} of their ${w.fg} baskets.`,
 					`${cap(theNick(shape.winner))} racked up ${w.ast} assists.`,
 				],
 				"teamAst",
@@ -3270,7 +3273,7 @@ const halftimeNote = (
 		rng,
 		[
 			`${cap(theNick(leader))} led ${a}-${b} at halftime.`,
-			`It was ${a}-${b} ${theNick(leader)} at the break.`,
+			`${cap(theNick(leader))} were ahead ${a}-${b} at the break.`,
 			`${cap(theNick(leader))} took a ${a}-${b} lead into halftime.`,
 			`${cap(theNick(leader))} were up ${a}-${b} at the half.`,
 			`${cap(theNick(leader))} led by ${by} at the break, ${a}-${b}.`,
@@ -3559,7 +3562,7 @@ const gameStory = (
 			[
 				`${T} led ${a}-${b} at halftime.`,
 				`${T} took a ${a}-${b} lead into the break.`,
-				`It was ${a}-${b} ${t} at the half.`,
+				`${T} were ahead ${a}-${b} at the half.`,
 				`${T} were up ${a - b} at the half, ${a}-${b}.`,
 				`${T} went into halftime ahead ${a}-${b}.`,
 				`${T} had a ${a}-${b} lead at the break.`,
@@ -4793,9 +4796,6 @@ const vsAverageNote = (
 				// The plain fact, the way a note reads: what he had been
 				// doing, next to what he did.
 				`${star.name} came in averaging ${avg.pts.toFixed(1)} points a game.`,
-				// Not "That is 13 more...": this can open a paragraph now, with
-				// his line a paragraph back, so it names the number it means.
-				`The ${star.pts} were ${Math.round(over)} more than the ${avg.pts.toFixed(1)} a game ${star.name} had been averaging.`,
 				...(beat
 					? [
 							`${star.name} had been averaging ${avg.pts.toFixed(1)} points a game, and he ${beat}.`,
@@ -6791,7 +6791,12 @@ export const getAutoRecap = (game: RecapGame): string => {
 		.sort((a, b) => b.length - a.length);
 	const tidy = (para: string[]) =>
 		joinShortPairs(
-			dedupePlayerSubjects(dedupeSubjects(para, otherNick, nicks), playerNames),
+			varyHalfWords(
+				dedupePlayerSubjects(
+					dedupeSubjects(para, otherNick, nicks),
+					playerNames,
+				),
+			),
 		).join(" ");
 	const paragraphs = [tidy(para1)];
 	if (storyPara.length > 0) {
@@ -6807,6 +6812,40 @@ export const getAutoRecap = (game: RecapGame): string => {
 		paragraphs.push(tidy(para4));
 	}
 	return `**${headline.text}**\n\n${withRecords(paragraphs, game, shape).join("\n\n")}`;
+};
+
+// ONE WORD FOR HALFTIME AT A TIME. "The Timberwolves took a 56-52 lead into
+// the break. After the break, they outscored the Pacers 56-43" - each
+// sentence fine, the pair an echo, and in one recap of 16. A sentence that
+// says "after the break" or "after halftime" right behind one that used the
+// same word takes another name for it.
+const HALF_WORDS = [
+	["after halftime", /halftime/],
+	["after the break", /\bbreak\b/],
+	["in the second half", /second half/],
+] as const;
+export const varyHalfWords = (sentences: string[]): string[] => {
+	const out = [...sentences];
+	for (let i = 1; i < out.length; i++) {
+		const prev = out[i - 1]!;
+		const cur = out[i]!;
+		for (const [phrase, word] of HALF_WORDS) {
+			const at = cur.toLowerCase().indexOf(phrase);
+			if (at < 0 || !word.test(prev)) {
+				continue;
+			}
+			const rest = cur.slice(0, at) + cur.slice(at + phrase.length);
+			const other = HALF_WORDS.find(
+				([, w]) => !w.test(prev) && !w.test(rest),
+			)?.[0];
+			if (other) {
+				const said = at === 0 ? cap(other) : other;
+				out[i] = `${cur.slice(0, at)}${said}${cur.slice(at + phrase.length)}`;
+			}
+			break;
+		}
+	}
+	return out;
 };
 
 // THE RECORD IN PARENTHESES. "The Wizards (10-3) held off the 76ers (5-8)" is

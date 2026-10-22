@@ -222,6 +222,12 @@ describe("simmed recaps", () => {
 				// "Picked up a sore ankle that will cost him", "went down with
 				// plantar fasciitis and is out around four games".
 				/is out around|that will cost him|picked up an? (?:sore|sprained|strained|bruised)/,
+				// "They shared it, 31 assists on the night", "It was 55-46 the
+				// Raptors at the half", "The 20 were 13 more than the 7.0 a game
+				// he had been averaging".
+				/shared it, \d+ assists|It was \d+-\d+ the [A-Z]|were \d+ more than the [\d.]+ a game/,
+				// "...a 56-52 lead into the break. After the break, ..."
+				/halftime\.[^.]*\bafter halftime|\bbreak\.[^.]*\bafter the break/i,
 				// Six in double figures is a third of all winners here.
 				/had six players score in double figures|got double figures out of six men\.|Six [A-Z][\w ]* reached double figures|- six in double figures/,
 			]) {
