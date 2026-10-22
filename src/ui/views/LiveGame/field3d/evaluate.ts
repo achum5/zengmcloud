@@ -12,9 +12,12 @@ export type FieldMoment = {
 	t: number;
 	play: Play | undefined;
 	players: FieldPlayerState[];
-	// The ball when it is on its own (spotted, on its tee): drawn by itself.
-	// Unset while a man has it - he is drawn with it.
-	ball?: { at: Pt3; tee?: boolean };
+	// The ball when it is on its own (spotted, on its tee, in the air):
+	// drawn by itself, its points along `axis` if it is flying. Unset while
+	// a man has it - he is drawn with it.
+	ball?: { at: Pt3; tee?: boolean; axis?: Pt3 };
+	// Where the ball is, wherever it is: for the camera to follow.
+	focus?: Pt3;
 };
 
 // From one move into the next, his pose eased over this long; and his
@@ -77,26 +80,78 @@ const yawOf = (l: Leg, before: number): number =>
 	l.yaw ??
 	(goes(l) ? Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x) : before);
 
-// How far through his move he is: a stride cycle by the ground covered (each
-// man a step out of time with the next), an act by the time.
-const phaseOf = (l: Leg, t: number, offset: number): number => {
+const lengthOf = (l: Leg) => Math.hypot(l.to.x - l.from.x, l.to.y - l.from.y);
+
+// How far through his move he is: a stride cycle by the ground covered -
+// carried on from the legs before it, so his feet keep their rhythm from
+// one stretch to the next (and each man a step out of time with the
+// next) - an act by the time (or its share of the act, cut in two).
+const phaseOf = (l: Leg, t: number, offset: number, before = 0): number => {
 	const kind = moveKind(l.move);
 	if (kind === "still") {
 		return 0;
 	}
 	if (kind === "act") {
-		return along(l, t);
+		const [p0, p1] = l.span ?? [0, 1];
+		return p0 + (p1 - p0) * along(l, t);
 	}
-	const d = Math.hypot(l.to.x - l.from.x, l.to.y - l.from.y) * along(l, t);
-	return d / strideOf(l.move) + offset;
+	return (before + lengthOf(l) * along(l, t)) / strideOf(l.move) + offset;
 };
 
-const ballAt = (segs: BallSeg[], t: number): FieldMoment["ball"] => {
-	const s = segs[lastStarted(segs, t, (b) => b.t0)];
-	if (!s || s.kind !== "spot") {
-		return undefined;
+// How far his arms are through an act of their own (see Leg.arms).
+const armsPhaseOf = (l: Leg, t: number): number => {
+	const [p0, p1] = l.armsSpan ?? [0, 1];
+	return p0 + (p1 - p0) * along(l, t);
+};
+
+// The ball in the air: along the straight line, up over it in a parabola.
+const flying = (
+	s: Extract<BallSeg, { kind: "fly" }>,
+	t: number,
+): { at: Pt3; axis: Pt3 } => {
+	const u = s.t1 > s.t0 ? clamp01((t - s.t0) / (s.t1 - s.t0)) : 1;
+	const at = {
+		x: s.from.x + (s.to.x - s.from.x) * u,
+		y: s.from.y + (s.to.y - s.from.y) * u,
+		z: s.from.z + (s.to.z - s.from.z) * u + 4 * s.peak * u * (1 - u),
+	};
+	// A spiral points the way it goes; end over end, it tumbles.
+	const secs = (s.t1 - s.t0) / 1000 || 1;
+	let axis = {
+		x: (s.to.x - s.from.x) / secs,
+		y: (s.to.y - s.from.y) / secs,
+		z: (s.to.z - s.from.z) / secs + (4 * s.peak * (1 - 2 * u)) / secs,
+	};
+	if (!s.spiral) {
+		const turn = ((t - s.t0) / 1000) * 9;
+		const flat = Math.hypot(axis.x, axis.y) || 1;
+		axis = {
+			x: (axis.x / flat) * Math.cos(turn),
+			y: (axis.y / flat) * Math.cos(turn),
+			z: Math.sin(turn),
+		};
 	}
-	return { at: s.at, ...(s.tee ? { tee: true } : {}) };
+	return { at, axis };
+};
+
+const ballAt = (
+	segs: BallSeg[],
+	t: number,
+	players: FieldPlayerState[],
+): { ball?: FieldMoment["ball"]; focus?: Pt3 } => {
+	const s = segs[lastStarted(segs, t, (b) => b.t0)];
+	if (!s) {
+		return {};
+	}
+	if (s.kind === "spot") {
+		return { ball: { at: s.at, ...(s.tee ? { tee: true } : {}) }, focus: s.at };
+	}
+	if (s.kind === "fly") {
+		const f = flying(s, t);
+		return { ball: f, focus: f.at };
+	}
+	const p = players.find((x) => x.id === s.pid);
+	return p ? { focus: { x: p.x, y: p.y, z: 3.5 } } : {};
 };
 
 export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
@@ -114,10 +169,16 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 		const l = legs[k]!;
 		const offset = (part.pid * 0.618) % 1;
 		const at = pointOf(l, t);
-		// The way he faced coming into this leg.
+		// The way he faced coming into this leg, and how far he had come in
+		// strides.
 		let before = legs[0]!.yaw ?? 0;
+		let ran = 0;
+		let ranBefore = 0;
 		for (let j = 0; j < k; j++) {
-			before = yawOf(legs[j]!, before);
+			const lj = legs[j]!;
+			before = yawOf(lj, before);
+			ranBefore = ran;
+			ran = moveKind(lj.move) === "cycle" ? ran + lengthOf(lj) : 0;
 		}
 		let yaw = yawOf(l, before);
 		const since = t - l.t0;
@@ -129,7 +190,7 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 		if (prev && prev.move !== l.move && since < BLEND_MS) {
 			from = {
 				move: prev.move as Move,
-				phase: phaseOf(prev, prev.t1, offset),
+				phase: phaseOf(prev, prev.t1, offset, ranBefore),
 				...(prev.mirrored ? { mirrored: true } : {}),
 				w: 1 - clamp01(since / BLEND_MS),
 			};
@@ -142,12 +203,19 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 			z: 0,
 			yaw,
 			move: l.move,
-			phase: phaseOf(l, t, offset),
+			phase: phaseOf(l, t, offset, ran),
 			...(l.mirrored ? { mirrored: true } : {}),
 			...(from ? { from } : {}),
 			...(l.ball ? { ball: l.ball } : {}),
+			...(l.arms ? { arms: { move: l.arms, phase: armsPhaseOf(l, t) } } : {}),
 		});
 	}
-	const ball = ballAt(play.ball, t);
-	return { t, play, players, ...(ball ? { ball } : {}) };
+	const { ball, focus } = ballAt(play.ball, t, players);
+	return {
+		t,
+		play,
+		players,
+		...(ball ? { ball } : {}),
+		...(focus ? { focus } : {}),
+	};
 };

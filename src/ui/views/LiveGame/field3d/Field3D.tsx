@@ -27,7 +27,7 @@ import {
 } from "../court3d/sprite.ts";
 import type { Body } from "../court3d/poses.ts";
 import { aimFor } from "./aim.ts";
-import { drawLooseBall } from "./ball.ts";
+import { drawFlyingBall, drawLooseBall } from "./ball.ts";
 import { footballBody } from "./body.ts";
 import { makeFieldCamera } from "./camera.ts";
 import { compileField, type FieldTimeline } from "./director.ts";
@@ -383,7 +383,7 @@ const Field3D = ({
 				canvas.height = fh;
 			}
 			const moment = momentAt(tl, s.t);
-			const aim = aimFor(moment.play);
+			const aim = aimFor(moment.play, s.t, moment.focus);
 			// (Squarer, the picture takes in a little more of the field.)
 			const width = aim.width * (fw / fh < 1.5 ? 0.8 : 1);
 			const c = cam.current;
@@ -419,10 +419,15 @@ const Field3D = ({
 			}
 			const ball = moment.ball;
 			if (ball) {
+				const axis = ball.axis;
 				items.push({
-					depth: depthOf(view, ball.at),
+					depth: depthOf(view, { ...ball.at, z: 0 }),
 					draw: () => {
-						drawLooseBall(ctx, view, ball.at, !!ball.tee);
+						if (axis) {
+							drawFlyingBall(ctx, view, ball.at, axis);
+						} else {
+							drawLooseBall(ctx, view, ball.at, !!ball.tee);
+						}
 					},
 				});
 			}

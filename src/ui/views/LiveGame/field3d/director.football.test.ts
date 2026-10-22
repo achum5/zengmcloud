@@ -1,11 +1,4 @@
 import { assert, beforeAll, describe, test } from "vitest";
-import GameSim from "../../../../worker/core/GameSim.football/index.ts";
-import loadTeams from "../../../../worker/core/game/loadTeams.ts";
-import { player, team } from "../../../../worker/core/index.ts";
-import { g, helpers } from "../../../../worker/util/index.ts";
-import { resetCache, resetG } from "../../../../test/helpers.ts";
-import { DEFAULT_LEVEL } from "../../../../common/budgetLevels.ts";
-import { range } from "../../../../common/utils.ts";
 import processLiveGameEvents, {
 	DEFAULT_SPORT_STATE,
 	type SportState,
@@ -15,67 +8,24 @@ import {
 	isLineItem,
 	targetForCursor,
 	type FieldTimeline,
-	type RawEvent,
+	type Leg,
+	type Part,
 } from "./director.ts";
 import { dirFor, FIELD_L, FIELD_W, yardLineX } from "./geometry.ts";
-import { GROUPS } from "./personnel.ts";
-import type { RosterMan } from "./personnel.ts";
+import { simGames, type SimGame } from "./testGames.ts";
 
-// Real games, simulated: whatever the sim says, the field has to stage.
-type Game = { events: RawEvent[]; roster: RosterMan[] };
-const games: Game[] = [];
+let games: SimGame[] = [];
 
 beforeAll(async () => {
-	resetG();
-	g.setWithoutSavingToDB("season", 2013);
-	const teamsDefault = helpers.getTeamsDefault().slice(0, 2);
-	await resetCache({
-		players: [
-			...range(53).map(() => player.generate(0, 25, 2010, true, DEFAULT_LEVEL)),
-			...range(53).map(() => player.generate(1, 25, 2010, true, DEFAULT_LEVEL)),
-		],
-		teams: teamsDefault.map(team.generate),
-		teamSeasons: teamsDefault.map((t) => team.genSeasonRow(t)),
-		teamStats: teamsDefault.map((t) => team.genStatsRow(t.tid)),
-	});
-	for (const gid of [11, 12, 13]) {
-		const teams = await loadTeams([0, 1], {});
-		for (const t of [teams[0], teams[1]]) {
-			// Each group's chart, best first - the way a team's own is set.
-			const score = (p: any, pos: string) =>
-				(p.ovrs[pos] ?? 0) + (p.pos === pos ? 15 : 0);
-			const depth: any = {};
-			for (const pos of GROUPS) {
-				depth[pos] = [...t.player].sort(
-					(a: any, b: any) => score(b, pos) - score(a, pos),
-				);
-			}
-			t.depth = depth;
-		}
-		const sim = new GameSim({
-			gid,
-			teams: [teams[0], teams[1]],
-			baseInjuryRate: g.get("injuryRate"),
-			doPlayByPlay: true,
-			homeCourtFactor: 1,
-			allStarGame: false,
-			neutralSite: false,
-		});
-		const events = sim.run().playByPlay as RawEvent[];
-		// (Raw team 0 is the home team: display side 1.)
-		const raw = events[0]!.boxScore;
-		const roster: RosterMan[] = [];
-		for (const rt of [0, 1] as const) {
-			for (const p of raw[rt].player) {
-				roster.push({ pid: p.id, team: rt === 0 ? 1 : 0, pos: p.pos });
-			}
-		}
-		games.push({ events, roster });
-	}
+	games = await simGames([11, 12, 13]);
 }, 120_000);
 
-const stage = ({ events, roster }: Game, gid = 1): FieldTimeline =>
+const stage = ({ events, roster }: SimGame, gid = 1): FieldTimeline =>
 	compileField({ events, players: roster, gid });
+
+// The leg a man is in at t.
+const legAt = (part: Part, t: number): Leg =>
+	part.legs.findLast((l) => l.t0 <= t) ?? part.legs[0]!;
 
 describe("compileField", () => {
 	test("every line the page shows gets its moment, in order", () => {
@@ -191,7 +141,7 @@ describe("compileField", () => {
 				assert.strictEqual(play.dir, dirFor(play.offense, play.quarter));
 				assert.strictEqual(play.losX, yardLineX(clock.scrimmage, play.dir));
 				for (const part of play.parts) {
-					const set = part.legs.at(-1)!.to;
+					const set = legAt(part, play.snap - 1).to;
 					const ahead = play.dir * (set.x - play.losX);
 					if (part.team === play.offense) {
 						assert.isAtMost(ahead, 0, `${part.role} offside`);
@@ -211,9 +161,9 @@ describe("compileField", () => {
 			}
 			const qb = play.parts.find((p) => p.role === "QB")!;
 			const center = play.parts.find((p) => p.role === "C")!;
-			const back = -play.dir * (qb.legs.at(-1)!.to.x - play.losX);
+			const back = -play.dir * (legAt(qb, play.snap - 1).to.x - play.losX);
 			assert.isTrue(back > 2 && back < 16, `QB ${back} ft back`);
-			assert.strictEqual(center.legs.at(-1)!.ball, "snap");
+			assert.strictEqual(legAt(center, play.snap - 1).ball, "snap");
 			assert.isTrue(
 				play.ball.some((b) => b.kind === "held" && b.pid === center.pid),
 			);

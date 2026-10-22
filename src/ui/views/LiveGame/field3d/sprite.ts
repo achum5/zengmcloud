@@ -9,7 +9,16 @@ import {
 } from "../court3d/sprite.ts";
 import type { Side } from "./geometry.ts";
 import type { FieldLook } from "./kit.ts";
-import { gripsOf, moveKind, poseOfMove, snapBall, type Move } from "./poses.ts";
+import type { BallHold } from "./director.ts";
+import {
+	gripsOf,
+	heldBall,
+	holding,
+	moveKind,
+	poseOfMove,
+	withArms,
+	type Move,
+} from "./poses.ts";
 import { sculptFigure, type Figure } from "./sculpt.ts";
 
 // THE PLAYERS ON THE FIELD, DRAWN - the way the court draws its own (see
@@ -38,8 +47,11 @@ export type FieldPlayerState = {
 	// Just after a change of move: the last one as it was when it changed,
 	// and how much of his pose is still that (1 all, 0 none).
 	from?: { move: Move; phase: number; mirrored?: boolean; w: number };
-	// The ball with him: under his hand on the turf, over the ball.
-	ball?: "snap";
+	// The ball with him, and how he has it.
+	ball?: BallHold;
+	// His arms in an act of their own over the rest of him, and how far
+	// through it.
+	arms?: { move: Move; phase: number };
 };
 
 const CYCLE_FRAMES = 12;
@@ -71,6 +83,7 @@ const figureOf = (
 	from:
 		| { move: Move; phase: number; mirrored?: boolean; w: number }
 		| undefined,
+	arms: { move: Move; phase: number } | undefined,
 ): Figure => {
 	let pose = poseOfMove(st.move, phase, st.mirrored === true);
 	if (from && from.w > 0) {
@@ -80,14 +93,21 @@ const figureOf = (
 			from.w,
 		);
 	}
+	if (arms) {
+		pose = withArms(
+			pose,
+			poseOfMove(arms.move, arms.phase, st.mirrored === true),
+		);
+	}
+	pose = holding(pose, st.ball);
 	return {
 		x: st.x,
 		y: st.y,
 		z: 0,
 		yaw,
 		pose,
-		grips: gripsOf(st.move),
-		...(st.ball === "snap" ? { ball: snapBall(body, pose) } : {}),
+		grips: gripsOf(st.move, st.ball),
+		...(st.ball ? { ball: heldBall(body, pose, st.ball) } : {}),
 	};
 };
 
@@ -123,6 +143,9 @@ export const drawFieldPlayer = (
 			: 0;
 	const from =
 		f && fw > 0 ? { ...f, phase: frameOf(f.move, f.phase), w: fw } : undefined;
+	const arms = st.arms
+		? { move: st.arms.move, phase: frameOf(st.arms.move, st.arms.phase) }
+		: undefined;
 	const scale = Math.round(Math.log(k) / Math.log(1.04));
 	let key: string | undefined;
 	let id = 0;
@@ -132,7 +155,7 @@ export const drawFieldPlayer = (
 		if (known === undefined) {
 			cache.ids.set(look, id);
 		}
-		key = `fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}|${((turn % TURNS) + TURNS) % TURNS}|${scale}|${px}|${st.ball ?? ""}${
+		key = `fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}|${((turn % TURNS) + TURNS) % TURNS}|${scale}|${px}|${st.ball ?? ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
 			from
 				? `|${from.move}${from.mirrored ? "m" : ""}${from.phase}~${from.w}`
 				: ""
@@ -161,7 +184,7 @@ export const drawFieldPlayer = (
 		}
 	}
 	const began = cache ? performance.now() : 0;
-	const fig = figureOf(st, body, phase, yaw, from);
+	const fig = figureOf(st, body, phase, yaw, from, arms);
 	const w = Math.max(4, Math.ceil((right - left) / px) + 2);
 	const h = Math.max(4, Math.ceil((lower - upper) / px) + 2);
 	const { canvas, ctx: s } = scratch;

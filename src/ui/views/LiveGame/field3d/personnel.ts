@@ -27,7 +27,7 @@ export const GROUPS = [
 export type Group = (typeof GROUPS)[number];
 export type DepthChart = Partial<Record<Group, number[]>>;
 
-export type RosterMan = { pid: number; team: Side; pos: string };
+export type RosterMan = { pid: number; team: Side; pos: string; name?: string };
 
 const isGroup = (s: unknown): s is Group =>
 	typeof s === "string" && (GROUPS as readonly string[]).includes(s);

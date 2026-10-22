@@ -7,9 +7,11 @@ import {
 	type AnimName,
 	type Body,
 	type Pose,
+	type V3,
 } from "../court3d/poses.ts";
+import type { BallHold } from "./director.ts";
 import type { Grip, HeldBall } from "./sculpt.ts";
-import { BALL_R } from "./sculpt.ts";
+import { BALL_LEN, BALL_R } from "./sculpt.ts";
 
 // HOW A FOOTBALL PLAYER STANDS AND MOVES.
 //
@@ -24,6 +26,7 @@ import { BALL_R } from "./sculpt.ts";
 type FieldAnim =
 	| { kind: "still"; pose: Pose }
 	| { kind: "loop"; n: number; fps: number; pose: (i: number) => Pose }
+	| { kind: "cycle"; n: number; stride: number; pose: (i: number) => Pose }
 	| { kind: "act"; keys: [number, Pose][] };
 
 // Every angle the court's skeleton takes, from standing easy - so a new one
@@ -107,6 +110,105 @@ const CENTER = pose({
 	abF: 12,
 	wide: 1.25,
 });
+
+// Lying face down on the turf: legs out behind him, his arms out in front.
+const PRONE = pose({
+	hipN: -90,
+	kneeN: 2,
+	hipF: -90,
+	kneeF: 4,
+	lean: 86,
+	shN: 96,
+	elN: 10,
+	abN: 18,
+	shF: 92,
+	elF: 14,
+	abF: 20,
+	wide: 0.5,
+});
+
+// The quarterback set in the pocket: on the balls of his feet, the ball up
+// at his chest in both hands.
+const QB_SET = pose({
+	hipN: 12,
+	kneeN: 22,
+	hipF: 16,
+	kneeF: 22,
+	lean: 10,
+	shN: 30,
+	elN: 92,
+	abN: 14,
+	shF: 30,
+	elF: 92,
+	abF: 14,
+	wide: 0.8,
+});
+// Cocked: the ball back up by his ear, his shoulders turned to the
+// target, the off arm out at it, his weight back.
+const THROW_COCKED = pose({
+	hipN: 4,
+	kneeN: 22,
+	hipF: 26,
+	kneeF: 14,
+	lean: 2,
+	shN: 104,
+	elN: 70,
+	abN: 72,
+	wrN: 20,
+	shF: 86,
+	elF: 16,
+	abF: 8,
+	twist: -34,
+	wide: 1.1,
+});
+// Let go: the arm over the top and out in front, his weight onto his front
+// foot.
+const THROW_RELEASE = pose({
+	hipN: -12,
+	kneeN: 26,
+	hipF: 30,
+	kneeF: 16,
+	lean: 16,
+	shN: 150,
+	elN: 22,
+	abN: 40,
+	wrN: -10,
+	shF: 40,
+	elF: 50,
+	abF: 14,
+	twist: 8,
+	wide: 1.1,
+});
+// Followed through: the arm down across him, the back foot coming
+// through.
+const THROW_THROUGH = pose({
+	hipN: -26,
+	kneeN: 44,
+	hipF: 34,
+	kneeF: 30,
+	lean: 30,
+	shN: 46,
+	elN: 30,
+	abN: -18,
+	wrN: -20,
+	shF: 14,
+	elF: 50,
+	abF: 16,
+	twist: 30,
+	wide: 1.0,
+});
+
+// A step in a blocker's or a rusher's feet, short and choppy: frame i of n,
+// one foot then the other.
+const chop = (i: number, n: number, lo: number, hi: number, knee: number) => {
+	const a = Math.sin((2 * Math.PI * i) / n);
+	return {
+		hipN: lo + (hi - lo) * Math.max(0, a),
+		kneeN: knee + 26 * Math.max(0, a),
+		hipF: lo + (hi - lo) * Math.max(0, -a),
+		kneeF: knee + 26 * Math.max(0, -a),
+	};
+};
 
 const FIELD_ANIMS = {
 	// Standing easy: between plays, on the sideline.
@@ -315,6 +417,412 @@ const FIELD_ANIMS = {
 			wide: 0.55,
 		}),
 	},
+
+	prone: { kind: "still", pose: PRONE },
+	qbSet: { kind: "still", pose: QB_SET },
+	// A receiver sat down in a hole in the zone, turned to the quarterback,
+	// hands up for it.
+	settle: {
+		kind: "still",
+		pose: pose({
+			hipN: 24,
+			kneeN: 36,
+			hipF: 26,
+			kneeF: 38,
+			lean: 20,
+			shN: 50,
+			elN: 64,
+			abN: 12,
+			shF: 50,
+			elF: 64,
+			abF: 12,
+			wide: 0.8,
+		}),
+	},
+	// Taking a knee: the right one down, the ball in both hands.
+	kneelDown: {
+		kind: "still",
+		pose: pose({
+			hipN: -20,
+			kneeN: 104,
+			hipF: 80,
+			kneeF: 88,
+			lean: 12,
+			shN: 26,
+			elN: 96,
+			abN: 12,
+			shF: 26,
+			elF: 96,
+			abF: 12,
+			wide: 0.5,
+		}),
+	},
+	// In pass protection: sat down in his stance, back straight, hands up
+	// at his chest to punch - and his feet going, short kick-slide steps.
+	passSet: {
+		kind: "cycle",
+		n: 4,
+		stride: 2.4,
+		pose: (i) =>
+			pose({
+				...chop(i, 4, 30, 44, 52),
+				lean: 24,
+				shN: 58,
+				elN: 74,
+				abN: 10,
+				shF: 58,
+				elF: 74,
+				abF: 10,
+				wide: 1.15,
+			}),
+	},
+	// Run blocking: into the man in front of him, low, hands inside on his
+	// chest, driving his legs.
+	drive: {
+		kind: "cycle",
+		n: 4,
+		stride: 2.2,
+		pose: (i) =>
+			pose({
+				...chop(i, 4, 18, 62, 58),
+				lean: 44,
+				shN: 84,
+				elN: 18,
+				abN: 8,
+				shF: 84,
+				elF: 18,
+				abF: 8,
+				wide: 0.95,
+			}),
+	},
+	// A rusher (or a man being blocked) locked up with his blocker, arms
+	// out into him, working his feet.
+	engage: {
+		kind: "cycle",
+		n: 4,
+		stride: 2.2,
+		pose: (i) =>
+			pose({
+				...chop(i, 4, 20, 58, 56),
+				lean: 40,
+				shN: 80,
+				elN: 24,
+				abN: 14,
+				shF: 76,
+				elF: 30,
+				abF: 14,
+				wide: 0.95,
+			}),
+	},
+	throwWind: {
+		kind: "act",
+		keys: [
+			[0, QB_SET],
+			[0.55, THROW_COCKED],
+			[1, THROW_RELEASE],
+		],
+	},
+	throwFollow: {
+		kind: "act",
+		keys: [
+			[0, THROW_RELEASE],
+			[1, THROW_THROUGH],
+		],
+	},
+	// Handing it off: turned, the ball out in both hands into the back's
+	// belly.
+	handOff: {
+		kind: "act",
+		keys: [
+			[0, QB_SET],
+			[
+				0.5,
+				pose({
+					hipN: 20,
+					kneeN: 30,
+					hipF: 8,
+					kneeF: 20,
+					lean: 18,
+					shN: 62,
+					elN: 30,
+					abN: 34,
+					shF: 54,
+					elF: 40,
+					abF: 0,
+					twist: 24,
+					wide: 1.0,
+				}),
+			],
+			[
+				1,
+				pose({
+					hipN: 14,
+					kneeN: 22,
+					hipF: 12,
+					kneeF: 18,
+					lean: 12,
+					shN: 34,
+					elN: 40,
+					abN: 10,
+					shF: 30,
+					elF: 50,
+					abF: 10,
+					wide: 0.9,
+				}),
+			],
+		],
+	},
+	// The catch: hands up together at the ball, and in to his chest.
+	catch: {
+		kind: "act",
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 20,
+					kneeN: 30,
+					hipF: 22,
+					kneeF: 32,
+					lean: 14,
+					shN: 40,
+					elN: 70,
+					shF: 40,
+					elF: 70,
+					abN: 12,
+					abF: 12,
+				}),
+			],
+			[
+				0.55,
+				pose({
+					hipN: 10,
+					kneeN: 18,
+					hipF: 14,
+					kneeF: 22,
+					lean: 4,
+					shN: 118,
+					elN: 14,
+					abN: -6,
+					shF: 118,
+					elF: 14,
+					abF: -6,
+					wrN: 20,
+					wrF: 20,
+				}),
+			],
+			[
+				1,
+				pose({
+					hipN: 16,
+					kneeN: 26,
+					hipF: 18,
+					kneeF: 28,
+					lean: 16,
+					shN: 30,
+					elN: 104,
+					abN: 4,
+					shF: 30,
+					elF: 104,
+					abF: 4,
+				}),
+			],
+		],
+	},
+	// A hand up at the ball as it comes, to knock it down.
+	swat: {
+		kind: "act",
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 30,
+					kneeN: 40,
+					hipF: 20,
+					kneeF: 30,
+					lean: 24,
+					shN: 60,
+					elN: 40,
+					shF: 40,
+					elF: 50,
+				}),
+			],
+			[
+				0.5,
+				pose({
+					hipN: -10,
+					kneeN: 20,
+					hipF: 40,
+					kneeF: 20,
+					lean: 20,
+					shN: 150,
+					elN: 6,
+					abN: 20,
+					shF: 70,
+					elF: 30,
+				}),
+			],
+			[
+				1,
+				pose({
+					hipN: 16,
+					kneeN: 26,
+					hipF: 18,
+					kneeF: 28,
+					lean: 14,
+					shN: 50,
+					elN: 40,
+					shF: 40,
+					elF: 50,
+				}),
+			],
+		],
+	},
+	// Brought down: his legs taken, pitching forward onto the turf.
+	tackled: {
+		kind: "act",
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 30,
+					kneeN: 50,
+					hipF: -10,
+					kneeF: 30,
+					lean: 16,
+					shN: 30,
+					elN: 100,
+					shF: 40,
+					elF: 60,
+				}),
+			],
+			[
+				0.35,
+				pose({
+					hipN: -10,
+					kneeN: 50,
+					hipF: 20,
+					kneeF: 60,
+					lean: 46,
+					shN: 30,
+					elN: 100,
+					shF: 70,
+					elF: 30,
+				}),
+			],
+			[
+				0.7,
+				pose({
+					hipN: -50,
+					kneeN: 30,
+					hipF: -40,
+					kneeF: 40,
+					lean: 70,
+					shN: 40,
+					elN: 100,
+					shF: 88,
+					elF: 20,
+					abF: 20,
+				}),
+			],
+			[1, PRONE],
+		],
+	},
+	// The tackle: off his feet into him, arms round him, taking him down.
+	dive: {
+		kind: "act",
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 30,
+					kneeN: 50,
+					hipF: -10,
+					kneeF: 30,
+					lean: 20,
+					shN: 50,
+					elN: 60,
+					shF: 50,
+					elF: 60,
+					abN: 20,
+					abF: 20,
+				}),
+			],
+			[
+				0.35,
+				pose({
+					hipN: -30,
+					kneeN: 20,
+					hipF: 44,
+					kneeF: 80,
+					lean: 52,
+					shN: 86,
+					elN: 46,
+					abN: 40,
+					shF: 86,
+					elF: 46,
+					abF: 40,
+				}),
+			],
+			[
+				0.7,
+				pose({
+					hipN: -80,
+					kneeN: 6,
+					hipF: -70,
+					kneeF: 20,
+					lean: 80,
+					shN: 92,
+					elN: 50,
+					abN: 30,
+					shF: 92,
+					elF: 50,
+					abF: 30,
+				}),
+			],
+			[1, { ...PRONE, shN: 94, elN: 40, abN: 26, shF: 94, elF: 40, abF: 26 }],
+		],
+	},
+	// Up off the turf: a foot under him and his hands down, onto a knee,
+	// then his feet.
+	getUp: {
+		kind: "act",
+		keys: [
+			[0, PRONE],
+			[
+				0.3,
+				pose({
+					hipN: 80,
+					kneeN: 130,
+					hipF: -50,
+					kneeF: 70,
+					lean: 60,
+					shN: 16,
+					elN: 0,
+					abN: 10,
+					shF: 16,
+					elF: 0,
+					abF: 10,
+					wide: 0.6,
+				}),
+			],
+			[
+				0.65,
+				pose({
+					hipN: 78,
+					kneeN: 86,
+					hipF: -18,
+					kneeF: 104,
+					lean: 26,
+					shN: 20,
+					elN: 20,
+					shF: 30,
+					elF: 30,
+					wide: 0.5,
+				}),
+			],
+			[1, BASE],
+		],
+	},
 } satisfies Record<string, FieldAnim>;
 
 export type FieldAnimName = keyof typeof FIELD_ANIMS;
@@ -340,7 +848,8 @@ export const strideOf = (m: Move): number => {
 		const a = ANIMS[m as AnimName];
 		return a.kind === "cycle" ? a.stride : 5;
 	}
-	return 5;
+	const a = FIELD_ANIMS[m] as FieldAnim;
+	return a.kind === "cycle" ? a.stride : 5;
 };
 
 // The pose partway through a move: an act from start (0) to finish (1), a
@@ -350,7 +859,6 @@ export const poseOfMove = (m: Move, phase: number, mirrored = false): Pose => {
 	if (isCourtMove(m)) {
 		q = poseAt(m as AnimName, phase);
 	} else {
-		// (All of them still, so far.)
 		const a = FIELD_ANIMS[m] as FieldAnim;
 		if (a.kind === "still") {
 			q = a.pose;
@@ -369,19 +877,101 @@ export const poseOfMove = (m: Move, phase: number, mirrored = false): Pose => {
 // or reading the play, open; standing about, relaxed.
 const FISTS = new Set<Move>(["run", "sprint"]);
 const RELAXED = new Set<Move>(["stand", "walk", "jog", "hands"]);
-export const gripsOf = (m: Move): [Grip, Grip] => {
+export const gripsOf = (m: Move, hold?: BallHold): [Grip, Grip] => {
 	const g: Grip = FISTS.has(m) ? "fist" : RELAXED.has(m) ? "relaxed" : "open";
+	if (hold === "carry" || hold === "throw") {
+		return ["ball", g];
+	}
+	if (hold === "hands") {
+		return ["ball", "ball"];
+	}
 	return [g, g];
 };
 
-// The ball under the center's hand before the snap: on the turf under his
-// right hand, its points up and down the field, laces down - in his frame.
-export const snapBall = (b: Body, q: Pose): HeldBall => {
-	const hand = skeleton(b, q).armR;
+// His pose with the ball: carried, his right arm folded up across him,
+// high and tight, whatever the rest of him is doing.
+export const holding = (q: Pose, hold: BallHold | undefined): Pose =>
+	hold === "carry" ? { ...q, shN: 24, elN: 104, abN: 8, wrN: 4 } : q;
+
+// His arms out of one pose over the rest of him in another: reaching up for
+// a ball he catches in stride.
+const ARMS = [
+	"shN",
+	"elN",
+	"abN",
+	"wrN",
+	"shF",
+	"elF",
+	"abF",
+	"wrF",
+	"flare",
+	"tuck",
+	"free",
+] as const;
+export const withArms = (q: Pose, arms: Pose): Pose => {
+	const out = { ...q };
+	for (const k of ARMS) {
+		out[k] = arms[k];
+	}
+	return out;
+};
+
+const unitV = (v: V3): V3 => {
+	const l = Math.hypot(v.f, v.s, v.u) || 1;
+	return { f: v.f / l, s: v.s / l, u: v.u / l };
+};
+
+// Where the ball is in his frame, the way he has it: under the center's
+// right hand on the turf, its points up and down the field, laces down;
+// tucked along his right forearm, its nose up out in front of his hand; in
+// both hands at his chest, nose up and out; cocked back in his throwing
+// hand, nose to the target.
+export const heldBall = (b: Body, q: Pose, hold: BallHold): HeldBall => {
+	const sk = skeleton(b, q);
+	const hand = sk.armR;
 	const tip = hand.tip ?? hand.end;
+	if (hold === "snap") {
+		return {
+			at: { f: (hand.end.f + tip.f) / 2, s: hand.end.s, u: BALL_R },
+			axis: { f: 1, s: 0, u: 0 },
+			laces: { f: 0, s: 0, u: -1 },
+		};
+	}
+	if (hold === "carry") {
+		const along = unitV({
+			f: hand.end.f - hand.mid.f,
+			s: hand.end.s - hand.mid.s,
+			u: hand.end.u - hand.mid.u,
+		});
+		return {
+			at: {
+				f: hand.end.f - along.f * BALL_LEN * 0.18,
+				s: hand.end.s - along.s * BALL_LEN * 0.18 + BALL_R * 0.4,
+				u: hand.end.u - along.u * BALL_LEN * 0.18,
+			},
+			axis: along,
+			laces: { f: 0, s: -1, u: 0 },
+		};
+	}
+	if (hold === "hands") {
+		const l = sk.armL.end;
+		return {
+			at: {
+				f: (hand.end.f + l.f) / 2 + BALL_R * 0.5,
+				s: (hand.end.s + l.s) / 2,
+				u: (hand.end.u + l.u) / 2 + BALL_R * 0.3,
+			},
+			axis: unitV({ f: 0.75, s: 0, u: 0.65 }),
+			laces: { f: 0, s: 0, u: 1 },
+		};
+	}
 	return {
-		at: { f: (hand.end.f + tip.f) / 2, s: hand.end.s, u: BALL_R },
-		axis: { f: 1, s: 0, u: 0 },
-		laces: { f: 0, s: 0, u: -1 },
+		at: {
+			f: (hand.end.f + tip.f) / 2,
+			s: (hand.end.s + tip.s) / 2,
+			u: (hand.end.u + tip.u) / 2,
+		},
+		axis: unitV({ f: 1, s: 0, u: 0.35 }),
+		laces: { f: 0, s: 1, u: 0 },
 	};
 };

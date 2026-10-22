@@ -36,7 +36,8 @@ import {
 	type Group,
 	type RosterMan,
 } from "./personnel.ts";
-import type { Move } from "./poses.ts";
+import { moveKind, type Move } from "./poses.ts";
+import { actOut } from "./action.ts";
 
 // THE GAME STAGED: every snap of the play-by-play, in feet and milliseconds -
 // who is on the field for it, where each man lines up, the ball, and the
@@ -56,6 +57,10 @@ import type { Move } from "./poses.ts";
 // Times are milliseconds at 1x.
 
 export type RawEvent = { type: string; [key: string]: any };
+
+// One thing a man did in a play, as the sim counts it: the stat, the man,
+// and his team (raw: 0 the home team).
+export type StatLine = { s: string; pid: number; t: number };
 
 export type PlayKind =
 	| "kickoff"
@@ -81,9 +86,22 @@ export type Leg = {
 	move: Move;
 	yaw?: number;
 	mirrored?: boolean;
-	// The ball with him, the way his move holds it.
-	ball?: "snap";
+	// The ball with him, and how he has it (see BallHold).
+	ball?: BallHold;
+	// An act cut in two: how far through it this leg starts and ends (all
+	// of it, unset).
+	span?: [number, number];
+	// His arms in an act of their own over whatever the rest of him is
+	// doing - reaching for a ball he catches in stride - and how far through
+	// it this leg takes them.
+	arms?: Move;
+	armsSpan?: [number, number];
 };
+
+// How a man has the ball: under his hand on the turf over it (a center or
+// a long snapper), tucked away under his arm, in both hands, cocked back in
+// his throwing hand.
+export type BallHold = "snap" | "carry" | "hands" | "throw";
 
 // One man in one play: his slot in it and what he does.
 export type Part = {
@@ -93,10 +111,21 @@ export type Part = {
 	legs: Leg[];
 };
 
-// Where the ball is, from t0 on: spotted (or on its tee), or with a man.
+// Where the ball is, from t0 on: spotted (or on its tee), with a man, or in
+// the air - from one point to another by t1, `peak` feet over the straight
+// line between them halfway, spiraling (thrown) or end over end.
 export type BallSeg =
 	| { kind: "spot"; t0: number; at: Pt3; tee?: boolean }
-	| { kind: "held"; t0: number; pid: number };
+	| { kind: "held"; t0: number; pid: number }
+	| {
+			kind: "fly";
+			t0: number;
+			t1: number;
+			from: Pt3;
+			to: Pt3;
+			peak: number;
+			spiral?: boolean;
+	  };
 
 export type Play = {
 	// The play's "clock" line.
@@ -256,10 +285,14 @@ const SET_HOLD = 450;
 const CADENCE = [700, 1500] as const;
 // A kickoff: everyone lined up, the kick this long in.
 const KICK_AT = 2600;
+// The plays acted out from the snap (see action.ts), and how long after
+// the whistle the picture stays on one - men getting up, walking off.
+const ACTED = new Set<PlayKind>(["pass", "run", "kneel"]);
+const AFTER_WHISTLE = 3200;
 
 // The first thing said of a play after the snap: when it happened, by what
-// it was. (Until the plays themselves are acted out, a fair guess at how
-// long each takes.)
+// it was. (For a play that is not acted out - a kick, so far - a fair
+// guess at how long each takes.)
 const resultAfterSnap = (e: RawEvent): number => {
 	const yds = typeof e.yds === "number" ? e.yds : 0;
 	switch (e.type) {
@@ -410,6 +443,36 @@ const situationOf = (kind: PlayKind, clock: RawEvent): string => {
 	}`;
 };
 
+// On a two-point try the sim keeps no stats: who did what read off the
+// names in its lines instead - for each name in turn, the stats it stands
+// for, and whether he is with the offense (or the defense; either, unset).
+const TRY_STATS: Record<string, [string[], boolean | undefined][]> = {
+	dropback: [[["pss"], true]],
+	passComplete: [
+		[["pss"], true],
+		[["tgt", "rec"], true],
+	],
+	passIncomplete: [
+		[["pss"], true],
+		[["tgt"], true],
+	],
+	handoff: [
+		[[], true],
+		[["rus"], true],
+	],
+	run: [[["rus"], true]],
+	sack: [
+		[["pss"], true],
+		[["defSk"], false],
+	],
+	interception: [[["defInt"], false]],
+	fumble: [
+		[["fmb"], true],
+		[["defFmbFrc"], false],
+	],
+	fumbleRecovery: [[["defFmbRec"], undefined]],
+};
+
 // ---- the director ----------------------------------------------------------
 
 class Director {
@@ -417,8 +480,12 @@ class Director {
 	readonly gid: number;
 	readonly numPeriods: number;
 	readonly depth: [DepthChart, DepthChart];
-	// Each side's men, by display side.
+	// Each side's men, by display side - and by name.
 	readonly roster: [number[], number[]];
+	readonly byName: [Map<string, number>, Map<string, number>] = [
+		new Map(),
+		new Map(),
+	];
 	// Who is out: hurt, and gone for the day.
 	readonly out = new Set<number>();
 	readonly plays: Play[] = [];
@@ -440,6 +507,11 @@ class Director {
 			players.filter((p) => p.team === 0).map((p) => p.pid),
 			players.filter((p) => p.team === 1).map((p) => p.pid),
 		];
+		for (const p of players) {
+			if (p.name !== undefined) {
+				this.byName[p.team].set(p.name, p.pid);
+			}
+		}
 	}
 
 	rng(i: number, what: string) {
@@ -495,16 +567,56 @@ class Director {
 		};
 	}
 
-	// The men a play's stats name, for each side: who they are and what
-	// they could have been playing.
-	named(i0: number, i1: number): [Named[], Named[]] {
-		const out: [Named[], Named[]] = [[], []];
-		const seen = new Map<number, Named>();
+	// Who did what in a play, by its stats - on a two-point try, by the
+	// names in its lines.
+	statsOf(i0: number, i1: number): StatLine[] {
+		const out: StatLine[] = [];
+		let isTry = false;
 		for (let i = i0; i < i1; i++) {
 			const e = this.events[i];
-			if (e?.type !== "stat" || typeof e.pid !== "number") {
+			if (e?.type === "stat" && typeof e.pid === "number") {
+				out.push({ s: e.s, pid: e.pid, t: e.t });
+			} else if (e?.type === "twoPointConversion") {
+				isTry = true;
+			}
+		}
+		if (!isTry) {
+			return out;
+		}
+		const o = this.events[i0]?.t === 1 ? 1 : 0;
+		for (let i = i0; i < i1; i++) {
+			const e = this.events[i];
+			const spec = e ? TRY_STATS[e.type] : undefined;
+			if (!spec || !Array.isArray(e!.names)) {
 				continue;
 			}
+			spec.forEach(([stats, own], k) => {
+				const name = e!.names[k];
+				if (typeof name !== "string") {
+					return;
+				}
+				// (Raw team t is display side 1 - t.)
+				const first = own === false ? 1 - o : o;
+				for (const t of own === undefined ? [first, 1 - first] : [first]) {
+					const pid = this.byName[(1 - t) as Side].get(name);
+					if (pid !== undefined) {
+						for (const s of stats) {
+							out.push({ s, pid, t });
+						}
+						return;
+					}
+				}
+			});
+		}
+		return out;
+	}
+
+	// The men a play's stats name, for each side: who they are and what
+	// they could have been playing.
+	named(stats: StatLine[]): [Named[], Named[]] {
+		const out: [Named[], Named[]] = [[], []];
+		const seen = new Map<number, Named>();
+		for (const e of stats) {
 			const side = (1 - e.t) as Side;
 			const groups =
 				STAT_GROUPS[e.s] ??
@@ -559,7 +671,8 @@ class Director {
 		const r = this.rng(i0, "play");
 
 		// Who is on, and where each lines up.
-		const named = this.named(i0, i1);
+		const stats = this.statsOf(i0, i1);
+		const named = this.named(stats);
 		const { placed, formation } = this.lineUp(
 			kind,
 			events,
@@ -621,6 +734,28 @@ class Director {
 			ball.push({ kind: "held", t0: over.t0, pid: center.pid });
 		}
 
+		// The play itself, from the snap.
+		const acted = ACTED.has(kind)
+			? actOut({
+					kind,
+					offense,
+					dir,
+					losX,
+					ballY,
+					snap,
+					set: formation ? OFFENSE_SETS[formation] : undefined,
+					parts,
+					events,
+					stats,
+					i0,
+					i1,
+					r: this.rng(i0, "action"),
+				})
+			: undefined;
+		if (acted) {
+			ball.push(...acted.ball);
+		}
+
 		// The lines.
 		this.lastLine = Math.max(this.lastLine, t0 - LINE_GAP);
 		let afterSnap = false;
@@ -658,6 +793,12 @@ class Director {
 				// Before the snap: a false start, offside.
 				want = kindAt < 0 || i < kindAt ? set + 600 : snap + 1300;
 				afterSnap = kindAt >= 0 && i > kindAt;
+			} else if (acted?.at.has(i)) {
+				want = acted.at.get(i)!;
+				afterSnap = true;
+				if (RESULTS.has(e.type)) {
+					results += 1;
+				}
 			} else if (AT_SNAP[e.type] !== undefined) {
 				want = snap + AT_SNAP[e.type]!;
 				afterSnap = true;
@@ -675,17 +816,40 @@ class Director {
 			}
 			lastAt = this.line(i, e.type, want);
 		}
-		const t1 = Math.max(this.lastLine + TAIL, snap + 1500);
+		const t1 = Math.max(
+			this.lastLine + TAIL,
+			snap + 1500,
+			acted ? acted.whistle + AFTER_WHISTLE : 0,
+		);
 		// Each line of the play ends where its own action does; the last one,
 		// with the play.
 		const last = this.beats.at(-1);
 		if (last && last.i >= i0) {
 			last.end = t1;
 		}
+		// And everybody stays as the play left him until the next one.
 		for (const part of parts) {
 			const l = part.legs.at(-1);
-			if (l) {
-				l.t1 = Math.max(l.t1, t1);
+			if (!l || l.t1 >= t1) {
+				continue;
+			}
+			if (
+				l.from.x === l.to.x &&
+				l.from.y === l.to.y &&
+				moveKind(l.move) === "still" &&
+				!l.arms
+			) {
+				l.t1 = t1;
+			} else {
+				part.legs.push({
+					t0: l.t1,
+					t1,
+					from: l.to,
+					to: l.to,
+					move: moveKind(l.move) === "still" ? l.move : "stand",
+					...(l.yaw !== undefined ? { yaw: l.yaw } : {}),
+					...(l.ball ? { ball: l.ball } : {}),
+				});
 			}
 		}
 		this.plays.push({
