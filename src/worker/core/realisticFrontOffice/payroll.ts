@@ -101,7 +101,7 @@ const haulAt = (share: number) => {
 let poolLeft: { key: string; share: number } | undefined;
 
 const poolKey = () =>
-	`${g.get("season")}:${g.get("phase")}:${g.get("daysLeft")}`;
+	`${g.get("lid")}:${g.get("season")}:${g.get("phase")}:${g.get("daysLeft")}`;
 
 export const setFreeAgentPoolLeft = (share: number) => {
 	poolLeft = { key: poolKey(), share };

@@ -188,7 +188,7 @@ const NEUTRAL = {
 } as unknown as Player;
 
 const getMarketView = async () => {
-	const key = `${g.get("season")}:${g.get("phase")}`;
+	const key = `${g.get("lid")}:${g.get("season")}:${g.get("phase")}`;
 	if (marketView?.key !== key) {
 		const moods = new Map<number, MoodComponents>();
 		const rosters = new Map<number, number[]>();

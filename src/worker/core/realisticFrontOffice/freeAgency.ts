@@ -394,7 +394,7 @@ const appealFor = async (
 	rank: number,
 	rosters: Map<number, Player[]>,
 ) => {
-	const key = `${g.get("season")}:${g.get("phase")}:${g.get("daysLeft")}:${p.pid}:${tid}:${rosters.get(tid)?.length ?? 0}`;
+	const key = `${g.get("lid")}:${g.get("season")}:${g.get("phase")}:${g.get("daysLeft")}:${p.pid}:${tid}:${rosters.get(tid)?.length ?? 0}`;
 	let appeal = appealCache.get(key);
 	if (appeal === undefined) {
 		if (appealCache.size > 50_000) {
@@ -463,7 +463,7 @@ const lineCache: { outlook?: LeagueOutlook; lines: Map<string, Line> } = {
 	lines: new Map(),
 };
 
-let poolAtOpen: { season: number; quality: number } | undefined;
+let poolAtOpen: { lid: number; season: number; quality: number } | undefined;
 
 // A day of free agency, or of the season.
 export const freeAgencyDay = async () => {
@@ -495,8 +495,11 @@ export const freeAgencyDay = async () => {
 			(a, p) => a + Math.max(0, p.valueNoPot - REPLACEMENT_OVR),
 			0,
 		);
-		if (poolAtOpen?.season !== g.get("season")) {
-			poolAtOpen = { season: g.get("season"), quality };
+		if (
+			poolAtOpen?.season !== g.get("season") ||
+			poolAtOpen.lid !== g.get("lid")
+		) {
+			poolAtOpen = { lid: g.get("lid"), season: g.get("season"), quality };
 		}
 		setFreeAgentPoolLeft(
 			poolAtOpen.quality > 0 ? Math.min(1, quality / poolAtOpen.quality) : 0,

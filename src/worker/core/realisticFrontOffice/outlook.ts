@@ -193,7 +193,7 @@ export const outlookSeason = (
 
 // Kept for the season they were made in, and dropped once it has passed.
 const projections = new Map<string, RatingsProjection>();
-let projectionsSeason = -Infinity;
+let projectionsKey = "";
 
 const seedFor = (pid: number, season: number) =>
 	(pid * 2_654_435_761 + season * 40_503) % 2_147_483_647;
@@ -206,9 +206,11 @@ export const lineMeasure = (ratings: MinimalPlayerRatings) => {
 };
 
 export const projectPlayer = (p: Player, season: number) => {
-	if (season !== projectionsSeason) {
+	// Players of another league share pids.
+	const forKey = `${g.get("lid")}:${season}`;
+	if (forKey !== projectionsKey) {
 		projections.clear();
-		projectionsSeason = season;
+		projectionsKey = forKey;
 	}
 	const r = last(p.ratings);
 	// The fuzz too: a human's read of the player (proposals.ts) is projected

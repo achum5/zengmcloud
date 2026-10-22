@@ -192,7 +192,8 @@ const gamesPlayed = async () => {
 
 const getOutlook = async (games: number) => {
 	const week = Math.floor(games / Math.max(1, g.get("numActiveTeams") * 3));
-	const key = `${g.get("season")}:${g.get("phase")}:${week}`;
+	// The league too: a worker can open another league at the same point.
+	const key = `${g.get("lid")}:${g.get("season")}:${g.get("phase")}:${week}`;
 	if (cache?.key !== key) {
 		const started = performance.now();
 		cache = { key, outlook: await buildOutlook() };
