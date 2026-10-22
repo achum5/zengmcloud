@@ -1166,11 +1166,17 @@ const IN_PLACE = new Set<AnimName>([
 	"roar",
 	"chestPound",
 	"celebrate",
+	"clap",
 	"highFive",
 	"lowFive",
 	"chestBump",
 	"waitFive",
 ]);
+// Of those, what he does reacting to something - having words, a flex,
+// hands on his hips - rather than set for a teammate.
+const REACTIONS = new Set<AnimName>(
+	[...IN_PLACE].filter((a) => a !== "screen" && a !== "postUp"),
+);
 // How far round the arc from straight out a man spacing the floor goes
 // (radians): into the corner, and no farther.
 const ARC_EDGE = 1.62;
@@ -17686,6 +17692,7 @@ class Director {
 		// glass, not round behind it.)
 		const STAND = new Set<AnimName>([
 			...UP_IN_CLOSE,
+			...IN_PLACE,
 			"contest",
 			"shoot",
 			"setShot",
@@ -18502,6 +18509,17 @@ class Director {
 					return;
 				}
 			}
+			// (And back before he has words with the official over it, say -
+			// not sliding back in the middle of that.)
+			const then = tr.acts.find(
+				(x) => REACTIONS.has(x.anim) && x.t0 > n0 && x.t0 < n1,
+			);
+			if (then) {
+				n1 = then.t0;
+				if (n1 - n0 < 2 * GIVE_WAY_MS) {
+					return;
+				}
+			}
 			(tr.nudges ??= []).push({
 				t0: n0,
 				t1: n1,
@@ -18930,6 +18948,9 @@ class Director {
 							// (Going up with a shot in close he is never moved: where
 							// he lets it go from is where the ball goes from, in
 							// front of the glass - see clearTheWayIn.)
+							// (Nor, before anybody else, a man having words, hands on
+							// his hips, flexing: he does it where he stands - not
+							// sliding off across the floor in the middle of it.)
 							const ground = (pid: number, act: AnimName | undefined) =>
 								act !== undefined && UP_IN_CLOSE.has(act)
 									? 3
@@ -18939,10 +18960,13 @@ class Director {
 											? 1.5
 											: pid === holder
 												? 1
-												: 0;
+												: act !== undefined && REACTIONS.has(act)
+													? 0.5
+													: 0;
 							const ga = ground(A.pid, aa);
 							const gb = ground(B.pid, ab);
-							const fixA = ga > 0;
+							// (Two of them at it, though, one gives way all the same.)
+							const fixA = ga >= 1;
 							// (On the move, he is only going by: a teammate's shoulder,
 							// or - not in it with him - an opponent's.)
 							const going = (i: number) =>
@@ -19088,7 +19112,12 @@ class Director {
 				}
 				const busy = [
 					...r.a.acts
-						.filter((a) => TOGETHER.has(a.anim) || HOLDS.has(a.anim))
+						.filter(
+							(a) =>
+								TOGETHER.has(a.anim) ||
+								HOLDS.has(a.anim) ||
+								IN_PLACE.has(a.anim),
+						)
 						.map((a) => [a.t0, a.t1] as const),
 					...(holds.get(r.a.pid) ?? []),
 				];
@@ -19100,7 +19129,24 @@ class Director {
 						n0 = b1;
 					}
 				}
-				if (n1 - n0 < 400) {
+				// In the middle of a reaction of his own while they are on each
+				// other - a flex, a clap - he steps aside once he is done with it
+				// (or, done before it, is back before it): not sliding over while
+				// he does it. All through it, he holds where he is.
+				let holdsOn = false;
+				for (const a of r.a.acts) {
+					if (!REACTIONS.has(a.anim) || a.t1 <= n0 || a.t0 >= n1) {
+						continue;
+					}
+					if (a.t0 <= r.t0 && a.t1 >= r.t1) {
+						holdsOn = true;
+					} else if (a.t1 < r.t1) {
+						n0 = Math.max(n0, a.t1);
+					} else if (a.t0 > r.t0) {
+						n1 = Math.min(n1, a.t0);
+					}
+				}
+				if (holdsOn || n1 - n0 < 400) {
 					continue;
 				}
 				// Aside to where nobody else is, either: the way away from the
@@ -20134,16 +20180,20 @@ class Director {
 								holder = holderAt(t);
 								off = offenseAt(t);
 							}
+							// (A man having words, hands on his hips, a flex: where he
+							// stands to do it, he mostly stays - see keepApart.)
 							const give = (tr: Track, act: AnimName | undefined, k: number) =>
 								tr.pid === holder ||
 								(act !== undefined && FIXED.has(act)) ||
 								(held[k]?.[s] ?? 1) < 1
 									? 0
-									: act === "contest"
-										? 0.3
-										: tr.team === off
-											? 0.5
-											: 1;
+									: act !== undefined && REACTIONS.has(act)
+										? 0.15
+										: act === "contest"
+											? 0.3
+											: tr.team === off
+												? 0.5
+												: 1;
 							const ga = give(A, aa, i);
 							const gb = give(B, ab, j);
 							if (ga + gb === 0) {
@@ -20197,6 +20247,33 @@ class Director {
 						const w = u * u * (3 - 2 * u);
 						ex[s]! *= w;
 						ey[s]! *= w;
+					}
+				}
+				// Doing something where he stands - having words, hands on his
+				// hips, a flex - he is not slid over in the middle of it: kept
+				// off as he was as he started it, and eased on from there once
+				// he is done.
+				for (const a of tracks[i]!.acts) {
+					if (!REACTIONS.has(a.anim) || a.t1 <= l0 || a.t0 >= l1) {
+						continue;
+					}
+					const s0 = Math.max(0, Math.ceil((a.t0 - l0) / DT));
+					const s1 = Math.min(n - 1, Math.floor((a.t1 - l0) / DT));
+					if (s1 <= s0) {
+						continue;
+					}
+					const fx = ex[s0]!;
+					const fy = ey[s0]!;
+					for (let s = s0 + 1; s <= s1; s++) {
+						ex[s] = fx;
+						ey[s] = fy;
+					}
+					const E = 8;
+					for (let s = s1 + 1; s <= Math.min(n - 1, s1 + E); s++) {
+						const u = (s - s1) / E;
+						const w = u * u * (3 - 2 * u);
+						ex[s] = fx + (ex[s]! - fx) * w;
+						ey[s] = fy + (ey[s]! - fy) * w;
 					}
 				}
 				// Never pushed over faster than a quick step aside, however

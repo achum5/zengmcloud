@@ -993,6 +993,59 @@ describe("3D director", () => {
 	// A screen, a post-up, a celebration, words with the official: each is
 	// done where he stands, and the pose ends as he sets off again rather
 	// than him sliding away across the floor in it.
+	// Having words with the official, hands on his hips, a flex for the
+	// crowd: he does it where he stands - nobody else stepping round him
+	// slides him over in the middle of it. (Off his own dunk, he is still
+	// coming down from it as he starts.)
+	test("a man reacting where he stands is not slid across the floor doing it", () => {
+		const REACT = new Set([
+			"protest",
+			"hips",
+			"point",
+			"flex",
+			"roar",
+			"chestPound",
+			"celebrate",
+			"clap",
+		]);
+		let n = 0;
+		const slid: string[] = [];
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl } = compile(seed, 150);
+			for (const tr of tl.tracks.values()) {
+				for (const a of tr.acts) {
+					if (
+						!REACT.has(a.anim) ||
+						fastAt(tl, a.t0) > 1.01 ||
+						tr.moves.some((m) => m.t1 > a.t0 && m.t0 < a.t1) ||
+						tr.acts.some(
+							(b) => SHOOTING.has(b.anim) && b.t1 > a.t0 - 700 && b.t0 < a.t0,
+						)
+					) {
+						continue;
+					}
+					const p0 = evalPlayer(tl, tr.pid, a.t0);
+					if (!p0.shown) {
+						continue;
+					}
+					n += 1;
+					let far = 0;
+					for (let t = a.t0; t <= a.t1; t += 50) {
+						const p = evalPlayer(tl, tr.pid, t);
+						far = Math.max(far, Math.hypot(p.x - p0.x, p.y - p0.y));
+					}
+					if (far > 1.2) {
+						slid.push(
+							`${seed}: ${tr.pid} ${a.anim} at ${a.t0} ${far.toFixed(1)}ft`,
+						);
+					}
+				}
+			}
+		}
+		assert.isAbove(n, 150);
+		assert.deepEqual(slid, []);
+	}, 240_000);
+
 	test("nobody slides off across the floor still set in a screen or a celebration", () => {
 		const inPlace = new Set([
 			"screen",
