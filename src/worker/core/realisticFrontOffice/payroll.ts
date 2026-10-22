@@ -20,23 +20,26 @@ import {
 // By cap room as free agency opens (share of the cap): the chance of signing a
 // first and a second free agent better than the minimum, and what they are as
 // the value model sees them (roleFree, offense, usage, overall). Read off
-// 1,200 team-summers in 8 arena leagues (src/test/arena, the freeAgents
-// snapshot), averaged over rooms within 5% of the cap and smoothed so more
-// room never buys less. Teams with room do far
-// better than a signing at that price suggests - most end up paying less than
-// they have - and what they get rises smoothly with room: there is no special
-// prize for clearing a max slot.
+// 600 team-summers in 4 arena leagues under the offer market with picks
+// priced honestly (src/test/arena, the freeAgents snapshot), averaged over
+// rooms within 5% of the cap and smoothed so more room never buys less. Teams
+// with room do far better than a signing at that price suggests - most end up
+// paying less than they have - and what they get rises smoothly with room:
+// there is no special prize for clearing a max slot. Under the offer market
+// room buys less than it did before it - a first signing of 61 at 40% of the
+// cap, not 65 - and even a team with none lands someone better than the
+// minimum two times in three.
 const HAUL: readonly (readonly number[])[] = [
-	[0, 0.28, 8.61, 16.63, 0.387, 51, 0.07, 7.8, 18, 0.355, 48.2],
-	[0.05, 0.82, 8.92, 19.23, 0.403, 54.1, 0.28, 8.29, 18.11, 0.381, 50.5],
-	[0.1, 0.96, 9.38, 21.48, 0.421, 56.9, 0.52, 8.48, 18.16, 0.384, 51.4],
-	[0.15, 0.96, 10.04, 21.73, 0.444, 59.1, 0.67, 8.56, 18.95, 0.388, 52.4],
-	[0.2, 0.96, 10.35, 21.96, 0.451, 60.2, 0.73, 8.58, 20.27, 0.393, 53.5],
-	[0.25, 0.96, 10.68, 23.23, 0.464, 61.7, 0.73, 9.02, 20.27, 0.401, 54.3],
-	[0.3, 0.96, 11.3, 23.27, 0.487, 63.5, 0.73, 9.22, 20.27, 0.406, 54.6],
-	[0.35, 0.96, 11.3, 23.92, 0.487, 63.7, 0.81, 9.22, 20.27, 0.407, 54.9],
-	[0.4, 0.99, 11.3, 26.3, 0.489, 64.9, 0.82, 9.37, 21.05, 0.416, 56.3],
-	[0.5, 0.99, 11.3, 26.9, 0.489, 64.9, 0.86, 9.37, 22.11, 0.419, 56.8],
+	[0, 0.68, 8.34, 17.44, 0.379, 50.7, 0.39, 7.79, 16.69, 0.365, 47.6],
+	[0.05, 0.87, 9.03, 17.07, 0.412, 53.5, 0.54, 8.23, 16.48, 0.378, 49.2],
+	[0.1, 0.97, 9.43, 18.45, 0.434, 55.6, 0.71, 8.77, 16.4, 0.388, 51.1],
+	[0.15, 0.97, 9.47, 21.14, 0.442, 57.2, 0.79, 8.93, 17.44, 0.406, 53.4],
+	[0.2, 0.99, 9.6, 22.5, 0.449, 58.8, 0.84, 9.08, 18.65, 0.406, 54.6],
+	[0.25, 0.99, 9.72, 23.85, 0.451, 59.7, 0.9, 9.11, 19.02, 0.404, 54.4],
+	[0.3, 0.99, 10.07, 23.58, 0.451, 60.3, 0.94, 9.14, 19.61, 0.408, 54.6],
+	[0.35, 0.99, 10.39, 22.96, 0.46, 60.9, 0.94, 9.18, 20.68, 0.405, 55.7],
+	[0.4, 0.99, 10.39, 22.96, 0.46, 60.9, 0.94, 9.18, 20.68, 0.405, 55.7],
+	[0.5, 1, 10.39, 22.96, 0.46, 60.9, 1, 9.18, 20.68, 0.405, 55.7],
 ];
 
 // Rosters are priced thousands of times a day, so these are remembered for
