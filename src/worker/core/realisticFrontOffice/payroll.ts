@@ -84,15 +84,73 @@ export const marketSalaries = () => {
 	return salaryFor;
 };
 
-const haulAt = (share: number) => {
-	const s = Math.min(HAUL.at(-1)![0]!, Math.max(HAUL[0]![0]!, share));
+// The same by how good the team is, in the season the room is for: free
+// agents want to win, so a bad team's room buys less - with 30% of the cap, a
+// first signing of 56 for a team that won a quarter of its games, 61 for an
+// average one, 66 for a good one. Read off 1,380 team-summers in 8 arena
+// leagues, by each team's record the season before, rows as HAUL's (fewer:
+// fewer summers each); good teams with a lot of room are rare, so its last
+// row is its 30% one.
+const HAUL_BY_RECORD: readonly {
+	winp: number;
+	rows: readonly (readonly number[])[];
+}[] = [
+	{
+		winp: 0.262,
+		rows: [
+			[0, 0.74, 8.23, 15.01, 0.381, 49.5, 0.39, 7.8, 14.56, 0.369, 47.1],
+			[0.1, 1, 9.44, 16.56, 0.422, 55, 0.75, 8.41, 15.89, 0.38, 50.1],
+			[0.2, 1, 9.27, 18.1, 0.422, 55.8, 0.87, 8.52, 17.39, 0.4, 51.9],
+			[0.3, 1, 9.33, 18.98, 0.429, 56.4, 0.95, 8.52, 17.39, 0.4, 51.9],
+			[0.45, 1, 9.99, 17.57, 0.441, 56.9, 1, 9.12, 16.09, 0.412, 53.4],
+		],
+	},
+	{
+		winp: 0.504,
+		rows: [
+			[0, 0.7, 8.36, 17.5, 0.39, 51, 0.42, 7.99, 16.23, 0.377, 48.4],
+			[0.1, 1, 9.37, 20.23, 0.42, 56.4, 0.82, 8.54, 17.58, 0.385, 51.3],
+			[0.2, 1, 9.63, 23.3, 0.438, 58.8, 0.82, 8.7, 20.66, 0.401, 53.8],
+			[0.3, 1, 10.63, 21.38, 0.448, 60.7, 0.84, 8.67, 20.39, 0.404, 54.2],
+			[0.45, 1, 10.27, 22.97, 0.458, 60.7, 1, 9.45, 17.42, 0.421, 55.2],
+		],
+	},
+	{
+		winp: 0.688,
+		rows: [
+			[0, 0.8, 8.7, 19.02, 0.401, 53.1, 0.52, 7.95, 18.67, 0.365, 49.4],
+			[0.1, 0.98, 9.86, 22.45, 0.439, 58.8, 0.82, 8.85, 18.93, 0.397, 52.8],
+			[0.2, 1, 11.2, 20.41, 0.472, 61.4, 0.86, 8.42, 20.5, 0.385, 52.9],
+			[0.3, 1, 11.35, 27.63, 0.494, 66.1, 1, 9.51, 18.73, 0.406, 55.9],
+		],
+	},
+];
+
+const rowAt = (table: readonly (readonly number[])[], share: number) => {
+	const s = Math.min(table.at(-1)![0]!, Math.max(table[0]![0]!, share));
 	let i = 0;
-	while (i < HAUL.length - 2 && HAUL[i + 1]![0]! < s) {
+	while (i < table.length - 2 && table[i + 1]![0]! < s) {
 		i += 1;
 	}
-	const lo = HAUL[i]!;
-	const hi = HAUL[i + 1]!;
+	const lo = table[i]!;
+	const hi = table[i + 1]!;
 	const t = (s - lo[0]!) / (hi[0]! - lo[0]!);
+	return lo.map((x, k) => x + t * (hi[k]! - x));
+};
+
+const haulAt = (share: number, winp: number | undefined) => {
+	if (winp === undefined) {
+		return rowAt(HAUL, share);
+	}
+	const tables = HAUL_BY_RECORD;
+	const w = Math.min(tables.at(-1)!.winp, Math.max(tables[0]!.winp, winp));
+	let i = 0;
+	while (i < tables.length - 2 && tables[i + 1]!.winp < w) {
+		i += 1;
+	}
+	const lo = rowAt(tables[i]!.rows, share);
+	const hi = rowAt(tables[i + 1]!.rows, share);
+	const t = (w - tables[i]!.winp) / (tables[i + 1]!.winp - tables[i]!.winp);
 	return lo.map((x, k) => x + t * (hi[k]! - x));
 };
 
@@ -115,8 +173,11 @@ export const setFreeAgentPoolLeft = (share: number) => {
 export const signingsWith = (
 	room: number,
 	duringFreeAgency?: boolean,
+	// The share of its games the team is expected to win that season: room
+	// priced by it (HAUL_BY_RECORD), or the same for every team (HAUL).
+	winp?: number,
 ): (StrengthPlayer & { availability: number })[] => {
-	const h = haulAt(room / g.get("salaryCap"));
+	const h = haulAt(room / g.get("salaryCap"), winp);
 	const left =
 		duringFreeAgency && poolLeft?.key === poolKey() ? poolLeft.share : 1;
 	return [h.slice(1, 6), h.slice(6, 11)].map(

@@ -139,6 +139,10 @@ export type LeagueOutlook = {
 	// In the offseason before this season's lottery: where each team
 	// finished, for its pick in it.
 	finalPlace?: Map<number, number>;
+	// The share of its games each team is expected to win each season, on its
+	// roster as it stands, against the league's - what its room buys in free
+	// agency goes by it (payroll.ts).
+	winShare?: Map<number, number[]>;
 	// COLA (draftType "cola", with the lottery): the first few picks are
 	// drawn among the teams outside the last three playoff rounds, each by
 	// the points it has built up, and the rest go by record. A team's own pick
@@ -494,15 +498,22 @@ export const outlookSettings = {
 	// A player whose future is uncertain plays as the worse and the better
 	// half of his careers, not as their average (SeasonLine).
 	upside: true,
+	// Cap room is priced by how good the team is (payroll.ts), not the same
+	// for every team.
+	roomByRecord: true,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
 // own rosters, over outlookSettings - the ones a team's pricing alone reads.
 export const teamOutlookSettings = new Map<
 	number,
-	Partial<Pick<typeof outlookSettings, "upside" | "keptCalibration">>
+	Partial<
+		Pick<typeof outlookSettings, "upside" | "keptCalibration" | "roomByRecord">
+	>
 >();
-const outlookSettingFor = <K extends "upside" | "keptCalibration">(
+const outlookSettingFor = <
+	K extends "upside" | "keptCalibration" | "roomByRecord",
+>(
 	tid: number,
 	key: K,
 ): (typeof outlookSettings)[K] =>
@@ -1232,6 +1243,9 @@ export const teamPoints = (
 			const signings = signingsWith(
 				salaryCap - committed,
 				y === 0 && outlook.offset === 1 && g.get("phase") === PHASE.FREE_AGENCY,
+				outlookSettingFor(tid, "roomByRecord")
+					? outlook.winShare?.get(tid)?.[y]
+					: undefined,
 			);
 			lines.push(...signings);
 			refill?.(y, 1 - committed / salaryCap, signings);
@@ -1571,6 +1585,7 @@ export const buildOutlook = async ({
 		meanPoints: [] as number[],
 		progress: inSeason ? progress : 0,
 		recordEdge: new Map<number, number>(),
+		winShare: undefined as LeagueOutlook["winShare"],
 		slotPicks: outlookSettings.lottery
 			? await lotteryOdds(teams.length, season)
 			: undefined,
@@ -1582,6 +1597,32 @@ export const buildOutlook = async ({
 	};
 	for (const t of teams) {
 		await ensureRetention(base, rosters.get(t.tid)!, t.tid);
+	}
+
+	// How good each team's roster alone is each season, against the league's,
+	// as a share of games won: what its room buys goes by it. Priced first
+	// with every team's room worth the league's average, and everything below
+	// with it, so a roster priced now and one priced in a deal later are
+	// priced alike.
+	if (outlookSettings.roomByRecord || teamOutlookSettings.size > 0) {
+		const first = new Map(
+			teams.map((t) => [
+				t.tid,
+				teamPoints(base, t.tid, rosters.get(t.tid)!, []),
+			]),
+		);
+		const means = Array.from(
+			{ length: OUTLOOK_YEARS + 1 },
+			(_, y) =>
+				teams.reduce((a, t) => a + first.get(t.tid)![y]!, 0) /
+				Math.max(1, teams.length),
+		);
+		base.winShare = new Map(
+			teams.map((t) => [
+				t.tid,
+				first.get(t.tid)!.map((x, y) => winProbability(x - means[y]!)),
+			]),
+		);
 	}
 
 	// Where each team's own pick lands, from its roster alone: worst first -

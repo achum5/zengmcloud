@@ -5,6 +5,7 @@ import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import { currentOutlook, loadTeam, priceFor } from "./market.ts";
+import { signingsWith } from "./payroll.ts";
 import {
 	OUTLOOK_YEARS,
 	outlookSettings,
@@ -85,3 +86,12 @@ test(
 		assert.isAbove(more, (2 * checked) / 3);
 	},
 );
+
+test("the same cap room buys a bad team less than a good one", () => {
+	const room = 0.3 * g.get("salaryCap");
+	const best = (winp: number) => signingsWith(room, false, winp)[0]!.valueNoPot;
+	assert.isBelow(best(0.25), best(0.5));
+	assert.isBelow(best(0.5), best(0.7));
+	// Unknown: the league's average.
+	assert.isAbove(best(0.7), signingsWith(room)[0]!.valueNoPot);
+});
