@@ -1,4 +1,4 @@
-import { PHASE } from "../../../common/constants.ts";
+import { PHASE, PLAYER } from "../../../common/constants.ts";
 import type {
 	DraftPick,
 	MinimalPlayerRatings,
@@ -25,9 +25,11 @@ import {
 	lineSynergy,
 	playerLine,
 	typicalSynergy,
+	valueOverReplacement,
 	type StrengthPlayer,
 	type ValueRatings,
 } from "./strength.ts";
+import getRookieContractLength from "../draft/getRookieContractLength.ts";
 
 // WHERE EVERY TEAM IS HEADED, season by season: each roster projected forward
 // with the game's own development, its draft picks turned into the players
@@ -148,6 +150,19 @@ export type LeagueOutlook = {
 	// season, in points of strength (outlookSettings.recordOdds). Empty when
 	// off or out of season.
 	recordEdge: Map<number, number>;
+	// From the draft lottery to the end of the draft: the class, so the
+	// draft's picks are priced by who would go there (classPickAt).
+	classBoard?: ClassBoard;
+};
+
+export type ClassBoard = {
+	// Bumped whenever it changes, for what is remembered from it.
+	version: number;
+	season: number;
+	// The prospects still there, best first by what each is generally worth.
+	prospects: Player[];
+	// The draft's picks still to be made, in order, as "round:pick".
+	order: string[];
 };
 
 // How far a team's true strength may be from our read of it, in points a game,
@@ -390,6 +405,7 @@ type PickYears = {
 	season: PickLike["season"];
 	round: number;
 	pick: number;
+	board: number;
 	byYear: (PickAt | null | undefined)[];
 };
 
@@ -403,13 +419,15 @@ const pickYearsOf = (
 		entry.originalTid !== dp.originalTid ||
 		entry.season !== dp.season ||
 		entry.round !== dp.round ||
-		entry.pick !== dp.pick
+		entry.pick !== dp.pick ||
+		entry.board !== (outlook.classBoard?.version ?? 0)
 	) {
 		entry = {
 			originalTid: dp.originalTid,
 			season: dp.season,
 			round: dp.round,
 			pick: dp.pick,
+			board: outlook.classBoard?.version ?? 0,
 			byYear: [],
 		};
 		outlook.pickYears.set(dp, entry);
@@ -529,6 +547,10 @@ export const pickLineAt = (
 	if (typeof dp.season !== "number" || dp.season >= season) {
 		return undefined;
 	}
+	const fromClass = classPickAt(outlook, dp, y);
+	if (fromClass !== undefined) {
+		return fromClass ?? undefined;
+	}
 	const n = outlook.numTeams;
 	const center = Math.min(
 		n - 1,
@@ -544,6 +566,127 @@ export const pickLineAt = (
 	}
 	return at ?? undefined;
 };
+
+// A drafted player's chance of re-signing when his rookie deal runs out, for
+// pricing a pick by its player (most stay: arena, about 95%).
+const ROOKIE_RETENTION = 0.95;
+
+// A prospect as he would be once drafted with this pick: on its rookie deal.
+const asDrafted = (p: Player, round: number, slot: number, season: number) => {
+	const salary = pickSalaries()({ slot, round, years: 1, ovr: 0 });
+	return {
+		...p,
+		contract: {
+			amount: salary,
+			exp: season + getRookieContractLength(round),
+			rookie: true,
+		},
+	} as Player;
+};
+
+// One of this draft's picks once the class is known and the order set: the
+// player who would go there off a board of the class by what each prospect is
+// generally worth - undefined for a pick it does not price, null for one with
+// nobody left.
+const classPickAt = (
+	outlook: Omit<LeagueOutlook, "teams" | "titleCurves" | "playoffCurves">,
+	dp: PickLike,
+	y: number,
+): PickAt | null | undefined => {
+	const board = outlook.classBoard;
+	if (!board || dp.season !== board.season || dp.pick <= 0) {
+		return undefined;
+	}
+	const k = board.order.indexOf(`${dp.round}:${dp.pick}`);
+	if (k < 0) {
+		return undefined;
+	}
+	const key = `class:${board.version}:${dp.round}:${dp.pick}:${y}`;
+	let at = outlook.pickLines.get(key);
+	if (at === undefined) {
+		const p = board.prospects[k];
+		if (!p) {
+			at = null;
+		} else {
+			const slot = (dp.round - 1) * outlook.numTeams + dp.pick - 1;
+			const drafted = asDrafted(p, dp.round, slot, board.season);
+			const line = computeSeasonLine(
+				drafted,
+				outlook.season,
+				outlook.offset,
+				y,
+				0,
+				ROOKIE_RETENTION,
+			);
+			const years = outlookSeason(outlook, y) - board.season;
+			at = {
+				line,
+				salary:
+					line.availability *
+					pickSalaries()({
+						slot,
+						round: dp.round,
+						years,
+						ovr: line.valueNoPot,
+					}),
+			};
+		}
+		outlook.pickLines.set(key, at);
+	}
+	return at;
+};
+
+// The draft class, best first by what each prospect is generally worth - his
+// value over a replacement each season, for as long as he is expected to be
+// around, five seasons out counting about 60% of the next - and the picks
+// still to be made. Built from the draft lottery to the end of the draft.
+export const buildClassBoard = async (
+	outlook: Omit<LeagueOutlook, "teams" | "titleCurves" | "playoffCurves">,
+): Promise<ClassBoard | undefined> => {
+	const phase = g.get("phase");
+	if (phase !== PHASE.DRAFT_LOTTERY && phase !== PHASE.DRAFT) {
+		return undefined;
+	}
+	const season = g.get("season");
+	const order = (
+		await idb.cache.draftPicks.indexGetAll("draftPicksBySeason", season)
+	)
+		.filter((dp) => dp.pick > 0)
+		.sort((a, b) => a.round - b.round || a.pick - b.pick);
+	if (order.length === 0) {
+		return undefined;
+	}
+	const prospects = (
+		await idb.cache.players.indexGetAll("playersByTid", PLAYER.UNDRAFTED)
+	).filter((p) => p.draft.year === season);
+	const worth = new Map<number, number>();
+	for (const p of prospects) {
+		const drafted = asDrafted(p, 1, outlook.numTeams, season);
+		let sum = 0;
+		for (let y = 0; y <= OUTLOOK_YEARS; y++) {
+			const line = computeSeasonLine(
+				drafted,
+				outlook.season,
+				outlook.offset,
+				y,
+				0,
+				ROOKIE_RETENTION,
+			);
+			sum += 0.9 ** y * line.availability * valueOverReplacement(line);
+		}
+		worth.set(p.pid, sum);
+	}
+	return {
+		version: ++classBoardVersion,
+		season,
+		prospects: prospects.sort(
+			(a, b) => worth.get(b.pid)! - worth.get(a.pid)! || a.pid - b.pid,
+		),
+		order: order.map((dp) => `${dp.round}:${dp.pick}`),
+	};
+};
+
+let classBoardVersion = 0;
 
 const averagePick = (
 	outlook: Pick<LeagueOutlook, "numTeams" | "numRounds">,
@@ -1026,6 +1169,7 @@ export const buildOutlook = async ({
 		titleCurves,
 		playoffCurves,
 		deadline,
+		classBoard: await buildClassBoard(base),
 	};
 };
 

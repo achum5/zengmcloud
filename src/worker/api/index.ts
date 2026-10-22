@@ -324,6 +324,7 @@ import { gameAttributesArrayToObject } from "../../common/gameAttributesArrayToO
 import { bySport } from "../../common/sportFunctions.ts";
 import { generateContractOptions } from "../core/contractNegotiation/generateContractOptions.ts";
 import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
+import { afterPick as realisticFrontOfficeAfterPick } from "../core/realisticFrontOffice/draft.ts";
 import {
 	decideReSignings as realisticFrontOfficeDecideReSignings,
 	makeOffer as realisticFrontOfficeMakeOffer,
@@ -1560,6 +1561,9 @@ const draftUser = async (pid: number, conditions: Conditions) => {
 	if (dp && g.get("userTids").includes(dp.tid)) {
 		const selected = await draft.selectPlayer(dp, pid);
 		if (selected) {
+			if (realisticFrontOfficesOn()) {
+				await realisticFrontOfficeAfterPick();
+			}
 			draftPicks.shift();
 			await draft.afterPicks(draftPicks.length === 0, conditions);
 		}
