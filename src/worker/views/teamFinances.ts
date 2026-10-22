@@ -1,5 +1,5 @@
 import { PHASE } from "../../common/constants.ts";
-import { capsForSeasons } from "../util/capsForSeasons.ts";
+import { capsForSeasons, salaryInSeason } from "../util/capsForSeasons.ts";
 import { draft, finances, team } from "../core/index.ts";
 import { idb } from "../db/index.ts";
 import { g, helpers } from "../util/index.ts";
@@ -74,6 +74,40 @@ const updateTeamFinances = async ({
 			maxContractExp - season + 1,
 		);
 
+		const salariesSeasons = [];
+		for (let i = 0; i < numSeasons; i++) {
+			salariesSeasons.push(season + i);
+		}
+
+		// The cap moves. In a real-players league scheduled events step the salary
+		// cap, luxury tax and hard cap up every season, so measuring a 2030 column
+		// against today's cap is wrong by a lot by the time you get there.
+		//
+		// FROM THE DATABASE, not idb.cache: the cache only ever holds the current
+		// season's scheduled events, so a walk over it saw this season's own
+		// pending change and nothing after it, and handed that one number to
+		// every column from the second onward.
+		const gameAttributeEvents = (
+			await idb.merged.scheduledEvents.getAll()
+		).filter((event) => event.type === "gameAttributes");
+		const currentCaps = {
+			salaryCap: g.get("salaryCap"),
+			luxuryPayroll: g.get("luxuryPayroll"),
+			minPayroll: g.get("minPayroll"),
+			minContract: g.get("minContract"),
+			maxContract: g.get("maxContract"),
+			hardCapAmount: g.get("hardCapAmount"),
+			hardCapTids: g.get("hardCapTids"),
+			hardCapUseLuxuryTax: g.get("hardCapUseLuxuryTax"),
+		};
+		const capsBySeason = capsForSeasons({
+			seasons: salariesSeasons,
+			current: currentCaps,
+			events: gameAttributeEvents,
+			season: g.get("season"),
+			phase: g.get("phase"),
+		});
+
 		// What a player would cost to keep once his current deal runs out. The
 		// table otherwise just goes blank after a contract expires, which reads as
 		// "free" when it usually means "the biggest bill coming". These are
@@ -123,12 +157,19 @@ const updateTeamFinances = async ({
 				if (p && !contract.released && contract.exp < lastSeasonShown) {
 					const next = projectNextContract(p, projectedAmounts);
 					const start = Math.max(season, contract.exp + 1);
+					// (Priced against today's cap, so paid in the money of the season
+					// it starts in - the max then, if it is a max deal.)
+					const amount = salaryInSeason(
+						next.amount,
+						currentCaps,
+						capsBySeason[start - season]!,
+					);
 					for (
 						let i = start;
 						i < start + next.years && i <= lastSeasonShown;
 						i++
 					) {
-						projected[i - season] = next.amount / 1000;
+						projected[i - season] = amount / 1000;
 					}
 				}
 
@@ -161,11 +202,6 @@ const updateTeamFinances = async ({
 				};
 			}),
 		);
-
-		const salariesSeasons = [];
-		for (let i = 0; i < numSeasons; i++) {
-			salariesSeasons.push(season + i);
-		}
 
 		// The picks this team owns, priced at the rookie scale.
 		//
@@ -233,32 +269,6 @@ const updateTeamFinances = async ({
 					a.round - b.round ||
 					(a.slot ?? Infinity) - (b.slot ?? Infinity),
 			);
-
-		// The cap moves. In a real-players league scheduled events step the salary
-		// cap, luxury tax and hard cap up every season, so measuring a 2030 column
-		// against today's cap is wrong by a lot by the time you get there.
-		//
-		// FROM THE DATABASE, not idb.cache: the cache only ever holds the current
-		// season's scheduled events, so a walk over it saw this season's own
-		// pending change and nothing after it, and handed that one number to
-		// every column from the second onward.
-		const gameAttributeEvents = (
-			await idb.merged.scheduledEvents.getAll()
-		).filter((event) => event.type === "gameAttributes");
-		const capsBySeason = capsForSeasons({
-			seasons: salariesSeasons,
-			current: {
-				salaryCap: g.get("salaryCap"),
-				luxuryPayroll: g.get("luxuryPayroll"),
-				minPayroll: g.get("minPayroll"),
-				hardCapAmount: g.get("hardCapAmount"),
-				hardCapTids: g.get("hardCapTids"),
-				hardCapUseLuxuryTax: g.get("hardCapUseLuxuryTax"),
-			},
-			events: gameAttributeEvents,
-			season: g.get("season"),
-			phase: g.get("phase"),
-		});
 
 		const teamSeasons = (
 			await idb.merged.teamSeasons.getAll({ tid: inputs.tid })

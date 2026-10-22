@@ -1,5 +1,9 @@
 import { assert, describe, test } from "vitest";
-import { capsForSeasons, type SeasonCaps } from "./capsForSeasons.ts";
+import {
+	capsForSeasons,
+	salaryInSeason,
+	type SeasonCaps,
+} from "./capsForSeasons.ts";
 import { PHASE } from "../../common/constants.ts";
 
 // The real-players data, verbatim: every cap change lands at the draft lottery
@@ -44,6 +48,8 @@ const CURRENT_2014: SeasonCaps = {
 	salaryCap: 58700,
 	luxuryPayroll: 71750,
 	minPayroll: 39150,
+	minContract: 500,
+	maxContract: 30000,
 	hardCapAmount: 0,
 	hardCapTids: [],
 	hardCapUseLuxuryTax: true,
@@ -176,5 +182,40 @@ describe("capsForSeasons", () => {
 		assert.deepStrictEqual(caps[0]!.hardCapTids, []);
 		assert.deepStrictEqual(caps[1]!.hardCapAmount, 90000);
 		assert.deepStrictEqual(caps[1]!.hardCapTids, [3]);
+	});
+});
+
+describe("salaryInSeason", () => {
+	// 2019 money, and 2023's: the real-players numbers.
+	const now = {
+		...CURRENT_2014,
+		salaryCap: 109150,
+		minContract: 900,
+		maxContract: 36400,
+	};
+	const then = {
+		...CURRENT_2014,
+		salaryCap: 136000,
+		minContract: 1150,
+		maxContract: 45350,
+	};
+
+	test("a max deal is that season's max, a minimum deal its minimum", () => {
+		assert.strictEqual(salaryInSeason(36400, now, then), 45350);
+		assert.strictEqual(salaryInSeason(900, now, then), 1150);
+	});
+
+	test("anything in between grows with the cap", () => {
+		// 20M of a 109.15M cap is 24.92M of a 136M one.
+		assert.strictEqual(salaryInSeason(20000, now, then), 24920);
+		// Never past that season's max, or under its minimum.
+		assert.strictEqual(salaryInSeason(36000, now, then), 44860);
+		assert.isAtMost(salaryInSeason(36399, now, then), 45350);
+		assert.isAtLeast(salaryInSeason(901, now, then), 1150);
+	});
+
+	test("the same season is the same money", () => {
+		assert.strictEqual(salaryInSeason(20000, now, now), 20000);
+		assert.strictEqual(salaryInSeason(36400, now, now), 36400);
 	});
 });

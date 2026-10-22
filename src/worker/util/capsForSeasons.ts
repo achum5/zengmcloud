@@ -1,4 +1,5 @@
 import { PHASE } from "../../common/constants.ts";
+import { roundContract } from "../../common/roundContract.ts";
 import type { GameAttributesLeague } from "../../common/types.ts";
 
 // THE CAP MOVES, AND A FUTURE COLUMN HAS TO BE JUDGED AGAINST ITS OWN.
@@ -14,6 +15,8 @@ export type SeasonCaps = {
 	salaryCap: number;
 	luxuryPayroll: number;
 	minPayroll: number;
+	minContract: number;
+	maxContract: number;
 	hardCapAmount: number;
 	hardCapTids: number[];
 	hardCapUseLuxuryTax: boolean;
@@ -83,6 +86,12 @@ export const capsForSeasons = ({
 			if (info.minPayroll !== undefined) {
 				running.minPayroll = info.minPayroll;
 			}
+			if (info.minContract !== undefined) {
+				running.minContract = info.minContract;
+			}
+			if (info.maxContract !== undefined) {
+				running.maxContract = info.maxContract;
+			}
 			if (info.hardCapAmount !== undefined) {
 				running.hardCapAmount = info.hardCapAmount;
 			}
@@ -97,4 +106,26 @@ export const capsForSeasons = ({
 
 		return { ...running };
 	});
+};
+
+// A salary priced in one season's money, in another's - a projected contract
+// worked out against today's cap, for the season it would start in. A max deal
+// is that season's max and a minimum deal its minimum; anything in between
+// moves with the cap.
+export const salaryInSeason = (
+	amount: number,
+	now: SeasonCaps,
+	then: SeasonCaps,
+): number => {
+	if (amount >= now.maxContract) {
+		return then.maxContract;
+	}
+	if (amount <= now.minContract) {
+		return then.minContract;
+	}
+	const scaled = roundContract(
+		(amount * then.salaryCap) / now.salaryCap,
+		then.minContract,
+	);
+	return Math.min(then.maxContract, Math.max(then.minContract, scaled));
 };
