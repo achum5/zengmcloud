@@ -1985,7 +1985,9 @@ class Action {
 				? spot.d + way * clamp(gain * 0.3, 3, 9)
 				: endD - way * 3;
 		const restPt = this.w({ d: restD, a });
-		const restT = t + clamp((dist(pt, restPt) / 15) * 1000, 450, 1500);
+		// (Loose long enough to be called loose before anyone has it - the
+		// line before it said just before.)
+		const restT = t + clamp((dist(pt, restPt) / 15) * 1000, 600, 1500);
 		const others = this.men.filter((m) => m !== rec);
 		if (!rec) {
 			this.hops({ ...pt, z: 3 }, { ...restPt, z: 0 }, t, restT);

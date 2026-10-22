@@ -338,6 +338,50 @@ describe("the chain crew", () => {
 	});
 });
 
+describe("pre-snap motion", () => {
+	test("now and then on a pass play, one man off the line going across at the snap - never toward the line", () => {
+		let passes = 0;
+		let moving = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			for (const play of tl.plays) {
+				if (play.kind !== "pass" && play.kind !== "run") {
+					continue;
+				}
+				const going = play.parts.filter((p) => {
+					const l = legAt(p, play.snap - 1);
+					return (
+						p.team === play.offense &&
+						l.t1 > play.snap + 50 &&
+						(l.from.x !== l.to.x || l.from.y !== l.to.y)
+					);
+				});
+				// (A run: only the man going round for it on a sweep.)
+				assert.isAtMost(going.length, 1, `play ${play.i}`);
+				passes += play.kind === "pass" ? 1 : 0;
+				const him = going[0];
+				if (!him) {
+					continue;
+				}
+				const l = legAt(him, play.snap - 1);
+				const depth = (x: number) => (play.losX - x) * play.dir;
+				assert.isAtLeast(
+					depth(l.to.x),
+					depth(l.from.x) - 0.01,
+					`play ${play.i}: toward the line`,
+				);
+				assert.isAbove(depth(l.to.x), 3, `play ${play.i}: on the line`);
+				if (play.kind === "pass") {
+					moving += 1;
+					assert.strictEqual(l.from.x, l.to.x, `play ${play.i}: not across`);
+				}
+			}
+		}
+		assert.isAbove(moving / passes, 0.15);
+		assert.isBelow(moving / passes, 0.6);
+	});
+});
+
 describe("the sidelines", () => {
 	test("everyone not in for the snap on his own sideline, in his team's area - the home team's across the field", () => {
 		for (const game of games) {

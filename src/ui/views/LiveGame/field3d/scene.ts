@@ -12,6 +12,9 @@ import {
 import {
 	CROSSBAR_Z,
 	FIELD_L,
+	FIELD_W,
+	GOAL_L,
+	GOAL_R,
 	MID_Y,
 	POST_BACK,
 	POST_W,
@@ -136,6 +139,30 @@ const drawPost = (ctx: CanvasRenderingContext2D, cam: Camera, side: 0 | 1) => {
 	ctx.restore();
 };
 
+// The pylons: orange, four inches square and eighteen tall, on the outside
+// corners of both goal lines and both end lines.
+const PYLON = "#ff6a14";
+const PYLON_SIDE = "#c24a08";
+const PYLON_W = 4 / 12;
+const PYLON_H = 1.5;
+const PYLONS: Pt3[] = [0, GOAL_L, GOAL_R, FIELD_L].flatMap((x) =>
+	[0, FIELD_W].map((y) => ({
+		x: x === 0 || x === GOAL_R ? x - PYLON_W / 2 : x + PYLON_W / 2,
+		y: y === 0 ? -PYLON_W / 2 : y + PYLON_W / 2,
+		z: 0,
+	})),
+);
+
+const drawPylon = (ctx: CanvasRenderingContext2D, cam: Camera, at: Pt3) => {
+	const a = project(cam, at);
+	const b = project(cam, { ...at, z: PYLON_H });
+	const w = Math.max(2, PYLON_W * a.k);
+	ctx.fillStyle = PYLON;
+	ctx.fillRect(a.x - w / 2, b.y, w, a.y - b.y);
+	ctx.fillStyle = PYLON_SIDE;
+	ctx.fillRect(a.x + w / 4, b.y, w / 4, a.y - b.y);
+};
+
 export const postDepth = (cam: Camera, side: 0 | 1): number =>
 	depthOf(cam, postParts(side).neck);
 
@@ -201,6 +228,12 @@ export const drawFieldFrame = (f: FieldFrame) => {
 	// Everything standing up, back to front.
 	const items = [
 		...(f.items ?? []),
+		...PYLONS.filter((at) => depthOf(cam, at) > 1).map((at) => ({
+			depth: depthOf(cam, at),
+			draw: () => {
+				drawPylon(ctx, cam, at);
+			},
+		})),
 		...([0, 1] as const).map((side) => ({
 			depth: postDepth(cam, side),
 			draw: () => {

@@ -19,6 +19,7 @@ import {
 } from "./formations.ts";
 import {
 	dirFor,
+	dist,
 	FIELD_L,
 	FIELD_W,
 	HASH_FAR_Y,
@@ -316,6 +317,20 @@ const WALK_ONLY = 10;
 // from there (shortest, longest).
 const SET_HOLD = 450;
 const CADENCE = [700, 1500] as const;
+// Pre-snap motion: on this share of pass plays, a man off the line (the
+// flanker, a slot) this far across (feet) at this pace - never in closer
+// to the ball than this, nor nearer a sideline. In man coverage, his man
+// goes with him.
+const MOTION = 0.38;
+const MOTION_ROLES = new Set<Role>(["Z", "SL", "SL2"]);
+const MOTION_FT = [12, 24] as const;
+const MOTION_FPS = [9, 13] as const;
+const MOTION_INSIDE = 19;
+const MOTION_EDGE = 8;
+const MAN_FOLLOWS = 0.5;
+// Still this far (ms) from his spot when the ball is snapped - on his way
+// out into his route without a stop.
+const IN_MOTION = 200;
 // A kickoff: everyone lined up, the kicker off on his run-up this long in.
 const KICK_AT = 2600;
 // The plays acted out from the snap (see action.ts), and how long after
@@ -814,11 +829,15 @@ class Director {
 		} else {
 			set = this.walkUp(placed, parts, offense, dir, losX, ballY, t0, r);
 		}
-		const snap = kick
+		let snap = kick
 			? t0 + KICK_AT
 			: kind === "none"
 				? set + 400
 				: set + CADENCE[0] + (CADENCE[1] - CADENCE[0]) * r();
+		const flagged = events.slice(i0, i1).some((e) => e?.type === "flag");
+		if (kind === "pass" && !flagged) {
+			snap = this.motion(parts, offense, dir, losX, ballY, set, snap, i0);
+		}
 
 		// The ball: spotted (on its tee, for a kickoff), then under the
 		// center's hand once he is over it.
@@ -837,7 +856,6 @@ class Director {
 		}
 
 		// The play itself, from the snap - or, a flag before it, the foul.
-		const flagged = events.slice(i0, i1).some((e) => e?.type === "flag");
 		const acted =
 			ACTED.has(kind) || flagged
 				? actOut({
@@ -1486,6 +1504,125 @@ class Director {
 			}
 		}
 		return set + SET_HOLD;
+	}
+
+	// PRE-SNAP MOTION, on a pass play now and then: a receiver off the line
+	// set first somewhere else - wider out, or in tighter - and on his way
+	// across to his spot as the ball is snapped; and, in man coverage, the
+	// man over him going along with him. When the snap is, then.
+	motion(
+		parts: Part[],
+		offense: Side,
+		dir: Dir,
+		losX: number,
+		ballY: number,
+		set: number,
+		snap: number,
+		i0: number,
+	): number {
+		const r = this.rng(i0, "motion");
+		if (r() >= MOTION) {
+			return snap;
+		}
+		const depthOf = (p: Pt) => (losX - p.x) * dir;
+		const acrossOf = (p: Pt) => (p.y - ballY) * dir;
+		const spot = (part: Part) => part.legs.at(-1)!.to;
+		const offenseParts = parts.filter((p) => p.team === offense);
+		const movers = offenseParts.filter(
+			(p) =>
+				MOTION_ROLES.has(p.role) && p.legs.length === 3 && depthOf(spot(p)) > 3,
+		);
+		const him = movers[Math.floor(r() * movers.length)];
+		if (!him) {
+			return snap;
+		}
+		const b = spot(him);
+		const aB = acrossOf(b);
+		const out = Math.sign(aB) || 1;
+		const way = r() < 0.5 ? 1 : -1;
+		const shift =
+			out * way * (MOTION_FT[0] + r() * (MOTION_FT[1] - MOTION_FT[0]));
+		const a: Pt = { x: b.x, y: b.y + shift * dir };
+		// (Not in among the line, not off the field, nobody else in the way.)
+		const aA = acrossOf(a);
+		if (
+			Math.abs(aA) < MOTION_INSIDE ||
+			Math.sign(aA) !== out ||
+			a.y < MOTION_EDGE ||
+			a.y > FIELD_W - MOTION_EDGE ||
+			offenseParts.some((p) => {
+				if (p === him) {
+					return false;
+				}
+				const q = spot(p);
+				const lo = Math.min(aA, aB) - 2.5;
+				const hi = Math.max(aA, aB) + 2.5;
+				return (
+					Math.abs(depthOf(q) - depthOf(b)) < 2.5 &&
+					acrossOf(q) > lo &&
+					acrossOf(q) < hi
+				);
+			})
+		) {
+			return snap;
+		}
+		const fps = MOTION_FPS[0] + r() * (MOTION_FPS[1] - MOTION_FPS[0]);
+		const takes = (Math.abs(shift) / fps) * 1000;
+		// Set over there first, the way he would be at his spot.
+		const [, upTo, stance] = him.legs as [Leg, Leg, Leg];
+		const there =
+			upTo.t0 + (dist(upTo.from, a) / (upTo.move === "jog" ? 9 : 4.6)) * 1000;
+		const go = Math.max(set + 300, there + 400, snap - takes);
+		const end = go + takes;
+		upTo.to = a;
+		upTo.t1 = there;
+		him.legs[2] = { ...stance, t0: there, t1: go, from: a, to: a };
+		him.legs.push({
+			t0: go,
+			t1: end,
+			from: a,
+			to: b,
+			move: fps < 12 ? "jog" : "run",
+		});
+		// The man over him, in man, with him.
+		const over = parts
+			.filter(
+				(p) =>
+					p.team !== offense &&
+					p.legs.length === 3 &&
+					Math.abs(acrossOf(spot(p)) - aB) < 9 &&
+					depthOf(spot(p)) < -2 &&
+					depthOf(spot(p)) > -30,
+			)
+			.sort(
+				(p, q) =>
+					Math.abs(acrossOf(spot(p)) - aB) - Math.abs(acrossOf(spot(q)) - aB),
+			)[0];
+		if (over && r() < MAN_FOLLOWS) {
+			const [, up, st] = over.legs as [Leg, Leg, Leg];
+			const d0 = spot(over);
+			const d1 = { x: d0.x, y: d0.y + shift * dir };
+			if (d1.y > MOTION_EDGE && d1.y < FIELD_W - MOTION_EDGE) {
+				const thereD =
+					up.t0 + (dist(up.from, d1) / (up.move === "jog" ? 9 : 4.6)) * 1000;
+				const goD = Math.max(go + 120, thereD + 200);
+				up.to = d1;
+				up.t1 = thereD;
+				over.legs[2] = { ...st, t0: thereD, t1: goD, from: d1, to: d1 };
+				over.legs.push(
+					{
+						t0: goD,
+						t1: end + 100,
+						from: d1,
+						to: d0,
+						move: "slide",
+						...(st.yaw !== undefined ? { yaw: st.yaw } : {}),
+					},
+					{ ...st, t0: end + 100, t1: end + 100, from: d0, to: d0 },
+				);
+			}
+		}
+		return Math.max(snap, end - IN_MOTION);
 	}
 }
 
