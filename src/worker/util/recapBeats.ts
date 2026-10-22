@@ -1201,7 +1201,7 @@ export const seriesShapeBeat = (
 				[
 					`Nothing before tonight had been decided by more than eight.`,
 					`After ${numWord(prior.length)} tight games, this one was not close.`,
-					`It was the first game of the series that was not a one-possession affair late.`,
+					`It was the first game of the series not decided late.`,
 				],
 				"seriesBreak",
 			),
@@ -1221,7 +1221,9 @@ export const seriesShapeBeat = (
 				rng,
 				[
 					`Across the series ${ahead} have outscored ${behind} by ${Math.abs(forTotal - againstTotal)}.`,
-					`${cap(ahead)} are +${Math.abs(forTotal - againstTotal)} over the ${numWord(margins.length)} games.`,
+					// Not "are +36 over the three games": a box-score column, not
+					// a sentence.
+					`Over ${numWord(margins.length)} games, ${ahead} have a ${Math.abs(forTotal - againstTotal)}-point edge on ${behind}.`,
 				],
 				"seriesAggregate",
 			),

@@ -9,6 +9,7 @@ import {
 	getAutoRecap,
 	hurtInGame,
 	pick,
+	postseasonSentences,
 	varyHalfWords,
 } from "./getAutoRecap.ts";
 import type {
@@ -18,6 +19,7 @@ import type {
 	RecapTeam,
 } from "./getDayGamesForRecap.ts";
 import { verifyRecap } from "./recapAccuracy.ts";
+import { rngFromSeed } from "./recapText.ts";
 
 // What a series-clinching headline can look like: the result leads it.
 const CLINCH_HEADLINE =
@@ -4130,6 +4132,27 @@ describe("the losing side of a playoff series", () => {
 		}
 	});
 
+	// "Evened the First Round at 1-1", "closed out the First Round 4-2",
+	// "took the First Round 4-1 and move on": a round is not a series. Every
+	// wording, every state.
+	test("a round is not a series", () => {
+		for (let h = 0; h <= 3; h += 1) {
+			for (let a = 0; a <= 3; a += 1) {
+				for (let seed = 1; seed <= 6; seed += 1) {
+					const text = postseasonSentences(
+						seriesGame(h, a, { gid: 8400 + h * 10 + a, round: 1 }),
+						rngFromSeed(seed),
+					).join(" ");
+					assert.doesNotMatch(
+						text,
+						/(?:closed out|evened|square|took|lead|trail) the (?:First Round|Conference Semifinals|Conference Finals)\b|the (?:First Round|Conference Semifinals|Conference Finals) (?:is tied|at \d|to )|deficit in the|and move on/,
+						text,
+					);
+				}
+			}
+		}
+	});
+
 	// A title-clinching game used to get a headline indistinguishable from a
 	// Tuesday in January - and then, for a while, a Tuesday headline with
 	// ", advancing to the Conference Semifinals" hung off the end of it. The
@@ -4144,7 +4167,7 @@ describe("the losing side of a playoff series", () => {
 		assert.ok(CLINCH_HEADLINE.test(advance.split("\n")[0]!), advance);
 		// The clinch is not then said again in the body's opening sentence.
 		assert.ok(
-			!/closed out the First Round|took the First Round|First Round to the/.test(
+			!/closed out the series|won the series|series goes to|sweep and advanced/.test(
 				advance,
 			) || !/in five|in six|sweep/.test(advance.split("\n")[0]!),
 			advance,

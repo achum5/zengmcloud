@@ -1386,6 +1386,25 @@ describe("what kind of series it has been", () => {
 		);
 	});
 
+	// "The Thunder are +36 over the three games" was a box-score column.
+	test("a lopsided series total reads as a sentence", () => {
+		const big = team({
+			tid: 1,
+			name: "Thunder",
+			pts: 120,
+			seriesSoFar: [sg(true, true, 118, 100, 96), sg(true, true, 112, 98, 98)],
+		});
+		const l = team({ tid: 2, name: "Nets", pts: 100 });
+		const all = shapes((rng) => seriesShapeBeat(playoffGame(big, l).ctx, rng));
+		assert.ok(
+			[...all].some((s) => /outscored|edge on/.test(s)),
+			[...all].join("\n"),
+		);
+		for (const s of all) {
+			assert.notMatch(s, /\+#/);
+		}
+	});
+
 	test("a series of one-possession games, and the night that ended it", () => {
 		const tight = team({
 			tid: 1,
@@ -1421,7 +1440,7 @@ describe("what kind of series it has been", () => {
 			seriesShapeBeat(playoffGame(blowout, wide).ctx, rng),
 		);
 		assert.ok(
-			[...shapes2].some((s) => /not close|eight|one-possession/.test(s)),
+			[...shapes2].some((s) => /not close|eight|not decided late/.test(s)),
 			[...shapes2].join("\n"),
 		);
 	});

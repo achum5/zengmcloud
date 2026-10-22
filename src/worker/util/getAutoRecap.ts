@@ -1187,17 +1187,20 @@ const postseasonContext = (
 								: `${cap(theNick(shape.loser))} finish as runners-up.`,
 					]
 				: [
+						// A round is not a series: "closed out the First Round 4-2",
+						// "evened the First Round at 1-1" and "took the First Round
+						// 4-1 and move on" all said the wrong noun.
 						isDecider
-							? `${cap(w)} closed out ${rnd} ${wAfter}-${lBefore} with ${
+							? `${cap(w)} closed out the series ${wAfter}-${lBefore} with ${
 									s.bestOf === 7 ? "a Game 7" : `a decisive Game ${gameNo}`
 								} win and advanced.`
 							: lBefore === 0
-								? `${cap(w)} closed out ${rnd} with a ${wAfter}-0 sweep and advanced.`
+								? `${cap(w)} finished a ${wAfter}-0 sweep and advanced.`
 								: choose(
 										[
-											`${cap(w)} closed out ${rnd} ${wAfter}-${lBefore} and advanced.`,
-											`${cap(w)} took ${rnd} ${wAfter}-${lBefore} and move on.`,
-											`That is ${rnd} to ${w}, ${wAfter}-${lBefore}, and a place in the next round.`,
+											`${cap(w)} closed out the series ${wAfter}-${lBefore} and advanced.`,
+											`${cap(w)} won the series ${wAfter}-${lBefore}.`,
+											`The series goes to ${w}, ${wAfter}-${lBefore}.`,
 										],
 										"seriesClinch",
 									),
@@ -1275,9 +1278,9 @@ const postseasonContext = (
 		out.sentences.push(
 			choose(
 				[
-					`${cap(w)} evened ${rnd} at ${wAfter}-${wAfter} with a Game ${gameNo} win.`,
-					`Game ${gameNo} went to ${w}, and ${rnd} is tied ${wAfter}-${wAfter}.`,
-					`${cap(w)} answered in Game ${gameNo} to square ${rnd} at ${wAfter}-${wAfter}.`,
+					`${cap(w)} evened the series at ${wAfter}-${wAfter} with a Game ${gameNo} win.`,
+					`Game ${gameNo} went to ${w}, and the series is tied ${wAfter}-${wAfter}.`,
+					`${cap(w)} answered in Game ${gameNo} to square the series at ${wAfter}-${wAfter}.`,
 				],
 				"seriesEven",
 			),
@@ -1296,7 +1299,7 @@ const postseasonContext = (
 					? choose(
 							[
 								`${cap(w)} drew first blood in ${rnd}, ${wAfter}-${lBefore}.`,
-								`${cap(w)} lead ${rnd} ${wAfter}-${lBefore} after taking the opener.`,
+								`${cap(w)} lead the series ${wAfter}-${lBefore} after taking the opener.`,
 								`Game 1 of ${rnd} went to ${w}.`,
 								`${cap(w)} struck first in ${rnd}.`,
 							],
@@ -1319,13 +1322,13 @@ const postseasonContext = (
 				? choose(
 						[
 							`${cap(w)} staved off elimination but still trail in ${rnd}, ${lBefore}-${wAfter}.`,
-							`${cap(w)} survived, though ${l} still lead ${rnd} ${lBefore}-${wAfter}.`,
+							`${cap(w)} survived, though ${l} still lead the series ${lBefore}-${wAfter}.`,
 						],
 						"seriesSurviveStillTrail",
 					)
 				: choose(
 						[
-							`${cap(w)} cut their deficit in ${rnd} to ${lBefore}-${wAfter}.`,
+							`${cap(w)} cut their series deficit to ${lBefore}-${wAfter}.`,
 							`${cap(w)} got one back, and now trail ${lBefore}-${wAfter} in ${rnd}.`,
 						],
 						"seriesTrail",
@@ -5019,7 +5022,7 @@ const defensiveNote = (
 			pickSentence(
 				rng,
 				[
-					`${cap(theNick(shape.winner))} blocked ${w.blk} shots at the rim.`,
+					`${cap(theNick(shape.winner))} blocked ${w.blk} shots.`,
 					`${cap(theNick(shape.winner))} sent back ${w.blk} shots.`,
 					`Nothing came easy inside - ${w.blk} ${nick(shape.winner)} blocks.`,
 					`${cap(theNick(shape.winner))} finished with ${w.blk} blocks.`,
@@ -6847,6 +6850,13 @@ export const varyHalfWords = (sentences: string[]): string[] => {
 	}
 	return out;
 };
+
+// The series sentences postseasonContext writes for a game, for tests that
+// need every wording of them.
+export const postseasonSentences = (
+	game: RecapGame,
+	rng: () => number,
+): string[] => postseasonContext(game, analyzeShape(game), rng).sentences;
 
 // THE RECORD IN PARENTHESES. "The Wizards (10-3) held off the 76ers (5-8)" is
 // the most recognizable mark of wire copy there is, and the one fact every
