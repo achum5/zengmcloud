@@ -98,6 +98,12 @@ with "the Pistons", not with a named person.
   is not known yet (a pick, a free agent a team may sign) counts as a
   typical one, and a projected player at the position his ratings will put
   him.
+- **What else it misses is small and spread out.** 1,200 random swaps of a
+  top-8 player for one of the same value (swap lab, 2 leagues): the model's
+  own error on a swap is about half a point a game, and neither the swapped
+  players' ratings, nor their skills, nor where they sat in the rotation,
+  nor the size of the swap explains much of it (athletes are underrated by
+  about a third of a point).
 - **A roster of players who may not be there is priced as it would play.**
   Each place in the pecking order goes to whoever is likely to fill it, given
   everyone's chance of being there; the most valuable uncertain players are
