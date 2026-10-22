@@ -5,6 +5,7 @@ import { makeSeededRandom } from "../../../common/random.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
+import { team } from "../index.ts";
 import { makeOffer, reSignChance, withdrawOffer } from "./freeAgency.ts";
 import {
 	chanceOfOffer,
@@ -80,8 +81,21 @@ test("he asks his price for the length he wants, and more for other lengths", as
 	}
 });
 
+// The free agents the user's cap room allows an offer to at their asking
+// price, best first. Which ones are best can depend on values left by leagues
+// other tests built.
+const affordable = async () => {
+	const payroll = await team.getPayroll(userTid);
+	return (await freeAgents()).filter((p) => {
+		const { ask } = askOf(p);
+		return (
+			payroll + ask - 1 <= g.get("salaryCap") || ask - 1 <= g.get("minContract")
+		);
+	});
+};
+
 test("the offer screen shows your odds, and the offer once it is made", async () => {
-	const [p] = await freeAgents();
+	const [p] = await affordable();
 	const before = await offerScreen(userTid, p!.pid);
 	if (typeof before === "string") {
 		throw new Error(before);
@@ -128,7 +142,7 @@ test("more money is more likely to be taken", async () => {
 });
 
 test("offers are listed in the team's order of priority", async () => {
-	const [a, b] = await freeAgents();
+	const [a, b] = await affordable();
 	for (const p of [a!, b!]) {
 		// At the minimum, which fits under any cap.
 		assert.isUndefined(
