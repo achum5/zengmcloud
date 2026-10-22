@@ -552,18 +552,19 @@ export const draftPlaceSpread = (
 // pick really keeps, by seasons of games still to be played before the draft
 // order is set: teams drift back toward the middle - others get better and
 // worse too, rosters turn over - more than projecting a roster forward says.
-// Measured in arena leagues (ARENA_PICK_SURVEY, 35,400 projections): the
-// slope of where picks landed on where they were projected, both from the
-// middle.
+// Measured in 8 arena leagues (ARENA_PICK_SURVEY, 89,400 projections), half
+// of them with picks expected back toward the middle like this: the slope of
+// where picks landed on where they were projected, both from the middle.
+// Leagues differ a lot at long range - 4 seasons out, from 0.05 to 0.80.
 const PLACE_KEPT: readonly (readonly [number, number])[] = [
 	[0, 1],
 	[0.5, 0.84],
-	[1, 0.78],
-	[1.5, 0.66],
-	[2, 0.57],
-	[3, 0.44],
-	[4, 0.32],
-	[5, 0.09],
+	[1, 0.79],
+	[1.5, 0.71],
+	[2, 0.64],
+	[3, 0.55],
+	[4, 0.42],
+	[5, 0.25],
 ];
 
 const placeKept = (seasons: number) => {
