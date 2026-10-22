@@ -705,6 +705,31 @@ export const KICKOFF_RECEIVE = (zone: number, back: number): Align[] => [
 	{ role: "KR", pos: "KR", depth: back, across: -12, move: "safetyStance" },
 	{ role: "KR", pos: "KR", depth: back + 9, across: 10, move: "safetyStance" },
 ];
+// Against an onside kick, the hands team: five across eleven yards off the
+// ball, four more behind them, two back for one kicked over the top. (The
+// kicking team, the old way: all ten a step behind the ball.)
+const HANDS: [number, number][] = [
+	[-50, 33],
+	[-25, 33],
+	[0, 33],
+	[25, 33],
+	[50, 33],
+	[-38, 51],
+	[-13, 51],
+	[13, 51],
+	[38, 51],
+];
+export const ONSIDE_RECEIVE: Align[] = [
+	...HANDS.map(([across, depth], i): Align => ({
+		role: "FRONT",
+		pos: SETUP_POS[i]!,
+		depth,
+		across,
+		move: "backerStance",
+	})),
+	{ role: "KR", pos: "KR", depth: 90, across: -15, move: "safetyStance" },
+	{ role: "KR", pos: "KR", depth: 90, across: 15, move: "safetyStance" },
+];
 
 // The spread punt: the snapper, two guards and two tackles tight, the
 // gunners split wide on the line, a shield of three five yards back, the

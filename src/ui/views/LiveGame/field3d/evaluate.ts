@@ -1,5 +1,5 @@
 import type { BallSeg, FieldTimeline, Leg, Play } from "./director.ts";
-import type { Pt, Pt3 } from "./geometry.ts";
+import type { Pt, Pt3, Side } from "./geometry.ts";
 import { moveKind, strideOf, type Move } from "./poses.ts";
 import type { FieldPlayerState } from "./sprite.ts";
 
@@ -12,12 +12,14 @@ export type FieldMoment = {
 	t: number;
 	play: Play | undefined;
 	players: FieldPlayerState[];
-	// The ball when it is on its own (spotted, on its tee, in the air):
+	// The ball when it is on its own (spotted, stood on end, in the air):
 	// drawn by itself, its points along `axis` if it is flying. Unset while
 	// a man has it - he is drawn with it.
-	ball?: { at: Pt3; tee?: boolean; axis?: Pt3 };
-	// Where the ball is, wherever it is: for the camera to follow.
+	ball?: { at: Pt3; stood?: "tee" | "hold"; axis?: Pt3 };
+	// Where the ball is, wherever it is, and the side with it if a man has
+	// it: for the camera to follow.
 	focus?: Pt3;
+	carrier?: Side;
 };
 
 // From one move into the next, his pose eased over this long; and his
@@ -138,20 +140,23 @@ const ballAt = (
 	segs: BallSeg[],
 	t: number,
 	players: FieldPlayerState[],
-): { ball?: FieldMoment["ball"]; focus?: Pt3 } => {
+): { ball?: FieldMoment["ball"]; focus?: Pt3; carrier?: Side } => {
 	const s = segs[lastStarted(segs, t, (b) => b.t0)];
 	if (!s) {
 		return {};
 	}
 	if (s.kind === "spot") {
-		return { ball: { at: s.at, ...(s.tee ? { tee: true } : {}) }, focus: s.at };
+		return {
+			ball: { at: s.at, ...(s.stood ? { stood: s.stood } : {}) },
+			focus: s.at,
+		};
 	}
 	if (s.kind === "fly") {
 		const f = flying(s, t);
 		return { ball: f, focus: f.at };
 	}
 	const p = players.find((x) => x.id === s.pid);
-	return p ? { focus: { x: p.x, y: p.y, z: 3.5 } } : {};
+	return p ? { focus: { x: p.x, y: p.y, z: 3.5 }, carrier: p.team } : {};
 };
 
 export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
@@ -210,12 +215,13 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 			...(l.arms ? { arms: { move: l.arms, phase: armsPhaseOf(l, t) } } : {}),
 		});
 	}
-	const { ball, focus } = ballAt(play.ball, t, players);
+	const { ball, focus, carrier } = ballAt(play.ball, t, players);
 	return {
 		t,
 		play,
 		players,
 		...(ball ? { ball } : {}),
 		...(focus ? { focus } : {}),
+		...(carrier !== undefined ? { carrier } : {}),
 	};
 };

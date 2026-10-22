@@ -6,6 +6,7 @@ import GameSim from "../../../../worker/core/GameSim.football/index.ts";
 import loadTeams from "../../../../worker/core/game/loadTeams.ts";
 import { player, team } from "../../../../worker/core/index.ts";
 import { g, helpers } from "../../../../worker/util/index.ts";
+import type { GameAttributesLeague } from "../../../../common/types.ts";
 import type { RawEvent } from "./director.ts";
 import { GROUPS, type RosterMan } from "./personnel.ts";
 
@@ -14,20 +15,30 @@ import { GROUPS, type RosterMan } from "./personnel.ts";
 
 export type SimGame = { events: RawEvent[]; roster: RosterMan[] };
 
-export const simGames = async (gids: number[]): Promise<SimGame[]> => {
+// (`settings`: the league's, for games with more of something in them.)
+export const simGames = async (
+	gids: number[],
+	settings: Partial<GameAttributesLeague> = {},
+): Promise<SimGame[]> => {
 	// The same games every run, so whatever goes wrong goes wrong again.
 	const random = Math.random;
 	Math.random = makeSeededRandom(gids[0] ?? 1);
 	try {
-		return await play(gids);
+		return await play(gids, settings);
 	} finally {
 		Math.random = random;
 	}
 };
 
-const play = async (gids: number[]): Promise<SimGame[]> => {
+const play = async (
+	gids: number[],
+	settings: Partial<GameAttributesLeague>,
+): Promise<SimGame[]> => {
 	resetG();
 	g.setWithoutSavingToDB("season", 2013);
+	for (const [key, value] of Object.entries(settings)) {
+		g.setWithoutSavingToDB(key as keyof GameAttributesLeague, value as never);
+	}
 	const teamsDefault = helpers.getTeamsDefault().slice(0, 2);
 	await resetCache({
 		// (Each his own name: a two-point try names its men, nothing more.)

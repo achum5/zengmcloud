@@ -7,20 +7,44 @@ import {
 	type Play,
 } from "./director.ts";
 import { momentAt } from "./evaluate.ts";
-import { dist, YD, type Pt } from "./geometry.ts";
+import {
+	CROSSBAR_Z,
+	dist,
+	FIELD_L,
+	MID_Y,
+	POST_W,
+	YD,
+	type Pt,
+} from "./geometry.ts";
 import { simGames, type SimGame } from "./testGames.ts";
 
 let games: SimGame[] = [];
 let staged: FieldTimeline[] = [];
 
 beforeAll(async () => {
-	games = await simGames([21, 22]);
+	games = [
+		...(await simGames([21, 22])),
+		// (One with a lot of onside kicks, and a lot of them got back.)
+		...(await simGames([23, 24], {
+			onsideFactor: 900,
+			onsideRecoveryFactor: 4,
+		})),
+	];
 	staged = games.map((g, k) =>
 		compileField({ events: g.events, players: g.roster, gid: k }),
 	);
 }, 120_000);
 
-const ACTED = new Set(["pass", "run", "kneel"]);
+const ACTED = new Set([
+	"pass",
+	"run",
+	"kneel",
+	"kickoff",
+	"punt",
+	"fieldGoal",
+	"extraPoint",
+	"onside",
+]);
 
 // Each play with the events it is made of.
 const eachPlay = (
@@ -184,5 +208,111 @@ describe("the plays acted out", () => {
 			caught += 1;
 		});
 		assert.isAbove(caught, 10);
+	});
+
+	test("a kick returned to where the sim says, the returner brought down there", () => {
+		let checked = 0;
+		eachPlay((play, seg, tl) => {
+			if (play.kind !== "kickoff" && play.kind !== "punt") {
+				return;
+			}
+			if (seg.some((e) => e.type === "penalty" || e.type === "flag")) {
+				return;
+			}
+			const kick = seg.find((e) => e.type === play.kind);
+			const ret = seg.find(
+				(e) => e.type === "kickoffReturn" || e.type === "puntReturn",
+			);
+			if (!kick || !ret || ret.td || typeof ret.yds !== "number") {
+				return;
+			}
+			const kickYds = typeof kick.yds === "number" ? kick.yds : 0;
+			// (The kicking team's way: a kickoff to so many yards out from the
+			// goal line, a punt so far from the line.)
+			const goalD = (play.dir === 1 ? FIELD_L - 30 : 30) - play.losX;
+			const want =
+				play.kind === "kickoff"
+					? goalD * play.dir - (kickYds + ret.yds) * YD
+					: (kickYds - ret.yds) * YD;
+			const beat = tl.beats.find((b) => b.i === play.i + seg.indexOf(ret));
+			assert.isDefined(beat);
+			const holder = [...play.ball]
+				.filter(
+					(b): b is Extract<BallSeg, { kind: "held" }> => b.kind === "held",
+				)
+				.findLast((b) => b.t0 <= beat!.actionStart);
+			assert.isDefined(holder, `play ${play.i}`);
+			const returner = play.parts.find((p) => p.pid === holder!.pid)!;
+			assert.notStrictEqual(returner.team, play.offense, `play ${play.i}`);
+			const m = momentAt(tl, beat!.actionStart);
+			const man = m.players.find((p) => p.id === holder!.pid)!;
+			assert.closeTo(
+				(man.x - play.losX) * play.dir,
+				want,
+				3.5,
+				`${play.kind} returned ${ret.yds} on play ${play.i}`,
+			);
+			checked += 1;
+		});
+		assert.isAbove(checked, 10);
+	});
+
+	test("a field goal through the uprights when it is good, and not when it is not", () => {
+		let checked = 0;
+		eachPlay((play, seg, tl) => {
+			if (play.kind !== "fieldGoal" && play.kind !== "extraPoint") {
+				return;
+			}
+			const e = seg.find((x) => x.type === play.kind);
+			if (!e) {
+				return;
+			}
+			const beat = tl.beats.find((b) => b.i === play.i + seg.indexOf(e));
+			const m = momentAt(tl, beat!.actionStart);
+			assert.isDefined(m.ball, `play ${play.i}`);
+			const b = m.ball!.at;
+			const endLine = play.dir === 1 ? FIELD_L : 0;
+			const through = Math.abs(b.y - MID_Y) < POST_W / 2 && b.z > CROSSBAR_Z;
+			if (e.made) {
+				assert.closeTo(b.x, endLine, 1, `play ${play.i}`);
+				assert.isTrue(through, `good on play ${play.i}`);
+			} else {
+				assert.isFalse(through, `no good on play ${play.i}`);
+			}
+			checked += 1;
+		});
+		assert.isAbove(checked, 4);
+	});
+	test("an onside kick got back where the sim says, by the side it says", () => {
+		let checked = 0;
+		let got = 0;
+		eachPlay((play, seg, tl) => {
+			if (play.kind !== "onside") {
+				return;
+			}
+			const e = seg.find((x) => x.type === "onsideKickRecovery");
+			if (!e || e.td || seg.some((x) => x.type === "penalty")) {
+				return;
+			}
+			const beat = tl.beats.find((b) => b.i === play.i + seg.indexOf(e));
+			assert.isDefined(beat);
+			const m = momentAt(tl, beat!.actionStart);
+			const want = e.success ? play.offense : 1 - play.offense;
+			assert.strictEqual(m.carrier, want, `play ${play.i}`);
+			// Down where the next snap is from.
+			const next = tl.plays[tl.plays.indexOf(play) + 1];
+			if (next && next.quarter === play.quarter && m.focus) {
+				const d = (m.focus.x - play.losX) * play.dir;
+				const at = (next.losX - play.losX) * play.dir;
+				if (at >= 10 * YD && at <= 25 * YD) {
+					assert.closeTo(d, at, 3.5, `play ${play.i}`);
+				}
+				assert.isAtLeast(d, 9 * YD, `play ${play.i}`);
+			}
+			checked += 1;
+			got += e.success ? 1 : 0;
+		});
+		assert.isAbove(checked, 3);
+		assert.isAbove(got, 0);
 	});
 });

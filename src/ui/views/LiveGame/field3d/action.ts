@@ -9,11 +9,15 @@ import type {
 } from "./director.ts";
 import type { OffenseSet, Role } from "./formations.ts";
 import {
+	CROSSBAR_Z,
 	dist,
+	END_ZONE,
 	FIELD_L,
 	FIELD_W,
 	GOAL_L,
 	GOAL_R,
+	MID_Y,
+	POST_W,
 	YD,
 	type Dir,
 	type Pt,
@@ -67,6 +71,8 @@ export type Acted = {
 	ball: BallSeg[];
 	// The ball dead: the tackle, the incompletion, the score.
 	whistle: number;
+	// A kick: when it is away.
+	follow?: number;
 };
 
 // ---- who is who ------------------------------------------------------------
@@ -117,6 +123,21 @@ const TOP: Partial<Record<Role, number>> = {
 	DE: 25,
 	DT: 22.5,
 	NT: 21.5,
+	// The kicking game: the cover men and the returners as fast as anybody,
+	// the men up front on it not so.
+	KR: 29.5,
+	PR: 29.5,
+	GUNNER: 30,
+	JAMMER: 29.5,
+	COVER: 28,
+	FRONT: 26.5,
+	WALL: 27,
+	RUSH: 24,
+	UP: 23,
+	WING: 21,
+	K: 22,
+	P: 22,
+	H: 22,
 };
 const topOf = (role: Role) => TOP[role] ?? 20;
 
@@ -383,6 +404,8 @@ const IN_HANDS = new Set<Move>([
 	"shotgun",
 	"underCenter",
 	"stand",
+	"punt",
+	"holdKneel",
 ]);
 const holdFor = (m: Move): BallHold =>
 	m === "center"
@@ -429,6 +452,37 @@ const FLAT_OUT = 0.97;
 // A receiver down his route, at this much of his top speed.
 const ROUTE_PACE = 0.86;
 
+// The kicking game. A place kick: the plant, and the foot into the ball this
+// far through it. A punt: from the punter's first step, the ball dropped and
+// the foot into it. A kickoff's run-up, from the kicker's first step to his
+// plant. How fast a long snap comes back.
+const KICK_MS = 800;
+const KICK_CONTACT = 0.4;
+const PUNT_MS = 1400;
+const PUNT_DROP = 0.42;
+const PUNT_CONTACT = 0.55;
+const KICKOFF_RUN = 1250;
+const LONG_SNAP_FPS = 60;
+// The ball on its tee (its middle, off the turf); and how far behind the
+// end line the net behind the posts catches a kick.
+const TEE_Z = 0.8;
+const NET_BACK = 20;
+// How high over the straight line a kick gets that is in the air `ms`.
+const peakFor = (ms: number) => (G * (ms / 1000) ** 2) / 8;
+
+const num = (x: unknown, otherwise: number): number =>
+	typeof x === "number" ? x : otherwise;
+
+// A blocker and the cover man he is on, locked up: the legs that took the
+// cover man to him and kept him there, and when he would have got off.
+type Lock = {
+	b: Actor;
+	c: Actor;
+	go: number;
+	run: Leg;
+	lock: Leg;
+};
+
 class Action {
 	readonly input: ActInput;
 	readonly r: () => number;
@@ -453,6 +507,10 @@ class Action {
 	// play is going, and can leave what it was doing to go after it.
 	seen: number;
 	whistle = 0;
+	// A kick: when it is away, for the camera to go with it from then.
+	follow?: number;
+	// A kick returned: the returner with room to run (see slow).
+	weave = false;
 
 	constructor(input: ActInput) {
 		this.input = input;
@@ -511,6 +569,19 @@ class Action {
 		}
 		return out;
 	}
+	// A stat's amount over the play (the yards of a return the sim gives no
+	// line of its own).
+	amount(s: string): number {
+		const { events, i0, i1 } = this.input;
+		let n = 0;
+		for (let i = i0; i < i1; i++) {
+			const e = events[i];
+			if (e?.type === "stat" && e.s === s && typeof e.amt === "number") {
+				n += e.amt;
+			}
+		}
+		return n;
+	}
 	man(pid: number | undefined): Actor | undefined {
 		return pid === undefined ? undefined : this.men.find((m) => m.pid === pid);
 	}
@@ -528,7 +599,35 @@ class Action {
 		const kneel = this.find("kneel");
 		const handoff = this.find("handoff");
 		const runI = this.find("run");
-		if (kind === "kneel" && kneel >= 0) {
+		// (A kick: what the sim says came of it, or - a flag before it -
+		// nothing to act out.)
+		const kicked = this.find(
+			kind === "kickoff" || kind === "punt"
+				? kind
+				: kind === "onside"
+					? "onsideKickRecovery"
+					: kind,
+		);
+		if (
+			kind === "kickoff" ||
+			kind === "punt" ||
+			kind === "fieldGoal" ||
+			kind === "extraPoint" ||
+			kind === "onside"
+		) {
+			if (kicked < 0) {
+				return undefined;
+			}
+			if (kind === "kickoff") {
+				this.kickoff(kicked);
+			} else if (kind === "punt") {
+				this.punt(kicked);
+			} else if (kind === "onside") {
+				this.onside(kicked);
+			} else if (!this.fieldGoal(kicked)) {
+				return undefined;
+			}
+		} else if (kind === "kneel" && kneel >= 0) {
 			this.kneel(kneel);
 		} else if (kind === "pass" && drop >= 0) {
 			this.pass(drop);
@@ -545,7 +644,12 @@ class Action {
 			x.m.arms(x.move, x.t0, x.t1);
 		}
 		this.handBall();
-		return { at: this.at, ball: this.ball, whistle: this.whistle };
+		return {
+			at: this.at,
+			ball: this.ball,
+			whistle: this.whistle,
+			...(this.follow !== undefined ? { follow: this.follow } : {}),
+		};
 	}
 
 	// The ball drawn with whoever has it, the way what he is doing holds it
@@ -1177,11 +1281,41 @@ class Action {
 	}
 
 	// Held up `ms` longer getting where he is going: the last of his run
-	// slowed to it (or, standing, held there).
+	// slowed to it (or, standing, held there) - or, a returner with the
+	// field to find his way in, the time made up going side to side.
 	slow(m: Actor, ms: number) {
 		const l = m.last;
 		const far = dist(l.from, l.to);
 		if (far > 1 && moveKind(l.move) !== "act") {
+			if (this.weave && ms > 300) {
+				const v = Math.min(m.top * 0.9, far / ((l.t1 - l.t0) / 1000));
+				const half = (v * (l.t1 - l.t0 + ms)) / 2000;
+				const h = Math.min(
+					24,
+					Math.sqrt(Math.max(0, half ** 2 - (far / 2) ** 2)),
+				);
+				if (h > 3) {
+					const ang = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+					const mid = {
+						x: (l.from.x + l.to.x) / 2,
+						y: (l.from.y + l.to.y) / 2,
+					};
+					// (Away from the nearer sideline.)
+					const side = Math.sign(Math.cos(ang) * (MID_Y - mid.y)) || 1;
+					const end = l.to;
+					const t1 = l.t1 + ms;
+					const w = onField({
+						x: mid.x - Math.sin(ang) * h * side,
+						y: mid.y + Math.cos(ang) * h * side,
+					});
+					const a = dist(l.from, w);
+					const tw = l.t0 + ((t1 - l.t0) * a) / (a + dist(w, end));
+					l.to = w;
+					l.t1 = tw;
+					m.go(end, t1, l.move);
+					return;
+				}
+			}
 			l.t1 += ms;
 			if (l.move !== "drive") {
 				l.move = gait(far / ((l.t1 - l.t0) / 1000));
@@ -1474,15 +1608,31 @@ class Action {
 		const others = this.o.filter((m) => m !== rec && !this.done.has(m.pid));
 		if (retI < 0) {
 			this.whistle = t;
-		} else if (td) {
-			const crossT = this.crossingBack(picker, t);
-			this.at.set(retI, crossT);
-			this.whistle = crossT;
-			picker.hold(t + 2200, "stand");
-			this.pursue(others, pt, t, []);
 		} else {
-			this.endCarry(retI, picker, { pt, td: false }, t, others);
+			this.endReturn(retI, picker, pt, t, td, others);
 		}
+	}
+
+	// The end of a carry back the other way (a pick, a kick returned):
+	// brought down - or into the end zone, by nobody.
+	endReturn(
+		i: number,
+		carrier: Actor,
+		pt: Pt,
+		t: number,
+		td: boolean,
+		chasers: Actor[],
+	) {
+		if (!td) {
+			this.endCarry(i, carrier, { pt, td: false }, t, chasers);
+			return;
+		}
+		const crossT = this.crossingBack(carrier, t);
+		this.at.set(i, crossT);
+		this.whistle = crossT;
+		carrier.hold(t + 2200, "stand");
+		this.done.add(carrier.pid);
+		this.pursue(chasers, pt, t, []);
 	}
 
 	crossingBack(m: Actor, fallback: number): number {
@@ -2038,6 +2188,1246 @@ class Action {
 			m.go(this.w({ d: s.d + 9 + r() * 8, a: s.a * 0.92 }), snap + 1300, "run");
 			m.hold(until, "drive", this.ahead);
 		}
+	}
+
+	// ---- the kicking game ------------------------------------------------------------
+
+	get defense(): Side {
+		return (1 - this.input.offense) as Side;
+	}
+
+	// The long snap: back between the snapper's legs to `to`'s hands, `z`
+	// feet up at `at` - the punter's, the holder's. When it gets there.
+	longSnap(to: Actor, at: OPt, z: number): number {
+		const { snap } = this.input;
+		const from: Pt3 = { ...this.w({ d: -0.9, a: 0 }), z: 1 };
+		const end: Pt3 = { ...this.w(at), z };
+		const t0 = snap + 40;
+		const t1 =
+			t0 + (Math.hypot(dist(from, end), end.z - from.z) / LONG_SNAP_FPS) * 1000;
+		this.ball.push(
+			{ kind: "fly", t0, t1, from, to: end, peak: 0.8, spiral: true },
+			{ kind: "held", t0: t1, pid: to.pid },
+		);
+		this.role("LS")?.act("longSnap", snap + 450, this.ahead);
+		return t1;
+	}
+
+	// The kicker up to the ball - his plant foot down beside it at
+	// `plantAt` - and through it. When his foot meets it.
+	placeKick(k: Actor, spot: OPt, plantAt: number): number {
+		k.go(this.w({ d: spot.d - 1.7, a: spot.a - 1.5 }), plantAt);
+		k.act(
+			"kick",
+			plantAt + KICK_MS,
+			this.ahead,
+			this.w({ d: spot.d + 1.4, a: spot.a - 1.2 }),
+		);
+		return plantAt + KICK_MS * KICK_CONTACT;
+	}
+
+	// Of `men`, the one lined up nearest across the field to `a`.
+	acrossFrom(men: Actor[], a: number): Actor | undefined {
+		let best: Actor | undefined;
+		for (const m of men) {
+			if (
+				!best ||
+				Math.abs(this.of(m.at).a - a) < Math.abs(this.of(best.at).a - a)
+			) {
+				best = m;
+			}
+		}
+		return best;
+	}
+
+	// Each blocker on one of `men`, the nearest across the field first.
+	pairUp(blockers: Actor[], men: Actor[]): [Actor, Actor][] {
+		const all = blockers
+			.flatMap((b) =>
+				men.map((c) => {
+					const p = this.of(b.at);
+					const q = this.of(c.at);
+					return { b, c, far: Math.abs(p.a - q.a) + 0.3 * Math.abs(p.d - q.d) };
+				}),
+			)
+			.sort((x, y) => x.far - y.far);
+		const used = new Set<Actor>();
+		const out: [Actor, Actor][] = [];
+		for (const { b, c } of all) {
+			if (!used.has(b) && !used.has(c)) {
+				used.add(b);
+				used.add(c);
+				out.push([b, c]);
+			}
+		}
+		return out;
+	}
+
+	// A blocker and a cover man at each other from `go` - the cover man all
+	// but flat out, the blocker at `bv` feet a second (or, 0, waiting for
+	// him where he is) - squared up where they meet, and locked up there,
+	// the two of them drifting along with the return, until `until`.
+	lockUp(
+		b: Actor,
+		c: Actor,
+		go: number,
+		bv: number,
+		endPt: Pt,
+		until: number,
+	): Lock {
+		const vc = c.top * 0.85;
+		c.hold(go);
+		const cGo = c.t;
+		const cAt = c.at;
+		let meet: Pt;
+		let tm: number;
+		if (bv <= 0) {
+			meet = b.at;
+			tm = Math.max(b.t, cGo + (dist(cAt, meet) / vc) * 1000);
+		} else {
+			b.hold(go);
+			const bAt = b.at;
+			const u = vc / (vc + bv);
+			meet = {
+				x: cAt.x + (bAt.x - cAt.x) * u,
+				y: cAt.y + (bAt.y - cAt.y) * u,
+			};
+			tm = Math.max(b.t, cGo) + 150 + (dist(bAt, cAt) / (vc + bv)) * 1000;
+		}
+		// Squared up to each other, a step apart.
+		const ang = Math.atan2(cAt.y - meet.y, cAt.x - meet.x);
+		const cHit = {
+			x: meet.x + Math.cos(ang) * 1.3,
+			y: meet.y + Math.sin(ang) * 1.3,
+		};
+		const bHit = {
+			x: meet.x - Math.cos(ang) * 1.3,
+			y: meet.y - Math.sin(ang) * 1.3,
+		};
+		if (bv <= 0) {
+			b.hold(tm - 200, "backerStance", ang);
+		}
+		b.go(bHit, tm, undefined, ang);
+		c.go(cHit, tm, undefined, ang + Math.PI);
+		const run = c.last;
+		// Along with the return a little, each fighting the other.
+		const end = this.of(endPt);
+		const m = this.of(meet);
+		const dd = clamp(end.d - m.d, -5, 5) * 0.4;
+		const da = clamp(end.a - m.a, -10, 10) * 0.45;
+		const shift = (p: Pt) => {
+			const o = this.of(p);
+			return this.w({ d: o.d + dd, a: o.a + da });
+		};
+		const t1 = Math.max(until, tm + 300);
+		c.go(shift(cHit), t1, "engage", ang + Math.PI);
+		const lock = c.last;
+		b.go(shift(bHit), t1, "drive", ang);
+		return { b, c, go: cGo, run, lock };
+	}
+
+	// After the play from wherever he is: up near where it ends by the
+	// whistle, at an easy run.
+	trail(m: Actor, pt: Pt) {
+		const r = this.r;
+		const ang = Math.atan2(m.at.y - pt.y, m.at.x - pt.x) + (r() - 0.5) * 0.6;
+		const ring = 9 + r() * 8;
+		m.chase(
+			{ x: pt.x + Math.cos(ang) * ring, y: pt.y + Math.sin(ang) * ring },
+			Math.max(m.t + 400, this.whistle + 300),
+			m.top * 0.7,
+		);
+	}
+
+	// Blockers whose men got off them - to make the tackle, or away from
+	// the play to go after it: off after it themselves.
+	release(locks: Lock[], endPt: Pt) {
+		for (const x of locks) {
+			const { b, c } = x;
+			if (this.done.has(b.pid)) {
+				continue;
+			}
+			const off = c.legs.includes(x.lock)
+				? x.lock.t1
+				: c.legs.includes(x.run)
+					? x.run.t1
+					: x.go;
+			if (off < b.t - 50) {
+				b.cut(off);
+			}
+			if (b.t < this.whistle - 300) {
+				this.trail(b, endPt);
+			}
+		}
+	}
+
+	// A return: up the field from the catch, then off into his lane - toward
+	// the man the sim says brings him down, or one side or the other of
+	// `aim` - to `endD`. When he gets there.
+	returnRun(m: Actor, endD: number, seenAt: number, aim: number): number {
+		const r = this.r;
+		const from = this.of(m.at);
+		const ta = this.tacklerA(m, seenAt);
+		const lane =
+			ta !== undefined ? ta + (r() - 0.5) * 16 : aim + (r() - 0.5) * 60;
+		const endA = clamp(lane, this.bounds.left + 6, this.bounds.right - 6);
+		const run = from.d - endD;
+		if (run > 24) {
+			m.run(
+				this.w({
+					d: from.d - Math.min(36, run * 0.35),
+					a: from.a + (endA - from.a) * 0.25,
+				}),
+				m.top * 0.82,
+				"sprint",
+			);
+		}
+		const end = this.w({ d: endD, a: endA });
+		if (dist(m.at, end) > 2) {
+			m.run(end, m.top * 0.93, "sprint");
+		} else {
+			m.hold(m.t + 150);
+		}
+		return m.t;
+	}
+
+	// Under a kick coming down at `land`, a step behind it, and up into it
+	// as it comes - caught at `catchAt`, from `from` (when he can go). Where
+	// his hands have it.
+	getUnder(m: Actor, land: OPt, from: number, catchAt: number): Pt3 {
+		m.hold(from);
+		m.chase(
+			this.w({ d: land.d + 3.5, a: land.a }),
+			catchAt - 700,
+			m.top * 0.85,
+		);
+		m.hold(catchAt - 300, "stand", this.behind);
+		m.act(
+			"catch",
+			catchAt + 220,
+			this.behind,
+			this.w({ d: land.d + 0.8, a: land.a }),
+		);
+		const at = this.of(m.posAt(catchAt));
+		return { ...this.w({ d: at.d - 1, a: at.a }), z: CATCH_Z };
+	}
+
+	// No return: the cover men on down the field a way and pulling up, the
+	// rest up out of their stances.
+	coverDown(cover: Actor[], others: Actor[]) {
+		const r = this.r;
+		for (const m of cover) {
+			m.hold(this.seen);
+			const s = this.of(m.at);
+			m.chase(
+				this.w({ d: s.d + 25 + r() * 25, a: s.a * 0.85 }),
+				this.whistle + 900,
+				m.top * 0.75,
+			);
+		}
+		for (const m of others) {
+			m.hold(this.seen + r() * 300);
+			m.hold(this.whistle + 600, "stand");
+		}
+	}
+
+	// ---- a kickoff -------------------------------------------------------------------
+
+	kickoff(i: number) {
+		const { snap } = this.input;
+		const r = this.r;
+		const e = this.ev(i);
+		// Where it comes down: yards out from the goal line (behind it, less
+		// than nothing).
+		const kickTo = num(e.yds, 0);
+		const k = this.role("K") ?? this.o[0]!;
+		const kickT = this.placeKick(k, { d: 0, a: 0 }, snap + KICKOFF_RUN);
+		this.at.set(i, kickT);
+		this.follow = kickT;
+
+		// Off to one side of the landing zone or the other - or, out the
+		// back, deep in the end zone.
+		const deep = kickTo <= -10;
+		const land: OPt = {
+			d: deep
+				? this.goalD + 15 + r() * 12
+				: Math.min(this.goalD - kickTo * YD, this.goalD + 27),
+			a: clamp((r() - 0.5) * 80, this.bounds.left + 14, this.bounds.right - 14),
+		};
+		const landPt = this.w(land);
+		const tee: Pt3 = { ...this.w({ d: 0, a: 0 }), z: TEE_Z };
+		const hang = clamp(2900 + dist(tee, landPt) * 5 + r() * 400, 2900, 4400);
+		const landT = kickT + hang;
+		// Nobody but the kicker and the returners moves till it is down.
+		this.seen = landT + 150;
+
+		const cover = this.o.filter((m) => m.role === "COVER");
+		const front = this.d.filter((m) => m.role === "FRONT");
+		const returners = this.d.filter((m) => m.role === "KR");
+		const kr =
+			this.man(this.statPids("kr")[0]) ??
+			[...returners].sort((a, b) => dist(a.at, landPt) - dist(b.at, landPt))[0];
+		const others = returners.filter((m) => m !== kr);
+		const retI = this.find("kickoffReturn", i);
+		const ret = retI >= 0 ? this.ev(retI) : undefined;
+		k.go(this.w({ d: 30 + r() * 15, a: land.a * 0.3 }), landT + 600, "jog");
+
+		if (deep || !kr) {
+			// Over everybody and out the back: the returners back to the goal
+			// line, watching it go.
+			const out: Pt3 = {
+				...this.w({
+					d: this.goalD + END_ZONE + 6,
+					a: land.a + (r() - 0.5) * 8,
+				}),
+				z: 0,
+			};
+			this.ball.push(
+				{
+					kind: "fly",
+					t0: kickT,
+					t1: landT,
+					from: tee,
+					to: { ...landPt, z: 0 },
+					peak: peakFor(hang),
+				},
+				{
+					kind: "fly",
+					t0: landT,
+					t1: landT + 800,
+					from: { ...landPt, z: 0 },
+					to: out,
+					peak: 3,
+				},
+				{ kind: "spot", t0: landT + 800, at: out },
+			);
+			this.whistle = landT + 400;
+			for (const m of returners) {
+				m.hold(kickT + 300);
+				m.chase(
+					this.w({ d: this.goalD - 4, a: this.of(m.at).a }),
+					landT,
+					m.top * 0.6,
+				);
+				m.hold(landT + 300, "stand", this.ahead);
+				this.done.add(m.pid);
+			}
+			this.coverDown(cover, front);
+			return;
+		}
+
+		// The catch - on the fly, or a line drive fielded on the hop.
+		const hop = kickTo >= 0 && r() < 0.3;
+		const catchAt = landT + (hop ? 650 : 0);
+		const hands = this.getUnder(kr, land, kickT + 250, catchAt);
+		if (hop) {
+			const bounce: Pt3 = {
+				...this.w({ d: land.d - 14 - r() * 8, a: land.a + (r() - 0.5) * 4 }),
+				z: 0,
+			};
+			this.ball.push(
+				{
+					kind: "fly",
+					t0: kickT,
+					t1: landT,
+					from: tee,
+					to: bounce,
+					peak: peakFor(hang),
+				},
+				{
+					kind: "fly",
+					t0: landT,
+					t1: catchAt,
+					from: bounce,
+					to: { ...hands, z: 3.2 },
+					peak: 3.5,
+				},
+			);
+		} else {
+			this.ball.push({
+				kind: "fly",
+				t0: kickT,
+				t1: catchAt,
+				from: tee,
+				to: hands,
+				peak: peakFor(hang),
+			});
+		}
+		this.ball.push({ kind: "held", t0: catchAt, pid: kr.pid });
+		// The other returner up in front of him, to lead him.
+		for (const m of others) {
+			m.hold(kickT + 300);
+			m.chase(
+				this.w({
+					d: land.d - 15,
+					a: land.a + (this.of(m.at).a > land.a ? 9 : -9),
+				}),
+				landT,
+				m.top * 0.7,
+			);
+		}
+
+		if (!ret || e.touchback === true) {
+			// Downed in the end zone: a knee.
+			kr.hold(catchAt + 650);
+			kr.hold(catchAt + 1800, "kneelDown", this.behind);
+			this.whistle = catchAt + 700;
+			if (retI >= 0) {
+				this.at.set(retI, this.whistle);
+			}
+			this.done.add(kr.pid);
+			this.coverDown(cover, [...front, ...others]);
+			return;
+		}
+
+		// The return, and the blocks for it: the front nine and the other
+		// returner each on a man coming down.
+		const td = ret.td === true;
+		const endD = clamp(
+			td
+				? this.ownGoalD - 4 - r() * 12
+				: this.goalD - (kickTo + num(ret.yds, 0)) * YD,
+			this.ownGoalD - 27,
+			this.goalD + 27,
+		);
+		const t = this.returnRun(kr, endD, landT, land.a);
+		this.weave = true;
+		const endPt = kr.at;
+		const locks = this.pairUp([...front, ...others], cover).map(([b, c]) =>
+			this.lockUp(
+				b,
+				c,
+				this.seen,
+				b.role === "KR" ? b.top * 0.75 : 5,
+				endPt,
+				Math.abs(this.of(b.at).a - this.of(endPt).a) > 45
+					? this.seen + 1600 + r() * 800
+					: t,
+			),
+		);
+		this.endReturn(retI, kr, endPt, t, td, this.o);
+		this.release(locks, endPt);
+	}
+
+	// ---- an onside kick ------------------------------------------------------------
+
+	// Kicked short, to be got back: driven down off the tee into the turf
+	// and up off it in a high hop - or skipping along the ground - past the
+	// ten yards it has to go. The kicking team after it from the kick, the
+	// hands team up to meet it, and the man the sim says came up with it on
+	// it: everybody near piling in, or, the hands team's, a few yards back
+	// up the field with it.
+	onside(i: number) {
+		const { snap, events, i1, offense } = this.input;
+		const r = this.r;
+		const e = this.ev(i);
+		const success = e.success === true;
+		const td = e.td === true;
+		const k = this.role("K") ?? this.o[0]!;
+		const kickT = this.placeKick(k, { d: 0, a: 0 }, snap + KICKOFF_RUN);
+		this.follow = kickT;
+		this.seen = kickT + 150;
+		const tee: Pt3 = { ...this.w({ d: 0, a: 0 }), z: TEE_Z };
+
+		// Where it is got: the next snap's spot, less what the hands team got
+		// back with it - past the ten yards, and not so far past.
+		const next = events[i1];
+		const spot =
+			!td && next?.type === "clock" && typeof next.scrimmage === "number"
+				? next.scrimmage
+				: undefined;
+		const back = success ? 0 : this.amount("krYds");
+		const recD = clamp(
+			spot === undefined
+				? (10.5 + r() * 4) * YD
+				: success
+					? this.ownGoalD + spot * YD
+					: this.goalD - (spot - back) * YD,
+			10.5 * YD,
+			25 * YD,
+		);
+		// Into the lane of the man who gets it, more or less.
+		const side = success ? this.o : this.d;
+		const named = this.man(this.statPids("onsRec")[0]);
+		const known = named && side.includes(named) ? named : undefined;
+		const aim = known
+			? this.of(known.at).a * (0.75 + r() * 0.25)
+			: (r() - 0.5) * 80;
+		const at: OPt = {
+			d: recD,
+			a: clamp(
+				aim + (r() - 0.5) * 10,
+				this.bounds.left + 12,
+				this.bounds.right - 12,
+			),
+		};
+		const restPt = this.w(at);
+		const rec =
+			known ??
+			[...side]
+				.filter((m) => m !== k)
+				.sort((a, b) => dist(a.at, restPt) - dist(b.at, restPt))[0] ??
+			k;
+		// The kicking team off with the kick, the hands team a beat after it.
+		const goOf = (m: Actor) => (m.team === offense ? kickT - 250 : kickT + 200);
+		const reach = (m: Actor, p: Pt) =>
+			Math.max(goOf(m), m.t) + 250 + (dist(m.at, p) / (m.top * 0.9)) * 1000;
+		const ahead = rec.team === offense;
+		const face = ahead ? this.ahead : this.behind;
+
+		// The kick: into the turf and up, or skipping along the ground, each
+		// hop as long in the air as it is high - caught on the fly, or down
+		// short and on (the longer, the longer it is before anybody has it)
+		// to whoever gets a hand on it first. A good one for the kicking team
+		// the hands team should have had: off the hands of the man who got
+		// to it first, loose, and fallen on.
+		const pop = recD < 16 * YD && r() < 0.6;
+		const airMs = (peak: number) => Math.sqrt((8 * peak) / G) * 1000;
+		const legs: [number, number][] = pop
+			? [
+					[(6 + r() * 5) / recD, 0.2],
+					[1, 13 + r() * 7],
+				]
+			: [
+					[0.18, 0.4],
+					[0.42, 2.5 + r() * 3],
+					[0.25, 1.1],
+					[0.15, 0.35],
+				];
+		const landT = legs.reduce((t, [, peak]) => t + airMs(peak), kickT);
+		const reachRest = reach(rec, restPt);
+		const caught = pop && reachRest <= landT - 150;
+		const returned = !success && (back > 0 || td);
+		const first =
+			success && !caught ? this.nearest(this.d, restPt, 1)[0] : undefined;
+		const muff =
+			first && reach(first, restPt) + 300 < reachRest ? first : undefined;
+		let touch = restPt;
+		if (muff) {
+			const far = dist(muff.at, restPt) || 1;
+			const off = 6 + r() * 4;
+			touch = {
+				x: restPt.x + ((muff.at.x - restPt.x) / far) * off,
+				y: restPt.y + ((muff.at.y - restPt.y) / far) * off,
+			};
+		}
+		const touchT = caught
+			? landT
+			: returned
+				? Math.max(landT + 450, reachRest + 100)
+				: muff
+					? Math.max(landT + 450, reach(muff, touch) + 100)
+					: clamp(reachRest - 300, landT + 450, landT + 1600);
+		const tail = caught
+			? 0
+			: 5 + 8 * Math.min(1.15, (touchT - landT - 450) / 1000);
+		const along = dist(tee, touch) || 1;
+		const down: Pt3 = {
+			x: touch.x - ((touch.x - tee.x) / along) * tail,
+			y: touch.y - ((touch.y - tee.y) / along) * tail,
+			z: 0,
+		};
+		const hands: Pt3 = { ...restPt, z: CATCH_Z + 0.8 };
+		{
+			let t = kickT;
+			let from = tee;
+			let u = 0;
+			for (const [k, [share, peak]] of legs.entries()) {
+				const last = k === legs.length - 1;
+				u = last ? 1 : u + share;
+				const to: Pt3 =
+					caught && last
+						? hands
+						: {
+								x: tee.x + (down.x - tee.x) * u,
+								y: tee.y + (down.y - tee.y) * u,
+								z: 0,
+							};
+				const t1 = t + airMs(peak);
+				this.ball.push({ kind: "fly", t0: t, t1, from, to, peak });
+				t = t1;
+				from = to;
+			}
+		}
+
+		// Up for it as it comes, facing it, his hands on it at `t`.
+		const handsOn = (m: Actor, at: Pt, t: number) => {
+			const yaw = this.toward(at, down);
+			m.hold(goOf(m));
+			m.chase(
+				{ x: at.x + Math.cos(yaw) * 1.5, y: at.y + Math.sin(yaw) * 1.5 },
+				t - 250,
+				m.top * 0.9,
+			);
+			m.hold(t - 300, "stand", yaw);
+			m.act("catch", t + 220, yaw, at);
+		};
+		let takeT: number;
+		if (caught) {
+			// Caught coming down, the hands team's man facing the kick, the
+			// kicking team's going with it.
+			const near = this.w({ d: at.d + (ahead ? -1.5 : 1.5), a: at.a });
+			rec.hold(goOf(rec));
+			rec.chase(near, landT - 250, rec.top * 0.9);
+			rec.hold(landT - 300, "stand", face);
+			rec.act("catch", landT + 220, face, restPt);
+			takeT = landT;
+		} else if (returned) {
+			// Fielded on a hop, on the run.
+			takeT = touchT;
+			this.hops(down, { ...restPt, z: 3.2 }, landT, takeT);
+			handsOn(rec, restPt, takeT);
+		} else {
+			let loose = touchT;
+			if (muff) {
+				// Off his hands and away.
+				this.hops(down, { ...touch, z: 2.6 }, landT, touchT);
+				handsOn(muff, touch, touchT);
+				loose = clamp(reachRest - 300, touchT + 500, touchT + 1400);
+				this.hops({ ...touch, z: 2.6 }, { ...restPt, z: 0 }, touchT, loose);
+			} else {
+				this.hops(down, { ...restPt, z: 0 }, landT, touchT);
+			}
+			// Where it stops, and fallen on.
+			this.ball.push({ kind: "spot", t0: loose, at: { ...restPt, z: 0 } });
+			takeT = Math.max(loose + 100, reachRest + 350);
+			rec.hold(goOf(rec));
+			rec.chase(restPt, takeT - 350, rec.top * FLAT_OUT, "sprint");
+			rec.act("dive", takeT, rec.yaw, restPt);
+			rec.hold(takeT + 1400, "prone");
+			rec.act("getUp", takeT + 1400 + GET_UP_MS);
+			if (muff) {
+				// And after it again, too late.
+				const yaw = this.toward(muff.at, restPt);
+				const by = {
+					x: restPt.x - Math.cos(yaw) * 1.6,
+					y: restPt.y - Math.sin(yaw) * 1.6,
+				};
+				muff.chase(by, takeT - 200, muff.top * 0.8);
+				muff.act("dive", takeT + 250, yaw, by);
+				muff.hold(takeT + 1500, "prone");
+				muff.act("getUp", takeT + 1500 + GET_UP_MS);
+				this.done.add(muff.pid);
+			}
+		}
+		this.ball.push({ kind: "held", t0: takeT, pid: rec.pid });
+		this.done.add(rec.pid);
+		const others = this.men.filter((m) => m !== rec && m !== k);
+
+		if (returned) {
+			// Back up the field with it: the kicking team's nearest at him,
+			// the hands team's on them.
+			const endD = clamp(
+				td
+					? this.ownGoalD - 4 - r() * 12
+					: spot !== undefined
+						? this.goalD - spot * YD
+						: recD - back * YD,
+				this.ownGoalD - 27,
+				this.goalD + 27,
+			);
+			let t: number;
+			if (td) {
+				this.weave = true;
+				t = this.returnRun(rec, endD, takeT, at.a);
+			} else {
+				const end = this.w({
+					d: endD,
+					a: clamp(
+						at.a + (r() - 0.5) * 12,
+						this.bounds.left + 6,
+						this.bounds.right - 6,
+					),
+				});
+				t = dist(rec.at, end) > 2 ? rec.run(end, rec.top * 0.8) : rec.t;
+			}
+			const endPt = rec.at;
+			const locks = this.lockOn(others, kickT, endPt, t);
+			this.endReturn(i, rec, endPt, t, td, this.o);
+			this.release(locks, endPt);
+			for (const m of this.d) {
+				if (!this.done.has(m.pid) && m.t < this.whistle - 300) {
+					m.hold(goOf(m));
+					this.trail(m, endPt);
+				}
+			}
+			this.kickerAfter(k, at, this.whistle);
+			return;
+		}
+
+		// Everybody near piling in on him, one after another: the first few
+		// off their feet into it, the rest at each other round it.
+		const hitT = caught ? takeT + 450 : takeT;
+		if (caught) {
+			rec.hold(hitT);
+			const by = this.nearest(
+				others.filter((m) => m.team !== rec.team),
+				restPt,
+				2,
+			);
+			this.tackle(rec, by, restPt, hitT);
+		}
+		this.whistle = hitT + 500;
+		this.at.set(i, this.whistle);
+		const pile = this.nearest(others, restPt, 7);
+		pile.forEach((m, n) => {
+			const t1 = hitT + 150 + n * 170 + r() * 200;
+			const ang =
+				Math.atan2(m.at.y - restPt.y, m.at.x - restPt.x) + (r() - 0.5) * 0.9;
+			const ring = 2.4 + n * 0.5 + r() * 1.5;
+			const hit = {
+				x: restPt.x + Math.cos(ang) * ring,
+				y: restPt.y + Math.sin(ang) * ring,
+			};
+			const inward = this.toward(hit, restPt);
+			m.hold(goOf(m));
+			if (n < 3) {
+				m.chase(hit, t1 - 400, m.top * FLAT_OUT, "sprint");
+				m.act("dive", t1, inward, {
+					x: restPt.x + Math.cos(ang) * 1.2,
+					y: restPt.y + Math.sin(ang) * 1.2,
+				});
+				m.hold(t1 + 1100 + n * 150, "prone");
+				m.act("getUp", t1 + 1100 + n * 150 + GET_UP_MS);
+			} else {
+				m.chase(hit, t1, m.top * 0.92);
+				m.hold(this.whistle + 700 + r() * 400, "engage", inward);
+			}
+			this.done.add(m.pid);
+		});
+		const rest = others.filter((m) => !this.done.has(m.pid));
+		const locks = this.lockOn(rest, kickT, restPt, this.whistle);
+		this.release(locks, restPt);
+		for (const m of rest) {
+			if (this.done.has(m.pid) || locks.some((x) => x.b === m || x.c === m)) {
+				continue;
+			}
+			// After it from wherever he is, pulling up as it is had.
+			const s = this.of(m.at);
+			m.hold(goOf(m));
+			const ang =
+				Math.atan2(m.at.y - restPt.y, m.at.x - restPt.x) + (r() - 0.5) * 0.8;
+			const ring = 8 + r() * 12;
+			m.chase(
+				m.team === offense
+					? {
+							x: restPt.x + Math.cos(ang) * ring,
+							y: restPt.y + Math.sin(ang) * ring,
+						}
+					: this.w({
+							d: (s.d + recD) / 2,
+							a: s.a * 0.7 + at.a * 0.3,
+						}),
+				this.whistle + 300,
+				m.top * (m.team === offense ? 0.9 : 0.6),
+			);
+		}
+		this.kickerAfter(k, at, this.whistle);
+	}
+
+	// The hands team's men left each on a kicking team man coming at them,
+	// from the kick: tied up near the ball until `until`.
+	lockOn(men: Actor[], go: number, pt: Pt, until: number): Lock[] {
+		const { offense } = this.input;
+		const free = men.filter((m) => !this.done.has(m.pid));
+		return this.pairUp(
+			free.filter((m) => m.team !== offense && m.role === "FRONT"),
+			free.filter((m) => m.team === offense),
+		)
+			.filter(([b, c]) => dist(b.at, c.at) < 55)
+			.map(([b, c]) => this.lockUp(b, c, go, 6, pt, until));
+	}
+
+	// The kicker, his kick away, on after it at a jog.
+	kickerAfter(k: Actor, at: OPt, until: number) {
+		if (this.done.has(k.pid)) {
+			return;
+		}
+		k.go(
+			this.w({ d: at.d * 0.45 + this.r() * 8, a: at.a * 0.4 }),
+			Math.max(k.t + 600, until),
+			"jog",
+		);
+	}
+
+	// A ball off the turf from `from` at t0 to `to` at t1, in hops - each a
+	// little shorter than the last, as high as that long in the air goes.
+	hops(from: Pt3, to: Pt3, t0: number, t1: number) {
+		const n = Math.max(1, Math.ceil((t1 - t0) / 550));
+		const w = Array.from({ length: n }, (_, k) => 0.75 ** k);
+		const sum = w.reduce((a, b) => a + b, 0);
+		let t = t0;
+		let p = from;
+		let u = 0;
+		for (const [k, x] of w.entries()) {
+			const ms = ((t1 - t0) * x) / sum;
+			u += x / sum;
+			const q: Pt3 =
+				k === n - 1
+					? to
+					: {
+							x: from.x + (to.x - from.x) * u,
+							y: from.y + (to.y - from.y) * u,
+							z: 0,
+						};
+			this.ball.push({
+				kind: "fly",
+				t0: t,
+				t1: t + ms,
+				from: p,
+				to: q,
+				peak: peakFor(ms),
+			});
+			t += ms;
+			p = q;
+		}
+	}
+
+	// ---- a punt ----------------------------------------------------------------------
+
+	punt(i: number) {
+		const { snap } = this.input;
+		const r = this.r;
+		const e = this.ev(i);
+		const yds = num(e.yds, 42);
+		const touchback = e.touchback === true;
+		const p = this.role("P") ?? this.o[0]!;
+		const pr =
+			this.man(this.statPids("pr")[0]) ?? this.role("PR", this.defense);
+		const retI = this.find("puntReturn", i);
+		const ret = retI >= 0 ? this.ev(retI) : undefined;
+
+		// The snap back to him, his two steps, the ball dropped onto his foot.
+		const p0 = this.of(p.at);
+		const has = this.longSnap(p, { d: p0.d + 1, a: p0.a }, 3.4);
+		const step = has + 380;
+		p.hold(step);
+		p.act("punt", step + PUNT_MS, this.ahead, this.w({ d: p0.d + 6, a: p0.a }));
+		const dropT = step + PUNT_MS * PUNT_DROP;
+		const kickT = step + PUNT_MS * PUNT_CONTACT;
+		this.at.set(i, kickT);
+		this.follow = kickT;
+		const foot = (t: number, ahead: number, z: number): Pt3 => {
+			const at = this.of(p.posAt(t));
+			return { ...this.w({ d: at.d + ahead, a: at.a - 0.6 }), z };
+		};
+		const off = foot(kickT, 2.3, 1.7);
+		this.ball.push({
+			kind: "fly",
+			t0: dropT,
+			t1: kickT,
+			from: foot(dropT, 1.7, 3.2),
+			to: off,
+			peak: 0,
+		});
+
+		// Where it comes down: near the returner, or - a touchback - in the
+		// end zone or bounding into it.
+		const land: OPt = {
+			d: touchback
+				? clamp(yds * YD, this.goalD - 12, this.goalD + 22)
+				: Math.min(yds * YD, this.goalD - 1),
+			a: clamp(
+				(pr ? this.of(pr.at).a : 0) + (r() - 0.5) * 36,
+				this.bounds.left + 12,
+				this.bounds.right - 12,
+			),
+		};
+		const landPt = this.w(land);
+		const hang = clamp(2800 + yds * 30 + r() * 400, 3300, 4900);
+		const landT = kickT + hang;
+		this.seen = kickT + 120;
+		p.go(this.w({ d: p0.d + 30, a: land.a * 0.2 }), landT + 600, "jog");
+
+		// The protection, until the ball is away: the line and the shield in
+		// their sets, the middle of the rush into them.
+		const line = this.o.filter((m) => m !== p && m.role !== "GUNNER");
+		const free = this.seen;
+		for (const m of line) {
+			const s = this.of(m.at);
+			if (m.role !== "LS") {
+				m.hold(snap + 60);
+			}
+			m.go(
+				this.w({ d: s.d + (m.role === "UP" ? 1 : -1.5), a: s.a }),
+				free,
+				"passSet",
+				this.ahead,
+			);
+		}
+		const rush = this.d.filter((m) => m.role === "RUSH");
+		const inside = rush.filter((m) => Math.abs(this.of(m.at).a) < 10);
+		const up = line.filter((m) => m.role !== "UP");
+		for (const m of inside) {
+			const b = this.acrossFrom(up, this.of(m.at).a);
+			m.hold(snap + 50);
+			if (!b) {
+				continue;
+			}
+			const at = (time: number) => {
+				const q = this.of(b.posAt(time));
+				return this.w({ d: q.d + 2.6, a: q.a });
+			};
+			m.chase(at(snap + 450), snap + 450, m.top * 0.9, "run");
+			m.go(at(free), free, "engage", this.behind);
+		}
+
+		// The gunners off the line through the men on them and flat out for
+		// where it is coming down, the jammers running with them.
+		const gunners = this.o.filter((m) => m.role === "GUNNER");
+		const jammers = this.d.filter((m) => m.role === "JAMMER");
+		const goalPull = this.goalD - 4;
+		for (const g of gunners) {
+			const s = this.of(g.at);
+			const side = Math.sign(s.a) || 1;
+			const j = this.acrossFrom(jammers, s.a);
+			g.hold(snap + 60);
+			g.go(
+				this.w({ d: s.d + 9, a: s.a - side * 2 }),
+				snap + 900,
+				"engage",
+				this.ahead,
+			);
+			g.run(
+				this.w({
+					d: Math.min(land.d - 10 - r() * 6, goalPull),
+					a: land.a + side * (6 + r() * 6),
+				}),
+				g.top * 0.95,
+				"sprint",
+			);
+			g.hold(g.t + 300, "backerStance", this.toward(g.at, landPt));
+			if (j) {
+				jammers.splice(jammers.indexOf(j), 1);
+				j.hold(snap + 60);
+				j.go(
+					this.w({ d: s.d + 11.6, a: s.a - side * 2 }),
+					snap + 900,
+					"engage",
+					this.behind,
+				);
+				// A step behind him and inside, all the way down.
+				for (let time = snap + 1300; time < g.t; time += 400) {
+					const q = this.of(g.posAt(time));
+					j.go(this.w({ d: q.d - 2.5, a: q.a - side * 2.5 }), time);
+				}
+			}
+		}
+
+		// The outside of the rush and the two held up behind it peeling back,
+		// to set up a wall on the side the return will go.
+		const ta = pr ? this.tacklerA(pr, landT) : undefined;
+		const wallSide =
+			ta !== undefined ? Math.sign(ta - land.a) || 1 : r() < 0.5 ? -1 : 1;
+		const peel = [
+			...rush.filter((m) => !inside.includes(m)),
+			...this.d.filter((m) => m.role === "WALL"),
+		];
+		peel.forEach((m, k) => {
+			m.hold(snap + 200 + r() * 150);
+			m.run(
+				this.w({
+					d: Math.min(land.d - 26 - k * 7 - r() * 8, goalPull - 20),
+					a: land.a + wallSide * (8 + k * 7 + r() * 5),
+				}),
+				m.top * 0.85,
+				"sprint",
+			);
+		});
+
+		// The rest of the cover in their lanes, spread across the field.
+		const lanes = [...line].sort((x, y) => this.of(x.at).a - this.of(y.at).a);
+		// (Funneling in on him, the men outside staying wider and a little
+		// deeper to keep him in.)
+		const laneEnd = (k: number): OPt => {
+			const off = k - (lanes.length - 1) / 2;
+			return {
+				d: Math.min(land.d - 22 - r() * 12 + Math.abs(off) * 3, goalPull),
+				a: land.a + off * (7 + r() * 3),
+			};
+		};
+
+		if (touchback || !pr) {
+			// Into the end zone, or bounding into it: the returner away from
+			// it, the cover pulling up at the goal line.
+			const bounce: Pt3 = {
+				...this.w({
+					d: Math.min(land.d + 12 + r() * 8, this.goalD + END_ZONE + 4),
+					a: land.a + (r() - 0.5) * 8,
+				}),
+				z: 0,
+			};
+			this.ball.push(
+				{
+					kind: "fly",
+					t0: kickT,
+					t1: landT,
+					from: off,
+					to: { ...landPt, z: 0 },
+					peak: peakFor(hang),
+					spiral: true,
+				},
+				{
+					kind: "fly",
+					t0: landT,
+					t1: landT + 700,
+					from: { ...landPt, z: 0 },
+					to: bounce,
+					peak: 3.5,
+				},
+				{ kind: "spot", t0: landT + 700, at: bounce },
+			);
+			this.whistle = landT + 900;
+			if (pr) {
+				pr.hold(kickT + 300);
+				pr.chase(
+					this.w({ d: this.goalD - 9, a: (this.of(pr.at).a + land.a) / 2 }),
+					landT - 400,
+					16,
+				);
+				pr.hold(landT + 900, "stand", this.toward(pr.at, landPt));
+				this.done.add(pr.pid);
+			}
+			lanes.forEach((m, k) => {
+				m.chase(this.w(laneEnd(k)), this.whistle + 900, m.top * 0.85);
+			});
+			for (const m of this.d) {
+				if (!this.done.has(m.pid)) {
+					m.hold(Math.max(m.t, free) + 300);
+					m.hold(this.whistle + 600, "stand");
+				}
+			}
+			return;
+		}
+
+		// The catch.
+		const hands = this.getUnder(pr, land, kickT + 200, landT);
+		this.ball.push(
+			{
+				kind: "fly",
+				t0: kickT,
+				t1: landT,
+				from: off,
+				to: { ...hands, z: CATCH_Z + 0.6 },
+				peak: peakFor(hang),
+				spiral: true,
+			},
+			{ kind: "held", t0: landT, pid: pr.pid },
+		);
+		const retYds = num(ret?.yds, 0);
+		const tacklers = this.statPids("defTckSolo", "defTckAst");
+		if (!ret || (retYds === 0 && tacklers.length === 0)) {
+			// A fair catch: his hand up as it comes, and nobody touches him.
+			this.reaches.push({
+				m: pr,
+				move: "swat",
+				t0: landT - 1700,
+				t1: landT - 900,
+			});
+			this.whistle = landT + 400;
+			if (retI >= 0) {
+				this.at.set(retI, this.whistle);
+			}
+			this.done.add(pr.pid);
+			lanes.forEach((m, k) => {
+				m.chase(this.w(laneEnd(k)), this.whistle + 900, m.top * 0.85);
+			});
+			return;
+		}
+
+		// The return, the wall each on a cover man as he comes - the rest of
+		// the cover in their lanes.
+		const td = ret.td === true;
+		const endD = clamp(
+			td ? this.ownGoalD - 4 - r() * 12 : land.d - retYds * YD,
+			this.ownGoalD - 27,
+			this.goalD + 27,
+		);
+		const t = this.returnRun(pr, endD, landT, land.a);
+		this.weave = true;
+		const endPt = pr.at;
+		const pairs = this.pairUp(peel, lanes);
+		const locks = pairs.map(([b, c]) =>
+			this.lockUp(
+				b,
+				c,
+				free,
+				0,
+				endPt,
+				Math.abs(this.of(b.at).a - this.of(endPt).a) > 40
+					? b.t + 1200 + r() * 600
+					: t,
+			),
+		);
+		lanes.forEach((m, k) => {
+			if (!pairs.some(([, c]) => c === m)) {
+				m.run(this.w(laneEnd(k)), m.top * (0.8 + r() * 0.12), "sprint");
+			}
+		});
+		this.endReturn(retI, pr, endPt, t, td, this.o);
+		this.release(locks, endPt);
+		for (const m of [...this.d, ...this.o]) {
+			if (!this.done.has(m.pid) && m.t < this.whistle - 300) {
+				this.trail(m, endPt);
+			}
+		}
+	}
+
+	// ---- a field goal, a try ----------------------------------------------------------
+
+	// Whether it could be acted out (a holder and a kicker on the field).
+	fieldGoal(i: number): boolean {
+		const { snap, ballY, dir } = this.input;
+		const r = this.r;
+		const e = this.ev(i);
+		const made = e.made === true;
+		const yds = num(e.yds, 35);
+		const h = this.role("H");
+		const k = this.role("K");
+		if (!h || !k) {
+			return false;
+		}
+
+		// The snap back to the holder, the ball down on its spot beside him,
+		// and the kick.
+		const hs = this.of(h.at);
+		const spot: OPt = { d: hs.d + 0.7, a: hs.a - 1.7 };
+		const has = this.longSnap(h, { d: spot.d + 0.3, a: spot.a + 0.9 }, 2.4);
+		const down = has + 260;
+		const kickT = snap + 1280 + r() * 100;
+		h.hold(down, "holdKneel");
+		h.hold(kickT + 250, "holdDown");
+		this.ball.push({
+			kind: "spot",
+			t0: down,
+			at: { ...this.w(spot), z: 0 },
+			stood: "hold",
+		});
+		k.hold(snap + 300);
+		this.placeKick(k, spot, kickT - KICK_MS * KICK_CONTACT);
+		this.follow = kickT;
+
+		// Through the posts on the end line (or wide of them, or short) and on
+		// into the net behind them.
+		const from: Pt3 = { ...this.w(spot), z: 0.5 };
+		const lineD = this.goalD + END_ZONE;
+		const postA = (MID_Y - ballY) * dir;
+		const short = !made && yds >= 45 && r() < 0.35;
+		const wide = r() < 0.5 ? -1 : 1;
+		const crossA =
+			postA +
+			(made
+				? (r() - 0.5) * 11
+				: short
+					? (r() - 0.5) * 8
+					: wide * (POST_W / 2 + 1 + r() * 6));
+		const vh = 64 + yds * 0.22 + r() * 5;
+		const tc = Math.hypot(lineD - spot.d, crossA - spot.a) / vh;
+		const z1 = short
+			? 3 + r() * 5
+			: CROSSBAR_Z + 4 + Math.max(0, 50 - yds) * 0.5 + r() * 6;
+		const vz = (z1 - from.z + (G / 2) * tc * tc) / tc;
+		const along = (s: number): Pt3 => {
+			const u = s / tc;
+			return {
+				...this.w({
+					d: spot.d + (lineD - spot.d) * u,
+					a: spot.a + (crossA - spot.a) * u,
+				}),
+				z: Math.max(0, from.z + vz * s - (G / 2) * s * s),
+			};
+		};
+		const tLand = (vz + Math.sqrt(vz * vz + 2 * G * from.z)) / G;
+		const tNet = (tc * (lineD + NET_BACK - spot.d)) / (lineD - spot.d);
+		const tEnd = Math.min(tLand, tNet);
+		const end = along(tEnd);
+		const endT = kickT + tEnd * 1000;
+		this.ball.push({
+			kind: "fly",
+			t0: kickT,
+			t1: endT,
+			from,
+			to: end,
+			peak: peakFor(tEnd * 1000),
+		});
+		if (tNet < tLand) {
+			const fall = Math.sqrt((2 * end.z) / G) * 1000;
+			const below: Pt3 = { ...end, z: 0 };
+			this.ball.push(
+				{
+					kind: "fly",
+					t0: endT,
+					t1: endT + fall,
+					from: end,
+					to: below,
+					peak: 0,
+				},
+				{ kind: "spot", t0: endT + fall, at: below },
+			);
+		} else {
+			this.ball.push({ kind: "spot", t0: endT, at: end });
+		}
+		const crossT = kickT + Math.min(tc, tLand) * 1000;
+		this.at.set(i, crossT);
+		this.whistle = crossT + 300;
+
+		// The wall holding its ground, the rush into it - off the edges and
+		// up at the kick as it goes.
+		const wall = this.o.filter((m) => m !== h && m !== k);
+		const held = kickT + 250;
+		for (const m of wall) {
+			const s = this.of(m.at);
+			if (m.role !== "LS") {
+				m.hold(snap + 40);
+			}
+			m.go(
+				this.w({ d: s.d - 0.8, a: s.a * 0.96 }),
+				held,
+				"passSet",
+				this.ahead,
+			);
+		}
+		for (const m of this.d) {
+			const s = this.of(m.at);
+			const edge = Math.abs(s.a) > 12;
+			m.hold(snap + 40 + r() * 40);
+			if (m.role === "RUSH" && !edge) {
+				const b = this.acrossFrom(wall, s.a);
+				if (!b) {
+					continue;
+				}
+				const at = (time: number) => {
+					const q = this.of(b.posAt(time));
+					return this.w({ d: q.d + 2.6, a: q.a + (s.a > q.a ? 0.8 : -0.8) });
+				};
+				m.chase(at(snap + 400), snap + 400, m.top * 0.9, "run");
+				m.go(at(held), held, "engage", this.behind);
+			} else if (m.role === "RUSH" || m.role === "CB") {
+				const side = Math.sign(s.a) || 1;
+				m.chase(
+					this.w({
+						d: spot.d + 13 + r() * 4,
+						a: spot.a + side * (7 + r() * 3),
+					}),
+					kickT - 150,
+					m.top * 0.95,
+					"sprint",
+				);
+				m.act("swat", kickT + 350, this.toward(m.at, this.w(spot)));
+			} else {
+				m.hold(kickT - 250);
+				m.act("swat", kickT + 350, this.behind);
+			}
+		}
+		// Everybody turned to watch it go.
+		const posts = this.w({ d: lineD, a: postA });
+		for (const m of this.men) {
+			if (m !== k) {
+				m.hold(Math.max(m.t, kickT + 350) + r() * 200);
+				m.hold(crossT + 300, "stand", this.toward(m.at, posts));
+			}
+		}
+		return true;
 	}
 
 	// ---- after the whistle --------------------------------------------------------

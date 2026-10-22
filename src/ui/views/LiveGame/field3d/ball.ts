@@ -3,8 +3,8 @@ import type { Pt3 } from "./geometry.ts";
 import { BALL_BROWN, BALL_LEN, BALL_R } from "./sculpt.ts";
 
 // THE BALL ON ITS OWN: spotted on the turf, its points up and down the field,
-// or stood up on its tee for a kickoff. (In a man's hands, it is drawn with
-// him - see sculpt.ts.)
+// or stood up on end - on its tee for a kickoff, under the holder's finger
+// for a field goal. (In a man's hands, it is drawn with him - see sculpt.ts.)
 
 const TEE_ORANGE = "#f26b1d";
 const TEE_H = 0.22;
@@ -13,7 +13,7 @@ export const drawLooseBall = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,
 	at: Pt3,
-	tee: boolean,
+	stood: "tee" | "hold" | undefined,
 ) => {
 	const base = project(cam, { ...at, z: 0 });
 	const k = base.k;
@@ -25,9 +25,10 @@ export const drawLooseBall = (
 	) {
 		return;
 	}
-	// On its tee: on end, a little up off the turf; spotted: on its side.
-	const rx = Math.max(1, (tee ? BALL_R : BALL_LEN / 2) * k);
-	const ry = Math.max(0.8, (tee ? BALL_LEN / 2 : BALL_R * 0.8) * k);
+	// On end (on its tee, a little up off the turf); spotted, on its side.
+	const tee = stood === "tee";
+	const rx = Math.max(1, (stood ? BALL_R : BALL_LEN / 2) * k);
+	const ry = Math.max(0.8, (stood ? BALL_LEN / 2 : BALL_R * 0.8) * k);
 	const lift = tee ? TEE_H * k : 0;
 	const cx = base.x;
 	const cy = base.y - lift - ry;
@@ -89,7 +90,7 @@ export const drawLooseBall = (
 	ctx.strokeStyle = "#f4efe6";
 	ctx.lineWidth = Math.max(0.5, k * 0.05);
 	ctx.beginPath();
-	if (tee) {
+	if (stood) {
 		ctx.moveTo(cx, cy - ry * 0.45);
 		ctx.lineTo(cx, cy + ry * 0.35);
 	} else {

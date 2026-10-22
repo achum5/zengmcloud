@@ -318,7 +318,16 @@ const Field3D = ({
 	const ballHomeRef = useRef<HTMLSpanElement | null>(null);
 
 	const clock = useRef(makeFieldClock(paused, skips));
-	const cam = useRef({ x: FIELD_L / 2, vx: 0, w: 200, vw: 0, y: 80, vy: 0 });
+	const cam = useRef({
+		x: FIELD_L / 2,
+		vx: 0,
+		w: 200,
+		vw: 0,
+		y: 80,
+		vy: 0,
+		z: 2,
+		vz: 0,
+	});
 	const shown = useRef({ down: "", ball: -1 });
 	useEffect(() => {
 		if (timeline) {
@@ -383,25 +392,33 @@ const Field3D = ({
 				canvas.height = fh;
 			}
 			const moment = momentAt(tl, s.t);
-			const aim = aimFor(moment.play, s.t, moment.focus);
+			const aim = aimFor(moment);
 			// (Squarer, the picture takes in a little more of the field.)
 			const width = aim.width * (fw / fh < 1.5 ? 0.8 : 1);
 			const c = cam.current;
+			const lift = aim.z ?? 2;
 			if (s.snapCam) {
 				c.x = aim.x;
 				c.w = width;
 				c.y = aim.y;
+				c.z = lift;
 				c.vx = 0;
 				c.vw = 0;
 				c.vy = 0;
+				c.vz = 0;
 				s.snapCam = false;
 			} else {
 				const secs = (dt / 1000) * Math.max(1, p.rate);
 				[c.x, c.vx] = follow(c.x, c.vx, aim.x, CAM_PAN, secs);
 				[c.w, c.vw] = follow(c.w, c.vw, width, CAM_ZOOM, secs);
 				[c.y, c.vy] = follow(c.y, c.vy, aim.y, CAM_ZOOM, secs);
+				[c.z, c.vz] = follow(c.z, c.vz, lift, CAM_ZOOM, secs);
 			}
-			const view = makeFieldCamera({ x: c.x, width: c.w, y: c.y }, fw, fh);
+			const view = makeFieldCamera(
+				{ x: c.x, width: c.w, y: c.y, z: c.z },
+				fw,
+				fh,
+			);
 			const look = (pid: number) => looks.current.get(pid);
 			const body = (pid: number) => bodies.current.get(pid) ?? footballBody();
 			const items: { depth: number; draw: () => void }[] = [];
@@ -426,7 +443,7 @@ const Field3D = ({
 						if (axis) {
 							drawFlyingBall(ctx, view, ball.at, axis);
 						} else {
-							drawLooseBall(ctx, view, ball.at, !!ball.tee);
+							drawLooseBall(ctx, view, ball.at, ball.stood);
 						}
 					},
 				});

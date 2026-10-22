@@ -8,6 +8,7 @@ import {
 	KICKOFF_COVER,
 	KICKOFF_RECEIVE,
 	OFFENSE_SETS,
+	ONSIDE_RECEIVE,
 	PUNT_RETURN,
 	PUNT_TEAM,
 	type Align,
@@ -111,11 +112,12 @@ export type Part = {
 	legs: Leg[];
 };
 
-// Where the ball is, from t0 on: spotted (or on its tee), with a man, or in
+// Where the ball is, from t0 on: spotted (or stood on end: on its tee, held
+// for a kick), with a man, or in
 // the air - from one point to another by t1, `peak` feet over the straight
 // line between them halfway, spiraling (thrown) or end over end.
 export type BallSeg =
-	| { kind: "spot"; t0: number; at: Pt3; tee?: boolean }
+	| { kind: "spot"; t0: number; at: Pt3; stood?: "tee" | "hold" }
 	| { kind: "held"; t0: number; pid: number }
 	| {
 			kind: "fly";
@@ -143,11 +145,13 @@ export type Play = {
 	// The down and distance, as the score bug has it ("3rd & 7", "PAT").
 	situation: string;
 	// Up out of the huddle from t0; everyone set by `set`; the snap (or the
-	// kick); on to the next play at t1.
+	// kicker away on his run-up); on to the next play at t1. And from when
+	// the camera goes with the ball: the snap, or the kick.
 	t0: number;
 	set: number;
 	snap: number;
 	t1: number;
+	follow: number;
 	// The formation the offense is in, for a play from scrimmage.
 	formation?: OffenseSetName;
 	parts: Part[];
@@ -283,11 +287,20 @@ const WALK_ONLY = 10;
 // from there (shortest, longest).
 const SET_HOLD = 450;
 const CADENCE = [700, 1500] as const;
-// A kickoff: everyone lined up, the kick this long in.
+// A kickoff: everyone lined up, the kicker off on his run-up this long in.
 const KICK_AT = 2600;
 // The plays acted out from the snap (see action.ts), and how long after
 // the whistle the picture stays on one - men getting up, walking off.
-const ACTED = new Set<PlayKind>(["pass", "run", "kneel"]);
+const ACTED = new Set<PlayKind>([
+	"pass",
+	"run",
+	"kneel",
+	"kickoff",
+	"punt",
+	"fieldGoal",
+	"extraPoint",
+	"onside",
+]);
 const AFTER_WHISTLE = 3200;
 
 // The first thing said of a play after the snap: when it happened, by what
@@ -349,6 +362,8 @@ const STAT_GROUPS: Record<string, Group[] | undefined> = {
 	rba: ["OL", "TE", "RB"],
 	rbw: ["OL", "TE", "RB"],
 	ko: ["K"],
+	ok: ["K"],
+	okRec: ["K"],
 	kr: ["KR"],
 	pnt: ["P"],
 	pr: ["PR"],
@@ -356,6 +371,7 @@ const STAT_GROUPS: Record<string, Group[] | undefined> = {
 	xp: ["K"],
 };
 const KICK_STAT = /^fga?\d+$/;
+const RETURN_STATS = new Set(["kr", "krYds", "krLng"]);
 // The order they are named in, most certain first: whoever had the ball.
 const NAMED_ORDER = [
 	"pss",
@@ -363,6 +379,7 @@ const NAMED_ORDER = [
 	"tgt",
 	"rec",
 	"ko",
+	"ok",
 	"pnt",
 	"kr",
 	"pr",
@@ -572,13 +589,19 @@ class Director {
 	statsOf(i0: number, i1: number): StatLine[] {
 		const out: StatLine[] = [];
 		let isTry = false;
+		let onside: RawEvent | undefined;
 		for (let i = i0; i < i1; i++) {
 			const e = this.events[i];
 			if (e?.type === "stat" && typeof e.pid === "number") {
 				out.push({ s: e.s, pid: e.pid, t: e.t });
 			} else if (e?.type === "twoPointConversion") {
 				isTry = true;
+			} else if (e?.type === "onsideKickRecovery") {
+				onside = e;
 			}
+		}
+		if (onside) {
+			return this.onsideStats(out, onside);
 		}
 		if (!isTry) {
 			return out;
@@ -607,6 +630,25 @@ class Director {
 					}
 				}
 			});
+		}
+		return out;
+	}
+
+	// An onside kick: the man who came up with it - the return the sim
+	// calls it, if it was the hands team's; if the kicking team's, named in
+	// its line only (the kicker credited with it) - "onsRec", wherever he
+	// lines up, not back deep as a returner.
+	onsideStats(stats: StatLine[], e: RawEvent): StatLine[] {
+		const t = e.t === 1 ? 1 : 0;
+		const name = Array.isArray(e.names) ? e.names[0] : undefined;
+		const pid =
+			stats.find((x) => x.s === "kr")?.pid ??
+			(typeof name === "string"
+				? this.byName[(1 - t) as Side].get(name)
+				: undefined);
+		const out = stats.filter((x) => !RETURN_STATS.has(x.s));
+		if (pid !== undefined) {
+			out.push({ s: "onsRec", pid, t });
 		}
 		return out;
 	}
@@ -725,7 +767,7 @@ class Director {
 				kind: "spot",
 				t0,
 				at: { x: losX, y: ballY, z: 0 },
-				...(kick ? { tee: true } : {}),
+				...(kick ? { stood: "tee" as const } : {}),
 			},
 		];
 		const center = parts.find((p) => p.role === "C" || p.role === "LS");
@@ -865,6 +907,7 @@ class Director {
 			set,
 			snap,
 			t1,
+			follow: acted?.follow ?? snap,
 			...(formation ? { formation } : {}),
 			parts,
 			ball,
@@ -939,8 +982,8 @@ class Director {
 		};
 		if (kind === "kickoff" || kind === "onside") {
 			const onside = kind === "onside";
-			off = KICKOFF_COVER(onside ? 3 : 75);
-			def = KICKOFF_RECEIVE(onside ? 33 : 90, onside ? 120 : 180);
+			off = KICKOFF_COVER(onside ? -3 : 75);
+			def = onside ? ONSIDE_RECEIVE : KICKOFF_RECEIVE(90, 180);
 		} else if (kind === "punt") {
 			const punt = event("punt");
 			const room = 100 - scrimmage;
