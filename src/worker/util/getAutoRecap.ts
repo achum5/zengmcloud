@@ -3454,7 +3454,9 @@ const gameStory = (
 	const lMaxAt = flow?.maxLeadAt?.[lSide];
 	const raw = flow?.run;
 	const run =
-		raw && raw.period <= regPeriods && raw.pts >= (raw.side === wSide ? 10 : 12)
+		raw &&
+		raw.period <= regPeriods &&
+		(raw.side === wSide ? winnersRunIsNews(shape, raw) : raw.pts >= 12)
 			? { winner: raw.side === wSide, pts: raw.pts, period: raw.period }
 			: undefined;
 	const when = (period: number) => periodTag(period, regPeriods);
@@ -3468,6 +3470,10 @@ const gameStory = (
 	const w1 = wq[0] ?? 0;
 	const l1 = lq[0] ?? 0;
 	const hot = w1 - l1 >= 8;
+	// Ahead at the break, the first quarter is told when it was big or built
+	// the whole halftime lead: "won the first quarter 34-26 and led 61-46 at
+	// halftime" opened a fifth of all recaps and said no more than the half.
+	const hotStart = w1 - l1 >= 12 || (hot && w1 - l1 >= wh - lh);
 	const covers = new Set<StoryCover>();
 	const out: string[] = [];
 
@@ -3767,12 +3773,12 @@ const gameStory = (
 					: ""
 			}${pick(rng, [`led ${wh}-${lh} at halftime`, `were in front ${wh}-${lh} by the break`], "story:turnedByHalf")}.`,
 		);
-	} else if (firstRun && firstRun.period === 1 && hot) {
+	} else if (firstRun && firstRun.period === 1 && hotStart) {
 		covers.add("run").add("firstQuarter");
 		out.push(
 			`${W} ran off ${firstRun.pts} straight points in the first, won the quarter ${w1}-${l1} and led ${wh}-${lh} at halftime.`,
 		);
-	} else if (!firstRun && hot) {
+	} else if (!firstRun && hotStart) {
 		covers.add("firstQuarter");
 		out.push(
 			pick(
@@ -3895,6 +3901,32 @@ const gameStory = (
 		);
 	}
 	return { sentences: out, covers };
+};
+
+// WHICH RUN OF THE WINNERS' IS NEWS. The game's longest run is 10 or 11
+// points in a typical game, and telling it in every recap made "ran off 11
+// straight points in the second" the commonest sentence on a page. It is
+// told when it is 15 or more; at 12 or more when its quarter broke a close
+// game open or took the winners from behind to in front; and at 10 or more
+// when it came in a last quarter the game was won in.
+const winnersRunIsNews = (
+	shape: Shape,
+	r: { pts: number; period: number },
+): boolean => {
+	const marginAfter = (n: number) =>
+		shape.wq.slice(0, n).reduce((a, b) => a + b, 0) -
+		shape.lq.slice(0, n).reduce((a, b) => a + b, 0);
+	const before = marginAfter(r.period - 1);
+	const after = marginAfter(r.period);
+	return (
+		r.pts >= 15 ||
+		(r.pts >= 12 &&
+			((before <= 4 && after >= 6) || (before < 0 && after > 0))) ||
+		(r.pts >= 10 &&
+			r.period === shape.regPeriods &&
+			shape.ot === 0 &&
+			marginAfter(shape.regPeriods - 1) <= 0)
+	);
 };
 
 // The scoreboard's overall character: a shootout or a defensive grind.
@@ -5669,8 +5701,8 @@ const runNote = (
 		return undefined;
 	}
 	const isWinner = run.side === sideOf(game, shape.winner);
-	// A 10-0 run is most games; a dozen straight is the one worth a sentence.
-	if (run.pts < (isWinner ? 12 : 15)) {
+	// A 10-0 run is most games; see winnersRunIsNews.
+	if (isWinner ? !winnersRunIsNews(shape, run) : run.pts < 15) {
 		return undefined;
 	}
 	const team = isWinner ? shape.winner : shape.loser;
@@ -6063,12 +6095,12 @@ export const getAutoRecap = (game: RecapGame): string => {
 	const spentTopics = new Set<StatTopic>();
 	// A "jumped out to a 30-20 first quarter" note on top of "led wire to wire"
 	// or "broke it open with a 30-20 first quarter" is the same beat twice.
+	// And a game story has already decided whether the first quarter was
+	// news; its note would land after the second half, out of order.
 	const stat = statNote(
 		shape,
 		rng,
-		flowCovered === "wire" ||
-			flowCovered === "run" ||
-			!!story?.covers.has("firstQuarter"),
+		flowCovered === "wire" || flowCovered === "run" || !!story,
 		balanceTold,
 	);
 	if (stat && (story ? storyPara.length < 6 : para1.length < 4)) {

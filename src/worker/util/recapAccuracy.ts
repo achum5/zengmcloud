@@ -542,7 +542,7 @@ export const verifyRecap = (
 		// not trail again" says the losers HAD been in front.
 		const loserPeak = flow.maxLead[game.teams[0].tid === winner.tid ? 1 : 0];
 		for (const m of text.matchAll(
-			/wire to wire|without ever trailing|never trailed(?! again)|start to finish|from the opening tip/g,
+			/wire to wire|without ever trailing|never trailed(?! again)|start to finish|in front from the opening tip/g,
 		)) {
 			if (loserPeak > 0) {
 				add("never trailed", `the losers led by ${loserPeak}`, m[0]);

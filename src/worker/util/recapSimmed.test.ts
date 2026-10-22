@@ -210,6 +210,46 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// A 10-0 run happens most games; "ran off 11 straight points in the
+	// second" was in most recaps. The winners' run is told when it is 15 or
+	// more, when it came in a quarter that turned the game or broke it open
+	// (12 or more), or in a last quarter the game was won in.
+	test("the winners' run is told only when it is news", () => {
+		let told = 0;
+		for (const { gid, recap, game } of pairs) {
+			const run = game.flow?.run;
+			const { w, l } = sides(game);
+			if (!run || run.side !== (game.teams[0] === w ? 0 : 1)) {
+				continue;
+			}
+			if (
+				!new RegExp(
+					String.raw`\b${run.pts} straight points|\b${run.pts} unanswered|${run.pts}-0 (?:run|burst)`,
+				).test(recap)
+			) {
+				continue;
+			}
+			told += 1;
+			const wq = w.ptsQtrs ?? [];
+			const lq = l.ptsQtrs ?? [];
+			const after = (n: number) =>
+				wq.slice(0, n).reduce((a, b) => a + b, 0) -
+				lq.slice(0, n).reduce((a, b) => a + b, 0);
+			const reg = wq.length - game.overtimes;
+			const news =
+				run.pts >= 15 ||
+				(run.pts >= 12 &&
+					((after(run.period - 1) <= 4 && after(run.period) >= 6) ||
+						(after(run.period - 1) < 0 && after(run.period) > 0))) ||
+				(run.pts >= 10 &&
+					run.period === reg &&
+					game.overtimes === 0 &&
+					after(reg - 1) <= 0);
+			assert.isTrue(news, `gid ${gid}: a ${run.pts}-0 run told\n${recap}`);
+		}
+		assert.isAtLeast(told, 5);
+	});
+
 	// Behind after three and won: the game was won in the fourth, and the
 	// story says so with the quarter's score - not just "the second half
 	// belonged to them".
