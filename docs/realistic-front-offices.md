@@ -218,7 +218,8 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
     does; it goes away once the team loses interest or finds something better
     elsewhere. Two teams a day look again at what they would offer each
     human team, the day's first shoppers; an offer is off as soon as any of
-    its players or picks moves.
+    its players or picks moves. Removing one on Trade Proposals declines it:
+    the team takes it back and does not make that deal again.
 - **The whole calculation behind each CPU-to-CPU trade** is on its trade
   summary page, in God Mode only (owner's call): it shows true ratings.
 - **Talking (later).** CPU teams explain their side of a deal the way a real

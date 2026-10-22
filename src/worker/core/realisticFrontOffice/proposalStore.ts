@@ -64,3 +64,44 @@ export const proposalsTo = async (humanTid: number) => {
 	}
 	return out;
 };
+
+// A proposal's assets, both sides, as one string.
+export const proposalKey = (x: {
+	give: { pids: readonly number[]; dpids: readonly number[] };
+	get: { pids: readonly number[]; dpids: readonly number[] };
+}) =>
+	[
+		[...x.give.pids].sort((a, b) => a - b).join(),
+		[...x.give.dpids].sort((a, b) => a - b).join(),
+		[...x.get.pids].sort((a, b) => a - b).join(),
+		[...x.get.dpids].sort((a, b) => a - b).join(),
+	].join("|");
+
+// How many turned-down proposals a team remembers.
+const DECLINED_KEPT = 10;
+
+// A human team turns down a CPU team's proposal: it is off, and the CPU team
+// won't make it again.
+export const declineProposal = async (cpuTid: number, humanTid: number) => {
+	const t = await idb.cache.teams.get(cpuTid);
+	const x = t?.tradeProposals?.find((y) => y.tid === humanTid);
+	if (!t || !x) {
+		return;
+	}
+	const rest = t.tradeProposals!.filter((y) => y !== x);
+	t.tradeProposals = rest.length > 0 ? rest : undefined;
+	t.declinedTradeProposals = [
+		...(t.declinedTradeProposals ?? []),
+		{ tid: humanTid, key: proposalKey(x) },
+	].slice(-DECLINED_KEPT);
+	await idb.cache.teams.put(t);
+};
+
+export const wasDeclined = (
+	t: { declinedTradeProposals?: { tid: number; key: string }[] },
+	humanTid: number,
+	key: string,
+) =>
+	(t.declinedTradeProposals ?? []).some(
+		(x) => x.tid === humanTid && x.key === key,
+	);

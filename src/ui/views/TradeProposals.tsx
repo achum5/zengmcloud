@@ -191,8 +191,12 @@ const TradeProposals = ({ offers, seed, standing }: View<"tradeProposals">) => {
 					challengeNoRatings={challengeNoRatings}
 					handleNegotiate={handleNegotiate}
 					handleRemove={(i) => {
-						const tid = offers[i]!.tid;
+						// The table lists the offers not yet removed.
+						const tid = filteredOffers[i]!.tid;
 						setRemovedTids((prevTids) => [...prevTids, tid]);
+						if (standing) {
+							void toWorker("main", "declineTradeProposal", tid);
+						}
 					}}
 					offers={filteredOffers}
 					salaryCap={salaryCap}
@@ -211,6 +215,9 @@ const TradeProposals = ({ offers, seed, standing }: View<"tradeProposals">) => {
 								onRemove={() => {
 									const tid = offer.tid;
 									setRemovedTids((prevTids) => [...prevTids, tid]);
+									if (standing) {
+										void toWorker("main", "declineTradeProposal", tid);
+									}
 								}}
 								salaryCap={salaryCap}
 								salaryCapType={salaryCapType}

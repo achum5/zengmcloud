@@ -2829,6 +2829,8 @@ export type Team = {
 		give: { pids: number[]; dpids: number[] };
 		get: { pids: number[]; dpids: number[] };
 	}[];
+	// The ones human teams turned down, not to be made again.
+	declinedTradeProposals?: { tid: number; key: string }[];
 
 	// Its home and away uniforms for the 3D live game, drawn from pictures:
 	// ids of JerseySkin rows. Optional (no upgrade).

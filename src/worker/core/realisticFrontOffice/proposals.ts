@@ -37,6 +37,7 @@ import {
 	type SeasonLines,
 } from "./outlook.ts";
 import { IMPACT_RATINGS } from "./playerImpact.ts";
+import { proposalKey, wasDeclined } from "./proposalStore.ts";
 
 // CPU TEAMS' OFFERS TO HUMANS (owner's calls): "What would make this work",
 // the trading block and Trade Proposals. A CPU team offers the deal best for
@@ -112,7 +113,7 @@ export const publicTeam = (outlook: LeagueOutlook, t: TeamState): TeamState => {
 };
 
 // What a deal does for a human team by its own read: `h` from publicTeam.
-const publicGain = (
+export const publicGain = (
 	outlook: LeagueOutlook,
 	h: TeamState,
 	outgoing: readonly Asset[],
@@ -356,7 +357,18 @@ export const refreshProposals = async (
 	for (const humanTid of humanTids) {
 		const h = await loadTeam(outlook, humanTid);
 		let proposal = await bestProposal(outlook, a, h);
-		if (proposal && !(await confirmed(cpuTid, humanTid, proposal))) {
+		if (
+			proposal &&
+			(wasDeclined(
+				t,
+				humanTid,
+				proposalKey({
+					give: sideOf(cpuTid, proposal.give),
+					get: sideOf(humanTid, proposal.get),
+				}),
+			) ||
+				!(await confirmed(cpuTid, humanTid, proposal)))
+		) {
 			proposal = undefined;
 		}
 		const old = before.find((x) => x.tid === humanTid);

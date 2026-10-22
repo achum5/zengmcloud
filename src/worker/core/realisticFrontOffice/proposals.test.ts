@@ -5,16 +5,22 @@ import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import { judgeHumanOffer } from "./humanTrades.ts";
-import { currentOutlook, loadTeam, priceFor } from "./market.ts";
+import { currentOutlook, loadTeam } from "./market.ts";
 import {
 	bestProposal,
 	counterOffer,
+	publicGain,
 	publicPlayer,
 	publicTeam,
 	refreshProposals,
 	tradingBlockTeams,
 } from "./proposals.ts";
-import { dropMovedProposals, proposalsTo } from "./proposalStore.ts";
+import {
+	declineProposal,
+	dropMovedProposals,
+	proposalKey,
+	proposalsTo,
+} from "./proposalStore.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 
@@ -69,10 +75,6 @@ test(
 		const outlook = await currentOutlook();
 		const human = await loadTeam(outlook, userTid);
 		const pub = publicTeam(outlook, human);
-		const seen = (assets: { kind: string; p?: any; dp?: any }[]) =>
-			assets.map((x) =>
-				x.kind === "player" ? { kind: "player", p: publicPlayer(x.p) } : x,
-			) as any;
 		let found = 0;
 		for (let tid = 1; tid < g.get("numTeams") && found < 3; tid++) {
 			const cpu = await loadTeam(outlook, tid);
@@ -87,12 +89,7 @@ test(
 			assert.isAbove(proposal.net, 0);
 			// The human gains by what he can see.
 			assert.isAtLeast(
-				priceFor(
-					{ ...outlook, lines: new Map() },
-					pub,
-					seen(proposal.get),
-					seen(proposal.give),
-				),
+				publicGain(outlook, pub, proposal.get, proposal.give, cpu),
 				-1e-9,
 			);
 		}
@@ -178,6 +175,28 @@ test(
 				side(userTid, counter.get),
 			);
 			assert.strictEqual(verdict.kind, "yes");
+		}
+	},
+);
+
+test(
+	"a proposal turned down is off and not made again",
+	{ timeout: 300_000 },
+	async () => {
+		const outlook = await currentOutlook();
+		const standing = (await proposalsTo(userTid)).find(
+			(x) => x.tid === proposer,
+		);
+		assert.isDefined(standing);
+		await declineProposal(proposer!, userTid);
+		assert.isUndefined(
+			(await proposalsTo(userTid)).find((x) => x.tid === proposer),
+		);
+		// Asked again, it does not make the same one.
+		await refreshProposals(outlook, proposer!, [userTid]);
+		const again = (await proposalsTo(userTid)).find((x) => x.tid === proposer);
+		if (again) {
+			assert.notStrictEqual(proposalKey(again), proposalKey(standing!));
 		}
 	},
 );

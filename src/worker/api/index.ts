@@ -326,6 +326,7 @@ import { generateContractOptions } from "../core/contractNegotiation/generateCon
 import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
 import { afterPick as realisticFrontOfficeAfterPick } from "../core/realisticFrontOffice/draft.ts";
 import { tradingBlockTeams } from "../core/realisticFrontOffice/proposals.ts";
+import { declineProposal } from "../core/realisticFrontOffice/proposalStore.ts";
 import {
 	decideReSignings as realisticFrontOfficeDecideReSignings,
 	makeOffer as realisticFrontOfficeMakeOffer,
@@ -4156,6 +4157,12 @@ const setTeamFinancesPlan = async ({
 	// someone ticks and then immediately navigates away from - exactly the write
 	// that would be lost. It's one small record, so pay for it now.
 	await idb.cache.flush();
+};
+
+// Realistic front offices: the user turns down a CPU team's standing proposal.
+const declineTradeProposal = async (tid: number) => {
+	await declineProposal(tid, g.get("userTid"));
+	await toUI("realtimeUpdate", [["g.tradeProposalsSeed"]]);
 };
 
 const incrementTradeProposalsSeed = async () => {
@@ -8246,6 +8253,7 @@ const api = {
 		idbCacheFlush,
 		importPlayers,
 		importPlayersGetReal,
+		declineTradeProposal,
 		incrementTradeProposalsSeed,
 		init,
 		initGold,
