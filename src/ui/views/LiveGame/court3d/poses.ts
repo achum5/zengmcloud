@@ -1497,10 +1497,10 @@ const CROSS_BACK: [number, Pose][] = [
 		0,
 		pose({
 			...BACK_STANCE,
-			twist: -6,
-			shN: -2,
-			elN: 56,
-			abN: 22,
+			twist: -2,
+			shN: 24,
+			elN: 50,
+			abN: 20,
 			wrN: 14,
 			shF: 50,
 			elF: 72,
@@ -1508,20 +1508,21 @@ const CROSS_BACK: [number, Pose][] = [
 		}),
 	],
 	[
-		0.1,
+		0.14,
 		pose({
 			...BACK_STANCE,
-			twist: -14,
-			shN: -27,
-			elN: 49,
-			abN: 24,
+			twist: -13,
+			shN: -11,
+			elN: 46,
+			abN: 22,
+			wrN: -4,
 			shF: 48,
 			elF: 70,
 			abF: 30,
 		}),
 	],
 	[
-		0.2,
+		0.28,
 		pose({
 			...BACK_STANCE,
 			twist: -22,
@@ -1536,7 +1537,7 @@ const CROSS_BACK: [number, Pose][] = [
 		}),
 	],
 	[
-		0.42,
+		0.5,
 		pose({
 			...BACK_STANCE,
 			twist: -16,
@@ -1552,7 +1553,7 @@ const CROSS_BACK: [number, Pose][] = [
 		}),
 	],
 	[
-		0.62,
+		0.66,
 		pose({
 			...BACK_STANCE,
 			twist: -6,
@@ -1567,7 +1568,7 @@ const CROSS_BACK: [number, Pose][] = [
 		}),
 	],
 	[
-		0.8,
+		0.82,
 		pose({
 			...BACK_STANCE,
 			twist: 2,
@@ -1597,20 +1598,22 @@ const CROSS_BACK: [number, Pose][] = [
 		}),
 	],
 ];
-// Where each move lets go of the ball (how far through its bounce) and
-// where the ball hits the floor - in his frame, as a share of his height, for
-// the ball leaving his right hand (his left mirrors it): across in front of
-// his knees, or on the move further out, past his stride; in the gap between
-// his legs; behind him by the heel of the foot on the side it is going to.
-// The keys above put his hands round these, so the ball's path between them
-// (evaluate.ts) goes round his legs, never through them.
+// Where each move lets go of the ball and where it hits the floor (how far
+// through its bounce), and where on the floor - in his frame, as a share of
+// his height, for the ball leaving his right hand (his left mirrors it):
+// across in front of his knees, or on the move further out, past his
+// stride; in the gap between his legs; behind him by the heel of the foot on
+// the side it is going to. The keys above put his hands round these, so the
+// ball's path between them (evaluate.ts) goes round his legs, never through
+// them. (Behind his back, the hand has furthest to take it before it lets
+// go - from out in front to behind his hip - so it holds on longer.)
 export const MOVE_BALL: Record<
 	DribbleMove,
-	{ letGo: number; f: number; s: number }
+	{ letGo: number; down: number; f: number; s: number }
 > = {
-	front: { letGo: 0.12, f: 0.22, s: 0 },
-	legs: { letGo: 0.14, f: 0.08, s: 0.064 },
-	back: { letGo: 0.2, f: -0.143, s: 0.08 },
+	front: { letGo: 0.12, down: 0.42, f: 0.22, s: 0 },
+	legs: { letGo: 0.14, down: 0.42, f: 0.08, s: 0.064 },
+	back: { letGo: 0.28, down: 0.5, f: -0.143, s: 0.08 },
 };
 const ON_THE_MOVE_F = 0.32;
 // Where a move's bounce hits the floor (feet, his frame): the ball going to

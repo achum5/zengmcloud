@@ -2162,6 +2162,10 @@ const BLEND_MS = 160;
 // longer.)
 const SETTLE_MS = 300;
 const MOVE_ARMS_MS = 60;
+// (Behind his back, the move starts with his hand out in front where the
+// ball comes up into it, and sweeps it back from there: no time to hold it
+// where it was.)
+const BACK_ARMS_MS = 25;
 const BLEND_DEPTH = 8;
 const FLICK_MS = 40;
 // An arm thrown up - fighting for the ball, contesting, reaching - comes
@@ -2423,7 +2427,13 @@ const blendInto = (
 		...(turns[0] || turns[1] ? { turns } : {}),
 		facing,
 		...(isMove(anim)
-			? { arms: ease(MOVE_ARMS_MS) }
+			? {
+					arms: ease(
+						anim === "crossBackR" || anim === "crossBackL"
+							? BACK_ARMS_MS
+							: MOVE_ARMS_MS,
+					),
+				}
 			: slowArms
 				? { arms: ease(ARMS_DOWN_MS) }
 				: {}),
@@ -3820,6 +3830,7 @@ const BEFORE = 0.5;
 export const moveBallAt = (
 	ph: number,
 	letGo: number,
+	down: number,
 	floor: V3,
 	under: (at: number, hand: Hand) => V3,
 	from: Hand,
@@ -3833,14 +3844,14 @@ export const moveBallAt = (
 	if (ph < letGo) {
 		return under(ph, from);
 	}
-	if (ph < DOWN) {
+	if (ph < down) {
 		return mix(
 			under(letGo, from),
 			floor,
-			((ph - letGo) / (DOWN - letGo)) ** 1.35,
+			((ph - letGo) / (down - letGo)) ** 1.35,
 		);
 	}
-	return mix(under(ph, to), floor, (1 - (ph - DOWN) / (1 - DOWN)) ** 1.8);
+	return mix(under(ph, to), floor, (1 - (ph - down) / (1 - down)) ** 1.8);
 };
 
 // The ball under a dribbling hand: just below the middle of his palm.
@@ -3901,6 +3912,7 @@ const ballOn = (
 					moveBallAt(
 						ph,
 						MOVE_BALL[move].letGo,
+						MOVE_BALL[move].down,
 						{ ...moveFloor(body, move, to, still), u: BALL_R },
 						under,
 						from,

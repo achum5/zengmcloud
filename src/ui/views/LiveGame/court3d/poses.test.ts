@@ -131,6 +131,7 @@ describe("3D poses", () => {
 						const ball = moveBallAt(
 							ph,
 							MOVE_BALL[move].letGo,
+							MOVE_BALL[move].down,
 							floor,
 							under,
 							from,
