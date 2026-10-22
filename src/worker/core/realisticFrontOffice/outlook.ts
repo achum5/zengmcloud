@@ -1,8 +1,14 @@
-import { PHASE, PLAYER } from "../../../common/constants.ts";
+import {
+	COLA_ALPHA,
+	COLA_NUM_LOTTERY_PICKS,
+	PHASE,
+	PLAYER,
+} from "../../../common/constants.ts";
 import type {
 	DraftPick,
 	MinimalPlayerRatings,
 	Player,
+	Team,
 } from "../../../common/types.ts";
 import { last } from "../../../common/utils.ts";
 import { idb } from "../../db/index.ts";
@@ -32,6 +38,8 @@ import {
 	type ValueRatings,
 } from "./strength.ts";
 import getRookieContractLength from "../draft/getRookieContractLength.ts";
+import { getSlotPickProbsCached } from "../team/pickProbsCache.ts";
+import { getNumColaLotteryTeams } from "../draft/cola.ts";
 
 // WHERE EVERY TEAM IS HEADED, season by season: each roster projected forward
 // with the game's own development, its draft picks turned into the players
@@ -122,7 +130,30 @@ export type LeagueOutlook = {
 	lastPickSeason: number;
 	// Where each team's own pick is expected to land in each season's draft,
 	// 0 for the first, from its roster alone - counted smoothly (softPlace).
+	// With the lottery (outlookSettings.lottery), where it finishes: the
+	// order teams go into the draft in, the worst first.
 	draftPlace: Map<number, number[]>;
+	// The chance of each pick in a round from each place teams go into the
+	// draft in, by round (the game's own lottery odds): with the lottery.
+	slotPicks?: readonly (readonly (readonly number[])[])[];
+	// In the offseason before this season's lottery: where each team
+	// finished, for its pick in it.
+	finalPlace?: Map<number, number>;
+	// COLA (draftType "cola", with the lottery): the first few picks are
+	// drawn among the teams outside the last three playoff rounds, each by
+	// the points it has built up, and the rest go by record. A team's own pick
+	// is in the draw only while it holds it.
+	cola?: {
+		points: Map<number, number>;
+		meanPoints: number;
+		// Points each team adds this season, not yet counted.
+		addNow: boolean;
+		numLottery: number;
+		numPicks: number;
+		alpha: number;
+		// Where a pick lands from each finish, by its team's share of points.
+		matrices: Map<number, number[][]>;
+	};
 	// What draftPlace ranks each team by, each season: its strength on its
 	// roster alone, and this season, once games are played, the wins it is
 	// heading for - with the wins banked and the average strength those come
@@ -396,6 +427,9 @@ export const outlookSettings = {
 	// How many drafts out a deal moves the picks of the teams in it
 	// (placesAfter); later ones stay where the outlook put them.
 	placesAfterDrafts: 99,
+	// A pick lands where its team finishes, then the draft lottery moves it
+	// (slotPicks); off, by where picks have landed, the lottery in the noise.
+	lottery: true,
 	// Picks are expected to land back toward the middle of the draft by as
 	// much as they have in arena leagues (expectedPlace).
 	placeRegression: true,
@@ -437,21 +471,26 @@ type PickYears = {
 	round: number;
 	pick: number;
 	board: number;
+	// Whether the team holding it is the one it came from (COLA's draw).
+	own: boolean;
 	byYear: (PickAt | null | undefined)[];
 };
 
 const pickYearsOf = (
 	outlook: Omit<LeagueOutlook, "teams" | "titleCurves" | "playoffCurves">,
 	dp: PickLike,
+	holder: number,
 ) => {
 	let entry = outlook.pickYears.get(dp);
+	const own = holder === dp.originalTid;
 	if (
 		!entry ||
 		entry.originalTid !== dp.originalTid ||
 		entry.season !== dp.season ||
 		entry.round !== dp.round ||
 		entry.pick !== dp.pick ||
-		entry.board !== (outlook.classBoard?.version ?? 0)
+		entry.board !== (outlook.classBoard?.version ?? 0) ||
+		entry.own !== own
 	) {
 		entry = {
 			originalTid: dp.originalTid,
@@ -459,6 +498,7 @@ const pickYearsOf = (
 			round: dp.round,
 			pick: dp.pick,
 			board: outlook.classBoard?.version ?? 0,
+			own,
 			byYear: [],
 		};
 		outlook.pickYears.set(dp, entry);
@@ -499,12 +539,31 @@ const futurePickLines = (
 	return lines;
 };
 
-// How many places in its round a pick lands from where the outlook expects,
-// typically (root mean square), by seasons of games still to be played before
-// its draft order is set. Measured in arena leagues (ARENA_PICK_SURVEY): every
-// outlook's expected place for every team's own first-round pick, against
-// where it landed, the lottery included (35,400 of them). A guess at random
-// would be about 12 places off.
+// How many places a team finishes from where the outlook expects it to go into
+// the draft, typically (root mean square, from where it is expected back
+// toward the middle: PLACE_KEPT), by seasons of games still to be played.
+// Measured in 4 arena leagues (ARENA_PICK_SURVEY, 58,200 projections) against
+// the standings: non-playoff teams by record, then playoff teams. A guess at
+// random would be about 9 places off.
+const FINISH_SPREAD: readonly (readonly [number, number])[] = [
+	[0, 0],
+	[0.25, 1.9],
+	[0.5, 2.3],
+	[0.75, 2.8],
+	[1, 4.1],
+	[1.5, 4.7],
+	[2, 5.6],
+	[3, 6.5],
+	[4, 7.4],
+	[5, 7.8],
+];
+
+// Without the lottery: how many places in its round a pick lands from where
+// the outlook expects, typically (root mean square), by seasons of games still
+// to be played before its draft order is set. Measured in arena leagues
+// (ARENA_PICK_SURVEY): every outlook's expected place for every team's own
+// first-round pick, against where it landed, the lottery included (35,400 of
+// them). A guess at random would be about 12 places off.
 const DRAFT_PLACE_SPREAD: readonly (readonly [number, number])[] = [
 	[0, 0],
 	[0.5, 4.9],
@@ -517,19 +576,29 @@ const DRAFT_PLACE_SPREAD: readonly (readonly [number, number])[] = [
 	[5, 11.7],
 ];
 
-const spreadAt = (seasons: number) => {
-	const last = DRAFT_PLACE_SPREAD.at(-1)!;
+// A table's value this many seasons out, straight between its rows.
+const tableAt = (
+	table: readonly (readonly [number, number])[],
+	seasons: number,
+) => {
+	const last = table.at(-1)!;
 	if (seasons >= last[0]) {
 		return last[1];
 	}
 	let i = 0;
-	while (DRAFT_PLACE_SPREAD[i + 1]![0] < seasons) {
+	while (table[i + 1]![0] < seasons) {
 		i += 1;
 	}
-	const [s0, e0] = DRAFT_PLACE_SPREAD[i]!;
-	const [s1, e1] = DRAFT_PLACE_SPREAD[i + 1]!;
+	const [s0, e0] = table[i]!;
+	const [s1, e1] = table[i + 1]!;
 	return e0 + ((e1 - e0) * (seasons - s0)) / (s1 - s0);
 };
+
+const spreadAt = (seasons: number) =>
+	tableAt(
+		outlookSettings.lottery ? FINISH_SPREAD : DRAFT_PLACE_SPREAD,
+		seasons,
+	);
 
 // How far a pick may land from where it is expected to, in places in its
 // round - none once the draft order is set.
@@ -556,6 +625,11 @@ export const draftPlaceSpread = (
 // of them with picks expected back toward the middle like this: the slope of
 // where picks landed on where they were projected, both from the middle.
 // Leagues differ a lot at long range - 4 seasons out, from 0.05 to 0.80.
+// That is with the lottery in the noise; how much of its distance from the
+// middle a team's finish keeps (FINISH_KEPT) is far more within a season: the
+// lottery, not the standings, moved most picks. Measured against the
+// standings in 4 of those leagues; two seasons and more out, less the
+// difference the other 4 showed in where picks landed.
 const PLACE_KEPT: readonly (readonly [number, number])[] = [
 	[0, 1],
 	[0.5, 0.84],
@@ -566,30 +640,35 @@ const PLACE_KEPT: readonly (readonly [number, number])[] = [
 	[4, 0.42],
 	[5, 0.25],
 ];
+const FINISH_KEPT: readonly (readonly [number, number])[] = [
+	[0, 1],
+	[0.25, 0.99],
+	[0.5, 0.98],
+	[0.75, 0.96],
+	[1, 0.9],
+	[1.5, 0.81],
+	[2, 0.74],
+	[3, 0.6],
+	[4, 0.44],
+	[5, 0.27],
+];
 
-const placeKept = (seasons: number) => {
-	const last = PLACE_KEPT.at(-1)!;
-	if (seasons >= last[0]) {
-		return last[1];
-	}
-	let i = 0;
-	while (PLACE_KEPT[i + 1]![0] < seasons) {
-		i += 1;
-	}
-	const [s0, k0] = PLACE_KEPT[i]!;
-	const [s1, k1] = PLACE_KEPT[i + 1]!;
-	return k0 + ((k1 - k0) * (seasons - s0)) / (s1 - s0);
-};
+const placeKept = (seasons: number) =>
+	tableAt(outlookSettings.lottery ? FINISH_KEPT : PLACE_KEPT, seasons);
 
 export const expectedPlace = (
 	outlook: Pick<
 		LeagueOutlook,
-		"draftPlace" | "season" | "offset" | "numTeams" | "progress"
+		"draftPlace" | "finalPlace" | "season" | "offset" | "numTeams" | "progress"
 	>,
 	dp: PickLike,
 ) => {
 	if (dp.pick > 0) {
 		return dp.pick - 1;
+	}
+	const final = outlook.finalPlace?.get(dp.originalTid);
+	if (final !== undefined && dp.season === outlook.season) {
+		return final;
 	}
 	const middle = (outlook.numTeams - 1) / 2;
 	const places = outlook.draftPlace.get(dp.originalTid);
@@ -618,6 +697,9 @@ export const pickLineAt = (
 	dp: PickLike,
 	y: number,
 	shift = 0,
+	// The team holding it, where that matters (COLA's draw); the team it
+	// came from if not given.
+	holder?: number,
 ): PickAt | undefined => {
 	const season = outlookSeason(outlook, y);
 	if (typeof dp.season !== "number" || dp.season >= season) {
@@ -634,13 +716,90 @@ export const pickLineAt = (
 	);
 	const spread = Math.round(10 * draftPlaceSpread(outlook, dp)) / 10;
 	const years = season - dp.season;
-	const key = `${dp.round}:${Math.round(10 * center) / 10}:${spread}:${years}`;
+	// Before the order is set, the lottery moves where the team finishes.
+	let lottery = dp.pick > 0 ? undefined : outlook.slotPicks?.[dp.round - 1];
+	let lotteryKey = lottery ? ":L" : "";
+	if (dp.pick <= 0 && dp.round === 1 && outlook.cola) {
+		const ratio =
+			holder === undefined || holder === dp.originalTid
+				? colaRatio(outlook.cola, dp, outlook.season)
+				: 0;
+		lottery = colaPicks(outlook.cola, outlook.numTeams, ratio);
+		lotteryKey = `:C${ratio}`;
+	}
+	const key = `${dp.round}:${Math.round(10 * center) / 10}:${spread}:${years}${lotteryKey}`;
 	let at = outlook.pickLines.get(key);
 	if (at === undefined) {
-		at = averagePick(outlook, dp.round, center, spread, years);
+		at = averagePick(outlook, dp.round, center, spread, years, lottery);
 		outlook.pickLines.set(key, at);
 	}
 	return at ?? undefined;
+};
+
+// A team's points toward a draft's COLA draw against the average team's,
+// rounded to cache on: what it has plus what each season until then adds,
+// for the teams outside the last three playoff rounds (those inside lose
+// theirs, which is left out).
+const colaRatio = (
+	cola: NonNullable<LeagueOutlook["cola"]>,
+	dp: PickLike,
+	season: number,
+) => {
+	const added =
+		cola.alpha * ((dp.season as number) - season + (cola.addNow ? 1 : 0));
+	const mean = cola.meanPoints + added;
+	if (mean <= 0) {
+		return 1;
+	}
+	return (
+		Math.round((20 * ((cola.points.get(dp.originalTid) ?? 0) + added)) / mean) /
+		20
+	);
+};
+
+// Where a pick in the first round lands from each place its team finishes in,
+// under COLA, by its team's points against the average's (0 out of the draw):
+// its chance of each drawn pick against the other teams in the draw, else
+// its place among the rest by record, behind the winners - who come from the
+// teams below it about as often as from those above.
+const colaPicks = (
+	cola: NonNullable<LeagueOutlook["cola"]>,
+	n: number,
+	ratio: number,
+) => {
+	let rows = cola.matrices.get(ratio);
+	if (rows) {
+		return rows;
+	}
+	const { numLottery, numPicks } = cola;
+	const others = numLottery - 1;
+	const win: number[] = [];
+	let left = 1;
+	for (let j = 0; j < numPicks; j++) {
+		const p = ratio > 0 ? ratio / (ratio + others - j) : 0;
+		win.push(left * p);
+		left *= 1 - p;
+	}
+	rows = [];
+	for (let k = 0; k < n; k++) {
+		const row = new Array<number>(n).fill(0);
+		if (k >= numLottery || others <= numPicks) {
+			row[k] = 1;
+		} else {
+			for (const [j, p] of win.entries()) {
+				row[j]! += p;
+			}
+			const at = Math.min(n - 1, k + numPicks * (1 - k / others));
+			const lo = Math.floor(at);
+			row[lo]! += left * (1 - (at - lo));
+			if (lo + 1 < n) {
+				row[lo + 1]! += left * (at - lo);
+			}
+		}
+		rows.push(row);
+	}
+	cola.matrices.set(ratio, rows);
+	return rows;
 };
 
 // A drafted player's chance of re-signing when his rookie deal runs out, for
@@ -770,11 +929,13 @@ const averagePick = (
 	center: number,
 	spread: number,
 	years: number,
+	// The chance of each pick in the round from each place a team finishes.
+	lottery?: readonly (readonly number[])[],
 ): PickAt | null => {
 	const n = outlook.numTeams;
 	const numPicks = outlook.numRounds * n;
 	// The chance of each place in the round, the ends taking what lies beyond.
-	const weights: number[] = [];
+	let weights: number[] = [];
 	if (spread > 0) {
 		for (let k = 0; k < n; k++) {
 			const below = k === 0 ? 0 : normalCdf((k - 0.5 - center) / spread);
@@ -785,6 +946,18 @@ const averagePick = (
 		for (let k = 0; k < n; k++) {
 			weights.push(k === Math.round(center) ? 1 : 0);
 		}
+	}
+	// Then where the lottery takes each finish.
+	if (lottery && lottery.length === n) {
+		const picks = new Array<number>(n).fill(0);
+		for (const [k, w] of weights.entries()) {
+			if (w > 0) {
+				for (const [pick, p] of lottery[k]!.entries()) {
+					picks[pick]! += w * p;
+				}
+			}
+		}
+		weights = picks;
 	}
 	let kept = 0;
 	let roleFree = 0;
@@ -902,7 +1075,7 @@ export const teamPoints = (
 			retention[i]!,
 		),
 	);
-	const byPick = picks.map((dp) => pickYearsOf(outlook, dp));
+	const byPick = picks.map((dp) => pickYearsOf(outlook, dp, tid));
 	// League settings, looked up once: nothing here can change them.
 	let salaryCap: number | undefined;
 	let marketSalary: ((value: number) => number) | undefined;
@@ -926,7 +1099,7 @@ export const teamPoints = (
 			const byYear = byPick[i]!.byYear;
 			let at = byYear[y];
 			if (at === undefined) {
-				at = pickLineAt(outlook, picks[i]!, y) ?? null;
+				at = pickLineAt(outlook, picks[i]!, y, 0, tid) ?? null;
 				byYear[y] = at;
 			}
 			if (at) {
@@ -1139,6 +1312,75 @@ export const fitCurve = (points: { x: number; p: number }[]): Curve => {
 export const curveAt = (curve: Curve, x: number) =>
 	1 / (1 + Math.exp(-(curve.a + curve.b * x)));
 
+// The game's chance of each pick in each round from each place a team goes
+// into the draft in - undefined if it has none to give.
+const lotteryOdds = async (numTeams: number, season: number) => {
+	try {
+		const rounds = [];
+		for (let round = 1; round <= g.get("numDraftRounds"); round++) {
+			rounds.push(await getSlotPickProbsCached(round, numTeams, season));
+		}
+		return rounds;
+	} catch {
+		return undefined;
+	}
+};
+
+// Where each team stands toward the COLA draw.
+const colaState = async (
+	teams: readonly Team[],
+): Promise<LeagueOutlook["cola"]> => {
+	const points = new Map(
+		teams.map((t) => [
+			t.tid,
+			t.draftLottery?.type === "cola" ? t.draftLottery.chances : 0,
+		]),
+	);
+	return {
+		points,
+		meanPoints:
+			[...points.values()].reduce((a, x) => a + x, 0) /
+			Math.max(1, points.size),
+		addNow: g.get("phase") <= PHASE.PLAYOFFS,
+		numLottery: await getNumColaLotteryTeams(),
+		numPicks: COLA_NUM_LOTTERY_PICKS,
+		alpha: COLA_ALPHA,
+		matrices: new Map(),
+	};
+};
+
+// In the offseason before this season's draft order is set: where each team
+// goes into it, the worst first - the teams that missed the playoffs by
+// record, then the rest.
+const finalPlaces = async (season: number) => {
+	const unset = (
+		await idb.cache.draftPicks.indexGetAll("draftPicksBySeason", season)
+	).some((dp) => dp.round === 1 && dp.pick <= 0);
+	if (!unset) {
+		return undefined;
+	}
+	const rows = (
+		await idb.cache.teamSeasons.indexGetAll("teamSeasonsBySeasonTid", [
+			[season],
+			[season, "Z"],
+		])
+	).map((ts) => {
+		const games = ts.won + ts.lost + (ts.tied ?? 0) + (ts.otl ?? 0);
+		return {
+			tid: ts.tid,
+			playoffs: ts.playoffRoundsWon >= 0,
+			winp: games > 0 ? (ts.won + 0.5 * (ts.tied ?? 0)) / games : 0.5,
+		};
+	});
+	rows.sort(
+		(a, b) =>
+			Number(a.playoffs) - Number(b.playoffs) ||
+			a.winp - b.winp ||
+			a.tid - b.tid,
+	);
+	return new Map(rows.map((row, i) => [row.tid, i]));
+};
+
 export const buildOutlook = async ({
 	iterations = 1000,
 }: { iterations?: number } = {}): Promise<LeagueOutlook> => {
@@ -1229,6 +1471,14 @@ export const buildOutlook = async ({
 		meanPoints: [] as number[],
 		progress: inSeason ? progress : 0,
 		recordEdge: new Map<number, number>(),
+		slotPicks: outlookSettings.lottery
+			? await lotteryOdds(teams.length, season)
+			: undefined,
+		finalPlace: inSeason ? undefined : await finalPlaces(season),
+		cola:
+			outlookSettings.lottery && g.get("draftType") === "cola"
+				? await colaState(teams)
+				: undefined,
 	};
 	for (const t of teams) {
 		await ensureRetention(base, rosters.get(t.tid)!, t.tid);

@@ -580,9 +580,9 @@ export const marginOf = (
 		const availability: number[] = [];
 		const error: number[] = [];
 		for (let y = 0; y <= OUTLOOK_YEARS; y++) {
-			const at = pickLineAt(outlook, dp, y);
-			const early = pickLineAt(outlook, dp, y, -spread);
-			const late = pickLineAt(outlook, dp, y, spread);
+			const at = pickLineAt(outlook, dp, y, 0, t.tid);
+			const early = pickLineAt(outlook, dp, y, -spread, t.tid);
+			const late = pickLineAt(outlook, dp, y, spread, t.tid);
 			const line = (at ?? early ?? late)?.line;
 			place.push(
 				line ? roster.filter((p) => p.valueNoPot > line.valueNoPot).length : 0,

@@ -308,20 +308,35 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   -> 0.3% of trades); with the offer market, 43 -> 15 (owner's call: accept
   the lower volume). The trade market takes about a third longer.
 - **Picks are priced over where they may land** (owner's call). How far a
-  pick lands from where it is projected is measured in the arena (about 6
-  places a season out, 9 three seasons out, the lottery included). Most of
-  that is luck, so it goes into the pick's value, not its margin: a pick is
-  worth the average over every place it may land. Its margin of error is only
+  team finishes from where it is projected is measured in the arena (about 4
+  places a season out, 6.5 three seasons out), and the lottery moves it from
+  there. Most of that is luck, so it goes into the pick's value, not its
+  margin: a pick is worth the average over every place it may land. Its margin of error is only
   the misread of how good its team will be, by the outlook's own estimate of
   that.
 - **Picks land back toward the middle.** Teams drift back toward the middle
   of the draft more than projecting their rosters forward says - others get
-  better and worse too, rosters turn over. Measured in the arena (35,400
-  projections): of a team's projected distance from the middle, a pick
-  really keeps 78% a season out, 44% three seasons out, 9% five out. A
-  pick's expected place is pulled toward the middle by that much; taken at
+  better and worse too, rosters turn over. Measured in the arena against the
+  standings (below): of a team's projected distance from the middle, its
+  finish really keeps 90% a season out, 60% three seasons out, 27% five out.
+  A pick's expected place is pulled toward the middle by that much; taken at
   face value, a bad team's picks years away looked far better than they
   were, and it kept selling.
+- **Picks go through the league's lottery.** A pick was priced by where it
+  was expected to land in the draft, the lottery lumped in with the luck of
+  the standings as if it were even both ways - so once the standings were
+  settled the worst team's own pick was priced as the first. Now a team's
+  finish is projected - far more surely than its pick: 2 places off half a
+  season out, against 5 for where the pick landed, the lottery being most of
+  that (4 arena leagues against the standings) - and then put through the
+  league's lottery: the game's own odds for each finish, or under COLA (the
+  owner's league) the draw for the first four picks by each team's points,
+  its own pick in it only while it holds it, and the rest by record. In the
+  arena under COLA the worst team drew a top-four pick 40% of the time and
+  picked fifth to eighth otherwise; teams finishing 7th-12th from the bottom
+  drew one 22% of the time. A team's pick held by another is never drawn.
+  Before this season's lottery is run, its picks go by the final standings
+  (they were priced by next season's projection).
 - **A deal moves the picks of the teams in it.** A pick's place comes from
   how good its team is, and a deal changes that: both teams' own picks are
   priced where the deal leaves the two rosters. Before this, a team gave up
