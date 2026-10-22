@@ -853,6 +853,63 @@ describe("3D director", () => {
 		assert.isBelow(frozen.filter((x) => x >= 4000).length, 12);
 	}, 120_000);
 
+	// A screen is set for somebody: the man it is for comes by the
+	// screener's shoulder - not past where it was going to be before the
+	// screener got there, and not off somewhere it isn't, the screen set for
+	// nobody. (Not one turned into off a handoff: the man he gave it to was
+	// right there first.)
+	test("the man a screen is for comes off it", () => {
+		let screens = 0;
+		let unused = 0;
+		let late = 0;
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl } = compile(seed, 150);
+			for (const tr of tl.tracks.values()) {
+				for (const a of tr.acts) {
+					if (
+						a.anim !== "screen" ||
+						fastAt(tl, a.t0) > 1 ||
+						fastAt(tl, a.t1) > 1 ||
+						tl.ball.some(
+							(b) =>
+								b.kind === "hold" &&
+								b.pid === tr.pid &&
+								b.t0 > a.t0 - 2500 &&
+								b.t0 < a.t0,
+						)
+					) {
+						continue;
+					}
+					screens += 1;
+					let best = Infinity;
+					let at = 0;
+					for (let t = a.t0 - 1500; t <= a.t1 + 400; t += 50) {
+						const S = evalPlayer(tl, tr.pid, t);
+						for (const q of tl.tracks.values()) {
+							if (q.pid === tr.pid || q.team !== tr.team) {
+								continue;
+							}
+							const Q = evalPlayer(tl, q.pid, t);
+							const d = Math.hypot(Q.x - S.x, Q.y - S.y);
+							if (d < best) {
+								best = d;
+								at = t;
+							}
+						}
+					}
+					if (best > 5) {
+						unused += 1;
+					} else if (at < a.t0 - 100) {
+						late += 1;
+					}
+				}
+			}
+		}
+		assert.isAbove(screens, 60);
+		assert.isAtMost(unused, screens * 0.05, `${unused} of ${screens} unused`);
+		assert.isAtMost(late, screens * 0.15, `${late} of ${screens} late`);
+	}, 240_000);
+
 	// A screen, a post-up, a celebration, words with the official: each is
 	// done where he stands, and the pose ends as he sets off again rather
 	// than him sliding away across the floor in it.

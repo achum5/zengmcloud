@@ -889,6 +889,10 @@ const needed = (
 // The man trailing a break - the big who got the rebound and threw the
 // outlet - runs the floor behind it (feet a second).
 const TRAIL_SPEED = 16;
+// Coming off a screen, he gets to it this long (ms) after it is set - and
+// goes by it this far (feet) off the screener's middle: at his shoulder.
+const SCREEN_BY = 150;
+const SCREEN_SHOULDER = 2;
 const MOVE_SPEED: Record<string, number> = {
 	walk: 6,
 	jog: 12,
@@ -5392,10 +5396,32 @@ class Director {
 					run.play.cat === "break" && this.holder !== pid
 						? Math.max(prev, Math.min(t0, this.free.get(pid) ?? 0))
 						: t0;
+				// Off a screen set for him in this same step, he comes by it once
+				// it is set - not past where it will be before the screener
+				// has got there - and round it, not round the last one.
+				const sc = run.screen;
+				const off =
+					sc && sc.step === k && sc.user === pid && !sc.ball ? sc : undefined;
+				const by = off
+					? Math.max(
+							since,
+							off.set +
+								SCREEN_BY -
+								runMs(dist(this.posOf(pid), off.at), MOVE_SPEED[a.style] ?? 13),
+						)
+					: since;
 				const done =
 					this.holder === pid
 						? this.playDribble(run, a.who, a.to, "attack", deep(pid))
-						: this.playMove(run, pid, a.to, a.style, since, before);
+						: this.playMove(
+								run,
+								pid,
+								a.to,
+								a.style,
+								by,
+								off ?? before,
+								off !== undefined,
+							);
 				// On the break nobody waits for the man trailing the play - not
 				// unless it comes to him.
 				if (
@@ -5811,6 +5837,8 @@ class Director {
 		style: string,
 		t0: number,
 		screen: Running["screen"],
+		// The screen is one set for him this step, to come off now.
+		fresh = false,
 	): number {
 		const rim = { x: rimX(run.team), y: COURT_H / 2 };
 		const from = this.posOf(pid);
@@ -5911,6 +5939,51 @@ class Director {
 			});
 			if (dist(from, W) > 2 && dist(W, P) > 2) {
 				t = this.go(pid, W, t, speed, "run");
+			}
+		}
+		if (
+			fresh &&
+			screen &&
+			screen.user === pid &&
+			!screen.ball &&
+			style !== "curl" &&
+			style !== "rip_cut" &&
+			style !== "iverson_cut" &&
+			style !== "shallow_cut"
+		) {
+			// Any other way off a screen set for him (two in a row, a
+			// stagger): by each screener's shoulder in turn on his way - not
+			// off past it somewhere it isn't, the screen set for nobody.
+			const A = this.posOf(pid);
+			const L = dist(A, P);
+			if (L > 2) {
+				const u = unitVec(A, P);
+				const by = screen.screeners
+					.map((q) => {
+						const S = this.posOf(q);
+						return {
+							S,
+							along: (S.x - A.x) * u.x + (S.y - A.y) * u.y,
+							side: (S.x - A.x) * -u.y + (S.y - A.y) * u.x,
+						};
+					})
+					.filter(
+						(q) =>
+							q.along > 1 &&
+							q.along < L - 1 &&
+							Math.abs(q.side) > SCREEN_SHOULDER,
+					)
+					.sort((a, b) => a.along - b.along);
+				for (const q of by) {
+					const k = Math.sign(q.side) * SCREEN_SHOULDER;
+					t = this.go(
+						pid,
+						clampPt({ x: q.S.x + u.y * k, y: q.S.y - u.x * k }),
+						t,
+						speed,
+						"run",
+					);
+				}
 			}
 		}
 		return this.go(
