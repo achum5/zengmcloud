@@ -156,9 +156,13 @@ const payrollsAndDeadMoney = async () => {
 export const advanceSeasons = async (
 	numSeasons: number,
 	options: {
-		// Days before the trade deadline to stop at and call onSurvey.
-		surveyAt?: number[];
+		// Days before the trade deadline to stop at and call onSurvey - or a
+		// function of the days to the deadline as the season opens.
+		surveyAt?: number[] | ((daysToDeadline: number) => number[]);
 		onSurvey?: (daysToDeadline: number) => Promise<void>;
+		// Called in the preseason, once ratings have progressed, before any
+		// games.
+		onPreseason?: () => Promise<void>;
 	} = {},
 ) => {
 	const snapshots: SeasonSnapshot[] = [];
@@ -206,12 +210,17 @@ export const advanceSeasons = async (
 				retirements: [],
 			};
 			snapshots.push(snapshot);
+			await options.onPreseason?.();
 			await phase.newPhase(PHASE.REGULAR_SEASON, conditions);
 		} else if (currentPhase === PHASE.REGULAR_SEASON) {
 			const daysToDeadline = await season.getDaysLeftSchedule("tradeDeadline");
+			const surveyAt =
+				typeof options.surveyAt === "function"
+					? options.surveyAt(daysToDeadline)
+					: options.surveyAt;
 			// Stops on the way to the deadline: the start of its final week, and
 			// any survey points.
-			const stops = [...new Set([7, ...(options.surveyAt ?? [])])]
+			const stops = [...new Set([7, ...(surveyAt ?? [])])]
 				.filter((d) => d > 0 && d < daysToDeadline)
 				.sort((a, b) => b - a);
 			let left = daysToDeadline;
@@ -221,7 +230,7 @@ export const advanceSeasons = async (
 				if (stop === 7) {
 					snapshot!.tradesBeforeDeadlineWeek = await countTrades();
 				}
-				if (options.surveyAt?.includes(stop)) {
+				if (surveyAt?.includes(stop)) {
 					await options.onSurvey?.(stop);
 				}
 			}
