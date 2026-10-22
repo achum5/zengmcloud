@@ -42,10 +42,12 @@ import {
 	type FieldTeam,
 } from "./fieldPaint.ts";
 import { FIELD_L } from "./geometry.ts";
+import { chainCrewFor } from "./chains.ts";
 import { crewFor } from "./crew.ts";
 import { crowdAt } from "./crowd.ts";
 import { marksAt } from "./marks.ts";
 import {
+	chainCrewLook,
 	fieldGearFor,
 	fieldKitsFor,
 	officialLook,
@@ -63,6 +65,7 @@ import {
 import { replayAim } from "./replays.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
 import { drawFieldPlayer } from "./sprite.ts";
+import { chainGear } from "./sticks.ts";
 import { paintStadium } from "./stadium.ts";
 
 // THE 3D FIELD: the football game as a broadcast - the home team's stadium,
@@ -306,6 +309,10 @@ const Field3D = ({
 			looks.set(o.id, officialLook(o.o === "R", o.number, `${gid}|${o.o}`));
 			bodies.set(o.id, officialBody(o.hgt, o.weight));
 		}
+		for (const o of chainCrewFor(gid ?? 0)) {
+			looks.set(o.id, chainCrewLook(`${gid}|${o.c}`));
+			bodies.set(o.id, officialBody(o.hgt, o.weight));
+		}
 		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [roster, kits, logos, facesVersion]);
@@ -477,6 +484,7 @@ const Field3D = ({
 					},
 				});
 			}
+			items.push(...chainGear(ctx, view, moment, body));
 			for (const f of moment.flags ?? []) {
 				items.push({
 					depth: depthOf(view, { ...f.at, z: 0 }),

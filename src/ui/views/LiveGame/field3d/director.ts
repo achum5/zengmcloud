@@ -48,6 +48,7 @@ import {
 	type FlagFlight,
 } from "./crew.ts";
 import { foulsOf } from "./fouls.ts";
+import { stageChains, type ChainSpots } from "./chains.ts";
 import { holderAt, replayFor, type FieldReplay } from "./replays.ts";
 
 // THE GAME STAGED: every snap of the play-by-play, in feet and milliseconds -
@@ -169,6 +170,9 @@ export type Play = {
 	// The officials (see crew.ts), and the flags they throw.
 	crew: CrewPart[];
 	flags: FlagFlight[];
+	// The chain crew (see chains.ts), and the down on their boxes.
+	chains: CrewPart[];
+	down: number;
 	ball: BallSeg[];
 	// A big play, shown again after it (see replays.ts).
 	replay?: FieldReplay;
@@ -558,6 +562,8 @@ class Director {
 	// Where the ball sits across the field for the next snap.
 	ballY = MID_Y;
 	lastLine = -Infinity;
+	// Where the chain crew left off.
+	chainSpots: ChainSpots | undefined;
 
 	constructor({ events, players, gid, numPeriods = 4 }: FieldInput) {
 		this.events = events;
@@ -1066,6 +1072,21 @@ class Director {
 			signals,
 			r: this.rng(i0, "crew"),
 		});
+		const chains = stageChains({
+			quarter,
+			dir,
+			losX,
+			scrimmage: FROM_SCRIMMAGE.has(kind) && !clock.awaitingAfterTouchdown,
+			down: typeof clock.down === "number" ? clock.down : 1,
+			gainX,
+			t0,
+			snap,
+			whistle,
+			t1,
+			parts,
+			before: this.chainSpots,
+		});
+		this.chainSpots = chains.spots;
 		const replay = replayFor({
 			kind,
 			events,
@@ -1096,6 +1117,8 @@ class Director {
 			parts,
 			crew: crew.parts,
 			flags: crew.flags,
+			chains: chains.parts,
+			down: chains.spots.down,
 			ball,
 			...(replay ? { replay } : {}),
 			...(cheer ? { cheer } : {}),

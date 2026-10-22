@@ -1299,6 +1299,19 @@ const FIELD_ANIMS = {
 			lean: 8,
 		}),
 	},
+	// A pole held upright in front of him in both hands, the right over the
+	// left: the chain crew's rods, the down box.
+	holdPole: {
+		kind: "still",
+		pose: pose({
+			shN: 38,
+			elN: 98,
+			abN: -4,
+			shF: 24,
+			elF: 84,
+			abF: -4,
+		}),
+	},
 
 	// ---- the officials ----
 	// The flag: a hand to it at his belt, up over his head, and thrown.
@@ -1425,7 +1438,7 @@ export const liftOf = (m: Move, phase: number): number =>
 
 // How he holds his hands in a move: running, loose fists; down in a stance
 // or reading the play, open; standing about, relaxed.
-const FISTS = new Set<Move>(["run", "sprint"]);
+const FISTS = new Set<Move>(["run", "sprint", "holdPole"]);
 const RELAXED = new Set<Move>(["stand", "walk", "jog", "hands"]);
 export const gripsOf = (m: Move, hold?: BallHold): [Grip, Grip] => {
 	const g: Grip = FISTS.has(m) ? "fist" : RELAXED.has(m) ? "relaxed" : "open";

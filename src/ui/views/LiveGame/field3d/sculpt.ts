@@ -1177,6 +1177,8 @@ type Palette = {
 	// An official's: the black of his striped shirt, and his hair under
 	// his cap.
 	stripes?: RGB;
+	// The chain crew's vest over the shirt.
+	vest?: RGB;
 	hair: RGB;
 };
 
@@ -1230,6 +1232,7 @@ const paletteOf = (look: FieldLook): Palette => {
 		),
 		...(gear.visor === "dark" ? { visor: [24, 26, 32] as RGB } : {}),
 		...(kit.stripes ? { stripes: rgb(kit.stripes) } : {}),
+		...(kit.vest ? { vest: rgb(kit.vest) } : {}),
 		hair: scaled(skin, 0.38),
 	};
 	palettes.set(look, p);
@@ -1361,7 +1364,7 @@ export const sculptFigure = (
 			set(pal.collar);
 			return;
 		}
-		let c = pal.jersey;
+		let c = pal.vest ?? pal.jersey;
 		if (pal.stripes) {
 			// An official's shirt, striped up and down.
 			const arc = Math.atan2(S, F) * body.shoulderW * 1.15;

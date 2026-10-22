@@ -33,6 +33,8 @@ export type FieldKit = {
 	sockStripes: string[];
 	// An official's shirt: white, striped up and down in this.
 	stripes?: string;
+	// A vest over the shirt, the chain crew's.
+	vest?: string;
 };
 
 // The facemask: two bars open in front (a quarterback, a receiver, a
@@ -277,6 +279,39 @@ export const officialLook = (
 		},
 		skin: OFFICIAL_SKIN[Math.floor(rng() * OFFICIAL_SKIN.length)]!,
 		jerseyNumber: number,
+		lastName: "",
+		official: true,
+	};
+};
+
+// THE CHAIN CREW: a bright vest over a white shirt, black pants, a black cap.
+const VEST = "#f4581c";
+export const chainCrewLook = (seed: string): FieldLook => {
+	const rng = makeCourtRng(`chain|${seed}`);
+	return {
+		kit: {
+			helmet: INK,
+			facemask: INK,
+			jersey: WHITE,
+			vest: VEST,
+			collar: WHITE,
+			number: INK,
+			numberEdge: WHITE,
+			name: INK,
+			sleeveStripes: [],
+			pants: INK,
+			pantsStripes: [],
+			sock: INK,
+			sockStripes: [],
+		},
+		gear: {
+			mask: "open",
+			cleat: INK,
+			cleatSole: "#2a2a2e",
+			cleatAccent: INK,
+		},
+		skin: OFFICIAL_SKIN[Math.floor(rng() * OFFICIAL_SKIN.length)]!,
+		jerseyNumber: "",
 		lastName: "",
 		official: true,
 	};

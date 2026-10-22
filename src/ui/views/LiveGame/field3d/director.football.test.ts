@@ -9,7 +9,6 @@ import {
 	targetForCursor,
 	type FieldTimeline,
 	type Leg,
-	type Part,
 } from "./director.ts";
 import { dirFor, FIELD_L, FIELD_W, yardLineX } from "./geometry.ts";
 import { makeFieldClock, REPLAY_SPEED, stepField } from "./playback.ts";
@@ -25,7 +24,7 @@ const stage = ({ events, roster }: SimGame, gid = 1): FieldTimeline =>
 	compileField({ events, players: roster, gid });
 
 // The leg a man is in at t.
-const legAt = (part: Part, t: number): Leg =>
+const legAt = (part: { legs: Leg[] }, t: number): Leg =>
 	part.legs.findLast((l) => l.t0 <= t) ?? part.legs[0]!;
 
 describe("compileField", () => {
@@ -257,5 +256,82 @@ describe("replays", () => {
 		assert.isAbove(seen.at(-1)!.t, r.cue);
 		// On fast: on through it.
 		assert.isTrue(run(4).every((x) => x.at === undefined));
+	});
+});
+
+describe("the chain crew", () => {
+	// Where a man is at t.
+	const posAt = (part: { legs: Leg[] }, t: number) => {
+		const l = legAt(part, t);
+		const u =
+			l.t1 > l.t0 ? Math.min(1, Math.max(0, (t - l.t0) / (l.t1 - l.t0))) : 1;
+		return {
+			x: l.from.x + (l.to.x - l.from.x) * u,
+			y: l.from.y + (l.to.y - l.from.y) * u,
+		};
+	};
+
+	test("the box on the line, the rods ten yards apart up to the line to gain - on the far sideline, the near one after the half", () => {
+		for (const game of games) {
+			const tl = stage(game);
+			const bad: string[] = [];
+			let prev: (typeof tl.plays)[number] | undefined;
+			for (const play of tl.plays) {
+				const man = (id: number) => play.chains.find((c) => c.pid === id)!;
+				const [box, rear, front, aux] = [-8, -9, -10, -11].map(man);
+				if (!box || !rear || !front || !aux) {
+					bad.push(`play ${play.i}: ${play.chains.length} in the chain crew`);
+					continue;
+				}
+				const far = play.quarter <= 2;
+				for (const m of [box, rear, front]) {
+					const y = posAt(m, play.snap).y;
+					if (far ? y >= 0 : y <= FIELD_W) {
+						bad.push(`play ${play.i}: ${m.pid} at y ${y.toFixed(0)}`);
+					}
+				}
+				const auxY = posAt(aux, play.snap).y;
+				if (far ? auxY <= FIELD_W : auxY >= 0) {
+					bad.push(`play ${play.i}: the other box at y ${auxY.toFixed(0)}`);
+				}
+				if (play.gainX === undefined) {
+					prev = play;
+					continue;
+				}
+				const at = (m: { legs: Leg[] }) => posAt(m, play.snap).x;
+				if (Math.abs(at(box) - play.losX) > 0.01) {
+					bad.push(
+						`play ${play.i}: the box at ${at(box)}, the line at ${play.losX}`,
+					);
+				}
+				if (Math.abs(at(front) - play.gainX) > 0.01) {
+					bad.push(`play ${play.i}: the front rod off the line to gain`);
+				}
+				if (Math.abs((at(front) - at(rear)) * play.dir - 30) > 0.01) {
+					bad.push(`play ${play.i}: the rods not ten yards apart`);
+				}
+				for (const m of [box, rear, front]) {
+					if (legAt(m, play.snap).move !== "holdPole") {
+						bad.push(`play ${play.i}: ${m.pid} not holding his pole up`);
+					}
+				}
+				// (Nothing to move the chain for, it stays put.)
+				if (
+					prev?.quarter === play.quarter &&
+					prev.gainX === play.gainX &&
+					[rear, front].some((m) =>
+						m.legs.some(
+							(l) =>
+								l.t0 < play.snap &&
+								(l.from.x !== l.to.x || l.from.y !== l.to.y),
+						),
+					)
+				) {
+					bad.push(`play ${play.i}: the chain moved, the line to gain didn't`);
+				}
+				prev = play;
+			}
+			assert.deepEqual(bad.slice(0, 8), []);
+		}
 	});
 });
