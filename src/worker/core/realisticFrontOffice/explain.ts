@@ -10,6 +10,7 @@ import {
 	curveAt,
 	draftPlaceSpread,
 	expectedPlace,
+	placesAfter,
 	OUTLOOK_YEARS,
 	outlookSeason,
 	pickLineAt,
@@ -19,6 +20,7 @@ import {
 	teamStrengths,
 	type LeagueOutlook,
 } from "./outlook.ts";
+import { marketSettings } from "./market.ts";
 import type { TradedAway } from "./tradePenalty.ts";
 
 // THE WHOLE CALCULATION behind a deal, for the trade page and the arena's
@@ -114,17 +116,33 @@ const reasonFor = (
 	return `gain ${fmt(gain)} (margin ${(100 * margin).toFixed(2)}): ${fmt(now)} in ${first}, ${fmt(soon)} in ${first + 1}-${first + 2}, ${fmt(later)} after; titles x100`;
 };
 
+const rosterAfter = (side: ExplainSide) => {
+	const outP = new Set(side.gives.players.map((p) => p.pid));
+	return [
+		...side.players.filter((p) => !outP.has(p.pid)),
+		...side.gets.players,
+	];
+};
+
 export const explainDeal = (
 	outlook: LeagueOutlook,
 	sides: readonly [ExplainSide, ExplainSide],
 ): FrontOfficeBreakdown => {
+	// The two teams' picks land where the deal leaves them, as the deal was
+	// priced (market.ts priceFor).
+	const view = marketSettings.placesAfter
+		? placesAfter(
+				outlook,
+				sides.map((side) => ({
+					tid: side.tid,
+					before: side.players,
+					after: rosterAfter(side),
+				})),
+			)
+		: outlook;
 	const explained = sides.map((side): FrontOfficeSide => {
-		const outP = new Set(side.gives.players.map((p) => p.pid));
 		const outD = new Set(side.gives.picks.map((dp) => dp.dpid));
-		const playersAfter = [
-			...side.players.filter((p) => !outP.has(p.pid)),
-			...side.gets.players,
-		];
+		const playersAfter = rosterAfter(side);
 		const picksAfter = [
 			...side.picks.filter((dp) => !outD.has(dp.dpid)),
 			...side.gets.picks,
@@ -156,7 +174,7 @@ export const explainDeal = (
 			refill(0),
 		);
 		const after = teamStrengths(
-			outlook,
+			view,
 			side.tid,
 			playersAfter,
 			picksAfter,
