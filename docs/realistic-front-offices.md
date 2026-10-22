@@ -291,6 +291,14 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   worth the average over every place it may land. Its margin of error is only
   the misread of how good its team will be, by the outlook's own estimate of
   that.
+- **Picks land back toward the middle.** Teams drift back toward the middle
+  of the draft more than projecting their rosters forward says - others get
+  better and worse too, rosters turn over. Measured in the arena (35,400
+  projections): of a team's projected distance from the middle, a pick
+  really keeps 78% a season out, 44% three seasons out, 9% five out. A
+  pick's expected place is pulled toward the middle by that much; taken at
+  face value, a bad team's picks years away looked far better than they
+  were, and it kept selling.
 - **A deal moves the picks of the teams in it.** A pick's place comes from
   how good its team is, and a deal changes that: both teams' own picks are
   priced where the deal leaves the two rosters. Before this, a team gave up
