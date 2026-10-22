@@ -1017,7 +1017,14 @@ export const buildClassBoard = async (
 				0,
 				ROOKIE_RETENTION,
 			);
-			sum += 0.9 ** y * line.availability * valueOverReplacement(line);
+			// A season he would be cut is worth nothing, not less: each half
+			// of his careers counts as far as it is above a replacement.
+			for (const half of line.halves ?? [line]) {
+				sum +=
+					0.9 ** y *
+					half.availability *
+					Math.max(0, valueOverReplacement(half));
+			}
 		}
 		worth.set(p.pid, sum);
 	}
