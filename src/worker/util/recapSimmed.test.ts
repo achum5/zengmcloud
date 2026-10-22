@@ -414,6 +414,42 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "...winning the second half 65-43. They were up by 21 at their
+	// biggest. The Celtics led by as many as 15." - a first-half lead told
+	// after the second half.
+	test("the losers' first-half lead is told before the second half", () => {
+		for (const { gid, recap, game } of pairs) {
+			const { l } = sides(game);
+			const at = game.flow?.maxLeadAt?.[game.teams[0] === l ? 0 : 1];
+			if (at === undefined || at > 2) {
+				continue;
+			}
+			const sents = recap
+				.split("\n\n")
+				.slice(1, 3)
+				.join(" ")
+				.split(/(?<=[!.?])\s+/)
+				.slice(1);
+			const second = sents.findIndex((t) =>
+				/second half|after the break|after halftime|going into the fourth|fourth quarter/i.test(
+					t,
+				),
+			);
+			if (second < 0) {
+				continue;
+			}
+			for (const t of sents.slice(second + 1)) {
+				assert.notMatch(
+					t,
+					new RegExp(
+						String.raw`^(?:The ${l.name} (?:led by as many as|had been up by)|At one point the ${l.name} led by)`,
+					),
+					`gid ${gid}\n${recap}`,
+				);
+			}
+		}
+	});
+
 	// "Walker Green has 22 points and 10 assists as the Grizzlies stun the
 	// Pacers" over "Walker Green totaled 22 points and 10 assists as the
 	// Grizzlies..."

@@ -6255,12 +6255,33 @@ export const getAutoRecap = (game: RecapGame): string => {
 			storyPara.splice(halfAt, 0, run);
 			finishAt += 1;
 		}
+		// And the losers' biggest lead, when it came in the first half, goes
+		// right after the halftime score: "...winning the second half 65-43.
+		// They were up by 21 at their biggest. The Celtics led by as many as
+		// 15." told the first half last.
+		let blown = blownLeadNote(game, shape, rng, written1);
+		const loserPeakAt =
+			game.flow?.maxLeadAt?.[sideOf(game, shape.loser)] ?? Infinity;
+		const halfNow = storyPara.findIndex((t) =>
+			/halftime|at the half\b|the break|into the second half/.test(t),
+		);
+		if (
+			blown &&
+			!/two minutes/.test(blown) &&
+			loserPeakAt <= shape.regPeriods / 2 &&
+			halfNow >= 0 &&
+			storyPara.length < 7
+		) {
+			storyPara.splice(halfNow + 1, 0, blown);
+			finishAt += 1;
+			blown = undefined;
+		}
 		for (const e of [
 			run && !storyPara.includes(run) ? run : undefined,
 			story.covers.has("winnerPeak") || /as many as|lead reached/.test(told)
 				? undefined
 				: bigLeadNote(game, shape, rng),
-			blownLeadNote(game, shape, rng, written1),
+			blown,
 		]) {
 			if (e && storyPara.length < 7) {
 				beforeFinish(e);

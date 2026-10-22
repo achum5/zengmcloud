@@ -7354,6 +7354,39 @@ describe("the story goes past halftime, in order", () => {
 		}
 	});
 
+	// "...winning the second half 65-43. They were up by 21 at their
+	// biggest. The Celtics led by as many as 15."
+	test("the losers' first-half lead is told at the half, not after the second", () => {
+		let seen = 0;
+		for (let gid = 860; gid < 900; gid++) {
+			const recap = getAutoRecap(
+				twoTeams(
+					[25, 22, 36, 36],
+					[28, 28, 25, 23],
+					{
+						leadChanges: 4,
+						ties: 2,
+						maxLead: [17, 12],
+						maxLeadAt: [4, 2],
+						lastLead: { side: 0, period: 3, clock: 400, pts: [70, 68] },
+					},
+					gid,
+				),
+			);
+			// The story paragraph: the lede may name the fourth quarter.
+			const story = recap.split("\n\n")[2] ?? "";
+			const peak = story.search(/Bucks[^.]*(?:as many as|up by|led by) 12/);
+			const second = story.search(
+				/second half|after the break|after halftime|fourth/i,
+			);
+			if (peak >= 0 && second >= 0) {
+				seen += 1;
+				assert.ok(peak < second, recap);
+			}
+		}
+		assert.ok(seen > 0);
+	});
+
 	// "...before the Lakers won the second half 69-59. The Lakers piled up 30
 	// assists and ran off 15 straight points in the first."
 	test("a first-half run comes before the half, not after the second", () => {
