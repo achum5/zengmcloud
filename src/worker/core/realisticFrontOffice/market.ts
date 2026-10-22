@@ -662,16 +662,28 @@ export const waitingOf = (
 	sides: readonly [TeamState, TeamState],
 ) => {
 	const view = outlook.deadline!;
+	// The two teams' picks land where the deal leaves them, as in priceFor.
+	const traded = ([0, 1] as const).map((k) =>
+		applyTrade(sides[k], deal.assets[k], deal.assets[k === 0 ? 1 : 0]),
+	);
+	const placed = marketSettings.placesAfter
+		? placesAfter(
+				outlook,
+				([0, 1] as const).map((k) => ({
+					tid: sides[k].tid,
+					before: sides[k].players,
+					after: traded[k]!.players,
+				})),
+			)
+		: outlook;
 	return ([0, 1] as const).map((k) => {
 		const t = sides[k];
-		const j = k === 0 ? 1 : 0;
-		const traded = applyTrade(t, deal.assets[k], deal.assets[j]);
 		const pathBefore = teamStrengths(outlook, t.tid, t.players, t.picks);
 		const pathAfter = teamStrengths(
-			outlook,
+			placed,
 			t.tid,
-			traded.players,
-			traded.picks,
+			traded[k]!.players,
+			traded[k]!.picks,
 			{
 				tradedAway: t.tradedAway,
 				extra: count(deal.assets[k]),
