@@ -183,9 +183,15 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   deal is its own, and the trade screen no longer prints it to the console.
 - **Human-to-human trades are unchanged** (agreed in chat).
 - **CPU offers to humans** appear on the Trade Proposals page, which is rebuilt
-  for this mode, with a notification so the user knows an offer is waiting. An
-  offer stays until the CPU team no longer wants the deal. The user can accept,
-  decline, dismiss or counter.
+  for this mode, with a notification so the user knows an offer is waiting. The
+  user can accept, decline, dismiss or counter.
+  - **What it asks** (owner's call): the deal best for the CPU team, fair by
+    what the human can see - public ratings, not the true ones the CPU judges
+    by.
+  - **How many** (owner's call): no fixed count and no reroll. A CPU team
+    makes an offer when it wants a deal, and the offer stays while it still
+    does; it goes away once the team loses interest or finds something better
+    elsewhere.
 - **The whole calculation behind each CPU-to-CPU trade** is on its trade
   summary page, in God Mode only (owner's call): it shows true ratings.
 - **Talking (later).** CPU teams explain their side of a deal the way a real
