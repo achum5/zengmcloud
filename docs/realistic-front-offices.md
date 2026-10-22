@@ -307,6 +307,17 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   against the NBA's ~3.6, a prospect given for a veteran of 30 or more 2.4%
   -> 0.3% of trades); with the offer market, 43 -> 15 (owner's call: accept
   the lower volume). The trade market takes about a third longer.
+- **A prospect's upside counts.** A player's seasons ahead are averaged over
+  many simulated careers - calibrated: within a point of how traded players
+  turned out, at every age. But a roster gives the player who turns out well
+  a starter's minutes and the one who doesn't none, so the average undersold
+  anyone whose future is uncertain: a teenager projected to average 44 sat
+  at the end of the bench in every season priced, though one in eight of the
+  prospects CPU teams traded for veterans of 58 or worse became 60 or better
+  within four seasons (3% projected to on average). Each projected season is
+  now played as the worse and the better half of his careers, each half as
+  likely, where the two are 4 or more apart: a 21-year-old 47/66 costs his
+  team about 4.6 times as much to give up.
 - **Picks are priced over where they may land** (owner's call). How far a
   team finishes from where it is projected is measured in the arena (about 4
   places a season out, 6.5 three seasons out), and the lottery moves it from
@@ -388,6 +399,15 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
 - A front office prices each player's chance of re-signing with the game's own
   mood model, with the team he would be re-signing with - so a player traded
   for is valued on how he would feel about his new team.
+- **That chance is turned into how often players really stay.** His chance of
+  taking his asking price is not his chance of still being there: the team
+  offers what is best for it, often more, and some who test the market come
+  back. In the arena players of 50 or better priced at 7% stayed 40% of the
+  time, at 91% 82%, about as often whether priced the season their contracts
+  ran out or years before. Priced at their asking price, a bad team's good
+  players - most of whom want out - were all leaving, so it sold them for
+  little: of the CPU trade sides that lost most in hindsight, 58% gave away
+  their best player priced at under 25% to stay.
 
 ## Free agency
 
@@ -396,6 +416,12 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   gets: teams with room do better than that, and what they get rises smoothly
   with room. Pricing it by the price of a signing gave clearing a max slot a
   special value, so teams dumped prospects' future salaries for it.
+- **And by how good the team is.** Free agents want to win: with 30% of the
+  cap a team that won a quarter of its games signed a 56 first, an average
+  one a 61, a good one a 66 (arena, 1,380 team-summers). Priced the same for
+  every team, a bad team valued room it could not use, cleared it by giving
+  good players away and stayed bad. A team's room is priced by the share of
+  its games its roster alone is expected to win that season.
 
 - **CPU teams sign by the valuation they trade with** (owner's call): what
   signing a player on given terms adds to the team's title chances, less the
