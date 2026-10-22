@@ -332,7 +332,7 @@ export const outlookSettings = {
 	// This season's title odds count a team's record, not only its strength:
 	// two teams equally good, one with a lucky record and one with an unlucky
 	// one, do not have the same chances, and a deal is worth more to the first.
-	recordOdds: false,
+	recordOdds: true,
 };
 
 export const ensureRetention = async (

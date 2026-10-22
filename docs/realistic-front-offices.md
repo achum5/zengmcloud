@@ -177,6 +177,17 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   call): six weeks out, the best deal a team can make at the deadline is worth
   about 60% of its best today, so waiting rarely pays and trades stay spread
   through the season rather than bunching at the deadline as in the NBA.
+- **A deadline rush** (owner's call: on, then tuned toward the NBA). In the
+  last 7 days before the deadline every team shops each day, as in the
+  offseason windows - with two teams shopping a day, a given pair was looked at
+  about once a month, so a deal put off for the deadline was seldom seen
+  again. Every team also shops once ratings progress in the preseason (the
+  NBA counts training camp deals as offseason ones), and this season's title
+  odds count a team's record as well as its strength, so the standings the
+  deadline reveals enter its deals. Arena, 4 leagues x 5 seasons: in-season
+  trades 12 -> 16 a season (NBA ~27), the deadline's final week 10% -> 41% of
+  them (NBA ~75%), trades 30 -> 36, firsts traded 8.7 -> 11; the trade market
+  takes about half again as long.
 - **Deals clear the margin of error** (owner's call). A front office only
   makes a deal if each side gains by more than the model's own error on that
   gain: what a player's ratings are worth on the floor (measured against swap

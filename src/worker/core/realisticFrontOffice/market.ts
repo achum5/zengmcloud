@@ -112,10 +112,10 @@ export const marketSettings = {
 	// shops, as in the offseason windows: the last chance to make a deal that
 	// helps this season, and when a deal put off for the deadline gets decided.
 	// 0 is off.
-	deadlineWindow: 0,
+	deadlineWindow: 7,
 	// Every team also shops once ratings have progressed in the preseason,
 	// before any games.
-	preseasonWindow: false,
+	preseasonWindow: true,
 };
 
 // Where the time goes, for the arena's speed report.
