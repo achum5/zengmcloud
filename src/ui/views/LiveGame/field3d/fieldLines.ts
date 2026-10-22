@@ -1,6 +1,7 @@
 import { depthOf, project, type Camera } from "../court3d/camera.ts";
 import {
 	BORDER,
+	COACH_LINE,
 	FIELD_L,
 	FIELD_W,
 	GOAL_L,
@@ -8,8 +9,11 @@ import {
 	HASH_FAR_Y,
 	HASH_LEN,
 	HASH_NEAR_Y,
+	LIMIT_END,
+	LIMIT_LINE,
 	LINE_W,
 	MID_Y,
+	TEAM_AREA,
 	YD,
 } from "./geometry.ts";
 
@@ -76,11 +80,64 @@ const BOXES: Box[] = (() => {
 	return out;
 })();
 
+// And off the field, in yellow: the coaches' line along each team area, and
+// the broken line everywhere else round the field - back behind the benches
+// at the 25s, round behind the end lines.
+const YELLOW = "#f3cd1f";
+const SIDELINE_BOXES: Box[] = (() => {
+	const coach = 8 / 12;
+	const w = 4 / 12;
+	const out: Box[] = [];
+	const [a, b] = TEAM_AREA;
+	const dash = 3;
+	const dashes = (x0: number, x1: number, y: number) => {
+		for (let x = x0; x < x1; x += dash * 2) {
+			out.push(box(x, y, Math.min(x1, x + dash), y + w));
+		}
+	};
+	const across = (x: number, y0: number, y1: number) => {
+		for (let y = y0; y < y1; y += dash * 2) {
+			out.push(box(x, y, x + w, Math.min(y1, y + dash)));
+		}
+	};
+	const end = LIMIT_END;
+	for (const far of [true, false]) {
+		const yOf = (off: number) => (far ? -off : FIELD_W + off);
+		const y = (off: number, width: number) =>
+			far ? yOf(off) - width : yOf(off);
+		out.push(
+			box(a, y(COACH_LINE, coach), b, y(COACH_LINE, coach) + coach, true),
+		);
+		dashes(-end, a, y(LIMIT_LINE, w));
+		dashes(b, FIELD_L + end, y(LIMIT_LINE, w));
+		const [o0, o1] = far
+			? [yOf(LIMIT_LINE + 18), yOf(LIMIT_LINE)]
+			: [yOf(LIMIT_LINE), yOf(LIMIT_LINE + 18)];
+		across(a, o0, o1);
+		across(b - w, o0, o1);
+		dashes(a, b, y(LIMIT_LINE + 18, w));
+	}
+	for (const x of [-end - w, FIELD_L + end]) {
+		across(x, -LIMIT_LINE, FIELD_W + LIMIT_LINE);
+	}
+	return out;
+})();
+
 export const fieldLineBoxes = (): readonly Box[] => BOXES;
 
 export const drawFieldLines = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,
+	color: string,
+) => {
+	drawBoxes(ctx, cam, BOXES, color);
+	drawBoxes(ctx, cam, SIDELINE_BOXES, YELLOW);
+};
+
+const drawBoxes = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	boxes: Box[],
 	color: string,
 ) => {
 	const W = cam.viewW;
@@ -90,7 +147,7 @@ export const drawFieldLines = (
 	ctx.strokeStyle = color;
 	ctx.globalAlpha = 0.94;
 	ctx.lineWidth = 1;
-	for (const b of BOXES) {
+	for (const b of boxes) {
 		const c = [
 			{ x: b.x0, y: b.y0, z: 0 },
 			{ x: b.x1, y: b.y0, z: 0 },

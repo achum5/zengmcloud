@@ -38,6 +38,15 @@ export const NUMBER_IN = 12 * YD;
 export const BORDER = 6;
 export const SIDE_ROOM = 42;
 export const END_ROOM = 33;
+// Each team's area on its sideline, between the 25-yard lines: the coaches'
+// yellow line six feet behind the border, the benches at least thirty feet
+// back - and elsewhere, the broken yellow line nine feet four inches behind
+// the border (six feet behind it, past the end lines).
+export const TEAM_AREA: [number, number] = [GOAL_L + 25 * YD, GOAL_R - 25 * YD];
+export const COACH_LINE = BORDER + 6;
+export const LIMIT_LINE = BORDER + 9 + 4 / 12;
+export const LIMIT_END = BORDER + 6;
+export const BENCH_OFF = 30.5;
 
 export const POST_W = 18.5;
 export const CROSSBAR_Z = 10;

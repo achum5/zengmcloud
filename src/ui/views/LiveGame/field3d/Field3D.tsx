@@ -42,12 +42,14 @@ import {
 	type FieldTeam,
 } from "./fieldPaint.ts";
 import { FIELD_L } from "./geometry.ts";
+import { sidelineGear } from "./bench.ts";
 import { chainCrewFor } from "./chains.ts";
 import { crewFor } from "./crew.ts";
 import { crowdAt } from "./crowd.ts";
 import { marksAt } from "./marks.ts";
 import {
 	chainCrewLook,
+	coachLook,
 	fieldGearFor,
 	fieldKitsFor,
 	officialLook,
@@ -64,6 +66,7 @@ import {
 } from "./playback.ts";
 import { replayAim } from "./replays.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
+import { coachId, sidelineAt, sidelineFor } from "./sideline.ts";
 import { drawFieldPlayer } from "./sprite.ts";
 import { chainGear } from "./sticks.ts";
 import { paintStadium } from "./stadium.ts";
@@ -313,9 +316,26 @@ const Field3D = ({
 			looks.set(o.id, chainCrewLook(`${gid}|${o.c}`));
 			bodies.set(o.id, officialBody(o.hgt, o.weight));
 		}
+		for (const team of [0, 1] as const) {
+			for (let i = 0; i < 4; i++) {
+				const id = coachId(team, i);
+				looks.set(id, coachLook(kits[team], `${gid}|${id}`));
+				bodies.set(id, officialBody(69 + ((i * 5) % 6), 195 + i * 12));
+			}
+		}
 		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [roster, kits, logos, facesVersion]);
+	// The men on each sideline, where each stands all game.
+	const sideline = useMemo(
+		() => sidelineFor(roster, gid ?? 0),
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+		[roster],
+	);
+	const sidelineRef = useRef(sideline);
+	sidelineRef.current = sideline;
+	const sideColors = useRef<[string, string]>([kits[0].helmet, kits[1].helmet]);
+	sideColors.current = [kits[0].helmet, kits[1].helmet];
 	const looks = useRef(appearance.looks);
 	const bodies = useRef(appearance.bodies);
 	looks.current = appearance.looks;
@@ -458,7 +478,10 @@ const Field3D = ({
 			const look = (pid: number) => looks.current.get(pid);
 			const body = (pid: number) => bodies.current.get(pid) ?? footballBody();
 			const items: { depth: number; draw: () => void }[] = [];
-			for (const st of moment.players) {
+			for (const st of [
+				...moment.players,
+				...sidelineAt(sidelineRef.current, tl, moment),
+			]) {
 				const l = look(st.id);
 				if (!l) {
 					continue;
@@ -484,7 +507,10 @@ const Field3D = ({
 					},
 				});
 			}
-			items.push(...chainGear(ctx, view, moment, body));
+			items.push(
+				...chainGear(ctx, view, moment, body),
+				...sidelineGear(ctx, view, sideColors.current),
+			);
 			for (const f of moment.flags ?? []) {
 				items.push({
 					depth: depthOf(view, { ...f.at, z: 0 }),

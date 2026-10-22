@@ -1299,6 +1299,27 @@ const FIELD_ANIMS = {
 			lean: 8,
 		}),
 	},
+	// Arms folded across his chest: a coach watching.
+	armsFolded: {
+		kind: "still",
+		pose: pose({ shN: 46, elN: 124, abN: -34, shF: 50, elF: 120, abF: -34 }),
+	},
+	// Sat on the bench, leaning on his forearms on his thighs.
+	sit: {
+		kind: "still",
+		pose: pose({
+			hipN: 88,
+			kneeN: 90,
+			hipF: 82,
+			kneeF: 84,
+			lean: 16,
+			shN: 34,
+			elN: 46,
+			shF: 30,
+			elF: 50,
+			wide: 0.9,
+		}),
+	},
 	// A pole held upright in front of him in both hands, the right over the
 	// left: the chain crew's rods, the down box.
 	holdPole: {

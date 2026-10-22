@@ -10,8 +10,10 @@ import {
 	type FieldTimeline,
 	type Leg,
 } from "./director.ts";
-import { dirFor, FIELD_L, FIELD_W, yardLineX } from "./geometry.ts";
+import { momentAt } from "./evaluate.ts";
+import { dirFor, FIELD_L, FIELD_W, TEAM_AREA, yardLineX } from "./geometry.ts";
 import { makeFieldClock, REPLAY_SPEED, stepField } from "./playback.ts";
+import { sidelineAt, sidelineFor } from "./sideline.ts";
 import { simGames, type SimGame } from "./testGames.ts";
 
 let games: SimGame[] = [];
@@ -330,6 +332,42 @@ describe("the chain crew", () => {
 					bad.push(`play ${play.i}: the chain moved, the line to gain didn't`);
 				}
 				prev = play;
+			}
+			assert.deepEqual(bad.slice(0, 8), []);
+		}
+	});
+});
+
+describe("the sidelines", () => {
+	test("everyone not in for the snap on his own sideline, in his team's area - the home team's across the field", () => {
+		for (const game of games) {
+			const tl = stage(game);
+			const men = sidelineFor(game.roster, 1);
+			const teamOf = new Map(game.roster.map((p) => [p.pid, p.team]));
+			const bad: string[] = [];
+			for (const play of tl.plays.filter((_, k) => k % 7 === 0)) {
+				const m = momentAt(tl, play.snap);
+				const on = new Set(play.parts.map((p) => p.pid));
+				const off = sidelineAt(men, tl, m);
+				const seen = new Set<number>();
+				for (const st of off) {
+					if (on.has(st.id) || seen.has(st.id)) {
+						bad.push(`play ${play.i}: ${st.id} on the field and the sideline`);
+					}
+					seen.add(st.id);
+					const far = st.y < 0;
+					if (far !== (st.team === 1) || (st.y >= -6 && st.y <= FIELD_W + 6)) {
+						bad.push(`play ${play.i}: ${st.id} at y ${st.y.toFixed(0)}`);
+					}
+					if (st.x < TEAM_AREA[0] || st.x > TEAM_AREA[1]) {
+						bad.push(`play ${play.i}: ${st.id} out of the team area`);
+					}
+				}
+				for (const [pid, team] of teamOf) {
+					if (!on.has(pid) && !seen.has(pid)) {
+						bad.push(`play ${play.i}: ${pid} (team ${team}) nowhere`);
+					}
+				}
 			}
 			assert.deepEqual(bad.slice(0, 8), []);
 		}

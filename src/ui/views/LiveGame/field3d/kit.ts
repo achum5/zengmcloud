@@ -316,3 +316,37 @@ export const chainCrewLook = (seed: string): FieldLook => {
 		official: true,
 	};
 };
+
+// A COACH: his team's pullover in its main color, sleeves to the wrist, dark
+// pants, a cap.
+export const coachLook = (kit: FieldKit, seed: string): FieldLook => {
+	const rng = makeCourtRng(`coach|${seed}`);
+	const main = kit.helmet;
+	return {
+		kit: {
+			helmet: luminance(main) < 0.2 ? main : shade(main, -0.25),
+			facemask: INK,
+			jersey: main,
+			collar: kit.helmetStripe ?? WHITE,
+			number: INK,
+			numberEdge: WHITE,
+			name: INK,
+			sleeveStripes: [],
+			pants: rng() < 0.6 ? "#2b2c31" : "#b9a682",
+			pantsStripes: [],
+			sock: INK,
+			sockStripes: [],
+		},
+		gear: {
+			mask: "open",
+			cleat: INK,
+			cleatSole: "#2a2a2e",
+			cleatAccent: INK,
+			sleeve: { arms: "RL", color: main },
+		},
+		skin: OFFICIAL_SKIN[Math.floor(rng() * OFFICIAL_SKIN.length)]!,
+		jerseyNumber: "",
+		lastName: "",
+		official: true,
+	};
+};
