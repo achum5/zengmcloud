@@ -192,7 +192,12 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   (2.5 ± 0.8 hundredths of a title a deal, 7% of deals leaving it worse off,
   4 leagues x 3 seasons); 1, 2 and 3 misread no less, so it stays at 1.5. What
   the shark gains is mostly bought with its future, as a contender would.
-  The one blind spot it found, guards, is fixed (positions, above).
+  The one blind spot it found, guards, is fixed (positions, above): run again
+  on the fixed model (4 leagues x 3 seasons), no deal the shark made left the
+  CPU team worse off by its own read after its misreads (7% before), and its
+  edge by position is gone (guards and wings were 0.6-1.0 points a game).
+  Hunting the CPU's misreads instead of its own gain, it finds deals misread
+  by 0.75 ± 0.29 points a game, still a gain for the CPU after them.
 - **What a no says** (owner's call): no, a better offer (shown in full), or
   not before the deadline - never how close the offer came.
 - **Undo is unchanged** (owner's call).
