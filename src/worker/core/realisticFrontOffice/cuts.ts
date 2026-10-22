@@ -43,6 +43,8 @@ const worthWithout = (
 	);
 };
 
+const CUT_CANDIDATES = 8;
+
 // Releases this many of the team's players, and returns their pids.
 export const frontOfficeCuts = async (
 	players: readonly Player[],
@@ -59,9 +61,14 @@ export const frontOfficeCuts = async (
 	for (let k = 0; k < numToDrop; k++) {
 		const t = await loadTeam(outlook, tid);
 		let best: { p: Player; value: number; free: boolean } | undefined;
-		// Ties go to the lower pid, so every device in a shared league cuts the
-		// same player.
-		for (const p of [...t.players].sort((a, b) => a.pid - b.pid)) {
+		// Only the least valuable few are worth trying: a good player's salary
+		// is owed either way. Ties go to the lower pid, so every device in a
+		// shared league cuts the same player.
+		const tried = [...t.players]
+			.sort((a, b) => a.value - b.value || a.pid - b.pid)
+			.slice(0, CUT_CANDIDATES)
+			.sort((a, b) => a.pid - b.pid);
+		for (const p of tried) {
 			const free = helpers.justDrafted(p, phase, season);
 			const value = worthWithout(outlook, tid, t.players, t.picks, p, free);
 			if (!best || value > best.value) {
