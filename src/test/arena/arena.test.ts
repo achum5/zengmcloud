@@ -645,8 +645,22 @@ test.runIf(env.ARENA_RUN === "1")(
 				`${out}/deadline-views-${seed}.json`,
 				JSON.stringify(deadlineViews),
 			);
-			// Every team's seasons: how it did, and which version ran it.
+			// Every team's seasons: how it did, which version ran it, and how
+			// old it was, by minutes played.
 			{
+				const ages = new Map<string, [number, number]>();
+				for (const p of await idb.league.getAll("players")) {
+					for (const row of p.stats) {
+						const min = row.min ?? 0;
+						if (!row.playoffs && min > 0) {
+							const key = `${row.season}:${row.tid}`;
+							const a = ages.get(key) ?? [0, 0];
+							a[0] += (row.season - p.born.year) * min;
+							a[1] += min;
+							ages.set(key, a);
+						}
+					}
+				}
 				const seasons: unknown[] = [];
 				for (let s = firstSeason; s <= g.get("season"); s++) {
 					for (let tid = 0; tid < g.get("numTeams"); tid++) {
@@ -663,6 +677,12 @@ test.runIf(env.ARENA_RUN === "1")(
 								won: ts.won,
 								lost: ts.lost,
 								playoffRoundsWon: ts.playoffRoundsWon,
+								age: (() => {
+									const a = ages.get(`${s}:${tid}`);
+									return a && a[1] > 0
+										? Math.round((a[0] / a[1]) * 10) / 10
+										: undefined;
+								})(),
 							});
 						}
 					}
