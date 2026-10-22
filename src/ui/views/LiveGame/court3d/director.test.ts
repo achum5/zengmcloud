@@ -637,6 +637,73 @@ describe("3D director", () => {
 	// come in - not five in a line across the floor out past the arc, level
 	// with the ball, nobody back. (As the ball is brought up to the top of
 	// the key, mostly somebody back within 15 feet of the rim.)
+	// Off a defensive board or a steal, the five who lost it pick up whoever
+	// is coming up the floor their side of it - a break is matched up on the
+	// fly - not each off across the floor to find the man he had, through
+	// his teammates in the paint.
+	test("off a turnover or a board, the defense matches up on the fly - nobody crosses the floor for his own man", () => {
+		let changes = 0;
+		let crosses = 0;
+		// (Eight games: in four, the rate swings a good way either side with
+		// any change to where men happen to be.)
+		for (const seed of ["a", "b", "c", "d", "e", "f", "g", "h"]) {
+			const { events, tl } = compile(seed, 150);
+			const pids = [...tl.tracks.keys()];
+			for (const b of tl.beats) {
+				if (b.type !== "drb" && b.type !== "stl") {
+					continue;
+				}
+				const off = tl.tracks.get(events[b.i]?.pid as number)?.team;
+				if (off === undefined) {
+					continue;
+				}
+				changes += 1;
+				let prev: Map<number, { x: number; y: number }> | undefined;
+				for (let t = b.end; t < b.end + 7000; t += 100) {
+					const D =
+						fastAt(tl, t) > 1
+							? []
+							: pids
+									.map((pid) => evalPlayer(tl, pid, t))
+									.filter(
+										(q) =>
+											q.team !== off &&
+											q.shown &&
+											q.x > -1 &&
+											q.x < COURT_W + 1,
+									);
+					if (D.length !== 5) {
+						prev = undefined;
+						continue;
+					}
+					if (prev) {
+						for (let i = 0; i < 5; i++) {
+							for (let j = i + 1; j < 5; j++) {
+								const a = D[i]!;
+								const c = D[j]!;
+								const a0 = prev.get(a.pid);
+								const c0 = prev.get(c.pid);
+								if (
+									a0 &&
+									c0 &&
+									Math.sign(a.y - c.y) !== Math.sign(a0.y - c0.y) &&
+									Math.abs(a.x - c.x) < 6 &&
+									Math.hypot(a.x - a0.x, a.y - a0.y) > 0.5 &&
+									Math.hypot(c.x - c0.x, c.y - c0.y) > 0.5
+								) {
+									crosses += 1;
+								}
+							}
+						}
+					}
+					prev = new Map(D.map((q) => [q.pid, { x: q.x, y: q.y }]));
+				}
+			}
+		}
+		assert.isAbove(changes, 300);
+		assert.isAtMost(crosses / changes, 0.37, `${crosses} in ${changes}`);
+	}, 240_000);
+
 	test("getting back, somebody is back at the rim - not five in a line out at the top", () => {
 		let n = 0;
 		let back = 0;

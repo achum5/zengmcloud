@@ -1204,6 +1204,8 @@ const PERMS5 = permsOf(5);
 // What a defender picking up a man a position away from his own costs, in
 // feet of running (see matchUp).
 const MATCH_RANK = 7;
+// ... and on a break, matched up on the fly.
+const BREAK_MATCH_RANK = 2;
 // What every foot a man has to go to get to his part in a set costs, against
 // how badly he fits it (see castPlay): thirty feet, about a guard's part
 // played by a forward.
@@ -3617,7 +3619,7 @@ class Director {
 	// across the floor, mostly, since they all run its length - among those
 	// near his own size: a guard is not left on the center for the sake of a
 	// few strides.
-	private matchUp(team: Side, spots: Pt[]) {
+	private matchUp(team: Side, spots: Pt[], rankCost = MATCH_RANK) {
 		const men = this.slots(team);
 		const def = this.slots(other(team));
 		if (men.length !== 5 || def.length !== 5) {
@@ -3634,7 +3636,7 @@ class Director {
 					Math.abs(D.y - S.y) * 1.5 +
 					Math.abs(D.x - S.x) * 0.3 +
 					Math.abs((this.rank.get(d) ?? 4) - (this.rank.get(men[j]!) ?? 4)) *
-						MATCH_RANK;
+						rankCost;
 			}
 			if (!best || cost < best.cost - 0.01) {
 				best = { perm, cost };
@@ -5340,6 +5342,28 @@ class Director {
 					: B.y;
 			this.fillLanes(run.team, lanes, t0, t0, ballY);
 		}
+		// Back on defense, each picks up whoever is coming up the floor his
+		// side of it - not the man he would have had, across the floor and
+		// back through his teammates in the paint to get to him. A break is
+		// matched up on the fly, a guard on a big if that is who is there.
+		const opening = (run.play.steps[run.from] ?? []).find(
+			(a) => a.type === "dribble" && a.who === run.play.ball && a.to !== "rim",
+		);
+		this.matchUp(
+			run.team,
+			this.slots(run.team).map((pid) =>
+				pid === bh && opening?.type === "dribble"
+					? this.spotFor(
+							run.team,
+							run.across?.has(opening.to)
+								? (-run.mirror as 1 | -1)
+								: run.mirror,
+							opening.to,
+						)
+					: this.posOf(pid),
+			),
+			BREAK_MATCH_RANK,
+		);
 		this.motionTeam = run.team;
 		this.motion = 0;
 		return t;
