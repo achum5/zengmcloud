@@ -1328,6 +1328,23 @@ const rushed = (tr: Track, k: number, yaw: number, target: number): boolean => {
 	const a = spotAt(tr, k - TURN_STEP, false);
 	return Math.hypot(b.x - a.x, b.y - a.y) / (TURN_STEP / 1000) >= RUSH_FTPS;
 };
+// Stood off the ball with nothing coming to him, a man on the offense
+// follows it round at an easier pace - his eyes do the quick part - not
+// whipped round on the spot every time it moves.
+const CALM_TURN = 0.55;
+const calm = (tl: CourtTimeline, tr: Track, k: number): boolean => {
+	if (offenseAt(tl, k) !== tr.team || spotAt(tr, k, false).moving) {
+		return false;
+	}
+	if (actAt(tr, k)) {
+		return false;
+	}
+	const seg = ballSegAt(tl, k);
+	if (seg?.kind === "hold" && seg.pid === tr.pid) {
+		return false;
+	}
+	return !passComing(tl, tr.pid, k);
+};
 // Worked-out beats, kept per player: keyed by the beat and which settling
 // moment it was worked out from.
 const beatYaws = new WeakMap<Track, Map<number, Turning>>();
@@ -1362,7 +1379,11 @@ const yawOnBeat = (tl: CourtTimeline, tr: Track, g: number): number => {
 		turning = turnStep(
 			turning,
 			target,
-			rushed(tr, k, turning.yaw, target) ? TURN_MAX * RUSH_TURN : TURN_MAX,
+			rushed(tr, k, turning.yaw, target)
+				? TURN_MAX * RUSH_TURN
+				: calm(tl, tr, k)
+					? TURN_MAX * CALM_TURN
+					: TURN_MAX,
 		);
 		kept.set(key(k), turning);
 	}
