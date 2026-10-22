@@ -7206,6 +7206,98 @@ test("a veteran's past is told only on a night that fits it", () => {
 	assert.ok(clock > 0 && clock <= 25, `told ${clock} times`);
 });
 
+describe("the story goes past halftime, in order", () => {
+	const twoTeams = (
+		wq: number[],
+		lq: number[],
+		flow: RecapGame["flow"],
+		gid: number,
+	) =>
+		game({
+			gid,
+			teams: [
+				realisticTeam(
+					{
+						tid: 1,
+						name: "Suns",
+						abbrev: "PHX",
+						pts: wq.reduce((a, b) => a + b, 0),
+						ptsQtrs: wq,
+					},
+					player({ name: "Obi King", pts: 27, ast: 14, fg: 10, fga: 19 }),
+				),
+				realisticTeam(
+					{
+						tid: 2,
+						name: "Bucks",
+						abbrev: "MIL",
+						pts: lq.reduce((a, b) => a + b, 0),
+						ptsQtrs: lq,
+					},
+					player({ name: "Vince Hayes", pts: 20, ast: 7, fg: 8, fga: 17 }),
+				),
+			],
+			winnerTid: 1,
+			flow,
+		});
+
+	// Up 1 at the half, 9 after three, the Bucks within three with five
+	// minutes left: "The Suns were up 1 at the half, 56-55." was all of it.
+	test("a game close late says where it stood going into the fourth", () => {
+		for (let gid = 800; gid < 815; gid++) {
+			const recap = getAutoRecap(
+				twoTeams(
+					[28, 28, 30, 23],
+					[27, 28, 22, 25],
+					{
+						leadChanges: 6,
+						ties: 4,
+						maxLead: [12, 6],
+						maxLeadAt: [3, 1],
+						late: [
+							{ clock: 300, pts: [100, 97] },
+							{ clock: 120, pts: [105, 99] },
+						],
+					},
+					gid,
+				),
+			);
+			assert.match(
+				recap,
+				/9 up going into the fourth|9-point game entering the fourth|fourth, the Suns were up 9/,
+				recap,
+			);
+		}
+	});
+
+	// "...before the Lakers won the second half 69-59. The Lakers piled up 30
+	// assists and ran off 15 straight points in the first."
+	test("a first-half run comes before the half, not after the second", () => {
+		for (let gid = 830; gid < 845; gid++) {
+			const recap = getAutoRecap(
+				twoTeams(
+					[30, 21, 45, 24],
+					[22, 29, 27, 32],
+					{
+						leadChanges: 5,
+						ties: 6,
+						maxLead: [20, 6],
+						maxLeadAt: [3, 2],
+						lastLead: { side: 0, period: 3, clock: 500, pts: [60, 58] },
+						run: { side: 0, pts: 15, period: 1, clock: 500 },
+					},
+					gid,
+				),
+			);
+			const run = recap.search(/15 straight points|15-0 (?:run|burst)/);
+			const second = recap.search(/second half/);
+			if (run >= 0 && second >= 0) {
+				assert.ok(run < second, recap);
+			}
+		}
+	});
+});
+
 // "Jalen Green collected 5 steals for the Clippers" closed the losers'
 // paragraph, after their two men and their shooting.
 describe("a winner's steals sit with the winners", () => {

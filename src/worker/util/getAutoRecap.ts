@@ -2037,9 +2037,12 @@ const buildHeadlineText = (
 			);
 		}
 		const text = pick(rng, options, "headline:upset");
+		// Named in the headline is told, whatever his total: "Walker Green has
+		// 22 points and 10 assists as the Grizzlies stun the Pacers" over
+		// "Walker Green totaled 22 points and 10 assists as the Grizzlies..."
 		return h(
 			text,
-			star.pts >= 24 && text.includes(star.name),
+			text.includes(star.name),
 			false,
 			text.includes(statPhrase(star, 1)),
 		);
@@ -3018,6 +3021,10 @@ const statNote = (
 	const add = (text: string, fact: StatFact = "other", topic?: StatTopic) => {
 		options.push({ text, fact, topic });
 	};
+	// A team number earns a sentence when it is unusual, roughly one winner
+	// in ten: at 14 threes, 28 assists or 16 forced turnovers - a quarter to
+	// half of all winners - "They racked up 28 assists" sat in the middle of
+	// the story in most recaps and explained nothing.
 
 	if (w.fga >= 20 && w.fgp >= 52) {
 		// One fixed sentence here put "The X shot 52% from the field." in nine
@@ -3037,7 +3044,7 @@ const statNote = (
 			),
 		);
 	}
-	if (w.tp >= 14) {
+	if (w.tp >= 16) {
 		add(
 			pick(
 				rng,
@@ -3055,7 +3062,7 @@ const statNote = (
 	}
 	// Realistic team totals only (a full box score), so partial data can't yield
 	// an absurd "won the glass 22-0".
-	if (w.reb >= 30 && l.reb >= 20 && w.reb - l.reb >= 10) {
+	if (w.reb >= 30 && l.reb >= 20 && w.reb - l.reb >= 12) {
 		add(
 			pick(
 				rng,
@@ -3085,7 +3092,7 @@ const statNote = (
 			),
 		);
 	}
-	if (w.stl >= 10 && l.tov >= 16) {
+	if (w.stl >= 10 && l.tov >= 21) {
 		add(
 			pick(
 				rng,
@@ -3099,7 +3106,7 @@ const statNote = (
 			"loserTov",
 		);
 	}
-	if (w.ast >= 28) {
+	if (w.ast >= 30) {
 		add(
 			pickSentence(
 				rng,
@@ -3540,10 +3547,14 @@ const gameStory = (
 	};
 
 	// The score going into the last period, for a game still in doubt then.
-	const entering = (): string | undefined => {
+	// `anyLead`: in a game that was close at the end, the winners' lead
+	// going into the last period is told whatever its size - "The Suns were
+	// up 1 at the half" and then nothing at all, in a game the Bucks got
+	// back into late, stopped the story at halftime.
+	const entering = (anyLead = false): string | undefined => {
 		const m = shape.marginEnteringLast;
 		const last = ordinal(regPeriods);
-		if (Math.abs(m) > 6) {
+		if (Math.abs(m) > 6 && !(anyLead && m > 0)) {
 			return undefined;
 		}
 		covers.add("entering");
@@ -3862,7 +3873,7 @@ const gameStory = (
 				),
 			);
 		} else {
-			const e = entering();
+			const e = entering(true);
 			if (e) {
 				out.push(e);
 			}
@@ -6202,10 +6213,23 @@ export const getAutoRecap = (game: RecapGame): string => {
 			finishAt += 1;
 		}
 		const told = storyPara.join(" ");
-		for (const e of [
+		const run =
 			story.covers.has("run") || /straight points|-0 run|unanswered/.test(told)
 				? undefined
-				: runNote(game, shape, rng),
+				: runNote(game, shape, rng);
+		// A first-half run goes before the halftime score, not after the
+		// second half: "...before the Lakers won the second half 69-59. The
+		// Lakers ran off 15 straight points in the first."
+		const runPeriod = game.flow?.run?.period ?? 0;
+		const halfAt = storyPara.findIndex((t) =>
+			/halftime|at the half\b|the break|into the second half/.test(t),
+		);
+		if (run && runPeriod <= shape.regPeriods / 2 && halfAt >= 0) {
+			storyPara.splice(halfAt, 0, run);
+			finishAt += 1;
+		}
+		for (const e of [
+			run && !storyPara.includes(run) ? run : undefined,
 			story.covers.has("winnerPeak") || /as many as|lead reached/.test(told)
 				? undefined
 				: bigLeadNote(game, shape, rng),

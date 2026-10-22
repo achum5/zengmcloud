@@ -207,7 +207,7 @@ describe("simmed recaps", () => {
 				/nothing else fell/,
 				/Nothing fell from deep/,
 				/after going \d+-of-\d+/,
-				/\d+ [a-z]+ for the [A-Z][\w ]*, and \d+ [a-z]/,
+				/\d+ [a-z]+ for the [A-Z][\w ]*, and \d+ (?:points|rebounds|assists|steals|blocks)\b/,
 				/including \d+-of-\d+ from (?:three|the line) (?:as|in)\b/,
 				// The side that tied it at the end may have been the other one.
 				/after the break to force overtime/,
@@ -337,6 +337,92 @@ describe("simmed recaps", () => {
 					),
 					`gid ${gid}\n${recap}`,
 				);
+			}
+		}
+	});
+
+	// "The Suns were up 1 at the half, 56-55." and nothing after it, in a game
+	// the Suns won by seven. A story that reaches the break goes past it.
+	test("the story never stops at halftime", () => {
+		const after =
+			/second half|after the break|after halftime|going into the|entering the|fourth|third|overtime|extra period|with \d|seconds|for good|ahead for the last time|never|did not trail|pulled away|lead reached|as many as|at their biggest|from there|had led|nearly|let it go|got as close/i;
+		for (const { gid, recap } of pairs) {
+			const story = recap.split("\n\n").slice(1, 3).join(" ");
+			const sents = story.split(/(?<=[!.?])\s+/);
+			const at = sents.findIndex((t) =>
+				/halftime|at the half\b|at the break|into the break/.test(t),
+			);
+			if (at < 0) {
+				continue;
+			}
+			assert.match(sents.slice(at).join(" "), after, `gid ${gid}\n${recap}`);
+		}
+	});
+
+	// "...before the Lakers won the second half 69-59. The Lakers piled up 30
+	// assists and ran off 15 straight points in the first."
+	test("a first-half run is told before the second half", () => {
+		for (const { gid, recap } of pairs) {
+			// The lede's first sentence summarizes ("breaking it open with a
+			// 31-16 fourth quarter"); the story is told from the one after it.
+			const sents = recap
+				.split("\n\n")
+				.slice(1, 3)
+				.join(" ")
+				.split(/(?<=[!.?])\s+/)
+				.slice(1);
+			const second = sents.findIndex((t) =>
+				/second half|after the break|after halftime|going into the fourth|fourth quarter/i.test(
+					t,
+				),
+			);
+			if (second < 0) {
+				continue;
+			}
+			for (const t of sents.slice(second + 1)) {
+				assert.notMatch(
+					t,
+					/straight points in the (?:first|second)\b|-0 (?:run|burst) in the (?:first|second)\b/,
+					`gid ${gid}\n${recap}`,
+				);
+			}
+		}
+	});
+
+	// "Walker Green has 22 points and 10 assists as the Grizzlies stun the
+	// Pacers" over "Walker Green totaled 22 points and 10 assists as the
+	// Grizzlies..."
+	test("the lede does not restate the headline's line", () => {
+		for (const { gid, recap } of pairs) {
+			const headline = recap.split("\n")[0]!;
+			const lede = recap.split("\n\n")[1]!.split(/(?<=\.)\s/)[0]!;
+			for (const m of headline.matchAll(
+				/\d+ points and \d+ (?:rebounds|assists|steals|blocks)/g,
+			)) {
+				assert.notInclude(lede, m[0], `gid ${gid}\n${recap}`);
+			}
+		}
+	});
+
+	// "They racked up 28 assists" - a quarter of all winners have 28.
+	test("a team number gets a sentence only when it is unusual", () => {
+		for (const { gid, recap, game } of pairs) {
+			const { w } = sides(game);
+			const sum = (k: "tp" | "ast") =>
+				w.players.reduce((a, p) => a + (p[k] ?? 0), 0);
+			if (
+				new RegExp(
+					String.raw`${w.name} (?:piled up|finished with|racked up) \d+ assists|${w.name} shared it, \d+ assists`,
+				).test(recap)
+			) {
+				assert.isAtLeast(sum("ast"), 30, `gid ${gid}\n${recap}`);
+			}
+			if (
+				new RegExp(
+					String.raw`${w.name} (?:knocked down \d+ threes|hit \d+ from deep|made \d+ three-pointers|got \w+ to fall from deep)`,
+				).test(recap)
+			) {
+				assert.isAtLeast(sum("tp"), 16, `gid ${gid}\n${recap}`);
 			}
 		}
 	});
