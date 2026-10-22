@@ -976,6 +976,21 @@ describe("the deficit a comeback came from", () => {
 			["deficit"],
 		);
 	});
+
+	// 47-57 at the half. "Tied at N at the break" is a halftime score, not the
+	// game's last tie.
+	test("the accuracy reader holds a halftime score to the quarters", () => {
+		const g = make(900);
+		const kinds = (s: string) =>
+			verifyRecap(`**x**\n\n${s}`, g).map((v) => v.kind);
+		assert.deepStrictEqual(kinds("The Magic trailed 47-57 at halftime."), []);
+		assert.deepStrictEqual(kinds("It was 52-52 at halftime."), [
+			"halftime score",
+		]);
+		assert.deepStrictEqual(kinds("The teams were tied at 47 at the break."), [
+			"halftime score",
+		]);
+	});
 });
 
 // "Sore achilles kept Anthony Lowry out": a singular tendon ending in s was

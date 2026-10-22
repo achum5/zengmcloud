@@ -519,6 +519,18 @@ describe("simmed recaps", () => {
 		assert.isAtLeast(seen, 3);
 	});
 
+	// An American box score, not a football table: "level at 54", "the two
+	// sides", "top of the table", "away from home" were all in the copy.
+	test("the copy is American sports copy", () => {
+		for (const recap of [...pairs.map((p) => p.recap), ...dayRecaps]) {
+			assert.notMatch(
+				recap,
+				/\blevel (?:at|with|for|going)\b|break level|drew level|pull(?:ed)? level|the two sides|both sides|\btable\b|away from home|home side|, away\./,
+				recap,
+			);
+		}
+	});
+
 	// "Isaiah King strained his hamstring" at the bottom of a recap that had
 	// never named him left the reader to guess whose loss it was.
 	test("a man hurt in the game is told with his team unless already named", () => {

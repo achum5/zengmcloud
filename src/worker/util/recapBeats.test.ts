@@ -860,7 +860,7 @@ describe("the day wrap's context", () => {
 		);
 		assert.match(
 			text,
-			/Kings and the Suns are level for the last spot in the West/,
+			/Kings and the Suns are tied for the last spot in the West/,
 		);
 		// "cut line" never twice in one sentence.
 		assert.ok((text.match(/cut line/g) ?? []).length <= 1, text);
@@ -1253,8 +1253,8 @@ describe("the postseason day wrap", () => {
 		];
 		const text = dayBracketWatch(ctx(games), rngFromSeed(1))!;
 		assert.match(text, /Knicks face elimination in Game 6/);
-		assert.match(text, /Bucks and the Heat are level at 2-2/);
-		assert.ok(text.indexOf("elimination") < text.indexOf("level"), text);
+		assert.match(text, /Bucks and the Heat are tied 2-2/);
+		assert.ok(text.indexOf("elimination") < text.indexOf("tied"), text);
 		assert.ok(shapes((rng) => dayBracketWatch(ctx(games), rng)).size >= 3);
 	});
 

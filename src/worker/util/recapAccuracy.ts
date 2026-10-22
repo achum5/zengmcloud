@@ -381,9 +381,35 @@ export const verifyRecap = (
 			}
 		}
 
+		// --- tied at the half ------------------------------------------------
+		//
+		// "A-B at halftime" is held to the quarters further down; "tied at 61
+		// at the break" has one number and needs its own reading.
+		{
+			const hq = home.ptsQtrs ?? [];
+			const aq = away.ptsQtrs ?? [];
+			const reg = hq.length - (game.overtimes ?? 0);
+			if (reg >= 2 && reg % 2 === 0 && aq.length >= reg) {
+				const sum = (q: number[]) =>
+					q.slice(0, reg / 2).reduce((acc, x) => acc + x, 0);
+				for (const m of sentence.matchAll(
+					/\btied at (\d+) (?:at halftime|at the half\b|at the break)/g,
+				)) {
+					const n = Number(m[1]);
+					if (n !== sum(hq) || n !== sum(aq)) {
+						add(
+							"halftime score",
+							`said tied at ${n}, real ${sum(hq)}-${sum(aq)}`,
+							sentence,
+						);
+					}
+				}
+			}
+		}
+
 		// --- the score going into a quarter ----------------------------------
 		for (const m of sentence.matchAll(
-			/(?:(\d+)-(\d+)|[Ll]evel at (\d+)) going into the (second|third|fourth)\b/g,
+			/(?:(\d+)-(\d+)|(?:[Ll]evel|[Tt]ied) at (\d+)) going into the (second|third|fourth)\b/g,
 		)) {
 			const idx = { second: 1, third: 2, fourth: 3 }[
 				m[4] as "second" | "third" | "fourth"
@@ -444,7 +470,12 @@ export const verifyRecap = (
 		);
 		claim(/(\d+)-0 run/g, (n) => n === flow.run?.pts, "run");
 		claim(/ran off (\d+) straight/g, (n) => n === flow.run?.pts, "run");
-		claim(/tied at (\d+)/g, (n) => n === flow.lastTie?.pts, "last tie");
+		// "Tied at 61 at the break" is the halftime score, checked above.
+		claim(
+			/tied at (\d+)\b(?! (?:at (?:the break|halftime|the half\b)|going into))/g,
+			(n) => n === flow.lastTie?.pts,
+			"last tie",
+		);
 		claim(
 			/last tie came at (\d+)/g,
 			(n) => n === flow.lastTie?.pts,

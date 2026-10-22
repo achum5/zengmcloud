@@ -1276,7 +1276,7 @@ const postseasonContext = (
 			choose(
 				[
 					`${cap(w)} evened ${rnd} at ${wAfter}-${wAfter} with a Game ${gameNo} win.`,
-					`Game ${gameNo} went to ${w}, and ${rnd} is level at ${wAfter}-${wAfter}.`,
+					`Game ${gameNo} went to ${w}, and ${rnd} is tied ${wAfter}-${wAfter}.`,
 					`${cap(w)} answered in Game ${gameNo} to square ${rnd} at ${wAfter}-${wAfter}.`,
 				],
 				"seriesEven",
@@ -1373,7 +1373,7 @@ const postseasonContext = (
 			out.sentences.push(
 				choose(
 					[
-						`Game ${gameNo + 1} decides it, with both sides one win from ${prize}.`,
+						`Game ${gameNo + 1} decides it, with each team one win from ${prize}.`,
 						`It comes down to Game ${gameNo + 1}, with ${prize} going to the winner.`,
 						`Game ${gameNo + 1} is winner-take-all, with ${prize} on the line.`,
 					],
@@ -2940,7 +2940,6 @@ const flowSentence = (
 					// No fixed minute count here: quarter length and the number of
 					// periods are both league settings.
 					`Regulation settled nothing, and it took ${extra}.`,
-					`The two sides could not be separated in regulation, and ${extra} was needed.`,
 				],
 				"otLede",
 			),
@@ -2987,7 +2986,7 @@ const flowSentence = (
 					rng,
 					[
 						`The game was tied entering the ${last}.`,
-						`It was level going into the ${last}.`,
+						`It was tied going into the ${last}.`,
 						...(shape.regPeriods === 4
 							? [`Nothing separated them after three.`]
 							: []),
@@ -3244,7 +3243,7 @@ const halftimeNote = (
 			rng,
 			[
 				`It was ${w}-${w} at halftime.`,
-				`The two sides went to the break level at ${w}.`,
+				`The teams were tied at ${w} at the break.`,
 			],
 			"halftimeTied",
 		);
@@ -3655,7 +3654,7 @@ const gameStory = (
 						rng,
 						[
 							`It was ${wIn}-${lIn} going into the ${last}, and ${w} won the ${last} quarter ${q}.`,
-							`Level at ${wIn} going into the ${last}, ${w} took the ${last} quarter ${q}.`,
+							`Tied at ${wIn} going into the ${last}, ${w} took the ${last} quarter ${q}.`,
 						],
 						"story:lastTied",
 					);
@@ -3781,14 +3780,14 @@ const gameStory = (
 
 	covers.add("half");
 	if (wh === lh) {
-		// --- LEVEL AT THE BREAK. ---
+		// --- TIED AT THE BREAK. ---
 		if (wonInLast) {
 			out.push(
 				pick(
 					rng,
 					[
 						`It was ${wh}-${lh} at halftime.`,
-						`The teams went to the break level at ${wh}.`,
+						`The teams were tied at ${wh} at the break.`,
 					],
 					"story:halfTied",
 				),
@@ -3811,7 +3810,7 @@ const gameStory = (
 				rng,
 				[
 					`It was ${wh}-${lh} at halftime.`,
-					`The teams went to the break level at ${wh}.`,
+					`The teams were tied at ${wh} at the break.`,
 				],
 				"story:halfTied",
 			),
@@ -4022,7 +4021,7 @@ const combinedNote = (shape: Shape, rng: () => number): string | undefined => {
 			teamStats(shape.winner).fgp < 47
 		) {
 			return pick(rng, [
-				`Neither offense could find a rhythm, the two sides combining for just ${total} points.`,
+				`Neither offense could find a rhythm, the teams combining for just ${total} points.`,
 				`Points were hard to come by all night: ${total} of them between the two teams.`,
 				`It was a rock fight from the opening tip.`,
 				`Neither team could get anything going, and it showed on the scoreboard.`,
@@ -5338,7 +5337,7 @@ const buildAllStar = (game: RecapGame, rng: () => number): string => {
 		}
 		// No stored names (an imported league, an older save): fall back to
 		// something that at least reads as a side rather than a digit.
-		return t === home ? "the home side" : "the visitors";
+		return t === home ? "the home team" : "the visitors";
 	};
 	const w = squad(winner);
 	const l = squad(loser);
@@ -5431,7 +5430,7 @@ const buildAllStar = (game: RecapGame, rng: () => number): string => {
 				rng,
 				[
 					`Defense was optional, as usual: ${total} points between them.`,
-					`The two sides combined for ${total} points.`,
+					`The teams combined for ${total} points.`,
 				],
 				"allStarTotal",
 			),
@@ -6883,7 +6882,7 @@ const buildTie = (game: RecapGame, shape: Shape, rng: () => number): string => {
 		const so = game.shootout;
 		return [
 			`**${nick(winner)} beat the ${nick(loser)} in a shootout, ${pts}-${pts} (${so.won}-${so.lost})**`,
-			`${cap(theNick(winner))} and ${theNick(loser)} were level at ${pts}${ot}, and ${theNick(winner)} took the shootout ${so.won}-${so.lost}.${lines.length > 0 ? ` ${cap(lines.join(", and "))}.` : ""}`,
+			`${cap(theNick(winner))} and ${theNick(loser)} were tied at ${pts}${ot}, and ${theNick(winner)} took the shootout ${so.won}-${so.lost}.${lines.length > 0 ? ` ${cap(lines.join(", and "))}.` : ""}`,
 		].join("\n\n");
 	}
 	// The headline has the score; the body has the rest.
@@ -6892,7 +6891,7 @@ const buildTie = (game: RecapGame, shape: Shape, rng: () => number): string => {
 			rng,
 			[
 				`${cap(H)} and ${A} played to a tie${ot}.`,
-				`Nobody won: ${H} and ${A} finished level${ot}.`,
+				`Nobody won: ${H} and ${A} finished tied${ot}.`,
 				`${cap(H)} and ${A} settled for a tie${ot}.`,
 			],
 			"tieLede",
@@ -7258,7 +7257,7 @@ const conferencePictureSentence = (
 		rng,
 		[
 			`In the standings, ${list}.`,
-			`Around the top of the table, ${list}.`,
+			`As for the standings, ${list}.`,
 			`As it stands, ${list}.`,
 			`The bigger picture: ${list}.`,
 		],
@@ -7466,7 +7465,7 @@ const daySeriesPhrase = (
 				rng,
 				[
 					`${w} pulled even with ${l} at ${wAfter}-${wAfter}`,
-					`${w} drew level with ${l} at ${wAfter}-${wAfter}`,
+					`${w} evened their series with ${l} at ${wAfter}-${wAfter}`,
 					`${w} squared it with ${l} at ${wAfter}-${wAfter}`,
 				],
 				"daySeriesEven",
@@ -7772,7 +7771,7 @@ const dayHeadline = (
 				);
 			} else if (ss.wAfter === ss.lBefore) {
 				stateBits.push(
-					`${w} pull level with ${l}`,
+					`${w} pull even with ${l}`,
 					`${w} answer back against ${l}`,
 				);
 			} else if (ss.wAfter === ss.need - 1 && ss.wAfter - ss.lBefore >= 2) {

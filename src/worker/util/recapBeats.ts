@@ -220,7 +220,7 @@ export const seriesBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 			);
 		}
 		if (wonNow === s.lost) {
-			return `${W} and ${ln} finished their season series level at ${wonNow}-${wonNow}.`;
+			return `${W} and ${ln} split their season series ${wonNow}-${wonNow}.`;
 		}
 	}
 
@@ -257,7 +257,7 @@ export const seriesBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 					total === 2
 						? `${W} and ${ln} have split their two meetings this season.`
 						: `${W} and ${ln} have split ${numWord(total)} meetings this season.`,
-					`${W} pulled level with ${ln} at ${wonNow}-${wonNow} for the season.`,
+					`${W} evened the season series with ${ln} at ${wonNow}-${wonNow}.`,
 				],
 				"seriesLevel",
 			),
@@ -367,7 +367,7 @@ export const homeRoadBeat = (
 				[
 					`${W} improved to ${wa.won}-${wa.lost} on the road.`,
 					`That is ${numWord(wa.won)} road wins in ${numWord(games(wa))} tries for ${wn}.`,
-					`${W} are ${wa.won}-${wa.lost} away from home.`,
+					`${W} are ${wa.won}-${wa.lost} on the road.`,
 				],
 				"roadRecord",
 			),
@@ -417,7 +417,7 @@ export const homeRoadBeat = (
 				rng,
 				[
 					`${L} dropped to ${la.won}-${la.lost} on the road.`,
-					`${L} have won just ${numWord(la.won)} of ${numWord(games(la))} away from home.`,
+					`${L} have won just ${numWord(la.won)} of ${numWord(games(la))} on the road.`,
 					`It is ${la.won}-${la.lost} on the road now for ${ln}.`,
 				],
 				"roadStruggles",
@@ -894,11 +894,6 @@ const nextPlayoffGame = (ctx: BeatContext, rng: Rng): string | undefined => {
 		[
 			`Game ${gameNo} is${where}.`,
 			`The series moves on to Game ${gameNo}${where}.`,
-			// Not "They meet again": the pronoun here means BOTH clubs, which
-			// is not what a "They" at the head of a sentence means anywhere
-			// else in the piece - the deduper and the short-pair joiner both
-			// read it as the winner alone.
-			`The two sides meet again${where} for Game ${gameNo}.`,
 			`Next is Game ${gameNo}${where}.`,
 			`Game ${gameNo} will be played${where}.`,
 			`${cap(hostNick)} host Game ${gameNo}.`,
@@ -937,7 +932,7 @@ export const nextGameBeat = (
 			rng,
 			[
 				`${T} are next in action ${n.home ? "at home against" : "on the road against"} ${opp}.`,
-				`Up next for ${tn}: ${opp}, ${n.home ? "at home" : "away"}.`,
+				`Up next for ${tn}: ${opp}, ${n.home ? "at home" : "on the road"}.`,
 				`${T} ${n.home ? "host" : "visit"} ${opp} next.`,
 				`Next up for ${tn} is ${opp}, ${n.home ? "at home" : "on the road"}.`,
 				`${T} get ${opp} next${n.home ? ", at home" : ""}.`,
@@ -1146,7 +1141,7 @@ export const seriesShapeBeat = (
 				[
 					`Home has decided every game of the series so far.`,
 					`Nobody has won on the road in this series yet.`,
-					`That is ${numWord(prior.length + 1)} games, and ${numWord(prior.length + 1)} wins for the home side.`,
+					`That is ${numWord(prior.length + 1)} games, and ${numWord(prior.length + 1)} wins for the home team.`,
 				],
 				"seriesHomeHold",
 			),
@@ -1381,7 +1376,7 @@ export const dayStandingsMovers = (
 		rng,
 		[
 			`${cap(list)}.`,
-			`The table moved with them: ${list}.`,
+			`The standings moved with them: ${list}.`,
 			`It shuffled the order too - ${list}.`,
 			`The night moved the order as well: ${list}.`,
 		],
@@ -1413,7 +1408,7 @@ export const dayRaceSentence = (
 		const spot = bits.length === 0 ? "the last playoff spot" : "the last spot";
 		if (gap <= 0) {
 			bits.push(
-				`${lastName} and ${firstName} are level for ${spot} in ${confShort(conf.name)}`,
+				`${lastName} and ${firstName} are tied for ${spot} in ${confShort(conf.name)}`,
 			);
 		} else if (gap <= 3) {
 			bits.push(
@@ -1700,7 +1695,7 @@ export const dayBracketWatch = (
 		} else if (wAfter === lAfter) {
 			out.push({
 				weight: 1,
-				text: `${w} and ${l} are level at ${wAfter}-${wAfter}`,
+				text: `${w} and ${l} are tied ${wAfter}-${wAfter}`,
 			});
 		}
 		ctx.saidTids.add(winner.tid);
