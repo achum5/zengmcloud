@@ -47,6 +47,7 @@ import {
 	type FlagFlight,
 } from "./crew.ts";
 import { foulsOf } from "./fouls.ts";
+import { replayFor, type FieldReplay } from "./replays.ts";
 
 // THE GAME STAGED: every snap of the play-by-play, in feet and milliseconds -
 // who is on the field for it, where each man lines up, the ball, and the
@@ -168,6 +169,8 @@ export type Play = {
 	crew: CrewPart[];
 	flags: FlagFlight[];
 	ball: BallSeg[];
+	// A big play, shown again after it (see replays.ts).
+	replay?: FieldReplay;
 };
 
 export type Beat = {
@@ -1022,6 +1025,17 @@ class Director {
 			signals,
 			r: this.rng(i0, "crew"),
 		});
+		const replay = replayFor({
+			kind,
+			events,
+			beats: this.beats.filter((b) => b.i >= i0 && b.i < i1),
+			t0,
+			snap,
+			whistle,
+			t1,
+			ball,
+			fouled: fouls.some((f) => f.accepted),
+		});
 		this.plays.push({
 			i: i0,
 			kind,
@@ -1041,6 +1055,7 @@ class Director {
 			crew: crew.parts,
 			flags: crew.flags,
 			ball,
+			...(replay ? { replay } : {}),
 		});
 		this.T = t1;
 		this.ballY = this.nextSpot(kind, i0, i1, ballY);

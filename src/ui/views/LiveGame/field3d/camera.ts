@@ -25,6 +25,14 @@ export const MAIN_RIG: FieldRig = {
 	slide: 1,
 	upright: true,
 };
+// The replay camera: down low on the near side, in true perspective - back
+// past the edge of the turf, so the turf is all in front of it.
+export const REPLAY_RIG: FieldRig = {
+	back: 60,
+	high: 22,
+	slide: 1,
+	upright: false,
+};
 
 // Where it looks: a point on the field (x, y), how wide a slice of the field
 // fits across the picture there (feet), and how high (z, the turf if unset).

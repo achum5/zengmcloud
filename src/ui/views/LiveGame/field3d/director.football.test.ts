@@ -12,6 +12,7 @@ import {
 	type Part,
 } from "./director.ts";
 import { dirFor, FIELD_L, FIELD_W, yardLineX } from "./geometry.ts";
+import { makeFieldClock, REPLAY_SPEED, stepField } from "./playback.ts";
 import { simGames, type SimGame } from "./testGames.ts";
 
 let games: SimGame[] = [];
@@ -181,5 +182,80 @@ describe("compileField", () => {
 		const a = stage(games[1]!, 5);
 		const b = stage(games[1]!, 5);
 		assert.deepStrictEqual(a, b);
+	});
+});
+
+describe("replays", () => {
+	test("a score, a pick, a long gain shown again once the play is over", () => {
+		let shown = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			tl.plays.forEach((play, k) => {
+				const end = tl.plays[k + 1]?.i ?? game.events.length;
+				const seg = game.events.slice(play.i, end);
+				const r = play.replay;
+				const stands = seg.some(
+					(e) => e.type === "penalty" && e.decision !== "decline",
+				);
+				const td = seg.some(
+					(e) =>
+						e.td === true &&
+						["run", "passComplete", "interceptionReturn"].includes(e.type),
+				);
+				if (td && !stands) {
+					assert.isDefined(r, `a score on play ${play.i}`);
+				}
+				if (!r) {
+					return;
+				}
+				shown += 1;
+				// Of the play itself, cut to after it, before the next.
+				assert.isAtLeast(r.from, play.t0, `play ${play.i}`);
+				assert.isAbove(r.to, r.from + 1000, `play ${play.i}`);
+				assert.isAtMost(r.to, r.cue, `play ${play.i}`);
+				assert.isBelow(r.cue, play.t1, `play ${play.i}`);
+				assert.isAbove(r.cue, play.snap, `play ${play.i}`);
+			});
+		}
+		assert.isAbove(shown, 15);
+	});
+
+	test("the live picture held while one shows, slowed down - and not on fast", () => {
+		const tl = stage(games[0]!);
+		const play = tl.plays.find((p) => p.replay)!;
+		const r = play.replay!;
+		const input = {
+			cursor: 1e9,
+			paused: false,
+			rate: 1,
+			follower: true,
+			eventsLength: 1e9,
+			onReady: () => {},
+		};
+		const run = (rate: number) => {
+			const s = makeFieldClock(false, 0);
+			s.t = r.cue - 500;
+			let now = 0;
+			stepField(s, { ...input, rate }, tl, now);
+			const seen: { t: number; at?: number }[] = [];
+			for (let k = 0; k < 2000; k++) {
+				now += 16;
+				stepField(s, { ...input, rate }, tl, now);
+				seen.push({ t: s.t, ...(s.replay ? { at: s.replay.at } : {}) });
+			}
+			return seen;
+		};
+		const seen = run(1);
+		const during = seen.filter((x) => x.at !== undefined);
+		assert.isAbove(during.length, 10);
+		for (const x of during) {
+			assert.strictEqual(x.t, r.cue);
+		}
+		// From the start of it to the end, at its own pace.
+		const spanMs = during.length * 16;
+		assert.closeTo(spanMs, (r.to - r.from) / REPLAY_SPEED, 40);
+		assert.isAbove(seen.at(-1)!.t, r.cue);
+		// On fast: on through it.
+		assert.isTrue(run(4).every((x) => x.at === undefined));
 	});
 });

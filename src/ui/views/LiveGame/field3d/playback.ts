@@ -4,11 +4,19 @@ import {
 	targetForCursor,
 	type FieldTimeline,
 } from "./director.ts";
+import type { FieldReplay } from "./replays.ts";
 
 // THE 3D FIELD'S CLOCK, frame by frame - the 3D court's, for football (see
 // court3d/playback.ts): how far along the timeline the picture is, run on
 // toward the page's cursor, and at each line it gets to, asking the page for
-// it.
+// it - and a big play, once it is over, shown again.
+
+// Watched quicker than this, a big play is not shown again.
+export const REPLAY_RATE_MAX = 2;
+export const REPLAY_SPEED = 0.55;
+
+// A replay showing: where in it the picture is (`at`, timeline ms).
+export type FieldReplayShowing = FieldReplay & { at: number };
 
 export type FieldClock = {
 	t: number;
@@ -22,6 +30,10 @@ export type FieldClock = {
 	prevSkips: number;
 	// Cut the camera straight to its shot, next frame.
 	snapCam: boolean;
+	// The replay showing now; the live clock held while it does - and when
+	// (frame time, ms) the last one ended.
+	replay: FieldReplayShowing | undefined;
+	backAt: number;
 };
 
 export const makeFieldClock = (paused: boolean, skips: number): FieldClock => ({
@@ -33,6 +45,8 @@ export const makeFieldClock = (paused: boolean, skips: number): FieldClock => ({
 	prevPaused: paused,
 	prevSkips: skips,
 	snapCam: true,
+	replay: undefined,
+	backAt: -Infinity,
 });
 
 // Follow the page's cursor: run on to the next line normally; cut straight
@@ -57,6 +71,7 @@ export const onFieldCursor = (
 		const at = snapForCursor(tl, cursor);
 		s.t = skipped ? Math.max(s.t, at) : at;
 		s.snapCam = true;
+		s.replay = undefined;
 	}
 	if (paused && s.prevCursor >= 0 && cursor > s.prevCursor && !skipped) {
 		s.stepping = true;
@@ -91,14 +106,32 @@ export const stepField = (
 	s.last = now;
 	const target = targetForCursor(tl, p.cursor);
 	const before = s.t;
-	if ((!p.paused || s.stepping) && s.t < target) {
-		s.t = Math.min(target, s.t + dt * p.rate);
+	const r = s.replay;
+	if (r) {
+		if (!p.paused) {
+			r.at += dt * p.rate * REPLAY_SPEED;
+		}
+		if (r.at >= r.to) {
+			s.replay = undefined;
+			s.snapCam = true;
+			s.backAt = now;
+		}
+	} else if ((!p.paused || s.stepping) && s.t < target) {
+		// On to the next line - stopping on the moment to show a big play
+		// again, unless stepping play by play or watching on fast.
+		const next = nextReplay(tl, before);
+		const again = !!next && !s.stepping && p.rate <= REPLAY_RATE_MAX;
+		s.t = Math.min(target, again ? next.cue : Infinity, s.t + dt * p.rate);
+		if (again && s.t >= next.cue) {
+			s.replay = { ...next, at: next.from };
+			s.snapCam = true;
+		}
 	}
 	const cut = tl.cuts.some((c) => c > before && c <= s.t);
 	if (cut) {
 		s.snapCam = true;
 	}
-	if (s.t >= target) {
+	if (s.t >= target && !s.replay) {
 		s.stepping = false;
 		if (
 			!p.paused &&
@@ -111,4 +144,17 @@ export const stepField = (
 		}
 	}
 	return { dt, cut };
+};
+
+// The next replay to come after t, if any.
+export const nextReplay = (
+	tl: FieldTimeline,
+	t: number,
+): FieldReplay | undefined => {
+	for (const play of tl.plays) {
+		if (play.replay && play.replay.cue > t) {
+			return play.replay;
+		}
+	}
+	return undefined;
 };

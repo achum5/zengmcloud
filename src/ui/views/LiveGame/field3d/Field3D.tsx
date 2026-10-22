@@ -30,7 +30,7 @@ import { aimFor } from "./aim.ts";
 import { drawFlyingBall, drawLooseBall } from "./ball.ts";
 import { drawFlag } from "./flag.ts";
 import { footballBody, officialBody } from "./body.ts";
-import { makeFieldCamera } from "./camera.ts";
+import { makeFieldCamera, MAIN_RIG, REPLAY_RIG } from "./camera.ts";
 import { compileField, type FieldTimeline } from "./director.ts";
 import { momentAt, playAt } from "./evaluate.ts";
 import {
@@ -50,7 +50,15 @@ import {
 	type FieldLook,
 } from "./kit.ts";
 import type { RosterMan } from "./personnel.ts";
-import { makeFieldClock, onFieldCursor, stepField } from "./playback.ts";
+import {
+	makeFieldClock,
+	nextReplay,
+	onFieldCursor,
+	REPLAY_RATE_MAX,
+	REPLAY_SPEED,
+	stepField,
+} from "./playback.ts";
+import { replayAim } from "./replays.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
 import { drawFieldPlayer } from "./sprite.ts";
 import { paintStadium } from "./stadium.ts";
@@ -66,6 +74,10 @@ import { paintStadium } from "./stadium.ts";
 
 // How long the picture dips to black either side of a cut (timeline ms).
 const DIP_MS = 150;
+// Replay-time ms the picture takes to come up out of black and go back down,
+// and (ms) to come back up out of it to the game.
+const REPLAY_DIP = 90;
+const BACK_DIP_MS = 180;
 // How quickly the camera pans and zooms after what it follows (per second).
 const CAM_PAN = 3.2;
 const CAM_ZOOM = 2.4;
@@ -320,6 +332,7 @@ const Field3D = ({
 	const narrow = size.w < NARROW_W;
 
 	const dipRef = useRef<HTMLDivElement | null>(null);
+	const replayRef = useRef<HTMLDivElement | null>(null);
 	const clockRef = useRef<HTMLSpanElement | null>(null);
 	const shotRef = useRef<HTMLSpanElement | null>(null);
 	const downRef = useRef<HTMLSpanElement | null>(null);
@@ -402,8 +415,9 @@ const Field3D = ({
 				canvas.width = fw;
 				canvas.height = fh;
 			}
-			const moment = momentAt(tl, s.t);
-			const aim = aimFor(moment);
+			const replay = s.replay;
+			const moment = momentAt(tl, replay ? replay.at : s.t);
+			const aim = replay ? replayAim(moment, replay) : aimFor(moment);
 			// (Squarer, the picture takes in a little more of the field.)
 			const width = aim.width * (fw / fh < 1.5 ? 0.8 : 1);
 			const c = cam.current;
@@ -419,7 +433,8 @@ const Field3D = ({
 				c.vz = 0;
 				s.snapCam = false;
 			} else {
-				const secs = (dt / 1000) * Math.max(1, p.rate);
+				const secs =
+					(dt / 1000) * Math.max(1, p.rate) * (replay ? REPLAY_SPEED : 1);
 				[c.x, c.vx] = follow(c.x, c.vx, aim.x, CAM_PAN, secs);
 				[c.w, c.vw] = follow(c.w, c.vw, width, CAM_ZOOM, secs);
 				[c.y, c.vy] = follow(c.y, c.vy, aim.y, CAM_ZOOM, secs);
@@ -429,6 +444,7 @@ const Field3D = ({
 				{ x: c.x, width: c.w, y: c.y, z: c.z },
 				fw,
 				fh,
+				replay ? REPLAY_RIG : MAIN_RIG,
 			);
 			const look = (pid: number) => looks.current.get(pid);
 			const body = (pid: number) => bodies.current.get(pid) ?? footballBody();
@@ -482,9 +498,35 @@ const Field3D = ({
 					(m, x) => Math.min(m, Math.abs(s.t - x)),
 					Infinity,
 				);
-				const o = cut ? 1 : Math.max(0, 1 - near / DIP_MS);
+				// (And down into a replay coming up, and up out of one.)
+				const coming = nextReplay(tl, s.t);
+				const toReplay =
+					coming && !s.stepping && p.rate <= REPLAY_RATE_MAX
+						? coming.cue - s.t
+						: Infinity;
+				const o = replay
+					? Math.max(
+							0,
+							1 -
+								Math.min(replay.at - replay.from, replay.to - replay.at) /
+									REPLAY_DIP,
+						)
+					: cut
+						? 1
+						: Math.max(
+								0,
+								1 - Math.min(near, toReplay) / DIP_MS,
+								1 - (now - s.backAt) / BACK_DIP_MS,
+							);
 				if (dip.style.opacity !== String(o)) {
 					dip.style.opacity = String(o);
+				}
+			}
+			const tag = replayRef.current;
+			if (tag) {
+				const show = replay ? "block" : "none";
+				if (tag.style.display !== show) {
+					tag.style.display = show;
 				}
 			}
 			// The down and distance, and which side has the ball.
@@ -617,6 +659,27 @@ const Field3D = ({
 					pointerEvents: "none",
 				}}
 			/>
+			<div
+				ref={replayRef}
+				style={{
+					display: "none",
+					position: "absolute",
+					right: "2cqw",
+					top: "2cqw",
+					padding: "0.35em 0.7em",
+					fontFamily: "system-ui, -apple-system, Segoe UI, Roboto, sans-serif",
+					fontWeight: 800,
+					fontSize: "clamp(10px, 1.7cqw, 14px)",
+					letterSpacing: "0.08em",
+					color: "#fff",
+					background: "rgba(10, 10, 14, 0.85)",
+					borderLeft: `3px solid ${home?.colors?.[0] ?? "#888"}`,
+					borderRadius: 3,
+					pointerEvents: "none",
+				}}
+			>
+				REPLAY
+			</div>
 			{!timeline && events && events.length > 0 ? (
 				<div
 					className="spinner-border text-light"
