@@ -1337,6 +1337,18 @@ const UP_WITH_SHOT = new Set<AnimName>([
 const GIVE_WAY = 1.5;
 const GIVE_WAY_BEFORE = 400;
 const GIVE_WAY_MS = 300;
+// Going up with a shot in close: off the glass or over the rim.
+const UP_IN_CLOSE = new Set<AnimName>([
+	"layup",
+	"fingerRoll",
+	"powerLayup",
+	"scoop",
+	"reverseLayup",
+	"floater",
+]);
+// (Worked out from where the schedule has them - which the picture, a
+// stride at a time, can have up to half a foot or so nearer: that much more.)
+const GIVE_WAY_SLACK = 0.5;
 // How near him (feet, middle to middle) a man going up for that rebound gets
 // - round him from where he would have taken it, by no more than this (feet
 // for every second it is in the air to him).
@@ -17618,8 +17630,11 @@ class Director {
 		// Standing in one of these - up contesting a shot, letting one go,
 		// taking a pass - or set in one of those above (a screen, say), he
 		// stays put: the man going by veers round him - off the screen at
-		// his shoulder, not through him.
+		// his shoulder, not through him. (Going up with a shot in close too:
+		// where he lets it go from is where it goes from - in front of the
+		// glass, not round behind it.)
 		const STAND = new Set<AnimName>([
+			...UP_IN_CLOSE,
 			"contest",
 			"shoot",
 			"setShot",
@@ -18340,14 +18355,6 @@ class Director {
 	// goes.)
 	private clearTheWayIn() {
 		const FOR_THE_BALL = new Set<AnimName>(["block", "poke", "strip"]);
-		const UP = new Set<AnimName>([
-			"layup",
-			"fingerRoll",
-			"powerLayup",
-			"scoop",
-			"reverseLayup",
-			"floater",
-		]);
 		const tracks = [...this.tracks.values()];
 		// Where he is - nudged aside already, too - running each run as the
 		// court does, or (`even`) at an even pace along it, as a man already
@@ -18390,7 +18397,7 @@ class Director {
 					}
 				}
 			}
-			if (!worst || worst.d >= GIVE_WAY) {
+			if (!worst || worst.d >= GIVE_WAY + GIVE_WAY_SLACK) {
 				return;
 			}
 			// Off to his side of the way the shooter is going then.
@@ -18400,10 +18407,23 @@ class Director {
 				dist(A, B) > 0.2 ? unitVec(A, B) : unitVec(worst.S, rimPt(sh.team));
 			const n = { x: -u.y, y: u.x };
 			const off = (worst.O.x - worst.S.x) * n.x + (worst.O.y - worst.S.y) * n.y;
-			const s = Math.abs(off) > 0.1 ? Math.sign(off) : tr.pid % 2 ? 1 : -1;
-			const k = GIVE_WAY + 0.2 - Math.abs(off);
 			const n0 = ta - GIVE_WAY_MS;
 			let n1 = tb + GIVE_WAY_MS;
+			// (Stepped aside already about then - a man sliding across his way,
+			// say, on one side of it and then the other: the same way again,
+			// not back across into him, the two steps undoing each other.)
+			const was = (tr.nudges ?? [])
+				.filter((x) => x.t0 < n1 && x.t1 > n0)
+				.reduce((a, x) => a + x.dx * n.x + x.dy * n.y, 0);
+			const s =
+				Math.abs(was) > 0.1
+					? Math.sign(was)
+					: Math.abs(off) > 0.1
+						? Math.sign(off)
+						: tr.pid % 2
+							? 1
+							: -1;
+			const k = s * (GIVE_WAY + GIVE_WAY_SLACK + 0.2) - off;
 			// (Back where he was by the time the ball is in the air to him -
 			// off the rim, say: where his hands are, it goes.)
 			const to = this.ball.find(
@@ -18423,8 +18443,8 @@ class Director {
 			(tr.nudges ??= []).push({
 				t0: n0,
 				t1: n1,
-				dx: n.x * s * k,
-				dy: n.y * s * k,
+				dx: n.x * k,
+				dy: n.y * k,
 				ramp: GIVE_WAY_MS,
 			});
 			tr.nudges.sort((x, y) => x.t0 - y.t0);
@@ -18434,7 +18454,7 @@ class Director {
 		for (let round = 0; round < 3; round++) {
 			for (const sh of tracks) {
 				for (const a of sh.acts) {
-					if (!UP.has(a.anim)) {
+					if (!UP_IN_CLOSE.has(a.anim)) {
 						continue;
 					}
 					const t0 = a.t0 - GIVE_WAY_BEFORE;
@@ -18845,14 +18865,19 @@ class Director {
 							// Who gives way.
 							// (The man with the ball, only dribbling it, gives way to
 							// one set in a screen or busy where he is.)
+							// (Going up with a shot in close he is never moved: where
+							// he lets it go from is where the ball goes from, in
+							// front of the glass - see clearTheWayIn.)
 							const ground = (pid: number, act: AnimName | undefined) =>
-								act !== undefined && ON_BALL.has(act)
-									? 2
-									: act !== undefined && (HOLDS.has(act) || SET.has(act))
-										? 1.5
-										: pid === holder
-											? 1
-											: 0;
+								act !== undefined && UP_IN_CLOSE.has(act)
+									? 3
+									: act !== undefined && ON_BALL.has(act)
+										? 2
+										: act !== undefined && (HOLDS.has(act) || SET.has(act))
+											? 1.5
+											: pid === holder
+												? 1
+												: 0;
 							const ga = ground(A.pid, aa);
 							const gb = ground(B.pid, ab);
 							const fixA = ga > 0;
