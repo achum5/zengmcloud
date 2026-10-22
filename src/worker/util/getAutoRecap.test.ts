@@ -137,6 +137,51 @@ describe("getAutoRecap", () => {
 		assert.ok(!recap.includes("triple-double"), recap);
 	});
 
+	// "Yuta Dunn's layup sinks the Bulls" over a teammate's 45: the shot
+	// shares the headline with the night it did not outshine.
+	test("a winning shot shares the headline with a 45-point teammate", () => {
+		const nuggets = team({
+			tid: 7,
+			name: "Nuggets",
+			abbrev: "DEN",
+			pts: 112,
+			ptsQtrs: [28, 24, 30, 30],
+			players: [
+				player({
+					name: "Marcus Ellis",
+					pts: 45,
+					reb: 6,
+					ast: 9,
+					fg: 16,
+					fga: 28,
+				}),
+				player({ name: "Yuta Dunn", pts: 9, reb: 4, fg: 4, fga: 8 }),
+			],
+		});
+		const bulls = team({
+			tid: 4,
+			name: "Bulls",
+			abbrev: "CHI",
+			pts: 110,
+			ptsQtrs: [30, 25, 27, 28],
+			players: [player({ name: "Vince Carter", pts: 28, reb: 8 })],
+		});
+		const recap = getAutoRecap(
+			game({
+				gid: 3611,
+				teams: [nuggets, bulls],
+				winnerTid: 7,
+				clutchPlays: [
+					'<a href="#">Yuta Dunn</a> made a game-winning layup with 1.5 seconds remaining.',
+				],
+			}),
+		);
+		const headline = recap.split("\n")[0]!;
+		assert.ok(headline.includes("Marcus Ellis"), headline);
+		assert.ok(headline.includes("Yuta Dunn"), headline);
+		assert.match(recap, /Yuta Dunn won it/, recap);
+	});
+
 	test("triple-double is stated, never inflated", () => {
 		const mavs = team({
 			tid: 3,

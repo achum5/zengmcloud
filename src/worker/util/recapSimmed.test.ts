@@ -297,6 +297,22 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// The record in parentheses is the lede's; hung on the next mention down
+	// the piece it read as a score: "they outscored the Raptors (0-4) 52-34".
+	// And a beat of the game's course stands on its own: "They did not trail
+	// again and forced 24 turnovers." (A whole-game "never trailed" may join.)
+	test("records sit in the lede, and the game's course is not glued to a stat", () => {
+		for (const { gid, recap } of pairs) {
+			const body = recap.split("\n\n").slice(2).join("\n\n");
+			assert.notMatch(body, /\(\d+-\d+\)/, `gid ${gid}\n${recap}`);
+			assert.notMatch(
+				recap,
+				/(?:trail(?:ed)? again|going into the \w+) and (?:forced|hit|made|got|finished|piled|racked|shared|knocked|won the glass|out-rebounded|controlled|turned|hounded)/,
+				`gid ${gid}\n${recap}`,
+			);
+		}
+	});
+
 	// Behind after three and won: the game was won in the fourth, and the
 	// story says so with the quarter's score - not just "the second half
 	// belonged to them".

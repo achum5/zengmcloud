@@ -302,7 +302,12 @@ export const joinShortPairs = (sentences: string[]): string[] => {
 		// other.
 		!/halftime|the half\b|the break|second half|for good|ahead for the last time|went in front/.test(
 			t,
-		);
+		) &&
+		// ...and so does any other beat of the game's course: "They did not
+		// trail again and forced 24 turnovers", "They were 5 up going into the
+		// fourth and hit 14 from deep" tied a moment of the game to a number
+		// from the box score.
+		!/\btrail(?:ed)? again|going into the|entering the|got back/.test(t);
 	// The FIRST sentence has to start with its own subject, because the join
 	// hands its subject to the second clause. "Over six games the aggregate
 	// favors the Nets by 37." + "They meet again tomorrow." became "...the
@@ -464,6 +469,12 @@ const storyPlayerOf = (
 				// outscored it; a double-double that small can still be one.
 				(low.pts < 12 && doubleCategories(low).length < 2 && p.pts > low.pts) ||
 				(low.pts < 15 && p.pts >= low.pts + 7) ||
+				// "Zeke Foster posted 13 points and 3 blocks as the Clippers
+				// pulled away" over a teammate's 19: a line that small and
+				// without a double-double leads only a game nobody outscored it.
+				(low.pts < 15 &&
+					doubleCategories(low).length < 2 &&
+					p.pts >= low.pts + 5) ||
 				(low.pts < 15 && p.pts >= 12 && doubleCategories(p).length >= 2) ||
 				// A 16-and-8 against a teammate's 25 and 12.
 				(p.pts >= low.pts + 8 && doubleCategories(p).length >= 2) ||
@@ -1880,6 +1891,28 @@ const buildHeadlineText = (
 	if (shot && !shot.tying) {
 		// A regular-season skid is not the story of a playoff game.
 		const skid = game.playoffs ? undefined : snappedSkid(shape);
+		// A night the shot did not outshine: "Yuta Dunn's layup sinks the
+		// Bulls" over a teammate's 45 points, a season high, in a game that
+		// went to two overtimes. Both go in, the big night first.
+		const bigNight =
+			skid === undefined &&
+			star.name !== shot.name &&
+			shape.winner.players.includes(star) &&
+			(star.pts >= 40 ||
+				doubleCategories(star).length >= 3 ||
+				(star.pts >= 20 && star.reb >= 20));
+		if (bigNight) {
+			const did =
+				doubleCategories(star).length >= 3
+					? `posts a ${doubleWord(doubleCategories(star).length)}`
+					: star.pts >= 40
+						? `scores ${star.pts}`
+						: `has ${star.pts} and ${star.reb}`;
+			return h(
+				`${star.name} ${did}, and ${poss(shot.name)} ${shot.shot} sinks the ${loserN}${tag}`,
+				true,
+			);
+		}
 		return h(
 			skid !== undefined
 				? // The shot ended a skid: both facts, and the skid is the bigger.
@@ -5141,8 +5174,10 @@ const spreadNote = (
 
 // Heavy minutes - a starter who barely came off the floor.
 const minutesNote = (shape: Shape, said: Set<string>): string | undefined => {
+	// Five more for every overtime: "Marcus Dunn logged 46 minutes" of a game
+	// that ran 58 was less than most of the men who started it.
 	const iron = [...shape.winner.players, ...shape.loser.players].find(
-		(p) => p.min >= 46 && !said.has(p.name),
+		(p) => p.min >= 46 + 5 * shape.ot && !said.has(p.name),
 	);
 	if (!iron) {
 		return undefined;
@@ -6656,14 +6691,16 @@ const withRecords = (
 		if (out.some((p) => stated.test(p))) {
 			continue;
 		}
-		const re = new RegExp(String.raw`\b([Tt]he ${nick(t)})(?=[ ,.;:])`);
-		for (let i = 0; i < out.length; i++) {
-			const m = re.exec(out[i]!);
-			if (m) {
-				out[i] =
-					`${out[i]!.slice(0, m.index + m[0].length)} (${tag})${out[i]!.slice(m.index + m[0].length)}`;
-				break;
-			}
+		// In the lede, where wire copy carries it, or not at all. A team the
+		// lede did not name by its plain nickname had its record hung on the
+		// next mention down the piece, wherever that was: "In the second
+		// half, they outscored the Raptors (0-4) 52-34" reads as a score.
+		const re = new RegExp(
+			String.raw`\b([Tt]he (?:visiting )?${nick(t)})(?=[ ,.;:])`,
+		);
+		const m = re.exec(out[0] ?? "");
+		if (m) {
+			out[0] = `${out[0]!.slice(0, m.index + m[0].length)} (${tag})${out[0]!.slice(m.index + m[0].length)}`;
 		}
 	}
 	return out;
