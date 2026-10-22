@@ -1,8 +1,6 @@
 import { Fragment } from "react";
 import { depthChart } from "../../../common/depthChart.ts";
-import { InjuryIcon } from "../../components/InjuryIcon.tsx";
 import { PlayerNameLabels } from "../../components/PlayerNameLabels.tsx";
-import { RatingsStatsPopover } from "../../components/RatingsStatsPopover/index.tsx";
 import type { View } from "../../../common/types.ts";
 
 const POSITIONS = [
@@ -38,9 +36,7 @@ const DepthChart = ({
 			<div
 				className="depth-chart"
 				style={{
-					// (Two to the width on a phone - beside the spots and their
-					// gaps, 2.25rem - so a swipe lands square on the next two.)
-					gridTemplateColumns: `auto repeat(${groups.length}, minmax(min(20rem, calc((100cqw - 2.25rem) / 2)), 20rem))`,
+					gridTemplateColumns: `repeat(${groups.length + 1}, auto)`,
 				}}
 			>
 				<div className="depth-chart-spot" />
@@ -66,22 +62,16 @@ const DepthChart = ({
 								<div key={i} className="depth-chart-player">
 									{p ? (
 										<>
-											<span className="depth-chart-name">
-												<PlayerNameLabels
-													pid={p.pid}
-													season={season}
-													firstName={p.firstName}
-													firstNameShort={p.firstNameShort}
-													lastName={p.lastName}
-													hideRatingsPopover
-													neverShowCountry
-												/>
-											</span>
-											<InjuryIcon injury={p.injury} />
-											<RatingsStatsPopover
+											<PlayerNameLabels
 												pid={p.pid}
 												season={season}
 												defaultWatch={p.watch}
+												firstName={p.firstName}
+												firstNameShort={p.firstNameShort}
+												lastName={p.lastName}
+												injury={p.injury}
+												skills={p.ratings.skills}
+												neverShowCountry
 											/>
 											{showRatings ? (
 												<span className="depth-chart-ovr" title="Ovr/Pot">

@@ -15,7 +15,9 @@
 	align-items: center;
 	column-gap: 0.5rem;
 	display: grid;
-	justify-content: start;
+	// (As wide as what is in it, scrolling past the edge on a phone - never
+	// squeezed so one column runs under the next.)
+	width: max-content;
 
 	> * {
 		align-self: stretch;
@@ -47,23 +49,20 @@
 	z-index: 1;
 }
 
+// A column is as wide as its longest name and badges, and at least half the
+// width on a phone - beside the spots and their gaps, 2.25rem - so the
+// starters and the 2nd string fill it - or 20rem where there is room.
+.depth-chart-head,
+.depth-chart-player {
+	min-width: min(20rem, calc((100cqw - 2.25rem) / 2));
+}
+
 .depth-chart-player {
 	align-items: center;
 	display: flex;
-	gap: 0.25rem;
+	gap: 0.75rem;
 	min-height: 2.25rem;
-	min-width: 0;
 	white-space: nowrap;
-
-	.badge-injury {
-		margin-left: 0;
-	}
-}
-
-.depth-chart-name {
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
 }
 
 .depth-chart-ovr {

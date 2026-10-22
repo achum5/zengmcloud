@@ -560,6 +560,22 @@ const newPhasePreseason = async (
 
 	await idb.cache.players.putAll(players);
 
+	// Everyone has developed, so last season's lineups are stale. AI teams sort
+	// their rosters now rather than waiting for the first game day - and so do
+	// users' teams set to keep theirs auto sorted, as before every game.
+	for (const t of await idb.cache.teams.getAll()) {
+		if (t.disabled) {
+			continue;
+		}
+		const userTeamAndActive =
+			g.get("userTids").includes(t.tid) &&
+			!local.autoPlayUntil &&
+			!g.get("spectator");
+		if (!userTeamAndActive || t.keepRosterSorted) {
+			await team.rosterAutoSort(t.tid);
+		}
+	}
+
 	// College: next year's high school class, recruited starting now.
 	if (g.get("college")) {
 		await genCollegeRecruits(newSeason);
