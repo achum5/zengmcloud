@@ -26,6 +26,7 @@ import {
 import {
 	franchiseValue,
 	OUTLOOK_YEARS,
+	retentionKey,
 	retentionOf,
 	seasonLine,
 	teamStrengths,
@@ -218,12 +219,17 @@ test.runIf(env.SHARK_RUN === "1")(
 		const numSeasons = Number(env.SHARK_SEASONS ?? 2);
 		const factor = Number(env.SHARK_FACTOR ?? humanTradeSettings.marginFactor);
 		const passive = env.SHARK_PASSIVE === "1";
+		// SHARK_OBJECTIVE=harm: hunt for the deals the CPU misreads worst, not
+		// the ones that help the shark most.
+		const harm = env.SHARK_OBJECTIVE === "harm";
 		const games = Number(env.SHARK_GAMES ?? 600);
 		const decideGames = Number(env.SHARK_DECIDE_GAMES ?? 400);
 		const screenGames = Number(env.SHARK_SCREEN_GAMES ?? 150);
 		const sharkTid = Number(env.SHARK_TID ?? 0);
 		const out = env.SHARK_OUT ?? ".";
-		const tag = passive ? `passive-${seed}` : `f${factor}-${seed}`;
+		const tag = passive
+			? `passive-${seed}`
+			: `${harm ? "h" : "f"}${factor}-${seed}`;
 		const fs = await importNode("node:fs/promises");
 		await fs.mkdir(out, { recursive: true });
 		const logLine = async (line: string) => {
@@ -533,17 +539,30 @@ test.runIf(env.SHARK_RUN === "1")(
 				}
 
 				clock.push(Date.now());
-				// The full judge, best for the shark first.
+				// The full judge, best for the shark first - or, hunting for the
+				// CPU's misreads, worst for the CPU against its model first, among
+				// deals that help the shark.
+				const misreadOf = (c: Candidate, cpu: Stat) => cpu.mean - c.modelCpu;
 				const verdicts: Record<string, number> = {};
 				const yes: Candidate[] = [];
 				let judged = 0;
-				for (const c of [...toSim].sort(
-					(a, b) => b.quick!.shark.mean - a.quick!.shark.mean,
-				)) {
+				const order = harm
+					? toSim
+							.filter((c) => c.quick!.shark.mean > 0)
+							.sort(
+								(a, b) =>
+									misreadOf(a, a.quick!.cpu) - misreadOf(b, b.quick!.cpu),
+							)
+					: [...toSim].sort(
+							(a, b) => b.quick!.shark.mean - a.quick!.shark.mean,
+						);
+				for (const c of order) {
 					if (judged >= JUDGE_MAX || yes.length >= YES_MAX) {
 						break;
 					}
-					if (c.quick!.shark.mean <= 0) {
+					if (
+						harm ? misreadOf(c, c.quick!.cpu) >= 0 : c.quick!.shark.mean <= 0
+					) {
 						break;
 					}
 					judged += 1;
@@ -567,17 +586,27 @@ test.runIf(env.SHARK_RUN === "1")(
 
 				clock.push(Date.now());
 				// Each yes on fresh random numbers; the best for the shark, if
-				// clearly a gain.
-				let best: { c: Candidate; stat: Stat } | undefined;
+				// clearly a gain - or the CPU's worst misread, if beyond the noise,
+				// among those that help the shark.
+				let best: { c: Candidate; stat: Stat; cpu?: Stat } | undefined;
 				for (const c of yes) {
-					const { shark: stat } = await simDeal(
+					const result = await simDeal(
 						c,
 						states.get(c.cpuTid)!,
 						2,
 						decideGames,
-						"shark",
+						harm ? "both" : "shark",
 					);
-					if (!best || stat.mean > best.stat.mean) {
+					const stat = result.shark;
+					if (harm) {
+						const cpu = (result as { cpu: Stat }).cpu;
+						if (
+							stat.mean > 0 &&
+							(!best || misreadOf(c, cpu) < misreadOf(best.c, best.cpu!))
+						) {
+							best = { c, stat, cpu };
+						}
+					} else if (!best || stat.mean > best.stat.mean) {
 						best = { c, stat };
 					}
 				}
@@ -601,11 +630,20 @@ test.runIf(env.SHARK_RUN === "1")(
 					judged,
 					verdicts,
 					decision: best
-						? { gain: roundStat(best.stat), cpuTid: best.c.cpuTid }
+						? {
+								gain: roundStat(best.stat),
+								cpu: best.cpu ? roundStat(best.cpu) : undefined,
+								cpuTid: best.c.cpuTid,
+							}
 						: undefined,
 				};
 				hunts.push(row);
-				if (!best || best.stat.mean <= 2 * best.stat.se) {
+				if (
+					!best ||
+					(harm
+						? misreadOf(best.c, best.cpu!) >= -best.cpu!.se
+						: best.stat.mean <= 2 * best.stat.se)
+				) {
 					await logLine(
 						`${label} hunt ${huntNo}: ${built} built, ${candidates.length} pass, ${judged} judged ${JSON.stringify(verdicts)}, no deal [${seconds.join("/")} s] (${((Date.now() - started) / 60000).toFixed(1)} min)`,
 					);
@@ -667,6 +705,17 @@ test.runIf(env.SHARK_RUN === "1")(
 						actual: round(await stayChance(p, cpu.tid)),
 					});
 				}
+				// And the CPU's gain had it used the mood model's, put back after.
+				const unset = retention.filter(
+					(x) => !outlook.retention.has(retentionKey(x.pid, cpu.tid)),
+				);
+				for (const x of unset) {
+					outlook.retention.set(retentionKey(x.pid, cpu.tid), x.actual);
+				}
+				const gainTrueRetention = priceFor(outlook, cpu, c.get, c.give);
+				for (const x of unset) {
+					outlook.retention.delete(retentionKey(x.pid, cpu.tid));
+				}
 
 				const teams: TradeTeams = [
 					{
@@ -708,6 +757,7 @@ test.runIf(env.SHARK_RUN === "1")(
 					},
 					sharkModelGain: round(sharkGain, 5),
 					retention,
+					gainTrueRetention: round(gainTrueRetention, 5),
 					cpuStanding: o
 						? { now: round(o.strength[0]!, 2), title: round(o.title[0]!, 4) }
 						: undefined,
@@ -757,10 +807,11 @@ test.runIf(env.SHARK_RUN === "1")(
 
 			const seasons = [];
 			for (let s = g.get("season") - numSeasons; s < g.get("season"); s++) {
-				const ts = await idb.cache.teamSeasons.indexGet(
-					"teamSeasonsBySeasonTid",
-					[s, sharkTid],
-				);
+				// Old seasons are only in the database.
+				const [ts] = await idb.merged.teamSeasons.getAll({
+					tid: sharkTid,
+					season: s,
+				});
 				seasons.push({ season: s, won: ts?.won ?? 0, lost: ts?.lost ?? 0 });
 			}
 			await fs.writeFile(
@@ -769,6 +820,7 @@ test.runIf(env.SHARK_RUN === "1")(
 					seed,
 					factor,
 					passive,
+					objective: harm ? "harm" : "gain",
 					games,
 					decideGames,
 					screenGames,
@@ -805,6 +857,7 @@ type RunFile = {
 	seed: number;
 	factor: number;
 	passive: boolean;
+	objective?: "gain" | "harm";
 	games: number;
 	seasons: { season: number; won: number; lost: number }[];
 	hunts: {
@@ -820,6 +873,7 @@ type RunFile = {
 		warning: string | null;
 		graded: { shark: Stat; cpu: Stat };
 		misread: number;
+		gainTrueRetention?: number;
 		misreadValue: {
 			now: number;
 			carried: number;
@@ -863,17 +917,31 @@ test.runIf(env.SHARK_REPORT !== undefined)("shark: report", async () => {
 	const passive = new Map(
 		runs.filter((r) => r.passive).map((r) => [r.seed, r]),
 	);
-	const factors = [
-		...new Set(runs.filter((r) => !r.passive).map((r) => r.factor)),
-	].sort((a, b) => a - b);
+	// A column per objective and margin factor.
+	const columnOf = (r: RunFile) =>
+		`${r.objective === "harm" ? "harm " : ""}${r.factor}`;
+	const columns = [
+		...new Set(
+			runs
+				.filter((r) => !r.passive)
+				.sort(
+					(a, b) =>
+						Number(a.objective === "harm") - Number(b.objective === "harm") ||
+						a.factor - b.factor,
+				)
+				.map(columnOf),
+		),
+	];
 
 	const lines = [
 		"# Shark report",
 		"",
 		"Per accepted deal, graded on fresh random numbers (healthy, against the rest of the league, before and after on the same numbers). Points per game this season. Misread: the CPU's change in the sim minus what its model expected (the trade checker's modelNow). Truly worse off: its model gain plus its misread in titles, carried while the players moved would have been there, below zero. ± is the standard error across deals; noise is the per-deal standard error of the sim.",
 		"",
-		`| marginFactor | ${factors.join(" | ")} |`,
-		`|---|${factors.map(() => "---|").join("")}`,
+		"Columns: the margin factor, for the shark after its own gain (default) and the one after the CPU's misreads (harm).",
+		"",
+		`| marginFactor | ${columns.join(" | ")} |`,
+		`|---|${columns.map(() => "---|").join("")}`,
 	];
 	const rows: [string, (rs: RunFile[]) => string][] = [
 		[
@@ -953,6 +1021,17 @@ test.runIf(env.SHARK_REPORT !== undefined)("shark: report", async () => {
 				`${fmt(100 * meanOf(made(rs).map((d) => d.misreadValue.now)))} / ${fmt(100 * meanOf(made(rs).map((d) => d.misreadValue.carried)))}`,
 		],
 		[
+			"CPU's gain after its misread (titles x100, carried)",
+			(rs) => pm(made(rs).map((d) => 100 * (d.gain + d.misreadValue.carried))),
+		],
+		[
+			"CPU's gain at the mood model's re-signing odds (titles x100)",
+			(rs) => {
+				const xs = made(rs).filter((d) => d.gainTrueRetention !== undefined);
+				return `${pm(xs.map((d) => 100 * d.gainTrueRetention!))} (${xs.length} deals)`;
+			},
+		],
+		[
 			"CPU truly worse off (carried)",
 			(rs) =>
 				pct(
@@ -991,7 +1070,7 @@ test.runIf(env.SHARK_REPORT !== undefined)("shark: report", async () => {
 	];
 	for (const [label, cell] of rows) {
 		lines.push(
-			`| ${label} | ${factors.map((k) => cell(runs.filter((r) => !r.passive && r.factor === k))).join(" | ")} |`,
+			`| ${label} | ${columns.map((k) => cell(runs.filter((r) => !r.passive && columnOf(r) === k))).join(" | ")} |`,
 		);
 	}
 
