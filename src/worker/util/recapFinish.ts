@@ -385,9 +385,12 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 										`${cap(shot)} ${when(goAhead.e, rng)} then made it ${w}-${l}.`,
 										`${cap(W)} took the lead on ${shot} ${when(goAhead.e, rng)}, ${w}-${l}.`,
 									]
-								: [
-										`${cap(shot)} ${when(goAhead.e, rng)} made it ${w}-${l}, and ${W} never trailed again.`,
-									]),
+								: // "Never trailed again" says they had trailed.
+									(game.flow?.maxLead[wSide === 0 ? 1 : 0] ?? 0) > 0
+									? [
+											`${cap(shot)} ${when(goAhead.e, rng)} made it ${w}-${l}, and ${W} never trailed again.`,
+										]
+									: []),
 					],
 					"finishGoAhead",
 				),

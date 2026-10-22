@@ -113,12 +113,24 @@ export const dedupeSubjects = (
 	// And "The Thunder led by 10 in the second, but the Timberwolves led
 	// 65-64 at halftime" hands the reader's eye to the SECOND team: a "They"
 	// two sentences on meant the Thunder and read as the Timberwolves.
+	// So does a "but" clause that ends on the other club in any order: "The
+	// Lakers ran off 11 straight points in the second, but it was 65-63 the
+	// Pistons at halftime. They trailed..." - "They" read as the Pistons.
+	const butTheOther = (sentence: string) => {
+		const clause = /, but (.*)$/.exec(sentence)?.[1];
+		const own = /^The (\w+(?: \w+)?)/.exec(sentence)?.[1] ?? "";
+		return (
+			!!clause &&
+			knownNicks.some((n) => !own.startsWith(n) && clause.includes(n))
+		);
+	};
 	const ambiguous = (sentence: string) =>
 		sentence.includes(";") ||
 		/^The \w+[\w ]*? and the \w+/.test(sentence) ||
 		/, (?:but|and) the [A-Z]\w*[\w ]*? (?:led|were|took|won|came|had)\b/.test(
 			sentence,
-		);
+		) ||
+		butTheOther(sentence);
 
 	const subjectOf = (sentence: string): string | undefined => {
 		for (const n of knownNicks) {
@@ -606,9 +618,20 @@ type Shape = {
 	loserPeak: number;
 	// Margin the winner led/trailed by entering the final regulation period.
 	marginEnteringLast: number;
+	// Never behind. From the score log when there is one: leading at every
+	// period boundary is not the same thing - a team 10 down midway through
+	// the first and ahead after it "led wire to wire" in 121 of 953 recaps.
 	wireToWire: boolean;
-	// The single period where the winner most outscored the loser (a decisive run).
-	bigRun?: { period: number; wpts: number; lpts: number; margin: number };
+	// The single period where the winner most outscored the loser (a decisive
+	// run), with the winners' margin going into it and coming out of it.
+	bigRun?: {
+		period: number;
+		wpts: number;
+		lpts: number;
+		margin: number;
+		before: number;
+		after: number;
+	};
 };
 
 const analyzeShape = (game: RecapGame): Shape => {
@@ -634,17 +657,20 @@ const analyzeShape = (game: RecapGame): Shape => {
 		let ledEveryBoundary = true;
 		for (let i = 0; i < wq.length; i++) {
 			const runMargin = (wq[i] ?? 0) - (lq[i] ?? 0);
+			const before = wCum - lCum;
+			wCum += wq[i] ?? 0;
+			lCum += lq[i] ?? 0;
+			const diff = wCum - lCum;
 			if (!bigRun || runMargin > bigRun.margin) {
 				bigRun = {
 					period: i + 1,
 					wpts: wq[i] ?? 0,
 					lpts: lq[i] ?? 0,
 					margin: runMargin,
+					before,
+					after: diff,
 				};
 			}
-			wCum += wq[i] ?? 0;
-			lCum += lq[i] ?? 0;
-			const diff = wCum - lCum;
 			if (i === regPeriods - 2) {
 				marginEnteringLast = diff;
 			}
@@ -660,6 +686,9 @@ const analyzeShape = (game: RecapGame): Shape => {
 	}
 
 	const loserPeak = game.flow ? game.flow.maxLead[sideOf(game, loser)] : 0;
+	if (game.flow && loserPeak > 0) {
+		wireToWire = false;
+	}
 
 	return {
 		game,
@@ -677,6 +706,25 @@ const analyzeShape = (game: RecapGame): Shape => {
 		wireToWire,
 		bigRun,
 	};
+};
+
+// What the winners' biggest quarter did to the game. It "broke it open" only
+// when the game was still a game going in and they came out of it clear; a
+// 28-19 second quarter that turned an eight-point deficit into a one-point
+// halftime lead broke nothing open (it turned the game, barely), and one
+// that padded a 20-point lead did neither.
+const bigQuarterRole = (shape: Shape): "broke" | "turned" | undefined => {
+	const r = shape.bigRun;
+	if (!r) {
+		return undefined;
+	}
+	if (r.before <= 6 && r.after >= 10) {
+		return "broke";
+	}
+	if (r.before < 0 && r.after >= 5) {
+		return "turned";
+	}
+	return undefined;
 };
 
 // The losing streak the WINNER carried into this game, when it was long enough
@@ -2430,17 +2478,21 @@ const resultLead = (
 			covers: "wire",
 		};
 	}
+	const quarterRole = bigQuarterRole(shape);
 	if (
 		shape.bigRun &&
+		quarterRole &&
 		shape.bigRun.margin >= 9 &&
 		shape.margin >= 8 &&
 		shape.bigRun.period > 1 &&
 		!closeLate(game)
 	) {
 		return {
-			text: `${cap(w)} ${verb} ${l}${score}, breaking it open with a ${
-				shape.bigRun.wpts
-			}-${shape.bigRun.lpts} ${ordinal(shape.bigRun.period)} quarter.`,
+			text: `${cap(w)} ${verb} ${l}${score}, ${
+				quarterRole === "broke" ? "breaking it open" : "taking over"
+			} with a ${shape.bigRun.wpts}-${shape.bigRun.lpts} ${ordinal(
+				shape.bigRun.period,
+			)} quarter.`,
 			covers: "run",
 		};
 	}
@@ -2726,8 +2778,10 @@ const flowSentence = (
 	}
 	// A specific run that broke the game open beats the generic wire-to-wire
 	// note (which was showing up in most recaps on a chalky night).
+	const quarterRole = bigQuarterRole(shape);
 	if (
 		shape.bigRun &&
+		quarterRole &&
 		shape.bigRun.margin >= 9 &&
 		shape.margin >= 8 &&
 		shape.regPeriods >= 3 &&
@@ -2738,13 +2792,21 @@ const flowSentence = (
 		const per = ordinal(shape.bigRun.period);
 		return {
 			covers: "run",
-			text: pick(rng, [
-				`A ${run} ${per} quarter broke it open.`,
-				`The ${per} quarter settled it: ${run}.`,
-				`${cap(theNick(shape.winner))} took over in the ${per}, ${run}.`,
-				`A ${run} edge in the ${per} was the difference.`,
-				`The game turned on a ${run} ${per} quarter.`,
-			]),
+			text: pick(
+				rng,
+				quarterRole === "broke"
+					? [
+							`A ${run} ${per} quarter broke it open.`,
+							`The ${per} quarter settled it: ${run}.`,
+							`${cap(theNick(shape.winner))} took over in the ${per}, ${run}.`,
+							`The game turned on a ${run} ${per} quarter.`,
+						]
+					: [
+							`${cap(theNick(shape.winner))} took over in the ${per}, ${run}.`,
+							`The game turned on a ${run} ${per} quarter.`,
+						],
+				`flowQuarter:${quarterRole}`,
+			),
 		};
 	}
 	if (shape.wireToWire && shape.margin >= 10) {
@@ -3297,6 +3359,7 @@ type StoryCover =
 	| "winnerPeak"
 	| "loserPeak"
 	| "entering"
+	| "lastQuarter"
 	| "comeback";
 
 const gameStory = (
@@ -3306,6 +3369,8 @@ const gameStory = (
 	opts: {
 		// The lede already said the winners came from behind.
 		comebackTold: boolean;
+		// The lede already said the winners never trailed.
+		wireTold?: boolean;
 	},
 ): { sentences: string[]; covers: Set<StoryCover> } | undefined => {
 	const { wq, lq, regPeriods } = shape;
@@ -3430,6 +3495,64 @@ const gameStory = (
 		);
 	};
 
+	// THE LAST QUARTER, when that is where it was won: behind or level going
+	// into it, winners at the end. "The second half belonged to the Nuggets,
+	// 64-50" was all one recap said of a game the Nuggets trailed by nine
+	// after three and took 38-21 in the fourth.
+	const lastIdx = regPeriods - 1;
+	const sum = (q: number[]) =>
+		q.slice(0, lastIdx).reduce((a, b) => a + (b ?? 0), 0);
+	const wIn = sum(wq);
+	const lIn = sum(lq);
+	const wLast = wq[lastIdx] ?? 0;
+	const lLast = lq[lastIdx] ?? 0;
+	const wonInLast = shape.ot === 0 && wIn <= lIn;
+	const lastQuarterTurn = (): string => {
+		covers.add("entering").add("lastQuarter").add("secondHalf");
+		const last = ordinal(regPeriods);
+		const q = `${wLast}-${lLast}`;
+		const lastRun =
+			run && run.winner && run.period === regPeriods ? run : undefined;
+		// A run in the quarter before, which got them back in it: told first,
+		// so the clock runs forward.
+		const lateRun =
+			run && run.winner && run.period > halfN && run.period < regPeriods
+				? run
+				: undefined;
+		if (lastRun || lateRun) {
+			covers.add("run");
+		}
+		if (lateRun) {
+			const ran = `${W} ran off ${lateRun.pts} straight points in ${when(lateRun.period)}`;
+			return wIn === lIn
+				? `${ran}, and it was ${wIn}-${lIn} going into the ${last} before they won the ${last} quarter ${q}.`
+				: `${ran} but were still ${lIn - wIn} down going into the ${last}, then won the ${last} quarter ${q}.`;
+		}
+		if (wIn === lIn) {
+			return lastRun
+				? `It was ${wIn}-${lIn} going into the ${last}, and ${w} ran off ${lastRun.pts} straight points on the way to a ${q} ${last} quarter.`
+				: pick(
+						rng,
+						[
+							`It was ${wIn}-${lIn} going into the ${last}, and ${w} won the ${last} quarter ${q}.`,
+							`Level at ${wIn} going into the ${last}, ${w} took the ${last} quarter ${q}.`,
+						],
+						"story:lastTied",
+					);
+		}
+		return lastRun
+			? `${W} trailed ${lIn}-${wIn} going into the ${last}, then ran off ${lastRun.pts} straight points on the way to a ${q} ${last} quarter.`
+			: pick(
+					rng,
+					[
+						`${L} were still up ${lIn}-${wIn} going into the ${last}, and ${w} won the ${last} quarter ${q}.`,
+						`${W} trailed ${lIn}-${wIn} going into the ${last}, then took the ${last} quarter ${q}.`,
+						`${W} were ${lIn - wIn} down going into the ${last} and won the ${last} quarter ${q}.`,
+					],
+					"story:lastTurn",
+				);
+	};
+
 	if (lh > wh) {
 		// --- DOWN AT THE BREAK, AND WON. The story is the turn. ---
 		covers.add("half").add("comeback");
@@ -3490,6 +3613,8 @@ const gameStory = (
 			out.push(
 				`${W} outscored ${l} ${w2}-${l2} after the break to force overtime.`,
 			);
+		} else if (wonInLast) {
+			out.push(lastQuarterTurn());
 		} else if (run && run.winner && run.period > halfN) {
 			covers.add("run");
 			out.push(
@@ -3535,6 +3660,20 @@ const gameStory = (
 	covers.add("half");
 	if (wh === lh) {
 		// --- LEVEL AT THE BREAK. ---
+		if (wonInLast) {
+			out.push(
+				pick(
+					rng,
+					[
+						`It was ${wh}-${lh} at halftime.`,
+						`The teams went to the break level at ${wh}.`,
+					],
+					"story:halfTied",
+				),
+				lastQuarterTurn(),
+			);
+			return { sentences: out, covers };
+		}
 		if (!close && w2 - l2 >= 8) {
 			covers.add("secondHalf");
 			const parts = [`won the second half ${w2}-${l2}`];
@@ -3616,6 +3755,11 @@ const gameStory = (
 		out.push(halfLine(shape.winner, wh, lh));
 	}
 
+	if (wonInLast) {
+		out.push(lastQuarterTurn());
+		return { sentences: out, covers };
+	}
+
 	if (close) {
 		// Tight to the end: how tight, going into the last period. The finish
 		// takes it from there.
@@ -3681,18 +3825,28 @@ const gameStory = (
 				: `${pick(rng, ["After the break", "In the second half", "From there"], "story:after")}, ${aboutWinner ? "they" : w} ${series(parts)}.`,
 		);
 	} else if (aheadForGoodByHalf && shape.margin >= 8) {
-		out.push(
-			pick(
-				rng,
-				[`${cap(l)} never got back in front.`, `${W} did not trail again.`],
-				"story:held",
-			),
-		);
+		// "Never got back in front" says they had been; a side that never led
+		// at all gets the plain fact, unless the lede already said it.
+		if (lMax > 0) {
+			out.push(
+				pick(
+					rng,
+					[`${cap(l)} never got back in front.`, `${W} did not trail again.`],
+					"story:held",
+				),
+			);
+		} else if (!opts.wireTold) {
+			out.push(
+				pick(rng, [`${L} never led.`, `${W} never trailed.`], "story:neverLed"),
+			);
+		}
 	} else if (run && !run.winner && run.period > halfN && aheadForGoodByHalf) {
 		// The losers' push that came up short.
 		covers.add("run");
 		out.push(
-			`${L} ran off ${run.pts} straight points in ${when(run.period)} but could not get back in front.`,
+			`${L} ran off ${run.pts} straight points in ${when(run.period)} but could not get ${
+				lMax > 0 ? "back in front" : "in front"
+			}.`,
 		);
 	}
 	return { sentences: out, covers };
@@ -4458,7 +4612,12 @@ const vsAverageNote = (
 		);
 	}
 	// An efficient volume night against a middling shooting season.
+	// Only beside the night's split. When the lede already printed it, a
+	// bare "Naji Hayes' season mark coming in was 46.7%." two paragraphs
+	// later is a number with nothing to measure it against, and the split
+	// made the point on its own.
 	if (
+		!splitTold &&
 		star.fga >= 12 &&
 		avg.fgp > 0 &&
 		star.fg / star.fga >= 0.6 &&
@@ -4467,23 +4626,11 @@ const vsAverageNote = (
 		const split = `${star.fg}-of-${star.fga}`;
 		return pick(
 			rng,
-			splitTold
-				? // The split was printed in the lede, which can be two paragraphs
-					// back by now: "It was a long way clear of his 51.0% season mark"
-					// with nothing nearby for "it" to be. The number is restated.
-					// Only the new fact, the season mark: the night's percentage
-					// restated after its split ("9-of-15 ... shot 60% on the
-					// night") is the same number told twice.
-					[
-						`${star.name} came in shooting ${fmtPct(avg.fgp)}% on the season.`,
-						`${star.name} had been a ${fmtPct(avg.fgp)}% shooter on the year.`,
-						`${poss(star.name)} season mark coming in was ${fmtPct(avg.fgp)}%.`,
-					]
-				: [
-						`${star.name} was ${split} from the floor, far better than the ${fmtPct(avg.fgp)}% he had managed on the season.`,
-						`${star.name} came in shooting ${fmtPct(avg.fgp)}% on the year and went ${split}.`,
-						`${star.name}, a ${fmtPct(avg.fgp)}% shooter on the season, went ${split}.`,
-					],
+			[
+				`${star.name} was ${split} from the floor, far better than the ${fmtPct(avg.fgp)}% he had managed on the season.`,
+				`${star.name} came in shooting ${fmtPct(avg.fgp)}% on the year and went ${split}.`,
+				`${star.name}, a ${fmtPct(avg.fgp)}% shooter on the season, went ${split}.`,
+			],
 			"vsSeasonFgp",
 		);
 	}
@@ -5412,7 +5559,13 @@ const blownLeadNote = (
 			written,
 		);
 	const lead = flow.maxLead[lSide];
-	if (lead >= 12 && !comebackTold) {
+	// The story's own first half may have said it already: "The Heat were up
+	// by as many as 14 in the second..." and then, after the rebounding
+	// note, "The Heat led by as many as 14."
+	const peakTold = new RegExp(
+		String.raw`${nick(shape.loser)}[^.]*\b(?:as many as|led by|up by) ${lead}\b`,
+	).test(written);
+	if (lead >= 12 && !comebackTold && !peakTold) {
 		return pick(
 			rng,
 			[
@@ -5774,6 +5927,7 @@ export const getAutoRecap = (game: RecapGame): string => {
 	// below is used unchanged.
 	const story = gameStory(game, shape, rng, {
 		comebackTold: flowCovered === "comeback",
+		wireTold: flowCovered === "wire",
 	});
 	const storyPara: string[] = [];
 	const body = story ? storyPara : para1;

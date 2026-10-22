@@ -1,3 +1,4 @@
+// @ts-expect-error - the typecheck project has no node types (as in test/setup.ts)
 import assert from "node:assert/strict";
 import { describe, test } from "vitest";
 import {
@@ -81,7 +82,6 @@ const realisticTeam = (
 const team = (t: Partial<RecapTeam> & { name: string }): RecapTeam => ({
 	tid: 0,
 	region: "",
-	name: t.name,
 	abbrev: t.abbrev ?? "???",
 	pts: 0,
 	players: [],
@@ -6376,6 +6376,19 @@ describe("a compound subject blocks the pronoun", () => {
 			"The Pistons led wire to wire.",
 			"They stretched their run to 11 wins.",
 		]);
+	});
+
+	// "...but it was 65-63 the Pistons at halftime. They trailed 92-88" read
+	// as the Pistons trailing.
+	test("a 'but' clause ending on the other club is not an antecedent", () => {
+		const sentences = [
+			"The Lakers ran off 11 straight points in the second, but it was 65-63 the Pistons at halftime.",
+			"The Lakers trailed 92-88 going into the fourth, then took the fourth quarter 35-26.",
+		];
+		assert.deepEqual(
+			dedupeSubjects(sentences, "Pistons", ["Lakers", "Pistons"]),
+			sentences,
+		);
 	});
 });
 

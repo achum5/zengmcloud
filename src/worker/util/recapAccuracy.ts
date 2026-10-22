@@ -330,6 +330,31 @@ export const verifyRecap = (
 				}
 			}
 		}
+
+		// --- the score going into a quarter ----------------------------------
+		for (const m of sentence.matchAll(
+			/(?:(\d+)-(\d+)|[Ll]evel at (\d+)) going into the (second|third|fourth)\b/g,
+		)) {
+			const idx = { second: 1, third: 2, fourth: 3 }[
+				m[4] as "second" | "third" | "fourth"
+			];
+			const hq = home.ptsQtrs ?? [];
+			const aq = away.ptsQtrs ?? [];
+			if (idx <= hq.length && idx <= aq.length) {
+				const h = hq.slice(0, idx).reduce((a, b) => a + b, 0);
+				const a = aq.slice(0, idx).reduce((x, y) => x + y, 0);
+				const said1 = Number(m[1] ?? m[3]);
+				const said2 = Number(m[2] ?? m[3]);
+				const said = new Set([said1, said2]);
+				if (!said.has(h) || !said.has(a)) {
+					add(
+						"score entering a quarter",
+						`said ${said1}-${said2}, real ${h}-${a}`,
+						sentence,
+					);
+				}
+			}
+		}
 	}
 
 	// --- how it unfolded, against the sim's own log --------------------------
@@ -432,6 +457,26 @@ export const verifyRecap = (
 			const said = new Set([Number(m[1]), Number(m[2])]);
 			if (!two || !said.has(two.pts[0]) || !said.has(two.pts[1])) {
 				add("late score", `said ${m[1]}-${m[2]}`, m[0]);
+			}
+		}
+
+		// Never behind, against the log. Leading at the end of every quarter
+		// is not it: a team ten down midway through the first and ahead after
+		// it did not lead wire to wire. And "never got back in front" or "did
+		// not trail again" says the losers HAD been in front.
+		const loserPeak = flow.maxLead[game.teams[0].tid === winner.tid ? 1 : 0];
+		for (const m of text.matchAll(
+			/wire to wire|without ever trailing|never trailed(?! again)|start to finish|from the opening tip/g,
+		)) {
+			if (loserPeak > 0) {
+				add("never trailed", `the losers led by ${loserPeak}`, m[0]);
+			}
+		}
+		for (const m of text.matchAll(
+			/(?:never|could not) get back in front|never got back in front|did not trail again|never trailed again/g,
+		)) {
+			if (loserPeak === 0) {
+				add("back in front", "the losers never led", m[0]);
 			}
 		}
 	}
