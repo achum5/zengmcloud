@@ -394,6 +394,9 @@ export const outlookSettings = {
 	// How many drafts out a deal moves the picks of the teams in it
 	// (placesAfter); later ones stay where the outlook put them.
 	placesAfterDrafts: 99,
+	// Picks are expected to land back toward the middle of the draft by as
+	// much as they have in arena leagues (expectedPlace).
+	placeRegression: true,
 };
 
 export const ensureRetention = async (
@@ -543,19 +546,63 @@ export const draftPlaceSpread = (
 };
 
 // Where a pick is expected to land in its round, 0 for the first.
+// How much of a team's projected distance from the middle of the draft its
+// pick really keeps, by seasons of games still to be played before the draft
+// order is set: teams drift back toward the middle - others get better and
+// worse too, rosters turn over - more than projecting a roster forward says.
+// Measured in arena leagues (ARENA_PICK_SURVEY, 35,400 projections): the
+// slope of where picks landed on where they were projected, both from the
+// middle.
+const PLACE_KEPT: readonly (readonly [number, number])[] = [
+	[0, 1],
+	[0.5, 0.84],
+	[1, 0.78],
+	[1.5, 0.66],
+	[2, 0.57],
+	[3, 0.44],
+	[4, 0.32],
+	[5, 0.09],
+];
+
+const placeKept = (seasons: number) => {
+	const last = PLACE_KEPT.at(-1)!;
+	if (seasons >= last[0]) {
+		return last[1];
+	}
+	let i = 0;
+	while (PLACE_KEPT[i + 1]![0] < seasons) {
+		i += 1;
+	}
+	const [s0, k0] = PLACE_KEPT[i]!;
+	const [s1, k1] = PLACE_KEPT[i + 1]!;
+	return k0 + ((k1 - k0) * (seasons - s0)) / (s1 - s0);
+};
+
 export const expectedPlace = (
-	outlook: Pick<LeagueOutlook, "draftPlace" | "season" | "offset" | "numTeams">,
+	outlook: Pick<
+		LeagueOutlook,
+		"draftPlace" | "season" | "offset" | "numTeams" | "progress"
+	>,
 	dp: PickLike,
 ) => {
 	if (dp.pick > 0) {
 		return dp.pick - 1;
 	}
+	const middle = (outlook.numTeams - 1) / 2;
 	const places = outlook.draftPlace.get(dp.originalTid);
 	const yDraft = (dp.season as number) - outlookSeason(outlook, 0);
-	return (
-		places?.[Math.min(OUTLOOK_YEARS, Math.max(0, yDraft))] ??
-		Math.floor(outlook.numTeams / 2)
-	);
+	const projected = places?.[Math.min(OUTLOOK_YEARS, Math.max(0, yDraft))];
+	if (projected === undefined) {
+		return middle;
+	}
+	if (!outlookSettings.placeRegression) {
+		return projected;
+	}
+	const seasons =
+		outlook.offset === 0
+			? (dp.season as number) - outlook.season + 1 - outlook.progress
+			: (dp.season as number) - outlook.season;
+	return middle + placeKept(Math.max(0, seasons)) * (projected - middle);
 };
 
 // The player one pick is expected to have become by outlook year y, if he has
