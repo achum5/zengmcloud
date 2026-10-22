@@ -2404,12 +2404,12 @@ class Director {
 	}
 
 	// In the lane off the drive or the roll, short of the rim: floated up
-	// over the big, or a hook in over him - a guard mostly the floater, a
-	// big mostly the hook, each man more one way than another, the same
-	// every game. (Never a jumper from in there.)
+	// over the big, or a hook in over him - a guard the floater, all but
+	// now and then, a big mostly the hook, each man more one way than
+	// another, the same every game. (Never a jumper from in there.)
 	private laneFinish(pid: number, t: number): ShotStyle {
 		const rank = this.rank.get(pid) ?? 4;
-		const floats = rank >= 6 ? 0.3 : rank >= 3 ? 0.6 : 0.85;
+		const floats = rank >= 6 ? 0.3 : rank >= 3 ? 0.6 : 1;
 		const f = Math.min(0.95, floats * (0.75 + 0.5 * hash01(pid, 9137)));
 		return hash01(pid * 13 + 5, Math.round(t)) < f ? "floater" : "hook";
 	}
