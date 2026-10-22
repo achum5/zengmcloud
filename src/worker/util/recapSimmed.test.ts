@@ -287,6 +287,21 @@ describe("simmed recaps", () => {
 		assert.isAtLeast(seen, 1);
 	});
 
+	// "Payton Mathis goes for 42, Jalen Hayes for 44" over a deck reading
+	// "Payton Mathis pours in 42".
+	test("a day wrap's deck does not repeat its headline", () => {
+		for (const recap of dayRecaps) {
+			const headline = recap.split("\n")[0]!;
+			const deck = /^\*([^*].*)\*$/m.exec(recap)?.[1] ?? "";
+			for (const item of deck.split(" · ")) {
+				const who = /^(.+?) (?:pours in|triple-doubles|goes for)\b/.exec(item);
+				if (who) {
+					assert.notInclude(headline, who[1]!, recap);
+				}
+			}
+		}
+	});
+
 	// "Elsewhere, the 76ers routed the Celtics and the Raptors routed the
 	// Heat. Also on the night, the Hornets routed the Rockets."
 	test("a day wrap does not repeat a result verb", () => {

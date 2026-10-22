@@ -4653,6 +4653,53 @@ describe("the standings sentence", () => {
 		],
 	});
 
+	// "The Nets cling to the top of the Eastern Conference" on six evenings
+	// running: the top is told on a night that changed it.
+	test("the top of a conference is told when tonight changed it", () => {
+		const night = (heatWon: boolean, rankBefore: number) => {
+			const g = mkGame(
+				6100,
+				"Heat",
+				"Pacers",
+				heatWon ? 104 : 96,
+				heatWon ? 96 : 104,
+				heatWon,
+				player({ name: "Dwyane Wade", pts: 28, reb: 5, ast: 6 }),
+				player({ name: "Danny Granger", pts: 21, reb: 6 }),
+			);
+			g.teams[0].standing = {
+				conf: "Eastern Conference",
+				rank: 1,
+				gb: 0,
+				teams: 15,
+				won: 30,
+				lost: 12,
+				rankBefore,
+			};
+			const east = conf(
+				"Eastern Conference",
+				["Heat", 30, 12],
+				["Celtics", 27, 15],
+			);
+			const withTid = {
+				...east,
+				teams: east.teams.map((t, i) =>
+					i === 0 ? { ...t, tid: g.teams[0].tid } : t,
+				),
+			};
+			return getAutoDayRecap({
+				season: 2009,
+				day: 30,
+				playoffs: false,
+				games: [g],
+				standings: { day: 30, confs: [withTid] },
+			});
+		};
+		assert.ok(!night(true, 1).includes("Eastern Conference"), night(true, 1));
+		assert.ok(night(false, 1).includes("Eastern Conference"), night(false, 1));
+		assert.ok(night(true, 2).includes("Eastern Conference"), night(true, 2));
+	});
+
 	test("both conferences are not described in identical words", () => {
 		const games = [
 			mkGame(

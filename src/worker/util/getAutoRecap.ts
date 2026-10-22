@@ -7062,11 +7062,17 @@ const conferencePictureSentence = (
 	// runs every night, and without the anchor "cling to the top of the
 	// West" showed up three evenings running.
 	day?: number,
-	// Who played tonight and who won. A conference's top is news only on a
-	// night that could have moved it - its leader played, or a team within a
-	// game of him won. Otherwise the sentence said every night what the night
-	// before had said.
-	tonight?: { played: ReadonlySet<number>; won: ReadonlySet<number> },
+	// Tonight's results, and where each team that played stood before them.
+	// A conference's top is news on a night that changed it - a new leader,
+	// or the leader losing - and a perfect record at every fifth win.
+	// Otherwise the sentence said every night what the night before had
+	// said: "the Nets cling to the top of the Eastern Conference" on six
+	// evenings running.
+	tonight?: {
+		played: ReadonlySet<number>;
+		won: ReadonlySet<number>;
+		rankBefore: ReadonlyMap<number, number>;
+	},
 ): string | undefined => {
 	if (!standings || standings.confs.length === 0) {
 		return undefined;
@@ -7086,14 +7092,10 @@ const conferencePictureSentence = (
 		const moved =
 			!tonight ||
 			leader.tid === undefined ||
-			tonight.played.has(leader.tid) ||
-			conf.teams.some(
-				(t) =>
-					t !== leader &&
-					t.gb <= 1 &&
-					t.tid !== undefined &&
-					tonight.won.has(t.tid),
-			);
+			(tonight.played.has(leader.tid) &&
+				((tonight.rankBefore.get(leader.tid) ?? 1) > 1 ||
+					!tonight.won.has(leader.tid) ||
+					(leader.lost === 0 && leader.won % 5 === 0)));
 		if (!moved) {
 			continue;
 		}
@@ -7825,7 +7827,10 @@ const dayHeadline = (
 	}
 
 	// Two or more 40-point nights across the league.
-	const fortyClub = performers.filter((perf) => perf.p.pts >= 40);
+	// The bigger night first: "Payton Mathis goes for 42, Jalen Hayes for 44".
+	const fortyClub = performers
+		.filter((perf) => perf.p.pts >= 40)
+		.sort((x, y) => y.p.pts - x.p.pts);
 	if (fortyClub.length >= 2) {
 		const [a, b] = fortyClub;
 		return hl(
@@ -7857,7 +7862,9 @@ const dayHeadline = (
 		return hl(
 			pick(rng, [
 				`${bw} stun ${bl} on a night ${numWord(upsets.length)} favorites fell`,
-				`${cap(numWord(upsets.length))} favorites fall, ${bw} over ${bl} the biggest of them`,
+				// Not "Three favorites fall, Kings over the Cavaliers the biggest
+				// of them": a headline with no verb for its subject.
+				`${bw} top ${bl} as ${numWord(upsets.length)} favorites fall`,
 				`${bw} knock off ${bl} to headline a ${numWord(upsets.length)}-upset night`,
 			]),
 			biggest.g,
@@ -8153,6 +8160,9 @@ const dayDeck = (
 	// body re-told the same man two lines below the deck that had just named
 	// him: "Adrian Murphy triple-doubles" over "Adrian Murphy put together a
 	// triple-double (23 points, 11 rebounds, and 10 assists)".
+	// And the headline's words: "Payton Mathis goes for 42, Jalen Hayes for
+	// 44" over a deck reading "Payton Mathis pours in 42".
+	headlineText = "",
 ): { text: string; games: RecapGame[]; players: RecapPlayer[] } | undefined => {
 	const usedTids = new Set<number>([
 		marquee.teams[0].tid,
@@ -8173,6 +8183,9 @@ const dayDeck = (
 			continue; // force variety - no two clauses of the same kind
 		}
 		if (mStar && s.pid === mStar) {
+			continue;
+		}
+		if (s.pid && headlineText.includes(s.pid.name)) {
 			continue;
 		}
 		picks.push(s.text);
@@ -8605,6 +8618,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 				marquee,
 				mStar,
 				headline.game,
+				headline.text,
 			);
 	const deck = deckResult?.text;
 
@@ -9169,6 +9183,15 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			{
 				played: new Set(games.flatMap((g) => g.teams.map((t) => t.tid))),
 				won: new Set(games.map((g) => g.winnerTid)),
+				rankBefore: new Map(
+					games.flatMap((g) =>
+						g.teams.flatMap((t) =>
+							t.standing?.rankBefore !== undefined
+								? [[t.tid, t.standing.rankBefore] as const]
+								: [],
+						),
+					),
+				),
 			},
 		);
 		if (picture) {
