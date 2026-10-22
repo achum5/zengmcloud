@@ -24,6 +24,7 @@ const SEED = 11;
 
 type Pair = { gid: number; recap: string; game: RecapGame };
 const pairs: Pair[] = [];
+const dayRecaps: string[] = [];
 let savedLeague: unknown;
 
 beforeAll(async () => {
@@ -35,7 +36,10 @@ beforeAll(async () => {
 			playoffs: false,
 		});
 		for (let day = 1; day <= lastDay; day++) {
-			const { notes } = await getAutoRecapsForDay({ season, day });
+			const { notes, dayRecap } = await getAutoRecapsForDay({ season, day });
+			if (dayRecap) {
+				dayRecaps.push(dayRecap);
+			}
 			for (const game of await recapGamesForDay({ season, day })) {
 				const recap = notes[game.gid];
 				if (recap) {
@@ -62,6 +66,7 @@ const ORD = ["first", "second", "third", "fourth"] as const;
 describe("simmed recaps", () => {
 	test("there are enough of them to mean something", () => {
 		assert.isAtLeast(pairs.length, 60);
+		assert.isAtLeast(dayRecaps.length, DAYS);
 	});
 
 	test("nothing the box score and the score log contradict", () => {
@@ -248,6 +253,48 @@ describe("simmed recaps", () => {
 			assert.isTrue(news, `gid ${gid}: a ${run.pts}-0 run told\n${recap}`);
 		}
 		assert.isAtLeast(told, 5);
+	});
+
+	// "Marcus Green pours in 40" in the deck, and never a word of him in the
+	// wrap under it - for whom, against whom, won or lost. Every one of 73
+	// deck performers in a 90-day corpus run.
+	test("a day wrap tells every performer its deck names", () => {
+		let seen = 0;
+		for (const recap of dayRecaps) {
+			const deck = /^\*([^*].*)\*$/m.exec(recap);
+			if (!deck) {
+				continue;
+			}
+			const body = recap.slice(deck.index + deck[0].length);
+			for (const item of deck[1]!.split(" · ")) {
+				const who = /^(.+?) (?:pours in|triple-doubles|goes for)\b/.exec(item);
+				if (who) {
+					seen += 1;
+					assert.include(body, who[1]!, recap);
+				}
+			}
+		}
+		assert.isAtLeast(seen, 1);
+	});
+
+	// "Elsewhere, the 76ers routed the Celtics and the Raptors routed the
+	// Heat. Also on the night, the Hornets routed the Rockets."
+	test("a day wrap does not repeat a result verb", () => {
+		for (const recap of dayRecaps) {
+			const body = recap.split("\n\n").slice(1).join(" ");
+			for (const verb of [
+				"routed",
+				"blew out",
+				"ran away from",
+				"rolled past",
+				"edged",
+				"held off",
+				"slipped past",
+			]) {
+				const n = body.split(` ${verb} `).length - 1;
+				assert.isAtMost(n, 1, `${verb}\n${recap}`);
+			}
+		}
 	});
 
 	// Behind after three and won: the game was won in the fourth, and the

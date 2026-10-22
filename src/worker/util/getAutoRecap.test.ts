@@ -4471,7 +4471,10 @@ describe("the day wrap does not tell a story twice", () => {
 		})(),
 	];
 
-	test("a player the deck put in lights is not re-introduced below it", () => {
+	// The deck is a tease and the body tells it: "Magic Carter triple-doubles"
+	// over a wrap that never named him again left the reader to guess for
+	// whom and against whom. Told in the body, and once.
+	test("a player the deck put in lights is told in the body, once", () => {
 		for (let day = 1; day <= 20; day += 1) {
 			const recap = getAutoDayRecap({
 				season: 2005,
@@ -4491,14 +4494,13 @@ describe("the day wrap does not tell a story twice", () => {
 				"Tim Duncan",
 				"Steve Nash",
 			]) {
-				assert.ok(
-					!(
-						deck.includes(name) &&
-						new RegExp(
-							`${name}(?:'s)? (?:led|had|put|went|posted|got|scored)`,
-						).test(body)
-					),
-					`day ${day}: ${name} is in the deck and the body:\n${recap}`,
+				if (!deck.includes(name)) {
+					continue;
+				}
+				assert.strictEqual(
+					body.split(name).length - 1,
+					1,
+					`day ${day}: ${name} is in the deck:\n${recap}`,
 				);
 			}
 		}

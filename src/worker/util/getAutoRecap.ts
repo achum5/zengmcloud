@@ -6960,6 +6960,11 @@ const conferencePictureSentence = (
 	// runs every night, and without the anchor "cling to the top of the
 	// West" showed up three evenings running.
 	day?: number,
+	// Who played tonight and who won. A conference's top is news only on a
+	// night that could have moved it - its leader played, or a team within a
+	// game of him won. Otherwise the sentence said every night what the night
+	// before had said.
+	tonight?: { played: ReadonlySet<number>; won: ReadonlySet<number> },
 ): string | undefined => {
 	if (!standings || standings.confs.length === 0) {
 		return undefined;
@@ -6974,6 +6979,20 @@ const conferencePictureSentence = (
 		// "Hawks (1-0) lead the East" is noise, not news - the standings only mean
 		// something once a real sample exists.
 		if (leader.won + leader.lost < 5) {
+			continue;
+		}
+		const moved =
+			!tonight ||
+			leader.tid === undefined ||
+			tonight.played.has(leader.tid) ||
+			conf.teams.some(
+				(t) =>
+					t !== leader &&
+					t.gb <= 1 &&
+					t.tid !== undefined &&
+					tonight.won.has(t.tid),
+			);
+		if (!moved) {
 			continue;
 		}
 		if (leader.tid !== undefined) {
@@ -8078,7 +8097,35 @@ const dayDeck = (
 // verb chosen to fit the margin (a blowout "routs", a nail-biter "edges"). `seq`
 // rotates the verb DETERMINISTICALLY through the bucket, so a long roundup reads
 // "beat ... downed ... got past ..." instead of "beat ... beat ... beat".
-const roundupClause = (game: RecapGame, shape: Shape, seq: number): string => {
+const ROUT_VERBS = ["routed", "blew out", "ran away from", "rolled past"];
+const EDGE_VERBS = ["edged", "held off", "slipped past"];
+
+// The first verb of the pool, from `seq` on, that the wrap has not used yet
+// (all of them used: the rotation's own). "Elsewhere, the 76ers routed the
+// Celtics and the Raptors routed the Heat. Also on the night, the Hornets
+// routed the Rockets" was the notable list and the roundup each rotating
+// on its own.
+const freshVerb = (
+	pool: readonly string[],
+	seq: number,
+	used?: Set<string>,
+): string => {
+	for (let k = 0; k < pool.length; k++) {
+		const verb = pool[(seq + k) % pool.length]!;
+		if (!used?.has(verb)) {
+			used?.add(verb);
+			return verb;
+		}
+	}
+	return pool[seq % pool.length]!;
+};
+
+const roundupClause = (
+	game: RecapGame,
+	shape: Shape,
+	seq: number,
+	used?: Set<string>,
+): string => {
 	const w = theNick(shape.winner);
 	const l = theNick(shape.loser);
 	if (shape.margin === 0) {
@@ -8104,9 +8151,9 @@ const roundupClause = (game: RecapGame, shape: Shape, seq: number): string => {
 				? ["outlasted", "pulled away from"]
 				: ["outlasted", "survived", "edged"];
 	} else if (shape.margin >= 20) {
-		pool = ["routed", "blew out", "ran away from", "rolled past"];
+		pool = ROUT_VERBS;
 	} else if (shape.margin <= 4) {
-		pool = ["edged", "held off", "slipped past", "outlasted"];
+		pool = [...EDGE_VERBS, "outlasted"];
 	} else if (shape.margin <= 9) {
 		pool = ["beat", "got past", "held off", "topped", "took down"];
 	} else {
@@ -8120,7 +8167,7 @@ const roundupClause = (game: RecapGame, shape: Shape, seq: number): string => {
 			"pulled away from",
 		];
 	}
-	return `${w} ${pool[seq % pool.length]} ${l} ${scoreTag(shape)}`;
+	return `${w} ${freshVerb(pool, seq, used)} ${l} ${scoreTag(shape)}`;
 };
 
 // League-wide notes read off the whole slate: the night's blowout, its
@@ -8535,11 +8582,42 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	if (mStar) {
 		named.add(mStar);
 	}
-	// Anyone the deck put in lights counts as named - the body's job is to add
-	// stories, not to spell out the deck's.
+	// THE DECK IS A TEASE, AND THE BODY TELLS IT. A deck player used to count
+	// as named, so the body never told him: in all 73 decks of a 90-day corpus
+	// run, "Marcus Green pours in 40" was the last the reader heard of him -
+	// for whom, against whom, won or lost - and his game could be told through
+	// a teammate's 25 instead. The body now picks its standouts as if there
+	// were no deck, and any deck player it did not pick rides on his game's
+	// result: "the Cavaliers erased an 18-point deficit to beat the Clippers
+	// 108-103 despite Marcus Green's 40 points".
+	const deckPerfByGame = new Map<RecapGame, LeaguePerformance[]>();
 	for (const p of deckResult?.players ?? []) {
-		named.add(p);
+		const perf = performers.find((x) => x.p === p);
+		if (perf) {
+			deckPerfByGame.set(perf.game, [
+				...(deckPerfByGame.get(perf.game) ?? []),
+				perf,
+			]);
+		}
 	}
+	// Points alone, as the deck had them: the clause sits in a list joined
+	// by "and", and "40 points and 9 rebounds and the Suns routed the Spurs"
+	// lost the reader.
+	const deckLine = (perf: LeaguePerformance) =>
+		doubleCategories(perf.p).length >= 3
+			? "triple-double"
+			: plural(perf.p.pts, "point");
+	// The deck players of this game the page has not named yet.
+	const untold = (g: RecapGame, text: string) =>
+		(deckPerfByGame.get(g) ?? []).filter((perf) => !text.includes(perf.p.name));
+	const withDeckPerf = (g: RecapGame, clause: string): string => {
+		let out = clause;
+		for (const perf of untold(g, para1.join(" "))) {
+			const sep = / as /.test(out) ? "," : "";
+			out = `${out}${sep} ${perf.won ? "behind" : "despite"} ${poss(perf.p.name)} ${deckLine(perf)}`;
+		}
+		return out;
+	};
 
 	// The day's leading scorer, when it isn't the marquee star already described.
 	if (topScorer && topScorer.p.pts >= 30 && !named.has(topScorer.p)) {
@@ -8673,6 +8751,28 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		}
 	}
 
+	// A deck performer whose game a sentence above already told, from either
+	// side, rides in right after it: "Marcus Nowell's 25 points and 11
+	// rebounds came in a 120-111 loss to the Bulls. Xavier Carter had 34
+	// points for the Bulls."
+	for (const g of deckPerfByGame.keys()) {
+		const score = plainScore(analyzeShape(g));
+		const at = para1.findIndex((t) => t.includes(score));
+		const left = untold(g, para1.join(" "));
+		if (at >= 0 && left.length > 0) {
+			para1.splice(
+				at + 1,
+				0,
+				`${naturalList(
+					left.map((perf) => {
+						const line = deckLine(perf);
+						return `${perf.p.name} had ${line === "triple-double" ? "a triple-double" : line} for ${theNick(perf.team)}`;
+					}),
+				)}.`,
+			);
+		}
+	}
+
 	// Paragraph 2: the rest of the night's RESULTS. First the dramatic ones
 	// ("Elsewhere, ..." - upsets, comebacks, walk-offs, blowouts, thrillers) with
 	// rotating verbs so three upsets don't read "upset... upset... upset", then an
@@ -8687,6 +8787,14 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	// "Stunned" and "shocked" belong to a real number. A 3.5-point dog winning
 	// gets the flat verbs, so the strong ones still mean something when the
 	// 13.5-point dog turns up two clauses later.
+	// Seeded with the verbs the opening paragraph already spent: "as the
+	// Pistons routed the Magic... In the other games, the Lakers routed the
+	// Bulls".
+	const usedVerbs = new Set<string>(
+		[...ROUT_VERBS, ...EDGE_VERBS].filter((verb) =>
+			para1.some((t) => t.includes(` ${verb} `)),
+		),
+	);
 	const bigUpsetVerbs = ["stunned", "shocked", "toppled", "upset"];
 	const smallUpsetVerbs = ["upset", "got past", "took down", "knocked off"];
 	let upsetIdx = 0;
@@ -8734,14 +8842,14 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 						: `${shape.ot} overtimes`
 			}, ${plainScore(shape)}`;
 		} else if (shape.margin >= 25) {
-			blurb = `${theNick(shape.winner)} routed ${theNick(shape.loser)} ${scoreTag(shape)}`;
+			blurb = `${theNick(shape.winner)} ${freshVerb(ROUT_VERBS, 0, usedVerbs)} ${theNick(shape.loser)} ${scoreTag(shape)}`;
 		} else if (shape.margin <= 3) {
-			blurb = `${theNick(shape.winner)} edged ${theNick(shape.loser)} ${scoreTag(
-				shape,
-			)}`;
+			blurb = `${theNick(shape.winner)} ${freshVerb(EDGE_VERBS, 0, usedVerbs)} ${theNick(
+				shape.loser,
+			)} ${scoreTag(shape)}`;
 		}
 		if (blurb) {
-			notableBlurbs.push(blurb);
+			notableBlurbs.push(withDeckPerf(g, blurb));
 			coveredGames.add(g);
 			if (notableBlurbs.length >= 5) {
 				break;
@@ -8799,7 +8907,12 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			continue;
 		}
 		if (roundupClauses.length < ROUNDUP_CAP) {
-			roundupClauses.push(roundupClause(g, gShape, roundupClauses.length));
+			roundupClauses.push(
+				withDeckPerf(
+					g,
+					roundupClause(g, gShape, roundupClauses.length, usedVerbs),
+				),
+			);
 		} else {
 			roundupExtra += 1;
 		}
@@ -8850,11 +8963,15 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	}
 
 	// What kind of night it was, league-wide: the blowout, the shootout, the best
-	// shooting performance. Two at most, so the wrap stays a wrap.
+	// shooting performance. Two notes about the night at most, counting the
+	// theme and the close games above, so the wrap stays a wrap: "Home teams
+	// went 7-1. Three of the eight games were decided by five or fewer. The
+	// night's most one-sided result... Nothing on the slate outscored..." was
+	// four in a row.
 	for (const note of leagueNotes(
 		games,
 		rng,
-		2,
+		Math.max(0, 2 - para3.length),
 		[headline.text, deck ?? "", ...para1, ...para2].join(" "),
 	)) {
 		para3.push(note);
@@ -8947,6 +9064,10 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			rng,
 			dayCtx.saidTids,
 			games[0]?.day,
+			{
+				played: new Set(games.flatMap((g) => g.teams.map((t) => t.tid))),
+				won: new Set(games.map((g) => g.winnerTid)),
+			},
 		);
 		if (picture) {
 			para3.push(picture);
