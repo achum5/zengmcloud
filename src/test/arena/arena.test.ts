@@ -22,6 +22,7 @@ import {
 	freeAgencyWatchers,
 } from "../../worker/core/realisticFrontOffice/freeAgency.ts";
 import { offerSettings } from "../../worker/core/realisticFrontOffice/offers.ts";
+import { draftSettings } from "../../worker/core/realisticFrontOffice/draft.ts";
 import {
 	curveAt,
 	ensureRetention,
@@ -87,6 +88,7 @@ test.runIf(env.ARENA_RUN === "1")(
 		try {
 			const started = Date.now();
 			await createArenaLeague(seed);
+			const firstSeason = g.get("season");
 			if (env.ARENA_FO === "1") {
 				await league.setGameAttributes({ realisticFrontOffices: true });
 				// ARENA_NO_WAIT=1: deals are made as soon as they are found.
@@ -100,6 +102,7 @@ test.runIf(env.ARENA_RUN === "1")(
 					JSON.parse(env.ARENA_FREE_AGENCY ?? "{}"),
 				);
 				Object.assign(offerSettings, JSON.parse(env.ARENA_OFFERS ?? "{}"));
+				Object.assign(draftSettings, JSON.parse(env.ARENA_DRAFT ?? "{}"));
 			}
 			// ARENA_PICK_SURVEY=1: where every outlook expects each team's own
 			// picks to land, draft by draft, to set against where they do.
@@ -601,6 +604,27 @@ test.runIf(env.ARENA_RUN === "1")(
 				await fs.writeFile(
 					`${out}/realized-${seed}.json`,
 					JSON.stringify(realized),
+				);
+			}
+			// Every player drafted while the league ran: where he went and how
+			// he turned out, to judge the drafting.
+			{
+				const drafts: unknown[] = [];
+				for (const p of await idb.cache.players.getAll()) {
+					if (p.draft.year >= firstSeason && p.draft.round > 0) {
+						drafts.push({
+							pid: p.pid,
+							season: p.draft.year,
+							round: p.draft.round,
+							pick: p.draft.pick,
+							tid: p.draft.tid,
+							ovr: p.ratings.map((r) => [r.season, r.ovr]),
+						});
+					}
+				}
+				await fs.writeFile(
+					`${out}/drafts-${seed}.json`,
+					JSON.stringify(drafts),
 				);
 			}
 			if (env.ARENA_PICK_SURVEY === "1") {

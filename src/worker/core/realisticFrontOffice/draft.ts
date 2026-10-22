@@ -18,11 +18,20 @@ import { pickSalaries } from "./payroll.ts";
 // are priced by who would go there (outlook.ts, the class board), kept up to
 // date as players are taken.
 
+// For the arena, to measure what a behaviour is worth by turning it off.
+export const draftSettings = {
+	// Off: CPU teams draft as in stock.
+	franchiseBoard: true,
+};
+
 // The prospect a CPU team takes with this pick.
 export const bestProspect = async (
 	dp: DraftPick,
 	prospects: readonly Player[],
 ) => {
+	if (!draftSettings.franchiseBoard) {
+		return undefined;
+	}
 	const outlook = await currentOutlook();
 	const t = await loadTeam(outlook, dp.tid);
 	await ensureRetention(outlook, prospects, dp.tid);
