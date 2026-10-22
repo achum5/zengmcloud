@@ -386,7 +386,9 @@ describe("3D director", () => {
 		let onHim = 0;
 		let passers = 0;
 		let backOut = 0;
-		for (const seed of ["a", "kick"]) {
+		// (Three games: in two, up on him is 3-4 of ~24 - right on the line,
+		// either side of it as the games come out.)
+		for (const seed of ["a", "kick", "b"]) {
 			const { tl, players } = compile(seed, 140);
 			const big = new Set(
 				players
@@ -3078,8 +3080,9 @@ describe("3D director", () => {
 		const { tl } = compile("a");
 		let sprints = 0;
 		let jogs = 0;
+		const gaitOf = (v: number) => (v >= 19 ? "sprint" : v < 11 ? "jog" : "run");
 		for (const [pid, tr] of tl.tracks) {
-			for (const m of tr.moves) {
+			for (const [k, m] of tr.moves.entries()) {
 				const d = Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y);
 				const secs = (m.t1 - m.t0) / 1000;
 				if (m.anim !== "run" || d < 20) {
@@ -3092,17 +3095,38 @@ describe("3D director", () => {
 					const b = evalPlayer(tl, pid, t + 10);
 					return Math.hypot(b.x - a.x, b.y - a.y) / 0.02;
 				};
-				let fastest = 0;
-				for (let t = m.t0 + secs * 350; t < m.t1 - secs * 350; t += 20) {
-					fastest = Math.max(fastest, at(t));
-				}
+				const quickest = (t0: number, t1: number) => {
+					let v = 0;
+					for (
+						let t = t0 + (t1 - t0) * 0.35;
+						t < t1 - (t1 - t0) * 0.35;
+						t += 20
+					) {
+						v = Math.max(v, at(t));
+					}
+					return v;
+				};
+				const fastest = quickest(m.t0, m.t1);
 				// (A walk - some run is that slow - is a walk. And right on the
 				// line between two gaits, either will do.)
 				if (fastest < 6.25) {
 					continue;
 				}
+				// (So too if, running on into it from the run before or on out
+				// of it into the next, he takes in half the pause between - and
+				// through the middle of that he goes at the other gait's pace: a
+				// step aside eased off right there, say.)
+				const prev = tr.moves[k - 1];
+				const next = tr.moves[k + 1];
+				const gap0 = prev ? m.t0 - prev.t1 : Infinity;
+				const gap1 = next ? next.t0 - m.t1 : Infinity;
+				const joined = quickest(
+					gap0 <= FLOW_MS ? m.t0 - gap0 / 2 : m.t0,
+					gap1 <= FLOW_MS ? m.t1 + gap1 / 2 : m.t1,
+				);
 				const sure =
-					Math.min(Math.abs(fastest - 19), Math.abs(fastest - 11)) > 0.75;
+					Math.min(Math.abs(fastest - 19), Math.abs(fastest - 11)) > 0.75 &&
+					gaitOf(joined) === gaitOf(fastest);
 				let top = 0;
 				let low = Infinity;
 				let frames = 0;
@@ -3113,10 +3137,7 @@ describe("3D director", () => {
 					}
 					frames += 1;
 					if (sure) {
-						assert.strictEqual(
-							st.anim,
-							fastest >= 19 ? "sprint" : fastest < 11 ? "jog" : "run",
-						);
+						assert.strictEqual(st.anim, gaitOf(fastest));
 					}
 					top = Math.max(top, st.z);
 					low = Math.min(low, st.z);

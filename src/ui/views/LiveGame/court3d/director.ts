@@ -1047,6 +1047,9 @@ const SINK_MAX = 9;
 // the other basket, bringing it up - is picked up about three-quarter court
 // (feet from the rim defended), not chased down to the far baseline.
 const PICK_UP = 60;
+// On a break, though, the defense running back, he stops the ball at about
+// half court: not back out to three-quarter court for him from the paint.
+const BREAK_PICK_UP = 38;
 // Lining up with the ball dead, everybody where he has to be.
 const DEAD_SETUPS =
 	/^(jumpBall|ft|missFt|sub|timeout|endOfPeriod|period|overtime|gameOver)/;
@@ -5538,17 +5541,39 @@ class Director {
 						: handed !== undefined
 							? Math.min(t0, handed)
 							: deep(pid);
-				end = Math.max(
-					end,
-					this.playDribble(
-						run,
-						a.who,
-						a.to,
-						a.kind,
-						since,
-						handed !== undefined,
-					),
+				const came = this.playDribble(
+					run,
+					a.who,
+					a.to,
+					a.kind,
+					since,
+					handed !== undefined,
 				);
+				end = Math.max(end, came);
+				// Off up the floor with it before the step - his man goes with
+				// him from then: not still on his way to where the last step had
+				// the ball, back up the floor, the ball coming on past him.
+				if (a.kind === "advance" && since < t0 - 50 && this.holder === pid) {
+					const d = this.defenderOf(pid);
+					if (d !== undefined && (this.free.get(d) ?? 0) > since) {
+						this.cutShort(d, since);
+						const P = this.posOf(pid);
+						this.shadow(
+							d,
+							this.defensePoint(
+								team,
+								P,
+								P,
+								true,
+								run.play.cat === "break" ? BREAK_PICK_UP : PICK_UP,
+							),
+							since,
+							came,
+							team,
+							pid,
+						);
+					}
+				}
 			} else if (a.type === "move") {
 				const pid = run.roles[a.who]!;
 				// On the break, a man running the floor goes on as soon as he
@@ -6445,7 +6470,15 @@ class Director {
 	// ball, between his man and the rim, tighter the nearer the rim; off it,
 	// sagged toward the rim and shaded toward the ball, more the farther his
 	// man is from it - so the weak side sinks into the paint.
-	private defensePoint(team: Side, at: Pt, ball: Pt, onBall: boolean): Pt {
+	private defensePoint(
+		team: Side,
+		at: Pt,
+		ball: Pt,
+		onBall: boolean,
+		// How far up the floor (feet from the rim) the man on the ball goes to
+		// pick him up.
+		pickUp = PICK_UP,
+	): Pt {
 		const rim = { x: rimX(team), y: COURT_H / 2 };
 		// A man still up the floor - coming up it, trailing the play, still at
 		// the other end - is nobody's worry yet: off the ball, his man waits
@@ -6454,7 +6487,7 @@ class Director {
 		// up as he comes. (Not stood out level with the ball, the five of
 		// them a line across the floor, nobody back at the rim.)
 		const deep = Math.abs(at.x - rim.x);
-		const reach = onBall ? PICK_UP : UP_FLOOR;
+		const reach = onBall ? pickUp : UP_FLOOR;
 		const sink = onBall
 			? 0
 			: Math.min(SINK_MAX, Math.max(0, deep - UP_FLOOR) * SINK_PER_FT);
@@ -6604,7 +6637,13 @@ class Director {
 			if (d !== undefined) {
 				targets.set(
 					d,
-					this.defensePoint(team, this.posOf(pid), ball, pid === holder),
+					this.defensePoint(
+						team,
+						this.posOf(pid),
+						ball,
+						pid === holder,
+						run.play.cat === "break" ? BREAK_PICK_UP : PICK_UP,
+					),
 				);
 				manOf.set(d, pid);
 			}
@@ -16721,6 +16760,15 @@ class Director {
 		};
 		const cuts = [...this.cuts].sort((a, b) => a - b);
 		const changes = this.poss.map(([t]) => t).sort((a, b) => a - b);
+		// On a break - from when it got going till the ball changes hands -
+		// the man on the ball stops it about half court (see BREAK_PICK_UP).
+		const breaks = [...this.breaks].sort((a, b) => a - b);
+		const pickUpAt = (t: number): number => {
+			const b = breaks[lastAt(breaks, t, (x) => x)];
+			return b !== undefined && t - b < 12000 && firstAfter(changes, b) > t
+				? BREAK_PICK_UP
+				: PICK_UP;
+		};
 
 		// Bodies he cannot run through (see bodies). Following his man round
 		// one, he runs into it, is held up a moment, and fights his way round.
@@ -17054,7 +17102,13 @@ class Director {
 					}
 					let aim =
 						(shownAt(who, t - R) && !waiting) || !last
-							? this.defensePoint(this.teamOf(who), seen, Bp, holder === who)
+							? this.defensePoint(
+									this.teamOf(who),
+									seen,
+									Bp,
+									holder === who,
+									pickUpAt(t),
+								)
 							: last;
 					// Up on the man with it, out from the rim, never nearer him
 					// than the ball out in front of him leaves room for - unless
