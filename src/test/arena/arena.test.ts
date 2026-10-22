@@ -11,6 +11,7 @@ import {
 	priceDeal,
 	marketSettings,
 	outlookWatchers,
+	teamMarketSettings,
 	tradeWatchers,
 	waitingOf,
 	type TeamState,
@@ -96,6 +97,16 @@ test.runIf(env.ARENA_RUN === "1")(
 				marketSettings.valueWaiting = env.ARENA_NO_WAIT !== "1";
 				// ARENA_MARKET='{"oneSided":false}': any other market setting.
 				Object.assign(marketSettings, JSON.parse(env.ARENA_MARKET ?? "{}"));
+				// ARENA_SPLIT: these market settings for the odd teams only - a
+				// league of two versions, to see which builds better
+				// franchises (teams-<seed>.json).
+				teamMarketSettings.clear();
+				if (env.ARENA_SPLIT) {
+					const split = JSON.parse(env.ARENA_SPLIT);
+					for (let tid = 1; tid < g.get("numTeams"); tid += 2) {
+						teamMarketSettings.set(tid, split);
+					}
+				}
 				Object.assign(outlookSettings, JSON.parse(env.ARENA_OUTLOOK ?? "{}"));
 				Object.assign(marginSettings, JSON.parse(env.ARENA_MARGIN ?? "{}"));
 				Object.assign(
@@ -624,6 +635,32 @@ test.runIf(env.ARENA_RUN === "1")(
 				`${out}/deadline-views-${seed}.json`,
 				JSON.stringify(deadlineViews),
 			);
+			// Every team's seasons: how it did, and which version ran it.
+			{
+				const seasons: unknown[] = [];
+				for (let s = firstSeason; s <= g.get("season"); s++) {
+					for (let tid = 0; tid < g.get("numTeams"); tid++) {
+						const [ts] = await idb.merged.teamSeasons.getAll({
+							tid,
+							season: s,
+						});
+						if (ts) {
+							seasons.push({
+								season: s,
+								tid,
+								split: teamMarketSettings.has(tid),
+								won: ts.won,
+								lost: ts.lost,
+								playoffRoundsWon: ts.playoffRoundsWon,
+							});
+						}
+					}
+				}
+				await fs.writeFile(
+					`${out}/teams-${seed}.json`,
+					JSON.stringify(seasons),
+				);
+			}
 			// Every player drafted while the league ran: where he went and how
 			// he turned out, to judge the drafting.
 			{

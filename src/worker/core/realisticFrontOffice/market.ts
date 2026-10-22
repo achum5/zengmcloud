@@ -129,6 +129,19 @@ export const marketSettings = {
 	placesAfter: true,
 };
 
+// For the arena's version-against-version leagues: settings for some teams'
+// own decisions, over marketSettings.
+export const teamMarketSettings = new Map<
+	number,
+	Partial<typeof marketSettings>
+>();
+export const settingFor = <K extends keyof typeof marketSettings>(
+	tid: number,
+	key: K,
+): (typeof marketSettings)[K] =>
+	(teamMarketSettings.get(tid)?.[key] ??
+		marketSettings[key]) as (typeof marketSettings)[K];
+
 // Where the time goes, for the arena's speed report.
 export const marketClock = {
 	days: 0,
@@ -341,7 +354,7 @@ export const priceFor = (
 	const after = applyTrade(t, outgoing, incoming);
 	let view = outlook;
 	if (
-		marketSettings.placesAfter &&
+		settingFor(t.tid, "placesAfter") &&
 		partner &&
 		count(outgoing) + count(incoming) > 0
 	) {
@@ -685,7 +698,7 @@ export const waitingOf = (
 		const t = sides[k];
 		const pathBefore = teamStrengths(outlook, t.tid, t.players, t.picks);
 		const pathAfter = teamStrengths(
-			placed,
+			settingFor(t.tid, "placesAfter") ? placed : outlook,
 			t.tid,
 			traded[k]!.players,
 			traded[k]!.picks,

@@ -18,7 +18,7 @@ import {
 	currentOutlook,
 	loadTeam,
 	marginOf,
-	marketSettings,
+	settingFor,
 	type TeamState,
 } from "./market.ts";
 import {
@@ -117,7 +117,7 @@ const priceSigning = (
 	};
 	const players = [...t.players, signed];
 	// His team's own picks land where he leaves it, as in a trade.
-	const view = marketSettings.placesAfter
+	const view = settingFor(t.tid, "placesAfter")
 		? placesAfter(outlook, [{ tid: t.tid, before: t.players, after: players }])
 		: outlook;
 	const value = franchiseValue(
