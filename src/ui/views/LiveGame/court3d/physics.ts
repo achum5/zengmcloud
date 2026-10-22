@@ -215,7 +215,10 @@ export const playShot = (
 			vz = 0;
 		}
 		if (decided === undefined) {
-			if (rho < RIM_R - 0.12 && z < RIM_Z - 0.45 && vz < 0) {
+			// (Hugging the inside of the ring on its way down counts: with its
+			// middle inside the iron and that far under it, it has gone through
+			// - there is nothing down there to come back out off.)
+			if (rho < RIM_R && z < RIM_Z - 0.45 && vz < 0) {
 				// Down through the hoop.
 				made = true;
 				decided = t;
@@ -226,6 +229,12 @@ export const playShot = (
 				// Off the rim, below it and away.
 				decided = t;
 			}
+		}
+		// (However it goes, never on down through the floor: down on it, off
+		// the rim, it is done - the bounce takes it from there.)
+		if (!made && z <= BALL_R) {
+			z = BALL_R;
+			decided ??= t;
 		}
 		// Written down on the beat - and done once it is off the rim for good,
 		// or in and on the floor.

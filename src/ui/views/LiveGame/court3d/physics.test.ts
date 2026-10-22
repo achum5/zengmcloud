@@ -186,4 +186,31 @@ describe("3D ball at the rim", () => {
 		}
 		assert.isAbove(near / all, 0.8);
 	});
+
+	// Down the inside of the ring, its middle inside the iron: it has gone
+	// through. (It was counted a miss, and fell on through the net and the
+	// floor till it drifted out from under the ring 2 ft down.)
+	test("hugging the inside of the ring on its way down, it is in - and nothing goes through the floor", () => {
+		const p = playShot(
+			0,
+			{ x: rimX(0), y: 25 + RIM_R - 0.06, z: RIM_Z - 0.3 },
+			{ x: 0, y: 0, z: -3 },
+		);
+		assert.isTrue(p.made);
+		for (const [k, { from, flight }] of spots.entries()) {
+			for (let n = 0; n < 12; n++) {
+				const found = findShot(
+					0,
+					from,
+					flight,
+					{ made: n % 3 === 0 },
+					seeded(500 + k * 37 + n),
+				);
+				const pts = found?.play.pts ?? [];
+				for (let i = 2; i < pts.length; i += 3) {
+					assert.isAtLeast(pts[i]!, 0.38, `spot ${k} try ${n}`);
+				}
+			}
+		}
+	});
 });
