@@ -3,6 +3,7 @@ import { PLAYER } from "../../common/constants.ts";
 import { makeSeededRandom } from "../../common/random.ts";
 import type { Player } from "../../common/types.ts";
 import { last } from "../../common/utils.ts";
+import { IMPACT_RATINGS } from "../../worker/core/realisticFrontOffice/playerImpact.ts";
 import {
 	playerLine,
 	rosterPoints,
@@ -27,6 +28,9 @@ import { inGameOrder, play, toSimTeam, type SimTeam } from "./simTools.ts";
 // guards; each roster plays the rest of the league on the same random
 // numbers as the team it came from. Rows go to a file for the analysis.
 //
+// POSITIONS_RANDOM=20 adds that many more swaps of a top-8 player for one of
+// the same value at any position, for hunting what else the model misses.
+//
 //   POSITIONS_RUN=1 POSITIONS_SEED=1 POSITIONS_GAMES=300 POSITIONS_OUT=/tmp/pos \
 //     npx vitest --run --project basketball src/test/impact/positions.test.ts
 
@@ -50,12 +54,20 @@ const lineOf = (p: Player): StrengthPlayer => ({
 	valueNoPot: p.valueNoPot,
 });
 
-const describe = (p: Player) => ({
-	pid: p.pid,
-	pos: posOf(p),
-	ovr: last(p.ratings).ovr,
-	valueNoPot: Math.round(p.valueNoPot * 10) / 10,
-});
+const describe = (p: Player) => {
+	const r = last(p.ratings);
+	return {
+		pid: p.pid,
+		pos: posOf(p),
+		ovr: r.ovr,
+		valueNoPot: Math.round(p.valueNoPot * 10) / 10,
+		age: g.get("season") - p.born.year,
+		skills: r.skills,
+		ratings: Object.fromEntries(
+			IMPACT_RATINGS.map((key) => [key, (r as any)[key] as number]),
+		),
+	};
+};
 
 test.runIf(env.POSITIONS_RUN === "1")(
 	"positions: lab",
@@ -174,14 +186,15 @@ test.runIf(env.POSITIONS_RUN === "1")(
 						});
 					}
 				}
-				// And milder ones: a player in the top 8 at random for one of
-				// another position at random.
+				// And milder ones: a player in the top 8 at random for one at a
+				// position at random.
 				const random = makeSeededRandom(seed * 7919 + tid);
 				const positions = ["PG", "SG", "G", "GF", "SF", "F", "PF", "FC", "C"];
-				for (let i = 0; i < 2; i++) {
+				// POSITIONS_RANDOM: how many, 2 by default - a swap lab when many.
+				const numRandom = Number(env.POSITIONS_RANDOM ?? 2);
+				for (let i = 0; i < numRandom; i++) {
 					const p = top[Math.floor(random() * top.length)]!;
-					const others = positions.filter((x) => x !== posOf(p));
-					const to = others[Math.floor(random() * others.length)]!;
+					const to = positions[Math.floor(random() * positions.length)]!;
 					variants.push({
 						name: "random",
 						out: [p],
