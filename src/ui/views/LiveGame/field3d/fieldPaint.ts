@@ -17,6 +17,7 @@ import {
 } from "./geometry.ts";
 import type { Pt3 } from "./geometry.ts";
 import type { TexturedPlane } from "../court3d/planes.ts";
+import { venueFor, type Venue } from "./venue.ts";
 
 // THE HOME TEAM'S FIELD, PAINTED - the turf with its mowed stripes, the end
 // zones in the home colors with the team's name across them, the numbers and
@@ -33,6 +34,9 @@ import type { TexturedPlane } from "../court3d/planes.ts";
 // editor can set it later the way the court editor sets a court.
 
 export type EndZoneStyle = {
+	// Painted solid, left green (only the letters painted), or painted and
+	// striped corner to corner.
+	pattern: Venue["endZones"];
 	fill: string;
 	text: string;
 	textColor: string;
@@ -41,8 +45,10 @@ export type EndZoneStyle = {
 
 export type FieldStyle = {
 	turf: string;
-	// How much lighter every other five yards is mowed (0 to 1).
+	// How much lighter every other five yards is mowed (0 to 1), and how
+	// much each blade differs from the next.
 	stripe: number;
+	grain: number;
 	lines: string;
 	// The grass past the white border, round the field to the walls.
 	surround: string;
@@ -58,10 +64,27 @@ export type FieldTeam = {
 	colors?: [string, string, string];
 };
 
-const endZoneOf = (team: FieldTeam | undefined, fallback: string) => {
+const endZoneOf = (
+	team: FieldTeam | undefined,
+	fallback: string,
+	pattern: Venue["endZones"],
+	turf: string,
+): EndZoneStyle => {
 	const fill = team?.colors?.[0] ?? fallback;
 	const second = team?.colors?.[1] ?? "#ffffff";
 	const third = team?.colors?.[2] ?? "#ffffff";
+	const text = (team?.name ?? team?.abbrev ?? "").toUpperCase();
+	if (pattern === "green") {
+		// On the grass: lettered in the team's color, if it shows on green,
+		// edged in another.
+		const textColor =
+			[fill, second, third].find((c) => contrast(c, turf) > 0.18) ?? "#ffffff";
+		const edge =
+			[second, third, fill, "#ffffff"].find(
+				(c) => c !== textColor && contrast(c, textColor) > 0.2,
+			) ?? shade(textColor, -0.4);
+		return { pattern, fill: turf, text, textColor, edge };
+	}
 	// Lettered in the team's second color where it shows, edged in its third;
 	// white (or black on a light end zone) otherwise.
 	const light = luminance(fill) > 0.55;
@@ -75,29 +98,34 @@ const endZoneOf = (team: FieldTeam | undefined, fallback: string) => {
 		Math.abs(luminance(third) - luminance(textColor)) > 0.2 && third !== fill
 			? third
 			: shade(fill, -0.35);
-	return {
-		fill,
-		text: (team?.name ?? team?.abbrev ?? "").toUpperCase(),
-		textColor,
-		edge,
-	};
+	return { pattern, fill, text, textColor, edge };
 };
 
-// The default: natural grass, mowed in five-yard stripes, white paint, and
-// the home team's colors and name in both end zones. At a neutral site the
-// two teams split the ends.
+const contrast = (a: string, b: string) =>
+	Math.abs(luminance(a) - luminance(b));
+
+// The home team's field, as its venue has it (see venue.ts): natural grass
+// mowed in five-yard stripes, or artificial turf - brighter, even, its
+// stripes woven in faint - white paint, and the home team's colors and name
+// in both end zones. At a neutral site the two teams split the ends.
 export const fieldStyleFor = (
 	home: FieldTeam | undefined,
 	away: FieldTeam | undefined,
 	neutralSite = false,
+	venue: Venue = venueFor(home),
 ): FieldStyle => {
-	const left = endZoneOf(home, "#8c1d40");
-	const right = neutralSite ? endZoneOf(away, "#1d3461") : left;
+	const grass = venue.turf === "grass";
+	const turf = grass ? "#3f7d34" : "#2f8a3d";
+	const left = endZoneOf(home, "#8c1d40", venue.endZones, turf);
+	const right = neutralSite
+		? endZoneOf(away, "#1d3461", venue.endZones, turf)
+		: left;
 	return {
-		turf: "#3f7d34",
-		stripe: 0.075,
+		turf,
+		stripe: grass ? 0.075 : 0.04,
+		grain: grass ? 14 : 7,
 		lines: "#f7f7f2",
-		surround: "#356b2d",
+		surround: grass ? "#356b2d" : "#2b7f38",
 		endZones: [left, right],
 		numbers: "#f7f7f2",
 	};
@@ -175,7 +203,7 @@ export const paintTurf = (style: FieldStyle, seed: string) => {
 	const img = g.getImageData(0, 0, P.w, P.h);
 	const d = img.data;
 	for (let i = 0; i < d.length; i += 4) {
-		const n = (rng() - 0.5) * 14;
+		const n = (rng() - 0.5) * style.grain;
 		d[i] = Math.max(0, Math.min(255, d[i]! + n * 0.6));
 		d[i + 1] = Math.max(0, Math.min(255, d[i + 1]! + n));
 		d[i + 2] = Math.max(0, Math.min(255, d[i + 2]! + n * 0.4));
@@ -193,22 +221,39 @@ export const paintEndZone = (style: FieldStyle, side: 0 | 1) => {
 	const P = END_ZONE_PLANES[side];
 	const c = canvasOf(P.w, P.h);
 	const g = c.getContext("2d")!;
-	g.fillStyle = z.fill;
-	g.fillRect(0, 0, P.w, P.h);
-	// (The back of the end zone a shade darker, so a whole block of color
-	// still reads as ground.)
-	const back = g.createLinearGradient(
-		side === 0 ? 0 : P.w,
-		0,
-		side === 0 ? P.w : 0,
-		0,
-	);
-	back.addColorStop(0, shade(z.fill, -0.1));
-	back.addColorStop(1, z.fill);
-	g.fillStyle = back;
-	g.globalAlpha = 0.6;
-	g.fillRect(0, 0, P.w, P.h);
-	g.globalAlpha = 1;
+	// (Left green, the grass shows through all but the letters.)
+	if (z.pattern !== "green") {
+		g.fillStyle = z.fill;
+		g.fillRect(0, 0, P.w, P.h);
+		if (z.pattern === "striped") {
+			// Bands two yards wide, corner to corner, a shade darker.
+			const band = 2 * YD * END_PPF;
+			g.fillStyle = shade(z.fill, -0.2);
+			for (let x = -P.h; x < P.w + P.h; x += band * 2) {
+				g.beginPath();
+				g.moveTo(x, 0);
+				g.lineTo(x + band, 0);
+				g.lineTo(x + band + P.h, P.h);
+				g.lineTo(x + P.h, P.h);
+				g.closePath();
+				g.fill();
+			}
+		}
+		// (The back of the end zone a shade darker, so a whole block of color
+		// still reads as ground.)
+		const back = g.createLinearGradient(
+			side === 0 ? 0 : P.w,
+			0,
+			side === 0 ? P.w : 0,
+			0,
+		);
+		back.addColorStop(0, shade(z.fill, -0.1));
+		back.addColorStop(1, z.fill);
+		g.fillStyle = back;
+		g.globalAlpha = 0.6;
+		g.fillRect(0, 0, P.w, P.h);
+		g.globalAlpha = 1;
+	}
 	if (z.text) {
 		// Letters 7 yards tall, run across the end zone between the hash
 		// marks and out toward the numbers.

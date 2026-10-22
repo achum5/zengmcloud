@@ -27,6 +27,7 @@ import {
 	LOWER,
 	RIM,
 	UPPER,
+	ROOF,
 	WALL,
 	type StadiumPaint,
 } from "./stadium.ts";
@@ -143,6 +144,9 @@ export const drawFieldFrame = (f: FieldFrame) => {
 	const st = paint.stadium;
 	ctx.setTransform(1, 0, 0, 1, 0, 0);
 	drawSky(ctx, st.style);
+	if (st.roof) {
+		drawTexturedPlane(ctx, cam, ROOF, st.roof, 24, 16);
+	}
 	// The far side, top down: the rim and its lights, the upper deck, the
 	// club level, the lower bowl, the wall.
 	drawTexturedPlane(ctx, cam, RIM, st.rim, 24, 1);

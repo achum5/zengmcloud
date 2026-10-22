@@ -3,6 +3,7 @@ import { shade } from "./color.ts";
 import type { TexturedPlane } from "../court3d/planes.ts";
 import type { FieldTeam } from "./fieldPaint.ts";
 import { END_ROOM, FIELD_L, FIELD_W, SIDE_ROOM, type Pt3 } from "./geometry.ts";
+import { venueFor, type Venue } from "./venue.ts";
 
 // THE STADIUM: an open bowl round the field - a padded wall with an LED
 // board along it, the lower bowl rising from it, a club level's ribbon board,
@@ -20,19 +21,25 @@ export type StadiumStyle = {
 	// The concrete and steel of the bowl.
 	structure: string;
 	sky: "night" | "day";
+	// Open to the sky, or under a roof (see venue.ts).
+	roof: Venue["roof"];
 };
 
+// (The same seats every game at a team's home.)
 export const stadiumStyleFor = (
 	home: FieldTeam | undefined,
-	seed: string,
+	venue: Venue = venueFor(home),
 ): StadiumStyle => {
-	const rng = makeCourtRng(`stadium|${seed}`);
+	const rng = makeCourtRng(
+		`stadium|${home?.region ?? ""}|${home?.name ?? ""}|${home?.abbrev ?? ""}`,
+	);
 	const c0 = home?.colors?.[0] ?? "#8c1d40";
 	return {
 		seats: rng() < 0.6 ? shade(c0, -0.3) : "#4b505b",
 		wall: shade(c0, -0.42),
 		structure: "#5b5e66",
 		sky: "night",
+		roof: venue.roof,
 	};
 };
 
@@ -125,6 +132,19 @@ export const RIM = plane(
 	X1 - X0,
 	RIM_H,
 	3,
+);
+
+// A roof, if it has one: from the top of the rim across the field and on
+// over the near side, rising a little as it goes.
+const ROOF_RISE = 12 * RAD;
+const ROOF_SPAN = 470;
+export const ROOF = plane(
+	{ x: X0, y: UPPER_TOP.y, z: UPPER_TOP.z + RIM_H },
+	{ x: 1, y: 0, z: 0 },
+	{ x: 0, y: Math.cos(ROOF_RISE), z: Math.sin(ROOF_RISE) },
+	X1 - X0,
+	ROOF_SPAN,
+	1,
 );
 
 // Behind each end zone: a wall, the lower bowl rising from it, and the
@@ -468,6 +488,45 @@ const paintVideoBoard = (
 	return c;
 };
 
+// The underside of the roof: dark panels between the trusses, which run
+// along the field and across it, and rows of lights hung from them -
+// brightest out over the field.
+const paintRoof = (w: number, h: number, ppf: number, seed: string) => {
+	const c = canvasOf(w, h);
+	const g = c.getContext("2d")!;
+	g.fillStyle = "#1d1f25";
+	g.fillRect(0, 0, w, h);
+	const glow = g.createLinearGradient(0, 0, 0, h);
+	glow.addColorStop(0, "rgba(120,124,136,0.05)");
+	glow.addColorStop(0.55, "rgba(150,154,166,0.16)");
+	glow.addColorStop(1, "rgba(120,124,136,0.04)");
+	g.fillStyle = glow;
+	g.fillRect(0, 0, w, h);
+	const along = 32 * ppf;
+	const across = 48 * ppf;
+	g.fillStyle = "#3a3d46";
+	for (let y = along / 2; y < h; y += along) {
+		g.fillRect(0, y, w, Math.max(1, 1.6 * ppf));
+	}
+	g.fillStyle = "#2f323a";
+	for (let x = across / 2; x < w; x += across) {
+		g.fillRect(x, 0, Math.max(1, 1.2 * ppf), h);
+	}
+	const rng = makeCourtRng(`roof|${seed}`);
+	for (let y = along / 2; y < h; y += along * 2) {
+		for (let x = across / 4; x < w; x += across / 2) {
+			const r = (1.6 + rng() * 0.4) * ppf;
+			const lamp = g.createRadialGradient(x, y, 0, x, y, r * 2.2);
+			lamp.addColorStop(0, "rgba(255,252,236,1)");
+			lamp.addColorStop(0.35, "rgba(255,248,220,0.7)");
+			lamp.addColorStop(1, "rgba(255,248,220,0)");
+			g.fillStyle = lamp;
+			g.fillRect(x - r * 2.2, y - r * 2.2, r * 4.4, r * 4.4);
+		}
+	}
+	return c;
+};
+
 export type StadiumPaint = {
 	style: StadiumStyle;
 	wall: HTMLCanvasElement;
@@ -478,6 +537,7 @@ export type StadiumPaint = {
 	endWall: HTMLCanvasElement;
 	endStands: [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement];
 	board: HTMLCanvasElement;
+	roof?: HTMLCanvasElement;
 };
 
 export const paintStadium = (
@@ -486,8 +546,9 @@ export const paintStadium = (
 	seed: string,
 	crowd?: { att?: number; capacity?: number },
 	logo?: HTMLCanvasElement,
+	venue: Venue = venueFor(home),
 ): StadiumPaint => {
-	const style = stadiumStyleFor(home, seed);
+	const style = stadiumStyleFor(home, venue);
 	const fill =
 		crowd?.att !== undefined && crowd.capacity
 			? Math.min(0.97, Math.max(0.04, crowd.att / crowd.capacity))
@@ -538,15 +599,22 @@ export const paintStadium = (
 		),
 		endStands,
 		board: paintVideoBoard(END_BOARDS[0].w, END_BOARDS[0].h, home, logo),
+		...(style.roof === "dome"
+			? { roof: paintRoof(ROOF.w, ROOF.h, ROOF.w / (X1 - X0), seed) }
+			: {}),
 	};
 };
 
 // The sky over the open bowl: night, a deep blue going black overhead, a
-// glow off the lights low down.
+// glow off the lights low down. (Or a roof over it.)
 export const drawSky = (ctx: CanvasRenderingContext2D, style: StadiumStyle) => {
 	const { width: w, height: h } = ctx.canvas;
 	const g = ctx.createLinearGradient(0, 0, 0, h * 0.6);
-	if (style.sky === "night") {
+	if (style.roof === "dome") {
+		// (Under the roof - drawn over this - and the dark of it.)
+		g.addColorStop(0, "#141519");
+		g.addColorStop(1, "#1d1f25");
+	} else if (style.sky === "night") {
 		g.addColorStop(0, "#04060d");
 		g.addColorStop(0.7, "#0d1424");
 		g.addColorStop(1, "#1b2236");
