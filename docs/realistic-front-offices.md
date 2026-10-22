@@ -421,7 +421,9 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   one a 61, a good one a 66 (arena, 1,380 team-summers). Priced the same for
   every team, a bad team valued room it could not use, cleared it by giving
   good players away and stayed bad. A team's room is priced by the share of
-  its games its roster alone is expected to win that season.
+  its games its roster alone is expected to win that season, drifting back
+  toward the middle seasons out as finishes do - a bad roster now is not a
+  bad team for good, and a long contract eats room it may want.
 
 - **CPU teams sign by the valuation they trade with** (owner's call): what
   signing a player on given terms adds to the team's title chances, less the
