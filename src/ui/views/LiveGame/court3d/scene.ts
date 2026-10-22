@@ -53,7 +53,7 @@ import { COURT_W, RIM_Z, seatSpot, type Pt3, type Side } from "./geometry.ts";
 import { drawPixelText, pixelTextWidth } from "./pixelFont.ts";
 import type { Replay } from "./playback.ts";
 import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
-import { ANIMS, type AnimName, type Body } from "./poses.ts";
+import { ANIMS, bounceAt, isGait, type AnimName, type Body } from "./poses.ts";
 import {
 	drawSprite,
 	startFrame,
@@ -82,15 +82,65 @@ export const momentAt = (
 	t: number,
 	roster: { pid: number }[],
 	bodyFor: (pid: number) => Body,
+	// How fast it is being shown, and the picture's own clock (ms) - see
+	// fastLegs.
+	look?: { rate: number; wall: number },
 ): Moment => {
 	const players: PlayerState[] = [];
 	for (const p of roster) {
 		const st = evalPlayer(tl, p.pid, t);
 		if (st.shown) {
-			players.push(withBody(st, bodyFor(p.pid)));
+			players.push(
+				withBody(
+					look && look.rate > FF_FROM ? fastLegs(st, look) : st,
+					bodyFor(p.pid),
+				),
+			);
 		}
 	}
 	return { t, players, ball: evalBall(tl, t, bodyFor) };
+};
+
+// RUN THROUGH QUICK. Many times real speed, a frame of the picture is a good
+// part of a stride on from the last - each one a different moment of it, his
+// legs flickering from one to another at random. Past a few times real
+// speed, a stride's legs go round on the picture's own clock instead - a
+// quick, even stride as he goes - eased over from his own between FF_FROM
+// and FF_ALL times real speed.
+const FF_FROM = 3;
+const FF_ALL = 6;
+// One stride on the picture's clock (ms).
+const FF_STRIDE_MS = 320;
+const BALL_CYCLES = new Set<AnimName>([
+	"dribble",
+	"dribbleWalk",
+	"carry",
+	"post",
+]);
+const fastLegs = (
+	st: PlayerState,
+	look: { rate: number; wall: number },
+): PlayerState => {
+	if (ANIMS[st.anim].kind !== "cycle") {
+		return st;
+	}
+	const u = Math.min(1, (look.rate - FF_FROM) / (FF_ALL - FF_FROM));
+	const w = u * u * (3 - 2 * u);
+	// (Each man on his own step.)
+	const phase = look.wall / FF_STRIDE_MS + ((st.pid * 0.618034) % 1);
+	// (His arms go with his legs once they are mostly on the picture's clock
+	// - unless they are busy with the ball.)
+	const arms = w >= 0.5 && !BALL_CYCLES.has(st.anim);
+	return {
+		...st,
+		...(arms ? { phase } : {}),
+		stride: { anim: st.anim, phase, w },
+		// (And the bob of it with them - not him jumping up and down at
+		// random.)
+		...(isGait(st.anim)
+			? { z: st.z + (bounceAt(st.anim, phase) - st.z) * w }
+			: {}),
+	};
 };
 
 // The building's pictures, painted once a game.

@@ -1144,6 +1144,7 @@ const Court3D = ({
 							replay ? replay.at : s.t,
 							rosterRef.current,
 							bodyOfPid,
+							replay ? undefined : { rate, wall: now },
 						);
 			// Over a break, a look round the building; at the starting lineups,
 			// each man called.
