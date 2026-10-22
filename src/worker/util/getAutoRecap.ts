@@ -3695,7 +3695,9 @@ const gameStory = (
 		covers.add("secondHalf");
 		if (shape.ot > 0) {
 			out.push(
-				`${W} outscored ${l} ${w2}-${l2} after the break to force overtime.`,
+				// Not "to force overtime": the side that tied it at the end may
+				// have been the other one, and the finish says who.
+				`${W} won the second half ${w2}-${l2}, and it went to overtime.`,
 			);
 		} else if (wonInLast) {
 			out.push(lastQuarterTurn());
@@ -4896,7 +4898,7 @@ const freeThrowNote = (
 			[
 				`${cap(theNick(shape.loser))} had the better of the whistle - ${l.fta} free throws to ${w.fta} - and still lost.`,
 				`${cap(theNick(shape.loser))} shot ${l.fta} free throws to ${w.fta} and lost anyway.`,
-				`The line was no help to ${theNick(shape.loser)}: ${l.fta} attempts to ${w.fta}, and a loss.`,
+				`${cap(theNick(shape.loser))} shot ${l.fta} free throws to ${w.fta} and still lost.`,
 			],
 			"ftGapLoser",
 		);
@@ -6450,12 +6452,29 @@ export const getAutoRecap = (game: RecapGame): string => {
 	// The defensive note can be either side's man, so it waits until the
 	// losers' best has had his sentence - named first for his steals, he
 	// came back a sentence later as "His 18 points...".
+	// It goes in the paragraph of the side it is about: "Jalen Green
+	// collected 5 steals for the Clippers" closed the losers' paragraph after
+	// their two men and their shooting, a winner's note among the losers.
 	for (const beat of shuffle(rng, [
 		() => defensiveNote(shape, rng, said),
 		() => foulOutNote(shape, said, rng),
 		() => minutesNote(shape, said),
 	])) {
-		addLoser(beat);
+		if (losers.length >= 5) {
+			break;
+		}
+		const text = beat();
+		if (!text) {
+			continue;
+		}
+		const aboutWinner =
+			shape.winner.players.some((p) => text.startsWith(p.name)) ||
+			(text.includes(nick(shape.winner)) && !text.includes(nick(shape.loser)));
+		if (aboutWinner) {
+			addWinner(() => text, 6);
+		} else {
+			addLoser(() => text);
+		}
 	}
 
 	// --- 4. What it means: the series, the season, who was missing, and

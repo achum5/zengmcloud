@@ -1154,18 +1154,22 @@ export const seriesShapeBeat = (
 		const roadLosses = prior.filter((g) => !g.won && !g.home).length;
 		options.push(
 			roadWins === 1
-				? pick(
-						rng,
-						[
-							`It was ${poss(wn)} first win on ${poss(ln)} floor in the series.`,
-							// "Finally" needs a wait behind it - after ONE road loss it
-							// read like relief nobody had earned.
-							roadLosses >= 2
-								? `${W} finally won one on the road, after ${numWord(roadLosses)} losses there.`
-								: `${W} took ${roadLosses > 0 ? "a" : "the first"} road game of the series.`,
-						],
-						"seriesFirstRoadWin",
-					)
+				? // "Their first win on the Hornets' floor in the series" of the
+					// first game there is true of every road team that wins one.
+					roadLosses === 0
+					? `${W} took the first road game of the series.`
+					: pick(
+							rng,
+							[
+								`It was ${poss(wn)} first win on ${poss(ln)} floor in the series.`,
+								// "Finally" needs a wait behind it - after ONE road loss it
+								// read like relief nobody had earned.
+								roadLosses >= 2
+									? `${W} finally won one on the road, after ${numWord(roadLosses)} losses there.`
+									: `${W} took a road game of the series.`,
+							],
+							"seriesFirstRoadWin",
+						)
 				: pick(
 						rng,
 						[
@@ -1220,7 +1224,7 @@ export const seriesShapeBeat = (
 				rng,
 				[
 					`Across the series ${ahead} have outscored ${behind} by ${Math.abs(forTotal - againstTotal)}.`,
-					`Over ${numWord(margins.length)} games the aggregate favors ${ahead} by ${Math.abs(forTotal - againstTotal)}.`,
+					`${cap(ahead)} are +${Math.abs(forTotal - againstTotal)} over the ${numWord(margins.length)} games.`,
 				],
 				"seriesAggregate",
 			),

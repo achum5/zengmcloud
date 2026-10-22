@@ -7206,6 +7206,41 @@ test("a veteran's past is told only on a night that fits it", () => {
 	assert.ok(clock > 0 && clock <= 25, `told ${clock} times`);
 });
 
+// "Jalen Green collected 5 steals for the Clippers" closed the losers'
+// paragraph, after their two men and their shooting.
+describe("a winner's steals sit with the winners", () => {
+	test("never at the end of the losers' paragraph", () => {
+		for (let gid = 6000; gid < 6040; gid++) {
+			const win = realisticTeam(
+				{ tid: 1, name: "Clippers", abbrev: "LAC", pts: 103 },
+				player({ name: "Zeke Foster", pts: 28, reb: 8, fg: 10, fga: 19 }),
+			);
+			win.players.push(
+				player({ name: "Jalen Green", pts: 9, reb: 3, stl: 5, fg: 4, fga: 9 }),
+			);
+			const lose = realisticTeam(
+				{ tid: 2, name: "Mavericks", abbrev: "DAL", pts: 97 },
+				player({
+					name: "Lonnie Dunn",
+					pts: 19,
+					reb: 14,
+					ast: 12,
+					fg: 8,
+					fga: 18,
+				}),
+			);
+			const recap = getAutoRecap(
+				game({ gid, teams: [win, lose], winnerTid: 1 }),
+			);
+			// The losers' sentences start with Lonnie Dunn's line; nothing
+			// about the winners comes after it.
+			const loserAt = recap.indexOf("Lonnie Dunn");
+			const stealsAt = recap.indexOf("Jalen Green");
+			assert.ok(stealsAt >= 0 && stealsAt < loserAt, recap);
+		}
+	});
+});
+
 // "Jalen King's 24 points and 10 rebounds not enough as the Jazz handle the
 // 76ers" - in a 19-point loss. A losing line is the headline only when it
 // is big for the margin.

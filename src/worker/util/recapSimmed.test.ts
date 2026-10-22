@@ -209,6 +209,10 @@ describe("simmed recaps", () => {
 				/after going \d+-of-\d+/,
 				/\d+ [a-z]+ for the [A-Z][\w ]*, and \d+ [a-z]/,
 				/including \d+-of-\d+ from (?:three|the line) (?:as|in)\b/,
+				// The side that tied it at the end may have been the other one.
+				/after the break to force overtime/,
+				// Soccer talk, and "and a loss" as an afterthought.
+				/aggregate favors|was no help to .*, and a loss/,
 			]) {
 				assert.notMatch(recap, bad, `gid ${gid}\n${recap}`);
 			}
@@ -310,6 +314,30 @@ describe("simmed recaps", () => {
 				/(?:trail(?:ed)? again|going into the \w+) and (?:forced|hit|made|got|finished|piled|racked|shared|knocked|won the glass|out-rebounded|controlled|turned|hounded)/,
 				`gid ${gid}\n${recap}`,
 			);
+		}
+	});
+
+	// "Jalen Green collected 5 steals for the Clippers" closed the losers'
+	// paragraph: a note goes with the side it is about.
+	test("a winner's steals or blocks are not told among the losers", () => {
+		for (const { gid, recap, game } of pairs) {
+			const { w, l } = sides(game);
+			for (const para of recap.split("\n\n").slice(2)) {
+				const first = para.split(/(?<=\.)\s+/)[0] ?? "";
+				const losersPara =
+					l.players.some((p) => first.includes(p.name)) &&
+					!w.players.some((p) => first.includes(p.name));
+				if (!losersPara) {
+					continue;
+				}
+				assert.notMatch(
+					para,
+					new RegExp(
+						String.raw`\d+ steals for the ${w.name}|The ${w.name} (?:blocked|sent back|finished with \d+ blocks)|(?:${w.players.map((p) => p.name).join("|")}) protected the rim`,
+					),
+					`gid ${gid}\n${recap}`,
+				);
+			}
 		}
 	});
 

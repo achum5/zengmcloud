@@ -1363,6 +1363,28 @@ describe("what kind of series it has been", () => {
 		assert.match(text, /road|away from home|floor/);
 	});
 
+	// "It was the Warriors' first win on the Hornets' floor in the series" -
+	// of Game 3, the first game there.
+	test("winning the first game on the road is not a first win there", () => {
+		const w = team({
+			tid: 1,
+			name: "Warriors",
+			pts: 128,
+			seriesSoFar: [sg(true, true, 110, 100, 96), sg(true, true, 108, 101, 98)],
+		});
+		const l = team({ tid: 2, name: "Hornets", pts: 125 });
+		const all = shapes((rng) =>
+			seriesShapeBeat(playoffGame(w, l, false).ctx, rng),
+		);
+		for (const text of all) {
+			assert.notMatch(text, /first win on/, text);
+		}
+		assert.ok(
+			[...all].some((s) => /first road game/.test(s)),
+			[...all].join("\n"),
+		);
+	});
+
 	test("a series of one-possession games, and the night that ended it", () => {
 		const tight = team({
 			tid: 1,
