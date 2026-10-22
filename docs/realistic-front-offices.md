@@ -322,7 +322,8 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   player is on the table, not just a team's best. A pick is never worth less
   than nothing: a drafted player not worth a roster place is cut, which costs
   nothing straight after the draft. Rosters only have to fit once games are
-  played.
+  played. A side gives up to three assets - three of its six most valuable
+  for a star is a deal humans make all the time.
 - **Offseason trading windows** (owner's call): every team shops once the
   draft order is set, right after the draft, and once teams have re-signed
   their own players, and free agency's days have more shopping. In the NBA
