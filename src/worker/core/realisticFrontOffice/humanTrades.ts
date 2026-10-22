@@ -16,7 +16,7 @@ import {
 	type Asset,
 	type TeamState,
 } from "./market.ts";
-import type { LeagueOutlook } from "./outlook.ts";
+import { ensureRetention, type LeagueOutlook } from "./outlook.ts";
 
 // TRADING WITH HUMANS. A CPU team judges a human's offer exactly as it judges
 // a deal with another CPU team - what it does to its title chances, the trade
@@ -50,6 +50,9 @@ export type Verdict =
 			players: Player[];
 			picks: DraftPick[];
 	  };
+
+export const playersIn = (assets: readonly Asset[]) =>
+	assets.flatMap((x) => (x.kind === "player" ? [x.p] : []));
 
 export const assetsFor = (
 	t: TeamState,
@@ -90,6 +93,8 @@ const bestElsewhere = async (
 			continue;
 		}
 		const b = await loadTeam(outlook, tid);
+		await ensureRetention(outlook, playersIn(giving), tid);
+		await ensureRetention(outlook, b.tradablePlayers, a.tid);
 		const worthToB = priceFor(outlook, b, [], giving);
 		if (worthToB < MIN_GAIN) {
 			continue;
@@ -157,6 +162,9 @@ export const judgeHumanOffer = async (
 	if (!giving || !getting) {
 		return { kind: "no" };
 	}
+	// How each side's players would feel about re-signing with the other.
+	await ensureRetention(outlook, playersIn(getting), a.tid);
+	await ensureRetention(outlook, playersIn(giving), h.tid);
 
 	// Better than keeping what it has, by more than its margin of error counts
 	// for in a deal with a human.

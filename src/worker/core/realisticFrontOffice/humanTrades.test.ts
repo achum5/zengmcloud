@@ -6,6 +6,8 @@ import { g } from "../../util/index.ts";
 import { tradeDifficulty } from "../../util/difficulty.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import { judgeHumanOffer } from "./humanTrades.ts";
+import { currentOutlook } from "./market.ts";
+import { retentionKey } from "./outlook.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 
@@ -73,6 +75,23 @@ test(
 		// Taken, unless another team would give more for the scrub - or it would
 		// rather wait for the deadline.
 		assert.notStrictEqual(verdict.kind, "no");
+	},
+);
+
+test(
+	"a player coming over is priced on how he would feel about his new team",
+	{ timeout: 120_000 },
+	async () => {
+		const mine = await roster(userTid);
+		const theirs = await roster(cpuTid);
+		const outlook = await currentOutlook();
+		const pid = mine[1]!.pid;
+		await judgeHumanOffer(
+			{ tid: cpuTid, pids: [theirs[1]!.pid], dpids: [] },
+			{ tid: userTid, pids: [pid], dpids: [] },
+		);
+		assert.isTrue(outlook.retention.has(retentionKey(pid, cpuTid)));
+		assert.isTrue(outlook.retention.has(retentionKey(theirs[1]!.pid, userTid)));
 	},
 );
 

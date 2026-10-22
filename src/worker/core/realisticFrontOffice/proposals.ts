@@ -30,6 +30,7 @@ import {
 	type TeamState,
 } from "./market.ts";
 import {
+	ensureRetention,
 	franchiseValue,
 	teamStrengths,
 	type LeagueOutlook,
@@ -160,6 +161,9 @@ export const bestProposal = async (
 	} = {},
 ): Promise<Proposal | undefined> => {
 	const factor = humanTradeSettings.marginFactor;
+	// How each side's players would feel about re-signing with the other.
+	await ensureRetention(outlook, human.tradablePlayers, cpu.tid);
+	await ensureRetention(outlook, cpu.tradablePlayers, human.tid);
 	const pub = publicTeam(outlook, human);
 	const kept = new Set([...keep.give, ...keep.get].map(assetKey));
 	const cpuAssets = tableAssets(cpu).filter(
