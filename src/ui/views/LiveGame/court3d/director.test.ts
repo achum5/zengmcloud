@@ -220,7 +220,8 @@ describe("3D director", () => {
 			}
 			prev = cur;
 		}
-	}, 180_000);
+		// (Every 20 ms of a whole game: three minutes and more of work.)
+	}, 300_000);
 
 	// Picked up off the dribble, switched hand to hand, scooped off the
 	// floor, thrown off a dribble: from one move to the next the ball goes
@@ -1417,6 +1418,75 @@ describe("3D director", () => {
 		assert.isAbove(mean(actions.long), mean(actions.short) + 2);
 	}, 120_000);
 
+	test("on the break the ball goes one way - nobody takes it back up the floor to bring it in again", () => {
+		let breaks = 0;
+		const back: string[] = [];
+		for (const seed of [
+			"break",
+			"break2",
+			"break3",
+			"break4",
+			"break5",
+			"break6",
+			"break7",
+			"break8",
+		]) {
+			const { events, tl } = compile(seed, 160);
+			tl.beats.forEach((b, j) => {
+				const e = events[b.i]!;
+				if (!/^fga/.test(e.type) || j === 0) {
+					return;
+				}
+				// Quick off a board, a steal or a basket.
+				const prev = tl.beats[j - 1]!;
+				const p = events[prev.i]!;
+				if (
+					!/^(drb|stl|fg[A-Z]|tp)/.test(p.type) ||
+					typeof e.clock !== "number" ||
+					typeof p.clock !== "number" ||
+					p.clock - e.clock >= 9
+				) {
+					return;
+				}
+				const shot = tl.ball.find(
+					(s) =>
+						s.kind === "fly" &&
+						s.t0 >= b.actionStart - 300 &&
+						"pid" in s.from &&
+						!("pid" in s.to),
+				);
+				if (shot?.kind !== "fly" || "pid" in shot.to) {
+					return;
+				}
+				const rim = {
+					x: shot.to.x < COURT_W / 2 ? rimX(0) : rimX(1),
+					y: COURT_H / 2,
+				};
+				breaks += 1;
+				for (const tr of tl.tracks.values()) {
+					for (const m of tr.moves) {
+						// Out on the floor in the frontcourt with it, back the way
+						// he came. (Not a step or two back out of the lane, facing
+						// the rim, to throw it.)
+						const out0 = Math.abs(m.from.x - rim.x);
+						if (
+							m.anim === "dribble" &&
+							m.t0 >= prev.actionStart &&
+							m.t0 < b.actionStart &&
+							out0 < COURT_W / 2 &&
+							Math.hypot(m.from.x - rim.x, m.from.y - rim.y) >= 19 &&
+							Math.abs(m.to.x - rim.x) - out0 > 8
+						) {
+							back.push(`${seed} ${Math.round(m.t0)} ${tr.pid}`);
+						}
+					}
+				}
+			});
+		}
+		assert.isAbove(breaks, 10);
+		assert.deepEqual(back, []);
+	}, 120_000);
+
 	test("whoever holds the ball is on the floor", () => {
 		const { tl } = compile("holder", 140);
 		for (const t of sampleTimes(tl, 50)) {
@@ -1959,11 +2029,14 @@ describe("3D director", () => {
 		for (const seed of ["a", "b", "c", "d"]) {
 			const { tl } = compile(seed, 150);
 			for (const s of tl.ball) {
+				// (Up at the rim - not the game ball thrown up at the horn by
+				// whoever has it, wherever he is.)
 				if (
 					s.kind !== "fly" ||
 					!("pid" in s.from) ||
 					"pid" in s.to ||
-					s.to.z < 8.5
+					s.to.z < 8.5 ||
+					s.to.z > RIM_Z + 4
 				) {
 					continue;
 				}

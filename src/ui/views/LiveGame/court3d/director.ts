@@ -583,6 +583,9 @@ const SPIN_FTPS = 10;
 // past the middle of it there he goes up (feet).
 const REVERSE_SHARE = 0.5;
 const REVERSE_OUT = 2.4;
+// ...and the ball, in the hand up and back at the rim, no further behind the
+// middle of it than this as it leaves his hand (feet): clear of the glass.
+const REVERSE_BALL_BEHIND = 0.4;
 // Going up for a finish beside the rim, he is at least this far (feet) out
 // in front of the middle of it: his hand, reaching out to the side with the
 // ball, still in front of the glass - not round behind it, where the ball can
@@ -1881,9 +1884,15 @@ class Director {
 		const due = next
 			? next.t0 - runMs(dist(R, this.posAt(pid, next.t0)), SPRINT) - 100
 			: Infinity;
+		// (One he starts a moment after he is back counts too: he does not
+		// slide off across the floor in the middle of it.)
 		let hold = stepped;
 		for (const a of [...tr.acts].sort((x, y) => x.t0 - y.t0)) {
-			if (!IN_PLACE.has(a.anim) || a.t1 <= leave || a.t0 >= hold) {
+			if (
+				!IN_PLACE.has(a.anim) ||
+				a.t1 <= leave ||
+				a.t0 >= Math.max(hold, stepped + 1000)
+			) {
 				continue;
 			}
 			if (a.t0 < stepped) {
@@ -4838,6 +4847,25 @@ class Director {
 		if (!called || called.play.id === run.play.id) {
 			return undefined;
 		}
+		// A screen it sets is used: the man it is for comes off it before they
+		// flow into the next set - not a screen set for the man with the ball
+		// and him stood there with it, everybody then off to somewhere else.
+		const { steps } = called.play;
+		let k = Math.min(n, steps.length);
+		const last = steps[k - 1] ?? [];
+		const after = steps[k] ?? [];
+		if (
+			last.some(
+				(a) =>
+					a.type === "screen" &&
+					after.some(
+						(b) =>
+							(b.type === "dribble" || b.type === "move") && b.who === a.for,
+					),
+			)
+		) {
+			k += 1;
+		}
 		return {
 			run: {
 				play: called.play,
@@ -4848,7 +4876,7 @@ class Director {
 				from: 0,
 				...(gap === undefined ? {} : { gap }),
 			},
-			steps: Math.min(n, called.play.steps.length),
+			steps: k,
 		};
 	}
 
@@ -5873,6 +5901,16 @@ class Director {
 			(P.x - COURT_W / 2) * dir < 3
 		) {
 			P = { x: COURT_W / 2 + dir * 3.5, y: P.y };
+		}
+		// Nor, on the break, back up the floor at all to bring it up: ahead of
+		// it already - the ball won up the floor - he goes on from where he is.
+		// (Not out to the arc and back in again with it.)
+		if (
+			kind === "advance" &&
+			run.play.cat === "break" &&
+			(P.x - this.posOf(pid).x) * dir < -BREAK_NO_BACK
+		) {
+			return start;
 		}
 		this.keepComing(pid, start);
 		// The hand on the side he goes (away from his man). Coming off a ball
@@ -9255,6 +9293,19 @@ class Director {
 							x: P1.x + (toRim.x / len) * step,
 							y: P1.y + (toRim.y / len) * step,
 						});
+				if (reverse) {
+					// (Going along the baseline, the hand up and back at the rim
+					// reaches out toward it: he goes up far enough out from it
+					// that the ball, not just he, is in front of the glass.)
+					const h = releaseAt("reverseLayup", letGo);
+					const hs = offLeft ? -h.s : h.s;
+					const bx = going.x * h.f + going.y * hs;
+					const short =
+						-REVERSE_BALL_BEHIND - ((rim.x - far.x) * dir - bx * dir);
+					if (short > 0) {
+						S = clampPt({ x: far.x - dir * short, y: far.y });
+					}
+				}
 				if (!reverse) {
 					// (In front of the glass, and out from under the ring: see
 					// FINISH_FRONT.)
@@ -18400,11 +18451,22 @@ class Director {
 			if (!worst || worst.d >= GIVE_WAY + GIVE_WAY_SLACK) {
 				return;
 			}
-			// Off to his side of the way the shooter is going then.
+			// Off to his side of the way the shooter is going then - the way
+			// they are going by each other: a man running across his way steps
+			// off the line they close on, not on along it, into him again a
+			// moment later.
 			const A = this.spotAt(sh, worst.t - 120);
 			const B = this.spotAt(sh, worst.t + 120);
+			const OA = this.spotAt(tr, worst.t - 120);
+			const OB = this.spotAt(tr, worst.t + 120);
+			const rel = {
+				x: B.x - A.x - (OB.x - OA.x),
+				y: B.y - A.y - (OB.y - OA.y),
+			};
 			const u =
-				dist(A, B) > 0.2 ? unitVec(A, B) : unitVec(worst.S, rimPt(sh.team));
+				Math.hypot(rel.x, rel.y) > 0.2
+					? unitVec({ x: 0, y: 0 }, rel)
+					: unitVec(worst.S, rimPt(sh.team));
 			const n = { x: -u.y, y: u.x };
 			const off = (worst.O.x - worst.S.x) * n.x + (worst.O.y - worst.S.y) * n.y;
 			const n0 = ta - GIVE_WAY_MS;
