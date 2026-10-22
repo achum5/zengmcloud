@@ -3986,21 +3986,42 @@ const ballOn = (
 				const p = underPalm(hand === "R" ? sk.armR : sk.armL);
 				return { ...p, u: p.u + me.z };
 			};
-			return {
-				...bodyPoint(
-					{ ...me, z: 0 },
-					moveBallAt(
-						ph,
-						MOVE_BALL[move].letGo,
-						MOVE_BALL[move].down,
-						{ ...moveFloor(body, move, to, still), u: BALL_R },
-						under,
-						from,
-						to,
-					),
+			const ball = bodyPoint(
+				{ ...me, z: 0 },
+				moveBallAt(
+					ph,
+					MOVE_BALL[move].letGo,
+					MOVE_BALL[move].down,
+					{ ...moveFloor(body, move, to, still), u: BALL_R },
+					under,
+					from,
+					to,
 				),
-				holder: seg.pid,
-			};
+			);
+			// Straight out of both hands, the first bounce goes down from
+			// where he had it - carried along with him - not over into the one
+			// hand in a frame.
+			const down = MOVE_BALL[move].down;
+			if (
+				prev?.kind === "hold" &&
+				prev.pid === seg.pid &&
+				prev.style === "hold" &&
+				t - seg.t0 < CROSS_MS &&
+				ph < down
+			) {
+				const was = left();
+				const then = evalPlayer(tl, seg.pid, seg.t0 - BEFORE);
+				const e = ease(ph / down);
+				const x = was.x + st.x - then.x;
+				const y = was.y + st.y - then.y;
+				return {
+					x: x + (ball.x - x) * e,
+					y: y + (ball.y - y) * e,
+					z: was.z + (ball.z - was.z) * e,
+					holder: seg.pid,
+				};
+			}
+			return { ...ball, holder: seg.pid };
 		}
 		if (seg.style === "dribble") {
 			const { ph, from, to, first, start, origin } = bounceOf(tl, i, t);
