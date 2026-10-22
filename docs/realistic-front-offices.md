@@ -188,7 +188,17 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   day, and other teams (humans included) can bid on it. Bidding wars are fine;
   a bid cannot be withdrawn. Everything is public - every team sees the bids.
 - **Which deals get a window** (every deal, or only notable ones) is a user
-  setting.
+  setting; notable ones by default (owner's call) - a deal with one of a
+  team's five best players or a first-round pick. The rest go through at
+  once.
+- **Bids are for either side's assets** (owner's call): any team can offer
+  either team more for what it is giving up. Each side takes the best offer
+  for its assets by its own read when the window closes, which may break the
+  deal.
+- **Humans see held deals on a Pending Deals list** (owner's call), on the
+  Trade Proposals page, with a notification. Bidding opens the trade screen
+  with that team; the offer is judged like any other and, if it is the best,
+  holds until the window closes.
 - **A higher bar for a human's deal** (owner's call): a human picks which
   deals to offer, so finds the ones the model gets wrong in his favour; the
   margin of error counts 1.5 times as much in a deal with a human, tuned by
