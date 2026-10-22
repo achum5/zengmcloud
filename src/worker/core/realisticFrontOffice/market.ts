@@ -53,6 +53,8 @@ import type { TradedAway } from "./tradePenalty.ts";
 
 // Teams looking for a deal each day, and how many other teams each one calls.
 const SHOPPERS_PER_DAY = 2;
+// Teams a day that look again at what they would offer the human teams.
+const PROPOSERS_PER_DAY = 1;
 const PARTNERS_PER_SHOPPER = 6;
 
 // The smallest gain, in titles, that makes a trade worth making for either
@@ -899,11 +901,12 @@ const shop = async (numShoppers: number) => {
 		}
 	}
 
-	// Then what the day's first shoppers would offer the human teams - the
-	// usual two a day even when every team shops, which would take seconds.
+	// Then what the day's first shopper would offer the human teams: one team
+	// a day, each about every month - looking at a deal with a human takes
+	// about a quarter of a second.
 	const humanTids = g.get("userTids").filter((tid) => !tids.includes(tid));
 	if (humanTids.length > 0) {
-		for (const tid of shoppers.slice(0, SHOPPERS_PER_DAY)) {
+		for (const tid of shoppers.slice(0, PROPOSERS_PER_DAY)) {
 			const fresh = await refreshProposals(outlook, tid, humanTids);
 			for (const humanTid of fresh) {
 				await notifyProposal(tid, humanTid);
