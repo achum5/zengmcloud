@@ -140,8 +140,9 @@ export type LeagueOutlook = {
 	// finished, for its pick in it.
 	finalPlace?: Map<number, number>;
 	// The share of its games each team is expected to win each season, on its
-	// roster as it stands, against the league's - what its room buys in free
-	// agency goes by it (payroll.ts).
+	// roster as it stands, against the league's, drifting back toward the
+	// middle seasons out - what its room buys in free agency goes by it
+	// (payroll.ts).
 	winShare?: Map<number, number[]>;
 	// COLA (draftType "cola", with the lottery): the first few picks are
 	// drawn among the teams outside the last three playoff rounds, each by
@@ -1624,10 +1625,20 @@ export const buildOutlook = async ({
 				teams.reduce((a, t) => a + first.get(t.tid)![y]!, 0) /
 				Math.max(1, teams.length),
 		);
+		// Seasons out, teams drift back toward the middle as their finishes
+		// do (FINISH_KEPT): a bad roster now is not a bad team for good, and
+		// its room later is worth more than its roster alone says.
 		base.winShare = new Map(
 			teams.map((t) => [
 				t.tid,
-				first.get(t.tid)!.map((x, y) => winProbability(x - means[y]!)),
+				first
+					.get(t.tid)!
+					.map(
+						(x, y) =>
+							0.5 +
+							tableAt(FINISH_KEPT, y + 1 - (inSeason ? progress : 0)) *
+								(winProbability(x - means[y]!) - 0.5),
+					),
 			]),
 		);
 	}
