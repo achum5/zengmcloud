@@ -2178,7 +2178,7 @@ export const PLAYBOOK: PlaySource[] = [
 			"1 rim layup rim 1 - - Transition 3 | 1 dribble rim attack",
 			"1 post floater R_lane 1 - - Transition 1",
 			"1 mid pull_up high_post 0 - - Transition 1 | 1 dribble high_post attack",
-			"2 post hook R_block 1 1 bounce Transition 1 | 2 move R_block seal",
+			"2 post hook R_block 1 1 bounce Transition 1 | 2 move R_block flash",
 		],
 		risks: ["1 1 lost", "1 1 charge"],
 	},

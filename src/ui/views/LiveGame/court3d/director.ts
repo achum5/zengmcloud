@@ -16,6 +16,7 @@ import {
 	COURT_H,
 	COURT_W,
 	dist,
+	FT_LINE_DEPTH,
 	FT_SHOOTER_DEPTH,
 	ftDefenseSpot,
 	ftOfficialBall,
@@ -6226,6 +6227,20 @@ class Director {
 		return Math.max(tx + 350, set);
 	}
 
+	// Where a man down low with the ball goes to feed the post from, the
+	// post man at S: up to the elbow his side - a high-low, a couple of
+	// dribbles - not all the way back out to the 3-point line on the wing
+	// to throw it back in, the man in the post stood waiting on it. (The
+	// wing, if a teammate is at the elbow already.)
+	private entryFrom(team: Side, pid: number, S: Pt): Pt {
+		const side = S.y >= COURT_H / 2 ? 1 : -1;
+		const elbow = spot(team, FT_LINE_DEPTH, COURT_H / 2 + side * 8);
+		const taken = this.slots(team).some(
+			(m) => m !== pid && dist(this.posOf(m), elbow) < 6,
+		);
+		return taken ? spot(team, 17.5, COURT_H / 2 + side * 19) : elbow;
+	}
+
 	// When he took the handoff he is going on with, if he has the ball off
 	// one this step or the last (see playHandoff).
 	private handedOn(run: Running, pid: number): number | undefined {
@@ -7880,19 +7895,18 @@ class Director {
 				if (fed && !entry) {
 					this.rng();
 				}
-				// Fed from the wing on his side - not handed it from a step away
-				// by a man down in the lane with him.
+				// Fed from up the floor - not handed it from a step away by a
+				// man down in the lane with him (see entryFrom).
 				const F = this.posOf(from);
 				if (
 					entry &&
 					this.holder === from &&
 					(dist(F, S) < 11 || dist(F, rim) < 11)
 				) {
-					const side = S.y >= COURT_H / 2 ? 1 : -1;
 					this.hold(from, t, "dribble");
 					t = this.go(
 						from,
-						spot(team, 17.5, COURT_H / 2 + side * 19),
+						this.entryFrom(team, from, S),
 						t,
 						DRIBBLE,
 						"dribble",
@@ -8556,8 +8570,8 @@ class Director {
 					// for it, and it comes in to him as he has him sealed - then
 					// he backs him down.
 					const entry = zone === "lowPost" && this.rng() < 0.9;
-					// Fed from the wing on his side - not handed it from a step
-					// away by a man down in the lane with him.
+					// Fed from up the floor - not handed it from a step away by a
+					// man down in the lane with him (see entryFrom).
 					const H = this.posOf(handler);
 					const P = spotNow();
 					if (
@@ -8565,10 +8579,14 @@ class Director {
 						(dist(H, P) < 11 || dist(H, rim) < 11) &&
 						this.holder === handler
 					) {
-						const side = P.y >= COURT_H / 2 ? 1 : -1;
-						const W = spot(team, 17.5, COURT_H / 2 + side * 19);
 						this.hold(handler, t, "dribble");
-						t = this.go(handler, W, t, DRIBBLE, "dribble");
+						t = this.go(
+							handler,
+							this.entryFrom(team, handler, P),
+							t,
+							DRIBBLE,
+							"dribble",
+						);
 					}
 					const arrive = this.go(shooter, P, t, RUN, "run");
 					const d = dist(this.posOf(handler), P);
