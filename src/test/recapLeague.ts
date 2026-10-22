@@ -279,6 +279,12 @@ export const simRecapLeague = async ({
 		return processTeam(t, teamSeason, ps);
 	};
 
+	// The injuries this game's sim handed out, by pid, for its box score.
+	const newInjuries = new Map<
+		number,
+		{ type: string; gamesRemaining: number }
+	>();
+
 	const buildGameRow = (
 		result: any,
 		gameId: number,
@@ -313,11 +319,21 @@ export const simRecapLeague = async ({
 					out[k] = t.stat[k] ?? 0;
 				}
 				for (const sp of t.player) {
+					// Hurt in this game: the box score carries the new injury
+					// marked as such, as game/writePlayerStats does, so a recap
+					// can say who went down.
+					const hurt = newInjuries.get(sp.id);
 					const line: any = {
 						pid: sp.id,
 						name: sp.name,
 						pos: sp.pos,
-						injury: sp.injury,
+						injury: hurt
+							? {
+									type: hurt.type,
+									gamesRemaining: hurt.gamesRemaining,
+									newThisGame: true,
+								}
+							: sp.injury,
 					};
 					for (const k of STAT_KEYS) {
 						line[k] = sp.stat[k] ?? 0;
@@ -379,6 +395,19 @@ export const simRecapLeague = async ({
 			} as any).run();
 
 			const w = result.team[0].stat.pts > result.team[1].stat.pts ? 0 : 1;
+			newInjuries.clear();
+			for (const j of [0, 1] as const) {
+				for (const sp of result.team[j].player) {
+					if (sp.newInjury) {
+						const p = await idb.cache.players.get(sp.id);
+						if (p && p.injury.gamesRemaining === 0) {
+							p.injury = player.injury(DEFAULT_LEVEL);
+							await idb.cache.players.put(p);
+							newInjuries.set(sp.id, p.injury);
+						}
+					}
+				}
+			}
 			const row = buildGameRow(result, gid, day, w, false);
 			await idb.cache.games.add(row as Game);
 			for (const tid of [result.team[0].id, result.team[1].id]) {
@@ -399,15 +428,6 @@ export const simRecapLeague = async ({
 					}
 					(ts as any).gp = ts.won + ts.lost;
 					await idb.cache.teamSeasons.put(ts);
-				}
-				for (const sp of result.team[j].player) {
-					if (sp.newInjury) {
-						const p = await idb.cache.players.get(sp.id);
-						if (p && p.injury.gamesRemaining === 0) {
-							p.injury = player.injury(DEFAULT_LEVEL);
-							await idb.cache.players.put(p);
-						}
-					}
 				}
 			}
 			gid += 1;

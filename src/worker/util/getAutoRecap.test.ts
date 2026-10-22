@@ -7,6 +7,7 @@ import {
 	endRecapBatch,
 	getAutoDayRecap,
 	getAutoRecap,
+	hurtInGame,
 	pick,
 } from "./getAutoRecap.ts";
 import type {
@@ -820,13 +821,9 @@ describe("recap quality (from real Day 1 output)", () => {
 		const recap = getAutoRecap(
 			game({ gid: 9080, teams: [spurs, hurtRockets], winnerTid: 46 }),
 		);
-		assert.ok(recap.includes("a torn ACL"), recap);
-		// The duration is always stated, but the phrasing rotates so a slate full
-		// of injuries doesn't read from one template.
-		assert.ok(
-			/out ~40 games|out around 40 games|about 40 games/.test(recap),
-			recap,
-		);
+		// Told as what happened to him, the acronym kept.
+		assert.ok(recap.includes("Manu Ginobili tore his ACL"), recap);
+		assert.ok(/about 40 games/.test(recap), recap);
 		assert.ok(!recap.includes("Torn ACL"), recap);
 	});
 
@@ -1776,6 +1773,99 @@ describe("getAutoDayRecap", () => {
 			/Vince Carter \(sprained ankle, out about five games\)/.test(recap),
 			recap,
 		);
+	});
+});
+
+describe("who got hurt", () => {
+	test("an injury is told as what happened to him", () => {
+		assert.equal(hurtInGame("Sprained Ankle"), "sprained his ankle");
+		assert.equal(hurtInGame("Torn ACL"), "tore his ACL");
+		assert.equal(
+			hurtInGame("Torn Achilles Tendon"),
+			"tore his Achilles tendon",
+		);
+		assert.equal(hurtInGame("Fractured Hand"), "fractured his hand");
+		// Not something done to a body part: he left with it.
+		assert.equal(hurtInGame("Sore Knee"), "left with a sore knee");
+		assert.equal(hurtInGame("Concussion"), "left with a concussion");
+		assert.equal(hurtInGame("Back Spasms"), "left with back spasms");
+		assert.equal(
+			hurtInGame("High Ankle Sprain"),
+			"left with a high ankle sprain",
+		);
+	});
+
+	// Spurs over Rockets; a Rockets starter who scored 2 goes down, and so does
+	// a 6-minute reserve.
+	const hurtNight = () => {
+		const spurs = realisticTeam(
+			{
+				tid: 46,
+				region: "San Antonio",
+				name: "Spurs",
+				abbrev: "SAS",
+				pts: 110,
+				ptsQtrs: [28, 28, 27, 27],
+			},
+			player({ name: "Shaquille O'Neal", pts: 28, reb: 14 }),
+		);
+		const rockets = realisticTeam(
+			{
+				tid: 47,
+				region: "Houston",
+				name: "Rockets",
+				abbrev: "HOU",
+				pts: 90,
+				ptsQtrs: [23, 23, 22, 22],
+			},
+			player({ name: "Steve Francis", pts: 24, ast: 6, fg: 9, fga: 20 }),
+		);
+		rockets.players.push(
+			player({
+				name: "Kenny Thomas",
+				starter: true,
+				min: 9,
+				pts: 2,
+				fg: 1,
+				fga: 3,
+				injury: {
+					type: "Sprained Ankle",
+					gamesRemaining: 6,
+					newThisGame: true,
+				},
+			}),
+			player({
+				name: "Deep Reserve",
+				starter: false,
+				min: 3,
+				seasonAvg: avg({ min: 6 }),
+				injury: { type: "Sore Knee", gamesRemaining: 7, newThisGame: true },
+			}),
+		);
+		return game({ gid: 9090, teams: [spurs, rockets], winnerTid: 46 });
+	};
+
+	test("a man the recap had not named comes with his team", () => {
+		const recap = getAutoRecap(hurtNight());
+		assert.ok(
+			/[Tt]he Rockets' Kenny Thomas sprained his ankle and (?:is expected to|will) (?:miss|be out for) about six games/.test(
+				recap,
+			),
+			recap,
+		);
+	});
+
+	test("a deep reserve's knock is not news", () => {
+		const g = hurtNight();
+		assert.ok(!getAutoRecap(g).includes("Deep Reserve"));
+		const wrap = getAutoDayRecap({
+			season: 2003,
+			day: 2,
+			playoffs: false,
+			games: [g],
+		});
+		assert.ok(!wrap.includes("Deep Reserve"), wrap);
+		assert.ok(wrap.includes("the Rockets' Kenny Thomas (sprained ankle"), wrap);
 	});
 });
 

@@ -219,6 +219,9 @@ describe("simmed recaps", () => {
 				// attempts to 24, and play the Pacers next, at home."
 				/, and (?:host|visit|play|get) the [A-Z][\w ]* next\b/,
 				/\b[Ss]ore achilles|with (?:bruised|sore|strained) quadriceps/,
+				// "Picked up a sore ankle that will cost him", "went down with
+				// plantar fasciitis and is out around four games".
+				/is out around|that will cost him|picked up an? (?:sore|sprained|strained|bruised)/,
 				// Six in double figures is a third of all winners here.
 				/had six players score in double figures|got double figures out of six men\.|Six [A-Z][\w ]* reached double figures|- six in double figures/,
 			]) {
@@ -514,5 +517,37 @@ describe("simmed recaps", () => {
 			);
 		}
 		assert.isAtLeast(seen, 3);
+	});
+
+	// "Isaiah King strained his hamstring" at the bottom of a recap that had
+	// never named him left the reader to guess whose loss it was.
+	test("a man hurt in the game is told with his team unless already named", () => {
+		let seen = 0;
+		for (const { gid, recap, game } of pairs) {
+			for (const t of game.teams) {
+				for (const p of t.players) {
+					if (!p.injury?.newThisGame) {
+						continue;
+					}
+					const at = recap.search(
+						new RegExp(
+							`${p.name} (?:sprained|strained|bruised|fractured|dislocated|tore|broke|left with)[^.;]* and (?:is expected to miss|will miss|will be out for)`,
+						),
+					);
+					if (at < 0) {
+						continue;
+					}
+					seen += 1;
+					if (recap.indexOf(p.name) === at) {
+						assert.match(
+							recap.slice(0, at),
+							new RegExp(`(?:the|teammate) ${t.name}'s? $|teammate $`, "i"),
+							`gid ${gid}: ${p.name}\n${recap}`,
+						);
+					}
+				}
+			}
+		}
+		assert.isAtLeast(seen, 2);
 	});
 });

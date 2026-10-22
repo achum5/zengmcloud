@@ -4614,27 +4614,77 @@ const absenceWorthNoting = (
 const gamesWord = (n: number): string =>
 	n === 1 ? "a game" : `${numWord(n)} games`;
 
+// WHAT HAPPENED TO HIM, the way a reporter puts it: "sprained his ankle",
+// "tore his ACL". An injury named for what was done to a body part is told as
+// the thing that happened in the game. The rest - a sore knee, a concussion,
+// back spasms - he left with. "Picked up a sore ankle" and "went down with
+// plantar fasciitis" were how it read before.
+const HURT_VERBS = new Map([
+	["sprained", "sprained"],
+	["strained", "strained"],
+	["bruised", "bruised"],
+	["fractured", "fractured"],
+	["dislocated", "dislocated"],
+	["torn", "tore"],
+	["broken", "broke"],
+]);
+export const hurtInGame = (type: string): string => {
+	const [first = "", ...part] = lowerInjury(type).split(" ");
+	const verb = HURT_VERBS.get(first);
+	return verb && part.length > 0
+		? `${verb} his ${part.join(" ")}`
+		: `left with ${injuryPhrase(type)}`;
+};
+
+// Whether a man hurt tonight is news. A starter or a rotation player, yes; the
+// deep reserve who tweaked something in garbage time is a line in the box
+// score, not in the story. Without usage data (fixtures, a first game) he is
+// taken as news.
+const hurtIsNews = (p: RecapPlayer): boolean =>
+	p.starter === true ||
+	(p.seasonAvg ? p.seasonAvg.min >= 15 : p.starter === undefined);
+
+// "about five games", but "the next game" - "about a game" is no estimate.
+const gamesOut = (n: number): string =>
+	n === 1 ? "the next game" : `about ${gamesWord(n)}`;
+
 // Injury color: returns, playing through, new injuries, and notable inactives.
 const injurySentence = (
 	shape: Shape,
 	playoffs: boolean,
 	rng: () => number,
+	// The recap so far. A man it has not named yet gets his team: "Isaiah
+	// King strained his hamstring" left the reader to guess whose loss it was.
+	written: string,
 ): string | undefined => {
 	const bits: string[] = [];
 	for (const t of [shape.winner, shape.loser]) {
+		let teammate = false;
 		for (const p of t.players) {
 			if (p.injury?.playingThrough && p.pts >= 18) {
 				bits.push(
 					`${p.name} played through ${injuryPhrase(p.injury.type)} for ${p.pts}`,
 				);
-			} else if (p.injury?.newThisGame && p.injury.gamesRemaining > 0) {
+			} else if (
+				p.injury?.newThisGame &&
+				p.injury.gamesRemaining > 0 &&
+				hurtIsNews(p)
+			) {
+				const who = written.includes(p.name)
+					? p.name
+					: teammate
+						? `teammate ${p.name}`
+						: `${poss(theNick(t))} ${p.name}`;
+				teammate = true;
+				const hurt = hurtInGame(p.injury.type);
+				const span = gamesOut(p.injury.gamesRemaining);
 				bits.push(
 					pick(
 						rng,
 						[
-							`${p.name} left with ${injuryPhrase(p.injury.type)} and is expected to miss about ${gamesWord(p.injury.gamesRemaining)}`,
-							`${p.name} went down with ${injuryPhrase(p.injury.type)} and is out around ${gamesWord(p.injury.gamesRemaining)}`,
-							`${p.name} picked up ${injuryPhrase(p.injury.type)} that will cost him about ${gamesWord(p.injury.gamesRemaining)}`,
+							`${who} ${hurt} and is expected to miss ${span}`,
+							`${who} ${hurt} and will miss ${span}`,
+							`${who} ${hurt} and will be out for ${span}`,
 						],
 						"injuryNew",
 					),
@@ -6639,7 +6689,12 @@ export const getAutoRecap = (game: RecapGame): string => {
 	}
 	// Never dropped: who was missing is a fact a reader checks the recap
 	// for, so it gets its slot however much else the game gave.
-	const injury = injurySentence(shape, !!game.playoffs, rng);
+	const injury = injurySentence(
+		shape,
+		!!game.playoffs,
+		rng,
+		[beatCtx.written, ...context].join(" "),
+	);
 	if (injury) {
 		context.push(injury);
 	}
@@ -7212,32 +7267,43 @@ const conferencePictureSentence = (
 };
 
 // The night's injury news, worst first - a real league wrap covers who went
-// down, not just who went off.
+// down, not just who went off. A wrap has room for the injuries that change a
+// team for a while: a rotation player out five games or more. "The casualty
+// list: Payton Hayes (sore back, out about three games)" was a sentence about
+// nothing.
 const injuryRoundup = (
 	games: RecapGame[],
 	rng: () => number,
+	// The wrap so far; a man it already named needs no team.
+	written: string,
 ): string | undefined => {
-	const bits: { text: string; severity: number }[] = [];
+	const hurt: { t: RecapTeam; p: RecapPlayer; n: number }[] = [];
 	for (const game of games) {
 		if (game.allStar) {
 			continue;
 		}
 		for (const t of game.teams) {
 			for (const p of t.players) {
-				if (p.injury?.newThisGame && (p.injury.gamesRemaining ?? 0) >= 2) {
-					bits.push({
-						text: `${p.name} (${lowerInjury(p.injury.type)}, out about ${gamesWord(p.injury.gamesRemaining)})`,
-						severity: p.injury.gamesRemaining,
-					});
+				const n = p.injury?.newThisGame ? (p.injury.gamesRemaining ?? 0) : 0;
+				if (n >= 5 && hurtIsNews(p)) {
+					hurt.push({ t, p, n });
 				}
 			}
 		}
 	}
-	if (bits.length === 0) {
+	if (hurt.length === 0) {
 		return undefined;
 	}
-	bits.sort((a, b) => b.severity - a.severity);
-	const top = bits.slice(0, 3).map((b) => b.text);
+	hurt.sort((a, b) => b.n - a.n);
+	// "the Celtics' Isaiah King (strained hamstring, out about eleven games)
+	// and the Rockets' Anthony Foster (sprained ankle, about five)": whose he
+	// is, and "out ... games" said once.
+	const top = hurt
+		.slice(0, 3)
+		.map(
+			({ t, p, n }, i) =>
+				`${written.includes(p.name) ? "" : `${poss(theNick(t))} `}${p.name} (${lowerInjury(p.injury!.type)}, ${i === 0 ? `out about ${gamesWord(n)}` : `about ${numWord(n)}`})`,
+		);
 	return pick(
 		rng,
 		[
@@ -9120,7 +9186,11 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	}
 
 	// The night's injury news - who went down matters to the league picture.
-	const injuries = injuryRoundup(games, rng);
+	const injuries = injuryRoundup(
+		games,
+		rng,
+		[headline.text, deck ?? "", ...para1, ...para2, ...para3].join(" "),
+	);
 	if (injuries) {
 		para3.push(injuries);
 	}
