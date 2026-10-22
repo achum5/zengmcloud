@@ -278,7 +278,7 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   player moves a team's own first about 9 places, worth 0.025 titles on
   average and up to 0.15 - so "their star and their pick" was a steal, and a
   team selling its star priced the buyer's pick as if the buyer had not got
-  him.
+  him. A signing moves a team's own picks the same way.
 - **Every kind of deal that happens in real life** (owner's call), as long as
   the CPU's judgment holds up: a side may give nothing (a player into another
   team's cap room, a salary dump), picks may go for picks, and every tradable

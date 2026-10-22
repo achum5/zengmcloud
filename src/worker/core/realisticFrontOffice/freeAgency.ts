@@ -18,6 +18,7 @@ import {
 	currentOutlook,
 	loadTeam,
 	marginOf,
+	marketSettings,
 	type TeamState,
 } from "./market.ts";
 import {
@@ -35,6 +36,7 @@ import {
 import {
 	ensureRetention,
 	franchiseValue,
+	placesAfter,
 	teamStrengths,
 	type LeagueOutlook,
 } from "./outlook.ts";
@@ -113,9 +115,14 @@ const priceSigning = (
 		tid: t.tid,
 		contract: { ...p.contract, amount: contract.amount, exp: contract.exp },
 	};
+	const players = [...t.players, signed];
+	// His team's own picks land where he leaves it, as in a trade.
+	const view = marketSettings.placesAfter
+		? placesAfter(outlook, [{ tid: t.tid, before: t.players, after: players }])
+		: outlook;
 	const value = franchiseValue(
 		outlook,
-		teamStrengths(outlook, t.tid, [...t.players, signed], t.picks),
+		teamStrengths(view, t.tid, players, t.picks),
 	);
 	const gain = value - t.value;
 	const margin = marginOf(outlook, t, [], [{ kind: "player", p: signed }]);
