@@ -43,6 +43,7 @@ import {
 } from "./fieldPaint.ts";
 import { FIELD_L } from "./geometry.ts";
 import { crewFor } from "./crew.ts";
+import { crowdAt } from "./crowd.ts";
 import {
 	fieldGearFor,
 	fieldKitsFor,
@@ -485,7 +486,13 @@ const Field3D = ({
 			}
 			startFrame(sprites);
 			const drawStart = performance.now();
-			drawFieldFrame({ ctx, cam: view, paint: p.paint, items });
+			drawFieldFrame({
+				ctx,
+				cam: view,
+				paint: p.paint,
+				items,
+				crowd: crowdAt(tl, moment.t, now),
+			});
 			if (adjust(res, h * dpr, dt, performance.now() - drawStart, now)) {
 				releaseSprites(sprites);
 				sprites = makeSpriteCache();

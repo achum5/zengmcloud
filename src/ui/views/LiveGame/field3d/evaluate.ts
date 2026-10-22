@@ -1,6 +1,6 @@
 import type { BallSeg, FieldTimeline, Leg, Play } from "./director.ts";
 import type { Pt, Pt3, Side } from "./geometry.ts";
-import { moveKind, strideOf, type Move } from "./poses.ts";
+import { liftOf, moveKind, strideOf, type Move } from "./poses.ts";
 import type { FieldPlayerState } from "./sprite.ts";
 
 // THE FIELD AT ONE MOMENT: where everybody is and what each is doing, read
@@ -208,7 +208,7 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 			team: part.team,
 			x: at.x,
 			y: at.y,
-			z: 0,
+			z: liftOf(l.move, phaseOf(l, t, offset, ran)),
 			yaw,
 			move: l.move,
 			phase: phaseOf(l, t, offset, ran),

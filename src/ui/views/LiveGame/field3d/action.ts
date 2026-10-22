@@ -73,6 +73,8 @@ export type Acted = {
 	whistle: number;
 	// A kick: when it is away.
 	follow?: number;
+	// A big play's moment after it (see celebrate): when it is over.
+	until?: number;
 };
 
 // ---- who is who ------------------------------------------------------------
@@ -408,10 +410,13 @@ const IN_HANDS = new Set<Move>([
 	"punt",
 	"holdKneel",
 ]);
+// (Up over his head in his throwing hand, his arms doing something of
+// their own: spiking it, holding it up.)
+const IN_HAND = new Set<Move>(["throwWind", "spike", "ballUp", "leap"]);
 const holdFor = (m: Move): BallHold =>
 	m === "center"
 		? "snap"
-		: m === "throwWind"
+		: IN_HAND.has(m)
 			? "throw"
 			: IN_HANDS.has(m)
 				? "hands"
@@ -525,6 +530,9 @@ class Action {
 	follow?: number;
 	// A kick returned: the returner with room to run (see slow).
 	weave = false;
+	// When the moment after a big play is over (see celebrate), if it had
+	// one.
+	until = 0;
 	// The stats said of what is being acted out: those of its lines from
 	// just after `lo` through `hi` - the play up to the first time the ball
 	// is out, then each recovery in turn.
@@ -692,6 +700,7 @@ class Action {
 			this.deadBall(flagI);
 		}
 		this.afterWhistle();
+		this.celebrate();
 		for (const x of this.reaches) {
 			x.m.arms(x.move, x.t0, x.t1);
 		}
@@ -701,6 +710,7 @@ class Action {
 			ball: this.ball,
 			whistle: this.whistle,
 			...(this.follow !== undefined ? { follow: this.follow } : {}),
+			...(this.until > 0 ? { until: this.until } : {}),
 		};
 	}
 
@@ -3806,6 +3816,162 @@ class Action {
 
 	// ---- after the whistle --------------------------------------------------------
 
+	// A big play's moment after it: a score - the ball spiked, or held up,
+	// or a leap, his teammates running to him to leap with him, the other
+	// side's men nearest it hands on hips - or a sack, the man who made it
+	// flexing over the quarterback.
+	celebrate() {
+		const r = this.r;
+		const { events, i0, i1 } = this.input;
+		let tdI = -1;
+		for (let i = i0; i < i1; i++) {
+			const e = events[i];
+			if (e?.td === true && this.at.has(i) && e.type !== "fumble") {
+				tdI = i;
+			}
+		}
+		if (tdI < 0) {
+			const sacker =
+				this.find("sack") >= 0
+					? this.man(this.statPids("defSk")[0])
+					: undefined;
+			if (sacker && r() < 0.7) {
+				// (Up off the quarterback, and straight into it.)
+				const up = sacker.legs.findLast((l) => DOWN.has(l.move));
+				if (up) {
+					sacker.cut(up.t1);
+				}
+				sacker.act("flex", sacker.t + 1100);
+				this.until = sacker.t;
+				sacker.hold(sacker.t + 400, "stand");
+			}
+			return;
+		}
+		const tTD = this.at.get(tdI)!;
+		const held = this.ball.findLast(
+			(b): b is Extract<BallSeg, { kind: "held" }> =>
+				b.kind === "held" && b.t0 <= tTD + 1,
+		);
+		const scorer = this.man(held?.pid);
+		if (!scorer || this.ball.at(-1) !== held) {
+			return;
+		}
+		// Slowed up in the end zone: from there - or, down on it, once he is
+		// up.
+		let c0 = tTD;
+		let fell = false;
+		for (const l of scorer.legs) {
+			if (l.t1 > tTD - 200 && DOWN.has(l.move)) {
+				fell = true;
+			}
+			if (l.t0 >= tTD && (l.from.x !== l.to.x || l.from.y !== l.to.y)) {
+				c0 = l.t1;
+			}
+		}
+		if (fell) {
+			c0 = scorer.t;
+		} else {
+			c0 = Math.max(c0, tTD + 300);
+			scorer.cut(c0);
+		}
+		const at = scorer.at;
+		const u = r();
+		if (u < 0.4) {
+			scorer.act("spike", c0 + SPIKE_MS);
+			const out = c0 + SPIKE_MS * SPIKE_AT;
+			const ang = scorer.yaw + (r() - 0.5) * 0.6;
+			const down = {
+				x: at.x + Math.cos(ang) * 2.4,
+				y: at.y + Math.sin(ang) * 2.4,
+				z: 0.3,
+			};
+			const off = ang + (r() - 0.5) * 1.4;
+			const far = 8 + r() * 6;
+			const rest = onField({
+				x: down.x + Math.cos(off) * far,
+				y: down.y + Math.sin(off) * far,
+			});
+			this.ball.push(
+				{
+					kind: "fly",
+					t0: out,
+					t1: out + 110,
+					from: {
+						x: at.x + Math.cos(ang) * 1.2,
+						y: at.y + Math.sin(ang) * 1.2,
+						z: 4.6,
+					},
+					to: down,
+					peak: 0,
+				},
+				{
+					kind: "fly",
+					t0: out + 110,
+					t1: out + 110 + BOUNCE_MS,
+					from: down,
+					to: { ...rest, z: 0.3 },
+					peak: 3.5,
+				},
+				{ kind: "spot", t0: out + 110 + BOUNCE_MS, at: { ...rest, z: 0 } },
+			);
+		} else if (u < 0.7) {
+			scorer.hold(c0 + 1400, "ballUp");
+		} else {
+			scorer.act("leap", c0 + 800);
+		}
+		this.until = scorer.t;
+		scorer.hold(scorer.t + 2600, "stand");
+		// His teammates nearest, to him.
+		const start = c0 + 150;
+		// (Away on his own, a long way ahead of them all: the nearest of them
+		// coming down the field after him, however long it takes.)
+		const mates = this.men
+			.filter(
+				(m) =>
+					m !== scorer &&
+					m.team === scorer.team &&
+					!DOWN.has(legAt(m, start).move),
+			)
+			.sort((a, b) => dist(a.posAt(c0), at) - dist(b.posAt(c0), at))
+			.filter((m, k) => k < 2 || dist(m.posAt(c0), at) < MOB_FROM)
+			.slice(0, MOB);
+		mates.forEach((m, k) => {
+			const near = dist(m.posAt(c0), at) < MOB_FROM;
+			const from = m.posAt(start);
+			m.cut(start);
+			const ang = Math.atan2(from.y - at.y, from.x - at.x) + (k - 1.5) * 0.25;
+			const to = {
+				x: at.x + Math.cos(ang) * MOB_RING,
+				y: at.y + Math.sin(ang) * MOB_RING,
+			};
+			const t = m.run(to, m.top * (0.7 + r() * 0.15), "sprint");
+			const face = this.toward(m.at, at);
+			if (r() < 0.65) {
+				m.act("leap", t + 800, face);
+			}
+			if (near) {
+				this.until = Math.max(this.until, m.t);
+			}
+			m.hold(m.t + 1800 + r() * 800, "stand", face);
+		});
+		// The other side's nearest: hands on hips, turned away.
+		const beaten = this.men
+			.filter((m) => m.team !== scorer.team && dist(m.posAt(c0), at) < 40)
+			.sort((a, b) => dist(a.posAt(c0), at) - dist(b.posAt(c0), at))
+			.slice(0, 3);
+		for (const m of beaten) {
+			const t = Math.max(m.t, c0 + 300 + r() * 700);
+			m.hold(t);
+			const away = this.toward(at, m.at) + (r() - 0.5) * 0.8;
+			m.go(
+				{ x: m.at.x + Math.cos(away) * 6, y: m.at.y + Math.sin(away) * 6 },
+				t + 1800,
+				"walk",
+			);
+			m.hold(m.t + 2400, "onHips");
+		}
+	}
+
 	// Everyone not already given his part to the end: pulled up where the
 	// whistle finds him - a few steps on the way he was going, slowing -
 	// and stood there.
@@ -3836,6 +4002,21 @@ class Action {
 		}
 	}
 }
+
+// The leg he is in at t (or the last).
+const legAt = (m: Actor, t: number): Leg =>
+	m.legs.findLast((l) => l.t0 <= t) ?? m.legs[0]!;
+
+// After a score: the scorer's moment, then his teammates' around him -
+// at the most this many of them, from no further than this away.
+const MOB = 4;
+const MOB_FROM = 75;
+// How far off the scorer each of them pulls up (feet), and a ball spiked:
+// down into the turf this long after he starts, and up off it.
+const MOB_RING = 3.2;
+const SPIKE_MS = 720;
+const SPIKE_AT = 0.6;
+const BOUNCE_MS = 650;
 
 // The play from the snap: what the sim says happened, acted out - or
 // undefined, a play this does not act out (yet), left standing in its

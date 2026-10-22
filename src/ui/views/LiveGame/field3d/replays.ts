@@ -17,8 +17,9 @@ export type FieldReplay = {
 };
 
 // How long after the whistle it cuts to it - after the signals, a moment
-// of whoever made the play.
+// of whoever made the play (a score, longer).
 const REPLAY_AFTER = 2300;
+const REPLAY_AFTER_SCORE = 3700;
 // From this long before the moment it is shown for, to this long after.
 const REPLAY_BEFORE = 3800;
 const REPLAY_TO = 900;
@@ -39,7 +40,8 @@ const SCORES = new Set([
 	"fumbleRecovery",
 ]);
 
-const holderAt = (ball: BallSeg[], t: number): number | undefined => {
+// Who has the ball at t, if anybody.
+export const holderAt = (ball: BallSeg[], t: number): number | undefined => {
 	let pid: number | undefined;
 	for (const s of ball) {
 		if (s.t0 > t) {
@@ -59,6 +61,9 @@ export const replayFor = (input: {
 	t0: number;
 	snap: number;
 	whistle: number;
+	// When the moment after it is over (the scorer, his teammates round
+	// him), if it had one.
+	until?: number;
 	t1: number;
 	ball: BallSeg[];
 	// A flag that stands: what it was is shown instead.
@@ -72,6 +77,7 @@ export const replayFor = (input: {
 	// away, then the long gain.
 	let key: number | undefined;
 	let to: number | undefined;
+	let scored = false;
 	let fumbleAt: number | undefined;
 	let lost = false;
 	for (const b of beats) {
@@ -80,6 +86,7 @@ export const replayFor = (input: {
 		if (e.td === true && SCORES.has(e.type)) {
 			key = Math.max(b.actionStart, whistle);
 			to = undefined;
+			scored = true;
 			break;
 		}
 		if (e.type === "fumble") {
@@ -106,7 +113,13 @@ export const replayFor = (input: {
 	if (key === undefined) {
 		return undefined;
 	}
-	const cue = Math.min(input.t1 - 700, whistle + REPLAY_AFTER);
+	const cue = Math.min(
+		input.t1 - 700,
+		Math.max(
+			whistle + (scored ? REPLAY_AFTER_SCORE : REPLAY_AFTER),
+			(input.until ?? 0) + 400,
+		),
+	);
 	const end = Math.min(cue, to ?? key + REPLAY_TO);
 	const from = Math.max(
 		input.t0,

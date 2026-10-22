@@ -47,7 +47,7 @@ import {
 	type FlagFlight,
 } from "./crew.ts";
 import { foulsOf } from "./fouls.ts";
-import { replayFor, type FieldReplay } from "./replays.ts";
+import { holderAt, replayFor, type FieldReplay } from "./replays.ts";
 
 // THE GAME STAGED: every snap of the play-by-play, in feet and milliseconds -
 // who is on the field for it, where each man lines up, the ball, and the
@@ -171,7 +171,12 @@ export type Play = {
 	ball: BallSeg[];
 	// A big play, shown again after it (see replays.ts).
 	replay?: FieldReplay;
+	// The crowd's moment in it: when, for which side, and how big (see
+	// crowd.ts).
+	cheer?: Cheer;
 };
+
+export type Cheer = { t: number; side: Side; big: boolean };
 
 export type Beat = {
 	i: number;
@@ -317,6 +322,12 @@ const ACTED = new Set<PlayKind>([
 	"onside",
 ]);
 const AFTER_WHISTLE = 3200;
+// (Longer after a score: the scorer's moment, his teammates round him.)
+const AFTER_SCORE = 4800;
+// After the moment after a big play (see action.ts celebrate), this long
+// on; and at the most this long after the whistle.
+const CELEBRATE_AFTER = 1300;
+const CELEBRATE_MOST = 7500;
 // The referee's call of a foul, from its line on (see crew.ts); a first
 // down signaled this long after the whistle.
 const CALL_MS = 2900;
@@ -960,10 +971,18 @@ class Director {
 				at: spotAt(whistle),
 			});
 		}
+		const cheer = this.cheerOf(i0, i1, offense, whistle, ball, parts);
 		const t1 = Math.max(
 			this.lastLine + TAIL,
 			snap + 1500,
-			acted ? acted.whistle + AFTER_WHISTLE : 0,
+			acted ? acted.whistle + (scored ? AFTER_SCORE : AFTER_WHISTLE) : 0,
+			// (The moment after a big play seen out.)
+			acted?.until
+				? Math.min(
+						acted.whistle + CELEBRATE_MOST,
+						acted.until + CELEBRATE_AFTER,
+					)
+				: 0,
 			...calls.map((c) => c.t + CALL_MS),
 		);
 		// Each line of the play ends where its own action does; the last one,
@@ -1032,6 +1051,7 @@ class Director {
 			t0,
 			snap,
 			whistle,
+			...(acted?.until ? { until: acted.until } : {}),
 			t1,
 			ball,
 			fouled: fouls.some((f) => f.accepted),
@@ -1056,9 +1076,61 @@ class Director {
 			flags: crew.flags,
 			ball,
 			...(replay ? { replay } : {}),
+			...(cheer ? { cheer } : {}),
 		});
 		this.T = t1;
 		this.ballY = this.nextSpot(kind, i0, i1, ballY);
+	}
+
+	// What brings the crowd up in a play: a score, the ball taken away, a
+	// kick good, a sack, a long gain or return.
+	cheerOf(
+		i0: number,
+		i1: number,
+		offense: Side,
+		whistle: number,
+		ball: BallSeg[],
+		parts: Part[],
+	): Cheer | undefined {
+		const { events } = this;
+		const other = (1 - offense) as Side;
+		const sideAt = (t: number): Side | undefined => {
+			const pid = holderAt(ball, t);
+			return parts.find((p) => p.pid === pid)?.team;
+		};
+		let cheer: Cheer | undefined;
+		for (const b of this.beats) {
+			if (b.i < i0 || b.i >= i1) {
+				continue;
+			}
+			const e = events[b.i]!;
+			const t = b.actionStart;
+			const yds = typeof e.yds === "number" ? e.yds : 0;
+			if (e.td === true && RESULTS.has(e.type)) {
+				const at = Math.max(t, whistle);
+				return { t: at, side: sideAt(at) ?? offense, big: true };
+			}
+			if (e.safety === true && RESULTS.has(e.type)) {
+				return { t: Math.max(t, whistle), side: other, big: true };
+			}
+			if ((e.type === "fieldGoal" || e.type === "extraPoint") && e.made) {
+				cheer ??= { t, side: offense, big: e.type === "fieldGoal" };
+			} else if (e.type === "interception") {
+				cheer ??= { t, side: other, big: true };
+			} else if (e.type === "fumbleRecovery" && e.lost === true) {
+				cheer ??= { t, side: sideAt(t + 1) ?? other, big: true };
+			} else if (e.type === "sack") {
+				cheer ??= { t: whistle, side: other, big: false };
+			} else if ((e.type === "run" || e.type === "passComplete") && yds >= 20) {
+				cheer ??= { t: whistle, side: offense, big: false };
+			} else if (
+				(e.type === "kickoffReturn" || e.type === "puntReturn") &&
+				yds >= 35
+			) {
+				cheer ??= { t: whistle, side: other, big: false };
+			}
+		}
+		return cheer;
 	}
 
 	// Across the field, where the next snap is spotted.

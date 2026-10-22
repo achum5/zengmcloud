@@ -1171,6 +1171,135 @@ const FIELD_ANIMS = {
 		],
 	},
 
+	// ---- after a big play ----
+	// The ball spiked: up over his head, and slammed down into the turf in
+	// front of him.
+	spike: {
+		kind: "act",
+		keys: [
+			[0, pose({ shN: 120, elN: 70, abN: 24, wrN: 20, lean: -2 })],
+			[0.4, pose({ shN: 172, elN: 26, abN: 16, wrN: 20, lean: -8, kneeN: 12 })],
+			[
+				0.6,
+				pose({
+					shN: 36,
+					elN: 8,
+					abN: 8,
+					wrN: -20,
+					lean: 32,
+					hipN: 30,
+					kneeN: 42,
+					hipF: 18,
+					kneeF: 36,
+				}),
+			],
+			[0.8, pose({ shN: 6, elN: 20, abN: 10, lean: 20, hipN: 14, kneeN: 24 })],
+			[1, BASE],
+		],
+	},
+	// The ball held up high, the other fist pumped.
+	ballUp: {
+		kind: "still",
+		pose: pose({
+			shN: 172,
+			elN: 12,
+			abN: 14,
+			shF: 128,
+			elF: 70,
+			abF: 30,
+			lean: -4,
+		}),
+	},
+	// Up off both feet, both arms up: a teammate's score, a chest bump.
+	leap: {
+		kind: "act",
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 40,
+					kneeN: 70,
+					hipF: 40,
+					kneeF: 70,
+					lean: 24,
+					shN: -24,
+					elN: 30,
+					shF: -24,
+					elF: 30,
+				}),
+			],
+			[
+				0.3,
+				pose({
+					hipN: 6,
+					kneeN: 14,
+					hipF: 6,
+					kneeF: 14,
+					lean: 2,
+					shN: 160,
+					elN: 20,
+					abN: 20,
+					shF: 160,
+					elF: 20,
+					abF: 20,
+				}),
+			],
+			[
+				0.55,
+				pose({
+					hipN: 34,
+					kneeN: 64,
+					hipF: 30,
+					kneeF: 60,
+					lean: -4,
+					shN: 172,
+					elN: 10,
+					abN: 16,
+					shF: 172,
+					elF: 10,
+					abF: 16,
+				}),
+			],
+			[
+				0.82,
+				pose({
+					hipN: 34,
+					kneeN: 54,
+					hipF: 34,
+					kneeF: 54,
+					lean: 16,
+					shN: 120,
+					elN: 30,
+					abN: 24,
+					shF: 120,
+					elF: 30,
+					abF: 24,
+				}),
+			],
+			[1, BASE],
+		],
+	},
+	// A sack: the arms flung out wide, and up into a V, and out again.
+	flex: over(
+		{ shN: 100, elN: 40, abN: 80, shF: 100, elF: 40, abF: 80, lean: -8 },
+		{ shN: 150, elN: 26, abN: 50, shF: 150, elF: 26, abF: 50, lean: -10 },
+	),
+	// Hands on his hips: the other side's score.
+	onHips: {
+		kind: "still",
+		pose: pose({
+			shN: -14,
+			elN: 106,
+			abN: 48,
+			wrN: 10,
+			shF: -14,
+			elF: 106,
+			abF: 48,
+			wrF: 10,
+			lean: 8,
+		}),
+	},
+
 	// ---- the officials ----
 	// The flag: a hand to it at his belt, up over his head, and thrown.
 	flagToss: {
@@ -1286,6 +1415,13 @@ export const poseOfMove = (m: Move, phase: number, mirrored = false): Pose => {
 	}
 	return mirrored ? mirror(q) : q;
 };
+
+// How far off the turf he is partway through a move (feet): up off both
+// feet in a leap.
+export const liftOf = (m: Move, phase: number): number =>
+	m === "leap" && phase > 0.3 && phase < 0.82
+		? 1.7 * Math.sin((Math.PI * (phase - 0.3)) / 0.52)
+		: 0;
 
 // How he holds his hands in a move: running, loose fists; down in a stance
 // or reading the play, open; standing about, relaxed.

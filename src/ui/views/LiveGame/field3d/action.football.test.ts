@@ -6,6 +6,7 @@ import {
 	type Part,
 	type Play,
 } from "./director.ts";
+import { crowdAt } from "./crowd.ts";
 import { momentAt } from "./evaluate.ts";
 import {
 	CROSSBAR_Z,
@@ -222,6 +223,58 @@ describe("the plays acted out", () => {
 		});
 		assert.deepEqual(bad.slice(0, 5), []);
 		assert.isAbove(checked, 10);
+	});
+	test("after a score, his teammates round the scorer - and the home crowd on its feet", () => {
+		let checked = 0;
+		let home = 0;
+		eachPlay((play, seg, tl) => {
+			if (!ACTED.has(play.kind) || seg.some((e) => e.type === "flag")) {
+				return;
+			}
+			const k = seg.findIndex(
+				(x) =>
+					x.td === true &&
+					["run", "passComplete", "interceptionReturn"].includes(x.type),
+			);
+			if (k < 0) {
+				return;
+			}
+			const beat = tl.beats.find((b) => b.i === play.i + k)!;
+			const holder = play.ball.findLast(
+				(b): b is Extract<BallSeg, { kind: "held" }> =>
+					b.kind === "held" && b.t0 <= beat.actionStart + 1,
+			)!;
+			const scorer = play.parts.find((p) => p.pid === holder.pid)!;
+			// Those of them anywhere near him when he got in, round him by the
+			// end of it.
+			const end = play.t1 - 1;
+			const at = posAt(scorer, end);
+			const mates = play.parts.filter(
+				(p) => p !== scorer && p.team === scorer.team,
+			);
+			const by = mates.filter(
+				(p) =>
+					dist(posAt(p, beat.actionStart), posAt(scorer, beat.actionStart)) <
+					45,
+			);
+			const round = mates.filter((p) => dist(posAt(p, end), at) < 8);
+			assert.isAtLeast(
+				round.length,
+				Math.min(2, by.length),
+				`round him on play ${play.i}`,
+			);
+			// (The home side: 1.)
+			const up = crowdAt(tl, beat.actionStart + 1500, 0).up;
+			if (scorer.team === 1) {
+				assert.isAbove(up, 0.9, `home crowd on play ${play.i}`);
+				home += 1;
+			} else {
+				assert.isBelow(up, 0.5, `road crowd on play ${play.i}`);
+			}
+			checked += 1;
+		});
+		assert.isAbove(checked, 10);
+		assert.isAbove(home, 3);
 	});
 	test("a pick taken back from where the sim says, to where it says", () => {
 		let checked = 0;
