@@ -123,6 +123,73 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "Vince Carter's 11 points and 10 rebounds lead the Bulls past the
+	// Celtics" in a 43-point rout where a teammate scored 20. The man the
+	// lede is about was outscored by eight or more only when his line is one
+	// nobody outscores, or he made the winning shot.
+	test("the lede goes to the night's scorer unless the line is rare", () => {
+		for (const { gid, recap, game } of pairs) {
+			const { w } = sides(game);
+			const [headline, , lede = ""] = recap.split("\n");
+			const named = w.players
+				.map((p) => ({ p, at: lede.indexOf(p.name) }))
+				.filter((x) => x.at >= 0)
+				.sort((a, b) => a.at - b.at)[0]?.p;
+			if (!named) {
+				continue;
+			}
+			const top = [...w.players].sort((a, b) => b.pts - a.pts)[0]!;
+			const tens = [named.pts, named.reb, named.ast, named.stl, named.blk];
+			const rare =
+				tens.filter((x) => x >= 10).length >= 3 ||
+				named.reb >= 15 ||
+				named.ast >= 13 ||
+				named.blk >= 6 ||
+				named.stl >= 6;
+			const shot =
+				headline!.includes(named.name) &&
+				/three|layup|jumper|free throw|hook|buzzer|winner|basket|dunk/.test(
+					headline!,
+				);
+			if (rare || shot) {
+				continue;
+			}
+			assert.isTrue(
+				top.pts < 18 || top.pts < named.pts + 8,
+				`gid ${gid}: lede ${named.name} ${named.pts} under ${top.name} ${top.pts}\n${recap}`,
+			);
+		}
+	});
+
+	// "Jalen King's 24 points and 10 rebounds not enough as the Jazz handle
+	// the 76ers" - a 19-point loss. A losing line headlines a game only when
+	// it is big for the margin.
+	test("a losing line headlines only a game it could have swung", () => {
+		for (const { gid, recap, game } of pairs) {
+			const { w, l } = sides(game);
+			const headline = recap.split("\n")[0]!;
+			if (!/not enough|despite/.test(headline)) {
+				continue;
+			}
+			const p = l.players.find((x) => headline.includes(x.name));
+			if (!p) {
+				continue;
+			}
+			const tens = [p.pts, p.reb, p.ast, p.stl, p.blk];
+			const size =
+				p.pts +
+				(p.reb >= 20 ? 10 : p.reb >= 15 ? 6 : 0) +
+				(p.ast >= 12 ? 6 : 0) +
+				(tens.filter((x) => x >= 10).length >= 3 ? 10 : 0);
+			const margin = w.pts - l.pts;
+			assert.isAtLeast(
+				size,
+				22 + Math.max(0, margin - 5),
+				`gid ${gid}: ${headline} (by ${margin})`,
+			);
+		}
+	});
+
 	// Behind after three and won: the game was won in the fourth, and the
 	// story says so with the quarter's score - not just "the second half
 	// belonged to them".

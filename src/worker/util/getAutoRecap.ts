@@ -382,6 +382,28 @@ const storyScore = (p: RecapPlayer): number => {
 	);
 };
 
+// A line that is the story whoever outscored it.
+const rareLine = (p: RecapPlayer): boolean =>
+	doubleCategories(p).length >= 3 ||
+	p.reb >= 15 ||
+	p.ast >= 13 ||
+	p.blk >= 6 ||
+	p.stl >= 6;
+
+// How big a losing side's line is, in points: the rebounds or assists that
+// make a night more than its scoring count for something.
+const loserLineSize = (p: RecapPlayer): number =>
+	p.pts +
+	(p.reb >= 20 ? 10 : p.reb >= 15 ? 6 : 0) +
+	(p.ast >= 12 ? 6 : 0) +
+	(doubleCategories(p).length >= 3 ? 10 : 0);
+
+// A losing line big enough to be the headline, or the lede's last clause,
+// for a game decided by `margin`. A 24-and-10 in a 19-point loss is not the
+// story of the night; a 39-and-21 is, by any margin.
+const loserLineCarries = (p: RecapPlayer, margin: number): boolean =>
+	loserLineSize(p) >= 22 + Math.max(0, margin - 5);
+
 // A line with nothing in it worth a sentence: under 18 points, no
 // double-double, and none of the other columns even at the loose bar.
 const quietLine = (p: RecapPlayer): boolean =>
@@ -477,6 +499,20 @@ const storyPlayerOf = (
 		);
 		if (alt) {
 			star = alt;
+		}
+	}
+	// THE NIGHT'S SCORER. A teammate who outscored the pick by eight or more
+	// - 25 on 10-of-13 against a 17-and-10 on 6-of-17, 20 against an 11-and-10
+	// in a 43-point rout - is the man a reporter leads with. The pick keeps
+	// the lede only with a line nobody outscores: a triple-double, 15
+	// rebounds, 13 assists, six blocks or six steals.
+	if (star && shape.winner.players.includes(star) && !rareLine(star)) {
+		const pick = star;
+		const top = shape.winner.players
+			.filter((p) => p !== pick)
+			.sort((a, b) => b.pts - a.pts)[0];
+		if (top && top.pts >= 18 && top.pts >= pick.pts + 8) {
+			star = top;
 		}
 	}
 	const last = game.flow?.lastLead;
@@ -2153,7 +2189,8 @@ const buildHeadlineText = (
 		loserStar &&
 		storyScore(loserStar) > storyScore(star) * 1.2 &&
 		loserStar.pts >= 22 &&
-		star.pts < 25
+		star.pts < 25 &&
+		loserLineCarries(loserStar, shape.margin)
 	) {
 		return h(
 			pick(
@@ -2339,6 +2376,7 @@ const ledeTail = (
 		loserBest &&
 		loserBest.pts >= 28 &&
 		loserBest.pts >= star.pts + 4 &&
+		loserLineCarries(loserBest, shape.margin) &&
 		!headline.spentLoserStar &&
 		!headline.text.includes(loserBest.name)
 	) {
@@ -3899,6 +3937,16 @@ const supportSentence = (
 	);
 	if (cast.length === 0) {
 		return undefined;
+	}
+	// The man the box-score card features goes first when the lede went to
+	// somebody else: a 13-13-8 gave the lede to a 22-point scorer and then
+	// vanished from the piece, a fraction of an impact point behind two
+	// teammates in a sentence with room for two.
+	const featured = bestOf(shape.winner.players);
+	const at = featured ? cast.indexOf(featured) : -1;
+	if (featured && at > 0) {
+		cast.splice(at, 1);
+		cast.unshift(featured);
 	}
 	// Impact decides WHO is worth a mention, but when the sentence only shows
 	// points, the order has to follow them: "Keegan Mathis threw in 13 points,

@@ -6312,17 +6312,26 @@ describe("the second man who outscored the first", () => {
 	};
 
 	test("he is named the leading scorer, never 'chipped in'", () => {
-		const recap = getAutoRecap(twoMen(22, 33));
+		const recap = getAutoRecap(twoMen(22, 28));
 		assert.ok(recap.includes("Lonnie Green"), recap);
 		assert.doesNotMatch(
 			recap,
-			/Lonnie Green (?:chipped in|added|pitched in with|kicked in|tacked on|contributed|was good for|supplied|came up with) 33/,
+			/Lonnie Green (?:chipped in|added|pitched in with|kicked in|tacked on|contributed|was good for|supplied|came up with) 28/,
 			recap,
 		);
 		assert.match(
 			recap,
 			/Lonnie Green[^.]*(?:led the scoring|top-scored|leading scorer)|No one scored more than Lonnie Green/,
 		);
+	});
+
+	// Outscored by eight or more, a line short of a rare one gives the lede
+	// to the scorer - and is still told.
+	test("eleven points more and the scorer leads", () => {
+		const recap = getAutoRecap(twoMen(22, 33));
+		const lede = recap.split("\n\n")[1]!;
+		assert.match(lede, /^Lonnie Green\b|\. Lonnie Green\b/, recap);
+		assert.ok(recap.includes("Keegan Green"), recap);
 	});
 
 	test("an ordinary second man still gets an ordinary verb", () => {
@@ -6338,7 +6347,7 @@ describe("the second man who outscored the first", () => {
 		beginRecapBatch();
 		try {
 			for (let i = 0; i < 8; i++) {
-				const g = twoMen(22, 33);
+				const g = twoMen(22, 28);
 				g.gid = 4300 + i;
 				const m = /Lonnie Green[^.]*\./.exec(getAutoRecap(g));
 				if (m) {
@@ -7148,4 +7157,65 @@ test("a veteran's past is told only on a night that fits it", () => {
 		}
 	}
 	assert.ok(clock > 0 && clock <= 25, `told ${clock} times`);
+});
+
+// "Jalen King's 24 points and 10 rebounds not enough as the Jazz handle the
+// 76ers" - in a 19-point loss. A losing line is the headline only when it
+// is big for the margin.
+describe("a losing line and the margin", () => {
+	const make = (loserPts: number) => {
+		const jazz = team({
+			tid: 1,
+			name: "Jazz",
+			abbrev: "UTA",
+			pts: 103,
+			ptsQtrs: [25, 26, 26, 26],
+			players: [
+				player({
+					name: "Trey Mathis",
+					pts: 18,
+					reb: 4,
+					ast: 2,
+					fg: 7,
+					fga: 15,
+				}),
+				player({
+					name: "Scoot Mathis",
+					pts: 16,
+					reb: 3,
+					ast: 3,
+					fg: 6,
+					fga: 13,
+				}),
+			],
+		});
+		const sixers = team({
+			tid: 2,
+			name: "76ers",
+			abbrev: "PHI",
+			pts: loserPts,
+			ptsQtrs: [loserPts - 75, 25, 25, 25],
+			players: [
+				player({
+					name: "Jalen King",
+					pts: 24,
+					reb: 10,
+					ast: 2,
+					fg: 9,
+					fga: 22,
+				}),
+			],
+		});
+		return game({ gid: 5150, teams: [jazz, sixers], winnerTid: 1 });
+	};
+
+	test("a 24-and-10 does not headline a 19-point loss", () => {
+		const headline = getAutoRecap(make(84)).split("\n")[0]!;
+		assert.ok(!headline.includes("Jalen King"), headline);
+	});
+
+	test("the same line headlines a three-point loss", () => {
+		const headline = getAutoRecap(make(100)).split("\n")[0]!;
+		assert.ok(headline.includes("Jalen King"), headline);
+	});
 });
