@@ -428,6 +428,8 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   his salary still owed unless he was just drafted, his upside gone with him,
   and the floor's positions as they are left. Stock cuts the lowest value,
   salary and fit aside.
+- **Short of the roster minimum, it signs the minimum-salary free agent worth
+  the most to it** - a guard when it has none - among the best few by value.
 
 ## Coaching
 

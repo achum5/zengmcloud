@@ -9,7 +9,10 @@ import { KEY_POSITIONS_NEEDED } from "../freeAgents/getBest.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { last } from "../../../common/utils.ts";
 import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
-import { frontOfficeCuts } from "../realisticFrontOffice/cuts.ts";
+import {
+	frontOfficeCuts,
+	frontOfficeFill,
+} from "../realisticFrontOffice/cuts.ts";
 
 export const dropPlayers = async (players: Player[], numToDrop: number) => {
 	// Automatically drop lowest value players until we reach g.get("maxRosterSize")
@@ -220,7 +223,17 @@ const checkRosterSizes = async (
 				// Auto-add players
 				while (numPlayersOnRoster < g.get("minRosterSize")) {
 					// See also core.phase
-					let p = minFreeAgents.shift();
+					let p: Player | undefined;
+					// Realistic front offices: whoever is worth the most to the team
+					// (realisticFrontOffice/cuts.ts).
+					if (realisticFrontOfficesOn()) {
+						p = await frontOfficeFill(tid, minFreeAgents);
+						if (p) {
+							minFreeAgents.splice(minFreeAgents.indexOf(p), 1);
+						}
+					} else {
+						p = minFreeAgents.shift();
+					}
 
 					if (!p) {
 						p = g.get("college")

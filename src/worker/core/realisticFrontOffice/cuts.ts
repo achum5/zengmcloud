@@ -76,3 +76,33 @@ export const frontOfficeCuts = async (
 	}
 	return released;
 };
+
+// The free agents a team short of players chooses among, best first by value.
+const FILL_CANDIDATES = 15;
+
+// A CPU team under the roster minimum signs, one at a time, the minimum-salary
+// free agent worth the most to it - a guard when it is short of guards - from
+// `candidates`, best first by value; undefined if there are none.
+export const frontOfficeFill = async (
+	tid: number,
+	candidates: readonly Player[],
+) => {
+	if (candidates.length === 0) {
+		return undefined;
+	}
+	const outlook = await currentOutlook();
+	const t = await loadTeam(outlook, tid);
+	let best: { p: Player; value: number } | undefined;
+	// The first few by value are enough to choose from.
+	for (const p of candidates.slice(0, FILL_CANDIDATES)) {
+		const signed = { ...p, tid } as Player;
+		const value = franchiseValue(
+			outlook,
+			teamStrengths(outlook, tid, [...t.players, signed], t.picks),
+		);
+		if (!best || value > best.value) {
+			best = { p, value };
+		}
+	}
+	return best?.p;
+};

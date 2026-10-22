@@ -5,7 +5,7 @@ import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { player } from "../index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
-import { frontOfficeCuts } from "./cuts.ts";
+import { frontOfficeCuts, frontOfficeFill } from "./cuts.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 
@@ -56,5 +56,30 @@ test(
 		for (const pid of best) {
 			assert.notInclude(cut, pid);
 		}
+	},
+);
+
+test(
+	"a team short of players and of guards signs a guard",
+	{ timeout: 120_000 },
+	async () => {
+		const other = 6;
+		const players = await idb.cache.players.indexGetAll("playersByTid", other);
+		// Its guards leave.
+		const guards = players.filter((p) => p.ratings.at(-1)!.pos.includes("G"));
+		for (const p of guards) {
+			p.tid = PLAYER.FREE_AGENT;
+			await idb.cache.players.put(p);
+		}
+		const candidates = (
+			await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
+		)
+			.filter((p) => !guards.includes(p))
+			.sort((a, b) => b.value - a.value);
+		assert.isTrue(
+			candidates.slice(0, 15).some((p) => p.ratings.at(-1)!.pos.includes("G")),
+		);
+		const p = await frontOfficeFill(other, candidates);
+		assert.include(p!.ratings.at(-1)!.pos, "G");
 	},
 );
