@@ -318,6 +318,14 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   now played as the worse and the better half of his careers, each half as
   likely, where the two are 4 or more apart: a 21-year-old 47/66 costs his
   team about 4.6 times as much to give up.
+- **So does a pick's.** A pick's player was the average of what players taken
+  there become, the star and the bust averaged into a bench player: a middling
+  team's first was worth almost nothing to a bad team. He is now the worse
+  and the better half of their careers too (the 15th pick five seasons on:
+  a 48 or a 60, against an average of 51), and the team keeps or lets go
+  each half after his rookie deal - by then it knows which he turned out to
+  be. A middling team's first is worth 2-16 times what it was, the most to
+  the worst teams.
 - **Picks are priced over where they may land** (owner's call). How far a
   team finishes from where it is projected is measured in the arena (about 4
   places a season out, 6.5 three seasons out), and the lottery moves it from
@@ -410,9 +418,13 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   their best player priced at under 25% to stay.
 - **A pick's player is kept past his rookie deal only if he is worth his
   second contract** - if the team is better with him than with what his
-  salary buys as room, decided the season his rookie deal ends. Priced as
-  kept at whatever he asks, a mediocre one ate room that buys better, and the
-  worst teams valued a fourth extra first below nothing.
+  salary buys as room over every season ahead, decided the season his rookie
+  deal ends (on that season alone, it let young players go who were about to
+  get better). Priced as kept at whatever he asks, a mediocre one ate room
+  that buys better, and the worst teams valued a fourth extra first below
+  nothing. A deal is priced with the team's decisions on its roster as it
+  stands, made again only for a pick the deal brings in or a season whose
+  room the deal moves by more than a tenth of the cap.
 
 ## Free agency
 

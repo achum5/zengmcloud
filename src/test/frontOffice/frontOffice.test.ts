@@ -109,6 +109,12 @@ test.runIf(env.FO_PICKS !== undefined)(
 			const sums = Array.from({ length: numPicks }, () =>
 				Array.from({ length: years + 1 }, () => [0, 0, 0, 0, 0]),
 			);
+			// And every half-career (the worse and the better half of each
+			// prospect's simulated careers) worth a roster place: overall,
+			// roleFree, offense and usage - for the pick's halves.
+			const halfOutcomes = Array.from({ length: numPicks }, () =>
+				Array.from({ length: years + 1 }, () => [] as number[][]),
+			);
 			for (let c = 0; c < numClasses; c++) {
 				const prospects = await genPlayersWithoutSaving(
 					season,
@@ -140,7 +146,16 @@ test.runIf(env.FO_PICKS !== undefined)(
 					.sort((a, b) => b.score - a.score);
 				for (let k = 0; k < numPicks && k < board.length; k++) {
 					for (let y = 0; y <= years; y++) {
-						const { measures, ovr } = board[k]!.projection;
+						const { measures, ovr, halves } = board[k]!.projection;
+						for (let h = 0; h < 2; h++) {
+							const half = halves[y]!;
+							if (half.ovr[h]! >= REPLACEMENT_OVR) {
+								halfOutcomes[k]![y]!.push([
+									half.ovr[h]!,
+									...half.measures[h]!.slice(0, 3),
+								]);
+							}
+						}
 						if (ovr[y]! < REPLACEMENT_OVR) {
 							continue;
 						}
@@ -172,6 +187,41 @@ test.runIf(env.FO_PICKS !== undefined)(
 										round(kept / numClasses),
 									]
 								: [0, 0, 0, 0, 0];
+						}),
+					),
+					// Per pick, per season after the draft: the worse and the better
+					// half of the half-careers worth a roster place - roleFree,
+					// offense, usage and overall of each - and the share of
+					// half-careers that are.
+					halves: halfOutcomes.map((rows) =>
+						rows.map((outcomes) => {
+							if (outcomes.length === 0) {
+								return [[0, 0, 0, 0], [0, 0, 0, 0], 0];
+							}
+							const sorted = [...outcomes].sort((a, b) => a[0]! - b[0]!);
+							// Split at the middle, a middle one shared between the halves.
+							const half = sorted.length / 2;
+							const means = [0, 1].map((h) => {
+								const sum = [0, 0, 0, 0];
+								let weight = 0;
+								for (const [i, o] of sorted.entries()) {
+									const w =
+										h === 0
+											? Math.max(0, Math.min(1, half - i))
+											: Math.max(0, Math.min(1, i + 1 - half));
+									if (w > 0) {
+										weight += w;
+										for (let j = 0; j < 4; j++) {
+											sum[j]! += w * o[j]!;
+										}
+									}
+								}
+								const [ovr, roleFree, offense, usage] = sum.map(
+									(x) => x / weight,
+								);
+								return [roleFree!, offense!, usage!, ovr!].map(round);
+							});
+							return [...means, round(outcomes.length / (2 * numClasses))];
 						}),
 					),
 				}),

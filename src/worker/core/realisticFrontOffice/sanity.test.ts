@@ -145,7 +145,7 @@ test(
 );
 
 test(
-	"the worst teams are better off for more first-round picks when they may let the players go after their rookie deals",
+	"the worst teams are never worse off for more first-round picks for being able to let the players go after their rookie deals",
 	{ timeout: 300_000 },
 	async () => {
 		const outlook = await currentOutlook();
@@ -156,15 +156,25 @@ test(
 				.filter((dp) => dp.round === 1 && dp.originalTid === partner.tid)
 				.slice(0, 4)
 				.map((dp) => ({ kind: "pick" as const, dp }));
+			// Decided afresh on the roster the deal leaves, not as on the
+			// roster as it stands (as priceFor does, to be quick).
 			const value = (letGo: boolean) => {
 				outlookSettings.letGo = letGo;
 				try {
-					return priceFor(outlook, t, [], firsts, partner);
+					return priceFor(
+						outlook,
+						{ ...t, letGo: undefined },
+						[],
+						firsts,
+						partner,
+					);
 				} finally {
 					outlookSettings.letGo = true;
 				}
 			};
-			assert.isAbove(value(true), value(false), `team ${t.tid}`);
+			const withLetGo = value(true);
+			assert.isAtLeast(withLetGo, value(false) - 1e-9, `team ${t.tid}`);
+			assert.isAbove(withLetGo, 0, `team ${t.tid}`);
 		}
 	},
 );

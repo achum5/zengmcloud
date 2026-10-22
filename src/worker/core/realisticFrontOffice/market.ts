@@ -33,6 +33,7 @@ import {
 	seasonLine,
 	seasonValue,
 	teamStrengths,
+	type LetGoDecisions,
 	type LeagueOutlook,
 } from "./outlook.ts";
 import { waitingValues } from "./timing.ts";
@@ -87,6 +88,8 @@ export type TeamState = {
 	tradedAway: TradedAway;
 	// Strength each season of the outlook, as the roster stands.
 	path: number[];
+	// Whom it lets go after their rookie deals, as the roster stands.
+	letGo?: LetGoDecisions;
 	value: number;
 	// Its players and their injuries, for remembering what its assets are
 	// worth while the roster stands.
@@ -243,8 +246,12 @@ const valueOf = (
 	players: readonly Player[],
 	picks: readonly DraftPick[],
 	trading?: { tradedAway: TradedAway; extra: number },
+	known?: LetGoDecisions,
 ) =>
-	franchiseValue(outlook, teamStrengths(outlook, tid, players, picks, trading));
+	franchiseValue(
+		outlook,
+		teamStrengths(outlook, tid, players, picks, trading, undefined, known),
+	);
 
 const tradedAwayOf = async (tid: number): Promise<TradedAway> => {
 	const season = g.get("season");
@@ -268,11 +275,22 @@ export const loadTeam = async (
 	const picks = (
 		await idb.cache.draftPicks.indexGetAll("draftPicksByTid", tid)
 	).filter((dp) => typeof dp.season === "number");
-	const path = teamStrengths(outlook, tid, players, picks);
+	const letGo: LetGoDecisions = { decisions: new Map(), record: true };
+	const path = teamStrengths(
+		outlook,
+		tid,
+		players,
+		picks,
+		undefined,
+		undefined,
+		letGo,
+	);
+	letGo.record = false;
 	return {
 		tid,
 		players,
 		picks,
+		letGo,
 		tradablePlayers: players.filter((p) => !isUntradable(p).untradable),
 		payroll: await getPayroll(tid),
 		tradedAway: await tradedAwayOf(tid),
@@ -405,10 +423,17 @@ export const priceFor = (
 		]);
 	}
 	return (
-		valueOf(view, t.tid, after.players, after.picks, {
-			tradedAway: t.tradedAway,
-			extra: count(outgoing),
-		}) - t.value
+		valueOf(
+			view,
+			t.tid,
+			after.players,
+			after.picks,
+			{
+				tradedAway: t.tradedAway,
+				extra: count(outgoing),
+			},
+			t.letGo,
+		) - t.value
 	);
 };
 

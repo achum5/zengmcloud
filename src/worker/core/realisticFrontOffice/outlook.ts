@@ -178,7 +178,7 @@ export type LeagueOutlook = {
 	// Each pick's line every season of the outlook, as pickLineAt has it, and
 	// each team's picks in the drafts beyond the last that exists.
 	pickYears: WeakMap<PickLike, PickYears>;
-	futurePicks: Map<number, PickAt[][]>;
+	futurePicks: Map<number, FuturePickAt[][]>;
 	// Chance each player re-signs with each team, by retentionKey.
 	retention: Map<string, number>;
 	teams: Map<number, TeamOutlook>;
@@ -499,6 +499,9 @@ export const outlookSettings = {
 	// A player whose future is uncertain plays as the worse and the better
 	// half of his careers, not as their average (SeasonLine).
 	upside: true,
+	// And a pick's player as the worse and the better half of what players
+	// taken there become (PICK_HALVES), with upside.
+	pickUpside: true,
 	// Cap room is priced by how good the team is (payroll.ts), not the same
 	// for every team.
 	roomByRecord: true,
@@ -515,12 +518,17 @@ export const teamOutlookSettings = new Map<
 	Partial<
 		Pick<
 			typeof outlookSettings,
-			"upside" | "keptCalibration" | "roomByRecord" | "letGo"
+			"upside" | "pickUpside" | "keptCalibration" | "roomByRecord" | "letGo"
 		>
 	>
 >();
 const outlookSettingFor = <
-	K extends "upside" | "keptCalibration" | "roomByRecord" | "letGo",
+	K extends
+		| "upside"
+		| "pickUpside"
+		| "keptCalibration"
+		| "roomByRecord"
+		| "letGo",
 >(
 	tid: number,
 	key: K,
@@ -577,9 +585,14 @@ export type PickLike = Pick<
 
 // A pick's player as a roster sees him, and what he is expected to be paid.
 type PickAt = {
-	line: StrengthPlayer & { availability: number };
+	line: SeasonLine;
 	salary: number;
+	// What each of the line's halves is paid, when it has them.
+	halfSalaries?: readonly [number, number];
 };
+
+// A team's own pick in a draft beyond the last that exists, by its draft.
+type FuturePickAt = PickAt & { season: number; round: number };
 
 // A pick's line each season of the outlook (null for none), for the pick as
 // it was when they were worked out.
@@ -648,7 +661,7 @@ const futurePickLines = (
 					y,
 				);
 				if (at) {
-					lines.push(at);
+					lines.push({ ...at, season: d, round });
 				}
 			}
 		}
@@ -972,16 +985,15 @@ const classPickAt = (
 				ROOKIE_RETENTION,
 			);
 			const years = outlookSeason(outlook, y) - board.season;
+			const paid = (half: { availability: number; valueNoPot: number }) =>
+				half.availability *
+				pickSalaries()({ slot, round: dp.round, years, ovr: half.valueNoPot });
 			at = {
 				line,
-				salary:
-					line.availability *
-					pickSalaries()({
-						slot,
-						round: dp.round,
-						years,
-						ovr: line.valueNoPot,
-					}),
+				salary: paid(line),
+				halfSalaries: line.halves
+					? [paid(line.halves[0]!), paid(line.halves[1]!)]
+					: undefined,
 			};
 		}
 		outlook.pickLines.set(key, at);
@@ -1084,49 +1096,67 @@ const averagePick = (
 		}
 		weights = picks;
 	}
-	let kept = 0;
-	let roleFree = 0;
-	let offense = 0;
-	let usage = 0;
-	let ovr = 0;
-	let salary = 0;
+	// The line, then its worse and its better half, each averaged over
+	// where the pick may land: chance, roleFree, offense, usage, overall and
+	// salary.
+	const sums = [0, 1, 2].map(() => [0, 0, 0, 0, 0, 0]);
 	let pickSalary: ReturnType<typeof pickSalaries> | undefined;
+	const add = (
+		sum: number[],
+		w: number,
+		slot: number,
+		p: StrengthPlayer & { availability: number },
+	) => {
+		const share = w * p.availability;
+		if (share <= 0) {
+			return;
+		}
+		sum[0]! += share;
+		sum[1]! += share * p.roleFree;
+		sum[2]! += share * p.offense;
+		sum[3]! += share * p.usage;
+		sum[4]! += share * p.valueNoPot;
+		// Only the players worth keeping are paid.
+		pickSalary ??= pickSalaries();
+		sum[5]! += share * pickSalary({ slot, round, years, ovr: p.valueNoPot });
+	};
 	for (const [k, w] of weights.entries()) {
 		if (w < 1e-4) {
 			continue;
 		}
 		const slot = (round - 1) * n + k;
 		const p = pickPlayer({ slot, numPicks, years });
-		const share = w * p.availability;
-		if (share <= 0) {
-			continue;
+		add(sums[0]!, w, slot, p);
+		if (p.halves) {
+			add(sums[1]!, w, slot, p.halves[0]!);
+			add(sums[2]!, w, slot, p.halves[1]!);
 		}
-		kept += share;
-		roleFree += share * p.roleFree;
-		offense += share * p.offense;
-		usage += share * p.usage;
-		ovr += share * p.valueNoPot;
-		// Only the players worth keeping are paid.
-		pickSalary ??= pickSalaries();
-		salary += share * pickSalary({ slot, round, years, ovr: p.valueNoPot });
 	}
-	if (kept <= 0) {
+	const lineOf = ([kept, roleFree, offense, usage, ovr]: number[]) => ({
+		roleFree: roleFree! / kept!,
+		offense: offense! / kept!,
+		usage: usage! / kept!,
+		// Who he is is not known yet: a typical player of his overall.
+		synergy: typicalSynergy(ovr! / kept!),
+		guard: TYPICAL_GUARD,
+		forward: TYPICAL_FORWARD,
+		valueNoPot: ovr! / kept!,
+		availability: kept!,
+	});
+	const [all, worse, better] = sums as [number[], number[], number[]];
+	if (all[0]! <= 0) {
 		return null;
 	}
-	return {
-		line: {
-			roleFree: roleFree / kept,
-			offense: offense / kept,
-			usage: usage / kept,
-			// Who he is is not known yet: a typical player of his overall.
-			synergy: typicalSynergy(ovr / kept),
-			guard: TYPICAL_GUARD,
-			forward: TYPICAL_FORWARD,
-			valueNoPot: ovr / kept,
-			availability: kept,
-		},
-		salary,
-	};
+	const line: SeasonLine = lineOf(all);
+	if (
+		worse[0]! > 0 &&
+		better[0]! > 0 &&
+		better[4]! / better[0]! - worse[4]! / worse[0]! >= UPSIDE_SPLIT
+	) {
+		line.halves = [lineOf(worse), lineOf(better)];
+		return { line, salary: all[5]!, halfSalaries: [worse[5]!, better[5]!] };
+	}
+	return { line, salary: all[5]! };
 };
 
 // What a player is expected to be paid in a season of the outlook: his
@@ -1173,6 +1203,9 @@ export const teamPoints = (
 		y: number,
 		lines: readonly (StrengthPlayer & { availability: number })[],
 	) => void,
+	// Whom the team lets go after their rookie deals, as decided on another
+	// roster of its (letGo) - or false for nobody, for ranking rosters alone.
+	known?: LetGoDecisions | false,
 ) => {
 	const retentionFor = (p: Player) => {
 		const r = retentionOf(outlook, p.pid, tid);
@@ -1204,10 +1237,8 @@ export const teamPoints = (
 	// League settings, looked up once: nothing here can change them.
 	let salaryCap: number | undefined;
 	let marketSalary: ((value: number) => number) | undefined;
-	const out: number[] = [];
-	// Whether each pick's player was let go (true) or kept, by pick: decided
-	// the first season the team may let him go, as it is.
-	const goneFor = new Map<number, boolean>();
+	// Every season's roster, before the team lets anyone go.
+	const seasons: SeasonState[] = [];
 	for (let y = 0; y <= OUTLOOK_YEARS; y++) {
 		const lines = players.map(
 			(p, i) =>
@@ -1221,14 +1252,50 @@ export const teamPoints = (
 				)),
 		);
 		const season = outlookSeason(outlook, y);
-		// The season's points, when working out who to let go already did.
-		let known: number | undefined;
 		// Its picks' players past their rookie deals, whom the team may let go
-		// rather than pay that season.
-		const options: { i: number; pick: number; salary: number }[] = [];
+		// rather than pay that season - each half on its own where a line has
+		// them: by then the team knows which he turned out to be.
+		const options: LetGoOption[] = [];
 		// The players its picks are expected to have become by then, and what
 		// they are paid.
 		let salaries = 0;
+		const pickUpside =
+			outlookSettingFor(tid, "upside") && outlookSettingFor(tid, "pickUpside");
+		const addPick = (
+			at: PickAt,
+			draft: unknown,
+			round: number,
+			key: string,
+		) => {
+			const halfSalaries =
+				at.line.halves && pickUpside ? at.halfSalaries : undefined;
+			const salary = halfSalaries
+				? halfSalaries[0] + halfSalaries[1]
+				: at.salary;
+			if (
+				typeof draft === "number" &&
+				season - draft > getRookieContractLength(round)
+			) {
+				if (halfSalaries) {
+					for (const half of [0, 1] as const) {
+						options.push({
+							i: lines.length,
+							half,
+							key: `${key}:${half}`,
+							salary: halfSalaries[half],
+						});
+					}
+				} else {
+					options.push({ i: lines.length, key, salary });
+				}
+			}
+			lines.push(
+				at.line.halves && !pickUpside
+					? { ...at.line, halves: undefined }
+					: at.line,
+			);
+			salaries += salary;
+		};
 		for (let i = 0; i < picks.length; i++) {
 			const byYear = byPick[i]!.byYear;
 			let at = byYear[y];
@@ -1238,24 +1305,19 @@ export const teamPoints = (
 			}
 			if (at) {
 				const dp = picks[i]!;
-				if (
-					typeof dp.season === "number" &&
-					season - dp.season > getRookieContractLength(dp.round)
-				) {
-					options.push({
-						i: lines.length,
-						pick: i,
-						salary: at.salary,
-					});
-				}
-				lines.push(at.line);
-				salaries += at.salary;
+				addPick(
+					at,
+					dp.season,
+					dp.round,
+					`${dp.originalTid}:${dp.season}:${dp.round}`,
+				);
 			}
 		}
 		for (const at of futurePickLines(outlook, tid, y)) {
-			lines.push(at.line);
-			salaries += at.salary;
+			addPick(at, at.season, at.round, `future:${at.season}:${at.round}`);
 		}
+		const state: SeasonState = { lines, options };
+		seasons.push(state);
 		if (season >= outlook.firstRefillSeason) {
 			salaryCap ??= g.get("salaryCap");
 			marketSalary ??= marketSalaries();
@@ -1279,42 +1341,24 @@ export const teamPoints = (
 			const winp = outlookSettingFor(tid, "roomByRecord")
 				? outlook.winShare?.get(tid)?.[y]
 				: undefined;
-			if (outlookSettingFor(tid, "letGo") && options.length > 0) {
-				const undecided = [];
-				for (const o of options) {
-					const gone = goneFor.get(o.pick);
-					if (gone === undefined) {
-						undecided.push(o);
-					} else if (gone) {
-						lines[o.i] = { ...lines[o.i]!, availability: 0, halves: undefined };
-						committed -= o.salary;
-					}
-				}
-				if (undecided.length > 0) {
-					const decided = letGo(
-						lines,
-						undecided,
-						salaryCap - committed,
-						(room) => signingsWith(room, duringFreeAgency, winp),
-						(all) => expectedRosterPoints(asPlayed(tid, all)),
-					);
-					for (const o of undecided) {
-						goneFor.set(o.pick, decided.gone.includes(o));
-					}
-					committed -= decided.freed;
-					known = decided.points;
-				}
-			}
-			const signings = signingsWith(
-				salaryCap - committed,
-				duringFreeAgency,
-				winp,
-			);
+			state.room = salaryCap - committed;
+			state.signingsAt = (room) => signingsWith(room, duringFreeAgency, winp);
+		}
+	}
+	if (known !== false && outlookSettingFor(tid, "letGo")) {
+		letGo(seasons, (all) => expectedRosterPoints(asPlayed(tid, all)), known);
+	}
+	const out: number[] = [];
+	for (let y = 0; y <= OUTLOOK_YEARS; y++) {
+		const { lines, room, signingsAt } = seasons[y]!;
+		if (room !== undefined) {
+			const signings = signingsAt!(room);
 			lines.push(...signings);
-			refill?.(y, 1 - committed / salaryCap, signings);
+			refill?.(y, room / salaryCap!, signings);
 		}
 		roster?.(y, lines);
-		let points = known ?? expectedRosterPoints(asPlayed(tid, lines));
+		let points =
+			seasons[y]!.points ?? expectedRosterPoints(asPlayed(tid, lines));
 		// This season's playoffs count with everyone back who will be by then
 		// (playoffWeight): a star out for the rest of the regular season is
 		// still worth his playoffs.
@@ -1348,60 +1392,175 @@ export const teamPoints = (
 	return out;
 };
 
+type LetGoOption = {
+	// His line's place in the roster's lines, and which half, if just one.
+	i: number;
+	half?: 0 | 1;
+	key: string;
+	salary: number;
+};
+
+const optionLine = (line: SeasonLine, o: LetGoOption) =>
+	o.half === undefined ? line : line.halves![o.half]!;
+
+// The line without the player, or without that half of him.
+const withoutOption = (line: SeasonLine, o: LetGoOption): SeasonLine =>
+	o.half === undefined
+		? { ...line, availability: 0, halves: undefined }
+		: {
+				...line,
+				halves: line.halves!.map((half, k) =>
+					k === o.half ? { ...half, availability: 0 } : half,
+				),
+			};
+
+// Whom a team lets go after their rookie deals, by pick (and half): decided on
+// its roster as it stands (`record`), then the same in a deal's - unless the
+// deal brings the pick in or moves the team's room that season. Deciding
+// afresh on every roster a deal might leave it with cost more than pricing
+// the deal.
+export type LetGoDecisions = {
+	// Whether he goes, and the team's room that season before it decided.
+	decisions: Map<string, { gone: boolean; room: number }>;
+	record: boolean;
+};
+
+// A deal that changes a team's room the season it decides on a player by
+// more than this share of the cap has it decide again.
+const LET_GO_ROOM_TOLERANCE = 0.1;
+
+// One season of a team's outlook, as teamPoints works it out: its roster, and
+// from the first season it refills, its cap room and what that room buys.
+type SeasonState = {
+	lines: SeasonLine[];
+	// Its picks' players it may let go that season.
+	options: LetGoOption[];
+	room?: number;
+	signingsAt?: (room: number) => readonly SeasonLine[];
+	// Its points once the room is filled, when worked out (letGo).
+	points?: number;
+};
+
+// A roster's points alone, for ranking where teams finish: no picks, and
+// nobody let go.
+const rosterOnlyPoints = (
+	outlook: Parameters<typeof teamPoints>[0],
+	tid: number,
+	players: readonly Player[],
+) =>
+	teamPoints(outlook, tid, players, [], undefined, undefined, undefined, false);
+
 // A team keeps a drafted player past his rookie deal only while it is better
-// with him than with what his salary buys as cap room - as it decides when
-// the time comes (freeAgency.ts). A player let go is out of `lines` that
-// season; who went and what they would have been paid are returned, with the
-// season's points once signings fill the room, if they were worked out.
+// with him than with what his salary buys as cap room, over the seasons ahead
+// - decided once, the first season it may let him go, as it is when the time
+// comes (freeAgency.ts). A player let go is out of every season's `lines`
+// from then on, and his salary is room.
 // Without this, every pick's player was kept at what he asks: a mediocre
 // one's second contract ate room that buys better, so a bad team was worse
 // off for a second first-round pick.
-const letGo = <Option extends { i: number; salary: number }>(
-	lines: SeasonLine[],
-	options: readonly Option[],
-	room: number,
-	signingsAt: (room: number) => readonly SeasonLine[],
+const letGo = (
+	seasons: readonly SeasonState[],
 	points: (lines: readonly SeasonLine[]) => number,
+	known?: LetGoDecisions,
 ) => {
 	const minContract = g.get("minContract");
-	const best = (room: number) =>
-		Math.max(...signingsAt(room).map((s) => s.valueNoPot));
-	// Those his salary would buy the most better than him go first; room that
-	// buys nobody better is no reason to let him go.
-	const sorted = options
-		.filter((o) => o.salary >= minContract)
-		.map((o) => ({
-			o,
-			surplus: lines[o.i]!.valueNoPot - best(room + o.salary),
-		}))
-		.filter((x) => x.surplus < 0)
-		.sort((a, b) => a.surplus - b.surplus || a.o.i - b.o.i)
-		.map((x) => x.o);
-	const gone: Option[] = [];
-	let freedTotal = 0;
-	let kept: number | undefined;
-	let keptInARow = 0;
-	for (const o of sorted) {
-		const line = lines[o.i]!;
-		const signings = signingsAt(room + freedTotal + o.salary);
-		kept ??= points([...lines, ...signingsAt(room + freedTotal)]);
-		lines[o.i] = { ...line, availability: 0, halves: undefined };
-		const freed = points([...lines, ...signings]);
-		if (freed > kept) {
-			kept = freed;
-			freedTotal += o.salary;
-			gone.push(o);
-			keptInARow = 0;
-		} else {
-			lines[o.i] = line;
-			// The rest are better for the money.
-			keptInARow += 1;
-			if (keptInARow === 2) {
-				break;
+	const tolerance = LET_GO_ROOM_TOLERANCE * g.get("salaryCap");
+	const pointsOf = (s: SeasonState) =>
+		(s.points ??= points([...s.lines, ...s.signingsAt!(s.room!)]));
+	// The same player in each season from y on.
+	const aheadOf = (y: number, key: string) => {
+		const ahead: [SeasonState, LetGoOption][] = [];
+		for (const s of seasons.slice(y)) {
+			const at = s.options.find((x) => x.key === key);
+			if (at) {
+				ahead.push([s, at]);
+			}
+		}
+		return ahead;
+	};
+	const goFrom = (
+		ahead: readonly [SeasonState, LetGoOption][],
+		freed: readonly number[] = [],
+	) => {
+		for (const [k, [s, at]] of ahead.entries()) {
+			s.lines[at.i] = withoutOption(s.lines[at.i]!, at);
+			s.room! += at.salary;
+			s.points = freed[k];
+		}
+	};
+	const decided = new Set<string>();
+	for (const [y, now] of seasons.entries()) {
+		if (now.room === undefined || now.options.length === 0) {
+			continue;
+		}
+		const room = now.room;
+		const fresh: LetGoOption[] = [];
+		for (const o of now.options) {
+			if (decided.has(o.key)) {
+				continue;
+			}
+			decided.add(o.key);
+			const before = known?.record ? undefined : known?.decisions.get(o.key);
+			if (before && Math.abs(before.room - room) <= tolerance) {
+				if (before.gone) {
+					goFrom(aheadOf(y, o.key));
+				}
+			} else {
+				fresh.push(o);
+				if (known?.record) {
+					known.decisions.set(o.key, { gone: false, room });
+				}
+			}
+		}
+		const best = (room: number) =>
+			Math.max(...now.signingsAt!(room).map((x) => x.valueNoPot));
+		// Those his salary would buy the most better than him go first; room
+		// that buys nobody better is no reason to let him go.
+		const sorted = fresh
+			.filter((o) => o.salary >= minContract)
+			.map((o) => ({
+				o,
+				surplus:
+					optionLine(now.lines[o.i]!, o).valueNoPot -
+					best(now.room! + o.salary),
+			}))
+			.filter((x) => x.surplus < 0)
+			.sort((a, b) => a.surplus - b.surplus || a.o.i - b.o.i)
+			.map((x) => x.o);
+		let keptInARow = 0;
+		for (const o of sorted) {
+			const ahead = aheadOf(y, o.key);
+			let gain = 0;
+			const freed: number[] = [];
+			// Every season ahead: on the first few alone, it let young players
+			// go who were about to get better. One worth more than his room
+			// the first season only gets better.
+			for (const [s, at] of ahead) {
+				const kept = pointsOf(s);
+				const line = s.lines[at.i]!;
+				s.lines[at.i] = withoutOption(line, at);
+				freed.push(points([...s.lines, ...s.signingsAt!(s.room! + at.salary)]));
+				s.lines[at.i] = line;
+				gain += freed.at(-1)! - kept;
+				if (gain <= 0 && freed.length === 1) {
+					break;
+				}
+			}
+			if (gain > 0) {
+				if (known?.record) {
+					known.decisions.set(o.key, { gone: true, room });
+				}
+				goFrom(ahead, freed);
+				keptInARow = 0;
+			} else {
+				// The rest are better for the money.
+				keptInARow += 1;
+				if (keptInARow === 2) {
+					break;
+				}
 			}
 		}
 	}
-	return { gone, freed: freedTotal, points: kept };
 };
 
 // What a team's draft place is ranked by each season, from its strength on
@@ -1457,7 +1616,7 @@ const rosterOnlyNow = (
 		.join()}`;
 	let points = outlook.placeBase.get(key);
 	if (!points) {
-		points = teamPoints(outlook, tid, players, []);
+		points = rosterOnlyPoints(outlook, tid, players);
 		outlook.placeBase.set(key, points);
 	}
 	return points;
@@ -1486,7 +1645,7 @@ export const placesAfter = (
 		// The change in strength, both ways priced now, onto what the places
 		// were ranked by.
 		const from = rosterOnlyNow(outlook, tid, before);
-		const to = teamPoints(outlook, tid, after, []);
+		const to = rosterOnlyPoints(outlook, tid, after);
 		keys.set(
 			tid,
 			placeKeysOf(
@@ -1524,8 +1683,18 @@ export const teamStrengths = (
 	picks: readonly PickLike[],
 	trading?: { tradedAway: TradedAway; extra: number },
 	refill?: Parameters<typeof teamPoints>[5],
+	known?: LetGoDecisions,
 ) =>
-	teamPoints(outlook, tid, players, picks, trading, refill).map(
+	teamPoints(
+		outlook,
+		tid,
+		players,
+		picks,
+		trading,
+		refill,
+		undefined,
+		known,
+	).map(
 		(x, y) =>
 			x -
 			outlook.meanPoints[y]! +
@@ -1699,7 +1868,7 @@ export const buildOutlook = async ({
 		lines: new Map() as SeasonLines,
 		pickLines: new Map<string, PickAt | null>(),
 		pickYears: new WeakMap<PickLike, PickYears>(),
-		futurePicks: new Map<number, PickAt[][]>(),
+		futurePicks: new Map<number, FuturePickAt[][]>(),
 		retention: new Map<string, number>(),
 		meanPoints: [] as number[],
 		progress: inSeason ? progress : 0,
@@ -1727,7 +1896,7 @@ export const buildOutlook = async ({
 		const first = new Map(
 			teams.map((t) => [
 				t.tid,
-				teamPoints(base, t.tid, rosters.get(t.tid)!, []),
+				rosterOnlyPoints(base, t.tid, rosters.get(t.tid)!),
 			]),
 		);
 		const means = Array.from(
@@ -1758,7 +1927,10 @@ export const buildOutlook = async ({
 	// and this season's draft, once games are played, by the record it is
 	// heading for, the wins already banked included.
 	const rosterOnly = new Map(
-		teams.map((t) => [t.tid, teamPoints(base, t.tid, rosters.get(t.tid)!, [])]),
+		teams.map((t) => [
+			t.tid,
+			rosterOnlyPoints(base, t.tid, rosters.get(t.tid)!),
+		]),
 	);
 	for (const t of teams) {
 		base.draftPlace.set(t.tid, []);

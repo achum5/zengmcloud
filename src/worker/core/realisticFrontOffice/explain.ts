@@ -18,6 +18,7 @@ import {
 	seasonLine,
 	seasonValue,
 	teamStrengths,
+	type LetGoDecisions,
 	type LeagueOutlook,
 } from "./outlook.ts";
 import { marketSettings } from "./market.ts";
@@ -165,6 +166,9 @@ export const explainDeal = (
 					round(x.availability, 2),
 				]);
 			};
+		// Whom the team lets go after their rookie deals, decided on the
+		// roster as it stands, as when it priced the deal (market.ts).
+		const letGo: LetGoDecisions = { decisions: new Map(), record: true };
 		const before = teamStrengths(
 			outlook,
 			side.tid,
@@ -172,7 +176,9 @@ export const explainDeal = (
 			side.picks,
 			undefined,
 			refill(0),
+			letGo,
 		);
+		letGo.record = false;
 		const after = teamStrengths(
 			view,
 			side.tid,
@@ -183,15 +189,22 @@ export const explainDeal = (
 				extra: side.gives.players.length,
 			},
 			refill(1),
+			letGo,
 		);
 		// One asset at a time, against the roster as it stands.
 		const effectOf = (
 			players: readonly Player[],
 			picks: readonly DraftPick[],
 		) =>
-			teamStrengths(outlook, side.tid, players, picks).map((x, y) =>
-				round(x - before[y]!, 2),
-			);
+			teamStrengths(
+				outlook,
+				side.tid,
+				players,
+				picks,
+				undefined,
+				undefined,
+				letGo,
+			).map((x, y) => round(x - before[y]!, 2));
 		const value = years.map(
 			(y) =>
 				seasonValue(outlook, y, after[y]!) -
