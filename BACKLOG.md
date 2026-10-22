@@ -319,9 +319,15 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   longer swaps which foot is up; behind the back the ball is drawn round
   his hip, not whipped there in two frames; shuffling on a slant each foot
   steps the way he goes, not out to his side and slid back - planted-foot
-  slide about halved. Still to do: turning his hips - setting off on a run
-  at an angle, a drift along the arc - swings both feet round under him,
-  the planted one too; each leg should turn only while its foot is up.)
+  slide about halved. A shooter drifting along the arc side-steps - push
+  step and close, hands ready - instead of running sideways on legs turned
+  only so far (planted-foot slide 1.05 -> 0.2 ft a foot); closeouts and
+  backing a man down in the post take short chop steps that land and stay
+  put; a man waiting off the ball turns to follow it at an easy pace, not
+  whipped round every time it moves. Still to do: turning his hips -
+  setting off on a run at an angle, a slow backpedal getting going - swings
+  both feet round under him, the planted one too; each leg should turn
+  only while its foot is up.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like
