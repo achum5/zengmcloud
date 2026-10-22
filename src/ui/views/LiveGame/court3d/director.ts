@@ -828,6 +828,10 @@ const DUNK_SIDE = (55 * Math.PI) / 180;
 // at `p`, or nothing if he already is: out along the corner, or straight
 // back from the rim round the arc.
 const THREE_CLEAR = 1.5;
+// Stood this near the line (feet) inside it, a man out there is on it - a
+// shooter's spot: a drift along it takes him behind it, not along it with
+// his toes over.
+const ON_THE_LINE = 1;
 const behindArc = (team: Side, p: Pt): Pt | undefined => {
 	const rim = { x: rimX(team), y: COURT_H / 2 };
 	const depth = team === 0 ? p.x : COURT_W - p.x;
@@ -5960,7 +5964,10 @@ class Director {
 						: Math.sign(diff);
 				// (Behind the line, he stays well behind it - his toes too.)
 				const deep = Math.abs(P.x - rim.x) + RIM_INSET;
-				const behind = deep < 14 ? Math.abs(P.y - rim.y) > 22 : r > 23.75;
+				const behind =
+					deep < 14
+						? Math.abs(P.y - rim.y) > 22 - ON_THE_LINE
+						: r > 23.75 - ON_THE_LINE;
 				const R = behind ? Math.max(r, 23.75 + 0.75) : r;
 				const along = (w: number) => {
 					const to = Math.max(-ARC_EDGE, Math.min(ARC_EDGE, aP + w * step));
@@ -15868,8 +15875,8 @@ class Director {
 						// (Out behind the line, he stays behind it.)
 						const deep =
 							Math.abs(at.x - rim.x) < 14 - 5.25
-								? Math.abs(at.y - rim.y) >= 22
-								: dist(at, rim) >= 23.75;
+								? Math.abs(at.y - rim.y) >= 22 - ON_THE_LINE
+								: dist(at, rim) >= 23.75 - ON_THE_LINE;
 						const Q = [1, -1]
 							.map((side) => {
 								const q = clampPt({
