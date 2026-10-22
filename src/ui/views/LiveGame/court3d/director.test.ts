@@ -5,7 +5,9 @@ import {
 	linesBetween,
 	snapForCursor,
 	targetForCursor,
+	type CourtPlayer,
 	type CourtTimeline,
+	type RawEvent,
 } from "./director.ts";
 import {
 	BALL_R,
@@ -477,6 +479,103 @@ describe("3D director", () => {
 		assert.isAtLeast(onHim / helps.length, 0.14);
 		assert.isAtLeast(backOut / passers, 0.6);
 	}, 60_000);
+
+	// Off an offensive board the rest spread out for the kick-out - but the
+	// man who gets the next shot in there (the dump-off, a post-up) stays
+	// in for it: not out to the arc with them and straight back in again.
+	test("off an offensive board, the man with the next shot in close stays in close", () => {
+		let near = 0;
+		const out: string[] = [];
+		for (const gid of [1, 2, 3]) {
+			const players: CourtPlayer[] = [];
+			const POS = ["PG", "SG", "SF", "PF", "C"];
+			const events: RawEvent[] = [{ type: "init", boxScore: {} }];
+			for (const raw of [0, 1] as const) {
+				for (let j = 0; j < 5; j++) {
+					const pid = raw * 10 + j + 1;
+					players.push({ pid, team: raw === 0 ? 1 : 0, pos: POS[j] });
+					events.push({ type: "stat", t: raw, pid, s: "gs", amt: 1 });
+				}
+			}
+			events.push({ type: "jumpBall", t: 0, pid: 5, pid2: 15, clock: 720 });
+			// Every one of them off the board, every other one with the shot
+			// in: a miss, the board, and the shot in close 2.5 s on; then the
+			// other end.
+			let c = 718;
+			let k = 0;
+			for (let r = 1; r <= 5; r++) {
+				for (let y = 1; y <= 5; y++) {
+					if (y === r) {
+						continue;
+					}
+					const s = [1, 2, 3, 4, 5].find((p) => p !== r && p !== y)!;
+					const zone = k % 2 === 0 ? "AtRim" : "LowPost";
+					const b = 11 + (k % 5);
+					events.push(
+						{
+							type: "fgaMidRange",
+							t: 0,
+							pid: s,
+							clock: c - 8,
+							desperation: false,
+						},
+						{ type: "missMidRange", t: 0, pid: s, clock: c - 9 },
+						{ type: "orb", t: 0, pid: r, clock: c - 9.5 },
+						{
+							type: `fga${zone}`,
+							t: 0,
+							pid: y,
+							clock: c - 12,
+							desperation: false,
+						},
+						{ type: `fg${zone}`, t: 0, pid: y, pidAst: r, clock: c - 12.5 },
+						{ type: "stat", t: 0, pid: y, s: "pts", amt: 2 },
+						{
+							type: "fgaMidRange",
+							t: 1,
+							pid: b,
+							clock: c - 24,
+							desperation: false,
+						},
+						{ type: "fgMidRange", t: 1, pid: b, clock: c - 25 },
+						{ type: "stat", t: 1, pid: b, s: "pts", amt: 2 },
+					);
+					c -= 26;
+					k += 1;
+				}
+			}
+			events.push({ type: "gameOver" });
+			const tl = compileCourt({ events, players, gid });
+			tl.beats.forEach((bt, j) => {
+				if (bt.type !== "orb") {
+					return;
+				}
+				const shot = tl.beats
+					.slice(j + 1)
+					.find((x) => x.type.startsWith("fga"))!;
+				const y = (events[shot.i] as { pid: number }).pid;
+				const rim = { x: rimX(tl.tracks.get(y)!.team), y: COURT_H / 2 };
+				const off = (t: number) => {
+					const p = evalPlayer(tl, y, t);
+					return Math.hypot(p.x - rim.x, p.y - rim.y);
+				};
+				// In close as it comes off: no farther out than 19 ft (the arc
+				// is 22-24) till he shoots.
+				if (off(bt.actionStart) >= 17) {
+					return;
+				}
+				near += 1;
+				for (let t = bt.actionStart; t < shot.actionStart; t += 100) {
+					if (off(t) > 19) {
+						out.push(`${gid} ${Math.round(bt.actionStart)} ${y}`);
+						break;
+					}
+				}
+			});
+		}
+		assert.isAtLeast(near, 15);
+		assert.deepEqual(out, []);
+	}, 120_000);
 
 	// A man set in a screen or sealing in the post is a body: whoever comes
 	// at him runs into him - held up a moment, fighting round him - rather

@@ -703,6 +703,9 @@ const FLOW_ON_MS = 1500;
 // Pulling up for three off a ball screen, he dribbles this far (feet) off
 // it, past the screener's shoulder, first.
 const PULL_UP_OFF = 4.5;
+// Holding it this near the rim (feet) or nearer, a man fakes going up with
+// it - never a jab step (see liveHands).
+const IN_CLOSE_FAKE = 9;
 // A run in counts as a cut to the rim for the ball if it ends this near
 // the rim (feet) - or, rolling or cutting into the lane for a hook or a
 // floater there, this near.
@@ -7822,7 +7825,9 @@ class Director {
 	// spot on the arc, for the kick-out; a big right on top of him steps off
 	// to the dunker spot or the short corner, there for the dump-off. (Their
 	// men go with them - see findMen.)
-	private spreadOut(team: Side, rebounder: number, t: number) {
+	// (So too the man who gets the next shot in there - the dump-off, a
+	// post-up: he stays in, not out to the arc and straight back in for it.)
+	private spreadOut(team: Side, rebounder: number, t: number, inside?: number) {
 		const rim = { x: rimX(team), y: COURT_H / 2 };
 		const ball = this.posOf(rebounder);
 		// Nearest the rim first: the most crowded in, the first out.
@@ -7831,7 +7836,7 @@ class Director {
 			.sort((a, b) => dist(this.posOf(a), rim) - dist(this.posOf(b), rim));
 		men.forEach((pid, j) => {
 			const P = this.posOf(pid);
-			const big = (this.rank.get(pid) ?? 4) >= 6;
+			const big = (this.rank.get(pid) ?? 4) >= 6 || pid === inside;
 			if (big ? dist(P, ball) > 8 : dist(P, rim) > 17) {
 				return;
 			}
@@ -7840,9 +7845,13 @@ class Director {
 				.map((x) => this.posOf(x));
 			let best: Pt | undefined;
 			let score = -Infinity;
-			for (const name of big
-				? ["L_dunker", "R_dunker", "L_short_corner", "R_short_corner"]
-				: RESPACE_SPOTS) {
+			// (The man with the shot coming: in at the dunker spot or the
+			// block - not out in the short corner.)
+			for (const name of pid === inside
+				? ["L_dunker", "R_dunker", "L_block", "R_block"]
+				: big
+					? ["L_dunker", "R_dunker", "L_short_corner", "R_short_corner"]
+					: RESPACE_SPOTS) {
 				const S = this.spotFor(team, 1, name);
 				const room = Math.min(...others.map((m) => dist(m, S)));
 				const sc = Math.min(room, 16) - dist(P, S) * 0.8;
@@ -11783,6 +11792,28 @@ class Director {
 		return false;
 	}
 
+	// Who of `team` other than `pid` has the next shot (subs aside) in close
+	// - at the rim, in the post, a tip - if anybody does.
+	private nextInClose(
+		idx: number,
+		team: Side,
+		pid: number,
+	): number | undefined {
+		const next = this.peek(idx, 3).find(
+			(x) => x.e.type !== "sub" && x.e.type !== "foulOut",
+		)?.e;
+		if (!next || typeof next.pid !== "number" || next.pid === pid) {
+			return undefined;
+		}
+		const zone = ATTEMPT_ZONE[next.type] ?? resultOf(next.type)?.zone;
+		return zone !== undefined &&
+			zone !== "midRange" &&
+			zone !== "three" &&
+			this.teamOf(next.pid) === team
+			? next.pid
+			: undefined;
+	}
+
 	private reboundBy(idx: number): number | undefined {
 		const next = this.peek(idx, 3).find(
 			(x) => x.e.type !== "sub" && x.e.type !== "foulOut",
@@ -12023,7 +12054,7 @@ class Director {
 				this.phase = type === "drb" ? "loose" : "set";
 				if (type === "orb") {
 					this.motionTeam = team;
-					this.spreadOut(team, pid, T);
+					this.spreadOut(team, pid, T, this.nextInClose(i, team, pid));
 					this.findMen(team, T);
 				}
 				break;
@@ -16531,7 +16562,12 @@ class Director {
 			const throws =
 				next.kind === "fly" && "pid" in next.from && next.from.pid === pid;
 			const fake = (t: number): number => {
-				const anim = this.rng() < 0.55 ? "jab" : "shotFake";
+				// (In close - a board in his hands under the rim, say - he
+				// shows it to go up: a pump fake, not a jab step at his man.)
+				const anim =
+					this.rng() < 0.55 && dist(P, rim) >= IN_CLOSE_FAKE
+						? "jab"
+						: "shotFake";
 				const dur = anim === "jab" ? 520 : 640;
 				this.act(pid, anim, t, t + dur, { look: rim });
 				if (anim === "shotFake") {
