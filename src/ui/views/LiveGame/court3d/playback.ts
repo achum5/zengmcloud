@@ -419,7 +419,7 @@ export const stepPlay = (
 		// that one isn't on to the next yet - it is still showing something
 		// in between, its own reel being cut otherwise.)
 		let seg = keyOn ? segmentAt(plan, s.t).at : undefined;
-		if (seg && p.follower) {
+		if (seg && plan && p.follower) {
 			const after = plan[plan.indexOf(seg) + 1];
 			if (!after || p.cursor < after.cursor) {
 				seg = undefined;

@@ -1092,7 +1092,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 			const bc = breakContext.current;
 			if (bc) {
 				const isShotByBreakTeam =
-					!!action && !action.blocked && displayT === bc.t;
+					!!action &&
+					!(action.kind === "result" && action.blocked) &&
+					displayT === bc.t;
 				if (
 					action?.kind === "attempt" &&
 					isShotByBreakTeam &&

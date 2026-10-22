@@ -962,6 +962,10 @@ const Court3D = ({
 		// Following another device's sim: where its court is estimated to be
 		// (see follow.ts).
 		lead: 0,
+		// When playing along last cut back (see alignTo), and whether it has
+		// given up on that for stepping line by line.
+		slips: undefined as number[] | undefined,
+		lost: false,
 		// How much of the show has been played (ms): the game played through
 		// at its own pace, and the replays, but none of what is cut past. Two
 		// devices playing the same game the same way agree on it, so it is
