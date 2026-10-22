@@ -106,6 +106,18 @@ test.runIf(env.ARENA_RUN === "1")(
 				Object.assign(draftSettings, JSON.parse(env.ARENA_DRAFT ?? "{}"));
 				Object.assign(strengthSettings, JSON.parse(env.ARENA_STRENGTH ?? "{}"));
 			}
+			// How much this season's playoffs count at each outlook before the
+			// deadline (outlook.playoffWeight).
+			const deadlineViews: unknown[] = [];
+			outlookWatchers.push((outlook) => {
+				if (outlook.deadline) {
+					deadlineViews.push({
+						season: g.get("season"),
+						days: outlook.deadline.daysToDeadline,
+						playoffWeight: outlook.playoffWeight ?? null,
+					});
+				}
+			});
 			// ARENA_PICK_SURVEY=1: where every outlook expects each team's own
 			// picks to land, draft by draft, to set against where they do.
 			const pickSurvey: unknown[] = [];
@@ -608,6 +620,10 @@ test.runIf(env.ARENA_RUN === "1")(
 					JSON.stringify(realized),
 				);
 			}
+			await fs.writeFile(
+				`${out}/deadline-views-${seed}.json`,
+				JSON.stringify(deadlineViews),
+			);
 			// Every player drafted while the league ran: where he went and how
 			// he turned out, to judge the drafting.
 			{

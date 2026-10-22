@@ -162,6 +162,11 @@ export type LeagueOutlook = {
 	// From the draft lottery to the end of the draft: the class, so the
 	// draft's picks are priced by who would go there (classPickAt).
 	classBoard?: ClassBoard;
+	// Before the trade deadline: how much this season's title chances follow
+	// playoff strength rather than regular-season strength, 0 to 1 (from the
+	// deadline view's fit), and the playoff games a team plays (teamPoints).
+	playoffWeight?: number;
+	playoffGames?: number;
 };
 
 export type ClassBoard = {
@@ -383,6 +388,9 @@ export const outlookSettings = {
 	// two teams equally good, one with a lucky record and one with an unlucky
 	// one, do not have the same chances, and a deal is worth more to the first.
 	recordOdds: true,
+	// Before the deadline, injured players back for the playoffs count for
+	// them (teamPoints).
+	playoffInjuries: true,
 };
 
 export const ensureRetention = async (
@@ -904,12 +912,39 @@ export const teamPoints = (
 			refill?.(y, 1 - committed / salaryCap, signings);
 		}
 		roster?.(y, lines);
-		out.push(expectedRosterPoints(lines));
+		let points = expectedRosterPoints(lines);
+		// This season's playoffs count with everyone back who will be by then
+		// (playoffWeight): a star out for the rest of the regular season is
+		// still worth his playoffs.
+		const weight = outlook.playoffWeight ?? 0;
+		if (y === 0 && weight > 0) {
+			let playoffLines: typeof lines | undefined;
+			for (let i = 0; i < players.length; i++) {
+				const out = players[i]!.injury.gamesRemaining;
+				if (out <= 0) {
+					continue;
+				}
+				const back =
+					1 -
+					Math.min(
+						1,
+						Math.max(0, out - gamesRemaining) /
+							Math.max(1, outlook.playoffGames ?? 1),
+					);
+				if (back !== lines[i]!.availability) {
+					playoffLines ??= [...lines];
+					playoffLines[i] = { ...lines[i]!, availability: back };
+				}
+			}
+			if (playoffLines) {
+				points += weight * (expectedRosterPoints(playoffLines) - points);
+			}
+		}
+		out.push(points);
 	}
 	return out;
 };
 
-// The same, against an average team.
 // What a team's draft place is ranked by each season, from its strength on
 // its roster alone (draftPlace).
 const placeKeysOf = (
@@ -1000,6 +1035,7 @@ export const placesAfter = (
 	};
 };
 
+// The same, against an average team.
 export const teamStrengths = (
 	outlook: LeagueOutlook,
 	tid: number,
@@ -1283,6 +1319,14 @@ export const buildOutlook = async ({
 		}
 	}
 
+	const playoffWeight =
+		deadline &&
+		deadline.curve.regular > 0 &&
+		deadline.curve.playoff > 0 &&
+		outlookSettings.playoffInjuries
+			? deadline.curve.playoff /
+				(deadline.curve.regular + deadline.curve.playoff)
+			: undefined;
 	return {
 		...base,
 		teams: outlooks,
@@ -1290,6 +1334,14 @@ export const buildOutlook = async ({
 		playoffCurves,
 		deadline,
 		classBoard: await buildClassBoard(base),
+		playoffWeight,
+		// About three quarters of the most a run could last.
+		playoffGames: Math.round(
+			0.75 *
+				g
+					.get("numGamesPlayoffSeries", "current")
+					.reduce((a: number, x: number) => a + x, 0),
+		),
 	};
 };
 

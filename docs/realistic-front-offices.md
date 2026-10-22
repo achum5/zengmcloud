@@ -235,6 +235,14 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   call): six weeks out, the best deal a team can make at the deadline is worth
   about 60% of its best today, so waiting rarely pays and trades stay spread
   through the season rather than bunching at the deadline as in the NBA.
+- **An injured player back for the playoffs is worth his playoffs.** This
+  season's strength counted each player for the share of the regular season
+  he would play, so a star out for the rest of it but back for the playoffs
+  was nearly worthless this season - a contender could be had at the
+  deadline. Before the deadline, this season's strength is now the regular
+  season's moved toward the playoffs' (everyone back who will be by then) by
+  how much the deadline view's fit of title chances leans on playoff
+  strength.
 - **A deadline rush** (owner's call: on, then tuned toward the NBA). In the
   last 7 days before the deadline every team shops each day, as in the
   offseason windows - with two teams shopping a day, a given pair was looked at
