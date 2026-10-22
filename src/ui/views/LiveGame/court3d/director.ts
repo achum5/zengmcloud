@@ -14291,13 +14291,27 @@ class Director {
 			atTime(tr.shown, a, false) &&
 			!tr.shown.some(([t0, on]) => t0 > a && t0 < b && !on);
 		// Spells of drifting before a run of his: the run starts from where
-		// the last of them left him - and the next spell, from there.
-		const taken = new Map<string, Pt>();
-		const take = (tr: Track, w: Still, at: Pt) =>
-			taken.set(`${tr.pid}:${w.next}`, at);
+		// the last of them left him - and the next spell, from there. (Not
+		// from where a later one does: a spell he stands in on into the next
+		// trip, the ball the other way - he is no further on in this one for
+		// it.)
+		const taken = new Map<string, { t: number; at: Pt }[]>();
+		const take = (tr: Track, w: Still, at: Pt) => {
+			const k = `${tr.pid}:${w.next}`;
+			taken.set(k, [...(taken.get(k) ?? []), { t: w.from, at }]);
+		};
 		const free = (_tr: Track, w: Still) => w.next !== undefined;
-		const startOf = (tr: Track, w: Still): Pt =>
-			taken.get(`${tr.pid}:${w.next}`) ?? w.at;
+		const startOf = (tr: Track, w: Still): Pt => {
+			let at = w.at;
+			let t = -Infinity;
+			for (const e of taken.get(`${tr.pid}:${w.next}`) ?? []) {
+				if (e.t <= w.from && e.t >= t) {
+					at = e.at;
+					t = e.t;
+				}
+			}
+			return at;
+		};
 		// From when the ball is in play again at or after t: a loose ball
 		// picked up, a rebound come down into somebody's hands.
 		const liveFrom = (t: number): number => {
