@@ -6,7 +6,7 @@ import {
 	getAutoDayRecap,
 	getAutoRecap,
 } from "./getAutoRecap.ts";
-import { pickByDay } from "./recapText.ts";
+import { injuryPhrase, pickByDay } from "./recapText.ts";
 import type {
 	RecapGame,
 	RecapPlayer,
@@ -919,6 +919,24 @@ describe("facts told once, in English", () => {
 			const recap = getAutoRecap(game([home, away], { gid }));
 			assert.notMatch(recap, /all two\b/, recap);
 		}
+	});
+});
+
+// "Sore achilles kept Anthony Lowry out": a singular tendon ending in s was
+// read as a plural, and a man's name lost its capital.
+describe("injury names in prose", () => {
+	test("singular names ending in s keep their article", () => {
+		assert.strictEqual(injuryPhrase("Sore Achilles"), "a sore Achilles");
+		assert.strictEqual(
+			injuryPhrase("Bruised Quadriceps"),
+			"a bruised quadriceps",
+		);
+		assert.strictEqual(
+			injuryPhrase("Achilles Tendinitis"),
+			"Achilles tendinitis",
+		);
+		assert.strictEqual(injuryPhrase("Back Spasms"), "back spasms");
+		assert.strictEqual(injuryPhrase("Torn ACL"), "a torn ACL");
 	});
 });
 

@@ -215,6 +215,10 @@ describe("simmed recaps", () => {
 				/aggregate favors|was no help to .*, and a loss/,
 				// Backwards, and never said where.
 				/are next on the schedule for/,
+				// The next game is its own sentence: "...beaten at the line, 3
+				// attempts to 24, and play the Pacers next, at home."
+				/, and (?:host|visit|play|get) the [A-Z][\w ]* next\b/,
+				/\b[Ss]ore achilles|with (?:bruised|sore|strained) quadriceps/,
 			]) {
 				assert.notMatch(recap, bad, `gid ${gid}\n${recap}`);
 			}

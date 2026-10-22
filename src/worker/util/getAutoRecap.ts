@@ -307,7 +307,10 @@ export const joinShortPairs = (sentences: string[]): string[] => {
 		// trail again and forced 24 turnovers", "They were 5 up going into the
 		// fourth and hit 14 from deep" tied a moment of the game to a number
 		// from the box score.
-		!/\btrail(?:ed)? again|going into the|entering the|got back/.test(t);
+		!/\btrail(?:ed)? again|going into the|entering the|got back/.test(t) &&
+		// ...and so does the next game: "The Pelicans were beaten at the line,
+		// 3 attempts to 24, and play the Pacers next, at home."
+		!/\bnext\b/.test(t);
 	// The FIRST sentence has to start with its own subject, because the join
 	// hands its subject to the second clause. "Over six games the aggregate
 	// favors the Nets by 37." + "They meet again tomorrow." became "...the

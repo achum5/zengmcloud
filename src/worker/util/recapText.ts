@@ -244,7 +244,9 @@ export const lowerInjury = (type: string): string =>
 	type
 		.split(" ")
 		.map((w) => (w.length >= 2 && w === w.toUpperCase() ? w : w.toLowerCase()))
-		.join(" ");
+		.join(" ")
+		// A man's name: "Achilles tendinitis", never "achilles".
+		.replaceAll(/\bachilles\b/g, "Achilles");
 
 // "a sprained ankle", but "plantar fasciitis" and "back spasms" take no article
 // at all - "went down with a plantar fasciitis" is the kind of line that gives
@@ -264,9 +266,14 @@ export const injuryPhrase = (type: string): string => {
 	}
 	// "ss" is singular ("abscess"), and so is "us" ("torn meniscus"); both
 	// still take an article.
+	// And a few singular muscles and tendons end in s too: "Sore achilles
+	// kept Anthony Lowry out" wanted "A sore Achilles".
 	if (
 		lower.endsWith("itis") ||
-		(lower.endsWith("s") && !lower.endsWith("ss") && !lower.endsWith("us"))
+		(lower.endsWith("s") &&
+			!lower.endsWith("ss") &&
+			!lower.endsWith("us") &&
+			!/(?:Achilles|quadriceps|biceps|triceps)$/.test(lower))
 	) {
 		return lower;
 	}
