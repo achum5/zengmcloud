@@ -735,6 +735,88 @@ describe("3D director", () => {
 		}
 	}, 120_000);
 
+	// A spot the play has back in the backcourt, with the ball over half
+	// court already, is half court for him (nobody goes back over it) - but a
+	// man over it already trails from where he is: not off along the line to
+	// the sideline for it.
+	test("over half court already, nobody runs along the line for a backcourt spot", () => {
+		const along: string[] = [];
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl } = compile(seed, 140);
+			for (const [pid, tr] of tl.tracks) {
+				for (const m of tr.moves) {
+					const x0 = m.from.x - COURT_W / 2;
+					const x1 = m.to.x - COURT_W / 2;
+					if (
+						Math.abs(Math.abs(x1) - 3.5) < 0.05 &&
+						Math.abs(x0) >= 3 &&
+						Math.sign(x0) === Math.sign(x1) &&
+						Math.abs(m.to.y - m.from.y) >= 6 &&
+						Math.abs(x1 - x0) <= 3
+					) {
+						along.push(`${seed} ${Math.round(m.t0)} ${pid}`);
+					}
+				}
+			}
+		}
+		assert.deepEqual(along, []);
+	}, 120_000);
+
+	// With the ball played in close in the front court, nobody off it is
+	// left stood out at half court watching - the man who pitched it ahead,
+	// the one the break left back: he trails up into the play.
+	test("nobody stood out at half court while the ball is played in close", () => {
+		let samples = 0;
+		const stood: string[] = [];
+		for (const seed of ["a", "b", "c", "d", "e", "f"]) {
+			const { tl } = compile(seed, 140);
+			const fast = (t: number) => tl.fast.some(([a, b]) => t >= a && t < b);
+			const runs = new Map<number, { t: number; x: number; y: number }>();
+			const end = (pid: number, t: number) => {
+				const r = runs.get(pid);
+				if (r && t - r.t >= 2000) {
+					stood.push(`${seed} ${pid} ${r.t} ${t - r.t}`);
+				}
+				runs.delete(pid);
+			};
+			for (let t = 0; t < tl.end; t += 200) {
+				const h = fast(t) ? undefined : evalBall(tl, t, bodyFor).holder;
+				const team = h === undefined ? undefined : tl.tracks.get(h)!.team;
+				const rim =
+					team === undefined ? undefined : { x: rimX(team), y: COURT_H / 2 };
+				const H = h === undefined ? undefined : evalPlayer(tl, h, t);
+				if (!H || !rim || Math.hypot(H.x - rim.x, H.y - rim.y) > 30) {
+					for (const pid of runs.keys()) {
+						end(pid, t);
+					}
+					continue;
+				}
+				for (const tr of tl.tracks.values()) {
+					if (tr.team !== team || tr.pid === h) {
+						continue;
+					}
+					const q = evalPlayer(tl, tr.pid, t);
+					if (!q.shown) {
+						continue;
+					}
+					samples += 1;
+					const r = runs.get(tr.pid);
+					const deep = Math.hypot(q.x - rim.x, q.y - rim.y) >= 36;
+					if (deep && r && Math.hypot(q.x - r.x, q.y - r.y) <= 3) {
+						continue;
+					}
+					end(tr.pid, t);
+					if (deep) {
+						runs.set(tr.pid, { t, x: q.x, y: q.y });
+					}
+				}
+			}
+		}
+		assert.isAbove(samples, 10_000);
+		// (A man stood out there 2 s+: 22 of them in these six games before.)
+		assert.isAtMost(stood.length, 6, stood.join("; "));
+	}, 240_000);
+
 	// Coming back on defense, they get back the way a defense does: into the
 	// paint and round it, somebody at the rim, picking up their men as they
 	// come in - not five in a line across the floor out past the arc, level
@@ -1622,15 +1704,18 @@ describe("3D director", () => {
 					for (const m of tr.moves) {
 						// Out on the floor in the frontcourt with it, back the way
 						// he came. (Not a step or two back out of the lane, facing
-						// the rim, to throw it.)
+						// the rim, to throw it - nor a drive out of the corner,
+						// up the floor but in at the rim.)
 						const out0 = Math.abs(m.from.x - rim.x);
+						const r0 = Math.hypot(m.from.x - rim.x, m.from.y - rim.y);
 						if (
 							m.anim === "dribble" &&
 							m.t0 >= prev.actionStart &&
 							m.t0 < b.actionStart &&
 							out0 < COURT_W / 2 &&
-							Math.hypot(m.from.x - rim.x, m.from.y - rim.y) >= 19 &&
-							Math.abs(m.to.x - rim.x) - out0 > 8
+							r0 >= 19 &&
+							Math.abs(m.to.x - rim.x) - out0 > 8 &&
+							Math.hypot(m.to.x - rim.x, m.to.y - rim.y) > r0
 						) {
 							back.push(`${seed} ${Math.round(m.t0)} ${tr.pid}`);
 						}

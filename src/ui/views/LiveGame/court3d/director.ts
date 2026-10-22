@@ -1122,6 +1122,10 @@ const LANE_RUN = 30;
 // A trailer's way up to the top of the play keeps this far (feet) off the
 // man bringing the ball up, if it can.
 const TRAIL_CLEAR = 8;
+// A man this far from the rim (feet) or farther, with the ball well in
+// front of him in the front court, is left back up the floor too (see
+// trailUp) - stood out at half court.
+const TRAIL_DEEP = 36;
 
 // How far along a run (0 to 1) a man is `u` of the way through its `ms`:
 // setting off from a standstill and pulling up at the end, the way the
@@ -5837,15 +5841,18 @@ class Director {
 	}
 
 	// THE TRAILER. A man the set leaves back up the floor - the big who took
-	// it out after a basket, the one who stayed home on the break - with no
-	// part in this step or the next does not stand and watch from back
-	// there: he runs up to the top of the play, to the side of it with the
-	// most room.
+	// it out after a basket, the one who stayed home on the break, the man
+	// who pitched it ahead - with no part in this step or the next does not
+	// stand and watch from back there (in the backcourt, or out at half
+	// court with the ball well in front of him): he runs up to the top of
+	// the play, to the side of it with the most room.
 	private trailUp(
 		run: Running,
 		acts: PlayAction[],
 		next: PlayAction[] | undefined,
 		t0: number,
+		// (Called where it never was before: his own draws for all of them.)
+		own = false,
 	) {
 		const { team } = run;
 		const busy = new Set<number>();
@@ -5860,44 +5867,80 @@ class Director {
 				}
 			}
 		}
+		const rim = { x: rimX(team), y: COURT_H / 2 };
+		const h = this.holder;
+		const B =
+			h !== undefined && this.teamOf(h) === team ? this.posOf(h) : undefined;
 		run.roles.forEach((pid, r) => {
 			const P = this.posOf(pid);
-			if (busy.has(r) || pid === this.holder || !this.inBackcourt(team, P)) {
+			if (busy.has(r) || pid === this.holder) {
 				return;
 			}
-			const mates = run.roles
-				.filter((o) => o !== pid)
-				.map((o) => this.posOf(o));
-			const depth = RIM_INSET + this.rand(27, 30);
-			const spots = [COURT_H / 2 - 12, COURT_H / 2, COURT_H / 2 + 12].map((y) =>
-				spot(team, depth, y + this.rand(-1.5, 1.5)),
+			const back = this.inBackcourt(team, P);
+			if (
+				!back &&
+				!(
+					B &&
+					!this.inBackcourt(team, B) &&
+					dist(P, rim) >= TRAIL_DEEP &&
+					dist(B, rim) <= dist(P, rim) - 8
+				)
+			) {
+				return;
+			}
+			// (Out at half court, his own draws: the game's luck as it was.)
+			const { Q, start } = this.trailSpot(
+				run,
+				pid,
+				t0,
+				back && !own ? undefined : this.ownDraws(pid, t0),
 			);
-			const start = Math.max(t0 + this.rand(150, 450), this.free.get(pid) ?? 0);
-			// The room he has there from the rest - and, all the way there,
-			// from the man bringing the ball up: not up the floor at his side.
-			const h = this.holder;
-			const room = (S: Pt) => {
-				let r = Math.min(...mates.map((M) => dist(M, S)));
-				if (h !== undefined && this.teamOf(h) === team) {
-					const ms = runMs(dist(P, S), RUN * 0.85);
-					for (let k = 1; k <= 6; k++) {
-						const u = k / 6;
-						const gap = dist(
-							{ x: P.x + (S.x - P.x) * u, y: P.y + (S.y - P.y) * u },
-							this.posAt(h, start + ms * u),
-						);
-						if (gap < TRAIL_CLEAR) {
-							r = Math.min(r, gap);
-						}
+			this.go(pid, Q, start, RUN * 0.85, "run");
+		});
+	}
+
+	// Where a trailer runs up to (see trailUp), and when he sets off - drawn
+	// from the game's luck unless `own` draws are given.
+	private trailSpot(
+		run: Running,
+		pid: number,
+		t0: number,
+		own: (() => number) | undefined,
+	): { Q: Pt; start: number } {
+		const { team } = run;
+		const rand = (lo: number, hi: number) =>
+			own ? lo + own() * (hi - lo) : this.rand(lo, hi);
+		const P = this.posOf(pid);
+		const h = this.holder;
+		const mates = run.roles.filter((o) => o !== pid).map((o) => this.posOf(o));
+		const depth = RIM_INSET + rand(27, 30);
+		const spots = [COURT_H / 2 - 12, COURT_H / 2, COURT_H / 2 + 12].map((y) =>
+			spot(team, depth, y + rand(-1.5, 1.5)),
+		);
+		const start = Math.max(t0 + rand(150, 450), this.free.get(pid) ?? 0);
+		// The room he has there from the rest - and, all the way there,
+		// from the man bringing the ball up: not up the floor at his side.
+		const room = (S: Pt) => {
+			let r = Math.min(...mates.map((M) => dist(M, S)));
+			if (h !== undefined && this.teamOf(h) === team) {
+				const ms = runMs(dist(P, S), RUN * 0.85);
+				for (let k = 1; k <= 6; k++) {
+					const u = k / 6;
+					const gap = dist(
+						{ x: P.x + (S.x - P.x) * u, y: P.y + (S.y - P.y) * u },
+						this.posAt(h, start + ms * u),
+					);
+					if (gap < TRAIL_CLEAR) {
+						r = Math.min(r, gap);
 					}
 				}
-				return r;
-			};
-			const Q = spots
-				.map((S) => ({ S, room: room(S) }))
-				.sort((a, b) => b.room - a.room)[0]!.S;
-			this.go(pid, clampPt(Q), start, RUN * 0.85, "run");
-		});
+			}
+			return r;
+		};
+		const Q = spots
+			.map((S) => ({ S, room: room(S) }))
+			.sort((a, b) => b.room - a.room)[0]!.S;
+		return { Q: clampPt(Q), start };
 	}
 
 	// SPACING THE DRIVE. The ball going hard at the rim, nobody off it stays
@@ -6161,7 +6204,11 @@ class Director {
 			this.holder !== undefined &&
 			(this.posAt(this.holder, t0).x - COURT_W / 2) * dir > 2;
 		if (ballOver && (P.x - COURT_W / 2) * dir < 3) {
-			P = { x: COURT_W / 2 + dir * 3.5, y: P.y };
+			// (A spot the play has back in the backcourt - the big staying
+			// home, say - with the ball over already: he trails the play, up
+			// to the top of it (see trailUp) - not out to the sideline at half
+			// court, to stand and watch from there.)
+			P = this.trailSpot(run, pid, t0, this.ownDraws(pid, t0)).Q;
 		}
 		// On the break, nobody runs back down the floor to the spot the play
 		// has him trailing in, from farther up it already - the big who beat
@@ -6177,7 +6224,13 @@ class Director {
 				dist(across, rim) < BREAK_DEEP || dist(from, rim) < BREAK_DEEP;
 			const role = run.roles.indexOf(pid);
 			if (!(deep && role >= 0 && needed(run, undefined, role as Role))) {
-				if (deep || Math.abs(P.y - from.y) < BREAK_NO_BACK) {
+				// (Nor, for a spot back over half court with him over it
+				// already, across to the sideline out there.)
+				if (
+					deep ||
+					Math.abs(P.y - from.y) < BREAK_NO_BACK ||
+					((P.x - COURT_W / 2) * dir < 0 && (from.x - COURT_W / 2) * dir > 0)
+				) {
 					return Math.max(t0, this.free.get(pid) ?? 0);
 				}
 				P = across;
@@ -12170,6 +12223,9 @@ class Director {
 						}
 						t = this.runStep(run, steps[k]!, t, steps[k + 1], k);
 					}
+					// (Cut short by the whistle: those left back up the floor
+					// are on their way up as it goes, not stood out there.)
+					this.trailUp(run, [], undefined, t, true);
 				}
 				const { hit, at: vp } = this.stageFoul(
 					fouler,
