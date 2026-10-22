@@ -11,6 +11,39 @@ import { orderBy } from "../../common/utils.ts";
 import { defineView } from "../util/defineView.ts";
 import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
 import { proposalsTo } from "../core/realisticFrontOffice/proposalStore.ts";
+import { heldDeals } from "../core/realisticFrontOffice/windows.ts";
+import { getSummary } from "./trade.ts";
+
+// Deals two CPU teams agreed, open to bids till the next trading day
+// (realisticFrontOffice/windows.ts): each with the sides this team has bid on.
+const pendingDeals = async (userTid: number) => {
+	const out = [];
+	for (const deal of await heldDeals()) {
+		const side = (k: 0 | 1) => ({
+			tid: deal.tids[k],
+			pids: deal.give[k].pids,
+			dpids: deal.give[k].dpids,
+			pidsExcluded: [],
+			dpidsExcluded: [],
+		});
+		const teams: TradeTeams = [side(0), side(1)];
+		out.push({
+			tids: deal.tids,
+			give: deal.give,
+			bid: [0, 1].map((k) =>
+				deal.bids.some((bid) => bid.tid === userTid && bid.side === k),
+			),
+			// The teams that have bid on each side, for everyone to see.
+			bidders: [0, 1].map((k) => [
+				...new Set(
+					deal.bids.filter((bid) => bid.side === k).map((bid) => bid.tid),
+				),
+			]),
+			summary: await getSummary(teams),
+		});
+	}
+	return out;
+};
 
 const getOffers = async (seed: number) => {
 	const NUM_OFFERS = 5;
@@ -188,6 +221,7 @@ export default defineView({
 					offers: (await augmentOffers(standing)).map((offer) =>
 						addInlinePlayerInfo(offer),
 					),
+					pending: await pendingDeals(userTid),
 					seed: 0,
 					standing: true,
 				};
@@ -213,6 +247,7 @@ export default defineView({
 
 			return {
 				offers,
+				pending: [] as Awaited<ReturnType<typeof pendingDeals>>,
 				seed,
 				standing: false,
 			};

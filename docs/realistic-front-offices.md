@@ -199,6 +199,19 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   Trade Proposals page, with a notification. Bidding opens the trade screen
   with that team; the offer is judged like any other and, if it is the best,
   holds until the window closes.
+- **Built** (realisticFrontOffice/windows.ts). A notable deal two CPU teams
+  agree is held to the next trading day - not on the last one before the
+  deadline, the end of the regular season or of free agency, and not in the
+  offseason's one-shot windows, which have no next day. Its assets are off
+  every table meanwhile. When the window closes, each side weighs the deal
+  against the best any other CPU team would give for the same assets (as when
+  judging a human's offer) and against the humans' bids, judged with a
+  human's higher bar; the best by its own read wins if it clears the minimum
+  gain, and the deal itself goes through only if both sides still want it. A
+  human bids by asking for exactly what one side gives; asking for part of it,
+  or for it with more, is refused while the window is open. The Pending
+  Deals list shows who has bid. League Settings > Pending Deals: notable
+  deals or every deal.
 - **A higher bar for a human's deal** (owner's call): a human picks which
   deals to offer, so finds the ones the model gets wrong in his favour; the
   margin of error counts 1.5 times as much in a deal with a human, tuned by

@@ -37,6 +37,13 @@ import {
 } from "./outlook.ts";
 import { waitingValues } from "./timing.ts";
 import type { TradedAway } from "./tradePenalty.ts";
+import {
+	closeWindows,
+	holdDeal,
+	isNotable,
+	isReserved,
+	loadReserved,
+} from "./windows.ts";
 
 // CPU TEAMS TRADING WITH EACH OTHER. Every day a few teams work the phones:
 // each prices what every other team has, and what it has itself, by what it
@@ -86,7 +93,7 @@ export type TeamState = {
 	rosterKey: string;
 };
 
-type Deal = {
+export type Deal = {
 	// What each side gives.
 	give: [
 		{ pids: number[]; dpids: number[] },
@@ -132,6 +139,9 @@ export const marketSettings = {
 	placesAfter: true,
 	// Packages of three assets, not only one or two.
 	triples: true,
+	// Which deals two CPU teams agree are held a trading day for other teams'
+	// bids (windows.ts), over the league's setting.
+	windows: undefined as "notable" | "all" | "off" | undefined,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -157,6 +167,11 @@ export const marketClock = {
 	// Deals both teams wanted, put off because one would rather decide at the
 	// deadline.
 	deferred: 0,
+	// Deals held a day for bids (windows.ts): how many, how many were made as
+	// agreed, and the sides that took another team's offer instead.
+	held: 0,
+	heldKept: 0,
+	heldTaken: 0,
 };
 
 // Called with every deal just before it is made, with both rosters as they
@@ -182,7 +197,7 @@ export const outlookWatchers: ((outlook: LeagueOutlook) => void)[] = [];
 // alone, so any device in charge of simming builds the same one.
 let cache: { key: string; outlook: LeagueOutlook } | undefined;
 
-const gamesPlayed = async () => {
+export const gamesPlayed = async () => {
 	let total = 0;
 	for (const ts of await idb.cache.teamSeasons.getAll()) {
 		if (ts.season === g.get("season")) {
@@ -400,20 +415,21 @@ export const priceFor = (
 // The best deal between two teams, if there is one both would make. `single`
 // holds what one asset is worth to one team, gained or lost, for the day.
 // What a team puts on the table: its tradable players, best first, and its
-// picks in the next few drafts.
-export const tableAssets = (t: TeamState): Asset[] => [
-	...[...t.tradablePlayers]
-		.sort((x, y) => y.valueNoPot - x.valueNoPot)
-		.slice(0, marketSettings.wholeRoster ? undefined : PLAYERS_ON_TABLE)
-		.map((p) => ({ kind: "player" as const, p })),
-	...t.picks
-		.filter(
-			(dp) =>
-				typeof dp.season === "number" &&
-				dp.season <= g.get("season") + PICK_DRAFTS_ON_TABLE,
-		)
-		.map((dp) => ({ kind: "pick" as const, dp })),
-];
+// picks in the next few drafts - none held in a deal waiting for bids.
+export const tableAssets = (t: TeamState): Asset[] =>
+	[
+		...[...t.tradablePlayers]
+			.sort((x, y) => y.valueNoPot - x.valueNoPot)
+			.slice(0, marketSettings.wholeRoster ? undefined : PLAYERS_ON_TABLE)
+			.map((p) => ({ kind: "player" as const, p })),
+		...t.picks
+			.filter(
+				(dp) =>
+					typeof dp.season === "number" &&
+					dp.season <= g.get("season") + PICK_DRAFTS_ON_TABLE,
+			)
+			.map((dp) => ({ kind: "pick" as const, dp })),
+	].filter((x) => !isReserved(x));
 
 export const bestDealWith = (
 	outlook: LeagueOutlook,
@@ -778,11 +794,32 @@ export const tradeDay = () =>
 	timed(async () => {
 		const phase = g.get("phase");
 		if (phase === PHASE.REGULAR_SEASON) {
-			await shop((await inDeadlineWindow()) ? Infinity : SHOPPERS_PER_DAY);
+			await closeWindows();
+			await shop(
+				(await inDeadlineWindow()) ? Infinity : SHOPPERS_PER_DAY,
+				await anotherTradingDay(),
+			);
 		} else if (phase === PHASE.FREE_AGENCY) {
-			await shop(marketSettings.freeAgencyShoppers);
+			await closeWindows();
+			await shop(marketSettings.freeAgencyShoppers, await anotherTradingDay());
 		}
 	});
+
+// Whether there is a trading day after this one, before the deadline or the
+// end of the regular season or of free agency - for a deal to wait for bids.
+const anotherTradingDay = async () => {
+	if (g.get("phase") === PHASE.FREE_AGENCY) {
+		return g.get("daysLeft") > 1;
+	}
+	try {
+		if ((await getDaysLeftSchedule("tradeDeadline")) <= 1) {
+			return false;
+		}
+	} catch {
+		// No deadline left this season.
+	}
+	return (await getDaysLeftSchedule()) > 1;
+};
 
 // The last days before the trade deadline (marketSettings.deadlineWindow).
 const inDeadlineWindow = async () => {
@@ -814,8 +851,108 @@ export const tradeWindow = async () => {
 			WINDOW_PHASES.includes(g.get("phase"))) ||
 		(marketSettings.preseasonWindow && g.get("phase") === PHASE.PRESEASON)
 	) {
-		await timed(() => shop(Infinity));
+		await timed(async () => {
+			await closeWindows();
+			await shop(Infinity);
+		});
 	}
+};
+
+// The trade screen's own check of a deal: no warning.
+export const legalDeal = async (deal: Pick<Deal, "tids" | "give">) =>
+	!(
+		await summary([
+			{
+				tid: deal.tids[0],
+				pids: deal.give[0].pids,
+				dpids: deal.give[0].dpids,
+				pidsExcluded: [],
+				dpidsExcluded: [],
+			},
+			{
+				tid: deal.tids[1],
+				pids: deal.give[1].pids,
+				dpids: deal.give[1].dpids,
+				pidsExcluded: [],
+				dpidsExcluded: [],
+			},
+		])
+	).warning;
+
+// Makes a deal two CPU teams agreed, with its record for the trade history;
+// false if the trade screen would not allow it.
+export const makeDeal = async (
+	outlook: LeagueOutlook,
+	best: Deal,
+	initiatorTid: number,
+	sides: readonly [TeamState, TeamState],
+	waiting?: ReturnType<typeof waitingOf>,
+) => {
+	const teams: TradeTeams = [
+		{
+			tid: best.tids[0],
+			pids: best.give[0].pids,
+			dpids: best.give[0].dpids,
+			pidsExcluded: [],
+			dpidsExcluded: [],
+		},
+		{
+			tid: best.tids[1],
+			pids: best.give[1].pids,
+			dpids: best.give[1].dpids,
+			pidsExcluded: [],
+			dpidsExcluded: [],
+		},
+	];
+	const tradeSummary = await summary(teams);
+	if (tradeSummary.warning) {
+		return false;
+	}
+	// Stamped on the trade, for the trade history: where each team stood
+	// and what the deal was worth to it.
+	const standing = (t: number) => {
+		const o = outlook.teams.get(t);
+		return o
+			? `${o.strength[0]! >= 0 ? "+" : ""}${o.strength[0]!.toFixed(1)} now, ${(100 * o.title[0]!).toFixed(1)}% title`
+			: "";
+	};
+	const assetsOf = (k: 0 | 1) => ({
+		players: best.assets[k].flatMap((x) => (x.kind === "player" ? [x.p] : [])),
+		picks: best.assets[k].flatMap((x) => (x.kind === "pick" ? [x.dp] : [])),
+	});
+	const sideFor = (k: 0 | 1): ExplainSide => ({
+		tid: best.tids[k],
+		players: sides[k].players,
+		picks: sides[k].picks,
+		tradedAway: sides[k].tradedAway,
+		gain: best.gains[k],
+		margin: best.margins[k],
+		gives: assetsOf(k),
+		gets: assetsOf(k === 0 ? 1 : 0),
+	});
+	const breakdown = explainDeal(outlook, [sideFor(0), sideFor(1)]);
+	for (const watch of tradeWatchers) {
+		watch({
+			tids: best.tids,
+			give: best.give,
+			gains: best.gains,
+			rosters: [sides[0].players, sides[1].players],
+			picks: [sides[0].picks, sides[1].picks],
+			outlook,
+			breakdown,
+			margins: best.margins,
+			waiting,
+		});
+	}
+	await processTrade(teams, undefined, {
+		initiatorTid,
+		tiers: [standing(best.tids[0]), standing(best.tids[1])],
+		dv: Math.round(Math.min(...best.gains) * 10_000) / 10_000,
+		motivation: `both gain: ${best.gains.map((x) => `+${(100 * x).toFixed(2)}`).join(" / ")} title-equivalents x100`,
+		frontOffice: breakdown,
+	});
+	marketClock.trades += 1;
+	return true;
 };
 
 // What one asset at a time is worth to each team, for the screens: kept for
@@ -830,7 +967,8 @@ const screensOf = (outlook: LeagueOutlook) => {
 	return map;
 };
 
-const shop = async (numShoppers: number) => {
+// `holds`: notable deals wait a day for bids (windows.ts).
+const shop = async (numShoppers: number, holds = false) => {
 	const phase = g.get("phase");
 	const tids = await aiTids();
 	if (tids.length < 2) {
@@ -838,6 +976,7 @@ const shop = async (numShoppers: number) => {
 	}
 	const games = await gamesPlayed();
 	const outlook = await getOutlook(games);
+	await loadReserved();
 	const random = makeSeededRandom(
 		g.get("season") * 100_003 + phase * 1009 + games + g.get("daysLeft") * 7,
 	);
@@ -882,72 +1021,15 @@ const shop = async (numShoppers: number) => {
 			}
 			continue;
 		}
-		const teams: TradeTeams = [
-			{
-				tid: best.tids[0],
-				pids: best.give[0].pids,
-				dpids: best.give[0].dpids,
-				pidsExcluded: [],
-				dpidsExcluded: [],
-			},
-			{
-				tid: best.tids[1],
-				pids: best.give[1].pids,
-				dpids: best.give[1].dpids,
-				pidsExcluded: [],
-				dpidsExcluded: [],
-			},
-		];
-		const tradeSummary = await summary(teams);
-		if (tradeSummary.warning) {
+		if (holds && isNotable(best, sides, tid)) {
+			// Held until the next trading day, for other teams to bid on
+			// either side's assets (windows.ts).
+			if (await legalDeal(best)) {
+				await holdDeal(tid, best);
+			}
 			continue;
 		}
-		// Stamped on the trade, for the trade history: where each team stood
-		// and what the deal was worth to it.
-		const standing = (t: number) => {
-			const o = outlook.teams.get(t);
-			return o
-				? `${o.strength[0]! >= 0 ? "+" : ""}${o.strength[0]!.toFixed(1)} now, ${(100 * o.title[0]!).toFixed(1)}% title`
-				: "";
-		};
-		const assetsOf = (k: 0 | 1) => ({
-			players: best.assets[k].flatMap((x) =>
-				x.kind === "player" ? [x.p] : [],
-			),
-			picks: best.assets[k].flatMap((x) => (x.kind === "pick" ? [x.dp] : [])),
-		});
-		const sideFor = (k: 0 | 1): ExplainSide => ({
-			tid: best.tids[k],
-			players: sides[k].players,
-			picks: sides[k].picks,
-			tradedAway: sides[k].tradedAway,
-			gain: best.gains[k],
-			margin: best.margins[k],
-			gives: assetsOf(k),
-			gets: assetsOf(k === 0 ? 1 : 0),
-		});
-		const breakdown = explainDeal(outlook, [sideFor(0), sideFor(1)]);
-		for (const watch of tradeWatchers) {
-			watch({
-				tids: best.tids,
-				give: best.give,
-				gains: best.gains,
-				rosters: [sides[0].players, sides[1].players],
-				picks: [sides[0].picks, sides[1].picks],
-				outlook,
-				breakdown,
-				margins: best.margins,
-				waiting,
-			});
-		}
-		await processTrade(teams, undefined, {
-			initiatorTid: tid,
-			tiers: [standing(best.tids[0]), standing(best.tids[1])],
-			dv: Math.round(Math.min(...best.gains) * 10_000) / 10_000,
-			motivation: `both gain: ${best.gains.map((x) => `+${(100 * x).toFixed(2)}`).join(" / ")} title-equivalents x100`,
-			frontOffice: breakdown,
-		});
-		marketClock.trades += 1;
+		await makeDeal(outlook, best, tid, sides, waiting);
 	}
 
 	// Then what the day's first shopper would offer the human teams: one team

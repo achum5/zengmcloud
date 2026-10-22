@@ -1824,6 +1824,16 @@ export const settings: Setting[] = (
 						name: "Realistic Front Offices",
 						type: "bool",
 					} as const,
+					{
+						category: "Game Modes",
+						key: "realisticFrontOfficesWindows",
+						name: "Pending Deals",
+						type: "string",
+						values: [
+							{ key: "notable", value: "Notable deals" },
+							{ key: "all", value: "Every deal" },
+						],
+					} as const,
 				]
 			: []),
 		{

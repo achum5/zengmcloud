@@ -937,6 +937,8 @@ export type GameAttributesLeague = {
 	// CPU teams run by the new front office (docs/realistic-front-offices.md)
 	// instead of stock's. Basketball only, and not in League Settings yet.
 	realisticFrontOffices: boolean;
+	// Which deals two CPU teams agree are held a trading day for bids.
+	realisticFrontOfficesWindows: "notable" | "all";
 	allStarGame: number | null;
 	allStarNum: number;
 	allStarType: "draft" | "byConf" | "top";
@@ -2781,6 +2783,25 @@ export type Team = {
 	adjustForInflation: boolean;
 	disabled: boolean;
 	keepRosterSorted: boolean;
+
+	// Realistic Front Offices: a deal this team agreed with another CPU team,
+	// held until the next trading day for other teams to bid on what either
+	// side gives.
+	pendingTrade?: {
+		tids: [number, number];
+		give: [
+			{ pids: number[]; dpids: number[] },
+			{ pids: number[]; dpids: number[] },
+		];
+		// The trading day it was held, `season:phase:games:daysLeft`.
+		day: string;
+		// Offers from human teams for what one side gives.
+		bids: {
+			tid: number;
+			side: 0 | 1;
+			give: { pids: number[]; dpids: number[] };
+		}[];
+	};
 
 	// [regular season, playoffs]
 	playThroughInjuries: [number, number];

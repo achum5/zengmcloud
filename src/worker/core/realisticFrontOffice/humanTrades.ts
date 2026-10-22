@@ -17,6 +17,7 @@ import {
 	type TeamState,
 } from "./market.ts";
 import { ensureRetention, type LeagueOutlook } from "./outlook.ts";
+import { offerOnHeld } from "./windows.ts";
 
 // TRADING WITH HUMANS. A CPU team judges a human's offer exactly as it judges
 // a deal with another CPU team - what it does to its title chances, the trade
@@ -43,6 +44,10 @@ export type Verdict =
 	| { kind: "yes" }
 	| { kind: "no" }
 	| { kind: "wait" }
+	// What it asks for is in a deal held for bids: a bid on it, if it asks
+	// for exactly what that team gives in it (windows.ts), else no.
+	| { kind: "bid" }
+	| { kind: "held" }
 	| {
 			kind: "better";
 			tid: number;
@@ -80,7 +85,7 @@ export const assetsFor = (
 // The best another CPU team would give for these assets, by what it is worth
 // to the team giving them up (less its margin of error), among packages that
 // clear the other team's own bar - undefined if no team would deal.
-const bestElsewhere = async (
+export const bestElsewhere = async (
 	outlook: LeagueOutlook,
 	a: TeamState,
 	giving: readonly Asset[],
@@ -154,6 +159,10 @@ export const judgeHumanOffer = async (
 	cpu: Side,
 	human: Side,
 ): Promise<Verdict> => {
+	const held = await offerOnHeld(cpu);
+	if (held === "held") {
+		return { kind: "held" };
+	}
 	const outlook = await currentOutlook();
 	const a = await loadTeam(outlook, cpu.tid);
 	const h = await loadTeam(outlook, human.tid);
@@ -173,6 +182,10 @@ export const judgeHumanOffer = async (
 		humanTradeSettings.marginFactor * marginOf(outlook, a, giving, getting);
 	if (net < MIN_GAIN) {
 		return { kind: "no" };
+	}
+	// A bid is weighed against the others when the window closes.
+	if (held === "bid") {
+		return { kind: "bid" };
 	}
 
 	// Before the deadline it may rather decide then.
@@ -216,6 +229,12 @@ const pickName = (dp: DraftPick) => {
 
 // What a rejection says.
 export const verdictMessage = (verdict: Exclude<Verdict, { kind: "yes" }>) => {
+	if (verdict.kind === "bid") {
+		return "Bid placed. They decide tomorrow.";
+	}
+	if (verdict.kind === "held") {
+		return "Trade rejected. Part of a pending deal.";
+	}
 	if (verdict.kind === "wait") {
 		return "Trade rejected. They would rather wait for the deadline.";
 	}

@@ -198,6 +198,7 @@ export type Key =
 	| "footballOvertimePlayoffs"
 	| "easterEggPlayers"
 	| "realisticFrontOffices"
+	| "realisticFrontOfficesWindows"
 	| "fakeAgeProb";
 
 export type Category =
