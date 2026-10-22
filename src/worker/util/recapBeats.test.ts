@@ -1246,26 +1246,27 @@ describe("the postseason day wrap", () => {
 	// Four wins takes a best-of-seven, and tonight's winner had one fewer than
 	// the score below says: (1, 2) is a series pulled level at 2-2, (2, 2) is a
 	// 3-2 lead, (2, 3) is 3-3 and everything on Game 7.
-	test("elimination outranks a series pulled level", () => {
+	// The result already said "to even the series 2-2" and "to force a Game
+	// 7"; the watch says only who plays for their season next.
+	test("a series pulled level is not said again", () => {
 		const games = [
 			seriesGame(1, "Bucks", "Heat", 1, 2, [3, 4]),
 			seriesGame(2, "Celtics", "Knicks", 2, 2, [1, 2]),
 		];
 		const text = dayBracketWatch(ctx(games), rngFromSeed(1))!;
 		assert.match(text, /Knicks face elimination in Game 6/);
-		assert.match(text, /Bucks and the Heat are tied 2-2/);
-		assert.ok(text.indexOf("elimination") < text.indexOf("tied"), text);
+		assert.notMatch(text, /tied|Bucks|Heat/);
 		assert.ok(shapes((rng) => dayBracketWatch(ctx(games), rng)).size >= 3);
 	});
 
-	test("a decider outranks everything", () => {
+	test("a Game 7 forced tonight is not said again", () => {
 		const games = [
 			seriesGame(1, "Celtics", "Knicks", 2, 2, [1, 2]),
 			seriesGame(2, "Bucks", "Heat", 2, 3, [3, 4]),
 		];
 		const text = dayBracketWatch(ctx(games), rngFromSeed(1))!;
-		assert.match(text, /Bucks-Heat go to a decider in Game 7/);
-		assert.ok(text.indexOf("decider") < text.indexOf("elimination"), text);
+		assert.match(text, /Knicks face elimination in Game 6/);
+		assert.notMatch(text, /decider|Game 7|Bucks|Heat/);
 	});
 
 	test("three series on the brink share one tail, not three", () => {

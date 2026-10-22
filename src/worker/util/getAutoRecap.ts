@@ -7408,6 +7408,138 @@ const teamStreakSentence = (
 // eight first-round games produced "the Curses are up 3-1 in the First Round,
 // the Riots grabbed a 3-1 edge in the First Round, ..." - the same four words
 // in every clause. The caller factors a shared round out to the front instead.
+// WHAT A PLAYOFF RESULT DID TO ITS SERIES, said on the result itself. The
+// night wrap told each game twice: "the Thunder downed the Nets 84-74" in
+// one paragraph, "the Thunder are up 1-0 on the Nets" in a list two
+// paragraphs on - and the list stopped at four, so some games had a state
+// and some did not. A wire roundup says it once: "the Thunder downed the
+// Nets 84-74 for a 1-0 series lead". `tail` follows a clause whose subject
+// is the winner ("...beat the Nets 84-74"); `who` follows one that ends on
+// the winner as its object ("...loss to the Heat, who lead the series 3-1").
+//
+// Each comes in a few wordings, used in turn down the wrap: a night of
+// openers read "for a 1-0 series lead" eight times.
+export const seriesTail = (
+	g: RecapGame,
+): { kind: string; tails: string[]; whos: string[] } | undefined => {
+	const s = g.series;
+	if (g.playIn || !s || typeof s.bestOf !== "number" || s.bestOf <= 1) {
+		return undefined;
+	}
+	const shape = analyzeShape(g);
+	if (shape.margin === 0) {
+		return undefined;
+	}
+	const winnerIsHome = shape.winner.abbrev === s.homeAbbrev;
+	const lBefore = winnerIsHome ? s.awayWon : s.homeWon;
+	const wAfter = (winnerIsHome ? s.homeWon : s.awayWon) + 1;
+	const need = Math.floor(s.bestOf / 2) + 1;
+	const games = wAfter + lBefore;
+	const score = `${wAfter}-${lBefore}`;
+	const down = `${lBefore}-${wAfter}`;
+	if (wAfter >= need) {
+		if (s.round === s.numRounds) {
+			return {
+				kind: "title",
+				tails: ["to win the title"],
+				whos: ["who won the title"],
+			};
+		}
+		if (lBefore === 0) {
+			return {
+				kind: "sweep",
+				tails: [
+					"to sweep the series",
+					"to finish a sweep",
+					`to complete a ${numWord(games)}-game sweep`,
+				],
+				whos: [
+					"who swept the series",
+					"who finished a sweep",
+					`who completed a ${numWord(games)}-game sweep`,
+				],
+			};
+		}
+		if (games === s.bestOf) {
+			return {
+				kind: "decider",
+				tails: [`to win the series in Game ${games}`],
+				whos: [`who won the series in Game ${games}`],
+			};
+		}
+		const n = numWord(games);
+		return {
+			kind: "close",
+			tails: [`to close out the series in ${n}`, `to win the series in ${n}`],
+			whos: [`who closed out the series in ${n}`, `who won the series in ${n}`],
+		};
+	}
+	if (wAfter === lBefore) {
+		return wAfter === need - 1
+			? {
+					kind: "force",
+					tails: [`to force a Game ${s.bestOf}`],
+					whos: [`who forced a Game ${s.bestOf}`],
+				}
+			: {
+					kind: "even",
+					tails: [
+						`to even the series ${score}`,
+						`to tie the series ${score}`,
+						`to square the series at ${score}`,
+					],
+					whos: [
+						`who evened the series ${score}`,
+						`who tied the series ${score}`,
+						`who squared the series at ${score}`,
+					],
+				};
+	}
+	if (games === 1) {
+		return {
+			kind: "opener",
+			tails: ["in Game 1", "to open the series", "for a 1-0 series lead"],
+			whos: [
+				"who took Game 1",
+				"who won the opener",
+				"who lead the series 1-0",
+			],
+		};
+	}
+	if (wAfter > lBefore) {
+		return {
+			kind: "lead",
+			tails: [
+				`for a ${score} series lead`,
+				`to go up ${score}`,
+				`to take a ${score} lead in the series`,
+			],
+			whos: [
+				`who lead the series ${score}`,
+				`who went up ${score}`,
+				`who took a ${score} lead in the series`,
+			],
+		};
+	}
+	return lBefore === need - 1
+		? {
+				kind: "alive",
+				tails: [`to stay alive, down ${down}`],
+				whos: [`who stayed alive, down ${down}`],
+			}
+		: {
+				kind: "within",
+				tails: [
+					`to pull within ${down}`,
+					`to cut the series deficit to ${down}`,
+				],
+				whos: [
+					`who pulled within ${down}`,
+					`who cut the series deficit to ${down}`,
+				],
+			};
+};
+
 type DaySeriesPhrase = { text: string; round?: string };
 
 const daySeriesPhrase = (
@@ -7579,7 +7711,7 @@ const dayStakesPhrase = (
 		return pick(
 			rng,
 			[
-				`One more and ${w} are through; ${l} have no more room.`,
+				`${cap(l)} face elimination in Game ${nextGame}.`,
 				`${cap(l)} have to win out from here, starting in Game ${nextGame}.`,
 				`Game ${nextGame} can end it.`,
 			],
@@ -8762,6 +8894,38 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		}
 	}
 
+	// The playoff games whose series state rides on their result; the
+	// series list further down tells only the rest.
+	const seriesTold = new Set<RecapGame>();
+	const tailsUsed = new Map<string, number>();
+	const seriesWords = (g: RecapGame, which: "tails" | "whos"): string => {
+		const t = playoffs ? seriesTail(g) : undefined;
+		if (!t) {
+			return "";
+		}
+		seriesTold.add(g);
+		const n = tailsUsed.get(t.kind) ?? 0;
+		tailsUsed.set(t.kind, n + 1);
+		const pool = t[which];
+		return pool[n % pool.length]!;
+	};
+	const tailFor = (g: RecapGame): string => {
+		const t = seriesWords(g, "tails");
+		return t ? ` ${t}` : "";
+	};
+	const whoFor = (g: RecapGame): string => {
+		const t = seriesWords(g, "whos");
+		return t ? `, ${t}` : "";
+	};
+	// "...beat the Clippers at the wire, 101-100, to even the series": a
+	// clause that ends on a set-off score closes it with a comma first.
+	const withTail = (g: RecapGame, clause: string): string => {
+		const tail = tailFor(g);
+		return tail && /, \d+-\d+(?: \(\w+\))?$/.test(clause)
+			? `${clause},${tail}`
+			: `${clause}${tail}`;
+	};
+
 	// One line about one player, in one of several shapes. Every performance
 	// sentence used to end "in the X's win over the Y", so a paragraph naming
 	// three standouts read as the same sentence three times with the nouns
@@ -8778,22 +8942,28 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		// left the reader without a final for it.
 		const score = scoreTag(analyzeShape(perf.game));
 		if (!perf.won) {
+			const who = whoFor(perf.game);
 			return pick(
 				rng,
 				[
-					`${perf.p.name} ${verb} ${line} in ${poss(team)} ${score} loss to ${opp}.`,
-					`${perf.p.name} ${verb} ${line}, but ${team} lost to ${opp} ${score}.`,
-					`${perf.p.name} ${verb} ${line} in a ${score} loss to ${opp}.`,
+					`${perf.p.name} ${verb} ${line} in ${poss(team)} ${score} loss to ${opp}${who}.`,
+					`${perf.p.name} ${verb} ${line} in a ${score} loss to ${opp}${who}.`,
+					...(who
+						? []
+						: [
+								`${perf.p.name} ${verb} ${line}, but ${team} lost to ${opp} ${score}.`,
+							]),
 				],
 				"dayPerfLoss",
 			);
 		}
+		const tail = tailFor(perf.game);
 		return pick(
 			rng,
 			[
-				`${perf.p.name} ${verb} ${line} in ${poss(team)} ${score} win over ${opp}.`,
-				`${perf.p.name} ${verb} ${line} as ${team} beat ${opp} ${score}.`,
-				`${cap(team)} got ${line} from ${perf.p.name} in a ${score} win over ${opp}.`,
+				`${perf.p.name} ${verb} ${line} in ${poss(team)} ${score} win over ${opp}${tail}.`,
+				`${perf.p.name} ${verb} ${line} as ${team} beat ${opp} ${score}${tail}.`,
+				`${cap(team)} got ${line} from ${perf.p.name} in a ${score} win over ${opp}${tail}.`,
 			],
 			"dayPerfWin",
 		);
@@ -8809,14 +8979,23 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		headline.game === marquee &&
 		headline.text.includes(nick(mShape.winner)) &&
 		headline.text.includes(nick(mShape.loser));
-	para1.push(`${cap(gameBlurb(marquee, rng, headlineHasResult))}.`);
+	// The marquee's series, unless the headline already gave it.
+	const headlineHasSeries =
+		/\d-\d(?!\d)|sweep|close|put .* out|finish|eliminat|advance|move on|through|game \d|force|even|title|champion/i.test(
+			headline.text.replaceAll(/\b\d{2,3}-\d{2,3}\b/g, ""),
+		);
+	para1.push(
+		`${cap(gameBlurb(marquee, rng, headlineHasResult))}${headlineHasSeries ? "" : tailFor(marquee)}.`,
+	);
 
 	// When the headline is about a DIFFERENT game, that game leads the body -
 	// a reader should not have to take the headline on trust. Previously the
 	// deck covered it, which made the roundup skip it as already told, and the
 	// night's stated lead story appeared nowhere in the wrap.
 	if (headline.game !== marquee && !coveredGames.has(headline.game)) {
-		para1.push(`${cap(gameBlurb(headline.game, rng))}.`);
+		para1.push(
+			`${cap(gameBlurb(headline.game, rng))}${tailFor(headline.game)}.`,
+		);
 		coveredGames.add(headline.game);
 	}
 
@@ -8885,10 +9064,10 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 				: topScorer.won
 					? `${topScorer.p.name} led all scorers with ${line} in ${poss(
 							theNick(topScorer.team),
-						)} ${topScore} win over ${theNick(topScorer.opp)}.`
+						)} ${topScore} win over ${theNick(topScorer.opp)}${tailFor(topScorer.game)}.`
 					: `${topScorer.p.name} led all scorers with ${line} in ${poss(
 							theNick(topScorer.team),
-						)} ${topScore} loss to ${theNick(topScorer.opp)}.`,
+						)} ${topScore} loss to ${theNick(topScorer.opp)}${whoFor(topScorer.game)}.`,
 		);
 		named.add(topScorer.p);
 		coveredGames.add(topScorer.game);
@@ -8991,7 +9170,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 					? `${poss(lossPerf.p.name)} ${statPhrase(lossPerf.p)} came in a losing effort.`
 					: `${poss(lossPerf.p.name)} ${statPhrase(
 							lossPerf.p,
-						)} came in a ${scoreTag(analyzeShape(lossPerf.game))} loss to ${theNick(lossPerf.opp)}.`,
+						)} came in a ${scoreTag(analyzeShape(lossPerf.game))} loss to ${theNick(lossPerf.opp)}${whoFor(lossPerf.game)}.`,
 			);
 			coveredGames.add(lossPerf.game);
 		}
@@ -9065,7 +9244,10 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			// Every blurb carries its score: these are the only place many of
 			// the night's games get told, and the reader wants the final.
 			blurb =
-				upsetIdx === 0 && spreadPts !== undefined && spreadPts >= 5
+				upsetIdx === 0 &&
+				spreadPts !== undefined &&
+				spreadPts >= 5 &&
+				!(playoffs && seriesTail(g))
 					? `${theNick(shape.winner)} ${verb} ${theNick(
 							shape.loser,
 						)} ${scoreTag(shape)} as ${spreadPts}-point underdogs`
@@ -9095,7 +9277,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			)} ${scoreTag(shape)}`;
 		}
 		if (blurb) {
-			notableBlurbs.push(withDeckPerf(g, blurb));
+			notableBlurbs.push(withDeckPerf(g, withTail(g, blurb)));
 			coveredGames.add(g);
 			if (notableBlurbs.length >= 5) {
 				break;
@@ -9156,7 +9338,10 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			roundupClauses.push(
 				withDeckPerf(
 					g,
-					roundupClause(g, gShape, roundupClauses.length, usedVerbs),
+					withTail(
+						g,
+						roundupClause(g, gShape, roundupClauses.length, usedVerbs),
+					),
 				),
 			);
 		} else {
@@ -9239,7 +9424,10 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		const seriesBits: DaySeriesPhrase[] = [];
 		const seen = new Set<string>();
 		for (const g of games) {
-			if (marqueeTids.has(g.teams[0].tid) && marqueeTids.has(g.teams[1].tid)) {
+			if (
+				seriesTold.has(g) ||
+				(marqueeTids.has(g.teams[0].tid) && marqueeTids.has(g.teams[1].tid))
+			) {
 				continue;
 			}
 			const phrase = daySeriesPhrase(g, rng);
@@ -9253,8 +9441,12 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		}
 		// Nothing left after the marquee - a one-game day. Say what the marquee
 		// series now hinges on instead of falling silent.
-		const stakes =
-			seriesBits.length === 0 ? dayStakesPhrase(marquee, rng) : undefined;
+		// Only on a night of one series: with others told beside it, "the
+		// Suns need three more; the Hornets need four" is arithmetic on a
+		// state the lead already gave.
+		const stakes = games.some((g) => g !== marquee && g.series)
+			? undefined
+			: dayStakesPhrase(marquee, rng);
 		if (stakes) {
 			para3.push(stakes);
 		} else {
@@ -9277,7 +9469,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 							rng,
 							[
 								`${cap(theNick(mShape.winner))} move on to ${post.clinch.nextRound}.`,
-								`That puts ${theNick(mShape.winner)} in ${post.clinch.nextRound}.`,
+								`${cap(theNick(mShape.winner))} are through to ${post.clinch.nextRound}.`,
 							],
 							"dayClinchNext",
 						),

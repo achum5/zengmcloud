@@ -4468,6 +4468,35 @@ describe("a postseason read end to end", () => {
 		assert.ok(sawCommand, "a commanding series lead never says so");
 	});
 
+	// A playoff night told each game twice - "the Lakers beat the Kings
+	// 104-96" in the results, "the Lakers lead the Kings 3-1" in a list two
+	// paragraphs on - and the list stopped at four. Each result now carries
+	// its series, once.
+	test("a playoff night tells each series once, on its result", () => {
+		for (let day = 1; day <= 10; day += 1) {
+			const recap = getAutoDayRecap({
+				season: 2026,
+				day,
+				playoffs: true,
+				games: [
+					seriesSlateGame(9700, "Celtics", "Pistons", 1, 1),
+					seriesSlateGame(9710, "Lakers", "Kings", 2, 1),
+					seriesSlateGame(9720, "Suns", "Jazz", 1, 2),
+					seriesSlateGame(9730, "Heat", "Bulls", 0, 0),
+				],
+			});
+			for (const score of ["2-1", "3-1", "2-2"]) {
+				assert.strictEqual(
+					recap.split(score).length - 1,
+					1,
+					`${score} told ${recap.split(score).length - 1} times\n${recap}`,
+				);
+			}
+			assert.match(recap, /Game 1|opener|open the series|1-0/, recap);
+			assert.doesNotMatch(recap, /In the First Round, |are tied/, recap);
+		}
+	});
+
 	// "In the other games, ..." over a single clause read as a miscount on a
 	// two-game night. The second game has to be QUIET or the wrap gives it a
 	// performance line instead, and the roundup never runs at all.

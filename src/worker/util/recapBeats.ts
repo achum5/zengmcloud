@@ -1651,9 +1651,11 @@ export const dayNextSlate = (
 
 // ---------------------------------------------------------------- THE BRACKET
 
-// The postseason day wrap's closing context. Which series are on the brink,
-// which are level, and who plays for their season next. The wrap already
-// narrates the night's series results; this is what they set up.
+// The postseason day wrap's closing context: who plays for their season
+// next. The wrap tells each series' state on its result ("...to even the
+// series 2-2", "...to force a Game 7"); this is what those set up, and only
+// that - "the Bucks and the Heat are tied 2-2" a paragraph after "to even the
+// series 2-2" was the same fact twice.
 export const dayBracketWatch = (
 	ctx: DayBeatContext,
 	rng: Rng,
@@ -1677,25 +1679,10 @@ export const dayBracketWatch = (
 		if (wAfter >= need) {
 			continue; // the series is over; the wrap has it as a result
 		}
-		const w = theNick(winner);
-		const l = theNick(loser);
-		if (wAfter === need - 1 && lAfter === need - 1) {
-			// The matchup as one item, so two of them list as "Mavericks-Hawks
-			// and Celtics-Cavaliers" rather than "the Mavericks and the Hawks and
-			// the Celtics and the Cavaliers".
-			out.push({
-				weight: 4,
-				text: `${nick(winner)}-${nick(loser)} go to a decider in Game ${nextGame}`,
-			});
-		} else if (wAfter === need - 1) {
+		if (wAfter === need - 1 && lAfter < need - 1) {
 			out.push({
 				weight: 3,
-				text: `${l} face elimination in Game ${nextGame}`,
-			});
-		} else if (wAfter === lAfter) {
-			out.push({
-				weight: 1,
-				text: `${w} and ${l} are tied ${wAfter}-${wAfter}`,
+				text: `${theNick(loser)} face elimination in Game ${nextGame}`,
 			});
 		}
 		ctx.saidTids.add(winner.tid);
