@@ -283,3 +283,73 @@ describe("the finish says only what the clock allows", () => {
 		}
 	});
 });
+
+// "The Jazz were up 100-91 with two minutes left" and then the winning
+// three: nothing of the 103-94 with 56.8 seconds to go, or the ten straight
+// points after it.
+describe("a late rally", () => {
+	// The 76ers in front all the way through the window, nine up with under
+	// a minute left; the Wizards score the last ten.
+	const rally = () =>
+		build([
+			ev(1, 21, 2, "rim", 110, [91, 100]),
+			ev(0, 11, 2, "rim", 95, [93, 100]),
+			ev(1, 22, 3, "tp", 56.8, [93, 103]),
+			ev(0, 12, 3, "tp", 40, [96, 103]),
+			ev(0, 11, 2, "rim", 30, [98, 103]),
+			ev(0, 12, 3, "tp", 15, [101, 103]),
+			ev(0, 11, 3, "tp", 4.4, [104, 103]),
+		]);
+
+	test("the deficit and the run that erased it are told", () => {
+		for (const shotTold of [false, true]) {
+			for (let seed = 0; seed < 8; seed++) {
+				const game = rally();
+				const text = tell(game, seed, shotTold).join(" ");
+				assert.match(text, /103-93/, text);
+				assert.match(text, /56\.8 seconds/, text);
+				assert.match(text, /the next 11 points/, text);
+				assert.deepEqual(verifyRecap(`**x**\n\n${text}`, game), [], text);
+			}
+		}
+	});
+
+	test("an answered rally names the basket that got them close", () => {
+		const game = build([
+			ev(1, 21, 2, "rim", 80, [95, 100]),
+			ev(0, 11, 3, "tp", 50, [98, 100]),
+			ev(1, 22, 1, "ft", 30, [98, 101]),
+			ev(0, 12, 2, "rim", 20, [100, 101]),
+			ev(0, 11, 2, "mid", 2, [102, 101]),
+		]);
+		const text = tell(game, 2, true).join(" ");
+		assert.match(text, /100-95/, text);
+		assert.match(text, /Tyrese Nowell's layup .*had cut it to 101-100/, text);
+		assert.deepEqual(verifyRecap(`**x**\n\n${text}`, game), [], text);
+	});
+
+	test("the accuracy reader holds the run to the log", () => {
+		const game = rally();
+		const bad = verifyRecap(
+			"**x**\n\nThe 76ers led 103-93 with 56.8 seconds left before the Wizards scored the next 12 points.",
+			game,
+		);
+		assert.deepEqual(
+			bad.map((v) => v.kind),
+			["finish run"],
+		);
+	});
+
+	// "Tyrese Nowell set up the winner." on its own, after a sentence about
+	// something else: the winner was the lede's, and so is its assist.
+	test("an assist on a winner the lede told is not a sentence of its own", () => {
+		const game = build([
+			ev(1, 21, 2, "rim", 24.9, [101, 101]),
+			ev(0, 11, 3, "tp", 1.8, [104, 101], { ast: 12 }),
+		]);
+		for (let seed = 0; seed < 8; seed++) {
+			const text = tell(game, seed, true).join(" ");
+			assert.notMatch(text, /Tyrese Nowell/, text);
+		}
+	});
+});

@@ -218,6 +218,44 @@ const classify = (
 	return out;
 };
 
+// The losers' biggest lead in the window before the go-ahead score, at the
+// last moment it was that big, when it was four or more inside the last
+// minute and a half; whether the winners' points from there to the go-ahead
+// came unanswered; and the winners' last basket that cut it short of the lead.
+const lateRally = (
+	moments: Moment[],
+	goAheadIdx: number,
+	wSide: GameFlowSide,
+):
+	| { peak: Moment; unanswered: boolean; pts: number; lastCut?: Moment }
+	| undefined => {
+	let peakIdx = -1;
+	for (let i = 0; i < goAheadIdx; i++) {
+		const m = moments[i]!;
+		if (
+			m.e.side !== wSide &&
+			m.e.clock <= 90 &&
+			(peakIdx < 0 || m.margin <= moments[peakIdx]!.margin)
+		) {
+			peakIdx = i;
+		}
+	}
+	const peak = peakIdx >= 0 ? moments[peakIdx] : undefined;
+	if (!peak || -peak.margin < 4) {
+		return undefined;
+	}
+	const after = moments.slice(peakIdx + 1, goAheadIdx + 1);
+	return {
+		peak,
+		unanswered: after.every((m) => m.e.side === wSide),
+		pts: after.reduce((a, m) => a + m.e.pts, 0),
+		lastCut: after
+			.slice(0, -1)
+			.filter((m) => m.role === "winnerCut" && m.margin >= -3)
+			.at(-1),
+	};
+};
+
 // The sequence, as up to three sentences. Empty when the closing scores
 // hold no drama - a six-point win where the losers' last basket came with
 // the game decided is not a finish worth narrating.
@@ -336,6 +374,38 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 					before.name,
 				);
 			}
+		} else if (!ot && lateRally(moments, goAheadIdx, wSide)) {
+			// The losers were in front all through the window until the
+			// go-ahead score, and by a real margin late: how far back the
+			// winners came, and how late, is the story. "The Jazz were up
+			// 100-91 with two minutes left" and then the winning three said
+			// nothing of the 103-94 with 56.8 seconds to go.
+			const rally = lateRally(moments, goAheadIdx, wSide)!;
+			const [w, l] = scoreOf(rally.peak.e, wSide);
+			const had = shotTold ? "had " : "";
+			const at = when(rally.peak.e, rng);
+			if (rally.unanswered) {
+				say(
+					pick(
+						rng,
+						[
+							`${cap(L)} ${had}led ${l}-${w} ${at} before ${W} scored the next ${rally.pts} points.`,
+							`${cap(W)} ${shotTold ? "had trailed" : "trailed"} ${l}-${w} ${at} and scored the next ${rally.pts} points.`,
+						],
+						"finishRally",
+					),
+				);
+			} else {
+				say(`${cap(L)} ${shotTold ? "had been" : "were"} up ${l}-${w} ${at}.`);
+				const cut = rally.lastCut;
+				if (cut?.name) {
+					const [cw, cl] = scoreOf(cut.e, wSide);
+					say(
+						`${cap(shotBy(cut.name, cut.e, justNamed))} ${when(cut.e, rng)} ${had}cut it to ${cl}-${cw}.`,
+						cut.name,
+					);
+				}
+			}
 		} else if (!ot) {
 			// Nothing in the window before the go-ahead score: the losers were
 			// in front or level at the two-minute mark and did not score
@@ -401,26 +471,18 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 		// the basket was the one that decided it.
 		const setUp = nameOf(game, goAhead.e.ast);
 		if (
+			!shotTold &&
 			setUp &&
 			setUp !== goAhead.name &&
 			goAhead.e.kind !== "ft" &&
 			(goAhead.e.clock <= 60 || goAheadIdx === moments.length - 1)
 		) {
 			say(
-				shotTold
-					? pick(
-							rng,
-							[
-								`${setUp} set up the winner.`,
-								`The assist on the winner was ${poss(setUp)}.`,
-							],
-							"finishAssistTold",
-						)
-					: pick(
-							rng,
-							[`${setUp} had the assist.`, `${setUp} set it up.`],
-							"finishAssist",
-						),
+				pick(
+					rng,
+					[`${setUp} had the assist.`, `${setUp} set it up.`],
+					"finishAssist",
+				),
 				setUp,
 			);
 		}

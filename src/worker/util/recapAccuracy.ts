@@ -211,6 +211,11 @@ export const verifyRecap = (
 				if (/averag\w*\s*$/i.test(before)) {
 					continue;
 				}
+				// "scored the next 10 points" is a stretch of the finish, checked
+				// against the log below.
+				if (/\bthe next\s*$/.test(before)) {
+					continue;
+				}
 				// "7 points the wrong side of the line", "favored by 6" - a
 				// margin against the pregame line, not anything in the box score.
 				if (SPREAD_TALK.test(sentence)) {
@@ -430,6 +435,32 @@ export const verifyRecap = (
 				const isFinal = finalPts.has(a) && finalPts.has(b) && a !== b;
 				if (!pairs.has(`${a}-${b}`) && !isFinal) {
 					add("finish score", `said ${a}-${b}`, sentence);
+				}
+			}
+			// "scored the next 10 points": one side's points in a row, from a
+			// score by the other side (or the start of the log) on.
+			for (const m of sentence.matchAll(/the next (\d+) points/g)) {
+				const n = Number(m[1]);
+				const log = game.flow?.finish ?? [];
+				let ok = false;
+				for (let i = 0; i < log.length && !ok; i++) {
+					if (i > 0 && log[i - 1]!.side === log[i]!.side) {
+						continue;
+					}
+					let sum = 0;
+					for (
+						let j = i;
+						j < log.length && log[j]!.side === log[i]!.side;
+						j++
+					) {
+						sum += log[j]!.pts;
+						if (sum === n) {
+							ok = true;
+						}
+					}
+				}
+				if (!ok) {
+					add("finish run", `said the next ${n} points`, sentence);
 				}
 			}
 			for (const m of sentence.matchAll(/tied it at (\d+)/g)) {

@@ -5625,7 +5625,15 @@ const blownLeadNote = (
 		);
 	}
 	const two = flow.late?.find((m) => m.clock === 120);
-	if (two && !/two minutes/.test(written)) {
+	// Nor when the finish already put them in front later than that.
+	const laterLead =
+		new RegExp(
+			String.raw`${nick(shape.loser)} (?:had )?(?:led|were up|had been up) \d+-\d+ with`,
+		).test(written) ||
+		new RegExp(
+			String.raw`${nick(shape.winner)} (?:had )?trailed \d+-\d+ with`,
+		).test(written);
+	if (two && !laterLead && !/two minutes/.test(written)) {
 		const l = two.pts[lSide];
 		const w = two.pts[1 - lSide];
 		if (l !== undefined && w !== undefined && l > w) {
