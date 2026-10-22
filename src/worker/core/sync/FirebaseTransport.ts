@@ -128,7 +128,17 @@ const parseLiveSync3D = (value: unknown): LiveSync3D | undefined => {
 	) {
 		return undefined;
 	}
-	return { of, t, w, rp, at, rate, keys: v.keys, mine };
+	return {
+		of,
+		t,
+		w,
+		rp,
+		at,
+		rate,
+		keys: v.keys,
+		mine,
+		...(typeof v.fp === "string" ? { fp: v.fp } : {}),
+	};
 };
 const ROOM_SNAPSHOT_DOC_ID = "roomSnapshot";
 

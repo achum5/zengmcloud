@@ -9,6 +9,7 @@ import { cameraCuts, fastAt } from "./evaluate.ts";
 import {
 	advanceLead,
 	agrees,
+	FOLLOW_BEHIND,
 	cutTo,
 	dueChecks,
 	followRate,
@@ -180,7 +181,20 @@ export type PlayClock = {
 	prevCursor: number;
 	prevPaused: boolean;
 	prevSkips: number;
+	// Playing along: when (ms) it last had to cut to where the other court
+	// was - and, cut time after time, that it is not the same game over
+	// there (see LOST_SLIPS).
+	slips?: number[];
+	lost?: boolean;
 };
+
+// Playing along, this many cuts to where the other court was within this
+// long (ms) - when, with it, there is one on joining late or after a skip
+// there: the two courts are not showing the same game (an older build over
+// there, say), and playing along only plays the same few seconds over and
+// over - it is stepped line by line instead (see Court3D).
+const LOST_SLIPS = 3;
+const LOST_WITHIN = 20_000;
 
 // What the page says, this frame.
 export type PlayInput = {
@@ -197,6 +211,22 @@ export type PlayInput = {
 	onReady: () => void;
 	onJump?: (cursor: number) => void;
 	report?: { current: Shown | undefined };
+	// What this court staged (see stagedAs), said along with where it is.
+	fp?: string;
+};
+
+// How far on the picture may run with the page's cursor where it is: to the
+// moment of the next line, its line going up as it gets there. Stepped by
+// another device, through to the end of that play: the word of it comes
+// late and unevenly, and a court that stages a possession quicker than the
+// other one (another build there) would otherwise stand on the shot going
+// up, seconds at a time, waiting for it.
+const stepTarget = (tl: CourtTimeline, cursor: number, follower: boolean) => {
+	if (!follower) {
+		return targetForCursor(tl, cursor);
+	}
+	const beat = tl.beats.find((b) => b.i >= cursor);
+	return beat ? beat.end : tl.end;
 };
 
 // Follow the page's cursor: run on to the next line normally; cut straight
@@ -211,7 +241,7 @@ export const onCursor = (
 		follower,
 	}: { cursor: number; paused: boolean; skips: number; follower: boolean },
 ) => {
-	const target = targetForCursor(timeline, cursor);
+	const target = stepTarget(timeline, cursor, follower);
 	// "Next play": past what is left of the play now shown, straight on to
 	// the next one - never back.
 	const skipped =
@@ -284,6 +314,12 @@ const alignTo = (
 		s.keyDip = now;
 		s.keyHold = -Infinity;
 	}
+	const slips = (s.slips ?? []).filter((x) => now - x < LOST_WITHIN);
+	slips.push(now);
+	s.slips = slips;
+	if (slips.length >= LOST_SLIPS) {
+		s.lost = true;
+	}
 	if (r.cursor > p.cursor && p.onJump) {
 		s.jumpTo = r.cursor;
 		p.onJump(r.cursor);
@@ -316,15 +352,16 @@ export const stepPlay = (
 	}
 	const target = staging
 		? Math.min(WARMUP_MS, s.t + dt)
-		: targetForCursor(tl, p.cursor);
+		: stepTarget(tl, p.cursor, p.follower);
 	const base = p.rate;
 	// Through the dead stretches, fast.
 	let rate = base * fastAt(tl, s.t);
 	if (p.follower) {
 		// Behind the device in charge of simming: hold a steady gap to
 		// where its court is, rather than running to the last play it
-		// reported and stopping there.
-		if (!p.paused) {
+		// reported and stopping there. (Showing a dunk again, as it does
+		// too: its clock held for it, as this one's is.)
+		if (!p.paused && !s.replay) {
 			s.lead = advanceLead(
 				Math.max(s.lead, s.t),
 				target,
@@ -338,8 +375,7 @@ export const stepPlay = (
 	}
 	const before = s.t;
 	// The next dunk that would be shown again, and whether it would be -
-	// unless this device is only following, stepping play by play, or
-	// watching on fast.
+	// unless stepping play by play, or watching on fast.
 	const fx = tl.fx;
 	while (
 		s.nextDunk >= 0 &&
@@ -351,7 +387,6 @@ export const stepPlay = (
 	const dunk = fx[s.nextDunk];
 	const again =
 		!!dunk &&
-		!p.follower &&
 		!p.paused &&
 		!s.stepping &&
 		p.rate <= REPLAY_RATE_MAX &&
@@ -359,7 +394,7 @@ export const stepPlay = (
 		// finish, shown the way it happened.)
 		(!p.keyPlan || segmentAt(p.keyPlan, dunk.t).at?.close === true);
 	const plan = p.keyPlan;
-	const keyOn = !!plan && !p.follower && !p.paused;
+	const keyOn = !!plan && !p.paused;
 	// A replay holds the live clock while it plays.
 	const r = s.replay;
 	if (staging) {
@@ -380,7 +415,16 @@ export const stepPlay = (
 	} else if ((!p.paused || s.stepping) && s.t < target) {
 		// On to the next line - stopping on the moment to show a dunk again,
 		// or at the end of the key play shown, exactly there.
-		const seg = keyOn ? segmentAt(plan, s.t).at : undefined;
+		// (Stepped by another device: on past the end of the play shown, if
+		// that one isn't on to the next yet - it is still showing something
+		// in between, its own reel being cut otherwise.)
+		let seg = keyOn ? segmentAt(plan, s.t).at : undefined;
+		if (seg && p.follower) {
+			const after = plan[plan.indexOf(seg) + 1];
+			if (!after || p.cursor < after.cursor) {
+				seg = undefined;
+			}
+		}
 		runOn(
 			s,
 			tl,
@@ -418,7 +462,8 @@ export const stepPlay = (
 	// it on the way.
 	if (keyOn && !s.replay && s.jumpTo < 0) {
 		const { at, next } = segmentAt(plan, s.t);
-		if (!at && next) {
+		// (Stepped by another device, not before its page is there too.)
+		if (!at && next && (!p.follower || p.cursor >= next.cursor)) {
 			if (p.along) {
 				noteShown(f, { w: s.w, t: s.t, rp: -1 });
 			}
@@ -426,6 +471,11 @@ export const stepPlay = (
 			s.paceAt = -1;
 			s.snapCam = true;
 			s.keyDip = now;
+			// (Stepped: the other court went on to it first, and is on into
+			// it by now.)
+			if (p.follower) {
+				s.lead = Math.max(s.lead, s.t + FOLLOW_BEHIND);
+			}
 			if (next.cursor > p.cursor && p.onJump) {
 				s.jumpTo = next.cursor;
 				p.onJump(next.cursor);
@@ -462,7 +512,12 @@ export const stepPlay = (
 		}
 	}
 	if (p.report && !staging) {
-		p.report.current = { w: s.w, t: s.t, rp: s.replay?.at ?? -1 };
+		p.report.current = {
+			w: s.w,
+			t: s.t,
+			rp: s.replay?.at ?? -1,
+			...(p.fp === undefined ? {} : { fp: p.fp }),
+		};
 	}
 	return { dt, rate, cut };
 };

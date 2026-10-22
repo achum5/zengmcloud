@@ -15,6 +15,8 @@
 // That is how a device in charge of simming on an older build is followed.
 // One that says where its court is gets played along with instead (below).
 
+import type { CourtTimeline } from "./director.ts";
+
 // How far behind the other court to play (ms of game timeline): enough that
 // a late report doesn't run the picture into a wall.
 export const FOLLOW_BEHIND = 800;
@@ -57,10 +59,41 @@ export type FollowReport = {
 	paused: boolean;
 	at: number;
 	recv: number;
+	// What its court staged (see stagedAs) - absent from older builds.
+	fp?: string;
 };
 
-// Where this court was, a moment at a time.
-export type Shown = { w: number; t: number; rp: number };
+// Where this court was, a moment at a time (and, said to whoever plays
+// along, what it staged).
+export type Shown = { w: number; t: number; rp: number; fp?: string };
+
+// THE SAME GAME, OR NOT. Both courts stage the game from the same
+// play-by-play - but a device still on an older build of the app (a tab not
+// reloaded since an update) stages it differently, and then no point in one
+// show is that point in the other's game: every check disagrees, and the cut
+// back to where the other court was comes round again a second later, the
+// same few seconds over and over. So a court says what it staged - this, its
+// plays' moments to a tenth of a second - and one that staged something else
+// is stepped line by line instead of playing along (see Court3D).
+export const stagedAs = (tl: CourtTimeline): string => {
+	let h = 0x811c9dc5;
+	const add = (x: number) => {
+		h ^= Math.round(x) | 0;
+		h = Math.imul(h, 0x01000193);
+	};
+	add(tl.beats.length);
+	add(tl.end / 100);
+	for (const b of tl.beats) {
+		add(b.i);
+		add(b.actionStart / 100);
+		add(b.end / 100);
+	}
+	for (const [a, b] of tl.fast) {
+		add(a / 100);
+		add(b / 100);
+	}
+	return (h >>> 0).toString(36);
+};
 
 export type Follow = {
 	// The latest reports, oldest first.

@@ -66,6 +66,7 @@ import {
 import {
 	addReport,
 	makeFollow,
+	stagedAs,
 	type FollowReport,
 	type Shown,
 } from "./follow.ts";
@@ -281,6 +282,9 @@ type Props = {
 	onJump?: (cursor: number) => void;
 	// The court cannot play this game: the page goes on without it.
 	onFail?: () => void;
+	// Playing along, the other court is not showing the same game (see
+	// stagedAs): the page has this one stepped line by line instead.
+	onLost?: () => void;
 };
 
 const Court3D = ({
@@ -299,6 +303,7 @@ const Court3D = ({
 	onReady,
 	onJump,
 	onFail,
+	onLost,
 }: Props) => {
 	const { lid, gender } = useLocal(["lid", "gender"]);
 	const gid: number | undefined = boxScore?.gid;
@@ -451,7 +456,7 @@ const Court3D = ({
 	const numPeriods: number = boxScore?.numPeriods ?? 4;
 	const keyPlan = useMemo(
 		(): KeySegment[] | undefined =>
-			timeline && events && keyPlays?.settings.on && !follower
+			timeline && events && keyPlays?.settings.on
 				? planKeyPlays(timeline, events, keyPlays.settings, {
 						rate,
 						numPeriods,
@@ -468,12 +473,17 @@ const Court3D = ({
 			timeline,
 			events,
 			keyPlays,
-			follower,
 			rate,
 			numPeriods,
 			boxScore?.spread,
 			boxScore?.neutralSite,
 		],
+	);
+	// What this court staged, for whoever plays along with it to check
+	// against their own (see stagedAs).
+	const fp = useMemo(
+		() => (timeline ? stagedAs(timeline) : undefined),
+		[timeline],
 	);
 	// Team fouls and the bonus through the game, for the score bug.
 	const fouls = useMemo(
@@ -994,6 +1004,15 @@ const Court3D = ({
 			addReport(alongWith.current, along);
 		}
 	}, [along]);
+	// Playing along with a court that staged something else: stepped line
+	// by line instead, said once.
+	const lostSaid = useRef(false);
+	useEffect(() => {
+		if (along?.fp && fp && along.fp !== fp && !lostSaid.current) {
+			lostSaid.current = true;
+			onLost?.();
+		}
+	}, [along?.fp, fp, onLost]);
 
 	const homePad = home?.colors?.[0] ?? "#8c1d40";
 	const lineColor: string = home?.court?.lines || "#f8f5f0";
@@ -1025,7 +1044,9 @@ const Court3D = ({
 		report,
 		onReady,
 		onJump,
+		onLost,
 		keyPlan,
+		fp,
 		timeline,
 		pregame,
 		clocks,
@@ -1049,7 +1070,9 @@ const Court3D = ({
 		report,
 		onReady,
 		onJump,
+		onLost,
 		keyPlan,
+		fp,
 		timeline,
 		pregame,
 		clocks,
@@ -1105,6 +1128,10 @@ const Court3D = ({
 				now,
 				Date.now(),
 			);
+			if (s.lost && p.along && !lostSaid.current) {
+				lostSaid.current = true;
+				p.onLost?.();
+			}
 			if (!draw) {
 				return;
 			}

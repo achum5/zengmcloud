@@ -1648,9 +1648,14 @@ export const LiveGame = (props: View<"liveGame">) => {
 	const followCursor = mpLiveBroadcast?.cursor ?? 0;
 	const followPaused = !!mpLiveBroadcast?.paused;
 	const followRecv = mpLiveBroadcast?.recvAt;
+	// The game the 3D court found it can't play along with (the other court
+	// staged it differently - see Court3D's onLost): stepped line by line.
+	const [alongLostGid, setAlongLostGid] = useState<number | undefined>();
+	const alongLost =
+		alongLostGid !== undefined && alongLostGid === props.initialBoxScore?.gid;
 	const along = useMemo(
 		(): FollowReport | undefined =>
-			sync3d && followRecv !== undefined
+			sync3d && followRecv !== undefined && !alongLost
 				? {
 						t: sync3d.t,
 						w: sync3d.w,
@@ -1659,9 +1664,10 @@ export const LiveGame = (props: View<"liveGame">) => {
 						paused: followPaused,
 						at: sync3d.at,
 						recv: followRecv,
+						...(sync3d.fp === undefined ? {} : { fp: sync3d.fp }),
 					}
 				: undefined,
-		[sync3d, followCursor, followPaused, followRecv],
+		[sync3d, followCursor, followPaused, followRecv, alongLost],
 	);
 	const playAlongRef = useRef(!!along);
 	playAlongRef.current = !!along;
@@ -2208,6 +2214,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 							t: court?.t ?? 0,
 							w: court?.w ?? 0,
 							rp: court?.rp ?? -1,
+							...(court?.fp === undefined ? {} : { fp: court.fp }),
 							at: now,
 							rate: rate3dRef.current,
 							keys: keyPlays.settings.on
@@ -2293,6 +2300,14 @@ export const LiveGame = (props: View<"liveGame">) => {
 		processToNextPause();
 		setPlayIndex((prev) => prev + 1);
 	}, [processToNextPause]);
+
+	// Playing along, the 3D court found the other one staged this game
+	// differently: stepped line by line by the device in charge of simming
+	// instead, as with an older build there.
+	const lostGid = props.initialBoxScore?.gid;
+	const onCourt3DLost = useCallback(() => {
+		setAlongLostGid(lostGid);
+	}, [lostGid]);
 
 	// The 3D court cannot play this game: on with the 2D court, paced like
 	// any other - not left waiting for a court that will never ask for the
@@ -3107,15 +3122,22 @@ export const LiveGame = (props: View<"liveGame">) => {
 											caption={playByPlayEntries.current[0]?.text}
 											captionT={playByPlayEntries.current[0]?.t}
 											paused={paused}
-											rate={along && sync3d!.rate > 0 ? sync3d!.rate : rate3d}
+											rate={sync3d && sync3d.rate > 0 ? sync3d.rate : rate3d}
 											follower={isFollower && !along}
 											along={along}
 											report={court3dReport}
 											skips={skips3d}
-											keyPlays={along ? alongKeyPlays : keyPlays3d}
+											keyPlays={
+												sync3d
+													? alongKeyPlays
+													: isFollower
+														? undefined
+														: keyPlays3d
+											}
 											onReady={onCourt3DReady}
 											onJump={onCourt3DJump}
 											onFail={onCourt3DFail}
+											onLost={onCourt3DLost}
 										/>
 									)}
 								</Suspense>

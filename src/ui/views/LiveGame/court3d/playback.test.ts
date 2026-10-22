@@ -1,5 +1,5 @@
 import { assert, describe, test } from "vitest";
-import { compile } from "./testGame.ts";
+import { compile, gidOf } from "./testGame.ts";
 import {
 	KEY_PLAY_DEFAULTS,
 	planKeyPlays,
@@ -8,12 +8,20 @@ import {
 import {
 	addReport,
 	makeFollow,
+	stagedAs,
 	SYNC_BEHIND,
 	type Follow,
 	type FollowReport,
 } from "./follow.ts";
 import { onCursor, stepPlay, type PlayClock } from "./playback.ts";
-import { targetForCursor, type CourtTimeline } from "./director.ts";
+import {
+	compileCourt,
+	isLineItem,
+	targetForCursor,
+	type CourtPlayer,
+	type CourtTimeline,
+	type RawEvent,
+} from "./director.ts";
 
 // Two devices playing the same game: one in charge of simming, the other
 // watching it in 3D, told where the first one's court is once a second,
@@ -68,6 +76,9 @@ const watch = ({
 	pauseAt,
 	skipAt,
 	seconds,
+	stagedBy,
+	unsaid,
+	silent,
 }: {
 	seed: string;
 	possessions?: number;
@@ -77,33 +88,66 @@ const watch = ({
 	pauseAt?: number;
 	skipAt?: number;
 	seconds?: number;
+	// How the watching device stages the game, if not as the other one does
+	// (an older build there, say).
+	stagedBy?: (events: RawEvent[], players: CourtPlayer[]) => CourtTimeline;
+	// The other device on a build that doesn't say what it staged - or,
+	// older still, nothing of where its court is at all.
+	unsaid?: boolean;
+	silent?: boolean;
 }) => {
-	const { tl, events } = compile(seed, possessions);
-	const plan: KeySegment[] | undefined = minutes
-		? planKeyPlays(
-				tl,
-				events,
-				{ ...KEY_PLAY_DEFAULTS, on: true, minutes },
-				{ rate, numPeriods: 4 },
-			)
-		: undefined;
+	const { tl, events, players } = compile(seed, possessions);
+	const ftl = stagedBy ? stagedBy(events, players) : tl;
+	const planOf = (tlx: CourtTimeline) =>
+		minutes
+			? planKeyPlays(
+					tlx,
+					events,
+					{ ...KEY_PLAY_DEFAULTS, on: true, minutes },
+					{ rate, numPeriods: 4 },
+				)
+			: undefined;
+	const plan: KeySegment[] | undefined = planOf(tl);
+	const fPlan = ftl === tl ? plan : planOf(ftl);
 	const n = events.length;
+	// As the page does: on through the next line, with whatever came in
+	// before it.
+	const lineEnd = (c: number) => {
+		let j = c;
+		while (j < n && !isLineItem(events[j])) {
+			j += 1;
+		}
+		return Math.min(n, j + 1);
+	};
+	// The watching device plays along until it finds it can't (see
+	// Court3D's onLost) - then the page has it stepped line by line.
+	let stepped = !!silent;
+	let steppedAt: number | undefined = silent ? 0 : undefined;
 	const frame = (d: Device, tlx: CourtTimeline, now: number, wall: number) => {
+		const st = d.along && stepped;
 		stepPlay(
 			d.s,
 			{
 				cursor: d.cursor,
 				paused: d.paused,
 				rate,
-				follower: false,
-				along: d.along,
-				keyPlan: plan,
+				follower: st,
+				along: d.along && !st,
+				keyPlan: d.along ? (silent ? undefined : fPlan) : plan,
 				eventsLength: n,
 				onReady: () => {
-					d.next = Math.min(n, d.cursor + 1);
+					if (!st) {
+						d.next = lineEnd(d.cursor);
+					}
 				},
 				onJump: (c) => {
-					d.next = Math.max(d.next, Math.min(n, c));
+					if (!st) {
+						let x = Math.max(d.next, d.cursor);
+						while (x < Math.min(n, c)) {
+							x = lineEnd(x);
+						}
+						d.next = x;
+					}
 				},
 			},
 			d.f,
@@ -120,11 +164,11 @@ const watch = ({
 			d.s.prevSkips !== d.skips
 		) {
 			d.cursor = d.next;
-			onCursor(d.s, tl, {
+			onCursor(d.s, d.along ? ftl : tl, {
 				cursor: d.cursor,
 				paused: d.paused,
 				skips: d.skips,
-				follower: false,
+				follower: d.along && stepped,
 			});
 		}
 	};
@@ -153,6 +197,26 @@ const watch = ({
 		line: boolean;
 	}[] = [];
 	const end = (seconds ?? 3600) * 1000;
+	// Each line's moment, when each court played through it (ms) - not cut
+	// past, nor in a replay.
+	const seenB = new Map<number, number>();
+	const seenF = new Map<number, number>();
+	const seen = (
+		m: Map<number, number>,
+		tlx: CourtTimeline,
+		t0: number,
+		s: PlayClock,
+		now: number,
+	) => {
+		if (s.replay || s.t <= t0 || s.t - t0 > 2000) {
+			return;
+		}
+		for (const bt of tlx.beats) {
+			if (bt.actionStart > t0 && bt.actionStart <= s.t && !m.has(bt.i)) {
+				m.set(bt.i, now);
+			}
+		}
+	};
 	let bNext = 0;
 	let fNext = joinAt * 1000;
 	let beat = 0;
@@ -184,6 +248,7 @@ const watch = ({
 						paused: b.paused,
 						at: now + SKEW,
 						recv: 0,
+						...(unsaid ? {} : { fp: stagedAs(tl) }),
 					},
 				});
 			}
@@ -194,6 +259,13 @@ const watch = ({
 			const { r, due } = inbox.shift()!;
 			if (due >= joinAt * 1000) {
 				addReport(f.f, { ...r, recv: due });
+				if (!stepped && r.fp !== undefined && r.fp !== stagedAs(ftl)) {
+					stepped = true;
+					steppedAt = due;
+				}
+				if (stepped) {
+					f.next = Math.max(f.next, r.cursor);
+				}
 			}
 		}
 		k += 1;
@@ -213,7 +285,9 @@ const watch = ({
 				b.next = Math.min(n, b.cursor + 1);
 			}
 			render(b);
+			const bt = b.s.t;
 			frame(b, tl, now, now + SKEW);
+			seen(seenB, tl, bt, b.s, now);
 			shown.push({ w: b.s.w, t: b.s.t, rp: b.s.replay?.at ?? -1 });
 			render(b);
 			bNext = now + 1000 / 60 + jitter;
@@ -222,8 +296,14 @@ const watch = ({
 			const dt = f.s.last === undefined ? 0 : Math.min(100, now - f.s.last);
 			// (Waiting on its own page for the next line, as the other court
 			// does there too - the opening tip's dozen lines, say.)
-			const line = f.s.t >= targetForCursor(tl, f.cursor);
-			frame(f, tl, now, now);
+			const line = f.s.t >= targetForCursor(ftl, f.cursor);
+			const ft = f.s.t;
+			frame(f, ftl, now, now);
+			seen(seenF, ftl, ft, f.s, now);
+			if (f.s.lost && !stepped) {
+				stepped = true;
+				steppedAt = now;
+			}
 			render(f);
 			out.push({
 				now,
@@ -257,7 +337,7 @@ const watch = ({
 		}
 		return [shown[lo]!, shown[lo + 1] ?? shown[lo]!];
 	};
-	return { out, theirs, tl, plan };
+	return { out, theirs, tl, plan, seenB, seenF, steppedAt };
 };
 
 // How it looked: the frames after it had settled, where the picture stood
@@ -304,6 +384,60 @@ const judge = (run: ReturnType<typeof watch>, from: number) => {
 	};
 };
 
+// What the watching court showed of what the other one did: each line's
+// moment it played through - how many it never showed, and how long after
+// the other court it showed the rest (ms).
+const moments = (run: ReturnType<typeof watch>) => {
+	let missing = 0;
+	const lags: number[] = [];
+	for (const [i, at] of run.seenB) {
+		const f = run.seenF.get(i);
+		if (f === undefined) {
+			missing += 1;
+		} else {
+			lags.push(f - at);
+		}
+	}
+	return {
+		shown: run.seenB.size,
+		missing,
+		minLag: Math.min(...lags),
+		maxLag: Math.max(...lags),
+	};
+};
+
+// The picture stood still while the other one played on (ms each time),
+// longest first.
+const freezes = (run: ReturnType<typeof watch>, from: number) => {
+	const held: number[] = [];
+	let h = 0;
+	for (const x of run.out) {
+		if (x.now < from || x.done) {
+			continue;
+		}
+		if (x.dw <= 0 && !x.paused && x.dt > 0) {
+			h += x.dt;
+		} else {
+			if (h > 0) {
+				held.push(h);
+			}
+			h = 0;
+		}
+	}
+	return held.sort((a, b) => b - a);
+};
+
+// Staged by another build: the same game, one man's skills read otherwise
+// (so other sets get run).
+const otherBuild = (events: RawEvent[], players: CourtPlayer[]) =>
+	compileCourt({
+		events,
+		players: players.map((q, k) =>
+			k === 2 ? { ...q, skills: ["3", "B"] } : q,
+		),
+		gid: gidOf("along"),
+	});
+
 describe("watching another device's 3D sim", () => {
 	test("the whole game: never a stop, never a cut, a second behind", () => {
 		const run = watch({ seed: "along", seconds: 600 });
@@ -324,6 +458,7 @@ describe("watching another device's 3D sim", () => {
 		] as const) {
 			const run = watch({ seed: "along", rate, minutes });
 			const j = judge(run, 5000);
+			assert.isUndefined(run.steppedAt);
 			assert.isAbove(j.frames, 3000);
 			assert.strictEqual(j.cuts, 0, JSON.stringify(j));
 			assert.strictEqual(j.longest, 0, JSON.stringify(j));
@@ -353,5 +488,84 @@ describe("watching another device's 3D sim", () => {
 		const skip = judge(run, 5000);
 		assert.strictEqual(skip.cuts, 1, JSON.stringify(skip));
 		assert.isBelow(skip.off / skip.frames, 0.01, JSON.stringify(skip));
+	}, 120_000);
+
+	// Both devices stage the game the same way, and say so.
+	test("a court says what it staged: the same game the same, another not", () => {
+		const a = compile("along", 140);
+		const b = compile("along", 140);
+		assert.strictEqual(stagedAs(a.tl), stagedAs(b.tl));
+		assert.notStrictEqual(
+			stagedAs(a.tl),
+			stagedAs(otherBuild(a.events, a.players)),
+		);
+	}, 60_000);
+
+	// The field report: watched from a device on another build, which stages
+	// the game differently, playing along cut back to where the other court
+	// was second after second - the same few seconds over and over until it
+	// moved on. Told what the other court staged, it is stepped line by line
+	// at once instead (failing that, after a couple of cuts back): every
+	// play the other one shows, a moment behind it, never ahead, and never
+	// the same stretch twice.
+	test("on another build: stepped line by line, never round the same stretch again", () => {
+		for (const minutes of [3, undefined]) {
+			for (const unsaid of [false, true]) {
+				const run = watch({
+					seed: "along",
+					minutes,
+					seconds: 300,
+					stagedBy: otherBuild,
+					unsaid,
+				});
+				const label = `${minutes ?? "all"} ${unsaid ? "unsaid" : "said"}`;
+				// Back to a moment it had already shown: never once it is
+				// stepped; before that, told what the other court staged,
+				// never - and not told, only the couple it takes to tell.
+				const at = run.steppedAt ?? Infinity;
+				const back = (after: boolean) =>
+					run.out.filter(
+						(x, k) =>
+							k > 0 && x.now > at === after && x.t < run.out[k - 1]!.t - 50,
+					).length;
+				assert.strictEqual(back(true), 0, label);
+				assert.isAtMost(back(false), unsaid ? 3 : 0, label);
+				if (!unsaid) {
+					assert.isBelow(at, 3000, label);
+				}
+				// Every play the other one shows, and not long after (staged
+				// otherwise here, some a moment sooner) - and never stood still
+				// for long, waiting on the other device's word of the next play.
+				const m = moments(run);
+				assert.isAbove(m.shown, 40, label);
+				assert.isAtMost(m.missing, 2, `${label} ${JSON.stringify(m)}`);
+				assert.isBelow(m.maxLag, 4000, `${label} ${JSON.stringify(m)}`);
+				const held = freezes(run, 5000);
+				assert.isBelow(held[0] ?? 0, 4000, `${label} ${held.slice(0, 4)}`);
+				assert.isAtMost(
+					held.filter((x) => x > 1000).length,
+					2,
+					`${label} ${held.slice(0, 4)}`,
+				);
+			}
+		}
+	}, 240_000);
+
+	// A device in charge of simming on a build that says nothing of where
+	// its court is: stepped line by line from the start, on through each
+	// play as the word of it comes - all of them, a moment behind, never
+	// back over one.
+	test("an older build there: stepped, every play, never back", () => {
+		const run = watch({ seed: "along", seconds: 300, silent: true });
+		const back = run.out.filter(
+			(x, k) => k > 0 && x.t < run.out[k - 1]!.t - 50,
+		).length;
+		assert.strictEqual(back, 0);
+		const m = moments(run);
+		assert.isAbove(m.shown, 60);
+		assert.isAtMost(m.missing, 2, JSON.stringify(m));
+		assert.isBelow(m.maxLag, 3000, JSON.stringify(m));
+		const held = freezes(run, 5000);
+		assert.isBelow(held[0] ?? 0, 2500, `${held.slice(0, 4)}`);
 	}, 120_000);
 });

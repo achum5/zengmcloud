@@ -1613,6 +1613,9 @@ export type LiveSync3D = {
 	rate: number;
 	keys: string;
 	mine: number;
+	// What its court staged (see the 3D court's stagedAs): a watcher whose
+	// court staged something else is stepped line by line, not played along.
+	fp?: string;
 };
 
 // Ready-up state for the header control, for whichever gated stage the league
