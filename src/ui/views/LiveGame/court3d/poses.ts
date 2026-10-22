@@ -535,7 +535,7 @@ type RunMode =
 // A defensive slide: how far he goes each step-and-close (feet), and how
 // far apart his feet are, closed up (see "shuffle").
 const SLIDE_STRIDE = 1.8;
-const SLIDE_NARROW = 0.35;
+export const SLIDE_NARROW = 0.35;
 // HOW HE RUNS - AND WALKS.
 //
 // The way a body really goes: each foot planted while it is down, going

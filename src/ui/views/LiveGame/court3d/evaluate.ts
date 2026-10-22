@@ -39,6 +39,7 @@ import {
 	posed,
 	shotForm,
 	skeleton,
+	SLIDE_NARROW,
 	standingReach,
 	underPalm,
 	type AnimName,
@@ -127,6 +128,11 @@ export type PlayerState = {
 	mirror?: boolean;
 	// His legs turned under him from the way he faces (degrees - see Pose).
 	legs?: number;
+	// Shuffling, the way he goes - ahead, and across to his left (a length
+	// up to 1, as much of it as counts: none all but stood still): partly
+	// ahead or behind as well as across, each foot steps out along it (see
+	// slanted).
+	way?: [number, number];
 	// Turning where he stands: each leg's own turn (degrees - see Pose) and
 	// how far each foot is up off the floor stepping round (0 to 1) - right,
 	// left; turn, turn, up, up.
@@ -165,6 +171,8 @@ export type Blend = {
 	turns?: [number, number];
 	facing?: number;
 	down?: number;
+	// Shuffling then, the way he went (see way).
+	way?: [number, number];
 	// Changed again while still easing out of the move before: that one,
 	// and how much of it was still in him then.
 	from?: Blend;
@@ -2387,7 +2395,12 @@ const blendInto = (
 	// they showed, part the way out of the move before, if they were: each
 	// foot still pointing where it pointed on the floor as that changed).
 	const facing = yawAt(tl, tr, lo);
-	const own = legsOf(spotAt(tr, lo), facing, before.anim, lo);
+	const there = spotAt(tr, lo);
+	const own = legsOf(there, facing, before.anim, lo);
+	const way =
+		before.anim === "shuffle" && there.moving
+			? wayOf(tr, facing, lo)
+			: undefined;
 	const ownPv = pivotOf(tl, tr, facing, before, lo);
 	const turns = ([0, 1] as const).map((i) => {
 		const to = own + (ownPv?.[i] ?? 0);
@@ -2425,6 +2438,7 @@ const blendInto = (
 		w,
 		...(pv ? { pivot: pv } : {}),
 		...(turns[0] || turns[1] ? { turns } : {}),
+		...(way === undefined ? {} : { way }),
 		facing,
 		...(isMove(anim)
 			? {
@@ -3104,6 +3118,8 @@ export const evalPlayer = (
 			: doing;
 	const yaw = spinYawAt(tl, tr, t) ?? yawAt(tl, tr, t);
 	const legs = legsOf(here, yaw, now.anim, t);
+	const way =
+		now.anim === "shuffle" && here.moving ? wayOf(tr, yaw, t) : undefined;
 	const pivot = shown ? pivotOf(tl, tr, yaw, now, t) : undefined;
 	// (An arm a beat behind its reason never takes the hand his dribble has
 	// just come over into.)
@@ -3135,9 +3151,69 @@ export const evalPlayer = (
 		moving: here.moving,
 		...now,
 		...(legs !== 0 ? { legs } : {}),
+		...(way === undefined ? {} : { way }),
 		...(pivot ? { pivot } : {}),
 		...(from ? { from } : {}),
 		...(arm ? { arm } : {}),
+	};
+};
+
+// The way he shuffles, in his frame: the way he gets from a moment before
+// to a moment after - so it comes round a corner as he does, not in a frame
+// or two - and as much of it as counts, none all but stood still (turning
+// back the way he came, say: which foot leads changes over there, not in a
+// frame).
+const WAY_MS = 60;
+const WAY_FTPS = 3;
+const wayOf = (tr: Track, yaw: number, t: number): [number, number] => {
+	const a = spotAt(tr, t - WAY_MS, false);
+	const b = spotAt(tr, t + WAY_MS, false);
+	const dx = b.x - a.x;
+	const dy = b.y - a.y;
+	const d = Math.hypot(dx, dy);
+	if (d < 1e-6) {
+		return [0, 0];
+	}
+	const on = smooth01((d * 1000) / (2 * WAY_MS) / WAY_FTPS) / d;
+	const c = Math.cos(yaw);
+	const sn = Math.sin(yaw);
+	// (His left is the floor's clockwise.)
+	return [(dx * c + dy * sn) * on, (dx * sn - dy * c) * on];
+};
+
+// SHUFFLING ON A SLANT.
+//
+// A shuffle steps straight out to his side - and going partly ahead or back
+// as well, his feet would slide that way under him. So each foot steps out
+// the way he goes instead: as far out from under him, but only so much of it
+// across and the rest ahead (the foot he leads with) or behind (the other) -
+// his hips square, his feet together at the close the same as ever. (Going
+// so nearly straight ahead or back that which foot leads is no way to tell,
+// not at all.)
+// How far ahead a foot goes for a turn of his hip (feet a radian, a typical
+// man down in his stance - his hips turned the two ways at once).
+const SLANT_REACH = 2.15;
+const slanted = (q: Pose, way: [number, number]): Pose => {
+	const [f, s] = way;
+	const m = Math.hypot(f, s);
+	const d = q.wide - SLIDE_NARROW;
+	if (m < 1e-3 || d <= 0) {
+		return q;
+	}
+	const side = Math.abs(s) / m;
+	const on = smooth01((side - 0.3) / 0.3) * Math.min(1, m);
+	if (on <= 0) {
+		return q;
+	}
+	const ahead = ((d * (f / m) * on) / SLANT_REACH) * (180 / Math.PI);
+	const across = d * (1 - side) * on;
+	// (His left leads going to his left.)
+	return {
+		...q,
+		wideN: q.wideN - across,
+		wideF: q.wideF - across,
+		hipN: q.hipN + (s > 0 ? -ahead : ahead),
+		hipF: q.hipF + (s > 0 ? ahead : -ahead),
 	};
 };
 
@@ -3397,7 +3473,9 @@ const blendPose = (f: Blend): Pose => {
 		f.tight,
 	);
 	const m = strode(f.mirror ? mirror(as) : as, f.stride);
-	const own = footDown(f.held ? carried(m, f.anim) : m, f.down ?? 0);
+	const own0 = footDown(f.held ? carried(m, f.anim) : m, f.down ?? 0);
+	const own =
+		f.anim === "shuffle" && f.way !== undefined ? slanted(own0, f.way) : own0;
 	const g = f.from;
 	if (!g || (g.w <= 0 && (g.arms ?? 0) <= 0)) {
 		return own;
@@ -3578,7 +3656,9 @@ export const poseOf = (st: PlayerState): Pose => {
 	// carry it as the move does (and as the one before did, if he had it
 	// then), so going from the one to the other they ease over too.
 	const carry = st.holding === true && st.grip === undefined;
-	const q = footDown(carry ? carried(m, st.anim) : m, st.down ?? 0);
+	const q0 = footDown(carry ? carried(m, st.anim) : m, st.down ?? 0);
+	const q =
+		st.anim === "shuffle" && st.way !== undefined ? slanted(q0, st.way) : q0;
 	const f = st.from;
 	const eased = f && (f.w > 0 || (f.arms ?? 0) > 0) ? blendFrom(q, f) : q;
 	const fw = f && f.w > 0 ? f.w : 0;

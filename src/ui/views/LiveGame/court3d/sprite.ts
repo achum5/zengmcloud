@@ -316,6 +316,11 @@ const armSteps = (a: PlayerState["arm"], k: Steps): PlayerState["arm"] => {
 		: undefined;
 };
 
+// Shuffling, the way he goes, in steps.
+const wayStep = (w: [number, number], k: Steps): [number, number] => {
+	const n = 40 / k.legs;
+	return [Math.round(w[0] * n) / n, Math.round(w[1] * n) / n];
+};
 // A move he is easing out of, in steps (and the one it was easing out of).
 const blendStep = (v: number, k: Steps) =>
 	v > 0.12
@@ -346,6 +351,7 @@ const stepBlend = (f: Blend, w: number, k: Steps): Blend => {
 		w,
 		...(f.arms === undefined ? {} : { arms: blendStep(f.arms, k) }),
 		...(f.down ? { down: Math.round(f.down * k.blend) / k.blend } : {}),
+		...(f.way === undefined ? {} : { way: wayStep(f.way, k) }),
 		...(f.pivot === undefined
 			? {}
 			: {
@@ -360,7 +366,7 @@ const stepBlend = (f: Blend, w: number, k: Steps): Blend => {
 	};
 };
 const blendKey = (f: Blend): string =>
-	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.dribbleFrom ?? ""}${f.tight ? `t${f.tight}` : ""}${strideKey(f.stride)}${f.held ? "h" : ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.turns ?? ""}~${f.pivot ?? ""}~${f.down ?? ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
+	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.dribbleFrom ?? ""}${f.tight ? `t${f.tight}` : ""}${strideKey(f.stride)}${f.held ? "h" : ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.turns ?? ""}~${f.pivot ?? ""}~${f.down ?? ""}~${f.way ?? ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
 
 // The pose he is drawn in: his own, stepped to the sprite's frames and turns
 // - and, easing out of his last move, a few steps of that.
@@ -374,6 +380,8 @@ const stepped = (st: PlayerState, k: Steps) => {
 		// steps.
 		legs:
 			st.legs === undefined ? undefined : Math.round(st.legs / k.legs) * k.legs,
+		// Shuffling, the way he goes, the same.
+		way: st.way === undefined ? undefined : wayStep(st.way, k),
 		// Each leg turned on its own, and a foot up stepping round, the same.
 		pivot:
 			st.pivot === undefined
@@ -452,7 +460,7 @@ export const drawSprite = (
 		}
 		const f = pose.from;
 		const a = pose.arm;
-		key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.pivot ? `p${pose.pivot}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
+		key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
 			f ? `|${blendKey(f)}` : ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 		const kept = cache.kept.get(key);
@@ -507,6 +515,7 @@ export const drawSprite = (
 		from: pose.from,
 		arm: pose.arm,
 		legs: pose.legs,
+		way: pose.way,
 		pivot: pose.pivot,
 		grip: pose.grip,
 		down: pose.down,
