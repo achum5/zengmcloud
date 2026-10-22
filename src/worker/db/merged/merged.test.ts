@@ -133,7 +133,14 @@ const IDB_GLOBALS = [
 	"IDBTransaction",
 ] as const;
 
+// What was there before, put back afterwards: test files share globals, and
+// a later file may have set these up already.
+const previousGlobals = new Map<string, unknown>();
+
 beforeAll(async () => {
+	for (const name of [...IDB_GLOBALS, "indexedDB"]) {
+		previousGlobals.set(name, (globalThis as any)[name]);
+	}
 	for (const name of IDB_GLOBALS) {
 		(globalThis as any)[name] = fakeIndexedDB[name];
 	}
@@ -148,10 +155,12 @@ afterAll(() => {
 	// @ts-expect-error
 	idb.league = undefined;
 
-	// @ts-expect-error
-	delete globalThis.indexedDB;
-	for (const name of IDB_GLOBALS) {
-		delete (globalThis as any)[name];
+	for (const [name, value] of previousGlobals) {
+		if (value === undefined) {
+			delete (globalThis as any)[name];
+		} else {
+			(globalThis as any)[name] = value;
+		}
 	}
 });
 
