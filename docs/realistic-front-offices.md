@@ -87,6 +87,18 @@ with "the Pistons", not with a named person.
   usage, so two stars dilute each other: summing single-player values over a
   roster overstates the gaps between teams by about 40%. Rosters are priced
   whole, with each player's share of the ball, plus lineup synergy.
+- **Positions matter on the floor.** The sim starts 2 guards and 2 forwards
+  or centers and won't sub a man in if that leaves fewer than 2 guards (or a
+  PG) or 2 forwards (or a C) on the floor, so a roster short of guards plays
+  its scrubs and tired starters there. The shark bot found it: CPU teams gave
+  their guards away too cheaply. Measured by swapping teams' guards for
+  forwards of the same value and back (positions lab): in random-players
+  leagues a quarter of rosters are short of guards, and the model missed by
+  up to 5 points a game without it; with it, its error on whole teams fell
+  from 1.49 to 1.23 points a game on fresh leagues. A player whose position
+  is not known yet (a pick, a free agent a team may sign) counts as a
+  typical one, and a projected player at the position his ratings will put
+  him.
 - **A roster of players who may not be there is priced as it would play.**
   Each place in the pecking order goes to whoever is likely to fill it, given
   everyone's chance of being there; the most valuable uncertain players are

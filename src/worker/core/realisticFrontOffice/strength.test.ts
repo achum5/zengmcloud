@@ -9,8 +9,11 @@ import ovr from "../player/ovr.ts";
 import { IMPACT_RATINGS } from "./playerImpact.ts";
 import {
 	expectedRosterPoints,
+	forwardWeight,
 	getReplacement,
+	guardWeight,
 	playerLine,
+	positionCost,
 	ROSTER_PLACES,
 	rosterPoints,
 	typicalSynergy,
@@ -92,6 +95,28 @@ test("a starter counts for more than the end of the bench", () => {
 	const bench = rosterPoints([...roster.slice(0, 12), at(44)]) - base;
 	assert.isAbove(bench, 0);
 	assert.isAbove(starter, 5 * bench);
+});
+
+test("a roster whose best players are all forwards loses to the same talent with guards", () => {
+	// The same players, as one of the game's positions or another.
+	const as = (p: StrengthPlayer, position: string) => ({
+		...p,
+		guard: guardWeight(position),
+		forward: forwardWeight(position),
+	});
+	const forwards = roster.map((p) => as(p, "F"));
+	const mixed = roster.map((p, i) =>
+		as(p, ["PG", "SG", "F", "PF", "C"][i % 5]!),
+	);
+	// It plays its scrubs at guard: a few points a game.
+	const gap = rosterPoints(mixed) - rosterPoints(forwards);
+	assert.isAbove(gap, 2);
+	assert.isBelow(gap, 8);
+	// Guards to spare are no help.
+	const guards = roster.map((p, i) => as(p, i % 2 === 0 ? "PG" : "G"));
+	assert.isBelow(rosterPoints(guards), rosterPoints(mixed) + 1e-9);
+	// A balanced roster pays nothing.
+	assert.strictEqual(positionCost(5, 5), 0);
 });
 
 test("an empty place is filled for the minimum", () => {

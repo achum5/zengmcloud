@@ -1,5 +1,10 @@
 import type { SynergyCompositeRating } from "../GameSim.basketball/synergy.ts";
-import { typicalSynergy, type StrengthPlayer } from "./strength.ts";
+import {
+	typicalSynergy,
+	TYPICAL_FORWARD,
+	TYPICAL_GUARD,
+	type StrengthPlayer,
+} from "./strength.ts";
 
 // What a pick turns into, by place in the draft (both rounds of a 30-team
 // league), from draft day (0) through ten seasons on: roleFree, offense and
@@ -823,6 +828,8 @@ export const pickPlayer = ({
 		offense: offense!,
 		usage: usage!,
 		synergy,
+		guard: TYPICAL_GUARD,
+		forward: TYPICAL_FORWARD,
 		valueNoPot: ovr!,
 		availability: kept!,
 	};

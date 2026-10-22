@@ -6,6 +6,7 @@ import {
 	type SynergyCompositeRating,
 } from "../GameSim.basketball/synergy.ts";
 import ovr from "../player/ovr.ts";
+import pos from "../player/pos.basketball.ts";
 import {
 	IMPACT_RATINGS,
 	shotWeight,
@@ -126,6 +127,10 @@ const MODEL = {
 	// Points a game per unit of pregame lineup synergy.
 	synergy: 3.1245,
 	home: 3.1432,
+	// Points a game per unit cubed that the floor's guards, place by place
+	// over the game, fall short of `need`; and its forwards (POSITIONS).
+	guards: { need: 3.7, cost: 0.106 },
+	forwards: { need: 2.9, cost: 0.124 },
 };
 
 // Share of the game on the floor, by place in the pecking order.
@@ -207,7 +212,28 @@ export type PlayerLine = {
 	// usage ** 1.25, what the sim hands the ball out by.
 	usage: number;
 	synergy: SynergyCompositeRating;
+	// What he counts for toward the guards and the forwards the sim keeps on
+	// the floor (see POSITIONS).
+	guard: number;
+	forward: number;
 };
+
+// THE FLOOR'S POSITIONS. The sim starts 2 guards and 2 forwards or centers,
+// and won't sub a man in if that leaves fewer than 2 guards (unless one is a
+// PG) or fewer than 2 forwards (unless one is a C) on the floor, short of a
+// man about to drop - so a PG counts as two guards and a C as two forwards.
+// A roster whose minutes, place by place, hold too few of either plays its
+// scrubs and its tired starters in their place.
+//
+// Fit on the positions lab (src/test/impact/positions.test.ts): every team
+// of random-players leagues with its best guards swapped for forwards and
+// centers of the same value and the other way round, against the rest of the
+// league on the same random numbers. In those leagues a quarter of rosters are
+// short of guards, and the model without this missed by up to 5 points a game.
+export const guardWeight = (position: string) =>
+	position === "PG" ? 2 : position.includes("G") ? 1 : 0;
+export const forwardWeight = (position: string) =>
+	position === "C" ? 2 : position.includes("F") ? 1 : 0;
 
 const evaluate = (
 	coefficients: {
@@ -232,11 +258,18 @@ const evaluate = (
 export const lineSynergy = (ratings: ValueRatings) =>
 	synergyCompositeRating(ratings as any);
 
-export const playerLine = (ratings: ValueRatings): PlayerLine => ({
+// `position`: the one the game has him at, if known; otherwise where his
+// ratings put him.
+export const playerLine = (
+	ratings: ValueRatings,
+	position = pos(ratings as any),
+): PlayerLine => ({
 	roleFree: evaluate(MODEL.roleFree, ratings),
 	offense: evaluate(MODEL.offense, ratings),
 	usage: shotWeight(ratings),
 	synergy: lineSynergy(ratings),
+	guard: guardWeight(position),
+	forward: forwardWeight(position),
 });
 
 // A typical 43 overall, about what is always there for the minimum. A stand-in
@@ -302,10 +335,19 @@ export const typicalSynergy = (overall: number) => {
 	return synergy;
 };
 
+// What a player whose position is not known yet counts for toward the
+// floor's guards and forwards: the average player's, in random-players
+// leagues.
+export const TYPICAL_GUARD = 0.5;
+export const TYPICAL_FORWARD = 0.82;
+
 export const getReplacement = () => {
 	if (!replacement) {
 		replacement = {
 			...playerLine(REPLACEMENT_RATINGS),
+			// Whoever the team needs.
+			guard: TYPICAL_GUARD,
+			forward: TYPICAL_FORWARD,
 			valueNoPot: -Infinity,
 		};
 	}
@@ -468,12 +510,26 @@ const TOGETHER_FLAT = Float64Array.from(TOGETHER.flat());
 const placeRoleFree = new Float64Array(ROSTER_PLACES);
 const placeOffense = new Float64Array(ROSTER_PLACES);
 const placeUsage = new Float64Array(ROSTER_PLACES);
+const placeGuard = new Float64Array(ROSTER_PLACES);
+const placeForward = new Float64Array(ROSTER_PLACES);
 
-// Points of the roster in placeRoleFree, placeOffense, placeUsage, placeHeld
-// and placeSkills.
+// What the floor's positions cost a roster whose places hold this many guards
+// and forwards, each counted at his place's minutes.
+export const positionCost = (guards: number, forwards: number) => {
+	const g = Math.max(0, MODEL.guards.need - guards);
+	const f = Math.max(0, MODEL.forwards.need - forwards);
+	return MODEL.guards.cost * g ** 3 + MODEL.forwards.cost * f ** 3;
+};
+
+// Points of the roster in placeRoleFree, placeOffense, placeUsage,
+// placeGuard, placeForward, placeHeld and placeSkills.
 const pointsOfPlaces = () => {
 	let total = 0;
+	let guards = 0;
+	let forwards = 0;
 	for (let k = 0; k < ROSTER_PLACES; k++) {
+		guards += SLOT_MINUTES[k]! * placeGuard[k]!;
+		forwards += SLOT_MINUTES[k]! * placeForward[k]!;
 		const row = k * ROSTER_PLACES;
 		let others = 0;
 		for (let j = 0; j < k; j++) {
@@ -488,7 +544,7 @@ const pointsOfPlaces = () => {
 	}
 	const synergy =
 		STARTER_SYNERGY * unitSynergy(0) + (1 - STARTER_SYNERGY) * unitSynergy(5);
-	return total + MODEL.synergy * synergy;
+	return total + MODEL.synergy * synergy - positionCost(guards, forwards);
 };
 
 // The roster's places from players already in pecking order.
@@ -499,6 +555,8 @@ const pointsOfSorted = (sorted: readonly StrengthPlayer[]) => {
 		placeRoleFree[k] = p.roleFree;
 		placeOffense[k] = p.offense;
 		placeUsage[k] = p.usage;
+		placeGuard[k] = p.guard;
+		placeForward[k] = p.forward;
 		if (k < SYNERGY_PLACES) {
 			placeHeld[k] = synergyInput(p.synergy);
 		}
@@ -546,6 +604,8 @@ let sortedAvailability = new Float64Array(0);
 let sortedRoleFree = new Float64Array(0);
 let sortedOffense = new Float64Array(0);
 let sortedUsage = new Float64Array(0);
+let sortedGuard = new Float64Array(0);
+let sortedForward = new Float64Array(0);
 let sortedEnumerated = new Int8Array(0);
 const sortedSynergy: SynergyCompositeRating[] = [];
 const sortedSynergyInput: (SynergyInput | undefined)[] = [];
@@ -561,6 +621,8 @@ const layOut = (
 		sortedRoleFree = new Float64Array(capacity);
 		sortedOffense = new Float64Array(capacity);
 		sortedUsage = new Float64Array(capacity);
+		sortedGuard = new Float64Array(capacity);
+		sortedForward = new Float64Array(capacity);
 		sortedEnumerated = new Int8Array(capacity);
 	}
 	for (let i = 0; i < n; i++) {
@@ -569,6 +631,8 @@ const layOut = (
 		sortedRoleFree[i] = p.roleFree;
 		sortedOffense[i] = p.offense;
 		sortedUsage[i] = p.usage;
+		sortedGuard[i] = p.guard;
+		sortedForward[i] = p.forward;
 		sortedSynergy[i] = p.synergy;
 		sortedSynergyInput[i] = undefined;
 		sortedEnumerated[i] =
@@ -589,6 +653,8 @@ const restFilled = new Float64Array(ROSTER_PLACES);
 const restRoleFree = new Float64Array(ROSTER_PLACES);
 const restOffense = new Float64Array(ROSTER_PLACES);
 const restUsage = new Float64Array(ROSTER_PLACES);
+const restGuard = new Float64Array(ROSTER_PLACES);
+const restForward = new Float64Array(ROSTER_PLACES);
 // Each place's synergy skills, by everyone's chance of playing it, and who is
 // sure to play it (-1 if nobody is).
 const restSkills = new Float64Array(SYNERGY_PLACES * NUM_SKILLS);
@@ -605,6 +671,8 @@ const fillRest = (from: number, n: number, mask: number) => {
 	restRoleFree.fill(0);
 	restOffense.fill(0);
 	restUsage.fill(0);
+	restGuard.fill(0);
+	restForward.fill(0);
 	restSkills.fill(0);
 	restHeld.fill(-1);
 	for (let i = from; i < n; i++) {
@@ -621,6 +689,8 @@ const fillRest = (from: number, n: number, mask: number) => {
 		const roleFree = sortedRoleFree[i]!;
 		const offense = sortedOffense[i]!;
 		const usage = sortedUsage[i]!;
+		const guard = sortedGuard[i]!;
+		const forward = sortedForward[i]!;
 		const top = Math.min(hi, ROSTER_PLACES - 1);
 		for (let k = lo; k <= top; k++) {
 			const chance = a * ahead[k]!;
@@ -628,6 +698,8 @@ const fillRest = (from: number, n: number, mask: number) => {
 			restRoleFree[k]! += chance * roleFree;
 			restOffense[k]! += chance * offense;
 			restUsage[k]! += chance * usage;
+			restGuard[k]! += chance * guard;
+			restForward[k]! += chance * forward;
 		}
 		if (lo < SYNERGY_PLACES) {
 			const skills = sortedInput(i).skills;
@@ -694,6 +766,8 @@ const byPlace = (sure: number, mask: number) => {
 			placeRoleFree[next] = sortedRoleFree[i]!;
 			placeOffense[next] = sortedOffense[i]!;
 			placeUsage[next] = sortedUsage[i]!;
+			placeGuard[next] = sortedGuard[i]!;
+			placeForward[next] = sortedForward[i]!;
 			if (next < SYNERGY_PLACES) {
 				placeHeld[next] = sortedInput(i);
 			}
@@ -705,6 +779,8 @@ const byPlace = (sure: number, mask: number) => {
 		placeRoleFree[k] = restRoleFree[k - next]!;
 		placeOffense[k] = restOffense[k - next]!;
 		placeUsage[k] = restUsage[k - next]!;
+		placeGuard[k] = restGuard[k - next]!;
+		placeForward[k] = restForward[k - next]!;
 	}
 	const r = getReplacement();
 	for (let k = 0; k < ROSTER_PLACES; k++) {
@@ -712,6 +788,8 @@ const byPlace = (sure: number, mask: number) => {
 		placeRoleFree[k]! += empty * r.roleFree;
 		placeOffense[k]! += empty * r.offense;
 		placeUsage[k]! += empty * r.usage;
+		placeGuard[k]! += empty * r.guard;
+		placeForward[k]! += empty * r.forward;
 	}
 	replacementInput ??= synergyInput(r.synergy);
 	const replacementSkills = replacementInput.skills;

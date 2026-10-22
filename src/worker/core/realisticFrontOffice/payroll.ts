@@ -2,7 +2,12 @@ import getRookieContractLength from "../draft/getRookieContractLength.ts";
 import getRookieSalaries from "../draft/getRookieSalaries.ts";
 import genContract from "../player/genContract.ts";
 import { g } from "../../util/index.ts";
-import { typicalSynergy, type StrengthPlayer } from "./strength.ts";
+import {
+	typicalSynergy,
+	TYPICAL_FORWARD,
+	TYPICAL_GUARD,
+	type StrengthPlayer,
+} from "./strength.ts";
 
 // HOW TEAMS REFILL. A roster projected forward loses players to age and to
 // free agency; in the real league their places do not stay empty, and the
@@ -116,6 +121,8 @@ export const signingsWith = (
 			usage: usage!,
 			// Who he is is not known yet: a typical player of his overall.
 			synergy: typicalSynergy(ovr!),
+			guard: TYPICAL_GUARD,
+			forward: TYPICAL_FORWARD,
 			valueNoPot: ovr!,
 			availability: chance! * left,
 		}),

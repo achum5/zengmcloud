@@ -25,6 +25,8 @@ import {
 	lineSynergy,
 	playerLine,
 	typicalSynergy,
+	TYPICAL_FORWARD,
+	TYPICAL_GUARD,
 	valueOverReplacement,
 	type StrengthPlayer,
 	type ValueRatings,
@@ -186,8 +188,9 @@ const seedFor = (pid: number, season: number) =>
 
 // The parts of a player's line that average over simulated careers.
 export const lineMeasure = (ratings: MinimalPlayerRatings) => {
+	// Where his ratings put him then, not where he plays now.
 	const line = playerLine(ratings as unknown as ValueRatings);
-	return [line.roleFree, line.offense, line.usage];
+	return [line.roleFree, line.offense, line.usage, line.guard, line.forward];
 };
 
 export const projectPlayer = (p: Player, season: number) => {
@@ -229,7 +232,7 @@ const computeSeasonLine = (
 		const availability =
 			out <= 0 ? 1 : 1 - Math.min(1, out / Math.max(1, gamesRemaining));
 		return {
-			...playerLine(r as unknown as ValueRatings),
+			...playerLine(r as unknown as ValueRatings, r.pos),
 			valueNoPot: p.valueNoPot,
 			availability,
 		};
@@ -250,7 +253,8 @@ const computeSeasonLine = (
 	if (p.contract.exp < season + index) {
 		availability *= retention;
 	}
-	const [roleFree, offense, usage] = projection.measures[index]!;
+	const [roleFree, offense, usage, guard, forward] =
+		projection.measures[index]!;
 	// One synergy per projected season, shared by all his lines for it, so a
 	// lineup is recognised as the same whatever his re-signing odds.
 	let synergies = projectedSynergy.get(projection);
@@ -267,6 +271,8 @@ const computeSeasonLine = (
 		offense: offense!,
 		usage: usage!,
 		synergy,
+		guard: guard!,
+		forward: forward!,
 		valueNoPot: projection.ovr[index]!,
 		availability,
 	};
@@ -746,6 +752,8 @@ const averagePick = (
 			usage: usage / kept,
 			// Who he is is not known yet: a typical player of his overall.
 			synergy: typicalSynergy(ovr / kept),
+			guard: TYPICAL_GUARD,
+			forward: TYPICAL_FORWARD,
 			valueNoPot: ovr / kept,
 			availability: kept,
 		},

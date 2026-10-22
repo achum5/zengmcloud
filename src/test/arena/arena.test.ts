@@ -755,7 +755,10 @@ const healthy = (players: readonly Player[]) =>
 const modelPoints = (players: readonly Player[]) =>
 	rosterPoints(
 		players.map((p) => ({
-			...playerLine(last(p.ratings) as unknown as ValueRatings),
+			...playerLine(
+				last(p.ratings) as unknown as ValueRatings,
+				last(p.ratings).pos,
+			),
 			valueNoPot: p.valueNoPot,
 		})),
 	);
