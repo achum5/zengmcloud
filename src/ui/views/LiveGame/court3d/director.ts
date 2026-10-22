@@ -693,6 +693,10 @@ const PARKED_MS = 150;
 // has it no sooner than this far (feet) into it, up to speed.
 const CUT_FROM = 16;
 const CUT_RUN_UP = 4;
+// Getting to where his cut starts sooner than he sets off on it, he takes
+// his run there no slower than this on average (feet a second) - and stands
+// there only what is left.
+const IN_STRIDE_PACE = 8;
 // A run in counts as a cut to the rim for the ball if it ends this near
 // the rim (feet) - or, rolling or cutting into the lane for a hook or a
 // floater there, this near.
@@ -5583,12 +5587,33 @@ class Director {
 								off !== undefined,
 							);
 				// On the break nobody waits for the man trailing the play - not
-				// unless it comes to him.
+				// unless it comes to him: jogging up behind it, or on his way to
+				// a spot back up the floor from the ball (the big still coming
+				// up from the far end).
+				// (Only running on again after it - not the ball coming to him,
+				// a screen of his - the next step goes on from wherever he is.)
+				const behind = (): boolean => {
+					const h = this.holder;
+					if (h === undefined || h === pid) {
+						return false;
+					}
+					const B = this.posAt(h, done);
+					return dist(this.posOf(pid), rim) > dist(B, rim) + 4;
+				};
+				const forBall =
+					run.option?.shooter === a.who ||
+					run.option?.assist === a.who ||
+					(next ?? []).some((b) =>
+						b.type === "screen"
+							? b.who.includes(a.who) || b.for === a.who
+							: (b.type === "pass" || b.type === "handoff") &&
+								(b.to === a.who || b.who === a.who),
+					);
 				if (
 					!(
 						run.play.cat === "break" &&
-						a.style === "jog" &&
-						!needed(run, next, a.who)
+						(a.style === "jog" || behind()) &&
+						!forBall
 					)
 				) {
 					end = Math.max(end, done);
@@ -8183,6 +8208,7 @@ class Director {
 				C !== end,
 			);
 		}
+		this.inStride(shooter, go.start);
 		this.go(shooter, C, go.start, speed, "run", undefined, { onto: go.onto });
 		this.stopFor(passer, at);
 		return at;
@@ -8245,6 +8271,7 @@ class Director {
 				);
 			}
 		}
+		this.inStride(shooter, go.start);
 		const there = this.go(shooter, P, go.start, speed, "run", face);
 		this.stopFor(lobber, at);
 		return there;
@@ -8445,6 +8472,76 @@ class Director {
 			}
 		}
 		return lo;
+	}
+
+	// His cut timed to the ball, he sets off on it at `start`: the run that
+	// gets him to where it starts takes him there as he does - a man running
+	// the floor easing up, a cutter coming slower off his spot - not there
+	// first at full tilt and stood at the free-throw line waiting on it.
+	// (No slower than IN_STRIDE_PACE: past that, he stands what is left.)
+	private inStride(pid: number, start: number) {
+		const tr = this.track(pid);
+		const moves = tr?.moves ?? [];
+		const A = moves.at(-1);
+		const running = (m: Move) =>
+			m.anim === "run" || m.anim === "sprint" || m.anim === "jog";
+		if (
+			!tr ||
+			!A ||
+			!running(A) ||
+			A.t1 >= start - PARKED_MS ||
+			tr.acts.some((a) => a.t1 > A.t1 && a.t0 < start)
+		) {
+			return;
+		}
+		// (The runs that take him there one into the next, the last few: each
+		// eased up on, the last first.)
+		let k = moves.length - 1;
+		while (
+			k > 0 &&
+			moves.length - k < 3 &&
+			running(moves[k - 1]!) &&
+			moves[k - 1]!.t1 >= moves[k]!.t0 - 80 &&
+			!tr.acts.some((a) => a.t1 > moves[k - 1]!.t0 && a.t0 < moves[k]!.t0)
+		) {
+			k--;
+		}
+		let left = start - A.t1;
+		const extra = moves.map(() => 0);
+		for (let i = moves.length - 1; i >= k && left > 0; i--) {
+			const m = moves[i]!;
+			const len = dist(m.from, m.to);
+			if (len < CUT_RUN_UP) {
+				continue;
+			}
+			const slack = (len / IN_STRIDE_PACE) * 1000 - (m.t1 - m.t0);
+			extra[i] = Math.max(0, Math.min(slack, left));
+			left -= extra[i]!;
+		}
+		// Off a screen of his - rolling, slipping out of it - he holds it the
+		// rest of that long: set until it is time to go, then gone in one.
+		let shift = 0;
+		const held = tr.acts.find(
+			(a) => a.anim === "screen" && Math.abs(a.t1 - moves[k]!.t0) < 120,
+		);
+		if (held && left > PARKED_MS) {
+			held.t1 += left;
+			shift = left;
+		}
+		for (let i = k; i < moves.length; i++) {
+			const m = moves[i]!;
+			if (shift === 0 && extra[i] === 0) {
+				continue;
+			}
+			m.t0 += shift;
+			shift += extra[i]!;
+			m.t1 += shift;
+			// (How fast he is going along them, read off them afresh.)
+			m.v1 = undefined;
+			if (i > k) {
+				m.v0 = undefined;
+			}
+		}
 	}
 
 	// Pulled up where he is at t, to throw it: whatever run he was on with

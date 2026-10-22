@@ -2226,6 +2226,98 @@ describe("3D director", () => {
 		assert.isAtMost(parked, fed * 0.15, `${parked} of ${fed} parked`);
 	}, 240_000);
 
+	// Nor stood out at the free-throw line first, waiting on it: his run
+	// there - down the floor on the break, off his spot on a cut - gets him
+	// there as he sets off on the cut in.
+	test("a man fed at the rim runs in to it in stride - not stood at the free-throw line waiting first", () => {
+		const FINISH = new Set<string>([
+			"dunk",
+			"dunk1",
+			"tomahawk",
+			"windmill",
+			...LAYUPS,
+		]);
+		const rims = [0, 1].map((side) => ({
+			x: rimX(side as 0 | 1),
+			y: COURT_H / 2,
+		}));
+		let fed = 0;
+		const waited: string[] = [];
+		for (const seed of ["a", "b", "c", "d", "e", "f"]) {
+			const { tl } = compile(seed, 150);
+			tl.ball.forEach((s, i) => {
+				if (
+					s.kind !== "fly" ||
+					!("pid" in s.to) ||
+					!("pid" in s.from) ||
+					s.from.pid === s.to.pid
+				) {
+					return;
+				}
+				const catcher = s.to.pid;
+				const C = evalPlayer(tl, catcher, s.t1);
+				const rim = rims.reduce((a, b) =>
+					Math.hypot(C.x - a.x, C.y - a.y) < Math.hypot(C.x - b.x, C.y - b.y)
+						? a
+						: b,
+				);
+				if (Math.hypot(C.x - rim.x, C.y - rim.y) > 9) {
+					return;
+				}
+				const shot = tl.ball
+					.slice(i + 1, i + 6)
+					.find(
+						(q) =>
+							q.kind === "fly" &&
+							"pid" in q.from &&
+							q.from.pid === catcher &&
+							!("pid" in q.to) &&
+							q.t0 - s.t1 < 2500,
+					);
+				if (
+					!shot ||
+					!tl.tracks
+						.get(catcher)!
+						.acts.some(
+							(a) =>
+								FINISH.has(a.anim) &&
+								a.t0 <= shot.t0 + 50 &&
+								a.t1 >= shot.t0 - 50,
+						)
+				) {
+					return;
+				}
+				fed += 1;
+				// The longest he stood still out there, 10 to 20 feet from the
+				// rim, in the six seconds before he caught it - doing nothing
+				// else (not set in a screen, say).
+				const acts = tl.tracks.get(catcher)!.acts;
+				let still = 0;
+				let most = 0;
+				let prev = evalPlayer(tl, catcher, s.t1 - 6000);
+				for (let w = 5900; w >= 0; w -= 100) {
+					const t = s.t1 - w;
+					const Q = evalPlayer(tl, catcher, t);
+					const d = Math.hypot(Q.x - rim.x, Q.y - rim.y);
+					still =
+						Math.hypot(Q.x - prev.x, Q.y - prev.y) < 0.15 &&
+						d >= 10 &&
+						d <= 20 &&
+						!acts.some((a) => a.t0 <= t && a.t1 > t)
+							? still + 100
+							: 0;
+					most = Math.max(most, still);
+					prev = Q;
+				}
+				if (most >= 700) {
+					waited.push(`${seed}: ${catcher} at ${Math.round(s.t1)} ${most}ms`);
+				}
+			});
+		}
+		assert.isAbove(fed, 25);
+		assert.isAtMost(waited.length, fed * 0.4, waited.join("; "));
+	}, 240_000);
+
 	// A handoff he goes on from - a drive, a run with it - is taken on the
 	// move: in his hands as he comes by, and him on his way with it round
 	// the man who gave it, not stood there with it first (and then a
