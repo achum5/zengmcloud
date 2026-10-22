@@ -28,6 +28,7 @@ import {
 	franchiseValue,
 	OUTLOOK_YEARS,
 	pickLineAt,
+	placesAfter,
 	retentionOf,
 	seasonLine,
 	seasonValue,
@@ -122,6 +123,8 @@ export const marketSettings = {
 	// Every team also shops once ratings have progressed in the preseason,
 	// before any games.
 	preseasonWindow: true,
+	// A deal's teams' picks land where the deal leaves their rosters.
+	placesAfter: true,
 };
 
 // Where the time goes, for the arena's speed report.
@@ -323,16 +326,31 @@ export const packages = (
 export const assetKey = (x: Asset) =>
 	x.kind === "player" ? `p${x.p.pid}` : `d${x.dp.dpid}`;
 
-// What a deal does to a team's franchise value.
+// What a deal does to a team's franchise value - with its own picks, and the
+// other team's (`partner`, when given), landing where the deal leaves the two
+// rosters.
 export const priceFor = (
 	outlook: LeagueOutlook,
 	t: TeamState,
 	outgoing: readonly Asset[],
 	incoming: readonly Asset[],
+	partner?: TeamState,
 ) => {
 	const after = applyTrade(t, outgoing, incoming);
+	let view = outlook;
+	if (marketSettings.placesAfter && count(outgoing) + count(incoming) > 0) {
+		const changes = [{ tid: t.tid, before: t.players, after: after.players }];
+		if (partner) {
+			changes.push({
+				tid: partner.tid,
+				before: partner.players,
+				after: applyTrade(partner, incoming, outgoing).players,
+			});
+		}
+		view = placesAfter(outlook, changes);
+	}
 	return (
-		valueOf(outlook, t.tid, after.players, after.picks, {
+		valueOf(view, t.tid, after.players, after.picks, {
 			tradedAway: t.tradedAway,
 			extra: count(outgoing),
 		}) - t.value
@@ -449,8 +467,8 @@ export const bestDealWith = (
 		}
 		checked += 1;
 		const gains: [number, number] = [
-			price(a, giveA, giveB),
-			price(b, giveB, giveA),
+			priceFor(outlook, a, giveA, giveB, b),
+			priceFor(outlook, b, giveB, giveA, a),
 		];
 		if (gains[0] < MIN_GAIN || gains[1] < MIN_GAIN) {
 			continue;

@@ -123,6 +123,13 @@ export type LeagueOutlook = {
 	// Where each team's own pick is expected to land in each season's draft,
 	// 0 for the first, from its roster alone.
 	draftPlace: Map<number, number[]>;
+	// What draftPlace ranks each team by, each season: its strength on its
+	// roster alone, and this season, once games are played, the wins it is
+	// heading for - with the wins banked and the average strength those come
+	// from, and rosters' strengths as priced now (placesAfter).
+	placeKeys: Map<number, { points: number[]; keys: number[] }>;
+	placeNow?: { won: Map<number, number>; meanNow: number };
+	placeBase: Map<string, number[]>;
 	// Money each team owes players it has released, and until when.
 	deadMoney: Map<number, { amount: number; exp: number }[]>;
 	// The first season whose free agency is still to come or under way: from
@@ -903,6 +910,96 @@ export const teamPoints = (
 };
 
 // The same, against an average team.
+// What a team's draft place is ranked by each season, from its strength on
+// its roster alone (draftPlace).
+const placeKeysOf = (
+	outlook: Pick<LeagueOutlook, "placeNow" | "remaining">,
+	tid: number,
+	points: readonly number[],
+) =>
+	points.map((x, y) =>
+		y === 0 && outlook.placeNow
+			? outlook.placeNow.won.get(tid)! +
+				(outlook.remaining.get(tid) ?? 0) *
+					winProbability(x - outlook.placeNow.meanNow)
+			: x,
+	);
+
+// A team's strength on a roster alone, as priced now, remembered for its
+// current roster.
+const rosterOnlyNow = (
+	outlook: LeagueOutlook,
+	tid: number,
+	players: readonly Player[],
+) => {
+	const key = `${tid}:${players
+		.map((p) => `${p.pid}.${p.injury.gamesRemaining}`)
+		.sort()
+		.join()}`;
+	let points = outlook.placeBase.get(key);
+	if (!points) {
+		points = teamPoints(outlook, tid, players, []);
+		outlook.placeBase.set(key, points);
+	}
+	return points;
+};
+
+// The outlook with these teams' rosters changed, as a trade changes them:
+// their own picks land where the new rosters put them, against everyone
+// else's as they stand. Picks are otherwise priced where the outlook was
+// built, so a team giving up its best player would price its own pick as if
+// it still had him, and a team selling its star the buyer's as if the buyer
+// still did not.
+export const placesAfter = (
+	outlook: LeagueOutlook,
+	changes: readonly {
+		tid: number;
+		before: readonly Player[];
+		after: readonly Player[];
+	}[],
+): LeagueOutlook => {
+	const keys = new Map<number, number[]>();
+	for (const { tid, before, after } of changes) {
+		const was = outlook.placeKeys.get(tid);
+		if (!was) {
+			return outlook;
+		}
+		// The change in strength, both ways priced now, onto what the places
+		// were ranked by.
+		const from = rosterOnlyNow(outlook, tid, before);
+		const to = teamPoints(outlook, tid, after, []);
+		keys.set(
+			tid,
+			placeKeysOf(
+				outlook,
+				tid,
+				was.points.map((x, y) => x + to[y]! - from[y]!),
+			),
+		);
+	}
+	const draftPlace = new Map(outlook.draftPlace);
+	for (const [tid, own] of keys) {
+		draftPlace.set(
+			tid,
+			own.map((key, y) => {
+				let place = 0;
+				for (const [other, was] of outlook.placeKeys) {
+					if (other !== tid && (keys.get(other) ?? was.keys)[y]! < key) {
+						place += 1;
+					}
+				}
+				return place;
+			}),
+		);
+	}
+	return {
+		...outlook,
+		draftPlace,
+		pickYears: new WeakMap(),
+		futurePicks: new Map(),
+	};
+};
+
 export const teamStrengths = (
 	outlook: LeagueOutlook,
 	tid: number,
@@ -1006,6 +1103,9 @@ export const buildOutlook = async ({
 		numRounds: g.get("numDraftRounds"),
 		lastPickSeason,
 		draftPlace: new Map<number, number[]>(),
+		placeKeys: new Map<number, { points: number[]; keys: number[] }>(),
+		placeNow: undefined as LeagueOutlook["placeNow"],
+		placeBase: new Map<string, number[]>(),
 		deadMoney,
 		// During free agency too: room not yet spent is worth what it can still
 		// buy, so money paid out this coming season is not free.
@@ -1035,14 +1135,24 @@ export const buildOutlook = async ({
 	const meanNow =
 		teams.reduce((a, t) => a + rosterOnly.get(t.tid)![0]!, 0) /
 		Math.max(1, teams.length);
-	const finalWins = (tid: number) =>
-		records.get(tid)!.won +
-		remaining.get(tid)! * winProbability(rosterOnly.get(tid)![0]! - meanNow);
+	if (inSeason) {
+		base.placeNow = {
+			won: new Map(teams.map((t) => [t.tid, records.get(t.tid)!.won])),
+			meanNow,
+		};
+	}
+	for (const t of teams) {
+		const points = rosterOnly.get(t.tid)!;
+		base.placeKeys.set(t.tid, {
+			points,
+			keys: placeKeysOf(base, t.tid, points),
+		});
+	}
 	for (let y = 0; y <= OUTLOOK_YEARS; y++) {
-		const order = [...teams].sort((a, b) =>
-			y === 0 && inSeason
-				? finalWins(a.tid) - finalWins(b.tid)
-				: rosterOnly.get(a.tid)![y]! - rosterOnly.get(b.tid)![y]!,
+		const order = [...teams].sort(
+			(a, b) =>
+				base.placeKeys.get(a.tid)!.keys[y]! -
+				base.placeKeys.get(b.tid)!.keys[y]!,
 		);
 		for (const [i, t] of order.entries()) {
 			base.draftPlace.get(t.tid)!.push(i);

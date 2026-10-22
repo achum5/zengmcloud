@@ -122,12 +122,13 @@ const bestElsewhere = async (
 			) {
 				continue;
 			}
-			const gainB = priceFor(outlook, b, pkg, giving);
+			const gainB = priceFor(outlook, b, pkg, giving, a);
 			if (gainB - marginOf(outlook, b, pkg, giving) < MIN_GAIN) {
 				continue;
 			}
 			const net =
-				priceFor(outlook, a, giving, pkg) - marginOf(outlook, a, giving, pkg);
+				priceFor(outlook, a, giving, pkg, b) -
+				marginOf(outlook, a, giving, pkg);
 			if (!best || net > best.net) {
 				best = { tid, assets: pkg, net };
 			}
@@ -160,7 +161,7 @@ export const judgeHumanOffer = async (
 	// Better than keeping what it has, by more than its margin of error counts
 	// for in a deal with a human.
 	const net =
-		priceFor(outlook, a, giving, getting) -
+		priceFor(outlook, a, giving, getting, h) -
 		humanTradeSettings.marginFactor * marginOf(outlook, a, giving, getting);
 	if (net < MIN_GAIN) {
 		return { kind: "no" };

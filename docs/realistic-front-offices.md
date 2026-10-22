@@ -271,6 +271,14 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   worth the average over every place it may land. Its margin of error is only
   the misread of how good its team will be, by the outlook's own estimate of
   that.
+- **A deal moves the picks of the teams in it.** A pick's place comes from
+  how good its team is, and a deal changes that: both teams' own picks are
+  priced where the deal leaves the two rosters. Before this, a team gave up
+  its star and priced its own pick as if it still had him - losing its best
+  player moves a team's own first about 9 places, worth 0.025 titles on
+  average and up to 0.15 - so "their star and their pick" was a steal, and a
+  team selling its star priced the buyer's pick as if the buyer had not got
+  him.
 - **Every kind of deal that happens in real life** (owner's call), as long as
   the CPU's judgment holds up: a side may give nothing (a player into another
   team's cap room, a salary dump), picks may go for picks, and every tradable

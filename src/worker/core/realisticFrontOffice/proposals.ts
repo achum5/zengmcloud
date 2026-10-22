@@ -112,12 +112,14 @@ const publicGain = (
 	h: TeamState,
 	outgoing: readonly Asset[],
 	incoming: readonly Asset[],
+	partner?: TeamState,
 ) =>
 	priceFor(
 		publicOutlookOf(outlook),
 		h,
 		publicAssets(outgoing),
 		publicAssets(incoming),
+		partner,
 	);
 
 export type Proposal = {
@@ -230,12 +232,12 @@ export const bestProposal = async (
 		}
 		checked += 1;
 		const net =
-			priceFor(outlook, cpu, give, get) -
+			priceFor(outlook, cpu, give, get, human) -
 			factor * marginOf(outlook, cpu, give, get);
 		if (net < MIN_GAIN || (best && net <= best.net)) {
 			continue;
 		}
-		if (publicGain(outlook, pub, get, give) < 0) {
+		if (publicGain(outlook, pub, get, give, cpu) < 0) {
 			continue;
 		}
 		best = { give, get, net };
