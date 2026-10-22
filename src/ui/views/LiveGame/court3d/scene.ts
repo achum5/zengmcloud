@@ -204,9 +204,6 @@ export type Frame = {
 	// How many picture pixels to a pixel of the lettering drawn into it, so a
 	// name reads at the same size on every screen.
 	textScale: number;
-	// A small picture - a phone's: the man with the ball named by his last
-	// name, as TV does, not his whole name across half of it.
-	shortNames?: boolean;
 	// What is laid over the picture - the score bug, the line over it - each
 	// a box (shares of the picture: across from x0 to x1, down from y0): the
 	// tag under the man with the ball goes over his head instead of behind
@@ -1035,23 +1032,12 @@ export const drawFrame = (f: Frame) => {
 			: players.find((p) => p.pid === ball.holder);
 	if (holder) {
 		const look = f.lookFor(holder.pid);
-		drawNameTag(
-			ctx,
-			cam,
-			holder,
-			f.shortNames ? { ...look, name: lastName(look.name) } : look,
-			f.textScale,
-			f.tagClear,
-		);
+		drawNameTag(ctx, cam, holder, look, f.textScale, f.tagClear);
 	}
 };
 
 // Over his head: higher than the tallest man's (feet).
 const TAG_OVER = 7.6;
-const lastName = (name: string) => {
-	const i = name.indexOf(" ");
-	return i > 0 ? name.slice(i + 1) : name;
-};
 
 const drawNameTag = (
 	ctx: CanvasRenderingContext2D,

@@ -227,9 +227,6 @@ const LINEUP_INTROS = false;
 // How long the play-by-play may disagree with the roster before the court
 // gives up on the game (ms).
 const ROSTER_WAIT = 5000;
-// Narrower than this (CSS pixels) - a phone held upright - the man with the
-// ball is tagged by his last name (see scene.ts).
-const SHORT_NAMES_W = 560;
 // Drawing a frame in under this long (ms, smoothed), there is time for his
 // poses in finer steps (see sprite.ts); over that, back to the usual ones -
 // and not tried again for a while.
@@ -1327,10 +1324,9 @@ const Court3D = ({
 				},
 				crowd: { up, wave },
 				now,
-				// Lettering at least 10 CSS pixels tall: a 7-pixel font, each of
-				// its pixels this many picture pixels.
-				textScale: Math.max(1, Math.ceil(10 / ((7 * art) / dpr))),
-				shortNames: w < SHORT_NAMES_W,
+				// Lettering about 8 CSS pixels tall: a 7-pixel font, each of its
+				// pixels this many picture pixels.
+				textScale: Math.max(1, Math.round(8 / ((7 * art) / dpr))),
 				tagClear: s.covers,
 				crew: working.states.flatMap((st) => {
 					const c = cr.crewLooks.get(st.pid);
