@@ -2319,6 +2319,70 @@ describe("3D director", () => {
 		assert.isAtMost(waited.length, fed * 0.4, waited.join("; "));
 	}, 240_000);
 
+	// A pull-up three off a ball screen: he comes off it - a dribble or two
+	// past the big's shoulder - and up behind it, not stood where he was all
+	// along shooting over it.
+	test("a pull-up three off a ball screen comes off the screen first", () => {
+		let n = 0;
+		const stood: string[] = [];
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl } = compile(seed, 150);
+			const tracks = [...tl.tracks.values()];
+			for (const s of tl.ball) {
+				if (s.kind !== "fly" || !("pid" in s.from) || "pid" in s.to) {
+					continue;
+				}
+				const rx = s.to.x < COURT_W / 2 ? rimX(0) : rimX(1);
+				const shooter = s.from.pid;
+				const tr = tl.tracks.get(shooter)!;
+				const P = evalPlayer(tl, shooter, s.t0);
+				if (
+					Math.hypot(P.x - rx, P.y - COURT_H / 2) < 23.9 ||
+					!tr.acts.some(
+						(a) => a.anim === "shoot" && a.t0 <= s.t0 && a.t1 > s.t0,
+					)
+				) {
+					continue;
+				}
+				// Off the dribble: his own ball the last two seconds.
+				const caught = tl.ball.some(
+					(q) =>
+						q.kind === "fly" &&
+						"pid" in q.to &&
+						q.to.pid === shooter &&
+						q.t1 > s.t0 - 2000 &&
+						q.t1 < s.t0,
+				);
+				// A screen for him: a teammate set beside him just before.
+				const screen = tracks.some(
+					(o) =>
+						o.team === tr.team &&
+						o !== tr &&
+						o.acts.some((a) => {
+							if (a.anim !== "screen" || a.t1 < s.t0 - 2500 || a.t0 > s.t0) {
+								return false;
+							}
+							const at = Math.max(a.t0, s.t0 - 2500);
+							const Q = evalPlayer(tl, o.pid, at);
+							const H = evalPlayer(tl, shooter, at);
+							return Math.hypot(Q.x - H.x, Q.y - H.y) < 6;
+						}),
+				);
+				if (caught || !screen) {
+					continue;
+				}
+				n += 1;
+				// (Over his last strides and the gather into the shot.)
+				const B = evalPlayer(tl, shooter, s.t0 - 2200);
+				if (Math.hypot(P.x - B.x, P.y - B.y) < 3) {
+					stood.push(`${seed}: ${shooter} at ${Math.round(s.t0)}`);
+				}
+			}
+		}
+		assert.isAbove(n, 10);
+		assert.isAtMost(stood.length, n * 0.25, stood.join("; "));
+	}, 240_000);
+
 	// Off the ball on the offense, a man going on the same way after a moment
 	// - nothing done there, no ball - runs on into it rather than pulling up
 	// dead and setting off again, unless he is already going no faster than

@@ -700,6 +700,9 @@ const IN_STRIDE_PACE = 8;
 // The longest pause between two runs the same way (ms) a man runs on
 // through instead (see flowOn).
 const FLOW_ON_MS = 1500;
+// Pulling up for three off a ball screen, he dribbles this far (feet) off
+// it, past the screener's shoulder, first.
+const PULL_UP_OFF = 4.5;
 // A run in counts as a cut to the rim for the ball if it ends this near
 // the rim (feet) - or, rolling or cutting into the lane for a hook or a
 // floater there, this near.
@@ -8076,6 +8079,37 @@ class Director {
 				"back",
 				dir,
 			);
+		} else if (
+			o.kind === "pull_up" &&
+			o.zone === "three" &&
+			this.holder === shooter &&
+			run.screen?.ball === true &&
+			run.screen.user === shooter &&
+			run.screen.step === last &&
+			(this.track(shooter)?.moves.at(-1)?.t1 ?? -Infinity) < run.screen.set
+		) {
+			// A pull-up three off a ball screen he has not used yet: off it
+			// first - a hard dribble or two past the big's shoulder, the way he
+			// turns the corner - and up behind it, his man caught on it. Not
+			// stood where he was all along and shooting over it.
+			const sc = run.screen;
+			const S = this.posOf(sc.screeners[0]!);
+			const ur = unitVec(P, rim);
+			const side =
+				Math.sign((S.x - P.x) * -ur.y + (S.y - P.y) * ur.x) ||
+				(shooter % 2 ? 1 : -1);
+			let Q = clampPt({
+				x: P.x - ur.y * side * PULL_UP_OFF + ur.x * 0.8,
+				y: P.y + ur.x * side * PULL_UP_OFF + ur.y * 0.8,
+			});
+			// (Still well behind the line.)
+			if (dist(Q, rim) < 24.4) {
+				const u = unitVec(rim, Q);
+				Q = clampPt({ x: rim.x + u.x * 24.4, y: rim.y + u.y * 24.4 });
+			}
+			t = Math.max(t, sc.set + SCREEN_USE);
+			this.hold(shooter, t, "dribble");
+			t = this.go(shooter, Q, t, DRIBBLE * 0.7, "dribble", dir);
 		} else if (
 			o.kind === "step_back" &&
 			!this.track(shooter)?.acts.some(
