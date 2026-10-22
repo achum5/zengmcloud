@@ -8,6 +8,7 @@ import {
 	type CourtTimeline,
 } from "./director.ts";
 import {
+	BALL_R,
 	FAST,
 	bodyPoint,
 	evalBall,
@@ -27,6 +28,7 @@ import {
 	COURT_H,
 	COURT_W,
 	FT_LINE_DEPTH,
+	RIM_R,
 	RIM_Z,
 	rimX,
 } from "./geometry.ts";
@@ -1771,6 +1773,64 @@ describe("3D director", () => {
 			}
 		}
 	}, 60_000);
+
+	// A finish at the rim goes up from in front of the glass: the ball
+	// leaves his hand in front of the backboard - not round behind it, where
+	// it could only get to the rim through the board - and never rises up
+	// through the ring from under it.
+	test("a layup leaves his hand in front of the glass", () => {
+		// (The glass is this far behind the middle of the rim, feet.)
+		const GLASS = 1.25;
+		const DUNKS = new Set(["dunk", "dunk1", "tomahawk", "windmill"]);
+		let checked = 0;
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl } = compile(seed, 150);
+			for (const s of tl.ball) {
+				if (
+					s.kind !== "fly" ||
+					!("pid" in s.from) ||
+					"pid" in s.to ||
+					s.to.z < 8.5
+				) {
+					continue;
+				}
+				const rx = s.to.x < COURT_W / 2 ? rimX(0) : rimX(1);
+				if (Math.hypot(s.to.x - rx, s.to.y - COURT_H / 2) > 3) {
+					continue;
+				}
+				const shooter = s.from.pid;
+				const anim = tl.tracks
+					.get(shooter)!
+					.acts.find((a) => a.t0 <= s.t0 && s.t0 < a.t1 + 50)?.anim;
+				if (anim === undefined || DUNKS.has(anim)) {
+					continue;
+				}
+				const b0 = evalBall(tl, s.t0 + 1, bodyFor);
+				if (Math.hypot(b0.x - rx, b0.y - COURT_H / 2) > 5) {
+					continue;
+				}
+				checked += 1;
+				const front = rx < COURT_W / 2 ? 1 : -1;
+				assert.isAtLeast(
+					(b0.x - rx) * front,
+					BALL_R - GLASS,
+					`${seed}: ${anim} by ${shooter} at ${Math.round(s.t0)}`,
+				);
+				let prev = b0;
+				for (let t = s.t0 + 8; t <= s.t1; t += 8) {
+					const b = evalBall(tl, t, bodyFor);
+					assert.isFalse(
+						Math.hypot(b.x - rx, b.y - COURT_H / 2) < RIM_R &&
+							prev.z < RIM_Z &&
+							b.z >= RIM_Z,
+						`${seed}: up through the ring at ${Math.round(t)}`,
+					);
+					prev = b;
+				}
+			}
+		}
+		assert.isAbove(checked, 60);
+	}, 240_000);
 
 	// "Dunks on him": the man the words name is the one who meets him at the
 	// rim - nearest him of anybody on the other side, right there, up with

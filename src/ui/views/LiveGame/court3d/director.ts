@@ -581,6 +581,16 @@ const SPIN_FTPS = 10;
 // past the middle of it there he goes up (feet).
 const REVERSE_SHARE = 0.5;
 const REVERSE_OUT = 2.4;
+// Going up for a finish beside the rim, he is at least this far (feet) out
+// in front of the middle of it: his hand, reaching out to the side with the
+// ball, still in front of the glass - not round behind it, where the ball can
+// only get to the rim through the board or up through the ring.
+const FINISH_FRONT = 1;
+// ...and at least this far (feet) out from the middle of it.
+const FINISH_OUT = 2.2;
+// And let go from there, the ball goes up this far (feet) over the rim,
+// and down onto it.
+const LAYUP_LOFT = 1;
 // The room round a man going up over another for a dunk (feet): nobody else
 // of theirs nearer him than that.
 const POSTER_ROOM = 3.2;
@@ -8478,7 +8488,7 @@ class Director {
 				hash01(shooter, gather + 3) < REVERSE_SHARE;
 			const under = Math.sign(P1.y - rim.y) || 1;
 			const far = clampPt({
-				x: rim.x + dir * 0.5,
+				x: rim.x - dir * FINISH_FRONT,
 				y: rim.y - under * REVERSE_OUT,
 			});
 			const going = unitVec(P1, far);
@@ -8566,12 +8576,27 @@ class Director {
 					0,
 					Math.min(floater ? 1.4 : LAYUP_STRIDE, len - out),
 				);
-				const S = reverse
+				let S = reverse
 					? far
 					: clampPt({
 							x: P1.x + (toRim.x / len) * step,
 							y: P1.y + (toRim.y / len) * step,
 						});
+				if (!reverse) {
+					// (In front of the glass, and out from under the ring: see
+					// FINISH_FRONT.)
+					if ((rim.x - S.x) * dir < FINISH_FRONT) {
+						S = { x: rim.x - dir * FINISH_FRONT, y: S.y };
+					}
+					const r = dist(S, rim);
+					if (r < FINISH_OUT) {
+						const u = r > 0.3 ? unitVec(rim, S) : { x: -dir, y: 0 };
+						S = clampPt({
+							x: rim.x + u.x * FINISH_OUT,
+							y: rim.y + u.y * FINISH_OUT,
+						});
+					}
+				}
 				this.carry(
 					shooter,
 					S,
@@ -8620,7 +8645,22 @@ class Director {
 				fingers.s = -fingers.s;
 			}
 			const d = dist(P1, rim);
-			const flight = close ? 300 : floater ? 760 + d * 24 : 620 + d * 22;
+			// (In close, it goes up soft: up over the rim and down onto it -
+			// never up into the ring from under it.)
+			const lift = Math.sqrt(
+				2 * GRAVITY * Math.max(0.5, RIM_Z + LAYUP_LOFT - fingers.u),
+			);
+			const fall = Math.sqrt(
+				Math.max(
+					0,
+					lift * lift - 2 * GRAVITY * Math.max(0, RIM_Z + 0.2 - fingers.u),
+				),
+			);
+			const flight = close
+				? Math.max(300, ((lift + fall) / GRAVITY) * 1000)
+				: floater
+					? 760 + d * 24
+					: 620 + d * 22;
 			if (plan.kind === "block" && plan.blocker !== undefined) {
 				const b = plan.blocker;
 				// He is there as it goes up, and gets a hand on it as it leaves
@@ -10442,10 +10482,10 @@ class Director {
 		const rim = rimPt(team);
 		const hands = out ? TIP_AT : BOARD_AT;
 		// He reads where it is coming down off the shot, and goes - once he
-		// is done with what he was doing (up contesting it, say; out of a
-		// box-out he just comes), off any run he was still on, after it.
-		// (A block nobody reads before it happens: he goes once it is off
-		// the hand that blocked it.)
+		// is done with what he was doing (up contesting it, say, or up with
+		// the shot himself; out of a box-out he just comes), off any run he
+		// was still on, after it. (A block nobody reads before it happens: he
+		// goes once it is off the hand that blocked it.)
 		let read = blocked ? t + READ_MS : t - REBOUND_READ;
 		for (const a of [...(this.track(r)?.acts ?? [])].sort(
 			(x, y) => x.t0 - y.t0,
@@ -10453,8 +10493,8 @@ class Director {
 			if (
 				a.anim !== "boxOut" &&
 				a.anim !== "fight" &&
-				a.t0 <= read &&
-				a.t1 > read
+				a.t1 > read &&
+				(a.t0 <= read || (UP_WITH_SHOT.has(a.anim) && a.t0 < t))
 			) {
 				read = a.t1;
 			}
