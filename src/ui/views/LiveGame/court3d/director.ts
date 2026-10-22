@@ -589,6 +589,8 @@ const POSTER_ROOM = 3.2;
 const POSTER_LANE = 3;
 // How far off the dunker the man he dunked on is, once both are down (ft).
 const DUNKED_ON_ROOM = 3.4;
+// The least time (ms) a reaction stood in one place is worth doing at all.
+const IN_PLACE_MIN = 400;
 // A drop step or an up-and-under goes up this far out (feet): a low-post
 // shot, not one from under the rim.
 const POST_FINISH_OUT = 3.4;
@@ -1779,10 +1781,38 @@ class Director {
 			: V;
 		const stepped =
 			dist(V, R) > 0.3 ? leave + runMs(dist(V, R), 9, 0, 1) : leave;
-		let z = stepped;
+		// Whatever he does standing there once he is down - hands on his
+		// hips, say - he does out there, once he has stepped back, and he
+		// stays to finish it before he goes (see IN_PLACE): as long as he
+		// can, and still be in time for what he does next (picking the ball
+		// up to take it out, say), or not at all.
+		const next = tr.acts
+			.filter((a) => !IN_PLACE.has(a.anim) && a.t0 > leave)
+			.sort((x, y) => x.t0 - y.t0)[0];
+		const due = next
+			? next.t0 - runMs(dist(R, this.posAt(pid, next.t0)), SPRINT) - 100
+			: Infinity;
+		let hold = stepped;
+		for (const a of [...tr.acts].sort((x, y) => x.t0 - y.t0)) {
+			if (!IN_PLACE.has(a.anim) || a.t1 <= leave || a.t0 >= hold) {
+				continue;
+			}
+			if (a.t0 < stepped) {
+				a.t1 += stepped - a.t0;
+				a.t0 = stepped;
+			}
+			a.t1 = Math.min(a.t1, due);
+			if (a.t1 - a.t0 < IN_PLACE_MIN) {
+				tr.acts.splice(tr.acts.indexOf(a), 1);
+				continue;
+			}
+			hold = Math.max(hold, a.t1);
+		}
+		tr.acts.sort((x, y) => x.t0 - y.t0);
+		let z = hold;
 		let Z = this.posAt(pid, z);
 		for (let n = 0; n < 80; n++) {
-			if (runMs(dist(R, Z), SPRINT) + 100 <= z - stepped) {
+			if (runMs(dist(R, Z), SPRINT) + 100 <= z - hold) {
 				break;
 			}
 			z += 100;
@@ -1817,9 +1847,9 @@ class Director {
 				face: meet.face,
 			});
 		}
-		if (z > stepped && dist(R, Z) > 0.05) {
+		if (z > hold && dist(R, Z) > 0.05) {
 			kept.push({
-				t0: stepped,
+				t0: hold,
 				t1: z,
 				from: { ...R },
 				to: { ...Z },
