@@ -183,6 +183,25 @@ export const BURST = 1.3;
 // As hard as a man pulls up (feet a second, a second): all out.
 export const HARDEST_PULL_UP = BRAKE * BURST;
 
+// How fast (feet a second) a man going v0 is going L feet on, getting going
+// all he can.
+export const paceAfter = (L: number, v0 = 0): number => {
+	const a = Math.min(Math.max(0, v0), TOP - 0.5);
+	const along = (t: number) =>
+		TOP * t - TAU * (TOP - a) * (1 - Math.exp(-t / TAU));
+	let lo = 0;
+	let hi = 10;
+	for (let n = 0; n < 40; n++) {
+		const m = (lo + hi) / 2;
+		if (along(m) < L) {
+			lo = m;
+		} else {
+			hi = m;
+		}
+	}
+	return TOP - (TOP - a) * Math.exp(-(lo + hi) / 2 / TAU);
+};
+
 // The pace (feet a second) he can pull up from in L feet, `effort` times as
 // hard as he usually brakes.
 export const pullUpFrom = (L: number, effort = 1): number =>

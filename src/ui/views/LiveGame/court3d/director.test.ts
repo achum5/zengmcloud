@@ -1926,6 +1926,101 @@ describe("3D director", () => {
 		assert.isAbove(checked, 60);
 	}, 240_000);
 
+	// A man fed at the rim from out on the floor is hit on his way in - on a
+	// cut, a roll, a run down the floor - not stood under it waiting on the
+	// ball while the man with it gets out to the arc to throw it in to him.
+	// (That dump-in, a man parked at the rim and scoring every time, was
+	// the one possession a viewer kept noticing.)
+	test("a pass in to a man at the rim finds him on his way there - not parked under it", () => {
+		const FINISH = new Set<string>([
+			"dunk",
+			"dunk1",
+			"tomahawk",
+			"windmill",
+			...LAYUPS,
+		]);
+		const rims = [0, 1].map((side) => ({
+			x: rimX(side as 0 | 1),
+			y: COURT_H / 2,
+		}));
+		let fed = 0;
+		let parked = 0;
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl } = compile(seed, 150);
+			tl.ball.forEach((s, i) => {
+				if (s.kind !== "fly" || !("pid" in s.to)) {
+					return;
+				}
+				// (A bounce pass comes up off the floor: from whoever threw it
+				// down there.)
+				const thrown =
+					"pid" in s.from
+						? s
+						: tl.ball.find((q) => q.kind === "fly" && q.t1 === s.t0);
+				if (
+					thrown?.kind !== "fly" ||
+					!("pid" in thrown.from) ||
+					thrown.from.pid === s.to.pid
+				) {
+					return;
+				}
+				const catcher = s.to.pid;
+				const C = evalPlayer(tl, catcher, s.t1);
+				const F = evalPlayer(tl, thrown.from.pid, thrown.t0);
+				const rim = rims.reduce((a, b) =>
+					Math.hypot(C.x - a.x, C.y - a.y) < Math.hypot(C.x - b.x, C.y - b.y)
+						? a
+						: b,
+				);
+				if (
+					Math.hypot(C.x - rim.x, C.y - rim.y) > 8 ||
+					Math.hypot(F.x - rim.x, F.y - rim.y) < 21
+				) {
+					return;
+				}
+				// He goes up with it at the rim, there and then.
+				const shot = tl.ball
+					.slice(i + 1, i + 6)
+					.find(
+						(q) =>
+							q.kind === "fly" &&
+							"pid" in q.from &&
+							q.from.pid === catcher &&
+							!("pid" in q.to) &&
+							q.t0 - s.t1 < 2500,
+					);
+				if (
+					!shot ||
+					!tl.tracks
+						.get(catcher)!
+						.acts.some(
+							(a) =>
+								FINISH.has(a.anim) &&
+								a.t0 <= shot.t0 + 50 &&
+								a.t1 >= shot.t0 - 50,
+						)
+				) {
+					return;
+				}
+				fed += 1;
+				// How long he had been stood on the spot he caught it on.
+				let stood = 0;
+				for (let w = 50; w <= 3000; w += 50) {
+					const Q = evalPlayer(tl, catcher, s.t1 - w);
+					if (Math.hypot(Q.x - C.x, Q.y - C.y) > 1.5) {
+						break;
+					}
+					stood = w;
+				}
+				if (stood >= 600) {
+					parked += 1;
+				}
+			});
+		}
+		assert.isAbove(fed, 8);
+		assert.isAtMost(parked, fed * 0.15, `${parked} of ${fed} parked`);
+	}, 240_000);
+
 	// "Dunks on him": the man the words name is the one who meets him at the
 	// rim - nearest him of anybody on the other side, right there, up with
 	// him - not someone else who happened to be in there.

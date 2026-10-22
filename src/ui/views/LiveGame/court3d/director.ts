@@ -43,6 +43,7 @@ import {
 	HARDEST_PULL_UP,
 	keepThrough,
 	paceFor,
+	paceAfter,
 	pullUpFrom,
 	pushFrom,
 	reachIn,
@@ -676,6 +677,23 @@ const LAYUP_GATHER = 7;
 const DUNK_GATHER = 6;
 const LAYUP_STRIDE = 4.5;
 const AIR_DRIFT = 3;
+// A man cutting to the rim is hit on the move (see leadTheCut): the ball in
+// his hands this far out (feet from the middle of the rim), still going;
+// thrown no sooner than this long (ms) after the passer has it; and a cut
+// that has him there sooner than this (ms) before the ball - stood under
+// the rim waiting on it - is timed to it instead.
+const CUT_CATCH_OUT = 7.5;
+const CATCH_TO_THROW = 300;
+const PARKED_MS = 150;
+// His cut in is laid from where he comes this near the rim (feet) - and he
+// has it no sooner than this far (feet) into it, up to speed.
+const CUT_FROM = 16;
+const CUT_RUN_UP = 4;
+// A run in counts as a cut to the rim for the ball if it ends this near
+// the rim (feet) - or, rolling or cutting into the lane for a hook or a
+// floater there, this near.
+const RIM_CUT_TO = 6.5;
+const LANE_CUT_TO = 12;
 // A basket, the team that scored turns and gets back this long (ms) after
 // it is through (see inboundAfterMake).
 const MADE_BACK_MS = 350;
@@ -990,6 +1008,9 @@ const HELP_REACH: [number, number] = [8, 14];
 // On the break, the most (feet) a man already up the floor goes back down
 // it to his spot.
 const BREAK_NO_BACK = 4;
+// ... unless he is in under the rim, or would be once over to its side of
+// the floor: this near it (feet).
+const BREAK_DEEP = 12;
 // The sets there are to run with the ball over half court already: none
 // that starts with it back over (see setsFor).
 const OVER_SETS = PLAYS.filter(
@@ -1092,6 +1113,33 @@ const runProgress = (
 				? (vc * ta) / 2 + vc * (s - ta)
 				: (vc * ta) / 2 + vc * (s - ta) - vc * td * ramp((s - (T - td)) / td);
 	return Math.min(1, Math.max(0, d));
+};
+// How far through a run of `ms` (0 to 1) he is `f` of the way along it.
+const timeTo = (ms: number, f: number): number => {
+	let lo = 0;
+	let hi = 1;
+	for (let k = 0; k < 24; k++) {
+		const mid = (lo + hi) / 2;
+		if (runProgress(ms, mid) < f) {
+			lo = mid;
+		} else {
+			hi = mid;
+		}
+	}
+	return (lo + hi) / 2;
+};
+// How far a run goes, start to end (feet).
+const lenOf = (m: Move): number => dist(m.from, m.to);
+// How far (feet) from Q the way u he first comes within r of the rim -
+// none if he is already, never if he never does.
+const alongTo = (Q: Pt, u: Pt, rim: Pt, r: number): number => {
+	const w = { x: Q.x - rim.x, y: Q.y - rim.y };
+	const b = w.x * u.x + w.y * u.y;
+	const c = w.x * w.x + w.y * w.y - r * r;
+	if (c <= 0) {
+		return 0;
+	}
+	return b * b - c < 0 ? Infinity : Math.max(0, -b - Math.sqrt(b * b - c));
 };
 // A man set where he stands, for nobody to run through: in a screen, or
 // sealing in the post.
@@ -5869,11 +5917,20 @@ class Director {
 		// everybody down after the basket, say: he holds where he is (over
 		// to its side of the floor, if it is a way across), and the ball is
 		// not held up waiting on him.
+		// (Down low already, though, he is not slid across into the paint
+		// under the rim: he holds where he is - or, the ball to come to him,
+		// comes back out to his spot for it, not stood under the rim for it.)
 		if (run.play.cat === "break" && (P.x - from.x) * dir < -BREAK_NO_BACK) {
-			if (Math.abs(P.y - from.y) < BREAK_NO_BACK) {
-				return Math.max(t0, this.free.get(pid) ?? 0);
+			const across = { x: from.x, y: P.y };
+			const deep =
+				dist(across, rim) < BREAK_DEEP || dist(from, rim) < BREAK_DEEP;
+			const role = run.roles.indexOf(pid);
+			if (!(deep && role >= 0 && needed(run, undefined, role as Role))) {
+				if (deep || Math.abs(P.y - from.y) < BREAK_NO_BACK) {
+					return Math.max(t0, this.free.get(pid) ?? 0);
+				}
+				P = across;
 			}
-			P = { x: from.x, y: P.y };
 		}
 		// (Trailing the break is no jog: he runs the floor.)
 		const speed =
@@ -7646,6 +7703,7 @@ class Director {
 		}
 		const dunk =
 			o.zone === "rim" && (plan.finish === "dunk" || plan.finish === "poster");
+		let stride = false;
 		if (this.holder !== shooter) {
 			const from = this.holder ?? passer ?? shooter;
 			if (
@@ -7653,7 +7711,15 @@ class Director {
 				from !== shooter &&
 				(o.kind === "alley_oop" || o.pass === "lob")
 			) {
-				// An alley-oop: he heads for the rim and the lob meets him up there.
+				// An alley-oop: he heads for the rim and the lob meets him up there
+				// - on his way in, not stood there for it (see leadTheLob).
+				const led =
+					this.holder === from
+						? this.leadTheLob(run, shooter, from, t)
+						: undefined;
+				if (led !== undefined) {
+					return { t: led, style: "plain", lob: from };
+				}
 				const P = this.nearRim(team, this.posOf(shooter), 3.4);
 				t = this.go(
 					shooter,
@@ -7666,13 +7732,23 @@ class Director {
 				return { t, style: "plain", lob: from };
 			}
 			if (from !== shooter) {
-				// Into the post: he seals his man for it first.
+				// Into the post: he seals his man for it first. (Only a man the
+				// set has posting up: a roller or a cutter into the lane is hit
+				// on his way there, from wherever the ball is - the pocket pass,
+				// the dump-off off the drive - not stood there while the man
+				// with it backs out to the wing to throw it in to him. The
+				// draws are made all the same.)
 				const S = this.posOf(shooter);
-				const entry =
+				const posting = o.zone === "post" && this.postsUp(run);
+				const fed =
 					o.zone === "post" &&
 					dist(S, rim) > 4 &&
 					dist(S, rim) < 15 &&
 					this.rng() < 0.85;
+				const entry = fed && posting;
+				if (fed && !entry) {
+					this.rng();
+				}
 				// Fed from the wing on his side - not handed it from a step away
 				// by a man down in the lane with him.
 				const F = this.posOf(from);
@@ -7699,16 +7775,20 @@ class Director {
 							dir,
 						)
 					: undefined;
-				t = this.passTo(
-					from,
-					shooter,
-					t,
-					entry
-						? this.rng() < 0.6
-							? "bounce"
-							: "chest"
-						: passStyleOf(o.pass, this.rng),
-				);
+				const style = fed
+					? this.rng() < 0.6
+						? "bounce"
+						: "chest"
+					: passStyleOf(o.pass, this.rng);
+				// To a man cutting to the rim, or rolling into the lane: on his
+				// way in (see leadTheCut).
+				const led =
+					(o.zone === "rim" || (o.zone === "post" && !posting)) &&
+					this.holder === from
+						? this.leadTheCut(run, shooter, from, t, style)
+						: undefined;
+				stride = led !== undefined && o.zone === "rim";
+				t = this.passTo(from, shooter, led ?? t, style);
 				held?.(t - 110);
 				if (o.pass === "kickout" || o.pass === "skip") {
 					this.respace(team, from, shooter);
@@ -7717,8 +7797,9 @@ class Director {
 		}
 		const P = this.posOf(shooter);
 		const out = dist(P, rim);
-		if (o.zone === "rim" && out > 4.5) {
-			// Caught short of the rim: one hard dribble and up.
+		if (o.zone === "rim" && out > 4.5 && !stride) {
+			// Caught short of the rim: one hard dribble and up. (Hit on his cut
+			// in, he goes up in stride.)
 			this.hold(shooter, t, "dribble");
 			t = this.go(
 				shooter,
@@ -7823,6 +7904,354 @@ class Director {
 			style:
 				o.kind === "fadeaway" ? "fade" : o.kind === "hook" ? "hook" : "plain",
 		};
+	}
+
+	// THE CUT, TIMED TO THE BALL. A man cutting to the rim for the pass is
+	// hit on the move: it is in his hands a stride or two out, him still
+	// going, and he goes up with it in stride - not thrown in once he has got
+	// there and stood under the rim waiting on it, the passer only now up at
+	// the arc with it. Off the dribble, if that is when he comes open: the man
+	// with it pulls up and hits him - the hit-ahead to the big running the
+	// floor, the pocket pass to the roller. Or, the ball not his to throw yet,
+	// the cutter holds his cut until it can come to him. Returns when the
+	// passer throws it, if it is timed so.
+	private leadTheCut(
+		run: Running,
+		shooter: number,
+		passer: number,
+		t: number,
+		style: PassStyle | undefined,
+	): number | undefined {
+		// (Into the lane for a hook or a floater: he has it as he gets to his
+		// spot there.)
+		const lane = run.option?.zone === "post";
+		const cut = this.cutIn(run, shooter, lane ? LANE_CUT_TO : RIM_CUT_TO);
+		if (!cut) {
+			return undefined;
+		}
+		const rim = { x: rimX(run.team), y: COURT_H / 2 };
+		// (Over the top and as long as it might take, the pass not said.)
+		const wind =
+			RELEASE_MS +
+			(style === "chest" || style === "bounce" ? 0 : OVERHEAD_WIND);
+		const flight = (d: number) =>
+			style === "lob"
+				? Math.max(750, passMs(d) * 1.7)
+				: passMs(d) * (style === "chest" || style === "overhead" ? 1 : 1.15);
+		// Thrown now, it would find him stood there.
+		const now = Math.max(t, this.free.get(passer) ?? 0);
+		if (
+			cut.there + PARKED_MS >=
+			now + wind + flight(dist(this.posOf(passer), cut.end))
+		) {
+			return undefined;
+		}
+		const lo = this.throwFrom(run, passer, t);
+		if (lo === undefined) {
+			return undefined;
+		}
+		// Where he has it: on his way in, as far out as that - a stride or two
+		// into his cut, though (a short one, at the end of it).
+		const { Q, end, speed } = cut;
+		const u = unitVec(Q, end);
+		const s = lane
+			? Infinity
+			: Math.max(CUT_RUN_UP, alongTo(Q, u, rim, CUT_CATCH_OUT));
+		const C =
+			s < dist(Q, end) - 0.5 ? { x: Q.x + u.x * s, y: Q.y + u.y * s } : end;
+		const thrown = (tC: number) => {
+			let x = tC - wind - flight(dist(this.posAt(passer, tC), C));
+			for (let k = 0; k < 2; k++) {
+				x = tC - wind - flight(dist(this.posAt(passer, x), C));
+			}
+			return x;
+		};
+		// His run in, laid again from there: on as he was going, the ball
+		// thrown to meet him - or, held, timed to it.
+		this.cutFrom(shooter, cut);
+		let go = this.setOff(shooter, C, cut.tQ, -Infinity, speed, C !== end);
+		let at = thrown(go.there);
+		if (at < lo) {
+			at = lo;
+			go = this.setOff(
+				shooter,
+				C,
+				cut.tQ,
+				lo + wind + flight(dist(this.posAt(passer, lo), C)),
+				speed,
+				C !== end,
+			);
+		}
+		this.go(shooter, C, go.start, speed, "run", undefined, { onto: go.onto });
+		this.stopFor(passer, at);
+		return at;
+	}
+
+	// The same for an alley-oop: his run in timed to go up as he gets there,
+	// the lob already on its way to meet him - not there first and stood
+	// under the rim, waiting on the passer to get up the floor and throw it.
+	// Returns when he gets there, if it is timed so.
+	private leadTheLob(
+		run: Running,
+		shooter: number,
+		lobber: number,
+		t: number,
+	): number | undefined {
+		const cut = this.cutIn(run, shooter, RIM_CUT_TO);
+		if (!cut || cut.there + PARKED_MS >= t) {
+			return undefined;
+		}
+		const lo = this.throwFrom(run, lobber, t);
+		if (lo === undefined) {
+			return undefined;
+		}
+		const team = run.team;
+		const rim = rimPt(team);
+		const { Q, speed } = cut;
+		const P = this.nearRim(team, cut.end, 3.4);
+		const face = (rim.x >= P.x ? 1 : -1) as 1 | -1;
+		const la = dist(Q, P);
+		// When the lob goes up (see stageShot): his last strides gathered a
+		// way out, up off them, and it meets him at the top - from where the
+		// passer is when he throws it. (With a little to spare: pulled up and
+		// the ball up over his head before it goes.)
+		const back = Math.min(DUNK_GATHER - dist(P, rim), la * 0.5);
+		const gathered = (ms: number) =>
+			la >= 4 && dist(Q, rim) - dist(P, rim) >= 2 && back > 0.3
+				? ms * timeTo(ms, (la - back) / la)
+				: ms;
+		const flight = (x: number) =>
+			Math.max(700, 380 + dist(this.posAt(lobber, x), rim) * 20);
+		const lead = 1300 * 0.4 + 60 - RELEASE_MS - OVERHEAD_WIND - 200;
+		this.cutFrom(shooter, cut);
+		let go = this.setOff(shooter, P, cut.tQ, -Infinity, speed, false);
+		const up = go.there - go.ms + gathered(go.ms) + lead;
+		let at = up - flight(up - 900);
+		at = up - flight(at);
+		if (at < lo) {
+			// The ball not his to throw yet: the cut held until it is.
+			at = lo;
+			const want = lo + flight(lo) - lead;
+			go = this.setOff(shooter, P, cut.tQ, want, speed, false);
+			for (let k = 0; k < 2; k++) {
+				go = this.setOff(
+					shooter,
+					P,
+					cut.tQ,
+					want + go.ms - gathered(go.ms),
+					speed,
+					false,
+				);
+			}
+		}
+		const there = this.go(shooter, P, go.start, speed, "run", face);
+		this.stopFor(lobber, at);
+		return there;
+	}
+
+	// When he sets off from where he is for P - no sooner than `from` - to be
+	// there by `by` (or as soon as he can), going for `speed`: from a
+	// standstill, or straight on from the run he is on; and if `on`, going on
+	// past it at the pace he has got up to there. How long it takes him, when
+	// he is there, and that pace.
+	private setOff(
+		pid: number,
+		P: Pt,
+		from: number,
+		by: number,
+		speed: number,
+		on: boolean,
+	): { start: number; ms: number; there: number; onto: number } {
+		const L = dist(this.posOf(pid), P);
+		const take = (start: number) => {
+			const v0 = this.carried(pid, P, start, speed);
+			const onto = on ? Math.min(speed, paceAfter(L, v0)) : 0;
+			return { onto, ms: Math.max(240, runMs(L, speed, v0, 1, onto)) };
+		};
+		let start = from;
+		let r = take(start);
+		for (let k = 0; k < 3 && from + r.ms < by; k++) {
+			start = Math.max(from, by - r.ms);
+			r = take(start);
+		}
+		return { start, ms: r.ms, there: start + r.ms, onto: r.onto };
+	}
+
+	// Whether the set has the man it is run for posting up for the ball -
+	// sealed on the block or in the lane, his back to the rim - rather than
+	// rolling or cutting in for it.
+	private postsUp(run: Running): boolean {
+		const o = run.option;
+		if (!o) {
+			return false;
+		}
+		if (o.playType === "Postup") {
+			return true;
+		}
+		const at = Math.min(o.after, run.play.steps.length - 1);
+		for (const acts of [
+			o.branch,
+			...run.play.steps.slice(0, at + 1).reverse(),
+		]) {
+			const a = acts.findLast(
+				(x) => (x.type === "move" || x.type === "post") && x.who === o.shooter,
+			);
+			if (a) {
+				return a.type === "post" || (a.type === "move" && a.style === "seal");
+			}
+		}
+		return false;
+	}
+
+	// His run in to the rim (ending within `reach` of it), if the set has
+	// him make one for the ball: the runs he goes straight on through to get
+	// there (not a step or two once he is there) - from where he comes
+	// within CUT_FROM of it on them, or from where he set off, nearer than
+	// that; when he is there, where he ends up and when; and how fast the
+	// set has him go.
+	private cutIn(
+		run: Running,
+		pid: number,
+		reach: number,
+	):
+		| {
+				k: number;
+				Q: Pt;
+				tQ: number;
+				end: Pt;
+				there: number;
+				speed: number;
+		  }
+		| undefined {
+		const o = run.option;
+		const moves = this.track(pid)?.moves ?? [];
+		const rim = { x: rimX(run.team), y: COURT_H / 2 };
+		let j = moves.length - 1;
+		for (let n = 0; n < 3 && j > 0 && lenOf(moves[j]!) < 2.5; n++) {
+			j--;
+		}
+		const last = moves[j];
+		if (!o || !last || last.anim !== "run" || dist(last.to, rim) > reach) {
+			return undefined;
+		}
+		let k = j;
+		while (
+			k > 0 &&
+			moves[k - 1]!.anim === "run" &&
+			moves[k - 1]!.t1 >= moves[k]!.t0 - 80
+		) {
+			k--;
+		}
+		while (k < j && dist(moves[k]!.to, rim) > CUT_FROM) {
+			k++;
+		}
+		const m = moves[k]!;
+		let Q = m.from;
+		let tQ = m.t0;
+		if (dist(m.from, rim) > CUT_FROM) {
+			for (let x = m.t0; x < m.t1; x += 20) {
+				const e = 0.5 - 0.5 * Math.cos((Math.PI * (x - m.t0)) / (m.t1 - m.t0));
+				const P = {
+					x: m.from.x + (m.to.x - m.from.x) * e,
+					y: m.from.y + (m.to.y - m.from.y) * e,
+				};
+				if (dist(P, rim) <= CUT_FROM) {
+					Q = P;
+					tQ = x;
+					break;
+				}
+			}
+		}
+		// (In toward the rim - or, into the lane, up from the baseline too: a
+		// flash.)
+		if (
+			dist(Q, last.to) < CUT_RUN_UP ||
+			(reach <= RIM_CUT_TO && dist(Q, rim) - dist(last.to, rim) < CUT_RUN_UP)
+		) {
+			return undefined;
+		}
+		const at = Math.min(o.after, run.play.steps.length - 1);
+		const steps = [o.branch, ...run.play.steps.slice(0, at + 1).reverse()];
+		const cut = { k, Q, tQ, end: last.to, there: last.t1 };
+		for (const acts of steps) {
+			const a = acts.find((x) => x.type === "move" && x.who === o.shooter);
+			if (a?.type === "move") {
+				return {
+					...cut,
+					speed:
+						run.play.cat === "break" && a.style === "jog"
+							? TRAIL_SPEED
+							: (MOVE_SPEED[a.style] ?? 13),
+				};
+			}
+		}
+		// (Not one of the set's own runs - running his lane on the break, say:
+		// at about the pace he was going.)
+		let len = 0;
+		for (let n = k; n <= j; n++) {
+			len += lenOf(moves[n]!);
+		}
+		const secs = (last.t1 - moves[k]!.t0) / 1000;
+		return {
+			...cut,
+			speed: Math.min(SPRINT, Math.max(12, (1.2 * len) / Math.max(0.3, secs))),
+		};
+	}
+
+	// His run in taken back to where it starts (see cutIn): there then, and
+	// none of it after.
+	private cutFrom(pid: number, cut: { k: number; Q: Pt; tQ: number }) {
+		const tr = this.track(pid);
+		const m = tr?.moves[cut.k];
+		if (!tr || !m) {
+			return;
+		}
+		if (cut.tQ > m.t0 + 1) {
+			tr.moves.splice(cut.k + 1);
+			m.to = { ...cut.Q };
+			m.t1 = cut.tQ;
+			m.v1 = undefined;
+		} else {
+			tr.moves.splice(cut.k);
+		}
+		this.pos.set(pid, { ...cut.Q });
+		this.free.set(pid, cut.tQ);
+	}
+
+	// The soonest the man with the ball can throw it on in the step the set
+	// gets to its shot in: once he has it - caught, his eyes up - and not in
+	// the middle of a move with it.
+	private throwFrom(run: Running, pid: number, t: number): number | undefined {
+		let since: number | undefined;
+		for (let k = this.ball.length - 1; k >= 0; k--) {
+			const s = this.ball[k]!;
+			if (s.kind === "hold" && s.pid === pid) {
+				since = s.t0;
+				continue;
+			}
+			if (s.kind === "fly" && "pid" in s.to && s.to.pid === pid) {
+				since = s.t1;
+			}
+			break;
+		}
+		if (since === undefined) {
+			return undefined;
+		}
+		let lo = Math.max(since + CATCH_TO_THROW, run.stepAt ?? t);
+		for (const a of this.track(pid)?.acts ?? []) {
+			if (a.anim !== "catch" && a.t0 < t && a.t1 > lo) {
+				lo = a.t1;
+			}
+		}
+		return lo;
+	}
+
+	// Pulled up where he is at t, to throw it: whatever run he was on with
+	// it ends there.
+	private stopFor(pid: number, t: number) {
+		if ((this.track(pid)?.moves.at(-1)?.t1 ?? -Infinity) > t) {
+			this.cutShort(pid, t);
+		}
 	}
 
 	// Kicked out of the lane, the ball gone, the passer does not stand there
