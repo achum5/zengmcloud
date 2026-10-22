@@ -2946,6 +2946,51 @@ describe("3D director", () => {
 		assert.isAtMost(stood, trips / 30, `${stood} of ${trips}`);
 	}, 240_000);
 
+	// A whistle on a foul that stops play, the man with the ball - the set
+	// still coming to him - isn't stood there with it waiting on it: he has
+	// it on the floor, probing, as it goes.
+	test("no man with the ball stood waiting on a foul's whistle", () => {
+		let fouls = 0;
+		const stood: string[] = [];
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl } = compile(seed, 140);
+			for (const b of tl.beats) {
+				if (b.type !== "pfNonShooting" && b.type !== "pfBonus") {
+					continue;
+				}
+				const t = b.actionStart;
+				const at = evalBall(tl, t, bodyFor);
+				const h = at.holder;
+				if (h === undefined) {
+					continue;
+				}
+				const team = tl.tracks.get(h)!.team;
+				const H = evalPlayer(tl, h, t);
+				if ((H.x - COURT_W / 2) * attackDir(team) < 8) {
+					continue;
+				}
+				fouls += 1;
+				// How long he has had it, within 3 ft of where he is now.
+				let s = t;
+				while (s > t - 6000) {
+					const q = evalPlayer(tl, h, s - 100);
+					if (
+						evalBall(tl, s - 100, bodyFor).holder !== h ||
+						Math.hypot(q.x - H.x, q.y - H.y) > 3
+					) {
+						break;
+					}
+					s -= 100;
+				}
+				if (t - s >= 2000) {
+					stood.push(`${seed} ${Math.round(t)} ${h} ${t - s}`);
+				}
+			}
+		}
+		assert.isAtLeast(fouls, 30);
+		assert.isAtMost(stood.length, 1, stood.join("; "));
+	}, 120_000);
+
 	// The camera goes off the floor only while nothing is happening on it: the
 	// game opens on the building and cuts in for the tip, and a timeout or the
 	// break between periods looks round it - but no shot, pass or tip-off is

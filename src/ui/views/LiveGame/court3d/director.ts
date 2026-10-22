@@ -706,6 +706,12 @@ const PULL_UP_OFF = 4.5;
 // Holding it this near the rim (feet) or nearer, a man fakes going up with
 // it - never a jab step (see liveHands).
 const IN_CLOSE_FAKE = 9;
+// A whistle off the ball with the man with it stood waiting (see probe):
+// he takes a beat with it first (ms), probes for at most the last this long
+// (ms) before it goes, and in toward the rim no nearer than this (feet).
+const PROBE_LOOK = 500;
+const PROBE_MS = 1800;
+const PROBE_IN = 15;
 // A run in counts as a cut to the rim for the ball if it ends this near
 // the rim (feet) - or, rolling or cutting into the lane for a hook or a
 // floater there, this near.
@@ -3970,6 +3976,63 @@ class Director {
 		}
 		came.t1 = Math.min(t - 150, came.t0 + (came.t1 - came.t0) * 2);
 		came.v1 = undefined;
+	}
+
+	// The whistle going away from the ball: the man with it, stood with it
+	// in the front court since he got it, isn't still stood there waiting on
+	// it - he puts it on the floor and probes, a few dribbles in at his man
+	// (from in close already, across), and is on the move as it goes. His
+	// man goes with him.
+	private probe(pid: number, t: number) {
+		const tr = this.track(pid);
+		if (!tr || this.holder !== pid) {
+			return;
+		}
+		const team = tr.team;
+		const dir = attackDir(team);
+		const since = Math.max(this.free.get(pid) ?? 0, tr.moves.at(-1)?.t1 ?? 0);
+		const start = Math.max(since + PROBE_LOOK, t - PROBE_MS);
+		const A = this.posOf(pid);
+		if (
+			t - start < 700 ||
+			(A.x - COURT_W / 2) * dir < 8 ||
+			tr.acts.some((a) => a.t1 > start && a.t0 < t)
+		) {
+			return;
+		}
+		const rim = { x: rimX(team), y: COURT_H / 2 };
+		const out = dist(A, rim);
+		const u = unitVec(A, rim);
+		// In toward the rim - not inside the lane's top - or, there already,
+		// across toward the middle.
+		const across = A.y >= COURT_H / 2 ? -1 : 1;
+		const P = clampPt(
+			out > PROBE_IN + 3
+				? {
+						x: A.x + u.x * Math.min(6, out - PROBE_IN),
+						y: A.y + u.y * Math.min(6, out - PROBE_IN),
+					}
+				: { x: A.x - dir * 1, y: A.y + across * 4.5 },
+		);
+		const L = dist(A, P);
+		if (L < 2.5) {
+			return;
+		}
+		const end = t - 120;
+		const speed = Math.min(9, Math.max(4, L / ((end - start) / 1000)));
+		this.hold(pid, start, "dribble");
+		const there = this.go(pid, P, start, speed, "dribble", dir);
+		const d = this.defenderOf(pid);
+		if (d !== undefined && (this.free.get(d) ?? 0) <= start) {
+			this.shadow(
+				d,
+				this.defensePoint(team, P, P, true),
+				start + 120,
+				there + 120,
+				team,
+				pid,
+			);
+		}
 	}
 
 	// The outlet: the man who came down with it holds it, looking up the
@@ -13422,11 +13485,14 @@ class Director {
 			// goes - not stood waiting on it.
 			if (this.holder !== undefined) {
 				this.keepComing(this.holder, hit);
+				this.probe(this.holder, hit);
 			}
 			return contact(fouled, hit);
 		}
 
-		// On the ball: he puts it on the floor and goes.
+		// On the ball: he puts it on the floor and goes. (Stood with it a
+		// while first - the set still coming - he has been probing.)
+		this.probe(handler, start(handler));
 		const A = this.posOf(handler);
 		const D = this.nearRim(team, A, Math.max(7, dist(A, rim) - 11));
 		const mine = this.defenderOf(handler);
