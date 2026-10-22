@@ -44,6 +44,7 @@ import {
 import { FIELD_L } from "./geometry.ts";
 import { crewFor } from "./crew.ts";
 import { crowdAt } from "./crowd.ts";
+import { marksAt } from "./marks.ts";
 import {
 	fieldGearFor,
 	fieldKitsFor,
@@ -492,6 +493,7 @@ const Field3D = ({
 				paint: p.paint,
 				items,
 				crowd: crowdAt(tl, moment.t, now),
+				...(replay ? {} : { marks: marksAt(moment.play, moment.t) }),
 			});
 			if (adjust(res, h * dpr, dt, performance.now() - drawStart, now)) {
 				releaseSprites(sprites);

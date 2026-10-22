@@ -1,6 +1,7 @@
 import { depthOf, project, type Camera } from "../court3d/camera.ts";
 import { drawTexturedPlane } from "../court3d/planes.ts";
 import { drawFieldLines } from "./fieldLines.ts";
+import { drawMarks, type Mark } from "./marks.ts";
 import {
 	END_ZONE_PLANES,
 	MID_LOGO_PLANE,
@@ -51,6 +52,8 @@ export type FieldFrame = {
 	paint: FieldPaint;
 	// The crowd on its feet (0 to 1), and waving rather than arms up.
 	crowd?: { up: number; wave: boolean };
+	// The broadcast's lines on the turf (see marks.ts).
+	marks?: Mark[];
 	// Drawn among the posts, back to front: each with how far it is from the
 	// camera.
 	items?: { depth: number; draw: () => void }[];
@@ -188,6 +191,9 @@ export const drawFieldFrame = (f: FieldFrame) => {
 		drawTexturedPlane(ctx, cam, n.plane, n.img, 2, 1);
 	}
 	drawFieldLines(ctx, cam, paint.style.lines);
+	if (f.marks && f.marks.length > 0) {
+		drawMarks(ctx, cam, f.marks);
+	}
 	// Everything standing up, back to front.
 	const items = [
 		...(f.items ?? []),

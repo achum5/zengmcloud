@@ -24,6 +24,7 @@ import {
 	HASH_FAR_Y,
 	HASH_NEAR_Y,
 	MID_Y,
+	YD,
 	yardLineX,
 	type Dir,
 	type Pt,
@@ -174,6 +175,10 @@ export type Play = {
 	// The crowd's moment in it: when, for which side, and how big (see
 	// crowd.ts).
 	cheer?: Cheer;
+	// The ball dead; and, for a down from scrimmage, the line to gain (the
+	// broadcast's lines on the field: see marks.ts).
+	whistle: number;
+	gainX?: number;
 };
 
 export type Cheer = { t: number; side: Side; big: boolean };
@@ -472,6 +477,16 @@ const spotBetweenHashes = (r: () => number): number => {
 };
 
 const ORDINALS = ["1st", "2nd", "3rd", "4th"];
+// A down from scrimmage, with a line to gain.
+const FROM_SCRIMMAGE = new Set<PlayKind>([
+	"pass",
+	"run",
+	"kneel",
+	"punt",
+	"fieldGoal",
+	"none",
+]);
+
 const situationOf = (kind: PlayKind, clock: RawEvent): string => {
 	if (kind === "kickoff" || kind === "onside") {
 		return "Kickoff";
@@ -735,6 +750,13 @@ class Director {
 		const scrimmage: number =
 			typeof clock.scrimmage === "number" ? clock.scrimmage : 25;
 		const losX = yardLineX(scrimmage, dir);
+		const toGo: number = typeof clock.toGo === "number" ? clock.toGo : 10;
+		const gainX =
+			FROM_SCRIMMAGE.has(kind) &&
+			!clock.awaitingAfterTouchdown &&
+			scrimmage + toGo < 100
+				? losX + dir * toGo * YD
+				: undefined;
 		const kick = kind === "kickoff" || kind === "onside";
 		const ballY =
 			kick || kind === "extraPoint"
@@ -1077,6 +1099,8 @@ class Director {
 			ball,
 			...(replay ? { replay } : {}),
 			...(cheer ? { cheer } : {}),
+			whistle,
+			...(gainX !== undefined ? { gainX } : {}),
 		});
 		this.T = t1;
 		this.ballY = this.nextSpot(kind, i0, i1, ballY);
