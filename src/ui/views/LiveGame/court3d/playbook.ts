@@ -2786,4 +2786,151 @@ export const PLAYBOOK: PlaySource[] = [
 			"0 1 fiveSeconds",
 		],
 	},
+	// SPLITTING THE POST: the ball in to the post off the wing, and the
+	// passer run off a down screen - curled tight to the rim and on through
+	// to the far side, the screener popping out behind him to the wing the
+	// passer left.
+	{
+		id: "post-split-curl",
+		cat: "half",
+		use: 3,
+		start: "R_wing* R_slot L_wing L_corner R_block",
+		needs:
+			"passer cutter | shooter screener | shooter | shooter spacer | postScorer passer big",
+		steps: [
+			"5 post R_block seal",
+			"1 pass 5 entry",
+			"2 screen 1 R_mid_wing down; 1 move rim curl",
+			"2 move R_wing pop; 1 move L_dunker clear_out",
+		],
+		options: [
+			"1 rim layup rim 2 5 dump_off Cut 3",
+			"2 three catch_and_shoot R_wing 3 5 kickout Spotup 2",
+			"5 post hook R_block 3 - - Postup 2 | 5 post R_block back_down",
+			"4 three catch_and_shoot L_corner 3 5 skip Spotup 1",
+		],
+		risks: ["1 1 pass", "2 2 screen", "3 5 lost"],
+	},
+	// SHALLOW INTO A SIDE PICK-AND-ROLL: the guard dribbles at the wing, who
+	// cuts up and across the top out of his way; the big comes out to screen
+	// him there and rolls.
+	{
+		id: "shallow-cut-pnr",
+		cat: "half",
+		use: 4,
+		start: "R_slot* R_wing L_corner L_wing high_post",
+		needs:
+			"ballHandler | shooter cutter | shooter | shooter spacer | screener rollMan",
+		steps: [
+			"2 move L_slot shallow_cut; 1 dribble R_wing advance",
+			"5 screen 1 R_wing ball",
+			"1 dribble high_post drive_middle; 5 move rim roll",
+		],
+		options: [
+			"5 rim dunk rim 2 1 pocket PRRollMan 3",
+			"1 mid pull_up high_post 2 - - PRBallHandler 3",
+			"1 post floater R_lane 2 - - PRBallHandler 2 | 1 dribble R_lane attack",
+			"2 three catch_and_shoot L_slot 2 1 kickout Spotup 2",
+			"3 three catch_and_shoot L_corner 2 1 skip Spotup 1",
+			"4 three catch_and_shoot L_wing 2 1 skip Spotup 1",
+		],
+		risks: ["0 1 lost", "1 5 screen", "2 1 lost", "2 1 charge"],
+	},
+	// A SIDE PICK-AND-ROLL DRIVEN TO THE MIDDLE, the far side moving with it:
+	// the wing lifting to the slot, the big off the dunker cutting in on a
+	// 45 behind the help.
+	{
+		id: "side-pnr-45-cut",
+		cat: "half",
+		use: 4,
+		start: "R_wing* R_corner L_wing L_dunker R_elbow",
+		needs:
+			"ballHandler | shooter | shooter spacer | cutter big rimRunner | screener rollMan",
+		steps: [
+			"5 screen 1 R_wing ball",
+			"1 dribble high_post drive_middle; 5 move R_lane roll; 3 move L_slot lift",
+		],
+		options: [
+			"4 rim layup rim 1 1 dump_off Cut 3 | 4 move rim flash",
+			"3 three catch_and_shoot L_slot 1 1 kickout Spotup 2",
+			"5 rim dunk rim 1 1 pocket PRRollMan 2 | 5 move rim roll",
+			"1 mid pull_up high_post 1 - - PRBallHandler 2",
+			"2 three catch_and_shoot R_corner 1 1 kickout Spotup 1",
+			"1 post floater L_lane 1 - - PRBallHandler 1 | 1 dribble L_lane attack",
+		],
+		risks: ["0 5 screen", "1 1 lost", "1 1 charge"],
+	},
+	// STACK INTO AN ISO: the scorer stacked under the big on the block, run
+	// up off him to the wing for the ball, the big clearing to the far side
+	// - and the wing his to go at.
+	{
+		id: "stack-rub-iso",
+		cat: "half",
+		use: 3,
+		start: "top* R_dunker L_wing L_corner R_block",
+		needs: "passer ballHandler | isoScorer | shooter | shooter | screener big",
+		steps: [
+			"5 screen 2 R_block down; 2 move R_wing v_cut",
+			"1 pass 2 chest; 5 move L_dunker clear_out",
+			"2 dribble R_mid_wing attack",
+		],
+		options: [
+			"2 mid pull_up R_mid_wing 2 - - Isolation 3",
+			"2 three step_back R_wing 1 - - Isolation 2 | 2 dribble R_wing step_back",
+			"2 rim layup rim 1 - - Isolation 2 | 2 dribble R_short_corner drive_baseline; 2 dribble rim drive_baseline",
+			"2 post floater R_lane 1 - - Isolation 1 | 2 dribble R_lane attack",
+			"1 three catch_and_shoot top 2 2 kickout Spotup 1",
+			"5 rim dunk rim 2 2 dump_off Cut 1 | 2 dribble R_lane attack; 5 move rim flash",
+		],
+		risks: ["0 5 screen", "1 1 pass", "2 2 lost"],
+	},
+	// PINCH POST, THE WING GETTING IT: the ball up to the big at the elbow,
+	// the wing setting his man up as it goes in and run over the top to take
+	// it off him going downhill, the big rolling behind.
+	{
+		id: "pinch-post-wing-get",
+		cat: "half",
+		use: 3,
+		start: "top* R_wing L_wing L_corner R_elbow",
+		needs:
+			"passer shooter | slasher ballHandler | shooter | shooter | handoffBig passer",
+		steps: [
+			"1 pass 5 chest; 1 move L_slot relocate; 2 move R_slot v_cut",
+			"5 handoff 2 get",
+			"2 dribble R_lane attack; 5 move rim roll",
+		],
+		options: [
+			"2 post floater R_lane 2 - - Handoff 3",
+			"2 rim layup rim 2 - - Handoff 2 | 2 dribble rim attack",
+			"2 mid pull_up R_elbow 1 5 - Handoff 2",
+			"5 rim dunk rim 2 2 dump_off Cut 2",
+			"1 three catch_and_shoot L_slot 2 2 kickout Spotup 1",
+			"4 three catch_and_shoot L_corner 2 2 skip Spotup 1",
+		],
+		risks: ["0 1 pass", "1 2 lost", "2 2 charge"],
+	},
+	// RAM INTO A SLIP: the big run up off a down screen into a ball screen -
+	// and gone to the rim before he sets it, for a pocket pass behind the
+	// defense jumping out at the ball.
+	{
+		id: "ram-slip",
+		cat: "half",
+		use: 3,
+		start: "top* L_corner R_elbow L_wing R_dunker",
+		needs:
+			"ballHandler passer | shooter | screener shooter | spacer | screener rollMan rimRunner",
+		steps: [
+			"3 screen 5 R_block down; 5 move R_elbow sprint",
+			"5 screen 1 top ball; 3 move R_corner clear_out",
+			"5 move rim slip; 1 dribble R_slot hesitation",
+		],
+		options: [
+			"5 rim dunk rim 2 1 pocket PRRollMan 4",
+			"5 rim layup rim 2 1 bounce PRRollMan 2",
+			"3 three catch_and_shoot R_corner 2 1 kickout Spotup 2",
+			"2 three catch_and_shoot L_corner 2 1 skip Spotup 1",
+			"1 three pull_up R_slot 2 - - PRBallHandler 1",
+		],
+		risks: ["0 3 screen", "1 5 screen", "2 1 pass"],
+	},
 ];
