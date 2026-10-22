@@ -9,11 +9,10 @@ import {
 	type StrengthPlayer,
 	type ValueRatings,
 } from "../../worker/core/realisticFrontOffice/strength.ts";
-import { getRosterOrderByPid } from "../../worker/core/team/rosterAutoSort.basketball.ts";
 import { idb } from "../../worker/db/index.ts";
 import { g, helpers } from "../../worker/util/index.ts";
 import { createArenaLeague } from "../arena/runLeague.ts";
-import { play, setOrder, toSimTeam, type SimTeam } from "./simTools.ts";
+import { inGameOrder, play, toSimTeam, type SimTeam } from "./simTools.ts";
 
 // THE POSITIONS LAB: what a roster loses in the game's sim when it is short of
 // guards, or of forwards and centers - which the strength model, ranking
@@ -45,26 +44,6 @@ const healthy = (players: readonly Player[]) =>
 		copy.injury = { type: "Healthy", gamesRemaining: 0 };
 		return copy;
 	});
-
-// The order the game plays a roster in: by value, then shuffled so 2 guards
-// and 2 forwards or centers start.
-const inGameOrder = (players: readonly Player[]) => {
-	const orders = getRosterOrderByPid(
-		players.map((p) => ({
-			pid: p.pid,
-			valueNoPot: p.valueNoPot,
-			valueNoPotFuzz: p.valueNoPot,
-			ratings: { pos: posOf(p) },
-		})),
-		-1,
-		false,
-	);
-	const sorted = [...players].sort(
-		(a, b) => orders.get(a.pid)! - orders.get(b.pid)!,
-	);
-	setOrder(sorted);
-	return sorted;
-};
 
 const lineOf = (p: Player): StrengthPlayer => ({
 	...playerLine(last(p.ratings) as unknown as ValueRatings, posOf(p)),

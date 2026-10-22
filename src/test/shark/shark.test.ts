@@ -42,7 +42,12 @@ import { stayChance } from "../../worker/core/realisticFrontOffice/offers.ts";
 import { idb } from "../../worker/db/index.ts";
 import { g, helpers } from "../../worker/util/index.ts";
 import { advanceSeasons, createArenaLeague } from "../arena/runLeague.ts";
-import { play, setOrder, toSimTeam, type SimTeam } from "../impact/simTools.ts";
+import {
+	inGameOrder,
+	play,
+	toSimTeam,
+	type SimTeam,
+} from "../impact/simTools.ts";
 
 // THE SHARK: an expert human hunting for trades the CPU's model misprices,
 // with the game's own sim as ground truth - what tunes how much more the
@@ -122,11 +127,8 @@ const healthy = (players: readonly Player[]) =>
 		return copy;
 	});
 
-const simTeamOf = async (tid: number, players: readonly Player[]) => {
-	const roster = healthy(players).sort((a, b) => b.valueNoPot - a.valueNoPot);
-	setOrder(roster);
-	return toSimTeam(tid, roster);
-};
+const simTeamOf = async (tid: number, players: readonly Player[]) =>
+	toSimTeam(tid, inGameOrder(healthy(players)));
 
 // Points per game the model gives a healthy roster this season, as the trade
 // checker reads it.
@@ -137,7 +139,7 @@ const lineOf = (p: Player): StrengthPlayer => {
 	let line = lineCache.get(key);
 	if (!line) {
 		line = {
-			...playerLine(r as unknown as ValueRatings),
+			...playerLine(r as unknown as ValueRatings, r.pos),
 			valueNoPot: p.valueNoPot,
 		};
 		lineCache.set(key, line);

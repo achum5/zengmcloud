@@ -45,7 +45,7 @@ import {
 	rosterPoints,
 	type ValueRatings,
 } from "../../worker/core/realisticFrontOffice/strength.ts";
-import { play, setOrder, toSimTeam } from "../impact/simTools.ts";
+import { inGameOrder, play, toSimTeam } from "../impact/simTools.ts";
 import { advanceSeasons, createArenaLeague } from "./runLeague.ts";
 import { computeMetrics, type LeagueMetrics } from "./metrics.ts";
 import { BENCHMARKS, type Benchmark } from "./benchmarks.ts";
@@ -775,18 +775,12 @@ const checkTrades = async (trades: WatchedTrade[], games: number) => {
 		);
 	}
 	const marginOf = async (tid: number, roster: Player[], seed: number) => {
-		const sorted = [...roster].sort((a, b) => b.valueNoPot - a.valueNoPot);
-		setOrder(sorted);
-		const team = await toSimTeam(tid, sorted);
+		const team = await toSimTeam(tid, inGameOrder(roster));
 		let total = 0;
 		for (let i = 0; i < games; i++) {
 			const oppTid =
 				(tid + 1 + (i % (opponents.length - 1))) % opponents.length;
-			const opp = [...opponents[oppTid]!].sort(
-				(a, b) => b.valueNoPot - a.valueNoPot,
-			);
-			setOrder(opp);
-			const oppTeam = await toSimTeam(oppTid, opp);
+			const oppTeam = await toSimTeam(oppTid, inGameOrder(opponents[oppTid]!));
 			Math.random = makeSeededRandom(seed * 1_000_003 + i);
 			const home = i % 2 === 0;
 			const result = home

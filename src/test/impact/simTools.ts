@@ -1,7 +1,9 @@
 import { DEFAULT_PLAY_THROUGH_INJURIES } from "../../common/constants.ts";
 import type { Player } from "../../common/types.ts";
+import { last } from "../../common/utils.ts";
 import GameSim from "../../worker/core/GameSim.ts";
 import { processTeam } from "../../worker/core/game/loadTeams.ts";
+import { getRosterOrderByPid } from "../../worker/core/team/rosterAutoSort.basketball.ts";
 
 // Playing single games outside a league's schedule, for the labs: any roster
 // against any other, with the game's own sim and no injuries.
@@ -13,6 +15,27 @@ export const setOrder = (roster: Player[]) => {
 	for (const [i, p] of roster.entries()) {
 		p.rosterOrder = i;
 	}
+};
+
+// A roster in the order a CPU team's is sorted in a league - by value, then
+// shuffled so 2 guards and 2 forwards or centers start - and set to be played
+// that way.
+export const inGameOrder = (players: readonly Player[]) => {
+	const orders = getRosterOrderByPid(
+		players.map((p) => ({
+			pid: p.pid,
+			valueNoPot: p.valueNoPot,
+			valueNoPotFuzz: p.valueNoPot,
+			ratings: { pos: last(p.ratings).pos },
+		})),
+		-1,
+		false,
+	);
+	const sorted = [...players].sort(
+		(a, b) => orders.get(a.pid)! - orders.get(b.pid)!,
+	);
+	setOrder(sorted);
+	return sorted;
 };
 
 export const toSimTeam = async (tid: number, roster: Player[]) =>
