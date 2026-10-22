@@ -328,9 +328,9 @@ export const packages = (
 export const assetKey = (x: Asset) =>
 	x.kind === "player" ? `p${x.p.pid}` : `d${x.dp.dpid}`;
 
-// What a deal does to a team's franchise value - with its own picks, and the
-// other team's (`partner`, when given), landing where the deal leaves the two
-// rosters.
+// What a deal does to a team's franchise value. Priced in full - with the
+// other team, `partner` - both teams' picks land where the deal leaves their
+// rosters; the quick screens of one asset at a time leave them be.
 export const priceFor = (
 	outlook: LeagueOutlook,
 	t: TeamState,
@@ -340,16 +340,19 @@ export const priceFor = (
 ) => {
 	const after = applyTrade(t, outgoing, incoming);
 	let view = outlook;
-	if (marketSettings.placesAfter && count(outgoing) + count(incoming) > 0) {
-		const changes = [{ tid: t.tid, before: t.players, after: after.players }];
-		if (partner) {
-			changes.push({
+	if (
+		marketSettings.placesAfter &&
+		partner &&
+		count(outgoing) + count(incoming) > 0
+	) {
+		view = placesAfter(outlook, [
+			{ tid: t.tid, before: t.players, after: after.players },
+			{
 				tid: partner.tid,
 				before: partner.players,
 				after: applyTrade(partner, incoming, outgoing).players,
-			});
-		}
-		view = placesAfter(outlook, changes);
+			},
+		]);
 	}
 	return (
 		valueOf(view, t.tid, after.players, after.picks, {
@@ -613,8 +616,8 @@ export const priceDeal = (
 		tids: [a.tid, b.tid] as [number, number],
 		assets: [giveA, giveB] as [Asset[], Asset[]],
 		gains: [
-			priceFor(outlook, a, giveA, giveB),
-			priceFor(outlook, b, giveB, giveA),
+			priceFor(outlook, a, giveA, giveB, b),
+			priceFor(outlook, b, giveB, giveA, a),
 		] as [number, number],
 		margins: [
 			marginOf(outlook, a, giveA, giveB),

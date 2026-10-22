@@ -100,9 +100,12 @@ test(
 			)[0]!;
 			const star = { kind: "player" as const, p: best };
 			const pick = { kind: "pick" as const, dp: own };
-			const both = -priceFor(outlook, t, [star, pick], []);
+			// To a team that gives nothing back, priced in full.
+			const partner = await loadTeam(outlook, (tid + 1) % g.get("numTeams"));
+			const both = -priceFor(outlook, t, [star, pick], [], partner);
 			const apart =
-				-priceFor(outlook, t, [star], []) - priceFor(outlook, t, [pick], []);
+				-priceFor(outlook, t, [star], [], partner) -
+				priceFor(outlook, t, [pick], [], partner);
 			checked += 1;
 			if (both > apart) {
 				more += 1;
