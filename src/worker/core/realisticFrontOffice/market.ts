@@ -130,6 +130,8 @@ export const marketSettings = {
 	preseasonWindow: true,
 	// A deal's teams' picks land where the deal leaves their rosters.
 	placesAfter: true,
+	// Packages of three assets, not only one or two.
+	triples: true,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -322,11 +324,13 @@ const applyTrade = (
 	};
 };
 
-// Two-asset packages are built from a team's most valuable assets only.
+// Two-asset packages are built from a team's most valuable assets only, and
+// three-asset ones from fewer still.
 const PAIR_ASSETS = 10;
+const TRIPLE_ASSETS = 6;
 
-// Every single asset, and every pair of the ones that matter most to their
-// team - and nothing at all, for a one-sided deal.
+// Every single asset, every pair of the ones that matter most to their team
+// and every three of the very top - and nothing at all, for a one-sided deal.
 export const packages = (
 	assets: readonly Asset[],
 	worth: (x: Asset) => number,
@@ -341,6 +345,16 @@ export const packages = (
 	for (let i = 0; i < top.length; i++) {
 		for (let j = i + 1; j < top.length; j++) {
 			out.push([top[i]!, top[j]!]);
+		}
+	}
+	if (marketSettings.triples) {
+		const few = top.slice(0, TRIPLE_ASSETS);
+		for (let i = 0; i < few.length; i++) {
+			for (let j = i + 1; j < few.length; j++) {
+				for (let k = j + 1; k < few.length; k++) {
+					out.push([few[i]!, few[j]!, few[k]!]);
+				}
+			}
 		}
 	}
 	return out;
