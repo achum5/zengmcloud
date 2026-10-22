@@ -195,6 +195,12 @@ export type PlayClock = {
 // over - it is stepped line by line instead (see Court3D).
 const LOST_SLIPS = 3;
 const LOST_WITHIN = 20_000;
+// (Or, a reel of the key plays, the other court somewhere this one's reel
+// leaves out - more than this far (ms) from any stretch of it: its reel is
+// another, so the game it staged is.)
+const OFF_REEL_MS = 1000;
+const offReel = (plan: KeySegment[], t: number) =>
+	!plan.some((x) => t > x.t0 - OFF_REEL_MS && t < x.t1 + OFF_REEL_MS);
 
 // What the page says, this frame.
 export type PlayInput = {
@@ -348,6 +354,16 @@ export const stepPlay = (
 		show = step.ms;
 		if (step.snap) {
 			alignTo(s, p, f, tl, step.snap, now, true);
+		}
+		const said = f.reports.at(-1);
+		if (
+			p.keyPlan &&
+			said &&
+			said.rp < 0 &&
+			!said.paused &&
+			offReel(p.keyPlan, said.t)
+		) {
+			s.lost = true;
 		}
 	}
 	const target = staging
