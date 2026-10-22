@@ -312,6 +312,16 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   moving more than 0.6 ft in a frame about 20 a game down to 3 or 4. A
   roar or a pound of the chest after a big finish; the man dunked on
   steps back from it; the coach stands in the middle of his huddle.)
+  (2026-10-22: easing from one move into the next looks back over the same
+  moments of the game whatever the frame, and keeps eight moves deep, not
+  five - a moment's backpedal turning into a run no longer flings a leg out
+  a foot and back, and a defender shuffling and backpedalling in turn no
+  longer swaps which foot is up; behind the back the ball is drawn round
+  his hip, not whipped there in two frames; shuffling on a slant each foot
+  steps the way he goes, not out to his side and slid back - planted-foot
+  slide about halved. Still to do: turning his hips - setting off on a run
+  at an angle, a drift along the arc - swings both feet round under him,
+  the planted one too; each leg should turn only while its foot is up.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like
