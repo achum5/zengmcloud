@@ -642,6 +642,10 @@ const RIVAL_STEP_MS = 450;
 // A defender whose man stays out goes in to the glass and puts a body on the
 // nearest man coming in that nobody else has - from this far off (feet).
 const GLASS_FIND = 10;
+// Busy with something else as the shot goes up (a contest, a cut still on
+// its way), a man still plays the glass once he is done - if that leaves
+// him this long (ms) before it comes off the rim.
+const GLASS_LATE = 550;
 // The rest of them near a rebound as it comes down - within this far of
 // where it is taken (feet) - play it too, from as it comes loose (but this
 // long before he has it at the least, this long at the most - ms): a step or
@@ -2980,6 +2984,14 @@ class Director {
 
 	private rand(lo: number, hi: number) {
 		return lo + this.rng() * (hi - lo);
+	}
+
+	// Draws of a man's own, from who he is and when (see hash01) - for one
+	// brought into something the game's own luck never had him in, so all
+	// else stays as it was.
+	private ownDraws(pid: number, t: number): () => number {
+		let k = 0;
+		return () => hash01(pid * 7919 + 104729 * k++, Math.round(t));
 	}
 
 	private finishFor(e: RawEvent | undefined): Finish | undefined {
@@ -9360,6 +9372,28 @@ class Director {
 			}
 			return t;
 		};
+		// The shot up, nobody runs on with what he was doing before it -
+		// shadowing his man out on the floor, a cut still on its way: each
+		// plays the shot from where he is as it goes. (Not out of anything
+		// he does about it - a contest of it, say - or is in the middle of.)
+		// A man that leaves free to play it who wasn't before draws his lot
+		// for it from who he is and when (see ownDraws), not the game's luck.
+		const was = new Map<number, number>();
+		for (const pid of [...this.slots(team), ...this.slots(other(team))]) {
+			was.set(pid, readyAt(pid));
+			if (
+				pid !== shooter &&
+				!busy.includes(pid) &&
+				(this.free.get(pid) ?? 0) > go &&
+				!this.track(pid)?.acts.some((a) => a.t1 > go && a.t0 < until)
+			) {
+				this.cutShort(pid, go);
+			}
+		}
+		const luck = (pid: number, by: number): (() => number) =>
+			(was.get(pid) ?? Infinity) <= by
+				? () => this.rng()
+				: this.ownDraws(pid, gather);
 		// The man who gets it reads it off the shot: from the moment it leaves
 		// the shooter's hands (once he is done with whatever he is doing), to
 		// where it will come down into his reach - facing the rim, to take it
@@ -9426,23 +9460,24 @@ class Director {
 		const inAt = new Map<number, number>();
 		this.slots(team).forEach((pid, j) => {
 			const r0 = readyAt(pid);
-			if (busy.includes(pid) || r0 > meet - 200) {
+			if (busy.includes(pid) || r0 > Math.max(meet - 200, until - GLASS_LATE)) {
 				return;
 			}
+			const draw = luck(pid, meet - 200);
 			const M = this.posOf(pid);
 			const out = dist(M, rim);
 			const big = (this.rank.get(pid) ?? 4) >= 6 || j >= 4;
-			const r = this.rng();
+			const r = draw();
 			if (big ? r < 0.85 : out < 17 ? r < 0.45 : r < 0.18) {
 				const u = unitVec(M, rim);
-				const k = Math.max(0, Math.min(out - this.rand(5, 8), 9));
+				const k = Math.max(0, Math.min(out - (5 + 3 * draw()), 9));
 				const C = apart(clampPt({ x: M.x + u.x * k, y: M.y + u.y * k }));
 				crash.set(pid, C);
 				inAt.set(pid, this.goBy(pid, C, r0, meet, "run", undefined, BURST));
 			} else if (out < 30) {
 				// Back on defense, eyes on the shot.
 				const back = clampPt({
-					x: M.x - dir * this.rand(5, 9),
+					x: M.x - dir * (5 + 4 * draw()),
 					y: M.y + (COURT_H / 2 - M.y) * 0.3,
 				});
 				this.goBy(pid, back, r0, until + 300, "back");
@@ -9451,7 +9486,9 @@ class Director {
 		// Which of them his own man is free to put a body on.
 		const onHim = (man: number): number | undefined => {
 			const d = this.defenderOf(man);
-			return d === undefined || busy.includes(d) || readyAt(d) > meet - 150
+			return d === undefined ||
+				busy.includes(d) ||
+				readyAt(d) > Math.max(meet - 150, until - GLASS_LATE)
 				? undefined
 				: d;
 		};
@@ -9463,6 +9500,7 @@ class Director {
 				continue;
 			}
 			const r0 = readyAt(d);
+			const draw = luck(d, meet - 150);
 			let C = crash.get(man);
 			let mark = man;
 			if (!C) {
@@ -9497,7 +9535,9 @@ class Director {
 				const big = (this.rank.get(d) ?? 4) >= 6;
 				const k = Math.min(
 					dist(D0, rim),
-					big ? this.rand(6, 9) : this.rand(LONG_BOARD[0], LONG_BOARD[1]),
+					big
+						? 6 + 3 * draw()
+						: LONG_BOARD[0] + (LONG_BOARD[1] - LONG_BOARD[0]) * draw(),
 				);
 				spot = apart(clampPt({ x: rim.x + u.x * k, y: rim.y + u.y * k }));
 			}
@@ -9511,6 +9551,7 @@ class Director {
 					Math.max(meet, there, inAt.get(mark) ?? until),
 					until,
 					rim,
+					draw,
 				);
 			}
 		}
@@ -9530,15 +9571,23 @@ class Director {
 	// in leans one way and then the other, trying to get round, and the man
 	// on him slides with him to stay in front - backing him off the glass
 	// a little with each one - until the ball comes off the rim.
-	private jostle(o: number, d: number, from: number, until: number, rim: Pt) {
+	private jostle(
+		o: number,
+		d: number,
+		from: number,
+		until: number,
+		rim: Pt,
+		draw: () => number = () => this.rng(),
+	) {
+		const rand = (lo: number, hi: number) => lo + draw() * (hi - lo);
 		const O = this.posOf(o);
 		const D = this.posOf(d);
 		const u = unitVec(D, rim);
 		const lat = { x: -u.y, y: u.x };
-		let side: 1 | -1 = this.rng() < 0.5 ? 1 : -1;
+		let side: 1 | -1 = draw() < 0.5 ? 1 : -1;
 		let off = 0;
 		let back = 0;
-		let t = from + this.rand(80, 200);
+		let t = from + rand(80, 200);
 		const shove = (pid: number, to: Pt, t0: number, ms: number) => {
 			const tr = this.track(pid);
 			// (Still on his way in: no leaning on anybody until he is there.)
@@ -9559,19 +9608,19 @@ class Director {
 		while (t + 380 < until - 80) {
 			// Around one side - or a second go at the same one.
 			const was = off;
-			off = side * this.rand(0.6, 1.25);
+			off = side * rand(0.6, 1.25);
 			if (Math.abs(off - was) < 0.4) {
 				off = was + side * 0.5;
 			}
-			back = Math.min(1.4, back + this.rand(0.15, 0.4));
+			back = Math.min(1.4, back + rand(0.15, 0.4));
 			const at = (P: Pt, k: number, extra = 0): Pt => ({
 				x: P.x + lat.x * off * k - u.x * (back + extra),
 				y: P.y + lat.y * off * k - u.y * (back + extra),
 			});
 			shove(o, at(O, 1, 0.1), t, 300);
 			shove(d, at(D, 0.9), t + 80, 300);
-			t += this.rand(480, 760);
-			if (this.rng() < 0.75) {
+			t += rand(480, 760);
+			if (draw() < 0.75) {
 				side = -side as 1 | -1;
 			}
 		}

@@ -1648,6 +1648,43 @@ describe("3D director", () => {
 		assert.isAbove(share(n.big, n.big.hook), 0.6);
 	}, 120_000);
 
+	// A jumper goes up: each man coming in to the glass has somebody put a
+	// body on him - his own man, or the man nearest - once that man is done
+	// with what he was doing (a contest, a run he was on), not left to walk
+	// in because that took him past the moment the rest went in.
+	test("a jumper up, the men going to the glass are boxed out", () => {
+		let shots = 0;
+		let boxes = 0;
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { events, tl } = compile(seed, 150);
+			const beatOf = new Map(tl.beats.map((b) => [b.i, b]));
+			events.forEach((e, i) => {
+				const b = beatOf.get(i);
+				if (!b || !/^(miss|fg)(Tp|MidRange)$/.test(e.type)) {
+					return;
+				}
+				const fly = tl.ball.findLast(
+					(s) =>
+						s.kind === "fly" &&
+						s.t0 <= b.actionStart + 50 &&
+						!("pid" in s.to) &&
+						s.to.z > 6,
+				);
+				if (!fly) {
+					return;
+				}
+				shots += 1;
+				for (const tr of tl.tracks.values()) {
+					boxes += tr.acts.filter(
+						(a) => a.anim === "boxOut" && a.t1 > fly.t0 && a.t0 < fly.t0 + 1500,
+					).length;
+				}
+			});
+		}
+		assert.isAbove(shots, 100);
+		assert.isAtLeast(boxes / shots, 1.3, `${boxes} over ${shots}`);
+	}, 120_000);
+
 	test("off the rim, the man who gets it mostly goes up and takes it in the air", () => {
 		let air = 0;
 		let all = 0;
