@@ -299,6 +299,15 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   average and up to 0.15 - so "their star and their pick" was a steal, and a
   team selling its star priced the buyer's pick as if the buyer had not got
   him. A signing moves a team's own picks the same way.
+  - **It makes tanking pay, and that stands** (owner's call: "Each FO
+    should be in charge solely of building a winning franchise"). With picks
+    priced honestly, a team going nowhere sells its veterans to contenders
+    and a contender buys: arena, 2 leagues x 5 seasons, trades rose from 20
+    to 69 a season and the league polarized - win spread 17 against the
+    NBA's 12.4, 4 sixty-win and 6.5 sub-25-win teams a season against 1.6
+    and 3.7. Limiting it to the next two drafts changed little (49 trades,
+    spread 17). No pull toward winning now for fans' or owners' sake is
+    added.
 - **Every kind of deal that happens in real life** (owner's call), as long as
   the CPU's judgment holds up: a side may give nothing (a player into another
   team's cap room, a salary dump), picks may go for picks, and every tradable
