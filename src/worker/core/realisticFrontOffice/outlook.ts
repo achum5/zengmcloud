@@ -121,7 +121,7 @@ export type LeagueOutlook = {
 	// stay with their teams.
 	lastPickSeason: number;
 	// Where each team's own pick is expected to land in each season's draft,
-	// 0 for the first, from its roster alone.
+	// 0 for the first, from its roster alone - counted smoothly (softPlace).
 	draftPlace: Map<number, number[]>;
 	// What draftPlace ranks each team by, each season: its strength on its
 	// roster alone, and this season, once games are played, the wins it is
@@ -391,6 +391,9 @@ export const outlookSettings = {
 	// Before the deadline, injured players back for the playoffs count for
 	// them (teamPoints).
 	playoffInjuries: true,
+	// How many drafts out a deal moves the picks of the teams in it
+	// (placesAfter); later ones stay where the outlook put them.
+	placesAfterDrafts: 99,
 };
 
 export const ensureRetention = async (
@@ -960,6 +963,31 @@ const placeKeysOf = (
 			: x,
 	);
 
+// Where a team ranked by this key lands among the others (by `changed` keys
+// where given, else as the outlook ranked them), 0 for the worst - counted
+// smoothly over a win or half a point either way, so a deal that barely
+// changes a team cannot jump its pick a whole place and invent a gain.
+const PLACE_SOFTNESS_WINS = 1.5;
+const PLACE_SOFTNESS_POINTS = 0.5;
+const softPlace = (
+	outlook: Pick<LeagueOutlook, "placeKeys" | "placeNow">,
+	tid: number,
+	key: number,
+	y: number,
+	changed: ReadonlyMap<number, readonly number[]>,
+) => {
+	const softness =
+		y === 0 && outlook.placeNow ? PLACE_SOFTNESS_WINS : PLACE_SOFTNESS_POINTS;
+	let place = 0;
+	for (const [other, was] of outlook.placeKeys) {
+		if (other !== tid) {
+			const otherKey = (changed.get(other) ?? was.keys)[y]!;
+			place += 1 / (1 + Math.exp(-(key - otherKey) / softness));
+		}
+	}
+	return place;
+};
+
 // A team's strength on a roster alone, as priced now, remembered for its
 // current roster.
 const rosterOnlyNow = (
@@ -1014,17 +1042,14 @@ export const placesAfter = (
 	}
 	const draftPlace = new Map(outlook.draftPlace);
 	for (const [tid, own] of keys) {
+		const was = outlook.draftPlace.get(tid)!;
 		draftPlace.set(
 			tid,
-			own.map((key, y) => {
-				let place = 0;
-				for (const [other, was] of outlook.placeKeys) {
-					if (other !== tid && (keys.get(other) ?? was.keys)[y]! < key) {
-						place += 1;
-					}
-				}
-				return place;
-			}),
+			own.map((key, y) =>
+				y < outlookSettings.placesAfterDrafts
+					? softPlace(outlook, tid, key, y, keys)
+					: was[y]!,
+			),
 		);
 	}
 	return {
@@ -1184,15 +1209,13 @@ export const buildOutlook = async ({
 			keys: placeKeysOf(base, t.tid, points),
 		});
 	}
-	for (let y = 0; y <= OUTLOOK_YEARS; y++) {
-		const order = [...teams].sort(
-			(a, b) =>
-				base.placeKeys.get(a.tid)!.keys[y]! -
-				base.placeKeys.get(b.tid)!.keys[y]!,
+	for (const t of teams) {
+		base.draftPlace.set(
+			t.tid,
+			base.placeKeys
+				.get(t.tid)!
+				.keys.map((key, y) => softPlace(base, t.tid, key, y, new Map())),
 		);
-		for (const [i, t] of order.entries()) {
-			base.draftPlace.get(t.tid)!.push(i);
-		}
 	}
 	// Picks' lines worked out before then had nowhere to land.
 	base.pickYears = new WeakMap();
