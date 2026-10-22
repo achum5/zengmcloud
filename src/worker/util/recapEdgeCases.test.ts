@@ -922,6 +922,62 @@ describe("facts told once, in English", () => {
 	});
 });
 
+// "Magic knock off the Knicks 118-113" of a game the 7-point underdogs
+// trailed by 20 in the first quarter (10 at the break), and "Down 13" of a
+// game trailed by 17: the comeback is the score log's biggest deficit, and
+// at 15 or more it outranks the upset.
+describe("the deficit a comeback came from", () => {
+	const make = (gid: number) => {
+		const magic = squad(
+			{ tid: 1, name: "Magic", ptsQtrs: [20, 27, 28, 43] },
+			{ name: "Obi Jackson", pid: 11, pts: 26, fg: 8, fga: 12 },
+			118,
+		);
+		const knicks = squad(
+			{ tid: 2, name: "Knicks", ptsQtrs: [35, 22, 24, 32] },
+			{ name: "Walker Ingram", pid: 21, pts: 27, ast: 14, fg: 10, fga: 22 },
+			113,
+		);
+		return game([magic, knicks], {
+			gid,
+			spread: { favTid: 2, points: 7 },
+			flow: {
+				leadChanges: 4,
+				ties: 3,
+				maxLead: [6, 20],
+				maxLeadAt: [4, 1],
+				lastLead: { side: 0, period: 4, clock: 67, pts: [111, 108] },
+			},
+		});
+	};
+
+	test("is the biggest the log saw, and leads over the upset", () => {
+		for (let gid = 900; gid < 915; gid++) {
+			const g = make(gid);
+			const recap = getAutoRecap(g);
+			const top = recap.split("\n\n").slice(0, 2).join(" ");
+			assert.match(
+				top,
+				/20-point|from 20 down|Down 20|rall|come back|came back|erase/,
+				recap,
+			);
+			assert.notMatch(recap, /\b10-point deficit|from 10 down|Down 10,/, recap);
+			assert.deepStrictEqual(verifyRecap(recap, g), [], recap);
+		}
+	});
+
+	test("the accuracy reader holds a deficit to the log", () => {
+		const g = make(900);
+		assert.deepStrictEqual(
+			verifyRecap(
+				"**x**\n\nThe Magic erased a 25-point deficit to beat the Knicks 118-113.",
+				g,
+			).map((v) => v.kind),
+			["deficit"],
+		);
+	});
+});
+
 // "Sore achilles kept Anthony Lowry out": a singular tendon ending in s was
 // read as a plural, and a man's name lost its capital.
 describe("injury names in prose", () => {

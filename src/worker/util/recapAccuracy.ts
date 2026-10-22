@@ -536,6 +536,30 @@ export const verifyRecap = (
 			}
 		}
 
+		// How far down the winners were: the log's biggest lead for the losers,
+		// or what they led by at a quarter break.
+		{
+			const loserSide = game.teams[0].tid === winner.tid ? 1 : 0;
+			const wq = winner.ptsQtrs ?? [];
+			const lq = loser.ptsQtrs ?? [];
+			const deficits = new Set<number>([flow.maxLead[loserSide]]);
+			let wc = 0;
+			let lc = 0;
+			for (let i = 0; i < Math.min(wq.length, lq.length); i++) {
+				wc += wq[i]!;
+				lc += lq[i]!;
+				deficits.add(lc - wc);
+			}
+			for (const m of text.matchAll(
+				/(?:erased an? |spotted [^.]*?an? )(\d+)-point|came from (\d+) down|[Dd]own (\d+), |fell behind by (\d+)|from (\d+) down\b/g,
+			)) {
+				const n = Number(m.slice(1).find((g) => g !== undefined));
+				if (!deficits.has(n)) {
+					add("deficit", `said ${n} down`, m[0]);
+				}
+			}
+		}
+
 		// Never behind, against the log. Leading at the end of every quarter
 		// is not it: a team ten down midway through the first and ahead after
 		// it did not lead wire to wire. And "never got back in front" or "did

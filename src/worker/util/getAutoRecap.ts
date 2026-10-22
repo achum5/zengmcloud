@@ -1420,12 +1420,15 @@ const postseasonContext = (
 // The deficit the winner came back from, when it was a real one: the period
 // boundaries first, else the score log's peak. Zero for a game that was
 // never a comeback.
+// The deficit the winners came back from: the score log's biggest when there
+// is one. The quarter break's was preferred, which made "Down 13, the Lakers
+// come back" of a game the Lakers trailed by 17, and left a 20-point hole the
+// Magic climbed out of in the first quarter (10 down at the break) out of the
+// headline altogether.
 const comebackSize = (shape: Shape): number =>
-	shape.comebackFrom >= 12
-		? shape.comebackFrom
-		: shape.loserPeak >= 15
-			? shape.loserPeak
-			: 0;
+	shape.comebackFrom >= 12 || shape.loserPeak >= 15
+		? Math.max(shape.comebackFrom, shape.loserPeak)
+		: 0;
 
 const verbPool = (game: RecapGame, shape: Shape): string[] => {
 	if (isUpset(game, shape)) {
@@ -1971,7 +1974,10 @@ const buildHeadlineText = (
 	// this file exists to remove. The number the books had, the record the
 	// favorite carried in, and the run either side was on are all in hand, and
 	// each of them says something the bare result does not.
-	if (isUpset(game, shape)) {
+	// A comeback of 15 or more outranks the upset: "Magic knock off the
+	// Knicks 118-113" of a game the 7-point underdogs trailed by 20. The line
+	// note still says who was favored.
+	if (isUpset(game, shape) && comebackSize(shape) < 15) {
 		// No betting line in a headline. Real desks write the upset as what the
 		// favorite lost - a streak, a home record, a rare defeat - or as the
 		// man who beat them; the number the books had is body color.
@@ -2484,16 +2490,22 @@ const resultLead = (
 	const score = scoreTold ? "" : ` ${scoreTag(shape)}`;
 
 	if (shape.comebackFrom >= 12 && shape.comebackPeriod > 0) {
+		const down = comebackSize(shape);
 		// A 25-point win that began 14 down is not "erased a deficit to beat":
 		// they fell behind, then ran away.
 		if (shape.margin >= 15) {
-			const early = shape.comebackPeriod <= 2 ? " early" : "";
+			const at =
+				shape.loserPeak > shape.comebackFrom
+					? (game.flow?.maxLeadAt?.[sideOf(game, shape.loser)] ??
+						shape.comebackPeriod)
+					: shape.comebackPeriod;
+			const early = at <= 2 ? " early" : "";
 			return {
 				text: pick(
 					rng,
 					[
-						`${cap(w)} fell behind by ${shape.comebackFrom}${early} and still ran away from ${l}${score}${tail}.`,
-						`${cap(w)} spotted ${l} ${aNum(shape.comebackFrom)}-point lead${early} and won going away${score ? `,${score}` : ""}${tail}.`,
+						`${cap(w)} fell behind by ${down}${early} and still ran away from ${l}${score}${tail}.`,
+						`${cap(w)} spotted ${l} ${aNum(down)}-point lead${early} and won going away${score ? `,${score}` : ""}${tail}.`,
 					],
 					"comebackRout",
 				),
@@ -2505,7 +2517,7 @@ const resultLead = (
 		// an 18-point deficit to stormed back to beat the Rivers". The sentence is
 		// already the comeback; the verb just has to finish it.
 		return {
-			text: `${cap(w)} erased ${aNum(shape.comebackFrom)}-point deficit to ${pick(
+			text: `${cap(w)} erased ${aNum(down)}-point deficit to ${pick(
 				rng,
 				["beat", "top", "take down", "knock off"],
 				"comebackVerb",
