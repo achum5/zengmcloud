@@ -1799,6 +1799,12 @@ const stepsOf = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
 				? "back"
 				: "slide";
 	}
+	// Drifting along the arc square to the ball, the same: push steps, not a
+	// run with his legs turned only so far under him and his feet sliding
+	// the rest of the way.
+	if (anim === "drift" && sideways(tl, tr, run)) {
+		return "sideStep";
+	}
 	// Going the way his back faces - easing off from the ball while he
 	// watches it, or backing out with it squared up to the rim - at no more
 	// than a backpedal's pace: he backpedals, not runs forward while he goes
@@ -1809,7 +1815,8 @@ const stepsOf = (tl: CourtTimeline, tr: Track, run: Run): AnimName => {
 			anim === "jog" ||
 			anim === "run" ||
 			anim === "dribble" ||
-			anim === "dribbleWalk") &&
+			anim === "dribbleWalk" ||
+			anim === "drift") &&
 		backward(tl, tr, run)
 	) {
 		return "back";
@@ -2398,7 +2405,7 @@ const blendInto = (
 	const there = spotAt(tr, lo);
 	const own = legsOf(there, facing, before.anim, lo);
 	const way =
-		before.anim === "shuffle" && there.moving
+		PUSH_STEPS.has(before.anim) && there.moving
 			? wayOf(tr, facing, lo)
 			: undefined;
 	const ownPv = pivotOf(tl, tr, facing, before, lo);
@@ -3119,7 +3126,7 @@ export const evalPlayer = (
 	const yaw = spinYawAt(tl, tr, t) ?? yawAt(tl, tr, t);
 	const legs = legsOf(here, yaw, now.anim, t);
 	const way =
-		now.anim === "shuffle" && here.moving ? wayOf(tr, yaw, t) : undefined;
+		PUSH_STEPS.has(now.anim) && here.moving ? wayOf(tr, yaw, t) : undefined;
 	const pivot = shown ? pivotOf(tl, tr, yaw, now, t) : undefined;
 	// (An arm a beat behind its reason never takes the hand his dribble has
 	// just come over into.)
@@ -3158,6 +3165,8 @@ export const evalPlayer = (
 	};
 };
 
+// Push steps, a foot out and the other closed up after it (see slanted).
+const PUSH_STEPS = new Set<AnimName>(["shuffle", "sideStep"]);
 // The way he shuffles, in his frame: the way he gets from a moment before
 // to a moment after - so it comes round a corner as he does, not in a frame
 // or two - and as much of it as counts, none all but stood still (turning
@@ -3475,7 +3484,7 @@ const blendPose = (f: Blend): Pose => {
 	const m = strode(f.mirror ? mirror(as) : as, f.stride);
 	const own0 = footDown(f.held ? carried(m, f.anim) : m, f.down ?? 0);
 	const own =
-		f.anim === "shuffle" && f.way !== undefined ? slanted(own0, f.way) : own0;
+		PUSH_STEPS.has(f.anim) && f.way !== undefined ? slanted(own0, f.way) : own0;
 	const g = f.from;
 	if (!g || (g.w <= 0 && (g.arms ?? 0) <= 0)) {
 		return own;
@@ -3535,6 +3544,7 @@ const SETTLE_FROM = new Set<AnimName>([
 	"back",
 	"slide",
 	"shuffle",
+	"sideStep",
 	"closeout",
 	"drift",
 	"carry",
@@ -3658,7 +3668,7 @@ export const poseOf = (st: PlayerState): Pose => {
 	const carry = st.holding === true && st.grip === undefined;
 	const q0 = footDown(carry ? carried(m, st.anim) : m, st.down ?? 0);
 	const q =
-		st.anim === "shuffle" && st.way !== undefined ? slanted(q0, st.way) : q0;
+		PUSH_STEPS.has(st.anim) && st.way !== undefined ? slanted(q0, st.way) : q0;
 	const f = st.from;
 	const eased = f && (f.w > 0 || (f.arms ?? 0) > 0) ? blendFrom(q, f) : q;
 	const fw = f && f.w > 0 ? f.w : 0;

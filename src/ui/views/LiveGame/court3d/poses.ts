@@ -531,6 +531,7 @@ type RunMode =
 	| "carry"
 	| "drift"
 	| "shuffle"
+	| "sideStep"
 	| "closeout";
 // A defensive slide: how far he goes each step-and-close (feet), and how
 // far apart his feet are, closed up (see "shuffle").
@@ -1016,6 +1017,30 @@ const stride = (ph: number, mode: RunMode): Pose => {
 			wide: SLIDE_NARROW + (SLIDE_STRIDE / 2) * spread,
 		});
 	}
+	if (mode === "sideStep") {
+		// Off the ball, sliding along the arc with his eyes on it: the same
+		// push step and close as a defensive slide - each foot still on the
+		// floor while the other moves - but up out of a stance, a shooter's
+		// hands up ready for it.
+		const spread = ph < 0.5 ? ph * 2 : 2 - ph * 2;
+		const knee = 36 - 14 * spread * spread;
+		return pose({
+			hipN: 16,
+			hipF: 18,
+			kneeN: knee,
+			kneeF: knee + 2,
+			lean: 8,
+			shN: 40 + 4 * spread,
+			elN: 60,
+			abN: 16 + 4 * spread,
+			wrN: 20,
+			shF: 38 + 4 * spread,
+			elF: 62,
+			abF: 16 + 4 * spread,
+			wrF: 20,
+			wide: SLIDE_NARROW + (SLIDE_STRIDE / 2) * spread,
+		});
+	}
 	if (mode === "closeout") {
 		// Closing out on a shooter: short, choppy steps to break down, sat
 		// down in his legs, his left hand high at the shot - face to face, the
@@ -1108,7 +1133,7 @@ const stride = (ph: number, mode: RunMode): Pose => {
 // straighten with each push his feet don't creep forward along the floor.)
 const runPose = (ph: number, mode: RunMode): Pose => ({
 	...stride(ph, mode),
-	plant: mode === "shuffle" ? 1.25 : 0,
+	plant: mode === "shuffle" || mode === "sideStep" ? 1.25 : 0,
 });
 
 // A PURE JUMPER.
@@ -2390,6 +2415,13 @@ export const ANIMS = {
 		n: 6,
 		stride: SLIDE_STRIDE,
 		pose: (i) => runPose(i / 6, "shuffle"),
+	},
+	// A shooter sliding along the arc, square to the ball.
+	sideStep: {
+		kind: "cycle",
+		n: 6,
+		stride: SLIDE_STRIDE,
+		pose: (i) => runPose(i / 6, "sideStep"),
 	},
 	// Running at a shooter and breaking down in front of him, a hand up.
 	closeout: {
