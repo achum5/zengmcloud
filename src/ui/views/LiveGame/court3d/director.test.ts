@@ -10,6 +10,7 @@ import {
 import {
 	BALL_R,
 	FAST,
+	FLOW_MS,
 	bodyPoint,
 	evalBall,
 	evalPlayer,
@@ -2316,6 +2317,64 @@ describe("3D director", () => {
 		}
 		assert.isAbove(fed, 25);
 		assert.isAtMost(waited.length, fed * 0.4, waited.join("; "));
+	}, 240_000);
+
+	// Off the ball on the offense, a man going on the same way after a moment
+	// - nothing done there, no ball - runs on into it rather than pulling up
+	// dead and setting off again, unless he is already going no faster than
+	// an easy run.
+	test("off the ball, a man on his way doesn't stop dead between two runs the same way", () => {
+		const RUNS = new Set(["run", "sprint", "jog"]);
+		let pairs = 0;
+		const stops: string[] = [];
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl } = compile(seed, 150);
+			const holds = new Map<number, [number, number][]>();
+			tl.ball.forEach((b, i) => {
+				if (b.kind === "hold") {
+					const list = holds.get(b.pid) ?? [];
+					list.push([b.t0, tl.ball[i + 1]?.t0 ?? Infinity]);
+					holds.set(b.pid, list);
+				}
+			});
+			for (const tr of tl.tracks.values()) {
+				const ms = tr.moves;
+				for (let i = 0; i + 1 < ms.length; i++) {
+					const a = ms[i]!;
+					const b = ms[i + 1]!;
+					const gap = b.t0 - a.t1;
+					const la = Math.hypot(a.to.x - a.from.x, a.to.y - a.from.y);
+					const lb = Math.hypot(b.to.x - b.from.x, b.to.y - b.from.y);
+					if (
+						!RUNS.has(a.anim) ||
+						!RUNS.has(b.anim) ||
+						gap < 0 ||
+						gap > 1500 ||
+						la < 6 ||
+						lb < 4 ||
+						Math.hypot(a.to.x - b.from.x, a.to.y - b.from.y) > 0.25 ||
+						offenseAt(tl, a.t1) !== tr.team ||
+						((a.to.x - a.from.x) * (b.to.x - b.from.x) +
+							(a.to.y - a.from.y) * (b.to.y - b.from.y)) /
+							(la * lb) <
+							0.5 ||
+						tr.acts.some((x) => x.t1 > a.t1 - 50 && x.t0 < b.t0 + 50) ||
+						(holds.get(tr.pid) ?? []).some(([h0, h1]) => h1 > a.t0 && h0 < b.t0)
+					) {
+						continue;
+					}
+					pairs += 1;
+					// (Faster than an easy run on average into the stop.)
+					if (gap > FLOW_MS && la / ((a.t1 - a.t0) / 1000) > 8.2) {
+						stops.push(
+							`${seed}: ${tr.pid} at ${Math.round(a.t1)} ${Math.round(gap)}ms`,
+						);
+					}
+				}
+			}
+		}
+		assert.isAbove(pairs, 100);
+		assert.isAtMost(stops.length, pairs * 0.02, stops.join("; "));
 	}, 240_000);
 
 	// A handoff he goes on from - a drive, a run with it - is taken on the

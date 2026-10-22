@@ -697,6 +697,9 @@ const CUT_RUN_UP = 4;
 // his run there no slower than this on average (feet a second) - and stands
 // there only what is left.
 const IN_STRIDE_PACE = 8;
+// The longest pause between two runs the same way (ms) a man runs on
+// through instead (see flowOn).
+const FLOW_ON_MS = 1500;
 // A run in counts as a cut to the rim for the ball if it ends this near
 // the rim (feet) - or, rolling or cutting into the lane for a hook or a
 // floater there, this near.
@@ -8483,8 +8486,11 @@ class Director {
 		const tr = this.track(pid);
 		const moves = tr?.moves ?? [];
 		const A = moves.at(-1);
+		// (A run of his own: not the picture cutting to him somewhere else.)
 		const running = (m: Move) =>
-			m.anim === "run" || m.anim === "sprint" || m.anim === "jog";
+			(m.anim === "run" || m.anim === "sprint" || m.anim === "jog") &&
+			m.t1 - m.t0 >= 100 &&
+			!this.cuts.some((c) => c >= m.t0 - 1 && c <= start + 1);
 		if (
 			!tr ||
 			!A ||
@@ -14830,6 +14836,75 @@ class Director {
 		}
 	}
 
+	// ON HIS WAY. Off the ball on the offense, a man going somewhere in two
+	// runs the same way - to a spot the set had him at, then on from it - with
+	// a moment between them he does nothing in, doesn't pull up dead there
+	// and set off again: he takes the first a little easier and runs on into
+	// the second (see FLOW_MS) - no slower than IN_STRIDE_PACE, though: past
+	// that, he stops what is left.
+	private flowOn() {
+		const RUNS = new Set<AnimName>(["run", "sprint", "jog"]);
+		const holds = new Map<number, [number, number][]>();
+		this.ball.forEach((b, i) => {
+			if (b.kind === "hold") {
+				const list = holds.get(b.pid) ?? [];
+				list.push([b.t0, this.ball[i + 1]?.t0 ?? Infinity]);
+				holds.set(b.pid, list);
+			}
+		});
+		const offenseAt = (t: number): Side | undefined =>
+			this.poss[lastBy(this.poss, t, (x) => x[0])]?.[1];
+		for (const tr of this.tracks.values()) {
+			const ms = tr.moves;
+			for (let i = 0; i + 1 < ms.length; i++) {
+				const a = ms[i]!;
+				const b = ms[i + 1]!;
+				const gap = b.t0 - a.t1;
+				if (
+					!RUNS.has(a.anim) ||
+					!RUNS.has(b.anim) ||
+					gap <= FLOW_MS ||
+					gap > FLOW_ON_MS ||
+					dist(a.to, b.from) > 0.25 ||
+					offenseAt(a.t1) !== tr.team
+				) {
+					continue;
+				}
+				const la = dist(a.from, a.to);
+				const lb = dist(b.from, b.to);
+				if (la < 6 || lb < CUT_RUN_UP) {
+					continue;
+				}
+				const cos =
+					((a.to.x - a.from.x) * (b.to.x - b.from.x) +
+						(a.to.y - a.from.y) * (b.to.y - b.from.y)) /
+					(la * lb);
+				// (Not across a cut of the picture, everybody somewhere new.)
+				if (
+					cos < 0.5 ||
+					a.t1 - a.t0 < 100 ||
+					this.cuts.some((c) => c >= a.t0 - 1 && c <= b.t0 + 1) ||
+					tr.acts.some((x) => x.t1 > a.t1 - 50 && x.t0 < b.t0 + 50) ||
+					(holds.get(tr.pid) ?? []).some(([h0, h1]) => h1 > a.t0 && h0 < b.t0)
+				) {
+					continue;
+				}
+				const t1 = Math.min(
+					b.t0 - FLOW_MS / 2,
+					a.t0 + (la / IN_STRIDE_PACE) * 1000,
+				);
+				if (t1 <= a.t1) {
+					continue;
+				}
+				a.t1 = t1;
+				a.v1 = undefined;
+				if (b.v0 === 0) {
+					b.v0 = undefined;
+				}
+			}
+		}
+	}
+
 	// OFF THE BALL, ON THE MOVE.
 	//
 	// The set says where each man goes when his part in it comes. In
@@ -20832,6 +20907,7 @@ class Director {
 		this.pace();
 		this.liveHands();
 		this.keepDribbling();
+		this.flowOn();
 		this.liven();
 		this.stagger();
 		for (const tr of this.tracks.values()) {
@@ -20861,6 +20937,8 @@ class Director {
 				(a) => a.t1 - a.t0 >= GLIMPSE_MS || !GLIMPSED.has(a.anim),
 			);
 		}
+		// (Nor, with those gone, does a man pull up dead where one was.)
+		this.flowOn();
 		// The lead-in to a play - the ball brought up, the set getting going
 		// - is run through fast, back at real speed for the last few seconds
 		// of it: whatever leads straight to the shot, the steal, the foul. A
