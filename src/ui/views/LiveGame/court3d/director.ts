@@ -961,8 +961,14 @@ const BALL_SCREENS = new Set([
 	"spain",
 	"ghost",
 ]);
+// How many moves he puts on his man getting by him off the dribble, for
+// a draw k: one close in already (d feet to go), else one to three.
+const crossCount = (d: number, k: number): number =>
+	d < 10 || k < 0.6 ? 1 : k < 0.85 ? 2 : 3;
 // The shortest a step of a set takes, milliseconds.
 const STEP_MIN = 600;
+// A handoff taken on the move, at most this fast (feet a second).
+const HANDOFF_PACE = 9;
 // Run out on the break: a trip that gets its shot up within this long (sim
 // seconds) of a defensive board, a steal, or a field goal at the other end.
 // In the league a third of the trips off a board end inside six seconds, and
@@ -1382,6 +1388,8 @@ type Running = {
 		coverage: Coverage;
 		// When the first of them is planted in it.
 		set: number;
+		// A handoff he took on the move, to go on with: when he had it.
+		handed?: number;
 	};
 };
 
@@ -5442,11 +5450,24 @@ class Director {
 				// Bringing it up, he goes as soon as he has it - not once the
 				// others have got where the last step sent them.
 				const pid = run.roles[a.who]!;
+				const handed = this.handedOn(run, pid);
 				const since =
 					a.kind === "advance" && this.holder === pid
 						? Math.min(t0, this.hasItFrom(pid))
-						: deep(pid);
-				end = Math.max(end, this.playDribble(run, a.who, a.to, a.kind, since));
+						: handed !== undefined
+							? Math.min(t0, handed)
+							: deep(pid);
+				end = Math.max(
+					end,
+					this.playDribble(
+						run,
+						a.who,
+						a.to,
+						a.kind,
+						since,
+						handed !== undefined,
+					),
+				);
 			} else if (a.type === "move") {
 				const pid = run.roles[a.who]!;
 				// On the break, a man running the floor goes on as soon as he
@@ -5470,9 +5491,17 @@ class Director {
 								runMs(dist(this.posOf(pid), off.at), MOVE_SPEED[a.style] ?? 13),
 						)
 					: since;
+				const handed = this.handedOn(run, pid);
 				const done =
 					this.holder === pid
-						? this.playDribble(run, a.who, a.to, "attack", deep(pid))
+						? this.playDribble(
+								run,
+								a.who,
+								a.to,
+								"attack",
+								handed !== undefined ? Math.min(t0, handed) : deep(pid),
+								handed !== undefined,
+							)
 						: this.playMove(
 								run,
 								pid,
@@ -5517,6 +5546,7 @@ class Director {
 						k,
 						planted,
 						next,
+						[...acts.slice(acts.indexOf(a) + 1), ...(next ?? [])],
 					),
 				);
 			} else {
@@ -5772,6 +5802,8 @@ class Director {
 		to: string,
 		kind: string,
 		t0: number,
+		// Off a handoff he took on the move: he goes on with it.
+		handed = false,
 	): number {
 		const pid = run.roles[who]!;
 		const dir = attackDir(run.team);
@@ -5835,15 +5867,20 @@ class Director {
 			}
 		}
 		// A drive at his man - now and then with a move to get by him first.
-		if (
-			kind === "crossover" ||
-			kind === "hesitation" ||
-			((kind === "attack" ||
+		// (Not straight off a handoff taken on the move: the handoff is what
+		// gets him by his man, and he is on his way - though the draws are
+		// made all the same.)
+		const move = kind === "crossover" || kind === "hesitation";
+		const drive =
+			!move &&
+			(kind === "attack" ||
 				kind === "drive_baseline" ||
 				kind === "drive_middle") &&
-				dist(this.posOf(pid), P) > 7 &&
-				this.rng() < 0.5)
-		) {
+			dist(this.posOf(pid), P) > 7 &&
+			this.rng() < 0.5;
+		if (handed && drive) {
+			this.skipCrossover(pid, P, start);
+		} else if (move || drive) {
 			const t = this.driveTo(pid, P, start, dir, "crossover");
 			this.hold(pid, t, "dribble");
 			return t;
@@ -5853,9 +5890,13 @@ class Director {
 			this.hold(pid, t, "hold");
 			return t;
 		}
+		// (Off a handoff on the move, a stride with it in both hands first.)
+		if (handed) {
+			this.hold(pid, start, "hold");
+		}
 		this.hold(
 			pid,
-			start,
+			handed ? start + GATHER_MS : start,
 			kind === "snake" ? "cross" : "dribble",
 			kind === "snake" ? undefined : hand,
 		);
@@ -6075,6 +6116,8 @@ class Director {
 		k: number,
 		planted: { pid: number; t: number; anim: AnimName; look: Pt }[],
 		next: PlayAction[] | undefined,
+		// What the set has anybody do after it, this step and the next.
+		after: PlayAction[] = next ?? [],
 	): number {
 		const rim = { x: rimX(run.team), y: COURT_H / 2 };
 		const G = this.posOf(giver);
@@ -6104,20 +6147,44 @@ class Director {
 			Math.max(t0, this.free.get(giver) ?? 0),
 			"hold",
 		);
-		const there = this.go(
-			recv,
-			meet,
-			Math.max(t0, this.free.get(recv) ?? 0),
-			12,
-			"run",
-		);
-		const tx = Math.max(there - 120, this.free.get(giver) ?? 0, held + 180);
+		// Going on with it - a drive, a run, from there - he takes it on the
+		// move: timed to come by as the man with it is ready to give it, the
+		// ball handed to him going by and him on his way with it, not stood
+		// there waiting on it and then stood there with it.
+		const role = run.roles.indexOf(recv);
+		const on =
+			role >= 0 &&
+			after.some(
+				(x) => (x.type === "dribble" || x.type === "move") && x.who === role,
+			);
+		const ready = Math.max(this.free.get(giver) ?? 0, held + 180);
+		let start = Math.max(t0, this.free.get(recv) ?? 0);
+		let onto = 0;
+		if (on && dist(R, meet) > 1) {
+			const L = dist(R, meet);
+			const pace = (at: number) =>
+				Math.min(HANDOFF_PACE, paceAfter(L, this.carried(recv, meet, at, 12)));
+			const ms = (at: number) =>
+				Math.max(
+					240,
+					runMs(L, 12, this.carried(recv, meet, at, 12), 1, pace(at)),
+				);
+			start = Math.max(start, ready + 120 - ms(start));
+			onto = pace(start);
+		}
+		const there = this.go(recv, meet, start, 12, "run", undefined, { onto });
+		// (On the move, it is in his hands as he gets there.)
+		const tx = Math.max(there - (onto > 0 ? 130 : 120), ready);
+		const moving = onto > 0 && tx <= there - 129;
 		this.act(giver, "pass", tx - 180, tx + 120, { look: meet });
 		this.fly(tx, tx + 130, { pid: giver }, { pid: recv });
 		this.act(recv, "catch", tx + 30, tx + 200);
 		this.hold(recv, tx + 130, "hold");
 		this.hold(recv, tx + 130 + GATHER_MS, "dribble");
-		this.free.set(recv, Math.max(this.free.get(recv) ?? 0, tx + 200));
+		this.free.set(
+			recv,
+			Math.max(this.free.get(recv) ?? 0, moving ? there : tx + 200),
+		);
 		const u = unitVec(G, rim);
 		const S = clampPt({ x: G.x + u.x * 2.2, y: G.y + u.y * 2.2 });
 		const set = this.go(giver, S, tx + 140, 7, "run");
@@ -6130,8 +6197,21 @@ class Director {
 			step: k,
 			coverage: this.coverageFor(run, giver, recv, true, next),
 			set,
+			...(moving ? { handed: there } : {}),
 		};
 		return Math.max(tx + 350, set);
+	}
+
+	// When he took the handoff he is going on with, if he has the ball off
+	// one this step or the last (see playHandoff).
+	private handedOn(run: Running, pid: number): number | undefined {
+		const sc = run.screen;
+		return sc?.handed !== undefined &&
+			sc.user === pid &&
+			this.holder === pid &&
+			this.hasItFrom(pid) <= sc.handed + 400
+			? sc.handed
+			: undefined;
 	}
 
 	private playPost(
@@ -7100,6 +7180,41 @@ class Director {
 		return tb;
 	}
 
+	// The draws a move off the dribble to get by his man makes (see
+	// driveTo), made and thrown away: the move not made, every draw after it
+	// as it was.
+	private skipCrossover(pid: number, P: Pt, t: number) {
+		if (this.spinsBy(pid, P, t)) {
+			return;
+		}
+		const n = crossCount(dist(this.posOf(pid), P) || 1, this.rng());
+		for (let i = 0; i < n; i++) {
+			this.crossMove(0.25, 0.2);
+		}
+	}
+
+	// Whether, setting off for P at t with his man square in front of him,
+	// he spins away round him rather than crossing over (see driveTo).
+	private spinsBy(pid: number, P: Pt, t: number): boolean {
+		const from = this.posOf(pid);
+		const dx = P.x - from.x;
+		const dy = P.y - from.y;
+		const d = Math.hypot(dx, dy) || 1;
+		const cutOff = this.defenderOf(pid);
+		if (cutOff === undefined) {
+			return false;
+		}
+		const C = this.posOf(cutOff);
+		const ahead = ((C.x - from.x) * dx + (C.y - from.y) * dy) / d;
+		return (
+			d >= SPIN_FROM_FT &&
+			ahead > 3.5 &&
+			ahead < d - 3 &&
+			Math.abs((C.x - from.x) * -dy + (C.y - from.y) * dx) / d < 3 &&
+			hash01(pid, t + 5) < SPIN_SHARE
+		);
+	}
+
 	private driveTo(
 		pid: number,
 		P: Pt,
@@ -7118,17 +7233,10 @@ class Director {
 		// His man square in front of him, now and then he spins away round
 		// him rather than crossing over.
 		const cutOff = this.defenderOf(pid);
-		const C = cutOff === undefined ? undefined : this.posOf(cutOff);
-		const ahead = C ? ((C.x - from.x) * dx + (C.y - from.y) * dy) / d : 0;
 		if (
 			style === "crossover" &&
 			cutOff !== undefined &&
-			C !== undefined &&
-			d >= SPIN_FROM_FT &&
-			ahead > 3.5 &&
-			ahead < d - 3 &&
-			Math.abs((C.x - from.x) * ax + (C.y - from.y) * ay) < 3 &&
-			hash01(pid, t + 5) < SPIN_SHARE
+			this.spinsBy(pid, P, t)
 		) {
 			t = this.spinBy(pid, cutOff, P, t, dir, goHand);
 		} else if (style === "crossover") {
@@ -7136,8 +7244,7 @@ class Director {
 			// across in front of him, between his legs, behind his back - that
 			// end in the hand on the side he goes, and the drive.
 			// (Close in already, just the one.)
-			const k = this.rng();
-			const n = d < 10 || k < 0.6 ? 1 : k < 0.85 ? 2 : 3;
+			const n = crossCount(d, this.rng());
 			const start: Hand = n % 2 ? (goHand === "R" ? "L" : "R") : goHand;
 			this.hold(pid, t, "dribble", start);
 			// His right is toward the camera when he faces the right rim.

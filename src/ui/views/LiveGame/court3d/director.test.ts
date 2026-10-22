@@ -2021,6 +2021,58 @@ describe("3D director", () => {
 		assert.isAtMost(parked, fed * 0.15, `${parked} of ${fed} parked`);
 	}, 240_000);
 
+	// A handoff he goes on from - a drive, a run with it - is taken on the
+	// move: in his hands as he comes by, and him on his way with it round
+	// the man who gave it, not stood there with it first (and then a
+	// crossover in place, the handoff done for nothing).
+	test("a handoff is taken on the move", () => {
+		const ons: number[] = [];
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl } = compile(seed, 150);
+			tl.ball.forEach((s, i) => {
+				if (
+					s.kind !== "fly" ||
+					!("pid" in s.from) ||
+					!("pid" in s.to) ||
+					s.from.pid === s.to.pid ||
+					s.t1 - s.t0 > 200
+				) {
+					return;
+				}
+				const giver = s.from.pid;
+				const recv = s.to.pid;
+				const G = evalPlayer(tl, giver, s.t0);
+				const C = evalPlayer(tl, recv, s.t1);
+				if (
+					Math.hypot(G.x - C.x, G.y - C.y) > 3.5 ||
+					!tl.tracks
+						.get(giver)!
+						.acts.some(
+							(a) =>
+								a.anim === "pass" && a.t0 <= s.t0 + 20 && a.t1 >= s.t0 - 20,
+						)
+				) {
+					return;
+				}
+				// Gone 3 ft on with it - before he lets it go - and how soon.
+				const gone = tl.ball
+					.slice(i + 1)
+					.find((z) => !(z.kind === "hold" && z.pid === recv));
+				const until = Math.min(gone?.t0 ?? Infinity, s.t1 + 2500);
+				for (let w = 0; s.t1 + w <= until; w += 25) {
+					const Q = evalPlayer(tl, recv, s.t1 + w);
+					if (Math.hypot(Q.x - C.x, Q.y - C.y) >= 3) {
+						ons.push(w);
+						return;
+					}
+				}
+			});
+		}
+		ons.sort((a, b) => a - b);
+		assert.isAbove(ons.length, 15);
+		assert.isAtMost(ons[Math.floor(ons.length / 2)]!, 700, `${ons}`);
+	}, 240_000);
+
 	// "Dunks on him": the man the words name is the one who meets him at the
 	// rim - nearest him of anybody on the other side, right there, up with
 	// him - not someone else who happened to be in there.
