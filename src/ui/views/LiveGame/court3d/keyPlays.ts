@@ -508,11 +508,17 @@ export const planKeyPlays = (
 			...p,
 			t1: ball.inAir(p.t1) ? ball.settle(p.t1).t + 300 : p.t1,
 		})),
-	).map((p) => ({
-		...p,
-		t1: Math.min(p.t1, tl.end),
-		cursor: beats.find((b) => b.actionStart >= p.t0)?.i ?? events.length,
-	}));
+	).map((p) => {
+		// The page caught up to the last line before the stretch - and no
+		// further: the stats after that line go in with the next one, the
+		// key play's own, which would be up on the page before it happens.
+		const k = beats.findIndex((b) => b.actionStart >= p.t0);
+		return {
+			...p,
+			t1: Math.min(p.t1, tl.end),
+			cursor: k < 0 ? events.length : k === 0 ? 0 : beats[k - 1]!.i + 1,
+		};
+	});
 };
 
 const merge = <T extends { t0: number; t1: number; close: boolean }>(

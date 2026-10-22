@@ -7,6 +7,7 @@ import {
 	segmentAt,
 } from "./keyPlays.ts";
 import { fastAt } from "./evaluate.ts";
+import { isLineItem } from "./director.ts";
 
 const watchMs = (tl: any, segs: { t0: number; t1: number }[]) => {
 	let ms = 0;
@@ -46,6 +47,39 @@ describe("3D key plays", () => {
 			assert.isBelow(ms, minutes * 60_000 * 1.15, `${minutes} min`);
 			assert.isAbove(ms, minutes * 60_000 * 0.5, `${minutes} min`);
 		}
+	}, 60_000);
+
+	// Cut to a key play, the page catches up the lines before it - not the
+	// key play's own, which goes up as the court gets to it, not seconds
+	// before as the stretch leading into it starts.
+	test("cut to a key play, its line is not up on the page before it happens", () => {
+		const plan = planKeyPlays(
+			tl,
+			events,
+			{ ...on, minutes: 4 },
+			{ rate: 1, numPeriods: 4 },
+		);
+		const at = new Map(tl.beats.map((b) => [b.i, b.actionStart]));
+		let cuts = 0;
+		for (const s of plan.slice(1)) {
+			// As the page does: a line at a time, each with what came before it.
+			let n = 0;
+			while (n < s.cursor) {
+				let j = n;
+				while (j < events.length && !isLineItem(events[j])) {
+					j += 1;
+				}
+				n = j + 1;
+			}
+			for (let i = 0; i < n; i++) {
+				const a = at.get(i);
+				if (a !== undefined) {
+					assert.isBelow(a, s.t0, `line ${i} up at the cut to ${s.t0}`);
+				}
+			}
+			cuts += 1;
+		}
+		assert.isAbove(cuts, 5);
 	}, 60_000);
 
 	test("a basket is seen from the play that gets it up until it is down; no cut with the ball in the air", () => {
