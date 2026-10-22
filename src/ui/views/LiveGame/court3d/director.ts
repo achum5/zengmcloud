@@ -8800,10 +8800,8 @@ class Director {
 		let arrive: number;
 		let target: Pt3;
 		let atRim: AtRim | undefined;
-		// When he lands off a jumper, if that is what it is - and when the
-		// ball left his hands.
+		// When he lands off a jumper, if that is what it is.
 		let landed: number | undefined;
-		let letGoAt: number | undefined;
 		const faceRim = (rim.x >= P1.x ? 1 : -1) as 1 | -1;
 		const look = { x: rim.x, y: rim.y };
 
@@ -9241,7 +9239,6 @@ class Director {
 					});
 				}
 			}
-			letGoAt = release;
 			// The ball on his fingers then, as high as his jump has him.
 			const v = (letGo - jump[0]) / (jump[1] - jump[0]);
 			// (Up off his own jumper, the ball in his hand on it.)
@@ -9487,7 +9484,6 @@ class Director {
 				arrive,
 				[shooter, ...(plan.fouler === undefined ? [] : [plan.fouler])],
 				reads,
-				letGoAt,
 			);
 		}
 		return {
@@ -9883,8 +9879,6 @@ class Director {
 		busy0: number[],
 		// Who reads where it is coming down off the rim, and gets there.
 		reads?: { pid: number; at: Pt },
-		// When the shot left the shooter's hands: he reads it from then.
-		released?: number,
 	) {
 		// Everybody plays it as it goes up: into each other well before it
 		// comes down.
@@ -9930,11 +9924,14 @@ class Director {
 			(was.get(pid) ?? Infinity) <= by
 				? () => this.rng()
 				: this.ownDraws(pid, gather);
-		// The man who gets it reads it off the shot: from the moment it leaves
-		// the shooter's hands (once he is done with whatever he is doing), to
-		// where it will come down into his reach - facing the rim, to take it
-		// in front of him - as fast as it takes to be there and set before it
-		// does, flat out if it is a long way. There he holds his ground.
+		// The man who gets it reads it off the shot: from the moment the
+		// shooter goes up with it (once he is done with whatever he is doing),
+		// to where it will come down into his reach - facing the rim, to take
+		// it in front of him - as fast as it takes to be there and set before
+		// it does, flat out if it is a long way. There he holds his ground.
+		// (Not only once it is out of the shooter's hands: from out on the
+		// floor - a dozen feet and more, most of them - that has him there too
+		// late to go up for it, and half the boards were let bounce first.)
 		const spot =
 			reads &&
 			clampPt({
@@ -9942,10 +9939,7 @@ class Director {
 				y: reads.at.y + unitVec(rim, reads.at).y * BOARD_OUT,
 			});
 		if (reads && spot && !busy.includes(reads.pid)) {
-			let r0 = Math.max(
-				(released ?? go) + READ_MS,
-				this.free.get(reads.pid) ?? 0,
-			);
+			let r0 = Math.max(gather + READ_MS, this.free.get(reads.pid) ?? 0);
 			for (const a of this.track(reads.pid)?.acts ?? []) {
 				if (a.t1 > r0 && a.t0 < land - 300) {
 					r0 = Math.max(r0, a.t1);
