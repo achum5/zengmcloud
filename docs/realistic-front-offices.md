@@ -457,6 +457,13 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
 Starters, rotation and minutes come from the same judgment of who helps win.
 Always played to win.
 
+- **Minutes by the model's read of each player don't help.** The sim hands
+  out minutes by value, fatigue and a playing-time dial; turning each CPU
+  player's dial (within ±25%) so minutes follow the strength model's read of
+  him instead changed nothing (0.01 ± 0.19 points a game, a league of 30
+  teams x 300 games). The game's own value already sorts minutes as well, so
+  CPU teams keep its rotation.
+
 ## How we know it is good
 
 Build the measuring tools before the front office.
