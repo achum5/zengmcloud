@@ -408,6 +408,11 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   players - most of whom want out - were all leaving, so it sold them for
   little: of the CPU trade sides that lost most in hindsight, 58% gave away
   their best player priced at under 25% to stay.
+- **A pick's player is kept past his rookie deal only if he is worth his
+  second contract** - if the team is better with him than with what his
+  salary buys as room, decided the season his rookie deal ends. Priced as
+  kept at whatever he asks, a mediocre one ate room that buys better, and the
+  worst teams valued a fourth extra first below nothing.
 
 ## Free agency
 

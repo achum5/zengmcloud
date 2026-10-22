@@ -12,6 +12,7 @@ import {
 	type Asset,
 	type TeamState,
 } from "./market.ts";
+import { outlookSettings } from "./outlook.ts";
 
 // Moves no good front office makes, checked for every team of a league: a
 // deal that clears a team's margin of error by the minimum gain is one it
@@ -139,6 +140,31 @@ test(
 				0.002,
 				`team ${t.tid} would give away its injured best player`,
 			);
+		}
+	},
+);
+
+test(
+	"the worst teams are better off for more first-round picks when they may let the players go after their rookie deals",
+	{ timeout: 300_000 },
+	async () => {
+		const outlook = await currentOutlook();
+		const all = await teams();
+		const worst = [...all].sort((a, b) => a.strength - b.strength).slice(0, 5);
+		for (const { t, partner } of worst) {
+			const firsts = partner.picks
+				.filter((dp) => dp.round === 1 && dp.originalTid === partner.tid)
+				.slice(0, 4)
+				.map((dp) => ({ kind: "pick" as const, dp }));
+			const value = (letGo: boolean) => {
+				outlookSettings.letGo = letGo;
+				try {
+					return priceFor(outlook, t, [], firsts, partner);
+				} finally {
+					outlookSettings.letGo = true;
+				}
+			};
+			assert.isAbove(value(true), value(false), `team ${t.tid}`);
 		}
 	},
 );

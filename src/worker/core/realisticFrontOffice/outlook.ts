@@ -502,6 +502,10 @@ export const outlookSettings = {
 	// Cap room is priced by how good the team is (payroll.ts), not the same
 	// for every team.
 	roomByRecord: true,
+	// A pick's player past his rookie deal is let go when his salary buys more
+	// as room (letGo). Other players' chance of staying already counts the
+	// times their teams let them go (KEPT).
+	letGo: true,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -509,11 +513,14 @@ export const outlookSettings = {
 export const teamOutlookSettings = new Map<
 	number,
 	Partial<
-		Pick<typeof outlookSettings, "upside" | "keptCalibration" | "roomByRecord">
+		Pick<
+			typeof outlookSettings,
+			"upside" | "keptCalibration" | "roomByRecord" | "letGo"
+		>
 	>
 >();
 const outlookSettingFor = <
-	K extends "upside" | "keptCalibration" | "roomByRecord",
+	K extends "upside" | "keptCalibration" | "roomByRecord" | "letGo",
 >(
 	tid: number,
 	key: K,
@@ -1198,6 +1205,9 @@ export const teamPoints = (
 	let salaryCap: number | undefined;
 	let marketSalary: ((value: number) => number) | undefined;
 	const out: number[] = [];
+	// Whether each pick's player was let go (true) or kept, by pick: decided
+	// the first season the team may let him go, as it is.
+	const goneFor = new Map<number, boolean>();
 	for (let y = 0; y <= OUTLOOK_YEARS; y++) {
 		const lines = players.map(
 			(p, i) =>
@@ -1210,6 +1220,12 @@ export const teamPoints = (
 					retention[i]!,
 				)),
 		);
+		const season = outlookSeason(outlook, y);
+		// The season's points, when working out who to let go already did.
+		let known: number | undefined;
+		// Its picks' players past their rookie deals, whom the team may let go
+		// rather than pay that season.
+		const options: { i: number; pick: number; salary: number }[] = [];
 		// The players its picks are expected to have become by then, and what
 		// they are paid.
 		let salaries = 0;
@@ -1221,6 +1237,17 @@ export const teamPoints = (
 				byYear[y] = at;
 			}
 			if (at) {
+				const dp = picks[i]!;
+				if (
+					typeof dp.season === "number" &&
+					season - dp.season > getRookieContractLength(dp.round)
+				) {
+					options.push({
+						i: lines.length,
+						pick: i,
+						salary: at.salary,
+					});
+				}
 				lines.push(at.line);
 				salaries += at.salary;
 			}
@@ -1229,7 +1256,6 @@ export const teamPoints = (
 			lines.push(at.line);
 			salaries += at.salary;
 		}
-		const season = outlookSeason(outlook, y);
 		if (season >= outlook.firstRefillSeason) {
 			salaryCap ??= g.get("salaryCap");
 			marketSalary ??= marketSalaries();
@@ -1248,18 +1274,47 @@ export const teamPoints = (
 					committed += row.amount;
 				}
 			}
+			const duringFreeAgency =
+				y === 0 && outlook.offset === 1 && g.get("phase") === PHASE.FREE_AGENCY;
+			const winp = outlookSettingFor(tid, "roomByRecord")
+				? outlook.winShare?.get(tid)?.[y]
+				: undefined;
+			if (outlookSettingFor(tid, "letGo") && options.length > 0) {
+				const undecided = [];
+				for (const o of options) {
+					const gone = goneFor.get(o.pick);
+					if (gone === undefined) {
+						undecided.push(o);
+					} else if (gone) {
+						lines[o.i] = { ...lines[o.i]!, availability: 0, halves: undefined };
+						committed -= o.salary;
+					}
+				}
+				if (undecided.length > 0) {
+					const decided = letGo(
+						lines,
+						undecided,
+						salaryCap - committed,
+						(room) => signingsWith(room, duringFreeAgency, winp),
+						(all) => expectedRosterPoints(asPlayed(tid, all)),
+					);
+					for (const o of undecided) {
+						goneFor.set(o.pick, decided.gone.includes(o));
+					}
+					committed -= decided.freed;
+					known = decided.points;
+				}
+			}
 			const signings = signingsWith(
 				salaryCap - committed,
-				y === 0 && outlook.offset === 1 && g.get("phase") === PHASE.FREE_AGENCY,
-				outlookSettingFor(tid, "roomByRecord")
-					? outlook.winShare?.get(tid)?.[y]
-					: undefined,
+				duringFreeAgency,
+				winp,
 			);
 			lines.push(...signings);
 			refill?.(y, 1 - committed / salaryCap, signings);
 		}
 		roster?.(y, lines);
-		let points = expectedRosterPoints(asPlayed(tid, lines));
+		let points = known ?? expectedRosterPoints(asPlayed(tid, lines));
 		// This season's playoffs count with everyone back who will be by then
 		// (playoffWeight): a star out for the rest of the regular season is
 		// still worth his playoffs.
@@ -1291,6 +1346,62 @@ export const teamPoints = (
 		out.push(points);
 	}
 	return out;
+};
+
+// A team keeps a drafted player past his rookie deal only while it is better
+// with him than with what his salary buys as cap room - as it decides when
+// the time comes (freeAgency.ts). A player let go is out of `lines` that
+// season; who went and what they would have been paid are returned, with the
+// season's points once signings fill the room, if they were worked out.
+// Without this, every pick's player was kept at what he asks: a mediocre
+// one's second contract ate room that buys better, so a bad team was worse
+// off for a second first-round pick.
+const letGo = <Option extends { i: number; salary: number }>(
+	lines: SeasonLine[],
+	options: readonly Option[],
+	room: number,
+	signingsAt: (room: number) => readonly SeasonLine[],
+	points: (lines: readonly SeasonLine[]) => number,
+) => {
+	const minContract = g.get("minContract");
+	const best = (room: number) =>
+		Math.max(...signingsAt(room).map((s) => s.valueNoPot));
+	// Those his salary would buy the most better than him go first; room that
+	// buys nobody better is no reason to let him go.
+	const sorted = options
+		.filter((o) => o.salary >= minContract)
+		.map((o) => ({
+			o,
+			surplus: lines[o.i]!.valueNoPot - best(room + o.salary),
+		}))
+		.filter((x) => x.surplus < 0)
+		.sort((a, b) => a.surplus - b.surplus || a.o.i - b.o.i)
+		.map((x) => x.o);
+	const gone: Option[] = [];
+	let freedTotal = 0;
+	let kept: number | undefined;
+	let keptInARow = 0;
+	for (const o of sorted) {
+		const line = lines[o.i]!;
+		const signings = signingsAt(room + freedTotal + o.salary);
+		kept ??= points([...lines, ...signingsAt(room + freedTotal)]);
+		lines[o.i] = { ...line, availability: 0, halves: undefined };
+		const freed = points([...lines, ...signings]);
+		if (freed > kept) {
+			kept = freed;
+			freedTotal += o.salary;
+			gone.push(o);
+			keptInARow = 0;
+		} else {
+			lines[o.i] = line;
+			// The rest are better for the money.
+			keptInARow += 1;
+			if (keptInARow === 2) {
+				break;
+			}
+		}
+	}
+	return { gone, freed: freedTotal, points: kept };
 };
 
 // What a team's draft place is ranked by each season, from its strength on
