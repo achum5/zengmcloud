@@ -1,0 +1,74 @@
+// The depth chart on a basketball roster page (ui/views/Roster/DepthChart.tsx):
+// spots 1 to 5 down the side, the starters and the strings behind them
+// across. On a phone the starters and the 2nd string fit, and the rest is a
+// scroll to the right, the spots staying put.
+
+.depth-chart-scroll {
+	container-type: inline-size;
+	overflow-x: auto;
+	// (A swipe settles on a column, just right of the spots.)
+	scroll-padding-left: 1.75rem;
+	scroll-snap-type: x proximity;
+}
+
+.depth-chart {
+	align-items: center;
+	column-gap: 0.5rem;
+	display: grid;
+	justify-content: start;
+
+	> * {
+		align-self: stretch;
+		border-bottom: var(--bs-border-width) solid
+			var(--bs-border-color-translucent);
+	}
+}
+
+.depth-chart-head {
+	scroll-snap-align: start;
+	border-bottom-color: var(--bs-border-color) !important;
+	color: var(--bs-secondary-color);
+	font-size: 0.85rem;
+	padding-bottom: 0.25rem;
+}
+
+.depth-chart-spot {
+	align-items: center;
+	background: var(--bs-body-bg);
+	// (Over the gap beside it too, so nothing scrolled under it shows there.)
+	box-shadow: 0.5rem 0 0 var(--bs-body-bg);
+	color: var(--bs-secondary-color);
+	display: flex;
+	font-weight: bold;
+	justify-content: center;
+	left: 0;
+	position: sticky;
+	width: 1.25rem;
+	z-index: 1;
+}
+
+.depth-chart-player {
+	align-items: center;
+	display: flex;
+	gap: 0.25rem;
+	min-height: 2.25rem;
+	min-width: 0;
+	white-space: nowrap;
+
+	.badge-injury {
+		margin-left: 0;
+	}
+}
+
+.depth-chart-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.depth-chart-ovr {
+	color: var(--bs-secondary-color);
+	flex-shrink: 0;
+	font-size: 0.85rem;
+	margin-left: auto;
+}

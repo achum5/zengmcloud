@@ -17,6 +17,7 @@ import type { RouteParams } from "../../ui/router/types.ts";
 import { validateAbbrev } from "../util/processInputs.ts";
 import { validateSeason } from "../util/processInputs.ts";
 import { validateSeasonType } from "../util/processInputs.ts";
+import { posValue } from "../core/player/pos.basketball.ts";
 
 const processInputs = (params: RouteParams<"roster">) => {
 	// Fix broken links
@@ -61,6 +62,18 @@ const sortByPos = (p: {
 }) => {
 	const ind = POSITIONS.indexOf(p.ratings.pos);
 	return (POSITIONS.length - ind) * 1000 + p.ratings.ovr;
+};
+
+// For the depth chart: where each player's ratings that season put him,
+// point guard to center.
+const addPosValues = (players: any[], playersAll: Player[], season: number) => {
+	const byPid = new Map(playersAll.map((p) => [p.pid, p]));
+	for (const p of players) {
+		const ratings = byPid.get(p.pid)?.ratings;
+		const row =
+			ratings?.findLast((r) => r.season === season) ?? ratings?.at(-1);
+		p.posValue = row ? posValue(row as any) : 2;
+	}
 };
 
 const getStandingsInfo = async (info: { season: number; tid: number }) => {
@@ -309,6 +322,7 @@ export default defineView({
 
 				if (__SPORT === "basketball") {
 					players.sort((a, b) => a.rosterOrder - b.rosterOrder);
+					addPosValues(players, playersAll, inputs.season);
 				} else {
 					players.sort((a, b) => sortByPos(b) - sortByPos(a));
 				}
@@ -354,6 +368,7 @@ export default defineView({
 					players.sort(
 						(a, b) => b.stats.gp * b.stats.min - a.stats.gp * a.stats.min,
 					);
+					addPosValues(players, playersAll, inputs.season);
 				} else {
 					players.sort((a, b) => sortByPos(b) - sortByPos(a));
 				}

@@ -14,6 +14,7 @@ import { getCols } from "../../../common/getCols.ts";
 import { useLocal } from "../../util/local.ts";
 import PlayingTime, { ptModifiers } from "./PlayingTime.tsx";
 import TopStuff from "./TopStuff.tsx";
+import DepthChart from "./DepthChart.tsx";
 import type {
 	GameAttributesLeague,
 	Phase,
@@ -506,6 +507,16 @@ const Roster = ({
 				collegeInfo={collegeInfo}
 				conf={conf}
 				currentSeason={currentSeason}
+				depthChart={
+					__SPORT === "basketball" ? (
+						<DepthChart
+							numPlayersOnCourt={numPlayersOnCourt}
+							players={playersSorted}
+							season={season}
+							showRatings={!challengeNoRatings}
+						/>
+					) : null
+				}
 				editable={editable}
 				luxuryTaxAmount={luxuryTaxAmount}
 				minPayrollAmount={minPayrollAmount}

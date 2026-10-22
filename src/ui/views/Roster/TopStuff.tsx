@@ -1,5 +1,5 @@
 import { ConfLogoAndName } from "../../components/ConfLogoAndName.tsx";
-import { useState, type CSSProperties } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
 import { OverlayTrigger, Popover } from "react-bootstrap";
 import { RecordAndPlayoffs } from "../../components/RecordAndPlayoffs.tsx";
 import { helpers } from "../../util/helpers.ts";
@@ -152,6 +152,7 @@ const TopStuff = ({
 	collegeInfo,
 	conf,
 	currentSeason,
+	depthChart,
 	editable,
 	luxuryTaxAmount,
 	minPayrollAmount,
@@ -187,6 +188,7 @@ const TopStuff = ({
 	| "usePts"
 > & {
 	currentSeason: number;
+	depthChart?: ReactNode;
 	openRosterSpots: number;
 	profit: number;
 }) => {
@@ -430,6 +432,7 @@ const TopStuff = ({
 					) : null}
 				</div>
 			</div>
+			{depthChart}
 			<InstructionsAndSortButtons
 				keepRosterSorted={t.keepRosterSorted}
 				editable={editable}

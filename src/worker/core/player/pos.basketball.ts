@@ -12,25 +12,28 @@ const POS_VALUES = {
 	GF: 1.5,
 };
 
-// Assign a position (PG, SG, SF, PF, C, G, GF, FC) based on ratings. See analysis/pos-basketball
+// Where ratings put a player, from point guard (0) to center (4). See analysis/pos-basketball
+export const posValue = (ratings: PlayerRatings): number =>
+	-0.922949 +
+	0.073339 * ratings.hgt +
+	0.009744 * ratings.stre +
+	-0.002215 * ratings.spd +
+	-0.005438 * ratings.jmp +
+	0.003006 * ratings.endu +
+	-0.003516 * ratings.ins +
+	-0.008239 * ratings.dnk +
+	0.001647 * ratings.ft +
+	-0.001404 * ratings.fg +
+	-0.004599 * ratings.tp +
+	0.001407 * ratings.diq +
+	0.002433 * ratings.oiq +
+	-0.000753 * ratings.drb +
+	-0.021888 * ratings.pss +
+	0.016867 * ratings.reb;
+
+// Assign a position (PG, SG, SF, PF, C, G, GF, FC) based on ratings
 const pos = (ratings: PlayerRatings): string => {
-	const value =
-		-0.922949 +
-		0.073339 * ratings.hgt +
-		0.009744 * ratings.stre +
-		-0.002215 * ratings.spd +
-		-0.005438 * ratings.jmp +
-		0.003006 * ratings.endu +
-		-0.003516 * ratings.ins +
-		-0.008239 * ratings.dnk +
-		0.001647 * ratings.ft +
-		-0.001404 * ratings.fg +
-		-0.004599 * ratings.tp +
-		0.001407 * ratings.diq +
-		0.002433 * ratings.oiq +
-		-0.000753 * ratings.drb +
-		-0.021888 * ratings.pss +
-		0.016867 * ratings.reb;
+	const value = posValue(ratings);
 
 	let minDiff = Infinity;
 	let minDiffPos = "F";
