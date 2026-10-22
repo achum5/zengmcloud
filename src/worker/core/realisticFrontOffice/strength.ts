@@ -513,9 +513,18 @@ const placeUsage = new Float64Array(ROSTER_PLACES);
 const placeGuard = new Float64Array(ROSTER_PLACES);
 const placeForward = new Float64Array(ROSTER_PLACES);
 
+// For the arena, to measure what a behaviour is worth by turning it off.
+export const strengthSettings = {
+	// Off: positions cost a roster nothing.
+	positions: true,
+};
+
 // What the floor's positions cost a roster whose places hold this many guards
 // and forwards, each counted at his place's minutes.
 export const positionCost = (guards: number, forwards: number) => {
+	if (!strengthSettings.positions) {
+		return 0;
+	}
 	const g = Math.max(0, MODEL.guards.need - guards);
 	const f = Math.max(0, MODEL.forwards.need - forwards);
 	return MODEL.guards.cost * g ** 3 + MODEL.forwards.cost * f ** 3;

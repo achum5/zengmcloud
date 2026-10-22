@@ -43,6 +43,7 @@ import { PHASE } from "../../common/constants.ts";
 import {
 	playerLine,
 	rosterPoints,
+	strengthSettings,
 	type ValueRatings,
 } from "../../worker/core/realisticFrontOffice/strength.ts";
 import { inGameOrder, play, toSimTeam } from "../impact/simTools.ts";
@@ -103,6 +104,7 @@ test.runIf(env.ARENA_RUN === "1")(
 				);
 				Object.assign(offerSettings, JSON.parse(env.ARENA_OFFERS ?? "{}"));
 				Object.assign(draftSettings, JSON.parse(env.ARENA_DRAFT ?? "{}"));
+				Object.assign(strengthSettings, JSON.parse(env.ARENA_STRENGTH ?? "{}"));
 			}
 			// ARENA_PICK_SURVEY=1: where every outlook expects each team's own
 			// picks to land, draft by draft, to set against where they do.
