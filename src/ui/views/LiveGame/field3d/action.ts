@@ -454,7 +454,15 @@ const IN_HANDS = new Set<Move>([
 ]);
 // (Up over his head in his throwing hand, his arms doing something of
 // their own: spiking it, holding it up.)
-const IN_HAND = new Set<Move>(["throwWind", "pump", "spike", "ballUp", "leap"]);
+const IN_HAND = new Set<Move>([
+	"throwWind",
+	"pump",
+	"spike",
+	"ballUp",
+	"leap",
+	"pointSky",
+	"bowl",
+]);
 const holdFor = (m: Move): BallHold =>
 	m === "center"
 		? "snap"
@@ -5870,7 +5878,10 @@ class Action {
 		}
 		const at = scorer.at;
 		const u = r();
-		if (u < 0.4) {
+		if (u < BOWL && this.bowl(scorer, c0)) {
+			return;
+		}
+		if (u < 0.32) {
 			scorer.act("spike", c0 + SPIKE_MS);
 			const out = c0 + SPIKE_MS * SPIKE_AT;
 			const ang = scorer.yaw + (r() - 0.5) * 0.6;
@@ -5908,10 +5919,16 @@ class Action {
 				},
 				{ kind: "spot", t0: out + 110 + BOUNCE_MS, at: { ...rest, z: 0 } },
 			);
-		} else if (u < 0.7) {
+		} else if (u < 0.46) {
 			scorer.hold(c0 + 1400, "ballUp");
-		} else {
+		} else if (u < 0.6) {
 			scorer.act("leap", c0 + 800);
+		} else if (u < 0.78) {
+			scorer.act("griddy", c0 + GRIDDY_MS);
+		} else if (u < 0.9) {
+			scorer.hold(c0 + 1500, "pointSky");
+		} else {
+			scorer.hold(c0 + 1800, "kneelPoint");
 		}
 		this.until = scorer.t;
 		scorer.hold(scorer.t + 2600, "stand");
@@ -5919,9 +5936,122 @@ class Action {
 		this.mobRound(scorer, c0);
 	}
 
+	// A score celebrated together, bowling: three of his teammates set up as
+	// pins down the end zone from him, the ball rolled along the turf at
+	// them - and down they go. (Not enough of them near: none of it.)
+	bowl(scorer: Actor, c0: number): boolean {
+		const r = this.r;
+		const at = scorer.at;
+		const start = c0 + 150;
+		const pins = this.men
+			.filter(
+				(m) =>
+					m !== scorer &&
+					m.team === scorer.team &&
+					!DOWN.has(legAt(m, start).move) &&
+					dist(m.posAt(start), at) < PIN_FROM,
+			)
+			.sort((a, b) => dist(a.posAt(start), at) - dist(b.posAt(start), at))
+			.slice(0, PIN_SPOTS.length);
+		if (pins.length < PIN_SPOTS.length) {
+			return false;
+		}
+		// Across the end zone, toward the middle of the field.
+		const way = (at.y < MID_Y ? 1 : -1) * (Math.PI / 2) + (r() - 0.5) * 0.3;
+		const ux = Math.cos(way);
+		const uy = Math.sin(way);
+		const spotOf = (f: number, s: number): Pt =>
+			onField({
+				x: clamp(at.x + ux * f - uy * s, PIN_IN, FIELD_L - PIN_IN),
+				y: at.y + uy * f + ux * s,
+			});
+		const face = Math.atan2(-uy, -ux);
+		// (All of it over well inside the moment after a score - or none of
+		// it.)
+		let set = c0 + PIN_SET;
+		pins.forEach((m, k) => {
+			const p = PIN_SPOTS[k]!;
+			const far = dist(m.posAt(start), spotOf(p.f, p.s));
+			set = Math.max(set, start + (far / m.top) * 1000 + 300);
+		});
+		if (set + BOWL_REST > this.whistle + BOWL_MOST) {
+			return false;
+		}
+		pins.forEach((m, k) => {
+			const p = PIN_SPOTS[k]!;
+			m.cut(start);
+			m.hold(start);
+			m.run(spotOf(p.f, p.s), m.top, "sprint");
+		});
+		// The ball up while they set up; then the roll, swung back and let go
+		// low, along the turf.
+		const b0 = Math.max(c0 + 400, set - PIN_BOWL_AT * BOWL_MS);
+		scorer.hold(b0 - 300, "ballUp", way);
+		scorer.hold(b0, "stand", way);
+		scorer.act("bowl", b0 + BOWL_MS, way);
+		const out = b0 + PIN_BOWL_AT * BOWL_MS;
+		const from = { x: at.x + ux * 2.2, y: at.y + uy * 2.2, z: 0.4 };
+		const head = spotOf(PIN_SPOTS[0]!.f - 1, 0);
+		const hit = out + (dist(from, head) / ROLL_FPS) * 1000;
+		const rest = spotOf(PIN_SPOTS[0]!.f + 8 + r() * 6, (r() - 0.5) * 6);
+		this.ball.push(
+			{
+				kind: "fly",
+				t0: out,
+				t1: hit,
+				from,
+				to: { ...head, z: 0.3 },
+				peak: 0,
+			},
+			{
+				kind: "fly",
+				t0: hit,
+				t1: hit + BOUNCE_MS,
+				from: { ...head, z: 0.3 },
+				to: { ...rest, z: 0.3 },
+				peak: 1.2,
+			},
+			{ kind: "spot", t0: hit + BOUNCE_MS, at: { ...rest, z: 0 } },
+		);
+		// Stood waiting for it, and knocked flat - the head pin first, the
+		// others falling away to each side of him.
+		pins.forEach((m, k) => {
+			const p = PIN_SPOTS[k]!;
+			m.hold(set, "stand", face);
+			const down = hit + (k === 0 ? 0 : PIN_AFTER + r() * 120);
+			m.hold(down, "stand", face);
+			const off = spotOf(p.f + 2.5, p.s * 1.8);
+			m.act("tackledBack", down + 450, face, off);
+			m.hold(down + 450 + PIN_DOWN_MS + r() * 200, "supine");
+			m.act("getUpBack", m.t + GET_UP_MS);
+			// (Up, and over to him.)
+			const by = Math.atan2(m.at.y - at.y, m.at.x - at.x) + (k - 1) * 0.5;
+			m.run(
+				{
+					x: at.x + Math.cos(by) * MOB_RING,
+					y: at.y + Math.sin(by) * MOB_RING,
+				},
+				m.top * 0.8,
+				"run",
+			);
+			m.act("leap", m.t + 800, this.toward(m.at, at));
+			m.hold(m.t + 1400, "stand", this.toward(m.at, at));
+			this.mob.add(m.pid);
+			this.until = Math.max(this.until, m.t);
+		});
+		// And him, at it.
+		scorer.hold(hit + 250, "stand", way);
+		scorer.act("leap", scorer.t + 800, way);
+		scorer.hold(this.until, "stand");
+		this.mob.add(scorer.pid);
+		this.until = Math.max(this.until, scorer.t);
+		this.mobRound(scorer, c0, true);
+		return true;
+	}
+
 	// The moment after: `hero`'s teammates nearest running to him from c0,
 	// to leap with him, the other side's nearest hands on hips, turned away.
-	mobRound(hero: Actor, c0: number) {
+	mobRound(hero: Actor, c0: number, alone = false) {
 		const r = this.r;
 		const at = hero.at;
 		this.mobAt = at;
@@ -5936,7 +6066,7 @@ class Action {
 			)
 			.sort((a, b) => dist(a.posAt(c0), at) - dist(b.posAt(c0), at))
 			.filter((m, k) => k < 2 || dist(m.posAt(c0), at) < MOB_FROM)
-			.slice(0, MOB);
+			.slice(0, alone ? 0 : MOB);
 		mates.forEach((m, k) => {
 			const near = dist(m.posAt(c0), at) < MOB_FROM;
 			const from = m.posAt(start);
@@ -5957,6 +6087,26 @@ class Action {
 			m.hold(m.t + 1800 + r() * 800, "stand", face);
 			this.mob.add(m.pid);
 		});
+		// (Those down by him - a pile under him - in on it as they are up.)
+		const under = this.men.filter(
+			(m) =>
+				m !== hero &&
+				m.team === hero.team &&
+				!this.mob.has(m.pid) &&
+				DOWN.has(legAt(m, start).move) &&
+				dist(m.posAt(start), at) < MOB_UP_NEAR,
+		);
+		for (const m of under) {
+			const l = m.legs.findLast((x) => DOWN.has(x.move));
+			if (l) {
+				m.cut(l.t1);
+			}
+			const face = this.toward(m.at, at);
+			m.act(r() < 0.5 ? "leap" : "fistPump", m.t + 1000, face);
+			m.hold(m.t + 1400 + r() * 600, "stand", face);
+			this.mob.add(m.pid);
+			this.until = Math.max(this.until, m.t);
+		}
 		// The other side's nearest: hands on hips, turned away.
 		const beaten = this.men
 			.filter((m) => m.team !== hero.team && dist(m.posAt(c0), at) < 40)
@@ -6215,10 +6365,20 @@ class Action {
 			(holder !== undefined && holder.team !== offense);
 		// (The side scored on, that had the ball taken off it or gave it up on
 		// downs: slow off the field, heads down.)
+		// (Scored: whoever had it last, whatever he did with it after.)
+		const scorer =
+			holder ??
+			(scored
+				? this.man(
+						this.ball.findLast(
+							(b): b is Extract<BallSeg, { kind: "held" }> => b.kind === "held",
+						)?.pid,
+					)
+				: undefined);
 		const won = downs
 			? ((1 - offense) as Side)
 			: scored || (!KICK_KINDS.has(kind) && holder?.team !== offense)
-				? holder?.team
+				? scorer?.team
 				: undefined;
 		const y = clamp(spot.y, HUDDLE_Y[0], HUDDLE_Y[1]);
 		const huddle = (team: Side): Pt =>
@@ -6403,7 +6563,34 @@ const MOB_FROM = 75;
 // How far off the scorer each of them pulls up (feet), and a ball spiked:
 // down into the turf this long after he starts, and up off it.
 const MOB_RING = 3.2;
+// (Down this near him: in on it once up.)
+const MOB_UP_NEAR = 12;
 const SPIKE_MS = 720;
+// The griddy this long.
+const GRIDDY_MS = 2400;
+// Bowling, this often (with three teammates no further than this off): the
+// pins this far down the end zone and across (feet), no nearer the end line
+// than this, set no sooner than this after he is in; the roll this long, let
+// go this far through it, along the turf at this pace; the pins behind the
+// head pin down this long after him.
+const BOWL = 0.2;
+const PIN_FROM = 40;
+const PIN_SPOTS = [
+	{ f: 13, s: 0 },
+	{ f: 15.5, s: -1.7 },
+	{ f: 15.5, s: 1.7 },
+];
+const PIN_IN = 2;
+const PIN_SET = 900;
+const BOWL_MS = 1000;
+const PIN_BOWL_AT = 0.68;
+const ROLL_FPS = 26;
+const PIN_AFTER = 110;
+// The pins down this long; and them in round him no later than this after
+// the score - that this long after they are set.
+const PIN_DOWN_MS = 400;
+const BOWL_MOST = 7300;
+const BOWL_REST = 3600;
 const SPIKE_AT = 0.6;
 const BOUNCE_MS = 650;
 // Between plays: the offense's huddle this far back of the ball, the

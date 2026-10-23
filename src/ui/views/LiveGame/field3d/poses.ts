@@ -464,6 +464,56 @@ const DIVE_KEYS: [number, Pose][] = [
 	[1, { ...PRONE, shN: 94, elN: 40, abN: 26, shF: 94, elF: 40, abF: 26 }],
 ];
 
+// The griddy, a score's dance: a skip on one foot, the other heel kicked
+// up behind him, his arms swinging the other way - then the other foot -
+// four times through, in and out of standing easy.
+const GRIDDY_STEP = (i: number): Pose =>
+	i % 2 === 1
+		? pose({
+				hipN: 6,
+				kneeN: 24,
+				hipF: 6,
+				kneeF: 24,
+				lean: 10,
+				shN: 34,
+				elN: 104,
+				abN: 18,
+				shF: 34,
+				elF: 104,
+				abF: 18,
+			})
+		: i === 0
+			? pose({
+					hipN: -14,
+					kneeN: 104,
+					hipF: 8,
+					kneeF: 18,
+					lean: 12,
+					shN: -55,
+					elN: 72,
+					abN: 16,
+					shF: 70,
+					elF: 94,
+					abF: 16,
+				})
+			: pose({
+					hipN: 8,
+					kneeN: 18,
+					hipF: -14,
+					kneeF: 104,
+					lean: 12,
+					shN: 70,
+					elN: 94,
+					abN: 16,
+					shF: -55,
+					elF: 72,
+					abF: 16,
+				});
+const GRIDDY_KEYS: [number, Pose][] = Array.from({ length: 17 }, (_, k) => [
+	k / 16,
+	k === 0 || k === 16 ? BASE : GRIDDY_STEP(k % 4),
+]);
+
 // Getting up (see FIELD_ANIMS) - off the top of a pile too.
 const GET_UP_KEYS: [number, Pose][] = [
 	[0, PRONE],
@@ -1905,6 +1955,94 @@ const FIELD_ANIMS = {
 			[1, BASE],
 		],
 	},
+	griddy: { kind: "act", keys: GRIDDY_KEYS },
+	// Both arms straight up, pointing at the sky.
+	pointSky: {
+		kind: "still",
+		pose: pose({
+			shN: 168,
+			elN: 6,
+			abN: 16,
+			shF: 168,
+			elF: 6,
+			abF: 16,
+			lean: -8,
+		}),
+	},
+	// Down on a knee in the end zone, head bowed, a hand up to the sky.
+	kneelPoint: {
+		kind: "still",
+		pose: pose({
+			hipN: -20,
+			kneeN: 104,
+			hipF: 80,
+			kneeF: 88,
+			lean: 18,
+			shN: 20,
+			elN: 30,
+			abN: 12,
+			shF: 166,
+			elF: 8,
+			abF: 14,
+			wide: 0.5,
+		}),
+	},
+	// Bowling it: a step into it, the ball swung back, down low in a lunge
+	// as it is let go along the turf, and the arm on up after it.
+	bowl: {
+		kind: "act",
+		keys: [
+			[0, pose({ shN: 40, elN: 80, abN: 10, lean: 8 })],
+			[
+				0.35,
+				pose({
+					hipN: -16,
+					kneeN: 28,
+					hipF: 40,
+					kneeF: 50,
+					lean: 30,
+					shN: -56,
+					elN: 12,
+					abN: 10,
+					shF: 50,
+					elF: 40,
+					abF: 30,
+				}),
+			],
+			[
+				0.68,
+				pose({
+					hipN: -30,
+					kneeN: 56,
+					hipF: 76,
+					kneeF: 100,
+					lean: 52,
+					shN: 46,
+					elN: 6,
+					abN: 6,
+					shF: 30,
+					elF: 30,
+					abF: 50,
+				}),
+			],
+			[
+				1,
+				pose({
+					hipN: -20,
+					kneeN: 40,
+					hipF: 60,
+					kneeF: 80,
+					lean: 36,
+					shN: 120,
+					elN: 10,
+					abN: 8,
+					shF: 30,
+					elF: 30,
+					abF: 50,
+				}),
+			],
+		],
+	},
 	// The ball held up high, the other fist pumped.
 	ballUp: {
 		kind: "still",
@@ -2632,23 +2770,38 @@ export const poseOfMove = (m: Move, phase: number, mirrored = false): Pose => {
 // How far off the turf he is partway through a move (feet): up off both
 // feet in a leap, a chest bump - laid out on top of a pile, this high.
 const PILE_TOP = 1.2;
-export const liftOf = (m: Move, phase: number): number =>
-	m === "leap" && phase > 0.3 && phase < 0.82
-		? 1.7 * Math.sin((Math.PI * (phase - 0.3)) / 0.52)
-		: m === "leapCatch" && phase > 0.2 && phase < 0.8
-			? 2.4 * Math.sin((Math.PI * (phase - 0.2)) / 0.6)
-			: m === "diveCatch" && phase > 0.25 && phase < 0.75
-				? 0.8 * Math.sin((Math.PI * (phase - 0.25)) / 0.5)
-				: m === "chestBump" && phase > 0.32 && phase < 0.72
-					? 1.5 * Math.sin((Math.PI * (phase - 0.32)) / 0.4)
-					: m === "pileDive"
-						? PILE_TOP * Math.min(1, phase / 0.6) +
-							0.6 * Math.sin(Math.PI * Math.min(1, phase / 0.7))
-						: m === "pileTop"
-							? PILE_TOP
-							: m === "offTop"
-								? PILE_TOP * (1 - Math.min(1, phase / 0.45))
-								: 0;
+const GRIDDY_HOP = 0.22;
+export const liftOf = (m: Move, phase: number): number => {
+	const arc = (lo: number, hi: number, up: number) =>
+		phase > lo && phase < hi
+			? up * Math.sin((Math.PI * (phase - lo)) / (hi - lo))
+			: 0;
+	switch (m) {
+		case "leap":
+			return arc(0.3, 0.82, 1.7);
+		case "leapCatch":
+			return arc(0.2, 0.8, 2.4);
+		case "diveCatch":
+			return arc(0.25, 0.75, 0.8);
+		case "chestBump":
+			return arc(0.32, 0.72, 1.5);
+		case "griddy":
+			return phase > 0.05 && phase < 0.95
+				? GRIDDY_HOP * Math.abs(Math.cos(Math.PI * 8 * phase))
+				: 0;
+		case "pileDive":
+			return (
+				PILE_TOP * Math.min(1, phase / 0.6) +
+				0.6 * Math.sin(Math.PI * Math.min(1, phase / 0.7))
+			);
+		case "pileTop":
+			return PILE_TOP;
+		case "offTop":
+			return PILE_TOP * (1 - Math.min(1, phase / 0.45));
+		default:
+			return 0;
+	}
+};
 
 // How he holds his hands in a move: running, loose fists; down in a stance
 // or reading the play, open; standing about, relaxed.
