@@ -6,32 +6,13 @@ import type { Role } from "./formations.ts";
 import type { FieldLook } from "./kit.ts";
 import type { FieldPlayerState } from "./sprite.ts";
 
-// WHO'S WHO: a broadcast's tags under the men - his number in his team's
-// colors, his name on a dark plate. Before the snap on the quarterback, the
-// backs and the receivers (for a kick, the kicker and the men back to field
-// it); from the snap on whoever has the ball.
+// WHO'S WHO: as on a broadcast, whoever has the ball tagged under him - his
+// number in his team's colors, his name on a dark plate.
 
-const NAMED = new Set<Role>([
-	"QB",
-	"RB",
-	"FB",
-	"TE",
-	"TE2",
-	"X",
-	"Z",
-	"SL",
-	"SL2",
-	"K",
-	"P",
-	"KR",
-	"PR",
-]);
 // With the ball only to snap it or to set it down for the kick.
 const SNAPPED_TO = new Set<Role>(["C", "LS", "H"]);
-// Faded in and out over (ms) - the men before the snap from as they come
-// up to the line, apart.
-const IN_MS = 400;
-const UP_MS = 1500;
+// Faded in and out over (ms).
+const IN_MS = 150;
 const OUT_MS = 300;
 // Over his head, as drawn (feet).
 const TAG_OVER = 8.2 * FIGURE_SCALE;
@@ -42,134 +23,35 @@ export type TagCover = { x0: number; x1: number; y0: number };
 
 const clamp01 = (u: number) => Math.min(1, Math.max(0, u));
 
-// How much of each man's tag shows at t.
-const shownAt = (
-	play: Play,
-	t: number,
-	lineUp: boolean,
-): Map<number, number> => {
+// How much of each man's tag shows at t: the man with the ball, or it just
+// away from him.
+const shownAt = (play: Play, t: number): Map<number, number> => {
 	const shown = new Map<number, number>();
-	const show = (pid: number, a: number) => {
-		if (a > 0) {
-			shown.set(pid, Math.max(shown.get(pid) ?? 0, a));
-		}
-	};
-	if (lineUp && t < play.snap + OUT_MS) {
-		const a = Math.min(
-			clamp01((t - Math.max(play.t0, play.set - UP_MS)) / IN_MS),
-			clamp01((play.snap + OUT_MS - t) / OUT_MS),
-		);
-		for (const part of play.parts) {
-			if (NAMED.has(part.role)) {
-				show(part.pid, a);
-			}
-		}
-	}
-	// The ball's last stop by t: a man with it, or it just away from one.
 	let i = -1;
 	for (let j = 0; j < play.ball.length && play.ball[j]!.t0 <= t; j++) {
 		i = j;
 	}
 	const seg = play.ball[i];
-	const roleOf = (pid: number) => play.parts.find((p) => p.pid === pid)?.role;
-	if (seg?.kind === "held" && !SNAPPED_TO.has(roleOf(seg.pid) ?? "C")) {
-		const prev = play.ball[i - 1];
-		// (Caught by the man tagged while it was in the air: still his.)
-		const caught =
-			prev?.kind === "fly" && targetOf(play, prev.t1, prev.to) === seg.pid;
-		show(
-			seg.pid,
-			caught
-				? 1
-				: prev?.kind === "held" || t >= play.snap
-					? clamp01((t - seg.t0) / (prev?.kind === "fly" ? IN_MS : 120))
-					: 0,
-		);
-	} else {
-		const prev = play.ball[i - 1];
-		if (
-			seg &&
-			prev?.kind === "held" &&
-			!SNAPPED_TO.has(roleOf(prev.pid) ?? "C")
-		) {
-			show(prev.pid, clamp01(1 - (t - seg.t0) / OUT_MS));
+	const prev = play.ball[i - 1];
+	// (Only the men in the play - not an official it is tossed to - and not
+	// one with it only to snap it.)
+	const named = (pid: number) => {
+		const role = play.parts.find((p) => p.pid === pid)?.role;
+		return role !== undefined && !SNAPPED_TO.has(role);
+	};
+	if (seg?.kind === "held" && named(seg.pid)) {
+		if (t >= play.snap || prev?.kind === "held") {
+			shown.set(seg.pid, clamp01((t - seg.t0) / IN_MS));
 		}
-		// Thrown, punted or kicked off: the man it is going to as well - and
-		// not caught, faded out from when it comes down.
-		// (From where it last stopped: a punter drops it, then kicks it.)
-		const fly =
-			seg?.kind === "fly" ? seg : prev?.kind === "fly" ? prev : undefined;
-		let k = play.ball.indexOf(fly!) - 1;
-		while (play.ball[k]?.kind === "fly") {
-			k--;
-		}
-		const from = play.ball[k];
-		if (
-			fly &&
-			fly.t0 < play.whistle &&
-			(from?.kind === "held"
-				? NAMED.has(roleOf(from.pid) ?? "C")
-				: from?.kind === "spot" && from.stood === "tee")
-		) {
-			const to = targetOf(play, fly.t1, fly.to);
-			if (to !== undefined) {
-				show(
-					to,
-					fly === seg
-						? clamp01((t - fly.t0) / IN_MS)
-						: clamp01(1 - (t - fly.t1) / OUT_MS),
-				);
-			}
-		}
+	} else if (seg && prev?.kind === "held" && named(prev.pid)) {
+		shown.set(prev.pid, clamp01(1 - (t - seg.t0) / OUT_MS));
 	}
-	// (Only the men in the play: not an official it is tossed to.)
-	const inPlay = new Set(play.parts.map((p) => p.pid));
-	for (const pid of shown.keys()) {
-		if (!inPlay.has(pid)) {
+	for (const [pid, a] of shown) {
+		if (a <= 0) {
 			shown.delete(pid);
 		}
 	}
 	return shown;
-};
-
-// Where a man is at t, near enough.
-const atTime = (part: Play["parts"][number], t: number) => {
-	const leg = part.legs.find((l) => l.t0 <= t && l.t1 >= t) ?? part.legs.at(-1);
-	if (!leg) {
-		return undefined;
-	}
-	const u = leg.t1 > leg.t0 ? clamp01((t - leg.t0) / (leg.t1 - leg.t0)) : 1;
-	return {
-		x: leg.from.x + (leg.to.x - leg.from.x) * u,
-		y: leg.from.y + (leg.to.y - leg.from.y) * u,
-	};
-};
-// Who is under the ball where it comes down: a receiver, a returner.
-const TARGET_FT = 12;
-const targets = new WeakMap<Play, Map<number, number | undefined>>();
-const targetOf = (play: Play, t1: number, to: { x: number; y: number }) => {
-	let known = targets.get(play);
-	if (!known) {
-		known = new Map();
-		targets.set(play, known);
-	}
-	if (!known.has(t1)) {
-		let best: number | undefined;
-		let bestD = TARGET_FT;
-		for (const part of play.parts) {
-			if (!NAMED.has(part.role)) {
-				continue;
-			}
-			const at = atTime(part, t1);
-			const d = at ? Math.hypot(at.x - to.x, at.y - to.y) : Infinity;
-			if (d < bestD) {
-				best = part.pid;
-				bestD = d;
-			}
-		}
-		known.set(t1, best);
-	}
-	return known.get(t1);
 };
 
 type Placed = { x: number; y: number; w: number; h: number };
@@ -186,13 +68,11 @@ export const drawTags = (
 	lookFor: (pid: number) => FieldLook | undefined,
 	scale: number,
 	clear: TagCover[] = [],
-	// The men before the snap too: not in a replay.
-	lineUp = true,
 ) => {
 	if (!play) {
 		return;
 	}
-	const shown = shownAt(play, t, lineUp);
+	const shown = shownAt(play, t);
 	if (shown.size === 0) {
 		return;
 	}

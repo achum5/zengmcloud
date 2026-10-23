@@ -679,7 +679,6 @@ const Field3D = ({
 				look,
 				Math.max(1, Math.round(8 / ((7 * art) / dpr))),
 				covers.current.boxes,
-				!replay,
 			);
 			if (adjust(res, h * dpr, dt, performance.now() - drawStart, now)) {
 				releaseSprites(sprites);
