@@ -1253,6 +1253,10 @@ const REACTIONS = new Set<AnimName>(
 // How far round the arc from straight out a man spacing the floor goes
 // (radians): into the corner, and no farther.
 const ARC_EDGE = 1.62;
+// Inside the arc, a man this near (feet) where a drive ends, or this near its
+// way there, gets out of it.
+const DRIVE_ROOM = 7;
+const DRIVE_LANE = 3.5;
 // Where a man who has passed out of the lane gets back out to.
 // The ways round the five may take the motion set's spots (see fitSpots):
 // the point his own; the two wings either way; the two bigs either way.
@@ -6082,7 +6086,8 @@ class Director {
 	// away from where the help comes from, into the driver's line of sight -
 	// one drifting down to the corner, one lifting up out of it - and a big
 	// in the way drops off to the dunker spot on the far side, under the
-	// help, for the dump-off.
+	// help, for the dump-off. Nobody inside the arc stays stood where it is
+	// going, or in its way there: he clears out the far side.
 	private spaceTheDrive(run: Running, t0: number) {
 		const { team } = run;
 		const holder = this.holder;
@@ -6112,6 +6117,18 @@ class Director {
 		);
 		const clear = (pid: number, q: Pt) =>
 			[...taken].every(([p, at]) => p === pid || dist(at, q) >= 6);
+		// How far off the way he goes, from where he set off to where it ends.
+		const A = drive.from;
+		const toLine = (q: Pt): number => {
+			const vx = D.x - A.x;
+			const vy = D.y - A.y;
+			const L = vx * vx + vy * vy;
+			const u =
+				L > 0
+					? Math.max(0, Math.min(1, ((q.x - A.x) * vx + (q.y - A.y) * vy) / L))
+					: 0;
+			return Math.hypot(q.x - A.x - vx * u, q.y - A.y - vy * u);
+		};
 		for (const pid of this.slots(team)) {
 			const tr = this.track(pid);
 			if (
@@ -6125,6 +6142,7 @@ class Director {
 			const P = this.posOf(pid);
 			const r = dist(P, rim);
 			let Q: Pt | undefined;
+			let from = a;
 			if (r >= 21) {
 				// On the arc, on the ball's side of the floor: along it, away.
 				const aP = angle(P);
@@ -6165,9 +6183,52 @@ class Director {
 				// along the baseline.
 				const side = D.y >= rim.y ? -1 : 1;
 				Q = clampPt({ x: rim.x - out * 2.5, y: rim.y + side * 8 });
+			} else if (
+				r < 21 &&
+				(dist(P, D) < DRIVE_ROOM || toLine(P) < DRIVE_LANE)
+			) {
+				// (Off as it starts: stood in its way, he is gone by the time it
+				// comes by.)
+				from = drive.t0;
+				// Anybody else inside the arc where it is going - the man who
+				// drove and kicked it out, still in there; a cutter, a screener
+				// stood where the attack comes: out the far side - a big down to
+				// the dunker spot or the short corner, anybody else to the short
+				// corner, the wing or the slot - whichever is nearest and open.
+				const side = D.y >= rim.y ? -1 : 1;
+				const big =
+					(this.rank.get(pid) ?? 4) >= 6 || this.slots(team).indexOf(pid) >= 4;
+				// (Depth from the baseline, and across from the middle.)
+				const spots: [number, number][] = big
+					? [
+							[RIM_INSET - 2.5, 8],
+							[RIM_INSET, 15],
+						]
+					: [
+							[RIM_INSET, 15],
+							[RIM_INSET + 13.2, 21.8],
+							[RIM_INSET + 22, 13],
+						];
+				Q = spots
+					.map(([deep, across]) =>
+						clampPt(spot(team, deep, rim.y + side * across)),
+					)
+					.filter(
+						(q) =>
+							clear(pid, q) &&
+							dist(q, D) >= DRIVE_ROOM &&
+							toLine(q) >= DRIVE_LANE,
+					)
+					.sort((u, v) => dist(P, u) - dist(P, v))[0];
 			}
 			if (Q && dist(P, Q) > 1.5 && clear(pid, Q)) {
-				this.goBy(pid, Q, a, b, r >= 21 ? "drift" : "slide");
+				this.goBy(
+					pid,
+					Q,
+					from,
+					b,
+					r >= 21 ? "drift" : dist(P, Q) > 8 ? "run" : "slide",
+				);
 				taken.set(pid, Q);
 			}
 		}
