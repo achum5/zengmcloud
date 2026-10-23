@@ -765,20 +765,24 @@ describe("3D director", () => {
 
 	// With the ball played in close in the front court, nobody off it is
 	// left stood out at half court watching - the man who pitched it ahead,
-	// the one the break left back: he trails up into the play.
+	// the one the break left back: he trails up into the play. Nor parked a
+	// long step behind the arc, out of it: he comes up to it.
 	test("nobody stood out at half court while the ball is played in close", () => {
 		let samples = 0;
-		const stood: string[] = [];
+		// (Stood 36 ft+ from the rim - half court - and 31 ft+.)
+		const lines = [36, 31].map((at) => ({ at, stood: [] as string[] }));
 		for (const seed of ["a", "b", "c", "d", "e", "f"]) {
 			const { tl } = compile(seed, 140);
 			const fast = (t: number) => tl.fast.some(([a, b]) => t >= a && t < b);
-			const runs = new Map<number, { t: number; x: number; y: number }>();
-			const end = (pid: number, t: number) => {
-				const r = runs.get(pid);
+			const runs = lines.map(
+				() => new Map<number, { t: number; x: number; y: number }>(),
+			);
+			const end = (k: number, pid: number, t: number) => {
+				const r = runs[k]!.get(pid);
 				if (r && t - r.t >= 2000) {
-					stood.push(`${seed} ${pid} ${r.t} ${t - r.t}`);
+					lines[k]!.stood.push(`${seed} ${pid} ${r.t} ${t - r.t}`);
 				}
-				runs.delete(pid);
+				runs[k]!.delete(pid);
 			};
 			for (let t = 0; t < tl.end; t += 200) {
 				const h = fast(t) ? undefined : evalBall(tl, t, bodyFor).holder;
@@ -787,9 +791,11 @@ describe("3D director", () => {
 					team === undefined ? undefined : { x: rimX(team), y: COURT_H / 2 };
 				const H = h === undefined ? undefined : evalPlayer(tl, h, t);
 				if (!H || !rim || Math.hypot(H.x - rim.x, H.y - rim.y) > 30) {
-					for (const pid of runs.keys()) {
-						end(pid, t);
-					}
+					runs.forEach((m, k) => {
+						for (const pid of m.keys()) {
+							end(k, pid, t);
+						}
+					});
 					continue;
 				}
 				for (const tr of tl.tracks.values()) {
@@ -801,15 +807,18 @@ describe("3D director", () => {
 						continue;
 					}
 					samples += 1;
-					const r = runs.get(tr.pid);
-					const deep = Math.hypot(q.x - rim.x, q.y - rim.y) >= 36;
-					if (deep && r && Math.hypot(q.x - r.x, q.y - r.y) <= 3) {
-						continue;
-					}
-					end(tr.pid, t);
-					if (deep) {
-						runs.set(tr.pid, { t, x: q.x, y: q.y });
-					}
+					const out = Math.hypot(q.x - rim.x, q.y - rim.y);
+					lines.forEach((line, k) => {
+						const r = runs[k]!.get(tr.pid);
+						const deep = out >= line.at;
+						if (deep && r && Math.hypot(q.x - r.x, q.y - r.y) <= 3) {
+							return;
+						}
+						end(k, tr.pid, t);
+						if (deep) {
+							runs[k]!.set(tr.pid, { t, x: q.x, y: q.y });
+						}
+					});
 				}
 			}
 		}
@@ -817,7 +826,10 @@ describe("3D director", () => {
 		// (A man stood out there 2 s+: 22 of them in these six games before;
 		// a break's trailers waiting on the wings to get down the floor
 		// before they came on, 3 more.)
-		assert.isAtMost(stood.length, 3, stood.join("; "));
+		assert.isAtMost(lines[0]!.stood.length, 3, lines[0]!.stood.join("; "));
+		// (31 ft out: 10 of them before - a 3-on-2's trailers parked at the
+		// hashes, men trailing up to 30-32 ft.)
+		assert.isAtMost(lines[1]!.stood.length, 4, lines[1]!.stood.join("; "));
 	}, 240_000);
 
 	// Coming back on defense, they get back the way a defense does: into the

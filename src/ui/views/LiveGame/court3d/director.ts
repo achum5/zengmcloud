@@ -1161,6 +1161,10 @@ const TRAIL_CLEAR = 8;
 // front of him in the front court, is left back up the floor too (see
 // trailUp) - stood out at half court.
 const TRAIL_DEEP = 36;
+// Where a trailer comes up to (see trailSpot): this far out from the rim
+// (feet) at the top of the key, and this much less out in a slot.
+const TRAIL_OUT: [number, number] = [25, 27.5];
+const TRAIL_SLOT_IN = 2.5;
 
 // How far along a run (0 to 1) a man is `u` of the way through its `ms`:
 // setting off from a standstill and pulling up at the end, the way the
@@ -6031,9 +6035,17 @@ class Director {
 		const P = this.posOf(pid);
 		const h = this.holder;
 		const mates = run.roles.filter((o) => o !== pid).map((o) => this.posOf(o));
-		const depth = RIM_INSET + rand(27, 30);
-		const spots = [COURT_H / 2 - 12, COURT_H / 2, COURT_H / 2 + 12].map((y) =>
-			spot(team, depth, y + rand(-1.5, 1.5)),
+		// (A step or two behind the arc, there to shoot it or swing it: the
+		// top of the key, or a slot either side of it - not stood out past it
+		// at 30 feet and more, out of the play.)
+		const out = rand(TRAIL_OUT[0], TRAIL_OUT[1]);
+		const spots = [COURT_H / 2 - 12, COURT_H / 2, COURT_H / 2 + 12].map(
+			(y, i) =>
+				spot(
+					team,
+					RIM_INSET + (i === 1 ? out : out - TRAIL_SLOT_IN),
+					y + rand(-1.5, 1.5),
+				),
 		);
 		const start = Math.max(t0 + rand(150, 450), this.free.get(pid) ?? 0);
 		// The room he has there from the rest - and, all the way there,

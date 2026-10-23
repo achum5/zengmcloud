@@ -2149,14 +2149,14 @@ export const PLAYBOOK: PlaySource[] = [
 		needs: "ballHandler passer | wing slasher | wing shooter | big | big",
 		steps: [
 			"1 dribble top advance; 2 move R_wing sprint; 3 move L_wing sprint; 4 move backcourt_R sprint; 5 move backcourt_L jog",
-			"1 dribble high_post attack; 2 move R_dunker sprint; 3 move L_corner sprint; 4 move R_hash sprint; 5 move L_hash jog",
+			"1 dribble high_post attack; 2 move R_dunker sprint; 3 move L_corner sprint; 4 move R_slot sprint; 5 move L_slot jog",
 		],
 		options: [
 			"2 rim layup R_dunker 1 1 bounce Transition 3",
 			"1 mid pull_up high_post 1 - - Transition 2",
 			"1 rim layup rim 1 - - Transition 2 | 1 dribble rim attack",
 			"3 three catch_and_shoot L_corner 1 1 skip Transition 2",
-			"4 three catch_and_shoot R_hash 1 1 swing Transition 1",
+			"4 three catch_and_shoot R_slot 1 1 swing Transition 1",
 			"4 mid catch_and_shoot R_elbow 1 1 swing Transition 1 | 4 move R_elbow jog",
 			"2 mid catch_and_shoot R_mid_wing 1 1 bounce Transition 1 | 2 move R_mid_wing relocate",
 			"1 post floater R_lane 1 - - Transition 2 | 1 dribble R_lane attack",
@@ -2189,7 +2189,7 @@ export const PLAYBOOK: PlaySource[] = [
 		start: "own_L_outlet backcourt_L* own_R_outlet own_rim backcourt_R",
 		needs: "wing | slasher wing | wing | big | big",
 		steps: [
-			"2 dribble L_hash advance; 5 move R_hash sprint; 1 move backcourt_mid sprint",
+			"2 dribble L_hash advance; 5 move R_slot sprint; 1 move backcourt_mid sprint",
 			"2 dribble rim attack; 1 move top sprint",
 		],
 		options: [
@@ -2214,7 +2214,6 @@ export const PLAYBOOK: PlaySource[] = [
 			"3 dribble L_wing advance; 2 move R_corner sprint; 4 move rim sprint",
 		],
 		options: [
-			"3 three catch_and_shoot L_hash 0 1 - Transition 1",
 			"3 three pull_up L_wing 1 - - Transition 3",
 			"2 three catch_and_shoot R_corner 1 3 skip Transition 2",
 			"4 rim dunk rim 1 3 lob Transition 2",
