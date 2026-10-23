@@ -298,3 +298,57 @@ test("black, a man much bigger since is left out till he is made, not drawn the 
 		],
 	);
 });
+
+test("all black, nobody drawn, the books are kept as if they were: a man made a frame ago waits", () => {
+	const body = bodyOf();
+	const look: Look = {
+		kit: kitsFor(undefined, undefined)[0],
+		skin: "#8d5524",
+		hair: "#1f1612",
+		jerseyNumber: "",
+		name: "",
+		lastName: "",
+		wordmark: "",
+	};
+	const scratch = makeScratch();
+	const cache = makeSpriteCache();
+	const cam = makeCamera({ x: 47, width: 60, y: 24 }, 640, 360, MAIN_RIG);
+	const skipped: number[] = [];
+	for (let i = 0; i < 4; i++) {
+		startFrame(cache);
+		// Time for his first picture only; black from the second frame on.
+		cache.budget = i === 0 ? undefined : 0;
+		cache.dark = i > 0;
+		cache.black = i > 0;
+		const st = {
+			pid: 1,
+			team: 0,
+			shown: true,
+			x: 47,
+			y: 25,
+			z: 0,
+			yaw: 0,
+			anim: "run",
+			phase: (i + 0.5) / 12,
+			moving: true,
+		} as PlayerState;
+		prepareSprites(scratch, cam, [{ st, body, look }], 1, cache);
+		if (i === 0) {
+			drawSprite(
+				stubCanvas().getContext() as unknown as CanvasRenderingContext2D,
+				scratch,
+				cam,
+				st,
+				body,
+				look,
+				1,
+				cache,
+			);
+		}
+		skipped.push(cache.skipped);
+	}
+	// Never left out (which would hold the picture black for him): drawn,
+	// were it drawn, as he was.
+	assert.deepEqual(skipped, [0, 0, 0, 0]);
+	assert.strictEqual(cache.last.get(cache.ids.get(look)!)!.behind, 3);
+});

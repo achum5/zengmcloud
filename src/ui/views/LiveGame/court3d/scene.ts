@@ -219,6 +219,10 @@ export type Frame = {
 	// Each side's colors [road, home] (main, trim), for the lights swept over
 	// the floor at the starting lineups.
 	teamColors?: [string, string][];
+	// The picture all black (dipped between clips, held black till the men
+	// in it can be drawn): none of it seen - only the new pictures of the
+	// men in it made, with all the frame's time for them.
+	black?: boolean;
 };
 
 const fxLevel = (
@@ -741,6 +745,7 @@ export const drawFrame = (f: Frame) => {
 			look: warm ? warmupLook(look, f.warmups[st.team]) : look,
 		};
 	});
+	f.sprites.black = f.black;
 	prepareSprites(
 		f.scratch,
 		cam,
@@ -748,6 +753,9 @@ export const drawFrame = (f: Frame) => {
 		1,
 		f.sprites,
 	);
+	if (f.black) {
+		return;
+	}
 
 	// The building: the stands (on their feet after a big play), the LED
 	// ribbon, the floor round the court, the court, the table, the benches.

@@ -1386,6 +1386,7 @@ const Court3D = ({
 				flashes: working.flashes,
 				courtside: cr.courtside,
 				teamColors: p.teamColors,
+				black: o >= 0.999,
 			});
 			if (
 				adjust(

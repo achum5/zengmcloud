@@ -136,8 +136,11 @@ export type SpriteCache = {
 	// The picture as good as black (dipped between clips): more time a
 	// frame, and once that is spent a man with no picture yet at all is
 	// left out of the frame rather than all of them made in one - and how
-	// many were (see Court3D, which holds the black till none are).
+	// many were (see Court3D, which holds the black till none are). All
+	// black, nothing of the frame is drawn (see drawFrame): all its time
+	// goes on new pictures, more still.
 	dark?: boolean;
+	black?: boolean;
 	skipped: number;
 	// How fast the moment drawn moves on, to the wall clock's (1 at real
 	// speed; a slow-motion replay less): poses come round that much more
@@ -154,6 +157,7 @@ export type SpriteCache = {
 // more time a frame may take on new pictures while the picture is black.
 const MAX_BEHIND = 3;
 const DARK_BUDGET = 8;
+const BLACK_BUDGET = 16;
 export const makeSpriteCache = (): SpriteCache => ({
 	kept: new Map(),
 	area: 0,
@@ -463,6 +467,8 @@ type Plan = {
 	scale: number;
 	id: number;
 	key?: string;
+	// Left out of this frame: the picture black, and no time to make his.
+	leftOut?: boolean;
 };
 
 const planOf = (
@@ -536,7 +542,8 @@ const asWas = (cache: SpriteCache, plan: Plan) => {
 };
 const overBudget = (cache: SpriteCache) =>
 	cache.budget !== undefined &&
-	cache.spent >= cache.budget * (cache.dark ? DARK_BUDGET : 1);
+	cache.spent >=
+		cache.budget * (cache.black ? BLACK_BUDGET : cache.dark ? DARK_BUDGET : 1);
 
 // His picture for the plan, made: kept, with a cache - or, without, left on
 // the scratch sheet to be drawn from.
@@ -682,6 +689,44 @@ const make = (
 // instead, before anything is drawn, nearest first while there is time (and
 // whoever has no picture to be drawn in meanwhile, regardless) - so the men
 // left a frame behind are the furthest and smallest.
+// Which picture he is drawn in this frame - his own for this pose, kept;
+// the one he had, if he may be drawn as he was; or none yet (to be made
+// now - or, black and out of time, left out) - and the books kept on it as
+// if he were drawn.
+const pick = (cache: SpriteCache, plan: Plan): Kept | "make" | "out" => {
+	const kept = plan.key === undefined ? undefined : cache.kept.get(plan.key);
+	if (kept && plan.key !== undefined) {
+		// Kept longest are the ones still in use: to the back of the line.
+		cache.kept.delete(plan.key);
+		cache.kept.set(plan.key, kept);
+		cache.last.set(plan.id, {
+			kept,
+			frame: cache.frame,
+			behind: 0,
+			scale: plan.scale,
+		});
+		return kept;
+	}
+	if (plan.leftOut) {
+		return "out";
+	}
+	// Out of time this frame, and drawn a moment ago: as he was.
+	if (overBudget(cache)) {
+		const was = asWas(cache, plan);
+		if (was) {
+			was.frame = cache.frame;
+			was.behind += 1;
+			return was.kept;
+		}
+		if (cache.dark) {
+			plan.leftOut = true;
+			cache.skipped += 1;
+			return "out";
+		}
+	}
+	return "make";
+};
+
 export const prepareSprites = (
 	scratch: Scratch,
 	cam: Camera,
@@ -689,6 +734,7 @@ export const prepareSprites = (
 	px: number,
 	cache: SpriteCache,
 ) => {
+	const all: { man: (typeof men)[number]; plan: Plan }[] = [];
 	const todo: { man: (typeof men)[number]; plan: Plan; wait: boolean }[] = [];
 	for (const man of men) {
 		const plan = planOf(cam, man.st, man.body, man.look, px, cache);
@@ -696,6 +742,7 @@ export const prepareSprites = (
 			continue;
 		}
 		cache.plans.set(man.st, plan);
+		all.push({ man, plan });
 		if (!cache.kept.has(plan.key)) {
 			todo.push({ man, plan, wait: asWas(cache, plan) !== undefined });
 		}
@@ -703,11 +750,20 @@ export const prepareSprites = (
 	todo.sort((a, b) => b.plan.base.k - a.plan.base.k);
 	for (const { man, plan, wait } of todo) {
 		// Out of time: drawn as he was - or, the picture black, left out of
-		// the frame (see drawSprite).
+		// the frame (and the picture held black for him: see Court3D).
 		if (overBudget(cache) && (wait || cache.dark)) {
 			continue;
 		}
 		make(plan, scratch, cam, man.st, man.body, man.look, px, cache);
+	}
+	// All black, nobody is drawn - but the books are kept as if they were,
+	// so a man made a frame ago may be drawn as he was the next, as in any
+	// other frame, rather than made again for each new pose while it stays
+	// black.
+	if (cache.black) {
+		for (const { plan } of all) {
+			pick(cache, plan);
+		}
 	}
 };
 
@@ -727,33 +783,13 @@ export const drawSprite = (
 	}
 	const { base, lift } = plan;
 	if (cache && plan.key !== undefined) {
-		const kept = cache.kept.get(plan.key);
-		if (kept) {
-			// Kept longest are the ones still in use: to the back of the line.
-			cache.kept.delete(plan.key);
-			cache.kept.set(plan.key, kept);
-			stamp(ctx, kept, base.x, base.y - lift, px);
-			cache.last.set(plan.id, {
-				kept,
-				frame: cache.frame,
-				behind: 0,
-				scale: plan.scale,
-			});
+		const was = pick(cache, plan);
+		if (was === "out") {
 			return;
 		}
-		// Out of time this frame, and drawn a moment ago: as he was.
-		if (overBudget(cache)) {
-			const was = asWas(cache, plan);
-			if (was) {
-				stamp(ctx, was.kept, base.x, base.y - lift, px);
-				was.frame = cache.frame;
-				was.behind += 1;
-				return;
-			}
-			if (cache.dark) {
-				cache.skipped += 1;
-				return;
-			}
+		if (was !== "make") {
+			stamp(ctx, was, base.x, base.y - lift, px);
+			return;
 		}
 	}
 	const made = make(plan, scratch, cam, st, body, look, px, cache);
