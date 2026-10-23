@@ -1327,7 +1327,7 @@ const postseasonContext = (
 			facingElimination
 				? choose(
 						[
-							`${cap(w)} staved off elimination to pull within ${lBefore}-${wAfter} in ${rnd}.`,
+							`${cap(w)} staved off elimination and trail ${lBefore}-${wAfter} in ${rnd}.`,
 							`${cap(w)} live to play another game, down ${lBefore}-${wAfter} in ${rnd}.`,
 						],
 						"seriesSurviveTrail",
@@ -7944,26 +7944,35 @@ export const seriesTail = (
 			],
 		};
 	}
-	return lBefore === need - 1
-		? {
-				kind: "alive",
-				// No comma inside: these sit in comma-separated lists, and "the
-				// Clippers got past the 76ers 113-106 to stay alive, down 3-1,
-				// the Cavaliers held off..." lost the reader.
-				tails: [`to stay alive and pull within ${down}`],
-				whos: [`who stayed alive and pulled within ${down}`],
-			}
-		: {
-				kind: "within",
-				tails: [
-					`to pull within ${down}`,
-					`to cut the series deficit to ${down}`,
-				],
-				whos: [
-					`who pulled within ${down}`,
-					`who cut the series deficit to ${down}`,
-				],
-			};
+	// No comma inside: these sit in comma-separated lists, and "the Clippers
+	// got past the 76ers 113-106 to stay alive, down 3-1, the Cavaliers held
+	// off..." lost the reader. And not "to stay alive and pull within 3-1":
+	// a series score is not a margin to pull within. What the win bought is
+	// the next game.
+	if (lBefore === need - 1) {
+		return wAfter === 1
+			? {
+					kind: "alive",
+					tails: ["to avoid a sweep", `to force a Game ${games + 1}`],
+					whos: ["who avoided a sweep", `who forced a Game ${games + 1}`],
+				}
+			: {
+					kind: "alive",
+					tails: [`to force a Game ${games + 1}`],
+					whos: [`who forced a Game ${games + 1}`],
+				};
+	}
+	return {
+		kind: "within",
+		tails: [
+			`to cut the series deficit to ${down}`,
+			`to trim their series deficit to ${down}`,
+		],
+		whos: [
+			`who cut the series deficit to ${down}`,
+			`who trimmed their series deficit to ${down}`,
+		],
+	};
 };
 
 type DaySeriesPhrase = { text: string; round?: string };
@@ -8996,7 +9005,7 @@ const roundupClause = (
 // League-wide notes read off the whole slate: the night's blowout, its
 // shootout, the best shooting performance. A day wrap that only lists results
 // never tells you what KIND of night it was.
-const leagueNotes = (
+export const leagueNotes = (
 	games: RecapGame[],
 	rng: () => number,
 	limit: number,
@@ -9055,11 +9064,25 @@ const leagueNotes = (
 		}
 	}
 
+	// A rout the wrap already told, by its margin or by its score: after
+	// "the Mavericks routed the Rockets 121-93", "The night's most one-sided
+	// result was the Mavericks' 28-point win over the Rockets" only did the
+	// subtraction.
 	const routTold =
 		biggest !== undefined &&
-		new RegExp(
+		(new RegExp(
 			String.raw`${nick(biggest.shape.winner).replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`)}.*(?:by ${biggest.margin}\b|${biggest.margin}-point)`,
-		).test(written);
+		).test(written) ||
+			written
+				.split(/(?<=[!.?])\s+/)
+				.some(
+					(t) =>
+						t.includes(nick(biggest!.shape.winner)) &&
+						t.includes(nick(biggest!.shape.loser)) &&
+						t.includes(
+							`${biggest!.shape.winner.pts}-${biggest!.shape.loser.pts}`,
+						),
+				));
 	if (biggest && biggest.margin >= 25 && !routTold) {
 		cands.push({
 			sort: 0,
@@ -9646,7 +9669,9 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 				`${naturalList(
 					left.map((perf) => {
 						const line = deckLine(perf);
-						return `${perf.p.name} had ${line === "triple-double" ? "a triple-double" : line} for ${theNick(perf.team)}`;
+						// "Marcus Green had a triple-double for the Clippers" gave the
+						// deck's word and none of the line.
+						return `${perf.p.name} had ${line === "triple-double" ? `a triple-double (${statPhrase(perf.p)})` : line} for ${theNick(perf.team)}`;
 					}),
 				)}.`,
 			);

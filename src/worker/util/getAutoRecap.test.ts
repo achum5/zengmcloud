@@ -8,8 +8,10 @@ import {
 	getAutoDayRecap,
 	getAutoRecap,
 	hurtInGame,
+	leagueNotes,
 	pick,
 	postseasonSentences,
+	seriesTail,
 	trimHeadline,
 	varyHalfWords,
 } from "./getAutoRecap.ts";
@@ -6072,6 +6074,29 @@ describe("a full slate does not repeat itself", () => {
 		});
 	};
 
+	// "...the Mavericks routed the Rockets 121-93. ... The night's most
+	// one-sided result was the Mavericks' 28-point win over the Rockets."
+	test("a day wrap does not do the subtraction on a score it gave", () => {
+		const games = Array.from({ length: 6 }, (_, i) => slateGame(i));
+		const rout = games[5]!;
+		const [w, l] = rout.teams;
+		const notes = (written: string) =>
+			leagueNotes(games, rngFromSeed(1), 3, written).join(" ");
+		// Told only as a result: the note is the subtraction.
+		assert.doesNotMatch(
+			notes(`The ${w.name} routed the ${l.name} ${w.pts}-${l.pts}.`),
+			/most one-sided/,
+		);
+		assert.doesNotMatch(
+			notes(
+				`Star5 had 34 in the ${w.name}' ${w.pts}-${l.pts} win over the ${l.name}.`,
+			),
+			/most one-sided/,
+		);
+		// Not told at all: the note is news.
+		assert.match(notes(""), /most one-sided/);
+	});
+
 	test("no sentence frame is used three times on one night", () => {
 		beginRecapBatch();
 		let text: string;
@@ -8391,6 +8416,53 @@ describe("a winner's steals sit with the winners", () => {
 // "Anthony Jackson pitched in with 18 points for the Thunder, and Cade
 // Jackson was the leading scorer with 18 points." A high two men shared is
 // neither's alone.
+// "The Thunder beat the Nets 110-99 to stay alive and pull within 3-1": a
+// series score is not a margin to pull within. The win bought a next game.
+describe("a team that stays alive in a series", () => {
+	const at = (homeWon: number, awayWon: number) =>
+		game({
+			gid: 1200 + homeWon * 10 + awayWon,
+			teams: [
+				realisticTeam(
+					{ tid: 1, name: "Thunder", abbrev: "OKC", pts: 110 },
+					player({ name: "Jaden Jackson", pts: 27, fg: 10, fga: 19 }),
+				),
+				realisticTeam(
+					{ tid: 2, name: "Nets", abbrev: "BKN", pts: 99 },
+					player({ name: "Xavier Brooks", pts: 25, fg: 9, fga: 20 }),
+				),
+			],
+			winnerTid: 1,
+			playoffs: true,
+			series: {
+				round: 1,
+				numRounds: 4,
+				bestOf: 7,
+				homeAbbrev: "OKC",
+				awayAbbrev: "BKN",
+				homeWon,
+				awayWon,
+			},
+		});
+
+	test("forced the next game, or avoided a sweep", () => {
+		assert.deepEqual(seriesTail(at(0, 3))?.tails, [
+			"to avoid a sweep",
+			"to force a Game 5",
+		]);
+		assert.deepEqual(seriesTail(at(1, 3))?.tails, ["to force a Game 6"]);
+		assert.ok(
+			seriesTail(at(0, 2))?.tails.every((t) => /deficit to 2-1$/.test(t)),
+		);
+		for (const g of [at(0, 3), at(1, 3), at(0, 2)]) {
+			const t = seriesTail(g)!;
+			for (const x of [...t.tails, ...t.whos]) {
+				assert.doesNotMatch(x, /pull/);
+			}
+		}
+	});
+});
+
 describe("a shared team high", () => {
 	const line = (name: string, pts: number, extra: Partial<RecapPlayer> = {}) =>
 		player({

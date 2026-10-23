@@ -330,6 +330,15 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "Marcus Green had a triple-double for the Clippers" - the deck's word
+	// and none of the line, which was 38 points, 12 rebounds and 10 assists.
+	test("a triple-double in a day wrap comes with its line", () => {
+		for (const recap of dayRecaps) {
+			const body = recap.split("\n\n").slice(1).join(" ");
+			assert.notMatch(body, /\bhad a triple-double(?! \()/, recap);
+		}
+	});
+
 	test("a day wrap's deck does not repeat its headline", () => {
 		for (const recap of dayRecaps) {
 			const headline = recap.split("\n")[0]!;
