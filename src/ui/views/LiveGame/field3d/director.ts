@@ -363,6 +363,27 @@ const MAN_FOLLOWS = 0.5;
 // Still this far (ms) from his spot when the ball is snapped - on his way
 // out into his route without a stop.
 const IN_MOTION = 200;
+// The defense waiting on the snap (see defenseSet): the call, this often,
+// over this long (at least DEF_CALL_MIN) and done this long before the
+// snap; a linebacker over a step this often, this far (feet); one up into
+// a gap this often, this deep off the ball (feet), back out of it from this
+// long before the snap, up at this pace (feet a second); of two safeties
+// deep, one down late this often, to this deep (feet), over this long.
+const DEF_CALL = 0.75;
+const DEF_CALL_MS = 1500;
+const DEF_CALL_MIN = 800;
+const DEF_CALL_BEFORE = 350;
+const SHUFFLE = 0.35;
+const SHUFFLE_FT = [1.5, 4] as const;
+const MUG = 0.14;
+const MUG_D = 6.5;
+const MUG_BACK = 500;
+const MUG_FPS = 7;
+const CREEP = 0.3;
+const CREEP_D = 21;
+const CREEP_MS = 1600;
+const LBS = new Set<Role>(["SAM", "MIKE", "WILL", "BUCK"]);
+const DL_ROLES = new Set<Role>(["DE", "DT", "NT"]);
 // A kickoff: everyone lined up, the kicker off on his run-up this long in.
 const KICK_AT = 2600;
 // The plays acted out from the snap (see action.ts), and how long after
@@ -876,6 +897,9 @@ class Director {
 			snap = this.motion(parts, offense, dir, losX, ballY, set, snap, i0);
 		}
 		this.cadence(parts, offense, snap, i0);
+		if (kind === "pass" || kind === "run") {
+			this.defenseSet(parts, offense, dir, losX, ballY, snap, i0);
+		}
 
 		// The ball: spotted (on its tee, for a kickoff), then under the
 		// center's hand once he is over it.
@@ -1862,6 +1886,106 @@ class Director {
 			}
 		}
 		return Math.max(snap, end - IN_MOTION);
+	}
+
+	// THE DEFENSE WAITING ON THE SNAP: not stood stock still - the middle
+	// linebacker turned round one way and the other making the call, an arm
+	// out at the strength; a linebacker now and then over a step, or up
+	// into a gap showing blitz and back out of it as the ball is snapped;
+	// and now and then, of two safeties deep, one creeping down late.
+	defenseSet(
+		parts: Part[],
+		offense: Side,
+		dir: Dir,
+		losX: number,
+		ballY: number,
+		snap: number,
+		i0: number,
+	) {
+		const r = this.rng(i0, "defense");
+		const depthOf = (p: Pt) => (losX - p.x) * dir;
+		const acrossOf = (p: Pt) => (p.y - ballY) * dir;
+		const defense = parts.filter((p) => p.team !== offense && walkedUp(p));
+		// (Stood in his stance from when he got there till t, then over to
+		// `to` by t1 doing `move` - and set there.)
+		const over = (p: Part, t: number, t1: number, to: Pt, move: Move) => {
+			const st = p.legs.at(-1)!;
+			st.t1 = t;
+			p.legs.push(
+				{ ...st, t0: t, t1, from: st.to, to, move },
+				{ ...st, t0: t1, t1, from: to, to },
+			);
+		};
+		const lbs = defense
+			.filter((p) => LBS.has(p.role))
+			.sort(
+				(p, q) =>
+					Math.abs(acrossOf(p.legs.at(-1)!.to)) -
+					Math.abs(acrossOf(q.legs.at(-1)!.to)),
+			);
+		const mike = lbs.find((p) => p.role === "MIKE") ?? lbs[0];
+		let called = false;
+		if (mike && r() < DEF_CALL) {
+			const st = mike.legs.at(-1)!;
+			const t1 = snap - DEF_CALL_BEFORE;
+			const t0 = Math.max(st.t0 + 150, t1 - DEF_CALL_MS);
+			if (t1 - t0 >= DEF_CALL_MIN && st.move === "backerStance") {
+				st.t1 = t0;
+				mike.legs.push(
+					{ ...st, t0, t1, move: "backerCall", mirrored: r() < 0.5 },
+					{ ...st, t0: t1, t1, mirrored: false },
+				);
+				called = true;
+			}
+		}
+		for (const lb of lbs) {
+			const st = lb.legs.at(-1)!;
+			const room = snap - DEF_CALL_BEFORE - st.t0;
+			if (lb === mike && called) {
+				continue;
+			}
+			const p = st.to;
+			// (Up into the gap nearest him, just off the men down in it.)
+			const a = acrossOf(p);
+			const line = defense
+				.filter((q) => DL_ROLES.has(q.role))
+				.map((q) => acrossOf(q.legs.at(-1)!.to))
+				.sort((x, y) => x - y);
+			const gaps = line.slice(1).map((x, k) => (x + line[k]!) / 2);
+			const gapA =
+				gaps.sort((x, y) => Math.abs(x - a) - Math.abs(y - a))[0] ?? a / 2;
+			const gap = { x: losX + dir * MUG_D, y: ballY + dir * gapA };
+			const ms = (Math.hypot(gap.x - p.x, gap.y - p.y) / MUG_FPS) * 1000;
+			const back = snap - MUG_BACK;
+			const latest = back - 300 - ms;
+			if (r() < MUG && latest > st.t0 + 200) {
+				// Showing blitz - and back out of it as the ball goes.
+				const t = st.t0 + 200 + r() * (latest - st.t0 - 200);
+				over(lb, t, t + ms, gap, "walk");
+				over(lb, back, snap - 60, p, "back");
+			} else if (r() < SHUFFLE && room > 900) {
+				const ft = SHUFFLE_FT[0] + r() * (SHUFFLE_FT[1] - SHUFFLE_FT[0]);
+				const to = { x: p.x, y: p.y + (r() < 0.5 ? 1 : -1) * ft };
+				const t = st.t0 + 200 + r() * (room - 800);
+				over(lb, t, t + 160 + ft * 110, to, "slide");
+			}
+		}
+		// A safety down late.
+		const deep = defense.filter(
+			(p) =>
+				(p.role === "FS" || p.role === "SS") &&
+				depthOf(p.legs.at(-1)!.to) < -CREEP_D - 6,
+		);
+		const down = deep.find((p) => p.role === "SS");
+		if (deep.length === 2 && down && r() < CREEP) {
+			const st = down.legs.at(-1)!;
+			const t = Math.max(st.t0 + 200, snap - CREEP_MS);
+			const p = st.to;
+			const to = { x: losX - dir * -CREEP_D, y: p.y + (ballY - p.y) * 0.25 };
+			if (snap - t > 700) {
+				over(down, t, snap - 100, to, "walk");
+			}
+		}
 	}
 }
 

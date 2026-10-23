@@ -222,6 +222,28 @@ const QB_SURVEY = pose({
 });
 // One arm out straight, pointing; both hands in together, a clap.
 const POINT_OUT = { shF: 94, elF: 6, abF: 4 };
+const BACKER = pose({
+	hipN: 34,
+	kneeN: 50,
+	hipF: 36,
+	kneeF: 52,
+	lean: 30,
+	shN: 34,
+	elN: 56,
+	abN: 14,
+	shF: 34,
+	elF: 56,
+	abF: 14,
+	wide: 0.9,
+});
+const BACKER_UP = {
+	...BACKER,
+	hipN: 18,
+	kneeN: 26,
+	hipF: 20,
+	kneeF: 28,
+	lean: 14,
+};
 const CLAP = { abN: -6, abF: -6, shF: 60, elF: 56 };
 const QB_SET = pose({
 	hipN: 12,
@@ -489,22 +511,21 @@ const FIELD_ANIMS = {
 	},
 	// A linebacker: square, knees bent, hands out in front, reading the
 	// backfield.
-	backerStance: {
-		kind: "still",
-		pose: pose({
-			hipN: 34,
-			kneeN: 50,
-			hipF: 36,
-			kneeF: 52,
-			lean: 30,
-			shN: 34,
-			elN: 56,
-			abN: 14,
-			shF: 34,
-			elF: 56,
-			abF: 14,
-			wide: 0.9,
-		}),
+	backerStance: { kind: "still", pose: BACKER },
+	// The middle linebacker making the call: up out of it a little, turned
+	// one way with an arm out at the strength, then the other, and back
+	// down.
+	backerCall: {
+		kind: "act",
+		keys: [
+			[0, BACKER],
+			[0.14, { ...BACKER_UP, twist: 24 }],
+			[0.28, { ...BACKER_UP, twist: 20, ...POINT_OUT }],
+			[0.5, { ...BACKER_UP, twist: 20, ...POINT_OUT }],
+			[0.66, { ...BACKER_UP, twist: -22 }],
+			[0.86, { ...BACKER_UP, twist: -22 }],
+			[1, BACKER],
+		],
 	},
 	// A corner over his man: low, a stagger, eyes in.
 	cornerStance: {
