@@ -172,6 +172,11 @@ Teams work the phones every day, all season. Sims get slower; how much slower is
 acceptable is decided once the real cost is measured against how much smarter
 it makes CPU teams, but it must not be egregious. Speed work waits until the
 behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
+Measured since (arena, one season of a random-players league): about 800 s
+against about 50 s stock. Looking for trades is 41% of it (the last week
+before the deadline, when every team shops each day, is about 40% of the
+in-season looking), free agency 19% (each of the best free agents priced for
+every team, again whenever a signing changes the pool), memory cleanup 17%.
 
 ## Trades
 
