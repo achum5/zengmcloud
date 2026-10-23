@@ -35,6 +35,13 @@ const OUT_FPS = 17;
 const TEND_MS = 3600;
 const SIT_UP = 0.55;
 const UP_MS = 1000;
+// Sat up off his back - or, down on his face, up onto a knee - over this
+// long: that far through getting up (see poses.ts).
+const SIT_MS = 800;
+const SAT_AT = 0.35;
+const KNEE_AT = 0.5;
+// Brought down on his face (or else on his back, or sat).
+const FACE_DOWN = new Set<Move>(["tackled", "dive", "prone"]);
 const HELPED_FPS = 5;
 const ALONE_FPS = 7;
 const SHOWN_OFF = 6000;
@@ -163,12 +170,13 @@ export const stageHurt = (input: {
 			t1: t + FALL_MS,
 			from: at,
 			to: at,
-			move: "tackled",
+			move: "tackledBack",
 			yaw,
 		});
 		t += FALL_MS;
 	}
 	const downAt = t;
+	const faceDown = FACE_DOWN.has(him.legs.at(-1)!.move);
 	input.busy.add(him.pid);
 	// (The ball, if he had it, on the turf by him - not tossed down once he
 	// was up.)
@@ -212,16 +220,30 @@ export const stageHurt = (input: {
 		const to = m.legs.at(-1)!.to;
 		still(m.legs, m.legs.at(-1)!.t1, up, to, "tend", toward(to, at));
 	}
-	// Him: on his back, then sat up with them, then up.
+	// Him: on his back, then sat up with them, then up - or face down, up
+	// on a knee, then up.
 	const sitUp = downAt + (up - downAt) * SIT_UP;
-	still(him.legs, downAt, sitUp, at, "hurt", yaw);
-	still(him.legs, sitUp, up, at, "hurtUp", yaw);
+	const sat = Math.min(sitUp + SIT_MS, up);
+	const rise = faceDown ? "getUp" : "getUpBack";
+	const part = faceDown ? KNEE_AT : SAT_AT;
+	still(him.legs, downAt, sitUp, at, faceDown ? "hurtProne" : "hurt", yaw);
+	him.legs.push({
+		t0: sitUp,
+		t1: sat,
+		from: at,
+		to: at,
+		move: rise,
+		span: [0, part],
+		yaw,
+	});
+	still(him.legs, sat, up, at, faceDown ? "hurtKnee" : "hurtUp", yaw);
 	him.legs.push({
 		t0: up,
 		t1: up + UP_MS,
 		from: at,
 		to: at,
-		move: "getUp",
+		move: rise,
+		span: [part, 1],
 		yaw,
 	});
 

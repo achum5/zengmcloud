@@ -468,7 +468,23 @@ const DIVE_KEYS: [number, Pose][] = [
 		}),
 	],
 	[
-		0.7,
+		0.6,
+		pose({
+			hipN: -63,
+			kneeN: 11,
+			hipF: -31,
+			kneeF: 40,
+			lean: 70,
+			shN: 90,
+			elN: 49,
+			abN: 33,
+			shF: 90,
+			elF: 49,
+			abF: 33,
+		}),
+	],
+	[
+		0.8,
 		pose({
 			hipN: -80,
 			kneeN: 6,
@@ -539,8 +555,27 @@ const GRIDDY_KEYS: [number, Pose][] = Array.from({ length: 17 }, (_, k) => [
 // Getting up (see FIELD_ANIMS) - off the top of a pile too.
 const GET_UP_KEYS: [number, Pose][] = [
 	[0, PRONE],
+	// (Up on his hands and knees first: or his near leg, swung through under
+	// him, has him up and down again on the way.)
 	[
-		0.3,
+		0.18,
+		pose({
+			hipN: 0,
+			kneeN: 90,
+			hipF: -6,
+			kneeF: 86,
+			lean: 82,
+			shN: 10,
+			elN: 0,
+			abN: 10,
+			shF: 10,
+			elF: 0,
+			abF: 10,
+			wide: 0.6,
+		}),
+	],
+	[
+		0.38,
 		pose({
 			hipN: 80,
 			kneeN: 130,
@@ -557,7 +592,7 @@ const GET_UP_KEYS: [number, Pose][] = [
 		}),
 	],
 	[
-		0.65,
+		0.68,
 		pose({
 			hipN: 78,
 			kneeN: 86,
@@ -1538,7 +1573,7 @@ const FIELD_ANIMS = {
 				}),
 			],
 			[
-				0.55,
+				0.6,
 				pose({
 					hipN: -70,
 					kneeN: 10,
@@ -2440,6 +2475,41 @@ const FIELD_ANIMS = {
 			elF: 50,
 			abF: 10,
 			wide: 0.5,
+		}),
+	},
+	// Face down on the turf as he was brought down, the far knee drawn up,
+	// his arms out by his head.
+	hurtProne: {
+		kind: "still",
+		pose: {
+			...PRONE,
+			hipF: -66,
+			kneeF: 40,
+			shN: 96,
+			elN: 30,
+			abN: 44,
+			shF: 40,
+			elF: 60,
+			abF: 30,
+		},
+	},
+	// Up on a knee with them (part of the way up - see GET_UP_KEYS), a hand
+	// on his knee, the other down by him.
+	hurtKnee: {
+		kind: "still",
+		pose: pose({
+			hipN: 79,
+			kneeN: 112,
+			hipF: -37,
+			kneeF: 84,
+			lean: 40,
+			shN: 44,
+			elN: 50,
+			abN: 10,
+			shF: 20,
+			elF: 20,
+			abF: 14,
+			wide: 0.56,
 		}),
 	},
 	// Sat up, both hands round the knee.

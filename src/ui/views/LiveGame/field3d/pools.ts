@@ -18,7 +18,7 @@ const DARK = 0.48;
 // A man down: pools this far apart along him (feet).
 const LENGTH = [-1.7, 0, 1.7];
 
-const LYING = new Set<Move>(["prone", "supine", "hurt"]);
+const LYING = new Set<Move>(["prone", "supine", "hurt", "hurtProne"]);
 const FALLING = new Set<Move>(["tackled", "tackledBack", "dive"]);
 const RISING = new Set<Move>(["getUp", "getUpBack"]);
 const isDown = (st: FieldPlayerState) =>

@@ -25,8 +25,8 @@ import { sculptFigure, type Figure, type HeldBall } from "./sculpt.ts";
 // court3d/sprite.ts, whose cache this shares): each sculpted on a sheet of
 // his own at the picture's resolution, a soft dark rim round him, stamped
 // into the picture and kept for the next time the same pose comes round.
-// His animation runs in frames and he turns in 24 directions (twice as many
-// of each with time to spare, the way the court does it), so the same few
+// His animation runs in frames and he turns in 36 directions (more of each
+// with time to spare, the way the court does it), so the same few
 // pictures come round again and again, and a whole formation set in its
 // stances costs a picture apiece.
 
@@ -72,13 +72,22 @@ type Blend = {
 	// its own, and the blend out of it (for it to keep step with their
 	// frames - see weightOf).
 	rate?: { move: number; from: number; w: number };
+	// That one itself still partly what he was before it, when it ended.
+	under?: Under;
+};
+type Under = {
+	move: Move;
+	phase: number;
+	mirrored?: boolean;
+	w: number;
+	arms?: { move: Move; phase: number };
 };
 
 // In so many steps: a stride's frames, an act's, the ways he faces, and a
 // blend from one move into the next - or, with time to spare on the device
-// (see Field3D), twice as many of each, so he moves the more smoothly.
+// (see Field3D), more of each, so he moves the more smoothly.
 type Steps = { cycle: number; act: number; turns: number; blend: number };
-const COARSE: Steps = { cycle: 12, act: 20, turns: 24, blend: 8 };
+const COARSE: Steps = { cycle: 12, act: 20, turns: 36, blend: 8 };
 const FINE: Steps = { cycle: 24, act: 40, turns: 48, blend: 16 };
 
 const frameOf = (m: Move, phase: number, k: Steps): number => {
@@ -135,6 +144,21 @@ type Stepped = {
 	from: Blend | undefined;
 	arms: { move: Move; phase: number } | undefined;
 };
+const armsIn = (a: { move: Move; phase: number }, k: Steps) => ({
+	move: a.move,
+	phase: frameOf(a.move, a.phase, k),
+});
+const underIn = (u: Under, k: Steps): Under | undefined => {
+	const w = Math.round(u.w * k.blend) / k.blend;
+	return w > 0
+		? {
+				...u,
+				phase: frameOf(u.move, u.phase, k),
+				w,
+				...(u.arms ? { arms: armsIn(u.arms, k) } : {}),
+			}
+		: undefined;
+};
 const stepped = (st: FieldPlayerState, k: Steps): Stepped => {
 	const turn = Math.round(st.yaw / ((Math.PI * 2) / k.turns));
 	const f = st.from;
@@ -149,19 +173,11 @@ const stepped = (st: FieldPlayerState, k: Steps): Stepped => {
 						...f,
 						phase: frameOf(f.move, f.phase, k),
 						w: fw,
-						...(f.arms
-							? {
-									arms: {
-										move: f.arms.move,
-										phase: frameOf(f.arms.move, f.arms.phase, k),
-									},
-								}
-							: {}),
+						...(f.arms ? { arms: armsIn(f.arms, k) } : {}),
+						under: f.under && underIn(f.under, k),
 					}
 				: undefined,
-		arms: st.arms
-			? { move: st.arms.move, phase: frameOf(st.arms.move, st.arms.phase, k) }
-			: undefined,
+		arms: st.arms ? armsIn(st.arms, k) : undefined,
 	};
 };
 
@@ -184,19 +200,25 @@ const wholePose = (
 const poseFor = (st: FieldPlayerState, s: Stepped): Pose => {
 	const { phase, from, arms } = s;
 	const pose = wholePose(st.move, phase, st.mirrored === true, arms, st.ball);
-	return from && from.w > 0
-		? lerpPose(
-				pose,
-				wholePose(
-					from.move,
-					from.phase,
-					from.mirrored === true,
-					from.arms,
-					from.ball,
-				),
-				from.w,
-			)
-		: pose;
+	if (!from || from.w <= 0) {
+		return pose;
+	}
+	let was = wholePose(
+		from.move,
+		from.phase,
+		from.mirrored === true,
+		from.arms,
+		from.ball,
+	);
+	const u = from.under;
+	if (u) {
+		was = lerpPose(
+			was,
+			wholePose(u.move, u.phase, u.mirrored === true, u.arms, from.ball),
+			u.w,
+		);
+	}
+	return lerpPose(pose, was, from.w);
 };
 
 // How he is drawn, the way the sprite has him: his pose and the way he
@@ -311,7 +333,11 @@ export const drawFieldPlayer = (
 		}
 		key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
 			from
-				? `|${from.move}${from.mirrored ? "m" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}`
+				? `|${from.move}${from.mirrored ? "m" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}${
+						from.under
+							? `^${from.under.move}${from.under.mirrored ? "m" : ""}${from.under.phase}~${from.under.w}${from.under.arms ? `+${from.under.arms.move}${from.under.arms.phase}` : ""}`
+							: ""
+					}`
 				: ""
 		}${shaded ? "|d" : ""}`;
 		const kept = cache.kept.get(key);

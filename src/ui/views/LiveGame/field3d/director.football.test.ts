@@ -117,7 +117,9 @@ describe("compileField", () => {
 					on.add(part.pid);
 					// (A man hurt on it off to his sideline - see "a man hurt". A
 					// man run out of bounds, a stride or two over a sideline.)
-					const hurt = part.legs.some((l) => l.move === "hurt");
+					const hurt = part.legs.some(
+						(l) => l.move === "hurt" || l.move === "hurtProne",
+					);
 					for (const leg of hurt ? [] : part.legs) {
 						for (const p of [leg.from, leg.to]) {
 							assert.isTrue(
@@ -483,7 +485,7 @@ describe("a man hurt", () => {
 					(p) => p.id === him.pid,
 				);
 				assert.include(
-					["hurt", "tackled", "tackledBack"],
+					["hurt", "hurtProne", "tackled", "tackledBack"],
 					down?.move,
 					`play ${play.i}`,
 				);

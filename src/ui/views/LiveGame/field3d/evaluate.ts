@@ -386,24 +386,35 @@ const stateOf = (
 		at.x += aside.x;
 		at.y += aside.y;
 	}
+	// The leg he last changed what he was doing at (on through any more of
+	// it since), for him to be eased out of what he was before it - and, that
+	// one too short for him to have been eased all the way into it, the one
+	// before that, still part of what he was.
+	const changedAt = (j: number, at: number): number => {
+		while (
+			j > 0 &&
+			at - legs[j]!.t0 < BLEND_MS &&
+			!changed(legs[j - 1]!, legs[j]!)
+		) {
+			j--;
+		}
+		return j;
+	};
+	const c = changedAt(k, t);
+	const c2 = c > 1 ? changedAt(c - 1, legs[c]!.t0) : 0;
+	const left =
+		c2 > 0 && changed(legs[c2 - 1]!, legs[c2]!)
+			? 1 - (legs[c]!.t0 - legs[c2]!.t0) / blendOf(legs[c2]!)
+			: 0;
 	// The way he faced coming into this leg, and how far he had come in
-	// strides.
+	// strides (and before the leg he is eased out of).
 	// (And the way he was drawn facing as it started: a leg too short for
 	// his turn into it to be done, still turning.)
-	// (And the leg he last changed what he was doing at - on through any
-	// more of it since - for him to be eased out of what he was before it.)
-	let c = k;
-	while (
-		c > 0 &&
-		t - legs[c]!.t0 < BLEND_MS &&
-		!changed(legs[c - 1]!, legs[c]!)
-	) {
-		c--;
-	}
 	let before = legs[0]!.yaw ?? 0;
 	let turned = before;
 	let ran = 0;
 	let ranBefore = 0;
+	let ranUnder = 0;
 	for (let j = 0; j < k; j++) {
 		const lj = legs[j]!;
 		const aim = yawOf(lj, before);
@@ -414,6 +425,9 @@ const stateOf = (
 				: before;
 		if (j === c - 1) {
 			ranBefore = ran;
+		}
+		if (j === c2 - 1) {
+			ranUnder = ran;
 		}
 		ran = moveKind(lj.move) === "cycle" ? ran + lengthOf(lj) : 0;
 	}
@@ -428,9 +442,17 @@ const stateOf = (
 	// step.)
 	let from: FieldPlayerState["from"];
 	const prior = c > 0 ? legs[c - 1]! : undefined;
+	// (What he was before that, as he was when it ended.)
+	const underOf = (u: Leg, ranTo: number, w: number) => ({
+		move: u.move as Move,
+		phase: phaseOf(u, u.t1, offset, ranTo),
+		...(u.mirrored ? { mirrored: true } : {}),
+		w,
+		...(u.arms ? { arms: { move: u.arms, phase: armsPhaseOf(u, u.t1) } } : {}),
+	});
 	const blended = t - legs[c]!.t0;
 	const blending = blendOf(legs[c]!);
-	if (prior && blended < blending && changed(prior, legs[c]!)) {
+	if (prior && blended < blending && changed(legs[c - 1]!, legs[c]!)) {
 		const striding = prior.move === l.move && moveKind(l.move) === "cycle";
 		const wasAt = (at: number, u: number) =>
 			striding
@@ -458,6 +480,7 @@ const stateOf = (
 				? { arms: { move: prior.arms, phase: armsPhaseOf(prior, prior.t1) } }
 				: {}),
 			...(prior.ball ? { ball: prior.ball } : {}),
+			...(left > 0 ? { under: underOf(legs[c2 - 1]!, ranUnder, left) } : {}),
 		};
 	}
 	return {
