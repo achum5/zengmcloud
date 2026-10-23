@@ -1599,6 +1599,28 @@ const h = (
 	spentLine = false,
 ): Headline => ({ text, spentStar, spentLoserStar, spentLine });
 
+// A HEADLINE FITS ON A LINE. A tenth of them ran past 80 characters - "Evan
+// Carter has 35 points and 10 assists as the #8 Hornets push top-seeded
+// Warriors to the brink, 3-1" - nearly always because a man's whole line
+// sat in front of the result. Past 80, his line comes down to his points,
+// the way a wire headline has it ("Carter scores 35 as..."); the lede
+// under it gives the rest, since it prints whatever the headline did not.
+const HEADLINE_MAX = 80;
+export const trimHeadline = (text: string): string => {
+	if (text.length <= HEADLINE_MAX) {
+		return text;
+	}
+	return text
+		.replace(
+			/ (?:has|turns in|goes for|puts up|posts) (\d+) points(?:, \d+ \w+,)? and \d+ (?:rebounds|assists|steals|blocks)(?= as | in |, and )/,
+			" scores $1",
+		)
+		.replace(
+			/('s?) (\d+) points and \d+ (?:rebounds|assists|steals|blocks) (?=not enough|power|lead|carry|lift|sink)/,
+			"$1 $2 ",
+		);
+};
+
 const buildHeadline = (
 	game: RecapGame,
 	shape: Shape,
@@ -1606,8 +1628,13 @@ const buildHeadline = (
 	post: PostseasonContext,
 	rng: () => number,
 ): Headline => {
-	const headline = buildHeadlineText(game, shape, star, post, rng);
-	return { ...headline, spentScore: headline.text.includes(scoreTag(shape)) };
+	const built = buildHeadlineText(game, shape, star, post, rng);
+	const text = trimHeadline(built.text);
+	return {
+		...built,
+		text,
+		spentScore: text.includes(scoreTag(shape)),
+	};
 };
 
 const buildHeadlineText = (
@@ -2197,7 +2224,7 @@ const buildHeadlineText = (
 				[
 					`${star.name} and ${partner.name} lead the ${winnerN} ${winOver(rng)} the ${loserN}${tag}`,
 					`Double-doubles from ${star.name} and ${partner.name} carry the ${winnerN} ${winOver(rng)} the ${loserN}${tag}`,
-					`${star.name} and ${partner.name} both go for double-doubles as the ${winnerN} ${verb} the ${loserN}${tag}`,
+					`${star.name} and ${partner.name} post double-doubles as the ${winnerN} ${verb} the ${loserN}${tag}`,
 					`${winnerN} get double-doubles from ${star.name} and ${partner.name} in a ${scoreTag(shape)} win${tag}`,
 					`${star.name} and ${partner.name} are too much for the ${loserN}${tag}`,
 				],

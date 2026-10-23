@@ -545,6 +545,21 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// A headline cut down to "Herb Hayes scores 25" leaves his whole line to
+	// the lede.
+	test("a headline's trimmed line is given in full underneath", () => {
+		for (const { gid, recap } of pairs) {
+			const m = / scores (\d+)(?: as |, and )/.exec(recap.split("\n")[0]!);
+			if (m) {
+				assert.include(
+					recap.split("\n\n")[1],
+					`${m[1]} points`,
+					`gid ${gid}\n${recap}`,
+				);
+			}
+		}
+	});
+
 	// "But 18 turnovers did them in" of a game the winners turned it over
 	// 16 times: a reason they lost has to be something they did worse.
 	test("a reason the losers lost is a difference between the teams", () => {

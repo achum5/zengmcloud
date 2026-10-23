@@ -10,6 +10,7 @@ import {
 	hurtInGame,
 	pick,
 	postseasonSentences,
+	trimHeadline,
 	varyHalfWords,
 } from "./getAutoRecap.ts";
 import type {
@@ -1776,6 +1777,38 @@ describe("getAutoDayRecap", () => {
 			/Vince Carter \(sprained ankle, out about five games\)/.test(recap),
 			recap,
 		);
+	});
+});
+
+// "Evan Carter has 35 points and 10 assists as the #8 Hornets push
+// top-seeded Warriors to the brink, 3-1": a tenth of all headlines ran past
+// 80 characters, nearly always on a man's whole line.
+describe("a headline fits on a line", () => {
+	test("past 80 characters, a man's line comes down to his points", () => {
+		assert.equal(
+			trimHeadline(
+				"Evan Carter has 35 points and 10 assists as the #8 Hornets push top-seeded Warriors to the brink, 3-1",
+			),
+			"Evan Carter scores 35 as the #8 Hornets push top-seeded Warriors to the brink, 3-1",
+		);
+		assert.equal(
+			trimHeadline(
+				"Franz Ellis has 35 points and 7 assists, and the Pistons take a 2-1 series lead over the Bucks",
+			),
+			"Franz Ellis scores 35, and the Pistons take a 2-1 series lead over the Bucks",
+		);
+		assert.equal(
+			trimHeadline(
+				"Bennedict Ingram's 33 points and 10 rebounds not enough as the Timberwolves get past the Knicks",
+			),
+			"Bennedict Ingram's 33 not enough as the Timberwolves get past the Knicks",
+		);
+	});
+
+	test("a headline that fits is left alone", () => {
+		const fits =
+			"Herb Hayes has 22 points and 11 assists as the Heat edge the Pelicans";
+		assert.equal(trimHeadline(fits), fits);
 	});
 });
 
