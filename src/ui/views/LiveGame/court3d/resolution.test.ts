@@ -9,10 +9,12 @@ const run = (
 	ms: number,
 	frameMs: number,
 	drawMs: number,
+	// Of the drawing, making new pictures of the players.
+	spriteMs = 0,
 ) => {
 	let t = from;
 	for (; t < from + ms; t += frameMs) {
-		adjust(res, rows, frameMs, drawMs, t);
+		adjust(res, rows, frameMs, drawMs, t, spriteMs);
 	}
 	return t;
 };
@@ -49,6 +51,56 @@ describe("3D picture resolution", () => {
 		run(res, 1620, 0, 30_000, 45, 5);
 		assert.strictEqual(artFor(1620, res), 3);
 		assert.strictEqual(res.changes, 0);
+	});
+
+	test("a hitch every few seconds - new poses at each cut - leaves it as fine as it is", () => {
+		const res = makeResolution(0);
+		// A Retina picture drawn in 7 ms at 60 frames a second - and every
+		// 3 s, at the jump to the next key play, two frames of 100 ms.
+		let t = 0;
+		for (let k = 0; k < 40; k++) {
+			t = run(res, 1350, t, 3000, 16.7, 7);
+			for (let i = 0; i < 2; i++) {
+				t += 100;
+				adjust(res, 1350, 100, 95, t);
+			}
+		}
+		assert.strictEqual(artFor(1350, res), 2);
+		assert.strictEqual(res.changes, 0);
+		// The page's own first frames of a game, longer still.
+		for (const ms of [420, 250, 180, 100]) {
+			t += ms;
+			adjust(res, 1350, ms, ms - 5, t);
+		}
+		t = run(res, 1350, t, 5000, 16.7, 7);
+		assert.strictEqual(res.changes, 0);
+	});
+
+	test("a few seconds of new poses for everybody - the teams coming out - leave it as fine as it is", () => {
+		const res = makeResolution(0);
+		let t = run(res, 1350, 0, 4000, 16.7, 7, 3);
+		t = run(res, 1350, t, 4000, 40, 30, 25);
+		run(res, 1350, t, 30_000, 16.7, 7, 3);
+		assert.strictEqual(artFor(1350, res), 2);
+		assert.strictEqual(res.changes, 0);
+	});
+
+	test("coarser while the players' new pictures took too long, back finer once they don't", () => {
+		const res = makeResolution(0);
+		// Slow for a good while: a size coarser.
+		let t = run(res, 1350, 0, 12_000, 40, 30, 25);
+		assert.strictEqual(artFor(1350, res), 3);
+		// Then a frame in 5.5 ms, 4 of it the players' new pictures: a size
+		// finer would take about 10.5 ms (the pictures 2.25 times the
+		// pixels, the rest as it is) - room for it.
+		run(res, 1350, t, 15_000, 16.7, 5.5, 4);
+		assert.strictEqual(artFor(1350, res), 2);
+		// But not if nearly all of it was the players' pictures (about
+		// 12 ms a size finer).
+		const busy = makeResolution(0);
+		t = run(busy, 1350, 0, 12_000, 40, 30, 25);
+		run(busy, 1350, t, 15_000, 16.7, 5.5, 5);
+		assert.strictEqual(artFor(1350, busy), 3);
 	});
 
 	test("a device keeping up stays as fine as it gets", () => {

@@ -1367,7 +1367,16 @@ const Court3D = ({
 				courtside: cr.courtside,
 				teamColors: p.teamColors,
 			});
-			if (adjust(res, h * dpr, dt, performance.now() - drawStart, now)) {
+			if (
+				adjust(
+					res,
+					h * dpr,
+					dt,
+					performance.now() - drawStart,
+					now,
+					sprites.spent,
+				)
+			) {
 				// Sprites drawn for the old size are no use at the new one - let
 				// go of now.
 				releaseSprites(sprites);
