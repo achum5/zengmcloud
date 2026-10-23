@@ -706,6 +706,16 @@ const FLOW_ON_MS = 1500;
 // Pulling up for three off a ball screen, he dribbles this far (feet) off
 // it, past the screener's shoulder, first.
 const PULL_UP_OFF = 4.5;
+// A pull-up jumper from the elbow, at most this far out (feet).
+const MID_PULL_UP_IN = 20.5;
+// A roll to the rim with the man with the ball driving into the lane - to
+// within ROLL_AWAY_IN feet of the rim, more than ROLL_AWAY_MID off the middle
+// of it - goes in to the rim's far side from him: this far out from it, and
+// across (feet).
+const ROLL_AWAY_IN = 12;
+const ROLL_AWAY_MID = 1.5;
+const ROLL_AWAY_OUT = 2.5;
+const ROLL_AWAY_ACROSS = 4.5;
 // Holding it this near the rim (feet) or nearer, a man fakes going up with
 // it - never a jab step (see liveHands).
 const IN_CLOSE_FAKE = 9;
@@ -1043,6 +1053,10 @@ const HEAVE_RUN = 19;
 // Coming off a ball screen with the man who set it right in his way, he
 // goes round him this far off (feet) - the ball on the far side.
 const ROUND_SCREEN = 2.0;
+// A ball screen still there for him to use: set no longer ago than this
+// (ms) as he sets off, and the man who set it this near him (feet).
+const SCREEN_FRESH = 2000;
+const SCREEN_HERE = 9;
 // And by where the shot came from: a break ends at the rim far more often
 // than a trip does, seldom with a floater and hardly ever with a pull-up from
 // mid-range (see BREAK_SHARE) - so a trip ending at the rim was a break on a
@@ -6226,7 +6240,15 @@ class Director {
 		// A drive at his man - now and then with a move to get by him first.
 		// (Not straight off a handoff taken on the move: the handoff is what
 		// gets him by his man, and he is on his way - though the draws are
-		// made all the same.)
+		// made all the same. Nor off a ball screen just set for him: the
+		// screen is what gets him by, and he comes off it as it is set - not
+		// stood in front of it crossing over while the big holds it and the
+		// rest of the floor comes in round them.)
+		const screened =
+			sc?.ball === true &&
+			sc.user === pid &&
+			start - sc.set < SCREEN_FRESH &&
+			sc.screeners.some((s) => dist(this.posOf(s), A) < SCREEN_HERE);
 		const move = kind === "crossover" || kind === "hesitation";
 		const drive =
 			!move &&
@@ -6235,7 +6257,7 @@ class Director {
 				kind === "drive_middle") &&
 			dist(this.posOf(pid), P) > 7 &&
 			this.rng() < 0.5;
-		if (handed && drive) {
+		if ((handed || screened) && drive) {
 			this.skipCrossover(pid, P, start);
 		} else if (move || drive) {
 			const t = this.driveTo(pid, P, start, dir, "crossover");
@@ -6276,7 +6298,19 @@ class Director {
 		const push = kind === "advance" && run.play.cat === "break";
 		const speed = DRIBBLE_SPEED[push ? "push" : kind] ?? 16;
 		if (around && kind !== "snake") {
-			t = this.go(pid, around, t, speed, "dribble");
+			// (Round him and on, in stride: no pulling up at his shoulder to
+			// set off again from there.)
+			const a = unitVec(this.posOf(pid), around);
+			const b = unitVec(around, P);
+			const onto =
+				Math.min(
+					speed,
+					paceAfter(
+						dist(this.posOf(pid), around),
+						this.carried(pid, around, t, speed),
+					),
+				) * keepThrough(a.x * b.x + a.y * b.y);
+			t = this.go(pid, around, t, speed, "dribble", undefined, { onto });
 		}
 		return this.go(
 			pid,
@@ -6304,6 +6338,31 @@ class Director {
 		// Once the ball is over half court nobody goes back over it - not to
 		// trail the play, not for a pass.
 		const dir = attackDir(run.team);
+		// Rolling to the rim as the man with the ball drives into the lane -
+		// off the handoff he gave him, the screen he set - he goes in to the
+		// far side of the rim from where the drive is headed: not down the
+		// lane at the driver's shoulder, the two of them and both their men
+		// one pack all the way in. (There for the dump-off across, and out of
+		// the floater's way.)
+		if (to === "rim" && (style === "roll" || style === "dive")) {
+			const h = this.holder;
+			const drive =
+				h !== undefined && h !== pid && this.teamOf(h) === run.team
+					? this.track(h)?.moves.at(-1)
+					: undefined;
+			const across = drive ? drive.to.y - rim.y : 0;
+			if (
+				drive?.anim === "dribble" &&
+				drive.t1 > t0 &&
+				dist(drive.to, rim) < ROLL_AWAY_IN &&
+				Math.abs(across) > ROLL_AWAY_MID
+			) {
+				P = clampPt({
+					x: rim.x - dir * ROLL_AWAY_OUT,
+					y: rim.y - Math.sign(across) * ROLL_AWAY_ACROSS,
+				});
+			}
+		}
 		const ballOver =
 			this.holder !== undefined &&
 			(this.posAt(this.holder, t0).x - COURT_W / 2) * dir > 2;
@@ -6518,12 +6577,23 @@ class Director {
 		// move: timed to come by as the man with it is ready to give it, the
 		// ball handed to him going by and him on his way with it, not stood
 		// there waiting on it and then stood there with it.
+		// (Pulling up off it, the same: off the giver's hip and up - see
+		// playToShot.)
 		const role = run.roles.indexOf(recv);
+		const o = run.option;
+		const pulls =
+			o !== undefined &&
+			o.after === k &&
+			o.branch.length === 0 &&
+			o.shooter === role &&
+			o.kind === "pull_up" &&
+			(o.zone === "three" || o.zone === "mid");
 		const on =
 			role >= 0 &&
-			after.some(
-				(x) => (x.type === "dribble" || x.type === "move") && x.who === role,
-			);
+			(pulls ||
+				after.some(
+					(x) => (x.type === "dribble" || x.type === "move") && x.who === role,
+				));
 		const ready = Math.max(this.free.get(giver) ?? 0, held + 180);
 		let start = Math.max(t0, this.free.get(recv) ?? 0);
 		let onto = 0;
@@ -8184,7 +8254,9 @@ class Director {
 			const mine = this.hasItFrom(shooter);
 			if (mine < t - 150) {
 				const screen =
-					run.screen?.user === shooter ? run.screen.set + SCREEN_USE : 0;
+					run.screen?.user === shooter
+						? (run.screen.handed ?? run.screen.set + SCREEN_USE)
+						: 0;
 				let k = this.ball.length - 1;
 				for (; k >= 0; k--) {
 					const s = this.ball[k]!;
@@ -8356,7 +8428,8 @@ class Director {
 			);
 		} else if (
 			o.kind === "pull_up" &&
-			o.zone === "three" &&
+			(o.zone === "three" ||
+				(o.zone === "mid" && run.screen?.handed !== undefined)) &&
 			this.holder === shooter &&
 			run.screen?.ball === true &&
 			run.screen.user === shooter &&
@@ -8367,23 +8440,44 @@ class Director {
 			// first - a hard dribble or two past the big's shoulder, the way he
 			// turns the corner - and up behind it, his man caught on it. Not
 			// stood where he was all along and shooting over it.
+			// (Off a handoff he took on the move - for three, or from the
+			// elbow - he goes on with it as he has it, the way he was going,
+			// past the man who gave it him: not stood with it beside him while
+			// he turns to screen, nor up off the catch with the two of them
+			// shoulder to shoulder.)
 			const sc = run.screen;
 			const S = this.posOf(sc.screeners[0]!);
 			const ur = unitVec(P, rim);
+			const came = this.track(shooter)?.moves.at(-1);
+			const way =
+				sc.handed !== undefined && came && dist(came.from, came.to) > 1
+					? unitVec(came.from, came.to)
+					: undefined;
 			const side =
-				Math.sign((S.x - P.x) * -ur.y + (S.y - P.y) * ur.x) ||
-				(shooter % 2 ? 1 : -1);
+				Math.sign(
+					way
+						? way.x * -ur.y + way.y * ur.x
+						: (S.x - P.x) * -ur.y + (S.y - P.y) * ur.x,
+				) || (shooter % 2 ? 1 : -1);
 			let Q = clampPt({
 				x: P.x - ur.y * side * PULL_UP_OFF + ur.x * 0.8,
 				y: P.y + ur.x * side * PULL_UP_OFF + ur.y * 0.8,
 			});
-			// (Still well behind the line.)
-			if (dist(Q, rim) < 24.4) {
+			const out = o.zone === "three" ? 24.4 : MID_PULL_UP_IN;
+			if (o.zone === "three" ? dist(Q, rim) < out : dist(Q, rim) > out) {
+				// (A three still well behind the line; a jumper from the elbow
+				// still inside it.)
 				const u = unitVec(rim, Q);
-				Q = clampPt({ x: rim.x + u.x * 24.4, y: rim.y + u.y * 24.4 });
+				Q = clampPt({ x: rim.x + u.x * out, y: rim.y + u.y * out });
 			}
-			t = Math.max(t, sc.set + SCREEN_USE);
-			this.hold(shooter, t, "dribble");
+			if (sc.handed !== undefined) {
+				t = sc.handed;
+				this.hold(shooter, t, "hold");
+				this.hold(shooter, t + GATHER_MS, "dribble");
+			} else {
+				t = Math.max(t, sc.set + SCREEN_USE);
+				this.hold(shooter, t, "dribble");
+			}
 			t = this.go(shooter, Q, t, DRIBBLE * 0.7, "dribble", dir);
 		} else if (
 			o.kind === "step_back" &&

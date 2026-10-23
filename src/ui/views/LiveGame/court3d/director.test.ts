@@ -2682,6 +2682,137 @@ describe("3D director", () => {
 		assert.isAtMost(ons[Math.floor(ons.length / 2)]!, 700, `${ons}`);
 	}, 240_000);
 
+	// A jumper off a handoff goes up off the hip of the man who gave it, a
+	// dribble or two on the way he was going: not stood with it at his side
+	// for a second or two while he turns to screen, nor up off the catch with
+	// the two of them shoulder to shoulder.
+	test("a pull-up off a handoff comes off the man who gave it", () => {
+		const shots: string[] = [];
+		const slow: string[] = [];
+		const close: string[] = [];
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl } = compile(seed, 150);
+			tl.ball.forEach((s, i) => {
+				if (
+					s.kind !== "fly" ||
+					!("pid" in s.from) ||
+					!("pid" in s.to) ||
+					s.from.pid === s.to.pid ||
+					s.t1 - s.t0 > 200
+				) {
+					return;
+				}
+				const giver = s.from.pid;
+				const recv = s.to.pid;
+				const G = evalPlayer(tl, giver, s.t0);
+				const C = evalPlayer(tl, recv, s.t1);
+				if (
+					Math.hypot(G.x - C.x, G.y - C.y) > 3.5 ||
+					!tl.tracks
+						.get(giver)!
+						.acts.some(
+							(a) =>
+								a.anim === "pass" && a.t0 <= s.t0 + 20 && a.t1 >= s.t0 - 20,
+						)
+				) {
+					return;
+				}
+				// Next the ball is let go of: a jumper of his.
+				const up = tl.ball
+					.slice(i + 1)
+					.find((z) => !(z.kind === "hold" && z.pid === recv));
+				if (
+					up?.kind !== "fly" ||
+					"pid" in up.to ||
+					up.t0 - s.t1 > 3500 ||
+					!tl.tracks
+						.get(recv)!
+						.acts.some(
+							(a) => a.anim === "shoot" && a.t0 <= up.t0 && a.t1 > up.t0,
+						)
+				) {
+					return;
+				}
+				const at = `${seed}: ${recv} at ${Math.round(up.t0)}`;
+				shots.push(at);
+				if (up.t0 - s.t1 > 2600) {
+					slow.push(`${at} (${Math.round(up.t0 - s.t1)} ms)`);
+				}
+				const A = evalPlayer(tl, giver, up.t0);
+				const B = evalPlayer(tl, recv, up.t0);
+				if (Math.hypot(A.x - B.x, A.y - B.y) < 2.5) {
+					close.push(at);
+				}
+			});
+		}
+		assert.isAtLeast(shots.length, 8);
+		assert.isAtMost(slow.length, 1, slow.join("; "));
+		assert.isAtMost(close.length, 1, close.join("; "));
+	}, 240_000);
+
+	// A drive into the lane goes in on its own: nobody of his running in at
+	// his shoulder the whole way - the man who set him the screen or gave him
+	// the handoff rolls in to the far side of the rim, not down the lane with
+	// him, the two of them and both their men one pack.
+	test("a drive into the lane has no teammate running in at his shoulder", () => {
+		let drives = 0;
+		const along: string[] = [];
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl } = compile(seed, 150);
+			const tracks = [...tl.tracks.values()];
+			for (const tr of tracks) {
+				const mates = tracks.filter((o) => o !== tr && o.team === tr.team);
+				for (const m of tr.moves) {
+					const rim = Math.min(
+						...[rimX(0), rimX(1)].map((x) =>
+							Math.hypot(m.to.x - x, m.to.y - COURT_H / 2),
+						),
+					);
+					if (
+						m.anim !== "dribble" ||
+						Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y) < 6 ||
+						rim > 12
+					) {
+						continue;
+					}
+					drives += 1;
+					// Over the back half of it: a teammate within 4.5 ft of him,
+					// both going the same way.
+					const n = new Map<number, number>();
+					for (let i = 0; i < 6; i++) {
+						const t = m.t0 + (m.t1 - m.t0) * (0.5 + i / 12);
+						const A = evalPlayer(tl, tr.pid, t);
+						const A0 = evalPlayer(tl, tr.pid, t - 100);
+						const ax = A.x - A0.x;
+						const ay = A.y - A0.y;
+						for (const o of mates) {
+							const B = evalPlayer(tl, o.pid, t);
+							const B0 = evalPlayer(tl, o.pid, t - 100);
+							const bx = B.x - B0.x;
+							const by = B.y - B0.y;
+							const va = Math.hypot(ax, ay);
+							const vb = Math.hypot(bx, by);
+							if (
+								Math.hypot(A.x - B.x, A.y - B.y) < 4.5 &&
+								va > 0.4 &&
+								vb > 0.4 &&
+								(ax * bx + ay * by) / (va * vb) > 0.6
+							) {
+								n.set(o.pid, (n.get(o.pid) ?? 0) + 1);
+							}
+						}
+					}
+					const most = Math.max(0, ...n.values());
+					if (most >= 3) {
+						along.push(`${seed}: ${tr.pid} at ${Math.round(m.t0)}`);
+					}
+				}
+			}
+		}
+		assert.isAbove(drives, 120);
+		assert.isAtMost(along.length, drives * 0.035, along.join("; "));
+	}, 240_000);
+
 	// "Dunks on him": the man the words name is the one who meets him at the
 	// rim - nearest him of anybody on the other side, right there, up with
 	// him - not someone else who happened to be in there.
