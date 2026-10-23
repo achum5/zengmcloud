@@ -459,6 +459,16 @@ const DRIVEN_BACK = 0.55;
 // late as this after it), this often.
 const GANG = [0.5, 0.35];
 const GANG_LATE = 250;
+// A carrier making a man miss, this often on a stretch this long (feet, and
+// ms) at least; a stiff arm, this often when the man comes at his free arm.
+// The cut: this long, this far on and over (feet).
+const EVADE = 0.5;
+const EVADE_FAR = 30;
+const EVADE_MS = 1200;
+const STIFF_ARM = 0.5;
+const JUKE_MS = 300;
+const JUKE_ON = 2;
+const JUKE_OVER = 5;
 // How much later than he would have been a carrier can be brought down, his
 // run slowed, for the man the sim says made the tackle to get there.
 const SLACK_MS = 700;
@@ -1353,6 +1363,7 @@ class Action {
 		by?: Actor[],
 	) {
 		if (end.td) {
+			this.evade(carrier, [], chasers);
 			// Into the end zone, slowing up, the ball held up.
 			const goal = this.goalLineX();
 			const crossT = this.crossing(carrier, goal, t);
@@ -1370,6 +1381,7 @@ class Action {
 			return;
 		}
 		const down = this.downBy(carrier, end.pt, t, chasers, by);
+		this.evade(carrier, down.by, chasers);
 		this.at.set(i, down.t);
 		this.whistle = down.t;
 		const fumI = this.fumbleAfter(i);
@@ -1380,6 +1392,94 @@ class Action {
 		const pile = this.tackle(carrier, down.by, end.pt, down.t);
 		this.gangUp(chasers, pile, down.t, down.by);
 		this.pursue(chasers, end.pt, down.t, down.by);
+	}
+
+	// Making a man miss on the way, now and then on a long enough carry: one
+	// of `chasers` (not the men who bring him down) there to meet him
+	// partway along his last stretch - and a cut away from him, a plant and
+	// off the other way, the man left on the turf behind him; or, coming at
+	// his free arm, put on his back with a stiff arm.
+	evade(carrier: Actor, by: Actor[], chasers: Actor[]) {
+		const r = this.r;
+		const l = carrier.last;
+		const ms = l.t1 - l.t0;
+		if (
+			moveKind(l.move) !== "cycle" ||
+			dist(l.from, l.to) < EVADE_FAR ||
+			ms < EVADE_MS ||
+			r() > EVADE
+		) {
+			return;
+		}
+		const ang = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+		const tc = l.t0 + ms * (0.3 + r() * 0.35);
+		const at = carrier.posAt(tc);
+		const m = chasers
+			.filter(
+				(c) =>
+					c.team !== carrier.team &&
+					!this.done.has(c.pid) &&
+					!by.includes(c) &&
+					c.t < tc - 400,
+			)
+			.map((c) => ({
+				c,
+				t: this.canReach(c, at),
+				from: c.posAt(Math.max(this.seen, Math.min(c.t, tc - 700))),
+			}))
+			// (Coming at him, not from behind.)
+			.filter(
+				(x) =>
+					x.t < tc - 250 &&
+					Math.cos(Math.atan2(x.from.y - at.y, x.from.x - at.x) - ang) > -0.3,
+			)
+			.sort((a, b) => a.t - b.t)[0];
+		if (!m) {
+			return;
+		}
+		const toHim = Math.atan2(m.from.y - at.y, m.from.x - at.x);
+		// (Which side he comes from: +1 the side the ball is carried on, his
+		// right.)
+		const side = Math.sin(toHim - ang) > 0 ? 1 : -1;
+		const beside = (p: Pt, a: number, by: number) => ({
+			x: p.x + Math.cos(a) * by,
+			y: p.y + Math.sin(a) * by,
+		});
+		if (side < 0 && r() < STIFF_ARM) {
+			const hit = beside(at, ang - Math.PI / 2, 2.6);
+			const face = this.toward(hit, at);
+			this.closeOn(m.c, hit, tc - 80, face);
+			m.c.act("tackledBack", tc + 520, face, beside(hit, face, -1.6));
+			m.c.hold(tc + 520 + 600, "supine");
+			m.c.act("getUpBack", tc + 520 + 600 + GET_UP_MS);
+			carrier.arms("stiffArm", tc - 280, tc + 300);
+		} else {
+			const { to, t1, move } = l;
+			const off = beside(
+				beside(at, ang, JUKE_ON),
+				ang - (side * Math.PI) / 2,
+				JUKE_OVER,
+			);
+			// (Not if it would take more than he has to get there still.)
+			if (dist(off, to) / ((t1 - tc - JUKE_MS) / 1000) > carrier.top) {
+				return;
+			}
+			carrier.cut(tc);
+			carrier.act("juke", tc + JUKE_MS, ang, off);
+			if (side < 0) {
+				// (To his right: the cut the other way round.)
+				carrier.last.mirrored = true;
+			}
+			carrier.go(to, t1, move);
+			// (Off his feet at where he was.)
+			const hit = beside(at, toHim, 3.5);
+			const face = this.toward(hit, at);
+			this.closeOn(m.c, hit, tc - 100, face);
+			m.c.act("dive", tc + 380, face, beside(at, face, 0.8));
+			m.c.hold(tc + 380 + 700, "prone");
+			m.c.act("getUp", tc + 380 + 700 + GET_UP_MS);
+		}
+		this.done.add(m.c.pid);
 	}
 
 	// Who brings the carrier down at `pt` - `who`, or the men the sim says

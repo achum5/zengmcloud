@@ -789,6 +789,78 @@ const FIELD_ANIMS = {
 			[1, PRONE],
 		],
 	},
+	// A cut on the run, to his left: the right foot planted out wide, low,
+	// his shoulders dipped into it, and off the left.
+	juke: {
+		kind: "act",
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 34,
+					kneeN: 56,
+					hipF: -8,
+					kneeF: 34,
+					lean: 22,
+					shF: 30,
+					elF: 70,
+				}),
+			],
+			[
+				0.35,
+				pose({
+					hipN: 30,
+					kneeN: 76,
+					hipF: 18,
+					kneeF: 52,
+					lean: 26,
+					wide: 0.5,
+					wideN: 0.9,
+					tilt: 16,
+					twist: -8,
+					legs: 10,
+					shF: 50,
+					elF: 40,
+					abF: 40,
+				}),
+			],
+			[
+				0.7,
+				pose({
+					hipN: -6,
+					kneeN: 30,
+					hipF: 40,
+					kneeF: 66,
+					lean: 22,
+					wide: 0.4,
+					wideF: 0.4,
+					tilt: 10,
+					legs: 20,
+					shF: 40,
+					elF: 60,
+					abF: 20,
+				}),
+			],
+			[
+				1,
+				pose({
+					hipN: 30,
+					kneeN: 50,
+					hipF: -10,
+					kneeF: 30,
+					lean: 18,
+					shF: 30,
+					elF: 70,
+				}),
+			],
+		],
+	},
+	// The free arm out straight at a man coming at him, the heel of the
+	// hand into him.
+	stiffArm: {
+		kind: "still",
+		pose: pose({ shF: 80, elF: 4, abF: 6, wrF: 30 }),
+	},
 	// Met head on and driven back: his feet out from under him, down on his
 	// seat, and over onto his back.
 	tackledBack: {

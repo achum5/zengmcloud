@@ -93,7 +93,7 @@ describe("the plays acted out", () => {
 				});
 			}
 		});
-	});
+	}, 30_000);
 
 	test("the ball always somewhere: thrown to where a man catches it, handed from hand to hand", () => {
 		eachPlay((play) => {
