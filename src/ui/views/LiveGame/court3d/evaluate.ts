@@ -2424,7 +2424,13 @@ const blendInto = (
 	// foot still pointing where it pointed on the floor as that changed).
 	const facing = yawAt(tl, tr, lo);
 	const there = spotAt(tr, lo);
-	const own = legsOf(there, facing, before.anim, lo);
+	const own = flippedLegs(
+		tl,
+		tr,
+		lo,
+		before.anim,
+		legsOf(there, facing, before.anim, lo),
+	);
 	const way =
 		PUSH_STEPS.has(before.anim) && there.moving
 			? wayOf(tr, facing, lo)
@@ -3145,7 +3151,7 @@ export const evalPlayer = (
 				}
 			: doing;
 	const yaw = spinYawAt(tl, tr, t) ?? yawAt(tl, tr, t);
-	const legs = legsOf(here, yaw, now.anim, t);
+	const legs = flippedLegs(tl, tr, t, now.anim, legsOf(here, yaw, now.anim, t));
 	const way =
 		PUSH_STEPS.has(now.anim) && here.moving ? wayOf(tr, yaw, t) : undefined;
 	const pivot = shown ? pivotOf(tl, tr, yaw, now, t) : undefined;
@@ -3298,6 +3304,53 @@ const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
 		) * (here.round === undefined ? 1 : smooth01(here.round / LEGS_FTPS));
 	// (His left is the floor's clockwise.)
 	return -Math.sign(off) * turn * ease;
+};
+// Turned and away out of a backpedal, his legs come round under him over a
+// couple of steps - eased over from the turn they had under him as he went
+// back - not swung from back the way he went to out ahead of him in a frame
+// or two as his hips go round. (The last moment he was backpedalling: looked
+// for back a FLICK_MS at a time, at the same moments whatever the frame,
+// past nothing but strides.)
+const FLIP_MS = 320;
+const FLIPS_TO = new Set<AnimName>([
+	"run",
+	"sprint",
+	"jog",
+	"walk",
+	"dribble",
+	"dribbleWalk",
+	"carry",
+]);
+const flippedLegs = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	anim: AnimName,
+	own: number,
+): number => {
+	if (!FLIPS_TO.has(anim)) {
+		return own;
+	}
+	for (
+		let at = Math.floor(t / FLICK_MS) * FLICK_MS;
+		at > t - FLIP_MS;
+		at -= FLICK_MS
+	) {
+		const d = doingAt(tl, tr, at);
+		if (d.anim === "back") {
+			// (Not a moment's backpedal in passing, his legs never round for
+			// it: that is eased out of like any other change.)
+			if (doingAt(tl, tr, at - FLICK_MS).anim !== "back") {
+				return own;
+			}
+			const was = legsOf(spotAt(tr, at), yawAt(tl, tr, at), "back", at);
+			return own + (was - own) * (1 - smooth01((t - at) / FLIP_MS));
+		}
+		if (!FLIPS_TO.has(d.anim)) {
+			return own;
+		}
+	}
+	return own;
 };
 
 // TURNING WHERE HE STANDS.

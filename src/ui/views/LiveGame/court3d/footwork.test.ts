@@ -68,7 +68,81 @@ describe("footwork", () => {
 		assert.isAbove(travel, 10);
 		assert.isBelow(slide, 0.5);
 	}, 120_000);
+
+	// Backpedalling, then turned and away: his legs come round under him
+	// over a couple of steps - not a foot swung from behind him to out in
+	// front of him in a frame or two as his hips go round.
+	test("turned out of a backpedal, his feet come round, not flung", () => {
+		const { turns, flung, worst } = turnAndRun();
+		assert.isAbove(turns, 100);
+		assert.isBelow(flung / turns, 0.2);
+		assert.isBelow(worst, 1.2);
+	}, 240_000);
 });
+
+// Every turn out of a backpedal into a run in the first fifteen minutes of
+// a game, frame by frame through it: how many there were, the frames a foot
+// went more than 0.75 ft round him (beyond what his hips did), and the most.
+const FORWARD = new Set<AnimName>([
+	"run",
+	"sprint",
+	"jog",
+	"walk",
+	"dribble",
+	"dribbleWalk",
+	"carry",
+]);
+const turnAndRun = () => {
+	const body = bodyOf();
+	const tl = (game ??= compile("a", 140).tl);
+	let turns = 0;
+	let flung = 0;
+	let worst = 0;
+	for (const tr of tl.tracks.values()) {
+		let back = -Infinity;
+		let done = -Infinity;
+		for (let t = 0; t < Math.min(tl.end, 900_000); t += 40) {
+			const st = evalPlayer(tl, tr.pid, t);
+			if (!st.shown) {
+				continue;
+			}
+			if (st.anim === "back") {
+				back = t;
+				continue;
+			}
+			if (!FORWARD.has(st.anim) || t - back > 80 || t < done) {
+				continue;
+			}
+			turns += 1;
+			done = back + 500;
+			let prev:
+				| { x: number; y: number; feet: { x: number; y: number; z: number }[] }
+				| undefined;
+			for (let u = back; u < done; u += 16) {
+				const s = evalPlayer(tl, tr.pid, u);
+				const me = withBody(s, body);
+				const sk = skeleton(body, poseOf(me));
+				const hips = bodyPoint(me, sk.pelvis);
+				const feet = [sk.legR.end, sk.legL.end].map((j) => {
+					const f = bodyPoint(me, j);
+					return { x: f.x - hips.x, y: f.y - hips.y, z: f.z };
+				});
+				if (prev && Math.hypot(s.x - prev.x, s.y - prev.y) < 1) {
+					for (const [i, f] of feet.entries()) {
+						const was = prev.feet[i]!;
+						const d = Math.hypot(f.x - was.x, f.y - was.y, f.z - was.z);
+						worst = Math.max(worst, d);
+						if (d > 0.75) {
+							flung += 1;
+						}
+					}
+				}
+				prev = { x: s.x, y: s.y, feet };
+			}
+		}
+	}
+	return { turns, flung, worst };
+};
 
 // Moving like this over the first fifteen minutes of a game: how far he
 // went, and how far the foot that moved least slid along the floor for
