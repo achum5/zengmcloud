@@ -7610,6 +7610,24 @@ describe("the second man who outscored the first", () => {
 		assert.ok(recap.includes("Keegan Green"), recap);
 	});
 
+	// "Knicks top the Pelicans behind Xavier Ingram's 20 points and 10
+	// rebounds / The shooting was not pretty for Xavier Ingram - 5-of-20",
+	// over a teammate's 27 on 12-of-17.
+	test("a man who shot himself out of it gives the lede to the scorer", () => {
+		const g = twoMen(20, 25);
+		const pick = g.teams[0].players[0]!;
+		Object.assign(pick, { ast: 3, reb: 10, stl: 1, fg: 5, fga: 20 });
+		const recap = getAutoRecap(g);
+		const [head, lede] = recap.split("\n\n");
+		assert.ok(head!.includes("Lonnie Green"), recap);
+		assert.match(lede!, /^Lonnie Green\b|\. Lonnie Green\b/, recap);
+		assert.ok(recap.includes("Keegan Green"), recap);
+		// The same line on 10-of-20 keeps it.
+		Object.assign(pick, { fg: 10 });
+		const kept = getAutoRecap(g).split("\n\n")[0]!;
+		assert.ok(kept.includes("Keegan Green"), kept);
+	});
+
 	test("an ordinary second man still gets an ordinary verb", () => {
 		const recap = getAutoRecap(twoMen(28, 14));
 		assert.doesNotMatch(

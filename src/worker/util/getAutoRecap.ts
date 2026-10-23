@@ -590,6 +590,32 @@ const storyPlayerOf = (
 			star = top;
 		}
 	}
+	// A NIGHT HE SHOT HIMSELF OUT OF. Twenty and ten on 5-of-20 led a win in
+	// which a teammate scored 27 on 12-of-17, and the second sentence of the
+	// lede was "The shooting was not pretty for Xavier Ingram". Under 36% on
+	// 14 or more shots, the pick gives way to a teammate who outscored him on
+	// an honest night; a rare line holds unless that man scored eight more,
+	// and a triple-double always holds.
+	if (
+		star &&
+		shape.winner.players.includes(star) &&
+		star.fga >= 14 &&
+		star.fg / star.fga < 0.36 &&
+		doubleCategories(star).length < 3
+	) {
+		const pick = star;
+		const top = shape.winner.players
+			.filter((p) => p !== pick)
+			.sort((a, b) => b.pts - a.pts)[0];
+		if (
+			top &&
+			top.pts >= pick.pts + (rareLine(pick) ? 8 : 3) &&
+			top.fga > 0 &&
+			top.fg / top.fga >= 0.45
+		) {
+			star = top;
+		}
+	}
 	// A LINE THAT IS ONLY POINTS is the story only when nobody on his side
 	// outscored it. Picked for what the line does not show - seven rebounds,
 	// two steals - he read as the wrong man: "Miles Ingram's 24 leads the
