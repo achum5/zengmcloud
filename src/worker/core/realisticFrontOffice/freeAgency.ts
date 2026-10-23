@@ -496,6 +496,7 @@ export const freeAgencyDay = async () => {
 		return;
 	}
 
+	let poolLeft = -1;
 	if (phase === PHASE.FREE_AGENCY) {
 		// The quality left in the pool, against the quality as free agency
 		// opened: players above the minimum's level, by how far.
@@ -509,9 +510,9 @@ export const freeAgencyDay = async () => {
 		) {
 			poolAtOpen = { lid: g.get("lid"), season: g.get("season"), quality };
 		}
-		setFreeAgentPoolLeft(
-			poolAtOpen.quality > 0 ? Math.min(1, quality / poolAtOpen.quality) : 0,
-		);
+		poolLeft =
+			poolAtOpen.quality > 0 ? Math.min(1, quality / poolAtOpen.quality) : 0;
+		setFreeAgentPoolLeft(poolLeft);
 	}
 	const outlook = await currentOutlook();
 	const cpu = new Set(await aiTids());
@@ -555,10 +556,9 @@ export const freeAgencyDay = async () => {
 		}),
 	);
 	// During free agency, what room buys shrinks as the pool empties
-	// (payroll.ts), so lines last a day.
-	const day = phase === PHASE.FREE_AGENCY ? g.get("daysLeft") : -1;
+	// (payroll.ts), so lines last while the pool does.
 	const lineOf = (tid: number, p: Player, years: number) => {
-		const key = `${day}:${tid}:${p.pid}:${years}:${p.value}:${rosterKey.get(tid)}`;
+		const key = `${poolLeft}:${tid}:${p.pid}:${years}:${p.value}:${rosterKey.get(tid)}`;
 		let line = lineCache.lines.get(key);
 		if (!line) {
 			if (lineCache.lines.size > 100_000) {
