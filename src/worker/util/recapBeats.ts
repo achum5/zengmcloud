@@ -419,7 +419,7 @@ export const homeRoadBeat = (
 				[
 					`${L} dropped to ${la.won}-${la.lost} on the road.`,
 					`${L} have won just ${numWord(la.won)} of ${numWord(games(la))} on the road.`,
-					`It is ${la.won}-${la.lost} on the road now for ${ln}.`,
+					`${L} are ${la.won}-${la.lost} away from home.`,
 				],
 				"roadStruggles",
 			),
@@ -901,6 +901,32 @@ const nextPlayoffGame = (ctx: BeatContext, rng: Rng): string | undefined => {
 		? ` in ${host.region}`
 		: ` at ${poss(theNick(host))} place`;
 	const hostNick = theNick(host);
+	// The stakes sentence already named the game - "Nothing short of four
+	// straight saves the Pelicans, and Game 4 could end it. Next is Game 4 in
+	// New Orleans." - so this one says only where the series goes.
+	if (new RegExp(String.raw`\bGame ${gameNo}\b`).test(ctx.written)) {
+		const stays = ctx.game.teams[0].tid === host.tid;
+		return host.region
+			? stays
+				? pick(
+						rng,
+						[
+							`The series stays in ${host.region}.`,
+							`That one is in ${host.region} too.`,
+						],
+						"nextPlayoffGameStays",
+					)
+				: pick(
+						rng,
+						[
+							`The series shifts to ${host.region}.`,
+							`The series heads to ${host.region}.`,
+							`That one is in ${host.region}.`,
+						],
+						"nextPlayoffGameShifts",
+					)
+			: `${cap(hostNick)} are at home for it.`;
+	}
 	return pick(
 		rng,
 		[
@@ -1029,7 +1055,7 @@ export const scoringNormBeat = (
 						// other clubs in it, and "That is 17 more" two sentences after
 						// the last mention of them attaches to the wrong one.
 						`The ${ctx.winner.pts} were ${numWord(over)} more than ${poss(wn)} season average of ${wNorm.pts.toFixed(1)}.`,
-						`${W} scored ${numWord(over)} more than they had been managing on the season.`,
+						`${W} topped their season scoring average by ${numWord(over)}.`,
 						`${W} came in averaging ${wNorm.pts.toFixed(1)} and beat it by ${numWord(over)}.`,
 					],
 					"normWinnerHigh",

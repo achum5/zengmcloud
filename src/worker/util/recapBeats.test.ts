@@ -412,6 +412,88 @@ describe("home and road, rest, and what comes next", () => {
 		assert.notMatch(text, CALENDAR);
 		assert.match(text, /road|away|visit/);
 	});
+
+	// "Nothing short of four straight saves the Pelicans, and Game 4 could
+	// end it. Next is Game 4 in New Orleans." - a quarter of all playoff
+	// recaps named the next game twice.
+	test("the next playoff game is named once", () => {
+		const winner = team({
+			tid: 1,
+			name: "Mavericks",
+			region: "Dallas",
+			abbrev: "DAL",
+			nextGame: {
+				day: 31,
+				daysAway: 1,
+				home: true,
+				oppTid: 2,
+				oppName: "Trail Blazers",
+				oppAbbrev: "POR",
+			},
+		});
+		const loser = team({
+			tid: 2,
+			name: "Trail Blazers",
+			region: "Portland",
+			abbrev: "POR",
+			pts: 90,
+		});
+		const g = game(winner, loser, {
+			playoffs: true,
+			// Played in Portland; Game 5 goes back to Dallas.
+			teams: [loser, winner],
+			series: {
+				round: 1,
+				numRounds: 4,
+				bestOf: 7,
+				homeAbbrev: "DAL",
+				awayAbbrev: "POR",
+				homeWon: 2,
+				awayWon: 1,
+			},
+		});
+		const plain = nextGameBeat(g.ctx, rngFromSeed(1))!;
+		assert.match(plain, /Game 5|host/);
+		g.ctx.written =
+			"Nothing short of three straight saves the Trail Blazers, and Game 5 could end it.";
+		for (let seed = 0; seed < 6; seed++) {
+			const text = nextGameBeat(g.ctx, rngFromSeed(seed))!;
+			assert.notMatch(text, /Game 5/, text);
+			assert.match(text, /Dallas/, text);
+			assert.notMatch(text, /stays|too\./, text);
+		}
+	});
+
+	// "It is 0-8 on the road now for the Nuggets."; "The Trail Blazers
+	// scored 16 more than they had been managing on the season."
+	test("records and averages are said plainly", () => {
+		const road = team({
+			tid: 2,
+			name: "Nuggets",
+			pts: 90,
+			awayRecord: { won: 0, lost: 8 },
+		});
+		const home = team({ tid: 1, name: "Nets" });
+		const rec = shapes((rng) => homeRoadBeat(game(home, road).ctx, rng));
+		for (const s of rec) {
+			assert.notMatch(s, /^It is \d/, s);
+		}
+		const w = team({
+			tid: 1,
+			name: "Celtics",
+			pts: 128,
+			norm: { gp: 30, pts: 110.4, oppPts: 108 },
+		});
+		const l = team({
+			tid: 2,
+			name: "Knicks",
+			pts: 100,
+			norm: { gp: 30, pts: 104.2, oppPts: 106 },
+		});
+		for (const s of shapes((rng) => scoringNormBeat(game(w, l).ctx, rng))) {
+			assert.notMatch(s, /had been managing/, s);
+		}
+	});
 });
 
 describe("season highs, streaks, milestones and returns", () => {
