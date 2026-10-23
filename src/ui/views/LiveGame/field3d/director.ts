@@ -53,6 +53,7 @@ import { foulsOf } from "./fouls.ts";
 import { stageChains, type ChainSpots } from "./chains.ts";
 import { holderAt, replayFor, type FieldReplay } from "./replays.ts";
 import { crewClear, stageTimeout } from "./timeout.ts";
+import { measureTimes, stageMeasure } from "./measure.ts";
 import { HURT_MOST, MEDICS, stageHurt } from "./hurt.ts";
 import { crewOff, stageHalftime, stagePostgame } from "./postgame.ts";
 import { stageTv } from "./tv.ts";
@@ -200,6 +201,9 @@ export type Play = {
 	// A timeout (see timeout.ts): when the picture cuts to the side that
 	// called it, and where it looks.
 	timeout?: { cut: number; at: Pt };
+	// A measurement (see measure.ts): when the picture cuts to the chain out
+	// on the field, and where it looks.
+	measure?: { cut: number; at: Pt };
 	postgame?: {
 		from: number;
 		shake: number;
@@ -470,6 +474,21 @@ const CALL_MS = 2900;
 const FIRST_DOWN_AT = 1100;
 const OUT_SIGNAL_AT = 150;
 const OUT_FIRST_AT = 1700;
+// A first down on third or fourth down made by no more than this (feet
+// past the line to gain): this often the chain out to measure it (see
+// measure.ts), the picture on it this long after the play is over.
+const MEASURE_NEAR = 1.5;
+const MEASURE = 0.5;
+const MEASURE_AFTER = 2400;
+// (Not with any of these on the play: the scene is the measurement's.)
+const NO_MEASURE = new Set([
+	"injury",
+	"timeout",
+	"twoMinuteWarning",
+	"quarter",
+	"overtime",
+	"gameOver",
+]);
 
 // The first thing said of a play after the snap: when it happened, by what
 // it was. (For a play that is not acted out - a kick, so far - a fair
@@ -1257,15 +1276,26 @@ class Director {
 		}
 		// (A new set of downs for the same side, by what it did - not a flag.)
 		const next = events[i1];
-		if (
+		const made =
 			(kind === "run" || kind === "pass") &&
 			!scored &&
 			fouls.length === 0 &&
 			next?.type === "clock" &&
 			next.down === 1 &&
 			next.t === clock.t &&
-			!events.slice(i0, i1).some((e) => e?.type === "interception" || e?.lost)
-		) {
+			!events.slice(i0, i1).some((e) => e?.type === "interception" || e?.lost);
+		// (Made by the nose of it, late in the downs: measured, some of the
+		// time - the signal the referee's, then.)
+		const measuring =
+			made &&
+			gainX !== undefined &&
+			typeof clock.down === "number" &&
+			clock.down >= 3 &&
+			!acted?.out &&
+			Math.abs(spotAt(whistle).x - gainX) <= MEASURE_NEAR &&
+			!events.slice(i0, i1).some((e) => NO_MEASURE.has(e?.type)) &&
+			this.rng(i0, "measure")() < MEASURE;
+		if (made && !measuring) {
 			signals.push({
 				what: "first",
 				t: whistle + (acted?.out ? OUT_FIRST_AT : FIRST_DOWN_AT),
@@ -1416,6 +1446,16 @@ class Director {
 			t1 = Math.max(t1, timeout.t1);
 			this.cuts.push(timeout.cut);
 		}
+		// The measurement: the picture on it once the play is over.
+		const measureAt =
+			measuring && !timeout && !hurt && !half && !ended
+				? measureTimes(offAt + MEASURE_AFTER)
+				: undefined;
+		if (measureAt) {
+			t1 = Math.max(t1, measureAt.t1);
+			this.cuts.push(measureAt.cut);
+			cheer = { t: measureAt.call + 450, side: offense, big: false };
+		}
 		// Each line of the play ends where its own action does; the last one,
 		// with the play.
 		const last = this.beats.at(-1);
@@ -1502,6 +1542,22 @@ class Director {
 			before: this.chainSpots,
 		});
 		this.chainSpots = chains.spots;
+		const measure =
+			measureAt && gainX !== undefined
+				? stageMeasure({
+						parts,
+						crew: crew.parts,
+						chains: chains.parts,
+						ball,
+						cut: measureAt.cut,
+						spot: spotAt(whistle),
+						gainX,
+						dir,
+						offense,
+						side: chains.spots.side,
+						r: this.rng(i0, "measured"),
+					})
+				: undefined;
 		const shown = replayFor({
 			kind,
 			events,
@@ -1574,6 +1630,7 @@ class Director {
 						timeout: { cut: timeout.cut, at: timeout.at },
 					}
 				: {}),
+			...(measure ? { measure: { cut: measure.cut, at: measure.at } } : {}),
 			...(acted?.party && acted.until
 				? { party: { ...acted.party, until: acted.until } }
 				: {}),

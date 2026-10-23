@@ -89,6 +89,9 @@ const TOSS_TIGHT = 52;
 const TIMEOUT_WIDTH = 60;
 const TIMEOUT_UP = 8;
 const TIMEOUT_UP_FAR = 2;
+// A measurement: in on the ball and the front rod, this wide.
+const MEASURE_WIDTH = 46;
+const MEASURE_UP = -8;
 
 export const aimFor = (m: FieldMoment): Shot => {
 	const { play, t, focus } = m;
@@ -123,6 +126,15 @@ export const aimFor = (m: FieldMoment): Shot => {
 			x: timeout.at.x,
 			width: TIMEOUT_WIDTH,
 			y: timeout.at.y + (timeout.at.y < MID_Y ? TIMEOUT_UP_FAR : TIMEOUT_UP),
+		};
+	}
+	// A measurement: on the ball, the chain out beside it.
+	const measure = play.measure;
+	if (measure && t >= measure.cut) {
+		return {
+			x: inBounds(measure.at.x - play.dir * 6, MEASURE_WIDTH),
+			width: MEASURE_WIDTH,
+			y: measure.at.y + MEASURE_UP,
 		};
 	}
 	// A man hurt: on him, and the trainers round him, and with him off.
