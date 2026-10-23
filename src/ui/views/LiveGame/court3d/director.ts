@@ -712,6 +712,12 @@ const PULL_UP_OFF = 4.5;
 // Pulling up for three off a ball screen, he dribbles this far (feet) off
 // it, past the screener's shoulder, first - turning the corner.
 const TURN_THE_CORNER = 7;
+// The furthest (feet) a man dribbles it back the way he faces - a retreat
+// dribble, eyes still on the defense (see go).
+const RETREAT_MOST = 6;
+// The furthest (feet) a shooter hops back to get behind the line for a
+// three: further in, he dribbles out to it.
+const STEP_BACK_MOST = 3.5;
 // A pull-up jumper from the elbow, at most this far out (feet).
 const MID_PULL_UP_IN = 20.5;
 // A roll to the rim with the man with the ball driving into the lane - to
@@ -1817,6 +1823,18 @@ class Director {
 				this.turn(pid, start, face);
 			}
 			return start;
+		}
+		// Taking it a long way back out - out of the lane, up out of the
+		// corner, back to the top to set up - he turns and dribbles it out:
+		// a retreat dribble is a couple of steps, not a backpedal all the way
+		// out with the ball, facing the rim he is leaving.
+		if (
+			face !== undefined &&
+			(anim === "dribble" || anim === "dribbleWalk") &&
+			-(to.x - from.x) * face > RETREAT_MOST &&
+			-(to.x - from.x) * face > d * 0.4
+		) {
+			face = undefined;
 		}
 		// As long as it takes him to get going, get there and pull up.
 		const dur = Math.max(
@@ -4002,10 +4020,17 @@ class Director {
 				y: b.y + inn.y * V_CUT_IN,
 			});
 			const back = unitVec(b, a);
-			const meet = clampPt({
+			const met = clampPt({
 				x: b.x + back.x * V_CUT_MEET,
 				y: b.y + back.y * V_CUT_MEET,
 			});
+			// (Out on the arc, he meets it there - still behind the line, set
+			// to shoot it: not drawn in over it toward the man throwing it,
+			// and caught a step inside to back out of with it.)
+			const meet =
+				dist(b, rim) >= 23.75 - ON_THE_LINE
+					? (behindArc(this.teamOf(to), met) ?? met)
+					: met;
 			const arrive0 = start + wind + flight;
 			const face = -toward as 1 | -1;
 			const inAt = this.goBy(
@@ -8443,6 +8468,21 @@ class Director {
 						? this.leadTheCut(run, shooter, from, t, style)
 						: undefined;
 				stride = led !== undefined && o.zone === "rim";
+				// A three: out behind the line before it comes, and caught
+				// there set to shoot - not caught on the line and backed out
+				// with it (see shoot).
+				const out =
+					o.zone === "three" ? behindArc(team, this.posOf(shooter)) : undefined;
+				if (out) {
+					this.go(
+						shooter,
+						out,
+						Math.max(t - 400, this.free.get(shooter) ?? 0),
+						7,
+						"back",
+						dir,
+					);
+				}
 				t = this.passTo(from, shooter, led ?? t, style);
 				held?.(t - 110);
 				if (o.pass === "kickout" || o.pass === "skip") {
@@ -9367,11 +9407,23 @@ class Director {
 		}
 
 		// A three goes up from behind the line: a man a step in front of it,
-		// or right on it, steps back out first.
+		// or right on it, hops back out behind it first - a step-back - or,
+		// further in, takes a retreat dribble or two out to it. Not walked
+		// backward out to it with the ball in his hands.
 		if (zone === "three" && heaveSecs === undefined) {
 			const out = behindArc(team, this.posOf(shooter));
-			if (out) {
-				t = this.go(shooter, out, t, 9, "back", dir);
+			if (out && dist(this.posOf(shooter), out) <= STEP_BACK_MOST) {
+				t = Math.max(t, this.hold(shooter, t, "hold"));
+				const hop = t;
+				t = this.go(shooter, out, t + 40, 9, "back", dir);
+				this.act(shooter, "stepBack", hop, t, {
+					face: dir,
+					jump: [0.25, 0.85, 0.7],
+				});
+			} else if (out) {
+				this.hold(shooter, t, "dribble");
+				t = this.go(shooter, out, t, DRIBBLE * 0.6, "dribble", dir);
+				t = Math.max(t, this.hold(shooter, t, "hold"));
 			}
 		}
 

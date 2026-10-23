@@ -2594,6 +2594,63 @@ describe("3D director", () => {
 	// A pull-up three off a ball screen: he comes off it - a dribble or two
 	// past the big's shoulder - and up behind it, not stood where he was all
 	// along shooting over it.
+	// Caught for a three, he is behind the line already - got out there as
+	// it came, met it there - and goes straight up: not caught a step inside
+	// and backpedalled out with it before the shot (about every other
+	// catch-and-shoot before). And a man taking it a long way back out
+	// turns and dribbles it out, never backpedals the whole way with it.
+	test("a three is caught behind the line, and nobody backpedals a long way with the ball", () => {
+		let shots = 0;
+		const backed: string[] = [];
+		const long: string[] = [];
+		for (const seed of ["a", "b", "c"]) {
+			const { tl } = compile(seed, 150);
+			for (const tr of tl.tracks.values()) {
+				for (const a of tr.acts) {
+					if (a.anim !== "shoot") {
+						continue;
+					}
+					const c = tr.acts.find(
+						(x) =>
+							x.anim === "catch" && x.t1 <= a.t0 + 20 && x.t1 > a.t0 - 1500,
+					);
+					if (!c) {
+						continue;
+					}
+					shots += 1;
+					if (
+						tr.moves.some(
+							(m) =>
+								m.anim === "back" &&
+								m.t0 >= c.t0 - 50 &&
+								m.t1 <= a.t0 + 50 &&
+								!tr.acts.some(
+									(x) =>
+										x.anim === "stepBack" && x.t0 <= m.t0 + 50 && x.t1 >= m.t0,
+								),
+						)
+					) {
+						backed.push(`${seed} ${tr.pid} at ${Math.round(a.t0)}`);
+					}
+				}
+				for (const m of tr.moves) {
+					if (
+						(m.anim === "dribble" || m.anim === "dribbleWalk") &&
+						m.face !== undefined &&
+						-(m.to.x - m.from.x) * m.face > 6.5 &&
+						-(m.to.x - m.from.x) * m.face >
+							Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y) * 0.4
+					) {
+						long.push(`${seed} ${tr.pid} at ${Math.round(m.t0)}`);
+					}
+				}
+			}
+		}
+		assert.isAbove(shots, 60);
+		assert.isAtMost(backed.length, shots * 0.08, backed.join(", "));
+		assert.strictEqual(long.length, 0, long.join(", "));
+	}, 240_000);
+
 	test("a pull-up three off a ball screen comes off the screen first", () => {
 		let n = 0;
 		const stood: string[] = [];
