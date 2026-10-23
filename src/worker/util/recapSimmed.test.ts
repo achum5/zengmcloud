@@ -977,6 +977,25 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "Kings make it 8 straight" in the deck over "the Kings downed the
+	// Hawks 123-110" and not a word of the eight.
+	test("a streak the deck headlines is told in the body", () => {
+		for (const wrap of dayRecaps) {
+			const paras = wrap.split("\n\n");
+			const deck = paras.find((p) => /^\*[^*]/.test(p)) ?? "";
+			const body = paras.filter((p) => !p.startsWith("*")).join(" ");
+			for (const m of deck.matchAll(
+				/([A-Z][\w ]*?) (?:make it \d+ straight|end an? \d+-game skid)/g,
+			)) {
+				assert.match(
+					body,
+					new RegExp(`${m[1]}[^.]*(?:straight|in a row|losing streak|skid)`),
+					wrap,
+				);
+			}
+		}
+	});
+
 	// "Three of the 15 games were decided by five points or fewer" is any
 	// night; "Around the league, the Bulls blew out the Grizzlies 101-80" was
 	// the whole league on a two-game night; "Four of the ten favorites lost.

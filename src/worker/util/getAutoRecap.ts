@@ -9716,7 +9716,18 @@ const dayDeck = (
 	// And the headline's words: "Payton Mathis goes for 42, Jalen Hayes for
 	// 44" over a deck reading "Payton Mathis pours in 42".
 	headlineText = "",
-): { text: string; games: RecapGame[]; players: RecapPlayer[] } | undefined => {
+):
+	| {
+			text: string;
+			games: RecapGame[];
+			players: RecapPlayer[];
+			// The games the deck headlined for a streak or a skid, which the
+			// body has to say too: "Kings make it 8 straight" over "the Kings
+			// downed the Hawks 123-110" and not a word of the eight.
+			streakGames: RecapGame[];
+	  }
+	| undefined => {
+	const streakGames: RecapGame[] = [];
 	const usedTids = new Set<number>([
 		marquee.teams[0].tid,
 		marquee.teams[1].tid,
@@ -9748,6 +9759,9 @@ const dayDeck = (
 		}
 		if (s.game) {
 			covered.push(s.game);
+			if (s.kind === "streak" || s.kind === "skidEnd") {
+				streakGames.push(s.game);
+			}
 		}
 		if (s.pid) {
 			featured.push(s.pid);
@@ -9757,7 +9771,12 @@ const dayDeck = (
 		}
 	}
 	return picks.length > 0
-		? { text: picks.join(" · "), games: covered, players: featured }
+		? {
+				text: picks.join(" · "),
+				games: covered,
+				players: featured,
+				streakGames,
+			}
 		: undefined;
 };
 
@@ -10265,9 +10284,24 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		const pool = t[which];
 		return pool[n % pool.length]!;
 	};
+	// The streak or skid a deck item headlined, once, on the game's result.
+	const streakTold = new Set<RecapGame>();
+	const streakTail = (g: RecapGame): string => {
+		if (!deckResult?.streakGames.includes(g) || streakTold.has(g)) {
+			return "";
+		}
+		streakTold.add(g);
+		const shape = analyzeShape(g);
+		const skid = snappedSkid(shape);
+		if (skid !== undefined) {
+			return ` to snap ${aNumWord(skid)}-game losing streak`;
+		}
+		const s = shape.winner.streak;
+		return s?.won ? ` for their ${ordinal(s.count)} straight win` : "";
+	};
 	const tailFor = (g: RecapGame): string => {
 		const t = seriesWords(g, "tails");
-		return t ? ` ${t}` : "";
+		return t ? ` ${t}` : streakTail(g);
 	};
 	const whoFor = (g: RecapGame): string => {
 		const t = seriesWords(g, "whos");
