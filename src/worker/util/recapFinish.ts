@@ -37,6 +37,10 @@ export type FinishInput = {
 	// The man the sentence before this paragraph was about, when there is
 	// one, so a sentence opening on his name can open on "his" instead.
 	justNamed?: string;
+	// The sentence before opens on "It was", so the finish does not open on
+	// it again: "It was an 11-point game going into the fourth... It was
+	// 117-117 with two minutes to play."
+	afterItWas?: boolean;
 };
 
 // "layup", "jumper", "three-pointer"; an and-one is the play it made.
@@ -279,9 +283,11 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 
 	const out: string[] = [];
 	let justNamed = input.justNamed;
+	let itWas = input.afterItWas ?? false;
 	const say = (text: string, name?: string) => {
 		out.push(text);
 		justNamed = name;
+		itWas = /^It was\b/.test(text);
 	};
 
 	if (ot) {
@@ -359,16 +365,21 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 					before.name,
 				);
 			} else if (before.role === "tie") {
+				const tied = [
+					`${cap(shot)} ${had}tied it at ${w} ${when(before.e, rng)}.`,
+					`${cap(shot)} ${when(before.e, rng)} ${had}made it ${w}-${w}.`,
+				];
 				say(
-					pick(
-						rng,
-						[
-							`${cap(shot)} ${had}tied it at ${w} ${when(before.e, rng)}.`,
-							`${cap(shot)} ${when(before.e, rng)} ${had}made it ${w}-${w}.`,
-							`It was ${w}-${w} after ${shot} ${when(before.e, rng)}.`,
-						],
-						"finishTie",
-					),
+					itWas
+						? pick(rng, tied, "finishTieNoIt")
+						: pick(
+								rng,
+								[
+									...tied,
+									`It was ${w}-${w} after ${shot} ${when(before.e, rng)}.`,
+								],
+								"finishTie",
+							),
 					before.name,
 				);
 			} else {
@@ -436,7 +447,11 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 						),
 					);
 				} else if (l === w) {
-					say(`It was ${w}-${w} with two minutes to play.`);
+					say(
+						itWas
+							? `With two minutes to play, it was ${w}-${w}.`
+							: `It was ${w}-${w} with two minutes to play.`,
+					);
 				}
 			}
 		}
@@ -617,18 +632,28 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 			closest.name,
 		);
 	} else {
+		// "got the Nets within 3, and the Nets never got the stop they
+		// needed" named them twice in one breath - and so did "The Mavericks
+		// got as close as 115-112..., and the Mavericks never got the stop",
+		// which the lower-case test missed.
+		const named = cutText.toLowerCase().includes(L.toLowerCase());
+		const stop = `and ${named ? "they" : L} never got the stop they needed`;
 		say(
-			`${cap(cutText)}, ${pick(
-				rng,
-				[
-					// "got the Nets within 3, and the Nets never got the stop
-					// they needed" named them twice in one breath.
-					`and ${cutText.includes(L) ? "they" : L} never got the stop they needed`,
-					`but that was as close as it got`,
-					`and ${W} held from there`,
-				],
-				"finishHoldTail",
-			)}.`,
+			`${cap(cutText)}, ${
+				// "The Nets got as close as 114-112..., but that was as close
+				// as it got" said it twice.
+				/got as close as/.test(cutText)
+					? pick(rng, [stop, `and ${W} held from there`], "finishHoldTailClose")
+					: pick(
+							rng,
+							[
+								stop,
+								`but that was as close as it got`,
+								`and ${W} held from there`,
+							],
+							"finishHoldTail",
+						)
+			}.`,
 			closest.name,
 		);
 	}

@@ -8036,6 +8036,223 @@ describe("the story goes past halftime, in order", () => {
 			}
 		}
 	});
+
+	// "They trailed 86-79 going into the fourth, then took the fourth
+	// quarter 37-23. They let an 18-point lead get away and still won." -
+	// the lead came after the quarter that won it back.
+	test("a lead that got away is told where it was built", () => {
+		for (let gid = 900; gid < 915; gid++) {
+			const g = twoTeams(
+				[30, 27, 22, 37],
+				[20, 26, 40, 23],
+				{
+					leadChanges: 5,
+					ties: 3,
+					maxLead: [18, 9],
+					maxLeadAt: [2, 3],
+					lastLead: { side: 0, period: 4, clock: 506, pts: [88, 86] },
+					late: [
+						{ clock: 300, pts: [105, 100] },
+						{ clock: 120, pts: [111, 103] },
+					],
+				},
+				gid,
+			);
+			const recap = getAutoRecap(g);
+			const peak = recap.search(/as many as 18 in the second/);
+			const fourth = recap.search(/going into the fourth/);
+			assert.ok(peak >= 0 && fourth > peak, recap);
+			assert.doesNotMatch(
+				recap,
+				/won anyway|still won|get away|very nearly|hold on/,
+				recap,
+			);
+			assert.deepEqual(verifyRecap(recap, g), [], recap);
+		}
+	});
+
+	// "They were 12 up going into the fourth. They blew a 16-point lead and
+	// won anyway." - and nothing said who put them back in front.
+	test("a fourth-quarter lead that went says who took it back", () => {
+		for (let gid = 920; gid < 935; gid++) {
+			const g = twoTeams(
+				[31, 26, 30, 26],
+				[33, 21, 21, 31],
+				{
+					leadChanges: 7,
+					ties: 4,
+					maxLead: [16, 3],
+					maxLeadAt: [3, 1],
+					lastLead: { side: 0, period: 4, clock: 171, pts: [101, 99], by: 3 },
+					lastTie: { period: 3, clock: 536, pts: 63 },
+					late: [
+						{ clock: 300, pts: [96, 93] },
+						{ clock: 120, pts: [103, 99] },
+					],
+				},
+				gid,
+			);
+			const recap = getAutoRecap(g);
+			assert.match(
+				recap,
+				/as many as 16 in the third and were still 12 up going into the fourth/,
+				recap,
+			);
+			assert.match(recap, /2:51/, recap);
+			assert.doesNotMatch(recap, /won anyway|still won|get away/, recap);
+			assert.deepEqual(verifyRecap(recap, g), [], recap);
+		}
+	});
+
+	// "They scored 12 unanswered in overtime. Payton Dunn's three-pointer at
+	// the buzzer sent it to overtime."
+	test("an overtime run comes after the shot that forced overtime", () => {
+		const nets = (gid: number) => {
+			const win = realisticTeam(
+				{
+					tid: 1,
+					name: "Nets",
+					abbrev: "BKN",
+					pts: 128,
+					ptsQtrs: [32, 30, 27, 27, 12],
+				},
+				player({ name: "Marcus Carter", pid: 228, pts: 29, fg: 11, fga: 20 }),
+			);
+			win.players.push(
+				player({ name: "Jalen Carter", pid: 289, pts: 12, fg: 5, fga: 11 }),
+				player({ name: "Devin Carter", pid: 178, pts: 17, fg: 7, fga: 14 }),
+			);
+			const lose = realisticTeam(
+				{
+					tid: 2,
+					name: "Mavericks",
+					abbrev: "DAL",
+					pts: 118,
+					ptsQtrs: [28, 19, 30, 39, 2],
+				},
+				player({ name: "Scoot Dunn", pid: 183, pts: 24, fg: 10, fga: 21 }),
+			);
+			lose.players.push(
+				player({
+					name: "Payton Dunn",
+					pid: 79,
+					pts: 15,
+					tp: 3,
+					fg: 5,
+					fga: 12,
+				}),
+			);
+			return game({
+				gid,
+				overtimes: 1,
+				teams: [win, lose],
+				winnerTid: 1,
+				clutchPlays: [
+					'<a href="#">Payton Dunn</a> made a three pointer at the buzzer to force overtime.',
+				],
+				flow: {
+					leadChanges: 8,
+					ties: 3,
+					maxLead: [17, 4],
+					maxLeadAt: [3, 1],
+					run: { side: 0, pts: 12, period: 5, clock: 225.2 },
+					lastLead: {
+						side: 0,
+						pid: 228,
+						period: 5,
+						clock: 189.4,
+						pts: [120, 118],
+						by: 2,
+					},
+					lastTie: { period: 5, clock: 225.2, pts: 118 },
+					late: [
+						{ clock: 300, pts: [103, 96] },
+						{ clock: 120, pts: [106, 104] },
+					],
+					finish: [
+						{
+							side: 1,
+							pid: 79,
+							pts: 3,
+							kind: "tp",
+							period: 4,
+							clock: 0,
+							score: [116, 116],
+						},
+						{
+							side: 1,
+							pid: 183,
+							pts: 2,
+							kind: "post",
+							period: 5,
+							clock: 242.7,
+							score: [116, 118],
+						},
+						{
+							side: 0,
+							pid: 289,
+							pts: 2,
+							kind: "mid",
+							period: 5,
+							clock: 225.2,
+							score: [118, 118],
+						},
+						{
+							side: 0,
+							pid: 228,
+							pts: 2,
+							kind: "mid",
+							period: 5,
+							clock: 189.4,
+							score: [120, 118],
+						},
+						{
+							side: 0,
+							pid: 178,
+							pts: 3,
+							kind: "tp",
+							period: 5,
+							clock: 160,
+							score: [123, 118],
+						},
+						{
+							side: 0,
+							pid: 228,
+							pts: 3,
+							kind: "tp",
+							period: 5,
+							clock: 89.2,
+							score: [126, 118],
+						},
+						{
+							side: 0,
+							pid: 178,
+							pts: 2,
+							kind: "mid",
+							period: 5,
+							clock: 25.1,
+							score: [128, 118],
+						},
+					],
+				},
+			});
+		};
+		let seen = 0;
+		for (let gid = 940; gid < 960; gid++) {
+			const g = nets(gid);
+			const recap = getAutoRecap(g);
+			const forced = recap.search(
+				/sent it to overtime|forced overtime|force the extra period/,
+			);
+			const run = recap.search(/last 12 points|12 unanswered|12 straight/);
+			if (run >= 0) {
+				seen += 1;
+				assert.ok(forced >= 0 && run > forced, recap);
+			}
+			assert.deepEqual(verifyRecap(recap, g), [], recap);
+		}
+		assert.ok(seen > 0);
+	});
 });
 
 // "Jalen Green collected 5 steals for the Clippers" closed the losers'

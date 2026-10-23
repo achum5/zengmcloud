@@ -211,9 +211,10 @@ export const verifyRecap = (
 				if (/averag\w*\s*$/i.test(before)) {
 					continue;
 				}
-				// "scored the next 10 points" is a stretch of the finish, checked
-				// against the log below.
-				if (/\bthe next\s*$/.test(before)) {
+				// "scored the next 10 points" is a stretch of the finish, and "the
+				// last 12 points" an overtime run: both checked against the log
+				// below.
+				if (/\bthe (?:next|last)\s*$/.test(before)) {
 					continue;
 				}
 				// "7 points the wrong side of the line", "favored by 6" - a
@@ -533,6 +534,31 @@ export const verifyRecap = (
 		);
 		claim(/(\d+)-0 run/g, (n) => n === flow.run?.pts, "run");
 		claim(/ran off (\d+) straight/g, (n) => n === flow.run?.pts, "run");
+		claim(
+			/scored (\d+) unanswered|scored the last (\d+) points/g,
+			(n) => n === flow.run?.pts,
+			"run",
+		);
+		// "led by as many as 18 in the second": that side's biggest lead, in
+		// that period.
+		const PERIOD_WORDS = ["first", "second", "third", "fourth"];
+		for (const m of text.matchAll(
+			/as many as (\d+) in (?:the (first|second|third|fourth)\b|overtime)/g,
+		)) {
+			const n = Number(m[1]);
+			const period = m[2]
+				? PERIOD_WORDS.indexOf(m[2]) + 1
+				: (game.teams[0].ptsQtrs?.length ?? 0) - (game.overtimes ?? 0) + 1;
+			const at = flow.maxLeadAt;
+			if (
+				at &&
+				!([0, 1] as const).some(
+					(s) => flow.maxLead[s] === n && at[s] === period,
+				)
+			) {
+				add("biggest lead", `said ${n} in period ${period}`, m[0]);
+			}
+		}
 		// "Tied at 61 at the break" is the halftime score, checked above.
 		claim(
 			/(?<!regulation ended )tied at (\d+)\b(?! (?:at (?:the break|halftime|the half\b)|going into))/g,

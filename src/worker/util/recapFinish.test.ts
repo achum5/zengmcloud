@@ -289,6 +289,51 @@ describe("the finish says only what the clock allows", () => {
 		}
 	});
 
+	// "The Nets got as close as 114-112 ..., but that was as close as it
+	// got" said it twice; "The Mavericks got as close as 115-112 ..., and
+	// the Mavericks never got the stop they needed" named them twice.
+	test("how close they got is said once, and so are they", () => {
+		const held: RecapTeam = { ...wizards, pts: 104 };
+		const chased: RecapTeam = { ...sixers, pts: 101 };
+		const game = build(
+			[ev(0, 11, 2, "rim", 80, [104, 98]), ev(1, 21, 3, "tp", 20, [104, 101])],
+			{ teams: [held, chased] },
+		);
+		(game.flow as any).late = [{ clock: 120, pts: [102, 98] }];
+		for (let seed = 0; seed < 24; seed++) {
+			const text = finishStory(
+				{ game, winner: held, loser: chased, regPeriods: 4, shotTold: false },
+				rngFromSeed(seed),
+			).join(" ");
+			assert.notMatch(text, /got as close as[^.]*as close as it got/, text);
+			assert.notMatch(text, /The 76ers [^.]*the 76ers never/, text);
+		}
+	});
+
+	// "It was an 11-point game going into the fourth, but the Cavaliers took
+	// the fourth quarter 24-14. It was 117-117 with two minutes to play."
+	test("the finish does not open on It was after a sentence that did", () => {
+		const game = build([
+			ev(1, 21, 2, "rim", 60, [99, 99]),
+			ev(0, 11, 2, "mid", 30, [101, 99]),
+		]);
+		(game.flow as any).late = [{ clock: 120, pts: [97, 97] }];
+		for (let seed = 0; seed < 12; seed++) {
+			const text = finishStory(
+				{
+					game,
+					winner: wizards,
+					loser: sixers,
+					regPeriods: 4,
+					shotTold: false,
+					afterItWas: true,
+				},
+				rngFromSeed(seed),
+			);
+			assert.notMatch(text[0] ?? "", /^It was\b/, text.join(" "));
+		}
+	});
+
 	test("free throws that did not decide anything do not finish it", () => {
 		// Up nine when they were taken: the go-ahead basket and the cut are
 		// the story, and "his two free throws with 3.7 seconds left finished

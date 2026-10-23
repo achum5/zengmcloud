@@ -3587,6 +3587,33 @@ const gameStory = (
 	const hotStart = w1 - l1 >= 12 || (hot && w1 - l1 >= wh - lh);
 	const covers = new Set<StoryCover>();
 	const out: string[] = [];
+	// THE LEAD THAT GOT AWAY - up 18, home by seven - is told where it was
+	// built, and the scores after it show where it went. A closing "They let
+	// an 18-point lead get away and still won" landed after the quarter that
+	// won it back: "They trailed 86-79 going into the fourth, then took the
+	// fourth quarter 37-23. They let an 18-point lead get away..."
+	const bigGone =
+		!!flow && shape.margin <= 8 && wMax >= 15 && wMax >= shape.margin + 9;
+	// The biggest lead a sentence of the story has already shown. A peak no
+	// more than a basket or so past it is that lead: "won the first quarter
+	// 33-17" has said "led by 16".
+	let toldLead = 0;
+	const peakShown = (): boolean => {
+		if (bigGone && wMax <= toldLead + 3) {
+			covers.add("winnerPeak");
+		}
+		return covers.has("winnerPeak");
+	};
+	// Gone before the last quarter that won it back, it is told before that
+	// quarter: "They let an 18-point lead get away. It was 88-88 going into
+	// the fourth, and the Bucks won the fourth quarter 22-18."
+	const gotAway = (): string[] => {
+		if (!bigGone || peakShown()) {
+			return [];
+		}
+		covers.add("winnerPeak");
+		return [`${W} let ${aNum(wMax)}-point lead get away.`];
+	};
 
 	// "a, b and c".
 	const series = (parts: string[]) =>
@@ -3625,6 +3652,37 @@ const gameStory = (
 	const entering = (anyLead = false): string | undefined => {
 		const m = shape.marginEnteringLast;
 		const last = ordinal(regPeriods);
+		// A lead mostly lost before the fourth goes with the score it fell
+		// to: "They led by as many as 16 in the third and were still 12 up
+		// going into the fourth." One from before the break the half has not
+		// shown is told looking back - "had led by as many as 24 in the
+		// second" - and one built in the last quarter after its score.
+		if (m > 0 && (m <= 6 || anyLead)) {
+			toldLead = Math.max(toldLead, m);
+		}
+		const peak =
+			bigGone &&
+			m > 0 &&
+			!peakShown() &&
+			wMaxAt !== undefined &&
+			wMax >= toldLead + 4
+				? wMaxAt > halfN && wMaxAt < regPeriods
+					? `${W} led by as many as ${wMax} in ${when(wMaxAt)}`
+					: wMaxAt <= halfN
+						? `${W} had led by as many as ${wMax} in ${when(wMaxAt)}`
+						: undefined
+				: undefined;
+		const stretched =
+			bigGone &&
+			m > 0 &&
+			!peakShown() &&
+			wMaxAt === regPeriods &&
+			wMax >= toldLead + 4
+				? `${W} took ${aNum(m)}-point lead into the ${last} and stretched it to ${wMax}`
+				: undefined;
+		if (peak || stretched) {
+			covers.add("winnerPeak");
+		}
 		// THE LEAD THAT NEARLY WENT. Up 13 going into the last quarter, won by
 		// 3: the losers took that quarter by 10 or more, and the recap went
 		// straight from "It was a 13-point game entering the fourth" to a
@@ -3633,8 +3691,18 @@ const gameStory = (
 		// never told.
 		const lLast = lq[regPeriods - 1] ?? 0;
 		const wLast = wq[regPeriods - 1] ?? 0;
+		if (stretched) {
+			covers.add("entering");
+			return `${stretched}.`;
+		}
 		if (m > 0 && shape.ot === 0 && shape.margin <= 6 && lLast - wLast >= 10) {
 			covers.add("entering").add("lastQuarter");
+			if (peak) {
+				// Two sentences, not one of 140 characters that named the
+				// winners twice running: the lead, then where it stood.
+				out.push(`${peak}.`);
+				return `It was ${aNum(m)}-point game going into the ${last}, but ${l} took the ${last} quarter ${lLast}-${wLast}.`;
+			}
 			return `${pick(
 				rng,
 				[
@@ -3644,6 +3712,12 @@ const gameStory = (
 				],
 				"story:enteringUp",
 			)}, but ${l} took the ${last} quarter ${lLast}-${wLast}.`;
+		}
+		if (peak) {
+			covers.add("entering");
+			return m * 3 <= wMax
+				? `${peak}, but it was ${aNum(m)}-point game going into the ${last}.`
+				: `${peak} and were still ${m} up going into the ${last}.`;
 		}
 		if (Math.abs(m) > 6 && !(anyLead && m > 0)) {
 			return undefined;
@@ -3757,6 +3831,9 @@ const gameStory = (
 					: early
 						? `${W} ran off ${early.pts} straight points in ${when(early.period)}`
 						: `${W} won the first quarter ${w1}-${l1}`;
+			if (hot && !(early && early.period > 1)) {
+				toldLead = w1 - l1;
+			}
 			out.push(
 				hot
 					? `${opener}, but ${l} came back to lead ${lh}-${wh} at halftime.`
@@ -3805,7 +3882,7 @@ const gameStory = (
 				`${W} won the second half ${w2}-${l2}, and regulation ended tied at ${wh + w2}.`,
 			);
 		} else if (wonInLast) {
-			out.push(lastQuarterTurn());
+			out.push(...gotAway(), lastQuarterTurn());
 		} else if (run && run.winner && run.period > halfN) {
 			covers.add("run");
 			out.push(
@@ -3851,18 +3928,24 @@ const gameStory = (
 	covers.add("half");
 	if (wh === lh) {
 		// --- TIED AT THE BREAK. ---
-		if (wonInLast) {
-			out.push(
-				pick(
-					rng,
-					[
-						`It was ${wh}-${lh} at halftime.`,
-						`The teams were tied at ${wh} at the break.`,
-					],
-					"story:halfTied",
-				),
-				lastQuarterTurn(),
+		// A lead from before the break goes with the tie it fell to.
+		const tiedHalf = (): string => {
+			if (bigGone && wMaxAt !== undefined && wMaxAt <= halfN) {
+				covers.add("winnerPeak");
+				return `${W} led by as many as ${wMax} in ${when(wMaxAt)}, but it was ${wh}-${lh} at halftime.`;
+			}
+			return pick(
+				rng,
+				[
+					`It was ${wh}-${lh} at halftime.`,
+					`The teams were tied at ${wh} at the break.`,
+				],
+				"story:halfTied",
 			);
+		};
+		if (wonInLast) {
+			const half = tiedHalf();
+			out.push(half, ...gotAway(), lastQuarterTurn());
 			return { sentences: out, covers };
 		}
 		if (!close && w2 - l2 >= 8) {
@@ -3875,16 +3958,7 @@ const gameStory = (
 			out.push(`It was ${wh}-${lh} at halftime before ${w} ${series(parts)}.`);
 			return { sentences: out, covers };
 		}
-		out.push(
-			pick(
-				rng,
-				[
-					`It was ${wh}-${lh} at halftime.`,
-					`The teams were tied at ${wh} at the break.`,
-				],
-				"story:halfTied",
-			),
-		);
+		out.push(tiedHalf());
 		const e = entering();
 		if (e) {
 			out.push(e);
@@ -3913,13 +3987,35 @@ const gameStory = (
 					: ""
 			}${pick(rng, [`led ${wh}-${lh} at halftime`, `were in front ${wh}-${lh} by the break`], "story:turnedByHalf")}.`,
 		);
+	} else if (
+		bigGone &&
+		!firstRun &&
+		wMaxAt !== undefined &&
+		wMaxAt <= halfN &&
+		wMax >= up + 4 &&
+		!(hotStart && wMax <= w1 - l1 + 3)
+	) {
+		// The lead that got away outranks the first quarter that built it.
+		covers.add("winnerPeak");
+		out.push(
+			pick(
+				rng,
+				[
+					`${W} led by as many as ${wMax} in ${when(wMaxAt)} and were still up ${wh}-${lh} at halftime.`,
+					`${W} were up by as many as ${wMax} in ${when(wMaxAt)} and took a ${wh}-${lh} lead into the break.`,
+				],
+				"story:upPeak",
+			),
+		);
 	} else if (firstRun && firstRun.period === 1 && hotStart) {
 		covers.add("run").add("firstQuarter");
+		toldLead = w1 - l1;
 		out.push(
 			`${W} ran off ${firstRun.pts} straight points in the first, won the quarter ${w1}-${l1} and led ${wh}-${lh} at halftime.`,
 		);
 	} else if (!firstRun && hotStart) {
 		covers.add("firstQuarter");
+		toldLead = w1 - l1;
 		out.push(
 			pick(
 				rng,
@@ -3945,9 +4041,11 @@ const gameStory = (
 	} else {
 		out.push(halfLine(shape.winner, wh, lh));
 	}
+	toldLead = Math.max(toldLead, up);
+	peakShown();
 
 	if (wonInLast) {
-		out.push(lastQuarterTurn());
+		out.push(...gotAway(), lastQuarterTurn());
 		return { sentences: out, covers };
 	}
 
@@ -3986,6 +4084,7 @@ const gameStory = (
 		parts.push(`ran off ${run.pts} straight points in ${when(run.period)}`);
 	}
 	if (
+		!covers.has("winnerPeak") &&
 		wMaxAt !== undefined &&
 		wMaxAt > halfN &&
 		wMax >= Math.max(up, shape.margin) + 3
@@ -5639,7 +5738,17 @@ const finishNote = (
 	// When a comeback took the lead for good is its key beat, whatever the
 	// final margin; the tight-game notes below stay for tight games.
 	const comeback = comebackSize(shape) > 0;
-	if (!flow || (!close && !comeback)) {
+	// And a lead the losers took late and gave back, in a game won by up to
+	// nine: "They blew a 16-point lead and won anyway" was the last word on
+	// a game the Pelicans went back in front in with 2:51 left.
+	const lastLead = flow?.lastLead;
+	const retook =
+		!!lastLead &&
+		lastLead.side === sideOf(game, shape.winner) &&
+		lastLead.period >= shape.regPeriods &&
+		lastLead.clock <= 300 &&
+		shape.margin <= 9;
+	if (!flow || (!close && !comeback && !retook)) {
 		return [];
 	}
 	const out: string[] = [];
@@ -5939,6 +6048,19 @@ const runNote = (
 	const team = isWinner ? shape.winner : shape.loser;
 	const T = cap(theNick(team));
 	const when = periodTag(run.period, shape.regPeriods);
+	// An overtime run nobody answered is how the game ended.
+	const finish = game.flow?.finish ?? [];
+	if (
+		isWinner &&
+		run.period > shape.regPeriods &&
+		finish.some((e) => e.period === run.period) &&
+		!finish.some(
+			(e) =>
+				e.period === run.period && e.side !== run.side && e.clock < run.clock,
+		)
+	) {
+		return `${T} scored the last ${run.pts} points.`;
+	}
 	// "Put them in charge" of a game they won by three is the wrong tone: in
 	// a close one the run built a lead that then had to be kept.
 	const close = shape.margin <= 6 && shape.ot === 0;
@@ -6301,6 +6423,7 @@ const buildGameRecap = (game: RecapGame): string => {
 			regPeriods: shape.regPeriods,
 			shotTold,
 			justNamed: lastNamed,
+			afterItWas: /^It was\b/.test(body.at(-1) ?? ""),
 		},
 		rng,
 	);
@@ -6424,6 +6547,27 @@ const buildGameRecap = (game: RecapGame): string => {
 			storyPara.splice(halfAt, 0, run);
 			finishAt += 1;
 		}
+		// A third-quarter run goes before the score going into the fourth,
+		// and an overtime one after the finish that got the game there: "They
+		// scored 12 unanswered in overtime. Payton Dunn's three-pointer at
+		// the buzzer sent it to overtime." ran the clock backwards.
+		const enterAt = storyPara
+			.slice(0, finishAt)
+			.findIndex((t) => /going into the|entering the/.test(t));
+		if (
+			run &&
+			!storyPara.includes(run) &&
+			runPeriod > shape.regPeriods / 2 &&
+			runPeriod < shape.regPeriods &&
+			enterAt >= 0
+		) {
+			storyPara.splice(enterAt, 0, run);
+			finishAt += 1;
+		}
+		const otRun =
+			run && !storyPara.includes(run) && runPeriod > shape.regPeriods
+				? run
+				: undefined;
 		// And the losers' biggest lead, when it came in the first half, goes
 		// right after the halftime score: "...winning the second half 65-43.
 		// They were up by 21 at their biggest. The Celtics led by as many as
@@ -6446,7 +6590,7 @@ const buildGameRecap = (game: RecapGame): string => {
 			blown = undefined;
 		}
 		for (const e of [
-			run && !storyPara.includes(run) ? run : undefined,
+			run && !storyPara.includes(run) && run !== otRun ? run : undefined,
 			story.covers.has("winnerPeak") || /as many as|lead reached/.test(told)
 				? undefined
 				: bigLeadNote(game, shape, rng),
@@ -6455,6 +6599,9 @@ const buildGameRecap = (game: RecapGame): string => {
 			if (e && storyPara.length < 7) {
 				beforeFinish(e);
 			}
+		}
+		if (otRun && storyPara.length < 7) {
+			storyPara.push(otRun);
 		}
 	}
 	const howItHappened = story
