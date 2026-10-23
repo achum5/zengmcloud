@@ -656,6 +656,11 @@ const SWING_TURN = 1.6;
 // One man in the secondary bringing him down from the side or behind: this
 // often on his feet still after it, stood over him.
 const UPRIGHT = 0.3;
+// Driving or fighting off a man with nobody of the other side this near:
+// nobody there; on at a walk, under this pace (feet a second), a jog over.
+const AIR_BLOCK = 5;
+const WALK_UNDER = 6;
+const FIRST_STEP = 150;
 // The men who bring him down down no nearer one another than this.
 const LANDED_APART = 2.4;
 // Met head on, another man in on it by then (as late as this after, ms):
@@ -1128,6 +1133,7 @@ class Action {
 		this.afterWhistle();
 		this.celebrate();
 		this.regroup();
+		this.noAirBlocks();
 		for (const x of this.reaches) {
 			x.m.arms(x.move, x.t0, x.t1);
 		}
@@ -1141,6 +1147,38 @@ class Action {
 			...(this.party && this.until > 0 ? { party: this.party } : {}),
 			...(this.outAt ? { out: this.outAt } : {}),
 		};
+	}
+
+	// Nobody there to block, or to fight off, all the while: a man still
+	// driving into a man who has gone - the one he was on away after the
+	// carrier, the man he went out to never there - eases up instead, on at
+	// a walk or stood watching it.
+	noAirBlocks() {
+		for (const m of this.men) {
+			const them = m.team === this.input.offense ? this.d : this.o;
+			for (const l of m.legs) {
+				// (Not his first step out of his stance: low and hard, at
+				// whoever comes.)
+				if (
+					(l.move !== "drive" && l.move !== "engage") ||
+					l.t0 < this.input.snap + FIRST_STEP
+				) {
+					continue;
+				}
+				const steps = Math.max(1, Math.ceil((l.t1 - l.t0) / 100));
+				let near = false;
+				for (let k = 0; k <= steps && !near; k++) {
+					const t = l.t0 + ((l.t1 - l.t0) * k) / steps;
+					const at = m.posAt(t);
+					near = them.some((o) => dist(o.posAt(t), at) < AIR_BLOCK);
+				}
+				if (near) {
+					continue;
+				}
+				const fps = dist(l.from, l.to) / (Math.max(1, l.t1 - l.t0) / 1000);
+				l.move = fps < 1 ? "stand" : fps < WALK_UNDER ? "walk" : "jog";
+			}
+		}
 	}
 
 	// A foul before the snap: the man who jumped early - over the line, or
