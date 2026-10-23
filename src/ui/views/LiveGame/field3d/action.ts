@@ -6126,6 +6126,20 @@ class Action {
 				m.hold(crossT + 300, "stand", this.toward(m.at, posts));
 			}
 		}
+		// Good: this often the holder over to the kicker, a high five - the
+		// kicker's fist pumped first, now and then.
+		if (
+			made &&
+			r() < (this.input.kind === "fieldGoal" ? KICK_FIVE : TRY_FIVE)
+		) {
+			const go = crossT + r() * 150;
+			k.cut(go);
+			k.hold(go, "stand", this.toward(k.at, posts));
+			if (r() < KICK_PUMP) {
+				k.act("fistPump", go + 900);
+			}
+			this.highFive(h, k, Math.max(go + 100, k.t));
+		}
 		return true;
 	}
 
@@ -6896,34 +6910,38 @@ class Action {
 				continue;
 			}
 			const b = left.splice(k, 1)[0]!;
-			const go = Math.max(free.get(a.pid)!, free.get(b.pid)!) + 200 + r() * 400;
-			for (const m of [a, b]) {
-				m.cut(go);
-				m.hold(go);
-			}
-			const mid = { x: (a.at.x + b.at.x) / 2, y: (a.at.y + b.at.y) / 2 };
-			const way = sideOn(
-				dist(a.at, b.at) > 0.5 ? this.toward(a.at, b.at) : r() * 6.28,
+			this.highFive(
+				a,
+				b,
+				Math.max(free.get(a.pid)!, free.get(b.pid)!) + 200 + r() * 400,
 			);
-			const half = FIVE.apart / 2;
-			const ux = Math.cos(way) * half;
-			const uy = Math.sin(way) * half;
-			a.run({ x: mid.x - ux, y: mid.y - uy }, FIVE_FPS, undefined, way);
-			b.run(
-				{ x: mid.x + ux, y: mid.y + uy },
-				FIVE_FPS,
-				undefined,
-				way + Math.PI,
-			);
-			const t = Math.max(a.t, b.t) + 60;
-			a.hold(t, "stand", way - FIVE.turn);
-			b.hold(t, "stand", way + Math.PI - FIVE.turn);
-			a.act("highFive", t + FIVE_MS, way - FIVE.turn);
-			b.act("highFive", t + FIVE_MS, way + Math.PI - FIVE.turn);
 			free.set(a.pid, a.t);
 			free.set(b.pid, b.t);
 			pairs++;
 		}
+	}
+
+	// Two men, from `go`, over to each other at FIVE_FPS (to meet halfway)
+	// and a high five.
+	highFive(a: Actor, b: Actor, go: number) {
+		for (const m of [a, b]) {
+			m.cut(go);
+			m.hold(go);
+		}
+		const mid = { x: (a.at.x + b.at.x) / 2, y: (a.at.y + b.at.y) / 2 };
+		const way = sideOn(
+			dist(a.at, b.at) > 0.5 ? this.toward(a.at, b.at) : this.r() * 6.28,
+		);
+		const half = FIVE.apart / 2;
+		const ux = Math.cos(way) * half;
+		const uy = Math.sin(way) * half;
+		a.run({ x: mid.x - ux, y: mid.y - uy }, FIVE_FPS, undefined, way);
+		b.run({ x: mid.x + ux, y: mid.y + uy }, FIVE_FPS, undefined, way + Math.PI);
+		const t = Math.max(a.t, b.t) + 60;
+		a.hold(t, "stand", way - FIVE.turn);
+		b.hold(t, "stand", way + Math.PI - FIVE.turn);
+		a.act("highFive", t + FIVE_MS, way - FIVE.turn);
+		b.act("highFive", t + FIVE_MS, way + Math.PI - FIVE.turn);
 	}
 }
 
@@ -7064,6 +7082,11 @@ const STOP_BUMP = 0.55;
 const STOP_BUMP_APART = 2;
 const STOP_BUMP_MS = 900;
 const STOP_FIVE = 0.5;
+// A field goal good, a try good: this often the holder and the kicker slap
+// hands after it - the kicker this often with his fist pumped first.
+const KICK_FIVE = 0.75;
+const TRY_FIVE = 0.4;
+const KICK_PUMP = 0.35;
 const FIVE_MS = 800;
 // (Two men slapping hands: how far apart, how far turned - see handsMeet.)
 const FIVE = handsMeet(drawnBody(footballBody()), "highFive", HIGH_FIVE_AT);
