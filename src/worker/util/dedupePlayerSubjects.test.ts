@@ -3,6 +3,24 @@ import { dedupePlayerSubjects, joinShortPairs } from "./getAutoRecap.ts";
 
 const names = ["Yuta Dunn", "Amen Dunn"];
 
+// "It was the sixth game in a row Obi Brooks has reached 20. It was Obi
+// Brooks' best night on the glass this season."
+test("an It-was note about him after another one is also his", () => {
+	assert.deepEqual(
+		dedupePlayerSubjects(
+			[
+				"It was the sixth game in a row Obi Brooks has reached 20.",
+				"It was Obi Brooks' best night on the glass this season.",
+			],
+			["Obi Brooks", "Walker Brooks"],
+		),
+		[
+			"It was the sixth game in a row Obi Brooks has reached 20.",
+			"It was also his best night on the glass this season.",
+		],
+	);
+});
+
 describe("dedupePlayerSubjects", () => {
 	test("the second of two sentences opening on one man gets a pronoun", () => {
 		assert.deepStrictEqual(

@@ -339,6 +339,18 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "The Nuggets got a double-double - 14 points and 10 assists from
+	// Tyrese Ellis": the line, then the man it belonged to, dangling.
+	test("a man comes before his line, not after a dash", () => {
+		for (const { recap } of pairs) {
+			assert.notMatch(
+				recap,
+				/(?:got|was) an? (?:double|triple)-double - [^.]*\bfrom [A-Z]|finished with an? (?:double|triple)-double - [^.]* for the [A-Z]/,
+				recap,
+			);
+		}
+	});
+
 	test("a day wrap's deck does not repeat its headline", () => {
 		for (const recap of dayRecaps) {
 			const headline = recap.split("\n")[0]!;

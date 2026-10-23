@@ -240,7 +240,14 @@ export const dedupePlayerSubjects = (
 			const othersIn = names.some(
 				(other) => other !== framed && prev.includes(other),
 			);
-			if (itWas(prev) === framed && !othersIn) {
+			// "It was the sixth game in a row Obi Brooks has reached 20. It was
+			// Obi Brooks' best night on the glass this season." - any "It was"
+			// about him alone sets up the "also".
+			if (
+				(itWas(prev) === framed ||
+					(prev.startsWith("It was ") && prev.includes(framed))) &&
+				!othersIn
+			) {
 				out[i] = `It was also his ${afterPossessive(out[i]!.slice(7), framed)}`;
 			} else if (opensOn(prev) === framed && !othersIn) {
 				out[i] = `It was his ${afterPossessive(out[i]!.slice(7), framed)}`;
@@ -1642,18 +1649,30 @@ const h = (
 // the way a wire headline has it ("Carter scores 35 as..."); the lede
 // under it gives the rest, since it prints whatever the headline did not.
 const HEADLINE_MAX = 80;
+// The number kept is the one the night was about: "Anthony Foster scores 10
+// as the Rockets take down the Jazz" was a 10-point, 16-rebound night.
+const TRIM_VERB: Record<string, string> = {
+	rebounds: "grabs",
+	assists: "hands out",
+	steals: "has",
+	blocks: "has",
+};
 export const trimHeadline = (text: string): string => {
 	if (text.length <= HEADLINE_MAX) {
 		return text;
 	}
 	return text
 		.replace(
-			/ (?:has|turns in|goes for|puts up|posts) (\d+) points(?:, \d+ \w+,)? and \d+ (?:rebounds|assists|steals|blocks)(?= as | in |, and )/,
-			" scores $1",
+			/ (?:has|turns in|goes for|puts up|posts) (\d+) points(?:, \d+ \w+,)? and (\d+) (rebounds|assists|steals|blocks)(?= as | in |, and )/,
+			(_, pts: string, n: string, what: string) =>
+				Number(n) > Number(pts)
+					? ` ${TRIM_VERB[what]} ${n} ${what}`
+					: ` scores ${pts}`,
 		)
 		.replace(
-			/('s?) (\d+) points and \d+ (?:rebounds|assists|steals|blocks) (?=not enough|power|lead|carry|lift|sink)/,
-			"$1 $2 ",
+			/('s?) (\d+) points and (\d+) (rebounds|assists|steals|blocks) (?=not enough|power|lead|carry|lift|sink)/,
+			(_, s: string, pts: string, n: string, what: string) =>
+				Number(n) > Number(pts) ? `${s} ${n} ${what} ` : `${s} ${pts} `,
 		);
 };
 
@@ -4565,18 +4584,30 @@ const loserSentence = (
 		// The shape is picked WITHOUT the tail: with the second man's verb
 		// baked into every candidate, the ledger saw all four as spent and the
 		// pick could no longer steer away from a "finished with" already used.
+		// The dash form leaves the man dangling after his numbers - "got a
+		// double-double - 14 points and 10 assists from Tyrese Ellis" - so
+		// these frames name him first or bracket the line. A double-double's
+		// numbers say what it was; a triple-double is always called one.
+		const triple = doubleCategories(leader).length >= 3;
+		const gotLine = !ddw
+			? `${line} from ${leader.name}`
+			: triple
+				? `a ${ddw} from ${leader.name} (${statPhrase(leader)})`
+				: `${statPhrase(leader)} from ${leader.name}`;
 		const base = pickSentence(
 			rng,
 			[
 				`${leaderLine} ${agreed} ${them}`,
-				`${cap(them)} got ${line} from ${leader.name}`,
-				`${leader.name} finished with ${line} for ${them}`,
+				`${cap(them)} got ${gotLine}`,
+				`${leader.name} finished with ${ddw ? `a ${ddw} (${statPhrase(leader)})` : line} for ${them}`,
 				// Not "22 points from X was..." - a sentence does not open with a
 				// numeral, and every one of these lines starts with one. And only
 				// for a modest line: "The best the Pelicans could offer was 32
 				// points and 11 assists" undersold the best line on the floor.
-				...(leader.pts < 25 && doubleCategories(leader).length < 3
-					? [`The best ${them} could offer was ${line} from ${leader.name}`]
+				...(leader.pts < 25 && !triple
+					? [
+							`The best ${them} could offer was ${ddw ? leaderLine : `${line} from ${leader.name}`}`,
+						]
 					: []),
 				`For ${them}, it was ${leader.name} with ${line}`,
 				`${cap(them)} leaned on ${leader.name} for ${line}`,

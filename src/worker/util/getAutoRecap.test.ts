@@ -1807,6 +1807,23 @@ describe("a headline fits on a line", () => {
 		);
 	});
 
+	// "Anthony Foster scores 10 as the Rockets take down the Jazz" was a
+	// 10-point, 16-rebound night.
+	test("a trimmed line keeps the number the night was about", () => {
+		assert.equal(
+			trimHeadline(
+				"Anthony Foster has 10 points and 16 rebounds as the Rockets take down the visiting Jazz 101-95",
+			),
+			"Anthony Foster grabs 16 rebounds as the Rockets take down the visiting Jazz 101-95",
+		);
+		assert.equal(
+			trimHeadline(
+				"Grant Jackson's 9 points and 14 assists not enough as the Timberwolves get past the Thunder 99-97",
+			),
+			"Grant Jackson's 14 assists not enough as the Timberwolves get past the Thunder 99-97",
+		);
+	});
+
 	test("a headline that fits is left alone", () => {
 		const fits =
 			"Herb Hayes has 22 points and 11 assists as the Heat edge the Pelicans";
