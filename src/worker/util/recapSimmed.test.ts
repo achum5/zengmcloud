@@ -805,7 +805,7 @@ describe("simmed recaps", () => {
 				);
 			}
 			if (
-				/shot just [\d.]+% as a team|shot [\d.]+% from the floor|% shooting night for the team|never found the range|Shooting [\d.]+% was never/.test(
+				/shot just [\d.]+% as a team|shot [\d.]+% from the floor|% shooting night for the team|they shot [\d.]+% from the floor|never found the range|Shooting [\d.]+% was never/.test(
 					recap,
 				)
 			) {

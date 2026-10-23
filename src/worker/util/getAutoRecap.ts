@@ -4888,10 +4888,13 @@ const loserSentence = (
 		lossStats.tov >= 18 &&
 		lossStats.tov - winStats.tov >= 5 &&
 		!spent.has("loserTov");
+	// Eight points of field-goal percentage, as for threes: five was a
+	// quarter of all games, and "but they shot just 39.6% as a team" closed
+	// the losers' line in one recap in four.
 	const fgpReason =
 		lossStats.fga >= 20 &&
 		lossStats.fgp <= 40 &&
-		winStats.fgp - lossStats.fgp >= 5 &&
+		winStats.fgp - lossStats.fgp >= 8 &&
 		!spent.has("loserFgp");
 	const threesReason =
 		lossStats.tpa >= 25 &&
@@ -4978,10 +4981,13 @@ const loserSentence = (
 	} else if (fgpReason) {
 		reason = pick(
 			rng,
+			// Not ", on a 35.9% shooting night for the team" after a man's
+			// line: it hung the team's shooting on him, and ran in one recap in
+			// thirteen.
 			[
 				`, but they shot just ${stats.fgp}% as a team`,
 				`, but the team shot ${stats.fgp}% from the floor`,
-				`, on a ${stats.fgp}% shooting night for the team`,
+				`, on a night they shot ${stats.fgp}% from the floor`,
 			],
 			"loserFgp",
 		);
