@@ -553,7 +553,7 @@ describe("3D director", () => {
 				const shot = tl.beats
 					.slice(j + 1)
 					.find((x) => x.type.startsWith("fga"))!;
-				const y = (events[shot.i] as { pid: number }).pid;
+				const y = events[shot.i]!.pid as number;
 				const rim = { x: rimX(tl.tracks.get(y)!.team), y: COURT_H / 2 };
 				const off = (t: number) => {
 					const p = evalPlayer(tl, y, t);
@@ -3031,9 +3031,11 @@ describe("3D director", () => {
 		assert.isAtMost(stood, trips / 30, `${stood} of ${trips}`);
 	}, 240_000);
 
-	// A whistle on a foul that stops play, the man with the ball - the set
-	// still coming to him - isn't stood there with it waiting on it: he has
-	// it on the floor, probing, as it goes.
+	// A whistle on a foul that stops play, the man with the ball out on the
+	// floor - the set still coming to him - isn't stood there with it
+	// waiting on it: he has it on the floor, probing, as it goes. (In close
+	// - posting up, the split action going on round him, or caught under
+	// the rim - holding it is what he is doing.)
 	test("no man with the ball stood waiting on a foul's whistle", () => {
 		let fouls = 0;
 		const stood: string[] = [];
@@ -3051,7 +3053,10 @@ describe("3D director", () => {
 				}
 				const team = tl.tracks.get(h)!.team;
 				const H = evalPlayer(tl, h, t);
-				if ((H.x - COURT_W / 2) * attackDir(team) < 8) {
+				if (
+					(H.x - COURT_W / 2) * attackDir(team) < 8 ||
+					Math.hypot(H.x - rimX(team), H.y - COURT_H / 2) < 14
+				) {
 					continue;
 				}
 				fouls += 1;
@@ -3072,7 +3077,7 @@ describe("3D director", () => {
 				}
 			}
 		}
-		assert.isAtLeast(fouls, 30);
+		assert.isAtLeast(fouls, 20);
 		assert.isAtMost(stood.length, 1, stood.join("; "));
 	}, 120_000);
 

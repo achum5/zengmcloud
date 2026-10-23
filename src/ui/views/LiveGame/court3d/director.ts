@@ -5856,10 +5856,18 @@ class Director {
 	) {
 		const { team } = run;
 		const busy = new Set<number>();
+		// (Only sent back to a spot over half court - the safety a break
+		// leaves at home - he has no part here: see playMove.)
+		const home = new Set<number>();
 		for (const a of [...acts, ...(next ?? [])]) {
 			if (a.type === "screen") {
 				a.who.forEach((w) => busy.add(w));
 				busy.add(a.for);
+			} else if (
+				a.type === "move" &&
+				spotXY(a.to)[1] > COURT_W / 2 - RIM_INSET
+			) {
+				home.add(a.who);
 			} else {
 				busy.add(a.who);
 				if (a.type === "pass" || a.type === "handoff") {
@@ -5893,7 +5901,7 @@ class Director {
 				run,
 				pid,
 				t0,
-				back && !own ? undefined : this.ownDraws(pid, t0),
+				back && !own && !home.has(r) ? undefined : this.ownDraws(pid, t0),
 			);
 			this.go(pid, Q, start, RUN * 0.85, "run");
 		});
