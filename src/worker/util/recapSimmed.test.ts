@@ -825,7 +825,7 @@ describe("simmed recaps", () => {
 					}
 					const at = recap.search(
 						new RegExp(
-							`${p.name} (?:sprained|strained|bruised|fractured|dislocated|tore|broke|left with)[^.;]* and (?:is expected to miss|will miss|will be out for)`,
+							`${p.name} (?:sprained|strained|bruised|fractured|dislocated|tore|broke|left with)[^.;]* and (?:is expected to miss|will miss|will be out for|will be out as long)`,
 						),
 					);
 					if (at < 0) {
@@ -843,5 +843,21 @@ describe("simmed recaps", () => {
 			}
 		}
 		assert.isAtLeast(seen, 2);
+	});
+
+	// "Evan Hayes and Darius Hayes post double-doubles..." over a body that
+	// never said Darius Hayes.
+	test("every player the headline names is in the body", () => {
+		for (const { gid, recap, game } of pairs) {
+			const [head, ...rest] = recap.split("\n\n");
+			const body = rest.join(" ");
+			for (const t of game.teams) {
+				for (const p of t.players) {
+					if (head!.includes(p.name)) {
+						assert.include(body, p.name, `gid ${gid}\n${recap}`);
+					}
+				}
+			}
+		}
 	});
 });

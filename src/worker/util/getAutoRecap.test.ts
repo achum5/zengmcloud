@@ -9373,6 +9373,67 @@ test("held off is for a push that came up short", () => {
 	}
 });
 
+// "Evan Hayes and Darius Hayes post double-doubles as the Heat pull away"
+// over a body whose supporting cast was the next two scorers; "Franz
+// Carter goes for 15 points and 10 rebounds as the Hornets take down the
+// Bucks" over a body that never said his name.
+test("every man the headline names is in the body", () => {
+	const heat = realisticTeam(
+		{ tid: 1, region: "Miami", name: "Heat", abbrev: "MIA", pts: 119 },
+		player({
+			name: "Evan Hayes",
+			pts: 29,
+			ast: 13,
+			fg: 10,
+			fga: 20,
+			tp: 6,
+			tpa: 11,
+		}),
+	);
+	heat.players.push(
+		player({ name: "Darius Hayes", pts: 15, reb: 10, ast: 4, fg: 6, fga: 11 }),
+	);
+	const hornets = realisticTeam(
+		{ tid: 1, region: "Charlotte", name: "Hornets", abbrev: "CHA", pts: 117 },
+		player({ name: "Franz Carter", pts: 15, reb: 10, fg: 6, fga: 8 }),
+	);
+	hornets.players[1] = player({
+		name: "Keegan Carter",
+		pts: 18,
+		fg: 7,
+		fga: 15,
+	});
+	const lose = realisticTeam(
+		{ tid: 2, region: "Milwaukee", name: "Bucks", abbrev: "MIL", pts: 107 },
+		player({ name: "Payton Hayes", pts: 17, fg: 7, fga: 16 }),
+	);
+	const named = new Set<string>();
+	beginRecapBatch();
+	try {
+		for (const win of [heat, hornets]) {
+			for (let gid = 2200; gid < 2240; gid++) {
+				const recap = getAutoRecap(
+					game({ gid, teams: [win, lose], winnerTid: 1 }),
+				);
+				const [head, ...rest] = recap.split("\n\n");
+				const body = rest.join(" ");
+				for (const p of win.players) {
+					if (head!.includes(p.name)) {
+						named.add(p.name);
+						assert.ok(body.includes(p.name), recap);
+					}
+				}
+			}
+		}
+	} finally {
+		endRecapBatch();
+	}
+	assert.ok(
+		named.has("Darius Hayes") && named.has("Franz Carter"),
+		[...named].join(),
+	);
+});
+
 // "The Spurs' Payton Lowry sprained his toe and is expected to miss about
 // four games; teammate Yuta Lowry sprained his elbow and is expected to miss
 // about four games."

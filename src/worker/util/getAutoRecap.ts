@@ -4489,11 +4489,18 @@ const supportSentence = (
 	rng: () => number,
 	// A clutch hero whose full line the winning-shot sentence already printed.
 	alreadyTold?: string,
+	// A teammate the headline named beside the star. "Evan Hayes and Darius
+	// Hayes post double-doubles" sat over a body whose supporting cast was
+	// the two next scorers, and Darius Hayes was never mentioned.
+	headlined?: RecapPlayer,
 ): string | undefined => {
 	const cast = supportingCast(shape.winner.players, star).filter(
 		(p) =>
 			p.name !== alreadyTold &&
-			(p.pts >= 12 || doubleCategories(p).length >= 2 || p.reb >= 12),
+			(p === headlined ||
+				p.pts >= 12 ||
+				doubleCategories(p).length >= 2 ||
+				p.reb >= 12),
 	);
 	if (cast.length === 0) {
 		return undefined;
@@ -4530,6 +4537,18 @@ const supportSentence = (
 	) {
 		cast[0] = next;
 		cast[1] = first;
+	}
+	// The headline's man takes one of the two places - never the one held
+	// by a teammate who outscored the star.
+	const hAt = headlined ? cast.indexOf(headlined) : -1;
+	if (headlined && hAt > 1) {
+		cast.splice(hAt, 1);
+		const slot = cast[1] && cast[1] === scorer && scorer.pts > star.pts ? 0 : 1;
+		const bumped = cast[slot];
+		cast[slot] = headlined;
+		if (bumped) {
+			cast.splice(2, 0, bumped);
+		}
 	}
 	const second = cast[0]!;
 
@@ -6707,6 +6726,12 @@ const buildGameRecap = (game: RecapGame): string => {
 							: "starSplit",
 				),
 			);
+		} else if (star.fga > 0) {
+			// Fewer shots than that still make a split the headline did not
+			// have. With none of this, "Franz Carter goes for 15 points and 10
+			// rebounds as the Hornets take down the Bucks" sat over a body that
+			// never said his name.
+			para1.push(`${star.name} was ${star.fg}-of-${star.fga} from the floor.`);
 		}
 		// (A headline that printed his whole line, and a line with no split
 		// to add: the sentence is not pushed a third time.)
@@ -7234,7 +7259,15 @@ const buildGameRecap = (game: RecapGame): string => {
 	}
 	let supportText: string | undefined;
 	addWinner(() => {
-		supportText = supportSentence(shape, star, rng, heroTold);
+		supportText = supportSentence(
+			shape,
+			star,
+			rng,
+			heroTold,
+			shape.winner.players.find(
+				(p) => p !== star && headline.text.includes(p.name),
+			),
+		);
 		return supportText;
 	});
 	addWinner(() => storyStat, 6);
