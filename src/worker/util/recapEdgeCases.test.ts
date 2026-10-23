@@ -832,6 +832,42 @@ describe("edge cases", () => {
 		);
 	});
 
+	// "hitting 4 of 7 threes" is a split like "4-of-7", and held to one.
+	test("the reader holds a written-out split to a shooting line", () => {
+		const home = squad(
+			{ tid: 1, name: "Hawks", ptsQtrs: [28, 26, 27, 29] },
+			{ name: "Ace Hawk", pid: 11, pts: 29, fg: 10, fga: 20, tp: 4, tpa: 7 },
+			110,
+		);
+		const away = squad(
+			{ tid: 2, name: "Kings", ptsQtrs: [24, 25, 26, 27] },
+			{ name: "Rex King", pid: 21, pts: 28, fg: 11, fga: 21 },
+			102,
+		);
+		const g = game([home, away]);
+		assert.deepEqual(
+			verifyRecap(
+				"**x**\n\nAce Hawk scored 29 points, hitting 4 of 7 threes.",
+				g,
+			),
+			[],
+		);
+		assert.deepEqual(
+			verifyRecap(
+				"**x**\n\nAce Hawk scored 29 points, hitting 5 of 7 threes.",
+				g,
+			).map((v) => v.kind),
+			["shooting split"],
+		);
+		assert.deepEqual(
+			verifyRecap(
+				"**x**\n\nAce Hawk scored 29 points, hitting all 7 of his threes.",
+				g,
+			).map((v) => v.kind),
+			["shooting split"],
+		);
+	});
+
 	test("the reader holds series claims against the bracket", () => {
 		const home = squad(
 			{ tid: 1, name: "Hawks", ptsQtrs: [28, 26, 27, 29] },

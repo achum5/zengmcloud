@@ -300,9 +300,20 @@ export const verifyRecap = (
 				splits.add(`${p.ft}-${p.fta}`);
 			}
 		}
-		for (const m of sentence.matchAll(/(?<![\d.])(\d+)-of-(\d+)/g)) {
+		// "4-of-7", and "hitting 4 of 7 threes".
+		for (const m of sentence.matchAll(
+			/(?<![\d.])(\d+)(?:-of-| of (?=\d+ (?:threes|three-pointers|free throws|shots)\b))(\d+)/g,
+		)) {
 			if (!splits.has(`${m[1]}-${m[2]}`)) {
 				add("shooting split", `${m[1]}-of-${m[2]} matches nothing`, sentence);
+			}
+		}
+		// "hitting all 4 of his threes" is 4-of-4.
+		for (const m of sentence.matchAll(
+			/\ball (\d+) of his (?:threes|three-pointers|free throws|shots)\b/g,
+		)) {
+			if (!splits.has(`${m[1]}-${m[1]}`)) {
+				add("shooting split", `${m[1]}-of-${m[1]} matches nothing`, sentence);
 			}
 		}
 
@@ -408,7 +419,9 @@ export const verifyRecap = (
 				...game.teams.flatMap((t) => t.players.map((pl) => pl.tp)),
 			]);
 			for (const m of sentence.matchAll(
-				/(?<![\d.-])(\d+) (?:more )?(?:threes|three-pointers)\b/g,
+				// Not the attempts of "hitting 4 of 7 threes": that is a split,
+				// held to one above.
+				/(?<![\d.-])(?<!\d of )(\d+) (?:more )?(?:threes|three-pointers)\b/g,
 			)) {
 				if (SEASON_TALK.test(sentence) || /averag/.test(sentence)) {
 					continue;

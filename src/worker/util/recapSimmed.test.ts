@@ -208,7 +208,9 @@ describe("simmed recaps", () => {
 				/Nothing fell from deep/,
 				/after going \d+-of-\d+/,
 				/\d+ [a-z]+ for the [A-Z][\w ]*, and \d+ (?:points|rebounds|assists|steals|blocks)\b/,
-				/including \d+-of-\d+ from (?:three|the line) (?:as|in)\b/,
+				/(?:hitting|making) \d+ of \d+ (?:threes|free throws) (?:as|in)\b/,
+				// A shooting line is not part of a points total.
+				/points, including \d+-of-\d+/,
 				// The side that tied it at the end may have been the other one.
 				/after the break to force overtime/,
 				// Soccer talk, and "and a loss" as an afterthought.

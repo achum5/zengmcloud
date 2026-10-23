@@ -8892,6 +8892,129 @@ test("a line that is only points leads only if nobody outscored it", () => {
 	}
 });
 
+// "The Hawks had a 15-0 run in the second, and it still was not enough. The
+// Mavericks took the first quarter 35-20 and were up 49-43 at the break."
+test("a second-quarter run is not told before the first quarter", () => {
+	const win = realisticTeam(
+		{
+			tid: 1,
+			region: "Dallas",
+			name: "Mavericks",
+			abbrev: "DAL",
+			pts: 100,
+			ptsQtrs: [35, 14, 26, 25],
+		},
+		player({ name: "Miles Dunn", pts: 24, ast: 9, fg: 9, fga: 18 }),
+	);
+	const lose = realisticTeam(
+		{
+			tid: 2,
+			region: "Atlanta",
+			name: "Hawks",
+			abbrev: "ATL",
+			pts: 91,
+			ptsQtrs: [20, 23, 24, 24],
+		},
+		player({ name: "Anthony Brooks", pts: 18, reb: 12, fg: 7, fga: 18 }),
+	);
+	let both = 0;
+	beginRecapBatch();
+	try {
+		for (let gid = 2020; gid < 2050; gid++) {
+			const recap = getAutoRecap(
+				game({
+					gid,
+					teams: [win, lose],
+					winnerTid: 1,
+					flow: {
+						leadChanges: 0,
+						ties: 1,
+						maxLead: [17, 0],
+						maxLeadAt: [1, 1],
+						run: { side: 1, pts: 15, period: 2, clock: 600, endPeriod: 2 },
+					},
+				}),
+			);
+			const run = recap.search(/15-0|15 straight|15 unanswered/);
+			const first = recap.search(/first quarter 35-20/);
+			if (run >= 0 && first >= 0) {
+				both += 1;
+				assert.ok(run > first, recap);
+			}
+		}
+	} finally {
+		endRecapBatch();
+	}
+	assert.ok(both > 0);
+});
+
+// "The Wizards got no more than 12 from anyone, Marcus Nowell leading the
+// way, but the team shot 26.7% from the floor" - two bad facts set against
+// each other.
+test("a quiet leader's reason is more of the same, not a contrast", () => {
+	const win = realisticTeam(
+		{ tid: 1, region: "Miami", name: "Heat", abbrev: "MIA", pts: 104 },
+		player({ name: "Herb Hayes", pts: 24, reb: 6, fg: 9, fga: 16 }),
+	);
+	const lose = realisticTeam(
+		{ tid: 2, region: "Washington", name: "Wizards", abbrev: "WAS", pts: 80 },
+		player({ name: "Marcus Nowell", pts: 12, tov: 21, fg: 5, fga: 14 }),
+	);
+	let told = 0;
+	beginRecapBatch();
+	try {
+		for (let gid = 1980; gid < 2010; gid++) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [win, lose], winnerTid: 1 }),
+			);
+			assert.doesNotMatch(
+				recap,
+				/(?:from anyone|Nobody had more than)[^.]*, (?:but|though|on a night)\b/,
+				recap,
+			);
+			if (
+				/(?:from anyone|Nobody had more than)[^.]*, and they turned it over 21 times/.test(
+					recap,
+				)
+			) {
+				told += 1;
+			}
+		}
+	} finally {
+		endRecapBatch();
+	}
+	assert.ok(told > 0);
+});
+
+// "Obi King scored 29 points, including 4-of-7 from three" - a shooting
+// line is not part of a points total.
+test("a hot night from deep is a split, not a part of the points", () => {
+	const win = realisticTeam(
+		{ tid: 1, region: "Phoenix", name: "Suns", abbrev: "PHX", pts: 121 },
+		player({ name: "Obi King", pts: 29, fg: 10, fga: 20, tp: 4, tpa: 7 }),
+	);
+	const lose = realisticTeam(
+		{ tid: 2, region: "Memphis", name: "Grizzlies", abbrev: "MEM", pts: 104 },
+		player({ name: "Xavier Green", pts: 21, fg: 8, fga: 19 }),
+	);
+	let told = 0;
+	beginRecapBatch();
+	try {
+		for (let gid = 1950; gid < 1970; gid++) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [win, lose], winnerTid: 1 }),
+			);
+			assert.doesNotMatch(recap, /including \d+-of-\d+/, recap);
+			if (/hitting 4 of 7 threes/.test(recap)) {
+				told += 1;
+			}
+		}
+	} finally {
+		endRecapBatch();
+	}
+	assert.ok(told > 0);
+});
+
 // "The Hornets led 67-54 at halftime. They pushed on after the break and led
 // by as many as 20" - of a game the Clippers were down three going into the
 // fourth. And "cut it to 69-68 after three" told half of a comeback that

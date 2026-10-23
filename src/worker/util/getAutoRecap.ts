@@ -636,10 +636,14 @@ const shootingFlourish = (p: RecapPlayer): string | undefined => {
 		return `on ${p.fg}-of-${p.fga} shooting`;
 	}
 	// A hot night from deep is told as the split when the attempts are
-	// known: "5-of-7 from three" says more than "on 5 threes". Not "after
-	// going 5-of-7", which put the shooting before the points it made.
+	// known: "hitting 5 of 7 threes" says more than "on 5 threes". Not
+	// "after going 5-of-7", which put the shooting before the points it
+	// made, and not "29 points, including 4-of-7 from three": a shooting
+	// line is not part of a points total.
 	if (p.tp >= 4 && p.tpa >= p.tp && p.tp / p.tpa >= 0.55) {
-		return `including ${p.tp}-of-${p.tpa} from three`;
+		return p.tp === p.tpa
+			? `hitting all ${p.tp} of his threes`
+			: `hitting ${p.tp} of ${p.tpa} threes`;
 	}
 	if (p.tp >= 4) {
 		// "on", not "with": every caller introduces the stat line with "with", and
@@ -648,15 +652,17 @@ const shootingFlourish = (p: RecapPlayer): string | undefined => {
 	}
 	// A night lived at the line.
 	if (p.ft >= 12 && p.fta >= p.ft) {
-		return `including ${p.ft}-of-${p.fta} from the line`;
+		return p.ft === p.fta
+			? `making all ${p.ft} of his free throws`
+			: `making ${p.ft} of ${p.fta} free throws`;
 	}
 	return undefined;
 };
 
-// The line with its flourish: "38 points and 17 rebounds, including 13-of-17
-// from the line", "25 points, including 5-of-9 from three".
-// An "including" aside is closed with a comma when the sentence goes on:
-// "26 points, including 4-of-6 from three, as the Magic got past the Bucks".
+// The line with its flourish: "38 points and 17 rebounds, making 13 of 17
+// free throws", "25 points, hitting 5 of 9 threes".
+// The aside is closed with a comma when the sentence goes on: "26 points,
+// hitting 4 of 6 threes, as the Magic got past the Bucks".
 const withFlourish = (
 	line: string,
 	flourish: string | undefined,
@@ -664,7 +670,7 @@ const withFlourish = (
 ): string =>
 	flourish === undefined
 		? line
-		: flourish.startsWith("including")
+		: /^(?:hitting|making) /.test(flourish)
 			? `${line}, ${flourish}${continues ? "," : ""}`
 			: `${line} ${flourish}`;
 
@@ -4855,6 +4861,17 @@ const loserSentence = (
 	// unless the top line is so quiet it would embarrass him.
 	if (!skipLeader && topScorer && topScorer.pts >= 12) {
 		const them = theNick(shape.loser);
+		// After "got no more than 12 from anyone" the reason is more of the
+		// same, not a contrast: "..., but the team shot 26.7%" set two bad
+		// facts against each other, and "kept undoing the good work" had no
+		// good work to undo.
+		const more = tovReason
+			? `, and they turned it over ${stats.tov} times`
+			: fgpReason
+				? `, and they shot ${stats.fgp}% as a team`
+				: threesReason
+					? `, and they went ${stats.tp}-of-${stats.tpa} from three`
+					: "";
 		// A shared high is not one man's lead: "Nobody had more than Jalen
 		// Hayes' 16 for the Heat... Anthony Hayes was good for 16 points."
 		const level = shape.loser.players.filter(
@@ -4864,14 +4881,14 @@ const loserSentence = (
 			return `${cap(them)} got ${topScorer.pts} apiece from ${topScorer.name} and ${level[0]!.name}${reason}.`;
 		}
 		if (level.length > 1) {
-			return `${cap(them)} got no more than ${topScorer.pts} from anyone${reason}.`;
+			return `${cap(them)} got no more than ${topScorer.pts} from anyone${more}.`;
 		}
 		return pickSentence(
 			rng,
 			[
 				`${topScorer.name} led ${them} with ${plural(topScorer.pts, "point")}${reason}.`,
-				`Nobody had more than ${poss(topScorer.name)} ${topScorer.pts} for ${them}${reason}.`,
-				`${cap(them)} got no more than ${topScorer.pts} from anyone, ${topScorer.name} leading the way${reason}.`,
+				`Nobody had more than ${poss(topScorer.name)} ${topScorer.pts} for ${them}${more}.`,
+				`${cap(them)} got no more than ${topScorer.pts} from anyone, ${topScorer.name} leading the way${more}.`,
 			],
 			"loserQuietLeader",
 		);
@@ -6925,8 +6942,15 @@ const buildGameRecap = (game: RecapGame): string => {
 			/halftime|at the half\b|the break|into the second half/.test(t),
 		);
 		const runEnd = game.flow?.run?.endPeriod ?? runPeriod;
+		// Unless that sentence starts further back: "The Hawks had a 15-0
+		// run in the second... The Mavericks took the first quarter 35-20 and
+		// were up 49-43 at the break" told the second quarter first.
+		const halfStartsEarlier =
+			halfAt >= 0 &&
+			runPeriod > 1 &&
+			/first quarter|in the first\b/.test(storyPara[halfAt]!);
 		if (run && runEnd <= shape.regPeriods / 2 && halfAt >= 0) {
-			storyPara.splice(halfAt, 0, run);
+			storyPara.splice(halfStartsEarlier ? halfAt + 1 : halfAt, 0, run);
 			finishAt += 1;
 		} else if (run && runPeriod <= shape.regPeriods / 2 && halfAt >= 0) {
 			// One that spanned halftime comes right after the halftime score.
