@@ -177,7 +177,10 @@ describe("edge cases", () => {
 			recap,
 			/2OT|double overtime|2 extra periods|two extra periods/,
 		);
-		assert.match(recap, /Ace Hawk's jumper .*41 seconds/);
+		assert.match(
+			recap,
+			/Ace Hawk(?:'s jumper| answered with a jumper) .*41 seconds/,
+		);
 		assert.deepEqual(verifyRecap(recap, g), []);
 	});
 

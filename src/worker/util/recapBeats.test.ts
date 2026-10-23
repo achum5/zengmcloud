@@ -803,6 +803,36 @@ describe("season highs, streaks, milestones and returns", () => {
 		}
 	});
 
+	// "The Clippers' Tyrese Green was back after missing three games with a
+	// sprained toe, and had 8 points."
+	test("a reserve back from a short absence is no news", () => {
+		const loser = team({ tid: 2, name: "Knicks", pts: 90 });
+		const back = (p: Partial<RecapPlayer>) =>
+			returnBeat(
+				game(
+					team({
+						tid: 1,
+						name: "Celtics",
+						players: [
+							player({
+								name: "Bench Guy",
+								pts: 8,
+								starter: false,
+								returnFrom: { games: 3, type: "Sprained Toe" },
+								...p,
+							}),
+						],
+					}),
+					loser,
+				).ctx,
+				rngFromSeed(1),
+			);
+		assert.isUndefined(back({}));
+		assert.isDefined(back({ returnFrom: { games: 6, type: "Sprained Toe" } }));
+		assert.isDefined(back({ starter: true }));
+		assert.isDefined(back({ pts: 17 }));
+	});
+
 	test("the bench: an edge, a losing bench, a spark", () => {
 		const starters = (prefix: string, pts: number[]) =>
 			pts.map((p, i) =>

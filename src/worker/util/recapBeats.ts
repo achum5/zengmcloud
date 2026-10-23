@@ -837,8 +837,21 @@ export const milestoneBeat = (
 // ---------------------------------------------------------------- THE RETURN
 
 export const returnBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
+	// News when the absence was long or the man matters: "The Clippers'
+	// Tyrese Green was back after missing three games with a sprained toe,
+	// and had 8 points" was a bench player's short absence, one return note
+	// in four.
 	const p = [...ctx.winner.players, ...ctx.loser.players]
-		.filter((x) => x.returnFrom && x.min >= 12)
+		.filter(
+			(x) =>
+				x.returnFrom &&
+				x.min >= 12 &&
+				(x.returnFrom.games >= 5 ||
+					x.starter === true ||
+					x.pts >= 15 ||
+					doubleCategories(x).length >= 2 ||
+					ctx.said.has(x.name)),
+		)
 		.sort((a, b) => b.pts - a.pts)[0];
 	if (!p || !p.returnFrom) {
 		return undefined;

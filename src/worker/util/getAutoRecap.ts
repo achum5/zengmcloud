@@ -2923,12 +2923,22 @@ const resultLead = (
 		};
 	}
 	if (shape.ot > 0) {
+		// Half of all overtime ledes opened "It took an extra period, but...":
+		// the wire mostly just says where it was won, "beat the Rockets
+		// 104-102 in overtime".
+		const extra =
+			shape.ot === 1 ? "an extra period" : `${numWord(shape.ot)} extra periods`;
+		const plain = scoreTold ? "" : ` ${shape.winner.pts}-${shape.loser.pts}`;
 		return {
-			text: `It took ${
-				shape.ot === 1
-					? "an extra period"
-					: `${numWord(shape.ot)} extra periods`
-			}, but ${w} ${verb} ${l}${score}${tail}.`,
+			text: pick(
+				rng,
+				[
+					`It took ${extra}, but ${w} ${verb} ${l}${score}${tail}.`,
+					`${cap(w)} ${verb} ${l}${plain} in ${otPhrase(shape.ot)}${tail}.`,
+					`${cap(w)} ${verb} ${l}${plain} in ${otPhrase(shape.ot)}${tail}.`,
+				],
+				"otResultLead",
+			),
 			covers: "ot",
 		};
 	}
@@ -7266,14 +7276,22 @@ const buildGameRecap = (game: RecapGame): string => {
 	if (where && para1.length > 0) {
 		// The sentence with the result in it: after the score, or after the
 		// losers' name when the headline has the score.
-		const tag = scoreTag(shape);
+		// The score as the lede wrote it: "149-146 (3OT)", or "149-146 in
+		// triple overtime" - not "slipped past the Heat in Game 4 of the
+		// First Round 149-146 in triple overtime".
+		const plain = `${shape.winner.pts}-${shape.loser.pts}`;
 		const loserName = theNick(shape.loser);
 		const i = Math.max(
 			0,
-			para1.findIndex((x) => x.includes(tag) || x.includes(loserName)),
+			para1.findIndex((x) => x.includes(plain) || x.includes(loserName)),
 		);
 		const first = para1[i]!;
-		if (first.includes(tag)) {
+		const tag = [
+			scoreTag(shape),
+			`${plain} in ${otPhrase(shape.ot)}`,
+			plain,
+		].find((t) => first.includes(t));
+		if (tag) {
 			para1[i] = first.replace(tag, `${tag}${where}`);
 		} else {
 			const at = first.indexOf(loserName);

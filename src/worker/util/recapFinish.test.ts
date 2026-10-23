@@ -566,6 +566,42 @@ describe("a late rally", () => {
 		);
 	});
 
+	// "Cade Brooks' three-pointer with 28.8 seconds left put the Hawks
+	// ahead 114-111. Anthony Brooks set it up." - the pass is the basket's.
+	test("the pass that set up the go-ahead basket is in its sentence", () => {
+		const game = build([
+			ev(1, 21, 2, "rim", 50, [101, 101]),
+			ev(0, 11, 3, "tp", 28.8, [104, 101], { ast: 12 }),
+		]);
+		for (let seed = 0; seed < 8; seed++) {
+			const text = tell(game, seed).join(" ");
+			assert.match(
+				text,
+				/three-pointer off a pass from Tyrese Nowell with 28\.8 seconds/,
+				text,
+			);
+			assert.notMatch(text, /set it up|had the assist/, text);
+		}
+	});
+
+	// "Quentin Ingram sealed it with two free throws with 3:44 left", and
+	// the Pelicans scored eleven more.
+	test("free throws minutes from the end did not seal it", () => {
+		const game = build([
+			ev(1, 21, 2, "rim", 110, [99, 99]),
+			ev(0, 11, 2, "mid", 100, [101, 99]),
+			ev(0, 12, 2, "ft", 90, [103, 99]),
+		]);
+		for (let seed = 0; seed < 8; seed++) {
+			const text = tell(game, seed).join(" ");
+			assert.notMatch(
+				text,
+				/sealed it|close it out|finished it|put it away/,
+				text,
+			);
+		}
+	});
+
 	// "Tyrese Nowell set up the winner." on its own, after a sentence about
 	// something else: the winner was the lede's, and so is its assist.
 	test("an assist on a winner the lede told is not a sentence of its own", () => {

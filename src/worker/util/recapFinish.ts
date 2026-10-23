@@ -110,10 +110,12 @@ const scoreOf = (e: FinishEvent, wSide: GameFlowSide): [number, number] =>
 
 // Whether a winner's free throws decided anything: the lead they were shot
 // with was one possession or less. Two free throws with 3.7 seconds left
-// did not "finish" a game already up nine.
+// did not "finish" a game already up nine. And in the last minute: "Quentin
+// Ingram sealed it with two free throws with 3:44 left" was said of a game
+// with eleven more Pelicans points still to come.
 const mattered = (e: FinishEvent, wSide: GameFlowSide): boolean => {
 	const [w, l] = scoreOf(e, wSide);
-	return w - e.pts - l <= 3;
+	return w - e.pts - l <= 3 && e.clock <= 60;
 };
 
 // The winners' lead at the end of the window.
@@ -547,9 +549,22 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 			}
 		}
 
+		// The pass that set up the decisive basket, when the log has it and
+		// the basket was the one that decided it - in the basket's own
+		// sentence. Its own ("Anthony Brooks set it up.") hung between the
+		// go-ahead three and the free throws like a caption.
+		const setUp = nameOf(game, goAhead.e.ast);
+		const feed =
+			!shotTold &&
+			setUp &&
+			setUp !== goAhead.name &&
+			goAhead.e.kind !== "ft" &&
+			(goAhead.e.clock <= 60 || goAheadIdx === moments.length - 1)
+				? ` off a pass from ${setUp}`
+				: "";
 		if (goAhead.name && !shotTold) {
 			const [w, l] = scoreOf(goAhead.e, wSide);
-			const shot = shotBy(goAhead.name, goAhead.e, justNamed);
+			const shot = `${shotBy(goAhead.name, goAhead.e, justNamed)}${feed}`;
 			const isLast = goAheadIdx === moments.length - 1;
 			// "Answered" only when the losers had just scored; when the same
 			// side tied it and then went ahead, the second basket followed.
@@ -564,7 +579,7 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 						...(answered
 							? [
 									`Then ${shot} ${when(goAhead.e, rng)} made it ${w}-${l}.`,
-									`${goAhead.name} answered with ${aShot(goAhead.e)} ${when(goAhead.e, rng)} that put ${W} up ${w}-${l}.`,
+									`${goAhead.name} answered with ${aShot(goAhead.e)}${feed} ${when(goAhead.e, rng)} that put ${W} up ${w}-${l}.`,
 								]
 							: followed
 								? [
@@ -580,26 +595,8 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 					],
 					"finishGoAhead",
 				),
-				goAhead.name,
-			);
-		}
-		// The pass that set up the decisive basket, when the log has it and
-		// the basket was the one that decided it.
-		const setUp = nameOf(game, goAhead.e.ast);
-		if (
-			!shotTold &&
-			setUp &&
-			setUp !== goAhead.name &&
-			goAhead.e.kind !== "ft" &&
-			(goAhead.e.clock <= 60 || goAheadIdx === moments.length - 1)
-		) {
-			say(
-				pick(
-					rng,
-					[`${setUp} had the assist.`, `${setUp} set it up.`],
-					"finishAssist",
-				),
-				setUp,
+				// The passer was named last: a "he" next would be his.
+				feed ? undefined : goAhead.name,
 			);
 		}
 
