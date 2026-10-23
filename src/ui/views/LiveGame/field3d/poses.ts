@@ -2153,7 +2153,15 @@ const FIELD_ANIMS = {
 	// A score, a kick good: both arms straight up.
 	sigTD: held({ shN: 178, elN: 2, abN: 6, shF: 178, elF: 2, abF: 6 }),
 	// A safety: the palms together over his head.
-	sigSafety: held({ shN: 176, elN: 24, abN: -12, shF: 176, elF: 24, abF: -12 }),
+	sigSafety: held({
+		shN: 176,
+		elN: 24,
+		abN: -12,
+		shF: 176,
+		elF: 24,
+		abF: -12,
+		tuck: 1,
+	}),
 	// Incomplete, no good, declined: the arms swung across in front of him.
 	sigWave: over(
 		{ shN: 90, elN: 4, abN: 84, shF: 90, elF: 4, abF: 84 },
@@ -2162,8 +2170,8 @@ const FIELD_ANIMS = {
 	// Time out, the clock stopped: both arms up, crossed and uncrossed over
 	// his head.
 	sigTime: over(
-		{ shN: 166, elN: 6, abN: 26, shF: 166, elF: 6, abF: 26 },
-		{ shN: 166, elN: 6, abN: -16, shF: 166, elF: 6, abF: -16 },
+		{ shN: 166, elN: 6, abN: 26, shF: 166, elF: 6, abF: 26, tuck: 1 },
+		{ shN: 166, elN: 6, abN: -16, shF: 166, elF: 6, abF: -16, tuck: 1 },
 	),
 	// An arm straight out to his right: the way the offense goes for a
 	// first down, at the side that fouled.

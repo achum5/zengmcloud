@@ -103,7 +103,8 @@ export type Signaled =
 	| "noGood"
 	| "safety"
 	| "first"
-	| "out";
+	| "out"
+	| "timeout";
 
 // A flag thrown: from his hand at t0, down on the turf at `to` at t1, lying
 // there from then on.
@@ -140,6 +141,7 @@ const SIGNAL_MS: Record<Signaled, number> = {
 	safety: 1800,
 	first: 1500,
 	out: 1300,
+	timeout: 1600,
 };
 // Facing the press box.
 const FACING_US = Math.PI / 2;
@@ -624,25 +626,27 @@ export const stageCrew = (
 		const who: Official[] =
 			sg.what === "good" || sg.what === "noGood"
 				? ["FJ", "BJ"]
-				: sg.what === "td"
-					? [...CREW]
-							.filter((o) => o !== "R")
-							.sort(
-								(a, b) =>
-									dist(where(a, sg.t), sg.at) - dist(where(b, sg.t), sg.at),
-							)
-							.slice(0, 2)
-					: [
-							nearest(
-								sg.what === "first"
-									? ["DJ", "LJ"]
-									: sg.what === "out"
-										? ["DJ", "LJ", "SJ", "FJ"]
-										: CREW.filter((o) => o !== "R"),
-								sg.at,
-								sg.t,
-							),
-						];
+				: sg.what === "timeout"
+					? ["R"]
+					: sg.what === "td"
+						? [...CREW]
+								.filter((o) => o !== "R")
+								.sort(
+									(a, b) =>
+										dist(where(a, sg.t), sg.at) - dist(where(b, sg.t), sg.at),
+								)
+								.slice(0, 2)
+						: [
+								nearest(
+									sg.what === "first"
+										? ["DJ", "LJ"]
+										: sg.what === "out"
+											? ["DJ", "LJ", "SJ", "FJ"]
+											: CREW.filter((o) => o !== "R"),
+									sg.at,
+									sg.t,
+								),
+							];
 		for (const o of who) {
 			// (Busy with a call of his own: not this.)
 			if (holds.some((h) => h.o === o && h.t1 > sg.t && h.t0 < sg.t + ms)) {
@@ -655,9 +659,11 @@ export const stageCrew = (
 					? dir === 1
 						? Math.PI
 						: 0
-					: p.y > MID_Y
-						? -Math.PI / 2
-						: Math.PI / 2;
+					: sg.what === "timeout"
+						? FACING_US
+						: p.y > MID_Y
+							? -Math.PI / 2
+							: Math.PI / 2;
 			holds.push({ o, t0: sg.t - 200, t1: sg.t + ms, yaw });
 			arms.push({
 				o,
@@ -668,7 +674,7 @@ export const stageCrew = (
 							? "sigSafety"
 							: sg.what === "first"
 								? "sigSide"
-								: sg.what === "out"
+								: sg.what === "out" || sg.what === "timeout"
 									? "sigTime"
 									: "sigWave",
 				t0: sg.t,

@@ -1053,7 +1053,7 @@ class Director {
 		}
 		// What the officials signal: the referee's word on each foul as its
 		// line is said; a score, an incompletion, a kick good or not, a first
-		// down.
+		// down, a timeout.
 		const calls: CrewInput["calls"] = [];
 		const signals: CrewInput["signals"] = [];
 		const spotAt = (t: number) =>
@@ -1083,6 +1083,8 @@ class Director {
 				signals.push({ what: "safety", t: at, at: spotAt(at) });
 			} else if (e.type === "passIncomplete") {
 				signals.push({ what: "incomplete", t, at: spotAt(t) });
+			} else if (e.type === "timeout") {
+				signals.push({ what: "timeout", t, at: spotAt(t) });
 			}
 		}
 		// The clock stopped: out of bounds.
