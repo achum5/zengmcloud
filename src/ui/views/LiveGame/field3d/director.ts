@@ -319,9 +319,12 @@ const TAIL = 1500;
 // The clock line, as the offense breaks the huddle.
 const CLOCK_AT = 200;
 // Up out of the huddle (or on from the sideline) this long in - the men
-// going one after another over a moment.
-const BREAK_AT = 500;
-const BREAK_SPREAD = 350;
+// going one after another over a moment, the clap just before.
+const BREAK_AT = 640;
+const BREAK_SPREAD = 160;
+const DEF_BREAK_LATE = 150;
+// The clap as it breaks, this long in (and up and away from it).
+const CLAP_AT = 160;
 // How far back to the huddle (feet) a man is when the picture takes up the
 // play - from no farther than this off his spot, at an easy jog, or at a
 // walk for a short way.
@@ -335,6 +338,17 @@ const WALK_ONLY = 10;
 // from there (shortest, longest).
 const SET_HOLD = 450;
 const CADENCE = [700, 1500] as const;
+// The quarterback's read of the defense (see cadence): under center, down
+// under him this long before the snap, getting there over GET_UNDER_MS,
+// stood reading it for at least SURVEY_MIN first; in the gun, from this
+// long before it (at least GUN_CALL_MIN). Pointing out a man this often.
+const UNDER_AT = 650;
+const GET_UNDER_MS = 320;
+const SURVEY_BACK = 1.6;
+const SURVEY_MIN = 600;
+const GUN_CALL_MS = 1500;
+const GUN_CALL_MIN = 900;
+const POINT = 0.4;
 // Pre-snap motion: on this share of pass plays, a man off the line (the
 // flanker, a slot) this far across (feet) at this pace - never in closer
 // to the ball than this, nor nearer a sideline. In man coverage, his man
@@ -505,6 +519,18 @@ const clampX = (x: number, margin = 3) =>
 	Math.min(FIELD_L - margin, Math.max(margin, x));
 
 const HASHES = [HASH_FAR_Y, HASH_NEAR_Y] as const;
+
+// Just walked up to his spot and set there (see walkUp), nothing since.
+const walkedUp = (p: Part): boolean => {
+	const set = p.legs.at(-1);
+	const up = p.legs.at(-2);
+	return (
+		!!set &&
+		!!up &&
+		set.t1 === set.t0 &&
+		(up.move === "walk" || up.move === "jog")
+	);
+};
 
 const ORDINALS = ["1st", "2nd", "3rd", "4th"];
 // A down from scrimmage, with a line to gain.
@@ -849,6 +875,7 @@ class Director {
 		if (kind === "pass" && !flagged) {
 			snap = this.motion(parts, offense, dir, losX, ballY, set, snap, i0);
 		}
+		this.cadence(parts, offense, snap, i0);
 
 		// The ball: spotted (on its tee, for a kickoff), then under the
 		// center's hand once he is over it.
@@ -1586,18 +1613,46 @@ class Director {
 				};
 				const d = Math.hypot(p.at.x - from.x, p.at.y - from.y);
 				const jog = d > WALK_ONLY;
-				const leave =
-					t0 + BREAK_AT + BREAK_SPREAD * r() + (isOffense ? 0 : 150);
+				const late = isOffense ? 0 : DEF_BREAK_LATE;
+				const leave = t0 + BREAK_AT + BREAK_SPREAD * r() + late;
 				const arrive = leave + (d / (jog ? JOG_FPS : WALK_FPS)) * 1000;
 				const look = Math.atan2(center.y - from.y, center.x - from.x);
+				// (In the huddle: the clap, all at once, and out of it.)
+				const clap = t0 + CLAP_AT + late;
 				parts.push({
 					pid: p.pid,
 					team: p.team,
 					role: p.role,
 					legs: [
-						keep > 0
-							? { t0, t1: leave, from, to: from, move: "stand", yaw: p.yaw }
-							: { t0, t1: leave, from, to: from, move: "hands", yaw: look },
+						...(keep > 0
+							? [
+									{
+										t0,
+										t1: leave,
+										from,
+										to: from,
+										move: "stand" as const,
+										yaw: p.yaw,
+									},
+								]
+							: [
+									{
+										t0,
+										t1: clap,
+										from,
+										to: from,
+										move: "hands" as const,
+										yaw: look,
+									},
+									{
+										t0: clap,
+										t1: leave,
+										from,
+										to: from,
+										move: "huddleBreak" as const,
+										yaw: look,
+									},
+								]),
 						{
 							t0: leave,
 							t1: arrive,
@@ -1625,6 +1680,66 @@ class Director {
 		return set + SET_HOLD;
 	}
 
+	// THE QUARTERBACK AT THE LINE: under center, stood up behind him first
+	// to read the defense - his head round one way and the other, now and
+	// then an arm out at the man he picks out - and down under him for the
+	// ball; in the gun, the same look round and a clap for it.
+	cadence(parts: Part[], offense: Side, snap: number, i0: number) {
+		const qb = parts.find((p) => p.team === offense && p.role === "QB");
+		const set = qb?.legs.at(-1);
+		if (!qb || !set || set.t1 > set.t0) {
+			return;
+		}
+		const r = this.rng(i0, "cadence");
+		const at = set.to;
+		const still = (t: number, move: Move): Leg => ({
+			t0: t,
+			t1: t,
+			from: at,
+			to: at,
+			move,
+			yaw: set.yaw,
+		});
+		const act = (t0: number, t1: number, move: Move): Leg => ({
+			...still(t0, move),
+			t1,
+		});
+		if (set.move === "underCenter") {
+			const down = snap - UNDER_AT;
+			const up = qb.legs.at(-2);
+			if (down - set.t0 < SURVEY_MIN || !up) {
+				return;
+			}
+			// (A step back off him while he stands.)
+			const yaw = set.yaw ?? 0;
+			const back = {
+				x: at.x - Math.cos(yaw) * SURVEY_BACK,
+				y: at.y - Math.sin(yaw) * SURVEY_BACK,
+			};
+			up.to = back;
+			qb.legs.pop();
+			qb.legs.push(
+				{
+					...act(set.t0, down, r() < POINT ? "qbPoint" : "qbSurvey"),
+					from: back,
+					to: back,
+				},
+				{ ...act(down, down + GET_UNDER_MS, "getUnder"), from: back },
+				still(down + GET_UNDER_MS, "underCenter"),
+			);
+		} else if (set.move === "shotgun") {
+			const from = Math.max(set.t0 + 150, snap - GUN_CALL_MS);
+			if (snap - from < GUN_CALL_MIN) {
+				return;
+			}
+			set.t1 = from;
+			qb.legs.push(
+				act(from, snap - 40, "gunCall"),
+				still(snap - 40, "shotgun"),
+			);
+		}
+	}
+
 	// PRE-SNAP MOTION, on a pass play now and then: a receiver off the line
 	// set first somewhere else - wider out, or in tighter - and on his way
 	// across to his spot as the ball is snapped; and, in man coverage, the
@@ -1648,8 +1763,7 @@ class Director {
 		const spot = (part: Part) => part.legs.at(-1)!.to;
 		const offenseParts = parts.filter((p) => p.team === offense);
 		const movers = offenseParts.filter(
-			(p) =>
-				MOTION_ROLES.has(p.role) && p.legs.length === 3 && depthOf(spot(p)) > 3,
+			(p) => MOTION_ROLES.has(p.role) && walkedUp(p) && depthOf(spot(p)) > 3,
 		);
 		const him = movers[Math.floor(r() * movers.length)];
 		if (!him) {
@@ -1688,14 +1802,16 @@ class Director {
 		const fps = MOTION_FPS[0] + r() * (MOTION_FPS[1] - MOTION_FPS[0]);
 		const takes = (Math.abs(shift) / fps) * 1000;
 		// Set over there first, the way he would be at his spot.
-		const [, upTo, stance] = him.legs as [Leg, Leg, Leg];
+		const n = him.legs.length;
+		const upTo = him.legs[n - 2]!;
+		const stance = him.legs[n - 1]!;
 		const there =
 			upTo.t0 + (dist(upTo.from, a) / (upTo.move === "jog" ? 9 : 4.6)) * 1000;
 		const go = Math.max(set + 300, there + 400, snap - takes);
 		const end = go + takes;
 		upTo.to = a;
 		upTo.t1 = there;
-		him.legs[2] = { ...stance, t0: there, t1: go, from: a, to: a };
+		him.legs[n - 1] = { ...stance, t0: there, t1: go, from: a, to: a };
 		him.legs.push({
 			t0: go,
 			t1: end,
@@ -1708,7 +1824,7 @@ class Director {
 			.filter(
 				(p) =>
 					p.team !== offense &&
-					p.legs.length === 3 &&
+					walkedUp(p) &&
 					Math.abs(acrossOf(spot(p)) - aB) < 9 &&
 					depthOf(spot(p)) < -2 &&
 					depthOf(spot(p)) > -30,
@@ -1718,7 +1834,9 @@ class Director {
 					Math.abs(acrossOf(spot(p)) - aB) - Math.abs(acrossOf(spot(q)) - aB),
 			)[0];
 		if (over && r() < MAN_FOLLOWS) {
-			const [, up, st] = over.legs as [Leg, Leg, Leg];
+			const k = over.legs.length;
+			const up = over.legs[k - 2]!;
+			const st = over.legs[k - 1]!;
 			const d0 = spot(over);
 			const d1 = { x: d0.x, y: d0.y + shift * dir };
 			if (d1.y > MOTION_EDGE && d1.y < FIELD_W - MOTION_EDGE) {
@@ -1727,7 +1845,7 @@ class Director {
 				const goD = Math.max(go + 120, thereD + 200);
 				up.to = d1;
 				up.t1 = thereD;
-				over.legs[2] = { ...st, t0: thereD, t1: goD, from: d1, to: d1 };
+				over.legs[k - 1] = { ...st, t0: thereD, t1: goD, from: d1, to: d1 };
 				over.legs.push(
 					{
 						t0: goD,

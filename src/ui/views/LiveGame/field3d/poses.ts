@@ -163,6 +163,66 @@ const SLID = pose({
 
 // The quarterback set in the pocket: on the balls of his feet, the ball up
 // at his chest in both hands.
+const HUDDLE = pose({
+	hipN: 28,
+	kneeN: 26,
+	hipF: 30,
+	kneeF: 28,
+	lean: 42,
+	shN: 26,
+	elN: 18,
+	abN: 10,
+	shF: 26,
+	elF: 18,
+	abF: 10,
+	wide: 0.6,
+});
+const UNDER_CENTER = pose({
+	hipN: 34,
+	kneeN: 52,
+	hipF: 34,
+	kneeF: 52,
+	lean: 28,
+	shN: 54,
+	elN: 16,
+	abN: -8,
+	shF: 54,
+	elF: 16,
+	abF: -8,
+	wide: 0.7,
+});
+const SHOTGUN = pose({
+	hipN: 14,
+	kneeN: 22,
+	hipF: 16,
+	kneeF: 24,
+	lean: 12,
+	shN: 42,
+	elN: 74,
+	abN: 6,
+	shF: 42,
+	elF: 74,
+	abF: 6,
+	wide: 0.7,
+});
+// Stood up behind the center, hands at his belt.
+const QB_SURVEY = pose({
+	hipN: 8,
+	kneeN: 14,
+	hipF: 10,
+	kneeF: 14,
+	lean: 8,
+	shN: 18,
+	elN: 52,
+	abN: 12,
+	shF: 18,
+	elF: 52,
+	abF: 12,
+	wide: 0.75,
+});
+// One arm out straight, pointing; both hands in together, a clap.
+const POINT_OUT = { shF: 94, elF: 6, abF: 4 };
+const CLAP = { abN: -6, abF: -6, shF: 60, elF: 56 };
 const QB_SET = pose({
 	hipN: 12,
 	kneeN: 22,
@@ -273,23 +333,7 @@ const FIELD_ANIMS = {
 	// Standing easy: between plays, on the sideline.
 	stand: { kind: "still", pose: BASE },
 	// Bent over, hands on his knees: catching his breath, in the huddle.
-	hands: {
-		kind: "still",
-		pose: pose({
-			hipN: 28,
-			kneeN: 26,
-			hipF: 30,
-			kneeF: 28,
-			lean: 42,
-			shN: 26,
-			elN: 18,
-			abN: 10,
-			shF: 26,
-			elF: 18,
-			abF: 10,
-			wide: 0.6,
-		}),
-	},
+	hands: { kind: "still", pose: HUDDLE },
 	threePoint: { kind: "still", pose: THREE_POINT },
 	// A defensive lineman's: more of his weight on his hand, hips up -
 	// ready to fire off the ball.
@@ -308,41 +352,92 @@ const FIELD_ANIMS = {
 	center: { kind: "still", pose: CENTER },
 	// The quarterback under center: knees flexed, feet under his shoulders,
 	// hands together under the center, eyes up over the defense.
-	underCenter: {
-		kind: "still",
-		pose: pose({
-			hipN: 34,
-			kneeN: 52,
-			hipF: 34,
-			kneeF: 52,
-			lean: 28,
-			shN: 54,
-			elN: 16,
-			abN: -8,
-			shF: 54,
-			elF: 16,
-			abF: -8,
-			wide: 0.7,
-		}),
-	},
+	underCenter: { kind: "still", pose: UNDER_CENTER },
 	// In the shotgun: standing, a little crouched, hands up in front of him
 	// for the snap.
-	shotgun: {
-		kind: "still",
-		pose: pose({
-			hipN: 14,
-			kneeN: 22,
-			hipF: 16,
-			kneeF: 24,
-			lean: 12,
-			shN: 42,
-			elN: 74,
-			abN: 6,
-			shF: 42,
-			elF: 74,
-			abF: 6,
-			wide: 0.7,
-		}),
+	shotgun: { kind: "still", pose: SHOTGUN },
+	// At the line before the snap: stood up behind the center reading the
+	// defense, his head round one way and the other - now and then an arm
+	// out at the man he picks out - and down under him for the ball.
+	qbSurvey: {
+		kind: "act",
+		keys: [
+			[0, QB_SURVEY],
+			[0.22, { ...QB_SURVEY, twist: 26 }],
+			[0.42, { ...QB_SURVEY, twist: 26 }],
+			[0.68, { ...QB_SURVEY, twist: -24 }],
+			[0.84, { ...QB_SURVEY, twist: -24 }],
+			[1, QB_SURVEY],
+		],
+	},
+	qbPoint: {
+		kind: "act",
+		keys: [
+			[0, QB_SURVEY],
+			[0.2, { ...QB_SURVEY, twist: 22 }],
+			[0.36, { ...QB_SURVEY, twist: 8, ...POINT_OUT }],
+			[0.6, { ...QB_SURVEY, twist: 8, ...POINT_OUT }],
+			[0.8, { ...QB_SURVEY, twist: -20 }],
+			[1, QB_SURVEY],
+		],
+	},
+	getUnder: {
+		kind: "act",
+		keys: [
+			[0, QB_SURVEY],
+			[1, UNDER_CENTER],
+		],
+	},
+	// In the gun: the same look round and an arm out, then a clap for the
+	// ball.
+	gunCall: {
+		kind: "act",
+		keys: [
+			[0, SHOTGUN],
+			[0.16, { ...SHOTGUN, twist: 26 }],
+			[0.32, { ...SHOTGUN, twist: 26 }],
+			[0.48, { ...SHOTGUN, twist: -12, ...POINT_OUT }],
+			[0.64, { ...SHOTGUN, twist: -12, ...POINT_OUT }],
+			[0.78, SHOTGUN],
+			[0.86, { ...SHOTGUN, ...CLAP }],
+			[0.93, SHOTGUN],
+			[1, SHOTGUN],
+		],
+	},
+	// The huddle broken: up off his knees and a clap, all of them at once.
+	huddleBreak: {
+		kind: "act",
+		keys: [
+			[0, HUDDLE],
+			[
+				0.4,
+				{
+					...BASE,
+					lean: 14,
+					shN: 58,
+					elN: 50,
+					abN: 24,
+					shF: 58,
+					elF: 50,
+					abF: 24,
+				},
+			],
+			[0.55, { ...BASE, lean: 12, shN: 60, elN: 56, ...CLAP }],
+			[
+				0.7,
+				{
+					...BASE,
+					lean: 10,
+					shN: 54,
+					elN: 46,
+					abN: 16,
+					shF: 54,
+					elF: 46,
+					abF: 16,
+				},
+			],
+			[1, BASE],
+		],
 	},
 	// A running back set behind the quarterback: hands on his thighs, weight
 	// forward.
