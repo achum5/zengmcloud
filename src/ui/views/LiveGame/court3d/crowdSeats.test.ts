@@ -98,3 +98,26 @@ test("the fans behind the basket wave at a visitor at the line", () => {
 	assert.isAtLeast(road, 4);
 	assert.isAtLeast(home, 4);
 }, 60_000);
+
+// The look up at the crowd over a break: the people it is on are up and
+// waving at it - not sat still.
+test("the crowd up and waving for the camera on it", () => {
+	let shots = 0;
+	for (const seed of ["a", "b"]) {
+		const { tl } = compile(seed, 80);
+		for (const s of tl.shots) {
+			if (s.kind !== "crowd" || s.t1 - s.t0 < 800) {
+				continue;
+			}
+			shots += 1;
+			const mid = (s.t0 + s.t1) / 2;
+			const at = `${seed} @${Math.round(s.t0)}`;
+			assert.strictEqual(crowdAt(tl, mid, 0).up, 1, at);
+			const arms = new Set(
+				[0, 130, 260, 390].map((now) => crowdAt(tl, mid, now).wave),
+			);
+			assert.strictEqual(arms.size, 2, at);
+		}
+	}
+	assert.isAtLeast(shots, 2);
+}, 60_000);

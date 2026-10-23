@@ -462,6 +462,8 @@ const buildingAt = (tl: CourtTimeline, t: number, now: number): Stand => {
 		crowdUp(tl, t),
 		// On their feet for each of the home team's starters called out.
 		callAt(tl.intro, t)?.team === 1 ? 1 : 0,
+		// Up and going for the camera on them, over a break (see arenaAim).
+		crowdShotAt(tl, t),
 	);
 	const tense = tensionAt(tl, t);
 	return {
@@ -471,6 +473,16 @@ const buildingAt = (tl: CourtTimeline, t: number, now: number): Stand => {
 				? Math.sin(now / 130) > 0
 				: tense >= 1 && Math.sin(now / 520) > 0.55,
 	};
+};
+// The look up at the crowd from low in the seats over a break: the people
+// it is on are up and waving at it, the way a building's crowd goes when
+// it sees itself on the board - not sat still, waiting on the game.
+const CROWD_SHOT_UP_MS = 350;
+const crowdShotAt = (tl: CourtTimeline, t: number): number => {
+	const s = arenaShotAt(tl, t);
+	return s?.kind === "crowd"
+		? Math.min(1, Math.max(0, (t - s.t0) / CROWD_SHOT_UP_MS))
+		: 0;
 };
 
 // Where a bench player is in his idle loop: the loop at its own pace on the
