@@ -858,10 +858,23 @@ export const pickLineAt = (
 		lottery = colaPicks(outlook.cola, outlook.numTeams, ratio);
 		lotteryKey = `:C${ratio}`;
 	}
-	const key = `${dp.round}:${Math.round(10 * center) / 10}:${spread}:${years}${lotteryKey}`;
+	const place = Math.round(10 * center) / 10;
+	const key = `${dp.round}:${place}:${spread}:${years}${lotteryKey}`;
 	let at = outlook.pickLines.get(key);
 	if (at === undefined) {
-		at = averagePick(outlook, dp.round, center, spread, years, lottery);
+		// Where it lands is the same every season it is priced for.
+		let byPlace = landingCache.get(outlook.pickLines);
+		if (!byPlace) {
+			byPlace = new Map();
+			landingCache.set(outlook.pickLines, byPlace);
+		}
+		const landingKey = `${dp.round}:${center}:${spread}${lotteryKey}`;
+		let weights = byPlace.get(landingKey);
+		if (!weights) {
+			weights = landing(outlook.numTeams, center, spread, lottery);
+			byPlace.set(landingKey, weights);
+		}
+		at = averagePick(outlook, dp.round, weights, years);
 		outlook.pickLines.set(key, at);
 	}
 	return at ?? undefined;
@@ -1060,17 +1073,60 @@ export const buildClassBoard = async (
 
 let classBoardVersion = 0;
 
-const averagePick = (
-	outlook: Pick<LeagueOutlook, "numTeams" | "numRounds">,
+// What the player each place in a round becomes, `years` after its draft,
+// as averagePick adds them up: for the line, then its worse and its better
+// half (if any), the chance he is worth a roster place, then roleFree,
+// offense, usage, overall and salary each times that chance - only the
+// players worth keeping are paid. The same for every pick and every outlook
+// while the league's salaries stand.
+const slotPlayers = new Map<string, (number[] | undefined)[][]>();
+const slotsFor = (
+	n: number,
+	numPicks: number,
 	round: number,
+	years: number,
+) => {
+	const key = `${n}:${numPicks}:${round}:${years}:${g.get("salaryCap")}:${g.get("minContract")}:${g.get("maxContract")}`;
+	let slots = slotPlayers.get(key);
+	if (!slots) {
+		const pickSalary = pickSalaries();
+		slots = [];
+		for (let k = 0; k < n; k++) {
+			const slot = (round - 1) * n + k;
+			const p = pickPlayer({ slot, numPicks, years });
+			const rowOf = (x: StrengthPlayer & { availability: number }) => {
+				const a = x.availability;
+				return a > 0
+					? [
+							a,
+							a * x.roleFree,
+							a * x.offense,
+							a * x.usage,
+							a * x.valueNoPot,
+							a * pickSalary({ slot, round, years, ovr: x.valueNoPot }),
+						]
+					: undefined;
+			};
+			slots.push([
+				rowOf(p),
+				p.halves ? rowOf(p.halves[0]!) : undefined,
+				p.halves ? rowOf(p.halves[1]!) : undefined,
+			]);
+		}
+		slotPlayers.set(key, slots);
+	}
+	return slots;
+};
+
+// The chance of each pick in a round, for a pick expected `center` places in
+// (`spread` the error in that), then moved by the lottery - the chance of
+// each pick in the round from each place a team finishes.
+const landing = (
+	n: number,
 	center: number,
 	spread: number,
-	years: number,
-	// The chance of each pick in the round from each place a team finishes.
 	lottery?: readonly (readonly number[])[],
-): PickAt | null => {
-	const n = outlook.numTeams;
-	const numPicks = outlook.numRounds * n;
+) => {
 	// The chance of each place in the round, the ends taking what lies beyond.
 	let weights: number[] = [];
 	if (spread > 0) {
@@ -1096,40 +1152,39 @@ const averagePick = (
 		}
 		weights = picks;
 	}
+	return weights;
+};
+
+// Where it lands, by pickLines' lifetime: the lottery is priced in it.
+const landingCache = new WeakMap<object, Map<string, number[]>>();
+
+const averagePick = (
+	outlook: Pick<LeagueOutlook, "numTeams" | "numRounds">,
+	round: number,
+	// The chance of each pick in the round (landing).
+	weights: readonly number[],
+	years: number,
+): PickAt | null => {
+	const n = outlook.numTeams;
+	const numPicks = outlook.numRounds * n;
 	// The line, then its worse and its better half, each averaged over
 	// where the pick may land: chance, roleFree, offense, usage, overall and
 	// salary.
 	const sums = [0, 1, 2].map(() => [0, 0, 0, 0, 0, 0]);
-	let pickSalary: ReturnType<typeof pickSalaries> | undefined;
-	const add = (
-		sum: number[],
-		w: number,
-		slot: number,
-		p: StrengthPlayer & { availability: number },
-	) => {
-		const share = w * p.availability;
-		if (share <= 0) {
-			return;
-		}
-		sum[0]! += share;
-		sum[1]! += share * p.roleFree;
-		sum[2]! += share * p.offense;
-		sum[3]! += share * p.usage;
-		sum[4]! += share * p.valueNoPot;
-		// Only the players worth keeping are paid.
-		pickSalary ??= pickSalaries();
-		sum[5]! += share * pickSalary({ slot, round, years, ovr: p.valueNoPot });
-	};
+	const slots = slotsFor(n, numPicks, round, years);
 	for (const [k, w] of weights.entries()) {
 		if (w < 1e-4) {
 			continue;
 		}
-		const slot = (round - 1) * n + k;
-		const p = pickPlayer({ slot, numPicks, years });
-		add(sums[0]!, w, slot, p);
-		if (p.halves) {
-			add(sums[1]!, w, slot, p.halves[0]!);
-			add(sums[2]!, w, slot, p.halves[1]!);
+		const at = slots[k]!;
+		for (let h = 0; h < 3; h++) {
+			const row = at[h];
+			if (row) {
+				const sum = sums[h]!;
+				for (let j = 0; j < 6; j++) {
+					sum[j]! += w * row[j]!;
+				}
+			}
 		}
 	}
 	const lineOf = ([kept, roleFree, offense, usage, ovr]: number[]) => ({
