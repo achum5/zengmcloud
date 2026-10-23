@@ -229,6 +229,237 @@ const drawRows = (
 	return true;
 };
 
+// A FLAT PLANE SEEN BY A CAMERA TURNED ALONG THE COURT (a replay's, a
+// huddle's, the look round the building): the floor - or anything else
+// lying flat - is still the same depth all along a row of the picture (the
+// camera is level), so a row of the picture is still a straight run across
+// the plane, only no longer along a row of its picture: a slant across it.
+// So it too is drawn a row of the picture at a time, each row filled with
+// the picture laid on it slanted - exact, every pixel of the picture filled
+// once. (In triangles, each clipped to its own edges, every edge showed: a
+// lattice of faint slanting lines across the floor in every close-up.)
+// Anything not lying flat, or a camera tilted over, can't be: false.
+const patterns = new WeakMap<HTMLCanvasElement, CanvasPattern | null>();
+const patternOf = (ctx: CanvasRenderingContext2D, img: HTMLCanvasElement) => {
+	let p = patterns.get(img);
+	if (p === undefined) {
+		p = ctx.createPattern(img, "no-repeat");
+		patterns.set(img, p);
+	}
+	return p ?? undefined;
+};
+const drawFlatRows = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	plane: TexturedPlane,
+	img: HTMLCanvasElement,
+	alpha: number,
+): boolean => {
+	const { origin: o, alongX: ax, alongY: ay } = plane;
+	// Where a point is from the camera: across, up and in (as project has
+	// it) - for the plane's corner and a step along each of its sides.
+	const p = cam.pos;
+	const camOf = (q: Pt3) => {
+		const dx = q.x - p.x;
+		const dy = q.y - p.y;
+		const dz = cam.upright ? -p.z : q.z - p.z;
+		return {
+			X: dx * cam.right.x + dy * cam.right.y + dz * cam.right.z,
+			Y:
+				dx * cam.up.x + dy * cam.up.y + dz * cam.up.z + (cam.upright ? q.z : 0),
+			Z: dx * cam.fwd.x + dy * cam.fwd.y + dz * cam.fwd.z,
+		};
+	};
+	const c0 = camOf(o);
+	const cu = camOf({ x: o.x + ax.x, y: o.y + ax.y, z: o.z + ax.z });
+	const cv = camOf({ x: o.x + ay.x, y: o.y + ay.y, z: o.z + ay.z });
+	const du = { X: cu.X - c0.X, Y: cu.Y - c0.Y, Z: cu.Z - c0.Z };
+	const dv = { X: cv.X - c0.X, Y: cv.Y - c0.Y, Z: cv.Z - c0.Z };
+	// The plane's (u, v) to the picture's (x, y), and back.
+	const { f, cx, cy } = cam;
+	const h00 = f * du.X + cx * du.Z;
+	const h01 = f * dv.X + cx * dv.Z;
+	const h02 = f * c0.X + cx * c0.Z;
+	const h10 = -f * du.Y + cy * du.Z;
+	const h11 = -f * dv.Y + cy * dv.Z;
+	const h12 = -f * c0.Y + cy * c0.Z;
+	const h20 = du.Z;
+	const h21 = dv.Z;
+	const h22 = c0.Z;
+	const i00 = h11 * h22 - h12 * h21;
+	const i01 = h02 * h21 - h01 * h22;
+	const i02 = h01 * h12 - h02 * h11;
+	const i10 = h12 * h20 - h10 * h22;
+	const i11 = h00 * h22 - h02 * h20;
+	const i12 = h02 * h10 - h00 * h12;
+	const i20 = h10 * h21 - h11 * h20;
+	const i21 = h01 * h20 - h00 * h21;
+	const i22 = h00 * h11 - h01 * h10;
+	const W = cam.viewW;
+	// Not the same depth all along a row: not flat to this camera.
+	const wMid = i21 * (cam.viewH / 2) + i22;
+	if (!(Math.abs(i20) * W <= 1e-6 * Math.abs(wMid)) || wMid === 0) {
+		return false;
+	}
+	const H = cam.viewH;
+	// The point of the plane (u, v) at (x, y) on the picture.
+	const at = (x: number, y: number) => {
+		const w = i20 * x + i21 * y + i22;
+		return {
+			u: (i00 * x + i01 * y + i02) / w,
+			v: (i10 * x + i11 * y + i12) / w,
+		};
+	};
+	// The run of row r on the plane (x0 to x1; none if x1 <= x0) - or none
+	// at all, the row behind the camera or right up against it.
+	const runOf = (r: number) => {
+		const yc = r + 0.5;
+		const w0 = i21 * yc + i22;
+		if (Math.abs(w0) < 1e-12) {
+			return undefined;
+		}
+		const ua = i00 / w0;
+		const ub = (i01 * yc + i02) / w0;
+		const va = i10 / w0;
+		const vb = (i11 * yc + i12) / w0;
+		const um = ua * (W / 2) + ub;
+		const vm = va * (W / 2) + vb;
+		if (du.Z * um + dv.Z * vm + c0.Z < 1) {
+			return undefined;
+		}
+		let x0 = 0;
+		let x1 = W;
+		for (const [a, b, top] of [
+			[ua, ub, plane.w],
+			[va, vb, plane.h],
+		] as const) {
+			if (Math.abs(a) < 1e-12) {
+				if (b < 0 || b > top) {
+					x1 = x0;
+				}
+				continue;
+			}
+			const e0 = -b / a;
+			const e1 = (top - b) / a;
+			x0 = Math.max(x0, Math.min(e0, e1));
+			x1 = Math.min(x1, Math.max(e0, e1));
+		}
+		return x1 - x0 < 0.5 ? undefined : { x0, x1 };
+	};
+	const sxu = img.width / plane.w;
+	const syv = img.height / plane.h;
+	// A few rows at a time where one slant does for all of them - to within
+	// a third of a pixel at their corners.
+	const band = (r: number, k: number, x0: number, x1: number) => {
+		const yc = r + k / 2;
+		const xc = (x0 + x1) / 2;
+		const c = at(xc, yc);
+		const ex = at(xc + 1, yc);
+		const ey = at(xc, yc + 1);
+		const ua = ex.u - c.u;
+		const va = ex.v - c.v;
+		const uy = ey.u - c.u;
+		const vy = ey.v - c.v;
+		const pic = levelOf(
+			img,
+			levelFor(sxu * Math.max(Math.abs(ua), Math.abs(uy))),
+			levelFor(syv * Math.max(Math.abs(va), Math.abs(vy))),
+		);
+		const sx = pic.width / plane.w;
+		const sy = pic.height / plane.h;
+		// How far off it puts the plane at the band's corners, in pixels of
+		// the screen (the slant's own map, undone).
+		let err = 0;
+		const jd = ua * vy - uy * va;
+		if (k > 1 && Math.abs(jd) > 1e-12) {
+			for (const x of [x0, x1]) {
+				for (const y of [r + 0.5, r + k - 0.5]) {
+					const t = at(x, y);
+					const eu = t.u - (c.u + ua * (x - xc) + uy * (y - yc));
+					const ev = t.v - (c.v + va * (x - xc) + vy * (y - yc));
+					err = Math.max(
+						err,
+						Math.abs(vy * eu - uy * ev) / Math.abs(jd),
+						Math.abs(ua * ev - va * eu) / Math.abs(jd),
+					);
+				}
+			}
+		}
+		return { err, pic, sx, sy, xc, yc, c, ua, va, uy, vy };
+	};
+	const BAND_ERR = 0.75;
+	const BAND_ROWS = [2, 3, 4, 6, 8, 12, 16, 24, 32];
+	ctx.save();
+	ctx.globalAlpha *= alpha;
+	let r = 0;
+	while (r < H) {
+		const run = runOf(r);
+		if (!run) {
+			r++;
+			continue;
+		}
+		let k = 1;
+		let x0 = run.x0;
+		let x1 = run.x1;
+		let b = band(r, 1, x0, x1);
+		for (const next of BAND_ROWS) {
+			if (r + next > H) {
+				break;
+			}
+			const last = runOf(r + next - 1);
+			if (!last) {
+				break;
+			}
+			const nx0 = Math.min(x0, last.x0);
+			const nx1 = Math.max(x1, last.x1);
+			const nb = band(r, next, nx0, nx1);
+			if (nb.err > BAND_ERR) {
+				break;
+			}
+			k = next;
+			x0 = nx0;
+			x1 = nx1;
+			b = nb;
+		}
+		const pat = patternOf(ctx, b.pic);
+		if (!pat) {
+			ctx.restore();
+			return false;
+		}
+		// The picture's pixel (px, py) at the screen's (x, y): px = sx u,
+		// u = c.u + ua (x - xc) + uy (y - yc), the same for py - the pattern
+		// wants it the other way round.
+		const m00 = b.sx * b.ua;
+		const m01 = b.sx * b.uy;
+		const m10 = b.sy * b.va;
+		const m11 = b.sy * b.vy;
+		const t0 = b.sx * (b.c.u - b.ua * b.xc - b.uy * b.yc);
+		const t1 = b.sy * (b.c.v - b.va * b.xc - b.vy * b.yc);
+		const det = m00 * m11 - m01 * m10;
+		if (Math.abs(det) > 1e-12) {
+			const a = m11 / det;
+			const bb = -m10 / det;
+			const c = -m01 / det;
+			const d = m00 / det;
+			pat.setTransform({
+				a,
+				b: bb,
+				c,
+				d,
+				e: -(a * t0 + c * t1),
+				f: -(bb * t0 + d * t1),
+			});
+			ctx.fillStyle = pat;
+			// (Each row of it only as far as the plane goes - the picture is
+			// no wider than the plane, so past its edge the pattern is clear.)
+			ctx.fillRect(x0, r, x1 - x0, k);
+		}
+		r += k;
+	}
+	ctx.restore();
+	return true;
+};
+
 export const drawTexturedPlane = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,
@@ -241,7 +472,10 @@ export const drawTexturedPlane = (
 	if (alpha <= 0.004) {
 		return;
 	}
-	if (drawRows(ctx, cam, plane, img, alpha)) {
+	if (
+		drawRows(ctx, cam, plane, img, alpha) ||
+		drawFlatRows(ctx, cam, plane, img, alpha)
+	) {
 		return;
 	}
 	// The texture may be drawn at another resolution than the plane counts.

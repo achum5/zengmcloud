@@ -108,3 +108,67 @@ test("the floor far off is drawn from its picture halved, near from the whole of
 	const close = rowsOf(1200, 675, 50, picture);
 	assert.isTrue(close.every((d) => d.from === picture));
 });
+
+// From a camera turned along the court (a replay's), the floor is drawn a
+// band of the screen's rows at a time, each filled with its picture laid
+// on it slanted - every row of the floor filled once, nothing clipped -
+// not in triangles, whose edges all showed: a lattice of faint slanting
+// lines across the floor.
+test("the floor seen by a turned camera: in bands of whole rows, none twice, no edges", () => {
+	const picture = stubCanvas();
+	picture.width = 1040;
+	picture.height = 550;
+	const fills: { x: number; y: number; w: number; h: number }[] = [];
+	let clips = 0;
+	const pattern = { setTransform: () => {} };
+	const ctx = {
+		globalAlpha: 1,
+		fillStyle: undefined as unknown,
+		save: () => {},
+		restore: () => {},
+		clip: () => {
+			clips++;
+		},
+		createPattern: () => pattern,
+		fillRect: (x: number, y: number, w: number, h: number) => {
+			fills.push({ x, y, w, h });
+		},
+		beginPath: () => {},
+		moveTo: () => {},
+		lineTo: () => {},
+		closePath: () => {},
+		transform: () => {},
+		drawImage: () => {},
+	} as unknown as CanvasRenderingContext2D;
+	const cam = makeCamera({ x: 12, width: 30, y: 25, z: 4 }, 1200, 675, {
+		...MAIN_RIG,
+		back: 24,
+		high: 14,
+		slide: 0.92,
+		upright: false,
+	});
+	drawTexturedPlane(
+		ctx,
+		cam,
+		COURT,
+		picture as unknown as HTMLCanvasElement,
+		26,
+		12,
+	);
+	assert.strictEqual(clips, 0);
+	assert.isAbove(fills.length, 20);
+	// Whole rows, top to bottom, each band starting where the last ended.
+	for (let i = 0; i < fills.length; i++) {
+		const f = fills[i]!;
+		assert.strictEqual(f.y, Math.round(f.y));
+		assert.isAtLeast(f.h, 1);
+		if (i > 0) {
+			assert.strictEqual(f.y, fills[i - 1]!.y + fills[i - 1]!.h);
+		}
+		assert.isAtLeast(f.x, 0);
+		assert.isAtMost(f.x + f.w, 1200 + 1e-9);
+	}
+	// Down to the bottom of the picture: the floor right under the camera.
+	const last = fills.at(-1)!;
+	assert.strictEqual(last.y + last.h, 675);
+});
