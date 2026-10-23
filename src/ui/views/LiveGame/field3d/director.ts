@@ -1053,6 +1053,19 @@ class Director {
 						e?.td === true ||
 						e?.safety === true,
 				);
+		// (Stopped short on third down - or on fourth, the ball over on
+		// downs.)
+		const stopped =
+			(kind === "run" || kind === "pass") && !flagged
+				? events.slice(i0, i1).some((e) => e?.type === "turnoverOnDowns")
+					? ("fourth" as const)
+					: clock.down === 3 &&
+						  after?.type === "clock" &&
+						  after.down === 4 &&
+						  after.t === clock.t
+						? ("third" as const)
+						: undefined
+				: undefined;
 		// Out of bounds: a run or a catch the sim stopped the clock after
 		// with nothing else to stop it - no score, no change of hands, no
 		// flag, no timeout, no two-minute warning - no more time gone by the
@@ -1098,6 +1111,7 @@ class Director {
 						i0,
 						i1,
 						...(moved ? { firstDown: true } : {}),
+						...(stopped ? { stopped } : {}),
 						...(out ? { out: true } : {}),
 						r: this.rng(i0, "action"),
 					})
@@ -1252,7 +1266,7 @@ class Director {
 				at: spotAt(whistle),
 			});
 		}
-		let cheer = this.cheerOf(i0, i1, offense, whistle, ball, parts);
+		let cheer = this.cheerOf(i0, i1, offense, whistle, ball, parts, stopped);
 		let t1 = Math.max(
 			this.lastLine + TAIL,
 			snap + 1500,
@@ -1606,6 +1620,7 @@ class Director {
 		whistle: number,
 		ball: BallSeg[],
 		parts: Part[],
+		stopped?: "third" | "fourth",
 	): Cheer | undefined {
 		const { events } = this;
 		const other = (1 - offense) as Side;
@@ -1644,6 +1659,10 @@ class Director {
 			) {
 				cheer ??= { t: whistle, side: other, big: false };
 			}
+		}
+		// (Stopped short: the defense's.)
+		if (stopped) {
+			cheer ??= { t: whistle, side: other, big: stopped === "fourth" };
 		}
 		return cheer;
 	}

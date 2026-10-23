@@ -66,8 +66,10 @@ export type ActInput = {
 	// The play's events: from its "clock" line up to the next one.
 	i0: number;
 	i1: number;
-	// A new set of downs got by it (not by a flag).
+	// A new set of downs got by it (not by a flag) - or the offense stopped
+	// short on third down, or on fourth and the ball over on downs.
 	firstDown?: boolean;
+	stopped?: "third" | "fourth";
 	// The man with it got out of bounds (see the director).
 	out?: boolean;
 	r: () => number;
@@ -817,6 +819,8 @@ class Action {
 	// they crowd round the man who made it.
 	readonly mob = new Set<number>();
 	mobAt?: Pt;
+	// The man who brought the carrier down, the last time one did.
+	downer?: Actor;
 
 	constructor(input: ActInput) {
 		this.input = input;
@@ -2482,6 +2486,7 @@ class Action {
 	// their feet at him as he spins out of it.
 	tackle(carrier: Actor, by: Actor[], pt: Pt, t: number, keptUp = false): Pt {
 		const r = this.r;
+		this.downer = by[0] ?? this.downer;
 		const fall = carrier.yaw;
 		const lead = t - HIT_MS;
 		// (Where each comes at him from.)
@@ -5553,6 +5558,9 @@ class Action {
 			if (this.input.firstDown) {
 				this.pointFirst();
 			}
+			if (this.input.stopped && r() < STOP_PARTY) {
+				this.stopParty();
+			}
 			this.takeaway();
 			return;
 		}
@@ -5730,6 +5738,94 @@ class Action {
 		this.mobRound(hero, c0);
 	}
 
+	// Stopped short: the man who made the stop up and into it - a flex, a
+	// fist pumped, a leap - and the nearest of his teammates over to him,
+	// one chest to chest with him now and then, the other clapping.
+	stopParty() {
+		const r = this.r;
+		const hero =
+			this.man(this.statPids("defTckSolo", "defTckAst")[0]) ??
+			this.downer ??
+			this.man(this.statPids("defPssDef")[0]);
+		if (!hero || hero.team === this.input.offense || this.mob.has(hero.pid)) {
+			return;
+		}
+		const legs = hero.legs;
+		let k = legs.length - 1;
+		while (k > 1 && legs[k]!.move === "stand") {
+			k--;
+		}
+		const c0 = Math.max(this.whistle + STOP_AFTER, legs[k]!.t1);
+		hero.cut(c0);
+		hero.hold(c0);
+		// (A few steps away from the man he stopped first - out the side of
+		// the ball the defense was on, off the offense's way to its huddle.)
+		const ball = this.ballAt(c0);
+		if (ball) {
+			const far = dist(hero.at, ball);
+			const ux = far > 0.5 ? (hero.at.x - ball.x) / far : 0;
+			const uy = far > 0.5 ? (hero.at.y - ball.y) / far : 0;
+			const way = Math.atan2(uy, ux + this.input.dir);
+			if (far < STOP_AWAY) {
+				hero.run(
+					{
+						x: hero.at.x + Math.cos(way) * (STOP_AWAY - far),
+						y: hero.at.y + Math.sin(way) * (STOP_AWAY - far),
+					},
+					STOP_STEP,
+				);
+			}
+		}
+		const u = r();
+		hero.act(
+			u < 0.4 ? "flex" : u < 0.7 ? "fistPump" : "leap",
+			hero.t + (u < 0.7 ? 1200 : 800),
+		);
+		this.mob.add(hero.pid);
+		const at = hero.at;
+		this.mobAt = at;
+		const start = c0 + 150;
+		const mates = this.men
+			.filter(
+				(m) =>
+					m !== hero &&
+					m.team === hero.team &&
+					!this.mob.has(m.pid) &&
+					!DOWN.has(legAt(m, start).move) &&
+					dist(m.posAt(start), at) < STOP_NEAR,
+			)
+			.sort((a, b) => dist(a.posAt(start), at) - dist(b.posAt(start), at))
+			.slice(0, r() < 0.5 ? 2 : 1);
+		let end = hero.t;
+		mates.forEach((m, j) => {
+			const from = m.posAt(start);
+			m.cut(start);
+			m.hold(start);
+			const way = dist(from, at) > 0.5 ? this.toward(at, from) : r() * 6.28;
+			const bump = j === 0 && r() < STOP_BUMP;
+			const off = bump ? STOP_BUMP_APART : STOP_RING;
+			const spot = {
+				x: at.x + Math.cos(way) * off,
+				y: at.y + Math.sin(way) * off,
+			};
+			m.run(spot, Math.min(m.top * 0.6, STOP_FPS));
+			if (bump) {
+				const t = Math.max(m.t, hero.t) + 60;
+				m.hold(t, "stand", way + Math.PI);
+				hero.hold(t, "stand", way);
+				m.act("chestBump", t + STOP_BUMP_MS, way + Math.PI);
+				hero.act("chestBump", t + STOP_BUMP_MS, way);
+			} else {
+				m.act(r() < 0.5 ? "clap" : "fistPump", m.t + 1200, way + Math.PI);
+			}
+			m.hold(m.t + 500, "stand");
+			this.mob.add(m.pid);
+			end = Math.max(end, m.t);
+		});
+		hero.hold(hero.t + 500, "stand");
+		this.until = Math.max(this.until, end, hero.t);
+	}
+
 	// A new set of downs, now and then: the man who got it up off the turf
 	// quick - or pulled up on his feet - and pointing the way they are going.
 	pointFirst() {
@@ -5834,14 +5930,17 @@ class Action {
 				scored = true;
 			}
 		}
+		const downs = this.input.stopped === "fourth";
 		const off =
 			KICK_KINDS.has(kind) ||
 			scored ||
+			downs ||
 			(holder !== undefined && holder.team !== offense);
-		// (The side scored on, or that had the ball taken off it: slow off the
-		// field, heads down.)
-		const won =
-			scored || (!KICK_KINDS.has(kind) && holder?.team !== offense)
+		// (The side scored on, that had the ball taken off it or gave it up on
+		// downs: slow off the field, heads down.)
+		const won = downs
+			? ((1 - offense) as Side)
+			: scored || (!KICK_KINDS.has(kind) && holder?.team !== offense)
 				? holder?.team
 				: undefined;
 		const y = clamp(spot.y, HUDDLE_Y[0], HUDDLE_Y[1]);
@@ -6035,6 +6134,22 @@ const RUE_HIPS = 0.45;
 const SKIRT = 11;
 // ...and the side that got it: this often a fist pumped, or a clap, first.
 const GLAD = 0.3;
+// Stopped short: this often a moment for it, from this long after the
+// whistle at the soonest - his teammates no further off than this to him,
+// at no more than this pace, to this far off him, or (this often, the first
+// of them) chest to chest with him, this far apart, this long.
+const STOP_PARTY = 0.75;
+const STOP_AFTER = 250;
+// (The man who made it first this far off the ball, stepping away at this
+// pace.)
+const STOP_AWAY = 6;
+const STOP_STEP = 7;
+const STOP_NEAR = 30;
+const STOP_FPS = 13;
+const STOP_RING = 3.6;
+const STOP_BUMP = 0.55;
+const STOP_BUMP_APART = 2;
+const STOP_BUMP_MS = 900;
 // A punt going in for a touchback: the cover easing up this far short of
 // the goal line (feet) and as much as this much further.
 const TB_SHORT = 6;
