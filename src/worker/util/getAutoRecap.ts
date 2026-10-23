@@ -3787,8 +3787,11 @@ const gameStory = (
 		if (shape.ot > 0) {
 			out.push(
 				// Not "to force overtime": the side that tied it at the end may
-				// have been the other one, and the finish says who.
-				`${W} won the second half ${w2}-${l2}, and it went to overtime.`,
+				// have been the other one, and the finish says who. And not "and
+				// it went to overtime" either: the lead has said that, and the
+				// finish says it again with the shot that forced it. The score
+				// it ended at is the fact neither of them has.
+				`${W} won the second half ${w2}-${l2}, and regulation ended tied at ${wh + w2}.`,
 			);
 		} else if (wonInLast) {
 			out.push(lastQuarterTurn());
@@ -6244,7 +6247,10 @@ export const getAutoRecap = (game: RecapGame): string => {
 	// decisive-run angle, so the flow sentence would be saying it twice. With
 	// a story, only the overtime line is still wanted from it.
 	let otFlowAt = -1;
-	if (!flowCovered || (story && shape.ot > 0)) {
+	// ...unless the lead said it: "It took an extra period, but the Suns
+	// pulled away" was followed by "Regulation settled nothing, and it took
+	// an extra period."
+	if (!flowCovered || (story && shape.ot > 0 && flowCovered !== "ot")) {
 		const flow = flowSentence(shape, rng);
 		if (flow && (!story || flow.covers === "ot")) {
 			if (flow.covers === "ot") {

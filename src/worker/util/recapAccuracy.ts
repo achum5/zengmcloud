@@ -451,6 +451,23 @@ export const verifyRecap = (
 					}
 				}
 			}
+			// "...and regulation ended tied at 107".
+			if (reg >= 1 && aq.length >= reg) {
+				const regTotal = (q: number[]) =>
+					q.slice(0, reg).reduce((acc, x) => acc + x, 0);
+				for (const m of sentence.matchAll(
+					/\bregulation ended tied at (\d+)/g,
+				)) {
+					const n = Number(m[1]);
+					if (n !== regTotal(hq) || n !== regTotal(aq)) {
+						add(
+							"regulation score",
+							`said tied at ${n}, real ${regTotal(hq)}-${regTotal(aq)}`,
+							sentence,
+						);
+					}
+				}
+			}
 		}
 
 		// --- the score going into a quarter ----------------------------------
@@ -518,7 +535,7 @@ export const verifyRecap = (
 		claim(/ran off (\d+) straight/g, (n) => n === flow.run?.pts, "run");
 		// "Tied at 61 at the break" is the halftime score, checked above.
 		claim(
-			/tied at (\d+)\b(?! (?:at (?:the break|halftime|the half\b)|going into))/g,
+			/(?<!regulation ended )tied at (\d+)\b(?! (?:at (?:the break|halftime|the half\b)|going into))/g,
 			(n) => n === flow.lastTie?.pts,
 			"last tie",
 		);

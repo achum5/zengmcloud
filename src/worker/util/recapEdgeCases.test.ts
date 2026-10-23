@@ -451,6 +451,39 @@ describe("edge cases", () => {
 		assert.match(wrap, /shootout/);
 	});
 
+	// "It took an extra period, but the Suns pulled away... The Suns won the
+	// second half 51-49, and it went to overtime. Regulation settled
+	// nothing, and it took an extra period." Overtime, three times over.
+	test("overtime is said once, and the second half ends on the score", () => {
+		let told = 0;
+		for (let gid = 1; gid <= 20; gid++) {
+			const home = squad(
+				{ tid: 1, name: "Hawks", ptsQtrs: [22, 24, 28, 26, 12] },
+				{ name: "Ace Hawk", pid: 11, pts: 30, fg: 12, fga: 22 },
+				112,
+			);
+			const away = squad(
+				{ tid: 2, name: "Bulls", ptsQtrs: [28, 26, 24, 22, 10] },
+				{ name: "Bo Bull", pid: 21, pts: 28, fg: 11, fga: 20 },
+				110,
+			);
+			const g = game([home, away], { gid, overtimes: 1, winnerTid: 1 });
+			const recap = getAutoRecap(g);
+			clean(recap);
+			const body = recap.split("\n\n").slice(1).join(" ");
+			assert.isAtMost(
+				(body.match(/overtime|extra period|Regulation settled/g) ?? []).length,
+				2,
+				recap,
+			);
+			if (/regulation ended tied at 100\b/.test(body)) {
+				told += 1;
+			}
+			assert.deepEqual(verifyRecap(recap, g), []);
+		}
+		assert.isAbove(told, 0);
+	});
+
 	test("a game-winner in overtime after a tying shot in regulation", () => {
 		const home = squad(
 			{ tid: 1, name: "Hawks", ptsQtrs: [26, 24, 25, 25, 12] },
