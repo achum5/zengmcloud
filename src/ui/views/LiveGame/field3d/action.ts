@@ -545,6 +545,10 @@ const GET_UP_MS = 1000;
 const READ_MS = 350;
 // A defender sees the ball thrown and breaks on it this long after.
 const BREAK_MS = 250;
+// A back kept in to block sets up this far in front of where the
+// quarterback sets and this far to his side of him (feet).
+const BACK_SET_UP = 4.5;
+const BACK_SET_OUT = 4;
 // A play-action pass: this often, when it goes this far in the air (yards)
 // and a back is there to fake it to; the fake this long (the ball out to
 // him half way through), the back on past it this far (feet); and the
@@ -3278,15 +3282,16 @@ class Action {
 				b.role === "TE2";
 			const back = tackle ? 7 : 4;
 			const out = tackle ? Math.sign(s.a) * 2 : 0;
+			const inBack = b.role === "RB" || b.role === "FB";
 			b.hold(snap + 60);
 			// (A back through a fake already: set where it left him.)
 			const setPt =
 				b.t > snap + 300
 					? { d: s.d - 1, a: s.a }
-					: b.role === "RB" || b.role === "FB"
+					: inBack
 						? {
-								d: pocket.d + 3,
-								a: pocket.a + (Math.sign(s.a - pocket.a) || 1) * 3.5,
+								d: pocket.d + BACK_SET_UP,
+								a: pocket.a + (Math.sign(s.a - pocket.a) || 1) * BACK_SET_OUT,
 							}
 						: { d: Math.max(pocket.d + 4, s.d - back), a: s.a + out };
 			const far = dist(b.at, this.w(setPt));
@@ -3296,8 +3301,9 @@ class Action {
 				"passSet",
 				this.ahead,
 			);
-			// Giving ground as the rush comes.
-			const give = 2 + r() * 4;
+			// Giving ground as the rush comes (a back hardly at all: he is
+			// the last man between them and the quarterback).
+			const give = inBack ? r() * 1.2 : 2 + r() * 4;
 			b.go(
 				this.w({ d: setPt.d - give, a: setPt.a + (pocket.a - setPt.a) * 0.1 }),
 				end,
@@ -3596,7 +3602,7 @@ class Action {
 				: sweep
 					? has + (gun ? 150 : 250) + r() * 100
 					: Math.max(
-							has + 300 + (dist(qb.at, qbMesh) / 15) * 1000 + r() * 200,
+							has + 180 + (dist(qb.at, qbMesh) / 19) * 1000 + r() * 150,
 							snap +
 								lead +
 								(dist(carrier.at, meshPt) / (carrier.top * 0.75)) * 1000,
@@ -3684,8 +3690,8 @@ class Action {
 			t = carrier.run(end.pt, carrier.top * 0.6);
 		} else {
 			// Pressing the hole, patient - then through it (on a sweep,
-			// flat out for the edge).
-			carrier.run(holePt, carrier.top * (sweep ? 0.88 : 0.62));
+			// flat out for the edge; on outside zone, hard for it).
+			carrier.run(holePt, carrier.top * (sweep ? 0.88 : outside ? 0.76 : 0.64));
 			t = carrier.run(
 				end.pt,
 				carrier.top * (yds > 3 ? 0.88 : 0.55),
