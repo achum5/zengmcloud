@@ -2749,6 +2749,28 @@ const FIELD_ANIMS = {
 		}),
 	},
 
+	// ---- a timeout ----
+	// A drink: a bottle up over his face mask in his right hand, his head
+	// back a touch for it, a squirt or two - and down.
+	drink: {
+		kind: "act",
+		keys: [
+			[0, pose({ shN: 12, elN: 30, abN: 8 })],
+			[0.2, pose({ shN: 104, elN: 82, abN: 4, lean: -6, shF: 8, elF: 16 })],
+			[0.38, pose({ shN: 110, elN: 86, abN: 2, lean: -10, shF: 8, elF: 16 })],
+			[0.52, pose({ shN: 106, elN: 80, abN: 4, lean: -8, shF: 8, elF: 16 })],
+			[0.7, pose({ shN: 112, elN: 88, abN: 2, lean: -11, shF: 8, elF: 16 })],
+			[0.86, pose({ shN: 60, elN: 70, abN: 6, lean: -2 })],
+			[1, pose({ shN: 12, elN: 30, abN: 8 })],
+		],
+	},
+	// A trainer with a carrier of bottles hung from his right hand, out from
+	// his leg.
+	carryWater: {
+		kind: "still",
+		pose: pose({ shN: 6, elN: 10, abN: 16, shF: 10, elF: 24 }),
+	},
+
 	// ---- the officials ----
 	// The flag: a hand to it at his belt, up over his head, and thrown.
 	flagToss: {
