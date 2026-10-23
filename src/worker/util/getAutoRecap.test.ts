@@ -8680,7 +8680,7 @@ describe("the story goes past halftime, in order", () => {
 			);
 			assert.match(
 				recap,
-				/9 up going into the fourth|9-point game entering the fourth|fourth, the Suns were up 9/,
+				/9 up going into the fourth|9-point game (?:entering|going into) the fourth|fourth, the Suns were up 9|(?:grown|out) to 9 going into the fourth/,
 				recap,
 			);
 		}
@@ -8804,7 +8804,7 @@ describe("the story goes past halftime, in order", () => {
 			const recap = getAutoRecap(g);
 			assert.match(
 				recap,
-				/as many as 16 in the third and were still 12 up going into the fourth/,
+				/as many as 16 in the third and were still 12 up going into the fourth|lead reached 16 in the third and was still 12 going into the fourth/,
 				recap,
 			);
 			assert.match(recap, /2:51/, recap);

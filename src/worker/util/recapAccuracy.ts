@@ -555,10 +555,13 @@ export const verifyRecap = (
 		// entering the fourth", "took a 10-point lead into the fourth":
 		// told as a margin, held to the quarters all the same.
 		for (const m of sentence.matchAll(
-			/(\d+) (?:up|down) going into the (second|third|fourth)\b|an? (\d+)-point (?:game|lead) (?:entering|going into|into) the (second|third|fourth)\b|[Gg]oing into the (second|third|fourth), the [A-Z][\w ]*? were (?:up|down) (\d+)\b/g,
+			/(\d+) (?:up|down) going into the (second|third|fourth)\b|an? (\d+)-point (?:game|lead) (?:entering|going into|into) the (second|third|fourth)\b|[Gg]oing into the (second|third|fourth), the [A-Z][\w ]*? were (?:up|down) (\d+)\b|(?:lead was|[Ii]t was) down to (\d+) going into the (second|third|fourth)\b|lead (?:had grown|was out) to (\d+) going into the (second|third|fourth)\b|\bwas still (\d+) going into the (second|third|fourth)\b/g,
 		)) {
-			const said = Number(m[1] ?? m[3] ?? m[6]);
-			const word = (m[2] ?? m[4] ?? m[5]) as "second" | "third" | "fourth";
+			const said = Number(m[1] ?? m[3] ?? m[6] ?? m[7] ?? m[9] ?? m[11]);
+			const word = (m[2] ?? m[4] ?? m[5] ?? m[8] ?? m[10] ?? m[12]) as
+				| "second"
+				| "third"
+				| "fourth";
 			const idx = { second: 1, third: 2, fourth: 3 }[word];
 			const hq = home.ptsQtrs ?? [];
 			const aq = away.ptsQtrs ?? [];
@@ -596,7 +599,7 @@ export const verifyRecap = (
 		claim(/(\d+) ties?\b/g, (n) => n === flow.ties, "ties");
 		claim(/as many as (\d+)/g, (n) => flow.maxLead.includes(n), "biggest lead");
 		claim(
-			/lead reached (\d+)|up by (\d+) at their biggest|had led by (\d+)|lead that reached (\d+)/g,
+			/lead (?:had )?reached (\d+)|up by (\d+) at their biggest|had led by (\d+)|lead that reached (\d+)|pushed the lead to (\d+)/g,
 			(n) => flow.maxLead.includes(n),
 			"biggest lead",
 		);

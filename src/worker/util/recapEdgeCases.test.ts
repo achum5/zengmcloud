@@ -2346,3 +2346,127 @@ describe("a lede with room for the average", () => {
 		assert.isAbove(roomy, 0);
 	});
 });
+
+// "The Wizards were up 8 at the half, 60-52. Going into the fourth, the
+// Wizards were up 2." The score going into the last quarter is told against
+// the half that was just told.
+describe("the fourth told against the half", () => {
+	const make = (gid: number, wq: number[], lq: number[]) => {
+		const home = squad(
+			{ tid: 1, name: "Wizards", ptsQtrs: wq },
+			{ name: "Ace Wizard", pid: 11, pts: 26, fg: 10, fga: 20 },
+			wq.reduce((a, b) => a + b, 0),
+		);
+		const away = squad(
+			{ tid: 2, name: "Kings", ptsQtrs: lq },
+			{ name: "Rex King", pid: 21, pts: 22, fg: 9, fga: 20 },
+			lq.reduce((a, b) => a + b, 0),
+		);
+		return game([home, away], { gid });
+	};
+
+	test("not the same side 'up' twice running", () => {
+		let told = 0;
+		for (let gid = 1; gid <= 30; gid++) {
+			for (const [wq, lq] of [
+				// Up 8 at the half, 2 after three, won by 3.
+				[
+					[30, 30, 20, 22],
+					[25, 27, 26, 21],
+				],
+				// Up 4 at the half, 9 after three, won by 4.
+				[
+					[28, 26, 30, 18],
+					[26, 24, 25, 23],
+				],
+			]) {
+				const g = make(gid, wq!, lq!);
+				const recap = getAutoRecap(g);
+				clean(recap);
+				for (const para of recap.split("\n\n").slice(1)) {
+					const sentences = para.split(/(?<=\.) (?=[A-Z])/);
+					for (let i = 1; i < sentences.length; i++) {
+						const cur = sentences[i]!;
+						if (
+							/going into the fourth/.test(cur) &&
+							/\b(?:half|halftime|break)\b/.test(sentences[i - 1]!) &&
+							/Wizards/.test(sentences[i - 1]!)
+						) {
+							told += 1;
+							assert.notMatch(
+								cur,
+								/Wizards were|were \d+ up|were up \d+/,
+								recap,
+							);
+						}
+					}
+				}
+				assert.deepEqual(verifyRecap(recap, g), [], recap);
+			}
+		}
+		assert.isAbove(told, 0);
+	});
+
+	test("the reader holds the new forms to the quarters", () => {
+		const g = make(1, [30, 30, 20, 30], [25, 27, 26, 22]);
+		const kinds = (text: string) =>
+			verifyRecap(`**x**\n\n${text}`, g).map((v) => v.kind);
+		assert.deepEqual(
+			kinds("The lead was down to 2 going into the fourth."),
+			[],
+		);
+		assert.deepEqual(kinds("It was down to 2 going into the fourth."), []);
+		assert.deepEqual(kinds("The lead was down to 3 going into the fourth."), [
+			"margin entering a quarter",
+		]);
+		assert.deepEqual(kinds("The lead had grown to 9 going into the fourth."), [
+			"margin entering a quarter",
+		]);
+		assert.deepEqual(kinds("The lead was out to 9 going into the fourth."), [
+			"margin entering a quarter",
+		]);
+	});
+});
+
+// "The Pelicans led 59-39 at halftime. From there, they led by as many as
+// 27." After a sentence that said "led", the peak is the lead's.
+describe("not 'led' twice running", () => {
+	test("the peak after a halftime lead is the lead's", () => {
+		let told = 0;
+		for (let gid = 1; gid <= 40; gid++) {
+			const home = squad(
+				{ tid: 1, name: "Pelicans", ptsQtrs: [30, 30, 32, 20] },
+				{ name: "Ace Pelican", pid: 11, pts: 26, fg: 10, fga: 20 },
+				112,
+			);
+			const away = squad(
+				{ tid: 2, name: "Kings", ptsQtrs: [28, 24, 22, 28] },
+				{ name: "Rex King", pid: 21, pts: 22, fg: 9, fga: 20 },
+				102,
+			);
+			const g = game([home, away], {
+				gid,
+				flow: { leadChanges: 2, ties: 1, maxLead: [20, 3], maxLeadAt: [3, 1] },
+			});
+			const recap = getAutoRecap(g);
+			clean(recap);
+			for (const para of recap.split("\n\n").slice(1)) {
+				const sentences = para.split(/(?<=\.) (?=[A-Z])/);
+				for (let i = 1; i < sentences.length; i++) {
+					if (/ led \d+-\d+/.test(sentences[i - 1]!)) {
+						assert.notMatch(sentences[i]!, /\bled by as many as\b/, recap);
+						if (
+							/lead reached|pushed the lead|lead had reached/.test(
+								sentences[i]!,
+							)
+						) {
+							told += 1;
+						}
+					}
+				}
+			}
+			assert.deepEqual(verifyRecap(recap, g), [], recap);
+		}
+		assert.isAbove(told, 0);
+	});
+});

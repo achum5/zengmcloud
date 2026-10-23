@@ -4103,6 +4103,9 @@ const gameStory = (
 		if (m > 0 && (m <= 6 || anyLead)) {
 			toldLead = Math.max(toldLead, m);
 		}
+		// Not "led" twice running: "The Wizards led 48-39 at halftime. They
+		// led by as many as 15 in the third".
+		const ledPrev = / led\b/.test(out.at(-1) ?? "");
 		const peak =
 			bigGone &&
 			m > 0 &&
@@ -4110,9 +4113,13 @@ const gameStory = (
 			wMaxAt !== undefined &&
 			wMax >= toldLead + 4
 				? wMaxAt > halfN && wMaxAt < regPeriods
-					? `${W} led by as many as ${wMax} in ${when(wMaxAt)}`
+					? ledPrev
+						? `The lead reached ${wMax} in ${when(wMaxAt)}`
+						: `${W} led by as many as ${wMax} in ${when(wMaxAt)}`
 					: wMaxAt <= halfN
-						? `${W} had led by as many as ${wMax} in ${when(wMaxAt)}`
+						? ledPrev
+							? `The lead had reached ${wMax} in ${when(wMaxAt)}`
+							: `${W} had led by as many as ${wMax} in ${when(wMaxAt)}`
 						: undefined
 				: undefined;
 		const stretched =
@@ -4138,6 +4145,39 @@ const gameStory = (
 			covers.add("entering");
 			return `${stretched}.`;
 		}
+		// AGAINST THE HALF. Right after a halftime line that put the same
+		// side in front, the score going into the last quarter is told
+		// against it: "The Wizards were up 8 at the half, 60-52. Going into
+		// the fourth, the Wizards were up 2." was one form filled in twice,
+		// and "The lead was down to 2 going into the fourth" says what
+		// happened in between.
+		const halfM = wh - lh;
+		const prevLine = out.at(-1) ?? "";
+		const againstHalf =
+			m !== 0 &&
+			Math.sign(m) === Math.sign(halfM) &&
+			/\b(?:half|halftime|break)\b/.test(prevLine) &&
+			!/\b(?:going into|entering) the\b/.test(prevLine)
+				? Math.abs(m) < Math.abs(halfM)
+					? pick(
+							rng,
+							[
+								`The lead was down to ${Math.abs(m)} going into the ${last}`,
+								`It was down to ${Math.abs(m)} going into the ${last}`,
+							],
+							"story:enteringDownTo",
+						)
+					: Math.abs(m) > Math.abs(halfM)
+						? pick(
+								rng,
+								[
+									`The lead had grown to ${Math.abs(m)} going into the ${last}`,
+									`The lead was out to ${Math.abs(m)} going into the ${last}`,
+								],
+								"story:enteringGrown",
+							)
+						: `It was still ${aNum(Math.abs(m))}-point game going into the ${last}`
+				: undefined;
 		if (m > 0 && shape.ot === 0 && shape.margin <= 6 && lLast - wLast >= 10) {
 			covers.add("entering").add("lastQuarter");
 			if (peak) {
@@ -4146,21 +4186,26 @@ const gameStory = (
 				out.push(`${peak}.`);
 				return `It was ${aNum(m)}-point game going into the ${last}, but ${l} took the ${last} quarter ${lLast}-${wLast}.`;
 			}
-			return `${pick(
-				rng,
-				[
-					`${W} were ${m} up going into the ${last}`,
-					`It was ${aNum(m)}-point game entering the ${last}`,
-					`Going into the ${last}, ${w} were up ${m}`,
-				],
-				"story:enteringUp",
-			)}, but ${l} took the ${last} quarter ${lLast}-${wLast}.`;
+			return `${
+				againstHalf ??
+				pick(
+					rng,
+					[
+						`${W} were ${m} up going into the ${last}`,
+						`It was ${aNum(m)}-point game entering the ${last}`,
+						`Going into the ${last}, ${w} were up ${m}`,
+					],
+					"story:enteringUp",
+				)
+			}, but ${l} took the ${last} quarter ${lLast}-${wLast}.`;
 		}
 		if (peak) {
 			covers.add("entering");
 			return m * 3 <= wMax
 				? `${peak}, but it was ${aNum(m)}-point game going into the ${last}.`
-				: `${peak} and were still ${m} up going into the ${last}.`;
+				: peak.startsWith("The lead")
+					? `${peak} and was still ${m} going into the ${last}.`
+					: `${peak} and were still ${m} up going into the ${last}.`;
 		}
 		if (Math.abs(m) > 6 && !(anyLead && m > 0)) {
 			return undefined;
@@ -4193,6 +4238,9 @@ const gameStory = (
 					"story:enteringTied",
 				),
 			);
+		}
+		if (againstHalf) {
+			return m > 0 ? decided(`${againstHalf}.`) : `${againstHalf}.`;
 		}
 		if (m > 0) {
 			return decided(
@@ -4700,6 +4748,10 @@ const gameStory = (
 
 	// Decided: what the second half added.
 	const parts: string[] = [];
+	// "The Pelicans led 59-39 at halftime. From there, they led by as many
+	// as 27": "led" twice running, in a hundred recaps of 954. After a
+	// sentence that said it, the peak is the lead's.
+	const ledBefore = / led\b/.test(out.at(-1) ?? "");
 	if (w2 - l2 >= 8) {
 		covers.add("secondHalf");
 		parts.push(`outscored ${l} ${w2}-${l2}`);
@@ -4715,7 +4767,9 @@ const gameStory = (
 		wMax >= Math.max(up, shape.margin) + 3
 	) {
 		covers.add("winnerPeak");
-		parts.push(`led by as many as ${wMax}`);
+		parts.push(
+			ledBefore ? `pushed the lead to ${wMax}` : `led by as many as ${wMax}`,
+		);
 	}
 	if (parts.length > 0) {
 		// The sentence before was about the winners, so they carry on as
@@ -4734,7 +4788,7 @@ const gameStory = (
 							`The lead reached ${wMax} in the second half.`,
 							`After halftime the lead reached ${wMax}.`,
 							`${aboutWinner ? "They" : W} pushed on after the break and led by as many as ${wMax}.`,
-						],
+						].filter((t) => !ledBefore || !t.includes(" led by ")),
 						"story:peakOnly",
 					)
 				: `${pick(rng, ["After the break", "In the second half", "From there"], "story:after")}, ${aboutWinner ? "they" : w} ${series(parts)}.`,
@@ -7780,11 +7834,15 @@ const buildGameRecap = (game: RecapGame): string => {
 				.slice(0, finishAt)
 				.findIndex((t) => /going into the|entering the|after three\b/i.test(t));
 			if (wPeakAt <= shape.regPeriods / 2 && halfAt >= 0) {
-				// After the halftime score, so looking back.
+				// After the halftime score, so looking back - and not "led"
+				// twice running: "The Mavericks led 53-40 at halftime. They
+				// had led by as many as 20 in the second."
 				storyPara.splice(
 					halfAt + 1,
 					0,
-					`${W} had led by as many as ${wLead} in the ${q}.`,
+					/ led\b/.test(storyPara[halfAt]!)
+						? `The lead had reached ${wLead} in the ${q}.`
+						: `${W} had led by as many as ${wLead} in the ${q}.`,
 				);
 				finishAt += 1;
 				bigText = undefined;
