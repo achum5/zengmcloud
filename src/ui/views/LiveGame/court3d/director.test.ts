@@ -1927,6 +1927,77 @@ describe("3D director", () => {
 		assert.isAbove(blocks, 8);
 	}, 120_000);
 
+	// The man the words have at the shot - blocking it, fouling him - stays
+	// on his own man till it comes, and gets there from him: not gone to the
+	// spot steps ahead of it and stood there seconds, nobody near him, his
+	// man alone in the corner. (Four games: four of them stood like that
+	// before.)
+	test("the man who meets the shot is on his man till it comes - not stood waiting at the spot", () => {
+		let shots = 0;
+		const parked: string[] = [];
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl } = compile(seed, 150);
+			const teamOf = (pid: number) => tl.tracks.get(pid)?.team;
+			const flies = tl.ball.filter(
+				(s) => s.kind === "fly" && "pid" in s.from,
+			) as Extract<CourtTimeline["ball"][number], { kind: "fly" }>[];
+			for (const tr of tl.tracks.values()) {
+				for (const a of tr.acts) {
+					if (a.anim !== "block" && a.anim !== "reach") {
+						continue;
+					}
+					const shot = flies.find(
+						(s) =>
+							"pid" in s.from &&
+							teamOf(s.from.pid) !== tr.team &&
+							s.t0 >= a.t0 - 250 &&
+							s.t0 <= a.t0 + 600 &&
+							!("pid" in s.to && teamOf(s.to.pid) === teamOf(s.from.pid)),
+					);
+					if (!shot) {
+						continue;
+					}
+					shots += 1;
+					// The longest he stood, the eight seconds before it.
+					let most = 0;
+					let from = 0;
+					let free = a.t0 - 8000;
+					for (const m of tr.moves) {
+						if (m.t1 <= a.t0 - 8000 || m.t0 >= a.t0) {
+							continue;
+						}
+						if (m.t0 - free > most) {
+							most = m.t0 - free;
+							from = free;
+						}
+						free = Math.max(free, m.t1);
+					}
+					if (a.t0 - free > most) {
+						most = a.t0 - free;
+						from = free;
+					}
+					const t = from + most / 2;
+					if (most < 1500 || fastAt(tl, t) > 1) {
+						continue;
+					}
+					const me = evalPlayer(tl, tr.pid, t);
+					let near = Infinity;
+					for (const o of tl.tracks.values()) {
+						const q = evalPlayer(tl, o.pid, t);
+						if (o.team !== tr.team && q.shown) {
+							near = Math.min(near, Math.hypot(q.x - me.x, q.y - me.y));
+						}
+					}
+					if (near > 8) {
+						parked.push(`${seed} ${tr.pid} at ${Math.round(from)}`);
+					}
+				}
+			}
+		}
+		assert.isAbove(shots, 40);
+		assert.isAtMost(parked.length, 1, parked.join(", "));
+	}, 120_000);
+
 	test("a left-hander's follow-through is held up with his left", () => {
 		const SHOTS = new Set(["shoot", "fade", "hook", "floater", "setShot"]);
 		const held = { L: 0, R: 0 };

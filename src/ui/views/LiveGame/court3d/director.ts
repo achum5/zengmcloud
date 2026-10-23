@@ -7409,8 +7409,10 @@ class Director {
 				}
 			}
 		}
-		// Whoever meets the shot drifts toward it, and is there for it.
-		const toShot = new Map<number, { man: number; at: Pt }>();
+		// Whoever meets the shot gives a step toward it - but stays on his man:
+		// the shot brings him in, in time to get there from wherever he is
+		// (see shoot). Not gone to the spot steps ahead of it and stood there,
+		// seconds of his man left alone in the corner.
 		if (o && run.help && run.help.length > 0) {
 			const shooter = run.roles[o.shooter]!;
 			// (Once the step that gets him there is laid out, from where it
@@ -7432,17 +7434,22 @@ class Director {
 				if (cur && d === onBall && man === holder && k < o.after && !final) {
 					continue;
 				}
-				special(
-					d,
-					k >= o.after || !cur
-						? H
-						: { x: (cur.x + H.x) / 2, y: (cur.y + H.y) / 2 },
-				);
 				late.delete(d);
-				// (Not when an earlier step already had him there.)
-				if (cur && man !== undefined && final && k <= o.after) {
-					toShot.set(d, { man, at: cur });
+				if (cur && man !== undefined) {
+					const n = dist(cur, H);
+					const s = Math.min(n * 0.3, 4);
+					if (n > 0.1) {
+						targets.set(
+							d,
+							clampPt({
+								x: cur.x + ((H.x - cur.x) * s) / n,
+								y: cur.y + ((H.y - cur.y) * s) / n,
+							}),
+						);
+					}
+					continue;
 				}
+				special(d, H);
 			}
 		}
 		for (const [d, P] of targets) {
@@ -7520,16 +7527,6 @@ class Director {
 					manOf.get(d),
 				);
 				continue;
-			}
-			// With his man as long as he can be and still get there.
-			const ts = toShot.get(d);
-			if (ts) {
-				const leave = t1 - runMs(dist(ts.at, P), RUN) - 150;
-				if (leave - Math.max(t0 + 120, this.free.get(d) ?? 0) > 400) {
-					this.shadow(d, ts.at, t0 + 120, leave, team, ts.man);
-					this.shadow(d, P, leave, t1 + lag, team);
-					continue;
-				}
 			}
 			const ch = chase.get(d);
 			if (ch && ch.from - Math.max(t0, this.free.get(d) ?? 0) > 400) {
@@ -10048,14 +10045,22 @@ class Director {
 			} else if (plan.kind === "foul") {
 				const f = plan.fouler ?? guard;
 				if (f !== undefined) {
-					this.goBy(
-						f,
-						ahead(1.6),
-						gather - 300,
-						release - 120,
-						"run",
-						-faceRim as 1 | -1,
-					);
+					// (From a way off, setting off in time to get there.)
+					const F = ahead(1.6);
+					const by = release - 120;
+					let from = gather - 300;
+					for (let n = 0; n < 4; n++) {
+						const need =
+							runMs(dist(this.posAt(f, from), F), SPRINT, 0, BURST) + 60;
+						if (by - from >= need) {
+							break;
+						}
+						from = by - need;
+					}
+					if ((this.free.get(f) ?? 0) > from) {
+						this.cutShort(f, from);
+					}
+					this.goBy(f, F, from, by, "run", -faceRim as 1 | -1, BURST);
 					this.act(f, "reach", release - 200, release + 260, {
 						face: -faceRim as 1 | -1,
 						look: { ...P1 },
