@@ -2,7 +2,7 @@ import { depthOf, project, type Camera } from "../court3d/camera.ts";
 import { FIGURE_SCALE } from "./body.ts";
 import { shade } from "./color.ts";
 import { BENCH_OFF, FIELD_W, type Pt3, type Side } from "./geometry.ts";
-import { BENCHES, netX, sidelineOf } from "./sideline.ts";
+import { BENCHES, NET_OFF, NET_W, netX, sidelineOf } from "./sideline.ts";
 
 // WHAT STANDS ON THE SIDELINES: each team's benches - long, dark, a seat in
 // the team's color - and the kickers' net down at the end of the team
@@ -14,10 +14,7 @@ const BACK = "#2a2c31";
 const SEAT_Z = 1.6 * FIGURE_SCALE;
 const SEAT_D = 1.5;
 const BACK_Z = 3.3 * FIGURE_SCALE;
-const NET_W = 7;
 const NET_H = 8;
-// The net stands this far off the sideline, at its near edge.
-const NET_OFF = 14;
 
 type Item = { depth: number; draw: () => void };
 type P = { x: number; y: number };
@@ -121,16 +118,15 @@ export const sidelineGear = (
 				},
 			);
 		}
-		// The net.
+		// The net, its face to the field.
 		const nx = netX(line);
-		const n0 = y(NET_OFF);
-		const n1 = y(NET_OFF + NET_W);
-		const at = { x: nx, y: (n0 + n1) / 2, z: 0 };
+		const ny = y(NET_OFF);
+		const at = { x: nx, y: ny, z: 0 };
 		if (depthOf(cam, at) > 1) {
 			items.push({
 				depth: depthOf(cam, at),
 				draw: () => {
-					drawNet(ctx, cam, nx, n0, n1);
+					drawNet(ctx, cam, nx - NET_W / 2, nx + NET_W / 2, ny);
 				},
 			});
 		}
@@ -141,23 +137,23 @@ export const sidelineGear = (
 const drawNet = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,
-	x: number,
-	y0: number,
-	y1: number,
+	x0: number,
+	x1: number,
+	y: number,
 ) => {
 	ctx.save();
 	const q = quad(
 		ctx,
 		cam,
 		[
-			{ x, y: y0, z: NET_H },
-			{ x, y: y1, z: NET_H },
-			{ x, y: y1, z: 0 },
-			{ x, y: y0, z: 0 },
+			{ x: x0, y, z: NET_H },
+			{ x: x1, y, z: NET_H },
+			{ x: x1, y, z: 0 },
+			{ x: x0, y, z: 0 },
 		],
 		"rgba(16, 16, 18, 0.42)",
 	);
-	const k = project(cam, { x, y: y0, z: 0 }).k;
+	const k = project(cam, { x: x0, y, z: 0 }).k;
 	ctx.strokeStyle = "#151518";
 	ctx.lineWidth = Math.max(1, 0.2 * k);
 	ctx.beginPath();
@@ -173,12 +169,12 @@ const drawNet = (
 		ctx.beginPath();
 		for (let i = 1; i < 8; i++) {
 			const u = i / 8;
-			const a = project(cam, { x, y: y0 + (y1 - y0) * u, z: 0 });
-			const b = project(cam, { x, y: y0 + (y1 - y0) * u, z: NET_H });
+			const a = project(cam, { x: x0 + (x1 - x0) * u, y, z: 0 });
+			const b = project(cam, { x: x0 + (x1 - x0) * u, y, z: NET_H });
 			ctx.moveTo(a.x, a.y);
 			ctx.lineTo(b.x, b.y);
-			const c = project(cam, { x, y: y0, z: NET_H * u });
-			const d = project(cam, { x, y: y1, z: NET_H * u });
+			const c = project(cam, { x: x0, y, z: NET_H * u });
+			const d = project(cam, { x: x1, y, z: NET_H * u });
 			ctx.moveTo(c.x, c.y);
 			ctx.lineTo(d.x, d.y);
 		}

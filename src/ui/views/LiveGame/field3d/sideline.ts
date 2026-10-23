@@ -11,9 +11,11 @@ import {
 	MID_X,
 	TEAM_AREA,
 	type Pt,
+	type Pt3,
 	type Side,
 } from "./geometry.ts";
 import type { RosterMan } from "./personnel.ts";
+import { netBallAt, netKickAt, netKickOf, type NetKick } from "./netKicks.ts";
 import { liftOf, strideOf, type Move } from "./poses.ts";
 import type { FieldPlayerState } from "./sprite.ts";
 
@@ -40,10 +42,17 @@ export const BENCHES = [
 // Which sideline a team has (0 the far one).
 export const sidelineOf = (team: Side): 0 | 1 => (team === 1 ? 0 : 1);
 // The kicking net: near the end of the team area - the left end across the
-// field, the right on the near side.
+// field, the right on the near side - this far back off the sideline, this
+// wide, its face to the field (kicked into away from it).
 export const netX = (line: 0 | 1) =>
 	line === 0 ? TEAM_AREA[0] + 9 : TEAM_AREA[1] - 9;
+export const NET_OFF = 27;
+export const NET_W = 7;
 const yOf = (line: 0 | 1, off: number) => (line === 0 ? -off : FIELD_W + off);
+// Nobody but the kickers stood in front of it: this far either side of it,
+// out to this far off the sideline.
+const NET_LANE = NET_W / 2 + 4;
+const NET_LANE_FROM = NET_OFF - 16;
 
 export type SidelineMan = {
 	id: number;
@@ -68,6 +77,8 @@ export type SidelineMan = {
 	// How ready he is to have his helmet off (0 to 1: the lower, the
 	// sooner).
 	bare?: number;
+	// A kicker: what he kicks into the net, when he does (see netKicks.ts).
+	kicks?: "place" | "punt";
 };
 type Unit = "offense" | "defense" | "kicker" | "coach" | "staff";
 
@@ -107,6 +118,15 @@ const KICKS = new Set(["kickoff", "onside", "punt", "fieldGoal", "extraPoint"]);
 const unitOf = (pos: string): Unit =>
 	KICKERS.has(pos) ? "kicker" : OFFENSE.has(pos) ? "offense" : "defense";
 
+// (Over out of the kickers' way, if in front of their net.)
+const offNet = (line: 0 | 1, p: Pt): Pt => {
+	const along = p.x - netX(line);
+	const off = line === 0 ? -p.y : p.y - FIELD_W;
+	return Math.abs(along) < NET_LANE && off > NET_LANE_FROM && off < NET_OFF + 2
+		? { x: netX(line) + (along < 0 ? -1 : 1) * (NET_LANE + 1), y: p.y }
+		: p;
+};
+
 export const sidelineFor = (
 	roster: RosterMan[],
 	gid: number,
@@ -137,9 +157,12 @@ export const sidelineFor = (
 				...(unit === "kicker"
 					? {
 							at: {
-								x: netX(line) + lean * (5 + kickers++ * 3.5),
+								x: netX(line) + lean * (NET_W / 2 + 3 + kickers++ * 3.5),
 								y: yOf(line, FRONT + 2 + r() * 2),
 							},
+							...(p.pos === "K" || p.pos === "P"
+								? { kicks: p.pos === "K" ? "place" : "punt" }
+								: {}),
 						}
 					: {}),
 				move:
@@ -174,18 +197,21 @@ export const sidelineFor = (
 				id: staffId(team, i),
 				team,
 				unit: "staff",
-				at: back
-					? {
-							x: MID_X + (rng() - 0.5) * 90,
-							y: yOf(line, BENCH_OFF + 3 + rng() * 3),
-						}
-					: {
-							x:
-								MID_X +
-								(i % 4 === 1 ? -1 : 1) * (52 + rng() * 14) +
-								(rng() - 0.5) * 4,
-							y: yOf(line, FRONT + 4 + rng() * 8),
-						},
+				at: offNet(
+					line,
+					back
+						? {
+								x: MID_X + (rng() - 0.5) * 90,
+								y: yOf(line, BENCH_OFF + 3 + rng() * 3),
+							}
+						: {
+								x:
+									MID_X +
+									(i % 4 === 1 ? -1 : 1) * (52 + rng() * 14) +
+									(rng() - 0.5) * 4,
+								y: yOf(line, FRONT + 4 + rng() * 8),
+							},
+				),
 				move: rng() < 0.6 ? "stand" : "armsFolded",
 				rank: rng(),
 				sits: false,
@@ -579,6 +605,58 @@ const outAt = (
 	};
 };
 
+// A kicker's kick into his net on a play, if he takes one.
+const netKicks = new WeakMap<Play, Map<number, NetKick | null>>();
+const netKickFor = (s: SidelineMan, spot: Spot, play: Play): NetKick | null => {
+	if (!s.kicks || !s.at || spot.at !== s.at) {
+		return null;
+	}
+	let byMan = netKicks.get(play);
+	if (!byMan) {
+		byMan = new Map();
+		netKicks.set(play, byMan);
+	}
+	let k = byMan.get(s.id);
+	if (k === undefined) {
+		const line = sidelineOf(s.team);
+		k =
+			play.offense === s.team
+				? netKickOf(
+						s.kicks,
+						s.id,
+						play,
+						{ x: netX(line), y: yOf(line, NET_OFF) },
+						{ x: 0, y: line === 0 ? -1 : 1 },
+						s.at,
+					)
+				: null;
+		byMan.set(s.id, k);
+	}
+	return k;
+};
+
+// The balls kicked into the nets at t.
+export const netBallsAt = (
+	men: SidelineMan[],
+	m: FieldMoment,
+): { at: Pt3; axis?: Pt3; stood?: "tee" }[] => {
+	const play = m.play;
+	if (!play) {
+		return [];
+	}
+	const spots = layoutFor(men, play);
+	const out: { at: Pt3; axis?: Pt3; stood?: "tee" }[] = [];
+	for (const s of men) {
+		const spot = s.kicks ? spots.get(s.id) : undefined;
+		const k = spot ? netKickFor(s, spot, play) : null;
+		const b = k ? netBallAt(k, m.t) : null;
+		if (b) {
+			out.push(b);
+		}
+	}
+	return out;
+};
+
 export const sidelineAt = (
 	men: SidelineMan[],
 	tl: FieldTimeline,
@@ -602,6 +680,13 @@ export const sidelineAt = (
 		const o = post ? outOf(s, spot, play, post.at) : null;
 		if (o && post && m.t >= o.leave) {
 			out.push(outAt(s, spot, o, m.t));
+			continue;
+		}
+		// (A kicker out to his net has his helmet on, all that play.)
+		const kick = netKickFor(s, spot, play);
+		const kicking = kick ? netKickAt(kick, s.id, m.t) : null;
+		if (kicking) {
+			out.push({ id: s.id, team: s.team, ...kicking });
 			continue;
 		}
 		const at = spot.at;
@@ -640,7 +725,7 @@ export const sidelineAt = (
 			move,
 			phase,
 			...(arms ? { arms } : {}),
-			...(spot.bare ? { bare: true as const } : {}),
+			...(spot.bare && !kick ? { bare: true as const } : {}),
 		});
 	}
 	return out;

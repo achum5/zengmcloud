@@ -73,6 +73,7 @@ import { drawFieldFrame, type FieldPaint } from "./scene.ts";
 import {
 	coachId,
 	COACHES,
+	netBallsAt,
 	sidelineAt,
 	sidelineFor,
 	STAFF,
@@ -636,6 +637,19 @@ const Field3D = ({
 							drawFlyingBall(ctx, view, drawnUp(ball.at), axis);
 						} else {
 							drawLooseBall(ctx, view, drawnUp(ball.at), ball.stood);
+						}
+					},
+				});
+			}
+			for (const b of netBallsAt(sidelineRef.current, moment)) {
+				const axis = b.axis;
+				items.push({
+					depth: depthOf(view, { ...b.at, z: 0 }),
+					draw: () => {
+						if (axis) {
+							drawFlyingBall(ctx, view, drawnUp(b.at), axis);
+						} else {
+							drawLooseBall(ctx, view, drawnUp(b.at), b.stood);
 						}
 					},
 				});
