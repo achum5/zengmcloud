@@ -32,6 +32,14 @@ const FOLLOWS = new Set<Play["kind"]>(["pass", "run", "kneel"]);
 const FOLLOW_AHEAD = 12;
 const OPEN_UP = 0.3;
 const WIDEST = 190;
+// Once a man of the offense has it past the line - a catch, a back through
+// the hole - and after the whistle, in on him: narrowing the further he
+// gets, the men round him and not the whole field.
+const CARRY_WIDTH = 96;
+const NARROW = 0.5;
+// However it goes, no further toward an end line than to take in the end
+// zone and a strip past it (feet), not the stands behind.
+const PAST_END = 12;
 
 // A kick, from when it is away: wide with the ball in the air - tilting up
 // after it as it goes high, never so far as to look past the end zone into
@@ -87,7 +95,9 @@ export const aimFor = (m: FieldMoment): Shot => {
 		};
 	}
 	if (t < play.follow || !focus) {
-		return set;
+		return FOLLOWS.has(play.kind)
+			? { ...set, x: inBounds(set.x, set.width) }
+			: set;
 	}
 	const air = IN_AIR[play.kind];
 	if (air !== undefined) {
@@ -113,9 +123,18 @@ export const aimFor = (m: FieldMoment): Shot => {
 	const lead = back
 		? down - FOLLOW_AHEAD
 		: Math.max(down + FOLLOW_AHEAD, f.ahead * 0.6);
+	const carried = m.carrier === play.offense || t >= play.whistle;
+	const width = back
+		? f.width
+		: carried
+			? Math.max(CARRY_WIDTH, f.width - Math.max(0, down) * NARROW)
+			: Math.min(WIDEST, f.width + Math.max(0, down) * OPEN_UP);
 	return {
-		x: play.losX + play.dir * lead,
-		width: Math.min(WIDEST, f.width + Math.max(0, down) * OPEN_UP),
+		x: inBounds(play.losX + play.dir * lead, width),
+		width,
 		y: across(focus.y),
 	};
 };
+
+const inBounds = (x: number, width: number) =>
+	Math.min(FIELD_L - width / 2 + PAST_END, Math.max(width / 2 - PAST_END, x));
