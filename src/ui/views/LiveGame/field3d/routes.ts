@@ -72,6 +72,24 @@ const laid = (
 	settles,
 });
 
+// The same route run on out to the sideline nearer where it is caught:
+// met there `inFt` inside it, and on over it - a catch with his toes in.
+export const toTheLine = (r: Route, bounds: Bounds, inFt: number): Route => {
+	const c = r.catchAt;
+	const side = bounds.right - c.a < c.a - bounds.left ? 1 : -1;
+	const edge = side > 0 ? bounds.right : bounds.left;
+	const k = r.path.indexOf(c);
+	const at = { d: c.d, a: edge - side * inFt };
+	const path = [...r.path.slice(0, k), at, { d: c.d - 1, a: edge + side * 6 }];
+	return {
+		...r,
+		path,
+		catchAt: at,
+		catchAlong: lengthOf(path, k),
+		settles: false,
+	};
+};
+
 // A route for a man lined up at `start`, the middle of the field toward
 // `inSign` (+1 to the offense's right) - `depth` (feet downfield of the
 // line) where it is caught, or where it breaks if it is run as a decoy -

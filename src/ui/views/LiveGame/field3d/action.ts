@@ -32,6 +32,7 @@ import {
 	decoyRoute,
 	layRoute,
 	targetRoute,
+	toTheLine,
 	type Bounds,
 	type OPt,
 	type Route,
@@ -436,6 +437,7 @@ const IN_HANDS = new Set<Move>([
 	"catch",
 	"leapCatch",
 	"diveCatch",
+	"toeTap",
 	"scoop",
 	"back",
 	"slide",
@@ -584,6 +586,16 @@ const DIVE_HANDS = heldBall(
 	poseOfMove("diveCatch", DIVE_AT),
 	"hands",
 ).at;
+// Out of bounds with next to nothing after the catch (feet downfield), on
+// an out or a comeback, this often: thrown to him at the sideline, caught
+// TOE_IN inside it with his toes dragged in - from this long before it gets
+// there, over this long (ms).
+const TOE_TAP = 0.6;
+const TOE_YAC = 6;
+const TOE_IN = 1.8;
+const TOE_BEFORE = 250;
+const TOE_MS = 900;
+const TO_LINE = new Set<Route["name"]>(["out", "comeback"]);
 // The quarterback in the pocket: looking off another man first, this often
 // with this long to spare at least; up a step (feet, ms), this often; a pump
 // this often, and how long it takes.
@@ -1172,9 +1184,16 @@ class Action {
 					start.a === 0 && ta !== undefined
 						? (ta < 0 ? 0 : 0.5) + r() * 0.5
 						: r();
+				const route = layRoute(name, start, inSign, catchD, this.bounds, u, v);
 				routes.set(
 					m.pid,
-					layRoute(name, start, inSign, catchD, this.bounds, u, v),
+					first === cmpI &&
+						this.input.out &&
+						TO_LINE.has(name) &&
+						gain * YD - catchD <= TOE_YAC &&
+						r() < TOE_TAP
+						? toTheLine(route, this.bounds, TOE_IN)
+						: route,
 				);
 			} else {
 				const { name, depth } = decoyRoute(spotOf(m.role), r(), r());
@@ -1532,17 +1551,22 @@ class Action {
 		if (dive) {
 			end = this.endOf(gain, lands.a, false, false);
 		}
+		// Or caught at the sideline (see TOE_TAP).
+		const edge = end.out && end.out > 0 ? this.bounds.right : this.bounds.left;
+		const toe = !!end.out && Math.abs(this.of(catchPt).a - edge) < TOE_IN + 0.5;
 		if (end.out) {
 			rec.roam = OUT_MOST + 1;
 		}
-		const inStride = !leap && !dive && this.reachFor(rec, catchAt, qb);
+		const inStride = !leap && !dive && !toe && this.reachFor(rec, catchAt, qb);
 		if (leap) {
 			this.leapFor(rec, catchPt, catchAt, qb);
 		} else if (dive) {
 			this.diveFor(rec, end.pt, catchAt);
+		} else if (toe) {
+			this.toeTapFor(rec, end.pt, catchAt, qb);
 		}
 		let t = Math.max(rec.t, catchAt + 260);
-		if (dive) {
+		if (dive || toe) {
 			t = rec.t;
 		} else if (yac > 2 || inStride) {
 			t = rec.run(end.pt, v, "sprint");
@@ -1570,6 +1594,33 @@ class Action {
 				x: p.x + h.f * c + h.s * s,
 				y: p.y + h.f * s - h.s * c,
 				z: h.u + liftOf("diveCatch", DIVE_AT),
+			};
+		}
+	}
+
+	// Caught at the sideline: turned to the quarterback, his hands up to it
+	// as it comes, his toes dragged in as he goes on over the line - tipped
+	// toward it - to `over`; and the ball thrown to his hands there.
+	toeTapFor(rec: Actor, over: Pt, catchAt: number, qb: Actor) {
+		const t0 = catchAt - TOE_BEFORE;
+		rec.cut(t0);
+		rec.hold(t0);
+		const from = rec.at;
+		const face = this.toward(from, qb.posAt(catchAt));
+		rec.act("toeTap", t0 + TOE_MS, face, over);
+		// (Tipped to his right as it is drawn: the line on his left, the
+		// other way round.)
+		const goes = Math.atan2(over.y - from.y, over.x - from.x);
+		if (Math.sin(goes - face) < 0) {
+			rec.last.mirrored = true;
+		}
+		const fly = this.ball.findLast((b) => b.kind === "fly");
+		if (fly?.kind === "fly" && Math.abs(fly.t1 - catchAt) < 1) {
+			const p = rec.posAt(catchAt);
+			fly.to = {
+				...fly.to,
+				x: p.x + Math.cos(face) * 1.2,
+				y: p.y + Math.sin(face) * 1.2,
 			};
 		}
 	}
@@ -1772,13 +1823,16 @@ class Action {
 		const edge = side > 0 ? this.bounds.right : this.bounds.left;
 		const over = (a: number) =>
 			side > 0 ? Math.min(edge + OUT_MOST, a) : Math.max(edge - OUT_MOST, a);
-		const p1 = { d: to.d + dd * OUT_ON, a: over(to.a + side * da * OUT_ON) };
+		// (Off a catch with his toes in, a stride or two on.)
+		const toe = l.move === "toeTap";
+		const on = toe ? OUT_ON / 2 : OUT_ON;
+		const p1 = { d: to.d + dd * on, a: over(to.a + side * da * on) };
 		const p2 = {
 			d: p1.d + Math.sign(dd || 1) * 3,
 			a: over(p1.a + side * 1.5),
 		};
-		carrier.go(this.w(p1), down.t + 330, "run");
-		carrier.go(this.w(p2), down.t + 330 + 520, "jog");
+		carrier.go(this.w(p1), down.t + 330, toe ? "jog" : "run");
+		carrier.go(this.w(p2), down.t + 330 + 520, toe ? "walk" : "jog");
 		carrier.hold(
 			down.t + 2200,
 			"stand",
