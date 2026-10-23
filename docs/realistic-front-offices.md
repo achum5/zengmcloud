@@ -317,7 +317,12 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   within four seasons (3% projected to on average). Each projected season is
   now played as the worse and the better half of his careers, each half as
   likely, where the two are 4 or more apart: a 21-year-old 47/66 costs his
-  team about 4.6 times as much to give up.
+  team about 4.6 times as much to give up. Projections' spread is close to
+  real, if a little narrow: in arena leagues, traded players' overalls a
+  season to three on fell within their projected sd 58-65% of the time at
+  every age (68% would be exact) - upside, if anything, undersold. In a league of half the teams each way (4 leagues x 5
+  seasons), teams pricing upside gave a prospect for a mediocre veteran on
+  2.2% of their trade sides against 8.0%, and won 13 titles to 7.
 - **So does a pick's.** A pick's player was the average of what players taken
   there become, the star and the bust averaged into a bench player: a middling
   team's first was worth almost nothing to a bad team. He is now the worse
@@ -325,7 +330,11 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   a 48 or a 60, against an average of 51), and the team keeps or lets go
   each half after his rookie deal - by then it knows which he turned out to
   be. A middling team's first is worth 2-16 times what it was, the most to
-  the worst teams.
+  the worst teams. Half the teams each way (4 leagues x 5 seasons): those
+  pricing picks this way won 15 titles to 5 and 0.60 playoff series a season
+  to 0.40, gave a first to take on a weak player on 1.3% of their trade sides
+  against 7.5%, and took in 136 firsts to 21 - half of them from good teams
+  to bad, as in the NBA.
 - **Picks are priced over where they may land** (owner's call). How far a
   team finishes from where it is projected is measured in the arena (about 4
   places a season out, 6.5 three seasons out), and the lottery moves it from
