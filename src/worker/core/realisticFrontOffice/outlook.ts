@@ -858,29 +858,64 @@ export const pickLineAt = (
 		lottery = colaPicks(outlook.cola, outlook.numTeams, ratio);
 		lotteryKey = `:C${ratio}`;
 	}
-	// By exactly where it is expected to land: a place rounded to cache on
-	// priced the pick at wherever the first deal to round there put it, so what
-	// a deal was worth hung on what had been priced before it.
+	// Priced at the places a tenth apart either side of where it is expected
+	// to land, and in between by how far along it is. A cache by the place
+	// itself grew with every deal priced; one by the place rounded priced the
+	// pick wherever the first deal to round there put it, so what a deal was
+	// worth hung on what had been priced before it.
+	const scaled = center * PLACE_GRID;
+	const k = Math.floor(scaled);
+	const t = scaled - k;
+	const sumsAt = (at: number) => {
+		let bySums = gridSums.get(outlook.pickLines);
+		if (!bySums) {
+			bySums = new Map();
+			gridSums.set(outlook.pickLines, bySums);
+		}
+		const key = `${dp.round}:${at}:${spread}:${years}${lotteryKey}`;
+		let sums = bySums.get(key);
+		if (!sums) {
+			// Where it lands is the same every season it is priced for.
+			let byPlace = landingCache.get(outlook.pickLines);
+			if (!byPlace) {
+				byPlace = new Map();
+				landingCache.set(outlook.pickLines, byPlace);
+			}
+			const landingKey = `${dp.round}:${at}:${spread}${lotteryKey}`;
+			let weights = byPlace.get(landingKey);
+			if (!weights) {
+				weights = landing(n, at / PLACE_GRID, spread, lottery);
+				byPlace.set(landingKey, weights);
+			}
+			sums = pickSums(outlook, dp.round, weights, years);
+			bySums.set(key, sums);
+		}
+		return sums;
+	};
+	// Remembered by the place itself too, as many as PICK_LINES_KEPT.
 	const key = `${dp.round}:${center}:${spread}:${years}${lotteryKey}`;
 	let at = outlook.pickLines.get(key);
 	if (at === undefined) {
-		// Where it lands is the same every season it is priced for.
-		let byPlace = landingCache.get(outlook.pickLines);
-		if (!byPlace) {
-			byPlace = new Map();
-			landingCache.set(outlook.pickLines, byPlace);
+		const lo = sumsAt(k);
+		if (t === 0) {
+			at = pickFromSums(lo);
+		} else {
+			const hi = sumsAt(k + 1);
+			const sums = new Float64Array(SUMS);
+			for (let j = 0; j < SUMS; j++) {
+				sums[j] = lo[j]! + t * (hi[j]! - lo[j]!);
+			}
+			at = pickFromSums(sums);
 		}
-		const landingKey = `${dp.round}:${center}:${spread}${lotteryKey}`;
-		let weights = byPlace.get(landingKey);
-		if (!weights) {
-			weights = landing(outlook.numTeams, center, spread, lottery);
-			byPlace.set(landingKey, weights);
+		if (outlook.pickLines.size >= PICK_LINES_KEPT) {
+			outlook.pickLines.clear();
 		}
-		at = averagePick(outlook, dp.round, weights, years);
 		outlook.pickLines.set(key, at);
 	}
 	return at ?? undefined;
 };
+
+const PICK_LINES_KEPT = 20_000;
 
 // A team's points toward a draft's COLA draw against the average team's,
 // rounded to cache on: what it has plus what each season until then adds,
@@ -1076,7 +1111,7 @@ export const buildClassBoard = async (
 let classBoardVersion = 0;
 
 // What the player each place in a round becomes, `years` after its draft,
-// as averagePick adds them up: for the line, then its worse and its better
+// as pickSums adds them up: for the line, then its worse and its better
 // half (if any), the chance he is worth a roster place, then roleFree,
 // offense, usage, overall and salary each times that chance - only the
 // players worth keeping are paid. The same for every pick and every outlook
@@ -1157,22 +1192,29 @@ const landing = (
 	return weights;
 };
 
-// Where it lands, by pickLines' lifetime: the lottery is priced in it.
+// Where it lands, and what that adds up to, by pickLines' lifetime: the
+// lottery is priced in it.
 const landingCache = new WeakMap<object, Map<string, number[]>>();
+const gridSums = new WeakMap<object, Map<string, Float64Array>>();
 
-const averagePick = (
+// Picks are priced at this many points to a place, and in between
+// (pickLineAt).
+const PLACE_GRID = 10;
+
+// What a pick's player adds up to over where it may land: the line, then its
+// worse and its better half, each chance, roleFree, offense, usage, overall
+// and salary summed by the chance of each pick.
+const SUMS = 18;
+const pickSums = (
 	outlook: Pick<LeagueOutlook, "numTeams" | "numRounds">,
 	round: number,
 	// The chance of each pick in the round (landing).
 	weights: readonly number[],
 	years: number,
-): PickAt | null => {
+) => {
 	const n = outlook.numTeams;
 	const numPicks = outlook.numRounds * n;
-	// The line, then its worse and its better half, each averaged over
-	// where the pick may land: chance, roleFree, offense, usage, overall and
-	// salary.
-	const sums = [0, 1, 2].map(() => [0, 0, 0, 0, 0, 0]);
+	const sums = new Float64Array(SUMS);
 	const slots = slotsFor(n, numPicks, round, years);
 	for (const [k, w] of weights.entries()) {
 		if (w < 1e-4) {
@@ -1182,38 +1224,49 @@ const averagePick = (
 		for (let h = 0; h < 3; h++) {
 			const row = at[h];
 			if (row) {
-				const sum = sums[h]!;
 				for (let j = 0; j < 6; j++) {
-					sum[j]! += w * row[j]!;
+					sums[6 * h + j]! += w * row[j]!;
 				}
 			}
 		}
 	}
-	const lineOf = ([kept, roleFree, offense, usage, ovr]: number[]) => ({
-		roleFree: roleFree! / kept!,
-		offense: offense! / kept!,
-		usage: usage! / kept!,
-		// Who he is is not known yet: a typical player of his overall.
-		synergy: typicalSynergy(ovr! / kept!),
-		guard: TYPICAL_GUARD,
-		forward: TYPICAL_FORWARD,
-		valueNoPot: ovr! / kept!,
-		availability: kept!,
-	});
-	const [all, worse, better] = sums as [number[], number[], number[]];
-	if (all[0]! <= 0) {
+	return sums;
+};
+
+// The pick's player, from what he adds up to.
+const pickFromSums = (sums: Float64Array): PickAt | null => {
+	const lineOf = (at: number): SeasonLine => {
+		const kept = sums[at]!;
+		const ovr = sums[at + 4]! / kept;
+		return {
+			roleFree: sums[at + 1]! / kept,
+			offense: sums[at + 2]! / kept,
+			usage: sums[at + 3]! / kept,
+			// Who he is is not known yet: a typical player of his overall.
+			synergy: typicalSynergy(ovr),
+			guard: TYPICAL_GUARD,
+			forward: TYPICAL_FORWARD,
+			valueNoPot: ovr,
+			availability: kept,
+		};
+	};
+	if (sums[0]! <= 0) {
 		return null;
 	}
-	const line: SeasonLine = lineOf(all);
+	const line = lineOf(0);
 	if (
-		worse[0]! > 0 &&
-		better[0]! > 0 &&
-		better[4]! / better[0]! - worse[4]! / worse[0]! >= UPSIDE_SPLIT
+		sums[6]! > 0 &&
+		sums[12]! > 0 &&
+		sums[16]! / sums[12]! - sums[10]! / sums[6]! >= UPSIDE_SPLIT
 	) {
-		line.halves = [lineOf(worse), lineOf(better)];
-		return { line, salary: all[5]!, halfSalaries: [worse[5]!, better[5]!] };
+		line.halves = [lineOf(6), lineOf(12)];
+		return {
+			line,
+			salary: sums[5]!,
+			halfSalaries: [sums[11]!, sums[17]!],
+		};
 	}
-	return { line, salary: all[5]! };
+	return { line, salary: sums[5]! };
 };
 
 // What a player is expected to be paid in a season of the outlook: his
