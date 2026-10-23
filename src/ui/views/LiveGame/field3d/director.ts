@@ -53,7 +53,7 @@ import { foulsOf } from "./fouls.ts";
 import { stageChains, type ChainSpots } from "./chains.ts";
 import { holderAt, replayFor, type FieldReplay } from "./replays.ts";
 import { HURT_MOST, MEDICS, stageHurt } from "./hurt.ts";
-import { crewOff, stagePostgame } from "./postgame.ts";
+import { crewOff, stageHalftime, stagePostgame } from "./postgame.ts";
 import { stageTv } from "./tv.ts";
 import { stageToss, tossCrew } from "./toss.ts";
 import { sidelineOf } from "./sideline.ts";
@@ -1311,6 +1311,28 @@ class Director {
 				cheer = { t: postgame.from, side: postgame.winner, big: true };
 			}
 		}
+		// The half over (or regulation, before overtime): everybody off for
+		// the break.
+		const half =
+			!ended &&
+			!hurt &&
+			events
+				.slice(i0, i1)
+				.some(
+					(e) =>
+						(e?.type === "quarter" && e.startsWithKickoff === true) ||
+						e?.type === "overtime",
+				);
+		const offAt = Math.max(whistle, acted?.until ?? 0);
+		if (half) {
+			t1 = stageHalftime({
+				parts,
+				whistle: offAt,
+				t1,
+				ball,
+				r: this.rng(i0, "half"),
+			});
+		}
 		// Each line of the play ends where its own action does; the last one,
 		// with the play.
 		const last = this.beats.at(-1);
@@ -1375,6 +1397,9 @@ class Director {
 		}
 		if (toss) {
 			tossCrew(toss, crew.parts);
+		}
+		if (half) {
+			crewOff(crew.parts, offAt, t1, this.rng(i0, "crewOff"));
 		}
 		const chains = stageChains({
 			quarter,

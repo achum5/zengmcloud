@@ -315,31 +315,16 @@ const pairUp = <T>(
 	return out;
 };
 
-export const stagePostgame = (input: {
-	parts: Part[];
-	// The final score, each side's.
-	pts: [number, number];
-	// The ball dead (or the moment after it seen out).
-	whistle: number;
-	// The man who won it on the last play, if anybody did.
-	hero?: number;
-	t0: number;
-	t1: number;
-	playI: number;
-	ball: BallSeg[];
-	r: () => number;
-}): Postgame => {
-	const { parts, pts, ball, r } = input;
-	const winner: Side | undefined =
-		pts[0] > pts[1] ? 0 : pts[1] > pts[0] ? 1 : undefined;
-	const margin = Math.abs(pts[0] - pts[1]);
-	const rout = margin >= ROUT;
-	const go = input.whistle + GO_AFTER;
-
-	// Each man free of the play: up off the turf, done what he was doing -
-	// and the ball let go of.
-	const men: Man[] = [];
-	let hero: Man | undefined;
+// Each man (of the players) free of the play from `go`: up off the turf,
+// done what he was doing - and the ball, if he has it, tossed down by his
+// feet. Each at his own walking pace.
+export const freeMen = (
+	parts: Part[],
+	go: number,
+	ball: BallSeg[],
+	r: () => number,
+): { p: Part; man: Man }[] => {
+	const out: { p: Part; man: Man }[] = [];
 	for (const p of parts) {
 		if (p.pid < 0 || p.legs.length === 0) {
 			continue;
@@ -380,12 +365,37 @@ export const stagePostgame = (input: {
 		}
 		const big = BIG.has(p.role);
 		const pace = (PACE[0] + r() * (PACE[1] - PACE[0])) * (big ? BIG_SLOWER : 1);
-		const man = new Man(p.team, p.legs, pace);
-		men.push(man);
-		if (p.pid === input.hero) {
-			hero = man;
-		}
+		out.push({ p, man: new Man(p.team, p.legs, pace) });
 	}
+	return out;
+};
+
+export const stagePostgame = (input: {
+	parts: Part[];
+	// The final score, each side's.
+	pts: [number, number];
+	// The ball dead (or the moment after it seen out).
+	whistle: number;
+	// The man who won it on the last play, if anybody did.
+	hero?: number;
+	t0: number;
+	t1: number;
+	playI: number;
+	ball: BallSeg[];
+	r: () => number;
+}): Postgame => {
+	const { parts, pts, ball, r } = input;
+	const winner: Side | undefined =
+		pts[0] > pts[1] ? 0 : pts[1] > pts[0] ? 1 : undefined;
+	const margin = Math.abs(pts[0] - pts[1]);
+	const rout = margin >= ROUT;
+	const go = input.whistle + GO_AFTER;
+
+	// Each man free of the play: up off the turf, done what he was doing -
+	// and the ball let go of.
+	const freed = freeMen(parts, go, ball, r);
+	const men = freed.map((f) => f.man);
+	const hero = freed.find((f) => f.p.pid === input.hero)?.man;
 
 	// The moment: the winners'...
 	const won = men.filter((m) => m.team === winner);
@@ -639,4 +649,46 @@ export const crewOff = (
 		man.walk({ x: x + (r() - 0.5) * 10, y: FIELD_W + 1 + r() * 2 });
 		man.hold(t1);
 	}
+};
+
+// THE HALF - and the end of regulation, before overtime: the last play of
+// it over, everybody off the field for the break, each side toward its own
+// bench - at a walk, now and then a jog - from a moment after the whistle
+// (and up to a little later), to just off the field; the picture on them
+// this long, until it cuts to the kickoff after it.
+const HALF_GO = 900;
+const HALF_LATE = 1300;
+const HALF_JOG = 0.3;
+const HALF_JOG_FPS = 8.5;
+const HALF_MS = 6500;
+// (Along the field, this share of the way toward midfield, within the
+// team area - and to this far off the field.)
+const HALF_IN = 0.4;
+const HALF_OFF = 4;
+
+// When the play is over, now.
+export const stageHalftime = (input: {
+	parts: Part[];
+	whistle: number;
+	t1: number;
+	ball: BallSeg[];
+	r: () => number;
+}): number => {
+	const { parts, ball, r } = input;
+	const go = input.whistle + HALF_GO;
+	for (const { p, man } of freeMen(parts, go, ball, r)) {
+		man.hold(Math.max(man.t, go + r() * HALF_LATE));
+		const line = sidelineOf(p.team);
+		const x = clamp(
+			man.at.x + (MID_X - man.at.x) * HALF_IN + (r() - 0.5) * 16,
+			TEAM_AREA[0],
+			TEAM_AREA[1],
+		);
+		const off = HALF_OFF + r() * 3;
+		man.walk(
+			{ x, y: line === 0 ? -off : FIELD_W + off },
+			r() < HALF_JOG ? HALF_JOG_FPS : man.pace,
+		);
+	}
+	return Math.max(input.t1, go + HALF_MS);
 };
