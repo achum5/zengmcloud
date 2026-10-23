@@ -264,6 +264,7 @@ const BACKER_UP = {
 const CLAP = { abN: -6, abF: -6, shF: 60, elF: 56 };
 // A play sheet held up at his chest, in his left hand.
 const SHEET = { shF: 34, elF: 104, abF: -18, wrF: 10 };
+// (Both hands on the ball, at his chest.)
 const QB_SET = pose({
 	hipN: 12,
 	kneeN: 22,
@@ -272,41 +273,42 @@ const QB_SET = pose({
 	lean: 10,
 	shN: 30,
 	elN: 92,
-	abN: 14,
+	abN: -9,
 	shF: 30,
 	elF: 92,
-	abF: 14,
+	abF: -9,
 	wide: 0.8,
 });
-// Cocked: the ball back up by his ear, his shoulders turned to the
-// target, the off arm out at it, his weight back.
+// Cocked: the ball back up by his ear, his elbow up level with his head,
+// his shoulders turned to the target, the off arm out at it, his weight
+// back.
 const THROW_COCKED = pose({
 	hipN: 4,
 	kneeN: 22,
 	hipF: 26,
 	kneeF: 14,
 	lean: 2,
-	shN: 104,
-	elN: 70,
-	abN: 72,
+	shN: 165,
+	elN: 105,
+	abN: 35,
 	wrN: 20,
 	shF: 86,
 	elF: 16,
 	abF: 8,
-	twist: -34,
+	twist: -25,
 	wide: 1.1,
 });
-// Let go: the arm over the top and out in front, his weight onto his front
-// foot.
+// Let go: the arm straight up over the top and out in front of his head,
+// his weight onto his front foot.
 const THROW_RELEASE = pose({
 	hipN: -12,
 	kneeN: 26,
 	hipF: 30,
 	kneeF: 16,
-	lean: 16,
+	lean: 12,
 	shN: 150,
-	elN: 22,
-	abN: 40,
+	elN: 10,
+	abN: 10,
 	wrN: -10,
 	shF: 40,
 	elF: 50,
@@ -318,10 +320,10 @@ const THROW_RELEASE = pose({
 // through.
 const THROW_THROUGH = pose({
 	hipN: -26,
-	kneeN: 44,
+	kneeN: 38,
 	hipF: 34,
-	kneeF: 30,
-	lean: 30,
+	kneeF: 28,
+	lean: 20,
 	shN: 46,
 	elN: 30,
 	abN: -18,

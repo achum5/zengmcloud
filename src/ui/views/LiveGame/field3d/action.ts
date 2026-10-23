@@ -517,6 +517,7 @@ const IN_HAND = new Set<Move>([
 	"pointSky",
 	"bowl",
 ]);
+const HELD_UP = new Set<Move>(["back", "slide", "walk", "stand"]);
 const holdFor = (m: Move): BallHold =>
 	m === "center"
 		? "snap"
@@ -531,6 +532,21 @@ const holdFor = (m: Move): BallHold =>
 // it goes deep - as high over the straight line as a ball thrown that long
 // rises under gravity.
 const RELEASE_Z = 6.9;
+// A throw from the pocket (see pocketThrow): wound up and let go over this
+// long, the ball back by his ear this far through it; side on to it by
+// this much (radians) as he sets, coiled this much more as it goes back,
+// this much still at the release, and round past it this much after;
+// striding at it this far (feet) and on over his front foot this much more
+// in the follow-through, over this long.
+const WIND_MS = 320;
+const WIND_COCKED = 0.55;
+const SET_OPEN = 0.55;
+const COIL = 0.3;
+const RELEASE_OPEN = 0.1;
+const PAST_IT = -0.4;
+const STRIDE = 1.3;
+const WEIGHT_ON = 0.8;
+const FOLLOW_MS = 450;
 const CATCH_Z = 4.3;
 const G = 32;
 const flightOf = (from: Pt, to: Pt): { ms: number; peak: number } => {
@@ -1300,6 +1316,11 @@ class Action {
 							? "throw"
 							: "hands"
 						: holdFor(l.move);
+					// (On his feet with it in both hands: up at his chest,
+					// not swinging.)
+					if (!l.arms && l.ball === "hands" && HELD_UP.has(l.move)) {
+						l.arms = "qbSet";
+					}
 				}
 			}
 		}
@@ -1694,10 +1715,8 @@ class Action {
 			if (bootSide) {
 				this.onTheRun(qb, bootSide, catchPt, throwAt);
 			} else {
-				this.reads(qb, target!, catchPt, throwAt - 320, runners);
-				qb.hold(throwAt - 320, "qbSet", this.toward(qb.at, catchPt));
-				qb.act("throwWind", throwAt, this.toward(qb.at, catchPt));
-				qb.act("throwFollow", throwAt + 450, this.toward(qb.at, catchPt));
+				this.reads(qb, target!, catchPt, throwAt - WIND_MS, runners);
+				this.pocketThrow(qb, catchPt, throwAt);
 			}
 			const at = this.of(qb.posAt(throwAt));
 			const release: Pt3 = {
@@ -1861,6 +1880,34 @@ class Action {
 			return Math.round(5 + r() * 7);
 		}
 		return Math.max(1, Math.round(yds * (0.45 + 0.5 * r())));
+	}
+
+	// From the pocket: side on to it, his front shoulder at it; a step at it
+	// as the ball goes back by his ear, his hips and shoulders coming round
+	// through it as it goes, and his weight on over his front foot after it,
+	// turned on past it.
+	pocketThrow(qb: Actor, catchPt: Pt, throwAt: number) {
+		const way = this.toward(qb.at, catchPt);
+		const ahead = (ft: number) => ({
+			x: qb.at.x + Math.cos(way) * ft,
+			y: qb.at.y + Math.sin(way) * ft,
+		});
+		const w0 = throwAt - WIND_MS;
+		const cocked = w0 + WIND_MS * WIND_COCKED;
+		qb.hold(w0, "qbSet", way + SET_OPEN);
+		qb.act("throwWind", cocked, way + SET_OPEN, ahead(STRIDE * 0.75));
+		qb.last.span = [0, WIND_COCKED];
+		qb.turn(COIL);
+		qb.act("throwWind", throwAt, way + SET_OPEN + COIL, ahead(STRIDE * 0.25));
+		qb.last.span = [WIND_COCKED, 1];
+		qb.turn(-(SET_OPEN + COIL - RELEASE_OPEN));
+		qb.act(
+			"throwFollow",
+			throwAt + FOLLOW_MS,
+			way + RELEASE_OPEN,
+			ahead(WEIGHT_ON),
+		);
+		qb.turn(PAST_IT - RELEASE_OPEN);
 	}
 
 	// Rolled out round the edge, on at an easy run - the ball up in both
