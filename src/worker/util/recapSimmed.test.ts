@@ -345,7 +345,10 @@ describe("simmed recaps", () => {
 		for (const { recap } of pairs) {
 			assert.notMatch(
 				recap,
-				/(?:got|was) an? (?:double|triple)-double - [^.]*\bfrom [A-Z]|finished with an? (?:double|triple)-double - [^.]* for the [A-Z]/,
+				// Nor any line hung off a dash: "leaned on Scoot Carter for a
+				// double-double - 17 points and 11 rebounds, and Xavier Carter
+				// contributed 16" ran the next man into it.
+				/(?:double|triple)-double - \d/,
 				recap,
 			);
 		}

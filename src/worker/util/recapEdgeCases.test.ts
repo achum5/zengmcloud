@@ -738,6 +738,51 @@ describe("edge cases", () => {
 		assert.deepEqual(verifyRecap(`**x**\n\n${right}`, g), []);
 	});
 
+	// "They were 12 up going into the fourth" was never held to the
+	// quarters; only "it was 80-68 going into the fourth" was.
+	test("the reader holds a margin going into a quarter, and a lead stretched", () => {
+		const home = squad(
+			{ tid: 1, name: "Hawks", ptsQtrs: [28, 26, 27, 29] },
+			{ name: "Ace Hawk", pid: 11, pts: 30, fg: 12, fga: 22 },
+			110,
+		);
+		const away = squad(
+			{ tid: 2, name: "Kings", ptsQtrs: [24, 25, 26, 27] },
+			{ name: "Rex King", pid: 21, pts: 28, fg: 11, fga: 21 },
+			102,
+		);
+		const g = game([home, away], {
+			flow: { leadChanges: 2, ties: 1, maxLead: [14, 3], maxLeadAt: [4, 1] },
+		});
+		// 81-75 after three: a 6-point game.
+		for (const wrong of [
+			"The Hawks were 9 up going into the fourth.",
+			"It was a 4-point game entering the fourth.",
+			"Going into the fourth, the Hawks were up 8.",
+			"The Hawks took a 7-point lead into the fourth and stretched it to 14.",
+		]) {
+			assert.deepEqual(
+				verifyRecap(`**x**\n\n${wrong}`, g).map((v) => v.kind),
+				["margin entering a quarter"],
+				wrong,
+			);
+		}
+		assert.deepEqual(
+			verifyRecap(
+				"**x**\n\nThe Hawks took a 6-point lead into the fourth and stretched it to 15.",
+				g,
+			).map((v) => v.kind),
+			["biggest lead"],
+		);
+		assert.deepEqual(
+			verifyRecap(
+				"**x**\n\nIt was a 6-point game entering the fourth. The Hawks took a 6-point lead into the fourth and stretched it to 14.",
+				g,
+			),
+			[],
+		);
+	});
+
 	test("the reader holds series claims against the bracket", () => {
 		const home = squad(
 			{ tid: 1, name: "Hawks", ptsQtrs: [28, 26, 27, 29] },

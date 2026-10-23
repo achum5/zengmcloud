@@ -4621,7 +4621,10 @@ const loserSentence = (
 		const leaderLine = ddw
 			? `${poss(leader.name)} ${ddw} (${statPhrase(leader)})`
 			: `${poss(leader.name)} ${statPhrase(leader)}`;
-		const line = ddw ? `a ${ddw} - ${statPhrase(leader)}` : statPhrase(leader);
+		// Bracketed, not dashed: "leaned on Scoot Carter for a double-double -
+		// 17 points and 11 rebounds, and Xavier Carter contributed 16" ran the
+		// next man into his line.
+		const line = ddw ? `a ${ddw} (${statPhrase(leader)})` : statPhrase(leader);
 		const them = theNick(shape.loser);
 
 		// SHAPES, not synonyms. Rotating six verbs through one frame - "X's 22

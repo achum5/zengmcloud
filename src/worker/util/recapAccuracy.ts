@@ -495,6 +495,31 @@ export const verifyRecap = (
 				}
 			}
 		}
+
+		// --- the margin going into a quarter --------------------------------
+		// "They were 12 up going into the fourth", "It was a 2-point game
+		// entering the fourth", "took a 10-point lead into the fourth":
+		// told as a margin, held to the quarters all the same.
+		for (const m of sentence.matchAll(
+			/(\d+) (?:up|down) going into the (second|third|fourth)\b|an? (\d+)-point (?:game|lead) (?:entering|going into|into) the (second|third|fourth)\b|[Gg]oing into the (second|third|fourth), the [A-Z][\w ]*? were (?:up|down) (\d+)\b/g,
+		)) {
+			const said = Number(m[1] ?? m[3] ?? m[6]);
+			const word = (m[2] ?? m[4] ?? m[5]) as "second" | "third" | "fourth";
+			const idx = { second: 1, third: 2, fourth: 3 }[word];
+			const hq = home.ptsQtrs ?? [];
+			const aq = away.ptsQtrs ?? [];
+			if (idx <= hq.length && idx <= aq.length) {
+				const h = hq.slice(0, idx).reduce((a, b) => a + b, 0);
+				const a = aq.slice(0, idx).reduce((x, y) => x + y, 0);
+				if (said !== Math.abs(h - a)) {
+					add(
+						"margin entering a quarter",
+						`said ${said}, real ${Math.abs(h - a)}`,
+						sentence,
+					);
+				}
+			}
+		}
 	}
 
 	// --- how it unfolded, against the sim's own log --------------------------
@@ -523,6 +548,11 @@ export const verifyRecap = (
 		);
 		claim(
 			/up by (\d+) at one stage/g,
+			(n) => flow.maxLead.includes(n),
+			"biggest lead",
+		);
+		claim(
+			/stretched it to (\d+)|(?:let|blew) an? (\d+)-point lead/g,
 			(n) => flow.maxLead.includes(n),
 			"biggest lead",
 		);
