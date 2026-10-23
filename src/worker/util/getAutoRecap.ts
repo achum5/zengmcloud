@@ -4070,15 +4070,33 @@ const gameStory = (
 			);
 		} else if (run && !run.winner && run.period <= halfN) {
 			covers.add("run");
+			// The deficit the winners came back from, when the run built more
+			// than the halftime score shows: "Lakers rally from 15 down" sat
+			// over "The Pistons were up 58-45 at the break after they ran off
+			// 12 straight points in the second" and never said 15.
+			const peakFirst =
+				!opts.comebackTold &&
+				lMaxAt !== undefined &&
+				lMaxAt <= halfN &&
+				lMax >= 12 &&
+				lMax > lh - wh &&
+				// Fifteen is a comeback the headline can name; under it, only a
+				// peak well past the halftime score is worth the words.
+				(lMax >= 15 || lMax >= lh - wh + 3);
+			if (peakFirst) {
+				covers.add("loserPeak");
+			}
 			out.push(
-				pick(
-					rng,
-					[
-						`${L} ran off ${run.pts} straight points ${runAt(run)} and led ${lh}-${wh} at halftime.`,
-						`${L} were up ${lh}-${wh} at the break after they ran off ${run.pts} straight points ${runAt(run)}.`,
-					],
-					"story:downRun",
-				),
+				peakFirst
+					? `${L} ran off ${run.pts} straight points ${runAt(run)}, led by as many as ${lMax} and were up ${lh}-${wh} at halftime.`
+					: pick(
+							rng,
+							[
+								`${L} ran off ${run.pts} straight points ${runAt(run)} and led ${lh}-${wh} at halftime.`,
+								`${L} were up ${lh}-${wh} at the break after they ran off ${run.pts} straight points ${runAt(run)}.`,
+							],
+							"story:downRun",
+						),
 			);
 		} else if (
 			!opts.comebackTold &&
@@ -4163,6 +4181,22 @@ const gameStory = (
 				covers.add("winnerPeak");
 				return `${W} led by as many as ${wMax} in ${when(wMaxAt)}, but it was ${wh}-${lh} at halftime.`;
 			}
+			// Or the losers' lead, which is the comeback: "The Pistons had a
+			// 19-0 run in the first, and it still was not enough. The teams
+			// were tied at 56 at the break" over "rally from 19 down".
+			if (
+				!opts.comebackTold &&
+				lMax >= 12 &&
+				lMaxAt !== undefined &&
+				lMaxAt <= halfN
+			) {
+				covers.add("loserPeak").add("comeback");
+				if (run && !run.winner && run.end <= halfN) {
+					covers.add("run");
+					return `${L} ran off ${run.pts} straight points ${runAt(run)} and led by as many as ${lMax}, but it was ${wh}-${lh} at halftime.`;
+				}
+				return `${L} led by as many as ${lMax} in ${when(lMaxAt)}, but it was ${wh}-${lh} at halftime.`;
+			}
 			return pick(
 				rng,
 				[
@@ -4177,7 +4211,12 @@ const gameStory = (
 			out.push(half, ...gotAway(), lastQuarterTurn());
 			return { sentences: out, covers };
 		}
-		if (!close && w2 - l2 >= 8) {
+		const loserPeakFirst =
+			!opts.comebackTold &&
+			lMax >= 12 &&
+			lMaxAt !== undefined &&
+			lMaxAt <= halfN;
+		if (!close && w2 - l2 >= 8 && !loserPeakFirst) {
 			covers.add("secondHalf");
 			const parts = [`won the second half ${w2}-${l2}`];
 			if (run && run.winner && run.period > halfN) {
@@ -6598,6 +6637,50 @@ const runNote = (
 			"runWinnerCount",
 		);
 	}
+	// The losers' run gets "and it still was not enough" only when it was a
+	// late push that fell short. One in the first half built a lead that was
+	// lost later - "The Pistons had a 19-0 run in the first, and it still was
+	// not enough" called a game in the first quarter - and one that put them
+	// in front going into the next quarter turned it, for a while.
+	// Ahead at the end of the quarter it began in or the one it ended in.
+	const aheadAt = (n: number) => {
+		const sum = (q: unknown) =>
+			(Array.isArray(q) ? (q as number[]) : [])
+				.slice(0, n)
+				.reduce((a, b) => a + b, 0);
+		return (
+			Array.isArray(qs) &&
+			qs.length >= n &&
+			sum(shape.loser.ptsQtrs) > sum(shape.winner.ptsQtrs)
+		);
+	};
+	// Or in front at their best inside the run's quarters: an 18-0 run
+	// spanning halftime took a 10-point deficit to an 8-point lead, then
+	// gave it back by the end of the third.
+	const lSide = sideOf(game, shape.loser);
+	const lPeakAt = game.flow?.maxLeadAt?.[lSide];
+	const ledDuring =
+		(game.flow?.maxLead[lSide] ?? 0) > 0 &&
+		lPeakAt !== undefined &&
+		lPeakAt >= run.period &&
+		lPeakAt <= end;
+	const losersAheadAfter = aheadAt(run.period) || aheadAt(end) || ledDuring;
+	// An early run that never even put them in front is a footnote to a game
+	// they lost: "The Knicks ran off 16 straight points in the first. The
+	// Jazz were ahead 65-56 at the half."
+	if (!isWinner && run.period <= shape.regPeriods / 2 && !losersAheadAfter) {
+		return undefined;
+	}
+	if (!isWinner && (run.period <= shape.regPeriods / 2 || losersAheadAfter)) {
+		return pick(
+			rng,
+			[
+				`${T} ran off ${run.pts} straight points ${at}.`,
+				`${T} scored ${run.pts} ${unanswered} ${at}.`,
+			],
+			"runLoserCount",
+		);
+	}
 	return pick(
 		rng,
 		isWinner
@@ -7081,7 +7164,9 @@ const buildGameRecap = (game: RecapGame): string => {
 		// the buzzer sent it to overtime." ran the clock backwards.
 		const enterAt = storyPara
 			.slice(0, finishAt)
-			.findIndex((t) => /going into the|entering the/.test(t));
+			// Either case: "Going into the fourth, the Suns were up 8" opens on
+			// it, and the run was told after it, in the wrong quarter.
+			.findIndex((t) => /going into the|entering the/i.test(t));
 		if (
 			run &&
 			!storyPara.includes(run) &&

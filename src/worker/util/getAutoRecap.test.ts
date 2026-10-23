@@ -9228,11 +9228,14 @@ test("a second-quarter run is not told before the first quarter", () => {
 					gid,
 					teams: [win, lose],
 					winnerTid: 1,
+					// The Hawks' run put them in front for a moment; one that
+					// never did is not told at all (see "an early run by the
+					// losers that never led is left out").
 					flow: {
-						leadChanges: 0,
+						leadChanges: 2,
 						ties: 1,
-						maxLead: [17, 0],
-						maxLeadAt: [1, 1],
+						maxLead: [17, 2],
+						maxLeadAt: [1, 2],
 						run: { side: 1, pts: 15, period: 2, clock: 600, endPeriod: 2 },
 					},
 				}),
@@ -9248,6 +9251,106 @@ test("a second-quarter run is not told before the first quarter", () => {
 		endRecapBatch();
 	}
 	assert.ok(both > 0);
+});
+
+// "The Knicks ran off 16 straight points in the first. The Jazz were ahead
+// 65-56 at the half", and before that "The Pistons had a 19-0 run in the
+// first, and it still was not enough" - a verdict on a game in its first
+// quarter.
+test("an early run by the losers that never led is left out", () => {
+	const win = realisticTeam(
+		{
+			tid: 1,
+			region: "Dallas",
+			name: "Mavericks",
+			abbrev: "DAL",
+			pts: 110,
+			ptsQtrs: [26, 28, 30, 26],
+		},
+		player({ name: "Miles Dunn", pts: 24, ast: 9, fg: 9, fga: 18 }),
+	);
+	const lose = realisticTeam(
+		{
+			tid: 2,
+			region: "Atlanta",
+			name: "Hawks",
+			abbrev: "ATL",
+			pts: 94,
+			ptsQtrs: [24, 24, 24, 22],
+		},
+		player({ name: "Anthony Brooks", pts: 18, reb: 12, fg: 7, fga: 18 }),
+	);
+	for (let gid = 2060; gid < 2080; gid++) {
+		const recap = getAutoRecap(
+			game({
+				gid,
+				teams: [win, lose],
+				winnerTid: 1,
+				flow: {
+					leadChanges: 1,
+					ties: 1,
+					maxLead: [19, 0],
+					maxLeadAt: [4, 1],
+					run: { side: 1, pts: 16, period: 1, clock: 600, endPeriod: 1 },
+				},
+			}),
+		);
+		assert.doesNotMatch(
+			recap,
+			/16-0|16 straight|16 unanswered|still was not enough|could not turn it/,
+			recap,
+		);
+	}
+});
+
+// "#8 Trail Blazers rally from 19 down" over "The Pistons had a 19-0 run in
+// the first, and it still was not enough. The teams were tied at 56 at the
+// break" - the 19 the headline came back from was never a deficit.
+test("a lead the losers built before a tied half is told as one", () => {
+	const win = realisticTeam(
+		{
+			tid: 1,
+			region: "Portland",
+			name: "Trail Blazers",
+			abbrev: "POR",
+			pts: 103,
+			ptsQtrs: [24, 32, 25, 22],
+		},
+		player({ name: "Bennedict King", pts: 27, ast: 12, fg: 10, fga: 19 }),
+	);
+	const lose = realisticTeam(
+		{
+			tid: 2,
+			region: "Detroit",
+			name: "Pistons",
+			abbrev: "DET",
+			pts: 96,
+			ptsQtrs: [31, 25, 18, 22],
+		},
+		player({ name: "Franz Ellis", pts: 25, ast: 7, fg: 9, fga: 20 }),
+	);
+	for (let gid = 2090; gid < 2110; gid++) {
+		const recap = getAutoRecap(
+			game({
+				gid,
+				teams: [win, lose],
+				winnerTid: 1,
+				flow: {
+					leadChanges: 11,
+					ties: 5,
+					maxLead: [15, 19],
+					maxLeadAt: [4, 1],
+					run: { side: 1, pts: 19, period: 1, clock: 675, endPeriod: 1 },
+				},
+			}),
+		);
+		assert.match(
+			recap,
+			/as many as 19|19-point|from 19 down|19 down|trailed by 19|behind by 19/,
+			recap,
+		);
+		assert.doesNotMatch(recap, /still was not enough|could not turn it/, recap);
+	}
 });
 
 // "The Wizards got no more than 12 from anyone, Marcus Nowell leading the
