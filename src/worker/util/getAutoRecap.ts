@@ -3604,8 +3604,9 @@ const statNote = (
 			),
 		);
 	}
-	// A big edge at the free-throw line.
-	if (w.ft >= 24 && w.ft - l.ft >= 10) {
+	// A big edge at the free-throw line - big: at ten made, one recap in five
+	// carried a free-throw count somewhere.
+	if (w.ft >= 24 && w.ft - l.ft >= 14) {
 		add(
 			pick(
 				rng,
@@ -5907,7 +5908,6 @@ const threeNote = (
 			[
 				`${cap(theNick(shape.loser))} went ${l.tp}-of-${l.tpa} from three.`,
 				`${cap(theNick(shape.loser))} missed ${l.tpa - l.tp} of their ${l.tpa} threes.`,
-				`${cap(theNick(shape.loser))} shot ${l.tpp}% from three on ${l.tpa} attempts.`,
 				`${cap(theNick(shape.loser))} kept firing from outside and kept missing: ${l.tp}-of-${l.tpa}.`,
 			],
 			"loserColdThrees",
@@ -5931,7 +5931,9 @@ const freeThrowNote = (
 	if (told || w.fta + l.fta < 20) {
 		return undefined;
 	}
-	if (w.fta - l.fta >= 14) {
+	// Eighteen, not fourteen: a gap of fourteen attempts is one game in five,
+	// and "the whistle went one way" is not said of one game in five.
+	if (w.fta - l.fta >= 18) {
 		return pick(
 			rng,
 			[
@@ -5947,7 +5949,7 @@ const freeThrowNote = (
 			"ftGap",
 		);
 	}
-	if (l.fta - w.fta >= 14 && shape.margin <= 10) {
+	if (l.fta - w.fta >= 18 && shape.margin <= 10) {
 		return pick(
 			rng,
 			[
@@ -7114,36 +7116,49 @@ const buildGameRecap = (game: RecapGame): string => {
 			const pts = plural(star.pts, "point");
 			const his = `his ${pts}`;
 			const split = `${star.fg}-of-${star.fga}`;
+			// More than points, and the whole line goes with the split: "Naji
+			// Foster scored 13 points on 4-of-7 shooting" under "Naji Foster
+			// turns in 13 points and 20 rebounds" lost the 20 rebounds.
+			const line = statPhrase(star);
 			para1.push(
-				pick(
-					rng,
-					pct >= 0.55
-						? [
-								`${star.name} scored ${pts} on ${split} shooting.`,
-								`${star.name} needed only ${star.fga} shots for ${his}.`,
-								`${star.name} made ${star.fg} of ${star.fga} shots on the way to ${pts}.`,
-							]
-						: pct < 0.42
-							? // Plainly, the way the wire puts it: the second sentence of
-								// the winners' story is not the place to editorialize about
-								// the man the headline is about ("The shooting was not
-								// pretty for Cade Hayes" under "Heat ride Cade Hayes' 14
-								// points and 15 rebounds").
-								[
-									`${star.name} had ${pts} on ${split} shooting.`,
-									`${star.name} got ${his} the hard way, ${split} from the floor.`,
-								]
-							: [
-									`${star.name} scored ${pts} on ${split} shooting.`,
-									`${star.name} went ${split} from the floor for ${pts}.`,
-									`${star.name} took ${star.fga} shots and made ${star.fg} of them on the way to ${pts}.`,
-								],
-					pct >= 0.55
-						? "starSplitGood"
-						: pct < 0.42
-							? "starSplitPoor"
-							: "starSplit",
-				),
+				line !== pts
+					? pick(
+							rng,
+							[
+								`${star.name} totaled ${line} on ${split} shooting.`,
+								`${star.name} went ${split} from the floor for ${line}.`,
+							],
+							"starSplitLine",
+						)
+					: pick(
+							rng,
+							pct >= 0.55
+								? [
+										`${star.name} scored ${pts} on ${split} shooting.`,
+										`${star.name} needed only ${star.fga} shots for ${his}.`,
+										`${star.name} made ${star.fg} of ${star.fga} shots on the way to ${pts}.`,
+									]
+								: pct < 0.42
+									? // Plainly, the way the wire puts it: the second sentence of
+										// the winners' story is not the place to editorialize about
+										// the man the headline is about ("The shooting was not
+										// pretty for Cade Hayes" under "Heat ride Cade Hayes' 14
+										// points and 15 rebounds").
+										[
+											`${star.name} had ${pts} on ${split} shooting.`,
+											`${star.name} got ${his} the hard way, ${split} from the floor.`,
+										]
+									: [
+											`${star.name} scored ${pts} on ${split} shooting.`,
+											`${star.name} went ${split} from the floor for ${pts}.`,
+											`${star.name} took ${star.fga} shots and made ${star.fg} of them on the way to ${pts}.`,
+										],
+							pct >= 0.55
+								? "starSplitGood"
+								: pct < 0.42
+									? "starSplitPoor"
+									: "starSplit",
+						),
 			);
 		} else if (star.fga > 0) {
 			// Fewer shots than that still make a split the headline did not
@@ -7151,7 +7166,7 @@ const buildGameRecap = (game: RecapGame): string => {
 			// rebounds as the Hornets take down the Bucks" sat over a body that
 			// never said his name.
 			para1.push(
-				`${star.name} scored ${plural(star.pts, "point")} on ${star.fg}-of-${star.fga} shooting.`,
+				`${star.name} totaled ${statPhrase(star)} on ${star.fg}-of-${star.fga} shooting.`,
 			);
 		}
 		// (A headline that printed his whole line, and a line with no split

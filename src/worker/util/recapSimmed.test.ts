@@ -1124,6 +1124,18 @@ describe("simmed recaps", () => {
 							`gid ${gid}\n${recap}`,
 						);
 					}
+					// And the rest of the line it gave him: "Naji Foster turns in
+					// 13 points and 20 rebounds" over a body with no 20 rebounds.
+					const line = new RegExp(
+						String.raw`${p.name}[^*]* ${p.pts} points and (\d+) (rebounds|assists)`,
+					).exec(head!);
+					if (line) {
+						assert.match(
+							body,
+							new RegExp(String.raw`\b${line[1]} ${line[2]}`),
+							`gid ${gid}\n${recap}`,
+						);
+					}
 				}
 			}
 		}

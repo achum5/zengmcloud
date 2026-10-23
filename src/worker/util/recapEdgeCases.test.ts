@@ -725,6 +725,36 @@ describe("edge cases", () => {
 		}
 		assert.ok(counted >= 5, `${counted}`);
 	});
+	// One recap in five carried a free-throw count ("The whistle went one
+	// way: 29 attempts from the line for the Hawks, 14 for the Bulls").
+	test("a free-throw gap is told only when it is big", () => {
+		const make = (gid: number, fta: number) => {
+			const home = squad(
+				{ tid: 1, name: "Hawks" },
+				{ name: "Ace Hawk", pid: 11, pts: 28, ft: fta - 3, fta },
+				110,
+			);
+			const away = squad(
+				{ tid: 2, name: "Bulls" },
+				{ name: "Bo Bull", pid: 21, pts: 24 },
+				101,
+			);
+			return getAutoRecap(game([home, away], { gid }));
+		};
+		const FT =
+			/free throws to|attempts from the line|to the line|at the line|of the whistle|free throws in/;
+		let big = 0;
+		for (let gid = 1; gid <= 16; gid++) {
+			// 29 attempts to 14.
+			assert.notMatch(make(gid, 17), FT, make(gid, 17));
+			// 38 attempts to 14.
+			if (FT.test(make(gid, 26))) {
+				big += 1;
+			}
+		}
+		assert.isAbove(big, 0);
+	});
+
 	// "Walker Green racked up 32 points..." and a paragraph on "Walker
 	// Green's previous season high was 31.": the wire writes "a season-high
 	// 32 points".

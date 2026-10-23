@@ -7566,7 +7566,7 @@ describe("the star's shooting split", () => {
 			// man the headline is about.
 			assert.match(
 				text,
-				/the hard way|had \d+ points on \d+-of-\d+ shooting/,
+				/the hard way|(?:had|totaled) \d+ points(?: and \d+ \w+)? on \d+-of-\d+ shooting|went \d+-of-\d+ from the floor for/,
 				text,
 			);
 			assert.doesNotMatch(text, /not pretty/, text);
