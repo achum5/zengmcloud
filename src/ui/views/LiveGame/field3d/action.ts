@@ -401,6 +401,7 @@ const IN_HANDS = new Set<Move>([
 	"handOff",
 	"kneelDown",
 	"catch",
+	"leapCatch",
 	"scoop",
 	"back",
 	"slide",
@@ -462,6 +463,16 @@ const DRIVEN_BACK = 0.55;
 const TO_THROW = 1500;
 const TO_THROW_YD = 45;
 const TO_THROW_SPREAD = 500;
+// Up for a ball at its highest, this often, thrown this deep at least
+// (feet past the quarterback) with no more than this far to go after it,
+// and a man on him (this near) or the end zone; how long he is up (ms), and
+// how high it is caught (feet).
+const LEAP = 0.5;
+const LEAP_DEEP = 36;
+const LEAP_YAC = 9;
+const CONTESTED = 6;
+const LEAP_MS = 760;
+const LEAP_Z = 8.4;
 // The quarterback in the pocket: looking off another man first, this often
 // with this long to spare at least; up a step (feet, ms), this often; a pump
 // this often, and how long it takes.
@@ -1346,7 +1357,6 @@ class Action {
 	) {
 		const e = this.ev(i);
 		const r = this.r;
-		const inStride = this.reachFor(rec, catchAt, qb);
 		// After the catch: up the field to where the sim says it ended -
 		// toward the man who brings him down.
 		let across = this.of(catchPt).a + (r() - 0.5) * 24;
@@ -1357,12 +1367,56 @@ class Action {
 		const end = this.endOf(gain, across, e.td === true, e.safety === true);
 		const yac = dist(catchPt, end.pt);
 		const v = rec.top * (yac > 30 ? 0.95 : 0.8);
+		// Up for it at its highest, now and then - thrown deep and covered,
+		// or into the end zone.
+		const deep = this.of(catchPt).d - this.of(qb.posAt(catchAt)).d;
+		const covered = this.d.some(
+			(m) => dist(m.posAt(catchAt), catchPt) < CONTESTED,
+		);
+		const leap =
+			deep > LEAP_DEEP &&
+			yac < LEAP_YAC &&
+			(covered || e.td === true) &&
+			r() < LEAP;
+		const inStride = !leap && this.reachFor(rec, catchAt, qb);
+		if (leap) {
+			this.leapFor(rec, catchPt, catchAt, qb);
+		}
 		let t = Math.max(rec.t, catchAt + 260);
 		if (yac > 2 || inStride) {
 			t = rec.run(end.pt, v, "sprint");
 		}
 		this.ball.push({ kind: "held", t0: catchAt, pid: rec.pid });
 		this.endCarry(i, rec, end, t, this.d);
+	}
+
+	// Up off both feet for it at its highest: from wherever he is as it
+	// comes, on through the spot it is caught at (or, stood there, straight
+	// up), and the ball thrown up there to his hands.
+	leapFor(rec: Actor, catchPt: Pt, catchAt: number, qb: Actor) {
+		const t0 = catchAt - LEAP_MS / 2;
+		rec.cut(t0);
+		rec.hold(t0);
+		const from = rec.at;
+		const far = dist(from, catchPt);
+		const ang = Math.atan2(catchPt.y - from.y, catchPt.x - from.x);
+		const to =
+			far > 1
+				? {
+						x: catchPt.x + Math.cos(ang) * far * 0.9,
+						y: catchPt.y + Math.sin(ang) * far * 0.9,
+					}
+				: from;
+		rec.act(
+			"leapCatch",
+			t0 + LEAP_MS,
+			far > 4 ? ang : this.toward(from, qb.posAt(catchAt)),
+			to,
+		);
+		const fly = this.ball.findLast((b) => b.kind === "fly");
+		if (fly?.kind === "fly" && Math.abs(fly.t1 - catchAt) < 1) {
+			fly.to = { ...fly.to, z: LEAP_Z };
+		}
 	}
 
 	// Reaching for it as it comes - in stride, his arms up for it as he

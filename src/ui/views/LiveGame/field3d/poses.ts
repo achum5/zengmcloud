@@ -701,6 +701,95 @@ const FIELD_ANIMS = {
 			],
 		],
 	},
+	// Up for it at its highest: off both feet, his hands up over his head
+	// to it at the top, and down with it into his chest, landing.
+	leapCatch: {
+		kind: "act",
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 36,
+					kneeN: 64,
+					hipF: 36,
+					kneeF: 64,
+					lean: 20,
+					shN: 20,
+					elN: 40,
+					shF: 20,
+					elF: 40,
+				}),
+			],
+			[
+				0.3,
+				pose({
+					hipN: 8,
+					kneeN: 18,
+					hipF: 30,
+					kneeF: 50,
+					lean: 4,
+					shN: 150,
+					elN: 20,
+					abN: 10,
+					shF: 150,
+					elF: 20,
+					abF: 10,
+					toe: 1,
+				}),
+			],
+			[
+				0.5,
+				pose({
+					hipN: 4,
+					kneeN: 20,
+					hipF: 58,
+					kneeF: 84,
+					lean: -4,
+					shN: 168,
+					elN: 8,
+					abN: 8,
+					shF: 168,
+					elF: 8,
+					abF: 8,
+					wrN: 20,
+					wrF: 20,
+					toe: 1,
+				}),
+			],
+			[
+				0.75,
+				pose({
+					hipN: 20,
+					kneeN: 30,
+					hipF: 26,
+					kneeF: 36,
+					lean: 8,
+					shN: 40,
+					elN: 100,
+					abN: 4,
+					shF: 40,
+					elF: 100,
+					abF: 4,
+				}),
+			],
+			[
+				1,
+				pose({
+					hipN: 30,
+					kneeN: 54,
+					hipF: 30,
+					kneeF: 54,
+					lean: 18,
+					shN: 30,
+					elN: 104,
+					abN: 4,
+					shF: 30,
+					elF: 104,
+					abF: 4,
+				}),
+			],
+		],
+	},
 	// A hand up at the ball as it comes, to knock it down.
 	swat: {
 		kind: "act",
@@ -1793,7 +1882,9 @@ export const poseOfMove = (m: Move, phase: number, mirrored = false): Pose => {
 export const liftOf = (m: Move, phase: number): number =>
 	m === "leap" && phase > 0.3 && phase < 0.82
 		? 1.7 * Math.sin((Math.PI * (phase - 0.3)) / 0.52)
-		: 0;
+		: m === "leapCatch" && phase > 0.2 && phase < 0.8
+			? 2.4 * Math.sin((Math.PI * (phase - 0.2)) / 0.6)
+			: 0;
 
 // How he holds his hands in a move: running, loose fists; down in a stance
 // or reading the play, open; standing about, relaxed.
