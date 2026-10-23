@@ -1,6 +1,7 @@
 import { apartAt, apartOf } from "./apart.ts";
 import type { BallSeg, FieldTimeline, Leg, Play } from "./director.ts";
 import type { Pt, Pt3, Side } from "./geometry.ts";
+import { along, goes, paceAt } from "./pace.ts";
 import { liftOf, moveKind, strideOf, type Move } from "./poses.ts";
 import type { FieldPlayerState } from "./sprite.ts";
 
@@ -67,18 +68,12 @@ const lastStarted = <T>(
 export const playAt = (tl: FieldTimeline, t: number): Play | undefined =>
 	tl.plays[lastStarted(tl.plays, t, (p) => p.t0)];
 
-const along = (l: Leg, t: number) =>
-	l.t1 > l.t0 ? clamp01((t - l.t0) / (l.t1 - l.t0)) : 1;
-
-const pointOf = (l: Leg, t: number): Pt => {
-	const u = along(l, t);
+const pointOf = (l: Leg, t: number, u = along(l, t)): Pt => {
 	return {
 		x: l.from.x + (l.to.x - l.from.x) * u,
 		y: l.from.y + (l.to.y - l.from.y) * u,
 	};
 };
-
-const goes = (l: Leg) => l.from.x !== l.to.x || l.from.y !== l.to.y;
 
 // Which way he faces through a leg: as told, or the way he goes - or, going
 // nowhere and not told, the way he was.
@@ -92,7 +87,13 @@ const lengthOf = (l: Leg) => Math.hypot(l.to.x - l.from.x, l.to.y - l.from.y);
 // carried on from the legs before it, so his feet keep their rhythm from
 // one stretch to the next (and each man a step out of time with the
 // next) - an act by the time (or its share of the act, cut in two).
-const phaseOf = (l: Leg, t: number, offset: number, before = 0): number => {
+const phaseOf = (
+	l: Leg,
+	t: number,
+	offset: number,
+	before = 0,
+	u = along(l, t),
+): number => {
 	const kind = moveKind(l.move);
 	if (kind === "still") {
 		return 0;
@@ -101,7 +102,7 @@ const phaseOf = (l: Leg, t: number, offset: number, before = 0): number => {
 		const [p0, p1] = l.span ?? [0, 1];
 		return p0 + (p1 - p0) * along(l, t);
 	}
-	return (before + lengthOf(l) * along(l, t)) / strideOf(l.move) + offset;
+	return (before + lengthOf(l) * u) / strideOf(l.move) + offset;
 };
 
 // How far his arms are through an act of their own (see Leg.arms).
@@ -186,7 +187,10 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 		const k = lastStarted(legs, t, (l) => l.t0);
 		const l = legs[k]!;
 		const offset = (part.pid * 0.618) % 1;
-		const at = pointOf(l, t);
+		// (Into a stand, still pulling up from the stretch before.)
+		const { on, u: eased } = paceAt(legs, k, t);
+		const pulling = on !== k;
+		const at = pointOf(legs[on]!, t, eased);
 		const aside = apartAt(apart.get(part.pid), t);
 		if (aside) {
 			at.x += aside.x;
@@ -225,8 +229,10 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 			from = {
 				move: prev.move as Move,
 				phase: striding
-					? phaseOf(l, t, offset, ran)
-					: phaseOf(prev, prev.t1, offset, ranBefore),
+					? phaseOf(l, t, offset, ran, eased)
+					: pulling
+						? phaseOf(prev, t, offset, ranBefore, eased)
+						: phaseOf(prev, prev.t1, offset, ranBefore),
 				...(prev.mirrored ? { mirrored: true } : {}),
 				w: 1 - clamp01(since / BLEND_MS),
 				...(prev.arms
@@ -240,10 +246,10 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 			team: part.team,
 			x: at.x,
 			y: at.y,
-			z: liftOf(l.move, phaseOf(l, t, offset, ran)),
+			z: liftOf(l.move, phaseOf(l, t, offset, ran, eased)),
 			yaw,
 			move: l.move,
-			phase: phaseOf(l, t, offset, ran),
+			phase: phaseOf(l, t, offset, ran, eased),
 			...(l.mirrored ? { mirrored: true } : {}),
 			...(from ? { from } : {}),
 			...(l.ball ? { ball: l.ball } : {}),

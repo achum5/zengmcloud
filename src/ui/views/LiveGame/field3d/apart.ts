@@ -1,4 +1,5 @@
 import type { Leg, Play } from "./director.ts";
+import { paceAt, paceOf } from "./pace.ts";
 import type { Move } from "./poses.ts";
 
 // KEPT OFF EACH OTHER: never one man drawn standing in another. However the
@@ -219,7 +220,7 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 	return out;
 };
 
-// Where he is every SEP_MS from t0 (his legs as they go), and whether he
+// Where he is every SEP_MS from t0 (his legs as they go, at his pace), and whether he
 // is free to be moved over.
 const sample = (
 	m: { legs: Leg[] },
@@ -231,17 +232,22 @@ const sample = (
 ) => {
 	const legs = m.legs;
 	let k = 0;
+	let before = paceOf(legs, -1);
+	let pace = paceOf(legs, 0);
+	let after = paceOf(legs, 1);
 	for (let s = 0; s < n; s++) {
 		const t = t0 + s * SEP_MS;
 		while (k + 1 < legs.length && legs[k + 1]!.t0 <= t) {
 			k++;
+			before = pace;
+			pace = after;
+			after = paceOf(legs, k + 1);
 		}
-		const l = legs[k]!;
-		const u =
-			l.t1 > l.t0 ? Math.min(1, Math.max(0, (t - l.t0) / (l.t1 - l.t0))) : 1;
+		const { on, u } = paceAt(legs, k, t, pace, before, after);
+		const l = legs[on]!;
 		xs[s] = l.from.x + (l.to.x - l.from.x) * u;
 		ys[s] = l.from.y + (l.to.y - l.from.y) * u;
-		free[s] = touching(l) ? 0 : 1;
+		free[s] = touching(legs[k]!) ? 0 : 1;
 	}
 };
 
