@@ -167,7 +167,9 @@ const boxOf = (
 	};
 };
 // The line across the top goes faint while the ball is behind it - a shot
-// arcing up from the far side of the floor - and comes back as it drops.
+// arcing up from the far side of the floor - and comes back as it drops;
+// and is off the picture through a replay, the way a broadcast shows one
+// clean but for its REPLAY tag (the rim, seen from under it, is up there).
 const CAPTION_FAINT = 0.18;
 const captionOver = (
 	cap: Cover & { y1: number },
@@ -1334,7 +1336,7 @@ const Court3D = ({
 				const faint =
 					s.caption !== undefined &&
 					captionOver(s.caption, { x: b.x / fw, y: b.y / fh });
-				const o = faint ? String(CAPTION_FAINT) : "";
+				const o = replay ? "0" : faint ? String(CAPTION_FAINT) : "";
 				if (capEl.style.opacity !== o) {
 					capEl.style.opacity = o;
 				}
@@ -1429,7 +1431,7 @@ const Court3D = ({
 				// pixels this many picture pixels.
 				textScale: Math.max(1, Math.round(8 / ((7 * art) / dpr))),
 				tagClear: s.covers,
-				away: !!view,
+				away: !!view || !!replay,
 				crew: working.states.flatMap((st) => {
 					const c = cr.crewLooks.get(st.pid);
 					return c ? [{ st, body: c.body, look: c.look }] : [];

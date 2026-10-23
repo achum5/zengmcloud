@@ -244,7 +244,7 @@ export type Frame = {
 	// one.
 	tagClear?: { x0: number; x1: number; y0: number }[];
 	// Off the play: a look round the building, in on a huddle, the starting
-	// lineups - nobody's name tag over it.
+	// lineups - or a replay of it, shown clean - nobody's name tag over it.
 	away?: boolean;
 	// The officials, the coaches and the photographers (see crew.ts), and
 	// any of their cameras going off.
@@ -1206,7 +1206,7 @@ export const drawFrame = (f: Frame) => {
 	}
 
 	// Whoever has the ball, named under his feet - following the play, not
-	// looking round the building or in on a huddle.
+	// looking round the building, in on a huddle or showing it again.
 	const holder =
 		ball.holder === undefined || f.moment.warm || f.away
 			? undefined
