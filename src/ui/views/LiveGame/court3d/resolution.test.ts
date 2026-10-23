@@ -36,7 +36,7 @@ describe("3D picture resolution", () => {
 		// Struggling (under 40 frames a second): coarser, a step at a time.
 		let t = run(res, 1620, 0, 20_000, 45, 30);
 		assert.isAbove(artFor(1620, res), 3);
-		assert.isAtMost(artFor(1620, res), Math.ceil(1620 / 300));
+		assert.isAtLeast(1620 / artFor(1620, res), 300);
 		const coarse = artFor(1620, res);
 		// Now with time to spare: finer again.
 		t = run(res, 1620, t, 20_000, 16.7, 2);
@@ -44,6 +44,18 @@ describe("3D picture resolution", () => {
 		// But never a flicker back and forth for good.
 		run(res, 1620, t, 60_000, 45, 30);
 		assert.isAtMost(res.changes, 6);
+	});
+
+	test("as coarse as it gets, never fewer than 300 rows - not blocks for players", () => {
+		for (const rows of [675, 936, 1124, 1350, 1620, 2160]) {
+			const res = makeResolution(0);
+			run(res, rows, 0, 60_000, 60, 50);
+			assert.isAtLeast(rows / artFor(rows, res), 300, `${rows}`);
+		}
+		// A Retina laptop's 936 rows: 468, then 312 - not on to 234.
+		const res = makeResolution(0);
+		run(res, 936, 0, 60_000, 60, 50);
+		assert.strictEqual(artFor(936, res), 3);
 	});
 
 	test("slow frames that are not the drawing's doing leave it as fine as it is", () => {

@@ -3,8 +3,10 @@
 // The court is drawn small and blown up without smoothing, each of its
 // pixels a whole number of the screen's (see Court3D) - as fine as about
 // ROWS of them top to bottom. A device that can't draw that many fast
-// enough steps a size coarser, never coarser than about MIN_ROWS, and back
-// finer once it has time to spare.
+// enough steps a size coarser, never to fewer than MIN_ROWS of them, and
+// back finer once it has time to spare. (On past that to the next whole
+// number of screen pixels - 234 rows on a picture 936 screen pixels tall -
+// the players were blocks.)
 //
 // It is judged a few seconds at a time, on the typical frame of each
 // stretch - not the odd long one - and changes only when two stretches in a
@@ -61,7 +63,7 @@ const bounds = (deviceRows: number) => {
 	const finest = Math.max(1, Math.ceil(deviceRows / ROWS));
 	return {
 		finest,
-		coarsest: Math.max(finest, Math.ceil(deviceRows / MIN_ROWS)),
+		coarsest: Math.max(finest, Math.floor(deviceRows / MIN_ROWS)),
 	};
 };
 
