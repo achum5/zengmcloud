@@ -54,7 +54,15 @@ import {
 	type PlayerState,
 } from "./evaluate.ts";
 import { lightness, type Look } from "./figure.ts";
-import { COURT_W, RIM_Z, seatSpot, type Pt3, type Side } from "./geometry.ts";
+import {
+	benchX,
+	COURT_W,
+	HUDDLE_Y,
+	RIM_Z,
+	seatSpot,
+	type Pt3,
+	type Side,
+} from "./geometry.ts";
 import { drawPixelText, pixelTextWidth } from "./pixelFont.ts";
 import type { Replay } from "./playback.ts";
 import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
@@ -1428,8 +1436,11 @@ export const boardAt = (tl: CourtTimeline, t: number): BoardScreen => {
 
 // THE LOOK ROUND THE BUILDING over a break (see ArenaShot): the whole arena
 // from up high, panning slowly; or low in the seats, looking up at the
-// crowd and the banners.
+// crowd and the banners. Over a timeout, in place of the whole arena: in
+// close on the huddle of the side with the ball, drawing up what it will
+// run - from courtside, pushing slowly in.
 const ARENA_RIG: Rig = { back: 60, high: 22, slide: 0.5, upright: false };
+const HUDDLE_RIG: Rig = { back: 24, high: 14, slide: 0.92, upright: false };
 export const arenaAim = (
 	tl: CourtTimeline,
 	t: number,
@@ -1440,6 +1451,19 @@ export const arenaAim = (
 		return undefined;
 	}
 	const u = Math.min(1, Math.max(0, (t - s.t0) / Math.max(1, s.t1 - s.t0)));
+	const huddle = s.kind === "wide" ? huddleOf(tl, s.t0) : undefined;
+	if (huddle !== undefined) {
+		const k = u * u * (3 - 2 * u);
+		return {
+			shot: {
+				x: benchX(huddle) + (huddle === 0 ? 1 : -1) * (1 - k),
+				width: (narrow ? 22 : 27) - 4 * k,
+				y: HUDDLE_Y,
+				z: 3.5,
+			},
+			rig: HUDDLE_RIG,
+		};
+	}
 	if (s.kind === "wide") {
 		return {
 			shot: {
@@ -1454,6 +1478,17 @@ export const arenaAim = (
 		shot: { x: 26 + 42 * u, width: narrow ? 70 : 90, y: -14, z: 16 },
 		rig: ARENA_RIG,
 	};
+};
+
+// The huddle to go in close on for a look at t0, if it is one over a
+// timeout: the side the ball goes back to (see the whistle that stopped
+// play) - as often as not the one that called it.
+const huddleOf = (tl: CourtTimeline, t0: number): Side | undefined => {
+	if (beatAt(tl, t0)?.type !== "timeout") {
+		return undefined;
+	}
+	const stop = recentFx(tl, t0, ["whistle"], 20_000);
+	return stop?.call === "stop" ? stop.team : undefined;
 };
 
 // THE STARTING LINEUPS (see intro.ts): in closer than the game's own

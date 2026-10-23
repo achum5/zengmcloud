@@ -7,7 +7,7 @@ import {
 	project,
 	type Operator,
 } from "./camera.ts";
-import { COURT_H, COURT_W } from "./geometry.ts";
+import { benchX, COURT_H, COURT_W, HUDDLE_Y, type Side } from "./geometry.ts";
 import { bodyOf } from "./poses.ts";
 import { aimFor, arenaAim, boardAt, momentAt } from "./scene.ts";
 import { compile } from "./testGame.ts";
@@ -205,6 +205,52 @@ describe("3D camera operator", () => {
 			assert.closeTo(op.camW, Math.max(width, Math.min(fit.min, width)), 0.5);
 		}
 	});
+});
+
+describe("3D looks round the building", () => {
+	// Over a timeout, the picture goes in close on a huddle: everybody in it
+	// in the picture, head to toe.
+	test("over a timeout, in on a huddle", () => {
+		const body = bodyOf();
+		const [w, h] = [1280, 720];
+		let huddles = 0;
+		for (const seed of ["a", "b"]) {
+			const { tl, players } = game(seed);
+			for (const s of tl.shots) {
+				const t = (s.t0 + s.t1) / 2;
+				const view = arenaAim(tl, t, false)!;
+				if (view.rig === MAIN_RIG || s.kind !== "wide") {
+					continue;
+				}
+				const m = momentAt(tl, t, players, () => body);
+				const cam = makeCamera(view.shot, w, h, view.rig);
+				const at = `${seed} @${Math.round(t)}`;
+				// The huddle it is on: the one nearest the middle of the picture.
+				const team: Side =
+					Math.abs(benchX(0) - view.shot.x) < Math.abs(benchX(1) - view.shot.x)
+						? 0
+						: 1;
+				const huddle = m.players.filter(
+					(st) =>
+						st.team === team &&
+						Math.hypot(st.x - benchX(team), st.y - HUDDLE_Y) < 4,
+				);
+				assert.isAtLeast(huddle.length, 3, at);
+				for (const st of huddle) {
+					const feet = project(cam, { ...st, z: 0 });
+					const head = project(cam, { ...st, z: 6.8 });
+					for (const p of [feet, head]) {
+						assert.isAbove(p.x, 0, at);
+						assert.isBelow(p.x, w, at);
+						assert.isAbove(p.y, 0, at);
+						assert.isBelow(p.y, h, at);
+					}
+				}
+				huddles += 1;
+			}
+		}
+		assert.isAbove(huddles, 2);
+	}, 60_000);
 });
 
 describe("3D boards", () => {
