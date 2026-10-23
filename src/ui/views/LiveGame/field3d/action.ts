@@ -475,6 +475,16 @@ const flightOf = (from: Pt, to: Pt): { ms: number; peak: number } => {
 	return { ms: s * 1000, peak: Math.max(0.4, (G * s * s) / 8) };
 };
 
+// A kick's rush off the edge (a man this far out from the ball, feet):
+// round the end of the wall this far outside him, and in at the kick this
+// far in front of the spot and out to the side of it - the next man out
+// this much further on each.
+const EDGE_A = 12;
+const EDGE_ROUND = 3;
+const EDGE_IN = 9;
+const EDGE_WIDE = 4.5;
+const EDGE_STAGGER = 2.5;
+
 // ---- the play ----------------------------------------------------------------
 
 // The blocking on a run: zone (outside zone, to the edge), a power play
@@ -482,8 +492,9 @@ const flightOf = (from: Pt, to: Pt): { ms: number; peak: number } => {
 // another on a double team this far over; a linebacker over to fill this
 // long after the snap (ms), at this much of his speed - and a blocker up
 // onto him at this much of his; a man beaten off the block this long after
-// (and up to this much longer); a receiver on a man off the ball this far
-// off at most (feet), winning it this often.
+// (and up to this much longer), and a man who has him off as the carrier
+// goes by, as much as this much later; a receiver on a man off the ball
+// this far off at most (feet), winning it this often.
 type RunScheme = "zone" | "stretch" | "power" | "sneak";
 const POWER = 0.35;
 const BLOCK_GAP = 2.6;
@@ -500,18 +511,21 @@ const FILL_PACE = 0.7;
 const CLIMB_PACE = 0.85;
 const SHED_MS = 550;
 const SHED_SPREAD = 350;
+const OFF_SPREAD = 350;
 const STALK_FAR = 36;
 const STALK_WON = 0.6;
 
 // After the ball: at this much of his speed at most - this much faster than
 // he needs to be, to get there in time - a leg this long at a time (ms), at
 // where the carrier will be this long after it, this far off him (feet),
-// closing in as he goes down.
+// closing in as he goes down - each this far at most to one side or the
+// other of the way he is going, a lane of his own.
 const PURSUIT_PACE = 0.85;
 const PURSUIT_URGE = 1.2;
 const PURSUIT_STEP = 350;
 const PURSUIT_LEAD = 300;
 const PURSUIT_RING = 10;
+const PURSUIT_LANE = 7;
 const PULL_UP_MS = 900;
 // After a man gone for a score, losing ground on him this far back (feet):
 // given up, now and then.
@@ -730,7 +744,8 @@ const BREAK_COST = 200;
 // The kicking game. A place kick: the plant, and the foot into the ball this
 // far through it. A punt: from the punter's first step, the ball dropped and
 // the foot into it. A kickoff's run-up, from the kicker's first step to his
-// plant. How fast a long snap comes back.
+// plant. How fast a long snap comes back. The kicker after his kick, at
+// no more than this (feet a second).
 const KICK_MS = 800;
 const KICK_CONTACT = 0.4;
 const PUNT_MS = 1400;
@@ -738,6 +753,7 @@ const PUNT_DROP = 0.42;
 const PUNT_CONTACT = 0.55;
 const KICKOFF_RUN = 1250;
 const LONG_SNAP_FPS = 60;
+const KICKER_JOG = 12;
 // The ball on its tee (its middle, off the turf); and how far behind the
 // end line the net behind the posts catches a kick.
 const TEE_Z = 0.8;
@@ -2641,6 +2657,7 @@ class Action {
 			const turn = (r() - 0.5) * 0.8;
 			const ring = 5 + r() * 9;
 			const arrive = t + 200 + r() * 500;
+			const lane = (r() < 0.5 ? -1 : 1) * PURSUIT_LANE * (0.2 + r() * 0.8);
 			const end = () => {
 				const ang = Math.atan2(m.at.y - pt.y, m.at.x - pt.x) + turn;
 				return {
@@ -2649,16 +2666,23 @@ class Action {
 				};
 			};
 			// (No sooner than he needs to be, or near enough: not stood off
-			// him, going along with him.)
+			// him, going along with him - in his lane, not all in single file
+			// on his heels.)
 			while (carrier && m.t + PURSUIT_STEP < arrive - 300) {
 				const c = m.t + PURSUIT_STEP;
 				const him = carrier.posAt(c + PURSUIT_LEAD);
+				const was = carrier.posAt(c + PURSUIT_LEAD - 100);
+				const goes = dist(him, was);
 				const off =
 					ring + (PURSUIT_RING - ring) * clamp((arrive - c) / 1500, 0, 1);
 				const a = Math.atan2(m.at.y - him.y, m.at.x - him.x);
+				const side = goes > 0.2 ? (lane * off) / PURSUIT_RING / goes : 0;
 				const need = (dist(m.at, end()) / (arrive - m.t)) * 1000;
 				m.chase(
-					{ x: him.x + Math.cos(a) * off, y: him.y + Math.sin(a) * off },
+					{
+						x: him.x + Math.cos(a) * off - (him.y - was.y) * side,
+						y: him.y + Math.sin(a) * off + (him.x - was.x) * side,
+					},
 					c,
 					clamp(need * PURSUIT_URGE, m.top * 0.45, m.top * PURSUIT_PACE),
 				);
@@ -3867,7 +3891,9 @@ class Action {
 		// before he is down.)
 		const offAt = (d: number) => {
 			const by = this.reachesAt(carrier, d - 3);
-			return by < t - 400 ? by + 150 : until;
+			return by < t - 400
+				? Math.min(t - 250, by + 150 + r() * OFF_SPREAD)
+				: until;
 		};
 
 		// The first step, all as one: across to the hole on zone, flat down
@@ -4964,10 +4990,11 @@ class Action {
 		if (this.done.has(k.pid)) {
 			return;
 		}
+		// (At a jog at most, from wherever he has got to.)
+		const to = this.w({ d: at.d * 0.45 + this.r() * 8, a: at.a * 0.4 });
 		k.go(
-			this.w({ d: at.d * 0.45 + this.r() * 8, a: at.a * 0.4 }),
-			Math.max(k.t + 600, until),
-			"jog",
+			to,
+			Math.max(k.t + 600, k.t + (dist(k.at, to) / KICKER_JOG) * 1000, until),
 		);
 	}
 
@@ -5408,9 +5435,16 @@ class Action {
 				this.ahead,
 			);
 		}
+		const edgers = this.d
+			.filter(
+				(m) =>
+					(m.role === "RUSH" || m.role === "CB") &&
+					Math.abs(this.of(m.at).a) > EDGE_A,
+			)
+			.sort((a, b) => Math.abs(this.of(a.at).a) - Math.abs(this.of(b.at).a));
 		for (const m of this.d) {
 			const s = this.of(m.at);
-			const edge = Math.abs(s.a) > 12;
+			const edge = Math.abs(s.a) > EDGE_A;
 			m.hold(snap + 40 + r() * 40);
 			if (m.role === "RUSH" && !edge) {
 				const b = this.acrossFrom(wall, s.a);
@@ -5424,16 +5458,31 @@ class Action {
 				m.chase(at(snap + 400), snap + 400, m.top * 0.9, "run");
 				m.go(at(held), held, "engage", this.behind);
 			} else if (m.role === "RUSH" || m.role === "CB") {
+				// Round the end of the wall and in at the kick: the man outside
+				// another wider round him, and in further back.
 				const side = Math.sign(s.a) || 1;
-				m.chase(
-					this.w({
-						d: spot.d + 13 + r() * 4,
-						a: spot.a + side * (7 + r() * 3),
-					}),
-					kickT - 150,
-					m.top * 0.95,
-					"sprint",
+				const k = edgers
+					.filter((x) => Math.sign(this.of(x.at).a) === side)
+					.indexOf(m);
+				const end = this.of(
+					wall.reduce((a, b) =>
+						side * this.of(b.at).a > side * this.of(a.at).a ? b : a,
+					).at,
 				);
+				const round = this.w({
+					d: end.d - 0.5,
+					a: end.a + side * (EDGE_ROUND + k * EDGE_STAGGER),
+				});
+				const block = this.w({
+					d: spot.d + EDGE_IN + k * EDGE_STAGGER + r() * 2,
+					a: spot.a + side * (EDGE_WIDE + k * EDGE_STAGGER + r() * 1.5),
+				});
+				const go = m.t;
+				const there = kickT - 150;
+				const first = dist(m.at, round);
+				const all = first + dist(round, block);
+				m.go(round, go + ((there - go) * first) / all, "sprint");
+				m.go(block, there, "sprint");
 				m.act("swat", kickT + 350, this.toward(m.at, this.w(spot)));
 			} else {
 				m.hold(kickT - 250);
