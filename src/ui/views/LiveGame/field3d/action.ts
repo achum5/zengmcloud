@@ -575,6 +575,14 @@ const DRIVEN_BACK = 0.55;
 const TO_THROW = 1500;
 const TO_THROW_YD = 45;
 const TO_THROW_SPREAD = 500;
+// A screen: this often a short completion is one, caught behind the line
+// (one that gains no more than this many yards), thrown this soon at the
+// soonest; the receivers on his side out onto the men coming up at him,
+// on them this long after the catch, give or take.
+const SCREEN = 0.14;
+const SCREEN_MOST = 12;
+const SCREEN_THROW = 750;
+const SCREEN_HOLD = 900;
 // Up for a ball at its highest, this often, thrown this deep at least
 // (feet past the quarterback) with no more than this far to go after it,
 // and a man on him (this near) or the end zone; how long he is up (ms), and
@@ -1291,15 +1299,17 @@ class Action {
 				this.w({ d: this.of(setAt).d + 1, a: this.of(setAt).a }),
 				catchPt,
 			);
-			const hold = tr.settles ? r() * 600 : 0;
+			const hold = tr.settles && tr.name !== "screen" ? r() * 600 : 0;
 			// (Not before he has had his time back there - longer, the deeper
 			// it goes.)
 			const least =
-				snap +
-				TO_THROW +
-				Math.max(0, airYds) * TO_THROW_YD +
-				r() * TO_THROW_SPREAD +
-				fl.ms;
+				tr.name === "screen"
+					? snap + SCREEN_THROW + r() * 300 + fl.ms
+					: snap +
+						TO_THROW +
+						Math.max(0, airYds) * TO_THROW_YD +
+						r() * TO_THROW_SPREAD +
+						fl.ms;
 			catchAt = Math.max(onTime, ready + 300 + fl.ms, least) + hold;
 			throwAt = catchAt - fl.ms;
 			this.runRoute(target, tr, go, catchAt);
@@ -1383,6 +1393,10 @@ class Action {
 			sacker && beaten ? [sacker, beaten] : undefined,
 		);
 
+		if (thrown && target && tr?.name === "screen") {
+			this.screenBlocks(target, runners, catchAt);
+		}
+
 		// And what came of it.
 		if (first === cmpI && thrown && target && catchPt) {
 			this.complete(cmpI, qb, target, catchPt, catchAt, gain);
@@ -1463,6 +1477,9 @@ class Action {
 		if (yds <= 0) {
 			return Math.max(-6, yds - Math.round(r() * 3));
 		}
+		if (yds <= SCREEN_MOST && r() < SCREEN) {
+			return -1 - Math.round(r() * 2);
+		}
 		if (yds <= 4) {
 			return yds - Math.round(r() * Math.min(yds, 3));
 		}
@@ -1470,6 +1487,62 @@ class Action {
 			return Math.round(5 + r() * 7);
 		}
 		return Math.max(1, Math.round(yds * (0.45 + 0.5 * r())));
+	}
+
+	// A screen out wide: the receivers on his side off their routes and out
+	// onto the men nearest where he catches it, there as it gets to him, and
+	// on them a moment after.
+	screenBlocks(target: Actor, runners: Actor[], catchAt: number) {
+		const { snap } = this.input;
+		const r = this.r;
+		const at = this.of(target.posAt(catchAt));
+		const side = Math.sign(at.a) || 1;
+		const mates = runners.filter(
+			(m) =>
+				m !== target &&
+				spotOf(m.role) !== "back" &&
+				Math.sign(this.of(m.posAt(snap)).a) === side,
+		);
+		const near = this.d
+			.filter((m) => !this.done.has(m.pid))
+			.sort(
+				(a, b) =>
+					dist(a.posAt(catchAt), this.w(at)) -
+					dist(b.posAt(catchAt), this.w(at)),
+			);
+		for (const b of mates.slice(0, 2)) {
+			const m = near.shift();
+			if (!m) {
+				return;
+			}
+			b.cut(snap + 200);
+			const fps = b.top * 0.9;
+			let meet: { t: number; at: Pt } | undefined;
+			for (let c = catchAt - 150; c <= catchAt + 900; c += 50) {
+				const p = this.of(m.posAt(c));
+				const to = this.w({ d: p.d - BLOCK_GAP, a: p.a });
+				if ((dist(b.at, to) / fps) * 1000 <= c - b.t) {
+					meet = { t: c, at: to };
+					break;
+				}
+			}
+			if (!meet) {
+				continue;
+			}
+			b.go(meet.at, meet.t);
+			m.cut(meet.t);
+			const p = this.of(m.at);
+			const end = catchAt + SCREEN_HOLD + r() * 500;
+			const give = 1 + r() * 2.5;
+			m.go(this.w({ d: p.d + give, a: p.a }), end, "engage", this.behind);
+			b.go(
+				this.w({ d: p.d + give - BLOCK_GAP, a: p.a }),
+				end,
+				"drive",
+				this.ahead,
+			);
+			b.hold(end + 400, "stand", this.ahead);
+		}
 	}
 
 	// How long a route takes him, out of his stance to `upto` feet along it
