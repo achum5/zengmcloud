@@ -2651,6 +2651,62 @@ describe("3D director", () => {
 		assert.strictEqual(long.length, 0, long.join(", "));
 	}, 240_000);
 
+	// Going up in close, whoever of theirs is right there goes up with him,
+	// arms high - not stood there in his slide while the shooter goes up
+	// through him. (About half of them did before.)
+	test("a man right there as a shot goes up in close goes up with it", () => {
+		const CLOSE = new Set([
+			"layup",
+			"fingerRoll",
+			"powerLayup",
+			"scoop",
+			"reverseLayup",
+			"floater",
+		]);
+		let near = 0;
+		const idle: string[] = [];
+		for (const seed of ["a", "b", "c"]) {
+			const { tl } = compile(seed, 150);
+			for (const tr of tl.tracks.values()) {
+				for (const a of tr.acts) {
+					if (!CLOSE.has(a.anim)) {
+						continue;
+					}
+					const fly = tl.ball.find(
+						(s) =>
+							s.kind === "fly" &&
+							"pid" in s.from &&
+							s.from.pid === tr.pid &&
+							s.t0 >= a.t0 &&
+							s.t0 <= a.t1,
+					);
+					if (!fly) {
+						continue;
+					}
+					const S = evalPlayer(tl, tr.pid, fly.t0);
+					for (const o of tl.tracks.values()) {
+						const q = evalPlayer(tl, o.pid, fly.t0);
+						if (
+							o.team === tr.team ||
+							!q.shown ||
+							Math.hypot(q.x - S.x, q.y - S.y) > 4.5
+						) {
+							continue;
+						}
+						near += 1;
+						if (
+							!o.acts.some((x) => x.t1 > fly.t0 - 300 && x.t0 < fly.t0 + 500)
+						) {
+							idle.push(`${seed} ${o.pid} at ${Math.round(fly.t0)}`);
+						}
+					}
+				}
+			}
+		}
+		assert.isAbove(near, 60);
+		assert.isAtMost(idle.length, near * 0.1, idle.join(", "));
+	}, 240_000);
+
 	test("a pull-up three off a ball screen comes off the screen first", () => {
 		let n = 0;
 		const stood: string[] = [];

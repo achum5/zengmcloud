@@ -1154,6 +1154,9 @@ const OPEN_LATE = 300;
 const ALONE_FT = 9;
 // A hand up at the shot from no farther off than this (feet).
 const CONTEST_FT = 6;
+// Anybody else of theirs this near (feet) a shot in close goes up with his
+// arms high (see shoot).
+const WALL_FT = 4.5;
 // How close (feet, middle to middle) two men get before they are into each
 // other: a screen, a post-up.
 const BODY = 1.85;
@@ -1689,6 +1692,9 @@ class Director {
 	private readonly marking = new Map<Move, number>();
 	// Shot fakes on the floor: who, when, and where.
 	private readonly fakes: { pid: number; t: number; at: Pt }[] = [];
+	// Shots in close, for whoever of theirs is right there to go up with his
+	// arms high (see wallUp).
+	private readonly walls: { shooter: number; release: number }[] = [];
 	// The little shoves of a battle for position (see jostle): cut short
 	// when he comes out of it (see letGo).
 	private readonly jostles = new Set<Move>();
@@ -10210,6 +10216,11 @@ class Director {
 						undefined,
 						close ? (drift ?? this.posOf(shooter)) : undefined,
 					);
+				}
+				// (Anybody else of theirs right there goes up with him - see
+				// wallUp.)
+				if (close || floater) {
+					this.walls.push({ shooter, release });
 				}
 			}
 			if (drift) {
@@ -21394,6 +21405,37 @@ class Director {
 	// is, once all their runs are worked out - comes up out of his stance
 	// for it: off his feet, if he bites (and is not on the move); a hand up,
 	// if he does not.
+	// Going up in close, the shooter has whoever of theirs is right there -
+	// the help stepped in, the big at the rim, the man who crashed in under
+	// it - going straight up with him, arms high: not stood there in his
+	// slide while the shooter goes up through him. (Here, once everybody's
+	// way there is laid out.)
+	private wallUp() {
+		for (const { shooter, release } of this.walls) {
+			const team = this.teamOf(shooter);
+			const S = this.posAt(shooter, release);
+			for (const tr of this.tracks.values()) {
+				if (
+					tr.team === team ||
+					dist(this.posAt(tr.pid, release), S) > WALL_FT ||
+					tr.acts.some((a) => a.t1 > release - 300 && a.t0 < release + 500)
+				) {
+					continue;
+				}
+				const D = this.posAt(tr.pid, release);
+				tr.acts.push({
+					t0: release - 120,
+					t1: release + 560,
+					anim: "contest",
+					look: { ...S },
+					jump: [0.15, 0.85, 0.9],
+					...(this.leftToBall(D, shooter, S) ? { mirror: true as const } : {}),
+				});
+				tr.acts.sort((a, b) => a.t0 - b.t0);
+			}
+		}
+	}
+
 	private biteOnFakes() {
 		for (const { pid, t, at } of this.fakes) {
 			const me = this.posAt(pid, t);
@@ -21591,6 +21633,7 @@ class Director {
 		this.keepClear();
 		this.aroundBodies();
 		this.biteOnFakes();
+		this.wallUp();
 		this.workHisMan();
 		this.joinUp();
 		// A fight for position or a box-out cut to a moment by what came
