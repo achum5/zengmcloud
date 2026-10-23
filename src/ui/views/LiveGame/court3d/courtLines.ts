@@ -1,4 +1,4 @@
-import { depthOf, project, type Camera } from "./camera.ts";
+import type { Camera } from "./camera.ts";
 import { COURT_H, COURT_W, type Pt } from "./geometry.ts";
 import { RIM_INSET } from "../courtSpots.ts";
 
@@ -201,9 +201,56 @@ const outline = (s: Strip, w: number): { left: Pt[]; right: Pt[] } => {
 
 const OUTLINES = STRIPS.map((s) => ({ strip: s, ...outline(s, LINE_W) }));
 
-// A strip reaching back behind the camera can't be drawn.
-const inFront = (cam: Camera, p: Pt) =>
-	depthOf(cam, { x: p.x, y: p.y, z: 0 }) > 1;
+// THE FLOOR'S POINTS ONTO THE PICTURE, a thousand-odd a frame: worked out
+// as project does it for a point on the floor, into a buffer kept for it -
+// not an object made for every point every frame, for the page to clear
+// away after (a quarter of a megabyte a frame, here alone). Nothing if a
+// point is behind the camera, or right up against it (`front`): a strip
+// reaching back behind the camera can't be drawn.
+const buffers = [0, 1, 2].map(() => new Float64Array(0));
+const onPicture = (
+	cam: Camera,
+	pts: readonly Pt[],
+	which: number,
+	front: boolean,
+): Float64Array | undefined => {
+	let out = buffers[which]!;
+	if (out.length < pts.length * 2) {
+		out = new Float64Array(pts.length * 4);
+		buffers[which] = out;
+	}
+	const { pos, right, up, fwd, f, cx, cy } = cam;
+	const dz = -pos.z;
+	for (let i = 0; i < pts.length; i++) {
+		const p = pts[i]!;
+		const dx = p.x - pos.x;
+		const dy = p.y - pos.y;
+		const depth = dx * fwd.x + dy * fwd.y + dz * fwd.z;
+		if (front && !(depth > 1)) {
+			return undefined;
+		}
+		const k = f / Math.max(0.5, depth);
+		out[i * 2] = cx + (dx * right.x + dy * right.y + dz * right.z) * k;
+		out[i * 2 + 1] = cy - (dx * up.x + dy * up.y + dz * up.z) * k;
+	}
+	return out;
+};
+// Along the first `n` points in a buffer (or back along them).
+const trace = (
+	ctx: CanvasRenderingContext2D,
+	b: Float64Array,
+	n: number,
+	reverse = false,
+) => {
+	for (let j = 0; j < n; j++) {
+		const i = reverse ? n - 1 - j : j;
+		if (j === 0 && !reverse) {
+			ctx.moveTo(b[i * 2]!, b[i * 2 + 1]!);
+		} else {
+			ctx.lineTo(b[i * 2]!, b[i * 2 + 1]!);
+		}
+	}
+};
 
 export const drawCourtLines = (
 	ctx: CanvasRenderingContext2D,
@@ -217,30 +264,23 @@ export const drawCourtLines = (
 	ctx.lineJoin = "round";
 	ctx.lineCap = "round";
 	for (const { strip, left, right } of OUTLINES) {
-		if (!strip.pts.every((p) => inFront(cam, p))) {
+		const C = onPicture(cam, strip.pts, 0, true);
+		if (!C) {
 			continue;
 		}
-		const L = left.map((p) => project(cam, { x: p.x, y: p.y, z: 0 }));
-		const R = right.map((p) => project(cam, { x: p.x, y: p.y, z: 0 }));
+		const L = onPicture(cam, left, 1, false)!;
+		const R = onPicture(cam, right, 2, false)!;
 		// The paint itself, at its true width.
 		ctx.beginPath();
 		if (strip.closed) {
-			L.forEach((p, i) =>
-				i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y),
-			);
+			trace(ctx, L, left.length);
 			ctx.closePath();
-			R.forEach((p, i) =>
-				i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y),
-			);
+			trace(ctx, R, right.length);
 			ctx.closePath();
 			ctx.fill("evenodd");
 		} else {
-			L.forEach((p, i) =>
-				i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y),
-			);
-			for (let i = R.length - 1; i >= 0; i--) {
-				ctx.lineTo(R[i]!.x, R[i]!.y);
-			}
+			trace(ctx, L, left.length);
+			trace(ctx, R, right.length, true);
 			ctx.closePath();
 			ctx.fill();
 		}
@@ -248,14 +288,7 @@ export const drawCourtLines = (
 		// still there.
 		ctx.lineWidth = 1;
 		ctx.beginPath();
-		strip.pts.forEach((p, i) => {
-			const q = project(cam, { x: p.x, y: p.y, z: 0 });
-			if (i === 0) {
-				ctx.moveTo(q.x, q.y);
-			} else {
-				ctx.lineTo(q.x, q.y);
-			}
-		});
+		trace(ctx, C, strip.pts.length);
 		if (strip.closed) {
 			ctx.closePath();
 		}
