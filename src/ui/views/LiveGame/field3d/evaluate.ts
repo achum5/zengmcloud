@@ -7,8 +7,23 @@ import type {
 	Play,
 } from "./director.ts";
 import type { Pt3, Side } from "./geometry.ts";
-import { along, goes, lagged, paceAt, placeAt } from "./pace.ts";
-import { liftOf, loopRate, moveKind, strideOf, type Move } from "./poses.ts";
+import {
+	along,
+	goes,
+	lagged,
+	placeAt,
+	TRACK_MS,
+	trackLength,
+	trackOf,
+} from "./pace.ts";
+import {
+	beatOf,
+	liftOf,
+	loopRate,
+	moveKind,
+	strideOf,
+	type Move,
+} from "./poses.ts";
 import type { FieldPlayerState } from "./sprite.ts";
 
 // THE FIELD AT ONE MOMENT: where everybody is and what each is doing, read
@@ -82,19 +97,11 @@ const yawOf = (l: Leg, before: number): number =>
 	l.yaw ??
 	(goes(l) ? Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x) : before);
 
-const lengthOf = (l: Leg) => Math.hypot(l.to.x - l.from.x, l.to.y - l.from.y);
-
-// How far through his move he is: a stride cycle by the ground covered -
-// carried on from the legs before it, so his feet keep their rhythm from
-// one stretch to the next (and each man a step out of time with the
-// next) - an act by the time (or its share of the act, cut in two).
-const phaseOf = (
-	l: Leg,
-	t: number,
-	offset: number,
-	before = 0,
-	u = along(l, t),
-): number => {
+// How far through his move he is: a stride cycle as far round his strides
+// as he has come (see stridesOf - each man a step out of time with the
+// next), an act by the time (or its share of the act, cut in two), a loop
+// by the clock.
+const phaseOf = (l: Leg, t: number, offset: number, strides = 0): number => {
 	const kind = moveKind(l.move);
 	if (kind === "still") {
 		return 0;
@@ -106,7 +113,114 @@ const phaseOf = (
 	if (kind === "loop") {
 		return (t / 1000) * loopRate(l.move) + offset;
 	}
-	return (before + lengthOf(l) * u) / strideOf(l.move) + offset;
+	return strides + offset;
+};
+
+// HIS STRIDES, worked out step by step through the play (every TRACK_MS,
+// once for his legs as they are - see trackOf): how far round them he is -
+// by the ground he covers, carried on from one stretch to the next so his
+// feet keep their rhythm, held while he does anything else - and how long
+// they are, as a share of a full one. Getting going, or pulling up, short
+// quick steps (see court3d/poses.ts shortSteps): below the pace a full
+// stride makes at its gait's beat, each that much shorter (no shorter than
+// LEN_MIN, and no quicker round than BEAT_MOST a second), by his pace over
+// PACE_MS either side, changing no quicker than LEN_RATE a second.
+const LEN_MIN = 0.1;
+// (As good as a full one.)
+const LEN_FULL = 0.98;
+const BEAT_MOST = 2.6;
+const PACE_MS = 100;
+const LEN_RATE = 6;
+type Strides = { t0: number; ph: Float32Array; len: Float32Array };
+const strided = new WeakMap<
+	Leg[],
+	{ n: number; t0: number; s: Strides | undefined }
+>();
+const cycles = (l: Leg | undefined) =>
+	l !== undefined && moveKind(l.move) === "cycle";
+const stridesOf = (legs: Leg[], t0: number, n: number): Strides | undefined => {
+	const had = strided.get(legs);
+	if (
+		had &&
+		had.n === legs.length &&
+		had.t0 === t0 &&
+		(!had.s || had.s.ph.length === n)
+	) {
+		return had.s;
+	}
+	if (!legs.some(cycles)) {
+		strided.set(legs, { n: legs.length, t0, s: undefined });
+		return undefined;
+	}
+	// (Striding on his own leg, pulling up from the one before it, or
+	// getting going on the next.)
+	const tr = trackOf(legs, t0, n);
+	const strideOn = legs.map((l) => (cycles(l) ? strideOf(l.move) : 0));
+	const beatOn = legs.map((l) => beatOf(l.move));
+	const gaitAt = (i: number) => {
+		const k = tr.late[i]!;
+		const on = tr.on[i]!;
+		return strideOn[k]! > 0 ? k : strideOn[on]! > 0 ? on : -1;
+	};
+	const gone = new Float64Array(n);
+	for (let i = 1; i < n; i++) {
+		const dx = tr.xs[i]! - tr.xs[i - 1]!;
+		const dy = tr.ys[i]! - tr.ys[i - 1]!;
+		gone[i] = gone[i - 1]! + Math.sqrt(dx * dx + dy * dy);
+	}
+	const ph = new Float32Array(n);
+	const len = new Float32Array(n);
+	const first = strideOn.findIndex((x) => x > 0);
+	let stride = first >= 0 ? strideOn[first]! : 1;
+	let beat = first >= 0 ? beatOn[first]! : 0;
+	let p = 0;
+	let l = LEN_MIN;
+	const dt = TRACK_MS / 1000;
+	const w = Math.max(1, Math.round(PACE_MS / TRACK_MS));
+	for (let i = 0; i < n; i++) {
+		const j = gaitAt(i);
+		if (j >= 0) {
+			stride = strideOn[j]!;
+			beat = beatOn[j]!;
+		}
+		const lo = Math.max(0, i - w);
+		const hi = Math.min(n - 1, i + w);
+		const v = hi > lo ? (gone[hi]! - gone[lo]!) / ((hi - lo) * dt) : 0;
+		const want =
+			beat > 0 ? Math.min(1, Math.max(LEN_MIN, v / (beat * stride))) : 1;
+		l =
+			i === 0
+				? want
+				: l + Math.min(LEN_RATE * dt, Math.max(-LEN_RATE * dt, want - l));
+		if (i > 0 && j >= 0) {
+			const d = gone[i]! - gone[i - 1]!;
+			if (beat > 0) {
+				const most = Math.max(BEAT_MOST * dt, d / stride);
+				if (d / (stride * l) > most) {
+					l = d / (stride * most);
+				}
+				p += d / (stride * l);
+			} else {
+				p += d / stride;
+			}
+		}
+		ph[i] = p;
+		len[i] = l;
+	}
+	const s = { t0, ph, len };
+	strided.set(legs, { n: legs.length, t0, s });
+	return s;
+};
+// How far round his strides he is at t, and how long they are.
+const strideAt = (s: Strides, t: number): { ph: number; len: number } => {
+	const n = s.ph.length;
+	const f = Math.min(n - 1, Math.max(0, (t - s.t0) / TRACK_MS));
+	const i = Math.min(n - 2, Math.floor(f));
+	const u = f - i;
+	return {
+		ph: s.ph[i]! + (s.ph[i + 1]! - s.ph[i]!) * u,
+		len: s.len[i]! + (s.len[i + 1]! - s.len[i]!) * u,
+	};
 };
 
 // How far his arms are through an act of their own (see Leg.arms).
@@ -178,7 +292,7 @@ const handsMet = (
 			seg?.kind === "held"
 				? play.parts.find((p) => p.pid === seg.pid)
 				: undefined;
-		const st = part ? stateOf(part, t, apart) : undefined;
+		const st = part ? stateOf(part, t, apart, play) : undefined;
 		const hold =
 			seg?.kind === "held" ? holdNear(play, seg.pid, t, thrown) : undefined;
 		const at =
@@ -365,6 +479,7 @@ const stateOf = (
 	part: { pid: number; team: Side; legs: Leg[] },
 	now: number,
 	apart: Map<number, Sep[]>,
+	play: Play,
 ): FieldPlayerState | undefined => {
 	const legs = part.legs;
 	if (legs.length === 0) {
@@ -376,15 +491,16 @@ const stateOf = (
 	const k = lastStarted(legs, t, (l) => l.t0);
 	const l = legs[k]!;
 	const offset = (part.pid * 0.618) % 1;
-	// (Into a stand, still pulling up from the stretch before.)
-	const { x, y, on, u: eased } = placeAt(legs, k, t);
-	const pulling = on !== k;
-	const at = { x, y };
+	const at = placeAt(legs, k, t);
 	const aside = apartAt(apart.get(part.pid), now);
 	if (aside) {
 		at.x += aside.x;
 		at.y += aside.y;
 	}
+	// How far round his strides he is, and a moment on.
+	const strides = stridesOf(legs, play.t0, trackLength(play.t0, play.t1));
+	const stride = strides ? strideAt(strides, now) : { ph: 0, len: 1 };
+	const ahead = strides ? strideAt(strides, now + RATE_MS).ph : 0;
 	// The leg he last changed what he was doing at (on through any more of
 	// it since), for him to be eased out of what he was before it - and, that
 	// one too short for him to have been eased all the way into it, the one
@@ -405,15 +521,11 @@ const stateOf = (
 		c2 > 0 && changed(legs[c2 - 1]!, legs[c2]!)
 			? 1 - (legs[c]!.t0 - legs[c2]!.t0) / blendOf(legs[c2]!)
 			: 0;
-	// The way he faced coming into this leg, and how far he had come in
-	// strides (and before the leg he is eased out of).
+	// The way he faced coming into this leg.
 	// (And the way he was drawn facing as it started: a leg too short for
 	// his turn into it to be done, still turning.)
 	let before = legs[0]!.yaw ?? 0;
 	let turned = before;
-	let ran = 0;
-	let ranBefore = 0;
-	let ranUnder = 0;
 	for (let j = 0; j < k; j++) {
 		const lj = legs[j]!;
 		const aim = yawOf(lj, before);
@@ -422,13 +534,6 @@ const stateOf = (
 			j > 0 && lj.t1 - lj.t0 < TURN_MS
 				? lerpAngle(turned, before, (lj.t1 - lj.t0) / TURN_MS)
 				: before;
-		if (j === c - 1) {
-			ranBefore = ran;
-		}
-		if (j === c2 - 1) {
-			ranUnder = ran;
-		}
-		ran = moveKind(lj.move) === "cycle" ? ran + lengthOf(lj) : 0;
 	}
 	let yaw = yawOf(l, before) + (l.turn ?? 0) * along(l, t);
 	const since = t - l.t0;
@@ -437,40 +542,38 @@ const stateOf = (
 		yaw = lerpAngle(turned, yaw, clamp01(since / TURN_MS));
 	}
 	// (Just changed what he is doing, his arms, or how he has the ball:
-	// eased out of what he was, his feet - the same stride - kept in
-	// step.)
+	// eased out of what he was - his strides, if it was a stride, going on
+	// round in step with these; anything else, as it was when it ended.)
 	let from: FieldPlayerState["from"];
 	const prior = c > 0 ? legs[c - 1]! : undefined;
+	const wasOf = (u: Leg) =>
+		cycles(u) ? phaseOf(u, t, offset, stride.ph) : phaseOf(u, u.t1, offset);
 	// (What he was before that, as he was when it ended.)
-	const underOf = (u: Leg, ranTo: number, w: number) => ({
+	const underOf = (u: Leg, w: number) => ({
 		move: u.move as Move,
-		phase: phaseOf(u, u.t1, offset, ranTo),
+		phase: wasOf(u),
 		...(u.mirrored ? { mirrored: true } : {}),
 		w,
 		...(u.arms ? { arms: { move: u.arms, phase: armsPhaseOf(u, u.t1) } } : {}),
 	});
+	const phase = phaseOf(l, t, offset, stride.ph);
 	const blended = t - legs[c]!.t0;
 	const blending = blendOf(legs[c]!);
 	if (prior && blended < blending && changed(legs[c - 1]!, legs[c]!)) {
-		const striding = prior.move === l.move && moveKind(l.move) === "cycle";
-		const wasAt = (at: number, u: number) =>
-			striding
-				? phaseOf(l, at, offset, ran, u)
-				: pulling && c === k
-					? phaseOf(prior, at, offset, ranBefore, u)
-					: phaseOf(prior, prior.t1, offset, ranBefore);
 		// (And how fast each goes through its frames, a moment on.)
-		const ahead = paceAt(legs, k, t + RATE_MS).u;
-		const was = wasAt(t, eased);
+		const was = wasOf(prior);
+		const rateOf = (u: Leg, now: number) =>
+			cycles(u)
+				? (ahead - stride.ph) / RATE_MS
+				: u === l
+					? (phaseOf(u, t + RATE_MS, offset) - now) / RATE_MS
+					: 0;
 		from = {
 			move: prior.move as Move,
 			phase: was,
 			rate: {
-				move:
-					(phaseOf(l, t + RATE_MS, offset, ran, ahead) -
-						phaseOf(l, t, offset, ran, eased)) /
-					RATE_MS,
-				from: (wasAt(t + RATE_MS, ahead) - was) / RATE_MS,
+				move: rateOf(l, phase),
+				from: rateOf(prior, was),
 				w: 1 / blending,
 			},
 			...(prior.mirrored ? { mirrored: true } : {}),
@@ -479,19 +582,24 @@ const stateOf = (
 				? { arms: { move: prior.arms, phase: armsPhaseOf(prior, prior.t1) } }
 				: {}),
 			...(prior.ball ? { ball: prior.ball } : {}),
-			...(left > 0 ? { under: underOf(legs[c2 - 1]!, ranUnder, left) } : {}),
+			...(left > 0 ? { under: underOf(legs[c2 - 1]!, left) } : {}),
 		};
 	}
+	// (Short steps, if he is striding - or just was.)
+	const short =
+		stride.len < LEN_FULL &&
+		(beatOf(l.move) > 0 || (from !== undefined && beatOf(from.move) > 0));
 	return {
 		id: part.pid,
 		team: part.team,
 		x: at.x,
 		y: at.y,
-		z: liftOf(l.move, phaseOf(l, t, offset, ran, eased)),
+		z: liftOf(l.move, phase),
 		yaw,
 		move: l.move,
-		phase: phaseOf(l, t, offset, ran, eased),
+		phase,
 		...(l.mirrored ? { mirrored: true } : {}),
+		...(short ? { len: stride.len } : {}),
 		...(from ? { from } : {}),
 		...(l.ball ? { ball: l.ball } : {}),
 		...(l.arms ? { arms: { move: l.arms, phase: armsPhaseOf(l, t) } } : {}),
@@ -519,7 +627,7 @@ export const momentAt = (
 		...(play.coaches ?? []),
 		...(play.toss && t < play.toss.cut ? play.toss.men : []),
 	]) {
-		const st = stateOf(part, t, apart);
+		const st = stateOf(part, t, apart, play);
 		if (st) {
 			players.push(st);
 		}

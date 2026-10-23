@@ -1,9 +1,13 @@
 import {
 	ANIMS,
+	bounceAt,
 	lerpPose,
 	mirror,
 	poseAt,
+	shortLift,
+	shortSteps,
 	skeleton,
+	stepBeat,
 	type AnimName,
 	type Body,
 	type Pose,
@@ -3174,22 +3178,38 @@ export const loopRate = (m: Move): number => {
 	return a?.kind === "loop" ? a.fps / a.n : 0;
 };
 
-// How long a stride of a cycle is (feet).
+// How long a stride of a cycle is (feet). (The court's, a little longer
+// for a man drawn bigger - his foot down staying put on the turf.)
+const COURT_STRIDE = 1.1;
 export const strideOf = (m: Move): number => {
 	if (isCourtMove(m)) {
 		const a = ANIMS[m as AnimName];
-		return a.kind === "cycle" ? a.stride : 5;
+		return a.kind === "cycle" ? a.stride * COURT_STRIDE : 5;
 	}
 	const a = FIELD_ANIMS[m] as FieldAnim;
 	return a.kind === "cycle" ? a.stride : 5;
 };
 
+// The beat a gait's strides keep going slowly (strides a second - see
+// court3d/poses.ts shortSteps); none, for steps that keep none.
+export const beatOf = (m: Move): number =>
+	isCourtMove(m) ? stepBeat(m as AnimName) : 0;
+
 // The pose partway through a move: an act from start (0) to finish (1), a
 // loop or a cycle through one turn - mirrored, if he does it left-handed.
-export const poseOfMove = (m: Move, phase: number, mirrored = false): Pose => {
+// (A gait's strides `len` of a full one: short steps.)
+export const poseOfMove = (
+	m: Move,
+	phase: number,
+	mirrored = false,
+	len = 1,
+): Pose => {
 	let q: Pose;
 	if (isCourtMove(m)) {
 		q = poseAt(m as AnimName, phase);
+		if (len < 1) {
+			q = shortSteps(q, m as AnimName, [len, len], phase);
+		}
 	} else {
 		const a = FIELD_ANIMS[m] as FieldAnim;
 		if (a.kind === "still") {
@@ -3220,6 +3240,16 @@ export const handsMeet = (
 		turn: Math.atan2(-hand.s, hand.f),
 	};
 };
+
+// How far off the turf his strides take him partway through a move (feet,
+// as the court has it): running, between one foot and the next; walking,
+// up on his toes.
+export const strideLift = (m: Move, phase: number, len = 1): number =>
+	!isCourtMove(m)
+		? 0
+		: len < 1
+			? shortLift(m as AnimName, [len, len], phase)
+			: bounceAt(m as AnimName, phase);
 
 // How far off the turf he is partway through a move (feet): up off both
 // feet in a leap, a chest bump - laid out on top of a pile, this high.

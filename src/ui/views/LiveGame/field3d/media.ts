@@ -16,7 +16,7 @@ import {
 } from "./geometry.ts";
 import { poseOfMove, withArms, type Move } from "./poses.ts";
 import { bodyPoint } from "./sculpt.ts";
-import type { FieldPlayerState } from "./sprite.ts";
+import { drawnLift, type FieldPlayerState } from "./sprite.ts";
 
 // THE PHOTOGRAPHERS: along each sideline past the team areas, back behind
 // the limit line, and in a row behind each end line - down on a knee or on
@@ -199,7 +199,7 @@ export const cameraGear = (
 	states.map((st) => {
 		const up = st.arms?.move === "shoot";
 		const h = holdOf(bodyOf(st.id), st.move, up);
-		const placed = { x: st.x, y: st.y, z: st.z, yaw: st.yaw };
+		const placed = { x: st.x, y: st.y, z: drawnLift(st), yaw: st.yaw };
 		const at = bodyPoint(placed, h.at);
 		// (Out ahead of him, a touch down; or hung straight down.)
 		const end = bodyPoint(
@@ -282,7 +282,7 @@ export const tvCameraGear = (
 			continue;
 		}
 		const s = shoulderOf(bodyOf(st.id));
-		const placed = { x: st.x, y: st.y, z: st.z, yaw: st.yaw };
+		const placed = { x: st.x, y: st.y, z: drawnLift(st), yaw: st.yaw };
 		const back = bodyPoint(placed, { ...s, f: s.f - TV_BACK });
 		const front = bodyPoint(placed, { ...s, f: s.f - TV_BACK + TV_FT });
 		const lens = bodyPoint(placed, {

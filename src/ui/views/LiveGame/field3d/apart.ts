@@ -1,5 +1,5 @@
 import type { Leg, Play } from "./director.ts";
-import { lagged, offsOf, paceOf, placeAt } from "./pace.ts";
+import { TRACK_MS, trackLength, trackOf } from "./pace.ts";
 import type { Move } from "./poses.ts";
 
 // KEPT OFF EACH OTHER: never one man drawn standing in another. However the
@@ -14,7 +14,7 @@ import type { Move } from "./poses.ts";
 // Worked out once a play, the first time it is looked at.
 
 // Every this long (ms) along the play, how far over each man is (feet).
-export const SEP_MS = 50;
+export const SEP_MS = TRACK_MS;
 export type Sep = { t0: number; dx: Float32Array; dy: Float32Array };
 
 // Center to center, no nearer (feet); how many goes at it; smoothed over
@@ -102,11 +102,18 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 	const crew = new Set(play.crew);
 	const official = men.map((m) => crew.has(m as (typeof play.crew)[number]));
 	const t0 = play.t0;
-	const n = Math.max(1, Math.ceil((play.t1 - t0) / SEP_MS) + 1);
-	const xs = men.map(() => new Float32Array(n));
-	const ys = men.map(() => new Float32Array(n));
-	const free = men.map(() => new Uint8Array(n));
-	men.forEach((m, i) => sample(m, t0, n, xs[i]!, ys[i]!, free[i]!));
+	const n = trackLength(t0, play.t1);
+	const tracks = men.map((m) => trackOf(m.legs, t0, n));
+	const xs = tracks.map((tr) => tr.xs.slice());
+	const ys = tracks.map((tr) => tr.ys);
+	const free = men.map((m, i) => {
+		const k = tracks[i]!.k;
+		const out = new Uint8Array(n);
+		for (let s = 0; s < n; s++) {
+			out[s] = touching(m.legs[k[s]!]!) ? 0 : 1;
+		}
+		return out;
+	});
 	// (The captains out for the coin toss gone once it is done.)
 	const toss = play.toss;
 	if (toss) {
@@ -143,30 +150,50 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 
 	const dx = men.map(() => new Float32Array(n));
 	const dy = men.map(() => new Float32Array(n));
+	// (After the first go, only those moved since they were last looked at:
+	// the rest are where they were, and were apart then.)
+	const m = men.length;
+	let was = new Uint8Array(m);
+	let now = new Uint8Array(m);
+	// (Where each is, moved over so far, and whether he can be.)
+	const px = new Float64Array(m);
+	const py = new Float64Array(m);
+	const fr = new Uint8Array(m);
 	for (let s = 0; s < n; s++) {
+		for (let i = 0; i < m; i++) {
+			px[i] = xs[i]![s]!;
+			py[i] = ys[i]![s]!;
+			fr[i] = free[i]![s]!;
+		}
 		for (let round = 0; round < ROUNDS; round++) {
 			let moved = false;
-			for (let i = 0; i < men.length; i++) {
-				const fi = free[i]![s]!;
-				for (let j = i + 1; j < men.length; j++) {
-					const fj = free[j]![s]!;
+			[was, now] = [now, was];
+			now.fill(0);
+			for (let i = 0; i < m; i++) {
+				const fi = fr[i]!;
+				for (let j = i + 1; j < m; j++) {
+					const fj = fr[j]!;
 					if (!fi && !fj) {
 						continue;
 					}
-					const ax = xs[i]![s]! + dx[i]![s]!;
-					const bx = xs[j]![s]! + dx[j]![s]!;
-					if (Math.abs(ax - bx) >= APART) {
+					if (round > 0 && !was[i] && !was[j] && !now[i] && !now[j]) {
 						continue;
 					}
-					const ay = ys[i]![s]! + dy[i]![s]!;
-					const by = ys[j]![s]! + dy[j]![s]!;
-					const d = Math.hypot(ax - bx, ay - by);
+					const ex = px[i]! - px[j]!;
+					if (ex >= APART || ex <= -APART) {
+						continue;
+					}
+					const ey = py[i]! - py[j]!;
+					if (ey >= APART || ey <= -APART) {
+						continue;
+					}
+					const d = Math.sqrt(ex * ex + ey * ey);
 					if (d >= APART) {
 						continue;
 					}
 					// (Right on top of each other: apart across the field.)
-					const ux = d > 1e-3 ? (ax - bx) / d : 0;
-					const uy = d > 1e-3 ? (ay - by) / d : 1;
+					const ux = d > 1e-3 ? ex / d : 0;
+					const uy = d > 1e-3 ? ey / d : 1;
 					// (Each half the way - or, the other where he has to be, or
 					// a player, the whole way himself.)
 					const push = APART - d;
@@ -181,6 +208,12 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 					iy[s] = iy[s]! + uy * push * wi;
 					jx[s] = jx[s]! - ux * push * (1 - wi);
 					jy[s] = jy[s]! - uy * push * (1 - wi);
+					px[i] = xs[i]![s]! + ix[s]!;
+					py[i] = ys[i]![s]! + iy[s]!;
+					px[j] = xs[j]![s]! + jx[s]!;
+					py[j] = ys[j]![s]! + jy[s]!;
+					now[i] = 1;
+					now[j] = 1;
 					moved = true;
 				}
 			}
@@ -220,46 +253,6 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 		}
 	});
 	return out;
-};
-
-// Where he is every SEP_MS from t0 (his legs as they go, at his pace), and whether he
-// is free to be moved over.
-const sample = (
-	m: { legs: Leg[] },
-	t0: number,
-	n: number,
-	xs: Float32Array,
-	ys: Float32Array,
-	free: Uint8Array,
-) => {
-	const legs = m.legs;
-	let k = 0;
-	let before = paceOf(legs, -1);
-	let pace = paceOf(legs, 0);
-	let after = paceOf(legs, 1);
-	const off = offsOf(legs);
-	for (let s = 0; s < n; s++) {
-		const t = t0 + s * SEP_MS;
-		while (k + 1 < legs.length && legs[k + 1]!.t0 <= t) {
-			k++;
-			before = pace;
-			pace = after;
-			after = paceOf(legs, k + 1);
-		}
-		// (Just off his stance, a moment behind.)
-		const late = lagged(legs, t, off);
-		let kl = k;
-		while (kl > 0 && legs[kl]!.t0 > late) {
-			kl--;
-		}
-		const at =
-			kl === k
-				? placeAt(legs, k, late, pace, before, after)
-				: placeAt(legs, kl, late);
-		xs[s] = at.x;
-		ys[s] = at.y;
-		free[s] = touching(legs[k]!) ? 0 : 1;
-	}
 };
 
 // Each sample the mean of those either side of it.

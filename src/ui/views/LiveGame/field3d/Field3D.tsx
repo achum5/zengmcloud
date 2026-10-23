@@ -88,7 +88,7 @@ import {
 	tvCameraGear,
 } from "./media.ts";
 import { tvCrewFor } from "./tv.ts";
-import { drawFieldPlayer, drawnBall } from "./sprite.ts";
+import { drawFieldPlayer, drawnBall, drawnLift } from "./sprite.ts";
 import { drawTags, type TagCover } from "./tags.ts";
 import { showerGear } from "./shower.ts";
 import { chainGear } from "./sticks.ts";
@@ -170,7 +170,7 @@ const handsOfFor =
 			return undefined;
 		}
 		const at = bodyPoint(
-			{ x: st.x, y: st.y, z: st.z * FIGURE_SCALE, yaw: drawn.yaw },
+			{ x: st.x, y: st.y, z: drawnLift(st, fine()), yaw: drawn.yaw },
 			drawn.ball.at,
 		);
 		return { x: at.x, y: at.y, z: at.z / FIGURE_SCALE };

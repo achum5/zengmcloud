@@ -262,3 +262,85 @@ const rounded = (
 	at.x = ax + (bx - ax) * s;
 	at.y = ay + (by - ay) * s;
 };
+
+// WHERE HE IS EVERY TRACK_MS through a play, as placeAt has him (n times,
+// from t0): and the leg he is on then, by the play's time (`k`) and by the
+// time the play has him at (`late` - see lagged), and the one his feet are
+// on (`on`). Worked out once for his legs as they are.
+export const TRACK_MS = 50;
+export type Track = {
+	t0: number;
+	xs: Float32Array;
+	ys: Float32Array;
+	k: Int32Array;
+	late: Int32Array;
+	on: Int32Array;
+};
+export const trackLength = (t0: number, t1: number) =>
+	Math.max(2, Math.ceil((t1 - t0) / TRACK_MS) + 1);
+const tracks = new WeakMap<Leg[], { n: number; tr: Track }>();
+export const trackOf = (legs: Leg[], t0: number, n: number): Track => {
+	const had = tracks.get(legs);
+	if (
+		had &&
+		had.n === legs.length &&
+		had.tr.t0 === t0 &&
+		had.tr.xs.length === n
+	) {
+		return had.tr;
+	}
+	const tr: Track = {
+		t0,
+		xs: new Float32Array(n),
+		ys: new Float32Array(n),
+		k: new Int32Array(n),
+		late: new Int32Array(n),
+		on: new Int32Array(n),
+	};
+	let k = 0;
+	let before = paceOf(legs, -1);
+	let pace = paceOf(legs, 0);
+	let after = paceOf(legs, 1);
+	const off = offsOf(legs);
+	for (let s = 0; s < n; s++) {
+		const t = t0 + s * TRACK_MS;
+		while (k + 1 < legs.length && legs[k + 1]!.t0 <= t) {
+			k++;
+			before = pace;
+			pace = after;
+			after = paceOf(legs, k + 1);
+		}
+		// (Just off his stance, a moment behind.)
+		const late = lagged(legs, t, off);
+		let kl = k;
+		while (kl > 0 && legs[kl]!.t0 > late) {
+			kl--;
+		}
+		tr.k[s] = k;
+		tr.late[s] = kl;
+		// (Stood where he is, not pulling up into it nor getting going from
+		// it: there.)
+		const l = legs[k]!;
+		const next = legs[k + 1];
+		if (
+			kl === k &&
+			!goes(l) &&
+			late >= l.t0 + before.stop &&
+			!(next && late >= next.t0 - after.early)
+		) {
+			tr.xs[s] = l.from.x;
+			tr.ys[s] = l.from.y;
+			tr.on[s] = k;
+			continue;
+		}
+		const at =
+			kl === k
+				? placeAt(legs, k, late, pace, before, after)
+				: placeAt(legs, kl, late);
+		tr.xs[s] = at.x;
+		tr.ys[s] = at.y;
+		tr.on[s] = at.on;
+	}
+	tracks.set(legs, { n: legs.length, tr });
+	return tr;
+};

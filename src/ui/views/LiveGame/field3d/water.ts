@@ -4,7 +4,7 @@ import { FIGURE_SCALE } from "./body.ts";
 import type { Pt3 } from "./geometry.ts";
 import { poseOfMove, withArms } from "./poses.ts";
 import { bodyPoint } from "./sculpt.ts";
-import type { FieldPlayerState } from "./sprite.ts";
+import { drawnLift, type FieldPlayerState } from "./sprite.ts";
 
 // THE WATER AT A TIMEOUT, as the camera sees it: a bottle in the hand of a
 // man taking a drink, up over his face mask; and a trainer's carrier of
@@ -76,7 +76,7 @@ export const waterGear = (
 			continue;
 		}
 		const { hand, mouth } = handOf(bodyOf(st.id), st);
-		const placed = { x: st.x, y: st.y, z: st.z, yaw: st.yaw };
+		const placed = { x: st.x, y: st.y, z: drawnLift(st), yaw: st.yaw };
 		if (drinking) {
 			// (Its spout to his mouth.)
 			const d = {

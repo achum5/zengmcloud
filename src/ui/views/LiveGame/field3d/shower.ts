@@ -8,7 +8,7 @@ import type { FieldMoment } from "./evaluate.ts";
 import { FIELD_W, type Pt, type Pt3, type Side } from "./geometry.ts";
 import { poseOfMove, type Move } from "./poses.ts";
 import { bodyPoint } from "./sculpt.ts";
-import { drawnPose, type FieldPlayerState } from "./sprite.ts";
+import { drawnLift, drawnPose, type FieldPlayerState } from "./sprite.ts";
 
 // THE SHOWER. The game won, with no doubt about it by the end - and two of
 // the winners' men off the field creep up behind their head coach with the
@@ -260,7 +260,7 @@ const handOf = (
 	const { pose, yaw } = drawnPose(st, fine);
 	const sk = skeleton(body, pose);
 	return bodyPoint(
-		{ x: st.x, y: st.y, z: st.z, yaw },
+		{ x: st.x, y: st.y, z: drawnLift(st, fine), yaw },
 		second ? sk.armL.end : sk.armR.end,
 	);
 };

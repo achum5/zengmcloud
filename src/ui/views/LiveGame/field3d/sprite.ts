@@ -7,6 +7,7 @@ import {
 	type Scratch,
 	type SpriteCache,
 } from "../court3d/sprite.ts";
+import { FIGURE_SCALE } from "./body.ts";
 import type { Side } from "./geometry.ts";
 import type { FieldLook } from "./kit.ts";
 import type { BallHold } from "./director.ts";
@@ -16,6 +17,7 @@ import {
 	holding,
 	moveKind,
 	poseOfMove,
+	strideLift,
 	withArms,
 	type Move,
 } from "./poses.ts";
@@ -45,6 +47,9 @@ export type FieldPlayerState = {
 	phase: number;
 	// Done the other way round: his left doing what his right does.
 	mirrored?: boolean;
+	// Short steps: his strides (and the ones he was taking, just after a
+	// change) this share of full ones.
+	len?: number;
 	// Just after a change - of move, of what his arms are doing, of how he
 	// has the ball: the last as it was when it changed, and how much of his
 	// pose is still that (1 all, 0 none).
@@ -139,6 +144,7 @@ const weightOf = (st: FieldPlayerState, f: Blend, k: Steps): number => {
 // what he just was.
 type Stepped = {
 	phase: number;
+	len: number | undefined;
 	turn: number;
 	yaw: number;
 	from: Blend | undefined;
@@ -159,12 +165,22 @@ const underIn = (u: Under, k: Steps): Under | undefined => {
 			}
 		: undefined;
 };
+// (Short steps, to the nearest of so many.)
+const LENS = 8;
+const lenIn = (len: number | undefined): number | undefined => {
+	if (len === undefined) {
+		return undefined;
+	}
+	const q = Math.max(1, Math.round(len * LENS)) / LENS;
+	return q < 1 ? q : undefined;
+};
 const stepped = (st: FieldPlayerState, k: Steps): Stepped => {
 	const turn = Math.round(st.yaw / ((Math.PI * 2) / k.turns));
 	const f = st.from;
 	const fw = f ? weightOf(st, f, k) : 0;
 	return {
 		phase: frameOf(st.move, st.phase, k),
+		len: lenIn(st.len),
 		turn,
 		yaw: (turn * Math.PI * 2) / k.turns,
 		from:
@@ -189,8 +205,9 @@ const wholePose = (
 	mirrored: boolean,
 	arms: { move: Move; phase: number } | undefined,
 	ball: BallHold | undefined,
+	len = 1,
 ): Pose => {
-	let pose = poseOfMove(move, phase, mirrored);
+	let pose = poseOfMove(move, phase, mirrored, len);
 	if (arms) {
 		pose = withArms(pose, poseOfMove(arms.move, arms.phase, mirrored));
 	}
@@ -198,8 +215,15 @@ const wholePose = (
 };
 
 const poseFor = (st: FieldPlayerState, s: Stepped): Pose => {
-	const { phase, from, arms } = s;
-	const pose = wholePose(st.move, phase, st.mirrored === true, arms, st.ball);
+	const { phase, from, arms, len } = s;
+	const pose = wholePose(
+		st.move,
+		phase,
+		st.mirrored === true,
+		arms,
+		st.ball,
+		len,
+	);
 	if (!from || from.w <= 0) {
 		return pose;
 	}
@@ -209,6 +233,7 @@ const poseFor = (st: FieldPlayerState, s: Stepped): Pose => {
 		from.mirrored === true,
 		from.arms,
 		from.ball,
+		len,
 	);
 	const u = from.under;
 	if (u) {
@@ -231,6 +256,20 @@ export const drawnPose = (
 	const s = stepped(st, fine ? FINE : COARSE);
 	return { pose: poseFor(st, s), yaw: s.yaw };
 };
+
+// How high he is drawn off the turf (feet): up as the play has him (in a
+// leap, on a pile), and off it between strides as his frame has him - his
+// lower foot on the turf, landing.
+const liftFor = (st: FieldPlayerState, s: Stepped): number => {
+	let up = strideLift(st.move, s.phase, s.len);
+	const f = s.from;
+	if (f) {
+		up += (strideLift(f.move, f.phase, s.len) - up) * f.w;
+	}
+	return (Math.max(0, st.z) + up) * FIGURE_SCALE;
+};
+export const drawnLift = (st: FieldPlayerState, fine = false): number =>
+	liftFor(st, stepped(st, fine ? FINE : COARSE));
 
 // The ball with him, the way he has it - just after he changed how, still
 // partway from the way he had it.
@@ -309,8 +348,11 @@ export const drawFieldPlayer = (
 ) => {
 	const base = project(cam, { x: st.x, y: st.y, z: 0 });
 	const k = base.k;
+	const fine = cache?.fine === true;
+	const steps = fine ? FINE : COARSE;
+	const step = stepped(st, steps);
 	const half = (body.H * 0.62 + 0.8) * k;
-	const lift = Math.max(0, st.z) * k;
+	const lift = liftFor(st, step) * k;
 	const left = base.x - half;
 	const right = base.x + half;
 	const upper = base.y - (body.H * 1.4 + 0.5) * k - lift;
@@ -318,10 +360,7 @@ export const drawFieldPlayer = (
 	if (right < 0 || left > cam.viewW || lower < 0 || upper > cam.viewH) {
 		return;
 	}
-	const fine = cache?.fine === true;
-	const steps = fine ? FINE : COARSE;
-	const step = stepped(st, steps);
-	const { phase, turn, from, arms } = step;
+	const { phase, turn, from, arms, len } = step;
 	const scale = Math.round(Math.log(k) / Math.log(1.04));
 	let key: string | undefined;
 	let id = 0;
@@ -331,7 +370,7 @@ export const drawFieldPlayer = (
 		if (known === undefined) {
 			cache.ids.set(look, id);
 		}
-		key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
+		key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}${len ? `s${len}` : ""}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
 			from
 				? `|${from.move}${from.mirrored ? "m" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}${
 						from.under
