@@ -1069,6 +1069,78 @@ const FIELD_ANIMS = {
 			[1, { ...PRONE, shN: 94, elN: 40, abN: 26, shF: 94, elF: 40, abF: 26 }],
 		],
 	},
+	// Laid out for a ball: off his feet, flat out over the turf with his
+	// arms out ahead of him to it, and down on it.
+	diveCatch: {
+		kind: "act",
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 30,
+					kneeN: 50,
+					hipF: -10,
+					kneeF: 30,
+					lean: 22,
+					shN: 60,
+					elN: 40,
+					shF: 60,
+					elF: 40,
+				}),
+			],
+			[
+				0.35,
+				pose({
+					hipN: -30,
+					kneeN: 20,
+					hipF: 44,
+					kneeF: 80,
+					lean: 52,
+					shN: 112,
+					elN: 12,
+					abN: 6,
+					shF: 112,
+					elF: 12,
+					abF: 6,
+				}),
+			],
+			[
+				0.55,
+				pose({
+					hipN: -70,
+					kneeN: 10,
+					hipF: -60,
+					kneeF: 24,
+					lean: 76,
+					shN: 104,
+					elN: 16,
+					abN: 4,
+					shF: 104,
+					elF: 16,
+					abF: 4,
+					wrN: 20,
+					wrF: 20,
+				}),
+			],
+			[
+				0.8,
+				pose({
+					hipN: -84,
+					kneeN: 6,
+					hipF: -80,
+					kneeF: 14,
+					lean: 84,
+					shN: 70,
+					elN: 80,
+					abN: 10,
+					shF: 70,
+					elF: 80,
+					abF: 10,
+				}),
+			],
+			[1, { ...PRONE, shN: 24, elN: 104, abN: 8, wrN: 4 }],
+		],
+	},
 	// A loose ball picked up on the run: down low over it, both hands
 	// under it, and up with it into him.
 	scoop: {
@@ -1884,7 +1956,9 @@ export const liftOf = (m: Move, phase: number): number =>
 		? 1.7 * Math.sin((Math.PI * (phase - 0.3)) / 0.52)
 		: m === "leapCatch" && phase > 0.2 && phase < 0.8
 			? 2.4 * Math.sin((Math.PI * (phase - 0.2)) / 0.6)
-			: 0;
+			: m === "diveCatch" && phase > 0.25 && phase < 0.75
+				? 0.8 * Math.sin((Math.PI * (phase - 0.25)) / 0.5)
+				: 0;
 
 // How he holds his hands in a move: running, loose fists; down in a stance
 // or reading the play, open; standing about, relaxed.

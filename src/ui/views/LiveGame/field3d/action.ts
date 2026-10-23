@@ -24,7 +24,8 @@ import {
 	type Pt3,
 	type Side,
 } from "./geometry.ts";
-import { moveKind, type Move } from "./poses.ts";
+import { footballBody } from "./body.ts";
+import { heldBall, liftOf, moveKind, poseOfMove, type Move } from "./poses.ts";
 import { sidelineOf } from "./sideline.ts";
 import {
 	alongRoute,
@@ -402,6 +403,7 @@ const IN_HANDS = new Set<Move>([
 	"kneelDown",
 	"catch",
 	"leapCatch",
+	"diveCatch",
 	"scoop",
 	"back",
 	"slide",
@@ -473,6 +475,23 @@ const LEAP_YAC = 9;
 const CONTESTED = 6;
 const LEAP_MS = 760;
 const LEAP_Z = 8.4;
+// Laid out for it, this often, thrown this deep at least - and where the
+// sim has him down no further from where he would land than this (he goes
+// this far laid out, feet); off his feet this long before it gets there,
+// down this long after he went (ms) - and his hands, out ahead of him, as
+// it does (his frame, feet).
+const DIVE_CATCH = 0.3;
+const DIVE_DEEP = 15;
+const DIVE_FT = 5;
+const DIVE_SHORT = 4;
+const DIVE_BEFORE = 330;
+const DIVE_CATCH_MS = 700;
+const DIVE_AT = DIVE_BEFORE / DIVE_CATCH_MS;
+const DIVE_HANDS = heldBall(
+	footballBody(),
+	poseOfMove("diveCatch", DIVE_AT),
+	"hands",
+).at;
 // The quarterback in the pocket: looking off another man first, this often
 // with this long to spare at least; up a step (feet, ms), this often; a pump
 // this often, and how long it takes.
@@ -1364,7 +1383,7 @@ class Action {
 		if (ta !== undefined) {
 			across += (ta - across) * 0.5;
 		}
-		const end = this.endOf(gain, across, e.td === true, e.safety === true);
+		let end = this.endOf(gain, across, e.td === true, e.safety === true);
 		const yac = dist(catchPt, end.pt);
 		const v = rec.top * (yac > 30 ? 0.95 : 0.8);
 		// Up for it at its highest, now and then - thrown deep and covered,
@@ -1378,16 +1397,63 @@ class Action {
 			yac < LEAP_YAC &&
 			(covered || e.td === true) &&
 			r() < LEAP;
-		const inStride = !leap && this.reachFor(rec, catchAt, qb);
+		// Or, on the run and down about where he would land laid out for it,
+		// off his feet for it, some of the time - down there, then.
+		const l = rec.last;
+		const heading = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+		const lands = this.of({
+			x: catchPt.x + Math.cos(heading) * DIVE_FT,
+			y: catchPt.y + Math.sin(heading) * DIVE_FT,
+		});
+		const dive =
+			!leap &&
+			!end.td &&
+			e.safety !== true &&
+			deep > DIVE_DEEP &&
+			Math.abs(rec.t - catchAt) < 5 &&
+			(l.from.x !== l.to.x || l.from.y !== l.to.y) &&
+			Math.abs(lands.d - end.d) < DIVE_SHORT &&
+			r() < DIVE_CATCH;
+		if (dive) {
+			end = this.endOf(gain, lands.a, false, false);
+		}
+		const inStride = !leap && !dive && this.reachFor(rec, catchAt, qb);
 		if (leap) {
 			this.leapFor(rec, catchPt, catchAt, qb);
+		} else if (dive) {
+			this.diveFor(rec, end.pt, catchAt);
 		}
 		let t = Math.max(rec.t, catchAt + 260);
-		if (yac > 2 || inStride) {
+		if (dive) {
+			t = rec.t;
+		} else if (yac > 2 || inStride) {
 			t = rec.run(end.pt, v, "sprint");
 		}
 		this.ball.push({ kind: "held", t0: catchAt, pid: rec.pid });
 		this.endCarry(i, rec, end, t, this.d);
+	}
+
+	// Laid out for it: off his feet from a stride or two short, his arms out
+	// for it as it comes in low, and down with it on the turf at `at`.
+	diveFor(rec: Actor, at: Pt, catchAt: number) {
+		const t0 = catchAt - DIVE_BEFORE;
+		rec.cut(t0);
+		rec.hold(t0);
+		rec.act("diveCatch", t0 + DIVE_CATCH_MS, rec.yaw, at);
+		rec.hold(rec.t + 200, "prone");
+		// (The ball thrown to his hands, out there.)
+		const fly = this.ball.findLast((b) => b.kind === "fly");
+		if (fly?.kind === "fly" && Math.abs(fly.t1 - catchAt) < 1) {
+			const p = rec.posAt(catchAt);
+			const c = Math.cos(rec.yaw);
+			const s = Math.sin(rec.yaw);
+			const h = DIVE_HANDS;
+			fly.to = {
+				x: p.x + h.f * c + h.s * s,
+				y: p.y + h.f * s - h.s * c,
+				z: h.u + liftOf("diveCatch", DIVE_AT),
+			};
+		}
 	}
 
 	// Up off both feet for it at its highest: from wherever he is as it
@@ -1761,8 +1827,11 @@ class Action {
 			m.posAt(Math.max(this.seen, Math.min(m.t, lead - 600))),
 		);
 		const first = froms[0];
+		// (Down already - off his feet for the catch - and touched there.)
+		const lying = carrier.last.move === "prone";
 		const back =
 			!keptUp &&
+			!lying &&
 			first !== undefined &&
 			Math.cos(Math.atan2(first.y - pt.y, first.x - pt.x) - fall) > HEAD_ON &&
 			r() < DRIVEN_BACK;
@@ -1770,9 +1839,13 @@ class Action {
 			x: p.x + Math.cos(fall) * f - Math.sin(fall) * s,
 			y: p.y + Math.sin(fall) * f + Math.cos(fall) * s,
 		});
-		const downAt = along(pt, back ? -1.4 : 2.5, 0);
+		const downAt = lying ? carrier.at : along(pt, back ? -1.4 : 2.5, 0);
 		if (keptUp) {
 			this.runOn(carrier, 450);
+		} else if (lying) {
+			carrier.hold(t + 450 + DOWN_MS, "prone");
+			carrier.act("getUp", t + 450 + DOWN_MS + GET_UP_MS);
+			this.done.add(carrier.pid);
 		} else {
 			carrier.act(back ? "tackledBack" : "tackled", t + 450, fall, downAt);
 			carrier.hold(t + 450 + DOWN_MS, back ? "supine" : "prone");
