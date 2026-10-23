@@ -6,7 +6,7 @@ import {
 	getAutoDayRecap,
 	getAutoRecap,
 } from "./getAutoRecap.ts";
-import { injuryPhrase, pickByDay } from "./recapText.ts";
+import { aOrdinal, injuryPhrase, ordinal, pickByDay } from "./recapText.ts";
 import type {
 	RecapGame,
 	RecapPlayer,
@@ -1097,6 +1097,28 @@ describe("the lead that nearly went", () => {
 			assert.deepStrictEqual(verifyRecap(recap, g), [], recap);
 		}
 		assert.isAbove(told, 0);
+	});
+});
+
+// "It was a 22th straight game out for Amen Green", and "send the Pistons to
+// a eighth straight defeat".
+describe("ordinals", () => {
+	test("past the words, the right suffix", () => {
+		assert.strictEqual(ordinal(15), "fifteenth");
+		assert.strictEqual(ordinal(16), "16th");
+		assert.strictEqual(ordinal(21), "21st");
+		assert.strictEqual(ordinal(22), "22nd");
+		assert.strictEqual(ordinal(23), "23rd");
+		assert.strictEqual(ordinal(111), "111th");
+		assert.strictEqual(ordinal(112), "112th");
+	});
+
+	test("and the article that sounds right", () => {
+		assert.strictEqual(aOrdinal(8), "an eighth");
+		assert.strictEqual(aOrdinal(11), "an eleventh");
+		assert.strictEqual(aOrdinal(18), "an 18th");
+		assert.strictEqual(aOrdinal(22), "a 22nd");
+		assert.strictEqual(aOrdinal(3), "a third");
 	});
 });
 

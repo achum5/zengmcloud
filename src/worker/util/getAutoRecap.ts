@@ -10,6 +10,7 @@ import type {
 import {
 	aNum,
 	aNumWord,
+	aOrdinal,
 	beginRecapBatch,
 	cap,
 	claimVerb,
@@ -2085,7 +2086,7 @@ const buildHeadlineText = (
 		if (loserStreak && !loserStreak.won && loserStreak.count >= 4) {
 			// The loser's streak ENDS with this game, so it counts tonight.
 			options.push(
-				`${winnerN} send the ${loserN} to a ${ordinal(loserStreak.count)} straight defeat${tag}`,
+				`${winnerN} send the ${loserN} to ${aOrdinal(loserStreak.count)} straight defeat${tag}`,
 			);
 		}
 		const winnerStreak = shape.winner.streak;
@@ -4796,7 +4797,7 @@ const injurySentence = (
 			// absence as new for the fifth game running.
 			if ((out.missed ?? 0) >= 2) {
 				const nth = ordinal(out.missed! + 1);
-				const aNth = /^[aeiou]/.test(nth) ? `an ${nth}` : `a ${nth}`;
+				const aNth = aOrdinal(out.missed! + 1);
 				bits.push(
 					pick(
 						rng,

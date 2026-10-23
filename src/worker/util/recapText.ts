@@ -198,7 +198,31 @@ const ORDINALS = [
 	"fifteenth",
 ];
 
-export const ordinal = (n: number): string => ORDINALS[n] ?? `${n}th`;
+// Past the words, the suffix the number takes: "22nd", not "22th" - "It
+// was a 22th straight game out" made it into a Finals recap.
+export const ordinal = (n: number): string => {
+	const word = ORDINALS[n];
+	if (word !== undefined) {
+		return word;
+	}
+	const teen = n % 100 >= 11 && n % 100 <= 13;
+	const suffix = teen
+		? "th"
+		: n % 10 === 1
+			? "st"
+			: n % 10 === 2
+				? "nd"
+				: n % 10 === 3
+					? "rd"
+					: "th";
+	return `${n}${suffix}`;
+};
+
+// An ordinal with its article: "an eighth", "an 18th", "a 22nd".
+export const aOrdinal = (n: number): string => {
+	const o = ordinal(n);
+	return /^(?:[aeiou]|8|18th|11th)/.test(o) ? `an ${o}` : `a ${o}`;
+};
 
 export const plural = (n: number, word: string): string => {
 	if (n === 1) {
