@@ -68,6 +68,7 @@ import {
 	stepField,
 } from "./playback.ts";
 import { replayAim } from "./replays.ts";
+import { poolsOf } from "./pools.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
 import {
 	coachId,
@@ -532,11 +533,12 @@ const Field3D = ({
 			const items: { depth: number; draw: () => void }[] = [];
 			const shadow = p.paint.stadium.style.shadow;
 			const snappers = photographersAt(photographersRef.current, moment);
-			for (const st of [
+			const standing = [
 				...moment.players,
 				...sidelineAt(sidelineRef.current, tl, moment),
 				...snappers,
-			]) {
+			];
+			for (const st of standing) {
 				const l = look(st.id);
 				if (!l) {
 					continue;
@@ -594,6 +596,7 @@ const Field3D = ({
 				cam: view,
 				paint: p.paint,
 				items,
+				pools: poolsOf(standing, moment.ball?.at),
 				crowd: crowdAt(tl, moment.t, now),
 				...(replay ? {} : { marks: marksAt(moment.play, moment.t) }),
 			});
