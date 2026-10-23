@@ -7,6 +7,7 @@ import {
 	drawJumbo,
 	drawShadow,
 	FLOOR,
+	jumboScored,
 	LED_WALL,
 	RAFTERS,
 	RIBBON,
@@ -222,6 +223,9 @@ export type Frame = {
 	// The warm-up tops the bench wears, by team.
 	warmups: [string, string];
 	shotClock: string;
+	// The score [road, home], for the board over center court - as the
+	// score bug has it.
+	score?: [number, number];
 	arena: ArenaPaint;
 	// The crowd on its feet (0..1), and which way its arms are this instant.
 	crowd: { up: number; wave: boolean };
@@ -1123,7 +1127,8 @@ export const drawFrame = (f: Frame) => {
 	// The board over center court, when the picture takes it in.
 	const jumbo = arena.boards.jumbo?.[screen];
 	if (jumbo) {
-		drawJumbo(ctx, cam, jumbo, (plane, img) => {
+		const face = f.score ? jumboScored(jumbo, f.score) : jumbo;
+		drawJumbo(ctx, cam, face, (plane, img) => {
 			drawTexturedPlane(ctx, cam, plane, img, 24, 1);
 		});
 	}

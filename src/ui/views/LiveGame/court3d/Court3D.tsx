@@ -1029,6 +1029,11 @@ const Court3D = ({
 		setFinal,
 		// The period, as the page's box score has it ("Q4", "OT").
 		period: boxScore?.quarterShort ?? "",
+		// The score [road, home], as the score bug has it.
+		score: [boxScore?.teams?.[1]?.pts ?? 0, boxScore?.teams?.[0]?.pts ?? 0] as [
+			number,
+			number,
+		],
 		eventsLength: events?.length ?? 0,
 	});
 	live.current = {
@@ -1058,6 +1063,11 @@ const Court3D = ({
 		setFinal,
 		// The period, as the page's box score has it ("Q4", "OT").
 		period: boxScore?.quarterShort ?? "",
+		// The score [road, home], as the score bug has it.
+		score: [boxScore?.teams?.[1]?.pts ?? 0, boxScore?.teams?.[0]?.pts ?? 0] as [
+			number,
+			number,
+		],
 		eventsLength: events?.length ?? 0,
 	};
 
@@ -1352,6 +1362,7 @@ const Court3D = ({
 				apron: p.apron,
 				warmups: p.warmups,
 				shotClock: shotText,
+				score: staging ? undefined : p.score,
 				arena: {
 					court: courtPicture.current,
 					stands: pt.stands,

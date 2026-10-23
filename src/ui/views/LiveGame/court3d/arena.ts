@@ -634,7 +634,8 @@ export const paintBoards = (
 };
 
 // The board over center court: the screen above, and the two teams in
-// their colors along the bottom.
+// their colors along the bottom (their scores beside them - see
+// jumboScored).
 const paintJumbo = (
 	screen: BoardScreen,
 	home: ArenaTeam | undefined,
@@ -692,24 +693,98 @@ const paintJumbo = (
 		ctx.fillStyle = inverted ? c0 : i === words.length - 1 ? accent : inkOn(c0);
 		ctx.fillText(word, sx + sw / 2, sy + lh * (i + 0.7));
 	});
-	const half = (w - 3 * edge) / 2;
-	([away, home] as const).forEach((team, i) => {
-		const x = edge + i * (half + edge);
-		const y = h - strip;
-		ctx.fillStyle = teamColor(team, 0, i ? "#8c1d40" : "#1d3461");
-		ctx.fillRect(x, y, half, strip - edge);
-		ctx.fillStyle = luminance(ctx.fillStyle as string) > 0.6 ? "#111" : "#fff";
-		ctx.font = `800 ${Math.round(strip * 0.62)}px Arial, sans-serif`;
-		ctx.textAlign = "center";
-		ctx.textBaseline = "middle";
-		ctx.fillText(
-			(team?.abbrev ?? (i ? "HOME" : "AWAY")).toUpperCase(),
-			x + half / 2,
-			y + (strip - edge) / 2,
-		);
-	});
+	paintJumboStrip(ctx, home, away);
 	ctx.fillStyle = teamColor(home, 1, "#f2c14e");
 	ctx.fillRect(0, 0, w, edge);
+	jumboTeams.set(canvas, { home, away });
+	return canvas;
+};
+
+// The strip along its foot: each side in its colors, road team first -
+// and, once there is one, its score beside it in white on black, the way
+// the board in a building carries it.
+export const paintJumboStrip = (
+	ctx: CanvasRenderingContext2D,
+	home: ArenaTeam | undefined,
+	away: ArenaTeam | undefined,
+	score?: [number, number],
+) => {
+	const { w, h } = JUMBO_FRONT;
+	const px = w / JUMBO_W;
+	const strip = Math.round(3 * px);
+	const edge = Math.max(1, Math.round(0.4 * px));
+	const half = (w - 3 * edge) / 2;
+	const y = h - strip;
+	const sh = strip - edge;
+	ctx.textBaseline = "middle";
+	([away, home] as const).forEach((team, i) => {
+		const x = edge + i * (half + edge);
+		const name = (team?.abbrev ?? (i ? "HOME" : "AWAY")).toUpperCase();
+		const bg = teamColor(team, 0, i ? "#8c1d40" : "#1d3461");
+		// (The score's box: about two fifths of the side.)
+		const box = score ? Math.round(half * 0.42) : 0;
+		const nw = half - box;
+		ctx.fillStyle = bg;
+		ctx.fillRect(x, y, nw, sh);
+		ctx.fillStyle = luminance(bg) > 0.6 ? "#111" : "#fff";
+		let size = strip * 0.62;
+		ctx.font = `800 ${Math.round(size)}px Arial, sans-serif`;
+		const tw = ctx.measureText(name).width;
+		if (tw > nw * 0.86) {
+			size *= (nw * 0.86) / tw;
+			ctx.font = `800 ${Math.round(size)}px Arial, sans-serif`;
+		}
+		ctx.textAlign = "center";
+		ctx.fillText(name, x + nw / 2, y + sh / 2);
+		if (score) {
+			ctx.fillStyle = "#050507";
+			ctx.fillRect(x + nw, y, box, sh);
+			ctx.fillStyle = "#ffffff";
+			const digits = String(score[i]);
+			let ds = strip * 0.74;
+			ctx.font = `800 ${Math.round(ds)}px Arial, sans-serif`;
+			const dw = ctx.measureText(digits).width;
+			if (dw > box * 0.86) {
+				ds *= (box * 0.86) / dw;
+				ctx.font = `800 ${Math.round(ds)}px Arial, sans-serif`;
+			}
+			ctx.fillText(digits, x + nw + box / 2, y + sh / 2);
+		}
+	});
+};
+
+// THE SCORE ON THE BOARD over center court, as the game goes: the board's
+// picture for a screen with the score in its strip - made again only when
+// the score changes, and only while the board is in the picture (a look
+// round the building).
+const jumboTeams = new WeakMap<
+	HTMLCanvasElement,
+	{ home: ArenaTeam | undefined; away: ArenaTeam | undefined }
+>();
+const jumboScores = new WeakMap<
+	HTMLCanvasElement,
+	{ key: string; canvas: HTMLCanvasElement }
+>();
+export const jumboScored = (
+	face: HTMLCanvasElement,
+	score: [number, number],
+): HTMLCanvasElement => {
+	const teams = jumboTeams.get(face);
+	if (!teams) {
+		return face;
+	}
+	const key = `${score[0]}-${score[1]}`;
+	const was = jumboScores.get(face);
+	if (was?.key === key) {
+		return was.canvas;
+	}
+	const canvas = document.createElement("canvas");
+	canvas.width = face.width;
+	canvas.height = face.height;
+	const ctx = canvas.getContext("2d")!;
+	ctx.drawImage(face, 0, 0);
+	paintJumboStrip(ctx, teams.home, teams.away, score);
+	jumboScores.set(face, { key, canvas });
 	return canvas;
 };
 
