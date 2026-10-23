@@ -399,6 +399,19 @@ export const assetKey = (x: Asset) =>
 // What a deal does to a team's franchise value. Priced in full - with the
 // other team, `partner` - both teams' picks land where the deal leaves their
 // rosters; the quick screens of one asset at a time leave them be.
+// The last deal's places, for pricing it from the other side next: they are
+// the same both ways.
+let lastPlaces:
+	| {
+			outlook: LeagueOutlook;
+			teams: readonly [TeamState, TeamState];
+			rosterKeys: readonly [string, string];
+			outgoing: readonly Asset[];
+			incoming: readonly Asset[];
+			view: LeagueOutlook;
+	  }
+	| undefined;
+
 export const priceFor = (
 	outlook: LeagueOutlook,
 	t: TeamState,
@@ -413,14 +426,36 @@ export const priceFor = (
 		partner &&
 		count(outgoing) + count(incoming) > 0
 	) {
-		view = placesAfter(outlook, [
-			{ tid: t.tid, before: t.players, after: after.players },
-			{
-				tid: partner.tid,
-				before: partner.players,
-				after: applyTrade(partner, incoming, outgoing).players,
-			},
-		]);
+		const last = lastPlaces;
+		if (
+			last &&
+			last.outlook === outlook &&
+			last.teams[0] === partner &&
+			last.teams[1] === t &&
+			last.rosterKeys[0] === partner.rosterKey &&
+			last.rosterKeys[1] === t.rosterKey &&
+			last.outgoing === incoming &&
+			last.incoming === outgoing
+		) {
+			view = last.view;
+		} else {
+			view = placesAfter(outlook, [
+				{ tid: t.tid, before: t.players, after: after.players },
+				{
+					tid: partner.tid,
+					before: partner.players,
+					after: applyTrade(partner, incoming, outgoing).players,
+				},
+			]);
+		}
+		lastPlaces = {
+			outlook,
+			teams: [t, partner],
+			rosterKeys: [t.rosterKey, partner.rosterKey],
+			outgoing,
+			incoming,
+			view,
+		};
 	}
 	return (
 		valueOf(
@@ -556,11 +591,16 @@ export const bestDealWith = (
 			continue;
 		}
 		checked += 1;
+		// A deal one side would not make needs no price from the other.
+		const gainA = priceFor(outlook, a, giveA, giveB, b);
+		if (gainA < MIN_GAIN) {
+			continue;
+		}
 		const gains: [number, number] = [
-			priceFor(outlook, a, giveA, giveB, b),
+			gainA,
 			priceFor(outlook, b, giveB, giveA, a),
 		];
-		if (gains[0] < MIN_GAIN || gains[1] < MIN_GAIN) {
+		if (gains[1] < MIN_GAIN) {
 			continue;
 		}
 		const margins: [number, number] = [
