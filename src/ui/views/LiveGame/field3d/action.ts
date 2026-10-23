@@ -36,6 +36,7 @@ import {
 	type Bounds,
 	type OPt,
 	type Route,
+	type RouteName,
 	type Spot,
 } from "./routes.ts";
 
@@ -553,6 +554,12 @@ const PA_AIR = 8;
 const PA_MS = 400;
 const PA_PAST = 5;
 const PA_BITE = 4;
+// Off this many of the fakes under center, a bootleg: the quarterback away
+// from the fake round the edge, this far out (feet), at this pace (feet a
+// second), and the throw on the run - as soon as he is most of the way.
+const BOOT = 0.4;
+const BOOT_OUT = 30;
+const BOOT_FPS = 16;
 // A pass he got a hand on: this often, the man who did waves it away -
 // no catch - as he slows up. One off a receiver's hands: this often, his
 // hands to his helmet.
@@ -1014,7 +1021,11 @@ class Action {
 			}
 			for (const l of m.legs) {
 				if (l.t0 >= s.t0 && l.t0 < until) {
-					l.ball = l.arms ? "hands" : holdFor(l.move);
+					l.ball = l.arms
+						? IN_HAND.has(l.arms)
+							? "throw"
+							: "hands"
+						: holdFor(l.move);
 				}
 			}
 		}
@@ -1175,6 +1186,33 @@ class Action {
 					)
 				: undefined;
 		const slip = targetName === "slip";
+		// (Toward the middle of the field from where he lines up.)
+		const inSignOf = (start: OPt): 1 | -1 =>
+			start.a > 0 ? -1 : start.a < 0 ? 1 : r() < 0.5 ? 1 : -1;
+		const layTarget = (m: Actor, name: RouteName): Route => {
+			const start = this.of(m.at);
+			const inSign = inSignOf(start);
+			const u = r();
+			// A back out of the backfield to the side of the man who brings
+			// him down.
+			const ta = first === cmpI ? this.tacklerA(m, snap) : undefined;
+			const v =
+				start.a === 0 && ta !== undefined
+					? (ta < 0 ? 0 : 0.5) + r() * 0.5
+					: r();
+			const route = layRoute(name, start, inSign, catchD, this.bounds, u, v);
+			return first === cmpI &&
+				this.input.out &&
+				TO_LINE.has(name) &&
+				gain * YD - catchD <= TOE_YAC &&
+				r() < TOE_TAP
+				? toTheLine(route, this.bounds, TOE_IN)
+				: route;
+		};
+		// (Laid now - but for a back's screen, who goes from beside the
+		// quarterback - so the quarterback can roll out to where it goes.)
+		const targetLaid =
+			target && targetName && !slip ? layTarget(target, targetName) : undefined;
 
 		// The quarterback's drop: none for a screen, three steps for the
 		// short game, five or seven going deep (in the gun, a step or two) -
@@ -1221,10 +1259,25 @@ class Action {
 				: [];
 		const faker = backs.find((m) => m.role === "RB") ?? backs[0];
 		let fakeT: number | undefined;
+		let bootReady = 0;
+		// (Rolled out to the side it goes to, if it goes out of the middle.)
+		const bootSide =
+			faker &&
+			targetLaid &&
+			!gun &&
+			Math.abs(targetLaid.catchAt.a) >= 8 &&
+			r() < BOOT
+				? Math.sign(targetLaid.catchAt.a)
+				: 0;
 		if (faker) {
 			const fs = this.of(faker.at);
-			const side =
-				fs.a === 0 ? (r() < 0.5 ? 1 : -1) : (gun ? -1 : 1) * Math.sign(fs.a);
+			const side = bootSide
+				? -bootSide
+				: fs.a === 0
+					? r() < 0.5
+						? 1
+						: -1
+					: (gun ? -1 : 1) * Math.sign(fs.a);
 			const meshPt = this.w(
 				gun
 					? { d: qbStart.d + 0.5, a: side * 2.5 }
@@ -1245,11 +1298,22 @@ class Action {
 				this.toward(qb.at, meshPt),
 			);
 			qb.act("handOff", fakeT + PA_MS / 2, this.toward(qbMesh, meshPt));
-			setAt = this.w({
-				d: Math.min(qbStart.d - dropD, this.of(qbMesh).d - (gun ? 4 : 7)),
-				a: qbStart.a,
-			});
-			qb.go(setAt, qb.t + 250 + dist(qb.at, setAt) * 50, "back", this.ahead);
+			if (bootSide) {
+				setAt = this.w({
+					d: this.of(qbMesh).d - 6,
+					a: qbStart.a + bootSide * BOOT_OUT,
+				});
+				const ms = (dist(qb.at, setAt) / BOOT_FPS) * 1000;
+				qb.go(setAt, qb.t + ms, "run", this.toward(qb.at, setAt));
+				qb.arms("qbSet", fakeT + PA_MS / 2, qb.t);
+				bootReady = qb.t - ms * 0.4;
+			} else {
+				setAt = this.w({
+					d: Math.min(qbStart.d - dropD, this.of(qbMesh).d - (gun ? 4 : 7)),
+					a: qbStart.a,
+				});
+				qb.go(setAt, qb.t + 250 + dist(qb.at, setAt) * 50, "back", this.ahead);
+			}
 			faker.hold(snap + 150);
 			faker.go(meshPt, fakeT, "run", this.toward(faker.at, meshPt));
 			faker.go(
@@ -1262,8 +1326,10 @@ class Action {
 		} else if (dropD > 0) {
 			qb.go(setAt, has + dropMs, "back", this.ahead);
 		}
-		const ready = qb.t + 150;
-		qb.hold(ready, "qbSet", this.ahead);
+		const ready = bootSide ? bootReady : qb.t + 150;
+		if (!bootSide) {
+			qb.hold(ready, "qbSet", this.ahead);
+		}
 
 		// A back's screen: up beside the quarterback as if to block, a beat.
 		const slipSide = slip
@@ -1284,29 +1350,9 @@ class Action {
 		const routes = new Map<number, Route>();
 		for (const m of runners) {
 			const start = this.of(m.at);
-			const inSign: 1 | -1 =
-				start.a > 0 ? -1 : start.a < 0 ? 1 : r() < 0.5 ? 1 : -1;
+			const inSign = inSignOf(start);
 			if (m === target && thrown && targetName) {
-				const name = targetName;
-				const u = r();
-				// A back out of the backfield to the side of the man who
-				// brings him down.
-				const ta = first === cmpI ? this.tacklerA(m, snap) : undefined;
-				const v =
-					start.a === 0 && ta !== undefined
-						? (ta < 0 ? 0 : 0.5) + r() * 0.5
-						: r();
-				const route = layRoute(name, start, inSign, catchD, this.bounds, u, v);
-				routes.set(
-					m.pid,
-					first === cmpI &&
-						this.input.out &&
-						TO_LINE.has(name) &&
-						gain * YD - catchD <= TOE_YAC &&
-						r() < TOE_TAP
-						? toTheLine(route, this.bounds, TOE_IN)
-						: route,
-				);
+				routes.set(m.pid, targetLaid ?? layTarget(m, targetName));
 			} else {
 				const { name, depth } = decoyRoute(spotOf(m.role), r(), r());
 				routes.set(
@@ -1370,12 +1416,17 @@ class Action {
 
 		// The quarterback: set, through his progressions, and the throw.
 		if (thrown && catchPt) {
-			this.reads(qb, target!, catchPt, throwAt - 320, runners);
-			qb.hold(throwAt - 320, "qbSet", this.toward(qb.at, catchPt));
-			qb.act("throwWind", throwAt, this.toward(qb.at, catchPt));
-			qb.act("throwFollow", throwAt + 450, this.toward(qb.at, catchPt));
+			if (bootSide) {
+				this.onTheRun(qb, bootSide, catchPt, throwAt);
+			} else {
+				this.reads(qb, target!, catchPt, throwAt - 320, runners);
+				qb.hold(throwAt - 320, "qbSet", this.toward(qb.at, catchPt));
+				qb.act("throwWind", throwAt, this.toward(qb.at, catchPt));
+				qb.act("throwFollow", throwAt + 450, this.toward(qb.at, catchPt));
+			}
+			const at = this.of(qb.posAt(throwAt));
 			const release: Pt3 = {
-				...this.w({ d: this.of(qb.at).d + 0.8, a: this.of(qb.at).a }),
+				...this.w({ d: at.d + 0.8, a: at.a }),
 				z: RELEASE_Z,
 			};
 			const fl = flightOf(release, catchPt);
@@ -1534,6 +1585,34 @@ class Action {
 			return Math.round(5 + r() * 7);
 		}
 		return Math.max(1, Math.round(yds * (0.45 + 0.5 * r())));
+	}
+
+	// Rolled out round the edge, on at an easy run - the ball up in both
+	// hands, then cocked and let go, still going - and slowing up after.
+	onTheRun(qb: Actor, side: number, catchPt: Pt, throwAt: number) {
+		const end = throwAt + 500;
+		if (qb.t > end) {
+			qb.cut(end);
+		} else {
+			const s = this.of(qb.at);
+			const v = BOOT_FPS * 0.75;
+			const room = Math.max(
+				0,
+				(side > 0 ? this.bounds.right : -this.bounds.left) - side * s.a - 12,
+			);
+			const far = Math.min(room, (v * (end - qb.t)) / 1000);
+			const to = this.w({ d: s.d + far * 0.35, a: s.a + side * far * 0.94 });
+			qb.go(to, end, undefined, this.toward(qb.at, to));
+		}
+		qb.arms("throwWind", throwAt - 320, throwAt);
+		qb.arms("throwFollow", throwAt, end);
+		const q = this.of(qb.at);
+		qb.go(
+			this.w({ d: q.d + 1, a: q.a + side * 2 }),
+			end + 450,
+			"walk",
+			this.toward(qb.at, catchPt),
+		);
 	}
 
 	// A screen out wide: the receivers on his side off their routes and out
