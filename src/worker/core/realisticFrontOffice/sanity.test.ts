@@ -1,5 +1,5 @@
 import { afterAll, assert, beforeAll, test } from "vitest";
-import { PHASE } from "../../../common/constants.ts";
+import { PHASE, PLAYER } from "../../../common/constants.ts";
 import { makeSeededRandom } from "../../../common/random.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers } from "../../util/index.ts";
@@ -14,9 +14,11 @@ import {
 } from "./market.ts";
 import type { Player } from "../../../common/types.ts";
 import { explainDeal, type ExplainSide } from "./explain.ts";
+import { priceSigning } from "./freeAgency.ts";
 import {
 	buildOutlook,
 	outlookSettings,
+	teamStrengths,
 	type LeagueOutlook,
 } from "./outlook.ts";
 
@@ -278,3 +280,102 @@ test("a deal's breakdown shows where it moves each team's picks", async () => {
 	assert.isBelow(own(0, t.tid).after, own(0, t.tid).before - 1);
 	assert.isAbove(own(1, partner.tid).after, own(1, partner.tid).before);
 });
+
+test(
+	"no team signs a free agent for making it worse",
+	{ timeout: 300_000 },
+	async () => {
+		// In free agency, when a poor player the rotation would play ahead of
+		// better ones could make a team worse, and so its own pick better.
+		g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
+		const outlook = await currentOutlook();
+		const pool = (
+			await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
+		)
+			.sort((a, b) => b.value - a.value)
+			.slice(0, 5);
+		let checked = 0;
+		for (let tid = 0; tid < g.get("numTeams"); tid++) {
+			const t = await loadTeam(outlook, tid);
+			for (const p of pool) {
+				const contract = {
+					amount: g.get("minContract"),
+					exp: g.get("season") + 2,
+				};
+				const signed = { ...p, tid, contract: { ...p.contract, ...contract } };
+				const path = teamStrengths(
+					outlook,
+					tid,
+					[...t.players, signed],
+					t.picks,
+				);
+				if (path.every((x, y) => x <= t.path[y]!)) {
+					checked += 1;
+					assert.isAtMost(
+						priceSigning(outlook, t, p, contract).gain,
+						0,
+						`team ${tid}, free agent ${p.pid}`,
+					);
+				}
+			}
+		}
+		assert.isAbove(checked, 0);
+		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+	},
+);
+
+test(
+	"a team with a full roster gains nothing from a free agent worse than anyone on it",
+	{ timeout: 300_000 },
+	async () => {
+		// In free agency, when rosters may run over the limit until the season.
+		g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
+		const tid = 3;
+		// Others' bench players, by value: every other one fills its roster to the
+		// limit, and the rest are free agents about as good as its last men.
+		const bench = (
+			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+		)
+			.filter((p) => p.tid !== tid && p.value < 50 && p.value > 44)
+			.sort((a, b) => b.value - a.value);
+		let roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+		for (const p of roster.filter((x) => x.value <= 44)) {
+			p.tid = PLAYER.FREE_AGENT;
+			await idb.cache.players.put(p);
+		}
+		roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+		const fill = bench
+			.filter((_, i) => i % 2 === 0)
+			.slice(0, g.get("maxRosterSize") - roster.length);
+		for (const p of bench) {
+			p.tid = fill.includes(p) ? tid : PLAYER.FREE_AGENT;
+			// The roster's contracts all run out after next season.
+			p.contract.exp = Math.min(p.contract.exp, g.get("season") + 1);
+			await idb.cache.players.put(p);
+		}
+		for (const p of roster) {
+			p.contract.exp = Math.min(p.contract.exp, g.get("season") + 1);
+			await idb.cache.players.put(p);
+		}
+		roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+		assert.equal(roster.length, g.get("maxRosterSize"));
+		const outlook = await currentOutlook();
+		const t = await loadTeam(outlook, tid);
+		const worst = Math.min(...t.players.map((p) => p.value));
+		let checked = 0;
+		for (const p of bench.filter((x) => !fill.includes(x) && x.value < worst)) {
+			if (checked === 5) {
+				break;
+			}
+			checked += 1;
+			const { gain } = priceSigning(outlook, t, p, {
+				amount: g.get("minContract"),
+				exp: g.get("season") + 3,
+			});
+			// He would be the one cut, his salary still owed.
+			assert.isBelow(gain, 0, `free agent ${p.pid}, value ${p.value}`);
+		}
+		assert.isAbove(checked, 0);
+		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+	},
+);

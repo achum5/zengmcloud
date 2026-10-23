@@ -1787,6 +1787,10 @@ export const placesAfter = (
 		before: readonly Player[];
 		after: readonly Player[];
 	}[],
+	// Only as far as the change makes a team better: a signing that makes it
+	// worse - a poor player the rotation would play ahead of better ones - is
+	// not a way to a better pick. Every team plays to win.
+	onlyBetter = false,
 ): LeagueOutlook => {
 	const keys = new Map<number, number[]>();
 	for (const { tid, before, after } of changes) {
@@ -1803,7 +1807,11 @@ export const placesAfter = (
 			placeKeysOf(
 				outlook,
 				tid,
-				was.points.map((x, y) => x + to[y]! - from[y]!),
+				was.points.map(
+					(x, y) =>
+						x +
+						(onlyBetter ? Math.max(0, to[y]! - from[y]!) : to[y]! - from[y]!),
+				),
 			),
 		);
 	}

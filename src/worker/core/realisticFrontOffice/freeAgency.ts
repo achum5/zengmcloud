@@ -110,9 +110,86 @@ const without = (
 	};
 };
 
+// The roster a team will have once games are played: past the limit, it cuts
+// the players it values least (cuts.ts), and still owes them their salaries
+// unless they were just drafted. Priced as it stands, a team with a full
+// roster signed one more cheap veteran after another - each looked like depth
+// for nothing - and cut them all before the season.
+const afterCuts = (
+	outlook: LeagueOutlook,
+	t: TeamState,
+	players: readonly Player[],
+) => {
+	const over = players.length - g.get("maxRosterSize");
+	if (over <= 0) {
+		return { players, deadMoney: outlook.deadMoney };
+	}
+	const phase = g.get("phase");
+	const season = g.get("season");
+	const cut = new Set(
+		[...players]
+			.sort((a, b) => a.value - b.value || a.pid - b.pid)
+			.slice(0, over),
+	);
+	const owed = [...cut]
+		.filter((p) => !helpers.justDrafted(p, phase, season))
+		.map((p) => ({ amount: p.contract.amount, exp: p.contract.exp }));
+	return {
+		players: players.filter((p) => !cut.has(p)),
+		deadMoney:
+			owed.length > 0
+				? new Map(outlook.deadMoney).set(t.tid, [
+						...(outlook.deadMoney.get(t.tid) ?? []),
+						...owed,
+					])
+				: outlook.deadMoney,
+	};
+};
+
+// What a team is worth on the roster it will have (afterCuts), with its own
+// picks where that roster leaves them, as in a trade - later for a signing
+// that makes it better, never earlier for one that makes it worse.
+const valueAfterCuts = (
+	outlook: LeagueOutlook,
+	t: TeamState,
+	players: readonly Player[],
+) => {
+	const kept = afterCuts(outlook, t, players);
+	if (kept.players === t.players) {
+		return t.value;
+	}
+	const placed = settingFor(t.tid, "placesAfter")
+		? placesAfter(
+				outlook,
+				[{ tid: t.tid, before: t.players, after: kept.players }],
+				true,
+			)
+		: outlook;
+	const view =
+		kept.deadMoney === outlook.deadMoney
+			? placed
+			: { ...placed, deadMoney: kept.deadMoney };
+	return franchiseValue(
+		outlook,
+		teamStrengths(
+			view,
+			t.tid,
+			kept.players,
+			t.picks,
+			undefined,
+			undefined,
+			t.letGo,
+		),
+	);
+};
+
+// A team's own value on the roster it will have, remembered for the day.
+const baseValues = new WeakMap<TeamState, number>();
+
 // What signing him on these terms is worth to a team, in titles, and the
-// margin of error on that: the team with him against the team without.
-const priceSigning = (
+// margin of error on that: the team with him against the team without, each
+// on the roster it will have once games are played.
+export const priceSigning = (
 	outlook: LeagueOutlook,
 	t: TeamState,
 	p: Player,
@@ -123,16 +200,12 @@ const priceSigning = (
 		tid: t.tid,
 		contract: { ...p.contract, amount: contract.amount, exp: contract.exp },
 	};
-	const players = [...t.players, signed];
-	// His team's own picks land where he leaves it, as in a trade.
-	const view = settingFor(t.tid, "placesAfter")
-		? placesAfter(outlook, [{ tid: t.tid, before: t.players, after: players }])
-		: outlook;
-	const value = franchiseValue(
-		outlook,
-		teamStrengths(view, t.tid, players, t.picks, undefined, undefined, t.letGo),
-	);
-	const gain = value - t.value;
+	let base = baseValues.get(t);
+	if (base === undefined) {
+		base = valueAfterCuts(outlook, t, t.players);
+		baseValues.set(t, base);
+	}
+	const gain = valueAfterCuts(outlook, t, [...t.players, signed]) - base;
 	const margin = marginOf(outlook, t, [], [{ kind: "player", p: signed }]);
 	return { gain, margin, net: gain - margin };
 };
