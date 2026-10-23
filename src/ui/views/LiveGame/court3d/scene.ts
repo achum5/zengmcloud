@@ -35,7 +35,12 @@ import { callAt, rowSpot } from "./intro.ts";
 import { drawLights } from "./lights.ts";
 import { atTable, TABLE_SEAT_Y } from "./crew.ts";
 import { drawFolk, type Folk } from "./courtside.ts";
-import { STRIP_MS, type CheckIn, type CourtTimeline } from "./director.ts";
+import {
+	STRIP_MS,
+	type Beat,
+	type CheckIn,
+	type CourtTimeline,
+} from "./director.ts";
 import {
 	arenaShotAt,
 	evalBall,
@@ -1161,8 +1166,12 @@ export const aimFor = (
 		const left = ball.x < COURT_W / 2;
 		return framed(left ? 12.5 : COURT_W - 12.5, narrow ? 30 : 36);
 	}
-	let minX = ball.x;
-	let maxX = ball.x;
+	// On the ball - but once the game is over, on the players: the
+	// handshakes, the bench out onto the floor, not the ball thrown up and
+	// left lying under a basket.
+	const on = onBall(m.t, beat);
+	let minX = Infinity;
+	let maxX = -Infinity;
 	let sum = 0;
 	let n = 0;
 	for (const st of m.players) {
@@ -1174,13 +1183,18 @@ export const aimFor = (
 		sum += st.x;
 		n += 1;
 	}
+	if (n === 0 || on > 0.5) {
+		minX = Math.min(minX, ball.x);
+		maxX = Math.max(maxX, ball.x);
+	}
 	const mid = n > 0 ? sum / n : ball.x;
 	// Wide enough that the players read small on the floor, the way a
-	// cartoon game shows them.
-	const minW = narrow ? 56 : 72;
+	// cartoon game shows them - in closer on them once it is over.
+	const loose = narrow ? 56 : 72;
+	const minW = loose * on + (fit?.min ?? loose) * (1 - on);
 	const maxW = narrow ? 68 : 88;
 	let width = Math.min(maxW, Math.max(minW, maxX - minX + 18));
-	let x = ball.x * 0.62 + mid * 0.38;
+	let x = (ball.x * 0.62 + mid * 0.38) * on + mid * (1 - on);
 	// A shot going up: push in on the shooter - eased in as he goes up and
 	// back out as he comes down, not a jump at either end.
 	const shooter = m.players.find((p) => SHOOTING.has(p.anim));
@@ -1194,9 +1208,22 @@ export const aimFor = (
 		x = x * (1 - 0.4 * k) + shooter.x * 0.4 * k;
 	}
 	width = Math.max(width, fit?.min ?? 0);
+	// (The ball kept in the picture while the game is on.)
 	const room = width / 2 - 7;
-	x = Math.min(ball.x + room, Math.max(ball.x - room, x));
+	x += (Math.min(ball.x + room, Math.max(ball.x - room, x)) - x) * on;
 	return framed(x, width);
+};
+
+// How much the main camera is on the ball (0 to 1): all the way while the
+// game is on, easing off it from the final buzzer - whatever is done with
+// the ball then, the players are worth looking at.
+const DEAD_MS = 1500;
+const onBall = (t: number, beat: Beat | undefined): number => {
+	if (beat?.type !== "gameOver") {
+		return 1;
+	}
+	const u = Math.min(1, Math.max(0, (t - beat.actionStart) / DEAD_MS));
+	return 1 - u * u * (3 - 2 * u);
 };
 
 // The play-by-play line being played out at t.
@@ -1315,7 +1342,8 @@ export const replayAim = (
 
 // WHAT THE BOARDS SHOW: a shout for the home side's big play, DEFENSE
 // (blinking) while the road team has the ball in play, otherwise the team
-// and the chants in turn.
+// and the chants in turn - over a break, the team and the chants, and once
+// the game is over, the team alone.
 const AMBIENT: BoardScreen[] = ["name", "letsGo", "name", "noise"];
 export const boardAt = (tl: CourtTimeline, t: number): BoardScreen => {
 	const roar = recentFx(tl, t, ["roar"], 3200);
@@ -1325,11 +1353,19 @@ export const boardAt = (tl: CourtTimeline, t: number): BoardScreen => {
 	if (recentFx(tl, t, ["block"], 2400)?.team === 1) {
 		return "block";
 	}
-	if (!arenaShotAt(tl, t) && offenseAt(tl, t) === 0) {
+	const beat = beatAt(tl, t);
+	if (beat?.type === "gameOver") {
+		return "name";
+	}
+	const stopped =
+		arenaShotAt(tl, t) !== undefined ||
+		beat?.type === "endOfPeriod" ||
+		beat?.type === "timeout";
+	if (!stopped && offenseAt(tl, t) === 0) {
 		return Math.floor(t / 420) % 2 ? "defense2" : "defense";
 	}
 	// Crunch time with the ball: the building as loud as it gets.
-	if (!arenaShotAt(tl, t) && tensionAt(tl, t) >= 0.5) {
+	if (!stopped && tensionAt(tl, t) >= 0.5) {
 		return Math.floor(t / 2600) % 2 ? "letsGo" : "noise";
 	}
 	return AMBIENT[Math.floor(t / 8000) % AMBIENT.length]!;
