@@ -7477,11 +7477,7 @@ describe("the day wrap says what it means", () => {
 			playoffs: false,
 			games,
 		});
-		assert.doesNotMatch(
-			recap,
-			/There was drama elsewhere too|Also worth the watch/,
-			recap,
-		);
+		assert.doesNotMatch(recap, /There was drama elsewhere too/, recap);
 	});
 
 	test("a performance in defeat is not the mirror of the sentence before it", () => {

@@ -864,7 +864,7 @@ describe("simmed recaps", () => {
 	// after the wrap had given that 129-124 itself.
 	test("a wrap's short list of results is one sentence, and a total is not re-added", () => {
 		const OPENER =
-			/^(?:Elsewhere|Also on the night|There was more besides|There was drama elsewhere too|Also worth the watch|Around the league|In the other games?)\b/;
+			/^(?:Elsewhere|Also on the night|There was drama elsewhere too|Around the league|In (?:the )?other games?)\b/;
 		for (const wrap of dayRecaps) {
 			const sentences = wrap
 				.split("\n\n")
@@ -1149,6 +1149,18 @@ describe("simmed recaps", () => {
 					);
 				}
 			}
+		}
+	});
+
+	// "Also worth the watch: ..." and "There was more besides: ..." - list
+	// openers nobody writes.
+	test("a wrap's list openers are plain", () => {
+		for (const wrap of dayRecaps) {
+			assert.notMatch(
+				wrap,
+				/Also worth the watch|There was more besides/,
+				wrap,
+			);
 		}
 	});
 });

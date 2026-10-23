@@ -1255,6 +1255,44 @@ describe("edge cases", () => {
 		}
 	});
 
+	// "Obi Brooks' 46 not enough as the Magic top the Celtics" over "Quentin
+	// Jackson led the way with 22 points... as the Magic beat the Celtics".
+	test("a wrap headlined by a losing big night leads on him", () => {
+		let led = 0;
+		for (let day = 1; day <= 12; day++) {
+			const home = squad(
+				{ tid: 1, name: "Magic" },
+				{ name: "Ace Magic", pid: 11, pts: 22, reb: 9, fg: 9, fga: 17 },
+				115,
+			);
+			const away = squad(
+				{ tid: 2, name: "Celtics" },
+				{ name: "Bo Celtic", pid: 21, pts: 48, reb: 10, fg: 17, fga: 30 },
+				107,
+			);
+			const other = [
+				squad({ tid: 3, name: "Kings" }, { name: "Cy King", pid: 31 }, 112),
+				squad({ tid: 4, name: "Suns" }, { name: "Di Sun", pid: 41 }, 96),
+			] as [RecapTeam, RecapTeam];
+			const wrap = getAutoDayRecap({
+				season: 2025,
+				day,
+				playoffs: false,
+				games: [game([home, away], { day }), game(other, { gid: 78, day })],
+			});
+			clean(wrap);
+			const [head, ...rest] = wrap.split("\n\n");
+			if (!head!.includes("Bo Celtic")) {
+				continue;
+			}
+			led += 1;
+			const body = rest.filter((p) => !p.startsWith("*"));
+			assert.match(body[0]!, /^Bo Celtic put up 48 points/, wrap);
+			assert.strictEqual(wrap.match(/48 points/g)?.length, 1, wrap);
+		}
+		assert.isAbove(led, 0);
+	});
+
 	// "Grant Green put up 29 points as the Lakers took down the Pistons
 	// 124-114" was the whole lede of the night that won them the title; not
 	// one of 45 series-ending ledes said the series was over.

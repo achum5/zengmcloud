@@ -10641,8 +10641,24 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		/\d-\d(?!\d)|sweep|close|put .* out|finish|eliminat|advance|move on|through|game \d|force|even|title|champion/i.test(
 			headline.text.replaceAll(/\b\d{2,3}-\d{2,3}\b/g, ""),
 		);
+	// A losing side's big night in the headline leads the body too: "Obi
+	// Brooks' 46 not enough as the Magic top the Celtics" stood over
+	// "Quentin Jackson led the way with 22 points... as the Magic beat the
+	// Celtics", with the 46 a sentence later.
+	const mLoserBig = bestOf(mShape.loser.players);
+	const loserLed =
+		headline.game === marquee &&
+		mLoserBig !== undefined &&
+		mLoserBig.pts >= 35 &&
+		headline.text.includes(mLoserBig.name);
+	const series = headlineHasSeries ? "" : tailFor(marquee);
 	para1.push(
-		`${cap(gameBlurb(marquee, rng, headlineHasResult))}${headlineHasSeries ? "" : tailFor(marquee)}.`,
+		loserLed
+			? `${mLoserBig.name} put up ${statPhrase(mLoserBig, 2)}, but ${gameBlurb(
+					marquee,
+					rng,
+				).replace(/^The /, "the ")}${series}.`
+			: `${cap(gameBlurb(marquee, rng, headlineHasResult))}${series}.`,
 	);
 	// THE ROUND, ONCE. "Obi King went for 16 points, 13 rebounds, and 3
 	// steals as the Suns rallied past the Hornets 105-99" opened the
@@ -10688,6 +10704,9 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	const named = new Set<RecapPlayer>();
 	if (mStar) {
 		named.add(mStar);
+	}
+	if (loserLed) {
+		named.add(mLoserBig);
 	}
 	// THE DECK IS A TEASE, AND THE BODY TELLS IT. A deck player used to count
 	// as named, so the body never told him: in all 73 decks of a 90-day corpus
@@ -11046,17 +11065,19 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 				blurb,
 			),
 		);
+		// Not "Also worth the watch:" or "There was more besides:" - nobody
+		// writes those - and a comma after the plain ones.
 		notableOpener = pick(
 			rng,
 			anyDrama
-				? ["Elsewhere", "There was drama elsewhere too", "Also worth the watch"]
-				: ["Elsewhere", "Also on the night", "There was more besides"],
+				? ["Elsewhere", "There was drama elsewhere too", "In other games"]
+				: ["Elsewhere", "Also on the night", "In other games"],
 			anyDrama ? "notableOpener" : "notableOpenerFlat",
 		);
 		para2.push(
-			notableOpener === "Elsewhere"
-				? `Elsewhere, ${naturalList(notableBlurbs)}.`
-				: `${notableOpener}: ${naturalList(notableBlurbs)}.`,
+			notableOpener === "There was drama elsewhere too"
+				? `${notableOpener}: ${naturalList(notableBlurbs)}.`
+				: `${notableOpener}, ${naturalList(notableBlurbs)}.`,
 		);
 	}
 	const notableAt = para2.length - 1;
