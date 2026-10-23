@@ -9,7 +9,7 @@ import { compile } from "./testGame.ts";
 const body = bodyOf();
 
 describe("3D replays", () => {
-	// The slow-motion replay of a big dunk is of him and the rim: the ball
+	// The slow-motion replay of a dunk is of him and the rim: the ball
 	// in the picture the whole way, the rim near the top of it, and - as he
 	// throws it down - all of him, his feet on the floor in the picture, not
 	// cut off along its foot under half a picture of the crowd.
@@ -35,7 +35,8 @@ describe("3D replays", () => {
 						assert.isAbove(p.y, 0, what);
 						assert.isBelow(p.y, h, what);
 					};
-					for (let t = r.from; t <= r.to; t += 50) {
+					// (Every dunk is shown again: a look every 100ms of it.)
+					for (let t = r.from; t <= r.to; t += 100) {
 						const m = momentAt(tl, t, players, () => body);
 						const cam = makeCamera(replayAim(m, r, w / h), w, h, REPLAY_RIG);
 						const at = `${seed} ${w}x${h} @${Math.round(t)}`;
@@ -57,5 +58,5 @@ describe("3D replays", () => {
 			}
 		}
 		assert.isAtLeast(dunks, 8);
-	}, 60_000);
+	}, 180_000);
 });

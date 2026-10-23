@@ -41,9 +41,11 @@ const REPLAY_FROM_THREE = 2300;
 const REPLAY_TO = 450;
 export const REPLAY_AFTER = 1150;
 const REPLAY_SPEED = 0.42;
-// Which plays are shown again: a big dunk, or a big three (see Fx).
+// Which plays are shown again: every dunk, the way a broadcast shows them
+// all again - not only a big one (on somebody, off a lob, through contact)
+// - and a big three (see Fx).
 export const replayed = (f: Fx) =>
-	!!f.big && (f.kind === "dunk" || f.kind === "swish");
+	f.kind === "dunk" || (!!f.big && f.kind === "swish");
 
 // THE WIPE: a replay is gone into, and come out of, behind a wipe across
 // the picture in the home team's colors, the way a broadcast does it - the

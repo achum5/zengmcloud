@@ -740,3 +740,51 @@ describe("the wipe into a replay and out of it", () => {
 		}
 	}, 60_000);
 });
+
+describe("dunks shown again", () => {
+	// Every dunk is shown again, the way a broadcast shows them all - not
+	// only a big one (on somebody, off a lob, through contact): watched
+	// live, the picture goes back for it, through the dunk itself.
+	test("every dunk, not only a big one", () => {
+		let plain = 0;
+		for (const seed of ["a", "c"]) {
+			const { tl, events } = compile(seed, 150);
+			for (const dunk of tl.fx.filter((f) => f.kind === "dunk")) {
+				plain += dunk.big ? 0 : 1;
+				const s = device(false).s;
+				s.t = dunk.t - 3000;
+				s.prevCursor = events.length;
+				s.snapCam = false;
+				s.nextDunk = tl.fx.indexOf(dunk);
+				const f = makeFollow();
+				let shown = false;
+				for (let now = 16; now < 12_000; now += 1000 / 60) {
+					stepPlay(
+						s,
+						{
+							cursor: events.length,
+							paused: false,
+							rate: 1,
+							follower: false,
+							along: false,
+							keyPlan: undefined,
+							eventsLength: events.length,
+							onReady: () => {},
+						},
+						f,
+						tl,
+						false,
+						now,
+						now,
+					);
+					const r = s.replay;
+					if (r && r.from < dunk.t && r.to > dunk.t && r.at > dunk.t) {
+						shown = true;
+					}
+				}
+				assert.isTrue(shown, `${seed} @${Math.round(dunk.t)}`);
+			}
+		}
+		assert.isAtLeast(plain, 3);
+	}, 60_000);
+});
