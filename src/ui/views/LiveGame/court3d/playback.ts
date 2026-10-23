@@ -45,6 +45,82 @@ const REPLAY_SPEED = 0.42;
 export const replayed = (f: Fx) =>
 	!!f.big && (f.kind === "dunk" || f.kind === "swish");
 
+// THE WIPE: a replay is gone into, and come out of, behind a wipe across
+// the picture in the home team's colors, the way a broadcast does it - the
+// cut made while it covers all of it (see Court3D). How far across it is,
+// 0 to 1 (0.5: all of the picture covered): in over the last STING_IN ms
+// (real time) before a replay cuts in, or before it is over, to the cut;
+// then held over the picture while the other side of the cut is made
+// ready to be drawn (`hold`, see Court3D), and on off it in as long.
+export const STING_IN = 280;
+// (All of the picture covered while it is this close to halfway across.)
+export const STING_COVERS = 0.03;
+export type Wipe = {
+	// Whether a replay was showing last frame; when the picture last cut
+	// behind the wipe, and when it was last held over all of the picture
+	// (ms).
+	was: boolean;
+	cut: number | undefined;
+	hold: number;
+	// How far across it is (undefined: off the picture), and whether that
+	// covers all of it.
+	u: number | undefined;
+	covered: boolean;
+};
+export const makeWipe = (): Wipe => ({
+	was: false,
+	cut: undefined,
+	hold: -Infinity,
+	u: undefined,
+	covered: false,
+});
+// Before the cut: how far in it has come. Played at `base` times real
+// time, the game going `rate` times as fast.
+export const stingIn = (
+	s: PlayClock,
+	base: number,
+	rate: number,
+): number | undefined => {
+	const r = s.replay;
+	if (r) {
+		const left = (r.to - r.at) / (base * REPLAY_SPEED);
+		return left < STING_IN ? 0.5 * (1 - left / STING_IN) : undefined;
+	}
+	if (s.replayDue === undefined) {
+		return undefined;
+	}
+	// (In game time - and never back over the dunk itself.)
+	const lead = Math.min(STING_IN * rate, REPLAY_AFTER - 400);
+	const d = s.replayDue - s.t;
+	return d < lead ? 0.5 * (1 - Math.max(0, d) / lead) : undefined;
+};
+// The wipe this frame (after the clock's step - see stepPlay).
+export const wipeAt = (
+	w: Wipe,
+	s: PlayClock,
+	now: number,
+	base: number,
+	rate: number,
+): number | undefined => {
+	if (!!s.replay !== w.was) {
+		w.was = !!s.replay;
+		w.cut = now;
+	}
+	let u: number | undefined;
+	if (w.cut !== undefined) {
+		const e = now - Math.max(w.cut, w.hold);
+		if (e < STING_IN) {
+			u = 0.5 + (0.5 * e) / STING_IN;
+		} else {
+			w.cut = undefined;
+		}
+	}
+	u ??= stingIn(s, base, rate);
+	w.u = u;
+	w.covered = u !== undefined && Math.abs(u - 0.5) <= STING_COVERS;
+	return u;
+};
+
 // A replay showing: where it is (`at`), from and to (timeline ms) - and who
 // it is of, the man who put the ball in, and the rim he put it in, for the
 // camera to stay on (see replayAim).
@@ -167,9 +243,12 @@ export type PlayClock = {
 	lead: number;
 	// The last frame's clock (ms).
 	last: number | undefined;
-	// The dunk replay showing now, and the next dunk that would get one.
+	// The dunk replay showing now, and the next dunk that would get one -
+	// and, one coming, the moment of the game it cuts in at (for the wipe
+	// into it: see stingIn).
 	replay: Replay | undefined;
 	nextDunk: number;
+	replayDue?: number;
 	snapCam: boolean;
 	// Key plays: the cursor the page is catching up to (-1 none), and when
 	// the picture last came up out of black onto the next one (ms).
@@ -438,13 +517,11 @@ export const stepPlay = (
 			r.at = at;
 		}
 		if (r.at >= r.to) {
+			// Back to the game behind the wipe (see stingIn) - held over the
+			// picture till everybody in it can be drawn at its size again.
 			s.replay = undefined;
 			s.snapCam = true;
 			s.paceAt = -1;
-			// Back to the game up out of black, as onto the next key play -
-			// held black till everybody in it can be drawn at its size again.
-			s.keyDip = now;
-			s.keyHold = -Infinity;
 		}
 	} else if ((!p.paused || s.stepping) && s.t < target) {
 		// On to the next line - stopping on the moment to show a dunk again,
@@ -486,6 +563,10 @@ export const stepPlay = (
 			s.paceAt = -1;
 		}
 	}
+	s.replayDue =
+		again && dunk && !s.replay && dunk.t + REPLAY_AFTER > s.t
+			? dunk.t + REPLAY_AFTER
+			: undefined;
 	// Through a cut: the camera starts fresh on the other side.
 	const cut = nearestCut(cameraCuts(tl), s.t);
 	if (cut !== undefined && cut > before && cut <= s.t) {

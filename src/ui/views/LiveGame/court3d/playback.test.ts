@@ -13,7 +13,15 @@ import {
 	type Follow,
 	type FollowReport,
 } from "./follow.ts";
-import { onCursor, stepPlay, type PlayClock } from "./playback.ts";
+import {
+	makeWipe,
+	onCursor,
+	replayed,
+	STING_IN,
+	stepPlay,
+	wipeAt,
+	type PlayClock,
+} from "./playback.ts";
 import {
 	compileCourt,
 	isLineItem,
@@ -617,4 +625,98 @@ describe("onto the game from the warm-ups", () => {
 		assert.strictEqual(asked, 0);
 		assert.isBelow(s.t, targetForCursor(tl, 0));
 	});
+});
+
+describe("the wipe into a replay and out of it", () => {
+	// A dunk shown again: the picture goes into the replay and back out of it
+	// behind a wipe - coming in over the picture to cover all of it at the
+	// cut, never over the dunk itself, and off it again as quickly; held
+	// over it while the picture on the other side is not ready.
+	test("in to cover the cut, never over the dunk, held while need be", () => {
+		const { tl, events } = compile("b", 150);
+		const dunks = tl.fx.filter((f) => replayed(f));
+		assert.isAtLeast(dunks.length, 1);
+		for (const [k, dunk] of dunks.slice(0, 3).entries()) {
+			const s = device(false).s;
+			s.t = dunk.t - 4000;
+			s.prevCursor = events.length;
+			s.nextDunk = tl.fx.indexOf(dunk);
+			const w = makeWipe();
+			const f = makeFollow();
+			const frames: {
+				now: number;
+				t: number;
+				replay: boolean;
+				u: number | undefined;
+				covered: boolean;
+			}[] = [];
+			// The second dunk's: the picture on the other side of each cut
+			// not ready for six frames - the wipe held over it.
+			const holds = k === 1 ? 6 : 0;
+			let held = 0;
+			for (let now = 16; now < 14_000; now += 1000 / 60) {
+				const { rate } = stepPlay(
+					s,
+					{
+						cursor: events.length,
+						paused: false,
+						rate: 1,
+						follower: false,
+						along: false,
+						keyPlan: undefined,
+						eventsLength: events.length,
+						onReady: () => {},
+					},
+					f,
+					tl,
+					false,
+					now,
+					now,
+				);
+				const was = frames.at(-1);
+				if (holds && w.covered && was && was.replay !== !!s.replay) {
+					held = holds;
+				}
+				if (held > 0 && w.covered) {
+					w.hold = now;
+					held -= 1;
+				}
+				const u = wipeAt(w, s, now, 1, rate);
+				frames.push({ now, t: s.t, replay: !!s.replay, u, covered: w.covered });
+			}
+			const label = `${k} @${Math.round(dunk.t)}`;
+			const cuts = frames
+				.map((x, i) => i)
+				.filter((i) => i > 0 && frames[i]!.replay !== frames[i - 1]!.replay);
+			assert.strictEqual(cuts.length, 2, label);
+			for (const i of cuts) {
+				// All of the picture covered at the cut - come in over it,
+				// not popped up.
+				assert.isTrue(frames[i]!.covered, label);
+				assert.isAtLeast(frames[i - 1]!.u ?? 0, 0.35, label);
+				// On the picture only about the cut.
+				const on = frames.filter(
+					(x) => x.u !== undefined && Math.abs(x.now - frames[i]!.now) < 2000,
+				);
+				assert.isBelow(
+					on.length,
+					((2 * STING_IN) / 1000) * 60 + holds + 4,
+					label,
+				);
+				// Held while the other side was not ready, then off.
+				if (holds) {
+					assert.isTrue(
+						frames.slice(i, i + holds).every((x) => x.covered),
+						label,
+					);
+				}
+			}
+			// Never over the dunk.
+			for (const x of frames) {
+				if (!x.replay && x.t > dunk.t - 1500 && x.t < dunk.t + 400) {
+					assert.isUndefined(x.u, `${label} t=${Math.round(x.t)}`);
+				}
+			}
+		}
+	}, 60_000);
 });

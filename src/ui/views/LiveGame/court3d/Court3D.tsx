@@ -74,7 +74,13 @@ import {
 	type FollowReport,
 	type Shown,
 } from "./follow.ts";
-import { onCursor, stepPlay, type Replay } from "./playback.ts";
+import {
+	makeWipe,
+	onCursor,
+	stepPlay,
+	wipeAt,
+	type Replay,
+} from "./playback.ts";
 import {
 	keyOutAt,
 	planKeyPlays,
@@ -117,8 +123,13 @@ const DIP_MS = 130;
 const KEY_DIP_MS = 320;
 // The longest it is held black for the picture to be ready (ms).
 const KEY_HOLD_MS = 900;
-// Replay-time ms the picture takes to come up out of black and go back down.
-const REPLAY_DIP = 70;
+// THE WIPE into a replay and out of it (see playback's wipeAt): a band in
+// the home team's colors, its logo in the middle, slanting, sweeping across
+// the picture - this much wider than it (%: wide enough to cover all of it,
+// the slant and all, while it is near halfway across - see STING_COVERS),
+// slanting this far (deg).
+const STING_W = 140;
+const STING_SLANT = 18;
 // WHAT IS OVER THE PICTURE: the score bug along its foot and the line of
 // play-by-play across its top, each's box as shares of the picture (see
 // camera.ts's dodgeFor).
@@ -851,6 +862,7 @@ const Court3D = ({
 	const clockRef = useRef<HTMLSpanElement | null>(null);
 	const dipRef = useRef<HTMLDivElement | null>(null);
 	const replayRef = useRef<HTMLDivElement | null>(null);
+	const stingRef = useRef<HTMLDivElement | null>(null);
 	const shotRef = useRef<HTMLSpanElement | null>(null);
 	// The score bug's fouls and possession marker, per side [visitors, home].
 	const foulsAwayRef = useRef<HTMLSpanElement | null>(null);
@@ -922,6 +934,9 @@ const Court3D = ({
 		// The dunk replay showing now, and the next dunk that would get one.
 		replay: undefined as Replay | undefined,
 		nextDunk: 0,
+		replayDue: undefined as number | undefined,
+		// The wipe into a replay and out of it.
+		wipe: makeWipe(),
 		// The starting lineups: the man being called (his place in the
 		// order, -1 none), and whether they are on.
 		introCall: -1,
@@ -1191,18 +1206,25 @@ const Court3D = ({
 			// no picture yet is left out of it (see SpriteCache.dark), and it
 			// is held black until everybody in it is ready to be drawn: a
 			// moment more of black, not a freeze halfway out of it.
+			// (Behind the wipe: the wipe held over all of the picture.)
 			if (
 				sprites.skipped > 0 &&
 				sprites.dark &&
 				now - s.darkFrom < KEY_HOLD_MS
 			) {
-				s.keyHold = now;
+				if (s.wipe.covered) {
+					s.wipe.hold = now;
+				} else {
+					s.keyHold = now;
+				}
 			}
+			// The wipe: in over the picture to the cut into a replay or out of
+			// it, held there while need be, then on off it.
+			const sting = wipeAt(s.wipe, s, now, p.rate, rate);
 			const keyDark = 1 - (now - Math.max(s.keyDip, s.keyHold)) / KEY_DIP_MS;
 			let o: number;
 			if (replay) {
-				const edge = Math.min(replay.at - replay.from, replay.to - replay.at);
-				o = Math.max(0, 1 - edge / REPLAY_DIP, keyDark);
+				o = Math.max(0, keyDark);
 			} else {
 				const near = cut === undefined ? Infinity : Math.abs(s.t - cut);
 				// (And between clips of a highlight reel, and the key plays:
@@ -1213,10 +1235,11 @@ const Court3D = ({
 						: 0;
 				o = Math.max(0, 1 - near / DIP_MS, clipDipAt(tl, s.t), keyDark, keyOut);
 			}
-			if (o >= 0.75 && !sprites.dark) {
+			const dark = o >= 0.75 || s.wipe.covered;
+			if (dark && !sprites.dark) {
 				s.darkFrom = now;
 			}
-			sprites.dark = o >= 0.75;
+			sprites.dark = dark;
 			// Poses come round as slowly as the moment shown moves on: in slow
 			// motion a man may be drawn as he was for that many more frames.
 			const drawnAt = replay ? replay.at : s.t;
@@ -1241,9 +1264,29 @@ const Court3D = ({
 					capEl.style.opacity = o;
 				}
 			}
+			const band = stingRef.current;
+			if (band) {
+				const show = sting === undefined ? "none" : "flex";
+				if (band.style.display !== show) {
+					band.style.display = show;
+				}
+				if (sting !== undefined) {
+					// From all the way off the picture to its left to all the
+					// way off it to its right, the slant and all.
+					const off = (50 * h * Math.tan((STING_SLANT * Math.PI) / 180)) / w;
+					const from = -STING_W - off;
+					const to = 100 + off;
+					const x = ((from + (to - from) * sting) * w) / 100;
+					const tr = `translate3d(${x.toFixed(1)}px,0,0) skewX(${-STING_SLANT}deg)`;
+					if (band.style.transform !== tr) {
+						band.style.transform = tr;
+					}
+				}
+			}
 			const tag = replayRef.current;
 			if (tag) {
-				const show = replay ? "block" : "none";
+				const show =
+					replay && (sting === undefined || sting > 0.75) ? "block" : "none";
 				if (tag.style.display !== show) {
 					tag.style.display = show;
 				}
@@ -1306,7 +1349,7 @@ const Court3D = ({
 				flashes: working.flashes,
 				courtside: cr.courtside,
 				teamColors: p.teamColors,
-				black: o >= 0.999,
+				black: o >= 0.999 || s.wipe.hold === now,
 			});
 			if (
 				adjust(
@@ -1529,6 +1572,42 @@ const Court3D = ({
 					pointerEvents: "none",
 				}}
 			/>
+			<div
+				ref={stingRef}
+				aria-hidden
+				style={{
+					display: "none",
+					position: "absolute",
+					top: 0,
+					left: 0,
+					width: `${STING_W}%`,
+					height: "100%",
+					alignItems: "center",
+					justifyContent: "center",
+					pointerEvents: "none",
+					willChange: "transform",
+					background: (() => {
+						const main = home?.colors?.[0] ?? "#8c1d40";
+						const accent = home?.colors?.[1] ?? "#f2c14e";
+						// (Lit from above, a little.)
+						return `linear-gradient(180deg, rgba(255,255,255,0.16), rgba(0,0,0,0.22)), linear-gradient(90deg, #fff 0 2%, ${accent} 2% 7%, ${main} 7% 93%, ${accent} 93% 98%, #fff 98% 100%)`;
+					})(),
+				}}
+			>
+				{homeLogo ? (
+					<img
+						alt=""
+						src={homeLogo}
+						style={{
+							height: "34%",
+							maxWidth: "24%",
+							objectFit: "contain",
+							transform: `skewX(${STING_SLANT}deg)`,
+							filter: "drop-shadow(0 0.4cqw 0.6cqw rgba(0,0,0,0.35))",
+						}}
+					/>
+				) : null}
+			</div>
 			<div
 				ref={replayRef}
 				style={{
