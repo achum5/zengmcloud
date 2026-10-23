@@ -67,7 +67,14 @@ import {
 import { drawPixelText, pixelTextWidth } from "./pixelFont.ts";
 import type { Replay } from "./playback.ts";
 import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
-import { ANIMS, bounceAt, isGait, type AnimName, type Body } from "./poses.ts";
+import {
+	ANIMS,
+	bodyOf,
+	bounceAt,
+	isGait,
+	type AnimName,
+	type Body,
+} from "./poses.ts";
 import {
 	drawSprite,
 	prepareSprites,
@@ -1304,6 +1311,12 @@ export const aimFor = (
 	const maxW = narrow ? 68 : 88;
 	let width = Math.min(maxW, Math.max(minW, maxX - minX + 18));
 	let x = (ball.x * 0.62 + mid * 0.38) * on + mid * (1 - on);
+	// Ahead of the play: on toward where the ball is going.
+	if (on > 0) {
+		const ahead = evalBall(tl, Math.min(tl.end, m.t + LEAD_MS), leadBody);
+		const d = ahead.x - ball.x;
+		x += Math.sign(d) * Math.max(0, Math.abs(d) - LEAD_FROM) * LEAD_K * on;
+	}
 	// A shot going up: push in on the shooter - eased in as he goes up and
 	// back out as he comes down, not a jump at either end.
 	const shooter = m.players.find((p) => SHOOTING.has(p.anim));
@@ -1322,6 +1335,22 @@ export const aimFor = (
 	x += (Math.min(ball.x + room, Math.max(ball.x - room, x)) - x) * on;
 	return framed(x, width);
 };
+
+// LEADING THE PLAY: an operator shows where the play is going, not only
+// where it is - on a break, the floor ahead of the man with the ball and
+// the rim he is going to, not him out at the edge of the picture with the
+// rest of it still to come into it. The camera's aim goes on toward where
+// the ball will be this far (ms of the game) on - the whole game is staged
+// before it is shown, so that is known - by this much of the way there.
+// (On the camera's own lag behind its aim - see operate - that keeps a man
+// pushing the ball up the floor a little behind the middle of the picture.)
+// (Only where it is going a good way: the ball moved round the arc, or a
+// dribble one way and back, not chased ahead of time.)
+const LEAD_MS = 800;
+const LEAD_FROM = 6;
+const LEAD_K = 0.8;
+let leadBodyOf: Body | undefined;
+const leadBody = (): Body => (leadBodyOf ??= bodyOf());
 
 // A free throw's shot: about two thirds as wide as the whole floor's (but
 // never narrower than FT_MIN_W feet, and these widths without one), and

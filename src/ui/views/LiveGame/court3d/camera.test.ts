@@ -9,6 +9,7 @@ import {
 	type Operator,
 } from "./camera.ts";
 import { benchX, COURT_H, COURT_W, HUDDLE_Y, type Side } from "./geometry.ts";
+import { evalBall } from "./evaluate.ts";
 import { bodyOf } from "./poses.ts";
 import { aimFor, arenaAim, boardAt, momentAt } from "./scene.ts";
 import { compile } from "./testGame.ts";
@@ -144,6 +145,46 @@ describe("3D camera", () => {
 			assert.isAbove(shots, 6);
 		}
 	}, 60_000);
+
+	// On a break, the camera shows where the play is going: the floor ahead
+	// of the ball and the rim it is going to - it looks a way on from the
+	// ball, not back toward the players trailing the play.
+	test("pushed up the floor, the picture leads the ball", () => {
+		const body = bodyOf();
+		const fit = courtFit(16 / 9);
+		let pushes = 0;
+		let ahead = 0;
+		let lead = 0;
+		for (const seed of ["a", "b"]) {
+			const { tl, players } = game(seed);
+			const fast = (t: number) => tl.fast.some(([a, b]) => t >= a && t < b);
+			for (let t = 5000; t < tl.end - 1000; t += 250) {
+				if (fast(t) || fast(t + 800)) {
+					continue;
+				}
+				const m = momentAt(tl, t, players, () => body);
+				if (m.ball.holder === undefined) {
+					continue;
+				}
+				const later = evalBall(tl, t + 800, () => body);
+				const d = later.x - m.ball.x;
+				// Up the floor at 15 ft a second or more, away from either end.
+				if (Math.abs(d) < 12 || m.ball.x < 30 || m.ball.x > COURT_W - 30) {
+					continue;
+				}
+				const aim = aimFor(m, false, tl, fit);
+				pushes += 1;
+				lead += (aim.x - m.ball.x) * Math.sign(d);
+				if ((aim.x - m.ball.x) * Math.sign(d) > 1) {
+					ahead += 1;
+				}
+			}
+		}
+		assert.isAtLeast(pushes, 20);
+		const msg = `${ahead} of ${pushes}, ${(lead / pushes).toFixed(1)} ft`;
+		assert.isAbove(ahead / pushes, 0.9, msg);
+		assert.isAbove(lead / pushes, 6, msg);
+	}, 120_000);
 });
 
 describe("3D camera operator", () => {
