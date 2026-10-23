@@ -1213,6 +1213,112 @@ const poly = (ctx: CanvasRenderingContext2D, cam: Camera, pts: Pt3[]) => {
 	ctx.closePath();
 };
 
+// THE SHOT CLOCK on top of the board: a dark box, the seconds lit in red on
+// each side of it - so from wherever the camera is, the side it sees has
+// them, the way a broadcast shows it from the sideline. (Drawn flat across
+// the top of the board, as it was, the side camera saw only its edge, and
+// the seconds floated over the board on nothing.)
+const CLOCK_HALF = 0.9;
+const CLOCK_IN = 3.55;
+const CLOCK_OUT = 4.55;
+const CLOCK_LOW = 13.08;
+const CLOCK_HIGH = 14.05;
+const drawShotClock = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	X: (d: number) => number,
+	rock: number,
+	bz: number,
+	shotClock: string,
+	inkW: number,
+) => {
+	const xa = Math.min(X(CLOCK_IN), X(CLOCK_OUT));
+	const xb = Math.max(X(CLOCK_IN), X(CLOCK_OUT));
+	const ya = 25 - CLOCK_HALF + rock;
+	const yb = 25 + CLOCK_HALF + rock;
+	const z0 = CLOCK_LOW + bz;
+	const z1 = CLOCK_HIGH + bz;
+	const P = (x: number, y: number, z: number): Pt3 => ({ x, y, z });
+	// Each side: its top corners as seen from outside it, left then right
+	// (the floor's y runs toward the camera: see camera.ts), and which way
+	// it faces. (The top is seen from above.)
+	const sides: { tl: Pt3; tr: Pt3; nx: number; ny: number }[] = [
+		{ tl: P(xa, yb, z1), tr: P(xb, yb, z1), nx: 0, ny: 1 },
+		{ tl: P(xb, ya, z1), tr: P(xa, ya, z1), nx: 0, ny: -1 },
+		{ tl: P(xb, yb, z1), tr: P(xb, ya, z1), nx: 1, ny: 0 },
+		{ tl: P(xa, ya, z1), tr: P(xa, yb, z1), nx: -1, ny: 0 },
+	];
+	const seen = sides.filter(
+		(s) =>
+			(cam.pos.x - (s.tl.x + s.tr.x) / 2) * s.nx +
+				(cam.pos.y - (s.tl.y + s.tr.y) / 2) * s.ny >
+			0,
+	);
+	ctx.lineJoin = "round";
+	ctx.strokeStyle = INK;
+	ctx.lineWidth = 2 * inkW;
+	const faces: Pt3[][] = seen.map((s) => [
+		s.tl,
+		s.tr,
+		{ ...s.tr, z: z0 },
+		{ ...s.tl, z: z0 },
+	]);
+	if (cam.pos.z > z1) {
+		faces.push([P(xa, ya, z1), P(xb, ya, z1), P(xb, yb, z1), P(xa, yb, z1)]);
+	}
+	for (const f of faces) {
+		poly(ctx, cam, f);
+		ctx.stroke();
+	}
+	faces.forEach((f, i) => {
+		ctx.fillStyle = i < seen.length ? "#0d0d10" : "#2a2b31";
+		poly(ctx, cam, f);
+		ctx.fill();
+	});
+	if (!shotClock) {
+		return;
+	}
+	// The seconds on each side seen, laid on it: drawn in its own frame -
+	// across it and down it, a unit a pixel of the picture.
+	ctx.fillStyle = "#ff3b2f";
+	ctx.textAlign = "center";
+	ctx.textBaseline = "middle";
+	for (const s of seen) {
+		const tl = project(cam, s.tl);
+		const tr = project(cam, s.tr);
+		const bl = project(cam, { ...s.tl, z: z0 });
+		const w = Math.hypot(tr.x - tl.x, tr.y - tl.y);
+		const h = Math.hypot(bl.x - tl.x, bl.y - tl.y);
+		// (Not on a side seen too nearly edge on to read: its area on the
+		// picture against what it would have square on.)
+		const across = Math.hypot(s.tr.x - s.tl.x, s.tr.y - s.tl.y);
+		const k = (tl.k + tr.k) / 2;
+		const area = Math.abs(
+			(tr.x - tl.x) * (bl.y - tl.y) - (tr.y - tl.y) * (bl.x - tl.x),
+		);
+		if (h < 2.5 || area < 0.45 * across * (z1 - z0) * k * k) {
+			continue;
+		}
+		ctx.save();
+		ctx.transform(
+			(tr.x - tl.x) / w,
+			(tr.y - tl.y) / w,
+			(bl.x - tl.x) / h,
+			(bl.y - tl.y) / h,
+			tl.x,
+			tl.y,
+		);
+		ctx.font = `700 ${0.8 * h}px "Courier New", monospace`;
+		const fit = (0.86 * w) / Math.max(1, ctx.measureText(shotClock).width);
+		ctx.translate(w / 2, h * 0.53);
+		if (fit < 1) {
+			ctx.scale(fit, 1);
+		}
+		ctx.fillText(shotClock, 0, 0);
+		ctx.restore();
+	}
+};
+
 export type HoopFx = {
 	// 0..1, fading: the net snapping up after a make, the iron ringing after a
 	// miss, the rim bent by a dunk.
@@ -1335,6 +1441,10 @@ export const drawHoop = (
 			z,
 		});
 		const [d0, d1] = [-4.3, 2.1];
+		// (Inked round, so it reads as a sign against a floor its own color.)
+		ctx.lineJoin = "round";
+		ctx.strokeStyle = INK;
+		ctx.lineWidth = 2 * inkW;
 		ctx.fillStyle = padColor;
 		poly(ctx, cam, [
 			at(d0, low(d0) + 0.35),
@@ -1342,6 +1452,7 @@ export const drawHoop = (
 			at(d1, top(d1) - 0.35),
 			at(d0, top(d0) - 0.35),
 		]);
+		ctx.stroke();
 		ctx.fill();
 		ctx.fillStyle = "rgba(255,255,255,0.85)";
 		const mid = (d: number) => (low(d) + top(d)) / 2;
@@ -1425,23 +1536,7 @@ export const drawHoop = (
 		{ x: bx, y: 24 + rock, z: 11.5 + bz },
 	]);
 	ctx.stroke();
-	const sc = [
-		{ x: X(3.85), y: 24.15 + rock, z: 13.1 + bz },
-		{ x: X(3.85), y: 25.85 + rock, z: 13.1 + bz },
-		{ x: X(3.85), y: 25.85 + rock, z: 14.05 + bz },
-		{ x: X(3.85), y: 24.15 + rock, z: 14.05 + bz },
-	];
-	ctx.fillStyle = "#0d0d10";
-	poly(ctx, cam, sc);
-	ctx.fill();
-	if (shotClock) {
-		const c = project(cam, { x: X(3.8), y: 25 + rock, z: 13.58 + bz });
-		ctx.fillStyle = "#ff3b2f";
-		ctx.font = `700 ${Math.max(5, 0.72 * c.k)}px "Courier New", monospace`;
-		ctx.textAlign = "center";
-		ctx.textBaseline = "middle";
-		ctx.fillText(shotClock, c.x, c.y);
-	}
+	drawShotClock(ctx, cam, X, rock, bz, shotClock, inkW);
 
 	// The rim and its net.
 	const rx = X(5.25);
