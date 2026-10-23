@@ -5821,13 +5821,17 @@ const buildAllStar = (game: RecapGame, rng: () => number): string => {
 		: undefined;
 	if (mvpLine) {
 		named.add(mvpLine.name);
+		// With how he got there ("on 8 three-pointers"), and the award said in
+		// so many words: "The award went to Obi King, on 38 points" left the
+		// reader to work out which award.
+		const line = withFlourish(statPhrase(mvpLine), shootingFlourish(mvpLine));
 		sentences.push(
 			pick(
 				rng,
 				[
-					`${mvpLine.name} had ${statPhrase(mvpLine)}.`,
-					`${mvpLine.name} finished with ${statPhrase(mvpLine)}.`,
-					`The award went to ${mvpLine.name}, on ${statPhrase(mvpLine)}.`,
+					`${mvpLine.name} was named MVP after putting up ${line}.`,
+					`${mvpLine.name} took MVP honors with ${line}.`,
+					`MVP ${mvpLine.name} finished with ${line}.`,
 				],
 				"allStarMvpLine",
 			),

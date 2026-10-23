@@ -5783,6 +5783,19 @@ describe("the All-Star Game", () => {
 		}
 	});
 
+	// "The award went to Obi King, on 38 points" - which award - or no word
+	// of it in the body at all under a headline that said it.
+	test("the body says he was the MVP", () => {
+		for (let gid = 1; gid <= 30; gid += 1) {
+			const body = getAutoRecap(allStarGame(gid))
+				.split("\n\n")
+				.slice(1)
+				.join(" ");
+			assert.match(body, /LeBron James[^.]*MVP|MVP LeBron James/, body);
+			assert.doesNotMatch(body, /The award went/, body);
+		}
+	});
+
 	test("explains the MVP instead of just naming him", () => {
 		let withLine = 0;
 		for (let gid = 1; gid <= 30; gid += 1) {
