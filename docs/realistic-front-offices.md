@@ -384,7 +384,13 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   player moves a team's own first about 9 places, worth 0.025 titles on
   average and up to 0.15 - so "their star and their pick" was a steal, and a
   team selling its star priced the buyer's pick as if the buyer had not got
-  him. A signing moves a team's own picks the same way.
+  him. A signing moves a team's own picks the same way. The trade page's
+  front office breakdown shows how far a deal moves each team's picks.
+- **A pick is priced at places a tenth apart, and in between by how far
+  along** - within 0.01% of pricing it at its exact place. Cached by the exact
+  place, the picks priced grew by about 20 MB a trading day; by the place
+  rounded, a deal's price hung on what had been priced before it, so two
+  devices could answer the same offer differently.
   - **It makes tanking pay, and that stands** (owner's call: "Each FO
     should be in charge solely of building a winning franchise"). With picks
     priced honestly, a team going nowhere sells its veterans to contenders
