@@ -182,15 +182,16 @@ export const drawHeadAt = (
 	st: PlayerState,
 	body: Body,
 	look: Look,
+	// Where his head is on his body (see headOf), if already known.
+	head = headOf(st, body),
 ) => {
-	const sk = skeleton(body, poseOf(st));
 	const at = (v: V3): Projected => project(cam, bodyPoint(st, v));
 	const toCamX = cam.pos.x - st.x;
 	const toCamY = cam.pos.y - st.y;
 	const toCamL = Math.hypot(toCamX, toCamY) || 1;
 	const front =
 		(Math.cos(st.yaw) * toCamX + Math.sin(st.yaw) * toCamY) / toCamL;
-	const headC = at(sk.head);
+	const headC = at(head);
 	drawHead(
 		ctx,
 		headC,
@@ -198,10 +199,13 @@ export const drawHeadAt = (
 		look,
 		front,
 		at,
-		sk.head,
+		head,
 		OUTLINE * headC.k,
 	);
 };
+// Where his head is on his body, in his pose.
+export const headOf = (st: PlayerState, body: Body): V3 =>
+	skeleton(body, poseOf(st)).head;
 
 // How far round to the camera he is (1 facing it, -1 away) when his head
 // shows in profile, and when his face comes in over it - over this much more.

@@ -17,13 +17,17 @@ import {
 // left to that, the time ran out on the nearest.)
 
 // No canvas here: a stand-in that takes every call and draws nothing, and
-// reads back clear pixels - noting what is drawn from.
+// reads back clear pixels - noting what is drawn from, and how many pixels
+// are read off each canvas and put on it.
 const drawnFrom: unknown[] = [];
+const read = new Map<unknown, number>();
+const put = new Map<unknown, number>();
 // (And, as a canvas with a picture from another site on it, none of them
 // to be read.)
 let tainted = false;
 const stubCanvas = () => {
 	const ctx: Record<string | symbol, unknown> = {};
+	const canvas = { width: 0, height: 0, getContext: () => proxy };
 	const proxy: unknown = new Proxy(ctx, {
 		get: (target, prop) =>
 			prop in target
@@ -33,23 +37,39 @@ const stubCanvas = () => {
 							if (tainted) {
 								throw new Error("SecurityError");
 							}
+							read.set(canvas, (read.get(canvas) ?? 0) + w * h);
 							return {
 								data: new Uint8ClampedArray(w * h * 4),
 								width: w,
 								height: h,
 							};
 						}
-					: prop === "drawImage"
-						? (from: unknown) => {
-								drawnFrom.push(from);
+					: prop === "putImageData"
+						? (
+								img: ImageData,
+								_x: number,
+								_y: number,
+								_dx?: number,
+								_dy?: number,
+								dw?: number,
+								dh?: number,
+							) => {
+								put.set(
+									canvas,
+									(put.get(canvas) ?? 0) +
+										(dw ?? img.width) * (dh ?? img.height),
+								);
 							}
-						: () => proxy,
+						: prop === "drawImage"
+							? (from: unknown) => {
+									drawnFrom.push(from);
+								}
+							: () => proxy,
 		set: (target, prop, v) => {
 			target[prop] = v;
 			return true;
 		},
 	});
-	const canvas = { width: 0, height: 0, getContext: () => proxy };
 	return canvas;
 };
 
@@ -148,12 +168,13 @@ test("short of time, the men nearest the camera get their new pose first", () =>
 	);
 });
 
-// Each new picture is sculpted on one scratch sheet and kept as a picture
-// of its own. Drawn from, the sheet would be held on to as it was until the
-// kept picture is next painted, and the next man sculpted on it would wait
-// while all of it - as big as the biggest man ever drawn on it - was copied:
-// the pixels are handed over instead.
-test("a kept picture takes the sheet's pixels - the sheet is never drawn from", () => {
+// Each new picture is kept as a picture of its own, its pixels put on it
+// once. Drawn from a scratch sheet, the sheet would be held on to as it was
+// until the kept picture is next painted, and the next man sculpted on it
+// would wait while all of it - as big as the biggest man ever drawn on it -
+// was copied. And only his head is drawn on a canvas: only the bit of the
+// sheet round it is put on and read back, not all of him.
+test("a kept picture is given its pixels once - the sheet is never drawn from, and only read round his head", () => {
 	const cam = makeCamera({ x: 47, width: 30, y: 24 }, 640, 360, MAIN_RIG);
 	const body = bodyOf();
 	const look: Look = {
@@ -169,6 +190,8 @@ test("a kept picture takes the sheet's pixels - the sheet is never drawn from", 
 	const cache = makeSpriteCache();
 	const ctx = stubCanvas().getContext() as unknown as CanvasRenderingContext2D;
 	drawnFrom.length = 0;
+	read.clear();
+	put.clear();
 	for (let i = 0; i < 4; i++) {
 		startFrame(cache);
 		const st = {
@@ -190,6 +213,18 @@ test("a kept picture takes the sheet's pixels - the sheet is never drawn from", 
 	assert.isFalse(drawnFrom.includes(scratch.canvas));
 	// (What is drawn into the picture is each kept one.)
 	assert.strictEqual(drawnFrom.length, 4);
+	// Each kept picture is given all its pixels, once; off the sheet, a
+	// small part of that is read - round his head.
+	let keptArea = 0;
+	for (const k of cache.kept.values()) {
+		assert.strictEqual(put.get(k.canvas), k.w * k.h);
+		assert.isUndefined(read.get(k.canvas));
+		keptArea += k.w * k.h;
+	}
+	const sheetRead = read.get(scratch.canvas) ?? 0;
+	assert.isAbove(sheetRead, 0);
+	assert.isBelow(sheetRead, keptArea * 0.5);
+	assert.isBelow(put.get(scratch.canvas) ?? 0, keptArea * 0.5);
 	// A sheet that may not be read is drawn from all the same.
 	tainted = true;
 	try {

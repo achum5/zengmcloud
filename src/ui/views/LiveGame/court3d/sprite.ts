@@ -5,8 +5,8 @@ import {
 	type PlayerState,
 	type Stride,
 } from "./evaluate.ts";
-import { drawHeadAt, type Look } from "./figure.ts";
-import { ANIMS, type AnimName, type Body } from "./poses.ts";
+import { drawHeadAt, headOf, type Look } from "./figure.ts";
+import { ANIMS, type AnimName, type Body, type V3 } from "./poses.ts";
 import { sculpt } from "./sculpt.ts";
 
 // THE PLAYERS, DRAWN.
@@ -287,9 +287,31 @@ export const keep = (
 	} else {
 		into.drawImage(from, fx, fy, w, h, 0, 0, w, h);
 	}
-	const k: Kept = { canvas, w, h, dx, dy };
+	return remember(cache, key, { canvas, w, h, dx, dy });
+};
+// A picture kept as the pixels it was finished in (see finishPixels).
+const keepPixels = (
+	cache: SpriteCache,
+	key: string,
+	pixels: ImageData,
+	dx: number,
+	dy: number,
+): Kept => {
+	const canvas = document.createElement("canvas");
+	canvas.width = pixels.width;
+	canvas.height = pixels.height;
+	canvas.getContext("2d")!.putImageData(pixels, 0, 0);
+	return remember(cache, key, {
+		canvas,
+		w: pixels.width,
+		h: pixels.height,
+		dx,
+		dy,
+	});
+};
+const remember = (cache: SpriteCache, key: string, k: Kept): Kept => {
 	cache.kept.set(key, k);
-	cache.area += w * h;
+	cache.area += k.w * k.h;
 	// The oldest go first.
 	for (const [old, o] of cache.kept) {
 		if (o === k || (cache.kept.size <= KEEP && cache.area <= KEEP_AREA)) {
@@ -721,6 +743,9 @@ export type Shaped = {
 	rh: number;
 	box: Box;
 	head: { x: number; y: number; r: number };
+	// Where his head is on his body, for the page to draw it there (see
+	// finish).
+	headAt: V3;
 	at: [number, number];
 	img: ImageData;
 	over?: ImageData;
@@ -769,6 +794,7 @@ export const shape = (job: Job, look: Look, cut = false): Shaped => {
 		rh,
 		box,
 		head: made.head,
+		headAt: headOf(posed, body),
 		at: cut ? [rx0, ry0] : [0, 0],
 		img: cut ? cutTo(made.img, rx0, ry0, rw, rh) : made.img,
 		...(made.over
@@ -777,66 +803,188 @@ export const shape = (job: Job, look: Look, cut = false): Shaped => {
 	};
 };
 
-// His picture, finished on the scratch sheet: his body put on it, his head
-// drawn over (always on the page - see farm.ts), and the rim round that.
-// The part of the sheet with anything drawn in it (x0, y0 to x1, y1 - none
-// if x1 <= x0), and where that sits from where he stands (dx, dy).
-export const finish = (sh: Shaped, job: Job, look: Look, scratch: Scratch) => {
+// Where his head is drawn on the sheet: round it, his face and hair are
+// drawn and rimmed (see finish).
+const headBox = (sh: Shaped): Box => {
+	const { w, h, head } = sh;
+	const hr = head.r;
+	return {
+		x0: Math.max(0, Math.floor(head.x - hr * 1.9) - 2),
+		y0: Math.max(0, Math.floor(head.y - hr * 2) - 2),
+		x1: Math.min(w, Math.ceil(head.x + hr * 1.9) + 2),
+		y1: Math.min(h, Math.ceil(head.y + hr * 1.6) + 2),
+	};
+};
+// What is kept of the sheet: just what is drawn of him (the rim round it,
+// his head and all) - x0, y0 to x1, y1 (nothing, if x1 <= x0) - and where
+// that sits from where he stands (dx, dy).
+const keptBox = (sh: Shaped, hb: Box, job: Job) => {
+	const { w, h, ox, oy, box } = sh;
+	const x0 = Math.max(0, Math.min(box.x0 - 1, hb.x0));
+	const y0 = Math.max(0, Math.min(box.y0 - 1, hb.y0));
+	return {
+		w,
+		h,
+		ox,
+		oy,
+		x0,
+		y0,
+		x1: Math.min(w, Math.max(box.x1 + 2, hb.x1)),
+		y1: Math.min(h, Math.max(box.y1 + 2, hb.y1)),
+		dx: ox + x0 * job.px - job.baseX,
+		dy: oy + y0 * job.px - job.baseY,
+	};
+};
+// His face, shrunk to the sprite's scale, drawn on the sheet over what is
+// there - its top left corner at (fx, fy) on the sheet.
+// (Whatever drawing his head leaves set on the sheet - the joins of its
+// ink, its caps - is undone after: the next man's head is drawn the same
+// whoever was drawn on the sheet before him.)
+const drawHeadOn = (
+	s: CanvasRenderingContext2D,
+	sh: Shaped,
+	job: Job,
+	look: Look,
+	fx: number,
+	fy: number,
+) => {
 	const { cam, st: posed, body, px } = job;
-	const { w, h, ox, oy, rx0, ry0, rw, rh, box, img } = sh;
+	s.save();
+	s.setTransform(1 / px, 0, 0, 1 / px, -sh.ox / px - fx, -sh.oy / px - fy);
+	drawHeadAt(s, cam, posed, body, look, sh.headAt);
+	s.restore();
+	s.setTransform(1, 0, 0, 1, 0, 0);
+};
+// The rim round his face (the head box's pixels, read back), just where it
+// is new: the rest of him is done. (His body's own pixels there: none
+// outside what it has.)
+const rimFace = (face: ImageData, sh: Shaped, hb: Box) => {
+	const { img } = sh;
 	const [ax, ay] = sh.at;
-	const { canvas, ctx: s } = scratch;
+	const fw = hb.x1 - hb.x0;
+	const d = img.data;
+	const iw = img.width;
+	const ih = img.height;
+	rim(face.data, fw, hb.y1 - hb.y0, (i) => {
+		const x = hb.x0 + (i % fw) - ax;
+		const y = hb.y0 + Math.floor(i / fw) - ay;
+		return (
+			x < 0 || y < 0 || x >= iw || y >= ih || d[(y * iw + x) * 4 + 3]! < SOLID
+		);
+	});
+};
+const roomFor = (scratch: Scratch, w: number, h: number) => {
+	const { canvas } = scratch;
 	if (canvas.width < w || canvas.height < h) {
 		canvas.width = Math.max(canvas.width, w);
 		canvas.height = Math.max(canvas.height, h);
 	}
+};
+
+// HIS PICTURE, FINISHED AS PIXELS, to be kept: his body's pixels as they
+// came (from a hand, or sculpted here), and over them his head - the only
+// part of him drawn on a canvas, so the only part put on the scratch sheet
+// and read back, with just the bit of his body under it. (Finished on the
+// sheet, all of him was put on it and read back off it: two copies of every
+// pixel of him, the most of the page's share of a new picture - see
+// farm.ts.) Nothing, if he can only be finished on the sheet (see finish):
+// an arm in front of his face, or a head that may not be read.
+export const finishPixels = (
+	sh: Shaped,
+	job: Job,
+	look: Look,
+	scratch: Scratch,
+): (ReturnType<typeof keptBox> & { pixels: ImageData }) | undefined => {
+	if (sh.over) {
+		return undefined;
+	}
+	const { rx0, ry0, rw, rh, img } = sh;
+	const [ax, ay] = sh.at;
+	const hb = headBox(sh);
+	const k = keptBox(sh, hb, job);
+	const ow = k.x1 - k.x0;
+	const oh = k.y1 - k.y0;
+	if (ow <= 0 || oh <= 0) {
+		return undefined;
+	}
+	const pixels = new ImageData(ow, oh);
+	const out = pixels.data;
+	const iw = img.width;
+	for (let y = 0; y < rh; y++) {
+		const from = ((ry0 - ay + y) * iw + rx0 - ax) * 4;
+		out.set(
+			img.data.subarray(from, from + rw * 4),
+			((ry0 - k.y0 + y) * ow + rx0 - k.x0) * 4,
+		);
+	}
+	const fw = hb.x1 - hb.x0;
+	const fh = hb.y1 - hb.y0;
+	if (fw > 0 && fh > 0) {
+		roomFor(scratch, fw, fh);
+		const s = scratch.ctx;
+		s.setTransform(1, 0, 0, 1, 0, 0);
+		s.clearRect(0, 0, fw, fh);
+		const bx0 = Math.max(rx0, hb.x0);
+		const by0 = Math.max(ry0, hb.y0);
+		const bx1 = Math.min(rx0 + rw, hb.x1);
+		const by1 = Math.min(ry0 + rh, hb.y1);
+		if (bx1 > bx0 && by1 > by0) {
+			s.putImageData(
+				img,
+				ax - hb.x0,
+				ay - hb.y0,
+				bx0 - ax,
+				by0 - ay,
+				bx1 - bx0,
+				by1 - by0,
+			);
+		}
+		drawHeadOn(s, sh, job, look, hb.x0, hb.y0);
+		let face: ImageData;
+		try {
+			face = s.getImageData(0, 0, fw, fh);
+		} catch {
+			return undefined;
+		}
+		rimFace(face, sh, hb);
+		const fd = face.data;
+		for (let y = 0; y < fh; y++) {
+			out.set(
+				fd.subarray(y * fw * 4, (y + 1) * fw * 4),
+				((hb.y0 - k.y0 + y) * ow + hb.x0 - k.x0) * 4,
+			);
+		}
+	}
+	return { ...k, pixels };
+};
+
+// His picture, finished on the scratch sheet: his body put on it, his head
+// drawn over (always on the page - see farm.ts), and the rim round that.
+// The part of the sheet with anything drawn in it, and where that sits
+// from where he stands (see keptBox).
+export const finish = (sh: Shaped, job: Job, look: Look, scratch: Scratch) => {
+	const { w, h, rx0, ry0, rw, rh, img } = sh;
+	const [ax, ay] = sh.at;
+	const { ctx: s } = scratch;
+	roomFor(scratch, w, h);
 	s.setTransform(1, 0, 0, 1, 0, 0);
 	s.clearRect(0, 0, w, h);
 	if (rw > 0 && rh > 0) {
 		s.putImageData(img, ax, ay, rx0 - ax, ry0 - ay, rw, rh);
 	}
-	// His face, shrunk to the sprite's scale - and the rim round it, just
-	// where it is new: the rest of him is done.
-	// (Whatever drawing his head leaves set on the sheet - the joins of its
-	// ink, its caps - is undone after: the next man's head is drawn the same
-	// whoever was drawn on the sheet before him.)
-	s.save();
-	s.setTransform(1 / px, 0, 0, 1 / px, -ox / px, -oy / px);
-	drawHeadAt(s, cam, posed, body, look);
-	s.restore();
-	s.setTransform(1, 0, 0, 1, 0, 0);
-	const head = sh.head;
-	const hr = head.r;
-	const hx0 = Math.max(0, Math.floor(head.x - hr * 1.9) - 2);
-	const hy0 = Math.max(0, Math.floor(head.y - hr * 2) - 2);
-	const hx1 = Math.min(w, Math.ceil(head.x + hr * 1.9) + 2);
-	const hy1 = Math.min(h, Math.ceil(head.y + hr * 1.6) + 2);
-	if (hx1 > hx0 && hy1 > hy0) {
-		const fw = hx1 - hx0;
+	drawHeadOn(s, sh, job, look, 0, 0);
+	const hb = headBox(sh);
+	if (hb.x1 > hb.x0 && hb.y1 > hb.y0) {
 		// (Never let a picture we may not read stop the game: no rim then.)
 		let face: ImageData | undefined;
 		try {
-			face = s.getImageData(hx0, hy0, fw, hy1 - hy0);
+			face = s.getImageData(hb.x0, hb.y0, hb.x1 - hb.x0, hb.y1 - hb.y0);
 		} catch {
 			face = undefined;
 		}
 		if (face) {
-			// (His body's own pixels there: none outside what it has.)
-			const d = img.data;
-			const iw = img.width;
-			const ih = img.height;
-			rim(face.data, fw, hy1 - hy0, (i) => {
-				const x = hx0 + (i % fw) - ax;
-				const y = hy0 + Math.floor(i / fw) - ay;
-				return (
-					x < 0 ||
-					y < 0 ||
-					x >= iw ||
-					y >= ih ||
-					d[(y * iw + x) * 4 + 3]! < SOLID
-				);
-			});
-			s.putImageData(face, hx0, hy0);
+			rimFace(face, sh, hb);
+			s.putImageData(face, hb.x0, hb.y0);
 		}
 	}
 	if (sh.over) {
@@ -855,36 +1003,25 @@ export const finish = (sh: Shaped, job: Job, look: Look, scratch: Scratch) => {
 			s.drawImage(t.canvas, rx0, ry0, rw, rh, rx0, ry0, rw, rh);
 		}
 	}
-	// To be kept: just what is drawn of him (the rim round it, his head and
-	// all).
-	const x0 = Math.max(0, Math.min(box.x0 - 1, hx0));
-	const y0 = Math.max(0, Math.min(box.y0 - 1, hy0));
-	return {
-		w,
-		h,
-		ox,
-		oy,
-		x0,
-		y0,
-		x1: Math.min(w, Math.max(box.x1 + 2, hx1)),
-		y1: Math.min(h, Math.max(box.y1 + 2, hy1)),
-		dx: ox + x0 * px - job.baseX,
-		dy: oy + y0 * px - job.baseY,
-	};
+	return keptBox(sh, hb, job);
 };
 
-// His picture, made on the scratch sheet (see finish).
-const paint = (job: Job, look: Look, scratch: Scratch) =>
-	finish(shape(job, look), job, look, scratch);
-
-// Kept from the sheet it was finished on: a new picture for the cache.
-const keepFinished = (
+// His picture, finished and kept: a new picture for the cache (nothing, if
+// there is nothing of him to keep - then left on the sheet).
+const keepMade = (
 	cache: SpriteCache,
 	key: string,
 	scratch: Scratch,
-	p: ReturnType<typeof finish>,
-) =>
-	p.x1 > p.x0 && p.y1 > p.y0
+	sh: Shaped,
+	job: Job,
+	look: Look,
+): Kept | ReturnType<typeof finish> => {
+	const f = finishPixels(sh, job, look, scratch);
+	if (f) {
+		return keepPixels(cache, key, f.pixels, f.dx, f.dy);
+	}
+	const p = finish(sh, job, look, scratch);
+	return p.x1 > p.x0 && p.y1 > p.y0
 		? keep(
 				cache,
 				key,
@@ -896,7 +1033,8 @@ const keepFinished = (
 				p.dx,
 				p.dy,
 			)
-		: undefined;
+		: p;
+};
 
 // His picture for the plan, made: kept, with a cache - or, without, left on
 // the scratch sheet to be drawn from.
@@ -911,16 +1049,15 @@ const make = (
 	cache?: SpriteCache,
 ): Kept | { w: number; h: number; ox: number; oy: number } => {
 	const began = cache ? performance.now() : 0;
-	const p = paint(jobOf(plan, cam, st, body, px), look, scratch);
-	// Kept for next time.
-	if (cache && plan.key) {
-		const kept = keepFinished(cache, plan.key, scratch, p);
-		cache.spent += performance.now() - began;
-		if (kept) {
-			return kept;
-		}
+	const job = jobOf(plan, cam, st, body, px);
+	const sh = shape(job, look);
+	if (!cache || !plan.key) {
+		return finish(sh, job, look, scratch);
 	}
-	return { w: p.w, h: p.h, ox: p.ox, oy: p.oy };
+	// Kept for next time.
+	const made = keepMade(cache, plan.key, scratch, sh, job, look);
+	cache.spent += performance.now() - began;
+	return made;
 };
 
 // THE NEW PICTURES A FRAME NEEDS, MADE NEAREST FIRST. The frame is drawn
@@ -979,13 +1116,8 @@ const took = (cache: SpriteCache, farm: Farm, scratch: Scratch) => {
 		if (cache.kept.has(m.key)) {
 			continue;
 		}
-		const kept = keepFinished(
-			cache,
-			m.key,
-			scratch,
-			finish(m.shaped, m.job, m.look, scratch),
-		);
-		if (!kept) {
+		const kept = keepMade(cache, m.key, scratch, m.shaped, m.job, m.look);
+		if (!("canvas" in kept)) {
 			continue;
 		}
 		const was = cache.last.get(m.id);
