@@ -4988,6 +4988,11 @@ const injurySentence = (
 	written: string,
 ): string | undefined => {
 	const bits: string[] = [];
+	// The club the clause before this one named, so the next one about the
+	// same club can lean on it: "The Timberwolves' Bennedict Hayes left with
+	// a sore ankle...; a sprained wrist kept Devin Ingram out for the
+	// Timberwolves" named them twice in one sentence.
+	let namedTid: number | undefined;
 	for (const t of [shape.winner, shape.loser]) {
 		let teammate = false;
 		for (const p of t.players) {
@@ -4995,6 +5000,7 @@ const injurySentence = (
 				bits.push(
 					`${p.name} played through ${injuryPhrase(p.injury.type)} for ${p.pts}`,
 				);
+				namedTid = undefined;
 			} else if (
 				p.injury?.newThisGame &&
 				p.injury.gamesRemaining > 0 &&
@@ -5005,6 +5011,7 @@ const injurySentence = (
 					: teammate
 						? `teammate ${p.name}`
 						: `${poss(theNick(t))} ${p.name}`;
+				namedTid = who === p.name ? undefined : t.tid;
 				teammate = true;
 				const hurt = hurtInGame(p.injury.type);
 				const span = gamesOut(
@@ -5036,6 +5043,12 @@ const injurySentence = (
 		for (const out of outs) {
 			if (!absenceWorthNoting(out, playoffs, rng)) {
 				continue;
+			}
+			if (namedTid === t.tid && bits.length === 1) {
+				bits.push(
+					`they were ${(out.missed ?? 0) >= 2 ? "still" : "also"} without ${out.name} (${lowerInjury(out.type)})`,
+				);
+				break;
 			}
 			// He has been out a while: say so, rather than reporting the
 			// absence as new for the fifth game running.
@@ -7804,20 +7817,33 @@ const injuryRoundup = (
 	// "the Celtics' Isaiah King (strained hamstring, out about eleven games)
 	// and the Rockets' Anthony Foster (sprained ankle, about five)": whose he
 	// is, and "out ... games" said once.
-	const top = hurt
-		.slice(0, 3)
-		.map(
-			({ t, p, n, left, playoffs }, i) =>
-				`${written.includes(p.name) ? "" : `${poss(theNick(t))} `}${p.name} (${lowerInjury(p.injury!.type)}, ${
-					left !== undefined && n > left
-						? playoffs
-							? "out for the playoffs"
-							: "out for the season"
-						: i === 0
-							? `out about ${gamesWord(n)}`
-							: `about ${numWord(n)}`
-				})`,
-		);
+	// One club's men side by side, its name once: "the Warriors' Walker
+	// Ellis (...), the Warriors' Corey Ellis (...), and the Warriors' Vince
+	// Ellis (...)" named it three times.
+	const worst = hurt.slice(0, 3);
+	const grouped = worst
+		.map((h, i) => ({
+			h,
+			i,
+			g: worst.findIndex((x) => x.t.tid === h.t.tid),
+		}))
+		.sort((a, b) => a.g - b.g || a.i - b.i)
+		.map(({ h }) => h);
+	let teamInAir: number | undefined;
+	const top = grouped.map(({ t, p, n, left, playoffs }, i) => {
+		const named = written.includes(p.name);
+		const whose = named || teamInAir === t.tid ? "" : `${poss(theNick(t))} `;
+		teamInAir = named ? undefined : t.tid;
+		return `${whose}${p.name} (${lowerInjury(p.injury!.type)}, ${
+			left !== undefined && n > left
+				? playoffs
+					? "out for the playoffs"
+					: "out for the season"
+				: i === 0
+					? `out about ${gamesWord(n)}`
+					: `about ${numWord(n)}`
+		})`;
+	});
 	return pick(
 		rng,
 		[

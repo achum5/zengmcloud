@@ -2182,6 +2182,24 @@ describe("who got hurt", () => {
 			games: [night(175)],
 		});
 		assert.match(wrap, /Kenny Thomas \(torn ACL, out for the season\)/, wrap);
+		// Two of one club's men on the casualty list: its name once.
+		const two = night(175);
+		two.teams[1].players.push(
+			player({
+				name: "Yao Ming",
+				starter: true,
+				pts: 8,
+				injury: { type: "Sore Foot", gamesRemaining: 9, newThisGame: true },
+			}),
+		);
+		const wrap2 = getAutoDayRecap({
+			season: 2003,
+			day: 2,
+			playoffs: false,
+			games: [two],
+		});
+		assert.match(wrap2, /Yao Ming \(sore foot/, wrap2);
+		assert.equal(wrap2.split("the Rockets' ").length, 2, wrap2);
 		// 67 left: 70 ends just past them.
 		assert.match(getAutoRecap(night(70)), /the rest of the regular season/);
 		assert.match(getAutoRecap(night(40)), /about 40 games/);
@@ -2240,6 +2258,44 @@ describe("who was out", () => {
 			],
 			winnerTid: 1,
 		});
+
+	// "The Timberwolves' Bennedict Hayes left with a sore ankle and will miss
+	// about seven games; a sprained wrist kept Devin Ingram out for the
+	// Timberwolves."
+	test("one club hurt and short-handed is named once", () => {
+		let seen = 0;
+		for (let seed = 0; seed < 20; seed++) {
+			const g = gameWith(seed, [
+				{
+					name: "Star Guard",
+					type: "Sprained ankle",
+					gamesRemaining: 3,
+					mpg: 34,
+					missed: 0,
+				},
+			]);
+			g.teams[0].players.push(
+				player({
+					name: "Hurt Forward",
+					starter: true,
+					pts: 6,
+					fg: 3,
+					fga: 7,
+					injury: { type: "Sore Ankle", gamesRemaining: 7, newThisGame: true },
+				}),
+			);
+			const recap = getAutoRecap(g);
+			for (const s of recap.split(/(?<=[!.?])\s+/)) {
+				if (s.includes("; ")) {
+					assert.ok(s.split("Pacers").length <= 2, s);
+				}
+			}
+			if (/Hurt Forward[^.]*; they were also without Star Guard/.test(recap)) {
+				seen += 1;
+			}
+		}
+		assert.ok(seen > 0);
+	});
 
 	test("the 14th man's absence is not news when a starter is also out", () => {
 		for (let seed = 0; seed < 30; seed++) {
