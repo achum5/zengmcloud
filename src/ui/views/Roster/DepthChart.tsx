@@ -13,14 +13,15 @@ const POSITIONS = [
 ];
 const GROUPS = ["Starters", "2nd", "3rd"];
 const LINE = [
+	["min", "MP"],
 	["pts", "P"],
 	["trb", "R"],
 	["ast", "A"],
 	["per", "PER"],
 ] as const;
 
-// His season under his name: points, rebounds and assists a game, and PER -
-// nothing until he has played.
+// His season under his name: minutes, points, rebounds and assists a game,
+// and PER - nothing until he has played.
 const StatLine = ({
 	stats,
 }: {
@@ -29,7 +30,7 @@ const StatLine = ({
 	stats.gp > 0 ? (
 		<div
 			className="depth-chart-stats"
-			title="Points, rebounds and assists per game, PER"
+			title="Minutes, points, rebounds and assists per game, PER"
 		>
 			{LINE.map(([stat, label]) => (
 				<span key={stat}>
