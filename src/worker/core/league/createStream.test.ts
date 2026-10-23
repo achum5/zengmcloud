@@ -3,6 +3,7 @@ import {
 	applyTeamSeasonRidPolicy,
 	importRowWeight,
 	isDeviceLocalStoreForSyncedImport,
+	shouldCatchUpFacesOnCreate,
 } from "./createStream.ts";
 
 describe("isDeviceLocalStoreForSyncedImport", () => {
@@ -114,5 +115,30 @@ describe("importRowWeight", () => {
 		const replaysBeforeFlush = Math.ceil(BUDGET / perReplay);
 		assert.ok(replaysBeforeFlush < 20, `flushes after ${replaysBeforeFlush}`);
 		assert.ok(replaysBeforeFlush >= 1, "must still buffer at least one");
+	});
+});
+
+describe("shouldCatchUpFacesOnCreate", () => {
+	test("random-player leagues age their prospect faces", () => {
+		assert.strictEqual(
+			shouldCatchUpFacesOnCreate({ fileHasPlayers: false, realPlayers: false }),
+			true,
+		);
+	});
+
+	test("real-player leagues age their prospect faces", () => {
+		assert.strictEqual(
+			shouldCatchUpFacesOnCreate({ fileHasPlayers: true, realPlayers: true }),
+			true,
+		);
+	});
+
+	test("an imported league file keeps the faces it brought", () => {
+		// Replaying the careers again regrew beards and redrew eyes and noses on
+		// hand-picked faces.
+		assert.strictEqual(
+			shouldCatchUpFacesOnCreate({ fileHasPlayers: true, realPlayers: false }),
+			false,
+		);
 	});
 });

@@ -288,6 +288,19 @@ export const isDeviceLocalStoreForSyncedImport = (
 	syncedLeagueFile &&
 	(key === "trade" || key === "savedTrades" || key === "savedTradingBlock");
 
+// Whether a new league's faces get their careers replayed (see catchUpFace).
+// Random and real-player leagues draw every face at prospect age, so they need
+// it. A league file brings its own faces - already lived, often picked by hand
+// - and replaying the careers again regrows beards and redraws eyes and noses
+// on every one of them.
+export const shouldCatchUpFacesOnCreate = ({
+	fileHasPlayers,
+	realPlayers,
+}: {
+	fileHasPlayers: boolean;
+	realPlayers: boolean;
+}) => realPlayers || !fileHasPlayers;
+
 // These obejcts have auto incrementing primary keys that aren't referenced by anything else, so it's safe to delete them when importing, and also prevents any issues from people manually editing league files and accidentally repeating a primary key, resulting in the latest one overwriting any earlier ones
 const PRIMARY_KEYS_TO_DELETE: Record<string, string> = {
 	messages: "mid",
@@ -1878,7 +1891,14 @@ const afterDBStream = async ({
 	// has to have lived them too, or a new league opens on 34-year-olds with
 	// nineteen-year-old faces. Replayed from the draft age with the same rules
 	// a played season uses. See catchUpFace.
-	if (__SPORT === "basketball" && g.get("realisticFaces")) {
+	if (
+		__SPORT === "basketball" &&
+		g.get("realisticFaces") &&
+		shouldCatchUpFacesOnCreate({
+			fileHasPlayers,
+			realPlayers: !!getLeagueOptions,
+		})
+	) {
 		await applyFaceAgingToLeague("all", { record: false, skipCurrent: true });
 	}
 
