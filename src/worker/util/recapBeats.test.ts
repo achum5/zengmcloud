@@ -314,6 +314,35 @@ describe("the season series", () => {
 		}
 	});
 
+	// "Lonnie Green gave the Lakers 22 points off the bench. That finished a
+	// 2-0 season sweep of the Pacers for the Lakers." These close the piece
+	// after any sentence at all; "That" pointed at whatever came before.
+	test("a result line at the foot of the piece is the win's, not 'That'", () => {
+		const loser = team({ tid: 2, name: "Knicks", pts: 90 });
+		for (const series of [
+			{ won: 1, lost: 0, left: 0 },
+			{ won: 1, lost: 1, left: 0 },
+			{ won: 1, lost: 1 },
+			{ won: 0, lost: 1 },
+			{ won: 0, lost: 2 },
+		]) {
+			const winner = team({
+				tid: 1,
+				name: "Celtics",
+				seasonSeries: series,
+			});
+			for (const s of shapes((rng) =>
+				seriesBeat(game(winner, loser).ctx, rng),
+			)) {
+				assert.notMatch(
+					s,
+					/^That (?:lifted|finished|gave|put|squared|made it)\b/,
+					s,
+				);
+			}
+		}
+	});
+
 	test("a lopsided previous loss becomes a revenge angle, and the last meeting is flagged", () => {
 		const winner = team({
 			tid: 1,

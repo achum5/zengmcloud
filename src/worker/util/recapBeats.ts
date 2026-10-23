@@ -105,7 +105,11 @@ export const standingsBeat = (
 					[
 						`The win moved ${wn} up to ${ordinal(w.rank)} in the ${w.conf}.`,
 						`${W} climbed to ${ordinal(w.rank)} in the ${w.conf} with the win.`,
-						`That lifted ${wn} into ${ordinal(w.rank)} place in the ${w.conf}.`,
+						// "The win", not "That": these sit at the foot of the piece,
+						// after any sentence at all, and "Lonnie Green gave the Lakers
+						// 22 points off the bench. That finished a 2-0 season sweep"
+						// credited the sweep to his bench points.
+						`The win lifted ${wn} into ${ordinal(w.rank)} place in the ${w.conf}.`,
 					],
 					"standingsUp",
 				),
@@ -199,7 +203,7 @@ export const seriesBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 				rng,
 				[
 					`${W} completed a season sweep of ${ln}, ${total}-0.`,
-					`That finished a ${total}-0 season sweep of ${ln} for ${wn}.`,
+					`The win finished a ${total}-0 season sweep of ${ln} for ${wn}.`,
 					// "all two meetings" is not English. Two of anything is
 					// "both" - the ongoing-series branch below already knew
 					// that, and this one did not.
@@ -215,7 +219,7 @@ export const seriesBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 				rng,
 				[
 					`${W} took the season series with ${ln}, ${wonNow}-${s.lost}.`,
-					`That gave ${wn} the season series over ${ln}, ${wonNow}-${s.lost}.`,
+					`The win gave ${wn} the season series over ${ln}, ${wonNow}-${s.lost}.`,
 				],
 				"seriesTaken",
 			);
@@ -254,7 +258,7 @@ export const seriesBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 				// in a paragraph that has just been talking about the Bulls left
 				// the reader to guess whose series it was.
 				[
-					`That squared the season series between ${wn} and ${ln} at ${wonNow}-${wonNow}.`,
+					`The win squared the season series between ${wn} and ${ln} at ${wonNow}-${wonNow}.`,
 					total === 2
 						? `${W} and ${ln} have split their two meetings this season.`
 						: `${W} and ${ln} have split ${numWord(total)} meetings this season.`,
@@ -269,7 +273,7 @@ export const seriesBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 				rng,
 				[
 					`${W} lead the season series with ${ln} ${wonNow}-${s.lost}.`,
-					`That put ${wn} up ${wonNow}-${s.lost} on ${ln} for the season.`,
+					`The win put ${wn} up ${wonNow}-${s.lost} on ${ln} for the season.`,
 					`It was ${poss(wn)} ${ordinal(wonNow)} win in ${numWord(total)} meetings with ${ln} this season.`,
 				],
 				"seriesLead",
@@ -294,7 +298,7 @@ export const seriesBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 				[
 					`${W} still trail the season series ${s.lost}-${wonNow}.`,
 					`${L} lead the season series ${s.lost}-${wonNow} even so.`,
-					`That made it ${wonNow}-${s.lost} to ${ln} in the season series.`,
+					`${L} still have the edge in the season series, ${s.lost}-${wonNow}.`,
 				],
 				"seriesTrail",
 			),
@@ -541,7 +545,7 @@ export const playerCountBeat = (
 			[
 				`It was ${poss(p.name)} ${ordinal(n)} 30-point game of the season.`,
 				`${p.name} now has ${numWord(n)} 30-point games this season.`,
-				`That made it ${numWord(n)} games of 30 or more this season for ${p.name}.`,
+				`${p.name} has scored 30 or more ${numWord(n)} times this season.`,
 			],
 			"count30",
 		);
@@ -763,7 +767,9 @@ export const returnBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 			[
 				`It was ${poss(p.name)} first game back after ${injuryPhrase(r.type)} cost him ${numWord(r.games)} games.`,
 				`${p.name} had missed the previous ${numWord(r.games)} games with ${injuryPhrase(r.type)}.`,
-				`That was ${p.name} in his first game since ${injuryPhrase(r.type)} sidelined him for ${numWord(r.games)}.`,
+				// Not "That was Xavier King in his first game since...": "That"
+				// points at the sentence before, which was about something else.
+				`${p.name} was playing for the first time since ${injuryPhrase(r.type)} sidelined him for ${numWord(r.games)} games.`,
 			],
 			"returnFromInjuryTold",
 		);

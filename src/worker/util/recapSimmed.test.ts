@@ -367,6 +367,18 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "Lonnie Green gave the Lakers 22 points off the bench. That finished a
+	// 2-0 season sweep"; "That was Xavier King in his first game since..."
+	test("no closing line points 'That' at the sentence before it", () => {
+		for (const { recap } of pairs) {
+			assert.notMatch(
+				recap,
+				/(?:^|\. )That (?:lifted|finished|gave|put|squared|made it)\b|That was(?: [A-Z][a-z]+){2} in his first game/,
+				recap,
+			);
+		}
+	});
+
 	test("a day wrap's deck does not repeat its headline", () => {
 		for (const recap of dayRecaps) {
 			const headline = recap.split("\n")[0]!;
