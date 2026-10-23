@@ -26,9 +26,12 @@ import {
 } from "./arena.ts";
 import {
 	type Camera,
+	CAM_PAN,
 	courtFit,
+	follow,
 	makeCamera,
 	MAIN_RIG,
+	operate,
 	project,
 	REPLAY_RIG,
 } from "./camera.ts";
@@ -115,26 +118,6 @@ const KEY_DIP_MS = 320;
 const KEY_HOLD_MS = 900;
 // Replay-time ms the picture takes to come up out of black and go back down.
 const REPLAY_DIP = 70;
-// How quickly the camera pans and zooms after what it follows (per second):
-// as quick as a first look's lag would be, but getting going and pulling
-// up smoothly.
-const CAM_PAN = 5.6;
-const CAM_ZOOM = 3.2;
-// Critically damped: from where it is and how fast it is going (`v`), on
-// toward `to` over `secs` - exact, however long the step.
-const follow = (
-	x: number,
-	v: number,
-	to: number,
-	w: number,
-	secs: number,
-): [number, number] => {
-	const y = x - to;
-	const e = Math.exp(-w * secs);
-	const k = (v + w * y) * secs;
-	return [to + (y + k) * e, (v - w * k) * e];
-};
-
 // THE SCORE BUG IN THE WAY: the bug's box as shares of the picture, and how
 // far (feet, + to the right) the camera pans for the man with the ball to
 // stand clear of it - never so far that the basket at his end leaves the
@@ -1204,43 +1187,8 @@ const Court3D = ({
 						: aimFor(moment, p.narrow, tl, fit)));
 			const snap = s.snapCam;
 			const secs = (dt / 1000) * Math.min(24, Math.max(1, rate));
-			if (snap) {
-				s.camX = aim.x;
-				s.camW = aim.width;
-				s.camY = aim.y;
-				s.camZ = aim.z ?? 2;
-				s.camVX = 0;
-				s.camVW = 0;
-				s.camVY = 0;
-				s.camVZ = 0;
-				s.snapCam = false;
-			} else {
-				// An operator's pan and zoom: eased into and out of, never a
-				// lurch when what it is following jumps.
-				[s.camX, s.camVX] = follow(s.camX, s.camVX, aim.x, CAM_PAN, secs);
-				[s.camW, s.camVW] = follow(s.camW, s.camVW, aim.width, CAM_ZOOM, secs);
-				// (And off the floor's own framing - a replay - up and down and
-				// in and out across the floor the same way.)
-				[s.camY, s.camVY] = follow(s.camY, s.camVY, aim.y, CAM_ZOOM, secs);
-				[s.camZ, s.camVZ] = follow(s.camZ, s.camVZ, aim.z ?? 2, CAM_ZOOM, secs);
-				// (Never in tighter than the whole floor - but for a shot that
-				// asks for it, a free throw.)
-				if (fit) {
-					s.camW = Math.max(s.camW, Math.min(fit.min, aim.width));
-				}
-				s.camX = Math.min(
-					COURT_W + 12 - s.camW / 2,
-					Math.max(s.camW / 2 - 12, s.camX),
-				);
-			}
-			if (fit) {
-				// (Framed to the floor: where that has it look, for whatever
-				// comes next without a cut to start from.)
-				s.camY = fit.y(s.camW);
-				s.camZ = aim.z ?? 2;
-				s.camVY = 0;
-				s.camVZ = 0;
-			}
+			operate(s, aim, fit, secs, snap);
+			s.snapCam = false;
 			if (now - s.coversAt > 500) {
 				s.coversAt = now;
 				s.covers = coversOf(wrapRef.current, bugRef.current);

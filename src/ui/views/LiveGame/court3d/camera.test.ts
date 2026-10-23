@@ -1,8 +1,15 @@
 import { assert, describe, test } from "vitest";
-import { courtFit, makeCamera, MAIN_RIG, project } from "./camera.ts";
+import {
+	courtFit,
+	makeCamera,
+	MAIN_RIG,
+	operate,
+	project,
+	type Operator,
+} from "./camera.ts";
 import { COURT_H, COURT_W } from "./geometry.ts";
 import { bodyOf } from "./poses.ts";
-import { aimFor, boardAt, momentAt } from "./scene.ts";
+import { aimFor, arenaAim, boardAt, momentAt } from "./scene.ts";
 import { compile } from "./testGame.ts";
 
 // The games staged for these tests, staged once.
@@ -136,6 +143,68 @@ describe("3D camera", () => {
 			assert.isAbove(shots, 6);
 		}
 	}, 60_000);
+});
+
+describe("3D camera operator", () => {
+	// The look round the building pans slowly across it (see arenaAim): that
+	// pan is seen - not the camera parked where it cut in, the aim moving on
+	// without it.
+	test("the look round the building pans with it", () => {
+		const { tl } = game("a");
+		const shot = tl.shots[0]!;
+		const op: Operator = {
+			camX: 0,
+			camW: 0,
+			camY: 0,
+			camZ: 0,
+			camVX: 0,
+			camVW: 0,
+			camVY: 0,
+			camVZ: 0,
+		};
+		let lag = 0;
+		for (let t = shot.t0; t < shot.t1; t += 1000 / 60) {
+			const view = arenaAim(tl, t, false)!;
+			operate(op, view.shot, undefined, 1 / 60, t === shot.t0);
+			lag = Math.max(lag, Math.abs(op.camX - view.shot.x));
+		}
+		const from = arenaAim(tl, shot.t0, false)!.shot.x;
+		const to = arenaAim(tl, shot.t1 - 1, false)!.shot.x;
+		assert.isAbove(Math.abs(to - from), 8);
+		assert.isBelow(lag, 2);
+	});
+
+	// Following the play, never tighter than the whole floor - but for a
+	// shot that asks to be (a free throw) - however fast it zooms in;
+	// never past the stands at either end; aimed across the floor as the
+	// whole floor needs.
+	test("following the play, the whole floor in the picture", () => {
+		const fit = courtFit(16 / 9);
+		const op: Operator = {
+			camX: 47,
+			camW: 120,
+			camY: 0,
+			camZ: 0,
+			camVX: 0,
+			camVW: -400,
+			camVY: 0,
+			camVZ: 0,
+		};
+		for (const [x, width] of [
+			[-40, 60],
+			[47, 30],
+			[140, 80],
+		] as const) {
+			for (let i = 0; i < 240; i++) {
+				operate(op, { x, width, y: 99 }, fit, 1 / 60, false);
+				assert.isAtLeast(op.camW, Math.min(fit.min, width) - 1e-9);
+				assert.isAtLeast(op.camX, op.camW / 2 - 12 - 1e-9);
+				assert.isAtMost(op.camX, COURT_W + 12 - op.camW / 2 + 1e-9);
+				assert.closeTo(op.camY, fit.y(op.camW), 1e-9);
+			}
+			assert.closeTo(op.camW, Math.max(width, Math.min(fit.min, width)), 0.5);
+		}
+	});
 });
 
 describe("3D boards", () => {

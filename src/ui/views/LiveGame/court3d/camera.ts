@@ -278,3 +278,84 @@ export const courtFit = (aspect: number): CourtFit => {
 	}
 	return fit;
 };
+
+// THE OPERATOR: where the camera is looking, moving on toward where it is
+// asked to look (a Shot) a frame at a time - an operator's pan and zoom,
+// eased into and out of, never a lurch when what it is following jumps -
+// or, at a cut, straight there.
+//
+// How quickly it pans and zooms after what it follows (per second): as
+// quick as a first look's lag would be, but getting going and pulling up
+// smoothly.
+export const CAM_PAN = 5.6;
+export const CAM_ZOOM = 3.2;
+// Critically damped: from where it is and how fast it is going (`v`), on
+// toward `to` over `secs` - exact, however long the step.
+export const follow = (
+	x: number,
+	v: number,
+	to: number,
+	w: number,
+	secs: number,
+): [number, number] => {
+	const y = x - to;
+	const e = Math.exp(-w * secs);
+	const k = (v + w * y) * secs;
+	return [to + (y + k) * e, (v - w * k) * e];
+};
+
+// Where it looks along the floor, how wide, across the floor and how high,
+// and how fast each is changing (a second).
+export type Operator = {
+	camX: number;
+	camW: number;
+	camY: number;
+	camZ: number;
+	camVX: number;
+	camVW: number;
+	camVY: number;
+	camVZ: number;
+};
+
+// On toward `aim` over `secs` (straight there on a cut). Following the play
+// (`fit` given), the whole floor stays in the picture - never tighter than
+// it but for a shot that asks to be (a free throw), never further past
+// either end than the stands behind it, and aimed across the floor as the
+// whole floor needs. A look round the building and a replay go where they
+// ask, up and down and across the floor too.
+export const operate = (
+	op: Operator,
+	aim: Shot,
+	fit: CourtFit | undefined,
+	secs: number,
+	cut: boolean,
+) => {
+	if (cut) {
+		op.camX = aim.x;
+		op.camW = aim.width;
+		op.camY = aim.y;
+		op.camZ = aim.z ?? 2;
+		op.camVX = 0;
+		op.camVW = 0;
+		op.camVY = 0;
+		op.camVZ = 0;
+	} else {
+		[op.camX, op.camVX] = follow(op.camX, op.camVX, aim.x, CAM_PAN, secs);
+		[op.camW, op.camVW] = follow(op.camW, op.camVW, aim.width, CAM_ZOOM, secs);
+		[op.camY, op.camVY] = follow(op.camY, op.camVY, aim.y, CAM_ZOOM, secs);
+		[op.camZ, op.camVZ] = follow(op.camZ, op.camVZ, aim.z ?? 2, CAM_ZOOM, secs);
+	}
+	if (fit) {
+		op.camW = Math.max(op.camW, Math.min(fit.min, aim.width));
+		op.camX = Math.min(
+			COURT_W + 12 - op.camW / 2,
+			Math.max(op.camW / 2 - 12, op.camX),
+		);
+		// (Where the whole floor has it look, for whatever comes next
+		// without a cut to start from.)
+		op.camY = fit.y(op.camW);
+		op.camZ = aim.z ?? 2;
+		op.camVY = 0;
+		op.camVZ = 0;
+	}
+};
