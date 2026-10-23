@@ -52,6 +52,7 @@ import { foulsOf } from "./fouls.ts";
 import { stageChains, type ChainSpots } from "./chains.ts";
 import { holderAt, replayFor, type FieldReplay } from "./replays.ts";
 import { HURT_MOST, MEDICS, stageHurt } from "./hurt.ts";
+import { crewOff, stagePostgame } from "./postgame.ts";
 import { stageTv } from "./tv.ts";
 
 // THE GAME STAGED: every snap of the play-by-play, in feet and milliseconds -
@@ -182,6 +183,10 @@ export type Play = {
 	// camera on him from when he is down.
 	medics?: CrewPart[];
 	hurt?: { pid: number; from: number };
+	// The game over (see postgame.ts): the head coaches out to shake hands;
+	// from when it is, when they do, and where.
+	coaches?: CrewPart[];
+	postgame?: { from: number; shake: number; at: Pt };
 	ball: BallSeg[];
 	// A big play, shown again after it (see replays.ts).
 	replay?: FieldReplay;
@@ -708,6 +713,19 @@ class Director {
 		};
 	}
 
+	// The score, each side's, by the lines before i1.
+	pointsTo(i1: number): [number, number] {
+		const pts: [number, number] = [0, 0];
+		for (let i = 0; i < i1; i++) {
+			const e = this.events[i];
+			if (e?.type === "stat" && e.s === "pts" && typeof e.amt === "number") {
+				// (Raw team t is display side 1 - t.)
+				pts[e.t === 1 ? 0 : 1] += e.amt;
+			}
+		}
+		return pts;
+	}
+
 	// Who did what in a play, by its stats - on a two-point try, by the
 	// names in its lines.
 	statsOf(i0: number, i1: number): StatLine[] {
@@ -1132,7 +1150,7 @@ class Director {
 				at: spotAt(whistle),
 			});
 		}
-		const cheer = this.cheerOf(i0, i1, offense, whistle, ball, parts);
+		let cheer = this.cheerOf(i0, i1, offense, whistle, ball, parts);
 		let t1 = Math.max(
 			this.lastLine + TAIL,
 			snap + 1500,
@@ -1171,6 +1189,27 @@ class Director {
 				medics.push(...h.medics);
 				t1 = h.t1;
 				hurt ??= { pid: e.injuredPID, down: h.down, tending: h.tending };
+			}
+		}
+		// The game over: the winners' moment, both sides out to the middle to
+		// shake hands, the head coaches too (see postgame.ts).
+		const postgame =
+			!hurt && events.slice(i0, i1).some((e) => e?.type === "gameOver")
+				? stagePostgame({
+						parts,
+						pts: this.pointsTo(i1),
+						whistle: Math.max(whistle, acted?.until ?? 0),
+						t0,
+						t1,
+						playI: i0,
+						ball,
+						r: this.rng(i0, "postgame"),
+					})
+				: undefined;
+		if (postgame) {
+			t1 = postgame.t1;
+			if (postgame.winner !== undefined) {
+				cheer = { t: postgame.from, side: postgame.winner, big: true };
 			}
 		}
 		// Each line of the play ends where its own action does; the last one,
@@ -1232,6 +1271,9 @@ class Director {
 			signals,
 			r: this.rng(i0, "crew"),
 		});
+		if (postgame) {
+			crewOff(crew.parts, postgame.from, t1, this.rng(i0, "crewOff"));
+		}
 		const chains = stageChains({
 			quarter,
 			dir,
@@ -1303,6 +1345,16 @@ class Director {
 			}),
 			...(medics.length > 0 ? { medics } : {}),
 			...(hurt ? { hurt: { pid: hurt.pid, from: hurt.down } } : {}),
+			...(postgame
+				? {
+						coaches: postgame.coaches,
+						postgame: {
+							from: postgame.from,
+							shake: postgame.shake,
+							at: postgame.at,
+						},
+					}
+				: {}),
 			ball,
 			...(replay ? { replay } : {}),
 			...(cheer ? { cheer } : {}),

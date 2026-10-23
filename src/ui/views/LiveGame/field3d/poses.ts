@@ -348,6 +348,37 @@ const HANDS_ON_HEAD: Partial<Pose> = {
 	abF: 14,
 	tuck: 1,
 };
+// The hand held out to shake (and the shake down from it); in close, his
+// left arm round a man's back (and patting it); clapping.
+const SHAKE: Partial<Pose> = { shN: 40, elN: 50, abN: -8, lean: 4 };
+const SHAKE_DOWN: Partial<Pose> = { ...SHAKE, shN: 34, elN: 56 };
+const HUG: Partial<Pose> = {
+	shN: 30,
+	elN: 96,
+	abN: -16,
+	shF: 90,
+	elF: 50,
+	abF: -14,
+	lean: 8,
+};
+const HUG_SLAP: Partial<Pose> = { ...HUG, shF: 100, elF: 74 };
+const CLAP_APART: Partial<Pose> = {
+	shN: 56,
+	elN: 66,
+	abN: -8,
+	shF: 56,
+	elF: 66,
+	abF: -8,
+};
+const CLAP_TOGETHER: Partial<Pose> = {
+	...CLAP_APART,
+	shN: 54,
+	elN: 64,
+	abN: -24,
+	shF: 54,
+	elF: 64,
+	abF: -24,
+};
 const over = (a: Partial<Pose>, b: Partial<Pose>): FieldAnim => ({
 	kind: "act",
 	keys: [
@@ -2127,6 +2158,113 @@ const FIELD_ANIMS = {
 		kind: "still",
 		pose: pose({ shN: 12, elN: 44, abN: 78, shF: 12, elF: 44, abF: 78 }),
 	},
+
+	// ---- the game over ----
+	// A handshake: his right hand out in front of him at his belt, taken,
+	// shaken twice and let go.
+	shake: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[0.24, pose(SHAKE)],
+			[0.4, pose(SHAKE_DOWN)],
+			[0.56, pose(SHAKE)],
+			[0.72, pose(SHAKE_DOWN)],
+			[0.84, pose(SHAKE)],
+			[1, BASE],
+		],
+	},
+	// In close: the right hands clasped between them, his left arm round
+	// the other man's back, slapping it twice.
+	hug: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[0.22, pose(HUG)],
+			[0.38, pose(HUG_SLAP)],
+			[0.5, pose(HUG)],
+			[0.62, pose(HUG_SLAP)],
+			[0.78, pose(HUG)],
+			[1, BASE],
+		],
+	},
+	// A step in, up off both feet, chests together in the air with the arms
+	// flung back, and down (the court's).
+	chestBump: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[
+				0.25,
+				pose({
+					shN: -20,
+					elN: 30,
+					abN: 20,
+					shF: -20,
+					elF: 30,
+					abF: 20,
+					hipN: 40,
+					kneeN: 70,
+					hipF: 40,
+					kneeF: 70,
+					lean: 18,
+				}),
+			],
+			[
+				0.5,
+				pose({
+					shN: -40,
+					elN: 20,
+					abN: 40,
+					shF: -40,
+					elF: 20,
+					abF: 40,
+					hipN: 10,
+					kneeN: 30,
+					hipF: 14,
+					kneeF: 36,
+					lean: -14,
+				}),
+			],
+			[
+				0.75,
+				pose({
+					shN: 20,
+					elN: 40,
+					abN: 30,
+					shF: 20,
+					elF: 40,
+					abF: 30,
+					hipN: 30,
+					kneeN: 50,
+					hipF: 30,
+					kneeF: 50,
+					lean: 6,
+				}),
+			],
+			[1, BASE],
+		],
+	},
+	// His right fist pumped up over his head, again and again.
+	fistPump: over(
+		{ shN: 132, elN: 96, abN: 24, shF: 10, elF: 70, abF: 16, lean: -2 },
+		{ shN: 172, elN: 16, abN: 16, shF: 6, elF: 96, abF: 16, lean: -6 },
+	),
+	// Clapping, hands out in front of his chest.
+	clap: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[0.16, pose(CLAP_APART)],
+			[0.26, pose(CLAP_TOGETHER)],
+			[0.38, pose(CLAP_APART)],
+			[0.48, pose(CLAP_TOGETHER)],
+			[0.6, pose(CLAP_APART)],
+			[0.7, pose(CLAP_TOGETHER)],
+			[0.82, pose(CLAP_APART)],
+			[1, BASE],
+		],
+	},
 	// A camera up to the eye: the right hand on the grip at his face, the
 	// left under the lens out in front of it.
 	shoot: {
@@ -2304,7 +2442,7 @@ export const poseOfMove = (m: Move, phase: number, mirrored = false): Pose => {
 };
 
 // How far off the turf he is partway through a move (feet): up off both
-// feet in a leap.
+// feet in a leap, a chest bump.
 export const liftOf = (m: Move, phase: number): number =>
 	m === "leap" && phase > 0.3 && phase < 0.82
 		? 1.7 * Math.sin((Math.PI * (phase - 0.3)) / 0.52)
@@ -2312,7 +2450,9 @@ export const liftOf = (m: Move, phase: number): number =>
 			? 2.4 * Math.sin((Math.PI * (phase - 0.2)) / 0.6)
 			: m === "diveCatch" && phase > 0.25 && phase < 0.75
 				? 0.8 * Math.sin((Math.PI * (phase - 0.25)) / 0.5)
-				: 0;
+				: m === "chestBump" && phase > 0.32 && phase < 0.72
+					? 1.5 * Math.sin((Math.PI * (phase - 0.32)) / 0.4)
+					: 0;
 
 // How he holds his hands in a move: running, loose fists; down in a stance
 // or reading the play, open; standing about, relaxed.

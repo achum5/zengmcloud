@@ -5,6 +5,7 @@ import type { FieldMoment } from "./evaluate.ts";
 import {
 	BENCH_OFF,
 	COACH_LINE,
+	dist,
 	FIELD_W,
 	MID_X,
 	TEAM_AREA,
@@ -12,7 +13,7 @@ import {
 	type Side,
 } from "./geometry.ts";
 import type { RosterMan } from "./personnel.ts";
-import { liftOf, type Move } from "./poses.ts";
+import { liftOf, strideOf, type Move } from "./poses.ts";
 import type { FieldPlayerState } from "./sprite.ts";
 
 // THE SIDELINES: each team on its own, the home team across the field and
@@ -196,6 +197,15 @@ export const sidelineFor = (
 	return out;
 };
 
+// Where the head coach stands for a play: up front, about midfield.
+export const headCoachAt = (team: Side, playI: number): Pt => {
+	const r = makeCourtRng(`coach|${coachId(team, 0)}|${playI}`);
+	return {
+		x: MID_X + (r() - 0.5) * 16,
+		y: yOf(sidelineOf(team), COACH_LINE - 2 - r() * 1.4),
+	};
+};
+
 // Helmets off on the sideline - most of the unit sat on the benches, some
 // of it stood, a few of the men who could be sent in, the kickers - and
 // whether a man has his.
@@ -295,13 +305,7 @@ const lay = (men: SidelineMan[], play: Play): Map<number, Spot> => {
 			const i = c.coach ?? 0;
 			const r = makeCourtRng(`coach|${c.id}|${play.i}`);
 			if (i === 0) {
-				out.set(c.id, {
-					at: {
-						x: MID_X + (r() - 0.5) * 16,
-						y: yOf(line, COACH_LINE - 2 - r() * 1.4),
-					},
-					move: c.move,
-				});
+				out.set(c.id, { at: headCoachAt(team, play.i), move: c.move });
 			} else if (i <= 2) {
 				out.set(c.id, {
 					at: {
@@ -370,12 +374,13 @@ const lay = (men: SidelineMan[], play: Play): Map<number, Spot> => {
 	return out;
 };
 
-// Who is on the field for a play: everyone else is on his sideline.
+// Who is on the field for a play (a head coach out to shake hands too):
+// everyone else is on his sideline.
 const inFor = new WeakMap<Play, Set<number>>();
 const onField = (play: Play) => {
 	let s = inFor.get(play);
 	if (!s) {
-		s = new Set(play.parts.map((p) => p.pid));
+		s = new Set([...play.parts, ...(play.coaches ?? [])].map((p) => p.pid));
 		inFor.set(play, s);
 	}
 	return s;
@@ -385,6 +390,139 @@ const onField = (play: Play) => {
 // up for it.
 const LEAP_MS = 900;
 const UP_LEVEL = 0.55;
+
+// The game over (see postgame.ts): most of each side's players out onto the
+// field after the men on it, from a while after - the men sat down and the
+// kickers the last of them - at a walk, to stand about round the middle on
+// their own side of it: along the field about as far off the middle as
+// they stood off midfield, a share of it - the near side's off to either
+// side and back a way, not in front of it all - a few clapping as they get
+// there. Some of them at a jog; all of them there by a while after the
+// head coaches shake hands.
+const OUT_SHARE = 0.6;
+const OUT_AFTER = 1800;
+const OUT_SPREAD = 4200;
+const OUT_LATE = 1000;
+const OUT_FPS: [number, number] = [4.2, 5.6];
+const OUT_JOG = 0.35;
+const JOG_FPS = 7.5;
+const OUT_BY = 1500;
+const OUT_DEEP: [number, number] = [26, 48];
+const OUT_BACK = 12;
+const OUT_ALONG = 0.55;
+const OUT_WIDE = 16;
+const OUT_CLEAR = 20;
+const OUT_CLAP = 0.3;
+const CLAP_MS = 1400;
+// Up off the bench into it, and round to face the middle, over this long.
+const RISE_MS = 260;
+const TURN_MS = 380;
+
+type Out = {
+	leave: number;
+	from: Pt;
+	to: Pt;
+	arrive: number;
+	jog: boolean;
+	claps: boolean;
+};
+const outs = new WeakMap<Play, Map<number, Out | null>>();
+const outOf = (s: SidelineMan, spot: Spot, play: Play, at: Pt): Out | null => {
+	let byMan = outs.get(play);
+	if (!byMan) {
+		byMan = new Map();
+		outs.set(play, byMan);
+	}
+	let o = byMan.get(s.id);
+	if (o === undefined) {
+		o = null;
+		const r = makeCourtRng(`out|${s.id}`);
+		if (s.unit !== "coach" && s.unit !== "staff" && r() < OUT_SHARE) {
+			const near = spot.at.y > 0;
+			const leave =
+				play.postgame!.from +
+				OUT_AFTER +
+				r() * OUT_SPREAD +
+				(spot.seated || s.unit === "kicker" ? OUT_LATE : 0);
+			let along = (spot.at.x - MID_X) * OUT_ALONG + (r() - 0.5) * 2 * OUT_WIDE;
+			if (near) {
+				along = (along < 0 ? -1 : 1) * (OUT_CLEAR + Math.abs(along));
+			}
+			const deep =
+				OUT_DEEP[0] + r() * (OUT_DEEP[1] - OUT_DEEP[0]) + (near ? OUT_BACK : 0);
+			const to = { x: at.x + along, y: at.y + (near ? deep : -deep) };
+			const far = dist(spot.at, to);
+			const fps = Math.max(
+				r() < OUT_JOG ? JOG_FPS : OUT_FPS[0] + r() * (OUT_FPS[1] - OUT_FPS[0]),
+				far / (Math.max(1000, play.postgame!.shake + OUT_BY - leave) / 1000),
+			);
+			o = {
+				leave,
+				from: spot.at,
+				to,
+				arrive: leave + (far / fps) * 1000,
+				jog: fps >= 6.5,
+				claps: r() < OUT_CLAP,
+			};
+		}
+		byMan.set(s.id, o);
+	}
+	return o;
+};
+
+const turnTo = (a: number, b: number, u: number) => {
+	const d = Math.atan2(Math.sin(b - a), Math.cos(b - a));
+	return a + d * Math.min(1, Math.max(0, u));
+};
+
+// Out on the field at t, on his way or there.
+const outAt = (
+	s: SidelineMan,
+	spot: Spot,
+	o: Out,
+	middle: Pt,
+	t: number,
+): FieldPlayerState => {
+	const u = Math.min(1, (t - o.leave) / Math.max(1, o.arrive - o.leave));
+	const x = o.from.x + (o.to.x - o.from.x) * u;
+	const y = o.from.y + (o.to.y - o.from.y) * u;
+	const way = Math.atan2(o.to.y - o.from.y, o.to.x - o.from.x);
+	const gait = o.jog ? "jog" : "walk";
+	const stride = strideOf(gait);
+	const offset = (Math.abs(s.id) * 0.618) % 1;
+	const walked = (dist(o.from, o.to) * u) / stride + offset;
+	const base = {
+		id: s.id,
+		team: s.team,
+		x,
+		y,
+		z: 0,
+		...(spot.bare ? { bare: true as const } : {}),
+	};
+	if (u < 1) {
+		const up = t - o.leave;
+		return {
+			...base,
+			yaw: way,
+			move: gait,
+			phase: walked,
+			...(up < RISE_MS
+				? { from: { move: spot.move, phase: 0, w: 1 - up / RISE_MS } }
+				: {}),
+		};
+	}
+	const since = t - o.arrive;
+	const clapping = o.claps && since < CLAP_MS;
+	return {
+		...base,
+		yaw: turnTo(way, Math.atan2(middle.y - y, middle.x - x), since / TURN_MS),
+		move: clapping ? "clap" : "stand",
+		phase: clapping ? since / CLAP_MS : 0,
+		...(since < RISE_MS
+			? { from: { move: gait, phase: walked, w: 1 - since / RISE_MS } }
+			: {}),
+	};
+};
 
 export const sidelineAt = (
 	men: SidelineMan[],
@@ -399,9 +537,15 @@ export const sidelineAt = (
 	const spots = layoutFor(men, play);
 	const cheer = cheerAt(tl, m.t);
 	const ball = m.focus;
+	const post = play.postgame;
 	for (const s of men) {
 		const spot = spots.get(s.id);
 		if (!spot) {
+			continue;
+		}
+		const o = post ? outOf(s, spot, play, post.at) : null;
+		if (o && post && m.t >= o.leave) {
+			out.push(outAt(s, spot, o, post.at, m.t));
 			continue;
 		}
 		const at = spot.at;

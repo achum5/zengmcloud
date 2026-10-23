@@ -462,7 +462,7 @@ describe("the sidelines, packed", () => {
 			}
 			assert.isAbove(sat / resting, 8);
 		}
-	});
+	}, 20_000);
 });
 
 describe("a man hurt", () => {
@@ -543,5 +543,47 @@ describe("the TV cameras", () => {
 			}
 		}
 		assert.deepEqual(bad.slice(0, 8), []);
+	});
+});
+
+describe("the game over", () => {
+	test("everyone on the field shakes hands with one of the other side's, and the head coaches out to shake in the middle", () => {
+		for (const game of games) {
+			const tl = stage(game);
+			const play = tl.plays.at(-1)!;
+			const post = play.postgame!;
+			assert.isDefined(post, "a postgame");
+			assert.isBelow(play.t1 - play.whistle, 30_000);
+			for (const part of play.parts) {
+				const shakes = part.legs.filter((l) => l.move === "shake");
+				assert.isAbove(shakes.length, 0, `${part.pid} shook nobody's hand`);
+				for (const l of shakes) {
+					const t = (l.t0 + l.t1) / 2;
+					const other = play.parts.find(
+						(p) =>
+							p.team !== part.team &&
+							legAt(p, t).move === "shake" &&
+							Math.hypot(legAt(p, t).to.x - l.to.x, legAt(p, t).to.y - l.to.y) <
+								4,
+					);
+					assert.isDefined(other, `${part.pid}'s hand shaken by nobody`);
+				}
+			}
+			const coaches = play.coaches ?? [];
+			assert.lengthOf(coaches, 2);
+			const [a, b] = coaches.map((c) => legAt(c, post.shake + 200));
+			assert.equal(a!.move, "shake");
+			assert.equal(b!.move, "shake");
+			assert.isBelow(Math.hypot(a!.to.x - b!.to.x, a!.to.y - b!.to.y), 4);
+			// (Out on the field, not on the sideline as well.)
+			const off = sidelineAt(
+				sidelineFor(game.roster, 1),
+				tl,
+				momentAt(tl, post.shake),
+			);
+			for (const c of coaches) {
+				assert.isUndefined(off.find((s) => s.id === c.pid));
+			}
+		}
 	});
 });

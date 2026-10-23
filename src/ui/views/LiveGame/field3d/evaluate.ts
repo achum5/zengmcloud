@@ -176,6 +176,7 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 		...play.chains,
 		...play.tv,
 		...(play.medics ?? []),
+		...(play.coaches ?? []),
 	]) {
 		const legs = part.legs;
 		if (legs.length === 0) {

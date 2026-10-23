@@ -1,7 +1,7 @@
 import type { Shot } from "./camera.ts";
 import type { Play } from "./director.ts";
 import type { FieldMoment } from "./evaluate.ts";
-import { FIELD_L, GOAL_L, GOAL_R, MID_Y } from "./geometry.ts";
+import { FIELD_L, GOAL_L, GOAL_R, MID_Y, type Pt } from "./geometry.ts";
 
 // WHERE THE CAMERA LOOKS: the way a game is shot from the press box - on the
 // line before the snap, the offense's backfield on one side of the picture
@@ -68,6 +68,12 @@ const SET_MOST = 40;
 const NEAR = 18;
 const across = (y: number) => MID_Y + NEAR + (y - MID_Y) * 0.7;
 const HURT_WIDTH = 96;
+// The game over: wide on them all, and in on the head coaches from this long
+// before they shake hands, over this long.
+const POST_WIDE = 124;
+const POST_TIGHT = 66;
+const POST_IN = 5500;
+const POST_IN_MS = 4000;
 
 export const aimFor = (m: FieldMoment): Shot => {
 	const { play, t, focus } = m;
@@ -91,6 +97,19 @@ export const aimFor = (m: FieldMoment): Shot => {
 		if (him) {
 			return { x: him.x, width: HURT_WIDTH, y: across(him.y) };
 		}
+	}
+	// The game over: on them all as they make for the middle - and in on the
+	// head coaches as they come together to shake hands.
+	const post = play.postgame;
+	if (post && t >= post.from) {
+		const crowd = middleOf(play, m) ?? post.at;
+		const u = Math.min(1, Math.max(0, (t - post.shake + POST_IN) / POST_IN_MS));
+		const e = u * u * (3 - 2 * u);
+		return {
+			x: crowd.x + (post.at.x - crowd.x) * e,
+			width: POST_WIDE + (POST_TIGHT - POST_WIDE) * e,
+			y: across(crowd.y + (post.at.y - crowd.y) * e),
+		};
 	}
 	if (play.kind === "fieldGoal" || play.kind === "extraPoint") {
 		if (t < play.snap) {
@@ -182,3 +201,24 @@ const setY = (play: Play) => {
 
 const inBounds = (x: number, width: number) =>
 	Math.min(FIELD_L - width / 2 + PAST_END, Math.max(width / 2 - PAST_END, x));
+
+// The middle of the men on the field for a play, at the moment.
+const inPlay = new WeakMap<Play, Set<number>>();
+const middleOf = (play: Play, m: FieldMoment): Pt | undefined => {
+	let ids = inPlay.get(play);
+	if (!ids) {
+		ids = new Set(play.parts.map((p) => p.pid));
+		inPlay.set(play, ids);
+	}
+	let x = 0;
+	let y = 0;
+	let n = 0;
+	for (const p of m.players) {
+		if (ids.has(p.id)) {
+			x += p.x;
+			y += p.y;
+			n++;
+		}
+	}
+	return n > 0 ? { x: x / n, y: y / n } : undefined;
+};

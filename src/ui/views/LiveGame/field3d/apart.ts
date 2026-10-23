@@ -1,4 +1,4 @@
-import type { Leg, Part, Play } from "./director.ts";
+import type { Leg, Play } from "./director.ts";
 import type { Move } from "./poses.ts";
 
 // KEPT OFF EACH OTHER: never one man drawn standing in another. However the
@@ -7,7 +7,8 @@ import type { Move } from "./poses.ts";
 // whistle - wherever two would be in each other, each is eased a little way
 // aside, over a few steps before and back after, so they go round rather
 // than through. Not men meant to be on each other: blocking, tackled, in a
-// pile, handing the ball off - nor a man the ball is coming to or leaving.
+// pile, handing the ball off, shaking hands - nor a man the ball is coming
+// to or leaving.
 // Worked out once a play, the first time it is looked at.
 
 // Every this long (ms) along the play, how far over each man is (feet).
@@ -68,13 +69,19 @@ const TOUCH = new Set<Move>([
 	"tend",
 	"helpUp",
 	"takeKnee",
+	"shake",
+	"hug",
+	"chestBump",
 ]);
 
 const touching = (l: Leg) =>
 	TOUCH.has(l.move) || (l.arms !== undefined && TOUCH.has(l.arms));
 
 export const keepApart = (play: Play): Map<number, Sep[]> => {
-	const men = play.parts.filter((p) => p.pid >= 0 && p.legs.length > 0);
+	const men = [
+		...play.parts.filter((p) => p.pid >= 0),
+		...(play.coaches ?? []),
+	].filter((p) => p.legs.length > 0);
 	const t0 = play.t0;
 	const n = Math.max(1, Math.ceil((play.t1 - t0) / SEP_MS) + 1);
 	const xs = men.map(() => new Float32Array(n));
@@ -111,11 +118,10 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 		for (let round = 0; round < ROUNDS; round++) {
 			let moved = false;
 			for (let i = 0; i < men.length; i++) {
-				if (!free[i]![s]) {
-					continue;
-				}
+				const fi = free[i]![s]!;
 				for (let j = i + 1; j < men.length; j++) {
-					if (!free[j]![s]) {
+					const fj = free[j]![s]!;
+					if (!fi && !fj) {
 						continue;
 					}
 					const ax = xs[i]![s]! + dx[i]![s]!;
@@ -132,15 +138,18 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 					// (Right on top of each other: apart across the field.)
 					const ux = d > 1e-3 ? (ax - bx) / d : 0;
 					const uy = d > 1e-3 ? (ay - by) / d : 1;
-					const push = (APART - d) / 2;
+					// (Each half the way - or, the other where he has to be, the
+					// whole way himself.)
+					const push = APART - d;
+					const wi = fi ? (fj ? 0.5 : 1) : 0;
 					const ix = dx[i]!;
 					const iy = dy[i]!;
 					const jx = dx[j]!;
 					const jy = dy[j]!;
-					ix[s] = ix[s]! + ux * push;
-					iy[s] = iy[s]! + uy * push;
-					jx[s] = jx[s]! - ux * push;
-					jy[s] = jy[s]! - uy * push;
+					ix[s] = ix[s]! + ux * push * wi;
+					iy[s] = iy[s]! + uy * push * wi;
+					jx[s] = jx[s]! - ux * push * (1 - wi);
+					jy[s] = jy[s]! - uy * push * (1 - wi);
 					moved = true;
 				}
 			}
@@ -185,7 +194,7 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 // Where he is every SEP_MS from t0 (his legs as they go), and whether he
 // is free to be moved over.
 const sample = (
-	m: Part,
+	m: { legs: Leg[] },
 	t0: number,
 	n: number,
 	xs: Float32Array,
