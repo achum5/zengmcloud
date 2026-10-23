@@ -178,3 +178,25 @@ test(
 		}
 	},
 );
+
+test(
+	"no team is better off giving one of its picks away for nothing",
+	{ timeout: 300_000 },
+	async () => {
+		const outlook = await currentOutlook();
+		let checked = 0;
+		for (const { t } of await teams()) {
+			for (const dp of t.picks) {
+				checked += 1;
+				// Within the margin's smallest gain: a pick's player who is not
+				// worth his place is cut straight after the draft, for nothing.
+				assert.isAtMost(
+					priceFor(outlook, t, [{ kind: "pick", dp }], []),
+					0.001,
+					`team ${t.tid}, ${dp.season} round ${dp.round}`,
+				);
+			}
+		}
+		assert.isAbove(checked, 100);
+	},
+);

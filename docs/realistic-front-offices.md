@@ -425,6 +425,11 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   nothing. A deal is priced with the team's decisions on its roster as it
   stands, made again only for a pick the deal brings in or a season whose
   room the deal moves by more than a tenth of the cap.
+- **And a pick's player not worth his place is cut straight after the draft,
+  for nothing**, as the game allows. Kept on his rookie deal regardless, a
+  second-rounder who would sit cost room that buys better, and a team gave
+  its own second away for nothing. Each of these decisions is by what the
+  seasons it touches are worth to the franchise, as its trades are.
 
 ## Free agency
 

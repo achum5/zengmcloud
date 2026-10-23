@@ -1206,6 +1206,9 @@ export const teamPoints = (
 	// Whom the team lets go after their rookie deals, as decided on another
 	// roster of its (letGo) - or false for nobody, for ranking rosters alone.
 	known?: LetGoDecisions | false,
+	// What a season's points are worth to the franchise, for deciding whom to
+	// let go by it; points themselves without.
+	worth?: (y: number, points: number) => number,
 ) => {
 	const retentionFor = (p: Player) => {
 		const r = retentionOf(outlook, p.pid, tid);
@@ -1272,6 +1275,16 @@ export const teamPoints = (
 			const salary = halfSalaries
 				? halfSalaries[0] + halfSalaries[1]
 				: at.salary;
+			if (typeof draft === "number") {
+				// Cut for nothing straight after the draft, if he is not worth
+				// his place - not yet knowing which half he will turn out.
+				options.push({
+					i: lines.length,
+					key: `${key}:drafted`,
+					pick: key,
+					salary,
+				});
+			}
 			if (
 				typeof draft === "number" &&
 				season - draft > getRookieContractLength(round)
@@ -1282,11 +1295,12 @@ export const teamPoints = (
 							i: lines.length,
 							half,
 							key: `${key}:${half}`,
+							pick: key,
 							salary: halfSalaries[half],
 						});
 					}
 				} else {
-					options.push({ i: lines.length, key, salary });
+					options.push({ i: lines.length, key, pick: key, salary });
 				}
 			}
 			lines.push(
@@ -1316,7 +1330,7 @@ export const teamPoints = (
 		for (const at of futurePickLines(outlook, tid, y)) {
 			addPick(at, at.season, at.round, `future:${at.season}:${at.round}`);
 		}
-		const state: SeasonState = { lines, options };
+		const state: SeasonState = { y, lines, options };
 		seasons.push(state);
 		if (season >= outlook.firstRefillSeason) {
 			salaryCap ??= g.get("salaryCap");
@@ -1346,7 +1360,12 @@ export const teamPoints = (
 		}
 	}
 	if (known !== false && outlookSettingFor(tid, "letGo")) {
-		letGo(seasons, (all) => expectedRosterPoints(asPlayed(tid, all)), known);
+		letGo(
+			seasons,
+			(all) => expectedRosterPoints(asPlayed(tid, all)),
+			known,
+			worth,
+		);
 	}
 	const out: number[] = [];
 	for (let y = 0; y <= OUTLOOK_YEARS; y++) {
@@ -1397,6 +1416,9 @@ type LetGoOption = {
 	i: number;
 	half?: 0 | 1;
 	key: string;
+	// The pick he was taken with: once he is cut, the later decisions on him
+	// are moot.
+	pick: string;
 	salary: number;
 };
 
@@ -1432,6 +1454,7 @@ const LET_GO_ROOM_TOLERANCE = 0.1;
 // One season of a team's outlook, as teamPoints works it out: its roster, and
 // from the first season it refills, its cap room and what that room buys.
 type SeasonState = {
+	y: number;
 	lines: SeasonLine[];
 	// Its picks' players it may let go that season.
 	options: LetGoOption[];
@@ -1462,6 +1485,7 @@ const letGo = (
 	seasons: readonly SeasonState[],
 	points: (lines: readonly SeasonLine[]) => number,
 	known?: LetGoDecisions,
+	worth: (y: number, points: number) => number = (_, x) => x,
 ) => {
 	const minContract = g.get("minContract");
 	const tolerance = LET_GO_ROOM_TOLERANCE * g.get("salaryCap");
@@ -1478,10 +1502,15 @@ const letGo = (
 		}
 		return ahead;
 	};
+	// Picks whose players were cut.
+	const cut = new Set<string>();
 	const goFrom = (
 		ahead: readonly [SeasonState, LetGoOption][],
 		freed: readonly number[] = [],
 	) => {
+		if (ahead[0]?.[1].half === undefined && ahead[0]) {
+			cut.add(ahead[0][1].pick);
+		}
 		for (const [k, [s, at]] of ahead.entries()) {
 			s.lines[at.i] = withoutOption(s.lines[at.i]!, at);
 			s.room! += at.salary;
@@ -1496,7 +1525,7 @@ const letGo = (
 		const room = now.room;
 		const fresh: LetGoOption[] = [];
 		for (const o of now.options) {
-			if (decided.has(o.key)) {
+			if (decided.has(o.key) || cut.has(o.pick)) {
 				continue;
 			}
 			decided.add(o.key);
@@ -1517,7 +1546,7 @@ const letGo = (
 		// Those his salary would buy the most better than him go first; room
 		// that buys nobody better is no reason to let him go.
 		const sorted = fresh
-			.filter((o) => o.salary >= minContract)
+			.filter((o) => o.salary >= minContract || o.key.endsWith(":drafted"))
 			.map((o) => ({
 				o,
 				surplus:
@@ -1529,22 +1558,26 @@ const letGo = (
 			.map((x) => x.o);
 		let keptInARow = 0;
 		for (const o of sorted) {
+			if (cut.has(o.pick)) {
+				continue;
+			}
 			const ahead = aheadOf(y, o.key);
 			let gain = 0;
 			const freed: number[] = [];
-			// Every season ahead: on the first few alone, it let young players
-			// go who were about to get better. One worth more than his room
-			// the first season only gets better.
+			// Every season ahead, by what it is worth to the franchise: on the
+			// first few alone, it let young players go who were about to get
+			// better. One worth more than his room the first season only gets
+			// better.
 			for (const [s, at] of ahead) {
 				const kept = pointsOf(s);
 				const line = s.lines[at.i]!;
 				s.lines[at.i] = withoutOption(line, at);
 				freed.push(points([...s.lines, ...s.signingsAt!(s.room! + at.salary)]));
 				s.lines[at.i] = line;
-				gain += freed.at(-1)! - kept;
-				if (gain <= 0 && freed.length === 1) {
+				if (freed.length === 1 && freed[0]! <= kept) {
 					break;
 				}
+				gain += worth(s.y, freed.at(-1)!) - worth(s.y, kept);
 			}
 			if (gain > 0) {
 				if (known?.record) {
@@ -1684,8 +1717,12 @@ export const teamStrengths = (
 	trading?: { tradedAway: TradedAway; extra: number },
 	refill?: Parameters<typeof teamPoints>[5],
 	known?: LetGoDecisions,
-) =>
-	teamPoints(
+) => {
+	const strengthOf = (y: number, points: number) =>
+		points -
+		outlook.meanPoints[y]! +
+		(y === 0 ? (outlook.recordEdge.get(tid) ?? 0) : 0);
+	return teamPoints(
 		outlook,
 		tid,
 		players,
@@ -1694,12 +1731,11 @@ export const teamStrengths = (
 		refill,
 		undefined,
 		known,
-	).map(
-		(x, y) =>
-			x -
-			outlook.meanPoints[y]! +
-			(y === 0 ? (outlook.recordEdge.get(tid) ?? 0) : 0),
-	);
+		outlook.titleCurves.length > 0
+			? (y, points) => seasonValue(outlook, y, strengthOf(y, points))
+			: undefined,
+	).map((x, y) => strengthOf(y, x));
+};
 
 // Logistic fit of a probability against strength. Used to price a roster that
 // is not any team's actual roster.
