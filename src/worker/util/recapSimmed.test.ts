@@ -977,6 +977,49 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "Three of the 15 games were decided by five points or fewer" is any
+	// night; "Around the league, the Bulls blew out the Grizzlies 101-80" was
+	// the whole league on a two-game night; "Four of the ten favorites lost.
+	// Four of the ten games were..." ran one frame twice.
+	test("a wrap's league notes are news, and its openers fit the list", () => {
+		const WORDS = [
+			"zero",
+			"one",
+			"two",
+			"three",
+			"four",
+			"five",
+			"six",
+			"seven",
+			"eight",
+			"nine",
+			"ten",
+			"eleven",
+			"twelve",
+		];
+		const num = (s: string) =>
+			WORDS.includes(s.toLowerCase())
+				? WORDS.indexOf(s.toLowerCase())
+				: Number(s);
+		for (const wrap of dayRecaps) {
+			const sentences = wrap.split(/(?<=[!.?])\s+/);
+			for (let i = 0; i < sentences.length; i++) {
+				const s = sentences[i]!;
+				assert.notMatch(s, /^Around the league, [^,]*\.$/, wrap);
+				const m = /^(\w+) of the (\w+) games were decided by five/.exec(s);
+				if (m) {
+					assert.ok(num(m[1]!) >= 0.4 * num(m[2]!), wrap);
+				}
+				if (i > 0) {
+					assert.ok(
+						!(/^\w+ of the /.test(s) && /^\w+ of the /.test(sentences[i - 1]!)),
+						wrap,
+					);
+				}
+			}
+		}
+	});
+
 	// "Bulls cannot keep up with the Pacers, 110-107" over a game won on a
 	// jumper with 19.9 seconds left.
 	test("a headline's verb fits the margin", () => {

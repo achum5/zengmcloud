@@ -10029,7 +10029,9 @@ const nightThemeSentence = (
 			`Chalk held everywhere: all ${numWord(lined)} favorites won.`,
 			`The favorites went ${lined}-0.`,
 		);
-	} else if (lined >= 5 && upsets >= 3 && upsets >= 0.4 * lined) {
+	} else if (lined >= 5 && upsets >= 3 && upsets >= 0.5 * lined) {
+		// Half of them, at least: favorites lose a third of the time, and
+		// "Three of the seven favorites lost" is a normal night.
 		options.push(
 			`${cap(numWord(upsets))} of the ${numWord(lined)} favorites lost.`,
 			...(favWins >= upsets
@@ -10043,7 +10045,12 @@ const nightThemeSentence = (
 	return pick(rng, options, "nightTheme");
 };
 
-const closeGamesSentence = (games: RecapGame[]): string | undefined => {
+const closeGamesSentence = (
+	games: RecapGame[],
+	// The sentence before it, so "Four of the ten favorites lost. Four of the
+	// ten games were decided..." does not run the same frame twice.
+	before = "",
+): string | undefined => {
 	const nonExhibition = games.filter((g) => !g.allStar);
 	if (nonExhibition.length < 4) {
 		return undefined;
@@ -10062,8 +10069,13 @@ const closeGamesSentence = (games: RecapGame[]): string | undefined => {
 	// OT games are already surfaced individually (in "Elsewhere" and the roundup's
 	// scores), so only call out an unusually OT-heavy night here; otherwise the
 	// close-game count is the more informative league note.
-	if (close >= 3) {
-		return `${cap(numWord(close))} of the ${numWord(nonExhibition.length)} games were decided by five points or fewer.`;
+	// A night of them, not the usual share: "Three of the 15 games were
+	// decided by five points or fewer" is any night, and ran in a quarter of
+	// all wraps.
+	if (close >= 3 && close >= 0.4 * nonExhibition.length) {
+		return /^\w+ of the /.test(before)
+			? `${cap(numWord(close))} games were decided by five points or fewer.`
+			: `${cap(numWord(close))} of the ${numWord(nonExhibition.length)} games were decided by five points or fewer.`;
 	}
 	if (ot >= 3) {
 		return `${ot === nonExhibition.length ? "All" : cap(numWord(ot))} games went to overtime.`;
@@ -10734,11 +10746,16 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		// "Also worth the watch: ..." to be followed by "Also on the night, ...".
 		const notableFirstWord = notableOpener?.split(" ")[0];
 		const candidates = [
-			"Around the league",
+			// Not over one or two results: "Around the league, the Bulls blew
+			// out the Grizzlies 101-80" was the whole league on a two-game night.
+			...(items.length >= 3 ? ["Around the league"] : []),
 			"Also on the night",
 			// "In the other games" over a single clause read as a miscount on a
 			// two-game night ("In the other games, the Gold Club beat the Turtles").
-			items.length === 1 ? "In the other game" : "In the other games",
+			// And only when these ARE the other games, none left off the list.
+			...(roundupExtra === 0
+				? [items.length === 1 ? "In the other game" : "In the other games"]
+				: []),
 		].filter((o) => o.split(" ")[0] !== notableFirstWord);
 		if (notableBlurbs.length > 0 && notableBlurbs.length + items.length <= 3) {
 			// Three results or fewer are one list, not two sentences of one
@@ -10747,7 +10764,11 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			para2[notableAt] =
 				`Elsewhere, ${naturalList([...notableBlurbs, ...items])}.`;
 		} else {
-			const opener = pick(rng, candidates, "roundupOpener");
+			const opener = pick(
+				rng,
+				candidates.length > 0 ? candidates : ["Elsewhere"],
+				"roundupOpener",
+			);
 			para2.push(`${opener}, ${naturalList(items)}.`);
 		}
 	}
@@ -10773,7 +10794,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	if (theme) {
 		para3.push(theme);
 	}
-	const close = closeGamesSentence(games);
+	const close = closeGamesSentence(games, theme);
 	if (close) {
 		para3.push(close);
 	}
