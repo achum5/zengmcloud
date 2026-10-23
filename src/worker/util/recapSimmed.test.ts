@@ -382,6 +382,28 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "Keegan Lowry scores 30, and the Kings take Game 1" over a teammate's
+	// 32; "Xavier Ingram's 24 not enough" over one's 28.
+	test("a headline's points belong to the man who scored the most", () => {
+		for (const { recap, game } of pairs) {
+			const headline = recap.split("\n")[0]!;
+			for (const t of game.teams) {
+				for (const p of t.players) {
+					const m = new RegExp(
+						String.raw`${p.name}(?:'s?| scores| goes for| pours in) (\d+)\b(?!-| points and| points,| and \d)`,
+					).exec(headline);
+					if (m && Number(m[1]) === p.pts) {
+						assert.ok(
+							t.players.every((q) => q.pts <= p.pts) ||
+								/ picks /.test(headline),
+							recap,
+						);
+					}
+				}
+			}
+		}
+	});
+
 	test("a day wrap's deck does not repeat its headline", () => {
 		for (const recap of dayRecaps) {
 			const headline = recap.split("\n")[0]!;

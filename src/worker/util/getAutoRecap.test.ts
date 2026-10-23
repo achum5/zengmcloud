@@ -8752,6 +8752,43 @@ test("a line that is not about points gets a verb that is not either", () => {
 	);
 });
 
+// "Miles Ingram's 24 leads the Pelicans past the Hawks" over a teammate's
+// 26: picked for seven rebounds and two steals the line never showed.
+test("a line that is only points leads only if nobody outscored it", () => {
+	const win = realisticTeam(
+		{
+			tid: 1,
+			region: "New Orleans",
+			name: "Pelicans",
+			abbrev: "NOP",
+			pts: 112,
+		},
+		player({
+			name: "Miles Ingram",
+			pts: 24,
+			reb: 7,
+			ast: 3,
+			stl: 2,
+			blk: 2,
+			fg: 9,
+			fga: 16,
+		}),
+	);
+	win.players.push(
+		player({ name: "Herb Ingram", pts: 26, reb: 3, ast: 1, fg: 10, fga: 22 }),
+	);
+	const lose = realisticTeam(
+		{ tid: 2, region: "Atlanta", name: "Hawks", abbrev: "ATL", pts: 104 },
+		player({ name: "Hawk Star", pts: 21, reb: 5, fg: 8, fga: 18 }),
+	);
+	for (let gid = 1600; gid < 1610; gid++) {
+		const recap = getAutoRecap(game({ gid, teams: [win, lose], winnerTid: 1 }));
+		const [headline = "", , lede = ""] = recap.split("\n");
+		assert.doesNotMatch(headline, /Miles Ingram/, recap);
+		assert.match(`${headline} ${lede}`, /Herb Ingram/, recap);
+	}
+});
+
 // "Evan Hayes had a double-double of his own, 10 points and 14 rebounds"
 // under a lede whose man scored 21 and had nothing to be his own beside.
 test("a double-double is only 'of his own' beside another", () => {

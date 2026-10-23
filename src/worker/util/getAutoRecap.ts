@@ -574,6 +574,20 @@ const storyPlayerOf = (
 			star = top;
 		}
 	}
+	// A LINE THAT IS ONLY POINTS is the story only when nobody on his side
+	// outscored it. Picked for what the line does not show - seven rebounds,
+	// two steals - he read as the wrong man: "Miles Ingram's 24 leads the
+	// Pelicans" over a teammate's 26, "Keegan Lowry scores 30" over one's 32.
+	if (
+		star &&
+		shape.winner.players.includes(star) &&
+		statPhrase(star) === plural(star.pts, "point")
+	) {
+		const top = [...shape.winner.players].sort((a, b) => b.pts - a.pts)[0];
+		if (top && top !== star && top.pts > star.pts) {
+			star = top;
+		}
+	}
 	const last = game.flow?.lastLead;
 	const close = shape.margin <= 5 || shape.ot > 0;
 	if (
@@ -1691,7 +1705,23 @@ const buildHeadline = (
 	rng: () => number,
 ): Headline => {
 	const built = buildHeadlineText(game, shape, star, post, rng);
-	const text = trimHeadline(built.text);
+	const trimmed = trimHeadline(built.text);
+	// Cut down to his points, a man a teammate outscored reads as the wrong
+	// man: "Xavier Ingram's 24 not enough" over a teammate's 28 was a 24-
+	// and-8 night. A headline a little long beats one that misleads.
+	const misleads =
+		trimmed !== built.text &&
+		game.teams.some((t) =>
+			t.players.some((p) => {
+				const m = new RegExp(
+					String.raw`${p.name.replaceAll(/[$()*+.?[\\\]^{|}]/g, String.raw`\$&`)}(?:'s?| scores) (\d+)\b(?! (?:points|rebounds|assists|steals|blocks))`,
+				).exec(trimmed);
+				return (
+					!!m && Number(m[1]) === p.pts && t.players.some((q) => q.pts > p.pts)
+				);
+			}),
+		);
+	const text = misleads ? built.text : trimmed;
 	return {
 		...built,
 		text,
