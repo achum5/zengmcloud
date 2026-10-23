@@ -17,7 +17,8 @@ import {
 // left to that, the time ran out on the nearest.)
 
 // No canvas here: a stand-in that takes every call and draws nothing, and
-// reads back clear pixels.
+// reads back clear pixels - noting what is drawn from.
+const drawnFrom: unknown[] = [];
 const stubCanvas = () => {
 	const ctx: Record<string | symbol, unknown> = {};
 	const proxy: unknown = new Proxy(ctx, {
@@ -30,13 +31,18 @@ const stubCanvas = () => {
 							width: w,
 							height: h,
 						})
-					: () => proxy,
+					: prop === "drawImage"
+						? (from: unknown) => {
+								drawnFrom.push(from);
+							}
+						: () => proxy,
 		set: (target, prop, v) => {
 			target[prop] = v;
 			return true;
 		},
 	});
-	return { width: 0, height: 0, getContext: () => proxy };
+	const canvas = { width: 0, height: 0, getContext: () => proxy };
+	return canvas;
 };
 
 let clock = 0;
@@ -132,4 +138,48 @@ test("short of time, the men nearest the camera get their new pose first", () =>
 		later.map((m) => cache.last.get(cache.ids.get(m.look)!)!.behind),
 		[2, 0, 0, 0, 0],
 	);
+});
+
+// Each new picture is sculpted on one scratch sheet and kept as a picture
+// of its own. Drawn from, the sheet would be held on to as it was until the
+// kept picture is next painted, and the next man sculpted on it would wait
+// while all of it - as big as the biggest man ever drawn on it - was copied:
+// the pixels are handed over instead.
+test("a kept picture takes the sheet's pixels - the sheet is never drawn from", () => {
+	const cam = makeCamera({ x: 47, width: 30, y: 24 }, 640, 360, MAIN_RIG);
+	const body = bodyOf();
+	const look: Look = {
+		kit: kitsFor(undefined, undefined)[0],
+		skin: "#8d5524",
+		hair: "#1f1612",
+		jerseyNumber: "",
+		name: "",
+		lastName: "",
+		wordmark: "",
+	};
+	const scratch = makeScratch();
+	const cache = makeSpriteCache();
+	const ctx = stubCanvas().getContext() as unknown as CanvasRenderingContext2D;
+	drawnFrom.length = 0;
+	for (let i = 0; i < 4; i++) {
+		startFrame(cache);
+		const st = {
+			pid: 1,
+			team: 0,
+			shown: true,
+			x: 40 + i,
+			y: 25,
+			z: 0,
+			yaw: i,
+			anim: "run",
+			phase: i / 4,
+			moving: true,
+		} as PlayerState;
+		prepareSprites(scratch, cam, [{ st, body, look }], 1, cache);
+		drawSprite(ctx, scratch, cam, st, body, look, 1, cache);
+	}
+	assert.strictEqual(cache.kept.size, 4);
+	assert.isFalse(drawnFrom.includes(scratch.canvas));
+	// (What is drawn into the picture is each kept one.)
+	assert.strictEqual(drawnFrom.length, 4);
 });

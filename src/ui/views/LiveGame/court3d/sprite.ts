@@ -209,7 +209,14 @@ export const keep = (
 	const canvas = document.createElement("canvas");
 	canvas.width = w;
 	canvas.height = h;
-	canvas.getContext("2d")!.drawImage(from, fx, fy, w, h, 0, 0, w, h);
+	// Copied over as pixels, not drawn: a sheet drawn from is held on to as
+	// it was until the picture it was drawn into is next painted, so the
+	// next man sculpted on it waited while all of it was copied - and it is
+	// as big as the biggest man ever drawn on it (a close-up replay's: a
+	// couple of million pixels, every new pose after it).
+	canvas
+		.getContext("2d")!
+		.putImageData(from.getContext("2d")!.getImageData(fx, fy, w, h), 0, 0);
 	const k: Kept = { canvas, w, h, dx, dy };
 	cache.kept.set(key, k);
 	cache.area += w * h;
