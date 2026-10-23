@@ -199,7 +199,7 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 		let ranBefore = 0;
 		for (let j = 0; j < k; j++) {
 			const lj = legs[j]!;
-			before = yawOf(lj, before);
+			before = yawOf(lj, before) + (lj.turn ?? 0);
 			ranBefore = ran;
 			ran = moveKind(lj.move) === "cycle" ? ran + lengthOf(lj) : 0;
 		}

@@ -344,6 +344,13 @@ class Actor {
 		});
 	}
 
+	// Round as he goes through what he is doing now, this far (to his left
+	// positive).
+	turn(by: number) {
+		this.last.turn = by;
+		this.yaw += by;
+	}
+
 	// The leg he is in at t made two, there.
 	split(t: number) {
 		const legs = this.part.legs;
@@ -368,7 +375,13 @@ class Actor {
 			...(l.arms
 				? { armsSpan: [q0 + (q1 - q0) * u, q1] as [number, number] }
 				: {}),
+			...(l.turn && l.yaw !== undefined
+				? { yaw: l.yaw + l.turn * u, turn: l.turn * (1 - u) }
+				: {}),
 		};
+		if (l.turn) {
+			l.turn *= u;
+		}
 		l.t1 = t;
 		l.to = mid;
 		if (act) {
@@ -415,6 +428,9 @@ class Actor {
 				const [q0, q1] = l.armsSpan ?? [0, 1];
 				l.armsSpan = [q0, q0 + (q1 - q0) * u];
 			}
+			if (l.turn) {
+				l.turn *= u;
+			}
 			l.t1 = t;
 		}
 		let yaw = legs[0]!.yaw ?? 0;
@@ -425,11 +441,12 @@ class Actor {
 	}
 }
 
+// (The way he faces at the end of it: round by its turn.)
 const yawOf = (l: Leg, before: number): number =>
-	l.yaw ??
-	(l.from.x !== l.to.x || l.from.y !== l.to.y
-		? Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x)
-		: before);
+	(l.yaw ??
+		(l.from.x !== l.to.x || l.from.y !== l.to.y
+			? Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x)
+			: before)) + (l.turn ?? 0);
 
 // ---- the ball ---------------------------------------------------------------
 
@@ -628,6 +645,25 @@ const HIT_MS = 280;
 // front (the cosine of it); and then, this often, drove him back.
 const HEAD_ON = 0.5;
 const DRIVEN_BACK = 0.55;
+// Come at from the side (the sine of it at least this): this often swung
+// round as he goes down, about this far (radians) - away from him, down
+// the way he is thrown.
+const SWING_SIDE = 0.7;
+// (A tackler from behind him: the cosine of it under this.)
+const BEHIND = -0.3;
+const SWING = 0.4;
+const SWING_TURN = 1.6;
+// One man in the secondary bringing him down from the side or behind: this
+// often on his feet still after it, stood over him.
+const UPRIGHT = 0.3;
+// Met head on, another man in on it by then (as late as this after, ms):
+// this often stood up instead - held there and driven back this far (feet)
+// over this long, the whistle on forward progress, him still on his feet.
+const STOOD = 0.22;
+const STOOD_LATE = 350;
+const STOOD_BACK = 2.6;
+const STOOD_MS = 1100;
+const STOOD_APART = 1;
 // More men in on a tackle: the first, and the second, there in time to (as
 // late as this after it), this often.
 // The ball out of his hands this long after the snap at the soonest (ms),
@@ -2291,6 +2327,13 @@ class Action {
 			this.pursue(chasers, end.pt, down.t, down.by, carrier);
 			return;
 		}
+		if (
+			this.heap === 0 &&
+			this.standUp(carrier, down.by, chasers, end.pt, down.t)
+		) {
+			this.pursue(chasers, end.pt, down.t, down.by, carrier);
+			return;
+		}
 		const pile = this.tackle(carrier, down.by, end.pt, down.t);
 		this.gangUp(chasers, pile, down.t, down.by);
 		this.pursue(chasers, end.pt, down.t, down.by, carrier);
@@ -2485,7 +2528,7 @@ class Action {
 				);
 				carrier.cut(tc);
 				carrier.act("spin", tc + SPIN_MS, ang, off);
-				carrier.last.turn = side * Math.PI * 2;
+				carrier.turn(side * Math.PI * 2);
 				on();
 				const hit = beside(at, toHim, 2.2);
 				const face = this.toward(hit, at);
@@ -2669,19 +2712,44 @@ class Action {
 			m.posAt(Math.max(this.seen, Math.min(m.t, lead - 600))),
 		);
 		const first = froms[0];
+		// (Where the first comes from, round from the way he goes.)
+		const toFirst = first
+			? Math.atan2(first.y - pt.y, first.x - pt.x) - fall
+			: 0;
 		// (Down already - off his feet for the catch - and touched there.)
 		const lying = carrier.last.move === "prone";
 		const back =
 			!keptUp &&
 			!lying &&
 			first !== undefined &&
-			Math.cos(Math.atan2(first.y - pt.y, first.x - pt.x) - fall) > HEAD_ON &&
+			Math.cos(toFirst) > HEAD_ON &&
 			r() < DRIVEN_BACK;
+		// (The side the first comes at him from: +1 his left.)
+		const from1 = Math.sin(toFirst) > 0 ? 1 : -1;
+		const swing =
+			!keptUp &&
+			!lying &&
+			!back &&
+			first !== undefined &&
+			Math.abs(Math.sin(toFirst)) > SWING_SIDE &&
+			r() < SWING;
+		const upright =
+			!keptUp &&
+			!lying &&
+			!back &&
+			by.length === 1 &&
+			DB.has(by[0]!.role) &&
+			Math.cos(toFirst) < HEAD_ON &&
+			r() < UPRIGHT;
 		const along = (p: Pt, f: number, s: number) => ({
 			x: p.x + Math.cos(fall) * f - Math.sin(fall) * s,
 			y: p.y + Math.sin(fall) * f + Math.cos(fall) * s,
 		});
-		const downAt = lying ? carrier.at : along(pt, back ? -1.4 : 2.5, 0);
+		const downAt = lying
+			? carrier.at
+			: swing
+				? along(pt, 1.4, -from1 * 2)
+				: along(pt, back ? -1.4 : 2.5, 0);
 		if (keptUp) {
 			this.runOn(carrier, 450);
 		} else if (lying) {
@@ -2690,6 +2758,9 @@ class Action {
 			this.done.add(carrier.pid);
 		} else {
 			carrier.act(back ? "tackledBack" : "tackled", t + 450, fall, downAt);
+			if (swing) {
+				carrier.turn(-from1 * SWING_TURN * (0.8 + r() * 0.4));
+			}
 			carrier.hold(t + 450 + DOWN_MS, back ? "supine" : "prone");
 			carrier.act(back ? "getUpBack" : "getUp", t + 450 + DOWN_MS + GET_UP_MS);
 			this.done.add(carrier.pid);
@@ -2704,21 +2775,137 @@ class Action {
 				y: pt.y + Math.sin(ang) * 2.2,
 			};
 			const face = this.toward(hit, pt);
-			this.closeOn(m, hit, lead, face);
-			// Down alongside him, not on top of him - the man who drove him
-			// back down across his legs.
-			const by = (k % 2 === 0 ? 1 : -1) * 2.1;
-			const lands = !back
-				? along(downAt, -1.2, by)
-				: k === 0
-					? along(downAt, 2.6, 2)
-					: along(downAt, 0.6, by);
+			// (Run down from behind: on his heels as he gets there, not
+			// waiting there for him.)
+			this.closeOn(m, hit, Math.cos(ang - fall) < BEHIND ? t - 60 : lead, face);
+			if (upright) {
+				// Through him and up, over him.
+				m.go(
+					{ x: hit.x + Math.cos(face) * 1.6, y: hit.y + Math.sin(face) * 1.6 },
+					t + 450,
+					"drive",
+					face,
+				);
+				m.hold(t + 450 + DOWN_MS + 300, "stand", face);
+				this.done.add(m.pid);
+				return;
+			}
+			// Down alongside him on the side he came in from, not on top of
+			// him - the man who drove him back down across his legs.
+			const by = (Math.sin(ang - fall) > 0 ? 1 : -1) * 2.1;
+			const lands = swing
+				? {
+						x: downAt.x - Math.sin(fall) * by,
+						y: downAt.y + Math.cos(fall) * by,
+					}
+				: !back
+					? along(downAt, -1.2, by)
+					: k === 0
+						? along(downAt, 2.6, 2)
+						: along(downAt, 0.6, by);
 			m.act("dive", t + 450, face, lands);
 			m.hold(t + 450 + DOWN_MS + 150 * k, "prone");
 			m.act("getUp", t + 450 + DOWN_MS + GET_UP_MS + 150 * k);
 			this.done.add(m.pid);
 		});
 		return downAt;
+	}
+
+	// Stood up instead of brought down, some of the time: met head on at
+	// `pt` at t by the first of `by`, the next of them (or of `chasers`) in
+	// on it by then, and held there - the lot of them driving him back a
+	// couple of feet, and the whistle, forward progress, him still up. Whether
+	// he was (and the whistle, then).
+	standUp(carrier: Actor, by: Actor[], chasers: Actor[], pt: Pt, t: number) {
+		const r = this.r;
+		const l = carrier.last;
+		if (
+			carrier.role === "QB" ||
+			moveKind(l.move) !== "cycle" ||
+			l.to.x !== pt.x ||
+			l.to.y !== pt.y ||
+			by.length === 0
+		) {
+			return false;
+		}
+		const fall = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+		const lead = t - HIT_MS;
+		const fromOf = (m: Actor, c: number) =>
+			m.posAt(Math.max(this.seen, Math.min(m.t, c - 600)));
+		const first = fromOf(by[0]!, lead);
+		if (
+			Math.cos(Math.atan2(first.y - pt.y, first.x - pt.x) - fall) <= HEAD_ON
+		) {
+			return false;
+		}
+		const more = [
+			...by.slice(1),
+			...this.nearest(
+				chasers.filter(
+					(m) => m.team !== carrier.team && !by.includes(m) && m.t < t,
+				),
+				pt,
+				2,
+			),
+		]
+			.map((m) => ({ m, at: this.canReach(m, pt) }))
+			.filter((x) => x.at < t + STOOD_LATE)
+			.slice(0, 2);
+		if (more.length === 0 || r() > STOOD) {
+			return false;
+		}
+		const end = t + STOOD_MS;
+		const back = {
+			x: -Math.cos(fall) * STOOD_BACK,
+			y: -Math.sin(fall) * STOOD_BACK,
+		};
+		this.downer = by[0]!;
+		carrier.go({ x: pt.x + back.x, y: pt.y + back.y }, end, "drive", fall);
+		carrier.hold(end + 500, "stand", fall);
+		this.done.add(carrier.pid);
+		const men = [{ m: by[0]!, at: lead }, ...more];
+		// (Each in from the way he comes - no two in the same place.)
+		const angs: number[] = [];
+		for (const [k, { m, at }] of men.entries()) {
+			const from = fromOf(m, Math.max(at, lead));
+			let ang = Math.atan2(from.y - pt.y, from.x - pt.x);
+			for (let n = 0; n < 4; n++) {
+				const near = angs
+					.map((a) => Math.atan2(Math.sin(ang - a), Math.cos(ang - a)))
+					.filter((d) => Math.abs(d) < STOOD_APART)[0];
+				if (near === undefined) {
+					break;
+				}
+				ang +=
+					(near === 0 ? (k % 2 === 0 ? 1 : -1) : Math.sign(near)) *
+						STOOD_APART -
+					near;
+			}
+			angs.push(ang);
+		}
+		men.forEach(({ m, at }, k) => {
+			const ang = angs[k]!;
+			const hit = {
+				x: pt.x + Math.cos(ang) * 2.3,
+				y: pt.y + Math.sin(ang) * 2.3,
+			};
+			const face = this.toward(hit, pt);
+			// (In on it where it has got to by then.)
+			const there = Math.max(lead, at + 100);
+			const u = clamp((there - t) / STOOD_MS, 0, 1);
+			this.closeOn(
+				m,
+				{ x: hit.x + back.x * u, y: hit.y + back.y * u },
+				there,
+				face,
+			);
+			m.hold(t, "engage", face);
+			m.go({ x: hit.x + back.x, y: hit.y + back.y }, end, "drive", face);
+			m.hold(end + 300 + r() * 300, "stand", face);
+			this.done.add(m.pid);
+		});
+		this.whistle = end;
+		return true;
 	}
 
 	// A quarterback giving himself up: feet first at `pt` - the ball spotted
