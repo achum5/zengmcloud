@@ -3564,12 +3564,25 @@ const gameStory = (
 	const wMaxAt = flow?.maxLeadAt?.[wSide];
 	const lMaxAt = flow?.maxLeadAt?.[lSide];
 	const raw = flow?.run;
+	// A run across halftime belongs to neither half the story tells, so it
+	// is left to the run note, which goes after the halftime score.
+	const rawEnd = raw?.endPeriod ?? raw?.period ?? 0;
 	const run =
 		raw &&
 		raw.period <= regPeriods &&
+		!(raw.period <= halfN && rawEnd > halfN) &&
 		(raw.side === wSide ? winnersRunIsNews(shape, raw) : raw.pts >= 12)
-			? { winner: raw.side === wSide, pts: raw.pts, period: raw.period }
+			? {
+					winner: raw.side === wSide,
+					pts: raw.pts,
+					period: raw.period,
+					end: rawEnd,
+				}
 			: undefined;
+	// "in the second", or "across the third and fourth" for a run that
+	// began in one quarter and ended in the next.
+	const runAt = (r: { period: number; end: number }) =>
+		runSpan(r.period, r.end, regPeriods);
 	const when = (period: number) => periodTag(period, regPeriods);
 	const lastLead = flow?.lastLead;
 	// The winners were in front for good by the break.
@@ -3776,14 +3789,14 @@ const gameStory = (
 		// A run in the quarter before, which got them back in it: told first,
 		// so the clock runs forward.
 		const lateRun =
-			run && run.winner && run.period > halfN && run.period < regPeriods
+			run && run.winner && run.period > halfN && run.end < regPeriods
 				? run
 				: undefined;
 		if (lastRun || lateRun) {
 			covers.add("run");
 		}
 		if (lateRun) {
-			const ran = `${W} ran off ${lateRun.pts} straight points in ${when(lateRun.period)}`;
+			const ran = `${W} ran off ${lateRun.pts} straight points ${runAt(lateRun)}`;
 			return wIn === lIn
 				? `${ran}, and it was ${wIn}-${lIn} going into the ${last} before they won the ${last} quarter ${q}.`
 				: `${ran} but were still ${lIn - wIn} down going into the ${last}, then won the ${last} quarter ${q}.`;
@@ -3826,10 +3839,10 @@ const gameStory = (
 				covers.add("run");
 			}
 			const opener =
-				early && early.period === 1 && hot
+				early && early.end === 1 && hot
 					? `${W} ran off ${early.pts} straight points in the first and won the quarter ${w1}-${l1}`
 					: early
-						? `${W} ran off ${early.pts} straight points in ${when(early.period)}`
+						? `${W} ran off ${early.pts} straight points ${runAt(early)}`
 						: `${W} won the first quarter ${w1}-${l1}`;
 			if (hot && !(early && early.period > 1)) {
 				toldLead = w1 - l1;
@@ -3845,8 +3858,8 @@ const gameStory = (
 				pick(
 					rng,
 					[
-						`${L} ran off ${run.pts} straight points in ${when(run.period)} and led ${lh}-${wh} at halftime.`,
-						`${L} were up ${lh}-${wh} at the break after they ran off ${run.pts} straight points in ${when(run.period)}.`,
+						`${L} ran off ${run.pts} straight points ${runAt(run)} and led ${lh}-${wh} at halftime.`,
+						`${L} were up ${lh}-${wh} at the break after they ran off ${run.pts} straight points ${runAt(run)}.`,
 					],
 					"story:downRun",
 				),
@@ -3889,8 +3902,8 @@ const gameStory = (
 				pick(
 					rng,
 					[
-						`${W} took over after the break: they ran off ${run.pts} straight points in ${when(run.period)} and won the second half ${w2}-${l2}.`,
-						`After halftime it was all ${w}, ${w2}-${l2}, and they ran off ${run.pts} straight points in ${when(run.period)}.`,
+						`${W} took over after the break: they ran off ${run.pts} straight points ${runAt(run)} and won the second half ${w2}-${l2}.`,
+						`After halftime it was all ${w}, ${w2}-${l2}, and they ran off ${run.pts} straight points ${runAt(run)}.`,
 					],
 					"story:turnRun",
 				),
@@ -3953,7 +3966,7 @@ const gameStory = (
 			const parts = [`won the second half ${w2}-${l2}`];
 			if (run && run.winner && run.period > halfN) {
 				covers.add("run");
-				parts.push(`ran off ${run.pts} straight points in ${when(run.period)}`);
+				parts.push(`ran off ${run.pts} straight points ${runAt(run)}`);
 			}
 			out.push(`It was ${wh}-${lh} at halftime before ${w} ${series(parts)}.`);
 			return { sentences: out, covers };
@@ -3983,7 +3996,7 @@ const gameStory = (
 		out.push(
 			`${L} led by as many as ${lMax} in ${when(lMaxAt)}, but ${w} ${
 				firstRun
-					? `ran off ${firstRun.pts} straight points in ${when(firstRun.period)} and `
+					? `ran off ${firstRun.pts} straight points ${runAt(firstRun)} and `
 					: ""
 			}${pick(rng, [`led ${wh}-${lh} at halftime`, `were in front ${wh}-${lh} by the break`], "story:turnedByHalf")}.`,
 		);
@@ -4007,7 +4020,7 @@ const gameStory = (
 				"story:upPeak",
 			),
 		);
-	} else if (firstRun && firstRun.period === 1 && hotStart) {
+	} else if (firstRun && firstRun.end === 1 && hotStart) {
 		covers.add("run").add("firstQuarter");
 		toldLead = w1 - l1;
 		out.push(
@@ -4032,8 +4045,8 @@ const gameStory = (
 			pick(
 				rng,
 				[
-					`${W} ran off ${firstRun.pts} straight points in ${when(firstRun.period)} and led ${wh}-${lh} at halftime.`,
-					`${W} were up ${wh}-${lh} at the break after they ran off ${firstRun.pts} straight points in ${when(firstRun.period)}.`,
+					`${W} ran off ${firstRun.pts} straight points ${runAt(firstRun)} and led ${wh}-${lh} at halftime.`,
+					`${W} were up ${wh}-${lh} at the break after they ran off ${firstRun.pts} straight points ${runAt(firstRun)}.`,
 				],
 				"story:upRun",
 			),
@@ -4081,7 +4094,7 @@ const gameStory = (
 	}
 	if (run && run.winner && run.period > halfN) {
 		covers.add("run");
-		parts.push(`ran off ${run.pts} straight points in ${when(run.period)}`);
+		parts.push(`ran off ${run.pts} straight points ${runAt(run)}`);
 	}
 	if (
 		!covers.has("winnerPeak") &&
@@ -4138,7 +4151,7 @@ const gameStory = (
 		// The losers' push that came up short.
 		covers.add("run");
 		out.push(
-			`${L} ran off ${run.pts} straight points in ${when(run.period)} but could not get ${
+			`${L} ran off ${run.pts} straight points ${runAt(run)} but could not get ${
 				lMax > 0 ? "back in front" : "in front"
 			}.`,
 		);
@@ -4154,18 +4167,20 @@ const gameStory = (
 // when it came in a last quarter the game was won in.
 const winnersRunIsNews = (
 	shape: Shape,
-	r: { pts: number; period: number },
+	r: { pts: number; period: number; endPeriod?: number },
 ): boolean => {
 	const marginAfter = (n: number) =>
 		shape.wq.slice(0, n).reduce((a, b) => a + b, 0) -
 		shape.lq.slice(0, n).reduce((a, b) => a + b, 0);
+	const end = r.endPeriod ?? r.period;
 	const before = marginAfter(r.period - 1);
-	const after = marginAfter(r.period);
+	const after = marginAfter(end);
 	return (
 		r.pts >= 15 ||
 		(r.pts >= 12 &&
 			((before <= 4 && after >= 6) || (before < 0 && after > 0))) ||
 		(r.pts >= 10 &&
+			end === shape.regPeriods &&
 			r.period === shape.regPeriods &&
 			shape.ot === 0 &&
 			marginAfter(shape.regPeriods - 1) <= 0)
@@ -4253,22 +4268,43 @@ const supportSentence = (
 	// whichever slot, gets a verb that matches his line and the fact is stated.
 	// Measured over 359 engine-simmed recaps this was 24 of them.
 	const topScorer = [...shape.winner.players].sort((a, b) => b.pts - a.pts)[0];
+	const topPts = topScorer?.pts ?? 0;
+	// A team high two men shared is neither's alone: "Anthony Jackson pitched
+	// in with 18 points, and Cade Jackson was the leading scorer with 18
+	// points."
+	const topCount = shape.winner.players.filter((p) => p.pts === topPts).length;
+	const sharedTop = topCount > 1;
 	// Any margin at all: "Keegan Green put up 27... Lonnie Green tacked on 31"
-	// reads as though the piece cannot count, however small the gap.
+	// reads as though the piece cannot count, however small the gap. Three or
+	// more level at the top is nobody's lead.
 	const outscoredStar = (p: RecapPlayer) =>
-		p === topScorer && p.pts > star.pts && p.pts >= 14;
+		p.pts === topPts && topCount <= 2 && p.pts > star.pts && p.pts >= 14;
 
 	const topScorerText = (p: RecapPlayer) =>
-		pickSentence(
-			rng,
-			[
-				`${p.name} led the scoring with ${statPhrase(p)}`,
-				`${p.name} top-scored with ${statPhrase(p)}`,
-				`No one scored more than ${p.name}, who had ${statPhrase(p)}`,
-				`${p.name} was the leading scorer with ${statPhrase(p)}`,
-			],
-			"supportTopScorer",
-		);
+		sharedTop
+			? `${p.name} shared the team high with ${statPhrase(p)}`
+			: pickSentence(
+					rng,
+					[
+						`${p.name} led the scoring with ${statPhrase(p)}`,
+						`${p.name} top-scored with ${statPhrase(p)}`,
+						`No one scored more than ${p.name}, who had ${statPhrase(p)}`,
+						`${p.name} was the leading scorer with ${statPhrase(p)}`,
+					],
+					"supportTopScorer",
+				);
+	// Both of them in this sentence: one clause, "apiece".
+	const partner = cast[1];
+	if (
+		sharedTop &&
+		partner &&
+		outscoredStar(second) &&
+		outscoredStar(partner) &&
+		doubleCategories(second).length < 2 &&
+		doubleCategories(partner).length < 2
+	) {
+		return `${second.name} and ${partner.name} led the scoring with ${topPts} points apiece.`;
+	}
 
 	const ddw = doubleWord(doubleCategories(second).length);
 	const secondText = outscoredStar(second)
@@ -4559,6 +4595,17 @@ const loserSentence = (
 	// unless the top line is so quiet it would embarrass him.
 	if (!skipLeader && topScorer && topScorer.pts >= 12) {
 		const them = theNick(shape.loser);
+		// A shared high is not one man's lead: "Nobody had more than Jalen
+		// Hayes' 16 for the Heat... Anthony Hayes was good for 16 points."
+		const level = shape.loser.players.filter(
+			(p) => p !== topScorer && p.pts === topScorer.pts,
+		);
+		if (level.length === 1) {
+			return `${cap(them)} got ${topScorer.pts} apiece from ${topScorer.name} and ${level[0]!.name}${reason}.`;
+		}
+		if (level.length > 1) {
+			return `${cap(them)} got no more than ${topScorer.pts} from anyone${reason}.`;
+		}
 		return pickSentence(
 			rng,
 			[
@@ -5716,6 +5763,20 @@ const periodTag = (period: number, regPeriods: number): string =>
 			? "overtime"
 			: `the ${ordinal(period - regPeriods)} overtime`;
 
+// Where a run happened: "in the second", or across the break it spanned -
+// a 14-0 run that began with no time left in the first was all second
+// quarter, and "in the first" was wrong.
+const runSpan = (start: number, end: number, regPeriods: number): string =>
+	end === start
+		? `in ${periodTag(start, regPeriods)}`
+		: end > regPeriods
+			? start > regPeriods
+				? `across ${periodTag(start, regPeriods)} and ${periodTag(end, regPeriods)}`
+				: "across the end of regulation and overtime"
+			: start === regPeriods / 2 && end === start + 1
+				? "spanning halftime"
+				: `across the ${ordinal(start)} and ${ordinal(end)}`;
+
 // How a close game finished. The go-ahead score that held, or failing that
 // the last tie, and the count of lead changes when there were a lot of them.
 const finishNote = (
@@ -6047,7 +6108,12 @@ const runNote = (
 	}
 	const team = isWinner ? shape.winner : shape.loser;
 	const T = cap(theNick(team));
-	const when = periodTag(run.period, shape.regPeriods);
+	const end = run.endPeriod ?? run.period;
+	const spans = end !== run.period;
+	const at = runSpan(run.period, end, shape.regPeriods);
+	// "scored 15 unanswered in the first", but "15 unanswered points
+	// across the first and second".
+	const unanswered = spans ? "unanswered points" : "unanswered";
 	// An overtime run nobody answered is how the game ended.
 	const finish = game.flow?.finish ?? [];
 	if (
@@ -6070,23 +6136,27 @@ const runNote = (
 	// whether the run gets a verdict or just a count.
 	const cum = (q: unknown) =>
 		(Array.isArray(q) ? (q as number[]) : [])
-			.slice(0, run.period)
+			.slice(0, end)
 			.reduce((a, b) => a + b, 0);
 	const qs = shape.winner.ptsQtrs;
 	// And ahead for good: a run in the second does not "settle" a game the
 	// winners only went in front of for the last time in the third.
 	const lastLead = game.flow?.lastLead;
 	const aheadAfter =
-		(Array.isArray(qs) && qs.length >= run.period
+		(Array.isArray(qs) && qs.length >= end
 			? cum(shape.winner.ptsQtrs) > cum(shape.loser.ptsQtrs)
 			: true) &&
-		(lastLead === undefined || lastLead.period <= run.period);
-	if (isWinner && !aheadAfter) {
+		(lastLead === undefined || lastLead.period <= end);
+	// A run across a break gets the count and no verdict: where the score
+	// stood when it ended is not known, and "An 18-0 burst across the third
+	// and fourth settled it" was said of a side still 10 down going into the
+	// fourth.
+	if (isWinner && (!aheadAfter || spans)) {
 		return pick(
 			rng,
 			[
-				`${T} ran off ${run.pts} straight points in ${when}.`,
-				`${T} scored ${run.pts} unanswered in ${when}.`,
+				`${T} ran off ${run.pts} straight points ${at}.`,
+				`${T} scored ${run.pts} ${unanswered} ${at}.`,
 			],
 			"runWinnerCount",
 		);
@@ -6096,24 +6166,24 @@ const runNote = (
 		isWinner
 			? close
 				? [
-						`${T} ran off ${run.pts} straight points in ${when}, and needed every one of them.`,
-						`${cap(aNum(run.pts))}-0 run in ${when} built the lead ${theNick(shape.winner)} spent the rest of the night protecting.`,
+						`${T} ran off ${run.pts} straight points ${at}, and needed every one of them.`,
+						`${cap(aNum(run.pts))}-0 run ${at} built the lead ${theNick(shape.winner)} spent the rest of the night protecting.`,
 					]
 				: [
-						`${T} ran off ${run.pts} straight points in ${when}.`,
-						`${cap(aNum(run.pts))}-0 run in ${when} put ${theNick(shape.winner)} in charge.`,
-						`${T} put together ${aNum(run.pts)}-0 run in ${when}.`,
+						`${T} ran off ${run.pts} straight points ${at}.`,
+						`${cap(aNum(run.pts))}-0 run ${at} put ${theNick(shape.winner)} in charge.`,
+						`${T} put together ${aNum(run.pts)}-0 run ${at}.`,
 						// Enough shapes that a beat reader following one team does
 						// not meet "put the Hawks in charge" three times in a week:
 						// per-day rotation cannot see across days, so only pool
 						// size spreads a team's own recaps out.
-						`${T} scored ${run.pts} unanswered in ${when}.`,
-						`${cap(aNum(run.pts))}-0 burst in ${when} settled it.`,
-						`The game got away in ${when}, ${run.pts} straight points for ${theNick(shape.winner)}.`,
+						`${T} scored ${run.pts} ${unanswered} ${at}.`,
+						`${cap(aNum(run.pts))}-0 burst ${at} settled it.`,
+						`The game got away ${at}, ${run.pts} straight points for ${theNick(shape.winner)}.`,
 					]
 			: [
-					`${T} had ${aNum(run.pts)}-0 run in ${when}, and it still was not enough.`,
-					`Even ${aNum(run.pts)}-0 run in ${when} could not turn it for ${theNick(shape.loser)}.`,
+					`${T} had ${aNum(run.pts)}-0 run ${at}, and it still was not enough.`,
+					`Even ${aNum(run.pts)}-0 run ${at} could not turn it for ${theNick(shape.loser)}.`,
 				],
 		isWinner ? "runWinner" : "runLoser",
 	);
@@ -6543,8 +6613,13 @@ const buildGameRecap = (game: RecapGame): string => {
 		const halfAt = storyPara.findIndex((t) =>
 			/halftime|at the half\b|the break|into the second half/.test(t),
 		);
-		if (run && runPeriod <= shape.regPeriods / 2 && halfAt >= 0) {
+		const runEnd = game.flow?.run?.endPeriod ?? runPeriod;
+		if (run && runEnd <= shape.regPeriods / 2 && halfAt >= 0) {
 			storyPara.splice(halfAt, 0, run);
+			finishAt += 1;
+		} else if (run && runPeriod <= shape.regPeriods / 2 && halfAt >= 0) {
+			// One that spanned halftime comes right after the halftime score.
+			storyPara.splice(halfAt + 1, 0, run);
 			finishAt += 1;
 		}
 		// A third-quarter run goes before the score going into the fourth,
@@ -6565,7 +6640,7 @@ const buildGameRecap = (game: RecapGame): string => {
 			finishAt += 1;
 		}
 		const otRun =
-			run && !storyPara.includes(run) && runPeriod > shape.regPeriods
+			run && !storyPara.includes(run) && runEnd > shape.regPeriods
 				? run
 				: undefined;
 		// And the losers' biggest lead, when it came in the first half, goes

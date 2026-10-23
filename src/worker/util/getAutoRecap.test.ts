@@ -8104,6 +8104,71 @@ describe("the story goes past halftime, in order", () => {
 		}
 	});
 
+	// "The Bucks ran off 14 straight points in the first" - a run that began
+	// with no time left in the first and was all second quarter.
+	test("a run across a quarter break is not told as one quarter's", () => {
+		let seen = 0;
+		for (let gid = 960; gid < 980; gid++) {
+			const g = twoTeams(
+				[30, 33, 25, 24],
+				[24, 17, 30, 24],
+				{
+					leadChanges: 2,
+					ties: 1,
+					maxLead: [24, 3],
+					maxLeadAt: [3, 1],
+					lastLead: { side: 0, period: 1, clock: 500, pts: [10, 8] },
+					run: { side: 0, pts: 14, period: 1, clock: 3, endPeriod: 2 },
+				},
+				gid,
+			);
+			const recap = getAutoRecap(g);
+			assert.doesNotMatch(
+				recap,
+				/14 (?:straight points|unanswered) in the|14-0 (?:run|burst) in the/,
+				recap,
+			);
+			if (/across the first and second/.test(recap)) {
+				seen += 1;
+			}
+			assert.deepEqual(verifyRecap(recap, g), [], recap);
+		}
+		assert.ok(seen > 0);
+	});
+
+	test("a run across halftime comes after the halftime score", () => {
+		let seen = 0;
+		for (let gid = 980; gid < 1000; gid++) {
+			const g = twoTeams(
+				[26, 30, 31, 24],
+				[25, 24, 20, 26],
+				{
+					leadChanges: 4,
+					ties: 3,
+					maxLead: [21, 4],
+					maxLeadAt: [3, 1],
+					lastLead: { side: 0, period: 2, clock: 300, pts: [40, 38] },
+					run: { side: 0, pts: 15, period: 2, clock: 20, endPeriod: 3 },
+				},
+				gid,
+			);
+			const recap = getAutoRecap(g);
+			const half = recap.search(/56-49/);
+			const run = recap.search(/spanning halftime/);
+			if (run >= 0) {
+				seen += 1;
+				assert.ok(half >= 0 && run > half, recap);
+			}
+			assert.doesNotMatch(
+				recap,
+				/15 (?:straight points|unanswered) in the/,
+				recap,
+			);
+			assert.deepEqual(verifyRecap(recap, g), [], recap);
+		}
+		assert.ok(seen > 0);
+	});
+
 	// "They scored 12 unanswered in overtime. Payton Dunn's three-pointer at
 	// the buzzer sent it to overtime."
 	test("an overtime run comes after the shot that forced overtime", () => {
@@ -8286,6 +8351,79 @@ describe("a winner's steals sit with the winners", () => {
 			const loserAt = recap.indexOf("Lonnie Dunn");
 			const stealsAt = recap.indexOf("Jalen Green");
 			assert.ok(stealsAt >= 0 && stealsAt < loserAt, recap);
+		}
+	});
+});
+
+// "Anthony Jackson pitched in with 18 points for the Thunder, and Cade
+// Jackson was the leading scorer with 18 points." A high two men shared is
+// neither's alone.
+describe("a shared team high", () => {
+	const line = (name: string, pts: number, extra: Partial<RecapPlayer> = {}) =>
+		player({
+			name,
+			pts,
+			fg: Math.floor(pts / 2.4),
+			fga: Math.floor(pts / 1.1),
+			...extra,
+		});
+	const build = (gid: number) =>
+		game({
+			gid,
+			teams: [
+				team({
+					tid: 1,
+					region: "Oklahoma City",
+					name: "Thunder",
+					abbrev: "OKC",
+					pts: 104,
+					players: [
+						line("Grant Jackson", 15, { reb: 12, ast: 11 }),
+						line("Anthony Jackson", 18, { reb: 4, ast: 2 }),
+						line("Cade Jackson", 18, { reb: 5, ast: 3 }),
+						line("Role One", 12, { reb: 6 }),
+						line("Role Two", 11),
+						line("Bench One", 10),
+						line("Bench Two", 8),
+						line("Bench Three", 6),
+						line("Bench Four", 6),
+					],
+				}),
+				team({
+					tid: 2,
+					region: "Miami",
+					name: "Heat",
+					abbrev: "MIA",
+					pts: 96,
+					players: [
+						line("Jalen Hayes", 16, { reb: 5, ast: 3 }),
+						line("Anthony Hayes", 16, { reb: 4, ast: 2 }),
+						line("Role Three", 13, { reb: 7 }),
+						line("Role Four", 12),
+						line("Bench Five", 11),
+						line("Bench Six", 10),
+						line("Bench Seven", 10),
+						line("Bench Eight", 8),
+					],
+				}),
+			],
+			winnerTid: 1,
+		});
+
+	test("is told as both men's, once", () => {
+		for (let gid = 1100; gid < 1130; gid++) {
+			const g = build(gid);
+			const recap = getAutoRecap(g);
+			assert.doesNotMatch(
+				recap,
+				/leading scorer|top-scored|no one scored more than|nobody had more than|led the (?:scoring|heat) with (?:16|18) points(?! apiece)|leading the way/i,
+				recap,
+			);
+			// Each of them named once, not re-introduced as an afterthought.
+			for (const name of ["Anthony Hayes", "Jalen Hayes"]) {
+				assert.ok(recap.split(name).length <= 2, recap);
+			}
+			assert.deepEqual(verifyRecap(recap, g), [], recap);
 		}
 	});
 });

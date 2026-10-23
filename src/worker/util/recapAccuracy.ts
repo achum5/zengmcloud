@@ -539,6 +539,30 @@ export const verifyRecap = (
 			(n) => n === flow.run?.pts,
 			"run",
 		);
+		// "ran off 14 straight points in the first": the run began and ended
+		// in that period. One that began with no time left in the first was
+		// all second quarter.
+		const RUN_PERIOD_WORDS = ["first", "second", "third", "fourth"];
+		const run = flow.run;
+		if (run) {
+			for (const m of text.matchAll(
+				/(?:straight points|unanswered|-0 (?:run|burst)) in (?:the (first|second|third|fourth)\b|overtime)/g,
+			)) {
+				const period = m[1]
+					? RUN_PERIOD_WORDS.indexOf(m[1]) + 1
+					: (game.teams[0].ptsQtrs?.length ?? 0) - (game.overtimes ?? 0) + 1;
+				if (
+					run.period !== period ||
+					(run.endPeriod !== undefined && run.endPeriod !== period)
+				) {
+					add(
+						"run",
+						`run in period ${run.period}-${run.endPeriod ?? "?"}`,
+						m[0],
+					);
+				}
+			}
+		}
 		// "led by as many as 18 in the second": that side's biggest lead, in
 		// that period.
 		const PERIOD_WORDS = ["first", "second", "third", "fourth"];
@@ -748,6 +772,10 @@ export const verifyRecap = (
 							lead,
 						)
 					) {
+						continue;
+					}
+					// "a 12-0 run spanning halftime" names the run after it.
+					if (/^ (?:run|burst)\b/.test(sentence.slice(m.index + m[0].length))) {
 						continue;
 					}
 					const said = `${m[1]}-${m[2]}`;

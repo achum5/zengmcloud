@@ -59,8 +59,17 @@ export type GameFlow = {
 	};
 	// The last time it was level.
 	lastTie?: { period: number; clock: number; pts: number };
-	// The longest unanswered run, and where it began.
-	run?: { side: GameFlowSide; pts: number; period: number; clock: number };
+	// The longest unanswered run, where it began, and the period its last
+	// basket came in: a 14-0 run that began with no time left in the first
+	// was all second quarter. The end is absent in games simmed before it
+	// was recorded.
+	run?: {
+		side: GameFlowSide;
+		pts: number;
+		period: number;
+		clock: number;
+		endPeriod?: number;
+	};
 	// The score with five minutes and with two minutes left in regulation.
 	late?: { clock: number; pts: [number, number] }[];
 	// Every score inside the last two minutes of regulation and all of
@@ -198,7 +207,12 @@ export class FlowLog {
 			}
 			if (runPts > bestRun) {
 				bestRun = runPts;
-				out.run = { side: e.side, pts: runPts, ...runStart };
+				out.run = {
+					side: e.side,
+					pts: runPts,
+					...runStart,
+					endPeriod: e.period,
+				};
 			}
 
 			const diff = score[0] - score[1];

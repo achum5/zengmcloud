@@ -54,7 +54,33 @@ describe("FlowLog", () => {
 			[0, 2, 3, 320], // 9 straight from 3:400
 			[1, 2, 3, 300],
 		]);
-		assert.deepStrictEqual(f.run, { side: 0, pts: 9, period: 3, clock: 400 });
+		assert.deepStrictEqual(f.run, {
+			side: 0,
+			pts: 9,
+			period: 3,
+			clock: 400,
+			endPeriod: 3,
+		});
+	});
+
+	// A 14-0 run that began with no time left in the first was all second
+	// quarter; "in the first" was wrong.
+	test("a run across a break knows where it ended", () => {
+		const f = play([
+			[1, 2, 1, 200],
+			[0, 3, 1, 5],
+			[0, 2, 2, 700],
+			[0, 2, 2, 650],
+			[0, 3, 2, 600],
+			[1, 2, 2, 550],
+		]);
+		assert.deepStrictEqual(f.run, {
+			side: 0,
+			pts: 10,
+			period: 1,
+			clock: 5,
+			endPeriod: 2,
+		});
 	});
 
 	test("the score at five and two minutes left", () => {
