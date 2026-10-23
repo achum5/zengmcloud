@@ -84,8 +84,10 @@ export type Acted = {
 	whistle: number;
 	// A kick: when it is away.
 	follow?: number;
-	// A big play's moment after it (see celebrate): when it is over.
+	// A big play's moment after it (see celebrate): when it is over - and
+	// when it starts, where.
 	until?: number;
+	party?: { from: number; at: Pt };
 	// Where the man with it went out of bounds.
 	out?: Pt;
 };
@@ -908,6 +910,7 @@ class Action {
 	// they crowd round the man who made it.
 	readonly mob = new Set<number>();
 	mobAt?: Pt;
+	party?: { from: number; at: Pt };
 	// The man who brought the carrier down, the last time one did.
 	downer?: Actor;
 	// A pile on the carrier when he goes down (see pileUp): the most men in
@@ -1087,6 +1090,7 @@ class Action {
 			whistle: this.whistle,
 			...(this.follow !== undefined ? { follow: this.follow } : {}),
 			...(this.until > 0 ? { until: this.until } : {}),
+			...(this.party && this.until > 0 ? { party: this.party } : {}),
 			...(this.outAt ? { out: this.outAt } : {}),
 		};
 	}
@@ -5834,6 +5838,7 @@ class Action {
 				if (up) {
 					sacker.cut(up.t1);
 				}
+				this.party = { from: sacker.t, at: sacker.at };
 				sacker.act("flex", sacker.t + 1100);
 				this.until = sacker.t;
 				sacker.hold(sacker.t + 400, "stand");
@@ -6046,6 +6051,8 @@ class Action {
 		this.mob.add(scorer.pid);
 		this.until = Math.max(this.until, scorer.t);
 		this.mobRound(scorer, c0, true);
+		// (The camera on them all.)
+		this.party = { from: c0, at: spotOf(PIN_SPOTS[0]!.f / 2, 0) };
 		return true;
 	}
 
@@ -6055,6 +6062,7 @@ class Action {
 		const r = this.r;
 		const at = hero.at;
 		this.mobAt = at;
+		this.party = { from: c0, at };
 		// His teammates nearest, to him.
 		const start = c0 + 150;
 		// (Away on his own, a long way ahead of them all: the nearest of them
@@ -6211,6 +6219,7 @@ class Action {
 		this.mob.add(hero.pid);
 		const at = hero.at;
 		this.mobAt = at;
+		this.party = { from: c0, at };
 		const start = c0 + 150;
 		const mates = this.men
 			.filter(

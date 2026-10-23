@@ -206,6 +206,9 @@ export type Play = {
 		mob?: { at: Pt; until: number };
 	};
 	ball: BallSeg[];
+	// A big play's moment after it (see action.ts celebrate): from when, till
+	// when, and where - the camera in on it.
+	party?: { from: number; until: number; at: Pt };
 	// A big play, shown again after it (see replays.ts).
 	replay?: FieldReplay;
 	// The crowd's moment in it: when, for which side, and how big (see
@@ -1567,6 +1570,9 @@ class Director {
 						coaches: timeout.coaches,
 						timeout: { cut: timeout.cut, at: timeout.at },
 					}
+				: {}),
+			...(acted?.party && acted.until
+				? { party: { ...acted.party, until: acted.until } }
 				: {}),
 			...(postgame
 				? {

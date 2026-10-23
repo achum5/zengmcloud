@@ -76,6 +76,10 @@ const POST_IN = 5500;
 const POST_IN_MS = 4000;
 // Won on the last play: on them all over the man who won it.
 const MOB_WIDTH = 96;
+// A big play's moment after it - a score, a stop, a takeaway: in on it,
+// this wide, until this long after it.
+const PARTY_WIDTH = 62;
+const PARTY_AFTER = 600;
 // The coin toss: in on the captains as they come out, from this wide to
 // this, by the time the coin goes up.
 const TOSS_WIDE = 84;
@@ -147,6 +151,14 @@ export const aimFor = (m: FieldMoment): Shot => {
 			x: crowd.x + (post.at.x - crowd.x) * e,
 			width: POST_WIDE + (POST_TIGHT - POST_WIDE) * e,
 			y: across(crowd.y + (post.at.y - crowd.y) * e),
+		};
+	}
+	const party = play.party;
+	if (party && t >= party.from && t < party.until + PARTY_AFTER) {
+		return {
+			x: inBounds(party.at.x, PARTY_WIDTH),
+			width: PARTY_WIDTH,
+			y: across(party.at.y),
 		};
 	}
 	if (play.kind === "fieldGoal" || play.kind === "extraPoint") {
