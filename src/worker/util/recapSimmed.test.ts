@@ -227,6 +227,8 @@ describe("simmed recaps", () => {
 				// he had been averaging".
 				/shared it, \d+ assists|[Ii]t was \d+-\d+ the [A-Z]|were \d+ more than the [\d.]+ a game/,
 				/let all of it go before winning it/,
+				// A recap is read the next day: no "tonight".
+				/\btonight\b/i,
 				// Headlines: a passer's verb on a steals line, a pronoun, a
 				// stock phrase.
 				/picks the [A-Z][\w ]* apart: \d+ points and \d+ steals|score in double figures as they|come out on top of/,

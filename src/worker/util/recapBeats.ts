@@ -722,7 +722,9 @@ export const milestoneBeat = (
 			[
 				`${p.name} passed ${fmtNum(m.mark)} career ${word} along the way.`,
 				`Somewhere in there, ${p.name} went past ${fmtNum(m.mark)} ${word} for his career.`,
-				`${p.name} now has ${fmtNum(m.total)} career ${word}, having crossed ${fmtNum(m.mark)} tonight.`,
+				// Not "tonight": a recap is read the next day, and a league plays
+				// afternoons too.
+				`${p.name} now has ${fmtNum(m.total)} career ${word}, having crossed ${fmtNum(m.mark)} in this one.`,
 				`The night also took ${p.name} past ${fmtNum(m.mark)} career ${word}.`,
 			],
 			"milestoneCareer",
@@ -1042,8 +1044,8 @@ export const scoringNormBeat = (
 					rng,
 					[
 						`${L} came in averaging ${lNorm.pts.toFixed(1)} and never got near it.`,
-						`${L} finished ${numWord(under)} below their season average.`,
-						`${L} had been scoring ${lNorm.pts.toFixed(1)} a game; tonight they managed ${ctx.loser.pts}.`,
+						`${L} were held to ${ctx.loser.pts}, ${numWord(under)} under their season average.`,
+						`${L} had been scoring ${lNorm.pts.toFixed(1)} a game and managed ${ctx.loser.pts}.`,
 					],
 					"normLoserLow",
 				),
@@ -1206,7 +1208,7 @@ export const seriesShapeBeat = (
 			pick(
 				rng,
 				[
-					`Nothing before tonight had been decided by more than eight.`,
+					`None of the earlier games had been decided by more than eight.`,
 					`After ${numWord(prior.length)} tight games, this one was not close.`,
 					`It was the first game of the series not decided late.`,
 				],

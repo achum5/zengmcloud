@@ -1087,6 +1087,11 @@ describe("the night against the season's norms", () => {
 			),
 			[...all].join("\n"),
 		);
+		// Read the next day: not "tonight they managed 84"; and a number
+		// below an average is points, said as such.
+		for (const s of all) {
+			assert.notMatch(s, /tonight|finished \w+ below/, s);
+		}
 	});
 
 	test("the season-high sentence and the average sentence never both fire", () => {
