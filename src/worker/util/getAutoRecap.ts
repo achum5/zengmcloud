@@ -1517,6 +1517,11 @@ const verbPool = (game: RecapGame, shape: Shape): string[] => {
 	if (shape.ot > 0 || shape.margin <= 4) {
 		return ["hold off", "edge", "outlast", "slip past", "survive"];
 	}
+	// "Rolled past the Bucks 139-82" undersold a 57-point night: past 35
+	// the cruising verbs go.
+	if (shape.margin >= 35) {
+		return ["rout", "blow out", "crush", "trounce"];
+	}
 	if (shape.margin >= 20) {
 		return ["rout", "cruise past", "run away from", "roll past", "blow out"];
 	}
@@ -9090,6 +9095,7 @@ const dayDeck = (
 // rotates the verb DETERMINISTICALLY through the bucket, so a long roundup reads
 // "beat ... downed ... got past ..." instead of "beat ... beat ... beat".
 const ROUT_VERBS = ["routed", "blew out", "ran away from", "rolled past"];
+const BIG_ROUT_VERBS = ["routed", "blew out", "crushed", "trounced"];
 const EDGE_VERBS = ["edged", "held off", "slipped past"];
 
 // The first verb of the pool, from `seq` on, that the wrap has not used yet
@@ -9143,7 +9149,7 @@ const roundupClause = (
 				? ["outlasted", "pulled away from"]
 				: ["outlasted", "survived", "edged"];
 	} else if (shape.margin >= 20) {
-		pool = ROUT_VERBS;
+		pool = shape.margin >= 35 ? BIG_ROUT_VERBS : ROUT_VERBS;
 	} else if (shape.margin <= 4) {
 		pool = [...EDGE_VERBS, "outlasted"];
 	} else if (shape.margin <= 9) {
@@ -9869,7 +9875,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	// Pistons routed the Magic... In the other games, the Lakers routed the
 	// Bulls".
 	const usedVerbs = new Set<string>(
-		[...ROUT_VERBS, ...EDGE_VERBS].filter((verb) =>
+		[...ROUT_VERBS, ...BIG_ROUT_VERBS, ...EDGE_VERBS].filter((verb) =>
 			para1.some((t) => t.includes(` ${verb} `)),
 		),
 	);
@@ -9935,7 +9941,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 						: `${shape.ot} overtimes`
 			}`;
 		} else if (shape.margin >= 25) {
-			blurb = `${theNick(shape.winner)} ${freshVerb(ROUT_VERBS, 0, usedVerbs)} ${theNick(shape.loser)} ${scoreTag(shape)}`;
+			blurb = `${theNick(shape.winner)} ${freshVerb(shape.margin >= 35 ? BIG_ROUT_VERBS : ROUT_VERBS, 0, usedVerbs)} ${theNick(shape.loser)} ${scoreTag(shape)}`;
 		} else if (shape.margin <= 3) {
 			blurb = `${theNick(shape.winner)} ${freshVerb(EDGE_VERBS, 0, usedVerbs)} ${theNick(
 				shape.loser,

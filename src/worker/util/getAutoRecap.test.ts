@@ -8789,6 +8789,39 @@ test("a line that is only points leads only if nobody outscored it", () => {
 	}
 });
 
+// "The Clippers rolled past the Bucks 139-82" undersold a 57-point night.
+test("a historic rout is not a cruise", () => {
+	const win = realisticTeam(
+		{
+			tid: 1,
+			region: "Los Angeles",
+			name: "Clippers",
+			abbrev: "LAC",
+			pts: 139,
+		},
+		player({ name: "Tyrese Green", pts: 30, reb: 9, fg: 11, fga: 18 }),
+	);
+	const lose = realisticTeam(
+		{ tid: 2, region: "Milwaukee", name: "Bucks", abbrev: "MIL", pts: 82 },
+		player({ name: "Reggie Hayes", pts: 22, fg: 8, fga: 21 }),
+	);
+	beginRecapBatch();
+	try {
+		for (let gid = 1700; gid < 1720; gid++) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [win, lose], winnerTid: 1 }),
+			);
+			assert.doesNotMatch(
+				recap,
+				/roll(?:ed|s)? past|cruis(?:ed|es?) past|ran away from|run away from/,
+				recap,
+			);
+		}
+	} finally {
+		endRecapBatch();
+	}
+});
+
 // "Evan Hayes had a double-double of his own, 10 points and 14 rebounds"
 // under a lede whose man scored 21 and had nothing to be his own beside.
 test("a double-double is only 'of his own' beside another", () => {

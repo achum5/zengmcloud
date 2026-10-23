@@ -124,7 +124,7 @@ const SPREAD_TALK =
 	/the line|wrong side|favou?r|underdog|no chance|getting \d|spread|\bbooks\b/i;
 
 const RESULT_VERB =
-	/beat|topped|handled|downed|routed|edged|held off|took down|stunned|shocked|knocked off|upset|survived|outlast|blew out|rolled|cruised|got past|pulled away|defeat|\bwin\b|\bwon\b/i;
+	/beat|topped|handled|downed|routed|edged|held off|took down|stunned|shocked|knocked off|upset|survived|outlast|blew out|rolled|cruised|crushed|trounced|got past|pulled away|defeat|\bwin\b|\bwon\b/i;
 
 export const verifyRecap = (
 	recap: string,
