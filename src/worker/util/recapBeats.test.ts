@@ -602,6 +602,8 @@ describe("season highs, streaks, milestones and returns", () => {
 			assert.match(s, /eight/);
 			assert.match(s, /sprained ankle/);
 			assert.notMatch(s, /\ba eight/);
+			// Not named before, so his team comes with him.
+			assert.match(s, /[Tt]he Celtics' Kristaps Porzingis/);
 		}
 		assert.match(
 			returnBeat(game(winner, loser).ctx, rngFromSeed(1))!,

@@ -764,6 +764,12 @@ export const returnBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 		);
 	}
 	ctx.said.add(p.name);
+	// A man the piece has not named comes with his team. These notes sit at
+	// the foot of the recap, often straight after the losers' lines, and "In
+	// his first game since a sore quadriceps cost him three games, Miles
+	// Jackson threw in 10 points" read as one of the losers.
+	const team = ctx.winner.players.includes(p) ? ctx.winner : ctx.loser;
+	const who = `${poss(theNick(team))} ${p.name}`;
 	// A quiet line is not the news; that he was back is. "In his first game
 	// since a strained groin cost him four games, Franz Brooks chipped in 3
 	// points" made the return sound like a letdown.
@@ -771,8 +777,8 @@ export const returnBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 		return pick(
 			rng,
 			[
-				`${p.name} was back after missing ${numWord(r.games)} games with ${injuryPhrase(r.type)}.`,
-				`${p.name} returned from ${aWord(`${numWord(r.games)}-game`)} absence (${lowerInjury(r.type)}).`,
+				`${cap(who)} was back after missing ${numWord(r.games)} games with ${injuryPhrase(r.type)}.`,
+				`${cap(who)} returned from ${aWord(`${numWord(r.games)}-game`)} absence (${lowerInjury(r.type)}).`,
 			],
 			"returnFromInjuryQuiet",
 		);
@@ -780,9 +786,9 @@ export const returnBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 	return pick(
 		rng,
 		[
-			`${p.name} was back after missing ${numWord(r.games)} games with ${injuryPhrase(r.type)}, and had ${statPhrase(p)}.`,
-			`In his first game since ${injuryPhrase(r.type)} cost him ${numWord(r.games)} games, ${p.name} ${scoredVerb(rng)} ${statPhrase(p)}.`,
-			`${p.name} returned from ${aWord(`${numWord(r.games)}-game`)} absence (${lowerInjury(r.type)}) with ${statPhrase(p)}.`,
+			`${cap(who)} was back after missing ${numWord(r.games)} games with ${injuryPhrase(r.type)}, and had ${statPhrase(p)}.`,
+			`In his first game since ${injuryPhrase(r.type)} cost him ${numWord(r.games)} games, ${who} ${scoredVerb(rng)} ${statPhrase(p)}.`,
+			`${cap(who)} returned from ${aWord(`${numWord(r.games)}-game`)} absence (${lowerInjury(r.type)}) with ${statPhrase(p)}.`,
 		],
 		"returnFromInjury",
 	);
