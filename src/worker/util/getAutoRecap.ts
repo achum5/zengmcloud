@@ -5150,13 +5150,17 @@ const foulOutNote = (
 			if (p.pf >= 6 && mattered && !said.has(p.name)) {
 				said.add(p.name);
 				const line = `${plural(p.pts, "point")} in ${p.min} minutes`;
+				// He is new to the piece, and either side's: "Foul trouble cost
+				// Lonnie Dunn" after a sentence about the other team's free
+				// throws left the reader to guess whose.
+				const who = `${poss(theNick(t))} ${p.name}`;
 				return pickSentence(
 					rng,
 					[
-						`${p.name} fouled out with ${line}.`,
-						`${p.name} was gone by the end, fouling out with ${line}.`,
-						`Foul trouble cost ${p.name}, who finished with ${line}.`,
-						`${p.name} picked up his sixth foul, done for the night with ${line}.`,
+						`${cap(who)} fouled out with ${line}.`,
+						`${cap(who)} was gone by the end, fouling out with ${line}.`,
+						`Foul trouble cost ${who}, who finished with ${line}.`,
+						`${cap(who)} picked up his sixth foul, done for the night with ${line}.`,
 					],
 					"foulOut",
 				);
@@ -5353,7 +5357,8 @@ const minutesNote = (shape: Shape, said: Set<string>): string | undefined => {
 		return undefined;
 	}
 	said.add(iron.name);
-	return `${iron.name} logged ${iron.min} minutes.`;
+	const team = shape.winner.players.includes(iron) ? shape.winner : shape.loser;
+	return `${cap(poss(theNick(team)))} ${iron.name} logged ${iron.min} minutes.`;
 };
 
 // How the two benches / rotations compared in depth terms.

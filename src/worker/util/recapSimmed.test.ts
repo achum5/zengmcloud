@@ -580,6 +580,27 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "Foul trouble cost Lonnie Dunn, who finished with 9 points" after a
+	// sentence about the other team: a man these notes introduce comes with
+	// his team.
+	test("a foul-out or a minutes note says whose man it was", () => {
+		for (const { gid, recap, game } of pairs) {
+			const nicks = game.teams.map((t) => t.name);
+			for (const x of recap.split(/(?<=[!.?])\s+/)) {
+				if (
+					/fouling out with|fouled out with|sixth foul, done|Foul trouble cost|logged \d+ minutes/.test(
+						x,
+					)
+				) {
+					assert.ok(
+						nicks.some((n) => x.includes(n)),
+						`gid ${gid}: ${x}`,
+					);
+				}
+			}
+		}
+	});
+
 	// "Walker Mathis added 17 points in defeat. Walker Mathis returned from a
 	// three-game absence (sore foot) with 17 points." A man's points are
 	// given once in the body.
