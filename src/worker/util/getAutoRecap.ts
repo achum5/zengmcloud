@@ -1324,7 +1324,7 @@ const postseasonContext = (
 				: wBefore === 0 && lBefore === 0
 					? choose(
 							[
-								`${cap(w)} drew first blood in ${rnd}, ${wAfter}-${lBefore}.`,
+								`${cap(w)} are up ${wAfter}-${lBefore} in ${rnd}.`,
 								`${cap(w)} lead the series ${wAfter}-${lBefore} after taking the opener.`,
 								`Game 1 of ${rnd} went to ${w}.`,
 								`${cap(w)} struck first in ${rnd}.`,
@@ -8009,7 +8009,23 @@ const dayHeadline = (
 		}
 		const shot = clutchShot(marquee);
 		if (shot && !shot.tying) {
-			return hl(`${poss(shot.name)} ${shot.shot} decides a playoff thriller`);
+			// Which game, and whose: "Tyrese Ellis' three-pointer decides a
+			// playoff thriller" named neither team nor the game, on five
+			// nights of a postseason.
+			const s = marquee.series;
+			const gameNo = s ? s.homeWon + s.awayWon + 1 : undefined;
+			return hl(
+				gameNo === undefined
+					? `${poss(shot.name)} ${shot.shot} decides a playoff thriller`
+					: pick(
+							rng,
+							[
+								`${poss(shot.name)} ${shot.shot} wins Game ${gameNo} for ${tw}`,
+								`${poss(shot.name)} ${shot.shot} lifts ${tw} past ${l} in Game ${gameNo}`,
+							],
+							"dayHeadlinePlayoffShot",
+						),
+			);
 		}
 
 		// A play-in game is single elimination, not a series - it has its own
@@ -8052,7 +8068,7 @@ const dayHeadline = (
 			if (ss.gameNo === 1) {
 				stateBits.push(
 					`${w} take the opener from ${l}`,
-					`${w} draw first blood against ${l}`,
+					`${w} take Game 1 from ${l}`,
 				);
 			} else if (ss.wAfter === ss.lBefore) {
 				stateBits.push(
@@ -8082,7 +8098,11 @@ const dayHeadline = (
 				}
 				stateBits.push(
 					`${w} take a ${ss.wAfter}-${ss.lBefore} lead on ${l}`,
-					`${w} edge ahead of ${l}`,
+					// "Edge ahead" is a one-game lead; "Pistons edge ahead of the
+					// Trail Blazers" headlined a 2-0.
+					ss.wAfter - ss.lBefore === 1
+						? `${w} edge ahead of ${l}`
+						: `${w} go up ${ss.wAfter}-${ss.lBefore} on ${l}`,
 				);
 			} else {
 				stateBits.push(

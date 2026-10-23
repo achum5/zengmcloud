@@ -4410,7 +4410,7 @@ describe("the losing side of a playoff series", () => {
 					).join(" ");
 					assert.doesNotMatch(
 						text,
-						/(?:closed out|evened|square|took|lead|trail) the (?:First Round|Conference Semifinals|Conference Finals)\b|the (?:First Round|Conference Semifinals|Conference Finals) (?:is tied|at \d|to )|deficit in the|and move on/,
+						/(?:closed out|evened|square|took|lead|trail) the (?:First Round|Conference Semifinals|Conference Finals)\b|the (?:First Round|Conference Semifinals|Conference Finals) (?:is tied|at \d|to )|deficit in the|and move on|first blood/,
 						text,
 					);
 				}
@@ -4754,6 +4754,24 @@ describe("a postseason read end to end", () => {
 			}
 		}
 		assert.ok(sawCommand, "a commanding series lead never says so");
+	});
+
+	// "Pistons edge ahead of the Trail Blazers" headlined a 2-0 lead.
+	test("a two-game lead is not edging ahead", () => {
+		let sawUp = false;
+		for (let day = 1; day <= 24; day += 1) {
+			const head = getAutoDayRecap({
+				season: 2026,
+				day,
+				playoffs: true,
+				games: [seriesSlateGame(9800, "Pistons", "Blazers", 1, 0)],
+			}).split("\n")[0]!;
+			assert.doesNotMatch(head, /edge ahead/, head);
+			if (/go up 2-0|2-0 lead/.test(head)) {
+				sawUp = true;
+			}
+		}
+		assert.ok(sawUp, "the lead was never headlined");
 	});
 
 	// A playoff night told each game twice - "the Lakers beat the Kings
