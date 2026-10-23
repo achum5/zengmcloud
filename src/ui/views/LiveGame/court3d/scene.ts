@@ -22,6 +22,7 @@ import {
 	type HoopFx,
 } from "./arena.ts";
 import {
+	BASELINE_RIG,
 	depthOf,
 	MAIN_RIG,
 	makeCamera,
@@ -1464,7 +1465,17 @@ const beatAt = (tl: CourtTimeline, t: number) => {
 // till the ball leaves his hands; then on the ball and the rim, as wide as
 // both stay in it, closing in on the rim as it gets there.)
 //
+// A dunk's is seen from two angles, the way a broadcast cuts between its
+// cameras: from the side through the run-up, and round under the rim, from
+// the corner past the baseline, for the slam - him rising up the lane at
+// the camera, the backboard square over him (see BASELINE_RIG).
+//
 // `aspect` is the picture's width over its height.
+const SLAM_FROM = 650;
+export const replayRig = (r: Replay | undefined): Rig =>
+	r?.slam !== undefined && r.at >= r.slam - SLAM_FROM
+		? BASELINE_RIG
+		: REPLAY_RIG;
 const REPLAY_ROOM = 5;
 // The most of the picture's height (floor to iron) and width what has to
 // be in it may take up, and how high over the floor the top of the rim is.
@@ -1514,16 +1525,23 @@ export const replayAim = (
 		hi = Math.max(hi, p.x);
 		ys += p.y;
 	}
+	const rig = replayRig(r);
+	const side = rig === REPLAY_RIG;
 	let x = (lo + hi) / 2;
-	const y = Math.min(44, Math.max(6, ys / feet.length));
+	let y = Math.min(44, Math.max(6, ys / feet.length));
 	// Never so tight that the floor and the iron can't both be in it.
-	let width = Math.max(18, IRON_Z * aspect * 1.45, hi - lo + 2 * REPLAY_ROOM);
+	let width = Math.max(
+		18,
+		IRON_Z * aspect * 1.45,
+		side ? hi - lo + 2 * REPLAY_ROOM : 0,
+	);
 	let z = 5;
 	// Over, up or down until what has to be in it is in the middle of it,
-	// and wider if it doesn't fit (the picture 100 high).
+	// and wider if it doesn't fit (the picture 100 high) - or, round under
+	// the rim, as tight as it fits (it starts from no idea how wide that is).
 	const w = aspect * 100;
-	for (let i = 0; i < 4; i++) {
-		const cam = makeCamera({ x, width, y, z }, w, 100, REPLAY_RIG);
+	for (let i = 0; i < (side ? 4 : 6); i++) {
+		const cam = makeCamera({ x, width, y, z }, w, 100, rig);
 		let left = Infinity;
 		let right = -Infinity;
 		let top = Infinity;
@@ -1540,13 +1558,17 @@ export const replayAim = (
 			}
 		}
 		const k = project(cam, { x, y, z }).k;
-		x += ((left + right) / 2 - w / 2) / k;
+		// Across the picture: along the floor from the side; from the
+		// corner, the way the camera's right is.
+		const across = ((left + right) / 2 - w / 2) / k;
+		x += across * (side ? 1 : cam.right.x);
+		y += side ? 0 : across * cam.right.y;
 		z -= ((top + bottom) / 2 - REPLAY_MIDDLE) / k;
 		const over = Math.max(
 			(right - left) / (w * REPLAY_FILL),
 			(bottom - top) / (100 * REPLAY_FILL),
 		);
-		if (over > 1) {
+		if (over > 1 || !side) {
 			width *= over;
 		}
 	}

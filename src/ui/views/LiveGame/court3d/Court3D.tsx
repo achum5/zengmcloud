@@ -33,8 +33,8 @@ import {
 	MAIN_RIG,
 	operate,
 	project,
-	REPLAY_RIG,
 	type Cover,
+	type Rig,
 } from "./camera.ts";
 import { courtTexture } from "./courtTexture.ts";
 import { FaceLoader } from "./FaceLoader.tsx";
@@ -113,6 +113,7 @@ import {
 	introAim,
 	momentAt,
 	replayAim,
+	replayRig,
 } from "./scene.ts";
 
 // THE 3D COURT: the game as a broadcast - the home team's own floor, the
@@ -132,6 +133,10 @@ const DIP_MS = 130;
 const KEY_DIP_MS = 320;
 // The longest it is held black for the picture to be ready (ms).
 const KEY_HOLD_MS = 900;
+// A replay cut from one of its cameras to the next (see replayRig): a
+// flash of white, and the new angle up out of it over this long (ms) - held
+// white, as black is, while the men in it are made ready at their new size.
+const FLASH_MS = 260;
 // THE WIPE into a replay and out of it (see playback's wipeAt): a band in
 // the home team's colors, its logo in the middle, slanting, sweeping across
 // the picture - this much wider than it (%: wide enough to cover all of it,
@@ -870,6 +875,7 @@ const Court3D = ({
 	}, [gid, home?.court, home?.colors, home?.imgURL, boxScore?.finals]);
 	const clockRef = useRef<HTMLSpanElement | null>(null);
 	const dipRef = useRef<HTMLDivElement | null>(null);
+	const flashRef = useRef<HTMLDivElement | null>(null);
 	const replayRef = useRef<HTMLDivElement | null>(null);
 	const stingRef = useRef<HTMLDivElement | null>(null);
 	const shotRef = useRef<HTMLSpanElement | null>(null);
@@ -940,6 +946,12 @@ const Court3D = ({
 		shotText: "",
 		// The shot clock's own color on the bug, kept while it shows red.
 		shotInk: undefined as string | undefined,
+		// Which of its cameras the replay showing is seen from (see
+		// replayRig): a cut to the other is straight there, through a flash
+		// (when it went off, and when it was last held).
+		replayRig: undefined as Rig | undefined,
+		flashAt: -Infinity,
+		flashHold: -Infinity,
 		foulsText: ["", ""] as [string, string],
 		ballSide: -1,
 		// The dunk replay showing now, and the next dunk that would get one.
@@ -1195,6 +1207,15 @@ const Court3D = ({
 					(staging
 						? warmupAim(s.t, p.narrow, fit)
 						: aimFor(moment, p.narrow, tl, fit)));
+			const rigNow = replay ? replayRig(replay) : undefined;
+			if (rigNow !== s.replayRig) {
+				if (replay && s.replayRig) {
+					s.snapCam = true;
+					s.flashAt = now;
+					s.flashHold = -Infinity;
+				}
+				s.replayRig = rigNow;
+			}
 			const snap = s.snapCam;
 			const secs = (dt / 1000) * Math.min(24, Math.max(1, rate));
 			operate(s, aim, fit, secs, snap);
@@ -1240,7 +1261,7 @@ const Court3D = ({
 				},
 				fw,
 				fh,
-				replay ? REPLAY_RIG : (view?.rig ?? MAIN_RIG),
+				replay ? replayRig(replay) : (view?.rig ?? MAIN_RIG),
 			);
 
 			// While the picture is as good as black - dipped at a cut, into a
@@ -1249,6 +1270,9 @@ const Court3D = ({
 			// is held black until everybody in it is ready to be drawn: a
 			// moment more of black, not a freeze halfway out of it.
 			// (Behind the wipe: the wipe held over all of the picture.)
+			// (Or white, at a flash between a replay's angles.)
+			const flashing =
+				1 - (now - Math.max(s.flashAt, s.flashHold)) / FLASH_MS >= 0.75;
 			if (
 				sprites.skipped > 0 &&
 				sprites.dark &&
@@ -1256,10 +1280,15 @@ const Court3D = ({
 			) {
 				if (s.wipe.covered) {
 					s.wipe.hold = now;
+				} else if (flashing && replay) {
+					s.flashHold = now;
 				} else {
 					s.keyHold = now;
 				}
 			}
+			const flash = replay
+				? Math.max(0, 1 - (now - Math.max(s.flashAt, s.flashHold)) / FLASH_MS)
+				: 0;
 			// The wipe: in over the picture to the cut into a replay or out of
 			// it, held there while need be, then on off it.
 			const sting = wipeAt(s.wipe, s, now, p.rate, rate);
@@ -1277,7 +1306,7 @@ const Court3D = ({
 						: 0;
 				o = Math.max(0, 1 - near / DIP_MS, clipDipAt(tl, s.t), keyDark, keyOut);
 			}
-			const dark = o >= 0.75 || s.wipe.covered;
+			const dark = o >= 0.75 || flash >= 0.75 || s.wipe.covered;
 			if (dark && !sprites.dark) {
 				s.darkFrom = now;
 			}
@@ -1293,6 +1322,10 @@ const Court3D = ({
 			const dip = dipRef.current;
 			if (dip && dip.style.opacity !== String(o)) {
 				dip.style.opacity = String(o);
+			}
+			const white = flashRef.current;
+			if (white && white.style.opacity !== String(flash)) {
+				white.style.opacity = String(flash);
 			}
 			const capEl =
 				wrapRef.current?.querySelector<HTMLElement>(".court3d-caption");
@@ -1404,7 +1437,7 @@ const Court3D = ({
 				flashes: working.flashes,
 				courtside: cr.courtside,
 				teamColors: p.teamColors,
-				black: o >= 0.999 || s.wipe.hold === now,
+				black: o >= 0.999 || flash >= 0.999 || s.wipe.hold === now,
 			});
 			if (
 				adjust(
@@ -1631,6 +1664,17 @@ const Court3D = ({
 					position: "absolute",
 					inset: 0,
 					background: "#000",
+					opacity: 0,
+					pointerEvents: "none",
+				}}
+			/>
+			<div
+				ref={flashRef}
+				aria-hidden
+				style={{
+					position: "absolute",
+					inset: 0,
+					background: "#fff",
 					opacity: 0,
 					pointerEvents: "none",
 				}}

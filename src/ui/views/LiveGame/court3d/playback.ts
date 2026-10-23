@@ -126,13 +126,16 @@ export const wipeAt = (
 
 // A replay showing: where it is (`at`), from and to (timeline ms) - and who
 // it is of, the man who put the ball in, and the rim he put it in, for the
-// camera to stay on (see replayAim).
+// camera to stay on (see replayAim); and, a dunk, when he threw it down
+// (`slam`), for the camera to go round under the rim for it (see
+// replayRig).
 export type Replay = {
 	at: number;
 	from: number;
 	to: number;
 	pid?: number;
 	rim?: Side;
+	slam?: number;
 };
 
 // Who had the ball last at or before t: the man who dunked it (it leaves his
@@ -175,6 +178,7 @@ export const replayOf = (tl: CourtTimeline, f: Fx): Replay => {
 		to: f.t + REPLAY_TO,
 		...(pid === undefined ? {} : { pid }),
 		...(f.rim === undefined ? {} : { rim: f.rim }),
+		...(f.kind === "dunk" ? { slam: f.t } : {}),
 	};
 };
 

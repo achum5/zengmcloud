@@ -61,6 +61,16 @@ export const REPLAY_RIG: Rig = {
 	slide: 0.92,
 	upright: false,
 };
+// The replay's second angle, a dunk's slam: from the near corner past the
+// baseline, low in the first rows behind it - looking up the lane at the
+// rim, the backboard square over him. (It slides past the rim it looks at:
+// round the end, not along the side.)
+export const BASELINE_RIG: Rig = {
+	back: 4,
+	high: 11,
+	slide: 1.5,
+	upright: false,
+};
 
 // Where the camera looks: a point on the court (x), how wide a slice of the
 // floor fits across the screen there (feet), how far across the court the
