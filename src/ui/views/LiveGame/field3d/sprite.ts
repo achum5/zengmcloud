@@ -18,6 +18,7 @@ import {
 	holding,
 	moveKind,
 	poseOfMove,
+	settleStep,
 	strideLift,
 	withArms,
 	type Move,
@@ -87,6 +88,9 @@ type Blend = {
 	// Into or out of standing turning a foot at a time: where his feet were
 	// as it changed (as pivot).
 	feet?: [number, number, number, number];
+	// From one way of standing into another, not turning: stepped over a
+	// foot at a time (see poses.ts settleStep).
+	steps?: true;
 };
 type Under = {
 	move: Move;
@@ -357,7 +361,8 @@ const blendedPose = (st: FieldPlayerState, s: Stepped): Pose => {
 			u.w,
 		);
 	}
-	return lerpPose(pose, was, from.w);
+	const eased = lerpPose(pose, was, from.w);
+	return from.steps && !u ? settleStep(eased, pose, was, 1 - from.w) : eased;
 };
 
 // How he is drawn, the way the sprite has him: his pose and the way he
@@ -486,7 +491,7 @@ export const drawFieldPlayer = (
 		}
 		key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}${len ? `s${len}` : ""}${feet ? `v${feet.join(",")}` : ""}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
 			from
-				? `|${from.move}${from.mirrored ? "m" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}${
+				? `|${from.move}${from.mirrored ? "m" : ""}${from.steps ? "!" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}${
 						from.under
 							? `^${from.under.move}${from.under.mirrored ? "m" : ""}${from.under.phase}~${from.under.w}${from.under.arms ? `+${from.under.arms.move}${from.under.arms.phase}` : ""}`
 							: ""

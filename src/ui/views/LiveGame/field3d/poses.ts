@@ -1,6 +1,7 @@
 import {
 	ANIMS,
 	bounceAt,
+	flexOf,
 	lerpPose,
 	mirror,
 	poseAt,
@@ -3421,6 +3422,92 @@ export const gripsOf = (m: Move, hold?: BallHold): [Grip, Grip] => {
 		return ["ball", "ball"];
 	}
 	return [g, g];
+};
+
+// FROM ONE WAY OF STANDING INTO ANOTHER (the way the court has it - see
+// court3d's settleStep): his feet stepped over, not slid. One foot at a
+// time - the one already up first, or the one with furthest to go - each
+// up off the turf as it goes and down again where the next one has it,
+// the other where it was till its turn.
+const STANDS = new Set<Move>([
+	"stand",
+	"armsFolded",
+	"onHips",
+	"hands",
+	"pointSky",
+	"qbSet",
+	"shotgun",
+	"settle",
+	"overShoulders",
+	"kickReady",
+	"receiverStance",
+	"cornerStance",
+	"safetyStance",
+	"backerStance",
+]);
+export const stepsOver = (from: Move, to: Move) =>
+	from !== to && STANDS.has(from) && STANDS.has(to);
+// A step's lift (degrees at the hip and knee); a full one for a leg this
+// far from where it is going (degrees at the hip, half that again of its
+// knee, and his feet's spread at so many a foot); each step's share of the
+// way, overlapping; legs this near to as far to go swapping over which goes
+// first gradually; one foot this much higher than the other up off the
+// turf.
+const SETTLE_HIP = 14;
+const SETTLE_KNEE = 30;
+const SETTLE_FULL = 30;
+const SETTLE_SPREAD = 40;
+const SETTLE_STEP = 0.6;
+const SETTLE_TIE = 6;
+const SETTLE_UP = 0.12;
+const smooth01 = (u: number) => {
+	const v = Math.min(1, Math.max(0, u));
+	return v * v * (3 - 2 * v);
+};
+// `p` the two eased together the usual way, u of the way from `was` to
+// `to`.
+export const settleStep = (p: Pose, to: Pose, was: Pose, u: number): Pose => {
+	const away = (a: Pose, b: Pose) => {
+		const spread = Math.abs(a.wide - b.wide) * SETTLE_SPREAD;
+		return [
+			Math.abs(a.hipN - b.hipN) + 0.5 * Math.abs(a.kneeN - b.kneeN) + spread,
+			Math.abs(a.hipF - b.hipF) + 0.5 * Math.abs(a.kneeF - b.kneeF) + spread,
+		] as const;
+	};
+	const [dn, df] = away(was, to);
+	const leg = (d: number, from: number) => {
+		const v = Math.min(1, Math.max(0, (u - from) / SETTLE_STEP));
+		return {
+			on: smooth01(v),
+			up: Math.sin(Math.PI * v) * Math.min(1, d / SETTLE_FULL),
+		};
+	};
+	const wasFlex = flexOf(was);
+	const toFlex = flexOf(to);
+	const RAD = Math.PI / 180;
+	const lift = (hip: number, knee: number) =>
+		-Math.cos((hip + wasFlex) * RAD) - Math.cos((hip + wasFlex - knee) * RAD);
+	const high = lift(was.hipN, was.kneeN) - lift(was.hipF, was.kneeF);
+	const byFar = smooth01((dn - df) / SETTLE_TIE + 0.5);
+	const lifted = Math.min(1, Math.abs(high) / SETTLE_UP);
+	const first = byFar + ((high > 0 ? 1 : 0) - byFar) * lifted;
+	const n = leg(dn, (1 - first) * (1 - SETTLE_STEP));
+	const f = leg(df, first * (1 - SETTLE_STEP));
+	const at = (a: number, b: number, w: number) => a + (b - a) * w;
+	// (His hips' bend over his feet goes with each leg as it steps, not with
+	// both at once - which would slide the one still down.)
+	return {
+		...p,
+		plant: 0,
+		hipN: at(was.hipN + wasFlex, to.hipN + toFlex, n.on) + SETTLE_HIP * n.up,
+		kneeN: at(was.kneeN, to.kneeN, n.on) + SETTLE_KNEE * n.up,
+		toeN: at(was.toeN, to.toeN, n.on),
+		wideN: at(was.wide + was.wideN, to.wide + to.wideN, n.on) - p.wide,
+		hipF: at(was.hipF + wasFlex, to.hipF + toFlex, f.on) + SETTLE_HIP * f.up,
+		kneeF: at(was.kneeF, to.kneeF, f.on) + SETTLE_KNEE * f.up,
+		toeF: at(was.toeF, to.toeF, f.on),
+		wideF: at(was.wide + was.wideF, to.wide + to.wideF, f.on) - p.wide,
+	};
 };
 
 // His pose with the ball: carried, his right arm folded up across him,
