@@ -65,6 +65,19 @@ export type Pose = {
 	// shoulder down positive): a crossover's dip, an arm wrapped behind him.
 	twist: number;
 	tilt: number;
+	// Each hand on his hip, his elbow out to the side (0 to 1); each forearm
+	// folded across his chest, the hand at the other arm (0 to 1) - arms
+	// crossed; each hand on his knee, bent over (0 to 1); and each fist up
+	// by his head with the elbow out level with his shoulder - a flex (0 to
+	// 1). (Not angles: worked out from where the hand goes.)
+	onHipN: number;
+	onHipF: number;
+	foldN: number;
+	foldF: number;
+	onKneeN: number;
+	onKneeF: number;
+	flexN: number;
+	flexF: number;
 };
 
 const BASE: Pose = {
@@ -96,6 +109,14 @@ const BASE: Pose = {
 	spinF: 0,
 	twist: 0,
 	tilt: 0,
+	onHipN: 0,
+	onHipF: 0,
+	foldN: 0,
+	foldF: 0,
+	onKneeN: 0,
+	onKneeF: 0,
+	flexN: 0,
+	flexF: 0,
 };
 const pose = (o: Partial<Pose>): Pose => ({ ...BASE, ...o });
 
@@ -109,6 +130,10 @@ const SIDES: [keyof Pose, keyof Pose][] = [
 	["wrN", "wrF"],
 	["toeN", "toeF"],
 	["wideN", "wideF"],
+	["onHipN", "onHipF"],
+	["foldN", "foldF"],
+	["onKneeN", "onKneeF"],
+	["flexN", "flexF"],
 ];
 export const mirror = (q: Pose): Pose => {
 	const out = {
@@ -3472,12 +3497,14 @@ export const ANIMS = {
 					kneeN: 26,
 					hipF: 14,
 					kneeF: 30,
-					shN: 92,
-					elN: 115,
-					abN: 82,
-					shF: 92,
-					elF: 115,
-					abF: 82,
+					shN: 140,
+					elN: 110,
+					abN: 30,
+					shF: 140,
+					elF: 110,
+					abF: 30,
+					flexN: 1,
+					flexF: 1,
 					lean: -6,
 					wide: 0.5,
 				}),
@@ -3489,12 +3516,14 @@ export const ANIMS = {
 					kneeN: 22,
 					hipF: 14,
 					kneeF: 26,
-					shN: 96,
-					elN: 125,
-					abN: 84,
-					shF: 96,
-					elF: 125,
-					abF: 84,
+					shN: 140,
+					elN: 120,
+					abN: 30,
+					shF: 140,
+					elF: 120,
+					abF: 30,
+					flexN: 1,
+					flexF: 1,
 					lean: -8,
 					wide: 0.5,
 				}),
@@ -4994,6 +5023,8 @@ export const ANIMS = {
 				shF: 30,
 				elF: 112,
 				abF: -14,
+				foldN: 1,
+				foldF: 1,
 				lean: 1 + i,
 				kneeN: 8,
 				kneeF: 10,
@@ -5023,13 +5054,13 @@ export const ANIMS = {
 		pose: (i) =>
 			pose({
 				shN: -10,
-				elN: 108,
-				abN: 56,
-				wrN: -14,
+				elN: 60,
+				abN: 30,
 				shF: -10,
-				elF: 108,
-				abF: 56,
-				wrF: -14,
+				elF: 60,
+				abF: 30,
+				onHipN: 1,
+				onHipF: 1,
 				lean: i ? 13 : 9,
 				kneeN: 8,
 				kneeF: 10,
@@ -5336,17 +5367,19 @@ export const ANIMS = {
 		fps: 0.6,
 		pose: (i) =>
 			pose({
-				hipN: 38,
-				kneeN: 52,
-				hipF: 42,
-				kneeF: 56,
-				lean: 40 + i * 2,
+				hipN: 50,
+				kneeN: 66,
+				hipF: 54,
+				kneeF: 70,
+				lean: 56 + i * 2,
 				shN: 6,
 				elN: 8,
 				abN: 10,
 				shF: 8,
 				elF: 8,
 				abF: 10,
+				onKneeN: 1,
+				onKneeF: 1,
 				wide: 0.35,
 			}),
 	},
@@ -6024,8 +6057,30 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		0,
 		chest.u + Math.cos(L) * up,
 	);
-	const armR = armLimb(b, chest, q.shN, q.elN, q.abN, q.wrN, -1, q.tuck);
-	const armL = armLimb(b, chest, q.shF, q.elF, q.abF, q.wrF, 1, q.tuck);
+	const armR = shapedArm(
+		b,
+		chest,
+		pelvis,
+		armLimb(b, chest, q.shN, q.elN, q.abN, q.wrN, -1, q.tuck),
+		-1,
+		q.onHipN,
+		q.foldN,
+		q.onKneeN,
+		legR,
+		q.flexN,
+	);
+	const armL = shapedArm(
+		b,
+		chest,
+		pelvis,
+		armLimb(b, chest, q.shF, q.elF, q.abF, q.wrF, 1, q.tuck),
+		1,
+		q.onHipF,
+		q.foldF,
+		q.onKneeF,
+		legL,
+		q.flexF,
+	);
 	if (q.twist === 0 && q.tilt === 0) {
 		return { pelvis, chest, head, legR, legL, armR, armL };
 	}
@@ -6230,6 +6285,72 @@ const flared = (arm: Limb, deg: number, side: 1 | -1): Limb => {
 	const one = turn(deg * RAD);
 	const two = turn(-deg * RAD);
 	return { ...arm, mid: side * one.s >= side * two.s ? one : two };
+};
+
+// HANDS ON HIS HIPS, AND ARMS CROSSED - arms his angles cannot give him
+// (they bend the elbow in the plane the arm swings out in, so a hand can't
+// come back in to his side with the elbow out): worked out from where the
+// hand goes, the elbow then swung out.
+// (The wrist on his hip: back a touch from his side, out past his hip joint,
+// up at his waist - from his hips' middle, feet.)
+const ON_HIP = { f: -0.08, s: 0.26, u: 0.34 };
+// (The wrist of a folded arm: in front of his chest, across at the other
+// arm, so far below his shoulders - the right forearm over the left.)
+const FOLD = { f: 0.4, s: 0.12, u: 0.6, under: 0.14 };
+const mixArm = (a: Limb, b: Limb, w: number): Limb => {
+	const m = (p: V3, o: V3) =>
+		v3(p.f + (o.f - p.f) * w, p.s + (o.s - p.s) * w, p.u + (o.u - p.u) * w);
+	return {
+		root: m(a.root, b.root),
+		mid: m(a.mid, b.mid),
+		end: m(a.end, b.end),
+		...(a.tip && b.tip ? { tip: m(a.tip, b.tip) } : {}),
+	};
+};
+// (A hand on his knee: on top of his thigh just above it.)
+const ON_KNEE = { f: 0.12, u: 0.34 };
+// (A flexed arm's fist: out past his shoulder and up by his head.)
+const FLEX = { f: 0.12, s: 0.5, u: 0.6 };
+const shapedArm = (
+	b: Body,
+	chest: V3,
+	pelvis: V3,
+	arm: Limb,
+	side: 1 | -1,
+	hip: number,
+	fold: number,
+	knee: number,
+	leg: Limb,
+	flex: number,
+): Limb => {
+	let out = arm;
+	if (flex > 0) {
+		const sh = shoulderOf(b, chest, side);
+		const at = v3(sh.f + FLEX.f, sh.s + side * FLEX.s, sh.u + FLEX.u);
+		out = mixArm(out, flared(armTo(b, chest, at, 20, side), 90, side), flex);
+	}
+	if (knee > 0) {
+		const at = v3(leg.mid.f + ON_KNEE.f, leg.mid.s, leg.mid.u + ON_KNEE.u);
+		out = mixArm(out, flared(armTo(b, chest, at, 10, side), 20, side), knee);
+	}
+	if (hip > 0) {
+		const at = v3(
+			pelvis.f + ON_HIP.f,
+			side * (b.hipW + ON_HIP.s),
+			pelvis.u + ON_HIP.u,
+		);
+		out = mixArm(out, flared(armTo(b, chest, at, -30, side), 80, side), hip);
+	}
+	if (fold > 0) {
+		const sh = shoulderOf(b, chest, side);
+		const at = v3(
+			chest.f + FOLD.f,
+			-side * FOLD.s,
+			sh.u - FOLD.u - (side > 0 ? FOLD.under : 0),
+		);
+		out = mixArm(out, flared(armTo(b, chest, at, 40, side), 70, side), fold);
+	}
+	return out;
 };
 
 // How a move holds the ball: in both hands, one on each side of it; up on

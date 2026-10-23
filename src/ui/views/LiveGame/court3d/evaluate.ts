@@ -3735,6 +3735,14 @@ const UPPER: (keyof Pose)[] = [
 	"free",
 	"twist",
 	"tilt",
+	"onHipN",
+	"onHipF",
+	"foldN",
+	"foldF",
+	"onKneeN",
+	"onKneeF",
+	"flexN",
+	"flexF",
 ];
 // Acts that are all arms - done on the run (from this fast, feet a second),
 // his legs keep on striding.
@@ -4024,6 +4032,7 @@ export const poseOf = (st: PlayerState): Pose => {
 	}
 	const mix = (v: number, to: number) => v + (to - v) * a.w;
 	const tuck = a.tuck === undefined ? p.tuck : mix(p.tuck, a.tuck);
+	// (Off his hip, or out of his folded arms, as it does.)
 	return a.hand === "R"
 		? {
 				...p,
@@ -4031,6 +4040,10 @@ export const poseOf = (st: PlayerState): Pose => {
 				elN: mix(p.elN, a.el),
 				abN: mix(p.abN, a.ab),
 				wrN: mix(p.wrN, a.wr),
+				onHipN: mix(p.onHipN, 0),
+				foldN: mix(p.foldN, 0),
+				onKneeN: mix(p.onKneeN, 0),
+				flexN: mix(p.flexN, 0),
 				tuck,
 			}
 		: {
@@ -4039,6 +4052,10 @@ export const poseOf = (st: PlayerState): Pose => {
 				elF: mix(p.elF, a.el),
 				abF: mix(p.abF, a.ab),
 				wrF: mix(p.wrF, a.wr),
+				onHipF: mix(p.onHipF, 0),
+				foldF: mix(p.foldF, 0),
+				onKneeF: mix(p.onKneeF, 0),
+				flexF: mix(p.flexF, 0),
 				tuck,
 			};
 };

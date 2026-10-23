@@ -158,6 +158,47 @@ describe("3D poses", () => {
 		assert.isAbove(pairs, 8);
 	});
 
+	// Hands on his hips, arms folded, bent over with his hands on his knees:
+	// each hand where it goes - not held out wide in the air, as an arm that
+	// only bends in the plane it swings out in would put it.
+	test("hands on hips, arms folded, hands on knees", () => {
+		const b = bodyOf();
+		const gap = (a: V3, c: V3) => Math.hypot(a.f - c.f, a.s - c.s, a.u - c.u);
+		const hips = skeleton(b, poseAt("hips", 0));
+		for (const [arm, side] of [
+			[hips.armR, -1],
+			[hips.armL, 1],
+		] as const) {
+			// The hand at his waist, by his side - the elbow out wide of it.
+			assert.isBelow(Math.abs(arm.end.u - hips.pelvis.u - 0.34), 0.2);
+			assert.isBelow(Math.abs(side * arm.end.s - b.hipW - 0.26), 0.2);
+			assert.isAbove(side * arm.mid.s, side * arm.end.s + 0.25);
+		}
+		const folded = skeleton(b, poseAt("crossed", 0));
+		for (const [arm, side] of [
+			[folded.armR, -1],
+			[folded.armL, 1],
+		] as const) {
+			// Across in front of his chest, over at the other arm.
+			assert.isBelow(side * arm.end.s, 0);
+			assert.isAbove(arm.end.f, folded.chest.f + 0.2);
+			assert.isAbove(arm.end.u, folded.pelvis.u + 0.6);
+		}
+		// A flex: fists up past his shoulders, elbows out wide of them.
+		const flex = skeleton(b, poseAt("flex", 0.5));
+		for (const [arm, side] of [
+			[flex.armR, -1],
+			[flex.armL, 1],
+		] as const) {
+			assert.isAbove(arm.end.u, arm.root.u + 0.3);
+			assert.isAbove(side * arm.mid.s, side * arm.end.s + 0.2);
+			assert.isBelow(Math.abs(arm.mid.u - arm.root.u), 0.45);
+		}
+		const bent = skeleton(b, poseAt("crouch", 0));
+		assert.isBelow(gap(bent.armR.end, bent.legR.mid), 0.5);
+		assert.isBelow(gap(bent.armL.end, bent.legL.mid), 0.5);
+	});
+
 	test("a seven-footer stands taller than a six-footer", () => {
 		const tall = skeleton(bodyOf(84), poseAt("ready", 0));
 		const short = skeleton(bodyOf(72), poseAt("ready", 0));
