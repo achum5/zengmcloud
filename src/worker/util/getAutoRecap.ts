@@ -1629,7 +1629,53 @@ const comebackSize = (shape: Shape): number =>
 		? Math.max(shape.comebackFrom, shape.loserPeak)
 		: 0;
 
+// THE VERB FITS THE ARC, not only the final margin. "The Pistons held off
+// the Mavericks" of a game they trailed 87-79 after three and took 36-20 in
+// the fourth; "The Nuggets handled the Hornets 115-110" of one in which a
+// 15-point lead came down to five. Behind going into the last quarter, they
+// rallied - by five or more - and handled nobody; a big lead mostly let go
+// was held on to, not handled.
 const verbPool = (game: RecapGame, shape: Shape): string[] => {
+	const pool = marginVerbPool(game, shape);
+	const upset = isUpset(game, shape);
+	if (shape.ot === 0 && shape.wq.length >= 2 && shape.marginEnteringLast < 0) {
+		if (shape.marginEnteringLast <= -5 && !upset && shape.margin < 15) {
+			return ["rally past", "come back to top"];
+		}
+		const fits = pool.filter(
+			(v) => !["handle", "cruise past", "roll past"].includes(v),
+		);
+		return fits.length > 0 ? fits : ["beat", "top"];
+	}
+	const wMax = game.flow ? game.flow.maxLead[sideOf(game, shape.winner)] : 0;
+	if (shape.margin <= 8 && wMax >= 15 && wMax >= shape.margin + 9) {
+		const fits = pool.filter(
+			(v) =>
+				![
+					"handle",
+					"cruise past",
+					"roll past",
+					"run away from",
+					"pull away from",
+					"blow out",
+					"rout",
+				].includes(v),
+		);
+		// Held off a push that came up short: one that got within reach late.
+		if (
+			!upset &&
+			closeLate(game) &&
+			heldOn(game) &&
+			!fits.includes("hold off")
+		) {
+			fits.push("hold off");
+		}
+		return fits.length > 0 ? fits : ["beat", "top"];
+	}
+	return pool;
+};
+
+const marginVerbPool = (game: RecapGame, shape: Shape): string[] => {
 	if (isUpset(game, shape)) {
 		// An upset by 34 is a rout first: "Cavaliers knock off the Clippers
 		// 132-98" undersold it. The underdog part is told by the line note.

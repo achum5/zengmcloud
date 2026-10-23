@@ -2837,3 +2837,62 @@ describe("every deck game is told, and a triple-double by name", () => {
 		assert.isAbove(told, 0);
 	});
 });
+
+// "The Pistons held off the Mavericks" of a game they trailed 87-79 after
+// three; "The Nuggets handled the Hornets 115-110" of one in which a
+// 15-point lead came down to five. The verb fits the arc.
+describe("the verb fits the arc", () => {
+	const make = (gid: number, wq: number[], lq: number[], flow: GameFlow) => {
+		const home = squad(
+			{ tid: 1, name: "Pistons", ptsQtrs: wq },
+			{ name: "Ace Piston", pid: 11, pts: 27, ast: 6, fg: 10, fga: 20 },
+			wq.reduce((a, b) => a + b, 0),
+		);
+		const away = squad(
+			{ tid: 2, name: "Mavericks", ptsQtrs: lq },
+			{ name: "Bo Maverick", pid: 21, pts: 24, fg: 9, fga: 20 },
+			lq.reduce((a, b) => a + b, 0),
+		);
+		return game([home, away], { gid, flow });
+	};
+
+	test("behind after three, they rallied; a lead let go was not handled", () => {
+		for (let gid = 1; gid <= 40; gid++) {
+			// 79-87 after three, 115-107 at the end, in front for good at 4:51.
+			const rally = make(gid, [28, 28, 23, 36], [27, 28, 32, 20], {
+				leadChanges: 6,
+				ties: 3,
+				maxLead: [8, 12],
+				maxLeadAt: [4, 3],
+				lastLead: { side: 0, period: 4, clock: 291, pts: [100, 99] },
+			});
+			const r1 = getAutoRecap(rally);
+			clean(r1);
+			const [head1, lede1] = r1.split("\n\n");
+			assert.notMatch(
+				`${head1} ${lede1!.split(/(?<=\.) /)[0]}`,
+				/\bhel[dl] off\b|\bsurviv|\bhandle|cruise|roll(?:s|ed)? past/,
+				r1,
+			);
+			assert.deepEqual(verifyRecap(r1, rally), [], r1);
+
+			// Up 20 in the second, won by five.
+			const blown = make(gid, [32, 33, 25, 25], [22, 23, 33, 32], {
+				leadChanges: 1,
+				ties: 1,
+				maxLead: [20, 2],
+				maxLeadAt: [2, 1],
+				lastLead: { side: 0, period: 1, clock: 600, pts: [5, 4] },
+			});
+			const r2 = getAutoRecap(blown);
+			clean(r2);
+			const [head2, lede2] = r2.split("\n\n");
+			assert.notMatch(
+				`${head2} ${lede2!.split(/(?<=\.) /)[0]}`,
+				/\bhandle|cruise|roll(?:s|ed)? past|r[au]n away|pull(?:s|ed)? away|blow(?:s|ed)? out|\brout/,
+				r2,
+			);
+			assert.deepEqual(verifyRecap(r2, blown), [], r2);
+		}
+	});
+});
