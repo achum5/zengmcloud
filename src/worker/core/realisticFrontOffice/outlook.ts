@@ -858,8 +858,10 @@ export const pickLineAt = (
 		lottery = colaPicks(outlook.cola, outlook.numTeams, ratio);
 		lotteryKey = `:C${ratio}`;
 	}
-	const place = Math.round(10 * center) / 10;
-	const key = `${dp.round}:${place}:${spread}:${years}${lotteryKey}`;
+	// By exactly where it is expected to land: a place rounded to cache on
+	// priced the pick at wherever the first deal to round there put it, so what
+	// a deal was worth hung on what had been priced before it.
+	const key = `${dp.round}:${center}:${spread}:${years}${lotteryKey}`;
 	let at = outlook.pickLines.get(key);
 	if (at === undefined) {
 		// Where it lands is the same every season it is priced for.

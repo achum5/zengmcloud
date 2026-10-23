@@ -12,7 +12,7 @@ import {
 	type Asset,
 	type TeamState,
 } from "./market.ts";
-import { outlookSettings } from "./outlook.ts";
+import { buildOutlook, outlookSettings, type LeagueOutlook } from "./outlook.ts";
 
 // Moves no good front office makes, checked for every team of a league: a
 // deal that clears a team's margin of error by the minimum gain is one it
@@ -198,5 +198,44 @@ test(
 			}
 		}
 		assert.isAbove(checked, 100);
+	},
+);
+
+test(
+	"what a deal is worth does not hang on what was priced before it",
+	{ timeout: 300_000 },
+	async () => {
+		// The same deals on two outlooks of the same league, priced in opposite
+		// orders: picks for players, so where the picks land moves with each.
+		const dealsOn = async (outlook: LeagueOutlook) => {
+			const deals: {
+				t: TeamState;
+				partner: TeamState;
+				give: Asset[];
+				get: Asset[];
+			}[] = [];
+			for (let tid = 0; tid < g.get("numTeams"); tid += 3) {
+				const t = await loadTeam(outlook, tid);
+				const partner = await loadTeam(outlook, (tid + 7) % g.get("numTeams"));
+				for (const dp of t.picks.filter((x) => x.round === 1).slice(0, 2)) {
+					deals.push({
+						t,
+						partner,
+						give: [{ kind: "pick", dp }],
+						get: [{ kind: "player", p: partner.players[3]! }],
+					});
+				}
+			}
+			return { outlook, deals };
+		};
+		const price = ({ outlook, deals }: Awaited<ReturnType<typeof dealsOn>>) =>
+			deals.map((d) => priceFor(outlook, d.t, d.give, d.get, d.partner));
+		const first = await dealsOn(await buildOutlook());
+		const second = await dealsOn(await buildOutlook());
+		second.deals.reverse();
+		const forward = price(first);
+		const backward = price(second).reverse();
+		assert.isAbove(forward.length, 10);
+		assert.deepEqual(backward, forward);
 	},
 );
