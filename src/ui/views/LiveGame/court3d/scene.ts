@@ -343,11 +343,33 @@ export const crowdUp = (tl: CourtTimeline, t: number): number => {
 	if (!fx) {
 		return 0;
 	}
-	const e = t - fx.t;
-	const level =
-		e < 260 ? e / 260 : e < 1800 ? 1 : Math.max(0, 1 - (e - 1800) / 900);
-	return level * (fx.team === 1 ? 1 : 0.4);
+	return crowdLevel(t - fx.t) * (fx.team === 1 ? 1 : 0.4);
 };
+// Up, a moment on its feet, and down: how much of it, `e` ms after.
+const crowdLevel = (e: number): number =>
+	e < 260 ? e / 260 : e < 1800 ? 1 : Math.max(0, 1 - (e - 1800) / 900);
+
+// The final horn: who won, and how long ago (ms) - if it has gone.
+const finalHorn = (
+	tl: CourtTimeline,
+	t: number,
+): { since: number; winner: Side } | undefined => {
+	const beat = beatAt(tl, t);
+	if (beat?.type !== "gameOver" || t < beat.actionStart) {
+		return undefined;
+	}
+	const cheer = recentFx(tl, t, ["cheer"], t - beat.actionStart + 1);
+	return cheer?.team === undefined
+		? undefined
+		: { since: t - beat.actionStart, winner: cheer.team };
+};
+// At the horn, a home win brings the whole building up - arms going, then
+// on its feet applauding as the teams shake hands; a road win sits it down
+// (but for the road fans' few seconds).
+const HORN_UP_MS = 260;
+const HORN_WAVE_MS = 5000;
+const HORN_SETTLE_MS = 4000;
+const HORN_STAY = 0.55;
 
 // The crowd at t: on its feet for a big play, arms going - and in a tight
 // finish on its feet the whole way, arms going up now and then (`now` is
@@ -357,6 +379,28 @@ export const crowdAt = (
 	t: number,
 	now: number,
 ): { up: number; wave: boolean } => {
+	const horn = finalHorn(tl, t);
+	if (horn) {
+		const e = horn.since;
+		if (horn.winner === 0) {
+			// (The road fans, a few seconds, the way they take a big play.)
+			return { up: crowdLevel(e) * 0.4, wave: false };
+		}
+		const level =
+			e < HORN_UP_MS
+				? e / HORN_UP_MS
+				: e < HORN_WAVE_MS
+					? 1
+					: Math.max(
+							HORN_STAY,
+							1 - ((1 - HORN_STAY) * (e - HORN_WAVE_MS)) / HORN_SETTLE_MS,
+						);
+		return {
+			up: level,
+			wave:
+				e < HORN_WAVE_MS ? Math.sin(now / 130) > 0 : Math.sin(now / 520) > 0.55,
+		};
+	}
 	const roar = Math.max(
 		crowdUp(tl, t),
 		// On their feet for each of the home team's starters called out.
@@ -535,7 +579,10 @@ const benchStates = (
 	// each of its starters called out.
 	const roar = recentFx(f.tl, t, ["roar"], 1800);
 	const calling = callAt(f.tl.intro, t)?.team;
-	const tense = tensionAt(f.tl, t) >= 1;
+	// At the final horn, the winners' bench up and going, then on its feet;
+	// the losers' sat where they are.
+	const horn = finalHorn(f.tl, t);
+	const tense = !horn && tensionAt(f.tl, t) >= 1;
 	const clinch = recentFx(f.tl, t, ["clinch"], 10 * 60_000);
 	for (const p of f.roster) {
 		const i = seat[p.team]++;
@@ -560,10 +607,14 @@ const benchStates = (
 			out.push({ st: storm, warm });
 			continue;
 		}
-		const up = roar?.team === p.team || calling === p.team;
+		const won = horn?.winner === p.team;
+		const up =
+			roar?.team === p.team ||
+			calling === p.team ||
+			(won && horn.since < HORN_WAVE_MS);
 		const anim: AnimName = up
 			? "cheer"
-			: tense
+			: tense || won
 				? STANDING[Math.abs(p.pid) % STANDING.length]!
 				: "sit";
 		out.push({
@@ -879,9 +930,11 @@ export const drawFrame = (f: Frame) => {
 	// On their feet for a big play by their team, and some of them through
 	// a tight finish.
 	const roarNow = recentFx(tl, t, ["roar"], 2200);
-	const tenseNow = tensionAt(tl, t) >= 1;
+	const hornNow = finalHorn(tl, t);
+	const tenseNow = !hornNow && tensionAt(tl, t) >= 1;
 	const upOf = (p: Folk): number =>
 		(roarNow?.team === p.team && unitHash(p.x * 7, p.y * 13) < 0.8) ||
+		(hornNow?.winner === p.team && unitHash(p.x * 7, p.y * 13) < 0.85) ||
 		(tenseNow && unitHash(p.y * 5, p.x * 3) < 0.35)
 			? 1
 			: 0;
