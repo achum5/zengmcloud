@@ -584,6 +584,17 @@ const FIELD_ANIMS = {
 			[1, THROW_RELEASE],
 		],
 	},
+	// A pump: the ball up and the arm on through as if to let it go, and
+	// back down into both hands.
+	pump: {
+		kind: "act",
+		keys: [
+			[0, QB_SET],
+			[0.4, THROW_COCKED],
+			[0.6, lerpPose(THROW_COCKED, THROW_RELEASE, 0.35)],
+			[1, QB_SET],
+		],
+	},
 	throwFollow: {
 		kind: "act",
 		keys: [

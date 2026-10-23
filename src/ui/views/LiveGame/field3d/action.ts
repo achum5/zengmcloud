@@ -413,7 +413,7 @@ const IN_HANDS = new Set<Move>([
 ]);
 // (Up over his head in his throwing hand, his arms doing something of
 // their own: spiking it, holding it up.)
-const IN_HAND = new Set<Move>(["throwWind", "spike", "ballUp", "leap"]);
+const IN_HAND = new Set<Move>(["throwWind", "pump", "spike", "ballUp", "leap"]);
 const holdFor = (m: Move): BallHold =>
 	m === "center"
 		? "snap"
@@ -457,6 +457,21 @@ const HEAD_ON = 0.5;
 const DRIVEN_BACK = 0.55;
 // More men in on a tackle: the first, and the second, there in time to (as
 // late as this after it), this often.
+// The ball out of his hands this long after the snap at the soonest (ms),
+// and this much longer for each yard it goes in the air, give or take.
+const TO_THROW = 1500;
+const TO_THROW_YD = 45;
+const TO_THROW_SPREAD = 500;
+// The quarterback in the pocket: looking off another man first, this often
+// with this long to spare at least; up a step (feet, ms), this often; a pump
+// this often, and how long it takes.
+const LOOK_OFF = 0.55;
+const LOOK_OFF_MS = 900;
+const STEP_UP = 0.4;
+const STEP_UP_FT = 2.5;
+const STEP_UP_MS = 420;
+const PUMP = 0.12;
+const PUMP_MS = 520;
 // The rush: working a blocker's shoulder, a step over (feet) this often
 // (ms); off the edge, on a tackle's outside shoulder (feet out, and in front
 // of him), and round him by the end (feet behind).
@@ -504,7 +519,9 @@ const DOWN = new Set<Move>([
 const CLOSE = 0.85;
 const FLAT_OUT = 0.97;
 // A receiver down his route, at this much of his top speed.
-const ROUTE_PACE = 0.86;
+const ROUTE_PACE = 0.76;
+// And what each break in it costs him (ms): down and out of the cut.
+const BREAK_COST = 200;
 
 // The kicking game. A place kick: the plant, and the foot into the ball this
 // far through it. A punt: from the punter's first step, the ball dropped and
@@ -1053,7 +1070,15 @@ class Action {
 				catchPt,
 			);
 			const hold = tr.settles ? r() * 600 : 0;
-			catchAt = Math.max(onTime, ready + 300 + fl.ms) + hold;
+			// (Not before he has had his time back there - longer, the deeper
+			// it goes.)
+			const least =
+				snap +
+				TO_THROW +
+				Math.max(0, airYds) * TO_THROW_YD +
+				r() * TO_THROW_SPREAD +
+				fl.ms;
+			catchAt = Math.max(onTime, ready + 300 + fl.ms, least) + hold;
 			throwAt = catchAt - fl.ms;
 			this.runRoute(target, tr, go, catchAt);
 			this.at.set(first, catchAt);
@@ -1076,6 +1101,7 @@ class Action {
 
 		// The quarterback: set, through his progressions, and the throw.
 		if (thrown && catchPt) {
+			this.reads(qb, target!, catchPt, throwAt - 320, runners);
 			qb.hold(throwAt - 320, "qbSet", this.toward(qb.at, catchPt));
 			qb.act("throwWind", throwAt, this.toward(qb.at, catchPt));
 			qb.act("throwFollow", throwAt + 450, this.toward(qb.at, catchPt));
@@ -1159,6 +1185,48 @@ class Action {
 	// rest is run after the catch. Most of a short one is in the air; a
 	// long one is mostly the throw, now and then a short one taken a long
 	// way.
+	// Set in the pocket until `windAt`: his eyes on another man out on a
+	// route first, now and then, and on round to the man it goes to; a step
+	// up into the pocket before it goes, some of the time; and a pump at
+	// him, once in a while.
+	reads(
+		qb: Actor,
+		target: Actor,
+		catchPt: Pt,
+		windAt: number,
+		runners: Actor[],
+	) {
+		const r = this.r;
+		const spare = windAt - qb.t;
+		const to = this.toward(qb.at, catchPt);
+		if (spare > LOOK_OFF_MS && r() < LOOK_OFF) {
+			const at = qb.t + spare * 0.3;
+			const others = runners
+				.filter((m) => m !== target)
+				.map((m) => this.toward(qb.at, m.posAt(at)))
+				.filter(
+					(y) => Math.abs(Math.atan2(Math.sin(y - to), Math.cos(y - to))) > 0.5,
+				);
+			const other = others[Math.floor(r() * others.length)];
+			qb.hold(qb.t + spare * (0.35 + r() * 0.2), "qbSet", other ?? this.ahead);
+		}
+		if (windAt - qb.t > STEP_UP_MS + 250 && r() < STEP_UP) {
+			const t0 = qb.t;
+			const s = this.of(qb.at);
+			qb.go(
+				this.w({ d: s.d + STEP_UP_FT, a: s.a }),
+				t0 + STEP_UP_MS,
+				"walk",
+				to,
+			);
+			qb.arms("qbSet", t0, qb.t);
+		}
+		if (windAt - qb.t > PUMP_MS + 400 && r() < PUMP) {
+			qb.hold(windAt - PUMP_MS - 250 - r() * 150, "qbSet", to);
+			qb.act("pump", qb.t + PUMP_MS, to);
+		}
+	}
+
 	airYards(how: "complete" | "other", yds: number, td: boolean): number {
 		const r = this.r;
 		const toGoal = this.goalD / YD;
@@ -1189,7 +1257,8 @@ class Action {
 		let ms = 0;
 		for (let k = 1; k < pts.length && along < upto; k++) {
 			const go = Math.min(dist(pts[k - 1]!, pts[k]!), upto - along);
-			ms += (go / (speed * (k === 1 ? 0.8 : 1))) * 1000 + (k > 1 ? 90 : 0);
+			ms +=
+				(go / (speed * (k === 1 ? 0.8 : 1))) * 1000 + (k > 1 ? BREAK_COST : 0);
 			along += go;
 		}
 		return ms;
@@ -1231,7 +1300,7 @@ class Action {
 			const to = go < seg ? this.w(alongRoute(route, along + go)) : pts[k]!;
 			// Out of his stance a little slower.
 			const v = speed * (k === 1 ? 0.8 : 1);
-			const t1 = m.t + ((go / v) * 1000 + (k > 1 ? 90 : 0)) / pace;
+			const t1 = m.t + ((go / v) * 1000 + (k > 1 ? BREAK_COST : 0)) / pace;
 			if (until !== undefined && t1 > until) {
 				const u = (until - m.t) / (t1 - m.t);
 				const p = m.at;
