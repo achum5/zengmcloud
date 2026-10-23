@@ -477,6 +477,16 @@ const SHED_SPREAD = 350;
 const STALK_FAR = 36;
 const STALK_WON = 0.6;
 
+// After the ball: at this much of his speed at most - this much faster than
+// he needs to be, to get there in time - a leg this long at a time (ms), at
+// where the carrier will be this long after it, this far off him (feet),
+// closing in as he goes down.
+const PURSUIT_PACE = 0.85;
+const PURSUIT_URGE = 1.2;
+const PURSUIT_STEP = 350;
+const PURSUIT_LEAD = 300;
+const PURSUIT_RING = 10;
+
 // After the whistle, how long a man down stays down, and getting up.
 const DOWN_MS = 900;
 const GET_UP_MS = 1000;
@@ -1609,7 +1619,7 @@ class Action {
 			carrier.go(ahead, t + 900, "jog");
 			carrier.hold(t + 2600, "stand");
 			this.done.add(carrier.pid);
-			this.pursue(chasers, end.pt, t, []);
+			this.pursue(chasers, end.pt, t, [], carrier);
 			return;
 		}
 		const down = this.downBy(carrier, end.pt, t, chasers, by);
@@ -1623,7 +1633,7 @@ class Action {
 		}
 		const pile = this.tackle(carrier, down.by, end.pt, down.t);
 		this.gangUp(chasers, pile, down.t, down.by);
-		this.pursue(chasers, end.pt, down.t, down.by);
+		this.pursue(chasers, end.pt, down.t, down.by, carrier);
 	}
 
 	// Making a man miss on the way, now and then on a long enough carry: one
@@ -1990,21 +2000,41 @@ class Action {
 	// The rest of the defense after the ball - whoever is not busy with
 	// something of his own through it: each to where the play ends up,
 	// near it, as fast as he can get there - those too far off never do,
-	// and pull up at the whistle.
-	pursue(men: Actor[], pt: Pt, t: number, tacklers: Actor[]) {
+	// and pull up at the whistle. After a man with the ball, on an angle
+	// to him as he goes, closing in on him from his own side of him.
+	pursue(men: Actor[], pt: Pt, t: number, tacklers: Actor[], carrier?: Actor) {
 		const r = this.r;
 		for (const m of men) {
 			if (this.done.has(m.pid) || tacklers.includes(m) || m.t >= t) {
 				continue;
 			}
 			m.hold(Math.max(m.t, this.seen));
-			const ang = Math.atan2(m.at.y - pt.y, m.at.x - pt.x) + (r() - 0.5) * 0.8;
+			const turn = (r() - 0.5) * 0.8;
 			const ring = 5 + r() * 9;
-			m.chase(
-				{ x: pt.x + Math.cos(ang) * ring, y: pt.y + Math.sin(ang) * ring },
-				t + 200 + r() * 500,
-				m.top * 0.95,
-			);
+			const arrive = t + 200 + r() * 500;
+			const end = () => {
+				const ang = Math.atan2(m.at.y - pt.y, m.at.x - pt.x) + turn;
+				return {
+					x: pt.x + Math.cos(ang) * ring,
+					y: pt.y + Math.sin(ang) * ring,
+				};
+			};
+			// (No sooner than he needs to be, or near enough: not stood off
+			// him, going along with him.)
+			while (carrier && m.t + PURSUIT_STEP < arrive - 300) {
+				const c = m.t + PURSUIT_STEP;
+				const him = carrier.posAt(c + PURSUIT_LEAD);
+				const off =
+					ring + (PURSUIT_RING - ring) * clamp((arrive - c) / 1500, 0, 1);
+				const a = Math.atan2(m.at.y - him.y, m.at.x - him.x);
+				const need = (dist(m.at, end()) / (arrive - m.t)) * 1000;
+				m.chase(
+					{ x: him.x + Math.cos(a) * off, y: him.y + Math.sin(a) * off },
+					c,
+					clamp(need * PURSUIT_URGE, m.top * 0.45, m.top * PURSUIT_PACE),
+				);
+			}
+			m.chase(end(), arrive, m.top * 0.95);
 		}
 	}
 
