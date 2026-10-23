@@ -56,6 +56,7 @@ import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
 import { ANIMS, bounceAt, isGait, type AnimName, type Body } from "./poses.ts";
 import {
 	drawSprite,
+	prepareSprites,
 	startFrame,
 	type Scratch,
 	type SpriteCache,
@@ -722,6 +723,31 @@ export const drawFrame = (f: Frame) => {
 
 	const onFloor = new Set(players.map((p) => p.pid));
 	const bench = benchStates(f, onFloor);
+	// Everybody drawn as a sprite, in what he wears - his new pictures made
+	// before anything is drawn, nearest first (see prepareSprites).
+	const onCourt = players.map((st) => {
+		const look = f.lookFor(st.pid);
+		return {
+			st,
+			body: f.bodyFor(st.pid),
+			look: f.moment.warm ? warmupLook(look, f.warmups[st.team]) : look,
+		};
+	});
+	const benched = bench.map(({ st, warm }) => {
+		const look = f.lookFor(st.pid);
+		return {
+			st,
+			body: f.bodyFor(st.pid),
+			look: warm ? warmupLook(look, f.warmups[st.team]) : look,
+		};
+	});
+	prepareSprites(
+		f.scratch,
+		cam,
+		[...onCourt, ...benched, ...(f.crew ?? [])],
+		1,
+		f.sprites,
+	);
 
 	// The building: the stands (on their feet after a big play), the LED
 	// ribbon, the floor round the court, the court, the table, the benches.
@@ -884,39 +910,11 @@ export const drawFrame = (f: Frame) => {
 
 	type Item = { depth: number; draw: () => void };
 	const items: Item[] = [];
-	for (const st of players) {
+	for (const { st, body, look } of [...onCourt, ...benched]) {
 		items.push({
 			depth: depthOf(cam, { x: st.x, y: st.y, z: 3 }),
 			draw: () => {
-				const look = f.lookFor(st.pid);
-				drawSprite(
-					ctx,
-					f.scratch,
-					cam,
-					st,
-					f.bodyFor(st.pid),
-					f.moment.warm ? warmupLook(look, f.warmups[st.team]) : look,
-					1,
-					f.sprites,
-				);
-			},
-		});
-	}
-	for (const { st, warm } of bench) {
-		const look = f.lookFor(st.pid);
-		items.push({
-			depth: depthOf(cam, { x: st.x, y: st.y, z: 3 }),
-			draw: () => {
-				drawSprite(
-					ctx,
-					f.scratch,
-					cam,
-					st,
-					f.bodyFor(st.pid),
-					warm ? warmupLook(look, f.warmups[st.team]) : look,
-					1,
-					f.sprites,
-				);
+				drawSprite(ctx, f.scratch, cam, st, body, look, 1, f.sprites);
 			},
 		});
 	}

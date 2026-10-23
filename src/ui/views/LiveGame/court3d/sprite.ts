@@ -1,4 +1,4 @@
-import { project, type Camera } from "./camera.ts";
+import { project, type Camera, type Projected } from "./camera.ts";
 import {
 	legTurnFrom,
 	type Blend,
@@ -143,6 +143,8 @@ export type SpriteCache = {
 		number,
 		{ kept: Kept; frame: number; behind: number; scale: number }
 	>;
+	// This frame's plan for each man made ready (see prepareSprites).
+	plans: Map<PlayerState, Plan>;
 };
 // How many frames in a row a man may be drawn as he was; and how much
 // more time a frame may take on new pictures while the picture is black.
@@ -157,12 +159,14 @@ export const makeSpriteCache = (): SpriteCache => ({
 	spent: 0,
 	skipped: 0,
 	last: new Map(),
+	plans: new Map(),
 });
 // A new frame: none of its time spent yet.
 export const startFrame = (cache: SpriteCache) => {
 	cache.frame += 1;
 	cache.spent = 0;
 	cache.skipped = 0;
+	cache.plans.clear();
 };
 const KEEP = 2400;
 // And no more than this many pixels of them (four bytes each): beyond about
@@ -423,16 +427,30 @@ const stepped = (st: PlayerState, k: Steps) => {
 	};
 };
 
-export const drawSprite = (
-	ctx: CanvasRenderingContext2D,
-	scratch: Scratch,
+// Where he is drawn this frame and in which picture: worked out once a
+// frame (see prepareSprites), used again when he is drawn.
+type Plan = {
+	base: Projected;
+	lift: number;
+	left: number;
+	right: number;
+	upper: number;
+	lower: number;
+	pose: ReturnType<typeof stepped>;
+	// His size on the picture, in steps of 4%.
+	scale: number;
+	id: number;
+	key?: string;
+};
+
+const planOf = (
 	cam: Camera,
 	st: PlayerState,
 	body: Body,
 	look: Look,
 	px: number,
 	cache?: SpriteCache,
-) => {
+): Plan | undefined => {
 	const base = project(cam, { x: st.x, y: st.y, z: 0 });
 	const k = base.k;
 	// Room for him wherever his arms and feet go: a box round where he stands
@@ -446,63 +464,68 @@ export const drawSprite = (
 	const lower = base.y + 0.9 * k - lift;
 	// Nothing of him on the picture: nothing to draw.
 	if (right < 0 || left > cam.viewW || lower < 0 || upper > cam.viewH) {
-		return;
+		return undefined;
 	}
 	const fine = cache?.fine === true;
 	const pose = stepped(st, fine ? FINE_STEPS : COARSE_STEPS);
-	let key: string | undefined;
-	let id = 0;
-	// His size on the picture, in steps of 4%.
 	const scale = Math.round(Math.log(k) / Math.log(1.04));
+	const plan: Plan = {
+		base,
+		lift,
+		left,
+		right,
+		upper,
+		lower,
+		pose,
+		scale,
+		id: 0,
+	};
 	if (cache) {
 		const known = cache.ids.get(look);
-		id = known ?? cache.next++;
+		const id = known ?? cache.next++;
 		if (known === undefined) {
 			cache.ids.set(look, id);
 		}
 		const f = pose.from;
 		const a = pose.arm;
-		key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
+		plan.id = id;
+		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
 			f ? `|${blendKey(f)}` : ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
-		const kept = cache.kept.get(key);
-		if (kept) {
-			// Kept longest are the ones still in use: to the back of the line.
-			cache.kept.delete(key);
-			cache.kept.set(key, kept);
-			stamp(ctx, kept, base.x, base.y - lift, px);
-			cache.last.set(id, {
-				kept,
-				frame: cache.frame,
-				behind: 0,
-				scale,
-			});
-			return;
-		}
-		// Out of time this frame, and drawn a moment ago: as he was.
-		const was = cache.last.get(id);
-		const over =
-			cache.budget !== undefined &&
-			cache.spent >= cache.budget * (cache.dark ? DARK_BUDGET : 1);
-		if (
-			over &&
-			was &&
-			was.behind < MAX_BEHIND &&
-			was.frame === cache.frame - 1 &&
-			// (Not much bigger or smaller since: no lurch at a cut - unless
-			// the picture is black.)
-			(cache.dark || Math.abs(was.scale - scale) <= 1)
-		) {
-			stamp(ctx, was.kept, base.x, base.y - lift, px);
-			was.frame = cache.frame;
-			was.behind += 1;
-			return;
-		}
-		if (over && cache.dark) {
-			cache.skipped += 1;
-			return;
-		}
 	}
+	return plan;
+};
+
+// Whether he may be drawn this frame in the picture he had last frame (out
+// of time for a new one): if he had one a frame ago, not for too many frames
+// already, and not much bigger or smaller since - no lurch at a cut - unless
+// the picture is black.
+const asWas = (cache: SpriteCache, plan: Plan) => {
+	const was = cache.last.get(plan.id);
+	return was &&
+		was.behind < MAX_BEHIND &&
+		was.frame === cache.frame - 1 &&
+		(cache.dark || Math.abs(was.scale - plan.scale) <= 1)
+		? was
+		: undefined;
+};
+const overBudget = (cache: SpriteCache) =>
+	cache.budget !== undefined &&
+	cache.spent >= cache.budget * (cache.dark ? DARK_BUDGET : 1);
+
+// His picture for the plan, made: kept, with a cache - or, without, left on
+// the scratch sheet to be drawn from.
+const make = (
+	plan: Plan,
+	scratch: Scratch,
+	cam: Camera,
+	st: PlayerState,
+	body: Body,
+	look: Look,
+	px: number,
+	cache?: SpriteCache,
+): Kept | { w: number; h: number; ox: number; oy: number } => {
+	const { base, lift, left, right, upper, lower, pose } = plan;
 	const began = cache ? performance.now() : 0;
 	// Drawn standing on the floor; a jump only moves the picture up.
 	const posed: PlayerState = {
@@ -600,7 +623,7 @@ export const drawSprite = (
 
 	// Kept for next time: just what is drawn of him (the rim round it, his
 	// head and all).
-	if (cache && key) {
+	if (cache && plan.key) {
 		const x0 = Math.max(0, Math.min(box.x0 - 1, hx0));
 		const y0 = Math.max(0, Math.min(box.y0 - 1, hy0));
 		const x1 = Math.min(w, Math.max(box.x1 + 2, hx1));
@@ -609,7 +632,7 @@ export const drawSprite = (
 			x1 > x0 && y1 > y0
 				? keep(
 						cache,
-						key,
+						plan.key,
 						canvas,
 						x0,
 						y0,
@@ -621,28 +644,116 @@ export const drawSprite = (
 				: undefined;
 		cache.spent += performance.now() - began;
 		if (kept) {
-			cache.last.set(id, {
+			return kept;
+		}
+	}
+	return { w, h, ox, oy };
+};
+
+// THE NEW PICTURES A FRAME NEEDS, MADE NEAREST FIRST. The frame is drawn
+// from the back of the picture to the front, so left to that, a frame out
+// of time for new pictures ran out on the men nearest the camera - the
+// biggest on the picture - and drew them behind their pose. Made here first
+// instead, before anything is drawn, nearest first while there is time (and
+// whoever has no picture to be drawn in meanwhile, regardless) - so the men
+// left a frame behind are the furthest and smallest.
+export const prepareSprites = (
+	scratch: Scratch,
+	cam: Camera,
+	men: { st: PlayerState; body: Body; look: Look }[],
+	px: number,
+	cache: SpriteCache,
+) => {
+	const todo: { man: (typeof men)[number]; plan: Plan; wait: boolean }[] = [];
+	for (const man of men) {
+		const plan = planOf(cam, man.st, man.body, man.look, px, cache);
+		if (plan?.key === undefined) {
+			continue;
+		}
+		cache.plans.set(man.st, plan);
+		if (!cache.kept.has(plan.key)) {
+			todo.push({ man, plan, wait: asWas(cache, plan) !== undefined });
+		}
+	}
+	todo.sort((a, b) => b.plan.base.k - a.plan.base.k);
+	for (const { man, plan, wait } of todo) {
+		// Out of time: drawn as he was - or, the picture black, left out of
+		// the frame (see drawSprite).
+		if (overBudget(cache) && (wait || cache.dark)) {
+			continue;
+		}
+		make(plan, scratch, cam, man.st, man.body, man.look, px, cache);
+	}
+};
+
+export const drawSprite = (
+	ctx: CanvasRenderingContext2D,
+	scratch: Scratch,
+	cam: Camera,
+	st: PlayerState,
+	body: Body,
+	look: Look,
+	px: number,
+	cache?: SpriteCache,
+) => {
+	const plan = cache?.plans.get(st) ?? planOf(cam, st, body, look, px, cache);
+	if (!plan) {
+		return;
+	}
+	const { base, lift } = plan;
+	if (cache && plan.key !== undefined) {
+		const kept = cache.kept.get(plan.key);
+		if (kept) {
+			// Kept longest are the ones still in use: to the back of the line.
+			cache.kept.delete(plan.key);
+			cache.kept.set(plan.key, kept);
+			stamp(ctx, kept, base.x, base.y - lift, px);
+			cache.last.set(plan.id, {
 				kept,
 				frame: cache.frame,
 				behind: 0,
-				scale,
+				scale: plan.scale,
 			});
-			stamp(ctx, kept, base.x, base.y - lift, px);
 			return;
 		}
+		// Out of time this frame, and drawn a moment ago: as he was.
+		if (overBudget(cache)) {
+			const was = asWas(cache, plan);
+			if (was) {
+				stamp(ctx, was.kept, base.x, base.y - lift, px);
+				was.frame = cache.frame;
+				was.behind += 1;
+				return;
+			}
+			if (cache.dark) {
+				cache.skipped += 1;
+				return;
+			}
+		}
+	}
+	const made = make(plan, scratch, cam, st, body, look, px, cache);
+	if ("canvas" in made) {
+		cache?.last.set(plan.id, {
+			kept: made,
+			frame: cache.frame,
+			behind: 0,
+			scale: plan.scale,
+		});
+		stamp(ctx, made, base.x, base.y - lift, px);
+		return;
 	}
 	const smoothing = ctx.imageSmoothingEnabled;
 	ctx.imageSmoothingEnabled = false;
 	ctx.drawImage(
-		canvas,
+		scratch.canvas,
 		0,
 		0,
-		w,
-		h,
-		Math.round(ox),
-		Math.round(oy - lift),
-		w * px,
-		h * px,
+		made.w,
+		made.h,
+		Math.round(made.ox),
+		Math.round(made.oy - lift),
+		made.w * px,
+		made.h * px,
 	);
 	ctx.imageSmoothingEnabled = smoothing;
 };
