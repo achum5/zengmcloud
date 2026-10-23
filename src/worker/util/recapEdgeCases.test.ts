@@ -736,6 +736,20 @@ describe("edge cases", () => {
 			"He had not scored more than 31 in a game this season.",
 		].join(" ");
 		assert.deepEqual(verifyRecap(`**x**\n\n${right}`, g), []);
+		// A previous high, of whatever column it names.
+		const kinds = (s: string) =>
+			verifyRecap(`**x**\n\n${s}`, g).map((v) => v.kind);
+		assert.deepEqual(kinds("Ace Hawk's previous season high was 31."), []);
+		assert.deepEqual(kinds("Ace Hawk's previous season high was 29."), [
+			"season high",
+		]);
+		assert.deepEqual(
+			kinds("Ace Hawk's previous season high was 12 rebounds."),
+			[],
+		);
+		assert.deepEqual(kinds("Ace Hawk's previous season high was 9 assists."), [
+			"season high",
+		]);
 	});
 
 	// "They were 12 up going into the fourth" was never held to the

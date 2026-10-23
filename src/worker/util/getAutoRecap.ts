@@ -5508,19 +5508,27 @@ const vsAverageNote = (
 				: star.pts >= avg.pts * 2
 					? "doubled it"
 					: undefined;
+		// What he had been doing, next to what he did - in one sentence. "Anthony
+		// Mathis came in averaging 17.3 points a game." opened a paragraph on
+		// its own and left the reader to go back for the 33.
+		const ratio = star.pts / avg.pts;
+		const against =
+			ratio > 2.02
+				? "more than twice"
+				: ratio >= 1.98
+					? "twice"
+					: ratio >= 1.8
+						? "nearly twice"
+						: "well above";
 		return pick(
 			rng,
 			[
-				// The plain fact, the way a note reads: what he had been
-				// doing, next to what he did.
-				`${star.name} came in averaging ${avg.pts.toFixed(1)} points a game.`,
+				`${poss(star.name)} ${star.pts} points were ${against} his ${fmtPct(avg.pts)} average.`,
 				...(beat
 					? [
-							`${star.name} had been averaging ${avg.pts.toFixed(1)} points a game, and he ${beat}.`,
+							`${star.name} had been averaging ${fmtPct(avg.pts)} points a game, and he ${beat}.`,
 						]
-					: [
-							`${star.name} had been averaging ${avg.pts.toFixed(1)} points a game coming in.`,
-						]),
+					: []),
 			],
 			"vsAvgHigh",
 		);
@@ -5530,8 +5538,8 @@ const vsAverageNote = (
 		return pick(
 			rng,
 			[
-				`It was a quiet night by ${poss(star.name)} standards - he came in averaging ${avg.pts.toFixed(1)} points a game.`,
-				`The ${avg.pts.toFixed(1)} a night ${star.name} averages never showed up.`,
+				`It was a quiet night by ${poss(star.name)} standards - he came in averaging ${fmtPct(avg.pts)} points a game.`,
+				`The ${fmtPct(avg.pts)} a night ${star.name} averages never showed up.`,
 			],
 			"vsAvgLow",
 		);
@@ -5592,8 +5600,8 @@ const careerArcNote = (
 		return pick(
 			rng,
 			[
-				`At ${avg.pts.toFixed(1)} a night, ${star.name} is having the best scoring season of his career.`,
-				`${poss(star.name)} ${avg.pts.toFixed(1)} per game is a career best in year ${seasons}.`,
+				`At ${fmtPct(avg.pts)} a night, ${star.name} is having the best scoring season of his career.`,
+				`${poss(star.name)} ${fmtPct(avg.pts)} per game is a career best in year ${seasons}.`,
 				`No season ${star.name} has played has scored like this one.`,
 			],
 			"careerBest",
@@ -7733,7 +7741,61 @@ const buildGameRecap = (game: RecapGame): string => {
 	if (para4.length > 0) {
 		paragraphs.push(tidy(para4));
 	}
-	return `**${headline.text}**\n\n${withRecords(paragraphs, game, shape).join("\n\n")}`;
+	return `**${headline.text}**\n\n${withRecords(teamTheSwitch(paragraphs, shape), game, shape).join("\n\n")}`;
+};
+
+// A MAN WHOSE SIDE THE SENTENCE BEFORE DID NOT SET UP. A sentence that opens
+// on a bare name right after one about the other club reads as that club's
+// man: "The Grizzlies got to the line more than twice as often, 32 attempts
+// to 11. Cade Brooks sprained his shoulder..." - and Cade Brooks plays for
+// the Hawks. He gets his club, as the wire writes it: "The Hawks' Cade
+// Brooks sprained his shoulder". Across paragraphs too: a notes paragraph
+// opens straight after the losers' lines.
+export const teamTheSwitch = (paragraphs: string[], shape: Shape): string[] => {
+	const sides = [shape.winner, shape.loser];
+	const sideOfName = new Map<string, RecapTeam>();
+	for (const t of sides) {
+		for (const p of t.players) {
+			sideOfName.set(p.name, t);
+		}
+	}
+	const names = [...sideOfName.keys()].sort((a, b) => b.length - a.length);
+	let prev = "";
+	return paragraphs.map((para) => {
+		const sentences = para.split(/(?<=[!.?])\s+(?=[A-Z])/);
+		for (let i = 0; i < sentences.length; i++) {
+			const cur = sentences[i]!;
+			const who = names.find(
+				(n) => cur.startsWith(`${n} `) && !cur.startsWith(`${n}'`),
+			);
+			const team = who ? sideOfName.get(who) : undefined;
+			if (who && team) {
+				const other = sides.find((t) => t !== team)!;
+				const mentions = (s: string, t: RecapTeam) =>
+					s.includes(nick(t)) ||
+					t.players.some((p) => p.name !== who && s.includes(p.name));
+				// About the other club: names it or its men and not his. Not a
+				// sentence of the game's flow that names it as the object of
+				// "they" ("In the second half, they outscored the Spurs 53-37"),
+				// or as the side that never got back in front: those are about
+				// both.
+				const aboutOther =
+					mentions(prev, other) &&
+					!/\bthey\b|\bnever (?:led|trailed|got back)/i.test(prev);
+				if (
+					prev !== "" &&
+					!cur.includes(nick(team)) &&
+					!prev.includes(who) &&
+					aboutOther &&
+					!mentions(prev, team)
+				) {
+					sentences[i] = `${cap(poss(theNick(team)))} ${cur}`;
+				}
+			}
+			prev = sentences[i]!;
+		}
+		return sentences.join(" ");
+	});
 };
 
 export const getAutoRecap = (game: RecapGame): string =>

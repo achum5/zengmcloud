@@ -600,11 +600,12 @@ export const playerHighBeat = (
 	) {
 		return pick(
 			rng,
+			// Not "had not scored more than 31 in a game this season" or "had
+			// never gone past 31": the long way round, in the negative, to a
+			// season high - and one recap in thirty carried one.
 			[
 				`It was a season high for ${p.name}, whose previous best was ${e.high.pts}.`,
-				`${p.name} had not scored more than ${e.high.pts} in a game this season.`,
 				`${p.name} topped his season high of ${e.high.pts}.`,
-				`${p.name} had never gone past ${e.high.pts} in a game this season.`,
 				// Not "No night of his season had gone better than 31", which
 				// left the reader to supply what the 31 was. Bare, so it is
 				// never read as this game's line.
@@ -618,7 +619,7 @@ export const playerHighBeat = (
 			rng,
 			[
 				`The ${p.reb} rebounds were a season high for ${p.name}.`,
-				`${p.name} had not grabbed more than ${e.high.reb} in a game this season.`,
+				`${poss(p.name)} previous season high was ${e.high.reb} rebounds.`,
 				`It was ${poss(p.name)} best night on the glass this season.`,
 			],
 			"seasonHighReb",
@@ -629,7 +630,7 @@ export const playerHighBeat = (
 			rng,
 			[
 				`The ${p.ast} assists were a season high for ${p.name}.`,
-				`${p.name} had not handed out more than ${e.high.ast} in a game this season.`,
+				`${poss(p.name)} previous season high was ${e.high.ast} assists.`,
 				`It was ${poss(p.name)} best passing night of the season.`,
 			],
 			"seasonHighAst",

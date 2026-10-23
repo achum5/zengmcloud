@@ -886,6 +886,46 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "The Grizzlies got to the line more than twice as often, 32 attempts to
+	// 11. Cade Brooks sprained his shoulder..." - and he plays for the Hawks.
+	test("a man right after a sentence about the other club comes with his club", () => {
+		for (const { gid, recap, game } of pairs) {
+			const sideOf = new Map<string, RecapTeam>();
+			for (const t of game.teams) {
+				for (const p of t.players) {
+					sideOf.set(p.name, t);
+				}
+			}
+			const sentences = recap
+				.split("\n\n")
+				.slice(1)
+				.join(" ")
+				.split(/(?<=[!.?])\s+(?=[A-Z])/);
+			for (let i = 1; i < sentences.length; i++) {
+				const cur = sentences[i]!;
+				const prev = sentences[i - 1]!;
+				const who = [...sideOf.keys()].find((n) => cur.startsWith(`${n} `));
+				const mine = who ? sideOf.get(who) : undefined;
+				const other = game.teams.find((t) => t !== mine);
+				if (!who || !mine || !other || cur.includes(mine.name)) {
+					continue;
+				}
+				const opensOnOther =
+					prev.startsWith(`The ${other.name}`) ||
+					other.players.some((p) => prev.startsWith(p.name));
+				const mentionsMine =
+					prev.includes(mine.name) ||
+					mine.players.some((p) => prev.includes(p.name));
+				assert.ok(
+					!opensOnOther ||
+						mentionsMine ||
+						/\bthey\b|\bnever (?:led|trailed|got back)/i.test(prev),
+					`gid ${gid}: ${prev} || ${cur}`,
+				);
+			}
+		}
+	});
+
 	// "Bulls cannot keep up with the Pacers, 110-107" over a game won on a
 	// jumper with 19.9 seconds left.
 	test("a headline's verb fits the margin", () => {

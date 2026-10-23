@@ -897,6 +897,28 @@ export const verifyRecap = (
 		}
 	}
 
+	// --- an average he carried in -----------------------------------------------
+	// "came in averaging 17.3 points a game", "his 17.3 average": the season
+	// line, or in the playoffs the postseason one, whichever he had.
+	for (const sentence of splitSentences(recap)) {
+		for (const m of sentence.matchAll(
+			/\b(?:came in averaging|had been averaging|his) (\d+(?:\.\d)?) (?:points a game|average)\b/g,
+		)) {
+			const who = lastNameIn(sentence.slice(0, m.index));
+			const p = who ? byName.get(who) : undefined;
+			if (!p) {
+				continue;
+			}
+			const n = Number(m[1]);
+			const lines = [p.seasonAvg?.pts, p.playoffAvg?.pts].filter(
+				(x): x is number => x !== undefined,
+			);
+			if (lines.length > 0 && !lines.some((x) => Math.abs(x - n) < 0.051)) {
+				add("average", `said ${who} ${n}, real ${lines.join("/")}`, sentence);
+			}
+		}
+	}
+
 	// --- what a man carried in: streaks, counts, highs ------------------------
 	//
 	// "Has not been held under 20 in eight games", "his sixth 30-point game
@@ -975,13 +997,22 @@ export const verifyRecap = (
 			// The previous scoring high - not his best against tonight's
 			// opponent, which is its own claim below.
 			m =
-				/had not scored more than (\d+)\b(?! in \w+ earlier games against)|season high of (\d+)|previous best was (\d+)|had never gone past (\d+)/.exec(
+				/had not scored more than (\d+)\b(?! in \w+ earlier games against)|season high of (\d+)|previous best was (\d+)|had never gone past (\d+)|previous season high was (\d+)(?!\d| (?:rebounds|assists))/.exec(
 					sentence,
 				);
 			if (m) {
-				const n = Number(m[1] ?? m[2] ?? m[3] ?? m[4]);
+				const n = Number(m[1] ?? m[2] ?? m[3] ?? m[4] ?? m[5]);
 				if (n !== e.high.pts) {
 					add("season high", `said ${n}, real ${e.high.pts}`, sentence);
+				}
+			}
+			// "His previous season high was 13 assists."
+			m = /previous season high was (\d+) (rebounds|assists)/.exec(sentence);
+			if (m) {
+				const n = Number(m[1]);
+				const real = m[2] === "rebounds" ? e.high.reb : e.high.ast;
+				if (n !== real) {
+					add("season high", `said ${n} ${m[2]}, real ${real}`, sentence);
 				}
 			}
 			// "...had not scored more than 17 in two earlier games against the
