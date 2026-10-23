@@ -86,7 +86,12 @@ const faceSprite = async (
 		const canvas = document.createElement("canvas");
 		canvas.width = Math.round(CROP.w * SCALE);
 		canvas.height = Math.round(CROP.h * SCALE);
-		const ctx = canvas.getContext("2d")!;
+		// Kept in plain memory, not on the graphics card: it is only ever
+		// drawn onto the sheet each new picture of him is made on (see
+		// sprite.ts), which is in plain memory - and a picture on the card
+		// drawn onto one in plain memory is copied back off the card first,
+		// every time (a stall of the whole page, each new pose of each man).
+		const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
 		ctx.drawImage(
 			img,
 			CROP.x,
@@ -98,6 +103,9 @@ const faceSprite = async (
 			canvas.width,
 			canvas.height,
 		);
+		// (Settled into plain pixels now, not kept as a drawing of the face
+		// to be done over whenever it is drawn from.)
+		ctx.putImageData(ctx.getImageData(0, 0, canvas.width, canvas.height), 0, 0);
 		return {
 			img: canvas,
 			cx: (FACE_CENTER.x - CROP.x) * SCALE,
