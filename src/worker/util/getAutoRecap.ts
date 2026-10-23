@@ -1228,6 +1228,9 @@ type PostseasonContext = {
 		wSeed?: number;
 		lSeed?: number;
 	};
+	// A play-in game's stakes, for the lede after the score: " to claim the
+	// No. 7 seed", " to end the Pacers' season".
+	playInLede?: string;
 	// Full sentences for the body.
 	sentences: string[];
 };
@@ -1252,37 +1255,32 @@ const postseasonContext = (
 	const w = theNick(shape.winner);
 	const l = theNick(shape.loser);
 
+	// THE STAKES ARE THE STORY, and they lead: "Keegan Green posted 23
+	// points and 13 assists as the Lakers cruised past the Pacers" opened
+	// the night the Lakers took the last playoff berth, and the berth waited
+	// for the end of the second paragraph. The lede says what the game won
+	// ("...beat the Pacers 122-101 to claim the last playoff berth"), the
+	// headline carries it, and the body adds the other side.
 	if (game.playIn) {
 		const p = game.playIn;
+		const seed =
+			typeof p.prizeSeed === "number"
+				? `the No. ${p.prizeSeed} seed`
+				: undefined;
 		if (p.kind === "seed7v8") {
-			out.headlineTag = "a play-in game";
+			out.headlineTail = `, claiming ${seed ?? "the higher seed"}`;
+			out.playInLede = ` to claim ${seed ?? "the higher seed"}`;
 			out.sentences.push(
-				`With the win in the 7-vs-8 play-in game, ${theNick(
-					shape.winner,
-				)} claimed the ${
-					typeof p.prizeSeed === "number" ? `No. ${p.prizeSeed}` : "higher"
-				} seed, while ${theNick(
-					shape.loser,
-				)} dropped into a win-or-go-home game for the final spot.`,
+				`${cap(l)} drop into a win-or-go-home game for the final spot.`,
 			);
 		} else if (p.kind === "seed9v10") {
-			out.headlineTag = "an elimination game";
-			out.sentences.push(
-				`The 9-vs-10 play-in win kept ${theNick(
-					shape.winner,
-				)} alive and sent them to the final play-in game; ${poss(
-					theNick(shape.loser),
-				)} season is over.`,
-			);
+			out.headlineTail = `, ending ${poss(l)} season`;
+			out.playInLede = ` to end ${poss(l)} season`;
+			out.sentences.push(`${cap(w)} move on to the final play-in game.`);
 		} else {
-			out.headlineTag = "a win-or-go-home game";
-			out.sentences.push(
-				`${cap(w)} grabbed the last playoff berth${
-					typeof p.prizeSeed === "number"
-						? ` as the No. ${p.prizeSeed} seed`
-						: ""
-				}, ending ${poss(theNick(shape.loser))} season in the final play-in game.`,
-			);
+			out.headlineTail = ", claiming the last playoff berth";
+			out.playInLede = ` to claim the last playoff berth${seed ? ` as ${seed}` : ""}`;
+			out.sentences.push(`${cap(poss(l))} season is over.`);
 		}
 		return out;
 	}
@@ -2051,6 +2049,62 @@ const buildHeadlineText = (
 				: [...options, ...starOptions],
 			"headline:clinch",
 		);
+		return h(
+			text,
+			text.includes(star.name),
+			false,
+			text.includes(statPhrase(star, 1)),
+		);
+	}
+
+	// A PLAY-IN GAME IS HEADLINED BY WHAT IT WON. "Franz Ellis' 40 edges
+	// Marcus Green's 38 in the Pistons' win in a play-in game" buried the
+	// seed the win took; "Lakers take care of the Pacers 122-101 in a
+	// win-or-go-home game", the playoff berth.
+	const pi = game.playIn;
+	if (pi) {
+		const score = scoreTag(shape);
+		const prize =
+			pi.kind === "seed7v8"
+				? typeof pi.prizeSeed === "number"
+					? `the #${pi.prizeSeed} seed`
+					: "the higher seed"
+				: pi.kind === "final"
+					? "the last playoff spot"
+					: undefined;
+		const big =
+			shape.winner.players.includes(star) &&
+			(star.pts >= 30 || doubleCategories(star).length >= 3);
+		const starVerb =
+			doubleCategories(star).length >= 3
+				? `${star.name} posts a ${doubleWord(doubleCategories(star).length)!}`
+				: statPhrase(star, 1) === plural(star.pts, "point")
+					? `${star.name} scores ${star.pts}`
+					: `${star.name} has ${statPhrase(star, 1)}`;
+		const options = prize
+			? [
+					`${winnerN} beat the ${loserN} ${score} for ${prize}`,
+					`${winnerN} claim ${prize} with ${aFigure(score)} win over the ${loserN}`,
+					...(shot && !shot.tying
+						? [
+								`${poss(shot.name)} ${shot.shot} wins ${prize} for the ${winnerN}`,
+							]
+						: []),
+					...(big ? [`${starVerb} as the ${winnerN} claim ${prize}`] : []),
+				]
+			: [
+					`${winnerN} end the ${poss(loserN)} season, ${score}`,
+					`${winnerN} knock the ${loserN} out of the play-in, ${score}`,
+					...(shot && !shot.tying
+						? [
+								`${poss(shot.name)} ${shot.shot} ends the ${poss(loserN)} season`,
+							]
+						: []),
+					...(big
+						? [`${starVerb} as the ${winnerN} end the ${poss(loserN)} season`]
+						: []),
+				];
+		const text = pick(rng, options, "headline:playIn");
 		return h(
 			text,
 			text.includes(star.name),
@@ -7339,7 +7393,7 @@ const buildGameRecap = (game: RecapGame): string => {
 	const where =
 		headline.spentState && post.state
 			? ` in Game ${post.state.gameNo} of ${post.state.round}`
-			: clinchLede?.text;
+			: (clinchLede?.text ?? post.playInLede);
 	if (where && para1.length > 0) {
 		// The sentence with the result in it: after the score, or after the
 		// losers' name when the headline has the score.
@@ -7358,14 +7412,32 @@ const buildGameRecap = (game: RecapGame): string => {
 			`${plain} in ${otPhrase(shape.ot)}`,
 			plain,
 		].find((t) => first.includes(t));
+		// "erased a 23-point deficit to beat the Heat 115-111 to claim the
+		// No. 7 seed": after one infinitive the second becomes a participle.
+		const GERUND: Record<string, string> = {
+			claim: "claiming",
+			end: "ending",
+			close: "closing",
+			win: "winning",
+			finish: "finishing",
+			reach: "reaching",
+		};
+		const stakes =
+			/\bto (?:beat|top|take down|knock off|win|edge|outlast)\b/.test(
+				first.slice(0, tag ? first.indexOf(tag) : first.indexOf(loserName)),
+			)
+				? where.replace(/ to (\w+)/, (m, verb: string) =>
+						GERUND[verb] ? `, ${GERUND[verb]}` : m,
+					)
+				: where;
 		if (tag) {
-			para1[i] = first.replace(tag, `${tag}${where}`);
+			para1[i] = first.replace(tag, `${tag}${stakes}`);
 		} else {
 			const at = first.indexOf(loserName);
 			para1[i] =
 				at >= 0
-					? `${first.slice(0, at + loserName.length)}${where}${first.slice(at + loserName.length)}`
-					: `${first.slice(0, -1)}${where}.`;
+					? `${first.slice(0, at + loserName.length)}${stakes}${first.slice(at + loserName.length)}`
+					: `${first.slice(0, -1)}${stakes}.`;
 		}
 	}
 

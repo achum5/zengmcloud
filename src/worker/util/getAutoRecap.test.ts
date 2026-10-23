@@ -1186,7 +1186,27 @@ describe("getAutoRecap play-in", () => {
 
 	test("9-vs-10 elimination ends a season", () => {
 		const recap = getAutoRecap(playInGame("seed9v10", undefined));
-		assert.ok(/season is over/.test(recap), recap);
+		assert.ok(/season is over|end the Hawks' season/.test(recap), recap);
+	});
+
+	// "Lakers take care of the Pacers 122-101 in a win-or-go-home game" over
+	// "Keegan Green posted 23 points and 13 assists as the Lakers cruised
+	// past the Pacers", the berth left to the second paragraph.
+	test("a play-in game's stakes lead the headline and the lede", () => {
+		for (const [kind, seed, said] of [
+			["seed7v8", 7, /#7 seed/],
+			["seed9v10", undefined, /Hawks' season|out of the play-in/],
+			["final", 8, /last playoff spot/],
+		] as const) {
+			const recap = getAutoRecap(playInGame(kind, seed));
+			const [head, body] = recap.split("\n\n");
+			assert.match(head!, said, recap);
+			assert.match(
+				body!,
+				/(?:to claim|claiming) the No\. 7 seed|(?:to end|ending) the Hawks' season|(?:to claim|claiming) the last playoff berth as the No\. 8 seed/,
+				recap,
+			);
+		}
 	});
 
 	test("final play-in grabs the last playoff spot", () => {
