@@ -593,7 +593,10 @@ export const playerHighBeat = (
 				`${p.name} had not scored more than ${e.high.pts} in a game this season.`,
 				`${p.name} topped his season high of ${e.high.pts}.`,
 				`${p.name} had never gone past ${e.high.pts} in a game this season.`,
-				`No night of ${poss(p.name)} season had gone better than ${e.high.pts}.`,
+				// Not "No night of his season had gone better than 31", which
+				// left the reader to supply what the 31 was. Bare, so it is
+				// never read as this game's line.
+				`${poss(p.name)} previous season high was ${e.high.pts}.`,
 			],
 			"seasonHighPts",
 		);

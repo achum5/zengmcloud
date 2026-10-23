@@ -501,6 +501,7 @@ describe("season highs, streaks, milestones and returns", () => {
 		for (const s of all) {
 			assert.notMatch(s, /# points/);
 			assert.match(s, /#|season high|best/);
+			assert.notMatch(s, /had gone better than/);
 		}
 		const quiet = player({
 			name: "Jayson Tatum",

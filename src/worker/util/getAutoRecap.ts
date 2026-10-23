@@ -4011,7 +4011,11 @@ const gameStory = (
 			out.push(
 				pick(
 					rng,
-					[`${cap(l)} never got back in front.`, `${W} did not trail again.`],
+					[
+						`${cap(l)} never got back in front.`,
+						`${W} did not trail again.`,
+						`${W} led the rest of the way.`,
+					],
 					"story:held",
 				),
 			);
