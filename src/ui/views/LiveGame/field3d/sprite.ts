@@ -1,5 +1,5 @@
 import { project, type Camera } from "../court3d/camera.ts";
-import { lerpPose, type Body, type Pose } from "../court3d/poses.ts";
+import { lerpPose, type Body, type Pose, type V3 } from "../court3d/poses.ts";
 import {
 	keep,
 	rim,
@@ -19,7 +19,7 @@ import {
 	withArms,
 	type Move,
 } from "./poses.ts";
-import { sculptFigure, type Figure } from "./sculpt.ts";
+import { sculptFigure, type Figure, type HeldBall } from "./sculpt.ts";
 
 // THE PLAYERS ON THE FIELD, DRAWN - the way the court draws its own (see
 // court3d/sprite.ts, whose cache this shares): each sculpted on a sheet of
@@ -56,6 +56,9 @@ export type FieldPlayerState = {
 	arms?: { move: Move; phase: number };
 	// His helmet off, in his hand: on the sideline.
 	bare?: true;
+	// The ball he has on its way to another man's hands, or coming to his:
+	// drawn on its own, not in his (see evaluate.ts).
+	unseen?: true;
 };
 
 type Blend = {
@@ -174,6 +177,53 @@ export const drawnPose = (
 	return { pose: poseFor(st, s), yaw: s.yaw };
 };
 
+// The ball with him, the way he has it - just after he changed how, still
+// partway from the way he had it.
+const ballFor = (
+	st: FieldPlayerState,
+	body: Body,
+	pose: Pose,
+	s: Stepped,
+	hold: BallHold,
+): HeldBall => {
+	const now = heldBall(body, pose, hold);
+	const was = s.from?.ball;
+	const w = s.from?.w ?? 0;
+	const ball =
+		was && was !== hold && w > 0
+			? mixBall(heldBall(body, pose, was), now, w)
+			: now;
+	return st.unseen ? { ...ball, unseen: true } : ball;
+};
+const mixV = (a: V3, b: V3, w: number): V3 => ({
+	f: a.f * w + b.f * (1 - w),
+	s: a.s * w + b.s * (1 - w),
+	u: a.u * w + b.u * (1 - w),
+});
+const unit = (v: V3): V3 => {
+	const l = Math.hypot(v.f, v.s, v.u) || 1;
+	return { f: v.f / l, s: v.s / l, u: v.u / l };
+};
+const mixBall = (a: HeldBall, b: HeldBall, w: number): HeldBall => ({
+	at: mixV(a.at, b.at, w),
+	axis: unit(mixV(a.axis, b.axis, w)),
+	laces: unit(mixV(a.laces, b.laces, w)),
+});
+
+// Where the ball he has is drawn on him (his frame), and the way he faces
+// as drawn.
+export const drawnBall = (
+	st: FieldPlayerState,
+	body: Body,
+	fine = false,
+): { ball: HeldBall; yaw: number } | undefined => {
+	if (!st.ball) {
+		return undefined;
+	}
+	const s = stepped(st, fine ? FINE : COARSE);
+	return { ball: ballFor(st, body, poseFor(st, s), s, st.ball), yaw: s.yaw };
+};
+
 const figureOf = (st: FieldPlayerState, body: Body, s: Stepped): Figure => {
 	const pose = poseFor(st, s);
 	return {
@@ -183,7 +233,7 @@ const figureOf = (st: FieldPlayerState, body: Body, s: Stepped): Figure => {
 		yaw: s.yaw,
 		pose,
 		grips: gripsOf(st.move, st.ball),
-		...(st.ball ? { ball: heldBall(body, pose, st.ball) } : {}),
+		...(st.ball ? { ball: ballFor(st, body, pose, s, st.ball) } : {}),
 	};
 };
 
@@ -226,7 +276,7 @@ export const drawFieldPlayer = (
 		if (known === undefined) {
 			cache.ids.set(look, id);
 		}
-		key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
+		key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
 			from
 				? `|${from.move}${from.mirrored ? "m" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}`
 				: ""

@@ -654,6 +654,11 @@ const GET_UP_MS = 1000;
 const READ_MS = 350;
 // A defender sees the ball thrown and breaks on it this long after.
 const BREAK_MS = 250;
+// At the mesh, the quarterback this far to the side of the back's way
+// through it (feet): the two of them drawn the size they are (see body.ts),
+// his hands out to the ball, and not into each other. (Turned to it as he
+// goes there, side on, so he is facing it when the back gets there.)
+const MESH_APART = 3;
 // A quarterback keeping it on a run (not a sneak): off a ride this often -
 // held out in the back's belly this long (ms), the back on past it this far
 // (feet) - and out round the edge, at least this far across (feet).
@@ -1298,6 +1303,22 @@ class Action {
 	// it and where it leaves him.
 	handBall() {
 		const segs = this.ball;
+		// (Nobody on with it the way he had it before the snap - the center
+		// still in his stance on a knee - once the play has it elsewhere.)
+		const first = segs[0];
+		if (first) {
+			for (const m of this.men) {
+				if (!m.legs.some((l) => l.ball && l.t1 > first.t0)) {
+					continue;
+				}
+				m.split(first.t0);
+				for (const l of m.legs) {
+					if (l.t0 >= first.t0) {
+						delete l.ball;
+					}
+				}
+			}
+		}
 		for (const [k, s] of segs.entries()) {
 			if (s.kind !== "held") {
 				continue;
@@ -1583,18 +1604,13 @@ class Action {
 			);
 			const qbMesh = this.w({
 				d: this.of(meshPt).d,
-				a: this.of(meshPt).a - side * 2,
+				a: this.of(meshPt).a - side * MESH_APART,
 			});
 			fakeT = Math.max(
 				has + 180 + (dist(qb.at, qbMesh) / 19) * 1000 + r() * 150,
 				snap + 150 + (dist(faker.at, meshPt) / (faker.top * 0.75)) * 1000,
 			);
-			qb.go(
-				qbMesh,
-				fakeT - PA_MS / 2,
-				gun ? "slide" : "back",
-				this.toward(qb.at, meshPt),
-			);
+			qb.go(qbMesh, fakeT - PA_MS / 2, "slide", this.toward(qbMesh, meshPt));
 			qb.act("handOff", fakeT + PA_MS / 2, this.toward(qbMesh, meshPt));
 			if (bootSide) {
 				setAt = this.w({
@@ -4375,7 +4391,7 @@ class Action {
 					);
 		const qbMesh = this.w({
 			...this.of(meshPt),
-			a: this.of(meshPt).a - (sweep ? side : strong) * 2,
+			a: this.of(meshPt).a - (sweep ? side : strong) * MESH_APART,
 		});
 		const lead = cs.a === 0 && cs.d < -10 ? 0 : 150;
 		let mesh =
@@ -4404,12 +4420,7 @@ class Action {
 			this.at.set(handoffI, mesh);
 		}
 		if (carrier !== qb) {
-			qb.go(
-				qbMesh,
-				mesh - 60,
-				gun ? "slide" : "back",
-				this.toward(qb.at, meshPt),
-			);
+			qb.go(qbMesh, mesh - 60, "slide", this.toward(qbMesh, meshPt));
 			qb.act("handOff", mesh + 160, this.toward(qbMesh, meshPt));
 			qb.go(
 				this.w({ d: this.of(qbMesh).d - 6, a: this.of(qbMesh).a - strong * 9 }),
@@ -4433,7 +4444,7 @@ class Action {
 			);
 			const qbRide = this.w({
 				...this.of(riderMesh),
-				a: this.of(riderMesh).a - way * 2,
+				a: this.of(riderMesh).a - way * MESH_APART,
 			});
 			const rideT = Math.max(
 				has + 180 + (dist(qb.at, qbRide) / 19) * 1000 + r() * 150,
@@ -4442,8 +4453,8 @@ class Action {
 			qb.go(
 				qbRide,
 				rideT - RIDE_MS / 2,
-				gun ? "slide" : "back",
-				this.toward(qb.at, riderMesh),
+				"slide",
+				this.toward(qbRide, riderMesh),
 			);
 			qb.act("handOff", rideT + RIDE_MS / 2, this.toward(qbRide, riderMesh));
 			// (The back on with his fake into the line, and pulled up.)

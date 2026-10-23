@@ -1,5 +1,11 @@
 import { apartAt, apartOf, type Sep } from "./apart.ts";
-import type { BallSeg, FieldTimeline, Leg, Play } from "./director.ts";
+import type {
+	BallHold,
+	BallSeg,
+	FieldTimeline,
+	Leg,
+	Play,
+} from "./director.ts";
 import type { Pt, Pt3, Side } from "./geometry.ts";
 import { along, goes, paceAt } from "./pace.ts";
 import { liftOf, moveKind, strideOf, type Move } from "./poses.ts";
@@ -175,8 +181,12 @@ const handsMet = (
 				? play.parts.find((p) => p.pid === seg.pid)
 				: undefined;
 		const st = part ? stateOf(part, t, apart) : undefined;
+		const hold =
+			seg?.kind === "held" ? holdNear(play, seg.pid, t, thrown) : undefined;
 		const at =
-			st?.ball && !(thrown && KICKED.has(st.move)) ? handsOf(st) : undefined;
+			st && hold && !(thrown && KICKED.has(st.move))
+				? handsOf({ ...st, ball: hold })
+				: undefined;
 		return at ? { x: at.x - end.x, y: at.y - end.y, z: at.z - end.z } : NONE;
 	};
 	const next = play.ball[k + 1];
@@ -229,6 +239,109 @@ const ballAt = (
 	return p ? { focus: { x: p.x, y: p.y, z: 3.5 }, carrier: p.team } : {};
 };
 
+// HANDED OVER, NOT THROWN: the ball from one man's hands into another's (a
+// handoff, a snap under center), up off the turf into a man's hands, or put
+// down on it - over this long, the moment the play has it change hands in
+// the middle of it (or less, with less time for it either side), from
+// where it was drawn to where it will be, up over a little rise if it goes
+// any way: so much a foot it goes, and no more than so much.
+const PASS_MS = 240;
+const PASS_RISE = 0.12;
+const PASS_RISE_MOST = 1;
+
+// How he has the ball handing it over at t - the last way he had it by
+// then - or taking it, the first way he has it from then on. (Not long
+// before or after: it is his only so long.)
+const HOLD_NEAR_MS = 600;
+const holdNear = (
+	play: Play,
+	pid: number,
+	t: number,
+	giving: boolean,
+): BallHold | undefined => {
+	const legs = play.parts.find((p) => p.pid === pid)?.legs ?? [];
+	if (giving) {
+		for (let i = legs.length - 1; i >= 0; i--) {
+			const l = legs[i]!;
+			if (l.t0 < t && l.ball) {
+				return l.t1 > t - HOLD_NEAR_MS ? l.ball : undefined;
+			}
+		}
+		return undefined;
+	}
+	const l = legs.find((x) => x.t1 > t && x.ball);
+	return l && l.t0 < t + HOLD_NEAR_MS ? l.ball : undefined;
+};
+
+const passing = (
+	play: Play,
+	t: number,
+	players: FieldPlayerState[],
+	handsOf: HandsOf,
+): { at: Pt3; axis: Pt3; unseen: number[] } | undefined => {
+	const segs = play.ball;
+	const k = lastStarted(segs, t, (b) => b.t0);
+	for (const j of [k, k + 1]) {
+		const a = segs[j - 1];
+		const b = segs[j];
+		if (
+			!a ||
+			!b ||
+			a.kind === "fly" ||
+			b.kind === "fly" ||
+			(a.kind === "spot" && b.kind === "spot") ||
+			(a.kind === "held" && b.kind === "held" && a.pid === b.pid)
+		) {
+			continue;
+		}
+		const t0 = b.t0;
+		const after = segs[j + 1];
+		const half = Math.min(
+			PASS_MS / 2,
+			t0 - a.t0,
+			after ? after.t0 - t0 : PASS_MS / 2,
+		);
+		if (half <= 0 || Math.abs(t - t0) >= half) {
+			continue;
+		}
+		// (Each end where the ball is drawn at t: in a man's hands, the way he
+		// has it just before or just after it changes hands - or on the turf.)
+		const end = (seg: BallSeg, giving: boolean): Pt3 | undefined => {
+			if (seg.kind === "spot") {
+				return seg.at;
+			}
+			if (seg.kind !== "held") {
+				return undefined;
+			}
+			const st = players.find((p) => p.id === seg.pid);
+			const hold = holdNear(play, seg.pid, t0, giving);
+			return st && hold ? handsOf({ ...st, ball: hold }) : undefined;
+		};
+		const from = end(a, true);
+		const to = end(b, false);
+		if (!from || !to) {
+			return undefined;
+		}
+		const u = (t - (t0 - half)) / (half * 2);
+		const e = u * u * (3 - 2 * u);
+		const flat = Math.hypot(to.x - from.x, to.y - from.y);
+		const rise = Math.min(PASS_RISE_MOST, PASS_RISE * flat);
+		return {
+			at: {
+				x: from.x + (to.x - from.x) * e,
+				y: from.y + (to.y - from.y) * e,
+				z: from.z + (to.z - from.z) * e + 4 * rise * e * (1 - e),
+			},
+			axis:
+				flat > 0.01
+					? { x: (to.x - from.x) / flat, y: (to.y - from.y) / flat, z: 0.3 }
+					: { x: 1, y: 0, z: 0.3 },
+			unseen: [a, b].flatMap((x) => (x.kind === "held" ? [x.pid] : [])),
+		};
+	}
+	return undefined;
+};
+
 // Where one man is at t and what he is doing.
 const stateOf = (
 	part: { pid: number; team: Side; legs: Leg[] },
@@ -253,20 +366,28 @@ const stateOf = (
 	}
 	// The way he faced coming into this leg, and how far he had come in
 	// strides.
+	// (And the way he was drawn facing as it started: a leg too short for
+	// his turn into it to be done, still turning.)
 	let before = legs[0]!.yaw ?? 0;
+	let turned = before;
 	let ran = 0;
 	let ranBefore = 0;
 	for (let j = 0; j < k; j++) {
 		const lj = legs[j]!;
-		before = yawOf(lj, before) + (lj.turn ?? 0);
+		const aim = yawOf(lj, before);
+		before = aim + (lj.turn ?? 0);
+		turned =
+			j > 0 && lj.t1 - lj.t0 < TURN_MS
+				? lerpAngle(turned, before, (lj.t1 - lj.t0) / TURN_MS)
+				: before;
 		ranBefore = ran;
 		ran = moveKind(lj.move) === "cycle" ? ran + lengthOf(lj) : 0;
 	}
 	let yaw = yawOf(l, before) + (l.turn ?? 0) * along(l, t);
 	const since = t - l.t0;
 	const prev = k > 0 ? legs[k - 1] : undefined;
-	if (prev && since < TURN_MS && !l.turn) {
-		yaw = lerpAngle(before, yaw, clamp01(since / TURN_MS));
+	if (prev && since < TURN_MS) {
+		yaw = lerpAngle(turned, yaw, clamp01(since / TURN_MS));
 	}
 	// (Just changed what he is doing, his arms, or how he has the ball:
 	// eased out of what he was, his feet - the same stride - kept in
@@ -338,7 +459,19 @@ export const momentAt = (
 			players.push(st);
 		}
 	}
-	const { ball, focus, carrier } = ballAt(play, t, players, apart, handsOf);
+	const held = ballAt(play, t, players, apart, handsOf);
+	const carrier = held.carrier;
+	let { ball, focus } = held;
+	const over = handsOf && passing(play, t, players, handsOf);
+	if (over) {
+		for (const st of players) {
+			if (over.unseen.includes(st.id) && st.ball) {
+				st.unseen = true;
+			}
+		}
+		ball = { at: over.at, axis: over.axis };
+		focus = over.at;
+	}
 	const flags = play.flags
 		.filter((f) => t >= f.t0)
 		.map((f) => {

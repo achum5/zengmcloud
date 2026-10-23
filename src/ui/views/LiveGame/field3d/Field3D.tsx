@@ -33,7 +33,6 @@ import { drawnBody, FIGURE_SCALE, footballBody, officialBody } from "./body.ts";
 import { makeFieldCamera, MAIN_RIG, REPLAY_RIG } from "./camera.ts";
 import { compileField, type FieldTimeline } from "./director.ts";
 import { momentAt, playAt, type HandsOf } from "./evaluate.ts";
-import { heldBall } from "./poses.ts";
 import { bodyPoint } from "./sculpt.ts";
 import {
 	fieldStyleFor,
@@ -89,7 +88,7 @@ import {
 	tvCameraGear,
 } from "./media.ts";
 import { tvCrewFor } from "./tv.ts";
-import { drawFieldPlayer, drawnPose } from "./sprite.ts";
+import { drawFieldPlayer, drawnBall } from "./sprite.ts";
 import { drawTags, type TagCover } from "./tags.ts";
 import { showerGear } from "./shower.ts";
 import { chainGear } from "./sticks.ts";
@@ -166,13 +165,13 @@ const DRAWN_DEFAULT = drawnFootballBody();
 const handsOfFor =
 	(bodyOf: (pid: number) => Body, fine: () => boolean): HandsOf =>
 	(st) => {
-		if (!st.ball) {
+		const drawn = drawnBall(st, bodyOf(st.id), fine());
+		if (!drawn) {
 			return undefined;
 		}
-		const { pose, yaw } = drawnPose(st, fine());
 		const at = bodyPoint(
-			{ x: st.x, y: st.y, z: st.z * FIGURE_SCALE, yaw },
-			heldBall(bodyOf(st.id), pose, st.ball).at,
+			{ x: st.x, y: st.y, z: st.z * FIGURE_SCALE, yaw: drawn.yaw },
+			drawn.ball.at,
 		);
 		return { x: at.x, y: at.y, z: at.z / FIGURE_SCALE };
 	};

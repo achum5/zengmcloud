@@ -180,8 +180,9 @@ export const bodyPoint = (at: Placed, v: V3): Pt3 => {
 export type Grip = "open" | "relaxed" | "fist" | "ball";
 
 // The ball with him: its middle, the way its points run, and which way its
-// laces face - in his frame (feet).
-export type HeldBall = { at: V3; axis: V3; laces: V3 };
+// laces face - in his frame (feet). (Unseen: on its way from his hands to
+// another man's, drawn on its own - his hands on it all the same.)
+export type HeldBall = { at: V3; axis: V3; laces: V3; unseen?: true };
 
 export type Figure = Placed & {
 	pose: Pose;
@@ -1131,7 +1132,7 @@ const build = (
 		);
 	}
 
-	if (fig.ball) {
+	if (fig.ball && !fig.ball.unseen) {
 		const b = fig.ball;
 		add(
 			addV(b.at, b.axis, -BALL_LEN / 2),
