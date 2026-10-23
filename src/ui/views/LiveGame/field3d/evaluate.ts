@@ -8,7 +8,7 @@ import type {
 } from "./director.ts";
 import type { Pt3, Side } from "./geometry.ts";
 import { along, goes, lagged, paceAt, placeAt } from "./pace.ts";
-import { liftOf, moveKind, strideOf, type Move } from "./poses.ts";
+import { liftOf, loopRate, moveKind, strideOf, type Move } from "./poses.ts";
 import type { FieldPlayerState } from "./sprite.ts";
 
 // THE FIELD AT ONE MOMENT: where everybody is and what each is doing, read
@@ -102,6 +102,9 @@ const phaseOf = (
 	if (kind === "act") {
 		const [p0, p1] = l.span ?? [0, 1];
 		return p0 + (p1 - p0) * along(l, t);
+	}
+	if (kind === "loop") {
+		return (t / 1000) * loopRate(l.move) + offset;
 	}
 	return (before + lengthOf(l) * u) / strideOf(l.move) + offset;
 };

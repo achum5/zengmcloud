@@ -490,6 +490,7 @@ const yawOf = (l: Leg, before: number): number =>
 // taking a knee; otherwise tucked away.
 const IN_HANDS = new Set<Move>([
 	"qbSet",
+	"pocket",
 	"handOff",
 	"kneelDown",
 	"catch",
@@ -555,6 +556,14 @@ const flightOf = (from: Pt, to: Pt): { ms: number; peak: number } => {
 	const s = l / v;
 	return { ms: s * 1000, peak: Math.max(0.4, (G * s * s) / 8) };
 };
+
+// A drop this deep (feet, from under center) taken side on to the field,
+// turned this far (radians, the way he opens to throw), for this share of
+// it and this share of the time - backpedalling the rest.
+const DROP_TURN_FT = 18;
+const DROP_TURN = 1.2;
+const DROP_TURNED = 0.75;
+const DROP_TURNED_MS = 0.7;
 
 // A kick's rush off the edge (a man this far out from the ball, feet):
 // round the end of the wall this far outside him, and in at the kick this
@@ -1637,12 +1646,26 @@ class Action {
 				this.ahead,
 			);
 			faker.arms("fakeCarry", fakeT - 200, fakeT + 300);
+		} else if (dropD >= DROP_TURN_FT && !gun) {
+			// (Five or seven steps: turned and away most of it, side on, then
+			// round to the field for the last of it.)
+			const turned = this.w({
+				d: qbStart.d - dropD * DROP_TURNED,
+				a: qbStart.a,
+			});
+			qb.go(
+				turned,
+				has + dropMs * DROP_TURNED_MS,
+				"slide",
+				this.ahead + DROP_TURN,
+			);
+			qb.go(setAt, has + dropMs, "back", this.ahead);
 		} else if (dropD > 0) {
 			qb.go(setAt, has + dropMs, "back", this.ahead);
 		}
 		const ready = bootSide ? bootReady : qb.t + 150;
 		if (!bootSide) {
-			qb.hold(ready, "qbSet", this.ahead);
+			qb.hold(ready, "pocket", this.ahead);
 		}
 
 		// A back's screen: up beside the quarterback as if to block, a beat.
@@ -1856,7 +1879,7 @@ class Action {
 					(y) => Math.abs(Math.atan2(Math.sin(y - to), Math.cos(y - to))) > 0.5,
 				);
 			const other = others[Math.floor(r() * others.length)];
-			qb.hold(qb.t + spare * (0.35 + r() * 0.2), "qbSet", other ?? this.ahead);
+			qb.hold(qb.t + spare * (0.35 + r() * 0.2), "pocket", other ?? this.ahead);
 		}
 		if (windAt - qb.t > STEP_UP_MS + 250 && r() < STEP_UP) {
 			const t0 = qb.t;
@@ -1870,7 +1893,7 @@ class Action {
 			qb.arms("qbSet", t0, qb.t);
 		}
 		if (windAt - qb.t > PUMP_MS + 400 && r() < PUMP) {
-			qb.hold(windAt - PUMP_MS - 250 - r() * 150, "qbSet", to);
+			qb.hold(windAt - PUMP_MS - 250 - r() * 150, "pocket", to);
 			qb.act("pump", qb.t + PUMP_MS, to);
 		}
 	}
@@ -1912,7 +1935,7 @@ class Action {
 		});
 		const w0 = throwAt - WIND_MS;
 		const cocked = w0 + WIND_MS * WIND_COCKED;
-		qb.hold(w0, "qbSet", way + SET_OPEN);
+		qb.hold(w0, "pocket", way + SET_OPEN);
 		qb.act("throwWind", cocked, way + SET_OPEN, ahead(STRIDE * 0.75));
 		qb.last.span = [0, WIND_COCKED];
 		qb.turn(COIL);
@@ -3683,7 +3706,7 @@ class Action {
 			),
 		});
 		// Feeling it, he tries to get away from it.
-		qb.hold(t - 800, "qbSet", this.ahead);
+		qb.hold(t - 800, "pocket", this.ahead);
 		qb.go(at, t);
 		this.endCarry(
 			i,
@@ -3699,7 +3722,7 @@ class Action {
 		const r = this.r;
 		const e = this.ev(i);
 		const yds = typeof e.yds === "number" ? e.yds : 0;
-		qb.hold(go, "qbSet", this.ahead);
+		qb.hold(go, "pocket", this.ahead);
 		const ta = this.tacklerA(qb, go);
 		const side =
 			ta !== undefined && r() < 0.75 ? Math.sign(ta) || 1 : r() < 0.5 ? -1 : 1;
@@ -3738,7 +3761,7 @@ class Action {
 				: qb.at;
 		const forcer = this.man(this.statPids("defFmbFrc")[0]);
 		const step = (dist(qb.at, at) / (qb.top * 0.6)) * 1000;
-		qb.hold(Math.max(qb.t, t - Math.max(800, step)), "qbSet", this.ahead);
+		qb.hold(Math.max(qb.t, t - Math.max(800, step)), "pocket", this.ahead);
 		qb.go(at, t);
 		const down = this.downBy(qb, at, t, this.d, forcer ? [forcer] : undefined);
 		this.at.set(i, down.t);

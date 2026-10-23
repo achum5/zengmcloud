@@ -873,6 +873,26 @@ const FIELD_ANIMS = {
 	prone: { kind: "still", pose: PRONE },
 	supine: { kind: "still", pose: SUPINE },
 	qbSet: { kind: "still", pose: QB_SET },
+	// Set in the pocket, the ball up in both hands: up on the balls of his
+	// feet, his weight from one to the other, never stood still.
+	pocket: {
+		kind: "loop",
+		n: 8,
+		fps: 11,
+		pose: (i) => {
+			const a = Math.sin((Math.PI * 2 * i) / 8);
+			return {
+				...QB_SET,
+				hipN: 12 + 4 * a,
+				kneeN: 22 + 8 * a,
+				hipF: 16 - 4 * a,
+				kneeF: 22 - 8 * a,
+				toeN: Math.max(0, a) * 0.4,
+				toeF: Math.max(0, -a) * 0.4,
+				twist: 3 * a,
+			};
+		},
+	},
 	// A receiver sat down in a hole in the zone, turned to the quarterback,
 	// hands up for it.
 	settle: {
@@ -3147,6 +3167,12 @@ const isCourtMove = (m: Move): m is CourtMove =>
 // finish.
 export const moveKind = (m: Move): "still" | "loop" | "cycle" | "act" =>
 	isCourtMove(m) ? ANIMS[m as AnimName].kind : FIELD_ANIMS[m].kind;
+
+// How many times round a loop goes a second.
+export const loopRate = (m: Move): number => {
+	const a = FIELD_ANIMS[m as FieldAnimName] as FieldAnim | undefined;
+	return a?.kind === "loop" ? a.fps / a.n : 0;
+};
 
 // How long a stride of a cycle is (feet).
 export const strideOf = (m: Move): number => {
