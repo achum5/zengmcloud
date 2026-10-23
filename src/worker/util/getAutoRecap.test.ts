@@ -1824,6 +1824,84 @@ describe("a headline fits on a line", () => {
 		);
 	});
 
+	// "Franz Foster scores 17, and the Rockets even the series" over a
+	// 7-steal night; "Franz Foster scored his 17 on 6-of-10 shooting" under
+	// it, and the steals were nowhere in the piece.
+	test("a signature steals night keeps its number when the headline is cut", () => {
+		assert.equal(
+			trimHeadline(
+				"Franz Foster has 17 points and 7 steals, and the Rockets even the series with the Nets at 2-2",
+			),
+			"Franz Foster has 7 steals, and the Rockets even the series with the Nets at 2-2",
+		);
+	});
+
+	test("a star's line is not flattened into a pair's points", () => {
+		const win = realisticTeam(
+			{ tid: 1, region: "Houston", name: "Rockets", abbrev: "HOU", pts: 116 },
+			player({ name: "Franz Foster", pts: 17, stl: 7, ast: 4, fg: 6, fga: 10 }),
+		);
+		win.players.push(
+			player({ name: "Tyrese Foster", pts: 17, reb: 5, fg: 7, fga: 13 }),
+		);
+		const lose = realisticTeam(
+			{ tid: 2, region: "Brooklyn", name: "Nets", abbrev: "BKN", pts: 101 },
+			player({ name: "Marcus Carter", pts: 18, reb: 12, fg: 5, fga: 9 }),
+		);
+		for (let gid = 1300; gid < 1312; gid++) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [win, lose], winnerTid: 1 }),
+			);
+			if (recap.includes("Franz Foster")) {
+				assert.match(recap, /7 steals/, recap);
+			}
+		}
+	});
+
+	test("the man who outscored the star is named", () => {
+		const win = realisticTeam(
+			{
+				tid: 1,
+				region: "Oklahoma City",
+				name: "Thunder",
+				abbrev: "OKC",
+				pts: 120,
+			},
+			player({ name: "Grant Jackson", pts: 17, ast: 8, fg: 7, fga: 13 }),
+		);
+		win.players.push(
+			player({
+				name: "Anthony Jackson",
+				pts: 17,
+				reb: 6,
+				ast: 4,
+				stl: 2,
+				fg: 7,
+				fga: 12,
+			}),
+			player({
+				name: "Jaden Jackson",
+				pts: 15,
+				reb: 7,
+				ast: 5,
+				stl: 2,
+				fg: 6,
+				fga: 11,
+			}),
+			player({ name: "Miles Jackson", pts: 18, fg: 7, fga: 16 }),
+		);
+		const lose = realisticTeam(
+			{ tid: 2, region: "Phoenix", name: "Suns", abbrev: "PHX", pts: 91 },
+			player({ name: "Obi King", pts: 26, fg: 10, fga: 24 }),
+		);
+		for (let gid = 1320; gid < 1330; gid++) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [win, lose], winnerTid: 1 }),
+			);
+			assert.match(recap, /Miles Jackson/, recap);
+		}
+	});
+
 	test("a headline that fits is left alone", () => {
 		const fits =
 			"Herb Hayes has 22 points and 11 assists as the Heat edge the Pelicans";

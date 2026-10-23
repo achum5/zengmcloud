@@ -1650,7 +1650,9 @@ const h = (
 // under it gives the rest, since it prints whatever the headline did not.
 const HEADLINE_MAX = 80;
 // The number kept is the one the night was about: "Anthony Foster scores 10
-// as the Rockets take down the Jazz" was a 10-point, 16-rebound night.
+// as the Rockets take down the Jazz" was a 10-point, 16-rebound night, and
+// "Franz Foster scores 17" a 7-steal one - five steals or blocks is a
+// signature line, whatever the points.
 const TRIM_VERB: Record<string, string> = {
 	rebounds: "grabs",
 	assists: "hands out",
@@ -1665,14 +1667,18 @@ export const trimHeadline = (text: string): string => {
 		.replace(
 			/ (?:has|turns in|goes for|puts up|posts) (\d+) points(?:, \d+ \w+,)? and (\d+) (rebounds|assists|steals|blocks)(?= as | in |, and )/,
 			(_, pts: string, n: string, what: string) =>
-				Number(n) > Number(pts)
+				Number(n) > Number(pts) ||
+				(Number(n) >= 5 && (what === "steals" || what === "blocks"))
 					? ` ${TRIM_VERB[what]} ${n} ${what}`
 					: ` scores ${pts}`,
 		)
 		.replace(
 			/('s?) (\d+) points and (\d+) (rebounds|assists|steals|blocks) (?=not enough|power|lead|carry|lift|sink)/,
 			(_, s: string, pts: string, n: string, what: string) =>
-				Number(n) > Number(pts) ? `${s} ${n} ${what} ` : `${s} ${pts} `,
+				Number(n) > Number(pts) ||
+				(Number(n) >= 5 && (what === "steals" || what === "blocks"))
+					? `${s} ${n} ${what} `
+					: `${s} ${pts} `,
 		);
 };
 
@@ -1688,6 +1694,10 @@ const buildHeadline = (
 	return {
 		...built,
 		text,
+		// Cut to length, it no longer carries his whole line, and the lede
+		// gives it: "Franz Foster scores 17" over a 7-steal night left the
+		// steals out of the piece.
+		spentLine: built.spentLine && text === built.text,
 		spentScore: text.includes(scoreTag(shape)),
 	};
 };
@@ -2837,8 +2847,11 @@ const leadSentence = (
 // of a hat.
 // A teammate with the same number as the star, neither with a double-double:
 // the two are told together ("scored 26 apiece"), never one after the other.
+// Not when his line is more than points: "Franz Foster and Tyrese Foster
+// scored 17 points apiece" dropped the 7 steals he was picked for.
 const twinOf = (shape: Shape, star: RecapPlayer): RecapPlayer | undefined =>
-	doubleCategories(star).length >= 2
+	doubleCategories(star).length >= 2 ||
+	statPhrase(star) !== plural(star.pts, "point")
 		? undefined
 		: shape.winner.players.find(
 				(p) =>
@@ -4263,6 +4276,15 @@ const supportSentence = (
 	if (featured && at > 0) {
 		cast.splice(at, 1);
 		cast.unshift(featured);
+	}
+	// And the man who outscored the star is never left out for a better
+	// all-round line: "Anthony Jackson chipped in 17 points, and Jaden
+	// Jackson supplied 15" said nothing of Miles Jackson's team-high 18.
+	const scorer = [...shape.winner.players].sort((a, b) => b.pts - a.pts)[0];
+	const scorerAt = scorer ? cast.indexOf(scorer) : -1;
+	if (scorer && scorerAt > 1 && scorer.pts > star.pts) {
+		cast.splice(scorerAt, 1);
+		cast.splice(1, 0, scorer);
 	}
 	// Impact decides WHO is worth a mention, but when the sentence only shows
 	// points, the order has to follow them: "Keegan Mathis threw in 13 points,
