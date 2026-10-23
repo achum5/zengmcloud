@@ -26,6 +26,8 @@ const NAMED = new Set<Role>([
 	"KR",
 	"PR",
 ]);
+// With the ball only to snap it or to set it down for the kick.
+const SNAPPED_TO = new Set<Role>(["C", "LS", "H"]);
 // Faded in and out over (ms) - the men before the snap from as they come
 // up to the line, apart.
 const IN_MS = 400;
@@ -69,7 +71,8 @@ const shownAt = (
 		i = j;
 	}
 	const seg = play.ball[i];
-	if (seg?.kind === "held") {
+	const roleOf = (pid: number) => play.parts.find((p) => p.pid === pid)?.role;
+	if (seg?.kind === "held" && !SNAPPED_TO.has(roleOf(seg.pid) ?? "C")) {
 		const prev = play.ball[i - 1];
 		// (Caught by the man tagged while it was in the air: still his.)
 		const caught =
@@ -84,7 +87,11 @@ const shownAt = (
 		);
 	} else {
 		const prev = play.ball[i - 1];
-		if (seg && prev?.kind === "held") {
+		if (
+			seg &&
+			prev?.kind === "held" &&
+			!SNAPPED_TO.has(roleOf(prev.pid) ?? "C")
+		) {
 			show(prev.pid, clamp01(1 - (t - seg.t0) / OUT_MS));
 		}
 		// Thrown, punted or kicked off: the man it is going to as well.
@@ -98,7 +105,7 @@ const shownAt = (
 			seg?.kind === "fly" &&
 			seg.t0 < play.whistle &&
 			(from?.kind === "held"
-				? NAMED.has(play.parts.find((p) => p.pid === from.pid)?.role ?? "C")
+				? NAMED.has(roleOf(from.pid) ?? "C")
 				: from?.kind === "spot" && from.stood === "tee")
 		) {
 			const to = targetOf(play, seg.t1, seg.to);

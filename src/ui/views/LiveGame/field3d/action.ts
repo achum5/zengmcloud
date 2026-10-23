@@ -502,6 +502,7 @@ const PURSUIT_URGE = 1.2;
 const PURSUIT_STEP = 350;
 const PURSUIT_LEAD = 300;
 const PURSUIT_RING = 10;
+const PULL_UP_MS = 900;
 
 // A quarterback with it in the open, down feet first this often - a run
 // that ends on a stretch this long at least (feet); sliding on this far
@@ -1713,7 +1714,7 @@ class Action {
 			carrier.go(ahead, t + 900, "jog");
 			carrier.hold(t + 2600, "stand");
 			this.done.add(carrier.pid);
-			this.pursue(chasers, end.pt, t, [], carrier);
+			this.pullUp(chasers, carrier, crossT);
 			return;
 		}
 		const down = this.downBy(carrier, end.pt, t, chasers, by);
@@ -2246,6 +2247,45 @@ class Action {
 				);
 			}
 			m.chase(end(), arrive, m.top * 0.95);
+		}
+	}
+
+	// A score: after him till he is in, and then given up - on a few
+	// strides, slowing, and stood looking at him (not all in the end zone
+	// round him).
+	pullUp(men: Actor[], carrier: Actor, t: number) {
+		const r = this.r;
+		for (const m of men) {
+			if (this.done.has(m.pid) || m.t >= t) {
+				continue;
+			}
+			m.hold(Math.max(m.t, this.seen));
+			while (m.t + PURSUIT_STEP < t) {
+				const c = m.t + PURSUIT_STEP;
+				const him = carrier.posAt(c + PURSUIT_LEAD);
+				const a = Math.atan2(m.at.y - him.y, m.at.x - him.x);
+				m.chase(
+					{
+						x: him.x + Math.cos(a) * PURSUIT_RING,
+						y: him.y + Math.sin(a) * PURSUIT_RING,
+					},
+					c,
+					m.top * PURSUIT_PACE,
+				);
+			}
+			const l = m.last;
+			const ms = Math.max(1, l.t1 - l.t0);
+			const vx = (l.to.x - l.from.x) / ms;
+			const vy = (l.to.y - l.from.y) / ms;
+			// (Half a second's run, slowing.)
+			const on = PULL_UP_MS * 0.5;
+			m.go(
+				onField({ x: m.at.x + vx * on, y: m.at.y + vy * on }),
+				m.t + PULL_UP_MS,
+				Math.hypot(vx, vy) * 1000 > 12 ? "jog" : "walk",
+			);
+			const at = carrier.posAt(m.t);
+			m.hold(m.t + 500 + r() * 900, "stand", this.toward(m.at, at));
 		}
 	}
 
