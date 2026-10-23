@@ -545,6 +545,41 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "The Trail Blazers assisted on 31 of their 39 baskets." and then "The
+	// ball found the open man all night for the Trail Blazers - 31 assists to
+	// 16.": one team number, told twice.
+	test("a team number is told once", () => {
+		const KW = {
+			ast: /assist/,
+			tp: /threes|three-pointers|from deep|from three/,
+			reb: /glass|boards|rebounds/,
+			tov: /turnovers|giveaways|gave it away|coughed it up/,
+		} as const;
+		for (const { gid, recap, game } of pairs) {
+			const names = game.teams.flatMap((t) => t.players.map((p) => p.name));
+			const sentences = recap
+				.replaceAll("\n\n", " ")
+				.split(/(?<=[!.?])\s+/)
+				.filter((x) => !names.some((n) => x.includes(n)));
+			for (const [k, re] of Object.entries(KW)) {
+				const totals = new Set(
+					game.teams.map((t) =>
+						t.players.reduce(
+							(a, p) => a + (p[k as keyof typeof KW] as number),
+							0,
+						),
+					),
+				);
+				const told = sentences.filter(
+					(x) =>
+						re.test(x) &&
+						[...x.matchAll(/\b\d+\b/g)].some((m) => totals.has(Number(m[0]))),
+				);
+				assert.isAtMost(told.length, 1, `gid ${gid} (${k})\n${recap}`);
+			}
+		}
+	});
+
 	// A headline cut down to "Herb Hayes scores 25" leaves his whole line to
 	// the lede.
 	test("a headline's trimmed line is given in full underneath", () => {

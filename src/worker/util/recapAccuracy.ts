@@ -305,6 +305,37 @@ export const verifyRecap = (
 			}
 		}
 
+		// --- plus-minus, with him and without -------------------------------
+		//
+		// "The Kings outscored the Bulls by 27 with Isaiah Ellis on the floor
+		// and were outscored by 24 without him": his plus-minus, and his
+		// team's margin less it.
+		for (const m of sentence.matchAll(
+			/by (\d+) with (.+?) on the floor and were outscored by (\d+) without him|^(.+?) was \+(\d+) in \d+ minutes; .* were outscored by (\d+) when he sat|won (.+?)'s? \d+ minutes by (\d+) and lost the rest by (\d+)/g,
+		)) {
+			const who = m[2] ?? m[4] ?? m[7];
+			const on = Number(m[1] ?? m[5] ?? m[8]);
+			const without = Number(m[3] ?? m[6] ?? m[9]);
+			// Every man of that name: two teams can carry one.
+			const fits = game.teams.flatMap((team) => {
+				const opp = game.teams.find((t) => t !== team)!;
+				return team.players.filter(
+					(p) =>
+						p.name === who &&
+						p.pm === on &&
+						p.pm - (team.pts - opp.pts) === without,
+				);
+			});
+			if (fits.length === 0) {
+				const p = who === undefined ? undefined : byName.get(who);
+				add(
+					"plus-minus",
+					`said +${on} and -${without} for ${who}, real ${p?.pm ?? "none"}`,
+					sentence,
+				);
+			}
+		}
+
 		// --- assisted baskets ------------------------------------------------
 		for (const m of sentence.matchAll(
 			/assisted on (\d+) of their (\d+) baskets/g,

@@ -3433,55 +3433,26 @@ const plusMinusNote = (
 	if (!best && !said) {
 		best = candidates[0];
 	}
-	// +25 is a genuinely dominant shift; the old +18 bar fired in nearly every
-	// blowout and turned the note into filler. And it has to say more than
-	// the score did: "Trey Dunn was +34 in 26 minutes" of a 28-point win is
-	// the final margin with a name on it.
-	if (!best || (best.pm ?? 0) < Math.max(25, shape.margin + 10)) {
+	// A PLUS-MINUS MEANS SOMETHING ONLY NEXT TO THE SCORE. "Nobody swung it
+	// further than Isaiah Ellis, +27 across 24 minutes" of a 3-point win left
+	// the reader to do the sum that makes it news - the team lost the minutes
+	// he sat by 24 - and "Trey Dunn was +34" of a 28-point rout was the margin
+	// with a name on it. The note says both halves, and runs only when both
+	// are big: +25 or better with him, 15 or worse without.
+	const pm = best?.pm ?? 0;
+	const off = pm - shape.margin;
+	if (!best || pm < 25 || off < 15) {
 		return undefined;
 	}
-	// The superlatives have to be measured against what they actually claim.
-	// `candidates` is the winner's players MINUS the star, so "best mark on the
-	// floor" was being asserted from a list that could not see the star or the
-	// losing side at all - and printed "Casey Dye finished +32, the best mark on
-	// the floor" in a game somebody else finished +34.
-	const maxPmOf = (players: RecapPlayer[]): number =>
-		players.reduce(
-			(acc, p) => (typeof p.pm === "number" && p.pm > acc ? p.pm : acc),
-			Number.NEGATIVE_INFINITY,
-		);
-	const pm = best.pm ?? 0;
-	const isTeamBest = pm >= maxPmOf(shape.winner.players);
-	const isFloorBest =
-		isTeamBest &&
-		pm >= maxPmOf([...shape.winner.players, ...shape.loser.players]);
-
-	// True whatever the ranking: it states the swing, not a superlative.
-	const neutral = [
-		`${best.name} was +${pm} in ${best.min} minutes.`,
-		`${cap(theNick(shape.winner))} outscored ${theNick(shape.loser)} by ${pm} with ${best.name} on the floor.`,
-		`${best.name} finished +${pm}.`,
-	];
+	const W = cap(theNick(shape.winner));
 	return pick(
 		rng,
-		isFloorBest
-			? [
-					`${best.name} was a team-best +${pm} in ${best.min} minutes.`,
-					`Nobody swung it further than ${best.name}, +${pm} across ${best.min} minutes.`,
-					`${best.name} finished +${pm}, the best mark on the floor.`,
-					`${cap(theNick(shape.winner))} outscored ${theNick(shape.loser)} by ${pm} with ${best.name} on the floor.`,
-				]
-			: isTeamBest
-				? [
-						`${best.name} was a team-best +${pm} in ${best.min} minutes.`,
-						...neutral,
-					]
-				: neutral,
-		isFloorBest
-			? "plusMinus"
-			: isTeamBest
-				? "plusMinusTeamBest"
-				: "plusMinusSecond",
+		[
+			`${W} outscored ${theNick(shape.loser)} by ${pm} with ${best.name} on the floor and were outscored by ${off} without him.`,
+			`${best.name} was +${pm} in ${best.min} minutes; ${theNick(shape.winner)} were outscored by ${off} when he sat.`,
+			`${W} won ${poss(best.name)} ${best.min} minutes by ${pm} and lost the rest by ${off}.`,
+		],
+		"plusMinus",
 	);
 };
 
@@ -6604,7 +6575,8 @@ export const getAutoRecap = (game: RecapGame): string => {
 	addWinner(() =>
 		balanceNote(shape, rng, {
 			dblFig: /in double figures|double figures/.test(writtenSoFar),
-			assists: /assists?\b/.test(writtenSoFar),
+			// "assisted on 31 of their 39 baskets" counts too.
+			assists: /assist(?:s|ed)?\b/.test(writtenSoFar),
 		}),
 	);
 
@@ -8057,7 +8029,7 @@ const dayHeadline = (
 				) {
 					stateBits.push(
 						`#${ss.wSeed} ${w} have the #${ss.lSeed} seed in trouble`,
-						`${w}, seeded #${ss.wSeed}, lead ${poss(l)} series ${ss.wAfter}-${ss.lBefore}`,
+						`${w}, seeded #${ss.wSeed}, lead ${l} ${ss.wAfter}-${ss.lBefore}`,
 					);
 				}
 				stateBits.push(

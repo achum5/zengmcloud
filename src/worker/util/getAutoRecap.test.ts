@@ -5134,7 +5134,7 @@ describe("the standings sentence", () => {
 // A superlative measured over the wrong set of players reads perfectly and is
 // simply false. The plus-minus note picked from the WINNER's players minus the
 // star, then claimed "the best mark on the floor" from that list.
-describe("plus-minus superlatives", () => {
+describe("plus-minus, with him and without", () => {
 	const gameWith = (
 		gid: number,
 		winnerPm: number[],
@@ -5182,62 +5182,68 @@ describe("plus-minus superlatives", () => {
 		for (let gid = 201; gid <= 260; gid += 1) {
 			const pms = [12, 4, 6, 8, 10, 14, 34];
 			const loserPms = [-10, -12, -14, -8, -6, -4, -2];
-			if (/\+34|by 34 with/.test(getAutoRecap(gameWith(gid, pms, loserPms)))) {
+			if (/\+34|by 34\b/.test(getAutoRecap(gameWith(gid, pms, loserPms)))) {
 				close += 1;
 			}
 			const rout = gameWith(gid, pms, loserPms);
 			rout.teams[1].pts = 90;
 			rout.teams[1].ptsQtrs = [22, 22, 23, 23];
-			assert.doesNotMatch(getAutoRecap(rout), /\+34|by 34 with/);
+			assert.doesNotMatch(getAutoRecap(rout), /\+34|by 34\b/);
 		}
 		assert.ok(close > 0, "the note never ran, so nothing was tested");
 	});
 
-	// The swing sits on the LAST man in the rotation both times: the note skips
-	// anyone the recap has already named, and the starters all get written up.
-	test("nobody is called the best on the floor when somebody beat them", () => {
-		// The star (index 0) swings hardest, and the note never considers him -
-		// so the man it does pick must not claim the floor.
+	// "Nobody swung it further than Isaiah Ellis, +27 across 24 minutes" of a
+	// 3-point win: the number meant nothing until the reader worked out that
+	// the team lost his minutes on the bench by 24. Every note now says that
+	// half too, and the accuracy reader holds both numbers.
+	test("a plus-minus is told with the minutes he sat", () => {
 		let noted = 0;
 		for (let gid = 1; gid <= 60; gid += 1) {
-			const recap = getAutoRecap(
-				gameWith(
-					gid,
-					[40, 4, 6, 8, 10, 12, 32],
-					[-10, -12, -14, -8, -6, -4, -2],
-				),
+			const g = gameWith(
+				gid,
+				[12, 4, 6, 8, 10, 14, 34],
+				[-10, -12, -14, -8, -6, -4, -2],
 			);
-			if (/\+32/.test(recap)) {
+			const recap = getAutoRecap(g);
+			if (/\+34|by 34\b/.test(recap)) {
 				noted += 1;
+				assert.match(
+					recap,
+					/outscored by 20 without him|outscored by 20 when he sat|lost the rest by 20/,
+					recap,
+				);
 			}
-			assert.ok(
-				!/best mark on the floor|Nobody swung it further|team-best/.test(recap),
-				`a non-leader is called the best: ${recap}`,
+			assert.doesNotMatch(
+				recap,
+				/best mark on the floor|swung it further|team-best/,
+				recap,
 			);
+			assert.deepStrictEqual(verifyRecap(recap, g), [], recap);
 		}
-		assert.ok(
-			noted > 0,
-			"the plus-minus note never ran, so nothing was tested",
-		);
+		assert.ok(noted > 0, "the plus-minus note never ran");
 	});
 
-	test("the outright leader may still claim it", () => {
-		let claimed = 0;
-		for (let gid = 101; gid <= 160; gid += 1) {
-			const recap = getAutoRecap(
-				gameWith(
-					gid,
-					[12, 4, 6, 8, 10, 14, 34],
-					[-10, -12, -14, -8, -6, -4, -2],
-				),
-			);
-			if (
-				/best mark on the floor|Nobody swung it further|team-best/.test(recap)
-			) {
-				claimed += 1;
-			}
-		}
-		assert.ok(claimed > 0, "the true leader never got the superlative");
+	test("the accuracy reader holds both halves", () => {
+		const g = gameWith(
+			1,
+			[12, 4, 6, 8, 10, 14, 34],
+			[-10, -12, -14, -8, -6, -4, -2],
+		);
+		const kinds = (s: string) =>
+			verifyRecap(`**x**\n\n${s}`, g).map((v) => v.kind);
+		assert.deepStrictEqual(
+			kinds(
+				"The Celtics won Bench Three's 30 minutes by 34 and lost the rest by 20.",
+			),
+			[],
+		);
+		assert.deepStrictEqual(
+			kinds(
+				"The Celtics won Bench Three's 30 minutes by 34 and lost the rest by 12.",
+			),
+			["plus-minus"],
+		);
 	});
 });
 
