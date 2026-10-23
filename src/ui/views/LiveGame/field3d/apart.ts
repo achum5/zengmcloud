@@ -8,7 +8,8 @@ import type { Move } from "./poses.ts";
 // aside, over a few steps before and back after, so they go round rather
 // than through. Not men meant to be on each other: blocking, tackled, in a
 // pile, handing the ball off, shaking hands - nor a man the ball is coming
-// to or leaving.
+// to or leaving. An official in a man's way gives him it: it is the
+// official who goes round.
 // Worked out once a play, the first time it is looked at.
 
 // Every this long (ms) along the play, how far over each man is (feet).
@@ -89,7 +90,10 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 		...play.parts.filter((p) => p.pid >= 0),
 		...(play.coaches ?? []),
 		...(play.toss?.men ?? []),
+		...play.crew,
 	].filter((p) => p.legs.length > 0);
+	const crew = new Set(play.crew);
+	const official = men.map((m) => crew.has(m as (typeof play.crew)[number]));
 	const t0 = play.t0;
 	const n = Math.max(1, Math.ceil((play.t1 - t0) / SEP_MS) + 1);
 	const xs = men.map(() => new Float32Array(n));
@@ -156,10 +160,12 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 					// (Right on top of each other: apart across the field.)
 					const ux = d > 1e-3 ? (ax - bx) / d : 0;
 					const uy = d > 1e-3 ? (ay - by) / d : 1;
-					// (Each half the way - or, the other where he has to be, the
-					// whole way himself.)
+					// (Each half the way - or, the other where he has to be, or
+					// a player, the whole way himself.)
 					const push = APART - d;
-					const wi = fi ? (fj ? 0.5 : 1) : 0;
+					const oi = official[i]!;
+					const oj = official[j]!;
+					const wi = fi ? (fj ? (oi === oj ? 0.5 : oi ? 1 : 0) : 1) : 0;
 					const ix = dx[i]!;
 					const iy = dy[i]!;
 					const jx = dx[j]!;
