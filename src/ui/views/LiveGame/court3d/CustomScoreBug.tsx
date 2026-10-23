@@ -12,10 +12,6 @@ export type CustomBugTeam = BugTeam & { region?: string; name?: string };
 
 const MAX_TIMEOUTS = 7;
 
-// How tall the bug stands, as a share (in cqw) of the picture's width.
-export const customBugHeight = (style: ScoreBugStyle) =>
-	(style.span ?? 0.6) * 100 * (style.height / style.width);
-
 export const CustomScoreBug = ({
 	style,
 	away,

@@ -25,15 +25,16 @@ import {
 	paintTable,
 } from "./arena.ts";
 import {
-	type Camera,
 	CAM_PAN,
 	courtFit,
+	dodgeFor,
 	follow,
 	makeCamera,
 	MAIN_RIG,
 	operate,
 	project,
 	REPLAY_RIG,
+	type Cover,
 } from "./camera.ts";
 import { courtTexture } from "./courtTexture.ts";
 import { FaceLoader } from "./FaceLoader.tsx";
@@ -57,7 +58,7 @@ import { headColors, loadHead, profileOf, type HeadSprite } from "./faces.ts";
 import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
 import { dressKit, kitArtOf, type KitArt } from "./kitArt.ts";
 import { logoPicture } from "./logoPicture.ts";
-import { COURT_H, COURT_W, type Side } from "./geometry.ts";
+import { COURT_W, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
 import { stageCourt } from "./stageCourt.ts";
 import {
@@ -84,7 +85,7 @@ import { bodyOf, type Body } from "./poses.ts";
 import { offenseAt } from "./evaluate.ts";
 import { buildFouls, foulsAt } from "./scoreBug.ts";
 import { ScoreBug, type BugRefs } from "./ScoreBug.tsx";
-import { CustomScoreBug, customBugHeight } from "./CustomScoreBug.tsx";
+import { CustomScoreBug } from "./CustomScoreBug.tsx";
 import { IntroCard, IntroTitle } from "./IntroCard.tsx";
 import { callAt } from "./intro.ts";
 import { STARTING_NUM_TIMEOUTS } from "../../../../common/constants.ts";
@@ -118,16 +119,13 @@ const KEY_DIP_MS = 320;
 const KEY_HOLD_MS = 900;
 // Replay-time ms the picture takes to come up out of black and go back down.
 const REPLAY_DIP = 70;
-// THE SCORE BUG IN THE WAY: the bug's box as shares of the picture, and how
-// far (feet, + to the right) the camera pans for the man with the ball to
-// stand clear of it - never so far that the basket at his end leaves the
-// picture, and the way it went last (`side`: -1 left, 1 right, 0 neither)
-// kept to unless the other way is much better.
-type BugBox = { x0: number; x1: number; y0: number };
+// WHAT IS OVER THE PICTURE: the score bug along its foot and the line of
+// play-by-play across its top, each's box as shares of the picture (see
+// camera.ts's dodgeFor).
 const boxOf = (
 	wrap: HTMLElement | null,
 	el: Element | null | undefined,
-): BugBox | undefined => {
+): (Cover & { y1: number }) | undefined => {
 	if (!wrap || !el) {
 		return undefined;
 	}
@@ -140,72 +138,28 @@ const boxOf = (
 		x0: (b.left - w.left) / w.width,
 		x1: (b.right - w.left) / w.width,
 		y0: (b.top - w.top) / w.height,
+		y1: (b.bottom - w.top) / w.height,
 	};
 };
+// The line across the top goes faint while the ball is behind it - a shot
+// arcing up from the far side of the floor - and comes back as it drops.
+const CAPTION_FAINT = 0.18;
+const captionOver = (
+	cap: Cover & { y1: number },
+	at: { x: number; y: number },
+): boolean =>
+	at.x > cap.x0 - 0.02 &&
+	at.x < cap.x1 + 0.02 &&
+	at.y > cap.y0 - 0.02 &&
+	at.y < cap.y1 + 0.03;
 const bugBoxOf = (wrap: HTMLElement | null, holder: HTMLElement | null) =>
 	boxOf(wrap, holder?.firstElementChild);
-// The score bug and the line over it: what the tag under the man with the
-// ball keeps out from behind (see scene.ts).
+// The score bug: what the camera keeps the man with the ball out from
+// behind, and the tag under him too (see scene.ts).
 const coversOf = (
 	wrap: HTMLElement | null,
 	holder: HTMLElement | null,
-): BugBox[] =>
-	[
-		bugBoxOf(wrap, holder),
-		boxOf(wrap, wrap?.querySelector(".court3d-caption")),
-	].filter((b) => b !== undefined);
-const DODGE_MAX = 20;
-const dodgeFor = (
-	cam: Camera,
-	at: { x: number; y: number },
-	box: BugBox,
-	side: number,
-): [number, number] => {
-	const p = project(cam, { x: at.x, y: at.y, z: 3 });
-	// Eased in as he goes down behind its top edge.
-	const under = Math.min(1, Math.max(0, (p.y / cam.viewH - box.y0) / 0.07 + 1));
-	const m = 0.02 + (1.5 * p.k) / cam.viewW;
-	const fx = p.x / cam.viewW;
-	// How far across the picture he would go to come out its left side, or
-	// its right.
-	const left = fx - (box.x0 - m);
-	const right = box.x1 + m - fx;
-	if (under <= 0 || left <= 0 || right <= 0) {
-		return [0, 0];
-	}
-	// The camera moved d feet takes everything d * k across the other way.
-	const rim = project(cam, {
-		x: at.x < COURT_W / 2 ? 5.25 : COURT_W - 5.25,
-		y: COURT_H / 2,
-		z: 10,
-	});
-	const rimX = rim.x / cam.viewW;
-	const per = cam.viewW / rim.k;
-	const lo = Math.min(0, Math.max(-DODGE_MAX, (rimX - 0.92) * per));
-	const hi = Math.max(0, Math.min(DODGE_MAX, (rimX - 0.08) * per));
-	let best = 0;
-	let bestScore = Infinity;
-	for (const go of [-1, 1]) {
-		if (go < 0 ? box.x0 - m < 0.06 : box.x1 + m > 0.94) {
-			continue;
-		}
-		const need = (((go < 0 ? left : right) * cam.viewW) / p.k) * under;
-		const d = go < 0 ? Math.min(hi, need) : Math.max(lo, -need);
-		// Mostly how much of him is left behind it; then how far it pans.
-		const score =
-			3 * (need - Math.abs(d)) + Math.abs(d) - (go === side ? 6 : 0);
-		if (score < bestScore) {
-			bestScore = score;
-			best = go;
-		}
-	}
-	if (best === 0) {
-		return [0, 0];
-	}
-	const need = (((best < 0 ? left : right) * cam.viewW) / p.k) * under;
-	return [best < 0 ? Math.min(hi, need) : Math.max(lo, -need), best];
-};
-
+): Cover[] => [bugBoxOf(wrap, holder)].filter((b) => b !== undefined);
 // Whether a game opens with its starting lineups (see intro.ts).
 const LINEUP_INTROS = false;
 
@@ -924,10 +878,9 @@ const Court3D = ({
 		dodge: 0,
 		dodgeV: 0,
 		dodgeSide: 0,
-		bugAt: -Infinity,
-		bugBox: undefined as BugBox | undefined,
-		covers: [] as BugBox[],
+		covers: [] as Cover[],
 		coversAt: -Infinity,
+		caption: undefined as (Cover & { y1: number }) | undefined,
 		heldBy: undefined as number | undefined,
 		heldAt: -Infinity,
 		last: undefined as number | undefined,
@@ -1192,29 +1145,28 @@ const Court3D = ({
 			if (now - s.coversAt > 500) {
 				s.coversAt = now;
 				s.covers = coversOf(wrapRef.current, bugRef.current);
+				s.caption = boxOf(
+					wrapRef.current,
+					wrapRef.current?.querySelector(".court3d-caption"),
+				);
 			}
 			// The man with the ball (or the ball, loose or in the air) never
 			// left behind the score bug: the camera eased over off him.
 			let dodge = 0;
-			if (fit && !staging) {
-				if (now - s.bugAt > 500) {
-					s.bugAt = now;
-					s.bugBox = bugBoxOf(wrapRef.current, bugRef.current);
-				}
+			const block = s.covers[0];
+			if (fit && !staging && block) {
 				const { ball } = moment;
 				const who =
 					(ball.holder === undefined
 						? undefined
 						: moment.players.find((pl) => pl.pid === ball.holder)) ?? ball;
-				if (s.bugBox) {
-					const plain = makeCamera(
-						{ x: s.camX, width: s.camW, y: fit.y(s.camW) },
-						fw,
-						fh,
-						MAIN_RIG,
-					);
-					[dodge, s.dodgeSide] = dodgeFor(plain, who, s.bugBox, s.dodgeSide);
-				}
+				const plain = makeCamera(
+					{ x: s.camX, width: s.camW, y: fit.y(s.camW) },
+					fw,
+					fh,
+					MAIN_RIG,
+				);
+				[dodge, s.dodgeSide] = dodgeFor(plain, who, block, s.dodgeSide);
 			}
 			if (snap) {
 				s.dodge = dodge;
@@ -1276,6 +1228,18 @@ const Court3D = ({
 			const dip = dipRef.current;
 			if (dip && dip.style.opacity !== String(o)) {
 				dip.style.opacity = String(o);
+			}
+			const capEl =
+				wrapRef.current?.querySelector<HTMLElement>(".court3d-caption");
+			if (capEl) {
+				const b = project(cam, moment.ball);
+				const faint =
+					s.caption !== undefined &&
+					captionOver(s.caption, { x: b.x / fw, y: b.y / fh });
+				const o = faint ? String(CAPTION_FAINT) : "";
+				if (capEl.style.opacity !== o) {
+					capEl.style.opacity = o;
+				}
 			}
 			const tag = replayRef.current;
 			if (tag) {
@@ -1684,13 +1648,15 @@ const Court3D = ({
 					style={{
 						position: "absolute",
 						left: "50%",
-						// Just over the score bug.
-						bottom: boxScore?.scoreBug
-							? `${2.4 + customBugHeight(boxScore.scoreBug)}cqw`
-							: "calc(2.4cqw + clamp(10px, 1.75cqw, 16px) * 3.3)",
+						// Up top, over the crowd - never over the floor, where it hid
+						// the play along the near sideline (the score bug alone is
+						// down there, and the camera keeps the ball clear of it).
+						top: "1.6cqw",
 						transform: "translateX(-50%)",
 						width: "max-content",
-						maxWidth: "92%",
+						// (Clear of the REPLAY tag in the corner.)
+						maxWidth: "70%",
+						transition: "opacity 0.15s",
 						textAlign: "center",
 						fontSize: "clamp(10px, 1.85cqw, 16px)",
 						lineHeight: 1.35,

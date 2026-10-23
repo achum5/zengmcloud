@@ -1,6 +1,7 @@
 import { assert, describe, test } from "vitest";
 import {
 	courtFit,
+	dodgeFor,
 	makeCamera,
 	MAIN_RIG,
 	operate,
@@ -204,6 +205,52 @@ describe("3D camera operator", () => {
 			}
 			assert.closeTo(op.camW, Math.max(width, Math.min(fit.min, width)), 0.5);
 		}
+	});
+});
+
+describe("3D graphics over the picture", () => {
+	// The score bug along the foot of the picture: the man with the ball
+	// gone down behind it, the camera pans till he is out from behind it -
+	// and leaves him be up the floor.
+	test("the man with the ball kept out from behind the score bug", () => {
+		const [w, h] = [1280, 720];
+		const fit = courtFit(w / h);
+		const block = { x0: 0.26, x1: 0.74, y0: 0.88 };
+		const camAt = (x: number) =>
+			makeCamera({ x, width: fit.min, y: fit.y(fit.min) }, w, h, MAIN_RIG);
+		const behind = (x: number, at: { x: number; y: number }) => {
+			const p = project(camAt(x), { ...at, z: 3 });
+			return p.y / h > block.y0 && p.x / w > block.x0 && p.x / w < block.x1;
+		};
+		let moved = 0;
+		for (const camX of [40, 47, 54]) {
+			for (const at of [
+				{ x: camX - 4, y: 49 },
+				{ x: camX, y: 50.5 },
+				{ x: camX + 5, y: 49.5 },
+			]) {
+				const [d] = dodgeFor(camAt(camX), at, block, 0);
+				if (!behind(camX, at)) {
+					continue;
+				}
+				moved += 1;
+				assert.isFalse(behind(camX + d, at), `${camX} ${at.x},${at.y}`);
+				// And the basket at his end still in the picture.
+				const rim = project(camAt(camX + d), {
+					x: at.x < COURT_W / 2 ? 5.25 : COURT_W - 5.25,
+					y: COURT_H / 2,
+					z: 10,
+				});
+				assert.isAbove(rim.x, 0);
+				assert.isBelow(rim.x, w);
+			}
+			// Up the floor, left be.
+			assert.strictEqual(
+				dodgeFor(camAt(camX), { x: camX, y: 20 }, block, 0)[0],
+				0,
+			);
+		}
+		assert.isAtLeast(moved, 3);
 	});
 });
 

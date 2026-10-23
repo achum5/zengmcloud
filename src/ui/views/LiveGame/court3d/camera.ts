@@ -359,3 +359,62 @@ export const operate = (
 		op.camVZ = 0;
 	}
 };
+
+// THE SCORE BUG IN THE WAY: its box as shares of the picture (its left and
+// right edges, and its top; it goes on down to the foot of the picture),
+// and how far (feet, + to the right) the camera pans for the man with the
+// ball to stand clear of it - never so far that the basket at his end
+// leaves the picture, and the way it went last (`side`: -1 left, 1 right, 0
+// neither) kept to unless the other way is much better.
+export type Cover = { x0: number; x1: number; y0: number };
+const DODGE_MAX = 20;
+export const dodgeFor = (
+	cam: Camera,
+	at: { x: number; y: number },
+	box: Cover,
+	side: number,
+): [number, number] => {
+	const p = project(cam, { x: at.x, y: at.y, z: 3 });
+	// Eased in as he goes down behind its top edge.
+	const under = Math.min(1, Math.max(0, (p.y / cam.viewH - box.y0) / 0.07 + 1));
+	const m = 0.02 + (1.5 * p.k) / cam.viewW;
+	const fx = p.x / cam.viewW;
+	// How far across the picture he would go to come out its left side, or
+	// its right.
+	const left = fx - (box.x0 - m);
+	const right = box.x1 + m - fx;
+	if (under <= 0 || left <= 0 || right <= 0) {
+		return [0, 0];
+	}
+	// The camera moved d feet takes everything d * k across the other way.
+	const rim = project(cam, {
+		x: at.x < COURT_W / 2 ? 5.25 : COURT_W - 5.25,
+		y: COURT_H / 2,
+		z: 10,
+	});
+	const rimX = rim.x / cam.viewW;
+	const per = cam.viewW / rim.k;
+	const lo = Math.min(0, Math.max(-DODGE_MAX, (rimX - 0.92) * per));
+	const hi = Math.max(0, Math.min(DODGE_MAX, (rimX - 0.08) * per));
+	let best = 0;
+	let bestScore = Infinity;
+	for (const go of [-1, 1]) {
+		if (go < 0 ? box.x0 - m < 0.06 : box.x1 + m > 0.94) {
+			continue;
+		}
+		const need = (((go < 0 ? left : right) * cam.viewW) / p.k) * under;
+		const d = go < 0 ? Math.min(hi, need) : Math.max(lo, -need);
+		// Mostly how much of him is left behind it; then how far it pans.
+		const score =
+			3 * (need - Math.abs(d)) + Math.abs(d) - (go === side ? 6 : 0);
+		if (score < bestScore) {
+			bestScore = score;
+			best = go;
+		}
+	}
+	if (best === 0) {
+		return [0, 0];
+	}
+	const need = (((best < 0 ? left : right) * cam.viewW) / p.k) * under;
+	return [best < 0 ? Math.min(hi, need) : Math.max(lo, -need), best];
+};
