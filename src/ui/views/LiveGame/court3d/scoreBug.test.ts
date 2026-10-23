@@ -1,9 +1,11 @@
 import { assert, describe, test } from "vitest";
 import { buildClocks, gameClockAt, shotClockAt } from "./clock.ts";
 import {
+	breakText,
 	buildFouls,
 	finalText,
 	foulsAt,
+	isBreak,
 	isFinal,
 	SHOT_LOW,
 	shotClockText,
@@ -108,6 +110,39 @@ describe("the final horn on the score bug", () => {
 		assert.strictEqual(finalText("H2"), "FINAL");
 		assert.strictEqual(finalText("OT"), "FINAL/OT");
 		assert.strictEqual(finalText("3OT"), "FINAL/3OT");
+	}, 60_000);
+});
+
+describe("between periods on the score bug", () => {
+	// From the horn that ends a period until the next one starts, END Q1 -
+	// HALF at halftime - not the period just ended and 0.0; not after the
+	// last one (FINAL), and never while one is being played.
+	test("END Q1, HALF, END Q3 - from the horn to the next period", () => {
+		const { tl } = compile("a", 150);
+		const ends = tl.beats.filter((b) => b.type === "endOfPeriod");
+		const starts = tl.beats.filter(
+			(b) => b.type === "period" || b.type === "overtime",
+		);
+		assert.isAtLeast(ends.length, 4);
+		for (const [k, end] of ends.entries()) {
+			const next = starts.find((b) => b.actionStart > end.actionStart);
+			assert.isFalse(isBreak(tl, end.actionStart - 1), `${k}`);
+			if (!next) {
+				// (The last: FINAL.)
+				assert.isFalse(isBreak(tl, end.actionStart), `${k}`);
+				assert.isTrue(isFinal(tl, end.actionStart), `${k}`);
+				continue;
+			}
+			assert.isTrue(isBreak(tl, end.actionStart), `${k}`);
+			assert.isTrue(isBreak(tl, next.actionStart - 1), `${k}`);
+			assert.isFalse(isBreak(tl, next.actionStart), `${k}`);
+		}
+		assert.strictEqual(breakText("Q1", 4), "END Q1");
+		assert.strictEqual(breakText("Q2", 4), "HALF");
+		assert.strictEqual(breakText("Q3", 4), "END Q3");
+		assert.strictEqual(breakText("Q4", 4), "END Q4");
+		assert.strictEqual(breakText("H1", 2), "HALF");
+		assert.strictEqual(breakText("OT", 4), "END OT");
 	}, 60_000);
 });
 

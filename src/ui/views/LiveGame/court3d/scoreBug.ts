@@ -117,6 +117,42 @@ export const isFinal = (
 export const finalText = (period: string): string =>
 	/OT$/.test(period) ? `FINAL/${period}` : "FINAL";
 
+// BETWEEN PERIODS: from the horn that ends one (not the last) until the
+// next one starts, the bug says so where the clock was - END Q1, HALF at
+// halftime, END Q3, END OT - not the period just ended and 0.0.
+export const isBreak = (
+	tl: Pick<CourtTimeline, "beats">,
+	t: number,
+): boolean => {
+	const { beats } = tl;
+	let lo = 0;
+	let hi = beats.length - 1;
+	let k = -1;
+	while (lo <= hi) {
+		const mid = (lo + hi) >> 1;
+		if (beats[mid]!.actionStart <= t) {
+			k = mid;
+			lo = mid + 1;
+		} else {
+			hi = mid - 1;
+		}
+	}
+	const next = beats[k + 1];
+	return (
+		k >= 0 &&
+		beats[k]!.type === "endOfPeriod" &&
+		next !== undefined &&
+		next.type !== "gameOver"
+	);
+};
+// (The period just ended, as the bug carries it, and how many a game has.)
+export const breakText = (period: string, numPeriods: number): string => {
+	const n = /^[A-Z](\d+)$/.exec(period);
+	return n && numPeriods % 2 === 0 && Number(n[1]) === numPeriods / 2
+		? "HALF"
+		: `END ${period}`;
+};
+
 // THE SHOT CLOCK ON THE BUG: whole seconds, the way it counts - and in its
 // last five, tenths and in red, the way the clock in the building shows them
 // and a broadcast's bug carries them as it runs out.

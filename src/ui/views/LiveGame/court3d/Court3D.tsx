@@ -92,8 +92,10 @@ import { bodyOf, type Body } from "./poses.ts";
 import { offenseAt } from "./evaluate.ts";
 import {
 	buildFouls,
+	breakText,
 	finalText,
 	foulsAt,
+	isBreak,
 	isFinal,
 	SHOT_LOW,
 	SHOT_LOW_INK,
@@ -967,13 +969,14 @@ const Court3D = ({
 		introCall: -1,
 		introOn: false,
 		introTitle: false,
-		// The final horn gone (see isFinal).
-		final: false,
+		// No period on: the final horn gone, or between two (see isFinal,
+		// isBreak).
+		ended: false,
 	});
 	const [intro, setIntro] = useState({ call: -1, on: false, title: false });
-	// The final horn gone, in the picture: the bug says so (see the frame
-	// loop).
-	const [final, setFinal] = useState(false);
+	// No period on, in the picture - the final horn gone, or between two: the
+	// bug says so (see the frame loop).
+	const [ended, setEnded] = useState(false);
 	// Onto the game from the warm-ups (see pregame): a cut, up out of black
 	// (see tick).
 	useEffect(() => {
@@ -1050,7 +1053,8 @@ const Court3D = ({
 		warmups,
 		teamColors,
 		setIntro,
-		setFinal,
+		setEnded,
+		numPeriods,
 		// The period, as the page's box score has it ("Q4", "OT").
 		period: boxScore?.quarterShort ?? "",
 		// The score [road, home], as the score bug has it.
@@ -1084,7 +1088,8 @@ const Court3D = ({
 		warmups,
 		teamColors,
 		setIntro,
-		setFinal,
+		setEnded,
+		numPeriods,
 		// The period, as the page's box score has it ("Q4", "OT").
 		period: boxScore?.quarterShort ?? "",
 		// The score [road, home], as the score bug has it.
@@ -1376,14 +1381,19 @@ const Court3D = ({
 			// (The bug's: in its last seconds, tenths - see shotClockText.)
 			let bugShot = "";
 			let clockText = "";
-			// (Over: FINAL where the clock was, and no period.)
+			// (Over: FINAL where the clock was, and no period; between two,
+			// END Q1 - or HALF.)
 			const final = !staging && isFinal(tl, s.t);
-			if (final !== s.final) {
-				s.final = final;
-				p.setFinal(final);
+			const between = !staging && !final && isBreak(tl, s.t);
+			const ended = final || between;
+			if (ended !== s.ended) {
+				s.ended = ended;
+				p.setEnded(ended);
 			}
 			if (final) {
 				clockText = finalText(p.period);
+			} else if (between) {
+				clockText = breakText(p.period, p.numPeriods);
 			} else if (p.clocks) {
 				const game = gameClockAt(p.clocks, s.t);
 				const shot = shotClockAt(p.clocks, s.t);
@@ -1579,8 +1589,9 @@ const Court3D = ({
 
 	const awayPts: number = boxScore?.teams?.[1]?.pts ?? 0;
 	const homePts: number = boxScore?.teams?.[0]?.pts ?? 0;
-	// (Over: FINAL where the clock was - see the frame loop - and no period.)
-	const quarter = final ? "" : (boxScore?.quarterShort ?? "");
+	// (No period on: FINAL, or END Q1, where the clock was - see the frame
+	// loop - and no period.)
+	const quarter = ended ? "" : (boxScore?.quarterShort ?? "");
 	// Who made the play the caption describes: the same team the Plays list
 	// marks with a logo. Taken off `raw` so a replay shows that night's logo.
 	const captionTeam = captionT === undefined ? undefined : raw[captionT];
