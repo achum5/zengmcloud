@@ -1285,6 +1285,49 @@ describe("edge cases", () => {
 		}
 	});
 
+	// "Suns sweep the Hornets" over a night the Heat, the Pistons, the
+	// Thunder and the Lakers finished sweeps too.
+	test("a night that ends three series is headlined by all of them", () => {
+		const names = ["Hawks", "Kings", "Suns", "Jazz", "Bulls", "Nets"];
+		const games = [0, 1, 2].map((i) => {
+			const home = squad(
+				{ tid: i * 2 + 1, name: names[i * 2]! },
+				{ name: `Ace ${names[i * 2]}`, pid: i * 20 + 11, pts: 25 + i },
+				110 + i,
+			);
+			const away = squad(
+				{ tid: i * 2 + 2, name: names[i * 2 + 1]! },
+				{ name: `Bo ${names[i * 2 + 1]}`, pid: i * 20 + 21, pts: 20 },
+				100,
+			);
+			return game([home, away], {
+				gid: 80 + i,
+				playoffs: true,
+				series: {
+					round: 1,
+					numRounds: 4,
+					bestOf: 7,
+					homeAbbrev: home.abbrev,
+					awayAbbrev: away.abbrev,
+					homeWon: 3,
+					awayWon: 0,
+				},
+			});
+		});
+		const wrap = getAutoDayRecap({
+			season: 2025,
+			day: 12,
+			playoffs: true,
+			games,
+		});
+		clean(wrap);
+		const head = wrap.split("\n")[0]!;
+		assert.match(head, /all finish sweeps\*\*$/, wrap);
+		for (const team of ["Hawks", "Suns", "Bulls"]) {
+			assert.include(head, team, wrap);
+		}
+	});
+
 	// "Obi Brooks' 46 not enough as the Magic top the Celtics" over "Quentin
 	// Jackson led the way with 22 points... as the Magic beat the Celtics".
 	test("a wrap headlined by a losing big night leads on him", () => {

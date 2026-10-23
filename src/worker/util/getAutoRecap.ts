@@ -5227,7 +5227,12 @@ const loserSentence = (
 						]
 					: []),
 				`For ${them}, it was ${leader.name} with ${line}`,
-				`${cap(them)} leaned on ${leader.name} for ${line}`,
+				// Leaning on a man is a load he carried: not "The Celtics leaned
+				// on Payton Brooks for a double-double (15 points and 12
+				// rebounds)", one recap in six.
+				...(leader.pts >= 25 || leader.pts >= shape.loser.pts * 0.3
+					? [`${cap(them)} leaned on ${leader.name} for ${line}`]
+					: []),
 			],
 			"loserShape",
 		);
@@ -7126,7 +7131,7 @@ const buildGameRecap = (game: RecapGame): string => {
 							rng,
 							[
 								`${star.name} totaled ${line} on ${split} shooting.`,
-								`${star.name} went ${split} from the floor for ${line}.`,
+								`${star.name} put together ${line} on ${split} shooting.`,
 							],
 							"starSplitLine",
 						)
@@ -9358,6 +9363,28 @@ const dayHeadline = (
 				]),
 			);
 		}
+		// A night that ended three series or more is about all of them: "Suns
+		// sweep the Hornets" sat over a night the Heat, the Pistons, the
+		// Thunder and the Lakers finished sweeps too.
+		const ended = games
+			.map((g) => ({ g, t: seriesTail(g) }))
+			.filter(({ t }) => t && ["sweep", "decider", "close"].includes(t.kind));
+		if (clinch && ended.length >= 3 && ended.length <= 5) {
+			const names = naturalList(
+				[marquee, ...ended.map(({ g }) => g).filter((g) => g !== marquee)].map(
+					(g) => nick(analyzeShape(g).winner),
+				),
+			);
+			return hl(
+				ended.every(({ t }) => t!.kind === "sweep")
+					? `${names} all finish sweeps`
+					: ended.every(
+								({ g, t }) => t!.kind === "decider" && g.series?.bestOf === 7,
+						  )
+						? `${names} win Game 7s`
+						: `${names} close out their series`,
+			);
+		}
 		if (clinch) {
 			const next = clinch.nextRound;
 			return hl(
@@ -10291,7 +10318,8 @@ export const leagueNotes = (
 		});
 	}
 	// 53% is a good night; it is not "best of anyone" news two nights in three.
-	if (hottest && hottest.fgp >= 55) {
+	// Nor is 56%: some club shoots that most nights.
+	if (hottest && hottest.fgp >= 58) {
 		cands.push({
 			sort: 2,
 			tid: hottest.shape.winner.tid,
