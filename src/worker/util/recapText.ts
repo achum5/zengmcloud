@@ -218,6 +218,19 @@ export const ordinal = (n: number): string => {
 	return `${n}${suffix}`;
 };
 
+// A figure with its article, by how it is read aloud: "an 85-80 win", "a
+// 115-93 win", "an 11-point lead".
+export const aFigure = (s: string): string =>
+	/^(?:8|1[18]\b)/.test(s) ? `an ${s}` : `a ${s}`;
+
+// THE LAST WORD ON "A" AND "AN". A template writes "a" before whatever
+// number the game hands it, and three dozen of them do: "a 18-2 run", "a
+// 81-point edge", "a 85-80 win". Each is fixed where it is seen, and this
+// pass over the finished text catches the rest - every figure said with an
+// "eight" first, and 11 and 18 standing alone.
+export const fixArticles = (text: string): string =>
+	text.replaceAll(/\b([Aa]) (?=8|1[18]\b)/g, "$1n ");
+
 // An ordinal with its article: "an eighth", "an 18th", "a 22nd".
 export const aOrdinal = (n: number): string => {
 	const o = ordinal(n);
@@ -255,8 +268,10 @@ const NUM_WORDS = [
 
 export const numWord = (n: number): string => NUM_WORDS[n] ?? String(n);
 
+// Every number said with an "eight" first takes "an" - 8, 80-89, 800s - and
+// so do 11 and 18: "an 81-point edge", not "a 81-point edge".
 export const aNum = (n: number): string =>
-	n === 8 || n === 11 || n === 18 ? `an ${n}` : `a ${n}`;
+	String(n).startsWith("8") || n === 11 || n === 18 ? `an ${n}` : `a ${n}`;
 
 // A count as prose writes it inside a compound, with its article: "a
 // six-game losing streak", "an eight-game", "a 14-game".

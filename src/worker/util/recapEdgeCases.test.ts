@@ -6,7 +6,15 @@ import {
 	getAutoDayRecap,
 	getAutoRecap,
 } from "./getAutoRecap.ts";
-import { aOrdinal, injuryPhrase, ordinal, pickByDay } from "./recapText.ts";
+import {
+	aFigure,
+	aNum,
+	aOrdinal,
+	fixArticles,
+	injuryPhrase,
+	ordinal,
+	pickByDay,
+} from "./recapText.ts";
 import type {
 	RecapGame,
 	RecapPlayer,
@@ -1111,6 +1119,27 @@ describe("ordinals", () => {
 		assert.strictEqual(ordinal(23), "23rd");
 		assert.strictEqual(ordinal(111), "111th");
 		assert.strictEqual(ordinal(112), "112th");
+	});
+
+	test("a number takes the article it sounds like", () => {
+		assert.strictEqual(aNum(8), "an 8");
+		assert.strictEqual(aNum(81), "an 81");
+		assert.strictEqual(aNum(11), "an 11");
+		assert.strictEqual(aNum(18), "an 18");
+		assert.strictEqual(aNum(115), "a 115");
+		assert.strictEqual(aNum(28), "a 28");
+	});
+
+	test("a figure, and a finished text, take the article they sound like", () => {
+		assert.strictEqual(aFigure("85-80"), "an 85-80");
+		assert.strictEqual(aFigure("115-93"), "a 115-93");
+		assert.strictEqual(aFigure("11-9"), "an 11-9");
+		assert.strictEqual(
+			fixArticles(
+				"A 18-2 run gave them a 81-point edge in a 115-93 win and a 11-of-15 night.",
+			),
+			"An 18-2 run gave them an 81-point edge in a 115-93 win and an 11-of-15 night.",
+		);
 	});
 
 	test("and the article that sounds right", () => {

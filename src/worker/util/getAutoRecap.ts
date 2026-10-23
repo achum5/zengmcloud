@@ -8,7 +8,9 @@ import type {
 	RecapTeam,
 } from "./getDayGamesForRecap.ts";
 import {
+	aFigure,
 	aNum,
+	fixArticles,
 	aNumWord,
 	aOrdinal,
 	beginRecapBatch,
@@ -1788,7 +1790,7 @@ const buildHeadlineText = (
 			} else if (shape.margin <= 3 && shape.ot === 0) {
 				// "Put away the Lakers in six" over a 115-114 finish.
 				options.push(
-					`${winnerN} close out the ${loserN} with a ${scoreTag(shape)} escape`,
+					`${winnerN} close out the ${loserN} with ${aFigure(scoreTag(shape))} escape`,
 					`${winnerN} edge the ${loserN} ${scoreTag(shape)} to close out the series in ${games}`,
 					`${winnerN} hold off the ${loserN} ${scoreTag(shape)} and move on to ${next}`,
 				);
@@ -2251,7 +2253,7 @@ const buildHeadlineText = (
 					`${star.name} and ${partner.name} lead the ${winnerN} ${winOver(rng)} the ${loserN}${tag}`,
 					`Double-doubles from ${star.name} and ${partner.name} carry the ${winnerN} ${winOver(rng)} the ${loserN}${tag}`,
 					`${star.name} and ${partner.name} post double-doubles as the ${winnerN} ${verb} the ${loserN}${tag}`,
-					`${winnerN} get double-doubles from ${star.name} and ${partner.name} in a ${scoreTag(shape)} win${tag}`,
+					`${winnerN} get double-doubles from ${star.name} and ${partner.name} in ${aFigure(scoreTag(shape))} win${tag}`,
 					`${star.name} and ${partner.name} are too much for the ${loserN}${tag}`,
 				],
 				"headline:two-doubles",
@@ -2369,7 +2371,7 @@ const buildHeadlineText = (
 			: []),
 		...(balanced
 			? [
-					`${winnerN} get ${numWord(teamStats(shape.winner).dblFig)} men into double figures in a ${scoreTag(shape)} win over the ${loserN}${tag}`,
+					`${winnerN} get ${numWord(teamStats(shape.winner).dblFig)} men into double figures in ${aFigure(scoreTag(shape))} win over the ${loserN}${tag}`,
 					// No pronoun in a headline: not "Six Thunder score in
 					// double figures as they roll past the Trail Blazers".
 					`${winnerN} put ${numWord(teamStats(shape.winner).dblFig)} in double figures and ${verb} the ${loserN}${tag}`,
@@ -2384,7 +2386,7 @@ const buildHeadlineText = (
 		...(shape.winner.seasonHighs?.pts &&
 		(shape.winner.seasonHighs.priorGames ?? 0) >= 15
 			? [
-					`${winnerN} post a season high in a ${scoreTag(shape)} win over the ${loserN}${tag}`,
+					`${winnerN} post a season high in ${aFigure(scoreTag(shape))} win over the ${loserN}${tag}`,
 				]
 			: []),
 		// A long skid ending is the story of the night for that team, however
@@ -5983,7 +5985,7 @@ const runNote = (
 	);
 };
 
-export const getAutoRecap = (game: RecapGame): string => {
+const buildGameRecap = (game: RecapGame): string => {
 	if (!isInBatch()) {
 		clearPhraseMemory();
 	}
@@ -6925,6 +6927,9 @@ export const getAutoRecap = (game: RecapGame): string => {
 	}
 	return `**${headline.text}**\n\n${withRecords(paragraphs, game, shape).join("\n\n")}`;
 };
+
+export const getAutoRecap = (game: RecapGame): string =>
+	fixArticles(buildGameRecap(game));
 
 // ONE WORD FOR HALFTIME AT A TIME. "The Timberwolves took a 56-52 lead into
 // the break. After the break, they outscored the Pacers 56-43" - each
@@ -8348,7 +8353,7 @@ const dayHeadline = (
 	if (mShape.margin <= 3) {
 		return hl(
 			pick(rng, [
-				`${w} edge ${l} in a ${scoreTag(mShape)} thriller`,
+				`${w} edge ${l} in ${aFigure(scoreTag(mShape))} thriller`,
 				`${w} hold off ${l} at the wire`,
 				`${w} survive ${l} ${scoreTag(mShape)}`,
 			]),
@@ -8974,7 +8979,7 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 	beginRecapBatch();
 	resetVerbLedger();
 	try {
-		return buildDayRecap(input);
+		return fixArticles(buildDayRecap(input));
 	} finally {
 		endRecapBatch();
 	}
@@ -9098,7 +9103,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 				rng,
 				[
 					`${perf.p.name} ${verb} ${line} in ${poss(team)} ${score} loss to ${opp}${who}.`,
-					`${perf.p.name} ${verb} ${line} for ${team} in a ${score} loss to ${opp}${who}.`,
+					`${perf.p.name} ${verb} ${line} for ${team} in ${aFigure(score)} loss to ${opp}${who}.`,
 					...(who
 						? []
 						: [
@@ -9114,7 +9119,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			[
 				`${perf.p.name} ${verb} ${line} in ${poss(team)} ${score} win over ${opp}${tail}.`,
 				`${perf.p.name} ${verb} ${line} as ${team} beat ${opp} ${score}${tail}.`,
-				`${cap(team)} got ${line} from ${perf.p.name} in a ${score} win over ${opp}${tail}.`,
+				`${cap(team)} got ${line} from ${perf.p.name} in ${aFigure(score)} win over ${opp}${tail}.`,
 			],
 			"dayPerfWin",
 		);

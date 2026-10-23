@@ -232,8 +232,9 @@ describe("simmed recaps", () => {
 				// Headlines: a passer's verb on a steals line, a pronoun, a
 				// stock phrase.
 				/picks the [A-Z][\w ]* apart: \d+ points and \d+ steals|score in double figures as they|come out on top of/,
-				// "It was a 11-point game", "the end of a eight-game run".
-				/\ba (?:8|11|18)-|\ba (?:eight|eleven|eighteen)-/,
+				// "It was a 11-point game", "the end of a eight-game run", "a
+				// 81-point edge", "a 22th straight game".
+				/\b[Aa] (?:8|1[18]\b)|\ba (?:eight|eleven|eighteen)|\b\d*(?:[^1]|^)(?:1th|2th|3th)\b/,
 				// Prose spells out a streak: "a six-game", not "a 6-game".
 				/(?:ending|snapping|snapped|ended) (?:the [\w ]+'s? |an? )[2-9]-game/,
 				// "...a 56-52 lead into the break. After the break, ..."
