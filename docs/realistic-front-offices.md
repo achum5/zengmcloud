@@ -227,6 +227,11 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   edge by position is gone (guards and wings were 0.6-1.0 points a game).
   Hunting the CPU's misreads instead of its own gain, it finds deals misread
   by 0.75 ± 0.29 points a game, still a gain for the CPU after them.
+  Run again with draft picks' upside and letting picks go (4 leagues x 3
+  seasons): the shark gains 1.9 ± 0.5 points a game a deal (2.9 before), the
+  CPU misreads by -0.12 ± 0.35 and is still ahead after it (2.5 ± 1.3
+  hundredths of a title). Its deals are a rebuilding team's young player (on a
+  rookie deal in 68% of them) for older players.
 - **What a no says** (owner's call): no, a better offer (shown in full), or
   not before the deadline - never how close the offer came.
 - **Undo is unchanged** (owner's call).
