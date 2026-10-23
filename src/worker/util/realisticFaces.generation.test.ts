@@ -398,7 +398,7 @@ describe("a draft class has age in it", () => {
 		const at22 = share(22);
 		assert.isBelow(at18, at20);
 		assert.isBelow(at20, at22);
-		assert.isBelow(bandForAge(18).facialHair, bandForAge(22).facialHair);
+		assert.isBelow(bandForAge(18).growPerYear, bandForAge(22).growPerYear);
 	});
 });
 

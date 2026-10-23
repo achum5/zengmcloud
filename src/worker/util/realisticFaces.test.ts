@@ -41,6 +41,8 @@ import {
 	fatnessGainByAge,
 	HAIR_VOLUMINOUS,
 	SHAVES_HEAD_SHARE,
+	SHAVES_HEAD_FROM_AGE,
+	SHAVES_HEAD_SPREAD,
 	BALDING_PRONE_SHARE,
 	HAIR_PERIOD,
 	applyFaceAgingHistory,
@@ -187,13 +189,22 @@ describe("HAIR_RARE", () => {
 		const kept = face({
 			hair: { id: "longHair", color: "#272421", flip: false },
 		});
-		// High roll for the facial hair chance (so it stays "none" and consumes
-		// nothing more), low roll for the keep, then high again so the balding
-		// chance further down does not claim the hair instead.
+		// High rolls for the facial hair - one at 19 and one for every season
+		// grown into since, all staying "none" and consuming nothing more - then
+		// a low roll for the keep, then high again so the balding chance further
+		// down does not claim the hair instead.
+		const beardRolls = 1 + (25 - 19);
 		applyRealisticFace(kept, {
 			age: 25,
 			race: "white",
-			rand: sequence([0.9, 0.01, 0.9, 0.9, 0.9, 0.9]),
+			rand: sequence([
+				...Array<number>(beardRolls).fill(0.9),
+				0.01,
+				0.9,
+				0.9,
+				0.9,
+				0.9,
+			]),
 		});
 		assert.strictEqual(kept.hair.id, "longHair");
 	});
@@ -255,6 +266,10 @@ describe("facialHairForAge", () => {
 		"beard6",
 		"fullgoatee5",
 		"fullgoatee6",
+		// Ear to ear around the jaw, so it renders as heavy as a full beard -
+		// and it was filed light, so prospects got it.
+		"chin-strap",
+		"chin-strapStache",
 		// Costume: biker horseshoe, Amish chin curtain, Wolverine chops, mutton
 		// chops, neckbeard, Wilt's sideburns.
 		"harley1",
@@ -305,7 +320,7 @@ describe("facialHairForAge", () => {
 		// A tier left in the age bands with an empty generated list would be
 		// picked and then have nothing to return.
 		for (const band of FACE_AGE_BANDS) {
-			for (const tier of Object.keys(band.tiers)) {
+			for (const tier of band.tiers) {
 				assert.isAbove(
 					GENERATED_FACIAL_HAIR[tier as keyof typeof FACIAL_HAIR_TIERS]
 						?.length ?? 0,
@@ -317,7 +332,17 @@ describe("facialHairForAge", () => {
 	});
 
 	test("older players get facial hair more often than prospects", () => {
-		assert.isAbove(bandForAge(33).facialHair, bandForAge(19).facialHair);
+		const share = (age: number) => {
+			const rand = mulberry32(age);
+			let n = 0;
+			for (let i = 0; i < 2000; i++) {
+				if (facialHairForAge(age, rand) !== "none") {
+					n += 1;
+				}
+			}
+			return n / 2000;
+		};
+		assert.isAbove(share(33), share(19));
 		assert.isAbove(bandForAge(28).balding, bandForAge(19).balding);
 	});
 });
@@ -347,7 +372,7 @@ describe("applyRealisticFace", () => {
 			age: baldingOnsetAge(undefined) + 4,
 			rand: fixed(0.001),
 		});
-		assert.include([HAIR_THINNING, HAIR_BALD], f.hair.id);
+		assert.strictEqual(f.hair.id, HAIR_BALD);
 	});
 
 	// THE FIELD REPORT: horseshoes on twenty-six-year-olds. Nothing may take a
@@ -481,15 +506,15 @@ describe("ageFace", () => {
 		assert.strictEqual(f.hair.id, "short");
 	});
 
-	test("a susceptible player can lose it, one step at a time", () => {
+	test("a susceptible player can lose it, and it stays lost", () => {
 		const f = face();
 		ageFace(f, baldingOnsetAge(proneToBald), proneToBald, fixed(0.001));
-		assert.strictEqual(f.hair.id, HAIR_THINNING);
-		ageFace(f, 33, proneToBald, fixed(0.001));
 		assert.strictEqual(f.hair.id, HAIR_BALD);
 		// Already gone: it stays gone, however the roll lands.
-		ageFace(f, 34, proneToBald, fixed(0.001));
-		assert.strictEqual(f.hair.id, HAIR_BALD);
+		for (const age of [33, 34]) {
+			ageFace(f, age, proneToBald, fixed(0.001));
+			assert.strictEqual(f.hair.id, HAIR_BALD);
+		}
 	});
 
 	test("no hairline loss before the twenties bands, even when susceptible", () => {
@@ -502,7 +527,7 @@ describe("ageFace", () => {
 		// The old three-threshold scheme froze a 32-year-old forever.
 		const f = face();
 		ageFace(f, 36, proneToBald, fixed(0.001));
-		assert.strictEqual(f.hair.id, HAIR_THINNING);
+		assert.strictEqual(f.hair.id, HAIR_BALD);
 	});
 
 	test("facial hair never thins back out, at any age", () => {
@@ -828,36 +853,78 @@ describe("weathering varies by player", () => {
 	});
 });
 
-describe("hairline loss is gradual", () => {
-	test("going fully bald is rarer than starting to recede", () => {
-		// Otherwise a man goes from a full head to bald in two seasons, which
-		// reads as a glitch rather than as aging.
-		const prone = (() => {
-			for (let pid = 0; pid < 500; pid++) {
-				if (baldingProne(pid)) {
-					return pid;
-				}
+// NOBODY WEARS A HORSESHOE. facesjs's only rung between a full head and none
+// is `short-bald`, and on a basketball player it read as an old man every time
+// - the league's real balding players shave it. So aging goes from short
+// straight to a shaved head, generation never keeps the horseshoe facesjs
+// draws on its own, and a face that already has one is taken the rest of the
+// way rather than stranded on it.
+describe("nobody wears a horseshoe", () => {
+	const prone = (() => {
+		for (let pid = 0; pid < 500; pid++) {
+			if (baldingProne(pid) && !shavesHead(pid)) {
+				return pid;
 			}
-			throw new Error("none found");
-		})();
+		}
+		throw new Error("none found");
+	})();
 
-		const countStep = (startId: string) => {
-			let hits = 0;
-			for (let trial = 0; trial < 4000; trial++) {
-				const f = face({
-					hair: { id: startId, color: "#272421", flip: false },
+	test("a whole league of careers never grows one", () => {
+		const realRandom = Math.random;
+		try {
+			Math.random = mulberry32(777);
+			for (let i = 0; i < 1500; i++) {
+				const pid = i * 7 + 3;
+				const f = generateFace();
+				applyFaceAgingHistory({
+					face: f,
+					rookieAge: 20,
+					currentAge: 40,
+					pid,
+					rand: Math.random,
+					onChange: () => {
+						assert.notStrictEqual(f.hair.id, HAIR_THINNING, `pid ${pid}`);
+					},
 				});
-				ageFace(f, 33, prone);
-				if (f.hair.id !== startId) {
-					hits += 1;
-				}
+				assert.notStrictEqual(f.hair.id, HAIR_THINNING, `pid ${pid}`);
 			}
-			return hits;
-		};
+		} finally {
+			Math.random = realRandom;
+		}
+	});
 
-		const first = countStep("short");
-		const second = countStep(HAIR_THINNING);
-		assert.isAbove(first, second, `${first} vs ${second}`);
+	test("the one facesjs draws becomes a real haircut, at any age", () => {
+		for (const age of [19, 25, 30, 36, 40]) {
+			for (const roll of [0.001, 0.5, 0.99]) {
+				const f = face({
+					hair: { id: HAIR_THINNING, color: "#272421", flip: false },
+				});
+				applyRealisticFace(f, { age, rand: fixed(roll) });
+				assert.notStrictEqual(f.hair.id, HAIR_THINNING, `${age} ${roll}`);
+			}
+		}
+	});
+
+	test("a face that already has one goes the rest of the way", () => {
+		const f = face({
+			hair: { id: HAIR_THINNING, color: "#272421", flip: false },
+		});
+		ageFace(f, 33, prone, fixed(0.001));
+		assert.strictEqual(f.hair.id, HAIR_BALD);
+	});
+
+	test("and losing it is still the exception in any one season", () => {
+		let lost = 0;
+		const rand = mulberry32(31);
+		for (let trial = 0; trial < 4000; trial++) {
+			const f = face();
+			ageFace(f, 33, prone, rand);
+			if (f.hair.id === HAIR_BALD) {
+				lost += 1;
+			}
+		}
+		assert.isAbove(lost, 0);
+		assert.isBelow(lost / 4000, 0.15, `${lost}/4000 in one season`);
 	});
 });
 
@@ -960,7 +1027,10 @@ describe("a shaved head", () => {
 		throw new Error("no head-shaving pid found");
 	})();
 
-	test("about one player in ten, and always the same ones", () => {
+	// A few in a hundred. At one in ten from 21, a tenth of the league's
+	// 26-year-olds were shaved where the real league's under-30s are one in
+	// fifty - facesjs's own `bald` draws already cover the young ones.
+	test("a few players in a hundred, and always the same ones", () => {
 		let count = 0;
 		for (let pid = 0; pid < 4000; pid++) {
 			if (shavesHead(pid)) {
@@ -968,13 +1038,14 @@ describe("a shaved head", () => {
 			}
 			assert.strictEqual(shavesHead(pid), shavesHead(pid));
 		}
-		assert.closeTo(count / 4000, SHAVES_HEAD_SHARE, 0.03);
+		assert.closeTo(count / 4000, SHAVES_HEAD_SHARE, 0.01);
+		assert.isBelow(SHAVES_HEAD_SHARE, 0.05);
 	});
 
-	test("he does it young, and it sticks", () => {
+	test("he does it at his own age, and it sticks", () => {
 		const age = shavesHeadAtAge(shaver);
-		assert.isAtLeast(age, 21);
-		assert.isBelow(age, 29);
+		assert.isAtLeast(age, SHAVES_HEAD_FROM_AGE);
+		assert.isAtMost(age, SHAVES_HEAD_FROM_AGE + SHAVES_HEAD_SPREAD);
 
 		const f = face();
 		ageFace(f, age - 1, shaver, fixed(0.99));
@@ -1020,7 +1091,7 @@ describe("the balding ladder", () => {
 		}
 	});
 
-	// Volume goes before the hairline does. Dreads to a horseshoe in one
+	// Volume goes before the hairline does. Dreads to a bare scalp in one
 	// preseason reads as a glitch, not as aging.
 	test("big hair is cut back before the hairline shows", () => {
 		for (const id of ["afro", "dreads", "longHair", "high"]) {
@@ -1030,19 +1101,17 @@ describe("the balding ladder", () => {
 			assert.notStrictEqual(f.hair.id, HAIR_BALD, id);
 			assert.notStrictEqual(f.hair.id, id, id);
 
-			// And from there it carries on down the ladder.
+			// And from there, the razor.
 			ageFace(f, 35, proneNoShave, fixed(0.001));
-			assert.strictEqual(f.hair.id, HAIR_THINNING, id);
-			ageFace(f, 36, proneNoShave, fixed(0.001));
 			assert.strictEqual(f.hair.id, HAIR_BALD, id);
 		}
 	});
 
-	test("a receding hairline clears the hair behind it too", () => {
+	test("losing it clears the hair behind it too", () => {
 		const f = face();
 		f.hairBg.id = "longHair";
 		ageFace(f, 34, proneNoShave, fixed(0.001));
-		assert.strictEqual(f.hair.id, HAIR_THINNING);
+		assert.strictEqual(f.hair.id, HAIR_BALD);
 		assert.strictEqual(f.hairBg.id, "none");
 	});
 });
