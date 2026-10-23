@@ -3,7 +3,8 @@ import type {
 	RecapPlayer,
 	RecapTeam,
 } from "./getDayGamesForRecap.ts";
-import { finishScores } from "./recapFinish.ts";
+import { finishScores, withSettledLead } from "./recapFinish.ts";
+import { clockLeft } from "../../common/gameFlow.ts";
 
 // DOES THE RECAP SAY ANYTHING THAT ISN'T TRUE?
 //
@@ -1067,6 +1068,38 @@ export const verifyRecap = (
 						sentence,
 					);
 				}
+			}
+		}
+	}
+
+	// --- "went in front for good with 1:52 left" ------------------------------
+	// The basket that put the winners ahead for good, at the time the log
+	// says - and only when the log can say: a tie in the first quarter was
+	// broken by a basket it never kept, and the first one it did keep was
+	// being called the go-ahead.
+	// (A log with no lead change recorded at all says nothing either way.)
+	if (game.flow?.lastLead) {
+		const settled = withSettledLead(game).flow?.lastLead;
+		const at = settled ? clockLeft(settled.clock) : undefined;
+		for (const sentence of splitSentences(recap)) {
+			if (
+				!/for good|for the last time|never trailed again|(?:ahead|in front) to stay/.test(
+					sentence,
+				)
+			) {
+				continue;
+			}
+			const clocks = [
+				...sentence.matchAll(
+					/\bwith (\d+:\d\d|\d+(?:\.\d)? seconds?) (?:left|to go|to play)/g,
+				),
+			].map((m) => m[1]);
+			if (clocks.length > 0 && (at === undefined || !clocks.includes(at))) {
+				add(
+					"go-ahead for good",
+					`said ${clocks.join("/")}, the log has ${at ?? "no settled lead"}`,
+					sentence,
+				);
 			}
 		}
 	}

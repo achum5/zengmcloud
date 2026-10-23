@@ -370,6 +370,50 @@ describe("withSettledLead", () => {
 		game.flow.lastTie = { period: 4, clock: 50, pts: 109 };
 		assert.equal(withSettledLead(game).flow!.lastLead!.pid, 11);
 	});
+
+	// "The Thunder took the lead for good on Grant Jackson's basket with 1:54
+	// left" of a team up 60-41 at the half: the last tie was at 14 in the
+	// first quarter, and the log's first basket was taken for the one that
+	// broke it.
+	test("a tie before the log began is broken by a basket nobody can name", () => {
+		const game = build([
+			ev(0, 11, 2, "rim", 114, [99, 93]),
+			ev(1, 21, 2, "mid", 80, [99, 95]),
+			ev(0, 12, 2, "ft", 30, [101, 95]),
+		]);
+		game.flow = {
+			...game.flow!,
+			late: [
+				{ clock: 300, pts: [95, 90] },
+				{ clock: 120, pts: [97, 93] },
+			],
+			lastLead: {
+				side: 0,
+				pid: 11,
+				period: 1,
+				clock: 500,
+				pts: [12, 10],
+				by: 2,
+			},
+			lastTie: { period: 1, clock: 431, pts: 14 },
+		};
+		assert.isUndefined(withSettledLead(game).flow!.lastLead);
+		// And the reader will not have it said.
+		const said =
+			"**x**\n\nThe Wizards took the lead for good on Marcus Nowell's basket with 1:54 left.";
+		assert.include(
+			verifyRecap(said, game).map((v) => v.kind),
+			"go-ahead for good",
+		);
+		// A tie that still stood at the two-minute mark was broken inside the
+		// log: its first basket is the one.
+		game.flow.lastTie = { period: 4, clock: 150, pts: 97 };
+		game.flow.late = [
+			{ clock: 300, pts: [95, 90] },
+			{ clock: 120, pts: [97, 97] },
+		];
+		assert.equal(withSettledLead(game).flow!.lastLead!.clock, 114);
+	});
 });
 
 describe("how many overtimes", () => {
