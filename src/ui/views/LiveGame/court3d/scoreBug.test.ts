@@ -1,4 +1,5 @@
 import { assert, describe, test } from "vitest";
+import { buildClocks, gameClockAt, shotClockAt } from "./clock.ts";
 import { buildFouls, finalText, foulsAt, isFinal } from "./scoreBug.ts";
 import { compile } from "./testGame.ts";
 
@@ -101,4 +102,43 @@ describe("the final horn on the score bug", () => {
 		assert.strictEqual(finalText("OT"), "FINAL/OT");
 		assert.strictEqual(finalText("3OT"), "FINAL/3OT");
 	}, 60_000);
+});
+
+describe("the shot clock on the score bug", () => {
+	// A new period starts with a full shot clock. The lines that open one
+	// carry it as the last period left it (the sim restarts it after them):
+	// the quarter came up with the last one's 14 on it until the inbound.
+	test("a full 24 to start a period, not what the last one left", () => {
+		const events: any[] = [
+			{ type: "jumpBall", t: 0, clock: 720, shotClock: 24 },
+			{ type: "fgaTp", t: 0, clock: 1.2, shotClock: 14.3 },
+			{ type: "missTp", t: 0, clock: 0, shotClock: 14.3 },
+			{ type: "endOfPeriod", t: 0, clock: 0, shotClock: 14.3 },
+			{ type: "period", period: 2, clock: 720, shotClock: 14.3 },
+			{ type: "sub", t: 1, clock: 720, shotClock: 14.3 },
+			{ type: "fgaAtRim", t: 1, clock: 710.7, shotClock: 14.7 },
+		];
+		const tl = {
+			beats: events.map((e, i) => ({
+				i,
+				type: e.type,
+				preStart: i * 1000,
+				actionStart: i * 1000 + 600,
+				end: i * 1000 + 900,
+			})),
+			poss: [],
+			fast: [],
+			cuts: [],
+			ball: [],
+		};
+		const clocks = buildClocks(tl as never, events);
+		// (Off over the break.)
+		assert.isUndefined(shotClockAt(clocks, 3600));
+		for (const k of [4, 5]) {
+			assert.strictEqual(gameClockAt(clocks, k * 1000 + 600), 720);
+			assert.strictEqual(shotClockAt(clocks, k * 1000 + 600), 24, `${k}`);
+		}
+		// And on from there as the sim has it.
+		assert.closeTo(shotClockAt(clocks, 6600)!, 14.7, 0.01);
+	});
 });

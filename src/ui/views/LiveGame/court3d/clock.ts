@@ -58,6 +58,12 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 	// Whether this game's lines carry the shot clock at all (older saved
 	// replays don't, and fall back to reading it off possession).
 	let exact = false;
+	// The game clock a period started at, while it still reads that: the
+	// lines that open a period carry the shot clock as the last one left it
+	// (the sim restarts it after logging them), so the new quarter came up
+	// with the last one's 14 or 17 on it until the ball was inbounded. Before
+	// any time has run in a period its shot clock is a full one.
+	let fresh: number | undefined;
 	const possStarts = tl.poss.map(([t]) => t).filter(Number.isFinite);
 	const possStartSet = new Set(possStarts);
 	for (const b of tl.beats) {
@@ -68,6 +74,7 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 		if (e.type === "period" || e.type === "overtime") {
 			period = typeof e.period === "number" ? e.period : period + 1;
 			last = undefined;
+			fresh = typeof e.clock === "number" ? e.clock : undefined;
 		}
 		if (typeof e.clock !== "number") {
 			continue;
@@ -121,7 +128,12 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 			}
 		}
 		marks.push({ t: b.actionStart, clock: e.clock, period });
-		const shot = typeof e.shotClock === "number" ? e.shotClock : undefined;
+		if (fresh !== undefined && e.clock < fresh) {
+			fresh = undefined;
+		}
+		const logged = typeof e.shotClock === "number" ? e.shotClock : undefined;
+		const shot =
+			logged !== undefined && fresh !== undefined ? SHOT_CLOCK : logged;
 		if (shot !== undefined) {
 			// The sim's own shot clock (games simmed since it started logging
 			// it). If it reads higher than the last line's, run down by the game
