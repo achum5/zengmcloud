@@ -8820,8 +8820,14 @@ export const seriesTail = (
 		if (games === s.bestOf) {
 			return {
 				kind: "decider",
-				tails: [`to win the series in Game ${games}`],
-				whos: [`who won the series in Game ${games}`],
+				tails: [
+					`to win the series in Game ${games}`,
+					`to take Game ${games} and the series`,
+				],
+				whos: [
+					`who won the series in Game ${games}`,
+					`who took Game ${games} and the series`,
+				],
 			};
 		}
 		const n = numWord(games);
@@ -10140,7 +10146,9 @@ export const leagueNotes = (
 			),
 		});
 	}
-	if (bombs && bombs.tp >= 17) {
+	// Twenty, not seventeen: some club hits seventeen most nights, and "The
+	// Thunder made the most threes on the slate, 18" closed one wrap in six.
+	if (bombs && bombs.tp >= 20) {
 		cands.push({
 			sort: 3,
 			tid: bombs.shape.winner.tid,
@@ -10482,8 +10490,19 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		headline.game === marquee &&
 		headline.text.includes(nick(mShape.winner)) &&
 		headline.text.includes(nick(mShape.loser));
-	// The marquee's series, unless the headline already gave it.
+	const mSeries = marquee.series;
+	const mWinnerHome = mSeries?.homeAbbrev === mShape.winner.abbrev;
+	const mEnded =
+		!!mSeries &&
+		(mWinnerHome ? mSeries.homeWon : mSeries.awayWon) + 1 ===
+			Math.floor((mSeries.bestOf ?? 1) / 2) + 1;
+	// The marquee's series, unless the headline already gave it - but a
+	// series it ended is told in the lead whatever the headline said: "Heat
+	// put the Nuggets out in five" stood over "Evan Hayes went for 23 points
+	// as the Heat came back to top the Nuggets 124-111", and the series
+	// waited for the closing paragraph.
 	const headlineHasSeries =
+		!mEnded &&
 		/\d-\d(?!\d)|sweep|close|put .* out|finish|eliminat|advance|move on|through|game \d|force|even|title|champion/i.test(
 			headline.text.replaceAll(/\b\d{2,3}-\d{2,3}\b/g, ""),
 		);
@@ -10497,12 +10516,6 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	// has.
 	// A series it ended is told by where the winners go next ("The Raptors
 	// move on to the Conference Finals").
-	const mSeries = marquee.series;
-	const mWinnerHome = mSeries?.homeAbbrev === mShape.winner.abbrev;
-	const mEnded =
-		!!mSeries &&
-		(mWinnerHome ? mSeries.homeWon : mSeries.awayWon) + 1 ===
-			Math.floor((mSeries.bestOf ?? 1) / 2) + 1;
 	if (
 		playoffs &&
 		mSeries &&

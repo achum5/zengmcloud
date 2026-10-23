@@ -1108,6 +1108,70 @@ describe("edge cases", () => {
 		]);
 	});
 
+	// "Heat put the Nuggets out in five" over "Evan Hayes went for 23 points
+	// as the Heat came back to top the Nuggets 124-111": the wrap's lead
+	// left the series to its closing paragraph.
+	test("a wrap's lead tells the series its marquee game ended", () => {
+		const series = (home: RecapTeam, away: RecapTeam, won: number) => ({
+			round: 2,
+			numRounds: 4,
+			bestOf: 7,
+			homeAbbrev: home.abbrev,
+			awayAbbrev: away.abbrev,
+			homeWon: won,
+			awayWon: 2,
+		});
+		for (let day = 1; day <= 12; day++) {
+			const home = squad(
+				{ tid: 1, name: "Hawks" },
+				{ name: "Ace Hawk", pid: 11, pts: 33, fg: 12, fga: 22 },
+				118,
+			);
+			const away = squad(
+				{ tid: 2, name: "Kings" },
+				{ name: "Rex King", pid: 21, pts: 24, fg: 9, fga: 20 },
+				104,
+			);
+			const h2 = squad(
+				{ tid: 3, name: "Suns" },
+				{ name: "Cy Sun", pid: 31 },
+				99,
+			);
+			const a2 = squad(
+				{ tid: 4, name: "Jazz" },
+				{ name: "Di Jazz", pid: 41 },
+				95,
+			);
+			const wrap = getAutoDayRecap({
+				season: 2025,
+				day,
+				playoffs: true,
+				games: [
+					game([home, away], {
+						day,
+						playoffs: true,
+						series: series(home, away, 3),
+					}),
+					game([h2, a2], {
+						gid: 78,
+						day,
+						playoffs: true,
+						series: series(h2, a2, 1),
+					}),
+				],
+			});
+			clean(wrap);
+			const lead = wrap.split("\n\n").find((p) => !p.startsWith("*"))!;
+			const first = lead.split(/(?<=\.) /)[0]!;
+			assert.match(first, /Hawks/, wrap);
+			assert.match(
+				first,
+				/close out the series in six|win the series in six|in Game 6/,
+				wrap,
+			);
+		}
+	});
+
 	// "Grant Green put up 29 points as the Lakers took down the Pistons
 	// 124-114" was the whole lede of the night that won them the title; not
 	// one of 45 series-ending ledes said the series was over.
