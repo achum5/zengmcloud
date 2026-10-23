@@ -135,7 +135,10 @@ describe("simmed recaps", () => {
 	test("the lede goes to the night's scorer unless the line is rare", () => {
 		for (const { gid, recap, game } of pairs) {
 			const { w } = sides(game);
-			const [headline, , lede = ""] = recap.split("\n");
+			const [headline, , rawLede = ""] = recap.split("\n");
+			// The late go-ahead basket the lede ends on names its shooter,
+			// who is not the man the lede is about.
+			const lede = rawLede.replace(/ on [A-Z][^.]*? go-ahead [^.]*/, "");
 			const named = w.players
 				.map((p) => ({ p, at: lede.indexOf(p.name) }))
 				.filter((x) => x.at >= 0)
@@ -922,6 +925,31 @@ describe("simmed recaps", () => {
 						/\bthey\b|\bnever (?:led|trailed|got back)/i.test(prev),
 					`gid ${gid}: ${prev} || ${cur}`,
 				);
+			}
+		}
+	});
+
+	// "Jalen Ingram totaled 23 points and 12 rebounds... Jalen Ingram's 23
+	// points were more than twice his 8.8 average", and "Walker Carter
+	// exploded for 37 points and 8 assists. Walker Carter won it on a layup
+	// ... and finished with 37 points and 8 assists".
+	test("a man's points are given once in the body", () => {
+		for (const { gid, recap, game } of pairs) {
+			const sentences = recap
+				.split("\n\n")
+				.slice(1)
+				.join(" ")
+				.split(/(?<=[!.?])\s+/);
+			for (const t of game.teams) {
+				for (const p of t.players) {
+					if (p.pts < 10) {
+						continue;
+					}
+					const told = sentences.filter(
+						(s) => s.includes(p.name) && s.includes(`${p.pts} points`),
+					);
+					assert.ok(told.length <= 1, `gid ${gid}: ${told.join(" | ")}`);
+				}
 			}
 		}
 	});

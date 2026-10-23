@@ -72,7 +72,12 @@ import {
 	type BeatContext,
 	type DayBeatContext,
 } from "./recapBeats.ts";
-import { finishStory, winningShotKind } from "./recapFinish.ts";
+import {
+	finishStory,
+	shotName,
+	winningShotKind,
+	withSettledLead,
+} from "./recapFinish.ts";
 
 // A procedural, no-AI recap engine. getAutoRecap turns one RecapGame into a
 // bold headline plus a couple of tight paragraphs; getAutoDayRecap turns a whole
@@ -998,11 +1003,23 @@ const clutchShot = (
 		const regPeriods =
 			(game.teams[0].ptsQtrs?.length ?? 0) - (game.overtimes ?? 0);
 		const name = nameOfPid(game, last.pid);
+		// A trip to the line for two is not "a go-ahead basket", and every
+		// headline that names the shot takes it as one thing ("X's free
+		// throw sinks the Suns"): the lede's go-ahead clause tells those.
+		const trip = (game.flow?.finish ?? []).find(
+			(x) =>
+				x.side === winnerSide &&
+				x.period === last.period &&
+				x.kind === "ft" &&
+				x.pts >= 2 &&
+				Math.abs(x.clock - last.clock) < 0.15,
+		);
 		if (
 			last.side === winnerSide &&
 			regPeriods > 0 &&
 			last.period >= regPeriods &&
-			name
+			name &&
+			!trip
 		) {
 			return {
 				name,
@@ -1018,6 +1035,48 @@ const clutchShot = (
 		}
 	}
 	return undefined;
+};
+
+// THE BASKET THAT DECIDED A CLOSE GAME, when it came in the last minute and
+// the sim did not call it a game-winner (it calls only the last score that).
+// "Miles Foster answered with a jumper with 19.9 seconds to go that put the
+// Pacers up 108-107" was the third sentence of the story under a lede about
+// six men in double figures; a desk leads with it. The lede's closing clause:
+// " on Miles Foster's go-ahead jumper with 19.9 seconds left".
+const lateGoAhead = (
+	game: RecapGame,
+	shape: Shape,
+	shot: ReturnType<typeof clutchShot>,
+): { text: string; name: string } | undefined => {
+	if ((shot && !shot.tying) || shape.margin > 3 || shape.ot > 0) {
+		return undefined;
+	}
+	const last = game.flow?.lastLead;
+	const wSide = sideOf(game, shape.winner);
+	if (
+		!last ||
+		last.side !== wSide ||
+		last.period < shape.regPeriods ||
+		!(last.clock <= 60)
+	) {
+		return undefined;
+	}
+	const name = nameOfPid(game, last.pid);
+	const left = clockLeft(last.clock);
+	// What it was, from the log's own row: "free throws", not "basket".
+	const e = (game.flow?.finish ?? [])
+		.filter(
+			(x) =>
+				x.side === wSide &&
+				x.period === last.period &&
+				Math.abs(x.clock - last.clock) < 0.15,
+		)
+		.at(-1);
+	if (!name || !left || !e) {
+		return undefined;
+	}
+	const kind = shotName(e).replace(/^(?:two|three) /, "");
+	return { text: ` on ${poss(name)} go-ahead ${kind} with ${left} left`, name };
 };
 
 // "a free throw with 0.5 seconds left" / "a buzzer-beater" - the winning shot
@@ -5511,19 +5570,20 @@ const vsAverageNote = (
 		// What he had been doing, next to what he did - in one sentence. "Anthony
 		// Mathis came in averaging 17.3 points a game." opened a paragraph on
 		// its own and left the reader to go back for the 33.
+		// Without his points a second time: the lede has them.
 		const ratio = star.pts / avg.pts;
 		const against =
 			ratio > 2.02
-				? "more than twice"
+				? "more than doubled"
 				: ratio >= 1.98
-					? "twice"
+					? "doubled"
 					: ratio >= 1.8
-						? "nearly twice"
-						: "well above";
+						? "nearly doubled"
+						: "scored well above";
 		return pick(
 			rng,
 			[
-				`${poss(star.name)} ${star.pts} points were ${against} his ${fmtPct(avg.pts)} average.`,
+				`${star.name} ${against} his ${fmtPct(avg.pts)}-point average.`,
 				...(beat
 					? [
 							`${star.name} had been averaging ${fmtPct(avg.pts)} points a game, and he ${beat}.`,
@@ -6751,6 +6811,13 @@ const buildGameRecap = (game: RecapGame): string => {
 
 	const headline = buildHeadline(game, shape, star, post, rng);
 	const tail = ledeTail(game, shape, headline, star, rng);
+	// A game decided in its last minute, on the basket that decided it, when
+	// nothing else holds the lede's last slot.
+	const goAhead =
+		tail.text === "" ? lateGoAhead(game, shape, clutchShot(game)) : undefined;
+	if (goAhead) {
+		tail.text = goAhead.text;
+	}
 
 	// Paragraph 1: the result and how it happened. A game-winning shot is the
 	// game's defining moment, so it always gets a beat right after the lead -
@@ -6825,8 +6892,13 @@ const buildGameRecap = (game: RecapGame): string => {
 		}
 		const figures = (t: string) => t.match(/\d+(?:\.\d+)?/g) ?? [];
 		const inHeadline = new Set(figures(headline.text));
-		if (opener.starFolded) {
-			// His line is in the opener.
+		// He won it, and the winning-shot sentence carries his line: "Walker
+		// Carter exploded for 37 points and 8 assists. Walker Carter won it
+		// on a layup with 2.5 seconds left and finished with 37 points and 8
+		// assists" gave the line twice in two sentences.
+		const starWonIt = !!shot && !shot.tying && shot.name === star.name && !twin;
+		if (opener.starFolded || starWonIt) {
+			// His line is in the opener, or comes with the shot.
 		} else if (
 			!headline.spentLine ||
 			figures(starSentence).some((n) => !inHeadline.has(n))
@@ -6879,7 +6951,13 @@ const buildGameRecap = (game: RecapGame): string => {
 		// (A headline that printed his whole line, and a line with no split
 		// to add: the sentence is not pushed a third time.)
 		if (shot && !shot.tying) {
-			const clutch = clutchSentence(shot, shape);
+			const clutch =
+				starWonIt && opener.starFolded
+					? {
+							text: `${star.name} won it on ${clutchWhat(shot)}.`,
+							told: star.name,
+						}
+					: clutchSentence(shot, shape);
 			para1.push(clutch.text);
 			heroTold = clutch.told;
 		}
@@ -7013,10 +7091,30 @@ const buildGameRecap = (game: RecapGame): string => {
 			flowCovered = flow.covers;
 		}
 	}
+	// The late go-ahead basket the lede ended on is his own when he is the
+	// lede's subject: "Miles Foster had 23 points as the Pacers beat the
+	// Bulls 110-107 on his go-ahead jumper".
+	const goAheadAt = goAhead
+		? para1.findIndex((t) => t.includes(goAhead.text))
+		: -1;
+	if (goAhead && goAheadAt >= 0) {
+		const t = para1[goAheadAt]!;
+		// Not after two names: "Reggie Carter and Scoot Carter scored 17
+		// points apiece as... on his go-ahead three-pointer".
+		if (
+			(t.startsWith(`${goAhead.name} `) || t.startsWith(`${goAhead.name},`)) &&
+			!t.startsWith(`${goAhead.name} and `)
+		) {
+			para1[goAheadAt] = t.replace(
+				`${poss(goAhead.name)} go-ahead`,
+				"his go-ahead",
+			);
+		}
+	}
 	// How it finished, for a game that was still a game at the end: the
 	// closing scores in order when the sim kept them, the go-ahead basket
 	// and the last tie when it did not.
-	const shotTold = shot !== undefined && !shot.tying;
+	const shotTold = (shot !== undefined && !shot.tying) || goAheadAt >= 0;
 	const lastNamed = body.at(-1)?.includes(star.name)
 		? star.name
 		: heroTold && body.at(-1)?.includes(heroTold)
@@ -7799,7 +7897,7 @@ export const teamTheSwitch = (paragraphs: string[], shape: Shape): string[] => {
 };
 
 export const getAutoRecap = (game: RecapGame): string =>
-	fixArticles(buildGameRecap(game));
+	fixArticles(buildGameRecap(withSettledLead(game)));
 
 // ONE WORD FOR HALFTIME AT A TIME. "The Timberwolves took a 56-52 lead into
 // the break. After the break, they outscored the Pacers 56-43" - each
@@ -8118,8 +8216,16 @@ const gameBlurb = (
 		const who = nameOfPid(game, last.pid);
 		const left = clockLeft(last.clock);
 		if (who && left) {
-			const kind =
-				last.by === 1
+			// Two free throws are "go-ahead free throws", not a basket.
+			const e = (game.flow?.finish ?? []).find(
+				(x) =>
+					x.side === last.side &&
+					x.period === last.period &&
+					Math.abs(x.clock - last.clock) < 0.15,
+			);
+			const kind = e
+				? shotName(e).replace(/^(?:two|three) /, "")
+				: last.by === 1
 					? "free throw"
 					: (winningShotKind(game, game.winnerTid, last.clock) ?? "basket");
 			return `${base} on ${poss(who)} go-ahead ${kind} with ${left} left`;
@@ -9928,7 +10034,9 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 	beginRecapBatch();
 	resetVerbLedger();
 	try {
-		return fixArticles(buildDayRecap(input));
+		return fixArticles(
+			buildDayRecap({ ...input, games: input.games.map(withSettledLead) }),
+		);
 	} finally {
 		endRecapBatch();
 	}

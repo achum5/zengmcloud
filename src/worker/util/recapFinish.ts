@@ -751,6 +751,49 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 	return out;
 };
 
+// THE SCORE THAT PUT THE WINNERS AHEAD FOR GOOD. The flow's lastLead is the
+// last time the lead CHANGED HANDS, and a tie does not change hands: up
+// 112-109 on a three with 41.6 seconds left, tied at 119 with 5.9 left, ahead
+// again on a layup with 2.5 left - and lastLead still pointed at the three, so
+// the recap called it "the go-ahead three-pointer" and said they "went in
+// front for good" 39 seconds before the game was tied. When the last tie came
+// after it, the score that broke that tie is the one, and the log has it.
+export const withSettledLead = (game: RecapGame): RecapGame => {
+	const flow = game.flow;
+	const lead = flow?.lastLead;
+	const tie = flow?.lastTie;
+	if (!flow || !lead || !tie) {
+		return game;
+	}
+	const later = (
+		a: { period: number; clock: number },
+		b: { period: number; clock: number },
+	) => a.period > b.period || (a.period === b.period && a.clock < b.clock);
+	if (!later(tie, lead)) {
+		return game;
+	}
+	const next = (flow.finish ?? []).find(
+		(e) => e.pts > 0 && later(e, tie) && e.score[0] !== e.score[1],
+	);
+	if (!next) {
+		return game;
+	}
+	return {
+		...game,
+		flow: {
+			...flow,
+			lastLead: {
+				side: next.side,
+				pid: next.pid,
+				period: next.period,
+				clock: next.clock,
+				pts: [next.score[0], next.score[1]],
+				by: next.pts,
+			},
+		},
+	};
+};
+
 // What the winning shot was, for the headline and the lede, when the sim's
 // own note only says "basket": the finish log knows whether it was a
 // layup, a jumper or a hook.

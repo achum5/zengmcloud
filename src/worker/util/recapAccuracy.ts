@@ -902,14 +902,14 @@ export const verifyRecap = (
 	// line, or in the playoffs the postseason one, whichever he had.
 	for (const sentence of splitSentences(recap)) {
 		for (const m of sentence.matchAll(
-			/\b(?:came in averaging|had been averaging|his) (\d+(?:\.\d)?) (?:points a game|average)\b/g,
+			/\b(?:came in averaging|had been averaging) (\d+(?:\.\d)?) points a game|\bhis (\d+(?:\.\d)?)(?:-point)? average\b/g,
 		)) {
 			const who = lastNameIn(sentence.slice(0, m.index));
 			const p = who ? byName.get(who) : undefined;
 			if (!p) {
 				continue;
 			}
-			const n = Number(m[1]);
+			const n = Number(m[1] ?? m[2]);
 			const lines = [p.seasonAvg?.pts, p.playoffAvg?.pts].filter(
 				(x): x is number => x !== undefined,
 			);

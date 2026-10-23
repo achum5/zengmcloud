@@ -5,7 +5,12 @@ import type {
 	RecapPlayer,
 	RecapTeam,
 } from "./getDayGamesForRecap.ts";
-import { finishScores, finishStory, shotName } from "./recapFinish.ts";
+import {
+	finishScores,
+	finishStory,
+	shotName,
+	withSettledLead,
+} from "./recapFinish.ts";
 import { otPhrase, rngFromSeed } from "./recapText.ts";
 import { verifyRecap } from "./recapAccuracy.ts";
 
@@ -330,6 +335,40 @@ describe("finishStory", () => {
 			rngFromSeed(1),
 		).join(" ");
 		assert.match(text, /^(His layup|It was 99-99 after his layup)/);
+	});
+});
+
+// Up 112-109 on a three with 41.6 seconds left, tied at 119 with 5.9 left,
+// ahead again on a layup with 2.5 left: the flow's lastLead stayed on the
+// three, and the recap called it the go-ahead basket.
+describe("withSettledLead", () => {
+	test("a tie after the last lead change moves the lead to the basket that broke it", () => {
+		const game = build([
+			ev(0, 11, 3, "tp", 41.6, [112, 109]),
+			ev(1, 21, 2, "rim", 5.9, [112, 114]),
+			ev(1, 22, 3, "tp", 4, [117, 117]),
+			ev(0, 12, 2, "rim", 2.5, [119, 117]),
+			ev(0, 12, 1, "ft", 1.6, [120, 117]),
+		]);
+		game.flow = {
+			...game.flow!,
+			lastLead: {
+				side: 0,
+				pid: 11,
+				period: 4,
+				clock: 41.6,
+				pts: [112, 109],
+				by: 3,
+			},
+			lastTie: { period: 4, clock: 4, pts: 117 },
+		};
+		const settled = withSettledLead(game).flow!.lastLead!;
+		assert.equal(settled.pid, 12);
+		assert.equal(settled.clock, 2.5);
+		assert.deepEqual(settled.pts, [119, 117]);
+		// No tie after it: left alone.
+		game.flow.lastTie = { period: 4, clock: 50, pts: 109 };
+		assert.equal(withSettledLead(game).flow!.lastLead!.pid, 11);
 	});
 });
 

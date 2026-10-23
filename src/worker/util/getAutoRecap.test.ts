@@ -8270,7 +8270,7 @@ describe("the wire lede", () => {
 		);
 		assert.match(
 			recap,
-			/Tyrese Nowell's jumper with 41\.3 seconds (?:left|to go|to play)/,
+			/Tyrese Nowell's (?:go-ahead )?jumper with 41\.3 seconds (?:left|to go|to play)|his go-ahead jumper with 41\.3 seconds left/,
 		);
 		// A basket at the horn is not followed by "got no closer".
 		assert.match(recap, /at the buzzer made the final 101-99/);
