@@ -1383,6 +1383,7 @@ const Court3D = ({
 				// pixels this many picture pixels.
 				textScale: Math.max(1, Math.round(8 / ((7 * art) / dpr))),
 				tagClear: s.covers,
+				away: !!view,
 				crew: working.states.flatMap((st) => {
 					const c = cr.crewLooks.get(st.pid);
 					return c ? [{ st, body: c.body, look: c.look }] : [];

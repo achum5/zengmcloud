@@ -240,6 +240,9 @@ export type Frame = {
 	// tag under the man with the ball goes over his head instead of behind
 	// one.
 	tagClear?: { x0: number; x1: number; y0: number }[];
+	// Off the play: a look round the building, in on a huddle, the starting
+	// lineups - nobody's name tag over it.
+	away?: boolean;
 	// The officials, the coaches and the photographers (see crew.ts), and
 	// any of their cameras going off.
 	crew?: { st: PlayerState; body: Body; look: Look }[];
@@ -1146,9 +1149,10 @@ export const drawFrame = (f: Frame) => {
 		ctx.fill();
 	}
 
-	// Whoever has the ball, named under his feet.
+	// Whoever has the ball, named under his feet - following the play, not
+	// looking round the building or in on a huddle.
 	const holder =
-		ball.holder === undefined || f.moment.warm
+		ball.holder === undefined || f.moment.warm || f.away
 			? undefined
 			: players.find((p) => p.pid === ball.holder);
 	if (holder) {
