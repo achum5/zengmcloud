@@ -12,6 +12,7 @@ import {
 import {
 	bodyPoint,
 	gripped,
+	holdOf,
 	onRim,
 	poseOf,
 	type PlayerState,
@@ -25,7 +26,6 @@ import {
 } from "./figure.ts";
 import {
 	gripOf,
-	holdBall,
 	skeleton,
 	turnUpper,
 	type Body,
@@ -518,9 +518,7 @@ const build = (
 	const q = poseOf(st);
 	// (Just let go of it, his hands come off where it was.)
 	const held =
-		st.holding || st.grip !== undefined
-			? holdBall(body, q, st.anim, st.grip !== undefined, st.mirror === true)
-			: undefined;
+		st.holding || st.grip !== undefined ? holdOf(st, body, q) : undefined;
 	const sk = held
 		? gripped(held.sk, st, body, q)
 		: onRim(skeleton(body, q), st, body);

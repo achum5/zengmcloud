@@ -1,5 +1,11 @@
 import { assert, describe, test } from "vitest";
-import { BALL_R, moveBallAt } from "./evaluate.ts";
+import {
+	BALL_R,
+	holdOf,
+	moveBallAt,
+	poseOf,
+	type PlayerState,
+} from "./evaluate.ts";
 import {
 	ANIMS,
 	bodyOf,
@@ -95,6 +101,61 @@ describe("3D poses", () => {
 				);
 			}
 		}
+	});
+
+	// Held in both hands and straight into a move that has it all in one
+	// hand from the start - a windmill out of a rebound, a pass pushed out of
+	// a hold - the ball goes over from the one hold to the other as he eases
+	// out of the first: not across into the one hand in the frame the move
+	// starts.
+	test("the ball goes over from one hold to the next, not across in a frame", () => {
+		const body = bodyOf();
+		const base = {
+			pid: 1,
+			team: 0,
+			shown: true,
+			x: 0,
+			y: 0,
+			z: 0,
+			yaw: 0,
+			moving: false,
+			holding: true,
+		} as const;
+		const gap = (a: V3, b: V3) => Math.hypot(a.f - b.f, a.s - b.s, a.u - b.u);
+		let pairs = 0;
+		for (const was of ["hold", "board", "triple"] as AnimName[]) {
+			for (const anim of Object.keys(ANIMS) as AnimName[]) {
+				const g = gripOf(anim);
+				if (g !== "push" && g !== "pull" && g !== "cup") {
+					continue;
+				}
+				pairs += 1;
+				const at = (w: number) => {
+					const st: PlayerState = {
+						...base,
+						anim,
+						phase: 0,
+						from: { anim: was, phase: 0.5, w, held: true },
+					};
+					return holdOf(st, body, poseOf(st)).ball;
+				};
+				const before: PlayerState = { ...base, anim: was, phase: 0.5 };
+				const after: PlayerState = { ...base, anim, phase: 0 };
+				// Where he had it as the move began - and, all the way into it,
+				// where it holds it.
+				assert.isBelow(
+					gap(at(1), holdOf(before, body, poseOf(before)).ball),
+					0.01,
+					`${was} > ${anim}`,
+				);
+				assert.isBelow(
+					gap(at(0.001), holdOf(after, body, poseOf(after)).ball),
+					0.02,
+					`${was} > ${anim}`,
+				);
+			}
+		}
+		assert.isAbove(pairs, 8);
 	});
 
 	test("a seven-footer stands taller than a six-footer", () => {

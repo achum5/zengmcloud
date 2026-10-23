@@ -45,6 +45,7 @@ import {
 	type AnimName,
 	type Body,
 	type DribbleMove,
+	type Grip,
 	type Hand,
 	type Limb,
 	type Pose,
@@ -3894,6 +3895,51 @@ export const gripped = (
 	};
 };
 
+// The ball in his hands and his arms on it, the way his move holds it - and,
+// easing out of a move that held it another way, into one that has it all
+// in one hand from the start (cupped for a windmill out of a rebound,
+// pushed out for a pass, pulled round in a spin), where that one had it as
+// it changed, as much as his arms are still in it: it goes over from the
+// one hold to the other, not across in a frame. (Up on a jumper or a
+// finish, the hand takes it over as it comes up anyway - see holdBall.)
+// Whatever draws him and whatever puts the ball in his hands both ask
+// this, so the two agree.
+const ONE_HAND = new Set<Grip>(["push", "pull", "cup"]);
+export const holdOf = (
+	st: PlayerState,
+	body: Body,
+	q: Pose,
+): { sk: Skeleton; ball: V3 } => {
+	const carry = st.grip !== undefined;
+	const now = holdBall(body, q, st.anim, carry, st.mirror === true);
+	const f = st.from;
+	const w = f ? (f.arms ?? f.w) : 0;
+	const a = f ? gripOf(f.anim) : undefined;
+	const b = gripOf(st.anim);
+	if (
+		!f ||
+		w <= 0 ||
+		!f.held ||
+		!(ONE_HAND.has(a!) || ONE_HAND.has(b)) ||
+		(a === b && (f.mirror === true) === (st.mirror === true))
+	) {
+		return now;
+	}
+	const was = holdBall(body, blendPose(f), f.anim, false, f.mirror === true);
+	return {
+		sk: {
+			...now.sk,
+			armR: mixLimb(now.sk.armR, was.sk.armR, w),
+			armL: mixLimb(now.sk.armL, was.sk.armL, w),
+		},
+		ball: {
+			f: now.ball.f + (was.ball.f - now.ball.f) * w,
+			s: now.ball.s + (was.ball.s - now.ball.s) * w,
+			u: now.ball.u + (was.ball.u - now.ball.u) * w,
+		},
+	};
+};
+
 // Hanging on the rim after a dunk: both hands on the front of it, a
 // shoulder's width apart.
 export const onRim = (sk: Skeleton, st: PlayerState, body: Body): Skeleton => {
@@ -3954,16 +4000,7 @@ export const handWorld = (
 // The ball in his hands, held the way his move holds it.
 export const heldBall = (st0: PlayerState, body: Body): Pt3 => {
 	const st = withBody(st0, body);
-	return bodyPoint(
-		st,
-		holdBall(
-			body,
-			poseOf(st),
-			st.anim,
-			st.grip !== undefined,
-			st.mirror === true,
-		).ball,
-	);
+	return bodyPoint(st, holdOf(st, body, poseOf(st)).ball);
 };
 
 export type BallState = {
