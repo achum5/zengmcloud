@@ -3562,6 +3562,55 @@ describe("copy that only reads wrong in context", () => {
 		}
 	});
 
+	// "Payton Jackson picks the 76ers apart: 20 points and 5 steals" put a
+	// passer's verb on a steals line; "Six Thunder score in double figures as
+	// they roll past..." put a pronoun in a headline.
+	test("a headline's verb fits its line, and no headline says they", () => {
+		const heads: string[] = [];
+		for (let gid = 500; gid < 560; gid++) {
+			const recap = getAutoRecap(
+				game({
+					gid,
+					teams: [
+						realisticTeam(
+							{
+								tid: 1,
+								name: "Bulls",
+								abbrev: "CHI",
+								pts: 116,
+								ptsQtrs: [29, 29, 29, 29],
+							},
+							player({
+								name: "Payton Jackson",
+								pts: 22,
+								stl: 6,
+								reb: 4,
+								ast: 3,
+								fg: 9,
+								fga: 16,
+							}),
+						),
+						realisticTeam(
+							{
+								tid: 2,
+								name: "76ers",
+								abbrev: "PHI",
+								pts: 95,
+								ptsQtrs: [24, 24, 24, 23],
+							},
+							player({ name: "Tyrese King", pts: 18, reb: 5 }),
+						),
+					],
+					winnerTid: 1,
+				}),
+			);
+			heads.push(recap.split("\n")[0]!);
+		}
+		const all = heads.join("\n");
+		assert.match(all, /steal|pocket/, all);
+		assert.doesNotMatch(all, /apart:| they /, all);
+	});
+
 	// "Six Jazz scored in double figures as the Jazz got past the
 	// Timberwolves, Keegan Mathis adding 15 points": the team twice in one
 	// clause, and the man tacked on at the end.

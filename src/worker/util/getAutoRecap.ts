@@ -2231,10 +2231,9 @@ const buildHeadlineText = (
 						star.stl,
 						"steal",
 					)} as the ${winnerN} ${verb} the ${loserN}${tag}`,
-					`${star.name} picks the ${loserN} apart: ${plural(
-						star.pts,
-						"point",
-					)} and ${plural(star.stl, "steal")}${tag}`,
+					// Not "picks the 76ers apart": that is a passer's line, and
+					// this one is points and steals.
+					`${star.name} scores ${star.pts} and picks ${star.stl} pockets as the ${winnerN} ${verb} the ${loserN}${tag}`,
 					`${poss(star.name)} ${plural(star.stl, "steal")} turn the game as the ${winnerN} ${verb} the ${loserN}${tag}`,
 				],
 				"headline:steals",
@@ -2306,7 +2305,7 @@ const buildHeadlineText = (
 		`${winnerN} see off the ${loserN} ${scoreTag(shape)}${tag}`,
 		shape.margin >= 15
 			? `${winnerN} pull away from the ${loserN} for ${aNum(shape.margin)}-point win${tag}`
-			: `${winnerN} come out on top of the ${loserN} ${scoreTag(shape)}${tag}`,
+			: `${winnerN} get past the ${loserN} ${scoreTag(shape)}${tag}`,
 		shape.margin >= 15
 			? `${winnerN} have too much for the ${loserN}, ${scoreTag(shape)}${tag}`
 			: `${winnerN} get the better of the ${loserN} ${scoreTag(shape)}${tag}`,
@@ -2318,7 +2317,9 @@ const buildHeadlineText = (
 		...(balanced
 			? [
 					`${winnerN} get ${numWord(teamStats(shape.winner).dblFig)} men into double figures in a ${scoreTag(shape)} win over the ${loserN}${tag}`,
-					`${cap(numWord(teamStats(shape.winner).dblFig))} ${winnerN} score in double figures as they ${verb} the ${loserN}${tag}`,
+					// No pronoun in a headline: not "Six Thunder score in
+					// double figures as they roll past the Trail Blazers".
+					`${winnerN} put ${numWord(teamStats(shape.winner).dblFig)} in double figures and ${verb} the ${loserN}${tag}`,
 				]
 			: []),
 		// A team on a real run is a story the bare score does not carry.

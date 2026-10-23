@@ -227,6 +227,9 @@ describe("simmed recaps", () => {
 				// he had been averaging".
 				/shared it, \d+ assists|[Ii]t was \d+-\d+ the [A-Z]|were \d+ more than the [\d.]+ a game/,
 				/let all of it go before winning it/,
+				// Headlines: a passer's verb on a steals line, a pronoun, a
+				// stock phrase.
+				/picks the [A-Z][\w ]* apart: \d+ points and \d+ steals|score in double figures as they|come out on top of/,
 				// "It was a 11-point game", "the end of a eight-game run".
 				/\ba (?:8|11|18)-|\ba (?:eight|eleven|eighteen)-/,
 				// Prose spells out a streak: "a six-game", not "a 6-game".
