@@ -1,5 +1,5 @@
 import type { Leg, Play } from "./director.ts";
-import { paceAt, paceOf } from "./pace.ts";
+import { lagged, offsOf, paceOf, placeAt } from "./pace.ts";
 import type { Move } from "./poses.ts";
 
 // KEPT OFF EACH OTHER: never one man drawn standing in another. However the
@@ -237,6 +237,7 @@ const sample = (
 	let before = paceOf(legs, -1);
 	let pace = paceOf(legs, 0);
 	let after = paceOf(legs, 1);
+	const off = offsOf(legs);
 	for (let s = 0; s < n; s++) {
 		const t = t0 + s * SEP_MS;
 		while (k + 1 < legs.length && legs[k + 1]!.t0 <= t) {
@@ -245,10 +246,18 @@ const sample = (
 			pace = after;
 			after = paceOf(legs, k + 1);
 		}
-		const { on, u } = paceAt(legs, k, t, pace, before, after);
-		const l = legs[on]!;
-		xs[s] = l.from.x + (l.to.x - l.from.x) * u;
-		ys[s] = l.from.y + (l.to.y - l.from.y) * u;
+		// (Just off his stance, a moment behind.)
+		const late = lagged(legs, t, off);
+		let kl = k;
+		while (kl > 0 && legs[kl]!.t0 > late) {
+			kl--;
+		}
+		const at =
+			kl === k
+				? placeAt(legs, k, late, pace, before, after)
+				: placeAt(legs, kl, late);
+		xs[s] = at.x;
+		ys[s] = at.y;
 		free[s] = touching(legs[k]!) ? 0 : 1;
 	}
 };

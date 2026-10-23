@@ -6,8 +6,8 @@ import type {
 	Leg,
 	Play,
 } from "./director.ts";
-import type { Pt, Pt3, Side } from "./geometry.ts";
-import { along, goes, paceAt } from "./pace.ts";
+import type { Pt3, Side } from "./geometry.ts";
+import { along, goes, lagged, paceAt, placeAt } from "./pace.ts";
 import { liftOf, moveKind, strideOf, type Move } from "./poses.ts";
 import type { FieldPlayerState } from "./sprite.ts";
 
@@ -75,13 +75,6 @@ const lastStarted = <T>(
 
 export const playAt = (tl: FieldTimeline, t: number): Play | undefined =>
 	tl.plays[lastStarted(tl.plays, t, (p) => p.t0)];
-
-const pointOf = (l: Leg, t: number, u = along(l, t)): Pt => {
-	return {
-		x: l.from.x + (l.to.x - l.from.x) * u,
-		y: l.from.y + (l.to.y - l.from.y) * u,
-	};
-};
 
 // Which way he faces through a leg: as told, or the way he goes - or, going
 // nowhere and not told, the way he was.
@@ -367,21 +360,24 @@ const changed = (a: Leg, b: Leg) =>
 // Where one man is at t and what he is doing.
 const stateOf = (
 	part: { pid: number; team: Side; legs: Leg[] },
-	t: number,
+	now: number,
 	apart: Map<number, Sep[]>,
 ): FieldPlayerState | undefined => {
 	const legs = part.legs;
 	if (legs.length === 0) {
 		return undefined;
 	}
+	// (Just off his stance, where - and what - the play has him a moment
+	// before.)
+	const t = lagged(legs, now);
 	const k = lastStarted(legs, t, (l) => l.t0);
 	const l = legs[k]!;
 	const offset = (part.pid * 0.618) % 1;
 	// (Into a stand, still pulling up from the stretch before.)
-	const { on, u: eased } = paceAt(legs, k, t);
+	const { x, y, on, u: eased } = placeAt(legs, k, t);
 	const pulling = on !== k;
-	const at = pointOf(legs[on]!, t, eased);
-	const aside = apartAt(apart.get(part.pid), t);
+	const at = { x, y };
+	const aside = apartAt(apart.get(part.pid), now);
 	if (aside) {
 		at.x += aside.x;
 		at.y += aside.y;

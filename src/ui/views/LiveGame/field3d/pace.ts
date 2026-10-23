@@ -10,16 +10,22 @@ import { moveKind, type Move } from "./poses.ts";
 
 // Off from a stand: up to speed over this long, its start a moment before
 // his - a touch on from his mark when he is meant to go from it, at his
-// pace a moment after. Off from his stance at the snap, never before it:
-// up to speed over this long at the most (or this share of the stretch),
-// the ground lost made up over the rest of it. Pulling up to one: down from
-// his pace over this long, the stretch's end in the middle of it - a touch
+// pace a moment after. Off from nothing before (his first stretch): up to
+// speed over this long at the most (or this share of the stretch), the
+// ground lost made up over the rest of it. Pulling up to one: down from his
+// pace over this long, the stretch's end in the middle of it - a touch
 // short of his mark when it ends, on it a moment after.
 const GO_MS = 240;
-const SNAP_MS = 260;
-const SNAP_MOST = 0.3;
+const FIRST_MS = 260;
+const FIRST_MOST = 0.3;
 const STOP_MS = 240;
 const EASE_LEAST_MS = 120;
+// Off from his stance at the snap, never before it: a moment behind where
+// the play has him getting going, and caught up with it over this long - or
+// this share of his going on from it, if that is less (before he does
+// anything but run on).
+const SNAP_CATCH_MS = 500;
+const SNAP_CATCH_MOST = 0.8;
 
 // Set for the snap.
 const SET = new Set<Move>([
@@ -81,9 +87,12 @@ export const paceOf = (legs: Leg[], k: number): Pace => {
 	if (prev && goes(prev)) {
 		return stop > 0 ? { ...EVEN, h: stop / ms, stop } : EVEN;
 	}
-	if (!prev || SET.has(prev.move)) {
-		const a = Math.min(SNAP_MS / ms, SNAP_MOST);
+	if (!prev) {
+		const a = Math.min(FIRST_MS / ms, FIRST_MOST);
 		return { g: 0, early: 0, a, top: 1 / (1 - a / 2), h: stop / ms, stop };
+	}
+	if (SET.has(prev.move)) {
+		return stop > 0 ? { ...EVEN, h: stop / ms, stop } : EVEN;
 	}
 	// (Not before the stretch before this one's was pulled up from.)
 	const early = Math.max(
@@ -114,6 +123,56 @@ const easedAlong = (l: Leg, t: number, p: Pace): number => {
 	return off(Math.min(1, u));
 };
 
+// The times he goes off his stance at the snap, and how long he is behind
+// the play from each (worked out once for his legs as they are).
+const runsOn = (l: Leg) => goes(l) && moveKind(l.move) === "cycle";
+const offs = new WeakMap<
+	Leg[],
+	{ n: number; off: { b: number; r: number }[] }
+>();
+export const offsOf = (legs: Leg[]) => {
+	const had = offs.get(legs);
+	if (had && had.n === legs.length) {
+		return had.off;
+	}
+	const off: { b: number; r: number }[] = [];
+	for (let j = 1; j < legs.length; j++) {
+		if (!runsOn(legs[j]!) || !SET.has(legs[j - 1]!.move)) {
+			continue;
+		}
+		const b = legs[j]!.t0;
+		let m = j;
+		while (
+			m + 1 < legs.length &&
+			runsOn(legs[m + 1]!) &&
+			legs[m + 1]!.t0 - b < SNAP_CATCH_MS
+		) {
+			m++;
+		}
+		const r = Math.min(SNAP_CATCH_MS, (legs[m]!.t1 - b) * SNAP_CATCH_MOST);
+		if (r > 0) {
+			off.push({ b, r });
+		}
+	}
+	offs.set(legs, { n: legs.length, off });
+	return off;
+};
+
+// The time the play has him where he is at t: a moment behind it just off
+// his stance (see SNAP_CATCH_MS), or t. (The times he goes off it, if had
+// already.)
+export const lagged = (legs: Leg[], t: number, off = offsOf(legs)): number => {
+	for (const { b, r } of off) {
+		if (t > b && t < b + r) {
+			// (Still at the first, and as fast as the play has him at the
+			// last.)
+			const u = (t - b) / r;
+			return b + r * u * u * (2 - u);
+		}
+	}
+	return t;
+};
+
 // Where his feet are at t, k his leg then: which stretch they are on (the
 // one before, into a stand, still pulling up; the next, out of one, already
 // getting going), and how far along it. (The paces of leg k and those
@@ -134,4 +193,72 @@ export const paceAt = (
 		return { on: k + 1, u: easedAlong(next, t, after) };
 	}
 	return { on: k, u: easedAlong(legs[k]!, t, pace) };
+};
+
+// From one stretch straight on into another - going on, not pulled up at
+// it - not from the one's pace and way to the other's all at once, but over
+// this long either side of where they meet (no more than half of either):
+// the corner rounded, him still on it at the time laid out for it.
+const CORNER_MS = 150;
+
+// Where his feet are at t, k his leg then (see paceAt): on his stretch, or
+// round the corner from the one before it or into the next.
+export const placeAt = (
+	legs: Leg[],
+	k: number,
+	t: number,
+	pace = paceOf(legs, k),
+	before = paceOf(legs, k - 1),
+	after = paceOf(legs, k + 1),
+): { x: number; y: number; on: number; u: number } => {
+	const { on, u } = paceAt(legs, k, t, pace, before, after);
+	const l = legs[on]!;
+	const at = {
+		x: l.from.x + (l.to.x - l.from.x) * u,
+		y: l.from.y + (l.to.y - l.from.y) * u,
+		on,
+		u,
+	};
+	if (on === k) {
+		if (t - legs[k]!.t0 < CORNER_MS) {
+			rounded(legs, k, before.top, t, at);
+		}
+		const next = legs[k + 1];
+		if (next && next.t0 - t < CORNER_MS) {
+			rounded(legs, k + 1, pace.top, t, at);
+		}
+	}
+	return at;
+};
+
+// Round the corner between legs j - 1 and j (at the pace he came into it),
+// if he is at it: from where he is on the one to where he would be,
+// carried on from it at its pace, on the other.
+const rounded = (
+	legs: Leg[],
+	j: number,
+	top: number,
+	t: number,
+	at: { x: number; y: number },
+) => {
+	const a = legs[j - 1];
+	const b = legs[j];
+	if (!a || !b || !goes(a) || !goes(b) || Math.abs(a.t1 - b.t0) > 1) {
+		return;
+	}
+	const w = Math.min(CORNER_MS, (a.t1 - a.t0) / 2, (b.t1 - b.t0) / 2);
+	const d = t - b.t0;
+	if (w <= 0 || Math.abs(d) >= w) {
+		return;
+	}
+	const ia = top / (a.t1 - a.t0);
+	const ib = 1 / (b.t1 - b.t0);
+	const ax = d < 0 ? at.x : a.to.x + (a.to.x - a.from.x) * ia * d;
+	const ay = d < 0 ? at.y : a.to.y + (a.to.y - a.from.y) * ia * d;
+	const bx = d < 0 ? b.from.x + (b.to.x - b.from.x) * ib * d : at.x;
+	const by = d < 0 ? b.from.y + (b.to.y - b.from.y) * ib * d : at.y;
+	const v = (d + w) / (2 * w);
+	const s = v * v * (3 - 2 * v);
+	at.x = ax + (bx - ax) * s;
+	at.y = ay + (by - ay) * s;
 };
