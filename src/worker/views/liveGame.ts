@@ -13,6 +13,7 @@ import {
 	setTeamInfo,
 	type TeamSeasonOverride,
 } from "./gameLog.ts";
+import { primeTimeFor } from "../core/game/primeTime.ts";
 import { takeArenaLooks } from "../core/game/replayLooks.ts";
 import type {
 	AllStars,
@@ -261,6 +262,21 @@ export const boxScoreToLiveSim = async ({
 				t.jerseySkins = worn.jerseySkins;
 			}
 		}
+		// Football: the team's home stadium and helmet for the 3D game, as it
+		// has set them - a real team's only, for the reason above.
+		if (__SPORT === "football" && !teamSeasonOverrides?.[i] && t.tid >= 0) {
+			try {
+				const team = await idb.cache.teams.get(t.tid);
+				if (team?.stadium) {
+					t.stadium = team.stadium;
+				}
+				if (team?.helmet) {
+					t.helmet = team.helmet;
+				}
+			} catch {
+				// Cosmetic; the 3D game picks its own.
+			}
+		}
 		t.ptsQtrs = [];
 
 		for (const stat of resetStatsTeam) {
@@ -402,6 +418,16 @@ export default defineView({
 				playByPlay,
 			});
 			(out.initialBoxScore as any).finals = finals;
+			// Football: under the lights for the title game, or two of the
+			// league's better teams; in the afternoon otherwise.
+			if (__SPORT === "football" && !allStarGame) {
+				(out.initialBoxScore as any).primeTime =
+					finals ||
+					(await primeTimeFor(boxScore.season, [
+						boxScore.teams[0].tid,
+						boxScore.teams[1].tid,
+					]));
+			}
 			// The league's own score bug, if it has one (see ScoreBugStyle).
 			(out.initialBoxScore as any).scoreBug = await resolveScoreBug(
 				g.get("scoreBug"),

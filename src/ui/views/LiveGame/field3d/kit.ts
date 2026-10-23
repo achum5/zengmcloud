@@ -1,3 +1,4 @@
+import type { HelmetLook } from "../../../../common/types.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import { luminance, shade } from "./color.ts";
 
@@ -90,10 +91,12 @@ const showing = (colors: string[], on: string, or: string, by = 0.2) =>
 // A team's uniform: at home its jersey in its main color - its darkest, if
 // the main one is too light to be a home jersey - in white pants; on the
 // road a white jersey over pants in its main color. Its helmet the same
-// either way: its main color with a stripe down the middle in the others.
+// either way: its main color with a stripe down the middle in the others -
+// or as the team has set it (see HelmetLook).
 export const fieldKit = (
 	colors: FieldTeamColors,
 	edition: "home" | "away",
+	own: HelmetLook = {},
 ): FieldKit => {
 	const [c0, c1, c2] = colors;
 	const darkest = [...colors].sort((x, y) => luminance(x) - luminance(y))[0]!;
@@ -122,16 +125,21 @@ export const fieldKit = (
 			: WHITE;
 	const stripeOn = (on: string) =>
 		[c0, c1, c2].filter((c) => contrast(c, on) > 0.18).slice(0, 2);
-	const helmetStripe = [c1, c2, WHITE].find((c) => contrast(c, c0) > 0.2);
-	const stripeEdge = [c2, c1, WHITE, INK].find(
-		(c) =>
-			c !== helmetStripe && helmetStripe && contrast(c, helmetStripe) > 0.2,
-	);
+	const helmet = own.shell || c0;
+	const helmetStripe =
+		own.stripe ??
+		[c1, c2, WHITE].find((c) => c !== helmet && contrast(c, helmet) > 0.2);
+	const stripeEdge =
+		own.stripeEdge ??
+		[c2, c1, WHITE, INK].find(
+			(c) =>
+				c !== helmetStripe && helmetStripe && contrast(c, helmetStripe) > 0.2,
+		);
 	return {
-		helmet: c0,
+		helmet,
 		...(helmetStripe ? { helmetStripe } : {}),
 		...(helmetStripe && stripeEdge ? { helmetStripeEdge: stripeEdge } : {}),
-		facemask: MASK_GRAY,
+		facemask: own.facemask || MASK_GRAY,
 		jersey,
 		collar: home ? showing([c1, c2, WHITE], jersey, WHITE) : main,
 		number,
@@ -149,9 +157,10 @@ export const fieldKit = (
 export const fieldKitsFor = (
 	away: FieldTeamColors | undefined,
 	home: FieldTeamColors | undefined,
+	helmets: [HelmetLook?, HelmetLook?] = [],
 ): [FieldKit, FieldKit] => [
-	fieldKit(away ?? ["#1d3461", "#f28c28", "#ffffff"], "away"),
-	fieldKit(home ?? ["#8c1d40", "#f2c14e", "#ffffff"], "home"),
+	fieldKit(away ?? ["#1d3461", "#f28c28", "#ffffff"], "away", helmets[0]),
+	fieldKit(home ?? ["#8c1d40", "#f2c14e", "#ffffff"], "home", helmets[1]),
 ];
 
 const LINEMEN = new Set(["OL", "DL"]);

@@ -11,6 +11,7 @@ import {
 } from "./fieldPaint.ts";
 import {
 	CROSSBAR_Z,
+	END_ROOM,
 	FIELD_L,
 	FIELD_W,
 	GOAL_L,
@@ -18,6 +19,7 @@ import {
 	MID_Y,
 	POST_BACK,
 	POST_W,
+	SIDE_ROOM,
 	UPRIGHT_Z,
 	type Pt3,
 } from "./geometry.ts";
@@ -163,6 +165,36 @@ const drawPylon = (ctx: CanvasRenderingContext2D, cam: Camera, at: Pt3) => {
 	ctx.fillRect(a.x + w / 4, b.y, w / 4, a.y - b.y);
 };
 
+// A day game's shadow of the stands behind the camera across the near part
+// of the field, its edge a little soft.
+const SHADE = "rgba(10, 20, 42, 0.1)";
+const SHADE_EDGE = [0, 0.9, 1.8];
+const drawShadow = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	edge: [number, number],
+) => {
+	const x0 = -END_ROOM - 40;
+	const x1 = FIELD_L + END_ROOM + 40;
+	const at = (x: number) => edge[0] + (x / FIELD_L) * (edge[1] - edge[0]);
+	const near = FIELD_W + SIDE_ROOM;
+	ctx.fillStyle = SHADE;
+	for (const off of SHADE_EDGE) {
+		const pts = [
+			{ x: x0, y: at(x0) + off },
+			{ x: x1, y: at(x1) + off },
+			{ x: x1, y: near },
+			{ x: x0, y: near },
+		].map((p) => project(cam, { ...p, z: 0 }));
+		ctx.beginPath();
+		pts.forEach((p, k) =>
+			k === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y),
+		);
+		ctx.closePath();
+		ctx.fill();
+	}
+};
+
 export const postDepth = (cam: Camera, side: 0 | 1): number =>
 	depthOf(cam, postParts(side).neck);
 
@@ -222,6 +254,10 @@ export const drawFieldFrame = (f: FieldFrame) => {
 		drawTexturedPlane(ctx, cam, n.plane, n.img, 2, 1);
 	}
 	drawFieldLines(ctx, cam, paint.style.lines);
+	if (st.style.shadow) {
+		drawShadow(ctx, cam, st.style.shadow);
+	}
+	// (The broadcast's lines over it all, the shadow too.)
 	if (f.marks && f.marks.length > 0) {
 		drawMarks(ctx, cam, f.marks);
 	}

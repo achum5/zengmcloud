@@ -111,6 +111,9 @@ const figureOf = (
 	};
 };
 
+// How much of the light is left in the shade (a touch more of the blue).
+const SHADED = 0.66;
+
 export const drawFieldPlayer = (
 	ctx: CanvasRenderingContext2D,
 	scratch: Scratch,
@@ -120,6 +123,8 @@ export const drawFieldPlayer = (
 	look: FieldLook,
 	px: number,
 	cache?: SpriteCache,
+	// Standing in the shadow of the stands (a day game's).
+	shaded = false,
 ) => {
 	const base = project(cam, { x: st.x, y: st.y, z: 0 });
 	const k = base.k;
@@ -159,7 +164,7 @@ export const drawFieldPlayer = (
 			from
 				? `|${from.move}${from.mirrored ? "m" : ""}${from.phase}~${from.w}`
 				: ""
-		}`;
+		}${shaded ? "|d" : ""}`;
 		const kept = cache.kept.get(key);
 		if (kept) {
 			cache.kept.delete(key);
@@ -198,6 +203,14 @@ export const drawFieldPlayer = (
 	const oy = upper + lift - px;
 	const made = sculptFigure(cam, fig, body, look, px, ox, oy, w, h);
 	const box = made.box;
+	if (shaded) {
+		const d = made.img.data;
+		for (let i = 0; i < d.length; i += 4) {
+			d[i] = d[i]! * SHADED;
+			d[i + 1] = d[i + 1]! * SHADED;
+			d[i + 2] = d[i + 2]! * (SHADED + 0.06);
+		}
+	}
 	rim(made.img.data, w, h, undefined, box);
 	const rx0 = Math.max(0, box.x0 - 1);
 	const ry0 = Math.max(0, box.y0 - 1);

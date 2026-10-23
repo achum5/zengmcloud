@@ -1,3 +1,4 @@
+import type { StadiumLook } from "../../../../common/types.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import { luminance, mix, shade } from "./color.ts";
 import {
@@ -62,6 +63,8 @@ export type FieldTeam = {
 	name?: string;
 	region?: string;
 	colors?: [string, string, string];
+	// Its home stadium as it has set it (the home team's, that is).
+	stadium?: StadiumLook;
 };
 
 const endZoneOf = (

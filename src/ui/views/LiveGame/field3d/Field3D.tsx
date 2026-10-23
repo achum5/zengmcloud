@@ -70,6 +70,7 @@ import { coachId, sidelineAt, sidelineFor } from "./sideline.ts";
 import { drawFieldPlayer } from "./sprite.ts";
 import { chainGear } from "./sticks.ts";
 import { paintStadium } from "./stadium.ts";
+import { inShadow, venueFor } from "./venue.ts";
 
 // THE 3D FIELD: the football game as a broadcast - the home team's stadium,
 // its field, the twenty-two in their uniforms, a camera up in the press box
@@ -233,6 +234,7 @@ const Field3D = ({
 		name: t?.name,
 		region: t?.region,
 		colors: t?.colors,
+		...(t?.stadium ? { stadium: t.stadium } : {}),
 	});
 	const [logos, setLogos] = useState<[HTMLCanvasElement?, HTMLCanvasElement?]>(
 		[],
@@ -255,7 +257,11 @@ const Field3D = ({
 	const paint = useMemo((): FieldPaint => {
 		const h = team(home);
 		const a = team(away);
-		const style = fieldStyleFor(h, a);
+		const venue = venueFor(h, {
+			gid: gid ?? 0,
+			primeTime: boxScore?.primeTime === true,
+		});
+		const style = fieldStyleFor(h, a, false, venue);
 		const seed = String(gid ?? 0);
 		const mid = logos[1];
 		return {
@@ -270,6 +276,7 @@ const Field3D = ({
 				seed,
 				{ att: boxScore?.att, capacity: boxScore?.arena?.capacity },
 				mid,
+				venue,
 			),
 		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -288,7 +295,8 @@ const Field3D = ({
 	}, []);
 
 	const kits = useMemo(
-		() => fieldKitsFor(away?.colors, home?.colors),
+		() =>
+			fieldKitsFor(away?.colors, home?.colors, [away?.helmet, home?.helmet]),
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 		[gid],
 	);
@@ -304,7 +312,9 @@ const Field3D = ({
 				skin: headColors(f?.face).skin,
 				jerseyNumber: f?.jerseyNumber ?? p.jerseyNumber ?? "",
 				lastName: lastNameOf(p.name),
-				...(logos[p.team] ? { logo: logos[p.team] } : {}),
+				...(logos[p.team] && [away, home][p.team]?.helmet?.logo !== false
+					? { logo: logos[p.team] }
+					: {}),
 			});
 			bodies.set(p.pid, footballBody(f?.hgt, f?.weight));
 		}
@@ -478,6 +488,7 @@ const Field3D = ({
 			const look = (pid: number) => looks.current.get(pid);
 			const body = (pid: number) => bodies.current.get(pid) ?? footballBody();
 			const items: { depth: number; draw: () => void }[] = [];
+			const shadow = p.paint.stadium.style.shadow;
 			for (const st of [
 				...moment.players,
 				...sidelineAt(sidelineRef.current, tl, moment),
@@ -486,10 +497,21 @@ const Field3D = ({
 				if (!l) {
 					continue;
 				}
+				const shaded = inShadow(shadow, st);
 				items.push({
 					depth: depthOf(view, { x: st.x, y: st.y, z: 0 }),
 					draw: () => {
-						drawFieldPlayer(ctx, scratch, view, st, body(st.id), l, 1, sprites);
+						drawFieldPlayer(
+							ctx,
+							scratch,
+							view,
+							st,
+							body(st.id),
+							l,
+							1,
+							sprites,
+							shaded,
+						);
 					},
 				});
 			}

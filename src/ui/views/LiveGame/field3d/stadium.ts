@@ -23,6 +23,8 @@ export type StadiumStyle = {
 	sky: "night" | "day";
 	// Open to the sky, or under a roof (see venue.ts).
 	roof: Venue["roof"];
+	// A day game's shadow across the field (see venue.ts).
+	shadow?: [number, number];
 };
 
 // (The same seats every game at a team's home.)
@@ -38,8 +40,9 @@ export const stadiumStyleFor = (
 		seats: rng() < 0.6 ? shade(c0, -0.3) : "#4b505b",
 		wall: shade(c0, -0.42),
 		structure: "#5b5e66",
-		sky: "night",
+		sky: venue.sky,
 		roof: venue.roof,
+		...(venue.shadow ? { shadow: venue.shadow } : {}),
 	};
 };
 
@@ -426,13 +429,20 @@ const paintRim = (w: number, h: number, ppf: number, style: StadiumStyle) => {
 	g.fillStyle = shade(style.structure, -0.45);
 	g.fillRect(0, h * 0.55, w, h * 0.45);
 	const bank = 26 * ppf;
+	// (Off, in the afternoon: rows of gray lamps.)
+	const off = style.sky === "day" && style.roof === "open";
 	for (let x = bank * 0.6; x < w; x += bank * 1.9) {
-		g.fillStyle = "#202228";
+		g.fillStyle = off ? "#5d6169" : "#202228";
 		g.fillRect(x, h * 0.08, bank, h * 0.45);
 		for (let r = 0; r < 3; r++) {
 			for (let k = 0; k < 8; k++) {
 				const lx = x + (k + 0.5) * (bank / 8);
 				const ly = h * (0.16 + r * 0.13);
+				if (off) {
+					g.fillStyle = "#9da2aa";
+					g.fillRect(lx - bank / 22, ly - bank / 22, bank / 11, bank / 11);
+					continue;
+				}
 				const glow = g.createRadialGradient(lx, ly, 0, lx, ly, bank / 8);
 				glow.addColorStop(0, "rgba(255,255,244,1)");
 				glow.addColorStop(0.4, "rgba(255,250,225,0.8)");
@@ -575,7 +585,8 @@ export const paintStadium = (
 			fill,
 			up,
 			...(mid ? { midAt: -X0 + FIELD_L / 2 } : {}),
-			dim,
+			// (In the sun, the backs of the stands hardly in the dark.)
+			dim: style.sky === "day" && style.roof === "open" ? dim * 0.4 : dim,
 		});
 	const lower = ([0, 1, 2] as const).map((up) =>
 		seating(LOWER, "lower", up, 0.35, true),

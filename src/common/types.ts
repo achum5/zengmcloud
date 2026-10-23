@@ -2820,6 +2820,11 @@ export type Team = {
 	// fields optional so a partial customization is fine. See common/court.ts.
 	court?: CourtStyle;
 
+	// Football: the team's home stadium and its helmet in the 3D game, as it
+	// has set them. Optional; anything left out is picked for it.
+	stadium?: StadiumLook;
+	helmet?: HelmetLook;
+
 	// Realistic front offices: the team's standing offers to free agents, best
 	// first (realisticFrontOffice/freeAgency.ts).
 	offerBoard?: { pid: number; amount: number; exp: number }[];
@@ -3077,6 +3082,33 @@ export type CourtStyle = {
 	// The league's decals laid on it for the game being shown (see
 	// CourtDecal) - put there by the game, never saved with a team.
 	decals?: CourtDecalPlaced[];
+};
+
+// A FOOTBALL TEAM'S HOME STADIUM in the 3D game, as the team has set it.
+// Anything left out is picked for it from who it is, the same every game
+// (see LiveGame/field3d/venue.ts). The first of what a stadium editor will
+// set.
+export type StadiumLook = {
+	roof?: "open" | "dome";
+	turf?: "grass" | "artificial";
+	endZones?: "solid" | "green" | "striped";
+	// Its home games all in the afternoon, or all under the lights; left out,
+	// each game's own.
+	sky?: "day" | "night";
+};
+
+// A FOOTBALL TEAM'S HELMET in the 3D game, as the team has set it: colors
+// as hex. Anything left out comes from the team's colors (see
+// LiveGame/field3d/kit.ts).
+export type HelmetLook = {
+	shell?: string;
+	// Down the middle, front to back, and the thin edge either side of it;
+	// "" for none.
+	stripe?: string;
+	stripeEdge?: string;
+	facemask?: string;
+	// The team's logo on the sides; false for a bare shell.
+	logo?: boolean;
 };
 
 // A picture the league lays on every court on an occasion - opening night,
