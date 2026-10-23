@@ -146,9 +146,12 @@ export type SpriteCache = {
 	// speed; a slow-motion replay less): poses come round that much more
 	// slowly, and a man may be drawn as he was for that many more frames.
 	pace?: number;
+	// Each man's picture last drawn: the frame, how many frames behind his
+	// pose it was then, his size in it and whether the ball was in his hands
+	// in it.
 	last: Map<
 		number,
-		{ kept: Kept; frame: number; behind: number; scale: number }
+		{ kept: Kept; frame: number; behind: number; scale: number; held?: boolean }
 	>;
 	// This frame's plan for each man made ready (see prepareSprites).
 	plans: Map<PlayerState, Plan>;
@@ -601,6 +604,8 @@ type Plan = {
 	pose: ReturnType<typeof stepped>;
 	// His size on the picture, in steps of 4%.
 	scale: number;
+	// The ball in his hands (drawn with him, not on its own - see scene.ts).
+	held: boolean;
 	id: number;
 	key?: string;
 	// Left out of this frame: the picture black, and no time to make his.
@@ -645,6 +650,7 @@ const planOf = (
 		lower,
 		pose,
 		scale,
+		held: st.holding === true,
 		id: 0,
 	};
 	if (cache) {
@@ -668,14 +674,17 @@ const planOf = (
 // already (more in slow motion), and not much bigger or smaller since - no
 // lurch at a cut. (Black, a man much bigger or smaller since is left out
 // till his picture is made: the picture is held black for him - see
-// Court3D - so it comes up with everybody the size he is.)
+// Court3D - so it comes up with everybody the size he is.) And never with
+// the ball in his hands in it when he has let it go, or without it once he
+// has it: the ball would be on the picture twice, or not at all.
 const asWas = (cache: SpriteCache, plan: Plan) => {
 	const was = cache.last.get(plan.id);
 	return was &&
 		was.behind <
 			Math.round(MAX_BEHIND / Math.min(1, Math.max(0.35, cache.pace ?? 1))) &&
 		was.frame === cache.frame - 1 &&
-		Math.abs(was.scale - plan.scale) <= 1
+		Math.abs(was.scale - plan.scale) <= 1 &&
+		(was.held ?? false) === plan.held
 		? was
 		: undefined;
 };
@@ -1082,6 +1091,7 @@ const pick = (cache: SpriteCache, plan: Plan): Kept | "make" | "out" => {
 			frame: cache.frame,
 			behind: 0,
 			scale: plan.scale,
+			held: plan.held,
 		});
 		return kept;
 	}
@@ -1131,6 +1141,7 @@ const took = (cache: SpriteCache, farm: Farm, scratch: Scratch) => {
 				frame: cache.frame - 1,
 				behind: cache.frame - 1 - m.frame,
 				scale: m.scale,
+				held: m.job.st.holding === true,
 			});
 		}
 	}
@@ -1236,6 +1247,7 @@ export const drawSprite = (
 			frame: cache.frame,
 			behind: 0,
 			scale: plan.scale,
+			held: plan.held,
 		});
 		stamp(ctx, made, base.x, base.y - lift, px, shine);
 		return;

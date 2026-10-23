@@ -446,3 +446,51 @@ test("his lettering is laid out once, however many sizes he is drawn at", () => 
 	at(14);
 	assert.strictEqual(lettered, once * 2);
 });
+
+// Out of time for new pictures, a man may be drawn a frame or two as he
+// was - but not with the ball in his hands once he has let it go, or
+// without it once he has it: the ball, drawn on its own when loose, would
+// be on the picture twice, or not at all.
+test("the ball caught or let go of: never drawn as he was", () => {
+	const body = bodyOf();
+	const look: Look = {
+		kit: kitsFor(undefined, undefined)[1],
+		skin: "#8d5524",
+		hair: "#1f1612",
+		jerseyNumber: "",
+		name: "",
+		lastName: "",
+		wordmark: "",
+	};
+	const scratch = makeScratch();
+	const cache = makeSpriteCache();
+	const ctx = stubCanvas().getContext() as unknown as CanvasRenderingContext2D;
+	const cam = makeCamera({ x: 47, width: 60, y: 24 }, 640, 360, MAIN_RIG);
+	const behind: number[] = [];
+	for (let i = 0; i < 6; i++) {
+		startFrame(cache);
+		// Time for his first picture, none after.
+		cache.budget = i === 0 ? undefined : 0;
+		const st = {
+			pid: 1,
+			team: 1,
+			shown: true,
+			x: 47,
+			y: 25,
+			z: 0,
+			yaw: 0,
+			anim: "run",
+			phase: (i + 0.5) / 12,
+			moving: true,
+			// The ball comes into his hands at the third frame, and he lets
+			// it go at the fifth.
+			holding: i >= 2 && i < 4,
+		} as PlayerState;
+		prepareSprites(scratch, cam, [{ st, body, look }], 1, cache);
+		drawSprite(ctx, scratch, cam, st, body, look, 1, cache);
+		behind.push(cache.last.get(cache.ids.get(look)!)!.behind);
+	}
+	// A frame behind while nothing about the ball changed; the frame it
+	// came into his hands and the frame it left them, a picture of him now.
+	assert.deepEqual(behind, [0, 1, 0, 1, 0, 1]);
+});
