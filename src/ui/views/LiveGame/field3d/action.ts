@@ -1297,17 +1297,18 @@ class Action {
 						? 1
 						: -1
 					: (gun ? -1 : 1) * Math.sign(fs.a);
+			// (Where and when a handoff would be: see runPlay.)
 			const meshPt = this.w(
 				gun
 					? { d: qbStart.d + 0.5, a: side * 2.5 }
-					: { d: qbStart.d - 7, a: side * 3 },
+					: { d: qbStart.d - 9, a: side * 3 },
 			);
 			const qbMesh = this.w({
 				d: this.of(meshPt).d,
 				a: this.of(meshPt).a - side * 2,
 			});
 			fakeT = Math.max(
-				has + 300 + (dist(qb.at, qbMesh) / 15) * 1000 + r() * 150,
+				has + 180 + (dist(qb.at, qbMesh) / 19) * 1000 + r() * 150,
 				snap + 150 + (dist(faker.at, meshPt) / (faker.top * 0.75)) * 1000,
 			);
 			qb.go(
