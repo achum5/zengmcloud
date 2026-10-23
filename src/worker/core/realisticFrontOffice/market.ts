@@ -778,6 +778,8 @@ export const waitingOf = (
 				tradedAway: t.tradedAway,
 				extra: count(deal.assets[k]),
 			},
+			undefined,
+			t.letGo,
 		);
 		const later =
 			franchiseValue(outlook, pathAfter) -

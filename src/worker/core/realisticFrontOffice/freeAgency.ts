@@ -92,7 +92,15 @@ const without = (
 	pid: number,
 ): TeamState => {
 	const players = t.players.filter((p) => p.pid !== pid);
-	const path = teamStrengths(outlook, t.tid, players, t.picks);
+	const path = teamStrengths(
+		outlook,
+		t.tid,
+		players,
+		t.picks,
+		undefined,
+		undefined,
+		t.letGo,
+	);
 	return {
 		...t,
 		players,
@@ -122,7 +130,7 @@ const priceSigning = (
 		: outlook;
 	const value = franchiseValue(
 		outlook,
-		teamStrengths(view, t.tid, players, t.picks),
+		teamStrengths(view, t.tid, players, t.picks, undefined, undefined, t.letGo),
 	);
 	const gain = value - t.value;
 	const margin = marginOf(outlook, t, [], [{ kind: "player", p: signed }]);
