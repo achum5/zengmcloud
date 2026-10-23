@@ -1038,6 +1038,21 @@ describe("simmed recaps", () => {
 					`gid ${gid}: ${head}`,
 				);
 			}
+			// Mild words are not a rout: "Pistons turn back the Nets 116-73".
+			if (margin >= 20) {
+				assert.notMatch(head, /turn back/, `gid ${gid}: ${head}`);
+			}
+			if (margin >= 25) {
+				assert.notMatch(head, /take care of/, `gid ${gid}: ${head}`);
+			}
+			// "had led by 28, and very nearly let it go" of a seven-point win.
+			if (margin > 4) {
+				assert.notMatch(
+					recap,
+					/very nearly let it go|led by as many as \d+ and had to hold on/,
+					`gid ${gid}\n${recap}`,
+				);
+			}
 		}
 	});
 

@@ -2571,11 +2571,12 @@ const buildHeadlineText = (
 							]
 						: []),
 				]),
-		...(shape.margin >= 8
+		...(shape.margin >= 8 && shape.margin < 25
 			? [`${winnerN} take care of the ${loserN} ${scoreTag(shape)}${tag}`]
 			: []),
 		// Not "see off": that is the football page's English.
-		...(shape.margin >= 4
+		// Not over a rout either: "Pistons turn back the Nets 116-73".
+		...(shape.margin >= 4 && shape.margin < 20
 			? [`${winnerN} turn back the ${loserN} ${scoreTag(shape)}${tag}`]
 			: []),
 		shape.margin >= 15
@@ -6552,11 +6553,18 @@ const bigLeadNote = (
 				"blownThenWon",
 			);
 		}
+		// "Very nearly let it go" and "had to hold on" are a game that got
+		// within a basket or so; "had led by 28, and very nearly let it go"
+		// closed a seven-point win.
 		return pick(
 			rng,
 			[
-				`${W} led by as many as ${lead} and had to hold on.`,
-				`${W} had led by ${lead}, and very nearly let it go.`,
+				...(shape.margin <= 4
+					? [
+							`${W} led by as many as ${lead} and had to hold on.`,
+							`${W} had led by ${lead}, and very nearly let it go.`,
+						]
+					: []),
 				`A lead that reached ${lead} was down to ${shape.margin} at the end.`,
 			],
 			"nearlyBlown",
@@ -6968,10 +6976,14 @@ const buildGameRecap = (game: RecapGame): string => {
 								`${star.name} was ${star.fg}-of-${star.fga} from the floor.`,
 							]
 						: pct < 0.42
-							? [
-									`${star.name} needed ${star.fga} shots for his ${star.pts}, making ${star.fg}.`,
+							? // Plainly, the way the wire puts it: the second sentence of
+								// the winners' story is not the place to editorialize about
+								// the man the headline is about ("The shooting was not
+								// pretty for Cade Hayes" under "Heat ride Cade Hayes' 14
+								// points and 15 rebounds").
+								[
+									`${star.name} had ${plural(star.pts, "point")} on ${star.fg}-of-${star.fga} shooting.`,
 									`${star.name} got there the hard way, ${star.fg}-of-${star.fga} from the floor.`,
-									`The shooting was not pretty for ${star.name} - ${star.fg}-of-${star.fga}.`,
 								]
 							: [
 									`${star.name} scored his ${star.pts} on ${star.fg}-of-${star.fga} shooting.`,

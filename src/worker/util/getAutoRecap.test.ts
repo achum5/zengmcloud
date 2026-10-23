@@ -7566,7 +7566,14 @@ describe("the star's shooting split", () => {
 		assert.ok(sentences.size > 0, "no split sentence was produced");
 		for (const text of sentences) {
 			assert.doesNotMatch(text, /scored his \d+ on \d+-of-\d+ shooting/, text);
-			assert.match(text, /the hard way|needed \d+ shots|not pretty/, text);
+			// Plain, or said as a hard night - not an editorial about the
+			// man the headline is about.
+			assert.match(
+				text,
+				/the hard way|had \d+ points on \d+-of-\d+ shooting/,
+				text,
+			);
+			assert.doesNotMatch(text, /not pretty/, text);
 		}
 	});
 
@@ -8044,7 +8051,8 @@ describe("house style", () => {
 				`"a" before an eight/eleven/eighteen:\n${recap}`,
 			);
 			assert.ok(
-				!/\ban (?:[02-79]|1[02-9]|[2-9]\d)\b/.test(recap),
+				// (Not 18: "an 18-point win" is right.)
+				!/\ban (?:[02-79]|1[02-79]|[2-79]\d)\b/.test(recap),
 				`"an" before a number that takes "a":\n${recap}`,
 			);
 		}
