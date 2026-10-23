@@ -992,9 +992,12 @@ const LEN_MIN = 0.1;
 const BEAT_MOST = 2.6;
 // (Looking no further ahead than this, ms.)
 const LAND_AHEAD_MS = 300;
-// (Getting going, each step no more than this much longer than the last -
-// his strides lengthen a step at a time, quicker meanwhile.)
+// (Getting going, each step no more than this much longer than the other
+// foot's - his strides lengthen a step at a time, quicker meanwhile.)
 const STEP_GROW = 2.5;
+// (A foot's stride changes no quicker than this - so many full ones a
+// second.)
+const LEN_RATE = 10;
 type Stepping = {
 	s0: number;
 	s1: number;
@@ -1005,8 +1008,10 @@ type Stepping = {
 	legR: StepLeg;
 	legL: StepLeg;
 };
-// (Up, the stride it left the floor on.)
-type StepLeg = { len: number; up?: number };
+// (Up, the stride it goes over from toward the next - the one it left the
+// floor on - and from how far through its swing: from the start of it, or
+// from where it was as the run before ended.)
+type StepLeg = { len: number; up?: number; from?: number };
 const steppings = new WeakMap<Track, Map<Move, Stepping>>();
 const steppingOf = (
 	tl: CourtTimeline,
@@ -1053,9 +1058,12 @@ const steppingOf = (
 					1000) /
 				beat
 			: 0;
-	// (Steps that keep no beat - a shuffle, say - full ones throughout.)
+	// (Steps that keep no beat - a shuffle, say - full ones throughout. A
+	// foot up as he sets off goes over from there, from where it is through
+	// its swing.)
 	let R: StepLeg = {
 		len: first ? Math.max(LEN_MIN, stepLength(anim, over(run.s0, firstMs))) : 1,
+		from: -1,
 	};
 	let L: StepLeg = { ...R };
 	if (
@@ -1075,9 +1083,12 @@ const steppingOf = (
 		if (first && legPhases(took, 0)) {
 			const as = (len: number) =>
 				Math.min(1, Math.max(LEN_MIN, (len * strideOf(took)) / S));
+			// (A foot up goes on over from the stride it has now, from where
+			// it is through its swing on these steps - which may count it
+			// differently, turned round from running into a backpedal, say.)
 			const carry = (leg: StepLeg): StepLeg => ({
 				len: as(leg.len),
-				...(leg.up === undefined ? {} : { up: as(leg.up) }),
+				...(leg.up === undefined ? {} : { up: as(leg.len), from: -1 }),
 			});
 			R = carry(was.legR);
 			L = carry(was.legL);
@@ -1120,28 +1131,40 @@ const steppingOf = (
 			// Each foot: up off the floor once it is through its time down;
 			// then over from the stride it left the floor on to the one for
 			// when it comes down - so far ahead as it has yet to swing, at the
-			// rate it is swinging.
+			// rate it is swinging. (Never more than so much longer than the
+			// other foot's stride, as it is now - not as it was as that foot
+			// left the floor, or the cap would jump as it came down.)
 			const step = (leg: StepLeg, phi: number, other: StepLeg): StepLeg => {
 				if (phi < now.duty) {
 					return leg.up === undefined ? leg : { len: leg.len };
 				}
-				const up = leg.up ?? leg.len;
 				const through = Math.min(
 					1,
 					(now.back ? 1 - phi : phi - now.duty) / Math.max(1e-6, 1 - now.duty),
 				);
+				const up = leg.up ?? leg.len;
+				const from =
+					leg.from === -1
+						? through
+						: leg.up === undefined
+							? 0
+							: (leg.from ?? 0);
 				const ahead = Math.min(
 					LAND_AHEAD_MS,
 					((1 - through) * (1 - now.duty) * 1000) / Math.max(rate, 0.5),
 				);
-				return {
-					len:
-						up +
-						(Math.min(lenAt(u + ahead), (other.up ?? other.len) * STEP_GROW) -
-							up) *
-							smooth01(through),
-					up,
-				};
+				const to = Math.min(lenAt(u + ahead), other.len * STEP_GROW);
+				const s0 = smooth01(from);
+				const share =
+					s0 >= 1 ? 1 : clamp01((smooth01(through) - s0) / (1 - s0));
+				// (And no quicker than LEN_RATE: pulling up late in a swing,
+				// the step it comes down on shortened over the last of it, not
+				// snapped short in a frame.)
+				const most = (LEN_RATE * dt) / 1000;
+				const len =
+					leg.len +
+					Math.max(-most, Math.min(most, up + (to - up) * share - leg.len));
+				return { len, up, from };
 			};
 			const r = step(R, now.r, L);
 			L = step(L, now.l, R);

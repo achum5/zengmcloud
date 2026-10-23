@@ -1,5 +1,5 @@
 import { assert, describe, test } from "vitest";
-import { bodyPoint, evalPlayer, poseOf, withBody } from "./evaluate.ts";
+import { bodyPoint, evalPlayer, fastAt, poseOf, withBody } from "./evaluate.ts";
 import { type AnimName, bodyOf, legPhases, skeleton } from "./poses.ts";
 import { compile } from "./testGame.ts";
 
@@ -78,6 +78,17 @@ describe("footwork", () => {
 		assert.isBelow(slowMo / slow, SLOW_MO_MOST, `${slowMo} of ${slow}`);
 		assert.isAbove(travel, 2000);
 		assert.isBelow(slide / travel, SLIDE_MOST);
+	}, 240_000);
+
+	// And each foot's stride goes over to the next over its swing - not
+	// snapped longer as the other foot comes down, or shorter as he pulls
+	// up late in a step, or started over as one run turns into another.
+	// (63 such frames in game a before; 3 now, where one run hands on to
+	// the next after a moment stood between them.)
+	test("a foot's stride grows or shrinks over its swing, not in a frame", () => {
+		const { short, jumps } = strideJumps();
+		assert.isAbove(short, 2000);
+		assert.isAtMost(jumps, 5);
 	}, 240_000);
 
 	// Backpedalling, then turned and away: his legs come round under him
@@ -167,6 +178,46 @@ const goingSlow = () => {
 		}
 	}
 	return { slow, slowMo, travel, slide };
+};
+
+// Over the first fifteen minutes of a game, frame by frame on the same
+// steps (not easing in or out of something else): the frames a leg's
+// stride is short, and the frames one changed by more than a third of a
+// full one. (Before: 52.)
+const strideJumps = () => {
+	const STEP = 32;
+	const tl = (game ??= compile("a", 140).tl);
+	let short = 0;
+	let jumps = 0;
+	for (const tr of tl.tracks.values()) {
+		let prev: ReturnType<typeof evalPlayer> | undefined;
+		for (let t = 0; t < Math.min(tl.end, 900_000); t += STEP) {
+			// (Not where the picture runs through it fast.)
+			if (fastAt(tl, t) > 1) {
+				prev = undefined;
+				continue;
+			}
+			const st = evalPlayer(tl, tr.pid, t);
+			const was = prev;
+			prev = st;
+			if (
+				!was ||
+				!st.shown ||
+				!was.shown ||
+				was.anim !== st.anim ||
+				(st.from !== undefined && st.from.w > 0.05)
+			) {
+				continue;
+			}
+			const a = was.stepLen ?? [1, 1];
+			const b = st.stepLen ?? [1, 1];
+			short += st.stepLen ? 1 : 0;
+			if (Math.abs(a[0] - b[0]) > 0.33 || Math.abs(a[1] - b[1]) > 0.33) {
+				jumps += 1;
+			}
+		}
+	}
+	return { short, jumps };
 };
 
 // Every turn out of a backpedal into a run in the first fifteen minutes of
