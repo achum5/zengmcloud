@@ -8789,6 +8789,58 @@ test("a line that is only points leads only if nobody outscored it", () => {
 	}
 });
 
+// "The Heat held off the Cavaliers 115-107, breaking it open with a 34-25
+// third quarter" - the Cavaliers never got within seven late.
+test("held off is for a push that came up short", () => {
+	const win = realisticTeam(
+		{
+			tid: 1,
+			region: "Miami",
+			name: "Heat",
+			abbrev: "MIA",
+			pts: 115,
+			ptsQtrs: [28, 26, 34, 27],
+		},
+		player({ name: "Herb Hayes", pts: 25, reb: 6, fg: 10, fga: 18 }),
+	);
+	const lose = realisticTeam(
+		{
+			tid: 2,
+			region: "Cleveland",
+			name: "Cavaliers",
+			abbrev: "CLE",
+			pts: 107,
+			ptsQtrs: [27, 25, 25, 30],
+		},
+		player({ name: "Cav Star", pts: 22, fg: 8, fga: 19 }),
+	);
+	beginRecapBatch();
+	try {
+		for (let gid = 1800; gid < 1825; gid++) {
+			const recap = getAutoRecap(
+				game({
+					gid,
+					teams: [win, lose],
+					winnerTid: 1,
+					flow: {
+						leadChanges: 3,
+						ties: 2,
+						maxLead: [17, 3],
+						maxLeadAt: [3, 1],
+						late: [
+							{ clock: 300, pts: [104, 94] },
+							{ clock: 120, pts: [111, 101] },
+						],
+					},
+				}),
+			);
+			assert.doesNotMatch(recap, /held off|hold off/, recap);
+		}
+	} finally {
+		endRecapBatch();
+	}
+});
+
 // "The Clippers rolled past the Bucks 139-82" undersold a 57-point night.
 test("a historic rout is not a cruise", () => {
 	const win = realisticTeam(

@@ -1527,8 +1527,12 @@ const verbPool = (game: RecapGame, shape: Shape): string[] => {
 	}
 	// "Get past" a team you beat by 15 reads as a scare it wasn't. Comfortable
 	// wins get their own band so the verb matches the scoreboard.
+	// "Held off" is a push that came up short; a side never within seven
+	// over the last five minutes made none.
 	if (shape.margin <= 9) {
-		return ["beat", "top", "get past", "hold off", "take down"];
+		return closeLate(game)
+			? ["beat", "top", "get past", "hold off", "take down"]
+			: ["beat", "top", "get past", "take down", "handle"];
 	}
 	return ["beat", "top", "take down", "handle", "pull away from"];
 };
@@ -9153,7 +9157,9 @@ const roundupClause = (
 	} else if (shape.margin <= 4) {
 		pool = [...EDGE_VERBS, "outlasted"];
 	} else if (shape.margin <= 9) {
-		pool = ["beat", "got past", "held off", "topped", "took down"];
+		pool = closeLate(game)
+			? ["beat", "got past", "held off", "topped", "took down"]
+			: ["beat", "got past", "topped", "took down", "handled"];
 	} else {
 		pool = [
 			"beat",
