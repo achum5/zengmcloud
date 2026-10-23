@@ -617,6 +617,13 @@ const drawCooler = (
 	ctx.restore();
 };
 
+// One stood up where it is kept (its bottom at `bottom`), the lid on.
+export const drawStandingCooler = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	bottom: Pt3,
+) => drawCooler(ctx, cam, { bottom, axis: { x: 0, y: 0, z: 1 } }, RIM);
+
 // The stream from its mouth onto the back of his head: each bit of it out
 // of the mouth a moment ago, as thick as the pour was then.
 const streamOf = (
