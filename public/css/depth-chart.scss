@@ -58,11 +58,34 @@
 }
 
 .depth-chart-player {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	min-height: 2.25rem;
+	padding: 0.2rem 0;
+	white-space: nowrap;
+}
+
+.depth-chart-name {
 	align-items: center;
 	display: flex;
 	gap: 0.75rem;
-	min-height: 2.25rem;
-	white-space: nowrap;
+}
+
+// Points, rebounds, assists, PER: small, under the name, each number with its
+// letter after it.
+.depth-chart-stats {
+	display: flex;
+	font-size: 0.75rem;
+	font-variant-numeric: tabular-nums;
+	gap: 0.6rem;
+	line-height: 1.2;
+}
+
+.depth-chart-unit {
+	color: var(--bs-secondary-color);
+	font-size: 0.65rem;
+	margin-left: 0.15rem;
 }
 
 .depth-chart-ovr {
