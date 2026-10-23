@@ -501,7 +501,10 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   priced on the roster the team will have once games are played: past the
   limit, it cuts the players it values least and still pays them. Before, one
   team went from 13 players to 33 in a free agency; replayed, 81 signings
-  rather than 144, 13 rather than 70 of players under 45.
+  rather than 144, 13 rather than 70 of players under 45. An offseason trade
+  is priced the same way, both teams on the rosters they will have; only
+  players under contract then count, since one whose contract is up leaves or
+  re-signs.
 - **Players decide daily, stars early** (owner's call): each day a player with
   offers may sign or wait for more, so the best go in the first days and role
   players later, as in an NBA July.
