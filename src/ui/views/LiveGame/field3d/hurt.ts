@@ -59,14 +59,18 @@ const cut = (legs: Leg[], t: number): { at: number; down: boolean } => {
 		k = 0;
 	}
 	let l = legs[k]!;
-	if (l.move === "getUp" && l.t1 > t) {
+	if ((l.move === "getUp" || l.move === "getUpBack") && l.t1 > t) {
 		legs.length = k;
 		l = legs[k - 1] ?? l;
 		return { at: Math.min(t, l.t1), down: true };
 	}
 	if (moveKind(l.move) === "act") {
 		legs.length = k + 1;
-		return { at: l.t1, down: l.move === "tackled" || l.move === "dive" };
+		return {
+			at: l.t1,
+			down:
+				l.move === "tackled" || l.move === "tackledBack" || l.move === "dive",
+		};
 	}
 	const p = posOf(legs, t);
 	legs.length = k + 1;
@@ -89,7 +93,7 @@ const cut = (legs: Leg[], t: number): { at: number; down: boolean } => {
 			});
 		}
 	}
-	return { at: t, down: l.move === "prone" };
+	return { at: t, down: l.move === "prone" || l.move === "supine" };
 };
 
 const still = (
@@ -269,7 +273,10 @@ export const stageHurt = (input: {
 		// (Up off the turf first, one getting up then.)
 		let kneel = go + 500 + r() * 1400;
 		const rising = p.legs.find(
-			(l) => l.move === "getUp" && l.t0 <= kneel && l.t1 > kneel,
+			(l) =>
+				(l.move === "getUp" || l.move === "getUpBack") &&
+				l.t0 <= kneel &&
+				l.t1 > kneel,
 		);
 		if (rising) {
 			kneel = rising.t1;

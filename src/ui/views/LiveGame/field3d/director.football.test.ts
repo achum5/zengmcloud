@@ -474,7 +474,11 @@ describe("a man hurt", () => {
 				const down = momentAt(tl, play.hurt.from + 100).players.find(
 					(p) => p.id === him.pid,
 				);
-				assert.include(["hurt", "tackled"], down?.move, `play ${play.i}`);
+				assert.include(
+					["hurt", "tackled", "tackledBack"],
+					down?.move,
+					`play ${play.i}`,
+				);
 				const at = legAt(him, play.hurt.from + 100).to;
 				const medics = play.medics ?? [];
 				assert.isAbove(medics.length, 0, `play ${play.i}`);

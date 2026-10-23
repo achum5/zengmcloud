@@ -127,6 +127,23 @@ const PRONE = pose({
 	wide: 0.5,
 });
 
+// Lying on his back on the turf: legs out in front of him, arms out by his
+// sides.
+const SUPINE = pose({
+	hipN: 88,
+	kneeN: 8,
+	hipF: 116,
+	kneeF: 74,
+	lean: -84,
+	shN: 18,
+	elN: 30,
+	abN: 72,
+	shF: 40,
+	elF: 60,
+	abF: 50,
+	wide: 0.6,
+});
+
 // The quarterback set in the pocket: on the balls of his feet, the ball up
 // at his chest in both hands.
 const QB_SET = pose({
@@ -463,6 +480,7 @@ const FIELD_ANIMS = {
 	},
 
 	prone: { kind: "still", pose: PRONE },
+	supine: { kind: "still", pose: SUPINE },
 	qbSet: { kind: "still", pose: QB_SET },
 	// A receiver sat down in a hole in the zone, turned to the quarterback,
 	// hands up for it.
@@ -771,6 +789,59 @@ const FIELD_ANIMS = {
 			[1, PRONE],
 		],
 	},
+	// Met head on and driven back: his feet out from under him, down on his
+	// seat, and over onto his back.
+	tackledBack: {
+		kind: "act",
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 18,
+					kneeN: 34,
+					hipF: 8,
+					kneeF: 26,
+					lean: 8,
+					shN: 30,
+					elN: 100,
+					shF: 40,
+					elF: 70,
+				}),
+			],
+			[
+				0.3,
+				pose({
+					hipN: 44,
+					kneeN: 66,
+					hipF: 36,
+					kneeF: 58,
+					lean: -22,
+					shN: 50,
+					elN: 90,
+					shF: 64,
+					elF: 40,
+					abF: 22,
+				}),
+			],
+			[
+				0.65,
+				pose({
+					hipN: 84,
+					kneeN: 40,
+					hipF: 80,
+					kneeF: 50,
+					lean: -52,
+					shN: 50,
+					elN: 60,
+					abN: 22,
+					shF: 64,
+					elF: 30,
+					abF: 32,
+				}),
+			],
+			[1, SUPINE],
+		],
+	},
 	// The tackle: off his feet into him, arms round him, taking him down.
 	dive: {
 		kind: "act",
@@ -917,6 +988,46 @@ const FIELD_ANIMS = {
 					shF: 30,
 					elF: 30,
 					wide: 0.5,
+				}),
+			],
+			[1, BASE],
+		],
+	},
+	// Up off his back: sat up, his feet drawn under him, up off them.
+	getUpBack: {
+		kind: "act",
+		keys: [
+			[0, SUPINE],
+			[
+				0.35,
+				pose({
+					hipN: 118,
+					kneeN: 112,
+					hipF: 124,
+					kneeF: 118,
+					lean: -14,
+					shN: 20,
+					elN: 10,
+					abN: 20,
+					shF: 20,
+					elF: 10,
+					abF: 20,
+					wide: 0.6,
+				}),
+			],
+			[
+				0.65,
+				pose({
+					hipN: 96,
+					kneeN: 130,
+					hipF: 100,
+					kneeF: 134,
+					lean: 34,
+					shN: 30,
+					elN: 30,
+					shF: 30,
+					elF: 30,
+					wide: 0.6,
 				}),
 			],
 			[1, BASE],

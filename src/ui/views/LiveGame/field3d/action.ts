@@ -451,6 +451,14 @@ const BREAK_MS = 250;
 // at him at no more than most of his speed - all but flat out, if he has
 // to.
 const HIT_MS = 280;
+// A tackler met him head on if he came at him from this near straight in
+// front (the cosine of it); and then, this often, drove him back.
+const HEAD_ON = 0.5;
+const DRIVEN_BACK = 0.55;
+// More men in on a tackle: the first, and the second, there in time to (as
+// late as this after it), this often.
+const GANG = [0.5, 0.35];
+const GANG_LATE = 250;
 // How much later than he would have been a carrier can be brought down, his
 // run slowed, for the man the sim says made the tackle to get there.
 const SLACK_MS = 700;
@@ -466,7 +474,15 @@ const JUMP: Record<string, number> = {
 // The ball out of his hands this long after the hit that knocks it loose;
 // and what a man is doing on the turf, down.
 const POP_MS = 120;
-const DOWN = new Set<Move>(["tackled", "dive", "prone", "getUp"]);
+const DOWN = new Set<Move>([
+	"tackled",
+	"tackledBack",
+	"dive",
+	"prone",
+	"supine",
+	"getUp",
+	"getUpBack",
+]);
 const CLOSE = 0.85;
 const FLAT_OUT = 0.97;
 // A receiver down his route, at this much of his top speed.
@@ -1361,7 +1377,8 @@ class Action {
 			this.fumbled(fumI, carrier, end.pt, down.t, down.by, chasers);
 			return;
 		}
-		this.tackle(carrier, down.by, end.pt, down.t);
+		const pile = this.tackle(carrier, down.by, end.pt, down.t);
+		this.gangUp(chasers, pile, down.t, down.by);
 		this.pursue(chasers, end.pt, down.t, down.by);
 	}
 
@@ -1501,28 +1518,40 @@ class Action {
 	}
 
 	// Down at `pt` at t: the carrier going down with the first tackler
-	// round him, the second in on it - or, `keptUp`, the two of them off
+	// round him, the second in on it - met head on, stood up and driven back
+	// onto his back, some of the time - or, `keptUp`, the two of them off
 	// their feet at him as he spins out of it.
-	tackle(carrier: Actor, by: Actor[], pt: Pt, t: number, keptUp = false) {
+	tackle(carrier: Actor, by: Actor[], pt: Pt, t: number, keptUp = false): Pt {
 		const r = this.r;
 		const fall = carrier.yaw;
-		const downAt = {
-			x: pt.x + Math.cos(fall) * 2.5,
-			y: pt.y + Math.sin(fall) * 2.5,
-		};
+		const lead = t - HIT_MS;
+		// (Where each comes at him from.)
+		const froms = by.map((m) =>
+			m.posAt(Math.max(this.seen, Math.min(m.t, lead - 600))),
+		);
+		const first = froms[0];
+		const back =
+			!keptUp &&
+			first !== undefined &&
+			Math.cos(Math.atan2(first.y - pt.y, first.x - pt.x) - fall) > HEAD_ON &&
+			r() < DRIVEN_BACK;
+		const along = (p: Pt, f: number, s: number) => ({
+			x: p.x + Math.cos(fall) * f - Math.sin(fall) * s,
+			y: p.y + Math.sin(fall) * f + Math.cos(fall) * s,
+		});
+		const downAt = along(pt, back ? -1.4 : 2.5, 0);
 		if (keptUp) {
 			this.runOn(carrier, 450);
 		} else {
-			carrier.act("tackled", t + 450, fall, downAt);
-			carrier.hold(t + 450 + DOWN_MS, "prone");
-			carrier.act("getUp", t + 450 + DOWN_MS + GET_UP_MS);
+			carrier.act(back ? "tackledBack" : "tackled", t + 450, fall, downAt);
+			carrier.hold(t + 450 + DOWN_MS, back ? "supine" : "prone");
+			carrier.act(back ? "getUpBack" : "getUp", t + 450 + DOWN_MS + GET_UP_MS);
 			this.done.add(carrier.pid);
 		}
-		const lead = t - HIT_MS;
 		by.forEach((m, k) => {
 			// From the way he comes at him: there at the hit.
 			const side = k === 0 ? 0 : (r() < 0.5 ? -1 : 1) * 1.2;
-			const from = m.posAt(Math.max(this.seen, Math.min(m.t, lead - 600)));
+			const from = froms[k]!;
 			const ang = Math.atan2(from.y - pt.y, from.x - pt.x) + side;
 			const hit = {
 				x: pt.x + Math.cos(ang) * 2.2,
@@ -1530,14 +1559,56 @@ class Action {
 			};
 			const face = this.toward(hit, pt);
 			this.closeOn(m, hit, lead, face);
-			// Down alongside him, not on top of him.
+			// Down alongside him, not on top of him - the man who drove him
+			// back down across his legs.
 			const by = (k % 2 === 0 ? 1 : -1) * 2.1;
-			m.act("dive", t + 450, face, {
-				x: downAt.x - Math.sin(fall) * by - Math.cos(fall) * 1.2,
-				y: downAt.y + Math.cos(fall) * by - Math.sin(fall) * 1.2,
-			});
+			const lands = !back
+				? along(downAt, -1.2, by)
+				: k === 0
+					? along(downAt, 2.6, 2)
+					: along(downAt, 0.6, by);
+			m.act("dive", t + 450, face, lands);
 			m.hold(t + 450 + DOWN_MS + 150 * k, "prone");
 			m.act("getUp", t + 450 + DOWN_MS + GET_UP_MS + 150 * k);
+			this.done.add(m.pid);
+		});
+		return downAt;
+	}
+
+	// More of them in on it - the first one or two of `men` there as he
+	// goes down, off their feet onto the pile at `pile`, each in from the
+	// way he comes.
+	gangUp(men: Actor[], pile: Pt, t: number, by: Actor[]) {
+		const r = this.r;
+		const near = men
+			.filter((m) => !this.done.has(m.pid) && !by.includes(m) && m.t < t)
+			.map((m) => ({ m, at: this.canReach(m, pile) }))
+			.filter((x) => x.at < t + GANG_LATE)
+			.sort((a, b) => a.at - b.at)
+			.slice(0, GANG.length);
+		near.forEach(({ m }, k) => {
+			if (r() > GANG[k]!) {
+				return;
+			}
+			const from = m.posAt(Math.max(this.seen, Math.min(m.t, t - 600)));
+			const ang =
+				Math.atan2(from.y - pile.y, from.x - pile.x) + (r() - 0.5) * 0.6;
+			const hit = {
+				x: pile.x + Math.cos(ang) * 4.5,
+				y: pile.y + Math.sin(ang) * 4.5,
+			};
+			const go = t + 150 + k * 200 + r() * 150;
+			if (this.canReach(m, hit) > go) {
+				return;
+			}
+			const face = this.toward(hit, pile);
+			this.closeOn(m, hit, go, face);
+			m.act("dive", go + 450, face, {
+				x: pile.x + Math.cos(ang) * 1.6,
+				y: pile.y + Math.sin(ang) * 1.6,
+			});
+			m.hold(go + 450 + DOWN_MS, "prone");
+			m.act("getUp", go + 450 + DOWN_MS + GET_UP_MS);
 			this.done.add(m.pid);
 		});
 	}
@@ -4081,7 +4152,9 @@ class Action {
 		}
 		// The man down with the ball, a hand up.
 		const down = holder ?? undefined;
-		const up = down?.legs.find((l) => l.move === "getUp" && l.t0 >= t);
+		const up = down?.legs.find(
+			(l) => (l.move === "getUp" || l.move === "getUpBack") && l.t0 >= t,
+		);
 		if (down && up && !this.mob.has(down.pid) && r() < HELP_UP) {
 			const at = down.posAt(up.t0);
 			const mates = (team: Side) =>
