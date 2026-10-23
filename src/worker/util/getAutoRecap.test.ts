@@ -7597,7 +7597,7 @@ describe("the second man who outscored the first", () => {
 		);
 		assert.match(
 			recap,
-			/Lonnie Green[^.]*(?:led the scoring|led the [A-Z]\w+ with|leading scorer)|No one scored more than Lonnie Green/,
+			/Lonnie Green[^.]*(?:led the scoring|led the [A-Z]\w+ with|leading scorer|a team-high)/,
 		);
 	});
 
@@ -9753,7 +9753,7 @@ describe("a shared team high", () => {
 			const recap = getAutoRecap(g);
 			assert.doesNotMatch(
 				recap,
-				/leading scorer|top-scored|no one scored more than|nobody had more than|led the (?:scoring|heat) with (?:16|18) points(?! apiece)|leading the way/i,
+				/leading scorer|top-scored|team-high|no one scored more than|nobody had more than|led the (?:scoring|heat) with (?:16|18) points(?! apiece)|leading the way/i,
 				recap,
 			);
 			// Each of them named once, not re-introduced as an afterthought.

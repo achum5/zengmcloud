@@ -629,9 +629,12 @@ const storyPlayerOf = (
 };
 
 // A shooting flourish for a big scorer, when the line is efficient or three-heavy.
+// A count of threes is something he did, not what the line was made of:
+// "30 points, 8 rebounds, and 7 assists on 4 threes" put the rebounds on
+// the threes too. Said as he did it: "..., hitting 4 threes".
 const shootingFlourish = (p: RecapPlayer): string | undefined => {
 	if (p.tp >= 6) {
-		return `on ${p.tp} three-pointers`;
+		return `hitting ${p.tp} three-pointers`;
 	}
 	if (p.fga >= 10 && p.fg / p.fga >= 0.6) {
 		return `on ${p.fg}-of-${p.fga} shooting`;
@@ -647,9 +650,9 @@ const shootingFlourish = (p: RecapPlayer): string | undefined => {
 			: `hitting ${p.tp} of ${p.tpa} threes`;
 	}
 	if (p.tp >= 4) {
-		// "on", not "with": every caller introduces the stat line with "with", and
+		// Not "with": every caller introduces the stat line with "with", and
 		// "led all scorers with 33 points with 5 threes" doubled it.
-		return `on ${p.tp} threes`;
+		return `hitting ${p.tp} threes`;
 	}
 	// A night lived at the line.
 	if (p.ft >= 12 && p.fta >= p.ft) {
@@ -664,12 +667,16 @@ const shootingFlourish = (p: RecapPlayer): string | undefined => {
 // free throws", "25 points, hitting 5 of 9 threes".
 // The aside is closed with a comma when the sentence goes on: "26 points,
 // hitting 4 of 6 threes, as the Magic got past the Bucks".
+// A bare count of four or five threes is left off a line that already runs
+// to three numbers: "37 points, 13 assists, and 7 steals, hitting 4 threes,
+// in the Nuggets' win" buried the line under it.
 const withFlourish = (
 	line: string,
 	flourish: string | undefined,
 	continues = false,
 ): string =>
-	flourish === undefined
+	flourish === undefined ||
+	(/^hitting [45] threes$/.test(flourish) && line.includes(", and "))
 		? line
 		: /^(?:hitting|making) /.test(flourish)
 			? `${line}, ${flourish}${continues ? "," : ""}`
@@ -2366,7 +2373,12 @@ const buildHeadlineText = (
 					`Double-doubles from ${star.name} and ${partner.name} carry the ${winnerN} ${winOver(rng)} the ${loserN}${tag}`,
 					`${star.name} and ${partner.name} post double-doubles as the ${winnerN} ${verb} the ${loserN}${tag}`,
 					`${winnerN} get double-doubles from ${star.name} and ${partner.name} in ${aFigure(scoreTag(shape))} win${tag}`,
-					`${star.name} and ${partner.name} are too much for the ${loserN}${tag}`,
+					// "Too much for" is a game that was not close.
+					...(shape.margin >= 8
+						? [
+								`${star.name} and ${partner.name} are too much for the ${loserN}${tag}`,
+							]
+						: []),
 				],
 				"headline:two-doubles",
 			),
@@ -2466,10 +2478,21 @@ const buildHeadlineText = (
 			? []
 			: [
 					`${loserN} fall to the ${winnerN} ${scoreTag(shape)}${tag}`,
-					`${loserN} cannot keep up with the ${winnerN}, ${scoreTag(shape)}${tag}`,
+					// Over a 110-107 game won on a jumper with 19.9 seconds left,
+					// "cannot keep up" told a different game.
+					...(shape.margin >= 12
+						? [
+								`${loserN} cannot keep up with the ${winnerN}, ${scoreTag(shape)}${tag}`,
+							]
+						: []),
 				]),
-		`${winnerN} take care of the ${loserN} ${scoreTag(shape)}${tag}`,
-		`${winnerN} see off the ${loserN} ${scoreTag(shape)}${tag}`,
+		...(shape.margin >= 8
+			? [`${winnerN} take care of the ${loserN} ${scoreTag(shape)}${tag}`]
+			: []),
+		// Not "see off": that is the football page's English.
+		...(shape.margin >= 4
+			? [`${winnerN} turn back the ${loserN} ${scoreTag(shape)}${tag}`]
+			: []),
 		shape.margin >= 15
 			? `${winnerN} pull away from the ${loserN} for ${aNum(shape.margin)}-point win${tag}`
 			: `${winnerN} get past the ${loserN} ${scoreTag(shape)}${tag}`,
@@ -4580,7 +4603,10 @@ const supportSentence = (
 					[
 						`${p.name} led the scoring with ${statPhrase(p)}`,
 						`${p.name} led the ${nick(shape.winner)} with ${statPhrase(p)}`,
-						`No one scored more than ${p.name}, who had ${statPhrase(p)}`,
+						// Not "No one scored more than X, who had 16 points, and Y
+						// supplied 14": the long way round to a team high, and it
+						// read as a tie that was not one.
+						`${p.name} had a team-high ${statPhrase(p)}`,
 						`${p.name} was the leading scorer with ${statPhrase(p)}`,
 					],
 					"supportTopScorer",
@@ -4629,8 +4655,7 @@ const supportSentence = (
 	if (third && (third.pts >= 14 || doubleCategories(third).length >= 2)) {
 		const thirdDdw = doubleWord(doubleCategories(third).length);
 		const thirdText = outscoredStar(third)
-			? // Mid-sentence after ", and": "No one scored more" loses its capital.
-				topScorerText(third).replace(/^No one/, "no one")
+			? topScorerText(third)
 			: thirdDdw
 				? // The full line, and named: trimmed to one extra, a 15-10-10
 					// came out as "15 points and 10 rebounds".

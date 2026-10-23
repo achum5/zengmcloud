@@ -845,6 +845,37 @@ describe("simmed recaps", () => {
 		assert.isAtLeast(seen, 2);
 	});
 
+	// "30 points, 8 rebounds, and 7 assists on 4 threes" put the rebounds on
+	// the threes; "No one scored more than Amen Dunn, who had 16" was the long
+	// way to a team high.
+	test("threes are something he hit, and a team high is said straight", () => {
+		for (const text of [...pairs.map((p) => p.recap), ...dayRecaps]) {
+			assert.notMatch(text, /\bon \d+ (?:threes|three-pointers)\b/, text);
+			assert.notMatch(text, /\bno one scored more than\b/i, text);
+		}
+	});
+
+	// "Bulls cannot keep up with the Pacers, 110-107" over a game won on a
+	// jumper with 19.9 seconds left.
+	test("a headline's verb fits the margin", () => {
+		for (const { gid, recap, game } of pairs) {
+			const { w, l } = sides(game);
+			const margin = w.pts - l.pts;
+			const head = recap.split("\n\n")[0]!;
+			assert.notMatch(head, /\bsee off\b/, `gid ${gid}: ${head}`);
+			if (margin < 12) {
+				assert.notMatch(head, /cannot keep up/, `gid ${gid}: ${head}`);
+			}
+			if (margin < 8) {
+				assert.notMatch(
+					head,
+					/are too much for|take care of/,
+					`gid ${gid}: ${head}`,
+				);
+			}
+		}
+	});
+
 	// "Evan Hayes and Darius Hayes post double-doubles..." over a body that
 	// never said Darius Hayes.
 	test("every player the headline names is in the body", () => {

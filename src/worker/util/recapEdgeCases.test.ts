@@ -868,6 +868,35 @@ describe("edge cases", () => {
 		);
 	});
 
+	test("the reader holds a team high to the box score", () => {
+		const home = squad(
+			{ tid: 1, name: "Hawks", ptsQtrs: [28, 26, 27, 29] },
+			{ name: "Ace Hawk", pid: 11, pts: 29, fg: 10, fga: 20 },
+			110,
+		);
+		const away = squad(
+			{ tid: 2, name: "Kings", ptsQtrs: [24, 25, 26, 27] },
+			{ name: "Rex King", pid: 21, pts: 28, fg: 11, fga: 21 },
+			102,
+		);
+		const g = game([home, away]);
+		const kinds = (s: string) =>
+			verifyRecap(`**x**\n\n${s}`, g).map((v) => v.kind);
+		assert.deepEqual(kinds("Ace Hawk had a team-high 29 points."), []);
+		assert.deepEqual(kinds("Rex King had a team-high 28 points."), []);
+		assert.include(kinds("Ace Hawk had a team-high 27 points."), "team high");
+		// The second-best man on the side has no team high.
+		home.players.push({
+			...home.players[0]!,
+			name: "Bo Hawk",
+			pid: 12,
+			pts: 20,
+		});
+		assert.deepEqual(kinds("Bo Hawk had a team-high 20 points."), [
+			"team high",
+		]);
+	});
+
 	test("the reader holds series claims against the bracket", () => {
 		const home = squad(
 			{ tid: 1, name: "Hawks", ptsQtrs: [28, 26, 27, 29] },

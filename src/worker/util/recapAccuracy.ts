@@ -872,6 +872,31 @@ export const verifyRecap = (
 		}
 	}
 
+	// --- a team high ------------------------------------------------------------
+	// "Amen Dunn had a team-high 16 points": his 16, and nobody on his side
+	// with more.
+	for (const sentence of splitSentences(recap)) {
+		for (const m of sentence.matchAll(/\bteam-high (\d+)\b/g)) {
+			const who = lastNameIn(sentence.slice(0, m.index));
+			const p = who ? byName.get(who) : undefined;
+			const team = p
+				? game.teams.find((t) => t.players.includes(p))
+				: undefined;
+			if (!p || !team) {
+				continue;
+			}
+			const n = Number(m[1]);
+			const top = Math.max(...team.players.map((x) => x.pts));
+			if (n !== p.pts || p.pts < top) {
+				add(
+					"team high",
+					`said ${who} ${n}, his ${p.pts}, team high ${top}`,
+					sentence,
+				);
+			}
+		}
+	}
+
 	// --- what a man carried in: streaks, counts, highs ------------------------
 	//
 	// "Has not been held under 20 in eight games", "his sixth 30-point game
