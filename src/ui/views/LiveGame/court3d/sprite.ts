@@ -146,9 +146,9 @@ export type SpriteCache = {
 	// speed; a slow-motion replay less): poses come round that much more
 	// slowly, and a man may be drawn as he was for that many more frames.
 	pace?: number;
-	// Each man's picture last drawn: the frame, how many frames behind his
-	// pose it was then, his size in it and whether the ball was in his hands
-	// in it.
+	// Each man's picture last drawn (by who he is - see Plan.who): the
+	// frame, how many frames behind his pose it was then, his size in it and
+	// whether the ball was in his hands in it.
 	last: Map<
 		number,
 		{ kept: Kept; frame: number; behind: number; scale: number; held?: boolean }
@@ -179,8 +179,8 @@ export type Job = {
 	baseY: number;
 };
 // A man sculpted off the page's thread (see shape), for the page to
-// finish: the job and look it was for, and whose it is (his number in the
-// cache), the frame it was asked for in and his size then.
+// finish: the job and look it was for, and whose it is (see Plan.who), the
+// frame it was asked for in and his size then.
 export type Made = {
 	key: string;
 	shaped: Shaped;
@@ -606,7 +606,12 @@ type Plan = {
 	scale: number;
 	// The ball in his hands (drawn with him, not on its own - see scene.ts).
 	held: boolean;
+	// His look's number in the cache (in his pictures' keys), and who he is
+	// (his pid): the picture he was last drawn in is his whatever he looked
+	// like in it - so a new look (his face come in, the warm-up top off) is
+	// made as any new pose of his is, not all at once on the page.
 	id: number;
+	who: number;
 	key?: string;
 	// Left out of this frame: the picture black, and no time to make his.
 	leftOut?: boolean;
@@ -652,6 +657,7 @@ const planOf = (
 		scale,
 		held: st.holding === true,
 		id: 0,
+		who: st.pid,
 	};
 	if (cache) {
 		const known = cache.ids.get(look);
@@ -678,7 +684,7 @@ const planOf = (
 // the ball in his hands in it when he has let it go, or without it once he
 // has it: the ball would be on the picture twice, or not at all.
 const asWas = (cache: SpriteCache, plan: Plan) => {
-	const was = cache.last.get(plan.id);
+	const was = cache.last.get(plan.who);
 	return was &&
 		was.behind <
 			Math.round(MAX_BEHIND / Math.min(1, Math.max(0.35, cache.pace ?? 1))) &&
@@ -1086,7 +1092,7 @@ const pick = (cache: SpriteCache, plan: Plan): Kept | "make" | "out" => {
 		// Kept longest are the ones still in use: to the back of the line.
 		cache.kept.delete(plan.key);
 		cache.kept.set(plan.key, kept);
-		cache.last.set(plan.id, {
+		cache.last.set(plan.who, {
 			kept,
 			frame: cache.frame,
 			behind: 0,
@@ -1181,7 +1187,7 @@ export const prepareSprites = (
 			farm !== undefined &&
 			(farm.busy(cache, key) ||
 				farm.ask(cache, key, jobOf(plan, cam, man.st, man.body, px), man.look, {
-					id: plan.id,
+					id: plan.who,
 					frame: cache.frame,
 					scale: plan.scale,
 				}));
@@ -1242,7 +1248,7 @@ export const drawSprite = (
 	}
 	const made = make(plan, scratch, cam, st, body, look, px, cache);
 	if ("canvas" in made) {
-		cache?.last.set(plan.id, {
+		cache?.last.set(plan.who, {
 			kept: made,
 			frame: cache.frame,
 			behind: 0,

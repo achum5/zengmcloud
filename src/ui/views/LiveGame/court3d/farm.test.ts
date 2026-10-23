@@ -185,7 +185,7 @@ const frame = (cache: SpriteCache, men: PlayerState[], looks: Look[]) => {
 	}
 	return men.map((st, i) => ({
 		plan: cache.plans.get(st)!,
-		last: cache.last.get(cache.ids.get(looks[i]!)!)!,
+		last: cache.last.get(st.pid)!,
 	}));
 };
 

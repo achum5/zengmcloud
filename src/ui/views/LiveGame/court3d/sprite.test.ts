@@ -161,15 +161,12 @@ test("short of time, the men nearest the camera get their new pose first", () =>
 	// Then a new pose for all five, and time for two new pictures.
 	cache.budget = 1;
 	const now = frame(0.25);
-	const behind = now.map((m) => {
-		const id = cache.ids.get(m.look)!;
-		return cache.last.get(id)!.behind;
-	});
+	const behind = now.map((m) => cache.last.get(m.st.pid)!.behind);
 	assert.deepEqual(behind, [1, 1, 1, 0, 0]);
 	// And the next frame, the next nearest.
 	const later = frame(0.25);
 	assert.deepEqual(
-		later.map((m) => cache.last.get(cache.ids.get(m.look)!)!.behind),
+		later.map((m) => cache.last.get(m.st.pid)!.behind),
 		[2, 0, 0, 0, 0],
 	);
 });
@@ -299,7 +296,7 @@ const behindRun = (
 		prepareSprites(scratch, cam, [{ st, body, look }], 1, cache);
 		drawSprite(ctx, scratch, cam, st, body, look, 1, cache);
 		out.push({
-			behind: cache.last.get(cache.ids.get(look)!)?.behind ?? -1,
+			behind: cache.last.get(st.pid)?.behind ?? -1,
 			skipped: cache.skipped,
 		});
 	}
@@ -391,7 +388,7 @@ test("all black, nobody drawn, the books are kept as if they were: a man made a 
 	// Never left out (which would hold the picture black for him): drawn,
 	// were it drawn, as he was.
 	assert.deepEqual(skipped, [0, 0, 0, 0]);
-	assert.strictEqual(cache.last.get(cache.ids.get(look)!)!.behind, 3);
+	assert.strictEqual(cache.last.get(1)!.behind, 3);
 });
 
 // A man's number and lettering are laid out on his jersey's sheet once -
@@ -488,9 +485,61 @@ test("the ball caught or let go of: never drawn as he was", () => {
 		} as PlayerState;
 		prepareSprites(scratch, cam, [{ st, body, look }], 1, cache);
 		drawSprite(ctx, scratch, cam, st, body, look, 1, cache);
-		behind.push(cache.last.get(cache.ids.get(look)!)!.behind);
+		behind.push(cache.last.get(st.pid)!.behind);
 	}
 	// A frame behind while nothing about the ball changed; the frame it
 	// came into his hands and the frame it left them, a picture of him now.
 	assert.deepEqual(behind, [0, 1, 0, 1, 0, 1]);
+});
+
+// His look new (his face come in, the warm-up top off) is a new picture of
+// him like a new pose's: drawn as he was while there is no time for it -
+// not one made then and there for every man whose look changed at once.
+test("a new look of his waits its turn, like a new pose", () => {
+	const body = bodyOf();
+	const plain: Look = {
+		kit: kitsFor(undefined, undefined)[1],
+		skin: "#b07a52",
+		hair: "#1f1612",
+		jerseyNumber: "",
+		name: "",
+		lastName: "",
+		wordmark: "",
+	};
+	const faced: Look = { ...plain, skin: "#8d5524" };
+	const scratch = makeScratch();
+	const cache = makeSpriteCache();
+	const ctx = stubCanvas().getContext() as unknown as CanvasRenderingContext2D;
+	const cam = makeCamera({ x: 47, width: 60, y: 24 }, 640, 360, MAIN_RIG);
+	const st = {
+		pid: 7,
+		team: 1,
+		shown: true,
+		x: 47,
+		y: 25,
+		z: 0,
+		yaw: 0,
+		anim: "run",
+		phase: 0.25,
+		moving: true,
+	} as PlayerState;
+	const drawn: { behind: number; made: number }[] = [];
+	for (let i = 0; i < 4; i++) {
+		startFrame(cache);
+		// Time for his first picture, none the next frame, then plenty.
+		cache.budget = i === 1 ? 0 : undefined;
+		const look = i === 0 ? plain : faced;
+		prepareSprites(scratch, cam, [{ st, body, look }], 1, cache);
+		drawSprite(ctx, scratch, cam, st, body, look, 1, cache);
+		drawn.push({
+			behind: cache.last.get(st.pid)!.behind,
+			made: cache.kept.size,
+		});
+	}
+	assert.deepEqual(drawn, [
+		{ behind: 0, made: 1 },
+		{ behind: 1, made: 1 },
+		{ behind: 0, made: 2 },
+		{ behind: 0, made: 2 },
+	]);
 });
