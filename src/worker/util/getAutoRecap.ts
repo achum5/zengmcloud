@@ -386,8 +386,11 @@ const storyScore = (p: RecapPlayer): number => {
 	// a nudge, enough to beat a same-size line that is only points.
 	const cats = doubleCategories(p).length;
 	const bonus = cats >= 3 ? 10 : cats === 2 ? 2.5 : 0;
+	// A steal or a block at 1.2, not 1.7: at 1.7 one weighed as much as
+	// three and a half points, and "Naji Hayes 25 and 12 with two steals and
+	// a block" took the lede from a teammate's 32 and 12.
 	return (
-		0.5 * p.pts + 0.5 * p.reb + 0.5 * p.ast + 1.7 * p.blk + 1.7 * p.stl + bonus
+		0.5 * p.pts + 0.5 * p.reb + 0.5 * p.ast + 1.2 * p.blk + 1.2 * p.stl + bonus
 	);
 };
 
@@ -521,12 +524,34 @@ const storyPlayerOf = (
 	// in a 43-point rout - is the man a reporter leads with. The pick keeps
 	// the lede only with a line nobody outscores: a triple-double, 15
 	// rebounds, 13 assists, six blocks or six steals.
-	if (star && shape.winner.players.includes(star) && !rareLine(star)) {
+	// A rare line holds off all but a night bigger still: 40 points and 10
+	// assists is the story over a teammate's 23 and 16, whatever the
+	// rebounds.
+	if (star && shape.winner.players.includes(star)) {
 		const pick = star;
 		const top = shape.winner.players
 			.filter((p) => p !== pick)
 			.sort((a, b) => b.pts - a.pts)[0];
-		if (top && top.pts >= 18 && top.pts >= pick.pts + 8) {
+		const bigger =
+			top &&
+			top.pts >= 18 &&
+			top.pts >= pick.pts + 8 &&
+			(!rareLine(pick) ||
+				(doubleCategories(pick).length < 3 &&
+					top.pts >= 30 &&
+					top.pts >= pick.pts + 12 &&
+					doubleCategories(top).length >= 2));
+		// Two double-doubles: the one that scored more, by six or more. "Devin
+		// Ingram had 16 points and 11 rebounds" led a win in which Cade Ingram
+		// had 23 and 11.
+		const twoDoubles =
+			top &&
+			top.pts >= 18 &&
+			top.pts >= pick.pts + 6 &&
+			!rareLine(pick) &&
+			doubleCategories(pick).length === 2 &&
+			doubleCategories(top).length >= 2;
+		if (top && (bigger || twoDoubles)) {
 			star = top;
 		}
 	}

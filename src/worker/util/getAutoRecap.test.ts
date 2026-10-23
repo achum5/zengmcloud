@@ -1850,6 +1850,135 @@ describe("one word for halftime at a time", () => {
 	});
 });
 
+// Steals and blocks weighed three and a half points apiece in the story
+// score, so "Naji Hayes, 25 and 12 with two steals and a block" led a win in
+// which a teammate had 32 and 12; and a 16-rebound night held the lede
+// against a teammate's 40 points and 10 assists.
+describe("the bigger night leads", () => {
+	const twoStars = (gid: number, a: RecapPlayer, b: RecapPlayer) =>
+		game({
+			gid,
+			teams: [
+				team({
+					tid: 1,
+					name: "Bucks",
+					abbrev: "MIL",
+					pts: 118,
+					ptsQtrs: [30, 29, 30, 29],
+					players: [
+						a,
+						b,
+						player({ name: "Role One", pts: 14, reb: 4, ast: 3 }),
+						player({ name: "Role Two", pts: 12, reb: 3, ast: 2 }),
+						player({ name: "Role Three", pts: 10, reb: 2, ast: 4 }),
+					],
+				}),
+				realisticTeam(
+					{
+						tid: 2,
+						name: "Raptors",
+						abbrev: "TOR",
+						pts: 104,
+						ptsQtrs: [26, 26, 26, 26],
+					},
+					player({ name: "Other Star", pts: 22, reb: 6 }),
+				),
+			],
+			winnerTid: 1,
+		});
+	const leadsWith = (recap: string, name: string, other: string) => {
+		const top = recap.split("\n\n").slice(0, 2).join(" ");
+		const i = top.indexOf(name);
+		const j = top.indexOf(other);
+		return i >= 0 && (j < 0 || i < j);
+	};
+
+	test("32 and 12 over 25 and 12 with a steal and a block", () => {
+		for (let gid = 600; gid < 620; gid++) {
+			const recap = getAutoRecap(
+				twoStars(
+					gid,
+					player({
+						name: "Naji Hayes",
+						pts: 25,
+						reb: 12,
+						ast: 1,
+						stl: 2,
+						blk: 1,
+						fg: 8,
+						fga: 17,
+					}),
+					player({
+						name: "Vince Hayes",
+						pts: 32,
+						reb: 12,
+						ast: 4,
+						fg: 10,
+						fga: 16,
+					}),
+				),
+			);
+			assert.ok(leadsWith(recap, "Vince Hayes", "Naji Hayes"), recap);
+		}
+	});
+
+	test("40 points and 10 assists over 23 and 16", () => {
+		for (let gid = 620; gid < 640; gid++) {
+			const recap = getAutoRecap(
+				twoStars(
+					gid,
+					player({
+						name: "Keegan Ellis",
+						pts: 23,
+						reb: 16,
+						ast: 3,
+						stl: 1,
+						blk: 4,
+						fg: 8,
+						fga: 10,
+					}),
+					player({
+						name: "Franz Ellis",
+						pts: 40,
+						reb: 8,
+						ast: 10,
+						fg: 12,
+						fga: 22,
+					}),
+				),
+			);
+			assert.ok(leadsWith(recap, "Franz Ellis", "Keegan Ellis"), recap);
+		}
+	});
+
+	test("a triple-double still holds it", () => {
+		for (let gid = 640; gid < 660; gid++) {
+			const recap = getAutoRecap(
+				twoStars(
+					gid,
+					player({
+						name: "Trip Dub",
+						pts: 18,
+						reb: 11,
+						ast: 12,
+						fg: 7,
+						fga: 14,
+					}),
+					player({
+						name: "Big Scorer",
+						pts: 33,
+						reb: 5,
+						ast: 2,
+						fg: 12,
+						fga: 22,
+					}),
+				),
+			);
+			assert.ok(leadsWith(recap, "Trip Dub", "Big Scorer"), recap);
+		}
+	});
+});
+
 describe("who got hurt", () => {
 	test("an injury is told as what happened to him", () => {
 		assert.equal(hurtInGame("Sprained Ankle"), "sprained his ankle");
