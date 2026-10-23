@@ -9818,6 +9818,11 @@ class Director {
 				arrive = decided;
 				target = rimPt(team, 0.45);
 			}
+			// (Whoever of theirs is right there goes up with him - see wallUp.
+			// Not round a man dunked on: the room there is cleared.)
+			if (plan.finish !== "poster" && plan.kind !== "block") {
+				this.walls.push({ shooter, release: gather + dur * 0.38 });
+			}
 		} else {
 			// "Tips it in": a one-handed tap at the top of the jump.
 			const tip = zone === "tipIn" && plan.finish === "tip" && !drove;
