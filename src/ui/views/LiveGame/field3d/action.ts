@@ -504,6 +504,9 @@ const POINT_FIRST = 0.55;
 const UP_QUICK = 450;
 const POINT_MS = 1000;
 
+// A turnover: the man who came up with it mobbed this often.
+const TAKEAWAY = 0.75;
+
 // After the whistle, how long a man down stays down, and getting up.
 const DOWN_MS = 900;
 const GET_UP_MS = 1000;
@@ -4708,6 +4711,7 @@ class Action {
 			if (this.input.firstDown) {
 				this.pointFirst();
 			}
+			this.takeaway();
 			return;
 		}
 		const tTD = this.at.get(tdI)!;
@@ -4785,6 +4789,14 @@ class Action {
 		this.until = scorer.t;
 		scorer.hold(scorer.t + 2600, "stand");
 		this.mob.add(scorer.pid);
+		this.mobRound(scorer, c0);
+	}
+
+	// The moment after: `hero`'s teammates nearest running to him from c0,
+	// to leap with him, the other side's nearest hands on hips, turned away.
+	mobRound(hero: Actor, c0: number) {
+		const r = this.r;
+		const at = hero.at;
 		// His teammates nearest, to him.
 		const start = c0 + 150;
 		// (Away on his own, a long way ahead of them all: the nearest of them
@@ -4792,9 +4804,7 @@ class Action {
 		const mates = this.men
 			.filter(
 				(m) =>
-					m !== scorer &&
-					m.team === scorer.team &&
-					!DOWN.has(legAt(m, start).move),
+					m !== hero && m.team === hero.team && !DOWN.has(legAt(m, start).move),
 			)
 			.sort((a, b) => dist(a.posAt(c0), at) - dist(b.posAt(c0), at))
 			.filter((m, k) => k < 2 || dist(m.posAt(c0), at) < MOB_FROM)
@@ -4821,7 +4831,7 @@ class Action {
 		});
 		// The other side's nearest: hands on hips, turned away.
 		const beaten = this.men
-			.filter((m) => m.team !== scorer.team && dist(m.posAt(c0), at) < 40)
+			.filter((m) => m.team !== hero.team && dist(m.posAt(c0), at) < 40)
 			.sort((a, b) => dist(a.posAt(c0), at) - dist(b.posAt(c0), at))
 			.slice(0, 3);
 		for (const m of beaten) {
@@ -4836,6 +4846,45 @@ class Action {
 			m.hold(m.t + 2400, "onHips");
 			this.mob.add(m.pid);
 		}
+	}
+
+	// A turnover: the man who came up with it, once he is up - the ball held
+	// up, or a leap - his side's men round him.
+	takeaway() {
+		const r = this.r;
+		const { kind, offense, events, i0, i1 } = this.input;
+		if (kind !== "pass" && kind !== "run") {
+			return;
+		}
+		let turned = false;
+		for (let i = i0; i < i1; i++) {
+			const e = events[i];
+			if (e?.type === "interception" || e?.lost === true) {
+				turned = true;
+			}
+		}
+		const held = this.ball.findLast((b) => b.kind === "held");
+		const hero = held?.kind === "held" ? this.man(held.pid) : undefined;
+		if (!turned || !hero || hero.team === offense || r() > TAKEAWAY) {
+			return;
+		}
+		const legs = hero.legs;
+		let k = legs.length - 1;
+		while (k > 1 && legs[k]!.move === "stand") {
+			k--;
+		}
+		const c0 = Math.max(this.whistle + 300, legs[k]!.t1);
+		hero.cut(c0);
+		hero.hold(c0);
+		if (r() < 0.6) {
+			hero.hold(c0 + 1400, "ballUp");
+		} else {
+			hero.act("leap", c0 + 800);
+		}
+		this.until = hero.t;
+		hero.hold(hero.t + 2200, "stand");
+		this.mob.add(hero.pid);
+		this.mobRound(hero, c0);
 	}
 
 	// A new set of downs, now and then: the man who got it up off the turf
