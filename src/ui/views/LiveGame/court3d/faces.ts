@@ -258,13 +258,32 @@ export const headColors = (
 	};
 };
 
+// One face drawn at a time, each between two frames of its own: faces.js
+// lays each one out in the page as it draws it, and a whole roster's
+// arriving at once held up the game's first frames by a tenth of a second
+// and more.
+let turn: Promise<unknown> = Promise.resolve();
+const betweenFrames = () =>
+	new Promise((resolve) => {
+		if (typeof requestAnimationFrame === "function") {
+			requestAnimationFrame(() => setTimeout(resolve, 0));
+		} else {
+			setTimeout(resolve, 0);
+		}
+	});
+const inTurn = <T>(draw: () => Promise<T>): Promise<T> => {
+	const mine = turn.then(betweenFrames).then(draw);
+	turn = mine.catch(() => undefined);
+	return mine;
+};
+
 export const loadHead = async (
 	face: FaceConfig | undefined,
 	colors: [string, string, string] | undefined,
 ): Promise<{ sprite?: HeadSprite; skin?: string }> => {
 	try {
 		if (face) {
-			return { sprite: await faceSprite(face, colors) };
+			return { sprite: await inTurn(() => faceSprite(face, colors)) };
 		}
 	} catch {
 		// A face that will not draw just leaves him with a plain head.
