@@ -1375,6 +1375,44 @@ const FIELD_ANIMS = {
 			wide: 0.5,
 		}),
 	},
+	// A hand down to a man on the turf, and him pulled up by it.
+	helpUp: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[
+				0.3,
+				pose({
+					hipN: 22,
+					kneeN: 30,
+					hipF: 26,
+					kneeF: 32,
+					lean: 38,
+					shN: 58,
+					elN: 8,
+					abN: 8,
+					shF: 14,
+					elF: 30,
+				}),
+			],
+			[
+				0.65,
+				pose({
+					hipN: 10,
+					kneeN: 18,
+					hipF: 12,
+					kneeF: 18,
+					lean: 18,
+					shN: 46,
+					elN: 36,
+					abN: 6,
+					shF: 10,
+					elF: 26,
+				}),
+			],
+			[1, BASE],
+		],
+	},
 	// The men round him on a knee, waiting.
 	takeKnee: {
 		kind: "still",

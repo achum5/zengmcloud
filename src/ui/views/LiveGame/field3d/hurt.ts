@@ -157,9 +157,12 @@ export const stageHurt = (input: {
 	}
 	const downAt = t;
 	input.busy.add(him.pid);
-	// (The ball, if he had it, on the turf by him.)
-	const held = input.ball.at(-1);
-	if (held?.kind === "held" && held.pid === him.pid && held.t0 <= downAt) {
+	// (The ball, if he had it, on the turf by him - not tossed down once he
+	// was up.)
+	const k = input.ball.findLastIndex((b) => b.t0 <= downAt);
+	const held = input.ball[k];
+	if (held?.kind === "held" && held.pid === him.pid) {
+		input.ball.length = k + 1;
 		input.ball.push({
 			kind: "spot",
 			t0: downAt,

@@ -25,6 +25,7 @@ import {
 	type Side,
 } from "./geometry.ts";
 import { moveKind, type Move } from "./poses.ts";
+import { sidelineOf } from "./sideline.ts";
 import {
 	alongRoute,
 	decoyRoute,
@@ -539,6 +540,9 @@ class Action {
 	lo: number;
 	hi: number;
 
+	// The men in a moment of their own after it (see celebrate).
+	readonly mob = new Set<number>();
+
 	constructor(input: ActInput) {
 		this.input = input;
 		this.r = input.r;
@@ -701,6 +705,7 @@ class Action {
 		}
 		this.afterWhistle();
 		this.celebrate();
+		this.regroup();
 		for (const x of this.reaches) {
 			x.m.arms(x.move, x.t0, x.t1);
 		}
@@ -3846,6 +3851,7 @@ class Action {
 				sacker.act("flex", sacker.t + 1100);
 				this.until = sacker.t;
 				sacker.hold(sacker.t + 400, "stand");
+				this.mob.add(sacker.pid);
 			}
 			return;
 		}
@@ -3923,6 +3929,7 @@ class Action {
 		}
 		this.until = scorer.t;
 		scorer.hold(scorer.t + 2600, "stand");
+		this.mob.add(scorer.pid);
 		// His teammates nearest, to him.
 		const start = c0 + 150;
 		// (Away on his own, a long way ahead of them all: the nearest of them
@@ -3955,6 +3962,7 @@ class Action {
 				this.until = Math.max(this.until, m.t);
 			}
 			m.hold(m.t + 1800 + r() * 800, "stand", face);
+			this.mob.add(m.pid);
 		});
 		// The other side's nearest: hands on hips, turned away.
 		const beaten = this.men
@@ -3971,6 +3979,7 @@ class Action {
 				"walk",
 			);
 			m.hold(m.t + 2400, "onHips");
+			this.mob.add(m.pid);
 		}
 	}
 
@@ -4003,6 +4012,155 @@ class Action {
 			m.hold(Math.max(m.t, t) + 600, "stand");
 		}
 	}
+
+	// ---- between plays -------------------------------------------------------------
+
+	// Where the ball is at t: on the turf, in the air, or with a man.
+	ballAt(t: number): Pt | undefined {
+		const s = this.ball.findLast((b) => b.t0 <= t);
+		if (!s) {
+			return undefined;
+		}
+		if (s.kind === "spot") {
+			return s.at;
+		}
+		if (s.kind === "fly") {
+			return s.to;
+		}
+		return this.man(s.pid)?.posAt(t);
+	}
+
+	// Once it is over: the man brought down helped up off the turf by a
+	// teammate - now and then by the man who put him there - the ball let go
+	// of, and everyone not in a moment of his own on his way: back toward
+	// his huddle, a few yards off the ball - or, after a kick, a score or a
+	// change of hands, off toward his sideline for the next unit to come on.
+	regroup() {
+		const r = this.r;
+		const { kind, offense, dir, events, i0, i1 } = this.input;
+		const t = this.whistle;
+		const spot = this.ballAt(t);
+		if (!spot) {
+			return;
+		}
+		const last = this.ball.at(-1);
+		const holder = last?.kind === "held" ? this.man(last.pid) : undefined;
+		let scored = false;
+		for (let i = i0; i < i1; i++) {
+			if (events[i]?.td === true) {
+				scored = true;
+			}
+		}
+		const off =
+			KICK_KINDS.has(kind) ||
+			scored ||
+			(holder !== undefined && holder.team !== offense);
+		const y = clamp(spot.y, HUDDLE_Y[0], HUDDLE_Y[1]);
+		const huddle = (team: Side): Pt =>
+			team === offense
+				? { x: spot.x - dir * HUDDLE_BACK, y }
+				: { x: spot.x + dir * DEFENSE_BACK, y };
+		// (When each is done with what the play gave him: up off the turf, or
+		// pulled up.)
+		const freeOf = (m: Actor) => {
+			const legs = m.legs;
+			let k = legs.length - 1;
+			while (
+				k > 0 &&
+				legs[k]!.move === "stand" &&
+				legs[k]!.from.x === legs[k]!.to.x &&
+				legs[k]!.from.y === legs[k]!.to.y
+			) {
+				k--;
+			}
+			return Math.max(t, legs[k]!.t1);
+		};
+		const free = new Map<number, number>();
+		for (const m of this.men) {
+			free.set(m.pid, freeOf(m));
+		}
+		// The man down with the ball, a hand up.
+		const down = holder ?? undefined;
+		const up = down?.legs.find((l) => l.move === "getUp" && l.t0 >= t);
+		if (down && up && !this.mob.has(down.pid) && r() < HELP_UP) {
+			const at = down.posAt(up.t0);
+			const mates = (team: Side) =>
+				this.men
+					.filter(
+						(m) =>
+							m !== down &&
+							m.team === team &&
+							!this.mob.has(m.pid) &&
+							!DOWN.has(legAt(m, up.t0).move) &&
+							free.get(m.pid)! < up.t0 - 600,
+					)
+					.sort((a, b) => dist(a.posAt(up.t0), at) - dist(b.posAt(up.t0), at));
+			const helper = (
+				r() < HELP_FOE ? mates(down.team === 0 ? 1 : 0) : mates(down.team)
+			)[0];
+			if (helper) {
+				const from = helper.posAt(free.get(helper.pid)!);
+				const ang = Math.atan2(from.y - at.y, from.x - at.x);
+				const by = {
+					x: at.x + Math.cos(ang) * 2.3,
+					y: at.y + Math.sin(ang) * 2.3,
+				};
+				const need = (dist(from, by) / HELP_FPS) * 1000;
+				const leave = up.t0 - 80 - need;
+				if (dist(from, at) < HELP_FROM && leave >= free.get(helper.pid)!) {
+					helper.cut(leave);
+					helper.hold(leave);
+					helper.go(by, up.t0 - 80, undefined, this.toward(by, at));
+					helper.act("helpUp", up.t1, this.toward(by, at));
+					free.set(helper.pid, helper.t);
+				}
+			}
+		}
+		for (const m of this.men) {
+			if (this.mob.has(m.pid)) {
+				continue;
+			}
+			const start = free.get(m.pid)! + 250 + r() * 900;
+			m.cut(start);
+			m.hold(start);
+			// (The ball let go of: tossed down by his feet.)
+			if (m === holder && last && last.t0 <= start) {
+				const a = m.yaw;
+				const from = {
+					x: m.at.x + Math.cos(a),
+					y: m.at.y + Math.sin(a),
+					z: 3.2,
+				};
+				const to = {
+					x: m.at.x + Math.cos(a) * 4,
+					y: m.at.y + Math.sin(a) * 4,
+					z: 0.3,
+				};
+				this.ball.push(
+					{ kind: "fly", t0: start, t1: start + TOSS_MS, from, to, peak: 1.2 },
+					{ kind: "spot", t0: start + TOSS_MS, at: { ...to, z: 0 } },
+				);
+			}
+			const going = off
+				? {
+						x: m.at.x + (r() - 0.5) * 24,
+						y: sidelineOf(m.team) === 0 ? 3 : FIELD_W - 3,
+					}
+				: huddle(m.team);
+			const ang = r() * Math.PI * 2;
+			const ring = off ? 0 : 2 + r() * 5;
+			const to = {
+				x: going.x + Math.cos(ang) * ring,
+				y: going.y + Math.sin(ang) * ring,
+			};
+			const big = OL.has(m.role) || DL.has(m.role);
+			const fps =
+				off && r() < 0.6 ? 6.8 + r() * 2 : (big ? 3 : 3.6) + r() * 1.1;
+			if (dist(m.at, to) > 2) {
+				m.run(to, fps);
+			}
+		}
+	}
 }
 
 // The leg he is in at t (or the last).
@@ -4019,6 +4177,26 @@ const MOB_RING = 3.2;
 const SPIKE_MS = 720;
 const SPIKE_AT = 0.6;
 const BOUNCE_MS = 650;
+// Between plays: the offense's huddle this far back of the ball, the
+// defense gathering this far off it, between these (across the field); a
+// man down with the ball helped up this often - by the other side's man
+// this often - by a man no further off than this, getting to him at this
+// pace; and the ball tossed down this long.
+const HUDDLE_BACK = 8 * YD;
+const DEFENSE_BACK = 5 * YD;
+const HUDDLE_Y: [number, number] = [MID_Y - 30, MID_Y + 30];
+const HELP_UP = 0.6;
+const HELP_FOE = 0.25;
+const HELP_FROM = 22;
+const HELP_FPS = 6;
+const TOSS_MS = 380;
+const KICK_KINDS = new Set<PlayKind>([
+	"kickoff",
+	"onside",
+	"punt",
+	"fieldGoal",
+	"extraPoint",
+]);
 
 // The play from the snap: what the sim says happened, acted out - or
 // undefined, a play this does not act out (yet), left standing in its
