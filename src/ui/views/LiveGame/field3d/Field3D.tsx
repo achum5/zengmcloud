@@ -69,7 +69,14 @@ import {
 } from "./playback.ts";
 import { replayAim } from "./replays.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
-import { coachId, sidelineAt, sidelineFor } from "./sideline.ts";
+import {
+	coachId,
+	COACHES,
+	sidelineAt,
+	sidelineFor,
+	STAFF,
+	staffId,
+} from "./sideline.ts";
 import { HURT_MOST, MEDICS, medicId } from "./hurt.ts";
 import {
 	cameraGear,
@@ -338,10 +345,15 @@ const Field3D = ({
 			bodies.set(o.id, officialBody(o.hgt, o.weight));
 		}
 		for (const team of [0, 1] as const) {
-			for (let i = 0; i < 4; i++) {
+			for (let i = 0; i < COACHES; i++) {
 				const id = coachId(team, i);
 				looks.set(id, coachLook(kits[team], `${gid}|${id}`));
-				bodies.set(id, officialBody(69 + ((i * 5) % 6), 195 + i * 12));
+				bodies.set(id, officialBody(68 + ((i * 5) % 7), 180 + ((i * 17) % 70)));
+			}
+			for (let i = 0; i < STAFF; i++) {
+				const id = staffId(team, i);
+				looks.set(id, trainerLook(kits[team], `${gid}|${id}`));
+				bodies.set(id, officialBody(67 + ((i * 3) % 8), 170 + ((i * 23) % 60)));
 			}
 			// The trainers, out to a man hurt.
 			for (let n = 0; n < HURT_MOST; n++) {

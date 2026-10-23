@@ -420,6 +420,43 @@ describe("the sidelines", () => {
 	});
 });
 
+describe("the sidelines, packed", () => {
+	test("the whole team and its staff on hand, nobody stood on anybody, most of the unit just off sat down", () => {
+		for (const game of games) {
+			const tl = stage(game);
+			const men = sidelineFor(game.roster, 1);
+			let sat = 0;
+			let resting = 0;
+			for (const play of tl.plays.filter((_, k) => k % 5 === 0)) {
+				const off = sidelineAt(men, tl, momentAt(tl, play.snap));
+				for (const [k, a] of off.entries()) {
+					for (const b of off.slice(k + 1)) {
+						assert.isAtLeast(
+							Math.hypot(a.x - b.x, a.y - b.y),
+							1.5,
+							`play ${play.i}: ${a.id} on ${b.id}`,
+						);
+					}
+				}
+				const on = new Set(play.parts.map((p) => p.pid));
+				for (const team of [0, 1] as const) {
+					const here = off.filter((s) => s.team === team);
+					const players = game.roster.filter(
+						(p) => p.team === team && !on.has(p.pid),
+					);
+					// (Every man off the field, and the coaches and the staff.)
+					assert.isAtLeast(here.length, players.length + 10);
+				}
+				if (play.kind === "pass" || play.kind === "run") {
+					sat += off.filter((s) => s.move === "sit").length;
+					resting += 1;
+				}
+			}
+			assert.isAbove(sat / resting, 8);
+		}
+	});
+});
+
 describe("a man hurt", () => {
 	test("down after the whistle, the trainers out to him from his sideline, and helped off toward it", () => {
 		let hurt = 0;
