@@ -793,6 +793,16 @@ const STIFF_ARM = 0.5;
 const JUKE_MS = 300;
 const JUKE_ON = 2;
 const JUKE_OVER = 5;
+// Instead, now and then, a hurdle (him coming from no wider than this off
+// straight ahead: the cosine), this long; or a spin, this long, this far on
+// and over.
+const HURDLE = 0.12;
+const HURDLE_AHEAD = 0.6;
+const HURDLE_MS = 600;
+const SPIN = 0.22;
+const SPIN_MS = 480;
+const SPIN_ON = 2.5;
+const SPIN_OVER = 2.5;
 // How much later than he would have been a carrier can be brought down, his
 // run slowed, for the man the sim says made the tackle to get there.
 const SLACK_MS = 700;
@@ -2237,10 +2247,10 @@ class Action {
 				this.overTop(i, carrier, chasers);
 				return;
 			}
-			this.evade(carrier, [], chasers);
+			const late = this.evade(carrier, [], chasers, t);
 			// Into the end zone, slowing up, the ball held up.
 			const goal = this.goalLineX();
-			const crossT = this.crossing(carrier, goal, t);
+			const crossT = this.crossing(carrier, goal, late);
 			this.at.set(i, crossT);
 			this.whistle = crossT;
 			const p = carrier.at;
@@ -2248,14 +2258,19 @@ class Action {
 				x: p.x + Math.cos(carrier.yaw) * 10,
 				y: p.y + Math.sin(carrier.yaw) * 10,
 			};
-			carrier.go(ahead, t + 900, "jog");
-			carrier.hold(t + 2600, "stand");
+			carrier.go(ahead, late + 900, "jog");
+			carrier.hold(late + 2600, "stand");
 			this.done.add(carrier.pid);
 			this.pullUp(chasers, carrier, crossT);
 			return;
 		}
-		const down = this.downBy(carrier, end.pt, t, chasers, by);
-		this.evade(carrier, down.by, chasers);
+		const down = this.downBy(
+			carrier,
+			end.pt,
+			this.evade(carrier, by ?? [], chasers, t),
+			chasers,
+			by,
+		);
 		this.at.set(i, down.t);
 		this.whistle = down.t;
 		const fumI = this.fumbleAfter(i);
@@ -2364,19 +2379,24 @@ class Action {
 	// of `chasers` (not the men who bring him down) there to meet him
 	// partway along his last stretch - and a cut away from him, a plant and
 	// off the other way, the man left on the turf behind him; or, coming at
-	// his free arm, put on his back with a stiff arm.
-	evade(carrier: Actor, by: Actor[], chasers: Actor[]) {
+	// his free arm, put on his back with a stiff arm; or a spin out of his
+	// hands, or over the top of him gone low. Gives when the carry (to have
+	// ended at t) ends now: a cut or a spin costs him a beat.
+	evade(carrier: Actor, by: Actor[], chasers: Actor[], t: number): number {
 		const r = this.r;
 		const l = carrier.last;
-		const ms = l.t1 - l.t0;
+		const { t1 } = l;
+		const ms = t1 - l.t0;
 		if (
 			moveKind(l.move) !== "cycle" ||
 			dist(l.from, l.to) < EVADE_FAR ||
 			ms < EVADE_MS ||
 			r() > EVADE
 		) {
-			return;
+			return t;
 		}
+		// (Not the men the sim has bring him down.)
+		const tacklers = this.statPids("defTckSolo", "defTckAst");
 		const ang = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
 		const tc = l.t0 + ms * (0.3 + r() * 0.35);
 		const at = carrier.posAt(tc);
@@ -2386,6 +2406,7 @@ class Action {
 					c.team !== carrier.team &&
 					!this.done.has(c.pid) &&
 					!by.includes(c) &&
+					!tacklers.includes(c.pid) &&
 					c.t < tc - 400,
 			)
 			.map((c) => ({
@@ -2401,7 +2422,7 @@ class Action {
 			)
 			.sort((a, b) => a.t - b.t)[0];
 		if (!m) {
-			return;
+			return t;
 		}
 		const toHim = Math.atan2(m.from.y - at.y, m.from.x - at.x);
 		// (Which side he comes from: +1 the side the ball is carried on, his
@@ -2420,23 +2441,73 @@ class Action {
 			m.c.act("getUpBack", tc + 520 + 600 + GET_UP_MS);
 			carrier.arms("stiffArm", tc - 280, tc + 300);
 		} else {
-			const { to, t1, move } = l;
+			const { to, move } = l;
+			// (Off it as fast as he went into it.)
+			const v = Math.min(carrier.top, dist(l.from, to) / (ms / 1000));
+			const on = () =>
+				carrier.go(
+					to,
+					Math.max(t1, carrier.t + (dist(carrier.at, to) / v) * 1000),
+					move,
+				);
+			const u = r();
+			const half = HURDLE_MS / 2;
+			if (
+				u < HURDLE &&
+				Math.cos(toHim - ang) > HURDLE_AHEAD &&
+				tc - half > l.t0 &&
+				tc + half < t1
+			) {
+				// Coming at his legs, low: over the top of him, on his line.
+				carrier.cut(tc - half);
+				carrier.act(
+					"hurdle",
+					tc + half,
+					ang,
+					beside(at, ang, (v * half) / 1000),
+				);
+				on();
+				const hit = beside(at, toHim, 2.6);
+				const face = this.toward(hit, at);
+				this.closeOn(m.c, hit, tc - 300, face);
+				m.c.act("dive", tc + 250, face, beside(at, face, 1.2));
+				m.c.hold(tc + 250 + 700, "prone");
+				m.c.act("getUp", tc + 250 + 700 + GET_UP_MS);
+				this.done.add(m.c.pid);
+				return t + carrier.t - t1;
+			}
+			if (u < HURDLE + SPIN) {
+				// Got a hand on him: round on a planted foot, out of it, and on.
+				const off = beside(
+					beside(at, ang, SPIN_ON),
+					ang - (side * Math.PI) / 2,
+					SPIN_OVER,
+				);
+				carrier.cut(tc);
+				carrier.act("spin", tc + SPIN_MS, ang, off);
+				carrier.last.turn = side * Math.PI * 2;
+				on();
+				const hit = beside(at, toHim, 2.2);
+				const face = this.toward(hit, at);
+				this.closeOn(m.c, hit, tc + 60, face);
+				m.c.act("dive", tc + 520, face, beside(hit, face, 2.4));
+				m.c.hold(tc + 520 + 600, "prone");
+				m.c.act("getUp", tc + 520 + 600 + GET_UP_MS);
+				this.done.add(m.c.pid);
+				return t + carrier.t - t1;
+			}
 			const off = beside(
 				beside(at, ang, JUKE_ON),
 				ang - (side * Math.PI) / 2,
 				JUKE_OVER,
 			);
-			// (Not if it would take more than he has to get there still.)
-			if (dist(off, to) / ((t1 - tc - JUKE_MS) / 1000) > carrier.top) {
-				return;
-			}
 			carrier.cut(tc);
 			carrier.act("juke", tc + JUKE_MS, ang, off);
 			if (side < 0) {
 				// (To his right: the cut the other way round.)
 				carrier.last.mirrored = true;
 			}
-			carrier.go(to, t1, move);
+			on();
 			// (Off his feet at where he was.)
 			const hit = beside(at, toHim, 3.5);
 			const face = this.toward(hit, at);
@@ -2446,6 +2517,7 @@ class Action {
 			m.c.act("getUp", tc + 380 + 700 + GET_UP_MS);
 		}
 		this.done.add(m.c.pid);
+		return t + carrier.t - t1;
 	}
 
 	// Who brings the carrier down at `pt` - `who`, or the men the sim says

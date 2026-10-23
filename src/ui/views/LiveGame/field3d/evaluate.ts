@@ -203,10 +203,10 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 			ranBefore = ran;
 			ran = moveKind(lj.move) === "cycle" ? ran + lengthOf(lj) : 0;
 		}
-		let yaw = yawOf(l, before);
+		let yaw = yawOf(l, before) + (l.turn ?? 0) * along(l, t);
 		const since = t - l.t0;
 		const prev = k > 0 ? legs[k - 1] : undefined;
-		if (prev && since < TURN_MS) {
+		if (prev && since < TURN_MS && !l.turn) {
 			yaw = lerpAngle(before, yaw, clamp01(since / TURN_MS));
 		}
 		let from: FieldPlayerState["from"];

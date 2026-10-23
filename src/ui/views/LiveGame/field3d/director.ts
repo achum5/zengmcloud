@@ -106,6 +106,9 @@ export type Leg = {
 	to: Pt;
 	move: Move;
 	yaw?: number;
+	// Turning as he goes, this far round over the leg (radians, to his left
+	// positive): a spin move.
+	turn?: number;
 	mirrored?: boolean;
 	// The ball with him, and how he has it (see BallHold).
 	ball?: BallHold;

@@ -1223,6 +1223,122 @@ const FIELD_ANIMS = {
 			[1, PRONE],
 		],
 	},
+	// A spin move: a foot planted, low, round on it with his free arm out -
+	// and off again.
+	spin: {
+		kind: "act",
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 30,
+					kneeN: 50,
+					hipF: -10,
+					kneeF: 30,
+					lean: 20,
+					shF: 30,
+					elF: 70,
+				}),
+			],
+			[
+				0.3,
+				pose({
+					hipN: 40,
+					kneeN: 72,
+					hipF: 30,
+					kneeF: 62,
+					lean: 28,
+					wide: 0.6,
+					shF: 70,
+					elF: 40,
+					abF: 44,
+				}),
+			],
+			[
+				0.65,
+				pose({
+					hipN: 20,
+					kneeN: 42,
+					hipF: 22,
+					kneeF: 44,
+					lean: 16,
+					shF: 50,
+					elF: 60,
+					abF: 52,
+				}),
+			],
+			[
+				1,
+				pose({
+					hipN: -6,
+					kneeN: 30,
+					hipF: 40,
+					kneeF: 66,
+					lean: 22,
+					shF: 40,
+					elF: 60,
+				}),
+			],
+		],
+	},
+	// Over a man who has gone low at his legs: off one foot, the lead leg
+	// out straight in front of him, the other tucked up behind - and down
+	// running.
+	hurdle: {
+		kind: "act",
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 30,
+					kneeN: 50,
+					hipF: -20,
+					kneeF: 40,
+					lean: 22,
+					shF: 40,
+					elF: 60,
+				}),
+			],
+			[
+				0.35,
+				pose({
+					hipN: 84,
+					kneeN: 10,
+					hipF: -40,
+					kneeF: 104,
+					lean: 34,
+					shF: 80,
+					elF: 20,
+					abF: 20,
+				}),
+			],
+			[
+				0.7,
+				pose({
+					hipN: 60,
+					kneeN: 22,
+					hipF: -22,
+					kneeF: 82,
+					lean: 26,
+					shF: 60,
+					elF: 40,
+					abF: 30,
+				}),
+			],
+			[
+				1,
+				pose({
+					hipN: 20,
+					kneeN: 40,
+					hipF: -10,
+					kneeF: 30,
+					lean: 18,
+					shF: 30,
+					elF: 70,
+				}),
+			],
+		],
+	},
 	// A cut on the run, to his left: the right foot planted out wide, low,
 	// his shoulders dipped into it, and off the left.
 	juke: {
@@ -2785,6 +2901,8 @@ export const liftOf = (m: Move, phase: number): number => {
 			return arc(0.25, 0.75, 0.8);
 		case "chestBump":
 			return arc(0.32, 0.72, 1.5);
+		case "hurdle":
+			return arc(0.12, 0.85, 2.4);
 		case "griddy":
 			return phase > 0.05 && phase < 0.95
 				? GRIDDY_HOP * Math.abs(Math.cos(Math.PI * 8 * phase))
