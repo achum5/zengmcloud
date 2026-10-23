@@ -337,6 +337,46 @@ export const verifyRecap = (
 			}
 		}
 
+		// --- percentages ---------------------------------------------------
+		// "shot just 37.8% as a team", "52.4% from the field", "far better
+		// than the 44.8% he had managed on the season": a team's or a man's
+		// shooting tonight, or a man's coming in. None of them was checked.
+		{
+			const pct = (made: number, tried: number) =>
+				tried > 0 ? (100 * made) / tried : undefined;
+			const ok: number[] = [];
+			for (const t of game.teams) {
+				ok.push(
+					...[
+						pct(teamTotal(t, "fg"), teamTotal(t, "fga")),
+						pct(teamTotal(t, "tp"), teamTotal(t, "tpa")),
+						pct(teamTotal(t, "ft"), teamTotal(t, "fta")),
+					].filter((x): x is number => x !== undefined),
+				);
+				for (const pl of t.players) {
+					ok.push(
+						...[
+							pct(pl.fg, pl.fga),
+							pct(pl.tp, pl.tpa),
+							pct(pl.ft, pl.fta),
+							pl.seasonAvg?.fgp,
+							pl.seasonAvg?.tpp,
+							pl.seasonAvg?.ftp,
+							pl.playoffAvg?.fgp,
+							pl.playoffAvg?.tpp,
+							pl.playoffAvg?.ftp,
+						].filter((x): x is number => x !== undefined),
+					);
+				}
+			}
+			for (const m of sentence.matchAll(/(?<![\d.])(\d+(?:\.\d+)?)%/g)) {
+				const said = Number(m[1]);
+				if (!ok.some((x) => Math.abs(x - said) <= 0.051)) {
+					add("percentage", `${said}% matches no shooting line`, sentence);
+				}
+			}
+		}
+
 		// --- assisted baskets ------------------------------------------------
 		for (const m of sentence.matchAll(
 			/assisted on (\d+) of their (\d+) baskets/g,

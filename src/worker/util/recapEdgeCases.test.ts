@@ -783,6 +783,55 @@ describe("edge cases", () => {
 		);
 	});
 
+	test("the reader holds a shooting percentage to a shooting line", () => {
+		const home = squad(
+			{ tid: 1, name: "Hawks", ptsQtrs: [28, 26, 27, 29] },
+			{
+				name: "Ace Hawk",
+				pid: 11,
+				pts: 30,
+				fg: 12,
+				fga: 20,
+				seasonAvg: {
+					gp: 20,
+					min: 34,
+					pts: 22,
+					reb: 5,
+					ast: 4,
+					stl: 1,
+					blk: 0,
+					tov: 2,
+					fgp: 44.8,
+					tpp: 35,
+					ftp: 80,
+				},
+			},
+			110,
+		);
+		const away = squad(
+			{ tid: 2, name: "Kings", ptsQtrs: [24, 25, 26, 27] },
+			{ name: "Rex King", pid: 21, pts: 28, fg: 11, fga: 21 },
+			102,
+		);
+		const g = game([home, away]);
+		const fg = (t: RecapTeam) =>
+			(100 * t.players.reduce((a, p) => a + p.fg, 0)) /
+			t.players.reduce((a, p) => a + p.fga, 0);
+		const right = [
+			`The Hawks shot ${fg(home).toFixed(1)}% from the floor.`,
+			"Ace Hawk was 12-of-20 from the floor, far better than the 44.8% he had managed on the season.",
+			"He shot 60% on the night.",
+		].join(" ");
+		assert.deepEqual(verifyRecap(`**x**\n\n${right}`, g), []);
+		assert.deepEqual(
+			verifyRecap(
+				`**x**\n\nThe Kings shot just ${(fg(away) - 3).toFixed(1)}% as a team.`,
+				g,
+			).map((v) => v.kind),
+			["percentage"],
+		);
+	});
+
 	test("the reader holds series claims against the bracket", () => {
 		const home = squad(
 			{ tid: 1, name: "Hawks", ptsQtrs: [28, 26, 27, 29] },
