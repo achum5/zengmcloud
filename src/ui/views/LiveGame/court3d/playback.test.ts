@@ -538,7 +538,19 @@ describe("watching another device's 3D sim", () => {
 				// for long, waiting on the other device's word of the next play.
 				const m = moments(run);
 				assert.isAbove(m.shown, 40, label);
-				assert.isAtMost(m.missing, 2, `${label} ${JSON.stringify(m)}`);
+				// (Not told, it plays along with the other court until it can
+				// tell - and a cut to where that one was, staged otherwise, can
+				// go past a play or two here: only so many, and from a couple
+				// of seconds after it is stepped, all but the usual.)
+				const told = at + 2000;
+				const missed = [...run.seenB].filter(([i]) => !run.seenF.has(i));
+				const late = missed.filter(([, when]) => when > told).length;
+				assert.isAtMost(late, 2, `${label} ${JSON.stringify(m)}`);
+				assert.isAtMost(
+					missed.length - late,
+					unsaid ? 3 : 0,
+					`${label} ${JSON.stringify(m)}`,
+				);
 				assert.isBelow(m.maxLag, 4000, `${label} ${JSON.stringify(m)}`);
 				const held = freezes(run, 5000);
 				assert.isBelow(held[0] ?? 0, 4000, `${label} ${held.slice(0, 4)}`);
