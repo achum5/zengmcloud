@@ -49,8 +49,9 @@ export const replayed = (f: Fx) =>
 	f.kind === "dunk" || (!!f.big && f.kind === "swish");
 
 // THE WIPE: a replay is gone into, and come out of, behind a wipe across
-// the picture in the home team's colors, the way a broadcast does it - the
-// cut made while it covers all of it (see Court3D). How far across it is,
+// the picture in the colors of the team whose play it is, the way a
+// broadcast does it - the cut made while it covers all of it (see Court3D).
+// How far across it is,
 // 0 to 1 (0.5: all of the picture covered): in over the last STING_IN ms
 // (real time) before a replay cuts in, or before it is over, to the cut;
 // then held over the picture while the other side of the cut is made

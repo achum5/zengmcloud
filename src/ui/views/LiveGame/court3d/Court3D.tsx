@@ -76,8 +76,10 @@ import {
 	type Shown,
 } from "./follow.ts";
 import {
+	lastHolder,
 	makeWipe,
 	onCursor,
+	REPLAY_AFTER,
 	stepPlay,
 	wipeAt,
 	type Replay,
@@ -140,7 +142,8 @@ const KEY_HOLD_MS = 900;
 // white, as black is, while the men in it are made ready at their new size.
 const FLASH_MS = 260;
 // THE WIPE into a replay and out of it (see playback's wipeAt): a band in
-// the home team's colors, its logo in the middle, slanting, sweeping across
+// the colors of the team whose play it is, its logo in the middle, slanting,
+// sweeping across
 // the picture - this much wider than it (%: wide enough to cover all of it,
 // the slant and all, while it is near halfway across - see STING_COVERS),
 // slanting this far (deg).
@@ -881,7 +884,11 @@ const Court3D = ({
 	const dipRef = useRef<HTMLDivElement | null>(null);
 	const flashRef = useRef<HTMLDivElement | null>(null);
 	const replayRef = useRef<HTMLDivElement | null>(null);
-	const stingRef = useRef<HTMLDivElement | null>(null);
+	// (One for each side, [visitors, home]: the one whose play it is shows.)
+	const stingRefs = useRef<[HTMLDivElement | null, HTMLDivElement | null]>([
+		null,
+		null,
+	]);
 	const shotRef = useRef<HTMLSpanElement | null>(null);
 	// The score bug's fouls and possession marker, per side [visitors, home].
 	const foulsAwayRef = useRef<HTMLSpanElement | null>(null);
@@ -962,8 +969,9 @@ const Court3D = ({
 		replay: undefined as Replay | undefined,
 		nextDunk: 0,
 		replayDue: undefined as number | undefined,
-		// The wipe into a replay and out of it.
+		// The wipe into a replay and out of it, and whose play it is.
 		wipe: makeWipe(),
+		wipeSide: 1 as Side,
 		// The starting lineups: the man being called (his place in the
 		// order, -1 none), and whether they are on.
 		introCall: -1,
@@ -1316,6 +1324,22 @@ const Court3D = ({
 			// The wipe: in over the picture to the cut into a replay or out of
 			// it, held there while need be, then on off it.
 			const sting = wipeAt(s.wipe, s, now, p.rate, rate);
+			// (Whose play it is: the man who made the one in the replay, or the
+			// one it is about to show - kept through the wipe back out of it.)
+			if (sting !== undefined) {
+				const pid = s.replay
+					? s.replay.pid
+					: s.replayDue !== undefined
+						? lastHolder(tl, s.replayDue - REPLAY_AFTER)
+						: undefined;
+				const team =
+					pid === undefined
+						? undefined
+						: rosterRef.current.find((r) => r.pid === pid)?.team;
+				if (team !== undefined) {
+					s.wipeSide = team;
+				}
+			}
 			const keyDark = 1 - (now - Math.max(s.keyDip, s.keyHold)) / KEY_DIP_MS;
 			let o: number;
 			if (replay) {
@@ -1363,13 +1387,17 @@ const Court3D = ({
 					capEl.style.opacity = o;
 				}
 			}
-			const band = stingRef.current;
-			if (band) {
-				const show = sting === undefined ? "none" : "flex";
+			for (const side of [0, 1] as const) {
+				const band = stingRefs.current[side];
+				if (!band) {
+					continue;
+				}
+				const on = sting !== undefined && side === s.wipeSide;
+				const show = on ? "flex" : "none";
 				if (band.style.display !== show) {
 					band.style.display = show;
 				}
-				if (sting !== undefined) {
+				if (on && sting !== undefined) {
 					// From all the way off the picture to its left to all the
 					// way off it to its right, the slant and all.
 					const off = (50 * h * Math.tan((STING_SLANT * Math.PI) / 180)) / w;
@@ -1709,42 +1737,48 @@ const Court3D = ({
 					pointerEvents: "none",
 				}}
 			/>
-			<div
-				ref={stingRef}
-				aria-hidden
-				style={{
-					display: "none",
-					position: "absolute",
-					top: 0,
-					left: 0,
-					width: `${STING_W}%`,
-					height: "100%",
-					alignItems: "center",
-					justifyContent: "center",
-					pointerEvents: "none",
-					willChange: "transform",
-					background: (() => {
-						const main = home?.colors?.[0] ?? "#8c1d40";
-						const accent = home?.colors?.[1] ?? "#f2c14e";
-						// (Lit from above, a little.)
-						return `linear-gradient(180deg, rgba(255,255,255,0.16), rgba(0,0,0,0.22)), linear-gradient(90deg, #fff 0 2%, ${accent} 2% 7%, ${main} 7% 93%, ${accent} 93% 98%, #fff 98% 100%)`;
-					})(),
-				}}
-			>
-				{homeLogo ? (
-					<img
-						alt=""
-						src={homeLogo}
-						style={{
-							height: "34%",
-							maxWidth: "24%",
-							objectFit: "contain",
-							transform: `skewX(${STING_SLANT}deg)`,
-							filter: "drop-shadow(0 0.4cqw 0.6cqw rgba(0,0,0,0.35))",
+			{([away, home] as const).map((team, side) => {
+				const logo = side === 0 ? awayLogo : homeLogo;
+				const main = team?.colors?.[0] ?? "#8c1d40";
+				const accent = team?.colors?.[1] ?? "#f2c14e";
+				return (
+					<div
+						key={side}
+						ref={(el) => {
+							stingRefs.current[side] = el;
 						}}
-					/>
-				) : null}
-			</div>
+						aria-hidden
+						style={{
+							display: "none",
+							position: "absolute",
+							top: 0,
+							left: 0,
+							width: `${STING_W}%`,
+							height: "100%",
+							alignItems: "center",
+							justifyContent: "center",
+							pointerEvents: "none",
+							willChange: "transform",
+							// (Lit from above, a little.)
+							background: `linear-gradient(180deg, rgba(255,255,255,0.16), rgba(0,0,0,0.22)), linear-gradient(90deg, #fff 0 2%, ${accent} 2% 7%, ${main} 7% 93%, ${accent} 93% 98%, #fff 98% 100%)`,
+						}}
+					>
+						{logo ? (
+							<img
+								alt=""
+								src={logo}
+								style={{
+									height: "34%",
+									maxWidth: "24%",
+									objectFit: "contain",
+									transform: `skewX(${STING_SLANT}deg)`,
+									filter: "drop-shadow(0 0.4cqw 0.6cqw rgba(0,0,0,0.35))",
+								}}
+							/>
+						) : null}
+					</div>
+				);
+			})}
 			<div
 				ref={replayRef}
 				style={{
