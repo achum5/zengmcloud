@@ -596,6 +596,10 @@ const TAKEAWAY = 0.75;
 const OUT_PAST = 1.5;
 const OUT_ON = 7;
 const OUT_MOST = 9;
+// (Into a team area on the near sideline - or this near one - no further
+// over than this: the men stood there between him and the camera.)
+const OUT_MOST_NEAR = 4.5;
+const OUT_CROWD = 10;
 const SHOVE = 0.6;
 const OUT_FAR = 66;
 const OUT_NEAR = 30;
@@ -2417,8 +2421,16 @@ class Action {
 		const dd = (to.d - from.d) / len;
 		const da = Math.max(0.35, ((to.a - from.a) / len) * side);
 		const edge = side > 0 ? this.bounds.right : this.bounds.left;
+		// (Not so far into the team crowd on the near sideline that the
+		// camera loses him behind it.)
+		const most =
+			pt.y > MID_Y &&
+			pt.x > TEAM_AREA[0] - OUT_CROWD &&
+			pt.x < TEAM_AREA[1] + OUT_CROWD
+				? OUT_MOST_NEAR
+				: OUT_MOST;
 		const over = (a: number) =>
-			side > 0 ? Math.min(edge + OUT_MOST, a) : Math.max(edge - OUT_MOST, a);
+			side > 0 ? Math.min(edge + most, a) : Math.max(edge - most, a);
 		// (Off a catch with his toes in, a stride or two on.)
 		const toe = l.move === "toeTap";
 		const on = toe ? OUT_ON / 2 : OUT_ON;

@@ -268,6 +268,140 @@ const layoutFor = (men: SidelineMan[], play: Play): Map<number, Spot> => {
 	return spots;
 };
 
+// MAKING WAY. A man run on out of bounds into the team area - pulled up
+// there, shoved there, gone on after a catch at the line: those stood
+// where he comes step back out of his way as he does, and back after, no
+// nearer him than CLEAR (feet). Worked out once a play, every WAY_MS, eased
+// over WAY_EASE samples either side (twice over); quicker about it than
+// WAY_STEP (feet a second), they step it.
+const CLEAR = 4.5;
+const WAY_MS = 100;
+const WAY_EASE = 4;
+const WAY_STEP = 1.5;
+type Way = {
+	t0: number;
+	dx: Float32Array;
+	dy: Float32Array;
+	walked: Float32Array;
+};
+const ways = new WeakMap<Map<number, Spot>, Map<number, Way>>();
+const waysFor = (spots: Map<number, Spot>, play: Play): Map<number, Way> => {
+	let got = ways.get(spots);
+	if (got) {
+		return got;
+	}
+	got = new Map();
+	ways.set(spots, got);
+	const past = (p: Pt) => p.y < -1 || p.y > FIELD_W + 1;
+	const outs = play.parts.filter(
+		(p) => p.pid >= 0 && p.legs.some((l) => past(l.from) || past(l.to)),
+	);
+	if (outs.length === 0) {
+		return got;
+	}
+	const t0 = play.t0;
+	const n = Math.max(2, Math.ceil((play.t1 - t0) / WAY_MS) + 1);
+	const tracks = outs.map((p) => trackOf(p.legs, t0, n));
+	for (const [id, spot] of spots) {
+		if (spot.seated) {
+			continue;
+		}
+		const at = spot.at;
+		let dx: Float32Array | undefined;
+		let dy: Float32Array | undefined;
+		for (let k = 0; k < n; k++) {
+			for (const tr of tracks) {
+				const ex = at.x - tr.x[k]!;
+				const ey = at.y - tr.y[k]!;
+				if (Math.abs(ex) >= CLEAR || Math.abs(ey) >= CLEAR) {
+					continue;
+				}
+				const d = Math.hypot(ex, ey);
+				if (d >= CLEAR) {
+					continue;
+				}
+				dx ??= new Float32Array(n);
+				dy ??= new Float32Array(n);
+				// (Right where he is: straight back, off the field.)
+				const ux = d > 1e-3 ? ex / d : 0;
+				const uy = d > 1e-3 ? ey / d : at.y < 0 ? -1 : 1;
+				dx[k] = dx[k]! + ux * (CLEAR - d);
+				dy[k] = dy[k]! + uy * (CLEAR - d);
+			}
+		}
+		if (dx && dy) {
+			const sx = ease(ease(dx));
+			const sy = ease(ease(dy));
+			const walked = new Float32Array(n);
+			for (let k = 1; k < n; k++) {
+				walked[k] =
+					walked[k - 1]! + Math.hypot(sx[k]! - sx[k - 1]!, sy[k]! - sy[k - 1]!);
+			}
+			got.set(id, { t0, dx: sx, dy: sy, walked });
+		}
+	}
+	return got;
+};
+
+// Where a man is every WAY_MS from t0, his legs as they go.
+const trackOf = (
+	legs: Play["parts"][number]["legs"],
+	t0: number,
+	n: number,
+) => {
+	const x = new Float32Array(n);
+	const y = new Float32Array(n);
+	let k = 0;
+	for (let s = 0; s < n; s++) {
+		const t = t0 + s * WAY_MS;
+		while (k + 1 < legs.length && legs[k + 1]!.t0 <= t) {
+			k++;
+		}
+		const l = legs[k]!;
+		const u =
+			l.t1 > l.t0 ? Math.min(1, Math.max(0, (t - l.t0) / (l.t1 - l.t0))) : 1;
+		x[s] = l.from.x + (l.to.x - l.from.x) * u;
+		y[s] = l.from.y + (l.to.y - l.from.y) * u;
+	}
+	return { x, y };
+};
+
+// Each sample the mean of those either side of it.
+const ease = (a: Float32Array): Float32Array => {
+	const out = new Float32Array(a.length);
+	for (let s = 0; s < a.length; s++) {
+		let sum = 0;
+		let k = 0;
+		for (
+			let j = Math.max(0, s - WAY_EASE);
+			j <= Math.min(a.length - 1, s + WAY_EASE);
+			j++
+		) {
+			sum += a[j]!;
+			k++;
+		}
+		out[s] = sum / k;
+	}
+	return out;
+};
+
+// How far over he is at t, how far he has stepped, and how fast (feet a
+// second) and which way he is going about it.
+const wayAt = (w: Way, t: number) => {
+	const f = Math.min(w.dx.length - 1, Math.max(0, (t - w.t0) / WAY_MS));
+	const i = Math.min(w.dx.length - 2, Math.floor(f));
+	const u = f - i;
+	const vx = w.dx[i + 1]! - w.dx[i]!;
+	const vy = w.dy[i + 1]! - w.dy[i]!;
+	return {
+		x: w.dx[i]! + vx * u,
+		y: w.dy[i]! + vy * u,
+		walked: w.walked[i]! + (w.walked[i + 1]! - w.walked[i]!) * u,
+		fps: (Math.hypot(vx, vy) * 1000) / WAY_MS,
+		way: Math.atan2(vy, vx),
+	};
+};
+
 // The team area laid out for a play, the men not in it on their sideline.
 const lay = (men: SidelineMan[], play: Play): Map<number, Spot> => {
 	const out = new Map<number, Spot>();
@@ -682,6 +816,7 @@ export const sidelineAt = (
 	}
 	const out: FieldPlayerState[] = [];
 	const spots = layoutFor(men, play);
+	const making = waysFor(spots, play);
 	const cheer = cheerAt(tl, m.t);
 	const ball = m.focus;
 	const post = play.postgame;
@@ -703,7 +838,10 @@ export const sidelineAt = (
 			out.push({ id: s.id, team: s.team, ...kicking });
 			continue;
 		}
-		const at = spot.at;
+		// (Out of the way of a man run out of bounds into them.)
+		const way = making.get(s.id);
+		const off = way ? wayAt(way, m.t) : undefined;
+		const at = off ? { x: spot.at.x + off.x, y: spot.at.y + off.y } : spot.at;
 		const line = at.y < 0 ? 0 : 1;
 		const facing = spot.facing ?? (line === 0 ? Math.PI / 2 : -Math.PI / 2);
 		let yaw = facing;
@@ -714,6 +852,12 @@ export const sidelineAt = (
 		}
 		let move = spot.move;
 		let phase = 0;
+		if (off && off.fps > WAY_STEP) {
+			// (Stepping it: back, across, or on - as he faces.)
+			const c = Math.cos(off.way - yaw);
+			move = c < -0.5 ? "back" : c > 0.5 ? "walk" : "slide";
+			phase = off.walked / strideOf(move);
+		}
 		let arms: FieldPlayerState["arms"];
 		if (cheer && cheer.side === s.team && cheer.level > UP_LEVEL) {
 			const e = cheer.since - s.delay;
