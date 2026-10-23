@@ -3006,8 +3006,8 @@ const flowSentence = (
 				rng,
 				[
 					`${leader} led by ${by} entering the ${last}.`,
-					`${leader} took a ${by}-point lead into the ${last}.`,
-					`It was a ${by}-point game going into the ${last}.`,
+					`${leader} took ${aNum(by)}-point lead into the ${last}.`,
+					`It was ${aNum(by)}-point game going into the ${last}.`,
 					...(shape.regPeriods === 4
 						? [`${leader} were ${by} up with a quarter to play.`]
 						: []),
@@ -3371,7 +3371,7 @@ const secondHalfNote = (
 			[
 				`${cap(theNick(shape.winner))} led ${wFirst}-${lFirst} at halftime and never looked back.`,
 				`It was ${wFirst}-${lFirst} at the break and the outcome was already clear.`,
-				`${cap(theNick(shape.winner))} built a ${halfMargin}-point halftime lead and sat on it.`,
+				`${cap(theNick(shape.winner))} built ${aNum(halfMargin)}-point halftime lead and sat on it.`,
 			],
 			"halftimeLead",
 		);
@@ -3587,6 +3587,26 @@ const gameStory = (
 	const entering = (anyLead = false): string | undefined => {
 		const m = shape.marginEnteringLast;
 		const last = ordinal(regPeriods);
+		// THE LEAD THAT NEARLY WENT. Up 13 going into the last quarter, won by
+		// 3: the losers took that quarter by 10 or more, and the recap went
+		// straight from "It was a 13-point game entering the fourth" to a
+		// three-pointer that cut it to one with 8 seconds left - in all 16
+		// such games of a 953-game corpus, the quarter that made it close was
+		// never told.
+		const lLast = lq[regPeriods - 1] ?? 0;
+		const wLast = wq[regPeriods - 1] ?? 0;
+		if (m > 0 && shape.ot === 0 && shape.margin <= 6 && lLast - wLast >= 10) {
+			covers.add("entering").add("lastQuarter");
+			return `${pick(
+				rng,
+				[
+					`${W} were ${m} up going into the ${last}`,
+					`It was ${aNum(m)}-point game entering the ${last}`,
+					`Going into the ${last}, ${w} were up ${m}`,
+				],
+				"story:enteringUp",
+			)}, but ${l} took the ${last} quarter ${lLast}-${wLast}.`;
+		}
 		if (Math.abs(m) > 6 && !(anyLead && m > 0)) {
 			return undefined;
 		}
@@ -3606,7 +3626,7 @@ const gameStory = (
 				rng,
 				[
 					`${W} were ${m} up going into the ${last}.`,
-					`It was a ${m}-point game entering the ${last}.`,
+					`It was ${aNum(m)}-point game entering the ${last}.`,
 					`Going into the ${last}, ${w} were up ${m}.`,
 				],
 				"story:enteringUp",
@@ -3616,7 +3636,7 @@ const gameStory = (
 			rng,
 			[
 				`${L} were ${-m} up going into the ${last}.`,
-				`${L} took a ${-m}-point lead into the ${last}.`,
+				`${L} took ${aNum(-m)}-point lead into the ${last}.`,
 				`Going into the ${last}, ${l} were up ${-m}.`,
 			],
 			"story:enteringDown",
@@ -4485,7 +4505,7 @@ const stakesSentence = (
 				[
 					`It snapped ${poss(theNick(shape.loser))} ${numWord(run)}-game winning streak.`,
 					`${cap(theNick(shape.loser))} had won ${numWord(run)} in a row until this one.`,
-					`That is the end of a ${numWord(run)}-game run for ${theNick(shape.loser)}.`,
+					`That is the end of ${aNumWord(run)}-game run for ${theNick(shape.loser)}.`,
 				],
 				"snappedStreak",
 			),
@@ -4506,7 +4526,7 @@ const stakesSentence = (
 					[
 						`It snapped ${poss(theNick(shape.loser))} ${numWord(run)}-game winning streak.`,
 						`${cap(theNick(shape.loser))} had won ${numWord(run)} in a row until this one.`,
-						`That is the end of a ${numWord(run)}-game run for ${theNick(shape.loser)}.`,
+						`That is the end of ${aNumWord(run)}-game run for ${theNick(shape.loser)}.`,
 					],
 					"snappedStreak",
 				),
@@ -5696,7 +5716,7 @@ const bigLeadNote = (
 				rng,
 				[
 					`${W} had led by ${lead} and let all of it go before winning it.`,
-					`${W} blew a ${lead}-point lead and won anyway.`,
+					`${W} blew ${aNum(lead)}-point lead and won anyway.`,
 				],
 				"blownThenWon",
 			);
@@ -7473,12 +7493,12 @@ export const seriesTail = (
 				tails: [
 					"to sweep the series",
 					"to finish a sweep",
-					`to complete a ${numWord(games)}-game sweep`,
+					`to complete ${aNumWord(games)}-game sweep`,
 				],
 				whos: [
 					"who swept the series",
 					"who finished a sweep",
-					`who completed a ${numWord(games)}-game sweep`,
+					`who completed ${aNumWord(games)}-game sweep`,
 				],
 			};
 		}

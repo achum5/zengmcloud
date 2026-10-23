@@ -23,6 +23,7 @@ import type {
 	RecapTeam,
 } from "./getDayGamesForRecap.ts";
 import {
+	aNum,
 	aWord,
 	cap,
 	doubleCategories,
@@ -1223,7 +1224,7 @@ export const seriesShapeBeat = (
 					`Across the series ${ahead} have outscored ${behind} by ${Math.abs(forTotal - againstTotal)}.`,
 					// Not "are +36 over the three games": a box-score column, not
 					// a sentence.
-					`Over ${numWord(margins.length)} games, ${ahead} have a ${Math.abs(forTotal - againstTotal)}-point edge on ${behind}.`,
+					`Over ${numWord(margins.length)} games, ${ahead} have ${aNum(Math.abs(forTotal - againstTotal))}-point edge on ${behind}.`,
 				],
 				"seriesAggregate",
 			),

@@ -1023,6 +1023,50 @@ describe("the deficit a comeback came from", () => {
 	});
 });
 
+// Up 13 going into the fourth, won by 3: "It was a 13-point game entering
+// the fourth" went straight to a three that cut it to one, and the quarter
+// that made it close was never told - in all 16 such games of a corpus.
+describe("the lead that nearly went", () => {
+	test("the losers' last quarter is told, with an article that fits", () => {
+		let told = 0;
+		for (let gid = 300; gid < 330; gid++) {
+			const lakers = squad(
+				{ tid: 1, name: "Lakers", ptsQtrs: [30, 28, 30, 19] },
+				{ name: "Grant Green", pid: 11, pts: 22, fg: 8, fga: 17 },
+				107,
+			);
+			const bulls = squad(
+				{ tid: 2, name: "Bulls", ptsQtrs: [20, 22, 33, 29] },
+				{ name: "Xavier Carter", pid: 21, pts: 24, fg: 9, fga: 20 },
+				104,
+			);
+			const g = game([lakers, bulls], {
+				gid,
+				flow: {
+					leadChanges: 2,
+					ties: 1,
+					maxLead: [21, 2],
+					maxLeadAt: [3, 1],
+					lastLead: { side: 0, period: 1, clock: 400, pts: [8, 6] },
+				},
+			});
+			const recap = getAutoRecap(g);
+			clean(recap);
+			if (/going into the fourth|entering the fourth/.test(recap)) {
+				assert.match(recap, /fourth quarter 29-19/, recap);
+				told += 1;
+			}
+			assert.notMatch(
+				recap,
+				/\ba (?:8|11|18)-|\ba (?:eight|eleven|eighteen)-/,
+				recap,
+			);
+			assert.deepStrictEqual(verifyRecap(recap, g), [], recap);
+		}
+		assert.isAbove(told, 0);
+	});
+});
+
 // "Sore achilles kept Anthony Lowry out": a singular tendon ending in s was
 // read as a plural, and a man's name lost its capital.
 // "The Heat assisted on 31 of their 41 baskets": one team's assists and
