@@ -22,6 +22,10 @@ beforeAll(async () => {
 	games = await simGames([11, 12, 13]);
 }, 120_000);
 
+// How far over a sideline a man run out of bounds may go (see action.ts
+// runOut).
+const OUT_OF_BOUNDS = 10;
+
 const stage = ({ events, roster }: SimGame, gid = 1): FieldTimeline =>
 	compileField({ events, players: roster, gid });
 
@@ -111,12 +115,16 @@ describe("compileField", () => {
 					sides[part.team]! += 1;
 					assert.isFalse(on.has(part.pid), `${part.pid} on twice`);
 					on.add(part.pid);
-					// (A man hurt on it off to his sideline - see "a man hurt".)
+					// (A man hurt on it off to his sideline - see "a man hurt". A
+					// man run out of bounds, a stride or two over a sideline.)
 					const hurt = part.legs.some((l) => l.move === "hurt");
 					for (const leg of hurt ? [] : part.legs) {
 						for (const p of [leg.from, leg.to]) {
 							assert.isTrue(
-								p.x >= 0 && p.x <= FIELD_L && p.y >= 0 && p.y <= FIELD_W,
+								p.x >= 0 &&
+									p.x <= FIELD_L &&
+									p.y >= -OUT_OF_BOUNDS &&
+									p.y <= FIELD_W + OUT_OF_BOUNDS,
 								`${part.pid} at ${p.x}, ${p.y}`,
 							);
 						}

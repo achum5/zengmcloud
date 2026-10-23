@@ -265,6 +265,16 @@ const AT_SNAP: Record<string, number> = {
 	handoff: 600,
 	kneel: 900,
 };
+// Besides his getting out of bounds, what stops the clock after a run or a
+// catch.
+const STOPS_CLOCK = new Set<string | undefined>([
+	"timeout",
+	"twoMinuteWarning",
+	"quarter",
+	"fumble",
+	"interception",
+	"injury",
+]);
 // What happened, said when it does.
 const RESULTS = new Set([
 	"passComplete",
@@ -361,9 +371,12 @@ const AFTER_SCORE = 4800;
 const CELEBRATE_AFTER = 1300;
 const CELEBRATE_MOST = 7500;
 // The referee's call of a foul, from its line on (see crew.ts); a first
-// down signaled this long after the whistle.
+// down signaled this long after the whistle - after the clock stopped is,
+// for a man out of bounds.
 const CALL_MS = 2900;
 const FIRST_DOWN_AT = 1100;
+const OUT_SIGNAL_AT = 150;
+const OUT_FIRST_AT = 1700;
 
 // The first thing said of a play after the snap: when it happened, by what
 // it was. (For a play that is not acted out - a kick, so far - a fair
@@ -491,17 +504,7 @@ const clampY = (y: number, lo = 4, hi = FIELD_W - 4) =>
 const clampX = (x: number, margin = 3) =>
 	Math.min(FIELD_L - margin, Math.max(margin, x));
 
-// Where the ball is spotted after a play that ended in the field of play:
-// on the nearer hash, or where it was if it ended between them.
 const HASHES = [HASH_FAR_Y, HASH_NEAR_Y] as const;
-const spotBetweenHashes = (r: () => number): number => {
-	const u = r();
-	return u < 0.35
-		? HASHES[0]
-		: u < 0.7
-			? HASHES[1]
-			: HASHES[0] + (HASHES[1] - HASHES[0]) * r();
-};
 
 const ORDINALS = ["1st", "2nd", "3rd", "4th"];
 // A down from scrimmage, with a line to gain.
@@ -880,6 +883,34 @@ class Director {
 						e?.td === true ||
 						e?.safety === true,
 				);
+		// Out of bounds: a run or a catch the sim stopped the clock after
+		// with nothing else to stop it - no score, no change of hands, no
+		// flag, no timeout, no two-minute warning - no more time gone by the
+		// next snap than the play itself took (see GameSim's doRun, doPass).
+		const result = events
+			.slice(i0, i1)
+			.find((e) => e?.type === "run" || e?.type === "passComplete");
+		const took =
+			typeof clock.clock === "number" && typeof after?.clock === "number"
+				? (clock.clock - after.clock) * 60
+				: Infinity;
+		const yards = Math.abs(typeof result?.yds === "number" ? result.yds : 0);
+		const out =
+			result !== undefined &&
+			!flagged &&
+			after?.type === "clock" &&
+			took > 0 &&
+			took <=
+				(result.type === "run" ? 4 + yards / 10 : 6 + yards / 20) + 0.01 &&
+			!events
+				.slice(i0, i1)
+				.some(
+					(e) =>
+						STOPS_CLOCK.has(e?.type) ||
+						e?.lost ||
+						e?.td === true ||
+						e?.safety === true,
+				);
 		// The play itself, from the snap - or, a flag before it, the foul.
 		const acted =
 			ACTED.has(kind) || flagged
@@ -897,6 +928,7 @@ class Director {
 						i0,
 						i1,
 						...(moved ? { firstDown: true } : {}),
+						...(out ? { out: true } : {}),
 						r: this.rng(i0, "action"),
 					})
 				: undefined;
@@ -1026,6 +1058,10 @@ class Director {
 				signals.push({ what: "incomplete", t, at: spotAt(t) });
 			}
 		}
+		// The clock stopped: out of bounds.
+		if (acted?.out) {
+			signals.push({ what: "out", t: whistle + OUT_SIGNAL_AT, at: acted.out });
+		}
 		// (A new set of downs for the same side, by what it did - not a flag.)
 		const next = events[i1];
 		if (
@@ -1039,7 +1075,7 @@ class Director {
 		) {
 			signals.push({
 				what: "first",
-				t: whistle + FIRST_DOWN_AT,
+				t: whistle + (acted?.out ? OUT_FIRST_AT : FIRST_DOWN_AT),
 				at: spotAt(whistle),
 			});
 		}
@@ -1221,7 +1257,7 @@ class Director {
 			...(gainX !== undefined ? { gainX } : {}),
 		});
 		this.T = t1;
-		this.ballY = this.nextSpot(kind, i0, i1, ballY);
+		this.ballY = this.nextSpot(kind, i0, i1, ballY, spotAt(whistle).y);
 	}
 
 	// What brings the crowd up in a play: a score, the ball taken away, a
@@ -1275,9 +1311,15 @@ class Director {
 		return cheer;
 	}
 
-	// Across the field, where the next snap is spotted.
-	nextSpot(kind: PlayKind, i0: number, i1: number, ballY: number): number {
-		const r = this.rng(i0, "spot");
+	// Across the field, where the next snap is spotted: where the ball was
+	// dead (`endY`), brought in to the nearer hash from outside them.
+	nextSpot(
+		kind: PlayKind,
+		i0: number,
+		i1: number,
+		ballY: number,
+		endY: number,
+	): number {
 		let moved = false;
 		for (let i = i0; i < i1; i++) {
 			const e = this.events[i];
@@ -1300,12 +1342,12 @@ class Director {
 		}
 		if (kind === "kickoff" || kind === "punt") {
 			// A touchback: out to the middle.
-			return moved ? spotBetweenHashes(r) : MID_Y;
+			return moved ? clampY(endY, HASH_FAR_Y, HASH_NEAR_Y) : MID_Y;
 		}
 		if (kind === "extraPoint" || kind === "fieldGoal") {
 			return MID_Y;
 		}
-		return moved ? spotBetweenHashes(r) : ballY;
+		return moved ? clampY(endY, HASH_FAR_Y, HASH_NEAR_Y) : ballY;
 	}
 
 	// The eleven a side for a play, aligned.

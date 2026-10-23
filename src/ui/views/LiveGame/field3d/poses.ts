@@ -978,6 +978,20 @@ const FIELD_ANIMS = {
 		kind: "still",
 		pose: pose({ shF: 80, elF: 4, abF: 6, wrF: 30 }),
 	},
+	// Both hands into a man, out from his chest: seeing him out of bounds.
+	shove: {
+		kind: "still",
+		pose: pose({
+			shN: 76,
+			elN: 24,
+			abN: -12,
+			wrN: 30,
+			shF: 76,
+			elF: 24,
+			abF: -12,
+			wrF: 30,
+		}),
+	},
 	// Met head on and driven back: his feet out from under him, down on his
 	// seat, and over onto his back.
 	tackledBack: {
@@ -1968,6 +1982,12 @@ const FIELD_ANIMS = {
 	sigWave: over(
 		{ shN: 90, elN: 4, abN: 84, shF: 90, elF: 4, abF: 84 },
 		{ shN: 88, elN: 10, abN: -22, shF: 92, elF: 10, abF: -30 },
+	),
+	// Time out, the clock stopped: both arms up, crossed and uncrossed over
+	// his head.
+	sigTime: over(
+		{ shN: 166, elN: 6, abN: 26, shF: 166, elF: 6, abF: 26 },
+		{ shN: 166, elN: 6, abN: -16, shF: 166, elF: 6, abF: -16 },
 	),
 	// An arm straight out to his right: the way the offense goes for a
 	// first down, at the side that fouled.

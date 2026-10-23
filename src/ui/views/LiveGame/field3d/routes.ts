@@ -458,9 +458,41 @@ const pick = (choices: Choice, u: number): RouteName => {
 	return choices.at(-1)![0];
 };
 
-// The route the ball is thrown to him on, caught `yds` yards downfield.
-export const targetRoute = (spot: Spot, yds: number, u: number): RouteName =>
-	pick(TARGET_ROUTES.find((t) => yds <= t.upTo)!.by[spot], u);
+// The routes that take him toward the sideline.
+const OUTSIDE = new Set<RouteName>([
+	"go",
+	"fade",
+	"corner",
+	"out",
+	"comeback",
+	"flat",
+	"swing",
+	"screen",
+	"wheel",
+]);
+
+// The route the ball is thrown to him on, caught `yds` yards downfield -
+// one of those out toward the sideline, for a man who goes out of bounds
+// after the catch.
+export const targetRoute = (
+	spot: Spot,
+	yds: number,
+	u: number,
+	outside = false,
+): RouteName => {
+	const all = TARGET_ROUTES.find((t) => yds <= t.upTo)!.by[spot];
+	if (!outside) {
+		return pick(all, u);
+	}
+	const out = all.filter(([name]) => OUTSIDE.has(name));
+	return out.length > 0
+		? pick(out, u)
+		: yds <= 3
+			? "flat"
+			: yds <= 15
+				? "out"
+				: "corner";
+};
 
 // A route to run as a decoy, and how deep (feet downfield of the line).
 export const decoyRoute = (

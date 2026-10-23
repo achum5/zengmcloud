@@ -65,6 +65,8 @@ export type ActInput = {
 	i1: number;
 	// A new set of downs got by it (not by a flag).
 	firstDown?: boolean;
+	// The man with it got out of bounds (see the director).
+	out?: boolean;
 	r: () => number;
 };
 
@@ -79,7 +81,14 @@ export type Acted = {
 	follow?: number;
 	// A big play's moment after it (see celebrate): when it is over.
 	until?: number;
+	// Where the man with it went out of bounds.
+	out?: Pt;
 };
+
+// Where a carry ends: the spot, how far downfield, a score - or over a
+// sideline (+1 the one on the offense's +a side).
+type Sign = 1 | -1;
+type End = { pt: Pt; td: boolean; d: number; out?: Sign };
 
 // ---- who is who ------------------------------------------------------------
 
@@ -155,9 +164,10 @@ const gait = (fps: number): Move =>
 const clamp = (x: number, lo: number, hi: number) =>
 	Math.min(hi, Math.max(lo, x));
 
-const onField = (p: Pt): Pt => ({
+// (Or as far as `roam` past a sideline.)
+const onField = (p: Pt, roam = 0): Pt => ({
 	x: clamp(p.x, 1, FIELD_L - 1),
-	y: clamp(p.y, 1, FIELD_W - 1),
+	y: clamp(p.y, 1 - roam, FIELD_W - 1 + roam),
 });
 
 // Of `men`, the one nearest `p` - where each is at t, or by default at the
@@ -182,6 +192,8 @@ class Actor {
 	readonly top: number;
 	// The way he faces at the end of what he has been given so far.
 	yaw: number;
+	// How far past a sideline he may go: out of bounds.
+	roam = 0;
 
 	constructor(part: Part) {
 		this.part = part;
@@ -272,7 +284,7 @@ class Actor {
 	// is), facing `yaw` (by default the way he goes).
 	go(to: Pt, t1: number, move?: Move, yaw?: number, extra?: Partial<Leg>) {
 		const l = this.last;
-		const p = onField(to);
+		const p = onField(to, this.roam);
 		const t0 = l.t1;
 		const end = Math.max(t1, t0 + 1);
 		const fps = dist(l.to, p) / ((end - t0) / 1000);
@@ -289,7 +301,9 @@ class Actor {
 
 	// To `to` at `fps`; when he gets there.
 	run(to: Pt, fps: number, move?: Move, yaw?: number): number {
-		const t1 = this.t + (dist(this.at, onField(to)) / Math.max(1, fps)) * 1000;
+		const t1 =
+			this.t +
+			(dist(this.at, onField(to, this.roam)) / Math.max(1, fps)) * 1000;
 		this.go(to, t1, move, yaw);
 		return this.t;
 	}
@@ -297,7 +311,7 @@ class Actor {
 	// Toward `to` by t1, at no more than `fps`: there, or as far as that
 	// gets him.
 	chase(to: Pt, t1: number, fps: number, move?: Move, yaw?: number) {
-		const p = onField(to);
+		const p = onField(to, this.roam);
 		const from = this.at;
 		const far = dist(from, p);
 		const room = (fps * Math.max(0, t1 - this.t)) / 1000;
@@ -317,7 +331,7 @@ class Actor {
 			t0: l.t1,
 			t1: Math.max(t1, l.t1 + 1),
 			from: l.to,
-			to: to ? onField(to) : l.to,
+			to: to ? onField(to, this.roam) : l.to,
 			move,
 			yaw: yaw ?? this.yaw,
 		});
@@ -507,6 +521,18 @@ const POINT_MS = 1000;
 // A turnover: the man who came up with it mobbed this often.
 const TAKEAWAY = 0.75;
 
+// Out of bounds: the whistle as he gets this far over the sideline (feet),
+// on another stride or two - no further over than OUT_MOST - and pulled up;
+// the man on him there into him with both hands this often. Not from more
+// than OUT_FAR across the field from it on a run, OUT_NEAR from a catch (or
+// most of the way he goes downfield, if more).
+const OUT_PAST = 1.5;
+const OUT_ON = 7;
+const OUT_MOST = 9;
+const SHOVE = 0.6;
+const OUT_FAR = 66;
+const OUT_NEAR = 30;
+
 // After the whistle, how long a man down stays down, and getting up.
 const DOWN_MS = 900;
 const GET_UP_MS = 1000;
@@ -685,6 +711,7 @@ class Action {
 	// When the moment after a big play is over (see celebrate), if it had
 	// one.
 	until = 0;
+	outAt?: Pt;
 	// The stats said of what is being acted out: those of its lines from
 	// just after `lo` through `hi` - the play up to the first time the ball
 	// is out, then each recovery in turn.
@@ -867,6 +894,7 @@ class Action {
 			whistle: this.whistle,
 			...(this.follow !== undefined ? { follow: this.follow } : {}),
 			...(this.until > 0 ? { until: this.until } : {}),
+			...(this.outAt ? { out: this.outAt } : {}),
 		};
 	}
 
@@ -1129,7 +1157,12 @@ class Action {
 			const inSign: 1 | -1 =
 				start.a > 0 ? -1 : start.a < 0 ? 1 : r() < 0.5 ? 1 : -1;
 			if (m === target && thrown) {
-				const name = targetRoute(spotOf(m.role), airYds, r());
+				const name = targetRoute(
+					spotOf(m.role),
+					airYds,
+					r(),
+					first === cmpI && !!this.input.out,
+				);
 				const u = r();
 				// A back out of the backfield to the side of the man who
 				// brings him down.
@@ -1453,7 +1486,16 @@ class Action {
 		if (ta !== undefined) {
 			across += (ta - across) * 0.5;
 		}
-		let end = this.endOf(gain, across, e.td === true, e.safety === true);
+		let end = this.endOf(
+			gain,
+			across,
+			e.td === true,
+			e.safety === true,
+			this.outSide(
+				this.of(catchPt).a,
+				Math.max(OUT_NEAR, (gain * YD - this.of(catchPt).d) * 0.8),
+			),
+		);
 		const yac = dist(catchPt, end.pt);
 		const v = rec.top * (yac > 30 ? 0.95 : 0.8);
 		// Up for it at its highest, now and then - thrown deep and covered,
@@ -1463,6 +1505,7 @@ class Action {
 			(m) => dist(m.posAt(catchAt), catchPt) < CONTESTED,
 		);
 		const leap =
+			!end.out &&
 			deep > LEAP_DEEP &&
 			yac < LEAP_YAC &&
 			(covered || e.td === true) &&
@@ -1478,6 +1521,7 @@ class Action {
 		const dive =
 			!leap &&
 			!end.td &&
+			!end.out &&
 			e.safety !== true &&
 			deep > DIVE_DEEP &&
 			Math.abs(rec.t - catchAt) < 5 &&
@@ -1486,6 +1530,9 @@ class Action {
 			r() < DIVE_CATCH;
 		if (dive) {
 			end = this.endOf(gain, lands.a, false, false);
+		}
+		if (end.out) {
+			rec.roam = OUT_MOST + 1;
 		}
 		const inStride = !leap && !dive && this.reachFor(rec, catchAt, qb);
 		if (leap) {
@@ -1599,7 +1646,8 @@ class Action {
 		across: number,
 		td: boolean,
 		safety: boolean,
-	): { pt: Pt; td: boolean; d: number } {
+		out?: Sign,
+	): End {
 		const r = this.r;
 		let d = yds * YD;
 		if (td) {
@@ -1608,8 +1656,25 @@ class Action {
 			d = this.ownGoalD - 2 - r() * 6;
 		}
 		d = clamp(d, this.ownGoalD - 27, this.goalD + 27);
+		if (out && !td && !safety) {
+			const a =
+				out > 0 ? this.bounds.right + OUT_PAST : this.bounds.left - OUT_PAST;
+			return { pt: this.w({ d, a }), td, d, out };
+		}
 		const a = clamp(across, this.bounds.left + 6, this.bounds.right - 6);
 		return { pt: this.w({ d, a }), td, d };
+	}
+
+	// Out of bounds, if the sim says he got there - over the sideline
+	// nearer `a` (in the offense's frame), if it is no more than `reach`
+	// across the field.
+	outSide(a: number, reach: number): Sign | undefined {
+		if (!this.input.out) {
+			return undefined;
+		}
+		const { left, right } = this.bounds;
+		const side: Sign = right - a < a - left ? 1 : -1;
+		return Math.min(right - a, a - left) <= reach ? side : undefined;
 	}
 
 	// Where across the field (in the offense's frame) the man the sim says
@@ -1624,11 +1689,15 @@ class Action {
 	endCarry(
 		i: number,
 		carrier: Actor,
-		end: { pt: Pt; td: boolean },
+		end: { pt: Pt; td: boolean; out?: Sign },
 		t: number,
 		chasers: Actor[],
 		by?: Actor[],
 	) {
+		if (end.out) {
+			this.runOut(i, carrier, end.pt, end.out, t, chasers, by);
+			return;
+		}
 		if (end.td) {
 			this.evade(carrier, [], chasers);
 			// Into the end zone, slowing up, the ball held up.
@@ -1672,6 +1741,79 @@ class Action {
 		const pile = this.tackle(carrier, down.by, end.pt, down.t);
 		this.gangUp(chasers, pile, down.t, down.by);
 		this.pursue(chasers, end.pt, down.t, down.by, carrier);
+	}
+
+	// Out of bounds at `pt`, over the sideline on his `side`: the whistle
+	// as he gets there, the men after him there when they can be (his run
+	// slowed to it); on over it, slowing, and pulled up - the first of them
+	// into him with both hands as he goes, or pulled up at the line.
+	runOut(
+		i: number,
+		carrier: Actor,
+		pt: Pt,
+		side: Sign,
+		t: number,
+		chasers: Actor[],
+		by?: Actor[],
+	) {
+		const r = this.r;
+		const down = this.downBy(carrier, pt, t, chasers, by);
+		this.at.set(i, down.t);
+		this.whistle = down.t;
+		this.outAt = pt;
+		// On the way he was going, turned along the line.
+		const l = carrier.last;
+		const from = this.of(l.from);
+		const to = this.of(pt);
+		const len = Math.hypot(to.d - from.d, to.a - from.a) || 1;
+		const dd = (to.d - from.d) / len;
+		const da = Math.max(0.35, ((to.a - from.a) / len) * side);
+		const edge = side > 0 ? this.bounds.right : this.bounds.left;
+		const over = (a: number) =>
+			side > 0 ? Math.min(edge + OUT_MOST, a) : Math.max(edge - OUT_MOST, a);
+		const p1 = { d: to.d + dd * OUT_ON, a: over(to.a + side * da * OUT_ON) };
+		const p2 = {
+			d: p1.d + Math.sign(dd || 1) * 3,
+			a: over(p1.a + side * 1.5),
+		};
+		carrier.go(this.w(p1), down.t + 330, "run");
+		carrier.go(this.w(p2), down.t + 330 + 520, "jog");
+		carrier.hold(
+			down.t + 2200,
+			"stand",
+			this.toward(this.w(p2), this.w({ d: p2.d, a: 0 })),
+		);
+		this.done.add(carrier.pid);
+		const [first, ...rest] = down.by;
+		const inside = (m: Actor, k: number) => {
+			const at = carrier.posAt(down.t - 60);
+			const o = this.of(at);
+			const hit = this.w({ d: o.d - 1.5 - k * 2.5, a: o.a - side * (2.2 + k) });
+			this.closeOn(m, hit, down.t - 60, this.toward(hit, at));
+			return hit;
+		};
+		if (first) {
+			const hit = inside(first, 0);
+			if (r() < SHOVE) {
+				// Both hands into him, and through it to the line.
+				const on = this.of(hit);
+				first.go(
+					this.w({ d: on.d + dd * 3, a: on.a + side * 2.5 }),
+					down.t + 380,
+					"jog",
+				);
+				first.arms("shove", down.t - 260, down.t + 240);
+			}
+			first.hold(down.t + 1500, "stand");
+			this.done.add(first.pid);
+		}
+		for (const [k, m] of rest.entries()) {
+			inside(m, k + 1);
+			m.hold(down.t + 1300, "stand");
+			this.done.add(m.pid);
+		}
+		const near = this.w({ d: to.d, a: to.a - side * 8 });
+		this.pursue(chasers, near, down.t, down.by, carrier);
 	}
 
 	// Making a man miss on the way, now and then on a long enough carry: one
@@ -2948,7 +3090,9 @@ class Action {
 		// zone or a toss to the edge (a sweep, to the side it comes from),
 		// the sneak right over the center.
 		const sneak = carrier === qb && yds <= 2 && !gun;
-		const outside = !sneak && r() < 0.35;
+		// (Out of bounds at the end of it: as a rule a run to the edge.)
+		const toEdge = !sneak && !!this.input.out && yds < 15;
+		const outside = !sneak && (toEdge || r() < 0.35);
 		const cs = this.of(carrier.at);
 		const sweep = spotOf(carrier.role) !== "back" && carrier !== qb;
 		const holeA = sneak
@@ -3042,7 +3186,25 @@ class Action {
 		if (ta !== undefined) {
 			across += (ta - across) * (yds > 8 ? 0.5 : 0.25);
 		}
-		const end = this.endOf(yds, across, e.td === true, e.safety === true);
+		const end = this.endOf(
+			yds,
+			across,
+			e.td === true,
+			e.safety === true,
+			sneak
+				? undefined
+				: this.outSide(
+						toEdge
+							? holeA > 0
+								? this.bounds.right
+								: this.bounds.left
+							: across,
+						Math.max(OUT_FAR, yds * YD * 0.8),
+					),
+		);
+		if (end.out) {
+			carrier.roam = OUT_MOST + 1;
+		}
 		const holePt = this.w({ d: sneak ? 1 : 0.5, a: holeA });
 		let t = carrier.t;
 		const endD = this.of(end.pt).d;

@@ -5,6 +5,8 @@ import {
 	END_ZONE,
 	FIELD_L,
 	FIELD_W,
+	HASH_FAR_Y,
+	HASH_NEAR_Y,
 	MID_Y,
 	POST_W,
 	dist,
@@ -100,7 +102,8 @@ export type Signaled =
 	| "good"
 	| "noGood"
 	| "safety"
-	| "first";
+	| "first"
+	| "out";
 
 // A flag thrown: from his hand at t0, down on the turf at `to` at t1, lying
 // there from then on.
@@ -136,6 +139,7 @@ const SIGNAL_MS: Record<Signaled, number> = {
 	noGood: 1300,
 	safety: 1800,
 	first: 1500,
+	out: 1300,
 };
 // Facing the press box.
 const FACING_US = Math.PI / 2;
@@ -386,6 +390,8 @@ export const stageCrew = (
 		? w({ d: 0, a: 0 })
 		: (anyBall(input.ball, input.parts, whistle) ?? w({ d: 0, a: 0 }));
 	const deadO = of(dead);
+	// (Spotted for the next snap no wider than the hashes.)
+	const spotO = of({ x: dead.x, y: clamp(dead.y, HASH_FAR_Y, HASH_NEAR_Y) });
 	const kick = kind === "fieldGoal" || kind === "extraPoint";
 	// After the whistle, from where it finds him: in toward the ball - the
 	// wing on its side of the field to mark it, the umpire to spot it, the
@@ -395,7 +401,7 @@ export const stageCrew = (
 			return { to: from, fps: WALK };
 		}
 		if (o === "U" && !input.backToLine) {
-			return { to: w({ d: deadO.d - 3, a: deadO.a - 2 }), fps: JOG };
+			return { to: w({ d: spotO.d - 3, a: spotO.a - 2 }), fps: JOG };
 		}
 		if (o === "R") {
 			return {
@@ -630,7 +636,9 @@ export const stageCrew = (
 							nearest(
 								sg.what === "first"
 									? ["DJ", "LJ"]
-									: CREW.filter((o) => o !== "R"),
+									: sg.what === "out"
+										? ["DJ", "LJ", "SJ", "FJ"]
+										: CREW.filter((o) => o !== "R"),
 								sg.at,
 								sg.t,
 							),
@@ -660,7 +668,9 @@ export const stageCrew = (
 							? "sigSafety"
 							: sg.what === "first"
 								? "sigSide"
-								: "sigWave",
+								: sg.what === "out"
+									? "sigTime"
+									: "sigWave",
 				t0: sg.t,
 				t1: sg.t + ms,
 				left: sg.what === "first" && leftArm(yaw, dir),
