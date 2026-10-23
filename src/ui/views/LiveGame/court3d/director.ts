@@ -348,8 +348,9 @@ export type Call =
 	| "clock"
 	| "stop";
 // `big` marks a dunk worth a replay: on somebody, off a lob, or through
-// contact - or, on a swish, a three in a tight finish or at the buzzer. A
-// roar says what it was for, for the boards to shout about.
+// contact - or, on a swish (not a dunk's), a three in a tight finish, a
+// basket at the buzzer, or one through contact (an and-one). A roar says
+// what it was for, for the boards to shout about.
 export type Fx = {
 	kind: FxKind;
 	t: number;
@@ -13039,11 +13040,16 @@ class Director {
 				this.fly(t0, t0 + 140, top, under);
 				this.bounce(t0 + 140, t0 + 1350, under, settle, 1, 2.2);
 			}
+			// Worth a replay (a dunk is shown again for its own - see the
+			// dunk's): a three in a tight finish, anything at the buzzer, and
+			// one through contact.
+			const buzzer = typeof e.clock === "number" && e.clock < BUZZER_SECS;
 			this.effect("swish", t0 + 20, {
 				rim: team,
-				...(shot.zone === "three" &&
-				((this.tension.at(-1)?.[1] ?? 0) >= 1 ||
-					(typeof e.clock === "number" && e.clock < BUZZER_SECS))
+				...(!shot.dunk &&
+				(buzzer ||
+					typeof e.pidFoul === "number" ||
+					(shot.zone === "three" && (this.tension.at(-1)?.[1] ?? 0) >= 1))
 					? { big: true }
 					: {}),
 			});

@@ -34,7 +34,7 @@ import type { Side } from "./geometry.ts";
 // than this, a dunk is not shown again.
 const REPLAY_RATE_MAX = 2;
 // A dunk's replay: from just before he takes off to just after, in slow
-// motion, once its own play is over. (A big three's from his gather -
+// motion, once its own play is over. (A big basket's from his gather -
 // longer before it goes in.)
 const REPLAY_FROM = 1700;
 const REPLAY_FROM_THREE = 2300;
@@ -43,7 +43,8 @@ export const REPLAY_AFTER = 1150;
 const REPLAY_SPEED = 0.42;
 // Which plays are shown again: every dunk, the way a broadcast shows them
 // all again - not only a big one (on somebody, off a lob, through contact)
-// - and a big three (see Fx).
+// - and a big basket: a three in a tight finish, anything at the buzzer,
+// an and-one (see Fx).
 export const replayed = (f: Fx) =>
 	f.kind === "dunk" || (!!f.big && f.kind === "swish");
 

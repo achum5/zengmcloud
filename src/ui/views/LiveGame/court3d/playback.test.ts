@@ -741,7 +741,50 @@ describe("the wipe into a replay and out of it", () => {
 	}, 60_000);
 });
 
-describe("dunks shown again", () => {
+// Watched live from `from` for `ms`: whether the picture went back for the
+// play at `at`, through the moment itself.
+const shownAgain = (
+	tl: CourtTimeline,
+	cursor: number,
+	at: number,
+	from = at - 3000,
+	ms = 12_000,
+): boolean => {
+	const s = device(false).s;
+	s.t = from;
+	s.prevCursor = cursor;
+	s.snapCam = false;
+	s.nextDunk = tl.fx.findIndex((x) => replayed(x) && x.t + 1150 > from);
+	const f = makeFollow();
+	let shown = false;
+	for (let now = 16; now < ms; now += 1000 / 60) {
+		stepPlay(
+			s,
+			{
+				cursor,
+				paused: false,
+				rate: 1,
+				follower: false,
+				along: false,
+				keyPlan: undefined,
+				eventsLength: cursor,
+				onReady: () => {},
+			},
+			f,
+			tl,
+			false,
+			now,
+			now,
+		);
+		const r = s.replay;
+		if (r && r.from < at && r.to > at && r.at > at) {
+			shown = true;
+		}
+	}
+	return shown;
+};
+
+describe("plays shown again", () => {
 	// Every dunk is shown again, the way a broadcast shows them all - not
 	// only a big one (on somebody, off a lob, through contact): watched
 	// live, the picture goes back for it, through the dunk itself.
@@ -751,40 +794,74 @@ describe("dunks shown again", () => {
 			const { tl, events } = compile(seed, 150);
 			for (const dunk of tl.fx.filter((f) => f.kind === "dunk")) {
 				plain += dunk.big ? 0 : 1;
-				const s = device(false).s;
-				s.t = dunk.t - 3000;
-				s.prevCursor = events.length;
-				s.snapCam = false;
-				s.nextDunk = tl.fx.indexOf(dunk);
-				const f = makeFollow();
-				let shown = false;
-				for (let now = 16; now < 12_000; now += 1000 / 60) {
-					stepPlay(
-						s,
-						{
-							cursor: events.length,
-							paused: false,
-							rate: 1,
-							follower: false,
-							along: false,
-							keyPlan: undefined,
-							eventsLength: events.length,
-							onReady: () => {},
-						},
-						f,
-						tl,
-						false,
-						now,
-						now,
-					);
-					const r = s.replay;
-					if (r && r.from < dunk.t && r.to > dunk.t && r.at > dunk.t) {
-						shown = true;
-					}
-				}
-				assert.isTrue(shown, `${seed} @${Math.round(dunk.t)}`);
+				assert.isTrue(
+					shownAgain(tl, events.length, dunk.t),
+					`${seed} @${Math.round(dunk.t)}`,
+				);
 			}
 		}
 		assert.isAtLeast(plain, 3);
+	}, 60_000);
+
+	// A basket through contact (an and-one), and one at the buzzer, are
+	// shown again too - each once (a dunk through contact once, for the
+	// dunk, not again for the ball going through).
+	test("an and-one, and a basket at the buzzer", () => {
+		let andOnes = 0;
+		for (const seed of ["a", "b"]) {
+			const { tl, events } = compile(seed, 150);
+			const shown = tl.fx.filter((f) => replayed(f));
+			for (const [k, f] of shown.entries()) {
+				const next = shown[k + 1];
+				assert.isFalse(
+					!!next && next.t - f.t < 500,
+					`${seed} @${Math.round(f.t)} shown twice`,
+				);
+			}
+			for (const call of tl.fx.filter(
+				(f) => f.kind === "whistle" && f.call === "andOne",
+			)) {
+				const made = tl.fx.findLast(
+					(f) => (f.kind === "swish" || f.kind === "dunk") && f.t < call.t,
+				)!;
+				if (made.kind === "dunk") {
+					continue;
+				}
+				andOnes += 1;
+				assert.isTrue(
+					shownAgain(tl, events.length, made.t),
+					`${seed} @${Math.round(made.t)}`,
+				);
+			}
+		}
+		assert.isAtLeast(andOnes, 3);
+
+		// A two at the buzzer, the last shot of the half.
+		const players: CourtPlayer[] = [];
+		const events: RawEvent[] = [{ type: "init", boxScore: {} }];
+		for (const raw of [0, 1] as const) {
+			for (let j = 0; j < 5; j++) {
+				const pid = raw * 10 + j + 1;
+				players.push({ pid, team: raw === 0 ? 1 : 0, pos: "G" });
+				events.push({ type: "stat", t: raw, pid, s: "gs", amt: 1 });
+			}
+		}
+		events.push(
+			{ type: "jumpBall", t: 0, pid: 5, pid2: 15, clock: 9 },
+			{ type: "fgaMidRange", t: 1, pid: 12, clock: 6, desperation: false },
+			{ type: "fgMidRange", t: 1, pid: 12, clock: 5.6 },
+			{ type: "stat", t: 1, pid: 12, s: "pts", amt: 2 },
+			{ type: "fgaMidRange", t: 0, pid: 2, clock: 1.6, desperation: false },
+			{ type: "fgMidRange", t: 0, pid: 2, clock: 0.4 },
+			{ type: "stat", t: 0, pid: 2, s: "pts", amt: 2 },
+			{ type: "endOfPeriod", t: 0, reason: "noShot", clock: 0 },
+			{ type: "gameOver" },
+		);
+		const tl = compileCourt({ events, players, gid: 3 });
+		const makes = tl.fx.filter((f) => f.kind === "swish");
+		assert.strictEqual(makes.length, 2);
+		// (Not the first, with time left.)
+		assert.isFalse(replayed(makes[0]!));
+		assert.isTrue(shownAgain(tl, events.length, makes[1]!.t));
 	}, 60_000);
 });
