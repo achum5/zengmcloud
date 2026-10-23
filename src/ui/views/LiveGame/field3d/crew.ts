@@ -113,6 +113,18 @@ export type FlagFlight = { t0: number; t1: number; from: Pt3; to: Pt };
 // Just off the field: the wings on the sidelines, the deep men a step in.
 const OFF_FIELD = 3;
 const ON_SIDELINE = 2;
+// A snap from scrimmage: the umpire over the ball (this far off it) as the
+// picture comes up on it, putting it down (this long) and stood a moment -
+// then away from it this far and across as far as his place is - wide of
+// the huddle - and on to it, there this long before the offense is set, at
+// no more than this pace (or he is there already).
+const SPOTTED = new Set<PlayKind>(["pass", "run", "kneel", "none"]);
+const SPOT_OFF = 1.6;
+const SPOT_MS = 900;
+const SPOT_STAND = 250;
+const SPOT_WIDE = 10;
+const SPOT_BY = 200;
+const SPOT_FPS = 18;
 // How fast an official goes (feet a second): flat out, turned and running
 // - and an easy jog, a walk.
 const TOP = 21;
@@ -439,10 +451,35 @@ export const stageCrew = (
 		const start = p.at;
 		const startO = of(start);
 		const facing = Math.atan2(ballY - start.y, losX - start.x);
+		// (The umpire, a snap from scrimmage, over the ball as the picture
+		// comes up on it - just put it down - and back to his place as the
+		// offense comes out of its huddle.)
+		let from = t0;
+		if (p.o === "U" && SPOTTED.has(kind)) {
+			const side = startO.d < 0 ? -1 : 1;
+			const over = w({ d: side * SPOT_OFF, a: -SPOT_OFF / 2 });
+			const wide = w({ d: side * SPOT_WIDE, a: startO.a });
+			const leave = t0 + SPOT_MS + SPOT_STAND;
+			const far = dist(over, wide) + dist(wide, start);
+			const by = input.set - SPOT_BY;
+			const fps = (far / Math.max(1, by - leave)) * 1000;
+			if (fps <= SPOT_FPS) {
+				const face = Math.atan2(ballY - over.y, losX - over.x);
+				const at = t0 + SPOT_MS;
+				const turn = leave + (dist(over, wide) / fps) * 1000;
+				legs.push(
+					{ t0, t1: at, from: over, to: over, move: "spotBall", yaw: face },
+					{ t0: at, t1: leave, from: over, to: over, move: "stand", yaw: face },
+					{ t0: leave, t1: turn, from: over, to: wide, move: gait(fps) },
+					{ t0: turn, t1: by, from: wide, to: start, move: gait(fps) },
+				);
+				from = by;
+			}
+		}
 		// Standing waiting for the offense to come up, and set for the snap.
 		legs.push(
 			{
-				t0,
+				t0: from,
 				t1: input.set,
 				from: start,
 				to: start,

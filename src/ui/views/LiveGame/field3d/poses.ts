@@ -2178,6 +2178,60 @@ const FIELD_ANIMS = {
 			[1, BASE],
 		],
 	},
+	// An official putting the ball down for the next snap: bent to it, his
+	// hands on it, and up off it.
+	spotBall: {
+		kind: "act",
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 62,
+					kneeN: 70,
+					hipF: 50,
+					kneeF: 62,
+					lean: 52,
+					shN: 64,
+					elN: 12,
+					abN: 4,
+					shF: 64,
+					elF: 12,
+					abF: 4,
+				}),
+			],
+			[
+				0.45,
+				pose({
+					hipN: 60,
+					kneeN: 68,
+					hipF: 48,
+					kneeF: 60,
+					lean: 50,
+					shN: 56,
+					elN: 20,
+					abN: 4,
+					shF: 56,
+					elF: 20,
+					abF: 4,
+				}),
+			],
+			[
+				0.75,
+				pose({
+					hipN: 24,
+					kneeN: 28,
+					hipF: 18,
+					kneeF: 24,
+					lean: 22,
+					shN: 24,
+					elN: 30,
+					shF: 24,
+					elF: 30,
+				}),
+			],
+			[1, BASE],
+		],
+	},
 	// A coach going over it with a man: his play sheet held up at his chest in
 	// one hand, the other hand out, making his points with it.
 	coachTalk: {
