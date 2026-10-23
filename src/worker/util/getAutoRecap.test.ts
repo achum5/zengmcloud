@@ -4823,6 +4823,41 @@ describe("the day wrap does not tell a story twice", () => {
 		}
 	});
 
+	// "Wizards stun the Thunder 102-100" in the deck, and not a word of it in
+	// the body: 32 of 41 scored deck items in a corpus run. The deck is a row
+	// of headlines; the body still tells every result it carries.
+	test("a result the deck gives is told in the body too", () => {
+		let checked = 0;
+		for (let day = 1; day <= 20; day += 1) {
+			const games = slate();
+			// The Spurs as 9-point underdogs: an upset the deck will want, with
+			// a final no other game on the slate shares.
+			const upset = games[2]!;
+			upset.spread = { favTid: upset.teams[1].tid, points: 9 };
+			upset.teams[0].pts = 104;
+			upset.teams[0].ptsQtrs = [26, 26, 26, 26];
+			upset.teams[1].pts = 97;
+			upset.teams[1].ptsQtrs = [24, 24, 24, 25];
+			const recap = getAutoDayRecap({
+				season: 2005,
+				day,
+				playoffs: false,
+				games,
+			});
+			const lines = recap.split("\n");
+			const deck = lines.find((l) => l.startsWith("*") && !l.startsWith("**"));
+			const body = lines.filter((l) => !l.startsWith("*")).join("\n");
+			for (const item of deck?.split(" · ") ?? []) {
+				const score = /\b\d{2,3}-\d{2,3}\b/.exec(item)?.[0];
+				if (score) {
+					checked += 1;
+					assert.ok(body.includes(score), `day ${day}: ${item}\n${recap}`);
+				}
+			}
+		}
+		assert.ok(checked > 0, "no deck item carried a score");
+	});
+
 	test("one game is not reported twice in the same wrap", () => {
 		for (let day = 1; day <= 20; day += 1) {
 			const recap = getAutoDayRecap({

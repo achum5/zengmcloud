@@ -9269,7 +9269,16 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	const smallUpsetVerbs = ["upset", "got past", "took down", "knocked off"];
 	let upsetIdx = 0;
 	for (const g of others) {
-		if (g.allStar || coveredGames.has(g)) {
+		// A game the deck headlined is still the body's to tell, unless the
+		// body has given its final already: "Wizards stun the Thunder
+		// 102-100" in the deck and not a word of it underneath left the
+		// body short a result - the night's upset, often.
+		const deckOnly =
+			deckResult?.games.includes(g) &&
+			![headline.text, ...para1]
+				.join(" ")
+				.includes(plainScore(analyzeShape(g)));
+		if (g.allStar || (coveredGames.has(g) && !deckOnly)) {
 			continue;
 		}
 		const shape = analyzeShape(g);
@@ -9370,7 +9379,9 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	// been alluded to. The deck's "Spurs drop the Rockets to 0-8" is a tease,
 	// not a result, and three games in seven were reaching the reader with no
 	// score at all.
-	const soFar = [headline.text, deck ?? "", ...para1, ...para2].join(" ");
+	// Not the deck: it is a row of headlines over the body, and a final in it
+	// is not yet told underneath.
+	const soFar = [headline.text, ...para1, ...para2].join(" ");
 	for (const g of ranked) {
 		if (g.allStar) {
 			continue;
