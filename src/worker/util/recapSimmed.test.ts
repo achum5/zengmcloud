@@ -227,6 +227,9 @@ describe("simmed recaps", () => {
 				// he had been averaging".
 				/shared it, \d+ assists|[Ii]t was \d+-\d+ the [A-Z]|were \d+ more than the [\d.]+ a game/,
 				/let all of it go before winning it/,
+				// "The best the Pelicans could offer was 32 points" undersold
+				// the best line on the floor; "got out with 2" was a bettor's.
+				/could offer was (?:a [\w-]+ - )?(?:2[5-9]|[3-9]\d) points|got out with \d/,
 				// A recap is read the next day: no "tonight".
 				/\btonight\b/i,
 				// Headlines: a passer's verb on a steals line, a pronoun, a

@@ -4433,8 +4433,12 @@ const loserSentence = (
 				`${cap(them)} got ${line} from ${leader.name}`,
 				`${leader.name} finished with ${line} for ${them}`,
 				// Not "22 points from X was..." - a sentence does not open with a
-				// numeral, and every one of these lines starts with one.
-				`The best ${them} could offer was ${line} from ${leader.name}`,
+				// numeral, and every one of these lines starts with one. And only
+				// for a modest line: "The best the Pelicans could offer was 32
+				// points and 11 assists" undersold the best line on the floor.
+				...(leader.pts < 25 && doubleCategories(leader).length < 3
+					? [`The best ${them} could offer was ${line} from ${leader.name}`]
+					: []),
 				`For ${them}, it was ${leader.name} with ${line}`,
 				`${cap(them)} leaned on ${leader.name} for ${line}`,
 			],
@@ -5348,7 +5352,7 @@ const spreadNote = (
 			rng,
 			[
 				`The ${s.points}-point favorites had to sweat this one out.`,
-				`${cap(theNick(shape.winner))} were favored by ${s.points} and got out with ${shape.margin}.`,
+				`${cap(theNick(shape.winner))} were favored by ${s.points} and won by ${shape.margin}.`,
 				`${cap(theNick(shape.winner))} were supposed to win this one comfortably, and did not.`,
 			],
 			"spreadScare",
