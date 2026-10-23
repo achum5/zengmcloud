@@ -1,5 +1,5 @@
 import { assert, describe, test } from "vitest";
-import { buildFouls, foulsAt } from "./scoreBug.ts";
+import { buildFouls, finalText, foulsAt, isFinal } from "./scoreBug.ts";
 import { compile } from "./testGame.ts";
 
 // Lines at one-second steps, in order: a beat for each.
@@ -79,4 +79,26 @@ describe("team fouls on the score bug", () => {
 		}
 		assert.strictEqual(counted, pf);
 	});
+});
+
+describe("the final horn on the score bug", () => {
+	// Through the play, the period and the clock; from the final horn on,
+	// FINAL where the clock was - FINAL/OT after overtime.
+	test("FINAL from the horn, not before", () => {
+		const { tl } = compile("a", 150);
+		const k = tl.beats.findIndex((b) => b.type === "gameOver");
+		assert.isAbove(k, 0);
+		// (The horn: the end of the last period, just before the line that
+		// says the game is over.)
+		const horn = tl.beats[k - 1]!;
+		assert.strictEqual(horn.type, "endOfPeriod");
+		assert.isFalse(isFinal(tl, horn.actionStart - 1));
+		assert.isFalse(isFinal(tl, tl.beats[0]!.actionStart));
+		assert.isTrue(isFinal(tl, horn.actionStart));
+		assert.isTrue(isFinal(tl, tl.end));
+		assert.strictEqual(finalText("Q4"), "FINAL");
+		assert.strictEqual(finalText("H2"), "FINAL");
+		assert.strictEqual(finalText("OT"), "FINAL/OT");
+		assert.strictEqual(finalText("3OT"), "FINAL/3OT");
+	}, 60_000);
 });

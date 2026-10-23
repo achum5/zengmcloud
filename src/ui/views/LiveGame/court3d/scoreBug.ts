@@ -96,3 +96,23 @@ export const foulsAt = (marks: FoulMark[], t: number): TeamFouls => {
 	}
 	return found >= 0 ? marks[found]! : NONE;
 };
+
+// THE FINAL HORN: from it on, the bug says the game is over - FINAL, or
+// FINAL/OT after overtime - where the clock was, not the last period and a
+// clock stopped at 0:00 through the handshakes.
+export const isFinal = (
+	tl: Pick<CourtTimeline, "beats">,
+	t: number,
+): boolean => {
+	const k = tl.beats.findLastIndex((b) => b.type === "gameOver");
+	if (k < 0) {
+		return false;
+	}
+	// (The horn itself: the end of the last period, just before.)
+	const before = tl.beats[k - 1];
+	const horn = before?.type === "endOfPeriod" ? before : tl.beats[k]!;
+	return t >= horn.actionStart;
+};
+// (The last period, as the bug carries it: "Q4", "OT", "2OT".)
+export const finalText = (period: string): string =>
+	/OT$/.test(period) ? `FINAL/${period}` : "FINAL";

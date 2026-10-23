@@ -89,7 +89,7 @@ import {
 } from "./keyPlays.ts";
 import { bodyOf, type Body } from "./poses.ts";
 import { offenseAt } from "./evaluate.ts";
-import { buildFouls, foulsAt } from "./scoreBug.ts";
+import { buildFouls, finalText, foulsAt, isFinal } from "./scoreBug.ts";
 import { ScoreBug, type BugRefs } from "./ScoreBug.tsx";
 import { CustomScoreBug } from "./CustomScoreBug.tsx";
 import { IntroCard, IntroTitle } from "./IntroCard.tsx";
@@ -942,8 +942,13 @@ const Court3D = ({
 		introCall: -1,
 		introOn: false,
 		introTitle: false,
+		// The final horn gone (see isFinal).
+		final: false,
 	});
 	const [intro, setIntro] = useState({ call: -1, on: false, title: false });
+	// The final horn gone, in the picture: the bug says so (see the frame
+	// loop).
+	const [final, setFinal] = useState(false);
 	// Onto the game from the warm-ups (see pregame): a cut, up out of black
 	// (see tick).
 	useEffect(() => {
@@ -1020,6 +1025,9 @@ const Court3D = ({
 		warmups,
 		teamColors,
 		setIntro,
+		setFinal,
+		// The period, as the page's box score has it ("Q4", "OT").
+		period: boxScore?.quarterShort ?? "",
 		eventsLength: events?.length ?? 0,
 	});
 	live.current = {
@@ -1046,6 +1054,9 @@ const Court3D = ({
 		warmups,
 		teamColors,
 		setIntro,
+		setFinal,
+		// The period, as the page's box score has it ("Q4", "OT").
+		period: boxScore?.quarterShort ?? "",
 		eventsLength: events?.length ?? 0,
 	};
 
@@ -1297,7 +1308,15 @@ const Court3D = ({
 
 			let shotText = "";
 			let clockText = "";
-			if (p.clocks) {
+			// (Over: FINAL where the clock was, and no period.)
+			const final = !staging && isFinal(tl, s.t);
+			if (final !== s.final) {
+				s.final = final;
+				p.setFinal(final);
+			}
+			if (final) {
+				clockText = finalText(p.period);
+			} else if (p.clocks) {
 				const game = gameClockAt(p.clocks, s.t);
 				const shot = shotClockAt(p.clocks, s.t);
 				clockText = game === undefined ? "" : formatGameClock(game);
@@ -1482,7 +1501,8 @@ const Court3D = ({
 
 	const awayPts: number = boxScore?.teams?.[1]?.pts ?? 0;
 	const homePts: number = boxScore?.teams?.[0]?.pts ?? 0;
-	const quarter = boxScore?.quarterShort ?? "";
+	// (Over: FINAL where the clock was - see the frame loop - and no period.)
+	const quarter = final ? "" : (boxScore?.quarterShort ?? "");
 	// Who made the play the caption describes: the same team the Plays list
 	// marks with a logo. Taken off `raw` so a replay shows that night's logo.
 	const captionTeam = captionT === undefined ? undefined : raw[captionT];
