@@ -1221,6 +1221,9 @@ export type HoopFx = {
 	dunk: number;
 	// A dunk worth a replay rattles the whole basket harder.
 	big?: boolean;
+	// The period's clock run out: the lights round the edge of the glass on,
+	// red (see drawHoop).
+	out?: boolean;
 	t: number;
 };
 
@@ -1381,6 +1384,29 @@ export const drawHoop = (
 	ctx.strokeStyle = "#ffffff";
 	ctx.lineWidth = Math.max(0.8, 0.22 * gk);
 	ctx.stroke();
+	// The period over - its clock at zero - the strip of lights round the
+	// inside of the frame is lit red, the way an NBA board's is at the horn,
+	// and stays lit until the clock is set again.
+	if (fx.out) {
+		const inset = (p: Pt3, dy: number, dz: number): Pt3 => ({
+			...p,
+			y: p.y + dy,
+			z: p.z + dz,
+		});
+		const d = 0.16;
+		poly(ctx, cam, [
+			inset(glass[0]!, d, d),
+			inset(glass[1]!, -d, d),
+			inset(glass[2]!, -d, -d),
+			inset(glass[3]!, d, -d),
+		]);
+		ctx.strokeStyle = "rgba(255, 52, 36, 0.35)";
+		ctx.lineWidth = Math.max(1.5, 0.34 * gk);
+		ctx.stroke();
+		ctx.strokeStyle = "#ff4a32";
+		ctx.lineWidth = Math.max(0.8, 0.12 * gk);
+		ctx.stroke();
+	}
 	// The padding along the bottom of the board.
 	inkLine(
 		ctx,

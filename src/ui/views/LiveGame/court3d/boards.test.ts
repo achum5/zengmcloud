@@ -1,5 +1,7 @@
 import { assert, describe, test } from "vitest";
-import { JUMBO_FRONT, paintJumboStrip } from "./arena.ts";
+import { drawHoop, JUMBO_FRONT, paintJumboStrip } from "./arena.ts";
+import { makeCamera, REPLAY_RIG } from "./camera.ts";
+import { COURT_W } from "./geometry.ts";
 
 // A picture that only remembers its boxes and its words: where each went,
 // in what color, and how wide each word was.
@@ -77,5 +79,63 @@ describe("the board over center court", () => {
 			before.words.map((w) => w.text),
 			["BOS", "LAL"],
 		);
+	});
+});
+
+// A picture that only remembers the colors it stroked lines in.
+const strokes = () => {
+	const seen: string[] = [];
+	const state: Record<string, unknown> = {
+		strokeStyle: "",
+		fillStyle: "",
+		lineWidth: 1,
+	};
+	const ctx = new Proxy(state, {
+		get: (target, key: string) => {
+			if (key in target) {
+				return target[key];
+			}
+			if (key === "stroke") {
+				return () => seen.push(String(target.strokeStyle));
+			}
+			if (key === "measureText") {
+				return () => ({ width: 0 });
+			}
+			if (key.startsWith("create")) {
+				return () => ({ addColorStop: () => {} });
+			}
+			return () => {};
+		},
+		set: (target, key: string, v) => {
+			target[key] = v;
+			return true;
+		},
+	});
+	return { ctx: ctx as unknown as CanvasRenderingContext2D, seen };
+};
+
+describe("the backboard at the horn", () => {
+	// The period's clock run out, the lights round the glass are lit red -
+	// and only then.
+	test("lit red round the glass once the clock is out", () => {
+		const cam = makeCamera(
+			{ x: COURT_W - 8, width: 26, y: 25, z: 6 },
+			1280,
+			720,
+			REPLAY_RIG,
+		);
+		const red = (out: boolean) => {
+			const { ctx, seen } = strokes();
+			drawHoop(ctx, cam, 1, "#8c1d40", "", {
+				swish: 0,
+				clank: 0,
+				dunk: 0,
+				out,
+				t: 0,
+			});
+			return seen.filter((c) => /ff4a32|255, 52, 36/.test(c)).length;
+		};
+		assert.strictEqual(red(false), 0);
+		assert.isAtLeast(red(true), 2);
 	});
 });

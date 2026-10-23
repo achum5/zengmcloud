@@ -67,6 +67,7 @@ import {
 	type Side,
 } from "./geometry.ts";
 import { drawPixelText, pixelTextWidth } from "./pixelFont.ts";
+import { isBreak, isFinal } from "./scoreBug.ts";
 import type { Replay } from "./playback.ts";
 import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
 import {
@@ -1119,6 +1120,8 @@ export const drawFrame = (f: Frame) => {
 			!players.some((p) => p.pid === b.holder && p.holding),
 	);
 	const atRim = loose.map((b) => ballAtRim(b));
+	// (The period's clock run out: the lights round both boards on.)
+	const out = isFinal(tl, t) || isBreak(tl, t);
 	for (const side of [0, 1] as const) {
 		const rx = side === 0 ? 5.25 : COURT_W - 5.25;
 		const fx: HoopFx = {
@@ -1126,6 +1129,7 @@ export const drawFrame = (f: Frame) => {
 			clank: fxLevel(tl, t, "clank", 420, side),
 			dunk: fxLevel(tl, t, "dunk", 1100, side),
 			big: recentFx(tl, t, ["dunk"], 1100, side)?.big,
+			out,
 			t,
 		};
 		items.push({
