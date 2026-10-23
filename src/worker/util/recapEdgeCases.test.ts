@@ -459,6 +459,54 @@ describe("edge cases", () => {
 		assert.match(wrap, /shootout/);
 	});
 
+	// "Walker Ellis walks off the Pacers 108-106" of a free throw with 12.1
+	// seconds left, and the Pacers still to shoot.
+	test("a day wrap walks off only on the game's last shot", () => {
+		const slate = (day: number, play: string) => {
+			const home = squad(
+				{ tid: 1, name: "Hawks" },
+				{ name: "Ace Hawk", pid: 11, pts: 29, fg: 11, fga: 21 },
+				101,
+			);
+			const away = squad(
+				{ tid: 2, name: "Bulls" },
+				{ name: "Bo Bull", pid: 21, pts: 24, fg: 9, fga: 20 },
+				100,
+			);
+			const other = [
+				squad({ tid: 3, name: "Kings" }, { name: "Cy King", pid: 31 }, 112),
+				squad({ tid: 4, name: "Suns" }, { name: "Di Sun", pid: 41 }, 96),
+			] as [RecapTeam, RecapTeam];
+			return getAutoDayRecap({
+				season: 2025,
+				day,
+				playoffs: false,
+				games: [
+					game([home, away], {
+						day,
+						clutchPlays: [`<a href="#">Ace Hawk</a> made a ${play}.`],
+					}),
+					game(other, { gid: 78, day }),
+				],
+			});
+		};
+		let walked = 0;
+		for (let day = 1; day <= 40; day++) {
+			const early = slate(
+				day,
+				"game-winning free throw with 12.1 seconds remaining",
+			);
+			clean(early);
+			assert.notMatch(early, /walks off/, early);
+			if (
+				/walks off/.test(slate(day, "game-winning three-pointer at the buzzer"))
+			) {
+				walked += 1;
+			}
+		}
+		assert.isAbove(walked, 0);
+	});
+
 	// "It took an extra period, but the Suns pulled away... The Suns won the
 	// second half 51-49, and it went to overtime. Regulation settled
 	// nothing, and it took an extra period." Overtime, three times over.
@@ -1167,6 +1215,86 @@ describe("facts told once, in English", () => {
 			assert.strictEqual(told?.length, 1, recap);
 			assert.notMatch(recap, /6-game winning streak[^*]*$/, recap);
 		}
+	});
+
+	// "Isaiah Carter swats 5 as the Hornets slip past the Timberwolves" sat
+	// over the night an eleven-game winning streak ended, and "Hawks end the
+	// Kings' 9-game winning streak" over a body that never said so.
+	test("a long streak ended is the headline, and the body tells it too", () => {
+		const make = (gid: number, lost: Partial<RecapTeam>, won = {}) => {
+			const home = squad(
+				{ tid: 1, name: "Hornets", ...won },
+				{ name: "Ace Hornet", pid: 11, pts: 21, fg: 8, fga: 17 },
+				110,
+			);
+			const away = squad(
+				{ tid: 2, name: "Wolves", ...lost },
+				{ name: "Bo Wolf", pid: 21, pts: 20, fg: 8, fga: 19 },
+				104,
+			);
+			return getAutoRecap(game([home, away], { gid }));
+		};
+		for (let gid = 1; gid < 30; gid++) {
+			const run = make(gid, {
+				streak: { won: false, count: 1 },
+				streakBefore: { won: true, count: 11 },
+				last10: l10([false, true, true, true, true, true, true, true]),
+			});
+			const [head, ...body] = run.split("\n\n");
+			assert.match(head!, /11-game winning streak/, run);
+			assert.match(body[0]!, /eleven-game winning streak/, run);
+			clean(run);
+
+			const skid = make(
+				gid,
+				{},
+				{
+					streak: { won: true, count: 1 },
+					streakBefore: { won: false, count: 8 },
+					last10: l10([true, false, false, false, false, false, false]),
+				},
+			);
+			const [skidHead, ...skidBody] = skid.split("\n\n");
+			assert.match(skidHead!, /8-game (?:skid|losing streak)/, skid);
+			assert.match(skidBody[0]!, /eight-game losing streak/, skid);
+			clean(skid);
+		}
+	});
+
+	test("a skid the headline names is in the body", () => {
+		let named = 0;
+		for (let gid = 1; gid < 60; gid++) {
+			const home = squad(
+				{ tid: 1, name: "Nets" },
+				{ name: "Ace Net", pid: 11, pts: 18, fg: 7, fga: 15 },
+				99,
+			);
+			const away = squad(
+				{
+					tid: 2,
+					name: "Nuggets",
+					streak: { won: false, count: 7 },
+					streakBefore: { won: false, count: 6 },
+					last10: l10([false, false, false, false, false, false, false]),
+				},
+				{ name: "Bo Nugget", pid: 21, pts: 17, fg: 7, fga: 18 },
+				92,
+			);
+			// Underdogs, so the upset headlines can name the skid.
+			const recap = getAutoRecap(
+				game([home, away], { gid, spread: { favTid: 2, points: 7 } }),
+			);
+			const [head, ...body] = recap.split("\n\n");
+			if (/straight|in a row|losing streak/.test(head!)) {
+				named += 1;
+				assert.match(
+					body.join(" "),
+					/Nuggets[^.]*(?:straight|in a row|losing streak)|(?:straight|in a row|losing streak)[^.]*Nuggets/,
+					recap,
+				);
+			}
+		}
+		assert.isAbove(named, 3);
 	});
 
 	test("two meetings are 'both', never 'all two'", () => {

@@ -1101,7 +1101,9 @@ export const scoringNormBeat = (
 				rng,
 				[
 					`${W} held an offense averaging ${lNorm.pts.toFixed(1)} a game to ${ctx.loser.pts}.`,
-					`Holding ${ln} to ${ctx.loser.pts} was ${numWord(Math.round(lNorm.pts - ctx.loser.pts))} below what they usually get.`,
+					// Not "Holding the Knicks to 93 was 13 below what they
+					// usually get."
+					`${cap(ln)}, who average ${lNorm.pts.toFixed(1)} points, were held to ${ctx.loser.pts}.`,
 					`${cap(ln)} were kept well under their ${lNorm.pts.toFixed(1)} points a game.`,
 				],
 				"normDefense",
@@ -1179,11 +1181,22 @@ export const seriesShapeBeat = (
 	const ln = theNick(ctx.loser);
 	const options: string[] = [];
 	const winnerHome = ctx.game.teams[0].tid === ctx.winner.tid;
+	// The night the series ended. Where its games were won is ledger work
+	// then: "It is the first championship in franchise history. That is two
+	// wins on the Grizzlies' floor for the Warriors in the series."
+	const s = ctx.game.series;
+	const over =
+		!!s &&
+		typeof s.bestOf === "number" &&
+		(ctx.winner.abbrev === s.homeAbbrev ? s.homeWon : s.awayWon) + 1 >
+			s.bestOf / 2;
 
 	// Home advantage: every game so far, tonight included, has gone the way of
 	// whoever was at home.
 	const allHeldServe = prior.every((g) => g.won === g.home) && winnerHome;
-	if (allHeldServe) {
+	if (over) {
+		// Nothing about the venues.
+	} else if (allHeldServe) {
 		options.push(
 			pick(
 				rng,

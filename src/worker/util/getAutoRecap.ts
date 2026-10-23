@@ -917,6 +917,20 @@ const snappedSkid = (shape: Shape): number | undefined => {
 	return before && !before.won && before.count >= 5 ? before.count : undefined;
 };
 
+// A streak long enough to be the headline: the winner's skid from seven, or
+// the loser's winning streak from six. The longer one when both.
+const longStreakEnded = (
+	shape: Shape,
+): { kind: "skid" | "run"; n: number } | undefined => {
+	const skid = snappedSkid(shape) ?? 0;
+	const lRun = shape.loser.streakBefore;
+	const run = lRun?.won ? lRun.count : 0;
+	if (skid >= 7 && skid >= run) {
+		return { kind: "skid", n: skid };
+	}
+	return run >= 6 ? { kind: "run", n: run } : undefined;
+};
+
 // The loser was at home, unbeaten there until tonight, with enough home games
 // behind it for that to mean something. The home record runs THROUGH this
 // game, so the one loss on it is this one.
@@ -2165,6 +2179,7 @@ const buildHeadlineText = (
 		return headline;
 	}
 
+	const ended = game.playoffs ? undefined : longStreakEnded(shape);
 	if (shot && !shot.tying) {
 		// A regular-season skid is not the story of a playoff game.
 		const skid = game.playoffs ? undefined : snappedSkid(shape);
@@ -2201,16 +2216,66 @@ const buildHeadlineText = (
 						],
 						"headline:clutch-skid",
 					)
-				: pick(
-						rng,
-						[
-							`${poss(shot.name)} ${shot.shot} sinks the ${loserN}${tag}`,
-							`${poss(shot.name)} ${shot.shot} lifts the ${winnerN} ${winOver(rng)} the ${loserN}${tag}`,
-							`${shot.name} beats the ${loserN} with a ${shot.shot}${tag}`,
-						],
-						"headline:clutch-shot",
-					),
+				: ended?.kind === "run"
+					? `${poss(shot.name)} ${shot.shot} ends ${poss(`the ${loserN}`)} ${ended.n}-game winning streak`
+					: pick(
+							rng,
+							[
+								`${poss(shot.name)} ${shot.shot} sinks the ${loserN}${tag}`,
+								`${poss(shot.name)} ${shot.shot} lifts the ${winnerN} ${winOver(rng)} the ${loserN}${tag}`,
+								`${shot.name} beats the ${loserN} with a ${shot.shot}${tag}`,
+							],
+							"headline:clutch-shot",
+						),
 			false,
+		);
+	}
+
+	// A LONG STREAK ENDING IS THE HEADLINE. "Isaiah Carter swats 5 as the
+	// Hornets slip past the Timberwolves" sat over the night the Timberwolves'
+	// eleven-game winning streak ended, and a skid of seven or eight was one
+	// template in ten. The streak leads now, carrying the star's night or the
+	// comeback when either was big enough to share it.
+	if (ended) {
+		const ends =
+			ended.kind === "skid"
+				? `snap ${aNum(ended.n)}-game skid`
+				: `end ${poss(`the ${loserN}`)} ${ended.n}-game winning streak`;
+		const options =
+			ended.kind === "skid"
+				? [
+						`${winnerN} end ${aNum(ended.n)}-game skid with ${aFigure(scoreTag(shape))} win over the ${loserN}`,
+						`${winnerN} snap ${aNum(ended.n)}-game losing streak, beat the ${loserN} ${scoreTag(shape)}`,
+					]
+				: [
+						`${winnerN} ${ends}`,
+						`${winnerN} snap ${poss(`the ${loserN}`)} ${ended.n}-game winning streak, ${scoreTag(shape)}`,
+					];
+		const dd = doubleCategories(star).length;
+		const starBit = !shape.winner.players.includes(star)
+			? undefined
+			: dd >= 3
+				? `${star.name} posts a ${doubleWord(dd)!}`
+				: star.pts >= 25
+					? `${star.name} scores ${star.pts}`
+					: dd >= 2 && star.pts >= 15
+						? `${star.name} has ${statPhrase(star, 1)}`
+						: undefined;
+		const starText = starBit && `${starBit} as the ${winnerN} ${ends}`;
+		const cb = comebackSize(shape);
+		const text =
+			cb >= 15
+				? `${winnerN} rally from ${cb} down to ${ends.replace(/^snap /, "end ")}`
+				: starText &&
+					  trimHeadline(starText).length <= HEADLINE_MAX &&
+					  (dd >= 3 || star.pts >= 35 || rng() < 0.5)
+					? starText
+					: pick(rng, options, "headline:streak-ended");
+		return h(
+			text,
+			text.includes(star.name),
+			false,
+			text.includes(statPhrase(star, 1)),
 		);
 	}
 
@@ -2698,7 +2763,7 @@ const buildHeadlineText = (
 type LedeTail = {
 	text: string;
 	// The tail told a streak, so the stakes sentence must not.
-	streak?: boolean;
+	streak?: "skid" | "run" | "win";
 	// The tail named the losing side's best man with his line.
 	loserStar?: RecapPlayer;
 };
@@ -2710,23 +2775,25 @@ const ledeTail = (
 	star: RecapPlayer,
 	rng: () => number,
 ): LedeTail => {
-	const headlineStreak =
-		/straight|in a row|skid|losing streak|winning streak|-game run/.test(
-			headline.text,
-		);
-	if (!game.playoffs && !headlineStreak) {
+	// A streak in the headline is told here too, as a wire lede retells its
+	// headline: "Hawks end the Kings' 9-game winning streak" sat over a body
+	// that never said so, three times in four. When the headline named the
+	// losers' run and the winners also snapped a skid, the run goes here and
+	// the skid to the notes.
+	if (!game.playoffs) {
 		const skid = snappedSkid(shape);
-		if (skid !== undefined) {
+		const lRun = shape.loser.streakBefore;
+		const runInHeadline = /winning streak|-game run/.test(headline.text);
+		if (skid !== undefined && !(runInHeadline && lRun?.won)) {
 			return {
 				text: `, snapping ${aNumWord(skid)}-game losing streak`,
-				streak: true,
+				streak: "skid",
 			};
 		}
-		const lRun = shape.loser.streakBefore;
 		if (lRun?.won && lRun.count >= 5) {
 			return {
 				text: `, ending ${poss(theNick(shape.loser))} ${numWord(lRun.count)}-game winning streak`,
-				streak: true,
+				streak: "run",
 			};
 		}
 		const s = shape.winner.streak;
@@ -2737,7 +2804,7 @@ const ledeTail = (
 					["straight win", "win in a row", "consecutive win"],
 					"ledeStreak",
 				)}`,
-				streak: true,
+				streak: "win",
 			};
 		}
 	}
@@ -6142,7 +6209,7 @@ const spreadNote = (
 			[
 				`The ${s.points}-point favorites had to sweat this one out.`,
 				`${cap(theNick(shape.winner))} were favored by ${s.points} and won by ${shape.margin}.`,
-				`${cap(theNick(shape.winner))} were supposed to win this one comfortably, and did not.`,
+				`${cap(theNick(shape.winner))} were supposed to win this one comfortably, and barely did.`,
 			],
 			"spreadScare",
 		);
@@ -7767,20 +7834,28 @@ const buildGameRecap = (game: RecapGame): string => {
 		addContext(() => text);
 	}
 	const seriesCount = context.length;
+	// What the lede and the story told, and the body so far - without the
+	// headline, whose streak is the body's to tell too.
+	const story1 = written1.slice(headline.text.length);
 	addContext(() =>
 		stakesSentence(
 			game,
 			shape,
 			rng,
 			/underdog|-point dogs|the wrong side of the line/.test(headline.text),
-			/in a row|straight|skid|losing streak|winning streak/.test(written1) ||
-				tail.streak === true,
-			new RegExp(
-				String.raw`${nick(shape.loser)}'s? [\w-]+-game winning streak`,
-			).test(`${headline.text} ${written1}`),
+			// Not "ran off 13 straight points".
+			tail.streak === "skid" ||
+				tail.streak === "win" ||
+				/in a row|straight (?:win|game|victor)|skid|losing streak/.test(story1),
+			tail.streak === "run" ||
+				new RegExp(
+					String.raw`${nick(shape.loser)}'s? [\w-]+-game winning streak`,
+				).test(story1),
 		),
 	);
-	addContext(() => loserSkidNote(shape, rng, beatCtx.written));
+	addContext(() =>
+		loserSkidNote(shape, rng, beatCtx.written.slice(headline.text.length)),
+	);
 	addContext(() => standingsBeat(beatCtx, rng));
 	addContext(() => teamHighBeat(beatCtx, rng));
 	addContext(() => formNote(shape, rng, beatCtx.written));
@@ -9336,10 +9411,17 @@ const dayHeadline = (
 				]),
 			);
 		}
+		// "Walks off" is a shot with nothing left after it: a free throw with
+		// 12 seconds to play, and the Pacers' last possession, is not one.
+		const walkOff =
+			shot.buzzer ||
+			(shot.seconds !== undefined &&
+				shot.seconds <= 1 &&
+				!/free throw/.test(shot.shot));
 		return hl(
 			pick(rng, [
 				`${poss(shot.name)} ${shot.shot} sinks ${l} ${scoreTag(mShape)}`,
-				`${shot.name} walks off ${l} ${scoreTag(mShape)}`,
+				...(walkOff ? [`${shot.name} walks off ${l} ${scoreTag(mShape)}`] : []),
 				`${shot.name} wins it for ${tw} with a ${shot.shot}`,
 			]),
 		);
