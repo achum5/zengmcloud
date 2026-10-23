@@ -3062,7 +3062,12 @@ const leadSentence = (
 
 	// A big blowout with no standout line is a TEAM story - "Brad Miller had 13
 	// points as the Clippers won by 31" makes 13 points sound like the reason.
-	if (star.pts < 15 && shape.margin >= 20) {
+	// Not a triple-double, which is a line of its own at any point total.
+	if (
+		star.pts < 15 &&
+		shape.margin >= 20 &&
+		doubleCategories(star).length < 3
+	) {
 		if (omitResult) {
 			return shape.winner.players.some((p) => p.pts > star.pts)
 				? `${star.name} had ${statPhrase(star)}.`
@@ -3106,13 +3111,18 @@ const leadSentence = (
 	// all-round numbers in at a lower bar.
 	const topPts = Math.max(...shape.winner.players.map((p) => p.pts));
 	const plain = statPhrase(star);
+	// A triple-double (or bigger) deserves a strong verb even when the point total
+	// is modest - "chipped in 18, 12 and 12" undersells it. And it is named:
+	// "Grant Jackson produced 16 points, 12 rebounds, and 12 assists" under
+	// "Grant Jackson's triple-double carries the Thunder" never said the word,
+	// in 22 of 36 recaps with one.
+	const doubles = doubleCategories(star).length;
 	const statText =
 		plain === plural(star.pts, "point") && star.pts < topPts
 			? statPhrase(star, 2, true)
-			: plain;
-	// A triple-double (or bigger) deserves a strong verb even when the point total
-	// is modest - "chipped in 18, 12 and 12" undersells it.
-	const doubles = doubleCategories(star).length;
+			: doubles >= 3
+				? `${plain} for a ${doubleWord(doubles)!}`
+				: plain;
 	const hasExtras = statText !== plural(star.pts, "point");
 	const actionVerb =
 		doubles >= 3
@@ -5368,7 +5378,7 @@ const stakesSentence = (
 			pick(
 				rng,
 				[
-					`It snapped ${poss(theNick(shape.loser))} ${numWord(run)}-game winning streak.`,
+					`The win snapped ${poss(theNick(shape.loser))} ${numWord(run)}-game winning streak.`,
 					`${cap(theNick(shape.loser))} had won ${numWord(run)} in a row until this one.`,
 					// Not "That is the end of a four-game run for the 76ers": a run
 					// of what, and "is" of a streak that ended last night.
@@ -5391,7 +5401,7 @@ const stakesSentence = (
 				pick(
 					rng,
 					[
-						`It snapped ${poss(theNick(shape.loser))} ${numWord(run)}-game winning streak.`,
+						`The win snapped ${poss(theNick(shape.loser))} ${numWord(run)}-game winning streak.`,
 						`${cap(theNick(shape.loser))} had won ${numWord(run)} in a row until this one.`,
 						// Not "That is the end of a four-game run for the 76ers": a run
 						// of what, and "is" of a streak that ended last night.

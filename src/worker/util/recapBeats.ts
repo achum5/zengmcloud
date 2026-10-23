@@ -785,6 +785,13 @@ const STAT_ONE = {
 
 const fmtNum = (n: number) => n.toLocaleString("en-US");
 
+// An average to a decimal place, without a bare ".0": "came in averaging
+// 99.0" is a calculator talking.
+const fmtAvg = (n: number): string => {
+	const r = Math.round(n * 10) / 10;
+	return Number.isInteger(r) ? String(r) : r.toFixed(1);
+};
+
 // One milestone per recap: the biggest one on the floor, career over season,
 // points over the rest.
 export const milestoneBeat = (
@@ -1089,13 +1096,18 @@ export const nextGameBeat = (
 		wNext.oppName === ctx.loser.name &&
 		lNext.oppName === ctx.winner.name
 	) {
-		const host = theNick(wNext.home ? ctx.winner : ctx.loser);
+		const hostTeam = wNext.home ? ctx.winner : ctx.loser;
+		const host = theNick(hostTeam);
+		// Not "Same two teams next time out, this time at the Magic's place":
+		// "this time" claimed the last one was somewhere else.
 		return pick(
 			rng,
 			[
 				`The two go again next, with ${host} at home.`,
-				`They meet again in the next game, ${host} hosting.`,
-				`Same two teams next time out, this time at ${poss(host)} place.`,
+				`The two meet again in the next game, ${host} hosting.`,
+				hostTeam.region
+					? `The teams meet again next, in ${hostTeam.region}.`
+					: `The teams meet again next, at ${poss(host)} place.`,
 			],
 			"nextGameRematch",
 		);
@@ -1148,13 +1160,13 @@ export const scoringNormBeat = (
 				pick(
 					rng,
 					[
-						`${W} had been averaging ${wNorm.pts.toFixed(1)} a game coming in, and put up ${ctx.winner.pts}.`,
+						`${W} had been averaging ${fmtAvg(wNorm.pts)} a game coming in, and put up ${ctx.winner.pts}.`,
 						// Every shape names the team: these land in a paragraph with
 						// other clubs in it, and "That is 17 more" two sentences after
 						// the last mention of them attaches to the wrong one.
-						`The ${ctx.winner.pts} were ${numWord(over)} more than ${poss(wn)} season average of ${wNorm.pts.toFixed(1)}.`,
+						`The ${ctx.winner.pts} were ${numWord(over)} more than ${poss(wn)} season average of ${fmtAvg(wNorm.pts)}.`,
 						`${W} topped their season scoring average by ${numWord(over)}.`,
-						`${W} came in averaging ${wNorm.pts.toFixed(1)} and beat it by ${numWord(over)}.`,
+						`${W} came in averaging ${fmtAvg(wNorm.pts)} and beat it by ${numWord(over)}.`,
 					],
 					"normWinnerHigh",
 				),
@@ -1170,9 +1182,9 @@ export const scoringNormBeat = (
 				pick(
 					rng,
 					[
-						`${L} came in averaging ${lNorm.pts.toFixed(1)} and never got near it.`,
+						`${L} came in averaging ${fmtAvg(lNorm.pts)} and never got near it.`,
 						`${L} were held to ${ctx.loser.pts}, ${numWord(under)} under their season average.`,
-						`${L} had been scoring ${lNorm.pts.toFixed(1)} a game and managed ${ctx.loser.pts}.`,
+						`${L} had been scoring ${fmtAvg(lNorm.pts)} a game and managed ${ctx.loser.pts}.`,
 					],
 					"normLoserLow",
 				),
@@ -1191,11 +1203,11 @@ export const scoringNormBeat = (
 			pick(
 				rng,
 				[
-					`${W} held an offense averaging ${lNorm.pts.toFixed(1)} a game to ${ctx.loser.pts}.`,
+					`${W} held an offense averaging ${fmtAvg(lNorm.pts)} a game to ${ctx.loser.pts}.`,
 					// Not "Holding the Knicks to 93 was 13 below what they
 					// usually get."
-					`${cap(ln)}, who average ${lNorm.pts.toFixed(1)} points, were held to ${ctx.loser.pts}.`,
-					`${cap(ln)} were kept well under their ${lNorm.pts.toFixed(1)} points a game.`,
+					`${cap(ln)}, who average ${fmtAvg(lNorm.pts)} a game, were held to ${ctx.loser.pts}.`,
+					`${cap(ln)} were kept well under their ${fmtAvg(lNorm.pts)} a game.`,
 				],
 				"normDefense",
 			),
@@ -1226,9 +1238,9 @@ export const vsOpponentBeat = (
 		return pick(
 			rng,
 			[
-				`${p.name} has made a habit of this against ${opp}, ${v.avgPts.toFixed(1)} a game in ${numWord(v.games)} earlier meetings.`,
-				`${cap(opp)} have no answer for him: ${v.avgPts.toFixed(1)} a game from ${p.name} across their ${numWord(v.games)} previous meetings.`,
-				`${p.name} had already been averaging ${v.avgPts.toFixed(1)} against ${opp} this season.`,
+				`${p.name} has made a habit of this against ${opp}, ${fmtAvg(v.avgPts)} a game in ${numWord(v.games)} earlier meetings.`,
+				`${cap(opp)} have no answer for him: ${fmtAvg(v.avgPts)} a game from ${p.name} across their ${numWord(v.games)} previous meetings.`,
+				`${p.name} had already been averaging ${fmtAvg(v.avgPts)} against ${opp} this season.`,
 			],
 			"vsOppHabit",
 		);

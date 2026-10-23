@@ -1303,6 +1303,21 @@ describe("the night against the season's norms", () => {
 		}
 	});
 
+	// "The Spurs came in averaging 99.0 and never got near it."
+	test("a whole-number average has no '.0'", () => {
+		const w = withNorm("Celtics", 1, 100, { gp: 30, pts: 101, oppPts: 100 });
+		const l = withNorm("Knicks", 2, 84, { gp: 30, pts: 105, oppPts: 106 });
+		let said = 0;
+		for (let seed = 1; seed <= 12; seed++) {
+			const s = scoringNormBeat(game(w, l).ctx, rngFromSeed(seed));
+			if (s) {
+				said += 1;
+				assert.notMatch(s, /\b\d+\.0\b/, s);
+			}
+		}
+		assert.isAbove(said, 0);
+	});
+
 	test("the season-high sentence and the average sentence never both fire", () => {
 		const w = withNorm("Celtics", 1, 128, { gp: 30, pts: 110.4, oppPts: 108 });
 		const l = withNorm("Knicks", 2, 100, { gp: 30, pts: 104.2, oppPts: 106 });

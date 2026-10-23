@@ -1163,4 +1163,27 @@ describe("simmed recaps", () => {
 			);
 		}
 	});
+
+	// "Grant Jackson produced 16 points, 12 rebounds, and 12 assists" under
+	// "Grant Jackson's triple-double carries the Thunder": the body never
+	// said the word.
+	test("a triple-double in the lede is called one", () => {
+		for (const { gid, recap, game } of pairs) {
+			const lede = recap.split("\n\n")[1]!;
+			for (const t of game.teams) {
+				for (const p of t.players) {
+					const cats = [p.pts, p.reb, p.ast, p.stl, p.blk].filter(
+						(x) => x >= 10,
+					).length;
+					if (cats >= 3 && lede.includes(`${p.name} `)) {
+						assert.match(
+							recap.split("\n\n").slice(1).join(" "),
+							/triple-double|quadruple-double/,
+							`gid ${gid}\n${recap}`,
+						);
+					}
+				}
+			}
+		}
+	});
 });
