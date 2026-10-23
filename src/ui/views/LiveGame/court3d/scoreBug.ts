@@ -116,3 +116,13 @@ export const isFinal = (
 // (The last period, as the bug carries it: "Q4", "OT", "2OT".)
 export const finalText = (period: string): string =>
 	/OT$/.test(period) ? `FINAL/${period}` : "FINAL";
+
+// THE SHOT CLOCK ON THE BUG: whole seconds, the way it counts - and in its
+// last five, tenths and in red, the way the clock in the building shows them
+// and a broadcast's bug carries them as it runs out.
+export const SHOT_LOW = 5;
+export const SHOT_LOW_INK = "#ff5040";
+export const shotClockText = (shot: number): string => {
+	const tenths = Math.max(0, Math.ceil(shot * 10 - 1e-6) / 10);
+	return tenths < SHOT_LOW ? tenths.toFixed(1) : String(Math.ceil(shot - 1e-6));
+};

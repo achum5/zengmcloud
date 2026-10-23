@@ -1,6 +1,13 @@
 import { assert, describe, test } from "vitest";
 import { buildClocks, gameClockAt, shotClockAt } from "./clock.ts";
-import { buildFouls, finalText, foulsAt, isFinal } from "./scoreBug.ts";
+import {
+	buildFouls,
+	finalText,
+	foulsAt,
+	isFinal,
+	SHOT_LOW,
+	shotClockText,
+} from "./scoreBug.ts";
 import { compile } from "./testGame.ts";
 
 // Lines at one-second steps, in order: a beat for each.
@@ -140,5 +147,19 @@ describe("the shot clock on the score bug", () => {
 		}
 		// And on from there as the sim has it.
 		assert.closeTo(shotClockAt(clocks, 6600)!, 14.7, 0.01);
+	});
+
+	// Whole seconds as it counts down, never 0 while there is time on it;
+	// in its last five, tenths.
+	test("tenths in its last five seconds", () => {
+		assert.strictEqual(shotClockText(24), "24");
+		assert.strictEqual(shotClockText(14.2), "15");
+		assert.strictEqual(shotClockText(5), "5");
+		assert.strictEqual(shotClockText(4.96), "5");
+		assert.strictEqual(shotClockText(4.9), "4.9");
+		assert.strictEqual(shotClockText(4.31), "4.4");
+		assert.strictEqual(shotClockText(0.04), "0.1");
+		assert.strictEqual(shotClockText(0), "0.0");
+		assert.isBelow(Number(shotClockText(4.31)), SHOT_LOW);
 	});
 });

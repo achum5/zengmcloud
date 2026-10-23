@@ -90,7 +90,15 @@ import {
 } from "./keyPlays.ts";
 import { bodyOf, type Body } from "./poses.ts";
 import { offenseAt } from "./evaluate.ts";
-import { buildFouls, finalText, foulsAt, isFinal } from "./scoreBug.ts";
+import {
+	buildFouls,
+	finalText,
+	foulsAt,
+	isFinal,
+	SHOT_LOW,
+	SHOT_LOW_INK,
+	shotClockText,
+} from "./scoreBug.ts";
 import { ScoreBug, type BugRefs } from "./ScoreBug.tsx";
 import { CustomScoreBug } from "./CustomScoreBug.tsx";
 import { IntroCard, IntroTitle } from "./IntroCard.tsx";
@@ -930,6 +938,8 @@ const Court3D = ({
 		paceAt: -1,
 		clockText: "",
 		shotText: "",
+		// The shot clock's own color on the bug, kept while it shows red.
+		shotInk: undefined as string | undefined,
 		foulsText: ["", ""] as [string, string],
 		ballSide: -1,
 		// The dunk replay showing now, and the next dunk that would get one.
@@ -1328,6 +1338,8 @@ const Court3D = ({
 			const { up, wave } = crowdAt(tl, moment.t, now);
 
 			let shotText = "";
+			// (The bug's: in its last seconds, tenths - see shotClockText.)
+			let bugShot = "";
 			let clockText = "";
 			// (Over: FINAL where the clock was, and no period.)
 			const final = !staging && isFinal(tl, s.t);
@@ -1342,6 +1354,7 @@ const Court3D = ({
 				const shot = shotClockAt(p.clocks, s.t);
 				clockText = game === undefined ? "" : formatGameClock(game);
 				shotText = shot === undefined ? "" : String(Math.ceil(shot - 1e-6));
+				bugShot = shot === undefined ? "" : shotClockText(shot);
 			}
 			const pt = paintRef.current;
 			const cr = crewRef.current;
@@ -1437,11 +1450,16 @@ const Court3D = ({
 				s.clockText = clockText;
 				clockRef.current.textContent = clockText;
 			}
-			if (shotText !== s.shotText && shotRef.current) {
-				s.shotText = shotText;
-				shotRef.current.textContent = shotText;
+			if (bugShot !== s.shotText && shotRef.current) {
+				const el = shotRef.current;
+				s.shotText = bugShot;
+				el.textContent = bugShot;
 				// (Off once the game clock is shorter: gone from the bug.)
-				shotRef.current.style.display = shotText ? "flex" : "none";
+				el.style.display = bugShot ? "flex" : "none";
+				// Red in its last seconds - and back to its own color after.
+				s.shotInk ??= el.style.color;
+				const low = bugShot !== "" && Number(bugShot) < SHOT_LOW;
+				el.style.color = low ? SHOT_LOW_INK : s.shotInk;
 			}
 			// Each side's fouls this period - or BONUS - in the bug's order,
 			// visitors first (the marks are in box score order, home first).
