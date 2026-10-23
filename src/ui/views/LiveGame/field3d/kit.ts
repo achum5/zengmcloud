@@ -392,3 +392,41 @@ export const trainerLook = (kit: FieldKit, seed: string): FieldLook => {
 		official: true,
 	};
 };
+
+// A PHOTOGRAPHER: the tan vest over a dark shirt, sleeves to the wrist,
+// dark or khaki pants, a cap.
+const SHIRTS = ["#1d1e22", "#2b3040", "#3b3d42", "#45392f"];
+const CAPS = [INK, "#2b3040", "#5b5d62", WHITE];
+export const photographerLook = (seed: string): FieldLook => {
+	const rng = makeCourtRng(`photographer|${seed}`);
+	const pick = (from: string[]) => from[Math.floor(rng() * from.length)]!;
+	const shirt = pick(SHIRTS);
+	return {
+		kit: {
+			helmet: pick(CAPS),
+			facemask: INK,
+			jersey: shirt,
+			vest: "#bba47a",
+			collar: shirt,
+			number: INK,
+			numberEdge: WHITE,
+			name: INK,
+			sleeveStripes: [],
+			pants: pick(["#2b2c31", "#b9a682", "#34405a"]),
+			pantsStripes: [],
+			sock: INK,
+			sockStripes: [],
+		},
+		gear: {
+			mask: "open",
+			cleat: pick([INK, WHITE, "#6b5844"]),
+			cleatSole: "#2a2a2e",
+			cleatAccent: INK,
+			sleeve: { arms: "RL", color: shirt },
+		},
+		skin: OFFICIAL_SKIN[Math.floor(rng() * OFFICIAL_SKIN.length)]!,
+		jerseyNumber: "",
+		lastName: "",
+		official: true,
+	};
+};

@@ -54,6 +54,7 @@ import {
 	fieldGearFor,
 	fieldKitsFor,
 	officialLook,
+	photographerLook,
 	type FieldLook,
 } from "./kit.ts";
 import type { RosterMan } from "./personnel.ts";
@@ -69,6 +70,7 @@ import { replayAim } from "./replays.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
 import { coachId, sidelineAt, sidelineFor } from "./sideline.ts";
 import { HURT_MOST, MEDICS, medicId } from "./hurt.ts";
+import { cameraGear, photographersAt, photographersFor } from "./media.ts";
 import { drawFieldPlayer } from "./sprite.ts";
 import { chainGear } from "./sticks.ts";
 import { paintStadium } from "./stadium.ts";
@@ -343,6 +345,10 @@ const Field3D = ({
 				}
 			}
 		}
+		for (const [k, s] of photographersFor(gid ?? 0).entries()) {
+			looks.set(s.id, photographerLook(`${gid}|${s.id}`));
+			bodies.set(s.id, officialBody(67 + ((k * 7) % 8), 170 + ((k * 13) % 60)));
+		}
 		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [roster, kits, logos, facesVersion]);
@@ -354,6 +360,9 @@ const Field3D = ({
 	);
 	const sidelineRef = useRef(sideline);
 	sidelineRef.current = sideline;
+	const photographers = useMemo(() => photographersFor(gid ?? 0), [gid]);
+	const photographersRef = useRef(photographers);
+	photographersRef.current = photographers;
 	const sideColors = useRef<[string, string]>([kits[0].helmet, kits[1].helmet]);
 	sideColors.current = [kits[0].helmet, kits[1].helmet];
 	const looks = useRef(appearance.looks);
@@ -499,9 +508,11 @@ const Field3D = ({
 			const body = (pid: number) => bodies.current.get(pid) ?? footballBody();
 			const items: { depth: number; draw: () => void }[] = [];
 			const shadow = p.paint.stadium.style.shadow;
+			const snappers = photographersAt(photographersRef.current, moment);
 			for (const st of [
 				...moment.players,
 				...sidelineAt(sidelineRef.current, tl, moment),
+				...snappers,
 			]) {
 				const l = look(st.id);
 				if (!l) {
@@ -542,6 +553,7 @@ const Field3D = ({
 			items.push(
 				...chainGear(ctx, view, moment, body),
 				...sidelineGear(ctx, view, sideColors.current),
+				...cameraGear(ctx, view, snappers, body),
 			);
 			for (const f of moment.flags ?? []) {
 				items.push({

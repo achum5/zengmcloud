@@ -1361,10 +1361,10 @@ const FIELD_ANIMS = {
 	tend: {
 		kind: "still",
 		pose: pose({
-			hipN: -20,
-			kneeN: 104,
-			hipF: 80,
-			kneeF: 88,
+			hipN: -8,
+			kneeN: 86,
+			hipF: 92,
+			kneeF: 62,
 			lean: 34,
 			shN: 58,
 			elN: 28,
@@ -1379,10 +1379,10 @@ const FIELD_ANIMS = {
 	takeKnee: {
 		kind: "still",
 		pose: pose({
-			hipN: -20,
-			kneeN: 104,
-			hipF: 80,
-			kneeF: 88,
+			hipN: -8,
+			kneeN: 86,
+			hipF: 92,
+			kneeF: 62,
 			lean: 6,
 			shN: 18,
 			elN: 40,
@@ -1397,6 +1397,20 @@ const FIELD_ANIMS = {
 	overShoulders: {
 		kind: "still",
 		pose: pose({ shN: 12, elN: 44, abN: 78, shF: 12, elF: 44, abF: 78 }),
+	},
+	// A camera up to the eye: the right hand on the grip at his face, the
+	// left under the lens out in front of it.
+	shoot: {
+		kind: "still",
+		pose: pose({
+			shN: 70,
+			elN: 105,
+			abN: -10,
+			shF: 85,
+			elF: 55,
+			abF: -22,
+			tuck: 1,
+		}),
 	},
 	// A pole held upright in front of him in both hands, the right over the
 	// left: the chain crew's rods, the down box.
