@@ -37,7 +37,18 @@
 // replayed from any age without ever contradicting itself.
 
 import type { FaceConfig } from "facesjs";
+import { makeSeededRandom } from "../../common/random.ts";
 import type { Race } from "../../common/types.ts";
+
+// EVERY FACE ROLLS ON ITS OWN STREAM, seeded by a single draw from the
+// caller's. How many numbers a face consumes depends on the face - one roll a
+// season for a beard that has not come in, a re-roll for a style the age rules
+// turned away - so drawing them straight from Math.random made every player
+// generated after a face depend on the exact shape of these rules: tune a band
+// and the league's rosters, and every seeded test that builds one, came out
+// different. One draw per face, whatever the face does with it.
+export const faceStream = (from: () => number = Math.random): (() => number) =>
+	makeSeededRandom(Math.floor(from() * 4294967296));
 
 // The style groups, assigned by looking at all 83 rendered styles rather than
 // guessing from their names. A test asserts these cover facesjs's list exactly,
@@ -1592,7 +1603,7 @@ export const applyFaceAgingHistory = ({
 	pid,
 	familyPid,
 	race,
-	rand = Math.random,
+	rand = faceStream(),
 	onChange,
 }: {
 	face: FaceConfig;
@@ -1651,7 +1662,7 @@ export const applyRealisticFace = (
 		// exists keeps its own. Defaults to keepColors because the two callers
 		// that keep colours are the two that have a face.
 		keepFeatures = keepColors,
-		rand = Math.random,
+		rand = faceStream(),
 	}: {
 		age: number;
 		race?: Race;
@@ -1831,7 +1842,7 @@ export const ageFace = (
 	face: FaceConfig,
 	age: number,
 	pid?: number,
-	rand: () => number = Math.random,
+	rand: () => number = faceStream(),
 	// The family's shared seed, so baldness runs in one - see baldingProne.
 	familyPid?: number,
 ): boolean => {

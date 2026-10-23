@@ -117,28 +117,50 @@ test(
 	"a human's bid that beats the deal takes what that side gives",
 	{ timeout: 120_000 },
 	async () => {
-		// The 5 give a player for nothing; the human bids its best player, on
-		// about the same salary.
+		// A team gives a player for nothing; the human bids its best player, on
+		// about the same salary, to a team that would take that trade on its
+		// own. Which team that is depends on the draw - a rebuilding side wants
+		// none of a 29-year-old's contract - and the draw moves whenever
+		// anything in player generation does, so it is searched for rather than
+		// named. Teams 3 and 4 held a deal above, so the search starts past them.
 		const best = (
 			await idb.cache.players.indexGetAll("playersByTid", userTid)
 		).sort((a, b) => b.valueNoPot - a.valueNoPot)[0]!;
-		const theirs = (await idb.cache.players.indexGetAll("playersByTid", 5))
-			.filter(
-				(p) =>
-					p.valueNoPot < best.valueNoPot - 10 &&
-					Math.abs(p.contract.amount - best.contract.amount) <
-						0.15 * best.contract.amount,
-			)
-			.sort((a, b) => a.valueNoPot - b.valueNoPot)[0]!;
-		await hold([5, 6], { pids: [theirs.pid], dpids: [] }, nothing);
-		const cpu = { tid: 5, pids: [theirs.pid], dpids: [] };
 		const human = { tid: userTid, pids: [best.pid], dpids: [] };
+		let found: { tid: number; pid: number } | undefined;
+		for (let tid = 5; tid < g.get("numTeams") - 1 && !found; tid++) {
+			const candidates = (
+				await idb.cache.players.indexGetAll("playersByTid", tid)
+			)
+				.filter(
+					(p) =>
+						p.valueNoPot < best.valueNoPot - 10 &&
+						Math.abs(p.contract.amount - best.contract.amount) <
+							0.15 * best.contract.amount,
+				)
+				.sort((a, b) => a.valueNoPot - b.valueNoPot);
+			for (const p of candidates) {
+				const alone = await judgeHumanOffer(
+					{ tid, pids: [p.pid], dpids: [] },
+					human,
+				);
+				if (alone.kind === "yes" || alone.kind === "wait") {
+					found = { tid, pid: p.pid };
+					break;
+				}
+			}
+		}
+		assert.isDefined(found, "no team would take the human's best player");
+		const { tid, pid } = found!;
+		const theirs = (await idb.cache.players.get(pid))!;
+		await hold([tid, tid + 1], { pids: [theirs.pid], dpids: [] }, nothing);
+		const cpu = { tid, pids: [theirs.pid], dpids: [] };
 		const verdict = await judgeHumanOffer(cpu, human);
 		assert.strictEqual(verdict.kind, "bid");
 		assert.isTrue(await placeBid(cpu, human));
 
 		await closeWindows();
 		assert.strictEqual((await idb.cache.players.get(theirs.pid))!.tid, userTid);
-		assert.strictEqual((await idb.cache.players.get(best.pid))!.tid, 5);
+		assert.strictEqual((await idb.cache.players.get(best.pid))!.tid, tid);
 	},
 );
