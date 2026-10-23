@@ -814,8 +814,10 @@ describe("3D director", () => {
 			}
 		}
 		assert.isAbove(samples, 10_000);
-		// (A man stood out there 2 s+: 22 of them in these six games before.)
-		assert.isAtMost(stood.length, 6, stood.join("; "));
+		// (A man stood out there 2 s+: 22 of them in these six games before;
+		// a break's trailers waiting on the wings to get down the floor
+		// before they came on, 3 more.)
+		assert.isAtMost(stood.length, 3, stood.join("; "));
 	}, 240_000);
 
 	// Coming back on defense, they get back the way a defense does: into the

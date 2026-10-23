@@ -5940,7 +5940,20 @@ class Director {
 		// (Only sent back to a spot over half court - the safety a break
 		// leaves at home - he has no part here: see playMove.)
 		const home = new Set<number>();
-		for (const a of [...acts, ...(next ?? [])]) {
+		// (Nor is a run to a spot in the next step: that waits on the rest of
+		// this one - the wings still sprinting the floor, a cut - and he is
+		// not stood out there till then, but on his way up, and goes on from
+		// there to it. His own draws.)
+		const later = new Set<number>();
+		for (const a of next ?? []) {
+			if (a.type === "move") {
+				later.add(a.who);
+			}
+		}
+		for (const a of [
+			...acts,
+			...(next ?? []).filter((a) => a.type !== "move"),
+		]) {
 			if (a.type === "screen") {
 				a.who.forEach((w) => busy.add(w));
 				busy.add(a.for);
@@ -5982,7 +5995,9 @@ class Director {
 				run,
 				pid,
 				t0,
-				back && !own && !home.has(r) ? undefined : this.ownDraws(pid, t0),
+				back && !own && !home.has(r) && !later.has(r)
+					? undefined
+					: this.ownDraws(pid, t0),
 			);
 			this.go(pid, Q, start, RUN * 0.85, "run");
 		});
