@@ -583,6 +583,14 @@ const SCREEN = 0.14;
 const SCREEN_MOST = 12;
 const SCREEN_THROW = 750;
 const SCREEN_HOLD = 900;
+// A back's screen: he waits this long (ms) as if to block, the quarterback
+// drifting back this far (feet; in the gun), then out to the flat; the
+// line, set a moment, lets the rush through and three of them go out in
+// front of him; thrown this soon at the soonest.
+const SLIP_WAIT = 750;
+const SLIP_DROP = 18;
+const SLIP_DROP_GUN = 9;
+const SLIP_THROW = 1500;
 // Up for a ball at its highest, this often, thrown this deep at least
 // (feet past the quarterback) with no more than this far to go after it,
 // and a man on him (this near) or the end zone; how long he is up (ms), and
@@ -1156,29 +1164,46 @@ class Action {
 			(typeof sackYds === "number" ? sackYds : -6) * YD,
 		);
 
+		// The route the ball goes to him on.
+		const targetName =
+			thrown && target
+				? targetRoute(
+						spotOf(target.role),
+						airYds,
+						r(),
+						first === cmpI && !!this.input.out,
+					)
+				: undefined;
+		const slip = targetName === "slip";
+
 		// The quarterback's drop: none for a screen, three steps for the
 		// short game, five or seven going deep (in the gun, a step or two) -
-		// sacked, to a few steps short of where they get him.
+		// sacked, to a few steps short of where they get him; drifting back
+		// deep for a back's screen.
 		const qbStart = this.of(qb.at);
-		const dropD = sacked
-			? clamp(qbStart.d - sackD - 2 - r() * 4, 0, 24)
-			: !thrown
-				? gun
-					? 4
-					: 11
-				: gun
-					? airYds <= 0
-						? 0
-						: airYds <= 8
-							? 4
-							: 8
-					: airYds <= 0
-						? 3
-						: airYds <= 8
-							? 11
-							: airYds <= 18
-								? 18
-								: 24;
+		const dropD = slip
+			? gun
+				? SLIP_DROP_GUN
+				: SLIP_DROP
+			: sacked
+				? clamp(qbStart.d - sackD - 2 - r() * 4, 0, 24)
+				: !thrown
+					? gun
+						? 4
+						: 11
+					: gun
+						? airYds <= 0
+							? 0
+							: airYds <= 8
+								? 4
+								: 8
+						: airYds <= 0
+							? 3
+							: airYds <= 8
+								? 11
+								: airYds <= 18
+									? 18
+									: 24;
 		let setAt = this.w({ d: qbStart.d - dropD, a: qbStart.a });
 		const dropMs = dropD === 0 ? 0 : 300 + dropD * 55;
 		// Now and then a fake to a back first - play action: out to him as
@@ -1240,19 +1265,29 @@ class Action {
 		const ready = qb.t + 150;
 		qb.hold(ready, "qbSet", this.ahead);
 
+		// A back's screen: up beside the quarterback as if to block, a beat.
+		const slipSide = slip
+			? Math.sign(this.of(target!.at).a) || (r() < 0.5 ? -1 : 1)
+			: 0;
+		if (slip) {
+			target!.hold(snap + 100);
+			target!.go(
+				this.w({ d: this.of(setAt).d + 3, a: qbStart.a + slipSide * 3 }),
+				snap + 550,
+				"passSet",
+				this.ahead,
+			);
+			target!.hold(snap + SLIP_WAIT, "passSet", this.ahead);
+		}
+
 		// The routes, each man off the line a moment after the snap.
 		const routes = new Map<number, Route>();
 		for (const m of runners) {
 			const start = this.of(m.at);
 			const inSign: 1 | -1 =
 				start.a > 0 ? -1 : start.a < 0 ? 1 : r() < 0.5 ? 1 : -1;
-			if (m === target && thrown) {
-				const name = targetRoute(
-					spotOf(m.role),
-					airYds,
-					r(),
-					first === cmpI && !!this.input.out,
-				);
+			if (m === target && thrown && targetName) {
+				const name = targetName;
 				const u = r();
 				// A back out of the backfield to the side of the man who
 				// brings him down.
@@ -1305,11 +1340,13 @@ class Action {
 			const least =
 				tr.name === "screen"
 					? snap + SCREEN_THROW + r() * 300 + fl.ms
-					: snap +
-						TO_THROW +
-						Math.max(0, airYds) * TO_THROW_YD +
-						r() * TO_THROW_SPREAD +
-						fl.ms;
+					: slip
+						? snap + SLIP_THROW + r() * 400 + fl.ms
+						: snap +
+							TO_THROW +
+							Math.max(0, airYds) * TO_THROW_YD +
+							r() * TO_THROW_SPREAD +
+							fl.ms;
 			catchAt = Math.max(onTime, ready + 300 + fl.ms, least) + hold;
 			throwAt = catchAt - fl.ms;
 			this.runRoute(target, tr, go, catchAt);
@@ -1395,6 +1432,16 @@ class Action {
 
 		if (thrown && target && tr?.name === "screen") {
 			this.screenBlocks(target, runners, catchAt);
+		} else if (thrown && target && catchPt && slip) {
+			this.slipBlocks(
+				blockers,
+				rushers,
+				qb,
+				slipSide,
+				catchPt,
+				throwAt,
+				catchAt,
+			);
 		}
 
 		// And what came of it.
@@ -1490,35 +1537,86 @@ class Action {
 	}
 
 	// A screen out wide: the receivers on his side off their routes and out
-	// onto the men nearest where he catches it, there as it gets to him, and
-	// on them a moment after.
+	// in front of him.
 	screenBlocks(target: Actor, runners: Actor[], catchAt: number) {
 		const { snap } = this.input;
-		const r = this.r;
-		const at = this.of(target.posAt(catchAt));
-		const side = Math.sign(at.a) || 1;
+		const at = target.posAt(catchAt);
+		const side = Math.sign(this.of(at).a) || 1;
 		const mates = runners.filter(
 			(m) =>
 				m !== target &&
 				spotOf(m.role) !== "back" &&
 				Math.sign(this.of(m.posAt(snap)).a) === side,
 		);
+		this.leadBlocks(mates.slice(0, 2), snap + 200, at, catchAt);
+	}
+
+	// A back's screen: the line set a moment, then the rush let through on
+	// to the quarterback - and the three on the side of it out in front of
+	// the back.
+	slipBlocks(
+		blockers: Actor[],
+		rushers: Actor[],
+		qb: Actor,
+		side: number,
+		catchPt: Pt,
+		throwAt: number,
+		catchAt: number,
+	) {
+		const { snap } = this.input;
+		const from = snap + SLIP_WAIT + 100;
+		const line = blockers
+			.filter((b) => OL.has(b.role) && !this.done.has(b.pid))
+			.sort((a, b) => this.of(b.at).a * side - this.of(a.at).a * side)
+			.slice(0, 3);
+		const through = rushers.filter(
+			(m) =>
+				!this.done.has(m.pid) &&
+				line.some((b) => dist(b.posAt(from), m.posAt(from)) < 5),
+		);
+		for (const m of through) {
+			m.cut(from);
+			const q = this.of(qb.posAt(throwAt));
+			m.chase(
+				this.w({ d: q.d + 3, a: q.a + (this.of(m.at).a - q.a) * 0.3 }),
+				throwAt + 150,
+				m.top * 0.9,
+			);
+		}
+		this.leadBlocks(line, from, catchPt, catchAt, new Set(through));
+	}
+
+	// Blockers out in front of a man catching it behind the line: each off
+	// what he was doing at `from` and out onto the man nearest where he
+	// catches it (each a man of his own, none of `not`) - there as it gets
+	// to him, or as soon after as he can be - and on him a moment.
+	leadBlocks(
+		men: Actor[],
+		from: number,
+		catchPt: Pt,
+		catchAt: number,
+		not = new Set<Actor>(),
+	) {
+		const r = this.r;
 		const near = this.d
-			.filter((m) => !this.done.has(m.pid))
+			.filter((m) => !this.done.has(m.pid) && !not.has(m))
 			.sort(
 				(a, b) =>
-					dist(a.posAt(catchAt), this.w(at)) -
-					dist(b.posAt(catchAt), this.w(at)),
+					dist(a.posAt(catchAt), catchPt) - dist(b.posAt(catchAt), catchPt),
 			);
-		for (const b of mates.slice(0, 2)) {
+		for (const b of men) {
 			const m = near.shift();
 			if (!m) {
 				return;
 			}
-			b.cut(snap + 200);
+			b.cut(from);
 			const fps = b.top * 0.9;
 			let meet: { t: number; at: Pt } | undefined;
-			for (let c = catchAt - 150; c <= catchAt + 900; c += 50) {
+			for (
+				let c = Math.max(catchAt - 150, b.t + 300);
+				c <= catchAt + 1500;
+				c += 50
+			) {
 				const p = this.of(m.posAt(c));
 				const to = this.w({ d: p.d - BLOCK_GAP, a: p.a });
 				if ((dist(b.at, to) / fps) * 1000 <= c - b.t) {
@@ -1532,7 +1630,7 @@ class Action {
 			b.go(meet.at, meet.t);
 			m.cut(meet.t);
 			const p = this.of(m.at);
-			const end = catchAt + SCREEN_HOLD + r() * 500;
+			const end = Math.max(meet.t, catchAt) + SCREEN_HOLD + r() * 500;
 			const give = 1 + r() * 2.5;
 			m.go(this.w({ d: p.d + give, a: p.a }), end, "engage", this.behind);
 			b.go(

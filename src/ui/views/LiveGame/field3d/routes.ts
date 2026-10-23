@@ -25,6 +25,7 @@ export type RouteName =
 	| "flat"
 	| "swing"
 	| "screen"
+	| "slip"
 	| "checkdown"
 	| "wheel";
 
@@ -243,6 +244,18 @@ export const layRoute = (
 			const path = [s, at(Math.min(D, s.d - 3), s.a + out * (3 + 3 * u))];
 			return laid(name, path, 1, true);
 		}
+		case "slip": {
+			// A back's screen: up beside the quarterback as if to block, then
+			// slipped out behind the line to the flat, sitting down there
+			// for it.
+			const side = start.a === 0 ? (v < 0.5 ? -1 : 1) : Math.sign(start.a);
+			const path = [
+				s,
+				at(s.d + 2, s.a + side * 3),
+				at(Math.min(D, s.d + 4), side * (14 + 8 * u)),
+			];
+			return laid(name, path, 2, true);
+		}
 		case "checkdown": {
 			// A back out of the backfield to an open spot short, sitting
 			// down in it.
@@ -280,7 +293,10 @@ const TARGET_ROUTES: { upTo: number; by: Record<Spot, Choice> }[] = [
 			wide: [["screen", 1]],
 			slot: [["screen", 1]],
 			te: [["flat", 1]],
-			back: [["swing", 1]],
+			back: [
+				["swing", 1],
+				["slip", 2],
+			],
 		},
 	},
 	{
@@ -460,6 +476,7 @@ const DECOY_DEPTH: Record<RouteName, [number, number]> = {
 	flat: [1, 4],
 	swing: [-1, 0],
 	screen: [-1, -1],
+	slip: [-1, -1],
 	checkdown: [3, 5],
 	wheel: [15, 22],
 };
@@ -486,6 +503,7 @@ const OUTSIDE = new Set<RouteName>([
 	"flat",
 	"swing",
 	"screen",
+	"slip",
 	"wheel",
 ]);
 
