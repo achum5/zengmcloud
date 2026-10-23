@@ -855,6 +855,37 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "Elsewhere, the Warriors edged the Pacers 101-98. Around the league,
+	// the Heat beat the Spurs 101-83." Three results or fewer are one list.
+	// And "No game topped the Bucks' 253-point shootout with the Pistons"
+	// after the wrap had given that 129-124 itself.
+	test("a wrap's short list of results is one sentence, and a total is not re-added", () => {
+		const OPENER =
+			/^(?:Elsewhere|Also on the night|There was more besides|There was drama elsewhere too|Also worth the watch|Around the league|In the other games?)\b/;
+		for (const wrap of dayRecaps) {
+			const sentences = wrap
+				.split("\n\n")
+				.filter((p) => !p.startsWith("*"))
+				.join(" ")
+				.split(/(?<=[!.?])\s+/);
+			const lists = sentences.filter((s) => OPENER.test(s));
+			const results = lists.reduce(
+				(n, s) => n + (s.match(/\b\d{2,3}-\d{2,3}\b/g) ?? []).length,
+				0,
+			);
+			assert.ok(lists.length < 2 || results > 3, wrap);
+			for (const m of wrap.matchAll(
+				/(\d{3})-point shootout|combined for (\d{3}) points/g,
+			)) {
+				const total = Number(m[1] ?? m[2]);
+				const said = [...wrap.matchAll(/\b(\d{2,3})-(\d{2,3})\b/g)].some(
+					(s) => Number(s[1]) + Number(s[2]) === total,
+				);
+				assert.ok(!said || total >= 260, wrap);
+			}
+		}
+	});
+
 	// "Bulls cannot keep up with the Pacers, 110-107" over a game won on a
 	// jumper with 19.9 seconds left.
 	test("a headline's verb fits the margin", () => {

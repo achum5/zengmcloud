@@ -1877,6 +1877,42 @@ describe("getAutoDayRecap", () => {
 		assert.ok(/Kenny Satterfield.*(losing effort|loss)/.test(recap), recap);
 	});
 
+	// "Vince King's 26 points, 11 rebounds, and 4 steals came in the Trail
+	// Blazers' 128-103 loss" - a line no desk carries past the box score, in
+	// more than half of all wraps. The game is still told, as a result.
+	test("an ordinary line in a rout is not the wrap's losing effort", () => {
+		const games = [
+			mkGame(
+				5050,
+				"Knicks",
+				"Mavericks",
+				112,
+				104,
+				true,
+				player({ name: "Quentin Richardson", pts: 31, reb: 7 }),
+				player({ name: "Ray Allen", pts: 22 }),
+			),
+			mkGame(
+				5051,
+				"Hawks",
+				"Timberwolves",
+				128,
+				103,
+				true,
+				player({ name: "David Wesley", pts: 24 }),
+				player({ name: "Kenny Satterfield", pts: 26, reb: 11, stl: 4 }),
+			),
+		];
+		const recap = getAutoDayRecap({
+			season: 2003,
+			day: 12,
+			playoffs: false,
+			games,
+		});
+		assert.ok(!recap.includes("Kenny Satterfield"), recap);
+		assert.ok(recap.includes("128-103"), recap);
+	});
+
 	test("the day recap covers the night's injuries", () => {
 		const hurtStar = player({
 			name: "Vince Carter",
@@ -6514,7 +6550,8 @@ describe("a full slate does not repeat itself", () => {
 	// 121-88. ... Jaden Green's 22 points and 12 assists came in the Lakers'
 	// 121-88 loss to the Heat." Darius Hayes leads all scorers here, which
 	// tells the game first; a triple-double from another game sits between,
-	// and a game-winner keeps his game from being the marquee.
+	// and a game-winner keeps his game from being the marquee. (A 30-and-12
+	// in a 13-point loss: a 22-and-12 in a 33-point one is no longer told.)
 	test("a day wrap gives a game's score once", () => {
 		const side = (tid: number, name: string, pts: number, star: RecapPlayer) =>
 			realisticTeam(
@@ -6557,8 +6594,8 @@ describe("a full slate does not repeat itself", () => {
 				side(
 					4,
 					"Lakers",
-					88,
-					player({ name: "Jaden Green", pts: 22, ast: 12, fg: 8, fga: 19 }),
+					108,
+					player({ name: "Jaden Green", pts: 30, ast: 12, fg: 11, fga: 21 }),
 				),
 			),
 			two(
@@ -6610,7 +6647,7 @@ describe("a full slate does not repeat itself", () => {
 			.filter((p) => !p.startsWith("*"))
 			.join(" ");
 		assert.match(body, /Jaden Green/, wrap);
-		assert.equal(body.split("121-88").length, 2, wrap);
+		assert.equal(body.split("121-108").length, 2, wrap);
 	});
 
 	test("no sentence frame is used three times on one night", () => {

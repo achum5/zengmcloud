@@ -9586,7 +9586,14 @@ export const leagueNotes = (
 			),
 		});
 	}
-	if (highest && highest.total >= 240) {
+	// Nor a total the wrap has already given as a score: "No game topped the
+	// Bucks' 253-point shootout with the Pistons" closed a four-game wrap that
+	// had opened on the Bucks' 129-124 win.
+	const totalTold =
+		highest !== undefined &&
+		highest.total < 260 &&
+		written.includes(`${highest.shape.winner.pts}-${highest.shape.loser.pts}`);
+	if (highest && highest.total >= 240 && !totalTold) {
 		const ot = highest.shape.ot;
 		cands.push({
 			sort: 1,
@@ -9596,7 +9603,11 @@ export const leagueNotes = (
 					? `${cap(theNick(highest.shape.winner))} and ${theNick(
 							highest.shape.loser,
 						)} put up the slate's biggest total, ${highest.total} points in ${
-							ot === 1 ? "an overtime game" : `a game that went ${ot} overtimes`
+							ot === 1
+								? "an overtime game"
+								: ot <= 3
+									? `a ${otPhrase(ot).replace(" ", "-")} game`
+									: `a game that went ${numWord(ot)} overtimes`
 						}.`
 					: pickByDay(
 							day,
@@ -10141,13 +10152,21 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		// effort against the Mavericks." So another game is PREFERRED - and
 		// only preferred, because when the mirror is the only monster line in
 		// defeat on the slate, printing it beats losing it.
+		// A MONSTER line, though. Any 20-and-10 in defeat made the cut, so
+		// "Bennedict Brooks' 27 points and 11 rebounds came in the Nets'
+		// 119-96 loss" ran in more than half of all wraps, about lines no
+		// desk would carry past the box score - a 26-and-11 in a 25-point
+		// rout among them. The bar is the line's size against how far off
+		// the game was.
 		const lossCandidates = performers.filter(
 			(perf) =>
 				!named.has(perf.p) &&
 				!perf.won &&
 				!marqueeTids.has(perf.team.tid) &&
 				((perf.p.pts >= 20 && doubleCategories(perf.p).length >= 2) ||
-					perf.p.pts >= 35),
+					perf.p.pts >= 35) &&
+				loserLineSize(perf.p) >=
+					26 + Math.max(0, analyzeShape(perf.game).margin - 10),
 		);
 		const lossPerf =
 			lossCandidates.find((perf) => !coveredGames.has(perf.game)) ??
@@ -10315,8 +10334,13 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			// at the wire" never said whose side he was on.
 			blurb = `${theNick(shape.winner)} beat ${theNick(shape.loser)} ${scoreTag(shape)} on ${poss(shot2.name)} ${shot2.shot}`;
 		} else if (shape.ot > 0) {
+			// "Survived" is a close one, and said once: "the Heat survived the
+			// Kings 124-121 in overtime and the Jazz survived the Suns 133-126
+			// in overtime".
 			blurb = `${theNick(shape.winner)} ${
-				shape.ot === 1 ? "survived" : "outlasted"
+				shape.ot === 1 && shape.margin <= 3
+					? freshVerb(["survived", "outlasted"], 0, usedVerbs)
+					: "outlasted"
 			} ${theNick(shape.loser)} ${plainScore(shape)} in ${otPhrase(shape.ot)}`;
 		} else if (shape.margin >= 25) {
 			blurb = `${theNick(shape.winner)} ${freshVerb(shape.margin >= 35 ? BIG_ROUT_VERBS : ROUT_VERBS, 0, usedVerbs)} ${theNick(shape.loser)} ${scoreTag(shape)}`;
@@ -10356,6 +10380,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 				: `${notableOpener}: ${naturalList(notableBlurbs)}.`,
 		);
 	}
+	const notableAt = para2.length - 1;
 
 	// Around the league: sweep up every game not already told, with its score, so
 	// nothing on the slate goes unmentioned. Ordered by notability so the more
@@ -10414,8 +10439,16 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			// two-game night ("In the other games, the Gold Club beat the Turtles").
 			items.length === 1 ? "In the other game" : "In the other games",
 		].filter((o) => o.split(" ")[0] !== notableFirstWord);
-		const opener = pick(rng, candidates, "roundupOpener");
-		para2.push(`${opener}, ${naturalList(items)}.`);
+		if (notableBlurbs.length > 0 && notableBlurbs.length + items.length <= 3) {
+			// Three results or fewer are one list, not two sentences of one
+			// game each: "Elsewhere, the Warriors edged the Pacers 101-98.
+			// Around the league, the Heat beat the Spurs 101-83."
+			para2[notableAt] =
+				`Elsewhere, ${naturalList([...notableBlurbs, ...items])}.`;
+		} else {
+			const opener = pick(rng, candidates, "roundupOpener");
+			para2.push(`${opener}, ${naturalList(items)}.`);
+		}
 	}
 
 	// The night's own context, shared by the beats below so no team or player
