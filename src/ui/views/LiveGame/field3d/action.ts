@@ -487,6 +487,15 @@ const PURSUIT_STEP = 350;
 const PURSUIT_LEAD = 300;
 const PURSUIT_RING = 10;
 
+// A quarterback with it in the open, down feet first this often - a run
+// that ends on a stretch this long at least (feet); sliding on this far
+// (feet), this long (ms); the men on him pulled up this far off him.
+const QB_SLIDE = 0.55;
+const SLIDE_FROM = 15;
+const SLIDE_FT = 5;
+const SLIDE_MS = 650;
+const PULL_UP_FT = 3.4;
+
 // After the whistle, how long a man down stays down, and getting up.
 const DOWN_MS = 900;
 const GET_UP_MS = 1000;
@@ -590,6 +599,9 @@ const DOWN = new Set<Move>([
 	"supine",
 	"getUp",
 	"getUpBack",
+	"qbSlide",
+	"slid",
+	"sitUp",
 ]);
 const CLOSE = 0.85;
 const FLAT_OUT = 0.97;
@@ -1631,6 +1643,19 @@ class Action {
 			this.fumbled(fumI, carrier, end.pt, down.t, down.by, chasers);
 			return;
 		}
+		// (A quarterback out in the open, as often as not, down feet first
+		// before they get to him.)
+		const l = carrier.last;
+		if (
+			carrier.role === "QB" &&
+			moveKind(l.move) === "cycle" &&
+			dist(l.from, l.to) > SLIDE_FROM &&
+			this.r() < QB_SLIDE
+		) {
+			this.slideDown(carrier, down.by, end.pt, down.t);
+			this.pursue(chasers, end.pt, down.t, down.by, carrier);
+			return;
+		}
 		const pile = this.tackle(carrier, down.by, end.pt, down.t);
 		this.gangUp(chasers, pile, down.t, down.by);
 		this.pursue(chasers, end.pt, down.t, down.by, carrier);
@@ -1922,6 +1947,37 @@ class Action {
 			this.done.add(m.pid);
 		});
 		return downAt;
+	}
+
+	// A quarterback giving himself up: feet first at `pt` - the ball spotted
+	// there - sliding on a few feet, and up; the men on him there as he goes
+	// down, pulled up over him, no hit.
+	slideDown(qb: Actor, by: Actor[], pt: Pt, t: number) {
+		const r = this.r;
+		const fall = qb.yaw;
+		const at = {
+			x: pt.x + Math.cos(fall) * SLIDE_FT,
+			y: pt.y + Math.sin(fall) * SLIDE_FT,
+		};
+		qb.act("qbSlide", t + SLIDE_MS, fall, at);
+		qb.hold(t + SLIDE_MS + DOWN_MS, "slid");
+		qb.act("sitUp", t + SLIDE_MS + DOWN_MS + GET_UP_MS * 0.8);
+		this.done.add(qb.pid);
+		const lead = t - HIT_MS;
+		by.forEach((m, k) => {
+			const from = m.posAt(Math.max(this.seen, Math.min(m.t, lead - 600)));
+			const ang =
+				Math.atan2(from.y - at.y, from.x - at.x) +
+				(k === 0 ? 0 : (r() < 0.5 ? -1 : 1) * 0.9);
+			const over = {
+				x: at.x + Math.cos(ang) * PULL_UP_FT,
+				y: at.y + Math.sin(ang) * PULL_UP_FT,
+			};
+			const face = this.toward(over, at);
+			this.closeOn(m, over, t + 250 + k * 150, face);
+			m.hold(t + SLIDE_MS + DOWN_MS + 400, "stand", face);
+			this.done.add(m.pid);
+		});
 	}
 
 	// More of them in on it - the first one or two of `men` there as he

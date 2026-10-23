@@ -144,6 +144,23 @@ const SUPINE = pose({
 	wide: 0.6,
 });
 
+// Sat on the turf at the end of a slide: the lead leg out in front of him,
+// the other knee up, leaning back on a hand.
+const SLID = pose({
+	hipN: 92,
+	kneeN: 6,
+	hipF: 128,
+	kneeF: 128,
+	lean: -30,
+	shN: 20,
+	elN: 60,
+	abN: 20,
+	shF: -14,
+	elF: 40,
+	abF: 34,
+	wide: 0.5,
+});
+
 // The quarterback set in the pocket: on the balls of his feet, the ball up
 // at his chest in both hands.
 const QB_SET = pose({
@@ -1261,6 +1278,66 @@ const FIELD_ANIMS = {
 			],
 			[
 				0.65,
+				pose({
+					hipN: 96,
+					kneeN: 130,
+					hipF: 100,
+					kneeF: 134,
+					lean: 34,
+					shN: 30,
+					elN: 30,
+					shF: 30,
+					elF: 30,
+					wide: 0.6,
+				}),
+			],
+			[1, BASE],
+		],
+	},
+	// A quarterback giving himself up: down feet first on the run, on his
+	// seat, the lead leg out ahead of him and the other drawn up, leaning
+	// back away from the hit.
+	qbSlide: {
+		kind: "act",
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 34,
+					kneeN: 40,
+					hipF: -18,
+					kneeF: 50,
+					lean: 12,
+					shF: 30,
+					elF: 60,
+					abF: 20,
+				}),
+			],
+			[
+				0.3,
+				pose({
+					hipN: 64,
+					kneeN: 18,
+					hipF: 52,
+					kneeF: 96,
+					lean: -14,
+					shF: 10,
+					elF: 50,
+					abF: 30,
+				}),
+			],
+			[0.6, { ...SLID, lean: -40, hipF: 116, kneeF: 120 }],
+			[1, SLID],
+		],
+	},
+	slid: { kind: "still", pose: SLID },
+	// Up off his seat: his feet drawn under him, up off them.
+	sitUp: {
+		kind: "act",
+		keys: [
+			[0, SLID],
+			[
+				0.5,
 				pose({
 					hipN: 96,
 					kneeN: 130,
