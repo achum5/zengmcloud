@@ -226,6 +226,7 @@ describe("simmed recaps", () => {
 				// Raptors at the half", "The 20 were 13 more than the 7.0 a game
 				// he had been averaging".
 				/shared it, \d+ assists|[Ii]t was \d+-\d+ the [A-Z]|were \d+ more than the [\d.]+ a game/,
+				/let all of it go before winning it/,
 				// "It was a 11-point game", "the end of a eight-game run".
 				/\ba (?:8|11|18)-|\ba (?:eight|eleven|eighteen)-/,
 				// Prose spells out a streak: "a six-game", not "a 6-game".

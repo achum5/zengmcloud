@@ -2804,11 +2804,14 @@ const teamLede = (
 				rng,
 				ledTeam
 					? [
-							`${cap(numWord(w.dblFig))} ${nick(shape.winner)} scored in double figures as ${W} ${verb} ${L}${score}${tail}, ${poss(star.name)} ${statPhrase(star)} leading the way.`,
+							// Not "Six Jazz scored in double figures as the Jazz got
+							// past..., Keegan Mathis' 15 points leading the way": the
+							// team twice in one clause, and the man an afterthought.
+							`${poss(star.name)} ${statPhrase(star)} led ${numWord(w.dblFig)} players in double figures as ${W} ${verb} ${L}${score}${tail}.`,
 							`${cap(W)} got ${numWord(w.dblFig)} men into double figures and ${verb} ${L}${score}${tail}, led by ${poss(star.name)} ${statPhrase(star)}.`,
 						]
 					: [
-							`${cap(numWord(w.dblFig))} ${nick(shape.winner)} scored in double figures as ${W} ${verb} ${L}${score}${tail}, ${star.name} adding ${statPhrase(star)}.`,
+							`${star.name} had ${statPhrase(star)}, and ${numWord(w.dblFig)} players reached double figures as ${W} ${verb} ${L}${score}${tail}.`,
 							`${cap(W)} got ${numWord(w.dblFig)} men into double figures and ${verb} ${L}${score}${tail}, with ${star.name} putting up ${statPhrase(star)}.`,
 						],
 				"teamLedeBalance",
@@ -5715,7 +5718,7 @@ const bigLeadNote = (
 			return pick(
 				rng,
 				[
-					`${W} had led by ${lead} and let all of it go before winning it.`,
+					`${W} let ${aNum(lead)}-point lead get away and still won.`,
 					`${W} blew ${aNum(lead)}-point lead and won anyway.`,
 				],
 				"blownThenWon",

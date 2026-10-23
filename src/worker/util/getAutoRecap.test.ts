@@ -3562,6 +3562,60 @@ describe("copy that only reads wrong in context", () => {
 		}
 	});
 
+	// "Six Jazz scored in double figures as the Jazz got past the
+	// Timberwolves, Keegan Mathis adding 15 points": the team twice in one
+	// clause, and the man tacked on at the end.
+	test("a balanced lede names the team once and the man first", () => {
+		let balanced = 0;
+		for (let gid = 400; gid < 440; gid++) {
+			const recap = getAutoRecap(
+				game({
+					gid,
+					teams: [
+						team({
+							tid: 1,
+							name: "Jazz",
+							abbrev: "UTA",
+							pts: 104,
+							players: [
+								player({ name: "Keegan Mathis", pts: 15, reb: 9, ast: 4 }),
+								player({ name: "Obi Mathis", pts: 17, reb: 3, ast: 2 }),
+								player({ name: "Cade Mathis", pts: 16, reb: 4, ast: 3 }),
+								player({ name: "Zeke Mathis", pts: 14, reb: 3, ast: 5 }),
+								player({ name: "Jalen Mathis", pts: 13, reb: 2, ast: 4 }),
+								player({ name: "Marcus Mathis", pts: 12, reb: 5, ast: 3 }),
+								player({ name: "Herb Mathis", pts: 11, reb: 4, ast: 2 }),
+								player({ name: "Vince Mathis", pts: 6, reb: 2, ast: 1 }),
+							],
+						}),
+						team({
+							tid: 2,
+							name: "Timberwolves",
+							abbrev: "MIN",
+							pts: 99,
+							players: [
+								player({ name: "Devin Ingram", pts: 24, reb: 6, ast: 3 }),
+								player({ name: "Amen Ingram", pts: 20, reb: 4, ast: 5 }),
+								player({ name: "Trey Ingram", pts: 18, reb: 7, ast: 2 }),
+								player({ name: "Yuta Ingram", pts: 15, reb: 5, ast: 1 }),
+								player({ name: "Naji Ingram", pts: 12, reb: 3, ast: 2 }),
+								player({ name: "Grant Ingram", pts: 10, reb: 2, ast: 1 }),
+							],
+						}),
+					],
+					winnerTid: 1,
+				}),
+			);
+			const lede = recap.split("\n\n")[1] ?? "";
+			if (/double figures/.test(lede)) {
+				balanced += 1;
+			}
+			assert.doesNotMatch(lede, /\bJazz\b[^.]*\bJazz\b/, recap);
+			assert.doesNotMatch(lede, /, \w+ \w+ adding \d+/, recap);
+		}
+		assert.ok(balanced > 0, "the balanced lede never ran");
+	});
+
 	test("a game-winner headline is not followed by someone else's scoring line", () => {
 		// The headline is always the winning shot when there is one, so the body
 		// has to reach it immediately. Opening on the leading scorer made the
