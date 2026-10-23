@@ -6337,8 +6337,18 @@ const buildGameRecap = (game: RecapGame): string => {
 		flowCovered === "wire" || flowCovered === "run" || !!story,
 		balanceTold,
 	);
+	// In a story the team's number goes with the team's men, after the
+	// supporting cast: dropped in before the finish it broke the clock -
+	// "They were 14 up going into the fourth. They made 25 free throws to 11
+	// for the Trail Blazers. The Hornets had led by 18, and very nearly let
+	// it go." Without a story it stays with the lede, as before.
+	let storyStat: string | undefined;
 	if (stat && (story ? storyPara.length < 6 : para1.length < 4)) {
-		beforeFinish(stat.text);
+		if (story) {
+			storyStat = stat.text;
+		} else {
+			beforeFinish(stat.text);
+		}
 		spentFacts.add(stat.fact);
 		if (stat.topic) {
 			spentTopics.add(stat.topic);
@@ -6612,6 +6622,7 @@ const buildGameRecap = (game: RecapGame): string => {
 		supportText = supportSentence(shape, star, rng, heroTold);
 		return supportText;
 	});
+	addWinner(() => storyStat, 6);
 	// A +20 in a 25-point rout is the rout restated. In a game decided by
 	// that much the swing is a note only when it outran the final margin.
 	addWinner(() => {

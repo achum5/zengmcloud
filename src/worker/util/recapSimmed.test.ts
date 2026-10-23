@@ -664,6 +664,26 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "They were 14 up going into the fourth. They made 25 free throws to 11
+	// for the Trail Blazers. The Hornets had led by 18, and very nearly let
+	// it go." A team's number dropped into the middle of the game's last
+	// minutes broke the clock; it goes with the team's men.
+	test("no team number interrupts the finish", () => {
+		const STAT =
+			/^(?:The [A-Z][\w ]*|They) (?:knocked down|hit|made|got|piled up|finished with|racked up|assisted on|forced|turned|hounded|won the glass|controlled the boards|out-rebounded|blocked|sent back|shot)\b/;
+		const CLOCK =
+			/with [\d.:]+ (?:seconds? )?(?:left|to go|to play)|at the buzzer|two minutes/;
+		for (const { gid, recap } of pairs) {
+			for (const para of recap.split("\n\n").slice(1)) {
+				const sentences = para.split(/(?<=[!.?])\s+/);
+				const lastClock = sentences.findLastIndex((x) => CLOCK.test(x));
+				sentences.slice(0, Math.max(0, lastClock)).forEach((x) => {
+					assert.notMatch(x, STAT, `gid ${gid}\n${para}`);
+				});
+			}
+		}
+	});
+
 	// A headline cut down to "Herb Hayes scores 25" leaves his whole line to
 	// the lede.
 	test("a headline's trimmed line is given in full underneath", () => {
