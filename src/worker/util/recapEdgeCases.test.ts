@@ -2470,3 +2470,258 @@ describe("not 'led' twice running", () => {
 		assert.isAbove(told, 0);
 	});
 });
+
+// THE DECK'S STORY IS THE BODY'S. "Hawks rally past the Pistons from 20
+// down" over "Isaiah Ellis had a night-high 36 points... in the Pistons'
+// 123-106 loss to the Hawks"; "Celtics rally past the Magic from 20 down"
+// over a body that never gave the game, because the Knicks had also won
+// 103-100; and "Payton Lowry's 28 powers the Spurs past the Bucks" over a
+// body without Payton Lowry.
+describe("the deck and the headline are told below", () => {
+	const NAMES = [
+		"Hawks",
+		"Pistons",
+		"Celtics",
+		"Magic",
+		"Knicks",
+		"Mavericks",
+		"Suns",
+		"Jazz",
+		"Bulls",
+		"Nets",
+	];
+	const match = (
+		i: number,
+		w: number,
+		l: number,
+		opts: { down?: number; star?: number; loserStar?: number } = {},
+	) => {
+		const home = squad(
+			{ tid: i * 2 + 1, name: NAMES[i * 2]! },
+			{
+				name: `Ace ${NAMES[i * 2]}`,
+				pid: i * 20 + 11,
+				pts: opts.star ?? 22,
+				fg: 9,
+				fga: 19,
+			},
+			w,
+		);
+		const away = squad(
+			{ tid: i * 2 + 2, name: NAMES[i * 2 + 1]! },
+			{
+				name: `Bo ${NAMES[i * 2 + 1]}`,
+				pid: i * 20 + 21,
+				pts: opts.loserStar ?? 18,
+				fg: 8,
+				fga: 18,
+			},
+			l,
+		);
+		return game([home, away], {
+			gid: 80 + i,
+			flow: {
+				leadChanges: 3,
+				ties: 2,
+				maxLead: [Math.max(w - l, 1), opts.down ?? 4],
+				maxLeadAt: [4, 2],
+			},
+		});
+	};
+
+	test("a deck comeback is told, and a shared final does not hide a game", () => {
+		let deckComebacks = 0;
+		for (let day = 1; day <= 15; day++) {
+			const games = [
+				// The marquee: a big night.
+				match(0, 121, 100, { star: 44 }),
+				// A comeback whose loser had the night's second line.
+				match(1, 103, 100, { down: 20, loserStar: 38 }),
+				// Another 103-100, told through its star.
+				match(2, 103, 100, { star: 36 }),
+				match(3, 110, 97),
+				match(4, 99, 92),
+			].map((g) => ({ ...g, day }));
+			const wrap = getAutoDayRecap({
+				season: 2025,
+				day,
+				playoffs: false,
+				games,
+			});
+			clean(wrap);
+			const [, deck = "", ...rest] = wrap.split("\n\n");
+			const body = rest.join(" ");
+			for (const t of [
+				"Hawks",
+				"Pistons",
+				"Celtics",
+				"Magic",
+				"Knicks",
+				"Mavericks",
+				"Suns",
+				"Jazz",
+				"Bulls",
+				"Nets",
+			]) {
+				assert.include(body, t, wrap);
+			}
+			const cb = /(\w+) rally past the \w+ from (\d+) down/.exec(deck);
+			if (cb) {
+				deckComebacks += 1;
+				assert.match(
+					body,
+					new RegExp(
+						`${cb[2]}(?:-point deficit| down| points down)|trailing by ${cb[2]}`,
+					),
+					wrap,
+				);
+			}
+		}
+		assert.isAbove(deckComebacks, 0);
+	});
+
+	test("the headline's man is named below it", () => {
+		let told = 0;
+		for (let day = 1; day <= 15; day++) {
+			// Payton has the line; Vince hit the go-ahead three.
+			const spurs = squad(
+				{ tid: 1, name: "Spurs" },
+				{ name: "Payton Spur", pid: 11, pts: 34, reb: 9, fg: 13, fga: 22 },
+				118,
+			);
+			spurs.players[1] = { ...spurs.players[1]!, name: "Vince Spur", pid: 12 };
+			const bucks = squad(
+				{ tid: 2, name: "Bucks" },
+				{ name: "Bo Buck", pid: 21, pts: 24 },
+				116,
+			);
+			const series = (home: RecapTeam, away: RecapTeam) => ({
+				round: 2,
+				numRounds: 4,
+				bestOf: 7,
+				homeAbbrev: home.abbrev,
+				awayAbbrev: away.abbrev,
+				homeWon: 2,
+				awayWon: 0,
+			});
+			const marquee = game([spurs, bucks], {
+				gid: 70,
+				day,
+				playoffs: true,
+				series: series(spurs, bucks),
+				flow: {
+					leadChanges: 9,
+					ties: 4,
+					maxLead: [8, 6],
+					maxLeadAt: [2, 3],
+					lastLead: {
+						side: 0,
+						pid: 12,
+						period: 4,
+						clock: 85,
+						pts: [115, 113],
+						by: 3,
+					},
+					finish: [ev(0, 12, 3, "tp", 4, 85, [115, 113])],
+				},
+			});
+			const others = [
+				squad({ tid: 3, name: "Suns" }, { name: "Cy Sun", pid: 31 }, 104),
+				squad({ tid: 4, name: "Jazz" }, { name: "Di Jazz", pid: 41 }, 96),
+			] as [RecapTeam, RecapTeam];
+			const wrap = getAutoDayRecap({
+				season: 2025,
+				day,
+				playoffs: true,
+				games: [
+					marquee,
+					game(others, {
+						gid: 71,
+						day,
+						playoffs: true,
+						series: series(others[0], others[1]),
+					}),
+				],
+			});
+			clean(wrap);
+			const [head, ...rest] = wrap.split("\n\n");
+			const body = rest.filter((p) => !p.startsWith("*")).join(" ");
+			for (const name of ["Payton Spur", "Vince Spur"]) {
+				if (head!.includes(name)) {
+					told += 1;
+					assert.include(body, name, wrap);
+				}
+			}
+		}
+		assert.isAbove(told, 0);
+	});
+});
+
+// "The bigger picture: the Timberwolves (4-1) hold a narrow lead in the
+// Western Conference" - six games in, nothing. A perfect start is a story.
+describe("the standings once there are some", () => {
+	const slate = (day: number) => [
+		game(
+			[
+				squad(
+					{ tid: 1, name: "Hawks" },
+					{ name: "Ace Hawk", pid: 11, pts: 30 },
+					112,
+				),
+				squad({ tid: 2, name: "Kings" }, { name: "Rex King", pid: 21 }, 101),
+			],
+			{ gid: 1, day },
+		),
+		game(
+			[
+				squad({ tid: 3, name: "Suns" }, { name: "Cy Sun", pid: 31 }, 104),
+				squad({ tid: 4, name: "Jazz" }, { name: "Di Jazz", pid: 41 }, 96),
+			],
+			{ gid: 2, day },
+		),
+	];
+	// The leader is news on a night that changed the top: the unbeaten
+	// Hawks won again, the Kings lost.
+	const conf = (won: number, lost: number) => ({
+		name: "Western Conference",
+		teams: [
+			{
+				rank: 1,
+				tid: lost === 0 ? 1 : 2,
+				abbrev: lost === 0 ? "HAW" : "KIN",
+				region: "",
+				name: lost === 0 ? "Hawks" : "Kings",
+				won,
+				lost,
+				gb: 0,
+			},
+			{
+				rank: 2,
+				tid: 5,
+				abbrev: "NET",
+				region: "",
+				name: "Nets",
+				won: won - 1,
+				lost: lost + 1,
+				gb: 1,
+			},
+		],
+	});
+	const wrap = (won: number, lost: number, day: number) =>
+		getAutoDayRecap({
+			season: 2025,
+			day,
+			playoffs: false,
+			games: slate(day),
+			standings: { day, confs: [conf(won, lost)] },
+		});
+
+	test("a 4-1 or 6-2 leader is not news; 5-0 and 9-3 are", () => {
+		for (let day = 1; day <= 8; day++) {
+			assert.notInclude(wrap(4, 1, day), "Western Conference", wrap(4, 1, day));
+			assert.notInclude(wrap(6, 2, day), "Western Conference", wrap(6, 2, day));
+			assert.include(wrap(5, 0, day), "Western Conference", wrap(5, 0, day));
+			assert.include(wrap(9, 3, day), "Western Conference", wrap(9, 3, day));
+		}
+	});
+});

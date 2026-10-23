@@ -8949,8 +8949,11 @@ const conferencePictureSentence = (
 			continue;
 		}
 		// "Hawks (1-0) lead the East" is noise, not news - the standings only mean
-		// something once a real sample exists.
-		if (leader.won + leader.lost < 5) {
+		// something once a real sample exists. Ten games, or five without a
+		// loss: "the Timberwolves (4-1) hold a narrow lead in the Western
+		// Conference" was 15 of a corpus's 25 standings lines, and said
+		// nothing; "still perfect at 5-0" is a story.
+		if (leader.won + leader.lost < (leader.lost === 0 ? 5 : 10)) {
 			continue;
 		}
 		const moved =
@@ -10287,9 +10290,12 @@ const dayDeck = (
 			// body has to say too: "Kings make it 8 straight" over "the Kings
 			// downed the Hawks 123-110" and not a word of the eight.
 			streakGames: RecapGame[];
+			// And for a comeback or an upset, likewise.
+			reasons: Map<RecapGame, "comeback" | "upset">;
 	  }
 	| undefined => {
 	const streakGames: RecapGame[] = [];
+	const reasons = new Map<RecapGame, "comeback" | "upset">();
 	const usedTids = new Set<number>([
 		marquee.teams[0].tid,
 		marquee.teams[1].tid,
@@ -10324,6 +10330,9 @@ const dayDeck = (
 			if (s.kind === "streak" || s.kind === "skidEnd") {
 				streakGames.push(s.game);
 			}
+			if (s.kind === "comeback" || s.kind === "upset") {
+				reasons.set(s.game, s.kind);
+			}
 		}
 		if (s.pid) {
 			featured.push(s.pid);
@@ -10338,6 +10347,7 @@ const dayDeck = (
 				games: covered,
 				players: featured,
 				streakGames,
+				reasons,
 			}
 		: undefined;
 };
@@ -10837,6 +10847,18 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	// a featured performance, a dramatic "Elsewhere" result) so the body doesn't
 	// restate them and the "Around the league" sweep mops up only what's left.
 	const coveredGames = new Set<RecapGame>([marquee]);
+	// A sentence tells a game's final when it has the score and one of the
+	// two teams: two games of a night can both end 103-100, and "the Knicks'
+	// 103-100 win over the Mavericks" counted the Celtics' 103-100 comeback
+	// over the Magic as told - it was the deck's story, and the body never
+	// gave it.
+	const toldIn = (g: RecapGame, sentence: string): boolean => {
+		const sh = analyzeShape(g);
+		return (
+			sentence.includes(plainScore(sh)) &&
+			(sentence.includes(nick(sh.winner)) || sentence.includes(nick(sh.loser)))
+		);
+	};
 	if (deckResult) {
 		for (const g of deckResult.games) {
 			coveredGames.add(g);
@@ -10898,6 +10920,33 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		const t = seriesWords(g, "whos");
 		return t ? `, ${t}` : "";
 	};
+	// THE DECK'S REASON, ON ITS GAME. A game the deck headlined for a
+	// comeback or an upset, told below only through a man's line, lost the
+	// reason it was up there: "Hawks rally past the Pistons from 20 down"
+	// over "Isaiah Ellis had a night-high 36 points... in the Pistons'
+	// 123-106 loss to the Hawks", and the 20 never came up - 13 deck items
+	// in 100. The man's line carries it, once: "...loss to the Hawks, who
+	// came back from 20 down".
+	const reasonTold = new Set<RecapGame>();
+	const deckReason = (g: RecapGame, won: boolean): string => {
+		const kind = deckResult?.reasons.get(g);
+		if (!kind || reasonTold.has(g)) {
+			return "";
+		}
+		reasonTold.add(g);
+		if (kind === "comeback") {
+			const down = comebackSize(analyzeShape(g));
+			return won
+				? ` after trailing by ${down}`
+				: `, who came back from ${down} down`;
+		}
+		const pts = g.spread?.points;
+		return pts === undefined
+			? ""
+			: won
+				? ` as ${pts}-point underdogs`
+				: `, who were ${pts}-point underdogs`;
+	};
 	// "...beat the Clippers at the wire, 101-100, to even the series": a
 	// clause that ends on a set-off score closes it with a comma first.
 	const withTail = (g: RecapGame, clause: string): string => {
@@ -10923,7 +10972,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		// left the reader without a final for it.
 		const score = scoreTag(analyzeShape(perf.game));
 		if (!perf.won) {
-			const who = whoFor(perf.game);
+			const who = whoFor(perf.game) || deckReason(perf.game, false);
 			return pick(
 				rng,
 				[
@@ -10938,11 +10987,13 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 				"dayPerfLoss",
 			);
 		}
-		const tail = tailFor(perf.game);
+		const tail = tailFor(perf.game) || deckReason(perf.game, true);
 		// "Scoot Carter had 26 points in the Bulls' win over the Jazz to win
 		// the series in six": an infinitive after the team's possessive hangs
 		// off the man. It goes with the team as the subject.
 		const toTail = tail.startsWith(" to ");
+		// Not "as the Pistons beat the Spurs 111-99 as 6.5-point underdogs".
+		const asTail = tail.startsWith(" as ");
 		return pick(
 			rng,
 			[
@@ -10951,7 +11002,11 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 					: [
 							`${perf.p.name} ${verb} ${line} in ${poss(team)} ${score} win over ${opp}${tail}.`,
 						]),
-				`${perf.p.name} ${verb} ${line} as ${team} beat ${opp} ${score}${tail}.`,
+				...(asTail
+					? []
+					: [
+							`${perf.p.name} ${verb} ${line} as ${team} beat ${opp} ${score}${tail}.`,
+						]),
 				`${cap(team)} got ${line} from ${perf.p.name} in ${aFigure(score)} win over ${opp}${tail}.`,
 			],
 			"dayPerfWin",
@@ -11025,6 +11080,21 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			: /series|Game \d/.test(lead)
 				? lead.replace(/\.$/, ` in ${round}.`)
 				: lead.replace(/\.$/, ` in Game ${gameNo} of ${round}.`);
+	}
+	// THE HEADLINE'S MAN IS TOLD UNDER IT. "Payton Lowry's 28 powers the
+	// Spurs past the Bucks" stood over a lead about the go-ahead three
+	// another man hit, and Payton Lowry was named nowhere below.
+	if (
+		mStar &&
+		headline.game === marquee &&
+		headline.text.includes(mStar.name) &&
+		!para1[0]!.includes(mStar.name)
+	) {
+		para1.push(
+			`${mStar.name} had ${statPhrase(mStar, 2)} for ${theNick(
+				mShape.winner.players.includes(mStar) ? mShape.winner : mShape.loser,
+			)}.`,
+		);
 	}
 	openerTold =
 		openers && /\bGame 1\b|\bopener\b/.test(`${headline.text} ${para1[0]!}`);
@@ -11122,7 +11192,8 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 					}.`
 				: topScorer.won
 					? (() => {
-							const tail = tailFor(topScorer.game);
+							const tail =
+								tailFor(topScorer.game) || deckReason(topScorer.game, true);
 							// As above: "...in the Thunder's 124-98 win over the
 							// Grizzlies to force a Game 6" hung the infinitive off
 							// the man.
@@ -11134,7 +11205,9 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 						})()
 					: `${topScorer.p.name} ${led} in ${poss(
 							theNick(topScorer.team),
-						)} ${topScore} loss to ${theNick(topScorer.opp)}${whoFor(topScorer.game)}.`,
+						)} ${topScore} loss to ${theNick(topScorer.opp)}${
+							whoFor(topScorer.game) || deckReason(topScorer.game, false)
+						}.`,
 		);
 		named.add(topScorer.p);
 		coveredGames.add(topScorer.game);
@@ -11261,7 +11334,9 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 						// played for the Nets (78 lines in 177 wraps).
 						`${poss(lossPerf.p.name)} ${statPhrase(
 							lossPerf.p,
-						)} came in ${poss(theNick(lossPerf.team))} ${scored}loss to ${theNick(lossPerf.opp)}${whoFor(lossPerf.game)}.`,
+						)} came in ${poss(theNick(lossPerf.team))} ${scored}loss to ${theNick(lossPerf.opp)}${
+							whoFor(lossPerf.game) || deckReason(lossPerf.game, false)
+						}.`,
 			);
 			coveredGames.add(lossPerf.game);
 		}
@@ -11272,8 +11347,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	// rebounds came in a 120-111 loss to the Bulls. Xavier Carter had 34
 	// points for the Bulls."
 	for (const g of deckPerfByGame.keys()) {
-		const score = plainScore(analyzeShape(g));
-		const at = para1.findIndex((t) => t.includes(score));
+		const at = para1.findIndex((t) => toldIn(g, t));
 		const left = untold(g, para1.join(" "));
 		if (at >= 0 && left.length > 0) {
 			para1.splice(
@@ -11297,7 +11371,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	// shot was never mentioned again.
 	for (const g of deckResult?.games ?? []) {
 		const shot = clutchShot(g);
-		const at = para1.findIndex((t) => t.includes(plainScore(analyzeShape(g))));
+		const at = para1.findIndex((t) => toldIn(g, t));
 		if (
 			shot &&
 			!shot.tying &&
@@ -11360,9 +11434,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		// body short a result - the night's upset, often.
 		const deckOnly =
 			deckResult?.games.includes(g) &&
-			![headline.text, ...para1]
-				.join(" ")
-				.includes(plainScore(analyzeShape(g)));
+			![headline.text, ...para1].some((t) => toldIn(g, t));
 		if (g.allStar || (coveredGames.has(g) && !deckOnly)) {
 			continue;
 		}
@@ -11473,13 +11545,13 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	// score at all.
 	// Not the deck: it is a row of headlines over the body, and a final in it
 	// is not yet told underneath.
-	const soFar = [headline.text, ...para1, ...para2].join(" ");
+	const soFar = [headline.text, ...para1, ...para2];
 	for (const g of ranked) {
 		if (g.allStar) {
 			continue;
 		}
 		const gShape = analyzeShape(g);
-		if (coveredGames.has(g) && soFar.includes(plainScore(gShape))) {
+		if (coveredGames.has(g) && soFar.some((t) => toldIn(g, t))) {
 			continue;
 		}
 		if (roundupClauses.length < ROUNDUP_CAP) {
