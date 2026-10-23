@@ -22,7 +22,7 @@ import type {
 	RecapTeam,
 } from "./getDayGamesForRecap.ts";
 import { verifyRecap } from "./recapAccuracy.ts";
-import { rngFromSeed } from "./recapText.ts";
+import { lineVerb, rngFromSeed } from "./recapText.ts";
 
 // What a series-clinching headline can look like: the result leads it.
 const CLINCH_HEADLINE =
@@ -8737,6 +8737,19 @@ describe("a winner's steals sit with the winners", () => {
 			assert.ok(stealsAt >= 0 && stealsAt < loserAt, recap);
 		}
 	});
+});
+
+// "Keegan Ingram pitched in with 9 points, 19 rebounds, and 6 steals" made
+// the best line on the floor sound like a bench cameo.
+test("a line that is not about points gets a verb that is not either", () => {
+	assert.equal(
+		lineVerb(player({ name: "A", pts: 9, reb: 19, stl: 6 }), rngFromSeed(1)),
+		"had",
+	);
+	assert.equal(
+		lineVerb(player({ name: "B", pts: 12, stl: 5 }), rngFromSeed(1)),
+		"had",
+	);
 });
 
 // "Evan Hayes had a double-double of his own, 10 points and 14 rebounds"

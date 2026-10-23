@@ -494,6 +494,14 @@ export const pickSentence = (
 export const scoredVerb = (rng: () => number): string =>
 	takeVerb(rng, SCORED_VERBS, "scoredVerb");
 
+// The verb for a man whose biggest number is not his points. "Keegan
+// Ingram pitched in with 9 points, 19 rebounds, and 6 steals" made the
+// night of the game sound like a bench cameo.
+export const lineVerb = (p: RecapPlayer, rng: () => number): string =>
+	(p.reb >= 12 && p.reb > p.pts) || p.stl >= 5 || p.blk >= 5
+		? "had"
+		: scoredVerb(rng);
+
 // "34 points, 12 rebounds and 9 assists" - points first, then up to two more
 // categories worth mentioning (double-double stats always make the cut).
 export const statPhrase = (

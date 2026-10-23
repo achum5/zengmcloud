@@ -853,12 +853,12 @@ export const verifyRecap = (
 			}
 			// Counts of big games.
 			m =
-				/(\w+) (30|40)-point games? (?:of the season|this season)|(\w+) games of (30|40) or more/.exec(
+				/(\w+) (30|40)-point games? (?:of the season|this season)|(\w+) games of (30|40) or more|scored (30|40) or more (\w+) times/.exec(
 					sentence,
 				);
 			if (m && e.counts) {
-				const n = num(m[1] ?? m[3] ?? "");
-				const bar = m[2] ?? m[4];
+				const n = num(m[1] ?? m[3] ?? m[6] ?? "");
+				const bar = m[2] ?? m[4] ?? m[5];
 				const real = (bar === "40" ? e.counts.forty : e.counts.thirty) + 1;
 				if (n !== undefined && n !== real) {
 					add(`count of ${bar}`, `said ${n}, real ${real}`, sentence);
@@ -882,6 +882,23 @@ export const verifyRecap = (
 				sentence,
 			);
 			const vs = p?.vsOpponent;
+			// "...had not managed more than 7 points against the Warriors this
+			// season", "The Pistons had held Corey King to 9 or fewer in every
+			// earlier meeting."
+			const best =
+				/had not managed more than (\d+) points? against|to (\d+) or fewer in every earlier meeting/.exec(
+					sentence,
+				);
+			if (best && vs) {
+				const n = Number(best[1] ?? best[2]);
+				if (n !== vs.bestPts) {
+					add(
+						"against this opponent",
+						`said ${n}, real ${vs.bestPts}`,
+						sentence,
+					);
+				}
+			}
 			if (m && vs) {
 				const games = num(m[2]!);
 				if (Number(m[1]) !== vs.bestPts || games !== vs.games) {

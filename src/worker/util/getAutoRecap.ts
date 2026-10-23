@@ -23,6 +23,7 @@ import {
 	gbText,
 	injuryPhrase,
 	isInBatch,
+	lineVerb,
 	lowerInjury,
 	naturalList,
 	nick,
@@ -4409,7 +4410,7 @@ const supportSentence = (
 					],
 					"supportDouble",
 				)
-			: `${second.name} ${scoredVerb(rng)} ${statPhrase(second)}`;
+			: `${second.name} ${lineVerb(second, rng)} ${statPhrase(second)}`;
 
 	const third = cast[1];
 	if (third && (third.pts >= 14 || doubleCategories(third).length >= 2)) {
@@ -4421,7 +4422,7 @@ const supportSentence = (
 				? // The full line, and named: trimmed to one extra, a 15-10-10
 					// came out as "15 points and 10 rebounds".
 					`${third.name} ${scoredVerb(rng)} a ${thirdDdw}, ${statPhrase(third)}`
-				: `${third.name} ${scoredVerb(rng)} ${statPhrase(third, 1)}`;
+				: `${third.name} ${lineVerb(third, rng)} ${statPhrase(third, 1)}`;
 		// Not always "A verbed X, and B verbed Y": nine straight recaps of one
 		// team used that same two-verb frame, and a beat reader notices the
 		// skeleton before the words. When both are plain scoring lines, the
@@ -4683,7 +4684,7 @@ const loserSentence = (
 		const tail =
 			reason ||
 			(second
-				? `, and ${second.name} ${scoredVerb(rng)} ${statPhrase(second, 1)}`
+				? `, and ${second.name} ${lineVerb(second, rng)} ${statPhrase(second, 1)}`
 				: "");
 		return `${base}${tail}.`;
 	}
@@ -5617,7 +5618,7 @@ const loserSupportNote = (
 	// rotates too. Deliberately ONE shape: the verb and tail together give this
 	// sentence more distinct forms than a handful of alternative shapes would,
 	// and shapes without that variation collapse to a single frame each.
-	return `${second.name} ${scoredVerb(rng)} ${statPhrase(second, 1)} ${pick(
+	return `${second.name} ${lineVerb(second, rng)} ${statPhrase(second, 1)} ${pick(
 		rng,
 		["in defeat", "in the loss", "in a losing cause", "for the losing side"],
 		"loserTail",

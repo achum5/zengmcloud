@@ -664,7 +664,7 @@ describe("edge cases", () => {
 			const recap = getAutoRecap(game([home, away], { gid }));
 			clean(recap);
 			if (
-				/sixth 30-point game|six 30-point games|six games of 30 or more/.test(
+				/sixth 30-point game|six 30-point games|six games of 30 or more|30 or more six times/.test(
 					recap,
 				)
 			) {
@@ -704,6 +704,32 @@ describe("edge cases", () => {
 		].join(" ");
 		const found = verifyRecap(`**x**\n\n${wrong}`, g).map((v) => v.kind);
 		assert.deepEqual(found, ["streak of 20", "count of 30", "season high"]);
+		assert.deepEqual(
+			verifyRecap(
+				"**x**\n\nAce Hawk has scored 30 or more five times this season.",
+				g,
+			).map((v) => v.kind),
+			["count of 30"],
+		);
+		// His best against tonight's opponent, however it is put.
+		home.players[0]!.vsOpponent = { games: 3, bestPts: 15, avgPts: 12 };
+		for (const said of [
+			"Ace Hawk had not managed more than 17 points against the Bulls this season.",
+			"The Bulls had held Ace Hawk to 12 or fewer in every earlier meeting.",
+		]) {
+			assert.deepEqual(
+				verifyRecap(`**x**\n\n${said}`, g).map((v) => v.kind),
+				["against this opponent"],
+				said,
+			);
+		}
+		assert.deepEqual(
+			verifyRecap(
+				"**x**\n\nAce Hawk had not managed more than 15 points against the Bulls this season.",
+				g,
+			),
+			[],
+		);
 		const right = [
 			"Ace Hawk has not been held under 20 in five games.",
 			"It was his sixth 30-point game of the season.",

@@ -1286,6 +1286,8 @@ describe("a player against this opponent", () => {
 		// about the game, and a pronoun there points at nobody.
 		for (const s of all) {
 			assert.include(s, "Jayson Tatum", s);
+			// "had not managed more than 7 against the Warriors" - 7 what.
+			assert.match(s, /# points|earlier games|or fewer/, s);
 		}
 	});
 
