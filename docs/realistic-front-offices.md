@@ -495,6 +495,13 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   each one, fitted so the chances add up to 100%. An awful team with a bad
   offer and a bad fit has next to no chance. A human's offer waits for his
   decision like anyone else's; there is no instant signing.
+- **No signing a player to get worse, or past the roster limit for free.** A
+  signing never moves the team's own picks earlier - a poor player the
+  rotation would play ahead of better ones is no way to a better pick - and is
+  priced on the roster the team will have once games are played: past the
+  limit, it cuts the players it values least and still pays them. Before, one
+  team went from 13 players to 33 in a free agency; replayed, 81 signings
+  rather than 144, 13 rather than 70 of players under 45.
 - **Players decide daily, stars early** (owner's call): each day a player with
   offers may sign or wait for more, so the best go in the first days and role
   players later, as in an NBA July.
