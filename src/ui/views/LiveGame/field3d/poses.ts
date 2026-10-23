@@ -398,6 +398,22 @@ const CLAP_TOGETHER: Partial<Pose> = {
 	elF: 64,
 	abF: -24,
 };
+// The cooler's handle in his right hand, hung at his side; the cooler over
+// him (hunched, his arms up and out).
+const COOLER_CARRY: Partial<Pose> = { shN: 10, elN: 8, abN: 8, abF: 20 };
+const DOUSED: Partial<Pose> = {
+	shN: 60,
+	elN: 100,
+	abN: 46,
+	shF: 60,
+	elF: 100,
+	abF: 46,
+	hipN: 30,
+	kneeN: 24,
+	hipF: 30,
+	kneeF: 24,
+	lean: 26,
+};
 const over = (a: Partial<Pose>, b: Partial<Pose>): FieldAnim => ({
 	kind: "act",
 	keys: [
@@ -2687,6 +2703,97 @@ const FIELD_ANIMS = {
 			[1, BASE],
 		],
 	},
+	// The cooler (see shower.ts) carried between two men, a handle each: in
+	// his right hand, hung at his side; and, the two of them, up to their
+	// chests with it, over their heads, tipped forward over the man in front
+	// of them - and let go.
+	coolerCarry: { kind: "still", pose: pose(COOLER_CARRY) },
+	coolerDump: {
+		kind: "act",
+		keys: [
+			[0, pose(COOLER_CARRY)],
+			[
+				0.28,
+				pose({
+					shN: 75,
+					elN: 70,
+					abN: 8,
+					shF: 80,
+					elF: 80,
+					abF: -34,
+					hipN: 14,
+					kneeN: 20,
+					hipF: 14,
+					kneeF: 20,
+				}),
+			],
+			[
+				0.5,
+				pose({
+					shN: 162,
+					elN: 22,
+					abN: 8,
+					shF: 155,
+					elF: 36,
+					abF: -22,
+					lean: -6,
+					tuck: 1,
+				}),
+			],
+			[
+				0.64,
+				pose({
+					shN: 142,
+					elN: 8,
+					abN: 8,
+					shF: 136,
+					elF: 14,
+					abF: -20,
+					lean: 6,
+					tuck: 1,
+				}),
+			],
+			[
+				0.86,
+				pose({
+					shN: 136,
+					elN: 6,
+					abN: 8,
+					shF: 130,
+					elF: 12,
+					abF: -20,
+					lean: 9,
+					tuck: 1,
+				}),
+			],
+			[1, BASE],
+		],
+	},
+	// Caught by it from behind: hunched, his arms up and out, then his hands
+	// to his face and head to wipe it off - and his arms out, laughing.
+	doused: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[0.08, pose(DOUSED)],
+			[0.3, pose({ ...DOUSED, lean: 30, shN: 66, shF: 66 })],
+			[0.46, pose({ ...HANDS_ON_HEAD, elN: 130, elF: 130, lean: 16 })],
+			[0.62, pose({ ...HANDS_ON_HEAD, shN: 150, shF: 150, lean: 12 })],
+			[
+				0.82,
+				pose({
+					shN: 40,
+					elN: 30,
+					abN: 50,
+					shF: 40,
+					elF: 30,
+					abF: 50,
+					lean: -4,
+				}),
+			],
+			[1, BASE],
+		],
+	},
 	// His right fist pumped up over his head, again and again.
 	fistPump: over(
 		{ shN: 132, elN: 96, abN: 24, shF: 10, elF: 70, abF: 16, lean: -2 },
@@ -2945,7 +3052,13 @@ export const liftOf = (m: Move, phase: number): number => {
 
 // How he holds his hands in a move: running, loose fists; down in a stance
 // or reading the play, open; standing about, relaxed.
-const FISTS = new Set<Move>(["run", "sprint", "holdPole"]);
+const FISTS = new Set<Move>([
+	"run",
+	"sprint",
+	"holdPole",
+	"coolerCarry",
+	"coolerDump",
+]);
 const RELAXED = new Set<Move>(["stand", "walk", "jog", "hands"]);
 export const gripsOf = (m: Move, hold?: BallHold): [Grip, Grip] => {
 	const g: Grip = FISTS.has(m) ? "fist" : RELAXED.has(m) ? "relaxed" : "open";

@@ -1,5 +1,5 @@
 import { project, type Camera } from "../court3d/camera.ts";
-import { lerpPose, type Body } from "../court3d/poses.ts";
+import { lerpPose, type Body, type Pose } from "../court3d/poses.ts";
 import {
 	keep,
 	rim,
@@ -77,16 +77,39 @@ const frameOf = (m: Move, phase: number): number => {
 
 // His pose, stepped to the sprite's frames: what he is doing, blended with
 // what he just was.
-const figureOf = (
-	st: FieldPlayerState,
-	body: Body,
-	phase: number,
-	yaw: number,
+type Stepped = {
+	phase: number;
+	turn: number;
+	yaw: number;
 	from:
 		| { move: Move; phase: number; mirrored?: boolean; w: number }
-		| undefined,
-	arms: { move: Move; phase: number } | undefined,
-): Figure => {
+		| undefined;
+	arms: { move: Move; phase: number } | undefined;
+};
+const stepped = (st: FieldPlayerState): Stepped => {
+	const turn = Math.round(st.yaw / ((Math.PI * 2) / TURNS));
+	const f = st.from;
+	const fw =
+		f && f.w > 0.12
+			? Math.min(BLEND_STEPS - 1, Math.max(1, Math.round(f.w * BLEND_STEPS))) /
+				BLEND_STEPS
+			: 0;
+	return {
+		phase: frameOf(st.move, st.phase),
+		turn,
+		yaw: (turn * Math.PI * 2) / TURNS,
+		from:
+			f && fw > 0
+				? { ...f, phase: frameOf(f.move, f.phase), w: fw }
+				: undefined,
+		arms: st.arms
+			? { move: st.arms.move, phase: frameOf(st.arms.move, st.arms.phase) }
+			: undefined,
+	};
+};
+
+const poseFor = (st: FieldPlayerState, s: Stepped): Pose => {
+	const { phase, from, arms } = s;
 	let pose = poseOfMove(st.move, phase, st.mirrored === true);
 	if (from && from.w > 0) {
 		pose = lerpPose(
@@ -101,12 +124,25 @@ const figureOf = (
 			poseOfMove(arms.move, arms.phase, st.mirrored === true),
 		);
 	}
-	pose = holding(pose, st.ball);
+	return holding(pose, st.ball);
+};
+
+// How he is drawn, the way the sprite has him: his pose and the way he
+// faces (to the nearest of its turns).
+export const drawnPose = (
+	st: FieldPlayerState,
+): { pose: Pose; yaw: number } => {
+	const s = stepped(st);
+	return { pose: poseFor(st, s), yaw: s.yaw };
+};
+
+const figureOf = (st: FieldPlayerState, body: Body, s: Stepped): Figure => {
+	const pose = poseFor(st, s);
 	return {
 		x: st.x,
 		y: st.y,
 		z: 0,
-		yaw,
+		yaw: s.yaw,
 		pose,
 		grips: gripsOf(st.move, st.ball),
 		...(st.ball ? { ball: heldBall(body, pose, st.ball) } : {}),
@@ -139,20 +175,8 @@ export const drawFieldPlayer = (
 	if (right < 0 || left > cam.viewW || lower < 0 || upper > cam.viewH) {
 		return;
 	}
-	const phase = frameOf(st.move, st.phase);
-	const turn = Math.round(st.yaw / ((Math.PI * 2) / TURNS));
-	const yaw = (turn * Math.PI * 2) / TURNS;
-	const f = st.from;
-	const fw =
-		f && f.w > 0.12
-			? Math.min(BLEND_STEPS - 1, Math.max(1, Math.round(f.w * BLEND_STEPS))) /
-				BLEND_STEPS
-			: 0;
-	const from =
-		f && fw > 0 ? { ...f, phase: frameOf(f.move, f.phase), w: fw } : undefined;
-	const arms = st.arms
-		? { move: st.arms.move, phase: frameOf(st.arms.move, st.arms.phase) }
-		: undefined;
+	const step = stepped(st);
+	const { phase, turn, from, arms } = step;
 	const scale = Math.round(Math.log(k) / Math.log(1.04));
 	let key: string | undefined;
 	let id = 0;
@@ -191,7 +215,7 @@ export const drawFieldPlayer = (
 		}
 	}
 	const began = cache ? performance.now() : 0;
-	const fig = figureOf(st, body, phase, yaw, from, arms);
+	const fig = figureOf(st, body, step);
 	const w = Math.max(4, Math.ceil((right - left) / px) + 2);
 	const h = Math.max(4, Math.ceil((lower - upper) / px) + 2);
 	const { canvas, ctx: s } = scratch;

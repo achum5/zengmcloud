@@ -569,7 +569,8 @@ describe("the game over", () => {
 					assert.isDefined(other, `${part.pid}'s hand shaken by nobody`);
 				}
 			}
-			const coaches = play.coaches ?? [];
+			// (The head coaches - and, under the cooler, the two men with it.)
+			const coaches = (play.coaches ?? []).filter((c) => c.pid < 0);
 			assert.lengthOf(coaches, 2);
 			const [a, b] = coaches.map((c) => legAt(c, post.shake + 200));
 			assert.equal(a!.move, "shake");
@@ -581,9 +582,44 @@ describe("the game over", () => {
 				tl,
 				momentAt(tl, post.shake),
 			);
-			for (const c of coaches) {
+			for (const c of play.coaches ?? []) {
 				assert.isUndefined(off.find((s) => s.id === c.pid));
 			}
 		}
+	});
+
+	test("the winners' head coach under the cooler, the game won: two of his men off the field with it, after the whistle", () => {
+		let showers = 0;
+		for (const [k, game] of games.entries()) {
+			for (const gid of [1, 2, 3, 4, 5, 6]) {
+				const tl = stage(game, gid);
+				const play = tl.plays.at(-1)!;
+				const post = play.postgame!;
+				const sh = post.shower;
+				if (!sh) {
+					continue;
+				}
+				showers += 1;
+				const at = `game ${k} (${gid})`;
+				assert.equal(sh.team, post.winner, at);
+				assert.isAbove(sh.dump, play.whistle, at);
+				const men = (play.coaches ?? []).filter((c) => sh.men.includes(c.pid));
+				assert.lengthOf(men, 2, at);
+				for (const m of men) {
+					assert.equal(m.team, sh.team, at);
+					assert.isUndefined(
+						play.parts.find((p) => p.pid === m.pid),
+						`${at}: ${m.pid} on the field`,
+					);
+					assert.equal(legAt(m, sh.dump + 500).move, "coolerDump", at);
+				}
+				const coach = (play.coaches ?? []).find((c) => c.pid === sh.coach)!;
+				const doused = coach.legs.find((l) => l.move === "doused");
+				assert.isDefined(doused, at);
+				assert.isAbove(doused!.t0, sh.dump, at);
+				assert.isBelow(doused!.t1, post.shake, at);
+			}
+		}
+		assert.isAbove(showers, 0);
 	});
 });

@@ -56,6 +56,7 @@ import { crewClear, stageTimeout } from "./timeout.ts";
 import { measureTimes, stageMeasure } from "./measure.ts";
 import { HURT_MOST, MEDICS, stageHurt } from "./hurt.ts";
 import { crewOff, stageHalftime, stagePostgame } from "./postgame.ts";
+import { SHOWER, SHOWER_MARGIN, type Shower } from "./shower.ts";
 import { stageTv } from "./tv.ts";
 import { stageToss, tossCrew } from "./toss.ts";
 import { sidelineOf } from "./sideline.ts";
@@ -211,6 +212,8 @@ export type Play = {
 		winner?: Side;
 		// Won on it: all over the man who did it, there, until then.
 		mob?: { at: Pt; until: number };
+		// The winners' head coach under the cooler (see shower.ts).
+		shower?: Shower;
 	};
 	ball: BallSeg[];
 	// A big play's moment after it (see action.ts celebrate): from when, till
@@ -429,6 +432,7 @@ const KICK_AT = 2600;
 // men for the kick waiting for it on their sidelines in two rows - this
 // far off the field, rows this far apart, men this far apart along them -
 // this far along from midfield.
+const SHOWER_GROUPS: Group[] = ["OL", "DL", "LB", "TE", "RB", "S", "WR", "CB"];
 const CAPTAINS = 3;
 const CAPTAIN_GROUPS: Group[] = ["QB", "OL", "DL", "LB", "S", "WR", "RB"];
 const WAIT_OFF = 2;
@@ -1350,10 +1354,15 @@ class Director {
 		const hero = ended
 			? this.wonIt(kind, i0, i1, parts, ball, whistle)
 			: undefined;
+		const pts = this.pointsTo(i1);
+		const showerMen =
+			ended && hero === undefined
+				? this.showerOf(kind, pts, parts, i0)
+				: undefined;
 		const postgame = ended
 			? stagePostgame({
 					parts,
-					pts: this.pointsTo(i1),
+					pts,
 					// (Won on it: from the moment it was - not after the scorer's
 					// moment.)
 					whistle:
@@ -1363,6 +1372,9 @@ class Director {
 					t1,
 					playI: i0,
 					ball,
+					...(showerMen
+						? { shower: { men: showerMen, r: this.rng(i0, "showered") } }
+						: {}),
 					r: this.rng(i0, "postgame"),
 				})
 			: undefined;
@@ -1645,6 +1657,7 @@ class Director {
 								? { winner: postgame.winner }
 								: {}),
 							...(postgame.mob ? { mob: postgame.mob } : {}),
+							...(postgame.shower ? { shower: postgame.shower } : {}),
 						},
 					}
 				: {}),
@@ -1656,6 +1669,51 @@ class Director {
 		});
 		this.T = t1;
 		this.ballY = this.nextSpot(kind, i0, i1, ballY, spotAt(whistle).y);
+	}
+
+	// The two men off the field with the cooler for the winners' head coach
+	// (see shower.ts), if they have it ready - the game won by enough, or
+	// knelt out, and not on its last play: big men first.
+	showerOf(
+		kind: PlayKind,
+		pts: [number, number],
+		parts: Part[],
+		i0: number,
+	): [number, number] | undefined {
+		const winner: Side | undefined =
+			pts[0] > pts[1] ? 0 : pts[1] > pts[0] ? 1 : undefined;
+		if (winner === undefined) {
+			return undefined;
+		}
+		const r = this.rng(i0, "shower");
+		const won = Math.abs(pts[0] - pts[1]) >= SHOWER_MARGIN || kind === "kneel";
+		if (!won || r() >= SHOWER) {
+			return undefined;
+		}
+		const busy = new Set(parts.map((p) => p.pid));
+		const roster = new Set(this.roster[winner]);
+		const pool: number[] = [];
+		for (const g of SHOWER_GROUPS) {
+			for (const pid of this.depth[winner][g] ?? []) {
+				if (
+					roster.has(pid) &&
+					!busy.has(pid) &&
+					!this.out.has(pid) &&
+					!pool.includes(pid)
+				) {
+					pool.push(pid);
+				}
+			}
+		}
+		if (pool.length < 2) {
+			return undefined;
+		}
+		const first = pool.splice(
+			Math.floor(r() * Math.min(5, pool.length)),
+			1,
+		)[0]!;
+		const second = pool[Math.floor(r() * Math.min(5, pool.length))]!;
+		return [first, second];
 	}
 
 	// A side's captains for the coin toss: its quarterback, and a lineman

@@ -13,6 +13,7 @@ import {
 	type Side,
 } from "./geometry.ts";
 import { moveKind, poseOfMove, type Move } from "./poses.ts";
+import { stageShower, type Shower } from "./shower.ts";
 import { coachId, headCoachAt, sidelineOf } from "./sideline.ts";
 
 // THE GAME OVER. The winners' moment where the end of it finds them - up
@@ -137,6 +138,8 @@ export type Postgame = {
 	// Won on the last play: where they are all over the man who won it, and
 	// until when.
 	mob?: { at: Pt; until: number };
+	// The winners' head coach under the cooler (see shower.ts).
+	shower?: Shower;
 	t1: number;
 };
 
@@ -388,6 +391,9 @@ export const stagePostgame = (input: {
 	t1: number;
 	playI: number;
 	ball: BallSeg[];
+	// The two of the winners' men off the field with the cooler, if they
+	// have it ready.
+	shower?: { men: [number, number]; r: () => number };
 	r: () => number;
 }): Postgame => {
 	const { parts, pts, ball, r } = input;
@@ -546,9 +552,12 @@ export const stagePostgame = (input: {
 		done = Math.max(done, meet(a, b, r).end);
 	}
 
-	// The head coaches: out from their sidelines to each other.
+	// The head coaches: out from their sidelines to each other - the
+	// winners' under the cooler first, if his men have it ready.
 	const coaches: CrewPart[] = [];
 	const bosses: Man[] = [];
+	const dumpers: CrewPart[] = [];
+	let shower: Shower | undefined;
 	for (const team of [0, 1] as Side[]) {
 		const from = headCoachAt(team, input.playI);
 		const toField = sidelineOf(team) === 0 ? Math.PI / 2 : -Math.PI / 2;
@@ -562,6 +571,22 @@ export const stagePostgame = (input: {
 				yaw: toField,
 			},
 		];
+		if (input.shower && team === winner && !mob) {
+			const s = stageShower({
+				men: input.shower.men,
+				team,
+				coach: coachId(team, 0),
+				legs,
+				at: from,
+				yaw: toField,
+				t0: input.t0,
+				whistle: input.whistle,
+				from: go,
+				r: input.shower.r,
+			});
+			dumpers.push(...s.parts);
+			shower = s.shower;
+		}
 		coaches.push({ pid: coachId(team, 0), team, legs });
 		bosses.push(new Man(team, legs, COACH_FPS));
 	}
@@ -575,11 +600,21 @@ export const stagePostgame = (input: {
 	const { shake, end } = meet(far, near, r, at, COACH_HUG);
 
 	const t1 = Math.max(input.t1, end + COACH_AFTER, done + 800);
-	for (const m of [...men, ...bosses]) {
+	const others = dumpers.map((p) => new Man(p.team, p.legs, PACE[0]));
+	for (const m of [...men, ...bosses, ...others]) {
 		const l = m.legs.at(-1)!;
 		m.hold(t1, moveKind(l.move) === "still" ? l.move : "stand");
 	}
-	return { coaches, from: go, shake, at, winner, ...(mob ? { mob } : {}), t1 };
+	return {
+		coaches: [...coaches, ...dumpers],
+		from: go,
+		shake,
+		at,
+		winner,
+		...(mob ? { mob } : {}),
+		...(shower ? { shower } : {}),
+		t1,
+	};
 };
 
 // The winners all over the man who won it: each at a sprint to a place in

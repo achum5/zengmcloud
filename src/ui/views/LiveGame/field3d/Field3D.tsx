@@ -89,6 +89,7 @@ import {
 import { tvCrewFor } from "./tv.ts";
 import { drawFieldPlayer } from "./sprite.ts";
 import { drawTags, type TagCover } from "./tags.ts";
+import { showerGear } from "./shower.ts";
 import { chainGear } from "./sticks.ts";
 import { waterGear } from "./water.ts";
 import { paintStadium } from "./stadium.ts";
@@ -660,6 +661,7 @@ const Field3D = ({
 				...cameraGear(ctx, view, snappers, body),
 				...tvCameraGear(ctx, view, moment.players, body),
 				...waterGear(ctx, view, moment.players, body),
+				...showerGear(ctx, view, moment, body),
 			);
 			for (const f of moment.flags ?? []) {
 				items.push({

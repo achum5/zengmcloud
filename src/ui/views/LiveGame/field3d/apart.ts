@@ -80,6 +80,9 @@ const TOUCH = new Set<Move>([
 	"shake",
 	"hug",
 	"chestBump",
+	"coolerCarry",
+	"coolerDump",
+	"doused",
 ]);
 
 const touching = (l: Leg) =>

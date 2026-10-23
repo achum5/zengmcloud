@@ -103,6 +103,9 @@ const ROWS = 4;
 const FRONT = COACH_LINE + 1.6;
 const ROW_WORTH = 24;
 const JITTER = 0.5;
+// Nobody this near the head coach along the field, under the cooler at the
+// end (see shower.ts).
+const LANE = 4.4;
 // The unit just off the field: this share of it sit down.
 const SITS = 0.7;
 const SEAT = 2.6;
@@ -375,9 +378,16 @@ const lay = (men: SidelineMan[], play: Play): Map<number, Spot> => {
 				});
 			}
 		}
-		slots.sort((a, b) => a.cost - b.cost);
+		// (A lane left through them for the men with the cooler for the
+		// head coach: see shower.ts.)
+		const shower = play.postgame?.shower;
+		const lane =
+			shower?.team === team
+				? slots.filter((p) => Math.abs(p.x - shower.at.x) >= LANE)
+				: slots;
+		lane.sort((a, b) => a.cost - b.cost);
 		standing.forEach((s, k) => {
-			const slot = slots[k];
+			const slot = lane[k];
 			if (!slot) {
 				return;
 			}
@@ -516,7 +526,11 @@ const outOf = (s: SidelineMan, spot: Spot, play: Play, at: Pt): Out | null => {
 				OUT_AFTER +
 				r() * OUT_SPREAD +
 				(spot.seated || s.unit === "kicker" ? OUT_LATE : 0) +
-				(mob ? BEATEN_LATE : 0);
+				(mob ? BEATEN_LATE : 0) +
+				// (Watching the head coach under the cooler first.)
+				(post.shower && s.team === post.shower.team
+					? post.shower.until - post.from
+					: 0);
 			let along = (spot.at.x - MID_X) * OUT_ALONG + (r() - 0.5) * 2 * OUT_WIDE;
 			if (near) {
 				along = (along < 0 ? -1 : 1) * (OUT_CLEAR + Math.abs(along));

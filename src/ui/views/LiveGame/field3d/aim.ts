@@ -74,6 +74,12 @@ const POST_WIDE = 124;
 const POST_TIGHT = 66;
 const POST_IN = 5500;
 const POST_IN_MS = 4000;
+// The winners' head coach under the cooler: in on him, this wide, the
+// picture's middle this far toward the near side of him (on the far
+// sideline, this far).
+const SHOWER_WIDTH = 32;
+const SHOWER_UP = -3;
+const SHOWER_UP_FAR = -6;
 // Won on the last play: on them all over the man who won it.
 const MOB_WIDTH = 96;
 // A big play's moment after it - a score, a stop, a takeaway: in on it,
@@ -153,6 +159,15 @@ export const aimFor = (m: FieldMoment): Shot => {
 			x: inBounds(post.mob.at.x, MOB_WIDTH),
 			width: MOB_WIDTH,
 			y: across(post.mob.at.y),
+		};
+	}
+	// (The winners' head coach under the cooler first.)
+	const shower = post?.shower;
+	if (shower && t >= post.from && t < shower.until) {
+		return {
+			x: shower.at.x,
+			width: SHOWER_WIDTH,
+			y: shower.at.y + (shower.at.y < MID_Y ? SHOWER_UP_FAR : SHOWER_UP),
 		};
 	}
 	if (post && t >= post.from) {
