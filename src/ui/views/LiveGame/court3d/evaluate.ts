@@ -2309,7 +2309,7 @@ const blendInto = (
 		// the game whatever the frame, and all the way back to BLEND_MS ago
 		// - a sliver of something found some frames and missed in others,
 		// he flickers in and out of it.)
-		const g = Math.floor((t - FLICK_MS / 2) / FLICK_MS) * FLICK_MS;
+		const g = Math.floor(t / FLICK_MS) * FLICK_MS;
 		let flick: { at: number; d: Doing } | undefined;
 		for (let at = g; at > lo - FLICK_MS && !flick; at -= FLICK_MS) {
 			const d = doingAt(tl, tr, at);
