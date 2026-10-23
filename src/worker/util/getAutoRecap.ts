@@ -29,6 +29,7 @@ import {
 	nick,
 	numWord,
 	ordinal,
+	otPhrase,
 	pick,
 	pickByDay,
 	pickSentence,
@@ -1905,7 +1906,7 @@ const buildHeadlineText = (
 				);
 			} else if (shape.ot > 0) {
 				options.push(
-					`${winnerN} close out the ${loserN} in overtime, ${scoreTag(shape)}`,
+					`${winnerN} close out the ${loserN} in ${otPhrase(shape.ot)}, ${scoreTag(shape)}`,
 					`${winnerN} need ${shape.ot === 1 ? "an extra period" : `${numWord(shape.ot)} extra periods`} to finish off the ${loserN} in ${games}`,
 				);
 			} else if (comebackSize(shape) > 0) {
@@ -2033,7 +2034,7 @@ const buildHeadlineText = (
 					]
 				: []),
 			...(shape.ot > 0
-				? [`${W} outlast ${Lx} in overtime to ${stateShort}`]
+				? [`${W} outlast ${Lx} in ${otPhrase(shape.ot)} to ${stateShort}`]
 				: []),
 		];
 		const options =
@@ -9039,7 +9040,7 @@ const dayHeadline = (
 		return hl(
 			pick(rng, [
 				`${w} outlast ${l} ${scoreTag(mShape)}`,
-				`${w} survive ${l} in ${mShape.ot === 1 ? "overtime" : `${mShape.ot} overtimes`}`,
+				`${w} survive ${l} in ${otPhrase(mShape.ot)}`,
 				`${w} need ${
 					mShape.ot === 1
 						? "an extra period"
@@ -10265,13 +10266,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		} else if (shape.ot > 0) {
 			blurb = `${theNick(shape.winner)} ${
 				shape.ot === 1 ? "survived" : "outlasted"
-			} ${theNick(shape.loser)} ${plainScore(shape)} in ${
-				shape.ot === 1
-					? "overtime"
-					: shape.ot === 2
-						? "double overtime"
-						: `${shape.ot} overtimes`
-			}`;
+			} ${theNick(shape.loser)} ${plainScore(shape)} in ${otPhrase(shape.ot)}`;
 		} else if (shape.margin >= 25) {
 			blurb = `${theNick(shape.winner)} ${freshVerb(shape.margin >= 35 ? BIG_ROUT_VERBS : ROUT_VERBS, 0, usedVerbs)} ${theNick(shape.loser)} ${scoreTag(shape)}`;
 		} else if (shape.margin <= 3) {

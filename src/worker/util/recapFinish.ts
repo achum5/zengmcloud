@@ -50,7 +50,9 @@ export const shotName = (e: Pick<FinishEvent, "kind" | "andOne" | "pts">) => {
 			? "free throw"
 			: e.pts === 2
 				? "two free throws"
-				: `${e.pts} free throws`;
+				: e.pts === 3
+					? "three free throws"
+					: `${e.pts} free throws`;
 	}
 	if (e.andOne) {
 		return e.kind === "tp" ? "four-point play" : "three-point play";
@@ -136,47 +138,111 @@ const aShot = (e: FinishEvent): string => {
 	return /free throws$/.test(name) ? name : `a ${name}`;
 };
 
-// The game-tying shot that forced overtime, from the sim's own note of it:
-// "X made a three-pointer with 4.2 seconds remaining to force overtime".
-const regulationTie = (
+// "double" in the sim's "to force double overtime": which overtime it was.
+const OT_COUNTER: Record<string, number> = {
+	"": 1,
+	double: 2,
+	triple: 3,
+	quadruple: 4,
+	quintuple: 5,
+	sextuple: 6,
+	septuple: 7,
+};
+
+type ForcingTie = {
+	name: string;
+	shot: string;
+	clock?: string;
+	buzzer: boolean;
+	// The log's row for it, when the log reaches back that far.
+	e?: FinishEvent;
+};
+
+// The game-tying shot that forced the nth overtime (1 = the first).
+//
+// From the sim's own note - "X made a three-pointer with 4.2 seconds
+// remaining to force overtime", "...to force double overtime" - matched
+// to the overtime it names. Taking the first "to force" note there was
+// for the first overtime put the second overtime's tie at the end of
+// regulation.
+//
+// The sim writes that note only for a shot in the last seconds. A tie with
+// 38 seconds left that nobody broke forced overtime just the same, and
+// without it the story went from "up 4 going into the fourth" to "Bennedict
+// King's layup with 1:40 to play made it 108-108" - an overtime basket read
+// as one in regulation. The log has the period's last score, which is that
+// tie. (It has every overtime score, up to its cap, which can leave out the
+// first of three; the note covers that one.)
+const forcingTie = (
 	game: RecapGame,
 	regPeriods: number,
-):
-	| { name: string; shot: string; clock?: string; buzzer: boolean }
-	| undefined => {
+	n: number,
+): ForcingTie | undefined => {
+	const period = regPeriods + n - 1;
+	const fromLog = (): ForcingTie | undefined => {
+		const e = endingTie(game, period);
+		const name = e ? nameOf(game, e.pid) : undefined;
+		return e && name
+			? {
+					name,
+					shot: shotName(e),
+					clock: clockLeft(e.clock),
+					buzzer: e.clock < 0.5,
+					e,
+				}
+			: undefined;
+	};
 	for (const raw of game.clutchPlays) {
 		const text = stripHtml(raw);
 		const m =
-			/^(.+?) made (a [ a-z-]+?|two free throws|three free throws)(?: with ([\d.:]+) seconds remaining| at the buzzer| with no time on the clock)? to force/.exec(
+			/^(.+?) made (a [ a-z-]+?|two free throws|three free throws)(?: with ([\d.:]+) seconds remaining| at the buzzer| with no time on the clock)? to force\s+([a-z]*)\s*overtime/.exec(
 				text,
 			);
-		if (m) {
-			let shot = m[2]!.replace(/^a /, "");
-			const secs = m[3] ? Number.parseFloat(m[3].replace(":", ".")) : undefined;
-			// The sim's note says "basket"; the log knows what it was.
-			if (shot === "basket" && secs !== undefined) {
-				const e = (game.flow?.finish ?? []).find(
-					(x) =>
-						x.period === regPeriods &&
-						x.kind !== "ft" &&
-						Math.abs(x.clock - secs) < 0.15,
-				);
-				if (e) {
-					shot = shotName(e);
-				}
-			}
-			return {
-				name: m[1]!.trim(),
-				shot,
-				clock:
-					secs !== undefined && Number.isFinite(secs)
-						? clockLeft(secs)
-						: undefined,
-				buzzer: /at the buzzer|no time on the clock/.test(text),
-			};
+		if (!m || OT_COUNTER[m[4]!] !== n) {
+			continue;
 		}
+		// Past the first overtime the log's row says it with the score.
+		const logged = n > 1 ? fromLog() : undefined;
+		if (logged) {
+			return logged;
+		}
+		let shot = m[2]!.replace(/^a /, "");
+		const secs = m[3] ? Number.parseFloat(m[3].replace(":", ".")) : undefined;
+		// The sim's note says "basket"; the log knows what it was.
+		if (shot === "basket" && secs !== undefined) {
+			const e = (game.flow?.finish ?? []).find(
+				(x) =>
+					x.period === period &&
+					x.kind !== "ft" &&
+					Math.abs(x.clock - secs) < 0.15,
+			);
+			if (e) {
+				shot = shotName(e);
+			}
+		}
+		return {
+			name: m[1]!.trim(),
+			shot,
+			clock:
+				secs !== undefined && Number.isFinite(secs)
+					? clockLeft(secs)
+					: undefined,
+			buzzer: /at the buzzer|no time on the clock/.test(text),
+		};
 	}
-	return undefined;
+	return fromLog();
+};
+
+// The score a period ended on, when it was a tie: its last basket. Only
+// for a period that went to overtime.
+const endingTie = (
+	game: RecapGame,
+	period: number,
+): FinishEvent | undefined => {
+	const last = (game.flow?.finish ?? [])
+		.filter((e) => e.period === period && e.pts > 0)
+		.at(-1);
+	return last && last.score[0] === last.score[1] ? last : undefined;
 };
 
 // tie: level. goAhead: the winner took the lead. extend: the winner added to
@@ -290,33 +356,6 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 		itWas = /^It was\b/.test(text);
 	};
 
-	if (ot) {
-		const tie = regulationTie(game, regPeriods);
-		if (tie) {
-			const clock = tie.buzzer
-				? tie.shot.includes("free throw")
-					? " with no time left"
-					: " at the buzzer"
-				: tie.clock
-					? ` with ${tie.clock} left`
-					: "";
-			const shot = tie.shot;
-			const aShot = /free throws$/.test(shot) ? shot : `a ${shot}`;
-			say(
-				pick(
-					rng,
-					[
-						`${cap(poss(tie.name))} ${shot}${clock} sent it to overtime.`,
-						`It took ${poss(tie.name)} ${shot}${clock} to force the extra period.`,
-						`${tie.name} forced overtime on ${aShot}${clock}.`,
-					],
-					"finishForcedOt",
-				),
-				tie.name,
-			);
-		}
-	}
-
 	// The last time the winner took a lead it never gave back, inside the
 	// window. Everything before it is the fight; everything after is the
 	// hold.
@@ -335,19 +374,71 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 			goAheadIdx = i;
 		}
 	}
-
-	// The final overtime period only, when there were several: a double-OT
-	// game's first extra period is the fight, and it is enough to say the
-	// game needed two of them.
 	const goAhead = goAheadIdx >= 0 ? moments[goAheadIdx]! : undefined;
+	// What the go-ahead shot answered: the most recent tie or lead the
+	// losers held before it.
+	const before = goAhead
+		? moments
+				.slice(0, goAheadIdx)
+				.reverse()
+				.find((m) => m.role === "tie" || m.role === "loserLead")
+		: undefined;
+
+	// " with 4.2 seconds left", " at the buzzer", from a forcing tie.
+	const tieClock = (tie: ForcingTie) =>
+		tie.buzzer
+			? tie.shot.includes("free throw")
+				? " with no time left"
+				: " at the buzzer"
+			: tie.clock
+				? ` with ${tie.clock} left`
+				: "";
+
+	if (ot) {
+		const tie = forcingTie(game, regPeriods, 1);
+		if (tie) {
+			const clock = tieClock(tie);
+			const shot = tie.shot;
+			const aShot = /free throws$/.test(shot) ? shot : `a ${shot}`;
+			say(
+				pick(
+					rng,
+					[
+						`${cap(poss(tie.name))} ${shot}${clock} sent it to overtime.`,
+						`It took ${poss(tie.name)} ${shot}${clock} to force ${game.overtimes > 1 ? "overtime" : "the extra period"}.`,
+						`${tie.name} forced overtime on ${aShot}${clock}.`,
+					],
+					"finishForcedOt",
+				),
+				tie.name,
+			);
+		}
+		// Every overtime but the last ended tied too, and each of those ties
+		// is told in order. Without them a double-overtime story went from
+		// "sent it to overtime" straight to "The Kings led 108-106 on Lonnie
+		// Lowry's layup with 4:51 to play" - a basket in the SECOND
+		// overtime, with the whole first one, and the free throw that sent
+		// it on, never mentioned. The tie the go-ahead basket answered is
+		// told below, with that basket.
+		for (let n = 2; n <= game.overtimes; n++) {
+			const later = forcingTie(game, regPeriods, n);
+			if (!later || (later.e && before?.e === later.e)) {
+				continue;
+			}
+			const by =
+				later.name === justNamed
+					? `his ${later.shot}`
+					: `${poss(later.name)} ${later.shot}`;
+			say(
+				later.e
+					? `${cap(by)} ${when(later.e, rng)} tied it at ${later.e.score[0]} and forced ${aOrdinal(n)} overtime.`
+					: `${cap(by)}${tieClock(later)} forced ${aOrdinal(n)} overtime.`,
+				later.name,
+			);
+		}
+	}
 
 	if (goAhead) {
-		// What the go-ahead shot answered: the most recent tie or lead the
-		// losers held before it.
-		const before = moments
-			.slice(0, goAheadIdx)
-			.reverse()
-			.find((m) => m.role === "tie" || m.role === "loserLead");
 		if (before?.name) {
 			const [w, l] = scoreOf(before.e, wSide);
 			const shot = shotBy(before.name, before.e, justNamed);

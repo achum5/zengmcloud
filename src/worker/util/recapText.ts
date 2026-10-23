@@ -273,6 +273,17 @@ const NUM_WORDS = [
 
 export const numWord = (n: number): string => NUM_WORDS[n] ?? String(n);
 
+// How many overtimes, as a headline says it: "outlast the Kings in double
+// overtime", never "in overtime" over a game that needed two.
+export const otPhrase = (n: number): string =>
+	n <= 1
+		? "overtime"
+		: n === 2
+			? "double overtime"
+			: n === 3
+				? "triple overtime"
+				: `${numWord(n)} overtimes`;
+
 // Every number said with an "eight" first takes "an" - 8, 80-89, 800s - and
 // so do 11 and 18: "an 81-point edge", not "a 81-point edge".
 export const aNum = (n: number): string =>

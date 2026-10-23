@@ -1015,6 +1015,27 @@ export const verifyRecap = (
 			"(whole recap)",
 		);
 	}
+	// How many: "forced a second overtime" needs a second, "in double
+	// overtime" exactly two, "(2OT)" the same.
+	const OT_ORDINALS = ["second", "third", "fourth", "fifth"];
+	for (const m of text.matchAll(
+		/\bforced an? (second|third|fourth|fifth) overtime\b/g,
+	)) {
+		const n = OT_ORDINALS.indexOf(m[1]!) + 2;
+		if (n > game.overtimes) {
+			add(
+				"overtime",
+				`said a ${m[1]} overtime, game had ${game.overtimes}`,
+				m[0],
+			);
+		}
+	}
+	for (const m of text.matchAll(/\b(double|triple) overtime\b|\((\d)OT\)/g)) {
+		const n = m[2] ? Number(m[2]) : m[1] === "double" ? 2 : 3;
+		if (n !== game.overtimes) {
+			add("overtime", `said ${m[0]}, game had ${game.overtimes}`, m[0]);
+		}
+	}
 	// SERIES CLAIMS. A playoff recap states the bracket constantly - "Game 3
 	// of the Finals", "take a 2-1 series lead", "closing out the Magic in
 	// five", "#8 seed", "two wins from the title" - and every one of those is

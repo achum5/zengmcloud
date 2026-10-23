@@ -6,7 +6,7 @@ import type {
 	RecapTeam,
 } from "./getDayGamesForRecap.ts";
 import { finishScores, finishStory, shotName } from "./recapFinish.ts";
-import { rngFromSeed } from "./recapText.ts";
+import { otPhrase, rngFromSeed } from "./recapText.ts";
 import { verifyRecap } from "./recapAccuracy.ts";
 
 const player = (name: string, pid: number, pts = 10): RecapPlayer => ({
@@ -222,6 +222,97 @@ describe("finishStory", () => {
 		}
 	});
 
+	// "It took Anthony Lowry's three-pointer at the buzzer to force the extra
+	// period. They led 108-106 on Lonnie Lowry's layup with 4:51 to play" -
+	// that 4:51 was in the SECOND overtime, and the free throw that forced
+	// it was never told.
+	test("every overtime that was forced is told, in order", () => {
+		const game = build(
+			[
+				ev(1, 21, 3, "tp", 0, [96, 96]),
+				ev(0, 11, 2, "rim", 250, [98, 96], { period: 5 }),
+				ev(1, 22, 1, "ft", 43.3, [98, 98], { period: 5 }),
+				ev(1, 21, 2, "rim", 291, [98, 100], { period: 6 }),
+				ev(0, 12, 2, "mid", 200, [100, 100], { period: 6 }),
+				ev(1, 22, 2, "rim", 160, [100, 102], { period: 6 }),
+				ev(0, 11, 3, "tp", 94, [103, 102], { period: 6 }),
+				ev(0, 12, 2, "ft", 5, [105, 102], { period: 6 }),
+			],
+			{
+				overtimes: 2,
+				clutchPlays: [
+					'<a href="#">Cade King</a> made a three-pointer at the buzzer to force  overtime.',
+				],
+			},
+		);
+		for (let seed = 1; seed <= 8; seed++) {
+			const text = tell(game, seed).join(" ");
+			assert.match(text, /Cade King.*buzzer.*(overtime|extra period)/, text);
+			assert.match(
+				text,
+				/Anthony King's free throw with 43\.3 seconds (left|to go|to play) tied it at 98 and forced a second overtime/,
+				text,
+			);
+			// In order: the first overtime's tie before the second's baskets.
+			assert.ok(text.indexOf("second overtime") < text.indexOf("102"), text);
+			assert.notMatch(text, /the extra period/, text);
+		}
+	});
+
+	// The sim notes only a tie in the last seconds. One with 38.7 seconds
+	// left that nobody broke forced overtime too, and the overtime baskets
+	// after it read as regulation's.
+	test("a tie with no clutch note is found in the log", () => {
+		const game = build(
+			[
+				ev(1, 21, 2, "post", 38.7, [99, 99]),
+				ev(0, 11, 2, "rim", 100, [101, 99], { period: 5 }),
+				ev(0, 12, 2, "ft", 3, [103, 99], { period: 5 }),
+			],
+			{ overtimes: 1 },
+		);
+		for (let seed = 1; seed <= 6; seed++) {
+			const text = tell(game, seed).join(" ");
+			assert.match(text, /Cade King.*hook shot.*38\.7 seconds/, text);
+			assert.match(text, /overtime|extra period/, text);
+		}
+	});
+
+	// A double-overtime game whose regulation tie had no note but whose
+	// second did: "to force double overtime" is the SECOND overtime's.
+	test("the note that forced a second overtime is not taken for regulation's", () => {
+		const game = build(
+			[
+				ev(1, 21, 2, "mid", 29.7, [96, 96]),
+				ev(0, 11, 2, "rim", 250, [98, 96], { period: 5 }),
+				ev(1, 22, 2, "rim", 17.8, [98, 98], { period: 5 }),
+				ev(0, 11, 2, "rim", 100, [100, 98], { period: 6 }),
+				ev(0, 12, 2, "ft", 3, [102, 98], { period: 6 }),
+			],
+			{
+				overtimes: 2,
+				clutchPlays: [
+					'<a href="#">Anthony King</a> made a basket with 17.8 seconds remaining to force double overtime.',
+				],
+			},
+		);
+		for (let seed = 1; seed <= 6; seed++) {
+			const text = tell(game, seed).join(" ");
+			assert.match(text, /Cade King.*29\.7 seconds/, text);
+			assert.match(
+				text,
+				/Anthony King's layup .*forced a second overtime/,
+				text,
+			);
+			assert.notMatch(
+				text,
+				/Anthony King[^.]*(sent it to overtime|forced overtime|force overtime)/,
+				text,
+			);
+			assert.deepEqual(verifyRecap(`**x**\n\n${text}`, game), []);
+		}
+	});
+
 	test("the same man twice in a row becomes a pronoun", () => {
 		const game = build([
 			ev(1, 21, 2, "rim", 60, [99, 99]),
@@ -242,6 +333,29 @@ describe("finishStory", () => {
 	});
 });
 
+describe("how many overtimes", () => {
+	test("a headline says double overtime, and the reader holds it to the game", () => {
+		assert.equal(otPhrase(1), "overtime");
+		assert.equal(otPhrase(2), "double overtime");
+		assert.equal(otPhrase(3), "triple overtime");
+		assert.equal(otPhrase(4), "four overtimes");
+		const game = build([], { overtimes: 2 });
+		const kinds = (s: string) =>
+			verifyRecap(`**x**\n\n${s}`, game).map((v) => v.detail);
+		assert.deepEqual(kinds("The Wizards won in double overtime."), []);
+		assert.deepEqual(
+			kinds("A layup tied it at 99 and forced a second overtime."),
+			[],
+		);
+		assert.equal(
+			kinds("A layup tied it at 99 and forced a third overtime.").length,
+			1,
+		);
+		assert.equal(kinds("The Wizards won in triple overtime.").length, 1);
+		assert.equal(kinds("The Wizards won 104-101 (3OT).").length, 1);
+	});
+});
+
 describe("shotName", () => {
 	test("names the play, not the stat call", () => {
 		assert.equal(shotName({ kind: "rim", pts: 2 }), "layup");
@@ -254,6 +368,7 @@ describe("shotName", () => {
 			"four-point play",
 		);
 		assert.equal(shotName({ kind: "ft", pts: 2 }), "two free throws");
+		assert.equal(shotName({ kind: "ft", pts: 3 }), "three free throws");
 		assert.equal(shotName({ kind: "mid", pts: 2 }), "jumper");
 	});
 });
