@@ -668,6 +668,9 @@ const BREAK_MS = 250;
 // his hands out to the ball, and not into each other. (Turned to it as he
 // goes there, side on, so he is facing it when the back gets there.)
 const MESH_APART = 3;
+// (Into his pass set, over no less than this long - off a fake on the
+// run, a moment to pull up into it.)
+const SET_LEAST_MS = 300;
 // Out there to hand it off, or fake it: at no more than this pace (feet a
 // second), and over no less than this long (ms).
 const QB_STEP_FPS = 15;
@@ -4105,7 +4108,10 @@ class Action {
 			const far = dist(b.at, this.w(setPt));
 			b.go(
 				this.w(setPt),
-				Math.max(snap + 650, b.t + (far / (b.top * 0.75)) * 1000),
+				Math.max(
+					snap + 650,
+					b.t + Math.max(SET_LEAST_MS, (far / (b.top * 0.75)) * 1000),
+				),
 				"passSet",
 				this.ahead,
 			);

@@ -59,8 +59,14 @@ const acts = (l: Leg) =>
 const PULL_INTO = new Set<Move>(["swat", "handOff"]);
 
 // How long past a stretch's end he is still pulling up into the stand after
-// it (none if he runs on, or into an act of some kind).
-const stopOf = (l: Leg | undefined, next: Leg | undefined): number =>
+// it (none if he runs on, or into an act of some kind) - no more than half
+// of it, if he gets going again after it, for him to get going over the
+// rest.
+const stopOf = (
+	l: Leg | undefined,
+	next: Leg | undefined,
+	then: Leg | undefined,
+): number =>
 	!l ||
 	!(eases(l) || acts(l)) ||
 	(next &&
@@ -70,7 +76,9 @@ const stopOf = (l: Leg | undefined, next: Leg | undefined): number =>
 		: Math.min(
 				STOP_MS / 2,
 				(l.t1 - l.t0) / 2,
-				next ? next.t1 - next.t0 : STOP_MS / 2,
+				next
+					? (next.t1 - next.t0) / (then && eases(then) ? 2 : 1)
+					: STOP_MS / 2,
 			);
 
 // A stretch's pace: off from a stand `early` ms before it starts (`g` of it
@@ -90,12 +98,12 @@ const EVEN: Pace = { g: 0, early: 0, a: 0, top: 1, h: 0, stop: 0 };
 export const paceOf = (legs: Leg[], k: number): Pace => {
 	const l = legs[k];
 	if (!l || !eases(l)) {
-		const stop = l && acts(l) ? stopOf(l, legs[k + 1]) : 0;
+		const stop = l && acts(l) ? stopOf(l, legs[k + 1], legs[k + 2]) : 0;
 		return stop > 0 ? { ...EVEN, h: stop / (l!.t1 - l!.t0), stop } : EVEN;
 	}
 	const ms = l.t1 - l.t0;
 	const prev = legs[k - 1];
-	const stop = stopOf(l, legs[k + 1]);
+	const stop = stopOf(l, legs[k + 1], legs[k + 2]);
 	if (prev && goes(prev)) {
 		return stop > 0 ? { ...EVEN, h: stop / ms, stop } : EVEN;
 	}
@@ -109,7 +117,11 @@ export const paceOf = (legs: Leg[], k: number): Pace => {
 	// (Not before the stretch before this one's was pulled up from.)
 	const early = Math.max(
 		0,
-		Math.min(GO_MS / 2, ms / 2, prev.t1 - prev.t0 - stopOf(legs[k - 2], prev)),
+		Math.min(
+			GO_MS / 2,
+			ms / 2,
+			prev.t1 - prev.t0 - stopOf(legs[k - 2], prev, l),
+		),
 	);
 	return { g: early / ms, early, a: 0, top: 1, h: stop / ms, stop };
 };
