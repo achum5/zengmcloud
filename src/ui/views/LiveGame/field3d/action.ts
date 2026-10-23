@@ -656,6 +656,8 @@ const SWING_TURN = 1.6;
 // One man in the secondary bringing him down from the side or behind: this
 // often on his feet still after it, stood over him.
 const UPRIGHT = 0.3;
+// The men who bring him down down no nearer one another than this.
+const LANDED_APART = 2.4;
 // Met head on, another man in on it by then (as late as this after, ms):
 // this often stood up instead - held there and driven back this far (feet)
 // over this long, the whistle on forward progress, him still on his feet.
@@ -2765,6 +2767,7 @@ class Action {
 			carrier.act(back ? "getUpBack" : "getUp", t + 450 + DOWN_MS + GET_UP_MS);
 			this.done.add(carrier.pid);
 		}
+		const landed: Pt[] = [];
 		by.forEach((m, k) => {
 			// From the way he comes at him: there at the hit.
 			const side = k === 0 ? 0 : (r() < 0.5 ? -1 : 1) * 1.2;
@@ -2792,17 +2795,26 @@ class Action {
 			}
 			// Down alongside him on the side he came in from, not on top of
 			// him - the man who drove him back down across his legs.
+			// (Two in from the same side not down in the one place: the next
+			// over the other side of him, or further down his legs.)
+			const landing = (by: number) =>
+				swing
+					? {
+							x: downAt.x - Math.sin(fall) * by,
+							y: downAt.y + Math.cos(fall) * by,
+						}
+					: !back
+						? along(downAt, -1.2, by)
+						: k === 0
+							? along(downAt, 2.6, 2)
+							: along(downAt, 0.6, by);
 			const by = (Math.sin(ang - fall) > 0 ? 1 : -1) * 2.1;
-			const lands = swing
-				? {
-						x: downAt.x - Math.sin(fall) * by,
-						y: downAt.y + Math.cos(fall) * by,
-					}
-				: !back
-					? along(downAt, -1.2, by)
-					: k === 0
-						? along(downAt, 2.6, 2)
-						: along(downAt, 0.6, by);
+			const free = (p: Pt) => landed.every((q) => dist(p, q) >= LANDED_APART);
+			const lands =
+				[landing(by), landing(-by), along(landing(by), -LANDED_APART, 0)].find(
+					free,
+				) ?? along(landing(by), -LANDED_APART * 2, 0);
+			landed.push(lands);
 			m.act("dive", t + 450, face, lands);
 			m.hold(t + 450 + DOWN_MS + 150 * k, "prone");
 			m.act("getUp", t + 450 + DOWN_MS + GET_UP_MS + 150 * k);
