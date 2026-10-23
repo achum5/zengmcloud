@@ -954,6 +954,29 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "The Magic were ahead 63-39 at the half" and nothing after it, over a
+	// 106-97 final; "...but it was 57-57 at halftime" over a 54-41 second
+	// half. A second half that moved the game is told.
+	test("a second half that moved the game gets told", () => {
+		const LATER =
+			/second half|after the break|after halftime|third|fourth|going into the|entering the|for good|for the last time|with \d+:\d\d|seconds|two minutes|the rest of the way|from there|pushed on|never (?:led|trailed|got back)|as many as \d+\.|lead reached|the final|overtime|stretched|got within|cut it|pulled/i;
+		for (const { gid, recap, game } of pairs) {
+			const { w, l } = sides(game);
+			const wq = w.ptsQtrs ?? [];
+			const lq = l.ptsQtrs ?? [];
+			if (game.overtimes > 0 || wq.length !== 4 || lq.length !== 4) {
+				continue;
+			}
+			const w2 = wq[2]! + wq[3]!;
+			const l2 = lq[2]! + lq[3]!;
+			if (l2 - w2 < 8 && w2 - l2 < 12) {
+				continue;
+			}
+			const body = recap.split("\n\n").slice(1, 3).join(" ");
+			assert.match(body, LATER, `gid ${gid}\n${recap}`);
+		}
+	});
+
 	// "Bulls cannot keep up with the Pacers, 110-107" over a game won on a
 	// jumper with 19.9 seconds left.
 	test("a headline's verb fits the margin", () => {

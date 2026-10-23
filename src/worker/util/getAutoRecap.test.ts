@@ -5959,6 +5959,9 @@ describe("a one-game playoff day", () => {
 				) {
 					said += 1;
 				}
+				// "The Warriors need three more; the Grizzlies need four" -
+				// three more what.
+				assert.doesNotMatch(recap, /need (?:one|two|three|four) more;/, recap);
 			}
 			assert.ok(said > 0, `series ${h}-${a}: the wrap never stated the stakes`);
 		}

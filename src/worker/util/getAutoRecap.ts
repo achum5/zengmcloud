@@ -4275,14 +4275,24 @@ const gameStory = (
 			lMax >= 12 &&
 			lMaxAt !== undefined &&
 			lMaxAt <= halfN;
-		if (!close && w2 - l2 >= 8 && !loserPeakFirst) {
+		if (!close && w2 - l2 >= 8) {
 			covers.add("secondHalf");
 			const parts = [`won the second half ${w2}-${l2}`];
 			if (run && run.winner && run.period > halfN) {
 				covers.add("run");
 				parts.push(`ran off ${run.pts} straight points ${runAt(run)}`);
 			}
-			out.push(`It was ${wh}-${lh} at halftime before ${w} ${series(parts)}.`);
+			// The losers' early lead first, then the half that won it: "The
+			// Kings ran off 16 straight points in the first and led by as many
+			// as 12, but it was 57-57 at halftime" ended the story there, over
+			// a 54-41 second half.
+			if (loserPeakFirst) {
+				out.push(tiedHalf(), `${W} ${series(parts)}.`);
+			} else {
+				out.push(
+					`It was ${wh}-${lh} at halftime before ${w} ${series(parts)}.`,
+				);
+			}
 			return { sentences: out, covers };
 		}
 		out.push(tiedHalf());
@@ -4537,6 +4547,29 @@ const gameStory = (
 						"story:peakOnly",
 					)
 				: `${pick(rng, ["After the break", "In the second half", "From there"], "story:after")}, ${aboutWinner ? "they" : w} ${series(parts)}.`,
+		);
+	} else if (l2 - w2 >= 8) {
+		// The lead the second half ate into: "The Magic were ahead 63-39 at
+		// the half" and nothing after it, over a 106-97 final.
+		covers.add("secondHalf");
+		const lateRun =
+			run && !run.winner && run.period > halfN && run.end <= regPeriods
+				? run
+				: undefined;
+		if (lateRun) {
+			covers.add("run");
+		}
+		out.push(
+			lateRun
+				? `${L} won the second half ${l2}-${w2} and ran off ${lateRun.pts} straight points ${runAt(lateRun)}.`
+				: pick(
+						rng,
+						[
+							`${L} won the second half ${l2}-${w2}.`,
+							`${L} outscored ${w} ${l2}-${w2} after the break.`,
+						],
+						"story:loserHalf",
+					),
 		);
 	} else if (aheadForGoodByHalf && shape.margin >= 8) {
 		// "Never got back in front" says they had been; a side that never led
@@ -5021,6 +5054,17 @@ const loserSentence = (
 		// these frames name him first or bracket the line. A double-double's
 		// numbers say what it was; a triple-double is always called one.
 		const triple = doubleCategories(leader).length >= 3;
+		// Level with the next man and nothing else to his line: "Scoot Ellis'
+		// 21 points was the best of the Warriors, and Xavier Ellis supplied
+		// 21 points" crowned one of two equals.
+		if (
+			second &&
+			second.pts === leader.pts &&
+			statPhrase(leader) === plural(leader.pts, "point") &&
+			statPhrase(second, 1) === plural(second.pts, "point")
+		) {
+			return `${cap(them)} got ${leader.pts} apiece from ${leader.name} and ${second.name}.`;
+		}
 		const gotLine = !ddw
 			? `${line} from ${leader.name}`
 			: triple
@@ -8884,7 +8928,9 @@ const dayStakesPhrase = (
 	return pick(
 		rng,
 		[
-			`${cap(w)} need ${numWord(winnerNeeds)} more; ${l} need ${numWord(loserNeeds)}.`,
+			// "Need three more" of what: "The Warriors need three more; the
+			// Grizzlies need four" left the noun out of both.
+			`${cap(w)} need ${numWord(winnerNeeds)} more ${winnerNeeds === 1 ? "win" : "wins"}; ${l} need ${numWord(loserNeeds)}.`,
 			`${cap(w)} are ${wins(winnerNeeds)} from ${prize}, ${l} ${wins(loserNeeds)}.`,
 		],
 		"dayStakesOpen",
