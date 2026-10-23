@@ -2825,6 +2825,60 @@ describe("3D director", () => {
 		assert.isAtMost(along.length, drives * 0.035, along.join("; "));
 	}, 240_000);
 
+	// A shot from out on the floor goes up with room round him: off a ball
+	// screen he turns the corner, the man who set it rolling away - not up
+	// with him still stood at his shoulder.
+	test("a jumper goes up with no teammate at the shooter's shoulder", () => {
+		let shots = 0;
+		const close: string[] = [];
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { events, tl } = compile(seed, 150);
+			for (const b of tl.beats) {
+				const e = events[b.i];
+				if (!e || !/^fga/.test(e.type) || typeof e.pid !== "number") {
+					continue;
+				}
+				const pid = e.pid;
+				const shot = tl.ball.find(
+					(s) =>
+						s.kind === "fly" &&
+						"pid" in s.from &&
+						s.from.pid === pid &&
+						!("pid" in s.to) &&
+						s.to.z > 6 &&
+						s.t0 >= b.preStart - 100 &&
+						s.t0 <= b.end + 200,
+				);
+				if (
+					shot?.kind !== "fly" ||
+					"pid" in shot.to ||
+					fastAt(tl, shot.t0 - 1000) > 1
+				) {
+					continue;
+				}
+				const team = tl.tracks.get(pid)!.team;
+				const S = evalPlayer(tl, pid, shot.t0);
+				const rx = shot.to.x < COURT_W / 2 ? rimX(0) : rimX(1);
+				if (Math.hypot(S.x - rx, S.y - COURT_H / 2) < 6) {
+					continue;
+				}
+				shots += 1;
+				const near = Math.min(
+					...[...tl.tracks.values()]
+						.filter((tr) => tr.team === team && tr.pid !== pid)
+						.map((tr) => evalPlayer(tl, tr.pid, shot.t0))
+						.filter((m) => m.shown)
+						.map((m) => Math.hypot(m.x - S.x, m.y - S.y)),
+				);
+				if (near < 4) {
+					close.push(`${seed}: ${pid} at ${Math.round(shot.t0)}`);
+				}
+			}
+		}
+		assert.isAbove(shots, 200);
+		assert.isAtMost(close.length, shots * 0.075, close.join("; "));
+	}, 240_000);
+
 	// "Dunks on him": the man the words name is the one who meets him at the
 	// rim - nearest him of anybody on the other side, right there, up with
 	// him - not someone else who happened to be in there.

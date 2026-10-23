@@ -707,9 +707,11 @@ const IN_STRIDE_PACE = 8;
 // The longest pause between two runs the same way (ms) a man runs on
 // through instead (see flowOn).
 const FLOW_ON_MS = 1500;
-// Pulling up for three off a ball screen, he dribbles this far (feet) off
-// it, past the screener's shoulder, first.
+// Pulling up off a handoff, he dribbles this far (feet) on with it first.
 const PULL_UP_OFF = 4.5;
+// Pulling up for three off a ball screen, he dribbles this far (feet) off
+// it, past the screener's shoulder, first - turning the corner.
+const TURN_THE_CORNER = 7;
 // A pull-up jumper from the elbow, at most this far out (feet).
 const MID_PULL_UP_IN = 20.5;
 // A roll to the rim with the man with the ball driving into the lane - to
@@ -8536,9 +8538,10 @@ class Director {
 						? way.x * -ur.y + way.y * ur.x
 						: (S.x - P.x) * -ur.y + (S.y - P.y) * ur.x,
 				) || (shooter % 2 ? 1 : -1);
+			const off = sc.handed !== undefined ? PULL_UP_OFF : TURN_THE_CORNER;
 			let Q = clampPt({
-				x: P.x - ur.y * side * PULL_UP_OFF + ur.x * 0.8,
-				y: P.y + ur.x * side * PULL_UP_OFF + ur.y * 0.8,
+				x: P.x - ur.y * side * off + ur.x * 0.8,
+				y: P.y + ur.x * side * off + ur.y * 0.8,
 			});
 			const out = o.zone === "three" ? 24.4 : MID_PULL_UP_IN;
 			if (o.zone === "three" ? dist(Q, rim) < out : dist(Q, rim) > out) {
@@ -8555,7 +8558,26 @@ class Director {
 				t = Math.max(t, sc.set + SCREEN_USE);
 				this.hold(shooter, t, "dribble");
 			}
+			const off0 = t;
 			t = this.go(shooter, Q, t, DRIBBLE * 0.7, "dribble", dir);
+			if (sc.handed === undefined) {
+				// The man who set it doesn't stand there at his shoulder as he
+				// goes up: as the ball comes off it, he rolls to the rim - or
+				// pops, if that is what the set has him do next.
+				const big = sc.screeners[0]!;
+				const role = run.roles.indexOf(big);
+				const then = play.steps[last + 1]?.find(
+					(a) => a.type === "move" && a.who === role,
+				);
+				this.playMove(
+					run,
+					big,
+					then?.type === "move" ? then.to : "rim",
+					then?.type === "move" ? then.style : "roll",
+					off0,
+					sc,
+				);
+			}
 		} else if (
 			o.kind === "step_back" &&
 			!this.track(shooter)?.acts.some(
