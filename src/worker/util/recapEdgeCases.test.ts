@@ -725,6 +725,64 @@ describe("edge cases", () => {
 		}
 		assert.ok(counted >= 5, `${counted}`);
 	});
+	// "Keegan Ingram had 9 points, 19 rebounds, and 6 steals, and Naji
+	// Ingram had a double-double, 11 points and 14 rebounds."
+	test("two support lines in one sentence do not share a verb", () => {
+		for (let gid = 1; gid <= 12; gid++) {
+			const home = squad(
+				{ tid: 1, name: "Hawks" },
+				{ name: "Ace Hawk", pid: 11, pts: 30, fg: 12, fga: 21 },
+				110,
+			);
+			home.players[1] = player("Reb Hawk", 12, {
+				pts: 10,
+				reb: 19,
+				stl: 2,
+			});
+			home.players[2] = player("Thief Hawk", 13, { pts: 14, stl: 5 });
+			const away = squad(
+				{ tid: 2, name: "Bulls" },
+				{ name: "Bo Bull", pid: 21, pts: 22 },
+				98,
+			);
+			const recap = getAutoRecap(game([home, away], { gid }));
+			assert.notMatch(
+				recap,
+				/(?:Reb|Thief) Hawk (\w+) [^.]*, and (?:Reb|Thief) Hawk \1\b/,
+				recap,
+			);
+		}
+	});
+
+	// "Reb Hawk recorded 6 steals for the Hawks" of a night with 19
+	// rebounds the piece never told.
+	test("a man told for his steals or blocks gets the rest of a big line", () => {
+		let named = 0;
+		for (let gid = 1; gid <= 12; gid++) {
+			const home = squad(
+				{ tid: 1, name: "Hawks" },
+				{ name: "Ace Hawk", pid: 11, pts: 30, fg: 12, fga: 21 },
+				110,
+			);
+			home.players[1] = player("Reb Hawk", 12, {
+				pts: 9,
+				reb: 19,
+				stl: 6,
+			});
+			const away = squad(
+				{ tid: 2, name: "Bulls" },
+				{ name: "Bo Bull", pid: 21, pts: 22 },
+				98,
+			);
+			const recap = getAutoRecap(game([home, away], { gid }));
+			if (recap.includes("Reb Hawk")) {
+				named += 1;
+				assert.include(recap, "19 rebounds", recap);
+			}
+		}
+		assert.isAbove(named, 0);
+	});
+
 	// One recap in five carried a free-throw count ("The whistle went one
 	// way: 29 attempts from the line for the Hawks, 14 for the Bulls").
 	test("a free-throw gap is told only when it is big", () => {

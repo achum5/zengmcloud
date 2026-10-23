@@ -1211,4 +1211,21 @@ describe("simmed recaps", () => {
 			);
 		}
 	});
+
+	// "Keegan Ingram had 9 points, 19 rebounds, and 6 steals, and Naji
+	// Ingram had a double-double", and "X shared the team high..., and Y
+	// shared the team high".
+	test("two men in one sentence do not share a verb", () => {
+		const SHARED_VERBS =
+			"had|posted|scored|totaled|delivered|contributed|supplied|provided|added|shared";
+		for (const { gid, recap } of pairs) {
+			assert.notMatch(
+				recap,
+				new RegExp(
+					String.raw`[A-Z][a-z]+ [A-Z][a-z]+ (${SHARED_VERBS}) [^.]*, and [A-Z][a-z]+ [A-Z][a-z]+ \1\b`,
+				),
+				`gid ${gid}\n${recap}`,
+			);
+		}
+	});
 });

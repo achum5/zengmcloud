@@ -4971,7 +4971,38 @@ const supportSentence = (
 		) {
 			return `${second.name} ${scoredVerb(rng)} ${second.pts} points and ${third.name} ${third.pts}.`;
 		}
-		return `${secondText}, and ${thirdText}.`;
+		// Not the same verb twice in one sentence: "Keegan Ingram had 9
+		// points, 19 rebounds, and 6 steals, and Naji Ingram had a
+		// double-double".
+		const verbOf = (text: string, name: string) =>
+			text.startsWith(`${name} `)
+				? text.slice(name.length + 1).split(" ")[0]
+				: undefined;
+		const v2 = verbOf(secondText, second.name);
+		const v3 = verbOf(thirdText, third.name);
+		if (v2 === "shared" && v3 === "shared") {
+			// "X shared the team high with 23 points..., and Y shared the
+			// team high with 23 points."
+			return `${second.name} and ${third.name} shared the team high with ${second.pts} points apiece.`;
+		}
+		// Only a one-word verb is swapped: "put up", "chipped in" and their
+		// like rotate already, and a particle must not be left behind.
+		const ONE_WORD = [
+			"had",
+			"posted",
+			"scored",
+			"totaled",
+			"delivered",
+			"contributed",
+			"supplied",
+			"provided",
+			"added",
+		];
+		const third2 =
+			v2 !== undefined && v2 === v3 && ONE_WORD.includes(v2)
+				? `${third.name} ${v2 === "added" ? "chipped in" : "added"}${thirdText.slice(third.name.length + 1 + v3.length)}`
+				: thirdText;
+		return `${secondText}, and ${third2}.`;
 	}
 	return `${secondText}.`;
 };
@@ -5991,6 +6022,10 @@ const defensiveNote = (
 			)
 		: "";
 	const options: string[] = [];
+	// A man with more to his night than the steals or blocks gets the line:
+	// "Vince King recorded 5 steals" of a night with 11 rebounds the piece
+	// never told.
+	const more = (p: RecapPlayer) => p.pts >= 15 || p.reb >= 10 || p.ast >= 8;
 	if (w.blk >= 9) {
 		options.push(
 			pickSentence(
@@ -6007,12 +6042,14 @@ const defensiveNote = (
 	}
 	if (bigBlocker) {
 		options.push(
-			`${bigBlocker.name} protected the rim with ${plural(bigBlocker.blk, "block")}.`,
+			more(bigBlocker)
+				? `${bigBlocker.name} had ${statPhrase(bigBlocker)}.`
+				: `${bigBlocker.name} protected the rim with ${plural(bigBlocker.blk, "block")}.`,
 		);
 	}
 	if (bigThief) {
 		options.push(
-			`${bigThief.name} ${takeVerb(rng, ["came up with", "recorded", "collected"], "thiefVerb")} ${plural(bigThief.stl, "steal")} for ${thiefTeam}.`,
+			`${bigThief.name} ${takeVerb(rng, ["came up with", "recorded", "collected"], "thiefVerb")} ${more(bigThief) ? statPhrase(bigThief) : plural(bigThief.stl, "steal")} for ${thiefTeam}.`,
 		);
 	}
 	if (options.length === 0) {
