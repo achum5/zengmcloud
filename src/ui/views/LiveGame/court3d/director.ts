@@ -571,6 +571,9 @@ const BEHIND_FTPS = 7;
 const BEHIND_STILL_MS = 150;
 // A three let go with no more than this left (seconds): at the buzzer.
 const BUZZER_SECS = 1.5;
+// The last look round the building once the game is over (see gameOver),
+// before the picture holds on it.
+const LAST_LOOK_MS = 3500;
 // A spin move (see spinBy): how often a drive with his man square in front
 // of him goes into one rather than a crossover, from how far out (feet), how
 // far short of his man he plants (feet), and how fast he goes round him
@@ -12826,7 +12829,19 @@ class Director {
 				if (title && winner === 1) {
 					this.effect("confetti", T + 400, { team: winner });
 				}
-				this.beat(i, type, T, t1 + (title ? 5000 : 400));
+				// The last look, the hands all shaken: the whole building from
+				// up high - the crowd as the result left it, the board over
+				// center court with the final score - and the picture holds on
+				// it once the game is over, not on the two lines stood still in
+				// the middle of the floor. (It never ends: the game does first.)
+				const over = t1 + (title ? 5000 : 400);
+				this.shots.push({
+					t0: over,
+					t1: over + LAST_LOOK_MS + 60_000,
+					kind: "wide",
+					stretch: false,
+				});
+				this.beat(i, type, T, over + LAST_LOOK_MS);
 				this.phase = "dead";
 				break;
 			}

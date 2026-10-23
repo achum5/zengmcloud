@@ -1544,7 +1544,10 @@ export const arenaAim = (
 	if (!s) {
 		return undefined;
 	}
-	const u = Math.min(1, Math.max(0, (t - s.t0) / Math.max(1, s.t1 - s.t0)));
+	// (The last, once the game is over, runs on past the end: panned across
+	// by then, and held there.)
+	const t1 = Math.min(s.t1, tl.end);
+	const u = Math.min(1, Math.max(0, (t - s.t0) / Math.max(1, t1 - s.t0)));
 	const huddle = s.kind === "wide" ? huddleOf(tl, s.t0) : undefined;
 	if (huddle !== undefined) {
 		const k = u * u * (3 - 2 * u);

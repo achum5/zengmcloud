@@ -91,6 +91,37 @@ describe("3D camera", () => {
 		}
 	}, 60_000);
 
+	// The hands all shaken, the last look is round the building - the whole
+	// of it from up high, the board over center court in it - and the
+	// picture ends on that, not on the two lines stood still at center
+	// court.
+	test("the game over, the last look is round the building", () => {
+		const [w, h] = [1280, 720];
+		for (const seed of ["a", "b"]) {
+			const { tl } = game(seed);
+			const over = tl.beats.find((b) => b.type === "gameOver")!;
+			const last = tl.shots.at(-1)!;
+			const at = `${seed} ${Math.round(last.t0)}`;
+			assert.isAbove(last.t0, over.actionStart + 4000, at);
+			assert.isAtLeast(tl.end - last.t0, 3000, at);
+			for (const t of [last.t0 + 1, (last.t0 + tl.end) / 2, tl.end]) {
+				const view = arenaAim(tl, t, false)!;
+				assert.isDefined(view, `${at} @${Math.round(t)}`);
+				const cam = makeCamera(view.shot, w, h, view.rig);
+				// The board, and both baskets.
+				const board = project(cam, { x: COURT_W / 2, y: 36, z: 34 });
+				assert.isAbove(board.y, h * 0.1, at);
+				for (const x of [5.25, COURT_W - 5.25]) {
+					const rim = project(cam, { x, y: COURT_H / 2, z: 10 });
+					assert.isAbove(rim.x, 0, at);
+					assert.isBelow(rim.x, w, at);
+				}
+			}
+			// (Cut to from the game's own picture on the handshakes.)
+			assert.isUndefined(arenaAim(tl, last.t0 - 1, false), at);
+		}
+	}, 60_000);
+
 	// A free throw is shot from in close - the shooter at the line, the men
 	// along the lane and the rim filling the picture, all of them in it -
 	// not from as far out as the whole floor takes. Zooming in on it, the

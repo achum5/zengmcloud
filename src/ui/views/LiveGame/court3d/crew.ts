@@ -545,7 +545,8 @@ const tosserOf = (tl: CourtTimeline, toss: Fx): number =>
 const refTargets = (tl: CourtTimeline, t: number): [Pt, Pt, Pt] => {
 	const beat = beatAt(tl, t);
 	const shot = arenaShotAt(tl, t);
-	if (shot && shot !== tl.shots[0]) {
+	// (Over a break; not the last look round the building, the game over.)
+	if (shot && shot !== tl.shots[0] && beat?.type !== "gameOver") {
 		return [
 			{ x: COURT_W / 2 - 2.4, y: 3.2 },
 			{ x: COURT_W / 2 + 2.4, y: 3.2 },
@@ -1138,7 +1139,8 @@ const coachState = (
 			moving: false,
 		};
 	}
-	if (shot && shot !== tl.shots[0]) {
+	// (Not the last look round the building, the game over.)
+	if (shot && shot !== tl.shots[0] && beatAt(tl, t)?.type !== "gameOver") {
 		// In the huddle with his five, in the middle of them - not out on the
 		// edge of it by the bench, where a man coming off walks to.
 		return {
