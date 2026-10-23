@@ -7594,6 +7594,58 @@ describe("possessives on nicknames that do not end in s", () => {
 	});
 });
 
+// "The lead changed hands 14 times in the Spurs' game with the Celtics" ran
+// in 65 of 177 wraps: 12 changes is a tenth of all games, so most nights had
+// one. The wrap notices a seesaw only past 16.
+describe("the night's seesaw", () => {
+	const slate = (changes: number) =>
+		[1, 2, 3, 4, 5].map((i) =>
+			mkGame(
+				800 + i,
+				["Magic", "Heat", "Jazz", "Thunder", "Celtics"][i - 1]!,
+				["Raptors", "Bulls", "Kings", "Suns", "Knicks"][i - 1]!,
+				104,
+				101,
+				true,
+				player({ name: `Home Star ${i}`, pid: i * 10, pts: 24, reb: 6 }),
+				player({ name: `Away Star ${i}`, pid: i * 10 + 1, pts: 22, reb: 5 }),
+				{
+					flow: {
+						leadChanges: i === 1 ? changes : 4,
+						ties: 3,
+						maxLead: [6, 5],
+					},
+				},
+			),
+		);
+	test("an ordinary back-and-forth is not the night's note", () => {
+		for (let day = 1; day <= 8; day++) {
+			const recap = getAutoDayRecap({
+				season: 2005,
+				day,
+				playoffs: false,
+				games: slate(13),
+			});
+			assert.ok(!/traded the lead|lead changed hands/.test(recap), recap);
+		}
+	});
+	test("a real one is", () => {
+		let told = 0;
+		for (let day = 1; day <= 8; day++) {
+			const recap = getAutoDayRecap({
+				season: 2005,
+				day,
+				playoffs: false,
+				games: slate(19),
+			});
+			if (/traded the lead 19 times|lead changed hands 19 times/.test(recap)) {
+				told += 1;
+			}
+		}
+		assert.ok(told > 0);
+	});
+});
+
 // THE GAME TOLD IN ORDER. The halftime score, the turn after it and the
 // finish used to be separate sentences from separate generators, placed
 // wherever each one landed. Now one pass tells them as a story.

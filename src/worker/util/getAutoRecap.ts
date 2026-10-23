@@ -8692,9 +8692,12 @@ const leagueNotes = (
 		const total = shape.winner.pts + shape.loser.pts;
 		const changes = g.flow?.leadChanges ?? 0;
 		// A seesaw is a game that stayed one: "traded the lead 14 times" over
-		// a 13-point final is a first-half fact about a second-half rout.
+		// a 13-point final is a first-half fact about a second-half rout. And
+		// one the night has to notice: 12 changes is a tenth of all games, so
+		// most slates had one and the note ran in 65 of 177 wraps; 16 is one
+		// game in twenty.
 		if (
-			changes >= 12 &&
+			changes >= 16 &&
 			shape.margin <= 8 &&
 			(!seesaw || changes > seesaw.changes)
 		) {
