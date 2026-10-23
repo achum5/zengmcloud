@@ -1122,6 +1122,9 @@ const Court3D = ({
 		let fineOffAt = -Infinity;
 		// How fine the picture is: as fine as this device can draw it.
 		const res = makeResolution(performance.now() + 1500);
+		// The size the canvas is laid on the page at (CSS px).
+		let laidW = 0;
+		let laidH = 0;
 		const lookOf = (pid: number) => looks.current.get(pid)!;
 		const bodyOfPid = (pid: number) => bodies.current.get(pid) ?? bodyOf();
 
@@ -1176,6 +1179,20 @@ const Court3D = ({
 			if (canvas.width !== fw || canvas.height !== fh) {
 				canvas.width = fw;
 				canvas.height = fh;
+			}
+			// Laid on the page that many screen pixels to each of its pixels
+			// exactly - not stretched to the box it is in, which is a fraction
+			// of a pixel off that (831.5 x 467.7, say): stretched, a column and
+			// a row of the picture came out a screen pixel narrower than the
+			// rest, a seam everything crawled across as the camera moved. (The
+			// sliver past the box's edge is cut off by it.)
+			const cssW = (fw * art) / dpr;
+			const cssH = (fh * art) / dpr;
+			if (cssW !== laidW || cssH !== laidH) {
+				laidW = cssW;
+				laidH = cssH;
+				canvas.style.width = `${cssW}px`;
+				canvas.style.height = `${cssH}px`;
 			}
 
 			const replay = s.replay;
