@@ -52,6 +52,8 @@ export type FieldPlayerState = {
 	// His arms in an act of their own over the rest of him, and how far
 	// through it.
 	arms?: { move: Move; phase: number };
+	// His helmet off, in his hand: on the sideline.
+	bare?: true;
 };
 
 const CYCLE_FRAMES = 12;

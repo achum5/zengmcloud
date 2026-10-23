@@ -76,6 +76,7 @@ const MASK = 9;
 const CHIN = 10;
 const BALL = 11;
 const TOWEL = 12;
+const HELD = 13;
 
 // What melts into what: masses in one group melt together everywhere, two
 // groups only where a joint joins them.
@@ -402,6 +403,8 @@ type Built = {
 	arms: [Limb, Limb];
 	legs: [Limb, Limb];
 	ball?: HeldBall;
+	// The middle of the helmet in his hand, if he has it off.
+	held?: V3;
 	// Which way each palm faces.
 	pn: [V3, V3];
 	untwist?: Float64Array;
@@ -439,6 +442,11 @@ const untwistTable = (q: Pose, pel: V3): Float64Array => {
 // head, a cartoon's helmet. (An official's bare head, in helmet radii.)
 const HELMET = 1.1;
 const OFFICIAL_HEAD = 0.9;
+// A player's bare head, his helmet off - and the helmet in his hand, hung
+// from it (helmet radii).
+const BARE_HEAD = 0.86;
+const HELD_DROP = 0.75;
+const HELD_R = 0.9;
 // An official's shirt: its stripes, how wide (feet).
 const STRIPE_W = 0.15;
 
@@ -699,6 +707,7 @@ const build = (
 		NECK,
 		G_NECK,
 	);
+	let held: V3 | undefined;
 	if (official) {
 		// His bare head, a cap on it, and its brim out over his eyes.
 		add(at(0, 0, 0), at(0, 0, 0), [[0, R * OFFICIAL_HEAD]], SHELL, G_HELMET);
@@ -711,6 +720,18 @@ const build = (
 				G_HELMET,
 			);
 		}
+	} else if (look.bare) {
+		// His bare head; his helmet hung from his right hand.
+		add(
+			at(0, 0, -0.08),
+			at(0, 0, -0.08),
+			[[0, R * BARE_HEAD]],
+			SHELL,
+			G_HELMET,
+		);
+		const hand = sk.armR.tip ?? sk.armR.end;
+		held = addV(hand, v3(0, 0, -1), R * HELD_DROP);
+		add(held, held, [[0, R * HELD_R]], HELD, G_BALL);
 	} else {
 		// The shell: the dome, the back of it down over his neck, the jaw
 		// guards forward either side of his face.
@@ -1144,6 +1165,7 @@ const build = (
 		arms: [sk.armR, sk.armL],
 		legs: [sk.legR, sk.legL],
 		...(fig.ball ? { ball: fig.ball } : {}),
+		...(held ? { held } : {}),
 		pn,
 		...(turned ? { untwist: untwistTable(q, pel) } : {}),
 		k: kMid,
@@ -1233,7 +1255,7 @@ const paletteOf = (look: FieldLook): Palette => {
 		...(gear.visor === "dark" ? { visor: [24, 26, 32] as RGB } : {}),
 		...(kit.stripes ? { stripes: rgb(kit.stripes) } : {}),
 		...(kit.vest ? { vest: rgb(kit.vest) } : {}),
-		hair: scaled(skin, 0.38),
+		hair: look.hair ? rgb(look.hair) : scaled(skin, 0.38),
 	};
 	palettes.set(look, p);
 	return p;
@@ -1807,6 +1829,23 @@ export const sculptFigure = (
 						const lu = (qf * helm.u.f + qs * helm.u.s + qu * helm.u.u) / R;
 						gloss = 1;
 						let c = pal.helmet;
+						if (look.bare) {
+							// His face, his eyes; his hair over the top and round
+							// the back.
+							gloss = 0;
+							if (lf > 0.3 && lu < 0.42) {
+								const eye =
+									lu > -0.02 &&
+									lu < 0.16 &&
+									Math.abs(ls) > 0.12 &&
+									Math.abs(ls) < 0.42;
+								c = scaled(pal.skin, eye ? 0.34 : 0.96);
+							} else {
+								c = lu > 0.3 || lf < -0.25 ? pal.hair : pal.skin;
+							}
+							set(c);
+							break;
+						}
 						if (official) {
 							// His cap, and its brim; under it his face, his
 							// eyes in its shadow; his hair round the back.
@@ -1886,6 +1925,27 @@ export const sculptFigure = (
 					case TOWEL: {
 						cloth = true;
 						set(WHITE_RGB);
+						break;
+					}
+					case HELD: {
+						// The helmet in his hand, hung by its facemask: the
+						// stripe down over its crown, the bars of the mask up
+						// round his fingers, the dark of it inside.
+						const h = b.held!;
+						const r = helm.R * HELD_R;
+						const hs = (Ps - h.s) / r;
+						const hu = (Pu - h.u) / r;
+						let c = pal.helmet;
+						gloss = 1;
+						if (hu > 0.4) {
+							const bar =
+								Math.abs(hu - 0.55) < 0.08 || Math.abs(hu - 0.82) < 0.08;
+							c = bar ? pal.mask : scaled(pal.helmet, 0.3);
+							gloss = bar ? 0.6 : 0;
+						} else if (pal.stripe && Math.abs(hs) < 0.13) {
+							c = pal.stripe;
+						}
+						set(c);
 						break;
 					}
 					case BALL: {

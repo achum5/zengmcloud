@@ -73,6 +73,9 @@ export type FieldLook = {
 	// One of the officials: a cap, not a helmet (in the kit's helmet color),
 	// no pads.
 	official?: true;
+	// His hair, for when he has his helmet off - and off, in his hand.
+	hair?: string;
+	bare?: true;
 };
 
 export type FieldTeamColors = [string, string, string];

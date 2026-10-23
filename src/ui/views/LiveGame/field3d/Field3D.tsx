@@ -140,6 +140,20 @@ const lastNameOf = (name: string | undefined): string => {
 	return i < 0 ? n : n.slice(i + 1);
 };
 
+// A man as he looks with his helmet off, the same each time.
+const bareLooks = new WeakMap<FieldLook, FieldLook>();
+const bareLook = (look: FieldLook | undefined): FieldLook | undefined => {
+	if (!look) {
+		return undefined;
+	}
+	let bare = bareLooks.get(look);
+	if (!bare) {
+		bare = { ...look, bare: true };
+		bareLooks.set(look, bare);
+	}
+	return bare;
+};
+
 type Props = {
 	// The game's full play-by-play, never consumed.
 	events: any[] | undefined;
@@ -325,10 +339,12 @@ const Field3D = ({
 		for (const p of roster) {
 			const f = faces.current.get(p.pid) ?? undefined;
 			const kit = kits[p.team];
+			const head = headColors(f?.face);
 			looks.set(p.pid, {
 				kit,
 				gear: fieldGearFor(p.pid, p.pos, kit),
-				skin: headColors(f?.face).skin,
+				skin: head.skin,
+				hair: head.hair,
 				jerseyNumber: f?.jerseyNumber ?? p.jerseyNumber ?? "",
 				lastName: lastNameOf(p.name),
 				...(logos[p.team] && [away, home][p.team]?.helmet?.logo !== false
@@ -539,7 +555,7 @@ const Field3D = ({
 				...snappers,
 			];
 			for (const st of standing) {
-				const l = look(st.id);
+				const l = st.bare ? bareLook(look(st.id)) : look(st.id);
 				if (!l) {
 					continue;
 				}

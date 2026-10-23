@@ -63,6 +63,9 @@ export type SidelineMan = {
 	// How he takes a big play of his side's: jumps, an arm up, both.
 	cheer: Move;
 	delay: number;
+	// How ready he is to have his helmet off (0 to 1: the lower, the
+	// sooner).
+	bare?: number;
 };
 type Unit = "offense" | "defense" | "kicker" | "coach" | "staff";
 
@@ -144,6 +147,7 @@ export const sidelineFor = (
 				rank: r(),
 				sits: r() < SITS,
 				...common(r),
+				bare: makeCourtRng(`bare|${gid}|${p.pid}`)(),
 			});
 		}
 		for (let i = 0; i < COACHES; i++) {
@@ -192,9 +196,22 @@ export const sidelineFor = (
 	return out;
 };
 
+// Helmets off on the sideline - most of the unit sat on the benches, some
+// of it stood, a few of the men who could be sent in, the kickers - and
+// whether a man has his.
+const BARE = { seated: 0.75, resting: 0.4, next: 0.12, kicker: 0.5 };
+const bareOf = (s: SidelineMan, share: number) =>
+	s.bare !== undefined && s.bare < share;
+
 // Where a man is for a play, and how: stood or sat, and facing the field
 // (or, a coach at the bench, the men on it).
-type Spot = { at: Pt; move: Move; seated?: boolean; facing?: number };
+type Spot = {
+	at: Pt;
+	move: Move;
+	seated?: boolean;
+	facing?: number;
+	bare?: boolean;
+};
 
 const layouts = new WeakMap<SidelineMan[], WeakMap<Play, Map<number, Spot>>>();
 const layoutFor = (men: SidelineMan[], play: Play): Map<number, Spot> => {
@@ -225,7 +242,11 @@ const lay = (men: SidelineMan[], play: Play): Map<number, Spot> => {
 		const resting = working === "offense" ? "defense" : "offense";
 		for (const s of mine) {
 			if (s.at) {
-				out.set(s.id, { at: s.at, move: s.move });
+				out.set(s.id, {
+					at: s.at,
+					move: s.move,
+					...(bareOf(s, BARE.kicker) ? { bare: true } : {}),
+				});
 			}
 		}
 		// The unit just off, on the benches - from the middle of them out.
@@ -258,6 +279,7 @@ const lay = (men: SidelineMan[], play: Play): Map<number, Spot> => {
 				at: taken[Math.min(taken.length - 1, Math.floor(k * every))]!,
 				move: "sit",
 				seated: true,
+				...(bareOf(s, BARE.seated) ? { bare: true } : {}),
 			});
 		});
 		// The coaches: the head coach and his coordinators up front, the
@@ -329,12 +351,19 @@ const lay = (men: SidelineMan[], play: Play): Map<number, Spot> => {
 				return;
 			}
 			const r = makeCourtRng(`spot|${s.id}`);
+			// (Helmet in hand: not stood with his arms folded or on his
+			// hips.)
+			const bare = bareOf(s, s.unit === working ? BARE.next : BARE.resting);
 			out.set(s.id, {
 				at: {
 					x: slot.x + (r() - 0.5) * 2 * JITTER,
 					y: slot.y + (r() - 0.5) * 2 * JITTER,
 				},
-				move: s.move,
+				move:
+					bare && (s.move === "armsFolded" || s.move === "onHips")
+						? "stand"
+						: s.move,
+				...(bare ? { bare: true } : {}),
 			});
 		});
 	}
@@ -411,6 +440,7 @@ export const sidelineAt = (
 			move,
 			phase,
 			...(arms ? { arms } : {}),
+			...(spot.bare ? { bare: true as const } : {}),
 		});
 	}
 	return out;
