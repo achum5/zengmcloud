@@ -2,6 +2,7 @@ import {
 	ballAtRim,
 	benchPlane,
 	drawBall,
+	drawGlints,
 	drawHoop,
 	drawJumbo,
 	drawShadow,
@@ -964,6 +965,8 @@ export const drawFrame = (f: Frame) => {
 	drawTexturedPlane(ctx, cam, benchPlane(1), arena.bench[1], 6, 1);
 	drawFlashes(ctx, cam, tl, t);
 	drawCourtLines(ctx, cam, f.lineColor);
+	// The lights over the far stands, shining back off the floor.
+	drawGlints(ctx, cam);
 	drawDroppedTops(ctx, cam, tl, t, f.warmups);
 	const confetti = [
 		...(f.teamColors?.[1] ?? DEFAULT_TEAM_COLORS[1]!),

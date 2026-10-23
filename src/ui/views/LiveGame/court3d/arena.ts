@@ -244,6 +244,10 @@ export const RAFTERS = plane(
 	24,
 	8,
 );
+// Its lights, along under the lower chord: the first this far (ft) in from
+// its end, and the rest this far apart (see paintRafters, and drawGlints).
+const LIGHT_FIRST = 6;
+const LIGHT_GAP = 11;
 
 // The crowd, painted once - and twice more on its feet (`up` 1 and 2: arms
 // high, then waving wide), the same people in the same seats, for when the
@@ -843,7 +847,7 @@ export const paintRafters = (
 		ctx.lineTo(x + 3 * px, k % 2 ? bottom : top);
 	}
 	ctx.stroke();
-	for (let x = 6; x < X1 - X0; x += 11) {
+	for (let x = LIGHT_FIRST; x < X1 - X0; x += LIGHT_GAP) {
 		const cx = x * px;
 		const g = ctx.createRadialGradient(
 			cx,
@@ -1545,6 +1549,82 @@ const SEAMS: [number, number, number][][] = (() => {
 })();
 const TILT_C = Math.cos(0.55);
 const TILT_S = Math.sin(0.55);
+
+// THE LIGHTS IN THE FLOOR. A broadcast's floor is polished: the lights
+// along the truss over the far stands (see paintRafters) shine back off
+// it, a row of soft bright patches across the far half of the court. Each
+// is where the line from the camera to that light's mirror image under the
+// floor meets the floor - so they slide along it as the camera pans, more
+// slowly than the floor does, the way a reflection does - drawn out a
+// little toward the camera, as light off a floor that is not a mirror is.
+const LIGHT_Y = RAFTERS.origin.y;
+// (The lights hang just under the truss's lower chord - see paintRafters.)
+const LIGHT_Z = RAFTERS.origin.z - 2.2 - 2 / 8;
+const GLINT_R = 1.6;
+const GLINT_DRAWN = 2.8;
+const GLINT_ALPHA = 0.42;
+let glint: HTMLCanvasElement | undefined;
+const glintSprite = (): HTMLCanvasElement => {
+	if (!glint) {
+		glint = document.createElement("canvas");
+		glint.width = 32;
+		glint.height = 32;
+		const c = glint.getContext("2d")!;
+		const g = c.createRadialGradient(16, 16, 0, 16, 16, 16);
+		g.addColorStop(0, "rgba(255,252,240,1)");
+		g.addColorStop(0.3, "rgba(255,248,228,0.55)");
+		g.addColorStop(1, "rgba(255,248,228,0)");
+		c.fillStyle = g;
+		c.fillRect(0, 0, 32, 32);
+	}
+	return glint;
+};
+// Where each light shows in the floor, on the picture: its middle, and how
+// far it reaches across and up and down.
+export const glintsAt = (
+	cam: Camera,
+): { x: number; y: number; rx: number; ry: number }[] => {
+	const C = cam.pos;
+	// How far along from the camera to the light's mirror image the floor
+	// is.
+	const s = C.z / (C.z + LIGHT_Z);
+	const y = C.y + s * (LIGHT_Y - C.y);
+	if (y < FLOOR_EDGE.y0 || y > FLOOR_EDGE.y1) {
+		return [];
+	}
+	const out: { x: number; y: number; rx: number; ry: number }[] = [];
+	for (let lx = X0 + LIGHT_FIRST; lx < X1; lx += LIGHT_GAP) {
+		const x = C.x + s * (lx - C.x);
+		if (x < FLOOR_EDGE.x0 || x > FLOOR_EDGE.x1) {
+			continue;
+		}
+		const p = project(cam, { x, y, z: 0 });
+		const near = project(cam, { x, y: y + GLINT_R, z: 0 });
+		const rx = GLINT_R * p.k;
+		const ry = Math.max(rx * 0.5, (near.y - p.y) * GLINT_DRAWN);
+		if (p.x + rx < 0 || p.x - rx > cam.viewW || rx < 0.5) {
+			continue;
+		}
+		out.push({ x: p.x, y: p.y, rx, ry });
+	}
+	return out;
+};
+export const drawGlints = (ctx: CanvasRenderingContext2D, cam: Camera) => {
+	const glints = glintsAt(cam);
+	if (glints.length === 0) {
+		return;
+	}
+	const sprite = glintSprite();
+	const alpha = ctx.globalAlpha;
+	const smoothing = ctx.imageSmoothingEnabled;
+	ctx.imageSmoothingEnabled = true;
+	ctx.globalAlpha = alpha * GLINT_ALPHA;
+	for (const g of glints) {
+		ctx.drawImage(sprite, g.x - g.rx, g.y - g.ry, 2 * g.rx, 2 * g.ry);
+	}
+	ctx.globalAlpha = alpha;
+	ctx.imageSmoothingEnabled = smoothing;
+};
 
 // A soft dark patch on the floor under something: a player's feet, the ball.
 export const drawShadow = (
