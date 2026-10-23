@@ -51,6 +51,7 @@ const KICK_ROOM = 50;
 const KICK_LIFT = 14;
 
 const across = (y: number) => MID_Y + (y - MID_Y) * 0.45;
+const HURT_WIDTH = 96;
 
 export const aimFor = (m: FieldMoment): Shot => {
 	const { play, t, focus } = m;
@@ -64,6 +65,14 @@ export const aimFor = (m: FieldMoment): Shot => {
 		// (Across the field, most of the way to the middle.)
 		y: MID_Y + (play.ballY - MID_Y) * 0.35,
 	};
+	// A man hurt: on him, and the trainers round him, and with him off.
+	const hurt = play.hurt;
+	if (hurt && t >= hurt.from) {
+		const him = m.players.find((p) => p.id === hurt.pid);
+		if (him) {
+			return { x: him.x, width: HURT_WIDTH, y: across(him.y) };
+		}
+	}
 	if (play.kind === "fieldGoal" || play.kind === "extraPoint") {
 		if (t < play.snap) {
 			return set;

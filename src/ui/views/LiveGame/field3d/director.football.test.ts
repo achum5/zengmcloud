@@ -111,7 +111,9 @@ describe("compileField", () => {
 					sides[part.team]! += 1;
 					assert.isFalse(on.has(part.pid), `${part.pid} on twice`);
 					on.add(part.pid);
-					for (const leg of part.legs) {
+					// (A man hurt on it off to his sideline - see "a man hurt".)
+					const hurt = part.legs.some((l) => l.move === "hurt");
+					for (const leg of hurt ? [] : part.legs) {
 						for (const p of [leg.from, leg.to]) {
 							assert.isTrue(
 								p.x >= 0 && p.x <= FIELD_L && p.y >= 0 && p.y <= FIELD_W,
@@ -415,5 +417,49 @@ describe("the sidelines", () => {
 			}
 			assert.deepEqual(bad.slice(0, 8), []);
 		}
+	});
+});
+
+describe("a man hurt", () => {
+	test("down after the whistle, the trainers out to him from his sideline, and helped off toward it", () => {
+		let hurt = 0;
+		for (const game of games) {
+			const tl = stage(game);
+			for (const play of tl.plays) {
+				if (!play.hurt) {
+					continue;
+				}
+				hurt += 1;
+				const him = play.parts.find((p) => p.pid === play.hurt!.pid)!;
+				const far = him.team === 1;
+				const off = (y: number) => (far ? y < 0 : y > FIELD_W);
+				assert.isAtLeast(play.hurt.from, play.whistle, `play ${play.i}`);
+				const down = momentAt(tl, play.hurt.from + 100).players.find(
+					(p) => p.id === him.pid,
+				);
+				assert.include(["hurt", "tackled"], down?.move, `play ${play.i}`);
+				const at = legAt(him, play.hurt.from + 100).to;
+				const medics = play.medics ?? [];
+				assert.isAbove(medics.length, 0, `play ${play.i}`);
+				for (const m of medics) {
+					assert.isTrue(off(m.legs[0]!.from.y), `play ${play.i}: ${m.pid}`);
+					const tend = m.legs.find((l) => l.move === "tend");
+					assert.isAtMost(
+						Math.hypot(tend!.to.x - at.x, tend!.to.y - at.y),
+						4,
+						`play ${play.i}: ${m.pid}`,
+					);
+				}
+				const last = him.legs.at(-1)!;
+				assert.isTrue(off(last.to.y), `play ${play.i}: off the field`);
+				assert.isBelow(play.t1 - play.whistle, 30_000, `play ${play.i}`);
+				assert.isAtLeast(
+					momentAt(tl, play.t1 - 1).players.length,
+					22 + medics.length,
+					`play ${play.i}`,
+				);
+			}
+		}
+		assert.isAbove(hurt, 0);
 	});
 });

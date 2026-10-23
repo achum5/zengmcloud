@@ -1320,6 +1320,84 @@ const FIELD_ANIMS = {
 			wide: 0.9,
 		}),
 	},
+	// ---- a man hurt ----
+	// Down on his back on the turf, one knee drawn up, a hand to it.
+	hurt: {
+		kind: "still",
+		pose: pose({
+			hipN: 90,
+			kneeN: 6,
+			hipF: 130,
+			kneeF: 80,
+			lean: -84,
+			shN: 40,
+			elN: 30,
+			abN: 30,
+			shF: 70,
+			elF: 50,
+			abF: 10,
+			wide: 0.5,
+		}),
+	},
+	// Sat up, both hands round the knee.
+	hurtUp: {
+		kind: "still",
+		pose: pose({
+			hipN: 90,
+			kneeN: 6,
+			hipF: 122,
+			kneeF: 72,
+			lean: -18,
+			shN: 62,
+			elN: 40,
+			abN: 6,
+			shF: 58,
+			elF: 52,
+			abF: 4,
+			wide: 0.5,
+		}),
+	},
+	// A trainer down on a knee beside him, leaning over, hands to him.
+	tend: {
+		kind: "still",
+		pose: pose({
+			hipN: -20,
+			kneeN: 104,
+			hipF: 80,
+			kneeF: 88,
+			lean: 34,
+			shN: 58,
+			elN: 28,
+			abN: 14,
+			shF: 52,
+			elF: 36,
+			abF: 14,
+			wide: 0.5,
+		}),
+	},
+	// The men round him on a knee, waiting.
+	takeKnee: {
+		kind: "still",
+		pose: pose({
+			hipN: -20,
+			kneeN: 104,
+			hipF: 80,
+			kneeF: 88,
+			lean: 6,
+			shN: 18,
+			elN: 40,
+			abN: 14,
+			shF: 34,
+			elF: 62,
+			abF: 8,
+			wide: 0.5,
+		}),
+	},
+	// Helped off: his arms over the shoulders of the men either side of him.
+	overShoulders: {
+		kind: "still",
+		pose: pose({ shN: 12, elN: 44, abN: 78, shF: 12, elF: 44, abF: 78 }),
+	},
 	// A pole held upright in front of him in both hands, the right over the
 	// left: the chain crew's rods, the down box.
 	holdPole: {

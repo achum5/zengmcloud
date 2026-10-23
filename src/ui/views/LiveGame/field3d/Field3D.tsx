@@ -50,6 +50,7 @@ import { marksAt } from "./marks.ts";
 import {
 	chainCrewLook,
 	coachLook,
+	trainerLook,
 	fieldGearFor,
 	fieldKitsFor,
 	officialLook,
@@ -67,6 +68,7 @@ import {
 import { replayAim } from "./replays.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
 import { coachId, sidelineAt, sidelineFor } from "./sideline.ts";
+import { HURT_MOST, MEDICS, medicId } from "./hurt.ts";
 import { drawFieldPlayer } from "./sprite.ts";
 import { chainGear } from "./sticks.ts";
 import { paintStadium } from "./stadium.ts";
@@ -331,6 +333,14 @@ const Field3D = ({
 				const id = coachId(team, i);
 				looks.set(id, coachLook(kits[team], `${gid}|${id}`));
 				bodies.set(id, officialBody(69 + ((i * 5) % 6), 195 + i * 12));
+			}
+			// The trainers, out to a man hurt.
+			for (let n = 0; n < HURT_MOST; n++) {
+				for (let k = 0; k < MEDICS; k++) {
+					const id = medicId(team, n, k);
+					looks.set(id, trainerLook(kits[team], `${gid}|${id}`));
+					bodies.set(id, officialBody(68 + ((k * 3) % 5), 180 + k * 14));
+				}
 			}
 		}
 		return { looks, bodies };

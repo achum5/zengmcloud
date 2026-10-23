@@ -359,3 +359,36 @@ export const coachLook = (kit: FieldKit, seed: string): FieldLook => {
 		official: true,
 	};
 };
+
+// A TRAINER, or the team doctor, out to a man hurt: a polo in the team's
+// main color, khakis, a cap.
+export const trainerLook = (kit: FieldKit, seed: string): FieldLook => {
+	const rng = makeCourtRng(`trainer|${seed}`);
+	const main = kit.helmet;
+	return {
+		kit: {
+			helmet: luminance(main) < 0.2 ? main : shade(main, -0.25),
+			facemask: INK,
+			jersey: main,
+			collar: kit.helmetStripe ?? WHITE,
+			number: INK,
+			numberEdge: WHITE,
+			name: INK,
+			sleeveStripes: [],
+			pants: rng() < 0.7 ? "#b9a682" : "#2b2c31",
+			pantsStripes: [],
+			sock: INK,
+			sockStripes: [],
+		},
+		gear: {
+			mask: "open",
+			cleat: rng() < 0.5 ? INK : WHITE,
+			cleatSole: "#2a2a2e",
+			cleatAccent: INK,
+		},
+		skin: OFFICIAL_SKIN[Math.floor(rng() * OFFICIAL_SKIN.length)]!,
+		jerseyNumber: "",
+		lastName: "",
+		official: true,
+	};
+};

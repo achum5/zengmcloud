@@ -166,7 +166,7 @@ const clamp = (x: number, lo: number, hi: number) =>
 const gait = (fps: number): Move =>
 	fps < 6.5 ? "walk" : fps < 12.5 ? "jog" : fps < 21 ? "run" : "sprint";
 
-const posOf = (legs: Leg[], t: number): Pt => {
+export const posOf = (legs: Leg[], t: number): Pt => {
 	for (let k = legs.length - 1; k >= 0; k--) {
 		const l = legs[k]!;
 		if (t >= l.t0) {

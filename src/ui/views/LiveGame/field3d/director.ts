@@ -51,6 +51,7 @@ import {
 import { foulsOf } from "./fouls.ts";
 import { stageChains, type ChainSpots } from "./chains.ts";
 import { holderAt, replayFor, type FieldReplay } from "./replays.ts";
+import { HURT_MOST, MEDICS, stageHurt } from "./hurt.ts";
 
 // THE GAME STAGED: every snap of the play-by-play, in feet and milliseconds -
 // who is on the field for it, where each man lines up, the ball, and the
@@ -174,6 +175,10 @@ export type Play = {
 	// The chain crew (see chains.ts), and the down on their boxes.
 	chains: CrewPart[];
 	down: number;
+	// The trainers out to a man hurt on it (see hurt.ts) - and the man, the
+	// camera on him from when he is down.
+	medics?: CrewPart[];
+	hurt?: { pid: number; from: number };
 	ball: BallSeg[];
 	// A big play, shown again after it (see replays.ts).
 	replay?: FieldReplay;
@@ -1018,7 +1023,7 @@ class Director {
 			});
 		}
 		const cheer = this.cheerOf(i0, i1, offense, whistle, ball, parts);
-		const t1 = Math.max(
+		let t1 = Math.max(
 			this.lastLine + TAIL,
 			snap + 1500,
 			acted ? acted.whistle + (scored ? AFTER_SCORE : AFTER_WHISTLE) : 0,
@@ -1031,6 +1036,33 @@ class Director {
 				: 0,
 			...calls.map((c) => c.t + CALL_MS),
 		);
+		// A man hurt on it, as the sim says: down, the trainers out to him, and
+		// off (see hurt.ts) - the play over only once he is.
+		const medics: CrewPart[] = [];
+		const busy = new Set<number>();
+		let hurt: { pid: number; down: number; tending: number } | undefined;
+		for (let i = i0; i < i1 && medics.length < HURT_MOST * MEDICS; i++) {
+			const e = events[i];
+			if (e?.type !== "injury" || typeof e.injuredPID !== "number") {
+				continue;
+			}
+			const h = stageHurt({
+				pid: e.injuredPID,
+				n: medics.length / MEDICS,
+				parts,
+				whistle,
+				t0,
+				t1,
+				ball,
+				busy,
+				r: this.rng(i, "hurt"),
+			});
+			if (h) {
+				medics.push(...h.medics);
+				t1 = h.t1;
+				hurt ??= { pid: e.injuredPID, down: h.down, tending: h.tending };
+			}
+		}
 		// Each line of the play ends where its own action does; the last one,
 		// with the play.
 		const last = this.beats.at(-1);
@@ -1105,7 +1137,7 @@ class Director {
 			before: this.chainSpots,
 		});
 		this.chainSpots = chains.spots;
-		const replay = replayFor({
+		const shown = replayFor({
 			kind,
 			events,
 			beats: this.beats.filter((b) => b.i >= i0 && b.i < i1),
@@ -1117,6 +1149,17 @@ class Director {
 			ball,
 			fouled: fouls.some((f) => f.accepted),
 		});
+		// (A man hurt: the play shown again while they see to him.)
+		const replay =
+			shown ??
+			(hurt && !fouls.some((f) => f.accepted) && hurt.tending > whistle
+				? {
+						cue: hurt.tending,
+						from: Math.max(t0, snap - 300, whistle - 5600),
+						to: whistle + 400,
+						pid: hurt.pid,
+					}
+				: undefined);
 		this.plays.push({
 			i: i0,
 			kind,
@@ -1137,6 +1180,8 @@ class Director {
 			flags: crew.flags,
 			chains: chains.parts,
 			down: chains.spots.down,
+			...(medics.length > 0 ? { medics } : {}),
+			...(hurt ? { hurt: { pid: hurt.pid, from: hurt.down } } : {}),
 			ball,
 			...(replay ? { replay } : {}),
 			...(cheer ? { cheer } : {}),
