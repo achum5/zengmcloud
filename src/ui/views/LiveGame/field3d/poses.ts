@@ -2226,6 +2226,8 @@ const FIELD_ANIMS = {
 	sigFold: held({ shN: 46, elN: 124, abN: -34, shF: 50, elF: 120, abF: -34 }),
 	// Too many men, a man downfield who should not be: hands on his head.
 	sigHead: held(HANDS_ON_HEAD),
+	// A fake handoff taken: his arms shut round his belly on nothing.
+	fakeCarry: held({ shN: 24, elN: 104, abN: -16, shF: 30, elF: 98, abF: -16 }),
 	// A ball he should have had: his hands to his helmet, his head down.
 	handsOnHelmet: held({ ...HANDS_ON_HEAD, lean: 10 }),
 	// Illegal contact, illegal use of the hands: an open hand out in front.

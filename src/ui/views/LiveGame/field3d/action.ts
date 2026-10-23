@@ -544,6 +544,15 @@ const GET_UP_MS = 1000;
 const READ_MS = 350;
 // A defender sees the ball thrown and breaks on it this long after.
 const BREAK_MS = 250;
+// A play-action pass: this often, when it goes this far in the air (yards)
+// and a back is there to fake it to; the fake this long (the ball out to
+// him half way through), the back on past it this far (feet); and the
+// linebackers drawn up this far by it.
+const PA_SHARE = 0.4;
+const PA_AIR = 8;
+const PA_MS = 400;
+const PA_PAST = 5;
+const PA_BITE = 4;
 // A pass he got a hand on: this often, the man who did waves it away -
 // no catch - as he slows up. One off a receiver's hands: this often, his
 // hands to his helmet.
@@ -1162,9 +1171,62 @@ class Action {
 							: airYds <= 18
 								? 18
 								: 24;
-		const setAt = this.w({ d: qbStart.d - dropD, a: qbStart.a });
+		let setAt = this.w({ d: qbStart.d - dropD, a: qbStart.a });
 		const dropMs = dropD === 0 ? 0 : 300 + dropD * 55;
-		if (dropD > 0) {
+		// Now and then a fake to a back first - play action: out to him as
+		// on a run, the ball into his belly and back out, the back on
+		// through the line with his arms shut round nothing; then the drop.
+		const backs =
+			thrown && airYds >= PA_AIR && r() < PA_SHARE
+				? this.o.filter(
+						(m) =>
+							(m.role === "RB" || m.role === "FB") &&
+							m !== target &&
+							m.t <= snap + 1 &&
+							this.of(m.at).d < -8,
+					)
+				: [];
+		const faker = backs.find((m) => m.role === "RB") ?? backs[0];
+		let fakeT: number | undefined;
+		if (faker) {
+			const fs = this.of(faker.at);
+			const side =
+				fs.a === 0 ? (r() < 0.5 ? 1 : -1) : (gun ? -1 : 1) * Math.sign(fs.a);
+			const meshPt = this.w(
+				gun
+					? { d: qbStart.d + 0.5, a: side * 2.5 }
+					: { d: qbStart.d - 7, a: side * 3 },
+			);
+			const qbMesh = this.w({
+				d: this.of(meshPt).d,
+				a: this.of(meshPt).a - side * 2,
+			});
+			fakeT = Math.max(
+				has + 300 + (dist(qb.at, qbMesh) / 15) * 1000 + r() * 150,
+				snap + 150 + (dist(faker.at, meshPt) / (faker.top * 0.75)) * 1000,
+			);
+			qb.go(
+				qbMesh,
+				fakeT - PA_MS / 2,
+				gun ? "slide" : "back",
+				this.toward(qb.at, meshPt),
+			);
+			qb.act("handOff", fakeT + PA_MS / 2, this.toward(qbMesh, meshPt));
+			setAt = this.w({
+				d: Math.min(qbStart.d - dropD, this.of(qbMesh).d - (gun ? 4 : 7)),
+				a: qbStart.a,
+			});
+			qb.go(setAt, qb.t + 250 + dist(qb.at, setAt) * 50, "back", this.ahead);
+			faker.hold(snap + 150);
+			faker.go(meshPt, fakeT, "run", this.toward(faker.at, meshPt));
+			faker.go(
+				this.w({ d: this.of(meshPt).d + PA_PAST, a: this.of(meshPt).a }),
+				fakeT + 300,
+				"run",
+				this.ahead,
+			);
+			faker.arms("fakeCarry", fakeT - 200, fakeT + 300);
+		} else if (dropD > 0) {
 			qb.go(setAt, has + dropMs, "back", this.ahead);
 		}
 		const ready = qb.t + 150;
@@ -1211,7 +1273,7 @@ class Action {
 			}
 		}
 		const releases = new Map(
-			runners.map((m) => [m.pid, snap + 120 + r() * 100]),
+			runners.map((m) => [m.pid, Math.max(m.t, snap + 120 + r() * 100)]),
 		);
 
 		// When it is thrown, and caught: as the man it goes to comes open -
@@ -1310,6 +1372,7 @@ class Action {
 			catchPt,
 			catchAt,
 			onBall && target ? [onBall, target] : undefined,
+			fakeT,
 		);
 		const beaten = sacker ? this.man(this.statPids("skAlw")[0]) : undefined;
 		this.passRush(
@@ -2966,13 +3029,16 @@ class Action {
 			const back = tackle ? 7 : 4;
 			const out = tackle ? Math.sign(s.a) * 2 : 0;
 			b.hold(snap + 60);
+			// (A back through a fake already: set where it left him.)
 			const setPt =
-				b.role === "RB" || b.role === "FB"
-					? {
-							d: pocket.d + 3,
-							a: pocket.a + (Math.sign(s.a - pocket.a) || 1) * 3.5,
-						}
-					: { d: Math.max(pocket.d + 4, s.d - back), a: s.a + out };
+				b.t > snap + 300
+					? { d: s.d - 1, a: s.a }
+					: b.role === "RB" || b.role === "FB"
+						? {
+								d: pocket.d + 3,
+								a: pocket.a + (Math.sign(s.a - pocket.a) || 1) * 3.5,
+							}
+						: { d: Math.max(pocket.d + 4, s.d - back), a: s.a + out };
 			const far = dist(b.at, this.w(setPt));
 			b.go(
 				this.w(setPt),
@@ -3090,6 +3156,7 @@ class Action {
 		catchPt: Pt | undefined,
 		catchAt: number,
 		marked?: [Actor, Actor],
+		fake?: number,
 	) {
 		const { snap, dir } = this.input;
 		const r = this.r;
@@ -3160,9 +3227,22 @@ class Action {
 							? { d: Math.max(start.d, 36 + r() * 10), a: start.a * 0.9 }
 							: { d: 18 + r() * 10, a: start.a * 0.8 };
 				m.hold(snap + 150);
+				// (Up a step or two to the fake first, a linebacker, and stood
+				// reading it.)
+				let drop = snap + 1500;
+				if (fake !== undefined && LB.has(m.role)) {
+					m.go(
+						this.w({ d: start.d - PA_BITE, a: start.a }),
+						Math.min(snap + 600, fake),
+						undefined,
+						this.behind,
+					);
+					m.hold(fake + 100, "backerStance", this.behind);
+					drop = Math.max(drop, fake + 1300);
+				}
 				m.chase(
 					this.w(zone),
-					Math.min(until, snap + 1500),
+					Math.min(until, drop),
 					m.top * 0.6,
 					"back",
 					this.behind,
