@@ -180,6 +180,32 @@ const gait = (fps: number): Move =>
 const clamp = (x: number, lo: number, hi: number) =>
 	Math.min(hi, Math.max(lo, x));
 
+// Ways out from a man spread round him, no two nearer than `gap` (each as
+// near as it can be to the way it was).
+const spreadRound = (angles: number[], gap: number): number[] => {
+	const TAU = Math.PI * 2;
+	const order = angles
+		.map((a, k) => ({ a: ((a % TAU) + TAU) % TAU, k }))
+		.sort((x, y) => x.a - y.a);
+	const n = order.length;
+	for (let pass = 0; n > 1 && pass < 8; pass++) {
+		for (let j = 0; j < n; j++) {
+			const a = order[j]!;
+			const b = order[(j + 1) % n]!;
+			const d = b.a - a.a + (j === n - 1 ? TAU : 0);
+			if (d < gap) {
+				a.a -= (gap - d) / 2;
+				b.a += (gap - d) / 2;
+			}
+		}
+	}
+	const out: number[] = [];
+	for (const o of order) {
+		out[o.k] = o.a;
+	}
+	return out;
+};
+
 // (Or as far as `roam` past a sideline.)
 const onField = (p: Pt, roam = 0): Pt => ({
 	x: clamp(p.x, 1, FIELD_L - 1),
@@ -674,6 +700,10 @@ const UPRIGHT = 0.3;
 const AIR_BLOCK = 5;
 const WALK_UNDER = 6;
 const FIRST_STEP = 150;
+// A man on the line with the man he had off him this long before the end
+// of the blocking: up out of his block this long after.
+const FREED_MS = 600;
+const FREED_REACT = 200;
 // The men who bring him down down no nearer one another than this.
 const LANDED_APART = 2.4;
 // Met head on, another man in on it by then (as late as this after, ms):
@@ -4595,6 +4625,7 @@ class Action {
 				b.go(this.w({ d: s.d - 2.4, a: s.a }), until, "drive", this.ahead);
 			}
 			let locked = until;
+			let freed = snap;
 			for (const m of men) {
 				const at = (time: number) => {
 					const p = this.of(b.posAt(time));
@@ -4613,8 +4644,13 @@ class Action {
 				m.chase(at(snap + 450), snap + 450, m.top * 0.9, "run");
 				m.go(at(end), end, "engage", this.behind);
 				locked = Math.min(locked, end);
+				freed = Math.max(freed, end);
 			}
 			this.jostle([b, ...men], snap + JOSTLE_FROM, locked);
+			// (Nobody left on him well before it is over: up out of it.)
+			if (freed < until - FREED_MS) {
+				b.cut(freed + FREED_REACT);
+			}
 		}
 
 		// The linebackers: a read step, then over to fill - but for one to
@@ -6439,11 +6475,17 @@ class Action {
 			.sort((a, b) => dist(a.posAt(c0), at) - dist(b.posAt(c0), at))
 			.filter((m, k) => k < 2 || dist(m.posAt(c0), at) < MOB_FROM)
 			.slice(0, alone ? 0 : MOB);
+		const rings = spreadRound(
+			mates.map((m, k) => {
+				const from = m.posAt(start);
+				return Math.atan2(from.y - at.y, from.x - at.x) + (k - 1.5) * 0.25;
+			}),
+			MOB_GAP,
+		);
 		mates.forEach((m, k) => {
 			const near = dist(m.posAt(c0), at) < MOB_FROM;
-			const from = m.posAt(start);
 			m.cut(start);
-			const ang = Math.atan2(from.y - at.y, from.x - at.x) + (k - 1.5) * 0.25;
+			const ang = rings[k]!;
 			const to = {
 				x: at.x + Math.cos(ang) * MOB_RING,
 				y: at.y + Math.sin(ang) * MOB_RING,
@@ -6674,11 +6716,92 @@ class Action {
 	// whistle finds him - a few steps on the way he was going, slowing -
 	// and stood there.
 	afterWhistle() {
+		const r = this.r;
 		const t = this.whistle;
+		const { kind } = this.input;
+		const last = this.ball.findLast((b) => b.t0 <= t);
+		const carrier =
+			(kind === "pass" || kind === "run") && last?.kind === "held"
+				? this.man(last.pid)
+				: undefined;
+		// (Since when he has stood, his arms to himself.)
+		const idleFrom = (m: Actor) => {
+			const legs = m.legs;
+			let k = legs.length - 1;
+			while (
+				k > 0 &&
+				legs[k]!.move === "stand" &&
+				!legs[k]!.arms &&
+				legs[k]!.from.x === legs[k]!.to.x &&
+				legs[k]!.from.y === legs[k]!.to.y
+			) {
+				k--;
+			}
+			return legs[k]!.t1;
+		};
+		const ends: Pt[] = [];
 		for (const m of this.men) {
 			if (!this.done.has(m.pid)) {
 				// (Nothing for him: watching from where he was.)
 				m.hold(Math.max(m.t, this.input.snap + READ_MS));
+			}
+			// His part done (stood where it left him) and the ball still
+			// going, a long way: on after it, keeping off the man with it.
+			const idle = carrier && m !== carrier ? idleFrom(m) : t;
+			if (
+				carrier &&
+				idle < t - FOLLOW_LEFT &&
+				dist(carrier.posAt(idle), carrier.posAt(t)) > FOLLOW_GONE
+			) {
+				m.cut(idle);
+			}
+			if (
+				carrier &&
+				m !== carrier &&
+				m.t < t - FOLLOW_LEFT &&
+				!DOWN.has(m.last.move) &&
+				dist(carrier.posAt(m.t), carrier.posAt(t)) > FOLLOW_GONE
+			) {
+				const go = m.t + FOLLOW_REACT[0] + r() * FOLLOW_REACT[1];
+				const c = carrier.posAt(t);
+				const far = dist(m.at, c);
+				const mate = m.team === carrier.team;
+				const keep = mate
+					? FOLLOW_KEEP[0] + r() * FOLLOW_KEEP[1]
+					: FOLLOW_CLOSE[0] + r() * FOLLOW_CLOSE[1];
+				if (far > keep + 3) {
+					const most =
+						(OL.has(m.role) || DL.has(m.role)
+							? FOLLOW_FPS.line
+							: m.role === "QB"
+								? FOLLOW_FPS.qb
+								: FOLLOW_FPS.other) + (mate ? 0 : FOLLOW_FPS.after);
+					// (Where he gets to by the whistle, off where the others
+					// after it get to - in from a little to one side, if not.)
+					const from = Math.atan2(m.at.y - c.y, m.at.x - c.x);
+					const room = (most * (t - go)) / 1000;
+					let to = c;
+					let end = c;
+					for (const turn of FOLLOW_TURNS) {
+						to = {
+							x: c.x + Math.cos(from + turn) * keep,
+							y: c.y + Math.sin(from + turn) * keep,
+						};
+						const d = dist(m.at, to);
+						const u = d > room ? room / d : 1;
+						end = {
+							x: m.at.x + (to.x - m.at.x) * u,
+							y: m.at.y + (to.y - m.at.y) * u,
+						};
+						if (!ends.some((e) => dist(e, end) < FOLLOW_APART)) {
+							break;
+						}
+					}
+					ends.push(end);
+					const fps = Math.min(most, (dist(m.at, to) / (t - go)) * 1000);
+					m.hold(go);
+					m.chase(to, t, fps, gait(fps));
+				}
 			}
 			if (m.t > t + 400) {
 				m.hold(m.t + 600, "stand");
@@ -7029,9 +7152,11 @@ const stayDown = (m: Actor, until: number) => {
 // at the most this many of them, from no further than this away.
 const MOB = 4;
 const MOB_FROM = 75;
-// How far off the scorer each of them pulls up (feet), and a ball spiked:
+// How far off the scorer each of them pulls up (feet) - no two nearer each
+// other round him than this (radians) - and a ball spiked:
 // down into the turf this long after he starts, and up off it.
 const MOB_RING = 3.2;
+const MOB_GAP = 0.85;
 // (Down this near him: in on it once up.)
 const MOB_UP_NEAR = 12;
 const SPIKE_MS = 720;
@@ -7062,6 +7187,21 @@ const BOWL_MOST = 7300;
 const BOWL_REST = 3600;
 const SPIKE_AT = 0.6;
 const BOUNCE_MS = 650;
+// With this long (ms) to go to the whistle and the ball gone this far
+// (feet) since, a man whose part is done after it - a moment later, to as
+// near the man with it as this (a man of the other side's, this) - at
+// these paces at the most (feet a second; this much more for the other
+// side's, after him).
+const FOLLOW_LEFT = 900;
+const FOLLOW_GONE = 15;
+const FOLLOW_REACT = [150, 350] as const;
+const FOLLOW_KEEP = [9, 8] as const;
+const FOLLOW_CLOSE = [5, 6] as const;
+const FOLLOW_FPS = { line: 8, qb: 6.5, other: 12, after: 3 };
+// No two of them nearer than this (feet) when it is over: one in from a
+// little to the side (radians), if so.
+const FOLLOW_APART = 3.5;
+const FOLLOW_TURNS = [0, 0.45, -0.45, 0.9, -0.9];
 // Between plays: the offense's huddle this far back of the ball, the
 // defense gathering this far off it, between these (across the field); a
 // man down with the ball helped up this often - by the other side's man
