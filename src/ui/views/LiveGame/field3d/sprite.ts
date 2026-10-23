@@ -44,9 +44,10 @@ export type FieldPlayerState = {
 	phase: number;
 	// Done the other way round: his left doing what his right does.
 	mirrored?: boolean;
-	// Just after a change of move: the last one as it was when it changed,
-	// and how much of his pose is still that (1 all, 0 none).
-	from?: { move: Move; phase: number; mirrored?: boolean; w: number };
+	// Just after a change - of move, of what his arms are doing, of how he
+	// has the ball: the last as it was when it changed, and how much of his
+	// pose is still that (1 all, 0 none).
+	from?: Blend;
 	// The ball with him, and how he has it.
 	ball?: BallHold;
 	// His arms in an act of their own over the rest of him, and how far
@@ -54,6 +55,15 @@ export type FieldPlayerState = {
 	arms?: { move: Move; phase: number };
 	// His helmet off, in his hand: on the sideline.
 	bare?: true;
+};
+
+type Blend = {
+	move: Move;
+	phase: number;
+	mirrored?: boolean;
+	w: number;
+	arms?: { move: Move; phase: number };
+	ball?: BallHold;
 };
 
 const CYCLE_FRAMES = 12;
@@ -81,9 +91,7 @@ type Stepped = {
 	phase: number;
 	turn: number;
 	yaw: number;
-	from:
-		| { move: Move; phase: number; mirrored?: boolean; w: number }
-		| undefined;
+	from: Blend | undefined;
 	arms: { move: Move; phase: number } | undefined;
 };
 const stepped = (st: FieldPlayerState): Stepped => {
@@ -100,7 +108,19 @@ const stepped = (st: FieldPlayerState): Stepped => {
 		yaw: (turn * Math.PI * 2) / TURNS,
 		from:
 			f && fw > 0
-				? { ...f, phase: frameOf(f.move, f.phase), w: fw }
+				? {
+						...f,
+						phase: frameOf(f.move, f.phase),
+						w: fw,
+						...(f.arms
+							? {
+									arms: {
+										move: f.arms.move,
+										phase: frameOf(f.arms.move, f.arms.phase),
+									},
+								}
+							: {}),
+					}
 				: undefined,
 		arms: st.arms
 			? { move: st.arms.move, phase: frameOf(st.arms.move, st.arms.phase) }
@@ -108,23 +128,38 @@ const stepped = (st: FieldPlayerState): Stepped => {
 	};
 };
 
+// A whole pose: what he is doing, his arms in what they are doing, and the
+// ball the way he has it.
+const wholePose = (
+	move: Move,
+	phase: number,
+	mirrored: boolean,
+	arms: { move: Move; phase: number } | undefined,
+	ball: BallHold | undefined,
+): Pose => {
+	let pose = poseOfMove(move, phase, mirrored);
+	if (arms) {
+		pose = withArms(pose, poseOfMove(arms.move, arms.phase, mirrored));
+	}
+	return holding(pose, ball);
+};
+
 const poseFor = (st: FieldPlayerState, s: Stepped): Pose => {
 	const { phase, from, arms } = s;
-	let pose = poseOfMove(st.move, phase, st.mirrored === true);
-	if (from && from.w > 0) {
-		pose = lerpPose(
-			pose,
-			poseOfMove(from.move, from.phase, from.mirrored === true),
-			from.w,
-		);
-	}
-	if (arms) {
-		pose = withArms(
-			pose,
-			poseOfMove(arms.move, arms.phase, st.mirrored === true),
-		);
-	}
-	return holding(pose, st.ball);
+	const pose = wholePose(st.move, phase, st.mirrored === true, arms, st.ball);
+	return from && from.w > 0
+		? lerpPose(
+				pose,
+				wholePose(
+					from.move,
+					from.phase,
+					from.mirrored === true,
+					from.arms,
+					from.ball,
+				),
+				from.w,
+			)
+		: pose;
 };
 
 // How he is drawn, the way the sprite has him: his pose and the way he
@@ -188,7 +223,7 @@ export const drawFieldPlayer = (
 		}
 		key = `fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}|${((turn % TURNS) + TURNS) % TURNS}|${scale}|${px}|${st.ball ?? ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
 			from
-				? `|${from.move}${from.mirrored ? "m" : ""}${from.phase}~${from.w}`
+				? `|${from.move}${from.mirrored ? "m" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}`
 				: ""
 		}${shaded ? "|d" : ""}`;
 		const kept = cache.kept.get(key);

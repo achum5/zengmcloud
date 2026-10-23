@@ -209,13 +209,30 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 		if (prev && since < TURN_MS && !l.turn) {
 			yaw = lerpAngle(before, yaw, clamp01(since / TURN_MS));
 		}
+		// (Just changed what he is doing, his arms, or how he has the ball:
+		// eased out of what he was, his feet - the same stride - kept in
+		// step.)
 		let from: FieldPlayerState["from"];
-		if (prev && prev.move !== l.move && since < BLEND_MS) {
+		if (
+			prev &&
+			since < BLEND_MS &&
+			(prev.move !== l.move ||
+				prev.arms !== l.arms ||
+				prev.ball !== l.ball ||
+				!prev.mirrored !== !l.mirrored)
+		) {
+			const striding = prev.move === l.move && moveKind(l.move) === "cycle";
 			from = {
 				move: prev.move as Move,
-				phase: phaseOf(prev, prev.t1, offset, ranBefore),
+				phase: striding
+					? phaseOf(l, t, offset, ran)
+					: phaseOf(prev, prev.t1, offset, ranBefore),
 				...(prev.mirrored ? { mirrored: true } : {}),
 				w: 1 - clamp01(since / BLEND_MS),
+				...(prev.arms
+					? { arms: { move: prev.arms, phase: armsPhaseOf(prev, prev.t1) } }
+					: {}),
+				...(prev.ball ? { ball: prev.ball } : {}),
 			};
 		}
 		players.push({

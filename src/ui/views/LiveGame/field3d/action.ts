@@ -944,8 +944,10 @@ const CLOSE = 0.85;
 const FLAT_OUT = 0.97;
 // A receiver down his route, at this much of his top speed.
 const ROUTE_PACE = 0.76;
-// And what each break in it costs him (ms): down and out of the cut.
+// And what each break in it costs him (ms): down and out of the cut. (With
+// no more than this left of it to the catch (feet), no break.)
 const BREAK_COST = 200;
+const ROUTE_LEFT = 0.4;
 
 // The kicking game. A place kick: the plant, and the foot into the ball this
 // far through it. A punt: from the punter's first step, the ball dropped and
@@ -2051,7 +2053,7 @@ class Action {
 		const pts = route.path.map((p) => this.w(p));
 		let along = 0;
 		let ms = 0;
-		for (let k = 1; k < pts.length && along < upto; k++) {
+		for (let k = 1; k < pts.length && along < upto - ROUTE_LEFT; k++) {
 			const go = Math.min(dist(pts[k - 1]!, pts[k]!), upto - along);
 			ms +=
 				(go / (speed * (k === 1 ? 0.8 : 1))) * 1000 + (k > 1 ? BREAK_COST : 0);
@@ -2089,7 +2091,9 @@ class Action {
 		for (let k = 1; k < pts.length; k++) {
 			const seg = dist(pts[k - 1]!, pts[k]!);
 			const room = endAlong - along;
-			if (room <= 0) {
+			// (No more than a step left of it: there already, not stood
+			// marking time over a cut he does not make.)
+			if (room <= ROUTE_LEFT) {
 				break;
 			}
 			const go = Math.min(seg, room);
