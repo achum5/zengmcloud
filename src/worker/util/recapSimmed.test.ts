@@ -580,6 +580,27 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "Walker Mathis added 17 points in defeat. Walker Mathis returned from a
+	// three-game absence (sore foot) with 17 points." A man's points are
+	// given once in the body.
+	test("a man's points are given once", () => {
+		for (const { gid, recap, game } of pairs) {
+			const body = recap.split("\n\n").slice(1).join(" ");
+			const sentences = body.split(/(?<=[!.?])\s+/);
+			for (const t of game.teams) {
+				for (const p of t.players) {
+					if (p.pts < 10) {
+						continue;
+					}
+					const told = sentences.filter(
+						(x) => x.includes(p.name) && x.includes(`${p.pts} points`),
+					);
+					assert.isAtMost(told.length, 1, `gid ${gid}: ${p.name}\n${recap}`);
+				}
+			}
+		}
+	});
+
 	// A headline cut down to "Herb Hayes scores 25" leaves his whole line to
 	// the lede.
 	test("a headline's trimmed line is given in full underneath", () => {

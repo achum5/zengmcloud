@@ -1386,6 +1386,34 @@ describe("what kind of series it has been", () => {
 		);
 	});
 
+	// "The Pistons took a road game of the series" said nothing a reader
+	// could use; after a loss there and a win there, they have split them.
+	test("a road win after a road loss is a split", () => {
+		const w = team({
+			tid: 1,
+			name: "Pistons",
+			pts: 116,
+			seriesSoFar: [
+				sg(true, true, 110, 100, 96),
+				sg(false, true, 101, 108, 98),
+				sg(false, false, 99, 104, 100),
+			],
+		});
+		const l = team({ tid: 2, name: "76ers", pts: 111 });
+		const all = shapes((rng) =>
+			seriesShapeBeat(playoffGame(w, l, false).ctx, rng),
+		);
+		for (const text of all) {
+			assert.notMatch(text, /took a road game/, text);
+		}
+		assert.ok(
+			[...all].some((s) =>
+				/split the two games on the 76ers' floor|first win on/.test(s),
+			),
+			[...all].join("\n"),
+		);
+	});
+
 	// "The Thunder are +36 over the three games" was a box-score column.
 	test("a lopsided series total reads as a sentence", () => {
 		const big = team({

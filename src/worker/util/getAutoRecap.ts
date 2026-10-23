@@ -4250,7 +4250,7 @@ const loserSentence = (
 						: []),
 					...(fgp >= 55
 						? [
-								`${best.name} was efficient about his ${best.pts}, ${best.fg}-of-${best.fga}${forTeam}${why}.`,
+								`${best.name} took just ${best.fga} shots to get his ${best.pts}${forTeam}${why}.`,
 							]
 						: []),
 				],
@@ -6632,6 +6632,12 @@ export const getAutoRecap = (game: RecapGame): string => {
 	// It goes in the paragraph of the side it is about: "Jalen Green
 	// collected 5 steals for the Clippers" closed the losers' paragraph after
 	// their two men and their shooting, a winner's note among the losers.
+	// The men written since the set was taken, the losers' second man among
+	// them: "Payton Brooks turned in 12 points for the losing side. Foul
+	// trouble cost Payton Brooks, who finished with 12 points".
+	for (const name of namesIn(writtenSoFar, shape)) {
+		said.add(name);
+	}
 	for (const beat of shuffle(rng, [
 		() => defensiveNote(shape, rng, said),
 		() => foulOutNote(shape, said, rng),
@@ -6656,6 +6662,12 @@ export const getAutoRecap = (game: RecapGame): string => {
 
 	// --- 4. What it means: the series, the season, who was missing, and
 	// what is next. ---
+	// Everyone named by now, the losers' second man included: "Walker Mathis
+	// added 17 points in defeat. Walker Mathis returned from a three-game
+	// absence with 17 points." came of a set taken before he was written.
+	for (const name of namesIn(writtenSoFar, shape)) {
+		said.add(name);
+	}
 	const context: string[] = [];
 	const beatCtx: BeatContext = {
 		game,

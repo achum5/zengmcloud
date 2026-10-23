@@ -1164,7 +1164,7 @@ export const seriesShapeBeat = (
 								// read like relief nobody had earned.
 								roadLosses >= 2
 									? `${W} finally won one on the road, after ${numWord(roadLosses)} losses there.`
-									: `${W} took a road game of the series.`,
+									: `${W} have split the two games on ${poss(ln)} floor.`,
 							],
 							"seriesFirstRoadWin",
 						)
