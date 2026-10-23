@@ -10694,10 +10694,18 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			);
 		}
 		const tail = tailFor(perf.game);
+		// "Scoot Carter had 26 points in the Bulls' win over the Jazz to win
+		// the series in six": an infinitive after the team's possessive hangs
+		// off the man. It goes with the team as the subject.
+		const toTail = tail.startsWith(" to ");
 		return pick(
 			rng,
 			[
-				`${perf.p.name} ${verb} ${line} in ${poss(team)} ${score} win over ${opp}${tail}.`,
+				...(toTail
+					? []
+					: [
+							`${perf.p.name} ${verb} ${line} in ${poss(team)} ${score} win over ${opp}${tail}.`,
+						]),
 				`${perf.p.name} ${verb} ${line} as ${team} beat ${opp} ${score}${tail}.`,
 				`${cap(team)} got ${line} from ${perf.p.name} in ${aFigure(score)} win over ${opp}${tail}.`,
 			],
@@ -10868,9 +10876,17 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 						topScorer.won ? "the win" : "the loss"
 					}.`
 				: topScorer.won
-					? `${topScorer.p.name} ${led} in ${poss(
-							theNick(topScorer.team),
-						)} ${topScore} win over ${theNick(topScorer.opp)}${tailFor(topScorer.game)}.`
+					? (() => {
+							const tail = tailFor(topScorer.game);
+							// As above: "...in the Thunder's 124-98 win over the
+							// Grizzlies to force a Game 6" hung the infinitive off
+							// the man.
+							return tail.startsWith(" to ")
+								? `${topScorer.p.name} ${led} as ${theNick(topScorer.team)} beat ${theNick(topScorer.opp)} ${topScore}${tail}.`
+								: `${topScorer.p.name} ${led} in ${poss(
+										theNick(topScorer.team),
+									)} ${topScore} win over ${theNick(topScorer.opp)}${tail}.`;
+						})()
 					: `${topScorer.p.name} ${led} in ${poss(
 							theNick(topScorer.team),
 						)} ${topScore} loss to ${theNick(topScorer.opp)}${whoFor(topScorer.game)}.`,

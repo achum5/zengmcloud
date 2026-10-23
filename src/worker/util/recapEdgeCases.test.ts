@@ -1343,6 +1343,57 @@ describe("edge cases", () => {
 		}
 	});
 
+	// "Scoot Carter had 26 points in the Bulls' 109-97 win over the Jazz to
+	// win the series in six": the infinitive hung off the man.
+	test("a wrap's series tail follows the team, not a man's line", () => {
+		const names = ["Hawks", "Kings", "Suns", "Jazz", "Bulls", "Nets"];
+		for (let day = 1; day <= 12; day++) {
+			const games = [0, 1, 2].map((i) => {
+				const home = squad(
+					{ tid: i * 2 + 1, name: names[i * 2]! },
+					{
+						name: `Ace ${names[i * 2]}`,
+						pid: i * 20 + 11,
+						pts: 30 + i,
+						reb: 12,
+					},
+					110 + i * 3,
+				);
+				const away = squad(
+					{ tid: i * 2 + 2, name: names[i * 2 + 1]! },
+					{ name: `Bo ${names[i * 2 + 1]}`, pid: i * 20 + 21, pts: 20 },
+					100,
+				);
+				return game([home, away], {
+					gid: 80 + i,
+					day,
+					playoffs: true,
+					series: {
+						round: 1,
+						numRounds: 4,
+						bestOf: 7,
+						homeAbbrev: home.abbrev,
+						awayAbbrev: away.abbrev,
+						homeWon: 2,
+						awayWon: 3,
+					},
+				});
+			});
+			const wrap = getAutoDayRecap({
+				season: 2025,
+				day,
+				playoffs: true,
+				games,
+			});
+			clean(wrap);
+			assert.notMatch(
+				wrap,
+				/in the [A-Z]\w+'s? \d+-\d+ win over the [A-Z]\w+ to /,
+				wrap,
+			);
+		}
+	});
+
 	// "Suns sweep the Hornets" over a night the Heat, the Pistons, the
 	// Thunder and the Lakers finished sweeps too.
 	test("a night that ends three series is headlined by all of them", () => {
