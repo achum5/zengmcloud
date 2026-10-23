@@ -72,6 +72,7 @@ import {
 } from "./follow.ts";
 import { onCursor, stepPlay, type Replay } from "./playback.ts";
 import {
+	keyOutAt,
 	planKeyPlays,
 	type KeyPlaySettings,
 	type KeySegment,
@@ -1302,8 +1303,13 @@ const Court3D = ({
 				o = Math.max(0, 1 - edge / REPLAY_DIP, keyDark);
 			} else {
 				const near = cut === undefined ? Infinity : Math.abs(s.t - cut);
-				// (And between clips of a highlight reel, and the key plays.)
-				o = Math.max(0, 1 - near / DIP_MS, clipDipAt(tl, s.t), keyDark);
+				// (And between clips of a highlight reel, and the key plays:
+				// down to black out of one, up out of it into the next.)
+				const keyOut =
+					p.keyPlan && !p.follower && !p.paused
+						? keyOutAt(p.keyPlan, s.t, s.pace)
+						: 0;
+				o = Math.max(0, 1 - near / DIP_MS, clipDipAt(tl, s.t), keyDark, keyOut);
 			}
 			if (o >= 0.75 && !sprites.dark) {
 				s.darkFrom = now;

@@ -552,3 +552,21 @@ export const segmentAt = (
 	}
 	return {};
 };
+
+// From one stretch shown on to the next, the picture dips to black - down
+// over the last KEY_OUT_MS of the one (screen ms; `pace` game ms to a
+// screen ms there), then up out of it into the next (see Court3D). How
+// dark it is at t; not at the end of the last stretch, the end of the game.
+export const KEY_OUT_MS = 240;
+export const keyOutAt = (
+	plan: KeySegment[],
+	t: number,
+	pace: number,
+): number => {
+	const { at } = segmentAt(plan, t);
+	if (!at || at === plan.at(-1)) {
+		return 0;
+	}
+	const left = (at.t1 - t) / Math.max(1e-6, pace);
+	return Math.min(1, Math.max(0, 1 - left / KEY_OUT_MS));
+};

@@ -2,10 +2,13 @@ import { assert, describe, test } from "vitest";
 import { compile } from "./testGame.ts";
 import {
 	KEY_PLAY_DEFAULTS,
+	keyOutAt,
 	parseKeyPlays,
 	planKeyPlays,
 	segmentAt,
 } from "./keyPlays.ts";
+import { makeFollow } from "./follow.ts";
+import { stepPlay, type PlayClock } from "./playback.ts";
 import { fastAt } from "./evaluate.ts";
 import { isLineItem } from "./director.ts";
 
@@ -80,6 +83,77 @@ describe("3D key plays", () => {
 			cuts += 1;
 		}
 		assert.isAbove(cuts, 5);
+	}, 60_000);
+
+	// Played as the page plays it, a frame at a time: each cut on to the
+	// next key play comes out of black - the last frames of the one before
+	// going down into it, the way the next comes up out of it - not a
+	// picture snapped off mid-play.
+	test("out of each key play the picture goes down to black, then on to the next", () => {
+		const plan = planKeyPlays(
+			tl,
+			events,
+			{ ...on, minutes: 4 },
+			{ rate: 1, numPeriods: 4 },
+		);
+		const s: PlayClock = {
+			t: 0,
+			w: 0,
+			pace: 1,
+			paceAt: -1,
+			lead: 0,
+			last: undefined,
+			replay: undefined,
+			nextDunk: 0,
+			snapCam: true,
+			jumpTo: -1,
+			keyDip: -Infinity,
+			keyHold: -Infinity,
+			readyFor: -1,
+			stepping: false,
+			prevCursor: events.length,
+			prevPaused: false,
+			prevSkips: 0,
+		};
+		const f = makeFollow();
+		let cuts = 0;
+		let dark = 0;
+		for (let now = 0; s.t < tl.end && now < 30 * 60_000; now += 1000 / 60) {
+			const was = s.t;
+			const shown = s.replay ? 0 : keyOutAt(plan, s.t, s.pace);
+			stepPlay(
+				s,
+				{
+					cursor: events.length,
+					paused: false,
+					rate: 1,
+					follower: false,
+					along: false,
+					keyPlan: plan,
+					eventsLength: events.length,
+					onReady: () => {},
+				},
+				f,
+				tl,
+				false,
+				now,
+				now,
+			);
+			if (s.replay) {
+				continue;
+			}
+			if (s.t > was + 2000 && segmentAt(plan, was).at) {
+				// On to the next: the last frame of this one was all but black.
+				cuts += 1;
+				assert.isAbove(shown, 0.9, `into the cut at ${Math.round(was)}`);
+			} else if (shown > 0) {
+				dark += 1;
+			}
+		}
+		assert.isAbove(cuts, 5);
+		// And only its last moments: about a quarter second a cut.
+		assert.isBelow(dark / cuts, 20);
+		assert.isAbove(dark / cuts, 8);
 	}, 60_000);
 
 	test("a basket is seen from the play that gets it up until it is down; no cut with the ball in the air", () => {
