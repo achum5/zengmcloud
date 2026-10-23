@@ -17,6 +17,7 @@ import {
 	evalBall,
 	evalPlayer,
 	fastAt,
+	floorSpotOf,
 	handWorld,
 	heldBall,
 	offenseAt,
@@ -2871,6 +2872,48 @@ describe("3D director", () => {
 		}
 		assert.isAbove(checked, 50_000);
 		assert.isAtMost(out.length, 1, out.join("; "));
+	}, 120_000);
+
+	// The ball left bouncing at a basket or a whistle goes off the floor
+	// away from whoever is stood there - the man dunked on has stepped back
+	// out from under the rim, a man having words holds his ground - not on
+	// through him while he stands there.
+	test("a ball bouncing loose at a stop goes round a man stood there, not through him", () => {
+		const through: string[] = [];
+		let loose = 0;
+		for (const seed of ["a", "b", "c"]) {
+			const { tl } = compile(seed);
+			const tracks = [...tl.tracks.values()];
+			const since = new Map<number, number>();
+			let k = 0;
+			for (let t = 0; t < tl.end; t += 50) {
+				while (k + 1 < tl.ball.length && tl.ball[k + 1]!.t0 <= t) {
+					k++;
+				}
+				const seg = tl.ball[k];
+				const B =
+					fastAt(tl, t) <= 1.001 &&
+					(seg?.kind === "bounce" || seg?.kind === "rest")
+						? evalBall(tl, t, bodyFor)
+						: undefined;
+				const high = B !== undefined && B.z >= 1 && B.z <= 6.3;
+				loose += high ? 1 : 0;
+				for (const tr of tracks) {
+					const p = high ? floorSpotOf(tr, t) : undefined;
+					if (p && Math.hypot(p.x - B!.x, p.y - B!.y) < 0.75) {
+						const t0 = since.get(tr.pid) ?? t;
+						since.set(tr.pid, t0);
+						if (t - t0 === 150) {
+							through.push(`${seed} pid ${tr.pid} at ${t0}`);
+						}
+					} else {
+						since.delete(tr.pid);
+					}
+				}
+			}
+		}
+		assert.isAbove(loose, 1000);
+		assert.isAtMost(through.length, 1, through.join("; "));
 	}, 120_000);
 
 	test("a free throw has the shooter's routine", () => {

@@ -614,6 +614,9 @@ const POST_FINISH_OUT = 3.4;
 const WIDE_OF = 3;
 // How far out in front of his feet a man bent to the floor has his hands.
 const PICKUP_REACH = releaseAt("pickup", 0.65).f;
+// A ball bouncing on the floor keeps its middle this far off a man's
+// (feet): off him, not through him.
+const BOUNCE_CLEAR = 1.2;
 // How far through a bounce of his dribble the ball has come back up near
 // enough to his hands to take it in both (see evaluate.ts).
 const CATCH_UP = 0.7;
@@ -1891,19 +1894,24 @@ class Director {
 		meet: { at: Pt; by: number; face: 1 | -1; dunker: Pt },
 	) {
 		const tr = this.track(pid);
-		const { at: V, by } = meet;
-		if (!tr || dist(this.posAt(pid, by), V) < 0.5) {
+		if (!tr) {
 			return;
 		}
-		let t0 = by - 600;
-		for (let n = 0; n < 3; n++) {
-			const need = runMs(dist(this.posAt(pid, t0), V), SPRINT) + 150;
+		// (There for it already, he has no way to go in - but down again he
+		// steps back all the same: not stood under the rim, the ball coming
+		// down through the net onto him.)
+		const there = dist(this.posAt(pid, meet.by), meet.at) < 0.5;
+		const { by } = meet;
+		let t0 = there ? by : by - 600;
+		for (let n = 0; n < 3 && !there; n++) {
+			const need = runMs(dist(this.posAt(pid, t0), meet.at), SPRINT) + 150;
 			if (by - t0 >= need) {
 				break;
 			}
 			t0 = by - need;
 		}
 		const P = this.posAt(pid, t0);
+		const V = there ? P : meet.at;
 		// Back from the rim: there through whatever he goes up for at it,
 		// then flat out to where he was to be - picking up where following
 		// his man takes him at the first moment a run from the rim gets him
@@ -1981,14 +1989,16 @@ class Director {
 			}
 		}
 		const d = dist(P, V);
-		kept.push({
-			t0,
-			t1: by,
-			from: { ...P },
-			to: { ...V },
-			anim: d > 6 ? "run" : "slide",
-			...(d > 6 ? {} : { face: meet.face }),
-		});
+		if (!there) {
+			kept.push({
+				t0,
+				t1: by,
+				from: { ...P },
+				to: { ...V },
+				anim: d > 6 ? "run" : "slide",
+				...(d > 6 ? {} : { face: meet.face }),
+			});
+		}
 		if (stepped > leave) {
 			kept.push({
 				t0: leave,
@@ -2994,6 +3004,52 @@ class Director {
 		return got;
 	}
 
+	// The ball left bouncing at a whistle or a basket - down through the
+	// net, say - goes off the floor and away, not on through a man stood
+	// there (one with his hands on his hips, or having words, holds his
+	// ground: see keepOff): it comes off the floor away from whoever is
+	// there, the nearest way round to where it was going that misses them
+	// all, as far.
+	private bounceClear(men: number[]) {
+		const n = this.ball.length;
+		const rest = this.ball[n - 1];
+		const drop = this.ball[n - 2];
+		if (rest?.kind !== "rest" || drop?.kind !== "bounce") {
+			return;
+		}
+		const F = drop.from;
+		const clearOf = (to: Pt) => {
+			for (let s = drop.t0; s <= drop.t1; s += 40) {
+				const u = (s - drop.t0) / (drop.t1 - drop.t0);
+				const B = { x: F.x + (to.x - F.x) * u, y: F.y + (to.y - F.y) * u };
+				if (men.some((pid) => dist(this.posAt(pid, s), B) < BOUNCE_CLEAR)) {
+					return false;
+				}
+			}
+			return true;
+		};
+		if (clearOf(drop.to)) {
+			return;
+		}
+		const L = Math.max(2, dist(F, drop.to));
+		const a0 = Math.atan2(drop.to.y - F.y, drop.to.x - F.x);
+		for (let k = 1; k <= 6; k++) {
+			for (const s of [1, -1]) {
+				const a = a0 + (s * k * Math.PI) / 6;
+				const Q = inPlay({
+					x: F.x + Math.cos(a) * L,
+					y: F.y + Math.sin(a) * L,
+				});
+				if (clearOf(Q)) {
+					drop.to = Q;
+					rest.at = { ...Q, z: rest.at.z };
+					this.ballAt = rest.at;
+					return;
+				}
+			}
+		}
+	}
+
 	// He gets to the ball on the floor and scoops it up - stopped a stride
 	// short of it, so it is under his hands as he bends - and comes up with
 	// it, or comes up dribbling. Returns when he gets to it; he has it up
@@ -3203,8 +3259,10 @@ class Director {
 				true,
 			);
 		}
+		const ten = [...this.slots(0), ...this.slots(1)];
+		this.bounceClear(ten);
 		const b = this.ballPoint();
-		const near = [...this.slots(0), ...this.slots(1)].sort(
+		const near = ten.sort(
 			(a, c) => dist(this.posOf(a), b) - dist(this.posOf(c), b),
 		)[0];
 		if (near === undefined) {
@@ -3231,8 +3289,10 @@ class Director {
 		if (this.holder !== undefined) {
 			return;
 		}
+		const ten = [...this.slots(0), ...this.slots(1)];
+		this.bounceClear(ten);
 		const b = this.ballPoint();
-		const near = [...this.slots(0), ...this.slots(1)].sort(
+		const near = ten.sort(
 			(a, c) => dist(this.posOf(a), b) - dist(this.posOf(c), b),
 		)[0];
 		if (near !== undefined) {
@@ -3248,8 +3308,10 @@ class Director {
 		let pid = this.holder;
 		let start = t;
 		if (pid === undefined) {
+			const ten = [...this.slots(0), ...this.slots(1)];
+			this.bounceClear(ten);
 			const b = this.ballPoint();
-			pid = [...this.slots(0), ...this.slots(1)].sort(
+			pid = ten.sort(
 				(a, c) => dist(this.posOf(a), b) - dist(this.posOf(c), b),
 			)[0];
 			if (pid === undefined) {
@@ -3318,6 +3380,7 @@ class Director {
 		const off = this.slots(team);
 		const def = this.slots(other(team));
 		const pg = off[0]!;
+		this.bounceClear([...off, ...def]);
 		// Where the ball ends up, and when it gets there.
 		const b = this.ballPoint();
 		const last = this.ball.at(-1);
