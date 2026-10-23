@@ -1716,6 +1716,44 @@ const FIELD_ANIMS = {
 		{ shN: 100, elN: 40, abN: 80, shF: 100, elF: 40, abF: 80, lean: -8 },
 		{ shN: 150, elN: 26, abN: 50, shF: 150, elF: 26, abF: 50, lean: -10 },
 	),
+	// A new set of downs: his free arm up and thrust out, pointing the way
+	// they are going, held there a moment.
+	pointFirst: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[0.28, pose({ shF: 150, elF: 76, abF: 24, lean: -4 })],
+			[
+				0.5,
+				pose({
+					hipN: 22,
+					kneeN: 20,
+					hipF: -6,
+					kneeF: 8,
+					lean: 8,
+					shF: 92,
+					elF: 2,
+					abF: 8,
+					wrF: 0,
+				}),
+			],
+			[
+				0.84,
+				pose({
+					hipN: 22,
+					kneeN: 20,
+					hipF: -6,
+					kneeF: 8,
+					lean: 6,
+					shF: 94,
+					elF: 4,
+					abF: 8,
+					wrF: 0,
+				}),
+			],
+			[1, BASE],
+		],
+	},
 	// Hands on his hips: the other side's score.
 	onHips: {
 		kind: "still",

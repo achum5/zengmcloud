@@ -63,6 +63,8 @@ export type ActInput = {
 	// The play's events: from its "clock" line up to the next one.
 	i0: number;
 	i1: number;
+	// A new set of downs got by it (not by a flag).
+	firstDown?: boolean;
 	r: () => number;
 };
 
@@ -496,6 +498,12 @@ const SLIDE_FT = 5;
 const SLIDE_MS = 650;
 const PULL_UP_FT = 3.4;
 
+// A new set of downs: the man who got it pointing the way they are going
+// this often - down only this long first (ms) - for this long.
+const POINT_FIRST = 0.55;
+const UP_QUICK = 450;
+const POINT_MS = 1000;
+
 // After the whistle, how long a man down stays down, and getting up.
 const DOWN_MS = 900;
 const GET_UP_MS = 1000;
@@ -591,6 +599,8 @@ const JUMP: Record<string, number> = {
 // The ball out of his hands this long after the hit that knocks it loose;
 // and what a man is doing on the turf, down.
 const POP_MS = 120;
+// Getting up off the turf.
+const RISING = new Set<Move>(["getUp", "getUpBack", "sitUp"]);
 const DOWN = new Set<Move>([
 	"tackled",
 	"tackledBack",
@@ -4693,6 +4703,10 @@ class Action {
 				this.until = sacker.t;
 				sacker.hold(sacker.t + 400, "stand");
 				this.mob.add(sacker.pid);
+				return;
+			}
+			if (this.input.firstDown) {
+				this.pointFirst();
 			}
 			return;
 		}
@@ -4822,6 +4836,42 @@ class Action {
 			m.hold(m.t + 2400, "onHips");
 			this.mob.add(m.pid);
 		}
+	}
+
+	// A new set of downs, now and then: the man who got it up off the turf
+	// quick - or pulled up on his feet - and pointing the way they are going.
+	pointFirst() {
+		const r = this.r;
+		const held = this.ball.findLast((b) => b.kind === "held");
+		const m = held?.kind === "held" ? this.man(held.pid) : undefined;
+		if (!m || m.team !== this.input.offense || r() > POINT_FIRST) {
+			return;
+		}
+		// (Past whatever he was stood doing after.)
+		const legs = m.legs;
+		let k = legs.length - 1;
+		while (k > 1 && legs[k]!.move === "stand") {
+			k--;
+		}
+		const rise = legs[k]!;
+		const lay = legs[k - 1]!;
+		let t0: number;
+		if (RISING.has(rise.move) && moveKind(lay.move) === "still") {
+			legs.length = k + 1;
+			const ms = rise.t1 - rise.t0;
+			lay.t1 = Math.max(lay.t0 + 1, Math.min(lay.t1, lay.t0 + UP_QUICK));
+			rise.t0 = lay.t1;
+			rise.t1 = rise.t0 + ms * 0.8;
+			t0 = rise.t1;
+		} else if (legs.some((l) => l.t1 > this.whistle && DOWN.has(l.move))) {
+			return;
+		} else {
+			t0 = Math.max(this.whistle + 500, Math.min(m.t, this.whistle + 900));
+			m.cut(t0);
+			m.hold(t0);
+		}
+		m.act("pointFirst", t0 + POINT_MS, this.ahead + (r() - 0.5) * 0.7);
+		m.hold(m.t + 300, "stand");
 	}
 
 	// Everyone not already given his part to the end: pulled up where the

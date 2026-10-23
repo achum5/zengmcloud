@@ -863,6 +863,23 @@ class Director {
 			ball.push({ kind: "held", t0: over.t0, pid: center.pid });
 		}
 
+		// (A new set of downs for the same side, by what it did - not a flag.)
+		const after = events[i1];
+		const moved =
+			(kind === "run" || kind === "pass") &&
+			!flagged &&
+			after?.type === "clock" &&
+			after.down === 1 &&
+			after.t === clock.t &&
+			!events
+				.slice(i0, i1)
+				.some(
+					(e) =>
+						e?.type === "interception" ||
+						e?.lost ||
+						e?.td === true ||
+						e?.safety === true,
+				);
 		// The play itself, from the snap - or, a flag before it, the foul.
 		const acted =
 			ACTED.has(kind) || flagged
@@ -879,6 +896,7 @@ class Director {
 						stats,
 						i0,
 						i1,
+						...(moved ? { firstDown: true } : {}),
 						r: this.rng(i0, "action"),
 					})
 				: undefined;
