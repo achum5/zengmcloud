@@ -8319,9 +8319,11 @@ const buildGameRecap = (game: RecapGame): string => {
 	const tidy = (para: string[]) =>
 		joinShortPairs(
 			varyHalfWords(
-				dedupePlayerSubjects(
-					dedupeSubjects(para, otherNick, nicks),
-					playerNames,
+				spareDoubleLabels(
+					dedupePlayerSubjects(
+						dedupeSubjects(spareForThe(para), otherNick, nicks),
+						playerNames,
+					),
 				),
 			),
 		).join(" ");
@@ -8397,6 +8399,75 @@ export const teamTheSwitch = (paragraphs: string[], shape: Shape): string[] => {
 
 export const getAutoRecap = (game: RecapGame): string =>
 	fixArticles(buildGameRecap(withSettledLead(game)));
+
+// NOT "FOR THE LAKERS" TWICE RUNNING. "Naji Green supplied 19 points and
+// Keegan Green 16 for the Lakers. Shots fell for the Lakers - 54.2% from the
+// field." Three stock lines say "for the X", and right behind a sentence that
+// just did, the pair is an echo (43 of them in a 954-game corpus). They take
+// a sibling's shape instead: "The Lakers shot 54.2% from the field."
+export const spareForThe = (sentences: string[]): string[] =>
+	sentences.map((cur, i) => {
+		const prev = sentences[i - 1];
+		const team =
+			/^(?:Shots fell|It came from everywhere|Up next|Next up) for the (.+?)(?: - |: | is )/.exec(
+				cur,
+			)?.[1];
+		if (prev === undefined || !team || !prev.includes(`for the ${team}`)) {
+			return cur;
+		}
+		return cur
+			.replace(
+				/^Shots fell for the (.+?) - ([\d.]+%) from the field\.$/,
+				"The $1 shot $2 from the field.",
+			)
+			.replace(
+				/^It came from everywhere for the (.+?) - (\w+) in double figures\.$/,
+				(_m, t: string, n: string) => `${cap(n)} ${t} reached double figures.`,
+			)
+			.replace(
+				/^(?:Up next for the (.+?): |Next up for the (.+?) is )(the .+?), (at home|on the road)\.$/,
+				(
+					_m,
+					a: string | undefined,
+					b: string | undefined,
+					opp: string,
+					where: string,
+				) => `The ${a ?? b} face ${opp} next, ${where}.`,
+			);
+	});
+
+// ONE "DOUBLE-DOUBLE" A PARAGRAPH. "Walker Ingram had a double-double of
+// his own, 21 points and 12 assists, and Xavier Ingram posted a
+// double-double, 18 points and 10 rebounds. Keegan Green finished with a
+// double-double (16 points, 10 assists, and 5 blocks) for the Lakers." - the
+// label three times in two sentences, and twice or more in one paragraph of
+// ten. The numbers say it: the label is said once, and the lines after it
+// are told plain ("Xavier Ingram posted 18 points and 10 rebounds"). A
+// triple-double is always called one.
+export const spareDoubleLabels = (sentences: string[]): string[] => {
+	let said = false;
+	return sentences.map((sentence) =>
+		sentence.replace(
+			/\ba double-double(?: of his own)?(?:,| with) (?=\d|a season-high)|\ba double-double \(((?:a season-high )?\d[^)]*)\)|(?:'s|') double-double \(((?:a season-high )?\d[^)]*)\)|\bdouble-double\b(?!s)/g,
+			(m: string, line?: string, owned?: string) => {
+				if (!said) {
+					said = true;
+					return m;
+				}
+				// "Jalen Green's double-double (14 points and 16 rebounds) was
+				// the best of the Clippers": the man stays the subject, not his
+				// numbers.
+				if (owned !== undefined) {
+					return ` (${owned})`;
+				}
+				if (line !== undefined) {
+					return line;
+				}
+				return m.startsWith("a ") ? "" : m;
+			},
+		),
+	);
+};
 
 // ONE WORD FOR HALFTIME AT A TIME. "The Timberwolves took a 56-52 lead into
 // the break. After the break, they outscored the Pacers 56-43" - each

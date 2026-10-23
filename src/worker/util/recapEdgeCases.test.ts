@@ -5,6 +5,8 @@ import {
 	endRecapBatch,
 	getAutoDayRecap,
 	getAutoRecap,
+	spareDoubleLabels,
+	spareForThe,
 } from "./getAutoRecap.ts";
 import {
 	aFigure,
@@ -2154,5 +2156,104 @@ describe("a night of comebacks", () => {
 			assert.notMatch(head, /\bto (?:beat|top)\b.* to /, recap);
 		}
 		assert.isAbove(told, 0);
+	});
+});
+
+// "Walker Ingram had a double-double of his own, 21 points and 12 assists,
+// and Xavier Ingram posted a double-double, 18 points and 10 rebounds.
+// Keegan Green finished with a double-double (16 points, 10 assists, and 5
+// blocks) for the Lakers." The label is said once a paragraph.
+describe("one double-double label a paragraph", () => {
+	test("the lines after the first are told plain", () => {
+		assert.deepEqual(
+			spareDoubleLabels([
+				"Walker Ingram had a double-double of his own, 21 points and 12 assists, and Xavier Ingram posted a double-double, 18 points and 10 rebounds.",
+				"Keegan Green finished with a double-double (16 points, 10 assists, and 5 blocks) for the Lakers.",
+				"Grant Jackson's double-double (13 points and a season-high 12 rebounds) was the best of the Thunder.",
+				"Jaden Ellis added a double-double with 14 points and 10 rebounds.",
+			]),
+			[
+				"Walker Ingram had a double-double of his own, 21 points and 12 assists, and Xavier Ingram posted 18 points and 10 rebounds.",
+				"Keegan Green finished with 16 points, 10 assists, and 5 blocks for the Lakers.",
+				"Grant Jackson (13 points and a season-high 12 rebounds) was the best of the Thunder.",
+				"Jaden Ellis added 14 points and 10 rebounds.",
+			],
+		);
+		// A streak of them is not the label, and a triple-double is always
+		// called one.
+		assert.deepEqual(
+			spareDoubleLabels([
+				"That is four double-doubles in a row for Franz Jackson.",
+				"Cade Jackson came up with a double-double, 18 points and 10 rebounds, and Bo Jackson posted a triple-double (12 points, 10 rebounds, and 10 assists).",
+			]),
+			[
+				"That is four double-doubles in a row for Franz Jackson.",
+				"Cade Jackson came up with a double-double, 18 points and 10 rebounds, and Bo Jackson posted a triple-double (12 points, 10 rebounds, and 10 assists).",
+			],
+		);
+	});
+
+	test("a game full of them says it once a paragraph", () => {
+		for (let gid = 1; gid <= 20; gid++) {
+			const home = squad(
+				{ tid: 1, name: "Lakers" },
+				{ name: "Ace Laker", pid: 11, pts: 31, fg: 12, fga: 21 },
+				118,
+			);
+			home.players[1] = { ...home.players[1]!, name: "Cy Laker", reb: 12 };
+			home.players[2] = { ...home.players[2]!, name: "Di Laker", ast: 11 };
+			const away = squad(
+				{ tid: 2, name: "Kings" },
+				{ name: "Rex King", pid: 21, pts: 22, reb: 13, fg: 9, fga: 19 },
+				104,
+			);
+			away.players[1] = { ...away.players[1]!, name: "Al King", ast: 10 };
+			const g = game([home, away], { gid });
+			const recap = getAutoRecap(g);
+			clean(recap);
+			for (const para of recap.split("\n\n").slice(1)) {
+				assert.isAtMost(
+					para.match(/\bdouble-double\b(?!s)/g)?.length ?? 0,
+					1,
+					recap,
+				);
+			}
+			assert.deepEqual(verifyRecap(recap, g), [], recap);
+		}
+	});
+});
+
+// "Naji Green supplied 19 points and Keegan Green 16 for the Lakers. Shots
+// fell for the Lakers - 54.2% from the field."
+describe("not 'for the Lakers' twice running", () => {
+	test("a stock line right behind one takes a sibling's shape", () => {
+		assert.deepEqual(
+			spareForThe([
+				"Naji Green supplied 19 points and Keegan Green 16 for the Lakers.",
+				"Shots fell for the Lakers - 54.2% from the field.",
+				"Vince King led the scoring with 22 points for the Trail Blazers.",
+				"It came from everywhere for the Trail Blazers - seven in double figures.",
+				"Payton Dunn finished with 25 points for the 76ers.",
+				"Up next for the 76ers: the Timberwolves, on the road.",
+				"Amen Hayes sat out for the Heat.",
+				"Next up for the Heat is the Nuggets, at home.",
+			]),
+			[
+				"Naji Green supplied 19 points and Keegan Green 16 for the Lakers.",
+				"The Lakers shot 54.2% from the field.",
+				"Vince King led the scoring with 22 points for the Trail Blazers.",
+				"Seven Trail Blazers reached double figures.",
+				"Payton Dunn finished with 25 points for the 76ers.",
+				"The 76ers face the Timberwolves next, on the road.",
+				"Amen Hayes sat out for the Heat.",
+				"The Heat face the Nuggets next, at home.",
+			],
+		);
+		// Not after a sentence about somebody else.
+		const apart = [
+			"Payton Dunn finished with 25 points for the Mavericks.",
+			"Up next for the Lakers: the Bulls, on the road.",
+		];
+		assert.deepEqual(spareForThe(apart), apart);
 	});
 });
