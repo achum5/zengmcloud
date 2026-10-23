@@ -506,6 +506,9 @@ const PURSUIT_STEP = 350;
 const PURSUIT_LEAD = 300;
 const PURSUIT_RING = 10;
 const PULL_UP_MS = 900;
+// After a man gone for a score, losing ground on him this far back (feet):
+// given up, now and then.
+const GIVE_UP_FT = 24;
 
 // A quarterback with it in the open, down feet first this often - a run
 // that ends on a stretch this long at least (feet); sliding on this far
@@ -552,10 +555,15 @@ const QB_RIDE = 0.8;
 const RIDE_MS = 450;
 const RIDE_PAST = 12;
 const RIDE_EDGE = 13;
+// The line gives no ground nearer than this to where the quarterback sets
+// (feet).
+const POCKET_ROOM = 7;
 // A back kept in to block sets up this far in front of where the
-// quarterback sets and this far to his side of him (feet).
+// quarterback sets and this far to his side of him - no nearer the ball
+// than this (feet).
 const BACK_SET_UP = 4.5;
 const BACK_SET_OUT = 4;
+const BACK_OFF_LINE = 9;
 // A play-action pass: this often, when it goes this far in the air (yards)
 // and a back is there to fake it to; the fake this long (the ball out to
 // him half way through), the back on past it this far (feet); and the
@@ -1482,6 +1490,7 @@ class Action {
 			catchAt,
 			onBall && target ? [onBall, target] : undefined,
 			fakeT,
+			first === cmpI ? Math.max(0, (gain - airYds) * YD) : 0,
 		);
 		const beaten = sacker ? this.man(this.statPids("skAlw")[0]) : undefined;
 		this.passRush(
@@ -2660,18 +2669,27 @@ class Action {
 				continue;
 			}
 			m.hold(Math.max(m.t, this.seen));
+			// (Each on a line of his own to him, and as far off him as he
+			// can keep up - a man losing ground on him well back giving it up
+			// early: not all in single file on his heels.)
+			const ring = PURSUIT_RING * (0.8 + r() * 1.4);
+			const turn = (r() - 0.5) * 0.9;
+			const pace = m.top * PURSUIT_PACE * (0.88 + r() * 0.12);
+			let was = dist(m.at, carrier.posAt(m.t));
 			while (m.t + PURSUIT_STEP < t) {
 				const c = m.t + PURSUIT_STEP;
 				const him = carrier.posAt(c + PURSUIT_LEAD);
-				const a = Math.atan2(m.at.y - him.y, m.at.x - him.x);
+				const a = Math.atan2(m.at.y - him.y, m.at.x - him.x) + turn;
 				m.chase(
-					{
-						x: him.x + Math.cos(a) * PURSUIT_RING,
-						y: him.y + Math.sin(a) * PURSUIT_RING,
-					},
+					{ x: him.x + Math.cos(a) * ring, y: him.y + Math.sin(a) * ring },
 					c,
-					m.top * PURSUIT_PACE,
+					pace,
 				);
+				const now = dist(m.at, carrier.posAt(m.t));
+				if (now > GIVE_UP_FT && now > was && r() < 0.35) {
+					break;
+				}
+				was = now;
 			}
 			const l = m.last;
 			const ms = Math.max(1, l.t1 - l.t0);
@@ -3276,7 +3294,9 @@ class Action {
 			}
 		}
 		// The blockers' sets: back off the line, the tackles out wide; a
-		// back kept in, up beside the quarterback.
+		// back kept in, up beside the quarterback (two of them, one either
+		// side of him) - but never up in among the line.
+		const backSides = new Set<number>();
 		for (const b of blockers) {
 			if (this.done.has(b.pid)) {
 				continue;
@@ -3290,6 +3310,11 @@ class Action {
 			const back = tackle ? 7 : 4;
 			const out = tackle ? Math.sign(s.a) * 2 : 0;
 			const inBack = b.role === "RB" || b.role === "FB";
+			let side = Math.sign(s.a - pocket.a) || 1;
+			if (inBack) {
+				side = backSides.has(side) ? -side : side;
+				backSides.add(side);
+			}
 			b.hold(snap + 60);
 			// (A back through a fake already: set where it left him.)
 			const setPt =
@@ -3297,8 +3322,8 @@ class Action {
 					? { d: s.d - 1, a: s.a }
 					: inBack
 						? {
-								d: pocket.d + BACK_SET_UP,
-								a: pocket.a + (Math.sign(s.a - pocket.a) || 1) * BACK_SET_OUT,
+								d: Math.min(pocket.d + BACK_SET_UP, -BACK_OFF_LINE),
+								a: pocket.a + side * BACK_SET_OUT,
 							}
 						: { d: Math.max(pocket.d + 4, s.d - back), a: s.a + out };
 			const far = dist(b.at, this.w(setPt));
@@ -3308,9 +3333,12 @@ class Action {
 				"passSet",
 				this.ahead,
 			);
-			// Giving ground as the rush comes (a back hardly at all: he is
-			// the last man between them and the quarterback).
-			const give = inBack ? r() * 1.2 : 2 + r() * 4;
+			// Giving ground as the rush comes - never back into the pocket (a
+			// back hardly at all: he is the last man between them and the
+			// quarterback).
+			const give = inBack
+				? r() * 1.2
+				: Math.min(2 + r() * 4, Math.max(0, setPt.d - pocket.d - POCKET_ROOM));
 			b.go(
 				this.w({ d: setPt.d - give, a: setPt.a + (pocket.a - setPt.a) * 0.1 }),
 				end,
@@ -3420,9 +3448,13 @@ class Action {
 		catchAt: number,
 		marked?: [Actor, Actor],
 		fake?: number,
+		yac = 0,
 	) {
 		const { snap, dir } = this.input;
 		const r = this.r;
+		// (Round where it is caught - further off, the further he goes with
+		// it after: they were beaten to it.)
+		const closeIn = 4.5 + clamp(yac / 5, 0, 12);
 		// Everybody where he lined up.
 		const set = (m: Actor) => this.of(m.posAt(snap));
 		const free = coverage.filter((m) => !this.done.has(m.pid));
@@ -3519,10 +3551,15 @@ class Action {
 				const far = dist(m.at, to);
 				if (far < 60) {
 					const ang = Math.atan2(m.at.y - to.y, m.at.x - to.x);
+					// (Not back off it, though, a man already near.)
+					const off = Math.min(closeIn, Math.max(4.5, far - 2));
 					let spot = to;
 					for (let k = 0; k < 8; k++) {
 						const a = ang + Math.ceil(k / 2) * 0.7 * (k % 2 === 0 ? 1 : -1);
-						spot = { x: to.x + Math.cos(a) * 4.5, y: to.y + Math.sin(a) * 4.5 };
+						spot = {
+							x: to.x + Math.cos(a) * off,
+							y: to.y + Math.sin(a) * off,
+						};
 						if (closing.every((p) => dist(p, spot) > 3.5)) {
 							break;
 						}

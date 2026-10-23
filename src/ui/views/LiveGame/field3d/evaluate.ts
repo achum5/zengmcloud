@@ -1,3 +1,4 @@
+import { apartAt, apartOf } from "./apart.ts";
 import type { BallSeg, FieldTimeline, Leg, Play } from "./director.ts";
 import type { Pt, Pt3, Side } from "./geometry.ts";
 import { liftOf, moveKind, strideOf, type Move } from "./poses.ts";
@@ -168,6 +169,7 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 		return { t, play, players: [] };
 	}
 	const players: FieldPlayerState[] = [];
+	const apart = apartOf(play);
 	for (const part of [
 		...play.parts,
 		...play.crew,
@@ -183,6 +185,11 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 		const l = legs[k]!;
 		const offset = (part.pid * 0.618) % 1;
 		const at = pointOf(l, t);
+		const aside = apartAt(apart.get(part.pid), t);
+		if (aside) {
+			at.x += aside.x;
+			at.y += aside.y;
+		}
 		// The way he faced coming into this leg, and how far he had come in
 		// strides.
 		let before = legs[0]!.yaw ?? 0;
