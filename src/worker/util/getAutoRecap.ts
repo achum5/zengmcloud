@@ -2442,6 +2442,31 @@ const buildHeadlineText = (
 		);
 	}
 
+	// FORTY IN A LOSS outranks the winners' blocks, steals or pair of
+	// double-doubles: "Quentin Jackson swats 5 as the Magic take down the
+	// Celtics" sat over a game in which Obi Brooks scored 46, and the body
+	// reached him in its third paragraph.
+	if (
+		loserStar &&
+		loserStar.pts >= 40 &&
+		star.pts < 30 &&
+		doubleCategories(star).length < 3 &&
+		loserLineCarries(loserStar, shape.margin)
+	) {
+		return h(
+			pick(
+				rng,
+				[
+					`${poss(loserStar.name)} ${statPhrase(loserStar, 1)} not enough as the ${winnerN} ${verb} the ${loserN}${tag}`,
+					`${winnerN} ${verb} the ${loserN} despite ${poss(loserStar.name)} ${statPhrase(loserStar, 1)}${tag}`,
+				],
+				"headline:loser-star",
+			),
+			false,
+			true,
+		);
+	}
+
 	// Two double-doubles from the winner, when no single scorer dominates.
 	const winnerDoubles = shape.winner.players
 		.filter((p) => doubleCategories(p).length >= 2 && p.pts >= 12)
@@ -2868,7 +2893,11 @@ const resultLead = (
 		};
 	}
 	const quarterRole = bigQuarterRole(shape);
+	// Not when the sentence has a tail to carry: this shape has no room for
+	// one, and "for their fifth straight win" or "despite 46 points from Obi
+	// Brooks" was dropped for "taking over with a 33-19 second quarter".
 	if (
+		tail === "" &&
 		shape.bigRun &&
 		quarterRole &&
 		shape.bigRun.margin >= 9 &&

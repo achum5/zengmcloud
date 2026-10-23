@@ -10012,3 +10012,54 @@ describe("a losing line and the margin", () => {
 		assert.ok(headline.includes("Jalen King"), headline);
 	});
 });
+
+// "Quentin Jackson swats 5 as the Magic take down the Celtics" over a game in
+// which Obi Brooks scored 46 - and "despite 46 points from Obi Brooks" lost
+// to "taking over with a 33-19 second quarter".
+describe("forty in a loss", () => {
+	const make = (gid: number) =>
+		game({
+			gid,
+			teams: [
+				realisticTeam(
+					{
+						tid: 1,
+						region: "Orlando",
+						name: "Magic",
+						abbrev: "ORL",
+						pts: 115,
+						ptsQtrs: [25, 33, 30, 27],
+					},
+					player({
+						name: "Quentin Jackson",
+						pts: 22,
+						reb: 9,
+						blk: 5,
+						fg: 9,
+						fga: 17,
+					}),
+				),
+				realisticTeam(
+					{
+						tid: 2,
+						region: "Boston",
+						name: "Celtics",
+						abbrev: "BOS",
+						pts: 107,
+						ptsQtrs: [30, 19, 30, 28],
+					},
+					player({ name: "Obi Brooks", pts: 46, reb: 10, fg: 16, fga: 31 }),
+				),
+			],
+			winnerTid: 1,
+		});
+
+	test("outranks the winners' blocks in the headline, and reaches the lede", () => {
+		for (let gid = 6100; gid < 6110; gid++) {
+			const recap = getAutoRecap(make(gid));
+			const [headline, lede] = recap.split("\n\n");
+			assert.ok(headline!.includes("Obi Brooks"), recap);
+			assert.ok(lede!.includes("Obi Brooks"), recap);
+		}
+	});
+});
