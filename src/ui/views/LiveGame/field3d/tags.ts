@@ -71,16 +71,40 @@ const shownAt = (
 	const seg = play.ball[i];
 	if (seg?.kind === "held") {
 		const prev = play.ball[i - 1];
+		// (Caught by the man tagged while it was in the air: still his.)
+		const caught =
+			prev?.kind === "fly" && targetOf(play, prev.t1, prev.to) === seg.pid;
 		show(
 			seg.pid,
-			prev?.kind === "held" || t >= play.snap
-				? clamp01((t - seg.t0) / (prev?.kind === "fly" ? IN_MS : 120))
-				: 0,
+			caught
+				? 1
+				: prev?.kind === "held" || t >= play.snap
+					? clamp01((t - seg.t0) / (prev?.kind === "fly" ? IN_MS : 120))
+					: 0,
 		);
 	} else {
 		const prev = play.ball[i - 1];
 		if (seg && prev?.kind === "held") {
 			show(prev.pid, clamp01(1 - (t - seg.t0) / OUT_MS));
+		}
+		// Thrown, punted or kicked off: the man it is going to as well.
+		// (From where it last stopped: a punter drops it, then kicks it.)
+		let k = i - 1;
+		while (play.ball[k]?.kind === "fly") {
+			k--;
+		}
+		const from = play.ball[k];
+		if (
+			seg?.kind === "fly" &&
+			seg.t0 < play.whistle &&
+			(from?.kind === "held"
+				? NAMED.has(play.parts.find((p) => p.pid === from.pid)?.role ?? "C")
+				: from?.kind === "spot" && from.stood === "tee")
+		) {
+			const to = targetOf(play, seg.t1, seg.to);
+			if (to !== undefined) {
+				show(to, clamp01((t - seg.t0) / IN_MS));
+			}
 		}
 	}
 	// (Only the men in the play: not an official it is tossed to.)
@@ -91,6 +115,46 @@ const shownAt = (
 		}
 	}
 	return shown;
+};
+
+// Where a man is at t, near enough.
+const atTime = (part: Play["parts"][number], t: number) => {
+	const leg = part.legs.find((l) => l.t0 <= t && l.t1 >= t) ?? part.legs.at(-1);
+	if (!leg) {
+		return undefined;
+	}
+	const u = leg.t1 > leg.t0 ? clamp01((t - leg.t0) / (leg.t1 - leg.t0)) : 1;
+	return {
+		x: leg.from.x + (leg.to.x - leg.from.x) * u,
+		y: leg.from.y + (leg.to.y - leg.from.y) * u,
+	};
+};
+// Who is under the ball where it comes down: a receiver, a returner.
+const TARGET_FT = 12;
+const targets = new WeakMap<Play, Map<number, number | undefined>>();
+const targetOf = (play: Play, t1: number, to: { x: number; y: number }) => {
+	let known = targets.get(play);
+	if (!known) {
+		known = new Map();
+		targets.set(play, known);
+	}
+	if (!known.has(t1)) {
+		let best: number | undefined;
+		let bestD = TARGET_FT;
+		for (const part of play.parts) {
+			if (!NAMED.has(part.role)) {
+				continue;
+			}
+			const at = atTime(part, t1);
+			const d = at ? Math.hypot(at.x - to.x, at.y - to.y) : Infinity;
+			if (d < bestD) {
+				best = part.pid;
+				bestD = d;
+			}
+		}
+		known.set(t1, best);
+	}
+	return known.get(t1);
 };
 
 type Placed = { x: number; y: number; w: number; h: number };
