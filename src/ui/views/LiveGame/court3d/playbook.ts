@@ -1546,6 +1546,34 @@ export const PLAYBOOK: PlaySource[] = [
 		],
 		risks: ["1 1 pass"],
 	},
+	// PASS AND SCREEN AWAY: five out, the man up top swings it to the wing
+	// and goes away from the ball to set a down screen for the man on the
+	// far side - who walks his man down, then comes up off it to the top for
+	// the swing back - and the screener replaces him out on the wing. The
+	// motion at the heart of every five-out offense.
+	{
+		id: "pass-screen-away",
+		cat: "half",
+		use: 4,
+		start: "top* R_wing L_wing R_corner L_corner",
+		needs:
+			"passer screener | ballHandler passer | shooter offBallShooter | shooter spacer | shooter spacer",
+		steps: [
+			"1 pass 2 chest",
+			"1 screen 3 L_slot down; 3 move top v_cut",
+			"2 pass 3 swing; 1 move L_wing pop",
+		],
+		options: [
+			"3 three catch_and_shoot top 1 2 swing OffScreen 3",
+			"3 mid pull_up high_post 2 - - Spotup 1 | 3 dribble high_post attack",
+			"3 post floater L_lane 2 - - Spotup 1 | 3 dribble L_lane attack",
+			"1 three catch_and_shoot L_wing 2 3 swing Spotup 1",
+			"2 three catch_and_shoot R_wing 0 1 - Spotup 1",
+			"2 post floater R_lane 1 - - Isolation 1 | 2 dribble R_lane attack",
+			"5 three catch_and_shoot L_corner 2 3 kickout Spotup 1 | 3 dribble L_lane attack",
+		],
+		risks: ["0 1 pass", "1 1 screen", "2 2 pass"],
+	},
 	{
 		id: "five-out-pass-and-cut",
 		cat: "half",
