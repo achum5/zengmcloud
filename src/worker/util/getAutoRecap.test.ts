@@ -7374,7 +7374,7 @@ describe("the second man who outscored the first", () => {
 		);
 		assert.match(
 			recap,
-			/Lonnie Green[^.]*(?:led the scoring|top-scored|leading scorer)|No one scored more than Lonnie Green/,
+			/Lonnie Green[^.]*(?:led the scoring|led the [A-Z]\w+ with|leading scorer)|No one scored more than Lonnie Green/,
 		);
 	});
 
@@ -7391,7 +7391,7 @@ describe("the second man who outscored the first", () => {
 		const recap = getAutoRecap(twoMen(28, 14));
 		assert.doesNotMatch(
 			recap,
-			/Lonnie Green[^.]*(?:led the scoring|top-scored|leading scorer)/,
+			/Lonnie Green[^.]*(?:led the scoring|led the [A-Z]\w+ with|leading scorer)/,
 		);
 	});
 
@@ -7438,6 +7438,34 @@ describe("a compound subject blocks the pronoun", () => {
 			"The Pistons led wire to wire.",
 			"They stretched their run to 11 wins.",
 		]);
+	});
+
+	// "The win lifted the Jazz into fourth place. They finished a 2-0 season
+	// sweep of the Mavericks for the Jazz." - "They" from "The win".
+	test("a sentence about the result is not a team", () => {
+		const sentences = [
+			"The win lifted the Jazz into fourth place in the Eastern Conference.",
+			"The win finished a 2-0 season sweep of the Mavericks for the Jazz.",
+		];
+		const said = [
+			"The win lifted the Jazz into fourth place in the Eastern Conference.",
+			"It also finished a 2-0 season sweep of the Mavericks for the Jazz.",
+		];
+		assert.deepEqual(dedupeSubjects(sentences), said);
+		assert.deepEqual(
+			dedupeSubjects(sentences, "Mavericks", ["Jazz", "Mavericks"]),
+			said,
+		);
+		assert.deepEqual(
+			dedupeSubjects([
+				"The teams combined for 240 points.",
+				"The teams were tied at 59 at the break.",
+			]),
+			[
+				"The teams combined for 240 points.",
+				"They were tied at 59 at the break.",
+			],
+		);
 	});
 
 	// "...but it was 65-63 the Pistons at halftime. They trailed 92-88" read
@@ -8800,6 +8828,49 @@ test("a line that is only points leads only if nobody outscored it", () => {
 		assert.doesNotMatch(headline, /Miles Ingram/, recap);
 		assert.match(`${headline} ${lede}`, /Herb Ingram/, recap);
 	}
+});
+
+// "The Cavaliers went into halftime ahead 57-43. The Magic were still up
+// 82-80 going into the fourth" - still, after trailing by 14 at the half.
+test("still up only after a halftime lead", () => {
+	const win = realisticTeam(
+		{
+			tid: 1,
+			region: "Cleveland",
+			name: "Cavaliers",
+			abbrev: "CLE",
+			pts: 110,
+			ptsQtrs: [30, 27, 23, 30],
+		},
+		player({ name: "Evan Dunn", pts: 28, reb: 9, fg: 10, fga: 19 }),
+	);
+	const lose = realisticTeam(
+		{
+			tid: 2,
+			region: "Orlando",
+			name: "Magic",
+			abbrev: "ORL",
+			pts: 107,
+			ptsQtrs: [21, 22, 39, 25],
+		},
+		player({ name: "Vince Jackson", pts: 24, fg: 9, fga: 20 }),
+	);
+	let reached = 0;
+	beginRecapBatch();
+	try {
+		for (let gid = 1850; gid < 1890; gid++) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [win, lose], winnerTid: 1 }),
+			);
+			assert.doesNotMatch(recap, /still up 82-80/, recap);
+			if (/Magic were up 82-80 going into the fourth/.test(recap)) {
+				reached += 1;
+			}
+		}
+	} finally {
+		endRecapBatch();
+	}
+	assert.ok(reached > 0);
 });
 
 // "The Heat held off the Cavaliers 115-107, breaking it open with a 34-25

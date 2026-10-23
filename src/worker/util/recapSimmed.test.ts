@@ -244,6 +244,10 @@ describe("simmed recaps", () => {
 				/halftime\.[^.]*\bafter halftime|\bbreak\.[^.]*\bafter the break/i,
 				// Six in double figures is a third of all winners here.
 				/had six players score in double figures|got double figures out of six men\.|Six [A-Z][\w ]* reached double figures|- six in double figures/,
+				// "Top-scored" is not American; "got 21 to fall from deep" said
+				// neither of what nor from how many; nobody is "0 games off the
+				// top".
+				/top-scored|to fall from deep|\b0 games\b/,
 			]) {
 				assert.notMatch(recap, bad, `gid ${gid}\n${recap}`);
 			}

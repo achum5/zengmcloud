@@ -206,6 +206,49 @@ describe("standings", () => {
 		assert.ok([...topShapes].every((s) => s.includes("# game")));
 	});
 
+	// "It left the Bucks second in the Eastern Conference, 0 games off the
+	// top." Level on games is not a deficit, and "It" pointed nowhere.
+	test("no club is 0 games back", () => {
+		const said = new Set<string>();
+		for (let won = 20; won < 40; won++) {
+			const up = team({
+				tid: 1,
+				name: "Celtics",
+				standing: {
+					conf: "Eastern Conference",
+					rank: 2,
+					rankBefore: 3,
+					gb: 0,
+					teams: 15,
+					won,
+					lost: 10,
+					leader: "Nets",
+				},
+			});
+			const down = team({
+				tid: 2,
+				name: "Bucks",
+				pts: 90,
+				standing: {
+					conf: "Eastern Conference",
+					rank: 2,
+					rankBefore: 1,
+					gb: 0,
+					teams: 15,
+					won,
+					lost: 10,
+				},
+			});
+			for (const x of shapes((rng) => standingsBeat(game(up, down).ctx, rng))) {
+				said.add(x);
+			}
+		}
+		assert.ok(said.size > 0);
+		for (const x of said) {
+			assert.notMatch(x, /\b# games?\b|^It /, x);
+		}
+	});
+
 	test("says nothing early in the season, in the playoffs, or with nothing to say", () => {
 		const early = team({
 			tid: 1,

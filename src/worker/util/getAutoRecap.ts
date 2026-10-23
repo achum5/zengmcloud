@@ -143,7 +143,10 @@ export const dedupeSubjects = (
 				return n;
 			}
 		}
-		return /^The (\w+) [a-z]/.exec(sentence)?.[1];
+		// A nickname is capitalised: "The win lifted the Jazz into fourth.
+		// The win finished a 2-0 season sweep" is two notes on the result,
+		// and collapsing the second to "They finished" handed it to a team.
+		return /^The ([\dA-Z]\w*) [a-z]/.exec(sentence)?.[1];
 	};
 
 	// A player named on the losing side without his team ("... 19 points in
@@ -157,6 +160,17 @@ export const dedupeSubjects = (
 		// A compound subject is never collapsed: "The Timberwolves and the
 		// Celtics have split four meetings" became "They and the Celtics".
 		if (ambiguous(out[i]!)) {
+			continue;
+		}
+		// "The win lifted the Jazz into fourth. The win finished a season
+		// sweep" - a result, or the two clubs together, carried on from the
+		// sentence just before: "It also ...", "They ...".
+		const noun = /^The (win|loss|teams) [a-z]/.exec(out[i]!)?.[1];
+		if (noun) {
+			if (out[i - 1]!.startsWith(`The ${noun} `)) {
+				const rest = out[i]!.slice(`The ${noun} `.length);
+				out[i] = noun === "teams" ? `They ${rest}` : `It also ${rest}`;
+			}
 			continue;
 		}
 		const cur = subjectOf(out[i]!);
@@ -3216,7 +3230,8 @@ const statNote = (
 					`${cap(theNick(shape.winner))} knocked down ${w.tp} threes.`,
 					`${cap(theNick(shape.winner))} hit ${w.tp} from deep.`,
 					`${cap(theNick(shape.winner))} made ${w.tp} three-pointers.`,
-					`${cap(theNick(shape.winner))} got ${numWord(w.tp)} to fall from deep.`,
+					// Not "got 21 to fall from deep": 21 of what, from how many.
+					`${cap(theNick(shape.winner))} went ${w.tp}-of-${w.tpa} from three.`,
 				],
 				"statThrees",
 			),
@@ -3927,7 +3942,9 @@ const gameStory = (
 			: pick(
 					rng,
 					[
-						`${L} were still up ${lIn}-${wIn} going into the ${last}, and ${w} won the ${last} quarter ${q}.`,
+						// "Still" only after a halftime they led: "The Cavaliers went
+						// into halftime ahead 57-43. The Magic were still up 82-80".
+						`${L} were ${lh > wh ? "still " : ""}up ${lIn}-${wIn} going into the ${last}, and ${w} won the ${last} quarter ${q}.`,
 						`${W} trailed ${lIn}-${wIn} going into the ${last}, then took the ${last} quarter ${q}.`,
 						`${W} were ${lIn - wIn} down going into the ${last} and won the ${last} quarter ${q}.`,
 					],
@@ -4405,7 +4422,7 @@ const supportSentence = (
 					rng,
 					[
 						`${p.name} led the scoring with ${statPhrase(p)}`,
-						`${p.name} top-scored with ${statPhrase(p)}`,
+						`${p.name} led the ${nick(shape.winner)} with ${statPhrase(p)}`,
 						`No one scored more than ${p.name}, who had ${statPhrase(p)}`,
 						`${p.name} was the leading scorer with ${statPhrase(p)}`,
 					],

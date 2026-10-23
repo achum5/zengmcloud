@@ -134,6 +134,8 @@ export const standingsBeat = (
 		} else if (
 			w.rank >= 2 &&
 			w.rank <= 4 &&
+			// "0 games behind" is a tie on games, not a chase.
+			w.gb > 0 &&
 			w.gb <= 3 &&
 			w.leader &&
 			nowAndThen(ctx.winner.tid, played(w))
@@ -167,7 +169,13 @@ export const standingsBeat = (
 				[
 					`The loss dropped ${ln} to ${ordinal(l.rank)} in the ${l.conf}.`,
 					`${L} slipped to ${ordinal(l.rank)} in the ${l.conf}.`,
-					`It left ${ln} ${ordinal(l.rank)} in the ${l.conf}, ${gbText(l.gb)} off the top.`,
+					// "It left the Bucks second ..., 0 games off the top." The
+					// "It" had no clear antecedent, and nothing is 0 games off.
+					...(l.gb > 0
+						? [
+								`The loss left ${ln} ${ordinal(l.rank)} in the ${l.conf}, ${gbText(l.gb)} off the top.`,
+							]
+						: []),
 				],
 				"standingsDown",
 			),
