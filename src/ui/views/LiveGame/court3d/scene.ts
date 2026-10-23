@@ -69,7 +69,11 @@ import {
 import { drawPixelText, pixelTextWidth } from "./pixelFont.ts";
 import { isBreak, isFinal } from "./scoreBug.ts";
 import type { Replay } from "./playback.ts";
-import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
+import {
+	drawTexturedLayers,
+	drawTexturedPlane,
+	type TexturedPlane,
+} from "./planes.ts";
 import {
 	ANIMS,
 	bodyOf,
@@ -101,17 +105,33 @@ export const inFloor = (p: TexturedPlane): TexturedPlane => ({
 	alongX: { ...p.alongX, z: -p.alongX.z },
 	alongY: { ...p.alongY, z: -p.alongY.z },
 });
-// A board's picture as it shows in the floor: plain at its foot, fading
-// away up it (made once a picture).
-const shines = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
-const shineOf = (img: HTMLCanvasElement): HTMLCanvasElement => {
+// A board along the court as it shows in the floor: upside down under it,
+// plain at its foot, fading away up it - and only as far along as there is
+// floor in front of it (the wall along the far side runs on behind the
+// stands round the ends, and its shine showed over them). Made once a
+// picture.
+const shines = new WeakMap<
+	HTMLCanvasElement,
+	{ plane: TexturedPlane; img: HTMLCanvasElement }
+>();
+export const shineOf = (
+	board: TexturedPlane,
+	img: HTMLCanvasElement,
+): { plane: TexturedPlane; img: HTMLCanvasElement } => {
 	let out = shines.get(img);
 	if (!out) {
-		out = document.createElement("canvas");
-		out.width = img.width;
-		out.height = img.height;
-		const g = out.getContext("2d")!;
-		g.drawImage(img, 0, 0);
+		const k = img.width / board.w;
+		const per = board.alongX.x;
+		const at = (x: number) =>
+			Math.max(0, Math.min(img.width, ((x - board.origin.x) / per) * k));
+		const i0 = per > 0 ? Math.floor(at(FLOOR_EDGE.x0)) : 0;
+		const i1 = per > 0 ? Math.ceil(at(FLOOR_EDGE.x1)) : img.width;
+		const w = Math.max(1, i1 - i0);
+		const cv = document.createElement("canvas");
+		cv.width = w;
+		cv.height = img.height;
+		const g = cv.getContext("2d")!;
+		g.drawImage(img, i0, 0, w, img.height, 0, 0, w, img.height);
 		g.globalCompositeOperation = "destination-in";
 		const fade = g.createLinearGradient(0, 0, 0, img.height);
 		fade.addColorStop(0, "rgba(0,0,0,0)");
@@ -119,7 +139,21 @@ const shineOf = (img: HTMLCanvasElement): HTMLCanvasElement => {
 		fade.addColorStop(1 - BOARD_SHINE_SHOWN * 0.45, "rgba(0,0,0,0.3)");
 		fade.addColorStop(1, "rgba(0,0,0,1)");
 		g.fillStyle = fade;
-		g.fillRect(0, 0, img.width, img.height);
+		g.fillRect(0, 0, w, img.height);
+		const u0 = i0 / k;
+		const shown = inFloor(board);
+		out = {
+			plane: {
+				...shown,
+				origin: {
+					x: shown.origin.x + shown.alongX.x * u0,
+					y: shown.origin.y + shown.alongX.y * u0,
+					z: shown.origin.z + shown.alongX.z * u0,
+				},
+				w: w / k,
+			},
+			img: cv,
+		};
 		shines.set(img, out);
 	}
 	return out;
@@ -971,41 +1005,27 @@ export const drawFrame = (f: Frame) => {
 	// Round the ends: the stands, and the boards along their front.
 	for (const side of [0, 1] as const) {
 		if (arena.endStands) {
-			if (thin && arena.endStandsSparse) {
-				drawTexturedPlane(
-					ctx,
-					cam,
-					END_STANDS[side],
-					arena.endStandsSparse,
-					24,
-					6,
-				);
-			}
-			if (fill > 0.01) {
-				drawTexturedPlane(
-					ctx,
-					cam,
-					END_STANDS[side],
-					arena.endStands[0],
-					24,
-					6,
-					fill,
-				);
-			}
 			// (This end's own, if it is up to more than the building is.)
 			const own = f.crowd.ends?.[side];
 			const c = own && own.up > f.crowd.up ? own : f.crowd;
-			if (c.up > 0.01) {
-				drawTexturedPlane(
-					ctx,
-					cam,
-					END_STANDS[side],
-					arena.endStands[c.wave ? 2 : 1],
-					24,
-					6,
-					c.up,
-				);
-			}
+			// (All at once: see drawTexturedLayers.)
+			drawTexturedLayers(
+				ctx,
+				cam,
+				END_STANDS[side],
+				[
+					...(thin && arena.endStandsSparse
+						? [{ img: arena.endStandsSparse, alpha: 1 }]
+						: []),
+					{ img: arena.endStands[0], alpha: fill > 0.01 ? fill : 0 },
+					{
+						img: arena.endStands[c.wave ? 2 : 1],
+						alpha: c.up > 0.01 ? c.up : 0,
+					},
+				],
+				24,
+				6,
+			);
 		}
 		const end = arena.boards.end?.[screen];
 		if (end) {
@@ -1035,24 +1055,13 @@ export const drawFrame = (f: Frame) => {
 	// light added to the floor's, so where a board is dark the floor is just
 	// the floor.
 	ctx.globalCompositeOperation = "lighter";
-	drawTexturedPlane(
-		ctx,
-		cam,
-		inFloor(TABLE_FRONT),
-		shineOf(arena.boards.table?.[screen] ?? arena.tableFront),
-		4,
-		1,
-		BOARD_SHINE,
+	const table = shineOf(
+		TABLE_FRONT,
+		arena.boards.table?.[screen] ?? arena.tableFront,
 	);
-	drawTexturedPlane(
-		ctx,
-		cam,
-		inFloor(LED_WALL),
-		shineOf(arena.boards.wall[screen]),
-		24,
-		1,
-		BOARD_SHINE,
-	);
+	drawTexturedPlane(ctx, cam, table.plane, table.img, 4, 1, BOARD_SHINE);
+	const wall = shineOf(LED_WALL, arena.boards.wall[screen]);
+	drawTexturedPlane(ctx, cam, wall.plane, wall.img, 24, 1, BOARD_SHINE);
 	ctx.globalCompositeOperation = "source-over";
 	// The scorer's table, the people behind it hidden from the waist down,
 	// their monitors on it.

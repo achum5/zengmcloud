@@ -19,10 +19,15 @@ export type TexturedPlane = {
 };
 
 type Q = { x: number; y: number };
+// One of the pictures laid on a plane, and how strongly it shows.
+export type Layer = { img: HTMLCanvasElement; alpha: number };
 
+// (Every picture laid on the plane, one over another, drawn in the
+// triangle - its corners t0, t1, t2 on the first of them - before the next
+// triangle: see drawTexturedLayers.)
 const drawTriangle = (
 	ctx: CanvasRenderingContext2D,
-	img: HTMLCanvasElement,
+	layers: Layer[],
 	p0: Q,
 	p1: Q,
 	p2: Q,
@@ -66,7 +71,24 @@ const drawTriangle = (
 	ctx.closePath();
 	ctx.clip();
 	ctx.transform(a, b, c, e, f, g);
-	ctx.drawImage(img, sx, sy, ex - sx, ey - sy, sx, sy, ex - sx, ey - sy);
+	const base = ctx.globalAlpha;
+	const first = layers[0]!.img;
+	for (const { img, alpha } of layers) {
+		ctx.globalAlpha = base * alpha;
+		const kx = img.width / first.width;
+		const ky = img.height / first.height;
+		ctx.drawImage(
+			img,
+			sx * kx,
+			sy * ky,
+			(ex - sx) * kx,
+			(ey - sy) * ky,
+			sx,
+			sy,
+			ex - sx,
+			ey - sy,
+		);
+	}
 	ctx.restore();
 };
 
@@ -469,15 +491,42 @@ export const drawTexturedPlane = (
 	rows: number,
 	alpha = 1,
 ) => {
-	if (alpha <= 0.004) {
+	drawTexturedLayers(ctx, cam, plane, [{ img, alpha }], cols, rows);
+};
+
+// SEVERAL PICTURES ON ONE PLANE, each over the last as strongly as it says
+// (the stands: the seats as full as they are, the crowd on its feet). In
+// rows, one after another. In triangles, all of them in each triangle
+// before the next: each triangle is drawn a hair bigger than it is, to close
+// the seams between them, and a picture drawn faintly over another a
+// triangle at a time showed every one of those overlaps twice as strongly -
+// a lattice of faint lines across the stands behind the baskets. (And one
+// clip a triangle, not one for each picture.)
+export const drawTexturedLayers = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	plane: TexturedPlane,
+	all: Layer[],
+	cols: number,
+	rows: number,
+) => {
+	const layers = all.filter((l) => l.alpha > 0.004);
+	const bottom = layers[0];
+	if (!bottom) {
 		return;
 	}
 	if (
-		drawRows(ctx, cam, plane, img, alpha) ||
-		drawFlatRows(ctx, cam, plane, img, alpha)
+		drawRows(ctx, cam, plane, bottom.img, bottom.alpha) ||
+		drawFlatRows(ctx, cam, plane, bottom.img, bottom.alpha)
 	) {
+		for (const { img, alpha } of layers.slice(1)) {
+			if (!drawRows(ctx, cam, plane, img, alpha)) {
+				drawFlatRows(ctx, cam, plane, img, alpha);
+			}
+		}
 		return;
 	}
+	const img = bottom.img;
 	// The texture may be drawn at another resolution than the plane counts.
 	const sx = img.width / plane.w;
 	const sy = img.height / plane.h;
@@ -497,7 +546,6 @@ export const drawTexturedPlane = (
 	const W = cam.viewW;
 	const H = cam.viewH;
 	ctx.save();
-	ctx.globalAlpha *= alpha;
 	for (let j = 0; j < rows; j++) {
 		for (let i = 0; i < cols; i++) {
 			const a = pts[j * (cols + 1) + i];
@@ -529,8 +577,8 @@ export const drawTexturedPlane = (
 				x: (i / cols) * plane.w * sx,
 				y: ((j + 1) / rows) * plane.h * sy,
 			};
-			drawTriangle(ctx, img, a, b, c, ta, tb, tc);
-			drawTriangle(ctx, img, a, c, d, ta, tc, td);
+			drawTriangle(ctx, layers, a, b, c, ta, tb, tc);
+			drawTriangle(ctx, layers, a, c, d, ta, tc, td);
 		}
 	}
 	ctx.restore();

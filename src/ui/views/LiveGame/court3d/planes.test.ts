@@ -1,7 +1,11 @@
 import { afterEach, assert, beforeEach, test, vi } from "vitest";
 import { courtFit, makeCamera, MAIN_RIG } from "./camera.ts";
 import { COURT_W } from "./geometry.ts";
-import { drawTexturedPlane, type TexturedPlane } from "./planes.ts";
+import {
+	drawTexturedLayers,
+	drawTexturedPlane,
+	type TexturedPlane,
+} from "./planes.ts";
 
 // The floor shrunk to fewer pixels on the screen than its picture has is
 // drawn, a row at a time, from the picture halved to about a pixel of it to
@@ -171,4 +175,82 @@ test("the floor seen by a turned camera: in bands of whole rows, none twice, no 
 	// Down to the bottom of the picture: the floor right under the camera.
 	const last = fills.at(-1)!;
 	assert.strictEqual(last.y + last.h, 675);
+});
+
+// The stands behind a basket - drawn in triangles from the sideline - are
+// several pictures one over another (the seats as full as they are, the
+// crowd on its feet): all of them drawn in each triangle, under its one
+// clip, before the next triangle. (A faint one drawn a triangle at a time
+// showed each triangle's overlap with the next twice as strongly.)
+test("pictures over one another on a plane in triangles: all of them in each triangle", () => {
+	const calls: { op: string; alpha: number; img?: unknown }[] = [];
+	const saved: number[] = [];
+	const ctx = {
+		globalAlpha: 1,
+		save: () => {
+			saved.push(ctx.globalAlpha);
+		},
+		restore: () => {
+			ctx.globalAlpha = saved.pop()!;
+		},
+		beginPath: () => {},
+		moveTo: () => {},
+		lineTo: () => {},
+		closePath: () => {},
+		transform: () => {},
+		clip: () => {
+			calls.push({ op: "clip", alpha: ctx.globalAlpha });
+		},
+		drawImage: (img: unknown) => {
+			calls.push({ op: "draw", alpha: ctx.globalAlpha, img });
+		},
+	};
+	const pic = (w: number, h: number) =>
+		({ width: w, height: h }) as HTMLCanvasElement;
+	const seats = pic(1392, 528);
+	const full = pic(1392, 528);
+	const up = pic(1392, 528);
+	// Upright, running along the end of the court, back from the floor -
+	// seen from the sideline.
+	const ends: TexturedPlane = {
+		origin: { x: COURT_W + 20, y: 4, z: 18 },
+		alongX: { x: 0, y: 1 / 8, z: 0 },
+		alongY: { x: -0.08, y: 0, z: -0.06 },
+		w: 1392 / 3,
+		h: 528 / 3,
+	};
+	const fit = courtFit(16 / 9);
+	const cam = makeCamera(
+		{ x: 80, width: 60, y: fit.y(60) },
+		1200,
+		675,
+		MAIN_RIG,
+	);
+	drawTexturedLayers(
+		ctx as unknown as CanvasRenderingContext2D,
+		cam,
+		ends,
+		[
+			{ img: seats, alpha: 1 },
+			{ img: full, alpha: 0.5 },
+			{ img: up, alpha: 0 },
+		],
+		24,
+		6,
+	);
+	const clips = calls.filter((c) => c.op === "clip").length;
+	assert.isAbove(clips, 20);
+	// Each clip, then the seats and the full stands over them - the crowd
+	// sat down, not drawn at all.
+	assert.strictEqual(calls.length, clips * 3);
+	for (let i = 0; i < calls.length; i += 3) {
+		assert.deepEqual(
+			calls.slice(i, i + 3).map((c) => [c.op, c.img, c.alpha]),
+			[
+				["clip", undefined, 1],
+				["draw", seats, 1],
+				["draw", full, 0.5],
+			],
+		);
+	}
 });

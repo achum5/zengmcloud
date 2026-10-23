@@ -1,8 +1,8 @@
-import { assert, describe, test } from "vitest";
-import { glintsAt, TABLE_FRONT } from "./arena.ts";
+import { afterEach, assert, describe, test, vi } from "vitest";
+import { FLOOR_EDGE, glintsAt, LED_WALL, TABLE_FRONT } from "./arena.ts";
 import { makeCamera, project, REPLAY_RIG } from "./camera.ts";
 import type { TexturedPlane } from "./planes.ts";
-import { inFloor } from "./scene.ts";
+import { inFloor, shineOf } from "./scene.ts";
 import { stamp, type Kept } from "./sprite.ts";
 
 // A picture that only remembers what was drawn on it: how strongly, which
@@ -143,6 +143,48 @@ describe("3D boards in the floor", () => {
 					(foot.y - top.y) * 0.25,
 				);
 			}
+		}
+	});
+
+	// The wall along the far side runs on past the floor, behind the stands
+	// round the ends: it shows in the floor only where there is floor in
+	// front of it - not over the stands behind the baskets.
+	afterEach(() => {
+		vi.unstubAllGlobals();
+	});
+	test("a board shows in the floor only as far along as the floor goes", () => {
+		vi.stubGlobal("document", {
+			createElement: () => ({
+				width: 0,
+				height: 0,
+				getContext: () =>
+					new Proxy(
+						{},
+						{ get: () => () => ({ addColorStop: () => {} }), set: () => true },
+					),
+			}),
+		});
+		for (const [board, w] of [
+			[LED_WALL, 2088],
+			[TABLE_FRONT, 240],
+		] as const) {
+			const img = { width: w, height: 40 } as HTMLCanvasElement;
+			const { plane, img: shown } = shineOf(board, img);
+			const x0 = plane.origin.x;
+			const x1 = plane.origin.x + plane.alongX.x * plane.w;
+			assert.isAtLeast(x0, FLOOR_EDGE.x0 - 0.1);
+			assert.isAtMost(x1, FLOOR_EDGE.x1 + 0.1);
+			// All of it that stands on the floor, still.
+			assert.isAtMost(x0, Math.max(board.origin.x, FLOOR_EDGE.x0) + 0.1);
+			assert.isAtLeast(
+				x1,
+				Math.min(board.origin.x + board.alongX.x * board.w, FLOOR_EDGE.x1) -
+					0.1,
+			);
+			// The picture as much narrower.
+			assert.closeTo(shown.width / plane.w, w / board.w, 1e-9);
+			// Upside down under it.
+			assert.strictEqual(plane.origin.z, -board.origin.z);
 		}
 	});
 });
