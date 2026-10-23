@@ -487,6 +487,13 @@ const flightOf = (from: Pt, to: Pt): { ms: number; peak: number } => {
 type RunScheme = "zone" | "stretch" | "power" | "sneak";
 const POWER = 0.35;
 const BLOCK_GAP = 2.6;
+// Locked up on a run: shoved one way and then the other, every this long
+// (ms, give or take), from this long after the snap - this far across the
+// field (feet) and up to this far up or back.
+const JOSTLE_MS = 420;
+const JOSTLE_FROM = 650;
+const JOSTLE_A: [number, number] = [0.5, 1.1];
+const JOSTLE_D = 0.4;
 const DOUBLE_FT = 2.2;
 const FILL_MS = 1050;
 const FILL_PACE = 0.7;
@@ -3928,6 +3935,7 @@ class Action {
 				);
 				b.go(this.w({ d: s.d - 2.4, a: s.a }), until, "drive", this.ahead);
 			}
+			let locked = until;
 			for (const m of men) {
 				const at = (time: number) => {
 					const p = this.of(b.posAt(time));
@@ -3945,7 +3953,9 @@ class Action {
 				m.hold(snap + 50);
 				m.chase(at(snap + 450), snap + 450, m.top * 0.9, "run");
 				m.go(at(end), end, "engage", this.behind);
+				locked = Math.min(locked, end);
 			}
+			this.jostle([b, ...men], snap + JOSTLE_FROM, locked);
 		}
 
 		// The linebackers: a read step, then over to fill - but for one to
@@ -4134,6 +4144,48 @@ class Action {
 			this.ahead,
 		);
 		b.hold(Math.max(end, until), "stand", this.ahead);
+	}
+
+	// Men locked up, from t0 to t1: shoved this way and that together - a
+	// little way across the field and back, a half step up and back - each
+	// fighting the other.
+	jostle(men: Actor[], t0: number, t1: number) {
+		const r = this.r;
+		const times: number[] = [];
+		for (
+			let t = t0 + JOSTLE_MS * (0.6 + r() * 0.6);
+			t < t1 - JOSTLE_MS * 0.6;
+			t += JOSTLE_MS * (0.7 + r() * 0.6)
+		) {
+			times.push(t);
+		}
+		let side = r() < 0.5 ? 1 : -1;
+		const shifts = times.map(() => {
+			side = -side;
+			return {
+				d: (r() - 0.5) * 2 * JOSTLE_D,
+				a: side * (JOSTLE_A[0] + r() * (JOSTLE_A[1] - JOSTLE_A[0])),
+			};
+		});
+		const over = (p: Pt, o: OPt) => {
+			const q = this.of(p);
+			return this.w({ d: q.d + o.d, a: q.a + o.a });
+		};
+		for (const m of men) {
+			for (const t of times) {
+				m.split(t);
+			}
+			for (const [k, t] of times.entries()) {
+				const o = shifts[k]!;
+				for (const l of m.legs) {
+					if (Math.abs(l.t1 - t) < 1e-6) {
+						l.to = over(l.to, o);
+					} else if (Math.abs(l.t0 - t) < 1e-6) {
+						l.from = over(l.from, o);
+					}
+				}
+			}
+		}
 	}
 
 	// When he first gets `d` downfield, from the snap - or never, before he
