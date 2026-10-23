@@ -393,7 +393,8 @@ export const exportArenaLeague = async (file: string) => {
 export const importArenaLeague = async (file: string) => {
 	const fs = await importNode("node:fs/promises");
 	const lines = (await fs.readFile(file, "utf8")).split("\n");
-	await idb.cache.flush();
+	// Nothing the cache holds of the league it replaces may be written back.
+	idb.cache.discardForRestore();
 	for (const line of lines) {
 		if (line === "") {
 			continue;
@@ -406,6 +407,9 @@ export const importArenaLeague = async (file: string) => {
 		}
 		await tx.done;
 	}
+	// The cache holds a season's worth of some stores, so it is filled for
+	// the season carried on before the game attributes are read from it.
+	const season = (await idb.league.get("gameAttributes", "season"))?.value;
+	await idb.cache.fill(season);
 	await league.loadGameAttributes();
-	await idb.cache.fill();
 };
