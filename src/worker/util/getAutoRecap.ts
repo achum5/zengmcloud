@@ -9047,7 +9047,10 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	const tailsUsed = new Map<string, number>();
 	const seriesWords = (g: RecapGame, which: "tails" | "whos"): string => {
 		const t = playoffs ? seriesTail(g) : undefined;
-		if (!t) {
+		// Once per game: the leading scorer's line and a losing line from the
+		// same game both carried it - "...win over the Suns to even the series
+		// 1-1" and then "...loss to the Heat, who tied the series 1-1".
+		if (!t || seriesTold.has(g)) {
 			return "";
 		}
 		seriesTold.add(g);

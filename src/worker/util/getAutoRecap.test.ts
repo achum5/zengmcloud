@@ -4756,6 +4756,35 @@ describe("a postseason read end to end", () => {
 		assert.ok(sawCommand, "a commanding series lead never says so");
 	});
 
+	// "Evan Hayes led all scorers with 53 ... in the Heat's win over the Suns
+	// to even the series 1-1" and two sentences on "Payton King's 25 points
+	// and 12 assists came in the Suns' loss to the Heat, who tied the series
+	// 1-1": one game's series, twice.
+	test("a game's series is told once, however many lines it gets", () => {
+		for (let day = 1; day <= 12; day += 1) {
+			const heat = seriesSlateGame(9950, "Heat", "Suns", 0, 1);
+			heat.teams[0].players[0]!.pts = 45;
+			heat.teams[1].players[0]!.pts = 25;
+			heat.teams[1].players[0]!.ast = 12;
+			heat.teams[1].players[0]!.reb = 11;
+			const recap = getAutoDayRecap({
+				season: 2026,
+				day,
+				playoffs: true,
+				games: [
+					heat,
+					seriesSlateGame(9960, "Bucks", "Jazz", 3, 0),
+					seriesSlateGame(9970, "Knicks", "Cavaliers", 0, 0),
+				],
+			});
+			assert.ok(
+				(recap.match(/series 1-1|series at 1-1|tied the series 1-1/g) ?? [])
+					.length <= 1,
+				recap,
+			);
+		}
+	});
+
 	// A night the Bucks finished a sweep was headlined on a Game 4
 	// game-winner elsewhere, the sweep in the fourth clause of a list.
 	test("a series that ends is the night's headline", () => {
