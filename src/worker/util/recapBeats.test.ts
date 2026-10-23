@@ -1593,8 +1593,10 @@ describe("what kind of series it has been", () => {
 		);
 	});
 
-	// "The Thunder are +36 over the three games" was a box-score column.
-	test("a lopsided series total reads as a sentence", () => {
+	// "The Thunder are +36 over the three games" was a box-score column, and
+	// "Across the series the Heat have outscored the Magic by 40" ran under a
+	// sweep: a series total is news only when it disagrees with the series.
+	test("a series total is told only when it is not the series lead", () => {
 		const big = team({
 			tid: 1,
 			name: "Thunder",
@@ -1602,9 +1604,30 @@ describe("what kind of series it has been", () => {
 			seriesSoFar: [sg(true, true, 118, 100, 96), sg(true, true, 112, 98, 98)],
 		});
 		const l = team({ tid: 2, name: "Nets", pts: 100 });
-		const all = shapes((rng) => seriesShapeBeat(playoffGame(big, l).ctx, rng));
+		const leader = shapes((rng) =>
+			seriesShapeBeat(playoffGame(big, l).ctx, rng),
+		);
+		for (const s of leader) {
+			assert.notMatch(s, /outscored|edge on/, s);
+		}
+		// Even at 2-2, after a 40-point loss: the Nets have scored more.
+		const even = team({
+			tid: 1,
+			name: "Thunder",
+			pts: 120,
+			seriesSoFar: [
+				sg(false, true, 80, 120, 96),
+				sg(true, true, 100, 98, 98),
+				sg(false, false, 99, 101, 100),
+			],
+		});
+		const all = shapes((rng) => seriesShapeBeat(playoffGame(even, l).ctx, rng));
 		assert.ok(
-			[...all].some((s) => /outscored|edge on/.test(s)),
+			[...all].some((s) =>
+				/The series is even, but the Nets have outscored the Thunder by #/.test(
+					s,
+				),
+			),
 			[...all].join("\n"),
 		);
 		for (const s of all) {

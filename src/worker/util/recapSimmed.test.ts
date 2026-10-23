@@ -1020,6 +1020,18 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "That is three straight losses for the 76ers" closed one recap in
+	// seven; every team drops three now and then.
+	test("a losing streak is news from four", () => {
+		for (const { gid, recap } of pairs) {
+			assert.notMatch(
+				recap,
+				/three straight losses|lost three in a row|third straight loss|losses? was the \w+'s? third in a row/,
+				`gid ${gid}\n${recap}`,
+			);
+		}
+	});
+
 	// "Bulls cannot keep up with the Pacers, 110-107" over a game won on a
 	// jumper with 19.9 seconds left.
 	test("a headline's verb fits the margin", () => {

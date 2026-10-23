@@ -23,7 +23,6 @@ import type {
 	RecapTeam,
 } from "./getDayGamesForRecap.ts";
 import {
-	aNum,
 	aWord,
 	cap,
 	doubleCategories,
@@ -1260,20 +1259,22 @@ export const seriesShapeBeat = (
 	const forTotal = prior.reduce((acc, g) => acc + g.pts, 0) + ctx.winner.pts;
 	const againstTotal =
 		prior.reduce((acc, g) => acc + g.oppPts, 0) + ctx.loser.pts;
-	if (Math.abs(forTotal - againstTotal) >= 25 && margins.length >= 3) {
-		const ahead = forTotal > againstTotal ? wn : ln;
-		const behind = forTotal > againstTotal ? ln : wn;
+	// Only that: the side that leads the series having also scored more is
+	// what a series lead usually means, and "Across the series the Heat
+	// have outscored the Magic by 40" ran under a sweep.
+	const wWins = prior.filter((g) => g.won).length + 1;
+	const lWins = prior.length + 1 - wWins;
+	const diff = Math.abs(forTotal - againstTotal);
+	const pointsToWinner = forTotal > againstTotal;
+	const pointsLeaderTrails =
+		wWins === lWins || pointsToWinner !== wWins > lWins;
+	if (diff >= 15 && margins.length >= 3 && pointsLeaderTrails) {
+		const ahead = pointsToWinner ? wn : ln;
+		const behind = pointsToWinner ? ln : wn;
 		options.push(
-			pick(
-				rng,
-				[
-					`Across the series ${ahead} have outscored ${behind} by ${Math.abs(forTotal - againstTotal)}.`,
-					// Not "are +36 over the three games": a box-score column, not
-					// a sentence.
-					`Over ${numWord(margins.length)} games, ${ahead} have ${aNum(Math.abs(forTotal - againstTotal))}-point edge on ${behind}.`,
-				],
-				"seriesAggregate",
-			),
+			wWins === lWins
+				? `The series is even, but ${ahead} have outscored ${behind} by ${diff} in it.`
+				: `${cap(ahead)} have outscored ${behind} by ${diff} across the series and still trail it.`,
 		);
 	}
 

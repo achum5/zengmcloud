@@ -6595,7 +6595,10 @@ const loserSkidNote = (
 	written: string,
 ): string | undefined => {
 	const s = shape.loser.streak;
-	if (!s || s.won || s.count < 3 || shape.game.playoffs) {
+	// Four, not three: every team drops three in a row now and then, and
+	// "That is three straight losses for the 76ers" closed one recap in
+	// seven.
+	if (!s || s.won || s.count < 4 || shape.game.playoffs) {
 		return undefined;
 	}
 	const ln = nick(shape.loser);
