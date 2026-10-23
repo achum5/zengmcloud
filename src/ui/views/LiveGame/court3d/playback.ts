@@ -331,8 +331,14 @@ export const onCursor = (
 	// the next one - never back.
 	const skipped =
 		s.prevCursor >= 0 && skips !== s.prevSkips && cursor > s.prevCursor;
-	// (Caught up to a key play it went on to: it is there already.)
-	const expected = s.jumpTo >= 0 && cursor <= s.jumpTo;
+	// (Caught up to a key play it went on to, or to the other court: it is
+	// there already. The page gets there a line at a time, so it can land
+	// through the end of the line the jump fell in - one line on, not a jump
+	// of its own. Cut to that line's end, it was past where the other court
+	// was, and cut back a second later.)
+	const expected =
+		s.jumpTo >= 0 &&
+		(cursor <= s.jumpTo || linesBetween(timeline, s.jumpTo, cursor) <= 1);
 	const snap =
 		!expected &&
 		(s.prevCursor < 0 ||

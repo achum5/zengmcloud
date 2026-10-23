@@ -498,6 +498,26 @@ describe("watching another device's 3D sim", () => {
 		assert.isBelow(skip.off / skip.frames, 0.01, JSON.stringify(skip));
 	}, 120_000);
 
+	// Sent on to where the other court skipped to, the page here plays on to
+	// the end of the line that lands in - and the court took that line's end
+	// for a jump of its own, cut on past the other court, and back a second
+	// later. These games and moments did it; one cut each now.
+	test("after a skip there: one cut, not on past it and back", () => {
+		for (const [seed, skipAt] of [
+			["s4", 40],
+			["s5", 60],
+			["s4", 90],
+		] as const) {
+			const run = watch({ seed, seconds: skipAt + 30, skipAt });
+			const skip = judge(run, skipAt * 1000 - 5000);
+			const label = `${seed}@${skipAt} ${JSON.stringify(skip)}`;
+			assert.strictEqual(skip.cuts, 1, label);
+			// Out of step only while word of the skip is on its way (it was
+			// over 2 s, on past the other court and back).
+			assert.isAtMost(skip.off, 80, label);
+		}
+	}, 300_000);
+
 	// Both devices stage the game the same way, and say so.
 	test("a court says what it staged: the same game the same, another not", () => {
 		const a = compile("along", 140);
