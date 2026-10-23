@@ -400,6 +400,11 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
     and 3.7. Limiting it to the next two drafts changed little (49 trades,
     spread 17). No pull toward winning now for fans' or owners' sake is
     added.
+  - Version against version, 10 seasons (4 leagues, run before signing a
+    player to get worse was stopped): teams pricing their own picks where a
+    deal leaves them won 46.5% of their games against 53.5% for teams that
+    did not, and as many titles, 20 each - 5 to 15 in the first five seasons,
+    15 to 5 in the last five. They sell first and win later.
 - **Every kind of deal that happens in real life** (owner's call), as long as
   the CPU's judgment holds up: a side may give nothing (a player into another
   team's cap room, a salary dump), picks may go for picks, and every tradable
