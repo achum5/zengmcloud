@@ -4895,8 +4895,35 @@ const hurtIsNews = (p: RecapPlayer): boolean =>
 	(p.seasonAvg ? p.seasonAvg.min >= 15 : p.starter === undefined);
 
 // "about five games", but "the next game" - "about a game" is no estimate.
-const gamesOut = (n: number): string =>
-	n === 1 ? "the next game" : `about ${gamesWord(n)}`;
+// And not "about 175 games": past what is left of the regular season it is
+// "the rest of the season" ("the rest of the regular season" when it ends
+// near it), and in the playoffs a month is the rest of them.
+const gamesOut = (
+	n: number,
+	left: number | undefined,
+	playoffs: boolean,
+): string =>
+	left !== undefined && n > left
+		? playoffs
+			? "the rest of the playoffs"
+			: n > left + 10
+				? "the rest of the season"
+				: "the rest of the regular season"
+		: n === 1
+			? "the next game"
+			: `about ${gamesWord(n)}`;
+
+// The games a team has left: what is left of its regular season, or, in the
+// playoffs, a cap past which an absence is the rest of the postseason.
+const gamesLeft = (game: RecapGame, t: RecapTeam): number | undefined => {
+	if (game.playoffs) {
+		return 20;
+	}
+	if (!game.seasonGames || !t.record) {
+		return undefined;
+	}
+	return Math.max(0, game.seasonGames - t.record.won - t.record.lost);
+};
 
 // Injury color: returns, playing through, new injuries, and notable inactives.
 const injurySentence = (
@@ -4927,7 +4954,11 @@ const injurySentence = (
 						: `${poss(theNick(t))} ${p.name}`;
 				teammate = true;
 				const hurt = hurtInGame(p.injury.type);
-				const span = gamesOut(p.injury.gamesRemaining);
+				const span = gamesOut(
+					p.injury.gamesRemaining,
+					gamesLeft(shape.game, t),
+					shape.game.playoffs,
+				);
 				bits.push(
 					pick(
 						rng,
@@ -7687,7 +7718,13 @@ const injuryRoundup = (
 	// The wrap so far; a man it already named needs no team.
 	written: string,
 ): string | undefined => {
-	const hurt: { t: RecapTeam; p: RecapPlayer; n: number }[] = [];
+	const hurt: {
+		t: RecapTeam;
+		p: RecapPlayer;
+		n: number;
+		left?: number;
+		playoffs: boolean;
+	}[] = [];
 	for (const game of games) {
 		if (game.allStar) {
 			continue;
@@ -7696,7 +7733,13 @@ const injuryRoundup = (
 			for (const p of t.players) {
 				const n = p.injury?.newThisGame ? (p.injury.gamesRemaining ?? 0) : 0;
 				if (n >= 5 && hurtIsNews(p)) {
-					hurt.push({ t, p, n });
+					hurt.push({
+						t,
+						p,
+						n,
+						left: gamesLeft(game, t),
+						playoffs: game.playoffs,
+					});
 				}
 			}
 		}
@@ -7711,8 +7754,16 @@ const injuryRoundup = (
 	const top = hurt
 		.slice(0, 3)
 		.map(
-			({ t, p, n }, i) =>
-				`${written.includes(p.name) ? "" : `${poss(theNick(t))} `}${p.name} (${lowerInjury(p.injury!.type)}, ${i === 0 ? `out about ${gamesWord(n)}` : `about ${numWord(n)}`})`,
+			({ t, p, n, left, playoffs }, i) =>
+				`${written.includes(p.name) ? "" : `${poss(theNick(t))} `}${p.name} (${lowerInjury(p.injury!.type)}, ${
+					left !== undefined && n > left
+						? playoffs
+							? "out for the playoffs"
+							: "out for the season"
+						: i === 0
+							? `out about ${gamesWord(n)}`
+							: `about ${numWord(n)}`
+				})`,
 		);
 	return pick(
 		rng,

@@ -295,6 +295,9 @@ export type RecapGame = {
 	clutchPlays: string[];
 	// How the game unfolded, when the sim recorded it. See common/gameFlow.ts.
 	flow?: GameFlow;
+	// The regular season's length in games, so an injury that outlasts it is
+	// "the rest of the season" and not "about 175 games".
+	seasonGames?: number;
 	// Set ONLY for the All-Star Game. The game itself is still the normal box
 	// score in `teams`; this carries the weekend extras (MVP + the dunk and
 	// three-point contests) so the recap can cover the whole All-Star Weekend.
@@ -1215,6 +1218,7 @@ export const getDayGamesForRecap = async ({
 			spread: allStar ? undefined : spread,
 			clutchPlays: Array.isArray(game.clutchPlays) ? game.clutchPlays : [],
 			flow: game.flow,
+			seasonGames: allStar ? undefined : g.get("numGames"),
 			allStar: allStar ? allStarPayload() : undefined,
 		});
 	}
@@ -1914,6 +1918,7 @@ const createAutoRecapContext = async (season: number) => {
 			spread: allStar ? undefined : spread,
 			clutchPlays: Array.isArray(game.clutchPlays) ? game.clutchPlays : [],
 			flow: game.flow,
+			seasonGames: allStar ? undefined : g.get("numGames"),
 			allStar: allStar ? allStarPayload() : undefined,
 		};
 	};

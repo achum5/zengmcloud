@@ -2058,6 +2058,39 @@ describe("who got hurt", () => {
 		);
 	});
 
+	// "The Spurs' Reggie Lowry tore his ACL and is expected to miss about
+	// 175 games."
+	test("an injury longer than the season left is the rest of the season", () => {
+		const night = (gamesRemaining: number, playoffs = false) => {
+			const g = hurtNight();
+			g.seasonGames = 82;
+			g.playoffs = playoffs;
+			const rockets = g.teams[1];
+			rockets.record = { won: 10, lost: 5 };
+			const kenny = rockets.players.find((p) => p.name === "Kenny Thomas")!;
+			kenny.injury = { type: "Torn ACL", gamesRemaining, newThisGame: true };
+			return g;
+		};
+		const recap = getAutoRecap(night(175));
+		assert.match(
+			recap,
+			/Kenny Thomas tore his ACL and [^.;]*the rest of the season/,
+			recap,
+		);
+		assert.doesNotMatch(recap, /175/, recap);
+		const wrap = getAutoDayRecap({
+			season: 2003,
+			day: 2,
+			playoffs: false,
+			games: [night(175)],
+		});
+		assert.match(wrap, /Kenny Thomas \(torn ACL, out for the season\)/, wrap);
+		// 67 left: 70 ends just past them.
+		assert.match(getAutoRecap(night(70)), /the rest of the regular season/);
+		assert.match(getAutoRecap(night(40)), /about 40 games/);
+		assert.match(getAutoRecap(night(40, true)), /the rest of the playoffs/);
+	});
+
 	test("a deep reserve's knock is not news", () => {
 		const g = hurtNight();
 		assert.ok(!getAutoRecap(g).includes("Deep Reserve"));
