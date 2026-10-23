@@ -37,6 +37,7 @@ import {
 	resetVerbLedger,
 	rngFromSeed,
 	scoredVerb,
+	seeded,
 	shuffle,
 	statPhrase,
 	stripHtml,
@@ -1139,12 +1140,11 @@ const postseasonContext = (
 			out.sentences.push(
 				`With the win in the 7-vs-8 play-in game, ${theNick(
 					shape.winner,
-				)} claimed the #${p.prizeSeed ?? ""} seed, while ${theNick(
+				)} claimed the ${
+					typeof p.prizeSeed === "number" ? `No. ${p.prizeSeed}` : "higher"
+				} seed, while ${theNick(
 					shape.loser,
-				)} dropped into a win-or-go-home game for the final spot.`.replace(
-					"#  seed",
-					"higher seed",
-				),
+				)} dropped into a win-or-go-home game for the final spot.`,
 			);
 		} else if (p.kind === "seed9v10") {
 			out.headlineTag = "an elimination game";
@@ -1159,7 +1159,9 @@ const postseasonContext = (
 			out.headlineTag = "a win-or-go-home game";
 			out.sentences.push(
 				`${cap(w)} grabbed the last playoff berth${
-					typeof p.prizeSeed === "number" ? ` as the #${p.prizeSeed} seed` : ""
+					typeof p.prizeSeed === "number"
+						? ` as the No. ${p.prizeSeed} seed`
+						: ""
 				}, ending ${poss(theNick(shape.loser))} season in the final play-in game.`,
 			);
 		}
@@ -1256,7 +1258,7 @@ const postseasonContext = (
 						isDecider
 							? `It came down to the last night of the season, and ${theNick(shape.loser)} finish as runners-up.`
 							: seedUpset
-								? `The #${wSeed} seed finishes the job against the #${lSeed} seed.`
+								? `The ${seeded(lSeed)} ${nick(shape.loser)} finish as runners-up to the No. ${wSeed} seed.`
 								: `${cap(theNick(shape.loser))} finish as runners-up.`,
 					]
 				: [
@@ -1278,7 +1280,9 @@ const postseasonContext = (
 										"seriesClinch",
 									),
 						seedUpset
-							? `The #${wSeed} seed puts out the #${lSeed} seed, and ${poss(theNick(shape.loser))} season is over.`
+							? // "The #4 seed puts out the #1 seed" named nobody, and
+								// the wire writes "No. 4", not "#4".
+								`The ${seeded(lSeed)} ${nick(shape.loser)} are out, beaten by the No. ${wSeed} seed.`
 							: lBefore === 0
 								? `${cap(theNick(shape.loser))} go out without winning a game.`
 								: choose(
@@ -1463,7 +1467,7 @@ const postseasonContext = (
 					[
 						`${cap(l)} can still close it out in Game ${gameNo + 1}.`,
 						`${cap(l)} get another chance to finish it in Game ${gameNo + 1}.`,
-						`It is still ${poss(l)} series to win, in Game ${gameNo + 1}.`,
+						`${cap(l)} are still a win away, with Game ${gameNo + 1} next.`,
 					],
 					"seriesLoserCanClose",
 				),
@@ -1473,14 +1477,16 @@ const postseasonContext = (
 			out.sentences.push(
 				choose(
 					[
-						`The #${wSeed} seed leads the #${lSeed} seed with ${wins} to go.`,
-						// "In trouble" after Game 1 of seven is not trouble yet.
+						`${cap(w)}, the No. ${wSeed} seed, lead the series with ${wins} to go.`,
+						// "In trouble" after Game 1 of seven is not trouble yet. And
+						// it is the other side's wins that put them out: "two wins
+						// from going out" said the opposite.
 						...(winnerNeeds <= 2
 							? [
-									`The #${lSeed} seed is in trouble against the #${wSeed}, ${wins} from going out.`,
+									`The ${seeded(lSeed)} ${nick(shape.loser)} are in trouble, ${numWord(winnerNeeds)} ${winnerNeeds === 1 ? "loss" : "losses"} from going out.`,
 								]
 							: []),
-						`${cap(w)}, seeded #${wSeed}, are ${wins} from putting out the #${lSeed} seed.`,
+						`${cap(w)}, seeded No. ${wSeed}, are ${wins} from putting out the No. ${lSeed} seed.`,
 					],
 					"seriesSeedUpset",
 				),
@@ -8187,9 +8193,9 @@ const daySeriesPhrase = (
 							pick(
 								rng,
 								[
-									`${w} grabbed the #${p.prizeSeed} seed`,
-									`${w} came through for the #${p.prizeSeed} seed`,
-									`${w} locked up the #${p.prizeSeed} seed`,
+									`${w} grabbed the No. ${p.prizeSeed} seed`,
+									`${w} came through for the No. ${p.prizeSeed} seed`,
+									`${w} locked up the No. ${p.prizeSeed} seed`,
 								],
 								"daySeriesPlayInSeed",
 							)
@@ -10157,14 +10163,18 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			// never said at all.
 			const post = postseasonContext(marquee, mShape, rng);
 			if (post.clinch) {
+				// The marquee's ending goes first, straight after the results:
+				// behind "The Pistons made the most threes on the slate" it read
+				// as an afterthought to somebody else's night.
+				const ending: string[] = [];
 				// Where the winner goes next, unless the headline said so.
 				// "Wizards take Game 7 from the Warriors" over "The Warriors are
 				// done for the year" never said the Wizards were through.
-				if (
+				const toldNext =
 					!post.clinch.title &&
-					!/advance|move on|reach|through to|champion/i.test(headline.text)
-				) {
-					para3.push(
+					!/advance|move on|reach|through to|champion/i.test(headline.text);
+				if (toldNext) {
+					ending.push(
 						pick(
 							rng,
 							[
@@ -10175,9 +10185,23 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 						),
 					);
 				}
-				if (post.sentences[1]) {
-					para3.push(post.sentences[1]);
+				const { seedUpset, wSeed, lSeed } = post.clinch;
+				if (
+					seedUpset &&
+					!toldNext &&
+					!post.clinch.title &&
+					wSeed !== undefined &&
+					lSeed !== undefined
+				) {
+					// On a night of several series, "beaten by the No. 8 seed"
+					// could be anyone's: the wrap names them.
+					ending.push(
+						`The ${seeded(lSeed)} ${nick(mShape.loser)} are out, beaten by the No. ${wSeed} ${nick(mShape.winner)}.`,
+					);
+				} else if (post.sentences[1]) {
+					ending.push(post.sentences[1]);
 				}
+				para3.unshift(...ending);
 			}
 		}
 		if (seriesBits.length > 0) {

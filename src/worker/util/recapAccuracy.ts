@@ -1089,11 +1089,19 @@ export const verifyRecap = (
 			),
 		);
 		if (seeds.size > 0) {
-			for (const m of text.matchAll(/#(\d+)(?! seed of)/g)) {
-				if (!seeds.has(Number(m[1]))) {
+			// "#8", "No. 8", "the eighth-seeded Thunder", "top-seeded".
+			for (const m of text.matchAll(
+				/(?:#|\bNo\. )(\d+)(?! seed of)|\b(top|[a-z]+)-seeded\b/g,
+			)) {
+				const said = m[1]
+					? Number(m[1])
+					: m[2] === "top"
+						? 1
+						: wordToNumber(m[2]!);
+				if (said !== undefined && !seeds.has(said)) {
 					add(
 						"series seed",
-						`text says #${m[1]}, series seeds are ${[...seeds].join(", ")}`,
+						`text says #${said}, series seeds are ${[...seeds].join(", ")}`,
 						m[0]!,
 					);
 				}
@@ -1103,7 +1111,7 @@ export const verifyRecap = (
 		// "N wins from the title" belongs to one of the two sides' remaining
 		// counts after tonight.
 		for (const m of text.matchAll(
-			/(one|two|three|four|\d) (?:more )?wins? from (?:the title|the next round|going out|putting out)/g,
+			/(one|two|three|four|\d) (?:more )?(?:wins?|loss(?:es)?) from (?:the title|the next round|going out|putting out)/g,
 		)) {
 			const said = wordToNumber(m[1]!);
 			const remaining = new Set([need - wAfter, need - lAfter]);

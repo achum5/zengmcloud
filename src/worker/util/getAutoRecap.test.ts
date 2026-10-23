@@ -1127,7 +1127,9 @@ describe("getAutoRecap playoffs", () => {
 		assert.ok(!/Game 7/.test(recap), recap);
 		assert.ok(/Game 5/.test(recap.split("\n")[0]!), recap);
 		assert.ok(
-			/season is over|done for the year|end of the road|puts out/.test(recap),
+			/season is over|done for the year|end of the road|are out, beaten/.test(
+				recap,
+			),
 			recap,
 		);
 	});
@@ -1178,7 +1180,7 @@ describe("getAutoRecap play-in", () => {
 
 	test("7-vs-8 winner claims the higher seed", () => {
 		const recap = getAutoRecap(playInGame("seed7v8", 7));
-		assert.ok(/#7 seed/.test(recap), recap);
+		assert.ok(/No\. 7 seed/.test(recap), recap);
 		assert.ok(/win-or-go-home/.test(recap), recap);
 	});
 
@@ -1190,7 +1192,7 @@ describe("getAutoRecap play-in", () => {
 	test("final play-in grabs the last playoff spot", () => {
 		const recap = getAutoRecap(playInGame("final", 8));
 		assert.ok(/last playoff berth/.test(recap), recap);
-		assert.ok(/#8 seed/.test(recap), recap);
+		assert.ok(/No\. 8 seed/.test(recap), recap);
 	});
 });
 
@@ -4539,7 +4541,7 @@ describe("the losing side of a playoff series", () => {
 		const recap = getAutoRecap(seriesGame(1, 3, { gid: 8003 }));
 		assert.ok(/elimination|survived|stay alive/.test(recap), recap);
 		assert.ok(
-			/can still close it out in Game 6|finish it in Game 6|series to win, in Game 6/.test(
+			/can still close it out in Game 6|finish it in Game 6|still a win away, with Game 6 next/.test(
 				recap,
 			),
 			recap,
@@ -4631,7 +4633,9 @@ describe("the losing side of a playoff series", () => {
 		const recap = getAutoRecap(seriesGame(3, 3, { gid: 8300, round: 1 }));
 		assert.ok(/Game 7/.test(recap.split("\n")[0]!), recap);
 		assert.ok(
-			/season is over|done for the year|end of the road|puts out/.test(recap),
+			/season is over|done for the year|end of the road|are out, beaten/.test(
+				recap,
+			),
 			recap,
 		);
 	});
@@ -4661,6 +4665,24 @@ describe("the losing side of a playoff series", () => {
 		assert.ok(sawSeeds, "no headline named the seeds");
 	});
 
+	// "The #5 seed is in trouble against the #4, two wins from going out" -
+	// it is the other side's wins, and so this side's losses.
+	test("the side in trouble is losses from going out", () => {
+		const said = new Set<string>();
+		for (let gid = 8700; gid < 8760; gid += 1) {
+			const recap = getAutoRecap(
+				seriesGame(1, 1, { gid, round: 1, wSeed: 7, lSeed: 2 }),
+			);
+			for (const m of recap.matchAll(/[^.]*from going out[^.]*\./g)) {
+				said.add(m[0]);
+			}
+		}
+		assert.ok(said.size > 0);
+		for (const x of said) {
+			assert.match(x, /two losses from going out/, x);
+		}
+	});
+
 	test("a sweep is headlined as a sweep", () => {
 		const recap = getAutoRecap(seriesGame(3, 0, { gid: 8301, round: 1 }));
 		assert.ok(/sweep/i.test(recap.split("\n")[0]!), recap);
@@ -4672,8 +4694,12 @@ describe("the losing side of a playoff series", () => {
 		const recap = getAutoRecap(
 			seriesGame(3, 2, { gid: 8400, round: 1, wSeed: 7, lSeed: 2 }),
 		);
-		assert.ok(/#7 seed/.test(recap), recap);
-		assert.ok(/#2 seed/.test(recap), recap);
+		// As the wire writes it, and naming the side that went out: "The
+		// #7 seed puts out the #2 seed" said neither.
+		const body = recap.split("\n\n").slice(1).join(" ");
+		assert.match(body, /No\. 7 seed/, recap);
+		assert.match(body, /The second-seeded [A-Z]\w+ are out/, recap);
+		assert.doesNotMatch(body, /#\d/, recap);
 	});
 
 	test("a close seed gap is not remarked on", () => {
@@ -4940,6 +4966,42 @@ describe("a postseason read end to end", () => {
 			}
 		}
 		assert.ok(sawCommand, "a commanding series lead never says so");
+	});
+
+	// "The Pistons made the most threes on the slate, 19. The #8 seed puts out
+	// the #4 seed, and the Thunder's season is over." - behind somebody
+	// else's note, on a night two series ended, naming one side of neither.
+	test("the marquee's ending is told first, and names who did it", () => {
+		let told = 0;
+		for (let day = 1; day <= 16; day += 1) {
+			const upset = seriesSlateGame(9970, "Blazers", "Thunder", 3, 2);
+			upset.series!.homeSeed = 8;
+			upset.series!.awaySeed = 4;
+			upset.teams[0].seed = 8;
+			upset.teams[1].seed = 4;
+			upset.teams[0].players[0]!.pts = 41;
+			const other = seriesSlateGame(9971, "Pistons", "Bucks", 1, 1);
+			const third = seriesSlateGame(9972, "Lakers", "Suns", 2, 2);
+			const wrap = getAutoDayRecap({
+				season: 2026,
+				day,
+				playoffs: true,
+				games: [upset, other, third],
+			});
+			const paras = wrap.split("\n\n");
+			const at = paras.findIndex((x) => x.includes("Thunder are out"));
+			if (at < 0) {
+				continue;
+			}
+			told += 1;
+			assert.doesNotMatch(wrap, /#\d+ seed/, wrap);
+			assert.match(
+				paras[at]!,
+				/^The (?:Blazers (?:move on|are through)|fourth-seeded Thunder are out, beaten by the No\. 8 Blazers)/,
+				wrap,
+			);
+		}
+		assert.ok(told > 0, "the upset was never told");
 	});
 
 	// "Evan Hayes led all scorers with 53 ... in the Heat's win over the Suns

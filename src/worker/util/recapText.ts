@@ -218,6 +218,11 @@ export const ordinal = (n: number): string => {
 	return `${n}${suffix}`;
 };
 
+// A seed as the wire writes it before a name: "the top-seeded Nuggets",
+// "the eighth-seeded Thunder".
+export const seeded = (n: number): string =>
+	n === 1 ? "top-seeded" : `${ordinal(n)}-seeded`;
+
 // A figure with its article, by how it is read aloud: "an 85-80 win", "a
 // 115-93 win", "an 11-point lead".
 export const aFigure = (s: string): string =>
