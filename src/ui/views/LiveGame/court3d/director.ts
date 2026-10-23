@@ -15522,11 +15522,18 @@ class Director {
 			}
 			return k;
 		};
-		const freeThrows = this.beats.filter(
-			(bt) => bt.type === "ft" || bt.type === "missFt",
+		// (And a timeout or the end of a period: the ball goes to the huddle
+		// in a man's hands, which is not the ball in play - the huddle stood
+		// round it, not men sent off on runs.)
+		const stops = this.beats.filter(
+			(bt) =>
+				bt.type === "ft" ||
+				bt.type === "missFt" ||
+				bt.type === "timeout" ||
+				bt.type === "endOfPeriod",
 		);
 		// How long from t the ball stays in play: in a man's hands, or on its
-		// way between two - and no free throw.
+		// way between two - and no free throw, timeout or break.
 		const liveUntil = (a: number): number => {
 			let i = ballAt(a);
 			let end = Infinity;
@@ -15536,7 +15543,7 @@ class Director {
 					break;
 				}
 			}
-			for (const bt of freeThrows) {
+			for (const bt of stops) {
 				if (bt.end > a && bt.preStart < end) {
 					end = Math.max(a, bt.preStart);
 				}
