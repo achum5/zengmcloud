@@ -322,7 +322,9 @@ behaviour is right (owner's call); the first slice adds about 0.7 s a sim day.
   season to three on fell within their projected sd 58-65% of the time at
   every age (68% would be exact) - upside, if anything, undersold. In a league of half the teams each way (4 leagues x 5
   seasons), teams pricing upside gave a prospect for a mediocre veteran on
-  2.2% of their trade sides against 8.0%, and won 13 titles to 7.
+  2.2% of their trade sides against 8.0%, and won 13 titles to 7; over ten
+  seasons (4 leagues, with picks' halves too), 2.0% against 7.8%, titles
+  20 to 20, playoff series won 0.56 a season to 0.44.
 - **So does a pick's.** A pick's player was the average of what players taken
   there become, the star and the bust averaged into a bench player: a middling
   team's first was worth almost nothing to a bad team. He is now the worse
