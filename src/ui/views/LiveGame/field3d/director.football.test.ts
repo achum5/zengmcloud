@@ -463,3 +463,36 @@ describe("a man hurt", () => {
 		assert.isAbove(hurt, 0);
 	});
 });
+
+describe("the TV cameras", () => {
+	test("a man on each sideline, off the field, after the ball at a man's speed", () => {
+		const bad: string[] = [];
+		for (const game of games) {
+			const tl = stage(game);
+			for (const play of tl.plays) {
+				if (play.tv.length !== 2) {
+					bad.push(`play ${play.i}: ${play.tv.length} cameramen`);
+				}
+				for (const m of play.tv) {
+					m.legs.forEach((l, k) => {
+						const prev = m.legs[k - 1];
+						if (prev && Math.abs(l.t0 - prev.t1) > 1e-6) {
+							bad.push(`play ${play.i}: ${m.pid} gap at ${l.t0}`);
+						}
+						if (l.to.y >= 0 && l.to.y <= FIELD_W) {
+							bad.push(`play ${play.i}: ${m.pid} on the field`);
+						}
+						const secs = (l.t1 - l.t0) / 1000;
+						if (secs > 0.05 && Math.hypot(l.to.x - l.from.x) / secs > 24) {
+							bad.push(`play ${play.i}: ${m.pid} too fast`);
+						}
+					});
+					if (m.legs.at(-1)!.t1 < play.t1 - 1e-6) {
+						bad.push(`play ${play.i}: ${m.pid} gone before the end`);
+					}
+				}
+			}
+		}
+		assert.deepEqual(bad.slice(0, 8), []);
+	});
+});

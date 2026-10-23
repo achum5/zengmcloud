@@ -243,3 +243,78 @@ const drawCamera = (
 	ctx.fillStyle = BODY;
 	ctx.fillRect(a.x - w / 2, a.y - w / 2, w, w);
 };
+
+// ---- the TV cameras, drawn --------------------------------------------------
+
+const TV_BODY = "#686b72";
+const TV_TOP = "#8d9199";
+const TV_LENS = "#111114";
+// How long the camera is, how far back of his shoulder it sits, how big
+// round, and the lens on the front of it.
+const TV_FT = 1.9;
+const TV_BACK = 0.8;
+const TV_D = 0.55;
+const TV_LENS_FT = 0.45;
+
+const shoulders = new WeakMap<Body, V3>();
+const shoulderOf = (b: Body) => {
+	let at = shoulders.get(b);
+	if (!at) {
+		const sk = skeleton(b, poseOfMove("stand", 0));
+		// (Sat on top of his right shoulder.)
+		at = { f: sk.armR.root.f, s: sk.armR.root.s, u: sk.armR.root.u + 0.45 };
+		shoulders.set(b, at);
+	}
+	return at;
+};
+
+export const tvCameraGear = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	states: FieldPlayerState[],
+	bodyOf: (pid: number) => Body,
+): Item[] => {
+	const items: Item[] = [];
+	for (const st of states) {
+		if (st.arms?.move !== "shoulderCam") {
+			continue;
+		}
+		const s = shoulderOf(bodyOf(st.id));
+		const placed = { x: st.x, y: st.y, z: st.z, yaw: st.yaw };
+		const back = bodyPoint(placed, { ...s, f: s.f - TV_BACK });
+		const front = bodyPoint(placed, { ...s, f: s.f - TV_BACK + TV_FT });
+		const lens = bodyPoint(placed, {
+			...s,
+			f: s.f - TV_BACK + TV_FT + TV_LENS_FT,
+		});
+		items.push({
+			depth: Math.min(depthOf(cam, back), depthOf(cam, lens)),
+			draw: () => {
+				const a = project(cam, back);
+				const b = project(cam, front);
+				const c = project(cam, lens);
+				ctx.lineCap = "butt";
+				ctx.strokeStyle = TV_BODY;
+				ctx.lineWidth = Math.max(MIN_PX + 1, TV_D * a.k);
+				ctx.beginPath();
+				ctx.moveTo(a.x, a.y);
+				ctx.lineTo(b.x, b.y);
+				ctx.stroke();
+				// (Its top, catching the light.)
+				ctx.strokeStyle = TV_TOP;
+				ctx.lineWidth = Math.max(MIN_PX, TV_D * 0.3 * a.k);
+				ctx.beginPath();
+				ctx.moveTo(a.x, a.y - TV_D * 0.3 * a.k);
+				ctx.lineTo(b.x, b.y - TV_D * 0.3 * a.k);
+				ctx.stroke();
+				ctx.strokeStyle = TV_LENS;
+				ctx.lineWidth = Math.max(MIN_PX, TV_D * 0.8 * a.k);
+				ctx.beginPath();
+				ctx.moveTo(b.x, b.y);
+				ctx.lineTo(c.x, c.y);
+				ctx.stroke();
+			},
+		});
+	}
+	return items;
+};

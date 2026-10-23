@@ -55,6 +55,7 @@ import {
 	fieldKitsFor,
 	officialLook,
 	photographerLook,
+	tvCrewLook,
 	type FieldLook,
 } from "./kit.ts";
 import type { RosterMan } from "./personnel.ts";
@@ -70,7 +71,13 @@ import { replayAim } from "./replays.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
 import { coachId, sidelineAt, sidelineFor } from "./sideline.ts";
 import { HURT_MOST, MEDICS, medicId } from "./hurt.ts";
-import { cameraGear, photographersAt, photographersFor } from "./media.ts";
+import {
+	cameraGear,
+	photographersAt,
+	photographersFor,
+	tvCameraGear,
+} from "./media.ts";
+import { tvCrewFor } from "./tv.ts";
 import { drawFieldPlayer } from "./sprite.ts";
 import { chainGear } from "./sticks.ts";
 import { paintStadium } from "./stadium.ts";
@@ -345,6 +352,10 @@ const Field3D = ({
 				}
 			}
 		}
+		for (const o of tvCrewFor(gid ?? 0)) {
+			looks.set(o.id, tvCrewLook(`${gid}|${o.id}`));
+			bodies.set(o.id, officialBody(o.hgt, o.weight));
+		}
 		for (const [k, s] of photographersFor(gid ?? 0).entries()) {
 			looks.set(s.id, photographerLook(`${gid}|${s.id}`));
 			bodies.set(s.id, officialBody(67 + ((k * 7) % 8), 170 + ((k * 13) % 60)));
@@ -554,6 +565,7 @@ const Field3D = ({
 				...chainGear(ctx, view, moment, body),
 				...sidelineGear(ctx, view, sideColors.current),
 				...cameraGear(ctx, view, snappers, body),
+				...tvCameraGear(ctx, view, moment.players, body),
 			);
 			for (const f of moment.flags ?? []) {
 				items.push({

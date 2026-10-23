@@ -52,6 +52,7 @@ import { foulsOf } from "./fouls.ts";
 import { stageChains, type ChainSpots } from "./chains.ts";
 import { holderAt, replayFor, type FieldReplay } from "./replays.ts";
 import { HURT_MOST, MEDICS, stageHurt } from "./hurt.ts";
+import { stageTv } from "./tv.ts";
 
 // THE GAME STAGED: every snap of the play-by-play, in feet and milliseconds -
 // who is on the field for it, where each man lines up, the ball, and the
@@ -175,6 +176,8 @@ export type Play = {
 	// The chain crew (see chains.ts), and the down on their boxes.
 	chains: CrewPart[];
 	down: number;
+	// The TV cameramen on the sidelines (see tv.ts).
+	tv: CrewPart[];
 	// The trainers out to a man hurt on it (see hurt.ts) - and the man, the
 	// camera on him from when he is down.
 	medics?: CrewPart[];
@@ -1180,6 +1183,17 @@ class Director {
 			flags: crew.flags,
 			chains: chains.parts,
 			down: chains.spots.down,
+			tv: stageTv({
+				dir,
+				losX,
+				t0,
+				snap,
+				whistle,
+				t1,
+				parts,
+				ball,
+				r: this.rng(i0, "tv"),
+			}),
 			...(medics.length > 0 ? { medics } : {}),
 			...(hurt ? { hurt: { pid: hurt.pid, from: hurt.down } } : {}),
 			ball,

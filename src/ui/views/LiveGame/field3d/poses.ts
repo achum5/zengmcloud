@@ -1412,6 +1412,20 @@ const FIELD_ANIMS = {
 			tuck: 1,
 		}),
 	},
+	// A TV camera on his right shoulder: the right hand up on its grip by
+	// his head, the left out in front on the lens.
+	shoulderCam: {
+		kind: "still",
+		pose: pose({
+			shN: 84,
+			elN: 104,
+			abN: 46,
+			shF: 58,
+			elF: 72,
+			abF: -14,
+			tuck: 1,
+		}),
+	},
 	// A pole held upright in front of him in both hands, the right over the
 	// left: the chain crew's rods, the down box.
 	holdPole: {

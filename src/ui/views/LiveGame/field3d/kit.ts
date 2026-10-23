@@ -430,3 +430,35 @@ export const photographerLook = (seed: string): FieldLook => {
 		official: true,
 	};
 };
+
+// A TV CAMERAMAN: black from head to foot but for his skin - a polo, pants,
+// a cap - or khakis.
+export const tvCrewLook = (seed: string): FieldLook => {
+	const rng = makeCourtRng(`tv|${seed}`);
+	return {
+		kit: {
+			helmet: INK,
+			facemask: INK,
+			jersey: "#202125",
+			collar: "#202125",
+			number: INK,
+			numberEdge: WHITE,
+			name: INK,
+			sleeveStripes: [],
+			pants: rng() < 0.7 ? "#1d1e22" : "#b9a682",
+			pantsStripes: [],
+			sock: INK,
+			sockStripes: [],
+		},
+		gear: {
+			mask: "open",
+			cleat: INK,
+			cleatSole: "#2a2a2e",
+			cleatAccent: INK,
+		},
+		skin: OFFICIAL_SKIN[Math.floor(rng() * OFFICIAL_SKIN.length)]!,
+		jerseyNumber: "",
+		lastName: "",
+		official: true,
+	};
+};
