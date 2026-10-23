@@ -82,6 +82,13 @@ const COACH_LATE = 500;
 const COACH_FPS = 10.5;
 const COACH_HUG = 0.6;
 const COACH_AFTER = 2600;
+// Most of them with their helmets off for the handshakes - this share,
+// each a moment after his own moment - each pulling it off over this long,
+// off his head this far into it.
+const HELMET_OFF = 0.8;
+const HELMET_LATE = 500;
+const HELMET_MS = 1100;
+const HELMET_UP = 0.5;
 // The ball, if a man still has it: tossed down by his feet.
 const TOSS_MS = 380;
 // The officials: off this long after it is over (and up to this much
@@ -193,10 +200,15 @@ export class Man {
 	readonly team: Side;
 	readonly legs: Leg[];
 	pace: number;
+	// His helmet off, from now on.
+	bare = false;
 	constructor(team: Side, legs: Leg[], pace: number) {
 		this.team = team;
 		this.legs = legs;
 		this.pace = pace;
+	}
+	private get off(): { bare?: true } {
+		return this.bare ? { bare: true } : {};
 	}
 	get at(): Pt {
 		return this.legs.at(-1)!.to;
@@ -217,6 +229,7 @@ export class Man {
 			to: l.to,
 			move,
 			...(yaw !== undefined ? { yaw } : {}),
+			...this.off,
 		});
 	}
 	// An act where he is (or going a little way), part of it at a time.
@@ -230,7 +243,21 @@ export class Man {
 			move,
 			...(yaw !== undefined ? { yaw } : {}),
 			...(span ? { span } : {}),
+			...this.off,
 		});
+	}
+	// His helmet pulled off in both hands, and down in his left: off as it
+	// comes up over his head.
+	helmetOff() {
+		this.act("helmetOff", HELMET_MS * HELMET_UP, undefined, undefined, [
+			0,
+			HELMET_UP,
+		]);
+		this.bare = true;
+		this.act("helmetOff", HELMET_MS * (1 - HELMET_UP), undefined, undefined, [
+			HELMET_UP,
+			1,
+		]);
 	}
 	// To `to` at his pace (or this one); when he gets there.
 	walk(to: Pt, fps = this.pace): number {
@@ -243,6 +270,7 @@ export class Man {
 				from: l.to,
 				to,
 				move: fps < 6.5 ? "walk" : fps < 12.5 ? "jog" : "run",
+				...this.off,
 			});
 		}
 		return this.t;
@@ -490,6 +518,14 @@ export const stagePostgame = (input: {
 	if (winner === undefined) {
 		for (const m of men) {
 			m.hold(m.t + 600 + r() * 600, r() < 0.4 ? "onHips" : "stand");
+		}
+	}
+
+	// Helmets off.
+	for (const m of men) {
+		if (r() < HELMET_OFF) {
+			m.hold(m.t + r() * HELMET_LATE);
+			m.helmetOff();
 		}
 	}
 

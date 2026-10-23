@@ -231,6 +231,7 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 			...(from ? { from } : {}),
 			...(l.ball ? { ball: l.ball } : {}),
 			...(l.arms ? { arms: { move: l.arms, phase: armsPhaseOf(l, t) } } : {}),
+			...(l.bare ? { bare: true as const } : {}),
 		});
 	}
 	const { ball, focus, carrier } = ballAt(play.ball, t, players);

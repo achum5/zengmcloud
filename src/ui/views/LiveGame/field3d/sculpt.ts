@@ -762,7 +762,8 @@ const build = (
 			);
 		}
 	} else if (look.bare) {
-		// His bare head; his helmet hung from his right hand.
+		// His bare head; his helmet hung from his left hand (his right free
+		// to shake with).
 		add(
 			at(0, 0, -0.08),
 			at(0, 0, -0.08),
@@ -770,7 +771,7 @@ const build = (
 			SHELL,
 			G_HELMET,
 		);
-		const hand = sk.armR.tip ?? sk.armR.end;
+		const hand = sk.armL.tip ?? sk.armL.end;
 		held = addV(hand, v3(0, 0, -1), R * HELD_DROP);
 		add(held, held, [[0, R * HELD_R]], HELD, G_BALL);
 	} else {

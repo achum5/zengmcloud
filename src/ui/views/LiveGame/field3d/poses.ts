@@ -2703,6 +2703,41 @@ const FIELD_ANIMS = {
 			[1, BASE],
 		],
 	},
+	// His helmet off: both hands up to it, pulled up off his head, and down
+	// in his left hand.
+	helmetOff: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[
+				0.3,
+				pose({
+					shN: 150,
+					elN: 125,
+					abN: 26,
+					shF: 150,
+					elF: 125,
+					abF: 26,
+					tuck: 1,
+				}),
+			],
+			[
+				0.5,
+				pose({
+					shN: 168,
+					elN: 70,
+					abN: 18,
+					shF: 168,
+					elF: 70,
+					abF: 18,
+					lean: -4,
+					tuck: 1,
+				}),
+			],
+			[0.75, pose({ shN: 20, elN: 30, abN: 12, shF: 80, elF: 60, abF: 20 })],
+			[1, BASE],
+		],
+	},
 	// The cooler (see shower.ts) carried between two men, a handle each: in
 	// his right hand, hung at his side; and, the two of them, up to their
 	// chests with it, over their heads, tipped forward over the man in front

@@ -122,6 +122,8 @@ export type Leg = {
 	// it this leg takes them.
 	arms?: Move;
 	armsSpan?: [number, number];
+	// His helmet off, in his hand.
+	bare?: true;
 };
 
 // How a man has the ball: under his hand on the turf over it (a center or
