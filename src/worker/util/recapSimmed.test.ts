@@ -1198,4 +1198,17 @@ describe("simmed recaps", () => {
 			}
 		}
 	});
+
+	// "Led all scorers with" opened the second sentence of four wraps in ten.
+	test("a wrap's top scorer is not always 'led all scorers'", () => {
+		const said = dayRecaps.filter((w) =>
+			/led all scorers with|outscored everyone with|had a night-high/.test(w),
+		);
+		if (said.length >= 3) {
+			assert.isBelow(
+				said.filter((w) => /led all scorers with/.test(w)).length,
+				said.length,
+			);
+		}
+	});
 });

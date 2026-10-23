@@ -10809,20 +10809,32 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			true,
 		);
 		const topScore = scoreTag(analyzeShape(topScorer.game));
+		// "Led all scorers with" opened the second sentence of four wraps in
+		// ten. Said in turn, night by night.
+		const led = pickByDay(
+			day,
+			rng,
+			[
+				`led all scorers with ${line}`,
+				`outscored everyone with ${line}`,
+				`had a night-high ${line}`,
+			],
+			"dayTopScorer",
+		);
 		// The sentence before this one has just given the matchup and score
 		// when his game is the marquee, so "in the Nets' 124-114 loss to the
 		// Clippers" straight after "beat the Nets 124-114" says it twice.
 		para1.push(
 			coveredGames.has(topScorer.game) &&
 				para1.at(-1)?.includes(nick(topScorer.team))
-				? `${topScorer.p.name} led all scorers with ${line} in ${
+				? `${topScorer.p.name} ${led} in ${
 						topScorer.won ? "the win" : "the loss"
 					}.`
 				: topScorer.won
-					? `${topScorer.p.name} led all scorers with ${line} in ${poss(
+					? `${topScorer.p.name} ${led} in ${poss(
 							theNick(topScorer.team),
 						)} ${topScore} win over ${theNick(topScorer.opp)}${tailFor(topScorer.game)}.`
-					: `${topScorer.p.name} led all scorers with ${line} in ${poss(
+					: `${topScorer.p.name} ${led} in ${poss(
 							theNick(topScorer.team),
 						)} ${topScore} loss to ${theNick(topScorer.opp)}${whoFor(topScorer.game)}.`,
 		);
