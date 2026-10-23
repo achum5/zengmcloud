@@ -1807,10 +1807,10 @@ export const placesAfter = (
 			placeKeysOf(
 				outlook,
 				tid,
-				was.points.map(
-					(x, y) =>
-						x +
-						(onlyBetter ? Math.max(0, to[y]! - from[y]!) : to[y]! - from[y]!),
+				was.points.map((x, y) =>
+					onlyBetter
+						? x + Math.max(0, to[y]! - from[y]!)
+						: x + to[y]! - from[y]!,
 				),
 			),
 		);

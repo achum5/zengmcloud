@@ -379,3 +379,56 @@ test(
 		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
 	},
 );
+
+test(
+	"an offseason trade taking a team past the roster limit pays for the player it must cut",
+	{ timeout: 300_000 },
+	async () => {
+		g.setWithoutSavingToDB("phase", PHASE.DRAFT);
+		const tid = 5;
+		// Filled to the limit with others' bench players; the rest of them are
+		// the players it could be handed for nothing.
+		const bench = (
+			await idb.cache.players.indexGetAll("playersByTid", [0, Infinity])
+		)
+			.filter((p) => p.tid !== tid && p.value < 56 && p.value > 44)
+			.sort((a, b) => b.value - a.value);
+		let roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+		for (const p of roster.filter((x) => x.value <= 44)) {
+			p.tid = PLAYER.FREE_AGENT;
+			await idb.cache.players.put(p);
+		}
+		roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+		const fill = bench
+			.filter((_, i) => i % 2 === 0)
+			.slice(0, g.get("maxRosterSize") - roster.length);
+		for (const p of fill) {
+			p.tid = tid;
+			await idb.cache.players.put(p);
+		}
+		// Everyone under contract next season, when the roster has to fit.
+		for (const p of [...roster, ...bench]) {
+			p.contract.exp = Math.max(p.contract.exp, g.get("season") + 1);
+			await idb.cache.players.put(p);
+		}
+		const outlook = await currentOutlook();
+		const t = await loadTeam(outlook, tid);
+		assert.equal(t.players.length, g.get("maxRosterSize"));
+		const worst = Math.min(...t.players.map((p) => p.value));
+		let checked = 0;
+		for (const p of bench.filter((x) => !fill.includes(x) && x.value < worst)) {
+			if (checked === 5) {
+				break;
+			}
+			const partner = await loadTeam(outlook, p.tid);
+			checked += 1;
+			assert.isBelow(
+				priceFor(outlook, t, [], [{ kind: "player", p }], partner),
+				0,
+				`player ${p.pid}, value ${p.value}`,
+			);
+		}
+		assert.isAbove(checked, 0);
+		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+	},
+);

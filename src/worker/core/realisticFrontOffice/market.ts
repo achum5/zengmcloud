@@ -7,7 +7,7 @@ import type {
 	TradeTeams,
 } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
-import { g, local } from "../../util/index.ts";
+import { g, helpers, local } from "../../util/index.ts";
 import getDaysLeftSchedule from "../season/getDaysLeftSchedule.ts";
 import getPayroll from "../team/getPayroll.ts";
 import isUntradable from "../trade/isUntradable.ts";
@@ -399,6 +399,76 @@ export const assetKey = (x: Asset) =>
 // What a deal does to a team's franchise value. Priced in full - with the
 // other team, `partner` - both teams' picks land where the deal leaves their
 // rosters; the quick screens of one asset at a time leave them be.
+// The roster a team will have once games are played: past the limit, it cuts
+// the players it values least (cuts.ts), and still owes them their salaries
+// unless they were just drafted. Priced as it stands, a team with a full
+// roster signed one more cheap veteran after another - each looked like depth
+// for nothing - and cut them all before the season; and an offseason trade
+// bringing in more players than it sent out was priced as if it kept them
+// all.
+export const afterCuts = (
+	outlook: LeagueOutlook,
+	tid: number,
+	players: readonly Player[],
+) => {
+	const phase = g.get("phase");
+	const season = g.get("season");
+	// Only those under contract once games are played: in the offseason a
+	// player whose contract is up leaves or is re-signed, not cut.
+	const first = season + (phase > PHASE.PLAYOFFS ? 1 : 0);
+	const signed = players.filter((p) => p.contract.exp >= first);
+	const over = signed.length - g.get("maxRosterSize");
+	if (over <= 0) {
+		return { players, deadMoney: outlook.deadMoney };
+	}
+	const cut = new Set(
+		signed.sort((a, b) => a.value - b.value || a.pid - b.pid).slice(0, over),
+	);
+	const owed = [...cut]
+		.filter((p) => !helpers.justDrafted(p, phase, season))
+		.map((p) => ({ amount: p.contract.amount, exp: p.contract.exp }));
+	return {
+		players: players.filter((p) => !cut.has(p)),
+		deadMoney:
+			owed.length > 0
+				? new Map(outlook.deadMoney).set(tid, [
+						...(outlook.deadMoney.get(tid) ?? []),
+						...owed,
+					])
+				: outlook.deadMoney,
+	};
+};
+
+// A team's value on the roster it will have once games are played: as it
+// stands, within the limit.
+const keptValues = new WeakMap<TeamState, number>();
+const valueAsKept = (outlook: LeagueOutlook, t: TeamState) => {
+	let value = keptValues.get(t);
+	if (value === undefined) {
+		const kept = afterCuts(outlook, t.tid, t.players);
+		if (kept.players === t.players) {
+			value = t.value;
+		} else {
+			// Its own picks where those cuts leave them, as a deal's would be.
+			const placed = settingFor(t.tid, "placesAfter")
+				? placesAfter(outlook, [
+						{ tid: t.tid, before: t.players, after: kept.players },
+					])
+				: outlook;
+			value = valueOf(
+				{ ...placed, deadMoney: kept.deadMoney },
+				t.tid,
+				kept.players,
+				t.picks,
+				undefined,
+				t.letGo,
+			);
+		}
+		keptValues.set(t, value);
+	}
+	return value;
+};
+
 // The last deal's places, for pricing it from the other side next: they are
 // the same both ways.
 let lastPlaces:
@@ -420,6 +490,8 @@ export const priceFor = (
 	partner?: TeamState,
 ) => {
 	const after = applyTrade(t, outgoing, incoming);
+	// Each team on the roster it will have once games are played.
+	const kept = afterCuts(outlook, t.tid, after.players);
 	let view = outlook;
 	if (
 		settingFor(t.tid, "placesAfter") &&
@@ -440,11 +512,15 @@ export const priceFor = (
 			view = last.view;
 		} else {
 			view = placesAfter(outlook, [
-				{ tid: t.tid, before: t.players, after: after.players },
+				{ tid: t.tid, before: t.players, after: kept.players },
 				{
 					tid: partner.tid,
 					before: partner.players,
-					after: applyTrade(partner, incoming, outgoing).players,
+					after: afterCuts(
+						outlook,
+						partner.tid,
+						applyTrade(partner, incoming, outgoing).players,
+					).players,
 				},
 			]);
 		}
@@ -459,16 +535,18 @@ export const priceFor = (
 	}
 	return (
 		valueOf(
-			view,
+			kept.deadMoney === outlook.deadMoney
+				? view
+				: { ...view, deadMoney: kept.deadMoney },
 			t.tid,
-			after.players,
+			kept.players,
 			after.picks,
 			{
 				tradedAway: t.tradedAway,
 				extra: count(outgoing),
 			},
 			t.letGo,
-		) - t.value
+		) - valueAsKept(outlook, t)
 	);
 };
 

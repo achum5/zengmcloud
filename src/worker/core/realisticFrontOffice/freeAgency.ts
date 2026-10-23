@@ -20,6 +20,7 @@ import {
 	marginOf,
 	settingFor,
 	type TeamState,
+	afterCuts,
 } from "./market.ts";
 import {
 	appealOf,
@@ -110,42 +111,6 @@ const without = (
 	};
 };
 
-// The roster a team will have once games are played: past the limit, it cuts
-// the players it values least (cuts.ts), and still owes them their salaries
-// unless they were just drafted. Priced as it stands, a team with a full
-// roster signed one more cheap veteran after another - each looked like depth
-// for nothing - and cut them all before the season.
-const afterCuts = (
-	outlook: LeagueOutlook,
-	t: TeamState,
-	players: readonly Player[],
-) => {
-	const over = players.length - g.get("maxRosterSize");
-	if (over <= 0) {
-		return { players, deadMoney: outlook.deadMoney };
-	}
-	const phase = g.get("phase");
-	const season = g.get("season");
-	const cut = new Set(
-		[...players]
-			.sort((a, b) => a.value - b.value || a.pid - b.pid)
-			.slice(0, over),
-	);
-	const owed = [...cut]
-		.filter((p) => !helpers.justDrafted(p, phase, season))
-		.map((p) => ({ amount: p.contract.amount, exp: p.contract.exp }));
-	return {
-		players: players.filter((p) => !cut.has(p)),
-		deadMoney:
-			owed.length > 0
-				? new Map(outlook.deadMoney).set(t.tid, [
-						...(outlook.deadMoney.get(t.tid) ?? []),
-						...owed,
-					])
-				: outlook.deadMoney,
-	};
-};
-
 // What a team is worth on the roster it will have (afterCuts), with its own
 // picks where that roster leaves them, as in a trade - later for a signing
 // that makes it better, never earlier for one that makes it worse.
@@ -154,7 +119,7 @@ const valueAfterCuts = (
 	t: TeamState,
 	players: readonly Player[],
 ) => {
-	const kept = afterCuts(outlook, t, players);
+	const kept = afterCuts(outlook, t.tid, players);
 	if (kept.players === t.players) {
 		return t.value;
 	}
