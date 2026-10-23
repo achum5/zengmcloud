@@ -283,60 +283,101 @@ const QB_SET = pose({
 	abF: -9,
 	wide: 0.8,
 });
-// Cocked: the ball back up by his ear, his elbow up level with his head,
-// his shoulders turned to the target, the off arm out at it, his weight
-// back.
-const THROW_COCKED = pose({
-	hipN: 4,
-	kneeN: 22,
-	hipF: 26,
-	kneeF: 14,
-	lean: 2,
-	shN: 165,
-	elN: 105,
-	abN: 35,
-	wrN: 20,
-	shF: 86,
-	elF: 16,
-	abF: 8,
-	twist: -25,
-	wide: 1.1,
+// Coming up into it: the ball off his chest on its way back and up, the
+// off hand coming off it out in front, his front knee up for the stride,
+// his weight back on his back foot.
+const THROW_LIFT = pose({
+	hipN: 10,
+	kneeN: 28,
+	hipF: 46,
+	kneeF: 62,
+	lean: 6,
+	shN: 110,
+	elN: 110,
+	abN: 30,
+	wrN: 10,
+	flexN: 0.5,
+	shF: 70,
+	elF: 36,
+	abF: 2,
+	twist: -18,
+	wide: 0.9,
 });
-// Let go: the arm straight up over the top and out in front of his head,
-// his weight onto his front foot.
-const THROW_RELEASE = pose({
-	hipN: -12,
+// Cocked: his stride down at the target, the ball back by his ear - his
+// elbow up out to the side, level with his shoulder - his shoulders turned
+// away from the target, the off arm out at it, his weight back.
+const THROW_COCKED = pose({
+	hipN: 2,
 	kneeN: 26,
 	hipF: 30,
-	kneeF: 16,
-	lean: 12,
+	kneeF: 18,
+	lean: 4,
 	shN: 150,
-	elN: 10,
-	abN: 10,
-	wrN: -10,
-	shF: 40,
-	elF: 50,
-	abF: 14,
-	twist: 8,
-	wide: 1.1,
+	elN: 100,
+	abN: 35,
+	wrN: 25,
+	flexN: 1,
+	shF: 84,
+	elF: 14,
+	abF: 10,
+	twist: -28,
+	wide: 1.15,
 });
-// Followed through: the arm down across him, the back foot coming
-// through.
-const THROW_THROUGH = pose({
-	hipN: -26,
-	kneeN: 38,
-	hipF: 34,
-	kneeF: 28,
-	lean: 20,
-	shN: 46,
+// Let go: the arm out straight up over the top in front of his head, the
+// off arm pulled in to his side, his shoulders come round, his weight onto
+// his front foot and his back one up on its toes.
+const THROW_RELEASE = pose({
+	hipN: -16,
+	kneeN: 30,
+	hipF: 26,
+	kneeF: 20,
+	lean: 16,
+	shN: 140,
+	elN: 18,
+	abN: 30,
+	wrN: -15,
+	shF: 26,
+	elF: 96,
+	abF: 20,
+	toeN: 0.5,
+	twist: 16,
+	wide: 1.15,
+});
+// On through: the arm coming down across him, his back foot pushing off.
+const THROW_ACROSS = pose({
+	hipN: -12,
+	kneeN: 40,
+	hipF: 22,
+	kneeF: 24,
+	lean: 24,
+	shN: 72,
 	elN: 30,
-	abN: -18,
+	abN: -24,
 	wrN: -20,
-	shF: 14,
-	elF: 50,
+	shF: 22,
+	elF: 90,
 	abF: 16,
+	toeN: 0.6,
 	twist: 30,
 	wide: 1.0,
+});
+// Followed through: the arm down across him to his far hip, his back foot
+// come up off the turf and through.
+const THROW_THROUGH = pose({
+	hipN: 14,
+	kneeN: 70,
+	hipF: 20,
+	kneeF: 26,
+	lean: 26,
+	shN: 34,
+	elN: 28,
+	abN: -40,
+	wrN: -20,
+	shF: 20,
+	elF: 80,
+	abF: 10,
+	twist: 34,
+	wide: 0.8,
 });
 
 // A step in a blocker's or a rusher's feet, short and choppy: frame i of n,
@@ -995,6 +1036,7 @@ const FIELD_ANIMS = {
 		kind: "act",
 		keys: [
 			[0, QB_SET],
+			[0.3, THROW_LIFT],
 			[0.55, THROW_COCKED],
 			[1, THROW_RELEASE],
 		],
@@ -1014,6 +1056,7 @@ const FIELD_ANIMS = {
 		kind: "act",
 		keys: [
 			[0, THROW_RELEASE],
+			[0.35, THROW_ACROSS],
 			[1, THROW_THROUGH],
 		],
 	},
@@ -3383,7 +3426,7 @@ export const gripsOf = (m: Move, hold?: BallHold): [Grip, Grip] => {
 // His pose with the ball: carried, his right arm folded up across him,
 // high and tight, whatever the rest of him is doing.
 export const holding = (q: Pose, hold: BallHold | undefined): Pose =>
-	hold === "carry" ? { ...q, shN: 24, elN: 104, abN: 8, wrN: 4 } : q;
+	hold === "carry" ? { ...q, shN: 24, elN: 104, abN: 8, wrN: 4, flexN: 0 } : q;
 
 // His arms out of one pose over the rest of him in another: reaching up for
 // a ball he catches in stride.
@@ -3399,6 +3442,8 @@ const ARMS = [
 	"flare",
 	"tuck",
 	"free",
+	"flexN",
+	"flexF",
 ] as const;
 export const withArms = (q: Pose, arms: Pose): Pose => {
 	const out = { ...q };

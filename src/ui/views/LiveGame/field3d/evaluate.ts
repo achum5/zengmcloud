@@ -55,21 +55,10 @@ const TURN_MS = 380;
 // (Turning where he stands, no quicker round than STAND_TURN a second: his
 // feet stepping round after him - see pivotOf.)
 const STAND_TURN = 5;
-const TURN_MOST_MS = Math.max(TURN_MS, (Math.PI / STAND_TURN) * 1000);
 // (How fast he goes through a move: taken over this long.)
 const RATE_MS = 5;
 
 const clamp01 = (u: number) => Math.min(1, Math.max(0, u));
-
-const lerpAngle = (a: number, b: number, u: number) => {
-	let d = (b - a) % (Math.PI * 2);
-	if (d > Math.PI) {
-		d -= Math.PI * 2;
-	} else if (d < -Math.PI) {
-		d += Math.PI * 2;
-	}
-	return a + d * u;
-};
 
 const wrapAngle = (a: number) => {
 	const d = (a + Math.PI) % (Math.PI * 2);
@@ -106,16 +95,18 @@ const yawOf = (l: Leg, before: number): number =>
 	l.yaw ??
 	(goes(l) ? Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x) : before);
 
-// Which way he faces at t (his own clock - see lagged): eased round over
-// TURN_MS (or more) from the way he was facing as each leg starts - a leg too short
-// for that, still turning as the next one starts. Worked out once for his
-// legs as they are: the way he faced coming into each, and the way he was
-// drawn facing as it started.
+// Which way he faces at t (his own clock - see lagged): as each leg has him
+// (turning through it as it says), eased in over TURN_MS (or more) from the
+// way he was facing as it started - a leg too short for that, still coming
+// round as the next one starts. Worked out once for his legs as they are:
+// the way he faced coming into each, how far off it he was drawn as it
+// started, and over how long that goes.
 // (And whether he turns through it at all.)
 type Facing = {
 	n: number;
 	before: Float64Array;
-	turned: Float64Array;
+	aim: Float64Array;
+	off: Float64Array;
 	ms: Float64Array;
 	turns: Uint8Array;
 };
@@ -126,29 +117,29 @@ const facingOf = (legs: Leg[]): Facing => {
 		return had;
 	}
 	const before = new Float64Array(legs.length);
-	const turned = new Float64Array(legs.length);
+	const aims = new Float64Array(legs.length);
+	const off = new Float64Array(legs.length);
 	const ms = new Float64Array(legs.length);
 	const turns = new Uint8Array(legs.length);
 	let b = legs[0]!.yaw ?? 0;
 	let was = b;
 	for (let j = 0; j < legs.length; j++) {
 		before[j] = b;
-		turned[j] = was;
 		const lj = legs[j]!;
 		const aim = yawOf(lj, b);
-		const by = Math.abs(wrapAngle(aim - was));
-		turns[j] = lj.turn || (j > 0 && by > 1e-6) ? 1 : 0;
+		aims[j] = aim;
+		const by = j > 0 ? wrapAngle(was - aim) : 0;
+		off[j] = by;
+		turns[j] = lj.turn || Math.abs(by) > 1e-6 ? 1 : 0;
 		ms[j] =
 			PIVOTS.has(lj.move) && !goes(lj)
-				? Math.max(TURN_MS, (by / STAND_TURN) * 1000)
+				? Math.max(TURN_MS, (Math.abs(by) / STAND_TURN) * 1000)
 				: TURN_MS;
 		b = aim + (lj.turn ?? 0);
-		was =
-			j > 0 && lj.t1 - lj.t0 < ms[j]!
-				? lerpAngle(was, b, (lj.t1 - lj.t0) / ms[j]!)
-				: b;
+		const dur = lj.t1 - lj.t0;
+		was = b + (dur < ms[j]! ? by * (1 - dur / ms[j]!) : 0);
 	}
-	const f = { n: legs.length, before, turned, ms, turns };
+	const f = { n: legs.length, before, aim: aims, off, ms, turns };
 	facings.set(legs, f);
 	return f;
 };
@@ -156,27 +147,41 @@ const turnedAt = (legs: Leg[], t: number): number => {
 	const k = lastStarted(legs, t, (l) => l.t0);
 	const l = legs[k]!;
 	const f = facingOf(legs);
-	const yaw = yawOf(l, f.before[k]!) + (l.turn ?? 0) * along(l, t);
+	const yaw = f.aim[k]! + (l.turn ?? 0) * along(l, t);
 	const since = t - l.t0;
-	return k > 0 && since < f.ms[k]!
-		? lerpAngle(f.turned[k]!, yaw, clamp01(since / f.ms[k]!))
+	return since < f.ms[k]!
+		? yaw + f.off[k]! * (1 - clamp01(since / f.ms[k]!))
 		: yaw;
 };
 // (Whether he could be turning at all from a to b: none of his legs
 // turning him then, nor turning him round into it.)
-const steady = (legs: Leg[], a: number, b: number): boolean => {
-	const f = facingOf(legs);
-	for (
-		let j = lastStarted(legs, a - TURN_MOST_MS, (l) => l.t0);
-		j < legs.length && legs[j]!.t0 <= b;
-		j++
-	) {
-		if (f.turns[j]) {
+// (j the leg he is on at a.)
+const steadyFrom = (
+	legs: Leg[],
+	f: Facing,
+	j: number,
+	a: number,
+	b: number,
+): boolean => {
+	const l = legs[j]!;
+	if (l.turn || (f.off[j] !== 0 && a - l.t0 < f.ms[j]!)) {
+		return false;
+	}
+	for (let i = j + 1; i < legs.length && legs[i]!.t0 <= b; i++) {
+		if (f.turns[i]) {
 			return false;
 		}
 	}
 	return true;
 };
+const steady = (legs: Leg[], a: number, b: number): boolean =>
+	steadyFrom(
+		legs,
+		facingOf(legs),
+		lastStarted(legs, a, (l) => l.t0),
+		a,
+		b,
+	);
 // And not from stood still to turning flat out in a frame, nor stopped dead
 // the next, like a turret: that run through a short bell, a beat apart
 // either side (each beat taken from this one, so it never goes the long way
@@ -187,11 +192,14 @@ const TURN_EASE_SUM = 16;
 const TURN_EASE_MS = 40;
 const TURN_EASE_HALF = (TURN_EASE.length - 1) / 2;
 const yawAt = (legs: Leg[], t: number): number => {
-	const c = turnedAt(legs, t);
 	const half = TURN_EASE_HALF;
-	if (steady(legs, t - half * TURN_EASE_MS, t + half * TURN_EASE_MS)) {
-		return c;
+	const reach = half * TURN_EASE_MS;
+	const f = facingOf(legs);
+	const j = lastStarted(legs, t - reach, (l) => l.t0);
+	if (steadyFrom(legs, f, j, t - reach, t + reach)) {
+		return f.aim[j]!;
 	}
+	const c = turnedAt(legs, t);
 	let off = 0;
 	for (let i = 0; i < TURN_EASE.length; i++) {
 		if (i !== half) {
@@ -240,6 +248,14 @@ const PIVOTS = new Set<Move>([
 	"backerStance",
 ]);
 type Feet = [number, number, number, number];
+// Thrown off his front foot: from the stride down at the target (this far
+// through the move - the ball back by his ear) on through the follow-
+// through, it stays pointing where it landed on the turf, turned on, as he
+// comes round over it - the other with him. (His left, a right-hander.)
+const PLANTS = new Map<Move, number>([
+	["throwWind", 0.55],
+	["throwFollow", 0],
+]);
 const pivotOf = (legs: Leg[], t: number): Feet => {
 	const k = Math.floor(t / PIVOT_MS);
 	const g = k * PIVOT_MS;
@@ -705,9 +721,38 @@ const stateOf = (
 		const p = pivotOf(legs, at);
 		return square(p, yawAt(legs, at)) ? undefined : p;
 	};
+	// (Or thrown off his front foot - see PLANTS: where it landed.)
+	const plantOf = (j: number): number | undefined => {
+		const on = (u: Leg) => {
+			const p = PLANTS.get(u.move as Move);
+			return p !== undefined && (u.span?.[0] ?? 0) >= p - 1e-6;
+		};
+		if (!on(legs[j]!)) {
+			return undefined;
+		}
+		let i = j;
+		while (i > 0 && on(legs[i - 1]!)) {
+			i--;
+		}
+		return yawAt(legs, legs[i]!.t0);
+	};
+	const feetOf = (j: number, at: number, faced: number): Feet | undefined => {
+		const u = legs[j]!;
+		if (pivots(u)) {
+			return feetAt(at);
+		}
+		const p = plantOf(j);
+		return p === undefined
+			? undefined
+			: u.mirrored
+				? [p, faced, 0, 0]
+				: [faced, p, 0, 0];
+	};
+	const feetKind = (j: number) =>
+		pivots(legs[j]!) ? 1 : plantOf(j) !== undefined ? 2 : 0;
 	const phase = phaseOf(l, t, offset, stride.ph);
 	const z = liftOf(l.move, phase);
-	const pivot = pivots(l) && z <= 0 ? feetAt(t) : undefined;
+	const pivot = z <= 0 ? feetOf(k, t, yaw) : undefined;
 	// (Just changed what he is doing, his arms, or how he has the ball:
 	// eased out of what he was - his strides, if it was a stride, going on
 	// round in step with these; anything else, as it was when it ended.)
@@ -750,19 +795,21 @@ const stateOf = (
 			...(prior.ball ? { ball: prior.ball } : {}),
 			...(left > 0 ? { under: underOf(legs[c2 - 1]!, left) } : {}),
 		};
-		// (Out of one he moves his feet in into one he stands in, each foot
-		// pointing on the turf where it did as it changed - he turns on the
-		// foot he is down on, not with it slid round under him; out of one
-		// he turned where he stood in, each turned under him as it was, on
-		// the move with him.)
-		if (pivots(prior) !== pivots(l)) {
+		// (Into one he stands his feet in, each foot pointing on the turf
+		// where it did as it changed - he turns on the foot he is down on,
+		// not with it slid round under him; out of one into one he moves
+		// his feet in, each turned under him as it was, on the move with
+		// him.)
+		const kindWas = feetKind(c - 1);
+		const kindNow = feetKind(c);
+		if (kindWas !== kindNow) {
 			const at = legs[c]!.t0;
 			const faced = yawAt(legs, at);
-			const was = pivots(prior) ? feetAt(at) : undefined;
-			const by = was ? yaw - faced : 0;
-			if (was || pivots(l)) {
-				from.feet = was
-					? [was[0] + by, was[1] + by, was[2], was[3]]
+			const had = kindWas ? feetOf(c - 1, at, faced) : undefined;
+			const by = had && !kindNow ? yaw - faced : 0;
+			if (had || kindNow) {
+				from.feet = had
+					? [had[0] + by, had[1] + by, had[2], had[3]]
 					: [faced, faced, 0, 0];
 			}
 		}
