@@ -954,6 +954,11 @@ const Court3D = ({
 		jumpTo: -1,
 		keyDip: -Infinity,
 		keyHold: -Infinity,
+		// When the picture last went as good as black (a dip at a cut, into
+		// or out of a replay, onto the next key play), and the moment drawn
+		// last frame (timeline ms) - for how slowly poses come round.
+		darkFrom: -Infinity,
+		drawnAt: undefined as number | undefined,
 		// The timeline last drawn (the warm-ups' or the game's).
 		shown: undefined as CourtTimeline | undefined,
 		prevCursor: -1,
@@ -1278,28 +1283,43 @@ const Court3D = ({
 				replay ? REPLAY_RIG : (view?.rig ?? MAIN_RIG),
 			);
 
-			// Into the next of the key plays, the picture held black until
-			// everybody in it is ready to be drawn (see SpriteCache.dark) - a
+			// While the picture is as good as black - dipped at a cut, into a
+			// replay or out of it, onto the next of the key plays - whoever has
+			// no picture yet is left out of it (see SpriteCache.dark), and it
+			// is held black until everybody in it is ready to be drawn: a
 			// moment more of black, not a freeze halfway out of it.
-			if (sprites.skipped > 0 && sprites.dark && now - s.keyDip < KEY_HOLD_MS) {
+			if (
+				sprites.skipped > 0 &&
+				sprites.dark &&
+				now - s.darkFrom < KEY_HOLD_MS
+			) {
 				s.keyHold = now;
 			}
 			const keyDark = 1 - (now - Math.max(s.keyDip, s.keyHold)) / KEY_DIP_MS;
-			sprites.dark = keyDark >= 0.75;
+			let o: number;
+			if (replay) {
+				const edge = Math.min(replay.at - replay.from, replay.to - replay.at);
+				o = Math.max(0, 1 - edge / REPLAY_DIP, keyDark);
+			} else {
+				const near = cut === undefined ? Infinity : Math.abs(s.t - cut);
+				// (And between clips of a highlight reel, and the key plays.)
+				o = Math.max(0, 1 - near / DIP_MS, clipDipAt(tl, s.t), keyDark);
+			}
+			if (o >= 0.75 && !sprites.dark) {
+				s.darkFrom = now;
+			}
+			sprites.dark = o >= 0.75;
+			// Poses come round as slowly as the moment shown moves on: in slow
+			// motion a man may be drawn as he was for that many more frames.
+			const drawnAt = replay ? replay.at : s.t;
+			const pace =
+				s.drawnAt === undefined || dt <= 0 ? 1 : (drawnAt - s.drawnAt) / dt;
+			// (Stood still, or jumped back to a replay: as at real speed.)
+			sprites.pace = pace > 0 ? pace : 1;
+			s.drawnAt = drawnAt;
 			const dip = dipRef.current;
-			if (dip) {
-				let o: number;
-				if (replay) {
-					const edge = Math.min(replay.at - replay.from, replay.to - replay.at);
-					o = Math.max(0, 1 - edge / REPLAY_DIP);
-				} else {
-					const near = cut === undefined ? Infinity : Math.abs(s.t - cut);
-					// (And between clips of a highlight reel, and the key plays.)
-					o = Math.max(0, 1 - near / DIP_MS, clipDipAt(tl, s.t), keyDark);
-				}
-				if (dip.style.opacity !== String(o)) {
-					dip.style.opacity = String(o);
-				}
+			if (dip && dip.style.opacity !== String(o)) {
+				dip.style.opacity = String(o);
 			}
 			const tag = replayRef.current;
 			if (tag) {

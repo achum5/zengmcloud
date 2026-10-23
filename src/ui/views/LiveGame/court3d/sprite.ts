@@ -139,6 +139,10 @@ export type SpriteCache = {
 	// many were (see Court3D, which holds the black till none are).
 	dark?: boolean;
 	skipped: number;
+	// How fast the moment drawn moves on, to the wall clock's (1 at real
+	// speed; a slow-motion replay less): poses come round that much more
+	// slowly, and a man may be drawn as he was for that many more frames.
+	pace?: number;
 	last: Map<
 		number,
 		{ kept: Kept; frame: number; behind: number; scale: number }
@@ -505,14 +509,17 @@ const planOf = (
 
 // Whether he may be drawn this frame in the picture he had last frame (out
 // of time for a new one): if he had one a frame ago, not for too many frames
-// already, and not much bigger or smaller since - no lurch at a cut - unless
-// the picture is black.
+// already (more in slow motion), and not much bigger or smaller since - no
+// lurch at a cut. (Black, a man much bigger or smaller since is left out
+// till his picture is made: the picture is held black for him - see
+// Court3D - so it comes up with everybody the size he is.)
 const asWas = (cache: SpriteCache, plan: Plan) => {
 	const was = cache.last.get(plan.id);
 	return was &&
-		was.behind < MAX_BEHIND &&
+		was.behind <
+			Math.round(MAX_BEHIND / Math.min(1, Math.max(0.35, cache.pace ?? 1))) &&
 		was.frame === cache.frame - 1 &&
-		(cache.dark || Math.abs(was.scale - plan.scale) <= 1)
+		Math.abs(was.scale - plan.scale) <= 1
 		? was
 		: undefined;
 };

@@ -183,3 +183,87 @@ test("a kept picture takes the sheet's pixels - the sheet is never drawn from", 
 	// (What is drawn into the picture is each kept one.)
 	assert.strictEqual(drawnFrom.length, 4);
 });
+
+// One man, run on a frame at a time with a new pose each frame and no time
+// at all for new pictures: how many frames behind his pose he is drawn.
+const behindRun = (
+	frames: number,
+	opts: { pace?: number; dark?: boolean; zoomAt?: number },
+) => {
+	const body = bodyOf();
+	const look: Look = {
+		kit: kitsFor(undefined, undefined)[1],
+		skin: "#8d5524",
+		hair: "#1f1612",
+		jerseyNumber: "",
+		name: "",
+		lastName: "",
+		wordmark: "",
+	};
+	const scratch = makeScratch();
+	const cache = makeSpriteCache();
+	const ctx = stubCanvas().getContext() as unknown as CanvasRenderingContext2D;
+	const out: { behind: number; skipped: number }[] = [];
+	for (let i = 0; i < frames; i++) {
+		const width = opts.zoomAt !== undefined && i >= opts.zoomAt ? 30 : 60;
+		const cam = makeCamera({ x: 47, width, y: 24 }, 640, 360, MAIN_RIG);
+		startFrame(cache);
+		// Time for his first picture, none after.
+		cache.budget = i === 0 ? undefined : 0;
+		cache.pace = opts.pace;
+		cache.dark = i > 0 && opts.dark;
+		const st = {
+			pid: 1,
+			team: 1,
+			shown: true,
+			x: 47,
+			y: 25,
+			z: 0,
+			yaw: 0,
+			anim: "run",
+			phase: (i + 0.5) / 12,
+			moving: true,
+		} as PlayerState;
+		prepareSprites(scratch, cam, [{ st, body, look }], 1, cache);
+		drawSprite(ctx, scratch, cam, st, body, look, 1, cache);
+		out.push({
+			behind: cache.last.get(cache.ids.get(look)!)?.behind ?? -1,
+			skipped: cache.skipped,
+		});
+	}
+	return out;
+};
+
+test("in slow motion a man may be drawn as he was for more frames - the same time behind his pose", () => {
+	// At real speed, three frames behind at most; then made, whatever the
+	// time.
+	assert.deepEqual(
+		behindRun(6, {}).map((f) => f.behind),
+		[0, 1, 2, 3, 0, 1],
+	);
+	// A slow-motion replay (0.42 of real speed): seven.
+	assert.deepEqual(
+		behindRun(10, { pace: 0.42 }).map((f) => f.behind),
+		[0, 1, 2, 3, 4, 5, 6, 7, 0, 1],
+	);
+});
+
+test("black, a man much bigger since is left out till he is made, not drawn the size he was", () => {
+	// The camera closes in (twice the size) at frame 2, the picture black.
+	const dark = behindRun(4, { dark: true, zoomAt: 2 });
+	assert.deepEqual(
+		dark.map((f) => f.skipped),
+		[0, 0, 1, 1],
+	);
+	// Not black: made at once, his new size.
+	const lit = behindRun(4, { zoomAt: 2 });
+	assert.deepEqual(
+		lit.map((f) => [f.behind, f.skipped]),
+		[
+			[0, 0],
+			[1, 0],
+			[0, 0],
+			[1, 0],
+		],
+	);
+});

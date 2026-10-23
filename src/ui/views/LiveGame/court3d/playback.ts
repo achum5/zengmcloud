@@ -427,6 +427,10 @@ export const stepPlay = (
 			s.replay = undefined;
 			s.snapCam = true;
 			s.paceAt = -1;
+			// Back to the game up out of black, as onto the next key play -
+			// held black till everybody in it can be drawn at its size again.
+			s.keyDip = now;
+			s.keyHold = -Infinity;
 		}
 	} else if ((!p.paused || s.stepping) && s.t < target) {
 		// On to the next line - stopping on the moment to show a dunk again,
