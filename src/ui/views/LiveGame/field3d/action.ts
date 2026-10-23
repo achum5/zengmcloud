@@ -5046,11 +5046,24 @@ class Action {
 	// his hands have it.
 	getUnder(m: Actor, land: OPt, from: number, catchAt: number): Pt3 {
 		m.hold(from);
-		m.chase(
-			this.w({ d: land.d + 3.5, a: land.a }),
-			catchAt - 700,
-			m.top * 0.85,
-		);
+		const to = this.w({ d: land.d + 3.5, a: land.a });
+		const by = catchAt - 700;
+		const fps = (dist(m.at, to) / Math.max(1, by - m.t)) * 1000;
+		if (fps < DRIFT_FPS) {
+			// (Not far to go: under it with his eyes on it all the way, facing
+			// the kick - back, across, or in toward it.)
+			const rel = this.toward(m.at, to) - this.behind;
+			const c = Math.cos(rel);
+			m.chase(
+				to,
+				by,
+				m.top * 0.85,
+				Math.abs(c) < DRIFT_ACROSS ? "slide" : c < 0 ? "back" : gait(fps),
+				this.behind,
+			);
+		} else {
+			m.chase(to, by, m.top * 0.85);
+		}
 		m.hold(catchAt - 300, "stand", this.behind);
 		m.act(
 			"catch",
@@ -5894,12 +5907,13 @@ class Action {
 		const retYds = num(ret?.yds, 0);
 		const tacklers = this.statPids("defTckSolo", "defTckAst");
 		if (!ret || (retYds === 0 && tacklers.length === 0)) {
-			// A fair catch: his hand up as it comes, and nobody touches him.
+			// A fair catch: his arm up and waved as it comes, and nobody
+			// touches him.
 			this.reaches.push({
 				m: pr,
-				move: "swat",
-				t0: landT - 1700,
-				t1: landT - 900,
+				move: "fairCatch",
+				t0: landT - FAIR_FROM,
+				t1: landT - FAIR_TO,
 			});
 			this.whistle = landT + 400;
 			if (retI >= 0) {
@@ -7082,6 +7096,15 @@ const STOP_BUMP = 0.55;
 const STOP_BUMP_APART = 2;
 const STOP_BUMP_MS = 900;
 const STOP_FIVE = 0.5;
+// Getting under a kick: no faster than this (feet a second), he goes with
+// his eyes on it - across (shuffling, the way he goes no nearer straight at
+// or away from the kick than this, as a cosine), or backpedaling.
+const DRIFT_FPS = 9;
+const DRIFT_ACROSS = 0.6;
+// A fair catch: his arm waved from this long before the ball comes down
+// to this long before (ms).
+const FAIR_FROM = 2000;
+const FAIR_TO = 700;
 // A field goal good, a try good: this often the holder and the kicker slap
 // hands after it - the kicker this often with his fist pumped first.
 const KICK_FIVE = 0.75;

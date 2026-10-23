@@ -3051,6 +3051,12 @@ const FIELD_ANIMS = {
 	handsOnHelmet: held({ ...HANDS_ON_HEAD, lean: 10 }),
 	// Illegal contact, illegal use of the hands: an open hand out in front.
 	sigContact: held({ shN: 92, elN: 6, abN: 0, wrN: -40 }),
+	// A fair catch called for: his right arm up straight over his head,
+	// waved from side to side.
+	fairCatch: over(
+		{ shN: 172, elN: 4, abN: 32, tuck: 1 },
+		{ shN: 172, elN: 4, abN: -6, tuck: 1 },
+	),
 } satisfies Record<string, FieldAnim>;
 
 export type FieldAnimName = keyof typeof FIELD_ANIMS;
