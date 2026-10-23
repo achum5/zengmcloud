@@ -1356,6 +1356,13 @@ describe("a man the headline or deck names is in the body", () => {
 					),
 				],
 			});
+			// "Xavier Hayes beat the Clippers 101-100 at the wire" never said
+			// whose side he was on.
+			assert.doesNotMatch(
+				wrap,
+				/(?:: |, |and )(?:Payton Foster|Keegan Lowry) beat the/,
+				wrap,
+			);
 			const deck = wrap.split("\n\n")[1] ?? "";
 			if (deck.startsWith("*") && deck.includes("Keegan Lowry")) {
 				decked += 1;
@@ -5092,6 +5099,36 @@ describe("a postseason read end to end", () => {
 		assert.ok(sawCommand, "a commanding series lead never says so");
 	});
 
+	// "Obi King went for 16 points, 13 rebounds, and 3 steals as the Suns
+	// rallied past the Hornets 105-99" opened the playoffs and never said
+	// which round they were in.
+	test("a postseason wrap names the round", () => {
+		for (let day = 1; day <= 12; day += 1) {
+			const wrap = getAutoDayRecap({
+				season: 2026,
+				day,
+				playoffs: true,
+				games: [
+					seriesSlateGame(9980, "Suns", "Hornets", 0, 0),
+					seriesSlateGame(9981, "Pistons", "Pelicans", 0, 0),
+				],
+			});
+			assert.match(wrap, /First Round/, wrap);
+			// A night of openers says "Game 1" once, not on every line.
+			const body = wrap.split("\n\n").slice(1).join(" ");
+			assert.ok(
+				(body.match(/Game 1\b|to open the series|series 1-0|1-0 series/g) ?? [])
+					.length <= 1,
+				wrap,
+			);
+			assert.doesNotMatch(
+				wrap,
+				/Game \d+ of the First Round[^.]*Game \d+ of the First Round/,
+				wrap,
+			);
+		}
+	});
+
 	// "The Pistons made the most threes on the slate, 19. The #8 seed puts out
 	// the #4 seed, and the Thunder's season is over." - behind somebody
 	// else's note, on a night two series ended, naming one side of neither.
@@ -8256,7 +8293,10 @@ describe("the night's seesaw", () => {
 				playoffs: false,
 				games: slate(13),
 			});
-			assert.ok(!/traded the lead|lead changed hands/.test(recap), recap);
+			assert.ok(
+				!/traded the lead|lead changed hands|lead changes\./.test(recap),
+				recap,
+			);
 		}
 	});
 	test("a real one is", () => {
@@ -8268,7 +8308,11 @@ describe("the night's seesaw", () => {
 				playoffs: false,
 				games: slate(19),
 			});
-			if (/traded the lead 19 times|lead changed hands 19 times/.test(recap)) {
+			if (
+				/traded the lead 19 times|lead changed hands 19 times|had 19 lead changes/.test(
+					recap,
+				)
+			) {
 				told += 1;
 			}
 		}

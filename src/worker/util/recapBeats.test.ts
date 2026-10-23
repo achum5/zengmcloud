@@ -1085,6 +1085,8 @@ describe("the day wrap's context", () => {
 		// "The Grizzlies have now lost 6 straight": a count in prose is a word.
 		for (const x of all) {
 			assert.notMatch(x, /#/, x);
+			// In a wrap the sentence before is about another game.
+			assert.notMatch(x, /^That\b/, x);
 		}
 
 		const short = [

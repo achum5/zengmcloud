@@ -9528,7 +9528,7 @@ export const leagueNotes = (
 					// poss(), not a hardcoded apostrophe: four nicknames in a
 					// default league do not end in s, and this read "the Magic'
 					// game with the Raptors".
-					`The lead changed hands ${seesaw.changes} times in ${poss(theNick(seesaw.shape.winner))} game with ${theNick(seesaw.shape.loser)}.`,
+					`${cap(poss(theNick(seesaw.shape.winner)))} game with ${theNick(seesaw.shape.loser)} had ${seesaw.changes} lead changes.`,
 				],
 				"daySeesaw",
 			),
@@ -9552,8 +9552,8 @@ export const leagueNotes = (
 							[
 								`${cap(theNick(highest.shape.winner))} and ${theNick(
 									highest.shape.loser,
-								)} combined for ${highest.total} points, the most of any game on the slate.`,
-								`Nothing on the slate outscored ${poss(theNick(highest.shape.winner))} shootout with ${theNick(highest.shape.loser)}, ${highest.total} points in all.`,
+								)} combined for ${highest.total} points, the night's most.`,
+								`No game topped ${poss(theNick(highest.shape.winner))} ${highest.total}-point shootout with ${theNick(highest.shape.loser)}.`,
 							],
 							"dayHighTotal",
 						),
@@ -9790,7 +9790,21 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	// series list further down tells only the rest.
 	const seriesTold = new Set<RecapGame>();
 	const tailsUsed = new Map<string, number>();
+	// A night of openers: once the lead has said "in Game 1 of the First
+	// Round", "in Game 1", "to open the series", "who lead the series 1-0"
+	// and "who took Game 1" on every line after it say it four more times.
+	const openers =
+		playoffs &&
+		games.every(
+			(g) => !g.series || (g.series.homeWon === 0 && g.series.awayWon === 0),
+		);
+	// Set once the lead has said it.
+	let openerTold = false;
 	const seriesWords = (g: RecapGame, which: "tails" | "whos"): string => {
+		if (openerTold && g !== marquee) {
+			seriesTold.add(g);
+			return "";
+		}
 		const t = playoffs ? seriesTail(g) : undefined;
 		// Once per game: the leading scorer's line and a losing line from the
 		// same game both carried it - "...win over the Suns to even the series
@@ -9882,6 +9896,37 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	para1.push(
 		`${cap(gameBlurb(marquee, rng, headlineHasResult))}${headlineHasSeries ? "" : tailFor(marquee)}.`,
 	);
+	// THE ROUND, ONCE. "Obi King went for 16 points, 13 rebounds, and 3
+	// steals as the Suns rallied past the Hornets 105-99" opened the
+	// playoffs and never said which round they were in; 60 of 100
+	// postseason wraps named none. The lead names it when nothing above it
+	// has.
+	// A series it ended is told by where the winners go next ("The Raptors
+	// move on to the Conference Finals").
+	const mSeries = marquee.series;
+	const mWinnerHome = mSeries?.homeAbbrev === mShape.winner.abbrev;
+	const mEnded =
+		!!mSeries &&
+		(mWinnerHome ? mSeries.homeWon : mSeries.awayWon) + 1 ===
+			Math.floor((mSeries.bestOf ?? 1) / 2) + 1;
+	if (
+		playoffs &&
+		mSeries &&
+		(mSeries.bestOf ?? 0) > 1 &&
+		!mEnded &&
+		!/Round|Semifinals|Finals/.test(`${headline.text} ${para1[0]!}`)
+	) {
+		const round = roundName(mSeries.round, mSeries.numRounds);
+		const gameNo = mSeries.homeWon + mSeries.awayWon + 1;
+		const lead = para1[0]!;
+		para1[0] = /\bin Game \d+\b/.test(lead)
+			? lead.replace(/\b(in Game \d+)\b/, `$1 of ${round}`)
+			: /series|Game \d/.test(lead)
+				? lead.replace(/\.$/, ` in ${round}.`)
+				: lead.replace(/\.$/, ` in Game ${gameNo} of ${round}.`);
+	}
+	openerTold =
+		openers && /\bGame 1\b|\bopener\b/.test(`${headline.text} ${para1[0]!}`);
 
 	// When the headline is about a DIFFERENT game, that game leads the body -
 	// a reader should not have to take the headline on trust. Previously the
@@ -10214,7 +10259,9 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			// No comma inside: these sit in comma-separated lists, and "the
 			// Suns survived the 76ers in overtime, 103-97, the Rockets..."
 			// read as two items.
-			blurb = `${shot2.name} beat ${theNick(shape.loser)} ${scoreTag(shape)} at the wire`;
+			// The team, then the man: "Xavier Hayes beat the Clippers 101-100
+			// at the wire" never said whose side he was on.
+			blurb = `${theNick(shape.winner)} beat ${theNick(shape.loser)} ${scoreTag(shape)} on ${poss(shot2.name)} ${shot2.shot}`;
 		} else if (shape.ot > 0) {
 			blurb = `${theNick(shape.winner)} ${
 				shape.ot === 1 ? "survived" : "outlasted"
@@ -10360,7 +10407,10 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	for (const note of leagueNotes(
 		games,
 		rng,
-		Math.max(0, 2 - para3.length),
+		// One in the playoffs, where the series are the news: "Nobody shot it
+		// better than the Pistons. No team hit more threes than the Heat"
+		// closed a wrap of four elimination games.
+		Math.max(0, (playoffs ? 1 : 2) - para3.length),
 		[headline.text, deck ?? "", ...para1, ...para2].join(" "),
 	)) {
 		para3.push(note);

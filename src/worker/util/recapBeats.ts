@@ -1513,7 +1513,9 @@ export const dayColdStreak = (
 			// "The Grizzlies have now lost 6 straight": a count in prose is a
 			// word.
 			`${T} have now lost ${numWord(worst.count)} straight.`,
-			`That is ${numWord(worst.count)} losses in a row for ${t}.`,
+			// Not "That is six losses in a row for the Lakers": in a wrap the
+			// sentence before is about somebody else's game.
+			`${T} have dropped ${numWord(worst.count)} in a row.`,
 			`${T} have not won in ${numWord(worst.count)} games.`,
 			`The skid reached ${numWord(worst.count)} for ${t}.`,
 		],
