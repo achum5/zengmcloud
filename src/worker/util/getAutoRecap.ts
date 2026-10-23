@@ -4209,7 +4209,7 @@ const gameStory = (
 							rng,
 							[
 								`The lead was down to ${Math.abs(m)} going into the ${last}`,
-								`It was down to ${Math.abs(m)} going into the ${last}`,
+								`That was down to ${Math.abs(m)} going into the ${last}`,
 							],
 							"story:enteringDownTo",
 						)
@@ -4224,7 +4224,10 @@ const gameStory = (
 							)
 						: `It was still ${aNum(Math.abs(m))}-point game going into the ${last}`
 				: undefined;
-		if (m > 0 && shape.ot === 0 && shape.margin <= 6 && lLast - wLast >= 10) {
+		// In overtime too: "They were still 18 up going into the fourth. The
+		// Pelicans' Quentin Ingram forced overtime on a three-pointer at the
+		// buzzer" skipped the quarter the Pelicans won 30-12 to get there.
+		if (m > 0 && (shape.ot > 0 || shape.margin <= 6) && lLast - wLast >= 10) {
 			covers.add("entering").add("lastQuarter");
 			if (peak) {
 				// Two sentences, not one of 140 characters that named the
@@ -4464,13 +4467,25 @@ const gameStory = (
 		}
 		covers.add("secondHalf");
 		if (shape.ot > 0) {
+			// Their run in the half goes in with it, in order: "...and
+			// regulation ended tied at 93. They ran off 18 straight points in
+			// the third" told the third quarter after the end of the fourth.
+			const halfRun =
+				run && run.winner && run.period > halfN && run.end <= regPeriods
+					? run
+					: undefined;
+			if (halfRun) {
+				covers.add("run");
+			}
 			out.push(
 				// Not "to force overtime": the side that tied it at the end may
 				// have been the other one, and the finish says who. And not "and
 				// it went to overtime" either: the lead has said that, and the
 				// finish says it again with the shot that forced it. The score
 				// it ended at is the fact neither of them has.
-				`${W} won the second half ${w2}-${l2}, and regulation ended tied at ${wh + w2}.`,
+				halfRun
+					? `${W} ran off ${halfRun.pts} straight points ${runAt(halfRun)} on the way to a ${w2}-${l2} second half, and regulation ended tied at ${wh + w2}.`
+					: `${W} won the second half ${w2}-${l2}, and regulation ended tied at ${wh + w2}.`,
 			);
 		} else if (wonInLast) {
 			out.push(...gotAway(), lastQuarterTurn());
@@ -7637,6 +7652,11 @@ const buildGameRecap = (game: RecapGame): string => {
 			shotTold,
 			justNamed: lastNamed,
 			afterItWas: /^It was\b/.test(body.at(-1) ?? ""),
+			// The sentence the finish will follow: not the overtime flow line,
+			// which goes when the finish tells the tie.
+			losersJustNamed: (
+				body.at(otFlowAt >= 0 && otFlowAt === body.length - 1 ? -2 : -1) ?? ""
+			).includes(nick(shape.loser)),
 		},
 		rng,
 	);

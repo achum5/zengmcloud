@@ -41,6 +41,9 @@ export type FinishInput = {
 	// it again: "It was an 11-point game going into the fourth... It was
 	// 117-117 with two minutes to play."
 	afterItWas?: boolean;
+	// The sentence before ends on the losers ("...but the Nuggets took the
+	// fourth quarter 37-21"), so their man needs no club.
+	losersJustNamed?: boolean;
 };
 
 // "layup", "jumper", "three-pointer"; an and-one is the play it made.
@@ -402,14 +405,25 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 			const clock = tieClock(tie);
 			const shot = tie.shot;
 			const aShot = /free throws$/.test(shot) ? shot : `a ${shot}`;
+			// The losers' man is theirs: "They were still 10 up going into the
+			// fourth. Bennedict Dunn forced overtime on a three-pointer at the
+			// buzzer" read as one of "they".
+			const losersTie =
+				!input.losersJustNamed &&
+				loser.players.some((p) => p.name === tie.name);
 			say(
 				pick(
 					rng,
-					[
-						`${cap(poss(tie.name))} ${shot}${clock} sent it to overtime.`,
-						`It took ${poss(tie.name)} ${shot}${clock} to force ${game.overtimes > 1 ? "overtime" : "the extra period"}.`,
-						`${tie.name} forced overtime on ${aShot}${clock}.`,
-					],
+					losersTie
+						? [
+								`${cap(poss(L))} ${tie.name} forced overtime on ${aShot}${clock}.`,
+								`It took ${poss(tie.name)} ${shot}${clock} for ${L} to force ${game.overtimes > 1 ? "overtime" : "the extra period"}.`,
+							]
+						: [
+								`${cap(poss(tie.name))} ${shot}${clock} sent it to overtime.`,
+								`It took ${poss(tie.name)} ${shot}${clock} to force ${game.overtimes > 1 ? "overtime" : "the extra period"}.`,
+								`${tie.name} forced overtime on ${aShot}${clock}.`,
+							],
 					"finishForcedOt",
 				),
 				tie.name,

@@ -2896,3 +2896,92 @@ describe("the verb fits the arc", () => {
 		}
 	});
 });
+
+// "They were still 18 up going into the fourth. Quentin Ingram forced
+// overtime on a three-pointer at the buzzer" skipped the quarter that got
+// the Pelicans there, and left Quentin Ingram's club to a guess; "...and
+// regulation ended tied at 93. They ran off 18 straight points in the
+// third" told the third quarter after the fourth.
+describe("an overtime game told in order", () => {
+	test("an 18-point lead lost in the fourth is told before the tie", () => {
+		let told = 0;
+		for (let gid = 1; gid <= 30; gid++) {
+			const home = squad(
+				{ tid: 1, name: "Raptors", ptsQtrs: [24, 18, 30, 16, 9] },
+				{ name: "Ace Raptor", pid: 11, pts: 26, fg: 10, fga: 21 },
+				97,
+			);
+			const away = squad(
+				{ tid: 2, name: "Pelicans", ptsQtrs: [14, 16, 24, 34, 6] },
+				{ name: "Quentin Pelican", pid: 21, pts: 25, fg: 9, fga: 20 },
+				94,
+			);
+			const g = game([home, away], {
+				gid,
+				overtimes: 1,
+				flow: {
+					leadChanges: 2,
+					ties: 2,
+					maxLead: [23, 2],
+					maxLeadAt: [3, 5],
+					lastLead: { side: 0, pid: 11, period: 5, clock: 30, pts: [95, 94] },
+					finish: [
+						ev(1, 21, 3, "tp", 4, 0.2, [88, 88]),
+						ev(1, 22, 2, "rim", 5, 200, [90, 92]),
+						ev(0, 11, 3, "tp", 5, 30, [95, 94]),
+						ev(0, 12, 2, "ft", 5, 5, [97, 94]),
+					],
+				},
+			});
+			const recap = getAutoRecap(g);
+			clean(recap);
+			assert.match(recap, /took the fourth quarter 34-16|34-16 fourth/, recap);
+			for (const para of recap.split("\n\n").slice(1)) {
+				const sentences = para.split(/(?<=\.) (?=[A-Z])/);
+				sentences.forEach((s, i) => {
+					if (/^Quentin Pelican\b.*(?:forced overtime|to overtime)/.test(s)) {
+						told += 1;
+						assert.include(sentences[i - 1] ?? "", "Pelicans", recap);
+					}
+				});
+			}
+			assert.deepEqual(verifyRecap(recap, g), [], recap);
+		}
+		assert.isAbove(told, 0);
+	});
+
+	test("a run in the third goes before regulation's end", () => {
+		for (let gid = 1; gid <= 30; gid++) {
+			const home = squad(
+				{ tid: 1, name: "Wizards", ptsQtrs: [20, 23, 30, 20, 16] },
+				{ name: "Ace Wizard", pid: 11, pts: 33, fg: 12, fga: 24 },
+				109,
+			);
+			const away = squad(
+				{ tid: 2, name: "Warriors", ptsQtrs: [30, 31, 14, 18, 15] },
+				{ name: "Bo Warrior", pid: 21, pts: 23, fg: 9, fga: 20 },
+				108,
+			);
+			const g = game([home, away], {
+				gid,
+				overtimes: 1,
+				flow: {
+					leadChanges: 4,
+					ties: 3,
+					maxLead: [4, 21],
+					maxLeadAt: [5, 2],
+					run: { side: 0, pts: 18, period: 3, clock: 400, endPeriod: 3 },
+					lastLead: { side: 0, pid: 11, period: 5, clock: 73, pts: [104, 103] },
+				},
+			});
+			const recap = getAutoRecap(g);
+			clean(recap);
+			const run = recap.indexOf("18 straight points");
+			const end = recap.indexOf("regulation ended");
+			if (run >= 0 && end >= 0) {
+				assert.isBelow(run, end, recap);
+			}
+			assert.deepEqual(verifyRecap(recap, g), [], recap);
+		}
+	});
+});
