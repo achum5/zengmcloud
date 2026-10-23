@@ -144,6 +144,23 @@ const SUPINE = pose({
 	wide: 0.6,
 });
 
+// On a pile: down on both knees at the edge of it, shins flat on the turf
+// behind him, laid forward over the heap, his arms out over it.
+const OVER_PILE = pose({
+	hipN: 14,
+	kneeN: 104,
+	hipF: 20,
+	kneeF: 110,
+	lean: 76,
+	shN: 74,
+	elN: 34,
+	abN: 34,
+	shF: 82,
+	elF: 26,
+	abF: 40,
+	wide: 0.75,
+});
+
 // Sat on the turf at the end of a slide: the lead leg out in front of him,
 // the other knee up, leaning back on a hand.
 const SLID = pose({
@@ -393,6 +410,97 @@ const over = (a: Partial<Pose>, b: Partial<Pose>): FieldAnim => ({
 		[1, BASE],
 	],
 });
+
+// A dive (see FIELD_ANIMS) - onto the top of a pile too.
+const DIVE_KEYS: [number, Pose][] = [
+	[
+		0,
+		pose({
+			hipN: 30,
+			kneeN: 50,
+			hipF: -10,
+			kneeF: 30,
+			lean: 20,
+			shN: 50,
+			elN: 60,
+			shF: 50,
+			elF: 60,
+			abN: 20,
+			abF: 20,
+		}),
+	],
+	[
+		0.35,
+		pose({
+			hipN: -30,
+			kneeN: 20,
+			hipF: 44,
+			kneeF: 80,
+			lean: 52,
+			shN: 86,
+			elN: 46,
+			abN: 40,
+			shF: 86,
+			elF: 46,
+			abF: 40,
+		}),
+	],
+	[
+		0.7,
+		pose({
+			hipN: -80,
+			kneeN: 6,
+			hipF: -70,
+			kneeF: 20,
+			lean: 80,
+			shN: 92,
+			elN: 50,
+			abN: 30,
+			shF: 92,
+			elF: 50,
+			abF: 30,
+		}),
+	],
+	[1, { ...PRONE, shN: 94, elN: 40, abN: 26, shF: 94, elF: 40, abF: 26 }],
+];
+
+// Getting up (see FIELD_ANIMS) - off the top of a pile too.
+const GET_UP_KEYS: [number, Pose][] = [
+	[0, PRONE],
+	[
+		0.3,
+		pose({
+			hipN: 80,
+			kneeN: 130,
+			hipF: -50,
+			kneeF: 70,
+			lean: 60,
+			shN: 16,
+			elN: 0,
+			abN: 10,
+			shF: 16,
+			elF: 0,
+			abF: 10,
+			wide: 0.6,
+		}),
+	],
+	[
+		0.65,
+		pose({
+			hipN: 78,
+			kneeN: 86,
+			hipF: -18,
+			kneeF: 104,
+			lean: 26,
+			shN: 20,
+			elN: 20,
+			shF: 30,
+			elF: 30,
+			wide: 0.5,
+		}),
+	],
+	[1, BASE],
+];
 
 const FIELD_ANIMS = {
 	// Standing easy: between plays, on the sideline.
@@ -1205,60 +1313,7 @@ const FIELD_ANIMS = {
 		],
 	},
 	// The tackle: off his feet into him, arms round him, taking him down.
-	dive: {
-		kind: "act",
-		keys: [
-			[
-				0,
-				pose({
-					hipN: 30,
-					kneeN: 50,
-					hipF: -10,
-					kneeF: 30,
-					lean: 20,
-					shN: 50,
-					elN: 60,
-					shF: 50,
-					elF: 60,
-					abN: 20,
-					abF: 20,
-				}),
-			],
-			[
-				0.35,
-				pose({
-					hipN: -30,
-					kneeN: 20,
-					hipF: 44,
-					kneeF: 80,
-					lean: 52,
-					shN: 86,
-					elN: 46,
-					abN: 40,
-					shF: 86,
-					elF: 46,
-					abF: 40,
-				}),
-			],
-			[
-				0.7,
-				pose({
-					hipN: -80,
-					kneeN: 6,
-					hipF: -70,
-					kneeF: 20,
-					lean: 80,
-					shN: 92,
-					elN: 50,
-					abN: 30,
-					shF: 92,
-					elF: 50,
-					abF: 30,
-				}),
-			],
-			[1, { ...PRONE, shN: 94, elN: 40, abN: 26, shF: 94, elF: 40, abF: 26 }],
-		],
-	},
+	dive: { kind: "act", keys: DIVE_KEYS },
 	// Laid out for a ball: off his feet, flat out over the turf with his
 	// arms out ahead of him to it, and down on it.
 	diveCatch: {
@@ -1388,45 +1443,7 @@ const FIELD_ANIMS = {
 	},
 	// Up off the turf: a foot under him and his hands down, onto a knee,
 	// then his feet.
-	getUp: {
-		kind: "act",
-		keys: [
-			[0, PRONE],
-			[
-				0.3,
-				pose({
-					hipN: 80,
-					kneeN: 130,
-					hipF: -50,
-					kneeF: 70,
-					lean: 60,
-					shN: 16,
-					elN: 0,
-					abN: 10,
-					shF: 16,
-					elF: 0,
-					abF: 10,
-					wide: 0.6,
-				}),
-			],
-			[
-				0.65,
-				pose({
-					hipN: 78,
-					kneeN: 86,
-					hipF: -18,
-					kneeF: 104,
-					lean: 26,
-					shN: 20,
-					elN: 20,
-					shF: 30,
-					elF: 30,
-					wide: 0.5,
-				}),
-			],
-			[1, BASE],
-		],
-	},
+	getUp: { kind: "act", keys: GET_UP_KEYS },
 	// Up off his back: sat up, his feet drawn under him, up off them.
 	getUpBack: {
 		kind: "act",
@@ -1462,6 +1479,92 @@ const FIELD_ANIMS = {
 					shF: 30,
 					elF: 30,
 					wide: 0.6,
+				}),
+			],
+			[1, BASE],
+		],
+	},
+	// In on a pile: still driving his legs, then pitched forward onto his
+	// knees over it.
+	pileIn: {
+		kind: "act",
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 24,
+					kneeN: 56,
+					hipF: 12,
+					kneeF: 48,
+					lean: 42,
+					shN: 82,
+					elN: 20,
+					shF: 82,
+					elF: 20,
+				}),
+			],
+			[
+				0.45,
+				pose({
+					hipN: 44,
+					kneeN: 96,
+					hipF: -6,
+					kneeF: 70,
+					lean: 62,
+					shN: 88,
+					elN: 22,
+					abN: 26,
+					shF: 88,
+					elF: 22,
+					abF: 26,
+					wide: 0.7,
+				}),
+			],
+			[1, OVER_PILE],
+		],
+	},
+	overPile: { kind: "still", pose: OVER_PILE },
+	// Over the top of a pile: off his feet onto it, laid out flat across
+	// the top of it, and up off it.
+	pileDive: { kind: "act", keys: DIVE_KEYS },
+	pileTop: { kind: "still", pose: PRONE },
+	offTop: { kind: "act", keys: GET_UP_KEYS },
+	// Up off a pile: hands down on it, pushed up off his knees, a foot under
+	// him, and up.
+	offPile: {
+		kind: "act",
+		keys: [
+			[0, OVER_PILE],
+			[
+				0.35,
+				pose({
+					hipN: 30,
+					kneeN: 112,
+					hipF: 22,
+					kneeF: 108,
+					lean: 52,
+					shN: 56,
+					elN: 8,
+					abN: 16,
+					shF: 56,
+					elF: 8,
+					abF: 16,
+					wide: 0.7,
+				}),
+			],
+			[
+				0.7,
+				pose({
+					hipN: 78,
+					kneeN: 88,
+					hipF: -16,
+					kneeF: 100,
+					lean: 28,
+					shN: 24,
+					elN: 22,
+					shF: 30,
+					elF: 30,
+					wide: 0.5,
 				}),
 			],
 			[1, BASE],
@@ -2527,7 +2630,8 @@ export const poseOfMove = (m: Move, phase: number, mirrored = false): Pose => {
 };
 
 // How far off the turf he is partway through a move (feet): up off both
-// feet in a leap, a chest bump.
+// feet in a leap, a chest bump - laid out on top of a pile, this high.
+const PILE_TOP = 1.2;
 export const liftOf = (m: Move, phase: number): number =>
 	m === "leap" && phase > 0.3 && phase < 0.82
 		? 1.7 * Math.sin((Math.PI * (phase - 0.3)) / 0.52)
@@ -2537,7 +2641,14 @@ export const liftOf = (m: Move, phase: number): number =>
 				? 0.8 * Math.sin((Math.PI * (phase - 0.25)) / 0.5)
 				: m === "chestBump" && phase > 0.32 && phase < 0.72
 					? 1.5 * Math.sin((Math.PI * (phase - 0.32)) / 0.4)
-					: 0;
+					: m === "pileDive"
+						? PILE_TOP * Math.min(1, phase / 0.6) +
+							0.6 * Math.sin(Math.PI * Math.min(1, phase / 0.7))
+						: m === "pileTop"
+							? PILE_TOP
+							: m === "offTop"
+								? PILE_TOP * (1 - Math.min(1, phase / 0.45))
+								: 0;
 
 // How he holds his hands in a move: running, loose fists; down in a stance
 // or reading the play, open; standing about, relaxed.

@@ -114,6 +114,12 @@ const DOWN = new Set<Move>([
 	"qbSlide",
 	"slid",
 	"sitUp",
+	"pileIn",
+	"overPile",
+	"offPile",
+	"pileDive",
+	"pileTop",
+	"offTop",
 	"kneelDown",
 ]);
 

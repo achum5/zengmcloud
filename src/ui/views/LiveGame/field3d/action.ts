@@ -698,6 +698,69 @@ const EDGE_ON = 1.6;
 const EDGE_PAST = 1.8;
 const GANG = [0.5, 0.35];
 const GANG_LATE = 250;
+// A short run up the middle, this often a pile on him (one or less yards,
+// or a sneak, this often, and the most men in it; up to this many yards,
+// and this many men).
+const PILE_SHORT = 0.85;
+const PILE = 0.5;
+const PILE_YDS = 2;
+const PILE_SMALL = 3;
+// Who is in it: the big men in the scrum this near where he goes down -
+// each this likely, nearest first - in this long after he is hit (and each
+// next one this much later), going down over this long; on their knees
+// this far off the middle of it (and up to this much more), no two in from
+// nearer the same way than this (radians).
+const PILERS = new Set<Role>([
+	"C",
+	"LG",
+	"RG",
+	"LT",
+	"RT",
+	"TE",
+	"TE2",
+	"FB",
+	"DE",
+	"DT",
+	"NT",
+	"SAM",
+	"MIKE",
+	"WILL",
+	"BUCK",
+]);
+const PILE_NEAR = 11;
+const PILE_IN = [0.95, 0.85, 0.7, 0.55, 0.4];
+const PILE_FIRST = 120;
+const PILE_GO = 130;
+const PILE_FALL_MS = 550;
+const PILE_OFF = 2.5;
+const PILE_OFF_MORE = 1.1;
+const PILE_APART = 0.6;
+// (From further off than this, a run in first.) Over the top of it, the
+// most of them, from the third man in on, each this likely - his middle
+// this far off the middle of it.
+const PILE_REACH = 6;
+const PILE_TOPS = 2;
+const PILE_OVER = 0.6;
+const PILE_TOP_OFF = 0.7;
+// The rest near it then (this long after the hit), up to this many: in on
+// it this long after, this far off the middle (and up to this much more),
+// got there over this long; off it up to this long before the first man is
+// up off it, this far back.
+const PUSH_SEEN = 600;
+const PUSH_NEAR = 9;
+const PUSH_MOST = 3;
+const PUSH_GO = 350;
+const PUSH_AT = 4.6;
+const PUSH_AT_MORE = 0.8;
+const PUSH_IN_MS = 600;
+const PUSH_LEAVE = 500;
+const PUSH_BACK = 2.5;
+// Off it: the first this long after the hit, each next one this much
+// later, each this long getting up - the men under it then, him last.
+const PILE_HOLD = 1500;
+const PILE_PEEL = 330;
+const OFF_PILE_MS = 900;
+const PILE_UNDER = 350;
 // A carrier making a man miss, this often on a stretch this long (feet, and
 // ms) at least; a stiff arm, this often when the man comes at his free arm.
 // The cut: this long, this far on and over (feet).
@@ -736,6 +799,12 @@ const DOWN = new Set<Move>([
 	"qbSlide",
 	"slid",
 	"sitUp",
+	"pileIn",
+	"overPile",
+	"offPile",
+	"pileDive",
+	"pileTop",
+	"offTop",
 ]);
 const CLOSE = 0.85;
 const FLAT_OUT = 0.97;
@@ -821,6 +890,9 @@ class Action {
 	mobAt?: Pt;
 	// The man who brought the carrier down, the last time one did.
 	downer?: Actor;
+	// A pile on the carrier when he goes down (see pileUp): the most men in
+	// it.
+	heap = 0;
 
 	constructor(input: ActInput) {
 		this.input = input;
@@ -2179,6 +2251,9 @@ class Action {
 		const pile = this.tackle(carrier, down.by, end.pt, down.t);
 		this.gangUp(chasers, pile, down.t, down.by);
 		this.pursue(chasers, end.pt, down.t, down.by, carrier);
+		if (this.heap > 0) {
+			this.pileUp(carrier, pile, down.t, this.heap);
+		}
 	}
 
 	// Out of bounds at `pt`, over the sideline on his `side`: the whistle
@@ -2613,6 +2688,145 @@ class Action {
 			m.act("getUp", go + 450 + DOWN_MS + GET_UP_MS);
 			this.done.add(m.pid);
 		});
+	}
+
+	// Brought down in the thick of it, short and up the middle: a pile - the
+	// big men in the scrum round him falling in on top of him and the men
+	// who put him down, one after another, onto their knees over the heap -
+	// and off it again from the top, the last in the first up, the men under
+	// it then, him the last of them.
+	pileUp(carrier: Actor, at: Pt, t: number, most: number) {
+		const r = this.r;
+		const near = this.men
+			.filter(
+				(m) => m !== carrier && !this.done.has(m.pid) && PILERS.has(m.role),
+			)
+			.map((m) => ({ m, from: m.posAt(t) }))
+			.filter((x) => dist(x.from, at) < PILE_NEAR)
+			.sort((a, b) => dist(a.from, at) - dist(b.from, at))
+			.slice(0, most);
+		const on: { m: Actor; at: Pt; way: number; go: number }[] = [];
+		const ways: number[] = [];
+		near.forEach(({ m, from }, k) => {
+			if (r() > PILE_IN[k]!) {
+				return;
+			}
+			let way = Math.atan2(from.y - at.y, from.x - at.x) + (r() - 0.5) * 0.5;
+			for (
+				let n = 0;
+				n < 6 &&
+				ways.some(
+					(b) =>
+						Math.abs(Math.atan2(Math.sin(way - b), Math.cos(way - b))) <
+						PILE_APART,
+				);
+				n++
+			) {
+				way += PILE_APART * (k % 2 === 0 ? 1 : -1);
+			}
+			ways.push(way);
+			const far = PILE_OFF + r() * PILE_OFF_MORE;
+			on.push({
+				m,
+				at: { x: at.x + Math.cos(way) * far, y: at.y + Math.sin(way) * far },
+				way,
+				go: t + PILE_FIRST + on.length * PILE_GO + r() * 100,
+			});
+		});
+		if (on.length === 0) {
+			return;
+		}
+		const n = on.length;
+		let tops = 0;
+		on.forEach((x, k) => {
+			// (One of the last in, now and then, over the top of it - laid out
+			// across it.)
+			const top = k >= 2 && tops < PILE_TOPS && r() < PILE_OVER;
+			if (top) {
+				tops++;
+				const far = PILE_TOP_OFF + r() * 0.5;
+				x.at = {
+					x: at.x + Math.cos(x.way) * far,
+					y: at.y + Math.sin(x.way) * far,
+				};
+			}
+			const face = this.toward(x.at, at);
+			x.m.cut(x.go);
+			x.m.hold(x.go);
+			// (From further off, in at a run first.)
+			const far = dist(x.m.at, x.at);
+			if (far > PILE_REACH) {
+				const u = (far - PILE_REACH) / far;
+				x.m.run(
+					{
+						x: x.m.at.x + (x.at.x - x.m.at.x) * u,
+						y: x.m.at.y + (x.at.y - x.m.at.y) * u,
+					},
+					x.m.top * 0.8,
+				);
+			}
+			x.m.act(top ? "pileDive" : "pileIn", x.m.t + PILE_FALL_MS, face, x.at);
+			const off = Math.max(
+				x.m.t + 400,
+				t + PILE_HOLD + (n - 1 - k) * PILE_PEEL + r() * 120,
+			);
+			x.m.hold(off, top ? "pileTop" : "overPile", face);
+			x.m.act(top ? "offTop" : "offPile", off + OFF_PILE_MS, face);
+			this.done.add(x.m.pid);
+		});
+		// The men stood round it: in on it, shoving, a moment - and back off.
+		const ring = this.men
+			.filter((m) => m !== carrier && !this.done.has(m.pid))
+			.map((m) => ({ m, from: m.posAt(t + PUSH_SEEN) }))
+			.filter((x) => dist(x.from, at) < PUSH_NEAR)
+			.slice(0, PUSH_MOST);
+		for (const { m, from } of ring) {
+			const go = t + PUSH_GO + r() * 250;
+			const way = Math.atan2(from.y - at.y, from.x - at.x) + (r() - 0.5) * 0.4;
+			const far = PUSH_AT + r() * PUSH_AT_MORE;
+			const to = {
+				x: at.x + Math.cos(way) * far,
+				y: at.y + Math.sin(way) * far,
+			};
+			const face = this.toward(to, at);
+			m.cut(go);
+			m.hold(go);
+			m.chase(to, go + PUSH_IN_MS, m.top * 0.6, "drive", face);
+			const leave = t + PILE_HOLD - r() * PUSH_LEAVE;
+			m.go(
+				{
+					x: m.at.x + (at.x - m.at.x) * 0.15,
+					y: m.at.y + (at.y - m.at.y) * 0.15,
+				},
+				Math.max(m.t + 300, leave),
+				"drive",
+				face,
+			);
+			m.go(
+				{
+					x: m.at.x + Math.cos(way) * PUSH_BACK,
+					y: m.at.y + Math.sin(way) * PUSH_BACK,
+				},
+				m.t + 700,
+				"walk",
+				face,
+			);
+			m.hold(m.t + 400, "stand", face);
+			this.done.add(m.pid);
+		}
+		// (Under it: the men down on him there, then him.)
+		const up = t + PILE_HOLD + (n - 1) * PILE_PEEL + PILE_UNDER;
+		const seen = t + DOWN_MS;
+		const under = this.men.filter(
+			(m) =>
+				m !== carrier &&
+				(legAt(m, seen).move === "prone" || legAt(m, seen).move === "supine") &&
+				dist(m.posAt(seen), at) < PILE_NEAR,
+		);
+		under.forEach((m, k) => stayDown(m, up + k * 200 + r() * 100));
+		stayDown(carrier, up + under.length * 200 + 250);
+		// (The picture on it till he is up.)
+		this.until = Math.max(this.until, carrier.t);
 	}
 
 	// A man to `hit` by `lead`, facing `face` there: leaving what he was
@@ -3851,6 +4065,17 @@ class Action {
 			scheme,
 			down.by,
 		);
+		// (Short and up the middle, like as not a pile on him.)
+		const short = sneak || yds <= 1;
+		if (
+			!end.td &&
+			!end.out &&
+			scheme !== "stretch" &&
+			yds <= PILE_YDS &&
+			r() < (short ? PILE_SHORT : PILE)
+		) {
+			this.heap = short ? PILE_IN.length : PILE_SMALL;
+		}
 		this.endCarry(
 			runI,
 			carrier,
@@ -3859,6 +4084,7 @@ class Action {
 			this.d,
 			end.td ? undefined : down.by,
 		);
+		this.heap = 0;
 	}
 
 	// Up front on a run, the sim's blocks: each man on the line on whoever
@@ -6099,6 +6325,25 @@ const skirt = (a: Pt, b: Pt, c: Pt): Pt[] => {
 // The leg he is in at t (or the last).
 const legAt = (m: Actor, t: number): Leg =>
 	m.legs.findLast((l) => l.t0 <= t) ?? m.legs[0]!;
+
+// Down on the turf until `until` at least: the last time he lies there made
+// longer, and what he does after it later by as much.
+const stayDown = (m: Actor, until: number) => {
+	const legs = m.legs;
+	const k = legs.findLastIndex(
+		(l) => l.move === "prone" || l.move === "supine",
+	);
+	const l = legs[k];
+	if (!l || l.t1 >= until) {
+		return;
+	}
+	const more = until - l.t1;
+	l.t1 = until;
+	for (const x of legs.slice(k + 1)) {
+		x.t0 += more;
+		x.t1 += more;
+	}
+};
 
 // After a score: the scorer's moment, then his teammates' around him -
 // at the most this many of them, from no further than this away.
