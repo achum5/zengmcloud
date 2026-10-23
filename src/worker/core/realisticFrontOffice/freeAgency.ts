@@ -155,10 +155,16 @@ const lengths = () => {
 };
 
 // What signing him for this many years is worth to a team, by the money a
-// year: worth `atMin` at the minimum, less `slope` for each dollar more. Two
+// year: worth `atMin` at the minimum, less `slope()` for each dollar more. Two
 // prices are enough - money moves the value of a signing in a straight line,
-// through the cap room it uses.
-type Line = { years: number; atMin: number; slope: number; margin: number };
+// through the cap room it uses. The second is worked out only when it is
+// needed: a team that may pay him no more than the minimum never needs it.
+type Line = {
+	years: number;
+	atMin: number;
+	slope: () => number;
+	margin: number;
+};
 
 const lineFor = (
 	outlook: LeagueOutlook,
@@ -168,17 +174,23 @@ const lineFor = (
 ): Line => {
 	const minContract = g.get("minContract");
 	const exp = expFor(years);
-	const high = helpers.bound(
-		marketSalary(p.value),
-		2 * minContract,
-		g.get("maxContract"),
-	);
 	const low = priceSigning(outlook, t, p, { amount: minContract, exp });
-	const atHigh = priceSigning(outlook, t, p, { amount: high, exp }).net;
+	let slope: number | undefined;
 	return {
 		years,
 		atMin: low.net,
-		slope: Math.max(1e-9, (low.net - atHigh) / (high - minContract)),
+		slope: () => {
+			if (slope === undefined) {
+				const high = helpers.bound(
+					marketSalary(p.value),
+					2 * minContract,
+					g.get("maxContract"),
+				);
+				const atHigh = priceSigning(outlook, t, p, { amount: high, exp }).net;
+				slope = Math.max(1e-9, (low.net - atHigh) / (high - minContract));
+			}
+			return slope;
+		},
 		margin: low.margin,
 	};
 };
@@ -193,12 +205,22 @@ const firstLengths = (p: Player) => {
 };
 
 const netAt = (line: Line, amount: number) =>
-	line.atMin - line.slope * (amount - g.get("minContract"));
+	amount === g.get("minContract")
+		? line.atMin
+		: line.atMin - line.slope() * (amount - g.get("minContract"));
 
 // The most a team would pay a year and still gain by more than the margin of
 // error, if anything.
 const mostFrom = (line: Line) =>
-	line.atMin > 0 ? g.get("minContract") + line.atMin / line.slope : undefined;
+	line.atMin > 0 ? g.get("minContract") + line.atMin / line.slope() : undefined;
+
+// The same, up to `cap` (0 if nothing).
+const mostUpTo = (line: Line, cap: number) =>
+	line.atMin <= 0
+		? 0
+		: cap <= g.get("minContract")
+			? cap
+			: Math.min(cap, mostFrom(line)!);
 
 // The most a team may pay him under the cap rules, if anything.
 const mostAllowed = (t: TeamState, resigning: boolean) => {
@@ -237,7 +259,7 @@ const bestBid = (
 	cap: number,
 ) => {
 	const minContract = g.get("minContract");
-	const most = Math.min(cap, mostFrom(line) ?? 0);
+	const most = mostUpTo(line, cap);
 	if (most < minContract) {
 		return undefined;
 	}
@@ -581,21 +603,40 @@ export const freeAgencyDay = async () => {
 	for (const p of candidates) {
 		const byTeam = new Map<number, number>();
 		for (const t of signing) {
+			const cap = Math.min(maxContract, allowed.get(t.tid) ?? -Infinity);
+			if (!(cap >= minContract)) {
+				continue;
+			}
 			// At the length he wants, or for a season - priced as his ask for
 			// the length he wants.
-			let line: number | undefined;
-			for (const years of firstLengths(p)) {
+			const asWanted = (years: number) => {
 				const most = mostFrom(lineOf(t.tid, p, years));
-				if (most !== undefined) {
-					const asWanted =
-						(most * askFor(p, wantedYears(p))) / askFor(p, years);
-					line = Math.max(line ?? -Infinity, asWanted);
-				}
-			}
-			const most =
-				line === undefined
+				return most === undefined
 					? undefined
-					: Math.min(line, maxContract, allowed.get(t.tid) ?? -Infinity);
+					: (most * askFor(p, wantedYears(p))) / askFor(p, years);
+			};
+			let most: number | undefined;
+			if (cap <= minContract) {
+				// Held to the minimum: after him if he is worth it there.
+				if (
+					firstLengths(p).some((years) =>
+						years === wantedYears(p)
+							? lineOf(t.tid, p, years).atMin > 0
+							: (asWanted(years) ?? -Infinity) >= minContract,
+					)
+				) {
+					most = cap;
+				}
+			} else {
+				let line: number | undefined;
+				for (const years of firstLengths(p)) {
+					const x = asWanted(years);
+					if (x !== undefined) {
+						line = Math.max(line ?? -Infinity, x);
+					}
+				}
+				most = line === undefined ? undefined : Math.min(line, cap);
+			}
 			if (most !== undefined && most >= minContract) {
 				const appeal = await appealFor(p, t.tid, rankOf(p), rosters);
 				byTeam.set(t.tid, most * Math.exp(offerSettings.moodWeight * appeal));
