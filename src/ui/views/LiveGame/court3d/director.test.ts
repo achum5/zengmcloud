@@ -2828,6 +2828,51 @@ describe("3D director", () => {
 		assert.isAbove(threes, 30);
 	}, 60_000);
 
+	// With the ball in play, at real speed, everybody is on the floor: a
+	// corner man spacing or drifting keeps his feet in - not stood behind
+	// the baseline or on the sideline - and a defender after a man along
+	// the baseline pulls up at it, not carried on out of bounds.
+	test("in play, nobody stands out of bounds", () => {
+		const out: string[] = [];
+		let checked = 0;
+		for (const seed of ["a", "b", "c"]) {
+			const { tl } = compile(seed);
+			const since = new Map<number, number>();
+			for (const t of sampleTimes(tl, 100)) {
+				const b = evalBall(tl, t, bodyFor);
+				const H =
+					b.holder === undefined ? undefined : evalPlayer(tl, b.holder, t);
+				const live =
+					fastAt(tl, t) <= 1.001 &&
+					H !== undefined &&
+					H.x > 0 &&
+					H.x < COURT_W &&
+					H.y > 0 &&
+					H.y < COURT_H;
+				for (const tr of tl.tracks.values()) {
+					const p = live ? evalPlayer(tl, tr.pid, t) : undefined;
+					// (Past a line - but not one on his way on or off from the
+					// bench, out by the table.)
+					const by = p ? Math.max(-p.x, p.x - COURT_W, -p.y, p.y - COURT_H) : 0;
+					if (p?.shown && by > 0.3 && by < 2.5) {
+						const t0 = since.get(tr.pid) ?? t;
+						since.set(tr.pid, t0);
+						if (t - t0 === 500) {
+							out.push(
+								`${seed} pid ${tr.pid} at ${t0}: ${p.x.toFixed(1)},${p.y.toFixed(1)} ${p.anim}`,
+							);
+						}
+					} else {
+						since.delete(tr.pid);
+					}
+					checked += p?.shown ? 1 : 0;
+				}
+			}
+		}
+		assert.isAbove(checked, 50_000);
+		assert.isAtMost(out.length, 1, out.join("; "));
+	}, 120_000);
+
 	test("a free throw has the shooter's routine", () => {
 		for (const seed of ["a", "b"]) {
 			const { events, tl } = compile(seed);

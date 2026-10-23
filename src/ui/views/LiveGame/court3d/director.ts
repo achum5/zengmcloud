@@ -832,16 +832,24 @@ const THREE_CLEAR = 1.5;
 // shooter's spot: a drift along it takes him behind it, not along it with
 // his toes over.
 const ON_THE_LINE = 1;
+// Out in the corner there is less than a stride between the line and the
+// sideline: the corner man stands as wide as his feet stay in (see
+// inPlay), and that is behind it - as a set's corner spot has him.
+const CORNER_WIDE = COURT_H / 2 - SIDELINE_GAP;
+const CORNER_BEHIND = Math.min(22 + THREE_CLEAR, spotXY("R_corner")[0]);
 const behindArc = (team: Side, p: Pt): Pt | undefined => {
 	const rim = { x: rimX(team), y: COURT_H / 2 };
 	const depth = team === 0 ? p.x : COURT_W - p.x;
 	if (depth < 14) {
 		const across = Math.abs(p.y - rim.y);
-		if (across >= 22 + THREE_CLEAR) {
+		if (across >= CORNER_BEHIND) {
 			return undefined;
 		}
 		const side = p.y >= rim.y ? 1 : -1;
-		return { x: p.x, y: rim.y + side * (22 + THREE_CLEAR + 0.5) };
+		return onTheFloor({
+			x: p.x,
+			y: rim.y + side * Math.min(22 + THREE_CLEAR + 0.5, CORNER_WIDE),
+		});
 	}
 	const d = dist(p, rim);
 	if (d >= 23.75 + THREE_CLEAR) {
@@ -850,7 +858,17 @@ const behindArc = (team: Side, p: Pt): Pt | undefined => {
 	// A real step, not a shuffle too small to take.
 	const u = unitVec(rim, p);
 	const r = 23.75 + THREE_CLEAR + 0.5;
-	return clampPt({ x: rim.x + u.x * r, y: rim.y + u.y * r });
+	return onTheFloor({ x: rim.x + u.x * r, y: rim.y + u.y * r });
+};
+// Where a man out on the floor in play can stand: inside the lines (see
+// inPlay) - and out wide, down in the corner, a step in from the baseline,
+// not on it.
+const CORNER_DEEP = 2;
+const onTheFloor = (p: Pt): Pt => {
+	const q = inPlay(p);
+	return Math.abs(q.y - COURT_H / 2) > 8
+		? { x: Math.min(COURT_W - CORNER_DEEP, Math.max(CORNER_DEEP, q.x)), y: q.y }
+		: q;
 };
 
 const PASS_ACTS = new Set<AnimName>([
@@ -15941,20 +15959,25 @@ class Director {
 							Math.abs(at.x - rim.x) < 14 - 5.25
 								? Math.abs(at.y - rim.y) >= 22 - ON_THE_LINE
 								: dist(at, rim) >= 23.75 - ON_THE_LINE;
+						// (In bounds: down in the corner, the way along the line
+						// toward the baseline runs out of floor in a step - he
+						// goes the other way, up it.)
 						const Q = [1, -1]
 							.map((side) => {
-								const q = clampPt({
+								const q = onTheFloor({
 									x: at.x - u.y * side * L,
 									y: at.y + u.x * side * L,
 								});
 								return (deep ? behindArc(team, q) : undefined) ?? q;
 							})
+							.filter((q) => dist(q, at) >= L * 0.6)
 							.map((q) => ({
 								q,
 								room: Math.min(99, ...others.map((m) => dist(m, q))),
 							}))
-							.sort((a, b) => b.room - a.room)[0]!.q;
+							.sort((a, b) => b.room - a.room)[0]?.q;
 						if (
+							Q &&
 							fits(Q) &&
 							goTo(Q, this.rand(5, 7), "drift", this.rand(300, 600))
 						) {
@@ -17458,10 +17481,24 @@ class Director {
 						}
 						vx += dx;
 						vy += dy;
-						p = clampPt({
+						// (The lines are a wall to him: going after a man along
+						// the baseline or down in the corner, he pulls up at
+						// them, not carried on out of bounds.)
+						const q = {
 							x: p.x + (vx * DT) / 1000,
 							y: p.y + (vy * DT) / 1000,
-						});
+						};
+						// (Out there already, he goes no further out.)
+						const F = inPlay(q);
+						if (q.x !== F.x && (q.x - F.x) * vx > 0) {
+							q.x = (p.x - F.x) * (q.x - F.x) > 0 ? p.x : F.x;
+							vx = 0;
+						}
+						if (q.y !== F.y && (q.y - F.y) * vy > 0) {
+							q.y = (p.y - F.y) * (q.y - F.y) > 0 ? p.y : F.y;
+							vy = 0;
+						}
+						p = clampPt(q);
 						const now = ticks[i]!.t;
 						for (const w of inWay) {
 							if (now < w.t0 || now > w.t1) {
