@@ -8892,6 +8892,66 @@ test("a line that is only points leads only if nobody outscored it", () => {
 	}
 });
 
+// "The Hornets led 67-54 at halftime. They pushed on after the break and led
+// by as many as 20" - of a game the Clippers were down three going into the
+// fourth. And "cut it to 69-68 after three" told half of a comeback that
+// went in front in the fourth.
+test("a lead that came back before the last quarter is the story", () => {
+	const win = realisticTeam(
+		{
+			tid: 1,
+			region: "Los Angeles",
+			name: "Clippers",
+			abbrev: "LAC",
+			pts: 100,
+			ptsQtrs: [26, 28, 15, 31],
+		},
+		player({ name: "Marcus Green", pts: 24, reb: 11, fg: 9, fga: 17 }),
+	);
+	const lose = realisticTeam(
+		{
+			tid: 2,
+			region: "Toronto",
+			name: "Raptors",
+			abbrev: "TOR",
+			pts: 93,
+			ptsQtrs: [23, 22, 23, 25],
+		},
+		player({ name: "Tyrese Mathis", pts: 21, fg: 8, fga: 19 }),
+	);
+	beginRecapBatch();
+	try {
+		for (let gid = 1900; gid < 1920; gid++) {
+			const recap = getAutoRecap(
+				game({
+					gid,
+					teams: [win, lose],
+					winnerTid: 1,
+					flow: {
+						leadChanges: 4,
+						ties: 2,
+						maxLead: [17, 5],
+						maxLeadAt: [3, 4],
+						lastTie: { period: 4, clock: 500, pts: 79 },
+					},
+				}),
+			);
+			assert.match(
+				recap,
+				/Raptors cut it to 69-68 after three and went up 5 in the fourth/,
+				recap,
+			);
+			assert.doesNotMatch(
+				recap,
+				/pushed on|led the rest of the way|did not trail again|won the fourth 31-25/,
+				recap,
+			);
+		}
+	} finally {
+		endRecapBatch();
+	}
+});
+
 // "The Cavaliers went into halftime ahead 57-43. The Magic were still up
 // 82-80 going into the fourth" - still, after trailing by 14 at the half.
 test("still up only after a halftime lead", () => {

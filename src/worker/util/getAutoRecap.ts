@@ -4218,6 +4218,103 @@ const gameStory = (
 		return { sentences: out, covers };
 	}
 
+	// DECIDED, BUT NOT AT THE BREAK. "The Hornets led 67-54 at halftime.
+	// They pushed on after the break and led by as many as 20" - of a game
+	// the Clippers took the third quarter 37-27 and were down three going
+	// into the fourth. A lead that came back to a few points before the last
+	// quarter is the second half's story, whatever the final margin.
+	const mIn = shape.marginEnteringLast;
+	if (shape.ot === 0 && mIn > 0 && mIn <= 6 && up - mIn >= 6) {
+		covers.add("entering").add("secondHalf");
+		const last = ordinal(regPeriods);
+		const after = regPeriods === 4 ? "after three" : `going into the ${last}`;
+		// How far they came back: in front in the last quarter, in front
+		// or level before it, or only close. "Cut it to 69-68 after three"
+		// of a game the Raptors then led by five in the fourth told half of
+		// it.
+		const tie = flow?.lastTie;
+		const loserLedAt =
+			lMax > 0 && lMaxAt !== undefined && lMaxAt > halfN ? lMaxAt : undefined;
+		const tiedAt =
+			loserLedAt === undefined && tie && tie.period > halfN
+				? tie.period
+				: undefined;
+		// Their peak and the comeback in one quarter could have come in
+		// either order; "led by 17 in the third, but tied it in the third"
+		// would claim one.
+		const peak =
+			!covers.has("winnerPeak") &&
+			wMaxAt !== undefined &&
+			wMaxAt > halfN &&
+			wMaxAt < regPeriods &&
+			wMax >= up + 4 &&
+			wMaxAt !== loserLedAt &&
+			wMaxAt !== tiedAt;
+		if (peak) {
+			covers.add("winnerPeak");
+		}
+		// How it got away again, unless the lede gave the quarter: with the
+		// run in it when there was one, or the run is told on its own later
+		// as "The game got away in the fourth" after the quarter's score.
+		const lastRun =
+			run && run.winner && run.period === regPeriods ? run : undefined;
+		if (lastRun && !opts.lastQuarterTold) {
+			covers.add("run");
+		}
+		const finish = opts.lastQuarterTold
+			? undefined
+			: lastRun
+				? `${w} ran off ${lastRun.pts} straight points in a ${wLast}-${lLast} ${last}`
+				: `${w} won the ${last} ${wLast}-${lLast}`;
+		if (finish) {
+			covers.add("lastQuarter");
+		}
+		const cut = `cut it to ${wIn}-${lIn} ${after}`;
+		const clause =
+			loserLedAt === regPeriods
+				? `${cut} and went up ${lMax} in the ${last}`
+				: loserLedAt !== undefined
+					? `went up ${lMax} in the ${ordinal(loserLedAt)} but trailed ${wIn}-${lIn} ${after}`
+					: tie && tiedAt !== undefined && tiedAt < regPeriods
+						? `tied it at ${tie.pts} in the ${ordinal(tiedAt)}`
+						: tie && tiedAt === regPeriods
+							? `${cut} and tied it at ${tie.pts} in the ${last}`
+							: cut;
+		// "Went up 5 in the fourth. The Clippers won the fourth 31-25": the
+		// quarter, once it has been named.
+		const fin =
+			finish && clause.includes(` the ${last}`)
+				? finish.replace(` ${last}`, " quarter")
+				: finish;
+		// One "but" to a sentence.
+		const tail =
+			fin && !clause.includes(" but ") && !peak ? `, but ${fin}` : "";
+		const lRun =
+			run && !run.winner && run.period > halfN && run.end < regPeriods
+				? run
+				: undefined;
+		if (peak) {
+			// The halftime line was about them, unless it led with the
+			// losers' early lead.
+			const they = covers.has("loserPeak") ? W : "They";
+			out.push(
+				`${they} led by as many as ${wMax} in ${when(wMaxAt)}, but ${l} ${clause.replace(" but trailed", " and trailed")}.`,
+			);
+		} else if (lRun) {
+			// Their run is how they got back in it.
+			covers.add("run");
+			out.push(
+				`${L} ran off ${lRun.pts} straight points ${runAt(lRun)} and ${clause}${tail}.`,
+			);
+		} else {
+			out.push(`${L} ${clause}${tail}.`);
+		}
+		if (fin && !tail) {
+			out.push(`${cap(fin)}.`);
+		}
+		return { sentences: out, covers };
+	}
+
 	// Decided: what the second half added.
 	const parts: string[] = [];
 	if (w2 - l2 >= 8) {

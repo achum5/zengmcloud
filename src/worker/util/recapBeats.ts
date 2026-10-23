@@ -941,7 +941,6 @@ const nextPlayoffGame = (ctx: BeatContext, rng: Rng): string | undefined => {
 			`Game ${gameNo} is${where}.`,
 			`The series moves on to Game ${gameNo}${where}.`,
 			`Next is Game ${gameNo}${where}.`,
-			`Game ${gameNo} will be played${where}.`,
 			`${cap(hostNick)} host Game ${gameNo}.`,
 		],
 		"nextPlayoffGame",
@@ -977,7 +976,7 @@ export const nextGameBeat = (
 		return pick(
 			rng,
 			[
-				`${T} are next in action ${n.home ? "at home against" : "on the road against"} ${opp}.`,
+				`${T} face ${opp} next, ${n.home ? "at home" : "on the road"}.`,
 				`Up next for ${tn}: ${opp}, ${n.home ? "at home" : "on the road"}.`,
 				`${T} ${n.home ? "host" : "visit"} ${opp} next.`,
 				`Next up for ${tn} is ${opp}, ${n.home ? "at home" : "on the road"}.`,
