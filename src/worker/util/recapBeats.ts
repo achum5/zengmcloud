@@ -1666,7 +1666,6 @@ export const dayNextSlate = (
 	const best = fixtures[0]!;
 	const rest = fixtures.length - 1;
 	const matchup = `the ${best.awayName} at ${theNick(best.home)}`;
-	const restWord = `${numWord(rest)} others`;
 	// A second game is named, not counted: "and one other game" told the
 	// reader there was something and not what.
 	const second = fixtures[1];
@@ -1674,15 +1673,7 @@ export const dayNextSlate = (
 		rest === 1 && second
 			? ` and the ${second.awayName} at ${theNick(second.home)}`
 			: rest > 0
-				? pickByDay(
-						ctx.games[0]?.day,
-						rng,
-						[
-							` and ${numWord(rest)} other games`,
-							`, with ${restWord} on the slate`,
-						],
-						"dayNextSlateTail",
-					)
+				? ` and ${numWord(rest)} other games`
 				: "";
 	return pickByDay(
 		ctx.games[0]?.day,
@@ -1691,7 +1682,6 @@ export const dayNextSlate = (
 			`Next on the schedule: ${matchup}${tail}.`,
 			`Up next: ${matchup}${tail}.`,
 			`The next slate brings ${matchup}${tail}.`,
-			`Next up on the schedule is ${matchup}${tail}.`,
 		],
 		"dayNextSlate",
 	);

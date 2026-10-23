@@ -8513,7 +8513,7 @@ const dayHeadline = (
 	performers: LeaguePerformance[],
 	playoffs: boolean,
 	rng: () => number,
-): { text: string; game: RecapGame } => {
+): { text: string; game: RecapGame; players?: RecapPlayer[] } => {
 	// Nearly every branch is about the marquee; the league-wide upset lead is
 	// the exception, and it is the one that went missing from the body.
 	const hl = (text: string, game: RecapGame = marquee) => ({ text, game });
@@ -8867,13 +8867,19 @@ const dayHeadline = (
 		.sort((x, y) => y.p.pts - x.p.pts);
 	if (fortyClub.length >= 2) {
 		const [a, b] = fortyClub;
-		return hl(
-			pick(rng, [
-				`${poss(a!.p.name)} ${a!.p.pts} and ${poss(b!.p.name)} ${b!.p.pts} light up the night`,
-				`${a!.p.name} goes for ${a!.p.pts}, ${b!.p.name} for ${b!.p.pts}`,
-				`${a!.p.pts} for ${a!.p.name}, ${b!.p.pts} for ${b!.p.name} on a night the scorers took over`,
-			]),
-		);
+		// Both men are the headline, so the body tells both: "Jalen Hayes
+		// goes for 44, Payton Mathis for 42" over a body that gave the Jazz's
+		// 121-88 win and never said who scored 42 in it.
+		return {
+			...hl(
+				pick(rng, [
+					`${poss(a!.p.name)} ${a!.p.pts} and ${poss(b!.p.name)} ${b!.p.pts} light up the night`,
+					`${a!.p.name} goes for ${a!.p.pts}, ${b!.p.name} for ${b!.p.pts}`,
+					`${a!.p.pts} for ${a!.p.name}, ${b!.p.pts} for ${b!.p.name} on a night the scorers took over`,
+				]),
+			),
+			players: [a!.p, b!.p],
+		};
 	}
 
 	if (mStar && mStar.pts >= 45) {
@@ -9811,7 +9817,10 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	// result: "the Cavaliers erased an 18-point deficit to beat the Clippers
 	// 108-103 despite Marcus Green's 40 points".
 	const deckPerfByGame = new Map<RecapGame, LeaguePerformance[]>();
-	for (const p of deckResult?.players ?? []) {
+	for (const p of new Set([
+		...(deckResult?.players ?? []),
+		...(headline.players ?? []).filter((p) => p !== mStar),
+	])) {
 		const perf = performers.find((x) => x.p === p);
 		if (perf) {
 			deckPerfByGame.set(perf.game, [
@@ -10007,6 +10016,34 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 						return `${perf.p.name} had ${line === "triple-double" ? `a triple-double (${statPhrase(perf.p)})` : line} for ${theNick(perf.team)}`;
 					}),
 				)}.`,
+			);
+		}
+	}
+
+	// A deck's game-winner whose game a sentence above told without him:
+	// "Keegan Lowry's free throw sinks the Trail Blazers" over "Yuta King's
+	// 26 points came in the Trail Blazers' 99-97 loss to the Kings", and the
+	// shot was never mentioned again.
+	for (const g of deckResult?.games ?? []) {
+		const shot = clutchShot(g);
+		const at = para1.findIndex((t) => t.includes(plainScore(analyzeShape(g))));
+		if (
+			shot &&
+			!shot.tying &&
+			at >= 0 &&
+			deck?.includes(shot.name) &&
+			!para1.join(" ").includes(shot.name)
+		) {
+			const when =
+				shot.seconds !== undefined && !shot.buzzer
+					? ` with ${shot.seconds} seconds left`
+					: shot.buzzer
+						? " at the buzzer"
+						: "";
+			para1.splice(
+				at + 1,
+				0,
+				`${cap(poss(shot.name))} ${shot.shot}${when} won it for ${theNick(analyzeShape(g).winner)}.`,
 			);
 		}
 	}

@@ -1242,6 +1242,130 @@ const mkGame = (
 	});
 };
 
+// "Jalen Hayes goes for 44, Payton Mathis for 42" over a body that gave the
+// Jazz's 121-88 win and never said who scored 42 in it; "Keegan Lowry's
+// free throw sinks the Trail Blazers" over a body that told the game from
+// the losing side and never mentioned the shot.
+describe("a man the headline or deck names is in the body", () => {
+	const bodyOf = (wrap: string) =>
+		wrap
+			.split("\n\n")
+			.filter((x) => !x.startsWith("*"))
+			.join(" ");
+
+	test("both men of a two-man headline", () => {
+		let two = 0;
+		for (let day = 1; day <= 24; day++) {
+			const wrap = getAutoDayRecap({
+				season: 2026,
+				day,
+				playoffs: false,
+				games: [
+					mkGame(
+						4101,
+						"Heat",
+						"Hornets",
+						114,
+						108,
+						true,
+						player({ name: "Jalen Hayes", pts: 44, reb: 6, fg: 15, fga: 27 }),
+						player({ name: "Evan Carter", pts: 27, reb: 5 }),
+					),
+					mkGame(
+						4102,
+						"Jazz",
+						"Suns",
+						121,
+						88,
+						true,
+						player({ name: "Payton Mathis", pts: 42, reb: 5, fg: 15, fga: 24 }),
+						player({ name: "Obi King", pts: 18 }),
+					),
+					mkGame(
+						4103,
+						"Knicks",
+						"Pistons",
+						109,
+						102,
+						true,
+						player({ name: "Xavier Ingram", pts: 30, ast: 7 }),
+						player({ name: "Grant Ellis", pts: 22 }),
+					),
+				],
+			});
+			const headline = wrap.split("\n")[0]!;
+			if (
+				headline.includes("Jalen Hayes") &&
+				headline.includes("Payton Mathis")
+			) {
+				two += 1;
+				assert.match(bodyOf(wrap), /Payton Mathis/, wrap);
+				assert.match(bodyOf(wrap), /Jalen Hayes/, wrap);
+			}
+		}
+		assert.ok(two > 0, "the two-man headline never came up");
+	});
+
+	test("the deck's game-winner", () => {
+		let decked = 0;
+		for (let day = 1; day <= 24; day++) {
+			const wrap = getAutoDayRecap({
+				season: 2026,
+				day,
+				playoffs: false,
+				games: [
+					mkGame(
+						4201,
+						"Pacers",
+						"Clippers",
+						101,
+						100,
+						true,
+						player({ name: "Payton Foster", pts: 24 }),
+						player({ name: "Marcus Green", pts: 26, reb: 9 }),
+						{
+							clutchPlays: [
+								'<a href="#">Payton Foster</a> made a game-winning free throw with 5.7 seconds remaining.',
+							],
+						},
+					),
+					mkGame(
+						4202,
+						"Kings",
+						"Trail Blazers",
+						99,
+						97,
+						true,
+						player({ name: "Keegan Lowry", pts: 15 }),
+						player({ name: "Yuta King", pts: 36, reb: 14, blk: 4 }),
+						{
+							clutchPlays: [
+								'<a href="#">Keegan Lowry</a> made a game-winning free throw with 18.4 seconds remaining.',
+							],
+						},
+					),
+					mkGame(
+						4203,
+						"Warriors",
+						"Nets",
+						112,
+						80,
+						true,
+						player({ name: "Walker Ellis", pts: 30, stl: 4 }),
+						player({ name: "Tyrese Carter", pts: 17 }),
+					),
+				],
+			});
+			const deck = wrap.split("\n\n")[1] ?? "";
+			if (deck.startsWith("*") && deck.includes("Keegan Lowry")) {
+				decked += 1;
+				assert.match(bodyOf(wrap), /Keegan Lowry/, wrap);
+			}
+		}
+		assert.ok(decked > 0, "the deck never named the shot");
+	});
+});
+
 describe("getAutoDayRecap", () => {
 	const slate: RecapGame[] = [
 		mkGame(
