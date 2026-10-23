@@ -1170,6 +1170,11 @@ describe("a player against this opponent", () => {
 			[...all].join("\n"),
 		);
 		assert.match(vsOpponentBeat(p, "Knicks", rngFromSeed(1))!, /\b15\b/);
+		// Named, never "His previous best...": the note can follow a sentence
+		// about the game, and a pronoun there points at nobody.
+		for (const s of all) {
+			assert.include(s, "Jayson Tatum", s);
+		}
 	});
 
 	test("one earlier meeting, a quiet night, or nothing at all says nothing", () => {

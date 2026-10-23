@@ -810,15 +810,32 @@ export const verifyRecap = (
 					add(`count of ${bar}`, `said ${n}, real ${real}`, sentence);
 				}
 			}
-			// The previous scoring high.
+			// The previous scoring high - not his best against tonight's
+			// opponent, which is its own claim below.
 			m =
-				/had not scored more than (\d+)|season high of (\d+)|previous best was (\d+)|had never gone past (\d+)/.exec(
+				/had not scored more than (\d+)\b(?! in \w+ earlier games against)|season high of (\d+)|previous best was (\d+)|had never gone past (\d+)/.exec(
 					sentence,
 				);
 			if (m) {
 				const n = Number(m[1] ?? m[2] ?? m[3] ?? m[4]);
 				if (n !== e.high.pts) {
 					add("season high", `said ${n}, real ${e.high.pts}`, sentence);
+				}
+			}
+			// "...had not scored more than 17 in two earlier games against the
+			// Suns."
+			m = /had not scored more than (\d+) in (\w+) earlier games against/.exec(
+				sentence,
+			);
+			const vs = p?.vsOpponent;
+			if (m && vs) {
+				const games = num(m[2]!);
+				if (Number(m[1]) !== vs.bestPts || games !== vs.games) {
+					add(
+						"against this opponent",
+						`said ${m[1]} in ${m[2]}, real ${vs.bestPts} in ${vs.games}`,
+						sentence,
+					);
 				}
 			}
 		}

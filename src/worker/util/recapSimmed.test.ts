@@ -644,6 +644,26 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "There were 21 lead changes and 5 ties. He had not scored more than 17
+	// in two earlier games against the Suns." - a pronoun with no one to
+	// point at.
+	test("a sentence opening on He follows one that names him", () => {
+		for (const { gid, recap, game } of pairs) {
+			const names = game.teams.flatMap((t) => t.players.map((p) => p.name));
+			const body = recap.split("\n\n").slice(1).join(" ");
+			const sentences = body.split(/(?<=[!.?])\s+/);
+			sentences.forEach((x, i) => {
+				if (/^(?:He|His)\b/.test(x)) {
+					const prev = sentences[i - 1] ?? "";
+					assert.ok(
+						names.filter((n) => prev.includes(n)).length === 1,
+						`gid ${gid}: ${prev} || ${x}`,
+					);
+				}
+			});
+		}
+	});
+
 	// A headline cut down to "Herb Hayes scores 25" leaves his whole line to
 	// the lede.
 	test("a headline's trimmed line is given in full underneath", () => {
