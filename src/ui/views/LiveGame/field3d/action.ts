@@ -457,6 +457,14 @@ const HEAD_ON = 0.5;
 const DRIVEN_BACK = 0.55;
 // More men in on a tackle: the first, and the second, there in time to (as
 // late as this after it), this often.
+// The rush: working a blocker's shoulder, a step over (feet) this often
+// (ms); off the edge, on a tackle's outside shoulder (feet out, and in front
+// of him), and round him by the end (feet behind).
+const HAND_MS = 420;
+const HAND_FT = 0.9;
+const EDGE_OUT = 1.7;
+const EDGE_ON = 1.6;
+const EDGE_PAST = 1.8;
 const GANG = [0.5, 0.35];
 const GANG_LATE = 250;
 // A carrier making a man miss, this often on a stretch this long (feet, and
@@ -2381,20 +2389,85 @@ class Action {
 				this.ahead,
 			);
 		}
+		// The last man on the line on each side, for the rush round the edge.
+		const { dir } = this.input;
+		const edgeOf = (side: number) =>
+			blockers
+				.filter(
+					(b) => !this.done.has(b.pid) && Math.sign(this.of(b.at).a) === side,
+				)
+				.sort(
+					(x, y) => Math.abs(this.of(y.at).a) - Math.abs(this.of(x.at).a),
+				)[0];
+		const moved = new Set<Actor>();
 		for (const [m, b] of engaged) {
-			const at = (t: number) => {
-				const p = b.posAt(t);
-				return { x: p.x + this.input.dir * 2.6, y: p.y + (r() - 0.5) * 0.6 };
-			};
+			const s = this.of(m.at);
+			const side = Math.sign(s.a) || 1;
+			// Off the edge - lined up outside the last man on the line: up the
+			// arc, onto his outside shoulder, and on round him, ridden past
+			// the quarterback. Or in over the man across from him, working a
+			// shoulder one way and then the other, the blocker with him.
+			const edge =
+				b === edgeOf(side) && Math.abs(s.a) > Math.abs(this.of(b.at).a) + 0.5;
 			m.hold(snap + 40 + r() * 60);
 			// Into him as soon as he can get there.
 			const far = dist(m.at, b.posAt(snap + 450));
-			const hitT = Math.max(
+			let hitT = Math.max(
 				snap + 380 + r() * 150,
 				m.t + (far / (m.top * 0.8)) * 1000,
 			);
-			m.go(at(hitT), hitT, "run");
-			m.go(at(end), end, "engage", this.behind);
+			// (Where he is on the blocker at t - `lat` feet over, across the
+			// field.)
+			const on = (t: number, lat: number) => {
+				const p = b.posAt(t);
+				const u = clamp((t - hitT) / Math.max(1, end - hitT), 0, 1);
+				const ahead = edge ? EDGE_ON - u * (EDGE_ON + EDGE_PAST) : 2.6;
+				return {
+					x: p.x + dir * ahead,
+					y: p.y + dir * (edge ? side * EDGE_OUT : lat),
+				};
+			};
+			if (edge) {
+				// (Up the arc, and in onto him, at the one pace.)
+				const arc = this.w({ d: s.d - 2, a: s.a + side * 1.5 });
+				const a = dist(m.at, arc);
+				const way = a + dist(arc, on(hitT, 0));
+				hitT = Math.max(hitT, m.t + (way / (m.top * 0.85)) * 1000);
+				m.go(arc, m.t + ((hitT - m.t) * a) / Math.max(1, way), "run");
+			}
+			m.go(on(hitT, (r() - 0.5) * 0.6), hitT, "run");
+			const per = HAND_MS * (0.8 + r() * 0.5);
+			const amp = edge ? 0 : HAND_FT * (0.5 + r());
+			let way = r() < 0.5 ? 1 : -1;
+			const steps: { t: number; lat: number }[] = [];
+			for (let t = hitT + per; t < end - per / 2; t += per) {
+				steps.push({ t, lat: way * amp });
+				way = -way;
+			}
+			steps.push({ t: end, lat: 0 });
+			const held = steps.map((x) => b.posAt(x.t));
+			for (const x of steps) {
+				const p = on(x.t, x.lat);
+				m.go(
+					p,
+					x.t,
+					"engage",
+					edge ? this.toward(p, qb.posAt(x.t)) : this.behind,
+				);
+			}
+			// (A man doubled moves with the first of them.)
+			if (amp > 0 && !moved.has(b) && !this.done.has(b.pid)) {
+				moved.add(b);
+				b.cut(hitT);
+				steps.forEach((x, k) => {
+					b.go(
+						{ x: held[k]!.x, y: held[k]!.y + dir * x.lat * 0.6 },
+						x.t,
+						"passSet",
+						this.ahead,
+					);
+				});
+			}
 		}
 		for (const m of rushers) {
 			if (!engaged.has(m) && !this.done.has(m.pid)) {
