@@ -37,6 +37,8 @@ export type FieldMoment = {
 // turn, from the way he was facing to the way he faces now.
 const BLEND_MS = 260;
 const TURN_MS = 380;
+// (How fast he goes through a move: taken over this long.)
+const RATE_MS = 5;
 
 const clamp01 = (u: number) => Math.min(1, Math.max(0, u));
 
@@ -342,6 +344,26 @@ const passing = (
 	return undefined;
 };
 
+// How long he is eased into a leg over: into an act, over no more than this
+// share of it (or the first of it is gone by before he is into it).
+const ACT_BLEND = 0.5;
+const blendOf = (l: Leg): number => {
+	if (moveKind(l.move) !== "act") {
+		return BLEND_MS;
+	}
+	const [p0, p1] = l.span ?? [0, 1];
+	const ms = (l.t1 - l.t0) / Math.max(0.05, p1 - p0);
+	return Math.min(BLEND_MS, ms * ACT_BLEND);
+};
+
+// Whether he does something else from one leg to the next: his move, his
+// arms, how he has the ball.
+const changed = (a: Leg, b: Leg) =>
+	a.move !== b.move ||
+	a.arms !== b.arms ||
+	a.ball !== b.ball ||
+	!a.mirrored !== !b.mirrored;
+
 // Where one man is at t and what he is doing.
 const stateOf = (
 	part: { pid: number; team: Side; legs: Leg[] },
@@ -368,6 +390,16 @@ const stateOf = (
 	// strides.
 	// (And the way he was drawn facing as it started: a leg too short for
 	// his turn into it to be done, still turning.)
+	// (And the leg he last changed what he was doing at - on through any
+	// more of it since - for him to be eased out of what he was before it.)
+	let c = k;
+	while (
+		c > 0 &&
+		t - legs[c]!.t0 < BLEND_MS &&
+		!changed(legs[c - 1]!, legs[c]!)
+	) {
+		c--;
+	}
 	let before = legs[0]!.yaw ?? 0;
 	let turned = before;
 	let ran = 0;
@@ -380,7 +412,9 @@ const stateOf = (
 			j > 0 && lj.t1 - lj.t0 < TURN_MS
 				? lerpAngle(turned, before, (lj.t1 - lj.t0) / TURN_MS)
 				: before;
-		ranBefore = ran;
+		if (j === c - 1) {
+			ranBefore = ran;
+		}
 		ran = moveKind(lj.move) === "cycle" ? ran + lengthOf(lj) : 0;
 	}
 	let yaw = yawOf(l, before) + (l.turn ?? 0) * along(l, t);
@@ -393,28 +427,37 @@ const stateOf = (
 	// eased out of what he was, his feet - the same stride - kept in
 	// step.)
 	let from: FieldPlayerState["from"];
-	if (
-		prev &&
-		since < BLEND_MS &&
-		(prev.move !== l.move ||
-			prev.arms !== l.arms ||
-			prev.ball !== l.ball ||
-			!prev.mirrored !== !l.mirrored)
-	) {
-		const striding = prev.move === l.move && moveKind(l.move) === "cycle";
+	const prior = c > 0 ? legs[c - 1]! : undefined;
+	const blended = t - legs[c]!.t0;
+	const blending = blendOf(legs[c]!);
+	if (prior && blended < blending && changed(prior, legs[c]!)) {
+		const striding = prior.move === l.move && moveKind(l.move) === "cycle";
+		const wasAt = (at: number, u: number) =>
+			striding
+				? phaseOf(l, at, offset, ran, u)
+				: pulling && c === k
+					? phaseOf(prior, at, offset, ranBefore, u)
+					: phaseOf(prior, prior.t1, offset, ranBefore);
+		// (And how fast each goes through its frames, a moment on.)
+		const ahead = paceAt(legs, k, t + RATE_MS).u;
+		const was = wasAt(t, eased);
 		from = {
-			move: prev.move as Move,
-			phase: striding
-				? phaseOf(l, t, offset, ran, eased)
-				: pulling
-					? phaseOf(prev, t, offset, ranBefore, eased)
-					: phaseOf(prev, prev.t1, offset, ranBefore),
-			...(prev.mirrored ? { mirrored: true } : {}),
-			w: 1 - clamp01(since / BLEND_MS),
-			...(prev.arms
-				? { arms: { move: prev.arms, phase: armsPhaseOf(prev, prev.t1) } }
+			move: prior.move as Move,
+			phase: was,
+			rate: {
+				move:
+					(phaseOf(l, t + RATE_MS, offset, ran, ahead) -
+						phaseOf(l, t, offset, ran, eased)) /
+					RATE_MS,
+				from: (wasAt(t + RATE_MS, ahead) - was) / RATE_MS,
+				w: 1 / blending,
+			},
+			...(prior.mirrored ? { mirrored: true } : {}),
+			w: 1 - clamp01(blended / blending),
+			...(prior.arms
+				? { arms: { move: prior.arms, phase: armsPhaseOf(prior, prior.t1) } }
 				: {}),
-			...(prev.ball ? { ball: prev.ball } : {}),
+			...(prior.ball ? { ball: prior.ball } : {}),
 		};
 	}
 	return {

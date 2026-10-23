@@ -68,14 +68,18 @@ type Blend = {
 	w: number;
 	arms?: { move: Move; phase: number };
 	ball?: BallHold;
+	// How fast, a ms: his move through its phase, the one he was through
+	// its own, and the blend out of it (for it to keep step with their
+	// frames - see weightOf).
+	rate?: { move: number; from: number; w: number };
 };
 
 // In so many steps: a stride's frames, an act's, the ways he faces, and a
 // blend from one move into the next - or, with time to spare on the device
 // (see Field3D), twice as many of each, so he moves the more smoothly.
 type Steps = { cycle: number; act: number; turns: number; blend: number };
-const COARSE: Steps = { cycle: 12, act: 20, turns: 24, blend: 4 };
-const FINE: Steps = { cycle: 24, act: 40, turns: 48, blend: 8 };
+const COARSE: Steps = { cycle: 12, act: 20, turns: 24, blend: 8 };
+const FINE: Steps = { cycle: 24, act: 40, turns: 48, blend: 16 };
 
 const frameOf = (m: Move, phase: number, k: Steps): number => {
 	const kind = moveKind(m);
@@ -90,6 +94,38 @@ const frameOf = (m: Move, phase: number, k: Steps): number => {
 	return Math.floor((((phase % 1) + 1) % 1) * k.cycle) / k.cycle;
 };
 
+// How long since he came to the frame he is on (ms), going through his move
+// at this rate.
+const sinceFrame = (m: Move, phase: number, rate: number, k: Steps) => {
+	const kind = moveKind(m);
+	if (kind === "still" || rate <= 0) {
+		return Infinity;
+	}
+	const into =
+		kind === "act"
+			? phase - frameOf(m, phase, k) + 0.5 / (k.act - 1)
+			: (((phase % 1) + 1) % 1) - frameOf(m, phase, k);
+	return Math.max(0, into) / rate;
+};
+
+// How much of his pose is still what he was, in steps: as much as there was
+// when his move (or the one he was) last came to a new frame - a sprite of
+// its own then anyway, so the blend costs none of its own - or, if neither
+// did, on the nearest of so many steps.
+const WEIGHTS = 32;
+const weightOf = (st: FieldPlayerState, f: Blend, k: Steps): number => {
+	let w = Math.ceil(f.w * k.blend) / k.blend;
+	const r = f.rate;
+	if (r && r.w > 0) {
+		const since = Math.min(
+			sinceFrame(st.move, st.phase, r.move, k),
+			sinceFrame(f.move, f.phase, r.from, k),
+		);
+		w = Math.min(w, f.w + since * r.w);
+	}
+	return Math.round(w * WEIGHTS) / WEIGHTS;
+};
+
 // His pose, stepped to the sprite's frames: what he is doing, blended with
 // what he just was.
 type Stepped = {
@@ -102,10 +138,7 @@ type Stepped = {
 const stepped = (st: FieldPlayerState, k: Steps): Stepped => {
 	const turn = Math.round(st.yaw / ((Math.PI * 2) / k.turns));
 	const f = st.from;
-	const fw =
-		f && f.w > 0.12
-			? Math.min(k.blend - 1, Math.max(1, Math.round(f.w * k.blend))) / k.blend
-			: 0;
+	const fw = f ? weightOf(st, f, k) : 0;
 	return {
 		phase: frameOf(st.move, st.phase, k),
 		turn,
