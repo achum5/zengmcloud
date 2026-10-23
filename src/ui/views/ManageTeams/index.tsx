@@ -369,6 +369,16 @@ const ManageTeams = (props: View<"manageTeams">) => {
 									</button>
 								</div>
 							) : null}
+							{__SPORT === "football" ? (
+								<div className="col-12 mb-1">
+									<a
+										className="btn btn-sm btn-light-bordered"
+										href={helpers.leagueUrl(["edit_team_stadium", t.tid])}
+									>
+										Customize stadium
+									</a>
+								</div>
+							) : null}
 							<div className="col-12 d-lg-none" style={{ marginTop: -12 }}>
 								<hr className="my-hr" />
 							</div>

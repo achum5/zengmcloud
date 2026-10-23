@@ -12,6 +12,7 @@ import { prospectUniform } from "../../common/prospectColors.ts";
 import { csvFormat, csvFormatRows } from "d3-dsv";
 import type { FaceConfig } from "facesjs";
 import type { ScoreBugStyle, PlayerStatAttr } from "../../common/types.ts";
+import { cleanHelmet, cleanStadium } from "../../common/stadiumLook.ts";
 import {
 	GAME_ACRONYM,
 	PHASE,
@@ -6694,6 +6695,38 @@ const updateTeamCourt = async ({
 	return { ok: true };
 };
 
+// Save (or clear) a football team's stadium and helmet for the 3D game (see
+// StadiumLook, HelmetLook), through the cache, so every device in a
+// multiplayer league draws them the same.
+const updateTeamStadium = async ({
+	tid,
+	stadium,
+	helmet,
+}: {
+	tid: number;
+	stadium: unknown;
+	helmet: unknown;
+}) => {
+	const t = await idb.cache.teams.get(tid);
+	if (!t) {
+		throw new Error(`Team not found for tid ${tid}`);
+	}
+	const s = cleanStadium(stadium);
+	const h = cleanHelmet(helmet);
+	if (s) {
+		t.stadium = s;
+	} else {
+		delete t.stadium;
+	}
+	if (h) {
+		t.helmet = h;
+	} else {
+		delete t.helmet;
+	}
+	await idb.cache.teams.put(t);
+	return { ok: true };
+};
+
 // A picture for one of a court's slots, kept in the league (see
 // courtPictures.ts): its id, for the court to name it by.
 const storeCourtPicture = (url: string) => storePicture(url);
@@ -8350,6 +8383,7 @@ const api = {
 		updatePlayingTime,
 		updatePlayoffTeams,
 		updateTeamCourt,
+		updateTeamStadium,
 		storeCourtPicture,
 		updateCourtDecals,
 		updateScoreBug,

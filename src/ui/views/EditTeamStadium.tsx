@@ -1,0 +1,309 @@
+import { lazy, Suspense, useState } from "react";
+import useTitleBar from "../hooks/useTitleBar.tsx";
+import { toWorker } from "../util/toWorker.ts";
+import { realtimeUpdate } from "../util/realtimeUpdate.ts";
+import { helpers } from "../util/helpers.ts";
+import { showNotification } from "../util/showNotification.ts";
+import type { HelmetLook, StadiumLook, View } from "../../common/types.ts";
+import { fieldKit } from "./LiveGame/field3d/kit.ts";
+
+const StadiumPreview = lazy(
+	() => import("./LiveGame/field3d/StadiumPreview.tsx"),
+);
+
+// A setting picked from a few, "" for the team's own pick.
+const Choice = <K extends keyof StadiumLook>({
+	label,
+	value,
+	options,
+	onChange,
+}: {
+	label: string;
+	value: StadiumLook[K];
+	options: [NonNullable<StadiumLook[K]>, string][];
+	onChange: (value: StadiumLook[K]) => void;
+}) => (
+	<div className="mb-3">
+		<label className="form-label mb-1">{label}</label>
+		<select
+			className="form-select"
+			value={value ?? ""}
+			onChange={(e) =>
+				onChange(
+					e.target.value === ""
+						? undefined
+						: (e.target.value as StadiumLook[K]),
+				)
+			}
+		>
+			<option value="">Auto</option>
+			{options.map(([v, text]) => (
+				<option key={v} value={v}>
+					{text}
+				</option>
+			))}
+		</select>
+	</div>
+);
+
+// A helmet color: the team's own pick until one is chosen - and, for a
+// stripe, none at all.
+const HelmetColor = ({
+	label,
+	value,
+	fallback,
+	onChange,
+	none,
+}: {
+	label: string;
+	value: string | undefined;
+	fallback: string;
+	onChange: (value: string | undefined) => void;
+	none?: boolean;
+}) => (
+	<div className="mb-3">
+		<label className="form-label mb-1">{label}</label>
+		<div className="d-flex align-items-center gap-2">
+			<input
+				type="color"
+				className="form-control form-control-color"
+				value={value || fallback}
+				disabled={value === ""}
+				onChange={(e) => onChange(e.target.value)}
+			/>
+			<button
+				type="button"
+				className="btn btn-sm btn-light-bordered"
+				onClick={() => onChange(undefined)}
+				disabled={value === undefined}
+			>
+				Auto
+			</button>
+			{none ? (
+				<button
+					type="button"
+					className="btn btn-sm btn-light-bordered"
+					onClick={() => onChange("")}
+					disabled={value === ""}
+				>
+					None
+				</button>
+			) : null}
+		</div>
+	</div>
+);
+
+const EditTeamStadium = ({
+	tid,
+	abbrev,
+	region,
+	name,
+	colors,
+	imgURL,
+	stadium: savedStadium,
+	helmet: savedHelmet,
+}: View<"editTeamStadium">) => {
+	useTitleBar({
+		title: "Customize Stadium",
+		customMenu: undefined,
+	});
+
+	const [stadium, setStadium] = useState<StadiumLook>(savedStadium ?? {});
+	const [helmet, setHelmet] = useState<HelmetLook>(savedHelmet ?? {});
+	const [previewSky, setPreviewSky] = useState<"day" | "night">("day");
+	const [saving, setSaving] = useState(false);
+
+	const setField = <K extends keyof StadiumLook>(
+		key: K,
+		value: StadiumLook[K],
+	) => {
+		setStadium((s) => {
+			const next = { ...s };
+			if (value === undefined) {
+				delete next[key];
+			} else {
+				next[key] = value;
+			}
+			return next;
+		});
+	};
+	const setPart = <K extends keyof HelmetLook>(
+		key: K,
+		value: HelmetLook[K] | undefined,
+	) => {
+		setHelmet((h) => {
+			const next = { ...h };
+			if (value === undefined) {
+				delete next[key];
+			} else {
+				next[key] = value;
+			}
+			return next;
+		});
+	};
+
+	const sky = stadium.sky ?? previewSky;
+	// (What each part of the helmet is, left to the team's colors.)
+	const auto = fieldKit(colors, "home", { shell: helmet.shell });
+
+	const save = async () => {
+		setSaving(true);
+		try {
+			await toWorker("main", "updateTeamStadium", { tid, stadium, helmet });
+			showNotification({ type: "success", text: "Stadium saved." });
+			realtimeUpdate([], helpers.leagueUrl(["manage_teams"]));
+		} catch (error) {
+			showNotification({
+				type: "error",
+				text: `Could not save stadium: ${(error as Error).message}`,
+				persistent: true,
+			});
+		} finally {
+			setSaving(false);
+		}
+	};
+
+	return (
+		<div className="row">
+			<div className="col-lg-7 mb-3">
+				<Suspense
+					fallback={
+						<div
+							className="rounded"
+							style={{ aspectRatio: "16 / 9", background: "#07060a" }}
+						/>
+					}
+				>
+					<StadiumPreview
+						team={{ abbrev, name, region, colors, imgURL }}
+						stadium={stadium}
+						helmet={helmet}
+						sky={sky}
+					/>
+				</Suspense>
+				{stadium.sky === undefined && stadium.roof !== "dome" ? (
+					<div className="btn-group btn-group-sm mt-2" role="group">
+						{(["day", "night"] as const).map((s) => (
+							<button
+								key={s}
+								type="button"
+								className={`btn ${previewSky === s ? "btn-secondary" : "btn-light-bordered"}`}
+								onClick={() => setPreviewSky(s)}
+							>
+								{s === "day" ? "Day" : "Night"}
+							</button>
+						))}
+					</div>
+				) : null}
+			</div>
+
+			<div className="col-lg-5">
+				<h3 className="h6 text-body-secondary">{`${region} ${name}`}</h3>
+				<Choice<"roof">
+					label="Roof"
+					value={stadium.roof}
+					options={[
+						["open", "Open air"],
+						["dome", "Dome"],
+					]}
+					onChange={(v) => setField("roof", v)}
+				/>
+				<Choice<"turf">
+					label="Field"
+					value={stadium.turf}
+					options={[
+						["grass", "Grass"],
+						["artificial", "Artificial turf"],
+					]}
+					onChange={(v) => setField("turf", v)}
+				/>
+				<Choice<"endZones">
+					label="End zones"
+					value={stadium.endZones}
+					options={[
+						["solid", "Team color"],
+						["green", "Green with name"],
+						["striped", "Striped"],
+					]}
+					onChange={(v) => setField("endZones", v)}
+				/>
+				<Choice<"sky">
+					label="Kickoff"
+					value={stadium.sky}
+					options={[
+						["day", "Always day"],
+						["night", "Always night"],
+					]}
+					onChange={(v) => setField("sky", v)}
+				/>
+
+				<hr />
+				<h3 className="h6 text-body-secondary">Helmet</h3>
+				<HelmetColor
+					label="Shell"
+					value={helmet.shell}
+					fallback={auto.helmet}
+					onChange={(v) => setPart("shell", v)}
+				/>
+				<HelmetColor
+					label="Stripe"
+					value={helmet.stripe}
+					fallback={auto.helmetStripe ?? colors[1]}
+					onChange={(v) => setPart("stripe", v)}
+					none
+				/>
+				<HelmetColor
+					label="Stripe edge"
+					value={helmet.stripeEdge}
+					fallback={auto.helmetStripeEdge ?? colors[2]}
+					onChange={(v) => setPart("stripeEdge", v)}
+					none
+				/>
+				<HelmetColor
+					label="Facemask"
+					value={helmet.facemask}
+					fallback={auto.facemask}
+					onChange={(v) => setPart("facemask", v)}
+				/>
+				<div className="form-check mb-3">
+					<input
+						type="checkbox"
+						className="form-check-input"
+						id="helmet-logo"
+						checked={helmet.logo !== false}
+						onChange={(e) =>
+							setPart("logo", e.target.checked ? undefined : false)
+						}
+					/>
+					<label className="form-check-label" htmlFor="helmet-logo">
+						Logo on helmet
+					</label>
+				</div>
+
+				<div className="d-flex gap-2 mt-3">
+					<button
+						type="button"
+						className="btn btn-primary"
+						onClick={save}
+						disabled={saving}
+					>
+						Save stadium
+					</button>
+					<button
+						type="button"
+						className="btn btn-light-bordered"
+						onClick={() => {
+							setStadium({});
+							setHelmet({});
+						}}
+						disabled={saving}
+					>
+						Reset to default
+					</button>
+				</div>
+			</div>
+		</div>
+	);
+};
+
+export default EditTeamStadium;

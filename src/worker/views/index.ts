@@ -38,6 +38,7 @@ export { default as draftTeamHistory } from "./draftTeamHistory.ts";
 export { default as editAwardWinners } from "./editAwardWinners.ts";
 export { default as eightyTwoZeroDraft } from "./eightyTwoZeroDraft.ts";
 export { default as editTeamCourt } from "./editTeamCourt.ts";
+export { default as editTeamStadium } from "./editTeamStadium.ts";
 export { default as courtDecals } from "./courtDecals.ts";
 export { default as scoreBug } from "./scoreBug.ts";
 export { default as editTeamUniform } from "./editTeamUniform.ts";
