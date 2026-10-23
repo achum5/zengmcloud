@@ -21,6 +21,8 @@ import {
 // are read off each canvas and put on it.
 const drawnFrom: unknown[] = [];
 const read = new Map<unknown, number>();
+// (And how many runs of lettering are laid out.)
+let lettered = 0;
 const put = new Map<unknown, number>();
 // (And, as a canvas with a picture from another site on it, none of them
 // to be read.)
@@ -64,7 +66,11 @@ const stubCanvas = () => {
 							? (from: unknown) => {
 									drawnFrom.push(from);
 								}
-							: () => proxy,
+							: prop === "fillText"
+								? () => {
+										lettered += 1;
+									}
+								: () => proxy,
 		set: (target, prop, v) => {
 			target[prop] = v;
 			return true;
@@ -386,4 +392,57 @@ test("all black, nobody drawn, the books are kept as if they were: a man made a 
 	// were it drawn, as he was.
 	assert.deepEqual(skipped, [0, 0, 0, 0]);
 	assert.strictEqual(cache.last.get(cache.ids.get(look)!)!.behind, 3);
+});
+
+// A man's number and lettering are laid out on his jersey's sheet once -
+// the font looked up, every glyph drawn - and each other size of it is
+// shrunk from that, not laid out again each time the camera takes him a
+// step bigger or smaller.
+test("his lettering is laid out once, however many sizes he is drawn at", () => {
+	const body = bodyOf();
+	const look: Look = {
+		kit: kitsFor(undefined, undefined)[0],
+		skin: "#8d5524",
+		hair: "#1f1612",
+		jerseyNumber: "23",
+		name: "",
+		lastName: "Walker",
+		wordmark: "Hawks",
+	};
+	const scratch = makeScratch();
+	const ctx = stubCanvas().getContext() as unknown as CanvasRenderingContext2D;
+	const st = {
+		pid: 1,
+		team: 0,
+		shown: true,
+		x: 47,
+		y: 25,
+		z: 0,
+		yaw: 0.4,
+		anim: "ready",
+		phase: 0,
+		moving: false,
+	} as PlayerState;
+	const at = (width: number) =>
+		drawSprite(
+			ctx,
+			scratch,
+			makeCamera({ x: 47, width, y: 24 }, 1280, 720, MAIN_RIG),
+			st,
+			body,
+			look,
+			1,
+		);
+	lettered = 0;
+	// From the sideline camera, zooming, to a replay's close-up.
+	at(72);
+	const once = lettered;
+	assert.isAbove(once, 0);
+	for (const width of [90, 80, 64, 58, 46, 37, 30, 24]) {
+		at(width);
+	}
+	assert.strictEqual(lettered, once);
+	// In closer than any of that: laid out at that size.
+	at(14);
+	assert.strictEqual(lettered, once * 2);
 });

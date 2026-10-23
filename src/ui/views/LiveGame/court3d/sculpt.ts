@@ -222,7 +222,36 @@ type Sheet = {
 	aS: number;
 	u0: number;
 };
-const sheets = new WeakMap<Look, Map<number, Sheet | null>>();
+// Each look's sheets, a size a step: the lettering laid out once, big (see
+// SHEET_BIG), and each sheet shrunk from that.
+const sheets = new WeakMap<
+	Look,
+	{
+		big?: HTMLCanvasElement;
+		byStep: Map<number, Sheet | null>;
+	}
+>();
+// Laying the lettering out - a font looked up, every glyph drawn at a size
+// not drawn before - is most of what a new sheet cost, and a new one was
+// wanted for every man each time the camera took him a step bigger or
+// smaller: a dozen of them at a cut, or as the warm-ups started, in one
+// frame. So it is laid out once a look, at this size (sheet pixels to a
+// foot: 1.25 ** 19, about 69 - a replay close-up's), and each smaller sheet
+// shrunk from it, smoothly; only a camera in closer still has his laid out
+// at its own size. (The same sheet whatever size was wanted first - so a
+// hand off the page's thread paints him exactly as the page would.)
+const SHEET_BIG = 19;
+// A canvas to lay a sheet out on (in a worker making pictures for the page
+// - see farm.ts - an offscreen one).
+const sheetCanvas = (w: number, h: number) => {
+	const cv =
+		typeof document === "undefined"
+			? (new OffscreenCanvas(w, h) as unknown as HTMLCanvasElement)
+			: document.createElement("canvas");
+	cv.width = w;
+	cv.height = h;
+	return cv;
+};
 
 const jerseySheet = (
 	look: Look,
@@ -242,32 +271,86 @@ const jerseySheet = (
 	}
 	// Made at about the size he is drawn, in steps.
 	const step = Math.round(Math.log(Math.max(6, ppf0)) / Math.log(1.25));
-	let byStep = sheets.get(look);
-	if (!byStep) {
-		byStep = new Map();
-		sheets.set(look, byStep);
+	let mine = sheets.get(look);
+	if (!mine) {
+		mine = { byStep: new Map() };
+		sheets.set(look, mine);
 	}
-	const kept = byStep.get(step);
+	const kept = mine.byStep.get(step);
 	if (kept !== undefined) {
 		return kept ?? undefined;
 	}
-	const ppf = 1.25 ** step;
 	const aS = body.shoulderW * 1.1;
+	const u0 = body.torso + body.H * 0.08;
+	const sizeOf = (s: number) => {
+		const ppf = 1.25 ** s;
+		return {
+			ppf,
+			w: Math.max(8, Math.round(2 * Math.PI * aS * ppf)),
+			h: Math.max(8, Math.round((u0 - waist) * ppf) + 2),
+		};
+	};
+	const { ppf, w, h } = sizeOf(step);
+	let g: CanvasRenderingContext2D | null;
+	if (step >= SHEET_BIG) {
+		// (Its own, at this size - the one the rest are shrunk from, or one
+		// for a camera in closer still.)
+		const cv =
+			step === SHEET_BIG && mine.big
+				? mine.big
+				: letterSheet(look, body, sizeOf(step), aS, u0, warmup);
+		g = cv ? cv.getContext("2d", { willReadFrequently: true }) : null;
+		if (cv && step === SHEET_BIG) {
+			mine.big = cv;
+		}
+	} else {
+		if (!mine.big) {
+			const cv = letterSheet(look, body, sizeOf(SHEET_BIG), aS, u0, warmup);
+			if (!cv) {
+				mine.byStep.set(step, null);
+				return undefined;
+			}
+			mine.big = cv;
+		}
+		g = sheetCanvas(w, h).getContext("2d", { willReadFrequently: true });
+		if (g) {
+			// (All the way round his torso the same: across, to this sheet's
+			// width; down, at its size.)
+			g.imageSmoothingEnabled = true;
+			g.imageSmoothingQuality = "high";
+			const from = mine.big;
+			g.drawImage(from, 0, 0, w, from.height * (ppf / 1.25 ** SHEET_BIG));
+		}
+	}
+	if (!g) {
+		mine.byStep.set(step, null);
+		return undefined;
+	}
+	const sheet = {
+		data: g.getImageData(0, 0, w, h).data,
+		w,
+		h,
+		ppf,
+		aS,
+		u0,
+	};
+	mine.byStep.set(step, sheet);
+	return sheet;
+};
+
+// His number and lettering laid out on a new sheet this size.
+const letterSheet = (
+	look: Look,
+	body: Body,
+	{ ppf, w, h }: { ppf: number; w: number; h: number },
+	aS: number,
+	u0: number,
+	warmup: boolean,
+): HTMLCanvasElement | undefined => {
 	const T = body.torso;
-	const u0 = T + body.H * 0.08;
-	const w = Math.max(8, Math.round(2 * Math.PI * aS * ppf));
-	const h = Math.max(8, Math.round((u0 - waist) * ppf) + 2);
-	// (In a worker making pictures for the page - see farm.ts - on an
-	// offscreen canvas.)
-	const cv =
-		typeof document === "undefined"
-			? (new OffscreenCanvas(w, h) as unknown as HTMLCanvasElement)
-			: document.createElement("canvas");
-	cv.width = w;
-	cv.height = h;
+	const cv = sheetCanvas(w, h);
 	const g = cv.getContext("2d", { willReadFrequently: true });
 	if (!g) {
-		byStep.set(step, null);
 		return undefined;
 	}
 	const kit = look.kit;
@@ -362,16 +445,7 @@ const jerseySheet = (
 			warmup ? kit.chest : kit.name,
 		);
 	}
-	const sheet = {
-		data: g.getImageData(0, 0, w, h).data,
-		w,
-		h,
-		ppf,
-		aS,
-		u0,
-	};
-	byStep.set(step, sheet);
-	return sheet;
+	return cv;
 };
 
 // Where the parts of his uniform start and stop, in feet on his torso: U up
