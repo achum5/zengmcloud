@@ -59,6 +59,7 @@ export const BALL_BROWN = "#7a3d1e";
 const BALL_RGB = rgb(BALL_BROWN);
 const LACE_RGB: RGB = [246, 243, 236];
 const WHITE_RGB: RGB = [246, 245, 240];
+const HEADSET_RGB: RGB = [30, 30, 34];
 
 // ---- the masses -------------------------------------------------------------
 
@@ -77,6 +78,7 @@ const CHIN = 10;
 const BALL = 11;
 const TOWEL = 12;
 const HELD = 13;
+const HEADSET = 14;
 
 // What melts into what: masses in one group melt together everywhere, two
 // groups only where a joint joins them.
@@ -442,6 +444,11 @@ const untwistTable = (q: Pose, pel: V3): Float64Array => {
 // head, a cartoon's helmet. (An official's bare head, in helmet radii.)
 const HELMET = 1.1;
 const OFFICIAL_HEAD = 0.9;
+// A coach's headset band: this far out over his cap (head radii), round
+// this far either way of straight up, in so many pieces.
+const BAND = 0.95;
+const BAND_ARC = 1.45;
+const BAND_STEPS = 6;
 // A player's bare head, his helmet off - and the helmet in his hand, hung
 // from it (helmet radii).
 const BARE_HEAD = 0.86;
@@ -718,6 +725,40 @@ const build = (
 				[[0, R * 0.15]],
 				SHELL,
 				G_HELMET,
+			);
+		}
+		if (look.headset) {
+			// A coach's headset on over it: a cup over each ear, the band
+			// over the top between them, the mike's boom round from his left
+			// one to his mouth.
+			for (const sd of [-1, 1]) {
+				add(
+					at(-0.02, sd * 0.84, -0.1),
+					at(-0.02, sd * 0.98, -0.1),
+					[[0, R * 0.25]],
+					HEADSET,
+					G_MASK,
+				);
+			}
+			const band = (a: number) =>
+				at(-0.02, Math.sin(a) * BAND, Math.cos(a) * BAND - 0.04);
+			for (let i = 0; i < BAND_STEPS; i++) {
+				const a0 = -BAND_ARC + (2 * BAND_ARC * i) / BAND_STEPS;
+				const a1 = -BAND_ARC + (2 * BAND_ARC * (i + 1)) / BAND_STEPS;
+				add(band(a0), band(a1), [[0, R * 0.07]], HEADSET, G_MASK, 0, 0.42);
+			}
+			add(
+				at(0.12, -0.96, -0.2),
+				at(0.8, -0.5, -0.5),
+				[
+					[0, R * 0.05],
+					[0.92, R * 0.05],
+					[1, R * 0.09],
+				],
+				HEADSET,
+				G_MASK,
+				0,
+				0.42,
 			);
 		}
 	} else if (look.bare) {
@@ -1919,6 +1960,11 @@ export const sculptFigure = (
 					case MASK: {
 						gloss = 0.7;
 						set(pal.mask);
+						break;
+					}
+					case HEADSET: {
+						gloss = 0.4;
+						set(HEADSET_RGB);
 						break;
 					}
 					case CHIN:

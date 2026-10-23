@@ -73,6 +73,8 @@ export type FieldLook = {
 	// One of the officials: a cap, not a helmet (in the kit's helmet color),
 	// no pads.
 	official?: true;
+	// (A coach's) a headset on over his cap.
+	headset?: true;
 	// His hair, for when he has his helmet off - and off, in his hand.
 	hair?: string;
 	bare?: true;
@@ -330,8 +332,13 @@ export const chainCrewLook = (seed: string): FieldLook => {
 };
 
 // A COACH: his team's pullover in its main color, sleeves to the wrist, dark
-// pants, a cap.
-export const coachLook = (kit: FieldKit, seed: string): FieldLook => {
+// pants, a cap - most of them a headset on over it (the head coach always).
+const HEADSETS = 0.7;
+export const coachLook = (
+	kit: FieldKit,
+	seed: string,
+	head = false,
+): FieldLook => {
 	const rng = makeCourtRng(`coach|${seed}`);
 	const main = kit.helmet;
 	return {
@@ -360,6 +367,7 @@ export const coachLook = (kit: FieldKit, seed: string): FieldLook => {
 		jerseyNumber: "",
 		lastName: "",
 		official: true,
+		...(rng() < HEADSETS || head ? { headset: true } : {}),
 	};
 };
 

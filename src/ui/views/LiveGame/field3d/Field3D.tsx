@@ -402,7 +402,7 @@ const Field3D = ({
 		for (const team of [0, 1] as const) {
 			for (let i = 0; i < COACHES; i++) {
 				const id = coachId(team, i);
-				looks.set(id, coachLook(kits[team], `${gid}|${id}`));
+				looks.set(id, coachLook(kits[team], `${gid}|${id}`, i === 0));
 				bodies.set(
 					id,
 					drawnOfficialBody(68 + ((i * 5) % 7), 180 + ((i * 17) % 70)),
