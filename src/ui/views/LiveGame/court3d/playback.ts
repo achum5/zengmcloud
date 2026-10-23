@@ -346,6 +346,20 @@ export const stepPlay = (
 ): { dt: number; rate: number; cut: number | undefined } => {
 	const dt = s.last === undefined ? 0 : Math.min(100, now - s.last);
 	s.last = now;
+	// Onto the game from the warm-ups: first to where the page is. The
+	// page's cursor reaches the clock after the picture has had a frame or
+	// two of the game (see Court3D) - and run on from the warm-ups' own
+	// clock, seconds in, it was past the tip, so the first line (who won
+	// the jump ball) went up, and the game clock on the score bug started,
+	// over the look round the building before the ball was thrown up.
+	if (!staging && s.prevCursor < 0) {
+		onCursor(s, tl, {
+			cursor: p.cursor,
+			paused: p.paused,
+			skips: s.prevSkips,
+			follower: p.follower,
+		});
+	}
 	// Playing along with another device's court: as much of the show as
 	// holds a steady gap behind it - or a cut to where it was.
 	let show = dt;

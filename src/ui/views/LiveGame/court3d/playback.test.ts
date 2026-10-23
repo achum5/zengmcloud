@@ -581,3 +581,40 @@ describe("watching another device's 3D sim", () => {
 		assert.isBelow(held[0] ?? 0, 2500, `${held.slice(0, 4)}`);
 	}, 120_000);
 });
+
+describe("onto the game from the warm-ups", () => {
+	// The warm-ups run on their own clock while the game is staged; the game
+	// arrives, and the picture has a frame or two of it before the page's
+	// cursor reaches the clock (see Court3D).
+	test("the first line goes up at the tip, not on the game's first frame", () => {
+		const { tl, events } = compile("warm", 20);
+		const s = device(false).s;
+		s.t = 25_000;
+		let asked = 0;
+		const f = makeFollow();
+		for (let now = 16; now < 100; now += 16) {
+			stepPlay(
+				s,
+				{
+					cursor: 0,
+					paused: false,
+					rate: 1,
+					follower: false,
+					along: false,
+					keyPlan: undefined,
+					eventsLength: events.length,
+					onReady: () => {
+						asked += 1;
+					},
+				},
+				f,
+				tl,
+				false,
+				now,
+				now,
+			);
+		}
+		assert.strictEqual(asked, 0);
+		assert.isBelow(s.t, targetForCursor(tl, 0));
+	});
+});
