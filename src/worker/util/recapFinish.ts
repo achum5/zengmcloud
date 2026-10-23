@@ -22,7 +22,7 @@ import {
 	type GameFlowSide,
 } from "../../common/gameFlow.ts";
 import type { RecapGame, RecapTeam } from "./getDayGamesForRecap.ts";
-import { cap, pick, poss, stripHtml, theNick } from "./recapText.ts";
+import { aOrdinal, cap, pick, poss, stripHtml, theNick } from "./recapText.ts";
 
 type Rng = () => number;
 
@@ -348,7 +348,17 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 			// Past perfect when the lede has already jumped ahead to the
 			// winning shot: the tie is being told out of order.
 			const had = shotTold ? "had " : "";
-			if (before.role === "tie") {
+			if (before.role === "tie" && ot && before.e.period < goAhead.e.period) {
+				// The tie that ended an overtime and forced the next. Told as
+				// any other tie, "Lonnie Ingram's three-pointer with 0.9 seconds
+				// left made it 97-97" sat between the shot that forced the first
+				// overtime and the second overtime's go-ahead basket, and the
+				// reader could not tell there had been a second.
+				say(
+					`${cap(shot)} ${when(before.e, rng)} ${had}tied it at ${w} and forced ${aOrdinal(before.e.period - regPeriods + 1)} overtime.`,
+					before.name,
+				);
+			} else if (before.role === "tie") {
 				say(
 					pick(
 						rng,

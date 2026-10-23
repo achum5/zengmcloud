@@ -1109,7 +1109,8 @@ export const vsOpponentBeat = (
 			rng,
 			[
 				`${p.name} had not managed more than ${v.bestPts} against ${opp} this season.`,
-				`His previous best against ${opp} was ${v.bestPts}.`,
+				// Not "His previous best against the Warriors was 7": 7 of what.
+				`He had not scored more than ${v.bestPts} in ${numWord(v.games)} earlier games against ${opp}.`,
 				`${cap(opp)} had held ${p.name} to ${v.bestPts} or fewer in every earlier meeting.`,
 			],
 			"vsOppBreakout",

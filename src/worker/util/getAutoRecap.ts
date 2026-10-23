@@ -262,11 +262,15 @@ export const dedupePlayerSubjects = (
 			// for Obi King." - the name closing two sentences running. When the
 			// sentence before names him and this one names nobody else, the
 			// second becomes "for him".
+			// ...and the sentence before names nobody else either: "19 points
+			// and 13 rebounds from Cade Ingram, and Anthony Ingram supplied 18.
+			// The 13 rebounds were a season high for him." - him was Anthony.
 			const closing = names.find(
 				(n) =>
 					out[i]!.endsWith(` for ${n}.`) &&
 					sentences[i - 1]!.includes(n) &&
-					!names.some((other) => other !== n && out[i]!.includes(other)),
+					!names.some((other) => other !== n && out[i]!.includes(other)) &&
+					!another(sentences[i - 1]!, n),
 			);
 			if (closing) {
 				out[i] = `${out[i]!.slice(0, -(closing.length + 1))}him.`;

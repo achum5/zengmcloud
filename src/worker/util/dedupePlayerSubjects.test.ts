@@ -49,6 +49,27 @@ describe("dedupePlayerSubjects", () => {
 	});
 });
 
+// "...from Cade Ingram, and Anthony Ingram supplied 18 points. The 13
+// rebounds were a season high for him." - him was the second man named.
+test("'for him' only when the sentence before named no one else", () => {
+	const names = ["Cade Ingram", "Anthony Ingram"];
+	const kept = [
+		"The best the Timberwolves could offer was 19 points and 13 rebounds from Cade Ingram, and Anthony Ingram supplied 18 points.",
+		"The 13 rebounds were a season high for Cade Ingram.",
+	];
+	assert.deepStrictEqual(dedupePlayerSubjects(kept, names), kept);
+	assert.deepStrictEqual(
+		dedupePlayerSubjects(
+			[
+				"The Timberwolves got 19 points and 13 rebounds from Cade Ingram.",
+				"The 13 rebounds were a season high for Cade Ingram.",
+			],
+			names,
+		)[1],
+		"The 13 rebounds were a season high for him.",
+	);
+});
+
 describe("joinShortPairs", () => {
 	test("two short sentences on one subject become one", () => {
 		assert.deepStrictEqual(

@@ -1163,7 +1163,9 @@ describe("a player against this opponent", () => {
 		assert.ok(all.size >= 3, [...all].join("\n"));
 		assert.ok(
 			[...all].every((s) =>
-				/not managed more than|previous best|had held/.test(s),
+				/not managed more than|not scored more than # in three earlier games|had held/.test(
+					s,
+				),
 			),
 			[...all].join("\n"),
 		);

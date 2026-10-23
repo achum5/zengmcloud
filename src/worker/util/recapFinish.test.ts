@@ -195,6 +195,33 @@ describe("finishStory", () => {
 		(game.teams[1] as any).ptsQtrs = [16, 30, 28, 27];
 	});
 
+	// "Lonnie Ingram's three-pointer with 0.9 seconds left made it 97-97.
+	// Payton Ingram's three-pointer with 4:39 to go then made it 100-97." -
+	// the tie that forced a second overtime, told like any other, and the
+	// reader could not tell there had been one.
+	test("a tie that ends an overtime says it forced another", () => {
+		const game = build(
+			[
+				ev(1, 21, 2, "rim", 3.2, [96, 96]),
+				ev(0, 11, 2, "rim", 250, [98, 96], { period: 5 }),
+				ev(1, 22, 3, "tp", 0.9, [98, 99], { period: 5 }),
+				ev(0, 12, 1, "ft", 0.4, [99, 99], { period: 5 }),
+				ev(0, 11, 2, "mid", 100, [101, 99], { period: 6 }),
+				ev(0, 11, 2, "ft", 8, [103, 99], { period: 6 }),
+			],
+			{
+				overtimes: 2,
+				clutchPlays: [
+					'<a href="#">Cade King</a> made a basket with 3.2 seconds remaining to force overtime.',
+				],
+			},
+		);
+		for (let seed = 1; seed <= 6; seed++) {
+			const text = tell(game, seed).join(" ");
+			assert.match(text, /tied it at 99 and forced a second overtime/, text);
+		}
+	});
+
 	test("the same man twice in a row becomes a pronoun", () => {
 		const game = build([
 			ev(1, 21, 2, "rim", 60, [99, 99]),
