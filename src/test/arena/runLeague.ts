@@ -352,3 +352,60 @@ export const advanceSeasons = async (
 
 	return snapshots;
 };
+
+// A league as it stands, carried from one arena run to the next
+// (ARENA_EXPORT, ARENA_IMPORT): every record in the database but the box
+// scores, a store a line. A long run in parts survives losing one.
+const NOT_CARRIED = new Set(["games"]);
+
+const importNode = (name: string) => import(/* @vite-ignore */ name);
+
+// JSON has no Infinity.
+const replacer = (_: string, value: unknown) =>
+	typeof value === "number" && !Number.isFinite(value)
+		? { __number: String(value) }
+		: value;
+const reviver = (_: string, value: any) =>
+	value !== null &&
+	typeof value === "object" &&
+	Object.keys(value).length === 1 &&
+	typeof value.__number === "string"
+		? Number(value.__number)
+		: value;
+
+export const exportArenaLeague = async (file: string) => {
+	await idb.cache.flush();
+	const fs = await importNode("node:fs/promises");
+	const handle = await fs.open(file, "w");
+	try {
+		for (const store of idb.league.objectStoreNames) {
+			if (NOT_CARRIED.has(store)) {
+				continue;
+			}
+			const records = await idb.league.getAll(store as any);
+			await handle.write(`${JSON.stringify({ store, records }, replacer)}\n`);
+		}
+	} finally {
+		await handle.close();
+	}
+};
+
+export const importArenaLeague = async (file: string) => {
+	const fs = await importNode("node:fs/promises");
+	const lines = (await fs.readFile(file, "utf8")).split("\n");
+	await idb.cache.flush();
+	for (const line of lines) {
+		if (line === "") {
+			continue;
+		}
+		const { store, records } = JSON.parse(line, reviver);
+		const tx = idb.league.transaction(store, "readwrite");
+		await tx.store.clear();
+		for (const record of records) {
+			tx.store.put(record);
+		}
+		await tx.done;
+	}
+	await league.loadGameAttributes();
+	await idb.cache.fill();
+};

@@ -49,7 +49,12 @@ import {
 	type ValueRatings,
 } from "../../worker/core/realisticFrontOffice/strength.ts";
 import { inGameOrder, play, toSimTeam } from "../impact/simTools.ts";
-import { advanceSeasons, createArenaLeague } from "./runLeague.ts";
+import {
+	advanceSeasons,
+	createArenaLeague,
+	exportArenaLeague,
+	importArenaLeague,
+} from "./runLeague.ts";
 import { computeMetrics, type LeagueMetrics } from "./metrics.ts";
 import { BENCHMARKS, type Benchmark } from "./benchmarks.ts";
 
@@ -82,6 +87,9 @@ test.runIf(env.ARENA_RUN === "1")(
 		const seed = Number(env.ARENA_SEED ?? 1);
 		const numSeasons = Number(env.ARENA_SEASONS ?? 10);
 		const out = env.ARENA_OUT ?? ".";
+		// ARENA_TAG: what this run's files are named by (the seed by default) -
+		// a part of a longer run, say.
+		const tag = env.ARENA_TAG ?? String(seed);
 
 		// Every random number in the league, from league creation on, comes from
 		// the seed - so a league that looks wrong can be played again exactly.
@@ -91,6 +99,11 @@ test.runIf(env.ARENA_RUN === "1")(
 		try {
 			const started = Date.now();
 			await createArenaLeague(seed);
+			// ARENA_IMPORT: carry on the league another run exported
+			// (ARENA_EXPORT), so a long run can be played in parts.
+			if (env.ARENA_IMPORT) {
+				await importArenaLeague(env.ARENA_IMPORT);
+			}
 			const firstSeason = g.get("season");
 			if (env.ARENA_FO === "1") {
 				await league.setGameAttributes({ realisticFrontOffices: true });
@@ -604,17 +617,17 @@ test.runIf(env.ARENA_RUN === "1")(
 			await fs.mkdir(out, { recursive: true });
 			if (env.ARENA_FO === "1") {
 				await fs.writeFile(
-					`${out}/trades-${seed}.txt`,
+					`${out}/trades-${tag}.txt`,
 					await getTradeHistoryDump(numSeasons + 1),
 				);
 			}
 			if (env.ARENA_FO === "1") {
 				await fs.writeFile(
-					`${out}/tradelog-${seed}.json`,
+					`${out}/tradelog-${tag}.json`,
 					JSON.stringify(tradeLog),
 				);
 				await fs.writeFile(
-					`${out}/deferred-${seed}.json`,
+					`${out}/deferred-${tag}.json`,
 					JSON.stringify(deferLog),
 				);
 				// What became of every traded player: his overall each season, and
@@ -637,12 +650,12 @@ test.runIf(env.ARENA_RUN === "1")(
 					}
 				}
 				await fs.writeFile(
-					`${out}/realized-${seed}.json`,
+					`${out}/realized-${tag}.json`,
 					JSON.stringify(realized),
 				);
 			}
 			await fs.writeFile(
-				`${out}/deadline-views-${seed}.json`,
+				`${out}/deadline-views-${tag}.json`,
 				JSON.stringify(deadlineViews),
 			);
 			// Every team's seasons: how it did, which version ran it, and how
@@ -687,10 +700,7 @@ test.runIf(env.ARENA_RUN === "1")(
 						}
 					}
 				}
-				await fs.writeFile(
-					`${out}/teams-${seed}.json`,
-					JSON.stringify(seasons),
-				);
+				await fs.writeFile(`${out}/teams-${tag}.json`, JSON.stringify(seasons));
 			}
 			// Every player drafted while the league ran: where he went and how
 			// he turned out, to judge the drafting.
@@ -708,14 +718,11 @@ test.runIf(env.ARENA_RUN === "1")(
 						});
 					}
 				}
-				await fs.writeFile(
-					`${out}/drafts-${seed}.json`,
-					JSON.stringify(drafts),
-				);
+				await fs.writeFile(`${out}/drafts-${tag}.json`, JSON.stringify(drafts));
 			}
 			if (env.ARENA_PICK_SURVEY === "1") {
 				await fs.writeFile(
-					`${out}/pick-survey-${seed}.json`,
+					`${out}/pick-survey-${tag}.json`,
 					JSON.stringify({
 						projections: pickSurvey,
 						drafts: snapshots.map((s) => ({
@@ -727,39 +734,45 @@ test.runIf(env.ARENA_RUN === "1")(
 			}
 			if (env.ARENA_ROSTER_CHECK === "1") {
 				await fs.writeFile(
-					`${out}/roster-checks-${seed}.json`,
+					`${out}/roster-checks-${tag}.json`,
 					JSON.stringify(rosterChecks),
 				);
 			}
 			if (env.ARENA_FA_SURVEY === "1") {
 				await fs.writeFile(
-					`${out}/fa-survey-${seed}.json`,
+					`${out}/fa-survey-${tag}.json`,
 					JSON.stringify(faSurvey),
 				);
 			}
 			if (env.ARENA_DEAL_SURVEY === "1") {
 				await fs.writeFile(
-					`${out}/survey-${seed}.json`,
+					`${out}/survey-${tag}.json`,
 					JSON.stringify({ stops: survey, revisits }),
 				);
 			}
 			if (env.ARENA_DEBUG_GAINS !== undefined) {
 				await fs.writeFile(
-					`${out}/suspicious-${seed}.json`,
+					`${out}/suspicious-${tag}.json`,
 					JSON.stringify(suspicious),
 				);
 			}
 			if (env.ARENA_CHECK_TRADES !== undefined) {
 				tradeWatchers.length = 0;
 				await fs.writeFile(
-					`${out}/trade-check-${seed}.json`,
+					`${out}/trade-check-${tag}.json`,
 					JSON.stringify(
 						await checkTrades(watched, Number(env.ARENA_CHECK_TRADES)),
 					),
 				);
 			}
+			// ARENA_EXPORT: the league as it ends, for another run to carry on
+			// (ARENA_IMPORT) - before league-<tag>.json, which marks the run
+			// done.
+			if (env.ARENA_EXPORT) {
+				await exportArenaLeague(env.ARENA_EXPORT);
+			}
 			await fs.writeFile(
-				`${out}/league-${seed}.json`,
+				`${out}/league-${tag}.json`,
 				JSON.stringify({
 					seed,
 					seconds: (Date.now() - started) / 1000,
