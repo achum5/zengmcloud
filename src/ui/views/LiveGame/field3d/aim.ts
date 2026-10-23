@@ -12,10 +12,10 @@ import { FIELD_L, GOAL_L, GOAL_R, MID_Y } from "./geometry.ts";
 // and how far ahead of the line (toward the defense) the middle of the
 // picture is.
 const FRAMING: Record<Play["kind"], { width: number; ahead: number }> = {
-	pass: { width: 118, ahead: 12 },
-	run: { width: 112, ahead: 10 },
-	kneel: { width: 100, ahead: 6 },
-	none: { width: 112, ahead: 10 },
+	pass: { width: 104, ahead: 12 },
+	run: { width: 98, ahead: 10 },
+	kneel: { width: 88, ahead: 6 },
+	none: { width: 98, ahead: 10 },
 	fieldGoal: { width: 112, ahead: -4 },
 	extraPoint: { width: 112, ahead: -4 },
 	punt: { width: 170, ahead: 10 },
@@ -35,7 +35,7 @@ const WIDEST = 190;
 // Once a man of the offense has it past the line - a catch, a back through
 // the hole - and after the whistle, in on him: narrowing the further he
 // gets, the men round him and not the whole field.
-const CARRY_WIDTH = 96;
+const CARRY_WIDTH = 84;
 const NARROW = 0.5;
 // However it goes, no further toward an end line than to take in the end
 // zone and a strip past it (feet), not the stands behind.
@@ -58,7 +58,15 @@ const HOLD_BACK = 21;
 const KICK_ROOM = 50;
 const KICK_LIFT = 14;
 
-const across = (y: number) => MID_Y + (y - MID_Y) * 0.45;
+// Across the field, on the near side of the middle: the score bug and the
+// caption sit over the foot of the picture, so a man split wide on the near
+// side, or the ball carried down the near sideline, is kept up clear of
+// them. Before the snap, on the middle of the twenty-two as they will stand
+// at it - that far on past it, the far side drawn smaller.
+const SET_UP = 29;
+const SET_MOST = 40;
+const NEAR = 18;
+const across = (y: number) => MID_Y + NEAR + (y - MID_Y) * 0.7;
 const HURT_WIDTH = 96;
 
 export const aimFor = (m: FieldMoment): Shot => {
@@ -70,8 +78,11 @@ export const aimFor = (m: FieldMoment): Shot => {
 	const set = {
 		x: play.losX + play.dir * f.ahead,
 		width: f.width,
-		// (Across the field, most of the way to the middle.)
-		y: MID_Y + (play.ballY - MID_Y) * 0.35,
+		// (A kick across the field, most of the way to the middle.)
+		y:
+			FOLLOWS.has(play.kind) || play.kind === "none"
+				? setY(play)
+				: MID_Y + (play.ballY - MID_Y) * 0.35,
 	};
 	// A man hurt: on him, and the trainers round him, and with him off.
 	const hurt = play.hurt;
@@ -134,6 +145,39 @@ export const aimFor = (m: FieldMoment): Shot => {
 		width,
 		y: across(focus.y),
 	};
+};
+
+const setYs = new WeakMap<Play, number>();
+const setY = (play: Play) => {
+	let y = setYs.get(play);
+	if (y === undefined) {
+		let near = -Infinity;
+		let far = Infinity;
+		for (const part of play.parts) {
+			const leg =
+				part.legs.find((l) => l.t0 <= play.snap && l.t1 >= play.snap) ??
+				part.legs[0];
+			if (!leg) {
+				continue;
+			}
+			const u =
+				leg.t1 > leg.t0
+					? Math.min(1, Math.max(0, (play.snap - leg.t0) / (leg.t1 - leg.t0)))
+					: 1;
+			const at = leg.from.y + (leg.to.y - leg.from.y) * u;
+			near = Math.max(near, at);
+			far = Math.min(far, at);
+		}
+		y =
+			near < far
+				? MID_Y + SET_UP
+				: Math.min(
+						MID_Y + SET_MOST,
+						Math.max(MID_Y, (near + far) / 2 + SET_UP),
+					);
+		setYs.set(play, y);
+	}
+	return y;
 };
 
 const inBounds = (x: number, width: number) =>

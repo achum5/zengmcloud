@@ -1,5 +1,6 @@
 import { depthOf, project, type Camera } from "../court3d/camera.ts";
 import { skeleton, type Body } from "../court3d/poses.ts";
+import { FIGURE_SCALE } from "./body.ts";
 import { chainManOf, type ChainMan } from "./chains.ts";
 import type { FieldMoment } from "./evaluate.ts";
 import { MID_Y, type Pt3 } from "./geometry.ts";
@@ -15,15 +16,16 @@ const ORANGE = "#ff6b17";
 const ORANGE_DARK = "#b9440b";
 const NUMERAL = "#141416";
 const CHAIN_GRAY = "#c9c9c1";
-// How tall a rod is, and its marker on top (feet).
-const ROD_H = 8;
-const MARKER_W = 1.1;
-const MARKER_H = 0.9;
+// How tall a rod is, and its marker on top (feet - drawn to the size of the
+// men, see body.ts).
+const ROD_H = 8 * FIGURE_SCALE;
+const MARKER_W = 1.1 * FIGURE_SCALE;
+const MARKER_H = 0.9 * FIGURE_SCALE;
 // The box on its pole: its top, and how wide, tall and deep it is.
-const BOX_TOP = 7.6;
-const BOX_W = 1.4;
-const BOX_T = 1.1;
-const BOX_D = 0.5;
+const BOX_TOP = 7.6 * FIGURE_SCALE;
+const BOX_W = 1.4 * FIGURE_SCALE;
+const BOX_T = 1.1 * FIGURE_SCALE;
+const BOX_D = 0.5 * FIGURE_SCALE;
 const POLE_FT = 0.15;
 // Never so thin, far off, it can't be made out.
 const MIN_PX = 1;

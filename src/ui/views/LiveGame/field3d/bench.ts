@@ -1,4 +1,5 @@
 import { depthOf, project, type Camera } from "../court3d/camera.ts";
+import { FIGURE_SCALE } from "./body.ts";
 import { shade } from "./color.ts";
 import { BENCH_OFF, FIELD_W, type Pt3, type Side } from "./geometry.ts";
 import { BENCHES, netX, sidelineOf } from "./sideline.ts";
@@ -9,9 +10,10 @@ import { BENCHES, netX, sidelineOf } from "./sideline.ts";
 
 // (Dark, a rail along the top of its back in the team's color.)
 const BACK = "#2a2c31";
-const SEAT_Z = 1.6;
+// (Seat and back as high as the men sat on them, see body.ts.)
+const SEAT_Z = 1.6 * FIGURE_SCALE;
 const SEAT_D = 1.5;
-const BACK_Z = 3.3;
+const BACK_Z = 3.3 * FIGURE_SCALE;
 const NET_W = 7;
 const NET_H = 8;
 // The net stands this far off the sideline, at its near edge.

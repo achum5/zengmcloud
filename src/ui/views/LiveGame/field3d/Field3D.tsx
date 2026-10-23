@@ -29,7 +29,7 @@ import type { Body } from "../court3d/poses.ts";
 import { aimFor } from "./aim.ts";
 import { drawFlyingBall, drawLooseBall } from "./ball.ts";
 import { drawFlag } from "./flag.ts";
-import { footballBody, officialBody } from "./body.ts";
+import { drawnBody, FIGURE_SCALE, footballBody, officialBody } from "./body.ts";
 import { makeFieldCamera, MAIN_RIG, REPLAY_RIG } from "./camera.ts";
 import { compileField, type FieldTimeline } from "./director.ts";
 import { momentAt, playAt } from "./evaluate.ts";
@@ -87,6 +87,7 @@ import {
 } from "./media.ts";
 import { tvCrewFor } from "./tv.ts";
 import { drawFieldPlayer } from "./sprite.ts";
+import { drawTags, type TagCover } from "./tags.ts";
 import { chainGear } from "./sticks.ts";
 import { paintStadium } from "./stadium.ts";
 import { inShadow, venueFor } from "./venue.ts";
@@ -139,6 +140,42 @@ const lastNameOf = (name: string | undefined): string => {
 	const i = n.indexOf(" ");
 	return i < 0 ? n : n.slice(i + 1);
 };
+
+// Everyone drawn bigger than life (see body.ts), and so how high anything
+// is off the turf as it is drawn.
+const drawnFootballBody = (hgt?: number, weight?: number) =>
+	drawnBody(footballBody(hgt, weight));
+const drawnOfficialBody = (hgt?: number, weight?: number) =>
+	drawnBody(officialBody(hgt, weight));
+const DRAWN_DEFAULT = drawnFootballBody();
+
+// Where the score bug and the line over it sit in the picture: what the
+// tags keep out from behind (see tags.ts).
+const coverOf = (
+	wrap: HTMLElement | null,
+	el: Element | null | undefined,
+): TagCover | undefined => {
+	if (!wrap || !el) {
+		return undefined;
+	}
+	const w = wrap.getBoundingClientRect();
+	const b = el.getBoundingClientRect();
+	if (w.width <= 0 || w.height <= 0 || b.width <= 0 || b.height <= 0) {
+		return undefined;
+	}
+	return {
+		x0: (b.left - w.left) / w.width,
+		x1: (b.right - w.left) / w.width,
+		y0: (b.top - w.top) / w.height,
+	};
+};
+const coversOf = (wrap: HTMLElement | null, bug: HTMLElement | null) =>
+	[
+		coverOf(wrap, bug?.firstElementChild),
+		coverOf(wrap, wrap?.querySelector(".court3d-caption")),
+	].filter((b) => b !== undefined);
+const drawnUp = <T extends { z: number }>(p: T): T =>
+	p.z === 0 ? p : { ...p, z: p.z * FIGURE_SCALE };
 
 // A man as he looks with his helmet off, the same each time.
 const bareLooks = new WeakMap<FieldLook, FieldLook>();
@@ -351,43 +388,52 @@ const Field3D = ({
 					? { logo: logos[p.team] }
 					: {}),
 			});
-			bodies.set(p.pid, footballBody(f?.hgt, f?.weight));
+			bodies.set(p.pid, drawnFootballBody(f?.hgt, f?.weight));
 		}
 		for (const o of crewFor(gid ?? 0)) {
 			looks.set(o.id, officialLook(o.o === "R", o.number, `${gid}|${o.o}`));
-			bodies.set(o.id, officialBody(o.hgt, o.weight));
+			bodies.set(o.id, drawnOfficialBody(o.hgt, o.weight));
 		}
 		for (const o of chainCrewFor(gid ?? 0)) {
 			looks.set(o.id, chainCrewLook(`${gid}|${o.c}`));
-			bodies.set(o.id, officialBody(o.hgt, o.weight));
+			bodies.set(o.id, drawnOfficialBody(o.hgt, o.weight));
 		}
 		for (const team of [0, 1] as const) {
 			for (let i = 0; i < COACHES; i++) {
 				const id = coachId(team, i);
 				looks.set(id, coachLook(kits[team], `${gid}|${id}`));
-				bodies.set(id, officialBody(68 + ((i * 5) % 7), 180 + ((i * 17) % 70)));
+				bodies.set(
+					id,
+					drawnOfficialBody(68 + ((i * 5) % 7), 180 + ((i * 17) % 70)),
+				);
 			}
 			for (let i = 0; i < STAFF; i++) {
 				const id = staffId(team, i);
 				looks.set(id, trainerLook(kits[team], `${gid}|${id}`));
-				bodies.set(id, officialBody(67 + ((i * 3) % 8), 170 + ((i * 23) % 60)));
+				bodies.set(
+					id,
+					drawnOfficialBody(67 + ((i * 3) % 8), 170 + ((i * 23) % 60)),
+				);
 			}
 			// The trainers, out to a man hurt.
 			for (let n = 0; n < HURT_MOST; n++) {
 				for (let k = 0; k < MEDICS; k++) {
 					const id = medicId(team, n, k);
 					looks.set(id, trainerLook(kits[team], `${gid}|${id}`));
-					bodies.set(id, officialBody(68 + ((k * 3) % 5), 180 + k * 14));
+					bodies.set(id, drawnOfficialBody(68 + ((k * 3) % 5), 180 + k * 14));
 				}
 			}
 		}
 		for (const o of tvCrewFor(gid ?? 0)) {
 			looks.set(o.id, tvCrewLook(`${gid}|${o.id}`));
-			bodies.set(o.id, officialBody(o.hgt, o.weight));
+			bodies.set(o.id, drawnOfficialBody(o.hgt, o.weight));
 		}
 		for (const [k, s] of photographersFor(gid ?? 0).entries()) {
 			looks.set(s.id, photographerLook(`${gid}|${s.id}`));
-			bodies.set(s.id, officialBody(67 + ((k * 7) % 8), 170 + ((k * 13) % 60)));
+			bodies.set(
+				s.id,
+				drawnOfficialBody(67 + ((k * 7) % 8), 170 + ((k * 13) % 60)),
+			);
 		}
 		return { looks, bodies };
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -429,6 +475,8 @@ const Field3D = ({
 	}, []);
 	const narrow = size.w < NARROW_W;
 
+	const bugRef = useRef<HTMLDivElement | null>(null);
+	const covers = useRef({ at: -Infinity, boxes: [] as TagCover[] });
 	const dipRef = useRef<HTMLDivElement | null>(null);
 	const replayRef = useRef<HTMLDivElement | null>(null);
 	const clockRef = useRef<HTMLSpanElement | null>(null);
@@ -545,7 +593,7 @@ const Field3D = ({
 				replay ? REPLAY_RIG : MAIN_RIG,
 			);
 			const look = (pid: number) => looks.current.get(pid);
-			const body = (pid: number) => bodies.current.get(pid) ?? footballBody();
+			const body = (pid: number) => bodies.current.get(pid) ?? DRAWN_DEFAULT;
 			const items: { depth: number; draw: () => void }[] = [];
 			const shadow = p.paint.stadium.style.shadow;
 			const snappers = photographersAt(photographersRef.current, moment);
@@ -567,7 +615,7 @@ const Field3D = ({
 							ctx,
 							scratch,
 							view,
-							st,
+							drawnUp(st),
 							body(st.id),
 							l,
 							1,
@@ -584,9 +632,9 @@ const Field3D = ({
 					depth: depthOf(view, { ...ball.at, z: 0 }),
 					draw: () => {
 						if (axis) {
-							drawFlyingBall(ctx, view, ball.at, axis);
+							drawFlyingBall(ctx, view, drawnUp(ball.at), axis);
 						} else {
-							drawLooseBall(ctx, view, ball.at, ball.stood);
+							drawLooseBall(ctx, view, drawnUp(ball.at), ball.stood);
 						}
 					},
 				});
@@ -601,7 +649,7 @@ const Field3D = ({
 				items.push({
 					depth: depthOf(view, { ...f.at, z: 0 }),
 					draw: () => {
-						drawFlag(ctx, view, f.at, f.down, f.turn);
+						drawFlag(ctx, view, drawnUp(f.at), f.down, f.turn);
 					},
 				});
 			}
@@ -616,6 +664,23 @@ const Field3D = ({
 				crowd: crowdAt(tl, moment.t, now),
 				...(replay ? {} : { marks: marksAt(moment.play, moment.t) }),
 			});
+			if (now - covers.current.at > 500) {
+				covers.current = {
+					at: now,
+					boxes: coversOf(wrapRef.current, bugRef.current),
+				};
+			}
+			drawTags(
+				ctx,
+				view,
+				moment.play,
+				moment.t,
+				moment.players,
+				look,
+				Math.max(1, Math.round(8 / ((7 * art) / dpr))),
+				covers.current.boxes,
+				!replay,
+			);
 			if (adjust(res, h * dpr, dt, performance.now() - drawStart, now)) {
 				releaseSprites(sprites);
 				sprites = makeSpriteCache();
@@ -826,13 +891,15 @@ const Field3D = ({
 					}}
 				/>
 			) : null}
-			<ScoreBug
-				away={bugTeam(away, awayPts, 1)}
-				home={bugTeam(home, homePts, 0)}
-				quarter={quarter}
-				totalTimeouts={STARTING_NUM_TIMEOUTS}
-				refs={refs}
-			/>
+			<div ref={bugRef} style={{ display: "contents" }}>
+				<ScoreBug
+					away={bugTeam(away, awayPts, 1)}
+					home={bugTeam(home, homePts, 0)}
+					quarter={quarter}
+					totalTimeouts={STARTING_NUM_TIMEOUTS}
+					refs={refs}
+				/>
+			</div>
 			{caption ? (
 				<div
 					className="court3d-caption"

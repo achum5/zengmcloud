@@ -44,3 +44,16 @@ export const officialBody = (hgt = 72, weight = 205): Body => {
 	const b = footballBody(hgt, weight);
 	return { ...b, depth: b.depth / 1.18 };
 };
+
+// Bigger than life on the field, as a game draws them, so a man can be
+// picked out at the broadcast's distance: every length of him this much
+// over. (Only as drawn - where he is and how high anything goes stays
+// true, scaled the same way up off the turf when it is drawn.)
+export const FIGURE_SCALE = 1.2;
+export const drawnBody = (b: Body): Body => {
+	const out = { ...b };
+	for (const k of Object.keys(out) as (keyof Body)[]) {
+		out[k] = b[k] * FIGURE_SCALE;
+	}
+	return out;
+};

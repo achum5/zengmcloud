@@ -1,6 +1,7 @@
 import { depthOf, project, type Camera } from "../court3d/camera.ts";
 import { skeleton, type Body, type V3 } from "../court3d/poses.ts";
 import { makeCourtRng } from "../courtRng.ts";
+import { FIGURE_SCALE } from "./body.ts";
 import type { FieldMoment } from "./evaluate.ts";
 import {
 	FIELD_L,
@@ -155,10 +156,11 @@ const BODY = "#1c1c20";
 const LENS = "#e8e6df";
 const LENS_EDGE = "#9a9890";
 const RING = "#2a2a2e";
-// The camera body (feet across), the lens (long, and thick).
-const BODY_FT = 0.42;
-const LENS_FT = 1.35;
-const LENS_D = 0.42;
+// The camera body (feet across), the lens (long, and thick) - to the size
+// of the men (see body.ts).
+const BODY_FT = 0.42 * FIGURE_SCALE;
+const LENS_FT = 1.35 * FIGURE_SCALE;
+const LENS_D = 0.42 * FIGURE_SCALE;
 const MIN_PX = 1;
 
 type Item = { depth: number; draw: () => void };
