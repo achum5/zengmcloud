@@ -1622,17 +1622,26 @@ const letGo = (
 			// Every season ahead, by what it is worth to the franchise: on the
 			// first few alone, it let young players go who were about to get
 			// better. One worth more than his room the first season only gets
-			// better.
+			// better - but a drafted player is not decided by that: what he
+			// costs is room later on.
 			for (const [s, at] of ahead) {
 				const kept = pointsOf(s);
 				const line = s.lines[at.i]!;
 				s.lines[at.i] = withoutOption(line, at);
-				freed.push(points([...s.lines, ...s.signingsAt!(s.room! + at.salary)]));
+				const after = points([
+					...s.lines,
+					...s.signingsAt!(s.room! + at.salary),
+				]);
 				s.lines[at.i] = line;
-				if (freed.length === 1 && freed[0]! <= kept) {
+				freed.push(after);
+				if (
+					freed.length === 1 &&
+					after <= kept &&
+					!o.key.endsWith(":drafted")
+				) {
 					break;
 				}
-				gain += worth(s.y, freed.at(-1)!) - worth(s.y, kept);
+				gain += worth(s.y, after) - worth(s.y, kept);
 			}
 			if (gain > 0) {
 				if (known?.record) {
