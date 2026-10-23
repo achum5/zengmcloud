@@ -316,6 +316,16 @@ const held = (o: Partial<Pose>): FieldAnim => ({
 		[1, BASE],
 	],
 });
+// Both hands on top of his head (in close: see tuck).
+const HANDS_ON_HEAD: Partial<Pose> = {
+	shN: 162,
+	elN: 142,
+	abN: 14,
+	shF: 162,
+	elF: 142,
+	abF: 14,
+	tuck: 1,
+};
 const over = (a: Partial<Pose>, b: Partial<Pose>): FieldAnim => ({
 	kind: "act",
 	keys: [
@@ -2215,7 +2225,9 @@ const FIELD_ANIMS = {
 	// Delay of game: the arms folded across his chest.
 	sigFold: held({ shN: 46, elN: 124, abN: -34, shF: 50, elF: 120, abF: -34 }),
 	// Too many men, a man downfield who should not be: hands on his head.
-	sigHead: held({ shN: 160, elN: 128, abN: 34, shF: 160, elF: 128, abF: 34 }),
+	sigHead: held(HANDS_ON_HEAD),
+	// A ball he should have had: his hands to his helmet, his head down.
+	handsOnHelmet: held({ ...HANDS_ON_HEAD, lean: 10 }),
 	// Illegal contact, illegal use of the hands: an open hand out in front.
 	sigContact: held({ shN: 92, elN: 6, abN: 0, wrN: -40 }),
 } satisfies Record<string, FieldAnim>;

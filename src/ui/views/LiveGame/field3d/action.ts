@@ -544,6 +544,13 @@ const GET_UP_MS = 1000;
 const READ_MS = 350;
 // A defender sees the ball thrown and breaks on it this long after.
 const BREAK_MS = 250;
+// A pass he got a hand on: this often, the man who did waves it away -
+// no catch - as he slows up. One off a receiver's hands: this often, his
+// hands to his helmet.
+const WAVE_OFF = 0.5;
+const WAVE_MS = 1200;
+const RUE = 0.45;
+const RUE_MS = 1500;
 // A tackler gets to the carrier this long before he has him down, coming
 // at him at no more than most of his speed - all but flat out, if he has
 // to.
@@ -1679,6 +1686,21 @@ class Action {
 	}
 
 	// On a few steps the way he was going, slowing up.
+	// From what he is doing to a stop over a step or two, a walk the way he
+	// was going.
+	slowUp(m: Actor) {
+		const l = m.last;
+		const ang =
+			l.from.x === l.to.x && l.from.y === l.to.y
+				? m.yaw
+				: Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+		m.go(
+			{ x: m.at.x + Math.cos(ang) * 2.5, y: m.at.y + Math.sin(ang) * 2.5 },
+			m.t + 450,
+			"walk",
+		);
+	}
+
 	runOn(m: Actor, ms: number) {
 		const l = m.last;
 		const v = dist(l.from, l.to) / Math.max(0.001, (l.t1 - l.t0) / 1000);
@@ -2370,10 +2392,22 @@ class Action {
 			if (this.reachFor(rec, catchAt, qb)) {
 				this.runOn(rec, 600);
 			}
+			if (r() < WAVE_OFF) {
+				this.slowUp(breakup);
+				breakup.act(
+					"sigWave",
+					breakup.t + WAVE_MS,
+					this.toward(breakup.at, qb.at),
+				);
+			}
 		} else if (r() < 0.5) {
 			// Off his hands.
 			if (this.reachFor(rec, catchAt, qb)) {
 				this.runOn(rec, 600);
+				if (r() < RUE) {
+					this.slowUp(rec);
+					rec.act("handsOnHelmet", rec.t + RUE_MS);
+				}
 			}
 			const ang = r() * Math.PI * 2;
 			lands = {
