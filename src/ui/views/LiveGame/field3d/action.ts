@@ -742,6 +742,18 @@ const PILE_REACH = 6;
 const PILE_TOPS = 2;
 const PILE_OVER = 0.6;
 const PILE_TOP_OFF = 0.7;
+// In from right there: over the top this often - off his feet this far
+// short of the goal line (once he has had it this long), laid out this far
+// over it (and up to this much more), at this pace, over this long; on top
+// of it this long.
+const OVER_TOP = 0.7;
+const TOP_FROM = 6;
+const TOP_SET = 350;
+const TOP_PAST = 1.5;
+const TOP_PAST_MORE = 1.5;
+const TOP_FPS = 16;
+const TOP_MS = [450, 800] as const;
+const TOP_STAY = 700;
 // The rest near it then (this long after the hit), up to this many: in on
 // it this long after, this far off the middle (and up to this much more),
 // got there over this long; off it up to this long before the first man is
@@ -2209,6 +2221,10 @@ class Action {
 			return;
 		}
 		if (end.td) {
+			if (this.heap > 0) {
+				this.overTop(i, carrier, chasers);
+				return;
+			}
 			this.evade(carrier, [], chasers);
 			// Into the end zone, slowing up, the ball held up.
 			const goal = this.goalLineX();
@@ -2688,6 +2704,41 @@ class Action {
 			m.act("getUp", go + 450 + DOWN_MS + GET_UP_MS);
 			this.done.add(m.pid);
 		});
+	}
+
+	// In from right there, up the middle: over the top - off his feet short
+	// of the line, laid out over the pile on it as the ball goes over; up
+	// off the top of it into his moment, the pile under him.
+	overTop(i: number, carrier: Actor, chasers: Actor[]) {
+		const r = this.r;
+		const { dir } = this.input;
+		const goal = this.goalLineX();
+		const had =
+			this.ball.findLast((b) => b.kind === "held" && b.pid === carrier.pid)
+				?.t0 ?? this.input.snap;
+		const go = Math.max(
+			had + TOP_SET,
+			this.crossing(carrier, goal - dir * TOP_FROM, carrier.t),
+		);
+		carrier.cut(go);
+		carrier.hold(go);
+		const from = carrier.at;
+		const land = {
+			x: goal + dir * (TOP_PAST + r() * TOP_PAST_MORE),
+			y: from.y + (r() - 0.5) * 2,
+		};
+		const ms = clamp((dist(from, land) / TOP_FPS) * 1000, TOP_MS[0], TOP_MS[1]);
+		const face = dir > 0 ? 0 : Math.PI;
+		carrier.act("pileDive", go + ms, face, land);
+		const crossT =
+			go + ms * clamp((goal - from.x) / (land.x - from.x || dir), 0, 1);
+		this.at.set(i, crossT);
+		this.whistle = crossT;
+		carrier.hold(go + ms + TOP_STAY + r() * 300, "pileTop", face);
+		carrier.act("offTop", carrier.t + GET_UP_MS, face);
+		this.done.add(carrier.pid);
+		this.pullUp(chasers, carrier, crossT);
+		this.pileUp(carrier, { x: goal, y: land.y }, crossT, this.heap);
 	}
 
 	// Brought down in the thick of it, short and up the middle: a pile - the
@@ -4065,14 +4116,14 @@ class Action {
 			scheme,
 			down.by,
 		);
-		// (Short and up the middle, like as not a pile on him.)
-		const short = sneak || yds <= 1;
+		// (Short and up the middle, like as not a pile on him - or, in from
+		// right there, over the top of it.)
+		const short = sneak || yds <= 1 || end.td;
 		if (
-			!end.td &&
 			!end.out &&
 			scheme !== "stretch" &&
 			yds <= PILE_YDS &&
-			r() < (short ? PILE_SHORT : PILE)
+			r() < (end.td ? OVER_TOP : short ? PILE_SHORT : PILE)
 		) {
 			this.heap = short ? PILE_IN.length : PILE_SMALL;
 		}
