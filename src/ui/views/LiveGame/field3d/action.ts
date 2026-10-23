@@ -18,6 +18,7 @@ import {
 	GOAL_R,
 	MID_Y,
 	POST_W,
+	TEAM_AREA,
 	YD,
 	type Dir,
 	type Pt,
@@ -5238,8 +5239,22 @@ class Action {
 				pr.hold(landT + 900, "stand", this.toward(pr.at, landPt));
 				this.done.add(pr.pid);
 			}
+			// (Easing up short of the goal line once it is going in, scattered
+			// - not all of them stood along it.)
 			lanes.forEach((m, k) => {
-				m.chase(this.w(laneEnd(k)), this.whistle + 900, m.top * 0.85);
+				const end = laneEnd(k);
+				const off = Math.abs(k - (lanes.length - 1) / 2);
+				m.chase(
+					this.w({
+						d: Math.min(
+							end.d,
+							goalPull - TB_SHORT - r() * TB_SPREAD - off * 1.5,
+						),
+						a: end.a,
+					}),
+					this.whistle + 900,
+					m.top * 0.85,
+				);
 			});
 			for (const m of this.d) {
 				if (!this.done.has(m.pid)) {
@@ -5917,9 +5932,10 @@ class Action {
 					{ kind: "spot", t0: start + TOSS_MS, at: { ...to, z: 0 } },
 				);
 			}
+			// (Off toward his own bench, back up the field if it is past it.)
 			const going = off
 				? {
-						x: m.at.x + (r() - 0.5) * 24,
+						x: clamp(m.at.x, TEAM_AREA[0], TEAM_AREA[1]) + (r() - 0.5) * 24,
 						y: sidelineOf(m.team) === 0 ? 3 : FIELD_W - 3,
 					}
 				: huddle(m.team);
@@ -6019,6 +6035,10 @@ const RUE_HIPS = 0.45;
 const SKIRT = 11;
 // ...and the side that got it: this often a fist pumped, or a clap, first.
 const GLAD = 0.3;
+// A punt going in for a touchback: the cover easing up this far short of
+// the goal line (feet) and as much as this much further.
+const TB_SHORT = 6;
+const TB_SPREAD = 18;
 const KICK_KINDS = new Set<PlayKind>([
 	"kickoff",
 	"onside",
