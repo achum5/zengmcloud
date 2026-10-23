@@ -94,23 +94,31 @@ const shownAt = (
 		) {
 			show(prev.pid, clamp01(1 - (t - seg.t0) / OUT_MS));
 		}
-		// Thrown, punted or kicked off: the man it is going to as well.
+		// Thrown, punted or kicked off: the man it is going to as well - and
+		// not caught, faded out from when it comes down.
 		// (From where it last stopped: a punter drops it, then kicks it.)
-		let k = i - 1;
+		const fly =
+			seg?.kind === "fly" ? seg : prev?.kind === "fly" ? prev : undefined;
+		let k = play.ball.indexOf(fly!) - 1;
 		while (play.ball[k]?.kind === "fly") {
 			k--;
 		}
 		const from = play.ball[k];
 		if (
-			seg?.kind === "fly" &&
-			seg.t0 < play.whistle &&
+			fly &&
+			fly.t0 < play.whistle &&
 			(from?.kind === "held"
 				? NAMED.has(roleOf(from.pid) ?? "C")
 				: from?.kind === "spot" && from.stood === "tee")
 		) {
-			const to = targetOf(play, seg.t1, seg.to);
+			const to = targetOf(play, fly.t1, fly.to);
 			if (to !== undefined) {
-				show(to, clamp01((t - seg.t0) / IN_MS));
+				show(
+					to,
+					fly === seg
+						? clamp01((t - fly.t0) / IN_MS)
+						: clamp01(1 - (t - fly.t1) / OUT_MS),
+				);
 			}
 		}
 	}
@@ -204,6 +212,15 @@ export const drawTags = (
 		const num = look.jerseyNumber;
 		const nw = num ? pixelTextWidth(num, scale) + 6 * scale : 0;
 		const feet = project(cam, { x: st.x, y: st.y, z: 0 });
+		// (Out of the picture: none.)
+		if (
+			feet.x < 0 ||
+			feet.x > cam.viewW ||
+			feet.y < 0 ||
+			feet.y > cam.viewH + 4 * scale
+		) {
+			continue;
+		}
 		tags.push({ st, a, look, w, num, nw, total: nw + w + 2 * pad, feet });
 	}
 	// The man with the ball first, the rest top to bottom; each kept off
