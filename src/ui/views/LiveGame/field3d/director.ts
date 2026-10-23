@@ -378,6 +378,18 @@ const WALK_UP_MAX = 26;
 const JOG_FPS = 9;
 const WALK_FPS = 4.6;
 const WALK_ONLY = 10;
+// No huddle: the men out wide (these) back up from this far downfield
+// (feet, at the least, and as much as this more), the rest up from this far
+// behind their spots, the defense from about this far off theirs - each as
+// much as this far across - going this long after the picture takes up the
+// play at most, at these paces (feet a second).
+const HURRY_DOWNFIELD = [10, 25] as const;
+const HURRY_BEHIND = [6, 14] as const;
+const HURRY_DEFENSE = 14;
+const HURRY_ACROSS = 6;
+const HURRY_SPREAD = 350;
+const HURRY_FPS = [10, 4] as const;
+const HURRY_OUT = new Set<Role>(["X", "Z", "SL", "SL2", "TE", "TE2"]);
 // Set this long after the last man is, before the snap; and the cadence
 // from there (shortest, longest).
 const SET_HOLD = 450;
@@ -1035,7 +1047,19 @@ class Director {
 				parts.push({ pid: p.pid, team: p.team, role: p.role, legs });
 			}
 		} else {
-			set = this.walkUp(placed, parts, offense, dir, losX, ballY, t0, r);
+			// The two-minute drill, as the sim has it (see GameSim's hurryUp):
+			// no huddle.
+			const left = typeof clock.clock === "number" ? clock.clock : 15;
+			const pts = this.pointsTo(i0);
+			const hurry =
+				(kind === "pass" || kind === "run" || kind === "none") &&
+				left <= 2 &&
+				(((quarter * 2 === this.numPeriods || quarter >= this.numPeriods) &&
+					scrimmage >= 50) ||
+					(quarter === this.numPeriods && pts[offense] <= pts[1 - offense]!));
+			set = hurry
+				? this.hurryUp(placed, parts, offense, dir, t0, r)
+				: this.walkUp(placed, parts, offense, dir, losX, ballY, t0, r);
 		}
 		let snap = kick
 			? base + KICK_AT
@@ -2130,6 +2154,74 @@ class Director {
 				if (isOffense) {
 					set = Math.max(set, arrive);
 				}
+			}
+		}
+		return set + SET_HOLD;
+	}
+
+	// No huddle: each man from about where the last play left him - the
+	// offense back up from downfield, the line and the backs up from behind
+	// it, the defense close by - hurried to his spot and down into his
+	// stance. When everybody on the offense is.
+	hurryUp(
+		placed: Placed[],
+		parts: Part[],
+		offense: Side,
+		dir: Dir,
+		t0: number,
+		r: () => number,
+	): number {
+		let set = t0;
+		for (const p of placed) {
+			const isOffense = p.team === offense;
+			const out = isOffense && HURRY_OUT.has(p.role);
+			const back = isOffense
+				? out
+					? -(HURRY_DOWNFIELD[0] + r() * HURRY_DOWNFIELD[1])
+					: HURRY_BEHIND[0] + r() * HURRY_BEHIND[1]
+				: -(HURRY_DEFENSE * (r() - 0.3));
+			const from = {
+				x: clampX(p.at.x - dir * back, 4),
+				y: clampY(p.at.y + (r() - 0.5) * 2 * HURRY_ACROSS, 4, FIELD_W - 4),
+			};
+			const d = Math.hypot(p.at.x - from.x, p.at.y - from.y);
+			const leave = t0 + r() * HURRY_SPREAD;
+			const fps = HURRY_FPS[0] + r() * HURRY_FPS[1];
+			const arrive = leave + (d / fps) * 1000;
+			parts.push({
+				pid: p.pid,
+				team: p.team,
+				role: p.role,
+				legs: [
+					{
+						t0,
+						t1: leave,
+						from,
+						to: from,
+						move: "stand",
+						yaw: Math.atan2(p.at.y - from.y, p.at.x - from.x),
+					},
+					{
+						t0: leave,
+						t1: arrive,
+						from,
+						to: p.at,
+						move: fps < 12.5 ? "jog" : "run",
+					},
+					{
+						t0: arrive,
+						t1: arrive,
+						from: p.at,
+						to: p.at,
+						move: p.move,
+						yaw: p.yaw,
+						...(p.mirrored ? { mirrored: true } : {}),
+						...(p.ball ? { ball: p.ball } : {}),
+					},
+				],
+			});
+			if (isOffense) {
+				set = Math.max(set, arrive);
 			}
 		}
 		return set + SET_HOLD;
