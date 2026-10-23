@@ -722,6 +722,86 @@ describe("edge cases", () => {
 		}
 		assert.ok(counted >= 5, `${counted}`);
 	});
+	// "Walker Green racked up 32 points..." and a paragraph on "Walker
+	// Green's previous season high was 31.": the wire writes "a season-high
+	// 32 points".
+	test("a season high is in his line, not a footnote", () => {
+		const entering = (high: { pts: number; reb: number }) => ({
+			gp: 20,
+			high: { ...high, ast: 8, tp: 6, stl: 3, blk: 2 },
+			totals: { pts: 500, reb: 120, ast: 80, tp: 40, stl: 20, blk: 10 },
+			streaks: { twenty: 0, thirty: 0, doubleDouble: 0 },
+			counts: { twenty: 12, thirty: 0, forty: 0 },
+		});
+		for (let gid = 1; gid <= 12; gid++) {
+			const home = squad(
+				{ tid: 1, name: "Hawks" },
+				{
+					name: "Ace Hawk",
+					pid: 11,
+					pts: 33,
+					fg: 12,
+					fga: 22,
+					entering: entering({ pts: 27, reb: 12 }),
+				},
+				110,
+			);
+			const away = squad(
+				{ tid: 2, name: "Bulls" },
+				{
+					name: "Bo Bull",
+					pid: 21,
+					pts: 24,
+					reb: 15,
+					entering: entering({ pts: 30, reb: 13 }),
+				},
+				98,
+			);
+			const g = game([home, away], { gid });
+			const recap = getAutoRecap(g);
+			clean(recap);
+			assert.match(
+				recap,
+				/(?:\ba|his|Ace Hawk's) season-high 33 points\b/,
+				recap,
+			);
+			assert.match(recap, /season-high 15 rebounds/, recap);
+			assert.notMatch(
+				recap,
+				/previous season high|season high of|a season high for|best night on the glass/,
+				recap,
+			);
+			assert.deepEqual(verifyRecap(recap, g), [], recap);
+		}
+		// The reader holds the figure to his night and his old best.
+		const home = squad(
+			{ tid: 1, name: "Hawks" },
+			{
+				name: "Ace Hawk",
+				pid: 11,
+				pts: 33,
+				entering: entering({ pts: 35, reb: 12 }),
+			},
+			110,
+		);
+		const away = squad(
+			{ tid: 2, name: "Bulls" },
+			{ name: "Bo Bull", pid: 21 },
+			98,
+		);
+		const g = game([home, away]);
+		for (const said of [
+			"Ace Hawk had a season-high 33 points.",
+			"Ace Hawk had a season-high 34 points.",
+		]) {
+			assert.include(
+				verifyRecap(`**x**\n\n${said}`, g).map((v) => v.kind),
+				"season high",
+				said,
+			);
+		}
+	});
+
 	test("the reader holds a streak, a count and a high against what he carried in", () => {
 		const home = squad(
 			{ tid: 1, name: "Hawks" },

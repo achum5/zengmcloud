@@ -919,6 +919,26 @@ export const verifyRecap = (
 		}
 	}
 
+	// --- "a season-high 32 points" ---------------------------------------------
+	// Some man named in the sentence had that figure tonight, more than he
+	// had had in any game this season before it.
+	for (const sentence of splitSentences(recap)) {
+		for (const m of sentence.matchAll(
+			/\bseason-high (\d+) (points|rebounds|assists)\b/g,
+		)) {
+			const n = Number(m[1]);
+			const key =
+				m[2] === "points" ? "pts" : m[2] === "rebounds" ? "reb" : "ast";
+			const owns = names
+				.filter((nm) => sentence.includes(nm))
+				.map((nm) => byName.get(nm)!)
+				.some((p) => p[key] === n && (p.entering?.high[key] ?? -1) < n);
+			if (!owns) {
+				add("season high", `no one named had ${n} ${m[2]} as a high`, sentence);
+			}
+		}
+	}
+
 	// --- what a man carried in: streaks, counts, highs ------------------------
 	//
 	// "Has not been held under 20 in eight games", "his sixth 30-point game

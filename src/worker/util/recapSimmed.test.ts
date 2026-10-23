@@ -1102,4 +1102,30 @@ describe("simmed recaps", () => {
 			}
 		}
 	});
+
+	// "Ace Hawk turns in 33 points as the Hawks handle the Bulls" over "Ace
+	// Hawk finished 12-of-22 from the floor", and nothing else about him:
+	// the body never said what he scored.
+	test("a headline's points for a man are in the body too", () => {
+		for (const { gid, recap, game } of pairs) {
+			const [head, ...rest] = recap.split("\n\n");
+			const body = rest.join(" ");
+			for (const t of game.teams) {
+				for (const p of t.players) {
+					const said = new RegExp(
+						String.raw`${p.name}(?:'s?)? (?:[a-z]+ ){0,2}${p.pts}\b`,
+					).test(head!);
+					if (said) {
+						assert.match(
+							body,
+							new RegExp(
+								String.raw`\b${p.pts} points|his (?:season-high )?${p.pts}\b`,
+							),
+							`gid ${gid}\n${recap}`,
+						);
+					}
+				}
+			}
+		}
+	});
 });

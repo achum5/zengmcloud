@@ -568,6 +568,88 @@ export const playerCountBeat = (
 	return undefined;
 };
 
+// The column he set a season high in tonight, by the bars playerHighBeat
+// uses: points first, then rebounds, then assists.
+const seasonHighOf = (
+	p: RecapPlayer,
+): { n: number; unit: "points" | "rebounds" | "assists" } | undefined => {
+	const e = p.entering;
+	if (!e || e.gp < 10) {
+		return undefined;
+	}
+	if (
+		p.pts >= 22 &&
+		p.pts > e.high.pts &&
+		(p.pts - e.high.pts >= 2 || p.pts >= 30)
+	) {
+		return { n: p.pts, unit: "points" };
+	}
+	if (p.reb >= 12 && p.reb > e.high.reb) {
+		return { n: p.reb, unit: "rebounds" };
+	}
+	if (p.ast >= 10 && p.ast > e.high.ast) {
+		return { n: p.ast, unit: "assists" };
+	}
+	return undefined;
+};
+
+// THE SEASON HIGH IN HIS LINE. "Walker Green racked up 32 points, 6
+// assists, and 4 steals..." and a paragraph later "Walker Green's previous
+// season high was 31." - a footnote, with the subtraction left to the
+// reader. The wire writes "racked up a season-high 32 points". When his line
+// is already on the page, the high goes into it: the figure after his name,
+// or before it in "...from Walker Green", with no other man named between.
+// The paragraphs are edited in place; false when no line of his had the
+// figure, and the footnote is then still the way to say it.
+export const foldSeasonHigh = (
+	paragraphs: string[][],
+	p: RecapPlayer,
+	// Every other man in the game, so a figure in someone else's clause is
+	// never taken for his.
+	others: string[],
+): boolean => {
+	const high = seasonHighOf(p);
+	if (!high) {
+		return false;
+	}
+	// Points also as "got his 35 on 14-of-28 shooting", where the headline
+	// had the figure and the body refers back to it.
+	const figure = new RegExp(
+		high.unit === "points"
+			? String.raw`\b${high.n} points\b(?! apiece)|(?<=\bhis )${high.n}\b(?!-| (?:rebounds|assists|steals|blocks|minutes|shots|games))`
+			: String.raw`\b${high.n} ${high.unit}\b(?! apiece)`,
+	);
+	for (const texts of paragraphs) {
+		for (let i = 0; i < texts.length; i++) {
+			const sentences = texts[i]!.split(/(?<=[!.?])\s+/);
+			for (let j = 0; j < sentences.length; j++) {
+				const s = sentences[j]!;
+				const at = s.indexOf(p.name);
+				const m = at < 0 ? null : figure.exec(s);
+				if (!m) {
+					continue;
+				}
+				const after = m.index > at;
+				if (!after && !/\bfrom $/.test(s.slice(0, at))) {
+					continue;
+				}
+				const between = after
+					? s.slice(at + p.name.length, m.index)
+					: s.slice(m.index, at);
+				if (others.some((o) => between.includes(o))) {
+					continue;
+				}
+				const before = s.slice(0, m.index);
+				sentences[j] =
+					`${before}${/(?:'s|'|\bhis) $/.test(before) ? "" : "a "}season-high ${s.slice(m.index)}`;
+				texts[i] = sentences.join(" ");
+				return true;
+			}
+		}
+	}
+	return false;
+};
+
 export const playerHighBeat = (
 	p: RecapPlayer,
 	rng: Rng,
@@ -621,27 +703,15 @@ export const playerHighBeat = (
 			"seasonHighPts",
 		);
 	}
+	// With the figure: a board or passing high reaches this footnote when his
+	// line on the page did not carry the number (foldSeasonHigh puts it there
+	// when it did), and "It was Cade Hayes' best night on the glass this
+	// season" left the reader to guess how good.
 	if (p.reb >= 12 && p.reb > e.high.reb) {
-		return pick(
-			rng,
-			[
-				`The ${p.reb} rebounds were a season high for ${p.name}.`,
-				`${poss(p.name)} previous season high was ${e.high.reb} rebounds.`,
-				`It was ${poss(p.name)} best night on the glass this season.`,
-			],
-			"seasonHighReb",
-		);
+		return `The ${p.reb} rebounds were a season high for ${p.name}.`;
 	}
 	if (p.ast >= 10 && p.ast > e.high.ast) {
-		return pick(
-			rng,
-			[
-				`The ${p.ast} assists were a season high for ${p.name}.`,
-				`${poss(p.name)} previous season high was ${e.high.ast} assists.`,
-				`It was ${poss(p.name)} best passing night of the season.`,
-			],
-			"seasonHighAst",
-		);
+		return `The ${p.ast} assists were a season high for ${p.name}.`;
 	}
 	return undefined;
 };

@@ -60,6 +60,7 @@ import {
 	milestoneBeat,
 	nextGameBeat,
 	playerCountBeat,
+	foldSeasonHigh,
 	playerHighBeat,
 	playerStreakBeat,
 	returnBeat,
@@ -7086,15 +7087,21 @@ const buildGameRecap = (game: RecapGame): string => {
 			// his 16 on 5-of-15 shooting" states a poor night in the tone of a
 			// good one and reads as though nobody looked at it; a bad line is
 			// worth writing about, but as a bad line.
+			// And with his points: "Ace Hawk finished 12-of-22 from the floor"
+			// under "Ace Hawk turns in 33 points" left a body that never said
+			// what he scored.
 			const pct = star.fga > 0 ? star.fg / star.fga : 0;
+			const pts = plural(star.pts, "point");
+			const his = `his ${pts}`;
+			const split = `${star.fg}-of-${star.fga}`;
 			para1.push(
 				pick(
 					rng,
 					pct >= 0.55
 						? [
-								`${star.name} scored his ${star.pts} on ${star.fg}-of-${star.fga} shooting.`,
-								`${star.name} needed only ${star.fga} shots for his ${star.pts}.`,
-								`${star.name} was ${star.fg}-of-${star.fga} from the floor.`,
+								`${star.name} scored ${pts} on ${split} shooting.`,
+								`${star.name} needed only ${star.fga} shots for ${his}.`,
+								`${star.name} made ${star.fg} of ${star.fga} shots on the way to ${pts}.`,
 							]
 						: pct < 0.42
 							? // Plainly, the way the wire puts it: the second sentence of
@@ -7103,13 +7110,13 @@ const buildGameRecap = (game: RecapGame): string => {
 								// pretty for Cade Hayes" under "Heat ride Cade Hayes' 14
 								// points and 15 rebounds").
 								[
-									`${star.name} had ${plural(star.pts, "point")} on ${star.fg}-of-${star.fga} shooting.`,
-									`${star.name} got there the hard way, ${star.fg}-of-${star.fga} from the floor.`,
+									`${star.name} had ${pts} on ${split} shooting.`,
+									`${star.name} got ${his} the hard way, ${split} from the floor.`,
 								]
 							: [
-									`${star.name} scored his ${star.pts} on ${star.fg}-of-${star.fga} shooting.`,
-									`${star.name} finished ${star.fg}-of-${star.fga} from the floor.`,
-									`${star.name} took ${star.fga} shots and made ${star.fg} of them on the way to ${star.pts}.`,
+									`${star.name} scored ${pts} on ${split} shooting.`,
+									`${star.name} went ${split} from the floor for ${pts}.`,
+									`${star.name} took ${star.fga} shots and made ${star.fg} of them on the way to ${pts}.`,
 								],
 					pct >= 0.55
 						? "starSplitGood"
@@ -7123,7 +7130,9 @@ const buildGameRecap = (game: RecapGame): string => {
 			// have. With none of this, "Franz Carter goes for 15 points and 10
 			// rebounds as the Hornets take down the Bucks" sat over a body that
 			// never said his name.
-			para1.push(`${star.name} was ${star.fg}-of-${star.fga} from the floor.`);
+			para1.push(
+				`${star.name} scored ${plural(star.pts, "point")} on ${star.fg}-of-${star.fga} shooting.`,
+			);
 		}
 		// (A headline that printed his whole line, and a line with no split
 		// to add: the sentence is not pushed a third time.)
@@ -7691,6 +7700,19 @@ const buildGameRecap = (game: RecapGame): string => {
 			writtenSoFar = `${writtenSoFar} ${text}`;
 		}
 	};
+	// A season high goes into his line when the line is on the page
+	// ("racked up a season-high 32 points"), and is then no note of its own.
+	const everyone = [...shape.winner.players, ...shape.loser.players];
+	const othersOf = (p: RecapPlayer) =>
+		everyone.filter((x) => x !== p).map((x) => x.name);
+	const starHighFolded = foldSeasonHigh(
+		[para1, storyPara],
+		star,
+		othersOf(star),
+	);
+	if (starHighFolded) {
+		writtenSoFar = [headline.text, ...para1, ...storyPara].join(" ");
+	}
 	// The career arc first: it is the rarest note and the one a season
 	// high or an against-his-average line would otherwise crowd out.
 	const starColour = [
@@ -7706,7 +7728,8 @@ const buildGameRecap = (game: RecapGame): string => {
 			),
 		() => playerStreakBeat(star, rng),
 		() => playerCountBeat(star, rng, writtenSoFar),
-		() => playerHighBeat(star, rng, writtenSoFar),
+		() =>
+			starHighFolded ? undefined : playerHighBeat(star, rng, writtenSoFar),
 		() => vsOpponentBeat(star, nick(shape.loser), rng),
 	];
 	// Two notes on the star at most; the paragraph is about the team.
@@ -7778,7 +7801,10 @@ const buildGameRecap = (game: RecapGame): string => {
 	// after his line, and only once the piece has introduced him, so the
 	// sentence has a line to refer to.
 	addLoser(() =>
-		loserBest && loserBest !== star && said.has(loserBest.name)
+		loserBest &&
+		loserBest !== star &&
+		said.has(loserBest.name) &&
+		!foldSeasonHigh([para1, storyPara, losers], loserBest, othersOf(loserBest))
 			? playerHighBeat(loserBest, rng, writtenSoFar)
 			: undefined,
 	);
