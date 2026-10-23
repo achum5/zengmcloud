@@ -1643,8 +1643,12 @@ const verbPool = (game: RecapGame, shape: Shape): string[] => {
 			? ["stun", "upset", "shock", "knock off"]
 			: ["upset", "knock off", "take down", "get past"];
 	}
+	// "The Nuggets rallied past the Knicks 126-106": a side that trailed and
+	// then won by 20 did not rally past anybody. It pulled away.
 	if (comebackSize(shape) > 0) {
-		return ["rally past", "storm back to beat", "come back to top"];
+		return shape.margin >= 15
+			? ["pull away from", "run away from"]
+			: ["rally past", "storm back to beat", "come back to top"];
 	}
 	// Overtime is close by definition until the extra period says it was
 	// not: "edged the Nuggets 98-82 (OT)" was a 16-point win.
@@ -2203,7 +2207,7 @@ const buildHeadlineText = (
 				? special
 				: [
 						`${W} ${stateVerb}`,
-						`${W} ${verb} ${L} ${scoreTag(shape)} to ${stateShort}`,
+						`${W} ${verb} ${L} ${scoreTag(shape)}${verb.includes(" to ") ? " and" : " to"} ${stateShort}`,
 						...special,
 					];
 		const starOptions = bigStar
@@ -10208,6 +10212,32 @@ const EDGE_VERBS = ["edged", "held off", "slipped past"];
 // Celtics and the Raptors routed the Heat. Also on the night, the Hornets
 // routed the Rockets" was the notable list and the roundup each rotating
 // on its own.
+// "Came back to top the Nuggets 124-111 to close out the series in five":
+// a second infinitive stacked on the first. It joins the first instead, ahead
+// of any "behind" clause - "...to top the Nuggets 124-111 and close out the
+// series in five behind Evan Hayes' 23 points".
+const tailAfter = (clause: string, tail: string): string => {
+	if (
+		!tail.startsWith(" to ") ||
+		!/\bto (?:beat|top|take down|knock off)\b/.test(clause)
+	) {
+		return `${clause}${tail}`;
+	}
+	const joined = ` and ${tail.slice(4)}`;
+	const at = clause.indexOf(" behind ");
+	return at >= 0
+		? `${clause.slice(0, at)}${joined}${clause.slice(at)}`
+		: `${clause}${joined}`;
+};
+
+// A list of result clauses. Two of them are joined with ", and" when the first
+// has an "and" of its own: "the Pistons came back to beat the Rockets 107-105
+// and win the series in six and the Magic beat the Hornets" ran together.
+const clauseList = (items: string[]): string =>
+	items.length === 2 && / and /.test(items[0]!)
+		? `${items[0]}, and ${items[1]}`
+		: naturalList(items);
+
 const freshVerb = (
 	pool: readonly string[],
 	seq: number,
@@ -10731,7 +10761,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		const tail = tailFor(g);
 		return tail && /, \d+-\d+(?: \(\w+\))?$/.test(clause)
 			? `${clause},${tail}`
-			: `${clause}${tail}`;
+			: tailAfter(clause, tail);
 	};
 
 	// One line about one player, in one of several shapes. Every performance
@@ -10824,11 +10854,11 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	const series = headlineHasSeries ? "" : tailFor(marquee);
 	para1.push(
 		loserLed
-			? `${mLoserBig.name} put up ${statPhrase(mLoserBig, 2)}, but ${gameBlurb(
-					marquee,
-					rng,
-				).replace(/^The /, "the ")}${series}.`
-			: `${cap(gameBlurb(marquee, rng, headlineHasResult))}${series}.`,
+			? `${mLoserBig.name} put up ${statPhrase(mLoserBig, 2)}, but ${tailAfter(
+					gameBlurb(marquee, rng).replace(/^The /, "the "),
+					series,
+				)}.`
+			: `${cap(tailAfter(gameBlurb(marquee, rng, headlineHasResult), series))}.`,
 	);
 	// THE ROUND, ONCE. "Obi King went for 16 points, 13 rebounds, and 3
 	// steals as the Suns rallied past the Hornets 105-99" opened the
@@ -10862,7 +10892,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	// night's stated lead story appeared nowhere in the wrap.
 	if (headline.game !== marquee && !coveredGames.has(headline.game)) {
 		para1.push(
-			`${cap(gameBlurb(headline.game, rng))}${tailFor(headline.game)}.`,
+			`${cap(tailAfter(gameBlurb(headline.game, rng), tailFor(headline.game)))}.`,
 		);
 		coveredGames.add(headline.game);
 	}
@@ -11171,6 +11201,15 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	const bigUpsetVerbs = ["stunned", "shocked", "toppled", "upset"];
 	const smallUpsetVerbs = ["upset", "got past", "took down", "knocked off"];
 	let upsetIdx = 0;
+	// "...the Clippers erased a 15-point deficit to beat the Wizards 109-102,
+	// and the Bucks erased a 24-point deficit to beat the Raptors 101-94": one
+	// way of saying it per night, starting from one the lead has not used.
+	const comebackForms = [
+		(n: number) => `erased ${aNum(n)}-point deficit to beat`,
+		(n: number) => `came back from ${n} down to beat`,
+		(n: number) => `rallied from ${n} points down to beat`,
+	];
+	let comebackIdx = para1.some((t) => t.includes(" erased ")) ? 1 : 0;
 	for (const g of others) {
 		// A game the deck headlined is still the body's to tell, unless the
 		// body has given its final already: "Wizards stun the Thunder
@@ -11211,9 +11250,9 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 					: `${theNick(shape.winner)} ${verb} ${theNick(shape.loser)} ${scoreTag(shape)}`;
 			upsetIdx += 1;
 		} else if (comebackSize(shape) >= 15) {
-			blurb = `${theNick(shape.winner)} erased ${aNum(
-				comebackSize(shape),
-			)}-point deficit to beat ${theNick(shape.loser)} ${scoreTag(shape)}`;
+			const form = comebackForms[comebackIdx % comebackForms.length]!;
+			comebackIdx += 1;
+			blurb = `${theNick(shape.winner)} ${form(comebackSize(shape))} ${theNick(shape.loser)} ${scoreTag(shape)}`;
 		} else if (shot2 && !shot2.tying) {
 			// No comma inside: these sit in comma-separated lists, and "the
 			// Suns survived the 76ers in overtime, 103-97, the Rockets..."
@@ -11266,8 +11305,8 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		);
 		para2.push(
 			notableOpener === "There was drama elsewhere too"
-				? `${notableOpener}: ${naturalList(notableBlurbs)}.`
-				: `${notableOpener}, ${naturalList(notableBlurbs)}.`,
+				? `${notableOpener}: ${clauseList(notableBlurbs)}.`
+				: `${notableOpener}, ${clauseList(notableBlurbs)}.`,
 		);
 	}
 	const notableAt = para2.length - 1;
@@ -11339,14 +11378,14 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			// game each: "Elsewhere, the Warriors edged the Pacers 101-98.
 			// Around the league, the Heat beat the Spurs 101-83."
 			para2[notableAt] =
-				`Elsewhere, ${naturalList([...notableBlurbs, ...items])}.`;
+				`Elsewhere, ${clauseList([...notableBlurbs, ...items])}.`;
 		} else {
 			const opener = pick(
 				rng,
 				candidates.length > 0 ? candidates : ["Elsewhere"],
 				"roundupOpener",
 			);
-			para2.push(`${opener}, ${naturalList(items)}.`);
+			para2.push(`${opener}, ${clauseList(items)}.`);
 		}
 	}
 

@@ -1975,3 +1975,184 @@ describe("the accuracy reader counts threes", () => {
 		]);
 	});
 });
+
+// A NIGHT OF COMEBACKS. "...the Clippers erased a 15-point deficit to beat
+// the Wizards 109-102, and the Bucks erased a 24-point deficit to beat the
+// Raptors 101-94" said it the same way twice in one sentence; "the Pistons
+// erased a 19-point deficit to beat the Rockets 107-105 to win the series in
+// six" stacked one infinitive on another; and "the Nuggets rallied past the
+// Knicks 126-106" was a 20-point win.
+describe("a night of comebacks", () => {
+	const NAMES = [
+		"Hawks",
+		"Kings",
+		"Suns",
+		"Jazz",
+		"Bulls",
+		"Nets",
+		"Heat",
+		"Magic",
+	];
+	const match = (
+		i: number,
+		down: number,
+		w: number,
+		l: number,
+		over: Partial<RecapGame> = {},
+		starPts = 22,
+	) => {
+		const home = squad(
+			{ tid: i * 2 + 1, name: NAMES[i * 2]! },
+			{ name: `Ace ${NAMES[i * 2]}`, pid: i * 20 + 11, pts: starPts },
+			w,
+		);
+		const away = squad(
+			{ tid: i * 2 + 2, name: NAMES[i * 2 + 1]! },
+			{ name: `Bo ${NAMES[i * 2 + 1]}`, pid: i * 20 + 21, pts: 18 },
+			l,
+		);
+		return game([home, away], {
+			gid: 80 + i,
+			flow: {
+				leadChanges: 3,
+				ties: 2,
+				maxLead: [Math.max(w - l, 1), down],
+				maxLeadAt: [4, 2],
+			},
+			...over,
+		});
+	};
+
+	test("two comebacks in one list are told two ways", () => {
+		let both = 0;
+		for (let day = 1; day <= 12; day++) {
+			const games = [
+				match(0, 3, 121, 100, { day }, 41),
+				match(1, 16, 109, 102, { day }),
+				match(2, 24, 101, 94, { day }),
+				match(3, 18, 112, 106, { day }),
+			];
+			const wrap = getAutoDayRecap({
+				season: 2025,
+				day,
+				playoffs: false,
+				games,
+			});
+			clean(wrap);
+			const told = ["16", "24", "18"].filter((n) =>
+				[`${n}-point deficit`, ` ${n} down`, ` ${n} points down`].some((t) =>
+					wrap.includes(t),
+				),
+			);
+			if (told.length >= 2) {
+				both += 1;
+			}
+			assert.isAtMost(
+				wrap.match(/-point deficit to beat/g)?.length ?? 0,
+				1,
+				wrap,
+			);
+			assert.notMatch(
+				wrap,
+				/came back from \d+ down[^.]*came back from \d+ down/,
+				wrap,
+			);
+			assert.notMatch(
+				wrap,
+				/rallied from \d+ points down[^.]*rallied from \d+ points down/,
+				wrap,
+			);
+		}
+		assert.isAbove(both, 0);
+	});
+
+	test("a series won from behind does not stack two infinitives", () => {
+		for (let day = 1; day <= 12; day++) {
+			const games = [
+				match(0, 19, 107, 105, { day, playoffs: true }),
+				match(1, 13, 124, 111, { day, playoffs: true }),
+				match(2, 4, 102, 96, { day, playoffs: true }),
+			].map((g, i) => ({
+				...g,
+				series: {
+					round: 1,
+					numRounds: 4,
+					bestOf: 7,
+					homeAbbrev: g.teams[0].abbrev,
+					awayAbbrev: g.teams[1].abbrev,
+					homeWon: 3,
+					awayWon: i === 2 ? 1 : 2,
+				},
+			}));
+			const wrap = getAutoDayRecap({
+				season: 2025,
+				day,
+				playoffs: true,
+				games,
+			});
+			clean(wrap);
+			for (const sentence of wrap.split(/(?<=\.)\s+|\n+/)) {
+				for (const clause of sentence.split(/, (?:and )?(?=the [A-Z])/)) {
+					assert.notMatch(
+						clause,
+						/\bto (?:beat|top|take down|knock off)\b[^,]*\bto (?:win|close|finish|complete|sweep|take)\b/,
+						wrap,
+					);
+				}
+			}
+		}
+	});
+
+	test("a side that trailed and won by 20 did not rally past anybody", () => {
+		for (let day = 1; day <= 12; day++) {
+			const games = [
+				match(0, 16, 126, 106, { day }, 40),
+				match(1, 2, 110, 104, { day }),
+				match(2, 2, 99, 92, { day }),
+			];
+			const wrap = getAutoDayRecap({
+				season: 2025,
+				day,
+				playoffs: false,
+				games,
+			});
+			clean(wrap);
+			assert.notMatch(
+				wrap,
+				/(?:rallied past|stormed back to beat|came back to top) the Kings 126-106/,
+				wrap,
+			);
+		}
+	});
+
+	// "Lakers storm back to beat the Heat 109-101 to take Game 1".
+	test("a playoff headline won from behind does not stack two infinitives", () => {
+		let told = 0;
+		for (let gid = 1; gid <= 24; gid++) {
+			// 13 down at the half.
+			const g = match(0, 13, 109, 101, {
+				gid,
+				playoffs: true,
+				series: {
+					round: 1,
+					numRounds: 4,
+					bestOf: 7,
+					homeAbbrev: "HAW",
+					awayAbbrev: "KIN",
+					homeWon: 0,
+					awayWon: 0,
+				},
+			});
+			g.teams[0].ptsQtrs = [20, 22, 30, 37];
+			g.teams[1].ptsQtrs = [30, 25, 24, 22];
+			const recap = getAutoRecap(g);
+			clean(recap);
+			const head = recap.split("\n")[0]!;
+			if (/storm back to beat|come back to top/.test(head)) {
+				told += 1;
+			}
+			assert.notMatch(head, /\bto (?:beat|top)\b.* to /, recap);
+		}
+		assert.isAbove(told, 0);
+	});
+});
