@@ -459,8 +459,9 @@ describe("home and road, rest, and what comes next", () => {
 		for (let seed = 0; seed < 6; seed++) {
 			const text = nextGameBeat(g.ctx, rngFromSeed(seed))!;
 			assert.notMatch(text, /Game 5/, text);
-			assert.match(text, /Dallas/, text);
-			assert.notMatch(text, /stays|too\./, text);
+			// Not "That one is in Dallas": another line can land between it
+			// and the sentence that named the game.
+			assert.match(text, /^The series (?:shifts to|heads to) Dallas\.$/, text);
 		}
 	});
 

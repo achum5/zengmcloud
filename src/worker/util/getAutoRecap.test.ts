@@ -8442,6 +8442,52 @@ describe("the story goes past halftime, in order", () => {
 		}
 	});
 
+	// "...taking over with a 34-25 fourth quarter. ... The Clippers were still
+	// up 81-80 going into the fourth, and the Warriors won the fourth quarter
+	// 34-25."
+	test("a last quarter the lede scored is not scored again", () => {
+		let seen = 0;
+		for (let gid = 1400; gid < 1415; gid++) {
+			const recap = getAutoRecap(
+				twoTeams(
+					[25, 28, 27, 34],
+					[27, 27, 27, 25],
+					{ leadChanges: 9, ties: 4, maxLead: [9, 6], maxLeadAt: [4, 2] },
+					gid,
+				),
+			);
+			if (/with a 34-25 fourth quarter/.test(recap)) {
+				seen += 1;
+				assert.equal(recap.split("34-25").length, 2, recap);
+			}
+		}
+		assert.ok(seen > 0);
+	});
+
+	// "It was a 2-point game entering the fourth." closed a 120-106 game.
+	test("a game decided in the last quarter says so", () => {
+		for (let gid = 1420; gid < 1435; gid++) {
+			const g = twoTeams(
+				[28, 26, 27, 33],
+				[27, 27, 25, 21],
+				{
+					leadChanges: 9,
+					ties: 4,
+					maxLead: [15, 5],
+					maxLeadAt: [4, 2],
+					late: [
+						{ clock: 300, pts: [95, 92] },
+						{ clock: 120, pts: [104, 96] },
+					],
+				},
+				gid,
+			);
+			const recap = getAutoRecap(g);
+			assert.match(recap, /fourth quarter 33-21|33-21 fourth quarter/, recap);
+			assert.deepEqual(verifyRecap(recap, g), [], recap);
+		}
+	});
+
 	// "The Bucks ran off 14 straight points in the first" - a run that began
 	// with no time left in the first and was all second quarter.
 	test("a run across a quarter break is not told as one quarter's", () => {
@@ -8691,6 +8737,33 @@ describe("a winner's steals sit with the winners", () => {
 			assert.ok(stealsAt >= 0 && stealsAt < loserAt, recap);
 		}
 	});
+});
+
+// "Evan Hayes had a double-double of his own, 10 points and 14 rebounds"
+// under a lede whose man scored 21 and had nothing to be his own beside.
+test("a double-double is only 'of his own' beside another", () => {
+	const win = realisticTeam(
+		{ tid: 1, region: "Miami", name: "Heat", abbrev: "MIA", pts: 99 },
+		player({ name: "Anthony Hayes", pts: 21, reb: 4, ast: 3, fg: 8, fga: 15 }),
+	);
+	win.players.push(
+		player({ name: "Evan Hayes", pts: 10, reb: 14, fg: 4, fga: 9 }),
+	);
+	const lose = realisticTeam(
+		{ tid: 2, region: "Los Angeles", name: "Clippers", abbrev: "LAC", pts: 86 },
+		player({ name: "Corey Foster", pts: 18, reb: 9, fg: 7, fga: 18 }),
+	);
+	beginRecapBatch();
+	try {
+		for (let gid = 1500; gid < 1530; gid++) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [win, lose], winnerTid: 1 }),
+			);
+			assert.doesNotMatch(recap, /of his own/, recap);
+		}
+	} finally {
+		endRecapBatch();
+	}
 });
 
 // "Anthony Jackson pitched in with 18 points for the Thunder, and Cade

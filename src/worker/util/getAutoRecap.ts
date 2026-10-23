@@ -3559,6 +3559,9 @@ const gameStory = (
 		comebackTold: boolean;
 		// The lede already said the winners never trailed.
 		wireTold?: boolean;
+		// The lede already gave the last quarter's score ("taking over with a
+		// 34-25 fourth quarter").
+		lastQuarterTold?: boolean;
 	},
 ): { sentences: string[]; covers: Set<StoryCover> } | undefined => {
 	const { wq, lq, regPeriods } = shape;
@@ -3768,25 +3771,45 @@ const gameStory = (
 			return undefined;
 		}
 		covers.add("entering");
+		// Close going into the last quarter and not at the end: the quarter
+		// that decided it is the story's last word. "It was a 2-point game
+		// entering the fourth." closed a 120-106 game.
+		const pulledAway =
+			m >= 0 &&
+			shape.ot === 0 &&
+			shape.margin - m >= 8 &&
+			!opts.lastQuarterTold;
+		const decided = (s: string) => {
+			if (!pulledAway) {
+				return s;
+			}
+			covers.add("lastQuarter");
+			const who = s.includes(w) || s.startsWith(W) ? "they" : w;
+			return `${s.slice(0, -1)}, and ${who} won the ${last} quarter ${wLast}-${lLast}.`;
+		};
 		if (m === 0) {
-			return pick(
-				rng,
-				[
-					`It was tied going into the ${last}.`,
-					`Nothing separated them going into the ${last}.`,
-				],
-				"story:enteringTied",
+			return decided(
+				pick(
+					rng,
+					[
+						`It was tied going into the ${last}.`,
+						`Nothing separated them going into the ${last}.`,
+					],
+					"story:enteringTied",
+				),
 			);
 		}
 		if (m > 0) {
-			return pick(
-				rng,
-				[
-					`${W} were ${m} up going into the ${last}.`,
-					`It was ${aNum(m)}-point game entering the ${last}.`,
-					`Going into the ${last}, ${w} were up ${m}.`,
-				],
-				"story:enteringUp",
+			return decided(
+				pick(
+					rng,
+					[
+						`${W} were ${m} up going into the ${last}.`,
+						`It was ${aNum(m)}-point game entering the ${last}.`,
+						`Going into the ${last}, ${w} were up ${m}.`,
+					],
+					"story:enteringUp",
+				),
 			);
 		}
 		return pick(
@@ -3826,6 +3849,20 @@ const gameStory = (
 				: undefined;
 		if (lastRun || lateRun) {
 			covers.add("run");
+		}
+		// The lede gave the quarter's score, so the story gives where it
+		// stood going into it: "taking over with a 34-25 fourth quarter" and
+		// then "the Warriors won the fourth quarter 34-25" was one fact twice.
+		if (opts.lastQuarterTold) {
+			if (lateRun) {
+				const ran = `${W} ran off ${lateRun.pts} straight points ${runAt(lateRun)}`;
+				return wIn === lIn
+					? `${ran}, and it was ${wIn}-${lIn} going into the ${last}.`
+					: `${ran} but were still ${lIn - wIn} down going into the ${last}.`;
+			}
+			return wIn === lIn
+				? `It was ${wIn}-${lIn} going into the ${last}${lastRun ? `, and ${w} ran off ${lastRun.pts} straight points` : ""}.`
+				: `${W} trailed ${lIn}-${wIn} going into the ${last}${lastRun ? `, then ran off ${lastRun.pts} straight points` : ""}.`;
 		}
 		if (lateRun) {
 			const ran = `${W} ran off ${lateRun.pts} straight points ${runAt(lateRun)}`;
@@ -4355,7 +4392,14 @@ const supportSentence = (
 					rng,
 					[
 						`${second.name} added a ${ddw} with ${statPhrase(second)}`,
-						`${second.name} had a ${ddw} of his own, ${statPhrase(second)}`,
+						// "Of his own" says the star had one too: "Evan Hayes had a
+						// double-double of his own" under a 21-point lede had nothing
+						// to be his own beside.
+						...(doubleWord(doubleCategories(star).length) === ddw
+							? [
+									`${second.name} had a ${ddw} of his own, ${statPhrase(second)}`,
+								]
+							: []),
 						// A triple-double is always called one; "went for 15 points,
 						// 10 rebounds, and 10 assists" buried it.
 						...(doubleCategories(second).length >= 3
@@ -6543,6 +6587,9 @@ const buildGameRecap = (game: RecapGame): string => {
 	const story = gameStory(game, shape, rng, {
 		comebackTold: flowCovered === "comeback",
 		wireTold: flowCovered === "wire",
+		lastQuarterTold: new RegExp(
+			String.raw`with an? \d+-\d+ ${ordinal(shape.regPeriods)} quarter`,
+		).test(para1.join(" ")),
 	});
 	const storyPara: string[] = [];
 	const body = story ? storyPara : para1;

@@ -906,22 +906,16 @@ const nextPlayoffGame = (ctx: BeatContext, rng: Rng): string | undefined => {
 	// New Orleans." - so this one says only where the series goes.
 	if (new RegExp(String.raw`\bGame ${gameNo}\b`).test(ctx.written)) {
 		const stays = ctx.game.teams[0].tid === host.tid;
+		// Not "That one is in Los Angeles": the injury line can land between
+		// it and the sentence that named the game.
 		return host.region
 			? stays
-				? pick(
-						rng,
-						[
-							`The series stays in ${host.region}.`,
-							`That one is in ${host.region} too.`,
-						],
-						"nextPlayoffGameStays",
-					)
+				? `The series stays in ${host.region}.`
 				: pick(
 						rng,
 						[
 							`The series shifts to ${host.region}.`,
 							`The series heads to ${host.region}.`,
-							`That one is in ${host.region}.`,
 						],
 						"nextPlayoffGameShifts",
 					)
