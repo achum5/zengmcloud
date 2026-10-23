@@ -1335,7 +1335,7 @@ const Court3D = ({
 			}
 			// The crowd on its feet after a big play, arms going up and out -
 			// and the whole way through a tight finish.
-			const { up, wave } = crowdAt(tl, moment.t, now);
+			const crowd = crowdAt(tl, moment.t, now);
 
 			let shotText = "";
 			// (The bug's: in its last seconds, tenths - see shotClockText.)
@@ -1390,7 +1390,7 @@ const Court3D = ({
 					tableFront: pt.tableFront,
 					bench: [pt.bench0, pt.bench1],
 				},
-				crowd: { up, wave },
+				crowd,
 				now,
 				// Lettering about 8 CSS pixels tall: a 7-pixel font, each of its
 				// pixels this many picture pixels.

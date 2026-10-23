@@ -53,3 +53,48 @@ test("the building at the final horn", () => {
 	// Both: a home win and a road win.
 	assert.strictEqual(seen.size, 2);
 }, 60_000);
+
+// A visitor at the line: the home fans behind the basket he shoots at are
+// up and waving at him from his walk there till the ball comes down - and
+// sat again after it; a home shooter they leave be.
+test("the fans behind the basket wave at a visitor at the line", () => {
+	let road = 0;
+	let home = 0;
+	for (const seed of ["a", "b"]) {
+		const { tl } = compile(seed, 80);
+		for (const b of tl.beats) {
+			if (b.type !== "ft" && b.type !== "missFt") {
+				continue;
+			}
+			const shot = tl.fx
+				.filter(
+					(f) =>
+						(f.kind === "swish" || f.kind === "clank") &&
+						f.t >= b.preStart &&
+						f.t <= b.end,
+				)
+				.at(-1)!;
+			const at = `${seed} @${Math.round(b.actionStart)}`;
+			const set = crowdAt(tl, (b.preStart + shot.t) / 2 + 400, 0).ends;
+			const after = crowdAt(tl, shot.t + 1000, 0).ends;
+			assert.isUndefined(after, at);
+			if (shot.rim === 0) {
+				road += 1;
+				assert.strictEqual(set?.[0]?.up, 1, at);
+				assert.isUndefined(set?.[1], at);
+				// Their arms going.
+				const arms = new Set(
+					[0, 90, 180].map(
+						(now) => crowdAt(tl, shot.t - 300, now).ends?.[0]?.wave,
+					),
+				);
+				assert.strictEqual(arms.size, 2, at);
+			} else {
+				home += 1;
+				assert.isUndefined(set, at);
+			}
+		}
+	}
+	assert.isAtLeast(road, 4);
+	assert.isAtLeast(home, 4);
+}, 60_000);

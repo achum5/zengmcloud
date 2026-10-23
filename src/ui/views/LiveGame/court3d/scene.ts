@@ -227,8 +227,10 @@ export type Frame = {
 	// score bug has it.
 	score?: [number, number];
 	arena: ArenaPaint;
-	// The crowd on its feet (0..1), and which way its arms are this instant.
-	crowd: { up: number; wave: boolean };
+	// The crowd on its feet (0..1), and which way its arms are this instant -
+	// and, if either end behind a basket is doing something of its own (see
+	// crowdAt), that end's.
+	crowd: Crowd;
 	// The wall clock (ms), for what idles on its own time - the bench - rather
 	// than the game's, which races through a fast-forward and jumps at a cut.
 	now?: number;
@@ -386,14 +388,52 @@ const HORN_WAVE_MS = 5000;
 const HORN_SETTLE_MS = 4000;
 const HORN_STAY = 0.55;
 
+// THE FANS BEHIND THE BASKET: the visitors at the line, the home fans in
+// the stands behind the basket he shoots at are up, arms going, to put him
+// off - from his walk to the line until the ball comes down, then sat again.
+// (A home shooter they leave be.)
+const FT_WAVE_FROM = 400;
+const FT_WAVE_UP_MS = 300;
+const FT_WAVE_DOWN_MS = 600;
+const FT_WAVE_EVERY = 90;
+type Stand = { up: number; wave: boolean };
+export type Crowd = Stand & { ends?: [Stand | undefined, Stand | undefined] };
+const endsAt = (tl: CourtTimeline, t: number, now: number): Crowd["ends"] => {
+	const beat = beatAt(tl, t);
+	if (beat?.type !== "ft" && beat?.type !== "missFt") {
+		return undefined;
+	}
+	// Its shot: the ball going in, or off the iron, at its line.
+	const shot = recentFx(
+		tl,
+		beat.end,
+		["swish", "clank"],
+		beat.end - beat.preStart,
+	);
+	if (shot?.rim !== 0) {
+		return undefined;
+	}
+	const from = beat.preStart + FT_WAVE_FROM;
+	const up = Math.max(
+		0,
+		Math.min(1, (t - from) / FT_WAVE_UP_MS, 1 - (t - shot.t) / FT_WAVE_DOWN_MS),
+	);
+	if (up <= 0) {
+		return undefined;
+	}
+	const end = { up, wave: Math.floor(now / FT_WAVE_EVERY) % 2 === 0 };
+	return [end, undefined];
+};
+
 // The crowd at t: on its feet for a big play, arms going - and in a tight
 // finish on its feet the whole way, arms going up now and then (`now` is
 // the wall clock, for the arms).
-export const crowdAt = (
-	tl: CourtTimeline,
-	t: number,
-	now: number,
-): { up: number; wave: boolean } => {
+export const crowdAt = (tl: CourtTimeline, t: number, now: number): Crowd => {
+	const building = buildingAt(tl, t, now);
+	const ends = endsAt(tl, t, now);
+	return ends ? { ...building, ends } : building;
+};
+const buildingAt = (tl: CourtTimeline, t: number, now: number): Stand => {
 	const horn = finalHorn(tl, t);
 	if (horn) {
 		const e = horn.since;
@@ -904,15 +944,18 @@ export const drawFrame = (f: Frame) => {
 					fill,
 				);
 			}
-			if (f.crowd.up > 0.01) {
+			// (This end's own, if it is up to more than the building is.)
+			const own = f.crowd.ends?.[side];
+			const c = own && own.up > f.crowd.up ? own : f.crowd;
+			if (c.up > 0.01) {
 				drawTexturedPlane(
 					ctx,
 					cam,
 					END_STANDS[side],
-					arena.endStands[f.crowd.wave ? 2 : 1],
+					arena.endStands[c.wave ? 2 : 1],
 					24,
 					6,
-					f.crowd.up,
+					c.up,
 				);
 			}
 		}
@@ -947,7 +990,19 @@ export const drawFrame = (f: Frame) => {
 	const roarNow = recentFx(tl, t, ["roar"], 2200);
 	const hornNow = finalHorn(tl, t);
 	const tenseNow = !hornNow && tensionAt(tl, t) >= 1;
+	// (Behind the basket a visitor shoots free throws at, the home fans up
+	// and waving their arms at him - see crowdAt.)
+	const endOf = (p: Folk) =>
+		p.facing === "north" ? undefined : f.crowd.ends?.[p.x < 0 ? 0 : 1];
+	const waving = (p: Folk): boolean =>
+		p.team === 1 &&
+		!p.media &&
+		(endOf(p)?.up ?? 0) >= 0.5 &&
+		unitHash(p.x * 11, p.y * 5) < 0.85;
+	const swayOf = (p: Folk): number =>
+		waving(p) ? Math.sin((f.now ?? t) / 95 + unitHash(p.y * 3, p.x) * 6.3) : 0;
 	const upOf = (p: Folk): number =>
+		waving(p) ||
 		(roarNow?.team === p.team && unitHash(p.x * 7, p.y * 13) < 0.8) ||
 		(hornNow?.winner === p.team && unitHash(p.x * 7, p.y * 13) < 0.85) ||
 		(tenseNow && unitHash(p.y * 5, p.x * 3) < 0.35)
@@ -1032,7 +1087,7 @@ export const drawFrame = (f: Frame) => {
 			items.push({
 				depth: depthOf(cam, { x: p.x, y: p.y, z: 3 }),
 				draw: () => {
-					drawFolk(ctx, cam, p, upOf(p), f.padColor);
+					drawFolk(ctx, cam, p, upOf(p), f.padColor, swayOf(p));
 				},
 			});
 		}
@@ -1364,12 +1419,13 @@ const leadBody = (): Body => (leadBodyOf ??= bodyOf());
 // A free throw's shot: about two thirds as wide as the whole floor's (but
 // never narrower than FT_MIN_W feet, and these widths without one), and
 // where along the floor from the baseline - the rim and the shooter at the
-// line both well in it.
+// line both well in it, and the baseline and the seats behind it in the
+// picture past the rim, the way the side camera has a man at the line.
 const FT_SHARE = 0.66;
 const FT_MIN_W = 30;
 const FT_WIDTH = 42;
 const FT_WIDTH_NARROW = 34;
-const FT_X = 15;
+const FT_X = 10;
 
 // How much the main camera is on the ball (0 to 1): all the way while the
 // game is on, easing off it from the final buzzer - whatever is done with

@@ -131,13 +131,15 @@ export const courtsideFor = (
 };
 
 // Seated - or up on his feet (`up`, 0 to 1) - at the size the camera has
-// him, with his chair.
+// him, with his chair. On his feet his arms are up - swung to one side or
+// the other by `sway` (-1 to 1), waving them.
 export const drawFolk = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,
 	p: Folk,
 	up: number,
 	chair: string,
+	sway = 0,
 ) => {
 	const base = project(cam, { x: p.x, y: p.y, z: 0 });
 	const k = base.k * p.size;
@@ -218,7 +220,10 @@ export const drawFolk = (
 		ctx.beginPath();
 		for (const s of [-1, 1]) {
 			ctx.moveTo(X + s * torsoW * 0.4, torsoTop + 0.3 * k);
-			ctx.lineTo(X + s * (torsoW * 0.4 + 0.5 * k), torsoTop - 1.3 * k);
+			ctx.lineTo(
+				X + s * (torsoW * 0.4 + 0.5 * k) + sway * 0.7 * k,
+				torsoTop - 1.3 * k + Math.abs(sway) * 0.2 * k,
+			);
 		}
 		ctx.stroke();
 	}
