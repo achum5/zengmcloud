@@ -18,6 +18,7 @@ import {
 	GOAL_R,
 	MID_Y,
 	POST_W,
+	sideOn,
 	TEAM_AREA,
 	YD,
 	type Dir,
@@ -25,8 +26,16 @@ import {
 	type Pt3,
 	type Side,
 } from "./geometry.ts";
-import { footballBody } from "./body.ts";
-import { heldBall, liftOf, moveKind, poseOfMove, type Move } from "./poses.ts";
+import { drawnBody, footballBody } from "./body.ts";
+import {
+	HIGH_FIVE_AT,
+	handsMeet,
+	heldBall,
+	liftOf,
+	moveKind,
+	poseOfMove,
+	type Move,
+} from "./poses.ts";
 import { sidelineOf } from "./sideline.ts";
 import {
 	alongRoute,
@@ -6546,9 +6555,11 @@ class Action {
 			const from = m.posAt(start);
 			m.cut(start);
 			m.hold(start);
-			const way = dist(from, at) > 0.5 ? this.toward(at, from) : r() * 6.28;
+			const toHim = dist(from, at) > 0.5 ? this.toward(at, from) : r() * 6.28;
 			const bump = j === 0 && r() < STOP_BUMP;
-			const off = bump ? STOP_BUMP_APART : STOP_RING;
+			const five = j === 0 && !bump && r() < STOP_FIVE;
+			const way = bump || five ? sideOn(toHim) : toHim;
+			const off = bump ? STOP_BUMP_APART : five ? FIVE.apart : STOP_RING;
 			const spot = {
 				x: at.x + Math.cos(way) * off,
 				y: at.y + Math.sin(way) * off,
@@ -6560,6 +6571,12 @@ class Action {
 				hero.hold(t, "stand", way);
 				m.act("chestBump", t + STOP_BUMP_MS, way + Math.PI);
 				hero.act("chestBump", t + STOP_BUMP_MS, way);
+			} else if (five) {
+				const t = Math.max(m.t, hero.t) + 60;
+				m.hold(t, "stand", way + Math.PI - FIVE.turn);
+				hero.hold(t, "stand", way - FIVE.turn);
+				m.act("highFive", t + FIVE_MS, way + Math.PI - FIVE.turn);
+				hero.act("highFive", t + FIVE_MS, way - FIVE.turn);
 			} else {
 				m.act(r() < 0.5 ? "clap" : "fistPump", m.t + 1200, way + Math.PI);
 			}
@@ -6761,6 +6778,24 @@ class Action {
 				}
 			}
 		}
+		// The side it went for, a hand slapped or two on the way: a score, the
+		// ball taken off the other side, a long way gained, a sack.
+		const gain = num(
+			events
+				.slice(i0, i1)
+				.find((e) => e?.type === "run" || e?.type === "passComplete")?.yds,
+			0,
+		);
+		const cheered =
+			won ??
+			(gain >= FIVE_GAIN
+				? offense
+				: this.find("sack") >= 0
+					? ((1 - offense) as Side)
+					: undefined);
+		if (cheered !== undefined) {
+			this.fives(cheered, free, holder);
+		}
 		for (const m of this.men) {
 			if (this.mob.has(m.pid)) {
 				continue;
@@ -6822,6 +6857,72 @@ class Action {
 					m.arms("onHips", from, m.t);
 				}
 			}
+		}
+	}
+
+	// Two of a side near each other once done with the play (not the man
+	// with the ball, not in a crowd round somebody), now and then: over to
+	// each other, a high five, and on (each free from the end of it).
+	fives(team: Side, free: Map<number, number>, holder: Actor | undefined) {
+		const r = this.r;
+		const left = this.men.filter((m) => {
+			const t = free.get(m.pid)!;
+			return (
+				m.team === team &&
+				m !== holder &&
+				!this.mob.has(m.pid) &&
+				t < this.whistle + FIVE_LATE &&
+				!DOWN.has(legAt(m, t).move)
+			);
+		});
+		let pairs = 0;
+		while (left.length > 1 && pairs < FIVE_MOST) {
+			const a = left.splice(Math.floor(r() * left.length), 1)[0]!;
+			if (r() > FIVE_WANT) {
+				continue;
+			}
+			const pa = a.posAt(free.get(a.pid)!);
+			let k = -1;
+			for (let j = 0; j < left.length; j++) {
+				const d = dist(pa, left[j]!.posAt(free.get(left[j]!.pid)!));
+				if (
+					d < FIVE_NEAR &&
+					(k < 0 || d < dist(pa, left[k]!.posAt(free.get(left[k]!.pid)!)))
+				) {
+					k = j;
+				}
+			}
+			if (k < 0) {
+				continue;
+			}
+			const b = left.splice(k, 1)[0]!;
+			const go = Math.max(free.get(a.pid)!, free.get(b.pid)!) + 200 + r() * 400;
+			for (const m of [a, b]) {
+				m.cut(go);
+				m.hold(go);
+			}
+			const mid = { x: (a.at.x + b.at.x) / 2, y: (a.at.y + b.at.y) / 2 };
+			const way = sideOn(
+				dist(a.at, b.at) > 0.5 ? this.toward(a.at, b.at) : r() * 6.28,
+			);
+			const half = FIVE.apart / 2;
+			const ux = Math.cos(way) * half;
+			const uy = Math.sin(way) * half;
+			a.run({ x: mid.x - ux, y: mid.y - uy }, FIVE_FPS, undefined, way);
+			b.run(
+				{ x: mid.x + ux, y: mid.y + uy },
+				FIVE_FPS,
+				undefined,
+				way + Math.PI,
+			);
+			const t = Math.max(a.t, b.t) + 60;
+			a.hold(t, "stand", way - FIVE.turn);
+			b.hold(t, "stand", way + Math.PI - FIVE.turn);
+			a.act("highFive", t + FIVE_MS, way - FIVE.turn);
+			b.act("highFive", t + FIVE_MS, way + Math.PI - FIVE.turn);
+			free.set(a.pid, a.t);
+			free.set(b.pid, b.t);
+			pairs++;
 		}
 	}
 }
@@ -6924,6 +7025,16 @@ const HELP_FOE = 0.25;
 const HELP_FROM = 22;
 const HELP_FPS = 6;
 const TOSS_MS = 380;
+// The side it went for (a long way gained: this many yards): this often
+// a man of it after a high five - with the nearest of them done with the
+// play no later than this after the whistle (ms), no further off than
+// this, coming to him at this pace - at the most this many pairs of them.
+const FIVE_GAIN = 15;
+const FIVE_WANT = 0.35;
+const FIVE_LATE = 4000;
+const FIVE_NEAR = 14;
+const FIVE_FPS = 5;
+const FIVE_MOST = 2;
 // The side that lost it off the field: this often a man's hands to his
 // helmet first (for this long, give or take - the quarterback's more often),
 // this often his hands on his hips on the way; and round a crowd of the
@@ -6938,7 +7049,8 @@ const GLAD = 0.3;
 // Stopped short: this often a moment for it, from this long after the
 // whistle at the soonest - his teammates no further off than this to him,
 // at no more than this pace, to this far off him, or (this often, the first
-// of them) chest to chest with him, this far apart, this long.
+// of them) chest to chest with him, this far apart, this long - or else
+// (this often) a high five, this long.
 const STOP_PARTY = 0.75;
 const STOP_AFTER = 250;
 // (The man who made it first this far off the ball, stepping away at this
@@ -6951,6 +7063,10 @@ const STOP_RING = 3.6;
 const STOP_BUMP = 0.55;
 const STOP_BUMP_APART = 2;
 const STOP_BUMP_MS = 900;
+const STOP_FIVE = 0.5;
+const FIVE_MS = 800;
+// (Two men slapping hands: how far apart, how far turned - see handsMeet.)
+const FIVE = handsMeet(drawnBody(footballBody()), "highFive", HIGH_FIVE_AT);
 // A punt going in for a touchback: the cover easing up this far short of
 // the goal line (feet) and as much as this much further.
 const TB_SHORT = 6;

@@ -1,5 +1,4 @@
-import { skeleton } from "../court3d/poses.ts";
-import { FIGURE_SCALE, footballBody } from "./body.ts";
+import { drawnBody, footballBody } from "./body.ts";
 import { posOf, type CrewPart } from "./crew.ts";
 import type { BallSeg, Leg, Part } from "./director.ts";
 import {
@@ -8,19 +7,22 @@ import {
 	FIELD_W,
 	MID_X,
 	MID_Y,
+	sideOn,
 	TEAM_AREA,
 	type Pt,
 	type Side,
 } from "./geometry.ts";
-import { moveKind, poseOfMove, type Move } from "./poses.ts";
+import { HIGH_FIVE_AT, handsMeet, moveKind, type Move } from "./poses.ts";
 import { stageShower, type Shower } from "./shower.ts";
 import { coachId, headCoachAt, sidelineOf } from "./sideline.ts";
 
 // THE GAME OVER. The winners' moment where the end of it finds them - up
-// off their feet, chests bumped, a fist pumped (a rout: a clap, and that is
-// all; won on the last play, all of them all over the man who won it) - and
-// the beaten side's: hands on hips, on helmets, a man down on a knee. Then both sides out toward the middle of the field, each man to one
-// of the other side's: a handshake, a hug now and then, and on to the next.
+// off their feet, chests bumped, hands slapped, a fist pumped (a rout: a
+// clap, and that is all; won on the last play, all of them all over the
+// man who won it) - and the beaten side's: hands on hips, on helmets, a man
+// down on a knee. Then both sides out toward the middle of the field, each
+// man to one of the other side's: a handshake, a hug now and then, and on
+// to the next.
 // And the two head coaches out from their sidelines through it all, to
 // shake hands in the middle - the picture in on them as they do.
 
@@ -29,11 +31,14 @@ const GO_AFTER = 350;
 // A win by this many points or more is a rout.
 const ROUT = 17;
 // The winners: this share of them chest to chest with a teammate (one no
-// further off than this), the rest each in a moment of his own.
+// further off than this) - or, half the time, a high five - the rest each
+// in a moment of his own.
 const BUMP = 0.3;
 const BUMP_NEAR = 15;
 const BUMP_APART = 2;
 const BUMP_MS = 900;
+const BUMP_FIVE = 0.5;
+const FIVE_MS = 800;
 // Won on the last play: the winners on the field to the man who won it, at a
 // sprint (these paces), round him in a ring this far off him (this many
 // in it) and another outside it - up off their feet with him, and all over
@@ -99,15 +104,15 @@ const CREW_LATE = 900;
 const CREW_FPS = 8;
 const CREW_PAST = 18;
 
-// Two men shaking hands stand this far apart (feet, middle to middle),
-// each turned this far (radians) to his left of straight at the other -
-// right hand to right hand between them (as the men are drawn).
-const SHAKE_HAND = (() => {
-	const hand = skeleton(footballBody(), poseOfMove("shake", 0.24)).armR.end;
-	return { f: hand.f * FIGURE_SCALE, s: hand.s * FIGURE_SCALE };
-})();
-const SHAKE_APART = 2 * Math.hypot(SHAKE_HAND.f, SHAKE_HAND.s);
-const SHAKE_TURN = Math.atan2(-SHAKE_HAND.s, SHAKE_HAND.f);
+// Two men shaking hands, or slapping hands: how far apart they stand, and
+// turned (see handsMeet) - right hand to right hand between them (as the
+// men are drawn).
+const { apart: SHAKE_APART, turn: SHAKE_TURN } = handsMeet(
+	drawnBody(footballBody()),
+	"shake",
+	0.24,
+);
+const FIVE = handsMeet(drawnBody(footballBody()), "highFive", HIGH_FIVE_AT);
 
 // Down, or getting up, or in the middle of something: left to finish it.
 const DOWN = new Set<Move>([
@@ -461,16 +466,22 @@ export const stagePostgame = (input: {
 			bumped.add(a);
 			bumped.add(b);
 			const mid = { x: (a.at.x + b.at.x) / 2, y: (a.at.y + b.at.y) / 2 };
-			const way = dist(a.at, b.at) > 0.5 ? toward(a.at, b.at) : r() * 6.28;
-			const ux = Math.cos(way) * (BUMP_APART / 2);
-			const uy = Math.sin(way) * (BUMP_APART / 2);
+			const way = sideOn(
+				dist(a.at, b.at) > 0.5 ? toward(a.at, b.at) : r() * 6.28,
+			);
+			const five = r() < BUMP_FIVE;
+			const half = (five ? FIVE.apart : BUMP_APART) / 2;
+			const turn = five ? FIVE.turn : 0;
+			const ux = Math.cos(way) * half;
+			const uy = Math.sin(way) * half;
 			a.walk({ x: mid.x - ux, y: mid.y - uy }, 9);
 			b.walk({ x: mid.x + ux, y: mid.y + uy }, 9);
 			const at = Math.max(a.t, b.t) + 60;
-			a.hold(at, "stand", way);
-			b.hold(at, "stand", way + Math.PI);
-			a.act("chestBump", BUMP_MS, way);
-			b.act("chestBump", BUMP_MS, way + Math.PI);
+			a.hold(at, "stand", way - turn);
+			b.hold(at, "stand", way + Math.PI - turn);
+			const move = five ? "highFive" : "chestBump";
+			a.act(move, five ? FIVE_MS : BUMP_MS, way - turn);
+			b.act(move, five ? FIVE_MS : BUMP_MS, way + Math.PI - turn);
 		}
 	}
 	for (const m of won) {

@@ -80,6 +80,7 @@ const TOUCH = new Set<Move>([
 	"shake",
 	"hug",
 	"chestBump",
+	"highFive",
 	"coolerCarry",
 	"coolerDump",
 	"doused",

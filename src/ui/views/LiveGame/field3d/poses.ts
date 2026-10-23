@@ -398,6 +398,10 @@ const CLAP_TOGETHER: Partial<Pose> = {
 	elF: 64,
 	abF: -24,
 };
+// Where in a high five the two hands meet - up on his toes into it, this
+// far (feet).
+export const HIGH_FIVE_AT = 0.5;
+const HIGH_FIVE_HOP = 0.3;
 // The cooler's handle in his right hand, hung at his side; the cooler over
 // him (hunched, his arms up and out).
 const COOLER_CARRY: Partial<Pose> = { shN: 10, elN: 8, abN: 8, abF: 20 };
@@ -2703,6 +2707,56 @@ const FIELD_ANIMS = {
 			[1, BASE],
 		],
 	},
+	// A high five: his right arm up out to his side, back by his helmet, then
+	// up and through, reaching, to meet the other man's up over their heads
+	// (at HIGH_FIVE_AT), and round and down out to his side.
+	highFive: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[0.15, pose({ shN: 30, elN: 90, abN: 85, shF: 6, elF: 24, abF: 10 })],
+			[
+				0.32,
+				pose({
+					shN: 152,
+					elN: 75,
+					abN: 26,
+					shF: 10,
+					elF: 30,
+					abF: 12,
+					tuck: 1,
+					lean: -4,
+				}),
+			],
+			[
+				HIGH_FIVE_AT,
+				pose({
+					shN: 135,
+					elN: 4,
+					abN: -8,
+					shF: 16,
+					elF: 30,
+					abF: 14,
+					tuck: 1,
+					lean: 9,
+				}),
+			],
+			[
+				0.6,
+				pose({
+					shN: 150,
+					elN: 15,
+					abN: 60,
+					shF: 14,
+					elF: 30,
+					abF: 12,
+					lean: 5,
+				}),
+			],
+			[0.76, pose({ shN: 40, elN: 20, abN: 70, shF: 8, elF: 24, lean: 2 })],
+			[1, BASE],
+		],
+	},
 	// His helmet off: both hands up to it, pulled up off his head, and down
 	// in his left hand.
 	helmetOff: {
@@ -3047,6 +3101,22 @@ export const poseOfMove = (m: Move, phase: number, mirrored = false): Pose => {
 	return mirrored ? mirror(q) : q;
 };
 
+// Two men meeting right hand to right hand partway through a move (a
+// handshake, a high five): how far apart they stand, center to center, and
+// how far each is turned to his left of straight at the other (radians)
+// for the two hands to meet halfway.
+export const handsMeet = (
+	b: Body,
+	m: Move,
+	phase: number,
+): { apart: number; turn: number } => {
+	const hand = skeleton(b, poseOfMove(m, phase)).armR.end;
+	return {
+		apart: 2 * Math.hypot(hand.f, hand.s),
+		turn: Math.atan2(-hand.s, hand.f),
+	};
+};
+
 // How far off the turf he is partway through a move (feet): up off both
 // feet in a leap, a chest bump - laid out on top of a pile, this high.
 const PILE_TOP = 1.2;
@@ -3065,6 +3135,8 @@ export const liftOf = (m: Move, phase: number): number => {
 			return arc(0.25, 0.75, 0.8);
 		case "chestBump":
 			return arc(0.32, 0.72, 1.5);
+		case "highFive":
+			return arc(0.36, 0.64, HIGH_FIVE_HOP);
 		case "hurdle":
 			return arc(0.12, 0.85, 2.4);
 		case "griddy":

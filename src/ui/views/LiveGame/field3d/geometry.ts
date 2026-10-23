@@ -58,6 +58,17 @@ export const other = (t: Side): Side => (t === 0 ? 1 : 0);
 
 export const dist = (a: Pt, b: Pt): number => Math.hypot(a.x - b.x, a.y - b.y);
 
+// The way from one man to another he is meeting (a chest bump, a high
+// five), turned if need be to no more than this far (radians) off straight
+// along the field - so the broadcast, looking across it, sees the two side
+// on rather than one behind the other.
+const SIDE_ON = 0.6;
+export const sideOn = (way: number): number => {
+	const along = Math.cos(way) >= 0 ? 0 : Math.PI;
+	const off = Math.atan2(Math.sin(way - along), Math.cos(way - along));
+	return along + Math.min(SIDE_ON, Math.max(-SIDE_ON, off));
+};
+
 // Which way a team attacks: +1 toward the right end zone. The home team takes
 // the right end in the first and third quarters and the left in the second
 // and fourth (and odd overtimes like the first), as teams change ends at the
