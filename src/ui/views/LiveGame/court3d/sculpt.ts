@@ -442,6 +442,7 @@ const RELAXED = new Set<string>([
 	"back",
 	"drift",
 	"talk",
+	"easy",
 	"hips",
 	"crossed",
 	"sit",

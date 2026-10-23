@@ -98,6 +98,8 @@ describe("3D free throws", () => {
 			let checked = 0;
 			let boxOuts = 0;
 			let easy = 0;
+			let set = 0;
+			let lastOnes = 0;
 			for (let k = 0; k < tl.beats.length; k++) {
 				const b = tl.beats[k]!;
 				const e = events[b.i]!;
@@ -159,8 +161,17 @@ describe("3D free throws", () => {
 							`${pid}'s toes on a mark (${d.toFixed(2)})`,
 						);
 					}
-					if (!last && (st0.anim === "hips" || st0.anim === "crossed")) {
+					if (
+						!last &&
+						(st0.anim === "easy" ||
+							st0.anim === "hips" ||
+							st0.anim === "crouch")
+					) {
 						easy += 1;
+					}
+					if (last) {
+						set += st0.anim === "laneSet" ? 1 : 0;
+						lastOnes += 1;
 					}
 					if (last) {
 						boxOuts += tr.acts.some(
@@ -176,6 +187,10 @@ describe("3D free throws", () => {
 			}
 			assert.isAbove(checked, 40);
 			assert.isAbove(easy, 10);
+			// (On the last, set in his legs as it goes up - not stood, nor
+			// down in a defensive stance.)
+			assert.isAbove(lastOnes, 10);
+			assert.isAbove(set / lastOnes, 0.9);
 			assert.isAbove(boxOuts, 10);
 		},
 	);

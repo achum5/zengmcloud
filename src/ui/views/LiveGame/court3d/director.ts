@@ -13480,18 +13480,32 @@ class Director {
 			face: dir,
 			look: rimSpot,
 		});
-		// On the lane: with another to come, stood easy - hands on hips or arms
-		// folded - watching it; on the last, down in a stance, and as it leaves
-		// his hand, in to box out.
+		// On the lane: with another to come, stood easy watching it - hands on
+		// his hips, on his knees (a defender: the shooter's men may be off to
+		// slap his hand), or just stood there (the ball dead: see
+		// evaluate.ts); on the last, stood easy till the shooter has it, then
+		// set - down in his legs, hands out in front - and as it leaves his
+		// hand, in to box out.
 		const lane = [...def.slice(0, 3), ...off.slice(0, 2)];
 		for (const pid of lane) {
-			this.act(
-				pid,
-				more ? (hash01(pid, 17) < 0.5 ? "hips" : "crossed") : "stance",
-				Math.max(T, ready),
-				more ? at + 600 : release,
-				{ look: more ? S : rimSpot },
-			);
+			const h = hash01(pid, 17);
+			if (!more) {
+				this.act(
+					pid,
+					"laneSet",
+					caught + 150 + 350 * hash01(pid, 19),
+					release,
+					{ look: rimSpot },
+				);
+			} else if (h < 0.75) {
+				this.act(
+					pid,
+					h < 0.45 || off.includes(pid) ? "hips" : "crouch",
+					Math.max(T, ready),
+					at + 600,
+					{ look: S },
+				);
+			}
 		}
 		if (!more) {
 			this.laneBattle(team, def, off, shooter, release, at);

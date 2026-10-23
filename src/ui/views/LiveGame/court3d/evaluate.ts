@@ -1715,6 +1715,175 @@ const offBall = (
 	return { anim, phase: (t - start) / dur };
 };
 
+// THE BALL DEAD.
+//
+// After a whistle - a foul, a ball out of bounds, a sub, the trip to the
+// line - nobody stays down in his stance, or crouched ready, for seconds on
+// end: he stands up easy, puts his hands on his hips or on his knees a
+// while, and sinks back into it a moment before the ball is back in play -
+// in an inbounder's hands, or off the shooter's at the line. The ball's own
+// path says when: out of anybody's hands and play (or in the shooter's,
+// going through his routine), for long enough to be a stoppage - not just
+// dropped through the net and straight back in.
+const DEAD_MIN = 4000;
+// He stands up once it has been dead a moment, and is back down in it this
+// long before it is live.
+const DEAD_LAG = 600;
+const DEAD_LEAD = 1100;
+// (At the line, the men out on the floor stay stood till the last one is
+// on its way - then go.)
+const LINE_LEAD = 250;
+// (In play for less than this between two stoppages - a free throw with
+// another to come, the ball tossed to the official - is no time to get
+// down in it.)
+const LIVE_GAP = 1500;
+// A stoppage: from, to, and how long before its end he is back down in it.
+type Stoppage = [number, number, number];
+const deadSpans = new WeakMap<CourtTimeline, Stoppage[]>();
+const AT_LINE = new Set(["ft", "missFt"]);
+const BETWEEN = new Set(["sub", "timeout", "timeouts"]);
+export const deadSpansOf = (tl: CourtTimeline): Stoppage[] => {
+	const known = deadSpans.get(tl);
+	if (known) {
+		return known;
+	}
+	// At the line, the ball is dead all through a free throw with another
+	// to come - and through the last till it leaves his hand.
+	const lines: [number, number][] = [];
+	const shots = new Set<number>();
+	tl.beats.forEach((b, i) => {
+		if (!AT_LINE.has(b.type)) {
+			return;
+		}
+		let k = i + 1;
+		while (k < tl.beats.length && BETWEEN.has(tl.beats[k]!.type)) {
+			k++;
+		}
+		const next = tl.beats[k];
+		if (next && AT_LINE.has(next.type)) {
+			lines.push([b.preStart, b.end]);
+			return;
+		}
+		// (Its shot: the last throw out of a man's hands before it gets
+		// there.)
+		const shot = tl.ball.findLast(
+			(s) =>
+				s.kind === "fly" &&
+				"pid" in s.from &&
+				s.t0 >= b.preStart &&
+				s.t0 < b.actionStart,
+		);
+		const end = shot ? shot.t0 : b.actionStart;
+		lines.push([b.preStart, end]);
+		shots.add(end);
+	});
+	// Alternating stretches, dead or live, from the first: in play in a
+	// man's hands, passed or shot out of them, or off the rim - not lying
+	// where it was thrown, or bouncing loose.
+	const runs: { t0: number; t1: number; live: boolean }[] = [];
+	let li = 0;
+	const add = (t0: number, t1: number, live: boolean) => {
+		if (t1 <= t0) {
+			return;
+		}
+		while (li < lines.length && lines[li]![1] <= t0) {
+			li++;
+		}
+		const line = lines[li];
+		if (live && line && line[0] < t1) {
+			add(t0, line[0], true);
+			add(Math.max(t0, line[0]), Math.min(t1, line[1]), false);
+			add(line[1], t1, true);
+			return;
+		}
+		const last = runs.at(-1);
+		if (last && last.live === live) {
+			last.t1 = t1;
+		} else {
+			runs.push({ t0, t1, live });
+		}
+	};
+	tl.ball.forEach((s, i) => {
+		const next = tl.ball[i + 1]?.t0 ?? tl.end;
+		if (s.kind === "fly") {
+			const end = Math.min(s.t1, next);
+			add(s.t0, end, "pid" in s.from || liveSeg(tl.ball, i));
+			add(end, next, "pid" in s.to);
+		} else {
+			add(s.t0, next, s.kind === "hold" || s.kind === "path");
+		}
+	});
+	const out: Stoppage[] = [];
+	for (let i = 0; i < runs.length; i++) {
+		const r = runs[i]!;
+		if (r.live) {
+			continue;
+		}
+		let t1 = r.t1;
+		// (Through a moment in play to the next stoppage.)
+		while (
+			i + 2 < runs.length &&
+			runs[i + 1]!.t1 - runs[i + 1]!.t0 < LIVE_GAP
+		) {
+			i += 2;
+			t1 = runs[i]!.t1;
+		}
+		if (t1 - r.t0 >= DEAD_MIN) {
+			out.push([r.t0, t1, shots.has(t1) ? LINE_LEAD : DEAD_LEAD]);
+		}
+	}
+	deadSpans.set(tl, out);
+	return out;
+};
+// The stoppage he may stand easy in at t, if any.
+const stoppageAt = (tl: CourtTimeline, t: number): Stoppage | undefined => {
+	const list = deadSpansOf(tl);
+	const s = list[lastIndex(list, t, (d) => d[0])];
+	return s && t >= s[0] + DEAD_LAG && t < s[1] - s[2] ? s : undefined;
+};
+// Stood easy through a stoppage, now and then hands on his hips, or bent
+// over with them on his knees (getting his breath) - which, and when, from
+// who he is and when he stopped, as off the ball.
+const STOPPED: [AnimName, number][] = [
+	["hips", 2600],
+	["crouch", 1900],
+	["hips", 3400],
+];
+const STOPPED_EVERY = 4200;
+const stoppedLife = (
+	tr: Track,
+	t: number,
+	stop: Stoppage,
+): AnimName | undefined => {
+	const mi = lastIndex(tr.moves, t, (m) => m.t0);
+	let since = Math.max(stop[0] + DEAD_LAG, mi >= 0 ? tr.moves[mi]!.t1 : 0);
+	let until = Math.min(stop[1] - stop[2], tr.moves[mi + 1]?.t0 ?? Infinity);
+	const ai = lastIndex(tr.acts, t, (a) => a.t0);
+	for (let k = ai; k >= 0 && k >= ai - 3; k--) {
+		since = Math.max(since, tr.acts[k]!.t1);
+	}
+	until = Math.min(until, tr.acts[ai + 1]?.t0 ?? Infinity);
+	const k = Math.floor((t - since - 400) / STOPPED_EVERY);
+	if (k < 0) {
+		return undefined;
+	}
+	const h = hash01(tr.pid + 0.5, since / 1000 + k);
+	if (h < 0.35) {
+		return undefined;
+	}
+	const [anim, dur] = STOPPED[Math.floor(h * 1000) % STOPPED.length]!;
+	const start =
+		since +
+		400 +
+		k * STOPPED_EVERY +
+		hash01(tr.pid + 1.5, since / 1000 + k) *
+			Math.max(0, STOPPED_EVERY - dur - 300);
+	// (Done with, and stood up out of it, before he next moves.)
+	return t < start || t >= start + dur || start + dur > until - STOOD_MS - 100
+		? undefined
+		: anim;
+};
+
 // The hand the ball is in, with whoever has it at t: on its way down, the
 // hand it left; on its way up, the hand it goes to - and in both hands, as
 // good as his right.
@@ -1902,6 +2071,8 @@ const steppingAt = (tr: Track, t: number): boolean => {
 const STANDING = new Set<AnimName>([
 	"crossed",
 	"hips",
+	"crouch",
+	"laneSet",
 	"flex",
 	"roar",
 	"chestPound",
@@ -2276,11 +2447,15 @@ const doingAt = (
 			seg?.kind === "hold" && seg.pid === pid && seg.style === "cross"
 				? crossMoveAt(tl, seg, t)
 				: undefined;
+		const jump = jumpBallAt(tl, t);
+		const stop = jump ? undefined : stoppageAt(tl, t);
 		if (move) {
 			anim = moveAnim(move.move, move.from);
 		} else if (seg && seg.kind === "hold" && seg.pid === pid) {
 			anim = seg.style === "hold" ? "hold" : "dribbleIdle";
-		} else if (jumpBallAt(tl, t) || offenseAt(tl, t) === tr.team) {
+		} else if (stop) {
+			anim = stoppedLife(tr, t, stop) ?? "easy";
+		} else if (jump || offenseAt(tl, t) === tr.team) {
 			anim = "ready";
 		} else {
 			// Up on the man with the ball, or set in his stance off it.
@@ -2308,7 +2483,10 @@ const doingAt = (
 					? swipeAt(tl, tr, t, seg.pid)
 					: undefined;
 		if (
-			(anim === "ready" || anim === "stance" || anim === "guard") &&
+			(anim === "ready" ||
+				anim === "stance" ||
+				anim === "guard" ||
+				STOOD.has(anim)) &&
 			steppingAt(tr, t)
 		) {
 			// Eased aside off a man: he steps over, not slides.
@@ -2423,6 +2601,9 @@ const BLEND_MS = 160;
 // (Pulled up out of a run into where he stands, a step with each foot:
 // longer.)
 const SETTLE_MS = 300;
+// (Stood easy, standing up out of his stance or bending over onto his
+// knees and back: in no hurry.)
+const STOOD_MS = 500;
 const MOVE_ARMS_MS = 60;
 // (Behind his back, the move starts with his hand out in front where the
 // ball comes up into it, and sweeps it back from there: no time to hold it
@@ -2546,10 +2727,11 @@ const blendInto = (
 		// (Looked for the whole settle ago and halfway back to it: a step
 		// too short to span the gap between that and BLEND_MS ago is not
 		// lost in it for a few frames, and found again after.)
+		const back = STOOD.has(anim) ? STOOD_MS : SETTLE_MS;
 		const settle =
 			flick || !(PIVOTS.has(anim) || SETTLE_FROM.has(anim))
 				? undefined
-				: [t - SETTLE_MS, t - (SETTLE_MS + BLEND_MS) / 2]
+				: [t - back, t - (back + BLEND_MS) / 2]
 						.map((at) => ({ at, d: doingAt(tl, tr, at) }))
 						.find((x) => !same(x.d));
 		if (flick) {
@@ -2611,7 +2793,7 @@ const blendInto = (
 			before = back;
 		}
 	}
-	if (settling && !stepsOver(before.anim, anim)) {
+	if (settling && !slowOver(before.anim, anim)) {
 		return armsDown(tl, tr, t, now);
 	}
 	// (A moment of something else between an arm thrown up and this - his
@@ -2633,7 +2815,13 @@ const blendInto = (
 		const u = Math.min(1, (t - hi) / ms);
 		return 1 - u * u * (3 - 2 * u);
 	};
-	const w = ease(stepsOver(before.anim, anim) ? SETTLE_MS : BLEND_MS);
+	const w = ease(
+		!slowOver(before.anim, anim)
+			? BLEND_MS
+			: STOOD.has(anim) && PIVOTS.has(before.anim)
+				? STOOD_MS
+				: SETTLE_MS,
+	);
 	const slowArms = armsComeDown(tr, t, before.anim, anim);
 	if (w <= 0.02 && !(slowArms && ease(ARMS_DOWN_MS) > 0.02)) {
 		return undefined;
@@ -3599,6 +3787,9 @@ const PIVOT_FULL = 0.35;
 const PIVOTS = new Set<AnimName>([
 	"ready",
 	"stance",
+	"easy",
+	"crouch",
+	"laneSet",
 	"guard",
 	"hold",
 	"triple",
@@ -3869,9 +4060,17 @@ const SETTLE_FROM = new Set<AnimName>([
 // (And from one way of moving his feet in his stance into another - a
 // slide into a drop step, say - each foot steps over, not both slid.)
 const FOOTWORK = new Set<AnimName>(["shuffle", "back", "slide"]);
+// (And standing up out of his stance to stand easy, or back down into it:
+// his feet stepped in under him and out again, not slid.)
+const STOOD = new Set<AnimName>(["easy", "hips", "crouch"]);
 const stepsOver = (from: AnimName, to: AnimName) =>
 	(PIVOTS.has(to) && SETTLE_FROM.has(from)) ||
-	(FOOTWORK.has(from) && FOOTWORK.has(to));
+	(FOOTWORK.has(from) && FOOTWORK.has(to)) ||
+	(PIVOTS.has(from) && PIVOTS.has(to) && STOOD.has(from) !== STOOD.has(to));
+// (Stood easy, his hands go to his hips or his knees, and back, in no
+// hurry either: as long as a step over.)
+const slowOver = (from: AnimName, to: AnimName) =>
+	stepsOver(from, to) || (STOOD.has(from) && STOOD.has(to));
 const SETTLE_HIP = 14;
 const SETTLE_KNEE = 30;
 // (A full step for a leg this far from where it is going - degrees at the

@@ -224,6 +224,59 @@ const P = {
 		lean: 18,
 		wide: 0.85,
 	}),
+	// Stood easy, the ball dead - a whistle, a free throw: up straight, his
+	// knees all but locked, feet under his hips, arms hanging loose at his
+	// sides.
+	easy: pose({
+		hipN: -2,
+		kneeN: 6,
+		hipF: 4,
+		kneeF: 8,
+		lean: 3,
+		shN: 5,
+		elN: 14,
+		shF: 7,
+		elF: 16,
+		abN: 9,
+		abF: 9,
+		wide: 0.22,
+	}),
+	// On the lane for the last free throw, the shooter with the ball: bent
+	// over in his legs, hands on his knees, watching the rim...
+	laneWait: pose({
+		hipN: 34,
+		kneeN: 46,
+		hipF: 38,
+		kneeF: 50,
+		lean: 34,
+		shN: 6,
+		elN: 8,
+		abN: 10,
+		shF: 8,
+		elF: 8,
+		abF: 10,
+		onKneeN: 1,
+		onKneeF: 1,
+		wide: 0.55,
+	}),
+	// ...and as he goes up into it, hands off them and up in front of his
+	// chest, down in his legs - to go as it leaves the shooter's hand.
+	laneGo: pose({
+		hipN: 26,
+		kneeN: 54,
+		hipF: 30,
+		kneeF: 58,
+		lean: 24,
+		shN: 18,
+		elN: 104,
+		abN: 24,
+		wrN: 20,
+		shF: 18,
+		elF: 104,
+		abF: 24,
+		wrF: 20,
+		wide: 0.62,
+	}),
 	// The ball in both hands, live: knees bent and weight forward, ready
 	// to go with it - not stood up straight.
 	hold: pose({
@@ -1957,6 +2010,52 @@ export const ANIMS = {
 					? { shN: 30, elN: 40, abN: 30, shF: 150, elF: 22, abF: 20 }
 					: { shN: 150, elN: 22, abN: 20, shF: 30, elF: 40, abF: 30 }),
 			}),
+	},
+	// Stood easy while the ball is dead: his weight shifted slowly from one
+	// leg onto the other and back - the hip over the leg he stands on, the
+	// other knee given, his shoulders the other way.
+	easy: {
+		kind: "loop",
+		n: 4,
+		fps: 0.5,
+		pose: (i) =>
+			[
+				P.easy,
+				{
+					...P.easy,
+					kneeN: 2,
+					hipF: 7,
+					kneeF: 17,
+					tilt: -2.5,
+					twist: 3,
+					shN: 3,
+					shF: 10,
+				},
+				{ ...P.easy, kneeN: 7, kneeF: 9, lean: 4 },
+				{
+					...P.easy,
+					hipN: 1,
+					kneeN: 16,
+					kneeF: 3,
+					tilt: 2.5,
+					twist: -3,
+					shN: 9,
+					shF: 4,
+				},
+			][i]!,
+	},
+	// On the lane for the last free throw, from when the shooter has the
+	// ball till it leaves his hand: down onto his knees, and up off them
+	// as he shoots.
+	laneSet: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.easy],
+			[0.3, P.laneWait],
+			[0.72, { ...P.laneWait, kneeN: 50, kneeF: 54, lean: 36 }],
+			[1, P.laneGo],
+		],
 	},
 	// (Breathing with it: never quite still.)
 	hold: {
