@@ -1,6 +1,7 @@
 import { project, type Camera } from "../court3d/camera.ts";
 import { drawPixelText, pixelTextWidth } from "../court3d/pixelFont.ts";
 import { FIGURE_SCALE } from "./body.ts";
+import { luminance } from "./color.ts";
 import type { Play } from "./director.ts";
 import type { Role } from "./formations.ts";
 import type { FieldLook } from "./kit.ts";
@@ -22,6 +23,20 @@ const TAG_OVER = 8.2 * FIGURE_SCALE;
 export type TagCover = { x0: number; x1: number; y0: number };
 
 const clamp01 = (u: number) => Math.min(1, Math.max(0, u));
+
+// His number's box: in the darker of his jersey and its numbers (a road
+// team's white turned round to its color), the number in the other - or in
+// black or white, if the two are too near alike to read at this size.
+const numberColors = (kit: FieldLook["kit"]): [string, string] => {
+	const [box, ink] =
+		luminance(kit.jersey) <= luminance(kit.number)
+			? [kit.jersey, kit.number]
+			: [kit.number, kit.jersey];
+	if (Math.abs(luminance(box) - luminance(ink)) >= 0.4) {
+		return [box, ink];
+	}
+	return [box, luminance(box) > 0.5 ? "#18181c" : "#ffffff"];
+};
 
 // How much of each man's tag shows at t: the man with the ball, or it just
 // away from him.
@@ -160,16 +175,10 @@ export const drawTags = (
 		}
 		ctx.fillRect(x + nw, box.y, w + 2 * pad, h);
 		if (num) {
-			ctx.fillStyle = look.kit.jersey;
+			const [fill, ink] = numberColors(look.kit);
+			ctx.fillStyle = fill;
 			ctx.fillRect(x, box.y, nw, h);
-			drawPixelText(
-				ctx,
-				num,
-				x + 3 * scale,
-				box.y + 3 * scale,
-				look.kit.number,
-				scale,
-			);
+			drawPixelText(ctx, num, x + 3 * scale, box.y + 3 * scale, ink, scale);
 		}
 		ctx.fillStyle = look.kit.helmet;
 		ctx.fillRect(x, box.y + h - scale, total, scale);
