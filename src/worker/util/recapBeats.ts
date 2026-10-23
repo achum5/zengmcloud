@@ -1126,7 +1126,10 @@ export const vsOpponentBeat = (
 		return undefined;
 	}
 	const opp = `the ${oppName}`;
-	if (v.avgPts >= 24 && p.pts >= 24) {
+	// "This" is tonight, so tonight has to look like it: "Marcus Ellis has
+	// made a habit of this against the Bulls, 43.5 a game in two earlier
+	// meetings" sat under a 24-point night.
+	if (v.avgPts >= 24 && p.pts >= 24 && p.pts >= v.avgPts * 0.85) {
 		return pick(
 			rng,
 			[

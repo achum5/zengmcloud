@@ -1341,6 +1341,17 @@ describe("a player against this opponent", () => {
 		}
 	});
 
+	// "Marcus Ellis has made a habit of this against the Bulls, 43.5 a game
+	// in two earlier meetings" - under a 24-point night.
+	test("a habit is not claimed on a night well short of it", () => {
+		const p = player({
+			name: "Jayson Tatum",
+			pts: 24,
+			vsOpponent: { games: 2, bestPts: 47, avgPts: 43.5 },
+		});
+		assert.strictEqual(vsOpponentBeat(p, "Knicks", rngFromSeed(1)), undefined);
+	});
+
 	test("one earlier meeting, a quiet night, or nothing at all says nothing", () => {
 		const once = player({
 			name: "Jayson Tatum",

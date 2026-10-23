@@ -4560,17 +4560,33 @@ const gameStory = (
 		if (lateRun) {
 			covers.add("run");
 		}
+		// The lead's peak after the break, when it outran the halftime one,
+		// goes with it, in order: "The Bulls won the second half 60-40. The
+		// Nuggets led by as many as 35." told the 35 after the half that cut
+		// into it.
+		const peakAfter =
+			!covers.has("winnerPeak") &&
+			wMaxAt !== undefined &&
+			wMaxAt > halfN &&
+			wMax >= up + 3;
+		// A peak a basket past the halftime lead is that lead: "led 61-28 at
+		// halftime... The Nuggets led by as many as 35" said it twice.
+		if (peakAfter || wMax <= up + 2) {
+			covers.add("winnerPeak");
+		}
 		out.push(
-			lateRun
-				? `${L} won the second half ${l2}-${w2} and ran off ${lateRun.pts} straight points ${runAt(lateRun)}.`
-				: pick(
-						rng,
-						[
-							`${L} won the second half ${l2}-${w2}.`,
-							`${L} outscored ${w} ${l2}-${w2} after the break.`,
-						],
-						"story:loserHalf",
-					),
+			peakAfter
+				? `${W} led by as many as ${wMax} in ${when(wMaxAt)}, but ${l} won the second half ${l2}-${w2}${lateRun ? ` and ran off ${lateRun.pts} straight points ${runAt(lateRun)}` : ""}.`
+				: lateRun
+					? `${L} won the second half ${l2}-${w2} and ran off ${lateRun.pts} straight points ${runAt(lateRun)}.`
+					: pick(
+							rng,
+							[
+								`${L} won the second half ${l2}-${w2}.`,
+								`${L} outscored ${w} ${l2}-${w2} after the break.`,
+							],
+							"story:loserHalf",
+						),
 		);
 	} else if (aheadForGoodByHalf && shape.margin >= 8) {
 		// "Never got back in front" says they had been; a side that never led
