@@ -77,6 +77,7 @@ const FrontOfficeBreakdown = ({
 	breakdown: Breakdown;
 	abbrevs: string[];
 }) => {
+	const { teamInfoCache } = useLocal(["teamInfoCache"]);
 	const seasons = breakdown.seasons.slice(0, SEASONS_SHOWN);
 	return (
 		<div className="mt-4">
@@ -88,6 +89,17 @@ const FrontOfficeBreakdown = ({
 					<p className="mb-2 text-body-secondary">
 						Traded away: {side.tradedAway.join(" / ")}
 					</p>
+					{side.picksMoved && side.picksMoved.length > 0 ? (
+						<p className="mb-2 text-body-secondary">
+							Pick places:{" "}
+							{side.picksMoved
+								.map(
+									(x) =>
+										`${x.season} round ${x.round} (${teamInfoCache[x.originalTid]?.abbrev ?? x.originalTid}) ${(x.before + 1).toFixed(1)} → ${(x.after + 1).toFixed(1)}`,
+								)
+								.join(", ")}
+						</p>
+					) : null}
 					<div className="table-responsive">
 						<table className="table table-sm table-striped table-borderless w-auto">
 							<thead>

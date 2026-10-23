@@ -262,6 +262,21 @@ export const explainDeal = (
 				),
 			],
 			tradedAway: [...side.tradedAway],
+			picksMoved: picksAfter.flatMap((dp) => {
+				const from = expectedPlace(outlook, dp);
+				const to = expectedPlace(view, dp);
+				return Math.abs(to - from) >= 0.05
+					? [
+							{
+								season: dp.season as number,
+								round: dp.round,
+								originalTid: dp.originalTid,
+								before: round(from, 1),
+								after: round(to, 1),
+							},
+						]
+					: [];
+			}),
 			reason: reasonFor(outlook, value, side.gain, side.margin),
 		};
 	});

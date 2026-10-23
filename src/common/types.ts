@@ -3705,6 +3705,15 @@ export type FrontOfficeSide = {
 	gives: FrontOfficeAsset[];
 	// Players traded away this season, last season and the one before.
 	tradedAway: [number, number, number];
+	// The picks it holds after the deal whose expected place the deal moves (0
+	// the first pick), before and after. Missing on older trades.
+	picksMoved?: {
+		season: number;
+		round: number;
+		originalTid: number;
+		before: number;
+		after: number;
+	}[];
 	reason: string;
 };
 

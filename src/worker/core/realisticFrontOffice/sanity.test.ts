@@ -12,7 +12,13 @@ import {
 	type Asset,
 	type TeamState,
 } from "./market.ts";
-import { buildOutlook, outlookSettings, type LeagueOutlook } from "./outlook.ts";
+import type { Player } from "../../../common/types.ts";
+import { explainDeal, type ExplainSide } from "./explain.ts";
+import {
+	buildOutlook,
+	outlookSettings,
+	type LeagueOutlook,
+} from "./outlook.ts";
 
 // Moves no good front office makes, checked for every team of a league: a
 // deal that clears a team's margin of error by the minimum gain is one it
@@ -239,3 +245,36 @@ test(
 		assert.deepEqual(backward, forward);
 	},
 );
+
+test("a deal's breakdown shows where it moves each team's picks", async () => {
+	const outlook = await currentOutlook();
+	const all = await teams();
+	const { t, partner } = [...all].sort((a, b) => a.strength - b.strength)[
+		Math.floor(all.length / 2)
+	]!;
+	const star = [...t.players].sort((a, b) => b.valueNoPot - a.valueNoPot)[0]!;
+	const side = (
+		s: TeamState,
+		gives: Player[],
+		gets: Player[],
+	): ExplainSide => ({
+		tid: s.tid,
+		players: s.players,
+		picks: s.picks,
+		tradedAway: s.tradedAway,
+		gain: 0,
+		margin: 0,
+		gives: { players: gives, picks: [] },
+		gets: { players: gets, picks: [] },
+	});
+	const { sides } = explainDeal(outlook, [
+		side(t, [star], []),
+		side(partner, [], [star]),
+	]);
+	// Without its best player, its own first comes earlier; with him, the
+	// other team's comes later.
+	const own = (k: 0 | 1, tid: number) =>
+		sides[k].picksMoved!.find((x) => x.originalTid === tid && x.round === 1)!;
+	assert.isBelow(own(0, t.tid).after, own(0, t.tid).before - 1);
+	assert.isAbove(own(1, partner.tid).after, own(1, partner.tid).before);
+});
