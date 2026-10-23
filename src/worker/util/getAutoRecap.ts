@@ -4949,9 +4949,10 @@ const stakesSentence = (
 			rng,
 			[
 				`It ended ${aNumWord(skid)}-game losing streak for ${wn}.`,
-				`${W} had lost ${skid} in a row coming in.`,
+				// A count in prose is a word: "had lost six in a row".
+				`${W} had lost ${numWord(skid)} in a row coming in.`,
 				`That was ${poss(wn)} first win in ${numWord(skid + 1)} games.`,
-				`The skid is over at ${skid} for ${wn}.`,
+				`The skid is over at ${numWord(skid)} for ${wn}.`,
 			],
 			"skidEnded",
 		);
@@ -5709,7 +5710,7 @@ const formNote = (
 				rng,
 				[
 					`${theNick(t)} came in on ${aNum(before.count)}-game losing streak`,
-					`${theNick(t)} had lost ${before.count} in a row coming in`,
+					`${theNick(t)} had lost ${numWord(before.count)} in a row coming in`,
 					`${theNick(t)} arrived without a win in ${before.count} games`,
 				],
 				"formSkid",
@@ -6367,8 +6368,10 @@ const blownLeadNote = (
 	}
 	const lSide = sideOf(game, shape.loser);
 	const L = cap(theNick(shape.loser));
+	// "Fell behind by 15 early and still ran away" in the lede, and then
+	// "At one point the Celtics led by 15" three sentences on.
 	const comebackTold =
-		/deficit|erased|comeback|stormed back|charged home|came from \d|trailed by \d+ and still|at the break|at halftime|clawing back|hold on|nearly not enough/i.test(
+		/deficit|erased|comeback|stormed back|charged home|came from \d|trailed by \d+ and still|fell behind by \d|spotted the [a-z][\w ]* an? \d+-point lead|at the break|at halftime|clawing back|hold on|nearly not enough/i.test(
 			written,
 		);
 	const lead = flow.maxLead[lSide];
@@ -6999,15 +7002,32 @@ const buildGameRecap = (game: RecapGame): string => {
 			finishAt += 1;
 			blown = undefined;
 		}
-		for (const e of [
-			run && !storyPara.includes(run) && run !== otRun ? run : undefined,
+		const big =
 			story.covers.has("winnerPeak") || /as many as|lead reached/.test(told)
 				? undefined
-				: bigLeadNote(game, shape, rng),
+				: bigLeadNote(game, shape, rng);
+		// A lead that peaked after it was taken for good is told after the
+		// basket that took it: "They led by as many as 21. They took the lead
+		// for good on Scoot Mathis' basket with 6:43 left in the third" ran
+		// the fourth quarter before the third.
+		const wPeakAt = game.flow?.maxLeadAt?.[sideOf(game, shape.winner)];
+		const forGoodAt = game.flow?.lastLead?.period;
+		const peakLater =
+			wPeakAt !== undefined &&
+			forGoodAt !== undefined &&
+			forGoodAt < wPeakAt &&
+			/for good|for the last time/.test(storyPara.slice(finishAt).join(" "));
+		for (const e of [
+			run && !storyPara.includes(run) && run !== otRun ? run : undefined,
+			big,
 			blown,
 		]) {
 			if (e && storyPara.length < 7) {
-				beforeFinish(e);
+				if (e === big && peakLater) {
+					storyPara.push(e);
+				} else {
+					beforeFinish(e);
+				}
 			}
 		}
 		if (otRun && storyPara.length < 7) {

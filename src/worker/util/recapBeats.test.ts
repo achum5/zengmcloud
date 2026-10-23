@@ -1080,7 +1080,12 @@ describe("the day wrap's context", () => {
 		const text = dayColdStreak(ctxOf(games), rngFromSeed(1))!;
 		assert.match(text, /Knicks/);
 		assert.match(text, /11|eleven/);
-		assert.ok(shapes((rng) => dayColdStreak(ctxOf(games), rng)).size >= 3);
+		const all = shapes((rng) => dayColdStreak(ctxOf(games), rng));
+		assert.ok(all.size >= 3);
+		// "The Grizzlies have now lost 6 straight": a count in prose is a word.
+		for (const x of all) {
+			assert.notMatch(x, /#/, x);
+		}
 
 		const short = [
 			dayGame(

@@ -250,6 +250,8 @@ describe("simmed recaps", () => {
 				// neither of what nor from how many; nobody is "0 games off the
 				// top".
 				/top-scored|to fall from deep|\b0 games\b/,
+				// A count in prose is a word: "had lost six in a row".
+				/have now lost \d|had lost \d+ in a row|skid is over at \d/,
 			]) {
 				assert.notMatch(recap, bad, `gid ${gid}\n${recap}`);
 			}

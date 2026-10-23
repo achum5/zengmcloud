@@ -9016,6 +9016,85 @@ test("a line that is only points leads only if nobody outscored it", () => {
 	}
 });
 
+// "The Jazz fell behind by 15 early and still ran away from the Celtics...
+// At one point the Celtics led by 15. ... They led by as many as 21. They
+// took the lead for good on Scoot Mathis' basket with 6:43 left in the
+// third." The deficit twice, and the fourth quarter before the third.
+test("a comeback rout tells the deficit once and the clock forward", () => {
+	const win = realisticTeam(
+		{
+			tid: 1,
+			region: "Utah",
+			name: "Jazz",
+			abbrev: "UTA",
+			pts: 119,
+			ptsQtrs: [20, 34, 36, 29],
+		},
+		player({
+			name: "Obi Mathis",
+			pid: 274,
+			pts: 24,
+			reb: 14,
+			ast: 8,
+			fg: 9,
+			fga: 17,
+		}),
+	);
+	const lose = realisticTeam(
+		{
+			tid: 2,
+			region: "Boston",
+			name: "Celtics",
+			abbrev: "BOS",
+			pts: 104,
+			ptsQtrs: [35, 26, 16, 27],
+		},
+		player({ name: "Lonnie Brooks", pts: 18, reb: 13, fg: 7, fga: 18 }),
+	);
+	let ordered = 0;
+	beginRecapBatch();
+	try {
+		for (let gid = 2060; gid < 2090; gid++) {
+			const recap = getAutoRecap(
+				game({
+					gid,
+					teams: [win, lose],
+					winnerTid: 1,
+					flow: {
+						leadChanges: 3,
+						ties: 1,
+						maxLead: [21, 15],
+						maxLeadAt: [4, 1],
+						lastLead: {
+							side: 0,
+							pid: 274,
+							period: 3,
+							clock: 403,
+							pts: [67, 66],
+						},
+					},
+				}),
+			);
+			if (/fell behind by 15|15-point lead early/.test(recap)) {
+				assert.doesNotMatch(
+					recap,
+					/Celtics (?:led by|had been up by) (?:as many as )?15|At one point the Celtics led by 15/,
+					recap,
+				);
+			}
+			const peak = recap.search(/as many as 21|lead reached 21|up by 21/);
+			const forGood = recap.search(/for good|for the last time/);
+			if (peak >= 0 && forGood >= 0) {
+				ordered += 1;
+				assert.ok(forGood < peak, recap);
+			}
+		}
+	} finally {
+		endRecapBatch();
+	}
+	assert.ok(ordered > 0);
+});
+
 // "The Hawks had a 15-0 run in the second, and it still was not enough. The
 // Mavericks took the first quarter 35-20 and were up 49-43 at the break."
 test("a second-quarter run is not told before the first quarter", () => {

@@ -1510,8 +1510,10 @@ export const dayColdStreak = (
 		ctx.games[0]?.day,
 		rng,
 		[
-			`${T} have now lost ${worst.count} straight.`,
-			`That is ${plural(worst.count, "loss")} in a row for ${t}.`,
+			// "The Grizzlies have now lost 6 straight": a count in prose is a
+			// word.
+			`${T} have now lost ${numWord(worst.count)} straight.`,
+			`That is ${numWord(worst.count)} losses in a row for ${t}.`,
 			`${T} have not won in ${numWord(worst.count)} games.`,
 			`The skid reached ${numWord(worst.count)} for ${t}.`,
 		],
