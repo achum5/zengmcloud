@@ -234,6 +234,11 @@ export const numWord = (n: number): string => NUM_WORDS[n] ?? String(n);
 export const aNum = (n: number): string =>
 	n === 8 || n === 11 || n === 18 ? `an ${n}` : `a ${n}`;
 
+// A count as prose writes it inside a compound, with its article: "a
+// six-game losing streak", "an eight-game", "a 14-game".
+export const aNumWord = (n: number): string =>
+	NUM_WORDS[n] === undefined ? aNum(n) : aWord(numWord(n));
+
 // "a sprained ankle" but "an Achilles injury".
 export const aWord = (s: string): string =>
 	/^[aeiou]/i.test(s) ? `an ${s}` : `a ${s}`;

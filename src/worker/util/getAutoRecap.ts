@@ -9,6 +9,7 @@ import type {
 } from "./getDayGamesForRecap.ts";
 import {
 	aNum,
+	aNumWord,
 	beginRecapBatch,
 	cap,
 	claimVerb,
@@ -2410,14 +2411,14 @@ const ledeTail = (
 		const skid = snappedSkid(shape);
 		if (skid !== undefined) {
 			return {
-				text: `, snapping ${aNum(skid)}-game losing streak`,
+				text: `, snapping ${aNumWord(skid)}-game losing streak`,
 				streak: true,
 			};
 		}
 		const lRun = shape.loser.streakBefore;
 		if (lRun?.won && lRun.count >= 5) {
 			return {
-				text: `, ending ${poss(theNick(shape.loser))} ${lRun.count}-game winning streak`,
+				text: `, ending ${poss(theNick(shape.loser))} ${numWord(lRun.count)}-game winning streak`,
 				streak: true,
 			};
 		}
@@ -3263,7 +3264,7 @@ const halftimeNote = (
 			rng,
 			[
 				`${cap(theNick(leader))} had turned it around by halftime, ${a}-${b}.`,
-				`By the break it was ${a}-${b} ${theNick(leader)}.`,
+				`By the break ${theNick(leader)} were up ${a}-${b}.`,
 				`${cap(theNick(leader))} were in front ${a}-${b} by halftime.`,
 			],
 			"halftimeRecovered",
@@ -3402,8 +3403,10 @@ const plusMinusNote = (
 		best = candidates[0];
 	}
 	// +25 is a genuinely dominant shift; the old +18 bar fired in nearly every
-	// blowout and turned the note into filler.
-	if (!best || (best.pm ?? 0) < 25) {
+	// blowout and turned the note into filler. And it has to say more than
+	// the score did: "Trey Dunn was +34 in 26 minutes" of a 28-point win is
+	// the final margin with a name on it.
+	if (!best || (best.pm ?? 0) < Math.max(25, shape.margin + 10)) {
 		return undefined;
 	}
 	// The superlatives have to be measured against what they actually claim.
@@ -3699,7 +3702,7 @@ const gameStory = (
 			out.push(
 				hot
 					? `${opener}, but ${l} came back to lead ${lh}-${wh} at halftime.`
-					: `${opener}, but it was ${lh}-${wh} ${l} at halftime.`,
+					: `${opener}, but ${l} led ${lh}-${wh} at halftime.`,
 			);
 		} else if (run && !run.winner && run.period <= halfN) {
 			covers.add("run");
@@ -4416,6 +4419,10 @@ const stakesSentence = (
 	// The result lead already carried the winner's streak ("for their fifth
 	// win in a row"), so the streak option here would say it again.
 	streakTold = false,
+	// ...or the loser's, ending it: "ending the Knicks' six-game winning
+	// streak" in the lede, then "It snapped the Knicks' six-game winning
+	// streak" in the notes.
+	loserStreakTold = false,
 ): string | undefined => {
 	const options: string[] = [];
 	const W = cap(theNick(shape.winner));
@@ -4428,7 +4435,7 @@ const stakesSentence = (
 		return pick(
 			rng,
 			[
-				`It ended ${aNum(skid)}-game losing streak for ${wn}.`,
+				`It ended ${aNumWord(skid)}-game losing streak for ${wn}.`,
 				`${W} had lost ${skid} in a row coming in.`,
 				`That was ${poss(wn)} first win in ${numWord(skid + 1)} games.`,
 				`The skid is over at ${skid} for ${wn}.`,
@@ -4468,7 +4475,9 @@ const stakesSentence = (
 	// this game).
 	const l10 = shape.loser.last10;
 	const lBefore = shape.loser.streakBefore;
-	if (lBefore && lBefore.won && lBefore.count >= 4) {
+	if (loserStreakTold) {
+		// Told in the lede.
+	} else if (lBefore && lBefore.won && lBefore.count >= 4) {
 		const run = lBefore.count;
 		options.push(
 			pick(
@@ -6638,6 +6647,9 @@ export const getAutoRecap = (game: RecapGame): string => {
 			/underdog|-point dogs|the wrong side of the line/.test(headline.text),
 			/in a row|straight|skid|losing streak|winning streak/.test(written1) ||
 				tail.streak === true,
+			new RegExp(
+				String.raw`${nick(shape.loser)}'s? [\w-]+-game winning streak`,
+			).test(`${headline.text} ${written1}`),
 		),
 	);
 	addContext(() => loserSkidNote(shape, rng, beatCtx.written));

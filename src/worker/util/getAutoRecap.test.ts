@@ -4997,11 +4997,30 @@ describe("plus-minus superlatives", () => {
 			winnerTid: tidOf(gid),
 			teams: [
 				mkTeam(tidOf(gid), "Celtics", 118, winnerPm, 24),
-				mkTeam(tidOf(gid) + 1, "Pistons", 92, loserPm, 21),
+				// A 14-point game: a +32 says more than the score did. (In a
+				// 26-point one it would only be the margin with a name on it.)
+				mkTeam(tidOf(gid) + 1, "Pistons", 104, loserPm, 21),
 			],
 		});
 	};
 	const tidOf = (gid: number) => gid * 2;
+
+	test("a swing no bigger than the blowout is not news", () => {
+		// The same +34 bench man: told in a 14-point game, not in a 28-point one.
+		let close = 0;
+		for (let gid = 201; gid <= 260; gid += 1) {
+			const pms = [12, 4, 6, 8, 10, 14, 34];
+			const loserPms = [-10, -12, -14, -8, -6, -4, -2];
+			if (/\+34|by 34 with/.test(getAutoRecap(gameWith(gid, pms, loserPms)))) {
+				close += 1;
+			}
+			const rout = gameWith(gid, pms, loserPms);
+			rout.teams[1].pts = 90;
+			rout.teams[1].ptsQtrs = [22, 22, 23, 23];
+			assert.doesNotMatch(getAutoRecap(rout), /\+34|by 34 with/);
+		}
+		assert.ok(close > 0, "the note never ran, so nothing was tested");
+	});
 
 	// The swing sits on the LAST man in the rotation both times: the note skips
 	// anyone the recap has already named, and the starters all get written up.

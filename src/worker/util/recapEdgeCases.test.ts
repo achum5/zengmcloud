@@ -899,6 +899,36 @@ describe("facts told once, in English", () => {
 		assert.deepEqual(verifyRecap(recap, g), []);
 	});
 
+	// "...ending the Knicks' 6-game winning streak" in the lede, then "It
+	// snapped the Knicks' six-game winning streak" in the notes: one fact
+	// twice, in two styles.
+	test("a streak the winner ended is told once, spelled out", () => {
+		for (let gid = 1; gid < 30; gid++) {
+			const home = squad(
+				{ tid: 1, name: "Kings" },
+				{ name: "Ace King", pid: 11, pts: 27, fg: 10, fga: 18 },
+				113,
+			);
+			const away = squad(
+				{
+					tid: 2,
+					name: "Knicks",
+					streak: { won: false, count: 1 },
+					streakBefore: { won: true, count: 6 },
+					last10: l10([false, true, true, true, true, true, true]),
+				},
+				{ name: "Bo Knick", pid: 21, pts: 22, fg: 8, fga: 20 },
+				108,
+			);
+			const recap = getAutoRecap(game([home, away], { gid }));
+			const told = recap.match(
+				/six-game winning streak|won six in a row until|six-game run/g,
+			);
+			assert.strictEqual(told?.length, 1, recap);
+			assert.notMatch(recap, /6-game winning streak[^*]*$/, recap);
+		}
+	});
+
 	test("two meetings are 'both', never 'all two'", () => {
 		const home = squad(
 			{
