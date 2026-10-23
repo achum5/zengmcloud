@@ -1,6 +1,8 @@
 import { assert, describe, test } from "vitest";
-import { glintsAt } from "./arena.ts";
-import { makeCamera, project } from "./camera.ts";
+import { glintsAt, TABLE_FRONT } from "./arena.ts";
+import { makeCamera, project, REPLAY_RIG } from "./camera.ts";
+import type { TexturedPlane } from "./planes.ts";
+import { inFloor } from "./scene.ts";
 import { stamp, type Kept } from "./sprite.ts";
 
 // A picture that only remembers what was drawn on it: how strongly, which
@@ -105,6 +107,43 @@ describe("3D polished floor", () => {
 		});
 		const soles = floorY - lift + k.dy + k.h;
 		assert.strictEqual(draws[0]!.top, floorY + (floorY - soles));
+	});
+});
+
+describe("3D boards in the floor", () => {
+	// The lit boards along the far side show in the floor upside down
+	// under them: the reflection starts at the board's foot and goes as far
+	// down the picture as the board goes up it - from the sideline camera
+	// and from courtside alike.
+	test("a board's reflection hangs from its foot, as deep as it is tall", () => {
+		const corner = (p: TexturedPlane, u: number, v: number) => ({
+			x: p.origin.x + p.alongX.x * u + p.alongY.x * v,
+			y: p.origin.y + p.alongX.y * u + p.alongY.y * v,
+			z: p.origin.z + p.alongX.z * u + p.alongY.z * v,
+		});
+		const board = TABLE_FRONT;
+		const shown = inFloor(board);
+		for (const cam of [
+			makeCamera({ x: 47, width: 72, y: 22 }, 1280, 720),
+			makeCamera({ x: 30, width: 30, y: 20, z: 4 }, 1280, 720, REPLAY_RIG),
+		]) {
+			for (const u of [0, board.w / 2, board.w]) {
+				const top = project(cam, corner(board, u, 0));
+				const foot = project(cam, corner(board, u, board.h));
+				const deep = project(cam, corner(shown, u, 0));
+				const shownFoot = project(cam, corner(shown, u, shown.h));
+				// (Its foot as near the floor under it as the board's.)
+				const tall = foot.y - top.y;
+				assert.closeTo(shownFoot.x, foot.x, tall * 0.05);
+				assert.closeTo(shownFoot.y, foot.y, tall * 0.05);
+				assert.isAbove(deep.y, foot.y);
+				assert.closeTo(
+					deep.y - foot.y,
+					foot.y - top.y,
+					(foot.y - top.y) * 0.25,
+				);
+			}
+		}
 	});
 });
 

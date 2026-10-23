@@ -90,6 +90,40 @@ import {
 // his feet, this faintly.
 const SHINE = 0.24;
 const BALL_SHINE_Z = 8;
+// And the lit boards standing on it, this strongly where they meet it -
+// fading out up the reflection, as much of them as BOARD_SHINE_SHOWN.
+const BOARD_SHINE = 0.45;
+const BOARD_SHINE_SHOWN = 0.6;
+// A board upright on the floor, as it shows in it: upside down under it.
+export const inFloor = (p: TexturedPlane): TexturedPlane => ({
+	...p,
+	origin: { ...p.origin, z: -p.origin.z },
+	alongX: { ...p.alongX, z: -p.alongX.z },
+	alongY: { ...p.alongY, z: -p.alongY.z },
+});
+// A board's picture as it shows in the floor: plain at its foot, fading
+// away up it (made once a picture).
+const shines = new WeakMap<HTMLCanvasElement, HTMLCanvasElement>();
+const shineOf = (img: HTMLCanvasElement): HTMLCanvasElement => {
+	let out = shines.get(img);
+	if (!out) {
+		out = document.createElement("canvas");
+		out.width = img.width;
+		out.height = img.height;
+		const g = out.getContext("2d")!;
+		g.drawImage(img, 0, 0);
+		g.globalCompositeOperation = "destination-in";
+		const fade = g.createLinearGradient(0, 0, 0, img.height);
+		fade.addColorStop(0, "rgba(0,0,0,0)");
+		fade.addColorStop(1 - BOARD_SHINE_SHOWN, "rgba(0,0,0,0)");
+		fade.addColorStop(1 - BOARD_SHINE_SHOWN * 0.45, "rgba(0,0,0,0.3)");
+		fade.addColorStop(1, "rgba(0,0,0,1)");
+		g.fillStyle = fade;
+		g.fillRect(0, 0, img.width, img.height);
+		shines.set(img, out);
+	}
+	return out;
+};
 
 // ONE FRAME, AS PIXEL ART: the building and the floor laid out in
 // perspective, the lines, the shadows, then the players, the two baskets and
@@ -995,6 +1029,31 @@ export const drawFrame = (f: Frame) => {
 	} else {
 		floorQuad(ctx, cam, 0, 0, COURT_W, 50, "#d8a865");
 	}
+	// The lit boards along the far side - the front of the scorer's table,
+	// the wall behind the benches - shine back off the floor in front of
+	// them (under the table, the benches and everybody stood there): their
+	// light added to the floor's, so where a board is dark the floor is just
+	// the floor.
+	ctx.globalCompositeOperation = "lighter";
+	drawTexturedPlane(
+		ctx,
+		cam,
+		inFloor(TABLE_FRONT),
+		shineOf(arena.boards.table?.[screen] ?? arena.tableFront),
+		4,
+		1,
+		BOARD_SHINE,
+	);
+	drawTexturedPlane(
+		ctx,
+		cam,
+		inFloor(LED_WALL),
+		shineOf(arena.boards.wall[screen]),
+		24,
+		1,
+		BOARD_SHINE,
+	);
+	ctx.globalCompositeOperation = "source-over";
 	// The scorer's table, the people behind it hidden from the waist down,
 	// their monitors on it.
 	const crewAll = f.crew ?? [];
