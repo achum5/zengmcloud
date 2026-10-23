@@ -314,7 +314,11 @@ export const joinShortPairs = (sentences: string[]): string[] => {
 		!/\btrail(?:ed)? again|going into the|entering the|got back/.test(t) &&
 		// ...and so does the next game: "The Pelicans were beaten at the line,
 		// 3 attempts to 24, and play the Pacers next, at home."
-		!/\bnext\b/.test(t);
+		!/\bnext\b/.test(t) &&
+		// ...and so does who was out: "The Mavericks ran their streak to four
+		// and were missing Scoot Dunn (sore back)", "took both meetings with
+		// the Suns this season and were without Jaden Mathis".
+		!/\bwere (?:again )?(?:without|missing)\b|\bsat out\b|\bkept [A-Z]/.test(t);
 	// The FIRST sentence has to start with its own subject, because the join
 	// hands its subject to the second clause. "Over six games the aggregate
 	// favors the Nets by 37." + "They meet again tomorrow." became "...the

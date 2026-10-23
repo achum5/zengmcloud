@@ -98,4 +98,19 @@ describe("joinShortPairs", () => {
 			["The Nets won the glass 52-40 and meet again."],
 		);
 	});
+
+	// "The Mavericks ran their streak to four and were missing Scoot Dunn
+	// (sore back)": who was out has nothing to do with the sentence before.
+	test("who was out is not hung on another fact", () => {
+		const kept = [
+			"The Mavericks ran their streak to four.",
+			"They were missing Scoot Dunn (sore back).",
+		];
+		assert.deepStrictEqual(joinShortPairs(kept), kept);
+		const again = [
+			"The Jazz took both meetings with the Suns this season.",
+			"They were again without Jaden Mathis (strained calf).",
+		];
+		assert.deepStrictEqual(joinShortPairs(again), again);
+	});
 });
