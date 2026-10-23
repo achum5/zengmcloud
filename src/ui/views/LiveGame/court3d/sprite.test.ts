@@ -19,6 +19,9 @@ import {
 // No canvas here: a stand-in that takes every call and draws nothing, and
 // reads back clear pixels - noting what is drawn from.
 const drawnFrom: unknown[] = [];
+// (And, as a canvas with a picture from another site on it, none of them
+// to be read.)
+let tainted = false;
 const stubCanvas = () => {
 	const ctx: Record<string | symbol, unknown> = {};
 	const proxy: unknown = new Proxy(ctx, {
@@ -26,11 +29,16 @@ const stubCanvas = () => {
 			prop in target
 				? target[prop]
 				: prop === "getImageData"
-					? (_x: number, _y: number, w: number, h: number) => ({
-							data: new Uint8ClampedArray(w * h * 4),
-							width: w,
-							height: h,
-						})
+					? (_x: number, _y: number, w: number, h: number) => {
+							if (tainted) {
+								throw new Error("SecurityError");
+							}
+							return {
+								data: new Uint8ClampedArray(w * h * 4),
+								width: w,
+								height: h,
+							};
+						}
 					: prop === "drawImage"
 						? (from: unknown) => {
 								drawnFrom.push(from);
@@ -182,6 +190,29 @@ test("a kept picture takes the sheet's pixels - the sheet is never drawn from", 
 	assert.isFalse(drawnFrom.includes(scratch.canvas));
 	// (What is drawn into the picture is each kept one.)
 	assert.strictEqual(drawnFrom.length, 4);
+	// A sheet that may not be read is drawn from all the same.
+	tainted = true;
+	try {
+		startFrame(cache);
+		const st = {
+			pid: 1,
+			team: 0,
+			shown: true,
+			x: 44,
+			y: 25,
+			z: 0,
+			yaw: 4,
+			anim: "run",
+			phase: 0.9,
+			moving: true,
+		} as PlayerState;
+		prepareSprites(scratch, cam, [{ st, body, look }], 1, cache);
+		drawSprite(ctx, scratch, cam, st, body, look, 1, cache);
+	} finally {
+		tainted = false;
+	}
+	assert.strictEqual(cache.kept.size, 5);
+	assert.isTrue(drawnFrom.includes(scratch.canvas));
 });
 
 // One man, run on a frame at a time with a new pose each frame and no time
