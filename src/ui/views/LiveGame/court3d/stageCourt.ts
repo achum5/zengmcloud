@@ -51,17 +51,21 @@ const lost = () => {
 	}
 };
 
+// Another instance of the worker (see farm.ts).
+export const spawnCourtWorker = () =>
+	new Worker(
+		__NODE_ENV === "production"
+			? `/gen/court-${window.bbgmVersion}.js`
+			: "/gen/court.js",
+		{ type: "module" },
+	);
+
 const courtWorker = (): Worker | undefined => {
 	if (worker || unavailable || typeof Worker === "undefined") {
 		return worker;
 	}
 	try {
-		worker = new Worker(
-			__NODE_ENV === "production"
-				? `/gen/court-${window.bbgmVersion}.js`
-				: "/gen/court.js",
-			{ type: "module" },
-		);
+		worker = spawnCourtWorker();
 	} catch {
 		unavailable = true;
 		return undefined;

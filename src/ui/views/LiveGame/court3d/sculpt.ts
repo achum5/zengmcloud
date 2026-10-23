@@ -236,7 +236,7 @@ const jerseySheet = (
 	if (
 		(!look.jerseyNumber && !(warmup && (look.wordmark || look.crest))) ||
 		(look.outfit && !warmup) ||
-		typeof document === "undefined"
+		(typeof document === "undefined" && typeof OffscreenCanvas === "undefined")
 	) {
 		return undefined;
 	}
@@ -257,7 +257,12 @@ const jerseySheet = (
 	const u0 = T + body.H * 0.08;
 	const w = Math.max(8, Math.round(2 * Math.PI * aS * ppf));
 	const h = Math.max(8, Math.round((u0 - waist) * ppf) + 2);
-	const cv = document.createElement("canvas");
+	// (In a worker making pictures for the page - see farm.ts - on an
+	// offscreen canvas.)
+	const cv =
+		typeof document === "undefined"
+			? (new OffscreenCanvas(w, h) as unknown as HTMLCanvasElement)
+			: document.createElement("canvas");
 	cv.width = w;
 	cv.height = h;
 	const g = cv.getContext("2d", { willReadFrequently: true });

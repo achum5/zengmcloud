@@ -39,6 +39,7 @@ import {
 import { courtTexture } from "./courtTexture.ts";
 import { FaceLoader } from "./FaceLoader.tsx";
 import { adjust, artFor, makeResolution } from "./resolution.ts";
+import { makeFarm } from "./farm.ts";
 import { makeScratch, makeSpriteCache, releaseSprites } from "./sprite.ts";
 import {
 	buildClocks,
@@ -60,7 +61,7 @@ import { dressKit, kitArtOf, type KitArt } from "./kitArt.ts";
 import { logoPicture } from "./logoPicture.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
-import { stageCourt } from "./stageCourt.ts";
+import { spawnCourtWorker, stageCourt } from "./stageCourt.ts";
 import {
 	stageWarmup,
 	warmupAim,
@@ -1064,8 +1065,18 @@ const Court3D = ({
 		// The picture is drawn small - pixel art - and the page blows it up
 		// without smoothing (see the canvas's style).
 		const scratch = makeScratch();
+		// Hands off the page's own thread to make new pictures on, where the
+		// device has them (see farm.ts).
+		const farm =
+			typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined"
+				? undefined
+				: makeFarm(
+						spawnCourtWorker,
+						(navigator.hardwareConcurrency || 2) >= 8 ? 2 : 1,
+					);
 		let sprites = makeSpriteCache();
 		sprites.budget = SPRITE_BUDGET_MS;
+		sprites.farm = farm;
 		// When finer poses were last taken up, and last given up for want of
 		// time.
 		let fineOnAt = -Infinity;
@@ -1385,6 +1396,7 @@ const Court3D = ({
 				releaseSprites(sprites);
 				sprites = makeSpriteCache();
 				sprites.budget = SPRITE_BUDGET_MS;
+				sprites.farm = farm;
 			}
 			// Time to spare, at the finest picture: poses in finer steps - and
 			// back to the usual ones well before that costs a size.
@@ -1461,6 +1473,7 @@ const Court3D = ({
 			cancelAnimationFrame(raf);
 			clearInterval(interval);
 			releaseSprites(sprites);
+			farm?.stop();
 		};
 	}, []);
 

@@ -152,6 +152,56 @@ export type SpriteCache = {
 	>;
 	// This frame's plan for each man made ready (see prepareSprites).
 	plans: Map<PlayerState, Plan>;
+	// Hands off the page's own thread to make new pictures on (see farm.ts),
+	// if there are any to be had - and whether the cache is done with (let
+	// go of: nothing more to be kept in it).
+	farm?: Farm;
+	done?: boolean;
+};
+
+// HOW HE IS MADE, in plain numbers - the camera, his pose stepped to the
+// sprite's frames, his build, the box on the picture he is drawn in and
+// where he stands - so a worker can sculpt him as readily as the page can.
+export type Job = {
+	cam: Camera;
+	st: PlayerState;
+	body: Body;
+	px: number;
+	left: number;
+	right: number;
+	upper: number;
+	lower: number;
+	lift: number;
+	baseX: number;
+	baseY: number;
+};
+// A man sculpted off the page's thread (see shape), for the page to
+// finish: the job and look it was for, and whose it is (his number in the
+// cache), the frame it was asked for in and his size then.
+export type Made = {
+	key: string;
+	shaped: Shaped;
+	job: Job;
+	look: Look;
+	id: number;
+	frame: number;
+	scale: number;
+};
+// Workers that sculpt men for the page (see farm.ts).
+export type Farm = {
+	// Takes on sculpting this picture for the cache, if it can now (false:
+	// it can't - it is made here or not at all).
+	ask: (
+		cache: SpriteCache,
+		key: string,
+		job: Job,
+		look: Look,
+		whose: { id: number; frame: number; scale: number },
+	) => boolean;
+	// Whether it is still being made.
+	busy: (cache: SpriteCache, key: string) => boolean;
+	// The pictures made for the cache since last asked.
+	take: (cache: SpriteCache) => Made[];
 };
 // How many frames in a row a man may be drawn as he was; and how much
 // more time a frame may take on new pictures while the picture is black.
@@ -202,6 +252,7 @@ export const releaseSprites = (cache: SpriteCache) => {
 	cache.kept.clear();
 	cache.last.clear();
 	cache.area = 0;
+	cache.done = true;
 };
 export const keep = (
 	cache: SpriteCache,
@@ -214,9 +265,6 @@ export const keep = (
 	dx: number,
 	dy: number,
 ): Kept => {
-	const canvas = document.createElement("canvas");
-	canvas.width = w;
-	canvas.height = h;
 	// Copied over as pixels, not drawn: a sheet drawn from is held on to as
 	// it was until the picture it was drawn into is next painted, so the
 	// next man sculpted on it waited while all of it was copied - and it is
@@ -224,6 +272,9 @@ export const keep = (
 	// couple of million pixels, every new pose after it). (A sheet with a
 	// picture on it we may not read - a face from another site - can only
 	// be drawn from.)
+	const canvas = document.createElement("canvas");
+	canvas.width = w;
+	canvas.height = h;
 	const into = canvas.getContext("2d")!;
 	let pixels: ImageData | undefined;
 	try {
@@ -532,6 +583,9 @@ type Plan = {
 	key?: string;
 	// Left out of this frame: the picture black, and no time to make his.
 	leftOut?: boolean;
+	// His new picture being made off the page's thread: drawn as he was
+	// meanwhile.
+	farmed?: boolean;
 };
 
 const planOf = (
@@ -608,41 +662,129 @@ const overBudget = (cache: SpriteCache) =>
 	cache.spent >=
 		cache.budget * (cache.black ? BLACK_BUDGET : cache.dark ? DARK_BUDGET : 1);
 
-// His picture for the plan, made: kept, with a cache - or, without, left on
-// the scratch sheet to be drawn from.
-const make = (
+// What making his picture for the plan takes (see Job).
+const jobOf = (
 	plan: Plan,
-	scratch: Scratch,
 	cam: Camera,
 	st: PlayerState,
 	body: Body,
-	look: Look,
 	px: number,
-	cache?: SpriteCache,
-): Kept | { w: number; h: number; ox: number; oy: number } => {
+): Job => {
 	const { base, lift, left, right, upper, lower, pose } = plan;
-	const began = cache ? performance.now() : 0;
-	// Drawn standing on the floor; a jump only moves the picture up.
-	const posed: PlayerState = {
-		...st,
-		z: 0,
-		phase: pose.phase,
-		stepLen: pose.stepLen,
-		yaw: pose.yaw,
-		dribble: pose.dribble,
-		tight: pose.tight,
-		stride: pose.stride,
-		target: pose.target,
-		from: pose.from,
-		arm: pose.arm,
-		legs: pose.legs,
-		way: pose.way,
-		pivot: pose.pivot,
-		grip: pose.grip,
-		down: pose.down,
+	return {
+		cam,
+		// Drawn standing on the floor; a jump only moves the picture up.
+		st: {
+			...st,
+			z: 0,
+			phase: pose.phase,
+			stepLen: pose.stepLen,
+			yaw: pose.yaw,
+			dribble: pose.dribble,
+			tight: pose.tight,
+			stride: pose.stride,
+			target: pose.target,
+			from: pose.from,
+			arm: pose.arm,
+			legs: pose.legs,
+			way: pose.way,
+			pivot: pose.pivot,
+			grip: pose.grip,
+			down: pose.down,
+		},
+		body,
+		px,
+		left,
+		right,
+		upper,
+		lower,
+		lift,
+		baseX: base.x,
+		baseY: base.y,
 	};
+};
+
+// HIS BODY, SCULPTED (see sculpt.ts) and rimmed: all of him but his head,
+// and nothing but arithmetic - most of the work of a new picture, and done
+// as readily in a worker as on the page (see farm.ts). The sheet's box he
+// takes (w x h, at ox, oy on the picture) and the part of it with anything
+// in it (rx0, ry0, rw x rh); his body's pixels (and an arm in front of his
+// face, if one is) - all of the box, or `cut` down to that part, at `at`.
+export type Shaped = {
+	w: number;
+	h: number;
+	ox: number;
+	oy: number;
+	rx0: number;
+	ry0: number;
+	rw: number;
+	rh: number;
+	box: Box;
+	head: { x: number; y: number; r: number };
+	at: [number, number];
+	img: ImageData;
+	over?: ImageData;
+};
+const cutTo = (
+	img: ImageData,
+	x0: number,
+	y0: number,
+	w: number,
+	h: number,
+) => {
+	const out = new ImageData(Math.max(1, w), Math.max(1, h));
+	for (let y = 0; y < h; y++) {
+		const from = ((y0 + y) * img.width + x0) * 4;
+		out.data.set(img.data.subarray(from, from + w * 4), y * w * 4);
+	}
+	return out;
+};
+export const shape = (job: Job, look: Look, cut = false): Shaped => {
+	const { cam, st: posed, body, px, left, right, upper, lower, lift } = job;
 	const w = Math.max(4, Math.ceil((right - left) / px) + 2);
 	const h = Math.max(4, Math.ceil((lower - upper) / px) + 2);
+	// Screen coordinates, shrunk to sprite pixels, with a pixel of margin.
+	const ox = left - px;
+	const oy = upper + lift - px;
+	const made = sculpt(cam, posed, body, look, px, ox, oy, w, h);
+	const box = made.box;
+	rim(made.img.data, w, h, undefined, box);
+	if (made.over) {
+		rim(made.over.data, w, h, undefined, box);
+	}
+	// Only what is drawn of him (and the rim round it) goes on the sheet: the
+	// rest of his box is clear, and most of it.
+	const rx0 = Math.max(0, box.x0 - 1);
+	const ry0 = Math.max(0, box.y0 - 1);
+	const rw = Math.max(0, Math.min(w, box.x1 + 2) - rx0);
+	const rh = Math.max(0, Math.min(h, box.y1 + 2) - ry0);
+	return {
+		w,
+		h,
+		ox,
+		oy,
+		rx0,
+		ry0,
+		rw,
+		rh,
+		box,
+		head: made.head,
+		at: cut ? [rx0, ry0] : [0, 0],
+		img: cut ? cutTo(made.img, rx0, ry0, rw, rh) : made.img,
+		...(made.over
+			? { over: cut ? cutTo(made.over, rx0, ry0, rw, rh) : made.over }
+			: {}),
+	};
+};
+
+// His picture, finished on the scratch sheet: his body put on it, his head
+// drawn over (always on the page - see farm.ts), and the rim round that.
+// The part of the sheet with anything drawn in it (x0, y0 to x1, y1 - none
+// if x1 <= x0), and where that sits from where he stands (dx, dy).
+export const finish = (sh: Shaped, job: Job, look: Look, scratch: Scratch) => {
+	const { cam, st: posed, body, px } = job;
+	const { w, h, ox, oy, rx0, ry0, rw, rh, box, img } = sh;
+	const [ax, ay] = sh.at;
 	const { canvas, ctx: s } = scratch;
 	if (canvas.width < w || canvas.height < h) {
 		canvas.width = Math.max(canvas.width, w);
@@ -650,29 +792,20 @@ const make = (
 	}
 	s.setTransform(1, 0, 0, 1, 0, 0);
 	s.clearRect(0, 0, w, h);
-	// Screen coordinates, shrunk to sprite pixels, with a pixel of margin.
-	const ox = left - px;
-	const oy = upper + lift - px;
-	const made = sculpt(cam, posed, body, look, px, ox, oy, w, h);
-	const img = made.img;
-	const d = img.data;
-	rim(d, w, h, undefined, made.box);
-	// Only what is drawn of him (and the rim round it) is put on the sheet:
-	// the rest of his box is clear already, and most of it.
-	const box = made.box;
-	const rx0 = Math.max(0, box.x0 - 1);
-	const ry0 = Math.max(0, box.y0 - 1);
-	const rw = Math.min(w, box.x1 + 2) - rx0;
-	const rh = Math.min(h, box.y1 + 2) - ry0;
 	if (rw > 0 && rh > 0) {
-		s.putImageData(img, 0, 0, rx0, ry0, rw, rh);
+		s.putImageData(img, ax, ay, rx0 - ax, ry0 - ay, rw, rh);
 	}
 	// His face, shrunk to the sprite's scale - and the rim round it, just
 	// where it is new: the rest of him is done.
+	// (Whatever drawing his head leaves set on the sheet - the joins of its
+	// ink, its caps - is undone after: the next man's head is drawn the same
+	// whoever was drawn on the sheet before him.)
+	s.save();
 	s.setTransform(1 / px, 0, 0, 1 / px, -ox / px, -oy / px);
 	drawHeadAt(s, cam, posed, body, look);
+	s.restore();
 	s.setTransform(1, 0, 0, 1, 0, 0);
-	const head = made.head;
+	const head = sh.head;
 	const hr = head.r;
 	const hx0 = Math.max(0, Math.floor(head.x - hr * 1.9) - 2);
 	const hy0 = Math.max(0, Math.floor(head.y - hr * 2) - 2);
@@ -688,17 +821,25 @@ const make = (
 			face = undefined;
 		}
 		if (face) {
-			rim(
-				face.data,
-				fw,
-				hy1 - hy0,
-				(i) =>
-					d[((hy0 + Math.floor(i / fw)) * w + hx0 + (i % fw)) * 4 + 3]! < SOLID,
-			);
+			// (His body's own pixels there: none outside what it has.)
+			const d = img.data;
+			const iw = img.width;
+			const ih = img.height;
+			rim(face.data, fw, hy1 - hy0, (i) => {
+				const x = hx0 + (i % fw) - ax;
+				const y = hy0 + Math.floor(i / fw) - ay;
+				return (
+					x < 0 ||
+					y < 0 ||
+					x >= iw ||
+					y >= ih ||
+					d[(y * iw + x) * 4 + 3]! < SOLID
+				);
+			});
 			s.putImageData(face, hx0, hy0);
 		}
 	}
-	if (made.over) {
+	if (sh.over) {
 		// An arm up in front of his face goes over it: drawn on its own, in his
 		// palette, outlined so it reads against his face.
 		scratch.top ??= makeScratch();
@@ -709,41 +850,77 @@ const make = (
 		}
 		t.ctx.setTransform(1, 0, 0, 1, 0, 0);
 		t.ctx.clearRect(0, 0, w, h);
-		const top = made.over;
-		rim(top.data, w, h, undefined, made.box);
 		if (rw > 0 && rh > 0) {
-			t.ctx.putImageData(top, 0, 0, rx0, ry0, rw, rh);
+			t.ctx.putImageData(sh.over, ax, ay, rx0 - ax, ry0 - ay, rw, rh);
 			s.drawImage(t.canvas, rx0, ry0, rw, rh, rx0, ry0, rw, rh);
 		}
 	}
+	// To be kept: just what is drawn of him (the rim round it, his head and
+	// all).
+	const x0 = Math.max(0, Math.min(box.x0 - 1, hx0));
+	const y0 = Math.max(0, Math.min(box.y0 - 1, hy0));
+	return {
+		w,
+		h,
+		ox,
+		oy,
+		x0,
+		y0,
+		x1: Math.min(w, Math.max(box.x1 + 2, hx1)),
+		y1: Math.min(h, Math.max(box.y1 + 2, hy1)),
+		dx: ox + x0 * px - job.baseX,
+		dy: oy + y0 * px - job.baseY,
+	};
+};
 
-	// Kept for next time: just what is drawn of him (the rim round it, his
-	// head and all).
+// His picture, made on the scratch sheet (see finish).
+const paint = (job: Job, look: Look, scratch: Scratch) =>
+	finish(shape(job, look), job, look, scratch);
+
+// Kept from the sheet it was finished on: a new picture for the cache.
+const keepFinished = (
+	cache: SpriteCache,
+	key: string,
+	scratch: Scratch,
+	p: ReturnType<typeof finish>,
+) =>
+	p.x1 > p.x0 && p.y1 > p.y0
+		? keep(
+				cache,
+				key,
+				scratch.canvas,
+				p.x0,
+				p.y0,
+				p.x1 - p.x0,
+				p.y1 - p.y0,
+				p.dx,
+				p.dy,
+			)
+		: undefined;
+
+// His picture for the plan, made: kept, with a cache - or, without, left on
+// the scratch sheet to be drawn from.
+const make = (
+	plan: Plan,
+	scratch: Scratch,
+	cam: Camera,
+	st: PlayerState,
+	body: Body,
+	look: Look,
+	px: number,
+	cache?: SpriteCache,
+): Kept | { w: number; h: number; ox: number; oy: number } => {
+	const began = cache ? performance.now() : 0;
+	const p = paint(jobOf(plan, cam, st, body, px), look, scratch);
+	// Kept for next time.
 	if (cache && plan.key) {
-		const x0 = Math.max(0, Math.min(box.x0 - 1, hx0));
-		const y0 = Math.max(0, Math.min(box.y0 - 1, hy0));
-		const x1 = Math.min(w, Math.max(box.x1 + 2, hx1));
-		const y1 = Math.min(h, Math.max(box.y1 + 2, hy1));
-		const kept =
-			x1 > x0 && y1 > y0
-				? keep(
-						cache,
-						plan.key,
-						canvas,
-						x0,
-						y0,
-						x1 - x0,
-						y1 - y0,
-						ox + x0 * px - base.x,
-						oy + y0 * px - base.y,
-					)
-				: undefined;
+		const kept = keepFinished(cache, plan.key, scratch, p);
 		cache.spent += performance.now() - began;
 		if (kept) {
 			return kept;
 		}
 	}
-	return { w, h, ox, oy };
+	return { w: p.w, h: p.h, ox: p.ox, oy: p.oy };
 };
 
 // THE NEW PICTURES A FRAME NEEDS, MADE NEAREST FIRST. The frame is drawn
@@ -774,8 +951,9 @@ const pick = (cache: SpriteCache, plan: Plan): Kept | "make" | "out" => {
 	if (plan.leftOut) {
 		return "out";
 	}
-	// Out of time this frame, and drawn a moment ago: as he was.
-	if (overBudget(cache)) {
+	// Out of time this frame - or his new picture being made off the page's
+	// thread - and drawn a moment ago: as he was.
+	if (plan.farmed || overBudget(cache)) {
 		const was = asWas(cache, plan);
 		if (was) {
 			was.frame = cache.frame;
@@ -791,6 +969,42 @@ const pick = (cache: SpriteCache, plan: Plan): Kept | "make" | "out" => {
 	return "make";
 };
 
+// The men sculpted off the page's thread since the last frame, finished
+// and kept - and each the picture a man is drawn in meanwhile, if it is of
+// a later pose of his than the one he has: he is then that much less
+// behind.
+const took = (cache: SpriteCache, farm: Farm, scratch: Scratch) => {
+	const began = performance.now();
+	for (const m of farm.take(cache)) {
+		if (cache.kept.has(m.key)) {
+			continue;
+		}
+		const kept = keepFinished(
+			cache,
+			m.key,
+			scratch,
+			finish(m.shaped, m.job, m.look, scratch),
+		);
+		if (!kept) {
+			continue;
+		}
+		const was = cache.last.get(m.id);
+		if (
+			m.frame < cache.frame &&
+			(!was ||
+				(was.frame === cache.frame - 1 && was.frame - was.behind < m.frame))
+		) {
+			cache.last.set(m.id, {
+				kept,
+				frame: cache.frame - 1,
+				behind: cache.frame - 1 - m.frame,
+				scale: m.scale,
+			});
+		}
+	}
+	cache.spent += performance.now() - began;
+};
+
 export const prepareSprites = (
 	scratch: Scratch,
 	cam: Camera,
@@ -798,6 +1012,10 @@ export const prepareSprites = (
 	px: number,
 	cache: SpriteCache,
 ) => {
+	const farm = cache.farm;
+	if (farm) {
+		took(cache, farm, scratch);
+	}
 	const all: { man: (typeof men)[number]; plan: Plan }[] = [];
 	const todo: { man: (typeof men)[number]; plan: Plan; wait: boolean }[] = [];
 	for (const man of men) {
@@ -813,9 +1031,28 @@ export const prepareSprites = (
 	}
 	todo.sort((a, b) => b.plan.base.k - a.plan.base.k);
 	for (const { man, plan, wait } of todo) {
+		const key = plan.key!;
+		// Made off the page's thread, if it can be, and drawn as he was till
+		// it comes.
+		const farmed = () =>
+			farm !== undefined &&
+			(farm.busy(cache, key) ||
+				farm.ask(cache, key, jobOf(plan, cam, man.st, man.body, px), man.look, {
+					id: plan.id,
+					frame: cache.frame,
+					scale: plan.scale,
+				}));
+		if (wait && farmed()) {
+			plan.farmed = true;
+			continue;
+		}
 		// Out of time: drawn as he was - or, the picture black, left out of
-		// the frame (and the picture held black for him: see Court3D).
+		// the frame (and the picture held black for him: see Court3D) till
+		// it is made, here or off the page's thread.
 		if (overBudget(cache) && (wait || cache.dark)) {
+			if (!wait) {
+				farmed();
+			}
 			continue;
 		}
 		make(plan, scratch, cam, man.st, man.body, man.look, px, cache);
