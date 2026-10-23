@@ -322,7 +322,7 @@ describe("simmed recaps", () => {
 				if (/ loss to the /.test(x) && !/losing effort/.test(x)) {
 					assert.match(
 						x,
-						/(?:the [A-Z][\w ]*'s? |for the [A-Z][\w ]* in a )\d+-\d+(?: \(\w+\))? loss to/,
+						/(?:the [A-Z][\w ]*'s? |for the [A-Z][\w ]* in a )(?:\d+-\d+(?: \(\w+\))? )?loss to/,
 						x,
 					);
 				}
@@ -348,6 +348,22 @@ describe("simmed recaps", () => {
 				/(?:got|was) an? (?:double|triple)-double - [^.]*\bfrom [A-Z]|finished with an? (?:double|triple)-double - [^.]* for the [A-Z]/,
 				recap,
 			);
+		}
+	});
+
+	// "Darius Hayes had 31 points as the Heat beat the Lakers 121-88. ...
+	// Jaden Green's 22 points came in the Lakers' 121-88 loss to the Heat."
+	test("a day wrap gives a game's score once", () => {
+		for (const recap of dayRecaps) {
+			const body = recap
+				.split("\n\n")
+				.filter((p) => !p.startsWith("*"))
+				.join(" ");
+			for (const m of body.matchAll(
+				/came in the [A-Z][\w ]*?'s? (\d+-\d+) loss/g,
+			)) {
+				assert.equal(body.split(m[1]!).length, 2, recap);
+			}
 		}
 	});
 

@@ -9049,7 +9049,7 @@ const roundupClause = (
 	// here for its score; "edged" undersells what the deck just said.
 	const shot = clutchShot(game);
 	if (shot && !shot.tying) {
-		return `${w} beat ${l} at the wire, ${scoreTag(shape)}`;
+		return `${w} beat ${l} ${scoreTag(shape)} at the wire`;
 	}
 	// "The Nets blew out the Bulls" is not how a game they trailed by 17
 	// reads, whatever the final margin.
@@ -9719,6 +9719,19 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			// Knicks. Walker Ingram's 20 points, 12 assists and 4 steals came in
 			// a losing effort against the Mavericks."
 			const mirror = lossPerf.game === lastPerfGame;
+			// A game a sentence above already scored keeps its score there:
+			// "Darius Hayes had 31 points as the Heat beat the Lakers 121-88.
+			// ... Jaden Green's 22 points came in the Lakers' 121-88 loss to
+			// the Heat" gave it twice.
+			const lossShape = analyzeShape(lossPerf.game);
+			const scored = para1.some(
+				(t) =>
+					t.includes(plainScore(lossShape)) &&
+					t.includes(nick(lossPerf.team)) &&
+					t.includes(nick(lossPerf.opp)),
+			)
+				? ""
+				: `${scoreTag(lossShape)} `;
 			para1.push(
 				mirror
 					? `${poss(lossPerf.p.name)} ${statPhrase(lossPerf.p)} came in a losing effort.`
@@ -9727,7 +9740,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 						// played for the Nets (78 lines in 177 wraps).
 						`${poss(lossPerf.p.name)} ${statPhrase(
 							lossPerf.p,
-						)} came in ${poss(theNick(lossPerf.team))} ${scoreTag(analyzeShape(lossPerf.game))} loss to ${theNick(lossPerf.opp)}${whoFor(lossPerf.game)}.`,
+						)} came in ${poss(theNick(lossPerf.team))} ${scored}loss to ${theNick(lossPerf.opp)}${whoFor(lossPerf.game)}.`,
 			);
 			coveredGames.add(lossPerf.game);
 		}
@@ -9826,17 +9839,20 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 				comebackSize(shape),
 			)}-point deficit to beat ${theNick(shape.loser)} ${scoreTag(shape)}`;
 		} else if (shot2 && !shot2.tying) {
-			blurb = `${shot2.name} beat ${theNick(shape.loser)} at the wire, ${scoreTag(shape)}`;
+			// No comma inside: these sit in comma-separated lists, and "the
+			// Suns survived the 76ers in overtime, 103-97, the Rockets..."
+			// read as two items.
+			blurb = `${shot2.name} beat ${theNick(shape.loser)} ${scoreTag(shape)} at the wire`;
 		} else if (shape.ot > 0) {
 			blurb = `${theNick(shape.winner)} ${
 				shape.ot === 1 ? "survived" : "outlasted"
-			} ${theNick(shape.loser)} in ${
+			} ${theNick(shape.loser)} ${plainScore(shape)} in ${
 				shape.ot === 1
 					? "overtime"
 					: shape.ot === 2
 						? "double overtime"
 						: `${shape.ot} overtimes`
-			}, ${plainScore(shape)}`;
+			}`;
 		} else if (shape.margin >= 25) {
 			blurb = `${theNick(shape.winner)} ${freshVerb(ROUT_VERBS, 0, usedVerbs)} ${theNick(shape.loser)} ${scoreTag(shape)}`;
 		} else if (shape.margin <= 3) {

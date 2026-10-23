@@ -6248,6 +6248,135 @@ describe("a full slate does not repeat itself", () => {
 		assert.match(notes(""), /most one-sided/);
 	});
 
+	// "Elsewhere, the Pelicans upset the Clippers 103-101, the Suns survived
+	// the 76ers in overtime, 103-97, the Rockets..." read as two items.
+	test("a result in a wrap's list has no comma inside it", () => {
+		let seen = 0;
+		for (let day = 1; day <= 6; day++) {
+			const games = Array.from({ length: 10 }, (_, i) =>
+				slateGame(i + day * 10),
+			);
+			const wrap = getAutoDayRecap({
+				season: 2003,
+				day,
+				playoffs: false,
+				games,
+			});
+			assert.doesNotMatch(
+				wrap,
+				/in (?:double )?overtime, \d+-\d+|at the wire, \d+-\d+/,
+				wrap,
+			);
+			if (/\d+-\d+ in (?:double )?overtime/.test(wrap)) {
+				seen += 1;
+			}
+		}
+		assert.ok(seen > 0);
+	});
+
+	// "Darius Hayes had 31 points and 21 rebounds as the Heat beat the Lakers
+	// 121-88. ... Jaden Green's 22 points and 12 assists came in the Lakers'
+	// 121-88 loss to the Heat." Darius Hayes leads all scorers here, which
+	// tells the game first; a triple-double from another game sits between,
+	// and a game-winner keeps his game from being the marquee.
+	test("a day wrap gives a game's score once", () => {
+		const side = (tid: number, name: string, pts: number, star: RecapPlayer) =>
+			realisticTeam(
+				{ tid, name, abbrev: name.slice(0, 3).toUpperCase(), pts },
+				star,
+			);
+		const two = (
+			gid: number,
+			w: RecapTeam,
+			l: RecapTeam,
+			clutchPlays: string[] = [],
+		) => game({ gid, teams: [w, l], winnerTid: w.tid, clutchPlays });
+		const games = [
+			two(
+				2001,
+				side(
+					1,
+					"Suns",
+					118,
+					player({ name: "Big Scorer", pts: 30, reb: 6, fg: 11, fga: 22 }),
+				),
+				side(
+					2,
+					"Spurs",
+					116,
+					player({ name: "Spur One", pts: 20, fg: 8, fga: 17 }),
+				),
+				[
+					'<a href="#">Big Scorer</a> made a game-winning three-pointer with 0.4 seconds remaining.',
+				],
+			),
+			two(
+				2002,
+				side(
+					3,
+					"Heat",
+					121,
+					player({ name: "Darius Hayes", pts: 45, reb: 21, fg: 17, fga: 27 }),
+				),
+				side(
+					4,
+					"Lakers",
+					88,
+					player({ name: "Jaden Green", pts: 22, ast: 12, fg: 8, fga: 19 }),
+				),
+			),
+			two(
+				2003,
+				side(
+					5,
+					"Cavaliers",
+					94,
+					player({ name: "Cav One", pts: 19, fg: 8, fga: 16 }),
+				),
+				side(
+					6,
+					"Timberwolves",
+					92,
+					player({
+						name: "Bennedict Hayes",
+						pts: 13,
+						reb: 10,
+						ast: 10,
+						fg: 5,
+						fga: 12,
+					}),
+				),
+			),
+			two(
+				2004,
+				side(
+					7,
+					"Bulls",
+					104,
+					player({ name: "Bull One", pts: 18, fg: 7, fga: 15 }),
+				),
+				side(
+					8,
+					"Hawks",
+					99,
+					player({ name: "Hawk One", pts: 17, fg: 7, fga: 16 }),
+				),
+			),
+		];
+		const wrap = getAutoDayRecap({
+			season: 2003,
+			day: 3,
+			playoffs: false,
+			games,
+		});
+		const body = wrap
+			.split("\n\n")
+			.filter((p) => !p.startsWith("*"))
+			.join(" ");
+		assert.match(body, /Jaden Green/, wrap);
+		assert.equal(body.split("121-88").length, 2, wrap);
+	});
+
 	test("no sentence frame is used three times on one night", () => {
 		beginRecapBatch();
 		let text: string;
