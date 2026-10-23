@@ -249,18 +249,60 @@ export const keep = (
 	}
 	return k;
 };
+// A reflection's bands, from the floor up: how much of his height each
+// takes, and how strongly it shows (the rest, too faint to be worth
+// drawing).
+const SHINE_BANDS: [number, number][] = [
+	[0.3, 1],
+	[0.35, 0.45],
+];
 export const stamp = (
 	ctx: CanvasRenderingContext2D,
 	k: Kept,
 	x: number,
 	y: number,
 	px: number,
+	// His reflection in the floor first: how strong, and where the floor
+	// under him is on the picture.
+	shine?: { alpha: number; floorY: number },
 ) => {
 	if (k.canvas.width === 0) {
 		return;
 	}
 	const smoothing = ctx.imageSmoothingEnabled;
 	ctx.imageSmoothingEnabled = false;
+	if (shine) {
+		// Upside down from the floor under him - as far under it as he is
+		// over it - and fading away from it in steps: his feet plain in it,
+		// his head hardly.
+		const alpha = ctx.globalAlpha;
+		const m = ctx.getTransform();
+		ctx.transform(1, 0, 0, -1, 0, 2 * Math.round(shine.floorY));
+		const X = Math.round(x + k.dx);
+		const Y = Math.round(y + k.dy);
+		let below = k.h;
+		for (const [share, fade] of SHINE_BANDS) {
+			const rows = Math.min(below, Math.ceil(k.h * share));
+			if (rows <= 0) {
+				break;
+			}
+			below -= rows;
+			ctx.globalAlpha = alpha * shine.alpha * fade;
+			ctx.drawImage(
+				k.canvas,
+				0,
+				below,
+				k.w,
+				rows,
+				X,
+				Y + below * px,
+				k.w * px,
+				rows * px,
+			);
+		}
+		ctx.setTransform(m);
+		ctx.globalAlpha = alpha;
+	}
 	ctx.drawImage(
 		k.canvas,
 		Math.round(x + k.dx),
@@ -776,19 +818,23 @@ export const drawSprite = (
 	look: Look,
 	px: number,
 	cache?: SpriteCache,
+	// How strongly he shows in the polished floor under him (0: not at all -
+	// in a chair, behind the table).
+	reflect = 0,
 ) => {
 	const plan = cache?.plans.get(st) ?? planOf(cam, st, body, look, px, cache);
 	if (!plan) {
 		return;
 	}
 	const { base, lift } = plan;
+	const shine = reflect > 0 ? { alpha: reflect, floorY: base.y } : undefined;
 	if (cache && plan.key !== undefined) {
 		const was = pick(cache, plan);
 		if (was === "out") {
 			return;
 		}
 		if (was !== "make") {
-			stamp(ctx, was, base.x, base.y - lift, px);
+			stamp(ctx, was, base.x, base.y - lift, px, shine);
 			return;
 		}
 	}
@@ -800,7 +846,7 @@ export const drawSprite = (
 			behind: 0,
 			scale: plan.scale,
 		});
-		stamp(ctx, made, base.x, base.y - lift, px);
+		stamp(ctx, made, base.x, base.y - lift, px, shine);
 		return;
 	}
 	const smoothing = ctx.imageSmoothingEnabled;

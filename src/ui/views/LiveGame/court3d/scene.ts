@@ -67,6 +67,11 @@ import {
 	type SpriteCache,
 } from "./sprite.ts";
 
+// The floor is polished: everybody on it shows in it, upside down under
+// his feet, this faintly.
+const SHINE = 0.24;
+const BALL_SHINE_Z = 8;
+
 // ONE FRAME, AS PIXEL ART: the building and the floor laid out in
 // perspective, the lines, the shadows, then the players, the two baskets and
 // the ball from the back of the picture to the front - all drawn small, on a
@@ -927,7 +932,18 @@ export const drawFrame = (f: Frame) => {
 		items.push({
 			depth: depthOf(cam, { x: st.x, y: st.y, z: 3 }),
 			draw: () => {
-				drawSprite(ctx, f.scratch, cam, st, body, look, 1, f.sprites);
+				drawSprite(
+					ctx,
+					f.scratch,
+					cam,
+					st,
+					body,
+					look,
+					1,
+					f.sprites,
+					// (Not a man sat in his chair.)
+					st.anim === "sit" ? 0 : SHINE,
+				);
 			},
 		});
 	}
@@ -947,7 +963,17 @@ export const drawFrame = (f: Frame) => {
 		items.push({
 			depth: depthOf(cam, { x: c.st.x, y: c.st.y, z: 3 }),
 			draw: () => {
-				drawSprite(ctx, f.scratch, cam, c.st, c.body, c.look, 1, f.sprites);
+				drawSprite(
+					ctx,
+					f.scratch,
+					cam,
+					c.st,
+					c.body,
+					c.look,
+					1,
+					f.sprites,
+					SHINE,
+				);
 			},
 		});
 	}
@@ -996,6 +1022,14 @@ export const drawFrame = (f: Frame) => {
 			items.push({
 				depth: depthOf(cam, b) - 0.3,
 				draw: () => {
+					// (In the floor too, as far under it as it is over it -
+					// fainter the higher it is.)
+					const shine = SHINE * (1 - b.z / BALL_SHINE_Z);
+					if (shine > 0.01) {
+						ctx.globalAlpha = shine;
+						drawBall(ctx, cam, { ...b, z: -b.z }, -(b.roll ?? 0));
+						ctx.globalAlpha = 1;
+					}
 					drawBall(ctx, cam, b, b.roll ?? 0);
 				},
 			});
