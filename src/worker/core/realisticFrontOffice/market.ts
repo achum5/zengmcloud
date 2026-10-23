@@ -142,6 +142,11 @@ export const marketSettings = {
 	placesAfter: true,
 	// Packages of three assets, not only one or two.
 	triples: true,
+	// Pairs and threes of a team's assets that the other team values most over
+	// what they cost it, not only of those worth most to it.
+	surplusPackages: false,
+	// How many drafts ahead a team's picks are on the table.
+	pickDraftsOnTable: PICK_DRAFTS_ON_TABLE,
 	// Which deals two CPU teams agree are held a trading day for other teams'
 	// bids (windows.ts), over the league's setting.
 	windows: undefined as "notable" | "all" | "off" | undefined,
@@ -564,7 +569,7 @@ export const tableAssets = (t: TeamState): Asset[] =>
 			.filter(
 				(dp) =>
 					typeof dp.season === "number" &&
-					dp.season <= g.get("season") + PICK_DRAFTS_ON_TABLE,
+					dp.season <= g.get("season") + settingFor(t.tid, "pickDraftsOnTable"),
 			)
 			.map((dp) => ({ kind: "pick" as const, dp })),
 	].filter((x) => !isReserved(x));
@@ -621,16 +626,12 @@ export const bestDealWith = (
 			worth: screen(getter, [], assets),
 			hasPlayer: assets.some((x) => x.kind === "player"),
 		}));
-	const packagesA = summarize(
-		a,
-		b,
-		packages(assetsA, (x) => -single.get(key(a, "-", x))!),
-	);
-	const packagesB = summarize(
-		b,
-		a,
-		packages(assetsB, (x) => -single.get(key(b, "-", x))!),
-	);
+	const order = (giver: TeamState, getter: TeamState) => (x: Asset) =>
+		settingFor(a.tid, "surplusPackages")
+			? single.get(key(getter, "+", x))! + single.get(key(giver, "-", x))!
+			: -single.get(key(giver, "-", x))!;
+	const packagesA = summarize(a, b, packages(assetsA, order(a, b)));
+	const packagesB = summarize(b, a, packages(assetsB, order(b, a)));
 	const candidates: { giveA: Asset[]; giveB: Asset[]; screen: number }[] = [];
 	for (const pa of packagesA) {
 		for (const pb of packagesB) {
