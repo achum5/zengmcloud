@@ -9064,7 +9064,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 				rng,
 				[
 					`${perf.p.name} ${verb} ${line} in ${poss(team)} ${score} loss to ${opp}${who}.`,
-					`${perf.p.name} ${verb} ${line} in a ${score} loss to ${opp}${who}.`,
+					`${perf.p.name} ${verb} ${line} for ${team} in a ${score} loss to ${opp}${who}.`,
 					...(who
 						? []
 						: [
@@ -9285,9 +9285,12 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			para1.push(
 				mirror
 					? `${poss(lossPerf.p.name)} ${statPhrase(lossPerf.p)} came in a losing effort.`
-					: `${poss(lossPerf.p.name)} ${statPhrase(
+					: // Whose loss: "Bennedict Brooks' 27 points and 11 rebounds
+						// came in a 119-96 loss to the Mavericks" never said he
+						// played for the Nets (78 lines in 177 wraps).
+						`${poss(lossPerf.p.name)} ${statPhrase(
 							lossPerf.p,
-						)} came in a ${scoreTag(analyzeShape(lossPerf.game))} loss to ${theNick(lossPerf.opp)}${whoFor(lossPerf.game)}.`,
+						)} came in ${poss(theNick(lossPerf.team))} ${scoreTag(analyzeShape(lossPerf.game))} loss to ${theNick(lossPerf.opp)}${whoFor(lossPerf.game)}.`,
 			);
 			coveredGames.add(lossPerf.game);
 		}

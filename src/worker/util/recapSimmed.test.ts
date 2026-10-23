@@ -308,6 +308,22 @@ describe("simmed recaps", () => {
 
 	// "Payton Mathis goes for 42, Jalen Hayes for 44" over a deck reading
 	// "Payton Mathis pours in 42".
+	// "Bennedict Brooks' 27 points and 11 rebounds came in a 119-96 loss to
+	// the Mavericks" never said whose loss it was.
+	test("a day wrap's losing line says whose loss", () => {
+		for (const recap of dayRecaps) {
+			for (const x of recap.split(/(?<=[!.?])\s+/)) {
+				if (/ loss to the /.test(x) && !/losing effort/.test(x)) {
+					assert.match(
+						x,
+						/(?:the [A-Z][\w ]*'s? |for the [A-Z][\w ]* in a )\d+-\d+(?: \(\w+\))? loss to/,
+						x,
+					);
+				}
+			}
+		}
+	});
+
 	test("a day wrap's deck does not repeat its headline", () => {
 		for (const recap of dayRecaps) {
 			const headline = recap.split("\n")[0]!;
