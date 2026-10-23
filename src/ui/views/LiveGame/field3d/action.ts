@@ -812,8 +812,10 @@ class Action {
 	lo: number;
 	hi: number;
 
-	// The men in a moment of their own after it (see celebrate).
+	// The men in a moment of their own after it (see celebrate), and where
+	// they crowd round the man who made it.
 	readonly mob = new Set<number>();
+	mobAt?: Pt;
 
 	constructor(input: ActInput) {
 		this.input = input;
@@ -5622,6 +5624,7 @@ class Action {
 	mobRound(hero: Actor, c0: number) {
 		const r = this.r;
 		const at = hero.at;
+		this.mobAt = at;
 		// His teammates nearest, to him.
 		const start = c0 + 150;
 		// (Away on his own, a long way ahead of them all: the nearest of them
@@ -5820,6 +5823,12 @@ class Action {
 			KICK_KINDS.has(kind) ||
 			scored ||
 			(holder !== undefined && holder.team !== offense);
+		// (The side scored on, or that had the ball taken off it: slow off the
+		// field, heads down.)
+		const won =
+			scored || (!KICK_KINDS.has(kind) && holder?.team !== offense)
+				? holder?.team
+				: undefined;
 		const y = clamp(spot.y, HUDDLE_Y[0], HUDDLE_Y[1]);
 		const huddle = (team: Side): Pt =>
 			team === offense
@@ -5921,14 +5930,56 @@ class Action {
 				y: going.y + Math.sin(ang) * ring,
 			};
 			const big = OL.has(m.role) || DL.has(m.role);
-			const fps =
-				off && r() < 0.6 ? 6.8 + r() * 2 : (big ? 3 : 3.6) + r() * 1.1;
+			const beaten = won !== undefined && m.team !== won;
+			const glad = won !== undefined && m.team === won;
+			if (beaten && r() < (m.role === "QB" ? RUE_QB : RUE_HELMET)) {
+				m.act("handsOnHelmet", m.t + RUE_HELMET_MS + r() * 400);
+			} else if (glad && r() < GLAD) {
+				m.act(r() < 0.5 ? "fistPump" : "clap", m.t + 1200 + r() * 300);
+			}
+			const fps = beaten
+				? (big ? 2.7 : 3.2) + r() * 0.9
+				: off && r() < (glad ? 0.85 : 0.6)
+					? 6.8 + r() * 2
+					: (big ? 3 : 3.6) + r() * 1.1;
 			if (dist(m.at, to) > 2) {
-				m.run(to, fps);
+				const from = m.t;
+				const way = this.mobAt ? skirt(m.at, to, this.mobAt) : [to];
+				for (const p of way) {
+					m.run(p, fps);
+				}
+				if (beaten && r() < RUE_HIPS) {
+					m.arms("onHips", from, m.t);
+				}
 			}
 		}
 	}
 }
+
+// The way from a to b round a crowd at c, as far off it as SKIRT: straight
+// there, or by a point off to the side of it.
+const skirt = (a: Pt, b: Pt, c: Pt): Pt[] => {
+	const dx = b.x - a.x;
+	const dy = b.y - a.y;
+	const len = Math.hypot(dx, dy);
+	if (len < 1) {
+		return [b];
+	}
+	const u = clamp(((c.x - a.x) * dx + (c.y - a.y) * dy) / (len * len), 0, 1);
+	const q = { x: a.x + dx * u, y: a.y + dy * u };
+	if (dist(a, c) >= SKIRT && (dist(q, c) >= SKIRT || u <= 0 || u >= 1)) {
+		return [b];
+	}
+	// (Round it on the side he is going by - or that he is on.)
+	let nx = -dy / len;
+	let ny = dx / len;
+	const by = dist(q, c) > 0.5 ? q : a;
+	if ((by.x - c.x) * nx + (by.y - c.y) * ny < 0) {
+		nx = -nx;
+		ny = -ny;
+	}
+	return [{ x: c.x + nx * SKIRT, y: c.y + ny * SKIRT }, b];
+};
 
 // The leg he is in at t (or the last).
 const legAt = (m: Actor, t: number): Leg =>
@@ -5957,6 +6008,17 @@ const HELP_FOE = 0.25;
 const HELP_FROM = 22;
 const HELP_FPS = 6;
 const TOSS_MS = 380;
+// The side that lost it off the field: this often a man's hands to his
+// helmet first (for this long, give or take - the quarterback's more often),
+// this often his hands on his hips on the way; and round a crowd of the
+// other side's, no nearer it than this.
+const RUE_HELMET = 0.2;
+const RUE_QB = 0.55;
+const RUE_HELMET_MS = 1500;
+const RUE_HIPS = 0.45;
+const SKIRT = 11;
+// ...and the side that got it: this often a fist pumped, or a clap, first.
+const GLAD = 0.3;
 const KICK_KINDS = new Set<PlayKind>([
 	"kickoff",
 	"onside",
