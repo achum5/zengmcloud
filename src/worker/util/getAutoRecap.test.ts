@@ -7717,6 +7717,24 @@ describe("a compound subject blocks the pronoun", () => {
 		);
 	});
 
+	// The other club arriving later in the sentence does not stop it taking
+	// "They" - it only makes it a poor antecedent for the next one.
+	test("the other club later in the sentence still lets it collapse", () => {
+		const sentences = [
+			"The Raptors were up 58-40 at the break.",
+			"The Raptors were still up 75-71 going into the fourth, and the Bucks won the fourth quarter 30-19.",
+			"The Raptors fell to 1-5.",
+		];
+		assert.deepEqual(
+			dedupeSubjects(sentences, "Raptors", ["Raptors", "Bucks"]),
+			[
+				sentences[0],
+				"They were still up 75-71 going into the fourth, and the Bucks won the fourth quarter 30-19.",
+				sentences[2],
+			],
+		);
+	});
+
 	test("a single-team subject still collapses", () => {
 		const sentences = [
 			"The Pistons led wire to wire.",

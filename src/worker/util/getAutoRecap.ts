@@ -166,7 +166,12 @@ export const dedupeSubjects = (
 	for (let i = 1; i < out.length; i++) {
 		// A compound subject is never collapsed: "The Timberwolves and the
 		// Celtics have split four meetings" became "They and the Celtics".
-		if (ambiguous(out[i]!)) {
+		// The other club arriving later in the sentence is no bar to it,
+		// though - it only makes the sentence a poor antecedent for the NEXT
+		// one: "The Raptors were up 58-40 at the break. The Raptors were still
+		// up 75-71 going into the fourth, and the Bucks won the fourth" can
+		// read "They were still up".
+		if (out[i]!.includes(";") || /^The \w+[\w ]*? and the \w+/.test(out[i]!)) {
 			continue;
 		}
 		// "The win lifted the Jazz into fourth. The win finished a season
