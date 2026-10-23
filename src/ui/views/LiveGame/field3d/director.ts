@@ -24,6 +24,7 @@ import {
 	FIELD_W,
 	HASH_FAR_Y,
 	HASH_NEAR_Y,
+	MID_X,
 	MID_Y,
 	YD,
 	yardLineX,
@@ -54,6 +55,8 @@ import { holderAt, replayFor, type FieldReplay } from "./replays.ts";
 import { HURT_MOST, MEDICS, stageHurt } from "./hurt.ts";
 import { crewOff, stagePostgame } from "./postgame.ts";
 import { stageTv } from "./tv.ts";
+import { stageToss, tossCrew } from "./toss.ts";
+import { sidelineOf } from "./sideline.ts";
 
 // THE GAME STAGED: every snap of the play-by-play, in feet and milliseconds -
 // who is on the field for it, where each man lines up, the ball, and the
@@ -183,6 +186,9 @@ export type Play = {
 	// camera on him from when he is down.
 	medics?: CrewPart[];
 	hurt?: { pid: number; from: number };
+	// The coin toss (see toss.ts): the captains out to the middle and back;
+	// where, when the coin goes up, and when the picture cuts to the kick.
+	toss?: { men: CrewPart[]; at: Pt; flip: number; cut: number };
 	// The game over (see postgame.ts): the head coaches out to shake hands;
 	// from when it is, when they do, and where.
 	coaches?: CrewPart[];
@@ -398,6 +404,29 @@ const LBS = new Set<Role>(["SAM", "MIKE", "WILL", "BUCK"]);
 const DL_ROLES = new Set<Role>(["DE", "DT", "NT"]);
 // A kickoff: everyone lined up, the kicker off on his run-up this long in.
 const KICK_AT = 2600;
+// The coin toss: this many captains a side, from these groups in turn. The
+// men for the kick waiting for it on their sidelines in two rows - this
+// far off the field, rows this far apart, men this far apart along them -
+// this far along from midfield.
+const CAPTAINS = 3;
+const CAPTAIN_GROUPS: Group[] = ["QB", "OL", "DL", "LB", "S", "WR", "RB"];
+const WAIT_OFF = 2;
+const WAIT_ROW = 2.6;
+const WAIT_COL = 2.9;
+const WAIT_ALONG = 32;
+const waitingAt = (team: Side, k: number, r: () => number): Pt => {
+	const line = sidelineOf(team);
+	const lean = line === 0 ? 1 : -1;
+	const off = WAIT_OFF + (k % 2) * WAIT_ROW + r() * 0.6;
+	return {
+		x:
+			MID_X -
+			lean * WAIT_ALONG +
+			(Math.floor(k / 2) - 2.5 + (k % 2) * 0.5) * WAIT_COL +
+			(r() - 0.5) * 0.8,
+		y: line === 0 ? -off : FIELD_W + off,
+	};
+};
 // The plays acted out from the snap (see action.ts), and how long after
 // the whistle the picture stays on one - men getting up, walking off.
 const ACTED = new Set<PlayKind>([
@@ -649,6 +678,8 @@ class Director {
 	lastLine = -Infinity;
 	// Where the chain crew left off.
 	chainSpots: ChainSpots | undefined;
+	// A coin toss before the next kickoff: the game's first, overtime's.
+	tossNext = true;
 
 	constructor({ events, players, gid, numPeriods = 4 }: FieldInput) {
 		this.events = events;
@@ -895,6 +926,8 @@ class Director {
 		const t0 = this.T;
 		this.cuts.push(t0);
 		const r = this.rng(i0, "play");
+		const tossed = kick && this.tossNext;
+		this.tossNext = false;
 
 		// Who is on, and where each lines up.
 		const stats = this.statsOf(i0, i1);
@@ -913,33 +946,57 @@ class Director {
 			r,
 		);
 
+		// The coin toss first, at the start of the game and of overtime - the
+		// men for the kick waiting on their sidelines until the picture cuts
+		// to it (see toss.ts).
+		const toss = tossed
+			? stageToss({
+					captains: [0, 1].map((team) =>
+						this.captainsOf(team as Side, new Set(placed.map((p) => p.pid))),
+					) as [number[], number[]],
+					t0,
+					r: this.rng(i0, "toss"),
+				})
+			: undefined;
+		const base = toss ? toss.cut : t0;
+		if (toss) {
+			this.cuts.push(base);
+		}
+
 		// Up to the line, set, and the snap.
 		const parts: Part[] = [];
-		let set = t0 + KICK_AT;
+		let set = base + KICK_AT;
 		if (kick) {
+			const waiting = [0, 0];
 			for (const p of placed) {
-				parts.push({
-					pid: p.pid,
-					team: p.team,
-					role: p.role,
-					legs: [
-						{
-							t0,
-							t1: t0,
-							from: p.at,
-							to: p.at,
-							move: p.move,
-							yaw: p.yaw,
-							...(p.mirrored ? { mirrored: true } : {}),
-						},
-					],
+				const legs: Leg[] = [];
+				if (toss) {
+					const at = waitingAt(p.team, waiting[p.team]!++, r);
+					legs.push({
+						t0,
+						t1: base,
+						from: at,
+						to: at,
+						move: "stand",
+						yaw: Math.atan2(MID_Y - at.y, MID_X - at.x),
+					});
+				}
+				legs.push({
+					t0: base,
+					t1: base,
+					from: p.at,
+					to: p.at,
+					move: p.move,
+					yaw: p.yaw,
+					...(p.mirrored ? { mirrored: true } : {}),
 				});
+				parts.push({ pid: p.pid, team: p.team, role: p.role, legs });
 			}
 		} else {
 			set = this.walkUp(placed, parts, offense, dir, losX, ballY, t0, r);
 		}
 		let snap = kick
-			? t0 + KICK_AT
+			? base + KICK_AT
 			: kind === "none"
 				? set + 400
 				: set + CADENCE[0] + (CADENCE[1] - CADENCE[0]) * r();
@@ -1066,10 +1123,10 @@ class Director {
 		}
 
 		// The lines.
-		this.lastLine = Math.max(this.lastLine, t0 - LINE_GAP);
+		this.lastLine = Math.max(this.lastLine, base - LINE_GAP);
 		let afterSnap = false;
 		let results = 0;
-		let lastAt = t0;
+		let lastAt = base;
 		let pre = 0;
 		for (let i = i0; i < i1; i++) {
 			const e = events[i];
@@ -1082,6 +1139,7 @@ class Director {
 			} else if (e.type === "overtime") {
 				this.quarter =
 					this.numPeriods + (typeof e.overtimes === "number" ? e.overtimes : 1);
+				this.tossNext = true;
 			} else if (e.type === "injury" && typeof e.injuredPID === "number") {
 				this.out.add(e.injuredPID);
 			}
@@ -1090,10 +1148,10 @@ class Director {
 			}
 			let want: number;
 			if (i === i0) {
-				want = t0 + CLOCK_AT;
+				want = base + CLOCK_AT;
 			} else if (BEFORE_SNAP.has(e.type) && !afterSnap) {
 				// (The kickoff team's onside call too, though it is the kick.)
-				want = t0 + 900 + pre * 900;
+				want = base + 900 + pre * 900;
 				pre += 1;
 				if (e.type === "onsideKick") {
 					afterSnap = i >= kindAt;
@@ -1292,7 +1350,7 @@ class Director {
 			dir,
 			losX,
 			ballY,
-			t0,
+			t0: base,
 			set,
 			snap,
 			follow: acted?.follow ?? snap,
@@ -1314,6 +1372,9 @@ class Director {
 		});
 		if (postgame) {
 			crewOff(crew.parts, postgame.from, t1, this.rng(i0, "crewOff"));
+		}
+		if (toss) {
+			tossCrew(toss, crew.parts);
 		}
 		const chains = stageChains({
 			quarter,
@@ -1386,6 +1447,16 @@ class Director {
 			}),
 			...(medics.length > 0 ? { medics } : {}),
 			...(hurt ? { hurt: { pid: hurt.pid, from: hurt.down } } : {}),
+			...(toss
+				? {
+						toss: {
+							men: toss.men,
+							at: toss.at,
+							flip: toss.flip,
+							cut: toss.cut,
+						},
+					}
+				: {}),
 			...(postgame
 				? {
 						coaches: postgame.coaches,
@@ -1408,6 +1479,25 @@ class Director {
 		});
 		this.T = t1;
 		this.ballY = this.nextSpot(kind, i0, i1, ballY, spotAt(whistle).y);
+	}
+
+	// A side's captains for the coin toss: its quarterback, and a lineman
+	// each side of the ball (or the next best) - none out for the kick.
+	captainsOf(team: Side, busy: Set<number>): number[] {
+		const depth = this.depth[team];
+		const out: number[] = [];
+		for (const g of CAPTAIN_GROUPS) {
+			const pid = (depth[g] ?? []).find(
+				(p) => !busy.has(p) && !this.out.has(p) && !out.includes(p),
+			);
+			if (pid !== undefined) {
+				out.push(pid);
+			}
+			if (out.length === CAPTAINS) {
+				break;
+			}
+		}
+		return out;
 	}
 
 	// What brings the crowd up in a play: a score, the ball taken away, a

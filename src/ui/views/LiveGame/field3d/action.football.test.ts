@@ -74,13 +74,17 @@ const posAt = (part: Part, t: number): Pt => {
 
 describe("the plays acted out", () => {
 	test("every man goes from one place to the next, at a man's speed", () => {
-		eachPlay((play) => {
+		eachPlay((play, _, tl) => {
 			for (const part of play.parts) {
 				part.legs.forEach((l, k) => {
 					const prev = part.legs[k - 1];
 					if (prev) {
 						assert.closeTo(l.t0, prev.t1, 1e-6, `${part.role} at ${l.t0}`);
-						assert.isBelow(dist(l.from, prev.to), 1e-6, `${part.role} jumps`);
+						// (Somewhere else only as the picture cuts away: the coin
+						// toss done, set for the kick.)
+						if (!tl.cuts.includes(l.t0)) {
+							assert.isBelow(dist(l.from, prev.to), 1e-6, `${part.role} jumps`);
+						}
 					}
 					const secs = (l.t1 - l.t0) / 1000;
 					if (secs > 0.05) {
@@ -558,7 +562,7 @@ describe("the plays acted out", () => {
 	});
 	test("the officials on every play: all seven, at a man's speed, on the field or just off it", () => {
 		const bad: string[] = [];
-		eachPlay((play) => {
+		eachPlay((play, _, tl) => {
 			if (play.crew.length !== 7) {
 				bad.push(`${play.crew.length} officials on play ${play.i}`);
 			}
@@ -567,7 +571,8 @@ describe("the plays acted out", () => {
 					const prev = part.legs[k - 1];
 					if (
 						prev &&
-						(Math.abs(l.t0 - prev.t1) > 1e-6 || dist(l.from, prev.to) > 1e-6)
+						(Math.abs(l.t0 - prev.t1) > 1e-6 ||
+							(dist(l.from, prev.to) > 1e-6 && !tl.cuts.includes(l.t0)))
 					) {
 						bad.push(`official ${part.pid} jumps on play ${play.i}`);
 					}

@@ -376,7 +376,8 @@ const lay = (men: SidelineMan[], play: Play): Map<number, Spot> => {
 };
 
 // Who is on the field for a play (a head coach out to shake hands too):
-// everyone else is on his sideline.
+// everyone else is on his sideline - but for the captains out for the coin
+// toss, until it is done.
 const inFor = new WeakMap<Play, Set<number>>();
 const onField = (play: Play) => {
 	let s = inFor.get(play);
@@ -592,9 +593,10 @@ export const sidelineAt = (
 	const cheer = cheerAt(tl, m.t);
 	const ball = m.focus;
 	const post = play.postgame;
+	const toss = play.toss && m.t < play.toss.cut ? play.toss.men : [];
 	for (const s of men) {
 		const spot = spots.get(s.id);
-		if (!spot) {
+		if (!spot || toss.some((p) => p.pid === s.id)) {
 			continue;
 		}
 		const o = post ? outOf(s, spot, play, post.at) : null;

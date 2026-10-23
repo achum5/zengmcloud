@@ -76,6 +76,10 @@ const POST_IN = 5500;
 const POST_IN_MS = 4000;
 // Won on the last play: on them all over the man who won it.
 const MOB_WIDTH = 96;
+// The coin toss: in on the captains as they come out, from this wide to
+// this, by the time the coin goes up.
+const TOSS_WIDE = 84;
+const TOSS_TIGHT = 52;
 
 export const aimFor = (m: FieldMoment): Shot => {
 	const { play, t, focus } = m;
@@ -92,6 +96,17 @@ export const aimFor = (m: FieldMoment): Shot => {
 				? setY(play)
 				: MID_Y + (play.ballY - MID_Y) * 0.35,
 	};
+	// The coin toss: in on them in the middle of the field.
+	const toss = play.toss;
+	if (toss && t < toss.cut) {
+		const u = Math.min(1, Math.max(0, (t - play.t0) / (toss.flip - play.t0)));
+		const e = u * u * (3 - 2 * u);
+		return {
+			x: toss.at.x,
+			width: TOSS_WIDE + (TOSS_TIGHT - TOSS_WIDE) * e,
+			y: across(toss.at.y),
+		};
+	}
 	// A man hurt: on him, and the trainers round him, and with him off.
 	const hurt = play.hurt;
 	if (hurt && t >= hurt.from) {

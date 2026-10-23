@@ -2162,6 +2162,20 @@ const FIELD_ANIMS = {
 	// ---- the game over ----
 	// A handshake: his right hand out in front of him at his belt, taken,
 	// shaken twice and let go.
+	// The coin toss: the coin out on his thumb, flicked up, his hand up after
+	// it - and leaning to look down at it on the turf.
+	coinFlip: {
+		kind: "act",
+		keys: [
+			[0, BASE],
+			[0.22, pose({ shN: 46, elN: 98, abN: -8 })],
+			[0.34, pose({ shN: 58, elN: 84, abN: -8, wrN: 24 })],
+			[0.44, pose({ shN: 104, elN: 30, abN: -4, wrN: -16 })],
+			[0.56, pose({ shN: 112, elN: 22, abN: -4 })],
+			[0.8, pose({ shN: 30, elN: 64, abN: 6, lean: 16 })],
+			[1, BASE],
+		],
+	},
 	shake: {
 		kind: "act",
 		keys: [

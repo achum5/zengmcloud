@@ -180,7 +180,7 @@ const cutAt = (legs: Leg[], t: number) => {
 };
 
 // One man's legs, a stretch at a time from where they leave him.
-class Man {
+export class Man {
 	readonly team: Side;
 	readonly legs: Leg[];
 	pace: number;
@@ -243,7 +243,7 @@ class Man {
 // Two men out to each other from where they are (by when each is free),
 // to shake hands - and hug, now and then - meeting at `at` (or halfway).
 // When they shake, and when they are done.
-const meet = (
+export const meet = (
 	a: Man,
 	b: Man,
 	r: () => number,

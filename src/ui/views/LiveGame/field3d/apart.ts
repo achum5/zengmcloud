@@ -20,8 +20,9 @@ export type Sep = { t0: number; dx: Float32Array; dy: Float32Array };
 const APART = 2.1;
 const ROUNDS = 3;
 const SMOOTH = 4;
-// (Too little to bother with, feet.)
+// (Too little to bother with, feet; and nowhere near anybody.)
 const SLIGHT = 0.02;
+const GONE = -1e5;
 // The man the ball comes to, left where he is from this long (ms) before
 // it is his; the man it leaves, until this long after.
 const GATHER_MS = 400;
@@ -81,6 +82,7 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 	const men = [
 		...play.parts.filter((p) => p.pid >= 0),
 		...(play.coaches ?? []),
+		...(play.toss?.men ?? []),
 	].filter((p) => p.legs.length > 0);
 	const t0 = play.t0;
 	const n = Math.max(1, Math.ceil((play.t1 - t0) / SEP_MS) + 1);
@@ -88,6 +90,16 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 	const ys = men.map(() => new Float32Array(n));
 	const free = men.map(() => new Uint8Array(n));
 	men.forEach((m, i) => sample(m, t0, n, xs[i]!, ys[i]!, free[i]!));
+	// (The captains out for the coin toss gone once it is done.)
+	const toss = play.toss;
+	if (toss) {
+		const from = Math.max(0, Math.ceil((toss.cut - t0) / SEP_MS));
+		men.forEach((m, i) => {
+			if (toss.men.includes(m as (typeof toss.men)[number])) {
+				xs[i]!.fill(GONE, from);
+			}
+		});
+	}
 	// (Nor the man with the ball coming to him, or just gone from him.)
 	const index = new Map(men.map((m, i) => [m.pid, i]));
 	const hold = (pid: number, from: number, to: number) => {
