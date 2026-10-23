@@ -12,6 +12,7 @@ import type { Side } from "./geometry.ts";
 import type { FieldLook } from "./kit.ts";
 import type { BallHold } from "./director.ts";
 import {
+	actFrames,
 	gripsOf,
 	heldBall,
 	holding,
@@ -91,9 +92,46 @@ type Under = {
 // In so many steps: a stride's frames, an act's, the ways he faces, and a
 // blend from one move into the next - or, with time to spare on the device
 // (see Field3D), more of each, so he moves the more smoothly.
-type Steps = { cycle: number; act: number; turns: number; blend: number };
-const COARSE: Steps = { cycle: 12, act: 20, turns: 36, blend: 8 };
-const FINE: Steps = { cycle: 24, act: 40, turns: 48, blend: 16 };
+// (An act's, no fewer than `act` over it, and more where he moves fast
+// through it: no joint more than `actDeg` degrees from one to the next -
+// see actFrames.)
+type Steps = {
+	cycle: number;
+	act: number;
+	actDeg: number;
+	turns: number;
+	blend: number;
+};
+const COARSE: Steps = { cycle: 12, act: 20, actDeg: 10, turns: 36, blend: 8 };
+const FINE: Steps = { cycle: 24, act: 40, actDeg: 4, turns: 48, blend: 16 };
+
+// (A stride slow to go round - a walk - in this many times more.)
+const SLOW_STRIDES = new Map<Move, number>([["walk", 2]]);
+
+// The frame of an act he is on, and where it starts (each the nearest to
+// the phases about it).
+const actFrameAt = (
+	m: Move,
+	phase: number,
+	k: Steps,
+): { at: number; from: number } => {
+	const f = actFrames(m, k.act, k.actDeg);
+	const u = Math.min(1, Math.max(0, phase));
+	let lo = 0;
+	let hi = f.length - 1;
+	while (hi - lo > 1) {
+		const mid = (lo + hi) >> 1;
+		if (f[mid]! <= u) {
+			lo = mid;
+		} else {
+			hi = mid;
+		}
+	}
+	const mid = (f[lo]! + f[hi]!) / 2;
+	return u < mid || lo === hi
+		? { at: f[lo]!, from: lo > 0 ? (f[lo - 1]! + f[lo]!) / 2 : -Infinity }
+		: { at: f[hi]!, from: mid };
+};
 
 const frameOf = (m: Move, phase: number, k: Steps): number => {
 	const kind = moveKind(m);
@@ -101,11 +139,10 @@ const frameOf = (m: Move, phase: number, k: Steps): number => {
 		return 0;
 	}
 	if (kind === "act") {
-		return (
-			Math.round(Math.min(1, Math.max(0, phase)) * (k.act - 1)) / (k.act - 1)
-		);
+		return actFrameAt(m, phase, k).at;
 	}
-	return Math.floor((((phase % 1) + 1) % 1) * k.cycle) / k.cycle;
+	const n = k.cycle * (SLOW_STRIDES.get(m) ?? 1);
+	return Math.floor((((phase % 1) + 1) % 1) * n) / n;
 };
 
 // How long since he came to the frame he is on (ms), going through his move
@@ -117,7 +154,7 @@ const sinceFrame = (m: Move, phase: number, rate: number, k: Steps) => {
 	}
 	const into =
 		kind === "act"
-			? phase - frameOf(m, phase, k) + 0.5 / (k.act - 1)
+			? phase - actFrameAt(m, phase, k).from
 			: (((phase % 1) + 1) % 1) - frameOf(m, phase, k);
 	return Math.max(0, into) / rate;
 };

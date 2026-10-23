@@ -3225,6 +3225,74 @@ export const poseOfMove = (
 	return mirrored ? mirror(q) : q;
 };
 
+// THE FRAMES AN ACT IS DRAWN IN (phases, 0 to 1, the first and last its
+// own): through each stretch between its keys as many as `least` over the
+// whole act gives it, or more where he moves a long way in it - no joint
+// more than `most` degrees from one to the next - and none through a
+// stretch he holds.
+const DEGREES: (keyof Pose)[] = [
+	"hipN",
+	"kneeN",
+	"hipF",
+	"kneeF",
+	"shN",
+	"elN",
+	"shF",
+	"elF",
+	"lean",
+	"abN",
+	"abF",
+	"wrN",
+	"wrF",
+	"flare",
+	"spinN",
+	"spinF",
+	"twist",
+	"tilt",
+];
+// (Anything else - how wide his feet are, up on his toes, ... - as if this
+// many degrees all the way.)
+const SHARE_DEG = 60;
+const apartBy = (a: Pose, b: Pose): number => {
+	let most = 0;
+	for (const k of Object.keys(a) as (keyof Pose)[]) {
+		const d = Math.abs(a[k] - b[k]) * (DEGREES.includes(k) ? 1 : SHARE_DEG);
+		most = Math.max(most, d);
+	}
+	return most;
+};
+const actFrameSets = new Map<string, number[]>();
+export const actFrames = (m: Move, least: number, most: number): number[] => {
+	const key = `${m}|${least}|${most}`;
+	let out = actFrameSets.get(key);
+	if (!out) {
+		const a = FIELD_ANIMS[m as FieldAnimName] as FieldAnim | undefined;
+		out = [0];
+		if (a?.kind === "act") {
+			for (let i = 1; i < a.keys.length; i++) {
+				const [u0, p0] = a.keys[i - 1]!;
+				const [u1, p1] = a.keys[i]!;
+				const d = apartBy(p0, p1);
+				if (u1 <= u0 || d < 0.5) {
+					continue;
+				}
+				const n = Math.max(
+					Math.ceil((u1 - u0) * (least - 1) - 1e-6),
+					Math.ceil(d / most),
+				);
+				for (let j = 1; j <= n; j++) {
+					out.push(u0 + ((u1 - u0) * j) / n);
+				}
+			}
+		}
+		if (out.at(-1)! < 1) {
+			out.push(1);
+		}
+		actFrameSets.set(key, out);
+	}
+	return out;
+};
+
 // Two men meeting right hand to right hand partway through a move (a
 // handshake, a high five): how far apart they stand, center to center, and
 // how far each is turned to his left of straight at the other (radians)
