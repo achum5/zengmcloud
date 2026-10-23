@@ -390,9 +390,10 @@ describe("the season series", () => {
 		const winner = team({
 			tid: 1,
 			name: "Celtics",
+			// Two-all after tonight: a one-all split is no news.
 			seasonSeries: {
-				won: 0,
-				lost: 1,
+				won: 1,
+				lost: 2,
 				last: { won: false, pts: 95, oppPts: 115, day: 10, home: true },
 				left: 1,
 			},
@@ -409,6 +410,21 @@ describe("the season series", () => {
 			[...all].some((s) => /one meeting to go/.test(s)),
 			[...all].join("\n"),
 		);
+	});
+
+	// "The Hawks and the Kings split their season series 1-1." closed one
+	// recap in twenty.
+	test("a one-all split is no news", () => {
+		const loser = team({ tid: 2, name: "Knicks", pts: 90 });
+		for (const left of [0, 1, 2]) {
+			const winner = team({
+				tid: 1,
+				name: "Celtics",
+				seasonSeries: { won: 0, lost: 1, left },
+			});
+			const all = shapes((rng) => seriesBeat(game(winner, loser).ctx, rng));
+			assert.deepEqual([...all], []);
+		}
 	});
 
 	test("a first meeting has no series to talk about", () => {

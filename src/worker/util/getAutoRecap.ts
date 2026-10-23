@@ -1791,9 +1791,6 @@ type Headline = {
 	// third of every recap. The body keeps the RESULT - it still says who beat
 	// whom - and drops the repeated number.
 	spentScore?: boolean;
-	// The headline IS the series result ("Pistons close out the Bulls in six"),
-	// so the body's postseason opener must not say it again.
-	spentClinch?: boolean;
 	// The headline carried the series score ("take a 2-1 lead"), so the
 	// body's series-state sentence would be the same numbers again.
 	spentState?: boolean;
@@ -2053,14 +2050,12 @@ const buildHeadlineText = (
 				: [...options, ...starOptions],
 			"headline:clinch",
 		);
-		const headline = h(
+		return h(
 			text,
 			text.includes(star.name),
 			false,
 			text.includes(statPhrase(star, 1)),
 		);
-		headline.spentClinch = true;
-		return headline;
 	}
 
 	// A PLAYOFF GAME IS HEADLINED BY THE SERIES. "Cavaliers get past the
@@ -4760,7 +4755,7 @@ const combinedNote = (shape: Shape, rng: () => number): string | undefined => {
 	}
 	if (shape.ot === 0 && shape.regPeriods >= 4) {
 		if (total >= 240) {
-			return `The teams combined for ${total} points in an up-and-down affair.`;
+			return `The teams combined for ${total} points.`;
 		}
 		// "Neither offense got going" must be true of BOTH offenses. A 94-65
 		// blowout where the winner shot 50%+ is a defensive mauling of one team,
@@ -7217,16 +7212,63 @@ const buildGameRecap = (game: RecapGame): string => {
 	// The headline carried the series score, so the body's series sentence is
 	// dropped below - and the round goes where a wire lead puts it: "beat the
 	// Pistons 104-96 in Game 4 of the First Round".
-	if (headline.spentState && post.state && para1.length > 0) {
-		const where = ` in Game ${post.state.gameNo} of ${post.state.round}`;
-		const first = para1[0]!;
+	// THE SERIES IT ENDED, in the lede. "Grant Green put up 29 points as the
+	// Lakers took down the Pistons 124-114" was the whole lede of the night
+	// that won the Lakers the title, and not one of 45 series-ending ledes
+	// said the series was over: "beat the Clippers 104-93 to close out the
+	// series 4-1", "in Game 7 to reach the Conference Semifinals".
+	const clinch = post.clinch;
+	let clinchLede: { text: string; next: boolean } | undefined;
+	if (clinch) {
+		const games = clinch.wAfter + clinch.lBefore;
+		const score = `${clinch.wAfter}-${clinch.lBefore}`;
+		clinchLede = clinch.decider
+			? clinch.title
+				? { text: ` in Game ${games} to win the title`, next: true }
+				: {
+						text: ` in Game ${games} to reach ${clinch.nextRound}`,
+						next: true,
+					}
+			: clinch.title
+				? {
+						text: clinch.sweep
+							? ` to finish a ${numWord(clinch.wAfter)}-game sweep for the title`
+							: ` to win the Finals ${score}`,
+						next: true,
+					}
+				: {
+						text: clinch.sweep
+							? ` to finish a ${numWord(clinch.wAfter)}-game sweep`
+							: pick(
+									rng,
+									[
+										` to close out the series ${score}`,
+										` to win the series in ${numWord(games)} games`,
+									],
+									"ledeClinch",
+								),
+						next: false,
+					};
+	}
+	const where =
+		headline.spentState && post.state
+			? ` in Game ${post.state.gameNo} of ${post.state.round}`
+			: clinchLede?.text;
+	if (where && para1.length > 0) {
+		// The sentence with the result in it: after the score, or after the
+		// losers' name when the headline has the score.
 		const tag = scoreTag(shape);
+		const loserName = theNick(shape.loser);
+		const i = Math.max(
+			0,
+			para1.findIndex((x) => x.includes(tag) || x.includes(loserName)),
+		);
+		const first = para1[i]!;
 		if (first.includes(tag)) {
-			para1[0] = first.replace(tag, `${tag}${where}`);
+			para1[i] = first.replace(tag, `${tag}${where}`);
 		} else {
-			const loserName = theNick(shape.loser);
 			const at = first.indexOf(loserName);
-			para1[0] =
+			para1[i] =
 				at >= 0
 					? `${first.slice(0, at + loserName.length)}${where}${first.slice(at + loserName.length)}`
 					: `${first.slice(0, -1)}${where}.`;
@@ -7377,25 +7419,14 @@ const buildGameRecap = (game: RecapGame): string => {
 			// a 2-1 series lead" is the same numbers twice; the stakes sentence
 			// that follows it is the one with something to add.
 			post.sentences.slice(1)
-		: headline.spentClinch
+		: post.clinch
 			? [
-					// The series score, when the headline said only where the winner
-					// is going. Short: the fact, not the clinch sentence again.
-					...(post.clinch &&
-					!/sweep|Game \d|in (?:three|four|five|six|seven|nine)\b/.test(
-						headline.text,
-					)
-						? [
-								`${cap(theNick(shape.winner))} took the series ${post.clinch.wAfter}-${post.clinch.lBefore}.`,
-							]
-						: []),
-					// A decider's headline names the game and often nothing else -
-					// "Pacers make Game 7 a rout" - and the body then reported whose
-					// season ended without ever saying where the winner goes next.
-					...(post.clinch &&
-					!post.clinch.title &&
-					/Game \d/.test(headline.text) &&
-					!/advance|move on|reach/.test(headline.text)
+					// The lede has the series result now ("to close out the series
+					// 4-1"), so the winner's series sentence is not said again -
+					// only where they go next, when nothing above said it.
+					...(!post.clinch.title &&
+					!clinchLede?.next &&
+					!headline.text.includes(post.clinch.nextRound.replace(/^the /, ""))
 						? [
 								`${cap(theNick(shape.winner))} move on to ${post.clinch.nextRound}.`,
 							]

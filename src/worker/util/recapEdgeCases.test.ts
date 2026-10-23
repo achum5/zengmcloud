@@ -1107,6 +1107,57 @@ describe("edge cases", () => {
 			"franchise last title year",
 		]);
 	});
+
+	// "Grant Green put up 29 points as the Lakers took down the Pistons
+	// 124-114" was the whole lede of the night that won them the title; not
+	// one of 45 series-ending ledes said the series was over.
+	test("a series-ending game says so in its lede, and once", () => {
+		const cases: [number, number, number, RegExp][] = [
+			// round, winner's wins before, loser's wins before, lede
+			[1, 3, 1, /to close out the series 4-1|to win the series in five games/],
+			[1, 3, 0, /to finish a four-game sweep/],
+			[2, 3, 3, /in Game 7 to reach the Conference Finals/],
+			[4, 3, 2, /to win the Finals 4-2/],
+			[4, 3, 3, /in Game 7 to win the title/],
+		];
+		for (const [round, won, lost, lede] of cases) {
+			for (let gid = 1; gid <= 12; gid++) {
+				const home = squad(
+					{ tid: 1, name: "Hawks" },
+					{ name: "Ace Hawk", pid: 11, pts: 30, fg: 11, fga: 21 },
+					112,
+				);
+				const away = squad(
+					{ tid: 2, name: "Kings" },
+					{ name: "Rex King", pid: 21, pts: 24, fg: 9, fga: 20 },
+					101,
+				);
+				const g = game([home, away], {
+					gid,
+					playoffs: true,
+					series: {
+						round,
+						numRounds: 4,
+						bestOf: 7,
+						homeAbbrev: home.abbrev,
+						awayAbbrev: away.abbrev,
+						homeWon: won,
+						awayWon: lost,
+					},
+				});
+				const recap = getAutoRecap(g);
+				clean(recap);
+				const first = recap.split("\n\n")[1]!.split(/(?<=\.) /)[0]!;
+				assert.match(first, lede, recap);
+				assert.notMatch(
+					recap.split("\n\n").slice(1).join(" ").replace(first, ""),
+					/took the series|closed out the series|won the series|series goes to|are champions|finished a \d-0 sweep/,
+					recap,
+				);
+				assert.deepEqual(verifyRecap(recap, g), [], recap);
+			}
+		}
+	});
 });
 
 describe("pickByDay", () => {

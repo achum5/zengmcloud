@@ -231,8 +231,12 @@ export const seriesBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 				"seriesTaken",
 			);
 		}
+		// "The Hawks and the Kings split their season series 1-1" closed one
+		// recap in twenty and told nobody anything; two-and-two can stand.
 		if (wonNow === s.lost) {
-			return `${W} and ${ln} split their season series ${wonNow}-${wonNow}.`;
+			return total > 2
+				? `${W} and ${ln} split their season series ${wonNow}-${wonNow}.`
+				: undefined;
 		}
 	}
 
@@ -258,22 +262,23 @@ export const seriesBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 			),
 		);
 	} else if (wonNow === s.lost) {
-		options.push(
-			pick(
-				rng,
-				// Both clubs named. "The season series with the Bulls is level"
-				// in a paragraph that has just been talking about the Bulls left
-				// the reader to guess whose series it was.
-				[
-					`The win squared the season series between ${wn} and ${ln} at ${wonNow}-${wonNow}.`,
-					total === 2
-						? `${W} and ${ln} have split their two meetings this season.`
-						: `${W} and ${ln} have split ${numWord(total)} meetings this season.`,
-					`${W} evened the season series with ${ln} at ${wonNow}-${wonNow}.`,
-				],
-				"seriesLevel",
-			),
-		);
+		// Not one-all: a split of two meetings is no news.
+		if (total > 2) {
+			options.push(
+				pick(
+					rng,
+					// Both clubs named. "The season series with the Bulls is level"
+					// in a paragraph that has just been talking about the Bulls left
+					// the reader to guess whose series it was.
+					[
+						`The win squared the season series between ${wn} and ${ln} at ${wonNow}-${wonNow}.`,
+						`${W} and ${ln} have split ${numWord(total)} meetings this season.`,
+						`${W} evened the season series with ${ln} at ${wonNow}-${wonNow}.`,
+					],
+					"seriesLevel",
+				),
+			);
+		}
 	} else if (wonNow > s.lost) {
 		options.push(
 			pick(
@@ -328,6 +333,9 @@ export const seriesBeat = (ctx: BeatContext, rng: Rng): string | undefined => {
 		);
 	}
 
+	if (options.length === 0) {
+		return undefined;
+	}
 	let text = pick(rng, options);
 	if (s.left === 1 && text.includes("season series")) {
 		text = `${text.slice(0, -1)}, with one meeting to go.`;
