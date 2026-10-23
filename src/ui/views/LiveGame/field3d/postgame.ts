@@ -17,8 +17,8 @@ import { coachId, headCoachAt, sidelineOf } from "./sideline.ts";
 
 // THE GAME OVER. The winners' moment where the end of it finds them - up
 // off their feet, chests bumped, a fist pumped (a rout: a clap, and that is
-// all) - and the beaten side's: hands on hips, on helmets, a man down on a
-// knee. Then both sides out toward the middle of the field, each man to one
+// all; won on the last play, all of them all over the man who won it) - and
+// the beaten side's: hands on hips, on helmets, a man down on a knee. Then both sides out toward the middle of the field, each man to one
 // of the other side's: a handshake, a hug now and then, and on to the next.
 // And the two head coaches out from their sidelines through it all, to
 // shake hands in the middle - the picture in on them as they do.
@@ -33,19 +33,33 @@ const BUMP = 0.3;
 const BUMP_NEAR = 15;
 const BUMP_APART = 2;
 const BUMP_MS = 900;
-// The middle they make for: pulled this far from where they all are
-// toward midfield (and no further from it than this); each man going this
-// much of the way to a place of his own round it - spread this far either
-// way along the field and across it - at a walk, at these paces (feet a
-// second; the big men slower), and none of them right where the coaches
+// Won on the last play: the winners on the field to the man who won it, at a
+// sprint (these paces), round him in a ring this far off him (this many
+// in it) and another outside it - up off their feet with him, and all over
+// him this long after the last of them gets there (of those no further off
+// than this: the rest get there when they get there).
+const MOB_RINGS: [number, number] = [2.6, 4.8];
+const MOB_INNER = 6;
+const MOB_FPS: [number, number] = [15, 19];
+const MOB_MS = 2000;
+const MOB_NEAR = 60;
+// The middle they make for: from where they all are (or the man who won
+// it), pulled this share of the way toward midfield (no further than this,
+// feet) - the head coaches meeting this share of the rest of the way to it.
+// Each man going this much of the way to a place of his own round it -
+// spread this far either way along the field and across it - at a walk, at
+// these paces (feet a second; the big men slower), quicker if it is a long
+// way (there in this long, ms), and none of them right where the coaches
 // meet.
 const PULL = 0.45;
-const MIDDLE_MOST = 45;
+const PULL_MOST = 30;
+const COACH_PULL = 0.25;
 const SHARE = 0.9;
+const WALK_MOST = 6000;
 const SPREAD_X = 22;
 const SPREAD_Y = 30;
-const PACE: [number, number] = [4.2, 5.6];
-const BIG_SLOWER = 0.7;
+const PACE: [number, number] = [4.6, 6];
+const BIG_SLOWER = 0.85;
 const BIG = new Set(["C", "LG", "RG", "LT", "RT", "DE", "DT", "NT"]);
 const CLEAR = 7;
 // A handshake this long (and up to this much longer); a hug after it this
@@ -114,6 +128,9 @@ export type Postgame = {
 	shake: number;
 	at: Pt;
 	winner: Side | undefined;
+	// Won on the last play: where they are all over the man who won it, and
+	// until when.
+	mob?: { at: Pt; until: number };
 	t1: number;
 };
 
@@ -166,7 +183,7 @@ const cutAt = (legs: Leg[], t: number) => {
 class Man {
 	readonly team: Side;
 	readonly legs: Leg[];
-	readonly pace: number;
+	pace: number;
 	constructor(team: Side, legs: Leg[], pace: number) {
 		this.team = team;
 		this.legs = legs;
@@ -304,6 +321,8 @@ export const stagePostgame = (input: {
 	pts: [number, number];
 	// The ball dead (or the moment after it seen out).
 	whistle: number;
+	// The man who won it on the last play, if anybody did.
+	hero?: number;
 	t0: number;
 	t1: number;
 	playI: number;
@@ -320,6 +339,7 @@ export const stagePostgame = (input: {
 	// Each man free of the play: up off the turf, done what he was doing -
 	// and the ball let go of.
 	const men: Man[] = [];
+	let hero: Man | undefined;
 	for (const p of parts) {
 		if (p.pid < 0 || p.legs.length === 0) {
 			continue;
@@ -360,14 +380,24 @@ export const stagePostgame = (input: {
 		}
 		const big = BIG.has(p.role);
 		const pace = (PACE[0] + r() * (PACE[1] - PACE[0])) * (big ? BIG_SLOWER : 1);
-		men.push(new Man(p.team, p.legs, pace));
+		const man = new Man(p.team, p.legs, pace);
+		men.push(man);
+		if (p.pid === input.hero) {
+			hero = man;
+		}
 	}
 
 	// The moment: the winners'...
 	const won = men.filter((m) => m.team === winner);
 	const lost = men.filter((m) => winner !== undefined && m.team !== winner);
 	const bumped = new Set<Man>();
-	if (!rout && winner !== undefined) {
+	let mob: Postgame["mob"];
+	if (hero && hero.team === winner) {
+		mob = mobbed(hero, won, r);
+		for (const m of won) {
+			bumped.add(m);
+		}
+	} else if (!rout && winner !== undefined) {
 		const wanting = won.filter(() => r() < BUMP);
 		for (const [a, b] of pairUp(
 			wanting,
@@ -419,7 +449,8 @@ export const stagePostgame = (input: {
 	// ...and the beaten side's.
 	for (const m of lost) {
 		m.hold(m.t + 200 + r() * 600);
-		const u = r();
+		// (Beaten on the last play: none of them stood about.)
+		const u = mob ? r() * 0.64 : r();
 		if (rout) {
 			m.hold(m.t + 1200, u < 0.5 ? "onHips" : "stand");
 		} else if (u < 0.3) {
@@ -442,30 +473,29 @@ export const stagePostgame = (input: {
 
 	// The middle they make for, and the head coaches' place in it.
 	const n = Math.max(1, men.length);
-	const cx = men.reduce((s, m) => s + m.at.x, 0) / n;
-	const at = {
-		x: clamp(
-			cx + (MID_X - cx) * PULL,
-			MID_X - MIDDLE_MOST,
-			MID_X + MIDDLE_MOST,
-		),
+	const cx = mob ? mob.at.x : men.reduce((s, m) => s + m.at.x, 0) / n;
+	const middle = {
+		x: cx + clamp((MID_X - cx) * PULL, -PULL_MOST, PULL_MOST),
 		y: MID_Y + (r() - 0.5) * 12,
+	};
+	const at = {
+		x: middle.x + (MID_X - middle.x) * COACH_PULL,
+		y: middle.y,
 	};
 	const placeOf = new Map<Man, Pt>();
 	for (const m of men) {
 		let p = {
-			x: m.at.x + (at.x + (r() - 0.5) * 2 * SPREAD_X - m.at.x) * SHARE,
-			y: m.at.y + (at.y + (r() - 0.5) * 2 * SPREAD_Y - m.at.y) * SHARE,
+			x: m.at.x + (middle.x + (r() - 0.5) * 2 * SPREAD_X - m.at.x) * SHARE,
+			y: m.at.y + (middle.y + (r() - 0.5) * 2 * SPREAD_Y - m.at.y) * SHARE,
 		};
 		const d = dist(p, at);
 		if (d < CLEAR) {
 			const a = d > 0.1 ? toward(at, p) : r() * Math.PI * 2;
 			p = { x: at.x + Math.cos(a) * CLEAR, y: at.y + Math.sin(a) * CLEAR };
 		}
-		placeOf.set(m, {
-			x: clamp(p.x, 3, FIELD_L - 3),
-			y: clamp(p.y, 3, FIELD_W - 3),
-		});
+		p = { x: clamp(p.x, 3, FIELD_L - 3), y: clamp(p.y, 3, FIELD_W - 3) };
+		m.pace = Math.max(m.pace, dist(m.at, p) / (WALK_MOST / 1000));
+		placeOf.set(m, p);
 	}
 	// Each to one of the other side's, by where they are making for - and
 	// on to the next.
@@ -533,7 +563,57 @@ export const stagePostgame = (input: {
 		const l = m.legs.at(-1)!;
 		m.hold(t1, moveKind(l.move) === "still" ? l.move : "stand");
 	}
-	return { coaches, from: go, shake, at, winner, t1 };
+	return { coaches, from: go, shake, at, winner, ...(mob ? { mob } : {}), t1 };
+};
+
+// The winners all over the man who won it: each at a sprint to a place in
+// a ring round him (the nearest in the inner one), turned in to him, up off
+// his feet as he gets there, and there a while - him up with them.
+const mobbed = (
+	hero: Man,
+	won: Man[],
+	r: () => number,
+): { at: Pt; until: number } => {
+	const at = hero.at;
+	hero.act("leap", 800);
+	hero.act(r() < 0.5 ? "fistPump" : "flex", 1300);
+	const mates = won
+		.filter((m) => m !== hero)
+		.sort((a, b) => dist(a.at, at) - dist(b.at, at));
+	const rings = [mates.slice(0, MOB_INNER), mates.slice(MOB_INNER)];
+	let until = hero.t;
+	rings.forEach((ring, k) => {
+		// (Each to the place in it on his side of him, in turn round it.)
+		const from = (m: Man) => toward(at, m.at);
+		const byWay = [...ring].sort((a, b) => from(a) - from(b));
+		const first = byWay[0] ? from(byWay[0]) : 0;
+		byWay.forEach((m, j) => {
+			const a = first + (j / byWay.length) * Math.PI * 2;
+			const spot = {
+				x: at.x + Math.cos(a) * MOB_RINGS[k]!,
+				y: at.y + Math.sin(a) * MOB_RINGS[k]!,
+			};
+			const near = dist(m.at, at) <= MOB_NEAR;
+			m.hold(m.t + r() * 200);
+			m.walk(spot, MOB_FPS[0] + r() * (MOB_FPS[1] - MOB_FPS[0]));
+			const face = toward(spot, at);
+			m.act("leap", 800, face);
+			if (r() < 0.5) {
+				m.act("leap", 800, face);
+			}
+			if (near) {
+				until = Math.max(until, m.t);
+			}
+		});
+	});
+	until += MOB_MS;
+	for (const m of [hero, ...mates]) {
+		if (m !== hero && m.t < until - 1000 && r() < 0.35) {
+			m.act("fistPump", Math.min(1500, until - m.t));
+		}
+		m.hold(until, "stand");
+	}
+	return { at, until };
 };
 
 // The officials, once it is over: off the field together toward the near

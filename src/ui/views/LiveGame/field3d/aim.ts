@@ -74,6 +74,8 @@ const POST_WIDE = 124;
 const POST_TIGHT = 66;
 const POST_IN = 5500;
 const POST_IN_MS = 4000;
+// Won on the last play: on them all over the man who won it.
+const MOB_WIDTH = 96;
 
 export const aimFor = (m: FieldMoment): Shot => {
 	const { play, t, focus } = m;
@@ -101,6 +103,13 @@ export const aimFor = (m: FieldMoment): Shot => {
 	// The game over: on them all as they make for the middle - and in on the
 	// head coaches as they come together to shake hands.
 	const post = play.postgame;
+	if (post?.mob && t >= post.from && t < post.mob.until) {
+		return {
+			x: inBounds(post.mob.at.x, MOB_WIDTH),
+			width: MOB_WIDTH,
+			y: across(post.mob.at.y),
+		};
+	}
 	if (post && t >= post.from) {
 		const crowd = middleOf(play, m) ?? post.at;
 		const u = Math.min(1, Math.max(0, (t - post.shake + POST_IN) / POST_IN_MS));

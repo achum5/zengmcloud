@@ -6,6 +6,7 @@ import {
 	BENCH_OFF,
 	COACH_LINE,
 	dist,
+	FIELD_L,
 	FIELD_W,
 	MID_X,
 	TEAM_AREA,
@@ -414,6 +415,17 @@ const OUT_WIDE = 16;
 const OUT_CLEAR = 20;
 const OUT_CLAP = 0.3;
 const CLAP_MS = 1400;
+// Won on the last play: the winners' bench out onto the field at once, this
+// share of it, at a run (these paces), round the men all over the man who
+// won it - this far off him - jumping as they get there; the beaten side's
+// out after the rest of it, later still.
+const RUSH_SHARE = 0.85;
+const RUSH_AFTER = 250;
+const RUSH_SPREAD = 1400;
+const RUSH_FPS: [number, number] = [12.5, 17];
+const RUSH_RING: [number, number] = [7, 30];
+const RUSH_LEAPS = 2;
+const BEATEN_LATE = 2500;
 // Up off the bench into it, and round to face the middle, over this long.
 const RISE_MS = 260;
 const TURN_MS = 380;
@@ -423,8 +435,11 @@ type Out = {
 	from: Pt;
 	to: Pt;
 	arrive: number;
-	jog: boolean;
+	gait: "walk" | "jog" | "run";
+	// Jumps he takes when he gets there, claps then; what he turns to.
+	leaps: number;
 	claps: boolean;
+	face: Pt;
 };
 const outs = new WeakMap<Play, Map<number, Out | null>>();
 const outOf = (s: SidelineMan, spot: Spot, play: Play, at: Pt): Out | null => {
@@ -437,13 +452,44 @@ const outOf = (s: SidelineMan, spot: Spot, play: Play, at: Pt): Out | null => {
 	if (o === undefined) {
 		o = null;
 		const r = makeCourtRng(`out|${s.id}`);
-		if (s.unit !== "coach" && s.unit !== "staff" && r() < OUT_SHARE) {
+		const post = play.postgame!;
+		const mob = post.mob;
+		const player = s.unit !== "coach" && s.unit !== "staff";
+		if (mob && s.team === post.winner) {
+			if (player && r() < RUSH_SHARE) {
+				const leave =
+					post.from +
+					RUSH_AFTER +
+					r() * RUSH_SPREAD +
+					(spot.seated ? RISE_MS * 2 : 0);
+				const a =
+					Math.atan2(spot.at.y - mob.at.y, spot.at.x - mob.at.x) +
+					(r() - 0.5) * 2.4;
+				const ring = RUSH_RING[0] + r() * (RUSH_RING[1] - RUSH_RING[0]);
+				const to = {
+					x: Math.min(FIELD_L - 2, Math.max(2, mob.at.x + Math.cos(a) * ring)),
+					y: Math.min(FIELD_W - 2, Math.max(2, mob.at.y + Math.sin(a) * ring)),
+				};
+				const fps = RUSH_FPS[0] + r() * (RUSH_FPS[1] - RUSH_FPS[0]);
+				o = {
+					leave,
+					from: spot.at,
+					to,
+					arrive: leave + (dist(spot.at, to) / fps) * 1000,
+					gait: "run",
+					leaps: RUSH_LEAPS + (r() < 0.5 ? 1 : 0),
+					claps: false,
+					face: mob.at,
+				};
+			}
+		} else if (player && r() < OUT_SHARE) {
 			const near = spot.at.y > 0;
 			const leave =
-				play.postgame!.from +
+				post.from +
 				OUT_AFTER +
 				r() * OUT_SPREAD +
-				(spot.seated || s.unit === "kicker" ? OUT_LATE : 0);
+				(spot.seated || s.unit === "kicker" ? OUT_LATE : 0) +
+				(mob ? BEATEN_LATE : 0);
 			let along = (spot.at.x - MID_X) * OUT_ALONG + (r() - 0.5) * 2 * OUT_WIDE;
 			if (near) {
 				along = (along < 0 ? -1 : 1) * (OUT_CLEAR + Math.abs(along));
@@ -454,15 +500,17 @@ const outOf = (s: SidelineMan, spot: Spot, play: Play, at: Pt): Out | null => {
 			const far = dist(spot.at, to);
 			const fps = Math.max(
 				r() < OUT_JOG ? JOG_FPS : OUT_FPS[0] + r() * (OUT_FPS[1] - OUT_FPS[0]),
-				far / (Math.max(1000, play.postgame!.shake + OUT_BY - leave) / 1000),
+				far / (Math.max(1000, post.shake + OUT_BY - leave) / 1000),
 			);
 			o = {
 				leave,
 				from: spot.at,
 				to,
 				arrive: leave + (far / fps) * 1000,
-				jog: fps >= 6.5,
+				gait: fps < 6.5 ? "walk" : fps < 12.5 ? "jog" : "run",
+				leaps: 0,
 				claps: r() < OUT_CLAP,
+				face: at,
 			};
 		}
 		byMan.set(s.id, o);
@@ -480,14 +528,13 @@ const outAt = (
 	s: SidelineMan,
 	spot: Spot,
 	o: Out,
-	middle: Pt,
 	t: number,
 ): FieldPlayerState => {
 	const u = Math.min(1, (t - o.leave) / Math.max(1, o.arrive - o.leave));
 	const x = o.from.x + (o.to.x - o.from.x) * u;
 	const y = o.from.y + (o.to.y - o.from.y) * u;
 	const way = Math.atan2(o.to.y - o.from.y, o.to.x - o.from.x);
-	const gait = o.jog ? "jog" : "walk";
+	const gait = o.gait;
 	const stride = strideOf(gait);
 	const offset = (Math.abs(s.id) * 0.618) % 1;
 	const walked = (dist(o.from, o.to) * u) / stride + offset;
@@ -512,12 +559,19 @@ const outAt = (
 		};
 	}
 	const since = t - o.arrive;
-	const clapping = o.claps && since < CLAP_MS;
+	const leaping = since < o.leaps * LEAP_MS;
+	const clapping = !leaping && o.claps && since < CLAP_MS;
+	const phase = leaping
+		? (since / LEAP_MS) % 1
+		: clapping
+			? since / CLAP_MS
+			: 0;
 	return {
 		...base,
-		yaw: turnTo(way, Math.atan2(middle.y - y, middle.x - x), since / TURN_MS),
-		move: clapping ? "clap" : "stand",
-		phase: clapping ? since / CLAP_MS : 0,
+		z: leaping ? liftOf("leap", phase) : 0,
+		yaw: turnTo(way, Math.atan2(o.face.y - y, o.face.x - x), since / TURN_MS),
+		move: leaping ? "leap" : clapping ? "clap" : "stand",
+		phase,
 		...(since < RISE_MS
 			? { from: { move: gait, phase: walked, w: 1 - since / RISE_MS } }
 			: {}),
@@ -545,7 +599,7 @@ export const sidelineAt = (
 		}
 		const o = post ? outOf(s, spot, play, post.at) : null;
 		if (o && post && m.t >= o.leave) {
-			out.push(outAt(s, spot, o, post.at, m.t));
+			out.push(outAt(s, spot, o, m.t));
 			continue;
 		}
 		const at = spot.at;

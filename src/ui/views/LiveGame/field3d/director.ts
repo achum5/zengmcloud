@@ -186,7 +186,14 @@ export type Play = {
 	// The game over (see postgame.ts): the head coaches out to shake hands;
 	// from when it is, when they do, and where.
 	coaches?: CrewPart[];
-	postgame?: { from: number; shake: number; at: Pt };
+	postgame?: {
+		from: number;
+		shake: number;
+		at: Pt;
+		winner?: Side;
+		// Won on it: all over the man who did it, there, until then.
+		mob?: { at: Pt; until: number };
+	};
 	ball: BallSeg[];
 	// A big play, shown again after it (see replays.ts).
 	replay?: FieldReplay;
@@ -713,6 +720,32 @@ class Director {
 		};
 	}
 
+	// The man who won the game on its last play - the side behind or level
+	// before it, ahead after it: the kicker of a field goal (or an extra
+	// point), the man with the ball as it went in.
+	wonIt(
+		kind: PlayKind,
+		i0: number,
+		i1: number,
+		parts: Part[],
+		ball: BallSeg[],
+		whistle: number,
+	): number | undefined {
+		const before = this.pointsTo(i0);
+		const after = this.pointsTo(i1);
+		const winner =
+			after[0] > after[1] ? 0 : after[1] > after[0] ? 1 : undefined;
+		if (winner === undefined || before[winner] > before[1 - winner]!) {
+			return undefined;
+		}
+		if (kind === "fieldGoal" || kind === "extraPoint") {
+			return parts.find((p) => p.role === "K" && p.team === winner)?.pid;
+		}
+		const held = ball.findLast((b) => b.kind === "held" && b.t0 <= whistle);
+		const pid = held?.kind === "held" ? held.pid : undefined;
+		return parts.find((p) => p.pid === pid)?.team === winner ? pid : undefined;
+	}
+
 	// The score, each side's, by the lines before i1.
 	pointsTo(i1: number): [number, number] {
 		const pts: [number, number] = [0, 0];
@@ -1193,19 +1226,27 @@ class Director {
 		}
 		// The game over: the winners' moment, both sides out to the middle to
 		// shake hands, the head coaches too (see postgame.ts).
-		const postgame =
-			!hurt && events.slice(i0, i1).some((e) => e?.type === "gameOver")
-				? stagePostgame({
-						parts,
-						pts: this.pointsTo(i1),
-						whistle: Math.max(whistle, acted?.until ?? 0),
-						t0,
-						t1,
-						playI: i0,
-						ball,
-						r: this.rng(i0, "postgame"),
-					})
-				: undefined;
+		const ended =
+			!hurt && events.slice(i0, i1).some((e) => e?.type === "gameOver");
+		const hero = ended
+			? this.wonIt(kind, i0, i1, parts, ball, whistle)
+			: undefined;
+		const postgame = ended
+			? stagePostgame({
+					parts,
+					pts: this.pointsTo(i1),
+					// (Won on it: from the moment it was - not after the scorer's
+					// moment.)
+					whistle:
+						hero === undefined ? Math.max(whistle, acted?.until ?? 0) : whistle,
+					...(hero !== undefined ? { hero } : {}),
+					t0,
+					t1,
+					playI: i0,
+					ball,
+					r: this.rng(i0, "postgame"),
+				})
+			: undefined;
 		if (postgame) {
 			t1 = postgame.t1;
 			if (postgame.winner !== undefined) {
@@ -1352,6 +1393,10 @@ class Director {
 							from: postgame.from,
 							shake: postgame.shake,
 							at: postgame.at,
+							...(postgame.winner !== undefined
+								? { winner: postgame.winner }
+								: {}),
+							...(postgame.mob ? { mob: postgame.mob } : {}),
 						},
 					}
 				: {}),
