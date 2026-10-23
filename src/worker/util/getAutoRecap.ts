@@ -7134,9 +7134,12 @@ const notability = (game: RecapGame): number => {
 		if (post.headlineTag) {
 			n += 40;
 		}
-		// A clinch is the biggest story.
+		// A clinch is the biggest story - bigger than a game-winner in a
+		// Game 4 (+120): "Payton King's 29-point double-double powers the Suns
+		// past the Heat" headlined a night the Bucks finished a sweep, told
+		// in the fourth clause of a list.
 		if (post.clinch) {
-			n += post.clinch.title ? 120 : 80;
+			n += post.clinch.title ? 200 : 150;
 		}
 		// THE SERIES STAKES. A night full of playoff games was ranked almost
 		// entirely on box scores, so a routine 2-1 with a big star line
@@ -7642,8 +7645,11 @@ export const seriesTail = (
 	return lBefore === need - 1
 		? {
 				kind: "alive",
-				tails: [`to stay alive, down ${down}`],
-				whos: [`who stayed alive, down ${down}`],
+				// No comma inside: these sit in comma-separated lists, and "the
+				// Clippers got past the 76ers 113-106 to stay alive, down 3-1,
+				// the Cavaliers held off..." lost the reader.
+				tails: [`to stay alive and pull within ${down}`],
+				whos: [`who stayed alive and pulled within ${down}`],
 			}
 		: {
 				kind: "within",

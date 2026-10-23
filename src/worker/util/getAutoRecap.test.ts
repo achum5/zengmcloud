@@ -4756,6 +4756,24 @@ describe("a postseason read end to end", () => {
 		assert.ok(sawCommand, "a commanding series lead never says so");
 	});
 
+	// A night the Bucks finished a sweep was headlined on a Game 4
+	// game-winner elsewhere, the sweep in the fourth clause of a list.
+	test("a series that ends is the night's headline", () => {
+		for (let day = 1; day <= 12; day += 1) {
+			const winner = seriesSlateGame(9900, "Suns", "Heat", 1, 2);
+			winner.clutchPlays = [
+				'<a href="#">Suns Star</a> made a game-winning layup with 2 seconds remaining.',
+			];
+			const recap = getAutoDayRecap({
+				season: 2026,
+				day,
+				playoffs: true,
+				games: [winner, seriesSlateGame(9910, "Bucks", "Jazz", 3, 0)],
+			});
+			assert.match(recap.split("\n")[0]!, /Bucks/, recap);
+		}
+	});
+
 	// "Pistons edge ahead of the Trail Blazers" headlined a 2-0 lead.
 	test("a two-game lead is not edging ahead", () => {
 		let sawUp = false;
