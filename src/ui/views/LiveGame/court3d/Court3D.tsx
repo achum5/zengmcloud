@@ -1223,8 +1223,10 @@ const Court3D = ({
 				// in and out across the floor the same way.)
 				[s.camY, s.camVY] = follow(s.camY, s.camVY, aim.y, CAM_ZOOM, secs);
 				[s.camZ, s.camVZ] = follow(s.camZ, s.camVZ, aim.z ?? 2, CAM_ZOOM, secs);
+				// (Never in tighter than the whole floor - but for a shot that
+				// asks for it, a free throw.)
 				if (fit) {
-					s.camW = Math.max(s.camW, fit.min);
+					s.camW = Math.max(s.camW, Math.min(fit.min, aim.width));
 				}
 				s.camX = Math.min(
 					COURT_W + 12 - s.camW / 2,

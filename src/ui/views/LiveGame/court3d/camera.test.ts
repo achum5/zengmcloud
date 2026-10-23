@@ -81,6 +81,61 @@ describe("3D camera", () => {
 			}
 		}
 	}, 60_000);
+
+	// A free throw is shot from in close - the shooter at the line, the men
+	// along the lane and the rim filling the picture, all of them in it -
+	// not from as far out as the whole floor takes. Zooming in on it, the
+	// aim goes on smoothly from the whole floor's.
+	test("a free throw: in close on the shooter, the lane and the rim", () => {
+		const body = bodyOf();
+		for (const [w, h] of [
+			[1280, 720],
+			[800, 600],
+		] as const) {
+			const fit = courtFit(w / h);
+			assert.isBelow(
+				Math.abs(fit.y(fit.min - 0.3) - fit.y(fit.min)),
+				0.3,
+				`${w}x${h}`,
+			);
+			let shots = 0;
+			for (const seed of ["a", "b"]) {
+				const { tl, players, events } = game(seed);
+				for (const b of tl.beats) {
+					if (b.type !== "ft" && b.type !== "missFt") {
+						continue;
+					}
+					const shooter = (events[b.i] as { pid?: number }).pid;
+					// Set at the line, just before he lets it go.
+					const t = b.actionStart - 1500;
+					const m = momentAt(tl, t, players, () => body);
+					const aim = aimFor(m, false, tl, fit);
+					assert.isBelow(aim.width, fit.min * 0.8);
+					const cam = makeCamera(aim, w, h, MAIN_RIG);
+					const at = `${seed} ${w}x${h} @${Math.round(t)}`;
+					const rimX = m.ball.x < COURT_W / 2 ? 5.25 : COURT_W - 5.25;
+					const inside = (p: { x: number; y: number }, what: string) => {
+						assert.isAbove(p.x, 0, `${what} ${at}`);
+						assert.isBelow(p.x, w, `${what} ${at}`);
+						assert.isAbove(p.y, 0, `${what} ${at}`);
+						assert.isBelow(p.y, h, `${what} ${at}`);
+					};
+					inside(project(cam, { x: rimX, y: 25, z: 10.4 }), "the rim");
+					for (const st of m.players) {
+						const lane =
+							st.pid === shooter ||
+							(Math.abs(st.x - rimX) < 15 && Math.abs(st.y - 25) < 9);
+						if (lane) {
+							inside(project(cam, { ...st, z: 0 }), `${st.pid}'s feet`);
+							inside(project(cam, { ...st, z: 7 }), `${st.pid}'s head`);
+						}
+					}
+					shots += 1;
+				}
+			}
+			assert.isAbove(shots, 6);
+		}
+	}, 60_000);
 });
 
 describe("3D boards", () => {

@@ -163,7 +163,10 @@ export const depthOf = (cam: Camera, p: Pt3): number =>
 // edge, and the far one, with the heads of the players on it, below the top.
 // For a picture of a given shape (width over height) that sets the narrowest
 // shot across the floor there can be, and - for any shot at least that wide -
-// the line across the floor to aim at.
+// the line across the floor to aim at. (In tighter than that - a free throw,
+// when nothing is going on out by the sidelines - it zooms in on the middle
+// of the floor: the line down the middle of it kept where the whole floor
+// has it.)
 const FIT_TOP = 0.05;
 const FIT_BOTTOM = 0.985;
 
@@ -191,6 +194,31 @@ const aimY = (aspect: number, width: number): number => {
 	return (lo + hi) / 2;
 };
 
+// In tighter than the whole floor: the aim that keeps the line down the
+// middle of the floor `at` (a share of the way down the picture) - where
+// the whole floor has it, and up to TIGHT_LOWER of the picture lower by a
+// shot TIGHT_OVER of the whole floor's width tighter.
+const TIGHT_LOWER = 0.085;
+const TIGHT_OVER = 0.33;
+const tightY = (aspect: number, width: number, at: number): number => {
+	let lo = -10;
+	let hi = COURT_H + 10;
+	for (let i = 0; i < 28; i++) {
+		const mid = (lo + hi) / 2;
+		const cam = makeCamera(
+			{ x: COURT_W / 2, width, y: mid },
+			aspect * 100,
+			100,
+		);
+		if (project(cam, { x: COURT_W / 2, y: COURT_H / 2, z: 0 }).y / 100 > at) {
+			lo = mid;
+		} else {
+			hi = mid;
+		}
+	}
+	return (lo + hi) / 2;
+};
+
 export type CourtFit = { min: number; y: (width: number) => number };
 const fits = new Map<number, CourtFit>();
 export const courtFit = (aspect: number): CourtFit => {
@@ -209,15 +237,39 @@ export const courtFit = (aspect: number): CourtFit => {
 				hi = mid;
 			}
 		}
+		const min = hi;
 		const ys = new Map<number, number>();
+		const tight = new Map<number, number>();
+		let middle: number | undefined;
 		fit = {
-			min: hi,
+			min,
 			y: (width) => {
-				const w = Math.round(Math.max(hi, width) * 4) / 4;
-				let y = ys.get(w);
+				if (width >= min) {
+					const w = Math.round(width * 4) / 4;
+					let y = ys.get(w);
+					if (y === undefined) {
+						y = aimY(a, Math.max(min, w));
+						ys.set(w, y);
+					}
+					return y;
+				}
+				if (middle === undefined) {
+					const cam = makeCamera(
+						{ x: COURT_W / 2, width: min, y: aimY(a, min) },
+						a * 100,
+						100,
+					);
+					middle =
+						project(cam, { x: COURT_W / 2, y: COURT_H / 2, z: 0 }).y / 100;
+				}
+				const w = Math.round(width * 4) / 4;
+				let y = tight.get(w);
 				if (y === undefined) {
-					y = aimY(a, w);
-					ys.set(w, y);
+					// (In closer, the middle of the floor a little lower in the
+					// picture, for room over the rim.)
+					const k = Math.min(1, Math.max(0, (min - w) / (min * TIGHT_OVER)));
+					y = tightY(a, Math.min(min, w), middle + TIGHT_LOWER * k);
+					tight.set(w, y);
 				}
 				return y;
 			},

@@ -1194,11 +1194,22 @@ export const aimFor = (
 		};
 	};
 	const { ball } = m;
-	// Free throws: on the shooter, the line and the rim.
+	// Free throws: in close on the shooter, the lane and the rim - tighter
+	// than the whole floor, with nothing going on out by the sidelines (see
+	// courtFit).
 	const beat = beatAt(tl, m.t);
 	if (beat && (beat.type === "ft" || beat.type === "missFt")) {
 		const left = ball.x < COURT_W / 2;
-		return framed(left ? 12.5 : COURT_W - 12.5, narrow ? 30 : 36);
+		const width = fit
+			? Math.max(FT_MIN_W, fit.min * FT_SHARE)
+			: narrow
+				? FT_WIDTH_NARROW
+				: FT_WIDTH;
+		return {
+			x: left ? FT_X : COURT_W - FT_X,
+			width,
+			y: fit ? fit.y(width) : 24,
+		};
 	}
 	// On the ball - but once the game is over, on the players: the
 	// handshakes, the bench out onto the floor, not the ball thrown up and
@@ -1247,6 +1258,16 @@ export const aimFor = (
 	x += (Math.min(ball.x + room, Math.max(ball.x - room, x)) - x) * on;
 	return framed(x, width);
 };
+
+// A free throw's shot: about two thirds as wide as the whole floor's (but
+// never narrower than FT_MIN_W feet, and these widths without one), and
+// where along the floor from the baseline - the rim and the shooter at the
+// line both well in it.
+const FT_SHARE = 0.66;
+const FT_MIN_W = 30;
+const FT_WIDTH = 42;
+const FT_WIDTH_NARROW = 34;
+const FT_X = 15;
 
 // How much the main camera is on the ball (0 to 1): all the way while the
 // game is on, easing off it from the final buzzer - whatever is done with
