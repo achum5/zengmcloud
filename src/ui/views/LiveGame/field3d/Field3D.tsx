@@ -32,7 +32,9 @@ import { drawFlag } from "./flag.ts";
 import { drawnBody, FIGURE_SCALE, footballBody, officialBody } from "./body.ts";
 import { makeFieldCamera, MAIN_RIG, REPLAY_RIG } from "./camera.ts";
 import { compileField, type FieldTimeline } from "./director.ts";
-import { momentAt, playAt } from "./evaluate.ts";
+import { momentAt, playAt, type HandsOf } from "./evaluate.ts";
+import { heldBall } from "./poses.ts";
+import { bodyPoint } from "./sculpt.ts";
 import {
 	fieldStyleFor,
 	paintEndZone,
@@ -87,7 +89,7 @@ import {
 	tvCameraGear,
 } from "./media.ts";
 import { tvCrewFor } from "./tv.ts";
-import { drawFieldPlayer } from "./sprite.ts";
+import { drawFieldPlayer, drawnPose } from "./sprite.ts";
 import { drawTags, type TagCover } from "./tags.ts";
 import { showerGear } from "./shower.ts";
 import { chainGear } from "./sticks.ts";
@@ -158,6 +160,22 @@ const drawnFootballBody = (hgt?: number, weight?: number) =>
 const drawnOfficialBody = (hgt?: number, weight?: number) =>
 	drawnBody(officialBody(hgt, weight));
 const DRAWN_DEFAULT = drawnFootballBody();
+
+// Where the ball a man has is drawn: in his hands, the way his picture has
+// him (see evaluate.ts) - for the ball to leave them, and get to them.
+const handsOfFor =
+	(bodyOf: (pid: number) => Body, fine: () => boolean): HandsOf =>
+	(st) => {
+		if (!st.ball) {
+			return undefined;
+		}
+		const { pose, yaw } = drawnPose(st, fine());
+		const at = bodyPoint(
+			{ x: st.x, y: st.y, z: st.z * FIGURE_SCALE, yaw },
+			heldBall(bodyOf(st.id), pose, st.ball).at,
+		);
+		return { x: at.x, y: at.y, z: at.z / FIGURE_SCALE };
+	};
 
 // Where the score bug and the line over it sit in the picture: what the
 // tags keep out from behind (see tags.ts).
@@ -548,6 +566,10 @@ const Field3D = ({
 		// time.
 		let fineOnAt = -Infinity;
 		let fineOffAt = -Infinity;
+		const handsOf = handsOfFor(
+			(pid) => bodies.current.get(pid) ?? DRAWN_DEFAULT,
+			() => sprites.fine === true,
+		);
 		const res = makeResolution(performance.now() + 1500);
 
 		const tick = (now: number, draw: boolean) => {
@@ -576,7 +598,7 @@ const Field3D = ({
 				canvas.height = fh;
 			}
 			const replay = s.replay;
-			const moment = momentAt(tl, replay ? replay.at : s.t);
+			const moment = momentAt(tl, replay ? replay.at : s.t, handsOf);
 			const aim = replay ? replayAim(moment, replay) : aimFor(moment);
 			// (Squarer, the picture takes in a little more of the field.)
 			const width = aim.width * (fw / fh < 1.5 ? 0.8 : 1);

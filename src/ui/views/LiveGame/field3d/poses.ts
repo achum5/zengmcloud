@@ -3224,6 +3224,8 @@ const unitV = (v: V3): V3 => {
 // tucked along his right forearm, its nose up out in front of his hand; in
 // both hands at his chest, nose up and out; cocked back in his throwing
 // hand, nose to the target.
+// (In both hands, how far out past their middle its own is, feet.)
+const HANDS_ON = 0.3;
 export const heldBall = (b: Body, q: Pose, hold: BallHold): HeldBall => {
 	const sk = skeleton(b, q);
 	const hand = sk.armR;
@@ -3252,14 +3254,16 @@ export const heldBall = (b: Body, q: Pose, hold: BallHold): HeldBall => {
 		};
 	}
 	if (hold === "hands") {
+		// (His hands on the back half of it, its nose out past them.)
 		const l = sk.armL.end;
+		const axis = unitV({ f: 0.75, s: 0, u: 0.65 });
 		return {
 			at: {
-				f: (hand.end.f + l.f) / 2 + BALL_R * 0.5,
+				f: (hand.end.f + l.f) / 2 + BALL_R * 0.5 + axis.f * HANDS_ON,
 				s: (hand.end.s + l.s) / 2,
-				u: (hand.end.u + l.u) / 2 + BALL_R * 0.3,
+				u: (hand.end.u + l.u) / 2 + BALL_R * 0.3 + axis.u * HANDS_ON,
 			},
-			axis: unitV({ f: 0.75, s: 0, u: 0.65 }),
+			axis,
 			laces: { f: 0, s: 0, u: 1 },
 		};
 	}

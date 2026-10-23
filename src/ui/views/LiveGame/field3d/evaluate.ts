@@ -1,4 +1,4 @@
-import { apartAt, apartOf } from "./apart.ts";
+import { apartAt, apartOf, type Sep } from "./apart.ts";
 import type { BallSeg, FieldTimeline, Leg, Play } from "./director.ts";
 import type { Pt, Pt3, Side } from "./geometry.ts";
 import { along, goes, paceAt } from "./pace.ts";
@@ -141,12 +141,66 @@ const flying = (
 	return { at, axis };
 };
 
+// Where the ball he has is drawn, his hands on it (the field's own
+// coordinates, as the ball's flight is - see drawnUp): for a ball thrown,
+// pitched or snapped to leave his hands, and get to the hands catching it.
+export type HandsOf = (st: FieldPlayerState) => Pt3 | undefined;
+
+// (Not off a kicker's foot: the ball is not in his hands.)
+const KICKED = new Set<Move>(["punt", "kick"]);
+type Fly = Extract<BallSeg, { kind: "fly" }>;
+const metBy = new WeakMap<Fly, { off: Pt3; on: Pt3 }>();
+const NONE: Pt3 = { x: 0, y: 0, z: 0 };
+
+// How far the flight's ends are from the hands it leaves and gets to.
+const handsMet = (
+	play: Play,
+	k: number,
+	apart: Map<number, Sep[]>,
+	handsOf: HandsOf,
+): { off: Pt3; on: Pt3 } => {
+	const s = play.ball[k] as Fly;
+	let met = metBy.get(s);
+	if (met) {
+		return met;
+	}
+	const gap = (
+		seg: BallSeg | undefined,
+		t: number,
+		end: Pt3,
+		thrown: boolean,
+	): Pt3 => {
+		const part =
+			seg?.kind === "held"
+				? play.parts.find((p) => p.pid === seg.pid)
+				: undefined;
+		const st = part ? stateOf(part, t, apart) : undefined;
+		const at =
+			st?.ball && !(thrown && KICKED.has(st.move)) ? handsOf(st) : undefined;
+		return at ? { x: at.x - end.x, y: at.y - end.y, z: at.z - end.z } : NONE;
+	};
+	const next = play.ball[k + 1];
+	met = {
+		off: gap(play.ball[k - 1], s.t0 - 1, s.from, true),
+		on:
+			next && Math.abs(next.t0 - s.t1) < 2
+				? gap(next, s.t1 + 1, s.to, false)
+				: NONE,
+	};
+	metBy.set(s, met);
+	return met;
+};
+
 const ballAt = (
-	segs: BallSeg[],
+	play: Play,
 	t: number,
 	players: FieldPlayerState[],
+	apart: Map<number, Sep[]>,
+	handsOf: HandsOf | undefined,
 ): { ball?: FieldMoment["ball"]; focus?: Pt3; carrier?: Side } => {
-	const s = segs[lastStarted(segs, t, (b) => b.t0)];
+	const segs = play.ball;
+	const k = lastStarted(segs, t, (b) => b.t0);
+	const s = segs[k];
 	if (!s) {
 		return {};
 	}
@@ -158,13 +212,112 @@ const ballAt = (
 	}
 	if (s.kind === "fly") {
 		const f = flying(s, t);
+		if (handsOf) {
+			// (Out of his hands and into the other man's, the whole way
+			// eased from the one to the other.)
+			const { off, on } = handsMet(play, k, apart, handsOf);
+			const u = s.t1 > s.t0 ? clamp01((t - s.t0) / (s.t1 - s.t0)) : 1;
+			f.at = {
+				x: f.at.x + off.x * (1 - u) + on.x * u,
+				y: f.at.y + off.y * (1 - u) + on.y * u,
+				z: f.at.z + off.z * (1 - u) + on.z * u,
+			};
+		}
 		return { ball: f, focus: f.at };
 	}
 	const p = players.find((x) => x.id === s.pid);
 	return p ? { focus: { x: p.x, y: p.y, z: 3.5 }, carrier: p.team } : {};
 };
 
-export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
+// Where one man is at t and what he is doing.
+const stateOf = (
+	part: { pid: number; team: Side; legs: Leg[] },
+	t: number,
+	apart: Map<number, Sep[]>,
+): FieldPlayerState | undefined => {
+	const legs = part.legs;
+	if (legs.length === 0) {
+		return undefined;
+	}
+	const k = lastStarted(legs, t, (l) => l.t0);
+	const l = legs[k]!;
+	const offset = (part.pid * 0.618) % 1;
+	// (Into a stand, still pulling up from the stretch before.)
+	const { on, u: eased } = paceAt(legs, k, t);
+	const pulling = on !== k;
+	const at = pointOf(legs[on]!, t, eased);
+	const aside = apartAt(apart.get(part.pid), t);
+	if (aside) {
+		at.x += aside.x;
+		at.y += aside.y;
+	}
+	// The way he faced coming into this leg, and how far he had come in
+	// strides.
+	let before = legs[0]!.yaw ?? 0;
+	let ran = 0;
+	let ranBefore = 0;
+	for (let j = 0; j < k; j++) {
+		const lj = legs[j]!;
+		before = yawOf(lj, before) + (lj.turn ?? 0);
+		ranBefore = ran;
+		ran = moveKind(lj.move) === "cycle" ? ran + lengthOf(lj) : 0;
+	}
+	let yaw = yawOf(l, before) + (l.turn ?? 0) * along(l, t);
+	const since = t - l.t0;
+	const prev = k > 0 ? legs[k - 1] : undefined;
+	if (prev && since < TURN_MS && !l.turn) {
+		yaw = lerpAngle(before, yaw, clamp01(since / TURN_MS));
+	}
+	// (Just changed what he is doing, his arms, or how he has the ball:
+	// eased out of what he was, his feet - the same stride - kept in
+	// step.)
+	let from: FieldPlayerState["from"];
+	if (
+		prev &&
+		since < BLEND_MS &&
+		(prev.move !== l.move ||
+			prev.arms !== l.arms ||
+			prev.ball !== l.ball ||
+			!prev.mirrored !== !l.mirrored)
+	) {
+		const striding = prev.move === l.move && moveKind(l.move) === "cycle";
+		from = {
+			move: prev.move as Move,
+			phase: striding
+				? phaseOf(l, t, offset, ran, eased)
+				: pulling
+					? phaseOf(prev, t, offset, ranBefore, eased)
+					: phaseOf(prev, prev.t1, offset, ranBefore),
+			...(prev.mirrored ? { mirrored: true } : {}),
+			w: 1 - clamp01(since / BLEND_MS),
+			...(prev.arms
+				? { arms: { move: prev.arms, phase: armsPhaseOf(prev, prev.t1) } }
+				: {}),
+			...(prev.ball ? { ball: prev.ball } : {}),
+		};
+	}
+	return {
+		id: part.pid,
+		team: part.team,
+		x: at.x,
+		y: at.y,
+		z: liftOf(l.move, phaseOf(l, t, offset, ran, eased)),
+		yaw,
+		move: l.move,
+		phase: phaseOf(l, t, offset, ran, eased),
+		...(l.mirrored ? { mirrored: true } : {}),
+		...(from ? { from } : {}),
+		...(l.ball ? { ball: l.ball } : {}),
+		...(l.arms ? { arms: { move: l.arms, phase: armsPhaseOf(l, t) } } : {}),
+		...(l.bare ? { bare: true as const } : {}),
+	};
+};
+
+export const momentAt = (
+	tl: FieldTimeline,
+	t: number,
+	handsOf?: HandsOf,
+): FieldMoment => {
 	const play = playAt(tl, t);
 	if (!play) {
 		return { t, play, players: [] };
@@ -180,84 +333,12 @@ export const momentAt = (tl: FieldTimeline, t: number): FieldMoment => {
 		...(play.coaches ?? []),
 		...(play.toss && t < play.toss.cut ? play.toss.men : []),
 	]) {
-		const legs = part.legs;
-		if (legs.length === 0) {
-			continue;
+		const st = stateOf(part, t, apart);
+		if (st) {
+			players.push(st);
 		}
-		const k = lastStarted(legs, t, (l) => l.t0);
-		const l = legs[k]!;
-		const offset = (part.pid * 0.618) % 1;
-		// (Into a stand, still pulling up from the stretch before.)
-		const { on, u: eased } = paceAt(legs, k, t);
-		const pulling = on !== k;
-		const at = pointOf(legs[on]!, t, eased);
-		const aside = apartAt(apart.get(part.pid), t);
-		if (aside) {
-			at.x += aside.x;
-			at.y += aside.y;
-		}
-		// The way he faced coming into this leg, and how far he had come in
-		// strides.
-		let before = legs[0]!.yaw ?? 0;
-		let ran = 0;
-		let ranBefore = 0;
-		for (let j = 0; j < k; j++) {
-			const lj = legs[j]!;
-			before = yawOf(lj, before) + (lj.turn ?? 0);
-			ranBefore = ran;
-			ran = moveKind(lj.move) === "cycle" ? ran + lengthOf(lj) : 0;
-		}
-		let yaw = yawOf(l, before) + (l.turn ?? 0) * along(l, t);
-		const since = t - l.t0;
-		const prev = k > 0 ? legs[k - 1] : undefined;
-		if (prev && since < TURN_MS && !l.turn) {
-			yaw = lerpAngle(before, yaw, clamp01(since / TURN_MS));
-		}
-		// (Just changed what he is doing, his arms, or how he has the ball:
-		// eased out of what he was, his feet - the same stride - kept in
-		// step.)
-		let from: FieldPlayerState["from"];
-		if (
-			prev &&
-			since < BLEND_MS &&
-			(prev.move !== l.move ||
-				prev.arms !== l.arms ||
-				prev.ball !== l.ball ||
-				!prev.mirrored !== !l.mirrored)
-		) {
-			const striding = prev.move === l.move && moveKind(l.move) === "cycle";
-			from = {
-				move: prev.move as Move,
-				phase: striding
-					? phaseOf(l, t, offset, ran, eased)
-					: pulling
-						? phaseOf(prev, t, offset, ranBefore, eased)
-						: phaseOf(prev, prev.t1, offset, ranBefore),
-				...(prev.mirrored ? { mirrored: true } : {}),
-				w: 1 - clamp01(since / BLEND_MS),
-				...(prev.arms
-					? { arms: { move: prev.arms, phase: armsPhaseOf(prev, prev.t1) } }
-					: {}),
-				...(prev.ball ? { ball: prev.ball } : {}),
-			};
-		}
-		players.push({
-			id: part.pid,
-			team: part.team,
-			x: at.x,
-			y: at.y,
-			z: liftOf(l.move, phaseOf(l, t, offset, ran, eased)),
-			yaw,
-			move: l.move,
-			phase: phaseOf(l, t, offset, ran, eased),
-			...(l.mirrored ? { mirrored: true } : {}),
-			...(from ? { from } : {}),
-			...(l.ball ? { ball: l.ball } : {}),
-			...(l.arms ? { arms: { move: l.arms, phase: armsPhaseOf(l, t) } } : {}),
-			...(l.bare ? { bare: true as const } : {}),
-		});
 	}
-	const { ball, focus, carrier } = ballAt(play.ball, t, players);
+	const { ball, focus, carrier } = ballAt(play, t, players, apart, handsOf);
 	const flags = play.flags
 		.filter((f) => t >= f.t0)
 		.map((f) => {
