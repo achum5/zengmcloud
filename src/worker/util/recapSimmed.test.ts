@@ -1128,4 +1128,27 @@ describe("simmed recaps", () => {
 			}
 		}
 	});
+
+	// "It was 95-95 going into the fourth. At one point the Magic led by
+	// 14." sent the reader back to a third quarter the story had left.
+	test("the losers' peak is not told after the quarter that followed it", () => {
+		for (const { gid, recap } of pairs) {
+			for (const para of recap.split("\n\n")) {
+				const sentences = para.split(/(?<=\.)\s+/);
+				const into = sentences.findIndex((t) =>
+					/going into the fourth|entering the fourth|after three\b/.test(t),
+				);
+				if (into < 0) {
+					continue;
+				}
+				for (const t of sentences.slice(into + 1)) {
+					assert.notMatch(
+						t,
+						/^At one point the|had been up by \d+ at one stage\.$|^The [A-Z][\w ]+ led by as many as \d+\.$/,
+						`gid ${gid}\n${recap}`,
+					);
+				}
+			}
+		}
+	});
 });

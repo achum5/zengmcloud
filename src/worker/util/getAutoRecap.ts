@@ -7530,6 +7530,44 @@ const buildGameRecap = (game: RecapGame): string => {
 			finishAt += 1;
 			blown = undefined;
 		}
+		// A peak after the break is told in its quarter, in order: "It was
+		// 95-95 going into the fourth. At one point the Magic led by 14." sent
+		// the reader back to a third quarter the story had already left. A
+		// third-quarter peak goes before the score going into the fourth, a
+		// fourth-quarter one before the finish.
+		const lead = game.flow?.maxLead[sideOf(game, shape.loser)] ?? 0;
+		const enterNow = storyPara
+			.slice(0, finishAt)
+			.findIndex((t) => /going into the|entering the|after three\b/i.test(t));
+		if (
+			blown &&
+			/as many as|at one stage|At one point/.test(blown) &&
+			loserPeakAt > shape.regPeriods / 2 &&
+			loserPeakAt <= shape.regPeriods &&
+			storyPara.length < 7
+		) {
+			const L = cap(theNick(shape.loser));
+			const q = ordinal(loserPeakAt);
+			if (loserPeakAt < shape.regPeriods && enterNow >= 0) {
+				storyPara.splice(
+					enterNow,
+					0,
+					pick(
+						rng,
+						[
+							`${L} led by as many as ${lead} in the ${q}.`,
+							`${L} were up by as many as ${lead} in the ${q}.`,
+						],
+						"blownLeadQuarter",
+					),
+				);
+				finishAt += 1;
+				blown = undefined;
+			} else if (enterNow >= 0) {
+				// Told after the quarter's result, so looking back.
+				blown = `${L} had led by as many as ${lead} in the ${q}.`;
+			}
+		}
 		const big =
 			story.covers.has("winnerPeak") || /as many as|lead reached/.test(told)
 				? undefined
@@ -7545,9 +7583,62 @@ const buildGameRecap = (game: RecapGame): string => {
 			forGoodAt !== undefined &&
 			forGoodAt < wPeakAt &&
 			/for good|for the last time/.test(storyPara.slice(finishAt).join(" "));
+		// The winners' peak in its quarter too: "...but the Mavericks won the
+		// fourth 24-15. The Mavericks led by as many as 20." of a lead that
+		// peaked in the second.
+		let bigText = big;
+		if (
+			big &&
+			!peakLater &&
+			wPeakAt !== undefined &&
+			wPeakAt <= shape.regPeriods &&
+			/as many as \d+\.$|at one point\.$|at their biggest\.$/.test(big) &&
+			storyPara.length < 7
+		) {
+			const wLead = game.flow?.maxLead[sideOf(game, shape.winner)] ?? 0;
+			const W = cap(theNick(shape.winner));
+			const q = ordinal(wPeakAt);
+			const halfAt = storyPara.findIndex((t) =>
+				/halftime|at the half\b|the break|into the second half/.test(t),
+			);
+			const intoLast = storyPara
+				.slice(0, finishAt)
+				.findIndex((t) => /going into the|entering the|after three\b/i.test(t));
+			if (wPeakAt <= shape.regPeriods / 2 && halfAt >= 0) {
+				// After the halftime score, so looking back.
+				storyPara.splice(
+					halfAt + 1,
+					0,
+					`${W} had led by as many as ${wLead} in the ${q}.`,
+				);
+				finishAt += 1;
+				bigText = undefined;
+			} else if (
+				wPeakAt > shape.regPeriods / 2 &&
+				wPeakAt < shape.regPeriods &&
+				intoLast >= 0
+			) {
+				storyPara.splice(
+					intoLast,
+					0,
+					pick(
+						rng,
+						[
+							`${W} led by as many as ${wLead} in the ${q}.`,
+							`The lead reached ${wLead} in the ${q}.`,
+						],
+						"bigLeadQuarter",
+					),
+				);
+				finishAt += 1;
+				bigText = undefined;
+			} else if (wPeakAt === shape.regPeriods) {
+				bigText = `The lead reached ${wLead} in the ${q}.`;
+			}
+		}
 		for (const e of [
 			run && !storyPara.includes(run) && run !== otRun ? run : undefined,
-			big,
+			bigText,
 			blown,
 		]) {
 			if (e && storyPara.length < 7) {
