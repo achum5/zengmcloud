@@ -545,6 +545,13 @@ const GET_UP_MS = 1000;
 const READ_MS = 350;
 // A defender sees the ball thrown and breaks on it this long after.
 const BREAK_MS = 250;
+// A quarterback keeping it on a run (not a sneak): off a ride this often -
+// held out in the back's belly this long (ms), the back on past it this far
+// (feet) - and out round the edge, at least this far across (feet).
+const QB_RIDE = 0.8;
+const RIDE_MS = 450;
+const RIDE_PAST = 12;
+const RIDE_EDGE = 13;
 // A back kept in to block sets up this far in front of where the
 // quarterback sets and this far to his side of him (feet).
 const BACK_SET_UP = 4.5;
@@ -3559,11 +3566,20 @@ class Action {
 		const outside = !sneak && (toEdge || r() < 0.35);
 		const cs = this.of(carrier.at);
 		const sweep = spotOf(carrier.role) !== "back" && carrier !== qb;
+		// The quarterback keeping it (not a sneak), as a rule off a ride: the
+		// read option in the gun, a fake to the back under center - the back
+		// one way, and he the other, round the edge.
+		const rider =
+			carrier === qb && !sneak && r() < QB_RIDE
+				? this.o.find((m) => m.role === "RB" && !this.done.has(m.pid))
+				: undefined;
 		const holeA = sneak
 			? (r() - 0.5) * 3
 			: sweep
 				? -Math.sign(cs.a || 1) * (18 + r() * 6)
-				: strong * (outside ? 15 + r() * 6 : 2.5 + r() * 7);
+				: rider
+					? strong * (RIDE_EDGE + r() * 6)
+					: strong * (outside ? 15 + r() * 6 : 2.5 + r() * 7);
 		const blockersBack = this.statPids("rba", "rbw");
 		// Up front: a sneak, outside zone on a run to the edge - or inside,
 		// zone, or now and then power.
@@ -3644,6 +3660,47 @@ class Action {
 			this.ball.push({ kind: "held", t0: mesh, pid: carrier.pid });
 		}
 
+		if (rider) {
+			const way = -strong;
+			const riderMesh = this.w(
+				gun ? { d: qs.d + 0.5, a: way * 2.5 } : { d: qs.d - 7, a: way * 3 },
+			);
+			const qbRide = this.w({
+				...this.of(riderMesh),
+				a: this.of(riderMesh).a - way * 2,
+			});
+			const rideT = Math.max(
+				has + 180 + (dist(qb.at, qbRide) / 19) * 1000 + r() * 150,
+				snap + 150 + (dist(rider.at, riderMesh) / (rider.top * 0.75)) * 1000,
+			);
+			qb.go(
+				qbRide,
+				rideT - RIDE_MS / 2,
+				gun ? "slide" : "back",
+				this.toward(qb.at, riderMesh),
+			);
+			qb.act("handOff", rideT + RIDE_MS / 2, this.toward(qbRide, riderMesh));
+			// (The back on with his fake into the line, and pulled up.)
+			rider.hold(snap + 150);
+			rider.go(riderMesh, rideT, "run", this.toward(rider.at, riderMesh));
+			const rm = this.of(riderMesh);
+			const past = this.w({ d: rm.d + RIDE_PAST, a: rm.a + way * 3 });
+			rider.go(
+				past,
+				rideT + (RIDE_PAST / (rider.top * 0.7)) * 1000,
+				"run",
+				this.ahead,
+			);
+			rider.arms("fakeCarry", rideT - 200, rideT + 500);
+			rider.go(
+				this.w({ d: rm.d + RIDE_PAST + 3, a: rm.a + way * 4 }),
+				rider.t + 500,
+				"jog",
+			);
+			rider.hold(rider.t + 600, "stand");
+			this.done.add(rider.pid);
+		}
+
 		// Through the hole and on to where the sim says he was brought
 		// down.
 		let across = holeA + (r() - 0.5) * (yds > 8 ? 30 : 8);
@@ -3689,9 +3746,12 @@ class Action {
 			// Met in the backfield.
 			t = carrier.run(end.pt, carrier.top * 0.6);
 		} else {
-			// Pressing the hole, patient - then through it (on a sweep,
-			// flat out for the edge; on outside zone, hard for it).
-			carrier.run(holePt, carrier.top * (sweep ? 0.88 : outside ? 0.76 : 0.64));
+			// Pressing the hole, patient - then through it (on a sweep or a
+			// keeper, flat out for the edge; on outside zone, hard for it).
+			carrier.run(
+				holePt,
+				carrier.top * (sweep || rider ? 0.88 : outside ? 0.76 : 0.64),
+			);
 			t = carrier.run(
 				end.pt,
 				carrier.top * (yds > 3 ? 0.88 : 0.55),
