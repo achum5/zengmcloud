@@ -4135,10 +4135,23 @@ const ballOn = (
 											body,
 										);
 							const then = evalPlayer(tl, seg.pid, origin - BEFORE);
-							return {
+							const held = {
 								x: was.x + st.x - then.x,
 								y: was.y + st.y - then.y,
 								z: was.z,
+							};
+							// (His hand on it as his arms come down off holding
+							// it: pushed down out of where he had it, not let
+							// drop away from under his hands.)
+							const on = st.from && st.from.w > 0 ? st.from.w : 0;
+							if (on >= 1) {
+								return held;
+							}
+							const p = underHand(st, body, hand);
+							return {
+								x: p.x + (held.x - p.x) * on,
+								y: p.y + (held.y - p.y) * on,
+								z: p.z + (held.z - p.z) * on,
 							};
 						})()
 					: underHand(st, body, hand);
