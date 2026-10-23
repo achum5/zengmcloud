@@ -2597,7 +2597,7 @@ describe("3D director", () => {
 	test("a pull-up three off a ball screen comes off the screen first", () => {
 		let n = 0;
 		const stood: string[] = [];
-		for (const seed of ["a", "b", "c", "d"]) {
+		for (const seed of ["a", "b", "c", "d", "e"]) {
 			const { tl } = compile(seed, 150);
 			const tracks = [...tl.tracks.values()];
 			for (const s of tl.ball) {

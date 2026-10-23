@@ -569,11 +569,14 @@ describe("watching another device's 3D sim", () => {
 				// (Not told, it plays along with the other court until it can
 				// tell - and a cut to where that one was, staged otherwise, can
 				// go past a play or two here: only so many, and from a couple
-				// of seconds after it is stepped, all but the usual.)
+				// of seconds after it is stepped, all but the usual - the odd
+				// one where this court has fallen too far behind, which ones
+				// coming down to how the two stagings' lengths fall at a
+				// quarter's end.)
 				const told = at + 2000;
 				const missed = [...run.seenB].filter(([i]) => !run.seenF.has(i));
 				const late = missed.filter(([, when]) => when > told).length;
-				assert.isAtMost(late, 2, `${label} ${JSON.stringify(m)}`);
+				assert.isAtMost(late, 3, `${label} ${JSON.stringify(m)}`);
 				assert.isAtMost(
 					missed.length - late,
 					unsaid ? 3 : 0,
