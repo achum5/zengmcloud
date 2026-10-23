@@ -251,8 +251,13 @@ const tipAt = (u: number) =>
 
 // A man's hand on the cooler as he is drawn - his right, or (the second
 // man) his left.
-const handOf = (st: FieldPlayerState, body: Body, second: boolean): Pt3 => {
-	const { pose, yaw } = drawnPose(st);
+const handOf = (
+	st: FieldPlayerState,
+	body: Body,
+	second: boolean,
+	fine: boolean,
+): Pt3 => {
+	const { pose, yaw } = drawnPose(st, fine);
 	const sk = skeleton(body, pose);
 	return bodyPoint(
 		{ x: st.x, y: st.y, z: st.z, yaw },
@@ -292,11 +297,16 @@ const inDump = (sh: Shower, u: number, k: 0 | 1): FieldPlayerState => ({
 	...(k === 1 ? { mirrored: true as const } : {}),
 });
 
-const dumpCooler = (sh: Shower, u: number, bodies: [Body, Body]): Cooler => {
+const dumpCooler = (
+	sh: Shower,
+	u: number,
+	bodies: [Body, Body],
+	fine: boolean,
+): Cooler => {
 	const fwd = { x: Math.cos(sh.yaw), y: Math.sin(sh.yaw) };
 	return between(
-		handOf(inDump(sh, u, 0), bodies[0], false),
-		handOf(inDump(sh, u, 1), bodies[1], true),
+		handOf(inDump(sh, u, 0), bodies[0], false, fine),
+		handOf(inDump(sh, u, 1), bodies[1], true, fine),
 		tipAt(u),
 		fwd,
 	);
@@ -315,6 +325,7 @@ const coolerAt = (
 	a: FieldPlayerState | undefined,
 	b: FieldPlayerState | undefined,
 	bodies: [Body, Body],
+	fine: boolean,
 ): Cooler | null => {
 	const fwd = { x: Math.cos(sh.yaw), y: Math.sin(sh.yaw) };
 	const u = (t - sh.dump) / DUMP_MS;
@@ -323,15 +334,15 @@ const coolerAt = (
 			return null;
 		}
 		return between(
-			handOf(a, bodies[0], false),
-			handOf(b, bodies[1], true),
+			handOf(a, bodies[0], false, fine),
+			handOf(b, bodies[1], true, fine),
 			u > 0 ? tipAt(u) : 0,
 			fwd,
 		);
 	}
 	// (Let go: down, turning as it falls, onto its side - along the
 	// sideline, its mouth toward the first of them.)
-	const was = dumpCooler(sh, LET_GO, bodies);
+	const was = dumpCooler(sh, LET_GO, bodies, fine);
 	const c = centerOf(was);
 	const fall = Math.sqrt((2 * Math.max(0, c.z - R)) / G);
 	const s = (t - sh.dump - DUMP_MS * LET_GO) / 1000;
@@ -382,7 +393,7 @@ const pourOf = (sh: Shower, bodies: [Body, Body], coach: Body): Drop[] => {
 	const placed = { x: sh.at.x, y: sh.at.y, z: 0, yaw: sh.yaw };
 	for (let i = 0; i < DROPS; i++) {
 		const u = POUR_FROM + ((POUR_TO - POUR_FROM) * (i + r())) / DROPS;
-		const c = dumpCooler(sh, u, bodies);
+		const c = dumpCooler(sh, u, bodies, false);
 		const mouth = (k: number, a: number) => {
 			// (A point across its mouth.)
 			const e = across(c.axis);
@@ -713,6 +724,8 @@ export const showerGear = (
 	cam: Camera,
 	m: FieldMoment,
 	bodyOf: (pid: number) => Body,
+	// (The men drawn in finer steps: see sprite.ts.)
+	fine = false,
 ): Item[] => {
 	const sh = m.play?.postgame?.shower;
 	if (!sh) {
@@ -723,7 +736,7 @@ export const showerGear = (
 	const a = m.players.find((p) => p.id === sh.men[0]);
 	const b = m.players.find((p) => p.id === sh.men[1]);
 	const items: Item[] = [];
-	const c = coolerAt(sh, t, a, b, bodies);
+	const c = coolerAt(sh, t, a, b, bodies, fine);
 	if (c) {
 		const poured = t > sh.dump + DUMP_MS * POUR_FROM;
 

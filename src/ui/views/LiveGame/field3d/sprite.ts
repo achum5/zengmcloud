@@ -25,8 +25,9 @@ import { sculptFigure, type Figure } from "./sculpt.ts";
 // court3d/sprite.ts, whose cache this shares): each sculpted on a sheet of
 // his own at the picture's resolution, a soft dark rim round him, stamped
 // into the picture and kept for the next time the same pose comes round.
-// His animation runs in frames and he turns in 24 directions, so the same
-// few pictures come round again and again, and a whole formation set in its
+// His animation runs in frames and he turns in 24 directions (twice as many
+// of each with time to spare, the way the court does it), so the same few
+// pictures come round again and again, and a whole formation set in its
 // stances costs a picture apiece.
 
 export type FieldPlayerState = {
@@ -66,23 +67,24 @@ type Blend = {
 	ball?: BallHold;
 };
 
-const CYCLE_FRAMES = 12;
-const ACT_FRAMES = 20;
-const TURNS = 24;
-const BLEND_STEPS = 4;
+// In so many steps: a stride's frames, an act's, the ways he faces, and a
+// blend from one move into the next - or, with time to spare on the device
+// (see Field3D), twice as many of each, so he moves the more smoothly.
+type Steps = { cycle: number; act: number; turns: number; blend: number };
+const COARSE: Steps = { cycle: 12, act: 20, turns: 24, blend: 4 };
+const FINE: Steps = { cycle: 24, act: 40, turns: 48, blend: 8 };
 
-const frameOf = (m: Move, phase: number): number => {
+const frameOf = (m: Move, phase: number, k: Steps): number => {
 	const kind = moveKind(m);
 	if (kind === "still") {
 		return 0;
 	}
 	if (kind === "act") {
 		return (
-			Math.round(Math.min(1, Math.max(0, phase)) * (ACT_FRAMES - 1)) /
-			(ACT_FRAMES - 1)
+			Math.round(Math.min(1, Math.max(0, phase)) * (k.act - 1)) / (k.act - 1)
 		);
 	}
-	return Math.floor((((phase % 1) + 1) % 1) * CYCLE_FRAMES) / CYCLE_FRAMES;
+	return Math.floor((((phase % 1) + 1) % 1) * k.cycle) / k.cycle;
 };
 
 // His pose, stepped to the sprite's frames: what he is doing, blended with
@@ -94,36 +96,35 @@ type Stepped = {
 	from: Blend | undefined;
 	arms: { move: Move; phase: number } | undefined;
 };
-const stepped = (st: FieldPlayerState): Stepped => {
-	const turn = Math.round(st.yaw / ((Math.PI * 2) / TURNS));
+const stepped = (st: FieldPlayerState, k: Steps): Stepped => {
+	const turn = Math.round(st.yaw / ((Math.PI * 2) / k.turns));
 	const f = st.from;
 	const fw =
 		f && f.w > 0.12
-			? Math.min(BLEND_STEPS - 1, Math.max(1, Math.round(f.w * BLEND_STEPS))) /
-				BLEND_STEPS
+			? Math.min(k.blend - 1, Math.max(1, Math.round(f.w * k.blend))) / k.blend
 			: 0;
 	return {
-		phase: frameOf(st.move, st.phase),
+		phase: frameOf(st.move, st.phase, k),
 		turn,
-		yaw: (turn * Math.PI * 2) / TURNS,
+		yaw: (turn * Math.PI * 2) / k.turns,
 		from:
 			f && fw > 0
 				? {
 						...f,
-						phase: frameOf(f.move, f.phase),
+						phase: frameOf(f.move, f.phase, k),
 						w: fw,
 						...(f.arms
 							? {
 									arms: {
 										move: f.arms.move,
-										phase: frameOf(f.arms.move, f.arms.phase),
+										phase: frameOf(f.arms.move, f.arms.phase, k),
 									},
 								}
 							: {}),
 					}
 				: undefined,
 		arms: st.arms
-			? { move: st.arms.move, phase: frameOf(st.arms.move, st.arms.phase) }
+			? { move: st.arms.move, phase: frameOf(st.arms.move, st.arms.phase, k) }
 			: undefined,
 	};
 };
@@ -163,11 +164,13 @@ const poseFor = (st: FieldPlayerState, s: Stepped): Pose => {
 };
 
 // How he is drawn, the way the sprite has him: his pose and the way he
-// faces (to the nearest of its turns).
+// faces (to the nearest of its turns) - in the finer steps, if he is drawn
+// in them.
 export const drawnPose = (
 	st: FieldPlayerState,
+	fine = false,
 ): { pose: Pose; yaw: number } => {
-	const s = stepped(st);
+	const s = stepped(st, fine ? FINE : COARSE);
 	return { pose: poseFor(st, s), yaw: s.yaw };
 };
 
@@ -210,7 +213,9 @@ export const drawFieldPlayer = (
 	if (right < 0 || left > cam.viewW || lower < 0 || upper > cam.viewH) {
 		return;
 	}
-	const step = stepped(st);
+	const fine = cache?.fine === true;
+	const steps = fine ? FINE : COARSE;
+	const step = stepped(st, steps);
 	const { phase, turn, from, arms } = step;
 	const scale = Math.round(Math.log(k) / Math.log(1.04));
 	let key: string | undefined;
@@ -221,7 +226,7 @@ export const drawFieldPlayer = (
 		if (known === undefined) {
 			cache.ids.set(look, id);
 		}
-		key = `fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}|${((turn % TURNS) + TURNS) % TURNS}|${scale}|${px}|${st.ball ?? ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
+		key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
 			from
 				? `|${from.move}${from.mirrored ? "m" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}`
 				: ""

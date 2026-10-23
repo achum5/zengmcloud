@@ -116,6 +116,13 @@ const CAM_ZOOM = 2.4;
 // The most of a frame (ms) given to drawing players in poses not drawn
 // before; over that, a man waits a frame for his new one (see sprite.ts).
 const SPRITE_BUDGET_MS = 6;
+// Drawing a frame in under this long (ms, smoothed), there is time for the
+// men's poses in finer steps (see sprite.ts); over that, back to the usual
+// ones - and not tried again for a while.
+const FINE_ON_MS = 5;
+const FINE_OFF_MS = 11;
+const FINE_RETRY_MS = 20_000;
+const FINE_SETTLE_MS = 3000;
 // How long the play-by-play may disagree with the roster before the field
 // gives up on the game (ms).
 const ROSTER_WAIT = 5000;
@@ -537,6 +544,10 @@ const Field3D = ({
 		const scratch = makeScratch();
 		let sprites = makeSpriteCache();
 		sprites.budget = SPRITE_BUDGET_MS;
+		// When finer poses were last taken up, and last given up for want of
+		// time.
+		let fineOnAt = -Infinity;
+		let fineOffAt = -Infinity;
 		const res = makeResolution(performance.now() + 1500);
 
 		const tick = (now: number, draw: boolean) => {
@@ -661,7 +672,7 @@ const Field3D = ({
 				...cameraGear(ctx, view, snappers, body),
 				...tvCameraGear(ctx, view, moment.players, body),
 				...waterGear(ctx, view, moment.players, body),
-				...showerGear(ctx, view, moment, body),
+				...showerGear(ctx, view, moment, body, sprites.fine === true),
 			);
 			for (const f of moment.flags ?? []) {
 				items.push({
@@ -702,6 +713,28 @@ const Field3D = ({
 				releaseSprites(sprites);
 				sprites = makeSpriteCache();
 				sprites.budget = SPRITE_BUDGET_MS;
+			}
+			// Time to spare, at the finest picture: poses in finer steps - and
+			// back to the usual ones well before that costs a size.
+			const spare = res.drawMs;
+			if (res.coarser > 0 || spare === undefined) {
+				sprites.fine = false;
+			} else if (
+				!sprites.fine &&
+				spare < FINE_ON_MS &&
+				now - fineOffAt > FINE_RETRY_MS
+			) {
+				sprites.fine = true;
+				fineOnAt = now;
+			} else if (
+				sprites.fine &&
+				spare > FINE_OFF_MS &&
+				// (Not over the first few seconds of them: every pose is new then,
+				// and drawn for the first time.)
+				now - fineOnAt > FINE_SETTLE_MS
+			) {
+				sprites.fine = false;
+				fineOffAt = now;
 			}
 			// Into and out of black across a cut.
 			const dip = dipRef.current;
