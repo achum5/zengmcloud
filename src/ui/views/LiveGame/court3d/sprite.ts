@@ -400,20 +400,40 @@ const blendStep = (v: number, k: Steps) =>
 	v > 0.12
 		? Math.min(k.blend - 1, Math.max(1, Math.round(v * k.blend))) / k.blend
 		: 0;
+// Short steps, getting going or pulling up (see shortSteps): each leg's
+// stride in sixths of a full one.
+const LEN_STEPS = 4;
+const lenStep = (
+	len: [number, number] | undefined,
+): [number, number] | undefined => {
+	if (!len) {
+		return undefined;
+	}
+	const by = (x: number) => Math.max(1, Math.round(x * LEN_STEPS)) / LEN_STEPS;
+	const r = by(len[0]);
+	const l = by(len[1]);
+	return r >= 1 && l >= 1 ? undefined : [r, l];
+};
 // His legs on a stride, in the stride's frames and the blend's steps.
-const stepStride = (s: Stride, k: Steps): Stride => ({
-	anim: s.anim,
-	phase: frameOf(s.anim, s.phase, k),
-	w: Math.round(s.w * k.blend) / k.blend,
-});
+const stepStride = (s: Stride, k: Steps): Stride => {
+	const len = lenStep(s.len);
+	return {
+		anim: s.anim,
+		phase: frameOf(s.anim, s.phase, k),
+		w: Math.round(s.w * k.blend) / k.blend,
+		...(len ? { len } : {}),
+	};
+};
 const strideKey = (s: Stride | undefined): string =>
-	s ? `s${s.anim}${s.phase}~${s.w}` : "";
+	s ? `s${s.anim}${s.phase}~${s.w}${s.len ? `~${s.len}` : ""}` : "";
 const stepBlend = (f: Blend, w: number, k: Steps): Blend => {
 	const g = f.from;
 	const gw = g ? blendStep(g.w, k) : 0;
+	const len = lenStep(f.stepLen);
 	return {
 		anim: f.anim,
 		phase: frameOf(f.anim, f.phase, k),
+		...(len ? { stepLen: len } : {}),
 		dribble: dribbleFrame(f.dribble, k),
 		dribbleHand: f.dribbleHand,
 		...(f.dribbleFrom ? { dribbleFrom: f.dribbleFrom } : {}),
@@ -440,7 +460,7 @@ const stepBlend = (f: Blend, w: number, k: Steps): Blend => {
 	};
 };
 const blendKey = (f: Blend): string =>
-	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.dribbleFrom ?? ""}${f.tight ? `t${f.tight}` : ""}${strideKey(f.stride)}${f.held ? "h" : ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.turns ?? ""}~${f.pivot ?? ""}~${f.down ?? ""}~${f.way ?? ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
+	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.stepLen ? `l${f.stepLen}` : ""}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.dribbleFrom ?? ""}${f.tight ? `t${f.tight}` : ""}${strideKey(f.stride)}${f.held ? "h" : ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.turns ?? ""}~${f.pivot ?? ""}~${f.down ?? ""}~${f.way ?? ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
 
 // The pose he is drawn in: his own, stepped to the sprite's frames and turns
 // - and, easing out of his last move, a few steps of that.
@@ -471,6 +491,7 @@ const stepped = (st: PlayerState, k: Steps) => {
 				? undefined
 				: Math.floor(st.grip * k.blend) / k.blend,
 		phase: frameOf(st.anim, st.phase, k),
+		stepLen: lenStep(st.stepLen),
 		turn: ((turn % k.turns) + k.turns) % k.turns,
 		yaw: (turn * Math.PI * 2) / k.turns,
 		dribble: dribbleFrame(st.dribble, k),
@@ -559,7 +580,7 @@ const planOf = (
 		const f = pose.from;
 		const a = pose.arm;
 		plan.id = id;
-		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
+		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
 			f ? `|${blendKey(f)}` : ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 	}
@@ -606,6 +627,7 @@ const make = (
 		...st,
 		z: 0,
 		phase: pose.phase,
+		stepLen: pose.stepLen,
 		yaw: pose.yaw,
 		dribble: pose.dribble,
 		tight: pose.tight,

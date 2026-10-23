@@ -1,6 +1,6 @@
 import { assert, describe, test } from "vitest";
 import { bodyPoint, evalPlayer, poseOf, withBody } from "./evaluate.ts";
-import { type AnimName, bodyOf, skeleton } from "./poses.ts";
+import { type AnimName, bodyOf, legPhases, skeleton } from "./poses.ts";
 import { compile } from "./testGame.ts";
 
 describe("footwork", () => {
@@ -69,6 +69,17 @@ describe("footwork", () => {
 		assert.isBelow(slide, 0.5);
 	}, 120_000);
 
+	// Getting going from a standstill, or pulling up to one, his strides keep
+	// a beat - short, quick steps - not one long stride gone through in slow
+	// motion while he glides; and a foot down still stays where it is.
+	test("setting off and pulling up, short quick steps - no slow-motion stride", () => {
+		const { slow, slowMo, travel, slide } = goingSlow();
+		assert.isAbove(slow, 2000);
+		assert.isBelow(slowMo / slow, SLOW_MO_MOST, `${slowMo} of ${slow}`);
+		assert.isAbove(travel, 2000);
+		assert.isBelow(slide / travel, SLIDE_MOST);
+	}, 240_000);
+
 	// Backpedalling, then turned and away: his legs come round under him
 	// over a couple of steps - not a foot swung from behind him to out in
 	// front of him in a frame or two as his hips go round.
@@ -79,6 +90,84 @@ describe("footwork", () => {
 		assert.isBelow(worst, 1.2);
 	}, 240_000);
 });
+
+const RUNNING = new Set<AnimName>(["run", "jog", "sprint", "dribble"]);
+// (Before short steps: 0.71 of them, and 0.065 ft a foot.)
+const SLOW_MO_MOST = 0.15;
+const SLIDE_MOST = 0.06;
+
+// Running (any pace) over the first fifteen minutes of a game, frame by
+// frame: the frames he goes 1 to 6 ft a second, and of those the ones his
+// strides go round slower than 0.6 a second; and how far he went with a
+// foot in its time down, and how far that foot slid along the floor (the
+// least of the two, both down; not easing in or out of something else).
+const goingSlow = () => {
+	const body = bodyOf();
+	const STEP = 32;
+	const tl = (game ??= compile("a", 140).tl);
+	let slow = 0;
+	let slowMo = 0;
+	let travel = 0;
+	let slide = 0;
+	for (const tr of tl.tracks.values()) {
+		let prev:
+			| {
+					x: number;
+					y: number;
+					phase: number;
+					anim: AnimName;
+					feet: { x: number; y: number }[];
+					down: boolean[];
+			  }
+			| undefined;
+		for (let t = 0; t < Math.min(tl.end, 900_000); t += STEP) {
+			const st = evalPlayer(tl, tr.pid, t);
+			if (!st.shown || !RUNNING.has(st.anim)) {
+				prev = undefined;
+				continue;
+			}
+			const me = withBody(st, body);
+			const sk = skeleton(body, poseOf(me));
+			const feet = [bodyPoint(me, sk.legR.end), bodyPoint(me, sk.legL.end)];
+			const legs = legPhases(st.anim, st.phase)!;
+			// (In its time down, not just landing or leaving the floor.)
+			const down = [legs.r, legs.l].map(
+				(phi) => phi > 0.02 && phi < legs.duty - 0.02,
+			);
+			if (prev && prev.anim === st.anim) {
+				const d = Math.hypot(st.x - prev.x, st.y - prev.y);
+				const v = (d * 1000) / STEP;
+				if (v >= 1 && v < 6) {
+					slow += 1;
+					if (((st.phase - prev.phase) * 1000) / STEP < 0.6) {
+						slowMo += 1;
+					}
+				}
+				const both = [0, 1].filter(
+					(i) =>
+						down[i] && prev!.down[i] && Math.abs(st.phase - prev!.phase) < 0.3,
+				);
+				if (
+					both.length > 0 &&
+					d > 0.02 &&
+					!(st.from !== undefined && st.from.w > 0.05)
+				) {
+					travel += d;
+					slide += Math.min(
+						...both.map((i) =>
+							Math.hypot(
+								feet[i]!.x - prev!.feet[i]!.x,
+								feet[i]!.y - prev!.feet[i]!.y,
+							),
+						),
+					);
+				}
+			}
+			prev = { x: st.x, y: st.y, phase: st.phase, anim: st.anim, feet, down };
+		}
+	}
+	return { slow, slowMo, travel, slide };
+};
 
 // Every turn out of a backpedal into a run in the first fifteen minutes of
 // a game, frame by frame through it: how many there were, the frames a foot

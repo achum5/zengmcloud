@@ -5518,6 +5518,170 @@ export const poseAt = (anim: AnimName, phase: number): Pose => {
 	return lerpPose(a.pose(i0), a.pose((i0 + 1) % a.n), p - i0);
 };
 
+// SHORT, QUICK STEPS.
+//
+// Getting going from a standstill, or pulling up to one, a man takes short
+// quick steps - his legs never stuck partway through one long stride while
+// he glides off, or slowly finishing it as he stops. Each gait has a beat
+// its steps keep up even going slowly (strides a second); below the pace
+// that makes a full stride at that beat, each stride is that much shorter:
+// his legs swing that much less about how they stand with a foot down under
+// him (his arms, swinging free, about how they hang on average), and he is
+// up off the floor that much less - though a foot up still clears it.
+const STEP_BEAT: Partial<Record<AnimName, number>> = {
+	sprint: 1.3,
+	run: 1.2,
+	jog: 0.95,
+	walk: 0.7,
+	dribble: 1,
+	dribbleWalk: 0.7,
+	carry: 0.7,
+	drift: 0.85,
+	back: 0.95,
+	slide: 0.95,
+};
+// The beat (strides a second; nothing, for steps that keep none).
+export const stepBeat = (anim: AnimName): number => STEP_BEAT[anim] ?? 0;
+// How long his strides are going at pace v (feet a second), as a share of a
+// full one.
+export const stepLength = (anim: AnimName, v: number): number => {
+	const beat = STEP_BEAT[anim];
+	const a: Anim = ANIMS[anim];
+	return beat === undefined || a.kind !== "cycle"
+		? 1
+		: Math.min(1, Math.max(0, v) / (beat * a.stride));
+};
+const gaitModeOf = (anim: AnimName): GaitMode | undefined =>
+	STEP_BEAT[anim] === undefined
+		? undefined
+		: anim === "back" || anim === "slide"
+			? "backpedal"
+			: (anim as GaitMode);
+// Where each leg is through its own stride (0 as its foot comes down, see
+// legAt) `ph` through his - a backpedal's run backward - and how much of a
+// stride a foot is down; nothing, for steps that are not a gait's.
+export const legPhases = (
+	anim: AnimName,
+	ph: number,
+): { r: number; l: number; duty: number; back: boolean } | undefined => {
+	const mode = gaitModeOf(anim);
+	if (!mode) {
+		return undefined;
+	}
+	const back = anim === "back";
+	const q = back ? -ph : ph;
+	return { r: frac(q), l: frac(q + 0.5), duty: GAITS[mode].duty, back };
+};
+// A gait's pose on average through a stride: what his free arms swing about.
+const meanPoses = new Map<AnimName, Pose>();
+const MEAN_SAMPLES = 24;
+const meanPose = (anim: AnimName): Pose => {
+	let m = meanPoses.get(anim);
+	if (!m) {
+		const qs = Array.from({ length: MEAN_SAMPLES }, (_, i) =>
+			poseAt(anim, i / MEAN_SAMPLES),
+		);
+		const out = { ...qs[0]! };
+		for (const k of Object.keys(out) as (keyof Pose)[]) {
+			out[k] = qs.reduce((sum, q) => sum + q[k], 0) / MEAN_SAMPLES;
+		}
+		m = out;
+		meanPoses.set(anim, m);
+	}
+	return m;
+};
+// A leg with its foot down right under his hips, as a gait has it.
+const underHips = new Map<GaitMode, Leg>();
+const underHip = (mode: GaitMode): Leg => {
+	let leg = underHips.get(mode);
+	if (!leg) {
+		const g = GAITS[mode];
+		leg = legAt(mode, g.ahead * g.duty);
+		underHips.set(mode, leg);
+	}
+	return leg;
+};
+const SWING_ARMS: (keyof Pose)[] = [
+	"shN",
+	"elN",
+	"abN",
+	"shF",
+	"elF",
+	"abF",
+	"twist",
+];
+// (His arms swing with his stride only when they are free: not on the ball,
+// nor held in his stance.)
+const FREE_ARMS = new Set<AnimName>(["sprint", "run", "jog", "walk"]);
+// (A foot up still clears the floor, however short the step: through the
+// middle of its swing his knee keeps this much more of its lift, and his
+// hip a little of its drive.)
+const KNEE_KEEP = 0.6;
+const HIP_KEEP = 0.2;
+// Each leg through its swing, as a lift (0 with its foot down).
+const swingLift = (phi: number, duty: number, back: boolean): number =>
+	phi < duty
+		? 0
+		: Math.sin((Math.PI * (back ? 1 - phi : phi - duty)) / (1 - duty));
+// His pose with each leg's stride that share of a full one - right, left -
+// `ph` through his strides.
+export const shortSteps = (
+	q: Pose,
+	anim: AnimName,
+	len: [number, number] | undefined,
+	ph: number,
+): Pose => {
+	const mode = gaitModeOf(anim);
+	if (!len || !mode || (len[0] >= 1 && len[1] >= 1)) {
+		return q;
+	}
+	const legs = legPhases(anim, ph)!;
+	const n = underHip(mode);
+	const out = { ...q };
+	const leg = (
+		hip: "hipN" | "hipF",
+		knee: "kneeN" | "kneeF",
+		toe: "toeN" | "toeF",
+		phi: number,
+		k: number,
+	) => {
+		const lift = swingLift(phi, legs.duty, legs.back);
+		const kh = k + (1 - k) * HIP_KEEP * lift;
+		const kk = k + (1 - k) * KNEE_KEEP * lift;
+		out[hip] = n.hip + (q[hip] - n.hip) * kh;
+		out[knee] = n.knee + (q[knee] - n.knee) * kk;
+		out[toe] = q[toe] * k;
+	};
+	leg("hipN", "kneeN", "toeN", legs.r, len[0]);
+	leg("hipF", "kneeF", "toeF", legs.l, len[1]);
+	const both = (len[0] + len[1]) / 2;
+	out.toe = q.toe * both;
+	if (FREE_ARMS.has(anim)) {
+		const m = meanPose(anim);
+		for (const k of SWING_ARMS) {
+			out[k] = m[k] + (q[k] - m[k]) * both;
+		}
+	}
+	return out;
+};
+// How high off the floor short steps take him (see bounceAt): his lower
+// foot's height - a foot down, up on its toes as it pushes off.
+export const shortLift = (
+	anim: AnimName,
+	len: [number, number],
+	ph: number,
+): number => {
+	const mode = gaitModeOf(anim);
+	if (!mode) {
+		return 0;
+	}
+	const legs = legPhases(anim, ph)!;
+	const high = (phi: number, k: number) =>
+		Math.max(0, legAt(mode, phi).z) *
+		(k + (1 - k) * KNEE_KEEP * swingLift(phi, legs.duty, legs.back));
+	return Math.min(high(legs.r, len[0]), high(legs.l, len[1]));
+};
+
 // Which frame of an animation shows at a moment: an act by how far through it
 // is, a cycle by how far the body has run, a loop by the clock.
 export const actFrame = (anim: AnimName, u: number): number => {
