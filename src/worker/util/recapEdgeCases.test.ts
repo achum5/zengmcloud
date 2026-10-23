@@ -2257,3 +2257,92 @@ describe("not 'for the Lakers' twice running", () => {
 		assert.deepEqual(spareForThe(apart), apart);
 	});
 });
+
+// "Evan Foster, who came in averaging 14.7 points a game, racked up 27
+// points and 7 assists on 10-of-15 shooting as the Rockets stunned the
+// Thunder in Game 1 of the First Round despite 33 points and 12 assists from
+// Darius Jackson" - 42 words. The average goes in a lede with room for it,
+// and otherwise in the body.
+describe("a lede with room for the average", () => {
+	const make = (gid: number, threes: number, playoffs: boolean) => {
+		const home = squad(
+			{ tid: 1, name: "Rockets" },
+			{
+				name: "Evan Foster",
+				pid: 11,
+				pts: 30,
+				fg: 11,
+				fga: 22,
+				tp: threes,
+				tpa: 10,
+				ft: 8 - threes,
+				fta: 9,
+				seasonAvg: {
+					gp: 20,
+					min: 30,
+					pts: 14.7,
+					reb: 4,
+					ast: 3,
+					stl: 1,
+					blk: 0,
+					tov: 2,
+					fgp: 44,
+					tpp: 35,
+					ftp: 80,
+				},
+			},
+			112,
+		);
+		const away = squad(
+			{ tid: 2, name: "Thunder" },
+			{ name: "Bo Thunder", pid: 21, pts: 22, fg: 9, fga: 20 },
+			101,
+		);
+		return game([home, away], {
+			gid,
+			playoffs,
+			...(playoffs
+				? {
+						series: {
+							round: 1,
+							numRounds: 4,
+							bestOf: 7,
+							homeAbbrev: home.abbrev,
+							awayAbbrev: away.abbrev,
+							homeWon: 0,
+							awayWon: 0,
+						},
+					}
+				: {}),
+		});
+	};
+
+	test("not beside a flourish or a series, and the body tells it", () => {
+		let roomy = 0;
+		for (let gid = 1; gid <= 30; gid++) {
+			for (const [threes, playoffs] of [
+				[6, false],
+				[2, true],
+				[2, false],
+			] as const) {
+				const g = make(gid, threes, playoffs);
+				const recap = getAutoRecap(g);
+				clean(recap);
+				const body = recap.split("\n\n").slice(1);
+				// The lede, or the star's own sentence after a result lede.
+				const lead = body[0]!;
+				if (threes === 6 || playoffs) {
+					assert.notInclude(lead, "who came in averaging", recap);
+				} else if (lead.includes("who came in averaging")) {
+					roomy += 1;
+				}
+				assert.isAtMost(recap.match(/14\.7/g)?.length ?? 0, 1, recap);
+				if (threes === 6 && !playoffs) {
+					assert.include(recap, "14.7", recap);
+				}
+				assert.deepEqual(verifyRecap(recap, g), [], recap);
+			}
+		}
+		assert.isAbove(roomy, 0);
+	});
+});

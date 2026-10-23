@@ -3145,8 +3145,22 @@ const leadSentence = (
 	const line = enteringLine(star, game.playoffs);
 
 	let subject = star.name;
-	// Occasionally frame the star against the average he came in with.
-	if (line && star.pts >= line.pts + 12 && star.pts >= 24 && rng() < 0.6) {
+	// Occasionally frame the star against the average he came in with - in a
+	// lede with room for it. Beside a shooting flourish, a streak or a
+	// series, it made the longest ledes on the page: "Evan Foster, who came
+	// in averaging 14.7 points a game, racked up 27 points and 7 assists on
+	// 10-of-15 shooting as the Rockets stunned the Thunder in Game 1 of the
+	// First Round despite 33 points and 12 assists from Darius Jackson" -
+	// 42 words, and the median of the 20 that had it was 31. The body tells
+	// the average then ("Evan Foster nearly doubled his 14.7-point average").
+	const roomy = flourish === undefined && tail === "" && !game.playoffs;
+	if (
+		line &&
+		star.pts >= line.pts + 12 &&
+		star.pts >= 24 &&
+		rng() < 0.6 &&
+		roomy
+	) {
 		subject = `${star.name}, who came in averaging ${line.pts} points a game,`;
 	} else if (star.rookie && star.pts >= 20 && rng() < 0.5) {
 		// "Rookie Jalen Green scored 24" - the word a desk puts on a
