@@ -70,6 +70,53 @@ const drawTriangle = (
 	ctx.restore();
 };
 
+// THE PICTURE FROM FURTHER OFF. Shrunk on the screen to fewer pixels than
+// it has - the far side of the floor, the stands, a smaller picture - each
+// pixel of the screen would take just one of the picture's and skip those
+// in between: a plank's seam there in one frame and gone the next, the
+// floor crawling as the camera moves. So each picture is also kept halved
+// across, down or both (up to MAX_LEVEL times each way), every pixel the
+// average of the ones it stands for, made the first time it is wanted -
+// and each row of the screen drawn from the one with about a pixel of it
+// to a pixel of the screen. (The pictures drawn this way are painted once
+// - the building's a game, see ArenaPaint, and the stadium's in field3d -
+// and never changed after, so these never go stale.)
+const MAX_LEVEL = 2;
+const levels = new WeakMap<HTMLCanvasElement, Map<number, HTMLCanvasElement>>();
+const levelOf = (
+	img: HTMLCanvasElement,
+	lx: number,
+	ly: number,
+): HTMLCanvasElement => {
+	if (lx === 0 && ly === 0) {
+		return img;
+	}
+	let made = levels.get(img);
+	if (!made) {
+		made = new Map();
+		levels.set(img, made);
+	}
+	const key = lx * (MAX_LEVEL + 1) + ly;
+	let out = made.get(key);
+	if (!out) {
+		// Halved one way from the one a step finer: each pixel the average
+		// of two.
+		const down = ly > 0;
+		const from = down ? levelOf(img, lx, ly - 1) : levelOf(img, lx - 1, ly);
+		out = document.createElement("canvas");
+		out.width = down ? from.width : Math.max(1, Math.ceil(from.width / 2));
+		out.height = down ? Math.max(1, Math.ceil(from.height / 2)) : from.height;
+		const g = out.getContext("2d")!;
+		g.imageSmoothingEnabled = true;
+		g.drawImage(from, 0, 0, out.width, out.height);
+		made.set(key, out);
+	}
+	return out;
+};
+// Which of them for so many of the picture's pixels to one of the screen's.
+const levelFor = (perPixel: number) =>
+	perPixel >= 2 ? Math.min(MAX_LEVEL, Math.floor(Math.log2(perPixel))) : 0;
+
 // A plane whose rows run straight along the court, seen by a camera that
 // faces straight across it (the broadcast camera, which slides along the
 // sideline without turning): each row of the picture is one row of the
@@ -118,23 +165,29 @@ const drawRows = (
 		const k = cam.f / dep0;
 		const x0 = cam.cx + (o.x - p.x) * k;
 		const perU = ax.x * k;
+		const pic = levelOf(
+			img,
+			levelFor(img.width / Math.abs(perU * plane.w)),
+			levelFor(img.height / Math.abs(yB - yA)),
+		);
 		ctx.save();
 		ctx.globalAlpha *= alpha;
 		ctx.transform(perU, 0, 0, (yB - yA) / plane.h, x0, yA);
-		ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, plane.w, plane.h);
+		ctx.drawImage(pic, 0, 0, pic.width, pic.height, 0, 0, plane.w, plane.h);
 		ctx.restore();
 		return true;
 	}
 	const top = Math.max(0, Math.floor(Math.min(yA, yB)));
 	const bottom = Math.min(cam.viewH, Math.ceil(Math.max(yA, yB)));
-	const sx = img.width / plane.w;
-	const sy = img.height / plane.h;
+	// The plane's row at the middle of a row of the picture.
+	const vAt = (r: number) => {
+		const c = cam.cy - (r + 0.5);
+		return (cam.f * up0 - c * dep0) / (c * depV - cam.f * upV);
+	};
 	ctx.save();
 	ctx.globalAlpha *= alpha;
 	for (let r = top; r < bottom; r++) {
-		// The plane's row at the middle of this row of the picture.
-		const c = cam.cy - (r + 0.5);
-		const v = (cam.f * up0 - c * dep0) / (c * depV - cam.f * upV);
+		const v = vAt(r);
 		if (!(v >= 0 && v < plane.h)) {
 			continue;
 		}
@@ -147,15 +200,24 @@ const drawRows = (
 		if (right - left < 0.5) {
 			continue;
 		}
+		// Drawn from the picture with about a pixel of it to the screen's,
+		// across and down.
+		const pic = levelOf(
+			img,
+			levelFor(img.width / plane.w / Math.abs(perU)),
+			levelFor((img.height / plane.h) * Math.abs(vAt(r + 1) - v)),
+		);
+		const sx = pic.width / plane.w;
+		const sy = pic.height / plane.h;
 		const u0 = (left - x0) / perU;
 		const u1 = (right - x0) / perU;
 		const su = Math.min(u0, u1) * sx;
 		const sw = Math.max(0.5, Math.abs(u1 - u0) * sx);
 		ctx.drawImage(
-			img,
+			pic,
 			su,
-			Math.min(img.height - 1, Math.floor(v * sy)),
-			Math.min(sw, img.width - su),
+			Math.min(pic.height - 1, Math.floor(v * sy)),
+			Math.min(sw, pic.width - su),
 			1,
 			left,
 			r,
