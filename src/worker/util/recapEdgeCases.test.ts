@@ -2725,3 +2725,115 @@ describe("the standings once there are some", () => {
 		}
 	});
 });
+
+// "Suns end a 7-game skid" over a body whose roundup filled up before the
+// Suns' game came round; "Keegan Brooks triple-doubles" over "Keegan
+// Brooks' 37 points, 13 rebounds, and 13 assists came in the Celtics' loss".
+describe("every deck game is told, and a triple-double by name", () => {
+	const NAMES = [
+		"Hawks",
+		"Kings",
+		"Suns",
+		"Jazz",
+		"Bulls",
+		"Nets",
+		"Heat",
+		"Magic",
+		"Knicks",
+		"Lakers",
+		"Bucks",
+		"Spurs",
+		"Pacers",
+		"Nuggets",
+		"Hornets",
+		"Pistons",
+		"Clippers",
+		"Rockets",
+		"Celtics",
+		"Raptors",
+	];
+	const pair = (i: number, w: number, l: number, day: number) => {
+		const home = squad(
+			{ tid: i * 2 + 1, name: NAMES[i * 2]! },
+			{ name: `Ace ${NAMES[i * 2]}`, pid: i * 20 + 11, pts: 20 + (i % 4) },
+			w,
+		);
+		const away = squad(
+			{ tid: i * 2 + 2, name: NAMES[i * 2 + 1]! },
+			{ name: `Bo ${NAMES[i * 2 + 1]}`, pid: i * 20 + 21, pts: 17 },
+			l,
+		);
+		return game([home, away], { gid: 300 + i, day });
+	};
+
+	test("a deck's skid-ender is told on a full night", () => {
+		let told = 0;
+		for (let day = 1; day <= 12; day++) {
+			const games = Array.from({ length: 10 }, (_, i) =>
+				pair(i, 110 + (i % 5), 100 + (i % 3), day),
+			);
+			// The Suns end a seven-game skid in a plain 10-point win, the
+			// quietest game of a ten-game night: the others' best men score
+			// 24 to 33.
+			games.forEach((g, i) => {
+				g.teams[0].players[0]!.pts = 24 + i;
+			});
+			games[1]!.teams[0].players[0]!.pts = 12;
+			games[1]!.teams[0].streakBefore = { won: false, count: 7 };
+			const wrap = getAutoDayRecap({
+				season: 2025,
+				day,
+				playoffs: false,
+				games,
+			});
+			clean(wrap);
+			const [, deck = ""] = wrap.split("\n\n");
+			if (/Suns end/.test(deck)) {
+				told += 1;
+				const body = wrap.split("\n\n").slice(2).join(" ");
+				assert.match(body, /Suns/, wrap);
+				assert.match(body, /seven-game|7-game/, wrap);
+			}
+		}
+		assert.isAbove(told, 0);
+	});
+
+	test("a losing triple-double is called one", () => {
+		let told = 0;
+		for (let day = 1; day <= 12; day++) {
+			const games = Array.from({ length: 4 }, (_, i) =>
+				pair(i, 112 + i, 104, day),
+			);
+			// The Kings' man: 37, 13 and 13 in an 8-point loss.
+			games[0]!.teams[1].players[0] = {
+				...games[0]!.teams[1].players[0]!,
+				pts: 37,
+				reb: 13,
+				ast: 13,
+				fg: 14,
+				fga: 26,
+			};
+			const wrap = getAutoDayRecap({
+				season: 2025,
+				day,
+				playoffs: false,
+				games,
+			});
+			clean(wrap);
+			const body = wrap
+				.split("\n\n")
+				.slice(1)
+				.filter((p) => !p.startsWith("*"))
+				.join(" ");
+			if (body.includes("37 points")) {
+				told += 1;
+				assert.match(
+					body,
+					/triple-double[^.]*37 points|37 points[^.]*triple-double/,
+					wrap,
+				);
+			}
+		}
+		assert.isAbove(told, 0);
+	});
+});

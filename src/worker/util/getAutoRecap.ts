@@ -10926,7 +10926,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	// over "Isaiah Ellis had a night-high 36 points... in the Pistons'
 	// 123-106 loss to the Hawks", and the 20 never came up - 13 deck items
 	// in 100. The man's line carries it, once: "...loss to the Hawks, who
-	// came back from 20 down".
+	// rallied from 20 down", "...loss to the Kings, 6-point underdogs".
 	const reasonTold = new Set<RecapGame>();
 	const deckReason = (g: RecapGame, won: boolean): string => {
 		const kind = deckResult?.reasons.get(g);
@@ -10938,14 +10938,14 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			const down = comebackSize(analyzeShape(g));
 			return won
 				? ` after trailing by ${down}`
-				: `, who came back from ${down} down`;
+				: `, who rallied from ${down} down`;
 		}
 		const pts = g.spread?.points;
 		return pts === undefined
 			? ""
 			: won
 				? ` as ${pts}-point underdogs`
-				: `, who were ${pts}-point underdogs`;
+				: `, ${pts}-point underdogs`;
 	};
 	// "...beat the Clippers at the wire, 101-100, to even the series": a
 	// clause that ends on a set-off score closes it with a comma first.
@@ -11163,8 +11163,15 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 
 	// The day's leading scorer, when it isn't the marquee star already described.
 	if (topScorer && topScorer.p.pts >= 30 && !named.has(topScorer.p)) {
+		// A triple-double by name, here too.
+		const tdWord =
+			doubleCategories(topScorer.p).length >= 3
+				? doubleWord(doubleCategories(topScorer.p).length)
+				: undefined;
 		const line = withFlourish(
-			statPhrase(topScorer.p),
+			tdWord
+				? `${statPhrase(topScorer.p)} for a ${tdWord}`
+				: statPhrase(topScorer.p),
 			shootingFlourish(topScorer.p),
 			true,
 		);
@@ -11326,15 +11333,20 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			)
 				? ""
 				: `${scoreTag(lossShape)} `;
+			// A triple-double is always called one: "Keegan Brooks' 37 points,
+			// 13 rebounds, and 13 assists came in the Celtics' loss" under a
+			// deck that said "Keegan Brooks triple-doubles".
+			const lossLine =
+				doubleCategories(lossPerf.p).length >= 3
+					? `${doubleWord(doubleCategories(lossPerf.p).length)!} (${statPhrase(lossPerf.p)})`
+					: statPhrase(lossPerf.p);
 			para1.push(
 				mirror
-					? `${poss(lossPerf.p.name)} ${statPhrase(lossPerf.p)} came in a losing effort.`
+					? `${poss(lossPerf.p.name)} ${lossLine} came in a losing effort.`
 					: // Whose loss: "Bennedict Brooks' 27 points and 11 rebounds
 						// came in a 119-96 loss to the Mavericks" never said he
 						// played for the Nets (78 lines in 177 wraps).
-						`${poss(lossPerf.p.name)} ${statPhrase(
-							lossPerf.p,
-						)} came in ${poss(theNick(lossPerf.team))} ${scored}loss to ${theNick(lossPerf.opp)}${
+						`${poss(lossPerf.p.name)} ${lossLine} came in ${poss(theNick(lossPerf.team))} ${scored}loss to ${theNick(lossPerf.opp)}${
 							whoFor(lossPerf.game) || deckReason(lossPerf.game, false)
 						}.`,
 			);
@@ -11490,6 +11502,12 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 			blurb = `${theNick(shape.winner)} ${freshVerb(EDGE_VERBS, 0, usedVerbs)} ${theNick(
 				shape.loser,
 			)} ${scoreTag(shape)}`;
+		}
+		// A game the deck headlined is told, notable or not: "Suns end a
+		// 7-game skid" over a body whose roundup filled up before the Suns'
+		// game came round, and the skid was never mentioned below.
+		if (!blurb && deckOnly) {
+			blurb = roundupClause(g, shape, notableBlurbs.length, usedVerbs);
 		}
 		if (blurb) {
 			notableBlurbs.push(withDeckPerf(g, withTail(g, blurb)));
