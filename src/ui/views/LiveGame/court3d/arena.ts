@@ -107,6 +107,10 @@ export const FLOOR_EDGE = {
 	x1: COURT_W + END_BACK,
 	y1: END_Y1,
 };
+// (Each picture laid on them from its left to its right as seen from the
+// floor - the floor's y runs toward the camera: at the left end from the
+// near side to the far, at the right end from the far side to the near.
+// The other way, the boards' words came out backwards.)
 export const END_STANDS: [Plane, Plane] = [0, 1].map((side) => {
 	const s = side === 0 ? -1 : 1;
 	const x = side === 0 ? -END_BACK : COURT_W + END_BACK;
@@ -114,10 +118,10 @@ export const END_STANDS: [Plane, Plane] = [0, 1].map((side) => {
 		`endStands${side}`,
 		{
 			x: x + s * SLOPE * Math.cos(RAKE),
-			y: side === 0 ? END_Y0 : END_Y1,
+			y: side === 0 ? END_Y1 : END_Y0,
 			z: WALL_H + SLOPE * Math.sin(RAKE),
 		},
-		{ x: 0, y: side === 0 ? 1 : -1, z: 0 },
+		{ x: 0, y: side === 0 ? -1 : 1, z: 0 },
 		{ x: -s * Math.cos(RAKE), y: 0, z: -Math.sin(RAKE) },
 		END_Y1 - END_Y0,
 		SLOPE,
@@ -129,10 +133,10 @@ export const END_WALL: [Plane, Plane] = [0, 1].map((side) =>
 		`endWall${side}`,
 		{
 			x: side === 0 ? -END_BACK : COURT_W + END_BACK,
-			y: side === 0 ? END_Y0 : END_Y1,
+			y: side === 0 ? END_Y1 : END_Y0,
 			z: WALL_H,
 		},
-		{ x: 0, y: side === 0 ? 1 : -1, z: 0 },
+		{ x: 0, y: side === 0 ? -1 : 1, z: 0 },
 		{ x: 0, y: 0, z: -1 },
 		END_Y1 - END_Y0,
 		WALL_H,
