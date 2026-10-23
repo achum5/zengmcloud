@@ -80,6 +80,11 @@ const MOB_WIDTH = 96;
 // this, by the time the coin goes up.
 const TOSS_WIDE = 84;
 const TOSS_TIGHT = 52;
+// A timeout: in on the side that called it, the picture's middle this far
+// toward the near side of them (on the far sideline, this far).
+const TIMEOUT_WIDTH = 60;
+const TIMEOUT_UP = 8;
+const TIMEOUT_UP_FAR = 2;
 
 export const aimFor = (m: FieldMoment): Shot => {
 	const { play, t, focus } = m;
@@ -105,6 +110,15 @@ export const aimFor = (m: FieldMoment): Shot => {
 			x: toss.at.x,
 			width: TOSS_WIDE + (TOSS_TIGHT - TOSS_WIDE) * e,
 			y: across(toss.at.y),
+		};
+	}
+	// A timeout: on the side that called it, at its sideline.
+	const timeout = play.timeout;
+	if (timeout && t >= timeout.cut) {
+		return {
+			x: timeout.at.x,
+			width: TIMEOUT_WIDTH,
+			y: timeout.at.y + (timeout.at.y < MID_Y ? TIMEOUT_UP_FAR : TIMEOUT_UP),
 		};
 	}
 	// A man hurt: on him, and the trainers round him, and with him off.

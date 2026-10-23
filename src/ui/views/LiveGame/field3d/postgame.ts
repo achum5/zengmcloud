@@ -156,7 +156,7 @@ const freeAt = (legs: Leg[], t: number): number => {
 
 // Everything he does after t thrown away: what he was in the middle of cut
 // short there.
-const cutAt = (legs: Leg[], t: number) => {
+export const cutAt = (legs: Leg[], t: number) => {
 	while (legs.length > 1 && legs.at(-1)!.t0 >= t) {
 		legs.pop();
 	}

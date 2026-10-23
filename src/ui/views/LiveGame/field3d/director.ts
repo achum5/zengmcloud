@@ -52,6 +52,7 @@ import {
 import { foulsOf } from "./fouls.ts";
 import { stageChains, type ChainSpots } from "./chains.ts";
 import { holderAt, replayFor, type FieldReplay } from "./replays.ts";
+import { crewClear, stageTimeout } from "./timeout.ts";
 import { HURT_MOST, MEDICS, stageHurt } from "./hurt.ts";
 import { crewOff, stageHalftime, stagePostgame } from "./postgame.ts";
 import { stageTv } from "./tv.ts";
@@ -190,8 +191,12 @@ export type Play = {
 	// where, when the coin goes up, and when the picture cuts to the kick.
 	toss?: { men: CrewPart[]; at: Pt; flip: number; cut: number };
 	// The game over (see postgame.ts): the head coaches out to shake hands;
-	// from when it is, when they do, and where.
+	// from when it is, when they do, and where. (A timeout: the head coach
+	// of the side that called it out at the sideline.)
 	coaches?: CrewPart[];
+	// A timeout (see timeout.ts): when the picture cuts to the side that
+	// called it, and where it looks.
+	timeout?: { cut: number; at: Pt };
 	postgame?: {
 		from: number;
 		shake: number;
@@ -314,6 +319,12 @@ const RESULTS = new Set([
 	"turnoverOnDowns",
 	"shootoutShot",
 ]);
+// A timeout: the picture on to the side that called it no sooner than this
+// long after the ball is dead (and the moment after), after the referee's
+// signal, and after a replay is cued.
+const TIMEOUT_AFTER = 1800;
+const TIMEOUT_SAID = 1700;
+const TIMEOUT_AFTER_REPLAY = 400;
 // After the play: how long after the line before each is said.
 const AFTER_PLAY: Record<string, number> = {
 	penalty: 1600,
@@ -1333,6 +1344,58 @@ class Director {
 				r: this.rng(i0, "half"),
 			});
 		}
+		// A timeout (the two-minute warning too): the picture on to the side
+		// that called it, after the referee's signal - and any replay.
+		let calledI = -1;
+		if (!ended && !hurt && !half) {
+			for (let i = i0; i < i1; i++) {
+				const e = events[i];
+				if (e?.type === "timeout" || e?.type === "twoMinuteWarning") {
+					calledI = i;
+				}
+			}
+		}
+		const timeout =
+			calledI >= 0
+				? (() => {
+						const e = events[calledI]!;
+						const said =
+							this.beats.find((b) => b.i === calledI)?.actionStart ?? whistle;
+						const again = replayFor({
+							kind,
+							events,
+							beats: this.beats.filter((b) => b.i >= i0 && b.i < i1),
+							t0,
+							snap,
+							whistle,
+							...(acted?.until ? { until: acted.until } : {}),
+							t1: whistle + 60000,
+							ball,
+							fouled: fouls.some((f) => f.accepted),
+						});
+						return stageTimeout({
+							parts,
+							ball,
+							cut: Math.max(
+								offAt + TIMEOUT_AFTER,
+								said + TIMEOUT_SAID,
+								again ? again.cue + TIMEOUT_AFTER_REPLAY : 0,
+							),
+							team:
+								e.type === "timeout" && typeof e.t === "number"
+									? ((1 - e.t) as Side)
+									: offense,
+							spot: anyBall(ball, parts, offAt) ?? { x: losX, y: ballY },
+							t0,
+							playI: i0,
+							r: this.rng(i0, "timeout"),
+						});
+					})()
+				: undefined;
+		if (timeout) {
+			t1 = Math.max(t1, timeout.t1);
+			this.cuts.push(timeout.cut);
+		}
 		// Each line of the play ends where its own action does; the last one,
 		// with the play.
 		const last = this.beats.at(-1);
@@ -1400,6 +1463,9 @@ class Director {
 		}
 		if (half) {
 			crewOff(crew.parts, offAt, t1, this.rng(i0, "crewOff"));
+		}
+		if (timeout) {
+			crewClear(crew.parts, timeout, t1);
 		}
 		const chains = stageChains({
 			quarter,
@@ -1480,6 +1546,12 @@ class Director {
 							flip: toss.flip,
 							cut: toss.cut,
 						},
+					}
+				: {}),
+			...(timeout
+				? {
+						coaches: timeout.coaches,
+						timeout: { cut: timeout.cut, at: timeout.at },
 					}
 				: {}),
 			...(postgame

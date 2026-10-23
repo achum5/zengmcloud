@@ -245,6 +245,8 @@ const BACKER_UP = {
 	lean: 14,
 };
 const CLAP = { abN: -6, abF: -6, shF: 60, elF: 56 };
+// A play sheet held up at his chest, in his left hand.
+const SHEET = { shF: 34, elF: 104, abF: -18, wrF: 10 };
 const QB_SET = pose({
 	hipN: 12,
 	kneeN: 22,
@@ -2174,6 +2176,21 @@ const FIELD_ANIMS = {
 			[0.56, pose({ shN: 112, elN: 22, abN: -4 })],
 			[0.8, pose({ shN: 30, elN: 64, abN: 6, lean: 16 })],
 			[1, BASE],
+		],
+	},
+	// A coach going over it with a man: his play sheet held up at his chest in
+	// one hand, the other hand out, making his points with it.
+	coachTalk: {
+		kind: "act",
+		keys: [
+			[0, pose({ ...SHEET })],
+			[0.14, pose({ ...SHEET, shN: 34, elN: 84, abN: 6, lean: 6 })],
+			[0.28, pose({ ...SHEET, shN: 52, elN: 46, abN: 18, lean: 6, twist: 6 })],
+			[0.42, pose({ ...SHEET, shN: 36, elN: 80, abN: 4, lean: 8 })],
+			[0.58, pose({ ...SHEET, shN: 56, elN: 40, abN: 22, lean: 8, twist: -6 })],
+			[0.72, pose({ ...SHEET, shN: 40, elN: 74, abN: 8, lean: 6 })],
+			[0.86, pose({ ...SHEET, shN: 50, elN: 52, abN: 14, lean: 4 })],
+			[1, pose({ ...SHEET })],
 		],
 	},
 	shake: {
