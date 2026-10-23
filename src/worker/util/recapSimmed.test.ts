@@ -542,6 +542,38 @@ describe("simmed recaps", () => {
 		}
 	});
 
+	// "But 18 turnovers did them in" of a game the winners turned it over
+	// 16 times: a reason they lost has to be something they did worse.
+	test("a reason the losers lost is a difference between the teams", () => {
+		const total = (t: RecapTeam, k: "tov" | "fg" | "fga") =>
+			t.players.reduce((a, p) => a + p[k], 0);
+		let seen = 0;
+		for (const { gid, recap, game } of pairs) {
+			const { w, l } = sides(game);
+			if (
+				/did them in|proved costly|kept undoing|were far too many|coughed it up \d+|gave it away \d+ times|undone by \d+ turnovers|turnovers that beat|could not hold on to it/.test(
+					recap,
+				)
+			) {
+				seen += 1;
+				assert.isAtLeast(
+					total(l, "tov") - total(w, "tov"),
+					5,
+					`gid ${gid}\n${recap}`,
+				);
+			}
+			if (
+				/shot just [\d.]+% as a team|shot [\d.]+% from the floor|% shooting night for the team|never found the range|Shooting [\d.]+% was never/.test(
+					recap,
+				)
+			) {
+				const pct = (t: RecapTeam) => (100 * total(t, "fg")) / total(t, "fga");
+				assert.isAtLeast(pct(w) - pct(l), 4.9, `gid ${gid}\n${recap}`);
+			}
+		}
+		assert.isAtLeast(seen, 3);
+	});
+
 	// "Isaiah King strained his hamstring" at the bottom of a recap that had
 	// never named him left the reader to guess whose loss it was.
 	test("a man hurt in the game is told with his team unless already named", () => {

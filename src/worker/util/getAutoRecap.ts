@@ -3123,7 +3123,7 @@ const statNote = (
 			),
 		);
 	}
-	if (w.stl >= 10 && l.tov >= 21) {
+	if (w.stl >= 10 && l.tov >= 21 && l.tov - w.tov >= 5) {
 		add(
 			pick(
 				rng,
@@ -4197,6 +4197,28 @@ const loserSentence = (
 ): string | undefined => {
 	const best = bestOf(shape.loser.players);
 
+	// A REASON IS A DIFFERENCE. "But 18 turnovers did them in" of a game the
+	// winners turned it over 16 times blamed the loss on something both teams
+	// did - 225 of the 418 turnover reasons in a corpus run were that. A
+	// number is the reason they lost only when it is well worse than the
+	// winners'.
+	const lossStats = teamStats(shape.loser);
+	const winStats = teamStats(shape.winner);
+	const tovReason =
+		lossStats.tov >= 18 &&
+		lossStats.tov - winStats.tov >= 5 &&
+		!spent.has("loserTov");
+	const fgpReason =
+		lossStats.fga >= 20 &&
+		lossStats.fgp <= 40 &&
+		winStats.fgp - lossStats.fgp >= 5 &&
+		!spent.has("loserFgp");
+	const threesReason =
+		lossStats.tpa >= 25 &&
+		lossStats.tpp <= 28 &&
+		winStats.tpp - lossStats.tpp >= 8 &&
+		!spent.has("loserThrees");
+
 	// THE HEADLINE SUBJECT HAS TO BE IN THE STORY. Dropping him because the
 	// headline "already said it" produced recaps like "Isaac Adkins' 24 and 11
 	// not enough..." over a body that never mentions Adkins again - the surest
@@ -4205,12 +4227,11 @@ const loserSentence = (
 	// to the next man up, who at least is new information.
 	if (skipLeader && best) {
 		const stats = teamStats(shape.loser);
-		const why =
-			stats.tov >= 18 && !spent.has("loserTov")
-				? `, but ${theNick(shape.loser)} gave it away ${stats.tov} times`
-				: stats.fga >= 20 && stats.fgp <= 40 && !spent.has("loserFgp")
-					? `, but ${theNick(shape.loser)} shot ${stats.fgp}% as a team`
-					: "";
+		const why = tovReason
+			? `, but ${theNick(shape.loser)} gave it away ${stats.tov} times`
+			: fgpReason
+				? `, but ${theNick(shape.loser)} shot ${stats.fgp}% as a team`
+				: "";
 		// ALWAYS returns a sentence naming him. Returning undefined here is what
 		// left "Marko Jaric headlined but never appears" - the headline subject
 		// dropping out of his own story. Each rung adds something the headline
@@ -4261,7 +4282,7 @@ const loserSentence = (
 	// "reason" is appended after "...led the Loser", so it uses a pronoun rather
 	// than repeating the team name.
 	let reason = "";
-	if (stats.tov >= 18 && !spent.has("loserTov")) {
+	if (tovReason) {
 		reason = pick(
 			rng,
 			[
@@ -4274,7 +4295,7 @@ const loserSentence = (
 			],
 			"loserTov",
 		);
-	} else if (stats.fga >= 20 && stats.fgp <= 40 && !spent.has("loserFgp")) {
+	} else if (fgpReason) {
 		reason = pick(
 			rng,
 			[
@@ -4284,7 +4305,7 @@ const loserSentence = (
 			],
 			"loserFgp",
 		);
-	} else if (stats.tpa >= 25 && stats.tpp <= 28 && !spent.has("loserThrees")) {
+	} else if (threesReason) {
 		// Why they lost, in the same sentence as who tried hardest to stop it,
 		// instead of a bare "The Nets shot 25% from three on 32 attempts" two
 		// paragraphs away.
@@ -4404,7 +4425,7 @@ const loserSentence = (
 		);
 	}
 	// Name the team directly.
-	if (stats.tov >= 18 && !spent.has("loserTov")) {
+	if (tovReason) {
 		return pick(
 			rng,
 			[
@@ -4416,7 +4437,7 @@ const loserSentence = (
 			"loserTovAlone",
 		);
 	}
-	if (stats.fga >= 20 && stats.fgp <= 40 && !spent.has("loserFgp")) {
+	if (fgpReason) {
 		return pick(
 			rng,
 			[
