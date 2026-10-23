@@ -668,6 +668,12 @@ const BREAK_MS = 250;
 // his hands out to the ball, and not into each other. (Turned to it as he
 // goes there, side on, so he is facing it when the back gets there.)
 const MESH_APART = 3;
+// Out there to hand it off, or fake it: at no more than this pace (feet a
+// second), and over no less than this long (ms).
+const QB_STEP_FPS = 15;
+const QB_STEP_LEAST_MS = 150;
+const qbStepMs = (d: number) =>
+	Math.max(QB_STEP_LEAST_MS, (d / QB_STEP_FPS) * 1000);
 // A quarterback keeping it on a run (not a sneak): off a ride this often -
 // held out in the back's belly this long (ms), the back on past it this far
 // (feet) - and out round the edge, at least this far across (feet).
@@ -1616,7 +1622,10 @@ class Action {
 				a: this.of(meshPt).a - side * MESH_APART,
 			});
 			fakeT = Math.max(
-				has + 180 + (dist(qb.at, qbMesh) / 19) * 1000 + r() * 150,
+				Math.max(has, qb.t) +
+					PA_MS / 2 +
+					qbStepMs(dist(qb.at, qbMesh)) +
+					r() * 150,
 				snap + 150 + (dist(faker.at, meshPt) / (faker.top * 0.75)) * 1000,
 			);
 			qb.go(qbMesh, fakeT - PA_MS / 2, "slide", this.toward(qbMesh, meshPt));
@@ -4470,7 +4479,10 @@ class Action {
 				a: this.of(riderMesh).a - way * MESH_APART,
 			});
 			const rideT = Math.max(
-				has + 180 + (dist(qb.at, qbRide) / 19) * 1000 + r() * 150,
+				Math.max(has, qb.t) +
+					RIDE_MS / 2 +
+					qbStepMs(dist(qb.at, qbRide)) +
+					r() * 150,
 				snap + 150 + (dist(rider.at, riderMesh) / (rider.top * 0.75)) * 1000,
 			);
 			qb.go(

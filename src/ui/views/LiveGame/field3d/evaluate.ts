@@ -178,7 +178,9 @@ const stridesOf = (legs: Leg[], t0: number, n: number): Strides | undefined => {
 	const dt = TRACK_MS / 1000;
 	const w = Math.max(1, Math.round(PACE_MS / TRACK_MS));
 	for (let i = 0; i < n; i++) {
-		const j = gaitAt(i);
+		// (Striding at either end of the step, on it.)
+		const g = gaitAt(i);
+		const j = g >= 0 || i === 0 ? g : gaitAt(i - 1);
 		if (j >= 0) {
 			stride = strideOn[j]!;
 			beat = beatOn[j]!;

@@ -50,11 +50,22 @@ export const goes = (l: Leg) => l.from.x !== l.to.x || l.from.y !== l.to.y;
 
 const eases = (l: Leg) =>
 	goes(l) && l.t1 - l.t0 >= EASE_LEAST_MS && moveKind(l.move) === "cycle";
+// (An act on the move - a dive, a handoff, a man brought down - only ever
+// pulled up out of, into a stand.)
+const acts = (l: Leg) =>
+	goes(l) && l.t1 - l.t0 >= EASE_LEAST_MS && moveKind(l.move) === "act";
+// (Acts he does where he pulls up to, still coming to a stop as he starts
+// them.)
+const PULL_INTO = new Set<Move>(["swat", "handOff"]);
 
 // How long past a stretch's end he is still pulling up into the stand after
 // it (none if he runs on, or into an act of some kind).
 const stopOf = (l: Leg | undefined, next: Leg | undefined): number =>
-	!l || !eases(l) || (next && (goes(next) || moveKind(next.move) === "act"))
+	!l ||
+	!(eases(l) || acts(l)) ||
+	(next &&
+		(goes(next) ||
+			(moveKind(next.move) === "act" && !PULL_INTO.has(next.move))))
 		? 0
 		: Math.min(
 				STOP_MS / 2,
@@ -79,7 +90,8 @@ const EVEN: Pace = { g: 0, early: 0, a: 0, top: 1, h: 0, stop: 0 };
 export const paceOf = (legs: Leg[], k: number): Pace => {
 	const l = legs[k];
 	if (!l || !eases(l)) {
-		return EVEN;
+		const stop = l && acts(l) ? stopOf(l, legs[k + 1]) : 0;
+		return stop > 0 ? { ...EVEN, h: stop / (l!.t1 - l!.t0), stop } : EVEN;
 	}
 	const ms = l.t1 - l.t0;
 	const prev = legs[k - 1];
