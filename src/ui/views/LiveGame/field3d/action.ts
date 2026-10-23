@@ -84,6 +84,7 @@ export type Acted = {
 const OL = new Set<Role>(["C", "LG", "RG", "LT", "RT"]);
 const DL = new Set<Role>(["DE", "DT", "NT"]);
 const LB = new Set<Role>(["SAM", "MIKE", "WILL", "BUCK"]);
+const DB = new Set<Role>(["CB", "NB", "FS", "SS"]);
 const RECEIVERS = new Set<Role>([
 	"TE",
 	"TE2",
@@ -156,6 +157,21 @@ const onField = (p: Pt): Pt => ({
 	x: clamp(p.x, 1, FIELD_L - 1),
 	y: clamp(p.y, 1, FIELD_W - 1),
 });
+
+// Of `men`, the one nearest `p` - where each is at t, or by default at the
+// end of what he has so far.
+const closest = (men: Actor[], p: Pt, t?: number): Actor | undefined => {
+	let best: Actor | undefined;
+	let far = Infinity;
+	for (const m of men) {
+		const d = dist(t === undefined ? m.at : m.posAt(t), p);
+		if (d < far) {
+			far = d;
+			best = m;
+		}
+	}
+	return best;
+};
 
 // ---- one man's part, a stretch at a time ------------------------------------
 
@@ -441,6 +457,25 @@ const flightOf = (from: Pt, to: Pt): { ms: number; peak: number } => {
 };
 
 // ---- the play ----------------------------------------------------------------
+
+// The blocking on a run: zone (outside zone, to the edge), a power play
+// this often, or a sneak; a blocker this far off his man (feet), in beside
+// another on a double team this far over; a linebacker over to fill this
+// long after the snap (ms), at this much of his speed - and a blocker up
+// onto him at this much of his; a man beaten off the block this long after
+// (and up to this much longer); a receiver on a man off the ball this far
+// off at most (feet), winning it this often.
+type RunScheme = "zone" | "stretch" | "power" | "sneak";
+const POWER = 0.35;
+const BLOCK_GAP = 2.6;
+const DOUBLE_FT = 2.2;
+const FILL_MS = 1050;
+const FILL_PACE = 0.7;
+const CLIMB_PACE = 0.85;
+const SHED_MS = 550;
+const SHED_SPREAD = 350;
+const STALK_FAR = 36;
+const STALK_WON = 0.6;
 
 // After the whistle, how long a man down stays down, and getting up.
 const DOWN_MS = 900;
@@ -2823,6 +2858,15 @@ class Action {
 				? -Math.sign(cs.a || 1) * (18 + r() * 6)
 				: strong * (outside ? 15 + r() * 6 : 2.5 + r() * 7);
 		const blockersBack = this.statPids("rba", "rbw");
+		// Up front: a sneak, outside zone on a run to the edge - or inside,
+		// zone, or now and then power.
+		const scheme: RunScheme = sneak
+			? "sneak"
+			: outside || sweep
+				? "stretch"
+				: r() < POWER
+					? "power"
+					: "zone";
 
 		// The quarterback: a reverse pivot under center to hand it off
 		// deep, or a ride in the gun - and on with his fake. A receiver
@@ -2936,7 +2980,15 @@ class Action {
 		const down = end.td
 			? { by: [], t }
 			: this.downBy(carrier, end.pt, t, this.d);
-		this.runBlock(carrier, holeA, end.pt, down.t, blockersBack);
+		this.runBlock(
+			carrier,
+			holeA,
+			end.pt,
+			down.t,
+			blockersBack,
+			scheme,
+			down.by,
+		);
 		this.endCarry(
 			runI,
 			carrier,
@@ -2947,66 +2999,329 @@ class Action {
 		);
 	}
 
+	// Up front on a run, the sim's blocks: each man on the line on whoever
+	// is over him - driving him back if the sim has him win it, pushed back
+	// and beaten if not, the man he had off him in a moment to go after the
+	// ball; one with nobody over him up to the next level, onto a
+	// linebacker (or, none left, in on the double team beside him); on a
+	// power play the backside guard pulled round to the hole and up it, as
+	// a lead back goes up it, on whoever fills it; the receivers out onto
+	// the corners and safeties.
 	runBlock(
 		carrier: Actor,
 		holeA: number,
 		endPt: Pt,
 		t: number,
 		backBlockers: number[],
+		scheme: RunScheme,
+		tacklers: Actor[],
 	) {
-		const { snap, dir } = this.input;
+		const { snap } = this.input;
 		const r = this.r;
+		const won = new Set(this.statPids("rbw"));
+		const beat = (b: Actor) => backBlockers.length === 0 || won.has(b.pid);
 		const blockers = this.o.filter(
 			(m) =>
 				m !== carrier &&
 				!this.done.has(m.pid) &&
 				(OL.has(m.role) ||
 					backBlockers.includes(m.pid) ||
-					m.role === "TE" ||
-					m.role === "TE2"),
+					(backBlockers.length === 0 && (m.role === "TE" || m.role === "TE2"))),
 		);
-		const front = this.d.filter((m) => DL.has(m.role) && !this.done.has(m.pid));
+		const free = (m: Actor) => !this.done.has(m.pid) && !tacklers.includes(m);
 		const drive = this.of(endPt).d > 3 ? 4 : this.of(endPt).d < 0 ? -2 : 1;
 		const side = Math.sign(holeA) || 1;
 		const until = t + 300;
-		for (const b of blockers) {
+		const atHole = Math.min(this.reachesAt(carrier, 0), t);
+		// (Off a block to go after him as he goes by a man `d` deep, well
+		// before he is down.)
+		const offAt = (d: number) => {
+			const by = this.reachesAt(carrier, d - 3);
+			return by < t - 400 ? by + 150 : until;
+		};
+
+		// The first step, all as one: across to the hole on zone, flat down
+		// the line on outside zone, down away from the hole on power - and
+		// straight ahead into the pile on a sneak.
+		const pull =
+			scheme === "power"
+				? blockers.find(
+						(b) =>
+							(b.role === "LG" || b.role === "RG") &&
+							Math.sign(this.of(b.at).a) === -side,
+					)
+				: undefined;
+		const step =
+			scheme === "stretch"
+				? { d: 1.5, a: 4.5 * side }
+				: scheme === "power"
+					? { d: 3, a: -2 * side }
+					: scheme === "sneak"
+						? { d: 2.5, a: 0 }
+						: { d: 3, a: 2 * side };
+		const backs = blockers.filter((b) => b !== pull && this.of(b.at).d < -8);
+		const front = blockers.filter((b) => b !== pull && !backs.includes(b));
+		for (const b of front) {
 			const s = this.of(b.at);
 			b.hold(snap + 40);
-			const fire = { d: s.d + 3 + drive * 0.3, a: s.a + side * 2 };
-			b.go(this.w(fire), snap + 550, "drive", this.ahead);
 			b.go(
-				this.w({ d: fire.d + drive, a: fire.a + side * 1.5 }),
-				until,
+				this.w({
+					d: s.d + step.d * (drive > 1 ? 1 : 0.5) + drive * 0.3,
+					a: s.a + step.a,
+				}),
+				snap + 550,
 				"drive",
 				this.ahead,
 			);
 		}
-		for (const m of front) {
-			const s = this.of(m.at);
-			const b = blockers.sort(
-				(x, y) =>
-					Math.abs(this.of(x.at).a - s.a) - Math.abs(this.of(y.at).a - s.a),
-			)[0];
-			m.hold(snap + 50);
+
+		// Who is on whom up front.
+		const on = new Map<Actor, Actor[]>();
+		for (const m of this.d) {
+			if (!DL.has(m.role) || this.done.has(m.pid)) {
+				continue;
+			}
+			const b = closest(front, m.at);
 			if (b) {
-				const at = (time: number) => {
-					const p = b.posAt(time);
-					return { x: p.x + dir * 2.6, y: p.y + (r() - 0.5) * 0.6 };
-				};
-				m.chase(at(snap + 450), snap + 450, m.top * 0.9, "run");
-				m.go(at(until), until, "engage", this.behind);
+				on.set(b, [...(on.get(b) ?? []), m]);
 			}
 		}
-		// The receivers out on the corners and safeties.
+		for (const [b, men] of on) {
+			const s = this.of(b.at);
+			const wins = beat(b);
+			if (wins) {
+				b.go(
+					this.w({ d: s.d + drive + 1, a: s.a + step.a * 0.4 }),
+					until,
+					"drive",
+					this.ahead,
+				);
+			} else {
+				b.go(
+					this.w({ d: s.d - 1.6, a: s.a }),
+					snap + 1150,
+					"drive",
+					this.ahead,
+				);
+				b.go(this.w({ d: s.d - 2.4, a: s.a }), until, "drive", this.ahead);
+			}
+			for (const m of men) {
+				const at = (time: number) => {
+					const p = this.of(b.posAt(time));
+					return this.w({ d: p.d + BLOCK_GAP, a: p.a + (r() - 0.5) * 0.6 });
+				};
+				// (Beaten, off him - if he is not the one to make the tackle,
+				// who goes from wherever he is when he goes.)
+				const shed = snap + SHED_MS * 1.6 + r() * SHED_SPREAD;
+				const end =
+					wins || !free(m) || shed > t - 300
+						? wins && free(m)
+							? offAt(this.of(m.at).d)
+							: until
+						: shed;
+				m.hold(snap + 50);
+				m.chase(at(snap + 450), snap + 450, m.top * 0.9, "run");
+				m.go(at(end), end, "engage", this.behind);
+			}
+		}
+
+		// The linebackers: a read step, then over to fill - but for one to
+		// make the tackle, who goes from where he is.
+		const backers = this.d.filter((m) => LB.has(m.role) && free(m));
+		const filled = snap + FILL_MS;
+		for (const m of backers) {
+			const s = this.of(m.at);
+			m.hold(snap + 80);
+			m.go(
+				this.w({ d: s.d - 1.5, a: s.a + side }),
+				snap + 450,
+				"slide",
+				this.behind,
+			);
+			const fill = {
+				d: Math.max(3, s.d - (drive > 1 ? 4 : 7)),
+				a: holeA + (s.a - holeA) * 0.4,
+			};
+			const across = Math.abs(fill.a - s.a);
+			m.chase(
+				this.w(fill),
+				filled + r() * 250,
+				m.top * FILL_PACE,
+				across > 5 ? "run" : "slide",
+				across > 5 ? undefined : this.behind,
+			);
+		}
+		const taken = new Set<Actor>();
+		const pick = (from: Pt) => {
+			const m = closest(
+				backers.filter((x) => !taken.has(x)),
+				from,
+				filled,
+			);
+			if (m) {
+				taken.add(m);
+			}
+			return m;
+		};
+
+		// The puller and the lead back up through the hole, on whoever fills
+		// it.
+		const holePt = this.w({ d: 1, a: holeA });
+		if (pull) {
+			const s = this.of(pull.at);
+			pull.hold(snap + 40);
+			pull.go(this.w({ d: s.d - 1.8, a: s.a + side * 1.5 }), snap + 330, "run");
+			pull.chase(
+				this.w({ d: -1.5, a: holeA - side * 2.5 }),
+				Math.max(atHole - 250, snap + 700),
+				pull.top * 0.9,
+				"run",
+			);
+			pull.chase(
+				this.w({ d: 2, a: holeA - side }),
+				pull.t + 250,
+				pull.top * 0.9,
+				"run",
+			);
+			this.blockOn(pull, pick(holePt), beat(pull), offAt, until);
+		}
+		for (const b of backs) {
+			b.hold(snap + 40);
+			b.chase(
+				this.w({ d: -1, a: holeA - side }),
+				Math.max(atHole - 300, snap + 500),
+				b.top * 0.85,
+				"run",
+			);
+			this.blockOn(b, pick(holePt), beat(b), offAt, until);
+		}
+		// Nobody over him: up onto a linebacker - or, none left, in beside
+		// the man on the nearest one, on him too.
+		for (const b of front) {
+			if (on.has(b)) {
+				continue;
+			}
+			const m = pick(b.at);
+			if (m) {
+				this.blockOn(b, m, beat(b), offAt, until);
+				continue;
+			}
+			const mate = closest([...on.keys()], b.at);
+			if (!mate) {
+				b.go(
+					this.w({ ...this.of(b.at), d: this.of(b.at).d + drive }),
+					until,
+					"drive",
+					this.ahead,
+				);
+				continue;
+			}
+			const by = Math.sign(this.of(b.at).a - this.of(mate.at).a) || 1;
+			const beside = (time: number) => {
+				const p = this.of(mate.posAt(time));
+				return this.w({ d: p.d - 0.4, a: p.a + by * DOUBLE_FT });
+			};
+			b.chase(beside(snap + 800), snap + 800, b.top * 0.8, "drive", this.ahead);
+			b.go(beside(until), until, "drive", this.ahead);
+		}
+
+		// The receivers: out onto the nearest man off the ball, and on him -
+		// or, nobody near, on downfield.
+		const dbs = this.d.filter((m) => DB.has(m.role) && free(m));
 		for (const m of this.o) {
 			if (this.done.has(m.pid) || m === carrier || blockers.includes(m)) {
 				continue;
 			}
 			const s = this.of(m.at);
 			m.hold(snap + 80);
-			m.go(this.w({ d: s.d + 9 + r() * 8, a: s.a * 0.92 }), snap + 1300, "run");
-			m.hold(until, "drive", this.ahead);
+			const db = closest(dbs, m.at);
+			if (!db || dist(db.at, m.at) > STALK_FAR) {
+				m.go(
+					this.w({ d: s.d + 9 + r() * 8, a: s.a * 0.92 }),
+					snap + 1300,
+					"run",
+				);
+				m.hold(until, "drive", this.ahead);
+				continue;
+			}
+			dbs.splice(dbs.indexOf(db), 1);
+			// (He backs off at the snap, reading it, then up.)
+			const c = this.of(db.at);
+			db.hold(snap + 80);
+			db.go(this.w({ d: c.d + 4, a: c.a }), snap + 750, "back", this.behind);
+			db.chase(
+				this.w({ d: c.d + 1, a: c.a + (holeA - c.a) * 0.2 }),
+				snap + 1600,
+				db.top * 0.5,
+				"jog",
+				this.behind,
+			);
+			m.go(
+				this.w({ d: s.d + 4, a: s.a + (c.a - s.a) * 0.3 }),
+				snap + 650,
+				"run",
+			);
+			this.blockOn(m, db, r() < STALK_WON, offAt, until);
 		}
+	}
+
+	// A blocker onto a man off the line: as soon as he can be in front of
+	// him, then on him - driving him back if he wins it; if not, the man
+	// off him in a moment. Till `until` - or the man off it as the carrier
+	// goes by, after him.
+	blockOn(
+		b: Actor,
+		m: Actor | undefined,
+		won: boolean,
+		offAt: (d: number) => number,
+		until: number,
+	) {
+		const r = this.r;
+		let meet: { t: number; at: Pt } | undefined;
+		if (m) {
+			const fps = b.top * CLIMB_PACE;
+			for (let c = b.t + 100; c <= until; c += 50) {
+				const p = this.of(m.posAt(c));
+				const at = this.w({ d: p.d - BLOCK_GAP, a: p.a });
+				if ((dist(b.at, at) / fps) * 1000 <= c - b.t) {
+					meet = { t: c, at };
+					break;
+				}
+			}
+		}
+		if (!m || !meet) {
+			// (Up to the next level, and nobody there.)
+			const s = this.of(b.at);
+			b.chase(this.w({ d: s.d + 9, a: s.a }), b.t + 900, b.top * 0.6, "run");
+			b.hold(until, "stand", this.ahead);
+			return;
+		}
+		b.go(meet.at, meet.t);
+		m.cut(meet.t);
+		m.hold(meet.t);
+		const p = this.of(m.at);
+		const off = Math.max(meet.t + 200, offAt(p.d));
+		const end = won ? off : Math.min(off, meet.t + SHED_MS + r() * SHED_SPREAD);
+		const give = won ? 2.5 + r() * 2 : -1;
+		m.go(this.w({ d: p.d + give, a: p.a }), end, "engage", this.behind);
+		b.go(
+			this.w({ d: p.d + give - BLOCK_GAP, a: p.a }),
+			end,
+			"drive",
+			this.ahead,
+		);
+		b.hold(Math.max(end, until), "stand", this.ahead);
+	}
+
+	// When he first gets `d` downfield, from the snap - or never, before he
+	// is down.
+	reachesAt(m: Actor, d: number): number {
+		for (let c = this.input.snap; c <= m.t; c += 50) {
+			if (this.of(m.posAt(c)).d >= d) {
+				return c;
+			}
+		}
+		return Infinity;
 	}
 
 	// ---- the kicking game ------------------------------------------------------------
