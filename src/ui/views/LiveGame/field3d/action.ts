@@ -4252,9 +4252,10 @@ class Action {
 		const sweep = spotOf(carrier.role) !== "back" && carrier !== qb;
 		// The quarterback keeping it (not a sneak), as a rule off a ride: the
 		// read option in the gun, a fake to the back under center - the back
-		// one way, and he the other, round the edge.
+		// one way, and he the other, round the edge. (Under center, always:
+		// the back too far behind him to get out in front of him.)
 		const rider =
-			carrier === qb && !sneak && r() < QB_RIDE
+			carrier === qb && !sneak && (r() < QB_RIDE || !gun)
 				? this.o.find((m) => m.role === "RB" && !this.done.has(m.pid))
 				: undefined;
 		const holeA = sneak
@@ -4507,7 +4508,12 @@ class Action {
 				!this.done.has(m.pid) &&
 				(OL.has(m.role) ||
 					backBlockers.includes(m.pid) ||
-					(backBlockers.length === 0 && (m.role === "TE" || m.role === "TE2"))),
+					(backBlockers.length === 0 &&
+						(m.role === "TE" || m.role === "TE2")) ||
+					// (The quarterback keeping it, a back out in front of him.)
+					(carrier.role === "QB" &&
+						scheme !== "sneak" &&
+						(m.role === "RB" || m.role === "FB"))),
 		);
 		const free = (m: Actor) => !this.done.has(m.pid) && !tacklers.includes(m);
 		const drive = this.of(endPt).d > 3 ? 4 : this.of(endPt).d < 0 ? -2 : 1;
