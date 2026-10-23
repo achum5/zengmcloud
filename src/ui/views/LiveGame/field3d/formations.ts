@@ -421,7 +421,7 @@ export type DefenseCall = {
 
 // Off the ball (feet, on its own side): a lineman's feet, a linebacker, a
 // corner off or pressed, a safety deep.
-const DL_DEPTH = 3.4;
+const DL_DEPTH = 4.0;
 const LB_DEPTH = 15;
 const CB_OFF = 20;
 const CB_PRESS = 3.2;
