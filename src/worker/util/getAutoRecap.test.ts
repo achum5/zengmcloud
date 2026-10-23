@@ -6723,7 +6723,7 @@ describe("no branch has only one phrasing", () => {
 		],
 		[
 			"snapped streak",
-			/snapped .*(?:\d+|[a-z]+)-game winning streak|had won (?:\d+|[a-z]+) in a row until this one|end of a (?:\d+|[a-z]+)-game run/,
+			/snapped .*(?:\d+|[a-z]+)-game winning streak|had won (?:\d+|[a-z]+) in a row until this one|(?:\d+|[a-z]+)-game winning streak is over/,
 		],
 		[
 			"first-quarter run",
@@ -9371,6 +9371,113 @@ test("held off is for a push that came up short", () => {
 	} finally {
 		endRecapBatch();
 	}
+});
+
+// "The Spurs' Payton Lowry sprained his toe and is expected to miss about
+// four games; teammate Yuta Lowry sprained his elbow and is expected to miss
+// about four games."
+test("a second man out as long is not given the same clause again", () => {
+	const hurt = (type: string) => ({
+		type,
+		gamesRemaining: 4,
+		newThisGame: true,
+	});
+	const win = realisticTeam(
+		{ tid: 1, region: "San Antonio", name: "Spurs", abbrev: "SAS", pts: 105 },
+		player({ name: "Trey Lowry", pts: 27, reb: 8, fg: 10, fga: 19 }),
+	);
+	win.players.push(
+		player({ name: "Payton Lowry", pts: 6, injury: hurt("Sprained Toe") }),
+		player({ name: "Yuta Lowry", pts: 4, injury: hurt("Sprained Elbow") }),
+	);
+	const lose = realisticTeam(
+		{
+			tid: 2,
+			region: "Minnesota",
+			name: "Timberwolves",
+			abbrev: "MIN",
+			pts: 95,
+		},
+		player({ name: "Marcus Ingram", pts: 21, fg: 8, fga: 19 }),
+	);
+	let both = 0;
+	beginRecapBatch();
+	try {
+		for (let gid = 2150; gid < 2170; gid++) {
+			const recap = getAutoRecap(
+				game({ gid, teams: [win, lose], winnerTid: 1 }),
+			);
+			if (/Payton Lowry/.test(recap) && /Yuta Lowry/.test(recap)) {
+				both += 1;
+				assert.equal(recap.match(/about four games/g)?.length, 1, recap);
+			}
+		}
+	} finally {
+		endRecapBatch();
+	}
+	assert.ok(both > 0);
+});
+
+// "The Pistons held off the Kings 119-114" of a game tied at 112 with 1:35
+// left and won on a three with 54 seconds to go: they went and took it.
+test("held off is for a side that was already in front", () => {
+	const win = realisticTeam(
+		{
+			tid: 1,
+			region: "Detroit",
+			name: "Pistons",
+			abbrev: "DET",
+			pts: 117,
+			ptsQtrs: [30, 32, 22, 33],
+		},
+		player({ name: "Grant Ellis", pts: 29, ast: 9, fg: 10, fga: 21 }),
+	);
+	const lose = realisticTeam(
+		{
+			tid: 2,
+			region: "Sacramento",
+			name: "Kings",
+			abbrev: "SAC",
+			pts: 114,
+			ptsQtrs: [28, 25, 32, 29],
+		},
+		player({ name: "Naji Lowry", pts: 22, ast: 11, fg: 8, fga: 18 }),
+	);
+	const flow = (period: number, clock: number) => ({
+		leadChanges: 13,
+		ties: 6,
+		maxLead: [9, 4] as [number, number],
+		maxLeadAt: [2, 3] as [number, number],
+		lastLead: {
+			side: 0 as const,
+			period,
+			clock,
+			pts: [113, 112] as [number, number],
+		},
+		late: [
+			{ clock: 300, pts: [106, 107] as [number, number] },
+			{ clock: 120, pts: [110, 110] as [number, number] },
+		],
+	});
+	let early = 0;
+	beginRecapBatch();
+	try {
+		for (let gid = 2100; gid < 2140; gid++) {
+			const late = getAutoRecap(
+				game({ gid, teams: [win, lose], winnerTid: 1, flow: flow(4, 54) }),
+			);
+			assert.doesNotMatch(late, /held off|hold off/, late);
+			const before = getAutoRecap(
+				game({ gid, teams: [win, lose], winnerTid: 1, flow: flow(4, 400) }),
+			);
+			if (/held off|hold off/.test(before)) {
+				early += 1;
+			}
+		}
+	} finally {
+		endRecapBatch();
+	}
+	assert.ok(early > 0, "a lead kept from 6:40 never held anyone off");
 });
 
 // "The Clippers rolled past the Bucks 139-82" undersold a 57-point night.

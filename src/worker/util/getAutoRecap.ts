@@ -1541,7 +1541,9 @@ const verbPool = (game: RecapGame, shape: Shape): string[] => {
 		return ["outlast", "pull away from", "take down"];
 	}
 	if (shape.ot > 0 || shape.margin <= 4) {
-		return ["hold off", "edge", "outlast", "slip past", "survive"];
+		return heldOn(game)
+			? ["hold off", "edge", "outlast", "slip past", "survive"]
+			: ["edge", "outlast", "slip past", "survive"];
 	}
 	// "Rolled past the Bucks 139-82" undersold a 57-point night: past 35
 	// the cruising verbs go.
@@ -1556,7 +1558,7 @@ const verbPool = (game: RecapGame, shape: Shape): string[] => {
 	// "Held off" is a push that came up short; a side never within seven
 	// over the last five minutes made none.
 	if (shape.margin <= 9) {
-		return closeLate(game)
+		return closeLate(game) && heldOn(game)
 			? ["beat", "top", "get past", "hold off", "take down"]
 			: ["beat", "top", "get past", "take down", "handle"];
 	}
@@ -1895,7 +1897,11 @@ const buildHeadlineText = (
 				options.push(
 					`${winnerN} close out the ${loserN} with ${aFigure(scoreTag(shape))} escape`,
 					`${winnerN} edge the ${loserN} ${scoreTag(shape)} to close out the series in ${games}`,
-					`${winnerN} hold off the ${loserN} ${scoreTag(shape)} and move on to ${next}`,
+					...(heldOn(game)
+						? [
+								`${winnerN} hold off the ${loserN} ${scoreTag(shape)} and move on to ${next}`,
+							]
+						: []),
 				);
 			} else if (shape.ot > 0) {
 				options.push(
@@ -2272,7 +2278,9 @@ const buildHeadlineText = (
 				[
 					`${winnerN} survive a scare from the ${loserN}`,
 					`${winnerN} escape the ${loserN} ${scoreTag(shape)}`,
-					`${winnerN} hold off the ${loserN} ${scoreTag(shape)}`,
+					...(heldOn(game)
+						? [`${winnerN} hold off the ${loserN} ${scoreTag(shape)}`]
+						: []),
 				],
 				"headline:scare",
 			),
@@ -3002,6 +3010,26 @@ const secondHalfSplit = (
 		l += lq[i] ?? 0;
 	}
 	return { w, l };
+};
+
+// "Held off" says the winners were in front and kept the other side off.
+// "The Pistons held off the Kings 119-114" of a game tied at 112 with 1:35
+// left and won on a three with 54 seconds to go was a game they went and
+// took. Without the lead log, nothing says otherwise.
+const heldOn = (game: RecapGame): boolean => {
+	const last = game.flow?.lastLead;
+	if (!last) {
+		return true;
+	}
+	const regPeriods = game.teams[0].ptsQtrs
+		? Math.max(4, game.teams[0].ptsQtrs.length - game.overtimes)
+		: 4;
+	const winnerSide = game.teams[0].tid === game.winnerTid ? 0 : 1;
+	return (
+		last.side === winnerSide &&
+		(last.period < regPeriods ||
+			(last.period === regPeriods && last.clock > 120))
+	);
 };
 
 // Was it still a game inside the last two minutes? A quarter that "broke it
@@ -4999,7 +5027,9 @@ const stakesSentence = (
 				[
 					`It snapped ${poss(theNick(shape.loser))} ${numWord(run)}-game winning streak.`,
 					`${cap(theNick(shape.loser))} had won ${numWord(run)} in a row until this one.`,
-					`That is the end of ${aNumWord(run)}-game run for ${theNick(shape.loser)}.`,
+					// Not "That is the end of a four-game run for the 76ers": a run
+					// of what, and "is" of a streak that ended last night.
+					`${cap(poss(theNick(shape.loser)))} ${numWord(run)}-game winning streak is over.`,
 				],
 				"snappedStreak",
 			),
@@ -5020,7 +5050,9 @@ const stakesSentence = (
 					[
 						`It snapped ${poss(theNick(shape.loser))} ${numWord(run)}-game winning streak.`,
 						`${cap(theNick(shape.loser))} had won ${numWord(run)} in a row until this one.`,
-						`That is the end of ${aNumWord(run)}-game run for ${theNick(shape.loser)}.`,
+						// Not "That is the end of a four-game run for the 76ers": a run
+						// of what, and "is" of a streak that ended last night.
+						`${cap(poss(theNick(shape.loser)))} ${numWord(run)}-game winning streak is over.`,
 					],
 					"snappedStreak",
 				),
@@ -5220,6 +5252,9 @@ const injurySentence = (
 	let namedTid: number | undefined;
 	for (const t of [shape.winner, shape.loser]) {
 		let teammate = false;
+		// "...is expected to miss about four games; teammate Yuta Lowry
+		// sprained his elbow and is expected to miss about four games."
+		let lastSpan: string | undefined;
 		for (const p of t.players) {
 			if (p.injury?.playingThrough && p.pts >= 18) {
 				bits.push(
@@ -5245,16 +5280,19 @@ const injurySentence = (
 					shape.game.playoffs,
 				);
 				bits.push(
-					pick(
-						rng,
-						[
-							`${who} ${hurt} and is expected to miss ${span}`,
-							`${who} ${hurt} and will miss ${span}`,
-							`${who} ${hurt} and will be out for ${span}`,
-						],
-						"injuryNew",
-					),
+					span === lastSpan
+						? `${who} ${hurt} and will be out as long`
+						: pick(
+								rng,
+								[
+									`${who} ${hurt} and is expected to miss ${span}`,
+									`${who} ${hurt} and will miss ${span}`,
+									`${who} ${hurt} and will be out for ${span}`,
+								],
+								"injuryNew",
+							),
 				);
+				lastSpan = span;
 			}
 		}
 	}
@@ -9002,7 +9040,7 @@ const dayHeadline = (
 		return hl(
 			pick(rng, [
 				`${w} edge ${l} in ${aFigure(scoreTag(mShape))} thriller`,
-				`${w} hold off ${l} at the wire`,
+				...(heldOn(marquee) ? [`${w} hold off ${l} at the wire`] : []),
 				`${w} survive ${l} ${scoreTag(mShape)}`,
 			]),
 		);
@@ -9329,11 +9367,14 @@ const roundupClause = (
 	} else if (shape.margin >= 20) {
 		pool = shape.margin >= 35 ? BIG_ROUT_VERBS : ROUT_VERBS;
 	} else if (shape.margin <= 4) {
-		pool = [...EDGE_VERBS, "outlasted"];
+		pool = [...EDGE_VERBS, "outlasted"].filter(
+			(v) => v !== "held off" || heldOn(game),
+		);
 	} else if (shape.margin <= 9) {
-		pool = closeLate(game)
-			? ["beat", "got past", "held off", "topped", "took down"]
-			: ["beat", "got past", "topped", "took down", "handled"];
+		pool =
+			closeLate(game) && heldOn(game)
+				? ["beat", "got past", "held off", "topped", "took down"]
+				: ["beat", "got past", "topped", "took down", "handled"];
 	} else {
 		pool = [
 			"beat",
