@@ -4,6 +4,7 @@ import {
 	lastHoldoutToNotify,
 	onClockTeamToNotify,
 	overallPickNumber,
+	readyMapKey,
 	readyTeamTids,
 	stopStep,
 } from "./draftReady.ts";
@@ -79,6 +80,24 @@ describe("draft ready-up", () => {
 			uidCleared: null,
 		};
 		assert.deepEqual(readyTeamTids(ready, userTids, "2026-5", 1), []);
+	});
+
+	// The listener's copy and the server's are compared to catch a listener
+	// that stopped delivering - Firestore hands the fields back in any order,
+	// and a cleared entry is no entry.
+	test("two copies of the ready map compare by what they say", () => {
+		const a = { untilPick: 3, draftKey: "2026-5", tid: 0 };
+		const b = { untilPick: 1, draftKey: "2026-5", tid: 5 };
+		assert.strictEqual(
+			readyMapKey({ uidA: a, uidB: b }),
+			readyMapKey({ uidB: b, uidA: a, uidC: null }),
+		);
+		assert.strictEqual(readyMapKey(undefined), readyMapKey({}));
+		assert.notStrictEqual(
+			readyMapKey({ uidA: a }),
+			readyMapKey({ uidA: { ...a, untilPick: 4 } }),
+		);
+		assert.notStrictEqual(readyMapKey({ uidA: a }), readyMapKey({}));
 	});
 
 	describe("last-holdout notification", () => {

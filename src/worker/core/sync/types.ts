@@ -498,7 +498,13 @@ export interface SyncTransport {
 		onChange: (
 			ready: Record<string, DraftReadyEntry | null> | undefined,
 		) => void,
+		onError?: (error: unknown) => void,
 	): () => void;
+	// The same entries read from the server, to catch a listener that has
+	// stopped delivering without saying so.
+	fetchDraftReady?(): Promise<
+		Record<string, DraftReadyEntry | null> | undefined
+	>;
 	claimDraftAdvance?(
 		draftKey: string,
 		pick: number,

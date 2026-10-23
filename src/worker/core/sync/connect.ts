@@ -13,7 +13,12 @@ import { loadSyncBackend } from "./loadSyncBackend.ts";
 import { setActiveFirebaseConfig } from "./firebaseAppState.ts";
 import type { FirebaseConfig } from "./firebaseConfig.ts";
 import { setApplyGuard } from "./applyGuard.ts";
-import { setupDraftReady, teardownDraftReady } from "./draftReady.ts";
+import {
+	nudgeDraftReady,
+	reassertPhaseReady,
+	setupDraftReady,
+	teardownDraftReady,
+} from "./draftReady.ts";
 import {
 	completeDeferredSimDayFence,
 	revalidateQueuedSingleGame,
@@ -386,6 +391,7 @@ const pushSyncStateFull = () => {
 			mpPendingUploads: lastPendingUploads,
 		},
 	]);
+	reassertPhaseReady();
 };
 
 // Re-push the current sync state to the UI on demand. The UI calls this when it
@@ -409,6 +415,7 @@ export const syncNudge = () => {
 	}
 	void engine.probeHead();
 	void engine.drainOutbox();
+	nudgeDraftReady();
 	pushSyncStateFull();
 };
 

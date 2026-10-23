@@ -98,6 +98,14 @@ const LOTTERY_REVEAL_DOC_ID = "lotteryReveal";
 // Keep each payload chunk well under Firestore's 1 MB/doc limit.
 const LIVE_BROADCAST_CHUNK_BYTES = 700_000;
 
+// Everyone's ready entries off the draft ready doc, if it has any.
+const parseDraftReady = (
+	data: Record<string, unknown> | undefined,
+): Record<string, DraftReadyEntry | null> | undefined =>
+	data && typeof data.ready === "object" && data.ready !== null
+		? (data.ready as Record<string, DraftReadyEntry | null>)
+		: undefined;
+
 // Where the simmer's 3D court is (see LiveSync3D), if the doc says - whole,
 // or not at all.
 const parseLiveSync3D = (value: unknown): LiveSync3D | undefined => {
@@ -607,29 +615,39 @@ export class FirebaseTransport implements SyncTransport {
 	}
 
 	// Watch everyone's draft ready entries. Fires with the current map, then on
-	// every change.
+	// every change. onError: the listener is dead (see draftReady.ts, which
+	// builds a new one).
 	subscribeDraftReady(
 		onChange: (
 			ready: Record<string, DraftReadyEntry | null> | undefined,
 		) => void,
+		onError?: (error: unknown) => void,
 	) {
 		return this.tracked(() =>
 			onSnapshot(
 				doc(this.db, "leagues", this.code, "control", DRAFT_READY_DOC_ID),
 				(snapshot) => {
 					this.markContact();
-					const data = snapshot.data();
-					onChange(
-						data && typeof data.ready === "object" && data.ready !== null
-							? (data.ready as Record<string, DraftReadyEntry | null>)
-							: undefined,
-					);
+					onChange(parseDraftReady(snapshot.data()));
 				},
 				(error) => {
 					console.error("Draft ready subscription failed", error);
+					onError?.(error);
 				},
 			),
 		);
+	}
+
+	// Everyone's draft ready entries as the SERVER has them - never the cache,
+	// which is the listener's own view and so can't catch it out.
+	async fetchDraftReady(): Promise<
+		Record<string, DraftReadyEntry | null> | undefined
+	> {
+		const snap = await getDocFromServer(
+			doc(this.db, "leagues", this.code, "control", DRAFT_READY_DOC_ID),
+		);
+		this.markContact();
+		return parseDraftReady(snap.data());
 	}
 
 	// Merge the lottery-reveal cursor doc (see LOTTERY_REVEAL_DOC_ID). holderId

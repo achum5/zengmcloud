@@ -60,6 +60,15 @@ import type { MpPhaseReady, Phase } from "../../../common/types.ts";
 
 const EVALUATE_INTERVAL_MS = 2000;
 
+// How often the server is asked for the ready doc while a stage is gated (see
+// probeReady), how long that read may take, how long after a dead listener a
+// new one is built, and how long after this device publishes its own ready
+// the server's copy is let catch up before it is compared.
+const READY_PROBE_MS = 15_000;
+const READY_PROBE_TIMEOUT_MS = 8000;
+const READY_RESUBSCRIBE_MS = 5000;
+const READY_PUBLISH_SETTLE_MS = 5000;
+
 // How long an advance claim blocks other devices from claiming the same step.
 // Generous vs a single step (a second or two) so it only matters as crash
 // recovery for a claimant that died mid-advance.
@@ -129,6 +138,19 @@ export const readyTeamTids = (
 	}
 	return [...covered].sort((a, b) => a - b);
 };
+
+// The ready map in a form two copies of it can be compared by: every live
+// entry, by device, in one order (Firestore hands fields back in any).
+export const readyMapKey = (
+	ready: Record<string, DraftReadyEntry | null | undefined> | undefined,
+): string =>
+	JSON.stringify(
+		Object.entries(ready ?? {})
+			.flatMap(([uid, e]) =>
+				e ? [[uid, e.draftKey, e.tid, e.untilPick] as const] : [],
+			)
+			.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+	);
 
 // Everything the evaluator needs to know about the current gated stage:
 // UI state pieces plus how to run one step.
@@ -428,6 +450,19 @@ let evaluateTimer: ReturnType<typeof setInterval> | undefined;
 let latestReady: Record<string, DraftReadyEntry | null> | undefined;
 let advancing = false;
 let lastPushed: string | undefined;
+let lastPushedState: MpPhaseReady | undefined;
+
+// What this device knows of everyone's ready entries, and how fresh: whether
+// anything has said yet (until then there is no count to show - "0/3" from
+// knowing nothing is how a room with two teams ready looked empty), how many
+// times the listener has delivered, and when the server was last asked or
+// this device last published (see probeReady).
+let readyKnown = false;
+let readyDeliveries = 0;
+let readyProbedAt = 0;
+let readyProbing = false;
+let readyPublishedAt = 0;
+let resubscribeTimer: ReturnType<typeof setTimeout> | undefined;
 
 // The (stage, step) whose refused claim was last logged, so a steady stuck
 // state - everyone ready, claim refused every 2s tick - leaves ONE line in
@@ -715,7 +750,125 @@ const pushToUI = (state: MpPhaseReady | undefined) => {
 		return;
 	}
 	lastPushed = key;
+	lastPushedState = state;
 	void toUI("updateLocal", [{ mpPhaseReady: state }]);
+};
+
+// What the header was last told. Exported for tests.
+export const shownPhaseReady = () => lastPushedState;
+
+// The last state again, past the dedup: the UI's resetLeague() zeroes
+// mpPhaseReady behind the worker's back, and the same state is never sent
+// twice. Called with the rest of the sync UI state (pushSyncStateFull).
+export const reassertPhaseReady = () => {
+	if (lastPushed !== undefined) {
+		void toUI("updateLocal", [{ mpPhaseReady: lastPushedState }]);
+	}
+};
+
+const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
+	new Promise((resolve, reject) => {
+		const id = setTimeout(() => {
+			reject(new Error(`Timed out after ${ms}ms`));
+		}, ms);
+		promise.then(
+			(value) => {
+				clearTimeout(id);
+				resolve(value);
+			},
+			(error) => {
+				clearTimeout(id);
+				reject(error);
+			},
+		);
+	});
+
+// The live listener on everyone's ready entries. One that errors is dead for
+// good - Firestore does not retry it - so a new one is built after a pause.
+const subscribeReady = (transport: SyncTransport) => {
+	unsubscribe?.();
+	unsubscribe = transport.subscribeDraftReady?.(
+		(ready) => {
+			if (currentTransport !== transport) {
+				return;
+			}
+			readyKnown = true;
+			readyDeliveries += 1;
+			latestReady = ready;
+			void evaluate();
+		},
+		() => {
+			if (currentTransport !== transport) {
+				return;
+			}
+			clearTimeout(resubscribeTimer);
+			resubscribeTimer = setTimeout(() => {
+				resubscribeTimer = undefined;
+				if (currentTransport === transport) {
+					syncDebugLog("phaseReady:listener-restarted", {});
+					subscribeReady(transport);
+				}
+			}, READY_RESUBSCRIBE_MS);
+		},
+	);
+};
+
+// A listener can also stop delivering WITHOUT erroring (iOS parks the stream
+// while the app is in the background), and then nothing here finds out: the
+// count it last heard stays up - "0/3" with two teams ready - until a refresh.
+// So while a stage is gated, every READY_PROBE_MS (and at once on connecting
+// or coming back to the app) the server is asked, and a listener whose map is
+// not the server's is overruled and rebuilt.
+const probeReady = async (transport: SyncTransport) => {
+	const now = Date.now();
+	if (
+		!transport.fetchDraftReady ||
+		readyProbing ||
+		now - readyProbedAt < READY_PROBE_MS ||
+		// Our own ready may still be on its way up: the listener shows it, the
+		// server doesn't yet.
+		now - readyPublishedAt < READY_PUBLISH_SETTLE_MS
+	) {
+		return;
+	}
+	readyProbing = true;
+	readyProbedAt = now;
+	const deliveries = readyDeliveries;
+	try {
+		const ready = await withTimeout(
+			transport.fetchDraftReady(),
+			READY_PROBE_TIMEOUT_MS,
+		);
+		// Gone, or the listener spoke while this was out - its word is newer.
+		if (currentTransport !== transport || readyDeliveries !== deliveries) {
+			return;
+		}
+		const wasKnown = readyKnown;
+		readyKnown = true;
+		if (readyMapKey(ready) === readyMapKey(latestReady)) {
+			if (!wasKnown) {
+				void evaluate();
+			}
+			return;
+		}
+		syncDebugLog("phaseReady:listener-missed", {
+			listener: readyMapKey(latestReady),
+			server: readyMapKey(ready),
+		});
+		latestReady = ready;
+		subscribeReady(transport);
+		void evaluate();
+	} catch {
+		// No answer - the next probe asks again.
+	} finally {
+		readyProbing = false;
+	}
+};
+
+// Coming back to the app: ask the server now, not at the next probe.
+export const nudgeDraftReady = () => {
+	readyProbedAt = 0;
+	void evaluate();
 };
 
 const stageKeyNow = (): string => `${g.get("season")}-${g.get("phase")}`;
@@ -741,6 +894,12 @@ const evaluate = async () => {
 		return;
 	}
 	if (!stage) {
+		pushToUI(undefined);
+		return;
+	}
+
+	void probeReady(transport);
+	if (!readyKnown) {
 		pushToUI(undefined);
 		return;
 	}
@@ -996,6 +1155,7 @@ export const setDraftReady = async (untilStep: number | null) => {
 		);
 	}
 
+	readyPublishedAt = Date.now();
 	if (untilStep === null) {
 		await transport.publishDraftReady(null, sameTeamUids);
 	} else {
@@ -1009,6 +1169,7 @@ export const setDraftReady = async (untilStep: number | null) => {
 			sameTeamUids,
 		);
 	}
+	readyPublishedAt = Date.now();
 	void evaluate();
 };
 
@@ -1026,10 +1187,12 @@ export const setupDraftReady = (transport: SyncTransport) => {
 	lastHoldoutNotifKey = undefined;
 	lastOnClockNotifKey = undefined;
 	lastClaimRefusedKey = undefined;
-	unsubscribe = transport.subscribeDraftReady?.((ready) => {
-		latestReady = ready;
-		void evaluate();
-	});
+	// (A transport with no listener has nothing to wait for.)
+	readyKnown = !transport.subscribeDraftReady;
+	readyDeliveries = 0;
+	readyProbedAt = 0;
+	readyPublishedAt = 0;
+	subscribeReady(transport);
 	evaluateTimer = setInterval(() => {
 		void evaluate();
 	}, EVALUATE_INTERVAL_MS);
@@ -1039,6 +1202,8 @@ export const teardownDraftReady = () => {
 	setTradeDeadlineGateActive(false);
 	unsubscribe?.();
 	unsubscribe = undefined;
+	clearTimeout(resubscribeTimer);
+	resubscribeTimer = undefined;
 	if (evaluateTimer !== undefined) {
 		clearInterval(evaluateTimer);
 		evaluateTimer = undefined;
