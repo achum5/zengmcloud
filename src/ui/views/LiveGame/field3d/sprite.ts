@@ -51,6 +51,10 @@ export type FieldPlayerState = {
 	// Short steps: his strides (and the ones he was taking, just after a
 	// change) this share of full ones.
 	len?: number;
+	// Turning where he stands, a foot at a time: which way each foot points
+	// on the turf, right and left, and how far up off it each is (a full
+	// step 1 - see evaluate.ts pivotOf).
+	pivot?: [number, number, number, number];
 	// Just after a change - of move, of what his arms are doing, of how he
 	// has the ball: the last as it was when it changed, and how much of his
 	// pose is still that (1 all, 0 none).
@@ -80,6 +84,9 @@ type Blend = {
 	rate?: { move: number; from: number; w: number };
 	// That one itself still partly what he was before it, when it ended.
 	under?: Under;
+	// Into or out of standing turning a foot at a time: where his feet were
+	// as it changed (as pivot).
+	feet?: [number, number, number, number];
 };
 type Under = {
 	move: Move;
@@ -186,7 +193,11 @@ type Stepped = {
 	yaw: number;
 	from: Blend | undefined;
 	arms: { move: Move; phase: number } | undefined;
+	feet: Feet | undefined;
 };
+// Each foot turned under him (degrees, his right then his left) and how far
+// up off the turf.
+type Feet = [number, number, number, number];
 const armsIn = (a: { move: Move; phase: number }, k: Steps) => ({
 	move: a.move,
 	phase: frameOf(a.move, a.phase, k),
@@ -211,11 +222,59 @@ const lenIn = (len: number | undefined): number | undefined => {
 	const q = Math.max(1, Math.round(len * LENS)) / LENS;
 	return q < 1 ? q : undefined;
 };
+// A foot pointing `to` on the turf, turned under him from the way he is
+// drawn facing (in his turns, so it stays put on the turf as he turns
+// round over it): as far as hips turn - and further round than that, back
+// with him by the time he is facing the other way. (His left is the
+// turf's clockwise.)
+const LEGS_TURN = 75;
+const hipsTurn = (to: number, turn: number, k: Steps): number => {
+	const n = k.turns;
+	const d =
+		((((Math.round((to * n) / (Math.PI * 2)) - turn) % n) + n) % n) * (360 / n);
+	const w = d > 180 ? d - 360 : d;
+	const a = Math.abs(w);
+	return (
+		-Math.sign(w) *
+		(a <= LEGS_TURN ? a : (LEGS_TURN * (180 - a)) / (180 - LEGS_TURN))
+	);
+};
+// (In steps of so many degrees, and so much of a step up.)
+const FEET_DEG = 2;
+const FEET_UP = 6;
+const feetIn = (
+	st: FieldPlayerState,
+	turn: number,
+	fw: number,
+	k: Steps,
+): Feet | undefined => {
+	const p = st.pivot;
+	const was = fw > 0 ? st.from?.feet : undefined;
+	if (!p && !was) {
+		return undefined;
+	}
+	const at = (i: 0 | 1) => {
+		const to = p ? hipsTurn(p[i], turn, k) : 0;
+		return was ? to + (hipsTurn(was[i], turn, k) - to) * fw : to;
+	};
+	const up = (i: 2 | 3) => {
+		const to = p?.[i] ?? 0;
+		return was ? to + (was[i] - to) * fw : to;
+	};
+	const feet: Feet = [
+		Math.round(at(0) / FEET_DEG) * FEET_DEG,
+		Math.round(at(1) / FEET_DEG) * FEET_DEG,
+		Math.round(up(2) * FEET_UP) / FEET_UP,
+		Math.round(up(3) * FEET_UP) / FEET_UP,
+	];
+	return feet.some((v) => v !== 0) ? feet : undefined;
+};
 const stepped = (st: FieldPlayerState, k: Steps): Stepped => {
 	const turn = Math.round(st.yaw / ((Math.PI * 2) / k.turns));
 	const f = st.from;
 	const fw = f ? weightOf(st, f, k) : 0;
 	return {
+		feet: feetIn(st, turn, fw, k),
 		phase: frameOf(st.move, st.phase, k),
 		len: lenIn(st.len),
 		turn,
@@ -251,7 +310,25 @@ const wholePose = (
 	return holding(pose, ball);
 };
 
+// A step's lift: degrees at the hip and knee (see court3d's PIVOT_HIP).
+const STEP_HIP = 16;
+const STEP_KNEE = 34;
 const poseFor = (st: FieldPlayerState, s: Stepped): Pose => {
+	const p = blendedPose(st, s);
+	const f = s.feet;
+	return f
+		? {
+				...p,
+				spinN: p.spinN + f[0],
+				spinF: p.spinF + f[1],
+				hipN: p.hipN + STEP_HIP * f[2],
+				kneeN: p.kneeN + STEP_KNEE * f[2],
+				hipF: p.hipF + STEP_HIP * f[3],
+				kneeF: p.kneeF + STEP_KNEE * f[3],
+			}
+		: p;
+};
+const blendedPose = (st: FieldPlayerState, s: Stepped): Pose => {
 	const { phase, from, arms, len } = s;
 	const pose = wholePose(
 		st.move,
@@ -397,7 +474,7 @@ export const drawFieldPlayer = (
 	if (right < 0 || left > cam.viewW || lower < 0 || upper > cam.viewH) {
 		return;
 	}
-	const { phase, turn, from, arms, len } = step;
+	const { phase, turn, from, arms, len, feet } = step;
 	const scale = Math.round(Math.log(k) / Math.log(1.04));
 	let key: string | undefined;
 	let id = 0;
@@ -407,7 +484,7 @@ export const drawFieldPlayer = (
 		if (known === undefined) {
 			cache.ids.set(look, id);
 		}
-		key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}${len ? `s${len}` : ""}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
+		key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}${len ? `s${len}` : ""}${feet ? `v${feet.join(",")}` : ""}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
 			from
 				? `|${from.move}${from.mirrored ? "m" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}${
 						from.under
