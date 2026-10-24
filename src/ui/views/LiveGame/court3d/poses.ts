@@ -4045,7 +4045,9 @@ export const ANIMS = {
 			[1, P.land],
 		],
 	},
-	// A hand in: a swipe at the ball (a steal), or a hack on the shooter.
+	// A hand in: a swipe at the ball (a steal), or a hack on him - the one
+	// arm, the other back out of it for his balance (not both shoved out in
+	// front of him).
 	reach: {
 		kind: "act",
 		n: 5,
@@ -4060,9 +4062,11 @@ export const ANIMS = {
 					kneeF: 50,
 					shN: 100,
 					elN: 0,
-					shF: 60,
-					elF: 30,
+					shF: -24,
+					elF: 34,
+					abF: 30,
 					lean: 26,
+					twist: -8,
 				}),
 			],
 			[1, P.stance],
