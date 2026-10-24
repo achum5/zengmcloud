@@ -217,18 +217,26 @@ const CRAB_OFF = 1.05;
 const BACK_OFF = 2.1;
 const SHUFFLE_MOST = 7;
 const BACK_MOST = 11;
+// (Going no further than this, feet: no way to speak of.)
+const FACED_LEAST = 0.25;
+// (Kept on in push steps or a backpedal he was in, to HOLD_ON times as
+// quick; turned and running on the same way already, back in them only
+// under TURNED times as quick - not round and back each step.)
+const HOLD_ON = 1.2;
+const TURNED = 0.65;
 const faced = (
 	move: Move,
 	yaw: number | undefined,
 	from: Pt,
 	to: Pt,
 	fps: number,
+	was?: Leg,
 ): { move: Move; yaw: number | undefined } => {
 	const gaited = GAITS.has(move);
 	if (
 		yaw === undefined ||
 		(!gaited && move !== "slide") ||
-		dist(from, to) < 1
+		dist(from, to) < FACED_LEAST
 	) {
 		return { move, yaw };
 	}
@@ -238,13 +246,23 @@ const faced = (
 	if (off <= CRAB_OFF) {
 		return { move, yaw };
 	}
-	if (off <= BACK_OFF && fps <= SHUFFLE_MOST) {
+	const k =
+		was?.move === "shuffle" || was?.move === "back"
+			? HOLD_ON
+			: was &&
+				  GAITS.has(was.move) &&
+				  was.yaw === undefined &&
+				  dist(was.from, was.to) >= FACED_LEAST &&
+				  angleAt(was.from, from, to) < Math.PI / 3
+				? TURNED
+				: 1;
+	if (off <= BACK_OFF && fps <= SHUFFLE_MOST * k) {
 		return {
 			move: "shuffle",
 			yaw: way + (d > 0 ? 1 : -1) * (Math.PI / 2),
 		};
 	}
-	if (off > BACK_OFF && fps <= BACK_MOST) {
+	if (off > BACK_OFF && fps <= BACK_MOST * k) {
 		return { move: "back", yaw };
 	}
 	return gaited ? { move, yaw: undefined } : { move, yaw };
@@ -474,7 +492,7 @@ class Actor {
 		const t0 = l.t1;
 		const end = Math.max(t1, t0 + 1);
 		const fps = dist(l.to, p) / ((end - t0) / 1000);
-		const way = faced(paced(move, fps, end - t0), yaw, l.to, p, fps);
+		const way = faced(paced(move, fps, end - t0), yaw, l.to, p, fps, l);
 		return {
 			t0,
 			t1: end,
@@ -1073,6 +1091,17 @@ const BREAK_MS = 250;
 // long a step (from so long after the snap).
 const COVER_STEP = 220;
 const COVER_STEP_FIRST = 200;
+// Off him by the room he lined up with: giving up COVER_GIVE of what his man
+// makes down the field, and coming down on him at COVER_COME ft/s from
+// COVER_READ_MS after the snap - to no closer than COVER_MIN, easing on
+// to that over about COVER_SOFT (feet). And facing up the field at him
+// while he is more than COVER_FRONT in front of him (see faced).
+const COVER_GIVE = 0.45;
+const COVER_COME = 4;
+const COVER_READ_MS = 600;
+const COVER_MIN = 2.5;
+const COVER_SOFT = 3;
+const COVER_FRONT = 1;
 // At the mesh, the quarterback this far to the side of the back's way
 // through it (feet): the two of them drawn the size they are (see body.ts),
 // his hands out to the ball, and not into each other. (Turned to it as he
@@ -4895,7 +4924,7 @@ class Action {
 		fake?: number,
 		yac = 0,
 	) {
-		const { snap, dir } = this.input;
+		const { snap } = this.input;
 		const r = this.r;
 		// (Round where it is caught - further off, the further he goes with
 		// it after: they were beaten to it.)
@@ -4962,18 +4991,22 @@ class Action {
 						continue;
 					}
 					const p = this.of(rec.posAt(t - 180));
-					const cushion = Math.max(
-						2.5,
-						(start.d - rs.d) * (1 - (t - snap) / 1800),
-					);
+					const room =
+						start.d -
+						rs.d -
+						(1 - COVER_GIVE) * Math.max(0, p.d - rs.d) -
+						(COVER_COME * Math.max(0, t - snap - COVER_READ_MS)) / 1000;
+					const cushion =
+						COVER_MIN +
+						COVER_SOFT * Math.log1p(Math.exp((room - COVER_MIN) / COVER_SOFT));
 					const to = this.w({ d: p.d + cushion, a: p.a + inside * 1.8 });
-					const back = t - snap < 600 && (to.x - m.at.x) * dir > 0;
+					const front = this.of(m.at).d > p.d + COVER_FRONT;
 					m.chase(
 						to,
 						t,
-						m.top * (back ? 0.6 : 0.95),
-						back ? "back" : undefined,
-						back ? this.behind : undefined,
+						m.top * 0.95,
+						undefined,
+						front ? this.behind : undefined,
 					);
 				}
 			} else {
