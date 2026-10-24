@@ -300,6 +300,19 @@ class Actor {
 		}
 		const m = move ?? (moveKind(l.move) === "still" ? l.move : "stand");
 		const still = l.from.x === l.to.x && l.from.y === l.to.y;
+		// (Only a moment to wait, on his way there: there that much later,
+		// not stopped dead for it and off again.)
+		if (
+			!still &&
+			move === undefined &&
+			yaw === undefined &&
+			extra === undefined &&
+			moveKind(l.move) === "cycle" &&
+			t - l.t1 < WAIT_LEAST_MS
+		) {
+			l.t1 = t;
+			return;
+		}
 		if (
 			still &&
 			l.move === m &&
@@ -666,6 +679,9 @@ const GET_UP_MS = 1000;
 // Each man reads the play this long after the snap before he goes to the
 // ball.
 const READ_MS = 350;
+// A wait shorter than this, on his way somewhere: taken going there more
+// slowly, not stood.
+const WAIT_LEAST_MS = 150;
 // A defender sees the ball thrown and breaks on it this long after.
 const BREAK_MS = 250;
 // On his man in coverage: where he goes, worked out a step at a time, so
@@ -4354,6 +4370,11 @@ class Action {
 					}
 				}
 				for (const t of steps) {
+					// (Not one he has no time for, still on his way out of what
+					// he was doing at the snap.)
+					if (t - m.t < (t === until ? 1 : COVER_STEP)) {
+						continue;
+					}
 					const p = this.of(rec.posAt(t - 180));
 					const cushion = Math.max(
 						2.5,
