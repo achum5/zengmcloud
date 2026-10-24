@@ -198,6 +198,9 @@ const RAMP_OVER = 1.12;
 const RAMP_TOP = 31;
 const RAMP_LEAST = 4;
 const RAMP_LEG_MS = 250;
+// (Short of time for it: up to speed as much as this much the harder
+// first, before off the quicker all at once.)
+const RAMP_HARD = 1.6;
 const RAMPS = new Set<Move>(["jog", "run", "sprint"]);
 // Pulling up: down from his pace at STOP_ACCEL ft/s/s (harder, to stop
 // as near as he has to), in steps STOP_STEP_MS long (see slower).
@@ -619,8 +622,11 @@ class Actor {
 			(ve === undefined || ve > was * keep + SLOW_DROP) &&
 			this.plantFits(leg, was * keep)
 		) {
+			// (Not planted - out of a backpedal, say - none of his pace the
+			// new way but what he carries round: see paceInto.)
+			const before = this.last;
 			this.plantFor(leg.to, was * keep);
-			return legPace(this.last);
+			return this.last === before ? undefined : legPace(this.last);
 		}
 		return round < 1 ? ve : undefined;
 	}
@@ -1169,15 +1175,24 @@ class Actor {
 			return;
 		}
 		// (Up to vc and on at it, there on time - or, if that is too quick,
-		// off from v0 at as much more as it takes.)
+		// up to it the harder, and only then off from v0 at as much more as
+		// it takes.)
 		const room = T * T - (2 * (D - v0 * T)) / A;
 		let vc = room >= 0 ? v0 + A * (T - Math.sqrt(room)) : Infinity;
 		const most = Math.max(v, Math.min(v * RAMP_OVER, RAMP_TOP));
+		let a = A;
 		if (vc > most) {
 			vc = most;
-			v0 = Math.max(v0, vc - Math.sqrt(2 * A * (vc * T - D)));
+			const over = vc * T - D;
+			const hard = over > 0 ? ((vc - v0) * (vc - v0)) / (2 * over) : Infinity;
+			if (hard <= A * RAMP_HARD) {
+				a = Math.max(A, hard);
+			} else {
+				a = A * RAMP_HARD;
+				v0 = Math.max(v0, vc - Math.sqrt(2 * a * over));
+			}
 		}
-		const ta = (vc - v0) / A;
+		const ta = (vc - v0) / a;
 		if (!(ta > 0 && ta < T)) {
 			return;
 		}
@@ -1187,7 +1202,7 @@ class Actor {
 		let t = leg.t0;
 		let gone = 0;
 		for (let i = 0; i < n; i++) {
-			gone += (v0 + A * dt * (i + 0.5)) * dt;
+			gone += (v0 + a * dt * (i + 0.5)) * dt;
 			const at = {
 				x: leg.from.x + (dx * gone) / D,
 				y: leg.from.y + (dy * gone) / D,
