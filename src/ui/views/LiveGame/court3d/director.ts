@@ -10658,26 +10658,29 @@ class Director {
 		// With the hand on the ball's side.
 		let left = this.leftToBall(C, shooter, P);
 		const contest = (t: number, peak: number) => {
+			// Off the floor as long as gravity keeps a man up that high, at
+			// the top of it when he always was - the contest drawn out round
+			// a big leap (no sooner off the floor, nor later down, than the
+			// contest has his legs there).
+			const half = Math.sqrt((2 * peak) / GRAVITY) * 1000;
+			const D = Math.max(680, half / 0.43);
+			const t0 = t + 0.525 * (680 - D);
 			// (Not from way off him, nor once he is up for the rebound off it.)
 			if (
 				dist(C, P) > CONTEST_FT ||
 				this.track(d)?.acts.some(
 					(a) =>
 						(a.anim === "board" || a.anim === "rebound") &&
-						a.t1 > t &&
-						a.t0 < t + 680,
+						a.t1 > t0 &&
+						a.t0 < t0 + D,
 				)
 			) {
 				return;
 			}
-			// Off the floor as long as gravity keeps a man up that high, at
-			// the top of it when he always was (and no sooner off it, nor
-			// later down, than the contest has his legs there).
-			const half = Math.min(289, Math.sqrt((2 * peak) / GRAVITY) * 1000) / 680;
-			this.act(d, "contest", t, t + 680, {
+			this.act(d, "contest", t0, t0 + D, {
 				face,
 				look: { ...P },
-				jump: [0.525 - half, 0.525 + half, peak],
+				jump: [0.525 - half / D, 0.525 + half / D, peak],
 				...(left ? { mirror: true as const } : {}),
 			});
 		};
@@ -21726,7 +21729,8 @@ class Director {
 					t1: t + 690,
 					anim: "contest",
 					look: { ...at },
-					jump: [0.2, 0.8, 0.9],
+					// (Up as high as that long off the floor takes him.)
+					jump: [0.1, 0.9, hopFor(560, 0.8)],
 				});
 				tr.acts.sort((a, b) => a.t0 - b.t0);
 			} else if (!tr.arms.some((x) => x.t1 > t + 90 && x.t0 < t + 640)) {
