@@ -230,6 +230,9 @@ const CUT_SLIVER_MS = 1;
 const CUT_MERGE_MS = 60;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
 const STEPS = new Set<Move>([...GAITS, "back", "slide", "shuffle"]);
+// (Stood in it, or sat in it on the spot, alive under him - a receiver
+// sat down for the ball.)
+const sits = (m: Move) => moveKind(m) === "still" || m === "settle";
 // (Slower than this, ft/s, he is not going anywhere.)
 const CRAWL_FPS = 1;
 // Going well off the way he faces (more than CRAB_OFF radians), in a gait
@@ -503,7 +506,7 @@ class Actor {
 		if (t <= l.t1) {
 			return;
 		}
-		const m = move ?? (moveKind(l.move) === "still" ? l.move : "stand");
+		const m = move ?? (sits(l.move) ? l.move : "stand");
 		const still = l.from.x === l.to.x && l.from.y === l.to.y;
 		// (Only a moment to wait, on his way there: there that much later,
 		// not stopped dead for it and off again.)
@@ -528,7 +531,7 @@ class Actor {
 			l.t1 = t;
 			return;
 		}
-		if (!still && moveKind(m) === "still") {
+		if (!still && sits(m)) {
 			this.slowInto(0, STOP_ACCEL, t - l.t1);
 		}
 		this.push({

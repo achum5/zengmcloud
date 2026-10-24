@@ -337,6 +337,21 @@ const CLAP = { abN: -6, abF: -6, shF: 60, elF: 56 };
 // A play sheet held up at his chest, in his left hand.
 const SHEET = { shF: 34, elF: 104, abF: -18, wrF: 10 };
 // (Both hands on the ball, at his chest.)
+// A receiver sat down, hands up (see settle).
+const SETTLE = pose({
+	hipN: 24,
+	kneeN: 36,
+	hipF: 26,
+	kneeF: 38,
+	lean: 20,
+	shN: 50,
+	elN: 64,
+	abN: 12,
+	shF: 50,
+	elF: 64,
+	abF: 12,
+	wide: 0.8,
+});
 const QB_SET = pose({
 	hipN: 12,
 	kneeN: 22,
@@ -1058,23 +1073,27 @@ const FIELD_ANIMS = {
 		},
 	},
 	// A receiver sat down in a hole in the zone, turned to the quarterback,
-	// hands up for it.
+	// hands up for it: his feet alive under him, his weight from one to the
+	// other - not stood stock still waiting.
 	settle: {
-		kind: "still",
-		pose: pose({
-			hipN: 24,
-			kneeN: 36,
-			hipF: 26,
-			kneeF: 38,
-			lean: 20,
-			shN: 50,
-			elN: 64,
-			abN: 12,
-			shF: 50,
-			elF: 64,
-			abF: 12,
-			wide: 0.8,
-		}),
+		kind: "loop",
+		n: 8,
+		fps: 9,
+		pose: (i) => {
+			const a = Math.sin((Math.PI * 2 * i) / 8);
+			return {
+				...SETTLE,
+				hipN: SETTLE.hipN + 4 * a,
+				kneeN: SETTLE.kneeN + 8 * a,
+				hipF: SETTLE.hipF - 4 * a,
+				kneeF: SETTLE.kneeF - 8 * a,
+				toeN: Math.max(0, a) * 0.4,
+				toeF: Math.max(0, -a) * 0.4,
+				shN: SETTLE.shN + 2 * a,
+				shF: SETTLE.shF - 2 * a,
+				twist: 2 * a,
+			};
+		},
 	},
 	// Taking a knee: the right one down, the ball in both hands.
 	kneelDown: {
