@@ -336,6 +336,17 @@ const angleAt = (a: Pt, b: Pt, c: Pt): number => {
 	return Math.abs(Math.atan2(Math.sin(t), Math.cos(t)));
 };
 
+// Planted from v (ft/s) down to ve on the way he is going, where he is
+// going `ahead` feet on along it: no further on than that (see CUT_ACCEL)
+// - not past it and back. (The pace he is down to.)
+const plantedTo = (v: number, ve: number, ahead: number): number =>
+	Math.min(
+		v,
+		ahead > 0
+			? Math.max(ve, Math.sqrt(Math.max(0, v * v - 2 * CUT_ACCEL * ahead)))
+			: ve,
+	);
+
 // How quick he goes on leg l (ft/s).
 const legPace = (l: Leg): number =>
 	l.t1 > l.t0 ? dist(l.from, l.to) / ((l.t1 - l.t0) / 1000) : 0;
@@ -576,15 +587,22 @@ class Actor {
 		const l = this.last;
 		const v = legPace(l);
 		const far = dist(l.from, l.to);
-		if (far <= 0 || down >= v) {
+		if (far <= 0) {
 			return false;
 		}
-		const T = (v - down) / CUT_ACCEL;
-		const d = ((v + down) / 2) * T;
-		const at = {
-			x: l.to.x + ((l.to.x - l.from.x) / far) * d,
-			y: l.to.y + ((l.to.y - l.from.y) / far) * d,
-		};
+		const cos = (l.to.x - l.from.x) / far;
+		const sin = (l.to.y - l.from.y) / far;
+		const ve = plantedTo(
+			v,
+			down,
+			(leg.to.x - l.to.x) * cos + (leg.to.y - l.to.y) * sin,
+		);
+		if (ve >= v) {
+			return false;
+		}
+		const T = (v - ve) / CUT_ACCEL;
+		const d = ((v + ve) / 2) * T;
+		const at = { x: l.to.x + cos * d, y: l.to.y + sin * d };
 		const left = leg.t1 - l.t1 - T * 1000;
 		const most = Math.max(
 			legPace(leg),
@@ -906,16 +924,17 @@ class Actor {
 		if (!(turn > CUT_LEAST)) {
 			return;
 		}
-		const ve = Math.min(
+		const far = dist(l.from, l.to);
+		const cos = (l.to.x - l.from.x) / far;
+		const sin = (l.to.y - l.from.y) / far;
+		const ve = plantedTo(
 			v,
 			down ?? v * Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2),
+			(to.x - l.to.x) * cos + (to.y - l.to.y) * sin,
 		);
 		if (!(ve < v)) {
 			return;
 		}
-		const far = dist(l.from, l.to);
-		const cos = (l.to.x - l.from.x) / far;
-		const sin = (l.to.y - l.from.y) / far;
 		const T = (v - ve) / CUT_ACCEL;
 		const n = Math.max(1, Math.round((T * 1000) / STOP_STEP_MS));
 		const dt = T / n;
@@ -1080,6 +1099,13 @@ class Actor {
 	// or as far as that gets him.
 	chaseUp(to: Pt, t1: number, fps: number, move?: Move) {
 		const p = onField(to, this.roam);
+		// (Planted first, well round from the way he is going - all the
+		// time there is, maybe.)
+		this.plantFor(p);
+		if (t1 - this.t < STOP_STEP_MS) {
+			this.hold(t1);
+			return;
+		}
 		const from = this.at;
 		const far = dist(from, p);
 		const T = Math.max(0, t1 - this.t) / 1000;
@@ -4449,7 +4475,11 @@ class Action {
 			if (!(turn > CUT_LEAST)) {
 				return { at, t: c };
 			}
-			const ve = v * Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2);
+			const ve = plantedTo(
+				v,
+				v * Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2),
+				(hit.x - at.x) * cos + (hit.y - at.y) * sin,
+			);
 			const T = (v - ve) / CUT_ACCEL;
 			const d = ((v + ve) / 2) * T;
 			return { at: { x: at.x + cos * d, y: at.y + sin * d }, t: c + T * 1000 };
@@ -8099,13 +8129,13 @@ class Action {
 			};
 			m.run(spot, Math.min(m.top * 0.6, STOP_FPS));
 			if (bump) {
-				const t = Math.max(m.t, hero.t) + 60;
+				const t = Math.max(m.t, hero.t) + FIVE_SET_MS;
 				m.hold(t, "stand", way + Math.PI);
 				hero.hold(t, "stand", way);
 				m.act("chestBump", t + STOP_BUMP_MS, way + Math.PI);
 				hero.act("chestBump", t + STOP_BUMP_MS, way);
 			} else if (five) {
-				const t = Math.max(m.t, hero.t) + 60;
+				const t = Math.max(m.t, hero.t) + FIVE_SET_MS;
 				m.hold(t, "stand", way + Math.PI - FIVE.turn);
 				hero.hold(t, "stand", way - FIVE.turn);
 				m.act("highFive", t + FIVE_MS, way + Math.PI - FIVE.turn);
@@ -8554,7 +8584,7 @@ class Action {
 		const uy = Math.sin(way) * half;
 		a.run({ x: mid.x - ux, y: mid.y - uy }, FIVE_FPS, undefined, way);
 		b.run({ x: mid.x + ux, y: mid.y + uy }, FIVE_FPS, undefined, way + Math.PI);
-		const t = Math.max(a.t, b.t) + 60;
+		const t = Math.max(a.t, b.t) + FIVE_SET_MS;
 		a.hold(t, "stand", way - FIVE.turn);
 		b.hold(t, "stand", way + Math.PI - FIVE.turn);
 		a.act("highFive", t + FIVE_MS, way - FIVE.turn);
@@ -8733,6 +8763,9 @@ const KICK_FIVE = 0.75;
 const TRY_FIVE = 0.4;
 const KICK_PUMP = 0.35;
 const FIVE_MS = 800;
+// (Squared up to each other this long first, the later there of the two -
+// not into it off his last step.)
+const FIVE_SET_MS = 200;
 // (Two men slapping hands: how far apart, how far turned - see handsMeet.)
 const FIVE = handsMeet(drawnBody(footballBody()), "highFive", HIGH_FIVE_AT);
 // A punt going in for a touchback: the cover easing up this far short of
