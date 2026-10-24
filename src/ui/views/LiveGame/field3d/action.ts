@@ -2194,6 +2194,9 @@ const GATHER_IN = 0.6;
 const GATHER_NEAREST = 3.5;
 const GATHER_LEAST_MS = 400;
 const GATHER_FALLEN_MS = 1400;
+// A loose ball batted about: no nearer than this to the spot he dives from
+// (feet), he is laid out for it from where he is, not stepping in first.
+const BAT_RUN_LEAST_FT = 1.5;
 // Getting up off the turf.
 const RISING = new Set<Move>(["getUp", "getUpBack", "sitUp"]);
 const DOWN = new Set<Move>([
@@ -5792,20 +5795,36 @@ class Action {
 				2,
 			);
 			near.forEach((m, k) => {
-				const yaw = this.toward(m.posAt(this.seen), bat);
-				const off = Math.min(3.5, dist(m.posAt(this.seen), bat));
+				const from = m.posAt(this.seen);
+				const yaw = this.toward(from, bat);
+				const off = Math.min(3.5, dist(from, bat));
 				const short = {
 					x: bat.x - Math.cos(yaw) * off,
 					y: bat.y - Math.sin(yaw) * off,
 				};
-				const at = Math.max(batT + k * 160, this.canReach(m, short) + 300);
+				// (Up to speed from what he was doing, a few strides of it -
+				// or, hardly any way to go, laid out from where he is.)
+				const run = dist(from, short);
+				const l = m.legs.findLast((x) => x.t0 < this.seen && x.t1 > x.t0);
+				const v0 = l && RAMPS.has(l.move) ? paceOn(l, from, short) : 0;
+				const A = v0 > 0 ? RAMP_ACCEL : RELEASE_ACCEL;
+				const at = Math.max(
+					batT + k * 160,
+					this.seen +
+						(run > BAT_RUN_LEAST_FT
+							? rampedMs(run, m.top * FLAT_OUT, v0, A)
+							: 0) +
+						300,
+				);
 				if (at > stopT - 200) {
 					return;
 				}
 				m.cut(this.seen);
 				m.hold(this.seen);
-				if (off > TURN_IN_FT && at - 300 > m.t) {
-					m.chase(short, at - 300, m.top * FLAT_OUT, "sprint");
+				if (run > BAT_RUN_LEAST_FT && at - 300 > m.t) {
+					m.getOff(short, at - 300, v0, A, "sprint");
+				} else if (off > TURN_IN_FT) {
+					m.hold(at - 300);
 				} else {
 					m.hold(at - 300, undefined, yaw);
 				}
