@@ -338,6 +338,7 @@ export const fieldFarmHand = (
 					shaped: {
 						dx: sh.dx,
 						dy: sh.dy,
+						anchor: sh.anchor,
 						pixels: [data, sh.pixels.width, sh.pixels.height],
 					},
 				};

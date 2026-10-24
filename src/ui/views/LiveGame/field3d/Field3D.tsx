@@ -179,7 +179,12 @@ const handsOfFor =
 			return undefined;
 		}
 		const at = bodyPoint(
-			{ x: st.x, y: st.y, z: drawnLift(st, fine()), yaw: drawn.yaw },
+			{
+				x: st.x + drawn.shift.x,
+				y: st.y + drawn.shift.y,
+				z: drawnLift(st, fine()),
+				yaw: drawn.yaw,
+			},
 			drawn.ball.at,
 		);
 		return { x: at.x, y: at.y, z: at.z / FIGURE_SCALE };

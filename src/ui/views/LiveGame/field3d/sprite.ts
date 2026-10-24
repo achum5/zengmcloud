@@ -1,5 +1,11 @@
 import { project, type Camera } from "../court3d/camera.ts";
-import { lerpPose, type Body, type Pose, type V3 } from "../court3d/poses.ts";
+import {
+	lerpPose,
+	skeleton,
+	type Body,
+	type Pose,
+	type V3,
+} from "../court3d/poses.ts";
 import {
 	keepPixels,
 	rim,
@@ -46,6 +52,9 @@ export type FieldPlayerState = {
 	z: number;
 	// Which way he faces, radians (0 = toward the right end zone).
 	yaw: number;
+	// Drawn in a turn he is held to, a little off it (see steadied): the
+	// way he faces all the same.
+	faces?: number;
 	move: Move;
 	// How far through it (0 to 1).
 	phase: number;
@@ -414,11 +423,53 @@ export const steadied = (
 	was.at = t;
 	if (slow && Math.abs(t - turn) < 0.5 + STEADY_PAST) {
 		was.turn = turn;
-		return { ...st, yaw: turn * step };
+		return { ...st, yaw: turn * step, faces: st.yaw };
 	}
 	was.turn = Math.round(t);
 	return st;
 };
+
+// THE MIDDLE OF HIM WHERE IT IS, NOT SWUNG ROUND TO A TURN: drawn in the
+// nearest of the sprite's turns, round where he stands, a man down low or
+// stretched out - his head a yard out in front of him - would jump a half a
+// foot as he goes from one turn to the next. The middle of him (the middle
+// of the box his head, hands, knees and feet make, seen from over him: his
+// frame) put where the way he really faces has it, instead - all of him
+// within half his length of it, and no further off from turn to turn than
+// that much of a turn.
+type Anchor = { f: number; s: number; yaw: number };
+const anchorOf = (body: Body, pose: Pose, yaw: number): Anchor => {
+	const sk = skeleton(body, pose);
+	const pts = [
+		sk.head,
+		sk.pelvis,
+		sk.armR.end,
+		sk.armL.end,
+		sk.legR.mid,
+		sk.legL.mid,
+		sk.legR.end,
+		sk.legL.end,
+	];
+	let f0 = Infinity;
+	let f1 = -Infinity;
+	let s0 = Infinity;
+	let s1 = -Infinity;
+	for (const p of pts) {
+		f0 = Math.min(f0, p.f);
+		f1 = Math.max(f1, p.f);
+		s0 = Math.min(s0, p.s);
+		s1 = Math.max(s1, p.s);
+	}
+	return { f: (f0 + f1) / 2, s: (s0 + s1) / 2, yaw };
+};
+// (How far over on the field, feet, his picture goes for that: see
+// sculpt.ts bodyPoint for his frame.)
+const shiftOf = (a: Anchor, faces: number): { x: number; y: number } => {
+	const dc = Math.cos(faces) - Math.cos(a.yaw);
+	const ds = Math.sin(faces) - Math.sin(a.yaw);
+	return { x: a.f * dc + a.s * ds, y: a.f * ds - a.s * dc };
+};
+const facing = (st: FieldPlayerState) => st.faces ?? st.yaw;
 
 // How he is drawn, the way the sprite has him: his pose and the way he
 // faces (to the nearest of its turns) - in the finer steps, if he is drawn
@@ -489,12 +540,30 @@ export const drawnBall = (
 	st: FieldPlayerState,
 	body: Body,
 	fine = false,
-): { ball: HeldBall; yaw: number } | undefined => {
+):
+	| { ball: HeldBall; yaw: number; shift: { x: number; y: number } }
+	| undefined => {
 	if (!st.ball) {
 		return undefined;
 	}
 	const s = stepped(st, fine ? FINE : COARSE);
-	return { ball: ballFor(st, body, poseFor(st, s), s, st.ball), yaw: s.yaw };
+	const pose = poseFor(st, s);
+	return {
+		ball: ballFor(st, body, pose, s, st.ball),
+		yaw: s.yaw,
+		shift: shiftOf(anchorOf(body, pose, s.yaw), facing(st)),
+	};
+};
+
+// How far over on the field (feet) his picture is drawn from where he
+// stands (see anchorOf).
+export const drawnShift = (
+	st: FieldPlayerState,
+	body: Body,
+	fine = false,
+): { x: number; y: number } => {
+	const s = stepped(st, fine ? FINE : COARSE);
+	return shiftOf(anchorOf(body, poseFor(st, s), s.yaw), facing(st));
 };
 
 const figureOf = (st: FieldPlayerState, body: Body, s: Stepped): Figure => {
@@ -669,7 +738,13 @@ const jobOf = (
 // and done as readily in a worker as on the page. Just what is drawn of him
 // and the rim round it, and where that sits from where he stands - nothing,
 // if nothing of him shows.
-export type FieldShaped = { pixels: ImageData; dx: number; dy: number };
+export type FieldShaped = {
+	pixels: ImageData;
+	dx: number;
+	dy: number;
+	// The middle of him in it (see anchorOf).
+	anchor: Anchor;
+};
 export const shapeField = (
 	job: FieldJob,
 	look: FieldLook,
@@ -707,7 +782,25 @@ export const shapeField = (
 		pixels,
 		dx: ox + rx0 * px - job.baseX,
 		dy: oy + ry0 * px - job.baseY,
+		anchor: anchorOf(body, fig.pose, fig.yaw),
 	};
+};
+
+// The middle of him in each picture kept (see anchorOf).
+const anchors = new WeakMap<Kept, Anchor>();
+// Where on the picture his picture goes from where he stands, for that.
+const shiftedOn = (
+	cam: Camera,
+	st: FieldPlayerState,
+	base: { x: number; y: number },
+	a: Anchor | undefined,
+): { x: number; y: number } => {
+	const d = a && shiftOf(a, facing(st));
+	if (!d || (d.x === 0 && d.y === 0)) {
+		return { x: 0, y: 0 };
+	}
+	const p = project(cam, { x: st.x + d.x, y: st.y + d.y, z: 0 });
+	return { x: p.x - base.x, y: p.y - base.y };
 };
 
 // His picture for the plan, sculpted: kept, with a cache - or, without,
@@ -731,6 +824,7 @@ const make = (
 	}
 	if (cache && plan.key) {
 		const kept = keepPixels(cache, plan.key, sh.pixels, sh.dx, sh.dy);
+		anchors.set(kept, sh.anchor);
 		cache.spent += performance.now() - began;
 		return kept;
 	}
@@ -742,7 +836,13 @@ const make = (
 	}
 	s.setTransform(1, 0, 0, 1, 0, 0);
 	s.putImageData(sh.pixels, 0, 0);
-	return { w, h, x: plan.base.x + sh.dx, y: plan.base.y + sh.dy - plan.lift };
+	const on = shiftedOn(cam, st, plan.base, sh.anchor);
+	return {
+		w,
+		h,
+		x: plan.base.x + on.x + sh.dx,
+		y: plan.base.y + on.y + sh.dy - plan.lift,
+	};
 };
 
 // Which picture he is drawn in this frame: his own for this pose, kept;
@@ -783,8 +883,9 @@ const took = (cache: SpriteCache, farm: FieldFarm) => {
 		if (cache.kept.has(m.key)) {
 			continue;
 		}
-		const { pixels, dx, dy } = m.shaped;
+		const { pixels, dx, dy, anchor } = m.shaped;
 		const kept = keepPixels(cache, m.key, pixels, dx, dy);
+		anchors.set(kept, anchor);
 		const was = cache.last.get(m.id);
 		if (
 			m.frame < cache.frame &&
@@ -896,7 +997,8 @@ export const drawFieldPlayer = (
 	if (cache && plan.key !== undefined) {
 		const was = pick(cache, plan, st.id);
 		if (was !== "make") {
-			stamp(ctx, was, base.x, base.y - lift, px);
+			const on = shiftedOn(cam, st, base, anchors.get(was));
+			stamp(ctx, was, base.x + on.x, base.y + on.y - lift, px);
 			return;
 		}
 	}
@@ -912,7 +1014,8 @@ export const drawFieldPlayer = (
 			scale: plan.scale,
 			held: plan.held,
 		});
-		stamp(ctx, made, base.x, base.y - lift, px);
+		const on = shiftedOn(cam, st, base, anchors.get(made));
+		stamp(ctx, made, base.x + on.x, base.y + on.y - lift, px);
 		return;
 	}
 	const smoothing = ctx.imageSmoothingEnabled;
