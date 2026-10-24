@@ -706,6 +706,15 @@ class Actor {
 		return v0 + a * ta;
 	}
 
+	// Pulled up to a stand by the end of the leg he is on, going at a pace
+	// he could not stop dead from (see slowInto).
+	pullUpOn() {
+		const l = this.last;
+		if (GAITS.has(l.move) && legPace(l) >= SLOW_DROP) {
+			this.slowInto(0, STOP_ACCEL);
+		}
+	}
+
 	// Cutting to `to` by t1 off the leg he is on: down to `keep` of his pace
 	// over the last of it (see CUT_ACCEL), his foot planted, and off the new
 	// way up from there.
@@ -3481,7 +3490,7 @@ class Action {
 				return;
 			}
 			if (k === 1) {
-				m.getOff(to, t1, 0, RELEASE_ACCEL);
+				m.getOff(to, t1, 0, RELEASE_ACCEL, gait(routeFps(speed, 1)));
 			} else if (cut.keep < 1) {
 				m.cutTo(to, t1, cut.keep);
 			} else {
@@ -3759,7 +3768,10 @@ class Action {
 			return true;
 		}
 		const face = qb ? this.toward(rec.at, qb.at) : rec.yaw;
+		// (Getting there as he reaches for it, or no more than a moment
+		// before - see hold: pulled up into it, not stopped dead.)
 		rec.hold(reach);
+		rec.pullUpOn();
 		rec.act("catch", catchAt + 220, face);
 		return false;
 	}
