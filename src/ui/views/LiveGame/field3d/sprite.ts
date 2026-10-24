@@ -386,11 +386,16 @@ export const drawnPose = (
 // How high he is drawn off the turf (feet): up as the play has him (in a
 // leap, on a pile), and off it between strides as his frame has him - his
 // lower foot on the turf, landing.
+// (What he was is still partly what he was before that, as in his pose.)
+const wasLift = (u: Under, len: number | undefined): number => {
+	const up = strideLift(u.move, u.phase, len);
+	return u.under ? up + (wasLift(u.under, len) - up) * u.under.w : up;
+};
 const liftFor = (st: FieldPlayerState, s: Stepped): number => {
 	let up = strideLift(st.move, s.phase, s.len);
 	const f = s.from;
 	if (f) {
-		up += (strideLift(f.move, f.phase, s.len) - up) * f.w;
+		up += (wasLift(f, s.len) - up) * f.w;
 	}
 	return (Math.max(0, st.z) + up) * FIGURE_SCALE;
 };
