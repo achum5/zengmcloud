@@ -1849,10 +1849,12 @@ const STEP_UP_MS = 420;
 const PUMP = 0.12;
 const PUMP_MS = 520;
 // The rush: working a blocker's shoulder, a step over (feet) this often
-// (ms); off the edge, on a tackle's outside shoulder (feet out, and in front
-// of him), and round him by the end (feet behind).
+// (ms) - eased over and back, a step this long (ms) at a time, not swung
+// like a pendulum; off the edge, on a tackle's outside shoulder (feet out,
+// and in front of him), and round him by the end (feet behind).
 const HAND_MS = 420;
 const HAND_FT = 0.9;
+const HAND_STEP_MS = 90;
 const EDGE_OUT = 1.7;
 const EDGE_ON = 1.6;
 const EDGE_PAST = 1.8;
@@ -5577,16 +5579,34 @@ class Action {
 				hitT = Math.max(hitT, m.t + (way / (m.top * 0.85)) * 1000);
 				m.go(arc, m.t + ((hitT - m.t) * a) / Math.max(1, way), "run");
 			}
-			m.go(on(hitT, (r() - 0.5) * 0.6), hitT, "run");
+			const hitLat = (r() - 0.5) * 0.6;
+			m.go(on(hitT, hitLat), hitT, "run");
 			const per = HAND_MS * (0.8 + r() * 0.5);
 			const amp = edge ? 0 : HAND_FT * (0.5 + r());
 			let way = r() < 0.5 ? 1 : -1;
-			const steps: { t: number; lat: number }[] = [];
+			const turns: { t: number; lat: number }[] = [];
 			for (let t = hitT + per; t < end - per / 2; t += per) {
-				steps.push({ t, lat: way * amp });
+				turns.push({ t, lat: way * amp });
 				way = -way;
 			}
-			steps.push({ t: end, lat: 0 });
+			turns.push({ t: end, lat: 0 });
+			// (Over and back easing in and out of each way he works him.)
+			const steps: { t: number; lat: number }[] = [];
+			let t0 = hitT;
+			let lat0 = hitLat;
+			for (const x of turns) {
+				const n =
+					amp > 0 ? Math.max(1, Math.round((x.t - t0) / HAND_STEP_MS)) : 1;
+				for (let k = 1; k <= n; k++) {
+					const u = (1 - Math.cos((Math.PI * k) / n)) / 2;
+					steps.push({
+						t: t0 + ((x.t - t0) * k) / n,
+						lat: lat0 + (x.lat - lat0) * u,
+					});
+				}
+				t0 = x.t;
+				lat0 = x.lat;
+			}
 			const held = steps.map((x) => b.posAt(x.t));
 			for (const x of steps) {
 				const p = on(x.t, x.lat);
