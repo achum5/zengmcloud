@@ -1631,9 +1631,14 @@ const COVER_READ_MS = 600;
 const COVER_MIN = 2.5;
 const COVER_SOFT = 3;
 const COVER_FRONT = 1;
-// Back into his zone at this pace (ft/s), this far back at least (feet).
+// Back into his zone at this pace (ft/s), this far back at least (feet) -
+// settling into it over as much as this (feet), and turned and run there
+// if it takes him any quicker than this (ft/s) over this long (ms) at least.
 const ZONE_FPS = 9;
 const READ_STEPS_FT = 3;
+const ZONE_SETTLE_FT = 3;
+const BACK_MOST_FPS = 10;
+const BAIL_LEAST_MS = 1000;
 // Sat in it, a step at a time this long (ms): toward the nearest man in
 // it, no further off than ZONE_SEE_FT (feet), ZONE_LEAN of the way to him,
 // no more than ZONE_REACH_FT from it - at no more than ZONE_DRIFT_FPS, and
@@ -5747,13 +5752,35 @@ class Action {
 					d: Math.max(zone.d, start.d + READ_STEPS_FT),
 					a: zone.a,
 				});
+				// (Settling into it at the last - or, too far to get there
+				// backpedaling, turned and run there, round to the ball once
+				// he is. Not when the ball or the run calls him off it first.)
+				const far = dist(m.at, spot);
+				const due = Math.min(drop, m.t + (far / ZONE_FPS) * 1000);
+				const by = Math.min(until, due);
+				const T = Math.max(0.1, (by - m.t) / 1000);
+				const room = until < due ? 0 : Math.min(ZONE_SETTLE_FT, far / 2);
+				const bail =
+					room > 0 &&
+					(far + room) / T > BACK_MOST_FPS &&
+					T * 1000 >= BAIL_LEAST_MS;
+				const fit = bail ? room : Math.min(room, BACK_MOST_FPS * T - far);
+				const ease = fit < 0.5 ? 0 : fit;
+				const fps = Math.min(m.top * 0.6, (far + ease) / T);
+				const u = far > 0 ? (far - ease) / far : 0;
 				m.chase(
-					spot,
-					Math.min(until, drop, m.t + (dist(m.at, spot) / ZONE_FPS) * 1000),
-					m.top * 0.6,
-					"back",
-					this.behind,
+					{
+						x: m.at.x + (spot.x - m.at.x) * u,
+						y: m.at.y + (spot.y - m.at.y) * u,
+					},
+					by - ((2 * ease) / Math.max(1, fps)) * 1000,
+					fps,
+					bail ? undefined : "back",
+					bail ? undefined : this.behind,
 				);
+				if (ease > 0) {
+					m.easeOff(ease);
+				}
 				// Sat in it, reading it: drifting with the nearest man coming
 				// into it, a step or two at a time.
 				for (
