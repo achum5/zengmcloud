@@ -13,6 +13,7 @@ import {
 	DEFAULT_FIT,
 	type KitFit,
 	kitArtOf,
+	loadKitPicture,
 	writeFit,
 } from "../LiveGame/court3d/kitArt.ts";
 
@@ -31,12 +32,13 @@ export type JerseySkinsTeam = {
 // A picture kept is a PNG at most this long (see setJerseySkin).
 const SKIN_MAX = 690_000;
 
-// An uploaded picture made ready to keep: the template's shape, its guides
-// gone, a PNG as big as it can be and still be kept.
-const toSkinURL = async (file: File): Promise<string> => {
-	const img = new Image();
-	img.src = await fileToDataURL(file);
-	await img.decode();
+// An uploaded picture (a file, or one already read in) made ready to keep:
+// the template's shape, its guides gone, a PNG as big as it can be and
+// still be kept.
+export const toSkinURL = async (file: File | string): Promise<string> => {
+	const img = await loadKitPicture(
+		typeof file === "string" ? file : await fileToDataURL(file),
+	);
 	const scale = artScaleOf(img.width, img.height);
 	if (scale === undefined) {
 		throw new Error(
@@ -73,19 +75,13 @@ const toSkinURL = async (file: File): Promise<string> => {
 };
 
 // A picture's lettering settings.
-const fitOf = async (url: string): Promise<KitFit> => {
-	const img = new Image();
-	img.src = url;
-	await img.decode();
-	return kitArtOf(img, "")?.fit ?? DEFAULT_FIT;
-};
+const fitOf = async (url: string): Promise<KitFit> =>
+	kitArtOf(await loadKitPicture(url), "")?.fit ?? DEFAULT_FIT;
 
 // A picture with these lettering settings written into it (made lettered,
 // if it wasn't).
 const withFit = async (url: string, fit: KitFit): Promise<string> => {
-	const img = new Image();
-	img.src = url;
-	await img.decode();
+	const img = await loadKitPicture(url);
 	const scale = artScaleOf(img.width, img.height) ?? 1;
 	const cv = document.createElement("canvas");
 	cv.width = img.width;
@@ -284,6 +280,28 @@ const JerseySkins = ({
 		setBusy(undefined);
 	};
 
+	// A picture hosted elsewhere, by its link - the template's shape, on a
+	// host that lets it be read back.
+	const saveLink = async (side: Side, link: string) => {
+		setBusy(side);
+		setProblem(undefined);
+		try {
+			let ok = false;
+			try {
+				ok = kitArtOf(await loadKitPicture(link), link) !== undefined;
+			} catch {}
+			if (!ok) {
+				throw new Error("That link isn't a jersey picture the game can read.");
+			}
+			window.clearTimeout(keepTimer.current[side]);
+			setDrafts((old) => ({ ...old, [side]: undefined }));
+			await keep(side, link);
+		} catch (error) {
+			setProblem(error.message);
+		}
+		setBusy(undefined);
+	};
+
 	const downloadTemplate = async () => {
 		setBusy("template");
 		try {
@@ -361,6 +379,28 @@ const JerseySkins = ({
 										</button>
 									) : null}
 								</div>
+								<input
+									key={id}
+									type="url"
+									className="form-control form-control-sm mt-2 mx-auto"
+									style={{ width: 190 }}
+									placeholder="or a link: https://..."
+									defaultValue={
+										id !== undefined && /^https?:\/\//.test(id) ? id : ""
+									}
+									disabled={busy !== undefined}
+									onKeyDown={(event) => {
+										if (event.key === "Enter") {
+											event.currentTarget.blur();
+										}
+									}}
+									onBlur={(event) => {
+										const link = event.target.value.trim();
+										if (/^https?:\/\/\S+$/.test(link) && link !== id) {
+											void saveLink(side, link);
+										}
+									}}
+								/>
 								{lettering && id !== undefined ? (
 									<FitControls
 										fit={fitFor(side)}

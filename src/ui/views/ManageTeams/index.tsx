@@ -16,6 +16,7 @@ import TeamForm, { getNumTeamsByDid } from "./TeamForm.tsx";
 import { useBlocker } from "../../hooks/useBlocker.ts";
 import { useLocal } from "../../util/local.ts";
 import JerseySkins from "./JerseySkins.tsx";
+import ImportTeamLooks from "./ImportTeamLooks.tsx";
 
 export const nextSeasonWarning =
 	"Because the regular season is already over, changes will not be fully applied until next season.";
@@ -243,6 +244,14 @@ const ManageTeams = (props: View<"manageTeams">) => {
 					>
 						Score bug
 					</a>
+					<ImportTeamLooks
+						teams={props.teams}
+						onSkins={(tid, ids) => {
+							setSkins((old) =>
+								new Map(old).set(tid, { ...old.get(tid), ...ids }),
+							);
+						}}
+					/>
 				</div>
 			) : null}
 			{!godMode ? (

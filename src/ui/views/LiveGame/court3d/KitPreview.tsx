@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { makeCamera, MAIN_RIG } from "./camera.ts";
 import type { PlayerState } from "./evaluate.ts";
 import { kitsFor, type Look, type TeamDress } from "./figure.ts";
-import { dressKit, kitArtOf, type KitArt } from "./kitArt.ts";
+import { dressKit, kitArtOf, loadKitPicture, type KitArt } from "./kitArt.ts";
 import { bodyOf } from "./poses.ts";
 import { drawSprite, makeScratch, makeSpriteCache } from "./sprite.ts";
 
@@ -32,11 +32,8 @@ const KitPreview = ({
 			return;
 		}
 		let alive = true;
-		const img = new Image();
-		img.src = url;
-		img
-			.decode()
-			.then(() => {
+		loadKitPicture(url)
+			.then((img) => {
 				if (alive) {
 					setArt(kitArtOf(img, url.slice(-48)));
 				}

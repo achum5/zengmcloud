@@ -57,7 +57,7 @@ import { crewAt, crewFor } from "./crew.ts";
 import { courtsideFor } from "./courtside.ts";
 import { headColors, loadHead, profileOf, type HeadSprite } from "./faces.ts";
 import { gearFor, kitsFor, shade, type Look } from "./figure.ts";
-import { dressKit, kitArtOf, type KitArt } from "./kitArt.ts";
+import { dressKit, kitArtOf, loadKitPicture, type KitArt } from "./kitArt.ts";
 import { logoPicture } from "./logoPicture.ts";
 import { COURT_W, type Side } from "./geometry.ts";
 import { eventsMatchRoster } from "./rosterMatch.ts";
@@ -501,14 +501,11 @@ const Court3D = ({
 					if (id === undefined) {
 						return undefined;
 					}
-					const img = new Image();
-					img.src = urls[id]!;
 					try {
-						await img.decode();
+						return kitArtOf(await loadKitPicture(urls[id]!), id);
 					} catch {
 						return undefined;
 					}
-					return kitArtOf(img, id);
 				}),
 			);
 			if (alive) {

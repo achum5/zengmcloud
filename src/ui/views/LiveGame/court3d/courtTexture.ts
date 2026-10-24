@@ -10,15 +10,27 @@
 // allowed to fetch anything, so each logo is drawn onto the picture
 // separately, exactly where the SVG puts it.
 
-const load = (src: string) =>
+// (A picture hosted elsewhere asked for as one we may read back, where its
+// host allows that - so the floor picture stays readable; if not, as it is.)
+const load = (
+	src: string,
+	cors = /^https?:\/\//.test(src),
+): Promise<HTMLImageElement> =>
 	new Promise<HTMLImageElement>((resolve, reject) => {
 		const img = new Image();
 		img.decoding = "async";
+		if (cors) {
+			img.crossOrigin = "anonymous";
+		}
 		img.onload = () => {
 			resolve(img);
 		};
 		img.onerror = () => {
-			reject(new Error("image failed"));
+			if (cors) {
+				load(src, false).then(resolve, reject);
+			} else {
+				reject(new Error("image failed"));
+			}
 		};
 		img.src = src;
 	});

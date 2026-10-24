@@ -6779,8 +6779,11 @@ const updateCourtDecals = async ({
 // URL, at most this long), or none. The picture is stored once, by a hash of
 // it, in the synced jerseySkins store - so it travels in the league file -
 // and the team record keeps only its id. A picture no team wears any more is
-// removed (a replay that wore it shows the team's current one instead).
+// removed (a replay that wore it shows the team's current one instead). Or a
+// link to a picture hosted elsewhere, the way team logos are: the team record
+// keeps the link itself, and nothing goes in the store.
 const JERSEY_SKIN_MAX = 700_000;
+const JERSEY_LINK = /^https?:\/\/\S{1,2000}$/;
 const setJerseySkin = async ({
 	tid,
 	side,
@@ -6795,7 +6798,9 @@ const setJerseySkin = async ({
 		throw new Error(`Team not found for tid ${tid}`);
 	}
 	let id: string | undefined;
-	if (url !== undefined) {
+	if (url !== undefined && JERSEY_LINK.test(url)) {
+		id = url;
+	} else if (url !== undefined) {
 		if (url.length > JERSEY_SKIN_MAX) {
 			throw new Error("Invalid picture");
 		}
@@ -6824,6 +6829,11 @@ const setJerseySkin = async ({
 const getJerseySkins = async (ids: string[]) => {
 	const out: Record<string, string> = {};
 	for (const id of ids) {
+		// (A link is its own picture.)
+		if (JERSEY_LINK.test(id)) {
+			out[id] = id;
+			continue;
+		}
 		const row = await pictureById(id);
 		if (row) {
 			out[id] = row.url;

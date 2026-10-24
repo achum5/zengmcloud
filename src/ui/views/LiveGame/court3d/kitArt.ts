@@ -578,6 +578,21 @@ export const kitArtFromPixels = (
 	};
 };
 
+// A uniform's picture, loaded: one hosted elsewhere asked for as a picture
+// we may read back (its host must allow it - CORS), since every pixel of it
+// is read to dress the players.
+export const loadKitPicture = async (
+	url: string,
+): Promise<HTMLImageElement> => {
+	const img = new Image();
+	if (/^https?:\/\//.test(url)) {
+		img.crossOrigin = "anonymous";
+	}
+	img.src = url;
+	await img.decode();
+	return img;
+};
+
 // A loaded picture made into a KitArt (see kitArtFromPixels).
 export const kitArtOf = (
 	img: HTMLImageElement | HTMLCanvasElement,
@@ -597,7 +612,13 @@ export const kitArtOf = (
 		return undefined;
 	}
 	g.drawImage(img, 0, 0);
-	const pixels = g.getImageData(0, 0, cv.width, cv.height).data;
+	let pixels: Uint8ClampedArray;
+	try {
+		pixels = g.getImageData(0, 0, cv.width, cv.height).data;
+	} catch {
+		// (A picture from a host that won't let it be read back.)
+		return undefined;
+	}
 	return kitArtFromPixels(pixels, cv.width, cv.height, id);
 };
 

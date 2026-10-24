@@ -216,7 +216,8 @@ export const prunePictures = async (ids: Iterable<string>) => {
 		}
 	}
 	for (const id of new Set(ids)) {
-		if (!used.has(id)) {
+		// (A link to a picture hosted elsewhere is nothing of ours to remove.)
+		if (!used.has(id) && !/^https?:\/\//.test(id)) {
 			await idb.cache.jerseySkins.delete(id);
 		}
 	}

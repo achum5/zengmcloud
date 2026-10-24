@@ -118,6 +118,23 @@ describe("court pictures", () => {
 		assert.strictEqual(await idb.cache.jerseySkins.get(loose), undefined);
 	});
 
+	test("a jersey linked from elsewhere is left alone: nothing to keep, nothing to remove", async () => {
+		await setup();
+		const link = "https://cdn.example.com/kits/BOS-home.png";
+		const t0 = (await idb.cache.teams.get(0))!;
+		t0.jerseySkins = { home: link };
+		await idb.cache.teams.put(t0);
+		let deleted = 0;
+		const del = idb.cache.jerseySkins.delete.bind(idb.cache.jerseySkins);
+		idb.cache.jerseySkins.delete = async (id: string) => {
+			deleted += 1;
+			return del(id);
+		};
+		await prunePictures([link, "https://cdn.example.com/kits/old.png"]);
+		idb.cache.jerseySkins.delete = del;
+		assert.strictEqual(deleted, 0);
+	});
+
 	test("a game gets the decals for its occasion and season", async () => {
 		await setup();
 		const id = await storePicture(PNG(5));
