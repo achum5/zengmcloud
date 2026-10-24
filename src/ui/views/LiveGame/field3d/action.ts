@@ -1058,6 +1058,19 @@ class Actor {
 		}
 	}
 
+	// Into where his run ends, off it at `least` ft/s or more: the last of
+	// it eased off over twice `ft` (see easeOff) - not stopped dead on it,
+	// there a moment later for it.
+	easeIn(ft: number, least: number) {
+		const l = this.last;
+		const v = legPace(l);
+		const t = this.t - ((2 * ft) / Math.max(1, v)) * 1000;
+		if (RAMPS.has(l.move) && v >= least && t > l.t0) {
+			this.cut(t);
+			this.easeOff(2 * ft);
+		}
+	}
+
 	// On the way he was going, slowing to a stop no more than `most` feet
 	// on (see STOP_ACCEL) - bent off to the side of `past` (the pile at the
 	// ball), as little as takes him by it, if he would run on through it.
@@ -1953,7 +1966,7 @@ const STOOD_MS = 1100;
 const STOOD_APART = 1;
 // (In on him off a run this quick or more, ft/s: the last of it eased off
 // over twice this far, feet.)
-const STOOD_IN_LEAST = 10;
+const STOOD_IN_LEAST = 8;
 const STOOD_IN_FT = 1.2;
 // More men in on a tackle: the first, and the second, there in time to (as
 // late as this after it), this often.
@@ -4810,15 +4823,7 @@ class Action {
 				face,
 				carrier,
 			);
-			// (Into him off his run, slowing the last step or two as he gets
-			// to him - not stopped dead on him.)
-			const l = m.last;
-			const v = legPace(l);
-			const tau = ((2 * STOOD_IN_FT) / Math.max(1, v)) * 1000;
-			if (RAMPS.has(l.move) && v >= STOOD_IN_LEAST && there - tau > l.t0) {
-				m.cut(there - tau);
-				m.easeOff(2 * STOOD_IN_FT);
-			}
+			m.easeIn(STOOD_IN_FT, STOOD_IN_LEAST);
 			// (Not into it for a moment and straight on to the drive.)
 			if (t - m.t >= WAIT_LEAST_MS) {
 				m.hold(t, "engage", face);
@@ -8073,7 +8078,12 @@ class Action {
 				m.act("getUp", t1 + 1100 + n * 150 + GET_UP_MS);
 			} else {
 				m.chase(hit, t1, m.top * 0.92);
-				m.hold(this.whistle + 700 + r() * 400, "engage", inward);
+				m.easeIn(STOOD_IN_FT, STOOD_IN_LEAST);
+				const held = this.whistle + 700 + r() * 400;
+				// (Not in on it a moment only, there so late.)
+				if (held - m.t >= WAIT_LEAST_MS) {
+					m.hold(held, "engage", inward);
+				}
 			}
 			this.done.add(m.pid);
 		});
