@@ -1230,6 +1230,10 @@ const BODY = 1.85;
 // it at the least; and a man takes one across the floor from his side
 // only if it is this much nearer what he wants (feet).
 const LANES = [6, 15, 21.5, 28.5, 35, 44] as const;
+// Up the floor ahead of his part in a set, a man fills out to this far in
+// front of the rim (feet, up the floor) in his lane - out beyond the arc -
+// and waits on it there.
+const FILL_OUT = 24;
 const LANE_OFF_BALL = 7;
 const LANE_ACROSS = 8;
 // A run at least this far up the floor (feet) is run in a lane.
@@ -5675,9 +5679,11 @@ class Director {
 			const P = this.posOf(pid);
 			if (going.has(r)) {
 				// His part comes in the first step; back in the backcourt, he
-				// is on his way up for it meanwhile - on his side of the floor.
+				// is on his way up for it meanwhile - on his side of the floor,
+				// filling out to just beyond the arc there: not stood out at
+				// half court till it comes.
 				if (this.inBackcourt(run.team, P)) {
-					lane(pid, S, r, COURT_W / 2 + dir * 4);
+					lane(pid, S, r, rimX(run.team) - dir * FILL_OUT);
 				}
 				return;
 			}
