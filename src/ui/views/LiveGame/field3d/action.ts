@@ -1571,7 +1571,7 @@ const SET_LEAST_MS = 300;
 const SET_FPS = 7;
 // Out there to hand it off, or fake it: at no more than this pace (feet a
 // second), and over no less than this long (ms).
-const QB_STEP_FPS = 15;
+const QB_STEP_FPS = 11;
 const QB_STEP_LEAST_MS = 150;
 const qbStepMs = (d: number) =>
 	Math.max(QB_STEP_LEAST_MS, (d / QB_STEP_FPS) * 1000);
@@ -5732,7 +5732,7 @@ class Action {
 				: sweep
 					? has + (gun ? 150 : 250) + r() * 100
 					: Math.max(
-							has + 180 + (dist(qb.at, qbMesh) / 19) * 1000 + r() * 150,
+							has + 180 + qbStepMs(dist(qb.at, qbMesh)) + r() * 150,
 							snap +
 								lead +
 								(dist(carrier.at, meshPt) / (carrier.top * 0.75)) * 1000,
