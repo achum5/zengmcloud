@@ -2140,6 +2140,7 @@ const DOWN = new Set<Move>([
 	"offTop",
 ]);
 const CLOSE = 0.85;
+const CLOSE_SLIVER_MS = 120;
 const FLAT_OUT = 0.97;
 // A receiver down his route, at this much of his top speed - sat down at
 // the end of it for the ball, up for it this long before it comes.
@@ -2517,27 +2518,57 @@ class Action {
 	noAirBlocks() {
 		for (const m of this.men) {
 			const them = m.team === this.input.offense ? this.d : this.o;
-			for (const l of m.legs) {
+			const air = m.legs.map((l) => {
 				// (Not his first step out of his stance: low and hard, at
 				// whoever comes.)
 				if (
 					(l.move !== "drive" && l.move !== "engage") ||
 					l.t0 < this.input.snap + FIRST_STEP
 				) {
-					continue;
+					return false;
 				}
 				const steps = Math.max(1, Math.ceil((l.t1 - l.t0) / 100));
-				let near = false;
-				for (let k = 0; k <= steps && !near; k++) {
+				for (let k = 0; k <= steps; k++) {
 					const t = l.t0 + ((l.t1 - l.t0) * k) / steps;
 					const at = m.posAt(t);
-					near = them.some((o) => dist(o.posAt(t), at) < AIR_BLOCK);
+					if (them.some((o) => dist(o.posAt(t), at) < AIR_BLOCK)) {
+						return false;
+					}
 				}
-				if (near) {
-					continue;
+				return true;
+			});
+			// (A run of them together the one way, at the one pace: not
+			// swaying on with the push he had into nobody, a step a walk and
+			// the next a jog.)
+			for (let i = 0; i < m.legs.length;) {
+				let j = i + 1;
+				while (
+					air[i] &&
+					j < m.legs.length &&
+					air[j] &&
+					m.legs[j]!.t0 === m.legs[j - 1]!.t1
+				) {
+					j++;
 				}
-				const fps = dist(l.from, l.to) / (Math.max(1, l.t1 - l.t0) / 1000);
-				l.move = fps < 1 ? "stand" : fps < WALK_UNDER ? "walk" : "jog";
+				if (air[i]) {
+					const run = m.legs.slice(i, j);
+					const a = run[0]!.from;
+					const b = run.at(-1)!.to;
+					const t0 = run[0]!.t0;
+					const span = Math.max(1, run.at(-1)!.t1 - t0);
+					const fps = dist(a, b) / (span / 1000);
+					const move = fps < 1 ? "stand" : fps < WALK_UNDER ? "walk" : "jog";
+					const on = (t: number) => ({
+						x: a.x + ((b.x - a.x) * (t - t0)) / span,
+						y: a.y + ((b.y - a.y) * (t - t0)) / span,
+					});
+					for (const l of run) {
+						l.from = on(l.t0);
+						l.to = on(l.t1);
+						l.move = move;
+					}
+				}
+				i = j;
 			}
 		}
 	}
@@ -4797,7 +4828,8 @@ class Action {
 		// (Where and when he is off his new way, leaving what he was doing
 		// at c: planted on past it first, going at all quick and well round
 		// from it - see plantFor.)
-		const offAt = (c: number): { at: Pt; t: number } => {
+		// (And the pace he is off it at.)
+		const offAt = (c: number): { at: Pt; t: number; v: number } => {
 			const at = m.posAt(c);
 			const l = m.legs.findLast((x) => x.t0 < c && x.t1 > x.t0);
 			const v = l ? legPace(l) : 0;
@@ -4810,7 +4842,7 @@ class Action {
 				l.turn ||
 				far <= 0
 			) {
-				return { at, t: c };
+				return { at, t: c, v: l && RAMPS.has(l.move) ? paceOn(l, at, hit) : 0 };
 			}
 			const cos = (l.to.x - l.from.x) / far;
 			const sin = (l.to.y - l.from.y) / far;
@@ -4820,7 +4852,7 @@ class Action {
 				dist(at, hit) > 0 ? hit : { x: at.x + cos, y: at.y + sin },
 			);
 			if (!(turn > CUT_LEAST)) {
-				return { at, t: c };
+				return { at, t: c, v: paceOn(l, at, hit) };
 			}
 			const ve = plantedTo(
 				v,
@@ -4829,11 +4861,22 @@ class Action {
 			);
 			const T = (v - ve) / CUT_ACCEL;
 			const d = ((v + ve) / 2) * T;
-			return { at: { x: at.x + cos * d, y: at.y + sin * d }, t: c + T * 1000 };
+			const off = { x: at.x + cos * d, y: at.y + sin * d };
+			return { at: off, t: c + T * 1000, v: (ve * (1 + Math.cos(turn))) / 2 };
 		};
+		// (The pace he has to get up to - see RAMP_ACCEL - to be there by
+		// `lead`, off what he is doing at c.)
 		const need = (c: number) => {
 			const o = offAt(c);
-			return dist(o.at, hit) / Math.max(0.001, (lead - o.t) / 1000);
+			const T = Math.max(0.001, (lead - o.t) / 1000);
+			const D = dist(o.at, hit);
+			if (o.v * T >= D) {
+				return D / T;
+			}
+			const room = T * T - (2 * (D - o.v * T)) / RAMP_ACCEL;
+			return room >= 0
+				? o.v + RAMP_ACCEL * (T - Math.sqrt(room))
+				: o.v + (2 * (D - o.v * T)) / T;
 		};
 		let c = Math.max(this.seen, Math.min(m.t, lead - 100));
 		let best = c;
@@ -4845,6 +4888,19 @@ class Action {
 		}
 		if (need(c) > m.top * CLOSE) {
 			c = best;
+		}
+		// (Not a step or two into something new first - a backpedal just
+		// begun: off from before it.)
+		const k = m.legs.findLastIndex((x) => x.t0 < c && x.t1 > x.t0);
+		const began = m.legs[k];
+		if (
+			began &&
+			k > 0 &&
+			began.t0 >= this.seen &&
+			c - began.t0 < CLOSE_SLIVER_MS &&
+			m.legs[k - 1]!.move !== began.move
+		) {
+			c = began.t0;
 		}
 		m.cut(c);
 		m.hold(c);
