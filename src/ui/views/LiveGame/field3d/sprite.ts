@@ -177,10 +177,21 @@ const sinceFrame = (m: Move, phase: number, rate: number, k: Steps) => {
 // How much of his pose is still what he was, in steps: as much as there was
 // when his move (or the one he was) last came to a new frame - a sprite of
 // its own then anyway, so the blend costs none of its own - or, if neither
-// did, on the nearest of so many steps.
+// did, on the nearest of so many steps. (Up out of a stance, twice as many:
+// he comes a long way up in a moment.)
 const WEIGHTS = 32;
+const STANCES = new Set<Move>([
+	"threePoint",
+	"dlThree",
+	"center",
+	"backerStance",
+	"backStance",
+	"receiverStance",
+	"cornerStance",
+]);
 const weightOf = (st: FieldPlayerState, f: Blend, k: Steps): number => {
-	let w = Math.ceil(f.w * k.blend) / k.blend;
+	const n = STANCES.has(f.move) ? k.blend * 2 : k.blend;
+	let w = Math.ceil(f.w * n) / n;
 	const r = f.rate;
 	if (r && r.w > 0) {
 		const since = Math.min(

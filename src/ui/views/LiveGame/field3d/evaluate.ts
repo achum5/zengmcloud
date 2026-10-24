@@ -836,8 +836,9 @@ const BLEND_MOST_MS = Math.max(SETTLE_MS, GET_DOWN_MS);
 // its own - not drawn out under his strides and all at the last.)
 const SCOOP_IN_MS = 100;
 // (Up out of his stance at the snap and off: quickly - not slow to come
-// up, swung round still down in it.)
-const UP_MS = 180;
+// up, swung round still down in it - most of the way up at once, and
+// settled into his stride at the last; see intoOf.)
+const UP_MS = 240;
 const offTheSnap = (l: Leg, prev: Leg | undefined) =>
 	prev !== undefined &&
 	DOWN.has(prev.move as Move) &&
@@ -854,12 +855,19 @@ const upSlowly = (l: Leg, prev: Leg | undefined) =>
 // How far he is into a leg, so far through his blend into it (and how
 // fast he is going into it, per ms): down into his stance, or up out of
 // it slowly, eased in and settled at the last - not at an even rate,
-// dropped into it.
+// dropped into it. Up out of it at the snap: off at once, and settled into
+// his stride at the last - not still coming up as fast as ever as he gets
+// there. (The play is only getting going for him then anyway - see
+// lagged.)
 const eases = (l: Leg, prev: Leg | undefined) =>
 	DOWN.has(l.move as Move) || upSlowly(l, prev);
 const intoOf = (l: Leg, prev: Leg | undefined, u: number): number => {
 	const v = clamp01(u);
-	return eases(l, prev) ? v * v * (3 - 2 * v) : v;
+	return eases(l, prev)
+		? v * v * (3 - 2 * v)
+		: offTheSnap(l, prev)
+			? 1 - (1 - v) * (1 - v)
+			: v;
 };
 const intoRate = (
 	l: Leg,
@@ -868,7 +876,10 @@ const intoRate = (
 	ms: number,
 ): number => {
 	const v = clamp01(u);
-	return (eases(l, prev) ? 6 * v * (1 - v) : 1) / ms;
+	return (
+		(eases(l, prev) ? 6 * v * (1 - v) : offTheSnap(l, prev) ? 2 * (1 - v) : 1) /
+		ms
+	);
 };
 const blendOf = (l: Leg, prev?: Leg): number => {
 	if (moveKind(l.move) !== "act") {
