@@ -403,6 +403,7 @@ const intoStance = (
 	t0: number,
 	t1: number,
 	move: Move,
+	slow: Move = "walk",
 ): Leg[] => {
 	const d = Math.hypot(to.x - from.x, to.y - from.y);
 	const fps = d / ((t1 - t0) / 1000);
@@ -421,7 +422,7 @@ const intoStance = (
 	};
 	return [
 		{ t0, t1: t0 + main, from, to: mid, move },
-		{ t0: t0 + main, t1, from: mid, to, move: "walk" },
+		{ t0: t0 + main, t1, from: mid, to, move: slow },
 	];
 };
 // Set this long after the last man is, before the snap; and the cadence
@@ -472,9 +473,15 @@ const MUG = 0.14;
 const MUG_D = 6.5;
 const MUG_BACK = 500;
 const MUG_FPS = 7;
+// (Backing out of it at no more than this, feet a second, set again this
+// long before the snap - as a safety down late is.)
+const MUG_BACK_FPS = 9;
+const MUG_SET = 250;
 const CREEP = 0.3;
 const CREEP_D = 21;
 const CREEP_MS = 1600;
+// (At no more than this, feet a second.)
+const CREEP_FPS = 9;
 const LBS = new Set<Role>(["SAM", "MIKE", "WILL", "BUCK"]);
 const DL_ROLES = new Set<Role>(["DE", "DT", "NT"]);
 // A kickoff: everyone lined up, the kicker off on his run-up this long in.
@@ -2475,13 +2482,28 @@ class Director {
 		const defense = parts.filter((p) => p.team !== offense && walkedUp(p));
 		// (Stood in his stance from when he got there till t, then over to
 		// `to` by t1 doing `move` - and set there.)
-		const over = (p: Part, t: number, t1: number, to: Pt, move: Move) => {
+		// (Into it at the last at `slow`, if he is going at all quick - see
+		// intoStance.)
+		const over = (
+			p: Part,
+			t: number,
+			t1: number,
+			to: Pt,
+			move: Move,
+			slow?: Move,
+		) => {
 			const st = p.legs.at(-1)!;
 			st.t1 = t;
-			p.legs.push(
-				{ ...st, t0: t, t1, from: st.to, to, move },
-				{ ...st, t0: t1, t1, from: to, to },
-			);
+			const legs = slow
+				? intoStance(st.to, to, t, t1, move, slow)
+				: [{ t0: t, t1, from: st.to, to, move }];
+			p.legs.push(...legs.map((l) => ({ ...st, ...l })), {
+				...st,
+				t0: t1,
+				t1,
+				from: to,
+				to,
+			});
 		};
 		const lbs = defense
 			.filter((p) => LBS.has(p.role))
@@ -2522,14 +2544,16 @@ class Director {
 			const gapA =
 				gaps.sort((x, y) => Math.abs(x - a) - Math.abs(y - a))[0] ?? a / 2;
 			const gap = { x: losX + dir * MUG_D, y: ballY + dir * gapA };
-			const ms = (Math.hypot(gap.x - p.x, gap.y - p.y) / MUG_FPS) * 1000;
-			const back = snap - MUG_BACK;
+			const far = Math.hypot(gap.x - p.x, gap.y - p.y);
+			const ms = (far / MUG_FPS) * 1000;
+			const set = snap - MUG_SET;
+			const back = set - Math.max(MUG_BACK, (far / MUG_BACK_FPS) * 1000);
 			const latest = back - 300 - ms;
 			if (r() < MUG && latest > st.t0 + 200) {
 				// Showing blitz - and back out of it as the ball goes.
 				const t = st.t0 + 200 + r() * (latest - st.t0 - 200);
-				over(lb, t, t + ms, gap, "walk");
-				over(lb, back, snap - 60, p, "back");
+				over(lb, t, t + ms, gap, "walk", "walk");
+				over(lb, back, set, p, "back", "back");
 			} else if (r() < SHUFFLE && room > 900) {
 				const ft = SHUFFLE_FT[0] + r() * (SHUFFLE_FT[1] - SHUFFLE_FT[0]);
 				const to = { x: p.x, y: p.y + (r() < 0.5 ? 1 : -1) * ft };
@@ -2546,11 +2570,17 @@ class Director {
 		const down = deep.find((p) => p.role === "SS");
 		if (deep.length === 2 && down && r() < CREEP) {
 			const st = down.legs.at(-1)!;
-			const t = Math.max(st.t0 + 200, snap - CREEP_MS);
 			const p = st.to;
 			const to = { x: losX - dir * -CREEP_D, y: p.y + (ballY - p.y) * 0.25 };
-			if (snap - t > 700) {
-				over(down, t, snap - 100, to, "walk");
+			const far = Math.hypot(to.x - p.x, to.y - p.y);
+			const set = snap - MUG_SET;
+			const t = Math.max(
+				st.t0 + 200,
+				set - Math.max(CREEP_MS, (far / CREEP_FPS) * 1000),
+			);
+			const fps = far / ((set - t) / 1000);
+			if (set - t > 550) {
+				over(down, t, set, to, fps < 6.5 ? "walk" : "jog", "walk");
 			}
 		}
 	}
