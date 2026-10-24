@@ -394,6 +394,9 @@ const HURRY_OUT = new Set<Role>(["X", "Z", "SL", "SL2", "TE", "TE2"]);
 // from there (shortest, longest).
 const SET_HOLD = 450;
 const CADENCE = [700, 1500] as const;
+// The ball his once the center is down over it and square to it, his hand
+// on it (see evaluate.ts blendOf, TURN_MS) - not as he gets there.
+const HAND_ON_BALL_MS = 500;
 // The quarterback's read of the defense (see cadence): under center, down
 // under him this long before the snap, getting there over GET_UNDER_MS,
 // stood reading it for at least SURVEY_MIN first; in the gun, from this
@@ -1088,7 +1091,11 @@ class Director {
 		const center = parts.find((p) => p.role === "C" || p.role === "LS");
 		const over = center?.legs.find((l) => l.ball === "snap");
 		if (center && over) {
-			ball.push({ kind: "held", t0: over.t0, pid: center.pid });
+			ball.push({
+				kind: "held",
+				t0: Math.min(over.t0 + HAND_ON_BALL_MS, snap - 1),
+				pid: center.pid,
+			});
 		}
 
 		// (A new set of downs for the same side, by what it did - not a flag.)
@@ -1935,7 +1942,10 @@ class Director {
 			if (pid === undefined) {
 				continue;
 			}
-			const mirrored = (a.mirrored === true) !== flip;
+			// (The center's hand on the ball the same whichever way the
+			// formation is flipped.)
+			const snaps = a.role === "C" || a.role === "LS";
+			const mirrored = !snaps && (a.mirrored === true) !== flip;
 			placed.push({
 				pid,
 				team: offense,
@@ -1947,7 +1957,7 @@ class Director {
 				yaw: facing(dir),
 				move: a.move,
 				...(mirrored ? { mirrored: true } : {}),
-				...(a.role === "C" || a.role === "LS" ? { ball: "snap" as const } : {}),
+				...(snaps ? { ball: "snap" as const } : {}),
 			});
 		}
 		if (!def) {

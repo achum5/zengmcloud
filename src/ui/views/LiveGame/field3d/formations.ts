@@ -77,16 +77,16 @@ export type Role =
 	| "WALL";
 
 // The line: the center over the ball, guards and tackles shaded back off it.
-export const C_DEPTH = 1.4;
+export const C_DEPTH = 2.7;
 const G_ACROSS = 4.6;
-const G_DEPTH = 2.6;
+const G_DEPTH = 3.2;
 const T_ACROSS = 9.3;
-const T_DEPTH = 3.0;
+const T_DEPTH = 3.6;
 const TE_ACROSS = 14;
 // Five yards back in the gun; the pistol four, with the back behind him.
 const GUN_DEPTH = 15;
 const PISTOL_DEPTH = 12;
-const UNDER_DEPTH = 3.3;
+const UNDER_DEPTH = 4.6;
 
 const line = (): Align[] => [
 	{ role: "C", pos: "OL", depth: C_DEPTH, across: 0, move: "center" },

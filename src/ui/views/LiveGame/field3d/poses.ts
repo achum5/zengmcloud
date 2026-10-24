@@ -100,7 +100,7 @@ const THREE_POINT = pose({
 });
 
 // The center over the ball: square, both feet even, a little wider; his
-// right hand on the ball out in front of him, the left on his knee.
+// right hand in on the ball out in front of him, the left on his knee.
 const CENTER = pose({
 	hipN: 64,
 	kneeN: 108,
@@ -109,7 +109,7 @@ const CENTER = pose({
 	lean: 66,
 	shN: 22,
 	elN: 4,
-	abN: 4,
+	abN: -30,
 	shF: 40,
 	elF: 50,
 	abF: 12,
@@ -1928,7 +1928,7 @@ const FIELD_ANIMS = {
 	longSnap: {
 		kind: "act",
 		keys: [
-			[0, { ...CENTER, shF: 24, elF: 4, abF: 4 }],
+			[0, { ...CENTER, shF: 22, elF: 4, abF: -30 }],
 			[
 				0.3,
 				{
