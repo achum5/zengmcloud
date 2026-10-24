@@ -1783,6 +1783,9 @@ const BREAK_MS = 250;
 // On his man in coverage: where he goes, worked out a step at a time, so
 // long a step (from so long after the snap).
 const COVER_STEP = 220;
+// (Picking up pace on to him from one step to the next no quicker than
+// this, ft/s/s.)
+const COVER_ACCEL = 36;
 const COVER_STEP_FIRST = 200;
 // Off him by the room he lined up with: giving up COVER_GIVE of what his man
 // makes down the field, and coming down on him at COVER_COME ft/s from
@@ -6325,10 +6328,16 @@ class Action {
 						COVER_SOFT * Math.log1p(Math.exp((room - COVER_MIN) / COVER_SOFT));
 					const to = this.w({ d: p.d + cushion, a: p.a + inside * 1.8 });
 					const front = this.of(m.at).d > p.d + COVER_FRONT;
+					// (No further a step than he can get up to going there, off
+					// what he was doing - out of his stance, from nothing.)
+					const l = m.last;
+					const off = SET.has(l.move);
+					const v0 = off ? 0 : paceOn(l, l.to, to);
+					const up = ((off ? RELEASE_ACCEL : COVER_ACCEL) * (t - m.t)) / 2000;
 					m.chase(
 						to,
 						t,
-						m.top * 0.95,
+						Math.min(m.top * 0.95, v0 + up),
 						undefined,
 						front ? this.behind : undefined,
 					);
