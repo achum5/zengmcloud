@@ -1836,6 +1836,11 @@ const PA_SHARE = 0.4;
 const PA_AIR = 8;
 const PA_MS = 400;
 const PA_PAST = 5;
+// (In the gun, across the quarterback's face to the fake and on past it
+// downhill - on across as much as this for each foot up the field - not
+// turned square up the field off it: if he goes out into a route after
+// it, not if he stays in to block.)
+const PA_ACROSS = 0.75;
 const PA_BITE = 4;
 const PA_BITE_FPS = 8;
 // Off this many of the fakes under center, a bootleg: the quarterback away
@@ -3017,11 +3022,16 @@ class Action {
 			}
 			faker.hold(snap + 150);
 			faker.go(meshPt, fakeT, "run", this.toward(faker.at, meshPt));
+			const on = gun && runners.includes(faker) ? PA_ACROSS : 0;
+			const past = PA_PAST / Math.hypot(1, on);
 			faker.go(
-				this.w({ d: this.of(meshPt).d + PA_PAST, a: this.of(meshPt).a }),
+				this.w({
+					d: this.of(meshPt).d + past,
+					a: this.of(meshPt).a + side * on * past,
+				}),
 				fakeT + 300,
 				"run",
-				this.ahead,
+				on > 0 ? undefined : this.ahead,
 			);
 			faker.arms("fakeCarry", fakeT - 200, fakeT + 300);
 		} else if (dropD >= DROP_TURN_FT && !gun) {
