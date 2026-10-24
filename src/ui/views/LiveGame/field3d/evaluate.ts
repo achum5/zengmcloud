@@ -496,6 +496,10 @@ const LEN_FULL = 0.98;
 const BEAT_MOST = 2.6;
 const PACE_MS = 100;
 const LEN_RATE = 6;
+// (Steps that keep no beat - his feet going under him in a block, or
+// kick-sliding back - round no quicker than this a second: on into one
+// still at a run, his feet not a blur, but sliding the last of it.)
+const SHUFFLE_MOST = 3.5;
 type Strides = { t0: number; ph: Float32Array; len: Float32Array };
 const strided = new WeakMap<
 	Leg[],
@@ -568,7 +572,7 @@ const stridesOf = (legs: Leg[], t0: number, n: number): Strides | undefined => {
 				}
 				p += d / (stride * l);
 			} else {
-				p += d / stride;
+				p += Math.min(d / stride, SHUFFLE_MOST * dt);
 			}
 		}
 		ph[i] = p;
