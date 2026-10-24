@@ -952,8 +952,9 @@ class Actor {
 	}
 
 	// On the way he was going, slowing to a stop no more than `most` feet
-	// on (see STOP_ACCEL).
-	easeOff(most: number) {
+	// on (see STOP_ACCEL) - bent off to the side of `past` (the pile at the
+	// ball), as little as takes him by it, if he would run on through it.
+	easeOff(most: number, past?: Pt) {
 		const l = this.last;
 		const ms = l.t1 - l.t0;
 		const far = dist(l.from, l.to);
@@ -965,18 +966,45 @@ class Actor {
 		if (d < 0.5) {
 			return;
 		}
-		const cos = (l.to.x - l.from.x) / far;
-		const sin = (l.to.y - l.from.y) / far;
+		const way = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
 		const gaited = GAITS.has(l.move);
 		const T = (2 * d) / v;
 		const n = Math.max(1, Math.round((T * 1000) / STOP_STEP_MS));
 		const dt = T / n;
 		const paceOf = (i: number) => v * (1 - (i + 0.5) / n);
 		const moveOf = slower(l.move, n, dt, paceOf);
+		const stepsOf = (bend: number) => {
+			const out: Pt[] = [];
+			let at = this.at;
+			for (let i = 0; i < n; i++) {
+				const h = way + (bend * (i + 0.5)) / n;
+				const ft = paceOf(i) * dt;
+				at = { x: at.x + Math.cos(h) * ft, y: at.y + Math.sin(h) * ft };
+				out.push(at);
+			}
+			return out;
+		};
+		let steps = stepsOf(0);
+		if (gaited && past) {
+			const clear = (pts: Pt[]) =>
+				pts.every((p) => dist(p, past) >= EASE_PAST_FT);
+			// (Off the side it is on.)
+			const side =
+				Math.cos(way) * (past.y - this.at.y) -
+					Math.sin(way) * (past.x - this.at.x) >
+				0
+					? -1
+					: 1;
+			for (const bend of EASE_BENDS) {
+				if (clear(steps)) {
+					break;
+				}
+				steps = stepsOf(side * bend);
+			}
+		}
 		for (let i = 0; i < n; i++) {
-			const pace = paceOf(i);
 			this.go(
-				{ x: this.at.x + cos * pace * dt, y: this.at.y + sin * pace * dt },
+				steps[i]!,
 				this.t + dt * 1000,
 				moveOf(i),
 				gaited ? undefined : l.yaw,
@@ -1379,9 +1407,14 @@ const WEIGHT_ON = 0.5;
 const FOLLOW_MS = 450;
 const CATCH_Z = 4.3;
 const G = 32;
+// A pass: on a line at this pace (ft/s), lofted a little slower over this
+// much more for each foot it goes, down to no slower than this.
+const PASS_FPS = 70;
+const PASS_LOFT = 0.05;
+const PASS_LEAST_FPS = 60;
 const flightOf = (from: Pt, to: Pt): { ms: number; peak: number } => {
 	const l = dist(from, to);
-	const v = Math.min(66, 50 + l * 0.12);
+	const v = Math.max(PASS_LEAST_FPS, PASS_FPS - l * PASS_LOFT);
 	const s = l / v;
 	return { ms: s * 1000, peak: Math.max(0.4, (G * s * s) / 8) };
 };
@@ -1466,8 +1499,12 @@ const PURSUIT_RING = 10;
 const PURSUIT_IN = 1.5;
 const PURSUIT_NEAREST = 5;
 const PURSUIT_LANE = 7;
-// (Given up, or at the whistle: pulled up no more than this far on - feet.)
+// (Given up, or at the whistle: pulled up no more than this far on - feet;
+// bent round off the pile at the ball, if it is in the way, by as little of
+// these as (radians, all told) keeps him this far off it.)
 const EASE_OFF_FT = 12;
+const EASE_BENDS = [0.35, 0.7, 1.05, 1.4];
+const EASE_PAST_FT = 3.5;
 // (Carrying on the way he was going, before he eases off, ms - see carryOn.)
 const CARRY_MOST_MS = 500;
 // (Broken down a few steps off a man to hit, this long at least - see
@@ -1663,6 +1700,11 @@ const STOOD_APART = 1;
 const TO_THROW = 1500;
 const TO_THROW_YD = 45;
 const TO_THROW_SPREAD = 500;
+// To a man who sits down at the end of his route, as he turns for it: there
+// no later than this after he is sat (but for the quarterback not set yet),
+// give or take this much more.
+const SETTLE_MOST_MS = 350;
+const SETTLE_HOLD_MS = 250;
 // A screen: this often a short completion is one, caught behind the line
 // (one that gains no more than this many yards), thrown this soon at the
 // soonest; the receivers on his side out onto the men coming up at him,
@@ -1901,8 +1943,10 @@ const DOWN = new Set<Move>([
 ]);
 const CLOSE = 0.85;
 const FLAT_OUT = 0.97;
-// A receiver down his route, at this much of his top speed.
+// A receiver down his route, at this much of his top speed - sat down at
+// the end of it for the ball, up for it this long before it comes.
 const ROUTE_PACE = 0.76;
+const CATCH_LEAD_MS = 380;
 // (With no more than this left of it to the catch (feet), no break.)
 const ROUTE_LEFT = 0.4;
 // A break in it sharper than CUT_LEAST (radians), cut: into it at as much
@@ -1912,25 +1956,58 @@ const CUT_LEAST = 0.5;
 const CUT_KEEP = 0.25;
 // (Out of his stance, the first stretch of it, a little slower.)
 const routeFps = (speed: number, k: number) => speed * (k === 1 ? 0.8 : 1);
+// A break in a route: how much of his pace he cuts at (see CUT_KEEP), what
+// that costs him (ms) over going on at his pace, down into it and up out of
+// it, and how fast he is going at it (ft/s), slowed into it at `accel`.
+type Break = {
+	keep: number;
+	down: number;
+	up: number;
+	v: number;
+	accel: number;
+};
 // A break at b in a route from a on to c, into it at vIn ft/s and out of
-// it at vOut: how much of his pace he cuts at (see CUT_KEEP) - and what
-// that costs him (ms) over going on at his pace, down into it (at
-// CUT_ACCEL) and up out of it (at RAMP_ACCEL).
-const breakOf = (
-	a: Pt,
-	b: Pt,
-	c: Pt,
-	vIn: number,
-	vOut: number,
-): { keep: number; down: number; up: number } => {
+// it at vOut: cut at CUT_ACCEL, up out of it at RAMP_ACCEL.
+const breakOf = (a: Pt, b: Pt, c: Pt, vIn: number, vOut: number): Break => {
 	const turn = angleAt(a, b, c);
 	if (turn <= CUT_LEAST) {
-		return { keep: 1, down: 0, up: 0 };
+		return { keep: 1, down: 0, up: 0, v: vIn, accel: CUT_ACCEL };
 	}
 	const keep = Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2);
 	const lost = (v: number, A: number) =>
 		v > 0 ? (Math.max(0, v - vIn * keep) ** 2 / (2 * A * v)) * 1000 : 0;
-	return { keep, down: lost(vIn, CUT_ACCEL), up: lost(vOut, RAMP_ACCEL) };
+	return {
+		keep,
+		down: lost(vIn, CUT_ACCEL),
+		up: lost(vOut, RAMP_ACCEL),
+		v: vIn * keep,
+		accel: CUT_ACCEL,
+	};
+};
+// (Off the line: at his pace from the first step - see routeFps.)
+const OFF_LINE: Break = { keep: 1, down: 0, up: 0, v: 0, accel: CUT_ACCEL };
+// How long (ms) a stretch of a route `ft` long takes him at `fps`, out of
+// the break before it and into the one at its end: if it is too short for
+// him to get up to his pace in between (a hitch's step back down to the
+// ball), up as far as he gets and straight back down.
+const stretchMs = (ft: number, fps: number, from: Break, to: Break) => {
+	const v0 = from.up > 0 ? from.v : fps;
+	const v1 = to.down > 0 ? to.v : fps;
+	const a1 = to.accel;
+	if (
+		(fps * fps - v0 * v0) / (2 * RAMP_ACCEL) +
+			(fps * fps - v1 * v1) / (2 * a1) <=
+		ft
+	) {
+		return (ft / fps) * 1000 + from.up + to.down;
+	}
+	const top = Math.sqrt(
+		(2 * ft * RAMP_ACCEL * a1 + v0 * v0 * a1 + v1 * v1 * RAMP_ACCEL) /
+			(RAMP_ACCEL + a1),
+	);
+	return top > Math.max(v0, v1)
+		? ((top - v0) / RAMP_ACCEL + (top - v1) / a1) * 1000
+		: ((2 * ft) / Math.max(1, v0 + v1)) * 1000;
 };
 // Sat down at the end of his route with longer than this to wait (ms) - the
 // ball not coming yet, or not to him - he works his way across it to where
@@ -2723,7 +2800,8 @@ class Action {
 				this.w({ d: this.of(setAt).d + 1, a: this.of(setAt).a }),
 				catchPt,
 			);
-			const hold = tr.settles && tr.name !== "screen" ? r() * 600 : 0;
+			const hold =
+				tr.settles && tr.name !== "screen" ? r() * SETTLE_HOLD_MS : 0;
 			// (Not before he has had his time back there - longer, the deeper
 			// it goes.)
 			const least =
@@ -2736,7 +2814,11 @@ class Action {
 							Math.max(0, airYds) * TO_THROW_YD +
 							r() * TO_THROW_SPREAD +
 							fl.ms;
-			catchAt = Math.max(onTime, ready + 300 + fl.ms, least) + hold;
+			const due =
+				tr.settles && tr.name !== "screen" && !slip
+					? Math.min(least, onTime + SETTLE_MOST_MS)
+					: least;
+			catchAt = Math.max(onTime, ready + 300 + fl.ms, due) + hold;
 			throwAt = catchAt - fl.ms;
 			catchPt = this.runRoute(target, tr, go, catchAt) ?? catchPt;
 			this.at.set(first, catchAt);
@@ -3099,7 +3181,7 @@ class Action {
 		const pts = route.path.map((p) => this.w(p));
 		let along = 0;
 		let ms = 0;
-		let up = 0;
+		let cut = OFF_LINE;
 		for (let k = 1; k < pts.length && along < upto - ROUTE_LEFT; k++) {
 			const seg = dist(pts[k - 1]!, pts[k]!);
 			const go = Math.min(seg, upto - along);
@@ -3110,8 +3192,8 @@ class Action {
 				go < seg || upto - along - go <= ROUTE_LEFT,
 				route.settles,
 			);
-			ms += (go / routeFps(speed, k)) * 1000 + up + next.down;
-			up = next.up;
+			ms += stretchMs(go, routeFps(speed, k), cut, next);
+			cut = next;
 			along += go;
 		}
 		return ms;
@@ -3126,12 +3208,14 @@ class Action {
 		speed: number,
 		ends: boolean,
 		settles: boolean,
-	) {
+	): Break {
 		return ends || k + 1 >= pts.length
 			? {
 					keep: 1,
 					down: settles ? (routeFps(speed, k) / (2 * STOP_ACCEL)) * 1000 : 0,
 					up: 0,
+					v: settles ? 0 : routeFps(speed, k),
+					accel: STOP_ACCEL,
 				}
 			: breakOf(
 					pts[k - 1]!,
@@ -3170,7 +3254,7 @@ class Action {
 				: 1;
 		const pts = route.path.map((p) => this.w(p));
 		let along = 0;
-		let cut = { keep: 1, down: 0, up: 0 };
+		let cut = OFF_LINE;
 		for (let k = 1; k < pts.length; k++) {
 			const seg = dist(pts[k - 1]!, pts[k]!);
 			const room = endAlong - along;
@@ -3188,8 +3272,7 @@ class Action {
 				go < seg || room - go <= ROUTE_LEFT,
 				route.settles,
 			);
-			const t1 =
-				m.t + ((go / routeFps(speed, k)) * 1000 + cut.up + next.down) / pace;
+			const t1 = m.t + stretchMs(go, routeFps(speed, k), cut, next) / pace;
 			if (until !== undefined && t1 > until) {
 				const u = (until - m.t) / (t1 - m.t);
 				const p = m.at;
@@ -3223,7 +3306,8 @@ class Action {
 			// Sat down in it, turned to the quarterback.
 			const qb = this.role("QB");
 			const faceAt = (p: Pt) => (qb ? this.toward(p, qb.at) : this.behind);
-			const t = catchAt !== undefined ? catchAt - 380 : (until ?? m.t);
+			const t =
+				catchAt !== undefined ? catchAt - CATCH_LEAD_MS : (until ?? m.t);
 			const work = route.settles ? this.workTo(m, route, t) : undefined;
 			if (work) {
 				m.hold(m.t + work.sit, "settle", faceAt(m.at));
@@ -8314,18 +8398,16 @@ class Action {
 				// he was going - short of the ball.)
 				// (Short of it by half the way, or as much as pulling up hard
 				// takes, short of the ball.)
+				// (Or by it, if he cannot pull up short of it.)
 				if (GAITS.has(m.last.move) && ball) {
 					const v = legPace(m.last);
 					const near = dist(m.at, ball);
-					m.easeOff(
-						Math.min(
-							EASE_OFF_FT,
-							Math.max(
-								near * 0.5,
-								Math.min((v * v) / (2 * STOP_ACCEL * STOP_HARD), near - 2.5),
-							),
-						),
-					);
+					const stop = (v * v) / (2 * STOP_ACCEL * STOP_HARD);
+					if (stop > near - 2.5) {
+						m.easeOff(Math.min(EASE_OFF_FT, stop), ball);
+					} else {
+						m.easeOff(Math.min(EASE_OFF_FT, Math.max(near * 0.5, stop)));
+					}
 				}
 				m.hold(m.t + 600, "stand");
 				continue;
