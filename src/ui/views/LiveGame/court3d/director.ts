@@ -1230,10 +1230,9 @@ const BODY = 1.85;
 // it at the least; and a man takes one across the floor from his side
 // only if it is this much nearer what he wants (feet).
 const LANES = [6, 15, 21.5, 28.5, 35, 44] as const;
-// Up the floor ahead of his part in a set, a man fills out to this far in
-// front of the rim (feet, up the floor) in his lane - out beyond the arc -
-// and waits on it there.
-const FILL_OUT = 24;
+// Up the floor ahead of his part in a set, a man fills out to this far from
+// the rim (feet) in his lane - out beyond the arc - and waits on it there.
+const FILL_OUT = 27;
 const LANE_OFF_BALL = 7;
 const LANE_ACROSS = 8;
 // A run at least this far up the floor (feet) is run in a lane.
@@ -2235,10 +2234,16 @@ class Director {
 	// UP THE FLOOR IN LANES. Not two men side by side: a wing runs out wide,
 	// down his side of the floor, a big down the middle, a second man on a
 	// side the lane inside him - and from half court each in to his spot (or,
-	// told to go only `upTo` so far up the floor for now, there in his lane).
+	// told to go only so far for now, out `fill` from the rim in his lane).
 	private fillLanes(
 		team: Side,
-		men: { pid: number; to: Pt; j: number; by?: number; upTo?: number }[],
+		men: {
+			pid: number;
+			to: Pt;
+			j: number;
+			by?: number;
+			fill?: number;
+		}[],
 		t0: number,
 		by: number,
 		// Across the floor, where the ball comes up: nobody runs his lane.
@@ -2275,26 +2280,30 @@ class Director {
 				const big = Math.abs(m.to.y - COURT_H / 2) < 9 && dist(m.to, rim) < 17;
 				// (Only going so far for now, he takes the side he is on - not
 				// across the others to his spot's.)
-				const y = m.upTo === undefined ? m.to.y : this.posOf(m.pid).y;
+				const y = m.fill === undefined ? m.to.y : this.posOf(m.pid).y;
 				const side = y < COURT_H / 2 ? -1 : 1;
 				return { ...m, big, side, y };
 			})
 			// Out wide first: whoever is to go nearer his sideline has it.
 			.sort((a, b) => Math.abs(b.y - 25) - Math.abs(a.y - 25));
+		// (Out `fill` from the rim, across the floor at y.)
+		const fillAt = (fill: number, y: number) => {
+			const dy = Math.min(fill, Math.abs(y - rim.y));
+			return clampPt({ x: rim.x - dir * Math.sqrt(fill * fill - dy * dy), y });
+		};
 		for (const m of lanes) {
 			const from = this.posOf(m.pid);
 			const at = m.by ?? by;
-			const endX = m.upTo ?? m.to.x;
+			const endX = m.fill === undefined ? m.to.x : rim.x - dir * m.fill;
 			if ((endX - from.x) * dir < 24) {
-				const end =
-					m.upTo === undefined ? m.to : clampPt({ x: endX, y: from.y });
+				const end = m.fill === undefined ? m.to : fillAt(m.fill, from.y);
 				this.goBy(m.pid, end, t0 + m.j * 90, at, "run");
 				continue;
 			}
 			const laneY = laneFor(COURT_H / 2 + m.side * (m.big ? 3.5 : 19), m.side);
 			const start = Math.max(t0 + m.j * 90, this.free.get(m.pid) ?? 0);
-			if (m.upTo !== undefined) {
-				this.goBy(m.pid, clampPt({ x: endX, y: laneY }), start, at, "run");
+			if (m.fill !== undefined) {
+				this.goBy(m.pid, fillAt(m.fill, laneY), start, at, "run");
 				continue;
 			}
 			const W = clampPt({ x: from.x + (m.to.x - from.x) * 0.55, y: laneY });
@@ -5659,16 +5668,15 @@ class Director {
 			to: Pt;
 			j: number;
 			by: number;
-			upTo?: number;
+			fill?: number;
 		}[] = [];
-		const lane = (pid: number, to: Pt, j: number, upTo?: number) => {
-			const end = upTo === undefined ? to : { x: upTo, y: to.y };
+		const lane = (pid: number, to: Pt, j: number, fill?: number) => {
 			lanes.push({
 				pid,
 				to,
 				j,
-				by: t0 + runMs(dist(this.posOf(pid), end) * 1.08, RUN),
-				...(upTo !== undefined ? { upTo } : {}),
+				by: t0 + runMs(dist(this.posOf(pid), to) * 1.08, RUN),
+				...(fill !== undefined ? { fill } : {}),
 			});
 		};
 		run.roles.forEach((pid, r) => {
@@ -5683,7 +5691,7 @@ class Director {
 				// filling out to just beyond the arc there: not stood out at
 				// half court till it comes.
 				if (this.inBackcourt(run.team, P)) {
-					lane(pid, S, r, rimX(run.team) - dir * FILL_OUT);
+					lane(pid, S, r, FILL_OUT);
 				}
 				return;
 			}
