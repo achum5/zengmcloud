@@ -125,8 +125,10 @@ const CAM_ZOOM = 2.4;
 const SPRITE_BUDGET_MS = 6;
 // Drawing a frame in under this long (ms, smoothed), there is time for the
 // men's poses in finer steps (see sprite.ts); over that, back to the usual
-// ones - and not tried again for a while.
-const FINE_ON_MS = 5;
+// ones - and not tried again for a while. (A little sooner than
+// basketball's: most of the new poses are made off the page - see farm.ts -
+// and finer ones cost the page little more.)
+const FINE_ON_MS = 7;
 const FINE_OFF_MS = 11;
 const FINE_RETRY_MS = 20_000;
 const FINE_SETTLE_MS = 3000;
