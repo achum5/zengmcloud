@@ -228,6 +228,19 @@ type Sheet = {
 	u0: number;
 };
 const sheets = new WeakMap<FieldLook, Map<number, Sheet | null>>();
+// A canvas to lay it out on: the page's own, or one off the page (in a
+// worker - see farm.ts).
+const sheetCanvas = (w: number, h: number): HTMLCanvasElement | undefined => {
+	if (typeof document !== "undefined") {
+		const cv = document.createElement("canvas");
+		cv.width = w;
+		cv.height = h;
+		return cv;
+	}
+	return typeof OffscreenCanvas === "undefined"
+		? undefined
+		: (new OffscreenCanvas(w, h) as unknown as HTMLCanvasElement);
+};
 
 const jerseySheet = (
 	look: FieldLook,
@@ -235,7 +248,7 @@ const jerseySheet = (
 	ppf0: number,
 	waist: number,
 ): Sheet | undefined => {
-	if (!look.jerseyNumber || typeof document === "undefined") {
+	if (!look.jerseyNumber) {
 		return undefined;
 	}
 	const step = Math.round(Math.log(Math.max(6, ppf0)) / Math.log(1.25));
@@ -254,10 +267,8 @@ const jerseySheet = (
 	const u0 = shouldersOf(body) + body.H * 0.02;
 	const w = Math.max(8, Math.round(2 * Math.PI * aS * ppf));
 	const h = Math.max(8, Math.round((u0 - waist) * ppf) + 2);
-	const cv = document.createElement("canvas");
-	cv.width = w;
-	cv.height = h;
-	const g = cv.getContext("2d", { willReadFrequently: true });
+	const cv = sheetCanvas(w, h);
+	const g = cv?.getContext("2d", { willReadFrequently: true });
 	if (!g) {
 		byStep.set(step, null);
 		return undefined;

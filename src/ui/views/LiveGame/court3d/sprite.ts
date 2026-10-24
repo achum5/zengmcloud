@@ -292,8 +292,9 @@ export const keep = (
 	}
 	return remember(cache, key, { canvas, w, h, dx, dy });
 };
-// A picture kept as the pixels it was finished in (see finishPixels).
-const keepPixels = (
+// A picture kept as the pixels it was finished in (see finishPixels - and
+// field3d/sprite.ts).
+export const keepPixels = (
 	cache: SpriteCache,
 	key: string,
 	pixels: ImageData,

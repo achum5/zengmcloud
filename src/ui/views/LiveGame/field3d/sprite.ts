@@ -1,7 +1,7 @@
 import { project, type Camera } from "../court3d/camera.ts";
 import { lerpPose, type Body, type Pose, type V3 } from "../court3d/poses.ts";
 import {
-	keep,
+	keepPixels,
 	rim,
 	stamp,
 	type Kept,
@@ -568,9 +568,95 @@ const asWas = (cache: SpriteCache, plan: Plan, who: number) => {
 const overBudget = (cache: SpriteCache) =>
 	cache.budget !== undefined && cache.spent >= cache.budget;
 
+// HOW HE IS MADE, in plain numbers - the camera, him and his pose in the
+// sprite's steps, his build, the box on the picture he is drawn in and where
+// he stands in it - so a worker can sculpt him as readily as the page can
+// (see farm.ts).
+export type FieldJob = {
+	cam: Camera;
+	st: FieldPlayerState;
+	step: Stepped;
+	body: Body;
+	px: number;
+	left: number;
+	right: number;
+	upper: number;
+	lower: number;
+	lift: number;
+	baseX: number;
+	baseY: number;
+	shaded: boolean;
+};
+const jobOf = (
+	plan: Plan,
+	cam: Camera,
+	st: FieldPlayerState,
+	body: Body,
+	px: number,
+): FieldJob => ({
+	cam,
+	st,
+	step: plan.step,
+	body,
+	px,
+	left: plan.left,
+	right: plan.right,
+	upper: plan.upper,
+	lower: plan.lower,
+	lift: plan.lift,
+	baseX: plan.base.x,
+	baseY: plan.base.y,
+	shaded: plan.shaded,
+});
+
+// HIM, SCULPTED (see sculpt.ts), shaded and rimmed: nothing but arithmetic,
+// and done as readily in a worker as on the page. Just what is drawn of him
+// and the rim round it, and where that sits from where he stands - nothing,
+// if nothing of him shows.
+export type FieldShaped = { pixels: ImageData; dx: number; dy: number };
+export const shapeField = (
+	job: FieldJob,
+	look: FieldLook,
+): FieldShaped | undefined => {
+	const { cam, st, step, body, px, left, right, upper, lower, lift } = job;
+	const fig = figureOf(st, body, step);
+	const w = Math.max(4, Math.ceil((right - left) / px) + 2);
+	const h = Math.max(4, Math.ceil((lower - upper) / px) + 2);
+	const ox = left - px;
+	const oy = upper + lift - px;
+	const made = sculptFigure(cam, fig, body, look, px, ox, oy, w, h);
+	const box = made.box;
+	const d = made.img.data;
+	if (job.shaded) {
+		for (let i = 0; i < d.length; i += 4) {
+			d[i] = d[i]! * SHADED;
+			d[i + 1] = d[i + 1]! * SHADED;
+			d[i + 2] = d[i + 2]! * (SHADED + 0.06);
+		}
+	}
+	rim(d, w, h, undefined, box);
+	const rx0 = Math.max(0, box.x0 - 1);
+	const ry0 = Math.max(0, box.y0 - 1);
+	const rw = Math.min(w, box.x1 + 2) - rx0;
+	const rh = Math.min(h, box.y1 + 2) - ry0;
+	if (rw <= 0 || rh <= 0) {
+		return undefined;
+	}
+	const pixels = new ImageData(rw, rh);
+	for (let y = 0; y < rh; y++) {
+		const from = ((ry0 + y) * w + rx0) * 4;
+		pixels.data.set(d.subarray(from, from + rw * 4), y * rw * 4);
+	}
+	return {
+		pixels,
+		dx: ox + rx0 * px - job.baseX,
+		dy: oy + ry0 * px - job.baseY,
+	};
+};
+
 // His picture for the plan, sculpted: kept, with a cache - or, without,
-// left on the scratch sheet to be drawn from (its box there, and where that
-// goes on the picture). Nothing, if nothing of him shows.
+// left on the scratch sheet to be drawn from (its size there, and where
+// that goes on the picture). Nothing, if nothing of him shows.
 const make = (
 	plan: Plan,
 	scratch: Scratch,
@@ -580,59 +666,27 @@ const make = (
 	look: FieldLook,
 	px: number,
 	cache: SpriteCache | undefined,
-):
-	| Kept
-	| { rx0: number; ry0: number; rw: number; rh: number; x: number; y: number }
-	| undefined => {
-	const { base, lift, left, right, upper, lower, step } = plan;
+): Kept | { w: number; h: number; x: number; y: number } | undefined => {
 	const began = cache ? performance.now() : 0;
-	const fig = figureOf(st, body, step);
-	const w = Math.max(4, Math.ceil((right - left) / px) + 2);
-	const h = Math.max(4, Math.ceil((lower - upper) / px) + 2);
+	const job = jobOf(plan, cam, st, body, px);
+	const sh = shapeField(job, look);
+	if (!sh) {
+		return undefined;
+	}
+	if (cache && plan.key) {
+		const kept = keepPixels(cache, plan.key, sh.pixels, sh.dx, sh.dy);
+		cache.spent += performance.now() - began;
+		return kept;
+	}
 	const { canvas, ctx: s } = scratch;
+	const { width: w, height: h } = sh.pixels;
 	if (canvas.width < w || canvas.height < h) {
 		canvas.width = Math.max(canvas.width, w);
 		canvas.height = Math.max(canvas.height, h);
 	}
 	s.setTransform(1, 0, 0, 1, 0, 0);
-	s.clearRect(0, 0, w, h);
-	const ox = left - px;
-	const oy = upper + lift - px;
-	const made = sculptFigure(cam, fig, body, look, px, ox, oy, w, h);
-	const box = made.box;
-	if (plan.shaded) {
-		const d = made.img.data;
-		for (let i = 0; i < d.length; i += 4) {
-			d[i] = d[i]! * SHADED;
-			d[i + 1] = d[i + 1]! * SHADED;
-			d[i + 2] = d[i + 2]! * (SHADED + 0.06);
-		}
-	}
-	rim(made.img.data, w, h, undefined, box);
-	const rx0 = Math.max(0, box.x0 - 1);
-	const ry0 = Math.max(0, box.y0 - 1);
-	const rw = Math.min(w, box.x1 + 2) - rx0;
-	const rh = Math.min(h, box.y1 + 2) - ry0;
-	if (rw <= 0 || rh <= 0) {
-		return undefined;
-	}
-	s.putImageData(made.img, 0, 0, rx0, ry0, rw, rh);
-	if (cache && plan.key) {
-		const kept = keep(
-			cache,
-			plan.key,
-			canvas,
-			rx0,
-			ry0,
-			rw,
-			rh,
-			ox + rx0 * px - base.x,
-			oy + ry0 * px - base.y,
-		);
-		cache.spent += performance.now() - began;
-		return kept;
-	}
-	return { rx0, ry0, rw, rh, x: ox + rx0 * px, y: oy + ry0 * px - lift };
+	s.putImageData(sh.pixels, 0, 0);
+	return { w, h, x: plan.base.x + sh.dx, y: plan.base.y + sh.dy - plan.lift };
 };
 
 // Which picture he is drawn in this frame: his own for this pose, kept;
@@ -759,14 +813,14 @@ export const drawFieldPlayer = (
 	ctx.imageSmoothingEnabled = false;
 	ctx.drawImage(
 		scratch.canvas,
-		made.rx0,
-		made.ry0,
-		made.rw,
-		made.rh,
+		0,
+		0,
+		made.w,
+		made.h,
 		Math.round(made.x),
 		Math.round(made.y),
-		made.rw * px,
-		made.rh * px,
+		made.w * px,
+		made.h * px,
 	);
 	ctx.imageSmoothingEnabled = smoothing;
 };
