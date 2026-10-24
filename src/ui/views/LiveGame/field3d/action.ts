@@ -1635,12 +1635,14 @@ const COVER_SOFT = 3;
 const COVER_FRONT = 1;
 // Back into his zone at this pace (ft/s), this far back at least (feet) -
 // settling into it over as much as this (feet), and turned and run there
-// if it takes him any quicker than this (ft/s) over this long (ms) at least.
+// if it takes him any quicker than this (ft/s) over this long (ms) at least
+// (out of a backpedal this long, ms).
 const ZONE_FPS = 9;
 const READ_STEPS_FT = 3;
 const ZONE_SETTLE_FT = 3;
 const BACK_MOST_FPS = 10;
 const BAIL_LEAST_MS = 1000;
+const BAIL_BACK_MS = 250;
 // Sat in it, a step at a time this long (ms): toward the nearest man in
 // it, no further off than ZONE_SEE_FT (feet), ZONE_LEAN of the way to him,
 // no more than ZONE_REACH_FT from it - at no more than ZONE_DRIFT_FPS, and
@@ -5790,11 +5792,22 @@ class Action {
 				const ease = fit < 0.5 ? 0 : fit;
 				const fps = Math.min(m.top * 0.6, (far + ease) / T);
 				const u = far > 0 ? (far - ease) / far : 0;
+				const settleAt = {
+					x: m.at.x + (spot.x - m.at.x) * u,
+					y: m.at.y + (spot.y - m.at.y) * u,
+				};
+				// (Turned and run there out of a backpedal step or two.)
+				if (bail) {
+					m.chase(
+						settleAt,
+						m.t + BAIL_BACK_MS,
+						Math.min(fps, BACK_TOP),
+						"back",
+						this.behind,
+					);
+				}
 				m.chase(
-					{
-						x: m.at.x + (spot.x - m.at.x) * u,
-						y: m.at.y + (spot.y - m.at.y) * u,
-					},
+					settleAt,
 					by - ((2 * ease) / Math.max(1, fps)) * 1000,
 					fps,
 					bail ? undefined : "back",
