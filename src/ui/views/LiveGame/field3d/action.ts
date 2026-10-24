@@ -1859,6 +1859,11 @@ const HIT_FT = 2.2;
 const HIT_LEAST_FT = 1.2;
 // (No nearer it than this to go: round to it where he stands.)
 const TURN_IN_FT = 0.5;
+// (In the carrier's way: no further off the line he runs than this, feet;
+// given this much ground at most to meet him head on - see tackle.)
+const IN_WAY_FT = 2.5;
+const GIVE_MOST_FT = 8;
+const GIVE_COS = -0.5;
 // A tackler met him head on if he came at him from this near straight in
 // front (the cosine of it); and then, this often, drove him back.
 const HEAD_ON = 0.5;
@@ -4097,7 +4102,7 @@ class Action {
 			const at = carrier.posAt(down.t - 60);
 			const o = this.of(at);
 			const hit = this.w({ d: o.d - 1.5 - k * 2.5, a: o.a - side * (2.2 + k) });
-			this.closeOn(m, hit, down.t - 60, this.toward(hit, at));
+			this.closeOn(m, hit, down.t - 60, this.toward(hit, at), carrier);
 			return hit;
 		};
 		if (first) {
@@ -4207,7 +4212,7 @@ class Action {
 		if (!how && side < 0 && r() < STIFF_ARM) {
 			const hit = beside(at, ang - Math.PI / 2, 2.6);
 			const face = this.toward(hit, at);
-			this.closeOn(m, hit, tc - 80, face);
+			this.closeOn(m, hit, tc - 80, face, carrier);
 			m.act("tackledBack", tc + 520, face, beside(hit, face, -1.6));
 			m.hold(tc + 520 + 600, "supine");
 			m.act("getUpBack", tc + 520 + 600 + GET_UP_MS);
@@ -4241,7 +4246,7 @@ class Action {
 				on();
 				const hit = beside(at, toHim, out(2.6));
 				const face = this.toward(hit, at);
-				this.closeOn(m, hit, tc - 300, face);
+				this.closeOn(m, hit, tc - 300, face, carrier);
 				m.act("dive", tc + 250, face, beside(at, face, 1.2));
 				m.hold(tc + 250 + 700, "prone");
 				m.act("getUp", tc + 250 + 700 + GET_UP_MS);
@@ -4261,7 +4266,7 @@ class Action {
 				on();
 				const hit = beside(at, toHim, out(2.2));
 				const face = this.toward(hit, at);
-				this.closeOn(m, hit, tc + 60, face);
+				this.closeOn(m, hit, tc + 60, face, carrier);
 				m.act("dive", tc + 520, face, beside(at, face, 0.2));
 				m.hold(tc + 520 + 600, "prone");
 				m.act("getUp", tc + 520 + 600 + GET_UP_MS);
@@ -4283,7 +4288,7 @@ class Action {
 			// (Off his feet at where he was.)
 			const hit = beside(at, toHim, out(3.5));
 			const face = this.toward(hit, at);
-			this.closeOn(m, hit, tc - 100, face);
+			this.closeOn(m, hit, tc - 100, face, carrier);
 			m.act("dive", tc + 380, face, beside(at, face, 0.8));
 			m.hold(tc + 380 + 700, "prone");
 			m.act("getUp", tc + 380 + 700 + GET_UP_MS);
@@ -4471,10 +4476,29 @@ class Action {
 		this.downer = by[0] ?? this.downer;
 		const fall = carrier.yaw;
 		const lead = t - HIT_MS;
-		// (Where each comes at him from.)
-		const froms = by.map((m) =>
-			m.posAt(Math.max(this.seen, Math.min(m.t, lead - 600))),
-		);
+		// (Where each comes at him from. Stood in his way short of it, on
+		// the line he runs: in front of him there instead - given ground
+		// ahead of him and met head on, not run through and come at from
+		// behind - if that is no long way back.)
+		const froms = by.map((m) => {
+			const tf = Math.max(this.seen, Math.min(m.t, lead - 600));
+			const f = m.posAt(tf);
+			const c0 = carrier.posAt(tf);
+			const run = dist(c0, pt);
+			if (run < 1) {
+				return f;
+			}
+			const ux = (pt.x - c0.x) / run;
+			const uy = (pt.y - c0.y) / run;
+			const on = (f.x - c0.x) * ux + (f.y - c0.y) * uy;
+			const off = Math.abs((f.x - c0.x) * uy - (f.y - c0.y) * ux);
+			return on > 0 &&
+				on < run &&
+				off < IN_WAY_FT &&
+				run - on + HIT_FT < GIVE_MOST_FT
+				? { x: pt.x + ux * HIT_FT, y: pt.y + uy * HIT_FT }
+				: f;
+		});
 		const first = froms[0];
 		// (Where the first comes from, round from the way he goes.)
 		const toFirst = first
@@ -4543,7 +4567,13 @@ class Action {
 			const face = this.toward(hit, pt);
 			// (Run down from behind: on his heels as he gets there, not
 			// waiting there for him.)
-			this.closeOn(m, hit, Math.cos(ang - fall) < BEHIND ? t - 60 : lead, face);
+			this.closeOn(
+				m,
+				hit,
+				Math.cos(ang - fall) < BEHIND ? t - 60 : lead,
+				face,
+				carrier,
+			);
 			if (upright) {
 				// Through him and up, over him.
 				m.go(
@@ -4673,6 +4703,7 @@ class Action {
 				{ x: hit.x + back.x * u, y: hit.y + back.y * u },
 				there,
 				face,
+				carrier,
 			);
 			m.hold(t, "engage", face);
 			m.go({ x: hit.x + back.x, y: hit.y + back.y }, end, "drive", face);
@@ -4708,7 +4739,7 @@ class Action {
 				y: at.y + Math.sin(ang) * PULL_UP_FT,
 			};
 			const face = this.toward(over, at);
-			this.closeOn(m, over, t + 250 + k * 150, face);
+			this.closeOn(m, over, t + 250 + k * 150, face, qb);
 			m.hold(t + SLIDE_MS + DOWN_MS + 400, "stand", face);
 			this.done.add(m.pid);
 		});
@@ -4931,7 +4962,7 @@ class Action {
 	// doing as late as he can and still get there at most of his speed (or
 	// whenever gets him there easiest) - with time to spare, up to a few
 	// steps off to break down, and in from there.
-	closeOn(m: Actor, hit: Pt, lead: number, face: number) {
+	closeOn(m: Actor, hit: Pt, lead: number, face: number, watch?: Actor) {
 		// (Where and when he is off his new way, leaving what he was doing
 		// at c: planted on past it first, going at all quick and well round
 		// from it - see plantFor.)
@@ -5028,6 +5059,12 @@ class Action {
 			y: hit.y + ((m.at.y - hit.y) / far) * 5,
 		};
 		const nearMs = (Math.max(0, far - BREAK_NEAR_FT) / BREAK_NEAR_FPS) * 1000;
+		// (Broken down, square to the man he is to hit, where he is by then -
+		// not to where he will have him.)
+		const look = () => {
+			const him = watch?.posAt((m.t + lead - 300) / 2);
+			return him && dist(him, m.at) > 2 ? this.toward(m.at, him) : face;
+		};
 		const downBy =
 			m.t +
 			rampedMs(far - 5 - ease, v, paceOn(m.last, m.at, off)) +
@@ -5043,7 +5080,7 @@ class Action {
 				v,
 			);
 			m.easeOff(ease);
-			m.hold(lead - 300, "backerStance", face);
+			m.hold(lead - 300, "backerStance", look());
 			m.chase(hit, lead, m.top * FLAT_OUT, "run", face);
 		} else if (
 			far <= 8 &&
@@ -5060,10 +5097,15 @@ class Action {
 				};
 				m.go(at, m.t + nearMs, "shuffle", face);
 			}
-			m.hold(lead - 300, "backerStance", face);
+			m.hold(lead - 300, "backerStance", look());
 			m.chase(hit, lead, m.top * FLAT_OUT, undefined, face);
 		} else {
-			m.chase(hit, lead, m.top * FLAT_OUT);
+			// (Giving ground in front of him: backpedaling, square to him,
+			// if he can go that quick so.)
+			const gives =
+				far > 0 &&
+				Math.cos(Math.atan2(hit.y - m.at.y, hit.x - m.at.x) - face) < GIVE_COS;
+			m.chase(hit, lead, m.top * FLAT_OUT, undefined, gives ? face : undefined);
 		}
 	}
 
@@ -6308,29 +6350,49 @@ class Action {
 					const ang = Math.atan2(m.at.y - to.y, m.at.x - to.x);
 					// (Not back off it, though, a man already near.)
 					const off = Math.min(closeIn, Math.max(4.5, far - 2));
-					let spot = to;
-					for (let k = 0; k < 8; k++) {
-						const a = ang + Math.ceil(k / 2) * 0.7 * (k % 2 === 0 ? 1 : -1);
-						spot = {
-							x: to.x + Math.cos(a) * off,
-							y: to.y + Math.sin(a) * off,
-						};
-						if (closing.every((p) => dist(p, spot) > 3.5)) {
-							break;
-						}
-					}
+					// (On his own side of it: further out, rather than round the
+					// far side of the man it goes to, through him.)
+					const spots = [off, off + 3.5].flatMap((ring) =>
+						[0, 1, 2, 3, 4].map((k) => {
+							const a = ang + Math.ceil(k / 2) * 0.7 * (k % 2 === 0 ? 1 : -1);
+							return {
+								x: to.x + Math.cos(a) * ring,
+								y: to.y + Math.sin(a) * ring,
+							};
+						}),
+					);
+					const spot =
+						spots.find((p) => closing.every((q) => dist(q, p) > 3.5)) ??
+						spots.at(-1)!;
 					closing.push(spot);
 					// (Planted first, going the other way - see plantFor - and up
 					// to speed out of it.)
 					m.plantFor(spot);
-					m.go(
-						spot,
-						Math.max(
-							catchAt + 150,
-							m.t +
-								rampedMs(dist(m.at, spot), m.top, paceOn(m.last, m.at, spot)),
-						),
+					const v0 = paceOn(m.last, m.at, spot);
+					const due = catchAt + 150;
+					// (Near it, time to spare: there on the break all the same -
+					// pulled up as he gets there - and broken down square to it,
+					// not walked there the while.)
+					const D = dist(m.at, spot);
+					const fps = Math.min(
+						m.top * CLOSE,
+						Math.sqrt(STOP_ACCEL * STOP_HARD * D),
 					);
+					const ease = Math.min(
+						D * 0.5,
+						(fps * fps) / (2 * STOP_ACCEL * STOP_HARD),
+					);
+					const quick =
+						m.t + rampedMs(D - ease, fps, v0) + ((2 * ease) / fps) * 1000;
+					if (fps > 0 && due - quick >= BREAK_DOWN_MS) {
+						m.runUp(spot, fps);
+						m.hold(due, "backerStance", this.toward(spot, to));
+					} else {
+						m.go(
+							spot,
+							Math.max(due, m.t + rampedMs(dist(m.at, spot), m.top, v0)),
+						);
+					}
 				}
 			}
 		}
