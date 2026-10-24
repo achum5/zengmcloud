@@ -2,7 +2,7 @@
 // floorImageURL): the floor seen from above, edge to edge as the court lays
 // it down - the 94 x 50 ft court, five feet of apron past each baseline and
 // two and a half past each sideline - at 20 px a foot, its lines where the
-// game's are.
+// game's are. No goal: the 3D court stands a real one there.
 
 const FT = 20;
 const END = 5;
@@ -49,13 +49,6 @@ export const floorTemplate = (): HTMLCanvasElement => {
 		g.strokeRect(0, 17, 19, 16);
 		g.beginPath();
 		g.arc(19, 25, 6, 0, Math.PI * 2);
-		g.stroke();
-		g.beginPath();
-		g.moveTo(4, 22);
-		g.lineTo(4, 28);
-		g.stroke();
-		g.beginPath();
-		g.arc(RIM_INSET, 25, 0.95, 0, Math.PI * 2);
 		g.stroke();
 		g.beginPath();
 		g.arc(RIM_INSET, 25, 4, -Math.PI / 2, Math.PI / 2);
