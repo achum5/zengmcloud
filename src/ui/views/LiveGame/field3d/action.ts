@@ -176,6 +176,21 @@ const topOf = (role: Role) => TOP[role] ?? 20;
 // How a man goes, by how fast.
 const gait = (fps: number): Move =>
 	fps < 6.5 ? "walk" : fps < 12.5 ? "jog" : fps < 21 ? "run" : "sprint";
+// A gait asked for that he is nowhere near the pace of, for longer than
+// GAIT_LEAST_MS: the one he would be going at - not sprinting on the spot.
+const GAIT_LEAST: Partial<Record<Move, number>> = {
+	jog: 3.25,
+	run: 6.25,
+	sprint: 10.5,
+};
+const GAIT_LEAST_MS = 300;
+const paced = (move: Move | undefined, fps: number, ms: number): Move => {
+	const least = move === undefined ? undefined : GAIT_LEAST[move];
+	return move === undefined ||
+		(least !== undefined && fps < least && ms >= GAIT_LEAST_MS)
+		? gait(fps)
+		: move;
+};
 
 const clamp = (x: number, lo: number, hi: number) =>
 	Math.min(hi, Math.max(lo, x));
@@ -348,7 +363,7 @@ class Actor {
 			t1: end,
 			from: l.to,
 			to: p,
-			move: move ?? gait(fps),
+			move: paced(move, fps, end - t0),
 			...(yaw !== undefined ? { yaw } : {}),
 			...extra,
 		});
@@ -602,6 +617,11 @@ const EDGE_STAGGER = 2.5;
 type RunScheme = "zone" | "stretch" | "power" | "sneak";
 const POWER = 0.35;
 const BLOCK_GAP = 2.6;
+// A lineman off the ball into the man on him: no nearer than this (feet),
+// a step or two up into him, his arms out into him - not a run on the spot.
+const FIRE_FT = 4;
+const fireOff = (m: Actor, to: Pt): Move =>
+	dist(m.at, to) < FIRE_FT ? "engage" : "run";
 // Locked up on a run: shoved one way and then the other, every this long
 // (ms, give or take), from this long after the snap - this far across the
 // field (feet) and up to this far up or back.
@@ -992,6 +1012,24 @@ const JUMP: Record<string, number> = {
 // The ball out of his hands this long after the hit that knocks it loose;
 // and what a man is doing on the turf, down.
 const POP_MS = 120;
+// Everybody else after a loose ball (see gather): a beat after it is out
+// (ms, and up to this much more), at this much of his top speed (and up to
+// this much more), round it this far off (feet, and up to this much more),
+// a little off the straight line in (radians across) - or, nearer than
+// that already, in to this much as near (and no nearer than this, feet);
+// not with less than this long left to go (ms). Fallen on, stood round the
+// pile this long.
+const GATHER_REACT_MS = 300;
+const GATHER_REACT_SPREAD = 300;
+const GATHER_PACE = 0.6;
+const GATHER_PACE_SPREAD = 0.2;
+const GATHER_RING = 7;
+const GATHER_SPREAD = 10;
+const GATHER_TURN = 0.7;
+const GATHER_IN = 0.6;
+const GATHER_NEAREST = 3.5;
+const GATHER_LEAST_MS = 400;
+const GATHER_FALLEN_MS = 1400;
 // Getting up off the turf.
 const RISING = new Set<Move>(["getUp", "getUpBack", "sitUp"]);
 const DOWN = new Set<Move>([
@@ -4060,6 +4098,12 @@ class Action {
 		const takeT = scoop
 			? Math.max(restT, reach)
 			: Math.max(restT + 100, reach + 350);
+		this.gather(
+			others.filter((m) => m !== from),
+			restPt,
+			t,
+			scoop ? takeT : takeT + GATHER_FALLEN_MS,
+		);
 		// It stops (or is in his hands) - batted on by the first men at it,
 		// if he has a long way to go for it.
 		const upTo = scoop ? takeT : takeT - 300;
@@ -4201,6 +4245,42 @@ class Action {
 				m.t < this.whistle - 300
 			) {
 				this.trail(m, endPt);
+			}
+		}
+	}
+
+	// Everybody about nothing else as it comes loose (at t): in toward it, a
+	// beat after it is out, each from his own way - to stand off round where
+	// it ends up, the man going for it in among them - until `until` (after
+	// whoever comes up with it, then: see pursue). Not stood about where they
+	// were while it is loose about them.
+	gather(men: Actor[], at: Pt, t: number, until: number) {
+		const r = this.r;
+		for (const m of men) {
+			if (this.done.has(m.pid) || m.t >= until - GATHER_LEAST_MS) {
+				continue;
+			}
+			const far = dist(m.at, at);
+			// (In nearer than that already: in closer still.)
+			const ring = Math.min(
+				GATHER_RING + r() * GATHER_SPREAD,
+				Math.max(GATHER_NEAREST, far * GATHER_IN),
+			);
+			const ang =
+				Math.atan2(m.at.y - at.y, m.at.x - at.x) + (r() - 0.5) * GATHER_TURN;
+			const pace = m.top * (GATHER_PACE + r() * GATHER_PACE_SPREAD);
+			m.hold(Math.max(m.t, t + GATHER_REACT_MS + r() * GATHER_REACT_SPREAD));
+			if (far <= ring + 1) {
+				continue;
+			}
+			const to = {
+				x: at.x + Math.cos(ang) * ring,
+				y: at.y + Math.sin(ang) * ring,
+			};
+			if (m.t + (dist(m.at, to) / pace) * 1000 <= until) {
+				m.run(to, pace);
+			} else {
+				m.chase(to, until, pace);
 			}
 		}
 	}
@@ -4982,7 +5062,8 @@ class Action {
 							: until
 						: shed;
 				m.hold(snap + 50);
-				m.chase(at(snap + 450), snap + 450, m.top * 0.9, "run");
+				const into = at(snap + 450);
+				m.chase(into, snap + 450, m.top * 0.9, fireOff(m, into));
 				m.go(at(end), end, "engage", this.behind);
 				locked = Math.min(locked, end);
 				freed = Math.max(freed, end);
@@ -6149,7 +6230,8 @@ class Action {
 				const q = this.of(b.posAt(time));
 				return this.w({ d: q.d + 2.6, a: q.a });
 			};
-			m.chase(at(snap + 450), snap + 450, m.top * 0.9, "run");
+			const into = at(snap + 450);
+			m.chase(into, snap + 450, m.top * 0.9, fireOff(m, into));
 			m.go(at(free), free, "engage", this.behind);
 		}
 
@@ -6507,7 +6589,8 @@ class Action {
 					const q = this.of(b.posAt(time));
 					return this.w({ d: q.d + 2.6, a: q.a + (s.a > q.a ? 0.8 : -0.8) });
 				};
-				m.chase(at(snap + 400), snap + 400, m.top * 0.9, "run");
+				const into = at(snap + 400);
+				m.chase(into, snap + 400, m.top * 0.9, fireOff(m, into));
 				m.go(at(held), held, "engage", this.behind);
 			} else if (m.role === "RUSH" || m.role === "CB") {
 				// Round the end of the wall and in at the kick: the man outside
