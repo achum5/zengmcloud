@@ -814,16 +814,13 @@ const POKE_FAR = 12;
 const POKE_MEET = 0.4;
 const POKE_HIT = 0.42;
 // Reaching out for a ball going by (from the start of the reach to the
-// hands back): his hands - between them - at full reach, forward of him
-// and up, and how far through the reach that is.
+// hand back): the hand he reaches with at full reach - forward of him, off
+// to his side and up - and how far through the reach that is.
 const REACH_MS = 400;
 const REACH_HIT = 0.45;
 const REACH_AT = (() => {
 	const sk = skeleton(bodyOf(), poseAt("reach", REACH_HIT));
-	return {
-		f: (sk.armR.end.f + sk.armL.end.f) / 2,
-		u: (sk.armR.end.u + sk.armL.end.u) / 2,
-	};
+	return { f: sk.armR.end.f, s: sk.armR.end.s, u: sk.armR.end.u };
 })();
 // A catch, from hands up to it taken in: where the ball meets his hands, a
 // typical player's, and how far through the catch that is.
@@ -11599,25 +11596,24 @@ class Director {
 				face: B.x >= A.x ? 1 : -1,
 				look: { ...B },
 			});
-			// He gets there with his hands out to it - a step off the lane, to
+			// He gets there with his hand out to it - a step off the lane, to
 			// the side he came from: not stood on the line itself, where the
-			// pass would go through him on its way to his hands.
+			// pass would go through him on its way to his hand. (Facing it,
+			// his hand off to his side of him.)
 			const u = unitVec(A, B);
 			const M0 = this.posOf(m);
 			const s = -u.y * (M0.x - I.x) + u.x * (M0.y - I.y) >= 0 ? 1 : -1;
 			const side = { x: -u.y * s, y: u.x * s };
-			this.goBy(
-				m,
-				clampPt({
-					x: I.x + side.x * REACH_AT.f,
-					y: I.y + side.y * REACH_AT.f,
-				}),
-				go,
-				tI - 40,
-				"run",
-			);
+			const M = clampPt({
+				x: I.x + side.x * REACH_AT.f + side.y * REACH_AT.s,
+				y: I.y + side.y * REACH_AT.f - side.x * REACH_AT.s,
+			});
+			this.goBy(m, M, go, tI - 40, "run");
+			// (Square to the lane.)
 			const r0 = tI - REACH_MS * REACH_HIT;
-			this.act(m, "reach", r0, r0 + REACH_MS, { look: I });
+			this.act(m, "reach", r0, r0 + REACH_MS, {
+				look: { x: M.x - side.x * 5, y: M.y - side.y * 5 },
+			});
 			const I3 = { ...I, z: REACH_AT.u };
 			this.fly(release, tI, { pid: h }, I3);
 			// (Off line enough to see it was touched.)
@@ -11877,11 +11873,21 @@ class Director {
 			);
 		}
 		// Up for it, and once he lands, chinned - elbows out - a beat before
-		// he looks up the floor.
+		// he looks up the floor. Off the floor as long as gravity keeps a man
+		// up that high, at the top of it BOARD_TOP in (and no sooner off it
+		// than his legs can have him).
+		const half = Math.min(
+			BOARD_TOP - 40,
+			Math.sqrt((2 * peak) / GRAVITY) * 1000,
+		);
 		this.act(r, anim, t, t + REBOUND_MS, {
 			face: (rim.x >= at.x ? 1 : -1) as 1 | -1,
 			look: { x: rim.x, y: rim.y },
-			jump: [96 / REBOUND_MS, 704 / REBOUND_MS, peak],
+			jump: [
+				(BOARD_TOP - half) / REBOUND_MS,
+				(BOARD_TOP + half) / REBOUND_MS,
+				peak,
+			],
 			reach: true,
 		});
 		this.free.set(r, Math.max(this.free.get(r) ?? 0, t + REBOUND_MS));
@@ -11998,7 +12004,7 @@ class Director {
 		}
 		this.act(rival, "rebound", t, t + 700, {
 			look: { x: rim.x, y: rim.y },
-			jump: [0.15, 0.9, 1.6],
+			jump: [0.12, 0.93, hopFor(700, 0.81)],
 		});
 	}
 
