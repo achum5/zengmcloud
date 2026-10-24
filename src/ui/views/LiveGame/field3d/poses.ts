@@ -14,6 +14,7 @@ import {
 	type Pose,
 	type V3,
 } from "../court3d/poses.ts";
+import { drawnBody, footballBody } from "./body.ts";
 import type { BallHold } from "./director.ts";
 import type { Grip, HeldBall } from "./sculpt.ts";
 import { BALL_LEN, BALL_R } from "./sculpt.ts";
@@ -3479,9 +3480,9 @@ export const poseOfMove = (
 
 // THE FRAMES AN ACT IS DRAWN IN (phases, 0 to 1, the first and last its
 // own): through each stretch between its keys as many as `least` over the
-// whole act gives it, or more where he moves a long way in it - no joint
-// more than `most` degrees from one to the next - and none through a
-// stretch he holds.
+// whole act gives it, or more where he moves a long way in it - as many as
+// no joint more than `most` degrees from one to the next would take - and
+// none through a stretch he holds.
 const DEGREES: (keyof Pose)[] = [
 	"hipN",
 	"kneeN",
@@ -3513,6 +3514,28 @@ const apartBy = (a: Pose, b: Pose): number => {
 	}
 	return most;
 };
+// (Spread through each stretch by how far he moves, not how long it takes:
+// he comes into a key and out of it slowly - see keyed - and evenly in
+// time they would bunch there and jump in between. Measured in so many
+// small steps, on a man of the usual build: how far his head, hands,
+// feet, knees and elbows go.)
+const FRAME_SAMPLES = 32;
+const FRAME_BODY = drawnBody(footballBody());
+const framePoints = (q: Pose): V3[] => {
+	const k = skeleton(FRAME_BODY, q);
+	return [
+		k.head,
+		k.pelvis,
+		k.armR.mid,
+		k.armR.end,
+		k.armL.mid,
+		k.armL.end,
+		k.legR.mid,
+		k.legR.end,
+		k.legL.mid,
+		k.legL.end,
+	];
+};
 const actFrameSets = new Map<string, number[]>();
 export const actFrames = (m: Move, least: number, most: number): number[] => {
 	const key = `${m}|${least}|${most}`;
@@ -3528,13 +3551,45 @@ export const actFrames = (m: Move, least: number, most: number): number[] => {
 				if (u1 <= u0 || d < 0.5) {
 					continue;
 				}
+				// (How far he has gone through it, a little at a time: his
+				// joints, and the most any part of him has moved.)
+				let turned = 0;
+				const gone = [0];
+				let was = p0;
+				let wasAt = framePoints(p0);
+				for (let j = 1; j <= FRAME_SAMPLES; j++) {
+					const q = keyed(a.keys, u0 + ((u1 - u0) * j) / FRAME_SAMPLES);
+					const at = framePoints(q);
+					let moved = 0;
+					for (let k = 0; k < at.length; k++) {
+						const x = at[k]!;
+						const y = wasAt[k]!;
+						moved = Math.max(
+							moved,
+							Math.hypot(x.f - y.f, x.s - y.s, x.u - y.u),
+						);
+					}
+					turned += apartBy(was, q);
+					gone.push(gone[j - 1]! + moved);
+					was = q;
+					wasAt = at;
+				}
+				const all = gone[FRAME_SAMPLES]!;
 				const n = Math.max(
 					Math.ceil((u1 - u0) * (least - 1) - 1e-6),
-					Math.ceil(d / most),
+					Math.ceil(turned / most),
 				);
-				for (let j = 1; j <= n; j++) {
-					out.push(u0 + ((u1 - u0) * j) / n);
+				for (let j = 1, s = 1; j < n; j++) {
+					const want = (all * j) / n;
+					while (s < FRAME_SAMPLES && gone[s]! < want) {
+						s++;
+					}
+					const g0 = gone[s - 1]!;
+					const g1 = gone[s]!;
+					const v = g1 > g0 ? (want - g0) / (g1 - g0) : 1;
+					out.push(u0 + ((u1 - u0) * (s - 1 + v)) / FRAME_SAMPLES);
 				}
+				out.push(u1);
 			}
 		}
 		if (out.at(-1)! < 1) {
