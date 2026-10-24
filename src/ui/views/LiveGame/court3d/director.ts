@@ -4007,9 +4007,27 @@ class Director {
 		// Off the dribble, once he has it in both hands (or in the one).
 		const got = this.gather(from, ready);
 		let start = Math.max(ready, got);
+		// Handing it on at a dead ball, he stops and turns to the man first -
+		// not tossing it over his shoulder off the walk he was on.
+		if (handOff) {
+			const mv = this.track(from)?.moves.findLast(
+				(m) => m.t0 < start && m.t1 > start - PASS_TURN,
+			);
+			if (mv && dist(mv.from, mv.to) > 0.5) {
+				let turn =
+					Math.atan2(b.y - a.y, b.x - a.x) -
+					Math.atan2(mv.to.y - mv.from.y, mv.to.x - mv.from.x);
+				turn = Math.abs(turn - Math.round(turn / (2 * Math.PI)) * 2 * Math.PI);
+				start = Math.max(
+					start,
+					mv.t1 + Math.max(0, (turn - 0.5) / TURN_RATE - wind),
+				);
+			}
+		}
 		// Just caught facing the man who threw it, he turns to the man he
 		// throws it on to before it goes - not sending it off over his
-		// shoulder halfway round.
+		// shoulder halfway round. (Right round, he may come the long way,
+		// facing out: see turnStep.)
 		const caught = this.track(from)?.acts.findLast(
 			(x) => x.anim === "catch" && x.t0 < start && x.t1 >= start - 60,
 		);
@@ -4018,6 +4036,9 @@ class Director {
 				Math.atan2(b.y - a.y, b.x - a.x) -
 				Math.atan2(caught.look.y - a.y, caught.look.x - a.x);
 			turn = Math.abs(turn - Math.round(turn / (2 * Math.PI)) * 2 * Math.PI);
+			if (turn > Math.PI * 0.8) {
+				turn = 2 * Math.PI - turn;
+			}
 			start += Math.max(0, (turn - 0.5) / TURN_RATE - wind);
 		}
 		// (Only straight off the bounce: not once he has held it a while in
@@ -17160,6 +17181,28 @@ class Director {
 			// a pass or a shot.
 			const throws =
 				next.kind === "fly" && "pid" in next.from && next.from.pid === pid;
+			// About to throw it to a man well round from the rim, he is done
+			// facing up in time to turn to him first (see PASS_TURN) - not
+			// throwing it back over his shoulder still squared to the rim.
+			if (throws) {
+				const pass = tr.acts.find(
+					(a) => PASS_ACTS.has(a.anim) && a.t0 >= to && a.t0 <= next.t0 + 1,
+				);
+				if (pass?.look) {
+					let turn =
+						Math.atan2(pass.look.y - P.y, pass.look.x - P.x) -
+						Math.atan2(rim.y - P.y, rim.x - P.x);
+					turn = Math.abs(
+						turn - Math.round(turn / (2 * Math.PI)) * 2 * Math.PI,
+					);
+					if (turn > 1) {
+						to = Math.min(to, pass.t0 - PASS_TURN);
+						if (to - from < 400) {
+							continue;
+						}
+					}
+				}
+			}
 			const fake = (t: number): number => {
 				// (In close - a board in his hands under the rim, say - he
 				// shows it to go up: a pump fake, not a jab step at his man.)
