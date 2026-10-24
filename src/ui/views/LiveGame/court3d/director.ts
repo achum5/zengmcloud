@@ -1203,6 +1203,25 @@ const WALL_FT = 4.5;
 // the middle of it - as high as that long in the air takes him.
 const HACK_MS = 670;
 const HACK_JUMP: [number, number, number] = [0.12, 0.8, hopFor(HACK_MS, 0.68)];
+// A leap at the ball (a block), meeting it `contact` (ms) as he gets to the
+// top - off the floor as long as gravity keeps a man up that high: the act
+// round it as long as that takes, the swat BLOCK_HIT of the way through it
+// where he meets it.
+const BLOCK_HIT = 0.42;
+const blockLeap = (
+	contact: number,
+	peak: number,
+): { t0: number; t1: number; jump: [number, number, number] } => {
+	const half = Math.sqrt((2 * peak) / GRAVITY) * 1000;
+	const top = contact + 40;
+	const D = Math.max(750, (half - 40) / (BLOCK_HIT - 0.06));
+	const t0 = contact - BLOCK_HIT * D;
+	return {
+		t0,
+		t1: t0 + D,
+		jump: [(top - half - t0) / D, (top + half - t0) / D, peak],
+	};
+};
 // How close (feet, middle to middle) two men get before they are into each
 // other: a screen, a post-up.
 const BODY = 1.85;
@@ -9695,10 +9714,11 @@ class Director {
 					d > 6 ? "run" : "slide",
 					-faceRim as 1 | -1,
 				);
-				this.act(victim, "block", gather + 180, gather + 980, {
+				const leap = blockLeap(gather + 520, 2.3);
+				this.act(victim, "block", leap.t0, leap.t1, {
 					face: -faceRim as 1 | -1,
 					look: { ...P1 },
-					jump: [0.12, 0.88, 2.3],
+					jump: leap.jump,
 				});
 				// (And nobody else of theirs in there with them.)
 				this.clears.push({
@@ -9871,10 +9891,11 @@ class Director {
 					shooter,
 					P1,
 				);
-				this.act(b, "block", contact - 330, contact + 420, {
+				const leap = blockLeap(contact, 3.3);
+				this.act(b, "block", leap.t0, leap.t1, {
 					face: -faceRim as 1 | -1,
 					look: { ...P1 },
-					jump: [0.1, 0.9, 3.3],
+					jump: leap.jump,
 					...(left ? { mirror: true as const } : {}),
 				});
 				this.fly(
@@ -10174,10 +10195,11 @@ class Director {
 				const contact = Math.max(release + 110, there + 180);
 				// With the hand on the ball's side, straight up at it.
 				const left = this.leftToBall(this.posOf(b), shooter, P1);
-				this.act(b, "block", contact - 300, contact + 420, {
+				const leap = blockLeap(contact, 2.5);
+				this.act(b, "block", leap.t0, leap.t1, {
 					face: -faceRim as 1 | -1,
 					look: { ...P1 },
-					jump: [0.1, 0.9, 2.7],
+					jump: leap.jump,
 					...(left ? { mirror: true as const } : {}),
 				});
 				this.fly(
