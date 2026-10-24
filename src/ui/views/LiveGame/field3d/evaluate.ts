@@ -630,8 +630,6 @@ const flying = (
 // pitched or snapped to leave his hands, and get to the hands catching it.
 export type HandsOf = (st: FieldPlayerState) => Pt3 | undefined;
 
-// (Not off a kicker's foot: the ball is not in his hands.)
-const KICKED = new Set<Move>(["punt", "kick"]);
 type Fly = Extract<BallSeg, { kind: "fly" }>;
 const metBy = new WeakMap<Fly, { off: Pt3; on: Pt3 }>();
 const NONE: Pt3 = { x: 0, y: 0, z: 0 };
@@ -661,10 +659,7 @@ const handsMet = (
 		const st = part ? stateOf(part, t, apart, play) : undefined;
 		const hold =
 			seg?.kind === "held" ? holdNear(play, seg.pid, t, thrown) : undefined;
-		const at =
-			st && hold && !(thrown && KICKED.has(st.move))
-				? handsOf({ ...st, ball: hold })
-				: undefined;
+		const at = st && hold ? handsOf({ ...st, ball: hold }) : undefined;
 		return at ? { x: at.x - end.x, y: at.y - end.y, z: at.z - end.z } : NONE;
 	};
 	const next = play.ball[k + 1];
