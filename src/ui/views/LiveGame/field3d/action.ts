@@ -347,6 +347,20 @@ const plantedTo = (v: number, ve: number, ahead: number): number =>
 			: ve,
 	);
 
+// How long (ms) he takes to go `far` feet at `fps`, off `v0` ft/s - up to
+// it at RAMP_ACCEL.
+const rampedMs = (far: number, fps: number, v0: number): number => {
+	if (v0 >= fps) {
+		return (far / fps) * 1000;
+	}
+	const up = (fps * fps - v0 * v0) / (2 * RAMP_ACCEL);
+	return (
+		(far <= up
+			? (Math.sqrt(v0 * v0 + 2 * RAMP_ACCEL * far) - v0) / RAMP_ACCEL
+			: (fps - v0) / RAMP_ACCEL + (far - up) / fps) * 1000
+	);
+};
+
 // How quick he goes on leg l (ft/s).
 const legPace = (l: Leg): number =>
 	l.t1 > l.t0 ? dist(l.from, l.to) / ((l.t1 - l.t0) / 1000) : 0;
@@ -5766,11 +5780,16 @@ class Action {
 						}
 					}
 					closing.push(spot);
-					// (Planted first, going the other way - see plantFor.)
+					// (Planted first, going the other way - see plantFor - and up
+					// to speed out of it.)
 					m.plantFor(spot);
 					m.go(
 						spot,
-						Math.max(catchAt + 150, m.t + (dist(m.at, spot) / m.top) * 1000),
+						Math.max(
+							catchAt + 150,
+							m.t +
+								rampedMs(dist(m.at, spot), m.top, paceOn(m.last, m.at, spot)),
+						),
 					);
 				}
 			}
