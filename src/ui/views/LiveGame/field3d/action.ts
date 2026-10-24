@@ -1659,6 +1659,8 @@ const BLOCK_GAP = 2.6;
 const CLEAR_LATE_MS = 300;
 const BLOCK_CLEAR_FT = 3.5;
 const BLOCK_CLEAR_FPS = 4;
+// (Driven back, the block won, no quicker than this - ft/s.)
+const BLOCK_DRIVE_FPS = 6;
 // A lineman off the ball into the man on him: no nearer than this (feet),
 // a step or two up into him, his arms out into him - not a run on the spot.
 const FIRE_FT = 4;
@@ -7155,7 +7157,9 @@ class Action {
 		const p = this.of(m.at);
 		const off = Math.max(meet.t + 200, offAt(p.d));
 		const end = won ? off : Math.min(off, meet.t + SHED_MS + r() * SHED_SPREAD);
-		const give = won ? 2.5 + r() * 2 : -1;
+		const give = won
+			? Math.min(2.5 + r() * 2, (BLOCK_DRIVE_FPS * (end - meet.t)) / 1000)
+			: -1;
 		// (Turned off the way the man with the ball comes by - driven over
 		// to the side of it he is on, not stood in it as he comes through.)
 		// (As little as does it, or as far off him as it gets them.)
