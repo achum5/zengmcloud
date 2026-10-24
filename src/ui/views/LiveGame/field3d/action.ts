@@ -207,8 +207,10 @@ const STOP_STEP_MS = 100;
 const STOP_LEAST = 8;
 // Sinking into a cut: down at this (ft/s/s).
 const CUT_ACCEL = 28;
-// (Easing down to steps this much slower, ft/s, or more - see slowFor.)
+// (Easing down to steps this much slower, ft/s, or more - or for a turn
+// sharper than this, radians, that he plants for: see slowFor.)
 const SLOW_DROP = 6;
+const PLANT_TURN = 1.75;
 // One stretch of his, pulling up over it (see slowInto): legs no further
 // round from each other than this (radians), none quicker than the next by
 // more than this (ft/s), over no longer than this (ms) - and still there
@@ -512,27 +514,37 @@ class Actor {
 	go(to: Pt, t1: number, move?: Move, yaw?: number, extra?: Partial<Leg>) {
 		const leg = this.legTo(to, t1, move, yaw, extra);
 		if (extra === undefined) {
-			this.slowFor(leg);
-			this.rampInto(leg);
+			const ve = this.slowFor(leg);
+			this.rampInto(leg, ve);
 		}
 		this.push(leg);
 	}
 
-	// Slowing for `leg`, steps a good deal slower (SLOW_DROP ft/s or more)
-	// than the stride he is in: down to its pace over the last of the one he
-	// is on (see slowInto), not braked to it in a stride.
-	private slowFor(leg: Leg) {
+	// Slowing for `leg`: steps a good deal slower (SLOW_DROP ft/s or more)
+	// than the stride he is in, or a turn sharper than PLANT_TURN he can
+	// carry only so much of his pace round (as on a route - see breakOf):
+	// down to it over the last of the one he is on (see slowInto), planted
+	// for a turn (see CUT_ACCEL), not braked to it in a stride. (Turning,
+	// the pace he is down to.)
+	private slowFor(leg: Leg): number | undefined {
 		const l = this.last;
-		const ms = l.t1 - l.t0;
-		const T = leg.t1 - leg.t0;
-		if (!STEPS.has(leg.move) || ms <= 0 || T <= 0) {
-			return;
+		if (!STEPS.has(leg.move) || l.t1 <= l.t0 || leg.t1 <= leg.t0) {
+			return undefined;
 		}
-		const was = dist(l.from, l.to) / (ms / 1000);
-		const v = dist(leg.from, leg.to) / (T / 1000);
-		if (was - v >= SLOW_DROP) {
-			this.slowInto(v / was);
+		const was = legPace(l);
+		const v = legPace(leg);
+		const turn =
+			dist(l.from, l.to) > 0 && dist(leg.from, leg.to) > 0
+				? angleAt(l.from, l.to, leg.to)
+				: 0;
+		const round =
+			turn > PLANT_TURN ? Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2) : 1;
+		const keep = Math.min(v / was, round);
+		if (!(was * (1 - keep) >= SLOW_DROP)) {
+			return undefined;
 		}
+		const ve = this.slowInto(keep, round < 1 ? CUT_ACCEL : STOP_ACCEL);
+		return round < 1 ? ve : undefined;
 	}
 
 	// Cutting to `to` by t1 off the leg he is on: down to `keep` of his pace
@@ -805,6 +817,68 @@ class Actor {
 		return ve;
 	}
 
+	// On the way he was going, at the pace he was, until t1 (no more than
+	// CARRY_MOST_MS of it, and eased off from there) - or, not going
+	// anywhere much, stood there till then.
+	carryOn(t1: number) {
+		const l = this.last;
+		const v = legPace(l);
+		const far = dist(l.from, l.to);
+		if (!GAITS.has(l.move) || v < STOP_LEAST || t1 <= this.t) {
+			this.hold(t1);
+			return;
+		}
+		const ms = Math.min(t1 - this.t, CARRY_MOST_MS);
+		const on = (v * ms) / 1000 / far;
+		this.go(
+			{
+				x: l.to.x + (l.to.x - l.from.x) * on,
+				y: l.to.y + (l.to.y - l.from.y) * on,
+			},
+			this.t + ms,
+			l.move,
+			l.yaw,
+		);
+		if (this.t < t1) {
+			this.easeOff(EASE_OFF_FT);
+			this.hold(t1);
+		}
+	}
+
+	// About to go off toward `to`, well round from the way he is going
+	// (more than CUT_LEAST): planted first - on the way he was going, down
+	// to as much of his pace as he can take round with him (as on a route,
+	// see breakOf) at CUT_ACCEL - not turned round at full speed.
+	plantFor(to: Pt) {
+		const l = this.last;
+		const v = legPace(l);
+		if (!RAMPS.has(l.move) || v < STOP_LEAST || l.arms || l.turn) {
+			return;
+		}
+		const turn = angleAt(l.from, l.to, to);
+		if (!(turn > CUT_LEAST)) {
+			return;
+		}
+		const ve = v * Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2);
+		const far = dist(l.from, l.to);
+		const cos = (l.to.x - l.from.x) / far;
+		const sin = (l.to.y - l.from.y) / far;
+		const T = (v - ve) / CUT_ACCEL;
+		const n = Math.max(1, Math.round((T * 1000) / STOP_STEP_MS));
+		const dt = T / n;
+		const paceOf = (i: number) => v - (v - ve) * ((i + 0.5) / n);
+		const moveOf = slower(l.move, n, dt, paceOf);
+		for (let i = 0; i < n; i++) {
+			const pace = paceOf(i);
+			this.go(
+				{ x: this.at.x + cos * pace * dt, y: this.at.y + sin * pace * dt },
+				this.t + dt * 1000,
+				moveOf(i),
+				l.yaw,
+			);
+		}
+	}
+
 	// On the way he was going, slowing to a stop no more than `most` feet
 	// on (see STOP_ACCEL).
 	easeOff(most: number) {
@@ -961,6 +1035,38 @@ class Actor {
 		const ta = Math.min(T, Math.max(0, (fps - v0) / A));
 		const reach = v0 * ta + (A * ta * ta) / 2 + fps * (T - ta);
 		if (fps - v0 < RAMP_LEAST || reach >= far || far <= 0) {
+			// (There by t1 even so: up to as quick as gets him there just
+			// then, if it is no more than fps - not off at it all at once.)
+			const room = T * T - (2 * (far - v0 * T)) / A;
+			const vc = room >= 0 ? v0 + A * (T - Math.sqrt(room)) : Infinity;
+			const g = move ?? gait(vc);
+			if (
+				far > 0 &&
+				T > 0 &&
+				far / T - v0 >= RAMP_LEAST &&
+				vc <= fps &&
+				RAMPS.has(g)
+			) {
+				const ta = (vc - v0) / A;
+				const n = Math.max(1, Math.round((ta * 1000) / RAMP_STEP_MS));
+				const dt = ta / n;
+				const t0 = this.t;
+				for (let i = 1; i <= n; i++) {
+					const s = v0 * dt * i + (A * (dt * i) ** 2) / 2;
+					this.go(
+						{
+							x: from.x + ((p.x - from.x) * s) / far,
+							y: from.y + ((p.y - from.y) * s) / far,
+						},
+						t0 + i * dt * 1000,
+						g,
+					);
+				}
+				if (t1 > this.t + 1) {
+					this.go(p, t1, g);
+				}
+				return;
+			}
 			this.chase(to, t1, fps, move);
 			return;
 		}
@@ -1262,6 +1368,8 @@ const PURSUIT_NEAREST = 5;
 const PURSUIT_LANE = 7;
 // (Given up, or at the whistle: pulled up no more than this far on - feet.)
 const EASE_OFF_FT = 12;
+// (Carrying on the way he was going, before he eases off, ms - see carryOn.)
+const CARRY_MOST_MS = 500;
 // After a man gone for a score, losing ground on him this far back (feet):
 // given up, now and then.
 const GIVE_UP_FT = 24;
@@ -4272,7 +4380,8 @@ class Action {
 			if (this.done.has(m.pid) || tacklers.includes(m) || m.t >= t) {
 				continue;
 			}
-			m.hold(Math.max(m.t, this.seen));
+			m.carryOn(Math.max(m.t, this.seen));
+			m.plantFor(carrier ? carrier.posAt(m.t + PURSUIT_LEAD) : pt);
 			const turn = (r() - 0.5) * 0.8;
 			const ring = 5 + r() * 9;
 			const arrive = t + 200 + r() * 500;
@@ -4335,7 +4444,8 @@ class Action {
 			if (this.done.has(m.pid) || m.t >= t) {
 				continue;
 			}
-			m.hold(Math.max(m.t, this.seen));
+			m.carryOn(Math.max(m.t, this.seen));
+			m.plantFor(carrier.posAt(m.t + PURSUIT_LEAD));
 			// (Each on a line of his own to him, and as far off him as he
 			// can keep up - a man losing ground on him well back giving it up
 			// early: not all in single file on his heels.)
@@ -4966,7 +5076,7 @@ class Action {
 			const ang =
 				Math.atan2(m.at.y - at.y, m.at.x - at.x) + (r() - 0.5) * GATHER_TURN;
 			const pace = m.top * (GATHER_PACE + r() * GATHER_PACE_SPREAD);
-			m.hold(Math.max(m.t, t + GATHER_REACT_MS + r() * GATHER_REACT_SPREAD));
+			m.carryOn(Math.max(m.t, t + GATHER_REACT_MS + r() * GATHER_REACT_SPREAD));
 			if (far <= ring + 1) {
 				continue;
 			}
@@ -4974,10 +5084,11 @@ class Action {
 				x: at.x + Math.cos(ang) * ring,
 				y: at.y + Math.sin(ang) * ring,
 			};
+			m.plantFor(to);
 			if (m.t + (dist(m.at, to) / pace) * 1000 <= until) {
 				m.run(to, pace);
 			} else {
-				m.chase(to, until, pace);
+				m.chaseUp(to, until, pace);
 			}
 		}
 	}
