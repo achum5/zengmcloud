@@ -1911,6 +1911,13 @@ const SLIP_WAIT = 750;
 const SLIP_DROP = 18;
 const SLIP_DROP_GUN = 9;
 const SLIP_THROW = 1500;
+// (The rush let through up this far (feet) short of him as he throws, there
+// this long (ms) before it, and up at it then till this long after - carried
+// on no more than this far with it.)
+const SLIP_UP_FT = 5.5;
+const SLIP_SWAT_LEAD = 200;
+const SLIP_SWAT_MS = 300;
+const SLIP_SWAT_ON = 2;
 // Up for a ball at its highest, this often, thrown this deep at least
 // (feet past the quarterback) with no more than this far to go after it,
 // and a man on him (this near) or the end zone; how long he is up (ms), and
@@ -3362,14 +3369,27 @@ class Action {
 				!this.done.has(m.pid) &&
 				line.some((b) => dist(b.posAt(from), m.posAt(from)) < 5),
 		);
+		const thrower = qb.posAt(throwAt);
 		for (const m of through) {
 			m.cut(from);
-			const q = this.of(qb.posAt(throwAt));
+			const q = this.of(thrower);
 			m.chase(
-				this.w({ d: q.d + 3, a: q.a + (this.of(m.at).a - q.a) * 0.3 }),
-				throwAt + 150,
+				this.w({
+					d: q.d + SLIP_UP_FT,
+					a: q.a + (this.of(m.at).a - q.a) * 0.3,
+				}),
+				throwAt - SLIP_SWAT_LEAD,
 				m.top * 0.9,
 			);
+			// (Up at it with his hands as it goes over him - carried on a
+			// step off his last stride, not on into the quarterback.)
+			const l = m.last;
+			const far = dist(l.from, l.to);
+			const on = far > 0 ? Math.min(SLIP_SWAT_ON, legPace(l) * SWAT_ON) : 0;
+			m.act("swat", throwAt + SLIP_SWAT_MS, this.toward(m.at, thrower), {
+				x: l.to.x + ((l.to.x - l.from.x) / Math.max(far, 1e-6)) * on,
+				y: l.to.y + ((l.to.y - l.from.y) / Math.max(far, 1e-6)) * on,
+			});
 		}
 		this.leadBlocks(line, from, catchPt, catchAt, new Set(through));
 	}
