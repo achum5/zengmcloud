@@ -1572,6 +1572,8 @@ const CARRY_MOST_MS = 500;
 // (Broken down a few steps off a man to hit, this long at least - see
 // closeOn.)
 const BREAK_DOWN_MS = 450;
+// (Not broken down at all with less than this long, ms, to be set in it.)
+const BREAK_SET_MS = 150;
 // After a man gone for a score, losing ground on him this far back (feet):
 // given up, now and then.
 const GIVE_UP_FT = 24;
@@ -4683,16 +4685,34 @@ class Action {
 		m.plantFor(hit);
 		const far = dist(m.at, hit);
 		const secs = (lead - m.t) / 1000;
-		if (far > 8 && far < m.top * 0.5 * secs) {
-			const off = {
-				x: hit.x + ((m.at.x - hit.x) / far) * 5,
-				y: hit.y + ((m.at.y - hit.y) / far) * 5,
-			};
-			// (Up to it no quicker than gets him there with BREAK_DOWN_MS
-			// to settle into it.)
-			const room = (lead - 300 - BREAK_DOWN_MS - m.t) / 1000;
-			const v = clamp((far - 5) / Math.max(0.1, room), 4, m.top * 0.7);
-			m.run(off, v);
+		// (Up to it no quicker than gets him there with BREAK_DOWN_MS to
+		// settle into it - chopping his feet down into it, not stopped
+		// dead: if there is the time for that.)
+		const room = (lead - 300 - BREAK_DOWN_MS - m.t) / 1000;
+		const v = clamp((far - 5) / Math.max(0.1, room), 4, m.top * 0.7);
+		const ease = Math.min(
+			(far - 5) * 0.5,
+			(v * v) / (2 * STOP_ACCEL * STOP_HARD),
+		);
+		const off = {
+			x: hit.x + ((m.at.x - hit.x) / far) * 5,
+			y: hit.y + ((m.at.y - hit.y) / far) * 5,
+		};
+		const downBy =
+			m.t +
+			rampedMs(far - 5 - ease, v, paceOn(m.last, m.at, off)) +
+			((2 * ease) / v) * 1000;
+		if (
+			far > 8 &&
+			far < m.top * 0.5 * secs &&
+			downBy <= lead - 300 - BREAK_SET_MS
+		) {
+			const u = (far - 5 - ease) / (far - 5);
+			m.run(
+				{ x: m.at.x + (off.x - m.at.x) * u, y: m.at.y + (off.y - m.at.y) * u },
+				v,
+			);
+			m.easeOff(ease);
 			m.hold(lead - 300, "backerStance", face);
 			m.chase(hit, lead, m.top * FLAT_OUT, "run", face);
 		} else {
@@ -6488,6 +6508,8 @@ class Action {
 					snap + 1300,
 					"run",
 				);
+				// (Pulled up there, a step or two on.)
+				m.easeOff(STALK_EASE_FT);
 				m.hold(until, "drive", this.ahead);
 				continue;
 			}
