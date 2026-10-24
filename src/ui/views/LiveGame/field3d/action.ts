@@ -1224,11 +1224,13 @@ class Actor {
 		const p = onField(to, this.roam);
 		const from = this.at;
 		const far = dist(from, p);
-		const v0 = this.paceInto(p);
+		// (Out of his stance: up from nothing, at RELEASE_ACCEL.)
+		const into = this.paceInto(p);
+		const v0 = into ?? 0;
 		const g = move ?? gait(fps);
 		let gone = 0;
-		if (v0 !== undefined && far > 0 && fps - v0 >= RAMP_LEAST && RAMPS.has(g)) {
-			const A = RAMP_ACCEL;
+		if (far > 0 && fps - v0 >= RAMP_LEAST && RAMPS.has(g)) {
+			const A = into === undefined ? RELEASE_ACCEL : RAMP_ACCEL;
 			let ta = (fps - v0) / A;
 			if (v0 * ta + (A * ta * ta) / 2 > far) {
 				ta = (Math.sqrt(v0 * v0 + 2 * A * far) - v0) / A;
