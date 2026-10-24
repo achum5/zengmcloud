@@ -837,6 +837,21 @@ const DIVE_HANDS = heldBall(
 	poseOfMove("diveCatch", DIVE_AT),
 	"hands",
 ).at;
+// Fallen on a loose ball: down with his hand on it, out ahead of him (his
+// frame, feet), from a run this far short of it.
+const PRONE_HANDS = heldBall(
+	footballBody(),
+	poseOfMove("prone", 0),
+	"carry",
+).at;
+const FALL_ON_FT = 4;
+// (Where he comes down, facing `yaw`, for it to be in that hand.)
+const fallOn = (at: Pt, yaw: number): Pt => {
+	const h = PRONE_HANDS;
+	const c = Math.cos(yaw);
+	const s = Math.sin(yaw);
+	return { x: at.x - h.f * c - h.s * s, y: at.y - h.f * s + h.s * c };
+};
 // Out of bounds with next to nothing after the catch (feet downfield), on
 // an out or a comeback, this often: thrown to him at the sideline, caught
 // TOE_IN inside it with his toes dragged in - from this long before it gets
@@ -4027,12 +4042,13 @@ class Action {
 
 		if (!scoop) {
 			// Fallen on, and everybody near in on top.
+			const lands = fallOn(restPt, yaw);
 			const short = {
-				x: restPt.x - Math.cos(yaw) * 4,
-				y: restPt.y - Math.sin(yaw) * 4,
+				x: lands.x - Math.cos(yaw) * FALL_ON_FT,
+				y: lands.y - Math.sin(yaw) * FALL_ON_FT,
 			};
 			rec.chase(short, takeT - 350, rec.top * FLAT_OUT, "sprint");
-			rec.act("dive", takeT, yaw, restPt);
+			rec.act("dive", takeT, yaw, lands);
 			rec.hold(takeT + 1400, "prone");
 			rec.act("getUp", takeT + 1400 + GET_UP_MS);
 			this.done.add(rec.pid);
@@ -5765,8 +5781,18 @@ class Action {
 			this.ball.push({ kind: "spot", t0: loose, at: { ...restPt, z: 0 } });
 			takeT = Math.max(loose + 100, reachRest + 350);
 			rec.hold(goOf(rec));
-			rec.chase(restPt, takeT - 350, rec.top * FLAT_OUT, "sprint");
-			rec.act("dive", takeT, rec.yaw, restPt);
+			const yaw = this.toward(rec.at, restPt);
+			const lands = fallOn(restPt, yaw);
+			rec.chase(
+				{
+					x: lands.x - Math.cos(yaw) * FALL_ON_FT,
+					y: lands.y - Math.sin(yaw) * FALL_ON_FT,
+				},
+				takeT - 350,
+				rec.top * FLAT_OUT,
+				"sprint",
+			);
+			rec.act("dive", takeT, yaw, lands);
 			rec.hold(takeT + 1400, "prone");
 			rec.act("getUp", takeT + 1400 + GET_UP_MS);
 			if (muff) {
