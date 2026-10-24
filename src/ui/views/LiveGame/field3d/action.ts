@@ -2230,16 +2230,27 @@ const breakOf = (a: Pt, b: Pt, c: Pt, vIn: number, vOut: number): Break => {
 	};
 };
 // (Off the line: from a stand, up to his pace at RELEASE_ACCEL - not at it
-// from the first step - see routeFps.)
+// from the first step - see routeFps. Or, on the move already as he goes
+// out into it - off a fake - up from the `v0` ft/s he has of it at
+// RAMP_ACCEL.)
 const RELEASE_ACCEL = 24;
-const offLine = (fps: number): Break => ({
-	keep: 1,
-	down: 0,
-	up: (fps / (2 * RELEASE_ACCEL)) * 1000,
-	v: 0,
-	accel: CUT_ACCEL,
-	upAccel: RELEASE_ACCEL,
-});
+const offLine = (fps: number, v0 = 0): Break =>
+	v0 > 0
+		? {
+				keep: 1,
+				down: 0,
+				up: v0 < fps ? ((fps - v0) ** 2 / (2 * RAMP_ACCEL * fps)) * 1000 : 0,
+				v: v0,
+				accel: CUT_ACCEL,
+			}
+		: {
+				keep: 1,
+				down: 0,
+				up: (fps / (2 * RELEASE_ACCEL)) * 1000,
+				v: 0,
+				accel: CUT_ACCEL,
+				upAccel: RELEASE_ACCEL,
+			};
 // How long (ms) a stretch of a route `ft` long takes him at `fps`, out of
 // the break before it and into the one at its end: if it is too short for
 // him to get up to his pace in between (a hitch's step back down to the
@@ -3079,7 +3090,13 @@ class Action {
 			catchPt = this.w(tr.catchAt);
 			const go = releases.get(target.pid)!;
 			const onTime =
-				go + this.routeMs(tr, target.top * ROUTE_PACE, tr.catchAlong);
+				go +
+				this.routeMs(
+					tr,
+					target.top * ROUTE_PACE,
+					tr.catchAlong,
+					this.releasePace(target, tr, go),
+				);
 			const fl = flightOf(
 				this.w({ d: this.of(setAt).d + 1, a: this.of(setAt).a }),
 				catchPt,
@@ -3475,11 +3492,11 @@ class Action {
 	// How long a route takes him, out of his stance to `upto` feet along it
 	// at `speed`: a little slower off the line, down into each cut and up
 	// out of it.
-	routeMs(route: Route, speed: number, upto: number): number {
+	routeMs(route: Route, speed: number, upto: number, v0 = 0): number {
 		const pts = route.path.map((p) => this.w(p));
 		let along = 0;
 		let ms = 0;
-		let cut = offLine(routeFps(speed, 1));
+		let cut = offLine(routeFps(speed, 1), v0);
 		for (let k = 1; k < pts.length && along < upto - ROUTE_LEFT; k++) {
 			const seg = dist(pts[k - 1]!, pts[k]!);
 			const go = Math.min(seg, upto - along);
@@ -3538,13 +3555,14 @@ class Action {
 		until?: number,
 	): Pt | undefined {
 		const speed = m.top * ROUTE_PACE;
+		const v0 = this.releasePace(m, route, release);
 		m.hold(release);
 		const target = catchAt !== undefined;
 		const endAlong = target ? route.catchAlong : Infinity;
 		const pace =
 			catchAt !== undefined && !route.settles
 				? clamp(
-						this.routeMs(route, speed, route.catchAlong) /
+						this.routeMs(route, speed, route.catchAlong, v0) /
 							Math.max(1, catchAt - release),
 						0.6,
 						1,
@@ -3552,7 +3570,7 @@ class Action {
 				: 1;
 		const pts = route.path.map((p) => this.w(p));
 		let along = 0;
-		let cut = offLine(routeFps(speed, 1));
+		let cut = offLine(routeFps(speed, 1), v0);
 		for (let k = 1; k < pts.length; k++) {
 			const seg = dist(pts[k - 1]!, pts[k]!);
 			const room = endAlong - along;
@@ -3578,7 +3596,13 @@ class Action {
 				return;
 			}
 			if (k === 1) {
-				m.getOff(to, t1, 0, RELEASE_ACCEL, gait(routeFps(speed, 1)));
+				m.getOff(
+					to,
+					t1,
+					v0,
+					v0 > 0 ? RAMP_ACCEL : RELEASE_ACCEL,
+					gait(routeFps(speed, 1)),
+				);
 			} else if (cut.keep < 1) {
 				m.cutTo(to, t1, cut.keep);
 			} else {
@@ -3617,6 +3641,17 @@ class Action {
 			return work ? m.at : undefined;
 		}
 		return undefined;
+	}
+
+	// Off on `route` at `release` still on the move from what he was doing
+	// (out of a fake, say), how much of his pace he has on the way it goes
+	// (see paceOn) - none, out of his stance or stood there first.
+	releasePace(m: Actor, route: Route, release: number): number {
+		const l = m.last;
+		const first = route.path[1];
+		return first && release <= l.t1 && GAITS.has(l.move)
+			? paceOn(l, l.to, this.w(first))
+			: 0;
 	}
 
 	// Where a receiver sat down at the end of his route works his way to
@@ -6589,12 +6624,19 @@ class Action {
 				...this.of(riderMesh),
 				a: this.of(riderMesh).a - way * MESH_APART,
 			});
+			// (Out of his stance to it, up to speed: see the back below.)
+			const reach = rampedMs(
+				dist(rider.at, riderMesh),
+				rider.top * 0.75,
+				0,
+				RELEASE_ACCEL,
+			);
 			const rideT = Math.max(
 				Math.max(has, qb.t) +
 					RIDE_MS / 2 +
 					qbStepMs(dist(qb.at, qbRide)) +
 					r() * 150,
-				snap + 150 + (dist(rider.at, riderMesh) / (rider.top * 0.75)) * 1000,
+				snap + 150 + reach,
 			);
 			qb.go(
 				qbRide,
@@ -6603,24 +6645,18 @@ class Action {
 				this.toward(qbRide, riderMesh),
 			);
 			qb.act("handOff", rideT + RIDE_MS / 2, this.toward(qbRide, riderMesh));
-			// (The back on with his fake into the line, and pulled up.)
-			rider.hold(snap + 150);
-			rider.go(riderMesh, rideT, "run", this.toward(rider.at, riderMesh));
+			// (The back on with his fake into the line, and pulled up: off
+			// out of his stance as late as gets him to it up to speed - not
+			// walked there and away at a run - and up to his pace on past it.)
+			rider.hold(rideT - reach);
+			rider.getOff(riderMesh, rideT, 0, RELEASE_ACCEL, "run");
 			const rm = this.of(riderMesh);
-			const past = this.w({ d: rm.d + RIDE_PAST, a: rm.a + way * 3 });
-			rider.go(
-				past,
-				rideT + (RIDE_PAST / (rider.top * 0.7)) * 1000,
-				"run",
-				this.ahead,
-			);
-			rider.arms("fakeCarry", rideT - 200, rideT + 500);
-			rider.go(
-				this.w({ d: rm.d + RIDE_PAST + 3, a: rm.a + way * 4 }),
-				rider.t + 500,
-				"jog",
+			rider.runUp(
+				this.w({ d: rm.d + RIDE_PAST, a: rm.a + way * 3 }),
+				rider.top * 0.7,
 			);
 			rider.hold(rider.t + 600, "stand");
+			rider.arms("fakeCarry", rideT - 200, rideT + 500);
 			this.done.add(rider.pid);
 		}
 
