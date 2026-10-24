@@ -53,12 +53,43 @@ const KNEELS = 0.75;
 // (Getting up off the turf to, on his feet a moment first - turned to him -
 // before he goes down on the knee.)
 const STOOD_FIRST_MS = 700;
+// (No nearer each other than this (feet), nor him and the trainers by
+// him than KNEEL_OFF_HIM: a step or two round him to a place of his own,
+// at this pace, ft/s.)
+const KNEEL_APART = 2.6;
+const KNEEL_OFF_HIM = 5;
+const KNEEL_WALK_FPS = 4;
 // Where the trainers kneel by him, and walk with him (feet off him).
 const BESIDE = 2.6;
 const ALONGSIDE = 2.3;
 const BEHIND = 4;
 
 const toward = (a: Pt, b: Pt) => Math.atan2(b.y - a.y, b.x - a.x);
+
+// Where a man at `from` goes down on a knee round a man hurt at `at`, the
+// others down at `knelt`: where he is, or round him at that much off him
+// (or out a little further), the nearest clear of them all.
+const kneelSpot = (from: Pt, at: Pt, knelt: Pt[]): Pt => {
+	const clear = (p: Pt) =>
+		dist(p, at) >= KNEEL_OFF_HIM - 0.01 &&
+		knelt.every((q) => dist(p, q) >= KNEEL_APART);
+	if (clear(from)) {
+		return from;
+	}
+	const a0 = toward(at, from);
+	const r0 = Math.max(dist(from, at), KNEEL_OFF_HIM);
+	for (let ring = 0; ring < 4; ring++) {
+		const rad = r0 + ring * KNEEL_APART;
+		for (let k = 0; k < 24; k++) {
+			const a = a0 + Math.ceil(k / 2) * 0.28 * (k % 2 === 0 ? 1 : -1);
+			const p = { x: at.x + Math.cos(a) * rad, y: at.y + Math.sin(a) * rad };
+			if (clear(p)) {
+				return p;
+			}
+		}
+	}
+	return from;
+};
 
 // His legs up to t, and nothing after - the leg he is in at t ended there
 // (an act let finish, or - getting up, and not up yet - not begun): when
@@ -289,7 +320,9 @@ export const stageHurt = (input: {
 		);
 	});
 
-	// The men round him, down on a knee while he is.
+	// The men round him, down on a knee while he is - each in a place of his
+	// own (see KNEEL_APART).
+	const knelt: Pt[] = [];
 	for (const p of parts) {
 		// (Not the man with the ball.)
 		if (
@@ -317,9 +350,15 @@ export const stageHurt = (input: {
 		}
 		const rise = up + 300 + r() * 700;
 		const c = cut(p.legs, kneel);
-		const where = p.legs.at(-1)!.to;
-		if (c.at < rise - 500) {
-			still(p.legs, c.at, rise, where, "takeKnee", toward(where, at));
+		const from = p.legs.at(-1)!.to;
+		const where = kneelSpot(from, at, knelt);
+		const there = c.at + (dist(from, where) / KNEEL_WALK_FPS) * 1000;
+		if (there < rise - 500) {
+			if (there > c.at) {
+				p.legs.push({ t0: c.at, t1: there, from, to: where, move: "walk" });
+			}
+			knelt.push(where);
+			still(p.legs, there, rise, where, "takeKnee", toward(where, at));
 			still(p.legs, rise, rise + 1, where, "stand", toward(where, at));
 		}
 	}
