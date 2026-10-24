@@ -209,6 +209,16 @@ const STOP_LEAST = 8;
 const CUT_ACCEL = 28;
 // (Easing down to steps this much slower, ft/s, or more - see slowFor.)
 const SLOW_DROP = 6;
+// One stretch of his, pulling up over it (see slowInto): legs no further
+// round from each other than this (radians), none quicker than the next by
+// more than this (ft/s), over no longer than this (ms) - and still there
+// this long (ms) before he goes on, if he gets there later for it.
+const STRETCH_TURN = 0.12;
+const STRETCH_SLACK = 1.5;
+const STRETCH_MS = 3000;
+const HOLD_LEFT_MS = 150;
+// (Down at as much as this many times as hard, if he has to be.)
+const STOP_HARD = 1.5;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
 const STEPS = new Set<Move>([...GAITS, "back", "slide", "shuffle"]);
 // (Slower than this, ft/s, he is not going anywhere.)
@@ -315,6 +325,24 @@ const clamp = (x: number, lo: number, hi: number) =>
 const angleAt = (a: Pt, b: Pt, c: Pt): number => {
 	const t = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(b.y - a.y, b.x - a.x);
 	return Math.abs(Math.atan2(Math.sin(t), Math.cos(t)));
+};
+
+// How quick he can go on from `from` toward `to` off leg l (ft/s): all of
+// his pace on it the way he was going, half of it square to that, none of
+// it back the other way - nothing, stood or going no way at all.
+const paceOn = (l: Leg, from: Pt, to: Pt): number => {
+	const ms = l.t1 - l.t0;
+	const lx = l.to.x - l.from.x;
+	const ly = l.to.y - l.from.y;
+	const dx = to.x - from.x;
+	const dy = to.y - from.y;
+	const was = Math.hypot(lx, ly);
+	const way = Math.hypot(dx, dy);
+	if (ms <= 0 || was <= 0 || way <= 0) {
+		return 0;
+	}
+	const cos = (lx * dx + ly * dy) / (was * way);
+	return ((was / (ms / 1000)) * (1 + cos)) / 2;
 };
 
 // Ways out from a man spread round him, no two nearer than `gap` (each as
@@ -461,7 +489,7 @@ class Actor {
 			return;
 		}
 		if (!still && moveKind(m) === "still") {
-			this.slowInto();
+			this.slowInto(0, STOP_ACCEL, t - l.t1);
 		}
 		this.push({
 			t0: this.t,
@@ -543,10 +571,179 @@ class Actor {
 	}
 
 	// Pulling up to a stand at the end of his last leg (see STOP_ACCEL) - or
-	// down to `keep` of his pace, at `A` ft/s/s: down to it over the last of
-	// it, the rest of it that much quicker (see RAMP_OVER) - or from no
-	// quicker, down as far as that takes him. (The pace he is down to.)
-	private slowInto(keep = 0, A = STOP_ACCEL): number | undefined {
+	// down to `keep` of his pace, at `A` ft/s/s: over the whole stretch he
+	// is on (see stretchFrom), off the pace he came into it at, up to speed
+	// on it and down at the last, there on time - or, no time for that and
+	// `spare` ms after it to make it up in, there later (still to be there
+	// HOLD_LEFT_MS before it is up). Or, none of that doing it, as slowLast.
+	// (The pace he is down to.)
+	private slowInto(keep = 0, A = STOP_ACCEL, spare = 0): number | undefined {
+		const legs = this.part.legs;
+		const leg = this.last;
+		const ms = leg.t1 - leg.t0;
+		if (!RAMPS.has(leg.move) || ms <= 0 || leg.arms || leg.turn) {
+			return undefined;
+		}
+		const j = this.stretchFrom();
+		const first = legs[j]!;
+		const T = (leg.t1 - first.t0) / 1000;
+		const D = dist(first.from, leg.to);
+		const vl = dist(leg.from, leg.to) / (ms / 1000);
+		if (T * 1000 < RAMP_LEG_MS || vl < STOP_LEAST || D <= 0) {
+			return this.slowLast(keep, A);
+		}
+		const cos = (leg.to.x - first.from.x) / D;
+		const sin = (leg.to.y - first.from.y) / D;
+		const before = legs[j - 1];
+		const vf = dist(first.from, first.to) / ((first.t1 - first.t0) / 1000);
+		const vs =
+			!before || SET.has(before.move)
+				? vf
+				: Math.min(vf, paceOn(before, first.from, leg.to));
+		const ve = vl * keep;
+		const Au = RAMP_ACCEL;
+		const most = Math.max(vl, Math.min((D / T) * RAMP_OVER, RAMP_TOP));
+		// (Up from vs to vc, on at it, and down to ve at Ad: as slow a vc as
+		// gets him there on time - or, too quick, at no more than `most`, as
+		// soon as that gets him there. Down at A if that does it, harder if
+		// it takes it - see STOP_HARD.)
+		const room = Math.max(0, spare - HOLD_LEFT_MS) / 1000;
+		const plan = (Ad: number) => {
+			const qa = 1 / (2 * Au) + 1 / (2 * Ad);
+			const qb = T + vs / Au + ve / Ad;
+			const qc = (vs * vs) / (2 * Au) + (ve * ve) / (2 * Ad) + D;
+			const disc = qb * qb - 4 * qa * qc;
+			let vc = disc >= 0 ? (qb - Math.sqrt(disc)) / (2 * qa) : Infinity;
+			let Tn = T;
+			if (vc > most) {
+				vc = Math.min(most, Math.sqrt(qc / qa));
+				Tn = (D + (vc - vs) ** 2 / (2 * Au) + (vc - ve) ** 2 / (2 * Ad)) / vc;
+			}
+			const ta = (vc - vs) / Au;
+			const td = (vc - ve) / Ad;
+			const tc = Tn - ta - td;
+			return Tn <= T + room &&
+				vc >= vs &&
+				vc >= ve &&
+				ta >= 0 &&
+				tc > -1e-6 &&
+				td > 0
+				? { vc, Tn, ta, td, tc: Math.max(0, tc), Ad }
+				: undefined;
+		};
+		const p = plan(A) ?? plan(A * STOP_HARD);
+		if (!p) {
+			return this.slowLast(keep, A);
+		}
+		const { vc, Tn, ta, td, tc, Ad } = p;
+		const sa = vs * ta + (Au * ta * ta) / 2;
+		const sAt = (t: number) => {
+			if (t <= ta) {
+				return vs * t + (Au * t * t) / 2;
+			}
+			if (t <= ta + tc) {
+				return sa + vc * (t - ta);
+			}
+			const u = Math.min(t - ta - tc, td);
+			return sa + vc * tc + vc * u - (Ad * u * u) / 2;
+		};
+		// (In the gait he was in there, getting up to speed and on - and
+		// slowing from it as he slows.)
+		const old = legs.splice(j);
+		const moveAt = (s: number) => {
+			let gone = 0;
+			for (const o of old) {
+				gone += dist(o.from, o.to);
+				if (gone >= s) {
+					return o.move;
+				}
+			}
+			return leg.move;
+		};
+		const na =
+			ta > 0.001 ? Math.max(1, Math.round((ta * 1000) / RAMP_STEP_MS)) : 0;
+		const nd = Math.max(1, Math.round((td * 1000) / STOP_STEP_MS));
+		const marks: number[] = [];
+		for (let i = 1; i <= na; i++) {
+			marks.push((ta * i) / na);
+		}
+		if (tc > 0.001) {
+			marks.push(ta + tc);
+		}
+		const dt = td / nd;
+		const paceOf = (i: number) => vc - (vc - ve) * ((i + 0.5) / nd);
+		const downOf = slower(leg.move, nd, dt, paceOf);
+		const t0 = first.t0;
+		let from = first.from;
+		let prev = 0;
+		const put = (t: number, move: Move, last: boolean) => {
+			const s = sAt(t);
+			const to = last
+				? leg.to
+				: { x: first.from.x + cos * s, y: first.from.y + sin * s };
+			legs.push({
+				...leg,
+				t0: t0 + prev * 1000,
+				t1: t0 + t * 1000,
+				from,
+				to,
+				move,
+			});
+			from = to;
+			prev = t;
+		};
+		for (const t of marks) {
+			put(t, moveAt((sAt(prev) + sAt(t)) / 2), false);
+		}
+		for (let i = 0; i < nd; i++) {
+			const last = i === nd - 1;
+			put(last ? Tn : ta + tc + dt * (i + 1), downOf(i), last);
+		}
+		return ve;
+	}
+
+	// How far back his last legs are all one stretch: the same way (to
+	// within STRETCH_TURN radians), in a gait, nothing else going on, and
+	// no slower than those after them (getting up to speed, and on) - no
+	// longer ago than STRETCH_MS. (The first of them.)
+	private stretchFrom(): number {
+		const legs = this.part.legs;
+		const l = this.last;
+		const way = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+		const paceOf = (o: Leg) => dist(o.from, o.to) / ((o.t1 - o.t0) / 1000);
+		let j = legs.length - 1;
+		while (j > 0) {
+			const p = legs[j - 1]!;
+			const n = legs[j]!;
+			if (
+				!RAMPS.has(p.move) ||
+				p.arms ||
+				p.turn ||
+				p.span ||
+				p.t1 <= p.t0 ||
+				p.yaw !== l.yaw ||
+				p.mirrored !== l.mirrored ||
+				p.ball !== l.ball ||
+				l.t1 - p.t0 > STRETCH_MS ||
+				dist(p.from, p.to) <= 0 ||
+				paceOf(p) > paceOf(n) + STRETCH_SLACK
+			) {
+				break;
+			}
+			const a = Math.atan2(p.to.y - p.from.y, p.to.x - p.from.x) - way;
+			if (Math.abs(Math.atan2(Math.sin(a), Math.cos(a))) > STRETCH_TURN) {
+				break;
+			}
+			j--;
+		}
+		return j;
+	}
+
+	// Pulling up at the end of his last leg alone: down to `keep` of his
+	// pace over the last of it, the rest of it that much quicker (see
+	// RAMP_OVER) - or from no quicker, down as far as that takes him. (The
+	// pace he is down to.)
+	private slowLast(keep: number, A: number): number | undefined {
 		const legs = this.part.legs;
 		const leg = this.last;
 		const T = (leg.t1 - leg.t0) / 1000;
@@ -641,30 +838,12 @@ class Actor {
 	// Up to speed for `leg`, off the end of the one before (see
 	// RAMP_ACCEL): legs of his getting going put in ahead of it, and it what
 	// is left of it.
-	// How quick he can go on toward `to` off what he was doing (ft/s): all
-	// of his pace the way he was going, half of it square to that, none of
-	// it back the other way - nothing, stood or going no way at all; and
-	// not out of his stance at the snap, off as quick as he can be.
+	// How quick he can go on toward `to` off what he was doing (see
+	// paceOn) - not out of his stance at the snap, off as quick as he can
+	// be.
 	private paceInto(to: Pt): number | undefined {
 		const l = this.last;
-		const ms = l.t1 - l.t0;
-		if (SET.has(l.move)) {
-			return undefined;
-		}
-		if (ms <= 0) {
-			return 0;
-		}
-		const lx = l.to.x - l.from.x;
-		const ly = l.to.y - l.from.y;
-		const dx = to.x - l.to.x;
-		const dy = to.y - l.to.y;
-		const was = Math.hypot(lx, ly);
-		const way = Math.hypot(dx, dy);
-		if (was <= 0 || way <= 0) {
-			return 0;
-		}
-		const cos = (lx * dx + ly * dy) / (was * way);
-		return ((was / (ms / 1000)) * (1 + cos)) / 2;
+		return SET.has(l.move) ? undefined : paceOn(l, l.to, to);
 	}
 
 	private rampInto(leg: Leg, into = this.paceInto(leg.to)) {

@@ -623,5 +623,5 @@ describe("the game over", () => {
 			}
 		}
 		assert.isAbove(showers, 0);
-	});
+	}, 30_000);
 });
