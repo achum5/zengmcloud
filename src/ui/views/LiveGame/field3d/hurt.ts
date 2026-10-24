@@ -351,7 +351,12 @@ export const stageHurt = (input: {
 		const rise = up + 300 + r() * 700;
 		const c = cut(p.legs, kneel);
 		const from = p.legs.at(-1)!.to;
-		const where = kneelSpot(from, at, knelt);
+		// (Off the men stood round as well.)
+		const by = parts
+			.filter((o) => o !== p && o.pid >= 0 && o.legs.length > 0)
+			.map((o) => posOf(o.legs, c.at))
+			.filter((q) => dist(q, from) < KNEEL_APART * 2);
+		const where = kneelSpot(from, at, [...knelt, ...by]);
 		const there = c.at + (dist(from, where) / KNEEL_WALK_FPS) * 1000;
 		if (there < rise - 500) {
 			if (there > c.at) {

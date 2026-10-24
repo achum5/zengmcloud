@@ -543,7 +543,8 @@ export const alignDefense = (
 		}
 	}
 	// The receivers, outside in each side: a corner on the widest, the
-	// nickel (and dime) on the next ones in.
+	// nickel (and dime) on the next ones in. (Not a man tucked in tight by
+	// the line, a wing in the backfield: nobody lines up over him.)
 	const receivers = (side: -1 | 1) =>
 		offense
 			.filter(
@@ -551,7 +552,7 @@ export const alignDefense = (
 					Math.sign(o.across) === side &&
 					o.role !== "C" &&
 					o.role !== "QB" &&
-					(o.pos === "WR" || Math.abs(o.across) > TE_ACROSS + 3),
+					Math.abs(o.across) > (o.pos === "WR" ? TE_ACROSS : TE_ACROSS + 3),
 			)
 			.sort((a, b) => Math.abs(b.across) - Math.abs(a.across));
 	const nickels = call.front === "nickel" ? 1 : call.front === "dime" ? 2 : 0;
