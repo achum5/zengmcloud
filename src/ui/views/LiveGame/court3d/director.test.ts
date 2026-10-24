@@ -2707,6 +2707,54 @@ describe("3D director", () => {
 		assert.isAtMost(idle.length, near * 0.1, idle.join(", "));
 	}, 240_000);
 
+	// The shot up, a man getting back backs out with his eyes on it - never
+	// backs out of a corner up the floor facing the stands, the rim behind
+	// his shoulder.
+	test("getting back after a shot, nobody backpedals with the rim behind him", () => {
+		let backs = 0;
+		const blind: string[] = [];
+		for (const seed of ["a", "b", "c"]) {
+			const { tl } = compile(seed, 150);
+			for (const s of tl.ball) {
+				if (s.kind !== "fly" || !("pid" in s.from) || "pid" in s.to) {
+					continue;
+				}
+				const shooter = tl.tracks.get(s.from.pid);
+				if (!shooter) {
+					continue;
+				}
+				const rim = { x: s.to.x < 47 ? 5.25 : 88.75, y: 25 };
+				for (const tr of tl.tracks.values()) {
+					if (tr.team !== shooter.team || tr.pid === shooter.pid) {
+						continue;
+					}
+					for (const m of tr.moves) {
+						if (m.anim !== "back" || m.t0 < s.t0 || m.t0 > s.t0 + 1500) {
+							continue;
+						}
+						const gx = m.to.x - m.from.x;
+						const gy = m.to.y - m.from.y;
+						const g = Math.hypot(gx, gy);
+						const rx = rim.x - m.from.x;
+						const ry = rim.y - m.from.y;
+						const r = Math.hypot(rx, ry);
+						if (g < 2 || r < 1 || r > 35) {
+							continue;
+						}
+						backs += 1;
+						// Backpedalling, he faces back the way he came: the rim more
+						// than square to that is behind him.
+						if ((-gx * rx - gy * ry) / (g * r) < 0) {
+							blind.push(`${seed} ${tr.pid} at ${Math.round(m.t0)}`);
+						}
+					}
+				}
+			}
+		}
+		assert.isAbove(backs, 20);
+		assert.isAtMost(blind.length, backs * 0.05, blind.join(", "));
+	}, 240_000);
+
 	test("a pull-up three off a ball screen comes off the screen first", () => {
 		let n = 0;
 		const stood: string[] = [];

@@ -671,6 +671,9 @@ const SCRAMBLE_NEAR = 2.6;
 // tried this much further round the rim (radians) till he is.
 const GLASS_APART = 3;
 const GLASS_TURN = 0.4;
+// Backing out after a shot only if that keeps the rim within this (cosine)
+// of straight ahead of him.
+const BACK_FACING = 0.6;
 // The ball theirs, the other five turn and get back (see getBack): from this
 // long after (ms), anybody further than this from the rim at their end
 // (feet), this much nearer it - and back in to the top of the key, not
@@ -10794,12 +10797,23 @@ class Director {
 				crash.set(pid, C);
 				inAt.set(pid, this.goBy(pid, C, r0, meet, "run", undefined, BURST));
 			} else if (out < 30) {
-				// Back on defense, eyes on the shot.
+				// Back on defense, eyes on the shot - backing out if that keeps
+				// the rim in front of him, turning and jogging back if not (out of
+				// a corner, say, where backing up the floor would have him face
+				// the stands).
 				const back = clampPt({
 					x: M.x - dir * (5 + 4 * draw()),
 					y: M.y + (COURT_H / 2 - M.y) * 0.3,
 				});
-				this.goBy(pid, back, r0, until + 300, "back");
+				const going = unitVec(M, back);
+				const away = unitVec(rim, M);
+				this.goBy(
+					pid,
+					back,
+					r0,
+					until + 300,
+					going.x * away.x + going.y * away.y > BACK_FACING ? "back" : "jog",
+				);
 			}
 		});
 		// Which of them his own man is free to put a body on.
