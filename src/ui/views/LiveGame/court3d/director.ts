@@ -8076,7 +8076,7 @@ class Director {
 			if (guard !== undefined && G && dist(G, P) < 6) {
 				this.act(guard, "contest", start + 140, start + 760, {
 					look: { x: P.x, y: P.y },
-					jump: [0.2, 0.8, 1.4],
+					jump: [0.12, 0.88, hopFor(620, 0.76)],
 				});
 			}
 			t = start + 640;
@@ -10649,10 +10649,14 @@ class Director {
 			) {
 				return;
 			}
+			// Off the floor as long as gravity keeps a man up that high, at
+			// the top of it when he always was (and no sooner off it, nor
+			// later down, than the contest has his legs there).
+			const half = Math.min(289, Math.sqrt((2 * peak) / GRAVITY) * 1000) / 680;
 			this.act(d, "contest", t, t + 680, {
 				face,
 				look: { ...P },
-				jump: [0.15, 0.9, peak],
+				jump: [0.525 - half, 0.525 + half, peak],
 				...(left ? { mirror: true as const } : {}),
 			});
 		};
