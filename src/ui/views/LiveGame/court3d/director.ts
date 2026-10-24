@@ -9990,11 +9990,10 @@ class Director {
 			const form = jumper
 				? FORM_LO + (FORM_HI - FORM_LO) * hash01(shooter, 6151)
 				: 1;
-			// How high he gets up: up off the floor on a jumper as long as
-			// gravity takes for that - a little higher pulling up from mid-range
-			// than catching and shooting a three. (Off one foot in close, or on
-			// a hook, the same: up and down as gravity has him, not popped up
-			// and dropped.)
+			// How high he gets up: off one foot in close, or on a hook, up and
+			// down as gravity has him, not popped up and dropped. (A jumper -
+			// or a fade - as high as the time he is up in his stroke takes him:
+			// see below.)
 			const peak = tip
 				? 2.8
 				: close
@@ -10028,7 +10027,7 @@ class Director {
 				);
 			}
 			const jump: [number, number, number] = jumper
-				? [JUMPER.off, JUMPER.land, peak * form * form]
+				? [JUMPER.off, JUMPER.land, hopFor(dur, JUMPER.land - JUMPER.off)]
 				: [0.24, 0.93, peak];
 			this.act(shooter, anim, gather, gather + dur, {
 				face: faceRim,
