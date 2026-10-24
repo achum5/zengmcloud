@@ -151,10 +151,11 @@ const ownWay = (l: Leg) =>
 		) < OWN_WAY);
 const facings = new WeakMap<Leg[], Facing>();
 // (A short way he goes his own way along, faced a little the way he goes on
-// after it - where he will be LOOK_MS from its start - as near that as
+// after it - where he will be LOOK_MS from its start, or the way he is to
+// face next if he squares up to something before then - as near that as
 // CRAB_MOST off his own way: not round one way for a step and then back
 // the other.)
-const LOOK_MS = 400;
+const LOOK_MS = 500;
 const CRAB_MOST = 0.45;
 const lookedAhead = (legs: Leg[], j: number): number => {
 	const l = legs[j]!;
@@ -165,9 +166,17 @@ const lookedAhead = (legs: Leg[], j: number): number => {
 	}
 	let x = l.to.x;
 	let y = l.to.y;
+	let next: number | undefined;
 	for (let k = j + 1; k < legs.length; k++) {
 		const n = legs[k]!;
-		if (Math.abs(n.t0 - legs[k - 1]!.t1) > 1 || !goes(n)) {
+		if (Math.abs(n.t0 - legs[k - 1]!.t1) > 1 || n.turn) {
+			break;
+		}
+		if (n.yaw !== undefined && !ownWay(n)) {
+			next = n.yaw;
+			break;
+		}
+		if (!goes(n)) {
 			break;
 		}
 		const u = n.t1 > by ? (by - n.t0) / (n.t1 - n.t0) : 1;
@@ -177,7 +186,7 @@ const lookedAhead = (legs: Leg[], j: number): number => {
 			break;
 		}
 	}
-	const d = wrapAngle(Math.atan2(y - l.from.y, x - l.from.x) - aim);
+	const d = wrapAngle((next ?? Math.atan2(y - l.from.y, x - l.from.x)) - aim);
 	return aim + Math.max(-CRAB_MOST, Math.min(CRAB_MOST, d));
 };
 const facingOf = (legs: Leg[]): Facing => {
