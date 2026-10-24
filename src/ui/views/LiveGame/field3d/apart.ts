@@ -22,6 +22,7 @@ export type Sep = { t0: number; dx: Float32Array; dy: Float32Array };
 const APART = 2.1;
 const ROUNDS = 3;
 const SMOOTH = 4;
+const PASSES = 2;
 // (Too little to bother with, feet; and nowhere near anybody.)
 const SLIGHT = 0.02;
 const GONE = -1e5;
@@ -149,11 +150,77 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 		}
 	}
 
-	const dx = men.map(() => new Float32Array(n));
-	const dy = men.map(() => new Float32Array(n));
+	// (Each man pushed aside where he is in somebody, and that smoothed out
+	// - and then, where that left anybody still in somebody, again.)
+	const m = men.length;
+	const sx = men.map(() => new Float32Array(n));
+	const sy = men.map(() => new Float32Array(n));
+	for (let pass = 0; pass < PASSES; pass++) {
+		const bx =
+			pass === 0 ? xs : xs.map((x, i) => x.map((v, s) => v + sx[i]![s]!));
+		const by =
+			pass === 0 ? ys : ys.map((y, i) => y.map((v, s) => v + sy[i]![s]!));
+		const { dx, dy, moved } = pushed(bx, by, free, official, n);
+		if (!moved) {
+			break;
+		}
+		for (let i = 0; i < m; i++) {
+			const ax = smooth(smooth(dx[i]!));
+			const ay = smooth(smooth(dy[i]!));
+			for (let s = 0; s < n; s++) {
+				sx[i]![s] = sx[i]![s]! + ax[s]!;
+				sy[i]![s] = sy[i]![s]! + ay[s]!;
+			}
+		}
+	}
+
+	const out = new Map<number, Sep[]>();
+	men.forEach((m, i) => {
+		const sxi = sx[i]!;
+		const syi = sy[i]!;
+		const spans: Sep[] = [];
+		let s = 0;
+		while (s < n) {
+			if (Math.abs(sxi[s]!) < SLIGHT && Math.abs(syi[s]!) < SLIGHT) {
+				s++;
+				continue;
+			}
+			const from = Math.max(0, s - 1);
+			while (
+				s < n &&
+				(Math.abs(sxi[s]!) >= SLIGHT || Math.abs(syi[s]!) >= SLIGHT)
+			) {
+				s++;
+			}
+			const to = Math.min(n, s + 1);
+			spans.push({
+				t0: t0 + from * SEP_MS,
+				dx: sxi.slice(from, to),
+				dy: syi.slice(from, to),
+			});
+		}
+		if (spans.length > 0) {
+			out.set(m.pid, spans);
+		}
+	});
+	return out;
+};
+
+// How far over each is pushed, at each time on their tracks, to be apart
+// there (see keepApart).
+const pushed = (
+	xs: Float32Array[],
+	ys: Float32Array[],
+	free: Uint8Array[],
+	official: boolean[],
+	n: number,
+) => {
+	const m = xs.length;
+	const dx = xs.map(() => new Float32Array(n));
+	const dy = xs.map(() => new Float32Array(n));
+	let any = false;
 	// (After the first go, only those moved since they were last looked at:
 	// the rest are where they were, and were apart then.)
-	const m = men.length;
 	let was = new Uint8Array(m);
 	let now = new Uint8Array(m);
 	// (Where each is, moved over so far, and whether he can be.)
@@ -216,6 +283,7 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 					now[i] = 1;
 					now[j] = 1;
 					moved = true;
+					any = true;
 				}
 			}
 			if (!moved) {
@@ -224,36 +292,7 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 		}
 	}
 
-	const out = new Map<number, Sep[]>();
-	men.forEach((m, i) => {
-		const sx = smooth(smooth(dx[i]!));
-		const sy = smooth(smooth(dy[i]!));
-		const spans: Sep[] = [];
-		let s = 0;
-		while (s < n) {
-			if (Math.abs(sx[s]!) < SLIGHT && Math.abs(sy[s]!) < SLIGHT) {
-				s++;
-				continue;
-			}
-			const from = Math.max(0, s - 1);
-			while (
-				s < n &&
-				(Math.abs(sx[s]!) >= SLIGHT || Math.abs(sy[s]!) >= SLIGHT)
-			) {
-				s++;
-			}
-			const to = Math.min(n, s + 1);
-			spans.push({
-				t0: t0 + from * SEP_MS,
-				dx: sx.slice(from, to),
-				dy: sy.slice(from, to),
-			});
-		}
-		if (spans.length > 0) {
-			out.set(m.pid, spans);
-		}
-	});
-	return out;
+	return { dx, dy, moved: any };
 };
 
 // Each sample the mean of those either side of it.

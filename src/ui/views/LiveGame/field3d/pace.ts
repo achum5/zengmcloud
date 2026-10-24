@@ -249,7 +249,7 @@ export const paceAt = (
 // From one stretch straight on into another - going on, not pulled up at
 // it - not from the one's pace and way to the other's all at once, but over
 // this long either side of where they meet (no more than half of either):
-// the corner rounded, him still on it at the time laid out for it.
+// the corner rounded, him just inside it at the time laid out for it.
 export const CORNER_MS = 150;
 // (And from one pace to a far different one, the way on the same: longer,
 // up to twice as long for this much quicker or slower, ft/s.)
@@ -317,16 +317,17 @@ const rounded = (
 	if (w <= 0 || Math.abs(d) >= w) {
 		return;
 	}
+	// (From the one's pace and way to the other's evenly over it: where he
+	// is on the one he is on, and the ground the change has made up or lost
+	// on it by then.)
 	const ia = top / (a.t1 - a.t0);
 	const ib = 1 / (b.t1 - b.t0);
-	const ax = d < 0 ? at.x : a.to.x + (a.to.x - a.from.x) * ia * d;
-	const ay = d < 0 ? at.y : a.to.y + (a.to.y - a.from.y) * ia * d;
-	const bx = d < 0 ? b.from.x + (b.to.x - b.from.x) * ib * d : at.x;
-	const by = d < 0 ? b.from.y + (b.to.y - b.from.y) * ib * d : at.y;
-	const v = (d + w) / (2 * w);
-	const s = v * v * (3 - 2 * v);
-	at.x = ax + (bx - ax) * s;
-	at.y = ay + (by - ay) * s;
+	const dx = (b.to.x - b.from.x) * ib - (a.to.x - a.from.x) * ia;
+	const dy = (b.to.y - b.from.y) * ib - (a.to.y - a.from.y) * ia;
+	const e = d < 0 ? d + w : w - d;
+	const s = (e * e) / (4 * w);
+	at.x += dx * s;
+	at.y += dy * s;
 };
 
 // WHERE HE IS EVERY TRACK_MS through a play, as placeAt has him (n times,

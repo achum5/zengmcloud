@@ -390,8 +390,9 @@ const HURRY_ACROSS = 6;
 const HURRY_SPREAD = 350;
 const HURRY_FPS = [10, 4] as const;
 // (No quicker than gets him going and pulled up again over the way he
-// has: as if at this many ft/s a second, both ways.)
-const HURRY_EASE = 9;
+// has: as if at this many ft/s a second, both ways - half the pace he
+// would be up to halfway.)
+const HURRY_EASE = 16;
 const HURRY_OUT = new Set<Role>(["X", "Z", "SL", "SL2", "TE", "TE2"]);
 // Into his stance at the end of it: the last SET_IN_FT of the way at a
 // walk (SET_IN_FPS), the rest of it that much quicker (no more than
@@ -436,6 +437,33 @@ const intoStance = (
 		{ t0, t1: t0 + main, from, to: mid, move: up },
 		{ t0: t0 + main, t1, from: mid, to, move: slow },
 	];
+};
+// Out of a ring to their spots, all at much the same time and pace: each
+// man in the place round it - swapped about - that, squared, has the least
+// way to go for all of them, so no two ways out of it cross at the same
+// time (not, round it in order, the back of it through the front).
+const ringOut = (slots: Pt[], to: Pt[]) => {
+	const far = (s: Pt, p: Pt) => (s.x - p.x) ** 2 + (s.y - p.y) ** 2;
+	for (let pass = 0; pass < slots.length; pass++) {
+		let swapped = false;
+		for (let i = 0; i < slots.length; i++) {
+			for (let j = i + 1; j < slots.length; j++) {
+				const a = slots[i]!;
+				const b = slots[j]!;
+				if (
+					far(b, to[i]!) + far(a, to[j]!) <
+					far(a, to[i]!) + far(b, to[j]!) - 1e-6
+				) {
+					slots[i] = b;
+					slots[j] = a;
+					swapped = true;
+				}
+			}
+		}
+		if (!swapped) {
+			break;
+		}
+	}
 };
 // Set this long after the last man is, before the snap; and the cadence
 // from there (shortest, longest).
@@ -2147,6 +2175,10 @@ class Director {
 					y: center.y + Math.sin(a) * radius,
 				};
 			});
+			ringOut(
+				slots,
+				order.map((p) => p.at),
+			);
 			for (const [k, p] of order.entries()) {
 				const ring = slots[k]!;
 				const far = Math.hypot(p.at.x - ring.x, p.at.y - ring.y);
@@ -2247,7 +2279,7 @@ class Director {
 			const leave = t0 + r() * HURRY_SPREAD;
 			const fps = Math.min(
 				HURRY_FPS[0] + r() * HURRY_FPS[1],
-				Math.max(SET_IN_FPS, Math.sqrt(HURRY_EASE * d)),
+				Math.max(SET_IN_FPS, Math.sqrt(HURRY_EASE * d) / 2),
 			);
 			const arrive = leave + (d / fps) * 1000;
 			parts.push({
