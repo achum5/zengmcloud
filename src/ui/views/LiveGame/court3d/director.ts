@@ -2694,10 +2694,13 @@ class Director {
 		);
 		const at = Math.max(ta, tb) + 60;
 		const face = (u.x >= 0 ? 1 : -1) as 1 | -1;
-		this.act(a, "chestBump", at, at + 900, { face, jump: [0.32, 0.72, 1.5] });
+		// (Up off the crouch and down onto the landing, as high as that
+		// long in the air takes him.)
+		const bump: [number, number, number] = [0.25, 0.79, hopFor(900, 0.54)];
+		this.act(a, "chestBump", at, at + 900, { face, jump: bump });
 		this.act(b, "chestBump", at, at + 900, {
 			face: -face as 1 | -1,
-			jump: [0.32, 0.72, 1.5],
+			jump: bump,
 		});
 		for (const p of [a, b]) {
 			this.free.set(p, Math.max(this.free.get(p) ?? 0, at + 900));
@@ -15287,11 +15290,19 @@ class Director {
 		const apex = { x: c.x, y: c.y, z: 12.3 };
 		this.effect("toss", toss);
 		this.fly(toss, toss + 520, held, apex);
-		this.act(jumper, "block", toss + 120, toss + 900, {
+		// Each up as long as gravity has a man in the air for that height,
+		// at the top of it as the ball is (the winner a touch before).
+		const upFor = (h: number, top: number): [number, number] => {
+			const d = (2 * Math.sqrt((2 * h) / GRAVITY) * 1000) / 0.8;
+			return [top - d / 2, top + d / 2];
+		};
+		const [w0, w1] = upFor(2.8, toss + 510);
+		this.act(jumper, "block", w0, w1, {
 			face: attackDir(winnerTeam),
 			jump: [0.1, 0.9, 2.8],
 		});
-		this.act(loser, "block", toss + 160, toss + 940, {
+		const [l0, l1] = upFor(2.5, toss + 550);
+		this.act(loser, "block", l0, l1, {
 			face: attackDir(other(winnerTeam)),
 			jump: [0.1, 0.9, 2.5],
 		});
