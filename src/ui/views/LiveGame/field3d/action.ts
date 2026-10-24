@@ -7668,14 +7668,19 @@ class Action {
 		];
 		peel.forEach((m, k) => {
 			m.hold(snap + 200 + r() * 150);
-			m.run(
-				this.w({
-					d: Math.min(land.d - 26 - k * 7 - r() * 8, goalPull - 20),
-					a: land.a + wallSide * (8 + k * 7 + r() * 5),
-				}),
-				m.top * 0.85,
-				"sprint",
+			const to = this.w({
+				d: Math.min(land.d - 26 - k * 7 - r() * 8, goalPull - 20),
+				a: land.a + wallSide * (8 + k * 7 + r() * 5),
+			});
+			// (Turned round first, over a step or two, and then flat out.)
+			const far = dist(m.at, to);
+			const u = far > 0 ? Math.min(0.2, PEEL_TURN_FT / far) : 0;
+			m.go(
+				{ x: m.at.x + (to.x - m.at.x) * u, y: m.at.y + (to.y - m.at.y) * u },
+				m.t + PEEL_TURN_MS,
+				"jog",
 			);
+			m.run(to, m.top * 0.85, "sprint");
 		});
 
 		// The rest of the cover in their lanes, spread across the field.
@@ -9161,6 +9166,10 @@ const BOWL_MOST = 7300;
 const BOWL_REST = 3600;
 const SPIKE_AT = 0.6;
 const BOUNCE_MS = 650;
+// Peeling back off the line on a punt: turned round over this long, this
+// far, before he is flat out.
+const PEEL_TURN_MS = 400;
+const PEEL_TURN_FT = 2;
 // With this long (ms) to go to the whistle and the ball gone this far
 // (feet) since, a man whose part is done after it - a moment later, to as
 // near the man with it as this (a man of the other side's, this) - at
