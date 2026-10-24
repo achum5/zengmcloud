@@ -94,6 +94,7 @@ import {
 	drawnBall,
 	drawnLift,
 	prepareFieldSprites,
+	steadied,
 } from "./sprite.ts";
 import { drawTags, type TagCover } from "./tags.ts";
 import { showerGear } from "./shower.ts";
@@ -534,6 +535,10 @@ const Field3D = ({
 		vz: 0,
 	});
 	const glide = useRef<Glide>({ was: [], off: [], ms: 0 });
+	// The turn each man was drawn in last frame (see steadied).
+	const turns = useRef(
+		new Map<number, { n: number; turn: number; at: number }>(),
+	);
 	const shown = useRef({ down: "", ball: -1 });
 	useEffect(() => {
 		if (timeline) {
@@ -671,7 +676,7 @@ const Field3D = ({
 					return;
 				}
 				const shaded = inShadow(shadow, st);
-				const up = drawnUp(st);
+				const up = drawnUp(steadied(st, turns.current, sprites.fine === true));
 				men.push({
 					st: up,
 					body: body(st.id),

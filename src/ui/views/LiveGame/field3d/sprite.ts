@@ -385,6 +385,41 @@ const blendedPose = (st: FieldPlayerState, s: Stepped): Pose => {
 	return from.steps && !u ? settleStep(eased, pose, was, 1 - from.w) : eased;
 };
 
+// A man facing all but midway between two of the sprite's turns, and
+// hardly turning: held to the turn he was drawn in last frame till he is
+// this much of a turn past halfway round to the next - not flicking
+// between the two frame to frame. (Turning any quicker than this much of a
+// turn a frame, to the nearest as he goes: held, he would only be the
+// further round all at once after.) (`held`: the turn each man was last
+// drawn in, of how many, and the way he faced then - kept by whoever draws
+// him.)
+const STEADY_PAST = 0.2;
+const STEADY_RATE = 0.25;
+export const steadied = (
+	st: FieldPlayerState,
+	held: Map<number, { n: number; turn: number; at: number }>,
+	fine = false,
+): FieldPlayerState => {
+	const n = (fine ? FINE : COARSE).turns;
+	const step = (Math.PI * 2) / n;
+	const t = st.yaw / step;
+	const near = (x: number) => x + n * Math.round((t - x) / n);
+	const was = held.get(st.id);
+	if (!was || was.n !== n) {
+		held.set(st.id, { n, turn: Math.round(t), at: t });
+		return st;
+	}
+	const turn = near(was.turn);
+	const slow = Math.abs(t - near(was.at)) < STEADY_RATE;
+	was.at = t;
+	if (slow && Math.abs(t - turn) < 0.5 + STEADY_PAST) {
+		was.turn = turn;
+		return { ...st, yaw: turn * step };
+	}
+	was.turn = Math.round(t);
+	return st;
+};
+
 // How he is drawn, the way the sprite has him: his pose and the way he
 // faces (to the nearest of its turns) - in the finer steps, if he is drawn
 // in them.
