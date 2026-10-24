@@ -1151,8 +1151,7 @@ const FIELD_ANIMS = {
 			[1, THROW_THROUGH],
 		],
 	},
-	// Handing it off: turned, the ball out in both hands into the back's
-	// belly.
+	// Handing it off: the ball out in both hands, low, into the back's belly.
 	handOff: {
 		kind: "act",
 		keys: [
@@ -1164,14 +1163,14 @@ const FIELD_ANIMS = {
 					kneeN: 30,
 					hipF: 8,
 					kneeF: 20,
-					lean: 18,
-					shN: 62,
-					elN: 30,
-					abN: 34,
-					shF: 54,
-					elF: 40,
-					abF: 0,
-					twist: 24,
+					lean: 22,
+					shN: 31,
+					elN: 37,
+					abN: -3,
+					shF: 42,
+					elF: 20,
+					abF: -18,
+					twist: 8,
 					wide: 1.0,
 				}),
 			],

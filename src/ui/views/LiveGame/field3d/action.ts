@@ -673,6 +673,10 @@ const BREAK_MS = 250;
 // his hands out to the ball, and not into each other. (Turned to it as he
 // goes there, side on, so he is facing it when the back gets there.)
 const MESH_APART = 3;
+// (The quarterback's arms out with the ball from this long before the
+// back gets to it, into him this far ahead of the middle of him.)
+const HAND_OUT_MS = 200;
+const MESH_AHEAD = 0.8;
 // (Into his pass set, over no less than this long - off a fake on the
 // run, a moment to pull up into it.)
 const SET_LEAST_MS = 300;
@@ -4483,8 +4487,40 @@ class Action {
 			this.at.set(handoffI, mesh);
 		}
 		if (carrier !== qb) {
-			qb.go(qbMesh, mesh - 60, "slide", this.toward(qbMesh, meshPt));
-			qb.act("handOff", mesh + 160, this.toward(qbMesh, meshPt));
+			// (His arms out with it as he comes the last of the way there: out
+			// in front of him as the back gets to it - into his belly, a
+			// little ahead of where he is then.)
+			const from = sweep ? carrier.last.from : carrier.at;
+			const far = dist(from, meshPt);
+			const face = this.toward(
+				qbMesh,
+				far > 0.5
+					? {
+							x: meshPt.x + ((meshPt.x - from.x) / far) * MESH_AHEAD,
+							y: meshPt.y + ((meshPt.y - from.y) / far) * MESH_AHEAD,
+						}
+					: meshPt,
+			);
+			const set = mesh - 60;
+			const out = Math.min(set, Math.max(qb.t + 1, mesh - HAND_OUT_MS));
+			const most = set - qb.t;
+			const u = most > 0 ? (out - qb.t) / most : 1;
+			if (out > qb.t + 1) {
+				qb.go(
+					{
+						x: qb.at.x + (qbMesh.x - qb.at.x) * u,
+						y: qb.at.y + (qbMesh.y - qb.at.y) * u,
+					},
+					out,
+					"slide",
+					face,
+				);
+			}
+			const there = (set - out) / (mesh + 160 - out);
+			qb.act("handOff", set, face, qbMesh);
+			qb.last.span = [0, there];
+			qb.act("handOff", mesh + 160, face);
+			qb.last.span = [there, 1];
 			qb.go(
 				this.w({ d: this.of(qbMesh).d - 6, a: this.of(qbMesh).a - strong * 9 }),
 				mesh + 1400,
