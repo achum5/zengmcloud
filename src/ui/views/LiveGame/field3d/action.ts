@@ -264,12 +264,15 @@ const faced = (
 ): { move: Move; yaw: number | undefined } => {
 	const gaited = GAITS.has(move);
 	const backed = move === "back";
-	if (
-		yaw === undefined ||
-		(!gaited && !backed && move !== "slide") ||
-		dist(from, to) < FACED_LEAST
-	) {
+	if (yaw === undefined || (!gaited && !backed && move !== "slide")) {
 		return { move, yaw };
+	}
+	if (dist(from, to) < FACED_LEAST) {
+		// (In push steps or a backpedal, hardly going anywhere: on in them,
+		// slow - not a step of a walk going backwards.)
+		return gaited && (was?.move === "shuffle" || was?.move === "back")
+			? { move: was.move, yaw: was.yaw ?? yaw }
+			: { move, yaw };
 	}
 	const way = Math.atan2(to.y - from.y, to.x - from.x);
 	const d = yaw - way - Math.round((yaw - way) / (2 * Math.PI)) * 2 * Math.PI;
