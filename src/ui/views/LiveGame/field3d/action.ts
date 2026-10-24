@@ -2363,6 +2363,7 @@ class Action {
 			this.deadBall(flagI);
 		}
 		this.afterWhistle();
+		this.watch();
 		this.celebrate();
 		this.regroup();
 		this.noAirBlocks();
@@ -8686,6 +8687,57 @@ class Action {
 		}
 	}
 
+	// Stood with nothing to do while the play goes on: turned, now and then,
+	// to keep the ball in front of him - not a statue looking off at nothing.
+	watch() {
+		const from = this.input.snap + WATCH_FROM_MS;
+		const to = this.whistle;
+		for (const m of this.men) {
+			const turns: { t: number; yaw: number }[] = [];
+			let yaw = m.legs[0]?.yaw ?? 0;
+			for (const l of m.legs) {
+				// (A moment stood first: up out of what he was in.)
+				const a = Math.max(l.t0 + WATCH_STEP_MS, from);
+				const b = Math.min(l.t1, to);
+				if (
+					l.move === "stand" &&
+					!l.arms &&
+					!l.ball &&
+					!l.turn &&
+					l.from.x === l.to.x &&
+					l.from.y === l.to.y &&
+					b - a >= WATCH_STEP_MS / 2
+				) {
+					let face = yaw;
+					for (let t = a; t + WATCH_STEP_MS / 2 <= b; t += WATCH_STEP_MS) {
+						const ball = this.ballAt(t);
+						if (!ball || dist(ball, l.to) < WATCH_NEAR_FT) {
+							continue;
+						}
+						const at = Math.atan2(ball.y - l.to.y, ball.x - l.to.x);
+						const off = Math.atan2(Math.sin(at - face), Math.cos(at - face));
+						if (Math.abs(off) > WATCH_TURN) {
+							face = at;
+							turns.push({ t, yaw: at });
+						}
+					}
+				}
+				yaw = yawOf(l, yaw);
+			}
+			for (const x of turns) {
+				m.split(x.t);
+			}
+			for (const [k, x] of turns.entries()) {
+				const until = turns[k + 1]?.t ?? Infinity;
+				for (const l of m.legs) {
+					if (l.t0 >= x.t && l.t0 < until && l.move === "stand") {
+						l.yaw = x.yaw;
+					}
+				}
+			}
+		}
+	}
+
 	// ---- between plays -------------------------------------------------------------
 
 	// Where the ball is at t: on the turf, in the air, or with a man.
@@ -9061,6 +9113,13 @@ const FOLLOW_REACT = [150, 350] as const;
 // (Running on at the whistle, nothing more to do: pulled up this long
 // after it, ms, give or take.)
 const WHISTLE_SEEN_MS = [250, 300] as const;
+// Stood watching (from so long after the snap): looked again every so
+// often, ms, and turned to it if it is more than so far round (radians) -
+// not if it is right by him, ft.
+const WATCH_FROM_MS = 400;
+const WATCH_STEP_MS = 450;
+const WATCH_TURN = 0.6;
+const WATCH_NEAR_FT = 6;
 // (Pulled up from the step before rather than this little way into one.)
 const WHISTLE_SLIVER_MS = 150;
 // (Not with less time than this, ms, to go after it.)
