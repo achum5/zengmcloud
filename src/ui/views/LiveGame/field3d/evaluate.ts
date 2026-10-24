@@ -1172,6 +1172,15 @@ export const momentAt = (
 	const held = ballAt(play, t, players, apart, handsOf);
 	const carrier = held.carrier;
 	let { ball, focus } = held;
+	// (Over it, getting his hand on it - but it on the turf still, not yet
+	// his: the one ball, there.)
+	if (ball) {
+		for (const st of players) {
+			if (st.ball === "snap") {
+				st.unseen = true;
+			}
+		}
+	}
 	const over = handsOf && passing(play, t, players, handsOf);
 	if (over) {
 		for (const st of players) {
