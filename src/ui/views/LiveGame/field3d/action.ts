@@ -36,6 +36,7 @@ import {
 	poseOfMove,
 	type Move,
 } from "./poses.ts";
+import { SET } from "./pace.ts";
 import { sidelineOf } from "./sideline.ts";
 import {
 	alongRoute,
@@ -642,12 +643,16 @@ class Actor {
 	// is left of it.
 	// How quick he can go on toward `to` off what he was doing (ft/s): all
 	// of his pace the way he was going, half of it square to that, none of
-	// it back the other way - if he was going in a stride at all.
+	// it back the other way - nothing, stood or going no way at all; and
+	// not out of his stance at the snap, off as quick as he can be.
 	private paceInto(to: Pt): number | undefined {
 		const l = this.last;
 		const ms = l.t1 - l.t0;
-		if (ms <= 0 || moveKind(l.move) !== "cycle") {
+		if (SET.has(l.move)) {
 			return undefined;
+		}
+		if (ms <= 0) {
+			return 0;
 		}
 		const lx = l.to.x - l.from.x;
 		const ly = l.to.y - l.from.y;
