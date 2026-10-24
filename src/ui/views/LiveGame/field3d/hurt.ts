@@ -42,6 +42,11 @@ const SAT_AT = 0.35;
 const KNEE_AT = 0.5;
 // Brought down on his face (or else on his back, or sat).
 const FACE_DOWN = new Set<Move>(["tackled", "dive", "prone"]);
+// Going down still on the move, at this pace or more (ft/s): carried on
+// the way he goes as far as half his pace would take him over the fall (no
+// more than FALL_ON_MOST feet) - not dropped where he was.
+const FALL_ON_FPS = 8;
+const FALL_ON_MOST = 4.5;
 const HELPED_FPS = 5;
 const ALONE_FPS = 7;
 const SHOWN_OFF = 6000;
@@ -165,6 +170,41 @@ const cut = (legs: Leg[], t: number): { at: number; down: boolean } => {
 	};
 };
 
+// Still on the move at t, quicker than a walk (PULL_LEAST ft/s): pulled
+// up first on the way he was going, at PULL_EASE ft/s/s, in steps
+// OUT_STEP_MS long - not down on a knee in his stride. (When he is stood.)
+const PULL_LEAST = 6.5;
+const PULL_EASE = 14;
+const pullUp = (legs: Leg[], t: number): number => {
+	const l = legs.at(-1)!;
+	const v = l.t1 > l.t0 ? dist(l.from, l.to) / ((l.t1 - l.t0) / 1000) : 0;
+	if (moveKind(l.move) !== "cycle" || l.yaw !== undefined || v < PULL_LEAST) {
+		return t;
+	}
+	const cos = (l.to.x - l.from.x) / (v * ((l.t1 - l.t0) / 1000));
+	const sin = (l.to.y - l.from.y) / (v * ((l.t1 - l.t0) / 1000));
+	const T = v / PULL_EASE;
+	const n = Math.max(1, Math.round((T * 1000) / OUT_STEP_MS));
+	const dt = T / n;
+	let at = l.to;
+	let t0 = t;
+	for (let i = 0; i < n; i++) {
+		const pace = v * (1 - (i + 0.5) / n);
+		const to = { x: at.x + cos * pace * dt, y: at.y + sin * pace * dt };
+		const t1 = t0 + dt * 1000;
+		legs.push({
+			t0,
+			t1,
+			from: at,
+			to,
+			move: pace < PULL_LEAST ? "walk" : l.move,
+		});
+		at = to;
+		t0 = t1;
+	}
+	return t0;
+};
+
 // Out to him at OUT_FPS - pulled up over the last of it at OUT_EASE
 // (ft/s/s, down to a walk's pace), in steps this long, not stopped dead.
 const OUT_EASE = 12;
@@ -251,18 +291,34 @@ export const stageHurt = (input: {
 	const team = him.team;
 	// Down.
 	const fell = cut(him.legs, input.whistle + DOWN_AFTER);
-	const at = him.legs.at(-1)!.to;
-	const yaw = him.legs.at(-1)!.yaw ?? 0;
+	const last = him.legs.at(-1)!;
+	let at = last.to;
+	const goes = last.from.x !== last.to.x || last.from.y !== last.to.y;
+	const yaw =
+		last.yaw ??
+		(goes ? Math.atan2(last.to.y - last.from.y, last.to.x - last.from.x) : 0);
 	let t = fell.at;
 	if (!fell.down) {
+		const v =
+			last.t1 > last.t0
+				? dist(last.from, last.to) / ((last.t1 - last.t0) / 1000)
+				: 0;
+		const on = goes && v >= FALL_ON_FPS;
+		const way = Math.atan2(last.to.y - last.from.y, last.to.x - last.from.x);
+		const far = Math.min(FALL_ON_MOST, (v * FALL_MS) / 2000);
+		const to = on
+			? { x: at.x + Math.cos(way) * far, y: at.y + Math.sin(way) * far }
+			: at;
 		him.legs.push({
 			t0: t,
 			t1: t + FALL_MS,
 			from: at,
-			to: at,
-			move: "tackledBack",
+			to,
+			// (Going the way he faces: down on his face.)
+			move: on && Math.cos(way - yaw) > 0 ? "tackled" : "tackledBack",
 			yaw,
 		});
+		at = to;
 		t += FALL_MS;
 	}
 	const downAt = t;
@@ -405,18 +461,19 @@ export const stageHurt = (input: {
 		}
 		const rise = up + 300 + r() * 700;
 		const c = cut(p.legs, kneel);
+		const off = c.down ? c.at : pullUp(p.legs, c.at);
 		const from = p.legs.at(-1)!.to;
 		// (Off the men stood round as well.)
 		const by = parts
 			.filter((o) => o !== p && o.pid >= 0 && o.legs.length > 0)
-			.map((o) => posOf(o.legs, c.at))
+			.map((o) => posOf(o.legs, off))
 			.filter((q) => dist(q, from) < KNEEL_APART * 2);
 		const spot = kneelSpot(from, at, [...knelt, ...by]);
 		const where = dist(from, spot) < KNEEL_STEP_FT ? from : spot;
-		const there = c.at + (dist(from, where) / KNEEL_WALK_FPS) * 1000;
+		const there = off + (dist(from, where) / KNEEL_WALK_FPS) * 1000;
 		if (there < rise - 500) {
-			if (there > c.at) {
-				p.legs.push({ t0: c.at, t1: there, from, to: where, move: "walk" });
+			if (there > off) {
+				p.legs.push({ t0: off, t1: there, from, to: where, move: "walk" });
 			}
 			knelt.push(where);
 			still(p.legs, there, rise, where, "takeKnee", toward(where, at));
