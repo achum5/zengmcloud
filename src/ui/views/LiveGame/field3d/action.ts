@@ -224,8 +224,10 @@ const STRETCH_MS = 3000;
 const HOLD_LEFT_MS = 150;
 // (Down at as much as this many times as hard, if he has to be.)
 const STOP_HARD = 1.5;
-// (Cut short no more than this long into a leg, ms: none of it kept.)
+// (Cut short no more than this long into a leg, ms: none of it kept - or,
+// in a gait, this long: kept as the one before it.)
 const CUT_SLIVER_MS = 1;
+const CUT_MERGE_MS = 60;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
 const STEPS = new Set<Move>([...GAITS, "back", "slide", "shuffle"]);
 // (Slower than this, ft/s, he is not going anywhere.)
@@ -1327,6 +1329,31 @@ class Actor {
 		) {
 			legs.pop();
 		}
+		// (Nor a stride or two of a stretch he was getting going over: the
+		// one before it on to there instead - or, slowing, the gait he was
+		// slowing from.)
+		const sliver = legs.at(-1)!;
+		const before = legs.at(-2);
+		if (
+			before &&
+			sliver.t1 > t &&
+			t - sliver.t0 < CUT_MERGE_MS &&
+			GAITS.has(sliver.move) &&
+			GAITS.has(before.move) &&
+			before.t1 === sliver.t0
+		) {
+			if (legPace(sliver) < legPace(before)) {
+				sliver.move = before.move;
+			} else {
+				const u = (t - sliver.t0) / (sliver.t1 - sliver.t0);
+				before.to = {
+					x: sliver.from.x + (sliver.to.x - sliver.from.x) * u,
+					y: sliver.from.y + (sliver.to.y - sliver.from.y) * u,
+				};
+				before.t1 = t;
+				legs.pop();
+			}
+		}
 		const l = legs.at(-1)!;
 		if (l.t1 > t && t > l.t0) {
 			const u = (t - l.t0) / (l.t1 - l.t0);
@@ -1507,6 +1534,9 @@ const SHED_SPREAD = 350;
 const OFF_SPREAD = 350;
 const STALK_FAR = 36;
 const STALK_WON = 0.6;
+// (The man he goes out onto - or a linebacker over to fill - pulled up
+// there no more than this far on, feet.)
+const STALK_EASE_FT = 5;
 
 // After the ball: at this much of his speed at most - this much faster than
 // he needs to be, to get there in time - a leg this long at a time (ms), at
@@ -6274,6 +6304,10 @@ class Action {
 				across > 5 ? "run" : "slide",
 				across > 5 ? undefined : this.behind,
 			);
+			// (Pulled up there, nobody on him yet - see STALK_EASE_FT.)
+			if (across > 5) {
+				m.easeOff(STALK_EASE_FT);
+			}
 		}
 		const taken = new Set<Actor>();
 		const pick = (from: Pt) => {
@@ -6380,6 +6414,8 @@ class Action {
 				undefined,
 				this.behind,
 			);
+			// (Pulled up there, a step or two on.)
+			db.easeOff(STALK_EASE_FT);
 			m.go(
 				this.w({ d: s.d + 4, a: s.a + (c.a - s.a) * 0.3 }),
 				snap + 650,
@@ -6403,11 +6439,13 @@ class Action {
 		const r = this.r;
 		let meet: { t: number; at: Pt } | undefined;
 		if (m) {
+			// (Up to speed for it off what he is doing - see rampedMs.)
 			const fps = b.top * CLIMB_PACE;
 			for (let c = b.t + 100; c <= until; c += 50) {
 				const p = this.of(m.posAt(c));
 				const at = this.w({ d: p.d - BLOCK_GAP, a: p.a });
-				if ((dist(b.at, at) / fps) * 1000 <= c - b.t) {
+				const far = dist(b.at, at);
+				if (rampedMs(far, fps, paceOn(b.last, b.at, at)) <= c - b.t) {
 					meet = { t: c, at };
 					break;
 				}
