@@ -69,15 +69,82 @@ const BASE: Pose = {
 };
 const pose = (o: Partial<Pose>): Pose => ({ ...BASE, ...o });
 
+// Through an act's keys on a smooth curve, not straight from one to the
+// next: each angle coming into a key and on out of it at one speed, never
+// past it (a monotone cubic - see slopesOf).
 const keyed = (keys: [number, Pose][], u: number): Pose => {
 	for (let i = 1; i < keys.length; i++) {
 		const [u1, p1] = keys[i]!;
 		if (u <= u1) {
 			const [u0, p0] = keys[i - 1]!;
-			return lerpPose(p0, p1, u1 === u0 ? 1 : (u - u0) / (u1 - u0));
+			if (u1 === u0) {
+				return p1;
+			}
+			const h = u1 - u0;
+			const t = (u - u0) / h;
+			const m = slopesOf(keys);
+			const m0 = m[i - 1]!;
+			const m1 = m[i]!;
+			const a = (2 * t - 3) * t * t + 1;
+			const b = ((t - 2) * t + 1) * t * h;
+			const c = (3 - 2 * t) * t * t;
+			const d = (t - 1) * t * t * h;
+			const out = { ...p0 };
+			for (const k of Object.keys(p0) as (keyof Pose)[]) {
+				out[k] = a * p0[k] + b * m0[k] + c * p1[k] + d * m1[k];
+			}
+			return out;
 		}
 	}
 	return keys.at(-1)![1];
+};
+// How fast each angle goes through each key (a unit of phase): where it
+// turns back, or holds, none; otherwise a mean of the way in and the way
+// out weighted to the shorter (Fritsch-Carlson, as PCHIP has it - the
+// ends from the two ways next to them, no faster than three times the
+// one).
+const slopes = new WeakMap<[number, Pose][], Pose[]>();
+const slopesOf = (keys: [number, Pose][]): Pose[] => {
+	const had = slopes.get(keys);
+	if (had) {
+		return had;
+	}
+	const n = keys.length;
+	const out = keys.map(() => ({ ...BASE }));
+	for (const k of Object.keys(BASE) as (keyof Pose)[]) {
+		const h: number[] = [];
+		const d: number[] = [];
+		for (let i = 0; i + 1 < n; i++) {
+			h.push(keys[i + 1]![0] - keys[i]![0]);
+			d.push(h[i]! > 0 ? (keys[i + 1]![1][k] - keys[i]![1][k]) / h[i]! : 0);
+		}
+		for (let i = 1; i + 1 < n; i++) {
+			const d0 = d[i - 1]!;
+			const d1 = d[i]!;
+			const w0 = 2 * h[i]! + h[i - 1]!;
+			const w1 = h[i]! + 2 * h[i - 1]!;
+			out[i]![k] =
+				d0 * d1 <= 0 || h[i - 1]! <= 0 || h[i]! <= 0
+					? 0
+					: (w0 + w1) / (w0 / d0 + w1 / d1);
+		}
+		const end = (h0: number, h1: number, d0: number, d1: number) => {
+			if (n < 3 || h0 + h1 <= 0) {
+				return d0;
+			}
+			const m = ((2 * h0 + h1) * d0 - h0 * d1) / (h0 + h1);
+			return m * d0 <= 0
+				? 0
+				: d0 * d1 < 0 && Math.abs(m) > 3 * Math.abs(d0)
+					? 3 * d0
+					: m;
+		};
+		out[0]![k] = end(h[0]!, h[1] ?? 0, d[0] ?? 0, d[1] ?? 0);
+		out[n - 1]![k] =
+			n < 2 ? 0 : end(h[n - 2]!, h[n - 3] ?? 0, d[n - 2]!, d[n - 3] ?? 0);
+	}
+	slopes.set(keys, out);
+	return out;
 };
 
 // A lineman down in his stance: feet a little wider than his shoulders, his
