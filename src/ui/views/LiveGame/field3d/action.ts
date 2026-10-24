@@ -1520,6 +1520,9 @@ const READ_MS = 350;
 // A wait shorter than this, on his way somewhere: taken going there more
 // slowly, not stood.
 const WAIT_LEAST_MS = 150;
+// (A receiver there early, on the move, by no more than this far at the
+// pace he is going, feet: on in his stride to it - see reachFor.)
+const CATCH_ON_FT = 3;
 // A defender sees the ball thrown and breaks on it this long after.
 const BREAK_MS = 250;
 // On his man in coverage: where he goes, worked out a step at a time, so
@@ -3445,6 +3448,16 @@ class Action {
 	// Whether in stride.
 	reachFor(rec: Actor, catchAt: number, qb: Actor | undefined): boolean {
 		const reach = catchAt - 300;
+		// (There a moment early, on the move: on the way he was going to
+		// meet it, in his stride - not stopped dead for it.)
+		const was = rec.last;
+		if (
+			GAITS.has(was.move) &&
+			rec.t < catchAt &&
+			((catchAt - rec.t) / 1000) * legPace(was) <= CATCH_ON_FT
+		) {
+			rec.carryOn(catchAt);
+		}
 		const l = rec.last;
 		if (
 			Math.abs(rec.t - catchAt) < 5 &&
@@ -7965,7 +7978,18 @@ class Action {
 				x: at.x + Math.cos(ang) * MOB_RING,
 				y: at.y + Math.sin(ang) * MOB_RING,
 			};
-			const t = m.run(to, m.top * (0.7 + r() * 0.15), "sprint");
+			// (Pulled up as he gets there, hard - not leapt in off a sprint.)
+			const v = m.top * (0.7 + r() * 0.15);
+			const far = dist(m.at, to);
+			const ease = Math.min(far * 0.5, (v * v) / (2 * STOP_ACCEL * STOP_HARD));
+			const u = far > 0 ? (far - ease) / far : 1;
+			m.run(
+				{ x: m.at.x + (to.x - m.at.x) * u, y: m.at.y + (to.y - m.at.y) * u },
+				v,
+				"sprint",
+			);
+			m.easeOff(ease);
+			const t = m.t;
 			const face = this.toward(m.at, at);
 			if (r() < 0.65) {
 				m.act("leap", t + 800, face);
