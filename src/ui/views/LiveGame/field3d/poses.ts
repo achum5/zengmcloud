@@ -426,38 +426,40 @@ const THROW_RELEASE = pose({
 	twist: 16,
 	wide: 1.15,
 });
-// On through: the arm coming down across him, his back foot pushing off.
+// On through: the arm coming down across him, the off arm pulled in to
+// his side, his back foot pushing off.
 const THROW_ACROSS = pose({
 	hipN: -12,
 	kneeN: 40,
 	hipF: 22,
 	kneeF: 24,
-	lean: 24,
-	shN: 72,
-	elN: 30,
-	abN: -24,
+	lean: 26,
+	shN: 66,
+	elN: 18,
+	abN: -32,
 	wrN: -20,
-	shF: 22,
-	elF: 90,
-	abF: 16,
+	shF: -6,
+	elF: 76,
+	abF: 12,
 	toeN: 0.6,
 	twist: 30,
 	wide: 1.0,
 });
-// Followed through: the arm down across him to his far hip, his back foot
-// come up off the turf and through.
+// Followed through: the arm down across him to his far hip, the off arm
+// back by his side - not both out in front of him - his back foot come up
+// off the turf and through.
 const THROW_THROUGH = pose({
 	hipN: 14,
 	kneeN: 70,
 	hipF: 20,
 	kneeF: 26,
-	lean: 26,
-	shN: 34,
-	elN: 28,
-	abN: -40,
-	wrN: -20,
-	shF: 20,
-	elF: 80,
+	lean: 32,
+	shN: 18,
+	elN: 18,
+	abN: -44,
+	wrN: -30,
+	shF: -30,
+	elF: 50,
 	abF: 10,
 	twist: 34,
 	wide: 0.8,
