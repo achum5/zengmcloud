@@ -7452,11 +7452,14 @@ class Action {
 		const r = this.r;
 		const ang = Math.atan2(m.at.y - pt.y, m.at.x - pt.x) + (r() - 0.5) * 0.6;
 		const ring = 9 + r() * 8;
-		m.chase(
-			{ x: pt.x + Math.cos(ang) * ring, y: pt.y + Math.sin(ang) * ring },
-			Math.max(m.t + 400, this.whistle + 300),
-			m.top * 0.7,
-		);
+		const to = {
+			x: pt.x + Math.cos(ang) * ring,
+			y: pt.y + Math.sin(ang) * ring,
+		};
+		// (Well round from the way he was going: planted first - see
+		// plantFor - not turned at full speed.)
+		m.plantFor(to);
+		m.chase(to, Math.max(m.t + 400, this.whistle + 300), m.top * 0.7);
 	}
 
 	// Blockers whose men got off them - to make the tackle, or away from

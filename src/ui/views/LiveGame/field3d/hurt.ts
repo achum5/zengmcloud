@@ -59,6 +59,8 @@ const STOOD_FIRST_MS = 700;
 const KNEEL_APART = 2.6;
 const KNEEL_OFF_HIM = 5;
 const KNEEL_WALK_FPS = 4;
+// (Hardly a step off where he is, feet: down there.)
+const KNEEL_STEP_FT = 0.75;
 // Where the trainers kneel by him, and walk with him (feet off him).
 const BESIDE = 2.6;
 const ALONGSIDE = 2.3;
@@ -91,6 +93,9 @@ const kneelSpot = (from: Pt, at: Pt, knelt: Pt[]): Pt => {
 	return from;
 };
 
+// (Into what he does next less than this long, ms, at t: not begun.)
+const BEGUN_MS = 200;
+
 // His legs up to t, and nothing after - the leg he is in at t ended there
 // (an act let finish, or - getting up, and not up yet - not begun): when
 // they end, and whether he is down on the turf then.
@@ -121,7 +126,21 @@ const cut = (legs: Leg[], t: number): { at: number; down: boolean } => {
 	}
 	const p = posOf(legs, t);
 	legs.length = k + 1;
-	if (l.t1 > t) {
+	const before = legs[k - 1];
+	if (
+		l.t1 > t &&
+		t - l.t0 < BEGUN_MS &&
+		before &&
+		before.t1 === l.t0 &&
+		moveKind(before.move) === "still" &&
+		before.from.x === before.to.x &&
+		before.from.y === before.to.y &&
+		!before.arms
+	) {
+		// (Only just off from a stand: as if he never was.)
+		legs.length = k;
+		legs[k - 1] = { ...before, t1: t };
+	} else if (l.t1 > t) {
 		legs[k] = { ...l, t1: t, to: p };
 	} else if (l.t1 < t) {
 		// (Stood as the play left him, up to then.)
@@ -392,7 +411,8 @@ export const stageHurt = (input: {
 			.filter((o) => o !== p && o.pid >= 0 && o.legs.length > 0)
 			.map((o) => posOf(o.legs, c.at))
 			.filter((q) => dist(q, from) < KNEEL_APART * 2);
-		const where = kneelSpot(from, at, [...knelt, ...by]);
+		const spot = kneelSpot(from, at, [...knelt, ...by]);
+		const where = dist(from, spot) < KNEEL_STEP_FT ? from : spot;
 		const there = c.at + (dist(from, where) / KNEEL_WALK_FPS) * 1000;
 		if (there < rise - 500) {
 			if (there > c.at) {
