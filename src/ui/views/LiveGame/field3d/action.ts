@@ -327,6 +327,10 @@ const angleAt = (a: Pt, b: Pt, c: Pt): number => {
 	return Math.abs(Math.atan2(Math.sin(t), Math.cos(t)));
 };
 
+// How quick he goes on leg l (ft/s).
+const legPace = (l: Leg): number =>
+	l.t1 > l.t0 ? dist(l.from, l.to) / ((l.t1 - l.t0) / 1000) : 0;
+
 // How quick he can go on from `from` toward `to` off leg l (ft/s): all of
 // his pace on it the way he was going, half of it square to that, none of
 // it back the other way - nothing, stood or going no way at all.
@@ -710,7 +714,6 @@ class Actor {
 		const legs = this.part.legs;
 		const l = this.last;
 		const way = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
-		const paceOf = (o: Leg) => dist(o.from, o.to) / ((o.t1 - o.t0) / 1000);
 		let j = legs.length - 1;
 		while (j > 0) {
 			const p = legs[j - 1]!;
@@ -726,7 +729,7 @@ class Actor {
 				p.ball !== l.ball ||
 				l.t1 - p.t0 > STRETCH_MS ||
 				dist(p.from, p.to) <= 0 ||
-				paceOf(p) > paceOf(n) + STRETCH_SLACK
+				legPace(p) > legPace(n) + STRETCH_SLACK
 			) {
 				break;
 			}
@@ -2886,6 +2889,7 @@ class Action {
 				k,
 				speed,
 				go < seg || upto - along - go <= ROUTE_LEFT,
+				route.settles,
 			);
 			ms += (go / routeFps(speed, k)) * 1000 + up + next.down;
 			up = next.up;
@@ -2895,10 +2899,21 @@ class Action {
 	}
 
 	// The break at the end of the kth stretch of a route (see breakOf) - none,
-	// if it ends there (`ends`) or goes on no further.
-	private breakAt(pts: Pt[], k: number, speed: number, ends: boolean) {
+	// if it ends there (`ends`) or goes on no further: but for the time it
+	// takes him to pull up there, if he sits down in it (`settles`).
+	private breakAt(
+		pts: Pt[],
+		k: number,
+		speed: number,
+		ends: boolean,
+		settles: boolean,
+	) {
 		return ends || k + 1 >= pts.length
-			? { keep: 1, down: 0, up: 0 }
+			? {
+					keep: 1,
+					down: settles ? (routeFps(speed, k) / (2 * STOP_ACCEL)) * 1000 : 0,
+					up: 0,
+				}
 			: breakOf(
 					pts[k - 1]!,
 					pts[k]!,
@@ -2952,6 +2967,7 @@ class Action {
 				k,
 				speed,
 				go < seg || room - go <= ROUTE_LEFT,
+				route.settles,
 			);
 			const t1 =
 				m.t + ((go / routeFps(speed, k)) * 1000 + cut.up + next.down) / pace;
@@ -7929,14 +7945,20 @@ class Action {
 				!DOWN.has(m.last.move) &&
 				dist(carrier.posAt(m.t), carrier.posAt(t)) > FOLLOW_GONE
 			) {
-				const go = m.t + FOLLOW_REACT[0] + r() * FOLLOW_REACT[1];
+				const seen = m.t + FOLLOW_REACT[0] + r() * FOLLOW_REACT[1];
+				// (On the move still, slowing up as he sees it - not stopped
+				// dead for it and off again.)
+				if (GAITS.has(m.last.move) && legPace(m.last) >= STOP_LEAST) {
+					m.easeOff(EASE_OFF_FT);
+				}
+				const go = Math.max(seen, m.t);
 				const c = carrier.posAt(t);
 				const far = dist(m.at, c);
 				const mate = m.team === carrier.team;
 				const keep = mate
 					? FOLLOW_KEEP[0] + r() * FOLLOW_KEEP[1]
 					: FOLLOW_CLOSE[0] + r() * FOLLOW_CLOSE[1];
-				if (far > keep + 3) {
+				if (far > keep + 3 && t - go >= FOLLOW_LEAST_MS) {
 					const most =
 						(OL.has(m.role) || DL.has(m.role)
 							? FOLLOW_FPS.line
@@ -8360,6 +8382,8 @@ const BOUNCE_MS = 650;
 const FOLLOW_LEFT = 900;
 const FOLLOW_GONE = 15;
 const FOLLOW_REACT = [150, 350] as const;
+// (Not with less time than this, ms, to go after it.)
+const FOLLOW_LEAST_MS = 400;
 const FOLLOW_KEEP = [9, 8] as const;
 const FOLLOW_CLOSE = [5, 6] as const;
 const FOLLOW_FPS = { line: 8, qb: 6.5, other: 12, after: 3 };
