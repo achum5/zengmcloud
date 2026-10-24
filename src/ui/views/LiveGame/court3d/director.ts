@@ -42,6 +42,7 @@ import {
 import {
 	BURST,
 	HARDEST_PULL_UP,
+	alongShape,
 	keepThrough,
 	paceFor,
 	paceAfter,
@@ -49,6 +50,8 @@ import {
 	pushFrom,
 	reachIn,
 	runMs,
+	runShape,
+	type RunShape,
 } from "./motion.ts";
 import {
 	BACKSPIN,
@@ -977,6 +980,28 @@ const needed = (
 				((a.type === "pass" || a.type === "handoff") && a.to === who),
 	);
 
+// How far along a run he is, as a share of it, u of the way through its
+// time: getting going and pulling up as the evaluator has him (see
+// motion.ts) - from and to the pace it says, where it says, from and to a
+// standstill where not. (Worked out once a run, again if its times change.)
+const runShapes = new WeakMap<Move, { t0: number; t1: number; r: RunShape }>();
+const shareAlong = (m: Move, u: number): number => {
+	const L = dist(m.from, m.to);
+	if (L < 1e-6) {
+		return u;
+	}
+	let got = runShapes.get(m);
+	if (!got || got.t0 !== m.t0 || got.t1 !== m.t1) {
+		got = {
+			t0: m.t0,
+			t1: m.t1,
+			r: runShape(L, (m.t1 - m.t0) / 1000, m.v0 ?? 0, m.v1 ?? 0),
+		};
+		runShapes.set(m, got);
+	}
+	return alongShape(got.r, u * got.r.T) / L;
+};
+
 // How fast each cut and each dribble in a set goes, feet per second: the
 // tracking numbers (a curl off a screen about 16, a pick-and-pop about 11),
 // sped up like the rest of the court so a set reads in the time it has - but
@@ -1157,6 +1182,15 @@ const OPEN_LATE = 300;
 const ALONE_FT = 9;
 // A hand up at the shot from no farther off than this (feet).
 const CONTEST_FT = 6;
+// The finishes in close (see wallUp).
+const CLOSE_FINISHES = new Set<AnimName>([
+	"layup",
+	"fingerRoll",
+	"powerLayup",
+	"scoop",
+	"reverseLayup",
+	"floater",
+]);
 // Anybody else of theirs this near (feet) a shot in close goes up with his
 // arms high (see shoot).
 const WALL_FT = 4.5;
@@ -2767,10 +2801,12 @@ class Director {
 		this.ball.push(seg);
 	}
 
-	// Where a player is at a moment, read off his own schedule (the same easing
-	// the evaluator uses - or, `even`, at an even pace along each run, as a
-	// man already going at either end of it more nearly goes).
-	private posAt(pid: number, t: number, even = false): Pt {
+	// Where a player is at a moment, read off his own schedule (eased in and
+	// out - or, `even`, at an even pace along each run, as a man already going
+	// at either end of it more nearly goes; or, `real`, getting going and
+	// pulling up just as the evaluator has him: where he really is, once
+	// everybody's runs are laid out).
+	private posAt(pid: number, t: number, even = false, real = false): Pt {
 		const moves = this.track(pid)?.moves ?? [];
 		for (let k = moves.length - 1; k >= 0; k--) {
 			const m = moves[k]!;
@@ -2779,7 +2815,11 @@ class Director {
 					return m.to;
 				}
 				const u = (t - m.t0) / (m.t1 - m.t0);
-				const e = even ? u : 0.5 - 0.5 * Math.cos(Math.PI * u);
+				const e = even
+					? u
+					: real
+						? shareAlong(m, u)
+						: 0.5 - 0.5 * Math.cos(Math.PI * u);
 				return {
 					x: m.from.x + (m.to.x - m.from.x) * e,
 					y: m.from.y + (m.to.y - m.from.y) * e,
@@ -21210,6 +21250,33 @@ class Director {
 		}
 	}
 
+	// BACKING OUT, FACING THE PLAY. However his runs have been reworked since
+	// they were laid out (staggered, joined up, kept clear of others), a
+	// backpedal of his own - not one facing a man - that would now have him
+	// backing toward the rim he is backing out from, it behind his shoulder,
+	// he turns and jogs instead.
+	private backOutFacing() {
+		for (const tr of this.tracks.values()) {
+			for (const m of tr.moves) {
+				if (m.anim !== "back" || m.face !== undefined) {
+					continue;
+				}
+				const gx = m.to.x - m.from.x;
+				const gy = m.to.y - m.from.y;
+				if (Math.hypot(gx, gy) < 2) {
+					continue;
+				}
+				const rim = {
+					x: m.from.x < COURT_W / 2 ? RIM_INSET : COURT_W - RIM_INSET,
+					y: COURT_H / 2,
+				};
+				if (-gx * (rim.x - m.from.x) - gy * (rim.y - m.from.y) < 0) {
+					m.anim = "jog";
+				}
+			}
+		}
+	}
+
 	// Every run of his sets off from where the last one left him. Whatever
 	// reworked the one (following his man, say) but not the next, he gets
 	// over there in the time between - or, a hair off, or with no time to
@@ -21430,18 +21497,53 @@ class Director {
 	// slide while the shooter goes up through him. (Here, once everybody's
 	// way there is laid out.)
 	private wallUp() {
-		for (const { shooter, release } of this.walls) {
+		// Every shot in close, however it came about - a putback, a layup off
+		// a steal - not just those planned as one: whatever close finish the
+		// ball leaves his hands in, once it is all laid out (and when it
+		// really leaves them).
+		const walls: { shooter: number; release: number }[] = [];
+		for (const b of this.ball) {
+			if (b.kind !== "fly" || !("pid" in b.from)) {
+				continue;
+			}
+			const shooter = b.from.pid;
+			const planned = this.walls.some(
+				(w) =>
+					w.shooter === shooter &&
+					b.t0 >= w.release - 300 &&
+					b.t0 <= w.release + 1500,
+			);
+			const finish = this.track(shooter)?.acts.some(
+				(a) => CLOSE_FINISHES.has(a.anim) && a.t0 <= b.t0 && a.t1 >= b.t0,
+			);
+			if (planned || finish) {
+				walls.push({ shooter, release: b.t0 });
+			}
+		}
+		for (const w of this.walls) {
+			if (
+				!walls.some(
+					(x) =>
+						x.shooter === w.shooter &&
+						x.release >= w.release - 300 &&
+						x.release <= w.release + 1500,
+				)
+			) {
+				walls.push(w);
+			}
+		}
+		for (const { shooter, release } of walls) {
 			const team = this.teamOf(shooter);
-			const S = this.posAt(shooter, release);
+			const S = this.posAt(shooter, release, false, true);
 			for (const tr of this.tracks.values()) {
 				if (
 					tr.team === team ||
-					dist(this.posAt(tr.pid, release), S) > WALL_FT ||
+					dist(this.posAt(tr.pid, release, false, true), S) > WALL_FT ||
 					tr.acts.some((a) => a.t1 > release - 300 && a.t0 < release + 500)
 				) {
 					continue;
 				}
-				const D = this.posAt(tr.pid, release);
+				const D = this.posAt(tr.pid, release, false, true);
 				tr.acts.push({
 					t0: release - 120,
 					t1: release + 560,
@@ -21697,6 +21799,7 @@ class Director {
 		this.passBy(fast);
 		this.aroundTheMan(fast);
 		this.keepOff(fast);
+		this.backOutFacing();
 		// A look round the building runs on to the picture's next cut when
 		// that comes soon after (the substitutions over a timeout, the walk
 		// out for the next period), so the game picks up at a cut.
