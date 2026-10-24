@@ -1135,6 +1135,28 @@ class Actor {
 		return this.t;
 	}
 
+	// As run, to stop there: pulled up over the last of it, hard (see
+	// STOP_HARD) - not stopped dead off it.
+	runUp(to: Pt, fps: number, move?: Move): number {
+		const p = onField(to, this.roam);
+		const far = dist(this.at, p);
+		const ease = Math.min(
+			far * 0.5,
+			(fps * fps) / (2 * STOP_ACCEL * STOP_HARD),
+		);
+		const u = far > 0 ? (far - ease) / far : 1;
+		this.run(
+			{
+				x: this.at.x + (p.x - this.at.x) * u,
+				y: this.at.y + (p.y - this.at.y) * u,
+			},
+			fps,
+			move,
+		);
+		this.easeOff(ease);
+		return this.t;
+	}
+
 	// Toward `to` by t1, at no more than `fps`: there, or as far as that
 	// gets him.
 	chase(to: Pt, t1: number, fps: number, move?: Move, yaw?: number) {
@@ -8520,7 +8542,7 @@ class Action {
 				x: at.x + Math.cos(way) * off,
 				y: at.y + Math.sin(way) * off,
 			};
-			m.run(spot, Math.min(m.top * 0.6, STOP_FPS));
+			m.runUp(spot, Math.min(m.top * 0.6, STOP_FPS));
 			if (bump) {
 				const t = Math.max(m.t, hero.t) + FIVE_SET_MS;
 				m.hold(t, "stand", way + Math.PI);
@@ -8998,9 +9020,13 @@ class Action {
 			if (dist(m.at, to) > 2) {
 				const from = m.t;
 				const way = this.mobAt ? skirt(m.at, to, this.mobAt) : [to];
-				for (const p of way) {
-					m.run(p, fps);
-				}
+				way.forEach((p, k) => {
+					if (k === way.length - 1 && fps >= 7) {
+						m.runUp(p, fps);
+					} else {
+						m.run(p, fps);
+					}
+				});
 				if (beaten && r() < RUE_HIPS) {
 					m.arms("onHips", from, m.t);
 				}

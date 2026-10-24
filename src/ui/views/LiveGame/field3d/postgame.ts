@@ -47,6 +47,14 @@ const FIVE_MS = 800;
 const MOB_RINGS: [number, number] = [2.6, 4.8];
 const MOB_INNER = 6;
 const MOB_FPS: [number, number] = [15, 19];
+// Pulled up at the end of the way, from this pace on (ft/s): over this far
+// at most, down to this share of his pace (no slower than this).
+const PULL_UP_FPS = 7;
+const PULL_UP_FT = 3;
+const PULL_UP_TO = 0.45;
+const PULL_UP_LEAST = 4.5;
+// (Not for a step or two: not over less than this, feet.)
+const PULL_UP_SHORT = 1;
 const MOB_MS = 2000;
 const MOB_NEAR = 60;
 // The middle they make for: from where they all are (or the man who won
@@ -264,21 +272,38 @@ export class Man {
 			1,
 		]);
 	}
-	// To `to` at his pace (or this one); when he gets there.
+	// To `to` at his pace (or this one); when he gets there. (From a jog or
+	// more, pulled up over the last of the way - PULL_UP_FT, or a third of
+	// it - down to PULL_UP_TO of his pace: not stopped dead there.)
 	walk(to: Pt, fps = this.pace): number {
 		const far = dist(this.at, to);
 		if (far > 0.3) {
-			const l = this.legs.at(-1)!;
-			this.legs.push({
-				t0: l.t1,
-				t1: l.t1 + (far / fps) * 1000,
-				from: l.to,
-				to,
-				move: fps < 6.5 ? "walk" : fps < 12.5 ? "jog" : "run",
-				...this.off,
-			});
+			const most = Math.min(PULL_UP_FT, far / 3);
+			const tail = fps >= PULL_UP_FPS && most >= PULL_UP_SHORT ? most : 0;
+			const slow = Math.max(PULL_UP_LEAST, fps * PULL_UP_TO);
+			const u = (far - tail) / far;
+			const from = this.at;
+			const mid = {
+				x: from.x + (to.x - from.x) * u,
+				y: from.y + (to.y - from.y) * u,
+			};
+			this.step(mid, ((far - tail) / fps) * 1000, fps);
+			if (tail > 0) {
+				this.step(to, (tail / slow) * 1000, slow);
+			}
 		}
 		return this.t;
+	}
+	private step(to: Pt, ms: number, fps: number) {
+		const l = this.legs.at(-1)!;
+		this.legs.push({
+			t0: l.t1,
+			t1: l.t1 + ms,
+			from: l.to,
+			to,
+			move: fps < 6.5 ? "walk" : fps < 12.5 ? "jog" : "run",
+			...this.off,
+		});
 	}
 }
 
