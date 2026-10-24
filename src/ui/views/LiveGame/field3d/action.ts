@@ -1666,10 +1666,14 @@ const EDGE_ROUND = 3;
 const EDGE_IN = 9;
 const EDGE_WIDE = 4.5;
 const EDGE_STAGGER = 2.5;
+// (Bent round the end of the wall over this far either side of it, feet.)
+const EDGE_BEND = 2.5;
 // (His leap for it carrying him on this long at the pace he came in at,
 // seconds, and no further than this, feet.)
 const SWAT_ON = 0.2;
 const SWAT_ON_MOST = 4;
+// (No quicker about it than this, ms.)
+const SWAT_LEAST_MS = 450;
 // (A man breaking up a pass no nearer where it was to be caught than this,
 // feet, for it.)
 const SWAT_CLEAR = 2;
@@ -8680,21 +8684,70 @@ class Action {
 					d: spot.d + EDGE_IN + k * EDGE_STAGGER + r() * 2,
 					a: spot.a + side * (EDGE_WIDE + k * EDGE_STAGGER + r() * 1.5),
 				});
+				// (Up to speed off the ball the whole way round, at
+				// GET_OFF_ACCEL - not off it flat out from his first step - and
+				// no quicker than he goes: there late, if need be, and laid out
+				// for it after it has gone. Bent round the corner, not turned
+				// square at full tilt.)
 				const go = m.t;
-				const there = kickT - 150;
-				const first = dist(m.at, round);
-				const all = first + dist(round, block);
-				m.go(round, go + ((there - go) * first) / all, "sprint");
-				m.go(block, there, "sprint");
+				const cut = Math.min(
+					EDGE_BEND,
+					dist(m.at, round) / 3,
+					dist(round, block) / 3,
+				);
+				const toward = (p: Pt, q: Pt, d: number) => {
+					const D = Math.max(dist(p, q), 1e-6);
+					return {
+						x: p.x + ((q.x - p.x) * d) / D,
+						y: p.y + ((q.y - p.y) * d) / D,
+					};
+				};
+				const path = [
+					toward(round, m.at, cut),
+					toward(round, block, cut),
+					block,
+				];
+				const gone: number[] = [];
+				let all = 0;
+				let was = m.at;
+				for (const p of path) {
+					all += dist(was, p);
+					gone.push(all);
+					was = p;
+				}
+				const A = GET_OFF_ACCEL;
+				const top = m.top * FLAT_OUT;
+				const up = (top * top) / (2 * A);
+				const soonest =
+					all <= up ? Math.sqrt((2 * all) / A) : top / A + (all - up) / top;
+				const T = Math.max(soonest, (kickT - 150 - go) / 1000);
+				const vc = A * (T - Math.sqrt(Math.max(0, T * T - (2 * all) / A)));
+				const upTo = (vc * vc) / (2 * A);
+				let v = 0;
+				path.forEach((p, k) => {
+					const d = gone[k]!;
+					const at =
+						k === path.length - 1
+							? T
+							: d <= upTo
+								? Math.sqrt((2 * d) / A)
+								: vc / A + (d - upTo) / vc;
+					v = m.getOff(p, go + at * 1000, v, A, "sprint");
+				});
 				// (Laid out for it off his last stride: carried on a little
 				// way with it, not stopped dead.)
 				const l = m.last;
 				const far = dist(l.from, l.to);
 				const on = far > 0 ? Math.min(SWAT_ON_MOST, legPace(l) * SWAT_ON) : 0;
-				m.act("swat", kickT + 350, this.toward(m.at, this.w(spot)), {
-					x: l.to.x + ((l.to.x - l.from.x) / Math.max(far, 1e-6)) * on,
-					y: l.to.y + ((l.to.y - l.from.y) / Math.max(far, 1e-6)) * on,
-				});
+				m.act(
+					"swat",
+					Math.max(kickT + 350, m.t + SWAT_LEAST_MS),
+					this.toward(m.at, this.w(spot)),
+					{
+						x: l.to.x + ((l.to.x - l.from.x) / Math.max(far, 1e-6)) * on,
+						y: l.to.y + ((l.to.y - l.from.y) / Math.max(far, 1e-6)) * on,
+					},
+				);
 			} else {
 				m.hold(kickT - 250);
 				m.act("swat", kickT + 350, this.behind);
