@@ -8136,20 +8136,37 @@ class Action {
 		const face = Math.atan2(-uy, -ux);
 		// (All of it over well inside the moment after a score - or none of
 		// it.)
+		// (Pulled up as he gets to his spot, hard - not stopped dead off a
+		// sprint.)
+		const easeOf = (m: Actor, far: number) =>
+			Math.min(far * 0.5, (m.top * m.top) / (2 * STOP_ACCEL * STOP_HARD));
+		// (Not the less often for it.)
 		let set = c0 + PIN_SET;
+		let due = set;
 		pins.forEach((m, k) => {
 			const p = PIN_SPOTS[k]!;
 			const far = dist(m.posAt(start), spotOf(p.f, p.s));
-			set = Math.max(set, start + (far / m.top) * 1000 + 300);
+			const ease = easeOf(m, far);
+			set = Math.max(set, start + ((far + ease) / m.top) * 1000 + 300);
+			due = Math.max(due, start + (far / m.top) * 1000 + 300);
 		});
-		if (set + BOWL_REST > this.whistle + BOWL_MOST) {
+		if (due + BOWL_REST > this.whistle + BOWL_MOST) {
 			return false;
 		}
 		pins.forEach((m, k) => {
 			const p = PIN_SPOTS[k]!;
 			m.cut(start);
 			m.hold(start);
-			m.run(spotOf(p.f, p.s), m.top, "sprint");
+			const to = spotOf(p.f, p.s);
+			const far = dist(m.at, to);
+			const ease = easeOf(m, far);
+			const u = far > 0 ? (far - ease) / far : 1;
+			m.run(
+				{ x: m.at.x + (to.x - m.at.x) * u, y: m.at.y + (to.y - m.at.y) * u },
+				m.top,
+				"sprint",
+			);
+			m.easeOff(ease);
 		});
 		// The ball up while they set up; then the roll, swung back and let go
 		// low, along the turf.
@@ -8194,14 +8211,23 @@ class Action {
 			m.act("getUpBack", m.t + GET_UP_MS);
 			// (Up, and over to him.)
 			const by = Math.atan2(m.at.y - at.y, m.at.x - at.x) + (k - 1) * 0.5;
+			const ring = {
+				x: at.x + Math.cos(by) * MOB_RING,
+				y: at.y + Math.sin(by) * MOB_RING,
+			};
+			const v = m.top * 0.8;
+			const far = dist(m.at, ring);
+			const ease = Math.min(far * 0.5, (v * v) / (2 * STOP_ACCEL * STOP_HARD));
+			const u = far > 0 ? (far - ease) / far : 1;
 			m.run(
 				{
-					x: at.x + Math.cos(by) * MOB_RING,
-					y: at.y + Math.sin(by) * MOB_RING,
+					x: m.at.x + (ring.x - m.at.x) * u,
+					y: m.at.y + (ring.y - m.at.y) * u,
 				},
-				m.top * 0.8,
+				v,
 				"run",
 			);
+			m.easeOff(ease);
 			m.act("leap", m.t + 800, this.toward(m.at, at));
 			m.hold(m.t + 1400, "stand", this.toward(m.at, at));
 			this.mob.add(m.pid);
@@ -8585,6 +8611,51 @@ class Action {
 				}
 			}
 			if (m.t > t + 400) {
+				// (Nothing left for him but running on - a route, after a man
+				// who is down: pulled up as he sees it is over.)
+				// (Each as quick to see it as he is: no dice thrown for it,
+				// not to reshuffle what comes after.)
+				let seen =
+					t +
+					WHISTLE_SEEN_MS[0] +
+					(((m.pid * 37) % 100) / 100) * WHISTLE_SEEN_MS[1];
+				const on = m.legs.filter((l) => l.t1 > seen);
+				// (Not with a sliver of a step left in: from the one before.)
+				const k = m.legs.length - on.length;
+				const before = m.legs[k - 1];
+				if (
+					on.length > 0 &&
+					seen - on[0]!.t0 < WHISTLE_SLIVER_MS &&
+					before &&
+					before.t1 === on[0]!.t0 &&
+					GAITS.has(before.move) &&
+					legPace(before) >= STOP_LEAST
+				) {
+					seen = on[0]!.t0;
+				}
+				const going = on[0] && seen > on[0].t0 ? on[0] : before;
+				if (
+					on.length > 0 &&
+					on[0]!.t0 <= seen &&
+					going &&
+					on.every((l) => GAITS.has(l.move) || l.move === "stand") &&
+					legPace(going) >= STOP_LEAST
+				) {
+					m.cut(seen);
+					// (Nor pulled up out of a stride of a new gait: out of the
+					// one he was in.)
+					const [a, b] = m.legs.slice(-2);
+					if (
+						a &&
+						b &&
+						b.t1 - b.t0 < WHISTLE_SLIVER_MS &&
+						a.t1 === b.t0 &&
+						GAITS.has(a.move) &&
+						GAITS.has(b.move)
+					) {
+						b.move = a.move;
+					}
+				}
 				// (Still on his way in when his part ends: pulled up the way
 				// he was going - short of the ball.)
 				// (Short of it by half the way, or as much as pulling up hard
@@ -8984,6 +9055,11 @@ const BOUNCE_MS = 650;
 const FOLLOW_LEFT = 900;
 const FOLLOW_GONE = 15;
 const FOLLOW_REACT = [150, 350] as const;
+// (Running on at the whistle, nothing more to do: pulled up this long
+// after it, ms, give or take.)
+const WHISTLE_SEEN_MS = [250, 300] as const;
+// (Pulled up from the step before rather than this little way into one.)
+const WHISTLE_SLIVER_MS = 150;
 // (Not with less time than this, ms, to go after it.)
 const FOLLOW_LEAST_MS = 400;
 const FOLLOW_KEEP = [9, 8] as const;
