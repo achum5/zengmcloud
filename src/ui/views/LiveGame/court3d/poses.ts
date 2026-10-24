@@ -4068,6 +4068,85 @@ export const ANIMS = {
 			[1, P.stance],
 		],
 	},
+	// A hack on a man going up: up off his feet with him, the hand high at
+	// the ball and chopped down across it - not a swipe at his knees from
+	// the floor.
+	hack: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[
+				0,
+				pose({
+					hipN: 20,
+					kneeN: 46,
+					hipF: 26,
+					kneeF: 50,
+					shN: 118,
+					elN: 34,
+					abN: 8,
+					shF: 30,
+					elF: 34,
+					abF: 30,
+					lean: 14,
+					toe: 0.4,
+				}),
+			],
+			[
+				0.26,
+				pose({
+					hipN: -2,
+					kneeN: 14,
+					hipF: 10,
+					kneeF: 24,
+					shN: 162,
+					elN: 8,
+					abN: 4,
+					shF: 40,
+					elF: 30,
+					abF: 40,
+					lean: 4,
+					tuck: 0.6,
+					toe: 1,
+				}),
+			],
+			[
+				0.44,
+				pose({
+					hipN: 0,
+					kneeN: 16,
+					hipF: 12,
+					kneeF: 26,
+					shN: 134,
+					elN: 4,
+					abN: -10,
+					wrN: -42,
+					shF: 30,
+					elF: 30,
+					abF: 46,
+					lean: 12,
+					toe: 1,
+				}),
+			],
+			[
+				0.74,
+				pose({
+					hipN: -4,
+					kneeN: 22,
+					hipF: 12,
+					kneeF: 30,
+					shN: 78,
+					elN: 30,
+					shF: 20,
+					elF: 32,
+					abF: 30,
+					lean: 8,
+					toe: 0.5,
+				}),
+			],
+			[1, P.land],
+		],
+	},
 	// A poke at the ball on a man's dribble: down low, a quick jab of the
 	// right hand at it - forward, down and across - from his stance, the
 	// other hand up, and back. (Mirrored for the left.)

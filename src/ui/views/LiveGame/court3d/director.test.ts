@@ -1004,6 +1004,7 @@ describe("3D director", () => {
 			"highFive",
 			"lowFive",
 			"reach",
+			"hack",
 			"poke",
 			"block",
 			"dunk",
@@ -1943,7 +1944,7 @@ describe("3D director", () => {
 			) as Extract<CourtTimeline["ball"][number], { kind: "fly" }>[];
 			for (const tr of tl.tracks.values()) {
 				for (const a of tr.acts) {
-					if (a.anim !== "block" && a.anim !== "reach") {
+					if (a.anim !== "block" && a.anim !== "reach" && a.anim !== "hack") {
 						continue;
 					}
 					const shot = flies.find(

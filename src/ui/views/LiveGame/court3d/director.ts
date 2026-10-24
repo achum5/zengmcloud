@@ -255,6 +255,7 @@ const GLIMPSED = new Set<string>([
 	"bump",
 	"contest",
 	"reach",
+	"hack",
 ]);
 // Meeting a shot from the camera's side of the shooter (which looks across
 // the floor from the near side), a defender this near him across the floor
@@ -1201,6 +1202,10 @@ const CLOSE_FINISHES = new Set<AnimName>([
 // Anybody else of theirs this near (feet) a shot in close goes up with his
 // arms high (see shoot).
 const WALL_FT = 4.5;
+// A hack on a man going up (see poses): this long (ms), off the floor for
+// the middle of it - as high as that long in the air takes him.
+const HACK_MS = 670;
+const HACK_JUMP: [number, number, number] = [0.12, 0.8, hopFor(HACK_MS, 0.68)];
 // How close (feet, middle to middle) two men get before they are into each
 // other: a screen, a post-up.
 const BODY = 1.85;
@@ -9743,8 +9748,12 @@ class Director {
 					);
 					this.goBy(d, B, gather - 150, gather + 420, "run");
 					if (d === had) {
-						this.act(d, "reach", gather + 360, gather + 760, {
+						this.act(d, "hack", gather + 300, gather + 300 + HACK_MS, {
 							look: { x: rim.x, y: rim.y },
+							jump: HACK_JUMP,
+							...(this.leftToBall(B, shooter, under)
+								? { mirror: true as const }
+								: {}),
 						});
 					}
 				}
@@ -9774,15 +9783,15 @@ class Director {
 						BURST,
 					);
 					if (there < gather + 700) {
-						this.act(
-							guard,
-							"reach",
-							Math.max(there - 100, gather + 300),
-							gather + 760,
-							{
-								look: { x: rim.x, y: rim.y },
-							},
-						);
+						// (Up after it from behind him.)
+						const t0 = Math.max(there - 100, gather + 300);
+						this.act(guard, "hack", t0, t0 + HACK_MS, {
+							look: { x: rim.x, y: rim.y },
+							jump: HACK_JUMP,
+							...(this.leftToBall(B, shooter, under)
+								? { mirror: true as const }
+								: {}),
+						});
 					}
 				}
 			}
@@ -10188,7 +10197,7 @@ class Director {
 				if (f !== undefined) {
 					// (From a way off, setting off in time to get there.)
 					const F = ahead(1.6);
-					const by = release - 120;
+					const by = release - 180;
 					let from = gather - 300;
 					for (let n = 0; n < 4; n++) {
 						const need =
@@ -10202,9 +10211,15 @@ class Director {
 						this.cutShort(f, from);
 					}
 					this.goBy(f, F, from, by, "run", -faceRim as 1 | -1, BURST);
-					this.act(f, "reach", release - 200, release + 260, {
+					// (Up with him, the hand at the ball and down across his
+					// arm with it.)
+					this.act(f, "hack", release - 250, release - 250 + HACK_MS, {
 						face: -faceRim as 1 | -1,
 						look: { ...P1 },
+						jump: HACK_JUMP,
+						...(this.leftToBall(F, shooter, P1)
+							? { mirror: true as const }
+							: {}),
 					});
 				}
 				target = { x: rim.x - dir * (RIM_R + 0.1), y: 24.7, z: RIM_Z + 0.1 };
@@ -18921,6 +18936,7 @@ class Director {
 			"pickup",
 			"poke",
 			"reach",
+			"hack",
 			"block",
 			"contest",
 			"fall",
@@ -19095,6 +19111,7 @@ class Director {
 			"pickup",
 			"poke",
 			"reach",
+			"hack",
 			"block",
 			"contest",
 			"dunk",
@@ -19579,6 +19596,7 @@ class Director {
 			"chestBump",
 			"waitFive",
 			"reach",
+			"hack",
 			"poke",
 			"block",
 			"dunk",
@@ -20436,6 +20454,7 @@ class Director {
 			"boxOut",
 			"bump",
 			"reach",
+			"hack",
 			"poke",
 			"strip",
 			"block",

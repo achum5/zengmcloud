@@ -2674,6 +2674,7 @@ const ARMS_UP = new Set<AnimName>([
 	"block",
 	"rebound",
 	"reach",
+	"hack",
 	"threeUp",
 	"goggles",
 	"signalUp",
@@ -3864,6 +3865,7 @@ const PIVOTS = new Set<AnimName>([
 	// (Hands at work, feet where they are.)
 	"contest",
 	"reach",
+	"hack",
 	"poke",
 	"fight",
 	"bump",
