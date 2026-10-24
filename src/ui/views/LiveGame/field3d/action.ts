@@ -193,9 +193,19 @@ const GAIT_LEAST_MS = 300;
 const RAMP_ACCEL = 18;
 const RAMP_STEP_MS = 100;
 const RAMP_OVER = 1.12;
+// (Nor quicker than a man goes, ft/s, for it.)
+const RAMP_TOP = 31;
 const RAMP_LEAST = 4;
 const RAMP_LEG_MS = 250;
 const RAMPS = new Set<Move>(["jog", "run", "sprint"]);
+// Pulling up: down from his pace at STOP_ACCEL ft/s/s (harder, to stop
+// as near as he has to), in steps STOP_STEP_MS long - each in the gait
+// its pace is, if he was in one.
+const STOP_ACCEL = 20;
+const STOP_STEP_MS = 100;
+// (From no slower than this, ft/s.)
+const STOP_LEAST = 8;
+const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
 const paced = (move: Move | undefined, fps: number, ms: number): Move => {
 	const least = move === undefined ? undefined : GAIT_LEAST[move];
 	return move === undefined ||
@@ -350,11 +360,14 @@ class Actor {
 			l.t1 = t;
 			return;
 		}
+		if (!still && moveKind(m) === "still") {
+			this.pullUpInto();
+		}
 		this.push({
-			t0: l.t1,
+			t0: this.t,
 			t1: t,
-			from: l.to,
-			to: l.to,
+			from: this.at,
+			to: this.at,
 			move: m,
 			yaw: yaw ?? this.yaw,
 			...(l.mirrored && m === l.move ? { mirrored: true } : {}),
@@ -383,6 +396,98 @@ class Actor {
 			this.rampInto(leg);
 		}
 		this.push(leg);
+	}
+
+	// Pulling up to a stand at the end of his last leg (see STOP_ACCEL):
+	// down to a stop over the last of it, the rest of it that much quicker
+	// (see RAMP_OVER) - or from no quicker, down as far as that takes him -
+	// each step of it in the gait its pace is.
+	private pullUpInto() {
+		const legs = this.part.legs;
+		const leg = this.last;
+		const T = (leg.t1 - leg.t0) / 1000;
+		const D = dist(leg.from, leg.to);
+		const v = D / T;
+		if (
+			!RAMPS.has(leg.move) ||
+			T * 1000 < RAMP_LEG_MS ||
+			v < STOP_LEAST ||
+			leg.arms ||
+			leg.turn
+		) {
+			return;
+		}
+		const A = STOP_ACCEL;
+		const room = T * T - (2 * D) / A;
+		let vc = room >= 0 ? A * (T - Math.sqrt(room)) : Infinity;
+		let ve = 0;
+		const most = Math.max(v, Math.min(v * RAMP_OVER, RAMP_TOP));
+		if (vc > most) {
+			vc = most;
+			ve = Math.max(0, vc - Math.sqrt(2 * A * (vc * T - D)));
+		}
+		const td = (vc - ve) / A;
+		if (!(td > 0 && td < T)) {
+			return;
+		}
+		const cos = (leg.to.x - leg.from.x) / D;
+		const sin = (leg.to.y - leg.from.y) / D;
+		const end = leg.to;
+		const t1 = leg.t1;
+		const tc = t1 - td * 1000;
+		leg.to = {
+			x: leg.from.x + cos * vc * (T - td),
+			y: leg.from.y + sin * vc * (T - td),
+		};
+		leg.t1 = tc;
+		const n = Math.max(1, Math.round((td * 1000) / STOP_STEP_MS));
+		const dt = td / n;
+		let gone = 0;
+		for (let i = 0; i < n; i++) {
+			const pace = vc - (vc - ve) * ((i + 0.5) / n);
+			gone += pace * dt;
+			const last = i === n - 1;
+			const l = this.last;
+			legs.push({
+				...leg,
+				t0: l.t1,
+				t1: last ? t1 : tc + (i + 1) * dt * 1000,
+				from: l.to,
+				to: last ? end : { x: leg.to.x + cos * gone, y: leg.to.y + sin * gone },
+				move: gait(pace) === "walk" ? "jog" : gait(pace),
+			});
+		}
+	}
+
+	// On the way he was going, slowing to a stop no more than `most` feet
+	// on (see STOP_ACCEL).
+	easeOff(most: number) {
+		const l = this.last;
+		const ms = l.t1 - l.t0;
+		const far = dist(l.from, l.to);
+		if (ms <= 0 || far <= 0) {
+			return;
+		}
+		const v = far / (ms / 1000);
+		const d = Math.min(most, (v * v) / (2 * STOP_ACCEL));
+		if (d < 0.5) {
+			return;
+		}
+		const cos = (l.to.x - l.from.x) / far;
+		const sin = (l.to.y - l.from.y) / far;
+		const gaited = GAITS.has(l.move);
+		const T = (2 * d) / v;
+		const n = Math.max(1, Math.round((T * 1000) / STOP_STEP_MS));
+		const dt = T / n;
+		for (let i = 0; i < n; i++) {
+			const pace = v * (1 - (i + 0.5) / n);
+			this.go(
+				{ x: this.at.x + cos * pace * dt, y: this.at.y + sin * pace * dt },
+				this.t + dt * 1000,
+				gaited ? gait(pace) : l.move,
+				gaited ? undefined : l.yaw,
+			);
+		}
 	}
 
 	// Up to speed for `leg`, off the end of the one before (see
@@ -417,8 +522,9 @@ class Actor {
 		// off from v0 at as much more as it takes.)
 		const room = T * T - (2 * (D - v0 * T)) / A;
 		let vc = room >= 0 ? v0 + A * (T - Math.sqrt(room)) : Infinity;
-		if (vc > v * RAMP_OVER) {
-			vc = v * RAMP_OVER;
+		const most = Math.max(v, Math.min(v * RAMP_OVER, RAMP_TOP));
+		if (vc > most) {
+			vc = most;
 			v0 = Math.max(v0, vc - Math.sqrt(2 * A * (vc * T - D)));
 		}
 		const ta = (vc - v0) / A;
@@ -468,6 +574,50 @@ class Actor {
 			move,
 			yaw,
 		);
+	}
+
+	// Toward `to` by t1 at no more than `fps`, as chase - but getting up to
+	// it from the pace he was going at (see RAMP_ACCEL) as he goes: there,
+	// or as far as that gets him.
+	chaseUp(to: Pt, t1: number, fps: number, move?: Move) {
+		const p = onField(to, this.roam);
+		const from = this.at;
+		const far = dist(from, p);
+		const T = Math.max(0, t1 - this.t) / 1000;
+		const l = this.last;
+		const ms = l.t1 - l.t0;
+		const v0 =
+			far > 0 && ms > 0 && moveKind(l.move) === "cycle"
+				? Math.max(
+						0,
+						((l.to.x - l.from.x) * (p.x - from.x) +
+							(l.to.y - l.from.y) * (p.y - from.y)) /
+							(far * (ms / 1000)),
+					)
+				: 0;
+		const A = RAMP_ACCEL;
+		const ta = Math.min(T, Math.max(0, (fps - v0) / A));
+		const reach = v0 * ta + (A * ta * ta) / 2 + fps * (T - ta);
+		if (fps - v0 < RAMP_LEAST || reach >= far || far <= 0) {
+			this.chase(to, t1, fps, move);
+			return;
+		}
+		const g = move ?? gait(fps);
+		const n = Math.max(1, Math.round((ta * 1000) / RAMP_STEP_MS));
+		const dt = ta / n;
+		const t0 = this.t;
+		let gone = 0;
+		const at = (d: number) => ({
+			x: from.x + ((p.x - from.x) * d) / far,
+			y: from.y + ((p.y - from.y) * d) / far,
+		});
+		for (let i = 0; i < n; i++) {
+			gone += (v0 + A * dt * (i + 0.5)) * dt;
+			this.go(at(gone), t0 + (i + 1) * dt * 1000, g);
+		}
+		if (t1 > this.t + 1) {
+			this.go(at(reach), t1, g);
+		}
 	}
 
 	// An act where he is (or going a little way), over t0..t1.
@@ -747,7 +897,8 @@ const PURSUIT_RING = 10;
 const PURSUIT_IN = 1.5;
 const PURSUIT_NEAREST = 5;
 const PURSUIT_LANE = 7;
-const PULL_UP_MS = 900;
+// (Given up, or at the whistle: pulled up no more than this far on - feet.)
+const EASE_OFF_FT = 12;
 // After a man gone for a score, losing ground on him this far back (feet):
 // given up, now and then.
 const GIVE_UP_FT = 24;
@@ -3691,7 +3842,7 @@ class Action {
 				if (near < off) {
 					const now = carrier.posAt(m.t + PURSUIT_LEAD);
 					const by = Math.min(PURSUIT_IN, Math.max(0, near - PURSUIT_NEAREST));
-					m.chase(
+					m.chaseUp(
 						{
 							x: m.at.x + him.x - now.x - Math.cos(a) * by,
 							y: m.at.y + him.y - now.y - Math.sin(a) * by,
@@ -3701,7 +3852,7 @@ class Action {
 					);
 					continue;
 				}
-				m.chase(
+				m.chaseUp(
 					{
 						x: him.x + Math.cos(a) * off - (him.y - was.y) * side,
 						y: him.y + Math.sin(a) * off + (him.x - was.x) * side,
@@ -3710,7 +3861,7 @@ class Action {
 					clamp(need * PURSUIT_URGE, m.top * 0.45, m.top * PURSUIT_PACE),
 				);
 			}
-			m.chase(end(), arrive, m.top * 0.95);
+			m.chaseUp(end(), arrive, m.top * 0.95);
 		}
 	}
 
@@ -3735,7 +3886,7 @@ class Action {
 				const c = m.t + PURSUIT_STEP;
 				const him = carrier.posAt(c + PURSUIT_LEAD);
 				const a = Math.atan2(m.at.y - him.y, m.at.x - him.x) + turn;
-				m.chase(
+				m.chaseUp(
 					{ x: him.x + Math.cos(a) * ring, y: him.y + Math.sin(a) * ring },
 					c,
 					pace,
@@ -3746,17 +3897,7 @@ class Action {
 				}
 				was = now;
 			}
-			const l = m.last;
-			const ms = Math.max(1, l.t1 - l.t0);
-			const vx = (l.to.x - l.from.x) / ms;
-			const vy = (l.to.y - l.from.y) / ms;
-			// (Half a second's run, slowing.)
-			const on = PULL_UP_MS * 0.5;
-			m.go(
-				onField({ x: m.at.x + vx * on, y: m.at.y + vy * on }),
-				m.t + PULL_UP_MS,
-				Math.hypot(vx, vy) * 1000 > 12 ? "jog" : "walk",
-			);
+			m.easeOff(EASE_OFF_FT);
 			const at = carrier.posAt(m.t);
 			m.hold(m.t + 500 + r() * 900, "stand", this.toward(m.at, at));
 		}
@@ -7273,6 +7414,7 @@ class Action {
 			return legs[k]!.t1;
 		};
 		const ends: Pt[] = [];
+		const ball = this.ballAt(t);
 		for (const m of this.men) {
 			if (!this.done.has(m.pid)) {
 				// (Nothing for him: watching from where he was.)
@@ -7337,20 +7479,18 @@ class Action {
 				}
 			}
 			if (m.t > t + 400) {
+				// (Still on his way in when his part ends: pulled up the way
+				// he was going - short of the ball.)
+				if (GAITS.has(m.last.move) && ball) {
+					m.easeOff(Math.min(EASE_OFF_FT, dist(m.at, ball) * 0.5));
+				}
 				m.hold(m.t + 600, "stand");
 				continue;
 			}
 			const l = m.last;
 			const moving = l.from.x !== l.to.x || l.from.y !== l.to.y;
 			if (moving && l.t1 >= t - 100) {
-				const v = dist(l.from, l.to) / Math.max(0.001, (l.t1 - l.t0) / 1000);
-				const ang = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
-				const run = Math.min(10, v * 0.35);
-				m.go(
-					{ x: l.to.x + Math.cos(ang) * run, y: l.to.y + Math.sin(ang) * run },
-					m.t + 700,
-					gait(v * 0.45),
-				);
+				m.easeOff(EASE_OFF_FT);
 			}
 			m.hold(Math.max(m.t, t) + 600, "stand");
 		}
