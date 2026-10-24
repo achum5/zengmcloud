@@ -1671,6 +1671,13 @@ const CARRY_MOST_MS = 500;
 const BREAK_DOWN_MS = 450;
 // (Not broken down at all with less than this long, ms, to be set in it.)
 const BREAK_SET_MS = 150;
+// (Within a few steps of it already, and going no quicker than this (feet a
+// second): broken down if he has this long before he goes in, this far off
+// it, shuffled there at this pace.)
+const BREAK_NEAR_MOST = 10;
+const BREAK_NEAR_MS = 350;
+const BREAK_NEAR_FT = 3;
+const BREAK_NEAR_FPS = 6;
 // (His run slowed by more than this much over: in the gait he goes in now.)
 const SLOW_RELABEL = 1.3;
 // After a man gone for a score, losing ground on him this far back (feet):
@@ -2140,6 +2147,15 @@ const DOWN = new Set<Move>([
 	"offTop",
 ]);
 const CLOSE = 0.85;
+// A man this near a receiver as he catches it (feet), who is not the one to
+// bring him down, made to miss there: with this far (feet) after the catch
+// to go, this long (ms) after he is off with it - or caught in stride - and
+// this long of it left after.
+const CATCH_BEAT_FT = 7.5;
+const CATCH_BEAT_YAC = 10;
+const CATCH_BEAT_MS = 250;
+const CATCH_BEAT_STRIDE_MS = 200;
+const CATCH_BEAT_LEFT_MS = 500;
 const CLOSE_SLIVER_MS = 120;
 const FLAT_OUT = 0.97;
 // A receiver down his route, at this much of his top speed - sat down at
@@ -3685,10 +3701,46 @@ class Action {
 		if (dive || toe) {
 			t = rec.t;
 		} else if (yac > 2 || inStride) {
+			const off = rec.t;
 			t = rec.run(end.pt, v, "sprint");
+			// (The man on him as it came, not one the sim has bring him down:
+			// gone for him there, and left on the turf - not along with him
+			// all the way.)
+			const on = yac > CATCH_BEAT_YAC ? this.onHim(rec, catchAt) : undefined;
+			const tc = off + (inStride ? CATCH_BEAT_STRIDE_MS : CATCH_BEAT_MS);
+			if (on && t - tc > CATCH_BEAT_LEFT_MS) {
+				t = this.makeMiss(
+					rec,
+					on,
+					on.posAt(catchAt),
+					tc,
+					rec.last,
+					t,
+					inStride ? "juke" : "spin",
+				);
+			}
 		}
 		this.ball.push({ kind: "held", t0: catchAt, pid: rec.pid });
 		this.endCarry(i, rec, end, t, this.d);
+	}
+
+	// The man of the other side on a receiver as he catches it, if any: near
+	// enough to go for him there, on his feet, and not one the sim has bring
+	// him down.
+	onHim(rec: Actor, catchAt: number): Actor | undefined {
+		const tacklers = this.statPids("defTckSolo", "defTckAst");
+		const at = rec.posAt(catchAt);
+		const near = (m: Actor) => dist(m.posAt(catchAt), at);
+		return this.men
+			.filter(
+				(m) =>
+					m.team !== rec.team &&
+					!this.done.has(m.pid) &&
+					!tacklers.includes(m.pid) &&
+					moveKind(legAt(m, catchAt).move) !== "act" &&
+					near(m) < CATCH_BEAT_FT,
+			)
+			.sort((a, b) => near(a) - near(b))[0];
 	}
 
 	// Laid out for it: off his feet from a stride or two short, his arms out
@@ -4091,7 +4143,27 @@ class Action {
 		if (!m) {
 			return t;
 		}
-		const toHim = Math.atan2(m.from.y - at.y, m.from.x - at.x);
+		return this.makeMiss(carrier, m.c, m.from, tc, l, t);
+	}
+
+	// `m`, coming from `from`, made to miss the carrier at tc on his stretch
+	// `l` (see evade) - by the move `how`, if it has to be that one. Gives
+	// when the carry (to have ended at t) ends now.
+	makeMiss(
+		carrier: Actor,
+		m: Actor,
+		from: Pt,
+		tc: number,
+		l: Leg,
+		t: number,
+		how?: "spin" | "juke",
+	): number {
+		const r = this.r;
+		const { t1 } = l;
+		const ms = t1 - l.t0;
+		const ang = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+		const at = carrier.posAt(tc);
+		const toHim = Math.atan2(from.y - at.y, from.x - at.x);
 		// (Which side he comes from: +1 the side the ball is carried on, his
 		// right.)
 		const side = Math.sin(toHim - ang) > 0 ? 1 : -1;
@@ -4099,13 +4171,13 @@ class Action {
 			x: p.x + Math.cos(a) * by,
 			y: p.y + Math.sin(a) * by,
 		});
-		if (side < 0 && r() < STIFF_ARM) {
+		if (!how && side < 0 && r() < STIFF_ARM) {
 			const hit = beside(at, ang - Math.PI / 2, 2.6);
 			const face = this.toward(hit, at);
-			this.closeOn(m.c, hit, tc - 80, face);
-			m.c.act("tackledBack", tc + 520, face, beside(hit, face, -1.6));
-			m.c.hold(tc + 520 + 600, "supine");
-			m.c.act("getUpBack", tc + 520 + 600 + GET_UP_MS);
+			this.closeOn(m, hit, tc - 80, face);
+			m.act("tackledBack", tc + 520, face, beside(hit, face, -1.6));
+			m.hold(tc + 520 + 600, "supine");
+			m.act("getUpBack", tc + 520 + 600 + GET_UP_MS);
 			carrier.arms("stiffArm", tc - 280, tc + 300);
 		} else {
 			const { to, move } = l;
@@ -4117,7 +4189,7 @@ class Action {
 					Math.max(t1, carrier.t + (dist(carrier.at, to) / v) * 1000),
 					move,
 				);
-			const u = r();
+			const u = how === "spin" ? HURDLE : how === "juke" ? 1 : r();
 			const half = HURDLE_MS / 2;
 			if (
 				u < HURDLE &&
@@ -4136,11 +4208,11 @@ class Action {
 				on();
 				const hit = beside(at, toHim, 2.6);
 				const face = this.toward(hit, at);
-				this.closeOn(m.c, hit, tc - 300, face);
-				m.c.act("dive", tc + 250, face, beside(at, face, 1.2));
-				m.c.hold(tc + 250 + 700, "prone");
-				m.c.act("getUp", tc + 250 + 700 + GET_UP_MS);
-				this.done.add(m.c.pid);
+				this.closeOn(m, hit, tc - 300, face);
+				m.act("dive", tc + 250, face, beside(at, face, 1.2));
+				m.hold(tc + 250 + 700, "prone");
+				m.act("getUp", tc + 250 + 700 + GET_UP_MS);
+				this.done.add(m.pid);
 				return t + carrier.t - t1;
 			}
 			if (u < HURDLE + SPIN) {
@@ -4156,11 +4228,11 @@ class Action {
 				on();
 				const hit = beside(at, toHim, 2.2);
 				const face = this.toward(hit, at);
-				this.closeOn(m.c, hit, tc + 60, face);
-				m.c.act("dive", tc + 520, face, beside(hit, face, 2.4));
-				m.c.hold(tc + 520 + 600, "prone");
-				m.c.act("getUp", tc + 520 + 600 + GET_UP_MS);
-				this.done.add(m.c.pid);
+				this.closeOn(m, hit, tc + 60, face);
+				m.act("dive", tc + 520, face, beside(hit, face, 2.4));
+				m.hold(tc + 520 + 600, "prone");
+				m.act("getUp", tc + 520 + 600 + GET_UP_MS);
+				this.done.add(m.pid);
 				return t + carrier.t - t1;
 			}
 			const off = beside(
@@ -4178,12 +4250,12 @@ class Action {
 			// (Off his feet at where he was.)
 			const hit = beside(at, toHim, 3.5);
 			const face = this.toward(hit, at);
-			this.closeOn(m.c, hit, tc - 100, face);
-			m.c.act("dive", tc + 380, face, beside(at, face, 0.8));
-			m.c.hold(tc + 380 + 700, "prone");
-			m.c.act("getUp", tc + 380 + 700 + GET_UP_MS);
+			this.closeOn(m, hit, tc - 100, face);
+			m.act("dive", tc + 380, face, beside(at, face, 0.8));
+			m.hold(tc + 380 + 700, "prone");
+			m.act("getUp", tc + 380 + 700 + GET_UP_MS);
 		}
-		this.done.add(m.c.pid);
+		this.done.add(m.pid);
 		return t + carrier.t - t1;
 	}
 
@@ -4920,6 +4992,7 @@ class Action {
 			x: hit.x + ((m.at.x - hit.x) / far) * 5,
 			y: hit.y + ((m.at.y - hit.y) / far) * 5,
 		};
+		const nearMs = (Math.max(0, far - BREAK_NEAR_FT) / BREAK_NEAR_FPS) * 1000;
 		const downBy =
 			m.t +
 			rampedMs(far - 5 - ease, v, paceOn(m.last, m.at, off)) +
@@ -4937,6 +5010,23 @@ class Action {
 			m.easeOff(ease);
 			m.hold(lead - 300, "backerStance", face);
 			m.chase(hit, lead, m.top * FLAT_OUT, "run", face);
+		} else if (
+			far <= 8 &&
+			legPace(m.last) < BREAK_NEAR_MOST &&
+			lead - 300 - m.t >= nearMs + BREAK_NEAR_MS
+		) {
+			// (Right there already, and with time: squared up to him a step
+			// or so off, his feet chopping, till he comes - not walked in
+			// on him.)
+			if (far > BREAK_NEAR_FT + 1) {
+				const at = {
+					x: hit.x + ((m.at.x - hit.x) / far) * BREAK_NEAR_FT,
+					y: hit.y + ((m.at.y - hit.y) / far) * BREAK_NEAR_FT,
+				};
+				m.go(at, m.t + nearMs, "shuffle", face);
+			}
+			m.hold(lead - 300, "backerStance", face);
+			m.chase(hit, lead, m.top * FLAT_OUT, undefined, face);
 		} else {
 			m.chase(hit, lead, m.top * FLAT_OUT);
 		}
