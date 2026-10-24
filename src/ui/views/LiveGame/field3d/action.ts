@@ -199,13 +199,31 @@ const RAMP_LEAST = 4;
 const RAMP_LEG_MS = 250;
 const RAMPS = new Set<Move>(["jog", "run", "sprint"]);
 // Pulling up: down from his pace at STOP_ACCEL ft/s/s (harder, to stop
-// as near as he has to), in steps STOP_STEP_MS long - each in the gait
-// its pace is, if he was in one.
+// as near as he has to), in steps STOP_STEP_MS long (see slower).
 const STOP_ACCEL = 20;
 const STOP_STEP_MS = 100;
 // (From no slower than this, ft/s.)
 const STOP_LEAST = 8;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
+// (In the gait he was in, a run or a sprint down to a jog once he is
+// that slow, with this long (ms) at least still to go - not a gait to
+// each step, nor one for a moment at the last.)
+const SLOW_LEAST_MS = 250;
+const slower = (
+	move: Move,
+	n: number,
+	dt: number,
+	paceOf: (i: number) => number,
+): ((i: number) => Move) => {
+	let k = 0;
+	while (k < n && paceOf(k) >= 12.5) {
+		k++;
+	}
+	const down =
+		(move === "run" || move === "sprint") &&
+		(n - k) * dt * 1000 >= SLOW_LEAST_MS;
+	return (i) => (down && i >= k ? "jog" : move);
+};
 const paced = (move: Move | undefined, fps: number, ms: number): Move => {
 	const least = move === undefined ? undefined : GAIT_LEAST[move];
 	return move === undefined ||
@@ -400,8 +418,7 @@ class Actor {
 
 	// Pulling up to a stand at the end of his last leg (see STOP_ACCEL):
 	// down to a stop over the last of it, the rest of it that much quicker
-	// (see RAMP_OVER) - or from no quicker, down as far as that takes him -
-	// each step of it in the gait its pace is.
+	// (see RAMP_OVER) - or from no quicker, down as far as that takes him.
 	private pullUpInto() {
 		const legs = this.part.legs;
 		const leg = this.last;
@@ -443,8 +460,10 @@ class Actor {
 		const n = Math.max(1, Math.round((td * 1000) / STOP_STEP_MS));
 		const dt = td / n;
 		let gone = 0;
+		const paceOf = (i: number) => vc - (vc - ve) * ((i + 0.5) / n);
+		const moveOf = slower(leg.move, n, dt, paceOf);
 		for (let i = 0; i < n; i++) {
-			const pace = vc - (vc - ve) * ((i + 0.5) / n);
+			const pace = paceOf(i);
 			gone += pace * dt;
 			const last = i === n - 1;
 			const l = this.last;
@@ -454,7 +473,7 @@ class Actor {
 				t1: last ? t1 : tc + (i + 1) * dt * 1000,
 				from: l.to,
 				to: last ? end : { x: leg.to.x + cos * gone, y: leg.to.y + sin * gone },
-				move: gait(pace) === "walk" ? "jog" : gait(pace),
+				move: moveOf(i),
 			});
 		}
 	}
@@ -479,12 +498,14 @@ class Actor {
 		const T = (2 * d) / v;
 		const n = Math.max(1, Math.round((T * 1000) / STOP_STEP_MS));
 		const dt = T / n;
+		const paceOf = (i: number) => v * (1 - (i + 0.5) / n);
+		const moveOf = slower(l.move, n, dt, paceOf);
 		for (let i = 0; i < n; i++) {
-			const pace = v * (1 - (i + 0.5) / n);
+			const pace = paceOf(i);
 			this.go(
 				{ x: this.at.x + cos * pace * dt, y: this.at.y + sin * pace * dt },
 				this.t + dt * 1000,
-				gaited ? gait(pace) : l.move,
+				moveOf(i),
 				gaited ? undefined : l.yaw,
 			);
 		}
