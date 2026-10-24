@@ -18773,6 +18773,26 @@ class Director {
 				if (busy(tr, t)) {
 					continue;
 				}
+				// (Clapping, having words: his step aside is over before he
+				// starts, or starts once he is done - not sliding him in the
+				// middle of it.)
+				let n0 = t - SPAN;
+				let n1 = t + SPAN;
+				for (const a of tr.acts) {
+					if (!REACTIONS.has(a.anim) || a.t1 <= n0 || a.t0 >= n1) {
+						continue;
+					}
+					if (a.t0 > t) {
+						n1 = Math.min(n1, a.t0);
+					} else if (a.t1 < t) {
+						n0 = Math.max(n0, a.t1);
+					} else {
+						n1 = n0;
+					}
+				}
+				if (n1 - n0 < RAMP) {
+					continue;
+				}
 				const P = this.spotAt(tr, t);
 				// On the move, square across the way he is going - a veer, no
 				// quicker or slower for it (his stride is his speed).
@@ -18801,8 +18821,8 @@ class Director {
 				}
 				const list = (tr.nudges ??= []);
 				list.push({
-					t0: t - SPAN,
-					t1: t + SPAN,
+					t0: n0,
+					t1: n1,
 					dx: sx * by,
 					dy: sy * by,
 					ramp: RAMP,
