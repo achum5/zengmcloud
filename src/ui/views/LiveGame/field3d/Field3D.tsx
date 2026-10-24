@@ -26,7 +26,7 @@ import {
 	startFrame,
 } from "../court3d/sprite.ts";
 import type { Body } from "../court3d/poses.ts";
-import { aimFor } from "./aim.ts";
+import { aimFor, glideAim, type Glide } from "./aim.ts";
 import { drawFlyingBall, drawLooseBall } from "./ball.ts";
 import { drawFlag } from "./flag.ts";
 import { drawnBody, FIGURE_SCALE, footballBody, officialBody } from "./body.ts";
@@ -525,6 +525,7 @@ const Field3D = ({
 		z: 2,
 		vz: 0,
 	});
+	const glide = useRef<Glide>({ was: [], off: [], ms: 0 });
 	const shown = useRef({ down: "", ball: -1 });
 	useEffect(() => {
 		if (timeline) {
@@ -613,13 +614,19 @@ const Field3D = ({
 				c.vy = 0;
 				c.vz = 0;
 				s.snapCam = false;
+				glide.current = { was: [aim.x, aim.y, width, lift], off: [], ms: 0 };
 			} else {
 				const secs =
 					(dt / 1000) * Math.max(1, p.rate) * (replay ? REPLAY_SPEED : 1);
-				[c.x, c.vx] = follow(c.x, c.vx, aim.x, CAM_PAN, secs);
-				[c.w, c.vw] = follow(c.w, c.vw, width, CAM_ZOOM, secs);
-				[c.y, c.vy] = follow(c.y, c.vy, aim.y, CAM_ZOOM, secs);
-				[c.z, c.vz] = follow(c.z, c.vz, lift, CAM_ZOOM, secs);
+				const [gx, gy, gw, gz] = glideAim(
+					glide.current,
+					[aim.x, aim.y, width, lift],
+					secs * 1000,
+				);
+				[c.x, c.vx] = follow(c.x, c.vx, gx!, CAM_PAN, secs);
+				[c.w, c.vw] = follow(c.w, c.vw, gw!, CAM_ZOOM, secs);
+				[c.y, c.vy] = follow(c.y, c.vy, gy!, CAM_ZOOM, secs);
+				[c.z, c.vz] = follow(c.z, c.vz, gz!, CAM_ZOOM, secs);
 			}
 			const view = makeFieldCamera(
 				{ x: c.x, width: c.w, y: c.y, z: c.z },

@@ -299,3 +299,29 @@ const middleOf = (play: Play, m: FieldMoment): Pt | undefined => {
 	}
 	return n > 0 ? { x: x / n, y: y / n } : undefined;
 };
+
+// What the camera goes after never jumping from one place to another: a
+// sudden change of shot (the ball kicked, a pass away, the whistle) glided
+// over AIM_GLIDE_MS, eased in and out of - no lurch at the start of a pan.
+// (Its middle along and across the field, how wide, how high: more than so
+// much in FRAME_MS, a jump.)
+const AIM_GLIDE_MS = 600;
+const AIM_JUMPS = [2, 2, 3, 1];
+const FRAME_MS = 16;
+export type Glide = { was: number[]; off: number[]; ms: number };
+export const glideAim = (g: Glide, to: number[], ms: number): number[] => {
+	const left = () => {
+		const u = Math.min(1, g.ms / AIM_GLIDE_MS);
+		return 1 - u * u * (3 - 2 * u);
+	};
+	const most = Math.max(1, ms / FRAME_MS);
+	if (to.some((v, i) => Math.abs(v - (g.was[i] ?? v)) > AIM_JUMPS[i]! * most)) {
+		const l = left();
+		g.off = to.map((v, i) => (g.off[i] ?? 0) * l + (g.was[i] ?? v) - v);
+		g.ms = 0;
+	}
+	g.was = to;
+	g.ms += ms;
+	const l = left();
+	return to.map((v, i) => v + (g.off[i] ?? 0) * l);
+};
