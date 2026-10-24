@@ -1744,13 +1744,17 @@ const BAIL_BACK_MS = 250;
 // Sat in it, a step at a time this long (ms): toward the nearest man in
 // it, no further off than ZONE_SEE_FT (feet), ZONE_LEAN of the way to him,
 // no more than ZONE_REACH_FT from it - at no more than ZONE_DRIFT_FPS, and
-// only when that is more than ZONE_STIR_FT from where he is.
+// only when that is more than ZONE_STIR_FT from where he is - eased to a
+// stop when it is not, with ZONE_SIT_MS sat there after (or over all the
+// time there is, if no less than ZONE_EASE_LEAST_MS).
 const ZONE_STEP_MS = 300;
 const ZONE_SEE_FT = 50;
 const ZONE_LEAN = 0.3;
 const ZONE_REACH_FT = 8;
 const ZONE_DRIFT_FPS = 6;
 const ZONE_STIR_FT = 1.5;
+const ZONE_SIT_MS = 300;
+const ZONE_EASE_LEAST_MS = 200;
 // At the mesh, the quarterback this far to the side of the back's way
 // through it (feet): the two of them drawn the size they are (see body.ts),
 // his hands out to the ball, and not into each other. (Turned to it as he
@@ -2150,6 +2154,8 @@ type Break = {
 	up: number;
 	v: number;
 	accel: number;
+	// (Up out of it at this, ft/s/s - RAMP_ACCEL, unset.)
+	upAccel?: number;
 };
 // A break at b in a route from a on to c, into it at vIn ft/s and out of
 // it at vOut: cut at CUT_ACCEL, up out of it at RAMP_ACCEL.
@@ -2169,8 +2175,17 @@ const breakOf = (a: Pt, b: Pt, c: Pt, vIn: number, vOut: number): Break => {
 		accel: CUT_ACCEL,
 	};
 };
-// (Off the line: at his pace from the first step - see routeFps.)
-const OFF_LINE: Break = { keep: 1, down: 0, up: 0, v: 0, accel: CUT_ACCEL };
+// (Off the line: from a stand, up to his pace at RELEASE_ACCEL - not at it
+// from the first step - see routeFps.)
+const RELEASE_ACCEL = 24;
+const offLine = (fps: number): Break => ({
+	keep: 1,
+	down: 0,
+	up: (fps / (2 * RELEASE_ACCEL)) * 1000,
+	v: 0,
+	accel: CUT_ACCEL,
+	upAccel: RELEASE_ACCEL,
+});
 // How long (ms) a stretch of a route `ft` long takes him at `fps`, out of
 // the break before it and into the one at its end: if it is too short for
 // him to get up to his pace in between (a hitch's step back down to the
@@ -2178,20 +2193,19 @@ const OFF_LINE: Break = { keep: 1, down: 0, up: 0, v: 0, accel: CUT_ACCEL };
 const stretchMs = (ft: number, fps: number, from: Break, to: Break) => {
 	const v0 = from.up > 0 ? from.v : fps;
 	const v1 = to.down > 0 ? to.v : fps;
+	const a0 = from.upAccel ?? RAMP_ACCEL;
 	const a1 = to.accel;
 	if (
-		(fps * fps - v0 * v0) / (2 * RAMP_ACCEL) +
-			(fps * fps - v1 * v1) / (2 * a1) <=
+		(fps * fps - v0 * v0) / (2 * a0) + (fps * fps - v1 * v1) / (2 * a1) <=
 		ft
 	) {
 		return (ft / fps) * 1000 + from.up + to.down;
 	}
 	const top = Math.sqrt(
-		(2 * ft * RAMP_ACCEL * a1 + v0 * v0 * a1 + v1 * v1 * RAMP_ACCEL) /
-			(RAMP_ACCEL + a1),
+		(2 * ft * a0 * a1 + v0 * v0 * a1 + v1 * v1 * a0) / (a0 + a1),
 	);
 	return top > Math.max(v0, v1)
-		? ((top - v0) / RAMP_ACCEL + (top - v1) / a1) * 1000
+		? ((top - v0) / a0 + (top - v1) / a1) * 1000
 		: ((2 * ft) / Math.max(1, v0 + v1)) * 1000;
 };
 // Sat down at the end of his route with longer than this to wait (ms) - the
@@ -3368,7 +3382,7 @@ class Action {
 		const pts = route.path.map((p) => this.w(p));
 		let along = 0;
 		let ms = 0;
-		let cut = OFF_LINE;
+		let cut = offLine(routeFps(speed, 1));
 		for (let k = 1; k < pts.length && along < upto - ROUTE_LEFT; k++) {
 			const seg = dist(pts[k - 1]!, pts[k]!);
 			const go = Math.min(seg, upto - along);
@@ -3441,7 +3455,7 @@ class Action {
 				: 1;
 		const pts = route.path.map((p) => this.w(p));
 		let along = 0;
-		let cut = OFF_LINE;
+		let cut = offLine(routeFps(speed, 1));
 		for (let k = 1; k < pts.length; k++) {
 			const seg = dist(pts[k - 1]!, pts[k]!);
 			const room = endAlong - along;
@@ -3466,7 +3480,9 @@ class Action {
 				m.go({ x: p.x + (to.x - p.x) * u, y: p.y + (to.y - p.y) * u }, until);
 				return;
 			}
-			if (cut.keep < 1) {
+			if (k === 1) {
+				m.getOff(to, t1, 0, RELEASE_ACCEL);
+			} else if (cut.keep < 1) {
 				m.cutTo(to, t1, cut.keep);
 			} else {
 				m.go(to, t1);
@@ -6033,7 +6049,25 @@ class Action {
 					m.easeOff(ease);
 				}
 				// Sat in it, reading it: drifting with the nearest man coming
-				// into it, a step or two at a time.
+				// into it, a step or two at a time. (Pulled up into it off his
+				// drop or a drift, not stopped dead - see easeOff - with time
+				// to sit in it after.)
+				const sit = (t: number) => {
+					const v = legPace(m.last);
+					const ft = Math.min(ZONE_SETTLE_FT, (v * v) / (2 * STOP_ACCEL));
+					const spare = t - m.t;
+					const easing = v > 0 ? ((2 * ft) / v) * 1000 : Infinity;
+					if (spare >= easing + ZONE_SIT_MS) {
+						m.easeOff(ZONE_SETTLE_FT);
+					} else if (spare >= ZONE_EASE_LEAST_MS && spare <= easing) {
+						// (No time to sit after: eased down over all of it.)
+						m.easeOff((v * spare) / 2000);
+						if (t - m.t < ZONE_EASE_LEAST_MS / 2) {
+							return;
+						}
+					}
+					m.hold(t, "backerStance", this.behind);
+				};
 				for (
 					let t = m.t + ZONE_STEP_MS;
 					t < until - ZONE_STEP_MS / 2;
@@ -6060,12 +6094,12 @@ class Action {
 							}
 						: spot;
 					if (dist(to, m.at) < ZONE_STIR_FT) {
-						m.hold(t, "backerStance", this.behind);
+						sit(t);
 					} else {
 						m.chase(to, t, ZONE_DRIFT_FPS, undefined, this.behind);
 					}
 				}
-				m.hold(until, "backerStance", this.behind);
+				sit(until);
 			}
 			// The ball in the air: everyone near breaks for it, each to a
 			// spot of his own round it.
