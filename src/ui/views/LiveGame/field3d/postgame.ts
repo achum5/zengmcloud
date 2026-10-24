@@ -37,6 +37,9 @@ const BUMP = 0.3;
 const BUMP_NEAR = 15;
 const BUMP_APART = 2;
 const BUMP_MS = 900;
+// (No quicker to each other than this, and set this long before it, ms.)
+const BUMP_STEP_MS = 450;
+const BUMP_SET_MS = 200;
 const BUMP_FIVE = 0.5;
 const FIVE_MS = 800;
 // Won on the last play: the winners on the field to the man who won it, at a
@@ -499,9 +502,12 @@ export const stagePostgame = (input: {
 			const turn = five ? FIVE.turn : 0;
 			const ux = Math.cos(way) * half;
 			const uy = Math.sin(way) * half;
-			a.walk({ x: mid.x - ux, y: mid.y - uy }, 9);
-			b.walk({ x: mid.x + ux, y: mid.y + uy }, 9);
-			const at = Math.max(a.t, b.t) + 60;
+			// (A step or so to each other taken, not hopped.)
+			const over = (m: Man, to: Pt) =>
+				m.walk(to, Math.min(9, (dist(m.at, to) / BUMP_STEP_MS) * 1000));
+			over(a, { x: mid.x - ux, y: mid.y - uy });
+			over(b, { x: mid.x + ux, y: mid.y + uy });
+			const at = Math.max(a.t, b.t) + BUMP_SET_MS;
 			a.hold(at, "stand", way - turn);
 			b.hold(at, "stand", way + Math.PI - turn);
 			const move = five ? "highFive" : "chestBump";

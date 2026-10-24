@@ -9818,8 +9818,17 @@ class Action {
 		const half = FIVE.apart / 2;
 		const ux = Math.cos(way) * half;
 		const uy = Math.sin(way) * half;
-		a.run({ x: mid.x - ux, y: mid.y - uy }, FIVE_FPS, undefined, way);
-		b.run({ x: mid.x + ux, y: mid.y + uy }, FIVE_FPS, undefined, way + Math.PI);
+		// (A step or so across: taken, not hopped - no quicker than
+		// FIVE_STEP_MS.)
+		const over = (m: Actor, to: Pt, yaw: number) => {
+			if ((dist(m.at, to) / FIVE_FPS) * 1000 < FIVE_STEP_MS) {
+				m.go(to, m.t + FIVE_STEP_MS, undefined, yaw);
+			} else {
+				m.run(to, FIVE_FPS, undefined, yaw);
+			}
+		};
+		over(a, { x: mid.x - ux, y: mid.y - uy }, way);
+		over(b, { x: mid.x + ux, y: mid.y + uy }, way + Math.PI);
 		const t = Math.max(a.t, b.t) + FIVE_SET_MS;
 		a.hold(t, "stand", way - FIVE.turn);
 		b.hold(t, "stand", way + Math.PI - FIVE.turn);
@@ -9970,6 +9979,8 @@ const FIVE_WANT = 0.35;
 const FIVE_LATE = 4000;
 const FIVE_NEAR = 14;
 const FIVE_FPS = 5;
+// (A step or so to him, no quicker than this, ms.)
+const FIVE_STEP_MS = 450;
 const FIVE_MOST = 2;
 // The side that lost it off the field: this often a man's hands to his
 // helmet first (for this long, give or take - the quarterback's more often),
