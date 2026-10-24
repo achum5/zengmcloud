@@ -841,6 +841,17 @@ const BLEND_MOST_MS = Math.max(SETTLE_MS, GET_DOWN_MS);
 // (Down to a loose ball on the run: quickly into the scoop, the bend down
 // its own - not drawn out under his strides and all at the last.)
 const SCOOP_IN_MS = 100;
+// How far he is into a leg, so far through his blend into it (and how
+// fast he is going into it, per ms): down into his stance, eased in and
+// settled into it at the last - not at an even rate, dropped into it.
+const intoOf = (l: Leg, u: number): number => {
+	const v = clamp01(u);
+	return DOWN.has(l.move as Move) ? v * v * (3 - 2 * v) : v;
+};
+const intoRate = (l: Leg, u: number, ms: number): number => {
+	const v = clamp01(u);
+	return (DOWN.has(l.move as Move) ? 6 * v * (1 - v) : 1) / ms;
+};
 const blendOf = (l: Leg, prev?: Leg): number => {
 	if (moveKind(l.move) !== "act") {
 		return !prev
@@ -926,7 +937,11 @@ const stateOf = (
 	const c2 = c > 1 ? changedAt(c - 1, legs[c]!.t0) : 0;
 	const left =
 		c2 > 0 && changed(legs[c2 - 1]!, legs[c2]!)
-			? 1 - (legs[c]!.t0 - legs[c2]!.t0) / blendOf(legs[c2]!, legs[c2 - 1])
+			? 1 -
+				intoOf(
+					legs[c2]!,
+					(legs[c]!.t0 - legs[c2]!.t0) / blendOf(legs[c2]!, legs[c2 - 1]),
+				)
 			: 0;
 	const yaw = yawAt(legs, t);
 	// Stood turning, a foot at a time (or not yet - or no longer - turning,
@@ -1004,10 +1019,10 @@ const stateOf = (
 			rate: {
 				move: rateOf(l, phase),
 				from: rateOf(prior, was),
-				w: 1 / blending,
+				w: intoRate(legs[c]!, blended / blending, blending),
 			},
 			...(prior.mirrored ? { mirrored: true } : {}),
-			w: 1 - clamp01(blended / blending),
+			w: 1 - intoOf(legs[c]!, blended / blending),
 			...(prior.arms
 				? { arms: { move: prior.arms, phase: armsPhaseOf(prior, prior.t1) } }
 				: {}),
