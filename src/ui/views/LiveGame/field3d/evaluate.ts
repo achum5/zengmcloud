@@ -15,6 +15,7 @@ import {
 	paceOf,
 	placeAt,
 	SET,
+	smoothAt,
 	TRACK_MS,
 	trackLength,
 	trackOf,
@@ -798,6 +799,15 @@ const stateOf = (
 	const l = legs[k]!;
 	const offset = (part.pid * 0.618) % 1;
 	const at = placeAt(legs, k, t);
+	// (A sudden start or stop taken over a step - see smoothAt.)
+	const smooth = smoothAt(
+		trackOf(legs, play.t0, trackLength(play.t0, play.t1)),
+		now,
+	);
+	if (smooth) {
+		at.x = smooth.x;
+		at.y = smooth.y;
+	}
 	const aside = apartAt(apart.get(part.pid), now);
 	if (aside) {
 		at.x += aside.x;

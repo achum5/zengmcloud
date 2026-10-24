@@ -387,3 +387,81 @@ export const trackOf = (legs: Leg[], t0: number, n: number): Track => {
 	tracks.set(legs, { n: legs.length, tr });
 	return tr;
 };
+
+// NOT FROM FLAT OUT TO STOOD IN A FRAME: where his track has him, run
+// through a short bell a TRACK_MS apart either side - a sudden start, stop
+// or cut taken over a step or so, not in a frame; on a straight run at a
+// steady pace, or stood still, just where he was - and from one time on it
+// to the next along a smooth curve through them (see smoothAt). Never
+// across a jump from one place to another (more than JUMP_FT from one time
+// on it to the next): there he is where his legs have him.
+const SMOOTH = [1, 4, 6, 4, 1];
+const SMOOTH_SUM = 16;
+const SMOOTH_HALF = (SMOOTH.length - 1) / 2;
+const JUMP_FT = 3;
+type Smooth = { xs: Float32Array; ys: Float32Array; ok: Uint8Array };
+const smooths = new WeakMap<Track, Smooth>();
+const smoothOf = (tr: Track): Smooth => {
+	const had = smooths.get(tr);
+	if (had) {
+		return had;
+	}
+	const n = tr.xs.length;
+	const at = (j: number) => Math.min(n - 1, Math.max(0, j));
+	const jumps = new Uint8Array(n);
+	for (let s = 1; s < n; s++) {
+		const d = Math.hypot(tr.xs[s]! - tr.xs[s - 1]!, tr.ys[s]! - tr.ys[s - 1]!);
+		jumps[s] = d > JUMP_FT ? 1 : 0;
+	}
+	const sm: Smooth = {
+		xs: new Float32Array(n),
+		ys: new Float32Array(n),
+		ok: new Uint8Array(n),
+	};
+	for (let s = 0; s < n; s++) {
+		let x = 0;
+		let y = 0;
+		let ok = 1;
+		for (let i = 0; i < SMOOTH.length; i++) {
+			const j = at(s + i - SMOOTH_HALF);
+			x += SMOOTH[i]! * tr.xs[j]!;
+			y += SMOOTH[i]! * tr.ys[j]!;
+			if (i > 0 && jumps[j]) {
+				ok = 0;
+			}
+		}
+		sm.xs[s] = x / SMOOTH_SUM;
+		sm.ys[s] = y / SMOOTH_SUM;
+		sm.ok[s] = ok;
+	}
+	smooths.set(tr, sm);
+	return sm;
+};
+// (Where he is at t that way, if he can be had there: through the times
+// either side of t and the next out either side, Catmull-Rom.)
+export const smoothAt = (
+	tr: Track,
+	t: number,
+): { x: number; y: number } | undefined => {
+	const sm = smoothOf(tr);
+	const n = sm.xs.length;
+	const u = (t - tr.t0) / TRACK_MS;
+	const s = Math.floor(u);
+	if (s < 1 || s + 2 >= n) {
+		return undefined;
+	}
+	const { xs, ys, ok } = sm;
+	if (!ok[s - 1] || !ok[s] || !ok[s + 1] || !ok[s + 2]) {
+		return undefined;
+	}
+	const w = u - s;
+	const cr = (a: number, b: number, c: number, d: number) =>
+		b +
+		0.5 *
+			w *
+			(c - a + w * (2 * a - 5 * b + 4 * c - d + w * (3 * (b - c) + d - a)));
+	return {
+		x: cr(xs[s - 1]!, xs[s]!, xs[s + 1]!, xs[s + 2]!),
+		y: cr(ys[s - 1]!, ys[s]!, ys[s + 1]!, ys[s + 2]!),
+	};
+};
