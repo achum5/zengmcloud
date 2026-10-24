@@ -64,6 +64,7 @@ import { eventsMatchRoster } from "./rosterMatch.ts";
 import { spawnCourtWorker, stageCourt } from "./stageCourt.ts";
 import {
 	stageWarmup,
+	WARMUP_MS,
 	warmupAim,
 	warmupMoment,
 	type Warmup,
@@ -255,6 +256,9 @@ type Props = {
 	// Playing along, the other court is not showing the same game (see
 	// stagedAs): the page has this one stepped line by line instead.
 	onLost?: () => void;
+	// No game: the two teams warming up on the home floor, round and round -
+	// a look at the court (see CourtPreview).
+	preview?: boolean;
 };
 
 const Court3D = ({
@@ -274,6 +278,7 @@ const Court3D = ({
 	onJump,
 	onFail,
 	onLost,
+	preview = false,
 }: Props) => {
 	const { lid, gender } = useLocal(["lid", "gender"]);
 	const gid: number | undefined = boxScore?.gid;
@@ -409,7 +414,10 @@ const Court3D = ({
 	// While it is: the two teams out warming up at their baskets - not a
 	// black screen. (Staged here: it takes no time at all.)
 	const pregame = useMemo((): Warmup | undefined => {
-		if (!events || events.length === 0 || !eventsMatchRoster(events, roster)) {
+		if (
+			!preview &&
+			(!events || events.length === 0 || !eventsMatchRoster(events, roster))
+		) {
 			return undefined;
 		}
 		try {
@@ -417,7 +425,7 @@ const Court3D = ({
 		} catch {
 			return undefined;
 		}
-	}, [events, roster, gid]);
+	}, [events, roster, gid, preview]);
 	const clocks = useMemo(
 		() => (timeline && events ? buildClocks(timeline, events) : undefined),
 		[timeline, events],
@@ -1076,6 +1084,7 @@ const Court3D = ({
 			number,
 		],
 		eventsLength: events?.length ?? 0,
+		preview,
 	});
 	live.current = {
 		cursor,
@@ -1111,6 +1120,7 @@ const Court3D = ({
 			number,
 		],
 		eventsLength: events?.length ?? 0,
+		preview,
 	};
 
 	useEffect(() => {
@@ -1166,6 +1176,12 @@ const Court3D = ({
 				now,
 				Date.now(),
 			);
+			// A look at the court: the warm-ups over, round again from the top.
+			if (p.preview && staging && s.t >= WARMUP_MS) {
+				s.t = 0;
+				s.snapCam = true;
+				s.keyDip = now;
+			}
 			if (s.lost && p.along && !lostSaid.current) {
 				lostSaid.current = true;
 				p.onLost?.();
@@ -1853,7 +1869,7 @@ const Court3D = ({
 						? helpers.formatRecord(t)
 						: undefined;
 				const bug = {
-					hidden: intro.on,
+					hidden: intro.on || preview,
 					away: away && {
 						abbrev: away.abbrev,
 						region: away.region,

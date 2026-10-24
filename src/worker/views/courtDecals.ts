@@ -6,6 +6,7 @@ import {
 	resolveCourt,
 } from "../util/courtPictures.ts";
 import { defineView } from "../util/defineView.ts";
+import { courtPreview } from "../util/courtPreview.ts";
 
 // Data for the league's court decals page: the decals, the pictures uploaded
 // for them (by id), and the user's team's court to preview them on.
@@ -38,6 +39,7 @@ const courtDecals = async () => {
 					court: await resolveCourt(t.court),
 				}
 			: undefined,
+		preview: t ? await courtPreview(t) : undefined,
 	};
 };
 

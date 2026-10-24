@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { toWorker } from "../util/toWorker.ts";
 import { helpers } from "../util/helpers.ts";
@@ -10,12 +10,14 @@ import type {
 	View,
 } from "../../common/types.ts";
 import { parseCourtDecals } from "../../common/courtDecals.ts";
-import LiveCourt, { type CourtTeam } from "./LiveGame/LiveCourt.tsx";
 import {
 	ImageField,
 	PIC,
 	pictureFromFile,
 } from "../components/CourtImageField.tsx";
+
+// (The 3D court is big: fetched when the page is opened.)
+const CourtPreview = lazy(() => import("./LiveGame/court3d/CourtPreview.tsx"));
 
 const WHEN: [CourtDecal["when"], string][] = [
 	["always", "Every game"],
@@ -31,6 +33,7 @@ const CourtDecals = ({
 	pictures: picturesSaved,
 	season,
 	team,
+	preview: look,
 }: View<"courtDecals">) => {
 	useTitleBar({ title: "Court Decals" });
 
@@ -115,20 +118,26 @@ const CourtDecals = ({
 		}
 	};
 
-	const homeTeam: CourtTeam = team
-		? { ...team, court: { ...team.court, decals: shown } }
-		: { tid: -1, court: { decals: shown } };
+	const court = useMemo(
+		() => ({ ...team?.court, decals: shown }),
+		[team?.court, shown],
+	);
 
 	return (
 		<div className="row">
 			<div className="col-lg-7 mb-3">
-				<LiveCourt
-					scene={undefined}
-					teams={[undefined, homeTeam]}
-					finals={preview === "finals"}
-					season={undefined}
-					sceneMs={undefined}
-				/>
+				{look ? (
+					<Suspense fallback={null}>
+						<CourtPreview
+							home={look.home}
+							away={look.away}
+							court={court}
+							season={look.season}
+							arena={look.arena}
+							finals={preview === "finals"}
+						/>
+					</Suspense>
+				) : null}
 				<div className="btn-group btn-group-sm">
 					{WHEN.map(([when, label]) => (
 						<button

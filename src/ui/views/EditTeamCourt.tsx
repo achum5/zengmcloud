@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import useTitleBar from "../hooks/useTitleBar.tsx";
 import { toWorker } from "../util/toWorker.ts";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
@@ -10,7 +10,6 @@ import type {
 	CourtImageAdjust,
 	CourtImageSlot,
 } from "../../common/types.ts";
-import LiveCourt from "./LiveGame/LiveCourt.tsx";
 import {
 	ImageField,
 	PIC,
@@ -22,6 +21,9 @@ import {
 	FLOOR_TEMPLATE_W,
 	floorTemplate,
 } from "./courtTemplate.ts";
+
+// (The 3D court is big: fetched when the page is opened.)
+const CourtPreview = lazy(() => import("./LiveGame/court3d/CourtPreview.tsx"));
 
 const DEFAULT_FLOOR = "#c9a165";
 const DEFAULT_LINES = "#f8f5f0";
@@ -142,13 +144,12 @@ const TextField = ({
 
 const EditTeamCourt = ({
 	tid,
-	abbrev,
 	region,
 	name,
 	colors,
-	imgURL,
 	court,
 	pictures: picturesSaved,
+	preview,
 }: View<"editTeamCourt">) => {
 	useTitleBar({
 		title: `Customize Court`,
@@ -232,15 +233,6 @@ const EditTeamCourt = ({
 		() => withPictures(style, pictures),
 		[style, pictures],
 	);
-	const homeTeam = {
-		tid,
-		abbrev,
-		region,
-		name,
-		colors,
-		imgURL,
-		court: shownStyle,
-	};
 
 	const save = async () => {
 		setSaving(true);
@@ -277,13 +269,16 @@ const EditTeamCourt = ({
 
 			<div className="row">
 				<div className="col-lg-7 mb-3">
-					<LiveCourt
-						scene={undefined}
-						teams={[undefined, homeTeam]}
-						finals={previewFinals}
-						season={undefined}
-						sceneMs={undefined}
-					/>
+					<Suspense fallback={null}>
+						<CourtPreview
+							home={preview.home}
+							away={preview.away}
+							court={shownStyle}
+							season={preview.season}
+							arena={preview.arena}
+							finals={previewFinals}
+						/>
+					</Suspense>
 					<div className="form-check">
 						<input
 							type="checkbox"
