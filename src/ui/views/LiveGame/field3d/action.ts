@@ -1382,10 +1382,13 @@ const EDGE_STAGGER = 2.5;
 // (His leap for it carrying him on this long at the pace he came in at,
 // seconds, and no further than this, feet.)
 const SWAT_ON = 0.2;
+const SWAT_ON_MOST = 4;
+// (A man breaking up a pass no nearer where it was to be caught than this,
+// feet, for it.)
+const SWAT_CLEAR = 2;
 // A gunner set in front of the returner by this long after he would have
 // got there at full tilt, ms.
 const GUNNER_SET_MS = 900;
-const SWAT_ON_MOST = 4;
 
 // ---- the play ----------------------------------------------------------------
 
@@ -1441,6 +1444,9 @@ const PURSUIT_LANE = 7;
 const EASE_OFF_FT = 12;
 // (Carrying on the way he was going, before he eases off, ms - see carryOn.)
 const CARRY_MOST_MS = 500;
+// (Broken down a few steps off a man to hit, this long at least - see
+// closeOn.)
+const BREAK_DOWN_MS = 450;
 // After a man gone for a score, losing ground on him this far back (feet):
 // given up, now and then.
 const GIVE_UP_FT = 24;
@@ -4473,7 +4479,11 @@ class Action {
 				x: hit.x + ((m.at.x - hit.x) / far) * 5,
 				y: hit.y + ((m.at.y - hit.y) / far) * 5,
 			};
-			m.run(off, m.top * 0.7);
+			// (Up to it no quicker than gets him there with BREAK_DOWN_MS
+			// to settle into it.)
+			const room = (lead - 300 - BREAK_DOWN_MS - m.t) / 1000;
+			const v = clamp((far - 5) / Math.max(0.1, room), 4, m.top * 0.7);
+			m.run(off, v);
 			m.hold(lead - 300, "backerStance", face);
 			m.chase(hit, lead, m.top * FLAT_OUT, "run", face);
 		} else {
@@ -4603,7 +4613,23 @@ class Action {
 		if (breakup && coverage.includes(breakup)) {
 			// Got a hand on it: knocked away.
 			this.breakOn(breakup, catchPt, catchAt, 150);
-			breakup.act("swat", catchAt + 250, this.toward(breakup.at, catchPt));
+			// (Carried on a step or so with it, off his last stride - by the
+			// ball, not through the man it was for.)
+			const l = breakup.last;
+			const far = dist(l.from, l.to);
+			const ux = far > 0 ? (l.to.x - l.from.x) / far : 0;
+			const uy = far > 0 ? (l.to.y - l.from.y) / far : 0;
+			let on = Math.min(SWAT_ON_MOST, legPace(l) * SWAT_ON);
+			while (
+				on > 0.25 &&
+				dist({ x: l.to.x + ux * on, y: l.to.y + uy * on }, catchPt) < SWAT_CLEAR
+			) {
+				on -= 0.25;
+			}
+			breakup.act("swat", catchAt + 250, this.toward(breakup.at, catchPt), {
+				x: l.to.x + ux * on,
+				y: l.to.y + uy * on,
+			});
 			this.done.add(breakup.pid);
 			const ang = r() * Math.PI * 2;
 			lands = {
@@ -6175,7 +6201,7 @@ class Action {
 				this.w({ d: c.d + 1, a: c.a + (holeA - c.a) * 0.2 }),
 				snap + 1600,
 				db.top * 0.5,
-				"jog",
+				undefined,
 				this.behind,
 			);
 			m.go(
@@ -8232,15 +8258,27 @@ class Action {
 			if (m.t > t + 400) {
 				// (Still on his way in when his part ends: pulled up the way
 				// he was going - short of the ball.)
+				// (Short of it by half the way, or as much as pulling up hard
+				// takes, short of the ball.)
 				if (GAITS.has(m.last.move) && ball) {
-					m.easeOff(Math.min(EASE_OFF_FT, dist(m.at, ball) * 0.5));
+					const v = legPace(m.last);
+					const near = dist(m.at, ball);
+					m.easeOff(
+						Math.min(
+							EASE_OFF_FT,
+							Math.max(
+								near * 0.5,
+								Math.min((v * v) / (2 * STOP_ACCEL * STOP_HARD), near - 2.5),
+							),
+						),
+					);
 				}
 				m.hold(m.t + 600, "stand");
 				continue;
 			}
 			const l = m.last;
 			const moving = l.from.x !== l.to.x || l.from.y !== l.to.y;
-			if (moving && l.t1 >= t - 100) {
+			if (moving) {
 				m.easeOff(EASE_OFF_FT);
 			}
 			m.hold(Math.max(m.t, t) + 600, "stand");

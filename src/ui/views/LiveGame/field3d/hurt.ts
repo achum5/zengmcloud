@@ -146,6 +146,43 @@ const cut = (legs: Leg[], t: number): { at: number; down: boolean } => {
 	};
 };
 
+// Out to him at OUT_FPS - pulled up over the last of it at OUT_EASE
+// (ft/s/s, down to a walk's pace), in steps this long, not stopped dead.
+const OUT_EASE = 12;
+const OUT_WALK = 4;
+const OUT_STEP_MS = 100;
+const runOut = (legs: Leg[], from: Pt, to: Pt, t0: number) => {
+	const far = dist(from, to);
+	const slow = Math.min(
+		far * 0.6,
+		(OUT_FPS * OUT_FPS - OUT_WALK * OUT_WALK) / (2 * OUT_EASE),
+	);
+	const at = (s: number): Pt => ({
+		x: from.x + ((to.x - from.x) * s) / far,
+		y: from.y + ((to.y - from.y) * s) / far,
+	});
+	let t = t0 + ((far - slow) / OUT_FPS) * 1000;
+	legs.push({ t0, t1: t, from, to: at(far - slow), move: "run" });
+	let s = far - slow;
+	let v = Math.sqrt(OUT_WALK * OUT_WALK + 2 * OUT_EASE * slow);
+	while (s < far - 0.01) {
+		const dt = OUT_STEP_MS / 1000;
+		const next = Math.max(OUT_WALK, v - OUT_EASE * dt);
+		const ds = Math.min(far - s, ((v + next) / 2) * dt);
+		const pace = ds / dt;
+		legs.push({
+			t0: t,
+			t1: t + OUT_STEP_MS,
+			from: at(s),
+			to: at(s + ds),
+			move: pace < 6.5 ? "walk" : pace < 12.5 ? "jog" : "run",
+		});
+		s += ds;
+		t += OUT_STEP_MS;
+		v = next;
+	}
+};
+
 const still = (
 	legs: Leg[],
 	t0: number,
@@ -241,11 +278,10 @@ export const stageHurt = (input: {
 		const start = { x: fromX + (k - 1) * 3, y: sideY };
 		const to = besideOf[k]!;
 		const leave = go + k * 220;
-		const there = leave + (dist(start, to) / OUT_FPS) * 1000;
-		arrived = Math.max(arrived, there);
 		const legs: Leg[] = [];
 		still(legs, input.t0, leave, start, "stand", toward(start, at));
-		legs.push({ t0: leave, t1: there, from: start, to, move: "run" });
+		runOut(legs, start, to, leave);
+		arrived = Math.max(arrived, legs.at(-1)!.t1);
 		medics.push({ pid: medicId(team, input.n, k), team, legs });
 	}
 	const tending = arrived + 300;

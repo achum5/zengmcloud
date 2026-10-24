@@ -39,8 +39,11 @@ const SETTLE = 4;
 const STEP_MS = 200;
 // Under this pace he shuffles sideways, facing the play; over it he runs.
 const SHUFFLE_FPS = 7;
-// Stopped this long after the whistle.
+// Stopped this long after the whistle - pulled up at this (ft/s/s), in
+// steps this long, from a run.
 const AFTER_WHISTLE = 1500;
+const PULL_UP = 14;
+const PULL_UP_STEP_MS = 100;
 const ARMS: Move = "shoulderCam";
 
 export type TvInput = {
@@ -134,7 +137,30 @@ export const stageTv = (input: TvInput): CrewPart[] => {
 				push({ t0: t, t1: t + dt, from, to, move: "run", arms: ARMS });
 			}
 		}
-		// (And stopped, the camera on where it was blown dead.)
+		// (And stopped, the camera on where it was blown dead - pulled up
+		// from a run, not stopped dead in it.)
+		let was = legs.at(-1)!;
+		let v =
+			was.move === "run" && was.t1 > was.t0
+				? Math.abs(was.to.x - was.from.x) / ((was.t1 - was.t0) / 1000)
+				: 0;
+		const way = Math.sign(was.to.x - was.from.x);
+		while (v > SHUFFLE_FPS && was.t1 < t1) {
+			const dt = Math.min(PULL_UP_STEP_MS, t1 - was.t1);
+			const pace = Math.max(0, v - (PULL_UP * dt) / 2000);
+			const from = { x, y };
+			x = clampX(x + (way * pace * dt) / 1000);
+			push({
+				t0: was.t1,
+				t1: was.t1 + dt,
+				from,
+				to: { x, y },
+				move: "run",
+				arms: ARMS,
+			});
+			v = Math.max(0, v - (PULL_UP * dt) / 1000);
+			was = legs.at(-1)!;
+		}
 		const end = { x, y };
 		const last = legs.at(-1)!;
 		if (last.t1 < t1) {

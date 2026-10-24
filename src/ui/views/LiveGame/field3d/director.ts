@@ -423,8 +423,17 @@ const intoStance = (
 		x: from.x + (to.x - from.x) * u,
 		y: from.y + (to.y - from.y) * u,
 	};
+	// (The rest of it in a gait as quick as it goes: no jog at a run's
+	// pace.)
+	const pace = (d - s) / (main / 1000);
+	const up =
+		move === "walk" && pace >= 6.5
+			? "jog"
+			: move === "jog" && pace >= 12.5
+				? "run"
+				: move;
 	return [
-		{ t0, t1: t0 + main, from, to: mid, move },
+		{ t0, t1: t0 + main, from, to: mid, move: up },
 		{ t0: t0 + main, t1, from: mid, to, move: slow },
 	];
 };
