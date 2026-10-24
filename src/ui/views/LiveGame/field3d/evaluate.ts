@@ -181,12 +181,28 @@ const facingOf = (legs: Leg[]): Facing => {
 		const own = ownWay(lj);
 		const startsOff = own && lp && !goes(lp) && !lp.turn;
 		const setsUp = !goes(lj) && lp && goes(lp) && SET.has(lj.move);
+		// (Or down on a knee: round as he gets there - or, stood, round on
+		// his feet first, all the way, and then down.)
+		const kneels =
+			lj.move === "takeKnee" &&
+			lp &&
+			!lp.turn &&
+			(goes(lp) || PIVOTS.has(lp.move));
+		const stood = kneels && !goes(lp);
 		lead[j] =
 			startsOff && !SET.has(lp.move)
 				? paceOf(legs, j).early
-				: setsUp
-					? Math.min(SET_UP_MS, (lp.t1 - lp.t0) / 2)
-					: 0;
+				: stood
+					? Math.min(
+							Math.max(
+								TURN_MS,
+								(Math.abs(wrapAngle(was(0) - aim)) / STAND_TURN) * 1000,
+							),
+							(lp.t1 - lp.t0) * 0.9,
+						)
+					: setsUp || kneels
+						? Math.min(SET_UP_MS, (lp.t1 - lp.t0) / 2)
+						: 0;
 		snap[j] = startsOff && SET.has(lp.move) ? 1 : 0;
 		ahead = Math.max(ahead, lead[j]!);
 		let by = j > 0 ? wrapAngle(was(lead[j]!) - aim) : 0;
@@ -209,7 +225,7 @@ const facingOf = (legs: Leg[]): Facing => {
 		off[j] = by;
 		turns[j] = lj.turn || Math.abs(by) > 1e-6 || corner[j]! > 0 ? 1 : 0;
 		ms[j] =
-			PIVOTS.has(lj.move) && !goes(lj)
+			(PIVOTS.has(lj.move) && !goes(lj)) || stood
 				? Math.max(TURN_MS, (Math.abs(by) / STAND_TURN) * 1000)
 				: snap[j] || own
 					? Math.max(

@@ -50,6 +50,9 @@ const HELPED = 0.6;
 // the trainers go, up again as he is.
 const KNEEL_NEAR = 30;
 const KNEELS = 0.75;
+// (Getting up off the turf to, on his feet a moment first - turned to him -
+// before he goes down on the knee.)
+const STOOD_FIRST_MS = 700;
 // Where the trainers kneel by him, and walk with him (feet off him).
 const BESIDE = 2.6;
 const ALONGSIDE = 2.3;
@@ -310,7 +313,7 @@ export const stageHurt = (input: {
 				l.t1 > kneel,
 		);
 		if (rising) {
-			kneel = rising.t1;
+			kneel = rising.t1 + STOOD_FIRST_MS;
 		}
 		const rise = up + 300 + r() * 700;
 		const c = cut(p.legs, kneel);
