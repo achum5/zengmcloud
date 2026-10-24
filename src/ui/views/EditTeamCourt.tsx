@@ -601,6 +601,38 @@ const EditTeamCourt = ({
 					>
 						{json === undefined ? "Edit as JSON" : "Close JSON"}
 					</button>
+					<label className="btn btn-sm btn-light-bordered ms-2 mb-0">
+						Load file
+						<input
+							type="file"
+							accept=".json,application/json"
+							hidden
+							onChange={(e) => {
+								const file = e.target.files?.[0];
+								e.target.value = "";
+								if (!file) {
+									return;
+								}
+								file
+									.text()
+									.then((text) => {
+										const parsed = parseCourt(text);
+										if (typeof parsed === "string") {
+											setJSON(text);
+											setJSONError(parsed);
+										} else {
+											setJSON(undefined);
+											setJSONError(undefined);
+											setStyle(parsed);
+										}
+									})
+									.catch(() => {
+										setJSON("");
+										setJSONError("Could not read that file.");
+									});
+							}}
+						/>
+					</label>
 					{json !== undefined ? (
 						<div className="mt-2">
 							<textarea
