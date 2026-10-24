@@ -1169,6 +1169,8 @@ const MESH_AHEAD = 0.8;
 // (Into his pass set, over no less than this long - off a fake on the
 // run, a moment to pull up into it.)
 const SET_LEAST_MS = 300;
+// A lineman kick-sliding back into it, at this pace (ft/s).
+const SET_FPS = 7;
 // Out there to hand it off, or fake it: at no more than this pace (feet a
 // second), and over no less than this long (ms).
 const QB_STEP_FPS = 15;
@@ -4852,7 +4854,11 @@ class Action {
 				this.w(setPt),
 				Math.max(
 					snap + 650,
-					b.t + Math.max(SET_LEAST_MS, (far / (b.top * 0.75)) * 1000),
+					b.t +
+						Math.max(
+							SET_LEAST_MS,
+							(far / (inBack ? b.top * 0.75 : SET_FPS)) * 1000,
+						),
 				),
 				"passSet",
 				this.ahead,
