@@ -211,6 +211,9 @@ const CUT_ACCEL = 28;
 // sharper than this, radians, that he plants for: see slowFor.)
 const SLOW_DROP = 6;
 const PLANT_TURN = 1.75;
+// (Planted on past the turn, no time for it before: if it leaves him to go
+// on no more than this many times as quick as he would have.)
+const PLANT_ON = 1.35;
 // One stretch of his, pulling up over it (see slowInto): legs no further
 // round from each other than this (radians), none quicker than the next by
 // more than this (ft/s), over no longer than this (ms) - and still there
@@ -221,6 +224,8 @@ const STRETCH_MS = 3000;
 const HOLD_LEFT_MS = 150;
 // (Down at as much as this many times as hard, if he has to be.)
 const STOP_HARD = 1.5;
+// (Cut short no more than this long into a leg, ms: none of it kept.)
+const CUT_SLIVER_MS = 1;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
 const STEPS = new Set<Move>([...GAITS, "back", "slide", "shuffle"]);
 // (Slower than this, ft/s, he is not going anywhere.)
@@ -514,9 +519,14 @@ class Actor {
 	// To `to`, getting there at t1, in `move` (by default by how fast that
 	// is), facing `yaw` (by default the way he goes).
 	go(to: Pt, t1: number, move?: Move, yaw?: number, extra?: Partial<Leg>) {
-		const leg = this.legTo(to, t1, move, yaw, extra);
+		let leg = this.legTo(to, t1, move, yaw, extra);
 		if (extra === undefined) {
+			const t = this.t;
 			const ve = this.slowFor(leg);
+			if (this.t > t) {
+				// (Planted on past where he turns: on from there.)
+				leg = this.legTo(to, t1, move, yaw, extra);
+			}
 			this.rampInto(leg, ve);
 		}
 		this.push(leg);
@@ -526,8 +536,9 @@ class Actor {
 	// than the stride he is in, or a turn sharper than PLANT_TURN he can
 	// carry only so much of his pace round (as on a route - see breakOf):
 	// down to it over the last of the one he is on (see slowInto), planted
-	// for a turn (see CUT_ACCEL), not braked to it in a stride. (Turning,
-	// the pace he is down to.)
+	// for a turn (see CUT_ACCEL), not braked to it in a stride - or, going
+	// too fast to have slowed for it in time, planted on past it (see
+	// plantFor). (Turning, the pace he is down to.)
 	private slowFor(leg: Leg): number | undefined {
 		const l = this.last;
 		if (!STEPS.has(leg.move) || l.t1 <= l.t0 || leg.t1 <= leg.t0) {
@@ -546,7 +557,40 @@ class Actor {
 			return undefined;
 		}
 		const ve = this.slowInto(keep, round < 1 ? CUT_ACCEL : STOP_ACCEL);
+		if (
+			round < 1 &&
+			(ve === undefined || ve > was * keep + SLOW_DROP) &&
+			this.plantFits(leg, was * keep)
+		) {
+			this.plantFor(leg.to, was * keep);
+			return legPace(this.last);
+		}
 		return round < 1 ? ve : undefined;
+	}
+
+	// (Planted on past the end of the leg he is on, down to `down` ft/s
+	// - see plantFor - still time to go on from there to the end of `leg`
+	// by when it ends, at no more than PLANT_ON times its pace, nor more
+	// than his top speed.)
+	private plantFits(leg: Leg, down: number): boolean {
+		const l = this.last;
+		const v = legPace(l);
+		const far = dist(l.from, l.to);
+		if (far <= 0 || down >= v) {
+			return false;
+		}
+		const T = (v - down) / CUT_ACCEL;
+		const d = ((v + down) / 2) * T;
+		const at = {
+			x: l.to.x + ((l.to.x - l.from.x) / far) * d,
+			y: l.to.y + ((l.to.y - l.from.y) / far) * d,
+		};
+		const left = leg.t1 - l.t1 - T * 1000;
+		const most = Math.max(
+			legPace(leg),
+			Math.min(legPace(leg) * PLANT_ON, this.top),
+		);
+		return left >= RAMP_LEG_MS && dist(at, leg.to) / (left / 1000) <= most;
 	}
 
 	// Cutting to `to` by t1 off the leg he is on: down to `keep` of his pace
@@ -784,7 +828,7 @@ class Actor {
 			ve = Math.max(0, vc - Math.sqrt(2 * A * (vc * T - D)));
 		}
 		const td = (vc - ve) / A;
-		if (!(td > 0 && td < T)) {
+		if (!(td * 1000 >= CUT_SLIVER_MS && td < T)) {
 			return undefined;
 		}
 		const cos = (leg.to.x - leg.from.x) / D;
@@ -850,8 +894,9 @@ class Actor {
 	// About to go off toward `to`, well round from the way he is going
 	// (more than CUT_LEAST): planted first - on the way he was going, down
 	// to as much of his pace as he can take round with him (as on a route,
-	// see breakOf) at CUT_ACCEL - not turned round at full speed.
-	plantFor(to: Pt) {
+	// see breakOf), or to `down` ft/s, at CUT_ACCEL - not turned round at
+	// full speed.
+	plantFor(to: Pt, down?: number) {
 		const l = this.last;
 		const v = legPace(l);
 		if (!RAMPS.has(l.move) || v < STOP_LEAST || l.arms || l.turn) {
@@ -861,7 +906,13 @@ class Actor {
 		if (!(turn > CUT_LEAST)) {
 			return;
 		}
-		const ve = v * Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2);
+		const ve = Math.min(
+			v,
+			down ?? v * Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2),
+		);
+		if (!(ve < v)) {
+			return;
+		}
 		const far = dist(l.from, l.to);
 		const cos = (l.to.x - l.from.x) / far;
 		const sin = (l.to.y - l.from.y) / far;
@@ -1189,6 +1240,15 @@ class Actor {
 		while (legs.length > 1 && legs.at(-1)!.t0 >= t) {
 			legs.pop();
 		}
+		// (Not left a leg too short to have any pace to it, from the moment
+		// it began: as if never begun.)
+		if (
+			legs.length > 1 &&
+			legs.at(-1)!.t1 > t &&
+			t - legs.at(-1)!.t0 < CUT_SLIVER_MS
+		) {
+			legs.pop();
+		}
 		const l = legs.at(-1)!;
 		if (l.t1 > t && t > l.t0) {
 			const u = (t - l.t0) / (l.t1 - l.t0);
@@ -1502,12 +1562,14 @@ const BACK_OFF_LINE = 9;
 // A play-action pass: this often, when it goes this far in the air (yards)
 // and a back is there to fake it to; the fake this long (the ball out to
 // him half way through), the back on past it this far (feet); and the
-// linebackers drawn up this far by it.
+// linebackers drawn up this far by it (no quicker than this, ft/s: a
+// step or two, not a lunge).
 const PA_SHARE = 0.4;
 const PA_AIR = 8;
 const PA_MS = 400;
 const PA_PAST = 5;
 const PA_BITE = 4;
+const PA_BITE_FPS = 8;
 // Off this many of the fakes under center, a bootleg: the quarterback away
 // from the fake round the edge, this far out (feet), at this pace (feet a
 // second), and the throw on the run - as soon as he is most of the way.
@@ -4353,8 +4415,43 @@ class Action {
 	// whenever gets him there easiest) - with time to spare, up to a few
 	// steps off to break down, and in from there.
 	closeOn(m: Actor, hit: Pt, lead: number, face: number) {
-		const need = (c: number) =>
-			dist(m.posAt(c), hit) / Math.max(0.001, (lead - c) / 1000);
+		// (Where and when he is off his new way, leaving what he was doing
+		// at c: planted on past it first, going at all quick and well round
+		// from it - see plantFor.)
+		const offAt = (c: number): { at: Pt; t: number } => {
+			const at = m.posAt(c);
+			const l = m.legs.findLast((x) => x.t0 < c && x.t1 > x.t0);
+			const v = l ? legPace(l) : 0;
+			const far = l ? dist(l.from, l.to) : 0;
+			if (
+				!l ||
+				!RAMPS.has(l.move) ||
+				v < STOP_LEAST ||
+				l.arms ||
+				l.turn ||
+				far <= 0
+			) {
+				return { at, t: c };
+			}
+			const cos = (l.to.x - l.from.x) / far;
+			const sin = (l.to.y - l.from.y) / far;
+			const turn = angleAt(
+				{ x: at.x - cos, y: at.y - sin },
+				at,
+				dist(at, hit) > 0 ? hit : { x: at.x + cos, y: at.y + sin },
+			);
+			if (!(turn > CUT_LEAST)) {
+				return { at, t: c };
+			}
+			const ve = v * Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2);
+			const T = (v - ve) / CUT_ACCEL;
+			const d = ((v + ve) / 2) * T;
+			return { at: { x: at.x + cos * d, y: at.y + sin * d }, t: c + T * 1000 };
+		};
+		const need = (c: number) => {
+			const o = offAt(c);
+			return dist(o.at, hit) / Math.max(0.001, (lead - o.t) / 1000);
+		};
 		let c = Math.max(this.seen, Math.min(m.t, lead - 100));
 		let best = c;
 		while (c > this.seen && need(c) > m.top * CLOSE) {
@@ -4368,6 +4465,7 @@ class Action {
 		}
 		m.cut(c);
 		m.hold(c);
+		m.plantFor(hit);
 		const far = dist(m.at, hit);
 		const secs = (lead - m.t) / 1000;
 		if (far > 8 && far < m.top * 0.5 * secs) {
@@ -5406,7 +5504,10 @@ class Action {
 				if (fake !== undefined && LB.has(m.role)) {
 					m.go(
 						this.w({ d: start.d - PA_BITE, a: start.a }),
-						Math.min(snap + 600, fake),
+						Math.max(
+							Math.min(snap + 600, fake),
+							m.t + (PA_BITE / PA_BITE_FPS) * 1000,
+						),
 						undefined,
 						this.behind,
 					);
@@ -5482,6 +5583,8 @@ class Action {
 						}
 					}
 					closing.push(spot);
+					// (Planted first, going the other way - see plantFor.)
+					m.plantFor(spot);
 					m.go(
 						spot,
 						Math.max(catchAt + 150, m.t + (dist(m.at, spot) / m.top) * 1000),

@@ -389,6 +389,9 @@ const HURRY_DEFENSE = 14;
 const HURRY_ACROSS = 6;
 const HURRY_SPREAD = 350;
 const HURRY_FPS = [10, 4] as const;
+// (No quicker than gets him going and pulled up again over the way he
+// has: as if at this many ft/s a second, both ways.)
+const HURRY_EASE = 9;
 const HURRY_OUT = new Set<Role>(["X", "Z", "SL", "SL2", "TE", "TE2"]);
 // Into his stance at the end of it: the last SET_IN_FT of the way at a
 // walk (SET_IN_FPS), the rest of it that much quicker (no more than
@@ -2231,7 +2234,10 @@ class Director {
 			};
 			const d = Math.hypot(p.at.x - from.x, p.at.y - from.y);
 			const leave = t0 + r() * HURRY_SPREAD;
-			const fps = HURRY_FPS[0] + r() * HURRY_FPS[1];
+			const fps = Math.min(
+				HURRY_FPS[0] + r() * HURRY_FPS[1],
+				Math.max(SET_IN_FPS, Math.sqrt(HURRY_EASE * d)),
+			);
 			const arrive = leave + (d / fps) * 1000;
 			parts.push({
 				pid: p.pid,
@@ -2246,7 +2252,13 @@ class Director {
 						move: "stand",
 						yaw: Math.atan2(p.at.y - from.y, p.at.x - from.x),
 					},
-					...intoStance(from, p.at, leave, arrive, fps < 12.5 ? "jog" : "run"),
+					...intoStance(
+						from,
+						p.at,
+						leave,
+						arrive,
+						fps < 6 ? "walk" : fps < 12.5 ? "jog" : "run",
+					),
 					{
 						t0: arrive,
 						t1: arrive,
