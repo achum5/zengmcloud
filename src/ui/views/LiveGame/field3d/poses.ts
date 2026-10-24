@@ -3381,8 +3381,16 @@ const FIELD_ANIMS = {
 export type FieldAnimName = keyof typeof FIELD_ANIMS;
 
 // The court's moves a football player makes as they are: walking, jogging,
-// running, sprinting, backpedaling, sliding.
-const COURT_MOVES = ["walk", "jog", "run", "sprint", "back", "slide"] as const;
+// running, sprinting, backpedaling, sliding, shuffling across.
+const COURT_MOVES = [
+	"walk",
+	"jog",
+	"run",
+	"sprint",
+	"back",
+	"slide",
+	"shuffle",
+] as const;
 export type CourtMove = (typeof COURT_MOVES)[number];
 export type Move = FieldAnimName | CourtMove;
 

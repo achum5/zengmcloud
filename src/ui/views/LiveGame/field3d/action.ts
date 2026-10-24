@@ -205,6 +205,48 @@ const STOP_STEP_MS = 100;
 // (From no slower than this, ft/s.)
 const STOP_LEAST = 8;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
+// Going well off the way he faces (more than CRAB_OFF radians), in a gait
+// that goes the way it faces (or low steps up): at no more than
+// SHUFFLE_MOST ft/s, push steps across, square to the way he goes - or,
+// further round than BACK_OFF, at no more than BACK_MOST, a backpedal - in
+// its place; a gait quicker than that, turned the way he goes (no man runs
+// sideways).
+const CRAB_OFF = 1.05;
+const BACK_OFF = 2.1;
+const SHUFFLE_MOST = 7;
+const BACK_MOST = 11;
+const faced = (
+	move: Move,
+	yaw: number | undefined,
+	from: Pt,
+	to: Pt,
+	fps: number,
+): { move: Move; yaw: number | undefined } => {
+	const gaited = GAITS.has(move);
+	if (
+		yaw === undefined ||
+		(!gaited && move !== "slide") ||
+		dist(from, to) < 1
+	) {
+		return { move, yaw };
+	}
+	const way = Math.atan2(to.y - from.y, to.x - from.x);
+	const d = yaw - way - Math.round((yaw - way) / (2 * Math.PI)) * 2 * Math.PI;
+	const off = Math.abs(d);
+	if (off <= CRAB_OFF) {
+		return { move, yaw };
+	}
+	if (off <= BACK_OFF && fps <= SHUFFLE_MOST) {
+		return {
+			move: "shuffle",
+			yaw: way + (d > 0 ? 1 : -1) * (Math.PI / 2),
+		};
+	}
+	if (off > BACK_OFF && fps <= BACK_MOST) {
+		return { move: "back", yaw };
+	}
+	return gaited ? { move, yaw: undefined } : { move, yaw };
+};
 // (In the gait he was in, a run or a sprint down to a jog once he is
 // that slow, with this long (ms) at least still to go - not a gait to
 // each step, nor one for a moment at the last.)
@@ -401,13 +443,14 @@ class Actor {
 		const t0 = l.t1;
 		const end = Math.max(t1, t0 + 1);
 		const fps = dist(l.to, p) / ((end - t0) / 1000);
+		const way = faced(paced(move, fps, end - t0), yaw, l.to, p, fps);
 		const leg: Leg = {
 			t0,
 			t1: end,
 			from: l.to,
 			to: p,
-			move: paced(move, fps, end - t0),
-			...(yaw !== undefined ? { yaw } : {}),
+			move: way.move,
+			...(way.yaw !== undefined ? { yaw: way.yaw } : {}),
 			...extra,
 		};
 		if (extra === undefined) {
@@ -821,6 +864,7 @@ const IN_HANDS = new Set<Move>([
 	"scoop",
 	"back",
 	"slide",
+	"shuffle",
 	"walk",
 	"shotgun",
 	"underCenter",
@@ -840,7 +884,7 @@ const IN_HAND = new Set<Move>([
 	"pointSky",
 	"bowl",
 ]);
-const HELD_UP = new Set<Move>(["back", "slide", "walk", "stand"]);
+const HELD_UP = new Set<Move>(["back", "slide", "shuffle", "walk", "stand"]);
 const holdFor = (m: Move): BallHold =>
 	m === "center"
 		? "snap"
