@@ -4,6 +4,7 @@ import {
 	keep,
 	rim,
 	stamp,
+	type Kept,
 	type Scratch,
 	type SpriteCache,
 } from "../court3d/sprite.ts";
@@ -465,18 +466,32 @@ const figureOf = (st: FieldPlayerState, body: Body, s: Stepped): Figure => {
 // How much of the light is left in the shade (a touch more of the blue).
 const SHADED = 0.66;
 
-export const drawFieldPlayer = (
-	ctx: CanvasRenderingContext2D,
-	scratch: Scratch,
+// What drawing him takes this frame: where he stands on the picture and
+// the box round him there, his pose in the sprite's steps, his size in
+// steps of 4%, whether the ball is drawn with him, and his picture's key in
+// the cache (with one).
+type Plan = {
+	base: ReturnType<typeof project>;
+	lift: number;
+	left: number;
+	right: number;
+	upper: number;
+	lower: number;
+	step: Stepped;
+	scale: number;
+	held: boolean;
+	shaded: boolean;
+	key?: string;
+};
+const planOf = (
 	cam: Camera,
 	st: FieldPlayerState,
 	body: Body,
 	look: FieldLook,
 	px: number,
-	cache?: SpriteCache,
-	// Standing in the shadow of the stands (a day game's).
-	shaded = false,
-) => {
+	cache: SpriteCache | undefined,
+	shaded: boolean,
+): Plan | undefined => {
 	const base = project(cam, { x: st.x, y: st.y, z: 0 });
 	const k = base.k;
 	const fine = cache?.fine === true;
@@ -489,46 +504,87 @@ export const drawFieldPlayer = (
 	const upper = base.y - (body.H * 1.4 + 0.5) * k - lift;
 	const lower = base.y + 0.9 * k - lift;
 	if (right < 0 || left > cam.viewW || lower < 0 || upper > cam.viewH) {
-		return;
+		return undefined;
 	}
-	const { phase, turn, from, arms, len, feet } = step;
 	const scale = Math.round(Math.log(k) / Math.log(1.04));
-	let key: string | undefined;
-	let id = 0;
+	const plan: Plan = {
+		base,
+		lift,
+		left,
+		right,
+		upper,
+		lower,
+		step,
+		scale,
+		held: st.ball !== undefined && !st.unseen,
+		shaded,
+	};
 	if (cache) {
+		const { phase, turn, from, arms, len, feet } = step;
 		const known = cache.ids.get(look);
-		id = known ?? cache.next++;
+		const id = known ?? cache.next++;
 		if (known === undefined) {
 			cache.ids.set(look, id);
 		}
-		key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}${len ? `s${len}` : ""}${feet ? `v${feet.join(",")}` : ""}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
+		plan.key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}${len ? `s${len}` : ""}${feet ? `v${feet.join(",")}` : ""}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
 			from
 				? `|${from.move}${from.mirrored ? "m" : ""}${from.steps ? "!" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}${underKey(from.under)}`
 				: ""
 		}${shaded ? "|d" : ""}`;
-		const kept = cache.kept.get(key);
-		if (kept) {
-			cache.kept.delete(key);
-			cache.kept.set(key, kept);
-			stamp(ctx, kept, base.x, base.y - lift, px);
-			cache.last.set(id, { kept, frame: cache.frame, behind: 0, scale });
-			return;
-		}
-		const was = cache.last.get(id);
-		const over = cache.budget !== undefined && cache.spent >= cache.budget;
-		if (
-			over &&
-			was &&
-			was.behind < 3 &&
-			was.frame === cache.frame - 1 &&
-			Math.abs(was.scale - scale) <= 1
-		) {
-			stamp(ctx, was.kept, base.x, base.y - lift, px);
-			was.frame = cache.frame;
-			was.behind += 1;
-			return;
-		}
 	}
+	return plan;
+};
+
+// This frame's plan for each man made ready (see prepareFieldSprites).
+const planned = new WeakMap<
+	SpriteCache,
+	{ frame: number; plans: Map<FieldPlayerState, Plan> }
+>();
+const plansOf = (cache: SpriteCache) => {
+	let p = planned.get(cache);
+	if (!p || p.frame !== cache.frame) {
+		p = { frame: cache.frame, plans: new Map() };
+		planned.set(cache, p);
+	}
+	return p.plans;
+};
+
+// Whether he may be drawn this frame in the picture he had last frame (out
+// of time for a new one): if he had one a frame ago, not for too many frames
+// already, not much bigger or smaller since, and never with the ball in it
+// when he has let it go, or without it once he has it (see court3d's
+// asWas). Who he is, by his id: two men may look alike.
+const MAX_BEHIND = 3;
+const asWas = (cache: SpriteCache, plan: Plan, who: number) => {
+	const was = cache.last.get(who);
+	return was &&
+		was.behind < MAX_BEHIND &&
+		was.frame === cache.frame - 1 &&
+		Math.abs(was.scale - plan.scale) <= 1 &&
+		(was.held ?? false) === plan.held
+		? was
+		: undefined;
+};
+const overBudget = (cache: SpriteCache) =>
+	cache.budget !== undefined && cache.spent >= cache.budget;
+
+// His picture for the plan, sculpted: kept, with a cache - or, without,
+// left on the scratch sheet to be drawn from (its box there, and where that
+// goes on the picture). Nothing, if nothing of him shows.
+const make = (
+	plan: Plan,
+	scratch: Scratch,
+	cam: Camera,
+	st: FieldPlayerState,
+	body: Body,
+	look: FieldLook,
+	px: number,
+	cache: SpriteCache | undefined,
+):
+	| Kept
+	| { rx0: number; ry0: number; rw: number; rh: number; x: number; y: number }
+	| undefined => {
+	const { base, lift, left, right, upper, lower, step } = plan;
 	const began = cache ? performance.now() : 0;
 	const fig = figureOf(st, body, step);
 	const w = Math.max(4, Math.ceil((right - left) / px) + 2);
@@ -544,7 +600,7 @@ export const drawFieldPlayer = (
 	const oy = upper + lift - px;
 	const made = sculptFigure(cam, fig, body, look, px, ox, oy, w, h);
 	const box = made.box;
-	if (shaded) {
+	if (plan.shaded) {
 		const d = made.img.data;
 		for (let i = 0; i < d.length; i += 4) {
 			d[i] = d[i]! * SHADED;
@@ -558,13 +614,13 @@ export const drawFieldPlayer = (
 	const rw = Math.min(w, box.x1 + 2) - rx0;
 	const rh = Math.min(h, box.y1 + 2) - ry0;
 	if (rw <= 0 || rh <= 0) {
-		return;
+		return undefined;
 	}
 	s.putImageData(made.img, 0, 0, rx0, ry0, rw, rh);
-	if (cache && key) {
+	if (cache && plan.key) {
 		const kept = keep(
 			cache,
-			key,
+			plan.key,
 			canvas,
 			rx0,
 			ry0,
@@ -574,22 +630,143 @@ export const drawFieldPlayer = (
 			oy + ry0 * px - base.y,
 		);
 		cache.spent += performance.now() - began;
-		cache.last.set(id, { kept, frame: cache.frame, behind: 0, scale });
-		stamp(ctx, kept, base.x, base.y - lift, px);
+		return kept;
+	}
+	return { rx0, ry0, rw, rh, x: ox + rx0 * px, y: oy + ry0 * px - lift };
+};
+
+// Which picture he is drawn in this frame: his own for this pose, kept;
+// the one he had, if he may be drawn as he was, out of time for a new one;
+// or none yet, to be made now - and the books kept on it.
+const pick = (cache: SpriteCache, plan: Plan, who: number): Kept | "make" => {
+	const kept = plan.key === undefined ? undefined : cache.kept.get(plan.key);
+	if (kept && plan.key !== undefined) {
+		// Kept longest are the ones still in use: to the back of the line.
+		cache.kept.delete(plan.key);
+		cache.kept.set(plan.key, kept);
+		cache.last.set(who, {
+			kept,
+			frame: cache.frame,
+			behind: 0,
+			scale: plan.scale,
+			held: plan.held,
+		});
+		return kept;
+	}
+	if (overBudget(cache)) {
+		const was = asWas(cache, plan, who);
+		if (was) {
+			was.frame = cache.frame;
+			was.behind += 1;
+			return was.kept;
+		}
+	}
+	return "make";
+};
+
+// THE NEW PICTURES A FRAME NEEDS, MADE FIRST - the men on the field before
+// anyone off it, and of them the nearest the camera first: drawn back to
+// front, a frame out of time ran out on the men in the play and nearest,
+// the biggest on the picture, and drew them behind their pose. Made here
+// first instead, while there is time (and whoever has no picture to be
+// drawn in meanwhile, regardless), the men left a frame behind are the
+// furthest and smallest, and those on the sidelines (see court3d's
+// prepareSprites).
+export const prepareFieldSprites = (
+	scratch: Scratch,
+	cam: Camera,
+	men: {
+		st: FieldPlayerState;
+		body: Body;
+		look: FieldLook;
+		shaded: boolean;
+		off?: boolean;
+	}[],
+	px: number,
+	cache: SpriteCache,
+) => {
+	const plans = plansOf(cache);
+	const todo: { man: (typeof men)[number]; plan: Plan; wait: boolean }[] = [];
+	for (const man of men) {
+		const plan = planOf(cam, man.st, man.body, man.look, px, cache, man.shaded);
+		if (plan?.key === undefined) {
+			continue;
+		}
+		plans.set(man.st, plan);
+		if (!cache.kept.has(plan.key)) {
+			todo.push({
+				man,
+				plan,
+				wait: asWas(cache, plan, man.st.id) !== undefined,
+			});
+		}
+	}
+	todo.sort(
+		(a, b) =>
+			(a.man.off ? 1 : 0) - (b.man.off ? 1 : 0) ||
+			b.plan.base.k - a.plan.base.k,
+	);
+	for (const { man, plan, wait } of todo) {
+		if (wait && overBudget(cache)) {
+			continue;
+		}
+		make(plan, scratch, cam, man.st, man.body, man.look, px, cache);
+	}
+};
+
+export const drawFieldPlayer = (
+	ctx: CanvasRenderingContext2D,
+	scratch: Scratch,
+	cam: Camera,
+	st: FieldPlayerState,
+	body: Body,
+	look: FieldLook,
+	px: number,
+	cache?: SpriteCache,
+	// Standing in the shadow of the stands (a day game's).
+	shaded = false,
+) => {
+	const plan =
+		(cache && plansOf(cache).get(st)) ??
+		planOf(cam, st, body, look, px, cache, shaded);
+	if (!plan) {
+		return;
+	}
+	const { base, lift } = plan;
+	if (cache && plan.key !== undefined) {
+		const was = pick(cache, plan, st.id);
+		if (was !== "make") {
+			stamp(ctx, was, base.x, base.y - lift, px);
+			return;
+		}
+	}
+	const made = make(plan, scratch, cam, st, body, look, px, cache);
+	if (!made) {
+		return;
+	}
+	if ("canvas" in made) {
+		cache?.last.set(st.id, {
+			kept: made,
+			frame: cache.frame,
+			behind: 0,
+			scale: plan.scale,
+			held: plan.held,
+		});
+		stamp(ctx, made, base.x, base.y - lift, px);
 		return;
 	}
 	const smoothing = ctx.imageSmoothingEnabled;
 	ctx.imageSmoothingEnabled = false;
 	ctx.drawImage(
-		canvas,
-		rx0,
-		ry0,
-		rw,
-		rh,
-		Math.round(ox + rx0 * px),
-		Math.round(oy + ry0 * px - lift),
-		rw * px,
-		rh * px,
+		scratch.canvas,
+		made.rx0,
+		made.ry0,
+		made.rw,
+		made.rh,
+		Math.round(made.x),
+		Math.round(made.y),
+		made.rw * px,
+		made.rh * px,
 	);
 	ctx.imageSmoothingEnabled = smoothing;
 };

@@ -88,7 +88,12 @@ import {
 	tvCameraGear,
 } from "./media.ts";
 import { tvCrewFor } from "./tv.ts";
-import { drawFieldPlayer, drawnBall, drawnLift } from "./sprite.ts";
+import {
+	drawFieldPlayer,
+	drawnBall,
+	drawnLift,
+	prepareFieldSprites,
+} from "./sprite.ts";
 import { drawTags, type TagCover } from "./tags.ts";
 import { showerGear } from "./shower.ts";
 import { chainGear } from "./sticks.ts";
@@ -644,12 +649,23 @@ const Field3D = ({
 				...sidelineAt(sidelineRef.current, tl, moment),
 				...snappers,
 			];
-			for (const st of standing) {
+			// (Their new pictures made before anything is drawn: see
+			// prepareFieldSprites.)
+			const men: Parameters<typeof prepareFieldSprites>[2] = [];
+			standing.forEach((st, i) => {
 				const l = st.bare ? bareLook(look(st.id)) : look(st.id);
 				if (!l) {
-					continue;
+					return;
 				}
 				const shaded = inShadow(shadow, st);
+				const up = drawnUp(st);
+				men.push({
+					st: up,
+					body: body(st.id),
+					look: l,
+					shaded,
+					off: i >= moment.players.length,
+				});
 				items.push({
 					depth: depthOf(view, { x: st.x, y: st.y, z: 0 }),
 					draw: () => {
@@ -657,7 +673,7 @@ const Field3D = ({
 							ctx,
 							scratch,
 							view,
-							drawnUp(st),
+							up,
 							body(st.id),
 							l,
 							1,
@@ -666,7 +682,7 @@ const Field3D = ({
 						);
 					},
 				});
-			}
+			});
 			const ball = moment.ball;
 			if (ball) {
 				const axis = ball.axis;
@@ -712,6 +728,7 @@ const Field3D = ({
 			}
 			startFrame(sprites);
 			const drawStart = performance.now();
+			prepareFieldSprites(scratch, view, men, 1, sprites);
 			drawFieldFrame({
 				ctx,
 				cam: view,
