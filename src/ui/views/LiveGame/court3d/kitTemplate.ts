@@ -8,16 +8,22 @@ import {
 import type { PlayerState } from "./evaluate.ts";
 import { kitsFor, type Look } from "./figure.ts";
 import {
+	ART_DIGITS,
 	ART_GUIDE,
 	ART_H,
+	ART_H_LETTERED,
 	ART_JERSEY,
+	ART_LETTERS,
 	ART_PANELS,
+	ART_SETTINGS,
 	ART_SHORTS,
 	ART_SWATCHES,
 	ART_W,
 	artAt,
 	type ArtWrap,
+	DEFAULT_FIT,
 	type KitArt,
+	writeFit,
 } from "./kitArt.ts";
 import { bodyOf } from "./poses.ts";
 import { LETTERING, sculpt, wrapsFor } from "./sculpt.ts";
@@ -26,7 +32,9 @@ import { LETTERING, sculpt, wrapsFor } from "./sculpt.ts";
 // and the shorts' panels, clear wherever they show on a player, magenta
 // where they never do and where the trim goes, with the panels, his number
 // and name and the swatches marked out in magenta too - all of which a
-// picture loses when it is read.
+// picture loses when it is read. Under them, the lettering: the settings
+// strip (as it is by default) and a cell for each character of the team's
+// own type, each marked with its character.
 
 // Which of the picture's pixels show on a player (1), and which the trim
 // covers (2): him seen from all round, from up in the stands and from low
@@ -153,9 +161,9 @@ export const kitTemplate = async (): Promise<HTMLCanvasElement> => {
 	const seen = await seenOnHim();
 	const cv = document.createElement("canvas");
 	cv.width = ART_W;
-	cv.height = ART_H;
+	cv.height = ART_H_LETTERED;
 	const g = cv.getContext("2d")!;
-	const img = g.createImageData(ART_W, ART_H);
+	const img = g.createImageData(ART_W, ART_H_LETTERED);
 	const d = img.data;
 	// Where nothing shows, a check; where the trim goes, solid.
 	for (const band of [ART_JERSEY, ART_SHORTS]) {
@@ -173,6 +181,7 @@ export const kitTemplate = async (): Promise<HTMLCanvasElement> => {
 			}
 		}
 	}
+	writeFit(d, ART_W, 1, DEFAULT_FIT);
 	g.putImageData(img, 0, 0);
 	g.fillStyle = ART_GUIDE;
 	g.strokeStyle = ART_GUIDE;
@@ -224,6 +233,24 @@ export const kitTemplate = async (): Promise<HTMLCanvasElement> => {
 	] as const) {
 		g.strokeRect(x - 0.5, ART_SWATCHES.y - 0.5, S + 1, S + 1);
 		g.fillText(label, x + S + 3, ART_SWATCHES.y + S / 2);
+	}
+	// The lettering.
+	g.fillText(
+		"SETTINGS",
+		ART_SETTINGS.x + 9 * ART_SETTINGS.size + 4,
+		ART_SETTINGS.y + ART_SETTINGS.size / 2,
+	);
+	g.textBaseline = "bottom";
+	g.fillText("NUMBER", ART_DIGITS.x, ART_DIGITS.y - 1);
+	g.fillText("NAME", ART_LETTERS[0]!.x, ART_LETTERS[0]!.y - 1);
+	g.textBaseline = "top";
+	for (const row of [ART_DIGITS, ...ART_LETTERS]) {
+		for (const [i, ch] of [...row.chars].entries()) {
+			const x = row.x + i * row.w;
+			g.strokeRect(x + 0.5, row.y + 0.5, row.w - 1, row.h - 1);
+			g.font = "6px sans-serif";
+			g.fillText(ch, x + 2, row.y + 2);
+		}
 	}
 	return cv;
 };

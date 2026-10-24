@@ -8,6 +8,8 @@ import {
 	artColor,
 	artWrap,
 	type ArtWrap,
+	DEFAULT_FIT,
+	type KitArt,
 } from "./kitArt.ts";
 import {
 	bodyPoint,
@@ -248,6 +250,34 @@ const sheetCanvas = (w: number, h: number) => {
 	return cv;
 };
 
+// A lettered picture's lettering (the part of it under the swatches), as a
+// picture to set characters from.
+const glyphPictures = new WeakMap<KitArt, HTMLCanvasElement | null>();
+const glyphPicture = (art: KitArt): HTMLCanvasElement | undefined => {
+	let cv = glyphPictures.get(art);
+	if (cv === undefined) {
+		cv = null;
+		const W = ART_W * art.scale;
+		const top = ART_H * art.scale;
+		const h = art.data.length / 4 / W - top;
+		if (h > 0 && typeof ImageData !== "undefined") {
+			const made = sheetCanvas(W, h);
+			const g = made.getContext("2d");
+			if (g) {
+				g.putImageData(new ImageData(art.data.slice(top * W * 4), W, h), 0, 0);
+				cv = made;
+			}
+		}
+		glyphPictures.set(art, cv);
+	}
+	return cv ?? undefined;
+};
+
+// How tall a digit or a capital stands, in its type's size; and how far an
+// arched name rises in its middle at full arch, in its width.
+const CAP = 0.72;
+const ARCH = 0.12;
+
 const jerseySheet = (
 	look: Look,
 	body: Body,
@@ -349,6 +379,80 @@ const letterSheet = (
 		return undefined;
 	}
 	const kit = look.kit;
+	const art = look.kitArt;
+	// (A warm-up top is lettered the usual way.)
+	const fit = (!warmup && art?.fit) || DEFAULT_FIT;
+	const glyphs = warmup ? undefined : art?.glyphs;
+	const glyphPic = glyphs && art ? glyphPicture(art) : undefined;
+	g.imageSmoothingEnabled = true;
+	g.imageSmoothingQuality = "high";
+	// A line set in the team's own lettering, if it has every character of
+	// it: each as wide as it was painted, the line squeezed into `maxW` and
+	// bent round the arch.
+	const setLine = (
+		str: string,
+		x: number,
+		cy: number,
+		size: number,
+		maxW: number,
+		arch: number,
+	) => {
+		if (!glyphs || !glyphPic) {
+			return false;
+		}
+		const top = ART_H * art!.scale;
+		const boxes: (readonly [number, number, number, number] | undefined)[] = [];
+		let rowH = 0;
+		for (const ch of str.normalize("NFD").replaceAll(/[\u0300-\u036F]/g, "")) {
+			if (ch === " ") {
+				boxes.push(undefined);
+				continue;
+			}
+			const b = glyphs[ch];
+			if (!b) {
+				return false;
+			}
+			boxes.push(b);
+			rowH = Math.max(rowH, b[3]);
+		}
+		if (rowH === 0) {
+			return false;
+		}
+		const k = (size * ppf * CAP) / rowH;
+		const gap = rowH * 0.06;
+		const space = rowH * 0.4;
+		let total = -gap;
+		for (const b of boxes) {
+			total += (b ? b[2] : space) + gap;
+		}
+		const kx = k * Math.min(1, (maxW * ppf) / (total * k));
+		const half = (total * kx) / 2;
+		const A = arch * total * kx * ARCH;
+		let at = x - half;
+		for (const b of boxes) {
+			const bw = (b ? b[2] : space) * kx;
+			if (b) {
+				const t = (at + bw / 2 - x) / half;
+				g.save();
+				g.translate(at + bw / 2, cy - A * (1 - t * t));
+				g.rotate(Math.atan((2 * A * t) / half));
+				g.drawImage(
+					glyphPic,
+					b[0],
+					b[1] - top,
+					b[2],
+					b[3],
+					-bw / 2,
+					(-b[3] * k) / 2,
+					bw,
+					b[3] * k,
+				);
+				g.restore();
+			}
+			at += bw + gap * kx;
+		}
+		return true;
+	};
 	const text = (
 		str: string,
 		x: number,
@@ -357,25 +461,55 @@ const letterSheet = (
 		edge: boolean,
 		maxW: number,
 		color = kit.number,
+		arch = 0,
 	) => {
 		if (!str) {
 			return;
 		}
+		const cy = (u0 - u) * ppf;
+		if (setLine(str, x, cy, size, maxW, arch)) {
+			return;
+		}
 		const px = size * ppf;
 		g.save();
-		g.translate(x, (u0 - u) * ppf);
+		g.translate(x, cy);
 		g.scale(0.92, 1);
 		g.font = `bold ${px}px "Arial Narrow", "Helvetica Neue", Arial, sans-serif`;
 		g.textAlign = "center";
 		g.textBaseline = "middle";
 		g.lineJoin = "round";
-		if (edge) {
-			g.lineWidth = Math.max(1, px * 0.1);
-			g.strokeStyle = kit.numberEdge;
-			g.strokeText(str, 0, 0, maxW * ppf);
-		}
+		g.lineWidth = Math.max(1, px * 0.1);
+		g.strokeStyle = kit.numberEdge;
 		g.fillStyle = color;
-		g.fillText(str, 0, 0, maxW * ppf);
+		if (arch === 0) {
+			if (edge) {
+				g.strokeText(str, 0, 0, maxW * ppf);
+			}
+			g.fillText(str, 0, 0, maxW * ppf);
+		} else {
+			// A letter at a time, round the arch.
+			const chars = [...str];
+			const widths = chars.map((ch) => g.measureText(ch).width);
+			const total = widths.reduce((sum, w) => sum + w, 0);
+			const squeeze = Math.min(1, (maxW * ppf) / total);
+			const half = (total * squeeze) / 2;
+			const A = arch * total * squeeze * ARCH;
+			let at = -half;
+			for (const [i, ch] of chars.entries()) {
+				const cw = widths[i]! * squeeze;
+				const t = (at + cw / 2) / half;
+				g.save();
+				g.translate(at + cw / 2, -A * (1 - t * t));
+				g.rotate(Math.atan((2 * A * t) / half));
+				g.scale(squeeze, 1);
+				if (edge) {
+					g.strokeText(ch, 0, 0);
+				}
+				g.fillText(ch, 0, 0);
+				g.restore();
+				at += cw;
+			}
+		}
 		g.restore();
 	};
 	// The chest: the team's name over the number - unless his uniform is a
@@ -387,10 +521,10 @@ const letterSheet = (
 		text(
 			look.jerseyNumber,
 			w / 2,
-			T * L.number.u,
-			body.H * L.number.size,
+			T * (L.number.u + fit.numberUp),
+			body.H * L.number.size * fit.numberSize,
 			true,
-			aS * L.number.maxW,
+			aS * L.number.maxW * Math.max(1, fit.numberSize),
 		);
 	}
 	if (crest && crest.width > 0 && crest.height > 0) {
@@ -424,20 +558,21 @@ const letterSheet = (
 		text(
 			look.jerseyNumber,
 			x,
-			T * L.backNumber.u,
-			body.H * L.backNumber.size,
+			T * (L.backNumber.u + fit.backUp),
+			body.H * L.backNumber.size * fit.backSize,
 			!warmup,
-			aS * L.backNumber.maxW,
+			aS * L.backNumber.maxW * Math.max(1, fit.backSize),
 			warmup ? kit.chest : kit.number,
 		);
 		text(
 			look.lastName.toUpperCase(),
 			x,
-			T * L.name.u,
-			body.H * L.name.size,
+			T * (L.name.u + fit.nameUp),
+			body.H * L.name.size * fit.nameSize,
 			false,
 			aS * L.name.maxW,
 			warmup ? kit.chest : kit.name,
+			fit.nameArch,
 		);
 	}
 	return cv;
@@ -1399,6 +1534,8 @@ export const sculpt = (
 	const sheet = b.sheet;
 	const wraps = b.wraps;
 	const art = look.kitArt;
+	// (The trim round his neck and armholes the picture's own, not painted on.)
+	const trimFromArt = art?.fit?.trim === "picture" && wraps !== undefined;
 	const artXY = new Float64Array(2);
 	const artPx = new Float64Array(3);
 	const artRGB: RGB = [0, 0, 0];
@@ -1492,7 +1629,7 @@ export const sculpt = (
 			if (edge < 0) {
 				c = pal.skin;
 				cloth = false;
-			} else if (edge < cut.trim && !outfit) {
+			} else if (edge < cut.trim && !outfit && !trimFromArt) {
 				c = pal.trim;
 				if (seen && wraps) {
 					artAt(wraps.jersey, U, S, F, false, artXY);

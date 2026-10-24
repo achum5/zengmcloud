@@ -4,8 +4,11 @@ import { SIM_INERT_STORES } from "../../../../worker/core/sync/publishGuards.ts"
 import { serializeUniform } from "../../../../common/uniform.ts";
 import { gearFor, kitsFor } from "./figure.ts";
 import {
+	ART_DIGITS,
 	ART_H,
+	ART_H_LETTERED,
 	ART_JERSEY,
+	ART_LETTERS,
 	ART_PANELS,
 	ART_SHORTS,
 	ART_SWATCHES,
@@ -13,8 +16,12 @@ import {
 	artAt,
 	artColor,
 	artScaleOf,
+	DEFAULT_FIT,
 	dressKit,
+	type KitFit,
 	kitArtFromPixels,
+	readFit,
+	writeFit,
 } from "./kitArt.ts";
 import { bodyOf } from "./poses.ts";
 import { wrapsFor } from "./sculpt.ts";
@@ -142,6 +149,94 @@ describe("uniforms drawn from a picture", () => {
 		assert.strictEqual(dressed.number, "#f0b414");
 		assert.strictEqual(dressed.numberEdge, kit.numberEdge);
 		assert.strictEqual(dressKit(kit, undefined), kit);
+	});
+
+	test("a lettered picture keeps its settings, at any size", () => {
+		assert.strictEqual(artScaleOf(ART_W, ART_H_LETTERED), 1);
+		assert.strictEqual(artScaleOf(ART_W * 4, ART_H_LETTERED * 4), 4);
+		const fit: KitFit = {
+			numberSize: 1.3,
+			numberUp: -0.06,
+			backSize: 0.8,
+			backUp: 0.04,
+			nameSize: 1.5,
+			nameUp: -0.02,
+			nameArch: 0.6,
+			trim: "picture",
+		};
+		for (const scale of [1, 2, 4]) {
+			const W = ART_W * scale;
+			const data = new Uint8ClampedArray(W * ART_H_LETTERED * scale * 4);
+			assert.isUndefined(readFit(data, W, scale));
+			writeFit(data, W, scale, fit);
+			const read = readFit(data, W, scale)!;
+			for (const key of Object.keys(fit) as (keyof KitFit)[]) {
+				if (key === "trim") {
+					assert.strictEqual(read.trim, "picture");
+				} else {
+					assert.closeTo(read[key], fit[key], 0.01, key);
+				}
+			}
+			writeFit(data, W, scale, DEFAULT_FIT);
+			assert.deepEqual(
+				Object.values(readFit(data, W, scale)!).map((v) =>
+					typeof v === "number" ? Math.round(v * 100) / 100 : v,
+				),
+				Object.values(DEFAULT_FIT),
+			);
+		}
+	});
+
+	test("a lettered picture's characters: as wide as painted, standing on one line", () => {
+		const scale = 2;
+		const W = ART_W * scale;
+		const data = new Uint8ClampedArray(W * ART_H_LETTERED * scale * 4);
+		const paint = (
+			x0: number,
+			y0: number,
+			w: number,
+			h: number,
+			rgba: [number, number, number, number],
+		) => {
+			for (let y = y0; y < y0 + h; y++) {
+				for (let x = x0; x < x0 + w; x++) {
+					data.set(rgba, (y * W + x) * 4);
+				}
+			}
+		};
+		const cell = (row: { x: number; y: number; w: number }, i: number) => ({
+			x: (row.x + i * row.w) * scale,
+			y: row.y * scale,
+		});
+		// A narrow 1 and a wide 7, a little lower, each with its magenta
+		// outline left round its cell; an A on a cell painted white all over.
+		const one = cell(ART_DIGITS, 1);
+		const seven = cell(ART_DIGITS, 7);
+		paint(seven.x, seven.y, ART_DIGITS.w * scale, 1, [255, 0, 255, 255]);
+		paint(one.x + 20, one.y + 8, 8, 40, [0, 90, 50, 255]);
+		paint(seven.x + 6, seven.y + 12, 34, 40, [0, 90, 50, 255]);
+		const a = cell(ART_LETTERS[0]!, 0);
+		paint(a.x + 2, a.y + 2, 28, 36, [255, 255, 255, 255]);
+		paint(a.x + 8, a.y + 6, 16, 26, [200, 160, 40, 255]);
+		const art = kitArtFromPixels(data, W, ART_H_LETTERED * scale, "x")!;
+		const g = art.glyphs!;
+		assert.deepEqual(Object.keys(g).sort(), ["1", "7", "A"]);
+		assert.deepEqual(g["1"], [one.x + 20, one.y + 8, 8, 44]);
+		assert.deepEqual(g["7"], [seven.x + 6, one.y + 8, 34, 44]);
+		// The A's white ground keyed out: just the letter.
+		assert.deepEqual(g["A"], [a.x + 8, a.y + 6, 16, 26]);
+		assert.strictEqual(data[((a.y + 4) * W + a.x + 4) * 4 + 3], 0);
+		// The outline left round the 7's cell is clear, not green.
+		assert.strictEqual(data[(seven.y * W + seven.x + 10) * 4 + 3], 0);
+		// Not lettered: no characters, no settings.
+		const plain = kitArtFromPixels(
+			new Uint8ClampedArray(ART_W * ART_H * 4),
+			ART_W,
+			ART_H,
+			"y",
+		)!;
+		assert.isUndefined(plain.glyphs);
+		assert.isUndefined(plain.fit);
 	});
 
 	test("the pictures are kept with the league: synced, and never in a sim's way", () => {
