@@ -668,6 +668,10 @@ const GET_UP_MS = 1000;
 const READ_MS = 350;
 // A defender sees the ball thrown and breaks on it this long after.
 const BREAK_MS = 250;
+// On his man in coverage: where he goes, worked out a step at a time, so
+// long a step (from so long after the snap).
+const COVER_STEP = 220;
+const COVER_STEP_FIRST = 200;
 // At the mesh, the quarterback this far to the side of the back's way
 // through it (feet): the two of them drawn the size they are (see body.ts),
 // his hands out to the ball, and not into each other. (Turned to it as he
@@ -4335,7 +4339,21 @@ class Action {
 				// turned and running with him.
 				const rs = set(rec);
 				const inside = -Math.sign(rs.a || 1);
-				for (let t = snap + 200; t <= until; t += 220) {
+				// (A step at a time, the last of them on to the break - not
+				// short of it, stood waiting for it.)
+				const steps: number[] = [];
+				for (let t = snap + COVER_STEP_FIRST; t <= until; t += COVER_STEP) {
+					steps.push(t);
+				}
+				const last = steps.at(-1);
+				if (last !== undefined && until > last) {
+					if (until - last < COVER_STEP / 2) {
+						steps[steps.length - 1] = until;
+					} else {
+						steps.push(until);
+					}
+				}
+				for (const t of steps) {
 					const p = this.of(rec.posAt(t - 180));
 					const cushion = Math.max(
 						2.5,
