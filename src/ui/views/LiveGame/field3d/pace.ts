@@ -16,6 +16,12 @@ import { moveKind, type Move } from "./poses.ts";
 // pace over this long, the stretch's end in the middle of it - a touch
 // short of his mark when it ends, on it a moment after.
 const GO_MS = 240;
+// (Off from a stand into a walk or a jog - in no hurry: up to it over this
+// long, no more than this share of it, the ground lost made up over the
+// rest of it.)
+const GO_EASY_MS = 700;
+const GO_EASY_MOST = 0.35;
+const EASY = new Set<Move>(["walk", "jog"]);
 const FIRST_MS = 260;
 const FIRST_MOST = 0.3;
 const STOP_MS = 240;
@@ -123,7 +129,13 @@ export const paceOf = (legs: Leg[], k: number): Pace => {
 			prev.t1 - prev.t0 - stopOf(legs[k - 2], prev, l),
 		),
 	);
-	return { g: early / ms, early, a: 0, top: 1, h: stop / ms, stop };
+	const g = early / ms;
+	const a = EASY.has(l.move)
+		? Math.min(GO_EASY_MS / ms - g, GO_EASY_MOST, 1 - stop / ms - 0.05)
+		: 0;
+	return a > g
+		? { g, early, a, top: 1 / (1 + (g - a) / 2), h: stop / ms, stop }
+		: { g, early, a: 0, top: 1, h: stop / ms, stop };
 };
 
 // How far along a stretch he is at t (or just before its start, getting
@@ -134,12 +146,25 @@ const easedAlong = (l: Leg, t: number, p: Pace): number => {
 	}
 	const { g, a, top, h } = p;
 	const u = (t - l.t0) / (l.t1 - l.t0);
-	if (g > 0 && u < g) {
+	// (Getting going from g before its start, up to his pace by a into it -
+	// or, a no later than g, by as long after it as before.)
+	const easy = g > 0 && a > g;
+	if (g > 0 && !easy && u < g) {
 		const w = Math.max(0, u + g);
 		return (w * w) / (4 * g);
 	}
-	const off = (v: number) =>
-		v <= 0 ? 0 : v < a ? (top * v * v) / (2 * a) : top * (a / 2 + v - a);
+	const off = easy
+		? (v: number) => {
+				const w = v + g;
+				const R = a + g;
+				return w <= 0
+					? 0
+					: w < R
+						? (top * w * w) / (2 * R)
+						: top * (R / 2 + v - a);
+			}
+		: (v: number) =>
+				v <= 0 ? 0 : v < a ? (top * v * v) / (2 * a) : top * (a / 2 + v - a);
 	if (h > 0 && u > 1 - h) {
 		const w = Math.min(u - (1 - h), 2 * h);
 		return off(1 - h) + top * (w - (w * w) / (4 * h));
@@ -226,6 +251,10 @@ export const paceAt = (
 // this long either side of where they meet (no more than half of either):
 // the corner rounded, him still on it at the time laid out for it.
 export const CORNER_MS = 150;
+// (And from one pace to a far different one, the way on the same: longer,
+// up to twice as long for this much quicker or slower, ft/s.)
+const CORNER_DV = 4;
+const CORNER_MOST_MS = CORNER_MS * 2;
 
 // Where his feet are at t, k his leg then (see paceAt): on his stretch, or
 // round the corner from the one before it or into the next.
@@ -246,11 +275,11 @@ export const placeAt = (
 		u,
 	};
 	if (on === k) {
-		if (t - legs[k]!.t0 < CORNER_MS) {
+		if (t - legs[k]!.t0 < CORNER_MOST_MS) {
 			rounded(legs, k, before.top, t, at);
 		}
 		const next = legs[k + 1];
-		if (next && next.t0 - t < CORNER_MS) {
+		if (next && next.t0 - t < CORNER_MOST_MS) {
 			rounded(legs, k + 1, pace.top, t, at);
 		}
 	}
@@ -272,7 +301,18 @@ const rounded = (
 	if (!a || !b || !goes(a) || !goes(b) || Math.abs(a.t1 - b.t0) > 1) {
 		return;
 	}
-	const w = Math.min(CORNER_MS, (a.t1 - a.t0) / 2, (b.t1 - b.t0) / 2);
+	const ma = a.t1 - a.t0;
+	const mb = b.t1 - b.t0;
+	const dv = Math.abs(
+		(Math.hypot(a.to.x - a.from.x, a.to.y - a.from.y) * top * 1000) / ma -
+			(Math.hypot(b.to.x - b.from.x, b.to.y - b.from.y) * 1000) / mb,
+	);
+	const strides = moveKind(a.move) === "cycle" && moveKind(b.move) === "cycle";
+	const w = Math.min(
+		CORNER_MS * (strides ? Math.min(2, Math.max(1, dv / CORNER_DV)) : 1),
+		ma / 2,
+		mb / 2,
+	);
 	const d = t - b.t0;
 	if (w <= 0 || Math.abs(d) >= w) {
 		return;
