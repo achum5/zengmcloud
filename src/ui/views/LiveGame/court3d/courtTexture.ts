@@ -32,6 +32,8 @@ type Pic = {
 	h: number;
 	opacity: number;
 	fill: boolean;
+	// The whole floor (see LiveCourt's floor picture): laid down first.
+	floor: boolean;
 };
 
 export const courtTexture = async (
@@ -67,6 +69,7 @@ export const courtTexture = async (
 				h: img.height.baseVal.value,
 				opacity: Number(img.getAttribute("opacity") ?? 1),
 				fill: img.getAttribute("preserveAspectRatio") === "none",
+				floor: img.getAttribute("data-floor") === "1",
 			});
 		}
 	}
@@ -85,21 +88,13 @@ export const courtTexture = async (
 	const url = URL.createObjectURL(
 		new Blob([xml], { type: "image/svg+xml;charset=utf-8" }),
 	);
-	try {
-		ctx.drawImage(await load(url), 0, 0, canvas.width, canvas.height);
-	} catch {
-		return undefined;
-	} finally {
-		URL.revokeObjectURL(url);
-	}
-
-	// The pictures, on top, each in its own place.
-	for (const pic of pics) {
+	// A picture of the whole floor goes down first, everything else over it.
+	const drawPic = async (pic: Pic) => {
 		let img: HTMLImageElement;
 		try {
 			img = await load(pic.href);
 		} catch {
-			continue;
+			return;
 		}
 		let { x, y, w, h } = pic;
 		const nw = img.naturalWidth;
@@ -125,6 +120,25 @@ export const courtTexture = async (
 		);
 		ctx.drawImage(img, x, y, w, h);
 		ctx.restore();
+	};
+	for (const pic of pics) {
+		if (pic.floor) {
+			await drawPic(pic);
+		}
+	}
+	try {
+		ctx.drawImage(await load(url), 0, 0, canvas.width, canvas.height);
+	} catch {
+		return undefined;
+	} finally {
+		URL.revokeObjectURL(url);
+	}
+
+	// The pictures, on top, each in its own place.
+	for (const pic of pics) {
+		if (!pic.floor) {
+			await drawPic(pic);
+		}
 	}
 	return canvas;
 };

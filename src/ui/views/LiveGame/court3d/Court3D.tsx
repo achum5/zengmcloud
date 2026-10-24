@@ -1017,7 +1017,10 @@ const Court3D = ({
 	}, [along?.fp, fp, onLost]);
 
 	const homePad = home?.colors?.[0] ?? "#8c1d40";
-	const lineColor: string = home?.court?.lines || "#f8f5f0";
+	const lineColor: string =
+		home?.court?.floorImageURL && home.court.floorLines === "picture"
+			? ""
+			: home?.court?.lines || "#f8f5f0";
 	const apron: string = home?.court?.apron || homePad;
 	const warmups = useMemo(
 		(): [string, string] => [

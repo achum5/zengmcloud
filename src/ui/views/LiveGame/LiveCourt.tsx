@@ -1728,13 +1728,19 @@ const LiveCourt = ({
 	// Court styling comes from the home team's custom court (Manage Teams →
 	// Court), falling back to a neutral hardwood + the team's colors.
 	const court = home?.court;
+	// A picture of the whole floor, laid down as it is (see CourtStyle).
+	const floorImageURL = court?.floorImageURL || undefined;
+	const linesFromPicture = !!floorImageURL && court?.floorLines === "picture";
 	const lineColor = court?.lines || "#f8f5f0";
 	const woodFill = court?.floor || "#c9a165";
 	const woodLine = shade(woodFill, -0.14);
 	const floorPattern = court?.floorPattern ?? "hardwood";
 	const paintColor = court?.paint || undefined; // undefined = no painted key
 	const trophyURL = court?.trophyURL || DEFAULT_TROPHY_URL;
-	const centerLogoURL = court?.logoURL || home?.imgURL;
+	// (A floor picture has its own center court: the team logo goes on it
+	// only if asked for.)
+	const centerLogoURL =
+		court?.logoURL || (floorImageURL ? undefined : home?.imgURL);
 	const secondaryLogoURL = court?.secondaryLogoURL || undefined;
 	const sidelineImageURL = court?.sidelineImageURL || undefined;
 	const baselineImageURL = court?.baselineImageURL || undefined;
@@ -2037,7 +2043,7 @@ const LiveCourt = ({
 
 	const railText = (left: boolean) => {
 		// An image on the rail takes it over; the name would print on top of it.
-		if (!railLabel || railImageURL || court?.hideRailText) {
+		if (!railLabel || railImageURL || floorImageURL || court?.hideRailText) {
 			return null;
 		}
 		const x = left ? -RAIL_W / 2 : COURT_W + RAIL_W / 2;
@@ -2213,28 +2219,54 @@ const LiveCourt = ({
 						<stop offset="100%" stopColor="#000000" stopOpacity="0.22" />
 					</radialGradient>
 				</defs>
-				{/* Colored apron frame (home team) around the whole floor - baselines
-				    AND sidelines */}
-				<rect
-					x={-RAIL_W}
-					y={-APRON}
-					width={COURT_W + 2 * RAIL_W}
-					height={COURT_H + 2 * APRON}
-					rx={1}
-					fill={homeRail}
-				/>
-				<rect x={0} y={0} width={COURT_W} height={COURT_H} fill={woodFill} />
-				{/* Floor grain/planks for the chosen wood pattern */}
-				{floorDetail()}
-				{/* Overhead light sheen on the wood (under the court lines, so they
-				    stay crisp). */}
-				<rect
-					x={0}
-					y={0}
-					width={COURT_W}
-					height={COURT_H}
-					fill={`url(#${sheenId})`}
-				/>
+				{floorImageURL ? (
+					// The whole floor as pictured, apron and all. (Marked, so the 3D
+					// court lays it down first, under everything else - see
+					// courtTexture.)
+					<image
+						data-floor="1"
+						href={floorImageURL}
+						{...placed("floor", {
+							x: -RAIL_W,
+							y: -APRON,
+							width: COURT_W + 2 * RAIL_W,
+							height: COURT_H + 2 * APRON,
+							opacity: 1,
+							fit: "fill",
+						})}
+					/>
+				) : (
+					<>
+						{/* Colored apron frame (home team) around the whole floor -
+						    baselines AND sidelines */}
+						<rect
+							x={-RAIL_W}
+							y={-APRON}
+							width={COURT_W + 2 * RAIL_W}
+							height={COURT_H + 2 * APRON}
+							rx={1}
+							fill={homeRail}
+						/>
+						<rect
+							x={0}
+							y={0}
+							width={COURT_W}
+							height={COURT_H}
+							fill={woodFill}
+						/>
+						{/* Floor grain/planks for the chosen wood pattern */}
+						{floorDetail()}
+						{/* Overhead light sheen on the wood (under the court lines, so
+						    they stay crisp). */}
+						<rect
+							x={0}
+							y={0}
+							width={COURT_W}
+							height={COURT_H}
+							fill={`url(#${sheenId})`}
+						/>
+					</>
+				)}
 				{/* Sponsor images stretched lengthwise along each sideline apron */}
 				{sidelineImageURL ? (
 					<>
@@ -2341,13 +2373,17 @@ const LiveCourt = ({
 				{railText(false)}
 
 				{/* Court lines */}
-				<g fill="none" stroke={lineColor} strokeWidth={0.25} opacity={0.9}>
-					<rect x={0} y={0} width={COURT_W} height={COURT_H} />
-					<line x1={COURT_W / 2} y1={0} x2={COURT_W / 2} y2={COURT_H} />
-					<circle cx={COURT_W / 2} cy={25} r={6} />
-				</g>
-				{halfMarkings(false)}
-				{halfMarkings(true)}
+				{linesFromPicture ? null : (
+					<>
+						<g fill="none" stroke={lineColor} strokeWidth={0.25} opacity={0.9}>
+							<rect x={0} y={0} width={COURT_W} height={COURT_H} />
+							<line x1={COURT_W / 2} y1={0} x2={COURT_W / 2} y2={COURT_H} />
+							<circle cx={COURT_W / 2} cy={25} r={6} />
+						</g>
+						{halfMarkings(false)}
+						{halfMarkings(true)}
+					</>
+				)}
 
 				{/* Center-court branding OVER the lines. During a finals game a big
 				    championship trophy dominates center court with the home logo in
@@ -2375,7 +2411,7 @@ const LiveCourt = ({
 							opacity: 0.97,
 						})}
 					/>
-				) : !finals ? (
+				) : !finals && !floorImageURL ? (
 					<text
 						x={COURT_W / 2}
 						y={28}
@@ -2478,15 +2514,18 @@ const LiveCourt = ({
 				) : null}
 
 				{/* Edge vignette (over everything on the floor), so the lit center
-				    falls off into shadow at the sidelines - depth, like a real arena. */}
-				<rect
-					x={0}
-					y={0}
-					width={COURT_W}
-					height={COURT_H}
-					fill={`url(#${vignetteId})`}
-					pointerEvents="none"
-				/>
+				    falls off into shadow at the sidelines - depth, like a real arena.
+				    A floor picture is shown as it is. */}
+				{floorImageURL ? null : (
+					<rect
+						x={0}
+						y={0}
+						width={COURT_W}
+						height={COURT_H}
+						fill={`url(#${vignetteId})`}
+						pointerEvents="none"
+					/>
+				)}
 			</>
 		),
 		// Rebuild only when the court styling actually changes - never per play.
@@ -2511,6 +2550,8 @@ const LiveCourt = ({
 			cornerLogoURL,
 			benchImageURL,
 			railImageURL,
+			floorImageURL,
+			linesFromPicture,
 			adjustKey,
 			decals,
 			court?.hideRailText,

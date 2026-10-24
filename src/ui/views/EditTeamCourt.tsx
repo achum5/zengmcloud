@@ -16,11 +16,23 @@ import {
 	PIC,
 	pictureFromFile,
 } from "../components/CourtImageField.tsx";
+import {
+	FLOOR_TEMPLATE_H,
+	FLOOR_TEMPLATE_W,
+	floorTemplate,
+} from "./courtTemplate.ts";
 
 const DEFAULT_FLOOR = "#c9a165";
 const DEFAULT_LINES = "#f8f5f0";
 
+// A whole-floor picture: as big as the template, a JPEG to fit.
+const FLOOR_UPLOAD = {
+	sides: [2080, 1664, 1300, 1040],
+	type: "image/jpeg",
+} as const;
+
 const PICTURE_KEYS = [
+	"floorImageURL",
 	"logoURL",
 	"trophyURL",
 	"secondaryLogoURL",
@@ -71,6 +83,7 @@ const PATTERNS = new Set([
 	"solid",
 ]);
 const SLOTS = new Set<string>([
+	"floor",
 	"logo",
 	"trophy",
 	"secondary",
@@ -100,6 +113,10 @@ const parseCourt = (text: string): CourtStyle | string => {
 		} else if (key === "floorPattern") {
 			if (typeof value !== "string" || !PATTERNS.has(value)) {
 				return `"floorPattern" should be one of ${[...PATTERNS].join(", ")}.`;
+			}
+		} else if (key === "floorLines") {
+			if (value !== "picture") {
+				return `"floorLines" should be "picture".`;
 			}
 		} else if (key === "hideRailText") {
 			if (typeof value !== "boolean") {
@@ -250,9 +267,12 @@ const EditTeamCourt = ({
 	const [json, setJSON] = useState<string | undefined>();
 	const [jsonError, setJSONError] = useState<string | undefined>();
 
-	const upload = async (file: File) => {
+	const upload = async (
+		file: File,
+		options?: Parameters<typeof pictureFromFile>[1],
+	) => {
 		try {
-			const url = await pictureFromFile(file);
+			const url = await pictureFromFile(file, options);
 			const id = await toWorker("main", "storeCourtPicture", url);
 			setPictures((p) => ({ ...p, [id]: url }));
 			setUploaded((u) => [...u, id]);
@@ -265,7 +285,25 @@ const EditTeamCourt = ({
 			return undefined;
 		}
 	};
-	const picture = { pictures, onUpload: upload };
+	const picture = { pictures, onUpload: (file: File) => upload(file) };
+
+	// A court from a file keeps its pictures in the league, as uploads do (one
+	// too big to keep stays in the court).
+	const keepPictures = async (court: CourtStyle) => {
+		const out = { ...court };
+		for (const key of PICTURE_KEYS) {
+			const url = out[key];
+			if (typeof url === "string" && url.startsWith("data:image/")) {
+				try {
+					const id = await toWorker("main", "storeCourtPicture", url);
+					setPictures((p) => ({ ...p, [id]: url }));
+					setUploaded((u) => [...u, id]);
+					out[key] = `${PIC}${id}`;
+				} catch {}
+			}
+		}
+		setStyle(out);
+	};
 
 	// One image slot's size/position knobs.
 	const setAdjust = (
@@ -372,43 +410,98 @@ const EditTeamCourt = ({
 				</div>
 
 				<div className="col-lg-5">
-					<ColorField
-						label="Floor color"
-						value={style.floor ?? DEFAULT_FLOOR}
-						fallback={DEFAULT_FLOOR}
-						cleared={style.floor === undefined}
-						onChange={(v) => set("floor", v)}
-						onClear={() => set("floor", undefined)}
-					/>
-
-					<div className="mb-3">
-						<label className="form-label mb-1">Floor pattern</label>
-						<select
-							className="form-select"
-							value={style.floorPattern ?? "hardwood"}
-							onChange={(e) =>
-								set(
-									"floorPattern",
-									e.target.value as CourtStyle["floorPattern"],
-								)
+					<ImageField
+						label="Floor picture"
+						hint="(the whole floor from above)"
+						slot="floor"
+						url={style.floorImageURL ?? ""}
+						onURL={(v) => {
+							set("floorImageURL", v);
+							if (!v) {
+								set("floorLines", undefined);
 							}
+						}}
+						adjust={style.adjust?.floor}
+						onAdjust={setAdjust}
+						pictures={pictures}
+						onUpload={(file) => upload(file, FLOOR_UPLOAD)}
+						defaultFit="fill"
+					/>
+					<div className="d-flex align-items-center gap-3 mb-3">
+						{style.floorImageURL ? (
+							<div className="form-check mb-0">
+								<input
+									type="checkbox"
+									className="form-check-input"
+									id="floor-lines"
+									checked={style.floorLines === "picture"}
+									onChange={(e) =>
+										set("floorLines", e.target.checked ? "picture" : undefined)
+									}
+								/>
+								<label className="form-check-label" htmlFor="floor-lines">
+									Lines from the picture
+								</label>
+							</div>
+						) : null}
+						<button
+							type="button"
+							className="btn btn-sm btn-light-bordered"
+							title={`${FLOOR_TEMPLATE_W} \u00d7 ${FLOOR_TEMPLATE_H}, 20 px per foot`}
+							onClick={() => {
+								const a = document.createElement("a");
+								a.download = "floor-template.png";
+								a.href = floorTemplate().toDataURL("image/png");
+								a.click();
+							}}
 						>
-							<option value="hardwood">Hardwood planks</option>
-							<option value="parquet">Parquet (basketweave)</option>
-							<option value="diagonal">Diagonal planks</option>
-							<option value="chevron">Chevron</option>
-							<option value="solid">Solid</option>
-						</select>
+							Download template
+						</button>
 					</div>
 
-					<ColorField
-						label="Line color"
-						value={style.lines ?? DEFAULT_LINES}
-						fallback={DEFAULT_LINES}
-						cleared={style.lines === undefined}
-						onChange={(v) => set("lines", v)}
-						onClear={() => set("lines", undefined)}
-					/>
+					{style.floorImageURL ? null : (
+						<>
+							<ColorField
+								label="Floor color"
+								value={style.floor ?? DEFAULT_FLOOR}
+								fallback={DEFAULT_FLOOR}
+								cleared={style.floor === undefined}
+								onChange={(v) => set("floor", v)}
+								onClear={() => set("floor", undefined)}
+							/>
+
+							<div className="mb-3">
+								<label className="form-label mb-1">Floor pattern</label>
+								<select
+									className="form-select"
+									value={style.floorPattern ?? "hardwood"}
+									onChange={(e) =>
+										set(
+											"floorPattern",
+											e.target.value as CourtStyle["floorPattern"],
+										)
+									}
+								>
+									<option value="hardwood">Hardwood planks</option>
+									<option value="parquet">Parquet (basketweave)</option>
+									<option value="diagonal">Diagonal planks</option>
+									<option value="chevron">Chevron</option>
+									<option value="solid">Solid</option>
+								</select>
+							</div>
+						</>
+					)}
+
+					{style.floorLines === "picture" ? null : (
+						<ColorField
+							label="Line color"
+							value={style.lines ?? DEFAULT_LINES}
+							fallback={DEFAULT_LINES}
+							cleared={style.lines === undefined}
+							onChange={(v) => set("lines", v)}
+							onClear={() => set("lines", undefined)}
+						/>
+					)}
 
 					<div className="mb-3">
 						<div className="form-check mb-1">
@@ -623,7 +716,7 @@ const EditTeamCourt = ({
 										} else {
 											setJSON(undefined);
 											setJSONError(undefined);
-											setStyle(parsed);
+											return keepPictures(parsed);
 										}
 									})
 									.catch(() => {
@@ -654,7 +747,7 @@ const EditTeamCourt = ({
 										setJSONError(parsed);
 									} else {
 										setJSONError(undefined);
-										setStyle(parsed);
+										void keepPictures(parsed);
 									}
 								}}
 							>

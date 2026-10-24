@@ -5,10 +5,17 @@ import type { CourtImageAdjust } from "../../common/types.ts";
 // courtPictures.ts).
 export const PIC = "pic:";
 
-// A picture file made into a PNG small enough to keep in the league - as
-// big as it can be and still fit.
+// A picture file made small enough to keep in the league - as big as it can
+// be and still fit: a PNG, or a JPEG for a photo-like picture as big as a
+// whole floor.
 const PICTURE_MAX = 690_000;
-export const pictureFromFile = async (file: File): Promise<string> => {
+export const pictureFromFile = async (
+	file: File,
+	{
+		sides = [1024, 768, 512, 384, 256],
+		type = "image/png",
+	}: { sides?: readonly number[]; type?: "image/png" | "image/jpeg" } = {},
+): Promise<string> => {
 	const src = URL.createObjectURL(file);
 	try {
 		const img = new Image();
@@ -16,15 +23,17 @@ export const pictureFromFile = async (file: File): Promise<string> => {
 		await img.decode();
 		const w0 = img.naturalWidth || 1024;
 		const h0 = img.naturalHeight || 1024;
-		for (const side of [1024, 768, 512, 384, 256]) {
+		for (const side of sides) {
 			const k = Math.min(1, side / Math.max(w0, h0));
 			const cv = document.createElement("canvas");
 			cv.width = Math.max(1, Math.round(w0 * k));
 			cv.height = Math.max(1, Math.round(h0 * k));
 			cv.getContext("2d")!.drawImage(img, 0, 0, cv.width, cv.height);
-			const url = cv.toDataURL("image/png");
-			if (url.length <= PICTURE_MAX) {
-				return url;
+			for (const quality of type === "image/jpeg" ? [0.92, 0.85, 0.75] : [1]) {
+				const url = cv.toDataURL(type, quality);
+				if (url.length <= PICTURE_MAX) {
+					return url;
+				}
 			}
 		}
 		throw new Error("That picture is too big.");

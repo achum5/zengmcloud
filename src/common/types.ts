@@ -3069,9 +3069,17 @@ export type CourtImageSlot =
 	| "bench" // bench-side apron only
 	| "baseline" // on the floor in each backcourt
 	| "corner" // the four quarter-court corners
-	| "rail"; // the raised strip behind each baseline
+	| "rail" // the raised strip behind each baseline
+	| "floor"; // the whole floor, apron and all (floorImageURL)
 
 export type CourtStyle = {
+	// A picture of the whole floor seen from above - the court and the apron
+	// round it, edge to edge (see the editor's template) - laid down as it is
+	// in place of the floor drawn from the settings below: wood, paint,
+	// lettering and logos all as pictured.
+	floorImageURL?: string;
+	// The floor picture has its own lines: the game draws none over it.
+	floorLines?: "picture";
 	floor?: string; // hardwood tone (hex)
 	floorPattern?: "hardwood" | "parquet" | "diagonal" | "chevron" | "solid";
 	lines?: string; // court line color (hex)

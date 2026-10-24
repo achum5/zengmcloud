@@ -64,6 +64,26 @@ describe("court pictures", () => {
 		});
 	});
 
+	test("a whole-floor picture (a JPEG) is kept like any other", async () => {
+		await setup();
+		const jpeg = `data:image/jpeg;base64,${"B".repeat(300_000)}`;
+		const id = await storePicture(jpeg);
+		const court = {
+			floorImageURL: `${PIC}${id}`,
+			floorLines: "picture" as const,
+		};
+		assert.deepStrictEqual(courtPictureIds(court), [id]);
+		assert.deepStrictEqual(await resolveCourt(court), {
+			floorImageURL: jpeg,
+			floorLines: "picture",
+		});
+		const t0 = (await idb.cache.teams.get(0))!;
+		t0.court = court;
+		await idb.cache.teams.put(t0);
+		await prunePictures([id]);
+		assert.ok(await idb.cache.jerseySkins.get(id));
+	});
+
 	test("only pictures are kept", async () => {
 		await setup();
 		for (const bad of [

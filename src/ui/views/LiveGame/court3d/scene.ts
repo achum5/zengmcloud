@@ -286,7 +286,7 @@ export type Frame = {
 	bodyFor: (pid: number) => Body;
 	lookFor: (pid: number) => Look;
 	padColor: string;
-	// The home floor's line paint.
+	// The home floor's line paint ("" for none: its picture has its own).
 	lineColor: string;
 	// The floor round the court, past the lines (the court's apron color).
 	apron?: string;
@@ -1115,7 +1115,10 @@ export const drawFrame = (f: Frame) => {
 	drawTexturedPlane(ctx, cam, benchPlane(0), arena.bench[0], 6, 1);
 	drawTexturedPlane(ctx, cam, benchPlane(1), arena.bench[1], 6, 1);
 	drawFlashes(ctx, cam, tl, t);
-	drawCourtLines(ctx, cam, f.lineColor);
+	// (None when the floor picture has its own - see CourtStyle.floorLines.)
+	if (f.lineColor) {
+		drawCourtLines(ctx, cam, f.lineColor);
+	}
 	// The lights over the far stands, shining back off the floor.
 	drawGlints(ctx, cam);
 	drawDroppedTops(ctx, cam, tl, t, f.warmups);

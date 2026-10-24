@@ -17,6 +17,7 @@ import { scoreBugPictureIds } from "../../common/scoreBug.ts";
 // its pictures filled in (see resolveCourt).
 export const PIC = "pic:";
 export const COURT_PICTURE_KEYS = [
+	"floorImageURL",
 	"logoURL",
 	"trophyURL",
 	"secondaryLogoURL",
