@@ -527,6 +527,16 @@ class Actor {
 		});
 	}
 
+	// Pulled up at the end of his last leg (see slowInto) into `move`, a
+	// stance he works about in, there until t.
+	setInto(t: number, move: Move, yaw?: number) {
+		const l = this.last;
+		if (t > l.t1 && (l.from.x !== l.to.x || l.from.y !== l.to.y)) {
+			this.slowInto(0, STOP_ACCEL, t - l.t1);
+		}
+		this.hold(t, move, yaw);
+	}
+
 	// To `to`, getting there at t1, in `move` (by default by how fast that
 	// is), facing `yaw` (by default the way he goes).
 	go(to: Pt, t1: number, move?: Move, yaw?: number, extra?: Partial<Leg>) {
@@ -1631,6 +1641,12 @@ const POCKET_ROOM = 7;
 const BACK_SET_UP = 4.5;
 const BACK_SET_OUT = 4;
 const BACK_OFF_LINE = 9;
+// (Further off it than this (feet): up into it at a run, at no more than
+// this much of his top speed, and set there this long before he takes
+// anybody on.)
+const BACK_STEP_FT = 5;
+const BACK_UP_PACE = 0.6;
+const BACK_SET_MS = 150;
 // A play-action pass: this often, when it goes this far in the air (yards)
 // and a back is there to fake it to; the fake this long (the ball out to
 // him half way through), the back on past it this far (feet); and the
@@ -5426,19 +5442,33 @@ class Action {
 							}
 						: { d: Math.max(pocket.d + 4, s.d - back), a: s.a + out };
 			const far = dist(b.at, this.w(setPt));
-			b.go(
-				this.w(setPt),
-				Math.max(
+			if (inBack && far > BACK_STEP_FT) {
+				// (Pulled up into it - see STOP_ACCEL.)
+				const v = Math.min(
+					b.top * BACK_UP_PACE,
+					Math.sqrt(2 * STOP_ACCEL * far),
+				);
+				const t1 = Math.max(
 					snap + 650,
-					b.t +
-						Math.max(
-							SET_LEAST_MS,
-							(far / (inBack ? b.top * 0.75 : SET_FPS)) * 1000,
-						),
-				),
-				"passSet",
-				this.ahead,
-			);
+					b.t + (far / v + v / (2 * STOP_ACCEL)) * 1000,
+				);
+				b.go(this.w(setPt), t1);
+				b.setInto(t1 + BACK_SET_MS, "passSet", this.ahead);
+			} else {
+				b.go(
+					this.w(setPt),
+					Math.max(
+						snap + 650,
+						b.t +
+							Math.max(
+								SET_LEAST_MS,
+								(far / (inBack ? b.top * 0.75 : SET_FPS)) * 1000,
+							),
+					),
+					"passSet",
+					this.ahead,
+				);
+			}
 			// Giving ground as the rush comes - never back into the pocket (a
 			// back hardly at all: he is the last man between them and the
 			// quarterback).

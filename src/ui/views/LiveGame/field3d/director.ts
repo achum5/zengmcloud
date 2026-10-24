@@ -466,6 +466,8 @@ const MOTION_FPS = [9, 13] as const;
 const MOTION_INSIDE = 19;
 const MOTION_EDGE = 8;
 const MAN_FOLLOWS = 0.5;
+// (Shuffled across with him no quicker than this - ft/s.)
+const FOLLOW_SLIDE_FPS = 8;
 // Still this far (ms) from his spot when the ball is snapped - on his way
 // out into his route without a stop.
 const IN_MOTION = 200;
@@ -2467,15 +2469,26 @@ class Director {
 				up.to = d1;
 				up.t1 = thereD;
 				over.legs[k - 1] = { ...st, t0: thereD, t1: goD, from: d1, to: d1 };
+				// (Shuffled across with him - or, a man going across quicker
+				// than that, turned and run with him.)
+				const fpsD = dist(d1, d0) / Math.max(0.001, (end + 100 - goD) / 1000);
 				over.legs.push(
-					{
-						t0: goD,
-						t1: end + 100,
-						from: d1,
-						to: d0,
-						move: "slide",
-						...(st.yaw !== undefined ? { yaw: st.yaw } : {}),
-					},
+					fpsD > FOLLOW_SLIDE_FPS
+						? {
+								t0: goD,
+								t1: end + 100,
+								from: d1,
+								to: d0,
+								move: fpsD < 12 ? "jog" : "run",
+							}
+						: {
+								t0: goD,
+								t1: end + 100,
+								from: d1,
+								to: d0,
+								move: "slide",
+								...(st.yaw !== undefined ? { yaw: st.yaw } : {}),
+							},
 					{ ...st, t0: end + 100, t1: end + 100, from: d0, to: d0 },
 				);
 			}
