@@ -1619,6 +1619,12 @@ const GUNNER_SET_MS = 900;
 type RunScheme = "zone" | "stretch" | "power" | "sneak";
 const POWER = 0.35;
 const BLOCK_GAP = 2.6;
+// (A man blocked off the ball with the carrier coming by him while he is
+// still on it - or no later than this after - driven over to no nearer his
+// way than this (feet), at no more than this (ft/s) across.)
+const CLEAR_LATE_MS = 300;
+const BLOCK_CLEAR_FT = 3.5;
+const BLOCK_CLEAR_FPS = 4;
 // A lineman off the ball into the man on him: no nearer than this (feet),
 // a step or two up into him, his arms out into him - not a run on the spot.
 const FIRE_FT = 4;
@@ -4555,9 +4561,14 @@ class Action {
 		}
 		const landed: Pt[] = [];
 		by.forEach((m, k) => {
-			// From the way he comes at him: there at the hit.
-			const side = k === 0 ? 0 : (r() < 0.5 ? -1 : 1) * 1.2;
+			// From the way he comes at him: there at the hit. (The next of
+			// them round to one side of that - his own side of the way the
+			// carrier goes, not across in front of him to the other.)
 			const from = froms[k]!;
+			const th = Math.atan2(from.y - pt.y, from.x - pt.x) - fall;
+			const keeps = (s: number) => Math.sin(th + s * 1.2) * Math.sin(th) >= 0;
+			const flip = k === 0 ? 0 : r() < 0.5 ? -1 : 1;
+			const side = (keeps(flip) || !keeps(-flip) ? flip : -flip) * 1.2;
 			const ang = Math.atan2(from.y - pt.y, from.x - pt.x) + side;
 			const off = Math.max(HIT_LEAST_FT, Math.min(HIT_FT, dist(from, pt)));
 			const hit = {
@@ -6913,7 +6924,7 @@ class Action {
 				pull.top * 0.9,
 				"run",
 			);
-			this.blockOn(pull, pick(holePt), beat(pull), offAt, until);
+			this.blockOn(pull, pick(holePt), beat(pull), offAt, until, carrier);
 		}
 		for (const b of backs) {
 			b.hold(snap + 40);
@@ -6923,7 +6934,7 @@ class Action {
 				b.top * 0.85,
 				"run",
 			);
-			this.blockOn(b, pick(holePt), beat(b), offAt, until);
+			this.blockOn(b, pick(holePt), beat(b), offAt, until, carrier);
 		}
 		// Nobody over him: up onto a linebacker - or, none left, in beside
 		// the man on the nearest one, on him too.
@@ -6933,7 +6944,7 @@ class Action {
 			}
 			const m = pick(b.at);
 			if (m) {
-				this.blockOn(b, m, beat(b), offAt, until);
+				this.blockOn(b, m, beat(b), offAt, until, carrier);
 				continue;
 			}
 			const mate = closest([...on.keys()], b.at);
@@ -6995,7 +7006,7 @@ class Action {
 				snap + 650,
 				"run",
 			);
-			this.blockOn(m, db, r() < STALK_WON, offAt, until);
+			this.blockOn(m, db, r() < STALK_WON, offAt, until, carrier);
 		}
 	}
 
@@ -7009,6 +7020,7 @@ class Action {
 		won: boolean,
 		offAt: (d: number) => number,
 		until: number,
+		clear?: Actor,
 	) {
 		const r = this.r;
 		let meet: { t: number; at: Pt } | undefined;
@@ -7039,9 +7051,38 @@ class Action {
 		const off = Math.max(meet.t + 200, offAt(p.d));
 		const end = won ? off : Math.min(off, meet.t + SHED_MS + r() * SHED_SPREAD);
 		const give = won ? 2.5 + r() * 2 : -1;
-		m.go(this.w({ d: p.d + give, a: p.a }), end, "engage", this.behind);
+		// (Turned off the way the man with the ball comes by - driven over
+		// to the side of it he is on, not stood in it as he comes through.)
+		// (As little as does it, or as far off him as it gets them.)
+		let over = 0;
+		if (clear) {
+			const most = (BLOCK_CLEAR_FPS * (end - meet.t)) / 1000;
+			const nearest = (o: number) => {
+				let near = Infinity;
+				for (let c = meet.t; c <= end + CLEAR_LATE_MS; c += 50) {
+					const u = Math.min(1, (c - meet.t) / Math.max(1, end - meet.t));
+					const q = this.of(clear.posAt(c));
+					const d = q.d - (p.d + give * u);
+					const a = q.a - (p.a + o * u);
+					near = Math.min(near, Math.hypot(d, a), Math.hypot(d + BLOCK_GAP, a));
+				}
+				return near;
+			};
+			let best = nearest(0);
+			for (const o of [1, -1, 2, -2, 3, -3, 4, -4]) {
+				if (best >= BLOCK_CLEAR_FT || Math.abs(o) > most) {
+					break;
+				}
+				const near = nearest(o);
+				if (near > best + 0.5) {
+					best = near;
+					over = o;
+				}
+			}
+		}
+		m.go(this.w({ d: p.d + give, a: p.a + over }), end, "engage", this.behind);
 		b.go(
-			this.w({ d: p.d + give - BLOCK_GAP, a: p.a }),
+			this.w({ d: p.d + give - BLOCK_GAP, a: p.a + over }),
 			end,
 			"drive",
 			this.ahead,
