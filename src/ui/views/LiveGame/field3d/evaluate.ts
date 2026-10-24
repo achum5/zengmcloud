@@ -877,8 +877,12 @@ const blendOf = (l: Leg, prev?: Leg): number => {
 // (The ball coming into his hands, or going, partway through what he is
 // doing: no change to him unless it is tucked away under his arm - see
 // poses.ts holding.)
+// (Or the same act over again, from the first of it: eased back into it,
+// not jumped there.)
 const changed = (a: Leg, b: Leg) =>
 	a.move !== b.move ||
+	(moveKind(a.move) === "act" &&
+		(b.span?.[0] ?? 0) < (a.span?.[1] ?? 1) - 1e-6) ||
 	a.arms !== b.arms ||
 	(a.ball !== b.ball && (a.ball === "carry" || b.ball === "carry")) ||
 	!a.mirrored !== !b.mirrored;
@@ -934,15 +938,19 @@ const stateOf = (
 		return j;
 	};
 	const c = changedAt(k, t);
-	const c2 = c > 1 ? changedAt(c - 1, legs[c]!.t0) : 0;
-	const left =
-		c2 > 0 && changed(legs[c2 - 1]!, legs[c2]!)
+	const leftOf = (j: number, j2: number) =>
+		j2 > 0 && changed(legs[j2 - 1]!, legs[j2]!)
 			? 1 -
 				intoOf(
-					legs[c2]!,
-					(legs[c]!.t0 - legs[c2]!.t0) / blendOf(legs[c2]!, legs[c2 - 1]),
+					legs[j2]!,
+					(legs[j]!.t0 - legs[j2]!.t0) / blendOf(legs[j2]!, legs[j2 - 1]),
 				)
 			: 0;
+	const c2 = c > 1 ? changedAt(c - 1, legs[c]!.t0) : 0;
+	const left = leftOf(c, c2);
+	// (And that one, then, itself still partly what he was before it.)
+	const c3 = left > 0 && c2 > 1 ? changedAt(c2 - 1, legs[c2]!.t0) : 0;
+	const left2 = left > 0 ? leftOf(c2, c3) : 0;
 	const yaw = yawAt(legs, t);
 	// Stood turning, a foot at a time (or not yet - or no longer - turning,
 	// each foot where he faced as he stood, or as it stood on the turf).
@@ -1027,7 +1035,14 @@ const stateOf = (
 				? { arms: { move: prior.arms, phase: armsPhaseOf(prior, prior.t1) } }
 				: {}),
 			...(prior.ball ? { ball: prior.ball } : {}),
-			...(left > 0 ? { under: underOf(legs[c2 - 1]!, left) } : {}),
+			...(left > 0
+				? {
+						under: {
+							...underOf(legs[c2 - 1]!, left),
+							...(left2 > 0 ? { under: underOf(legs[c3 - 1]!, left2) } : {}),
+						},
+					}
+				: {}),
 			...(stepsOver(prior.move as Move, l.move as Move) &&
 			steady(legs, legs[c]!.t0 - reach, legs[c]!.t0 + blending + reach)
 				? { steps: true as const }

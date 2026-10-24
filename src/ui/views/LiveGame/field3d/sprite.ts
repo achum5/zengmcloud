@@ -98,6 +98,8 @@ type Under = {
 	mirrored?: boolean;
 	w: number;
 	arms?: { move: Move; phase: number };
+	// (And that one too, still partly what he was before it.)
+	under?: Under;
 };
 
 // In so many steps: a stride's frames, an act's, the ways he faces, and a
@@ -214,9 +216,14 @@ const underIn = (u: Under, k: Steps): Under | undefined => {
 				phase: frameOf(u.move, u.phase, k),
 				w,
 				...(u.arms ? { arms: armsIn(u.arms, k) } : {}),
+				under: u.under && underIn(u.under, k),
 			}
 		: undefined;
 };
+const underKey = (u: Under | undefined): string =>
+	u
+		? `^${u.move}${u.mirrored ? "m" : ""}${u.phase}~${u.w}${u.arms ? `+${u.arms.move}${u.arms.phase}` : ""}${underKey(u.under)}`
+		: "";
 // (Short steps, to the nearest of so many.)
 const LENS = 8;
 const lenIn = (len: number | undefined): number | undefined => {
@@ -332,6 +339,10 @@ const poseFor = (st: FieldPlayerState, s: Stepped): Pose => {
 			}
 		: p;
 };
+const underPose = (u: Under, ball: BallHold | undefined): Pose => {
+	const pose = wholePose(u.move, u.phase, u.mirrored === true, u.arms, ball);
+	return u.under ? lerpPose(pose, underPose(u.under, ball), u.under.w) : pose;
+};
 const blendedPose = (st: FieldPlayerState, s: Stepped): Pose => {
 	const { phase, from, arms, len } = s;
 	const pose = wholePose(
@@ -355,11 +366,7 @@ const blendedPose = (st: FieldPlayerState, s: Stepped): Pose => {
 	);
 	const u = from.under;
 	if (u) {
-		was = lerpPose(
-			was,
-			wholePose(u.move, u.phase, u.mirrored === true, u.arms, from.ball),
-			u.w,
-		);
+		was = lerpPose(was, underPose(u, from.ball), u.w);
 	}
 	const eased = lerpPose(pose, was, from.w);
 	return from.steps && !u ? settleStep(eased, pose, was, 1 - from.w) : eased;
@@ -491,11 +498,7 @@ export const drawFieldPlayer = (
 		}
 		key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}${len ? `s${len}` : ""}${feet ? `v${feet.join(",")}` : ""}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
 			from
-				? `|${from.move}${from.mirrored ? "m" : ""}${from.steps ? "!" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}${
-						from.under
-							? `^${from.under.move}${from.under.mirrored ? "m" : ""}${from.under.phase}~${from.under.w}${from.under.arms ? `+${from.under.arms.move}${from.under.arms.phase}` : ""}`
-							: ""
-					}`
+				? `|${from.move}${from.mirrored ? "m" : ""}${from.steps ? "!" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}${underKey(from.under)}`
 				: ""
 		}${shaded ? "|d" : ""}`;
 		const kept = cache.kept.get(key);
