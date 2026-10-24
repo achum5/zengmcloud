@@ -1773,6 +1773,10 @@ const LIVE_GAP = 1500;
 type Stoppage = [number, number, number];
 const deadSpans = new WeakMap<CourtTimeline, Stoppage[]>();
 const AT_LINE = new Set(["ft", "missFt"]);
+const HUDDLES = new Set(["timeout", "endOfPeriod"]);
+// (Out of the huddle, he walks back out onto the floor: stood easy in it
+// till then.)
+const HUDDLE_LEAD = 300;
 const BETWEEN = new Set(["sub", "timeout", "timeouts"]);
 export const deadSpansOf = (tl: CourtTimeline): Stoppage[] => {
 	const known = deadSpans.get(tl);
@@ -1846,6 +1850,13 @@ export const deadSpansOf = (tl: CourtTimeline): Stoppage[] => {
 		}
 	});
 	const out: Stoppage[] = [];
+	// (A timeout, the break between periods: off in the huddles, the ball
+	// with whoever took it there - dead, whoever has it.)
+	for (const b of tl.beats) {
+		if (HUDDLES.has(b.type) && b.end - b.actionStart >= DEAD_MIN) {
+			out.push([b.actionStart, b.end, HUDDLE_LEAD]);
+		}
+	}
 	for (let i = 0; i < runs.length; i++) {
 		const r = runs[i]!;
 		if (r.live) {
@@ -1864,8 +1875,22 @@ export const deadSpansOf = (tl: CourtTimeline): Stoppage[] => {
 			out.push([r.t0, t1, shots.has(t1) ? LINE_LEAD : DEAD_LEAD]);
 		}
 	}
-	deadSpans.set(tl, out);
-	return out;
+	// (In time order, one where two run into each other.)
+	out.sort((a, b) => a[0] - b[0]);
+	const merged: Stoppage[] = [];
+	for (const s of out) {
+		const last = merged.at(-1);
+		if (last && s[0] <= last[1]) {
+			if (s[1] > last[1]) {
+				last[1] = s[1];
+				last[2] = s[2];
+			}
+		} else {
+			merged.push([...s]);
+		}
+	}
+	deadSpans.set(tl, merged);
+	return merged;
 };
 // The stoppage he may stand easy in at t, if any.
 const stoppageAt = (tl: CourtTimeline, t: number): Stoppage | undefined => {
