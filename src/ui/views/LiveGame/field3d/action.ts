@@ -1122,6 +1122,16 @@ const COVER_FRONT = 1;
 // Back into his zone at this pace (ft/s), this far back at least (feet).
 const ZONE_FPS = 9;
 const READ_STEPS_FT = 3;
+// Sat in it, a step at a time this long (ms): toward the nearest man in
+// it, no further off than ZONE_SEE_FT (feet), ZONE_LEAN of the way to him,
+// no more than ZONE_REACH_FT from it - at no more than ZONE_DRIFT_FPS, and
+// only when that is more than ZONE_STIR_FT from where he is.
+const ZONE_STEP_MS = 300;
+const ZONE_SEE_FT = 50;
+const ZONE_LEAN = 0.3;
+const ZONE_REACH_FT = 8;
+const ZONE_DRIFT_FPS = 6;
+const ZONE_STIR_FT = 1.5;
 // At the mesh, the quarterback this far to the side of the back's way
 // through it (feet): the two of them drawn the size they are (see body.ts),
 // his hands out to the ball, and not into each other. (Turned to it as he
@@ -5065,6 +5075,39 @@ class Action {
 					"back",
 					this.behind,
 				);
+				// Sat in it, reading it: drifting with the nearest man coming
+				// into it, a step or two at a time.
+				for (
+					let t = m.t + ZONE_STEP_MS;
+					t < until - ZONE_STEP_MS / 2;
+					t += ZONE_STEP_MS
+				) {
+					let near: Pt | undefined;
+					let nd = Infinity;
+					for (const rec of runners) {
+						const p = rec.posAt(t);
+						const d = dist(p, spot);
+						if (d < nd) {
+							nd = d;
+							near = p;
+						}
+					}
+					const u =
+						near && nd < ZONE_SEE_FT
+							? Math.min(ZONE_REACH_FT, nd * ZONE_LEAN) / nd
+							: 0;
+					const to = near
+						? {
+								x: spot.x + (near.x - spot.x) * u,
+								y: spot.y + (near.y - spot.y) * u,
+							}
+						: spot;
+					if (dist(to, m.at) < ZONE_STIR_FT) {
+						m.hold(t, "backerStance", this.behind);
+					} else {
+						m.chase(to, t, ZONE_DRIFT_FPS, undefined, this.behind);
+					}
+				}
 				m.hold(until, "backerStance", this.behind);
 			}
 			// The ball in the air: everyone near breaks for it, each to a
