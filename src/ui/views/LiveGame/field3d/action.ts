@@ -1727,6 +1727,9 @@ const WAVE_OFF = 0.5;
 const WAVE_MS = 1200;
 const RUE = 0.45;
 const RUE_MS = 1500;
+// Anyone still on his way in once it is down: pulled up this long (ms,
+// give or take) after he sees it hit the turf.
+const DEAD_SEEN_MS = [250, 300] as const;
 // A tackler gets to the carrier this long before he has him down, coming
 // at him at no more than most of his speed - all but flat out, if he has
 // to.
@@ -4915,6 +4918,22 @@ class Action {
 		this.at.set(i, ground);
 		this.whistle = ground;
 		this.pursue(coverage, catchPt, catchAt + 200, []);
+		// (Not on in at it after, all of them round the man it was for.)
+		for (const m of coverage) {
+			const seen = ground + DEAD_SEEN_MS[0] + r() * DEAD_SEEN_MS[1];
+			const l = m.legs.findLast((x) => x.t0 < seen);
+			if (
+				this.done.has(m.pid) ||
+				m.t <= seen + 300 ||
+				!l ||
+				!GAITS.has(l.move) ||
+				legPace(l) < STOP_LEAST
+			) {
+				continue;
+			}
+			m.cut(seen);
+			m.easeOff(EASE_OFF_FT, lands);
+		}
 	}
 
 	// A defender breaking on the ball: from his coverage for where it comes
