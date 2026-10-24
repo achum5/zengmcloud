@@ -616,6 +616,10 @@ const PURSUIT_URGE = 1.2;
 const PURSUIT_STEP = 350;
 const PURSUIT_LEAD = 300;
 const PURSUIT_RING = 10;
+// (In nearer him than that already, closing in this much a step, no nearer
+// than so much.)
+const PURSUIT_IN = 1.5;
+const PURSUIT_NEAREST = 5;
 const PURSUIT_LANE = 7;
 const PULL_UP_MS = 900;
 // After a man gone for a score, losing ground on him this far back (feet):
@@ -3430,6 +3434,22 @@ class Action {
 				const a = Math.atan2(m.at.y - him.y, m.at.x - him.x);
 				const side = goes > 0.2 ? (lane * off) / PURSUIT_RING / goes : 0;
 				const need = (dist(m.at, end()) / (arrive - m.t)) * 1000;
+				// (In nearer him than that already: on along with him, closing
+				// in a little - not back out to it.)
+				const near = dist(m.at, him);
+				if (near < off) {
+					const now = carrier.posAt(m.t + PURSUIT_LEAD);
+					const by = Math.min(PURSUIT_IN, Math.max(0, near - PURSUIT_NEAREST));
+					m.chase(
+						{
+							x: m.at.x + him.x - now.x - Math.cos(a) * by,
+							y: m.at.y + him.y - now.y - Math.sin(a) * by,
+						},
+						c,
+						m.top * PURSUIT_PACE,
+					);
+					continue;
+				}
 				m.chase(
 					{
 						x: him.x + Math.cos(a) * off - (him.y - was.y) * side,
