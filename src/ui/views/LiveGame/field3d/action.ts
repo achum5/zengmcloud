@@ -2287,6 +2287,8 @@ const CATCH_BEAT_MS = 250;
 const CATCH_BEAT_STRIDE_MS = 200;
 const CATCH_BEAT_LEFT_MS = 500;
 const CLOSE_SLIVER_MS = 120;
+// (A gait no longer than this between two others, ms: see noFlicks.)
+const FLICK_MS = 150;
 const FLAT_OUT = 0.97;
 // A receiver down his route, at this much of his top speed - sat down at
 // the end of it for the ball, up for it this long before it comes.
@@ -2653,6 +2655,7 @@ class Action {
 		this.celebrate();
 		this.regroup();
 		this.noAirBlocks();
+		this.noFlicks();
 		for (const x of this.reaches) {
 			x.m.arms(x.move, x.t0, x.t1);
 		}
@@ -2666,6 +2669,29 @@ class Action {
 			...(this.party && this.until > 0 ? { party: this.party } : {}),
 			...(this.outAt ? { out: this.outAt } : {}),
 		};
+	}
+
+	// No stride or two of another gait between one and the next (a run
+	// slowed into a block, its last step a jog - cut short by it): on in
+	// the gait he was in.
+	noFlicks() {
+		for (const m of this.men) {
+			const legs = m.legs;
+			for (let i = 1; i + 1 < legs.length; i++) {
+				const l = legs[i]!;
+				const was = legs[i - 1]!;
+				if (
+					RAMPS.has(l.move) &&
+					RAMPS.has(was.move) &&
+					l.move !== was.move &&
+					l.move !== legs[i + 1]!.move &&
+					l.t1 - l.t0 < FLICK_MS &&
+					was.t1 === l.t0
+				) {
+					l.move = was.move;
+				}
+			}
+		}
 	}
 
 	// Nobody there to block, or to fight off, all the while: a man still
@@ -9660,7 +9686,8 @@ class Action {
 					x: at.x + Math.cos(ang) * 2.3,
 					y: at.y + Math.sin(ang) * 2.3,
 				};
-				const need = (dist(from, by) / HELP_FPS) * 1000;
+				// (A step or so over taken, not hopped.)
+				const need = Math.max(HELP_STEP_MS, (dist(from, by) / HELP_FPS) * 1000);
 				const leave = up.t0 - 80 - need;
 				if (dist(from, at) < HELP_FROM && leave >= free.get(helper.pid)!) {
 					helper.cut(leave);
@@ -9969,6 +9996,8 @@ const HELP_UP = 0.6;
 const HELP_FOE = 0.25;
 const HELP_FROM = 22;
 const HELP_FPS = 6;
+// (No quicker over to him than this, ms.)
+const HELP_STEP_MS = 450;
 const TOSS_MS = 380;
 // The side it went for (a long way gained: this many yards): this often
 // a man of it after a high five - with the nearest of them done with the
