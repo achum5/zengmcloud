@@ -70,6 +70,9 @@ const STAND_TURN = 5;
 const TURN_GO_MS = 240;
 const TURN_SNAP_MS = 150;
 const TURN_MOST = 12;
+// (Coming up into his stance for the snap, square to it as he gets there:
+// round into it over the last of his way up.)
+const SET_UP_MS = 300;
 const turnMost = (l: Leg) => (l.move === "walk" ? TURN_MOST / 2 : TURN_MOST);
 // (How fast he goes through a move: taken over this long.)
 const RATE_MS = 5;
@@ -177,7 +180,13 @@ const facingOf = (legs: Leg[]): Facing => {
 		const lp = legs[j - 1];
 		const own = ownWay(lj);
 		const startsOff = own && lp && !goes(lp) && !lp.turn;
-		lead[j] = startsOff && !SET.has(lp.move) ? paceOf(legs, j).early : 0;
+		const setsUp = !goes(lj) && lp && goes(lp) && SET.has(lj.move);
+		lead[j] =
+			startsOff && !SET.has(lp.move)
+				? paceOf(legs, j).early
+				: setsUp
+					? Math.min(SET_UP_MS, (lp.t1 - lp.t0) / 2)
+					: 0;
 		snap[j] = startsOff && SET.has(lp.move) ? 1 : 0;
 		ahead = Math.max(ahead, lead[j]!);
 		let by = j > 0 ? wrapAngle(was(lead[j]!) - aim) : 0;
@@ -760,13 +769,23 @@ const passing = (
 // share of it (or the first of it is gone by before he is into it).
 const ACT_BLEND = 0.5;
 // (From one way of standing into another, a step with each foot - see
-// stepsOver: longer.)
+// stepsOver: longer. Down into his stance on the line from on his feet:
+// longer still, not dropped into it.)
 const SETTLE_MS = 380;
+const GET_DOWN_MS = 480;
+const DOWN = new Set<Move>(["threePoint", "dlThree", "center"]);
+const BLEND_MOST_MS = Math.max(SETTLE_MS, GET_DOWN_MS);
 const blendOf = (l: Leg, prev?: Leg): number => {
 	if (moveKind(l.move) !== "act") {
-		return prev && stepsOver(prev.move as Move, l.move as Move)
-			? SETTLE_MS
-			: BLEND_MS;
+		return !prev
+			? BLEND_MS
+			: DOWN.has(l.move as Move) &&
+				  !DOWN.has(prev.move as Move) &&
+				  moveKind(prev.move) !== "act"
+				? GET_DOWN_MS
+				: stepsOver(prev.move as Move, l.move as Move)
+					? SETTLE_MS
+					: BLEND_MS;
 	}
 	const [p0, p1] = l.span ?? [0, 1];
 	const ms = (l.t1 - l.t0) / Math.max(0.05, p1 - p0);
@@ -824,7 +843,7 @@ const stateOf = (
 	const changedAt = (j: number, at: number): number => {
 		while (
 			j > 0 &&
-			at - legs[j]!.t0 < SETTLE_MS &&
+			at - legs[j]!.t0 < BLEND_MOST_MS &&
 			!changed(legs[j - 1]!, legs[j]!)
 		) {
 			j--;
