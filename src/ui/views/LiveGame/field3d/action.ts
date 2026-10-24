@@ -1574,6 +1574,8 @@ const CARRY_MOST_MS = 500;
 const BREAK_DOWN_MS = 450;
 // (Not broken down at all with less than this long, ms, to be set in it.)
 const BREAK_SET_MS = 150;
+// (His run slowed by more than this much over: in the gait he goes in now.)
+const SLOW_RELABEL = 1.3;
 // After a man gone for a score, losing ground on him this far back (feet):
 // given up, now and then.
 const GIVE_UP_FT = 24;
@@ -4082,36 +4084,71 @@ class Action {
 	slow(m: Actor, ms: number) {
 		const l = m.last;
 		const far = dist(l.from, l.to);
-		if (far > 1 && moveKind(l.move) !== "act") {
-			if (this.weave && ms > 300) {
-				const v = Math.min(m.top * 0.9, far / ((l.t1 - l.t0) / 1000));
-				const half = (v * (l.t1 - l.t0 + ms)) / 2000;
-				const h = Math.min(
-					24,
-					Math.sqrt(Math.max(0, half ** 2 - (far / 2) ** 2)),
-				);
-				if (h > 3) {
-					const ang = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
-					const mid = {
-						x: (l.from.x + l.to.x) / 2,
-						y: (l.from.y + l.to.y) / 2,
-					};
-					// (Away from the nearer sideline.)
-					const side = Math.sign(Math.cos(ang) * (MID_Y - mid.y)) || 1;
-					const end = l.to;
-					const t1 = l.t1 + ms;
-					const w = onField({
-						x: mid.x - Math.sin(ang) * h * side,
-						y: mid.y + Math.cos(ang) * h * side,
-					});
-					const a = dist(l.from, w);
-					const tw = l.t0 + ((t1 - l.t0) * a) / (a + dist(w, end));
-					l.to = w;
-					l.t1 = tw;
-					m.go(end, t1, l.move);
-					return;
+		if (far > 1 && moveKind(l.move) !== "act" && this.weave && ms > 300) {
+			const v = Math.min(m.top * 0.9, far / ((l.t1 - l.t0) / 1000));
+			const half = (v * (l.t1 - l.t0 + ms)) / 2000;
+			const h = Math.min(
+				24,
+				Math.sqrt(Math.max(0, half ** 2 - (far / 2) ** 2)),
+			);
+			if (h > 3) {
+				const ang = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+				const mid = {
+					x: (l.from.x + l.to.x) / 2,
+					y: (l.from.y + l.to.y) / 2,
+				};
+				// (Away from the nearer sideline.)
+				const side = Math.sign(Math.cos(ang) * (MID_Y - mid.y)) || 1;
+				const end = l.to;
+				const t1 = l.t1 + ms;
+				const w = onField({
+					x: mid.x - Math.sin(ang) * h * side,
+					y: mid.y + Math.cos(ang) * h * side,
+				});
+				const a = dist(l.from, w);
+				const tw = l.t0 + ((t1 - l.t0) * a) / (a + dist(w, end));
+				l.to = w;
+				l.t1 = tw;
+				m.go(end, t1, l.move);
+				return;
+			}
+		}
+		// (The whole of his run on to it slowed - not the last stride of it
+		// stretched, nor stood waiting at the end of it: since he has had the
+		// ball, whatever else is timed to him before that left be.)
+		const since =
+			this.ball.findLast((b) => b.kind === "held" && b.pid === m.pid)?.t0 ??
+			Infinity;
+		const run: Leg[] = [];
+		for (let k = m.legs.length - 1; k >= 0; k--) {
+			const x = m.legs[k]!;
+			if (
+				x.t0 < since ||
+				!GAITS.has(x.move) ||
+				x.arms ||
+				x.turn ||
+				(x.from.x === x.to.x && x.from.y === x.to.y) ||
+				(run.length > 0 && x.t1 !== run[0]!.t0)
+			) {
+				break;
+			}
+			run.unshift(x);
+		}
+		const span = run.reduce((d, x) => d + dist(x.from, x.to), 0);
+		if (span > 1) {
+			const t0 = run[0]!.t0;
+			const k = (l.t1 - t0 + ms) / (l.t1 - t0);
+			const v = span / ((l.t1 - t0 + ms) / 1000);
+			for (const x of run) {
+				x.t0 = t0 + (x.t0 - t0) * k;
+				x.t1 = t0 + (x.t1 - t0) * k;
+				if (k > SLOW_RELABEL) {
+					x.move = gait(v);
 				}
 			}
+			return;
+		}
+		if (far > 1 && moveKind(l.move) !== "act") {
 			l.t1 += ms;
 			if (l.move !== "drive") {
 				l.move = gait(far / ((l.t1 - l.t0) / 1000));
