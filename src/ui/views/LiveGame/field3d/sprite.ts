@@ -486,6 +486,8 @@ type Plan = {
 	// His new picture being made off the page's thread (see farm.ts): drawn
 	// as he was meanwhile.
 	farmed?: boolean;
+	// Off the field - on the sideline, at the back of the picture.
+	off?: boolean;
 };
 const planOf = (
 	cam: Camera,
@@ -557,12 +559,16 @@ const plansOf = (cache: SpriteCache) => {
 // of time for a new one): if he had one a frame ago, not for too many frames
 // already, not much bigger or smaller since, and never with the ball in it
 // when he has let it go, or without it once he has it (see court3d's
-// asWas). Who he is, by his id: two men may look alike.
+// asWas). Who he is, by his id: two men may look alike. (Off the field, a
+// few frames more: small, at the back, and seldom on the move - his new
+// picture made in his turn after the men in the play, not on the page's
+// thread ahead of them.)
 const MAX_BEHIND = 3;
+const MAX_BEHIND_OFF = 6;
 const asWas = (cache: SpriteCache, plan: Plan, who: number) => {
 	const was = cache.last.get(who);
 	return was &&
-		was.behind < MAX_BEHIND &&
+		was.behind < (plan.off ? MAX_BEHIND_OFF : MAX_BEHIND) &&
 		was.frame === cache.frame - 1 &&
 		Math.abs(was.scale - plan.scale) <= 1 &&
 		(was.held ?? false) === plan.held
@@ -784,6 +790,7 @@ export const prepareFieldSprites = (
 		if (plan?.key === undefined) {
 			continue;
 		}
+		plan.off = man.off;
 		plans.set(man.st, plan);
 		if (!cache.kept.has(plan.key)) {
 			todo.push({
