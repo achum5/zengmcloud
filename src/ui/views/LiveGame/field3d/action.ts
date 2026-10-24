@@ -204,6 +204,8 @@ const STOP_ACCEL = 20;
 const STOP_STEP_MS = 100;
 // (From no slower than this, ft/s.)
 const STOP_LEAST = 8;
+// Sinking into a cut: down at this (ft/s/s).
+const CUT_ACCEL = 28;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
 // Going well off the way he faces (more than CRAB_OFF radians), in a gait
 // that goes the way it faces (or low steps up): at no more than
@@ -276,6 +278,11 @@ const paced = (move: Move | undefined, fps: number, ms: number): Move => {
 
 const clamp = (x: number, lo: number, hi: number) =>
 	Math.min(hi, Math.max(lo, x));
+// How far round (radians) going a to b and on to c turns him at b.
+const angleAt = (a: Pt, b: Pt, c: Pt): number => {
+	const t = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(b.y - a.y, b.x - a.x);
+	return Math.abs(Math.atan2(Math.sin(t), Math.cos(t)));
+};
 
 // Ways out from a man spread round him, no two nearer than `gap` (each as
 // near as it can be to the way it was).
@@ -421,7 +428,7 @@ class Actor {
 			return;
 		}
 		if (!still && moveKind(m) === "still") {
-			this.pullUpInto();
+			this.slowInto();
 		}
 		this.push({
 			t0: this.t,
@@ -438,13 +445,37 @@ class Actor {
 	// To `to`, getting there at t1, in `move` (by default by how fast that
 	// is), facing `yaw` (by default the way he goes).
 	go(to: Pt, t1: number, move?: Move, yaw?: number, extra?: Partial<Leg>) {
+		const leg = this.legTo(to, t1, move, yaw, extra);
+		if (extra === undefined) {
+			this.rampInto(leg);
+		}
+		this.push(leg);
+	}
+
+	// Cutting to `to` by t1 off the leg he is on: down to `keep` of his pace
+	// over the last of it (see CUT_ACCEL), his foot planted, and off the new
+	// way up from there.
+	cutTo(to: Pt, t1: number, keep: number) {
+		const ve = this.slowInto(keep, CUT_ACCEL);
+		const leg = this.legTo(to, t1);
+		this.rampInto(leg, ve);
+		this.push(leg);
+	}
+
+	private legTo(
+		to: Pt,
+		t1: number,
+		move?: Move,
+		yaw?: number,
+		extra?: Partial<Leg>,
+	): Leg {
 		const l = this.last;
 		const p = onField(to, this.roam);
 		const t0 = l.t1;
 		const end = Math.max(t1, t0 + 1);
 		const fps = dist(l.to, p) / ((end - t0) / 1000);
 		const way = faced(paced(move, fps, end - t0), yaw, l.to, p, fps);
-		const leg: Leg = {
+		return {
 			t0,
 			t1: end,
 			from: l.to,
@@ -453,16 +484,13 @@ class Actor {
 			...(way.yaw !== undefined ? { yaw: way.yaw } : {}),
 			...extra,
 		};
-		if (extra === undefined) {
-			this.rampInto(leg);
-		}
-		this.push(leg);
 	}
 
-	// Pulling up to a stand at the end of his last leg (see STOP_ACCEL):
-	// down to a stop over the last of it, the rest of it that much quicker
-	// (see RAMP_OVER) - or from no quicker, down as far as that takes him.
-	private pullUpInto() {
+	// Pulling up to a stand at the end of his last leg (see STOP_ACCEL) - or
+	// down to `keep` of his pace, at `A` ft/s/s: down to it over the last of
+	// it, the rest of it that much quicker (see RAMP_OVER) - or from no
+	// quicker, down as far as that takes him. (The pace he is down to.)
+	private slowInto(keep = 0, A = STOP_ACCEL): number | undefined {
 		const legs = this.part.legs;
 		const leg = this.last;
 		const T = (leg.t1 - leg.t0) / 1000;
@@ -475,12 +503,11 @@ class Actor {
 			leg.arms ||
 			leg.turn
 		) {
-			return;
+			return undefined;
 		}
-		const A = STOP_ACCEL;
-		const room = T * T - (2 * D) / A;
-		let vc = room >= 0 ? A * (T - Math.sqrt(room)) : Infinity;
-		let ve = 0;
+		let ve = v * keep;
+		const room = T * T - (2 * (D - ve * T)) / A;
+		let vc = room >= 0 ? ve + A * (T - Math.sqrt(room)) : Infinity;
 		const most = Math.max(v, Math.min(v * RAMP_OVER, RAMP_TOP));
 		if (vc > most) {
 			vc = most;
@@ -488,7 +515,7 @@ class Actor {
 		}
 		const td = (vc - ve) / A;
 		if (!(td > 0 && td < T)) {
-			return;
+			return undefined;
 		}
 		const cos = (leg.to.x - leg.from.x) / D;
 		const sin = (leg.to.y - leg.from.y) / D;
@@ -519,6 +546,7 @@ class Actor {
 				move: moveOf(i),
 			});
 		}
+		return ve;
 	}
 
 	// On the way he was going, slowing to a stop no more than `most` feet
@@ -579,9 +607,8 @@ class Actor {
 		return ((was / (ms / 1000)) * (1 + cos)) / 2;
 	}
 
-	private rampInto(leg: Leg) {
+	private rampInto(leg: Leg, into = this.paceInto(leg.to)) {
 		const T = (leg.t1 - leg.t0) / 1000;
-		const into = this.paceInto(leg.to);
 		if (!RAMPS.has(leg.move) || T * 1000 < RAMP_LEG_MS || into === undefined) {
 			return;
 		}
@@ -1392,10 +1419,35 @@ const CLOSE = 0.85;
 const FLAT_OUT = 0.97;
 // A receiver down his route, at this much of his top speed.
 const ROUTE_PACE = 0.76;
-// And what each break in it costs him (ms): down and out of the cut. (With
-// no more than this left of it to the catch (feet), no break.)
-const BREAK_COST = 200;
+// (With no more than this left of it to the catch (feet), no break.)
 const ROUTE_LEFT = 0.4;
+// A break in it sharper than CUT_LEAST (radians), cut: into it at as much
+// of his pace as goes on the new way (half of it square to it), no less
+// than CUT_KEEP of it.
+const CUT_LEAST = 0.5;
+const CUT_KEEP = 0.25;
+// (Out of his stance, the first stretch of it, a little slower.)
+const routeFps = (speed: number, k: number) => speed * (k === 1 ? 0.8 : 1);
+// A break at b in a route from a on to c, into it at vIn ft/s and out of
+// it at vOut: how much of his pace he cuts at (see CUT_KEEP) - and what
+// that costs him (ms) over going on at his pace, down into it (at
+// CUT_ACCEL) and up out of it (at RAMP_ACCEL).
+const breakOf = (
+	a: Pt,
+	b: Pt,
+	c: Pt,
+	vIn: number,
+	vOut: number,
+): { keep: number; down: number; up: number } => {
+	const turn = angleAt(a, b, c);
+	if (turn <= CUT_LEAST) {
+		return { keep: 1, down: 0, up: 0 };
+	}
+	const keep = Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2);
+	const lost = (v: number, A: number) =>
+		v > 0 ? (Math.max(0, v - vIn * keep) ** 2 / (2 * A * v)) * 1000 : 0;
+	return { keep, down: lost(vIn, CUT_ACCEL), up: lost(vOut, RAMP_ACCEL) };
+};
 // Sat down at the end of his route with longer than this to wait (ms) - the
 // ball not coming yet, or not to him - he works his way across it to where
 // he sits down again: after a moment sat (and up to this much more), at this
@@ -2554,18 +2606,41 @@ class Action {
 	}
 
 	// How long a route takes him, out of his stance to `upto` feet along it
-	// at `speed`: a little slower off the line, a beat at each break.
+	// at `speed`: a little slower off the line, down into each cut and up
+	// out of it.
 	routeMs(route: Route, speed: number, upto: number): number {
 		const pts = route.path.map((p) => this.w(p));
 		let along = 0;
 		let ms = 0;
+		let up = 0;
 		for (let k = 1; k < pts.length && along < upto - ROUTE_LEFT; k++) {
-			const go = Math.min(dist(pts[k - 1]!, pts[k]!), upto - along);
-			ms +=
-				(go / (speed * (k === 1 ? 0.8 : 1))) * 1000 + (k > 1 ? BREAK_COST : 0);
+			const seg = dist(pts[k - 1]!, pts[k]!);
+			const go = Math.min(seg, upto - along);
+			const next = this.breakAt(
+				pts,
+				k,
+				speed,
+				go < seg || upto - along - go <= ROUTE_LEFT,
+			);
+			ms += (go / routeFps(speed, k)) * 1000 + up + next.down;
+			up = next.up;
 			along += go;
 		}
 		return ms;
+	}
+
+	// The break at the end of the kth stretch of a route (see breakOf) - none,
+	// if it ends there (`ends`) or goes on no further.
+	private breakAt(pts: Pt[], k: number, speed: number, ends: boolean) {
+		return ends || k + 1 >= pts.length
+			? { keep: 1, down: 0, up: 0 }
+			: breakOf(
+					pts[k - 1]!,
+					pts[k]!,
+					pts[k + 1]!,
+					routeFps(speed, k),
+					routeFps(speed, k + 1),
+				);
 	}
 
 	// A receiver down his route, off the line at `release`: at his route
@@ -2596,6 +2671,7 @@ class Action {
 				: 1;
 		const pts = route.path.map((p) => this.w(p));
 		let along = 0;
+		let cut = { keep: 1, down: 0, up: 0 };
 		for (let k = 1; k < pts.length; k++) {
 			const seg = dist(pts[k - 1]!, pts[k]!);
 			const room = endAlong - along;
@@ -2606,16 +2682,26 @@ class Action {
 			}
 			const go = Math.min(seg, room);
 			const to = go < seg ? this.w(alongRoute(route, along + go)) : pts[k]!;
-			// Out of his stance a little slower.
-			const v = speed * (k === 1 ? 0.8 : 1);
-			const t1 = m.t + ((go / v) * 1000 + (k > 1 ? BREAK_COST : 0)) / pace;
+			const next = this.breakAt(
+				pts,
+				k,
+				speed,
+				go < seg || room - go <= ROUTE_LEFT,
+			);
+			const t1 =
+				m.t + ((go / routeFps(speed, k)) * 1000 + cut.up + next.down) / pace;
 			if (until !== undefined && t1 > until) {
 				const u = (until - m.t) / (t1 - m.t);
 				const p = m.at;
 				m.go({ x: p.x + (to.x - p.x) * u, y: p.y + (to.y - p.y) * u }, until);
 				return;
 			}
-			m.go(to, t1);
+			if (cut.keep < 1) {
+				m.cutTo(to, t1, cut.keep);
+			} else {
+				m.go(to, t1);
+			}
+			cut = next;
 			along += go;
 		}
 		if (!target && !route.settles && until !== undefined && m.t < until) {
