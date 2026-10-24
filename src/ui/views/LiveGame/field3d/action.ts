@@ -207,6 +207,9 @@ const STOP_LEAST = 8;
 // Sinking into a cut: down at this (ft/s/s).
 const CUT_ACCEL = 28;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
+const STEPS = new Set<Move>([...GAITS, "back", "slide", "shuffle"]);
+// (Slower than this, ft/s, he is not going anywhere.)
+const CRAWL_FPS = 1;
 // Going well off the way he faces (more than CRAB_OFF radians), in a gait
 // that goes the way it faces (or low steps up, or a backpedal): at no more
 // than SHUFFLE_MOST ft/s, push steps across, square to the way he goes -
@@ -501,7 +504,12 @@ class Actor {
 		const t0 = l.t1;
 		const end = Math.max(t1, t0 + 1);
 		const fps = dist(l.to, p) / ((end - t0) / 1000);
-		const way = faced(paced(move, fps, end - t0), yaw, l.to, p, fps, l);
+		let way = faced(paced(move, fps, end - t0), yaw, l.to, p, fps, l);
+		// (Hardly going anywhere, a good while: stood there, not stepping in
+		// place - and facing the way he was.)
+		if (STEPS.has(way.move) && fps < CRAWL_FPS && end - t0 >= GAIT_LEAST_MS) {
+			way = { move: "stand", yaw: way.yaw ?? this.yaw };
+		}
 		return {
 			t0,
 			t1: end,
@@ -1111,6 +1119,9 @@ const COVER_READ_MS = 600;
 const COVER_MIN = 2.5;
 const COVER_SOFT = 3;
 const COVER_FRONT = 1;
+// Back into his zone at this pace (ft/s), this far back at least (feet).
+const ZONE_FPS = 9;
+const READ_STEPS_FT = 3;
 // At the mesh, the quarterback this far to the side of the back's way
 // through it (feet): the two of them drawn the size they are (see body.ts),
 // his hands out to the ball, and not into each other. (Turned to it as he
@@ -5041,9 +5052,15 @@ class Action {
 					m.hold(fake + 100, "backerStance", this.behind);
 					drop = Math.max(drop, fake + 1300);
 				}
+				// (A few read steps back at least, lined up deep already - and
+				// there at a backpedal's pace, not stepping in place.)
+				const spot = this.w({
+					d: Math.max(zone.d, start.d + READ_STEPS_FT),
+					a: zone.a,
+				});
 				m.chase(
-					this.w(zone),
-					Math.min(until, drop),
+					spot,
+					Math.min(until, drop, m.t + (dist(m.at, spot) / ZONE_FPS) * 1000),
 					m.top * 0.6,
 					"back",
 					this.behind,
