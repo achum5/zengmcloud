@@ -353,16 +353,21 @@ const plantedTo = (v: number, ve: number, ahead: number): number =>
 	);
 
 // How long (ms) he takes to go `far` feet at `fps`, off `v0` ft/s - up to
-// it at RAMP_ACCEL.
-const rampedMs = (far: number, fps: number, v0: number): number => {
+// it at RAMP_ACCEL (or `A` ft/s/s).
+const rampedMs = (
+	far: number,
+	fps: number,
+	v0: number,
+	A = RAMP_ACCEL,
+): number => {
 	if (v0 >= fps) {
 		return (far / fps) * 1000;
 	}
-	const up = (fps * fps - v0 * v0) / (2 * RAMP_ACCEL);
+	const up = (fps * fps - v0 * v0) / (2 * A);
 	return (
 		(far <= up
-			? (Math.sqrt(v0 * v0 + 2 * RAMP_ACCEL * far) - v0) / RAMP_ACCEL
-			: (fps - v0) / RAMP_ACCEL + (far - up) / fps) * 1000
+			? (Math.sqrt(v0 * v0 + 2 * A * far) - v0) / A
+			: (fps - v0) / A + (far - up) / fps) * 1000
 	);
 };
 
@@ -638,6 +643,67 @@ class Actor {
 			Math.min(legPace(leg) * PLANT_ON, this.top),
 		);
 		return left >= RAMP_LEG_MS && dist(at, leg.to) / (left / 1000) <= most;
+	}
+
+	// To `to` by t1, out of his stance or off `v0` ft/s: up to speed at `A`
+	// ft/s/s, in steps RAMP_STEP_MS long, and on at it - as quick as he has
+	// to be to be there on time (up the whole way, and the harder, if it
+	// takes that); still facing the way he was over the steps in the first
+	// `square` ms, getting up out of it. (The pace he gets there at.)
+	getOff(
+		to: Pt,
+		t1: number,
+		v0: number,
+		A: number,
+		move?: Move,
+		square = 0,
+	): number {
+		const yaw = this.yaw;
+		const leg = this.legTo(to, t1, move);
+		if (move) {
+			// (Going all out from the first step, slow as it is.)
+			leg.move = move;
+		}
+		const T = (leg.t1 - leg.t0) / 1000;
+		const dx = leg.to.x - leg.from.x;
+		const dy = leg.to.y - leg.from.y;
+		const D = Math.hypot(dx, dy);
+		if (D <= v0 * T) {
+			this.push(leg);
+			return D / T;
+		}
+		const room = T * T - (2 * (D - v0 * T)) / A;
+		const a = room >= 0 ? A : (2 * (D - v0 * T)) / (T * T);
+		const ta = room >= 0 ? T - Math.sqrt(room) : T;
+		const n = Math.max(1, Math.round((ta * 1000) / RAMP_STEP_MS));
+		const dt = ta / n;
+		// (Hardly any of it at the one pace: the last step up on to the end.)
+		const steps = T - ta < RAMP_STEP_MS / 2000 ? n - 1 : n;
+		let from = leg.from;
+		let t = leg.t0;
+		let gone = 0;
+		for (let i = 0; i < steps; i++) {
+			gone += (v0 + a * dt * (i + 0.5)) * dt;
+			const at = {
+				x: leg.from.x + (dx * gone) / D,
+				y: leg.from.y + (dy * gone) / D,
+			};
+			const t2 = leg.t0 + (i + 1) * dt * 1000;
+			this.push({
+				...leg,
+				t0: t,
+				t1: t2,
+				from,
+				to: at,
+				...(t2 - leg.t0 <= square ? { yaw } : {}),
+			});
+			from = at;
+			t = t2;
+		}
+		leg.t0 = t;
+		leg.from = from;
+		this.push(leg);
+		return v0 + a * ta;
 	}
 
 	// Cutting to `to` by t1 off the leg he is on: down to `keep` of his pace
@@ -1897,6 +1963,19 @@ const HAND_STEP_MS = 90;
 const EDGE_OUT = 1.7;
 const EDGE_ON = 1.6;
 const EDGE_PAST = 1.8;
+// Off the ball into the man across from him: up to speed at GET_OFF_ACCEL
+// ft/s/s, no quicker than RUSH_HIT_PACE of his top speed by the time he
+// gets there - not at full tilt from his first step.
+const GET_OFF_ACCEL = 28;
+const RUSH_HIT_PACE = 0.7;
+// (Square to the line over his first steps, coming up out of his stance -
+// turned the way he goes once he is up.)
+const GET_OFF_SQUARE_MS = 200;
+// (The blocker knocked back by him, feet for each ft/s he hits him at - no
+// more than JOLT_MOST - over JOLT_MS.)
+const JOLT_PER_FPS = 0.06;
+const JOLT_MOST = 1.1;
+const JOLT_MS = 250;
 const GANG = [0.5, 0.35];
 const GANG_LATE = 250;
 // A short run up the middle, this often a pile on him (one or less yards,
@@ -5664,12 +5743,12 @@ class Action {
 			const edge =
 				b === edgeOf(side) && Math.abs(s.a) > Math.abs(this.of(b.at).a) + 0.5;
 			m.hold(snap + 40 + r() * 60);
-			// Into him as soon as he can get there.
-			const far = dist(m.at, b.posAt(snap + 450));
-			let hitT = Math.max(
-				snap + 380 + r() * 150,
-				m.t + (far / (m.top * 0.8)) * 1000,
-			);
+			// Into him as soon as he can get there out of his stance (see
+			// GET_OFF_ACCEL).
+			const least = snap + 380 + r() * 150;
+			const offMs = (far: number) =>
+				rampedMs(far, m.top * RUSH_HIT_PACE, 0, GET_OFF_ACCEL);
+			let hitT = least;
 			// (Where he is on the blocker at t - `lat` feet over, across the
 			// field.)
 			const on = (t: number, lat: number) => {
@@ -5681,16 +5760,34 @@ class Action {
 					y: p.y + dir * (edge ? side * EDGE_OUT : lat),
 				};
 			};
+			// (Up the arc first, off the edge, and in onto him.)
+			const arc = edge ? this.w({ d: s.d - 2, a: s.a + side * 1.5 }) : m.at;
+			const a = dist(m.at, arc);
+			for (let k = 0; k < 2; k++) {
+				hitT = Math.max(least, m.t + offMs(a + dist(arc, on(hitT, 0))));
+			}
+			hitT = Math.min(hitT, Math.max(least, end - HAND_MS));
 			if (edge) {
-				// (Up the arc, and in onto him, at the one pace.)
-				const arc = this.w({ d: s.d - 2, a: s.a + side * 1.5 });
-				const a = dist(m.at, arc);
 				const way = a + dist(arc, on(hitT, 0));
-				hitT = Math.max(hitT, m.t + (way / (m.top * 0.85)) * 1000);
-				m.go(arc, m.t + ((hitT - m.t) * a) / Math.max(1, way), "run");
+				m.getOff(
+					arc,
+					m.t + ((hitT - m.t) * offMs(a)) / Math.max(1, offMs(way)),
+					0,
+					GET_OFF_ACCEL,
+					"run",
+					GET_OFF_SQUARE_MS,
+				);
 			}
 			const hitLat = (r() - 0.5) * 0.6;
-			m.go(on(hitT, hitLat), hitT, "run");
+			const hit = on(hitT, hitLat);
+			const vHit = m.getOff(
+				hit,
+				hitT,
+				edge ? paceOn(m.last, m.at, hit) : 0,
+				GET_OFF_ACCEL,
+				"run",
+				edge ? 0 : GET_OFF_SQUARE_MS,
+			);
 			const per = HAND_MS * (0.8 + r() * 0.5);
 			const amp = edge ? 0 : HAND_FT * (0.5 + r());
 			let way = r() < 0.5 ? 1 : -1;
@@ -5718,8 +5815,18 @@ class Action {
 				lat0 = x.lat;
 			}
 			const held = steps.map((x) => b.posAt(x.t));
+			// (Knocked back a step as he gets into him, the two of them - see
+			// JOLT_PER_FPS - and that ground made up as he gives the rest.)
+			const moves = amp > 0 && !moved.has(b) && !this.done.has(b.pid);
+			const jolt = moves ? Math.min(JOLT_MOST, vHit * JOLT_PER_FPS) : 0;
+			const shove = (t: number) => {
+				const u = clamp((t - hitT) / JOLT_MS, 0, 1);
+				const left = clamp(1 - (t - hitT) / Math.max(1, end - hitT), 0, 1);
+				return jolt * u * u * (3 - 2 * u) * left;
+			};
 			for (const x of steps) {
 				const p = on(x.t, x.lat);
+				p.x -= dir * shove(x.t);
 				m.go(
 					p,
 					x.t,
@@ -5728,12 +5835,15 @@ class Action {
 				);
 			}
 			// (A man doubled moves with the first of them.)
-			if (amp > 0 && !moved.has(b) && !this.done.has(b.pid)) {
+			if (moves) {
 				moved.add(b);
 				b.cut(hitT);
 				steps.forEach((x, k) => {
 					b.go(
-						{ x: held[k]!.x, y: held[k]!.y + dir * x.lat * 0.6 },
+						{
+							x: held[k]!.x - dir * shove(x.t),
+							y: held[k]!.y + dir * x.lat * 0.6,
+						},
 						x.t,
 						"passSet",
 						this.ahead,
