@@ -1520,11 +1520,13 @@ const fireOff = (m: Actor, to: Pt): Move =>
 	dist(m.at, to) < FIRE_FT ? "engage" : "run";
 // Locked up on a run: shoved one way and then the other, every this long
 // (ms, give or take), from this long after the snap - this far across the
-// field (feet) and up to this far up or back.
+// field (feet) and up to this far up or back; eased into each, a step this
+// long (ms) at a time.
 const JOSTLE_MS = 420;
 const JOSTLE_FROM = 650;
 const JOSTLE_A: [number, number] = [0.5, 1.1];
 const JOSTLE_D = 0.4;
+const JOSTLE_STEP_MS = 90;
 const DOUBLE_FT = 2.2;
 const FILL_MS = 1050;
 const FILL_PACE = 0.7;
@@ -6547,12 +6549,31 @@ class Action {
 			const q = this.of(p);
 			return this.w({ d: q.d + o.d, a: q.a + o.a });
 		};
+		// (Over from one shove to the next easing in and out of it, not
+		// flung from one to the other.)
+		const keys = [
+			{ t: t0, o: { d: 0, a: 0 } },
+			...times.map((t, k) => ({ t, o: shifts[k]! })),
+			{ t: t1, o: { d: 0, a: 0 } },
+		];
+		const steps: { t: number; o: OPt }[] = [];
+		for (let k = 0; k + 1 < keys.length && times.length > 0; k++) {
+			const a = keys[k]!;
+			const b = keys[k + 1]!;
+			const n = Math.max(1, Math.round((b.t - a.t) / JOSTLE_STEP_MS));
+			for (let j = 1; j < (k + 2 < keys.length ? n + 1 : n); j++) {
+				const u = (1 - Math.cos((Math.PI * j) / n)) / 2;
+				steps.push({
+					t: a.t + ((b.t - a.t) * j) / n,
+					o: { d: a.o.d + (b.o.d - a.o.d) * u, a: a.o.a + (b.o.a - a.o.a) * u },
+				});
+			}
+		}
 		for (const m of men) {
-			for (const t of times) {
+			for (const { t } of steps) {
 				m.split(t);
 			}
-			for (const [k, t] of times.entries()) {
-				const o = shifts[k]!;
+			for (const { t, o } of steps) {
 				for (const l of m.legs) {
 					if (Math.abs(l.t1 - t) < 1e-6) {
 						l.to = over(l.to, o);
