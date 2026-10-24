@@ -3,7 +3,9 @@ import {
 	BURST,
 	alongShape,
 	keepThrough,
+	paceAlong,
 	paceFor,
+	pushAlong,
 	runMs,
 	runShape,
 } from "./motion.ts";
@@ -53,28 +55,40 @@ describe("motion", () => {
 				(alongShape(r, s + h) - alongShape(r, s - h)) / (2 * h);
 			assert.closeTo(pace(2 * h), v0, 0.05, `${L} ${T} ${v0} ${v1}`);
 			assert.closeTo(pace(T - 2 * h), v1, 0.05, `${L} ${T} ${v0} ${v1}`);
-			// From one look to the next, no more of a change than the hardest
-			// push or pull of his ramps makes in the time - none at all
-			// between them.
-			const hardest =
-				1.5 *
-				Math.max(
-					r.ta > 0 ? Math.abs(r.vc - v0) / r.ta : 0,
-					r.td > 0 ? Math.abs(r.vc - v1) / r.td : 0,
-				);
+			// From one look to the next, no more of a change than how hard he
+			// is pushing or pulling up then makes in the time - and that just
+			// what the pace says.
 			const n = 2000;
 			let prev = pace(2 * h);
 			for (let k = 1; k < n; k++) {
-				const v = pace((T * k) / n);
+				const s = (T * k) / n;
+				const v = pace(s);
+				// (Over the step, and the little way past it the pace is read
+				// over.)
+				const push = Math.max(
+					Math.abs(pushAlong(r, s + 2 * h)),
+					Math.abs(pushAlong(r, s)),
+					Math.abs(pushAlong(r, s - 2 * h)),
+					Math.abs(pushAlong(r, s - T / n)),
+					Math.abs(pushAlong(r, s - T / n - 2 * h)),
+				);
 				assert.isAtMost(
 					Math.abs(v - prev),
-					hardest * (T / n) * 1.02 + 1e-4,
+					push * (T / n) * 1.02 + 1e-4,
 					`${L} ${T} ${v0} ${v1} at ${k}`,
 				);
+				if (k % 10 === 0) {
+					assert.closeTo(
+						paceAlong(r, s),
+						v,
+						0.05,
+						`${L} ${T} ${v0} ${v1} at ${k}`,
+					);
+				}
 				prev = v;
 			}
 		}
-	});
+	}, 30_000);
 
 	test("a run timed by runMs is one he can make at his usual push", () => {
 		for (const L of [3, 8, 15, 30, 50]) {
@@ -103,6 +117,15 @@ describe("motion", () => {
 				}
 			}
 		}
+	});
+
+	// Getting going from a standstill, the first step is the hardest: no
+	// easing into it.
+	test("getting going, the push comes first", () => {
+		const r = runShape(30, 2);
+		assert.isAbove(pushAlong(r, 0.01), 25);
+		assert.isAbove(pushAlong(r, 0.01), pushAlong(r, r.ta * 0.5));
+		assert.isAbove(paceAlong(r, 0.25), 6);
 	});
 
 	test("pace through a join: all of it straight on, none turning back", () => {

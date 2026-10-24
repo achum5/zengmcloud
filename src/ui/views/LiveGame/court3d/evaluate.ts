@@ -11,7 +11,13 @@ import type {
 	Track,
 } from "./director.ts";
 import { COURT_H, rimX, type Pt, type Pt3, type Side } from "./geometry.ts";
-import { alongShape, keepThrough, runShape, type RunShape } from "./motion.ts";
+import {
+	alongShape,
+	keepThrough,
+	pushAlong,
+	runShape,
+	type RunShape,
+} from "./motion.ts";
 import { playAt } from "./physics.ts";
 import {
 	ANIMS,
@@ -100,6 +106,9 @@ export type PlayerState = {
 	// Getting going or pulling up, how long each leg's stride is, as a share
 	// of a full one - right, left (see shortSteps).
 	stepLen?: [number, number];
+	// How hard he is getting going (up to 1, all he has) or pulling up (down
+	// to -1): he drives into it, or sits back against it (see driven).
+	drive?: number;
 	// Pulled up mid-stride: his foot up off the floor come down this far (0
 	// to 1 - see footDown).
 	down?: number;
@@ -2050,6 +2059,7 @@ type Doing = {
 	// come down (see footDown).
 	down?: number;
 	stepLen?: [number, number];
+	drive?: number;
 };
 // Eased aside off a man fast enough that he steps over (feet a second) - and
 // once he is stepping, a moment's slowing between one push and the next
@@ -2419,6 +2429,7 @@ const doingAt = (
 	let bridged: ReturnType<typeof bridgeAt>;
 	let down = 0;
 	let stepLen: [number, number] | undefined;
+	let drive = 0;
 	if (act) {
 		mirrored = act.mirror === true;
 		const u = (t - act.t0) / (act.t1 - act.t0);
@@ -2454,6 +2465,7 @@ const doingAt = (
 			len: stepLen,
 		} = gaitOf(tl, tr, here.moveIndex, here.run, t));
 		z = liftOf(anim, phase, stepLen);
+		drive = driveOf(anim, here.run, t);
 		const k = here.moveIndex;
 		down = footDownAt(
 			here.run,
@@ -2605,8 +2617,27 @@ const doingAt = (
 		...(stride ? { stride } : {}),
 		...(down > 0 ? { down } : {}),
 		...(stepLen ? { stepLen } : {}),
+		...(drive !== 0 ? { drive } : {}),
 		target: act || has ? undefined : targetAt(tl, pid, t) || undefined,
 	};
+};
+
+// HOW HARD HE IS GOING AT IT on a run, getting going or pulling up (see
+// PlayerState's drive): as hard as he is speeding up or slowing down,
+// against all he has (feet a second, a second) - on his feet going forward,
+// not sliding or backpedalling, and nothing to speak of left out.
+const DRIVE_FULL = 28;
+const DRIVE_MIN = 0.08;
+const DRIVES = new Set<AnimName>(["run", "sprint", "jog", "dribble"]);
+const driveOf = (anim: AnimName, run: Run, t: number): number => {
+	if (!DRIVES.has(anim)) {
+		return 0;
+	}
+	const d = Math.max(
+		-1,
+		Math.min(1, pushAlong(shapeOf(run), (t - run.s0) / 1000) / DRIVE_FULL),
+	);
+	return Math.abs(d) < DRIVE_MIN ? 0 : d;
 };
 // How far off the floor his stride takes him (short steps: see shortLift).
 const liftOf = (
@@ -4191,6 +4222,32 @@ const settleStep = (
 	};
 };
 
+// Getting going hard he drives into it - leaning on into his first steps,
+// his arms pumping - and pulling up hard he sits back against it. (His arms
+// left be with the ball in them, or on it.)
+const DRIVE_LEAN = 14;
+const BRACE_LEAN = 9;
+const DRIVE_PUMP = 0.45;
+const DRIVE_ELBOW = 12;
+const driven = (p: Pose, d: number, arms: boolean): Pose => {
+	if (d < 0) {
+		return { ...p, lean: p.lean + BRACE_LEAN * d };
+	}
+	if (!arms) {
+		return { ...p, lean: p.lean + DRIVE_LEAN * d };
+	}
+	const mid = (p.shN + p.shF) / 2;
+	const k = 1 + DRIVE_PUMP * d;
+	return {
+		...p,
+		lean: p.lean + DRIVE_LEAN * d,
+		shN: mid + (p.shN - mid) * k,
+		shF: mid + (p.shF - mid) * k,
+		elN: p.elN + DRIVE_ELBOW * d,
+		elF: p.elF + DRIVE_ELBOW * d,
+	};
+};
+
 // His pose: his move's, eased in from the last one's just after a change -
 // and an arm in whatever it is saying.
 export const poseOf = (st: PlayerState): Pose => {
@@ -4221,6 +4278,13 @@ export const poseOf = (st: PlayerState): Pose => {
 			: undefined;
 	const steps = was ? settleLegs(q, was, 1 - fw, standRef(st)) : undefined;
 	let p = steps ? settleStep(eased, q, was!, 1 - fw, standRef(st)) : eased;
+	if (st.drive) {
+		p = driven(
+			p,
+			st.drive,
+			st.dribble === undefined && !st.holding && st.grip === undefined,
+		);
+	}
 	// His legs turned under him - and turning on the spot, a leg each (see
 	// pivotOf). Easing out of the last move, each foot points where it
 	// pointed on the floor as it changed - not swung round with him as he

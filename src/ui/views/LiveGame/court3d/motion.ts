@@ -40,6 +40,50 @@ const ramp = (from: number, to: number, k: number): number => {
 	return (TAU / k) * Math.log((TOP - a) / (TOP - b)) + Math.max(0, to - b) / 4;
 };
 
+// The area under an S-shaped ramp from 0 to 1, x of the way along it.
+const rampArea = (x: number) => x * x * x - (x * x * x * x) / 2;
+
+// Getting going over a ramp `t` seconds long, from `from` up to `to`: the
+// push he has in hand all of it, from the first step - hardest then, less and
+// less as he picks up pace (see pushFrom) - not built up to. The time
+// constant of that push (s); nothing for a ramp that eases in and out
+// instead: pulling up, or getting up to a pace he never quite reaches.
+const upTau = (from: number, to: number, t: number): number | undefined =>
+	to <= from + 1e-9 || to > TOP - 0.5 || t <= 0
+		? undefined
+		: t / Math.log((TOP - Math.max(0, from)) / (TOP - to));
+
+// How far (feet) a ramp from one pace to another `t` seconds long takes him,
+// and how far along it he is `s` seconds in.
+const rampDist = (from: number, to: number, t: number): number => {
+	const tau = upTau(from, to, t);
+	return tau === undefined
+		? ((from + to) / 2) * t
+		: TOP * t - tau * (to - from);
+};
+const rampAlong = (from: number, to: number, t: number, s: number): number => {
+	const tau = upTau(from, to, t);
+	return tau === undefined
+		? from * s + (to - from) * t * rampArea(s / t)
+		: TOP * s - tau * (TOP - Math.max(0, from)) * (1 - Math.exp(-s / tau));
+};
+// How fast he is going `s` seconds into it, and how hard he is speeding up
+// (feet a second, a second - slowing, less than nothing).
+const rampPace = (from: number, to: number, t: number, s: number): number => {
+	const tau = upTau(from, to, t);
+	const x = Math.min(1, Math.max(0, s / t));
+	return tau === undefined
+		? from + (to - from) * x * x * (3 - 2 * x)
+		: TOP - (TOP - Math.max(0, from)) * Math.exp(-Math.min(s, t) / tau);
+};
+const rampPush = (from: number, to: number, t: number, s: number): number => {
+	const tau = upTau(from, to, t);
+	const x = Math.min(1, Math.max(0, s / t));
+	return tau === undefined
+		? ((to - from) / t) * 6 * x * (1 - x)
+		: ((TOP - Math.max(0, from)) / tau) * Math.exp(-Math.min(s, t) / tau);
+};
+
 // The way a run goes: up (or down) from its pace at the start to `vc`, on at
 // that, then to its pace at the end.
 export type RunShape = {
@@ -68,9 +112,9 @@ export const runShape = (L: number, T: number, v0 = 0, v1 = 0): RunShape => {
 		const ta = ramp(v0, vc, k);
 		const td = ramp(vc, v1, k);
 		return (
-			((v0 + vc) / 2) * ta +
+			rampDist(v0, vc, ta) +
 			vc * Math.max(0, T - ta - td) +
-			((vc + v1) / 2) * td
+			rampDist(vc, v1, td)
 		);
 	};
 	// Between a cruise that fits (a) and one that doesn't (b), the edge.
@@ -147,9 +191,6 @@ export const runShape = (L: number, T: number, v0 = 0, v1 = 0): RunShape => {
 	return { T, v0: L / T, v1: L / T, vc: L / T, ta: 0, td: 0, L };
 };
 
-// The area under an S-shaped ramp from 0 to 1, x of the way along it.
-const rampArea = (x: number) => x * x * x - (x * x * x * x) / 2;
-
 // How far along it (feet) a run of this shape is, s seconds in.
 export const alongShape = (r: RunShape, s: number): number => {
 	const { T, v0, v1, vc, ta, td, L } = r;
@@ -161,18 +202,37 @@ export const alongShape = (r: RunShape, s: number): number => {
 	}
 	let d: number;
 	if (s < ta) {
-		d = v0 * s + (vc - v0) * ta * rampArea(s / ta);
+		d = rampAlong(v0, vc, ta, s);
 	} else if (s <= T - td) {
-		d = ((v0 + vc) / 2) * ta + vc * (s - ta);
+		d = rampDist(v0, vc, ta) + vc * (s - ta);
 	} else {
-		const q = s - (T - td);
 		d =
-			((v0 + vc) / 2) * ta +
+			rampDist(v0, vc, ta) +
 			vc * (T - ta - td) +
-			vc * q +
-			(v1 - vc) * td * rampArea(q / td);
+			rampAlong(vc, v1, td, s - (T - td));
 	}
 	return Math.min(L, Math.max(0, d));
+};
+
+// How fast (feet a second) a run of this shape has him going s seconds in -
+// and how hard he is speeding up then (feet a second, a second; pulling up,
+// less than nothing).
+export const paceAlong = (r: RunShape, s: number): number => {
+	const { T, v0, v1, vc, ta, td } = r;
+	if (s < ta) {
+		return rampPace(v0, vc, ta, Math.max(0, s));
+	}
+	return s <= T - td ? vc : rampPace(vc, v1, td, Math.min(td, s - (T - td)));
+};
+export const pushAlong = (r: RunShape, s: number): number => {
+	const { T, v0, v1, vc, ta, td } = r;
+	if (s < 0 || s > T) {
+		return 0;
+	}
+	if (s < ta) {
+		return rampPush(v0, vc, ta, s);
+	}
+	return s <= T - td ? 0 : rampPush(vc, v1, td, s - (T - td));
 };
 
 // All out - after a loose ball, up for a rebound - he gets going and pulls
@@ -222,8 +282,8 @@ export const runMs = (
 	const s0 = Math.min(v0, v);
 	const s1 = Math.min(v1, v);
 	const k = effort;
-	const dUp = ((s0 + v) / 2) * ramp(s0, v, k);
-	const dDown = ((v + s1) / 2) * ramp(v, s1, k);
+	const dUp = rampDist(s0, v, ramp(s0, v, k));
+	const dDown = rampDist(v, s1, ramp(v, s1, k));
 	if (dUp + dDown <= L) {
 		return (ramp(s0, v, k) + (L - dUp - dDown) / v + ramp(v, s1, k)) * 1000;
 	}
@@ -233,7 +293,7 @@ export const runMs = (
 	for (let n = 0; n < 24; n++) {
 		const m = (a + b) / 2;
 		const dd =
-			((s0 + m) / 2) * ramp(s0, m, k) + ((m + s1) / 2) * ramp(m, s1, k);
+			rampDist(s0, m, ramp(s0, m, k)) + rampDist(m, s1, ramp(m, s1, k));
 		if (dd < L) {
 			a = m;
 		} else {
