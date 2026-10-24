@@ -472,6 +472,34 @@ const held = (o: Partial<Pose>): FieldAnim => ({
 		[1, BASE],
 	],
 });
+// Taking a handoff, his arms over whatever his legs are doing: in off
+// his stride, open round his belly for it as he comes to it - the arm on
+// the quarterback's side (here his right) across the top, the other under
+// - and shut round it as it comes in, two thirds of the way through (see
+// action.ts TAKE_BEFORE_MS).
+const TAKE_OPEN = pose({
+	shN: 2,
+	elN: 129,
+	abN: -36,
+	shF: 13,
+	elF: 35,
+	abF: -31,
+});
+const TAKE_SHUT = pose({
+	shN: 1,
+	elN: 97,
+	abN: -21,
+	shF: 5,
+	elF: 103,
+	abF: -14,
+});
+const TAKE_KEYS: [number, Pose][] = [
+	[0, pose({ shN: 10, elN: 85, shF: 10, elF: 85 })],
+	[0.4, TAKE_OPEN],
+	[0.64, TAKE_OPEN],
+	[0.8, TAKE_SHUT],
+	[1, TAKE_SHUT],
+];
 // Both hands on top of his head (in close: see tuck).
 const HANDS_ON_HEAD: Partial<Pose> = {
 	shN: 162,
@@ -3332,6 +3360,12 @@ const FIELD_ANIMS = {
 	sigHead: held(HANDS_ON_HEAD),
 	// A fake handoff taken: his arms shut round his belly on nothing.
 	fakeCarry: held({ shN: 24, elN: 104, abN: -16, shF: 30, elF: 98, abF: -16 }),
+	// A handoff taken from his right, or his left (see TAKE_KEYS).
+	takeR: { kind: "act", keys: TAKE_KEYS },
+	takeL: {
+		kind: "act",
+		keys: TAKE_KEYS.map(([k, q]): [number, Pose] => [k, mirror(q)]),
+	},
 	// A ball he should have had: his hands to his helmet, his head down.
 	handsOnHelmet: held({ ...HANDS_ON_HEAD, lean: 10 }),
 	// Illegal contact, illegal use of the hands: an open hand out in front.

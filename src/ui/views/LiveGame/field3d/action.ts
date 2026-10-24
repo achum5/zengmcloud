@@ -696,6 +696,11 @@ const MESH_APART = 3;
 // (The quarterback's arms out with the ball from this long before the
 // back gets to it, into him this far ahead of the middle of him.)
 const HAND_OUT_MS = 200;
+// (The back's arms in to take it this long before it gets to him, and on
+// round it so long after - see poses.ts TAKE_KEYS.)
+const TAKE_BEFORE_MS = 450;
+const TAKE_AFTER_MS = 250;
+const TAKE_LEAD_MS = 60;
 const MESH_AHEAD = 0.8;
 // (Into his pass set, over no less than this long - off a fake on the
 // run, a moment to pull up into it.)
@@ -4600,7 +4605,27 @@ class Action {
 				carrier.hold(snap + lead);
 				carrier.go(meshPt, mesh, "run");
 			}
-			this.ball.push({ kind: "held", t0: mesh, pid: carrier.pid });
+			// (Into his hands as they come to the quarterback's: just short of
+			// the mesh, out in front of him.)
+			this.ball.push({
+				kind: "held",
+				t0: mesh - TAKE_LEAD_MS,
+				pid: carrier.pid,
+			});
+			// (The back's arms open round his belly for it as he comes to it,
+			// the top one on the quarterback's side - and shut round it.)
+			const ox = qbMesh.x - meshPt.x;
+			const oy = qbMesh.y - meshPt.y;
+			const left = ox * (meshPt.y - from.y) - oy * (meshPt.x - from.x) > 0;
+			this.reaches.push({
+				m: carrier,
+				move: left ? "takeL" : "takeR",
+				t0: Math.max(
+					mesh - TAKE_BEFORE_MS,
+					sweep ? carrier.last.t0 : snap + lead + 100,
+				),
+				t1: mesh + TAKE_AFTER_MS,
+			});
 		}
 
 		if (rider) {
