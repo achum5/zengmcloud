@@ -675,9 +675,10 @@ class Actor {
 		A: number,
 		move?: Move,
 		square = 0,
+		face?: number,
 	): number {
 		const yaw = this.yaw;
-		const leg = this.legTo(to, t1, move);
+		const leg = this.legTo(to, t1, move, face);
 		if (move) {
 			// (Going all out from the first step, slow as it is.)
 			leg.move = move;
@@ -1765,6 +1766,9 @@ const BREAK_NEAR_MOST = 10;
 const BREAK_NEAR_MS = 350;
 const BREAK_NEAR_FT = 3;
 const BREAK_NEAR_FPS = 6;
+// (Off out of it into the hit up to speed (see GET_OFF_ACCEL) - this long
+// before it at least, ms.)
+const BREAK_FIRE_MS = 300;
 // (His run slowed by more than this much over: in the gait he goes in now.)
 const SLOW_RELABEL = 1.3;
 // After a man gone for a score, losing ground on him this far back (feet):
@@ -5200,10 +5204,17 @@ class Action {
 		m.plantFor(hit);
 		const far = dist(m.at, hit);
 		const secs = (lead - m.t) / 1000;
+		// (When he goes in on it from this far off, set: as long before it as
+		// getting up to speed into it takes - not off at it all at once.)
+		const fireAt = (d: number) =>
+			lead -
+			Math.max(BREAK_FIRE_MS, rampedMs(d, m.top * FLAT_OUT, 0, GET_OFF_ACCEL));
+		const fire = fireAt(5);
+		const fireNear = fireAt(far > BREAK_NEAR_FT + 1 ? BREAK_NEAR_FT : far);
 		// (Up to it no quicker than gets him there with BREAK_DOWN_MS to
 		// settle into it - chopping his feet down into it, not stopped
 		// dead: if there is the time for that.)
-		const room = (lead - 300 - BREAK_DOWN_MS - m.t) / 1000;
+		const room = (fire - BREAK_DOWN_MS - m.t) / 1000;
 		const v = clamp((far - 5) / Math.max(0.1, room), 4, m.top * 0.7);
 		const ease = Math.min(
 			(far - 5) * 0.5,
@@ -5217,30 +5228,26 @@ class Action {
 		// (Broken down, square to the man he is to hit, where he is by then -
 		// not to where he will have him.)
 		const look = () => {
-			const him = watch?.posAt((m.t + lead - 300) / 2);
+			const him = watch?.posAt((m.t + fire) / 2);
 			return him && dist(him, m.at) > 2 ? this.toward(m.at, him) : face;
 		};
 		const downBy =
 			m.t +
 			rampedMs(far - 5 - ease, v, paceOn(m.last, m.at, off)) +
 			((2 * ease) / v) * 1000;
-		if (
-			far > 8 &&
-			far < m.top * 0.5 * secs &&
-			downBy <= lead - 300 - BREAK_SET_MS
-		) {
+		if (far > 8 && far < m.top * 0.5 * secs && downBy <= fire - BREAK_SET_MS) {
 			const u = (far - 5 - ease) / (far - 5);
 			m.run(
 				{ x: m.at.x + (off.x - m.at.x) * u, y: m.at.y + (off.y - m.at.y) * u },
 				v,
 			);
 			m.easeOff(ease);
-			m.hold(lead - 300, "backerStance", look());
-			m.chase(hit, lead, m.top * FLAT_OUT, "run", face);
+			m.hold(fire, "backerStance", look());
+			m.getOff(hit, lead, 0, GET_OFF_ACCEL, "run", 0, face);
 		} else if (
 			far <= 8 &&
 			legPace(m.last) < BREAK_NEAR_MOST &&
-			lead - 300 - m.t >= nearMs + BREAK_NEAR_MS
+			fireNear - m.t >= nearMs + BREAK_NEAR_MS
 		) {
 			// (Right there already, and with time: squared up to him a step
 			// or so off, his feet chopping, till he comes - not walked in
@@ -5252,8 +5259,8 @@ class Action {
 				};
 				m.go(at, m.t + nearMs, "shuffle", face);
 			}
-			m.hold(lead - 300, "backerStance", look());
-			m.chase(hit, lead, m.top * FLAT_OUT, undefined, face);
+			m.hold(fireNear, "backerStance", look());
+			m.getOff(hit, lead, 0, GET_OFF_ACCEL, "run", 0, face);
 		} else {
 			// (Giving ground in front of him: backpedaling, square to him,
 			// if he can go that quick so.)
