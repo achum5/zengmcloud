@@ -74,6 +74,11 @@ const TURN_MOST = 12;
 // (Coming up into his stance for the snap, square to it as he gets there:
 // round into it over the last of his way up.)
 const SET_UP_MS = 300;
+// (Out of a backpedal into a run the same way - his hips opened, round
+// as he backpedals the last of it, this long (ms) at most: not running
+// on backwards as he comes round.)
+const FLIP_LEAD_MS = 130;
+const FLIP_SAME = Math.PI / 4;
 const turnMost = (l: Leg) => (l.move === "walk" ? TURN_MOST / 2 : TURN_MOST);
 // (How fast he goes through a move: taken over this long.)
 const RATE_MS = 5;
@@ -222,6 +227,18 @@ const facingOf = (legs: Leg[]): Facing => {
 		const setsUp = !goes(lj) && lp && goes(lp) && SET.has(lj.move);
 		// (Or down on a knee: round as he gets there - or, stood, round on
 		// his feet first, all the way, and then down.)
+		const flips =
+			own &&
+			lp !== undefined &&
+			lp.move === "back" &&
+			goes(lp) &&
+			Math.abs(lp.t1 - lj.t0) <= 1 &&
+			Math.abs(
+				wrapAngle(
+					Math.atan2(lj.to.y - lj.from.y, lj.to.x - lj.from.x) -
+						Math.atan2(lp.to.y - lp.from.y, lp.to.x - lp.from.x),
+				),
+			) < FLIP_SAME;
 		const kneels =
 			lj.move === "takeKnee" &&
 			lp &&
@@ -231,17 +248,19 @@ const facingOf = (legs: Leg[]): Facing => {
 		lead[j] =
 			startsOff && !SET.has(lp.move)
 				? paceOf(legs, j).early
-				: stood
-					? Math.min(
-							Math.max(
-								TURN_MS,
-								(Math.abs(wrapAngle(was(0) - aim)) / STAND_TURN) * 1000,
-							),
-							(lp.t1 - lp.t0) * 0.9,
-						)
-					: setsUp || kneels
-						? Math.min(SET_UP_MS, (lp.t1 - lp.t0) / 2)
-						: 0;
+				: flips
+					? Math.min(FLIP_LEAD_MS, (lp.t1 - lp.t0) * 0.9)
+					: stood
+						? Math.min(
+								Math.max(
+									TURN_MS,
+									(Math.abs(wrapAngle(was(0) - aim)) / STAND_TURN) * 1000,
+								),
+								(lp.t1 - lp.t0) * 0.9,
+							)
+						: setsUp || kneels
+							? Math.min(SET_UP_MS, (lp.t1 - lp.t0) / 2)
+							: 0;
 		snap[j] = startsOff && SET.has(lp.move) ? 1 : 0;
 		ahead = Math.max(ahead, lead[j]!);
 		let by = j > 0 ? wrapAngle(was(lead[j]!) - aim) : 0;
@@ -300,7 +319,8 @@ const roundAt = (legs: Leg[], f: Facing, j: number, t: number): number => {
 	const v = clamp01((t - legs[j]!.t0 + w) / (2 * w));
 	const a =
 		f.aim[j - 1]! +
-		f.off[j - 1]! * (1 - clamp01((t - legs[j - 1]!.t0) / f.ms[j - 1]!));
+		f.off[j - 1]! *
+			(1 - clamp01((t - legs[j - 1]!.t0 + f.lead[j - 1]!) / f.ms[j - 1]!));
 	return a + wrapAngle(f.aim[j]! - a) * v * v * (3 - 2 * v);
 };
 const turnedAt = (legs: Leg[], t: number, f = facingOf(legs)): number => {
