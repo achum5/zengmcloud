@@ -843,32 +843,53 @@ const SCOOP_IN_MS = 100;
 // (Up out of his stance at the snap and off: quickly - not slow to come
 // up, swung round still down in it.)
 const UP_MS = 180;
+const offTheSnap = (l: Leg, prev: Leg | undefined) =>
+	prev !== undefined &&
+	DOWN.has(prev.move as Move) &&
+	moveKind(l.move) === "cycle" &&
+	l.move !== "walk";
+// (Up out of it otherwise - stood up, or walking off: no quicker than he
+// got down into it.)
+const upSlowly = (l: Leg, prev: Leg | undefined) =>
+	prev !== undefined &&
+	DOWN.has(prev.move as Move) &&
+	!DOWN.has(l.move as Move) &&
+	moveKind(l.move) !== "act" &&
+	!offTheSnap(l, prev);
 // How far he is into a leg, so far through his blend into it (and how
-// fast he is going into it, per ms): down into his stance, eased in and
-// settled into it at the last - not at an even rate, dropped into it.
-const intoOf = (l: Leg, u: number): number => {
+// fast he is going into it, per ms): down into his stance, or up out of
+// it slowly, eased in and settled at the last - not at an even rate,
+// dropped into it.
+const eases = (l: Leg, prev: Leg | undefined) =>
+	DOWN.has(l.move as Move) || upSlowly(l, prev);
+const intoOf = (l: Leg, prev: Leg | undefined, u: number): number => {
 	const v = clamp01(u);
-	return DOWN.has(l.move as Move) ? v * v * (3 - 2 * v) : v;
+	return eases(l, prev) ? v * v * (3 - 2 * v) : v;
 };
-const intoRate = (l: Leg, u: number, ms: number): number => {
+const intoRate = (
+	l: Leg,
+	prev: Leg | undefined,
+	u: number,
+	ms: number,
+): number => {
 	const v = clamp01(u);
-	return (DOWN.has(l.move as Move) ? 6 * v * (1 - v) : 1) / ms;
+	return (eases(l, prev) ? 6 * v * (1 - v) : 1) / ms;
 };
 const blendOf = (l: Leg, prev?: Leg): number => {
 	if (moveKind(l.move) !== "act") {
 		return !prev
 			? BLEND_MS
-			: DOWN.has(prev.move as Move) &&
-				  moveKind(l.move) === "cycle" &&
-				  l.move !== "walk"
+			: offTheSnap(l, prev)
 				? UP_MS
-				: DOWN.has(l.move as Move) &&
-					  !DOWN.has(prev.move as Move) &&
-					  moveKind(prev.move) !== "act"
+				: upSlowly(l, prev)
 					? GET_DOWN_MS
-					: stepsOver(prev.move as Move, l.move as Move)
-						? SETTLE_MS
-						: BLEND_MS;
+					: DOWN.has(l.move as Move) &&
+						  !DOWN.has(prev.move as Move) &&
+						  moveKind(prev.move) !== "act"
+						? GET_DOWN_MS
+						: stepsOver(prev.move as Move, l.move as Move)
+							? SETTLE_MS
+							: BLEND_MS;
 	}
 	if (l.move === "scoop") {
 		return SCOOP_IN_MS;
@@ -949,6 +970,7 @@ const stateOf = (
 			? 1 -
 				intoOf(
 					legs[j2]!,
+					legs[j2 - 1],
 					(legs[j]!.t0 - legs[j2]!.t0) / blendOf(legs[j2]!, legs[j2 - 1]),
 				)
 			: 0;
@@ -1033,10 +1055,10 @@ const stateOf = (
 			rate: {
 				move: rateOf(l, phase),
 				from: rateOf(prior, was),
-				w: intoRate(legs[c]!, blended / blending, blending),
+				w: intoRate(legs[c]!, prior, blended / blending, blending),
 			},
 			...(prior.mirrored ? { mirrored: true } : {}),
-			w: 1 - intoOf(legs[c]!, blended / blending),
+			w: 1 - intoOf(legs[c]!, prior, blended / blending),
 			...(prior.arms
 				? { arms: { move: prior.arms, phase: armsPhaseOf(prior, prior.t1) } }
 				: {}),
