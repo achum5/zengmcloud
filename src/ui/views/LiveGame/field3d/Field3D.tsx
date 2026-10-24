@@ -88,6 +88,7 @@ import {
 	tvCameraGear,
 } from "./media.ts";
 import { tvCrewFor } from "./tv.ts";
+import { makeFieldFarm, spawnFieldWorker } from "./farm.ts";
 import {
 	drawFieldPlayer,
 	drawnBall,
@@ -565,6 +566,16 @@ const Field3D = ({
 		// The picture is drawn small - pixel art - and the page blows it up
 		// without smoothing (see the canvas's style).
 		const scratch = makeScratch();
+		// Hands off the page's own thread to make new pictures on, where the
+		// device has them (see farm.ts) - two, if it has the cores: twice the
+		// men basketball has, most of them on the move at once.
+		const farm =
+			typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined"
+				? undefined
+				: makeFieldFarm(
+						spawnFieldWorker,
+						(navigator.hardwareConcurrency || 2) >= 4 ? 2 : 1,
+					);
 		let sprites = makeSpriteCache();
 		sprites.budget = SPRITE_BUDGET_MS;
 		// When finer poses were last taken up, and last given up for want of
@@ -728,7 +739,7 @@ const Field3D = ({
 			}
 			startFrame(sprites);
 			const drawStart = performance.now();
-			prepareFieldSprites(scratch, view, men, 1, sprites);
+			prepareFieldSprites(scratch, view, men, 1, sprites, farm);
 			drawFieldFrame({
 				ctx,
 				cam: view,
@@ -852,6 +863,7 @@ const Field3D = ({
 			cancelAnimationFrame(raf);
 			clearInterval(interval);
 			releaseSprites(sprites);
+			farm?.stop();
 		};
 	}, []);
 

@@ -10,6 +10,7 @@ const BLACKLIST = {
 	ui: [...LODASH_BLACKLIST, /\/worker/],
 	worker: [...LODASH_BLACKLIST, /\/ui/, /^react/],
 	court: [...LODASH_BLACKLIST, /\/worker/, /^react/],
+	field: [...LODASH_BLACKLIST, /\/worker/, /^react/],
 };
 
 const buildFile = async (

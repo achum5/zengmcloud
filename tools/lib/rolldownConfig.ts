@@ -12,11 +12,18 @@ import { startEnd } from "./rolldownPlugins/startEnd.ts";
 
 export const FOLDER = "gen";
 
-// The page, the game's worker, and (basketball only) the worker the 3D court
-// is staged in (src/court).
-export type BundleName = "ui" | "worker" | "court";
+// The page, the game's worker, and the 3D game's own worker: basketball's,
+// the court staged in it (src/court); football's, the field's players
+// sculpted in it (src/field).
+export type BundleName = "ui" | "worker" | "court" | "field";
 export const bundleNames = (sport: Sport): BundleName[] =>
-	sport === "basketball" ? ["ui", "worker", "court"] : ["ui", "worker"];
+	sport === "basketball"
+		? ["ui", "worker", "court"]
+		: sport === "football"
+			? ["ui", "worker", "field"]
+			: ["ui", "worker"];
+// Every one, whatever the sport.
+export const ALL_BUNDLES: BundleName[] = ["ui", "worker", "court", "field"];
 
 export const rolldownConfig = (
 	sport: Sport,

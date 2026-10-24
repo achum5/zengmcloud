@@ -56,8 +56,10 @@ export const buildJs = async (sport: Sport, versionNumber: string) => {
 				);
 
 				worker.on("message", (modulepreloadFilenames) => {
-					// (The court's worker is only wanted once a 3D game is on.)
-					resolve(name === "court" ? [] : modulepreloadFilenames);
+					// (The 3D game's worker is only wanted once a 3D game is on.)
+					resolve(
+						name === "court" || name === "field" ? [] : modulepreloadFilenames,
+					);
 				});
 			}),
 		);

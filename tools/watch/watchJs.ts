@@ -2,7 +2,7 @@ import { Worker } from "node:worker_threads";
 import type { Spinners } from "./spinners.ts";
 import type { Update } from "./cli.ts";
 import type { Sport } from "../lib/getSport.ts";
-import { bundleNames } from "../lib/rolldownConfig.ts";
+import { ALL_BUNDLES } from "../lib/rolldownConfig.ts";
 
 export const watchJs = (
 	initialSport: Sport,
@@ -10,7 +10,7 @@ export const watchJs = (
 	eventEmitter: Spinners["eventEmitter"],
 ) => {
 	// (All of them, whatever the sport: the sport can change under a watch.)
-	for (const name of bundleNames("basketball")) {
+	for (const name of ALL_BUNDLES) {
 		const filename = `build/gen/${name}.js`;
 
 		const worker = new Worker(new URL("watchJsWorker.ts", import.meta.url), {
