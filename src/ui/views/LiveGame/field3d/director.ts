@@ -2521,7 +2521,6 @@ class Director {
 								move: "slide",
 								...(st.yaw !== undefined ? { yaw: st.yaw } : {}),
 							},
-					{ ...st, t0: end + 100, t1: end + 100, from: d0, to: d0 },
 				);
 			}
 		}
