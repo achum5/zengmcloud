@@ -1315,6 +1315,13 @@ const EDGE_ROUND = 3;
 const EDGE_IN = 9;
 const EDGE_WIDE = 4.5;
 const EDGE_STAGGER = 2.5;
+// (His leap for it carrying him on this long at the pace he came in at,
+// seconds, and no further than this, feet.)
+const SWAT_ON = 0.2;
+// A gunner set in front of the returner by this long after he would have
+// got there at full tilt, ms.
+const GUNNER_SET_MS = 900;
+const SWAT_ON_MOST = 4;
 
 // ---- the play ----------------------------------------------------------------
 
@@ -7114,7 +7121,8 @@ class Action {
 				g.top * 0.95,
 				"sprint",
 			);
-			g.hold(g.t + 300, "backerStance", this.toward(g.at, landPt));
+			// (Broken down there, slowing into it over his last strides.)
+			g.hold(g.t + GUNNER_SET_MS, "backerStance", this.toward(g.at, landPt));
 			if (j) {
 				jammers.splice(jammers.indexOf(j), 1);
 				j.hold(snap + 60);
@@ -7473,7 +7481,15 @@ class Action {
 				const all = first + dist(round, block);
 				m.go(round, go + ((there - go) * first) / all, "sprint");
 				m.go(block, there, "sprint");
-				m.act("swat", kickT + 350, this.toward(m.at, this.w(spot)));
+				// (Laid out for it off his last stride: carried on a little
+				// way with it, not stopped dead.)
+				const l = m.last;
+				const far = dist(l.from, l.to);
+				const on = far > 0 ? Math.min(SWAT_ON_MOST, legPace(l) * SWAT_ON) : 0;
+				m.act("swat", kickT + 350, this.toward(m.at, this.w(spot)), {
+					x: l.to.x + ((l.to.x - l.from.x) / Math.max(far, 1e-6)) * on,
+					y: l.to.y + ((l.to.y - l.from.y) / Math.max(far, 1e-6)) * on,
+				});
 			} else {
 				m.hold(kickT - 250);
 				m.act("swat", kickT + 350, this.behind);

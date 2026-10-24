@@ -390,6 +390,40 @@ const HURRY_ACROSS = 6;
 const HURRY_SPREAD = 350;
 const HURRY_FPS = [10, 4] as const;
 const HURRY_OUT = new Set<Role>(["X", "Z", "SL", "SL2", "TE", "TE2"]);
+// Into his stance at the end of it: the last SET_IN_FT of the way at a
+// walk (SET_IN_FPS), the rest of it that much quicker (no more than
+// SET_IN_MOST times) - not pulled up dead out of a jog.
+const SET_IN_FT = 3;
+const SET_IN_FPS = 4;
+const SET_IN_MOST = 1.35;
+const SET_IN_LEAST = 1;
+const intoStance = (
+	from: Pt,
+	to: Pt,
+	t0: number,
+	t1: number,
+	move: Move,
+): Leg[] => {
+	const d = Math.hypot(to.x - from.x, to.y - from.y);
+	const fps = d / ((t1 - t0) / 1000);
+	// (As far at a walk as leaves the rest no more than SET_IN_MOST times
+	// as quick.)
+	const k = (SET_IN_MOST * fps) / SET_IN_FPS - 1;
+	const s = Math.min(SET_IN_FT, d / 3, k > 0 ? (d * (SET_IN_MOST - 1)) / k : 0);
+	const main = t1 - t0 - (s / SET_IN_FPS) * 1000;
+	if (fps < SET_IN_FPS * 1.5 || s < SET_IN_LEAST || main <= 0) {
+		return [{ t0, t1, from, to, move }];
+	}
+	const u = (d - s) / d;
+	const mid = {
+		x: from.x + (to.x - from.x) * u,
+		y: from.y + (to.y - from.y) * u,
+	};
+	return [
+		{ t0, t1: t0 + main, from, to: mid, move },
+		{ t0: t0 + main, t1, from: mid, to, move: "walk" },
+	];
+};
 // Set this long after the last man is, before the snap; and the cadence
 // from there (shortest, longest).
 const SET_HOLD = 450;
@@ -2142,13 +2176,7 @@ class Director {
 										yaw: look,
 									},
 								]),
-						{
-							t0: leave,
-							t1: arrive,
-							from,
-							to: p.at,
-							move: jog ? "jog" : "walk",
-						},
+						...intoStance(from, p.at, leave, arrive, jog ? "jog" : "walk"),
 						{
 							t0: arrive,
 							t1: arrive,
@@ -2211,13 +2239,7 @@ class Director {
 						move: "stand",
 						yaw: Math.atan2(p.at.y - from.y, p.at.x - from.x),
 					},
-					{
-						t0: leave,
-						t1: arrive,
-						from,
-						to: p.at,
-						move: fps < 12.5 ? "jog" : "run",
-					},
+					...intoStance(from, p.at, leave, arrive, fps < 12.5 ? "jog" : "run"),
 					{
 						t0: arrive,
 						t1: arrive,
@@ -2273,6 +2295,20 @@ class Director {
 				x: at.x - Math.cos(yaw) * SURVEY_BACK,
 				y: at.y - Math.sin(yaw) * SURVEY_BACK,
 			};
+			// (Walking in to it, all of that a step back too.)
+			const jog = qb.legs.at(-3);
+			if (
+				up.move === "walk" &&
+				jog &&
+				jog.to.x === up.from.x &&
+				jog.to.y === up.from.y
+			) {
+				up.from = {
+					x: up.from.x + back.x - at.x,
+					y: up.from.y + back.y - at.y,
+				};
+				jog.to = up.from;
+			}
 			up.to = back;
 			qb.legs.pop();
 			qb.legs.push(
