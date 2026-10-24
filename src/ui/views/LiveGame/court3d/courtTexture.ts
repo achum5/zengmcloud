@@ -142,3 +142,44 @@ export const courtTexture = async (
 	}
 	return canvas;
 };
+
+// The color round the edge of the floor's picture - the middle of what's
+// there, so the lettering and logos on the apron don't count - for the floor
+// on out past it to the stands. Undefined if it can't be read (a picture
+// from another site the browser won't let us read back).
+export const edgeColor = (canvas: HTMLCanvasElement): string | undefined => {
+	const w = canvas.width;
+	const h = canvas.height;
+	const band = Math.max(2, Math.round(Math.min(w, h) * 0.012));
+	const reds: number[] = [];
+	const greens: number[] = [];
+	const blues: number[] = [];
+	try {
+		const g = canvas.getContext("2d", { willReadFrequently: true });
+		if (!g) {
+			return undefined;
+		}
+		for (const [x, y, cw, ch] of [
+			[0, 0, w, band],
+			[0, h - band, w, band],
+			[0, 0, band, h],
+			[w - band, 0, band, h],
+		] as const) {
+			const d = g.getImageData(x, y, cw, ch).data;
+			for (let i = 0; i < d.length; i += 16) {
+				if (d[i + 3]! > 200) {
+					reds.push(d[i]!);
+					greens.push(d[i + 1]!);
+					blues.push(d[i + 2]!);
+				}
+			}
+		}
+	} catch {
+		return undefined;
+	}
+	if (reds.length === 0) {
+		return undefined;
+	}
+	const middle = (a: number[]) => a.sort((x, y) => x - y)[a.length >> 1]!;
+	return `rgb(${middle(reds)}, ${middle(greens)}, ${middle(blues)})`;
+};

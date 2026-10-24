@@ -36,7 +36,7 @@ import {
 	type Cover,
 	type Rig,
 } from "./camera.ts";
-import { courtTexture } from "./courtTexture.ts";
+import { courtTexture, edgeColor } from "./courtTexture.ts";
 import { FaceLoader } from "./FaceLoader.tsx";
 import { adjust, artFor, makeResolution } from "./resolution.ts";
 import { makeFarm } from "./farm.ts";
@@ -864,8 +864,11 @@ const Court3D = ({
 	// The home floor as a picture, made from the 2D court's drawing of it.
 	const floorRef = useRef<HTMLDivElement | null>(null);
 	const courtPicture = useRef<HTMLCanvasElement | undefined>(undefined);
+	// A floor picture's edge color, the floor carried on out in it.
+	const floorEdge = useRef<string | undefined>(undefined);
 	useEffect(() => {
 		courtPicture.current = undefined;
+		floorEdge.current = undefined;
 		const svg = floorRef.current?.querySelector("svg");
 		if (!svg) {
 			return;
@@ -874,6 +877,8 @@ const Court3D = ({
 		void courtTexture(svg, 10).then((canvas) => {
 			if (alive) {
 				courtPicture.current = canvas;
+				floorEdge.current =
+					canvas && home?.court?.floorImageURL ? edgeColor(canvas) : undefined;
 			}
 		});
 		return () => {
@@ -1465,7 +1470,7 @@ const Court3D = ({
 				lookFor: lookOf,
 				padColor: p.homePad,
 				lineColor: p.lineColor,
-				apron: p.apron,
+				apron: floorEdge.current ?? p.apron,
 				warmups: p.warmups,
 				shotClock: shotText,
 				score: staging ? undefined : p.score,
