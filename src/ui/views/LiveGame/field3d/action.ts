@@ -1446,7 +1446,8 @@ const RELEASE_Z = 6.9;
 // this much (radians) as he sets, coiled this much more as it goes back,
 // this much still at the release, and round past it this much after;
 // striding at it this far (feet) and on over his front foot this much more
-// in the follow-through, over this long.
+// in the follow-through, over this long - then a step or two on after it
+// (feet, over ms), watching it go.
 const WIND_MS = 320;
 const WIND_COCKED = 0.55;
 const SET_OPEN = 0.55;
@@ -1456,6 +1457,8 @@ const PAST_IT = -0.4;
 const STRIDE = 1.3;
 const WEIGHT_ON = 0.5;
 const FOLLOW_MS = 450;
+const WATCH_FT = 2.5;
+const WATCH_MS = 1100;
 const CATCH_Z = 4.3;
 const G = 32;
 // A pass: on a line at this pace (ft/s), lofted a little slower over this
@@ -3108,6 +3111,7 @@ class Action {
 			ahead(WEIGHT_ON),
 		);
 		qb.turn(PAST_IT - RELEASE_OPEN);
+		qb.go(ahead(WEIGHT_ON + WATCH_FT), qb.t + WATCH_MS, "walk", way);
 	}
 
 	// Rolled out round the edge, on at an easy run - the ball up in both
