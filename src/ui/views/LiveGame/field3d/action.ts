@@ -493,16 +493,32 @@ class Actor {
 	// Up to speed for `leg`, off the end of the one before (see
 	// RAMP_ACCEL): legs of his getting going put in ahead of it, and it what
 	// is left of it.
+	// How quick he can go on toward `to` off what he was doing (ft/s): all
+	// of his pace the way he was going, half of it square to that, none of
+	// it back the other way - if he was going in a stride at all.
+	private paceInto(to: Pt): number | undefined {
+		const l = this.last;
+		const ms = l.t1 - l.t0;
+		if (ms <= 0 || moveKind(l.move) !== "cycle") {
+			return undefined;
+		}
+		const lx = l.to.x - l.from.x;
+		const ly = l.to.y - l.from.y;
+		const dx = to.x - l.to.x;
+		const dy = to.y - l.to.y;
+		const was = Math.hypot(lx, ly);
+		const way = Math.hypot(dx, dy);
+		if (was <= 0 || way <= 0) {
+			return 0;
+		}
+		const cos = (lx * dx + ly * dy) / (was * way);
+		return ((was / (ms / 1000)) * (1 + cos)) / 2;
+	}
+
 	private rampInto(leg: Leg) {
-		const prev = this.last;
 		const T = (leg.t1 - leg.t0) / 1000;
-		const pt = (prev.t1 - prev.t0) / 1000;
-		if (
-			!RAMPS.has(leg.move) ||
-			T * 1000 < RAMP_LEG_MS ||
-			pt <= 0 ||
-			moveKind(prev.move) !== "cycle"
-		) {
+		const into = this.paceInto(leg.to);
+		if (!RAMPS.has(leg.move) || T * 1000 < RAMP_LEG_MS || into === undefined) {
 			return;
 		}
 		const dx = leg.to.x - leg.from.x;
@@ -510,12 +526,8 @@ class Actor {
 		const D = Math.hypot(dx, dy);
 		const v = D / T;
 		const A = RAMP_ACCEL;
-		let v0 = Math.max(
-			0,
-			((prev.to.x - prev.from.x) * dx + (prev.to.y - prev.from.y) * dy) /
-				(Math.max(D, 1e-6) * pt),
-		);
-		if (v - v0 < RAMP_LEAST) {
+		let v0 = into;
+		if (v - v0 < RAMP_LEAST || D <= 0) {
 			return;
 		}
 		// (Up to vc and on at it, there on time - or, if that is too quick,
@@ -552,11 +564,38 @@ class Actor {
 	}
 
 	// To `to` at `fps`; when he gets there.
+	// (On the move already, and that a good deal quicker: up to it first -
+	// see RAMP_ACCEL - there the later for it.)
 	run(to: Pt, fps: number, move?: Move, yaw?: number): number {
-		const t1 =
-			this.t +
-			(dist(this.at, onField(to, this.roam)) / Math.max(1, fps)) * 1000;
-		this.go(to, t1, move, yaw);
+		const p = onField(to, this.roam);
+		const from = this.at;
+		const far = dist(from, p);
+		const v0 = this.paceInto(p);
+		const g = move ?? gait(fps);
+		let gone = 0;
+		if (v0 !== undefined && far > 0 && fps - v0 >= RAMP_LEAST && RAMPS.has(g)) {
+			const A = RAMP_ACCEL;
+			let ta = (fps - v0) / A;
+			if (v0 * ta + (A * ta * ta) / 2 > far) {
+				ta = (Math.sqrt(v0 * v0 + 2 * A * far) - v0) / A;
+			}
+			const n = Math.max(1, Math.round((ta * 1000) / RAMP_STEP_MS));
+			const dt = ta / n;
+			const t0 = this.t;
+			for (let i = 0; i < n; i++) {
+				gone = Math.min(far, gone + (v0 + A * dt * (i + 0.5)) * dt);
+				const u = gone / far;
+				this.go(
+					{ x: from.x + (p.x - from.x) * u, y: from.y + (p.y - from.y) * u },
+					t0 + (i + 1) * dt * 1000,
+					g,
+					yaw,
+				);
+			}
+		}
+		if (far - gone > 0.01) {
+			this.go(p, this.t + ((far - gone) / Math.max(1, fps)) * 1000, move, yaw);
+		}
 		return this.t;
 	}
 
@@ -584,17 +623,7 @@ class Actor {
 		const from = this.at;
 		const far = dist(from, p);
 		const T = Math.max(0, t1 - this.t) / 1000;
-		const l = this.last;
-		const ms = l.t1 - l.t0;
-		const v0 =
-			far > 0 && ms > 0 && moveKind(l.move) === "cycle"
-				? Math.max(
-						0,
-						((l.to.x - l.from.x) * (p.x - from.x) +
-							(l.to.y - l.from.y) * (p.y - from.y)) /
-							(far * (ms / 1000)),
-					)
-				: 0;
+		const v0 = this.paceInto(p) ?? 0;
 		const A = RAMP_ACCEL;
 		const ta = Math.min(T, Math.max(0, (fps - v0) / A));
 		const reach = v0 * ta + (A * ta * ta) / 2 + fps * (T - ta);
