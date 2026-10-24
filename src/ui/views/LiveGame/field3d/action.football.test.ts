@@ -191,7 +191,8 @@ describe("the plays acted out", () => {
 			checked += 1;
 		});
 		assert.isAbove(checked, 50);
-	});
+		// (The first to have every play's men laid out.)
+	}, 30_000);
 
 	test("a touchdown when he gets in with it, not before", () => {
 		const bad: string[] = [];

@@ -28,7 +28,7 @@ const SNAP_CATCH_MS = 500;
 const SNAP_CATCH_MOST = 0.8;
 
 // Set for the snap.
-const SET = new Set<Move>([
+export const SET = new Set<Move>([
 	"threePoint",
 	"dlThree",
 	"center",
@@ -197,6 +197,25 @@ export const lagged = (legs: Leg[], t: number, off = offsOf(legs)): number => {
 	return t;
 };
 
+// And the other way: the time it is when the play has him at t.
+export const unlagged = (
+	legs: Leg[],
+	t: number,
+	off = offsOf(legs),
+): number => {
+	for (const { b, r } of off) {
+		if (t > b && t < b + r) {
+			const y = (t - b) / r;
+			let u = Math.sqrt(y / 2);
+			for (let i = 0; i < 4; i++) {
+				u -= (u * u * (2 - u) - y) / Math.max(1e-6, u * (4 - 3 * u));
+			}
+			return b + r * Math.min(1, Math.max(0, u));
+		}
+	}
+	return t;
+};
+
 // Where his feet are at t, k his leg then: which stretch they are on (the
 // one before, into a stand, still pulling up; the next, out of one, already
 // getting going), and how far along it. (The paces of leg k and those
@@ -223,7 +242,7 @@ export const paceAt = (
 // it - not from the one's pace and way to the other's all at once, but over
 // this long either side of where they meet (no more than half of either):
 // the corner rounded, him still on it at the time laid out for it.
-const CORNER_MS = 150;
+export const CORNER_MS = 150;
 
 // Where his feet are at t, k his leg then (see paceAt): on his stretch, or
 // round the corner from the one before it or into the next.

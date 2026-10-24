@@ -9,12 +9,16 @@ import type {
 import type { Pt3, Side } from "./geometry.ts";
 import {
 	along,
+	CORNER_MS,
 	goes,
 	lagged,
+	paceOf,
 	placeAt,
+	SET,
 	TRACK_MS,
 	trackLength,
 	trackOf,
+	unlagged,
 } from "./pace.ts";
 import {
 	beatOf,
@@ -56,6 +60,16 @@ const TURN_MS = 380;
 // (Turning where he stands, no quicker round than STAND_TURN a second: his
 // feet stepping round after him - see pivotOf.)
 const STAND_TURN = 5;
+// (Round into the way he goes, from where he stood - with his first steps,
+// as he starts off: see pace.ts paceOf early - or from going another way:
+// quicker. Off his stance at the snap: quicker still, by the time it is,
+// not the slow clock he is still on then - round with his first step. But
+// never round quicker than TURN_MOST a second - walking, half that - nor
+// round a corner, if it comes too sharp for that so quick.)
+const TURN_GO_MS = 240;
+const TURN_SNAP_MS = 150;
+const TURN_MOST = 12;
+const turnMost = (l: Leg) => (l.move === "walk" ? TURN_MOST / 2 : TURN_MOST);
 // (How fast he goes through a move: taken over this long.)
 const RATE_MS = 5;
 
@@ -101,16 +115,35 @@ const yawOf = (l: Leg, before: number): number =>
 // way he was facing as it started - a leg too short for that, still coming
 // round as the next one starts. Worked out once for his legs as they are:
 // the way he faced coming into each, how far off it he was drawn as it
-// started, and over how long that goes.
-// (And whether he turns through it at all.)
+// started, and over how long that goes. Round a corner from one stretch
+// he goes his own way along into the next (see pace.ts rounded), round
+// with it as he goes round it - not still facing the way he came, running
+// sideways, as he goes off the other way: how far either side of where
+// they meet that is. Off from a stand, from when he starts off: how long
+// before it starts that is. (Off his stance at the snap, `snap`.)
+// (And whether he turns through it at all, and how far ahead of a leg the
+// most of any of that starts.)
 type Facing = {
 	n: number;
 	before: Float64Array;
 	aim: Float64Array;
 	off: Float64Array;
 	ms: Float64Array;
+	corner: Float64Array;
+	lead: Float64Array;
+	snap: Uint8Array;
 	turns: Uint8Array;
+	ahead: number;
 };
+// (Facing the way it goes along it, not turning through it.)
+const OWN_WAY = 0.1;
+const ownWay = (l: Leg) =>
+	goes(l) &&
+	!l.turn &&
+	(l.yaw === undefined ||
+		Math.abs(
+			wrapAngle(l.yaw - Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x)),
+		) < OWN_WAY);
 const facings = new WeakMap<Leg[], Facing>();
 const facingOf = (legs: Leg[]): Facing => {
 	const had = facings.get(legs);
@@ -121,37 +154,112 @@ const facingOf = (legs: Leg[]): Facing => {
 	const aims = new Float64Array(legs.length);
 	const off = new Float64Array(legs.length);
 	const ms = new Float64Array(legs.length);
+	const corner = new Float64Array(legs.length);
+	const lead = new Float64Array(legs.length);
+	const snap = new Uint8Array(legs.length);
 	const turns = new Uint8Array(legs.length);
+	let ahead = CORNER_MS;
 	let b = legs[0]!.yaw ?? 0;
-	let was = b;
+	// (The way the one before had him at its end, `end` into turning into
+	// it, `by` off it then over `ms` - and so at its end less e.)
+	let end = 0;
+	let wasBy = 0;
+	let wasMs = 1;
+	const was = (e: number) =>
+		b + (end - e < wasMs ? wasBy * (1 - Math.max(0, end - e) / wasMs) : 0);
+	let ownBefore = false;
 	for (let j = 0; j < legs.length; j++) {
 		before[j] = b;
 		const lj = legs[j]!;
 		const aim = yawOf(lj, b);
 		aims[j] = aim;
-		const by = j > 0 ? wrapAngle(was - aim) : 0;
+		const lp = legs[j - 1];
+		const own = ownWay(lj);
+		const startsOff = own && lp && !goes(lp) && !lp.turn;
+		lead[j] = startsOff && !SET.has(lp.move) ? paceOf(legs, j).early : 0;
+		snap[j] = startsOff && SET.has(lp.move) ? 1 : 0;
+		ahead = Math.max(ahead, lead[j]!);
+		let by = j > 0 ? wrapAngle(was(lead[j]!) - aim) : 0;
+		if (
+			lp &&
+			ownBefore &&
+			own &&
+			Math.abs(lp.t1 - lj.t0) <= 1 &&
+			Math.abs(by) > 1e-6
+		) {
+			const w = Math.min(CORNER_MS, (lp.t1 - lp.t0) / 2, (lj.t1 - lj.t0) / 2);
+			// (A smoothstep round it at its quickest: 1.5 times the even
+			// rate.)
+			const most = Math.min(turnMost(lp), turnMost(lj));
+			if (w > 0 && (0.75 * Math.abs(by)) / w <= most / 1000) {
+				corner[j] = w;
+				by = 0;
+			}
+		}
 		off[j] = by;
-		turns[j] = lj.turn || Math.abs(by) > 1e-6 ? 1 : 0;
+		turns[j] = lj.turn || Math.abs(by) > 1e-6 || corner[j]! > 0 ? 1 : 0;
 		ms[j] =
 			PIVOTS.has(lj.move) && !goes(lj)
 				? Math.max(TURN_MS, (Math.abs(by) / STAND_TURN) * 1000)
-				: TURN_MS;
+				: snap[j] || own
+					? Math.max(
+							snap[j] ? TURN_SNAP_MS : TURN_GO_MS,
+							(Math.abs(by) / turnMost(lj)) * 1000,
+						)
+					: TURN_MS;
 		b = aim + (lj.turn ?? 0);
-		const dur = lj.t1 - lj.t0;
-		was = b + (dur < ms[j]! ? by * (1 - dur / ms[j]!) : 0);
+		end = lj.t1 - lj.t0 + lead[j]!;
+		wasBy = by;
+		wasMs = ms[j]!;
+		ownBefore = own;
 	}
-	const f = { n: legs.length, before, aim: aims, off, ms, turns };
+	const f = {
+		n: legs.length,
+		before,
+		aim: aims,
+		off,
+		ms,
+		corner,
+		lead,
+		snap,
+		turns,
+		ahead,
+	};
 	facings.set(legs, f);
 	return f;
 };
-const turnedAt = (legs: Leg[], t: number): number => {
-	const k = lastStarted(legs, t, (l) => l.t0);
+// (Round the corner into leg j: from the way the one before has him -
+// still coming round into it, maybe - to the next's, halfway where the two
+// meet.)
+const roundAt = (legs: Leg[], f: Facing, j: number, t: number): number => {
+	const w = f.corner[j]!;
+	const v = clamp01((t - legs[j]!.t0 + w) / (2 * w));
+	const a =
+		f.aim[j - 1]! +
+		f.off[j - 1]! * (1 - clamp01((t - legs[j - 1]!.t0) / f.ms[j - 1]!));
+	return a + wrapAngle(f.aim[j]! - a) * v * v * (3 - 2 * v);
+};
+const turnedAt = (legs: Leg[], t: number, f = facingOf(legs)): number => {
+	let k = lastStarted(legs, t, (l) => l.t0);
+	if (k + 1 < f.n && legs[k + 1]!.t0 - t <= f.lead[k + 1]!) {
+		k++;
+	}
 	const l = legs[k]!;
-	const f = facingOf(legs);
 	const yaw = f.aim[k]! + (l.turn ?? 0) * along(l, t);
 	const since = t - l.t0;
-	return since < f.ms[k]!
-		? yaw + f.off[k]! * (1 - clamp01(since / f.ms[k]!))
+	if (f.corner[k]! > 0 && since < f.corner[k]!) {
+		return roundAt(legs, f, k, t);
+	}
+	const next = legs[k + 1];
+	if (next && next.t0 - t < f.corner[k + 1]!) {
+		return roundAt(legs, f, k + 1, t);
+	}
+	const turning =
+		since < f.ms[k]! && f.snap[k]
+			? unlagged(legs, t) - l.t0
+			: since + f.lead[k]!;
+	return turning < f.ms[k]!
+		? yaw + f.off[k]! * (1 - clamp01(turning / f.ms[k]!))
 		: yaw;
 };
 // (Whether he could be turning at all from a to b: none of his legs
@@ -165,11 +273,15 @@ const steadyFrom = (
 	b: number,
 ): boolean => {
 	const l = legs[j]!;
-	if (l.turn || (f.off[j] !== 0 && a - l.t0 < f.ms[j]!)) {
+	if (
+		l.turn ||
+		(f.off[j] !== 0 && a - l.t0 + f.lead[j]! < f.ms[j]!) ||
+		a - l.t0 < f.corner[j]!
+	) {
 		return false;
 	}
-	for (let i = j + 1; i < legs.length && legs[i]!.t0 <= b; i++) {
-		if (f.turns[i]) {
+	for (let i = j + 1; i < legs.length && legs[i]!.t0 <= b + f.ahead; i++) {
+		if (f.turns[i] && legs[i]!.t0 - Math.max(f.corner[i]!, f.lead[i]!) <= b) {
 			return false;
 		}
 	}
@@ -200,13 +312,13 @@ const yawAt = (legs: Leg[], t: number): number => {
 	if (steadyFrom(legs, f, j, t - reach, t + reach)) {
 		return f.aim[j]!;
 	}
-	const c = turnedAt(legs, t);
+	const c = turnedAt(legs, t, f);
 	let off = 0;
 	for (let i = 0; i < TURN_EASE.length; i++) {
 		if (i !== half) {
 			off +=
 				TURN_EASE[i]! *
-				wrapAngle(turnedAt(legs, t + (i - half) * TURN_EASE_MS) - c);
+				wrapAngle(turnedAt(legs, t + (i - half) * TURN_EASE_MS, f) - c);
 		}
 	}
 	return c + off / TURN_EASE_SUM;
