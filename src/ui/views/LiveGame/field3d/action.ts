@@ -1701,6 +1701,7 @@ const BLOCK_DRIVE_FPS = 6;
 // A lineman off the ball into the man on him: no nearer than this (feet),
 // a step or two up into him, his arms out into him - not a run on the spot.
 const FIRE_FT = 4;
+const FIRE_HELD_MS = 250;
 const fireOff = (m: Actor, to: Pt): Move =>
 	dist(m.at, to) < FIRE_FT ? "engage" : "run";
 // Locked up on a run: shoved one way and then the other, every this long
@@ -6996,9 +6997,9 @@ class Action {
 			let locked = until;
 			let freed = snap;
 			for (const m of men) {
-				const at = (time: number) => {
+				const at = (time: number, lat: number) => {
 					const p = this.of(b.posAt(time));
-					return this.w({ d: p.d + BLOCK_GAP, a: p.a + (r() - 0.5) * 0.6 });
+					return this.w({ d: p.d + BLOCK_GAP, a: p.a + lat });
 				};
 				// (Beaten, off him - if he is not the one to make the tackle,
 				// who goes from wherever he is when he goes.)
@@ -7010,9 +7011,9 @@ class Action {
 							: until
 						: shed;
 				m.hold(snap + 50);
-				const into = at(snap + 450);
-				m.chase(into, snap + 450, m.top * 0.9, fireOff(m, into));
-				m.go(at(end), end, "engage", this.behind);
+				const lat = (r() - 0.5) * 0.6;
+				this.fireInto(m, (time) => at(time, lat), snap + 450, end);
+				m.go(at(end, (r() - 0.5) * 0.6), end, "engage", this.behind);
 				locked = Math.min(locked, end);
 				freed = Math.max(freed, end);
 			}
@@ -7256,6 +7257,29 @@ class Action {
 	// Men locked up, from t0 to t1: shoved this way and that together - a
 	// little way across the field and back, a half step up and back - each
 	// fighting the other.
+	// Off the ball into the man across from him (`at`, where that is at t)
+	// by `by`: a step or two up into him - or, lined up further off him
+	// than he gets to by then out of his stance (see GET_OFF_ACCEL), up to
+	// speed and into him as soon as he can (on him FIRE_HELD_MS before
+	// `until` at the latest, when he is off him).
+	fireInto(m: Actor, at: (t: number) => Pt, by: number, until: number) {
+		const near = at(by);
+		if (fireOff(m, near) === "engage") {
+			m.chase(near, by, m.top * 0.9, "engage");
+			return;
+		}
+		let t = by;
+		for (let k = 0; k < 2; k++) {
+			t = Math.max(
+				by,
+				m.t +
+					rampedMs(dist(m.at, at(t)), m.top * RUSH_HIT_PACE, 0, GET_OFF_ACCEL),
+			);
+		}
+		t = Math.min(t, Math.max(by, until - FIRE_HELD_MS));
+		m.getOff(at(t), t, 0, GET_OFF_ACCEL, "run", GET_OFF_SQUARE_MS);
+	}
+
 	jostle(men: Actor[], t0: number, t1: number) {
 		const r = this.r;
 		const times: number[] = [];
@@ -7285,30 +7309,40 @@ class Action {
 			...times.map((t, k) => ({ t, o: shifts[k]! })),
 			{ t: t1, o: { d: 0, a: 0 } },
 		];
-		const steps: { t: number; o: OPt }[] = [];
+		const steps: number[] = [];
 		for (let k = 0; k + 1 < keys.length && times.length > 0; k++) {
 			const a = keys[k]!;
 			const b = keys[k + 1]!;
 			const n = Math.max(1, Math.round((b.t - a.t) / JOSTLE_STEP_MS));
 			for (let j = 1; j < (k + 2 < keys.length ? n + 1 : n); j++) {
-				const u = (1 - Math.cos((Math.PI * j) / n)) / 2;
-				steps.push({
-					t: a.t + ((b.t - a.t) * j) / n,
-					o: { d: a.o.d + (b.o.d - a.o.d) * u, a: a.o.a + (b.o.a - a.o.a) * u },
-				});
+				steps.push(a.t + ((b.t - a.t) * j) / n);
 			}
 		}
+		if (steps.length === 0) {
+			return;
+		}
+		// (And each end of every leg in it as far over as he is by then -
+		// a man still on his way into it too, not just at each shove.)
+		const offAt = (t: number): OPt => {
+			const k = keys.findIndex((x, j) => j > 0 && t <= x.t);
+			const a = keys[k - 1];
+			const b = keys[k];
+			if (!a || !b || b.t <= a.t) {
+				return { d: 0, a: 0 };
+			}
+			const u = (1 - Math.cos((Math.PI * (t - a.t)) / (b.t - a.t))) / 2;
+			return { d: a.o.d + (b.o.d - a.o.d) * u, a: a.o.a + (b.o.a - a.o.a) * u };
+		};
 		for (const m of men) {
-			for (const { t } of steps) {
+			for (const t of steps) {
 				m.split(t);
 			}
-			for (const { t, o } of steps) {
-				for (const l of m.legs) {
-					if (Math.abs(l.t1 - t) < 1e-6) {
-						l.to = over(l.to, o);
-					} else if (Math.abs(l.t0 - t) < 1e-6) {
-						l.from = over(l.from, o);
-					}
+			for (const l of m.legs) {
+				if (l.t0 > t0 && l.t0 < t1) {
+					l.from = over(l.from, offAt(l.t0));
+				}
+				if (l.t1 > t0 && l.t1 < t1) {
+					l.to = over(l.to, offAt(l.t1));
 				}
 			}
 		}
@@ -8260,8 +8294,7 @@ class Action {
 				const q = this.of(b.posAt(time));
 				return this.w({ d: q.d + 2.6, a: q.a });
 			};
-			const into = at(snap + 450);
-			m.chase(into, snap + 450, m.top * 0.9, fireOff(m, into));
+			this.fireInto(m, at, snap + 450, free);
 			m.go(at(free), free, "engage", this.behind);
 		}
 
@@ -8625,8 +8658,7 @@ class Action {
 					const q = this.of(b.posAt(time));
 					return this.w({ d: q.d + 2.6, a: q.a + (s.a > q.a ? 0.8 : -0.8) });
 				};
-				const into = at(snap + 400);
-				m.chase(into, snap + 400, m.top * 0.9, fireOff(m, into));
+				this.fireInto(m, at, snap + 400, held);
 				m.go(at(held), held, "engage", this.behind);
 			} else if (m.role === "RUSH" || m.role === "CB") {
 				// Round the end of the wall and in at the kick: the man outside
