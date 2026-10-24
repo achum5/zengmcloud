@@ -206,6 +206,8 @@ const STOP_STEP_MS = 100;
 const STOP_LEAST = 8;
 // Sinking into a cut: down at this (ft/s/s).
 const CUT_ACCEL = 28;
+// (Easing down to steps this much slower, ft/s, or more - see slowFor.)
+const SLOW_DROP = 6;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
 const STEPS = new Set<Move>([...GAITS, "back", "slide", "shuffle"]);
 // (Slower than this, ft/s, he is not going anywhere.)
@@ -477,9 +479,27 @@ class Actor {
 	go(to: Pt, t1: number, move?: Move, yaw?: number, extra?: Partial<Leg>) {
 		const leg = this.legTo(to, t1, move, yaw, extra);
 		if (extra === undefined) {
+			this.slowFor(leg);
 			this.rampInto(leg);
 		}
 		this.push(leg);
+	}
+
+	// Slowing for `leg`, steps a good deal slower (SLOW_DROP ft/s or more)
+	// than the stride he is in: down to its pace over the last of the one he
+	// is on (see slowInto), not braked to it in a stride.
+	private slowFor(leg: Leg) {
+		const l = this.last;
+		const ms = l.t1 - l.t0;
+		const T = leg.t1 - leg.t0;
+		if (!STEPS.has(leg.move) || ms <= 0 || T <= 0) {
+			return;
+		}
+		const was = dist(l.from, l.to) / (ms / 1000);
+		const v = dist(leg.from, leg.to) / (T / 1000);
+		if (was - v >= SLOW_DROP) {
+			this.slowInto(v / was);
+		}
 	}
 
 	// Cutting to `to` by t1 off the leg he is on: down to `keep` of his pace
