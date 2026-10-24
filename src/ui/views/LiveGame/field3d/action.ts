@@ -1476,12 +1476,44 @@ class Actor {
 				l.turn *= u;
 			}
 			l.t1 = t;
+			this.stretchOver(l);
 		}
 		let yaw = legs[0]!.yaw ?? 0;
 		for (const x of legs) {
 			yaw = yawOf(x, yaw);
 		}
 		this.yaw = yaw;
+	}
+
+	// (Stood there, cut down to a moment between what he was doing and
+	// whatever he does next: at what he was doing that moment longer
+	// instead, not stopped dead for it - see hold.)
+	private stretchOver(l: Leg) {
+		const legs = this.part.legs;
+		const before = legs.at(-2);
+		if (
+			!before ||
+			legs.at(-1) !== l ||
+			l.move !== "stand" ||
+			l.arms !== undefined ||
+			l.t1 - l.t0 >= WAIT_LEAST_MS ||
+			l.from.x !== l.to.x ||
+			l.from.y !== l.to.y ||
+			before.t1 !== l.t0 ||
+			moveKind(before.move) !== "cycle" ||
+			(before.from.x === before.to.x && before.from.y === before.to.y)
+		) {
+			return;
+		}
+		const face = yawOf(before, before.yaw ?? 0);
+		const off = (l.yaw ?? face) - face;
+		if (
+			Math.abs(Math.atan2(Math.sin(off), Math.cos(off))) > STRETCH_OVER_TURN
+		) {
+			return;
+		}
+		before.t1 = l.t1;
+		legs.pop();
 	}
 }
 
@@ -1736,6 +1768,9 @@ const READ_MS = 350;
 // A wait shorter than this, on his way somewhere: taken going there more
 // slowly, not stood.
 const WAIT_LEAST_MS = 150;
+// (Nor, cut down to that, stood that long turned no more than this far
+// round from the way he was - radians: see stretchOver.)
+const STRETCH_OVER_TURN = 0.6;
 // (A receiver there early, on the move, by no more than this far at the
 // pace he is going, feet: on in his stride to it - see reachFor.)
 const CATCH_ON_FT = 3;
