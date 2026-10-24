@@ -6168,8 +6168,7 @@ class Action {
 			let t0 = hitT;
 			let lat0 = hitLat;
 			for (const x of turns) {
-				const n =
-					amp > 0 ? Math.max(1, Math.round((x.t - t0) / HAND_STEP_MS)) : 1;
+				const n = Math.max(1, Math.round((x.t - t0) / HAND_STEP_MS));
 				for (let k = 1; k <= n; k++) {
 					const u = (1 - Math.cos((Math.PI * k) / n)) / 2;
 					steps.push({
@@ -6183,12 +6182,12 @@ class Action {
 			const held = steps.map((x) => b.posAt(x.t));
 			// (Knocked back a step as he gets into him, the two of them - see
 			// JOLT_PER_FPS - and that ground made up as he gives the rest.)
-			const moves = amp > 0 && !moved.has(b) && !this.done.has(b.pid);
+			const moves = !moved.has(b) && !this.done.has(b.pid);
 			const jolt = moves ? Math.min(JOLT_MOST, vHit * JOLT_PER_FPS) : 0;
 			const shove = (t: number) => {
 				const u = clamp((t - hitT) / JOLT_MS, 0, 1);
 				const left = clamp(1 - (t - hitT) / Math.max(1, end - hitT), 0, 1);
-				return jolt * u * u * (3 - 2 * u) * left;
+				return jolt * (1 - (1 - u) * (1 - u)) * left;
 			};
 			for (const x of steps) {
 				const p = on(x.t, x.lat);
