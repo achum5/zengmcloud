@@ -197,25 +197,6 @@ export const lagged = (legs: Leg[], t: number, off = offsOf(legs)): number => {
 	return t;
 };
 
-// And the other way: the time it is when the play has him at t.
-export const unlagged = (
-	legs: Leg[],
-	t: number,
-	off = offsOf(legs),
-): number => {
-	for (const { b, r } of off) {
-		if (t > b && t < b + r) {
-			const y = (t - b) / r;
-			let u = Math.sqrt(y / 2);
-			for (let i = 0; i < 4; i++) {
-				u -= (u * u * (2 - u) - y) / Math.max(1e-6, u * (4 - 3 * u));
-			}
-			return b + r * Math.min(1, Math.max(0, u));
-		}
-	}
-	return t;
-};
-
 // Where his feet are at t, k his leg then: which stretch they are on (the
 // one before, into a stand, still pulling up; the next, out of one, already
 // getting going), and how far along it. (The paces of leg k and those

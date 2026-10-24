@@ -20,7 +20,6 @@ import {
 	TRACK_MS,
 	trackLength,
 	trackOf,
-	unlagged,
 } from "./pace.ts";
 import {
 	beatOf,
@@ -64,8 +63,9 @@ const TURN_MS = 380;
 const STAND_TURN = 5;
 // (Round into the way he goes, from where he stood - with his first steps,
 // as he starts off: see pace.ts paceOf early - or from going another way:
-// quicker. Off his stance at the snap: quicker still, by the time it is,
-// not the slow clock he is still on then - round with his first step. But
+// quicker. Off his stance at the snap: quicker still, round as he comes up
+// out of it with his first step (on the clock he is on, slow just off it -
+// not swung round in his stance before he is up out of it). But
 // never round quicker than TURN_MOST a second - walking, half that - nor
 // round a corner, if it comes too sharp for that so quick.)
 const TURN_GO_MS = 240;
@@ -136,7 +136,6 @@ type Facing = {
 	ms: Float64Array;
 	corner: Float64Array;
 	lead: Float64Array;
-	snap: Uint8Array;
 	turns: Uint8Array;
 	ahead: number;
 };
@@ -287,7 +286,6 @@ const facingOf = (legs: Leg[]): Facing => {
 		ms,
 		corner,
 		lead,
-		snap,
 		turns,
 		ahead,
 	};
@@ -320,10 +318,7 @@ const turnedAt = (legs: Leg[], t: number, f = facingOf(legs)): number => {
 	if (next && next.t0 - t < f.corner[k + 1]!) {
 		return roundAt(legs, f, k + 1, t);
 	}
-	const turning =
-		since < f.ms[k]! && f.snap[k]
-			? unlagged(legs, t) - l.t0
-			: since + f.lead[k]!;
+	const turning = since + f.lead[k]!;
 	return turning < f.ms[k]!
 		? yaw + f.off[k]! * (1 - clamp01(turning / f.ms[k]!))
 		: yaw;
@@ -845,6 +840,9 @@ const BLEND_MOST_MS = Math.max(SETTLE_MS, GET_DOWN_MS);
 // (Down to a loose ball on the run: quickly into the scoop, the bend down
 // its own - not drawn out under his strides and all at the last.)
 const SCOOP_IN_MS = 100;
+// (Up out of his stance at the snap and off: quickly - not slow to come
+// up, swung round still down in it.)
+const UP_MS = 180;
 // How far he is into a leg, so far through his blend into it (and how
 // fast he is going into it, per ms): down into his stance, eased in and
 // settled into it at the last - not at an even rate, dropped into it.
@@ -860,13 +858,17 @@ const blendOf = (l: Leg, prev?: Leg): number => {
 	if (moveKind(l.move) !== "act") {
 		return !prev
 			? BLEND_MS
-			: DOWN.has(l.move as Move) &&
-				  !DOWN.has(prev.move as Move) &&
-				  moveKind(prev.move) !== "act"
-				? GET_DOWN_MS
-				: stepsOver(prev.move as Move, l.move as Move)
-					? SETTLE_MS
-					: BLEND_MS;
+			: DOWN.has(prev.move as Move) &&
+				  moveKind(l.move) === "cycle" &&
+				  l.move !== "walk"
+				? UP_MS
+				: DOWN.has(l.move as Move) &&
+					  !DOWN.has(prev.move as Move) &&
+					  moveKind(prev.move) !== "act"
+					? GET_DOWN_MS
+					: stepsOver(prev.move as Move, l.move as Move)
+						? SETTLE_MS
+						: BLEND_MS;
 	}
 	if (l.move === "scoop") {
 		return SCOOP_IN_MS;
