@@ -4690,11 +4690,21 @@ const ballOn = (
 					u: BALL_R,
 				},
 			);
+			// On the move up or down the floor it turns over once a bounce,
+			// pushed on ahead from its top - and so comes back up to his hand
+			// the way it left it; standing, it barely turns at all.
+			const top = evalPlayer(tl, seg.pid, t - ph * DRIBBLE_MS);
+			const c = Math.cos(top.yaw);
+			const roll =
+				dribbleAhead(top.anim) === 1 && Math.abs(c) > 0.5
+					? Math.PI * 2 * ph * Math.sign(c)
+					: 0;
 			return {
 				x: h.x + (floor.x - h.x) * tri,
 				y: h.y + (floor.y - h.y) * tri,
 				z: h.z + (floor.z - h.z) * tri,
 				holder: seg.pid,
+				...(roll !== 0 ? { roll } : {}),
 			};
 		}
 		const held: BallState = { ...heldBall(st, body), holder: seg.pid };
@@ -4767,7 +4777,16 @@ const ballOn = (
 				vz * tau -
 				0.5 * GRAVITY * tau * tau +
 				(w ? (w.z - (vz - GRAVITY * T)) * bend : 0),
-			roll: -Math.PI * 2 * BACKSPIN * tau * (Math.sign(b.x - a.x) || 1),
+			// (Caught, it has turned whole times over, so it comes into his
+			// hands as it left the passer's; into a play at the rim, as the play
+			// takes it on.)
+			roll:
+				-Math.PI *
+				2 *
+				("pid" in seg.to && T > 0
+					? (Math.max(1, Math.round(BACKSPIN * T)) * tau) / T
+					: BACKSPIN * tau) *
+				(Math.sign(b.x - a.x) || 1),
 		};
 	}
 	if (seg.kind === "bounce") {

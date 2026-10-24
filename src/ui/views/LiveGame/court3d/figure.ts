@@ -170,11 +170,6 @@ export const shade = (c: string, f: number): string => {
 	return out;
 };
 
-// The ball, when he has it in his hands: its leather and its seams. (Kept
-// in step with the loose ball's colors in arena.ts.)
-export const BALL_ORANGE = "#e2702a";
-export const BALL_SEAM = "#3a1608";
-
 // His head on its own, for a sprite to draw over his body.
 export const drawHeadAt = (
 	ctx: CanvasRenderingContext2D,

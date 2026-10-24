@@ -17,13 +17,8 @@ import {
 	poseOf,
 	type PlayerState,
 } from "./evaluate.ts";
-import {
-	BALL_ORANGE,
-	BALL_SEAM,
-	CAMERA_BODY,
-	CAMERA_LENS,
-	type Look,
-} from "./figure.ts";
+import { CAMERA_BODY, CAMERA_LENS, type Look } from "./figure.ts";
+import { ballSurface, type BallSurface, HELD, surfaceFor } from "./gameBall.ts";
 import {
 	gripOf,
 	skeleton,
@@ -1307,8 +1302,18 @@ const paletteOf = (look: Look): Palette => {
 
 // The palms of his hands, whatever his skin.
 const PALM: RGB = [232, 186, 166];
-const BALL_RGB = rgb(BALL_ORANGE);
-const SEAM_RGB = rgb(BALL_SEAM);
+// The ball in his hands (see gameBall.ts), at the size it is drawn.
+const heldSurfaces = new Map<number, BallSurface>();
+const heldSurface = (radius: number): BallSurface => {
+	const key = Math.round(radius * 2) / 2;
+	let s = heldSurfaces.get(key);
+	if (!s) {
+		s = surfaceFor(key);
+		heldSurfaces.set(key, s);
+	}
+	return s;
+};
+const heldPx = new Float64Array(3);
 const CAM_BODY_RGB = rgb(CAMERA_BODY);
 const CAM_LENS_RGB = rgb(CAMERA_LENS);
 
@@ -1971,19 +1976,23 @@ export const sculpt = (
 						break;
 					}
 					case BALL: {
-						// Its seams: round its middle, and a great circle
-						// across.
-						const nfx = hx[f]!;
-						const nfy = hy[f]!;
-						const nfz = hn[f]!;
-						const seam = Math.min(
-							Math.abs(nfy * 0.98 + nfx * 0.17),
-							Math.abs(nfx * 0.95 - nfz * 0.3),
+						// The game ball, as it sits in his hands - its
+						// channels and its print (see gameBall.ts).
+						const nx = hx[f]!;
+						const ny = -hy[f]!;
+						const nz = hn[f]!;
+						const rad = hr[f]!;
+						ballSurface(
+							heldSurface(rad),
+							nx * HELD[0][0] + ny * HELD[0][1] + nz * HELD[0][2],
+							nx * HELD[1][0] + ny * HELD[1][1] + nz * HELD[1][2],
+							nx * HELD[2][0] + ny * HELD[2][1] + nz * HELD[2][2],
+							1 / (rad * Math.max(0.3, Math.sqrt(nz))),
+							heldPx,
 						);
-						const c = seam < 0.055 ? SEAM_RGB : BALL_RGB;
-						cr = c[0];
-						cg = c[1];
-						cb = c[2];
+						cr = heldPx[0]!;
+						cg = heldPx[1]!;
+						cb = heldPx[2]!;
 						break;
 					}
 					case CAM_BODY:

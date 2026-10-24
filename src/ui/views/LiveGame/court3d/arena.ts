@@ -3,6 +3,15 @@ import { project, type Camera } from "./camera.ts";
 import { BALL_R } from "./evaluate.ts";
 import { shade } from "./figure.ts";
 import {
+	ballTurn,
+	CHANNEL,
+	CHANNEL_LINES,
+	floorMirror,
+	LEATHER,
+	paintBall,
+	viewFrame,
+} from "./gameBall.ts";
+import {
 	BENCH_SEATS,
 	BENCH_Y,
 	benchStart,
@@ -1361,288 +1370,312 @@ export const drawHoop = (
 	const rock = ringing * 0.16 * Math.sin(fx.t / 31);
 	const bend = Math.max(0, (fx.dunk - 0.55) / 0.45) * 0.32;
 
-	// The stanchion: a dark padded base behind the baseline with a lit
-	// board in the team's color on its faces, the post, and the arm out to
-	// the board with a sign along it.
-	const b0 = X(-9.5);
-	const b1 = X(-5);
-	const inkW = Math.max(1, 0.05 * project(cam, { x: X(4), y: 25, z: 0 }).k);
-	const box = (y0: number, y1: number, z1: number) => {
-		const pts = (x: number, y: number, z: number): Pt3 => ({ x, y, z });
-		// Top, the face toward the court, the face toward the camera.
-		ctx.lineJoin = "round";
-		ctx.lineWidth = inkW * 2;
-		ctx.strokeStyle = INK;
-		for (const [fill, face] of [
-			[
-				"#24262c",
-				[pts(b0, y0, z1), pts(b1, y0, z1), pts(b1, y1, z1), pts(b0, y1, z1)],
-			],
-			[
-				"#17181c",
-				[pts(b1, y0, 0), pts(b1, y1, 0), pts(b1, y1, z1), pts(b1, y0, z1)],
-			],
-			[
-				"#101115",
-				[pts(b0, y1, 0), pts(b1, y1, 0), pts(b1, y1, z1), pts(b0, y1, z1)],
-			],
-		] as const) {
-			poly(ctx, cam, [...face]);
-			ctx.stroke();
-			ctx.fillStyle = fill;
-			ctx.fill();
-		}
-		// The boards on its faces: the team's color, a bright band across.
-		const lit = (face: (u: number, v: number) => Pt3) => {
-			const quad = (v0: number, v1: number, fill: string) => {
-				ctx.fillStyle = fill;
-				poly(ctx, cam, [face(0, v0), face(1, v0), face(1, v1), face(0, v1)]);
-				ctx.fill();
-			};
-			quad(0.15, 0.85, padColor);
-			quad(0.44, 0.56, shade(padColor, 0.45));
-		};
-		const lo = 0.5;
-		const hi = z1 - 0.45;
-		lit((u, v) => pts(b1, y0 + 0.35 + u * (y1 - y0 - 0.7), lo + v * (hi - lo)));
-		lit((u, v) =>
-			pts(b0 + (b1 - b0) * (0.06 + u * 0.88), y1, lo + v * (hi - lo)),
-		);
-	};
-	box(22.4, 27.6, 3.4);
-	inkLine(
-		ctx,
-		cam,
-		{ x: X(-6.6), y: 25, z: 3.4 },
-		{ x: X(-6.2), y: 25, z: 12.4 },
-		0.75,
-		"#24262c",
-	);
-	inkLine(
-		ctx,
-		cam,
-		{ x: X(-6.2), y: 25, z: 12.4 },
-		{ x: X(3.7), y: 25 + rock, z: 11.9 + shake },
-		0.48,
-		"#2a2c33",
-	);
-	inkLine(
-		ctx,
-		cam,
-		{ x: X(-6.4), y: 25, z: 8.6 },
-		{ x: X(3.7), y: 25 + rock, z: 10.2 + shake },
-		0.3,
-		"#2a2c33",
-	);
-	// The sign along the arm, on the side the camera sees.
-	{
-		const along = (d: number) => (d + 6.3) / 10;
-		const top = (d: number) => 12.4 + (11.9 + shake - 12.4) * along(d);
-		const low = (d: number) => 8.6 + (10.2 + shake - 8.6) * along(d);
-		const at = (d: number, z: number): Pt3 => ({
-			x: X(d),
-			y: 25.3 + rock * along(d),
-			z,
-		});
-		const [d0, d1] = [-4.3, 2.1];
-		// (Inked round, so it reads as a sign against a floor its own color.)
-		ctx.lineJoin = "round";
-		ctx.strokeStyle = INK;
-		ctx.lineWidth = 2 * inkW;
-		ctx.fillStyle = padColor;
-		poly(ctx, cam, [
-			at(d0, low(d0) + 0.35),
-			at(d1, low(d1) + 0.35),
-			at(d1, top(d1) - 0.35),
-			at(d0, top(d0) - 0.35),
-		]);
-		ctx.stroke();
-		ctx.fill();
-		ctx.fillStyle = "rgba(255,255,255,0.85)";
-		const mid = (d: number) => (low(d) + top(d)) / 2;
-		poly(ctx, cam, [
-			at(d0 + 0.6, mid(d0) - 0.18),
-			at(d1 - 0.6, mid(d1) - 0.18),
-			at(d1 - 0.6, mid(d1) + 0.18),
-			at(d0 + 0.6, mid(d0) + 0.18),
-		]);
-		ctx.fill();
-	}
-	// Padding round the bottom of the post.
-	inkLine(
-		ctx,
-		cam,
-		{ x: X(-6.6), y: 25, z: 3.4 },
-		{ x: X(-6.5), y: 25, z: 7.4 },
-		1.15,
-		padColor,
-	);
-
-	// The backboard: glass in a white frame, the shooter's square, and the
-	// shot clock on top.
 	const bx = X(4);
 	const bz = shake;
-	const glass = [
-		{ x: bx, y: 22 + rock, z: 9.5 + bz },
-		{ x: bx, y: 28 + rock, z: 9.5 + bz },
-		{ x: bx, y: 28 + rock, z: 13 + bz },
-		{ x: bx, y: 22 + rock, z: 13 + bz },
-	];
-	const gk = project(cam, glass[0]!).k;
-	ctx.fillStyle = "rgba(214, 232, 244, 0.34)";
-	poly(ctx, cam, glass);
-	ctx.fill();
-	ctx.lineJoin = "round";
-	ctx.strokeStyle = INK;
-	ctx.lineWidth = Math.max(0.8, 0.22 * gk) + 2 * inkW;
-	ctx.stroke();
-	ctx.strokeStyle = "#ffffff";
-	ctx.lineWidth = Math.max(0.8, 0.22 * gk);
-	ctx.stroke();
-	// The period over - its clock at zero - the strip of lights round the
-	// inside of the frame is lit red, the way an NBA board's is at the horn,
-	// and stays lit until the clock is set again.
-	if (fx.out) {
-		const inset = (p: Pt3, dy: number, dz: number): Pt3 => ({
-			...p,
-			y: p.y + dy,
-			z: p.z + dz,
-		});
-		const d = 0.16;
-		poly(ctx, cam, [
-			inset(glass[0]!, d, d),
-			inset(glass[1]!, -d, d),
-			inset(glass[2]!, -d, -d),
-			inset(glass[3]!, d, -d),
-		]);
-		ctx.strokeStyle = "rgba(255, 52, 36, 0.35)";
-		ctx.lineWidth = Math.max(1.5, 0.34 * gk);
-		ctx.stroke();
-		ctx.strokeStyle = "#ff4a32";
-		ctx.lineWidth = Math.max(0.8, 0.12 * gk);
-		ctx.stroke();
-	}
-	// The padding along the bottom of the board.
-	inkLine(
-		ctx,
-		cam,
-		{ x: bx, y: 22 + rock, z: 9.45 + bz },
-		{ x: bx, y: 28 + rock, z: 9.45 + bz },
-		0.3,
-		padColor,
-	);
-	ctx.strokeStyle = "rgba(255,255,255,0.92)";
-	ctx.lineWidth = Math.max(0.6, 0.12 * gk);
-	poly(ctx, cam, [
-		{ x: bx, y: 24 + rock, z: 10.05 + bz },
-		{ x: bx, y: 26 + rock, z: 10.05 + bz },
-		{ x: bx, y: 26 + rock, z: 11.5 + bz },
-		{ x: bx, y: 24 + rock, z: 11.5 + bz },
-	]);
-	ctx.stroke();
-	drawShotClock(ctx, cam, X, rock, bz, shotClock, inkW);
-
-	// The rim and its net.
-	const rx = X(5.25);
-	const rz = RIM_Z - bend + shake * 0.5;
-	const N = 16;
-	const ring = (r: number, z: number, sway = 0): Pt3[] =>
-		Array.from({ length: N }, (_, i) => {
-			const a = (i / N) * Math.PI * 2;
-			return {
-				x: rx + Math.cos(a) * r + sway,
-				y: 25 + rock + Math.sin(a) * r,
-				z,
-			};
-		});
-	const rim = ring(RIM_R, rz);
-	// After a make the net whips up and sways; a dunk yanks it down first.
-	const lift = fx.swish * 0.75 - ringing * 0.5 * Math.cos(fx.t / 40);
-	const sway = (fx.swish * 0.12 + ringing * 0.1) * Math.sin(fx.t / 45);
-	const mid = ring(RIM_R * 0.78, rz - 0.75 + lift * 0.5, sway * 0.5);
-	const bottom = ring(RIM_R * 0.6, rz - 1.55 + lift, sway);
-	// Back half: the far side of the ring (smaller y is farther away).
-	const isBack = (i: number) => Math.sin((i / N) * Math.PI * 2) < 0;
-	const netLines = (back: boolean) => {
-		ctx.strokeStyle = back ? "rgba(225,225,225,0.7)" : "rgba(252,252,252,0.95)";
-		ctx.lineCap = "round";
-		for (let i = 0; i < N; i++) {
-			if (isBack(i) !== back) {
-				continue;
+	// From behind the board - a dunk's replay, looking up the lane from off
+	// the baseline - the stanchion is nearest and the rim is seen through
+	// the glass: drawn the other way round.
+	const behind = (cam.pos.x - bx) * sgn < 0;
+	const inkW = Math.max(1, 0.05 * project(cam, { x: X(4), y: 25, z: 0 }).k);
+	const stanchion = () => {
+		// The stanchion: a dark padded base behind the baseline with a lit
+		// board in the team's color on its faces, the post, and the arm out to
+		// the board with a sign along it.
+		const b0 = X(-9.5);
+		const b1 = X(-5);
+		const box = (y0: number, y1: number, z1: number) => {
+			const pts = (x: number, y: number, z: number): Pt3 => ({ x, y, z });
+			// Top, the face toward the court, the face toward the camera.
+			ctx.lineJoin = "round";
+			ctx.lineWidth = inkW * 2;
+			ctx.strokeStyle = INK;
+			for (const [fill, face] of [
+				[
+					"#24262c",
+					[pts(b0, y0, z1), pts(b1, y0, z1), pts(b1, y1, z1), pts(b0, y1, z1)],
+				],
+				[
+					"#17181c",
+					[pts(b1, y0, 0), pts(b1, y1, 0), pts(b1, y1, z1), pts(b1, y0, z1)],
+				],
+				[
+					"#101115",
+					[pts(b0, y1, 0), pts(b1, y1, 0), pts(b1, y1, z1), pts(b0, y1, z1)],
+				],
+			] as const) {
+				poly(ctx, cam, [...face]);
+				ctx.stroke();
+				ctx.fillStyle = fill;
+				ctx.fill();
 			}
-			const j = (i + 1) % N;
-			const k = (i + N - 1) % N;
-			line(ctx, cam, rim[i]!, mid[j]!, 0.055);
-			line(ctx, cam, rim[i]!, mid[k]!, 0.055);
-			line(ctx, cam, mid[i]!, bottom[j]!, 0.05);
-			line(ctx, cam, mid[i]!, bottom[k]!, 0.05);
-		}
-	};
-	// The ring itself, one solid tube of iron round each half - not a run of
-	// separate pieces with an edge round each - with the light along its top.
-	const R_N = 48;
-	const ringAt = (a: number, z = rz): Pt3 => ({
-		x: rx + Math.cos(a) * RIM_R,
-		y: 25 + rock + Math.sin(a) * RIM_R,
-		z,
-	});
-	const rimArc = (back: boolean) => {
-		const pts: { x: number; y: number }[] = [];
-		let k = 0;
-		const n = R_N / 2;
-		for (let i = 0; i <= n; i++) {
-			const a = (back ? Math.PI : 0) + (i / n) * Math.PI;
-			const p = project(cam, ringAt(a));
-			pts.push(p);
-			k += p.k;
-		}
-		k /= pts.length;
-		const w = Math.max(0.9, 0.17 * k);
-		const path = () => {
-			ctx.beginPath();
-			pts.forEach((p, i) =>
-				i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y),
+			// The boards on its faces: the team's color, a bright band across.
+			const lit = (face: (u: number, v: number) => Pt3) => {
+				const quad = (v0: number, v1: number, fill: string) => {
+					ctx.fillStyle = fill;
+					poly(ctx, cam, [face(0, v0), face(1, v0), face(1, v1), face(0, v1)]);
+					ctx.fill();
+				};
+				quad(0.15, 0.85, padColor);
+				quad(0.44, 0.56, shade(padColor, 0.45));
+			};
+			const lo = 0.5;
+			const hi = z1 - 0.45;
+			lit((u, v) =>
+				pts(b1, y0 + 0.35 + u * (y1 - y0 - 0.7), lo + v * (hi - lo)),
+			);
+			lit((u, v) =>
+				pts(b0 + (b1 - b0) * (0.06 + u * 0.88), y1, lo + v * (hi - lo)),
 			);
 		};
-		ctx.lineCap = "round";
+		box(22.4, 27.6, 3.4);
+		inkLine(
+			ctx,
+			cam,
+			{ x: X(-6.6), y: 25, z: 3.4 },
+			{ x: X(-6.2), y: 25, z: 12.4 },
+			0.75,
+			"#24262c",
+		);
+		inkLine(
+			ctx,
+			cam,
+			{ x: X(-6.2), y: 25, z: 12.4 },
+			{ x: X(3.7), y: 25 + rock, z: 11.9 + shake },
+			0.48,
+			"#2a2c33",
+		);
+		inkLine(
+			ctx,
+			cam,
+			{ x: X(-6.4), y: 25, z: 8.6 },
+			{ x: X(3.7), y: 25 + rock, z: 10.2 + shake },
+			0.3,
+			"#2a2c33",
+		);
+		// The sign along the arm, on the side the camera sees.
+		{
+			const along = (d: number) => (d + 6.3) / 10;
+			const top = (d: number) => 12.4 + (11.9 + shake - 12.4) * along(d);
+			const low = (d: number) => 8.6 + (10.2 + shake - 8.6) * along(d);
+			const at = (d: number, z: number): Pt3 => ({
+				x: X(d),
+				y: 25.3 + rock * along(d),
+				z,
+			});
+			const [d0, d1] = [-4.3, 2.1];
+			// (Inked round, so it reads as a sign against a floor its own color.)
+			ctx.lineJoin = "round";
+			ctx.strokeStyle = INK;
+			ctx.lineWidth = 2 * inkW;
+			ctx.fillStyle = padColor;
+			poly(ctx, cam, [
+				at(d0, low(d0) + 0.35),
+				at(d1, low(d1) + 0.35),
+				at(d1, top(d1) - 0.35),
+				at(d0, top(d0) - 0.35),
+			]);
+			ctx.stroke();
+			ctx.fill();
+			ctx.fillStyle = "rgba(255,255,255,0.85)";
+			const mid = (d: number) => (low(d) + top(d)) / 2;
+			poly(ctx, cam, [
+				at(d0 + 0.6, mid(d0) - 0.18),
+				at(d1 - 0.6, mid(d1) - 0.18),
+				at(d1 - 0.6, mid(d1) + 0.18),
+				at(d0 + 0.6, mid(d0) + 0.18),
+			]);
+			ctx.fill();
+		}
+		// Padding round the bottom of the post.
+		inkLine(
+			ctx,
+			cam,
+			{ x: X(-6.6), y: 25, z: 3.4 },
+			{ x: X(-6.5), y: 25, z: 7.4 },
+			1.15,
+			padColor,
+		);
+	};
+	const board = () => {
+		// The backboard: glass in a white frame, the shooter's square, and the
+		// shot clock on top.
+		const glass = [
+			{ x: bx, y: 22 + rock, z: 9.5 + bz },
+			{ x: bx, y: 28 + rock, z: 9.5 + bz },
+			{ x: bx, y: 28 + rock, z: 13 + bz },
+			{ x: bx, y: 22 + rock, z: 13 + bz },
+		];
+		const gk = project(cam, glass[0]!).k;
+		ctx.fillStyle = "rgba(214, 232, 244, 0.34)";
+		poly(ctx, cam, glass);
+		ctx.fill();
 		ctx.lineJoin = "round";
-		path();
 		ctx.strokeStyle = INK;
-		ctx.lineWidth = w + 2 * Math.max(1, 0.05 * k);
+		ctx.lineWidth = Math.max(0.8, 0.22 * gk) + 2 * inkW;
 		ctx.stroke();
-		ctx.strokeStyle = back ? "#c4501f" : "#ef6526";
-		ctx.lineWidth = w;
+		ctx.strokeStyle = "#ffffff";
+		ctx.lineWidth = Math.max(0.8, 0.22 * gk);
 		ctx.stroke();
-		if (!back && w > 2) {
-			ctx.beginPath();
-			for (let i = 0; i <= n; i++) {
-				const a = (i / n) * Math.PI;
-				const p = project(cam, ringAt(a, rz + 0.045));
-				if (i === 0) {
-					ctx.moveTo(p.x, p.y);
-				} else {
-					ctx.lineTo(p.x, p.y);
-				}
-			}
-			ctx.strokeStyle = "rgba(255, 196, 150, 0.75)";
-			ctx.lineWidth = Math.max(0.6, w * 0.3);
+		// The period over - its clock at zero - the strip of lights round the
+		// inside of the frame is lit red, the way an NBA board's is at the horn,
+		// and stays lit until the clock is set again.
+		if (fx.out) {
+			const inset = (p: Pt3, dy: number, dz: number): Pt3 => ({
+				...p,
+				y: p.y + dy,
+				z: p.z + dz,
+			});
+			const d = 0.16;
+			poly(ctx, cam, [
+				inset(glass[0]!, d, d),
+				inset(glass[1]!, -d, d),
+				inset(glass[2]!, -d, -d),
+				inset(glass[3]!, d, -d),
+			]);
+			ctx.strokeStyle = "rgba(255, 52, 36, 0.35)";
+			ctx.lineWidth = Math.max(1.5, 0.34 * gk);
+			ctx.stroke();
+			ctx.strokeStyle = "#ff4a32";
+			ctx.lineWidth = Math.max(0.8, 0.12 * gk);
 			ctx.stroke();
 		}
+		// The padding along the bottom of the board.
+		inkLine(
+			ctx,
+			cam,
+			{ x: bx, y: 22 + rock, z: 9.45 + bz },
+			{ x: bx, y: 28 + rock, z: 9.45 + bz },
+			0.3,
+			padColor,
+		);
+		ctx.strokeStyle = "rgba(255,255,255,0.92)";
+		ctx.lineWidth = Math.max(0.6, 0.12 * gk);
+		poly(ctx, cam, [
+			{ x: bx, y: 24 + rock, z: 10.05 + bz },
+			{ x: bx, y: 26 + rock, z: 10.05 + bz },
+			{ x: bx, y: 26 + rock, z: 11.5 + bz },
+			{ x: bx, y: 24 + rock, z: 11.5 + bz },
+		]);
+		ctx.stroke();
+		drawShotClock(ctx, cam, X, rock, bz, shotClock, inkW);
 	};
-	// The bracket from the board to the rim.
-	inkLine(
-		ctx,
-		cam,
-		{ x: X(4.05), y: 25 + rock, z: rz - 0.25 },
-		{ x: X(4.55), y: 25 + rock, z: rz },
-		0.17,
-		"#c4501f",
-	);
-	rimArc(true);
-	netLines(true);
-	between?.();
-	netLines(false);
-	rimArc(false);
+	const rimAndNet = () => {
+		// The rim and its net.
+		const rx = X(5.25);
+		const rz = RIM_Z - bend + shake * 0.5;
+		const N = 16;
+		const ring = (r: number, z: number, sway = 0): Pt3[] =>
+			Array.from({ length: N }, (_, i) => {
+				const a = (i / N) * Math.PI * 2;
+				return {
+					x: rx + Math.cos(a) * r + sway,
+					y: 25 + rock + Math.sin(a) * r,
+					z,
+				};
+			});
+		const rim = ring(RIM_R, rz);
+		// After a make the net whips up and sways; a dunk yanks it down first.
+		const lift = fx.swish * 0.75 - ringing * 0.5 * Math.cos(fx.t / 40);
+		const sway = (fx.swish * 0.12 + ringing * 0.1) * Math.sin(fx.t / 45);
+		const mid = ring(RIM_R * 0.78, rz - 0.75 + lift * 0.5, sway * 0.5);
+		const bottom = ring(RIM_R * 0.6, rz - 1.55 + lift, sway);
+		// Back half: the side of the ring away from the camera - the far
+		// side from the sideline, the court side from behind the baseline.
+		const near = Math.atan2(cam.pos.y - (25 + rock), cam.pos.x - rx);
+		const isBack = (i: number) => Math.cos((i / N) * Math.PI * 2 - near) < 0;
+		const netLines = (back: boolean) => {
+			ctx.strokeStyle = back
+				? "rgba(225,225,225,0.7)"
+				: "rgba(252,252,252,0.95)";
+			ctx.lineCap = "round";
+			for (let i = 0; i < N; i++) {
+				if (isBack(i) !== back) {
+					continue;
+				}
+				const j = (i + 1) % N;
+				const k = (i + N - 1) % N;
+				line(ctx, cam, rim[i]!, mid[j]!, 0.055);
+				line(ctx, cam, rim[i]!, mid[k]!, 0.055);
+				line(ctx, cam, mid[i]!, bottom[j]!, 0.05);
+				line(ctx, cam, mid[i]!, bottom[k]!, 0.05);
+			}
+		};
+		// The ring itself, one solid tube of iron round each half - not a run of
+		// separate pieces with an edge round each - with the light along its top.
+		const R_N = 48;
+		const ringAt = (a: number, z = rz): Pt3 => ({
+			x: rx + Math.cos(a) * RIM_R,
+			y: 25 + rock + Math.sin(a) * RIM_R,
+			z,
+		});
+		const rimArc = (back: boolean) => {
+			const pts: { x: number; y: number }[] = [];
+			let k = 0;
+			const n = R_N / 2;
+			for (let i = 0; i <= n; i++) {
+				const a =
+					near + (back ? Math.PI / 2 : -Math.PI / 2) + (i / n) * Math.PI;
+				const p = project(cam, ringAt(a));
+				pts.push(p);
+				k += p.k;
+			}
+			k /= pts.length;
+			const w = Math.max(0.9, 0.17 * k);
+			const path = () => {
+				ctx.beginPath();
+				pts.forEach((p, i) =>
+					i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y),
+				);
+			};
+			ctx.lineCap = "round";
+			ctx.lineJoin = "round";
+			path();
+			ctx.strokeStyle = INK;
+			ctx.lineWidth = w + 2 * Math.max(1, 0.05 * k);
+			ctx.stroke();
+			ctx.strokeStyle = back ? "#c4501f" : "#ef6526";
+			ctx.lineWidth = w;
+			ctx.stroke();
+			if (!back && w > 2) {
+				ctx.beginPath();
+				for (let i = 0; i <= n; i++) {
+					const a = near - Math.PI / 2 + (i / n) * Math.PI;
+					const p = project(cam, ringAt(a, rz + 0.045));
+					if (i === 0) {
+						ctx.moveTo(p.x, p.y);
+					} else {
+						ctx.lineTo(p.x, p.y);
+					}
+				}
+				ctx.strokeStyle = "rgba(255, 196, 150, 0.75)";
+				ctx.lineWidth = Math.max(0.6, w * 0.3);
+				ctx.stroke();
+			}
+		};
+		// The bracket from the board to the rim.
+		inkLine(
+			ctx,
+			cam,
+			{ x: X(4.05), y: 25 + rock, z: rz - 0.25 },
+			{ x: X(4.55), y: 25 + rock, z: rz },
+			0.17,
+			"#c4501f",
+		);
+		rimArc(true);
+		netLines(true);
+		between?.();
+		netLines(false);
+		rimArc(false);
+	};
+	if (behind) {
+		rimAndNet();
+		board();
+		stanchion();
+	} else {
+		stanchion();
+		board();
+		rimAndNet();
+	}
 };
 
 // How close the ball is to going through a rim: drawn between the rim's back
@@ -1666,14 +1699,30 @@ export const ballAtRim = (ball: Pt3): Side | undefined => {
 	return undefined;
 };
 
+// The ball (see gameBall.ts): painted a pixel at a time, its print and its
+// channels turning with its spin; where there is nothing to paint on, its
+// leather shaded and its channels drawn as lines. mirrored: its reflection
+// in the floor (drawn at its mirror image's place).
 export const drawBall = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,
 	ball: Pt3,
 	spin: number,
+	mirrored = false,
 ) => {
 	const c = project(cam, ball);
 	const r = Math.max(1.6, BALL_R * c.k);
+	ctx.beginPath();
+	ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+	ctx.strokeStyle = INK;
+	ctx.lineWidth = Math.max(1, 0.05 * c.k) * 2;
+	ctx.stroke();
+	const frame = viewFrame(cam);
+	const turn = ballTurn(frame, spin);
+	const mirror = mirrored ? floorMirror(frame) : undefined;
+	if (paintBall(ctx, c.x, c.y, r, turn, mirror)) {
+		return;
+	}
 	const g = ctx.createRadialGradient(
 		c.x - r * 0.35,
 		c.y - r * 0.4,
@@ -1682,41 +1731,38 @@ export const drawBall = (
 		c.y,
 		r,
 	);
-	g.addColorStop(0, "#f9a964");
-	g.addColorStop(0.55, "#e2702a");
-	g.addColorStop(1, "#a44716");
-	ctx.beginPath();
-	ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
-	ctx.strokeStyle = INK;
-	ctx.lineWidth = Math.max(1, 0.1 * c.k) * 2;
-	ctx.stroke();
+	g.addColorStop(0, "#de8a55");
+	g.addColorStop(0.5, `rgb(${LEATHER.join(", ")})`);
+	g.addColorStop(1, "#6e3417");
 	ctx.fillStyle = g;
 	ctx.fill();
-	if (r > 3) {
-		// The seams, on the side of it facing the camera: turned with its
-		// spin, about an axis tipped off level, so it rolls over as it goes.
-		const a = spin;
-		const ca = Math.cos(a);
-		const sa = Math.sin(a);
-		ctx.strokeStyle = "rgba(40, 16, 6, 0.85)";
-		ctx.lineWidth = Math.max(0.6, r * 0.09);
+	if (r > 2.2) {
+		ctx.strokeStyle = `rgba(${CHANNEL.join(", ")}, ${r > 4 ? 1 : 0.7})`;
+		ctx.lineWidth = Math.max(0.55, r * 0.07);
 		ctx.lineCap = "round";
 		ctx.lineJoin = "round";
-		for (const seam of SEAMS) {
+		const [X, Y, Z] = turn;
+		for (const line of CHANNEL_LINES) {
 			let drawing = false;
 			ctx.beginPath();
-			for (const [x0, y0, z0] of seam) {
-				// Spun about x, then set at its resting tilt.
-				const y1 = y0 * ca - z0 * sa;
-				const z1 = y0 * sa + z0 * ca;
-				const x2 = x0 * TILT_C + z1 * TILT_S;
-				const z2 = -x0 * TILT_S + z1 * TILT_C;
-				if (z2 < 0.02) {
+			for (const [x0, y0, z0] of line) {
+				let vx = X[0] * x0 + Y[0] * y0 + Z[0] * z0;
+				let vy = X[1] * x0 + Y[1] * y0 + Z[1] * z0;
+				let vz = X[2] * x0 + Y[2] * y0 + Z[2] * z0;
+				if (mirror) {
+					// (A mirror is its own inverse.)
+					const mx = mirror[0][0] * vx + mirror[0][1] * vy + mirror[0][2] * vz;
+					const my = mirror[1][0] * vx + mirror[1][1] * vy + mirror[1][2] * vz;
+					vz = mirror[2][0] * vx + mirror[2][1] * vy + mirror[2][2] * vz;
+					vx = mx;
+					vy = my;
+				}
+				if (vz < 0.02) {
 					drawing = false;
 					continue;
 				}
-				const px = c.x + x2 * r * 0.97;
-				const py = c.y - y1 * r * 0.97;
+				const px = c.x + vx * r * 0.97;
+				const py = c.y - vy * r * 0.97;
 				if (drawing) {
 					ctx.lineTo(px, py);
 				} else {
@@ -1728,27 +1774,6 @@ export const drawBall = (
 		}
 	}
 };
-
-// A basketball's seams on a ball of radius 1: two great circles at right
-// angles, and the two curved seams - circles in planes either side of the
-// one, crossing only the other - that make its eight panels.
-const SEAMS: [number, number, number][][] = (() => {
-	const n = 56;
-	const circle = (
-		f: (a: number) => [number, number, number],
-	): [number, number, number][] =>
-		Array.from({ length: n + 1 }, (_, i) => f((i / n) * Math.PI * 2));
-	const d = 0.62;
-	const rr = Math.sqrt(1 - d * d);
-	return [
-		circle((a) => [Math.cos(a), Math.sin(a), 0]),
-		circle((a) => [0, Math.cos(a), Math.sin(a)]),
-		circle((a) => [d, rr * Math.cos(a), rr * Math.sin(a)]),
-		circle((a) => [-d, rr * Math.cos(a), rr * Math.sin(a)]),
-	];
-})();
-const TILT_C = Math.cos(0.55);
-const TILT_S = Math.sin(0.55);
 
 // THE LIGHTS IN THE FLOOR. A broadcast's floor is polished: the lights
 // along the truss over the far stands (see paintRafters) shine back off

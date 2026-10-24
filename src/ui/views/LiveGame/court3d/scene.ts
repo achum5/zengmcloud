@@ -1245,7 +1245,7 @@ export const drawFrame = (f: Frame) => {
 					const shine = SHINE * (1 - b.z / BALL_SHINE_Z);
 					if (shine > 0.01) {
 						ctx.globalAlpha = shine;
-						drawBall(ctx, cam, { ...b, z: -b.z }, -(b.roll ?? 0));
+						drawBall(ctx, cam, { ...b, z: -b.z }, b.roll ?? 0, true);
 						ctx.globalAlpha = 1;
 					}
 					drawBall(ctx, cam, b, b.roll ?? 0);
