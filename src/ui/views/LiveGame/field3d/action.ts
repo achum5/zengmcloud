@@ -1020,6 +1020,25 @@ const ROUTE_PACE = 0.76;
 // no more than this left of it to the catch (feet), no break.)
 const BREAK_COST = 200;
 const ROUTE_LEFT = 0.4;
+// Sat down at the end of his route with longer than this to wait (ms) - the
+// ball not coming yet, or not to him - he works his way across it to where
+// he sits down again: after a moment sat (and up to this much more), at this
+// pace (feet a second), no further than this nor less than this worth the
+// going (feet), sat down again this long before it comes (or he is done).
+// Mostly across toward the middle of the field, a little back toward the
+// ball - more back down toward it off a route out to the sideline - and no
+// nearer a sideline than this (feet).
+const WORK_AFTER_MS = 600;
+const WORK_SIT_MS = 250;
+const WORK_SIT_SPREAD = 200;
+const WORK_FPS = 5.5;
+const WORK_MOST_FT = 12;
+const WORK_LEAST_FT = 2;
+const WORK_RESET_MS = 200;
+const WORK_BACK = 0.35;
+const WORK_BACK_OUT = 1.5;
+const WORK_MID_FT = 8;
+const WORK_IN_FT = 4;
 
 // The kicking game. A place kick: the plant, and the foot into the ball this
 // far through it. A punt: from the punter's first step, the ball dropped and
@@ -1804,7 +1823,7 @@ class Action {
 							fl.ms;
 			catchAt = Math.max(onTime, ready + 300 + fl.ms, least) + hold;
 			throwAt = catchAt - fl.ms;
-			this.runRoute(target, tr, go, catchAt);
+			catchPt = this.runRoute(target, tr, go, catchAt) ?? catchPt;
 			this.at.set(first, catchAt);
 		}
 
@@ -2176,14 +2195,16 @@ class Action {
 	// A receiver down his route, off the line at `release`: at his route
 	// speed - or, thrown to, timed to be where the ball is when it gets
 	// there (slowed a little to come open on time, or sat down in it
-	// waiting for it). Running on, he goes until `until`.
+	// waiting for it). Running on, he goes until `until`. (Where he sits
+	// down for it at the last, if he works his way across to there first
+	// - see workTo.)
 	runRoute(
 		m: Actor,
 		route: Route,
 		release: number,
 		catchAt?: number,
 		until?: number,
-	) {
+	): Pt | undefined {
 		const speed = m.top * ROUTE_PACE;
 		m.hold(release);
 		const target = catchAt !== undefined;
@@ -2239,10 +2260,58 @@ class Action {
 		if (route.settles || target) {
 			// Sat down in it, turned to the quarterback.
 			const qb = this.role("QB");
-			const face = qb ? this.toward(m.at, qb.at) : this.behind;
+			const faceAt = (p: Pt) => (qb ? this.toward(p, qb.at) : this.behind);
 			const t = catchAt !== undefined ? catchAt - 380 : (until ?? m.t);
-			m.hold(Math.max(m.t, t), "settle", face);
+			const work = route.settles ? this.workTo(m, route, t) : undefined;
+			if (work) {
+				m.hold(m.t + work.sit, "settle", faceAt(m.at));
+				m.go(work.at, t - WORK_RESET_MS, "slide", faceAt(m.at));
+			}
+			m.hold(Math.max(m.t, t), "settle", faceAt(m.at));
+			return work ? m.at : undefined;
 		}
+		return undefined;
+	}
+
+	// Where a receiver sat down at the end of his route works his way to
+	// by `t`, still facing the quarterback, and how long he sits first - if
+	// he has long enough to wait there for it to be worth it (see
+	// WORK_AFTER_MS). (Not a screen or a slip: the blocks are set up where
+	// he sits.)
+	workTo(m: Actor, route: Route, t: number) {
+		const spare = t - m.t;
+		if (
+			spare < WORK_AFTER_MS ||
+			route.name === "screen" ||
+			route.name === "slip"
+		) {
+			return undefined;
+		}
+		// (Which way, and how long sat first, the same each time for him
+		// there - not of the play's own draws.)
+		const u = (m.pid * 0.618034 + m.t / 997) % 1;
+		const sit = WORK_SIT_MS + WORK_SIT_SPREAD * u;
+		const ft = Math.min(
+			WORK_MOST_FT,
+			(WORK_FPS * (spare - sit - WORK_RESET_MS)) / 1000,
+		);
+		if (ft < WORK_LEAST_FT) {
+			return undefined;
+		}
+		const s = this.of(m.at);
+		const side =
+			Math.abs(s.a) < WORK_MID_FT ? (u < 0.5 ? -1 : 1) : -Math.sign(s.a);
+		const back =
+			route.name === "out" || route.name === "comeback"
+				? WORK_BACK_OUT
+				: WORK_BACK;
+		const n = Math.hypot(1, back);
+		const a = clamp(
+			s.a + (side * ft) / n,
+			this.bounds.left + WORK_IN_FT,
+			this.bounds.right - WORK_IN_FT,
+		);
+		return { at: this.w({ d: s.d - (back * ft) / n, a }), sit };
 	}
 
 	// ---- the catch, and after it ---------------------------------------------------
