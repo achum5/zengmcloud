@@ -988,6 +988,13 @@ const ROUTE_LEFT = 0.4;
 // no more than this (feet a second).
 const KICK_MS = 800;
 const KICK_CONTACT = 0.4;
+// A loose ball picked up on the run: his hands this far out in front of
+// him at the bottom of the scoop (feet), that far through it; down to it
+// over so long, and the whole of it up off the turf with it so long.
+const SCOOP_REACH = 2.4;
+const SCOOP_LOW = 0.4;
+const SCOOP_DOWN_MS = 400;
+const SCOOP_UP_MS = 380;
 // The holder: the snap in his hands this long before he brings it down to
 // its spot, and so long bringing it.
 const HOLD_CATCH_MS = 60;
@@ -4028,8 +4035,27 @@ class Action {
 			return;
 		}
 
-		// Picked up on the run, and away with it.
-		rec.chase(restPt, takeT, rec.top * FLAT_OUT, "sprint");
+		// Picked up on the run, and away with it: down to it as he gets there,
+		// his hands on it (SCOOP_REACH out in front of him, SCOOP_LOW through
+		// the scoop), and up and off with it.
+		const far = dist(rec.at, restPt);
+		const low =
+			far > SCOOP_REACH
+				? {
+						x: restPt.x - ((restPt.x - rec.at.x) / far) * SCOOP_REACH,
+						y: restPt.y - ((restPt.y - rec.at.y) / far) * SCOOP_REACH,
+					}
+				: rec.at;
+		rec.chase(low, takeT, rec.top * FLAT_OUT, "sprint");
+		const down = takeT - SCOOP_DOWN_MS;
+		if (rec.last.t0 < down && rec.last.t1 === takeT) {
+			rec.split(down);
+			Object.assign(rec.last, {
+				move: "scoop",
+				span: [0, SCOOP_LOW],
+				yaw,
+			});
+		}
 		const endPt = this.w({
 			d: endD,
 			a: clamp(
@@ -4039,10 +4065,12 @@ class Action {
 			),
 		});
 		const on = Math.atan2(endPt.y - rec.at.y, endPt.x - rec.at.x);
-		rec.act("scoop", takeT + 380, on, {
-			x: rec.at.x + Math.cos(on) * 5,
-			y: rec.at.y + Math.sin(on) * 5,
+		const up = rec.last.move === "scoop" ? SCOOP_LOW : 0;
+		rec.act("scoop", takeT + SCOOP_UP_MS * (1 - up), on, {
+			x: rec.at.x + Math.cos(on) * 5 * (1 - up),
+			y: rec.at.y + Math.sin(on) * 5 * (1 - up),
 		});
+		rec.last.span = [up, 1];
 		const tEnd =
 			dist(rec.at, endPt) > 2
 				? rec.run(endPt, rec.top * 0.88, "sprint")

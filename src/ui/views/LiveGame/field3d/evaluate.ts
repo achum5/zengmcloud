@@ -838,6 +838,9 @@ const SETTLE_MS = 380;
 const GET_DOWN_MS = 480;
 const DOWN = new Set<Move>(["threePoint", "dlThree", "center"]);
 const BLEND_MOST_MS = Math.max(SETTLE_MS, GET_DOWN_MS);
+// (Down to a loose ball on the run: quickly into the scoop, the bend down
+// its own - not drawn out under his strides and all at the last.)
+const SCOOP_IN_MS = 100;
 const blendOf = (l: Leg, prev?: Leg): number => {
 	if (moveKind(l.move) !== "act") {
 		return !prev
@@ -850,6 +853,9 @@ const blendOf = (l: Leg, prev?: Leg): number => {
 					? SETTLE_MS
 					: BLEND_MS;
 	}
+	if (l.move === "scoop") {
+		return SCOOP_IN_MS;
+	}
 	const [p0, p1] = l.span ?? [0, 1];
 	const ms = (l.t1 - l.t0) / Math.max(0.05, p1 - p0);
 	return Math.min(BLEND_MS, ms * ACT_BLEND);
@@ -857,10 +863,13 @@ const blendOf = (l: Leg, prev?: Leg): number => {
 
 // Whether he does something else from one leg to the next: his move, his
 // arms, how he has the ball.
+// (The ball coming into his hands, or going, partway through what he is
+// doing: no change to him unless it is tucked away under his arm - see
+// poses.ts holding.)
 const changed = (a: Leg, b: Leg) =>
 	a.move !== b.move ||
 	a.arms !== b.arms ||
-	a.ball !== b.ball ||
+	(a.ball !== b.ball && (a.ball === "carry" || b.ball === "carry")) ||
 	!a.mirrored !== !b.mirrored;
 
 // Where one man is at t and what he is doing.
