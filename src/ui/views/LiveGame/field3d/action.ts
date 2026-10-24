@@ -208,11 +208,11 @@ const STOP_LEAST = 8;
 const CUT_ACCEL = 28;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
 // Going well off the way he faces (more than CRAB_OFF radians), in a gait
-// that goes the way it faces (or low steps up): at no more than
-// SHUFFLE_MOST ft/s, push steps across, square to the way he goes - or,
-// further round than BACK_OFF, at no more than BACK_MOST, a backpedal - in
-// its place; a gait quicker than that, turned the way he goes (no man runs
-// sideways).
+// that goes the way it faces (or low steps up, or a backpedal): at no more
+// than SHUFFLE_MOST ft/s, push steps across, square to the way he goes -
+// or, further round than BACK_OFF, at no more than BACK_MOST (any pace,
+// told to backpedal), a backpedal square to it - in its place; quicker
+// than that, a gait turned the way he goes (no man runs sideways).
 const CRAB_OFF = 1.05;
 const BACK_OFF = 2.1;
 const SHUFFLE_MOST = 7;
@@ -233,9 +233,10 @@ const faced = (
 	was?: Leg,
 ): { move: Move; yaw: number | undefined } => {
 	const gaited = GAITS.has(move);
+	const backed = move === "back";
 	if (
 		yaw === undefined ||
-		(!gaited && move !== "slide") ||
+		(!gaited && !backed && move !== "slide") ||
 		dist(from, to) < FACED_LEAST
 	) {
 		return { move, yaw };
@@ -244,7 +245,11 @@ const faced = (
 	const d = yaw - way - Math.round((yaw - way) / (2 * Math.PI)) * 2 * Math.PI;
 	const off = Math.abs(d);
 	if (off <= CRAB_OFF) {
-		return { move, yaw };
+		return { move: backed ? gait(fps) : move, yaw };
+	}
+	// (Backpedaling, square to the way he goes.)
+	if (backed && off > BACK_OFF) {
+		return { move, yaw: way + Math.PI };
 	}
 	const k =
 		was?.move === "shuffle" || was?.move === "back"
@@ -263,9 +268,13 @@ const faced = (
 		};
 	}
 	if (off > BACK_OFF && fps <= BACK_MOST * k) {
-		return { move: "back", yaw };
+		return { move: "back", yaw: way + Math.PI };
 	}
-	return gaited ? { move, yaw: undefined } : { move, yaw };
+	return gaited
+		? { move, yaw: undefined }
+		: backed
+			? { move: gait(fps), yaw: undefined }
+			: { move, yaw };
 };
 // (In the gait he was in, a run or a sprint down to a jog once he is
 // that slow, with this long (ms) at least still to go - not a gait to
