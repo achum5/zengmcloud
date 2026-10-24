@@ -541,6 +541,15 @@ class Actor {
 		}
 		if (!still && sits(m)) {
 			this.slowInto(0, STOP_ACCEL, t - l.t1);
+			// (No pulling up on the way there - cut off at speed, say: on past
+			// it, eased off in the time there is, not stopped dead.)
+			const p = this.last;
+			if (m === "stand" && RAMPS.has(p.move) && legPace(p) >= STOP_LEAST) {
+				this.easeOff(Math.min(EASE_OFF_FT, (legPace(p) * (t - p.t1)) / 2000));
+				if (this.t >= t) {
+					return;
+				}
+			}
 		}
 		this.push({
 			t0: this.t,
