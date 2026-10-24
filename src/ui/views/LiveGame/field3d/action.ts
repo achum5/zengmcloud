@@ -1849,6 +1849,13 @@ const DEAD_SEEN_MS = [250, 300] as const;
 // at him at no more than most of his speed - all but flat out, if he has
 // to.
 const HIT_MS = 280;
+// Where he gets to: this far off him (feet) - or no further off than he
+// is already, right there (not stepping off him to come back in at him),
+// this near at the least.
+const HIT_FT = 2.2;
+const HIT_LEAST_FT = 1.2;
+// (No nearer it than this to go: round to it where he stands.)
+const TURN_IN_FT = 0.5;
 // A tackler met him head on if he came at him from this near straight in
 // front (the cosine of it); and then, this often, drove him back.
 const HEAD_ON = 0.5;
@@ -4191,6 +4198,9 @@ class Action {
 			x: p.x + Math.cos(a) * by,
 			y: p.y + Math.sin(a) * by,
 		});
+		// (Where he leaves his feet, this far out - no further than he is.)
+		const out = (ft: number) =>
+			Math.max(HIT_LEAST_FT, Math.min(ft, dist(from, at)));
 		if (!how && side < 0 && r() < STIFF_ARM) {
 			const hit = beside(at, ang - Math.PI / 2, 2.6);
 			const face = this.toward(hit, at);
@@ -4226,7 +4236,7 @@ class Action {
 					beside(at, ang, (v * half) / 1000),
 				);
 				on();
-				const hit = beside(at, toHim, 2.6);
+				const hit = beside(at, toHim, out(2.6));
 				const face = this.toward(hit, at);
 				this.closeOn(m, hit, tc - 300, face);
 				m.act("dive", tc + 250, face, beside(at, face, 1.2));
@@ -4246,10 +4256,10 @@ class Action {
 				carrier.act("spin", tc + SPIN_MS, ang, off);
 				carrier.turn(side * Math.PI * 2);
 				on();
-				const hit = beside(at, toHim, 2.2);
+				const hit = beside(at, toHim, out(2.2));
 				const face = this.toward(hit, at);
 				this.closeOn(m, hit, tc + 60, face);
-				m.act("dive", tc + 520, face, beside(hit, face, 2.4));
+				m.act("dive", tc + 520, face, beside(at, face, 0.2));
 				m.hold(tc + 520 + 600, "prone");
 				m.act("getUp", tc + 520 + 600 + GET_UP_MS);
 				this.done.add(m.pid);
@@ -4268,7 +4278,7 @@ class Action {
 			}
 			on();
 			// (Off his feet at where he was.)
-			const hit = beside(at, toHim, 3.5);
+			const hit = beside(at, toHim, out(3.5));
 			const face = this.toward(hit, at);
 			this.closeOn(m, hit, tc - 100, face);
 			m.act("dive", tc + 380, face, beside(at, face, 0.8));
@@ -4522,9 +4532,10 @@ class Action {
 			const side = k === 0 ? 0 : (r() < 0.5 ? -1 : 1) * 1.2;
 			const from = froms[k]!;
 			const ang = Math.atan2(from.y - pt.y, from.x - pt.x) + side;
+			const off = Math.max(HIT_LEAST_FT, Math.min(HIT_FT, dist(from, pt)));
 			const hit = {
-				x: pt.x + Math.cos(ang) * 2.2,
-				y: pt.y + Math.sin(ang) * 2.2,
+				x: pt.x + Math.cos(ang) * off,
+				y: pt.y + Math.sin(ang) * off,
 			};
 			const face = this.toward(hit, pt);
 			// (Run down from behind: on his heels as he gets there, not
@@ -4718,9 +4729,10 @@ class Action {
 			const from = m.posAt(Math.max(this.seen, Math.min(m.t, t - 600)));
 			const ang =
 				Math.atan2(from.y - pile.y, from.x - pile.x) + (r() - 0.5) * 0.6;
+			const off = Math.max(HIT_FT, Math.min(4.5, dist(from, pile)));
 			const hit = {
-				x: pile.x + Math.cos(ang) * 4.5,
-				y: pile.y + Math.sin(ang) * 4.5,
+				x: pile.x + Math.cos(ang) * off,
+				y: pile.y + Math.sin(ang) * off,
 			};
 			const go = t + 150 + k * 200 + r() * 150;
 			if (this.canReach(m, hit) > go) {
@@ -5645,9 +5657,10 @@ class Action {
 			);
 			near.forEach((m, k) => {
 				const yaw = this.toward(m.posAt(this.seen), bat);
+				const off = Math.min(3.5, dist(m.posAt(this.seen), bat));
 				const short = {
-					x: bat.x - Math.cos(yaw) * 3.5,
-					y: bat.y - Math.sin(yaw) * 3.5,
+					x: bat.x - Math.cos(yaw) * off,
+					y: bat.y - Math.sin(yaw) * off,
 				};
 				const at = Math.max(batT + k * 160, this.canReach(m, short) + 300);
 				if (at > stopT - 200) {
@@ -5655,7 +5668,11 @@ class Action {
 				}
 				m.cut(this.seen);
 				m.hold(this.seen);
-				m.chase(short, at - 300, m.top * FLAT_OUT, "sprint");
+				if (off > TURN_IN_FT && at - 300 > m.t) {
+					m.chase(short, at - 300, m.top * FLAT_OUT, "sprint");
+				} else {
+					m.hold(at - 300, undefined, yaw);
+				}
 				m.act("dive", at, yaw, {
 					x: bat.x + Math.cos(yaw) * 1.5,
 					y: bat.y + Math.sin(yaw) * 1.5,
@@ -7785,14 +7802,27 @@ class Action {
 		pile.forEach((m, n) => {
 			const t1 = hitT + 150 + n * 170 + r() * 200;
 			const ang = Math.atan2(m.at.y - pt.y, m.at.x - pt.x) + (r() - 0.5) * 0.9;
-			const ring = 2.4 + n * 0.5 + r() * 1.5;
+			// (No further out than he is: not stepping off it to come back.)
+			const ring = Math.max(
+				HIT_LEAST_FT,
+				Math.min(2.4 + n * 0.5 + r() * 1.5, dist(m.at, pt)),
+			);
 			const hit = {
 				x: pt.x + Math.cos(ang) * ring,
 				y: pt.y + Math.sin(ang) * ring,
 			};
 			const inward = this.toward(hit, pt);
-			if (n < 3) {
-				m.chase(hit, t1 - 400, m.top * FLAT_OUT, "sprint");
+			// (Round to it as he gets there, if he is all but there.)
+			if (n < 3 && dist(m.at, hit) > TURN_IN_FT) {
+				m.chase(
+					hit,
+					t1 - 400,
+					m.top * FLAT_OUT,
+					"sprint",
+					dist(m.at, hit) < 3 ? inward : undefined,
+				);
+			} else if (n < 3) {
+				m.hold(t1 - 400, undefined, inward);
 			}
 			if (n < 3 && dist(m.at, hit) < 3) {
 				m.act("dive", t1, inward, {
