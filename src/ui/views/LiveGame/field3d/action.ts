@@ -1130,17 +1130,19 @@ class Actor {
 		return SET.has(l.move) ? undefined : paceOn(l, l.to, to);
 	}
 
+	// (Out of his stance: up from nothing, at RELEASE_ACCEL - not left to
+	// catch up with the play all at once, quicker than it has him going.)
 	private rampInto(leg: Leg, into = this.paceInto(leg.to)) {
 		const T = (leg.t1 - leg.t0) / 1000;
-		if (!RAMPS.has(leg.move) || T * 1000 < RAMP_LEG_MS || into === undefined) {
+		if (!RAMPS.has(leg.move) || T * 1000 < RAMP_LEG_MS) {
 			return;
 		}
 		const dx = leg.to.x - leg.from.x;
 		const dy = leg.to.y - leg.from.y;
 		const D = Math.hypot(dx, dy);
 		const v = D / T;
-		const A = RAMP_ACCEL;
-		let v0 = into;
+		const A = into === undefined ? RELEASE_ACCEL : RAMP_ACCEL;
+		let v0 = into ?? 0;
 		if (v - v0 < RAMP_LEAST || D <= 0) {
 			return;
 		}
@@ -5122,17 +5124,21 @@ class Action {
 			c = best;
 		}
 		// (Not a step or two into something new first - a backpedal just
-		// begun: off from before it.)
+		// begun: off from before it. Or, begun before he could know to,
+		// still in the stance he was in until then.)
 		const k = m.legs.findLastIndex((x) => x.t0 < c && x.t1 > x.t0);
 		const began = m.legs[k];
 		if (
 			began &&
 			k > 0 &&
-			began.t0 >= this.seen &&
 			c - began.t0 < CLOSE_SLIVER_MS &&
 			m.legs[k - 1]!.move !== began.move
 		) {
-			c = began.t0;
+			if (began.t0 >= this.seen) {
+				c = began.t0;
+			} else if (sits(m.legs[k - 1]!.move)) {
+				m.cut(began.t0);
+			}
 		}
 		m.cut(c);
 		m.hold(c);
