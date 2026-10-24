@@ -1951,6 +1951,10 @@ const STOOD_LATE = 350;
 const STOOD_BACK = 2.6;
 const STOOD_MS = 1100;
 const STOOD_APART = 1;
+// (In on him off a run this quick or more, ft/s: the last of it eased off
+// over twice this far, feet.)
+const STOOD_IN_LEAST = 10;
+const STOOD_IN_FT = 1.2;
 // More men in on a tackle: the first, and the second, there in time to (as
 // late as this after it), this often.
 // The ball out of his hands this long after the snap at the soonest (ms),
@@ -4806,7 +4810,19 @@ class Action {
 				face,
 				carrier,
 			);
-			m.hold(t, "engage", face);
+			// (Into him off his run, slowing the last step or two as he gets
+			// to him - not stopped dead on him.)
+			const l = m.last;
+			const v = legPace(l);
+			const tau = ((2 * STOOD_IN_FT) / Math.max(1, v)) * 1000;
+			if (RAMPS.has(l.move) && v >= STOOD_IN_LEAST && there - tau > l.t0) {
+				m.cut(there - tau);
+				m.easeOff(2 * STOOD_IN_FT);
+			}
+			// (Not into it for a moment and straight on to the drive.)
+			if (t - m.t >= WAIT_LEAST_MS) {
+				m.hold(t, "engage", face);
+			}
 			m.go({ x: hit.x + back.x, y: hit.y + back.y }, end, "drive", face);
 			m.hold(end + 300 + r() * 300, "stand", face);
 			this.done.add(m.pid);
