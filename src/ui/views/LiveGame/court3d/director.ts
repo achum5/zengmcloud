@@ -1182,6 +1182,10 @@ const OPEN_LATE = 300;
 const ALONE_FT = 9;
 // A hand up at the shot from no farther off than this (feet).
 const CONTEST_FT = 6;
+// A hop of `ms` (off the floor `share` of it), as high as gravity has a
+// man go in that long - a skip, not a pop up off the floor.
+const hopFor = (ms: number, share: number): number =>
+	(GRAVITY * ((ms * share) / 1000) ** 2) / 8;
 // The finishes in close - and the shots over a man right on him in the
 // post (see wallUp).
 const CLOSE_FINISHES = new Set<AnimName>([
@@ -8001,7 +8005,7 @@ class Director {
 			const there = this.go(pid, P, t + 40, 9, "back", dir);
 			this.act(pid, "stepBack", t, there, {
 				face: dir,
-				jump: [0.25, 0.85, 0.7],
+				jump: [0.25, 0.85, hopFor(there - t, 0.6)],
 			});
 			return there;
 		}
@@ -8711,7 +8715,7 @@ class Director {
 			t = this.go(shooter, P, t + 40, 9, "back", dir);
 			this.act(shooter, "stepBack", hop, t, {
 				face: dir,
-				jump: [0.25, 0.85, 0.7],
+				jump: [0.25, 0.85, hopFor(t - hop, 0.6)],
 			});
 		}
 		t = Math.max(t, this.hold(shooter, t, "hold"));
@@ -9491,7 +9495,7 @@ class Director {
 				t = this.go(shooter, out, t + 40, 9, "back", dir);
 				this.act(shooter, "stepBack", hop, t, {
 					face: dir,
-					jump: [0.25, 0.85, 0.7],
+					jump: [0.25, 0.85, hopFor(t - hop, 0.6)],
 				});
 			} else if (out) {
 				this.hold(shooter, t, "dribble");
@@ -9956,8 +9960,26 @@ class Director {
 			const form = jumper
 				? FORM_LO + (FORM_HI - FORM_LO) * hash01(shooter, 6151)
 				: 1;
+			// How high he gets up: up off the floor on a jumper as long as
+			// gravity takes for that - a little higher pulling up from mid-range
+			// than catching and shooting a three. (Off one foot in close, or on
+			// a hook, the same: up and down as gravity has him, not popped up
+			// and dropped.)
+			const peak = tip
+				? 2.8
+				: close
+					? 1.95
+					: floater
+						? 1.6
+						: zone === "lowPost"
+							? 1.55
+							: zone === "midRange"
+								? 1.55
+								: 1.4;
 			const dur =
-				(close || floater ? 760 : zone === "lowPost" ? 900 : 1000) * form;
+				(close || floater) && !tip
+					? (2 * Math.sqrt((2 * peak) / GRAVITY) * 1000) / (0.93 - 0.24)
+					: (close || floater ? 760 : zone === "lowPost" ? 900 : 1000) * form;
 			if (jumper) {
 				landed = gather + dur;
 			}
@@ -9975,20 +9997,6 @@ class Director {
 					faceRim,
 				);
 			}
-			// How high he gets up: up off the floor on a jumper as long as
-			// gravity takes for that - a little higher pulling up from mid-range
-			// than catching and shooting a three.
-			const peak = tip
-				? 2.8
-				: close
-					? 2.4
-					: floater
-						? 1.9
-						: zone === "lowPost"
-							? 1.1
-							: zone === "midRange"
-								? 1.55
-								: 1.4;
 			const jump: [number, number, number] = jumper
 				? [JUMPER.off, JUMPER.land, peak * form * form]
 				: [0.24, 0.93, peak];
