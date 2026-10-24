@@ -506,6 +506,7 @@ const IN_HANDS = new Set<Move>([
 	"stand",
 	"punt",
 	"holdKneel",
+	"holdPlace",
 ]);
 // (Up over his head in his throwing hand, his arms doing something of
 // their own: spiking it, holding it up.)
@@ -979,6 +980,10 @@ const ROUTE_LEFT = 0.4;
 // no more than this (feet a second).
 const KICK_MS = 800;
 const KICK_CONTACT = 0.4;
+// The holder: the snap in his hands this long before he brings it down to
+// its spot, and so long bringing it.
+const HOLD_CATCH_MS = 60;
+const HOLD_PLACE_MS = 300;
 const PUNT_MS = 1400;
 const PUNT_DROP = 0.42;
 const PUNT_CONTACT = 0.55;
@@ -6141,9 +6146,13 @@ class Action {
 		const hs = this.of(h.at);
 		const spot: OPt = { d: hs.d + 0.7, a: hs.a - 1.7 };
 		const has = this.longSnap(h, { d: spot.d + 0.3, a: spot.a + 0.9 }, 2.4);
-		const down = has + 260;
+		// (Brought down to it in both hands from the catch, and let go onto
+		// it as they get there - a finger of his left on top of it.)
+		const brings = has + HOLD_CATCH_MS;
+		const down = brings + HOLD_PLACE_MS;
 		const kickT = snap + 1280 + r() * 100;
-		h.hold(down, "holdKneel");
+		h.hold(brings, "holdKneel");
+		h.hold(down, "holdPlace");
 		h.hold(kickT + 250, "holdDown");
 		this.ball.push({
 			kind: "spot",

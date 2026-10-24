@@ -1,4 +1,5 @@
 import { project, type Camera } from "../court3d/camera.ts";
+import { FIGURE_SCALE } from "./body.ts";
 import type { Pt3 } from "./geometry.ts";
 import { BALL_BROWN, BALL_LEN, BALL_R } from "./sculpt.ts";
 
@@ -8,6 +9,12 @@ import { BALL_BROWN, BALL_LEN, BALL_R } from "./sculpt.ts";
 
 const TEE_ORANGE = "#f26b1d";
 const TEE_H = 0.22;
+
+// How high the middle of it is drawn, on the turf (true feet - drawn up
+// by FIGURE_SCALE): for a ball handed down onto it to end up just there.
+export const restingZ = (stood: "tee" | "hold" | undefined): number =>
+	(stood ? BALL_LEN / 2 + (stood === "tee" ? TEE_H : 0) : BALL_R * 0.8) /
+	FIGURE_SCALE;
 
 export const drawLooseBall = (
 	ctx: CanvasRenderingContext2D,

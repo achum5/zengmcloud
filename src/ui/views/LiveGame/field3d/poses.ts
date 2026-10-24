@@ -877,8 +877,29 @@ const FIELD_ANIMS = {
 			wide: 0.5,
 		}),
 	},
+	// Bringing it down to its spot beside him: turned and leant over to his
+	// left, both arms down to it.
+	holdPlace: {
+		kind: "still",
+		pose: pose({
+			hipN: -24,
+			kneeN: 104,
+			hipF: 82,
+			kneeF: 88,
+			lean: 38,
+			twist: 50,
+			tilt: 35,
+			shN: 6,
+			elN: 2,
+			abN: -21,
+			shF: 6,
+			elF: 2,
+			abF: 21,
+			wide: 0.5,
+		}),
+	},
 	// And the ball down: leaning over it, a finger of his left hand on top
-	// of it, the right out of the kicker's way.
+	// of it, the right back by his side out of the kicker's way.
 	holdDown: {
 		kind: "still",
 		pose: pose({
@@ -886,13 +907,15 @@ const FIELD_ANIMS = {
 			kneeN: 104,
 			hipF: 82,
 			kneeF: 88,
-			lean: 34,
-			shN: 4,
-			elN: 40,
-			abN: 24,
-			shF: 40,
-			elF: 4,
-			abF: -14,
+			lean: 40,
+			twist: 37,
+			tilt: 30,
+			shN: -30,
+			elN: 4,
+			abN: 5,
+			shF: 6,
+			elF: 8,
+			abF: 15,
 			wide: 0.5,
 		}),
 	},

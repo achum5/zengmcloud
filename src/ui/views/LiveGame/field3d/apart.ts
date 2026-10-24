@@ -38,6 +38,7 @@ const TOUCH = new Set<Move>([
 	"qbPoint",
 	"getUnder",
 	"holdKneel",
+	"holdPlace",
 	"holdDown",
 	"kickReady",
 	"longSnap",

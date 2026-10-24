@@ -1,4 +1,5 @@
 import { apartAt, apartOf, type Sep } from "./apart.ts";
+import { restingZ } from "./ball.ts";
 import type {
 	BallHold,
 	BallSeg,
@@ -747,7 +748,7 @@ const passing = (
 		// has it just before or just after it changes hands - or on the turf.)
 		const end = (seg: BallSeg, giving: boolean): Pt3 | undefined => {
 			if (seg.kind === "spot") {
-				return seg.at;
+				return { ...seg.at, z: seg.at.z + restingZ(seg.stood) };
 			}
 			if (seg.kind !== "held") {
 				return undefined;
@@ -765,16 +766,23 @@ const passing = (
 		const e = u * u * (3 - 2 * u);
 		const flat = Math.hypot(to.x - from.x, to.y - from.y);
 		const rise = Math.min(PASS_RISE_MOST, PASS_RISE * flat);
+		const ax =
+			flat > 0.01
+				? { x: (to.x - from.x) / flat, y: (to.y - from.y) / flat, z: 0.3 }
+				: { x: 1, y: 0, z: 0.3 };
+		// (Set down on end, stood up as it goes.)
+		const up = b.kind === "spot" && b.stood ? e : 0;
 		return {
 			at: {
 				x: from.x + (to.x - from.x) * e,
 				y: from.y + (to.y - from.y) * e,
 				z: from.z + (to.z - from.z) * e + 4 * rise * e * (1 - e),
 			},
-			axis:
-				flat > 0.01
-					? { x: (to.x - from.x) / flat, y: (to.y - from.y) / flat, z: 0.3 }
-					: { x: 1, y: 0, z: 0.3 },
+			axis: {
+				x: ax.x * (1 - up),
+				y: ax.y * (1 - up),
+				z: ax.z + (1 - ax.z) * up,
+			},
 			unseen: [a, b].flatMap((x) => (x.kind === "held" ? [x.pid] : [])),
 		};
 	}
