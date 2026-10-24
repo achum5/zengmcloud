@@ -228,13 +228,15 @@ const CRAWL_FPS = 1;
 // Going well off the way he faces (more than CRAB_OFF radians), in a gait
 // that goes the way it faces (or low steps up, or a backpedal): at no more
 // than SHUFFLE_MOST ft/s, push steps across, square to the way he goes -
-// or, further round than BACK_OFF, at no more than BACK_MOST (any pace,
-// told to backpedal), a backpedal square to it - in its place; quicker
-// than that, a gait turned the way he goes (no man runs sideways).
+// or, further round than BACK_OFF, at no more than BACK_MOST (told to
+// backpedal, BACK_TOP), a backpedal square to it - in its place; quicker
+// than that, a gait turned the way he goes (no man runs sideways, nor
+// backpedals flat out).
 const CRAB_OFF = 1.05;
 const BACK_OFF = 2.1;
 const SHUFFLE_MOST = 7;
 const BACK_MOST = 11;
+const BACK_TOP = 13;
 // (Going no further than this, feet: no way to speak of.)
 const FACED_LEAST = 0.25;
 // (Kept on in push steps or a backpedal he was in, to HOLD_ON times as
@@ -266,7 +268,7 @@ const faced = (
 		return { move: backed ? gait(fps) : move, yaw };
 	}
 	// (Backpedaling, square to the way he goes.)
-	if (backed && off > BACK_OFF) {
+	if (backed && off > BACK_OFF && fps <= BACK_TOP) {
 		return { move, yaw: way + Math.PI };
 	}
 	const k =
@@ -1298,9 +1300,11 @@ const flightOf = (from: Pt, to: Pt): { ms: number; peak: number } => {
 	return { ms: s * 1000, peak: Math.max(0.4, (G * s * s) / 8) };
 };
 
-// A drop this deep (feet, from under center) taken side on to the field,
-// turned this far (radians, the way he opens to throw), for this share of
-// it and this share of the time - backpedalling the rest.
+// The quarterback's drop: back no quicker than this on the way (ft/s, all
+// told). One this deep (feet, from under center) taken side on to the
+// field, turned this far (radians, the way he opens to throw), for this
+// share of it and this share of the time - backpedalling the rest.
+const QB_DROP_FPS = 11;
 const DROP_TURN_FT = 18;
 const DROP_TURN = 1.2;
 const DROP_TURNED = 0.75;
@@ -2469,7 +2473,10 @@ class Action {
 									? 18
 									: 24;
 		let setAt = this.w({ d: qbStart.d - dropD, a: qbStart.a });
-		const dropMs = dropD === 0 ? 0 : 300 + dropD * 55;
+		const dropMs =
+			dropD === 0
+				? 0
+				: Math.max(300 + dropD * 55, (dropD / QB_DROP_FPS) * 1000 + 150);
 		// Now and then a fake to a back first - play action: out to him as
 		// on a run, the ball into his belly and back out, the back on
 		// through the line with his arms shut round nothing; then the drop.

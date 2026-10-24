@@ -479,18 +479,28 @@ describe("the plays acted out", () => {
 			if (rec !== undefined) {
 				assert.strictEqual(holder?.pid, rec, `who on play ${play.i}`);
 			}
-			// And down where the next snap is from.
+			// And down where the next snap is from: the ball - where it lay
+			// if he fell on it (he is down a few feet back from it), or him
+			// with it.
 			const next = tl.plays[tl.plays.indexOf(play) + 1];
+			const lay = holder
+				? play.ball.findLast((b) => b.t0 < holder.t0)
+				: undefined;
+			const on = play.parts
+				.find((p) => p.pid === holder?.pid)
+				?.legs.findLast((l) => l.t0 <= beat!.actionStart);
+			const at =
+				lay?.kind === "spot" && on?.move === "prone" ? lay.at : m.focus;
 			if (
 				next &&
 				next.quarter === play.quarter &&
 				!e.td &&
 				!e.safety &&
 				!e.touchback &&
-				m.focus &&
+				at &&
 				(next.kind === "pass" || next.kind === "run")
 			) {
-				assert.closeTo(m.focus.x, next.losX, 3.5, `where on play ${play.i}`);
+				assert.closeTo(at.x, next.losX, 3.5, `where on play ${play.i}`);
 			}
 			checked += 1;
 		});
