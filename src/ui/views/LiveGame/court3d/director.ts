@@ -1182,7 +1182,8 @@ const OPEN_LATE = 300;
 const ALONE_FT = 9;
 // A hand up at the shot from no farther off than this (feet).
 const CONTEST_FT = 6;
-// The finishes in close (see wallUp).
+// The finishes in close - and the shots over a man right on him in the
+// post (see wallUp).
 const CLOSE_FINISHES = new Set<AnimName>([
 	"layup",
 	"fingerRoll",
@@ -1190,6 +1191,8 @@ const CLOSE_FINISHES = new Set<AnimName>([
 	"scoop",
 	"reverseLayup",
 	"floater",
+	"hook",
+	"fade",
 ]);
 // Anybody else of theirs this near (feet) a shot in close goes up with his
 // arms high (see shoot).
@@ -21538,11 +21541,20 @@ class Director {
 			for (const tr of this.tracks.values()) {
 				if (
 					tr.team === team ||
-					dist(this.posAt(tr.pid, release, false, true), S) > WALL_FT ||
-					tr.acts.some((a) => a.t1 > release - 300 && a.t0 < release + 500)
+					dist(this.posAt(tr.pid, release, false, true), S) > WALL_FT
 				) {
 					continue;
 				}
+				// (A hand up only once it has gone - his closeout reckoned him
+				// still on his way - is put up as it goes instead: he is right
+				// there.)
+				const busy = tr.acts.filter(
+					(a) => a.t1 > release - 300 && a.t0 < release + 500,
+				);
+				if (busy.some((a) => a.anim !== "contest" || a.t0 < release - 120)) {
+					continue;
+				}
+				tr.acts = tr.acts.filter((a) => !busy.includes(a));
 				const D = this.posAt(tr.pid, release, false, true);
 				tr.acts.push({
 					t0: release - 120,
