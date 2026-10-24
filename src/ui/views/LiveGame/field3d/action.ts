@@ -184,6 +184,18 @@ const GAIT_LEAST: Partial<Record<Move, number>> = {
 	sprint: 10.5,
 };
 const GAIT_LEAST_MS = 300;
+// Up to speed from the pace he was going at (as much of it as was the way
+// he goes now): at no more than RAMP_ACCEL ft/s/s, in steps RAMP_STEP_MS
+// long, and the rest of the way that much quicker, to be there on time -
+// never more than RAMP_OVER times quicker than he would have been (off
+// the quicker instead). Not for less of a pick-up than RAMP_LEAST ft/s,
+// or on a leg shorter than RAMP_LEG_MS.
+const RAMP_ACCEL = 18;
+const RAMP_STEP_MS = 100;
+const RAMP_OVER = 1.12;
+const RAMP_LEAST = 4;
+const RAMP_LEG_MS = 250;
+const RAMPS = new Set<Move>(["jog", "run", "sprint"]);
 const paced = (move: Move | undefined, fps: number, ms: number): Move => {
 	const least = move === undefined ? undefined : GAIT_LEAST[move];
 	return move === undefined ||
@@ -358,7 +370,7 @@ class Actor {
 		const t0 = l.t1;
 		const end = Math.max(t1, t0 + 1);
 		const fps = dist(l.to, p) / ((end - t0) / 1000);
-		this.push({
+		const leg: Leg = {
 			t0,
 			t1: end,
 			from: l.to,
@@ -366,7 +378,71 @@ class Actor {
 			move: paced(move, fps, end - t0),
 			...(yaw !== undefined ? { yaw } : {}),
 			...extra,
-		});
+		};
+		if (extra === undefined) {
+			this.rampInto(leg);
+		}
+		this.push(leg);
+	}
+
+	// Up to speed for `leg`, off the end of the one before (see
+	// RAMP_ACCEL): legs of his getting going put in ahead of it, and it what
+	// is left of it.
+	private rampInto(leg: Leg) {
+		const prev = this.last;
+		const T = (leg.t1 - leg.t0) / 1000;
+		const pt = (prev.t1 - prev.t0) / 1000;
+		if (
+			!RAMPS.has(leg.move) ||
+			T * 1000 < RAMP_LEG_MS ||
+			pt <= 0 ||
+			moveKind(prev.move) !== "cycle"
+		) {
+			return;
+		}
+		const dx = leg.to.x - leg.from.x;
+		const dy = leg.to.y - leg.from.y;
+		const D = Math.hypot(dx, dy);
+		const v = D / T;
+		const A = RAMP_ACCEL;
+		let v0 = Math.max(
+			0,
+			((prev.to.x - prev.from.x) * dx + (prev.to.y - prev.from.y) * dy) /
+				(Math.max(D, 1e-6) * pt),
+		);
+		if (v - v0 < RAMP_LEAST) {
+			return;
+		}
+		// (Up to vc and on at it, there on time - or, if that is too quick,
+		// off from v0 at as much more as it takes.)
+		const room = T * T - (2 * (D - v0 * T)) / A;
+		let vc = room >= 0 ? v0 + A * (T - Math.sqrt(room)) : Infinity;
+		if (vc > v * RAMP_OVER) {
+			vc = v * RAMP_OVER;
+			v0 = Math.max(v0, vc - Math.sqrt(2 * A * (vc * T - D)));
+		}
+		const ta = (vc - v0) / A;
+		if (!(ta > 0 && ta < T)) {
+			return;
+		}
+		const n = Math.max(1, Math.round((ta * 1000) / RAMP_STEP_MS));
+		const dt = ta / n;
+		let from = leg.from;
+		let t = leg.t0;
+		let gone = 0;
+		for (let i = 0; i < n; i++) {
+			gone += (v0 + A * dt * (i + 0.5)) * dt;
+			const at = {
+				x: leg.from.x + (dx * gone) / D,
+				y: leg.from.y + (dy * gone) / D,
+			};
+			const t2 = leg.t0 + (i + 1) * dt * 1000;
+			this.push({ ...leg, t0: t, t1: t2, from, to: at });
+			from = at;
+			t = t2;
+		}
+		leg.t0 = t;
+		leg.from = from;
 	}
 
 	// To `to` at `fps`; when he gets there.
@@ -454,6 +530,23 @@ class Actor {
 			l.armsSpan = [q0, q0 + (q1 - q0) * u];
 		}
 		legs.splice(k + 1, 0, second);
+	}
+
+	// What he does from t on (a leg starting then) made one leg, straight
+	// on to where the last of it ends, in that.
+	joinFrom(t: number) {
+		const legs = this.part.legs;
+		const k = legs.findIndex((l) => l.t0 >= t);
+		if (k < 0 || k === legs.length - 1) {
+			return;
+		}
+		const first = legs[k]!;
+		const last = legs.at(-1)!;
+		legs.splice(k, legs.length - k, {
+			...last,
+			t0: first.t0,
+			from: first.from,
+		});
 	}
 
 	// His arms through `move` over t0..t1, whatever the rest of him is
@@ -4200,10 +4293,12 @@ class Action {
 						y: restPt.y - ((restPt.y - rec.at.y) / far) * SCOOP_REACH,
 					}
 				: rec.at;
+		const off = rec.t;
 		rec.chase(low, takeT, rec.top * FLAT_OUT, "sprint");
 		const down = takeT - SCOOP_DOWN_MS;
-		if (rec.last.t0 < down && rec.last.t1 === takeT) {
+		if (off < down && rec.t === takeT) {
 			rec.split(down);
+			rec.joinFrom(down);
 			Object.assign(rec.last, {
 				move: "scoop",
 				span: [0, SCOOP_LOW],

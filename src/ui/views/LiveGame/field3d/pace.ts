@@ -166,10 +166,12 @@ export const offsOf = (legs: Leg[]) => {
 		}
 		const b = legs[j]!.t0;
 		let m = j;
+		// (Run on over as many legs as it takes: the one stretch, as
+		// long as it is, whatever it is cut into.)
 		while (
 			m + 1 < legs.length &&
 			runsOn(legs[m + 1]!) &&
-			legs[m + 1]!.t0 - b < SNAP_CATCH_MS
+			legs[m]!.t1 - b < SNAP_CATCH_MS / SNAP_CATCH_MOST
 		) {
 			m++;
 		}
