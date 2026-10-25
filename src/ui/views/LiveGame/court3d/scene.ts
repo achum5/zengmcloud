@@ -55,6 +55,7 @@ import {
 	tensionAt,
 	withBody,
 	type BallState,
+	type Blend,
 	type PlayerState,
 } from "./evaluate.ts";
 import { lightness, type Look } from "./figure.ts";
@@ -712,6 +713,71 @@ const stormState = (
 		moving: false,
 	} as PlayerState;
 };
+// How a bench is at t: up cheering, on its feet, or sat.
+export type BenchMood = "up" | "stood" | "sat";
+const benchMood = (tl: CourtTimeline, t: number, team: Side): BenchMood => {
+	// A big play brings the bench to its feet for a moment - and so does
+	// each of its starters called out.
+	const roar = recentFx(tl, t, ["roar"], 1800);
+	// At the final horn, the winners' bench up and going, then on its feet;
+	// the losers' sat where they are.
+	const horn = finalHorn(tl, t);
+	const won = horn?.winner === team;
+	return roar?.team === team ||
+		callAt(tl.intro, t)?.team === team ||
+		(won && horn.since < HORN_WAVE_MS)
+		? "up"
+		: won || (!horn && tensionAt(tl, t) >= 1)
+			? "stood"
+			: "sat";
+};
+// Up off the bench or sitting back down, a man gets there over a moment
+// (BENCH_EASE), not in a frame: as it was at t, and if it changed lately,
+// how it was before and how much of that still shows - itself, if it had
+// just changed again then (the horn on a big play's heels), eased the same.
+const BENCH_EASE = 450;
+export type BenchEase = { mood: BenchMood; w: number; from?: BenchEase };
+export const benchMoodAt = (
+	tl: CourtTimeline,
+	t: number,
+	team: Side,
+	depth = 2,
+): { now: BenchMood; from?: BenchEase } => {
+	const now = benchMood(tl, t, team);
+	if (depth === 0 || benchMood(tl, t - BENCH_EASE, team) === now) {
+		return { now };
+	}
+	// (When it changed: halved down to a few ms.)
+	let lo = t - BENCH_EASE;
+	let hi = t;
+	for (let k = 0; k < 7; k++) {
+		const mid = (lo + hi) / 2;
+		if (benchMood(tl, mid, team) === now) {
+			hi = mid;
+		} else {
+			lo = mid;
+		}
+	}
+	const w = 1 - (t - hi) / BENCH_EASE;
+	const before = benchMoodAt(tl, lo, team, depth - 1);
+	return {
+		now,
+		from: {
+			mood: before.now,
+			w: w * w * (3 - 2 * w),
+			...(before.from ? { from: before.from } : {}),
+		},
+	};
+};
+// How much of something a bench shows, by mood, eased the same way.
+export const benchShare = (
+	m: { now: BenchMood; from?: BenchEase },
+	of: (mood: BenchMood) => number,
+): number =>
+	m.from
+		? of(m.now) * (1 - m.from.w) +
+			benchShare({ now: m.from.mood, from: m.from.from }, of) * m.from.w
+		: of(m.now);
 const benchStates = (
 	f: Frame,
 	onFloor: Set<number>,
@@ -719,14 +785,7 @@ const benchStates = (
 	const out: { st: PlayerState; warm: boolean }[] = [];
 	const t = f.moment.t;
 	const seat: [number, number] = [0, 0];
-	// A big play brings the bench to its feet for a moment - and so does
-	// each of its starters called out.
-	const roar = recentFx(f.tl, t, ["roar"], 1800);
-	const calling = callAt(f.tl.intro, t)?.team;
-	// At the final horn, the winners' bench up and going, then on its feet;
-	// the losers' sat where they are.
-	const horn = finalHorn(f.tl, t);
-	const tense = !horn && tensionAt(f.tl, t) >= 1;
+	const moods = ([0, 1] as const).map((team) => benchMoodAt(f.tl, t, team));
 	const clinch = recentFx(f.tl, t, ["clinch"], 10 * 60_000);
 	for (const p of f.roster) {
 		const i = seat[p.team]++;
@@ -751,18 +810,27 @@ const benchStates = (
 			out.push({ st: storm, warm });
 			continue;
 		}
-		const won = horn?.winner === p.team;
-		const up =
-			roar?.team === p.team ||
-			calling === p.team ||
-			(won && horn.since < HORN_WAVE_MS);
-		const anim: AnimName = up
-			? "cheer"
-			: tense || won
-				? STANDING[Math.abs(p.pid) % STANDING.length]!
-				: "sit";
-		// (Following the play, sat or stood watching it.)
-		const look = up ? 0 : benchLook(f.tl, t, at, Math.PI / 2);
+		const mood = moods[p.team]!;
+		const animOf = (m: BenchMood): AnimName =>
+			m === "up"
+				? "cheer"
+				: m === "stood"
+					? STANDING[Math.abs(p.pid) % STANDING.length]!
+					: "sit";
+		const anim = animOf(mood.now);
+		const easeOf = (e: BenchEase): Blend => {
+			const a = animOf(e.mood);
+			return {
+				anim: a,
+				phase: benchPhase(a, f.now ?? t, p.pid),
+				w: e.w,
+				...(e.from ? { from: easeOf(e.from) } : {}),
+			};
+		};
+		// (Following the play, sat or stood watching it - not up cheering.)
+		const watching = benchShare(mood, (m) => (m === "up" ? 0 : 1));
+		const look =
+			watching > 0 ? benchLook(f.tl, t, at, Math.PI / 2) * watching : 0;
 		out.push({
 			st: {
 				pid: p.pid,
@@ -776,6 +844,7 @@ const benchStates = (
 				phase: benchPhase(anim, f.now ?? t, p.pid),
 				moving: false,
 				...(look !== 0 ? { look } : {}),
+				...(mood.from ? { from: easeOf(mood.from) } : {}),
 			},
 			warm,
 		});
