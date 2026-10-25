@@ -506,3 +506,24 @@ export const smoothAt = (
 		y: cr(ys[s - 1]!, ys[s]!, ys[s + 1]!, ys[s + 2]!),
 	};
 };
+
+// HOW FAST HE IS GOING at t (feet a second), along his track as smoothAt
+// has him - from one time on it to the next, eased from the one stretch's
+// pace to the next's. Nothing near a jump.
+export const speedAt = (tr: Track, t: number): number | undefined => {
+	const sm = smoothOf(tr);
+	const n = sm.xs.length;
+	const u = (t - tr.t0) / TRACK_MS - 0.5;
+	const s = Math.floor(u);
+	if (s < 0 || s + 2 >= n) {
+		return undefined;
+	}
+	const { xs, ys, ok } = sm;
+	if (!ok[s] || !ok[s + 1] || !ok[s + 2]) {
+		return undefined;
+	}
+	const v = (i: number) =>
+		(Math.hypot(xs[i + 1]! - xs[i]!, ys[i + 1]! - ys[i]!) * 1000) / TRACK_MS;
+	const a = v(s);
+	return a + (v(s + 1) - a) * (u - s);
+};

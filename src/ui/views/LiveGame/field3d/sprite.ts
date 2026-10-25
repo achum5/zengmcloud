@@ -63,6 +63,9 @@ export type FieldPlayerState = {
 	// Short steps: his strides (and the ones he was taking, just after a
 	// change) this share of full ones.
 	len?: number;
+	// Getting going on his strides (up to 1), or pulling up on them (down
+	// to -1): how hard (see evaluate.ts driveOf).
+	drive?: number;
 	// Turning where he stands, a foot at a time: which way each foot points
 	// on the turf, right and left, and how far up off it each is (a full
 	// step 1 - see evaluate.ts pivotOf).
@@ -113,9 +116,10 @@ type Under = {
 	under?: Under;
 };
 
-// In so many steps: a stride's frames, an act's, the ways he faces, and a
-// blend from one move into the next - or, with time to spare on the device
-// (see Field3D), more of each, so he moves the more smoothly.
+// In so many steps: a stride's frames, an act's, the ways he faces, a
+// blend from one move into the next, and how hard he is going at it - or,
+// with time to spare on the device (see Field3D), more of each, so he
+// moves the more smoothly.
 // (An act's, no fewer than `act` over it, and more where he moves fast
 // through it: no joint more than `actDeg` degrees from one to the next -
 // see actFrames.)
@@ -125,9 +129,24 @@ type Steps = {
 	actDeg: number;
 	turns: number;
 	blend: number;
+	drive: number;
 };
-const COARSE: Steps = { cycle: 12, act: 20, actDeg: 10, turns: 36, blend: 8 };
-const FINE: Steps = { cycle: 24, act: 40, actDeg: 4, turns: 48, blend: 16 };
+const COARSE: Steps = {
+	cycle: 12,
+	act: 20,
+	actDeg: 10,
+	turns: 36,
+	blend: 8,
+	drive: 6,
+};
+const FINE: Steps = {
+	cycle: 24,
+	act: 40,
+	actDeg: 4,
+	turns: 48,
+	blend: 16,
+	drive: 12,
+};
 
 // (A stride slow to go round - a walk - in this many times more.)
 const SLOW_STRIDES = new Map<Move, number>([["walk", 2]]);
@@ -222,6 +241,7 @@ type Stepped = {
 	from: Blend | undefined;
 	arms: { move: Move; phase: number } | undefined;
 	feet: Feet | undefined;
+	drive: number | undefined;
 };
 // Each foot turned under him (degrees, his right then his left) and how far
 // up off the turf.
@@ -310,6 +330,9 @@ const stepped = (st: FieldPlayerState, k: Steps): Stepped => {
 		feet: feetIn(st, turn, fw, k),
 		phase: frameOf(st.move, st.phase, k),
 		len: lenIn(st.len),
+		drive: st.drive
+			? Math.round(st.drive * k.drive) / k.drive || undefined
+			: undefined,
 		turn,
 		yaw: (turn * Math.PI * 2) / k.turns,
 		from:
@@ -346,8 +369,41 @@ const wholePose = (
 // A step's lift: degrees at the hip and knee (see court3d's PIVOT_HIP).
 const STEP_HIP = 16;
 const STEP_KNEE = 34;
+// Getting going hard he drives into it - leaning on into his first steps,
+// his arms pumping - and pulling up hard he sits back against it. (His arms
+// left be with the ball in them, or doing anything else.) (See court3d's
+// driven.)
+const DRIVE_LEAN = 14;
+const BRACE_LEAN = 9;
+const DRIVE_PUMP = 0.45;
+const DRIVE_ELBOW = 12;
+const driven = (p: Pose, d: number, arms: boolean): Pose => {
+	if (d < 0) {
+		return { ...p, lean: p.lean + BRACE_LEAN * d };
+	}
+	if (!arms) {
+		return { ...p, lean: p.lean + DRIVE_LEAN * d };
+	}
+	const mid = (p.shN + p.shF) / 2;
+	const k = 1 + DRIVE_PUMP * d;
+	return {
+		...p,
+		lean: p.lean + DRIVE_LEAN * d,
+		shN: mid + (p.shN - mid) * k,
+		shF: mid + (p.shF - mid) * k,
+		elN: p.elN + DRIVE_ELBOW * d,
+		elF: p.elF + DRIVE_ELBOW * d,
+	};
+};
 const poseFor = (st: FieldPlayerState, s: Stepped): Pose => {
-	const p = blendedPose(st, s);
+	const d = s.drive;
+	const p = d
+		? driven(
+				blendedPose(st, s),
+				d,
+				!st.ball && !s.arms && !s.from?.arms && !s.from?.ball,
+			)
+		: blendedPose(st, s);
 	const f = s.feet;
 	return f
 		? {
@@ -641,13 +697,13 @@ const planOf = (
 		shaded,
 	};
 	if (cache) {
-		const { phase, turn, from, arms, len, feet } = step;
+		const { phase, turn, from, arms, len, feet, drive } = step;
 		const known = cache.ids.get(look);
 		const id = known ?? cache.next++;
 		if (known === undefined) {
 			cache.ids.set(look, id);
 		}
-		plan.key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}${len ? `s${len}` : ""}${feet ? `v${feet.join(",")}` : ""}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
+		plan.key = `${fine ? "f" : ""}fb${id}|${st.move}${st.mirrored ? "m" : ""}|${phase}${len ? `s${len}` : ""}${drive ? `r${drive}` : ""}${feet ? `v${feet.join(",")}` : ""}|${((turn % steps.turns) + steps.turns) % steps.turns}|${scale}|${px}|${st.ball ?? ""}${st.unseen ? "~" : ""}${arms ? `|${arms.move}${arms.phase}` : ""}${
 			from
 				? `|${from.move}${from.mirrored ? "m" : ""}${from.steps ? "!" : ""}${from.phase}~${from.w}${from.arms ? `+${from.arms.move}${from.arms.phase}` : ""}${from.ball ? `@${from.ball}` : ""}${underKey(from.under)}`
 				: ""

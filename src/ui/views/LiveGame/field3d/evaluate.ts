@@ -18,9 +18,11 @@ import {
 	placeAt,
 	SET,
 	smoothAt,
+	speedAt,
 	TRACK_MS,
 	trackLength,
 	trackOf,
+	type Track,
 } from "./pace.ts";
 import {
 	beatOf,
@@ -995,6 +997,27 @@ const changed = (a: Leg, b: Leg) =>
 	(a.ball !== b.ball && (a.ball === "carry" || b.ball === "carry")) ||
 	!a.mirrored !== !b.mirrored;
 
+// HOW HARD HE IS GOING AT IT on his strides, getting going or pulling up
+// (see sprite.ts driven): as hard as he has sped up or slowed down over the
+// last DRIVE_MS, against all he has (feet a second, a second) - his body
+// leaning into it a moment behind, not flicked from the one way to the
+// other - and nothing to speak of left out (see court3d's driveOf).
+const DRIVE_FULL = 28;
+const DRIVE_MIN = 0.08;
+const DRIVE_MS = 300;
+const DRIVES = new Set<Move>(["jog", "run", "sprint"]);
+const driveOf = (tr: Track, t: number): number => {
+	const a = speedAt(tr, t);
+	const b = speedAt(tr, t - DRIVE_MS);
+	if (a === undefined || b === undefined) {
+		return 0;
+	}
+	const d = Math.max(-1, Math.min(1, ((a - b) * 1000) / DRIVE_MS / DRIVE_FULL));
+	return (
+		(Math.sign(d) * Math.max(0, Math.abs(d) - DRIVE_MIN)) / (1 - DRIVE_MIN)
+	);
+};
+
 // Where one man is at t and what he is doing.
 const stateOf = (
 	part: { pid: number; team: Side; legs: Leg[] },
@@ -1014,10 +1037,8 @@ const stateOf = (
 	const offset = (part.pid * 0.618) % 1;
 	const at = placeAt(legs, k, t);
 	// (A sudden start or stop taken over a step - see smoothAt.)
-	const smooth = smoothAt(
-		trackOf(legs, play.t0, trackLength(play.t0, play.t1)),
-		now,
-	);
+	const track = trackOf(legs, play.t0, trackLength(play.t0, play.t1));
+	const smooth = smoothAt(track, now);
 	if (smooth) {
 		at.x = smooth.x;
 		at.y = smooth.y;
@@ -1192,6 +1213,15 @@ const stateOf = (
 			}
 		}
 	}
+	// (Getting going or pulling up on his strides - or just into them, as
+	// much as his pose already is them; just off them into anything else, as
+	// hard as he was going at it as he came off them, as much as his pose
+	// still is them: not thrown back as he is stopped in a hit, say.)
+	const on = DRIVES.has(l.move as Move);
+	const off = from !== undefined && DRIVES.has(from.move) ? from.w : 0;
+	const drive =
+		(on ? driveOf(track, now) * (1 - (from?.w ?? 0)) : 0) +
+		(off > 0 ? driveOf(track, on ? now : now - blended) * off : 0);
 	// (Short steps, if he is striding - or just was.)
 	const short =
 		stride.len < LEN_FULL &&
@@ -1207,6 +1237,7 @@ const stateOf = (
 		phase,
 		...(l.mirrored ? { mirrored: true } : {}),
 		...(short ? { len: stride.len } : {}),
+		...(drive ? { drive } : {}),
 		...(pivot ? { pivot } : {}),
 		...(from ? { from } : {}),
 		...(l.ball ? { ball: l.ball } : {}),
