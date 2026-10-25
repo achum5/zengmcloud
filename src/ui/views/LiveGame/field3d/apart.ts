@@ -25,6 +25,10 @@ const SMOOTH = 4;
 const PASSES = 3;
 // (Pushed over and let back no quicker than this, ft/s: not slid aside.)
 const SLIDE_FPS = 3.5;
+// (Coming by each other quicker than this (ft/s), over across the way they
+// come - all of it by this - not shoved back along it.)
+const BY_FPS = 2;
+const BY_ALL_FPS = 5;
 // (Samples either side of a push that the push, smoothed, reaches.)
 const NEAR = SMOOTH * 2 + 1;
 // (Too little to bother with, feet; and nowhere near anybody.)
@@ -281,8 +285,27 @@ const pushed = (
 						continue;
 					}
 					// (Right on top of each other: apart across the field.)
-					const ux = d > 1e-3 ? ex / d : 0;
-					const uy = d > 1e-3 ? ey / d : 1;
+					let ux = d > 1e-3 ? ex / d : 0;
+					let uy = d > 1e-3 ? ey / d : 1;
+					// (Coming by each other: round each other, the side they
+					// would go by on - the same all the way by, as the line
+					// between them swings round.)
+					const vx = pace(xs[i]!, s, n) - pace(xs[j]!, s, n);
+					const vy = pace(ys[i]!, s, n) - pace(ys[j]!, s, n);
+					const v = Math.sqrt(vx * vx + vy * vy);
+					if (v > BY_FPS) {
+						const nx = -vy / v;
+						const ny = vx / v;
+						const k = ex * nx + ey * ny < -0.05 ? -1 : 1;
+						const w = Math.min(1, (v - BY_FPS) / (BY_ALL_FPS - BY_FPS));
+						const qx = ux * (1 - w) + nx * k * w;
+						const qy = uy * (1 - w) + ny * k * w;
+						const q = Math.sqrt(qx * qx + qy * qy);
+						if (q > 1e-3) {
+							ux = qx / q;
+							uy = qy / q;
+						}
+					}
 					// (Each half the way - or, the other where he has to be, or
 					// a player, the whole way himself.)
 					const push = APART - d;
@@ -315,6 +338,13 @@ const pushed = (
 	}
 
 	return { dx, dy, hit };
+};
+
+// How quick a track goes at sample s, ft/s.
+const pace = (a: Float32Array, s: number, n: number): number => {
+	const lo = Math.max(0, s - 1);
+	const hi = Math.min(n - 1, s + 1);
+	return hi > lo ? ((a[hi]! - a[lo]!) / ((hi - lo) * SEP_MS)) * 1000 : 0;
 };
 
 // Each push taken up and let go no quicker than SLIDE_FPS: each sample the
