@@ -1913,6 +1913,41 @@ const SPIN_LOW = pose({
 	wide: 0.52,
 });
 
+// Never still, stood ready: he settles down into his knees and back up, his
+// shoulders swaying over his hips, his hands drifting - slowly.
+const READY_SWAY: Pose[] = [
+	P.ready,
+	{
+		...P.ready,
+		hipN: 6,
+		kneeN: 32,
+		hipF: 18,
+		kneeF: 34,
+		lean: 12,
+		tilt: 2.5,
+		twist: 5,
+		shN: 10,
+		elN: 26,
+		shF: 20,
+		elF: 40,
+	},
+	{ ...P.ready, kneeN: 24, kneeF: 26, lean: 9, shN: 16, elN: 36 },
+	{
+		...P.ready,
+		hipN: 5,
+		kneeN: 31,
+		hipF: 17,
+		kneeF: 33,
+		lean: 11,
+		tilt: -2.5,
+		twist: -5,
+		shN: 18,
+		elN: 38,
+		shF: 12,
+		elF: 28,
+	},
+];
+
 export const ANIMS = {
 	// Never still: he settles down into his knees and back up, his
 	// shoulders swaying over his hips, his hands drifting - slowly.
@@ -1920,39 +1955,7 @@ export const ANIMS = {
 		kind: "loop",
 		n: 4,
 		fps: 1.25,
-		pose: (i) =>
-			[
-				P.ready,
-				{
-					...P.ready,
-					hipN: 6,
-					kneeN: 32,
-					hipF: 18,
-					kneeF: 34,
-					lean: 12,
-					tilt: 2.5,
-					twist: 5,
-					shN: 10,
-					elN: 26,
-					shF: 20,
-					elF: 40,
-				},
-				{ ...P.ready, kneeN: 24, kneeF: 26, lean: 9, shN: 16, elN: 36 },
-				{
-					...P.ready,
-					hipN: 5,
-					kneeN: 31,
-					hipF: 17,
-					kneeF: 33,
-					lean: 11,
-					tilt: -2.5,
-					twist: -5,
-					shN: 18,
-					elN: 38,
-					shF: 12,
-					elF: 28,
-				},
-			][i]!,
+		pose: (i) => READY_SWAY[i]!,
 	},
 	// Live in his stance: hands working - one up into the lane, then the
 	// other - and his weight sinking into his heels and back up onto his toes.
@@ -5432,14 +5435,12 @@ export const ANIMS = {
 		],
 	},
 	// Face to face down the handshake line, waiting on the man before to
-	// finish with him.
+	// finish with him - not stood stock still.
 	waitFive: {
-		kind: "act",
-		n: 2,
-		keys: [
-			[0, P.ready],
-			[1, P.ready],
-		],
+		kind: "loop",
+		n: 4,
+		fps: 1.25,
+		pose: (i) => READY_SWAY[i]!,
 	},
 	// A CHEST BUMP: a step in, up off both feet, chests together in the air
 	// with the arms flung back, and down.
