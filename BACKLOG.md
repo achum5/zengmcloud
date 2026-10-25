@@ -333,6 +333,15 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   setting off on a run at an angle, a slow backpedal getting going - swings
   both feet round under him, the planted one too; each leg should turn
   only while its foot is up.)
+  (2026-10-25: running a stretch through fast, arms no longer flash up and
+  down for a frame or two - an arm out in the passing lane, up against his
+  man, calling for it or pointing goes as the picture speeds up and comes
+  back as it slows (about 1400 flashes in two test games down to 1) - and a
+  move only for show squeezed into a frame or two of it (a jab, a fake, a
+  hesitation, sat in his triple threat or his stance, a screen) is left out
+  of the picture. Stood through a stoppage, a man blows - chest heaving,
+  weight from leg to leg - and the longer he has been out there, the more
+  he is bent over on his knees or stood with his hands on his hips.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like
