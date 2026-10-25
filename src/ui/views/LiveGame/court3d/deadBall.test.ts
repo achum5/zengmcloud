@@ -73,4 +73,52 @@ describe("the ball dead", () => {
 			assert.strictEqual(live, 0);
 		},
 	);
+
+	// Off in the huddles - a timeout, the break between periods - and still
+	// in them through what comes straight after (the next period called, the
+	// subs made), the men stand about easy round their coach: nobody down in
+	// his stance or squared up ready in the huddle, his arms out into his
+	// teammates', before he has walked back out onto the floor.
+	test(
+		"nobody is down in his stance in the huddle",
+		{ timeout: 240_000 },
+		() => {
+			const { tl } = compile("a", 140);
+			const AFTER = new Set([
+				"period",
+				"overtime",
+				"sub",
+				"timeout",
+				"timeouts",
+			]);
+			let stood = 0;
+			const set: string[] = [];
+			tl.beats.forEach((b, i) => {
+				if (b.type !== "timeout" && b.type !== "endOfPeriod") {
+					return;
+				}
+				let end = b.end;
+				for (let k = i + 1; AFTER.has(tl.beats[k]?.type ?? ""); k++) {
+					end = Math.max(end, tl.beats[k]!.end);
+				}
+				for (let t = b.actionStart + 1500; t < end - 600; t += 250) {
+					if (fastAt(tl, t) > 1) {
+						continue;
+					}
+					for (const pid of tl.tracks.keys()) {
+						const st = evalPlayer(tl, pid, t);
+						if (!st.shown || st.moving) {
+							continue;
+						}
+						stood += 1;
+						if (SET.has(st.anim)) {
+							set.push(`${pid} ${st.anim} at ${Math.round(t)}`);
+						}
+					}
+				}
+			});
+			assert.isAbove(stood, 100);
+			assert.deepEqual(set.slice(0, 5), []);
+		},
+	);
 });

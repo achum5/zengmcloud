@@ -1778,6 +1778,15 @@ type Stoppage = [number, number, number];
 const deadSpans = new WeakMap<CourtTimeline, Stoppage[]>();
 const AT_LINE = new Set(["ft", "missFt"]);
 const HUDDLES = new Set(["timeout", "endOfPeriod"]);
+// (And still in them through what comes straight after, before anybody
+// walks back out: the next period called, the subs made, another timeout.)
+const STILL_HUDDLED = new Set([
+	"period",
+	"overtime",
+	"sub",
+	"timeout",
+	"timeouts",
+]);
 // (Out of the huddle, he walks back out onto the floor: stood easy in it
 // till then.)
 const HUDDLE_LEAD = 300;
@@ -1856,11 +1865,20 @@ export const deadSpansOf = (tl: CourtTimeline): Stoppage[] => {
 	const out: Stoppage[] = [];
 	// (A timeout, the break between periods: off in the huddles, the ball
 	// with whoever took it there - dead, whoever has it.)
-	for (const b of tl.beats) {
-		if (HUDDLES.has(b.type) && b.end - b.actionStart >= DEAD_MIN) {
-			out.push([b.actionStart, b.end, HUDDLE_LEAD]);
+	tl.beats.forEach((b, i) => {
+		if (!HUDDLES.has(b.type) || b.end - b.actionStart < DEAD_MIN) {
+			return;
 		}
-	}
+		let end = b.end;
+		for (
+			let k = i + 1;
+			k < tl.beats.length && STILL_HUDDLED.has(tl.beats[k]!.type);
+			k++
+		) {
+			end = Math.max(end, tl.beats[k]!.end);
+		}
+		out.push([b.actionStart, end, HUDDLE_LEAD]);
+	});
 	for (let i = 0; i < runs.length; i++) {
 		const r = runs[i]!;
 		if (r.live) {
