@@ -60,6 +60,12 @@ export type Pose = {
 	// foot he turns on left where it was, the other stepping round.
 	spinN: number;
 	spinF: number;
+	// And each foot on the floor turned on its own from where its leg points
+	// (degrees, the same way round): his foot left pointing where it came
+	// down as he turns over it on the run - his knee round with it, his
+	// ankle where it is.
+	footN: number;
+	footF: number;
 	// His shoulders turned on his hips about his spine (degrees, round to his
 	// left positive), and his upper body tipped to his side (degrees, his left
 	// shoulder down positive): a crossover's dip, an arm wrapped behind him.
@@ -107,6 +113,8 @@ const BASE: Pose = {
 	legs: 0,
 	spinN: 0,
 	spinF: 0,
+	footN: 0,
+	footF: 0,
 	twist: 0,
 	tilt: 0,
 	onHipN: 0,
@@ -143,6 +151,8 @@ export const mirror = (q: Pose): Pose => {
 		legs: -q.legs,
 		spinN: -q.spinF,
 		spinF: -q.spinN,
+		footN: -q.footF,
+		footF: -q.footN,
 	};
 	for (const [n, f] of SIDES) {
 		out[n] = q[f];
@@ -6253,6 +6263,40 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		spin(l.end);
 		if ((l as Limb).tip) {
 			spin((l as Limb).tip!);
+		}
+	}
+	// Each foot turned on its own: round on its heel, flat on the floor, and
+	// his knee round with it about the line from his hip down to his ankle.
+	for (const [l, own] of [
+		[legR, q.footN],
+		[legL, q.footF],
+	] as const) {
+		if (own === 0) {
+			continue;
+		}
+		const c = Math.cos(own * rad);
+		const sn = Math.sin(own * rad);
+		const ax = v3(l.root.f - l.end.f, l.root.s - l.end.s, l.root.u - l.end.u);
+		const n = Math.hypot(ax.f, ax.s, ax.u);
+		if (n > 1e-6) {
+			const k = v3(ax.f / n, ax.s / n, ax.u / n);
+			const v = v3(l.mid.f - l.end.f, l.mid.s - l.end.s, l.mid.u - l.end.u);
+			const kv = k.f * v.f + k.s * v.s + k.u * v.u;
+			const x = v3(
+				k.s * v.u - k.u * v.s,
+				k.u * v.f - k.f * v.u,
+				k.f * v.s - k.s * v.f,
+			);
+			l.mid.f = l.end.f + v.f * c + x.f * sn + k.f * kv * (1 - c);
+			l.mid.s = l.end.s + v.s * c + x.s * sn + k.s * kv * (1 - c);
+			l.mid.u = l.end.u + v.u * c + x.u * sn + k.u * kv * (1 - c);
+		}
+		const tip = (l as Limb).tip;
+		if (tip) {
+			const df = tip.f - l.end.f;
+			const ds = tip.s - l.end.s;
+			tip.f = l.end.f + df * c - ds * sn;
+			tip.s = l.end.s + df * sn + ds * c;
 		}
 	}
 	const L = q.lean * rad;

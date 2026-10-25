@@ -146,6 +146,10 @@ export type PlayerState = {
 	mirror?: boolean;
 	// His legs turned under him from the way he faces (degrees - see Pose).
 	legs?: number;
+	// On his strides, each foot's own turn on top of that (degrees, right,
+	// left - see Pose's footN): down, it points where it came down pointing
+	// (see footLock).
+	lock?: [number, number];
 	// Shuffling, the way he goes - ahead, and across to his left (a length
 	// up to 1, as much of it as counts: none all but stood still): partly
 	// ahead or behind as well as across, each foot steps out along it (see
@@ -194,6 +198,8 @@ export type Blend = {
 	// him as it showed then (see legs), right, left; and the way he faced.
 	pivot?: [number, number, number, number];
 	turns?: [number, number];
+	// And each foot's own turn then (see lock).
+	feet?: [number, number];
 	facing?: number;
 	down?: number;
 	// Shuffling then, the way he went (see way).
@@ -1590,6 +1596,8 @@ export const forgetTurns = (tracks: Iterable<Track>) => {
 		beatYaws.delete(tr);
 		endSteps.delete(tr);
 		steppings.delete(tr);
+		footfalls.delete(tr);
+		footsAt.delete(tr);
 	}
 };
 const yawOnBeat = (tl: CourtTimeline, tr: Track, g: number): number => {
@@ -2121,6 +2129,10 @@ type Doing = {
 	down?: number;
 	stepLen?: [number, number];
 	drive?: number;
+	// On the strides of one of his runs - his legs, or under whatever his
+	// arms are doing, his stride's: which, and when on it (in a moment's
+	// stand between it and the next, its end).
+	gait?: { k: number; at: number };
 };
 // Eased aside off a man fast enough that he steps over (feet a second) - and
 // once he is stepping, a moment's slowing between one push and the next
@@ -2330,7 +2342,13 @@ const bridgeAt = (
 	tr: Track,
 	t: number,
 ):
-	| { anim: AnimName; phase: number; down: number; len?: [number, number] }
+	| {
+			anim: AnimName;
+			phase: number;
+			down: number;
+			len?: [number, number];
+			gait: { k: number; at: number };
+	  }
 	| undefined => {
 	const k = lastIndex(tr.moves, t, (m) => m.t0);
 	const m = k >= 0 ? tr.moves[k] : undefined;
@@ -2360,6 +2378,7 @@ const bridgeAt = (
 		? {
 				...g,
 				down: footDownAt(run, at, k > 0 ? runOf(tr, k - 1) : undefined),
+				gait: { k, at },
 			}
 		: undefined;
 };
@@ -2488,6 +2507,7 @@ const doingAt = (
 	let mirrored = false;
 	let aside = false;
 	let bridged: ReturnType<typeof bridgeAt>;
+	let gait: Doing["gait"];
 	let down = 0;
 	let stepLen: [number, number] | undefined;
 	let drive = 0;
@@ -2525,6 +2545,7 @@ const doingAt = (
 			phase,
 			len: stepLen,
 		} = gaitOf(tl, tr, here.moveIndex, here.run, t));
+		gait = { k: here.moveIndex, at: t };
 		z = liftOf(anim, phase, stepLen);
 		drive = driveOf(anim, here.run, t);
 		const k = here.moveIndex;
@@ -2535,7 +2556,7 @@ const doingAt = (
 			k + 1 < tr.moves.length ? runOf(tr, k + 1) : undefined,
 		);
 	} else if ((bridged = bridgeAt(tl, tr, t))) {
-		({ anim, phase, down, len: stepLen } = bridged);
+		({ anim, phase, down, len: stepLen, gait } = bridged);
 	} else {
 		const seg = ballSegAt(tl, t);
 		// A dribble move: all of him through each bounce of it.
@@ -2606,6 +2627,7 @@ const doingAt = (
 		const run = here.moving ? here.run : undefined;
 		if (run && Math.max(shapeOf(run).vc, run.v0, run.v1) >= STRIDE_FTPS) {
 			stride = { ...gaitOf(tl, tr, here.moveIndex, run, t), w: 1 };
+			gait = { k: here.moveIndex, at: t };
 		} else if (steppingAt(tr, t)) {
 			asideAt(tr, t);
 			stride = { anim: "shuffle", phase: asideD / strideOf("shuffle"), w: 1 };
@@ -2679,6 +2701,7 @@ const doingAt = (
 		...(down > 0 ? { down } : {}),
 		...(stepLen ? { stepLen } : {}),
 		...(drive !== 0 ? { drive } : {}),
+		...(gait ? { gait } : {}),
 		target: act || has ? undefined : targetAt(tl, pid, t) || undefined,
 	};
 };
@@ -2977,6 +3000,12 @@ const blendInto = (
 			? to + (legTurnFrom(prior, i, facing, before.anim) - to) * prior.w
 			: to;
 	}) as [number, number];
+	const ownLock = ownPv ? undefined : footLock(tl, tr, lo, before, own);
+	const feet = ([0, 1] as const).map(
+		(i) =>
+			(ownLock?.[i] ?? 0) +
+			((prior?.feet?.[i] ?? 0) - (ownLock?.[i] ?? 0)) * (prior?.w ?? 0),
+	) as [number, number];
 	const pv: [number, number, number, number] | undefined =
 		prior?.pivot || ownPv
 			? ([0, 1, 2, 3].map(
@@ -3008,6 +3037,7 @@ const blendInto = (
 		w,
 		...(pv ? { pivot: pv } : {}),
 		...(turns[0] || turns[1] ? { turns } : {}),
+		...(feet[0] || feet[1] ? { feet } : {}),
 		...(way === undefined ? {} : { way }),
 		facing,
 		...(isMove(anim)
@@ -3720,6 +3750,7 @@ export const evalPlayer = (
 	const way =
 		PUSH_STEPS.has(now.anim) && here.moving ? wayOf(tr, yaw, t) : undefined;
 	const pivot = shown ? pivotOf(tl, tr, yaw, now, t) : undefined;
+	const lock = shown && !pivot ? footLock(tl, tr, t, now, legs) : undefined;
 	// (An arm a beat behind its reason never takes the hand his dribble has
 	// just come over into.)
 	const eased = shown ? easedArm(tl, tr, t) : undefined;
@@ -3752,6 +3783,7 @@ export const evalPlayer = (
 		moving: here.moving,
 		...now,
 		...(legs !== 0 ? { legs } : {}),
+		...(lock ? { lock } : {}),
 		...(way === undefined ? {} : { way }),
 		...(pivot ? { pivot } : {}),
 		...(from ? { from } : {}),
@@ -3918,6 +3950,194 @@ const flippedLegs = (
 		}
 	}
 	return own;
+};
+
+// A FOOT DOWN STAYS POINTED WHERE IT CAME DOWN. On his strides - cutting,
+// going round a corner, a backpedal getting going - a foot on the floor
+// doesn't turn with him: it points where it pointed as it came down till
+// it comes up, and goes round to where the rest of him has it only while
+// it is up. (As far as hips turn: past that, it goes round with him. And
+// turning on the spot with his arms at something on the run - a box-out,
+// say - his feet step round as they do standing: see pivotOf.)
+//
+// When each foot came down and came up on a run, on the steps he shows
+// on it - worked out once, along with his strides (see steppingOf); a
+// run that goes on from the last carries on from when that one's feet
+// came down and up.
+type Footfalls = { on: number[]; off: number[] };
+const footfalls = new WeakMap<
+	Track,
+	Map<Move, { of: Stepping; by: Map<AnimName, [Footfalls, Footfalls]> }>
+>();
+const footfallsOf = (
+	tl: CourtTimeline,
+	tr: Track,
+	k: number,
+	run: Run,
+	anim: AnimName,
+): [Footfalls, Footfalls] | undefined => {
+	const g0 = legPhases(anim, 0);
+	if (!g0) {
+		return undefined;
+	}
+	let byMove = footfalls.get(tr);
+	if (!byMove) {
+		byMove = new Map();
+		footfalls.set(tr, byMove);
+	}
+	const st = steppingOf(tl, tr, k, run);
+	let memo = byMove.get(run.mv);
+	if (!memo || memo.of !== st) {
+		memo = { of: st, by: new Map() };
+		byMove.set(run.mv, memo);
+	}
+	const had = memo.by.get(anim);
+	if (had) {
+		return had;
+	}
+	// (On the steps he shows, his strides as gaitOf counts them.)
+	const own = stepsOf(tl, tr, run);
+	const extra = anim === own ? 0 : 1 / strideOf(anim) - 1 / strideOf(own);
+	const n = st.ph.length - 1;
+	const dt = n > 0 ? (st.s1 - st.s0) / n : 0;
+	const when = (i: number) => st.s0 + i * dt;
+	const at = (i: number) =>
+		st.ph[i]! + (extra === 0 ? 0 : alongRun(run, when(i)) * extra);
+	const through = (ph: number, leg: 0 | 1) => {
+		const g = legPhases(anim, ph)!;
+		return footThrough(g, leg === 0 ? g.r : g.l);
+	};
+	// (Gone on from the run before on the same sort of steps: from when its
+	// feet last came down and up. Set off from a stand: from now.)
+	let before: [Footfalls, Footfalls] | undefined;
+	if (
+		k > 0 &&
+		(run.v0 > 0 || tr.moves[k]!.t0 - tr.moves[k - 1]!.t1 <= STRIDE_ON_MS)
+	) {
+		const was = runOf(tr, k - 1);
+		const ended = endStepsOf(tl, tr, k - 1, was);
+		const g = legPhases(ended, 0);
+		if (g && g.back === g0.back && g.duty === g0.duty) {
+			before = footfallsOf(tl, tr, k - 1, was, ended);
+		}
+	}
+	const out = ([0, 1] as const).map((leg): Footfalls => {
+		const f: Footfalls = before
+			? { on: [before[leg].on.at(-1)!], off: [before[leg].off.at(-1)!] }
+			: { on: [st.s0], off: [st.s0] };
+		let c0 = through(at(0), leg);
+		for (let i = 1; i <= n; i++) {
+			const c1 = through(at(i), leg);
+			if (c1 < c0 - 0.5) {
+				f.on.push(when(i - 1) + (dt * (1 - c0)) / (1 - c0 + c1));
+			} else if (c0 < g0.duty && c1 >= g0.duty) {
+				f.off.push(when(i - 1) + (dt * (g0.duty - c0)) / (c1 - c0));
+			}
+			c0 = c1;
+		}
+		return f;
+	}) as [Footfalls, Footfalls];
+	memo.by.set(anim, out);
+	return out;
+};
+// How far a leg is through its stride from its foot coming down (0) - down
+// till the gait's duty, then up - forward or backpedalling.
+const footThrough = (
+	g: NonNullable<ReturnType<typeof legPhases>>,
+	phi: number,
+): number => (g.back ? frac(g.duty - phi) : phi);
+const frac = (x: number) => x - Math.floor(x);
+// The last of them by t (a moment's leeway either side of the moment).
+const lastBy = (xs: number[], t: number): number => {
+	let lo = 0;
+	let hi = xs.length - 1;
+	if (xs[0]! > t + 2) {
+		return xs[0]!;
+	}
+	while (lo < hi) {
+		const mid = (lo + hi + 1) >> 1;
+		if (xs[mid]! <= t + 2) {
+			lo = mid;
+		} else {
+			hi = mid - 1;
+		}
+	}
+	return xs[lo]!;
+};
+// Which way a foot would point at a moment on these steps - his legs
+// turned under him from the way he faces. (As one came down or up: the same
+// every frame till the next, so kept.)
+const footsAt = new WeakMap<Track, Map<string, number>>();
+const footAt = (
+	tl: CourtTimeline,
+	tr: Track,
+	anim: AnimName,
+	at: number,
+	keep = false,
+): number => {
+	let memo = keep ? footsAt.get(tr) : undefined;
+	if (keep && !memo) {
+		memo = new Map();
+		footsAt.set(tr, memo);
+	}
+	const key = `${anim} ${at}`;
+	const had = memo?.get(key);
+	if (had !== undefined) {
+		return had;
+	}
+	const yaw = yawAt(tl, tr, at);
+	const out = yaw - (legsOf(spotAt(tr, at), yaw, anim, at) * Math.PI) / 180;
+	memo?.set(key, out);
+	return out;
+};
+// Each foot's own turn (degrees, right, left) on top of his legs' `legs`
+// at t, doing `d`: down, as much as keeps it pointing where it came down
+// pointing; up, eased back off over its swing.
+const footLock = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	d: Doing,
+	legs: number,
+): [number, number] | undefined => {
+	const g = d.gait;
+	if (!g) {
+		return undefined;
+	}
+	const anim = d.stride ? d.stride.anim : d.anim;
+	const now = legPhases(anim, d.stride ? d.stride.phase : d.phase);
+	if (!now) {
+		return undefined;
+	}
+	const run = runOf(tr, g.k);
+	const falls = footfallsOf(tl, tr, g.k, run, anim);
+	if (!falls) {
+		return undefined;
+	}
+	// (His legs turned under him as this move has them: under his arms at
+	// something on the run, not at all.)
+	const turned = (from: number, to: number) =>
+		hipsTurn(legs + (wrapAngle(to - from) * 180) / Math.PI) - legs;
+	const out = ([0, 1] as const).map((leg) => {
+		const c = footThrough(now, leg === 0 ? now.r : now.l);
+		const f = falls[leg];
+		if (c < now.duty) {
+			return turned(
+				footAt(tl, tr, d.anim, lastBy(f.on, g.at), true),
+				footAt(tl, tr, d.anim, t),
+			);
+		}
+		// (Up, from as it was as it came up.)
+		const off = lastBy(f.off, g.at);
+		return (
+			turned(
+				footAt(tl, tr, d.anim, lastBy(f.on, off), true),
+				footAt(tl, tr, d.anim, off, true),
+			) *
+			(1 - smooth01((c - now.duty) / (1 - now.duty)))
+		);
+	}) as [number, number];
+	return Math.abs(out[0]) < 0.05 && Math.abs(out[1]) < 0.05 ? undefined : out;
 };
 
 // TURNING WHERE HE STANDS.
@@ -4391,6 +4611,8 @@ export const poseOf = (st: PlayerState): Pose => {
 	const turned = st.legs ?? 0;
 	const fromAt = (i: 0 | 1) =>
 		fw > 0 ? legTurnFrom(f!, i, st.yaw, st.anim) : 0;
+	const onN = steps ? 1 - steps.n.on : fw;
+	const onF = steps ? 1 - steps.f.on : fw;
 	if (turned || pv || fp || fromAt(0) || fromAt(1)) {
 		const legAt = (i: 0 | 1, on: number) => {
 			const to = turned + (pv?.[i] ?? 0);
@@ -4401,13 +4623,22 @@ export const poseOf = (st: PlayerState): Pose => {
 		p = {
 			...p,
 			legs: 0,
-			spinN: legAt(0, steps ? 1 - steps.n.on : fw),
-			spinF: legAt(1, steps ? 1 - steps.f.on : fw),
+			spinN: legAt(0, onN),
+			spinF: legAt(1, onF),
 			hipN: p.hipN + PIVOT_HIP * lift(2),
 			kneeN: p.kneeN + PIVOT_KNEE * lift(2),
 			hipF: p.hipF + PIVOT_HIP * lift(3),
 			kneeF: p.kneeF + PIVOT_KNEE * lift(3),
 		};
+	}
+	// And each foot down on his strides pointing where it came down - easing
+	// out of the last move, from where it pointed then.
+	const lk = st.lock;
+	const ff = fw > 0 ? f!.feet : undefined;
+	if (lk || ff) {
+		const turnAt = (i: 0 | 1, on: number) =>
+			(lk?.[i] ?? 0) + ((ff?.[i] ?? 0) - (lk?.[i] ?? 0)) * on;
+		p = { ...p, footN: turnAt(0, onN), footF: turnAt(1, onF) };
 	}
 	const a = st.arm;
 	if (!a || a.w <= 0) {

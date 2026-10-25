@@ -229,10 +229,16 @@ const fastLegs = (
 	// (His arms go with his legs once they are mostly on the picture's clock
 	// - unless they are busy with the ball.)
 	const arms = w >= 0.5 && !BALL_CYCLES.has(st.anim);
+	// (His feet down on the game's clock are not the ones down on this one.)
+	const lock: PlayerState["lock"] = st.lock && [
+		st.lock[0] * (1 - w),
+		st.lock[1] * (1 - w),
+	];
 	return {
 		...st,
 		...(arms ? { phase } : {}),
 		stride: { anim: st.anim, phase, w },
+		...(lock ? { lock } : {}),
 		// (And the bob of it with them - not him jumping up and down at
 		// random.)
 		...(isGait(st.anim)

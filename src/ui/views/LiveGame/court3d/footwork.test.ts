@@ -100,6 +100,18 @@ describe("footwork", () => {
 		assert.isBelow(flung / turns, 0.2);
 		assert.isBelow(worst, 1.2);
 	}, 240_000);
+
+	// Cutting, going round a corner, a backpedal getting going: a foot on
+	// the floor points where it came down while he turns over it - not spun
+	// round under him with the rest of him - and goes round to his new way
+	// while it is up. (Before: a degree a frame a foot down, and 99 feet
+	// spun more than 30 degrees in their time down.)
+	test("a foot down on his strides stays pointed where it came down", () => {
+		const { down, spun, far } = plantedSpin();
+		assert.isAbove(down, 10_000);
+		assert.isBelow(spun / down, 0.35);
+		assert.isBelow(far, 60);
+	}, 240_000);
 });
 
 const RUNNING = new Set<AnimName>(["run", "jog", "sprint", "dribble"]);
@@ -325,5 +337,70 @@ const plantedSlide = (anim: AnimName) => {
 		}
 	}
 	return { travel, slide: slide / travel };
+};
+// On his strides over the first fifteen minutes of a game (not easing in or
+// out of something else), frame by frame: the frames a foot is down, how
+// far round its feet turned on the floor between them (degrees), and how
+// many feet turned more than 30 degrees in all in their time down.
+const STRIDES = new Set<AnimName>([...RUNNING, "walk", "back", "slide"]);
+const plantedSpin = () => {
+	const body = bodyOf();
+	const STEP = 32;
+	const tl = (game ??= compile("a", 140).tl);
+	let down = 0;
+	let spun = 0;
+	let far = 0;
+	for (const tr of tl.tracks.values()) {
+		let prev: { yaws: number[]; down: boolean[]; phase: number } | undefined;
+		const turned = [0, 0];
+		for (let t = 0; t < Math.min(tl.end, 900_000); t += STEP) {
+			const st = evalPlayer(tl, tr.pid, t);
+			if (
+				fastAt(tl, t) > 1 ||
+				!st.shown ||
+				!STRIDES.has(st.anim) ||
+				(st.from !== undefined && st.from.w > 0.05)
+			) {
+				prev = undefined;
+				turned.fill(0);
+				continue;
+			}
+			const me = withBody(st, body);
+			const sk = skeleton(body, poseOf(me));
+			const yaws = [sk.legR, sk.legL].map((l) => {
+				const heel = bodyPoint(me, l.end);
+				const toe = bodyPoint(me, l.tip!);
+				return Math.atan2(toe.y - heel.y, toe.x - heel.x);
+			});
+			const legs = legPhases(st.anim, st.phase)!;
+			// (In its time down, not just landing or leaving the floor.)
+			const isDown = [legs.r, legs.l].map((phi) => {
+				const c = legs.back ? (((legs.duty - phi) % 1) + 1) % 1 : phi;
+				return c > 0.02 && c < legs.duty - 0.02;
+			});
+			for (const i of [0, 1]) {
+				if (
+					prev &&
+					isDown[i] &&
+					prev.down[i] &&
+					Math.abs(st.phase - prev.phase) < 0.3
+				) {
+					let d = yaws[i]! - prev.yaws[i]!;
+					d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+					const deg = (Math.abs(d) * 180) / Math.PI;
+					down += 1;
+					spun += deg;
+					turned[i]! += deg;
+				} else {
+					if (turned[i]! > 30) {
+						far += 1;
+					}
+					turned[i] = 0;
+				}
+			}
+			prev = { yaws, down: isDown, phase: st.phase };
+		}
+	}
+	return { down, spun, far };
 };
 let game: ReturnType<typeof compile>["tl"] | undefined;

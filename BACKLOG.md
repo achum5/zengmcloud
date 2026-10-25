@@ -332,7 +332,7 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   whipped round every time it moves. Still to do: turning his hips -
   setting off on a run at an angle, a slow backpedal getting going - swings
   both feet round under him, the planted one too; each leg should turn
-  only while its foot is up.)
+  only while its foot is up. Done 2026-10-25, below.)
   (2026-10-25: running a stretch through fast, arms no longer flash up and
   down for a frame or two - an arm out in the passing lane, up against his
   man, calling for it or pointing goes as the picture speeds up and comes
@@ -341,7 +341,14 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   hesitation, sat in his triple threat or his stance, a screen) is left out
   of the picture. Stood through a stoppage, a man blows - chest heaving,
   weight from leg to leg - and the longer he has been out there, the more
-  he is bent over on his knees or stood with his hands on his hips.)
+  he is bent over on his knees or stood with his hands on his hips. On his
+  strides a foot down stays pointed where it came down - cutting, going
+  round a corner, a backpedal getting going, he turns over it, his knee
+  round with it, and it goes round to his new way only while it is up:
+  planted feet turning about a degree a frame down to a fifth of one, feet
+  spun more than 30 degrees in their time down 99 a game to 44. Still to
+  do: the same for a defender's shuffle, the next most - its push steps
+  have no stride table to say which foot is down.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like
