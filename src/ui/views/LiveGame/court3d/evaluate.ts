@@ -208,8 +208,11 @@ export type Blend = {
 	// and how much of it was still in him then.
 	from?: Blend;
 	// Stepped out of it, a foot at a time, rather than eased (see
-	// startsOff).
+	// startsOff) - or, easing between two gaits by how quick he goes (an
+	// official's walk into his run), never stepped: his legs go with his
+	// pace, back and forth with it.
 	step?: true;
+	paced?: true;
 };
 export type ArmPose = {
 	hand: Hand;
@@ -4750,7 +4753,9 @@ const blendPose = (f: Blend): Pose => {
 	// (Itself still settling out of a run, his feet stepping into it, as he
 	// went on into something else: from there - as he was - not from the two
 	// eased together, both feet slid over to it in a frame.)
-	return g.w > 0 && g.w < 1 && (g.step === true || stepsOver(g.anim, f.anim))
+	return g.w > 0 &&
+		g.w < 1 &&
+		(g.step === true || (!g.paced && stepsOver(g.anim, f.anim)))
 		? settleStep(eased, own, blendPose(g), 1 - g.w, standRef(f))
 		: eased;
 };
@@ -4987,7 +4992,7 @@ export const poseOf = (st: PlayerState): Pose => {
 		fw > 0 &&
 		fw < 1 &&
 		st.z <= SETTLE_AIR &&
-		(f!.step === true || stepsOver(f!.anim, st.anim))
+		(f!.step === true || (!f!.paced && stepsOver(f!.anim, st.anim)))
 			? blendPose(f!)
 			: undefined;
 	const steps = was ? settleLegs(q, was, 1 - fw, standRef(st)) : undefined;

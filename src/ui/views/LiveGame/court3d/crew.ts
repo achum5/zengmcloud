@@ -1126,6 +1126,8 @@ const refStates = (
 	t: number,
 	refs: CrewMember[],
 	ball: Pt,
+	// (How far back through one signal after another this is looking.)
+	depth = 0,
 ): PlayerState[] => {
 	const { at } = refPlaces(tl, t);
 	// How quick each goes over a moment either side - not reaching across
@@ -1179,6 +1181,7 @@ const refStates = (
 					anim: gait.from.anim,
 					phase: gaitPhase(gait.from.anim),
 					w: gait.from.w,
+					paced: true,
 				}
 			: undefined;
 		// (The ball in his own hands, or going right by him: facing us.)
@@ -1247,8 +1250,25 @@ const refStates = (
 						? (t - move.t0) / (move.t1 - move.t0)
 						: loopPhase(anim, t - move.t0, 0);
 				const chained = done && done.t1 >= move.t0 - 1;
+				// (Straight on from another call's signal - a three's arm up
+				// as it goes in, say: round from how that left him, not from
+				// how the play would have him.)
+				const prior =
+					!chained &&
+					depth < 2 &&
+					t - move.t0 < Math.max(SIGNAL_TURN, SIGNAL_EASE) &&
+					signalsAt(tl, move.t0 - 16)[i]?.t0 !== signal.t0 &&
+					signalsAt(tl, move.t0 - 16)[i] !== undefined
+						? refStates(
+								tl,
+								move.t0 - 16,
+								refs,
+								ballSpot(tl, move.t0 - 16),
+								depth + 1,
+							)[i]
+						: undefined;
 				yaw = turnToward(
-					chained ? done.yaw : yaw,
+					chained ? done.yaw : (prior?.yaw ?? yaw),
 					move.yaw,
 					smooth01((t - move.t0) / SIGNAL_TURN),
 				);
@@ -1260,12 +1280,14 @@ const refStates = (
 						? undefined
 						: chained
 							? { ...endOf(done), w }
-							: {
-									anim: gait.anim,
-									phase: gaitPhase(gait.anim),
-									w,
-									...(gaitFrom ? { from: gaitFrom } : {}),
-								};
+							: prior
+								? { anim: prior.anim, phase: prior.phase, w }
+								: {
+										anim: gait.anim,
+										phase: gaitPhase(gait.anim),
+										w,
+										...(gaitFrom ? { from: gaitFrom } : {}),
+									};
 			} else {
 				// Running back - or walking, or stood, as quick as he goes -
 				// the way he goes, and as he gets there, round to the way he
@@ -1281,6 +1303,7 @@ const refStates = (
 							anim: back.from.anim,
 							phase: gaitPhase(back.from.anim),
 							w: back.from.w,
+							paced: true,
 						}
 					: undefined;
 				const out = done ? 1 - smooth01((t - done.t1) / SIGNAL_EASE) : 0;

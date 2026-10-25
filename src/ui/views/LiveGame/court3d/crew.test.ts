@@ -409,7 +409,7 @@ describe("3D crew", () => {
 			}
 		}
 		assert.isAbove(frames, 50_000);
-		assert.isBelow(popped / frames, 0.0025, `${popped} in ${frames}`);
+		assert.isBelow(popped / frames, 0.0006, `${popped} in ${frames}`);
 		assert.strictEqual(snapped, 0);
 		assert.isAtMost(coached, 2);
 	}, 240_000);

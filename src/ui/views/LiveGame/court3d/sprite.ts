@@ -511,6 +511,7 @@ const stepBlend = (f: Blend, w: number, k: Steps): Blend => {
 		anim: f.anim,
 		phase: frameOf(f.anim, f.phase, k),
 		...(f.step ? { step: true as const } : {}),
+		...(f.paced ? { paced: true as const } : {}),
 		...(len ? { stepLen: len } : {}),
 		dribble: dribbleFrame(f.dribble, k),
 		dribbleHand: f.dribbleHand,
@@ -562,7 +563,7 @@ const lookStep = (d: number | undefined, k: Steps) =>
 const driveStep = (d: number | undefined, k: Steps) =>
 	d ? Math.round(d * k.arm) / k.arm || undefined : undefined;
 const blendKey = (f: Blend): string =>
-	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.stepLen ? `l${f.stepLen}` : ""}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.dribbleFrom ?? ""}${f.tight ? `t${f.tight}` : ""}${strideKey(f.stride)}${f.held ? "h" : ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.turns ?? ""}~${f.pivot ?? ""}~${f.down ?? ""}~${f.way ?? ""}~${f.feet ?? ""}~${f.drive ?? ""}${f.step ? "~st" : ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
+	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.stepLen ? `l${f.stepLen}` : ""}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.dribbleFrom ?? ""}${f.tight ? `t${f.tight}` : ""}${strideKey(f.stride)}${f.held ? "h" : ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.turns ?? ""}~${f.pivot ?? ""}~${f.down ?? ""}~${f.way ?? ""}~${f.feet ?? ""}~${f.drive ?? ""}${f.step ? "~st" : ""}${f.paced ? "~pc" : ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
 
 // The pose he is drawn in: his own, stepped to the sprite's frames and turns
 // - and, easing out of his last move, a few steps of that.
