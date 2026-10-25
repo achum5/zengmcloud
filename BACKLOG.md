@@ -389,11 +389,14 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   the lead foot out, the trail foot in - comes a couple of inches up off
   the floor as it goes, not swept along it (a slide's frames with both feet
   sliding over the floor 2241 in fifteen minutes of a test game down to
-  529). Still to do: backpedalling
-  slowly to a stop, his hips coming round slide both feet round under him;
-  going straight from running into a shuffle or a backpedal, or back, at
-  speed, both feet slide through the change (stepped over there, his legs
-  are flung; from all but a standstill they now step).)
+  529). Pulling up to stand out of a backpedal or a run at an angle, his
+  legs keep their turn under him till he settles and then step round a
+  foot at a time, not both feet swung round over the floor as his hips
+  come round (each about half a foot). Still to do: going straight from
+  running into a shuffle or a backpedal, or back, at speed, both feet slide
+  through the change (stepped over there, his legs are flung; from all but
+  a standstill they now step); and turning on the spot while all but stood
+  in a shuffle, both feet go round with him.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like

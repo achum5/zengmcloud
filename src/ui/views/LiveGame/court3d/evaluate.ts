@@ -484,7 +484,15 @@ const plantedBetween = (
 
 // A run as he really runs it: when it starts and ends (sharing any pause
 // with a run it joins), and how fast he is going at each end.
-type Run = { mv: Move; s0: number; s1: number; v0: number; v1: number };
+type Run = {
+	mv: Move;
+	s0: number;
+	s1: number;
+	v0: number;
+	v1: number;
+	// (Pulled up to stand, not straight on into another run.)
+	stands?: true;
+};
 // (Worked out once a run - again only if the runs either side of it, or its
 // times, are not what they were.)
 const runs = new WeakMap<
@@ -537,6 +545,7 @@ const workRun = (
 		s1: vOut === undefined ? mv.t1 : (mv.t1 + next!.t0) / 2,
 		v0: mv.v0 ?? vIn ?? 0,
 		v1: mv.v1 ?? vOut ?? 0,
+		...(next === undefined || next.t0 - mv.t1 > 1 ? { stands: true } : {}),
 	};
 };
 
@@ -3067,7 +3076,7 @@ const blendInto = (
 		tr,
 		lo,
 		before.anim,
-		legsOf(there, facing, before.anim, lo),
+		legsAt(tl, tr, there, facing, before.anim, lo),
 	);
 	const way =
 		PUSH_STEPS.has(before.anim) && there.moving
@@ -3833,7 +3842,13 @@ export const evalPlayer = (
 				}
 			: doing;
 	const yaw = spinYawAt(tl, tr, t) ?? yawAt(tl, tr, t);
-	const legs = flippedLegs(tl, tr, t, now.anim, legsOf(here, yaw, now.anim, t));
+	const legs = flippedLegs(
+		tl,
+		tr,
+		t,
+		now.anim,
+		legsAt(tl, tr, here, yaw, now.anim, t, from === undefined),
+	);
 	const way =
 		PUSH_STEPS.has(now.anim) && here.moving ? wayOf(tr, yaw, t) : undefined;
 	const pivot = shown ? pivotOf(tl, tr, yaw, now, t) : undefined;
@@ -4289,17 +4304,59 @@ const legsOf = (here: Spot, yaw: number, anim: AnimName, t: number): number => {
 	}
 	// Into it as he gets going from a standstill, out of it as he pulls up
 	// to one - on the clock, not his pace, which drops away too fast at
-	// the very end for his hips to follow.
+	// the very end for his hips to follow. (Pulled up to stand, not at all:
+	// both feet down, his legs coming round under him would swing them
+	// round over the floor - they step round one and then the other as he
+	// settles, the turn they had as he stopped eased out of a foot at a
+	// time; see settleLegs.)
 	// (And round a corner, the pace he goes round it at: turned right back
 	// on himself, all but stood still at the turn, not swung round with
 	// it.)
 	const ease =
-		Math.min(
-			run.v0 > LEGS_FTPS ? 1 : smooth01((t - run.s0) / LEGS_EASE_MS),
-			run.v1 > LEGS_FTPS ? 1 : smooth01((run.s1 - t) / LEGS_EASE_MS),
-		) * (here.round === undefined ? 1 : smooth01(here.round / LEGS_FTPS));
+		(run.v0 > LEGS_FTPS ? 1 : smooth01((t - run.s0) / LEGS_EASE_MS)) *
+		(run.v1 > LEGS_FTPS || run.stands
+			? 1
+			: smooth01((run.s1 - t) / LEGS_EASE_MS)) *
+		(here.round === undefined ? 1 : smooth01(here.round / LEGS_FTPS));
 	// (His left is the floor's clockwise.)
 	return -Math.sign(off) * turn * ease;
+};
+// (Stood where a run he pulled up from left him, still in its strides, the
+// turn it had them at as he stopped - till he settles out of them; or, off
+// again on the same strides, eased out of it as he gets going.)
+const legsAt = (
+	tl: CourtTimeline,
+	tr: Track,
+	here: Spot,
+	yaw: number,
+	anim: AnimName,
+	t: number,
+	carried = false,
+): number => {
+	const k = here.moveIndex;
+	const held = (run: Run) => {
+		const end = run.s1 - 1;
+		return legsOf(spotAt(tr, end), yawAt(tl, tr, end), anim, end);
+	};
+	if (!here.moving) {
+		const run = k >= 0 ? runOf(tr, k) : undefined;
+		return run?.stands && t >= run.s1 ? held(run) : legsOf(here, yaw, anim, t);
+	}
+	const own = legsOf(here, yaw, anim, t);
+	const run = here.run;
+	if (
+		!carried ||
+		!run ||
+		k <= 0 ||
+		run.v0 > LEGS_FTPS ||
+		t - run.s0 >= LEGS_EASE_MS
+	) {
+		return own;
+	}
+	const before = runOf(tr, k - 1);
+	return before.stands
+		? own + held(before) * (1 - smooth01((t - run.s0) / LEGS_EASE_MS))
+		: own;
 };
 // Turned and away out of a backpedal, his legs come round under him over a
 // couple of steps - eased over from the turn they had under him as he went
