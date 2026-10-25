@@ -828,6 +828,7 @@ const passing = (
 	t: number,
 	players: FieldPlayerState[],
 	handsOf: HandsOf,
+	cuts: readonly number[],
 ): { at: Pt3; axis: Pt3; unseen: number[] } | undefined => {
 	const segs = play.ball;
 	const k = lastStarted(segs, t, (b) => b.t0);
@@ -846,11 +847,16 @@ const passing = (
 		}
 		const t0 = b.t0;
 		const after = segs[j + 1];
-		const half = Math.min(
+		let half = Math.min(
 			PASS_MS / 2,
 			t0 - a.t0,
 			after ? after.t0 - t0 : PASS_MS / 2,
 		);
+		// (Not across the picture cutting away: from or to where the man
+		// with it no longer is.)
+		for (const c of cuts) {
+			half = Math.min(half, Math.abs(c - t0));
+		}
 		if (half <= 0 || Math.abs(t - t0) >= half) {
 			continue;
 		}
@@ -1313,7 +1319,7 @@ export const momentAt = (
 			}
 		}
 	}
-	const over = handsOf && passing(play, t, players, handsOf);
+	const over = handsOf && passing(play, t, players, handsOf, tl.cuts);
 	if (over) {
 		for (const st of players) {
 			if (over.unseen.includes(st.id) && st.ball) {
