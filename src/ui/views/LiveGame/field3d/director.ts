@@ -401,6 +401,117 @@ const SET_IN_FT = 3;
 const SET_IN_FPS = 4;
 const SET_IN_MOST = 1.35;
 const SET_IN_LEAST = 1;
+// Along a leg off `v0` ft/s and into the end of it at `w`: up to the pace
+// it takes at GOING_ACCEL ft/s/s, on at it and down to `w` at the last, in
+// steps GOING_STEP_MS long - there when he would have been, that much
+// quicker between; not off at it, nor pulled up out of it, in a stride.
+// (Just the leg, if it cannot be done.)
+const GOING_ACCEL = 14;
+const GOING_STEP_MS = 100;
+const GOING_LEAST_FPS = 3;
+// (What that costs him, ms, at `fps` the rest of it: from still, and down
+// to a walk into his stance - see intoStance.)
+const goingMs = (fps: number) =>
+	((fps + Math.max(0, fps - SET_IN_FPS) ** 2 / fps) / (2 * GOING_ACCEL)) * 1000;
+const paced = (l: Leg, v0: number, w: number): Leg[] => {
+	const A = GOING_ACCEL;
+	const T = (l.t1 - l.t0) / 1000;
+	const D = Math.hypot(l.to.x - l.from.x, l.to.y - l.from.y);
+	const b = T + (v0 + w) / A;
+	const disc = b * b - (4 / A) * (D + (v0 * v0 + w * w) / (2 * A));
+	if (!(T > 0 && D > 0 && disc >= 0)) {
+		return [l];
+	}
+	const vc = (A * (b - Math.sqrt(disc))) / 2;
+	const tu = (vc - v0) / A;
+	const td = (vc - w) / A;
+	const tc = T - tu - td;
+	if (vc < Math.max(v0, w, GOING_LEAST_FPS) || tc < -1e-6) {
+		return [l];
+	}
+	const sAt = (t: number) => {
+		if (t <= tu) {
+			return v0 * t + (A * t * t) / 2;
+		}
+		const su = v0 * tu + (A * tu * tu) / 2;
+		if (t <= tu + tc) {
+			return su + vc * (t - tu);
+		}
+		const u = Math.min(td, t - tu - tc);
+		return su + vc * tc + vc * u - (A * u * u) / 2;
+	};
+	const marks: number[] = [];
+	const nu = Math.max(1, Math.round((tu * 1000) / GOING_STEP_MS));
+	for (let i = 1; i <= nu; i++) {
+		marks.push((tu * i) / nu);
+	}
+	if (tc * 1000 >= 1) {
+		marks.push(tu + tc);
+	}
+	const nd =
+		td * 1000 >= 1 ? Math.max(1, Math.round((td * 1000) / GOING_STEP_MS)) : 0;
+	for (let i = 1; i <= nd; i++) {
+		marks.push(tu + tc + (td * i) / nd);
+	}
+	const legs: Leg[] = [];
+	let from = l.from;
+	let prev = 0;
+	marks.forEach((t, k) => {
+		const last = k === marks.length - 1;
+		const u = sAt(t) / D;
+		const to = last
+			? l.to
+			: {
+					x: l.from.x + (l.to.x - l.from.x) * u,
+					y: l.from.y + (l.to.y - l.from.y) * u,
+				};
+		legs.push({
+			...l,
+			t0: l.t0 + prev * 1000,
+			t1: last ? l.t1 : l.t0 + t * 1000,
+			from,
+			to,
+		});
+		from = to;
+		prev = t;
+	});
+	return legs;
+};
+
+// (Each man's way up to his spot - see intoStance - paced once the rest of
+// what he does before the snap is settled: see paceWalkUps.)
+const walkingUp = new WeakSet<Leg>();
+const paceWalkUps = (parts: Part[]) => {
+	for (const p of parts) {
+		if (!p.legs.some((l) => walkingUp.has(l))) {
+			continue;
+		}
+		p.legs = p.legs.flatMap((l, k) => {
+			const before = p.legs[k - 1];
+			const next = p.legs[k + 1];
+			if (
+				!walkingUp.has(l) ||
+				!before ||
+				before.from.x !== before.to.x ||
+				before.from.y !== before.to.y
+			) {
+				return [l];
+			}
+			const paceOf = (x: Leg) =>
+				Math.hypot(x.to.x - x.from.x, x.to.y - x.from.y) /
+				Math.max(0.001, (x.t1 - x.t0) / 1000);
+			const into =
+				next &&
+				next.move === "walk" &&
+				next.from.x === l.to.x &&
+				next.from.y === l.to.y
+					? next
+					: l;
+			return paced(l, 0, paceOf(into));
+		});
+	}
+};
+
 const intoStance = (
 	from: Pt,
 	to: Pt,
@@ -417,7 +528,9 @@ const intoStance = (
 	const s = Math.min(SET_IN_FT, d / 3, k > 0 ? (d * (SET_IN_MOST - 1)) / k : 0);
 	const main = t1 - t0 - (s / SET_IN_FPS) * 1000;
 	if (fps < SET_IN_FPS * 1.5 || s < SET_IN_LEAST || main <= 0) {
-		return [{ t0, t1, from, to, move }];
+		const l: Leg = { t0, t1, from, to, move };
+		walkingUp.add(l);
+		return [l];
 	}
 	const u = (d - s) / d;
 	const mid = {
@@ -427,16 +540,15 @@ const intoStance = (
 	// (The rest of it in a gait as quick as it goes: no jog at a run's
 	// pace.)
 	const pace = (d - s) / (main / 1000);
-	const up =
+	const gait =
 		move === "walk" && pace >= 6.5
 			? "jog"
 			: move === "jog" && pace >= 12.5
 				? "run"
 				: move;
-	return [
-		{ t0, t1: t0 + main, from, to: mid, move: up },
-		{ t0: t0 + main, t1, from: mid, to, move: slow },
-	];
+	const l: Leg = { t0, t1: t0 + main, from, to: mid, move: gait };
+	walkingUp.add(l);
+	return [l, { t0: t0 + main, t1, from: mid, to, move: slow }];
 };
 // Out of a ring to their spots, all at much the same time and pace: each
 // man in the place round it - swapped about - that, squared, has the least
@@ -1160,6 +1272,7 @@ class Director {
 		if (kind === "pass" || kind === "run") {
 			this.defenseSet(parts, offense, dir, losX, ballY, snap, i0);
 		}
+		paceWalkUps(parts);
 
 		// The ball: spotted (on its tee, for a kickoff), then under the
 		// center's hand once he is over it.
@@ -2191,7 +2304,8 @@ class Director {
 				const jog = d > WALK_ONLY;
 				const late = isOffense ? 0 : DEF_BREAK_LATE;
 				const leave = t0 + BREAK_AT + BREAK_SPREAD * r() + late;
-				const arrive = leave + (d / (jog ? JOG_FPS : WALK_FPS)) * 1000;
+				const fps = jog ? JOG_FPS : WALK_FPS;
+				const arrive = leave + (d / fps) * 1000 + goingMs(fps);
 				const look = Math.atan2(center.y - from.y, center.x - from.x);
 				// (In the huddle: the clap, all at once, and out of it.)
 				const clap = t0 + CLAP_AT + late;
@@ -2281,7 +2395,7 @@ class Director {
 				HURRY_FPS[0] + r() * HURRY_FPS[1],
 				Math.max(SET_IN_FPS, Math.sqrt(HURRY_EASE * d) / 2),
 			);
-			const arrive = leave + (d / fps) * 1000;
+			const arrive = leave + (d / fps) * 1000 + goingMs(fps);
 			parts.push({
 				pid: p.pid,
 				team: p.team,
@@ -2562,13 +2676,22 @@ class Director {
 			const legs = slow
 				? intoStance(st.to, to, t, t1, move, slow)
 				: [{ t0: t, t1, from: st.to, to, move }];
-			p.legs.push(...legs.map((l) => ({ ...st, ...l })), {
-				...st,
-				t0: t1,
-				t1,
-				from: to,
-				to,
-			});
+			p.legs.push(
+				...legs.map((l) => {
+					const c = { ...st, ...l };
+					if (walkingUp.has(l)) {
+						walkingUp.add(c);
+					}
+					return c;
+				}),
+				{
+					...st,
+					t0: t1,
+					t1,
+					from: to,
+					to,
+				},
+			);
 		};
 		const lbs = defense
 			.filter((p) => LBS.has(p.role))

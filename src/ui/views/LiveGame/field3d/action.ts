@@ -221,6 +221,21 @@ const PLANT_TURN = 1.75;
 // (Planted on past the turn, no time for it before: if it leaves him to go
 // on no more than this many times as quick as he would have.)
 const PLANT_ON = 1.35;
+// Turned on the move, BEND_PACE ft/s or quicker, more than BEND_LEAST
+// radians round and no more than PLANT_TURN: bent round it in an arc, at no
+// more than BEND_LAT ft/s/s across him at the pace he takes it at - in off
+// no more than BEND_IN of the stretch he is on, out over no more than
+// BEND_OUT of the way on, BEND_STEP radians to a leg (not at all, for less
+// than BEND_LEAST_FT of it).
+const BEND_PACE = 10;
+const BEND_LEAST = 0.3;
+const BEND_LAT = 50;
+const BEND_IN = 0.8;
+const BEND_OUT = 0.8;
+const BEND_STEP = 0.2;
+const BEND_LEAST_FT = 0.5;
+// (Slowed into it, if he cannot take it at as much as this of his pace.)
+const BEND_SLOW = 0.9;
 // One stretch of his, pulling up over it (see slowInto): legs no further
 // round from each other than this (radians), none quicker than the next by
 // more than this (ft/s), over no longer than this (ms) - and still there
@@ -648,6 +663,98 @@ class Actor {
 			return this.last === before ? undefined : legPace(this.last);
 		}
 		return round < 1 ? ve : undefined;
+	}
+
+	// Turning on the move toward `to`, on at `w` ft/s (see BEND_PACE):
+	// bent round into it in an arc as wide as he takes at the pace he comes
+	// into it at, off the last of the stretch he is on (see stretchFrom) -
+	// not turned in a stride at full tilt - slowed into it, if it is too
+	// tight to take at that pace. (Whether he was.)
+	private bendInto(to: Pt, w: number): boolean {
+		const legs = this.part.legs;
+		const l = this.last;
+		const v = legPace(l);
+		const dOut = dist(l.to, to);
+		if (
+			!RAMPS.has(l.move) ||
+			l.arms ||
+			l.turn ||
+			l.span ||
+			v < BEND_PACE ||
+			w < BEND_PACE ||
+			dOut <= 0
+		) {
+			return false;
+		}
+		const turn = angleAt(l.from, l.to, to);
+		if (!(turn > BEND_LEAST && turn <= PLANT_TURN)) {
+			return false;
+		}
+		const j = this.stretchFrom();
+		const back = Math.min(
+			((v * v) / BEND_LAT) * Math.tan(turn / 2),
+			dist(legs[j]!.from, l.to) * BEND_IN,
+			dOut * BEND_OUT,
+		);
+		if (back < BEND_LEAST_FT) {
+			return false;
+		}
+		// (Off the stretch that far short of the turn.)
+		let k = legs.length - 1;
+		let left = back;
+		while (k > j && dist(legs[k]!.from, legs[k]!.to) <= left) {
+			left -= dist(legs[k]!.from, legs[k]!.to);
+			k--;
+		}
+		const lk = legs[k]!;
+		const f = 1 - left / Math.max(dist(lk.from, lk.to), 1e-6);
+		const corner = l.to;
+		// (Facing the way he went, round with it - or, turned some other way
+		// to it, still that way.)
+		const { yaw, ...was } = l;
+		const way = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+		const keep =
+			yaw !== undefined &&
+			Math.abs(Math.atan2(Math.sin(yaw - way), Math.cos(yaw - way))) >
+				BEND_LEAST;
+		legs.splice(k + 1);
+		lk.to = {
+			x: lk.from.x + (lk.to.x - lk.from.x) * f,
+			y: lk.from.y + (lk.to.y - lk.from.y) * f,
+		};
+		lk.t1 = lk.t0 + (lk.t1 - lk.t0) * f;
+		// (Round from there, the way in to the way on.)
+		const start = lk.to;
+		const tIn = Math.max(dist(start, corner), 1e-6);
+		const u = { x: (corner.x - start.x) / tIn, y: (corner.y - start.y) / tIn };
+		const o = { x: (to.x - corner.x) / dOut, y: (to.y - corner.y) / dOut };
+		const round = Math.acos(clamp(u.x * o.x + u.y * o.y, -1, 1));
+		const R = tIn / Math.tan(round / 2);
+		// (Too tight a turn to take at his pace: slowed into it, off the
+		// stretch he is on, to one he can take it at.)
+		let pace = v;
+		const most = Math.sqrt(BEND_LAT * R);
+		if (most < v * BEND_SLOW) {
+			pace = this.slowInto(most / legPace(lk), CUT_ACCEL) ?? v;
+		}
+		const s = Math.sign(u.x * o.y - u.y * o.x) || 1;
+		const c = { x: start.x - s * u.y * R, y: start.y + s * u.x * R };
+		const r0 = Math.atan2(start.y - c.y, start.x - c.x);
+		const n = Math.max(2, Math.ceil(round / BEND_STEP));
+		const dt = ((R * round) / n / pace) * 1000;
+		for (let i = 1; i <= n; i++) {
+			const q = r0 + (s * round * i) / n;
+			const at = this.last;
+			this.push({
+				...was,
+				...(keep ? { yaw } : {}),
+				t0: at.t1,
+				t1: at.t1 + dt,
+				from: at.to,
+				to: { x: c.x + Math.cos(q) * R, y: c.y + Math.sin(q) * R },
+			});
+		}
+		return true;
 	}
 
 	// (Planted on past the end of the leg he is on, down to `down` ft/s
@@ -1078,11 +1185,17 @@ class Actor {
 		const far = dist(l.from, l.to);
 		const cos = (l.to.x - l.from.x) / far;
 		const sin = (l.to.y - l.from.y) / far;
+		const want = down ?? v * Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2);
 		const ve = plantedTo(
 			v,
-			down ?? v * Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2),
+			want,
 			(to.x - l.to.x) * cos + (to.y - l.to.y) * sin,
 		);
+		// (No room to plant for it short of where he goes: bent round into
+		// it, if he can be.)
+		if (ve - want > (v - want) / 2 && this.bendInto(to, v)) {
+			return;
+		}
 		if (!(ve < v)) {
 			return;
 		}
@@ -1264,6 +1377,9 @@ class Actor {
 	// see RAMP_ACCEL - there the later for it.)
 	run(to: Pt, fps: number, move?: Move, yaw?: number): number {
 		const p = onField(to, this.roam);
+		if (move === undefined || RAMPS.has(move)) {
+			this.bendInto(p, fps);
+		}
 		const from = this.at;
 		const far = dist(from, p);
 		// (Out of his stance: up from nothing, at RELEASE_ACCEL.)
@@ -1324,6 +1440,12 @@ class Actor {
 	// can (see rampInto).
 	chase(to: Pt, t1: number, fps: number, move?: Move, yaw?: number) {
 		const p = onField(to, this.roam);
+		if (move === undefined || RAMPS.has(move)) {
+			this.bendInto(
+				p,
+				Math.min(fps, dist(this.at, p) / Math.max(0.001, (t1 - this.t) / 1000)),
+			);
+		}
 		const from = this.at;
 		const far = dist(from, p);
 		const T = Math.max(0, t1 - this.t) / 1000;
@@ -1375,6 +1497,12 @@ class Actor {
 		if (t1 - this.t < STOP_STEP_MS) {
 			this.hold(t1);
 			return;
+		}
+		if (move === undefined || RAMPS.has(move)) {
+			this.bendInto(
+				p,
+				Math.min(fps, dist(this.at, p) / Math.max(0.001, (t1 - this.t) / 1000)),
+			);
 		}
 		const from = this.at;
 		const far = dist(from, p);
@@ -1740,8 +1868,12 @@ const EDGE_ROUND = 3;
 const EDGE_IN = 9;
 const EDGE_WIDE = 4.5;
 const EDGE_STAGGER = 2.5;
-// (Bent round the end of the wall over this far either side of it, feet.)
-const EDGE_BEND = 2.5;
+// (Bent round the end of the wall in an arc no tighter than he takes at the
+// pace he gets there at, at EDGE_LAT ft/s/s across him - out along no more
+// than EDGE_BEND_MOST of either side of it - in so many steps.)
+const EDGE_LAT = 50;
+const EDGE_BEND_MOST = 0.8;
+const EDGE_ARC_STEPS = 5;
 // (His leap for it carrying him on this long at the pace he came in at,
 // seconds, and no further than this, feet.)
 const SWAT_ON = 0.2;
@@ -2193,6 +2325,8 @@ const HAND_STEP_MS = 90;
 const EDGE_OUT = 1.7;
 const EDGE_ON = 1.6;
 const EDGE_PAST = 1.8;
+// (Up the arc onto him bent through so many points.)
+const EDGE_ARC_PTS = 6;
 // Off the ball into the man across from him: up to speed at GET_OFF_ACCEL
 // ft/s/s, no quicker than RUSH_HIT_PACE of his top speed by the time he
 // gets there - not at full tilt from his first step.
@@ -2609,6 +2743,42 @@ class Action {
 	}
 	toward(from: Pt, to: Pt) {
 		return Math.atan2(to.y - from.y, to.x - from.x);
+	}
+	// From `from` round `corner` toward `to`: the points of an arc bent as
+	// wide as he takes it at the pace he gets there at (off from still at
+	// `a`, no quicker than `top`), the corner itself if there is no turn.
+	bend(from: Pt, corner: Pt, to: Pt, a: number, top: number): Pt[] {
+		const dIn = dist(from, corner);
+		const dOut = dist(corner, to);
+		if (dIn < 1e-6 || dOut < 1e-6) {
+			return [corner];
+		}
+		const u = { x: (corner.x - from.x) / dIn, y: (corner.y - from.y) / dIn };
+		const v = { x: (to.x - corner.x) / dOut, y: (to.y - corner.y) / dOut };
+		const turn = Math.acos(clamp(u.x * v.x + u.y * v.y, -1, 1));
+		if (turn < 0.05) {
+			return [corner];
+		}
+		const pace = Math.min(top, Math.sqrt(2 * a * dIn));
+		const tan = Math.tan(turn / 2);
+		const t = Math.min(
+			((pace * pace) / EDGE_LAT) * tan,
+			dIn * EDGE_BEND_MOST,
+			dOut * EDGE_BEND_MOST,
+		);
+		const R = t / tan;
+		const s = Math.sign(u.x * v.y - u.y * v.x) || 1;
+		const c = {
+			x: corner.x - u.x * t - s * u.y * R,
+			y: corner.y - u.y * t + s * u.x * R,
+		};
+		const r0 = Math.atan2(corner.y - u.y * t - c.y, corner.x - u.x * t - c.x);
+		const pts: Pt[] = [];
+		for (let i = 0; i <= EDGE_ARC_STEPS; i++) {
+			const q = r0 + (s * turn * i) / EDGE_ARC_STEPS;
+			pts.push({ x: c.x + Math.cos(q) * R, y: c.y + Math.sin(q) * R });
+		}
+		return pts;
 	}
 
 	// What the sim says: the play's events of a kind, its stats.
@@ -6375,27 +6545,21 @@ class Action {
 				hitT = Math.max(least, m.t + offMs(a + dist(arc, on(hitT, 0))));
 			}
 			hitT = Math.min(hitT, Math.max(least, end - HAND_MS));
-			if (edge) {
-				const way = a + dist(arc, on(hitT, 0));
-				m.getOff(
-					arc,
-					m.t + ((hitT - m.t) * offMs(a)) / Math.max(1, offMs(way)),
-					0,
-					GET_OFF_ACCEL,
-					"run",
-					GET_OFF_SQUARE_MS,
-				);
-			}
 			const hitLat = (r() - 0.5) * 0.6;
 			const hit = on(hitT, hitLat);
-			const vHit = m.getOff(
-				hit,
-				hitT,
-				edge ? paceOn(m.last, m.at, hit) : 0,
-				GET_OFF_ACCEL,
-				"run",
-				edge ? 0 : GET_OFF_SQUARE_MS,
-			);
+			// (Bent up round it onto him, not off one way and turned the
+			// other.)
+			const vHit = edge
+				? this.getOffAlong(
+						m,
+						this.curve(m.at, arc, hit, EDGE_ARC_PTS),
+						hitT,
+						GET_OFF_ACCEL,
+						m.top * RUSH_HIT_PACE,
+						"run",
+						GET_OFF_SQUARE_MS,
+					)
+				: m.getOff(hit, hitT, 0, GET_OFF_ACCEL, "run", GET_OFF_SQUARE_MS);
 			const per = HAND_MS * (0.8 + r() * 0.5);
 			const amp = edge ? 0 : HAND_FT * (0.5 + r());
 			let way = r() < 0.5 ? 1 : -1;
@@ -7540,6 +7704,71 @@ class Action {
 		}
 		t = Math.min(t, Math.max(by, until - FIRE_HELD_MS));
 		m.getOff(at(t), t, 0, GET_OFF_ACCEL, "run", GET_OFF_SQUARE_MS);
+	}
+
+	// Off from still along `path` (on from where he is), up to speed at `a`
+	// - no quicker than `top` - and on at it: at the end of it by t1, or as
+	// soon after as he can be; still facing the way he was over the first
+	// `square` ms. (The pace he ends at.)
+	getOffAlong(
+		m: Actor,
+		path: Pt[],
+		t1: number,
+		a: number,
+		top: number,
+		move: Move,
+		square = 0,
+	): number {
+		const go = m.t;
+		const gone: number[] = [];
+		let all = 0;
+		let was = m.at;
+		for (const p of path) {
+			all += dist(was, p);
+			gone.push(all);
+			was = p;
+		}
+		const up = (top * top) / (2 * a);
+		const soonest =
+			all <= up ? Math.sqrt((2 * all) / a) : top / a + (all - up) / top;
+		const T = Math.max(soonest, (t1 - go) / 1000);
+		const vc = a * (T - Math.sqrt(Math.max(0, T * T - (2 * all) / a)));
+		const upTo = (vc * vc) / (2 * a);
+		let v = 0;
+		path.forEach((p, k) => {
+			const d = gone[k]!;
+			const at =
+				k === path.length - 1
+					? T
+					: d <= upTo
+						? Math.sqrt((2 * d) / a)
+						: vc / a + (d - upTo) / vc;
+			v = m.getOff(
+				p,
+				go + at * 1000,
+				v,
+				a,
+				move,
+				Math.max(0, go + square - m.t),
+			);
+		});
+		return v;
+	}
+	// From `from` to `to` bent toward `via` on the way (a curve pulled
+	// toward it, not through it): the points along it, so many.
+	curve(from: Pt, via: Pt, to: Pt, n: number): Pt[] {
+		const pts: Pt[] = [];
+		for (let k = 1; k <= n; k++) {
+			const s = k / n;
+			const a = (1 - s) * (1 - s);
+			const b = 2 * (1 - s) * s;
+			const c = s * s;
+			pts.push({
+				x: a * from.x + b * via.x + c * to.x,
+				y: a * from.y + b * via.y + c * to.y,
+			});
+		}
+		return pts;
 	}
 
 	jostle(men: Actor[], t0: number, t1: number) {
@@ -8980,51 +9209,16 @@ class Action {
 				// no quicker than he goes: there late, if need be, and laid out
 				// for it after it has gone. Bent round the corner, not turned
 				// square at full tilt.)
-				const go = m.t;
-				const cut = Math.min(
-					EDGE_BEND,
-					dist(m.at, round) / 3,
-					dist(round, block) / 3,
-				);
-				const toward = (p: Pt, q: Pt, d: number) => {
-					const D = Math.max(dist(p, q), 1e-6);
-					return {
-						x: p.x + ((q.x - p.x) * d) / D,
-						y: p.y + ((q.y - p.y) * d) / D,
-					};
-				};
-				const path = [
-					toward(round, m.at, cut),
-					toward(round, block, cut),
-					block,
-				];
-				const gone: number[] = [];
-				let all = 0;
-				let was = m.at;
-				for (const p of path) {
-					all += dist(was, p);
-					gone.push(all);
-					was = p;
-				}
 				const A = GET_OFF_ACCEL;
 				const top = m.top * FLAT_OUT;
-				const up = (top * top) / (2 * A);
-				const soonest =
-					all <= up ? Math.sqrt((2 * all) / A) : top / A + (all - up) / top;
-				const T = Math.max(soonest, (kickT - 150 - go) / 1000);
-				const vc = A * (T - Math.sqrt(Math.max(0, T * T - (2 * all) / A)));
-				const upTo = (vc * vc) / (2 * A);
-				let v = 0;
-				path.forEach((p, k) => {
-					const d = gone[k]!;
-					const at =
-						k === path.length - 1
-							? T
-							: d <= upTo
-								? Math.sqrt((2 * d) / A)
-								: vc / A + (d - upTo) / vc;
-					v = m.getOff(p, go + at * 1000, v, A, "sprint");
-				});
+				this.getOffAlong(
+					m,
+					[...this.bend(m.at, round, block, A, top), block],
+					kickT - 150,
+					A,
+					top,
+					"sprint",
+				);
 				// (Laid out for it off his last stride: carried on a little
 				// way with it, not stopped dead.)
 				const l = m.last;
