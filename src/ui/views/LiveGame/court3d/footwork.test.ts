@@ -1,7 +1,15 @@
 import { assert, describe, test } from "vitest";
 import { bodyPoint, evalPlayer, fastAt, poseOf, withBody } from "./evaluate.ts";
 import { type AnimName, bodyOf, legPhases, skeleton } from "./poses.ts";
+import type { CourtTimeline } from "./director.ts";
 import { compile } from "./testGame.ts";
+
+// How quick he goes at t (feet a second), over the frame before.
+const speedOf = (tl: CourtTimeline, pid: number, t: number) => {
+	const a = evalPlayer(tl, pid, t - 50);
+	const b = evalPlayer(tl, pid, t);
+	return Math.hypot(b.x - a.x, b.y - a.y) / 0.05;
+};
 
 describe("footwork", () => {
 	// Shuffling - straight across, or on a slant, partly ahead or back as
@@ -58,19 +66,27 @@ describe("footwork", () => {
 	// Setting off from where he stood, both his feet were swept round under
 	// him over the floor - from his stance, out wide, to where his strides
 	// have them - rather than stepping off, one and then the other.
+	// (And the same out of strides all but stopped into another way of
+	// going: a jog pulled up and then a backpedal.)
 	test("setting off from where he stands, his feet step off - not both slid over the floor", () => {
 		const body = bodyOf();
 		const STEP = 16;
-		const STANDS = new Set<AnimName>(["ready", "stance"]);
-		const GOES = new Set<AnimName>([
-			"jog",
-			"run",
-			"sprint",
-			"walk",
-			"back",
-			"shuffle",
-			"sideStep",
+		const FORWARD = new Set<AnimName>(["jog", "run", "sprint", "walk"]);
+		const SIDEWAYS = new Set<AnimName>(["back", "shuffle", "sideStep"]);
+		const STANDS = new Set<AnimName>([
+			"ready",
+			"stance",
+			...FORWARD,
+			...SIDEWAYS,
 		]);
+		const GOES = new Set<AnimName>([...FORWARD, ...SIDEWAYS]);
+		// (A change of way of going counted only from all but a standstill.)
+		const offFrom = (from: AnimName, to: AnimName, v: number) =>
+			from === "ready" ||
+			from === "stance" ||
+			(v < 2 &&
+				((FORWARD.has(from) && SIDEWAYS.has(to)) ||
+					(SIDEWAYS.has(from) && FORWARD.has(to))));
 		let starts = 0;
 		let slid = 0;
 		const { tl } = compile("a", 120);
@@ -85,7 +101,9 @@ describe("footwork", () => {
 					f === undefined ||
 					f.w <= 0.02 ||
 					!STANDS.has(f.anim) ||
-					!GOES.has(st.anim)
+					!GOES.has(st.anim) ||
+					(prev === undefined &&
+						!offFrom(f.anim, st.anim, speedOf(tl, tr.pid, t)))
 				) {
 					prev = undefined;
 					continue;
@@ -109,7 +127,7 @@ describe("footwork", () => {
 			}
 		}
 		assert.isAbove(starts, 50);
-		assert.isBelow(slid / starts, 0.045, `${slid} ft over ${starts} starts`);
+		assert.isBelow(slid / starts, 0.04, `${slid} ft over ${starts} starts`);
 	}, 120_000);
 
 	test("a shooter drifting along the arc side-steps, a foot planted", () => {

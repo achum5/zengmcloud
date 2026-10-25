@@ -386,8 +386,9 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   0.12 feet a start down to 0.02). Still to do: a few of an official's
   turns as one signal follows another; backpedalling slowly to a stop,
   his hips coming round slide both feet round under him; going straight
-  from running into a shuffle or a backpedal, or back, both feet slide
-  through the change (stepping them over there flung his legs instead).)
+  from running into a shuffle or a backpedal, or back, at speed, both feet
+  slide through the change (stepped over there, his legs are flung; from
+  all but a standstill they now step).)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like

@@ -207,6 +207,9 @@ export type Blend = {
 	// Changed again while still easing out of the move before: that one,
 	// and how much of it was still in him then.
 	from?: Blend;
+	// Stepped out of it, a foot at a time, rather than eased (see
+	// startsOff).
+	step?: true;
 };
 export type ArmPose = {
 	hand: Hand;
@@ -3025,8 +3028,14 @@ const blendInto = (
 		const u = Math.min(1, (t - hi) / ms);
 		return 1 - u * u * (3 - 2 * u);
 	};
+	// (Out of strides that had all but stopped into another way of
+	// going - a jog pulled up and then a backpedal, say - he steps off
+	// into it as from standing.)
+	const stepOff =
+		startsOff(before.anim, anim) ||
+		(crossesOver(before.anim, anim) && paceAt(tr, lo) < STEP_OFF_PACE);
 	const w = ease(
-		startsOff(before.anim, anim)
+		stepOff
 			? START_MS
 			: !slowOver(before.anim, anim)
 				? BLEND_MS
@@ -3090,6 +3099,7 @@ const blendInto = (
 	return {
 		anim: before.anim,
 		phase: before.phase,
+		...(stepOff ? { step: true as const } : {}),
 		dribble: before.dribble,
 		dribbleHand: before.dribbleHand,
 		...(before.dribbleFrom ? { dribbleFrom: before.dribbleFrom } : {}),
@@ -4740,7 +4750,7 @@ const blendPose = (f: Blend): Pose => {
 	// (Itself still settling out of a run, his feet stepping into it, as he
 	// went on into something else: from there - as he was - not from the two
 	// eased together, both feet slid over to it in a frame.)
-	return g.w > 0 && g.w < 1 && stepsOver(g.anim, f.anim)
+	return g.w > 0 && g.w < 1 && (g.step === true || stepsOver(g.anim, f.anim))
 		? settleStep(eased, own, blendPose(g), 1 - g.w, standRef(f))
 		: eased;
 };
@@ -4807,6 +4817,15 @@ const STOOD = new Set<AnimName>(["easy", "hips", "crouch"]);
 // quick as he goes, though, not a settle's slow step.)
 const startsOff = (from: AnimName, to: AnimName) =>
 	PIVOTS.has(from) && SETTLE_FROM.has(to);
+// (From running into shuffling, sliding or backpedalling, or back - stepped
+// off into only from all but a standstill, under STEP_OFF_PACE feet a
+// second: going, both feet stepped over in a fifth of a second fling his
+// legs.)
+const SIDEWAYS = new Set<AnimName>(["back", "shuffle", "slide", "sideStep"]);
+const crossesOver = (from: AnimName, to: AnimName) =>
+	(FORWARD.has(from) && SIDEWAYS.has(to)) ||
+	(SIDEWAYS.has(from) && FORWARD.has(to));
+const STEP_OFF_PACE = 3;
 const stepsOver = (from: AnimName, to: AnimName) =>
 	(PIVOTS.has(to) && SETTLE_FROM.has(from)) ||
 	(FOOTWORK.has(from) && FOOTWORK.has(to)) ||
@@ -4965,7 +4984,10 @@ export const poseOf = (st: PlayerState): Pose => {
 	const eased = f && (f.w > 0 || (f.arms ?? 0) > 0) ? blendFrom(q, f) : q;
 	const fw = f && f.w > 0 ? f.w : 0;
 	const was =
-		fw > 0 && fw < 1 && st.z <= SETTLE_AIR && stepsOver(f!.anim, st.anim)
+		fw > 0 &&
+		fw < 1 &&
+		st.z <= SETTLE_AIR &&
+		(f!.step === true || stepsOver(f!.anim, st.anim))
 			? blendPose(f!)
 			: undefined;
 	const steps = was ? settleLegs(q, was, 1 - fw, standRef(st)) : undefined;
