@@ -1049,6 +1049,10 @@ const REACH_FROM = 6.5;
 const REACH_MOST = 1.45;
 const reachOf = (v: number) =>
 	Math.min(REACH_MOST, Math.max(1, v / REACH_FROM));
+// (And goes over to a new spread no quicker than this - so many full
+// strides' worth a second: going on into a run at another pace, his feet
+// spread wider or closer over a step, not in a frame.)
+const REACH_RATE = 2;
 type Stepping = {
 	s0: number;
 	s1: number;
@@ -1171,7 +1175,8 @@ const steppingOf = (
 			// (Through the push, the foot he pushes off stays where it is as
 			// his feet spread further, and the other through the close - so
 			// his strides go round that much slower or quicker for it.)
-			const reach = reachOf(v);
+			const most = (REACH_RATE * dt) / 1000;
+			const reach = R.len + Math.max(-most, Math.min(most, reachOf(v) - R.len));
 			const f = frac(ph);
 			const spread = f < 0.5 ? 2 * f : 2 - 2 * f;
 			const grew = (reach - R.len) * (f < 0.5 ? 1 : -1);
