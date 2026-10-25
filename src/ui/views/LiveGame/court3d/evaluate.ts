@@ -4980,6 +4980,154 @@ export const evalBall = (
 		? { x: 47, y: 25, z: 0 }
 		: ballOn(tl, ballIndexAt(tl, t), t, bodyFor, 0);
 
+// A PASS GOES BY A MAN IN THE WAY, NOT THROUGH HIM. Thrown past a man
+// between the passer and his man - or out of bounds past one, or dropping
+// out of the net past a man under it - it bows out to the side round his
+// head or his body, just enough to miss him: past his ear, past his
+// shoulder - most at the middle of its flight, and not at all leaving the
+// passer's hands or getting to the other man's. (Not a shot, on its way
+// into a play at the rim.) Worked out once a pass, as it was thrown (feet,
+// the most it bows out; nothing, for a ball nobody is in the way of - or so
+// far in the way it would have to swing round him).
+const PASS_MARGIN = 0.12;
+const TORSO_R = 0.55;
+const BOW_MOST = 2.2;
+const passedBys = new WeakMap<object, Pt3 | null>();
+const passedBy = (
+	tl: CourtTimeline,
+	seg: Extract<CourtTimeline["ball"][number], { kind: "fly" }>,
+	a: Pt3,
+	b: Pt3,
+	bodyFor: (pid: number) => Body,
+): Pt3 | undefined => {
+	const had = passedBys.get(seg);
+	if (had !== undefined) {
+		return had ?? undefined;
+	}
+	// (Not round the men throwing it and catching it - nor one whose hands
+	// or head meet it at either end: a steal, a tip, a ball off him.)
+	const ends = new Set<number>();
+	for (const [e, at] of [
+		[seg.from, seg.t0],
+		[seg.to, seg.t1],
+	] as const) {
+		if ("pid" in e) {
+			ends.add(e.pid);
+			continue;
+		}
+		for (const tr of tl.tracks.values()) {
+			const st = evalPlayer(tl, tr.pid, at);
+			if (!st.shown || Math.hypot(st.x - e.x, st.y - e.y) > 4) {
+				continue;
+			}
+			const body = bodyFor(tr.pid);
+			const me = withBody(st, body);
+			const sk = skeleton(body, poseOf(me));
+			if (
+				[sk.head, sk.armR.end, sk.armL.end].some((v) => {
+					const w = bodyPoint(me, v);
+					return Math.hypot(w.x - e.x, w.y - e.y, w.z - e.z) < 2;
+				})
+			) {
+				ends.add(tr.pid);
+			}
+		}
+	}
+	const T = Math.max(0, seg.t1 - seg.t0) / 1000;
+	const vz = T > 0 ? (b.z - a.z) / T + 0.5 * GRAVITY * T : 0;
+	const along = Math.hypot(b.x - a.x, b.y - a.y);
+	// (Out to his side, across the way it goes.)
+	const side =
+		along > 1e-6
+			? { x: -(b.y - a.y) / along, y: (b.x - a.x) / along }
+			: { x: 0, y: 1 };
+	// Each moment it would touch him: how far into its flight, how far it is
+	// from him and needs to be, and which way he is from it.
+	const close: { k: number; r: Pt3; d: number; need: number }[] = [];
+	for (let u = 0.1; u < 0.95; u += 0.05) {
+		const t = seg.t0 + (seg.t1 - seg.t0) * u;
+		const tau = u * T;
+		const p = {
+			x: a.x + (b.x - a.x) * u,
+			y: a.y + (b.y - a.y) * u,
+			z: a.z + vz * tau - 0.5 * GRAVITY * tau * tau,
+		};
+		for (const tr of tl.tracks.values()) {
+			if (ends.has(tr.pid)) {
+				continue;
+			}
+			const st = evalPlayer(tl, tr.pid, t);
+			if (!st.shown || Math.hypot(st.x - p.x, st.y - p.y) > 3) {
+				continue;
+			}
+			const body = bodyFor(tr.pid);
+			const me = withBody(st, body);
+			const sk = skeleton(body, poseOf(me));
+			const head = bodyPoint(me, sk.head);
+			const hip = bodyPoint(me, sk.pelvis);
+			const chest = bodyPoint(me, sk.chest);
+			// The nearest of him to it: his head, or the line up his body.
+			const k = clamp01(
+				((p.x - hip.x) * (chest.x - hip.x) +
+					(p.y - hip.y) * (chest.y - hip.y) +
+					(p.z - hip.z) * (chest.z - hip.z)) /
+					Math.max(
+						1e-6,
+						(chest.x - hip.x) ** 2 +
+							(chest.y - hip.y) ** 2 +
+							(chest.z - hip.z) ** 2,
+					),
+			);
+			const spine = {
+				x: hip.x + (chest.x - hip.x) * k,
+				y: hip.y + (chest.y - hip.y) * k,
+				z: hip.z + (chest.z - hip.z) * k,
+			};
+			for (const [c, r] of [
+				[head, body.headR],
+				[spine, TORSO_R],
+			] as const) {
+				const need = r + BALL_R + PASS_MARGIN;
+				const d = Math.hypot(p.x - c.x, p.y - c.y, p.z - c.z);
+				if (d < need) {
+					close.push({
+						k: 4 * u * (1 - u),
+						r: { x: p.x - c.x, y: p.y - c.y, z: p.z - c.z },
+						d,
+						need,
+					});
+				}
+			}
+		}
+	}
+	// Out to the side it already is of him where it comes closest, across
+	// its flight - never up or down: in the air it falls as it would - as far
+	// out that way as takes it clear of him every moment it would touch him.
+	const worst = close.reduce<(typeof close)[number] | undefined>(
+		(w, c) => (!w || c.need - c.d > w.need - w.d ? c : w),
+		undefined,
+	);
+	let out: Pt3 | undefined;
+	if (worst) {
+		const way = worst.r.x * side.x + worst.r.y * side.y < 0 ? -1 : 1;
+		const dir = { x: side.x * way, y: side.y * way, z: 0 };
+		const len = Math.max(
+			...close.map((c) => {
+				const rd = c.r.x * dir.x + c.r.y * dir.y + c.r.z * dir.z;
+				return (
+					(Math.sqrt(Math.max(0, rd * rd - c.d * c.d + c.need * c.need)) - rd) /
+					c.k
+				);
+			}),
+		);
+		if (len <= BOW_MOST) {
+			out = { x: dir.x * len, y: dir.y * len, z: dir.z * len };
+		}
+	}
+	passedBys.set(seg, out ?? null);
+	return out;
+};
+
 // Where the ball is at t, by the i-th piece of its path.
 const ballOn = (
 	tl: CourtTimeline,
@@ -5189,6 +5337,12 @@ const ballOn = (
 				: resolve(seg.from, seg.t0);
 		const b = resolve(seg.to, seg.t1);
 		const u = clamp01((t - seg.t0) / (seg.t1 - seg.t0));
+		// (By a man in the way, not through him - see passedBy.)
+		const by =
+			tl.ball[i + 1]?.kind === "path"
+				? undefined
+				: passedBy(tl, seg, a, b, bodyFor);
+		const bow = by ? 4 * u * (1 - u) : 0;
 		const T = Math.max(0, seg.t1 - seg.t0) / 1000;
 		const tau = u * T;
 		const vz = T > 0 ? (b.z - a.z) / T + 0.5 * GRAVITY * T : 0;
@@ -5202,13 +5356,22 @@ const ballOn = (
 				: 0;
 		const w = bend === 0 || next?.kind !== "path" ? undefined : next.v0;
 		return {
-			x: a.x + (b.x - a.x) * u + (w ? (w.x - (b.x - a.x) / T) * bend : 0),
-			y: a.y + (b.y - a.y) * u + (w ? (w.y - (b.y - a.y) / T) * bend : 0),
+			x:
+				a.x +
+				(b.x - a.x) * u +
+				(w ? (w.x - (b.x - a.x) / T) * bend : 0) +
+				(by ? by.x * bow : 0),
+			y:
+				a.y +
+				(b.y - a.y) * u +
+				(w ? (w.y - (b.y - a.y) / T) * bend : 0) +
+				(by ? by.y * bow : 0),
 			z:
 				a.z +
 				vz * tau -
 				0.5 * GRAVITY * tau * tau +
-				(w ? (w.z - (vz - GRAVITY * T)) * bend : 0),
+				(w ? (w.z - (vz - GRAVITY * T)) * bend : 0) +
+				(by ? by.z * bow : 0),
 			// (Caught, it has turned whole times over, so it comes into his
 			// hands as it left the passer's; into a play at the rim, as the play
 			// takes it on.)

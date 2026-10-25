@@ -354,7 +354,11 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   frame or two as a defender's short runs staying with his man hand on to
   each other, or snapped upright as one move gives way to the next: heads
   thrown more than a foot in a frame 957 times in fifteen minutes of a
-  test game, down to 1.)
+  test game, down to 1. A ball in the air goes by a man in the way, not
+  through him - a pass past a man between, a ball thrown away past one, a
+  make dropping out of the net past a man under it bows out to the side
+  round his head or body, most at the middle of its flight: balls through
+  a man 8 a game down to 0.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like

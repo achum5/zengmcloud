@@ -1,7 +1,14 @@
 import { assert, describe, test } from "vitest";
-import { evalBall } from "./evaluate.ts";
+import {
+	bodyPoint,
+	evalBall,
+	evalPlayer,
+	fastAt,
+	poseOf,
+	withBody,
+} from "./evaluate.ts";
 import { ballTurn, channelDistance, HELD } from "./gameBall.ts";
-import { bodyOf } from "./poses.ts";
+import { bodyOf, skeleton } from "./poses.ts";
 import { compile } from "./testGame.ts";
 
 const body = bodyOf();
@@ -96,5 +103,81 @@ describe("the game ball", () => {
 		}
 		assert.isAbove(passes, 20);
 		assert.isAbove(dribbles, 20);
+	}, 300_000);
+
+	// Thrown past a man in the way - between the passer and his man, out of
+	// bounds past him, dropping out of the net past a man under it - it goes
+	// by his ear or past his shoulder, never through his head or his body.
+	// (Before: 8 in a game.)
+	test("in the air, it goes by a man in the way, not through him", () => {
+		const { tl } = compile("a", 140);
+		let flights = 0;
+		const through: string[] = [];
+		for (const seg of tl.ball) {
+			if (
+				seg.kind !== "fly" ||
+				fastAt(tl, seg.t0) > 1 ||
+				fastAt(tl, seg.t1) > 1
+			) {
+				continue;
+			}
+			flights += 1;
+			const ends = new Set<number>();
+			for (const e of [seg.from, seg.to]) {
+				if ("pid" in e) {
+					ends.add(e.pid);
+				}
+			}
+			let hit = false;
+			for (let t = seg.t0 + 60; t < seg.t1 - 60 && !hit; t += 16) {
+				const ball = evalBall(tl, t, bodyFor);
+				for (const tr of tl.tracks.values()) {
+					const st = evalPlayer(tl, tr.pid, t);
+					if (
+						ends.has(tr.pid) ||
+						!st.shown ||
+						Math.hypot(st.x - ball.x, st.y - ball.y) > 3
+					) {
+						continue;
+					}
+					const me = withBody(st, body);
+					const sk = skeleton(body, poseOf(me));
+					const head = bodyPoint(me, sk.head);
+					const hip = bodyPoint(me, sk.pelvis);
+					const chest = bodyPoint(me, sk.chest);
+					const up = {
+						x: chest.x - hip.x,
+						y: chest.y - hip.y,
+						z: chest.z - hip.z,
+					};
+					const k = Math.max(
+						0,
+						Math.min(
+							1,
+							((ball.x - hip.x) * up.x +
+								(ball.y - hip.y) * up.y +
+								(ball.z - hip.z) * up.z) /
+								(up.x ** 2 + up.y ** 2 + up.z ** 2),
+						),
+					);
+					const spine = Math.hypot(
+						ball.x - hip.x - up.x * k,
+						ball.y - hip.y - up.y * k,
+						ball.z - hip.z - up.z * k,
+					);
+					if (
+						Math.hypot(ball.x - head.x, ball.y - head.y, ball.z - head.z) <
+							0.75 ||
+						spine < 0.7
+					) {
+						hit = true;
+						through.push(`${Math.round(t)} through ${tr.pid}`);
+						break;
+					}
+				}
+			}
+		}
+		assert.isAbove(flights, 300);
+		assert.isAtMost(through.length, 1, through.join("; "));
 	}, 300_000);
 });
