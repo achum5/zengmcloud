@@ -2803,6 +2803,8 @@ const BLEND_MS = 160;
 // (Pulled up out of a run into where he stands, a step with each foot:
 // longer.)
 const SETTLE_MS = 300;
+// (Setting off from where he stands, a step each foot - see startsOff.)
+const START_MS = 220;
 // (Stood easy, standing up out of his stance or bending over onto his
 // knees and back: in no hurry.)
 const STOOD_MS = 500;
@@ -3024,11 +3026,13 @@ const blendInto = (
 		return 1 - u * u * (3 - 2 * u);
 	};
 	const w = ease(
-		!slowOver(before.anim, anim)
-			? BLEND_MS
-			: STOOD.has(anim) && PIVOTS.has(before.anim)
-				? STOOD_MS
-				: SETTLE_MS,
+		startsOff(before.anim, anim)
+			? START_MS
+			: !slowOver(before.anim, anim)
+				? BLEND_MS
+				: STOOD.has(anim) && PIVOTS.has(before.anim)
+					? STOOD_MS
+					: SETTLE_MS,
 	);
 	const slowArms = armsComeDown(tr, t, before.anim, anim);
 	if (w <= 0.02 && !(slowArms && ease(ARMS_DOWN_MS) > 0.02)) {
@@ -4798,14 +4802,21 @@ const FOOTWORK = new Set<AnimName>(["shuffle", "back", "slide"]);
 // (And standing up out of his stance to stand easy, or back down into it:
 // his feet stepped in under him and out again, not slid.)
 const STOOD = new Set<AnimName>(["easy", "hips", "crouch"]);
+// (And setting off from where he stands: his feet step off into his
+// strides one and then the other, not both swept round under him - as
+// quick as he goes, though, not a settle's slow step.)
+const startsOff = (from: AnimName, to: AnimName) =>
+	PIVOTS.has(from) && SETTLE_FROM.has(to);
 const stepsOver = (from: AnimName, to: AnimName) =>
 	(PIVOTS.has(to) && SETTLE_FROM.has(from)) ||
 	(FOOTWORK.has(from) && FOOTWORK.has(to)) ||
-	(PIVOTS.has(from) && PIVOTS.has(to) && STOOD.has(from) !== STOOD.has(to));
+	(PIVOTS.has(from) && PIVOTS.has(to) && STOOD.has(from) !== STOOD.has(to)) ||
+	startsOff(from, to);
 // (Stood easy, his hands go to his hips or his knees, and back, in no
 // hurry either: as long as a step over.)
 const slowOver = (from: AnimName, to: AnimName) =>
-	stepsOver(from, to) || (STOOD.has(from) && STOOD.has(to));
+	(stepsOver(from, to) && !startsOff(from, to)) ||
+	(STOOD.has(from) && STOOD.has(to));
 const SETTLE_HIP = 14;
 const SETTLE_KNEE = 30;
 // (A full step for a leg this far from where it is going - degrees at the

@@ -55,6 +55,63 @@ describe("footwork", () => {
 	// - a foot out the way he goes and the other closed up after it - not a
 	// run with his legs turned only so far under him and his feet sliding
 	// the rest of the way.
+	// Setting off from where he stood, both his feet were swept round under
+	// him over the floor - from his stance, out wide, to where his strides
+	// have them - rather than stepping off, one and then the other.
+	test("setting off from where he stands, his feet step off - not both slid over the floor", () => {
+		const body = bodyOf();
+		const STEP = 16;
+		const STANDS = new Set<AnimName>(["ready", "stance"]);
+		const GOES = new Set<AnimName>([
+			"jog",
+			"run",
+			"sprint",
+			"walk",
+			"back",
+			"shuffle",
+			"sideStep",
+		]);
+		let starts = 0;
+		let slid = 0;
+		const { tl } = compile("a", 120);
+		for (const tr of tl.tracks.values()) {
+			let prev: { x: number; y: number; z: number }[] | undefined;
+			for (let t = 200_000; t < 500_000; t += STEP) {
+				const st = evalPlayer(tl, tr.pid, t);
+				const f = st.from;
+				if (
+					!st.shown ||
+					fastAt(tl, t) > 1 ||
+					f === undefined ||
+					f.w <= 0.02 ||
+					!STANDS.has(f.anim) ||
+					!GOES.has(st.anim)
+				) {
+					prev = undefined;
+					continue;
+				}
+				const me = withBody(st, body);
+				const sk = skeleton(body, poseOf(me));
+				const feet = [sk.legR, sk.legL].map((l) => bodyPoint(me, l.end));
+				if (prev) {
+					const was = prev;
+					slid += Math.min(
+						...feet.map((q, i) =>
+							q.z < body.ankleH + 0.05 && was[i]!.z < body.ankleH + 0.05
+								? Math.hypot(q.x - was[i]!.x, q.y - was[i]!.y)
+								: 0,
+						),
+					);
+				} else {
+					starts += 1;
+				}
+				prev = feet;
+			}
+		}
+		assert.isAbove(starts, 50);
+		assert.isBelow(slid / starts, 0.045, `${slid} ft over ${starts} starts`);
+	}, 120_000);
+
 	test("a shooter drifting along the arc side-steps, a foot planted", () => {
 		const { travel, slide } = plantedSlide("sideStep");
 		assert.isAbove(travel, 20);
