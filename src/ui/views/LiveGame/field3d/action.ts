@@ -1835,6 +1835,12 @@ const BREAK_SET_MS = 150;
 // (No quicker than a walk, ft/s - see gait: going in on a man, or for the
 // ball, not walked there.)
 const WALK_MOST_FPS = 6.5;
+// (And as slow as a jog up to it goes, ft/s - a little over that.)
+const JOG_LEAST_FPS = 7.5;
+// (A guard pulling down the line, no slower than this, ft/s - and a man in
+// on a pile round a loose ball.)
+const PULL_FPS = 12;
+const PILE_RUN_FPS = 12;
 // (Within a few steps of it already, and going no quicker than this (feet a
 // second): broken down if he has this long before he goes in, this far off
 // it, shuffled there at this pace.)
@@ -5339,9 +5345,13 @@ class Action {
 		const fireNear = fireAt(far > BREAK_NEAR_FT + 1 ? BREAK_NEAR_FT : far);
 		// (Up to it no quicker than gets him there with BREAK_DOWN_MS to
 		// settle into it - chopping his feet down into it, not stopped
-		// dead: if there is the time for that.)
+		// dead: if there is the time for that - nor walked up there.)
 		const room = (fire - BREAK_DOWN_MS - m.t) / 1000;
-		const v = clamp((far - 5) / Math.max(0.1, room), 4, m.top * 0.7);
+		const v = clamp(
+			(far - 5) / Math.max(0.1, room),
+			JOG_LEAST_FPS,
+			m.top * 0.7,
+		);
 		const ease = Math.min(
 			(far - 5) * 0.5,
 			(v * v) / (2 * STOP_ACCEL * STOP_HARD),
@@ -6589,7 +6599,7 @@ class Action {
 									STOP_ACCEL * STOP_HARD,
 								),
 						),
-						undefined,
+						"slide",
 						this.behind,
 					);
 					m.hold(fake + 100, "backerStance", this.behind);
@@ -6725,7 +6735,10 @@ class Action {
 					if (dist(to, m.at) < ZONE_STIR_FT) {
 						sit(t);
 					} else {
-						m.chase(to, t, ZONE_DRIFT_FPS, undefined, this.behind);
+						// (In his low steps, his eyes on the ball - across or
+						// back, shuffling or backpedaling: see faced - not
+						// walking it.)
+						m.chase(to, t, ZONE_DRIFT_FPS, "slide", this.behind);
 					}
 				}
 				sit(until);
@@ -7311,12 +7324,19 @@ class Action {
 			const s = this.of(pull.at);
 			pull.hold(snap + 40);
 			pull.go(this.w({ d: s.d - 1.8, a: s.a + side * 1.5 }), snap + 330, "run");
-			pull.chase(
-				this.w({ d: -1.5, a: holeA - side * 2.5 }),
-				Math.max(atHole - 250, snap + 700),
-				pull.top * 0.9,
-				"run",
-			);
+			const pre = this.w({ d: -1.5, a: holeA - side * 2.5 });
+			const by = Math.max(atHole - 250, snap + 700);
+			if (
+				(dist(pull.at, pre) / Math.max(1, by - pull.t)) * 1000 <
+				WALK_MOST_FPS
+			) {
+				// (Flat down the line at a run all the same - not walked there -
+				// and set at the hole for the back.)
+				pull.run(pre, PULL_FPS, "run");
+				pull.setInto(by, "passSet", this.ahead);
+			} else {
+				pull.chase(pre, by, pull.top * 0.9, "run");
+			}
 			pull.chase(
 				this.w({ d: 2, a: holeA - side }),
 				pull.t + 250,
@@ -7391,11 +7411,16 @@ class Action {
 			const c = this.of(db.at);
 			db.hold(snap + 80);
 			db.go(this.w({ d: c.d + 4, a: c.a }), snap + 750, "back", this.behind);
+			// (Up in his low steps, as slow as that is - not walked up.)
+			const up = this.w({ d: c.d + 1, a: c.a + (holeA - c.a) * 0.2 });
 			db.chase(
-				this.w({ d: c.d + 1, a: c.a + (holeA - c.a) * 0.2 }),
+				up,
 				snap + 1600,
 				db.top * 0.5,
-				undefined,
+				(dist(db.at, up) / Math.max(0.001, snap + 1600 - db.t)) * 1000 <
+					WALK_MOST_FPS
+					? "slide"
+					: undefined,
 				this.behind,
 			);
 			// (Pulled up there, a step or two on.)
@@ -8369,17 +8394,26 @@ class Action {
 				y: pt.y + Math.sin(ang) * ring,
 			};
 			const inward = this.toward(hit, pt);
-			// (Round to it as he gets there, if he is all but there.)
-			if (n < 3 && dist(m.at, hit) > TURN_IN_FT) {
+			// (Round to it as he gets there, if he is all but there - or, with
+			// the time to walk it, set near it and in at it off that: see
+			// closeOn.)
+			const lead = t1 - 400;
+			if (
+				n < 3 &&
+				dist(m.at, hit) > TURN_IN_FT &&
+				dist(m.at, hit) / Math.max(0.001, (lead - m.t) / 1000) < WALK_MOST_FPS
+			) {
+				this.closeOn(m, hit, lead, inward);
+			} else if (n < 3 && dist(m.at, hit) > TURN_IN_FT) {
 				m.chase(
 					hit,
-					t1 - 400,
+					lead,
 					m.top * FLAT_OUT,
 					"sprint",
 					dist(m.at, hit) < 3 ? inward : undefined,
 				);
 			} else if (n < 3) {
-				m.hold(t1 - 400, undefined, inward);
+				m.hold(lead, undefined, inward);
 			}
 			if (n < 3 && dist(m.at, hit) < 3) {
 				m.act("dive", t1, inward, {
@@ -8389,8 +8423,18 @@ class Action {
 				m.hold(t1 + 1100 + n * 150, "prone");
 				m.act("getUp", t1 + 1100 + n * 150 + GET_UP_MS);
 			} else {
-				m.chase(hit, t1, m.top * 0.92);
-				m.easeIn(STOOD_IN_FT, STOOD_IN_LEAST);
+				// (Time to walk it: in at a run all the same, there sooner, at
+				// the others round it.)
+				const far = dist(m.at, hit);
+				if (
+					far > 3 &&
+					far / Math.max(0.001, (t1 - m.t) / 1000) < WALK_MOST_FPS
+				) {
+					m.runUp(hit, PILE_RUN_FPS);
+				} else {
+					m.chase(hit, t1, m.top * 0.92);
+					m.easeIn(STOOD_IN_FT, STOOD_IN_LEAST);
+				}
 				const held = this.whistle + 700 + r() * 400;
 				// (Not in on it a moment only, there so late.)
 				if (held - m.t >= WAIT_LEAST_MS) {
