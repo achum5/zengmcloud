@@ -619,7 +619,7 @@ const STEP = 250;
 const REF_GAIN = 1.8;
 const REF_RUN = 24;
 const REF_ACCEL = 20;
-type Places = { at: Pt[]; vel: Pt[] };
+type Places = { at: Pt[] };
 // Round the edge of the floor, not across it: from the sideline down to the
 // end line - or back up - by way of the corner.
 const viaCorner = (p: Pt, g: Pt): Pt => {
@@ -810,23 +810,40 @@ const refPlaces = (tl: CourtTimeline, t: number): Places => {
 		};
 		refPaths.set(tl, track);
 	}
-	const g = Math.max(0, Math.min(track.n - 2, Math.floor(t / STEP)));
+	// Through his steps (a quarter of a second apart) on a curve: half way
+	// between each two of them at the half steps, and round the step
+	// between, so his speed and the way he goes change as he goes rather
+	// than all at once at each step.
+	const s0 = t / STEP - 0.5;
+	const g = Math.max(0, Math.min(track.n - 3, Math.floor(s0)));
+	const u = Math.max(0, Math.min(1, s0 - g));
+	// (The picture cutting anywhere in it: from one step to the next, and
+	// settled at once where it cuts, not slid there.)
+	const cut = lastCut(tl, (g + 2) * STEP);
+	if (cut > g * STEP || s0 < 0) {
+		const h = Math.max(0, Math.min(track.n - 2, Math.floor(t / STEP)));
+		refFill(tl, track, h);
+		refFill(tl, track, h + 1);
+		const a = track.out[h]!;
+		const b = track.out[h + 1]!;
+		let v = Math.max(0, Math.min(1, (t - h * STEP) / STEP));
+		const at = lastCut(tl, (h + 1) * STEP);
+		if (at > h * STEP) {
+			v = t < at ? 0 : 1;
+		}
+		return { at: a.map((p, i) => lerp(p, b[i]!, v)) };
+	}
 	refFill(tl, track, g);
 	refFill(tl, track, g + 1);
-	const path = track.out;
-	const a = path[g]!;
-	const b = path[g + 1]!;
-	let u = Math.max(0, Math.min(1, (t - g * STEP) / STEP));
-	// The picture cutting in between: settled at once, not slid there.
-	const cut = lastCut(tl, (g + 1) * STEP);
-	if (cut > g * STEP) {
-		u = t < cut ? 0 : 1;
-	}
+	refFill(tl, track, g + 2);
+	const [a, b, c] = [track.out[g]!, track.out[g + 1]!, track.out[g + 2]!];
+	const wa = 0.5 * (1 - u) * (1 - u);
+	const wc = 0.5 * u * u;
+	const wb = 1 - wa - wc;
 	return {
-		at: a.map((p, i) => lerp(p, b[i]!, u)),
-		vel: a.map((p, i) => ({
-			x: ((b[i]!.x - p.x) / STEP) * 1000,
-			y: ((b[i]!.y - p.y) / STEP) * 1000,
+		at: a.map((p, i) => ({
+			x: p.x * wa + b[i]!.x * wb + c[i]!.x * wc,
+			y: p.y * wa + b[i]!.y * wb + c[i]!.y * wc,
 		})),
 	};
 };
@@ -846,6 +863,8 @@ const FACING_US = Math.PI / 2;
 // His right arm out toward x's direction `dir`.
 const pointing = (dir: number) => (dir > 0 ? -Math.PI / 2 : Math.PI / 2);
 
+// The officials' average pace (feet a second) running back after a signal.
+const BACK_PACE = 13;
 // Where an official is while he signals: still where he made the call,
 // then running back to his place in the play.
 const signalPos = (s: Signal, t: number, liveAt: (when: number) => Pt): Pt => {
@@ -853,11 +872,31 @@ const signalPos = (s: Signal, t: number, liveAt: (when: number) => Pt): Pt => {
 	if (t < t1) {
 		return s.still;
 	}
-	// (Back to where the play will have him once he gets there - round the
-	// edge of the floor, as he goes anywhere.)
-	return t < t1 + s.back
-		? alongEdge(s.still, liveAt(t1 + s.back), (t - t1) / s.back)
-		: liveAt(t);
+	if (t >= t1 + s.back) {
+		return liveAt(t);
+	}
+	// Back to where the play will have him once he gets there - round the
+	// edge of the floor, as he goes anywhere - getting going from where he
+	// stood, and coming into his place as quick as it goes on: not off at a
+	// run from a standstill and pulled up dead, or stopped short as it runs
+	// on.
+	const goal = liveAt(t1 + s.back);
+	const far = edgeDist(s.still, goal);
+	const u = (t - t1) / s.back;
+	if (far < 0.05) {
+		return alongEdge(s.still, goal, u);
+	}
+	const w = viaCorner(s.still, goal);
+	const from = dist(w, goal) > 0.01 ? w : s.still;
+	const way = { x: goal.x - from.x, y: goal.y - from.y };
+	const len = Math.hypot(way.x, way.y) || 1;
+	const a = liveAt(t1 + s.back - 50);
+	const b = liveAt(t1 + s.back + 50);
+	const ends = (((b.x - a.x) * way.x + (b.y - a.y) * way.y) / len) * 10;
+	// (How quick it goes, as a share of his average, at most three times it:
+	// a curve from standing to that.)
+	const m = clamp((ends * s.back) / 1000 / far, 0, 3);
+	return alongEdge(s.still, goal, (m - 2) * u * u * u + (3 - m) * u * u);
 };
 
 // Everything the officials have had to signal lately: each whistle's call,
@@ -960,11 +999,12 @@ const signalsAt = (tl: CourtTimeline, t: number): (Signal | undefined)[] => {
 		const still = pos[ref]!;
 		const t1 = cue.moves.at(-1)!.t1;
 		// As long as it takes him to jog back to where the play will have him
-		// by then (longer, never shorter, till he can make it).
+		// by then (longer, never shorter, till he can make it) - BACK_PACE
+		// feet a second, on average (see signalPos).
 		let back = 250;
 		for (let k = 0; k < 8; k++) {
 			const need = clamp(
-				(edgeDist(still, refPlaces(tl, t1 + back).at[ref]!) / 15) * 1000,
+				(edgeDist(still, refPlaces(tl, t1 + back).at[ref]!) / BACK_PACE) * 1000,
 				250,
 				6500,
 			);
