@@ -370,7 +370,17 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   frame, the pictures of a man kept and drawn again now told apart by his
   feet's turn. Off the ball a man turns his head to keep the ball in sight,
   as far as a neck goes and a moment behind it: men facing more than 100
-  degrees from the ball 18% of the time down to 11%.)
+  degrees from the ball 18% of the time down to 11%. The benches follow the
+  play with their heads too, and get up for a big play and sit back down
+  over a moment, not in a frame; and the people working the game turn,
+  start, stop and change what they are doing over a moment: officials
+  facing the play, easing between standing, walking and running, into
+  their signals and out, on paths whose speed changes as they go (turned
+  more than 20 degrees in a frame 403 times a game down to 53; a hand or
+  foot thrown more than a yard in a frame 882 times in fifteen minutes
+  down to 82), coaches clapping and folding their arms again, and
+  photographers bringing their cameras up as the play comes. Still to do:
+  a few of an official's turns as one signal follows another.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like

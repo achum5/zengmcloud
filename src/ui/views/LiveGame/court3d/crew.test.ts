@@ -347,8 +347,9 @@ describe("3D crew", () => {
 	// frame - his legs snapped from one stride to the other - and the same
 	// into a signal and out of it again.
 	// And a photographer's camera snapped up to his eye as the play crossed
-	// a line, and down again.
-	test("an official eases from standing to walking to running, and into his signals and out; a photographer's camera comes up as the play comes", () => {
+	// a line, and down again; a coach was clapping or arms out at a call
+	// from one frame to the next, and back.
+	test("an official eases from standing to walking to running, and into his signals and out; a photographer's camera comes up as the play comes; a coach claps and folds his arms again", () => {
 		const { tl, crew } = working("a");
 		const body = bodyOf();
 		const cuts = cameraCuts(tl);
@@ -356,6 +357,7 @@ describe("3D crew", () => {
 		let frames = 0;
 		let popped = 0;
 		let snapped = 0;
+		let coached = 0;
 		for (let t = 0; t < Math.min(tl.end, 900_000); t += 16) {
 			if (
 				fastAt(tl, t) > 1 ||
@@ -366,8 +368,9 @@ describe("3D crew", () => {
 				continue;
 			}
 			for (const r of crewAt(tl, t, crew).states) {
-				const photo = crew.find((m) => m.pid === r.pid)?.role === "photo";
-				if (!isRef(r.pid) && !photo) {
+				const role = crew.find((m) => m.pid === r.pid)?.role;
+				const photo = role === "photo";
+				if (!isRef(r.pid) && !photo && role !== "coach") {
 					continue;
 				}
 				const me = withBody(r, body);
@@ -377,7 +380,7 @@ describe("3D crew", () => {
 				);
 				const before = was.get(r.pid);
 				if (before) {
-					frames += photo ? 0 : 1;
+					frames += isRef(r.pid) ? 1 : 0;
 					// (Sixty feet a second, for a hand or a foot, is a blur.)
 					if (
 						ends.some(
@@ -392,6 +395,8 @@ describe("3D crew", () => {
 					) {
 						if (photo) {
 							snapped += 1;
+						} else if (role === "coach") {
+							coached += 1;
 						} else {
 							popped += 1;
 						}
@@ -403,5 +408,6 @@ describe("3D crew", () => {
 		assert.isAbove(frames, 50_000);
 		assert.isBelow(popped / frames, 0.0025, `${popped} in ${frames}`);
 		assert.strictEqual(snapped, 0);
+		assert.isAtMost(coached, 2);
 	}, 240_000);
 });

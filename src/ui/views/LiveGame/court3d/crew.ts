@@ -1367,11 +1367,33 @@ const coachState = (
 	const to = spotOf(j);
 	const walkMs = (Math.abs(to.x - from.x) / 3.6) * 1000;
 	const since = t - j * PACE_MS;
-	const idle = tensionAt(tl, t) >= 1 ? IDLE_TENSE : IDLE;
-	const idleOf = (k: number) =>
-		idle[Math.floor(unit(k, team * 31 + 7) * idle.length)]!;
 	// (Facing the play, a moment behind it - see ballBearing.)
 	const facing = (p: Pt) => ballBearing(tl, t, p)?.yaw ?? yawTo(p, ball);
+	// Stood at his spot at tt: arms folded, bent over watching, calling out
+	// - clapping a big play of his team's, or arms out at a call against
+	// it.
+	const standing = (tt: number): { anim: AnimName; phase: number } => {
+		const roar = recentFx(tl, tt, ["roar"], 1600);
+		if (roar?.team === team) {
+			return { anim: "clap", phase: loopPhase("clap", tt - roar.t, 0) };
+		}
+		const w = recentFx(tl, tt, ["whistle"], 1600);
+		if (
+			w?.call &&
+			w.call !== "stop" &&
+			w.team !== undefined &&
+			w.team !== team &&
+			unit(Math.round(w.t), team) < 0.45
+		) {
+			return { anim: "protest", phase: (tt - w.t) / 1600 };
+		}
+		const idle = tensionAt(tl, tt) >= 1 ? IDLE_TENSE : IDLE;
+		const anim =
+			idle[
+				Math.floor(unit(Math.floor(tt / PACE_MS), team * 31 + 7) * idle.length)
+			]!;
+		return { anim, phase: loopPhase(anim, tt, team * 0.5) };
+	};
 	if (since < walkMs) {
 		// Pacing along the sideline: turned from the play to the way he
 		// walks, and back to it as he gets there, over a moment either end -
@@ -1386,7 +1408,7 @@ const coachState = (
 		let rel = toPlay - yaw;
 		rel -= Math.round(rel / (Math.PI * 2)) * Math.PI * 2;
 		const look = clamp((rel * 180) / Math.PI, -LOOK_MOST, LOOK_MOST);
-		const was = idleOf(j - 1);
+		const was = standing(j * PACE_MS - 1);
 		const fw = 1 - smooth01(since / COACH_EASE);
 		return {
 			...base,
@@ -1397,36 +1419,44 @@ const coachState = (
 			phase: (t / 1000) * 0.85,
 			moving: true,
 			...(Math.abs(look) > 0.5 ? { look } : {}),
-			...(fw > 0
-				? {
-						from: {
-							anim: was,
-							phase: loopPhase(was, t, team * 0.5),
-							w: fw,
-						},
-					}
-				: {}),
+			...(fw > 0 ? { from: { ...was, w: fw } } : {}),
 		};
 	}
-	let anim = idleOf(j);
-	let phase = loopPhase(anim, t, team * 0.5);
-	const roar = recentFx(tl, t, ["roar"], 1600);
-	const w = recentFx(tl, t, ["whistle"], 1600);
-	if (roar?.team === team) {
-		anim = "clap";
-		phase = loopPhase("clap", t - roar.t, 0);
-	} else if (
-		w?.call &&
-		w.call !== "stop" &&
-		w.team !== undefined &&
-		w.team !== team &&
-		unit(Math.round(w.t), team) < 0.45
-	) {
-		anim = "protest";
-		phase = (t - w.t) / 1600;
+	const { anim, phase } = standing(t);
+	// Going from one to the next of those over a moment too, not in a frame
+	// (as it was when it changed, so much of it still showing) - and
+	// stopping, out of his walk.
+	let changed: Blend | undefined;
+	const back = Math.max(j * PACE_MS + walkMs, t - COACH_EASE);
+	if (standing(back).anim !== anim) {
+		let lo = back;
+		let hi = t;
+		for (let k = 0; k < 7; k++) {
+			const mid = (lo + hi) / 2;
+			if (standing(mid).anim === anim) {
+				hi = mid;
+			} else {
+				lo = mid;
+			}
+		}
+		changed = { ...standing(lo), w: 1 - smooth01((t - hi) / COACH_EASE) };
 	}
-	// (Stopping, out of his walk.)
+	// (A walk too short to have got all the way into: as far as it had,
+	// from how he stood before it.)
 	const fw = 1 - smooth01((since - walkMs) / COACH_EASE);
+	const into = 1 - smooth01(walkMs / COACH_EASE);
+	const walked: Blend | undefined =
+		fw > 0 && walkMs > 0
+			? {
+					anim: "walk",
+					phase: (t / 1000) * 0.85,
+					w: fw,
+					...(into > 0
+						? { from: { ...standing(j * PACE_MS - 1), w: into } }
+						: {}),
+				}
+			: undefined;
+	const eased = walked ? over(changed, walked) : changed;
 	return {
 		...base,
 		x: to.x,
@@ -1435,9 +1465,7 @@ const coachState = (
 		anim,
 		phase,
 		moving: false,
-		...(fw > 0 && walkMs > 0
-			? { from: { anim: "walk", phase: (t / 1000) * 0.85, w: fw } }
-			: {}),
+		...(eased && eased.w > 0 ? { from: eased } : {}),
 	};
 };
 // (A coach turning to and from the way he walks, and easing in and out of
