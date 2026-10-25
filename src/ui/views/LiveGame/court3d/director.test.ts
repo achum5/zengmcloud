@@ -3741,9 +3741,10 @@ describe("3D director", () => {
 		const hand = new Map<number, string>();
 		const said = (pid: number, t: number) =>
 			tl.tracks.get(pid)!.arms.some((g) => g.t0 <= t + 1 && g.t1 >= t - 101);
-		for (let t = 0; t < tl.end / 2; t += 100) {
+		for (let t = 0; t < tl.end; t += 100) {
 			const b = evalBall(tl, t, bodyFor);
-			if (b.holder === undefined) {
+			// (Run through fast, no arm says anything - see ARM_FAST.)
+			if (b.holder === undefined || fastAt(tl, t) > 1) {
 				hand.clear();
 				continue;
 			}
@@ -3785,8 +3786,8 @@ describe("3D director", () => {
 				}
 			}
 		}
-		assert.isAbove(cand, 300);
-		assert.isAbove(denied / cand, 0.45);
+		assert.isAbove(cand, 200);
+		assert.isAbove(denied / cand, 0.4);
 		assert.isBelow(flips, 15);
 	}, 120_000);
 

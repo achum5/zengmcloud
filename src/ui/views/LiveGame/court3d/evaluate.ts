@@ -3029,6 +3029,29 @@ const blendInto = (
 // else (a shot, a catch, a screen) or his hands are up for a pass coming.
 const ARM_IN = 0.22;
 const ARM_OUT = 0.25;
+// The picture running through it fast, no arm says anything - up for a
+// frame or two, it would only flash: it goes as the picture speeds up, gone
+// at this many times over, and comes back as it slows. (A gesture that
+// leaves less than this long of itself (ms) on the screen is left out
+// altogether.)
+const ARM_FAST = 4;
+const ARM_SEEN = 300;
+const armSeen = new WeakMap<Gesture, boolean>();
+const seenOnScreen = (tl: CourtTimeline, g: Gesture): boolean => {
+	let seen = armSeen.get(g);
+	if (seen === undefined) {
+		let screen = 0;
+		for (let t = g.t0; t < g.t1; t += 20) {
+			const f = fastAt(tl, t);
+			if (f < ARM_FAST) {
+				screen += 20 / f;
+			}
+		}
+		seen = screen >= ARM_SEEN;
+		armSeen.set(g, seen);
+	}
+	return seen;
+};
 // A jumper's follow-through as he lands, held on after.
 const FOLLOW = poseAt("shoot", 1);
 const smooth01 = (u: number) => {
@@ -3068,6 +3091,10 @@ const armAt = (
 					tuck: FOLLOW.tuck,
 					w,
 				};
+	}
+	// (Run through fast, the picture is no time for one - see ARM_FAST.)
+	if (!seenOnScreen(tl, g)) {
+		return undefined;
 	}
 	const w = smooth01(u / ARM_IN) * smooth01((1 - u) / ARM_OUT);
 	if (w <= 0.02) {
@@ -3701,7 +3728,9 @@ export const evalPlayer = (
 	// anything: an arm up against his man as he picks up his dribble comes
 	// in to the ball with the other - not still easing down as he goes up
 	// with it.)
-	const free = now.grip !== undefined ? 1 - now.grip : now.holding ? 0 : 1;
+	const free =
+		(now.grip !== undefined ? 1 - now.grip : now.holding ? 0 : 1) *
+		clamp01((ARM_FAST - fastAt(tl, t)) / (ARM_FAST - 1));
 	const arm =
 		said && free < 1
 			? said.w * free > 0.02
