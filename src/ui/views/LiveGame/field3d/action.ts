@@ -1583,6 +1583,46 @@ class Actor {
 		const far = dist(from, p);
 		const T = Math.max(0, t1 - this.t) / 1000;
 		const v0 = this.paceInto(p) ?? 0;
+		// (In quicker than it takes: slowing into it - at STOP_ACCEL, harder
+		// if he has to, or as hard as that and on past it - not down to its
+		// pace in a stride.)
+		if (
+			v0 >= STOP_LEAST &&
+			GAITS.has(this.last.move) &&
+			far > 0 &&
+			T > 0 &&
+			far / T < v0 - RAMP_LEAST
+		) {
+			const easeAt = (Ad: number) => {
+				const q = T * T - (2 * (v0 * T - far)) / Ad;
+				const v1 = q >= 0 ? v0 - Ad * (T - Math.sqrt(q)) : -1;
+				return v1 >= 0 ? { v1, Ad } : undefined;
+			};
+			const { v1, Ad } = easeAt(STOP_ACCEL) ??
+				easeAt(STOP_ACCEL * STOP_HARD) ?? { v1: 0, Ad: STOP_ACCEL * STOP_HARD };
+			const td = (v0 - v1) / Ad;
+			const n = Math.max(1, Math.round((td * 1000) / STOP_STEP_MS));
+			const dt = td / n;
+			const paceOf = (i: number) => v0 - (v0 - v1) * ((i + 0.5) / n);
+			const moveOf = slower(this.last.move, n, dt, paceOf);
+			const t0 = this.t;
+			let gone = 0;
+			for (let i = 0; i < n; i++) {
+				gone += paceOf(i) * dt;
+				this.go(
+					{
+						x: from.x + ((p.x - from.x) * gone) / far,
+						y: from.y + ((p.y - from.y) * gone) / far,
+					},
+					t0 + (i + 1) * dt * 1000,
+					move ?? moveOf(i),
+				);
+			}
+			if (v1 > 0 && t1 > this.t + 1) {
+				this.go(p, t1, move);
+			}
+			return;
+		}
 		const A = RAMP_ACCEL;
 		const ta = Math.min(T, Math.max(0, (fps - v0) / A));
 		const reach = v0 * ta + (A * ta * ta) / 2 + fps * (T - ta);
@@ -10647,12 +10687,13 @@ class Action {
 		const ux = Math.cos(way) * half;
 		const uy = Math.sin(way) * half;
 		// (A step or so across: taken, not hopped - no quicker than
-		// FIVE_STEP_MS.)
+		// FIVE_STEP_MS. Further: walked over the way he goes, turned to him
+		// once there - not side on all the way.)
 		const over = (m: Actor, to: Pt, yaw: number) => {
 			if ((dist(m.at, to) / FIVE_FPS) * 1000 < FIVE_STEP_MS) {
 				m.go(to, m.t + FIVE_STEP_MS, undefined, yaw);
 			} else {
-				m.run(to, FIVE_FPS, undefined, yaw);
+				m.run(to, FIVE_FPS);
 			}
 		};
 		over(a, { x: mid.x - ux, y: mid.y - uy }, way);
