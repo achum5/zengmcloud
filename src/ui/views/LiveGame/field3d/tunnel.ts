@@ -36,6 +36,10 @@ const ABREAST = 4;
 const LANE = 3.5;
 const ROW_MS = 320;
 const PACE = 17.5;
+// Some of them out with their arms up to the crowd, for this long (ms) out
+// of the tunnel.
+const ARMS_UP = 0.35;
+const ARMS_MS = 1500;
 // Their way: out of the dark this far back in the tunnel, straight out of
 // it to this far off the field, then round onto it and along it this far
 // in - to the crowd they make in front of their bench, round this spot.
@@ -205,6 +209,13 @@ export const stageRunOut = ({
 			);
 			for (const p of way.slice(1)) {
 				man.on(p);
+			}
+			if (r() < ARMS_UP) {
+				for (const l of man.legs) {
+					if (l.t0 < at + ARMS_MS) {
+						l.arms = "ballUp";
+					}
+				}
 			}
 			// (Lanes from the far side across, the far side's lane on the
 			// right as they come out.)
