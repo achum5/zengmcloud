@@ -1898,16 +1898,49 @@ const stoppageAt = (tl: CourtTimeline, t: number): Stoppage | undefined => {
 	const s = list[lastIndex(list, t, (d) => d[0])];
 	return s && t >= s[0] + DEAD_LAG && t < s[1] - s[2] ? s : undefined;
 };
+// How worn down he is (0 fresh, 1 run ragged): the trips up and down the
+// floor - changes of possession - since he came on, or since the break
+// between periods, from this many on to this many; a timeout gives him back
+// this many of them.
+const FRESH_TRIPS = 6;
+const SPENT_TRIPS = 30;
+const TIMEOUT_TRIPS = 6;
+const breaksOf = new WeakMap<
+	CourtTimeline,
+	{ ends: number[]; outs: number[] }
+>();
+const tirednessAt = (tl: CourtTimeline, tr: Track, t: number): number => {
+	let breaks = breaksOf.get(tl);
+	if (!breaks) {
+		const endsOf = (type: string) =>
+			tl.beats
+				.filter((b) => b.type === type)
+				.map((b) => b.end)
+				.sort((x, y) => x - y);
+		breaks = { ends: endsOf("endOfPeriod"), outs: endsOf("timeout") };
+		breaksOf.set(tl, breaks);
+	}
+	const { ends, outs } = breaks;
+	const si = lastIndex(tr.shown, t, (s) => s[0]);
+	let from = si >= 0 && tr.shown[si]![1] ? tr.shown[si]![0] : -Infinity;
+	const ei = lastIndex(ends, t, (e) => e);
+	if (ei >= 0) {
+		from = Math.max(from, ends[ei]!);
+	}
+	const trips =
+		lastIndex(tl.poss, t, (p) => p[0]) -
+		lastIndex(tl.poss, from, (p) => p[0]) -
+		TIMEOUT_TRIPS *
+			(lastIndex(outs, t, (e) => e) - lastIndex(outs, from, (e) => e));
+	return clamp01((trips - FRESH_TRIPS) / (SPENT_TRIPS - FRESH_TRIPS));
+};
 // Stood easy through a stoppage, now and then hands on his hips, or bent
-// over with them on his knees (getting his breath) - which, and when, from
+// over with them on his knees (getting his breath) - the longer he has been
+// out there, the more of it, and the more bent over - which, and when, from
 // who he is and when he stopped, as off the ball.
-const STOPPED: [AnimName, number][] = [
-	["hips", 2600],
-	["crouch", 1900],
-	["hips", 3400],
-];
 const STOPPED_EVERY = 4200;
 const stoppedLife = (
+	tl: CourtTimeline,
 	tr: Track,
 	t: number,
 	stop: Stoppage,
@@ -1924,11 +1957,14 @@ const stoppedLife = (
 	if (k < 0) {
 		return undefined;
 	}
+	const tired = tirednessAt(tl, tr, t);
 	const h = hash01(tr.pid + 0.5, since / 1000 + k);
-	if (h < 0.35) {
+	if (h < 0.55 - 0.45 * tired) {
 		return undefined;
 	}
-	const [anim, dur] = STOPPED[Math.floor(h * 1000) % STOPPED.length]!;
+	const bent = hash01(tr.pid + 2.5, since / 1000 + k) < 0.2 + 0.45 * tired;
+	const anim: AnimName = bent ? "crouch" : "hips";
+	const dur = (bent ? 1900 : 2600) + 1000 * tired + 800 * (h - 0.5);
 	const start =
 		since +
 		400 +
@@ -2514,7 +2550,7 @@ const doingAt = (
 		} else if (seg && seg.kind === "hold" && seg.pid === pid) {
 			anim = seg.style === "hold" ? "hold" : "dribbleIdle";
 		} else if (stop) {
-			anim = stoppedLife(tr, t, stop) ?? "easy";
+			anim = stoppedLife(tl, tr, t, stop) ?? "easy";
 		} else if (jump || offenseAt(tl, t) === tr.team) {
 			anim = "ready";
 		} else {
