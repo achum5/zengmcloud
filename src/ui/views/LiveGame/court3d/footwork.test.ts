@@ -124,6 +124,16 @@ describe("footwork", () => {
 		assert.isBelow(spun / down, 0.35);
 		assert.isBelow(far, 60);
 	}, 240_000);
+
+	// Sliding with a quick man, a defender's push steps get longer - his feet
+	// further apart each push - not quicker and quicker until his legs
+	// patter. (Before: nearly six pushes a second at ten feet a second.)
+	test("sliding fast, his push steps lengthen, not patter", () => {
+		const { time, pushes, gap } = fastSlides();
+		assert.isAbove(time, 3);
+		assert.isBelow(pushes / time, 4.4);
+		assert.isAbove(gap, 3.6);
+	}, 240_000);
 });
 
 const RUNNING = new Set<AnimName>(["run", "jog", "sprint", "dribble"]);
@@ -459,3 +469,42 @@ const headFlicks = () => {
 	return { frames, leaning, bracing, flicked };
 };
 let game: ReturnType<typeof compile>["tl"] | undefined;
+
+// Shuffling straight across at 8 ft a second or more, unblended, over the
+// first fifteen minutes: how long, how many pushes he took meanwhile, and
+// the furthest apart his feet got.
+const fastSlides = () => {
+	const body = bodyOf();
+	const STEP = 16;
+	const tl = (game ??= compile("a", 140).tl);
+	let time = 0;
+	let pushes = 0;
+	let gap = 0;
+	for (const tr of tl.tracks.values()) {
+		let prev: { x: number; y: number; phase: number } | undefined;
+		for (let t = 0; t < Math.min(tl.end, 900_000); t += STEP) {
+			const st = evalPlayer(tl, tr.pid, t);
+			if (fastAt(tl, t) > 1 || !st.shown || st.anim !== "shuffle" || st.from) {
+				prev = undefined;
+				continue;
+			}
+			const way = st.way ?? [0, 0];
+			const m = Math.hypot(way[0], way[1]);
+			if (
+				prev &&
+				m > 1e-3 &&
+				Math.abs(way[1]) / m > 0.6 &&
+				(Math.hypot(st.x - prev.x, st.y - prev.y) * 1000) / STEP >= 8
+			) {
+				time += STEP / 1000;
+				pushes += st.phase - prev.phase;
+				const me = withBody(st, body);
+				const sk = skeleton(body, poseOf(me));
+				const [r, l] = [bodyPoint(me, sk.legR.end), bodyPoint(me, sk.legL.end)];
+				gap = Math.max(gap, Math.hypot(r.x - l.x, r.y - l.y));
+			}
+			prev = { x: st.x, y: st.y, phase: st.phase };
+		}
+	}
+	return { time, pushes, gap };
+};

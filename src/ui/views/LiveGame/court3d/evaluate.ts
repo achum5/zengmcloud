@@ -1009,6 +1009,14 @@ const STEP_GROW = 2.5;
 // (A foot's stride changes no quicker than this - so many full ones a
 // second.)
 const LEN_RATE = 10;
+// A slide's push steps go round no quicker as he goes faster than
+// REACH_FROM (feet a second): each one spreads his feet further instead, up
+// to REACH_MOST times as far. (His stride's that long then - its "length",
+// though more than a full one.)
+const REACH_FROM = 6.5;
+const REACH_MOST = 1.45;
+const reachOf = (v: number) =>
+	Math.min(REACH_MOST, Math.max(1, v / REACH_FROM));
 type Stepping = {
 	s0: number;
 	s1: number;
@@ -1103,7 +1111,14 @@ const steppingOf = (
 			});
 			R = carry(was.legR);
 			L = carry(was.legL);
+		} else if (anim === "shuffle" && took === "shuffle") {
+			R = { len: was.legR.len };
+			L = { ...R };
 		}
+	}
+	if (anim === "shuffle" && R.from === -1) {
+		R = { len: reachOf(paceOn(run, run.s0)) };
+		L = { ...R };
 	}
 	const n = Math.max(1, Math.ceil((run.s1 - run.s0) / STEP_MS));
 	const dt = (run.s1 - run.s0) / n;
@@ -1120,7 +1135,21 @@ const steppingOf = (
 		const u = run.s0 + (i - 0.5) * dt;
 		const v = paceOn(run, u);
 		const was = legPhases(anim, ph);
-		if (!was) {
+		if (anim === "shuffle") {
+			// (Through the push, the foot he pushes off stays where it is as
+			// his feet spread further, and the other through the close - so
+			// his strides go round that much slower or quicker for it.)
+			const reach = reachOf(v);
+			const f = frac(ph);
+			const spread = f < 0.5 ? 2 * f : 2 - 2 * f;
+			const grew = (reach - R.len) * (f < 0.5 ? 1 : -1);
+			ph += Math.max(
+				0,
+				((v / (S * reach)) * dt) / 1000 - (grew * spread) / (2 * reach),
+			);
+			R = { len: reach };
+			L = R;
+		} else if (!was) {
 			ph += ((v / S) * dt) / 1000;
 		} else {
 			// (Both feet up, at the stride of the one that left the floor last
@@ -2298,7 +2327,7 @@ const gaitOf = (
 	const as = (len: number) =>
 		Math.min(1, Math.max(LEN_MIN, (len * strideOf(anim)) / strideOf(shown)));
 	const len: [number, number] = shown === anim ? own : [as(own[0]), as(own[1])];
-	const short = len[0] < 1 || len[1] < 1;
+	const short = len[0] !== 1 || len[1] !== 1;
 	// (At the other gait's stride, so his feet stay planted - over this run
 	// only: where it starts, his feet are where the one before left them.)
 	return {

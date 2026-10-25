@@ -5879,12 +5879,30 @@ const swingLift = (phi: number, duty: number, back: boolean): number =>
 		: Math.sin((Math.PI * (back ? 1 - phi : phi - duty)) / (1 - duty));
 // His pose with each leg's stride that share of a full one - right, left -
 // `ph` through his strides.
+// (Degrees more at his knees, a slide's push steps the most they lengthen
+// by, with his feet together - and less, spread.)
+const REACH_SIT = 30;
+const REACH_STAND = 5;
 export const shortSteps = (
 	q: Pose,
 	anim: AnimName,
 	len: [number, number] | undefined,
 	ph: number,
 ): Pose => {
+	// (A slide, quick: each push spreads his feet further - see reachOf - and
+	// he sits down lower into it, his knees bent the more as his feet come
+	// together and straightening as they spread, so his hips stay level.)
+	if (len && anim === "shuffle") {
+		const spread = (q.wide - SLIDE_NARROW) / (SLIDE_STRIDE / 2);
+		const bend =
+			(len[0] - 1) * (REACH_SIT - (REACH_SIT + REACH_STAND) * spread ** 2);
+		return {
+			...q,
+			wide: SLIDE_NARROW + (q.wide - SLIDE_NARROW) * len[0],
+			kneeN: q.kneeN + bend,
+			kneeF: q.kneeF + bend,
+		};
+	}
 	const mode = gaitModeOf(anim);
 	if (!len || !mode || (len[0] >= 1 && len[1] >= 1)) {
 		return q;

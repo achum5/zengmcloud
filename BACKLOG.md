@@ -358,7 +358,10 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   through him - a pass past a man between, a ball thrown away past one, a
   make dropping out of the net past a man under it bows out to the side
   round his head or body, most at the middle of its flight: balls through
-  a man 8 a game down to 0.)
+  a man 8 a game down to 0. Sliding with a quick man, a defender's push
+  steps lengthen - feet further apart each push, sat a little deeper so his
+  hips stay level - rather than quickening until his legs patter: nearly
+  six pushes a second at ten feet a second, down to four.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like
