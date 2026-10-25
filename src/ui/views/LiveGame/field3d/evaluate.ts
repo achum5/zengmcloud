@@ -79,9 +79,12 @@ const TURN_MOST = 12;
 const SET_UP_MS = 300;
 // (Out of a backpedal into a run the same way - his hips opened, round
 // as he backpedals the last of it, this long (ms) at most: not running
-// on backwards as he comes round.)
+// on backwards as he comes round. Or out of anything else he goes along
+// faced more than FLIP_AWAY off the way he goes - driven back in a block,
+// dragging his toes in - round off it the same.)
 const FLIP_LEAD_MS = 130;
 const FLIP_SAME = Math.PI / 4;
+const FLIP_AWAY = Math.PI / 2;
 const turnMost = (l: Leg) => (l.move === "walk" ? TURN_MOST / 2 : TURN_MOST);
 // (How fast he goes through a move: taken over this long.)
 const RATE_MS = 5;
@@ -238,17 +241,16 @@ const facingOf = (legs: Leg[]): Facing => {
 		const setsUp = !goes(lj) && lp && goes(lp) && SET.has(lj.move);
 		// (Or down on a knee: round as he gets there - or, stood, round on
 		// his feet first, all the way, and then down.)
+		const lpWay =
+			lp && goes(lp) ? Math.atan2(lp.to.y - lp.from.y, lp.to.x - lp.from.x) : 0;
 		const flips =
 			own &&
 			lp !== undefined &&
-			lp.move === "back" &&
+			(lp.move === "back" || Math.abs(wrapAngle(b - lpWay)) > FLIP_AWAY) &&
 			goes(lp) &&
 			Math.abs(lp.t1 - lj.t0) <= 1 &&
 			Math.abs(
-				wrapAngle(
-					Math.atan2(lj.to.y - lj.from.y, lj.to.x - lj.from.x) -
-						Math.atan2(lp.to.y - lp.from.y, lp.to.x - lp.from.x),
-				),
+				wrapAngle(Math.atan2(lj.to.y - lj.from.y, lj.to.x - lj.from.x) - lpWay),
 			) < FLIP_SAME;
 		const kneels =
 			lj.move === "takeKnee" &&
