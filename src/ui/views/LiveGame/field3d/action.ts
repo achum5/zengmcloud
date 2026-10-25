@@ -907,6 +907,12 @@ class Actor {
 		const room = T * T - (2 * (D - v0 * T)) / A;
 		const a = room >= 0 ? A : (2 * (D - v0 * T)) / (T * T);
 		const ta = room >= 0 ? T - Math.sqrt(room) : T;
+		// (Up to it in no time: on at it from where he is - not a step of
+		// nothing first, that has him stood still for it.)
+		if (ta * 1000 < RAMP_STEP_MS / 2) {
+			this.push(leg);
+			return D / T;
+		}
 		const n = Math.max(1, Math.round((ta * 1000) / RAMP_STEP_MS));
 		const dt = ta / n;
 		// (Hardly any of it at the one pace: the last step up on to the end.)
@@ -2211,6 +2217,18 @@ const BLOCK_GAP = 2.6;
 const CLEAR_LATE_MS = 300;
 const BLOCK_CLEAR_FT = 3.5;
 const BLOCK_CLEAR_FPS = 4;
+// (Up front, only as long as he is up and running: until this long before
+// he is down, ms.)
+const CLEAR_DOWN_MS = 500;
+// (In the way of him before the blocker is on him: a step or two over out
+// of it, there as he is no nearer than this (feet), at this pace (ft/s) -
+// no more than this far over (feet), and in no less than this (ms) - and
+// pulled up in no more than this far on (feet).)
+const WAY_CLEAR_FT = 2.6;
+const WAY_FPS = 6;
+const WAY_MOST_FT = 4;
+const WAY_LEAST_MS = 300;
+const WAY_EASE_FT = 1;
 // (Driven back, the block won, no quicker than this - ft/s.)
 const BLOCK_DRIVE_FPS = 6;
 // A lineman off the ball into the man on him: no nearer than this (feet),
@@ -7853,6 +7871,14 @@ class Action {
 		const down = end.td
 			? { by: [], t }
 			: this.downBy(carrier, end.pt, t, this.d);
+		// (Short and up the middle, like as not a pile on him - or, in from
+		// right there, over the top of it.)
+		const short = sneak || yds <= 1 || end.td;
+		const piled =
+			!end.out &&
+			scheme !== "stretch" &&
+			yds <= PILE_YDS &&
+			r() < (end.td ? OVER_TOP : short ? PILE_SHORT : PILE);
 		this.runBlock(
 			carrier,
 			holeA,
@@ -7861,16 +7887,9 @@ class Action {
 			blockersBack,
 			scheme,
 			down.by,
+			!piled,
 		);
-		// (Short and up the middle, like as not a pile on him - or, in from
-		// right there, over the top of it.)
-		const short = sneak || yds <= 1 || end.td;
-		if (
-			!end.out &&
-			scheme !== "stretch" &&
-			yds <= PILE_YDS &&
-			r() < (end.td ? OVER_TOP : short ? PILE_SHORT : PILE)
-		) {
+		if (piled) {
 			this.heap = short ? PILE_IN.length : PILE_SMALL;
 		}
 		this.endCarry(
@@ -7891,7 +7910,8 @@ class Action {
 	// linebacker (or, none left, in on the double team beside him); on a
 	// power play the backside guard pulled round to the hole and up it, as
 	// a lead back goes up it, on whoever fills it; the receivers out onto
-	// the corners and safeties.
+	// the corners and safeties. On a run `through` them (not into a pile),
+	// out of the carrier's way as he comes by.
 	runBlock(
 		carrier: Actor,
 		holeA: number,
@@ -7900,6 +7920,7 @@ class Action {
 		backBlockers: number[],
 		scheme: RunScheme,
 		tacklers: Actor[],
+		through: boolean,
 	) {
 		const { snap } = this.input;
 		const r = this.r;
@@ -7979,23 +8000,50 @@ class Action {
 			}
 		}
 		for (const [b, men] of on) {
-			const s = this.of(b.at);
+			const s = { ...this.of(b.at), t: b.t };
 			const wins = beat(b);
-			if (wins) {
-				b.go(
-					this.w({ d: s.d + drive + 1, a: s.a + step.a * 0.4 }),
-					until,
-					"drive",
-					this.ahead,
-				);
-			} else {
-				b.go(
-					this.w({ d: s.d - 1.6, a: s.a }),
-					snap + 1150,
-					"drive",
-					this.ahead,
-				);
-				b.go(this.w({ d: s.d - 2.4, a: s.a }), until, "drive", this.ahead);
+			const path = wins
+				? [{ d: s.d + drive + 1, a: s.a + step.a * 0.4, t: until }]
+				: [
+						{ d: s.d - 1.6, a: s.a, t: snap + 1150 },
+						{ d: s.d - 2.4, a: s.a, t: until },
+					];
+			// (Turned off the way the man with the ball comes through - over
+			// to the side of it they are on by the time he is by, not stood in
+			// it - on a run that gets past them, not one into a pile there.)
+			const lay = (over: number, by: number) => {
+				let was = s;
+				for (const p of path) {
+					if (was.t < by && by < p.t) {
+						const u = (by - was.t) / (p.t - was.t);
+						b.go(
+							this.w({
+								d: was.d + (p.d - was.d) * u,
+								a: was.a + (p.a - was.a) * u + over,
+							}),
+							by,
+							"drive",
+							this.ahead,
+						);
+					}
+					const u = clamp((p.t - s.t) / Math.max(1, by - s.t), 0, 1);
+					b.go(this.w({ d: p.d, a: p.a + over * u }), p.t, "drive", this.ahead);
+					was = p;
+				}
+			};
+			lay(0, s.t);
+			const way = through
+				? this.wayThrough(
+						b,
+						carrier,
+						s.t,
+						Math.min(until, t - CLEAR_DOWN_MS),
+						[...on].flatMap(([o, them]) => (o === b ? [] : [o, ...them])),
+					)
+				: { over: 0, by: s.t };
+			if (way.over !== 0) {
+				b.cut(s.t);
+				lay(way.over, way.by);
 			}
 			let locked = until;
 			let freed = snap;
@@ -8016,6 +8064,10 @@ class Action {
 				m.hold(snap + 50);
 				const lat = (r() - 0.5) * 0.6;
 				this.fireInto(m, (time) => at(time, lat), snap + 450, end);
+				// (Over with him, by when they are out of the way.)
+				if (way.over !== 0 && m.t < way.by && way.by < end) {
+					m.go(at(way.by, lat), way.by, "engage", this.behind);
+				}
 				m.go(at(end, (r() - 0.5) * 0.6), end, "engage", this.behind);
 				locked = Math.min(locked, end);
 				freed = Math.max(freed, end);
@@ -8097,7 +8149,15 @@ class Action {
 				pull.top * 0.9,
 				"run",
 			);
-			this.blockOn(pull, pick(holePt), beat(pull), offAt, until, carrier);
+			this.blockOn(
+				pull,
+				pick(holePt),
+				beat(pull),
+				offAt,
+				until,
+				carrier,
+				through,
+			);
 		}
 		for (const b of backs) {
 			b.hold(snap + 40);
@@ -8107,7 +8167,7 @@ class Action {
 				b.top * 0.85,
 				"run",
 			);
-			this.blockOn(b, pick(holePt), beat(b), offAt, until, carrier);
+			this.blockOn(b, pick(holePt), beat(b), offAt, until, carrier, through);
 		}
 		// Nobody over him: up onto a linebacker - or, none left, in beside
 		// the man on the nearest one, on him too.
@@ -8117,7 +8177,7 @@ class Action {
 			}
 			const m = pick(b.at);
 			if (m) {
-				this.blockOn(b, m, beat(b), offAt, until, carrier);
+				this.blockOn(b, m, beat(b), offAt, until, carrier, through);
 				continue;
 			}
 			const mate = closest([...on.keys()], b.at);
@@ -8184,14 +8244,14 @@ class Action {
 				snap + 650,
 				"run",
 			);
-			this.blockOn(m, db, r() < STALK_WON, offAt, until, carrier);
+			this.blockOn(m, db, r() < STALK_WON, offAt, until, carrier, through);
 		}
 	}
 
 	// A blocker onto a man off the line: as soon as he can be in front of
 	// him, then on him - driving him back if he wins it; if not, the man
 	// off him in a moment. Till `until` - or the man off it as the carrier
-	// goes by, after him.
+	// goes by, after him (and, `through` him, out of his way before then).
 	blockOn(
 		b: Actor,
 		m: Actor | undefined,
@@ -8199,10 +8259,13 @@ class Action {
 		offAt: (d: number) => number,
 		until: number,
 		clear?: Actor,
+		through = false,
 	) {
 		const r = this.r;
-		let meet: { t: number; at: Pt } | undefined;
-		if (m) {
+		const meetOf = () => {
+			if (!m) {
+				return undefined;
+			}
 			// (Up to speed for it off what he is doing - see rampedMs.)
 			const fps = b.top * CLIMB_PACE;
 			for (let c = b.t + 100; c <= until; c += 50) {
@@ -8210,10 +8273,14 @@ class Action {
 				const at = this.w({ d: p.d - BLOCK_GAP, a: p.a });
 				const far = dist(b.at, at);
 				if (rampedMs(far, fps, paceOn(b.last, b.at, at)) <= c - b.t) {
-					meet = { t: c, at };
-					break;
+					return { t: c, at };
 				}
 			}
+			return undefined;
+		};
+		let meet = meetOf();
+		if (m && meet && clear && through && this.outOfWay(m, clear, meet.t)) {
+			meet = meetOf();
 		}
 		if (!m || !meet) {
 			// (Up to the next level, and nobody there.)
@@ -8278,6 +8345,122 @@ class Action {
 			this.ahead,
 		);
 		b.hold(Math.max(end, until), "stand", this.ahead);
+	}
+
+	// A blocker locked up with the man in front of him (BLOCK_GAP on) from
+	// t0, with the man with the ball through them before t1: how far over
+	// (feet across the field) to have gone by when (`by`) to be out of his
+	// way - none if they are not in it, or if it would have them into the
+	// men around them (`crowd`) any more than they are.
+	wayThrough(
+		b: Actor,
+		clear: Actor,
+		t0: number,
+		t1: number,
+		crowd: Actor[],
+	): { over: number; by: number } {
+		const nearest = (over: number, by: number, of: Actor[]) => {
+			let near = Infinity;
+			let when = t0;
+			for (let c = t0; c <= t1; c += 50) {
+				const p = this.of(b.posAt(c));
+				const a = p.a + over * clamp((c - t0) / Math.max(1, by - t0), 0, 1);
+				for (const m of of) {
+					const q = this.of(m.posAt(c));
+					const d = Math.min(
+						Math.hypot(q.d - p.d, q.a - a),
+						Math.hypot(q.d - p.d - BLOCK_GAP, q.a - a),
+					);
+					if (d < near) {
+						near = d;
+						when = c;
+					}
+				}
+			}
+			return { near, when };
+		};
+		const first = nearest(0, t0, [clear]);
+		const by = first.when;
+		const most = (BLOCK_CLEAR_FPS * (by - t0)) / 1000;
+		const room = Math.min(WAY_CLEAR_FT, nearest(0, by, crowd).near);
+		let best = first.near;
+		let over = 0;
+		for (const o of [1, -1, 2, -2, 3, -3, 4, -4]) {
+			if (best >= BLOCK_CLEAR_FT || Math.abs(o) > most) {
+				break;
+			}
+			const near = nearest(o, by, [clear]).near;
+			if (near > best + 0.5 && nearest(o, by, crowd).near >= room) {
+				best = near;
+				over = o;
+			}
+		}
+		return { over, by };
+	}
+
+	// A man waiting on a blocker, with the man with the ball by him before
+	// then (`by`): a step or two over out of his way in his low steps,
+	// there as he comes - not run through stood there. Whether he was.
+	outOfWay(m: Actor, clear: Actor, by: number): boolean {
+		const at = m.at;
+		const nearest = (to: Pt) => {
+			let near = Infinity;
+			let when = m.t;
+			for (let c = m.t; c <= by; c += 33) {
+				const d = dist(clear.posAt(c), to);
+				if (d < near) {
+					near = d;
+					when = c;
+				}
+			}
+			return { near, when };
+		};
+		const { near, when } = nearest(at);
+		const a = clear.posAt(when - 100);
+		const z = clear.posAt(when + 100);
+		const run = dist(a, z);
+		if (near >= WAY_CLEAR_FT || run < 0.5) {
+			return false;
+		}
+		const n = { x: -(z.y - a.y) / run, y: (z.x - a.x) / run };
+		const q = clear.posAt(when);
+		const off = (at.x - q.x) * n.x + (at.y - q.y) * n.y;
+		const side = off < 0 ? -1 : 1;
+		// (The near side if that does it, the far one if it does not.)
+		let to = at;
+		let best = near;
+		for (const way of [side, -side]) {
+			for (let s = WAY_CLEAR_FT + 0.3 - way * off; s <= WAY_MOST_FT; s += 0.5) {
+				const p = { x: at.x + n.x * way * s, y: at.y + n.y * way * s };
+				const d = nearest(p).near;
+				if (d > best) {
+					best = d;
+					to = p;
+				}
+				if (d >= WAY_CLEAR_FT) {
+					break;
+				}
+			}
+			if (best >= WAY_CLEAR_FT) {
+				break;
+			}
+		}
+		if (to === at) {
+			return false;
+		}
+		const pace = (run / 200) * 1000;
+		const there = Math.max(
+			m.t + WAY_LEAST_MS,
+			when - (WAY_CLEAR_FT / pace) * 1000 - 100,
+		);
+		const from = Math.max(
+			m.t,
+			there - Math.max(WAY_LEAST_MS, (dist(at, to) / WAY_FPS) * 1000),
+		);
+		m.hold(from);
+		m.go(to, there, "slide", this.behind);
+		m.easeOff(WAY_EASE_FT);
+		return true;
 	}
 
 	// Men locked up, from t0 to t1: shoved this way and that together - a
