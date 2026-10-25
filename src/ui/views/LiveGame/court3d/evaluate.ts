@@ -3949,6 +3949,23 @@ const lookToward = (
 	here: Pt,
 	yaw: number,
 ): number => {
+	const b = ballBearing(tl, t, here);
+	if (!b) {
+		return 0;
+	}
+	const rel = (wrapAngle(b.yaw - yaw) * 180) / Math.PI;
+	const a = Math.abs(rel);
+	const reach = a <= LOOK_BACK ? 1 : Math.max(0, (180 - a) / (180 - LOOK_BACK));
+	return Math.sign(rel) * Math.min(a, LOOK_MOST) * reach * b.near;
+};
+// Which way the ball is from `here` as he sees it - a moment behind it,
+// over a moment (see LOOK_LAG): its way (radians), and how far off it is
+// to look at (0, coming right by him, to 1).
+export const ballBearing = (
+	tl: CourtTimeline,
+	t: number,
+	here: Pt,
+): { yaw: number; near: number } | undefined => {
 	// (The way to it over that time, each moment's as much as the others':
 	// between one step of LOOK_EVERY and the next, the one eased into the
 	// other.)
@@ -3974,14 +3991,9 @@ const lookToward = (
 		// after it as it goes by under his nose.)
 		near += clamp01((d - LOOK_NEAR) / LOOK_NEAR_EASE) * k;
 	}
-	near /= n;
-	if (sx * sx + sy * sy < 1e-9) {
-		return 0;
-	}
-	const rel = (wrapAngle(Math.atan2(sy, sx) - yaw) * 180) / Math.PI;
-	const a = Math.abs(rel);
-	const reach = a <= LOOK_BACK ? 1 : Math.max(0, (180 - a) / (180 - LOOK_BACK));
-	return Math.sign(rel) * Math.min(a, LOOK_MOST) * reach * near;
+	return sx * sx + sy * sy < 1e-9
+		? undefined
+		: { yaw: Math.atan2(sy, sx), near: near / n };
 };
 // Where the ball is on the floor at t, near enough to look at: with
 // whoever has it, along its way to wherever it is going.

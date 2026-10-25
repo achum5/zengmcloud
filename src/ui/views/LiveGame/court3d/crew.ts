@@ -3,6 +3,7 @@ import { makeCourtRng } from "../courtRng.ts";
 import type { BallEnd, CourtTimeline, Fx } from "./director.ts";
 import {
 	arenaShotAt,
+	ballBearing,
 	cameraCuts,
 	evalPlayer,
 	floorSpotOf,
@@ -1009,6 +1010,28 @@ const handingIn = (
 	return undefined;
 };
 
+// WHICH WAY AN OFFICIAL FACES: the ball - or, running with the play, the
+// way he goes, more of it the quicker he goes (from FACE_RUN_FROM to
+// FACE_RUN_TO, feet a second), his head turned to keep the ball in sight.
+// How quick, over a moment either side (FACE_SPAN): his places are worked
+// out a STEP apart, and from one stretch to the next he would turn in a
+// frame. A signal's facing - and the run back to his place after it - is
+// come round to over SIGNAL_TURN, from whichever way he faced before.
+const FACE_SPAN = 400;
+const FACE_RUN_FROM = 6;
+const FACE_RUN_TO = 12;
+const SIGNAL_TURN = 220;
+const LOOK_MOST = 70;
+const LOOK_BACK = 115;
+const smooth01 = (u: number) => {
+	const x = clamp(u, 0, 1);
+	return x * x * (3 - 2 * x);
+};
+const turnToward = (from: number, to: number, w: number) => {
+	let d = to - from;
+	d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+	return from + d * w;
+};
 const refStates = (
 	tl: CourtTimeline,
 	t: number,
@@ -1016,6 +1039,8 @@ const refStates = (
 	ball: Pt,
 ): PlayerState[] => {
 	const { at, vel } = refPlaces(tl, t);
+	const before = refPlaces(tl, t - FACE_SPAN / 2).at;
+	const after = refPlaces(tl, t + FACE_SPAN / 2).at;
 	const signals = signalsAt(tl, t);
 	// The jump ball: the third holds it out between the two of them, then
 	// throws it up.
@@ -1038,12 +1063,33 @@ const refStates = (
 				: anim === "walk"
 					? (t / 1000) * 1.1
 					: loopPhase(anim, t, i * 0.37);
-		let yaw = speed > 9 ? Math.atan2(v.y, v.x) : yawTo(p, ball);
-		if (ftTeam !== undefined && dist(p, ftAdminAt(ftTeam)) < 0.8) {
-			// The one with the ball at the line: facing the shooter.
-			yaw = yawTo(p, spot(ftTeam, FT_SHOOTER_DEPTH, 25));
-			if (handing) {
+		const gx = ((after[i]!.x - before[i]!.x) * 1000) / FACE_SPAN;
+		const gy = ((after[i]!.y - before[i]!.y) * 1000) / FACE_SPAN;
+		// (The ball in his own hands, or going right by him: facing us.)
+		const seen = ballBearing(tl, t, p);
+		const toBall = seen
+			? turnToward(FACING_US, seen.yaw, seen.near)
+			: yawTo(p, ball);
+		let yaw = turnToward(
+			toBall,
+			Math.atan2(gy, gx),
+			smooth01(
+				(Math.hypot(gx, gy) - FACE_RUN_FROM) / (FACE_RUN_TO - FACE_RUN_FROM),
+			),
+		);
+		let watching = true;
+		if (ftTeam !== undefined) {
+			// The one with the ball at the line: facing the shooter (come
+			// round to as he gets there).
+			const d = dist(p, ftAdminAt(ftTeam));
+			yaw = turnToward(
+				yaw,
+				yawTo(p, spot(ftTeam, FT_SHOOTER_DEPTH, 25)),
+				smooth01((1.6 - d) / 0.8),
+			);
+			if (handing && d < 0.8) {
 				({ anim, phase } = handing);
+				watching = false;
 			}
 		}
 		if (
@@ -1056,14 +1102,18 @@ const refStates = (
 			anim = "toss";
 			phase = t < toss.t ? 0 : (t - toss.t) / 600;
 			yaw = FACING_US;
+			watching = false;
 		}
 		const signal = signals[i];
 		if (signal) {
 			const move = signal.moves.find((s) => t >= s.t0 && t < s.t1);
 			const live = p;
-			p = signalPos(signal, t, (when) =>
-				when === t ? live : refPlaces(tl, when).at[i]!,
-			);
+			const liveAt = (when: number) =>
+				when === t ? live : refPlaces(tl, when).at[i]!;
+			p = signalPos(signal, t, liveAt);
+			// (The last of it he came round from: the move before, or as he
+			// faced before it.)
+			const done = signal.moves.filter((s) => s.t1 <= t).at(-1);
 			if (move) {
 				anim = move.anim;
 				const a = ANIMS[anim];
@@ -1071,13 +1121,41 @@ const refStates = (
 					a.kind === "act"
 						? (t - move.t0) / (move.t1 - move.t0)
 						: loopPhase(anim, t - move.t0, 0);
-				yaw = move.yaw;
+				yaw = turnToward(
+					done && done.t1 >= move.t0 - 1 ? done.yaw : yaw,
+					move.yaw,
+					smooth01((t - move.t0) / SIGNAL_TURN),
+				);
 			} else {
 				anim = "run";
 				phase = (t / 1000) * 1.6;
-				yaw = yawTo(signal.still, live);
+				// Running back: the way he goes - and as he gets there, round
+				// to the way he would face there.
+				const a = signalPos(signal, t - 60, liveAt);
+				const b = signalPos(signal, t + 60, liveAt);
+				const going =
+					Math.hypot(b.x - a.x, b.y - a.y) > 1e-3
+						? Math.atan2(b.y - a.y, b.x - a.x)
+						: yaw;
+				const back = turnToward(
+					done ? done.yaw : yaw,
+					going,
+					smooth01((t - (done ? done.t1 : signal.t0)) / SIGNAL_TURN),
+				);
+				const end = signal.moves.at(-1)!.t1 + signal.back;
+				yaw = turnToward(yaw, back, smooth01((end - t) / SIGNAL_TURN));
 			}
+			watching = !move;
 		}
+		// His head turned to keep the ball in sight, as far as a neck goes.
+		let rel = (toBall - yaw) % (Math.PI * 2);
+		rel -= Math.round(rel / (Math.PI * 2)) * Math.PI * 2;
+		const a = (Math.abs(rel) * 180) / Math.PI;
+		const look = watching
+			? Math.sign(rel) *
+				Math.min(a, LOOK_MOST) *
+				(a <= LOOK_BACK ? 1 : Math.max(0, (180 - a) / (180 - LOOK_BACK)))
+			: 0;
 
 		return {
 			pid: m.pid,
@@ -1090,6 +1168,7 @@ const refStates = (
 			anim,
 			phase,
 			moving: anim === "run" || anim === "walk",
+			...(Math.abs(look) > 0.5 ? { look } : {}),
 		};
 	});
 };
