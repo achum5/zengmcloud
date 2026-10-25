@@ -2744,6 +2744,9 @@ const GET_OFF_SQUARE_MS = 200;
 // (The blocker knocked back by him, feet for each ft/s he hits him at - no
 // more than JOLT_MOST - over JOLT_MS.)
 const JOLT_PER_FPS = 0.06;
+// (The blocker turned to face him, no further than this off straight
+// ahead, radians.)
+const BLOCK_TURN = 1;
 const JOLT_MOST = 1.1;
 const JOLT_MS = 250;
 const GANG = [0.5, 0.35];
@@ -7291,9 +7294,11 @@ class Action {
 				const left = clamp(1 - (t - hitT) / Math.max(1, end - hitT), 0, 1);
 				return jolt * (1 - (1 - u) * (1 - u)) * left;
 			};
+			const him: Pt[] = [];
 			for (const x of steps) {
 				const p = on(x.t, x.lat);
 				p.x -= dir * shove(x.t);
+				him.push(p);
 				m.go(
 					p,
 					x.t,
@@ -7301,19 +7306,27 @@ class Action {
 					edge ? this.toward(p, qb.posAt(x.t)) : this.behind,
 				);
 			}
-			// (A man doubled moves with the first of them.)
+			// (A man doubled moves with the first of them - turned to him,
+			// opened up to a man round his outside, as far as BLOCK_TURN.)
 			if (moves) {
 				moved.add(b);
 				b.cut(hitT);
 				steps.forEach((x, k) => {
+					const at = {
+						x: held[k]!.x - dir * shove(x.t),
+						y: held[k]!.y + dir * x.lat * 0.6,
+					};
+					const off = this.toward(at, him[k]!) - this.ahead;
 					b.go(
-						{
-							x: held[k]!.x - dir * shove(x.t),
-							y: held[k]!.y + dir * x.lat * 0.6,
-						},
+						at,
 						x.t,
 						"passSet",
-						this.ahead,
+						this.ahead +
+							clamp(
+								Math.atan2(Math.sin(off), Math.cos(off)),
+								-BLOCK_TURN,
+								BLOCK_TURN,
+							),
 					);
 				});
 			}
