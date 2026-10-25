@@ -523,6 +523,8 @@ const stepBlend = (f: Blend, w: number, k: Steps): Blend => {
 		...(f.arms === undefined ? {} : { arms: blendStep(f.arms, k) }),
 		...(f.down ? { down: Math.round(f.down * k.blend) / k.blend } : {}),
 		...(f.way === undefined ? {} : { way: wayStep(f.way, k) }),
+		...(footSteps(f.feet, k) ? { feet: footSteps(f.feet, k) } : {}),
+		...(driveStep(f.drive, k) ? { drive: driveStep(f.drive, k) } : {}),
 		...(f.pivot === undefined
 			? {}
 			: {
@@ -536,8 +538,26 @@ const stepBlend = (f: Blend, w: number, k: Steps): Blend => {
 		...(g && gw > 0 ? { from: stepBlend(g, gw, k) } : {}),
 	};
 };
+// Each foot's own turn on top of his legs' (see lock), to as many degrees as
+// his hips' - none, if neither turns that far.
+const footSteps = (
+	feet: [number, number] | undefined,
+	k: Steps,
+): [number, number] | undefined => {
+	if (!feet) {
+		return undefined;
+	}
+	const out = feet.map((d) => Math.round(d / k.legs) * k.legs || 0) as [
+		number,
+		number,
+	];
+	return out[0] === 0 && out[1] === 0 ? undefined : out;
+};
+// How hard he is going at it, in steps.
+const driveStep = (d: number | undefined, k: Steps) =>
+	d ? Math.round(d * k.arm) / k.arm || undefined : undefined;
 const blendKey = (f: Blend): string =>
-	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.stepLen ? `l${f.stepLen}` : ""}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.dribbleFrom ?? ""}${f.tight ? `t${f.tight}` : ""}${strideKey(f.stride)}${f.held ? "h" : ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.turns ?? ""}~${f.pivot ?? ""}~${f.down ?? ""}~${f.way ?? ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
+	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.stepLen ? `l${f.stepLen}` : ""}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.dribbleFrom ?? ""}${f.tight ? `t${f.tight}` : ""}${strideKey(f.stride)}${f.held ? "h" : ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.turns ?? ""}~${f.pivot ?? ""}~${f.down ?? ""}~${f.way ?? ""}~${f.feet ?? ""}~${f.drive ?? ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
 
 // The pose he is drawn in: his own, stepped to the sprite's frames and turns
 // - and, easing out of his last move, a few steps of that.
@@ -569,10 +589,9 @@ const stepped = (st: PlayerState, k: Steps) => {
 				: Math.floor(st.grip * k.blend) / k.blend,
 		phase: frameOf(st.anim, st.phase, k),
 		stepLen: lenStep(st.stepLen),
-		// How hard he is going at it, in steps.
-		drive: st.drive
-			? Math.round(st.drive * k.arm) / k.arm || undefined
-			: undefined,
+		drive: driveStep(st.drive, k),
+		// Each foot down pointing where it came down, the same.
+		lock: footSteps(st.lock, k),
 		turn: ((turn % k.turns) + k.turns) % k.turns,
 		yaw: (turn * Math.PI * 2) / k.turns,
 		dribble: dribbleFrame(st.dribble, k),
@@ -673,7 +692,7 @@ const planOf = (
 		const f = pose.from;
 		const a = pose.arm;
 		plan.id = id;
-		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
+		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.lock ? `k${pose.lock}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
 			f ? `|${blendKey(f)}` : ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 	}
@@ -734,6 +753,7 @@ const jobOf = (
 			pivot: pose.pivot,
 			grip: pose.grip,
 			down: pose.down,
+			lock: pose.lock,
 		},
 		body,
 		px,

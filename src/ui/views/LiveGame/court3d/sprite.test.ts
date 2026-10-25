@@ -543,3 +543,57 @@ test("a new look of his waits its turn, like a new pose", () => {
 		{ behind: 0, made: 2 },
 	]);
 });
+
+// A foot down on his strides pointing where it came down (see lock in
+// evaluate.ts), or still turned as he eases out of the move before: a picture
+// of him like that is one of its own - not the one made of him with his feet
+// straight, drawn again for it.
+test("a planted foot turned is a picture of its own, not one with it straight", () => {
+	const body = bodyOf();
+	const look: Look = {
+		kit: kitsFor(undefined, undefined)[1],
+		skin: "#8d5524",
+		hair: "#1f1612",
+		jerseyNumber: "",
+		name: "",
+		lastName: "",
+		wordmark: "",
+	};
+	const scratch = makeScratch();
+	const cache = makeSpriteCache();
+	const ctx = stubCanvas().getContext() as unknown as CanvasRenderingContext2D;
+	const cam = makeCamera({ x: 47, width: 60, y: 24 }, 640, 360, MAIN_RIG);
+	const run = {
+		pid: 1,
+		team: 1,
+		shown: true,
+		x: 47,
+		y: 25,
+		z: 0,
+		yaw: 0,
+		anim: "run",
+		phase: 0.5 / 12,
+		moving: true,
+	} as PlayerState;
+	const frames: PlayerState[] = [
+		run,
+		{ ...run, lock: [24, 0] },
+		{ ...run, lock: [24, 0] },
+		{ ...run, lock: [0, -24] },
+		// (Easing out of a move with a foot still turned, the same.)
+		{
+			...run,
+			from: { anim: "jog", phase: 0.5 / 12, w: 0.5, feet: [24, 0] },
+		},
+		{ ...run, from: { anim: "jog", phase: 0.5 / 12, w: 0.5 } },
+		// (Turned too little to show, his feet straight.)
+		{ ...run, lock: [1, -1] },
+	];
+	for (const st of frames) {
+		startFrame(cache);
+		cache.budget = undefined;
+		prepareSprites(scratch, cam, [{ st, body, look }], 1, cache);
+		drawSprite(ctx, scratch, cam, st, body, look, 1, cache);
+	}
+	assert.equal(cache.kept.size, 5);
+});
