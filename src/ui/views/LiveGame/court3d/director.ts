@@ -3131,25 +3131,35 @@ class Director {
 	// Off his dribble to pass it, he takes it as it next comes up into his
 	// hands and it goes straight on out of them - not snatched back at the
 	// top of the bounce gone by and stood holding it till the pass goes
-	// (unless that was only just now). Returns when he has it.
-	private gatherToPass(pid: number, by: number): number {
+	// (unless that was only just now). Or, with time in hand - a pass timed
+	// to meet a man on his way somewhere - straight off the top of the bounce
+	// gone by if that is nearer the moment, the pass a beat early to lead him
+	// rather than late to leave him waiting on it. When he has it, and when
+	// the pass can go.
+	private gatherToPass(
+		pid: number,
+		by: number,
+		// (Nothing of his before this.)
+		floor: number,
+	): { got: number; go: number } {
 		const from = this.dribbleFrom(pid, by);
 		const last = this.ball.at(-1);
 		if (
 			from === undefined ||
 			(last?.kind === "hold" && last.pid === pid && last.style === "cross")
 		) {
-			return this.gather(pid, by);
+			return { got: this.gather(pid, by), go: by };
 		}
 		const b = (by - from) / DRIBBLE_MS + 1e-6;
 		const k = Math.floor(b);
 		const ph = b - k;
-		return this.gather(
-			pid,
-			k >= 1 && ph * DRIBBLE_MS > PASS_GATHER_LATE && ph < CATCH_UP
-				? from + (k + CATCH_UP) * DRIBBLE_MS
-				: by,
-		);
+		if (k < 1 || ph * DRIBBLE_MS <= PASS_GATHER_LATE || ph >= CATCH_UP) {
+			return { got: this.gather(pid, by), go: by };
+		}
+		const early = from + k * DRIBBLE_MS + PASS_GATHER_LATE;
+		const late = from + (k + CATCH_UP) * DRIBBLE_MS;
+		const at = early >= floor && by - early < late - by ? early : late;
+		return { got: this.gather(pid, at), go: at };
 	}
 
 	// Through the net, down off the floor under it: the man taking it out
@@ -4102,8 +4112,12 @@ class Director {
 			(m) => m.t0 <= ready && m.t1 > ready + 60,
 		);
 		// Off the dribble, once he has it in both hands (or in the one).
-		const got = this.gatherToPass(from, ready);
-		let start = Math.max(ready, got);
+		const { got, go } = this.gatherToPass(
+			from,
+			ready,
+			Math.max(t, this.free.get(from) ?? 0),
+		);
+		let start = Math.max(Math.min(ready, go), got);
 		// Handing it on at a dead ball, he stops and turns to the man first -
 		// not tossing it over his shoulder off the walk he was on.
 		if (handOff) {
