@@ -392,7 +392,107 @@ describe("footwork", () => {
 		assert.isAbove(frames, 300);
 		assert.isBelow(slow, SWITCH_SLOW_MOST);
 	}, 240_000);
+
+	// Shuffling, turned so far that the way he goes comes round past straight
+	// ahead (or back) to his other side, the foot he leads with changes over
+	// - from the one leg to the other as it comes round, not a knee or a foot
+	// thrown across in a frame. (Before: 54 feet a second at worst, six over
+	// 42.)
+	test("a shuffling man's lead goes over from one foot to the other, not in a frame", () => {
+		const { flips, most } = leadFlips();
+		assert.isAbove(flips, 40);
+		assert.isBelow(most, 44);
+	}, 240_000);
+
+	// Stepping over out of one move into the next as he goes up off the floor
+	// - a jump at the end of a sprint, say - it lets go of his legs as he
+	// rises, not all at once as he gets so high: his head goes up with him,
+	// not down and then up a foot and more in a frame. (Before: as much as 29
+	// feet of head for a foot of rise, 183 times.)
+	test("going up out of a step over, his legs let go of it as he rises", () => {
+		const { frames, most } = takeoffSlope();
+		assert.isAbove(frames, 500);
+		assert.isBelow(most, 6);
+	}, 240_000);
 });
+
+// Shuffling, the frames the way he goes comes round to his other side: how
+// many, and the quickest a knee or a foot goes over one (feet a second).
+const leadFlips = () => {
+	const body = bodyOf();
+	const STEP = 16;
+	let flips = 0;
+	let most = 0;
+	const { tl } = compile("a", 120);
+	for (const tr of tl.tracks.values()) {
+		let prev: { joints: Pt3[]; left: boolean } | undefined;
+		for (let t = 0; t < Math.min(tl.end, 900_000); t += STEP) {
+			const st = evalPlayer(tl, tr.pid, t);
+			if (
+				!st.shown ||
+				fastAt(tl, t) > 1 ||
+				st.anim !== "shuffle" ||
+				(st.from !== undefined && st.from.w > 0.05) ||
+				!st.way
+			) {
+				prev = undefined;
+				continue;
+			}
+			const me = withBody(st, body);
+			const sk = skeleton(body, poseOf(me));
+			const joints = [sk.legR.mid, sk.legL.mid, sk.legR.end, sk.legL.end].map(
+				(v) => bodyPoint(me, v),
+			);
+			const left = st.way[1] > 0;
+			if (prev && prev.left !== left) {
+				flips++;
+				for (const [i, j] of joints.entries()) {
+					const was = prev.joints[i]!;
+					most = Math.max(
+						most,
+						(Math.hypot(j.x - was.x, j.y - was.y, j.z - was.z) * 1000) / STEP,
+					);
+				}
+			}
+			prev = { joints, left };
+		}
+	}
+	return { flips, most };
+};
+
+// Up off the floor out of a move he is still stepping over from: how far his
+// head goes for a little more height, at most (feet for a foot of rise),
+// up through where he lets go of it.
+const takeoffSlope = () => {
+	const body = bodyOf();
+	const DZ = 0.02;
+	let frames = 0;
+	let most = 0;
+	const { tl } = compile("a", 120);
+	for (const tr of tl.tracks.values()) {
+		for (let t = 0; t < Math.min(tl.end, 900_000); t += 16) {
+			const st = evalPlayer(tl, tr.pid, t);
+			const w = st.from?.w ?? 0;
+			if (
+				!st.shown ||
+				fastAt(tl, t) > 1 ||
+				w <= 0 ||
+				w >= 1 ||
+				st.z < 0.1 ||
+				st.z > 0.4
+			) {
+				continue;
+			}
+			frames++;
+			const head = (z: number) =>
+				skeleton(body, poseOf(withBody({ ...st, z }, body))).head.u;
+			for (let z = 0.1; z < 0.4; z += DZ) {
+				most = Math.max(most, Math.abs(head(z + DZ) - head(z)) / DZ);
+			}
+		}
+	}
+	return { frames, most };
+};
 
 // (Before: 0.92 of his speed.)
 const SWITCH_SLOW_MOST = 0.75;

@@ -423,11 +423,19 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   0.64). Shuffling and turned so far round that the way he goes comes
   round to his other side, the foot he stands on keeps pointing where it
   came down - not let go of as if it were the one up (planted feet turned
-  more than 30 degrees, 8 a game down to 4). Still to do: going straight from running into a shuffle or a
+  more than 30 degrees, 8 a game down to 4); and as it comes round, the
+  lead goes over from foot to foot, not thrown across in a frame (knees and
+  feet at 54 feet a second at worst there, down to 40). Going up off the
+  floor out of a step over, it lets go of his legs as he rises - his head
+  no longer dipping and then thrown up half a foot in a frame. Still to do: going straight from running into a shuffle or a
   backpedal, or back, at speed, both feet slide through the change
   (stepped over there, his legs are flung; from all but a standstill they
   now step); and turning on the spot while all but stood in a shuffle,
-  both feet go round with him.)
+  both feet go round with him - spun round as fast as a man turns where
+  he stands, 500 degrees a second on steps a second apart, nearly half of
+  a shuffle's sliding feet (his foot down held where it is through the
+  turn, and a slower turn on push steps, both tried: neither helped - it
+  wants quicker steps as he comes round).)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like

@@ -4284,6 +4284,18 @@ const slanted = (q: Pose, way: [number, number]): Pose => {
 // step.
 const SLIDE_LIFT = 14;
 const LIFT_HIP = 0.45;
+// How much his left leads, shuffling `way`: all of it going to his left,
+// none going to his right - and going so nearly straight ahead or back that
+// which foot leads is no way to tell, half and half, so as the way he goes
+// comes round past straight ahead the lead goes over from the one foot to
+// the other, not in a frame. (Out of how much of the way is across him.)
+const LEAD_SURE = 0.25;
+const leftLeads = (way: [number, number]): number | undefined => {
+	const m = Math.hypot(way[0], way[1]);
+	return m < 1e-6
+		? undefined
+		: smooth01((way[1] / m + LEAD_SURE) / (2 * LEAD_SURE));
+};
 const liftedStep = (q: Pose, way: [number, number], ph: number): Pose => {
 	const [f, s] = way;
 	const m = Math.hypot(f, s);
@@ -4304,20 +4316,18 @@ const liftedStep = (q: Pose, way: [number, number], ph: number): Pose => {
 			: 0;
 	const { ahead, across } = slantOf(way, e);
 	// (His left leads going to his left; pushing, the lead foot moves.)
-	const near = s > 0 !== at < 0.5;
-	return near
-		? {
-				...q,
-				kneeN: q.kneeN + k,
-				hipN: q.hipN + k * LIFT_HIP + (s > 0 ? -ahead : ahead),
-				wideN: q.wideN + e - across,
-			}
-		: {
-				...q,
-				kneeF: q.kneeF + k,
-				hipF: q.hipF + k * LIFT_HIP + (s > 0 ? ahead : -ahead),
-				wideF: q.wideF + e - across,
-			};
+	const left = leftLeads(way)!;
+	const far = at < 0.5 ? left : 1 - left;
+	const lead = s > 0 ? ahead : -ahead;
+	return {
+		...q,
+		kneeN: q.kneeN + k * (1 - far),
+		hipN: q.hipN + (k * LIFT_HIP - lead) * (1 - far),
+		wideN: q.wideN + (e - across) * (1 - far),
+		kneeF: q.kneeF + k * far,
+		hipF: q.hipF + (k * LIFT_HIP + lead) * far,
+		wideF: q.wideF + (e - across) * far,
+	};
 };
 
 // Going one way while he looks another - a few steps aside with his eyes on
@@ -4513,10 +4523,18 @@ const fallsMemo = (
 // together the same either way he goes (see stride in poses), so which one
 // is down is which way he goes - the foot he leads with down through the
 // close, the other through the push. (Which he leads with, as he goes
-// halfway along the run.)
+// halfway along the run - or, going straight on from push steps on the run
+// before, the foot that led on those: his feet go on stepping as they were,
+// not each put half a step on in a frame. Which way he goes having come
+// round to his other side, the other foot leads - see leftLeads.)
 const PUSH_DUTY = 0.5;
 const pushLeads = new WeakMap<Track, Map<Move, boolean>>();
-const leadsLeft = (tl: CourtTimeline, tr: Track, run: Run): boolean => {
+const leadsLeft = (
+	tl: CourtTimeline,
+	tr: Track,
+	k: number,
+	run: Run,
+): boolean => {
 	let memo = pushLeads.get(tr);
 	if (!memo) {
 		memo = new Map();
@@ -4524,8 +4542,16 @@ const leadsLeft = (tl: CourtTimeline, tr: Track, run: Run): boolean => {
 	}
 	let left = memo.get(run.mv);
 	if (left === undefined) {
-		const mid = (run.s0 + run.s1) / 2;
-		left = wayOf(tr, yawAt(tl, tr, mid), mid)[1] > 0;
+		const was =
+			k > 0 && (run.v0 > 0 || run.mv.t0 - tr.moves[k - 1]!.t1 <= STRIDE_ON_MS)
+				? runOf(tr, k - 1)
+				: undefined;
+		if (was && PUSH_STEPS.has(endStepsOf(tl, tr, k - 1, was))) {
+			left = leadsLeft(tl, tr, k - 1, was);
+		} else {
+			const mid = (run.s0 + run.s1) / 2;
+			left = wayOf(tr, yawAt(tl, tr, mid), mid)[1] > 0;
+		}
 		memo.set(run.mv, left);
 	}
 	return left;
@@ -4533,6 +4559,7 @@ const leadsLeft = (tl: CourtTimeline, tr: Track, run: Run): boolean => {
 const stepLegs = (
 	tl: CourtTimeline,
 	tr: Track,
+	k: number,
 	run: Run,
 	anim: AnimName,
 	ph: number,
@@ -4540,7 +4567,7 @@ const stepLegs = (
 	if (!PUSH_STEPS.has(anim)) {
 		return legPhases(anim, ph);
 	}
-	const left = leadsLeft(tl, tr, run);
+	const left = leadsLeft(tl, tr, k, run);
 	const trail = frac(ph);
 	const lead = frac(ph - 0.5);
 	return {
@@ -4557,7 +4584,7 @@ const footfallsOf = (
 	run: Run,
 	anim: AnimName,
 ): [Footfalls, Footfalls] | undefined => {
-	const g0 = stepLegs(tl, tr, run, anim, 0);
+	const g0 = stepLegs(tl, tr, k, run, anim, 0);
 	if (!g0) {
 		return undefined;
 	}
@@ -4576,7 +4603,7 @@ const footfallsOf = (
 	const at = (i: number) =>
 		st.ph[i]! + (extra === 0 ? 0 : alongRun(run, when(i)) * extra);
 	const through = (ph: number, leg: 0 | 1) => {
-		const g = stepLegs(tl, tr, run, anim, ph)!;
+		const g = stepLegs(tl, tr, k, run, anim, ph)!;
 		return footThrough(g, leg === 0 ? g.r : g.l);
 	};
 	// (Gone on from the run before on the same sort of steps: from when its
@@ -4588,7 +4615,7 @@ const footfallsOf = (
 	) {
 		const was = runOf(tr, k - 1);
 		const ended = endStepsOf(tl, tr, k - 1, was);
-		const g = stepLegs(tl, tr, was, ended, 0);
+		const g = stepLegs(tl, tr, k - 1, was, ended, 0);
 		if (g && g.back === g0.back && g.duty === g0.duty) {
 			before = footfallsOf(tl, tr, k - 1, was, ended);
 		}
@@ -4699,7 +4726,8 @@ const footAt = (
 // pointing; up, eased back off over its swing. (Shuffling, turned so far
 // that the way he goes has come round to his other side - `way`, as he
 // shows it - the foot that steps is the other one: each foot's turn is the
-// other's.)
+// other's, going over to it as the way he goes comes round - see
+// leftLeads.)
 const footLock = (
 	tl: CourtTimeline,
 	tr: Track,
@@ -4714,7 +4742,14 @@ const footLock = (
 	}
 	const anim = d.stride ? d.stride.anim : d.anim;
 	const run = runOf(tr, g.k);
-	const now = stepLegs(tl, tr, run, anim, d.stride ? d.stride.phase : d.phase);
+	const now = stepLegs(
+		tl,
+		tr,
+		g.k,
+		run,
+		anim,
+		d.stride ? d.stride.phase : d.phase,
+	);
 	if (!now) {
 		return undefined;
 	}
@@ -4747,13 +4782,12 @@ const footLock = (
 			(1 - smooth01(u))
 		);
 	}) as [number, number];
-	if (
-		PUSH_STEPS.has(anim) &&
-		way !== undefined &&
-		Math.abs(way[1]) > 1e-3 &&
-		way[1] > 0 !== leadsLeft(tl, tr, run)
-	) {
-		out.reverse();
+	const left = PUSH_STEPS.has(anim) && way ? leftLeads(way) : undefined;
+	if (left !== undefined) {
+		const w = leadsLeft(tl, tr, g.k, run) ? 1 - left : left;
+		const [r, l] = out;
+		out[0] = r + (l - r) * w;
+		out[1] = l + (r - l) * w;
 	}
 	return Math.abs(out[0]) < 0.05 && Math.abs(out[1]) < 0.05 ? undefined : out;
 };
@@ -5118,8 +5152,12 @@ const SETTLE_TIE = 6;
 // up off the floor.)
 const SETTLE_UP = 0.12;
 // (Stepping over only on his feet: not off them, up in the air - though
-// rolled up onto his toes is on them.)
+// rolled up onto his toes is on them. Going up, as much less of it as he is
+// up through that much either side - not let go in a frame on the way up.)
 const SETTLE_AIR = 0.25;
+const SETTLE_AIR_EASE = 0.13;
+const groundedAt = (z: number) =>
+	1 - smooth01((z - SETTLE_AIR + SETTLE_AIR_EASE) / (2 * SETTLE_AIR_EASE));
 type SettleLeg = { on: number; up: number };
 const settleLegs = (
 	to: Pose,
@@ -5377,15 +5415,19 @@ export const poseOf = (st: PlayerState): Pose => {
 	const eased =
 		f && (f.w > 0 || (f.arms ?? 0) > 0) ? blendFrom(q, f, style) : q;
 	const fw = f && f.w > 0 ? f.w : 0;
+	const ground = groundedAt(st.z);
 	const was =
 		fw > 0 &&
 		fw < 1 &&
-		st.z <= SETTLE_AIR &&
+		ground > 0 &&
 		(f!.step === true || (!f!.paced && stepsOver(f!.anim, st.anim)))
 			? blendPose(f!, style)
 			: undefined;
 	const steps = was ? settleLegs(q, was, 1 - fw, standRef(st)) : undefined;
 	let p = steps ? settleStep(eased, q, was!, 1 - fw, standRef(st)) : eased;
+	if (steps && ground < 1) {
+		p = lerpPose(eased, p, ground);
+	}
 	// (Easing out of the last move, out of how hard he was going at it then
 	// too.)
 	const drive =
@@ -5406,8 +5448,8 @@ export const poseOf = (st: PlayerState): Pose => {
 	const turned = st.legs ?? 0;
 	const fromAt = (i: 0 | 1) =>
 		fw > 0 ? legTurnFrom(f!, i, st.yaw, st.anim) : 0;
-	const onN = steps ? 1 - steps.n.on : fw;
-	const onF = steps ? 1 - steps.f.on : fw;
+	const onN = steps ? fw + (1 - steps.n.on - fw) * ground : fw;
+	const onF = steps ? fw + (1 - steps.f.on - fw) * ground : fw;
 	if (turned || pv || fp || fromAt(0) || fromAt(1)) {
 		const legAt = (i: 0 | 1, on: number) => {
 			const to = turned + (pv?.[i] ?? 0);
@@ -5439,7 +5481,7 @@ export const poseOf = (st: PlayerState): Pose => {
 	// he goes on over it - not carried along under him till it steps.
 	const sl = st.slip;
 	if (steps && sl) {
-		p = slipped(p, sl, 1 - steps.n.on, 1 - steps.f.on);
+		p = slipped(p, sl, (1 - steps.n.on) * ground, (1 - steps.f.on) * ground);
 	}
 	const a = st.arm;
 	if (!a || a.w <= 0) {
