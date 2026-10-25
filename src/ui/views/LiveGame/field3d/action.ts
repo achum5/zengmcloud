@@ -2290,6 +2290,9 @@ const TO_THROW_SPREAD = 500;
 // give or take this much more.
 const SETTLE_MOST_MS = 350;
 const SETTLE_HOLD_MS = 250;
+// To a man running on through it: no later than gets it to him with him
+// slowed to this much of his pace for it (see runRoute).
+const ROUTE_SLOW_MOST = 0.9;
 // A screen: this often a short completion is one, caught behind the line
 // (one that gains no more than this many yards), thrown this soon at the
 // soonest; the receivers on his side out onto the men coming up at him,
@@ -3639,10 +3642,15 @@ class Action {
 							Math.max(0, airYds) * TO_THROW_YD +
 							r() * TO_THROW_SPREAD +
 							fl.ms;
+			// (Nor, to a man running on through it, held on to while he
+			// jogs his route out to wait on it: out to him in his stride as
+			// he comes open - see ROUTE_SLOW_MOST.)
 			const due =
 				tr.settles && tr.name !== "screen" && !slip
 					? Math.min(least, onTime + SETTLE_MOST_MS)
-					: least;
+					: tr.settles
+						? least
+						: Math.min(least, go + (onTime - go) / ROUTE_SLOW_MOST);
 			catchAt = Math.max(onTime, ready + 300 + fl.ms, due) + hold;
 			throwAt = catchAt - fl.ms;
 			catchPt = this.runRoute(target, tr, go, catchAt) ?? catchPt;
@@ -7373,13 +7381,11 @@ class Action {
 				carrier.getOff(meshPt, mesh, 0, RELEASE_ACCEL, "run");
 			}
 			// (Into his hands as they come to the quarterback's: just short of
-			// the mesh, out in front of him.)
-			this.ball.push({
-				kind: "held",
-				t0: mesh - TAKE_LEAD_MS,
-				pid: carrier.pid,
-			});
-			carrier.pin(mesh - TAKE_LEAD_MS);
+			// the mesh, out in front of him - at it, going by flat out on a
+			// sweep: short of it, he is still well off him.)
+			const take = mesh - (sweep ? 0 : TAKE_LEAD_MS);
+			this.ball.push({ kind: "held", t0: take, pid: carrier.pid });
+			carrier.pin(take);
 			// (The back's arms open round his belly for it as he comes to it,
 			// the top one on the quarterback's side - and shut round it.)
 			const ox = qbMesh.x - meshPt.x;
@@ -9976,8 +9982,6 @@ class Action {
 		let end = hero.t;
 		mates.forEach((m, j) => {
 			const from = m.posAt(start);
-			m.cut(start);
-			m.hold(start);
 			const toHim = dist(from, at) > 0.5 ? this.toward(at, from) : r() * 6.28;
 			const bump = j === 0 && r() < STOP_BUMP;
 			const five = j === 0 && !bump && r() < STOP_FIVE;
@@ -9987,6 +9991,14 @@ class Action {
 				x: at.x + Math.cos(way) * off,
 				y: at.y + Math.sin(way) * off,
 			};
+			m.cut(start);
+			// (Still going, quick: planted and round to him - not stopped dead
+			// and off back the other way.)
+			if (GAITS.has(m.last.move) && legPace(m.last) >= STOP_LEAST) {
+				m.plantFor(spot);
+			} else {
+				m.hold(start);
+			}
 			m.runUp(spot, Math.min(m.top * 0.6, STOP_FPS));
 			if (bump) {
 				const t = Math.max(m.t, hero.t) + FIVE_SET_MS;
