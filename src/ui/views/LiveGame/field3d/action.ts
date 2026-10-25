@@ -1460,6 +1460,9 @@ class Actor {
 		const p = onField(to, this.roam);
 		if (move === undefined || RAMPS.has(move)) {
 			this.bendInto(p, fps);
+			// (Too sharp a turn to bend round: planted for it first - not
+			// sent off the new way at the pace he had on the old one.)
+			this.plantFor(p);
 		}
 		const from = this.at;
 		const far = dist(from, p);
