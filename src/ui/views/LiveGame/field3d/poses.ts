@@ -528,10 +528,11 @@ const HANDS_ON_HEAD: Partial<Pose> = {
 	abF: 14,
 	tuck: 1,
 };
-// The hand held out to shake (and the shake down from it); in close, his
-// left arm round a man's back (and patting it); clapping.
-const SHAKE: Partial<Pose> = { shN: 40, elN: 50, abN: -8, lean: 4 };
-const SHAKE_DOWN: Partial<Pose> = { ...SHAKE, shN: 34, elN: 56 };
+// The hand held out to shake, his elbow in by his side (and the shake down
+// from it); in close, his left arm round a man's back (and patting it);
+// clapping.
+const SHAKE: Partial<Pose> = { shN: 22, elN: 80, abN: -8, lean: 4 };
+const SHAKE_DOWN: Partial<Pose> = { ...SHAKE, shN: 16, elN: 86 };
 const HUG: Partial<Pose> = {
 	shN: 30,
 	elN: 96,

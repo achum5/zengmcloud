@@ -429,13 +429,14 @@ describe("the plays acted out", () => {
 			const m = momentAt(tl, beat!.actionStart);
 			const want = e.success ? play.offense : 1 - play.offense;
 			assert.strictEqual(m.carrier, want, `play ${play.i}`);
-			// Down where the next snap is from.
+			// Down where the next snap is from (as near as the man on it: the
+			// ball out at arm's length in front of him).
 			const next = tl.plays[tl.plays.indexOf(play) + 1];
 			if (next && next.quarter === play.quarter && m.focus) {
 				const d = (m.focus.x - play.losX) * play.dir;
 				const at = (next.losX - play.losX) * play.dir;
 				if (at >= 10 * YD && at <= 25 * YD) {
-					assert.closeTo(d, at, 3.5, `play ${play.i}`);
+					assert.closeTo(d, at, 4, `play ${play.i}`);
 				}
 				assert.isAtLeast(d, 9 * YD, `play ${play.i}`);
 			}

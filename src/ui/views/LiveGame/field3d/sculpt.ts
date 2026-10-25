@@ -452,8 +452,9 @@ const untwistTable = (q: Pose, pel: V3): Float64Array => {
 	return out;
 };
 
-// His helmet, as big round his head as it is (head radii): a cartoon's
-// head, a cartoon's helmet. (An official's bare head, in helmet radii.)
+// His helmet, as big round his head as it is (head radii) - a little over
+// life size, to be made out at the broadcast's distance. (An official's
+// bare head, in helmet radii.)
 const HELMET = 1.1;
 const OFFICIAL_HEAD = 0.9;
 // A coach's headset band: this far out over his cap (head radii), round

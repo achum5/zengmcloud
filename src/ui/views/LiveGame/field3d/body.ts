@@ -1,10 +1,25 @@
 import { bodyOf, girthOf, type Body } from "../court3d/poses.ts";
 
-// A FOOTBALL PLAYER'S BUILD: the court's cartoon athlete (see court3d/
-// poses.ts), his height the same way, but thickened the football way - a
-// 320-pound tackle is a wall next to a receiver, not a basketball center a
-// little broader than his guard - and every one of them heavier in the arms
-// and legs than a basketball player.
+// A FOOTBALL PLAYER'S BUILD: a grown man, not the court's cartoon athlete
+// (see court3d/poses.ts) - his height the same way, but a man's
+// proportions, and thickened the football way: a 320-pound tackle is a
+// wall next to a receiver, not a basketball center a little broader than
+// his guard, and every one of them heavier in the arms and legs than a
+// basketball player.
+
+// Lengths, over his height: a head an eighth of him or so (crown to chin
+// 2.45 head radii - and his helmet a little over life size round it, to be
+// made out at the broadcast's distance), on a short neck; his hips half
+// way up him; his arms hanging to the middle of his thighs.
+const ANKLE = 0.03;
+const SHIN = 0.23;
+const THIGH = 0.24;
+const TORSO = 0.3;
+const NECK = 0.042;
+const HEAD = 0.072;
+const UPPER = 0.18;
+const FORE = 0.148;
+const HAND = 0.03;
 
 // The league's typical build, as a body mass index.
 const FOOTBALL_BMI = 27.5;
@@ -23,19 +38,30 @@ export const footballBody = (
 ): Body => {
 	const b = bodyOf(hgt, weight);
 	const k = footballGirth(hgt, weight) / girthOf(hgt, weight);
+	const { H } = b;
 	return {
 		...b,
-		shoulderW: b.shoulderW * k,
-		hipW: b.hipW * k,
-		// (Deeper through the chest - and his pads deeper still, see
-		// sculpt.ts.)
+		hipH: H * (ANKLE + SHIN + THIGH),
+		ankleH: H * ANKLE,
+		thigh: H * THIGH,
+		shin: H * SHIN,
+		torso: H * TORSO,
+		neck: H * NECK,
+		headR: H * HEAD,
+		upper: H * UPPER,
+		fore: H * FORE,
+		handR: H * HAND,
+		// (Broad across the shoulders, and deeper through the chest - and
+		// his pads deeper still, see sculpt.ts.)
+		shoulderW: b.shoulderW * k * 1.1,
+		hipW: b.hipW * k * 1.04,
 		depth: b.depth * k * 1.18,
-		kneeR: b.kneeR * k,
-		// (Arms and legs a little heavier than a basketball player's too.)
-		thighR: b.thighR * k * 1.1,
-		calfR: b.calfR * k * 1.06,
-		upperR: b.upperR * k * 1.12,
-		foreR: b.foreR * k * 1.08,
+		kneeR: b.kneeR * k * 1.1,
+		// (Arms and legs heavier than a basketball player's too.)
+		thighR: b.thighR * k * 1.22,
+		calfR: b.calfR * k * 1.14,
+		upperR: b.upperR * k * 1.24,
+		foreR: b.foreR * k * 1.14,
 	};
 };
 
