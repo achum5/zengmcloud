@@ -387,6 +387,35 @@ const shotFrom = (tl: CourtTimeline, t: number): Pt | undefined => {
 	return undefined;
 };
 
+// When a shot taken from t comes down at the rim - the arm up for a three
+// held till then, as an official does, not dropped with it in the air; and
+// going in, held on till both arms go up for it.
+const comesDown = (tl: CourtTimeline, t: number): number => {
+	const i = Math.max(
+		0,
+		lastIndex(tl.ball, t, (s) => s.t0),
+	);
+	for (let j = i; j < tl.ball.length && j < i + 12; j++) {
+		const seg = tl.ball[j]!;
+		if (seg.t0 > t + 3000) {
+			break;
+		}
+		if (
+			seg.kind === "fly" &&
+			!("pid" in seg.to) &&
+			(tl.ball[j + 1]?.kind === "path" || Math.abs(seg.to.z - RIM_Z) < 1.6)
+		) {
+			const roar = nextFx(tl, seg.t1, "roar");
+			return roar?.kind === "roar" &&
+				roar.what === "three" &&
+				roar.t < seg.t1 + 1500
+				? roar.t
+				: seg.t1 + 150;
+		}
+	}
+	return -Infinity;
+};
+
 const beatAt = (tl: CourtTimeline, t: number) => {
 	const i = lastIndex(tl.beats, t, (b) => b.preStart);
 	return i >= 0 ? tl.beats[i] : undefined;
@@ -965,7 +994,7 @@ const cuesBefore = (tl: CourtTimeline, t: number): Cue[] => {
 					{
 						anim: "signalUp",
 						t0: b.actionStart,
-						t1: b.actionStart + 1000,
+						t1: Math.max(b.actionStart + 1000, comesDown(tl, b.actionStart)),
 						yaw: FACING_US,
 					},
 				],
@@ -978,7 +1007,12 @@ const cuesBefore = (tl: CourtTimeline, t: number): Cue[] => {
 // What each official is signaling at t, if anything. Each call goes to
 // whoever is nearest it then - played through from the last few seconds, so
 // one who is still signaling or running back is where he really is.
-const signalsAt = (tl: CourtTimeline, t: number): (Signal | undefined)[] => {
+// (And with `after`, one he has been through with as long ago as that.)
+const signalsAt = (
+	tl: CourtTimeline,
+	t: number,
+	after = 0,
+): (Signal | undefined)[] => {
 	const per: (Signal | undefined)[] = [undefined, undefined, undefined];
 	// A cut settles everyone where the play has them.
 	const cut = lastCut(tl, t);
@@ -1017,7 +1051,9 @@ const signalsAt = (tl: CourtTimeline, t: number): (Signal | undefined)[] => {
 		}
 		per[ref] = { ref, t0: cue.t0, moves: cue.moves, still, back };
 	}
-	return per.map((s) => (s && t < s.moves.at(-1)!.t1 + s.back ? s : undefined));
+	return per.map((s) =>
+		s && t < s.moves.at(-1)!.t1 + s.back + after ? s : undefined,
+	);
 };
 
 // The official at the line with the ball: catching it when it's tossed out
@@ -1033,14 +1069,29 @@ const handingIn = (
 	const ball = ftOfficialBall(offenseAt(tl, t));
 	const near = (p: BallEnd) =>
 		!("pid" in p) && Math.hypot(p.x - ball.x, p.y - ball.y) < 0.6;
-	const seg = tl.ball[lastIndex(tl.ball, t, (b) => b.t0)];
+	const k = lastIndex(tl.ball, t, (b) => b.t0);
+	const seg = tl.ball[k];
 	if (!seg) {
 		return undefined;
 	}
 	if (seg.kind === "fly" && near(seg.from)) {
-		return t < seg.t0 + 200
-			? { anim: "passBounce", phase: (t - seg.t0 + 120) / 300 }
+		return t < seg.t0 + PASS_OUT
+			? { anim: "passBounce", phase: (t - seg.t0 + PASS_WIND) / 300 }
 			: undefined;
+	}
+	// (Still in his hands, the bounce pass under way a moment before it
+	// leaves them - not begun half done as it goes.)
+	const next = tl.ball[k + 1];
+	const holding =
+		(seg.kind === "fly" && near(seg.to) && t >= seg.t1 + 150) ||
+		(seg.kind === "rest" && near(seg.at));
+	if (
+		holding &&
+		next?.kind === "fly" &&
+		near(next.from) &&
+		next.t0 - t < PASS_WIND
+	) {
+		return { anim: "passBounce", phase: (t - next.t0 + PASS_WIND) / 300 };
 	}
 	if (seg.kind === "fly" && near(seg.to)) {
 		return t < seg.t1 + 150
@@ -1051,6 +1102,33 @@ const handingIn = (
 		return { anim: "hold", phase: loopPhase("hold", t, 0) };
 	}
 	return undefined;
+};
+// The bounce pass in to the shooter: how long before it leaves his hands it
+// starts, and how long after he is through with it (ms).
+const PASS_WIND = 120;
+const PASS_OUT = 200;
+// Just through with it, how much of his pass still shows as he goes back
+// to how the play has him (over SIGNAL_EASE).
+const passedIn = (tl: CourtTimeline, t: number): number => {
+	const beat = beatAt(tl, t);
+	if (beat?.type !== "ft" && beat?.type !== "missFt") {
+		return 0;
+	}
+	const ball = ftOfficialBall(offenseAt(tl, t));
+	// (Back past its bounce on the way in.)
+	const k = lastIndex(tl.ball, t, (b) => b.t0);
+	const seg = [0, 1, 2]
+		.map((j) => tl.ball[k - j])
+		.find(
+			(b) =>
+				b?.kind === "fly" &&
+				!("pid" in b.from) &&
+				Math.hypot(b.from.x - ball.x, b.from.y - ball.y) < 0.6,
+		);
+	const after = seg ? t - seg.t0 - PASS_OUT : -1;
+	return !seg || after < 0 || after >= SIGNAL_EASE
+		? 0
+		: 1 - smooth01(after / SIGNAL_EASE);
 };
 
 // WHICH WAY AN OFFICIAL FACES: the ball - or, running with the play, the
@@ -1160,7 +1238,9 @@ const refStates = (
 	};
 	const going = pace(FACE_SPAN);
 	const gaitGoing = pace(GAIT_SPAN);
-	const signals = signalsAt(tl, t);
+	// (Just back from one, how quick he goes and the way he goes still taken
+	// over the run back as well.)
+	const signals = signalsAt(tl, t, FACE_SPAN / 2);
 	// The jump ball: the third holds it out between the two of them, then
 	// throws it up.
 	const beat = beatAt(tl, t);
@@ -1171,6 +1251,18 @@ const refStates = (
 		beat?.type === "ft" || beat?.type === "missFt"
 			? offenseAt(tl, t)
 			: undefined;
+	// (The one who passed it in: the nearest of them to where he stood.)
+	const passed = handing || ftTeam === undefined ? 0 : passedIn(tl, t);
+	const passer =
+		passed > 0
+			? at.reduce(
+					(best, p, i) =>
+						dist(p, ftAdminAt(ftTeam!)) < dist(at[best]!, ftAdminAt(ftTeam!))
+							? i
+							: best,
+					0,
+				)
+			: -1;
 	return refs.map((m, i) => {
 		let p = at[i]!;
 		const gx = going[i]!.x;
@@ -1207,6 +1299,8 @@ const refStates = (
 			),
 		);
 		let watching = true;
+		// (Doing something of his own the play has him do.)
+		let busy = false;
 		if (ftTeam !== undefined) {
 			// The one with the ball at the line: facing the shooter (come
 			// round to as he gets there).
@@ -1220,6 +1314,15 @@ const refStates = (
 				({ anim, phase } = handing);
 				gaitFrom = undefined;
 				watching = false;
+				busy = true;
+			} else if (i === passer && d < 2.5) {
+				// (Through with the bounce pass: out of it over a moment.)
+				gaitFrom = over(gaitFrom, {
+					anim: "passBounce",
+					phase: (PASS_OUT + PASS_WIND) / 300,
+					w: passed,
+				});
+				busy = true;
 			}
 		}
 		if (
@@ -1234,8 +1337,11 @@ const refStates = (
 			phase = t < toss.t ? 0 : (t - toss.t) / 600;
 			yaw = FACING_US;
 			watching = false;
+			busy = true;
 		}
-		const signal = signals[i];
+		const ends = signals[i] && signals[i].moves.at(-1)!.t1 + signals[i].back;
+		const signal =
+			ends !== undefined && (t < ends || !busy) ? signals[i] : undefined;
 		if (signal) {
 			const move = signal.moves.find((s) => t >= s.t0 && t < s.t1);
 			const live = p;
