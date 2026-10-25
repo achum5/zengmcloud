@@ -7227,9 +7227,15 @@ class Action {
 					? has + (gun ? 150 : 250) + r() * 100
 					: Math.max(
 							has + 180 + qbStepMs(dist(qb.at, qbMesh)) + r() * 150,
+							// (Out of his stance to it, up to speed: see the rider.)
 							snap +
 								lead +
-								(dist(carrier.at, meshPt) / (carrier.top * 0.75)) * 1000,
+								rampedMs(
+									dist(carrier.at, meshPt),
+									carrier.top * 0.75,
+									0,
+									RELEASE_ACCEL,
+								),
 						);
 		if (sweep) {
 			// In motion before the snap, across behind the line, to take it
@@ -7290,7 +7296,7 @@ class Action {
 			if (!sweep) {
 				// The back to the mesh.
 				carrier.hold(snap + lead);
-				carrier.go(meshPt, mesh, "run");
+				carrier.getOff(meshPt, mesh, 0, RELEASE_ACCEL, "run");
 			}
 			// (Into his hands as they come to the quarterback's: just short of
 			// the mesh, out in front of him.)
