@@ -7383,17 +7383,16 @@ class Action {
 				const p = lock.b.posAt(t);
 				return { x: p.x - dir * HELP_BACK, y: p.y + dir * side * HELP_OUT };
 			};
+			// (Over there no quicker than HELP_ON_FPS - or not at all.)
+			const from = f.posAt(go);
+			let k = ts.findIndex(
+				(t) => dist(from, spot(t)) <= (HELP_ON_FPS * (t - go)) / 1000,
+			);
+			if (k < 0) {
+				continue;
+			}
 			helped.add(lock.m);
 			f.cut(go);
-			// (Over there no quicker than HELP_ON_FPS.)
-			const from = f.at;
-			let k = 0;
-			while (
-				k < ts.length - 1 &&
-				dist(from, spot(ts[k]!)) > (HELP_ON_FPS * (ts[k]! - go)) / 1000
-			) {
-				k++;
-			}
 			for (; k < ts.length; k++) {
 				const p = spot(ts[k]!);
 				f.go(p, ts[k]!, "passSet", this.facing(p, lock.m.posAt(ts[k]!)));
