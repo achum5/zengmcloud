@@ -1832,6 +1832,9 @@ const CARRY_MOST_MS = 500;
 const BREAK_DOWN_MS = 450;
 // (Not broken down at all with less than this long, ms, to be set in it.)
 const BREAK_SET_MS = 150;
+// (No quicker than a walk, ft/s - see gait: going in on a man, or for the
+// ball, not walked there.)
+const WALK_MOST_FPS = 6.5;
 // (Within a few steps of it already, and going no quicker than this (feet a
 // second): broken down if he has this long before he goes in, this far off
 // it, shuffled there at this pace.)
@@ -5390,7 +5393,30 @@ class Action {
 			const gives =
 				far > 0 &&
 				Math.cos(Math.atan2(hit.y - m.at.y, hit.x - m.at.x) - face) < GIVE_COS;
-			m.press(hit, lead, m.top * FLAT_OUT, undefined, gives ? face : undefined);
+			// (A step or two off him, time over to walk it: set where he is,
+			// and in at him off it - not walked in on him.)
+			const fireMs = rampedMs(far, m.top * FLAT_OUT, 0, GET_OFF_ACCEL);
+			const set = lead - fireMs - m.t >= BREAK_SET_MS;
+			if (
+				!gives &&
+				far >= 1 &&
+				far / Math.max(0.001, secs) < WALK_MOST_FPS &&
+				lead - m.t >= fireMs &&
+				(sits(m.last.move) || (set && legPace(m.last) < STOP_LEAST))
+			) {
+				if (set) {
+					m.hold(lead - fireMs, "backerStance", look());
+				}
+				m.getOff(hit, lead, 0, GET_OFF_ACCEL, "run", 0, face);
+			} else {
+				m.press(
+					hit,
+					lead,
+					m.top * FLAT_OUT,
+					undefined,
+					gives ? face : undefined,
+				);
+			}
 		}
 	}
 
@@ -6747,13 +6773,33 @@ class Action {
 					);
 					const quick =
 						m.t + rampedMs(D - ease, fps, v0) + ((2 * ease) / fps) * 1000;
-					if (fps > 0 && due - quick >= BREAK_DOWN_MS) {
+					if (
+						D < ZONE_STIR_FT &&
+						due - m.t >= BREAK_SET_MS &&
+						legPace(m.last) < STOP_LEAST
+					) {
+						// (There already: broken down where he is.)
+						m.hold(due, "backerStance", this.toward(m.at, to));
+					} else if (fps > 0 && due >= quick) {
+						// (Up to it on the break, pulled up there, and set square
+						// to it the while - or, only a moment over, there that
+						// much later, on his feet: see hold.)
 						m.runUp(spot, fps);
-						m.hold(due, "backerStance", this.toward(spot, to));
+						m.hold(
+							due,
+							due - quick >= BREAK_SET_MS ? "backerStance" : undefined,
+							due - quick >= BREAK_SET_MS ? this.toward(spot, to) : undefined,
+						);
 					} else {
+						// (A step or two, no time to spare: quick steps, up to
+						// it and on - not a stroll.)
+						const t1 = Math.max(due, m.t + rampedMs(D, m.top, v0));
 						m.go(
 							spot,
-							Math.max(due, m.t + rampedMs(dist(m.at, spot), m.top, v0)),
+							t1,
+							D / Math.max(0.001, (t1 - m.t) / 1000) < WALK_MOST_FPS
+								? "jog"
+								: undefined,
 						);
 					}
 				}
