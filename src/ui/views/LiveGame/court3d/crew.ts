@@ -1467,7 +1467,11 @@ const tableState = (m: CrewMember, ball: Pt, t: number): PlayerState => {
 
 // ---- the photographers ------------------------------------------------------
 
-// Down on a knee, the camera up when the play is at his end.
+// Down on a knee, the camera up when the play is at his end - brought up
+// as it comes (over PHOTO_BAND feet of the ball's way to him either side of
+// PHOTO_AT), and down as it goes, not snapped up and down in a frame.
+const PHOTO_AT = 38;
+const PHOTO_BAND = 8;
 const photoState = (
 	tl: CourtTimeline,
 	t: number,
@@ -1477,8 +1481,10 @@ const photoState = (
 	const at = m.spot!;
 	const goal = { x: m.team === 0 ? 12 : COURT_W - 12, y: COURT_H / 2 };
 	const depth = m.team === 0 ? ball.x : COURT_W - ball.x;
-	const anim: AnimName =
-		depth < 38 && !arenaShotAt(tl, t) ? "kneelShoot" : "kneel";
+	const up = arenaShotAt(tl, t)
+		? 0
+		: smooth01((PHOTO_AT + PHOTO_BAND / 2 - depth) / PHOTO_BAND);
+	const anim: AnimName = up > 0 ? "kneelShoot" : "kneel";
 	return {
 		pid: m.pid,
 		team: m.team,
@@ -1490,6 +1496,15 @@ const photoState = (
 		anim,
 		phase: loopPhase(anim, t, m.pid * 0.31),
 		moving: false,
+		...(up > 0 && up < 1
+			? {
+					from: {
+						anim: "kneel",
+						phase: loopPhase("kneel", t, m.pid * 0.31),
+						w: 1 - up,
+					},
+				}
+			: {}),
 	};
 };
 
@@ -1523,7 +1538,8 @@ const flashOf = (
 	t: number,
 	st: PlayerState,
 ): Pt3 | undefined => {
-	if (st.anim !== "kneelShoot") {
+	// (The camera up to his eye.)
+	if (st.anim !== "kneelShoot" || (st.from?.w ?? 0) > 0.5) {
 		return undefined;
 	}
 	const fx = recentFx(tl, t, ["dunk", "roar", "block"], 1600);

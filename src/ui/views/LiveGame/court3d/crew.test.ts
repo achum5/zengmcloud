@@ -346,13 +346,16 @@ describe("3D crew", () => {
 	// Stood, walking or running, an official went from one to the next in a
 	// frame - his legs snapped from one stride to the other - and the same
 	// into a signal and out of it again.
-	test("an official eases from standing to walking to running, and into his signals and out", () => {
+	// And a photographer's camera snapped up to his eye as the play crossed
+	// a line, and down again.
+	test("an official eases from standing to walking to running, and into his signals and out; a photographer's camera comes up as the play comes", () => {
 		const { tl, crew } = working("a");
 		const body = bodyOf();
 		const cuts = cameraCuts(tl);
 		const was = new Map<number, Pt3[]>();
 		let frames = 0;
 		let popped = 0;
+		let snapped = 0;
 		for (let t = 0; t < Math.min(tl.end, 900_000); t += 16) {
 			if (
 				fastAt(tl, t) > 1 ||
@@ -363,7 +366,8 @@ describe("3D crew", () => {
 				continue;
 			}
 			for (const r of crewAt(tl, t, crew).states) {
-				if (!isRef(r.pid)) {
+				const photo = crew.find((m) => m.pid === r.pid)?.role === "photo";
+				if (!isRef(r.pid) && !photo) {
 					continue;
 				}
 				const me = withBody(r, body);
@@ -373,7 +377,7 @@ describe("3D crew", () => {
 				);
 				const before = was.get(r.pid);
 				if (before) {
-					frames += 1;
+					frames += photo ? 0 : 1;
 					// (Sixty feet a second, for a hand or a foot, is a blur.)
 					if (
 						ends.some(
@@ -386,7 +390,11 @@ describe("3D crew", () => {
 								60 * 0.016,
 						)
 					) {
-						popped += 1;
+						if (photo) {
+							snapped += 1;
+						} else {
+							popped += 1;
+						}
 					}
 				}
 				was.set(r.pid, ends);
@@ -394,5 +402,6 @@ describe("3D crew", () => {
 		}
 		assert.isAbove(frames, 50_000);
 		assert.isBelow(popped / frames, 0.0025, `${popped} in ${frames}`);
+		assert.strictEqual(snapped, 0);
 	}, 240_000);
 });
