@@ -81,7 +81,8 @@ const SET_UP_MS = 300;
 // as he backpedals the last of it, this long (ms) at most: not running
 // on backwards as he comes round. Or out of anything else he goes along
 // faced more than FLIP_AWAY off the way he goes - driven back in a block,
-// dragging his toes in - round off it the same.)
+// dragging his toes in - round off it the same, into a run at least
+// FLIP_SAME nearer the way he was going than he was faced.)
 const FLIP_LEAD_MS = 130;
 const FLIP_SAME = Math.PI / 4;
 const FLIP_AWAY = Math.PI / 2;
@@ -243,15 +244,18 @@ const facingOf = (legs: Leg[]): Facing => {
 		// his feet first, all the way, and then down.)
 		const lpWay =
 			lp && goes(lp) ? Math.atan2(lp.to.y - lp.from.y, lp.to.x - lp.from.x) : 0;
+		const away = Math.abs(wrapAngle(b - lpWay));
+		const onWay = Math.abs(
+			wrapAngle(Math.atan2(lj.to.y - lj.from.y, lj.to.x - lj.from.x) - lpWay),
+		);
 		const flips =
 			own &&
 			lp !== undefined &&
-			(lp.move === "back" || Math.abs(wrapAngle(b - lpWay)) > FLIP_AWAY) &&
 			goes(lp) &&
 			Math.abs(lp.t1 - lj.t0) <= 1 &&
-			Math.abs(
-				wrapAngle(Math.atan2(lj.to.y - lj.from.y, lj.to.x - lj.from.x) - lpWay),
-			) < FLIP_SAME;
+			(lp.move === "back"
+				? onWay < FLIP_SAME
+				: away > FLIP_AWAY && away - onWay > FLIP_SAME);
 		const kneels =
 			lj.move === "takeKnee" &&
 			lp &&
