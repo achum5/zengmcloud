@@ -3013,6 +3013,11 @@ const blendInto = (
 			: to;
 	}) as [number, number];
 	const ownLock = ownPv ? undefined : footLock(tl, tr, lo, before, own);
+	// (How hard he was going at it as it changed: as it showed, itself
+	// maybe easing out of the move before.)
+	const drive =
+		(before.drive ?? 0) +
+		((prior?.drive ?? 0) - (before.drive ?? 0)) * (prior?.w ?? 0);
 	const feet = ([0, 1] as const).map(
 		(i) =>
 			(ownLock?.[i] ?? 0) +
@@ -3050,7 +3055,7 @@ const blendInto = (
 		...(pv ? { pivot: pv } : {}),
 		...(turns[0] || turns[1] ? { turns } : {}),
 		...(feet[0] || feet[1] ? { feet } : {}),
-		...(before.drive ? { drive: before.drive } : {}),
+		...(drive ? { drive } : {}),
 		...(way === undefined ? {} : { way }),
 		facing,
 		...(isMove(anim)
