@@ -64,10 +64,17 @@ const acts = (l: Leg) =>
 // them.)
 const PULL_INTO = new Set<Move>(["swat", "handOff"]);
 
+// (The next leg taking him on from where the one before left him - not
+// put somewhere else, the picture cut away: no further off it than this,
+// feet.)
+const JOIN_FT = 1;
+export const joined = (l: Leg, next: Leg) =>
+	Math.hypot(next.from.x - l.to.x, next.from.y - l.to.y) <= JOIN_FT;
+
 // How long past a stretch's end he is still pulling up into the stand after
-// it (none if he runs on, or into an act of some kind) - no more than half
-// of it, if he gets going again after it, for him to get going over the
-// rest.
+// it (none if he runs on, or into an act of some kind, or is put somewhere
+// else after it) - no more than half of it, if he gets going again after
+// it, for him to get going over the rest.
 const stopOf = (
 	l: Leg | undefined,
 	next: Leg | undefined,
@@ -75,6 +82,7 @@ const stopOf = (
 ): number =>
 	!l ||
 	!(eases(l) || acts(l)) ||
+	(next && !joined(l, next)) ||
 	(next &&
 		(goes(next) ||
 			(moveKind(next.move) === "act" && !PULL_INTO.has(next.move))))
@@ -108,7 +116,9 @@ export const paceOf = (legs: Leg[], k: number): Pace => {
 		return stop > 0 ? { ...EVEN, h: stop / (l!.t1 - l!.t0), stop } : EVEN;
 	}
 	const ms = l.t1 - l.t0;
-	const prev = legs[k - 1];
+	// (Put where it starts - the picture cut to him there: off from nothing
+	// before.)
+	const prev = legs[k - 1] && joined(legs[k - 1]!, l) ? legs[k - 1] : undefined;
 	const stop = stopOf(l, legs[k + 1], legs[k + 2]);
 	if (prev && goes(prev)) {
 		return stop > 0 ? { ...EVEN, h: stop / ms, stop } : EVEN;
@@ -333,7 +343,8 @@ const rounded = (
 // WHERE HE IS EVERY TRACK_MS through a play, as placeAt has him (n times,
 // from t0): and the leg he is on then, by the play's time (`k`) and by the
 // time the play has him at (`late` - see lagged), and the one his feet are
-// on (`on`). Worked out once for his legs as they are.
+// on (`on`) - and whether he was put there since the time before, not come
+// there (`cut`: see joined). Worked out once for his legs as they are.
 export const TRACK_MS = 50;
 export type Track = {
 	t0: number;
@@ -342,6 +353,7 @@ export type Track = {
 	k: Int32Array;
 	late: Int32Array;
 	on: Int32Array;
+	cut: Uint8Array;
 };
 export const trackLength = (t0: number, t1: number) =>
 	Math.max(2, Math.ceil((t1 - t0) / TRACK_MS) + 1);
@@ -363,6 +375,7 @@ export const trackOf = (legs: Leg[], t0: number, n: number): Track => {
 		k: new Int32Array(n),
 		late: new Int32Array(n),
 		on: new Int32Array(n),
+		cut: new Uint8Array(n),
 	};
 	let k = 0;
 	let before = paceOf(legs, -1);
@@ -376,6 +389,9 @@ export const trackOf = (legs: Leg[], t0: number, n: number): Track => {
 			before = pace;
 			pace = after;
 			after = paceOf(legs, k + 1);
+			if (s > 0 && !joined(legs[k - 1]!, legs[k]!)) {
+				tr.cut[s] = 1;
+			}
 		}
 		// (Just off his stance, a moment behind.)
 		const late = lagged(legs, t, off);
@@ -418,7 +434,8 @@ export const trackOf = (legs: Leg[], t0: number, n: number): Track => {
 // steady pace, or stood still, just where he was - and from one time on it
 // to the next along a smooth curve through them (see smoothAt). Never
 // across a jump from one place to another (more than JUMP_FT from one time
-// on it to the next): there he is where his legs have him.
+// on it to the next, or put there - see Track): there he is where his legs
+// have him.
 const SMOOTH = [1, 4, 6, 4, 1];
 const SMOOTH_SUM = 16;
 const SMOOTH_HALF = (SMOOTH.length - 1) / 2;
@@ -435,7 +452,7 @@ const smoothOf = (tr: Track): Smooth => {
 	const jumps = new Uint8Array(n);
 	for (let s = 1; s < n; s++) {
 		const d = Math.hypot(tr.xs[s]! - tr.xs[s - 1]!, tr.ys[s]! - tr.ys[s - 1]!);
-		jumps[s] = d > JUMP_FT ? 1 : 0;
+		jumps[s] = d > JUMP_FT || tr.cut[s] ? 1 : 0;
 	}
 	const sm: Smooth = {
 		xs: new Float32Array(n),

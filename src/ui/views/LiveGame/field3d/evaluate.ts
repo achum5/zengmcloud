@@ -12,6 +12,7 @@ import {
 	along,
 	CORNER_MS,
 	goes,
+	joined,
 	lagged,
 	paceOf,
 	placeAt,
@@ -132,7 +133,9 @@ const yawOf = (l: Leg, before: number): number =>
 // they meet that is. Off from a stand, from when he starts off: how long
 // before it starts that is. (Off his stance at the snap, `snap`.)
 // (And whether he turns through it at all, and how far ahead of a leg the
-// most of any of that starts.)
+// most of any of that starts. Put somewhere new - the picture cut to him
+// there, see pace.ts joined - facing the way it has him from the first:
+// when each such leg starts.)
 type Facing = {
 	n: number;
 	before: Float64Array;
@@ -143,6 +146,7 @@ type Facing = {
 	lead: Float64Array;
 	turns: Uint8Array;
 	ahead: number;
+	cuts: number[];
 };
 // (Facing the way it goes along it, not turning through it.)
 const OWN_WAY = 0.1;
@@ -206,6 +210,7 @@ const facingOf = (legs: Leg[]): Facing => {
 	const lead = new Float64Array(legs.length);
 	const snap = new Uint8Array(legs.length);
 	const turns = new Uint8Array(legs.length);
+	const cuts: number[] = [];
 	let ahead = CORNER_MS;
 	let b = legs[0]!.yaw ?? 0;
 	// (The way the one before had him at its end, `end` into turning into
@@ -222,7 +227,11 @@ const facingOf = (legs: Leg[]): Facing => {
 		const own = ownWay(lj);
 		const aim = own ? lookedAhead(legs, j) : yawOf(lj, b);
 		aims[j] = aim;
-		const lp = legs[j - 1];
+		const cut = j > 0 && !joined(legs[j - 1]!, lj);
+		if (cut) {
+			cuts.push(lj.t0);
+		}
+		const lp = cut ? undefined : legs[j - 1];
 		const startsOff = own && lp && !goes(lp) && !lp.turn;
 		const setsUp = !goes(lj) && lp && goes(lp) && SET.has(lj.move);
 		// (Or down on a knee: round as he gets there - or, stood, round on
@@ -263,7 +272,7 @@ const facingOf = (legs: Leg[]): Facing => {
 							: 0;
 		snap[j] = startsOff && SET.has(lp.move) ? 1 : 0;
 		ahead = Math.max(ahead, lead[j]!);
-		let by = j > 0 ? wrapAngle(was(lead[j]!) - aim) : 0;
+		let by = lp ? wrapAngle(was(lead[j]!) - aim) : 0;
 		if (
 			lp &&
 			ownBefore &&
@@ -307,6 +316,7 @@ const facingOf = (legs: Leg[]): Facing => {
 		lead,
 		turns,
 		ahead,
+		cuts,
 	};
 	facings.set(legs, f);
 	return f;
@@ -368,6 +378,9 @@ const steadyFrom = (
 	}
 	return true;
 };
+// (Put somewhere new this near t, ms either side.)
+const cutNear = (f: Facing, t: number, ms: number): boolean =>
+	f.cuts.some((u) => u > t - ms && u <= t + ms);
 const steady = (legs: Leg[], a: number, b: number): boolean =>
 	steadyFrom(
 		legs,
@@ -389,6 +402,9 @@ const yawAt = (legs: Leg[], t: number): number => {
 	const half = TURN_EASE_HALF;
 	const reach = half * TURN_EASE_MS;
 	const f = facingOf(legs);
+	if (cutNear(f, t, reach)) {
+		return turnedAt(legs, t, f);
+	}
 	const j = lastStarted(legs, t - reach, (l) => l.t0);
 	if (steadyFrom(legs, f, j, t - reach, t + reach)) {
 		return f.aim[j]!;
@@ -477,6 +493,44 @@ const square = (p: Feet, yaw: number) =>
 	p[2] < 0.01 &&
 	p[3] < 0.01;
 
+// NUDGED ASIDE WHERE HE STANDS (see apart.ts): he steps it, not slid over
+// the turf stood still - a step each ASIDE_MS, the one foot and then the
+// other, still till it is up (the last ASIDE_STEP_MS of it) and over by the
+// time it is down; up the higher the quicker he is going over (a full step
+// at ASIDE_FPS ft/s - none under ASIDE_LEAST_FPS, eased over as he was).
+// Only a step he stands through, start to end (`stood`): it starts and ends
+// where he would be eased over to anyway.
+const ASIDE_MS = 300;
+const ASIDE_STEP_MS = 220;
+const ASIDE_LEAST_FPS = 0.6;
+const ASIDE_FPS = 3;
+const asideAt = (
+	spans: Sep[] | undefined,
+	t: number,
+	stood: (t: number) => boolean,
+): { x: number; y: number; up?: [number, number] } | undefined => {
+	const now = apartAt(spans, t);
+	const k = Math.floor(t / ASIDE_MS);
+	const g = k * ASIDE_MS;
+	if (!spans || !stood(g) || !stood(g + ASIDE_MS)) {
+		return now;
+	}
+	const a = apartAt(spans, g) ?? { x: 0, y: 0 };
+	const b = apartAt(spans, g + ASIDE_MS) ?? { x: 0, y: 0 };
+	const v = Math.hypot(b.x - a.x, b.y - a.y) / (ASIDE_MS / 1000);
+	if (v < ASIDE_LEAST_FPS) {
+		return now;
+	}
+	const u = clamp01((t - (g + ASIDE_MS - ASIDE_STEP_MS)) / ASIDE_STEP_MS);
+	const e = u * u * (3 - 2 * u);
+	const up = Math.sin(Math.PI * u) * Math.min(1, v / ASIDE_FPS);
+	return {
+		x: a.x + (b.x - a.x) * e,
+		y: a.y + (b.y - a.y) * e,
+		up: k % 2 === 0 ? [up, 0] : [0, up],
+	};
+};
+
 // How far through his move he is: a stride cycle as far round his strides
 // as he has come (see stridesOf - each man a step out of time with the
 // next), an act by the time (or its share of the act, cut in two), a loop
@@ -546,11 +600,12 @@ const stridesOf = (legs: Leg[], t0: number, n: number): Strides | undefined => {
 		const on = tr.on[i]!;
 		return strideOn[k]! > 0 ? k : strideOn[on]! > 0 ? on : -1;
 	};
+	// (Not the ground from where he was to where he was put, if he was.)
 	const gone = new Float64Array(n);
 	for (let i = 1; i < n; i++) {
 		const dx = tr.xs[i]! - tr.xs[i - 1]!;
 		const dy = tr.ys[i]! - tr.ys[i - 1]!;
-		gone[i] = gone[i - 1]! + Math.sqrt(dx * dx + dy * dy);
+		gone[i] = gone[i - 1]! + (tr.cut[i] ? 0 : Math.sqrt(dx * dx + dy * dy));
 	}
 	const ph = new Float32Array(n);
 	const len = new Float32Array(n);
@@ -967,7 +1022,9 @@ const stateOf = (
 		at.x = smooth.x;
 		at.y = smooth.y;
 	}
-	const aside = apartAt(apart.get(part.pid), now);
+	const aside = asideAt(apart.get(part.pid), now, (u) =>
+		PIVOTS.has(legs[lastStarted(legs, u, (x) => x.t0)]!.move as Move),
+	);
 	if (aside) {
 		at.x += aside.x;
 		at.y += aside.y;
@@ -984,7 +1041,8 @@ const stateOf = (
 		while (
 			j > 0 &&
 			at - legs[j]!.t0 < BLEND_MOST_MS &&
-			!changed(legs[j - 1]!, legs[j]!)
+			!changed(legs[j - 1]!, legs[j]!) &&
+			joined(legs[j - 1]!, legs[j]!)
 		) {
 			j--;
 		}
@@ -1011,7 +1069,10 @@ const stateOf = (
 	const pivots = (u: Leg) => PIVOTS.has(u.move as Move);
 	const reach = PIVOT_MS * 2 + TURN_EASE_HALF * TURN_EASE_MS;
 	const feetAt = (at: number): Feet | undefined => {
-		if (steady(legs, at - reach, at + reach)) {
+		if (
+			cutNear(facingOf(legs), at, reach) ||
+			steady(legs, at - reach, at + reach)
+		) {
 			return undefined;
 		}
 		const p = pivotOf(legs, at);
@@ -1048,7 +1109,12 @@ const stateOf = (
 		pivots(legs[j]!) ? 1 : plantOf(j) !== undefined ? 2 : 0;
 	const phase = phaseOf(l, t, offset, stride.ph);
 	const z = liftOf(l.move, phase);
-	const pivot = z <= 0 ? feetOf(k, t, yaw) : undefined;
+	const turned = z <= 0 ? feetOf(k, t, yaw) : undefined;
+	const pivot: Feet | undefined =
+		turned ??
+		(aside?.up && z <= 0 && PIVOTS.has(l.move as Move)
+			? [yaw, yaw, aside.up[0], aside.up[1]]
+			: undefined);
 	// (Just changed what he is doing, his arms, or how he has the ball:
 	// eased out of what he was - his strides, if it was a stride, going on
 	// round in step with these; anything else, as it was when it ended.)
@@ -1066,7 +1132,12 @@ const stateOf = (
 	});
 	const blended = t - legs[c]!.t0;
 	const blending = blendOf(legs[c]!, legs[c - 1]);
-	if (prior && blended < blending && changed(legs[c - 1]!, legs[c]!)) {
+	if (
+		prior &&
+		blended < blending &&
+		changed(legs[c - 1]!, legs[c]!) &&
+		joined(legs[c - 1]!, legs[c]!)
+	) {
 		// (And how fast each goes through its frames, a moment on.)
 		const was = wasOf(prior);
 		const rateOf = (u: Leg, now: number) =>
