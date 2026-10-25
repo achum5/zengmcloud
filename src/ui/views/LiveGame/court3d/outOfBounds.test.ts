@@ -108,6 +108,42 @@ const lastTouch = (
 };
 
 describe("3D out of bounds", () => {
+	// Gone out, it is out: lying (or still rolling) past the line when the
+	// whistle goes - not turned back in round a man stood in its way to lie
+	// on the floor inside it while the play is called dead.
+	test(
+		"a ball called out of bounds is out of bounds",
+		{ timeout: 60_000 },
+		() => {
+			let checked = 0;
+			const inside: string[] = [];
+			for (const seed of ["oob1", "oob2", "oob3", "oob4", "s8", "s12"]) {
+				const { tl } = compile(seed, 160);
+				for (const f of tl.fx) {
+					if (f.kind !== "whistle" || f.call !== "out") {
+						continue;
+					}
+					// Where it is going as the whistle goes: where that bounce ends,
+					// or where it lies.
+					const s = tl.ball.findLast((x) => x.t0 <= f.t + 1);
+					const at =
+						s?.kind === "rest" ? s.at : s?.kind === "bounce" ? s.to : undefined;
+					if (!at) {
+						continue;
+					}
+					checked += 1;
+					if (!outside(at)) {
+						inside.push(
+							`${seed} @${Math.round(f.t)}: at ${at.x.toFixed(1)}, ${at.y.toFixed(1)}`,
+						);
+					}
+				}
+			}
+			assert.isAtLeast(checked, 20);
+			assert.deepStrictEqual(inside, []);
+		},
+	);
+
 	test(
 		"the ball always goes out off the team that loses it",
 		{ timeout: 60_000 },

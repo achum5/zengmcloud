@@ -820,6 +820,9 @@ const PUSH_FT = 15;
 // meet it: the man with it brings it on at him, this much of the way.
 const POKE_FAR = 12;
 const POKE_MEET = 0.4;
+// (And in off the lines this far, the man poked at - so it is knocked out off
+// a hand that can be seen to get to it.)
+const POKE_EDGE = 3;
 const POKE_HIT = 0.42;
 // Reaching out for a ball going by (from the start of the reach to the
 // hand back): the hand he reaches with at full reach - forward of him, off
@@ -3237,13 +3240,25 @@ class Director {
 		}
 		const L = Math.max(2, dist(F, drop.to));
 		const a0 = Math.atan2(drop.to.y - F.y, drop.to.x - F.x);
+		// (Gone out of bounds, it stays out - on past the line, short of the
+		// front row - not turned back in to lie on the floor at the whistle.)
+		const out = outOfPlay(drop.to);
 		for (let k = 1; k <= 6; k++) {
 			for (const s of [1, -1]) {
 				const a = a0 + (s * k * Math.PI) / 6;
-				const Q = inPlay({
+				const P = {
 					x: F.x + Math.cos(a) * L,
 					y: F.y + Math.sin(a) * L,
-				});
+				};
+				const Q = out
+					? {
+							x: Math.min(COURT_W + OUT_CAP, Math.max(-OUT_CAP, P.x)),
+							y: Math.min(COURT_H + OUT_CAP, Math.max(-OUT_CAP, P.y)),
+						}
+					: inPlay(P);
+				if (out && !outOfPlay(Q)) {
+					continue;
+				}
 				if (clearOf(Q)) {
 					drop.to = Q;
 					rest.at = { ...Q, z: rest.at.z };
@@ -11792,6 +11807,17 @@ class Director {
 				y: A.y + (D.y - A.y) * POKE_MEET,
 			});
 			S = this.go(h, P, start, DRIBBLE * 0.8, "dribble", dir);
+		}
+		// (On the line - just in from it, say - he comes in off it first: a
+		// hand reached in at him from out there would knock it out off
+		// nobody.)
+		const inside = {
+			x: Math.min(COURT_W - POKE_EDGE, Math.max(POKE_EDGE, P.x)),
+			y: Math.min(COURT_H - POKE_EDGE, Math.max(POKE_EDGE, P.y)),
+		};
+		if (dist(inside, P) > 0.1) {
+			P = inside;
+			S = this.go(h, P, S, DRIBBLE * 0.8, "dribble", dir);
 		}
 		const toward = (P.x >= this.posOf(m).x ? 1 : -1) as 1 | -1;
 		const mirrored = this.ballHandOf === h && this.ballHand === "R";
