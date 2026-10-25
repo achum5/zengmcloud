@@ -304,28 +304,34 @@ describe("3D crew", () => {
 	}, 60_000);
 
 	// An official comes round to the play - the ball, the way he runs, a
-	// signal - over a moment, not spun round in a frame. (Before: 403 frames
-	// a game turned more than 20 degrees from the last - every time he went
-	// quicker or slower than a jog, about.)
-	test("the officials turn, never spun round in a frame", () => {
+	// signal - over a moment, not spun round in a frame; and so does a coach
+	// pacing his sideline. (Before: 403 frames a game an official turned
+	// more than 20 degrees from the last - every time he went quicker or
+	// slower than a jog, about - and 190 a coach, setting off and stopping.)
+	test("the officials and coaches turn, never spun round in a frame", () => {
 		const { tl, crew } = working("a");
 		const cuts = cameraCuts(tl);
 		const was = new Map<number, number>();
 		let frames = 0;
 		let spun = 0;
+		let others = 0;
 		for (let t = 0; t < Math.min(tl.end, 900_000); t += 16) {
 			if (fastAt(tl, t) > 1 || cuts.some((c) => c > t - 16 && c <= t)) {
 				was.clear();
 				continue;
 			}
-			for (const r of crewAt(tl, t, crew).states.filter((s) => isRef(s.pid))) {
+			for (const r of crewAt(tl, t, crew).states) {
 				const yaw = was.get(r.pid);
 				if (yaw !== undefined) {
-					frames += 1;
+					frames += isRef(r.pid) ? 1 : 0;
 					let d = r.yaw - yaw;
 					d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
 					if (Math.abs(d) > (20 * Math.PI) / 180) {
-						spun += 1;
+						if (isRef(r.pid)) {
+							spun += 1;
+						} else {
+							others += 1;
+						}
 					}
 				}
 				was.set(r.pid, r.yaw);
@@ -333,5 +339,6 @@ describe("3D crew", () => {
 		}
 		assert.isAbove(frames, 50_000);
 		assert.isBelow(spun, 80);
+		assert.isAtMost(others, 5);
 	}, 240_000);
 });

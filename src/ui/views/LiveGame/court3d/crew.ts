@@ -1237,20 +1237,48 @@ const coachState = (
 	const to = spotOf(j);
 	const walkMs = (Math.abs(to.x - from.x) / 3.6) * 1000;
 	const since = t - j * PACE_MS;
+	const idle = tensionAt(tl, t) >= 1 ? IDLE_TENSE : IDLE;
+	const idleOf = (k: number) =>
+		idle[Math.floor(unit(k, team * 31 + 7) * idle.length)]!;
+	// (Facing the play, a moment behind it - see ballBearing.)
+	const facing = (p: Pt) => ballBearing(tl, t, p)?.yaw ?? yawTo(p, ball);
 	if (since < walkMs) {
+		// Pacing along the sideline: turned from the play to the way he
+		// walks, and back to it as he gets there, over a moment either end -
+		// his head on the play all the while - and out of how he stood.
 		const p = lerp(from, to, since / walkMs);
+		const toPlay = facing(p);
+		const yaw = turnToward(
+			toPlay,
+			to.x > from.x ? 0 : Math.PI,
+			smooth01(Math.min(since, walkMs - since) / COACH_TURN),
+		);
+		let rel = toPlay - yaw;
+		rel -= Math.round(rel / (Math.PI * 2)) * Math.PI * 2;
+		const look = clamp((rel * 180) / Math.PI, -LOOK_MOST, LOOK_MOST);
+		const was = idleOf(j - 1);
+		const fw = 1 - smooth01(since / COACH_EASE);
 		return {
 			...base,
 			x: p.x,
 			y: p.y,
-			yaw: to.x > from.x ? 0 : Math.PI,
+			yaw,
 			anim: "walk",
 			phase: (t / 1000) * 0.85,
 			moving: true,
+			...(Math.abs(look) > 0.5 ? { look } : {}),
+			...(fw > 0
+				? {
+						from: {
+							anim: was,
+							phase: loopPhase(was, t, team * 0.5),
+							w: fw,
+						},
+					}
+				: {}),
 		};
 	}
-	const idle = tensionAt(tl, t) >= 1 ? IDLE_TENSE : IDLE;
-	let anim = idle[Math.floor(unit(j, team * 31 + 7) * idle.length)]!;
+	let anim = idleOf(j);
 	let phase = loopPhase(anim, t, team * 0.5);
 	const roar = recentFx(tl, t, ["roar"], 1600);
 	const w = recentFx(tl, t, ["whistle"], 1600);
@@ -1267,16 +1295,25 @@ const coachState = (
 		anim = "protest";
 		phase = (t - w.t) / 1600;
 	}
+	// (Stopping, out of his walk.)
+	const fw = 1 - smooth01((since - walkMs) / COACH_EASE);
 	return {
 		...base,
 		x: to.x,
 		y: to.y,
-		yaw: yawTo(to, ball),
+		yaw: facing(to),
 		anim,
 		phase,
 		moving: false,
+		...(fw > 0 && walkMs > 0
+			? { from: { anim: "walk", phase: (t / 1000) * 0.85, w: fw } }
+			: {}),
 	};
 };
+// (A coach turning to and from the way he walks, and easing in and out of
+// his walk - ms.)
+const COACH_TURN = 300;
+const COACH_EASE = 250;
 
 // ---- the scorer's table ---------------------------------------------------------
 
