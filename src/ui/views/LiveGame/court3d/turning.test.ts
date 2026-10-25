@@ -87,4 +87,51 @@ describe("turning", () => {
 		assert.isBelow(away / frames, 0.13);
 		assert.equal(whipped, 0);
 	}, 240_000);
+
+	// With the ball, about to pass it, he looked wherever he faced - not at
+	// the man he was about to pass to.
+	test("with the ball, his eyes come round to the man he passes to before it goes", () => {
+		const { tl } = compile("a", 140);
+		let passes = 0;
+		let onHim = 0;
+		let whipped = 0;
+		for (const s of tl.ball) {
+			if (
+				s.kind !== "fly" ||
+				!("pid" in s.from) ||
+				!("pid" in s.to) ||
+				s.from.pid === s.to.pid
+			) {
+				continue;
+			}
+			const t = s.t0 - 200;
+			if (fastAt(tl, t) > 1 || fastAt(tl, s.t0) > 1) {
+				continue;
+			}
+			const a = evalPlayer(tl, s.from.pid, t);
+			const b = evalPlayer(tl, s.to.pid, t);
+			if (!a.shown || !b.shown) {
+				continue;
+			}
+			passes += 1;
+			let d =
+				Math.atan2(b.y - a.y, b.x - a.x) -
+				(a.yaw + ((a.look ?? 0) * Math.PI) / 180);
+			d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+			if (Math.abs(d) < Math.PI / 6) {
+				onHim += 1;
+			}
+			let was: number | undefined;
+			for (let u = s.t0 - 900; u < s.t0 + 400; u += 16) {
+				const look = evalPlayer(tl, s.from.pid, u).look ?? 0;
+				if (was !== undefined && Math.abs(look - was) > 25) {
+					whipped += 1;
+				}
+				was = look;
+			}
+		}
+		assert.isAbove(passes, 50);
+		assert.isAbove(onHim / passes, 0.88);
+		assert.equal(whipped, 0);
+	}, 240_000);
 });

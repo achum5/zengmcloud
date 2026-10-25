@@ -3838,7 +3838,9 @@ export const evalPlayer = (
 		PUSH_STEPS.has(now.anim) && here.moving ? wayOf(tr, yaw, t) : undefined;
 	const pivot = shown ? pivotOf(tl, tr, yaw, now, t) : undefined;
 	const lock = shown && !pivot ? footLock(tl, tr, t, now, legs) : undefined;
-	const look = shown ? lookAt(tl, t, here, yaw, now, from) : 0;
+	const look = shown
+		? lookAt(tl, t, here, yaw, now, from) + passLook(tl, tr.pid, t, here, yaw)
+		: 0;
 	// (An arm a beat behind its reason never takes the hand his dribble has
 	// just come over into.)
 	const eased = shown ? easedArm(tl, tr, t) : undefined;
@@ -3945,6 +3947,93 @@ const lookAt = (
 		(1 - huddledAt(tl, t)) *
 		clamp01((ARM_FAST - fastAt(tl, t)) / (ARM_FAST - 1));
 	return w > 0 ? lookToward(tl, t, here, yaw) * w : 0;
+};
+// EYES ON THE PASS. With the ball, a man's head comes round to the one he
+// is about to pass it to - over the last PASS_LOOK ms before it goes, all
+// the way by PASS_LOOK_SET before, and back once it is gone - as far as a
+// neck goes; not with it on its way to him still, and not while the
+// picture runs through fast.
+const PASS_LOOK = 700;
+const PASS_LOOK_SET = 250;
+const PASS_LOOK_OFF = 250;
+const passLook = (
+	tl: CourtTimeline,
+	pid: number,
+	t: number,
+	here: Pt,
+	yaw: number,
+): number => {
+	const i = ballIndexAt(tl, t);
+	const now = tl.ball[i];
+	const fast = clamp01((ARM_FAST - fastAt(tl, t)) / (ARM_FAST - 1));
+	if (!now || fast <= 0) {
+		return 0;
+	}
+	// The pass he is about to make - or has just made, on its way or already
+	// there. (Caught and passed straight on: his head comes round from the
+	// moment it is in his hands, not before.)
+	let pass: Extract<BallSeg, { kind: "fly" }> | undefined;
+	let since = Infinity;
+	if (now.kind === "hold" && now.pid === pid) {
+		// (From when it came into his hands: dribbling it and then picking
+		// it up is all the one having it.)
+		let got = i;
+		while (got > 0) {
+			const b = tl.ball[got - 1]!;
+			if (b.kind !== "hold" || b.pid !== pid) {
+				break;
+			}
+			got -= 1;
+		}
+		since = t - tl.ball[got]!.t0;
+		for (let k = i + 1; k < tl.ball.length && k <= i + 3; k++) {
+			const s = tl.ball[k]!;
+			if (s.t0 - t > PASS_LOOK) {
+				break;
+			}
+			if (s.kind === "fly") {
+				pass = s;
+				break;
+			}
+		}
+	} else {
+		for (let k = i; k >= 0 && k >= i - 2; k--) {
+			const s = tl.ball[k]!;
+			if (t - s.t0 >= PASS_LOOK_OFF) {
+				break;
+			}
+			if (s.kind === "fly" && "pid" in s.from && s.from.pid === pid) {
+				pass = s;
+				break;
+			}
+		}
+	}
+	if (
+		!pass ||
+		!("pid" in pass.from) ||
+		pass.from.pid !== pid ||
+		!("pid" in pass.to) ||
+		pass.to.pid === pid
+	) {
+		return 0;
+	}
+	const to = tl.tracks.get(pass.to.pid);
+	if (!to) {
+		return 0;
+	}
+	const w =
+		t < pass.t0
+			? Math.min(
+					smooth01((PASS_LOOK - (pass.t0 - t)) / (PASS_LOOK - PASS_LOOK_SET)),
+					smooth01(since / PASS_LOOK_SET),
+				)
+			: 1 - smooth01((t - pass.t0) / PASS_LOOK_OFF);
+	const at = spotAt(to, Math.min(t, pass.t0));
+	const rel =
+		(wrapAngle(Math.atan2(at.y - here.y, at.x - here.x) - yaw) * 180) / Math.PI;
+	const a = Math.abs(rel);
+	const reach = a <= LOOK_BACK ? 1 : Math.max(0, (180 - a) / (180 - LOOK_BACK));
+	return Math.sign(rel) * Math.min(a, LOOK_MOST) * reach * w * fast;
 };
 // Off the floor - sat on the bench, stood at it - the same: his head turned
 // to follow the play, in front of him.

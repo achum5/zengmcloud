@@ -383,12 +383,13 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   spun round just after a camera cut. Setting off from where he stands, a
   man steps off, one foot and then the other, rather than both feet swept
   round under him over the floor (both feet sliding through his starts
-  0.12 feet a start down to 0.02). Still to do: a few of an official's
-  turns as one signal follows another; backpedalling slowly to a stop,
-  his hips coming round slide both feet round under him; going straight
-  from running into a shuffle or a backpedal, or back, at speed, both feet
-  slide through the change (stepped over there, his legs are flung; from
-  all but a standstill they now step).)
+  0.12 feet a start down to 0.02). With the ball, a man's eyes come round
+  to the one he is about to pass it to before it goes (eyes within 30
+  degrees of him 76% of passes up to 93%). Still to do: backpedalling
+  slowly to a stop, his hips coming round slide both feet round under him;
+  going straight from running into a shuffle or a backpedal, or back, at
+  speed, both feet slide through the change (stepped over there, his legs
+  are flung; from all but a standstill they now step).)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like
