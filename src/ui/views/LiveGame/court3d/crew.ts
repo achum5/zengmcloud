@@ -11,6 +11,7 @@ import {
 	offenseAt,
 	recentFx,
 	tensionAt,
+	type Blend,
 	type PlayerState,
 } from "./evaluate.ts";
 import { shade, type Look } from "./figure.ts";
@@ -1027,6 +1028,40 @@ const smooth01 = (u: number) => {
 	const x = clamp(u, 0, 1);
 	return x * x * (3 - 2 * x);
 };
+// An official's gait by how quick he goes (feet a second, over GAIT_SPAN):
+// stood, walking, running - the quicker one eased in from the slower across
+// a band of speeds (GAIT_BANDS), not switched in a frame as he crosses a
+// line.
+const GAIT_SPAN = 200;
+const GAIT_BANDS: [AnimName, AnimName, number, number][] = [
+	["ready", "walk", 0.8, 2.4],
+	["walk", "run", 6, 10],
+];
+const gaitOf = (
+	speed: number,
+): { anim: AnimName; from?: { anim: AnimName; w: number } } => {
+	const [a, b, lo, hi] =
+		speed < (GAIT_BANDS[0]![3] + GAIT_BANDS[1]![2]) / 2
+			? GAIT_BANDS[0]!
+			: GAIT_BANDS[1]!;
+	const u = smooth01((speed - lo) / (hi - lo));
+	return u <= 0
+		? { anim: a }
+		: u >= 1
+			? { anim: b }
+			: { anim: b, from: { anim: a, w: 1 - u } };
+};
+// Easing out of one thing (was, so much of it still showing) while his
+// gait eases between two of its own: the three of them in the shares the
+// two easings give - as one blend, the gait's other inside it with that.
+const SIGNAL_EASE = 200;
+const over = (gait: Blend | undefined, was: Blend): Blend => {
+	if (!gait || gait.w <= 0) {
+		return was;
+	}
+	const w = 1 - (1 - gait.w) * (1 - was.w);
+	return { ...gait, w, from: { ...was, w: was.w / w } };
+};
 const turnToward = (from: number, to: number, w: number) => {
 	let d = to - from;
 	d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
@@ -1038,9 +1073,11 @@ const refStates = (
 	refs: CrewMember[],
 	ball: Pt,
 ): PlayerState[] => {
-	const { at, vel } = refPlaces(tl, t);
+	const { at } = refPlaces(tl, t);
 	const before = refPlaces(tl, t - FACE_SPAN / 2).at;
 	const after = refPlaces(tl, t + FACE_SPAN / 2).at;
+	const gaitBefore = refPlaces(tl, t - GAIT_SPAN / 2).at;
+	const gaitAfter = refPlaces(tl, t + GAIT_SPAN / 2).at;
 	const signals = signalsAt(tl, t);
 	// The jump ball: the third holds it out between the two of them, then
 	// throws it up.
@@ -1054,17 +1091,28 @@ const refStates = (
 			: undefined;
 	return refs.map((m, i) => {
 		let p = at[i]!;
-		const v = vel[i]!;
-		const speed = Math.hypot(v.x, v.y);
-		let anim: AnimName = speed > 8 ? "run" : speed > 1.6 ? "walk" : "ready";
-		let phase =
-			anim === "run"
-				? (t / 1000) * 1.6
-				: anim === "walk"
-					? (t / 1000) * 1.1
-					: loopPhase(anim, t, i * 0.37);
 		const gx = ((after[i]!.x - before[i]!.x) * 1000) / FACE_SPAN;
 		const gy = ((after[i]!.y - before[i]!.y) * 1000) / FACE_SPAN;
+		// Stood, walking or running by how quick he goes over that moment
+		// too, and between two of them, the one eased into the other.
+		const gaitPhase = (a: AnimName) =>
+			a === "run"
+				? (t / 1000) * 1.6
+				: a === "walk"
+					? (t / 1000) * 1.1
+					: loopPhase(a, t, i * 0.37);
+		const gait = gaitOf(
+			(dist(gaitAfter[i]!, gaitBefore[i]!) * 1000) / GAIT_SPAN,
+		);
+		let anim = gait.anim;
+		let phase = gaitPhase(anim);
+		let gaitFrom: Blend | undefined = gait.from
+			? {
+					anim: gait.from.anim,
+					phase: gaitPhase(gait.from.anim),
+					w: gait.from.w,
+				}
+			: undefined;
 		// (The ball in his own hands, or going right by him: facing us.)
 		const seen = ballBearing(tl, t, p);
 		const toBall = seen
@@ -1089,6 +1137,7 @@ const refStates = (
 			);
 			if (handing && d < 0.8) {
 				({ anim, phase } = handing);
+				gaitFrom = undefined;
 				watching = false;
 			}
 		}
@@ -1100,6 +1149,7 @@ const refStates = (
 			(t >= toss.t || tossBallIn(tl, t))
 		) {
 			anim = "toss";
+			gaitFrom = undefined;
 			phase = t < toss.t ? 0 : (t - toss.t) / 600;
 			yaw = FACING_US;
 			watching = false;
@@ -1114,6 +1164,13 @@ const refStates = (
 			// (The last of it he came round from: the move before, or as he
 			// faced before it.)
 			const done = signal.moves.filter((s) => s.t1 <= t).at(-1);
+			// How he was at the end of a move: its last frame.
+			const endOf = (s: Signal["moves"][number]): Blend => ({
+				anim: s.anim,
+				phase:
+					ANIMS[s.anim].kind === "act" ? 1 : loopPhase(s.anim, s.t1 - s.t0, 0),
+				w: 1,
+			});
 			if (move) {
 				anim = move.anim;
 				const a = ANIMS[anim];
@@ -1121,29 +1178,61 @@ const refStates = (
 					a.kind === "act"
 						? (t - move.t0) / (move.t1 - move.t0)
 						: loopPhase(anim, t - move.t0, 0);
+				const chained = done && done.t1 >= move.t0 - 1;
 				yaw = turnToward(
-					done && done.t1 >= move.t0 - 1 ? done.yaw : yaw,
+					chained ? done.yaw : yaw,
 					move.yaw,
 					smooth01((t - move.t0) / SIGNAL_TURN),
 				);
+				// Into it from the move before, or from his stride as he
+				// pulled up to make it - over a moment, not in a frame.
+				const w = 1 - smooth01((t - move.t0) / SIGNAL_EASE);
+				gaitFrom =
+					w <= 0
+						? undefined
+						: chained
+							? { ...endOf(done), w }
+							: {
+									anim: gait.anim,
+									phase: gaitPhase(gait.anim),
+									w,
+									...(gaitFrom ? { from: gaitFrom } : {}),
+								};
 			} else {
-				anim = "run";
-				phase = (t / 1000) * 1.6;
-				// Running back: the way he goes - and as he gets there, round
-				// to the way he would face there.
-				const a = signalPos(signal, t - 60, liveAt);
-				const b = signalPos(signal, t + 60, liveAt);
-				const going =
-					Math.hypot(b.x - a.x, b.y - a.y) > 1e-3
-						? Math.atan2(b.y - a.y, b.x - a.x)
-						: yaw;
-				const back = turnToward(
+				// Running back - or walking, or stood, as quick as he goes -
+				// the way he goes, and as he gets there, round to the way he
+				// would face there; out of the last move over a moment.
+				const a = signalPos(signal, t - GAIT_SPAN / 2, liveAt);
+				const b = signalPos(signal, t + GAIT_SPAN / 2, liveAt);
+				const speed = (dist(a, b) * 1000) / GAIT_SPAN;
+				const back = gaitOf(speed);
+				anim = back.anim;
+				phase = gaitPhase(anim);
+				const easing: Blend | undefined = back.from
+					? {
+							anim: back.from.anim,
+							phase: gaitPhase(back.from.anim),
+							w: back.from.w,
+						}
+					: undefined;
+				const out = done ? 1 - smooth01((t - done.t1) / SIGNAL_EASE) : 0;
+				gaitFrom =
+					out > 0 && done ? over(easing, { ...endOf(done), w: out }) : easing;
+				const going = turnToward(
+					yaw,
+					Math.atan2(b.y - a.y, b.x - a.x),
+					smooth01(
+						(speed - GAIT_BANDS[0]![2]) /
+							(GAIT_BANDS[0]![3] - GAIT_BANDS[0]![2]),
+					),
+				);
+				const toward = turnToward(
 					done ? done.yaw : yaw,
 					going,
 					smooth01((t - (done ? done.t1 : signal.t0)) / SIGNAL_TURN),
 				);
 				const end = signal.moves.at(-1)!.t1 + signal.back;
-				yaw = turnToward(yaw, back, smooth01((end - t) / SIGNAL_TURN));
+				yaw = turnToward(yaw, toward, smooth01((end - t) / SIGNAL_TURN));
 			}
 			watching = !move;
 		}
@@ -1169,6 +1258,7 @@ const refStates = (
 			phase,
 			moving: anim === "run" || anim === "walk",
 			...(Math.abs(look) > 0.5 ? { look } : {}),
+			...(gaitFrom ? { from: gaitFrom } : {}),
 		};
 	});
 };

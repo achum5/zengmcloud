@@ -1,8 +1,9 @@
 import { assert, describe, test } from "vitest";
 import { atTable, crewAt, crewFor, type CrewMember } from "./crew.ts";
-import { cameraCuts, fastAt } from "./evaluate.ts";
-import { benchX, COURT_H, COURT_W, HUDDLE_Y } from "./geometry.ts";
+import { bodyPoint, cameraCuts, fastAt, poseOf, withBody } from "./evaluate.ts";
+import { benchX, COURT_H, COURT_W, HUDDLE_Y, type Pt3 } from "./geometry.ts";
 import { compileCourt, type CourtPlayer, type RawEvent } from "./director.ts";
+import { bodyOf, skeleton } from "./poses.ts";
 import { compile, gidOf } from "./testGame.ts";
 
 const AWAY = {
@@ -340,5 +341,58 @@ describe("3D crew", () => {
 		assert.isAbove(frames, 50_000);
 		assert.isBelow(spun, 80);
 		assert.isAtMost(others, 5);
+	}, 240_000);
+
+	// Stood, walking or running, an official went from one to the next in a
+	// frame - his legs snapped from one stride to the other - and the same
+	// into a signal and out of it again.
+	test("an official eases from standing to walking to running, and into his signals and out", () => {
+		const { tl, crew } = working("a");
+		const body = bodyOf();
+		const cuts = cameraCuts(tl);
+		const was = new Map<number, Pt3[]>();
+		let frames = 0;
+		let popped = 0;
+		for (let t = 0; t < Math.min(tl.end, 900_000); t += 16) {
+			if (
+				fastAt(tl, t) > 1 ||
+				fastAt(tl, t - 16) > 1 ||
+				cuts.some((c) => c > t - 16 && c <= t)
+			) {
+				was.clear();
+				continue;
+			}
+			for (const r of crewAt(tl, t, crew).states) {
+				if (!isRef(r.pid)) {
+					continue;
+				}
+				const me = withBody(r, body);
+				const sk = skeleton(body, poseOf(me));
+				const ends = [sk.legR.end, sk.legL.end, sk.armR.end, sk.armL.end].map(
+					(v) => bodyPoint(me, v),
+				);
+				const before = was.get(r.pid);
+				if (before) {
+					frames += 1;
+					// (Sixty feet a second, for a hand or a foot, is a blur.)
+					if (
+						ends.some(
+							(e, k) =>
+								Math.hypot(
+									e.x - before[k]!.x,
+									e.y - before[k]!.y,
+									e.z - before[k]!.z,
+								) >
+								60 * 0.016,
+						)
+					) {
+						popped += 1;
+					}
+				}
+				was.set(r.pid, ends);
+			}
+		}
+		assert.isAbove(frames, 50_000);
+		assert.isBelow(popped / frames, 0.0025, `${popped} in ${frames}`);
 	}, 240_000);
 });
