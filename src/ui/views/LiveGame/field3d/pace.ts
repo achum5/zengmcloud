@@ -106,12 +106,48 @@ export type Pace = {
 	top: number;
 	h: number;
 	stop: number;
+	// (Come into it quicker than it goes, and brought to a stop in it: see
+	// carriedOf.)
+	carry?: number;
 };
 const EVEN: Pace = { g: 0, early: 0, a: 0, top: 1, h: 0, stop: 0 };
+
+// AN ACT ON THE MOVE HE IS BROUGHT TO A STOP IN - a dive, a man brought
+// down - come into off a quicker stretch: as quick as he was going at its
+// start (no more than CARRY_MOST times its own pace), slowing all the way
+// to a stop at its end - not cut down to its pace in a stride. (How much
+// quicker it starts than it goes: 1, not at all.)
+const CARRY_MOST = 3;
+const paceIn = (l: Leg) =>
+	l.t1 > l.t0
+		? Math.hypot(l.to.x - l.from.x, l.to.y - l.from.y) / ((l.t1 - l.t0) / 1000)
+		: 0;
+const carriedOf = (legs: Leg[], k: number): number => {
+	const l = legs[k]!;
+	const prev = legs[k - 1];
+	const next = legs[k + 1];
+	if (
+		!prev ||
+		!acts(l) ||
+		PULL_INTO.has(l.move) ||
+		moveKind(prev.move) !== "cycle" ||
+		!goes(prev) ||
+		!joined(prev, l) ||
+		(next && goes(next) && joined(l, next))
+	) {
+		return 1;
+	}
+	const own = paceIn(l);
+	return own > 0 ? Math.min(CARRY_MOST, Math.max(1, paceIn(prev) / own)) : 1;
+};
 
 export const paceOf = (legs: Leg[], k: number): Pace => {
 	const l = legs[k];
 	if (!l || !eases(l)) {
+		const carry = l ? carriedOf(legs, k) : 1;
+		if (carry > 1) {
+			return { ...EVEN, carry };
+		}
 		const stop = l && acts(l) ? stopOf(l, legs[k + 1], legs[k + 2]) : 0;
 		return stop > 0 ? { ...EVEN, h: stop / (l!.t1 - l!.t0), stop } : EVEN;
 	}
@@ -153,6 +189,9 @@ export const paceOf = (legs: Leg[], k: number): Pace => {
 const easedAlong = (l: Leg, t: number, p: Pace): number => {
 	if (p === EVEN) {
 		return along(l, t);
+	}
+	if (p.carry) {
+		return 1 - (1 - along(l, t)) ** p.carry;
 	}
 	const { g, a, top, h } = p;
 	const u = (t - l.t0) / (l.t1 - l.t0);

@@ -249,6 +249,18 @@ const STOP_HARD = 1.5;
 // (Cut short no more than this long into a leg, ms: none of it kept - or,
 // in a gait, this long: kept as the one before it.)
 const CUT_SLIVER_MS = 1;
+// A man off his feet from on the run (see Actor.lunge), going at least
+// LUNGE_LEAST_FPS: off from as far back as LUNGE_AIR_MS at that pace and
+// LUNGE_SLIDE_FT more takes him (LUNGE_MOST_FT at most) - no more than
+// LUNGE_BACK_MS sooner, nor less than LUNGE_ON_MS into the run he was on
+// (looked back along in LUNGE_STEP_MS).
+const LUNGE_LEAST_FPS = 10;
+const LUNGE_AIR_MS = 250;
+const LUNGE_SLIDE_FT = 1.5;
+const LUNGE_MOST_FT = 8;
+const LUNGE_BACK_MS = 250;
+const LUNGE_ON_MS = 150;
+const LUNGE_STEP_MS = 10;
 const CUT_MERGE_MS = 60;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
 const STEPS = new Set<Move>([...GAITS, "back", "slide", "shuffle"]);
@@ -1629,6 +1641,41 @@ class Actor {
 			move,
 			yaw: yaw ?? this.yaw,
 		});
+	}
+
+	// Off his feet into it from on the run: launched from as far back as
+	// that carries him (LUNGE_BACK_MS earlier at the most), not run on in to
+	// throw himself the last yard or two - and slowed as he goes (see
+	// pace.ts carriedOf).
+	lunge(move: Move, t1: number, yaw: number, to: Pt) {
+		const l = this.last;
+		const v = GAITS.has(l.move) ? legPace(l) : 0;
+		if (v >= LUNGE_LEAST_FPS) {
+			const far = Math.min(
+				LUNGE_MOST_FT,
+				(v * LUNGE_AIR_MS) / 1000 + LUNGE_SLIDE_FT,
+			);
+			// (Back along the run he is on, no further than it goes.)
+			const legs = this.legs;
+			let k = legs.length - 1;
+			while (
+				k > 0 &&
+				GAITS.has(legs[k - 1]!.move) &&
+				legs[k - 1]!.t1 === legs[k]!.t0 &&
+				legPace(legs[k - 1]!) >= LUNGE_LEAST_FPS
+			) {
+				k--;
+			}
+			const least = Math.max(legs[k]!.t0 + LUNGE_ON_MS, this.t - LUNGE_BACK_MS);
+			let t0 = this.t;
+			while (t0 - LUNGE_STEP_MS >= least && dist(this.posAt(t0), to) < far) {
+				t0 -= LUNGE_STEP_MS;
+			}
+			if (t0 < this.t) {
+				this.cut(t0);
+			}
+		}
+		this.act(move, t1, yaw, to);
 	}
 
 	// Reaching for it, his hands on it at `at` (see CATCH_REACH_MS) - only
@@ -4874,7 +4921,7 @@ class Action {
 				const hit = beside(at, toHim, out(2.6));
 				const face = this.toward(hit, at);
 				this.closeOn(m, hit, tc - 300, face, carrier);
-				m.act("dive", tc + 250, face, beside(at, face, 1.2));
+				m.lunge("dive", tc + 250, face, beside(at, face, 1.2));
 				m.hold(tc + 250 + 700, "prone");
 				m.act("getUp", tc + 250 + 700 + GET_UP_MS);
 				this.done.add(m.pid);
@@ -4894,7 +4941,7 @@ class Action {
 				const hit = beside(at, toHim, out(2.2));
 				const face = this.toward(hit, at);
 				this.closeOn(m, hit, tc + 60, face, carrier);
-				m.act("dive", tc + 520, face, beside(at, face, 0.2));
+				m.lunge("dive", tc + 520, face, beside(at, face, 0.2));
 				m.hold(tc + 520 + 600, "prone");
 				m.act("getUp", tc + 520 + 600 + GET_UP_MS);
 				this.done.add(m.pid);
@@ -4916,7 +4963,7 @@ class Action {
 			const hit = beside(at, toHim, out(3.5));
 			const face = this.toward(hit, at);
 			this.closeOn(m, hit, tc - 100, face, carrier);
-			m.act("dive", tc + 380, face, beside(at, face, 0.8));
+			m.lunge("dive", tc + 380, face, beside(at, face, 0.8));
 			m.hold(tc + 380 + 700, "prone");
 			m.act("getUp", tc + 380 + 700 + GET_UP_MS);
 		}
@@ -5244,7 +5291,7 @@ class Action {
 					free,
 				) ?? along(landing(by), -LANDED_APART * 2, 0);
 			landed.push(lands);
-			m.act("dive", t + 450, face, lands);
+			m.lunge("dive", t + 450, face, lands);
 			m.hold(t + 450 + DOWN_MS + 150 * k, "prone");
 			m.act("getUp", t + 450 + DOWN_MS + GET_UP_MS + 150 * k);
 			this.done.add(m.pid);
@@ -5414,7 +5461,7 @@ class Action {
 			}
 			const face = this.toward(hit, pile);
 			this.closeOn(m, hit, go, face);
-			m.act("dive", go + 450, face, {
+			m.lunge("dive", go + 450, face, {
 				x: pile.x + Math.cos(ang) * 1.6,
 				y: pile.y + Math.sin(ang) * 1.6,
 			});
@@ -6020,7 +6067,7 @@ class Action {
 			rec.cut(Math.min(rec.t, catchAt - 250));
 			rec.hold(catchAt - 250);
 			const toward = this.toward(rec.at, lands);
-			rec.act("dive", catchAt + 450, toward, {
+			rec.lunge("dive", catchAt + 450, toward, {
 				x: rec.at.x + Math.cos(toward) * 5,
 				y: rec.at.y + Math.sin(toward) * 5,
 			});
@@ -6488,7 +6535,7 @@ class Action {
 				} else {
 					m.hold(at - 300, undefined, yaw);
 				}
-				m.act("dive", at, yaw, {
+				m.lunge("dive", at, yaw, {
 					x: bat.x + Math.cos(yaw) * 1.5,
 					y: bat.y + Math.sin(yaw) * 1.5,
 				});
@@ -6513,7 +6560,7 @@ class Action {
 				y: lands.y - Math.sin(yaw) * FALL_ON_FT,
 			};
 			rec.press(short, takeT - 350, rec.top * FLAT_OUT, "sprint");
-			rec.act("dive", takeT, yaw, lands);
+			rec.lunge("dive", takeT, yaw, lands);
 			rec.hold(takeT + 1400, "prone");
 			rec.act("getUp", takeT + 1400 + GET_UP_MS);
 			this.done.add(rec.pid);
@@ -8778,7 +8825,7 @@ class Action {
 				rec.top * FLAT_OUT,
 				"sprint",
 			);
-			rec.act("dive", takeT, yaw, lands);
+			rec.lunge("dive", takeT, yaw, lands);
 			rec.hold(takeT + 1400, "prone");
 			rec.act("getUp", takeT + 1400 + GET_UP_MS);
 			if (muff) {
@@ -8789,7 +8836,7 @@ class Action {
 					y: restPt.y - Math.sin(yaw) * 1.6,
 				};
 				muff.press(by, takeT - 200, muff.top * 0.8);
-				muff.act("dive", takeT + 250, yaw, by);
+				muff.lunge("dive", takeT + 250, yaw, by);
 				muff.hold(takeT + 1500, "prone");
 				muff.act("getUp", takeT + 1500 + GET_UP_MS);
 				this.done.add(muff.pid);
@@ -8930,7 +8977,7 @@ class Action {
 				m.hold(lead, undefined, inward);
 			}
 			if (n < 3 && dist(m.at, hit) < 3) {
-				m.act("dive", t1, inward, {
+				m.lunge("dive", t1, inward, {
 					x: pt.x + Math.cos(ang) * 1.2,
 					y: pt.y + Math.sin(ang) * 1.2,
 				});
