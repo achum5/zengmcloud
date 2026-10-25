@@ -1623,6 +1623,7 @@ export const forgetTurns = (tracks: Iterable<Track>) => {
 		steppings.delete(tr);
 		footfalls.delete(tr);
 		footsAt.delete(tr);
+		pushLeads.delete(tr);
 	}
 };
 const yawOnBeat = (tl: CourtTimeline, tr: Track, g: number): number => {
@@ -4029,22 +4030,28 @@ const flippedLegs = (
 // on it - worked out once, along with his strides (see steppingOf); a
 // run that goes on from the last carries on from when that one's feet
 // came down and up.
-type Footfalls = { on: number[]; off: number[] };
-const footfalls = new WeakMap<
-	Track,
-	Map<Move, { of: Stepping; by: Map<AnimName, [Footfalls, Footfalls]> }>
->();
-const footfallsOf = (
+// (And whether it is down as the run ends, or how far through its swing;
+// one that came down as the run started - sliding back the way he came,
+// say - which way it came down pointing; and one that came up then, when.)
+type Footfalls = {
+	on: number[];
+	off: number[];
+	down?: boolean;
+	swing?: number;
+	from?: Map<number, number>;
+	cut?: number;
+};
+type FallsMemo = {
+	of: Stepping;
+	by: Map<AnimName, [Footfalls, Footfalls]>;
+};
+const footfalls = new WeakMap<Track, Map<Move, FallsMemo>>();
+const fallsMemo = (
 	tl: CourtTimeline,
 	tr: Track,
 	k: number,
 	run: Run,
-	anim: AnimName,
-): [Footfalls, Footfalls] | undefined => {
-	const g0 = legPhases(anim, 0);
-	if (!g0) {
-		return undefined;
-	}
+): FallsMemo => {
 	let byMove = footfalls.get(tr);
 	if (!byMove) {
 		byMove = new Map();
@@ -4056,6 +4063,62 @@ const footfallsOf = (
 		memo = { of: st, by: new Map() };
 		byMove.set(run.mv, memo);
 	}
+	return memo;
+};
+// Push steps - a slide's, say - as a gait's legs: his feet go out and come
+// together the same either way he goes (see stride in poses), so which one
+// is down is which way he goes - the foot he leads with down through the
+// close, the other through the push. (Which he leads with, as he goes
+// halfway along the run.)
+const PUSH_DUTY = 0.5;
+const pushLeads = new WeakMap<Track, Map<Move, boolean>>();
+const leadsLeft = (tl: CourtTimeline, tr: Track, run: Run): boolean => {
+	let memo = pushLeads.get(tr);
+	if (!memo) {
+		memo = new Map();
+		pushLeads.set(tr, memo);
+	}
+	let left = memo.get(run.mv);
+	if (left === undefined) {
+		const mid = (run.s0 + run.s1) / 2;
+		left = wayOf(tr, yawAt(tl, tr, mid), mid)[1] > 0;
+		memo.set(run.mv, left);
+	}
+	return left;
+};
+const stepLegs = (
+	tl: CourtTimeline,
+	tr: Track,
+	run: Run,
+	anim: AnimName,
+	ph: number,
+): ReturnType<typeof legPhases> => {
+	if (!PUSH_STEPS.has(anim)) {
+		return legPhases(anim, ph);
+	}
+	const left = leadsLeft(tl, tr, run);
+	const trail = frac(ph);
+	const lead = frac(ph - 0.5);
+	return {
+		r: left ? trail : lead,
+		l: left ? lead : trail,
+		duty: PUSH_DUTY,
+		back: false,
+	};
+};
+const footfallsOf = (
+	tl: CourtTimeline,
+	tr: Track,
+	k: number,
+	run: Run,
+	anim: AnimName,
+): [Footfalls, Footfalls] | undefined => {
+	const g0 = stepLegs(tl, tr, run, anim, 0);
+	if (!g0) {
+		return undefined;
+	}
+	const memo = fallsMemo(tl, tr, k, run);
+	const st = memo.of;
 	const had = memo.by.get(anim);
 	if (had) {
 		return had;
@@ -4069,7 +4132,7 @@ const footfallsOf = (
 	const at = (i: number) =>
 		st.ph[i]! + (extra === 0 ? 0 : alongRun(run, when(i)) * extra);
 	const through = (ph: number, leg: 0 | 1) => {
-		const g = legPhases(anim, ph)!;
+		const g = stepLegs(tl, tr, run, anim, ph)!;
 		return footThrough(g, leg === 0 ? g.r : g.l);
 	};
 	// (Gone on from the run before on the same sort of steps: from when its
@@ -4081,7 +4144,7 @@ const footfallsOf = (
 	) {
 		const was = runOf(tr, k - 1);
 		const ended = endStepsOf(tl, tr, k - 1, was);
-		const g = legPhases(ended, 0);
+		const g = stepLegs(tl, tr, was, ended, 0);
 		if (g && g.back === g0.back && g.duty === g0.duty) {
 			before = footfallsOf(tl, tr, k - 1, was, ended);
 		}
@@ -4090,7 +4153,35 @@ const footfallsOf = (
 		const f: Footfalls = before
 			? { on: [before[leg].on.at(-1)!], off: [before[leg].off.at(-1)!] }
 			: { on: [st.s0], off: [st.s0] };
+		const kept = before?.[leg].from?.get(f.on[0]!);
+		if (kept !== undefined) {
+			f.from = new Map([[f.on[0]!, kept]]);
+		}
 		let c0 = through(at(0), leg);
+		// (Down as the run before ended and up now, or the other way about:
+		// it came up just now, or down - pointing as it was turned in the
+		// air, not snapped round to where his legs have it.)
+		const b = before?.[leg];
+		if (b?.down !== undefined && b.down !== c0 < g0.duty) {
+			if (c0 < g0.duty) {
+				const up = b.off.at(-1)!;
+				const on = lastBy(b.on, up);
+				const turn =
+					wrapAngle(
+						footAt(tl, tr, anim, up, true) -
+							(b.from?.get(on) ?? footAt(tl, tr, anim, on, true)),
+					) *
+					(1 - smooth01(b.swing ?? 0));
+				f.on.push(st.s0);
+				(f.from ??= new Map()).set(
+					st.s0,
+					footAt(tl, tr, anim, st.s0, true) - turn,
+				);
+			} else {
+				f.off.push(st.s0);
+				f.cut = st.s0;
+			}
+		}
 		for (let i = 1; i <= n; i++) {
 			const c1 = through(at(i), leg);
 			if (c1 < c0 - 0.5) {
@@ -4099,6 +4190,10 @@ const footfallsOf = (
 				f.off.push(when(i - 1) + (dt * (g0.duty - c0)) / (c1 - c0));
 			}
 			c0 = c1;
+		}
+		f.down = c0 < g0.duty;
+		if (!f.down) {
+			f.swing = (c0 - g0.duty) / (1 - g0.duty);
 		}
 		return f;
 	}) as [Footfalls, Footfalls];
@@ -4170,11 +4265,11 @@ const footLock = (
 		return undefined;
 	}
 	const anim = d.stride ? d.stride.anim : d.anim;
-	const now = legPhases(anim, d.stride ? d.stride.phase : d.phase);
+	const run = runOf(tr, g.k);
+	const now = stepLegs(tl, tr, run, anim, d.stride ? d.stride.phase : d.phase);
 	if (!now) {
 		return undefined;
 	}
-	const run = runOf(tr, g.k);
 	const falls = footfallsOf(tl, tr, g.k, run, anim);
 	if (!falls) {
 		return undefined;
@@ -4186,20 +4281,22 @@ const footLock = (
 	const out = ([0, 1] as const).map((leg) => {
 		const c = footThrough(now, leg === 0 ? now.r : now.l);
 		const f = falls[leg];
+		const from = (on: number) =>
+			f.from?.get(on) ?? footAt(tl, tr, d.anim, on, true);
 		if (c < now.duty) {
-			return turned(
-				footAt(tl, tr, d.anim, lastBy(f.on, g.at), true),
-				footAt(tl, tr, d.anim, t),
-			);
+			return turned(from(lastBy(f.on, g.at)), footAt(tl, tr, d.anim, t));
 		}
-		// (Up, from as it was as it came up.)
+		// (Up, from as it was as it came up - over the time till it comes
+		// down, if it came up as the run started.)
 		const off = lastBy(f.off, g.at);
+		const next = off === f.cut ? f.on.find((x) => x > off) : undefined;
+		const u =
+			next === undefined
+				? (c - now.duty) / (1 - now.duty)
+				: clamp01((g.at - off) / (next - off));
 		return (
-			turned(
-				footAt(tl, tr, d.anim, lastBy(f.on, off), true),
-				footAt(tl, tr, d.anim, off, true),
-			) *
-			(1 - smooth01((c - now.duty) / (1 - now.duty)))
+			turned(from(lastBy(f.on, off)), footAt(tl, tr, d.anim, off, true)) *
+			(1 - smooth01(u))
 		);
 	}) as [number, number];
 	return Math.abs(out[0]) < 0.05 && Math.abs(out[1]) < 0.05 ? undefined : out;

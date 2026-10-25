@@ -361,7 +361,12 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   a man 8 a game down to 0. Sliding with a quick man, a defender's push
   steps lengthen - feet further apart each push, sat a little deeper so his
   hips stay level - rather than quickening until his legs patter: nearly
-  six pushes a second at ten feet a second, down to four.)
+  six pushes a second at ten feet a second, down to four. And turning to
+  stay square to his man as he slides, his planted foot stays pointed where
+  it came down - the push foot through the push, the lead foot through the
+  close - going round only while it is up; sliding back the way he came,
+  the foot coming across plants where it is, pointed as it was turned:
+  planted feet turning 1.4 degrees a frame down to 0.1.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like
