@@ -690,8 +690,7 @@ class Actor {
 			dist(l.from, l.to) > 0 && dist(leg.from, leg.to) > 0
 				? angleAt(l.from, l.to, leg.to)
 				: 0;
-		const round =
-			turn > PLANT_TURN ? Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2) : 1;
+		const round = turn > PLANT_TURN ? cutKeep(turn) : 1;
 		const keep = Math.min(v / was, round);
 		if (!(was * (1 - keep) >= SLOW_DROP)) {
 			return undefined;
@@ -1247,7 +1246,7 @@ class Actor {
 		const far = dist(l.from, l.to);
 		const cos = (l.to.x - l.from.x) / far;
 		const sin = (l.to.y - l.from.y) / far;
-		const want = down ?? v * Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2);
+		const want = down ?? v * cutKeep(turn);
 		const ve = plantedTo(
 			v,
 			want,
@@ -2701,9 +2700,16 @@ const CATCH_LEAD_MS = 380;
 const ROUTE_LEFT = 0.4;
 // A break in it sharper than CUT_LEAST (radians), cut: into it at as much
 // of his pace as goes on the new way (half of it square to it), no less
-// than CUT_KEEP of it.
+// than CUT_KEEP of it - or, turned back past CUT_BACK, less of it the
+// further back, none of it straight back (a curl, a comeback: planted, not
+// sent back the way he came at the pace he had on).
 const CUT_LEAST = 0.5;
 const CUT_KEEP = 0.25;
+const CUT_BACK = (2 * Math.PI) / 3;
+const cutKeep = (turn: number): number =>
+	turn > CUT_BACK
+		? (CUT_KEEP * (Math.PI - turn)) / (Math.PI - CUT_BACK)
+		: Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2);
 // (Out of his stance, the first stretch of it, a little slower.)
 const routeFps = (speed: number, k: number) => speed * (k === 1 ? 0.8 : 1);
 // A break in a route: how much of his pace he cuts at (see CUT_KEEP), what
@@ -2725,7 +2731,7 @@ const breakOf = (a: Pt, b: Pt, c: Pt, vIn: number, vOut: number): Break => {
 	if (turn <= CUT_LEAST) {
 		return { keep: 1, down: 0, up: 0, v: vIn, accel: CUT_ACCEL };
 	}
-	const keep = Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2);
+	const keep = cutKeep(turn);
 	const lost = (v: number, A: number) =>
 		v > 0 ? (Math.max(0, v - vIn * keep) ** 2 / (2 * A * v)) * 1000 : 0;
 	return {
@@ -5734,7 +5740,7 @@ class Action {
 			}
 			const ve = plantedTo(
 				v,
-				v * Math.max(CUT_KEEP, (1 + Math.cos(turn)) / 2),
+				v * cutKeep(turn),
 				(hit.x - at.x) * cos + (hit.y - at.y) * sin,
 			);
 			const T = (v - ve) / CUT_ACCEL;
