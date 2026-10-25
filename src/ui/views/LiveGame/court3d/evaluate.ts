@@ -2927,7 +2927,8 @@ const blendInto = (
 		(d.dribble === undefined) === (now.dribble === undefined) &&
 		d.stride?.anim === now.stride?.anim;
 	const anim = now.anim;
-	let lo = t - BLEND_MS;
+	// (Back as far as the longest of these eases goes - stepping off, too.)
+	let lo = t - Math.max(BLEND_MS, START_MS);
 	let before = doingAt(tl, tr, lo);
 	let settling = false;
 	if (same(before)) {

@@ -1,5 +1,12 @@
 import { assert, describe, test } from "vitest";
-import { bodyPoint, evalPlayer, fastAt, poseOf, withBody } from "./evaluate.ts";
+import {
+	bodyPoint,
+	cameraCuts,
+	evalPlayer,
+	fastAt,
+	poseOf,
+	withBody,
+} from "./evaluate.ts";
 import { type AnimName, bodyOf, legPhases, skeleton } from "./poses.ts";
 import type { CourtTimeline } from "./director.ts";
 import { compile } from "./testGame.ts";
@@ -254,6 +261,41 @@ describe("footwork", () => {
 	// the push, the lead foot through the close - not swivelled round with
 	// his hips. (Before: planted feet turning 1.4 degrees a frame, as much as
 	// his body; 20 a game turned more than 30 degrees while down.)
+	// Easing out of what he was doing - set off from where he stood, or
+	// turned out of a backpedal and away - it fades out to the end, not
+	// dropped a fifth of the way short of it in a frame. (Before: 519 times
+	// in the first ten minutes, nearly all setting off.)
+	test("easing out of the last move, it fades to the end - not dropped in a frame", () => {
+		const STEP = 16;
+		const { tl } = compile("a", 120);
+		const cuts = cameraCuts(tl);
+		let eases = 0;
+		let dropped = 0;
+		for (const tr of tl.tracks.values()) {
+			let prev: ReturnType<typeof evalPlayer> | undefined;
+			for (let t = 0; t < 600_000; t += STEP) {
+				const st = evalPlayer(tl, tr.pid, t);
+				if (
+					fastAt(tl, t) > 1 ||
+					!st.shown ||
+					cuts.some((c) => c > t - STEP && c <= t)
+				) {
+					prev = undefined;
+					continue;
+				}
+				if (prev?.from && prev.from.w > 0.12 && st.anim === prev.anim) {
+					eases++;
+					if (!st.from) {
+						dropped++;
+					}
+				}
+				prev = st;
+			}
+		}
+		assert.isAbove(eases, 10_000);
+		assert.isAtMost(dropped, 10);
+	}, 240_000);
+
 	test("sliding, the foot he is down on stays pointed where it came down", () => {
 		const { down, spun, far } = slideSpin();
 		assert.isAbove(down, 2000);
