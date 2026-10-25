@@ -6698,6 +6698,85 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 };
 export const gripOf = (anim: AnimName): Grip => GRIPS[anim] ?? "two";
 
+// HOW EACH MAN RUNS. Nobody runs quite like anybody else: one pumps his arms
+// hard, another carries them low and loose; one runs tall, another leans on
+// into it, his shoulders rolling more or less with his stride - and down in
+// his stance, one sits right down in it, wide, another plays it taller -
+// each his own way, the same every game (by who he is, as his jumper - see
+// shotForm).
+export type RunStyle = {
+	// His arms' swing, for a typical man's; how much more bent at the elbows
+	// (degrees); how far further out from his sides (degrees); how much more
+	// he leans (degrees); his shoulders' roll, for a typical man's; and how
+	// low he sits in his stance (-1 to 1).
+	swing: number;
+	elbow: number;
+	carry: number;
+	lean: number;
+	roll: number;
+	low: number;
+};
+const styleUnit = (pid: number, k: number) => {
+	const x = Math.sin(pid * 12.9898 + k * 78.233) * 43758.5453;
+	return x - Math.floor(x);
+};
+export const runStyleOf = (pid: number): RunStyle => ({
+	swing: 0.7 + 0.6 * styleUnit(pid, 1),
+	elbow: -15 + 30 * styleUnit(pid, 2),
+	carry: -3 + 13 * styleUnit(pid, 3),
+	lean: -4 + 9 * styleUnit(pid, 4),
+	roll: 0.5 + styleUnit(pid, 5),
+	low: -1 + 2 * styleUnit(pid, 6),
+});
+// (Running free - not with the ball, nor in his stance.)
+const STYLED = new Set<AnimName>(["run", "jog", "sprint", "walk"]);
+// (Down in his stance: degrees more at the knees and hips, feet further
+// apart, more lean - the most, sat right down in it.)
+const STANCES = new Set<AnimName>([
+	"stance",
+	"guard",
+	"stanceHands",
+	"stancePoint",
+	"shuffle",
+]);
+const LOW_KNEE = 7;
+const LOW_HIP = 4;
+const LOW_WIDE = 0.08;
+const LOW_LEAN = 2.5;
+export const styledStance = (q: Pose, anim: AnimName, s: RunStyle): Pose =>
+	STANCES.has(anim)
+		? {
+				...q,
+				kneeN: q.kneeN + LOW_KNEE * s.low,
+				kneeF: q.kneeF + LOW_KNEE * s.low,
+				hipN: q.hipN + LOW_HIP * s.low,
+				hipF: q.hipF + LOW_HIP * s.low,
+				wide: q.wide + LOW_WIDE * s.low,
+				lean: q.lean + LOW_LEAN * s.low,
+			}
+		: q;
+export const styledRun = (q: Pose, anim: AnimName, s: RunStyle): Pose => {
+	if (!STYLED.has(anim)) {
+		return q;
+	}
+	// (His arms' swing as it is - shortened stepping off, say - so much
+	// more or less of it.)
+	const k = s.swing - 1;
+	const sw = ((q.shN - q.shF) / 2) * k;
+	const pump = ((q.elN - q.elF) / 2) * k;
+	return {
+		...q,
+		shN: q.shN + sw,
+		shF: q.shF - sw,
+		elN: q.elN + s.elbow + pump,
+		elF: q.elF + s.elbow - pump,
+		abN: q.abN + s.carry,
+		abF: q.abF + s.carry,
+		lean: q.lean + s.lean,
+		twist: q.twist * s.roll,
+	};
+};
+
 // Each man's own jumper, the same every game: most straight up and down,
 // some with a kick of the leg, some landing split (see KICK_SHOT).
 export const shotForm = (pid: number): AnimName => {

@@ -402,7 +402,13 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   0.06). Shuffling, the foot that steps gets going off the floor and slows
   to come down - not out at twice his pace from the moment it is up to the
   moment it is down (2.0 of his pace the frame before it lands down to 1.6,
-  1.5 the frame it comes up down to 1.0). Still to do: going straight from
+  1.5 the frame it comes up down to 1.0). And each man runs his own way, the
+  same every game: one leans on into it, another runs tall; one pumps his
+  arms, another carries them low and loose, out from his sides or in tight,
+  his shoulders rolling more or less with his stride - and down in his
+  stance, one sits right down in it, wide, another plays it taller. Still
+  to do: going
+  straight from
   running into a shuffle or a backpedal, or back, at speed, both feet slide
   through the change (stepped over there, his legs are flung; from all but
   a standstill they now step); and turning on the spot while all but stood

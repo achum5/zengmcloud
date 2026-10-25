@@ -41,7 +41,11 @@ import {
 	posed,
 	shortLift,
 	shortSteps,
+	runStyleOf,
+	type RunStyle,
 	shotForm,
+	styledRun,
+	styledStance,
 	skeleton,
 	SLIDE_NARROW,
 	standingReach,
@@ -4936,7 +4940,7 @@ const strode = (q: Pose, s: Stride | undefined): Pose => {
 	return out;
 };
 // The pose a blend shows: its move's, itself easing out of the one before.
-const blendPose = (f: Blend): Pose => {
+const blendPose = (f: Blend, style?: RunStyle): Pose => {
 	const as = posed(
 		f.anim,
 		f.phase,
@@ -4947,28 +4951,30 @@ const blendPose = (f: Blend): Pose => {
 		f.tight,
 	);
 	const short = shortSteps(legsKept(as, f), f.anim, f.stepLen, f.phase);
-	const m = strode(f.mirror ? mirror(short) : short, f.stride);
+	const m0 = strode(f.mirror ? mirror(short) : short, f.stride);
+	const m = style ? styledRun(m0, f.anim, style) : m0;
 	const own0 = footDown(f.held ? carried(m, f.anim) : m, f.down ?? 0);
-	const own =
+	const own1 =
 		PUSH_STEPS.has(f.anim) && f.way !== undefined
 			? liftedStep(slanted(own0, f.way), f.way, f.phase)
 			: own0;
+	const own = style ? styledStance(own1, f.anim, style) : own1;
 	const g = f.from;
 	if (!g || (g.w <= 0 && (g.arms ?? 0) <= 0)) {
 		return own;
 	}
-	const eased = blendFrom(own, g);
+	const eased = blendFrom(own, g, style);
 	// (Itself still settling out of a run, his feet stepping into it, as he
 	// went on into something else: from there - as he was - not from the two
 	// eased together, both feet slid over to it in a frame.)
 	return g.w > 0 &&
 		g.w < 1 &&
 		(g.step === true || (!g.paced && stepsOver(g.anim, f.anim)))
-		? settleStep(eased, own, blendPose(g), 1 - g.w, standRef(f))
+		? settleStep(eased, own, blendPose(g, style), 1 - g.w, standRef(f))
 		: eased;
 };
-const blendFrom = (q: Pose, f: Blend): Pose => {
-	const was = blendPose(f);
+const blendFrom = (q: Pose, f: Blend, style?: RunStyle): Pose => {
+	const was = blendPose(f, style);
 	const p = lerpPose(q, was, f.w);
 	if (f.arms !== undefined) {
 		for (const key of UPPER) {
@@ -5250,25 +5256,35 @@ export const poseOf = (st: PlayerState): Pose => {
 		st.stepLen,
 		st.phase,
 	);
-	const m = strode(st.mirror ? mirror(short) : short, st.stride);
+	const style = runStyleOf(st.pid);
+	const m = styledRun(
+		strode(st.mirror ? mirror(short) : short, st.stride),
+		st.anim,
+		style,
+	);
 	// The ball in his hands - not just now coming into them - his arms
 	// carry it as the move does (and as the one before did, if he had it
 	// then), so going from the one to the other they ease over too.
 	const carry = st.holding === true && st.grip === undefined;
 	const q0 = footDown(carry ? carried(m, st.anim) : m, st.down ?? 0);
-	const q =
+	// (His own way of it on top - see runStyleOf.)
+	const q = styledStance(
 		PUSH_STEPS.has(st.anim) && st.way !== undefined
 			? liftedStep(slanted(q0, st.way), st.way, st.phase)
-			: q0;
+			: q0,
+		st.anim,
+		style,
+	);
 	const f = st.from;
-	const eased = f && (f.w > 0 || (f.arms ?? 0) > 0) ? blendFrom(q, f) : q;
+	const eased =
+		f && (f.w > 0 || (f.arms ?? 0) > 0) ? blendFrom(q, f, style) : q;
 	const fw = f && f.w > 0 ? f.w : 0;
 	const was =
 		fw > 0 &&
 		fw < 1 &&
 		st.z <= SETTLE_AIR &&
 		(f!.step === true || (!f!.paced && stepsOver(f!.anim, st.anim)))
-			? blendPose(f!)
+			? blendPose(f!, style)
 			: undefined;
 	const steps = was ? settleLegs(q, was, 1 - fw, standRef(st)) : undefined;
 	let p = steps ? settleStep(eased, q, was!, 1 - fw, standRef(st)) : eased;

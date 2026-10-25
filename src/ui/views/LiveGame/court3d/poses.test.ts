@@ -46,6 +46,43 @@ const away = (p: V3, a: V3, b: V3): number => {
 };
 
 describe("3D poses", () => {
+	// Nobody runs quite like anybody else - and each man the same way every
+	// time: his own lean, swing of his arms, bend at the elbows; and down in
+	// his stance, sat right down in it or playing it taller. Not with the
+	// ball.
+	test("each man runs his own way, and always the same way", () => {
+		const at = (pid: number, anim: AnimName) =>
+			poseOf({
+				pid,
+				team: 0,
+				shown: true,
+				x: 0,
+				y: 0,
+				z: 0,
+				yaw: 0,
+				anim,
+				phase: 0.3,
+				moving: true,
+			} as PlayerState);
+		const leans = [];
+		const swings = [];
+		const knees = [];
+		for (let pid = 1; pid <= 20; pid++) {
+			const q = at(pid, "run");
+			assert.deepEqual(at(pid, "run"), q);
+			leans.push(q.lean);
+			swings.push(q.shN - q.shF);
+			knees.push(at(pid, "stance").kneeN);
+			assert.deepEqual(at(pid, "dribble"), at(pid + 100, "dribble"));
+		}
+		assert.isAbove(Math.max(...leans) - Math.min(...leans), 5);
+		assert.isAbove(Math.max(...knees) - Math.min(...knees), 8);
+		assert.isAbove(
+			Math.max(...swings) / Math.min(...swings.filter((x) => x > 0)),
+			1.3,
+		);
+	});
+
 	// A body is anchored at its feet and jumps are added on top, so every
 	// moment of every animation has to stand on the floor - otherwise a body
 	// would sink through the hardwood or hover between steps.
