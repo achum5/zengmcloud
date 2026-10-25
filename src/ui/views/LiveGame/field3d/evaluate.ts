@@ -1216,12 +1216,42 @@ const stateOf = (
 	// (Getting going or pulling up on his strides - or just into them, as
 	// much as his pose already is them; just off them into anything else, as
 	// hard as he was going at it as he came off them, as much as his pose
-	// still is them: not thrown back as he is stopped in a hit, say.)
-	const on = DRIVES.has(l.move as Move);
-	const off = from !== undefined && DRIVES.has(from.move) ? from.w : 0;
-	const drive =
-		(on ? driveOf(track, now) * (1 - (from?.w ?? 0)) : 0) +
-		(off > 0 ? driveOf(track, on ? now : now - blended) * off : 0);
+	// still is them - what he was before that too, if it still shows: not
+	// thrown back as he is stopped in a hit, say, nor straightened up in a
+	// frame as the run under a catch gives out.)
+	let drive = 0;
+	let share = 1;
+	let off = now;
+	const shows = [
+		{ move: l.move, w: from?.w ?? 0, at: t },
+		...(from
+			? [
+					{ move: from.move, w: from.under?.w ?? 0, at: legs[c]!.t0 },
+					...(from.under
+						? [
+								{
+									move: from.under.move,
+									w: from.under.under?.w ?? 0,
+									at: legs[c2]!.t0,
+								},
+								...(from.under.under
+									? [{ move: from.under.under.move, w: 0, at: legs[c3]!.t0 }]
+									: []),
+							]
+						: []),
+				]
+			: []),
+	];
+	for (const [i, u] of shows.entries()) {
+		const striding = DRIVES.has(u.move as Move);
+		if (!striding || i === 0 || !DRIVES.has(shows[i - 1]!.move as Move)) {
+			off = now - (t - u.at);
+		}
+		if (striding) {
+			drive += driveOf(track, off) * share * (1 - u.w);
+		}
+		share *= u.w;
+	}
 	// (Short steps, if he is striding - or just was.)
 	const short =
 		stride.len < LEN_FULL &&
