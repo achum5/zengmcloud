@@ -64,6 +64,7 @@ import {
 	SEP_MS,
 	TURN_RATE,
 	evalBall,
+	fastAt,
 	floorSpotOf,
 	forgetTurns,
 	liveSeg,
@@ -201,6 +202,10 @@ export type Act = {
 	// Done the other way round: his left hand doing what the move does with
 	// his right - a block or a contest with the hand on the ball's side.
 	mirror?: true;
+	// Only for show, and in a stretch the picture runs through too fast to
+	// see more than a frame or two of it: left out of the picture (see
+	// flashes).
+	flash?: true;
 };
 // Something he says with an arm while the rest of him goes on with whatever
 // it is doing - running, sliding, dribbling: a point (at the man he has, or
@@ -827,6 +832,22 @@ const REACH_AT = (() => {
 const CATCH_MS = 200;
 const CATCH_HIT = 0.45;
 const CATCH_AT = releaseAt("catch", CATCH_HIT);
+// Moves only for show, and the least of one (ms) worth putting on the
+// screen (see flashes).
+const FOR_SHOW = new Set<AnimName>([
+	"jab",
+	"shotFake",
+	"dribbleHesi",
+	"dribbleJab",
+	"triple",
+	"callPlay",
+	"guard",
+	"bump",
+	"fight",
+	"screen",
+	"postUp",
+]);
+const FLASH_MS = 120;
 // Stood waiting on a pass this long (feet) or longer, out this far from
 // the rim at the least (feet), he cuts to get open for it: walks his man in
 // up to this far (feet) at this pace (feet a second), starting no sooner
@@ -21904,6 +21925,26 @@ class Director {
 		}
 	}
 
+	// A move only for show - a jab at his man, a fake, the call of a set,
+	// sat in his stance - that the picture runs through too fast to see more
+	// than a frame or two of is left out of it: a twitch, not a move.
+	private flashes(tl: CourtTimeline) {
+		for (const tr of this.tracks.values()) {
+			for (const a of tr.acts) {
+				if (!FOR_SHOW.has(a.anim)) {
+					continue;
+				}
+				let seen = 0;
+				for (let t = a.t0; t < a.t1; t += 20) {
+					seen += 20 / fastAt(tl, t);
+				}
+				if (seen < FLASH_MS) {
+					a.flash = true;
+				}
+			}
+		}
+	}
+
 	finish(): CourtTimeline {
 		const byT0 = (a: { t0: number }, b: { t0: number }) => a.t0 - b.t0;
 		for (const tr of this.tracks.values()) {
@@ -22020,6 +22061,7 @@ class Director {
 			checkIns: this.checkIns,
 			end: this.T,
 		};
+		this.flashes(tl);
 		// (Worked out on a look at it of its own, and the turns that look
 		// worked out forgotten after: where men face is read afresh off
 		// where they end up.)

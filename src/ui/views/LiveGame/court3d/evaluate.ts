@@ -1267,7 +1267,7 @@ const actAt = (tr: Track, t: number): Act | undefined => {
 	const ai = lastIndex(tr.acts, t, (a) => a.t0);
 	for (let k = ai; k >= 0 && k >= ai - 3; k--) {
 		const a = tr.acts[k]!;
-		if (t < a.t1) {
+		if (t < a.t1 && !a.flash) {
 			return a;
 		}
 	}
@@ -2758,7 +2758,7 @@ const armsDown = (
 	const i = lastIndex(tr.acts, t, (a) => a.t0);
 	for (let k = i; k >= 0 && k >= i - 3; k--) {
 		const a = tr.acts[k]!;
-		if (a.t1 > t || t - a.t1 >= ARMS_DOWN_MS) {
+		if (a.t1 > t || t - a.t1 >= ARMS_DOWN_MS || a.flash) {
 			continue;
 		}
 		if (!armsComeDown(tr, t, a.anim, now.anim)) {
@@ -2919,7 +2919,12 @@ const blendInto = (
 		const i = lastIndex(tr.acts, hi, (a) => a.t0);
 		for (let k = i; k >= 0 && k >= i - 3; k--) {
 			const a = tr.acts[k]!;
-			if (a.t1 <= hi && hi - a.t1 < SLIVER_MS && ARMS_UP.has(a.anim)) {
+			if (
+				a.t1 <= hi &&
+				hi - a.t1 < SLIVER_MS &&
+				ARMS_UP.has(a.anim) &&
+				!a.flash
+			) {
 				hi = a.t1;
 				lo = hi - 1;
 				before = doingAt(tl, tr, lo);
