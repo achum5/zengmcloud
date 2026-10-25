@@ -3147,7 +3147,9 @@ const blendInto = (
 				}
 			: slowArms
 				? { arms: ease(ARMS_DOWN_MS) }
-				: {}),
+				: actBack(before.anim) && PIVOTS.has(anim)
+					? { arms: ease(BLEND_MS) }
+					: {}),
 		...(prior ? { from: prior } : {}),
 	};
 };
@@ -4910,7 +4912,7 @@ const blendPose = (f: Blend): Pose => {
 		f.dribbleFrom,
 		f.tight,
 	);
-	const short = shortSteps(as, f.anim, f.stepLen, f.phase);
+	const short = shortSteps(legsKept(as, f), f.anim, f.stepLen, f.phase);
 	const m = strode(f.mirror ? mirror(short) : short, f.stride);
 	const own0 = footDown(f.held ? carried(m, f.anim) : m, f.down ?? 0);
 	const own =
@@ -5003,8 +5005,17 @@ const crossesOver = (from: AnimName, to: AnimName) =>
 	(FORWARD.has(from) && SIDEWAYS.has(to)) ||
 	(SIDEWAYS.has(from) && FORWARD.has(to));
 const STEP_OFF_PACE = 3;
+// (Out of something done where he stands, his feet are where it left them -
+// see legsKept.)
+// (One gone back into his stance at its end: something done, held, and
+// then come out of.)
+const actBack = (anim: AnimName) => {
+	const a = ANIMS[anim];
+	return PIVOTS.has(anim) && a.kind === "act" && a.keys.length >= 3;
+};
 const stepsOver = (from: AnimName, to: AnimName) =>
 	(PIVOTS.has(to) && SETTLE_FROM.has(from)) ||
+	(PIVOTS.has(to) && actBack(from)) ||
 	(FOOTWORK.has(from) && FOOTWORK.has(to)) ||
 	(PIVOTS.has(from) && PIVOTS.has(to) && STOOD.has(from) !== STOOD.has(to)) ||
 	startsOff(from, to);
@@ -5110,6 +5121,57 @@ const settleStep = (
 	};
 };
 
+// At the end of something he does where he stands - a pass stepped into,
+// say - his feet stay where it had them: back under him after, a foot at a
+// time as he settles into what comes next (see actBack), not both slid
+// back over the floor at once as it ends.
+const LEG_KEYS: (keyof Pose)[] = [
+	"hipN",
+	"hipF",
+	"kneeN",
+	"kneeF",
+	"toeN",
+	"toeF",
+	"wide",
+	"wideN",
+	"wideF",
+];
+const legsKept = (
+	q: Pose,
+	x: {
+		anim: AnimName;
+		phase: number;
+		dribble?: number;
+		dribbleHand?: Hand;
+		target?: number;
+		dribbleFrom?: Hand;
+		tight?: number;
+	},
+): Pose => {
+	const a = ANIMS[x.anim];
+	if (!actBack(x.anim) || a.kind !== "act") {
+		return q;
+	}
+	const k0 = a.keys.at(-2)![0];
+	if (x.phase <= k0 || k0 >= 1) {
+		return q;
+	}
+	const was = posed(
+		x.anim,
+		k0,
+		x.dribble,
+		x.dribbleHand,
+		x.target,
+		x.dribbleFrom,
+		x.tight,
+	);
+	const out = { ...q };
+	for (const k of LEG_KEYS) {
+		out[k] = was[k];
+	}
+	return out;
+};
+
 // Getting going hard he drives into it - leaning on into his first steps,
 // his arms pumping - and pulling up hard he sits back against it. (His arms
 // left be with the ball in them, or on it.)
@@ -5148,7 +5210,12 @@ export const poseOf = (st: PlayerState): Pose => {
 		st.dribbleFrom,
 		st.tight,
 	);
-	const short = shortSteps(own, st.anim, st.stepLen, st.phase);
+	const short = shortSteps(
+		st.z > 0 ? own : legsKept(own, st),
+		st.anim,
+		st.stepLen,
+		st.phase,
+	);
 	const m = strode(st.mirror ? mirror(short) : short, st.stride);
 	// The ball in his hands - not just now coming into them - his arms
 	// carry it as the move does (and as the one before did, if he had it

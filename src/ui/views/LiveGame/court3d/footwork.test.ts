@@ -9,6 +9,7 @@ import {
 } from "./evaluate.ts";
 import { type AnimName, bodyOf, legPhases, skeleton } from "./poses.ts";
 import type { CourtTimeline } from "./director.ts";
+import type { Pt3 } from "./geometry.ts";
 import { compile } from "./testGame.ts";
 
 // How quick he goes at t (feet a second), over the frame before.
@@ -294,6 +295,65 @@ describe("footwork", () => {
 		}
 		assert.isAbove(eases, 10_000);
 		assert.isAtMost(dropped, 10);
+	}, 240_000);
+
+	// Stood passing it - stepped into the pass - his feet came back under
+	// him as it ended both at once, slid back over the floor; now they stay
+	// where the pass had them and step back after, a foot at a time.
+	// (Before: both feet sliding 149 of 276 frames.)
+	test("stepped into a pass, his feet come back a foot at a time - not both slid", () => {
+		const PASSES = new Set<AnimName>([
+			"pass",
+			"passBounce",
+			"passPush",
+			"passBouncePush",
+			"passOverhead",
+		]);
+		const body = bodyOf();
+		const STEP = 16;
+		const { tl } = compile("a", 120);
+		let frames = 0;
+		let slid = 0;
+		for (const tr of tl.tracks.values()) {
+			let prev: { x: number; y: number; feet: Pt3[] } | undefined;
+			for (let t = 0; t < 600_000; t += STEP) {
+				const st = evalPlayer(tl, tr.pid, t);
+				if (fastAt(tl, t) > 1 || !st.shown || st.z > 0.05) {
+					prev = undefined;
+					continue;
+				}
+				const me = withBody(st, body);
+				const sk = skeleton(body, poseOf(me));
+				const feet = [sk.legR, sk.legL].map((l) => bodyPoint(me, l.end));
+				const passing =
+					PASSES.has(st.anim) ||
+					(st.from !== undefined && PASSES.has(st.from.anim));
+				if (prev && passing) {
+					const v = (Math.hypot(st.x - prev.x, st.y - prev.y) * 1000) / STEP;
+					const down = feet.every(
+						(f, i) =>
+							f.z < body.ankleH + 0.03 && prev!.feet[i]!.z < body.ankleH + 0.03,
+					);
+					if (down && v < 0.5) {
+						frames++;
+						const sl =
+							(Math.min(
+								...feet.map((f, i) =>
+									Math.hypot(f.x - prev!.feet[i]!.x, f.y - prev!.feet[i]!.y),
+								),
+							) *
+								1000) /
+							STEP;
+						if (sl > 1) {
+							slid++;
+						}
+					}
+				}
+				prev = { x: st.x, y: st.y, feet };
+			}
+		}
+		assert.isAbove(frames, 150);
+		assert.isBelow(slid / frames, 0.4);
 	}, 240_000);
 
 	test("sliding, the foot he is down on stays pointed where it came down", () => {

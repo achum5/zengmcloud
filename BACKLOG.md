@@ -392,7 +392,10 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   529). Pulling up to stand out of a backpedal or a run at an angle, his
   legs keep their turn under him till he settles and then step round a
   foot at a time, not both feet swung round over the floor as his hips
-  come round (each about half a foot). Still to do: going straight from
+  come round (each about half a foot). Stepped into a pass where he
+  stands, his feet stay where the pass left them and come back under him
+  after, a foot at a time, not both slid back as it ends (both feet sliding
+  through a pass 149 frames of 276 down to 79). Still to do: going straight from
   running into a shuffle or a backpedal, or back, at speed, both feet slide
   through the change (stepped over there, his legs are flung; from all but
   a standstill they now step); and turning on the spot while all but stood
