@@ -76,6 +76,9 @@ const WALK_MOST = 6000;
 const SPREAD_X = 22;
 const SPREAD_Y = 30;
 const PACE: [number, number] = [4.6, 6];
+// (Hurried along to get there in time - but a step or two over to the next
+// man, no further than this, at his own pace.)
+const SHORT_WALK_FT = 8;
 const BIG_SLOWER = 0.85;
 const BIG = new Set(["C", "LG", "RG", "LT", "RT", "DE", "DT", "NT"]);
 const CLEAR = 7;
@@ -107,6 +110,9 @@ const HELMET_MS = 1100;
 const HELMET_UP = 0.5;
 // The ball, if a man still has it: tossed down by his feet.
 const TOSS_MS = 380;
+// Still pulling up off a run when he would be free: let come to his stop
+// first, if it is no further off than this.
+const STOPPING_MS = 1500;
 // The officials: off this long after it is over (and up to this much
 // later), at a jog, to just off the near sideline past the end of the team
 // area nearer them - this far past it.
@@ -183,6 +189,22 @@ const freeAt = (legs: Leg[], t: number): number => {
 		}
 		at = l.t1;
 	}
+	// (Slowing to a stop still: there first - not stood still in a frame,
+	// at speed.)
+	let end = at;
+	for (; k < legs.length; k++) {
+		const l = legs[k]!;
+		if (l.t1 <= end) {
+			continue;
+		}
+		if (l.from.x === l.to.x && l.from.y === l.to.y) {
+			return end;
+		}
+		end = l.t1;
+		if (moveKind(l.move) !== "cycle" || end - at > STOPPING_MS) {
+			break;
+		}
+	}
 	return at;
 };
 
@@ -216,12 +238,15 @@ export class Man {
 	readonly team: Side;
 	readonly legs: Leg[];
 	pace: number;
+	// (The pace he walks at, left to himself.)
+	private readonly own: number;
 	// His helmet off, from now on.
 	bare = false;
 	constructor(team: Side, legs: Leg[], pace: number) {
 		this.team = team;
 		this.legs = legs;
 		this.pace = pace;
+		this.own = pace;
 	}
 	private get off(): { bare?: true } {
 		return this.bare ? { bare: true } : {};
@@ -278,8 +303,10 @@ export class Man {
 	// To `to` at his pace (or this one); when he gets there. (From a jog or
 	// more, pulled up over the last of the way - PULL_UP_FT, or a third of
 	// it - down to PULL_UP_TO of his pace: not stopped dead there.)
-	walk(to: Pt, fps = this.pace): number {
+	walk(to: Pt, pace?: number): number {
 		const far = dist(this.at, to);
+		const fps =
+			pace ?? (far < SHORT_WALK_FT ? Math.min(this.pace, this.own) : this.pace);
 		if (far > 0.3) {
 			const most = Math.min(PULL_UP_FT, far / 3);
 			const tail = fps >= PULL_UP_FPS && most >= PULL_UP_SHORT ? most : 0;
@@ -777,6 +804,9 @@ export const crewOff = (
 // this long, until it cuts to the kickoff after it.
 const HALF_GO = 900;
 const HALF_LATE = 1300;
+// (Not stood there a moment between pulling up and walking off: straight
+// on, with less than this to wait.)
+const HALF_STILL_MS = 400;
 const HALF_JOG = 0.3;
 const HALF_JOG_FPS = 8.5;
 const HALF_MS = 6500;
@@ -796,7 +826,8 @@ export const stageHalftime = (input: {
 	const { parts, ball, r } = input;
 	const go = input.whistle + HALF_GO;
 	for (const { p, man } of freeMen(parts, go, ball, r)) {
-		man.hold(Math.max(man.t, go + r() * HALF_LATE));
+		const leave = go + r() * HALF_LATE;
+		man.hold(leave - man.t < HALF_STILL_MS ? man.t : leave);
 		const line = sidelineOf(p.team);
 		const x = clamp(
 			man.at.x + (MID_X - man.at.x) * HALF_IN + (r() - 0.5) * 16,

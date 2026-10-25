@@ -212,6 +212,9 @@ const STOP_ACCEL = 20;
 const STOP_STEP_MS = 100;
 // (From no slower than this, ft/s.)
 const STOP_LEAST = 8;
+// (Sitting down in a route, cut off at speed: eased off over this share of
+// the time there is - turned to the quarterback for the rest.)
+const SETTLE_EASE = 0.6;
 // Sinking into a cut: down at this (ft/s/s).
 const CUT_ACCEL = 28;
 // (Easing down to steps this much slower, ft/s, or more - or for a turn
@@ -617,8 +620,15 @@ class Actor {
 			// (No pulling up on the way there - cut off at speed, say: on past
 			// it, eased off in the time there is, not stopped dead.)
 			const p = this.last;
-			if (m === "stand" && RAMPS.has(p.move) && legPace(p) >= STOP_LEAST) {
-				this.easeOff(Math.min(EASE_OFF_FT, (legPace(p) * (t - p.t1)) / 2000));
+			if (
+				(m === "stand" || m === "settle") &&
+				RAMPS.has(p.move) &&
+				legPace(p) >= STOP_LEAST
+			) {
+				const share = m === "settle" ? SETTLE_EASE : 1;
+				this.easeOff(
+					Math.min(EASE_OFF_FT, (legPace(p) * (t - p.t1) * share) / 2000),
+				);
 				if (this.t >= t) {
 					return;
 				}
@@ -4249,8 +4259,11 @@ class Action {
 				m.hold(m.t + work.sit, "settle", faceAt(m.at));
 				m.go(work.at, t - WORK_RESET_MS, "slide", faceAt(m.at));
 			}
+			const end = m.at;
 			m.hold(Math.max(m.t, t), "settle", faceAt(m.at));
-			return work ? m.at : undefined;
+			// (Where he sits down for it - pulled up past the end of it, if he
+			// came into it at a run.)
+			return work || dist(m.at, end) > 0 ? m.at : undefined;
 		}
 		return undefined;
 	}
