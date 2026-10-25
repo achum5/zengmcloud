@@ -169,7 +169,11 @@ const facings = new WeakMap<Leg[], Facing>();
 // face next if he squares up to something before then - as near that as
 // CRAB_MOST off his own way: not round one way for a step and then back
 // the other.)
+// (Squaring up to it a little later than that, up to LOOK_FADE_MS on:
+// faced that way the less, the later - not round toward where he goes,
+// and then back, as it comes nearer.)
 const LOOK_MS = 500;
+const LOOK_FADE_MS = 500;
 const CRAB_MOST = 0.45;
 const lookedAhead = (legs: Leg[], j: number): number => {
 	const l = legs[j]!;
@@ -181,6 +185,8 @@ const lookedAhead = (legs: Leg[], j: number): number => {
 	let x = l.to.x;
 	let y = l.to.y;
 	let next: number | undefined;
+	let w = 1;
+	let seen = false;
 	for (let k = j + 1; k < legs.length; k++) {
 		const n = legs[k]!;
 		if (Math.abs(n.t0 - legs[k - 1]!.t1) > 1 || n.turn) {
@@ -188,19 +194,23 @@ const lookedAhead = (legs: Leg[], j: number): number => {
 		}
 		if (n.yaw !== undefined && !ownWay(n)) {
 			next = n.yaw;
+			w = clamp01(1 - (n.t0 - by) / LOOK_FADE_MS);
 			break;
 		}
-		if (!goes(n)) {
+		if (!goes(n) || n.t0 >= by + LOOK_FADE_MS) {
 			break;
 		}
-		const u = n.t1 > by ? (by - n.t0) / (n.t1 - n.t0) : 1;
-		x = n.from.x + (n.to.x - n.from.x) * u;
-		y = n.from.y + (n.to.y - n.from.y) * u;
-		if (n.t1 >= by) {
-			break;
+		if (!seen) {
+			const u = n.t1 > by ? (by - n.t0) / (n.t1 - n.t0) : 1;
+			x = n.from.x + (n.to.x - n.from.x) * u;
+			y = n.from.y + (n.to.y - n.from.y) * u;
+			seen = n.t1 >= by;
 		}
 	}
-	const d = wrapAngle((next ?? Math.atan2(y - l.from.y, x - l.from.x)) - aim);
+	const way = Math.atan2(y - l.from.y, x - l.from.x);
+	const d = wrapAngle(
+		(next === undefined ? way : way + wrapAngle(next - way) * w) - aim,
+	);
 	return aim + Math.max(-CRAB_MOST, Math.min(CRAB_MOST, d));
 };
 const facingOf = (legs: Leg[]): Facing => {
