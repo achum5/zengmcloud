@@ -1182,6 +1182,11 @@ class Actor {
 		const v = legPace(l);
 		const far = dist(l.from, l.to);
 		if (!GAITS.has(l.move) || v < STOP_LEAST || t1 <= this.t) {
+			// (Backpedaling, or in his low steps, quick: eased off the way he
+			// was going - not stopped dead in them.)
+			if (STEPS.has(l.move) && v >= STOP_LEAST && t1 > this.t) {
+				this.easeOff(EASE_OFF_FT);
+			}
 			this.hold(t1);
 			return;
 		}
@@ -10139,9 +10144,9 @@ class Action {
 				dist(carrier.posAt(m.t), carrier.posAt(t)) > FOLLOW_GONE
 			) {
 				const seen = m.t + FOLLOW_REACT[0] + r() * FOLLOW_REACT[1];
-				// (On the move still, slowing up as he sees it - not stopped
-				// dead for it and off again.)
-				if (GAITS.has(m.last.move) && legPace(m.last) >= STOP_LEAST) {
+				// (On the move still - backpedaling, too - slowing up as he
+				// sees it: not stopped dead for it and off again.)
+				if (STEPS.has(m.last.move) && legPace(m.last) >= STOP_LEAST) {
 					m.easeOff(EASE_OFF_FT);
 				}
 				const go = Math.max(seen, m.t);
