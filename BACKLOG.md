@@ -75,6 +75,11 @@ and shoes - every one eventually, none rushed to get to the next.
       (hundreds?) of possible outcomes, all natural and sleek.
 - [~] Entry passes are often ugly and clunky. In general, possessions should look
   like real basketball: defenders genuinely getting beaten by good offense.
+  (2026-10-25: a man waiting on a pass out on the floor walks his man in a
+  few steps, plants and comes back out hard to meet it, his hand up as he
+  comes - out as it is thrown, there as it gets there - his man going in
+  with him and a beat behind him back out; overhead passes kept mostly for
+  skipping it across the floor.)
 - [x] Poor ball handlers who get the defensive rebound should usually hold it and
       look to give it to a ball handler to bring it up. Exceptions: sets, urgency.
 - [x] Layups: many natural, real-NBA-looking finishes (finger rolls, normal
