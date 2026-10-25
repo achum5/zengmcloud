@@ -2183,6 +2183,13 @@ const PA_PAST = 5;
 // turned square up the field off it: if he goes out into a route after
 // it, not if he stays in to block.)
 const PA_ACROSS = 0.75;
+// (Staying in to block, round off the fake from the way he came in to it:
+// on into the line as far as he pulls up in at STOP_ACCEL * STOP_HARD - no
+// less than PA_PAST - the curve pulled this share of that on past the
+// mesh toward the way he came, in so many steps.)
+const PA_ROUND = 0.4;
+const PA_PACE_MS = 40;
+const PA_ROUND_STEPS = 8;
 const PA_BITE = 4;
 const PA_BITE_FPS = 8;
 // Off this many of the fakes under center, a bootleg: the quarterback away
@@ -3432,12 +3439,20 @@ class Action {
 				d: this.of(meshPt).d,
 				a: this.of(meshPt).a - side * MESH_APART,
 			});
+			// (Out of his stance to it, up to speed - see the rider in runPlay
+			// - not there flat out off his first step.)
+			const reach = rampedMs(
+				dist(faker.at, meshPt),
+				faker.top * 0.75,
+				0,
+				RELEASE_ACCEL,
+			);
 			fakeT = Math.max(
 				Math.max(has, qb.t) +
 					PA_MS / 2 +
 					qbStepMs(dist(qb.at, qbMesh)) +
 					r() * 150,
-				snap + 150 + (dist(faker.at, meshPt) / (faker.top * 0.75)) * 1000,
+				snap + 150 + reach,
 			);
 			qb.go(qbMesh, fakeT - PA_MS / 2, "slide", this.toward(qbMesh, meshPt));
 			qb.act("handOff", fakeT + PA_MS / 2, this.toward(qbMesh, meshPt));
@@ -3457,19 +3472,68 @@ class Action {
 				});
 				qb.go(setAt, qb.t + 250 + dist(qb.at, setAt) * 50, "back", this.ahead);
 			}
-			faker.hold(snap + 150);
-			faker.go(meshPt, fakeT, "run", this.toward(faker.at, meshPt));
-			const on = gun && runners.includes(faker) ? PA_ACROSS : 0;
-			const past = PA_PAST / Math.hypot(1, on);
-			faker.go(
-				this.w({
-					d: this.of(meshPt).d + past,
-					a: this.of(meshPt).a + side * on * past,
-				}),
-				fakeT + 300,
+			faker.hold(fakeT - reach);
+			faker.getOff(
+				meshPt,
+				fakeT,
+				0,
+				RELEASE_ACCEL,
 				"run",
-				on > 0 ? undefined : this.ahead,
+				0,
+				this.toward(faker.at, meshPt),
 			);
+			const on = gun && runners.includes(faker) ? PA_ACROSS : 0;
+			// (Going at the pace of the last of it that took any time - not a
+			// sliver of a step.)
+			const into =
+				faker.legs.findLast((l) => l.t1 - l.t0 >= PA_PACE_MS) ?? faker.last;
+			const v = Math.min(legPace(into), faker.top);
+			const far = Math.max(PA_PAST, (v * v) / (2 * STOP_ACCEL * STOP_HARD));
+			const past = (on > 0 ? PA_PAST : far) / Math.hypot(1, on);
+			const onTo = this.w({
+				d: this.of(meshPt).d + past,
+				a: this.of(meshPt).a + side * on * past,
+			});
+			const inFt = dist(into.from, into.to);
+			if (on > 0 || inFt <= 0 || v <= 0) {
+				faker.go(onTo, fakeT + 300, "run", on > 0 ? undefined : this.ahead);
+			} else {
+				// (Staying in to block: on off it round from the way he came
+				// in, pulled up as he goes - not turned square in a stride at
+				// full tilt and stopped dead in his set. Stepped off at even
+				// times along it, as far each time as his pace then takes
+				// him.)
+				const via = {
+					x: meshPt.x + ((into.to.x - into.from.x) / inFt) * far * PA_ROUND,
+					y: meshPt.y + ((into.to.y - into.from.y) / inFt) * far * PA_ROUND,
+				};
+				const fine = [meshPt, ...this.curve(meshPt, via, onTo, 32)];
+				const at = [0];
+				for (let k = 1; k < fine.length; k++) {
+					at.push(at[k - 1]! + dist(fine[k - 1]!, fine[k]!));
+				}
+				const len = at.at(-1)!;
+				let j = 1;
+				for (let k = 1; k <= PA_ROUND_STEPS; k++) {
+					const u = k / PA_ROUND_STEPS;
+					const want = len * (2 * u - u * u);
+					while (j < fine.length - 1 && at[j]! < want) {
+						j++;
+					}
+					const f = clamp(
+						(want - at[j - 1]!) / Math.max(at[j]! - at[j - 1]!, 1e-6),
+						0,
+						1,
+					);
+					const a = fine[j - 1]!;
+					const b = fine[j]!;
+					faker.go(
+						{ x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f },
+						fakeT + ((2 * len * 1000) / v) * u,
+						"run",
+					);
+				}
+			}
 			faker.arms("fakeCarry", fakeT - 200, fakeT + 300);
 		} else if (dropD >= DROP_TURN_FT && !gun) {
 			// (Five or seven steps: turned and away most of it, side on, then
@@ -4037,9 +4101,16 @@ class Action {
 			);
 			const t1 = m.t + stretchMs(go, routeFps(speed, k), cut, next) / pace;
 			if (until !== undefined && t1 > until) {
+				// (Still cut into the last of it, as far as he gets: not
+				// turned square at his pace.)
 				const u = (until - m.t) / (t1 - m.t);
 				const p = m.at;
-				m.go({ x: p.x + (to.x - p.x) * u, y: p.y + (to.y - p.y) * u }, until);
+				const part = { x: p.x + (to.x - p.x) * u, y: p.y + (to.y - p.y) * u };
+				if (k > 1 && cut.keep < 1) {
+					m.cutTo(part, until, cut.keep);
+				} else {
+					m.go(part, until);
+				}
 				return;
 			}
 			if (k === 1) {
@@ -6618,8 +6689,16 @@ class Action {
 			// (Up the arc first, off the edge, and in onto him.)
 			const arc = edge ? this.w({ d: s.d - 2, a: s.a + side * 1.5 }) : m.at;
 			const a = dist(m.at, arc);
+			const reachBy = (t: number) =>
+				Math.max(least, m.t + offMs(a + dist(arc, on(t, 0))));
 			for (let k = 0; k < 2; k++) {
-				hitT = Math.max(least, m.t + offMs(a + dist(arc, on(hitT, 0))));
+				hitT = reachBy(hitT);
+			}
+			// (Not where the blocker is at a time he cannot be there by - a
+			// back coming up at him through a fake, say: halfway to when he
+			// could, a few times.)
+			for (let k = 0; k < 4 && reachBy(hitT) > hitT + 1; k++) {
+				hitT = (hitT + reachBy(hitT)) / 2;
 			}
 			hitT = Math.min(hitT, Math.max(least, end - HAND_MS));
 			const hitLat = (r() - 0.5) * 0.6;
@@ -6828,22 +6907,26 @@ class Action {
 				// reading it.)
 				let drop = snap + 1500;
 				if (fake !== undefined && LB.has(m.role)) {
+					// (Stood reading it only if for long enough to be: on with
+					// the step up to then, if not.)
+					const biteT = Math.max(
+						Math.min(snap + 600, fake),
+						m.t +
+							stepMs(
+								PA_BITE,
+								PA_BITE_FPS,
+								RELEASE_ACCEL,
+								STOP_ACCEL * STOP_HARD,
+							),
+					);
+					const readT = fake + 100;
 					m.go(
 						this.w({ d: start.d - PA_BITE, a: start.a }),
-						Math.max(
-							Math.min(snap + 600, fake),
-							m.t +
-								stepMs(
-									PA_BITE,
-									PA_BITE_FPS,
-									RELEASE_ACCEL,
-									STOP_ACCEL * STOP_HARD,
-								),
-						),
+						readT - biteT < FLICK_MS ? Math.max(biteT, readT) : biteT,
 						"slide",
 						this.behind,
 					);
-					m.hold(fake + 100, "backerStance", this.behind);
+					m.hold(readT, "backerStance", this.behind);
 					drop = Math.max(drop, fake + 1300);
 				}
 				// (A few read steps back at least, lined up deep already - and
