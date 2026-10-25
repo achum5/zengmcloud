@@ -62,7 +62,7 @@ const acts = (l: Leg) =>
 	goes(l) && l.t1 - l.t0 >= EASE_LEAST_MS && moveKind(l.move) === "act";
 // (Acts he does where he pulls up to, still coming to a stop as he starts
 // them.)
-const PULL_INTO = new Set<Move>(["swat", "handOff"]);
+const PULL_INTO = new Set<Move>(["handOff"]);
 
 // (The next leg taking him on from where the one before left him - not
 // put somewhere else, the picture cut away: no further off it than this,
