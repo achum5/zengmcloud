@@ -2507,6 +2507,13 @@ const GIVE_SET_MS = 300;
 // front (the cosine of it); and then, this often, drove him back.
 const HEAD_ON = 0.5;
 const DRIVEN_BACK = 0.55;
+// Brought down off the run, carried on down by it: as far as this long at
+// the pace he was going takes him (feet - TACKLED_LEAST at least, and no
+// more than TACKLED_MOST) - see pace.ts carriedOf - not stopped in a
+// stride and dropped where he is.
+const TACKLED_CARRY_S = 0.15;
+const TACKLED_LEAST = 2.5;
+const TACKLED_MOST = 4.5;
 // Come at from the side (the sine of it at least this): this often swung
 // round as he goes down, about this far (radians) - away from him, down
 // the way he is thrown.
@@ -5433,11 +5440,17 @@ class Action {
 			x: p.x + Math.cos(fall) * f - Math.sin(fall) * s,
 			y: p.y + Math.sin(fall) * f + Math.cos(fall) * s,
 		});
+		const l = carrier.last;
+		const carried = clamp(
+			(GAITS.has(l.move) ? legPace(l) : 0) * TACKLED_CARRY_S,
+			TACKLED_LEAST,
+			TACKLED_MOST,
+		);
 		const downAt = lying
 			? carrier.at
 			: swing
-				? along(pt, 1.4, -from1 * 2)
-				: along(pt, back ? -1.4 : 2.5, 0);
+				? along(pt, (1.4 * carried) / TACKLED_LEAST, -from1 * 2)
+				: along(pt, back ? -1.4 : carried, 0);
 		if (keptUp) {
 			this.runOn(carrier, 450);
 		} else if (lying) {
