@@ -134,7 +134,7 @@ type Steps = {
 const COARSE: Steps = {
 	cycle: 12,
 	act: 20,
-	actDeg: 10,
+	actDeg: 7,
 	turns: 36,
 	blend: 8,
 	drive: 6,
