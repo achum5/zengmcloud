@@ -79,7 +79,11 @@ and shoes - every one eventually, none rushed to get to the next.
   few steps, plants and comes back out hard to meet it, his hand up as he
   comes - out as it is thrown, there as it gets there - his man going in
   with him and a beat behind him back out; overhead passes kept mostly for
-  skipping it across the floor.)
+  skipping it across the floor. Passing off his dribble, a man takes it as
+  it comes up into his hands and it goes straight on out of them - not
+  picked up at the top of the bounce gone by and stood holding it till the
+  pass goes: four in ten stood with it over 150 ms first, now under one in
+  ten.)
 - [x] Poor ball handlers who get the defensive rebound should usually hold it and
       look to give it to a ball handler to bring it up. Exceptions: sets, urgency.
 - [x] Layups: many natural, real-NBA-looking finishes (finger rolls, normal

@@ -633,6 +633,9 @@ const BOUNCE_CLEAR = 1.2;
 // How far through a bounce of his dribble the ball has come back up near
 // enough to his hands to take it in both (see evaluate.ts).
 const CATCH_UP = 0.7;
+// (Picked up off the top of a bounce no longer ago than this, it goes from
+// there: hardly stood with at all.)
+const PASS_GATHER_LATE = 100;
 // After a whistle, how long the official's signal holds the picture.
 const WHISTLE_HOLD = 950;
 // A rebound, from leaving the floor to the ball chinned once he is down.
@@ -3123,6 +3126,30 @@ class Director {
 			: this.hold(pid, by, "hold");
 	}
 
+	// Off his dribble to pass it, he takes it as it next comes up into his
+	// hands and it goes straight on out of them - not snatched back at the
+	// top of the bounce gone by and stood holding it till the pass goes
+	// (unless that was only just now). Returns when he has it.
+	private gatherToPass(pid: number, by: number): number {
+		const from = this.dribbleFrom(pid, by);
+		const last = this.ball.at(-1);
+		if (
+			from === undefined ||
+			(last?.kind === "hold" && last.pid === pid && last.style === "cross")
+		) {
+			return this.gather(pid, by);
+		}
+		const b = (by - from) / DRIBBLE_MS + 1e-6;
+		const k = Math.floor(b);
+		const ph = b - k;
+		return this.gather(
+			pid,
+			k >= 1 && ph * DRIBBLE_MS > PASS_GATHER_LATE && ph < CATCH_UP
+				? from + (k + CATCH_UP) * DRIBBLE_MS
+				: by,
+		);
+	}
+
 	// Through the net, down off the floor under it: the man taking it out
 	// gets to it and takes it on the hop - or scoops it up as it rolls - not
 	// stood over it till it lies still. Returns when he has it; undefined,
@@ -4073,7 +4100,7 @@ class Director {
 			(m) => m.t0 <= ready && m.t1 > ready + 60,
 		);
 		// Off the dribble, once he has it in both hands (or in the one).
-		const got = this.gather(from, ready);
+		const got = this.gatherToPass(from, ready);
 		let start = Math.max(ready, got);
 		// Handing it on at a dead ball, he stops and turns to the man first -
 		// not tossing it over his shoulder off the walk he was on.
