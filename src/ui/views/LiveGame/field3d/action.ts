@@ -489,6 +489,10 @@ class Actor {
 	yaw: number;
 	// How far past a sideline he may go: out of bounds.
 	roam = 0;
+	// Till when where he has been is fixed - where he takes the ball, say:
+	// no turn after it is bent into short of where he was then (see
+	// bendInto).
+	pinned = -Infinity;
 
 	constructor(part: Part) {
 		this.part = part;
@@ -542,6 +546,11 @@ class Actor {
 	private push(l: Leg) {
 		this.part.legs.push(l);
 		this.yaw = yawOf(l, this.yaw);
+	}
+
+	// (See pinned.)
+	pin(t: number) {
+		this.pinned = Math.max(this.pinned, t);
 	}
 
 	// Where he is until t, in `move` (by default what he was doing, if it
@@ -691,10 +700,21 @@ class Actor {
 			return false;
 		}
 		const j = this.stretchFrom();
+		// (No further back than where he was when he was pinned.)
+		let since = 0;
+		for (let k = legs.length - 1; k >= j && legs[k]!.t1 > this.pinned; k--) {
+			const lk = legs[k]!;
+			const u =
+				lk.t0 >= this.pinned
+					? 1
+					: (lk.t1 - this.pinned) / Math.max(lk.t1 - lk.t0, 1e-6);
+			since += dist(lk.from, lk.to) * u;
+		}
 		const back = Math.min(
 			((v * v) / BEND_LAT) * Math.tan(turn / 2),
 			dist(legs[j]!.from, l.to) * BEND_IN,
 			dOut * BEND_OUT,
+			since,
 		);
 		if (back < BEND_LEAST_FT) {
 			return false;
@@ -1484,6 +1504,7 @@ class Actor {
 			move,
 			yaw,
 		);
+		this.pin(t1);
 	}
 
 	// Toward `to` by t1 at no more than `fps`, as chase - but getting up to
@@ -1576,6 +1597,18 @@ class Actor {
 			move,
 			yaw: yaw ?? this.yaw,
 		});
+	}
+
+	// Reaching for it, his hands on it at `at` (see CATCH_REACH_MS) - only
+	// so much of the reach as there is still time for, if he gets to it
+	// late: his hands there as it gets there, not up for it after.
+	catchOn(at: number, yaw?: number, to?: Pt) {
+		this.act("catch", at + CATCH_IN_MS, yaw, to);
+		const l = this.last;
+		const late = l.t0 - (at - CATCH_REACH_MS);
+		if (late > 0 && l.t0 < at) {
+			l.span = [late / (CATCH_REACH_MS + CATCH_IN_MS), 1];
+		}
 	}
 
 	// Round as he goes through what he is doing now, this far (to his left
@@ -2038,6 +2071,13 @@ const STRETCH_OVER_TURN = 0.6;
 // (A receiver there early, on the move, by no more than this far at the
 // pace he is going, feet: on in his stride to it - see reachFor.)
 const CATCH_ON_FT = 3;
+// The catch (see poses.ts): reached out to it this long before his hands
+// are on it, and in to his chest this long after.
+const CATCH_REACH_MS = 300;
+const CATCH_IN_MS = 220;
+// Picking it off going at least this fast: caught on the run, his arms
+// up for it as he goes - not stopped dead to catch it.
+const PICK_ON_FPS = 10;
 // A defender sees the ball thrown and breaks on it this long after.
 const BREAK_MS = 250;
 // On his man in coverage: where he goes, worked out a step at a time, so
@@ -4172,7 +4212,15 @@ class Action {
 		if (end.out) {
 			rec.roam = OUT_MOST + 1;
 		}
+		rec.pin(catchAt);
 		const inStride = !leap && !dive && !toe && this.reachFor(rec, catchAt, qb);
+		// (Met in his stride, on past where it was thrown to: thrown to where
+		// he is as it gets there - not in behind him.)
+		const fly = this.ball.findLast((b) => b.kind === "fly");
+		if (inStride && fly?.kind === "fly" && Math.abs(fly.t1 - catchAt) < 1) {
+			const at = rec.posAt(catchAt);
+			fly.to = { ...fly.to, x: at.x, y: at.y };
+		}
 		if (leap) {
 			this.leapFor(rec, catchPt, catchAt, qb);
 		} else if (dive) {
@@ -4309,7 +4357,8 @@ class Action {
 	// runs on, or sat down in his route waiting on it, and in to his chest.
 	// Whether in stride.
 	reachFor(rec: Actor, catchAt: number, qb: Actor | undefined): boolean {
-		const reach = catchAt - 300;
+		const reach = catchAt - CATCH_REACH_MS;
+		rec.pin(catchAt);
 		// (There a moment early, on the move: on the way he was going to
 		// meet it, in his stride - not stopped dead for it.)
 		const was = rec.last;
@@ -4329,16 +4378,28 @@ class Action {
 				m: rec,
 				move: "catch",
 				t0: reach,
-				t1: catchAt + 220,
+				t1: catchAt + CATCH_IN_MS,
 			});
 			return true;
 		}
 		const face = qb ? this.toward(rec.at, qb.at) : rec.yaw;
 		// (Getting there as he reaches for it, or no more than a moment
-		// before - see hold: pulled up into it, not stopped dead.)
+		// before - see hold: pulled up into it, not stopped dead. Sat down
+		// waiting on it, reaching as it comes - not once it is there.)
 		rec.hold(reach);
 		rec.pullUpOn();
-		rec.act("catch", catchAt + 220, face);
+		const w = rec.last;
+		if (
+			w.t0 < catchAt &&
+			rec.t > reach &&
+			w.from.x === w.to.x &&
+			w.from.y === w.to.y &&
+			moveKind(w.move) !== "act"
+		) {
+			rec.cut(Math.max(reach, w.t0));
+			rec.hold(reach);
+		}
+		rec.catchOn(catchAt, face);
 		return false;
 	}
 
@@ -5879,10 +5940,22 @@ class Action {
 		}
 		// He jumps the route and takes it the other way.
 		this.breakOn(picker, catchPt, catchAt, 60);
-		picker.act("catch", catchAt + 220, this.toward(picker.at, catchPt));
 		const ball = this.ball.at(-1);
-		if (ball?.kind === "fly") {
-			ball.to = { ...picker.at, z: CATCH_Z };
+		const fly = ball?.kind === "fly" ? ball : undefined;
+		const onRun =
+			GAITS.has(picker.last.move) && legPace(picker.last) >= PICK_ON_FPS;
+		if (onRun) {
+			this.reaches.push({
+				m: picker,
+				move: "catch",
+				t0: catchAt - CATCH_REACH_MS,
+				t1: catchAt + CATCH_IN_MS,
+			});
+		} else {
+			picker.catchOn(catchAt, this.toward(picker.at, catchPt));
+		}
+		if (fly) {
+			fly.to = { ...picker.at, z: CATCH_Z };
 		}
 		this.ball.push({ kind: "held", t0: catchAt, pid: picker.pid });
 		const retI = this.find("interceptionReturn", i);
@@ -5912,6 +5985,10 @@ class Action {
 		let t = picker.t;
 		if (dist(picker.at, pt) > 2) {
 			t = picker.run(pt, picker.top * 0.9, "sprint");
+		}
+		// (Caught on the run: where he was as it got to him.)
+		if (onRun && fly) {
+			fly.to = { ...picker.posAt(catchAt), z: CATCH_Z };
 		}
 		// The offense sees it picked off, and comes after him.
 		this.seen = catchAt + BREAK_MS;
@@ -7139,6 +7216,7 @@ class Action {
 				t0: mesh - TAKE_LEAD_MS,
 				pid: carrier.pid,
 			});
+			carrier.pin(mesh - TAKE_LEAD_MS);
 			// (The back's arms open round his belly for it as he comes to it,
 			// the top one on the quarterback's side - and shut round it.)
 			const ox = qbMesh.x - meshPt.x;
@@ -8091,13 +8169,8 @@ class Action {
 		} else {
 			m.press(to, by, m.top * 0.85);
 		}
-		m.hold(catchAt - 300, "stand", this.behind);
-		m.act(
-			"catch",
-			catchAt + 220,
-			this.behind,
-			this.w({ d: land.d + 0.8, a: land.a }),
-		);
+		m.hold(catchAt - CATCH_REACH_MS, "stand", this.behind);
+		m.catchOn(catchAt, this.behind, this.w({ d: land.d + 0.8, a: land.a }));
 		const at = this.of(m.posAt(catchAt));
 		return { ...this.w({ d: at.d - 1, a: at.a }), z: CATCH_Z };
 	}
@@ -8449,8 +8522,8 @@ class Action {
 				t - 250,
 				m.top * 0.9,
 			);
-			m.hold(t - 300, "stand", yaw);
-			m.act("catch", t + 220, yaw, at);
+			m.hold(t - CATCH_REACH_MS, "stand", yaw);
+			m.catchOn(t, yaw, at);
 		};
 		let takeT: number;
 		if (caught) {
@@ -8459,8 +8532,8 @@ class Action {
 			const near = this.w({ d: at.d + (ahead ? -1.5 : 1.5), a: at.a });
 			rec.hold(goOf(rec));
 			rec.press(near, landT - 250, rec.top * 0.9);
-			rec.hold(landT - 300, "stand", face);
-			rec.act("catch", landT + 220, face, restPt);
+			rec.hold(landT - CATCH_REACH_MS, "stand", face);
+			rec.catchOn(landT, face, restPt);
 			takeT = landT;
 		} else if (returned) {
 			// Fielded on a hop, on the run.
