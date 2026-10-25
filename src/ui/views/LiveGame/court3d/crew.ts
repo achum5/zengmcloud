@@ -865,6 +865,7 @@ const pointing = (dir: number) => (dir > 0 ? -Math.PI / 2 : Math.PI / 2);
 
 // The officials' average pace (feet a second) running back after a signal.
 const BACK_PACE = 13;
+const BACK_LEAST = 500;
 // Where an official is while he signals: still where he made the call,
 // then running back to his place in the play.
 const signalPos = (s: Signal, t: number, liveAt: (when: number) => Pt): Pt => {
@@ -1000,12 +1001,13 @@ const signalsAt = (tl: CourtTimeline, t: number): (Signal | undefined)[] => {
 		const t1 = cue.moves.at(-1)!.t1;
 		// As long as it takes him to jog back to where the play will have him
 		// by then (longer, never shorter, till he can make it) - BACK_PACE
-		// feet a second, on average (see signalPos).
-		let back = 250;
+		// feet a second, on average (see signalPos) - and never so short he
+		// is spun round to it: BACK_LEAST.
+		let back = BACK_LEAST;
 		for (let k = 0; k < 8; k++) {
 			const need = clamp(
 				(edgeDist(still, refPlaces(tl, t1 + back).at[ref]!) / BACK_PACE) * 1000,
-				250,
+				BACK_LEAST,
 				6500,
 			);
 			if (need <= back) {
@@ -1102,6 +1104,18 @@ const over = (gait: Blend | undefined, was: Blend): Blend => {
 	const w = 1 - (1 - gait.w) * (1 - was.w);
 	return { ...gait, w, from: { ...was, w: was.w / w } };
 };
+// As turnToward, but the way `way` says when it is a long way round: not
+// one way one frame and the other the next as `to` passes right behind.
+const turnRound = (from: number, to: number, w: number, way: number) => {
+	let d = to - from;
+	d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+	let k = way;
+	k -= Math.round(k / (Math.PI * 2)) * Math.PI * 2;
+	if (Math.abs(d) > Math.PI / 2 && k !== 0 && Math.sign(d) !== Math.sign(k)) {
+		d += Math.sign(k) * Math.PI * 2;
+	}
+	return from + d * w;
+};
 const turnToward = (from: number, to: number, w: number) => {
 	let d = to - from;
 	d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
@@ -1114,10 +1128,26 @@ const refStates = (
 	ball: Pt,
 ): PlayerState[] => {
 	const { at } = refPlaces(tl, t);
-	const before = refPlaces(tl, t - FACE_SPAN / 2).at;
-	const after = refPlaces(tl, t + FACE_SPAN / 2).at;
-	const gaitBefore = refPlaces(tl, t - GAIT_SPAN / 2).at;
-	const gaitAfter = refPlaces(tl, t + GAIT_SPAN / 2).at;
+	// How quick each goes over a moment either side - not reaching across
+	// a cut, where they are settled at once wherever the play has them:
+	// not run there, nor run from there. (Feet a second.)
+	const pace = (span: number): Pt[] => {
+		const was = lastCut(tl, t);
+		const next = lastCut(tl, t + span / 2);
+		const lo = Math.max(t - span / 2, was);
+		const hi = next > t ? next - 1 : t + span / 2;
+		if (hi - lo < 20) {
+			return at.map(() => ({ x: 0, y: 0 }));
+		}
+		const a = refPlaces(tl, lo).at;
+		const b = refPlaces(tl, hi).at;
+		return a.map((p, i) => ({
+			x: ((b[i]!.x - p.x) * 1000) / (hi - lo),
+			y: ((b[i]!.y - p.y) * 1000) / (hi - lo),
+		}));
+	};
+	const going = pace(FACE_SPAN);
+	const gaitGoing = pace(GAIT_SPAN);
 	const signals = signalsAt(tl, t);
 	// The jump ball: the third holds it out between the two of them, then
 	// throws it up.
@@ -1131,8 +1161,8 @@ const refStates = (
 			: undefined;
 	return refs.map((m, i) => {
 		let p = at[i]!;
-		const gx = ((after[i]!.x - before[i]!.x) * 1000) / FACE_SPAN;
-		const gy = ((after[i]!.y - before[i]!.y) * 1000) / FACE_SPAN;
+		const gx = going[i]!.x;
+		const gy = going[i]!.y;
 		// Stood, walking or running by how quick he goes over that moment
 		// too, and between two of them, the one eased into the other.
 		const gaitPhase = (a: AnimName) =>
@@ -1141,9 +1171,7 @@ const refStates = (
 				: a === "walk"
 					? (t / 1000) * 1.1
 					: loopPhase(a, t, i * 0.37);
-		const gait = gaitOf(
-			(dist(gaitAfter[i]!, gaitBefore[i]!) * 1000) / GAIT_SPAN,
-		);
+		const gait = gaitOf(Math.hypot(gaitGoing[i]!.x, gaitGoing[i]!.y));
 		let anim = gait.anim;
 		let phase = gaitPhase(anim);
 		let gaitFrom: Blend | undefined = gait.from
@@ -1266,10 +1294,18 @@ const refStates = (
 							(GAIT_BANDS[0]![3] - GAIT_BANDS[0]![2]),
 					),
 				);
-				const toward = turnToward(
-					done ? done.yaw : yaw,
+				// (Round the way he will be going once he is round - not the
+				// short way each frame, which, turning right about, is one way
+				// one frame and the other the next.)
+				const from = done ? done.yaw : yaw;
+				const round = (done ? done.t1 : signal.t0) + SIGNAL_TURN;
+				const ra = signalPos(signal, round - GAIT_SPAN / 2, liveAt);
+				const rb = signalPos(signal, round + GAIT_SPAN / 2, liveAt);
+				const toward = turnRound(
+					from,
 					going,
 					smooth01((t - (done ? done.t1 : signal.t0)) / SIGNAL_TURN),
+					dist(ra, rb) > 1e-3 ? Math.atan2(rb.y - ra.y, rb.x - ra.x) - from : 0,
 				);
 				const end = signal.moves.at(-1)!.t1 + signal.back;
 				yaw = turnToward(yaw, toward, smooth01((end - t) / SIGNAL_TURN));

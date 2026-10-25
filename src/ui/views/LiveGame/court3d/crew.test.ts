@@ -309,6 +309,9 @@ describe("3D crew", () => {
 	// pacing his sideline. (Before: 403 frames a game an official turned
 	// more than 20 degrees from the last - every time he went quicker or
 	// slower than a jog, about - and 190 a coach, setting off and stopping.)
+	// (Nor spun round after a camera cut, as their pace took in where they
+	// were before it; nor about-turned one way one frame and the other the
+	// next, after a signal.)
 	test("the officials and coaches turn, never spun round in a frame", () => {
 		const { tl, crew } = working("a");
 		const cuts = cameraCuts(tl);
@@ -339,7 +342,7 @@ describe("3D crew", () => {
 			}
 		}
 		assert.isAbove(frames, 50_000);
-		assert.isBelow(spun, 80);
+		assert.isBelow(spun, 30);
 		assert.isAtMost(others, 5);
 	}, 240_000);
 

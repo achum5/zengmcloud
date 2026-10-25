@@ -379,8 +379,15 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   more than 20 degrees in a frame 403 times a game down to 53; a hand or
   foot thrown more than a yard in a frame 882 times in fifteen minutes
   down to 82), coaches clapping and folding their arms again, and
-  photographers bringing their cameras up as the play comes. Still to do:
-  a few of an official's turns as one signal follows another.)
+  photographers bringing their cameras up as the play comes, none of them
+  spun round just after a camera cut. Setting off from where he stands, a
+  man steps off, one foot and then the other, rather than both feet swept
+  round under him over the floor (both feet sliding through his starts
+  0.12 feet a start down to 0.02). Still to do: a few of an official's
+  turns as one signal follows another; backpedalling slowly to a stop,
+  his hips coming round slide both feet round under him; going straight
+  from running into a shuffle or a backpedal, or back, both feet slide
+  through the change (stepping them over there flung his legs instead).)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like
