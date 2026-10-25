@@ -342,7 +342,7 @@ describe("3D crew", () => {
 			}
 		}
 		assert.isAbove(frames, 50_000);
-		assert.isBelow(spun, 30);
+		assert.isBelow(spun, 15);
 		assert.isAtMost(others, 5);
 	}, 240_000);
 

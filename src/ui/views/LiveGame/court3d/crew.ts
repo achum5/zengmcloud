@@ -1143,10 +1143,20 @@ const refStates = (
 		}
 		const a = refPlaces(tl, lo).at;
 		const b = refPlaces(tl, hi).at;
-		return a.map((p, i) => ({
-			x: ((b[i]!.x - p.x) * 1000) / (hi - lo),
-			y: ((b[i]!.y - p.y) * 1000) / (hi - lo),
-		}));
+		// (The way from the one end to the other, as quick as he went along
+		// it - by way of where he is now, not straight across a corner he
+		// went round, which has him slow as he turns it.)
+		const m = Math.min(hi, Math.max(lo, t));
+		const c = m > lo && m < hi ? refPlaces(tl, m).at : undefined;
+		return a.map((p, i) => {
+			const chord = dist(p, b[i]!);
+			const along = c ? dist(p, c[i]!) + dist(c[i]!, b[i]!) : chord;
+			const k = chord > 1e-6 ? along / chord : 0;
+			return {
+				x: ((b[i]!.x - p.x) * k * 1000) / (hi - lo),
+				y: ((b[i]!.y - p.y) * k * 1000) / (hi - lo),
+			};
+		});
 	};
 	const going = pace(FACE_SPAN);
 	const gaitGoing = pace(GAIT_SPAN);
@@ -1309,9 +1319,15 @@ const refStates = (
 				const out = done ? 1 - smooth01((t - done.t1) / SIGNAL_EASE) : 0;
 				gaitFrom =
 					out > 0 && done ? over(easing, { ...endOf(done), w: out }) : easing;
+				// (The way he goes over the longer moment, as he faces in
+				// the play: round a corner of the floor, not swung round it.)
+				const fa = signalPos(signal, t - FACE_SPAN / 2, liveAt);
+				const fb = signalPos(signal, t + FACE_SPAN / 2, liveAt);
 				const going = turnToward(
 					yaw,
-					Math.atan2(b.y - a.y, b.x - a.x),
+					dist(fa, fb) > 1e-3
+						? Math.atan2(fb.y - fa.y, fb.x - fa.x)
+						: Math.atan2(b.y - a.y, b.x - a.x),
 					smooth01(
 						(speed - GAIT_BANDS[0]![2]) /
 							(GAIT_BANDS[0]![3] - GAIT_BANDS[0]![2]),
