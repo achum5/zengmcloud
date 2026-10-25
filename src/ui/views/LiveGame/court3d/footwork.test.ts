@@ -59,6 +59,45 @@ describe("footwork", () => {
 		assert.isBelow(slide / travel, 0.42);
 	}, 120_000);
 
+	// Sliding, the foot that steps was swept flat along the floor - out
+	// through the push, in through the close - for want of ever coming up
+	// off it.
+	test("sliding, the foot that steps comes up off the floor as it goes - the other stays down", () => {
+		const body = bodyOf();
+		const STEP = 32;
+		let frames = 0;
+		let up = 0;
+		let down = 0;
+		const { tl } = compile("a", 120);
+		for (const tr of tl.tracks.values()) {
+			for (let t = 200_000; t < 500_000; t += STEP) {
+				const st = evalPlayer(tl, tr.pid, t);
+				if (
+					!st.shown ||
+					st.anim !== "shuffle" ||
+					st.from !== undefined ||
+					fastAt(tl, t) > 1 ||
+					speedOf(tl, tr.pid, t) < 4
+				) {
+					continue;
+				}
+				const me = withBody(st, body);
+				const sk = skeleton(body, poseOf(me));
+				const [r, l] = [sk.legR.end, sk.legL.end].map((f) => bodyPoint(me, f));
+				frames++;
+				if (Math.abs(r!.z - l!.z) > 0.1) {
+					up++;
+				}
+				if (Math.min(r!.z, l!.z) < body.ankleH + 0.03) {
+					down++;
+				}
+			}
+		}
+		assert.isAbove(frames, 500);
+		assert.isAbove(up / frames, 0.4);
+		assert.isAbove(down / frames, 0.95);
+	}, 120_000);
+
 	// Drifting along the arc with his eyes on the ball, a shooter side-steps
 	// - a foot out the way he goes and the other closed up after it - not a
 	// run with his legs turned only so far under him and his feet sliding

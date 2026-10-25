@@ -385,7 +385,11 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   round under him over the floor (both feet sliding through his starts
   0.12 feet a start down to 0.02). With the ball, a man's eyes come round
   to the one he is about to pass it to before it goes (eyes within 30
-  degrees of him 76% of passes up to 93%). Still to do: backpedalling
+  degrees of him 76% of passes up to 93%). Sliding, the foot that steps -
+  the lead foot out, the trail foot in - comes a couple of inches up off
+  the floor as it goes, not swept along it (a slide's frames with both feet
+  sliding over the floor 2241 in fifteen minutes of a test game down to
+  529). Still to do: backpedalling
   slowly to a stop, his hips coming round slide both feet round under him;
   going straight from running into a shuffle or a backpedal, or back, at
   speed, both feet slide through the change (stepped over there, his legs

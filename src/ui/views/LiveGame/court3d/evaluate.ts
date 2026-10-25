@@ -4226,6 +4226,29 @@ const slanted = (q: Pose, way: [number, number]): Pose => {
 	};
 };
 
+// And the foot that moves comes up off the floor a little as it goes - the
+// lead foot out through the push, the trail foot in through the close - not
+// swept along it: bent more at the knee at the middle of its step, and at
+// the hip with it, so it comes up rather than back. (Degrees more at the
+// knee; at the hip, that share of it.)
+const SLIDE_LIFT = 14;
+const LIFT_HIP = 0.45;
+const liftedStep = (q: Pose, way: [number, number], ph: number): Pose => {
+	const [f, s] = way;
+	const m = Math.hypot(f, s);
+	if (m < 1e-3) {
+		return q;
+	}
+	const at = frac(ph);
+	const u = at < 0.5 ? 2 * at : 2 * at - 1;
+	const k = SLIDE_LIFT * Math.sin(Math.PI * u) * Math.min(1, m);
+	// (His left leads going to his left; pushing, the lead foot moves.)
+	const near = s > 0 !== at < 0.5;
+	return near
+		? { ...q, kneeN: q.kneeN + k, hipN: q.hipN + k * LIFT_HIP }
+		: { ...q, kneeF: q.kneeF + k, hipF: q.hipF + k * LIFT_HIP };
+};
+
 // Going one way while he looks another - a few steps aside with his eyes on
 // the ball, or not yet round from his last way - his legs go the way he
 // goes, his hips turned under him as far as hips turn; past that, they
@@ -4833,7 +4856,9 @@ const blendPose = (f: Blend): Pose => {
 	const m = strode(f.mirror ? mirror(short) : short, f.stride);
 	const own0 = footDown(f.held ? carried(m, f.anim) : m, f.down ?? 0);
 	const own =
-		PUSH_STEPS.has(f.anim) && f.way !== undefined ? slanted(own0, f.way) : own0;
+		PUSH_STEPS.has(f.anim) && f.way !== undefined
+			? liftedStep(slanted(own0, f.way), f.way, f.phase)
+			: own0;
 	const g = f.from;
 	if (!g || (g.w <= 0 && (g.arms ?? 0) <= 0)) {
 		return own;
@@ -5073,7 +5098,9 @@ export const poseOf = (st: PlayerState): Pose => {
 	const carry = st.holding === true && st.grip === undefined;
 	const q0 = footDown(carry ? carried(m, st.anim) : m, st.down ?? 0);
 	const q =
-		PUSH_STEPS.has(st.anim) && st.way !== undefined ? slanted(q0, st.way) : q0;
+		PUSH_STEPS.has(st.anim) && st.way !== undefined
+			? liftedStep(slanted(q0, st.way), st.way, st.phase)
+			: q0;
 	const f = st.from;
 	const eased = f && (f.w > 0 || (f.arms ?? 0) > 0) ? blendFrom(q, f) : q;
 	const fw = f && f.w > 0 ? f.w : 0;
