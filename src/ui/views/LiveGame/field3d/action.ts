@@ -995,14 +995,18 @@ class Actor {
 				? vf
 				: Math.min(vf, paceOn(before, first.from, leg.to));
 		const ve = vl * keep;
-		const Au = RAMP_ACCEL;
+		// (Up out of his stance as he got up out of it - see rampInto.)
+		const Au = !before || SET.has(before.move) ? RELEASE_ACCEL : RAMP_ACCEL;
 		const most = Math.max(vl, Math.min((D / T) * RAMP_OVER, RAMP_TOP));
 		// (Up from vs to vc, on at it, and down to ve at Ad: as slow a vc as
 		// gets him there on time - or, too quick, at no more than `most`, as
 		// soon as that gets him there. Down at A if that does it, harder if
-		// it takes it - see STOP_HARD.)
+		// it takes it - see STOP_HARD. Or, none of that doing it, on at up
+		// to RAMP_FAST times the pace he was going at - the stretch run at an
+		// even pace that had the slowing at the end of it in it.)
+		const fast = Math.max(most, Math.min(this.top, RAMP_TOP, vl * RAMP_FAST));
 		const room = Math.max(0, spare - HOLD_LEFT_MS) / 1000;
-		const plan = (Ad: number) => {
+		const plan = (Ad: number, most: number) => {
 			const qa = 1 / (2 * Au) + 1 / (2 * Ad);
 			const qb = T + vs / Au + ve / Ad;
 			const qc = (vs * vs) / (2 * Au) + (ve * ve) / (2 * Ad) + D;
@@ -1025,7 +1029,11 @@ class Actor {
 				? { vc, Tn, ta, td, tc: Math.max(0, tc), Ad }
 				: undefined;
 		};
-		const p = plan(A) ?? plan(A * STOP_HARD);
+		const p =
+			plan(A, most) ??
+			plan(A * STOP_HARD, most) ??
+			plan(A, fast) ??
+			plan(A * STOP_HARD, fast);
 		if (!p) {
 			return this.slowLast(keep, A);
 		}
