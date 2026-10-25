@@ -362,6 +362,16 @@ describe("footwork", () => {
 		assert.isBelow(spun / down, 0.3);
 		assert.isAtMost(far, 6);
 	}, 240_000);
+
+	// A 6-footer or a 7-footer, his foot down on a run stays as still as a
+	// typical man's - not slid along as he goes on strides made for legs
+	// longer or shorter than his. (Before: twice as far slid, both.)
+	test("a short or a tall man's foot down stays put as well as anybody's", () => {
+		const typical = runSlide(78);
+		for (const hgt of [72, 84]) {
+			assert.isBelow(runSlide(hgt), typical * 1.15, `${hgt} in`);
+		}
+	}, 240_000);
 });
 
 const RUNNING = new Set<AnimName>(["run", "jog", "sprint", "dribble"]);
@@ -801,4 +811,53 @@ const slideSpin = () => {
 		}
 	}
 	return { down, spun, far };
+};
+
+// Running, on a body `hgt` inches tall, a foot well into its time down (by
+// its stride): how far it slides along the floor for how far he goes.
+const runSlide = (hgt: number) => {
+	const body = bodyOf(hgt);
+	const STEP = 32;
+	const tl = (game ??= compile("a", 140).tl);
+	let went = 0;
+	let slid = 0;
+	for (const tr of tl.tracks.values()) {
+		let prev:
+			| { x: number; y: number; feet: Pt3[]; down: boolean[] }
+			| undefined;
+		for (let t = 200_000; t < 400_000; t += STEP) {
+			const st = evalPlayer(tl, tr.pid, t);
+			const legs =
+				st.shown &&
+				!st.from &&
+				fastAt(tl, t) <= 1 &&
+				(st.anim === "run" || st.anim === "jog" || st.anim === "sprint")
+					? legPhases(st.anim, st.phase)
+					: undefined;
+			if (!legs) {
+				prev = undefined;
+				continue;
+			}
+			const me = withBody(st, body);
+			const sk = skeleton(body, poseOf(me));
+			const feet = [bodyPoint(me, sk.legR.end), bodyPoint(me, sk.legL.end)];
+			const down = [legs.r, legs.l].map(
+				(f) => f > legs.duty * 0.1 && f < legs.duty * 0.9,
+			);
+			if (prev) {
+				const d = Math.hypot(st.x - prev.x, st.y - prev.y);
+				for (const i of [0, 1]) {
+					if (down[i] && prev.down[i]) {
+						went += d;
+						slid += Math.hypot(
+							feet[i]!.x - prev.feet[i]!.x,
+							feet[i]!.y - prev.feet[i]!.y,
+						);
+					}
+				}
+			}
+			prev = { x: st.x, y: st.y, feet, down };
+		}
+	}
+	return slid / went;
 };

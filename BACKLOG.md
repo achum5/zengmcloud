@@ -395,7 +395,11 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   come round (each about half a foot). Stepped into a pass where he
   stands, his feet stay where the pass left them and come back under him
   after, a foot at a time, not both slid back as it ends (both feet sliding
-  through a pass 149 frames of 276 down to 79). Still to do: going straight from
+  through a pass 149 frames of 276 down to 79). A 6-footer's or a 7-footer's
+  foot down on a run stays put as well as a typical man's - his foot put as
+  far out in front of his hips as the strides are made for, his leg swung
+  round at the hip to put it there (slid 0.14 and 0.12 ft a foot down to
+  0.06). Still to do: going straight from
   running into a shuffle or a backpedal, or back, at speed, both feet slide
   through the change (stepped over there, his legs are flung; from all but
   a standstill they now step); and turning on the spot while all but stood

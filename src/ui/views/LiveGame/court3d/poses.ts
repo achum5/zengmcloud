@@ -6209,6 +6209,16 @@ export const footDown = (q: Pose, w: number, b: Body = bodyOf()): Pose => {
 
 // The pose's angles live in the plane he faces along; arms swing out from
 // his sides a little (more in a stance), feet spread with the knees.
+//
+// Strides and footwork are fit to a typical body: a foot down stays put as
+// he goes by being as far out in front of his hips as a typical man's would
+// be - so a shorter or a taller man's foot is put there too, his knee
+// bending to reach it (a leg he stands on; not one tucked up under him,
+// sitting or kneeling).
+const TYPICAL = bodyOf();
+// (How far out in front of his hips a foot can be put, for how far it is
+// from them.)
+const REACH = 0.94;
 export const skeleton = (b: Body, q: Pose): Skeleton => {
 	const rad = Math.PI / 180;
 	// An angle in the facing plane: 0 straight down, 90 straight ahead.
@@ -6216,12 +6226,44 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		f: Math.sin(deg * rad),
 		u: -Math.cos(deg * rad),
 	});
-	const leg = (hipDeg: number, kneeDeg: number, side: 1 | -1) => {
+	const leg = (hipDeg: number, kneeDeg: number, side: 1 | -1, at: number) => {
 		const wide = q.wide + (side < 0 ? q.wideN : q.wideF);
 		const thigh = inPlane(b.thigh, wide);
 		const shin = inPlane(b.shin, wide);
-		const a = dir(hipDeg);
-		const c = dir(hipDeg - kneeDeg);
+		let a = dir(hipDeg);
+		let c = dir(hipDeg - kneeDeg);
+		const u = a.u * thigh + c.u * shin;
+		const w = Math.min(1, Math.max(0, (-u / (thigh + shin) - 0.55) / 0.25));
+		if (b.H !== TYPICAL.H && w > 0) {
+			// Where a typical man's foot would be: his own, out in front of his
+			// hips that far.
+			const f0 =
+				dir(at).f * inPlane(TYPICAL.thigh, wide) +
+				dir(at - kneeDeg).f * inPlane(TYPICAL.shin, wide);
+			// The leg swung round at the hip to put it there, its knee bent
+			// as much - only straightened if it can't reach.
+			const f1 = a.f * thigh + c.f * shin;
+			const want = f1 + (f0 - f1) * w;
+			const d = Math.min(
+				(thigh + shin) * 0.9999,
+				Math.max(Math.hypot(f1, u), Math.abs(want) / REACH),
+			);
+			const f = Math.sign(want) * Math.min(Math.abs(want), d * REACH);
+			const knee = Math.acos(
+				Math.max(
+					-1,
+					Math.min(
+						1,
+						(d * d - thigh * thigh - shin * shin) / (2 * thigh * shin),
+					),
+				),
+			);
+			const hip =
+				Math.atan2(f, Math.sqrt(d * d - f * f)) +
+				Math.atan2(shin * Math.sin(knee), thigh + shin * Math.cos(knee));
+			a = { f: Math.sin(hip), u: -Math.cos(hip) };
+			c = { f: Math.sin(hip - knee), u: -Math.cos(hip - knee) };
+		}
 		const root = v3(0, side * b.hipW, b.hipH);
 		const mid = v3(
 			a.f * thigh,
@@ -6236,8 +6278,9 @@ export const skeleton = (b: Body, q: Pose): Skeleton => {
 		return { root, mid, end };
 	};
 	const flex = flexOf(q, b);
-	const legR = leg(q.hipN + flex, q.kneeN, -1);
-	const legL = leg(q.hipF + flex, q.kneeF, 1);
+	const flex0 = b.H === TYPICAL.H ? flex : flexOf(q, TYPICAL);
+	const legR = leg(q.hipN + flex, q.kneeN, -1, q.hipN + flex0);
+	const legL = leg(q.hipF + flex, q.kneeF, 1, q.hipF + flex0);
 	// Down onto the floor: the lower ankle sits at ankle height.
 	const off = b.ankleH - Math.min(legR.end.u, legL.end.u);
 	// Pointed, a foot hangs from the ankle (only ever up in the air: his
