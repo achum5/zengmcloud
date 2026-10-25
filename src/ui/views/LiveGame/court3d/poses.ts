@@ -5243,26 +5243,34 @@ export const ANIMS = {
 			}),
 	},
 	// Hands on his hips, head down: scored on, a call gone against him, the
-	// game lost.
+	// game lost - blowing, his chest heaving with it, and his weight over
+	// onto the one leg and then the other.
 	hips: {
 		kind: "loop",
-		n: 2,
-		fps: 0.8,
-		pose: (i) =>
-			pose({
-				shN: -10,
-				elN: 60,
+		n: 8,
+		fps: 1.6,
+		pose: (i) => {
+			const inn = i % 2 === 0;
+			const side = i < 4 ? 1 : -1;
+			return pose({
+				shN: inn ? -6 : -12,
+				elN: inn ? 56 : 62,
 				abN: 30,
-				shF: -10,
-				elF: 60,
+				shF: inn ? -6 : -12,
+				elF: inn ? 56 : 62,
 				abF: 30,
 				onHipN: 1,
 				onHipF: 1,
-				lean: i ? 13 : 9,
-				kneeN: 8,
-				kneeF: 10,
+				lean: inn ? 6 : 13,
+				hipN: side > 0 ? -1 : 6,
+				kneeN: side > 0 ? 3 : 16,
+				hipF: side > 0 ? 6 : -1,
+				kneeF: side > 0 ? 16 : 3,
+				tilt: 2.5 * side,
+				twist: -3 * side,
 				wide: 0.3,
-			}),
+			});
+		},
 	},
 	// What was that? Arms out, palms up.
 	protest: {
@@ -5557,28 +5565,33 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
-	// Bent over, hands on his knees.
+	// Bent over, hands on his knees, getting his breath: his back rising and
+	// falling with it, and his weight over onto the one leg and then the
+	// other.
 	crouch: {
 		kind: "loop",
-		n: 2,
-		fps: 0.6,
-		pose: (i) =>
-			pose({
-				hipN: 50,
-				kneeN: 66,
-				hipF: 54,
-				kneeF: 70,
-				lean: 56 + i * 2,
-				shN: 6,
-				elN: 8,
+		n: 8,
+		fps: 2,
+		pose: (i) => {
+			const inn = i % 2 === 0;
+			const side = i < 4 ? 1 : -1;
+			return pose({
+				hipN: side > 0 ? 49 : 53,
+				kneeN: side > 0 ? 64 : 70,
+				hipF: side > 0 ? 55 : 51,
+				kneeF: side > 0 ? 72 : 66,
+				lean: inn ? 55 : 59,
+				shN: inn ? 10 : 4,
+				elN: inn ? 2 : 12,
 				abN: 10,
-				shF: 8,
-				elF: 8,
+				shF: inn ? 12 : 6,
+				elF: inn ? 2 : 12,
 				abF: 10,
 				onKneeN: 1,
 				onKneeF: 1,
 				wide: 0.35,
-			}),
+			});
+		},
 	},
 	// Talking it over: one hand making the point.
 	talk: {
