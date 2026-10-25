@@ -22,7 +22,7 @@ export type Sep = { t0: number; dx: Float32Array; dy: Float32Array };
 const APART = 2.1;
 const ROUNDS = 3;
 const SMOOTH = 4;
-const PASSES = 3;
+const PASSES = 4;
 // (Pushed over and let back no quicker than this, ft/s: not slid aside.)
 const SLIDE_FPS = 3.5;
 // (Coming by each other quicker than this (ft/s), over across the way they
@@ -164,16 +164,21 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 	const sx: Float32Array[] = men.map(() => new Float32Array(n));
 	const sy: Float32Array[] = men.map(() => new Float32Array(n));
 	let near: Uint8Array | undefined;
+	const ever = new Uint8Array(m);
 	for (let pass = 0; pass < PASSES; pass++) {
 		const bx =
 			pass === 0 ? xs : xs.map((x, i) => x.map((v, s) => v + sx[i]![s]!));
 		const by =
 			pass === 0 ? ys : ys.map((y, i) => y.map((v, s) => v + sy[i]![s]!));
-		const { dx, dy, hit } = pushed(bx, by, free, official, n, near);
+		const { dx, dy, hit, moved } = pushed(bx, by, free, official, n, near);
 		if (!hit) {
 			break;
 		}
 		for (let i = 0; i < m; i++) {
+			if (!moved[i]) {
+				continue;
+			}
+			ever[i] = 1;
 			const ax = smooth(smooth(eased(dx[i]!)));
 			const ay = smooth(smooth(eased(dy[i]!)));
 			for (let s = 0; s < n; s++) {
@@ -191,8 +196,10 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 	}
 	// (And all of it, put together, no quicker than that either.)
 	for (let i = 0; i < m; i++) {
-		sx[i] = smooth(eased(sx[i]!));
-		sy[i] = smooth(eased(sy[i]!));
+		if (ever[i]) {
+			sx[i] = smooth(eased(sx[i]!));
+			sy[i] = smooth(eased(sy[i]!));
+		}
 	}
 
 	const out = new Map<number, Sep[]>();
@@ -241,6 +248,8 @@ const pushed = (
 	const dx = xs.map(() => new Float32Array(n));
 	const dy = xs.map(() => new Float32Array(n));
 	let hit: Uint8Array | undefined;
+	// (Which of them were moved at all.)
+	const moved = new Uint8Array(m);
 	// (After the first go, only those moved since they were last looked at:
 	// the rest are where they were, and were apart then.)
 	let was = new Uint8Array(m);
@@ -259,7 +268,7 @@ const pushed = (
 			fr[i] = free[i]![s]!;
 		}
 		for (let round = 0; round < ROUNDS; round++) {
-			let moved = false;
+			let movedNow = false;
 			[was, now] = [now, was];
 			now.fill(0);
 			for (let i = 0; i < m; i++) {
@@ -326,18 +335,20 @@ const pushed = (
 					py[j] = ys[j]![s]! + jy[s]!;
 					now[i] = 1;
 					now[j] = 1;
-					moved = true;
+					movedNow = true;
+					moved[i] = 1;
+					moved[j] = 1;
 					hit ??= new Uint8Array(n);
 					hit[s] = 1;
 				}
 			}
-			if (!moved) {
+			if (!movedNow) {
 				break;
 			}
 		}
 	}
 
-	return { dx, dy, hit };
+	return { dx, dy, hit, moved };
 };
 
 // How quick a track goes at sample s, ft/s.
@@ -371,19 +382,19 @@ const eased = (a: Float32Array): Float32Array => {
 
 // Each sample the mean of those either side of it.
 const smooth = (a: Float32Array): Float32Array => {
-	const out = new Float32Array(a.length);
-	for (let s = 0; s < a.length; s++) {
-		let sum = 0;
-		let k = 0;
-		for (
-			let j = Math.max(0, s - SMOOTH);
-			j <= Math.min(a.length - 1, s + SMOOTH);
-			j++
-		) {
-			sum += a[j]!;
-			k++;
+	const n = a.length;
+	const out = new Float32Array(n);
+	let sum = 0;
+	let lo = 0;
+	let hi = -1;
+	for (let s = 0; s < n; s++) {
+		for (const to = Math.min(n - 1, s + SMOOTH); hi < to;) {
+			sum += a[++hi]!;
 		}
-		out[s] = sum / k;
+		for (const from = Math.max(0, s - SMOOTH); lo < from;) {
+			sum -= a[lo++]!;
+		}
+		out[s] = sum / (hi - lo + 1);
 	}
 	return out;
 };
