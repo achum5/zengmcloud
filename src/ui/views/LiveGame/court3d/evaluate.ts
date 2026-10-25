@@ -4220,6 +4220,19 @@ const wayOf = (tr: Track, yaw: number, t: number): [number, number] => {
 // How far ahead a foot goes for a turn of his hip (feet a radian, a typical
 // man down in his stance - his hips turned the two ways at once).
 const SLANT_REACH = 2.15;
+// (Of a step out that far: how much goes ahead or back, as the turn of his
+// hip it takes, and how much less goes across.)
+const slantOf = (way: [number, number], d: number) => {
+	const [f, s] = way;
+	const m = Math.hypot(f, s);
+	const side = Math.abs(s) / m;
+	const on = smooth01((side - 0.3) / 0.3) * Math.min(1, m);
+	return {
+		on,
+		ahead: ((d * (f / m) * on) / SLANT_REACH) * (180 / Math.PI),
+		across: d * (1 - side) * on,
+	};
+};
 const slanted = (q: Pose, way: [number, number]): Pose => {
 	const [f, s] = way;
 	const m = Math.hypot(f, s);
@@ -4227,13 +4240,10 @@ const slanted = (q: Pose, way: [number, number]): Pose => {
 	if (m < 1e-3 || d <= 0) {
 		return q;
 	}
-	const side = Math.abs(s) / m;
-	const on = smooth01((side - 0.3) / 0.3) * Math.min(1, m);
+	const { on, ahead, across } = slantOf(way, d);
 	if (on <= 0) {
 		return q;
 	}
-	const ahead = ((d * (f / m) * on) / SLANT_REACH) * (180 / Math.PI);
-	const across = d * (1 - side) * on;
 	// (His left leads going to his left.)
 	return {
 		...q,
@@ -4248,7 +4258,11 @@ const slanted = (q: Pose, way: [number, number]): Pose => {
 // lead foot out through the push, the trail foot in through the close - not
 // swept along it: bent more at the knee at the middle of its step, and at
 // the hip with it, so it comes up rather than back. (Degrees more at the
-// knee; at the hip, that share of it.)
+// knee; at the hip, that share of it.) It gets going and slows to land, too
+// - not out at twice his pace from the moment it leaves the floor to the
+// moment it is down, both feet sliding as the one hands on to the other:
+// the foot down goes back under him as ever, the one up eased over its
+// step.
 const SLIDE_LIFT = 14;
 const LIFT_HIP = 0.45;
 const liftedStep = (q: Pose, way: [number, number], ph: number): Pose => {
@@ -4260,11 +4274,31 @@ const liftedStep = (q: Pose, way: [number, number], ph: number): Pose => {
 	const at = frac(ph);
 	const u = at < 0.5 ? 2 * at : 2 * at - 1;
 	const k = SLIDE_LIFT * Math.sin(Math.PI * u) * Math.min(1, m);
+	// (How far out it is, eased, beyond where it would be going evenly - its
+	// feet's spread so far through the push, or left through the close.)
+	const d = q.wide - SLIDE_NARROW;
+	const even = at < 0.5 ? u : 1 - u;
+	const eased = u * u * u * (u * (u * 6 - 15) + 10);
+	const e =
+		even > 1e-3 && d > 0
+			? (d / even) * (at < 0.5 ? eased - u : u - eased) * Math.min(1, m)
+			: 0;
+	const { ahead, across } = slantOf(way, e);
 	// (His left leads going to his left; pushing, the lead foot moves.)
 	const near = s > 0 !== at < 0.5;
 	return near
-		? { ...q, kneeN: q.kneeN + k, hipN: q.hipN + k * LIFT_HIP }
-		: { ...q, kneeF: q.kneeF + k, hipF: q.hipF + k * LIFT_HIP };
+		? {
+				...q,
+				kneeN: q.kneeN + k,
+				hipN: q.hipN + k * LIFT_HIP + (s > 0 ? -ahead : ahead),
+				wideN: q.wideN + e - across,
+			}
+		: {
+				...q,
+				kneeF: q.kneeF + k,
+				hipF: q.hipF + k * LIFT_HIP + (s > 0 ? ahead : -ahead),
+				wideF: q.wideF + e - across,
+			};
 };
 
 // Going one way while he looks another - a few steps aside with his eyes on

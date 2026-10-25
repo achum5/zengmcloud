@@ -399,7 +399,10 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   foot down on a run stays put as well as a typical man's - his foot put as
   far out in front of his hips as the strides are made for, his leg swung
   round at the hip to put it there (slid 0.14 and 0.12 ft a foot down to
-  0.06). Still to do: going straight from
+  0.06). Shuffling, the foot that steps gets going off the floor and slows
+  to come down - not out at twice his pace from the moment it is up to the
+  moment it is down (2.0 of his pace the frame before it lands down to 1.6,
+  1.5 the frame it comes up down to 1.0). Still to do: going straight from
   running into a shuffle or a backpedal, or back, at speed, both feet slide
   through the change (stepped over there, his legs are flung; from all but
   a standstill they now step); and turning on the spot while all but stood

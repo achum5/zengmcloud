@@ -363,6 +363,17 @@ describe("footwork", () => {
 		assert.isAtMost(far, 6);
 	}, 240_000);
 
+	// Shuffling quick, the foot that steps gets going off the floor and slows
+	// to come down - not out at twice his pace from the moment it is up to
+	// the moment it is down. (Before: at 2.0 of his pace the frame before it
+	// landed, 1.47 the frame it came up.)
+	test("a shuffling man's stepping foot gets going and slows to land", () => {
+		const { landings, landing, liftOff } = shuffleSteps();
+		assert.isAbove(landings, 200);
+		assert.isBelow(landing, 1.8);
+		assert.isBelow(liftOff, 1.2);
+	}, 240_000);
+
 	// A 6-footer or a 7-footer, his foot down on a run stays as still as a
 	// typical man's - not slid along as he goes on strides made for legs
 	// longer or shorter than his. (Before: twice as far slid, both.)
@@ -860,4 +871,59 @@ const runSlide = (hgt: number) => {
 		}
 	}
 	return slid / went;
+};
+
+// Shuffling at a good pace (not easing in or out of anything else): the
+// steps each foot comes down from, and how quick it was going (for how quick
+// he goes) the frame before it was down, and the frame it came up.
+const shuffleSteps = () => {
+	const body = bodyOf();
+	const STEP = 16;
+	const tl = (game ??= compile("a", 140).tl);
+	const up = (f: Pt3) => f.z > body.ankleH + 0.02;
+	let landings = 0;
+	let landing = 0;
+	let lifts = 0;
+	let liftOff = 0;
+	for (const tr of tl.tracks.values()) {
+		let prev:
+			| { x: number; y: number; feet: Pt3[]; v: number; before?: Pt3[] }
+			| undefined;
+		for (let t = 0; t < Math.min(tl.end, 900_000); t += STEP) {
+			const st = evalPlayer(tl, tr.pid, t);
+			if (
+				fastAt(tl, t) > 1 ||
+				!st.shown ||
+				st.anim !== "shuffle" ||
+				st.from ||
+				!st.way
+			) {
+				prev = undefined;
+				continue;
+			}
+			const me = withBody(st, body);
+			const sk = skeleton(body, poseOf(me));
+			const feet = [bodyPoint(me, sk.legR.end), bodyPoint(me, sk.legL.end)];
+			const v = prev
+				? (Math.hypot(st.x - prev.x, st.y - prev.y) * 1000) / STEP
+				: 0;
+			if (prev && v > 5 && prev.v > 5) {
+				for (const i of [0, 1]) {
+					const a = prev.feet[i]!;
+					const b = feet[i]!;
+					if (!up(b) && up(a) && prev.before) {
+						const c = prev.before[i]!;
+						landings += 1;
+						landing += (Math.hypot(a.x - c.x, a.y - c.y) * 1000) / STEP / v;
+					}
+					if (up(b) && !up(a)) {
+						lifts += 1;
+						liftOff += (Math.hypot(b.x - a.x, b.y - a.y) * 1000) / STEP / v;
+					}
+				}
+			}
+			prev = { x: st.x, y: st.y, feet, v, before: prev?.feet };
+		}
+	}
+	return { landings, landing: landing / landings, liftOff: liftOff / lifts };
 };
