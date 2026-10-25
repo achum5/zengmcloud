@@ -11,13 +11,7 @@ import type {
 	Track,
 } from "./director.ts";
 import { COURT_H, rimX, type Pt, type Pt3, type Side } from "./geometry.ts";
-import {
-	alongShape,
-	keepThrough,
-	pushAlong,
-	runShape,
-	type RunShape,
-} from "./motion.ts";
+import { alongShape, keepThrough, runShape, type RunShape } from "./motion.ts";
 import { playAt } from "./physics.ts";
 import {
 	ANIMS,
@@ -198,8 +192,10 @@ export type Blend = {
 	// him as it showed then (see legs), right, left; and the way he faced.
 	pivot?: [number, number, number, number];
 	turns?: [number, number];
-	// And each foot's own turn then (see lock).
+	// And each foot's own turn then (see lock), and how hard he was going at
+	// it (see drive).
 	feet?: [number, number];
+	drive?: number;
 	facing?: number;
 	down?: number;
 	// Shuffling then, the way he went (see way).
@@ -2547,7 +2543,7 @@ const doingAt = (
 		} = gaitOf(tl, tr, here.moveIndex, here.run, t));
 		gait = { k: here.moveIndex, at: t };
 		z = liftOf(anim, phase, stepLen);
-		drive = driveOf(anim, here.run, t);
+		drive = driveOf(tr, anim, t);
 		const k = here.moveIndex;
 		down = footDownAt(
 			here.run,
@@ -2557,6 +2553,7 @@ const doingAt = (
 		);
 	} else if ((bridged = bridgeAt(tl, tr, t))) {
 		({ anim, phase, down, len: stepLen, gait } = bridged);
+		drive = driveOf(tr, anim, t);
 	} else {
 		const seg = ballSegAt(tl, t);
 		// A dribble move: all of him through each bounce of it.
@@ -2706,22 +2703,37 @@ const doingAt = (
 	};
 };
 
-// HOW HARD HE IS GOING AT IT on a run, getting going or pulling up (see
-// PlayerState's drive): as hard as he is speeding up or slowing down,
-// against all he has (feet a second, a second) - on his feet going forward,
-// not sliding or backpedalling, and nothing to speak of left out.
+// HOW HARD HE IS GOING AT IT on his strides, getting going or pulling up
+// (see PlayerState's drive): as hard as he has sped up or slowed down over
+// the last DRIVE_MS, against all he has (feet a second, a second) - his body
+// leaning into it a moment behind, not flicked from the one way to the
+// other as one run he keeps on changing hands to the next, or planted
+// stood up in a frame - on his feet going forward, not sliding or
+// backpedalling, and nothing to speak of left out.
 const DRIVE_FULL = 28;
 const DRIVE_MIN = 0.08;
+const DRIVE_MS = 200;
 const DRIVES = new Set<AnimName>(["run", "sprint", "jog", "dribble"]);
-const driveOf = (anim: AnimName, run: Run, t: number): number => {
+const paceAt = (tr: Track, t: number): number => {
+	const s = spotAt(tr, t);
+	return s.moving && s.run ? paceOn(s.run, t) : 0;
+};
+const driveOf = (tr: Track, anim: AnimName, t: number): number => {
 	if (!DRIVES.has(anim)) {
 		return 0;
 	}
 	const d = Math.max(
 		-1,
-		Math.min(1, pushAlong(shapeOf(run), (t - run.s0) / 1000) / DRIVE_FULL),
+		Math.min(
+			1,
+			((paceAt(tr, t) - paceAt(tr, t - DRIVE_MS)) * 1000) /
+				DRIVE_MS /
+				DRIVE_FULL,
+		),
 	);
-	return Math.abs(d) < DRIVE_MIN ? 0 : d;
+	return (
+		(Math.sign(d) * Math.max(0, Math.abs(d) - DRIVE_MIN)) / (1 - DRIVE_MIN)
+	);
 };
 // How far off the floor his stride takes him (short steps: see shortLift).
 const liftOf = (
@@ -3038,6 +3050,7 @@ const blendInto = (
 		...(pv ? { pivot: pv } : {}),
 		...(turns[0] || turns[1] ? { turns } : {}),
 		...(feet[0] || feet[1] ? { feet } : {}),
+		...(before.drive ? { drive: before.drive } : {}),
 		...(way === undefined ? {} : { way }),
 		facing,
 		...(isMove(anim)
@@ -4595,10 +4608,14 @@ export const poseOf = (st: PlayerState): Pose => {
 			: undefined;
 	const steps = was ? settleLegs(q, was, 1 - fw, standRef(st)) : undefined;
 	let p = steps ? settleStep(eased, q, was!, 1 - fw, standRef(st)) : eased;
-	if (st.drive) {
+	// (Easing out of the last move, out of how hard he was going at it then
+	// too.)
+	const drive =
+		(st.drive ?? 0) + ((fw > 0 ? (f!.drive ?? 0) : 0) - (st.drive ?? 0)) * fw;
+	if (drive) {
 		p = driven(
 			p,
-			st.drive,
+			drive,
 			st.dribble === undefined && !st.holding && st.grip === undefined,
 		);
 	}

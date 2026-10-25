@@ -348,7 +348,13 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   planted feet turning about a degree a frame down to a fifth of one, feet
   spun more than 30 degrees in their time down 99 a game to 44. Still to
   do: the same for a defender's shuffle, the next most - its push steps
-  have no stride table to say which foot is down.)
+  have no stride table to say which foot is down. And a man's body leans
+  into getting going and sits back pulling up a moment behind how hard he
+  speeds up or slows down - not flicked from the one to the other every
+  frame or two as a defender's short runs staying with his man hand on to
+  each other, or snapped upright as one move gives way to the next: heads
+  thrown more than a foot in a frame 957 times in fifteen minutes of a
+  test game, down to 1.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like

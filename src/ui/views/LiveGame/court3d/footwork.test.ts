@@ -106,6 +106,18 @@ describe("footwork", () => {
 	// round under him with the rest of him - and goes round to his new way
 	// while it is up. (Before: a degree a frame a foot down, and 99 feet
 	// spun more than 30 degrees in their time down.)
+	// Getting going he leans into it, pulling up he sits back against it - a
+	// moment behind how hard he speeds up or slows down, not flicked from the
+	// one to the other each time one short run of a man staying with his
+	// gives way to the next. (Before: his head thrown more than a foot in a
+	// frame 957 times in the first fifteen minutes.)
+	test("his body leans into getting going and pulling up, never flicked", () => {
+		const { frames, leaning, bracing, flicked } = headFlicks();
+		assert.isAbove(leaning, frames * 0.05);
+		assert.isAbove(bracing, frames * 0.025);
+		assert.isAtMost(flicked, 10);
+	}, 240_000);
+
 	test("a foot down on his strides stays pointed where it came down", () => {
 		const { down, spun, far } = plantedSpin();
 		assert.isAbove(down, 10_000);
@@ -402,5 +414,48 @@ const plantedSpin = () => {
 		}
 	}
 	return { down, spun, far };
+};
+// Frame by frame over the first fifteen minutes of a game (not where the
+// picture runs through it fast): the frames he is driving into it or bracing
+// against it to speak of, and the frames his head goes more than 40 feet a
+// second.
+const headFlicks = () => {
+	const body = bodyOf();
+	const STEP = 16;
+	const tl = (game ??= compile("a", 140).tl);
+	let frames = 0;
+	let leaning = 0;
+	let bracing = 0;
+	let flicked = 0;
+	for (const tr of tl.tracks.values()) {
+		let prev: { x: number; y: number; z: number } | undefined;
+		for (let t = 0; t < Math.min(tl.end, 900_000); t += STEP) {
+			const st = evalPlayer(tl, tr.pid, t);
+			if (fastAt(tl, t) > 1 || !st.shown) {
+				prev = undefined;
+				continue;
+			}
+			const me = withBody(st, body);
+			const head = bodyPoint(me, skeleton(body, poseOf(me)).head);
+			if (prev) {
+				frames += 1;
+				const v =
+					(Math.hypot(head.x - prev.x, head.y - prev.y, head.z - prev.z) *
+						1000) /
+					STEP;
+				if (v > 40) {
+					flicked += 1;
+				}
+				if ((st.drive ?? 0) > 0.4) {
+					leaning += 1;
+				}
+				if ((st.drive ?? 0) < -0.4) {
+					bracing += 1;
+				}
+			}
+			prev = head;
+		}
+	}
+	return { frames, leaning, bracing, flicked };
 };
 let game: ReturnType<typeof compile>["tl"] | undefined;
