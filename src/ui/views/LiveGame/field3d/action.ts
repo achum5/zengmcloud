@@ -1248,7 +1248,19 @@ class Actor {
 		const l = this.last;
 		const v = legPace(l);
 		const t = this.t - ((2 * ft) / Math.max(1, v)) * 1000;
-		if (RAMPS.has(l.move) && v >= least && t > l.t0) {
+		// (Back over the strides he got up to speed in, if it takes that -
+		// not only the last of them.)
+		const legs = this.part.legs;
+		let k = legs.length - 1;
+		while (
+			k > 0 &&
+			legs[k]!.t0 > t &&
+			legs[k - 1]!.t1 === legs[k]!.t0 &&
+			RAMPS.has(legs[k - 1]!.move)
+		) {
+			k--;
+		}
+		if (RAMPS.has(l.move) && v >= least && t > legs[k]!.t0) {
 			this.cut(t);
 			this.easeOff(2 * ft);
 		}
@@ -7710,8 +7722,9 @@ class Action {
 				across > 5 ? "run" : "slide",
 				across > 5 ? undefined : this.behind,
 			);
-			// (Pulled up there, nobody on him yet - see STALK_EASE_FT.)
-			if (across > 5) {
+			// (Pulled up there, nobody on him yet - see STALK_EASE_FT. In his
+			// low steps too, if he comes up quick in them.)
+			if (across > 5 || legPace(m.last) >= STOP_LEAST) {
 				m.easeOff(STALK_EASE_FT);
 			}
 		}
@@ -8333,18 +8346,24 @@ class Action {
 		const to = this.w({ d: land.d + 3.5, a: land.a });
 		const by = catchAt - 700;
 		const fps = (dist(m.at, to) / Math.max(1, by - m.t)) * 1000;
-		if (fps < DRIFT_FPS) {
+		const rel = this.toward(m.at, to) - this.behind;
+		const c = Math.cos(rel);
+		const across = Math.abs(c) < DRIFT_ACROSS;
+		if (fps < (across ? SHUFFLE_MOST : DRIFT_FPS)) {
 			// (Not far to go: under it with his eyes on it all the way, facing
 			// the kick - back, across, or in toward it.)
-			const rel = this.toward(m.at, to) - this.behind;
-			const c = Math.cos(rel);
 			m.press(
 				to,
 				by,
 				m.top * 0.85,
-				Math.abs(c) < DRIFT_ACROSS ? "slide" : c < 0 ? "back" : gait(fps),
+				across ? "slide" : c < 0 ? "back" : gait(fps),
 				this.behind,
 			);
+		} else if (fps * UNDER_EARLY <= m.top * 0.85) {
+			// (Further, with time: turned and run there, a little quicker
+			// than he has to, and pulled up under it - not across in his low
+			// steps at a run, nor stopped dead there.)
+			m.runUp(to, fps * UNDER_EARLY);
 		} else {
 			m.press(to, by, m.top * 0.85);
 		}
@@ -10750,9 +10769,12 @@ const STOP_BUMP_MS = 900;
 const STOP_FIVE = 0.5;
 // Getting under a kick: no faster than this (feet a second), he goes with
 // his eyes on it - across (shuffling, the way he goes no nearer straight at
-// or away from the kick than this, as a cosine), or backpedaling.
+// or away from the kick than this, as a cosine - and no quicker than push
+// steps go), or backpedaling. Further: run there this much quicker than he
+// has to be, with the time for it, and pulled up.
 const DRIFT_FPS = 9;
 const DRIFT_ACROSS = 0.6;
+const UNDER_EARLY = 1.25;
 // A fair catch: his arm waved from this long before the ball comes down
 // to this long before (ms).
 const FAIR_FROM = 2000;
