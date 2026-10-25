@@ -406,13 +406,16 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   same every game: one leans on into it, another runs tall; one pumps his
   arms, another carries them low and loose, out from his sides or in tight,
   his shoulders rolling more or less with his stride - and down in his
-  stance, one sits right down in it, wide, another plays it taller. Still
-  to do: going
-  straight from
-  running into a shuffle or a backpedal, or back, at speed, both feet slide
-  through the change (stepped over there, his legs are flung; from all but
-  a standstill they now step); and turning on the spot while all but stood
-  in a shuffle, both feet go round with him.)
+  stance, one sits right down in it, wide, another plays it taller. Going
+  from a shuffle into a backpedal or a slide, or back, the foot still
+  waiting to step stays where it was on the floor, his leg reaching back to
+  it as he goes on over it - not carried along under him till its turn
+  (the foot he stands on through the change at 0.92 of his pace down to
+  0.64). Still to do: going straight from running into a shuffle or a
+  backpedal, or back, at speed, both feet slide through the change
+  (stepped over there, his legs are flung; from all but a standstill they
+  now step); and turning on the spot while all but stood in a shuffle,
+  both feet go round with him.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like

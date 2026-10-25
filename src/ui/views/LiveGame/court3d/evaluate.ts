@@ -149,6 +149,10 @@ export type PlayerState = {
 	// left - see Pose's footN): down, it points where it came down pointing
 	// (see footLock).
 	lock?: [number, number];
+	// Stepping over out of the last move, how far he has gone since it
+	// changed, in his own frame (feet ahead, to his side): a foot still down
+	// stays where it was on the floor (see SLIP_MOST).
+	slip?: [number, number];
 	// His head turned from the way he faces, to keep the ball in sight
 	// (degrees, the way his yaw turns - see lookAt).
 	look?: number;
@@ -217,6 +221,11 @@ export type Blend = {
 	// pace, back and forth with it.
 	step?: true;
 	paced?: true;
+	// Where he was as it changed.
+	spot?: [number, number];
+	// Itself still stepping over out of the move before, how far he had gone
+	// since that one changed, in his own frame then (see slipOf).
+	slip?: [number, number];
 };
 export type ArmPose = {
 	hand: Hand;
@@ -3095,6 +3104,7 @@ const blendInto = (
 			: to;
 	}) as [number, number];
 	const ownLock = ownPv ? undefined : footLock(tl, tr, lo, before, own);
+	const slip = prior && prior.w > 0 ? slipOf(there, facing, prior) : undefined;
 	// (How hard he was going at it as it changed: as it showed, itself
 	// maybe easing out of the move before.)
 	const drive =
@@ -3141,6 +3151,8 @@ const blendInto = (
 		...(drive ? { drive } : {}),
 		...(way === undefined ? {} : { way }),
 		facing,
+		spot: [there.x, there.y],
+		...(slip ? { slip } : {}),
 		...(isMove(anim)
 			? {
 					arms: ease(
@@ -3860,6 +3872,7 @@ export const evalPlayer = (
 		PUSH_STEPS.has(now.anim) && here.moving ? wayOf(tr, yaw, t) : undefined;
 	const pivot = shown ? pivotOf(tl, tr, yaw, now, t) : undefined;
 	const lock = shown && !pivot ? footLock(tl, tr, t, now, legs) : undefined;
+	const slip = from && from.w > 0 ? slipOf(here, yaw, from) : undefined;
 	const look = shown
 		? lookAt(tl, t, here, yaw, now, from) + passLook(tl, tr.pid, t, here, yaw)
 		: 0;
@@ -3896,6 +3909,7 @@ export const evalPlayer = (
 		...now,
 		...(legs !== 0 ? { legs } : {}),
 		...(lock ? { lock } : {}),
+		...(slip ? { slip } : {}),
 		...(look !== 0 ? { look } : {}),
 		...(way === undefined ? {} : { way }),
 		...(pivot ? { pivot } : {}),
@@ -4966,12 +4980,23 @@ const blendPose = (f: Blend, style?: RunStyle): Pose => {
 	const eased = blendFrom(own, g, style);
 	// (Itself still settling out of a run, his feet stepping into it, as he
 	// went on into something else: from there - as he was - not from the two
-	// eased together, both feet slid over to it in a frame.)
-	return g.w > 0 &&
+	// eased together, both feet slid over to it in a frame. A foot still
+	// waiting its turn then, where it was on the floor then - see slipped.)
+	if (
+		g.w > 0 &&
 		g.w < 1 &&
 		(g.step === true || (!g.paced && stepsOver(g.anim, f.anim)))
-		? settleStep(eased, own, blendPose(g, style), 1 - g.w, standRef(f))
-		: eased;
+	) {
+		const was = blendPose(g, style);
+		const ref = standRef(f);
+		const p = settleStep(eased, own, was, 1 - g.w, ref);
+		if (!f.slip) {
+			return p;
+		}
+		const legs = settleLegs(own, was, 1 - g.w, ref);
+		return slipped(p, f.slip, 1 - legs.n.on, 1 - legs.f.on, f.turns ?? [0, 0]);
+	}
+	return eased;
 };
 const blendFrom = (q: Pose, f: Blend, style?: RunStyle): Pose => {
 	const was = blendPose(f, style);
@@ -5238,6 +5263,66 @@ const driven = (p: Pose, d: number, arms: boolean): Pose => {
 	};
 };
 
+// STEPPING OVER, A FOOT DOWN STAYS DOWN. Going on out of one move into
+// another a foot at a time (see settleStep), the foot still waiting its
+// turn is where it was on the floor as the move changed: his leg reaching
+// back (or round) to it as he goes on over it, as far as SLIP_MOST - put
+// on the leg as how far back at the hip (for its foot so far behind or
+// ahead of him: SLIP_LEG feet a radian) and out to his side.
+const SLIP_MOST = 0.5;
+const SLIP_LEG = 2.4;
+const slipOf = (
+	here: Pt,
+	yaw: number,
+	f: Blend,
+): [number, number] | undefined => {
+	if (!f.spot) {
+		return undefined;
+	}
+	const wx = f.spot[0] - here.x;
+	const wy = f.spot[1] - here.y;
+	const c = Math.cos(yaw);
+	const sn = Math.sin(yaw);
+	let df = wx * c + wy * sn;
+	let ds = wx * sn - wy * c;
+	const d = Math.hypot(df, ds);
+	if (d < 0.01) {
+		return undefined;
+	}
+	if (d > SLIP_MOST) {
+		df *= SLIP_MOST / d;
+		ds *= SLIP_MOST / d;
+	}
+	return [df, ds];
+};
+const slipped = (
+	p: Pose,
+	sl: [number, number],
+	wn: number,
+	wf: number,
+	// (Each leg's turn under him, if not as the pose has it.)
+	turns?: [number, number],
+) => {
+	const leg = (spin: number, w: number) => {
+		const a = (spin * Math.PI) / 180;
+		const c = Math.cos(a);
+		const sn = Math.sin(a);
+		// (Into the leg's own frame, turned under him.)
+		const f = sl[0] * c + sl[1] * sn;
+		const s = -sl[0] * sn + sl[1] * c;
+		return { hip: ((f / SLIP_LEG) * 180 * w) / Math.PI, s: s * w };
+	};
+	const n = leg(turns ? turns[0] : p.legs + p.spinN, wn);
+	const f = leg(turns ? turns[1] : p.legs + p.spinF, wf);
+	return {
+		...p,
+		hipN: p.hipN + n.hip,
+		wideN: p.wideN - n.s,
+		hipF: p.hipF + f.hip,
+		wideF: p.wideF + f.s,
+	};
+};
+
 // His pose: his move's, eased in from the last one's just after a change -
 // and an arm in whatever it is saying.
 export const poseOf = (st: PlayerState): Pose => {
@@ -5336,6 +5421,12 @@ export const poseOf = (st: PlayerState): Pose => {
 		const turnAt = (i: 0 | 1, on: number) =>
 			(lk?.[i] ?? 0) + ((ff?.[i] ?? 0) - (lk?.[i] ?? 0)) * on;
 		p = { ...p, footN: turnAt(0, onN), footF: turnAt(1, onF) };
+	}
+	// Stepping over, a foot not yet up stays where it was on the floor as
+	// he goes on over it - not carried along under him till it steps.
+	const sl = st.slip;
+	if (steps && sl) {
+		p = slipped(p, sl, 1 - steps.n.on, 1 - steps.f.on);
 	}
 	const a = st.arm;
 	if (!a || a.w <= 0) {

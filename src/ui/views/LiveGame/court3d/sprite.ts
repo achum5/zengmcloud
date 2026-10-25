@@ -538,6 +538,7 @@ const stepBlend = (f: Blend, w: number, k: Steps): Blend => {
 					] as [number, number, number, number],
 				}),
 		...(g && gw > 0 ? { from: stepBlend(g, gw, k) } : {}),
+		...(g && gw > 0 && slipStep(f.slip) ? { slip: slipStep(f.slip) } : {}),
 	};
 };
 // Each foot's own turn on top of his legs' (see lock), to as many degrees as
@@ -555,6 +556,21 @@ const footSteps = (
 	];
 	return out[0] === 0 && out[1] === 0 ? undefined : out;
 };
+// A foot left behind stepping over (see slipOf), to a few hundredths of a
+// foot.
+const SLIP_STEP = 0.05;
+const slipStep = (
+	sl: [number, number] | undefined,
+): [number, number] | undefined => {
+	if (!sl) {
+		return undefined;
+	}
+	const out = sl.map((d) => Math.round(d / SLIP_STEP) * SLIP_STEP || 0) as [
+		number,
+		number,
+	];
+	return out[0] || out[1] ? out : undefined;
+};
 const lookStep = (d: number | undefined, k: Steps) =>
 	d
 		? Math.round(d / (360 / k.turns)) * (360 / k.turns) || undefined
@@ -563,7 +579,7 @@ const lookStep = (d: number | undefined, k: Steps) =>
 const driveStep = (d: number | undefined, k: Steps) =>
 	d ? Math.round(d * k.arm) / k.arm || undefined : undefined;
 const blendKey = (f: Blend): string =>
-	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.stepLen ? `l${f.stepLen}` : ""}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.dribbleFrom ?? ""}${f.tight ? `t${f.tight}` : ""}${strideKey(f.stride)}${f.held ? "h" : ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.turns ?? ""}~${f.pivot ?? ""}~${f.down ?? ""}~${f.way ?? ""}~${f.feet ?? ""}~${f.drive ?? ""}${f.step ? "~st" : ""}${f.paced ? "~pc" : ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
+	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.stepLen ? `l${f.stepLen}` : ""}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.dribbleFrom ?? ""}${f.tight ? `t${f.tight}` : ""}${strideKey(f.stride)}${f.held ? "h" : ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.turns ?? ""}~${f.pivot ?? ""}~${f.down ?? ""}~${f.way ?? ""}~${f.feet ?? ""}~${f.drive ?? ""}${f.step ? "~st" : ""}${f.paced ? "~pc" : ""}${f.slip ? `~s${f.slip}` : ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
 
 // The pose he is drawn in: his own, stepped to the sprite's frames and turns
 // - and, easing out of his last move, a few steps of that.
@@ -598,6 +614,7 @@ const stepped = (st: PlayerState, k: Steps) => {
 		drive: driveStep(st.drive, k),
 		// Each foot down pointing where it came down, the same.
 		lock: footSteps(st.lock, k),
+		slip: f && w > 0 ? slipStep(st.slip) : undefined,
 		// His head turned to the ball, in the turns he is drawn in.
 		look: lookStep(st.look, k),
 		turn: ((turn % k.turns) + k.turns) % k.turns,
@@ -700,7 +717,7 @@ const planOf = (
 		const f = pose.from;
 		const a = pose.arm;
 		plan.id = id;
-		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.lock ? `k${pose.lock}` : ""}${pose.look ? `h${pose.look}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
+		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.lock ? `k${pose.lock}` : ""}${pose.slip ? `s${pose.slip}` : ""}${pose.look ? `h${pose.look}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
 			f ? `|${blendKey(f)}` : ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 	}
@@ -762,6 +779,7 @@ const jobOf = (
 			grip: pose.grip,
 			down: pose.down,
 			lock: pose.lock,
+			slip: pose.slip,
 			look: pose.look,
 		},
 		body,

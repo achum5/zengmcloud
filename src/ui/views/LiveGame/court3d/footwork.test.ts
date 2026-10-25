@@ -383,7 +383,70 @@ describe("footwork", () => {
 			assert.isBelow(runSlide(hgt), typical * 1.15, `${hgt} in`);
 		}
 	}, 240_000);
+
+	// Going from a shuffle into a backpedal (or a slide, or back), the foot
+	// still waiting to step stays where it was on the floor - not carried
+	// along under him till its turn comes.
+	test("a defender stepping from one footwork into another leaves his waiting foot down", () => {
+		const { frames, slow } = switchSlide();
+		assert.isAbove(frames, 300);
+		assert.isBelow(slow, SWITCH_SLOW_MOST);
+	}, 240_000);
 });
+
+// (Before: 0.92 of his speed.)
+const SWITCH_SLOW_MOST = 0.75;
+const SIDE = new Set<AnimName>(["shuffle", "back", "slide"]);
+// Easing out of one way of guarding into another on the move (not turning
+// hard), frame by frame over the first fifteen minutes: how fast the slower
+// of his feet - the one he stands on - goes over the floor, for how fast he
+// goes.
+const switchSlide = () => {
+	const body = bodyOf();
+	const STEP = 16;
+	const tl = (game ??= compile("a", 140).tl);
+	let frames = 0;
+	let slow = 0;
+	for (const tr of tl.tracks.values()) {
+		let prev: { x: number; y: number; yaw: number; feet: Pt3[] } | undefined;
+		for (let t = 0; t < Math.min(tl.end, 900_000); t += STEP) {
+			const st = evalPlayer(tl, tr.pid, t);
+			const f = st.from;
+			if (
+				fastAt(tl, t) > 1 ||
+				!st.shown ||
+				st.z > 0.05 ||
+				!f ||
+				f.w <= 0.02 ||
+				f.anim === st.anim ||
+				!SIDE.has(f.anim) ||
+				!SIDE.has(st.anim)
+			) {
+				prev = undefined;
+				continue;
+			}
+			const me = withBody(st, body);
+			const sk = skeleton(body, poseOf(me));
+			const feet = [bodyPoint(me, sk.legR.end), bodyPoint(me, sk.legL.end)];
+			if (prev) {
+				const v = (Math.hypot(st.x - prev.x, st.y - prev.y) * 1000) / STEP;
+				let turn = st.yaw - prev.yaw;
+				turn -= Math.round(turn / (2 * Math.PI)) * 2 * Math.PI;
+				if (v > 1 && (Math.abs(turn) * 180_000) / Math.PI / STEP < 120) {
+					const foot = Math.min(
+						...feet.map((q, i) =>
+							Math.hypot(q.x - prev!.feet[i]!.x, q.y - prev!.feet[i]!.y),
+						),
+					);
+					frames += 1;
+					slow += (foot * 1000) / STEP / v;
+				}
+			}
+			prev = { x: st.x, y: st.y, yaw: st.yaw, feet };
+		}
+	}
+	return { frames, slow: slow / frames };
+};
 
 const RUNNING = new Set<AnimName>(["run", "jog", "sprint", "dribble"]);
 // (Before short steps: 0.71 of them, and 0.065 ft a foot.)
