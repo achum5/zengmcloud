@@ -5747,6 +5747,9 @@ const passedBy = (
 	a: Pt3,
 	b: Pt3,
 	bodyFor: (pid: number) => Body,
+	// Coming off the rim: nobody's hand is on it as it starts, whoever's
+	// is still up there.
+	offRim = false,
 ): Pt3 | undefined => {
 	const had = passedBys.get(seg);
 	if (had !== undefined) {
@@ -5761,6 +5764,9 @@ const passedBy = (
 	] as const) {
 		if ("pid" in e) {
 			ends.add(e.pid);
+			continue;
+		}
+		if (offRim && at === seg.t0) {
 			continue;
 		}
 		for (const tr of tl.tracks.values()) {
@@ -5789,9 +5795,11 @@ const passedBy = (
 		along > 1e-6
 			? { x: -(b.y - a.y) / along, y: (b.x - a.x) / along }
 			: { x: 0, y: 1 };
-	// Each moment it would touch him: how far into its flight, how far it is
-	// from him and needs to be, and which way he is from it.
-	const close: { k: number; r: Pt3; d: number; need: number }[] = [];
+	// Each man near it, each moment of its flight: where it is then, how far
+	// out it bows there (for a bow of 1), and his head and the line up his
+	// body. (Near enough that a bow out his way could bring it to him.)
+	type Near = { k: number; p: Pt3; parts: [Pt3, Pt3, Pt3]; headR: number };
+	const near: Near[] = [];
 	for (let u = 0.1; u < 0.95; u += 0.05) {
 		const t = seg.t0 + (seg.t1 - seg.t0) * u;
 		const tau = u * T;
@@ -5805,71 +5813,107 @@ const passedBy = (
 				continue;
 			}
 			const st = evalPlayer(tl, tr.pid, t);
-			if (!st.shown || Math.hypot(st.x - p.x, st.y - p.y) > 3) {
+			if (!st.shown || Math.hypot(st.x - p.x, st.y - p.y) > 3 + BOW_MOST) {
 				continue;
 			}
 			const body = bodyFor(tr.pid);
 			const me = withBody(st, body);
 			const sk = skeleton(body, poseOf(me));
-			const head = bodyPoint(me, sk.head);
-			const hip = bodyPoint(me, sk.pelvis);
-			const chest = bodyPoint(me, sk.chest);
-			// The nearest of him to it: his head, or the line up his body.
-			const k = clamp01(
-				((p.x - hip.x) * (chest.x - hip.x) +
-					(p.y - hip.y) * (chest.y - hip.y) +
-					(p.z - hip.z) * (chest.z - hip.z)) /
-					Math.max(
-						1e-6,
-						(chest.x - hip.x) ** 2 +
-							(chest.y - hip.y) ** 2 +
-							(chest.z - hip.z) ** 2,
-					),
-			);
-			const spine = {
-				x: hip.x + (chest.x - hip.x) * k,
-				y: hip.y + (chest.y - hip.y) * k,
-				z: hip.z + (chest.z - hip.z) * k,
-			};
-			for (const [c, r] of [
-				[head, body.headR],
-				[spine, TORSO_R],
-			] as const) {
-				const need = r + BALL_R + PASS_MARGIN;
-				const d = Math.hypot(p.x - c.x, p.y - c.y, p.z - c.z);
-				if (d < need) {
-					close.push({
-						k: 4 * u * (1 - u),
-						r: { x: p.x - c.x, y: p.y - c.y, z: p.z - c.z },
-						d,
-						need,
-					});
-				}
-			}
+			near.push({
+				k: 4 * u * (1 - u),
+				p,
+				parts: [
+					bodyPoint(me, sk.head),
+					bodyPoint(me, sk.pelvis),
+					bodyPoint(me, sk.chest),
+				],
+				headR: body.headR,
+			});
 		}
 	}
+	// Where it is at one of those moments, bowed out `off` (feet): the
+	// nearest of him to it - his head, or the line up his body - how far
+	// it is, and how far it needs to be.
+	const gaps = (n: Near, off: Pt3) => {
+		const q = {
+			x: n.p.x + off.x * n.k,
+			y: n.p.y + off.y * n.k,
+			z: n.p.z + off.z * n.k,
+		};
+		const [head, hip, chest] = n.parts;
+		const k = clamp01(
+			((q.x - hip.x) * (chest.x - hip.x) +
+				(q.y - hip.y) * (chest.y - hip.y) +
+				(q.z - hip.z) * (chest.z - hip.z)) /
+				Math.max(
+					1e-6,
+					(chest.x - hip.x) ** 2 +
+						(chest.y - hip.y) ** 2 +
+						(chest.z - hip.z) ** 2,
+				),
+		);
+		const spine = {
+			x: hip.x + (chest.x - hip.x) * k,
+			y: hip.y + (chest.y - hip.y) * k,
+			z: hip.z + (chest.z - hip.z) * k,
+		};
+		return (
+			[
+				[head, n.headR],
+				[spine, TORSO_R],
+			] as const
+		).map(([c, r]) => ({
+			r: { x: q.x - c.x, y: q.y - c.y, z: q.z - c.z },
+			d: Math.hypot(q.x - c.x, q.y - c.y, q.z - c.z),
+			need: r + BALL_R + PASS_MARGIN,
+		}));
+	};
+	// How far into anybody it goes, bowed out `off`.
+	const into = (off: Pt3) =>
+		Math.max(0, ...near.flatMap((n) => gaps(n, off).map((g) => g.need - g.d)));
+	// Each moment it would touch him straight.
+	const none = { x: 0, y: 0, z: 0 };
+	const close = near.flatMap((n) =>
+		gaps(n, none)
+			.filter((g) => g.d < g.need)
+			.map((g) => ({ ...g, k: n.k })),
+	);
 	// Out to the side it already is of him where it comes closest, across
 	// its flight - never up or down: in the air it falls as it would - as far
 	// out that way as takes it clear of him every moment it would touch him.
+	// (Or, that bringing it into another man, the other way.)
 	const worst = close.reduce<(typeof close)[number] | undefined>(
 		(w, c) => (!w || c.need - c.d > w.need - w.d ? c : w),
 		undefined,
 	);
 	let out: Pt3 | undefined;
 	if (worst) {
-		const way = worst.r.x * side.x + worst.r.y * side.y < 0 ? -1 : 1;
-		const dir = { x: side.x * way, y: side.y * way, z: 0 };
-		const len = Math.max(
-			...close.map((c) => {
-				const rd = c.r.x * dir.x + c.r.y * dir.y + c.r.z * dir.z;
-				return (
-					(Math.sqrt(Math.max(0, rd * rd - c.d * c.d + c.need * c.need)) - rd) /
-					c.k
-				);
-			}),
-		);
-		if (len <= BOW_MOST) {
-			out = { x: dir.x * len, y: dir.y * len, z: dir.z * len };
+		const first = worst.r.x * side.x + worst.r.y * side.y < 0 ? -1 : 1;
+		let best = into(none);
+		for (const way of [first, -first]) {
+			const dir = { x: side.x * way, y: side.y * way, z: 0 };
+			const len = Math.max(
+				...close.map((c) => {
+					const rd = c.r.x * dir.x + c.r.y * dir.y + c.r.z * dir.z;
+					return (
+						(Math.sqrt(Math.max(0, rd * rd - c.d * c.d + c.need * c.need)) -
+							rd) /
+						c.k
+					);
+				}),
+			);
+			if (len > BOW_MOST) {
+				continue;
+			}
+			const off = { x: dir.x * len, y: dir.y * len, z: 0 };
+			const left = into(off);
+			if (left < best - 1e-6) {
+				best = left;
+				out = off;
+			}
+			if (left <= 1e-6) {
+				break;
+			}
 		}
 	}
 	passedBys.set(seg, out ?? null);
@@ -6089,7 +6133,7 @@ const ballOn = (
 		const by =
 			tl.ball[i + 1]?.kind === "path"
 				? undefined
-				: passedBy(tl, seg, a, b, bodyFor);
+				: passedBy(tl, seg, a, b, bodyFor, tl.ball[i - 1]?.kind === "path");
 		const bow = by ? 4 * u * (1 - u) : 0;
 		const T = Math.max(0, seg.t1 - seg.t0) / 1000;
 		const tau = u * T;
