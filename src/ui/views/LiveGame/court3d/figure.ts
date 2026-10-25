@@ -184,8 +184,11 @@ export const drawHeadAt = (
 	const toCamX = cam.pos.x - st.x;
 	const toCamY = cam.pos.y - st.y;
 	const toCamL = Math.hypot(toCamX, toCamY) || 1;
+	// (Turned on his neck to see the ball - see lookAt.)
+	const turned = ((st.look ?? 0) * Math.PI) / 180;
 	const front =
-		(Math.cos(st.yaw) * toCamX + Math.sin(st.yaw) * toCamY) / toCamL;
+		(Math.cos(st.yaw + turned) * toCamX + Math.sin(st.yaw + turned) * toCamY) /
+		toCamL;
 	const headC = at(head);
 	drawHead(
 		ctx,
@@ -196,6 +199,7 @@ export const drawHeadAt = (
 		at,
 		head,
 		OUTLINE * headC.k,
+		turned,
 	);
 };
 // Where his head is on his body, in his pose.
@@ -706,10 +710,17 @@ const drawHead = (
 	head: V3,
 	// How thick the ink round the back of his head (px).
 	ink = 0,
+	// And how far it is turned from the way the rest of him faces (radians,
+	// the way his yaw turns: his left is his body's -s).
+	turned = 0,
 ) => {
 	const c = { x: middle.x, y: middle.y - r * FACE_LIFT };
 	// Which way his nose points on screen.
-	const ahead = at({ f: head.f + 1, s: head.s, u: head.u });
+	const ahead = at({
+		f: head.f + Math.cos(turned),
+		s: head.s - Math.sin(turned),
+		u: head.u,
+	});
 	const turn = Math.sign(ahead.x - c.x) || 1;
 	const sprite = look.head;
 	const cut = look.cut ?? "short";

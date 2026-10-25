@@ -366,7 +366,11 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   it came down - the push foot through the push, the lead foot through the
   close - going round only while it is up; sliding back the way he came,
   the foot coming across plants where it is, pointed as it was turned:
-  planted feet turning 1.4 degrees a frame down to 0.1.)
+  planted feet turning 1.4 degrees a frame down to 0.1 - and drawn so every
+  frame, the pictures of a man kept and drawn again now told apart by his
+  feet's turn. Off the ball a man turns his head to keep the ball in sight,
+  as far as a neck goes and a moment behind it: men facing more than 100
+  degrees from the ball 18% of the time down to 11%.)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like

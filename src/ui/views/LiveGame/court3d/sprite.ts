@@ -553,6 +553,10 @@ const footSteps = (
 	];
 	return out[0] === 0 && out[1] === 0 ? undefined : out;
 };
+const lookStep = (d: number | undefined, k: Steps) =>
+	d
+		? Math.round(d / (360 / k.turns)) * (360 / k.turns) || undefined
+		: undefined;
 // How hard he is going at it, in steps.
 const driveStep = (d: number | undefined, k: Steps) =>
 	d ? Math.round(d * k.arm) / k.arm || undefined : undefined;
@@ -592,6 +596,8 @@ const stepped = (st: PlayerState, k: Steps) => {
 		drive: driveStep(st.drive, k),
 		// Each foot down pointing where it came down, the same.
 		lock: footSteps(st.lock, k),
+		// His head turned to the ball, in the turns he is drawn in.
+		look: lookStep(st.look, k),
 		turn: ((turn % k.turns) + k.turns) % k.turns,
 		yaw: (turn * Math.PI * 2) / k.turns,
 		dribble: dribbleFrame(st.dribble, k),
@@ -692,7 +698,7 @@ const planOf = (
 		const f = pose.from;
 		const a = pose.arm;
 		plan.id = id;
-		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.lock ? `k${pose.lock}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
+		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.lock ? `k${pose.lock}` : ""}${pose.look ? `h${pose.look}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
 			f ? `|${blendKey(f)}` : ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 	}
@@ -754,6 +760,7 @@ const jobOf = (
 			grip: pose.grip,
 			down: pose.down,
 			lock: pose.lock,
+			look: pose.look,
 		},
 		body,
 		px,

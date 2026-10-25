@@ -1,6 +1,7 @@
 import type {
 	Act,
 	ArenaShot,
+	BallEnd,
 	BallSeg,
 	FxKind,
 	Fx,
@@ -144,6 +145,9 @@ export type PlayerState = {
 	// left - see Pose's footN): down, it points where it came down pointing
 	// (see footLock).
 	lock?: [number, number];
+	// His head turned from the way he faces, to keep the ball in sight
+	// (degrees, the way his yaw turns - see lookAt).
+	look?: number;
 	// Shuffling, the way he goes - ahead, and across to his left (a length
 	// up to 1, as much of it as counts: none all but stood still): partly
 	// ahead or behind as well as across, each foot steps out along it (see
@@ -3817,6 +3821,7 @@ export const evalPlayer = (
 		PUSH_STEPS.has(now.anim) && here.moving ? wayOf(tr, yaw, t) : undefined;
 	const pivot = shown ? pivotOf(tl, tr, yaw, now, t) : undefined;
 	const lock = shown && !pivot ? footLock(tl, tr, t, now, legs) : undefined;
+	const look = shown ? lookAt(tl, t, here, yaw, now, from) : 0;
 	// (An arm a beat behind its reason never takes the hand his dribble has
 	// just come over into.)
 	const eased = shown ? easedArm(tl, tr, t) : undefined;
@@ -3850,11 +3855,177 @@ export const evalPlayer = (
 		...now,
 		...(legs !== 0 ? { legs } : {}),
 		...(lock ? { lock } : {}),
+		...(look !== 0 ? { look } : {}),
 		...(way === undefined ? {} : { way }),
 		...(pivot ? { pivot } : {}),
 		...(from ? { from } : {}),
 		...(arm ? { arm } : {}),
 	};
+};
+
+// WATCHING THE BALL. Off it - running, down in his stance, stood waiting
+// for it - a man turns his head to keep the ball in sight: as far round as
+// a neck goes (LOOK_MOST), and a moment behind it (LOOK_LAG), as people
+// are; less and less the further round behind him it is, not at all
+// straight behind. Not the man with it, not in a move with its own eyes on
+// something (a shot, a pass, a catch), not in the huddle - and not while
+// the picture runs through fast, his head whipped round with every pass.
+const LOOK_MOST = 70;
+const LOOK_LAG = 120;
+const LOOK_BACK = 115;
+// (The huddle's start and end, eased over so long - and where the ball is
+// taken over the last LOOK_SPAN, every LOOK_EVERY: a head turned through
+// a moment, not snapped round in a frame as the ball is gone on.)
+const LOOK_EASE = 500;
+const LOOK_SPAN = 200;
+const LOOK_NEAR = 1.5;
+const LOOK_NEAR_EASE = 4;
+const LOOK_EVERY = 40;
+const FREE_HEAD = new Set<AnimName>([
+	"run",
+	"sprint",
+	"jog",
+	"walk",
+	"drift",
+	"ready",
+	"stance",
+	"guard",
+	"easy",
+	"laneSet",
+	"boxOut",
+	"back",
+	"slide",
+	"shuffle",
+	"sideStep",
+	"closeout",
+	"spotUp",
+	"callBall",
+	"clapCall",
+	"stanceHands",
+	"stancePoint",
+	"hips",
+	"crouch",
+]);
+const lookAt = (
+	tl: CourtTimeline,
+	t: number,
+	here: Pt,
+	yaw: number,
+	now: Doing,
+	from: Blend | undefined,
+): number => {
+	// (Easing out of one move, itself easing out of another: as free as
+	// each of them, as much as each still shows.)
+	const free = (anim: AnimName, held: boolean | undefined, hand?: Hand) =>
+		FREE_HEAD.has(anim) && !held && hand === undefined ? 1 : 0;
+	const freed = (f: Blend | undefined, own: number): number =>
+		f
+			? own * (1 - f.w) +
+				freed(f.from, free(f.anim, f.held, f.dribbleHand)) * f.w
+			: own;
+	const w =
+		freed(from, free(now.anim, now.holding, now.dribbleHand)) *
+		(1 - huddledAt(tl, t)) *
+		clamp01((ARM_FAST - fastAt(tl, t)) / (ARM_FAST - 1));
+	if (w <= 0) {
+		return 0;
+	}
+	// (The way to it over that time, each moment's as much as the others':
+	// between one step of LOOK_EVERY and the next, the one eased into the
+	// other.)
+	const end = t - LOOK_LAG;
+	const g = Math.floor(end / LOOK_EVERY) * LOOK_EVERY;
+	const f = (end - g) / LOOK_EVERY;
+	let sx = 0;
+	let sy = 0;
+	let near = 0;
+	const n = LOOK_SPAN / LOOK_EVERY;
+	for (let i = -1; i < n; i++) {
+		const b = ballSpot(tl, g - i * LOOK_EVERY);
+		if (!b) {
+			continue;
+		}
+		const k = i === -1 ? f : i === n - 1 ? 1 - f : 1;
+		const d = Math.sqrt(dist2(here, b));
+		if (d > 1e-6) {
+			sx += ((b.x - here.x) / d) * k;
+			sy += ((b.y - here.y) / d) * k;
+		}
+		// (Coming right by him, or in his hands: ahead - not swung round
+		// after it as it goes by under his nose.)
+		near += clamp01((d - LOOK_NEAR) / LOOK_NEAR_EASE) * k;
+	}
+	near /= n;
+	if (sx * sx + sy * sy < 1e-9) {
+		return 0;
+	}
+	const rel = (wrapAngle(Math.atan2(sy, sx) - yaw) * 180) / Math.PI;
+	const a = Math.abs(rel);
+	const reach = a <= LOOK_BACK ? 1 : Math.max(0, (180 - a) / (180 - LOOK_BACK));
+	return Math.sign(rel) * Math.min(a, LOOK_MOST) * reach * near * w;
+};
+// Where the ball is on the floor at t, near enough to look at: with
+// whoever has it, along its way to wherever it is going.
+const ballSpot = (tl: CourtTimeline, t: number): Pt | undefined => {
+	const seg = tl.ball[ballIndexAt(tl, t)];
+	if (!seg) {
+		return undefined;
+	}
+	const endAt = (e: BallEnd, when: number): Pt | undefined => {
+		if (!("pid" in e)) {
+			return e;
+		}
+		const tr = tl.tracks.get(e.pid);
+		return tr ? spotAt(tr, when) : undefined;
+	};
+	if (seg.kind === "hold") {
+		const tr = tl.tracks.get(seg.pid);
+		return tr ? spotAt(tr, t) : undefined;
+	}
+	if (seg.kind === "rest") {
+		return seg.at;
+	}
+	if (seg.kind === "path") {
+		return playAt(seg.pts, t - seg.t0);
+	}
+	const u = seg.t1 > seg.t0 ? clamp01((t - seg.t0) / (seg.t1 - seg.t0)) : 1;
+	const a = seg.kind === "fly" ? endAt(seg.from, seg.t0) : seg.from;
+	const z = seg.kind === "fly" ? endAt(seg.to, seg.t1) : seg.to;
+	return a && z ? { x: a.x + (z.x - a.x) * u, y: a.y + (z.y - a.y) * u } : a;
+};
+// How far into a huddle - a timeout, the break between periods, and on
+// through the calls made in it - he is at t (0 to 1, eased in and out).
+const huddles = new WeakMap<CourtTimeline, [number, number][]>();
+const huddledAt = (tl: CourtTimeline, t: number): number => {
+	let spans = huddles.get(tl);
+	if (!spans) {
+		spans = [];
+		tl.beats.forEach((b, i) => {
+			if (!HUDDLES.has(b.type)) {
+				return;
+			}
+			let end = b.end;
+			for (
+				let k = i + 1;
+				k < tl.beats.length && STILL_HUDDLED.has(tl.beats[k]!.type);
+				k++
+			) {
+				end = Math.max(end, tl.beats[k]!.end);
+			}
+			spans!.push([b.actionStart, end]);
+		});
+		huddles.set(tl, spans);
+	}
+	let most = 0;
+	for (const [a, b] of spans) {
+		if (t > a && t < b) {
+			most = Math.max(
+				most,
+				Math.min(1, (t - a) / LOOK_EASE, (b - t) / LOOK_EASE),
+			);
+		}
+	}
+	return most;
 };
 
 // Push steps, a foot out and the other closed up after it (see slanted).
