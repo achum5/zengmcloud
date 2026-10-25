@@ -264,6 +264,7 @@ const LUNGE_MOST_FT = 8;
 const LUNGE_BACK_MS = 250;
 const LUNGE_ON_MS = 150;
 const LUNGE_STEP_MS = 10;
+const LUNGE_MOST_FPS = 28;
 const CUT_MERGE_MS = 60;
 const GAITS = new Set<Move>(["walk", "jog", "run", "sprint"]);
 const STEPS = new Set<Move>([...GAITS, "back", "slide", "shuffle"]);
@@ -407,6 +408,38 @@ const plantedTo = (v: number, ve: number, ahead: number): number =>
 			: ve,
 	);
 
+// Planted from v (ft/s) at `at`, going (cos, sin), for `to` (see
+// plantFor): the pace he is down to, and the most of his pace he could
+// take round (`down`, if given) - as far round as it is from where he gets
+// to planting, not from where he began it: on past it planting, it is
+// further round, and nearer.
+const plantedFor = (
+	v: number,
+	at: Pt,
+	cos: number,
+	sin: number,
+	to: Pt,
+	down?: number,
+): { ve: number; want: number } => {
+	const ahead = (to.x - at.x) * cos + (to.y - at.y) * sin;
+	const round = (p: Pt) => angleAt({ x: p.x - cos, y: p.y - sin }, p, to);
+	let want = down ?? v * cutKeep(round(at));
+	let ve = plantedTo(v, want, ahead);
+	for (let k = 0; k < 2 && down === undefined; k++) {
+		const d = (v * v - ve * ve) / (2 * CUT_ACCEL);
+		if (!(d > 0)) {
+			break;
+		}
+		const less = v * cutKeep(round({ x: at.x + cos * d, y: at.y + sin * d }));
+		if (!(less < want)) {
+			break;
+		}
+		want = less;
+		ve = plantedTo(v, want, ahead);
+	}
+	return { ve, want };
+};
+
 // Planting for `to` off leg l, where it has him at `at` (as plantFor
 // would): how long it takes him (s), how far on along it he goes the
 // while (feet), and the pace he is down to - none of it, not going quick
@@ -429,11 +462,13 @@ const plantOn = (
 	) {
 		return { T: 0, on: 0, ve: v };
 	}
-	const ahead =
-		((to.x - at.x) * (l.to.x - l.from.x) +
-			(to.y - at.y) * (l.to.y - l.from.y)) /
-		far;
-	const ve = plantedTo(v, v * cutKeep(turn), ahead);
+	const { ve } = plantedFor(
+		v,
+		at,
+		(l.to.x - l.from.x) / far,
+		(l.to.y - l.from.y) / far,
+		to,
+	);
 	const T = (v - ve) / CUT_ACCEL;
 	return { T, on: ((v + ve) / 2) * T, ve };
 };
@@ -1291,12 +1326,7 @@ class Actor {
 		const far = dist(l.from, l.to);
 		const cos = (l.to.x - l.from.x) / far;
 		const sin = (l.to.y - l.from.y) / far;
-		const want = down ?? v * cutKeep(turn);
-		const ve = plantedTo(
-			v,
-			want,
-			(to.x - l.to.x) * cos + (to.y - l.to.y) * sin,
-		);
+		const { ve, want } = plantedFor(v, l.to, cos, sin, to, down);
 		// (No room to plant for it short of where he goes: bent round into
 		// it, if he can be.)
 		if (ve - want > (v - want) / 2 && this.bendInto(to, v)) {
@@ -1874,7 +1904,15 @@ class Actor {
 				this.cut(t0);
 			}
 		}
-		this.act(move, t1, yaw, to);
+		// (No further than he can launch himself in the time there is: short
+		// of it, late into it.)
+		const far = dist(this.at, to);
+		const most = (LUNGE_MOST_FPS * (t1 - this.t)) / 1000;
+		const u = far > most ? most / far : 1;
+		this.act(move, t1, yaw, {
+			x: this.at.x + (to.x - this.at.x) * u,
+			y: this.at.y + (to.y - this.at.y) * u,
+		});
 	}
 
 	// Reaching for it, his hands on it at `at` (see CATCH_REACH_MS) - only
@@ -5945,15 +5983,12 @@ class Action {
 			if (!(turn > CUT_LEAST)) {
 				return { at, t: c, v: paceOn(l, at, hit) };
 			}
-			const ve = plantedTo(
-				v,
-				v * cutKeep(turn),
-				(hit.x - at.x) * cos + (hit.y - at.y) * sin,
-			);
+			const { ve } = plantedFor(v, at, cos, sin, hit);
 			const T = (v - ve) / CUT_ACCEL;
 			const d = ((v + ve) / 2) * T;
 			const off = { x: at.x + cos * d, y: at.y + sin * d };
-			return { at: off, t: c + T * 1000, v: (ve * (1 + Math.cos(turn))) / 2 };
+			const round = angleAt({ x: off.x - cos, y: off.y - sin }, off, hit);
+			return { at: off, t: c + T * 1000, v: (ve * (1 + Math.cos(round))) / 2 };
 		};
 		// (The pace he has to get up to - see RAMP_ACCEL - to be there by
 		// `lead`, off what he is doing at c.)
