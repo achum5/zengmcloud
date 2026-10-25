@@ -5,7 +5,8 @@ import type { Move } from "./poses.ts";
 import { Man, meet } from "./postgame.ts";
 import { sidelineOf } from "./sideline.ts";
 
-// THE COIN TOSS, before the opening kickoff - and overtime's: each side's
+// THE COIN TOSS, before overtime's kickoff (the game's own opens with the
+// teams out: see tunnel.ts): each side's
 // captains out to the middle of the field to face each other, the referee
 // at the end of the two of them and the rest of the crew stood behind him;
 // the coin up off his thumb, a look at it, his arm out to the side that won

@@ -47,6 +47,13 @@ export const COACH_LINE = BORDER + 6;
 export const LIMIT_LINE = BORDER + 9 + 4 / 12;
 export const LIMIT_END = BORDER + 6;
 export const BENCH_OFF = 30.5;
+// The home team's tunnel, out from under the stands across the field down by
+// the left end zone: the middle of it along the field, and its opening
+// (feet) - wide and tall enough for the men, drawn the size they are (see
+// body.ts).
+export const TUNNEL_X = GOAL_L + 4 * YD;
+export const TUNNEL_W = 18;
+export const TUNNEL_H = 12;
 
 export const POST_W = 18.5;
 export const CROSSBAR_Z = 10;

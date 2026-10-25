@@ -324,6 +324,15 @@ export class Man {
 		}
 		return this.t;
 	}
+	// On through `to` at his pace (or this one), not pulling up there: a way
+	// taken a stretch at a time.
+	on(to: Pt, pace = this.pace): number {
+		const far = dist(this.at, to);
+		if (far > 0.05) {
+			this.step(to, (far / pace) * 1000, pace);
+		}
+		return this.t;
+	}
 	private step(to: Pt, ms: number, fps: number) {
 		const l = this.legs.at(-1)!;
 		this.legs.push({

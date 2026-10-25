@@ -2,13 +2,23 @@ import { makeCourtRng } from "../courtRng.ts";
 import { shade } from "./color.ts";
 import type { TexturedPlane } from "../court3d/planes.ts";
 import type { FieldTeam } from "./fieldPaint.ts";
-import { END_ROOM, FIELD_L, FIELD_W, SIDE_ROOM, type Pt3 } from "./geometry.ts";
+import {
+	END_ROOM,
+	FIELD_L,
+	FIELD_W,
+	SIDE_ROOM,
+	TUNNEL_H,
+	TUNNEL_W,
+	TUNNEL_X,
+	type Pt3,
+} from "./geometry.ts";
 import { venueFor, type Venue } from "./venue.ts";
 
 // THE STADIUM: an open bowl round the field - a padded wall with an LED
 // board along it, the lower bowl rising from it, a club level's ribbon board,
 // the upper deck over that, the light banks on the rim against the night sky
-// - and the stands and video boards behind each end zone. Each a flat
+// - and the stands and video boards behind each end zone, and the home
+// team's tunnel out from under them by the left end zone. Each a flat
 // picture painted once a game and stood up in the world (see planes.ts), as
 // the 3D court's arena is.
 //
@@ -204,6 +214,19 @@ export const END_BOARDS: [TexturedPlane, TexturedPlane] = [0, 1].map((side) => {
 		4,
 	);
 }) as [TexturedPlane, TexturedPlane];
+
+// The tunnel: its opening in a face stood out from the wall, up past the top
+// of it, with a header over the opening.
+const PORTAL_W = TUNNEL_W + 8;
+const PORTAL_H = TUNNEL_H + 4;
+export const TUNNEL = plane(
+	{ x: TUNNEL_X - PORTAL_W / 2, y: WALL_Y + 0.1, z: PORTAL_H },
+	{ x: 1, y: 0, z: 0 },
+	{ x: 0, y: 0, z: -1 },
+	PORTAL_W,
+	PORTAL_H,
+	8,
+);
 
 const canvasOf = (w: number, h: number): HTMLCanvasElement => {
 	const c = document.createElement("canvas");
@@ -422,6 +445,80 @@ const paintBoard = (
 	return c;
 };
 
+// The tunnel's face: the wall's color, the team's name over the opening in
+// the header, a stripe of the second color under it; the opening dark, the
+// walls, floor and ceiling of it running back to the light at its far end.
+const paintTunnel = (
+	w: number,
+	h: number,
+	ppf: number,
+	home: FieldTeam | undefined,
+	name: string,
+	style: StadiumStyle,
+) => {
+	const c = canvasOf(w, h);
+	const g = c.getContext("2d")!;
+	const c0 = teamColor(home, 0, "#8c1d40");
+	const c1 = teamColor(home, 1, "#f2c14e");
+	g.fillStyle = style.wall;
+	g.fillRect(0, 0, w, h);
+	const ox = ((PORTAL_W - TUNNEL_W) / 2) * ppf;
+	const oy = (PORTAL_H - TUNNEL_H) * ppf;
+	const ow = TUNNEL_W * ppf;
+	const oh = TUNNEL_H * ppf;
+	g.fillStyle = shade(c0, -0.08);
+	g.fillRect(0, 0, w, oy * 0.86);
+	g.fillStyle = c1;
+	g.fillRect(0, oy * 0.86, w, oy * 0.14);
+	g.font = `900 ${oy * 0.56}px "Arial Black", "Helvetica Neue", Arial, sans-serif`;
+	g.textAlign = "center";
+	g.textBaseline = "middle";
+	g.fillStyle = "#f6f6f6";
+	g.fillText(name, w / 2, oy * 0.45, w * 0.9);
+	// (Its far end: this much of the opening, its foot this far down it.)
+	const bw = ow * 0.34;
+	const bh = oh * 0.4;
+	const bx = ox + (ow - bw) / 2;
+	const by = oy + oh * 0.68 - bh;
+	const quad = (pts: number[], fill: string | CanvasGradient) => {
+		g.beginPath();
+		g.moveTo(pts[0]!, pts[1]!);
+		for (let k = 2; k < pts.length; k += 2) {
+			g.lineTo(pts[k]!, pts[k + 1]!);
+		}
+		g.closePath();
+		g.fillStyle = fill;
+		g.fill();
+	};
+	const floor = g.createLinearGradient(0, oy + oh, 0, by + bh);
+	floor.addColorStop(0, "#34353b");
+	floor.addColorStop(1, "#1a1b20");
+	quad([ox, oy + oh, ox + ow, oy + oh, bx + bw, by + bh, bx, by + bh], floor);
+	quad([ox, oy, bx, by, bx, by + bh, ox, oy + oh], "#111216");
+	quad(
+		[ox + ow, oy, bx + bw, by, bx + bw, by + bh, ox + ow, oy + oh],
+		"#111216",
+	);
+	quad([ox, oy, ox + ow, oy, bx + bw, by, bx, by], "#08090b");
+	const glow = g.createRadialGradient(
+		bx + bw / 2,
+		by + bh * 0.55,
+		0,
+		bx + bw / 2,
+		by + bh * 0.55,
+		bw * 0.75,
+	);
+	glow.addColorStop(0, "#efe6cc");
+	glow.addColorStop(1, "#7a7058");
+	g.fillStyle = glow;
+	g.fillRect(bx, by, bw, bh);
+	// (A rim of the second color round the opening.)
+	g.strokeStyle = c1;
+	g.lineWidth = Math.max(1, ppf * 0.35);
+	g.strokeRect(ox, oy, ow, oh + g.lineWidth);
+	return c;
+};
+
 // The light banks along the rim: rows of lamps, glowing.
 const paintRim = (w: number, h: number, ppf: number, style: StadiumStyle) => {
 	const c = canvasOf(w, h);
@@ -547,6 +644,7 @@ export type StadiumPaint = {
 	endWall: HTMLCanvasElement;
 	endStands: [HTMLCanvasElement, HTMLCanvasElement, HTMLCanvasElement];
 	board: HTMLCanvasElement;
+	tunnel: HTMLCanvasElement;
 	roof?: HTMLCanvasElement;
 };
 
@@ -610,6 +708,14 @@ export const paintStadium = (
 		),
 		endStands,
 		board: paintVideoBoard(END_BOARDS[0].w, END_BOARDS[0].h, home, logo),
+		tunnel: paintTunnel(
+			TUNNEL.w,
+			TUNNEL.h,
+			TUNNEL.w / PORTAL_W,
+			home,
+			name || region,
+			style,
+		),
 		...(style.roof === "dome"
 			? { roof: paintRoof(ROOF.w, ROOF.h, ROOF.w / (X1 - X0), seed) }
 			: {}),

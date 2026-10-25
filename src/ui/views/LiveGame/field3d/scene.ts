@@ -34,6 +34,7 @@ import {
 	RIM,
 	UPPER,
 	ROOF,
+	TUNNEL,
 	WALL,
 	type StadiumPaint,
 } from "./stadium.ts";
@@ -246,6 +247,7 @@ export const drawFieldFrame = (f: FieldFrame) => {
 		drawTexturedPlane(ctx, cam, END_WALLS[side], st.endWall, 16, 1);
 	}
 	drawTexturedPlane(ctx, cam, WALL, st.wall, 24, 1);
+	drawTexturedPlane(ctx, cam, TUNNEL, st.tunnel, 4, 2);
 	// The ground: the turf, the end zones' paint, the logo, the numbers.
 	drawTexturedPlane(ctx, cam, TURF_PLANE, paint.turf, 32, 16);
 	drawTexturedPlane(ctx, cam, END_ZONE_PLANES[0], paint.endZones[0], 4, 16);

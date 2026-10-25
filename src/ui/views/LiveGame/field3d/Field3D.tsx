@@ -88,6 +88,7 @@ import {
 	tvCameraGear,
 } from "./media.ts";
 import { tvCrewFor } from "./tv.ts";
+import { runOutGear } from "./tunnel.ts";
 import { makeFieldFarm, spawnFieldWorker } from "./farm.ts";
 import {
 	drawFieldPlayer,
@@ -740,6 +741,7 @@ const Field3D = ({
 				...tvCameraGear(ctx, view, moment.players, body),
 				...waterGear(ctx, view, moment.players, body),
 				...showerGear(ctx, view, moment, body, sprites.fine === true),
+				...runOutGear(ctx, view, moment.play?.runOut, moment.t),
 			);
 			for (const f of moment.flags ?? []) {
 				items.push({

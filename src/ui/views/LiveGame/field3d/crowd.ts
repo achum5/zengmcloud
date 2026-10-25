@@ -2,7 +2,8 @@ import type { FieldTimeline } from "./director.ts";
 import { playAt } from "./evaluate.ts";
 import type { Side } from "./geometry.ts";
 
-// THE CROWD ON ITS FEET: up for a big play of the home team's, arms going -
+// THE CROWD ON ITS FEET: up for a big play of the home team's (and for the
+// team out of its tunnel before the game), arms going -
 // the road team's fans, a few of them - and sitting back down (the 3D
 // court's, for football: see court3d/scene.ts crowdUp).
 
@@ -25,13 +26,17 @@ export const cheerAt = (
 	const play = playAt(tl, t);
 	const k = play ? tl.plays.indexOf(play) : -1;
 	let out: ReturnType<typeof cheerAt>;
-	for (const p of [tl.plays[k], tl.plays[k - 1]]) {
-		const c = p?.cheer;
+	// (The home team out of its tunnel too: see tunnel.ts.)
+	for (const c of [
+		tl.plays[k]?.cheer,
+		tl.plays[k]?.runOut?.cheer,
+		tl.plays[k - 1]?.cheer,
+	]) {
 		if (!c || c.t > t) {
 			continue;
 		}
 		const e = t - c.t;
-		const hold = c.big ? HOLD_BIG : HOLD;
+		const hold = c.hold ?? (c.big ? HOLD_BIG : HOLD);
 		const level =
 			e < RISE ? e / RISE : e < hold ? 1 : Math.max(0, 1 - (e - hold) / FALL);
 		if (level > 0 && (!out || level > out.level)) {

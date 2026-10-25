@@ -545,6 +545,15 @@ const lay = (men: SidelineMan[], play: Play): Map<number, Spot> => {
 	return out;
 };
 
+// The home team's players out of their tunnel before the game, not yet on
+// their sideline (see tunnel.ts).
+const runningOut = (s: SidelineMan, play: Play, t: number) =>
+	play.runOut !== undefined &&
+	t < play.runOut.cut &&
+	s.team === play.runOut.team &&
+	s.unit !== "coach" &&
+	s.unit !== "staff";
+
 // Who is on the field for a play (a head coach out to shake hands too):
 // everyone else is on his sideline - but for the captains out for the coin
 // toss, until it is done.
@@ -795,7 +804,8 @@ export const netBallsAt = (
 	const spots = layoutFor(men, play);
 	const out: { at: Pt3; axis?: Pt3; stood?: "tee" }[] = [];
 	for (const s of men) {
-		const spot = s.kicks ? spots.get(s.id) : undefined;
+		const spot =
+			s.kicks && !runningOut(s, play, m.t) ? spots.get(s.id) : undefined;
 		const k = spot ? netKickFor(s, spot, play) : null;
 		const b = k ? netBallAt(k, m.t) : null;
 		if (b) {
@@ -823,7 +833,7 @@ export const sidelineAt = (
 	const toss = play.toss && m.t < play.toss.cut ? play.toss.men : [];
 	for (const s of men) {
 		const spot = spots.get(s.id);
-		if (!spot || toss.some((p) => p.pid === s.id)) {
+		if (!spot || toss.some((p) => p.pid === s.id) || runningOut(s, play, m.t)) {
 			continue;
 		}
 		const o = post ? outOf(s, spot, play, post.at) : null;

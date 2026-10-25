@@ -59,6 +59,7 @@ import { crewOff, stageHalftime, stagePostgame } from "./postgame.ts";
 import { SHOWER, SHOWER_MARGIN, type Shower } from "./shower.ts";
 import { stageTv } from "./tv.ts";
 import { stageToss, tossCrew } from "./toss.ts";
+import { runOutCrew, stageRunOut, type RunOut } from "./tunnel.ts";
 import { sidelineOf } from "./sideline.ts";
 
 // THE GAME STAGED: every snap of the play-by-play, in feet and milliseconds -
@@ -197,6 +198,9 @@ export type Play = {
 	// The coin toss (see toss.ts): the captains out to the middle and back;
 	// where, when the coin goes up, and when the picture cuts to the kick.
 	toss?: { men: CrewPart[]; at: Pt; flip: number; cut: number };
+	// The home team out of its tunnel before the opening kickoff, in place of
+	// the coin toss (see tunnel.ts).
+	runOut?: RunOut;
 	// The game over (see postgame.ts): the head coaches out to shake hands;
 	// from when it is, when they do, and where. (A timeout: the head coach
 	// of the side that called it out at the sideline.)
@@ -232,7 +236,8 @@ export type Play = {
 	gainX?: number;
 };
 
-export type Cheer = { t: number; side: Side; big: boolean };
+// (Held up this long, if not as long as a play's.)
+export type Cheer = { t: number; side: Side; big: boolean; hold?: number };
 
 export type Beat = {
 	i: number;
@@ -930,8 +935,10 @@ class Director {
 	lastLine = -Infinity;
 	// Where the chain crew left off.
 	chainSpots: ChainSpots | undefined;
-	// A coin toss before the next kickoff: the game's first, overtime's.
-	tossNext = true;
+	// The home team out of its tunnel before the game's first kickoff; a coin
+	// toss before overtime's.
+	runOutNext = true;
+	tossNext = false;
 
 	constructor({ events, players, gid, numPeriods = 4 }: FieldInput) {
 		this.events = events;
@@ -1180,6 +1187,8 @@ class Director {
 		const r = this.rng(i0, "play");
 		const tossed = kick && this.tossNext;
 		this.tossNext = false;
+		const runningOut = kick && this.runOutNext;
+		this.runOutNext = false;
 
 		// Who is on, and where each lines up.
 		const stats = this.statsOf(i0, i1);
@@ -1198,9 +1207,9 @@ class Director {
 			r,
 		);
 
-		// The coin toss first, at the start of the game and of overtime - the
-		// men for the kick waiting on their sidelines until the picture cuts
-		// to it (see toss.ts).
+		// The coin toss first, at the start of overtime - the men for the kick
+		// waiting on their sidelines until the picture cuts to it (see
+		// toss.ts).
 		const toss = tossed
 			? stageToss({
 					captains: [0, 1].map((team) =>
@@ -1210,8 +1219,18 @@ class Director {
 					r: this.rng(i0, "toss"),
 				})
 			: undefined;
-		const base = toss ? toss.cut : t0;
-		if (toss) {
+		// Or, before the game's first, the home team out of its tunnel - the
+		// visitors out already (see tunnel.ts).
+		const runOut = runningOut
+			? stageRunOut({
+					team: 1,
+					pids: this.roster[1].filter((pid) => !this.out.has(pid)),
+					t0,
+					r: this.rng(i0, "runOut"),
+				})
+			: undefined;
+		const base = toss ? toss.cut : runOut ? runOut.cut : t0;
+		if (toss || runOut) {
 			this.cuts.push(base);
 		}
 
@@ -1222,7 +1241,18 @@ class Director {
 			const waiting = [0, 0];
 			for (const p of placed) {
 				const legs: Leg[] = [];
-				if (toss) {
+				if (runOut?.team === p.team) {
+					// (Out of the tunnel with the rest of them, until the cut.)
+					legs.push({
+						t0,
+						t1: base,
+						from: p.at,
+						to: p.at,
+						move: p.move,
+						yaw: p.yaw,
+						...(p.mirrored ? { mirrored: true } : {}),
+					});
+				} else if (toss || runOut) {
 					const at = waitingAt(p.team, waiting[p.team]!++, r);
 					legs.push({
 						t0,
@@ -1762,6 +1792,9 @@ class Director {
 		if (toss) {
 			tossCrew(toss, crew.parts);
 		}
+		if (runOut) {
+			runOutCrew(runOut, crew.parts);
+		}
 		if (half) {
 			crewOff(crew.parts, offAt, t1, this.rng(i0, "crewOff"));
 		}
@@ -1855,6 +1888,7 @@ class Director {
 			}),
 			...(medics.length > 0 ? { medics } : {}),
 			...(hurt ? { hurt: { pid: hurt.pid, from: hurt.down } } : {}),
+			...(runOut ? { runOut } : {}),
 			...(toss
 				? {
 						toss: {

@@ -33,7 +33,9 @@ const BY_ALL_FPS = 5;
 const NEAR = SMOOTH * 2 + 1;
 // (Too little to bother with, feet; and nowhere near anybody.)
 const SLIGHT = 0.02;
+// (Off out of it: each well away from the rest, not all in each other there.)
 const GONE = -1e5;
+const goneAt = (i: number) => GONE - i * 10;
 // The man the ball comes to, left where he is from this long (ms) before
 // it is his; the man it leaves, until this long after.
 const GATHER_MS = 400;
@@ -107,6 +109,7 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 		...play.parts.filter((p) => p.pid >= 0),
 		...(play.coaches ?? []),
 		...(play.toss?.men ?? []),
+		...(play.runOut?.men ?? []),
 		...play.crew,
 	].filter((p) => p.legs.length > 0);
 	const crew = new Set(play.crew);
@@ -130,12 +133,34 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 		const from = Math.max(0, Math.ceil((toss.cut - t0) / SEP_MS));
 		men.forEach((m, i) => {
 			if (toss.men.includes(m as (typeof toss.men)[number])) {
-				xs[i]!.fill(GONE, from);
+				xs[i]!.fill(goneAt(i), from);
 			}
 		});
 	}
-	// (Nor the man with the ball coming to him, or just gone from him.)
-	const index = new Map(men.map((m, i) => [m.pid, i]));
+	// (The home team out of its tunnel there only from when each is out of it
+	// until the cut to the kick - the men for it only from then.)
+	const ro = play.runOut;
+	if (ro) {
+		const cut = Math.max(0, Math.ceil((ro.cut - t0) / SEP_MS));
+		const parts = new Set(play.parts);
+		men.forEach((m, i) => {
+			if (ro.men.includes(m)) {
+				const from = Math.ceil((m.legs[0]!.t0 - t0) / SEP_MS);
+				xs[i]!.fill(goneAt(i), 0, Math.max(0, from));
+				xs[i]!.fill(goneAt(i), cut);
+			} else if (m.team === ro.team && parts.has(m as Play["parts"][number])) {
+				xs[i]!.fill(goneAt(i), 0, cut);
+			}
+		});
+	}
+	// (Nor the man with the ball coming to him, or just gone from him - the
+	// man for the kick, not him out of the tunnel before it.)
+	const index = new Map<number, number>();
+	men.forEach((m, i) => {
+		if (!index.has(m.pid)) {
+			index.set(m.pid, i);
+		}
+	});
 	const hold = (pid: number, from: number, to: number) => {
 		const i = index.get(pid);
 		if (i === undefined) {
@@ -228,7 +253,8 @@ export const keepApart = (play: Play): Map<number, Sep[]> => {
 			});
 		}
 		if (spans.length > 0) {
-			out.set(m.pid, spans);
+			// (A man out of the tunnel and then set for the kick: both.)
+			out.set(m.pid, [...(out.get(m.pid) ?? []), ...spans]);
 		}
 	});
 	return out;

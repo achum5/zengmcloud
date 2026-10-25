@@ -2,6 +2,7 @@ import type { Shot } from "./camera.ts";
 import type { Play } from "./director.ts";
 import type { FieldMoment } from "./evaluate.ts";
 import { FIELD_L, GOAL_L, GOAL_R, MID_Y, type Pt } from "./geometry.ts";
+import { runOutShot } from "./tunnel.ts";
 
 // WHERE THE CAMERA LOOKS: the way a game is shot from the press box - on the
 // line before the snap, the offense's backfield on one side of the picture
@@ -114,6 +115,10 @@ export const aimFor = (m: FieldMoment): Shot => {
 				? setY(play)
 				: MID_Y + (play.ballY - MID_Y) * 0.35,
 	};
+	// The home team out of its tunnel: after them (see tunnel.ts).
+	if (play.runOut && t < play.runOut.cut) {
+		return runOutShot(play.runOut, t);
+	}
 	// The coin toss: in on them in the middle of the field.
 	const toss = play.toss;
 	if (toss && t < toss.cut) {
