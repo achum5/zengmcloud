@@ -271,6 +271,9 @@ const BACK_MOST = 11;
 const BACK_TOP = 13;
 // (Going no further than this, feet: no way to speak of.)
 const FACED_LEAST = 0.25;
+// (Low steps no further than this, feet: a step, the way he was told to
+// face - not turned square to it for the one step.)
+const SLIDE_STEP_FT = 1;
 // (Kept on in push steps or a backpedal he was in, to HOLD_ON times as
 // quick; turned and running on the same way already, back in them only
 // under TURNED times as quick - not round and back each step.)
@@ -287,6 +290,9 @@ const faced = (
 	const gaited = GAITS.has(move);
 	const backed = move === "back";
 	if (yaw === undefined || (!gaited && !backed && move !== "slide")) {
+		return { move, yaw };
+	}
+	if (move === "slide" && dist(from, to) < SLIDE_STEP_FT) {
 		return { move, yaw };
 	}
 	if (dist(from, to) < FACED_LEAST) {
@@ -2220,10 +2226,17 @@ const HIT_LEAST_FT = 1.2;
 // (No nearer it than this to go: round to it where he stands.)
 const TURN_IN_FT = 0.5;
 // (In the carrier's way: no further off the line he runs than this, feet;
-// given this much ground at most to meet him head on - see tackle.)
+// given this much ground at most to meet him head on - see tackle - or up
+// to GIVE_FAR_FT of it, if he has the time to backpedal it at GIVE_FPS.)
 const IN_WAY_FT = 2.5;
 const GIVE_MOST_FT = 8;
+const GIVE_FAR_FT = 16;
+const GIVE_FPS = 6;
 const GIVE_COS = -0.5;
+// (Given ground with the time: pulled up this far (feet) short of where he
+// meets him, set there this long (ms) at the least, and up into him off it.)
+const GIVE_STEP_FT = 1.5;
+const GIVE_SET_MS = 300;
 // A tackler met him head on if he came at him from this near straight in
 // front (the cosine of it); and then, this often, drove him back.
 const HEAD_ON = 0.5;
@@ -5072,10 +5085,14 @@ class Action {
 			const uy = (pt.y - c0.y) / run;
 			const on = (f.x - c0.x) * ux + (f.y - c0.y) * uy;
 			const off = Math.abs((f.x - c0.x) * uy - (f.y - c0.y) * ux);
+			// (Further back, with the time to backpedal it at his own pace -
+			// not stood in his way to be run through and come at from behind.)
+			const give = run - on + HIT_FT;
 			return on > 0 &&
 				on < run &&
 				off < IN_WAY_FT &&
-				run - on + HIT_FT < GIVE_MOST_FT
+				(give < GIVE_MOST_FT ||
+					(give < GIVE_FAR_FT && give <= (GIVE_FPS * (lead - tf)) / 1000))
 				? { x: pt.x + ux * HIT_FT, y: pt.y + uy * HIT_FT }
 				: f;
 		});
@@ -5673,7 +5690,63 @@ class Action {
 			m.t +
 			rampedMs(far - 5 - ease, v, paceOn(m.last, m.at, off)) +
 			((2 * ease) / v) * 1000;
-		if (far > 8 && far < m.top * 0.5 * secs && downBy <= fire - BREAK_SET_MS) {
+		// (Giving ground in front of him: backpedaling, square to him.)
+		const gives =
+			far > 0 &&
+			Math.cos(Math.atan2(hit.y - m.at.y, hit.x - m.at.x) - face) < GIVE_COS;
+		// (With the time for it: back at a pace he can hold - no quicker than
+		// he has to be - pulled up a step short of where he meets him and
+		// set, and up into him off that: not backpedaled into the hit, nor
+		// turned and run there, his back to him.)
+		const setAt = {
+			x: hit.x - Math.cos(face) * GIVE_STEP_FT,
+			y: hit.y - Math.sin(face) * GIVE_STEP_FT,
+		};
+		const upMs = rampedMs(GIVE_STEP_FT, m.top * FLAT_OUT, 0, GET_OFF_ACCEL);
+		const backFar = dist(m.at, setAt);
+		const backBy = lead - upMs - GIVE_SET_MS;
+		const down = STOP_ACCEL * STOP_HARD;
+		// (Up and down again: the pace v that takes backFar / v + v * per
+		// seconds - backBy, if it is quicker than GIVE_FPS.)
+		const per = 1 / (2 * RELEASE_ACCEL) + 1 / (2 * down);
+		const backT = (backBy - m.t) / 1000;
+		const disc = backT * backT - 4 * per * backFar;
+		const backV =
+			stepMs(backFar, GIVE_FPS, RELEASE_ACCEL, down) <= backT * 1000
+				? GIVE_FPS
+				: disc >= 0
+					? (backT - Math.sqrt(disc)) / (2 * per)
+					: Infinity;
+		if (
+			gives &&
+			backFar > GIVE_STEP_FT &&
+			backV <= BACK_MOST &&
+			legPace(m.last) < STOP_LEAST
+		) {
+			const bv = Math.min(backV, Math.sqrt(backFar / per));
+			const pull = Math.min(backFar / 2, (bv * bv) / (2 * down));
+			m.hold(backBy - stepMs(backFar, bv, RELEASE_ACCEL, down));
+			const u = (backFar - pull) / backFar;
+			m.getOff(
+				{
+					x: m.at.x + (setAt.x - m.at.x) * u,
+					y: m.at.y + (setAt.y - m.at.y) * u,
+				},
+				backBy - ((2 * pull) / bv) * 1000,
+				0,
+				RELEASE_ACCEL,
+				"back",
+				0,
+				face,
+			);
+			m.easeOff(pull);
+			m.hold(lead - upMs, "backerStance", look());
+			m.getOff(hit, lead, 0, GET_OFF_ACCEL, "run", 0, face);
+		} else if (
+			far > 8 &&
+			far < m.top * 0.5 * secs &&
+			downBy <= fire - BREAK_SET_MS
+		) {
 			const u = (far - 5 - ease) / (far - 5);
 			m.run(
 				{ x: m.at.x + (off.x - m.at.x) * u, y: m.at.y + (off.y - m.at.y) * u },
@@ -5689,22 +5762,17 @@ class Action {
 		) {
 			// (Right there already, and with time: squared up to him a step
 			// or so off, his feet chopping, till he comes - not walked in
-			// on him.)
+			// on him. Eyes on him on the way there, not on the spot.)
 			if (far > BREAK_NEAR_FT + 1) {
 				const at = {
 					x: hit.x + ((m.at.x - hit.x) / far) * BREAK_NEAR_FT,
 					y: hit.y + ((m.at.y - hit.y) / far) * BREAK_NEAR_FT,
 				};
-				m.go(at, m.t + nearMs, "shuffle", face);
+				m.go(at, m.t + nearMs, "slide", look());
 			}
 			m.hold(fireNear, "backerStance", look());
 			m.getOff(hit, lead, 0, GET_OFF_ACCEL, "run", 0, face);
 		} else {
-			// (Giving ground in front of him: backpedaling, square to him,
-			// if he can go that quick so.)
-			const gives =
-				far > 0 &&
-				Math.cos(Math.atan2(hit.y - m.at.y, hit.x - m.at.x) - face) < GIVE_COS;
 			// (A step or two off him, time over to walk it: set where he is,
 			// and in at him off it - not walked in on him.)
 			const fireMs = rampedMs(far, m.top * FLAT_OUT, 0, GET_OFF_ACCEL);
@@ -5721,6 +5789,7 @@ class Action {
 				}
 				m.getOff(hit, lead, 0, GET_OFF_ACCEL, "run", 0, face);
 			} else {
+				// (Backpedaling, if he gives ground and can go that quick so.)
 				m.press(
 					hit,
 					lead,
@@ -6930,11 +6999,16 @@ class Action {
 					drop = Math.max(drop, fake + 1300);
 				}
 				// (A few read steps back at least, lined up deep already - and
-				// there at a backpedal's pace, not stepping in place.)
-				const spot = this.w({
-					d: Math.max(zone.d, start.d + READ_STEPS_FT),
-					a: zone.a,
-				});
+				// there at a backpedal's pace, not stepping in place. No further
+				// back than the end line: not timed to get past it, turned and
+				// walked the last of the way there.)
+				const spot = onField(
+					this.w({
+						d: Math.max(zone.d, start.d + READ_STEPS_FT),
+						a: zone.a,
+					}),
+					m.roam,
+				);
 				// (Settling into it at the last - or, too far to get there
 				// backpedaling, turned and run there, round to the ball once
 				// he is. Not when the ball or the run calls him off it first.)
@@ -7799,7 +7873,17 @@ class Action {
 			b.hold(until, "stand", this.ahead);
 			return;
 		}
-		b.go(meet.at, meet.t);
+		// (Only a step or so to square up to him: in his drive steps, facing
+		// up the field - not turned round and walked back there.)
+		const near =
+			(dist(b.at, meet.at) / Math.max(0.001, meet.t - b.t)) * 1000 <
+			WALK_MOST_FPS;
+		b.go(
+			meet.at,
+			meet.t,
+			near ? "drive" : undefined,
+			near ? this.ahead : undefined,
+		);
 		m.cut(meet.t);
 		m.hold(meet.t);
 		const p = this.of(m.at);
