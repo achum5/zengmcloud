@@ -2747,6 +2747,16 @@ const JOLT_PER_FPS = 0.06;
 // (The blocker turned to face him, no further than this off straight
 // ahead, radians.)
 const BLOCK_TURN = 1;
+// A lineman with nobody to block helping on a man no further along the
+// line than this (feet): in a moment after the rusher gets there (ms, and
+// up to this much more, man by man), no quicker than this (ft/s) - at the
+// shoulder of his own man, this far out and back.
+const HELP_A = 7;
+const HELP_REACT_MS = 250;
+const HELP_REACT_SPREAD = 200;
+const HELP_ON_FPS = 6;
+const HELP_OUT = 2.4;
+const HELP_BACK = 0.5;
 const JOLT_MOST = 1.1;
 const JOLT_MS = 250;
 const GANG = [0.5, 0.35];
@@ -3159,6 +3169,15 @@ class Action {
 	}
 	toward(from: Pt, to: Pt) {
 		return Math.atan2(to.y - from.y, to.x - from.x);
+	}
+	// A blocker turned to his man - no further than BLOCK_TURN off straight
+	// ahead.
+	facing(from: Pt, him: Pt) {
+		const off = this.toward(from, him) - this.ahead;
+		return (
+			this.ahead +
+			clamp(Math.atan2(Math.sin(off), Math.cos(off)), -BLOCK_TURN, BLOCK_TURN)
+		);
 	}
 	// From `from` round `corner` toward `to`: the points of an arc bent as
 	// wide as he takes it at the pace he gets there at (off from still at
@@ -7202,6 +7221,7 @@ class Action {
 					(x, y) => Math.abs(this.of(y.at).a) - Math.abs(this.of(x.at).a),
 				)[0];
 		const moved = new Set<Actor>();
+		const locks: { m: Actor; b: Actor; hitT: number; ts: number[] }[] = [];
 		for (const [m, b] of engaged) {
 			const s = this.of(m.at);
 			const side = Math.sign(s.a) || 1;
@@ -7316,19 +7336,67 @@ class Action {
 						x: held[k]!.x - dir * shove(x.t),
 						y: held[k]!.y + dir * x.lat * 0.6,
 					};
-					const off = this.toward(at, him[k]!) - this.ahead;
-					b.go(
-						at,
-						x.t,
-						"passSet",
-						this.ahead +
-							clamp(
-								Math.atan2(Math.sin(off), Math.cos(off)),
-								-BLOCK_TURN,
-								BLOCK_TURN,
-							),
-					);
+					b.go(at, x.t, "passSet", this.facing(at, him[k]!));
 				});
+			}
+			locks.push({ m, b, hitT, ts: steps.map((x) => x.t) });
+		}
+		// A lineman with nobody to block: in to help on the nearest of his
+		// own locked up with a rusher - at his shoulder, turned to the
+		// rusher, giving ground with them.
+		const busy = new Set(engaged.values());
+		const helped = new Set<Actor>();
+		const aAt = (m: Actor) => this.of(m.posAt(snap)).a;
+		for (const f of blockers) {
+			if (
+				busy.has(f) ||
+				this.done.has(f.pid) ||
+				f.role === "RB" ||
+				f.role === "FB"
+			) {
+				continue;
+			}
+			const fa = aAt(f);
+			const lock = locks
+				.filter(
+					(k) =>
+						!helped.has(k.m) &&
+						k.m !== pair?.[0] &&
+						Math.abs(aAt(k.b) - fa) <= HELP_A,
+				)
+				.sort((x, y) => Math.abs(aAt(x.b) - fa) - Math.abs(aAt(y.b) - fa))[0];
+			if (!lock) {
+				continue;
+			}
+			const go = Math.max(
+				f.legs[0]!.t1,
+				lock.hitT +
+					HELP_REACT_MS +
+					((f.pid * 7) % 10) * HELP_REACT_SPREAD * 0.1,
+			);
+			const ts = lock.ts.filter((t) => t > go + HAND_STEP_MS);
+			if (ts.length === 0) {
+				continue;
+			}
+			const side = Math.sign(fa - aAt(lock.b)) || 1;
+			const spot = (t: number) => {
+				const p = lock.b.posAt(t);
+				return { x: p.x - dir * HELP_BACK, y: p.y + dir * side * HELP_OUT };
+			};
+			helped.add(lock.m);
+			f.cut(go);
+			// (Over there no quicker than HELP_ON_FPS.)
+			const from = f.at;
+			let k = 0;
+			while (
+				k < ts.length - 1 &&
+				dist(from, spot(ts[k]!)) > (HELP_ON_FPS * (ts[k]! - go)) / 1000
+			) {
+				k++;
+			}
+			for (; k < ts.length; k++) {
+				const p = spot(ts[k]!);
+				f.go(p, ts[k]!, "passSet", this.facing(p, lock.m.posAt(ts[k]!)));
 			}
 		}
 		for (const m of rushers) {
