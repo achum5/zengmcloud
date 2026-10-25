@@ -2655,6 +2655,20 @@ const LEAP_YAC = 9;
 const CONTESTED = 6;
 const LEAP_MS = 760;
 const LEAP_Z = 8.4;
+// Carried on across the field after the catch as far as he goes in this
+// long (s) at the pace he caught it at - the whole of it from this pace
+// (ft/s) on.
+const CATCH_DRIFT_S = 0.6;
+const CATCH_DRIFT_FPS = 18;
+// (So far back from that toward where he would have been brought down
+// otherwise, each in turn, till the man who does it is no more than this
+// late (ms) to him - or the least late.)
+const CATCH_BACK = [0.25, 0.5, 0.75, 1];
+// (Or first, going across quick enough - see CATCH_DRIFT_FPS - this much
+// further on (feet).)
+const CATCH_FURTHER_KEEP = 0.25;
+const CATCH_FURTHER_FT = [8, 16, 24, 32];
+const CATCH_LATE_MS = 350;
 // Laid out for it, this often, thrown this deep at least - and where the
 // sim has him down no further from where he would land than this (he goes
 // this far laid out, feet); off his feet this long before it gets there,
@@ -4605,22 +4619,72 @@ class Action {
 		const e = this.ev(i);
 		const r = this.r;
 		// After the catch: up the field to where the sim says it ended -
-		// toward the man who brings him down.
-		let across = this.of(catchPt).a + (r() - 0.5) * 24;
+		// carried on across the way he was going as he turns up it, and
+		// toward the man who brings him down (less, the more that is back
+		// against where he was going).
+		const l = rec.last;
+		const heading = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
+		const c = this.of(catchPt);
+		const ha =
+			this.of({
+				x: catchPt.x + Math.cos(heading),
+				y: catchPt.y + Math.sin(heading),
+			}).a - c.a;
+		const fps = Math.min(rec.top, legPace(l));
+		const keep = Math.abs(ha) * Math.min(1, fps / CATCH_DRIFT_FPS);
 		const ta = this.tacklerA(rec, catchAt);
-		if (ta !== undefined) {
-			across += (ta - across) * 0.5;
-		}
-		let end = this.endOf(
-			gain,
-			across,
-			e.td === true,
-			e.safety === true,
-			this.outSide(
-				this.of(catchPt).a,
-				Math.max(OUT_NEAR, (gain * YD - this.of(catchPt).d) * 0.8),
-			),
+		const toward = (a: number, w: number) =>
+			ta === undefined ? a : a + (ta - a) * 0.5 * ((ta - a) * ha < 0 ? w : 1);
+		const jit = (r() - 0.5) * 24;
+		const goes = toward(
+			c.a + ha * fps * CATCH_DRIFT_S + jit * (1 - keep),
+			1 - keep,
 		);
+		const was = toward(c.a + jit, 1);
+		const out = this.outSide(c.a, Math.max(OUT_NEAR, (gain * YD - c.d) * 0.8));
+		const endAt = (a: number) =>
+			this.endOf(gain, a, e.td === true, e.safety === true, out);
+		// (Where the man who brings him down can get to him in time: further
+		// on that way, if he can be there then - or else as little back
+		// toward where he would have gone as lets him.)
+		let across = goes;
+		const by = this.statPids("defTckSolo", "defTckAst")
+			.map((pid) => this.man(pid))
+			.filter(
+				(m): m is Actor => !!m && m.team !== rec.team && !this.done.has(m.pid),
+			);
+		if (by.length > 0 && !out && e.td !== true && e.safety !== true) {
+			const on = keep > CATCH_FURTHER_KEEP ? CATCH_FURTHER_FT : [];
+			let least = Infinity;
+			for (const a of [
+				goes,
+				...on.map((ft) => goes + Math.sign(ha) * ft),
+				...CATCH_BACK.map((u) => goes + (was - goes) * u),
+			]) {
+				const pt = endAt(a).pt;
+				const far = dist(catchPt, pt);
+				const plant = plantOn(l, catchPt, pt);
+				const t1 =
+					rec.t +
+					plant.T * 1000 +
+					rampedMs(
+						Math.max(0, far - plant.on),
+						rec.top * (far > 30 ? 0.95 : 0.8),
+						plant.ve,
+					);
+				const late =
+					Math.min(...by.map((m) => this.canReach(m, pt))) - (t1 - HIT_MS);
+				if (late < least - 1) {
+					least = late;
+					across = a;
+				}
+				if (late <= CATCH_LATE_MS) {
+					across = a;
+					break;
+				}
+			}
+		}
+		let end = endAt(across);
 		const yac = dist(catchPt, end.pt);
 		const v = rec.top * (yac > 30 ? 0.95 : 0.8);
 		// Up for it at its highest, now and then - thrown deep and covered,
@@ -4637,8 +4701,6 @@ class Action {
 			r() < LEAP;
 		// Or, on the run and down about where he would land laid out for it,
 		// off his feet for it, some of the time - down there, then.
-		const l = rec.last;
-		const heading = Math.atan2(l.to.y - l.from.y, l.to.x - l.from.x);
 		const lands = this.of({
 			x: catchPt.x + Math.cos(heading) * DIVE_FT,
 			y: catchPt.y + Math.sin(heading) * DIVE_FT,
