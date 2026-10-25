@@ -828,13 +828,18 @@ const CATCH_MS = 200;
 const CATCH_HIT = 0.45;
 const CATCH_AT = releaseAt("catch", CATCH_HIT);
 // Stood waiting on a pass this long (feet) or longer, out this far from
-// the rim at the least (feet), he cuts to get open for it: a step in this
-// far (feet) from this long before it goes (ms), and back out to meet it
-// this far toward the man throwing it (feet).
+// the rim at the least (feet), he cuts to get open for it: walks his man in
+// up to this far (feet) at this pace (feet a second), starting no sooner
+// than this long before it goes (ms) - none of it, with time for less than
+// this far (feet) - plants (ms), and comes back out hard to meet it this
+// far past where he was toward the man throwing it (feet).
 const V_CUT_PASS = 14;
 const V_CUT_OUT = 15;
-const V_CUT_IN = 2.6;
-const V_CUT_MS = 750;
+const V_CUT_IN = 5;
+const V_CUT_WALK = 7;
+const V_CUT_MS = 2200;
+const V_CUT_SHORTEST = 2;
+const V_CUT_PLANT = 80;
 const V_CUT_MEET = 1.4;
 // Caught and away on the dribble: both hands on it this long first (ms),
 // not out of the air straight down onto the floor.
@@ -4013,7 +4018,8 @@ class Director {
 		const toward = b.x >= a.x ? 1 : -1;
 		const kind: PassStyle =
 			style ??
-			(d >= 22 && this.rng() < 0.55
+			// (Up over the top mostly to skip it across the floor.)
+			(d >= 22 && this.rng() < (d >= 28 ? 0.55 : 0.2)
 				? "overhead"
 				: d >= 9 && d < 22 && this.rng() < 0.3
 					? "bounce"
@@ -4113,26 +4119,22 @@ class Director {
 			ahead < BEHIND_AHEAD[1] &&
 			onLeft === (pushHand === "R") &&
 			hash01(from * 7 + 3, Math.floor(ready)) < BEHIND_SHARE;
-		// Open, he calls for it: a hand up.
-		if (d >= 12) {
-			this.gesture(to, "hand", start - 700, start + wind - 60, undefined, 0.45);
-		}
+		// Open, he calls for it: a hand up (cutting to get open for it, as
+		// he plants to come back out).
+		let callAt = start - 700;
+		let callTo = start + wind - 60;
 		// Stood waiting on it out on the floor, he gets himself open for it:
-		// a step in at the rim, then back out to meet it as it comes - his
+		// walks his man in at the rim, plants, and comes back out hard to
+		// meet it - on his way out as it goes, there as it gets there - his
 		// eyes on the ball all the while.
 		const rim = { x: rimX(this.teamOf(to)), y: COURT_H / 2 };
 		if (
 			!handOff &&
 			d >= V_CUT_PASS &&
 			dist(b, rim) >= V_CUT_OUT &&
-			(this.free.get(to) ?? 0) < start - V_CUT_MS &&
 			(b.x - COURT_W / 2) * dir > 0
 		) {
 			const inn = unitVec(b, rim);
-			const inSpot = clampPt({
-				x: b.x + inn.x * V_CUT_IN,
-				y: b.y + inn.y * V_CUT_IN,
-			});
 			const back = unitVec(b, a);
 			const met = clampPt({
 				x: b.x + back.x * V_CUT_MEET,
@@ -4146,23 +4148,42 @@ class Director {
 					? (behindArc(this.teamOf(to), met) ?? met)
 					: met;
 			const arrive0 = start + wind + flight;
-			const face = -toward as 1 | -1;
-			const inAt = this.goBy(
-				to,
-				inSpot,
-				start - V_CUT_MS,
-				start - V_CUT_MS + 380,
-				"run",
-				face,
-			);
-			this.goBy(
-				to,
-				meet,
-				Math.max(inAt, arrive0 - 480),
-				arrive0 - 40,
-				"run",
-				face,
-			);
+			const cutAt = Math.max(this.free.get(to) ?? 0, start - V_CUT_MS);
+			// As far in as there is time for.
+			for (let deep = V_CUT_IN; deep >= V_CUT_SHORTEST; deep -= 0.5) {
+				const inSpot = clampPt({
+					x: b.x + inn.x * deep,
+					y: b.y + inn.y * deep,
+				});
+				const popMs = runMs(dist(inSpot, meet), SPRINT);
+				const pop = Math.min(start + wind - 100, arrive0 - 40 - popMs);
+				const walkAt = pop - V_CUT_PLANT - runMs(deep, V_CUT_WALK);
+				if (walkAt < cutAt) {
+					continue;
+				}
+				const face = -toward as 1 | -1;
+				this.go(to, inSpot, walkAt, V_CUT_WALK, "run", face);
+				this.go(to, meet, pop, SPRINT, "run", face);
+				callAt = Math.max(callAt, pop - V_CUT_PLANT);
+				callTo = Math.max(callTo, Math.min(callAt + 320, arrive0 - 120));
+				// His man goes in with him, and is a beat behind him back out.
+				const g = this.defenderOf(to);
+				if (g !== undefined && (this.free.get(g) ?? 0) <= walkAt) {
+					const team = this.teamOf(to);
+					this.shadow(
+						g,
+						this.defensePoint(team, meet, a, false),
+						walkAt,
+						arrive0,
+						team,
+						to,
+					);
+				}
+				break;
+			}
+		}
+		if (d >= 12) {
+			this.gesture(to, "hand", callAt, callTo, undefined, 0.45);
 		}
 		this.act(
 			from,
