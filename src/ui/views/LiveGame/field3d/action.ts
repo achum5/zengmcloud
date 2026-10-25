@@ -279,6 +279,15 @@ const SLIDE_STEP_FT = 1;
 // under TURNED times as quick - not round and back each step.)
 const HOLD_ON = 1.2;
 const TURNED = 0.65;
+// (Square to the way he goes - but no further round from the way he was
+// told to face than he has to be, to as near it as FACED_KEEP radians: not
+// swung one way and back the other each step as he drifts a little across.)
+const FACED_KEEP = 0.3;
+const keptTo = (square: number, yaw: number): number => {
+	const d =
+		yaw - square - Math.round((yaw - square) / (2 * Math.PI)) * 2 * Math.PI;
+	return square + Math.max(-FACED_KEEP, Math.min(FACED_KEEP, d));
+};
 const faced = (
 	move: Move,
 	yaw: number | undefined,
@@ -310,7 +319,7 @@ const faced = (
 	}
 	// (Backpedaling, square to the way he goes.)
 	if (backed && off > BACK_OFF && fps <= BACK_TOP) {
-		return { move, yaw: way + Math.PI };
+		return { move, yaw: keptTo(way + Math.PI, yaw) };
 	}
 	const k =
 		was?.move === "shuffle" || was?.move === "back"
@@ -325,11 +334,11 @@ const faced = (
 	if (off <= BACK_OFF && fps <= SHUFFLE_MOST * k) {
 		return {
 			move: "shuffle",
-			yaw: way + (d > 0 ? 1 : -1) * (Math.PI / 2),
+			yaw: keptTo(way + (d > 0 ? 1 : -1) * (Math.PI / 2), yaw),
 		};
 	}
 	if (off > BACK_OFF && fps <= BACK_MOST * k) {
-		return { move: "back", yaw: way + Math.PI };
+		return { move: "back", yaw: keptTo(way + Math.PI, yaw) };
 	}
 	return gaited
 		? { move, yaw: undefined }
