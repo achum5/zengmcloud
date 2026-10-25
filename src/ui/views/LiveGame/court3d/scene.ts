@@ -46,6 +46,7 @@ import {
 } from "./director.ts";
 import {
 	arenaShotAt,
+	benchLook,
 	evalBall,
 	evalPlayer,
 	offenseAt,
@@ -760,6 +761,8 @@ const benchStates = (
 			: tense || won
 				? STANDING[Math.abs(p.pid) % STANDING.length]!
 				: "sit";
+		// (Following the play, sat or stood watching it.)
+		const look = up ? 0 : benchLook(f.tl, t, at, Math.PI / 2);
 		out.push({
 			st: {
 				pid: p.pid,
@@ -772,6 +775,7 @@ const benchStates = (
 				anim,
 				phase: benchPhase(anim, f.now ?? t, p.pid),
 				moving: false,
+				...(look !== 0 ? { look } : {}),
 			},
 			warm,
 		});

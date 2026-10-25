@@ -3927,9 +3927,28 @@ const lookAt = (
 		freed(from, free(now.anim, now.holding, now.dribbleHand)) *
 		(1 - huddledAt(tl, t)) *
 		clamp01((ARM_FAST - fastAt(tl, t)) / (ARM_FAST - 1));
-	if (w <= 0) {
-		return 0;
-	}
+	return w > 0 ? lookToward(tl, t, here, yaw) * w : 0;
+};
+// Off the floor - sat on the bench, stood at it - the same: his head turned
+// to follow the play, in front of him.
+export const benchLook = (
+	tl: CourtTimeline,
+	t: number,
+	at: Pt,
+	yaw: number,
+): number => {
+	const w =
+		(1 - huddledAt(tl, t)) *
+		clamp01((ARM_FAST - fastAt(tl, t)) / (ARM_FAST - 1));
+	return w > 0 ? lookToward(tl, t, at, yaw) * w : 0;
+};
+// His head's turn to the ball, as far as it goes (degrees).
+const lookToward = (
+	tl: CourtTimeline,
+	t: number,
+	here: Pt,
+	yaw: number,
+): number => {
 	// (The way to it over that time, each moment's as much as the others':
 	// between one step of LOOK_EVERY and the next, the one eased into the
 	// other.)
@@ -3962,7 +3981,7 @@ const lookAt = (
 	const rel = (wrapAngle(Math.atan2(sy, sx) - yaw) * 180) / Math.PI;
 	const a = Math.abs(rel);
 	const reach = a <= LOOK_BACK ? 1 : Math.max(0, (180 - a) / (180 - LOOK_BACK));
-	return Math.sign(rel) * Math.min(a, LOOK_MOST) * reach * near * w;
+	return Math.sign(rel) * Math.min(a, LOOK_MOST) * reach * near;
 };
 // Where the ball is on the floor at t, near enough to look at: with
 // whoever has it, along its way to wherever it is going.
