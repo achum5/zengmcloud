@@ -3103,7 +3103,7 @@ const blendInto = (
 			? to + (legTurnFrom(prior, i, facing, before.anim) - to) * prior.w
 			: to;
 	}) as [number, number];
-	const ownLock = ownPv ? undefined : footLock(tl, tr, lo, before, own);
+	const ownLock = ownPv ? undefined : footLock(tl, tr, lo, before, own, way);
 	const slip = prior && prior.w > 0 ? slipOf(there, facing, prior) : undefined;
 	// (How hard he was going at it as it changed: as it showed, itself
 	// maybe easing out of the move before.)
@@ -3871,7 +3871,8 @@ export const evalPlayer = (
 	const way =
 		PUSH_STEPS.has(now.anim) && here.moving ? wayOf(tr, yaw, t) : undefined;
 	const pivot = shown ? pivotOf(tl, tr, yaw, now, t) : undefined;
-	const lock = shown && !pivot ? footLock(tl, tr, t, now, legs) : undefined;
+	const lock =
+		shown && !pivot ? footLock(tl, tr, t, now, legs, way) : undefined;
 	const slip = from && from.w > 0 ? slipOf(here, yaw, from) : undefined;
 	const look = shown
 		? lookAt(tl, t, here, yaw, now, from) + passLook(tl, tr.pid, t, here, yaw)
@@ -4695,13 +4696,17 @@ const footAt = (
 };
 // Each foot's own turn (degrees, right, left) on top of his legs' `legs`
 // at t, doing `d`: down, as much as keeps it pointing where it came down
-// pointing; up, eased back off over its swing.
+// pointing; up, eased back off over its swing. (Shuffling, turned so far
+// that the way he goes has come round to his other side - `way`, as he
+// shows it - the foot that steps is the other one: each foot's turn is the
+// other's.)
 const footLock = (
 	tl: CourtTimeline,
 	tr: Track,
 	t: number,
 	d: Doing,
 	legs: number,
+	way?: [number, number],
 ): [number, number] | undefined => {
 	const g = d.gait;
 	if (!g) {
@@ -4742,6 +4747,14 @@ const footLock = (
 			(1 - smooth01(u))
 		);
 	}) as [number, number];
+	if (
+		PUSH_STEPS.has(anim) &&
+		way !== undefined &&
+		Math.abs(way[1]) > 1e-3 &&
+		way[1] > 0 !== leadsLeft(tl, tr, run)
+	) {
+		out.reverse();
+	}
 	return Math.abs(out[0]) < 0.05 && Math.abs(out[1]) < 0.05 ? undefined : out;
 };
 

@@ -420,7 +420,10 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   waiting to step stays where it was on the floor, his leg reaching back to
   it as he goes on over it - not carried along under him till its turn
   (the foot he stands on through the change at 0.92 of his pace down to
-  0.64). Still to do: going straight from running into a shuffle or a
+  0.64). Shuffling and turned so far round that the way he goes comes
+  round to his other side, the foot he stands on keeps pointing where it
+  came down - not let go of as if it were the one up (planted feet turned
+  more than 30 degrees, 8 a game down to 4). Still to do: going straight from running into a shuffle or a
   backpedal, or back, at speed, both feet slide through the change
   (stepped over there, his legs are flung; from all but a standstill they
   now step); and turning on the spot while all but stood in a shuffle,
