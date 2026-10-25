@@ -5253,14 +5253,15 @@ class Action {
 			carrier.arms("stiffArm", tc - 280, tc + 300);
 		} else {
 			const { to, move } = l;
-			// (Off it as fast as he went into it.)
+			// (Off it as fast as he went into it - in the gait he goes at, if
+			// that is less.)
 			const v = Math.min(carrier.top, dist(l.from, to) / (ms / 1000));
-			const on = () =>
-				carrier.go(
-					to,
-					Math.max(t1, carrier.t + (dist(carrier.at, to) / v) * 1000),
-					move,
-				);
+			const on = () => {
+				const far = dist(carrier.at, to);
+				const at = Math.max(t1, carrier.t + (far / v) * 1000);
+				const fps = far / Math.max(0.001, (at - carrier.t) / 1000);
+				carrier.go(to, at, GAITS.has(move) ? gait(fps) : move);
+			};
 			const u = how === "spin" ? HURDLE : how === "juke" ? 1 : r();
 			const half = HURDLE_MS / 2;
 			if (
