@@ -407,6 +407,37 @@ const plantedTo = (v: number, ve: number, ahead: number): number =>
 			: ve,
 	);
 
+// Planting for `to` off leg l, where it has him at `at` (as plantFor
+// would): how long it takes him (s), how far on along it he goes the
+// while (feet), and the pace he is down to - none of it, not going quick
+// enough or far enough round to have to.
+const plantOn = (
+	l: Leg,
+	at: Pt,
+	to: Pt,
+): { T: number; on: number; ve: number } => {
+	const v = legPace(l);
+	const far = dist(l.from, l.to);
+	const turn = angleAt(l.from, at, to);
+	if (
+		!RAMPS.has(l.move) ||
+		v < STOP_LEAST ||
+		l.arms ||
+		l.turn ||
+		far <= 0 ||
+		!(turn > CUT_LEAST)
+	) {
+		return { T: 0, on: 0, ve: v };
+	}
+	const ahead =
+		((to.x - at.x) * (l.to.x - l.from.x) +
+			(to.y - at.y) * (l.to.y - l.from.y)) /
+		far;
+	const ve = plantedTo(v, v * cutKeep(turn), ahead);
+	const T = (v - ve) / CUT_ACCEL;
+	return { T, on: ((v + ve) / 2) * T, ve };
+};
+
 // The pace (ft/s) he has to get up to off `v0`, at `A` ft/s/s, and go on
 // at to go `far` feet in T seconds - Infinity, if even all the way up does
 // not do it.
@@ -1453,6 +1484,72 @@ class Actor {
 		leg.from = from;
 	}
 
+	// (Whether he can be slowed down into `move` off the leg he is on - see
+	// slowOn.)
+	private slows(move?: Move): boolean {
+		const l = this.last;
+		return (
+			RAMPS.has(l.move) &&
+			!l.arms &&
+			!l.turn &&
+			(move === undefined || GAITS.has(move))
+		);
+	}
+
+	// Toward `to`, `far` feet of the way in T seconds, off `v0` ft/s - a
+	// good deal quicker than that has him going: down over his first
+	// strides of it (see STOP_ACCEL), not braked to it in one. To a little
+	// under it, there as soon as he would have been at it - or, too near
+	// to get down to it, as hard as it takes by the time he is there,
+	// STOP_HARD at most. (How far of it that takes him, and the pace he is
+	// down to.)
+	private slowOn(
+		to: Pt,
+		far: number,
+		T: number,
+		v0: number,
+		move?: Move,
+		yaw?: number,
+	): { gone: number; on: number } {
+		const from = this.at;
+		const len = dist(from, to);
+		const fps = far / T;
+		let on = fps;
+		let A = STOP_ACCEL;
+		const room = A * T * (A * T - 2 * (v0 - fps));
+		const c = room >= 0 ? v0 - A * T + Math.sqrt(room) : -1;
+		if (c >= 0 && (v0 * v0 - c * c) / (2 * A) <= far) {
+			on = c;
+		}
+		// (Not even that doing it: from no quicker than that gets him down to
+		// it there, the rest of it in his first stride - not left to stop
+		// dead from there.)
+		let v = v0;
+		const need = (v0 * v0 - on * on) / (2 * far);
+		if (need > A) {
+			A = Math.min(A * STOP_HARD, need);
+			v = Math.min(v0, Math.sqrt(on * on + 2 * A * far));
+		}
+		const td = (v - on) / A;
+		const n = Math.max(1, Math.round((td * 1000) / STOP_STEP_MS));
+		const dt = td / n;
+		const paceOf = (i: number) => v - A * dt * (i + 0.5);
+		const moveOf = slower(move ?? this.last.move, n, dt, paceOf);
+		const t0 = this.t;
+		let gone = 0;
+		for (let i = 0; i < n; i++) {
+			gone = Math.min(far, gone + paceOf(i) * dt);
+			const u = gone / len;
+			this.go(
+				{ x: from.x + (to.x - from.x) * u, y: from.y + (to.y - from.y) * u },
+				t0 + (i + 1) * dt * 1000,
+				moveOf(i),
+				yaw,
+			);
+		}
+		return { gone, on };
+	}
+
 	// To `to` at `fps`; when he gets there.
 	// (On the move already, and that a good deal quicker: up to it first -
 	// see RAMP_ACCEL - there the later for it.)
@@ -1471,6 +1568,7 @@ class Actor {
 		const v0 = into ?? 0;
 		const g = move ?? gait(fps);
 		let gone = 0;
+		let on = fps;
 		if (far > 0 && fps - v0 >= RAMP_LEAST && RAMPS.has(g)) {
 			const A = into === undefined ? RELEASE_ACCEL : RAMP_ACCEL;
 			let ta = (fps - v0) / A;
@@ -1490,9 +1588,19 @@ class Actor {
 					yaw,
 				);
 			}
+		} else if (far > 0 && v0 - fps >= SLOW_DROP && this.slows(move)) {
+			// (A good deal quicker than that: down to it as he goes.)
+			({ gone, on } = this.slowOn(
+				p,
+				far,
+				far / Math.max(1, fps),
+				v0,
+				move,
+				yaw,
+			));
 		}
 		if (far - gone > 0.01) {
-			this.go(p, this.t + ((far - gone) / Math.max(1, fps)) * 1000, move, yaw);
+			this.go(p, this.t + ((far - gone) / Math.max(1, on)) * 1000, move, yaw);
 		}
 		return this.t;
 	}
@@ -1534,6 +1642,31 @@ class Actor {
 		const far = dist(from, p);
 		const T = Math.max(0, t1 - this.t) / 1000;
 		const into = this.paceInto(p);
+		// (Going a good deal quicker than he has to - than he can, or than
+		// gets him there on time: down to it over his first strides - see
+		// slowOn - and on at what he is down to. Not a step at a time, as
+		// on his man in coverage: slowed from one to the next.)
+		const pace = T > 0 ? Math.min(fps, far / T) : fps;
+		const S = Math.min(far, pace * T);
+		if (
+			into !== undefined &&
+			into - pace >= SLOW_DROP &&
+			S > 0 &&
+			T * 1000 >= RAMP_LEG_MS &&
+			this.slows(move)
+		) {
+			const { gone } = this.slowOn(p, S, T, into, move, yaw);
+			const u = S / far;
+			if (S - gone > 0.01 && t1 > this.t) {
+				this.go(
+					{ x: from.x + (p.x - from.x) * u, y: from.y + (p.y - from.y) * u },
+					t1,
+					move,
+					yaw,
+				);
+			}
+			return;
+		}
 		const v0 = Math.min(fps, into ?? 0);
 		const A = (into === undefined ? RELEASE_ACCEL : RAMP_ACCEL) * RAMP_HARD;
 		const ta = Math.min(T, (fps - v0) / A);
@@ -2408,8 +2541,8 @@ const STOOD_APART = 1;
 // over twice this far, feet.)
 const STOOD_IN_LEAST = 8;
 const STOOD_IN_FT = 1.2;
-// A cover man into the blocker he meets: down to this much of his pace
-// as they meet (see breakDown).
+// A cover man into the blocker he meets (or a lead blocker into his man):
+// down to this much of his pace as they meet (see breakDown).
 const LOCK_KEEP = 0.5;
 // More men in on a tackle: the first, and the second, there in time to (as
 // late as this after it), this often.
@@ -4129,23 +4262,42 @@ class Action {
 			}
 			b.cut(from);
 			const fps = b.top * 0.9;
+			// (Up to speed for it off what he was doing - out of his stance,
+			// from nothing - and time to break down into him at the last: see
+			// LOCK_KEEP. Or, no catching him like that, as soon as he could
+			// be there at that pace, flat out to the last.)
+			const l = b.last;
+			const off = SET.has(l.move);
+			const late = ((fps * (1 - LOCK_KEEP) ** 2) / (2 * STOP_ACCEL)) * 1000;
 			let meet: { t: number; at: Pt } | undefined;
-			for (
-				let c = Math.max(catchAt - 150, b.t + 300);
-				c <= catchAt + 1500;
-				c += 50
-			) {
-				const p = this.of(m.posAt(c));
-				const to = this.w({ d: p.d - BLOCK_GAP, a: p.a });
-				if ((dist(b.at, to) / fps) * 1000 <= c - b.t) {
-					meet = { t: c, at: to };
-					break;
+			for (const up of [true, false]) {
+				for (
+					let c = Math.max(catchAt - 150, b.t + 300);
+					c <= catchAt + 1500 && !meet;
+					c += 50
+				) {
+					const p = this.of(m.posAt(c));
+					const to = this.w({ d: p.d - BLOCK_GAP, a: p.a });
+					const far = dist(b.at, to);
+					const ms = up
+						? rampedMs(
+								far,
+								fps,
+								off ? 0 : paceOn(l, b.at, to),
+								off ? RELEASE_ACCEL : RAMP_ACCEL,
+							) + late
+						: (far / fps) * 1000;
+					if (ms <= c - b.t) {
+						meet = { t: c, at: to };
+					}
 				}
 			}
 			if (!meet) {
 				continue;
 			}
 			b.go(meet.at, meet.t);
+			// (Broken down into him, not run into him flat out.)
+			b.breakDown(LOCK_KEEP);
 			m.cut(meet.t);
 			const p = this.of(m.at);
 			const end = Math.max(meet.t, catchAt) + SCREEN_HOLD + r() * 500;
@@ -6530,13 +6682,15 @@ class Action {
 		}
 		rec.cut(go);
 		rec.hold(go);
-		// (Up to speed for it off what he was doing - out of his stance, from
+		// (Going the other way: planted for it first - see plantFor. Up to
+		// speed for it off what he was doing - out of his stance, from
 		// nothing.)
+		rec.plantFor(restPt);
 		const into = SET.has(rec.last.move)
 			? undefined
 			: paceOn(rec.last, rec.at, restPt);
 		const reach =
-			go +
+			rec.t +
 			rampedMs(
 				dist(rec.at, restPt),
 				rec.top * 0.92,
@@ -6572,7 +6726,19 @@ class Action {
 				2,
 			);
 			near.forEach((m, k) => {
-				const from = m.posAt(this.seen);
+				// (Going the other way: planted for it first - see plantFor -
+				// and off for it from there.)
+				const was = m.posAt(this.seen);
+				const l = m.legs.findLast((x) => x.t0 < this.seen && x.t1 > x.t0);
+				const plant = l ? plantOn(l, was, bat) : { T: 0, on: 0, ve: 0 };
+				const along = l ? dist(l.from, l.to) : 0;
+				const from =
+					l && along > 0
+						? {
+								x: was.x + ((l.to.x - l.from.x) / along) * plant.on,
+								y: was.y + ((l.to.y - l.from.y) / along) * plant.on,
+							}
+						: was;
 				const yaw = this.toward(from, bat);
 				const off = Math.min(3.5, dist(from, bat));
 				const short = {
@@ -6582,12 +6748,16 @@ class Action {
 				// (Up to speed from what he was doing, a few strides of it -
 				// or, hardly any way to go, laid out from where he is.)
 				const run = dist(from, short);
-				const l = m.legs.findLast((x) => x.t0 < this.seen && x.t1 > x.t0);
-				const v0 = l && RAMPS.has(l.move) ? paceOn(l, from, short) : 0;
+				const v = l ? legPace(l) : 0;
+				const v0 =
+					l && RAMPS.has(l.move) && v > 0
+						? (paceOn(l, from, short) * plant.ve) / v
+						: 0;
 				const A = v0 > 0 ? RAMP_ACCEL : RELEASE_ACCEL;
 				const at = Math.max(
 					batT + k * 160,
 					this.seen +
+						plant.T * 1000 +
 						(run > BAT_RUN_LEAST_FT
 							? rampedMs(run, m.top * FLAT_OUT, v0, A)
 							: 0) +
@@ -6598,8 +6768,16 @@ class Action {
 				}
 				m.cut(this.seen);
 				m.hold(this.seen);
+				m.plantFor(bat);
 				if (run > BAT_RUN_LEAST_FT && at - 300 > m.t) {
-					m.getOff(short, at - 300, v0, A, "sprint");
+					const p = m.last;
+					m.getOff(
+						short,
+						at - 300,
+						RAMPS.has(p.move) ? paceOn(p, m.at, short) : 0,
+						A,
+						"sprint",
+					);
 				} else if (off > TURN_IN_FT) {
 					m.hold(at - 300);
 				} else {
@@ -7099,6 +7277,14 @@ class Action {
 						COVER_SOFT * Math.log1p(Math.exp((room - COVER_MIN) / COVER_SOFT));
 					const to = this.w({ d: p.d + cushion, a: p.a + inside * 1.8 });
 					const front = this.of(m.at).d > p.d + COVER_FRONT;
+					// (His man broken off well round from the way he is going:
+					// planted for it first - see plantFor - not snapped round
+					// on to him at full speed. On after him from the next step,
+					// if that takes him up to this one.)
+					m.plantFor(to);
+					if (t - m.t < FLICK_MS) {
+						continue;
+					}
 					// (No further a step than he can get up to going there, off
 					// what he was doing - out of his stance, from nothing.)
 					const l = m.last;
