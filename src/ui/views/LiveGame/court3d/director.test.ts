@@ -71,6 +71,10 @@ const sampleTimes = (tl: CourtTimeline, step: number) => {
 	return out;
 };
 
+// Of long passes out to a man left open, how many his man is all but
+// stood still through. (Before: one in two.)
+const OPEN_STOOD_MOST = 0.45;
+
 describe("3D director", () => {
 	test("every play-by-play line gets one beat, in order, tiling the timeline", () => {
 		for (const seed of ["a", "b", "c"]) {
@@ -3725,6 +3729,61 @@ describe("3D director", () => {
 		}
 		assert.isAbove(passes, 100);
 		assert.isBelow(stood / passes, 0.2);
+	}, 120_000);
+
+	// Passed out to a man left open, his defender reads it as it goes and is
+	// on his way out to him in the air - not stood watching it till it gets
+	// there and only then off after him.
+	test("a pass out to a man left open: his man is on his way while it is in the air", () => {
+		let passes = 0;
+		let stood = 0;
+		for (const seed of ["a", "b"]) {
+			const { tl } = compile(seed);
+			for (const seg of tl.ball) {
+				if (
+					seg.kind !== "fly" ||
+					!("pid" in seg.from) ||
+					!("pid" in seg.to) ||
+					seg.from.pid === seg.to.pid ||
+					seg.t1 - seg.t0 < 550 ||
+					fastAt(tl, seg.t0) > 1
+				) {
+					continue;
+				}
+				const R0 = evalPlayer(tl, seg.to.pid, seg.t0);
+				const R1 = evalPlayer(tl, seg.to.pid, seg.t1);
+				if (evalPlayer(tl, seg.from.pid, seg.t0).team !== R0.team) {
+					continue;
+				}
+				// (His man: the nearest of them to him as it gets there.)
+				let man: number | undefined;
+				let near = Infinity;
+				for (const tr of tl.tracks.values()) {
+					const q = evalPlayer(tl, tr.pid, seg.t1);
+					const d = Math.hypot(q.x - R1.x, q.y - R1.y);
+					if (tr.team !== R0.team && q.shown && d < near) {
+						near = d;
+						man = tr.pid;
+					}
+				}
+				if (man === undefined) {
+					continue;
+				}
+				const D0 = evalPlayer(tl, man, seg.t0);
+				const D1 = evalPlayer(tl, man, seg.t1);
+				if (Math.hypot(D0.x - R0.x, D0.y - R0.y) < 6) {
+					continue;
+				}
+				passes += 1;
+				const pace =
+					Math.hypot(D1.x - D0.x, D1.y - D0.y) / ((seg.t1 - seg.t0) / 1000);
+				if (pace < 4) {
+					stood += 1;
+				}
+			}
+		}
+		assert.isAbove(passes, 30);
+		assert.isBelow(stood / passes, OPEN_STOOD_MOST);
 	}, 120_000);
 
 	// Running, sliding, dribbling, a man still talks with a hand: the

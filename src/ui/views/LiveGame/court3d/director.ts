@@ -1179,6 +1179,8 @@ const FINAL_LOOK = 1600;
 const CLOSE_READ = 150;
 const CLOSE_RUN = 21;
 const CLOSE_CHOP = 8;
+// Leaving his man open, the slowest he goes out to him (feet a second).
+const OPEN_PACE = 9;
 const CLOSE_BREAK = 3.5;
 // How much room a jump shooter gets (by how far off him his man meets the
 // shot, feet): right on him, an arm's length, a step late - or none of it,
@@ -10794,13 +10796,24 @@ class Director {
 			}
 			return B;
 		};
+		// (Leaving him all alone, he still reads it as it goes and is on his
+		// way out to him at once - only no quicker than leaves him that far
+		// off him as it goes up: not stood watching it go, then flat out.
+		// Too near for even that, on with whatever he was doing till he has
+		// to go.)
+		let pace = CLOSE_RUN;
 		if (outAt !== undefined) {
-			// On with whatever he was doing till he has to go.
+			const G = this.posAt(d, sees);
+			const L = dist(G, breakFrom(G));
+			const room = outAt - sees;
+			if (room > runMs(L, CLOSE_RUN, 0, BURST, CLOSE_CHOP)) {
+				pace = Math.min(CLOSE_RUN, Math.max(OPEN_PACE, (L * 1000) / room));
+			}
 			for (let n = 0; n < 2; n++) {
 				const G = this.posAt(d, sees);
 				sees = Math.max(
 					sees,
-					outAt - runMs(dist(G, breakFrom(G)), CLOSE_RUN, 0, BURST, CLOSE_CHOP),
+					outAt - runMs(dist(G, breakFrom(G)), pace, 0, BURST, CLOSE_CHOP),
 				);
 			}
 		}
@@ -10835,7 +10848,7 @@ class Director {
 		const brk = breakFrom(G);
 		// Flat out to a few feet off him, then choppy steps the rest of the
 		// way in - straight on from the one into the other.
-		const broke = this.go(d, brk, sees, CLOSE_RUN, "run", undefined, {
+		const broke = this.go(d, brk, sees, pace, "run", undefined, {
 			effort: BURST,
 			onto: CLOSE_CHOP,
 		});
@@ -17554,7 +17567,19 @@ class Director {
 			const u = Math.min(1, Math.max(0, (t - s.t0) / Math.max(1, s.t1 - s.t0)));
 			const A = s.kind === "fly" ? endOf(s.from, s.t0) : s.from;
 			const B = s.kind === "fly" ? endOf(s.to, s.t1) : s.to;
-			return { at: { x: A.x + (B.x - A.x) * u, y: A.y + (B.y - A.y) * u } };
+			// (Passed to a man, it is his already to the man guarding him: he
+			// reads it as it goes and is on his way out to him in the air.)
+			const to =
+				s.kind === "fly" &&
+				"pid" in s.to &&
+				"pid" in s.from &&
+				this.teamOf(s.to.pid) === this.teamOf(s.from.pid)
+					? s.to.pid
+					: undefined;
+			return {
+				at: { x: A.x + (B.x - A.x) * u, y: A.y + (B.y - A.y) * u },
+				...(to === undefined ? {} : { holder: to }),
+			};
 		};
 		const freeThrows = this.beats.filter(
 			(bt) => bt.type === "ft" || bt.type === "missFt",

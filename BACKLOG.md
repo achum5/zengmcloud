@@ -92,6 +92,11 @@ and shoes - every one eventually, none rushed to get to the next.
       and shoots. Rework.
 - [~] Defense overall should look like it's genuinely trying to stop the offense.
   Defenders can get crossed up, confused, etc. when the offense does good things.
+  (2026-10-25: a pass out to a man left open, his defender reads it as it
+  goes and is on his way out to him in the air - left open on purpose, at a
+  pace that still has him short as it goes up, not stood watching it and
+  then flat out: long passes his man all but stood through, one in two down
+  to two in five.)
 - [x] "Attempts low post shot" should usually be a real post move, not an awkward
       drive into a 6-foot jumper (currently close to 100% of the time).
 - [x] Injuries need an animation that depends on the kind of injury.
