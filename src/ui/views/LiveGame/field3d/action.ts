@@ -4640,6 +4640,19 @@ class Action {
 		} else if (toe) {
 			this.toeTapFor(rec, end.pt, catchAt, qb);
 		}
+		// (Still on their way to where it was going, in their strides: off
+		// it once they see it caught, after him - not on through him to
+		// there.)
+		const caught = catchAt + BREAK_MS;
+		for (const m of this.d) {
+			if (
+				!this.done.has(m.pid) &&
+				m.t > caught + FLICK_MS &&
+				m.legs.every((l) => l.t1 <= caught || (GAITS.has(l.move) && !l.arms))
+			) {
+				m.cut(caught);
+			}
+		}
 		let t = Math.max(rec.t, catchAt + 260);
 		if (dive || toe) {
 			t = rec.t;
