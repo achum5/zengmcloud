@@ -143,8 +143,12 @@ export const marketSettings = {
 	// Packages of three assets, not only one or two.
 	triples: true,
 	// Pairs and threes of a team's assets that the other team values most over
-	// what they cost it, not only of those worth most to it.
-	surplusPackages: false,
+	// what they cost it; off, of those worth most to it. Built from what each
+	// team valued most, a contender only ever offered its best players, never
+	// the young players and picks a rebuilding team wants: of all pairs of
+	// teams in three leagues, deals both would make went from 2, 0 and 4 to
+	// 22, 6 and 12, the best of them better for both.
+	surplusPackages: true,
 	// How many drafts ahead a team's picks are on the table.
 	pickDraftsOnTable: PICK_DRAFTS_ON_TABLE,
 	// Which deals two CPU teams agree are held a trading day for other teams'

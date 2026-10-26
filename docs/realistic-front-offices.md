@@ -405,6 +405,12 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
     deal leaves them won 46.5% of their games against 53.5% for teams that
     did not, and as many titles, 20 each - 5 to 15 in the first five seasons,
     15 to 5 in the last five. They sell first and win later.
+- **Deals are looked for among what the other team wants.** Packages of two
+  or three assets are built from those the other team values most over what
+  they cost the team giving them. Built from what each team valued most
+  itself, a contender only ever offered its best players, never the young
+  players and picks a rebuilding team wants: of every pair of teams in three
+  leagues, deals both would make went from 2, 0 and 4 to 22, 6 and 12.
 - **Every kind of deal that happens in real life** (owner's call), as long as
   the CPU's judgment holds up: a side may give nothing (a player into another
   team's cap room, a salary dump), picks may go for picks, and every tradable
