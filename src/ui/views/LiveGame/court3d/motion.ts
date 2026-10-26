@@ -40,8 +40,37 @@ const ramp = (from: number, to: number, k: number): number => {
 	return (TAU / k) * Math.log((TOP - a) / (TOP - b)) + Math.max(0, to - b) / 4;
 };
 
-// The area under an S-shaped ramp from 0 to 1, x of the way along it.
-const rampArea = (x: number) => x * x * x - (x * x * x * x) / 2;
+// An eased ramp from 0 to 1: how hard he pushes (or brakes) builds over
+// the first part of it, holds steady, and eases off over the last - never
+// harder than he must, rather than peaking halfway through. How far up it
+// he is x of the way along, the area under it so far, and how steep it is
+// there.
+const EASE_IN = 0.2;
+const EASE_TOP = 1 / (1 - EASE_IN);
+const easeUp = (x: number) => {
+	const r = EASE_IN;
+	const c = EASE_TOP;
+	return x <= r
+		? (c * x * x) / (2 * r)
+		: x < 1 - r
+			? c * (r / 2 + x - r)
+			: 1 - (c * (1 - x) * (1 - x)) / (2 * r);
+};
+const rampArea = (x: number) => {
+	const r = EASE_IN;
+	const c = EASE_TOP;
+	if (x <= r) {
+		return (c * x * x * x) / (6 * r);
+	}
+	if (x < 1 - r) {
+		const u = x - r;
+		return c * ((r * r) / 6 + (r / 2) * u + (u * u) / 2);
+	}
+	const w = 1 - x;
+	return 0.5 - w + (c * w * w * w) / (6 * r);
+};
+const easeSteep = (x: number) =>
+	EASE_TOP * Math.min(1, x / EASE_IN, (1 - x) / EASE_IN);
 
 // Getting going over a ramp `t` seconds long, from `from` up to `to`: the
 // push he has in hand all of it, from the first step - hardest then, less and
@@ -73,14 +102,14 @@ const rampPace = (from: number, to: number, t: number, s: number): number => {
 	const tau = upTau(from, to, t);
 	const x = Math.min(1, Math.max(0, s / t));
 	return tau === undefined
-		? from + (to - from) * x * x * (3 - 2 * x)
+		? from + (to - from) * easeUp(x)
 		: TOP - (TOP - Math.max(0, from)) * Math.exp(-Math.min(s, t) / tau);
 };
 const rampPush = (from: number, to: number, t: number, s: number): number => {
 	const tau = upTau(from, to, t);
 	const x = Math.min(1, Math.max(0, s / t));
 	return tau === undefined
-		? ((to - from) / t) * 6 * x * (1 - x)
+		? ((to - from) / t) * easeSteep(x)
 		: ((TOP - Math.max(0, from)) / tau) * Math.exp(-Math.min(s, t) / tau);
 };
 
