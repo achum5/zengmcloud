@@ -3351,6 +3351,15 @@ class Director {
 		this.ballAt = at;
 	}
 
+	// Where a ball on the floor ends up: at rest, or where its bounce takes it.
+	private ballSpotOf(b: BallSeg): Pt {
+		return b.kind === "rest"
+			? b.at
+			: b.kind === "bounce"
+				? b.to
+				: { x: -99, y: -99 };
+	}
+
 	// Where the ball is "now" (end of the schedule), as a point.
 	private ballPoint(): Pt3 {
 		if (this.holder !== undefined) {
@@ -17927,12 +17936,31 @@ class Director {
 					return true;
 				}
 				const t1 = m.t0 + runMs(far, FASTEST, 0, BURST);
-				if (
-					t1 <= (next?.t0 ?? Infinity) &&
-					!acts.some((a) => a > m.t1 && a <= t1)
-				) {
-					m.t1 = t1;
-					return true;
+				// (Off to pick the ball up off the floor, he gets to it: the
+				// play's moments on the way are nothing to do with him.)
+				const fetch = this.ball.some(
+					(b, j) =>
+						b.kind === "hold" &&
+						b.pid === tr.pid &&
+						b.t0 >= m.t1 - 50 &&
+						b.t0 <= t1 + 1500 &&
+						(this.ball[j - 1]?.kind === "rest" ||
+							this.ball[j - 1]?.kind === "bounce") &&
+						dist(this.ballSpotOf(this.ball[j - 1]!), m.to) < 4,
+				);
+				if (fetch || !acts.some((a) => a > m.t1 && a <= t1)) {
+					if (t1 <= (next?.t0 ?? Infinity)) {
+						m.t1 = t1;
+						return true;
+					}
+					// (What he does next there - settling over the ball before he
+					// picks it up, say - he does once he is there, if there is
+					// still time for it: not left standing short of it.)
+					if (next && t1 < next.t1 - 100 && dist(next.from, m.to) < 0.5) {
+						m.t1 = t1;
+						next.t0 = t1;
+						return true;
+					}
 				}
 				const k = most / far;
 				m.to = {
@@ -21317,19 +21345,29 @@ class Director {
 						let sg = Math.abs(along) > 0.01 ? Math.sign(along) : i % 2 ? 1 : -1;
 						const k = Math.hypot(x, y);
 						// (Not over into a man of theirs set in a screen, though,
-						// if the other way round is clear of him.)
+						// if the other way round is clear of him - anywhere over
+						// the steps either side it is eased in over.)
 						const into = (g: number) => {
-							const px = xs[i]![s]! + ox[i]![s]! + cx * k * g;
-							const py = ys[i]![s]! + oy[i]![s]! + cy * k * g;
-							return floor[s]!.some(
-								(j) =>
-									tracks[j]!.team !== tracks[i]!.team &&
-									actOf(j, s) === "screen" &&
-									Math.hypot(
-										xs[j]![s]! + ox[j]![s]! - px,
-										ys[j]![s]! + oy[j]![s]! - py,
-									) < BY_SCREEN,
-							);
+							const q0 = Math.max(0, s - AHEAD - SOFT);
+							const q1 = Math.min(n - 1, s + AHEAD + SOFT);
+							for (let q = q0; q <= q1; q++) {
+								const px = xs[i]![q]! + ox[i]![q]! + cx * k * g;
+								const py = ys[i]![q]! + oy[i]![q]! + cy * k * g;
+								if (
+									floor[q]!.some(
+										(j) =>
+											tracks[j]!.team !== tracks[i]!.team &&
+											actOf(j, q) === "screen" &&
+											Math.hypot(
+												xs[j]![q]! + ox[j]![q]! - px,
+												ys[j]![q]! + oy[j]![q]! - py,
+											) < BY_SCREEN,
+									)
+								) {
+									return true;
+								}
+							}
+							return false;
 						};
 						if (into(sg) && !into(-sg)) {
 							sg = -sg;
