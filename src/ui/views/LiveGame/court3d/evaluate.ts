@@ -4295,11 +4295,17 @@ const LIFT_HIP = 0.45;
 // comes round past straight ahead the lead goes over from the one foot to
 // the other, not in a frame. (Out of how much of the way is across him.)
 const LEAD_SURE = 0.35;
+// (And barely going anywhere - setting off, pulling up - neither foot leads,
+// rather than the one and then the other as the way he is barely going
+// swings round: the lead comes in as he gets going, by this much way.)
+const LEAD_PACE = 0.25;
 const leftLeads = (way: [number, number]): number | undefined => {
 	const m = Math.hypot(way[0], way[1]);
-	return m < 1e-6
-		? undefined
-		: smooth01((way[1] / m + LEAD_SURE) / (2 * LEAD_SURE));
+	if (m < 1e-6) {
+		return undefined;
+	}
+	const lead = smooth01((way[1] / m + LEAD_SURE) / (2 * LEAD_SURE));
+	return 0.5 + (lead - 0.5) * smooth01(m / LEAD_PACE);
 };
 const liftedStep = (q: Pose, way: [number, number], ph: number): Pose => {
 	const [f, s] = way;
