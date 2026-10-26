@@ -17648,6 +17648,10 @@ class Director {
 		// his this lately, and for at most so long, till the next thing he or
 		// the play does.
 		const FILL_GAP = 1200;
+		// Going for the ball himself - breaking off following his man as
+		// much as this much sooner (ms) to be there for it.
+		const FOR_IT = new Set<AnimName>(["poke", "strip", "reach", "block"]);
+		const BREAK_OFF = 1500;
 		const FILL_HOLD = 300;
 		const FILL_RECENT = 4000;
 		const FILL_MAX = 8000;
@@ -18023,12 +18027,51 @@ class Director {
 							this.ball[j - 1]?.kind === "bounce") &&
 						dist(this.ballSpotOf(this.ball[j - 1]!), m.to) < 4,
 				);
-				if (
-					t1 <= (next?.t0 ?? Infinity) &&
-					(fetch || !acts.some((a) => a > m.t1 && a <= t1))
-				) {
+				// (Nor, going for the ball - a poke at it, a strip, a hand to a
+				// pass - is the reach for it: late into it, he is there with
+				// his hand out as it gets there, not left short of it and the
+				// ball knocked off somebody else.)
+				const inWay = tr.acts.filter((a) => a.t0 > m.t1 && a.t0 <= t1);
+				const forIt = inWay.every(
+					(a) => FOR_IT.has(a.anim) && t1 <= a.t0 + (a.t1 - a.t0) * 0.5,
+				);
+				if (t1 <= (next?.t0 ?? Infinity) && (fetch || forIt)) {
 					m.t1 = t1;
 					return true;
+				}
+				// Too late even so to be there for the ball: he breaks off
+				// sooner, from wherever following had him then.
+				const due = Math.min(
+					...inWay
+						.filter((a) => FOR_IT.has(a.anim))
+						.map((a) => a.t0 + (a.t1 - a.t0) * 0.4),
+				);
+				if (due < Infinity && (out.at(-1)?.t1 ?? -Infinity) <= m.t0 + 1) {
+					for (let ts = m.t0 - 50; ts > m.t0 - BREAK_OFF; ts -= 50) {
+						if (
+							tr.acts.some((a) => a.t1 > ts && a.t0 < m.t0) ||
+							cuts.some((c) => c > ts && c <= m.t0)
+						) {
+							break;
+						}
+						const p = at(ts);
+						const need = runMs(dist(p, m.to), FASTEST, 0, BURST);
+						if (ts + need <= Math.min(due, next?.t0 ?? Infinity)) {
+							while ((out.at(-1)?.t0 ?? -Infinity) >= ts) {
+								out.pop();
+							}
+							const last = out.at(-1);
+							if (last && last.t1 > ts) {
+								last.t1 = ts;
+								last.to = p;
+								last.v1 = undefined;
+							}
+							m.from = { ...p };
+							m.t0 = ts;
+							m.t1 = ts + need;
+							return true;
+						}
+					}
 				}
 				const k = most / far;
 				m.to = {

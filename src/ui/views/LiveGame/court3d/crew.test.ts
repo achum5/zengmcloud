@@ -312,39 +312,44 @@ describe("3D crew", () => {
 	// (Nor spun round after a camera cut, as their pace took in where they
 	// were before it; nor about-turned one way one frame and the other the
 	// next, after a signal.)
+	// (Over three games: one alone can have most of a few games' worth, or
+	// none.)
 	test("the officials and coaches turn, never spun round in a frame", () => {
-		const { tl, crew } = working("a");
-		const cuts = cameraCuts(tl);
-		const was = new Map<number, number>();
+		const games = ["a", "b", "c"];
 		let frames = 0;
 		let spun = 0;
 		let others = 0;
-		for (let t = 0; t < Math.min(tl.end, 900_000); t += 16) {
-			if (fastAt(tl, t) > 1 || cuts.some((c) => c > t - 16 && c <= t)) {
-				was.clear();
-				continue;
-			}
-			for (const r of crewAt(tl, t, crew).states) {
-				const yaw = was.get(r.pid);
-				if (yaw !== undefined) {
-					frames += isRef(r.pid) ? 1 : 0;
-					let d = r.yaw - yaw;
-					d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
-					if (Math.abs(d) > (20 * Math.PI) / 180) {
-						if (isRef(r.pid)) {
-							spun += 1;
-						} else {
-							others += 1;
+		for (const seed of games) {
+			const { tl, crew } = working(seed);
+			const cuts = cameraCuts(tl);
+			const was = new Map<number, number>();
+			for (let t = 0; t < Math.min(tl.end, 900_000); t += 16) {
+				if (fastAt(tl, t) > 1 || cuts.some((c) => c > t - 16 && c <= t)) {
+					was.clear();
+					continue;
+				}
+				for (const r of crewAt(tl, t, crew).states) {
+					const yaw = was.get(r.pid);
+					if (yaw !== undefined) {
+						frames += isRef(r.pid) ? 1 : 0;
+						let d = r.yaw - yaw;
+						d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+						if (Math.abs(d) > (20 * Math.PI) / 180) {
+							if (isRef(r.pid)) {
+								spun += 1;
+							} else {
+								others += 1;
+							}
 						}
 					}
+					was.set(r.pid, r.yaw);
 				}
-				was.set(r.pid, r.yaw);
 			}
 		}
-		assert.isAbove(frames, 50_000);
-		assert.isBelow(spun, 15);
-		assert.isAtMost(others, 5);
-	}, 240_000);
+		assert.isAbove(frames, 50_000 * games.length);
+		assert.isBelow(spun, 15 * games.length);
+		assert.isAtMost(others, 5 * games.length);
+	}, 480_000);
 
 	// Stood, walking or running, an official went from one to the next in a
 	// frame - his legs snapped from one stride to the other - and the same
