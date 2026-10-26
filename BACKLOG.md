@@ -79,7 +79,11 @@ and shoes - every one eventually, none rushed to get to the next.
   few steps, plants and comes back out hard to meet it, his hand up as he
   comes - out as it is thrown, there as it gets there - his man going in
   with him and a beat behind him back out; overhead passes kept mostly for
-  skipping it across the floor.)
+  skipping it across the floor. Passing off his dribble, a man takes it as
+  it comes up into his hands and it goes straight on out of them - not
+  picked up at the top of the bounce gone by and stood holding it till the
+  pass goes: four in ten stood with it over 150 ms first, now under one in
+  ten.)
 - [x] Poor ball handlers who get the defensive rebound should usually hold it and
       look to give it to a ball handler to bring it up. Exceptions: sets, urgency.
 - [x] Layups: many natural, real-NBA-looking finishes (finger rolls, normal
@@ -88,6 +92,11 @@ and shoes - every one eventually, none rushed to get to the next.
       and shoots. Rework.
 - [~] Defense overall should look like it's genuinely trying to stop the offense.
   Defenders can get crossed up, confused, etc. when the offense does good things.
+  (2026-10-25: a pass out to a man left open, his defender reads it as it
+  goes and is on his way out to him in the air - left open on purpose, at a
+  pace that still has him short as it goes up, not stood watching it and
+  then flat out: long passes his man all but stood through, one in two down
+  to two in five.)
 - [x] "Attempts low post shot" should usually be a real post move, not an awkward
       drive into a 6-foot jumper (currently close to 100% of the time).
 - [x] Injuries need an animation that depends on the kind of injury.
@@ -411,11 +420,22 @@ Bank Center, a 2K27 broadcast) - what the floor and building should look like:
   waiting to step stays where it was on the floor, his leg reaching back to
   it as he goes on over it - not carried along under him till its turn
   (the foot he stands on through the change at 0.92 of his pace down to
-  0.64). Still to do: going straight from running into a shuffle or a
+  0.64). Shuffling and turned so far round that the way he goes comes
+  round to his other side, the foot he stands on keeps pointing where it
+  came down - not let go of as if it were the one up (planted feet turned
+  more than 30 degrees, 8 a game down to 4); and as it comes round, the
+  lead goes over from foot to foot, not thrown across in a frame (knees and
+  feet at 54 feet a second at worst there, down to 40). Going up off the
+  floor out of a step over, it lets go of his legs as he rises - his head
+  no longer dipping and then thrown up half a foot in a frame. Still to do: going straight from running into a shuffle or a
   backpedal, or back, at speed, both feet slide through the change
   (stepped over there, his legs are flung; from all but a standstill they
   now step); and turning on the spot while all but stood in a shuffle,
-  both feet go round with him.)
+  both feet go round with him - spun round as fast as a man turns where
+  he stands, 500 degrees a second on steps a second apart, nearly half of
+  a shuffle's sliding feet (his foot down held where it is through the
+  turn, and a slower turn on push steps, both tried: neither helped - it
+  wants quicker steps as he comes round).)
 - [~] As a player drives he is engaged with his defender, and vice versa. No
   player just casually dribbles around with no real animation. Defenders
   really look like they're defending; offensive players really look like

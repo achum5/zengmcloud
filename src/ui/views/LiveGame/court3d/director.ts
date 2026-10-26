@@ -633,6 +633,9 @@ const BOUNCE_CLEAR = 1.2;
 // How far through a bounce of his dribble the ball has come back up near
 // enough to his hands to take it in both (see evaluate.ts).
 const CATCH_UP = 0.7;
+// (Picked up off the top of a bounce no longer ago than this, it goes from
+// there: hardly stood with at all.)
+const PASS_GATHER_LATE = 100;
 // After a whistle, how long the official's signal holds the picture.
 const WHISTLE_HOLD = 950;
 // A rebound, from leaving the floor to the ball chinned once he is down.
@@ -1176,6 +1179,8 @@ const FINAL_LOOK = 1600;
 const CLOSE_READ = 150;
 const CLOSE_RUN = 21;
 const CLOSE_CHOP = 8;
+// Leaving his man open, the slowest he goes out to him (feet a second).
+const OPEN_PACE = 9;
 const CLOSE_BREAK = 3.5;
 // How much room a jump shooter gets (by how far off him his man meets the
 // shot, feet): right on him, an arm's length, a step late - or none of it,
@@ -3123,6 +3128,40 @@ class Director {
 			: this.hold(pid, by, "hold");
 	}
 
+	// Off his dribble to pass it, he takes it as it next comes up into his
+	// hands and it goes straight on out of them - not snatched back at the
+	// top of the bounce gone by and stood holding it till the pass goes
+	// (unless that was only just now). Or, with time in hand - a pass timed
+	// to meet a man on his way somewhere - straight off the top of the bounce
+	// gone by if that is nearer the moment, the pass a beat early to lead him
+	// rather than late to leave him waiting on it. When he has it, and when
+	// the pass can go.
+	private gatherToPass(
+		pid: number,
+		by: number,
+		// (Nothing of his before this.)
+		floor: number,
+	): { got: number; go: number } {
+		const from = this.dribbleFrom(pid, by);
+		const last = this.ball.at(-1);
+		if (
+			from === undefined ||
+			(last?.kind === "hold" && last.pid === pid && last.style === "cross")
+		) {
+			return { got: this.gather(pid, by), go: by };
+		}
+		const b = (by - from) / DRIBBLE_MS + 1e-6;
+		const k = Math.floor(b);
+		const ph = b - k;
+		if (k < 1 || ph * DRIBBLE_MS <= PASS_GATHER_LATE || ph >= CATCH_UP) {
+			return { got: this.gather(pid, by), go: by };
+		}
+		const early = from + k * DRIBBLE_MS + PASS_GATHER_LATE;
+		const late = from + (k + CATCH_UP) * DRIBBLE_MS;
+		const at = early >= floor && by - early < late - by ? early : late;
+		return { got: this.gather(pid, at), go: at };
+	}
+
 	// Through the net, down off the floor under it: the man taking it out
 	// gets to it and takes it on the hop - or scoops it up as it rolls - not
 	// stood over it till it lies still. Returns when he has it; undefined,
@@ -4073,8 +4112,12 @@ class Director {
 			(m) => m.t0 <= ready && m.t1 > ready + 60,
 		);
 		// Off the dribble, once he has it in both hands (or in the one).
-		const got = this.gather(from, ready);
-		let start = Math.max(ready, got);
+		const { got, go } = this.gatherToPass(
+			from,
+			ready,
+			Math.max(t, this.free.get(from) ?? 0),
+		);
+		let start = Math.max(Math.min(ready, go), got);
 		// Handing it on at a dead ball, he stops and turns to the man first -
 		// not tossing it over his shoulder off the walk he was on.
 		if (handOff) {
@@ -10767,13 +10810,24 @@ class Director {
 			}
 			return B;
 		};
+		// (Leaving him all alone, he still reads it as it goes and is on his
+		// way out to him at once - only no quicker than leaves him that far
+		// off him as it goes up: not stood watching it go, then flat out.
+		// Too near for even that, on with whatever he was doing till he has
+		// to go.)
+		let pace = CLOSE_RUN;
 		if (outAt !== undefined) {
-			// On with whatever he was doing till he has to go.
+			const G = this.posAt(d, sees);
+			const L = dist(G, breakFrom(G));
+			const room = outAt - sees;
+			if (room > runMs(L, CLOSE_RUN, 0, BURST, CLOSE_CHOP)) {
+				pace = Math.min(CLOSE_RUN, Math.max(OPEN_PACE, (L * 1000) / room));
+			}
 			for (let n = 0; n < 2; n++) {
 				const G = this.posAt(d, sees);
 				sees = Math.max(
 					sees,
-					outAt - runMs(dist(G, breakFrom(G)), CLOSE_RUN, 0, BURST, CLOSE_CHOP),
+					outAt - runMs(dist(G, breakFrom(G)), pace, 0, BURST, CLOSE_CHOP),
 				);
 			}
 		}
@@ -10808,7 +10862,7 @@ class Director {
 		const brk = breakFrom(G);
 		// Flat out to a few feet off him, then choppy steps the rest of the
 		// way in - straight on from the one into the other.
-		const broke = this.go(d, brk, sees, CLOSE_RUN, "run", undefined, {
+		const broke = this.go(d, brk, sees, pace, "run", undefined, {
 			effort: BURST,
 			onto: CLOSE_CHOP,
 		});
@@ -17527,7 +17581,19 @@ class Director {
 			const u = Math.min(1, Math.max(0, (t - s.t0) / Math.max(1, s.t1 - s.t0)));
 			const A = s.kind === "fly" ? endOf(s.from, s.t0) : s.from;
 			const B = s.kind === "fly" ? endOf(s.to, s.t1) : s.to;
-			return { at: { x: A.x + (B.x - A.x) * u, y: A.y + (B.y - A.y) * u } };
+			// (Passed to a man, it is his already to the man guarding him: he
+			// reads it as it goes and is on his way out to him in the air.)
+			const to =
+				s.kind === "fly" &&
+				"pid" in s.to &&
+				"pid" in s.from &&
+				this.teamOf(s.to.pid) === this.teamOf(s.from.pid)
+					? s.to.pid
+					: undefined;
+			return {
+				at: { x: A.x + (B.x - A.x) * u, y: A.y + (B.y - A.y) * u },
+				...(to === undefined ? {} : { holder: to }),
+			};
 		};
 		const freeThrows = this.beats.filter(
 			(bt) => bt.type === "ft" || bt.type === "missFt",
