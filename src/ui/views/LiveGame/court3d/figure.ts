@@ -406,9 +406,11 @@ const profileHead = (
 		P(0.86, -0.32),
 		P(0.92, -0.14),
 		P(0.8, -0.03),
-		N(0.94, 0.1),
-		N(1.12, 0.22),
-		N(0.92, 0.3),
+		N(0.92, 0.06),
+		N(1.06, 0.17),
+		N(1.12, 0.24),
+		N(1.04, 0.3),
+		N(0.93, 0.31),
 		P(0.9, 0.34),
 		P(0.94, 0.4),
 		P(0.84, 0.47),
@@ -439,26 +441,29 @@ const profileHead = (
 		P(-0.96, -0.66),
 	]);
 	const earK = 0.8 + 0.2 * Math.min(1.5, Math.max(0.5, pro.ear ?? 1));
-	const ear = new Path2D();
-	ear.ellipse(
-		P(-0.1, 0.08).x,
-		P(-0.1, 0.08).y,
-		r * 0.16 * earK,
-		r * 0.26 * earK,
-		0,
-		0,
-		Math.PI * 2,
-	);
-	const inner = new Path2D();
-	inner.ellipse(
-		P(-0.08, 0.09).x,
-		P(-0.08, 0.09).y,
-		r * 0.08 * earK,
-		r * 0.16 * earK,
-		0,
-		0,
-		Math.PI * 2,
-	);
+	// His ear: the rim round from the top of it, fuller up top, down to the
+	// lobe and in under it to his cheek; and the fold inside it.
+	const E = (u: number, v: number) => P(-0.1 + u * earK, 0.08 + v * earK);
+	const ear = softPoly([
+		E(0.08, -0.26),
+		E(-0.12, -0.27),
+		E(-0.2, -0.12),
+		E(-0.16, 0.06),
+		E(-0.1, 0.2),
+		E(-0.02, 0.29),
+		E(0.08, 0.27),
+		E(0.12, 0.14),
+		E(0.14, -0.1),
+	]);
+	const fold = new Path2D();
+	{
+		const a = E(0.06, -0.17);
+		const b = E(-0.1, -0.12);
+		const c2 = E(-0.06, 0.12);
+		const d = E(0.05, 0.17);
+		fold.moveTo(a.x, a.y);
+		fold.bezierCurveTo(b.x, b.y, c2.x, c2.y, d.x, d.y);
+	}
 	// Where his hair ends: across his forehead, back over his ear, and down
 	// to the nape of his neck - lower at the back the more there is of it.
 	const nape = cut === "long" ? 1.25 : cut === "big" ? 0.62 : 0.46;
@@ -513,7 +518,9 @@ const profileHead = (
 		ctx.lineWidth = ink * 2;
 		ctx.lineJoin = "round";
 		ctx.stroke(head);
+		ctx.lineWidth = ink * 1.4;
 		ctx.stroke(ear);
+		ctx.lineWidth = ink * 2;
 		if (hairy && !style?.thin && !style?.crown) {
 			ctx.save();
 			ctx.clip(above);
@@ -524,6 +531,24 @@ const profileHead = (
 	ctx.fillStyle = look.skin;
 	ctx.fill(head);
 	const shadow = shade(look.skin, -0.18);
+	// Light from in front of him and above: the back of his jaw and the
+	// underside of it in shade, his cheek round from it lit.
+	ctx.save();
+	ctx.clip(head);
+	ctx.fillStyle = shade(look.skin, -0.1);
+	ctx.fill(
+		softPoly([
+			P(-0.04, 0.36),
+			P(0.28, 0.62),
+			P(0.64, 0.78),
+			P(0.86, 0.84),
+			P(0.8, 1.1),
+			P(0.2, 1.05),
+			P(-0.36, 0.7),
+			P(-0.3, 0.4),
+		]),
+	);
+	ctx.restore();
 	// His beard, on his jaw, his chin, his lip - and by his ear.
 	const whiskers = new Path2D();
 	if (pro.jaw) {
@@ -552,7 +577,7 @@ const profileHead = (
 	}
 	if (pro.burns) {
 		whiskers.addPath(
-			softPoly([P(-0.02, -0.22), P(0.16, -0.2), P(0.16, 0.34), P(-0.02, 0.32)]),
+			softPoly([P(0.02, -0.22), P(0.13, -0.2), P(0.12, 0.3), P(0.03, 0.28)]),
 		);
 	}
 	if (pro.jaw || pro.chin || pro.lip || pro.burns) {
@@ -564,8 +589,10 @@ const profileHead = (
 	}
 	ctx.fillStyle = look.skin;
 	ctx.fill(ear);
-	ctx.fillStyle = shadow;
-	ctx.fill(inner);
+	ctx.strokeStyle = shadow;
+	ctx.lineWidth = Math.max(0.6, r * 0.045);
+	ctx.lineCap = "round";
+	ctx.stroke(fold);
 	if (hairy) {
 		// (Side on, a strip down the middle of his head is the whole top of
 		// it: faded below its crest.)
@@ -643,25 +670,26 @@ const profileHead = (
 	if (look.silhouette) {
 		return;
 	}
-	// His eye, looking where his nose points, under his brow.
-	const eye = P(0.64, -0.06);
+	// His eye side on: a wedge of white back from the front of it, the
+	// iris a sliver at its front edge, under the line of his upper lid -
+	// lashes out at its front - set in a little under his brow.
 	ctx.fillStyle = "#f6f2ec";
-	ctx.beginPath();
-	ctx.ellipse(eye.x, eye.y, r * 0.1, r * 0.075, 0, 0, Math.PI * 2);
-	ctx.fill();
-	const iris = P(0.7, -0.055);
+	ctx.fill(
+		softPoly([P(0.57, -0.06), P(0.72, -0.11), P(0.77, -0.05), P(0.7, -0.01)]),
+	);
 	ctx.fillStyle = INK;
 	ctx.beginPath();
-	ctx.ellipse(iris.x, iris.y, r * 0.05, r * 0.07, 0, 0, Math.PI * 2);
+	const iris = P(0.72, -0.06);
+	ctx.ellipse(iris.x, iris.y, r * 0.03, r * 0.055, 0, 0, Math.PI * 2);
 	ctx.fill();
 	ctx.strokeStyle = INK;
 	ctx.lineCap = "round";
 	ctx.lineWidth = Math.max(0.6, r * 0.05);
 	ctx.beginPath();
-	const lid0 = P(0.54, -0.1);
-	const lid1 = P(0.76, -0.1);
+	const lid0 = P(0.56, -0.07);
+	const lid1 = P(0.79, -0.08);
 	ctx.moveTo(lid0.x, lid0.y);
-	ctx.quadraticCurveTo(P(0.65, -0.16).x, P(0.65, -0.16).y, lid1.x, lid1.y);
+	ctx.quadraticCurveTo(P(0.68, -0.15).x, P(0.68, -0.15).y, lid1.x, lid1.y);
 	ctx.stroke();
 	ctx.strokeStyle =
 		cut === "bald" || !hairy ? shade(look.skin, -0.5) : shade(look.hair, -0.1);
@@ -682,20 +710,37 @@ const profileHead = (
 	ctx.strokeStyle = shade(look.skin, -0.45);
 	ctx.lineWidth = Math.max(0.6, r * 0.045);
 	ctx.beginPath();
-	const n0 = N(0.84, 0.25);
+	// (The wing of his nostril, round from the tip to his cheek.)
+	const n0 = N(0.95, 0.29);
 	ctx.moveTo(n0.x, n0.y);
-	ctx.quadraticCurveTo(
-		N(0.9, 0.2).x,
-		N(0.9, 0.2).y,
-		N(0.96, 0.24).x,
-		N(0.96, 0.24).y,
+	ctx.bezierCurveTo(
+		N(0.86, 0.3).x,
+		N(0.86, 0.3).y,
+		N(0.84, 0.21).x,
+		N(0.84, 0.21).y,
+		N(0.93, 0.2).x,
+		N(0.93, 0.2).y,
 	);
 	ctx.stroke();
-	ctx.strokeStyle = INK;
+	if (!pro.lip) {
+		ctx.save();
+		ctx.clip(head);
+		ctx.fillStyle = shade(look.skin, -0.14);
+		ctx.fill(
+			softPoly([P(0.8, 0.37), P(0.99, 0.39), P(0.99, 0.55), P(0.82, 0.55)]),
+		);
+		ctx.restore();
+	}
+	ctx.strokeStyle = shade(look.skin, -0.6);
 	ctx.beginPath();
-	const m0 = P(0.88, 0.47);
+	const m0 = P(0.9, 0.47);
 	ctx.moveTo(m0.x, m0.y);
-	ctx.lineTo(P(0.74, 0.48).x, P(0.74, 0.48).y);
+	ctx.quadraticCurveTo(
+		P(0.82, 0.48).x,
+		P(0.82, 0.48).y,
+		P(0.77, 0.46).x,
+		P(0.77, 0.46).y,
+	);
 	ctx.stroke();
 	ctx.lineCap = "butt";
 };
