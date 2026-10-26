@@ -8,6 +8,7 @@ import {
 	validateSeasonType,
 } from "../util/processInputs.ts";
 import { seasonLineups } from "../util/gameTimeline.ts";
+import { lineupPictures } from "../util/lineupPictures.ts";
 
 // A team's fives over a season, from the lineups each of its games kept (see
 // util/gameTimeline.ts). Games from before the sim logged time have no
@@ -49,6 +50,9 @@ export default defineView({
 		);
 
 		const { names, lineups } = seasonLineups(games as any, tid);
+		const pics = await lineupPictures(lineups.flatMap((line) => line.pids));
+		// (In his team's uniform.)
+		const t = await idb.cache.teams.get(tid);
 
 		return {
 			abbrev,
@@ -58,6 +62,9 @@ export default defineView({
 			numGames: games.length,
 			names,
 			lineups,
+			pics,
+			colors: t?.colors,
+			jersey: t?.jersey,
 		};
 	},
 });

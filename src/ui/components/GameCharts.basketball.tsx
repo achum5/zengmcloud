@@ -13,6 +13,9 @@ import type {
 	Stint,
 } from "../../worker/util/gameTimeline.ts";
 import { formatClock } from "../../common/formatClock.ts";
+import { MAX_LINEUPS, MIN_LINEUP_SEC } from "../../common/lineups.ts";
+import clsx from "clsx";
+import { LineupFaces } from "./LineupFaces.tsx";
 import { helpers } from "../util/helpers.ts";
 import { teamsInDisplayOrder } from "../util/boxScoreDisplayOrder.ts";
 
@@ -526,52 +529,76 @@ const RotationTable = ({
 	);
 };
 
-// Less than this together and a five's ratings are noise.
-const MIN_LINEUP_SEC = 120;
-
-const LineupTable = ({ t, lines }: { t: any; lines: LineupLine[] }) => {
-	const names = new Map<number, string>(
-		(t.players as any[]).map((p) => [p.pid, shortName(p.name)]),
-	);
-	// Fives that played a real stretch, most minutes first.
-	const shown = lines.filter((line) => line.sec >= MIN_LINEUP_SEC).slice(0, 5);
+// Each five: its faces, minutes and possessions, and how it scored and
+// defended per 100 possessions.
+const LineupTable = ({
+	t,
+	lines,
+	pics,
+}: {
+	t: any;
+	lines: LineupLine[];
+	pics: BoxScoreFlow["pics"];
+}) => {
+	const shown = lines
+		.filter((line) => line.sec >= MIN_LINEUP_SEC)
+		.slice(0, MAX_LINEUPS);
 	if (shown.length === 0) {
 		return null;
 	}
 	return (
-		<div className="table-responsive mb-3">
-			<table className="table table-striped table-borderless table-sm table-hover mb-0">
+		<div className="table-responsive">
+			<table className="table table-striped table-borderless table-sm mb-0 align-middle">
 				<thead>
 					<tr>
-						<th>{t.abbrev}</th>
+						<th>{t.region ?? t.abbrev}</th>
 						<th className="text-end">MIN</th>
-						<th className="text-end">+/-</th>
+						<th className="text-end">POSS</th>
 						<th className="text-end" title="Points scored per 100 possessions">
-							ORtg
+							ORTG
 						</th>
 						<th className="text-end" title="Points allowed per 100 possessions">
-							DRtg
+							DRTG
 						</th>
-						<th className="text-end">NRtg</th>
+						<th className="text-end">NRTG</th>
 					</tr>
 				</thead>
 				<tbody style={{ fontVariantNumeric: "tabular-nums" }}>
-					{shown.map((line) => (
-						<tr key={line.pids.join(",")}>
-							<td className="text-nowrap">
-								{line.pids.map((pid) => names.get(pid) ?? "?").join(", ")}
-							</td>
-							<td className="text-end">{formatMin(line.sec)}</td>
-							<td className="text-end">
-								{helpers.plusMinus(line.pts - line.ptsOpp, 0)}
-							</td>
-							<td className="text-end">{fmt(rating(line.pts, line.poss))}</td>
-							<td className="text-end">
-								{fmt(rating(line.ptsOpp, line.possOpp))}
-							</td>
-							<td className="text-end">{fmt(net(line), true)}</td>
-						</tr>
-					))}
+					{shown.map((line) => {
+						const nrtg = net(line);
+						return (
+							<tr key={line.pids.join(",")}>
+								<td>
+									<LineupFaces
+										pids={line.pids}
+										pics={pics}
+										colors={t.colors}
+										jersey={t.jersey}
+									/>
+								</td>
+								<td className="text-end">{formatMin(line.sec)}</td>
+								<td className="text-end">{line.poss}</td>
+								<td className="text-end">{fmt(rating(line.pts, line.poss))}</td>
+								<td className="text-end">
+									{fmt(rating(line.ptsOpp, line.possOpp))}
+								</td>
+								<td
+									className={clsx(
+										"text-end fw-bold",
+										nrtg === undefined
+											? undefined
+											: nrtg > 0
+												? "text-success"
+												: nrtg < 0
+													? "text-danger"
+													: undefined,
+									)}
+								>
+									{fmt(nrtg, true)}
+								</td>
+							</tr>
+						);
+					})}
 				</tbody>
 			</table>
 		</div>
@@ -629,9 +656,17 @@ export const GameCharts = ({ boxScore }: { boxScore: any }) => {
 			{lineups &&
 			lineups.some((lines) => lines.some((l) => l.sec >= MIN_LINEUP_SEC)) ? (
 				<Section title="Lineups">
-					{order.map((side) => (
-						<LineupTable key={side} t={teams[side]} lines={lineups[side]} />
-					))}
+					<div className="row g-3">
+						{order.map((side) => (
+							<div key={side} className="col-xl-6">
+								<LineupTable
+									t={teams[side]}
+									lines={lineups[side]}
+									pics={charts.pics}
+								/>
+							</div>
+						))}
+					</div>
 				</Section>
 			) : null}
 		</>

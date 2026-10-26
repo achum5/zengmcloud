@@ -17,6 +17,7 @@ import type { Game } from "../../common/types.ts";
 import type { GameShift } from "../core/GameSim.basketball/shiftLog.ts";
 import type { GameTimelineRaw } from "../core/GameSim.basketball/timelineLog.ts";
 import { decodeShifts } from "./gameShifts.ts";
+import type { LineupPic } from "./lineupPictures.ts";
 
 export const encodeTimeline = (timeline: GameTimelineRaw) => {
 	const stints: number[] = [];
@@ -127,6 +128,8 @@ export type BoxScoreFlow = {
 		{ team: OnCourt; byPid: Record<number, OnCourt> },
 		{ team: OnCourt; byPid: Record<number, OnCourt> },
 	];
+	// Faces for the fives shown (see util/lineupPictures).
+	pics?: Record<number, LineupPic>;
 };
 
 const blank = (): OnCourt => ({

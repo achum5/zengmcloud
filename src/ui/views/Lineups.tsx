@@ -4,7 +4,7 @@ import { DataTable } from "../components/DataTable/index.tsx";
 import { MoreLinks } from "../components/MoreLinks.tsx";
 import { PlusMinus } from "../components/PlusMinus.tsx";
 import { getCols } from "../../common/getCols.ts";
-import { helpers } from "../util/helpers.ts";
+import { LineupFaces } from "../components/LineupFaces.tsx";
 import type { View } from "../../common/types.ts";
 
 // A team's fives over a season: minutes, possessions, and how they scored and
@@ -30,9 +30,12 @@ const shortName = (name: string | undefined) => {
 
 const Lineups = ({
 	abbrev,
+	colors,
+	jersey,
 	lineups,
 	names,
 	numGames,
+	pics,
 	playoffs,
 	season,
 	tid,
@@ -72,18 +75,16 @@ const Lineups = ({
 			data: [
 				{
 					value: (
-						<>
-							{line.pids.map((pid, i) => (
-								<span key={pid}>
-									{i > 0 ? ", " : null}
-									<a href={helpers.leagueUrl(["player", pid])}>
-										{shortName(names[pid])}
-									</a>
-								</span>
-							))}
-						</>
+						<LineupFaces
+							pids={line.pids}
+							pics={pics}
+							colors={colors}
+							jersey={jersey}
+							scale={0.9}
+						/>
 					),
 					searchValue: line.pids.map((pid) => names[pid] ?? "").join(" "),
+					sortValue: line.pids.map((pid) => shortName(names[pid])).join(" "),
 				},
 				line.gp,
 				number(line.sec / 60),
