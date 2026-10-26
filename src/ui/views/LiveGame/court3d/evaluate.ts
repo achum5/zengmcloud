@@ -5987,6 +5987,21 @@ const passedBy = (
 };
 
 // Where the ball is at t, by the i-th piece of its path.
+// Where a ball he had at `then` is now, held still in his hands: along with
+// him as he goes, and round with him as he turns.
+const carriedRound = (
+	was: Pt,
+	then: { x: number; y: number; yaw: number },
+	now: { x: number; y: number; yaw: number },
+): Pt => {
+	const d = now.yaw - then.yaw;
+	const c = Math.cos(d);
+	const s = Math.sin(d);
+	const rx = was.x - then.x;
+	const ry = was.y - then.y;
+	return { x: now.x + rx * c - ry * s, y: now.y + rx * s + ry * c };
+};
+
 const ballOn = (
 	tl: CourtTimeline,
 	i: number,
@@ -6048,8 +6063,7 @@ const ballOn = (
 				const was = left();
 				const then = evalPlayer(tl, seg.pid, seg.t0 - BEFORE);
 				const e = ease(ph / down);
-				const x = was.x + st.x - then.x;
-				const y = was.y + st.y - then.y;
+				const { x, y } = carriedRound(was, then, st);
 				return {
 					x: x + (ball.x - x) * e,
 					y: y + (ball.y - y) * e,
@@ -6082,11 +6096,7 @@ const ballOn = (
 											body,
 										);
 							const then = evalPlayer(tl, seg.pid, origin - BEFORE);
-							const held = {
-								x: was.x + st.x - then.x,
-								y: was.y + st.y - then.y,
-								z: was.z,
-							};
+							const held = { ...carriedRound(was, then, st), z: was.z };
 							// (His hand on it as his arms come down off holding
 							// it: pushed down out of where he had it, not let
 							// drop away from under his hands.)
