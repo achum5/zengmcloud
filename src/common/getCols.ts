@@ -3532,6 +3532,8 @@ const cols: {
 		sortType: "number",
 	},
 	Teammate: {},
+	// A team's lineups page: the five on the floor.
+	Lineup: {},
 	Seed: {
 		desc: "Playoff Seed",
 		sortType: "number",

@@ -141,6 +141,13 @@ export const MoreLinks = (
 			},
 		];
 
+		if (__SPORT === "basketball") {
+			links.splice(links.findIndex((link) => link.name === "Game Log") + 1, 0, {
+				url: ["lineups", `${abbrev}_${tid}`, season],
+				name: "Lineups",
+			});
+		}
+
 		// The rotation page is basketball's depth chart, and only exists in a
 		// league that has turned rotation plans on.
 		if (__SPORT === "basketball" && rotationPlans) {

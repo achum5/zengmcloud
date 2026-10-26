@@ -16,6 +16,7 @@ import {
 	encodeShiftSecs,
 	encodeTimeline,
 	getBoxScoreFlow,
+	seasonLineups,
 } from "../../util/gameTimeline.ts";
 const seededRandom = () => {
 	let a = 0x1234567;
@@ -216,6 +217,47 @@ describe("a game, played", () => {
 					assert.approximately(on!.sec, p.stat.min * 60, lines.length);
 				}
 			}
+		}
+	});
+});
+
+describe("seasonLineups", () => {
+	test("a five's games, time and points add up across a team's games", () => {
+		const n = result.numPlayersOnCourt;
+		const packed = {
+			shifts: encodeShifts(result.shifts, n),
+			shiftSecs: encodeShiftSecs(result.shifts, n),
+			numPlayersOnCourt: n,
+		};
+		const teams = result.team.map((t: any, i: number) => ({
+			tid: i,
+			players: t.player.map((p: any) => ({ pid: p.id, name: p.name })),
+		}));
+		// The same game twice, and one the team was not in.
+		const games = [
+			{ ...packed, teams },
+			{ ...packed, teams },
+			{
+				...packed,
+				teams: [
+					{ ...teams[0], tid: 7 },
+					{ ...teams[1], tid: 8 },
+				],
+			},
+		];
+		const once = getBoxScoreFlow({
+			...encodeTimeline(result.timeline),
+			...packed,
+			teams,
+		})!.lineups![1];
+		const { lineups } = seasonLineups(games, 1);
+		assert.strictEqual(lineups.length, once.length);
+		for (const line of lineups) {
+			const single = once.find((l) => l.pids.join() === line.pids.join())!;
+			assert.strictEqual(line.gp, 2);
+			assert.strictEqual(line.sec, 2 * single.sec);
+			assert.strictEqual(line.pts, 2 * single.pts);
+			assert.strictEqual(line.possOpp, 2 * single.possOpp);
 		}
 	});
 });

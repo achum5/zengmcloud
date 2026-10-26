@@ -250,3 +250,47 @@ export const getBoxScoreFlow = (
 			: {}),
 	};
 };
+
+// A team's fives over a stretch of games: the same rows, added up across them,
+// with how many games each five saw the floor in.
+export type SeasonLineup = LineupLine & { gp: number };
+
+export const seasonLineups = (
+	games: readonly (Pick<Game, "shifts" | "shiftSecs" | "numPlayersOnCourt"> & {
+		teams: { tid: number; players: { pid: number; name?: string }[] }[];
+	})[],
+	tid: number,
+) => {
+	const byKey = new Map<string, SeasonLineup>();
+	const names: Record<number, string> = {};
+	for (const game of games) {
+		const side =
+			game.teams[0]!.tid === tid ? 0 : game.teams[1]!.tid === tid ? 1 : -1;
+		if (side < 0) {
+			continue;
+		}
+		for (const p of game.teams[side]!.players) {
+			if (p.name) {
+				names[p.pid] = p.name;
+			}
+		}
+		const folded = foldLineups(game);
+		if (!folded) {
+			continue;
+		}
+		for (const line of folded[side as 0 | 1]) {
+			const key = line.pids.join(",");
+			let total = byKey.get(key);
+			if (!total) {
+				total = { pids: line.pids, gp: 0, ...blank() };
+				byKey.set(key, total);
+			}
+			total.gp += 1;
+			add(total, line);
+		}
+	}
+	return {
+		names,
+		lineups: [...byKey.values()].sort((a, b) => b.sec - a.sec),
+	};
+};

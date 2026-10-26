@@ -70,6 +70,7 @@ export { default as globalSettings } from "./globalSettings.ts";
 export { default as gmHistory } from "./gmHistory.ts";
 export { default as hallOfFame } from "./hallOfFame.ts";
 export { default as headToHead } from "./headToHead.ts";
+export { default as lineups } from "./lineups.ts";
 export { default as headToHeadAll } from "./headToHeadAll.ts";
 export { default as history } from "./history.ts";
 export { default as historyAll } from "./historyAll.ts";
