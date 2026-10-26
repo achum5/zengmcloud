@@ -408,4 +408,24 @@ export class FormulaEvaluator<
 
 		return stack.pop()!;
 	}
+
+	// Each variable the formula reads, as written, with the value it reads.
+	variableValues(
+		variables: Record<Variables[number], VariableValue>,
+	): [string, number][] {
+		const out = new Map<string, number>();
+		for (const token of this.tokens) {
+			if (token.type === "variable") {
+				const value = (variables as any)[token.name];
+				out.set(token.name, typeof value === "number" ? value : 0);
+			} else if (token.type === "nestedVariable") {
+				const value = (variables as any)[token.name]?.[token.property];
+				out.set(
+					`${token.name}.${token.property}`,
+					typeof value === "number" ? value : 0,
+				);
+			}
+		}
+		return [...out];
+	}
 }

@@ -223,6 +223,8 @@ const getProcessedPlayers = async (
 		currentStats: Partial<Record<StatRange, CurrentStats>>; // Would be nice to assume currentStats.regularSeason is always defined, but it's possible for a player to play in the playoffs but not the regular season...
 		age: number;
 		scores: Record<string, number>;
+		// MIP and bounce back: the formula's scores behind each one's score.
+		scoreParts?: Record<string, { current: number; prev: number; max: number }>;
 	})[];
 
 	for (const p of players) {

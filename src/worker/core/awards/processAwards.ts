@@ -507,6 +507,12 @@ export const processAwards = async ({
 					p.scores[award.shortName] = (
 						award.bounceBack ? bounceBackScore : mipScore
 					)(currentScore, prevScore, maxScore);
+					p.scoreParts ??= {};
+					p.scoreParts[award.shortName] = {
+						current: currentScore,
+						prev: prevScore,
+						max: maxScore,
+					};
 				} else {
 					p.scores[award.shortName] = currentScore;
 				}

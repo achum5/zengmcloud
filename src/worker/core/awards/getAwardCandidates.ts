@@ -14,6 +14,7 @@ import g from "../../util/g.ts";
 import type { StatOverridesByMatchup } from "./getPlayers.ts";
 import { hashPlayoffSeries } from "./hashPlayoffSeries.ts";
 import { processAwards } from "./processAwards.ts";
+import { getScoreBreakdown, type ScoreBreakdown } from "./scoreBreakdown.ts";
 
 const persistedAwardsToAwardSetting = (persistedAwards: Awards) => {
 	let statOverridesByMatchup: StatOverridesByMatchup | undefined;
@@ -116,6 +117,8 @@ export type AwardCandidateOptions = {
 	// Defaults to the ballot depth, which is what the Award Races page shows;
 	// a futures board on the named teams wants a deeper field.
 	numPlayersPerIndividualAward?: number;
+	// How each score adds up, for the Award Races popup.
+	breakdown?: boolean;
 };
 
 export const getAwardCandidates = async (
@@ -164,7 +167,29 @@ export const getAwardCandidates = async (
 					const statRange = award.statRange ?? "regularSeason";
 
 					const p = playersByPid[p2.pid]!;
+					const stats = p.currentStats[statRange];
+					let scoreBreakdown: ScoreBreakdown | undefined;
+					if (
+						options.breakdown &&
+						stats &&
+						!p2.opoyOverride &&
+						!p2.statOverrides
+					) {
+						scoreBreakdown = getScoreBreakdown(
+							award.formulaByPos?.[p.pos] ?? award.formula,
+							stats,
+							typeof statRange === "number",
+						);
+						const parts = p.scoreParts?.[award.shortName];
+						if (scoreBreakdown && parts) {
+							scoreBreakdown.compare = {
+								kind: award.bounceBack ? "bounceBack" : "mip",
+								...parts,
+							};
+						}
+					}
 					return {
+						scoreBreakdown,
 						...p,
 						currentStats: {
 							...p.currentStats[statRange],

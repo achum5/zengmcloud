@@ -11,7 +11,8 @@ import { RatingWithChange } from "../components/RatingWithChange.tsx";
 import { StatWithChange } from "../components/StatWithChange.tsx";
 import { useLocal } from "../util/local.ts";
 import { getCol } from "../../common/getCol.ts";
-import { Fragment, type ReactNode } from "react";
+import { Fragment, useState, type ReactNode } from "react";
+import { Modal } from "../components/Modal.tsx";
 import { formatPlayerAwardName } from "../../common/awards.ts";
 import clsx from "clsx";
 import type { getAwardCandidates } from "../../worker/core/awards/getAwardCandidates.ts";
@@ -28,6 +29,128 @@ const roundAwardStat = (value: unknown, stat: string) =>
 		: helpers.roundStat(value, stat);
 
 const MARGIN = 14;
+
+type Breakdown = InputAward["players"][number]["scoreBreakdown"];
+
+const fmt = (x: number, digits = 3) =>
+	Number.isInteger(x) ? String(x) : x.toFixed(digits);
+
+const ScoreCell = ({
+	awardName,
+	breakdown,
+	playerName,
+	score,
+}: {
+	awardName: string;
+	breakdown: NonNullable<Breakdown>;
+	playerName: string;
+	score: number;
+}) => {
+	const [show, setShow] = useState(false);
+	const { compare, formula, terms, values } = breakdown;
+	return (
+		<>
+			<button
+				type="button"
+				className="btn btn-link p-0 border-0 align-baseline"
+				onClick={() => {
+					setShow(true);
+				}}
+			>
+				{score.toFixed(2)}
+			</button>
+			<Modal
+				centered
+				show={show}
+				onHide={() => {
+					setShow(false);
+				}}
+			>
+				<Modal.Header closeButton>
+					<Modal.Title>
+						{playerName}, {awardName}
+					</Modal.Title>
+				</Modal.Header>
+				<Modal.Body>
+					<code className="d-block mb-3 text-wrap">{formula}</code>
+					<table className="table table-sm mb-3">
+						<tbody>
+							{values.map(([name, value]) => (
+								<tr key={name}>
+									<td>
+										<code>{name}</code>
+									</td>
+									<td className="text-end">{fmt(value)}</td>
+								</tr>
+							))}
+						</tbody>
+					</table>
+					{terms ? (
+						<table className="table table-sm mb-3">
+							<tbody>
+								{terms.map((term, i) => (
+									<tr key={i}>
+										<td>
+											<code>
+												{i > 0 || term.sign < 0
+													? `${term.sign < 0 ? "-" : "+"} `
+													: null}
+												{term.text}
+											</code>
+										</td>
+										<td className="text-end">{fmt(term.value)}</td>
+									</tr>
+								))}
+								<tr className="fw-bold">
+									<td>{compare ? "This season" : "Score"}</td>
+									<td className="text-end">
+										{fmt(compare ? compare.current : score)}
+									</td>
+								</tr>
+							</tbody>
+						</table>
+					) : null}
+					{compare ? (
+						<table className="table table-sm mb-0">
+							<tbody>
+								{!terms ? (
+									<tr>
+										<td>This season</td>
+										<td className="text-end">{fmt(compare.current)}</td>
+									</tr>
+								) : null}
+								<tr>
+									<td>Last season</td>
+									<td className="text-end">{fmt(compare.prev)}</td>
+								</tr>
+								<tr>
+									<td>Best before</td>
+									<td className="text-end">{fmt(compare.max)}</td>
+								</tr>
+								<tr className="fw-bold">
+									<td>
+										Score{" "}
+										<code>
+											{compare.kind === "mip"
+												? "2 × this - last - best"
+												: "min(this, best) - last"}
+										</code>
+									</td>
+									<td className="text-end">{fmt(score)}</td>
+								</tr>
+							</tbody>
+						</table>
+					) : !terms ? (
+						<div className="fw-bold d-flex justify-content-between">
+							<span>Score</span>
+							<span>{fmt(score)}</span>
+						</div>
+					) : null}
+				</Modal.Body>
+			</Modal>
+		</>
+	);
+};
 
 export type InputAward = Awaited<
 	ReturnType<typeof getAwardCandidates>
@@ -83,6 +206,21 @@ const getRows = ({
 	const rows: DataTableRow<"player">[] = players.map((p, j) => {
 		const ps = p.currentStats;
 		const pr = p.ratings.findLast((row) => row.season === season);
+
+		const scoreCell = (score: number | undefined) =>
+			p.scoreBreakdown && typeof score === "number" && Number.isFinite(score)
+				? {
+						value: (
+							<ScoreCell
+								awardName={award.name}
+								breakdown={p.scoreBreakdown}
+								playerName={`${p.firstName} ${p.lastName}`}
+								score={score}
+							/>
+						),
+						sortValue: score,
+					}
+				: roundAwardStat(score, "score");
 
 		const abbrev = ps?.abbrev;
 		const tid = ps?.tid;
@@ -179,7 +317,10 @@ const getRows = ({
 						return null;
 					}
 
-					if (!ps2 || stat === "score" || stat === "keyStats") {
+					if (stat === "score") {
+						return scoreCell(ps.score);
+					}
+					if (!ps2 || stat === "keyStats") {
 						return roundAwardStat(ps[stat], stat);
 					}
 
@@ -207,6 +348,10 @@ const getRows = ({
 						value: null,
 						sortValue: Infinity,
 					};
+				}
+
+				if (stat === "score" && ps && !p.statOverrides) {
+					return scoreCell(ps.score);
 				}
 
 				return ps

@@ -17,7 +17,7 @@ export default defineView({
 			inputs.season !== prevInputs?.season
 		) {
 			const awardCandidates = (
-				await getAwardCandidates(inputs.season)
+				await getAwardCandidates(inputs.season, undefined, { breakdown: true })
 			).awardCandidates.flat();
 
 			// Live odds come from the shared award-race model (getAwardRaceOdds), the
