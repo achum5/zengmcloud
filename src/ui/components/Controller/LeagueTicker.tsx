@@ -650,16 +650,4 @@ const LeagueTickerBar = memo(() => {
 	);
 });
 
-// Turned off for this device (Global Settings), the bar is never MOUNTED -
-// nothing measures, no clock runs, and the unmount cleanup above puts the bottom
-// of the document back. Gating the render inside the bar would have left all of
-// that running behind an empty screen.
-export const LeagueTicker = memo(() => {
-	const { leagueTickerEnabled } = useLocal(["leagueTickerEnabled"]);
-
-	if (!leagueTickerEnabled) {
-		return null;
-	}
-
-	return <LeagueTickerBar />;
-});
+export const LeagueTicker = memo(() => <LeagueTickerBar />);

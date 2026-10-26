@@ -1,31 +1,17 @@
-import { safeLocalStorage } from "../../../util/safeLocalStorage.ts";
-
-// Which live-game picture this device shows for basketball (or football): the
-// classic 2D court (or field) or the 3D one. Saved in this browser only, like
-// the color scheme.
+// Which live-game picture a device shows for basketball (or football): the
+// 3D one, always - the classic 2D court (or field) only when the 3D one can't
+// play a game (see LiveGame's onFail).
 // (In a multiplayer broadcast, everyone watching follows the device in charge
 // of simming instead - see LiveGame.)
 
 export type LiveGameView = "classic" | "3d";
 
-const KEY = "bbgmLiveGameView";
-
 // "2.5d" and "retro" are what the 3D court used to be called - still what
-// it reads back from a browser that chose it then, or from a device on an
-// older version that's in charge of simming.
+// a device on an older version that's in charge of simming may send.
 export const parseLiveGameView = (value: unknown): LiveGameView =>
 	value === "3d" || value === "2.5d" || value === "retro" ? "3d" : "classic";
 
-export const getLiveGameView = (): LiveGameView =>
-	parseLiveGameView(safeLocalStorage.getItem(KEY));
-
-export const setLiveGameView = (view: LiveGameView) => {
-	if (view === "3d") {
-		safeLocalStorage.setItem(KEY, view);
-	} else {
-		safeLocalStorage.removeItem(KEY);
-	}
-};
+export const getLiveGameView = (): LiveGameView => "3d";
 
 // How fast the 3D court plays: 1x is real time - a second of the game in
 // a second (bar the dead time it runs through fast) - and quicker from there.

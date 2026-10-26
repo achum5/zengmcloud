@@ -1,6 +1,7 @@
-import { assert, describe, test } from "vitest";
+import { assert, describe, test, vi } from "vitest";
 import { compile } from "./testGame.ts";
 import {
+	getKeyPlays,
 	KEY_PLAY_DEFAULTS,
 	keyOutAt,
 	parseKeyPlays,
@@ -277,5 +278,42 @@ describe("3D key plays", () => {
 		assert.isFalse(s.closeOnTop);
 		assert.isTrue(parseKeyPlays({ closeOnTop: true }).closeOnTop);
 		assert.deepEqual(parseKeyPlays("junk"), KEY_PLAY_DEFAULTS);
+	});
+
+	// This device's own: on or off, the length and what counts as close as
+	// saved - a close finish always on top of the length, and the reel made
+	// of every kind of big play (whatever an older version saved).
+	test("this device's key plays: its length and close game, the rest as standard", () => {
+		const saved = new Map<string, string>([
+			[
+				"bbgmKeyPlays",
+				JSON.stringify({
+					on: true,
+					minutes: 5,
+					closePoints: 6,
+					closeMinutes: 2,
+					closeOnTop: false,
+					dunks: false,
+					mine: false,
+				}),
+			],
+		]);
+		vi.stubGlobal("window", {
+			localStorage: {
+				getItem: (k: string) => saved.get(k) ?? null,
+			},
+		});
+		try {
+			const s = getKeyPlays();
+			assert.isTrue(s.on);
+			assert.strictEqual(s.minutes, 5);
+			assert.strictEqual(s.closePoints, 6);
+			assert.strictEqual(s.closeMinutes, 2);
+			assert.isTrue(s.closeOnTop);
+			assert.isTrue(s.dunks);
+			assert.isTrue(s.mine);
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 });

@@ -1674,11 +1674,6 @@ export type LocalStateUI = {
 	// itself. Anything else anchored to the bottom of the window reads this to
 	// know whether to lift - the same arrangement stickyFooterAd uses.
 	leagueTickerVisible: boolean;
-	// Whether the ticker is wanted at all on THIS device (Global Settings). Off,
-	// the bar is never mounted - not collapsed to a sliver, which is what its own
-	// caret button does. Saved to localStorage, so it does not follow the account
-	// to another device.
-	leagueTickerEnabled: boolean;
 	gold?: boolean;
 	keyboardShortcuts: KeyboardShortcutsLocal;
 	leagueCreation?: {
@@ -1759,6 +1754,8 @@ export type LocalStateUI = {
 	popup: boolean;
 	recapAIProvider: RecapAIProvider;
 	showLeagueTopBar: boolean;
+	// The depth chart over the roster table, on THIS device (Global Settings).
+	showDepthChart: boolean;
 	showNagModal: boolean;
 	sidebarOpen: boolean;
 	statusText: string;

@@ -6,12 +6,14 @@ import { momentsOf } from "../winProb.ts";
 // KEY PLAYS. A game watched as its big moments: a reel of them - the dunks,
 // the threes, the blocks, the lead changing hands - in order, the score and
 // the clock moving on between them, to a length the viewer picks. And if it
-// is close at the end, every play of the finish, the way it happened - out
-// of that length, or on top of it (so a close finish takes nothing from the
-// rest of the game, and how quickly the early going passes never gives one
-// away).
+// is close at the end, every play of the finish, the way it happened - on
+// top of that length (so a close finish takes nothing from the rest of the
+// game, and how quickly the early going passes never gives one away).
 //
-// Saved in this browser only, like the choice of picture (see setting.ts).
+// Saved in this browser only: on or off and the length (the picker by the
+// 3D court), and what counts as close (Global Settings). The reel is made of
+// every kind of big play, your team's first. (Another device's, followed in
+// a multiplayer broadcast, is read just as it sent it.)
 
 export type KeyPlaySettings = {
 	on: boolean;
@@ -111,12 +113,21 @@ export const parseKeyPlays = (value: unknown): KeyPlaySettings => {
 };
 
 export const getKeyPlays = (): KeyPlaySettings => {
+	let saved: KeyPlaySettings;
 	try {
 		const raw = safeLocalStorage.getItem(KEY);
-		return parseKeyPlays(raw ? JSON.parse(raw) : undefined);
+		saved = parseKeyPlays(raw ? JSON.parse(raw) : undefined);
 	} catch {
-		return { ...KEY_PLAY_DEFAULTS };
+		saved = KEY_PLAY_DEFAULTS;
 	}
+	return {
+		...KEY_PLAY_DEFAULTS,
+		on: saved.on,
+		minutes: saved.minutes,
+		closePoints: saved.closePoints,
+		closeMinutes: saved.closeMinutes,
+		closeOnTop: true,
+	};
 };
 
 export const setKeyPlays = (settings: KeyPlaySettings) => {

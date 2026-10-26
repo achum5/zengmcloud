@@ -455,9 +455,9 @@ const getNavigateWarning = (
 export const LiveGame = (props: View<"liveGame">) => {
 	const [paused, setPaused] = useState(false);
 	const pausedRef = useRef(paused);
-	// This device's choice of picture for basketball or football: the 2D
-	// court (or field), or the 3D one. Read once - a game does not switch
-	// pictures halfway through. In 3D the picture sets the pace: it asks for
+	// This device's picture for basketball or football: the 3D one (see
+	// setting.ts). Read once - a game does not switch pictures halfway
+	// through. In 3D the picture sets the pace: it asks for
 	// each line when its animation reaches it (onCourt3DReady), instead of the
 	// timer below firing. Someone following a multiplayer broadcast sees
 	// whatever the device in charge of simming chose instead (see court3d

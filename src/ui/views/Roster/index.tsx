@@ -129,6 +129,7 @@ const Roster = ({
 		phase,
 		salaryCapType,
 		season: currentSeason,
+		showDepthChart,
 		teamInfoCache,
 		userTid,
 	} = useLocal([
@@ -138,6 +139,7 @@ const Roster = ({
 		"phase",
 		"salaryCapType",
 		"season",
+		"showDepthChart",
 		"teamInfoCache",
 		"userTid",
 	]);
@@ -508,7 +510,7 @@ const Roster = ({
 				conf={conf}
 				currentSeason={currentSeason}
 				depthChart={
-					__SPORT === "basketball" ? (
+					__SPORT === "basketball" && showDepthChart ? (
 						<DepthChart
 							numPlayersOnCourt={numPlayersOnCourt}
 							players={playersSorted}

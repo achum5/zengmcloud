@@ -12,8 +12,8 @@ type LocalActions = {
 	deleteGames: (gids: number[]) => void;
 	mergeGames: (games: LocalStateUI["games"]) => void;
 	resetLeague: () => void;
-	setLeagueTickerEnabled: (leagueTickerEnabled: boolean) => void;
 	setShowLeagueTopBar: (showLeagueTopBar: boolean) => void;
+	setShowDepthChart: (showDepthChart: boolean) => void;
 	setSidebarOpen: (sidebarOpen: boolean) => void;
 	update: (obj: Partial<LocalStateUI>) => void;
 	updateGameAttributes: (
@@ -25,9 +25,7 @@ type LocalActions = {
 const defaultUnits: "metric" | "us" =
 	window.navigator.language === "en-US" ? "us" : "metric";
 
-// Distinct from bbgmShowLeagueTicker, which is the bar's own caret - collapsed
-// to a sliver rather than gone.
-const LEAGUE_TICKER_ENABLED_KEY = "bbgmLeagueTickerEnabled";
+const SHOW_DEPTH_CHART_KEY = "bbgmShowDepthChart";
 
 type LocalStateWithActions = LocalStateUI & {
 	actions: LocalActions;
@@ -52,10 +50,9 @@ if (showTemp === "true") {
 	initialShowLeagueTopBar = true;
 }
 
-// On unless this device has said otherwise, so a browser with nothing saved (and
-// one where localStorage is unavailable) gets the ticker.
-const initialLeagueTickerEnabled =
-	safeLocalStorage.getItem(LEAGUE_TICKER_ENABLED_KEY) !== "false";
+// On unless this device has said otherwise.
+const initialShowDepthChart =
+	safeLocalStorage.getItem(SHOW_DEPTH_CHART_KEY) !== "false";
 
 const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 	(set, get) => ({
@@ -77,7 +74,6 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		fullNames: false,
 		tickerItems: [],
 		leagueTickerVisible: false,
-		leagueTickerEnabled: initialLeagueTickerEnabled,
 		gameOver: false,
 		gameSimInProgress: false,
 		games: [],
@@ -132,6 +128,7 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 		hardCapUseLuxuryTax: defaultGameAttributes.hardCapUseLuxuryTax,
 		season: 0,
 		showLeagueTopBar: initialShowLeagueTopBar,
+		showDepthChart: initialShowDepthChart,
 		showNagModal: false,
 		sidebarOpen: initialSidebarOpen,
 		spectator: false,
@@ -245,20 +242,17 @@ const useLocalRaw = createWithEqualityFn<LocalStateWithActions>(
 				});
 			},
 
-			setLeagueTickerEnabled(leagueTickerEnabled: boolean) {
-				set({ leagueTickerEnabled });
-				safeLocalStorage.setItem(
-					LEAGUE_TICKER_ENABLED_KEY,
-					String(leagueTickerEnabled),
-				);
-			},
-
 			setShowLeagueTopBar(showLeagueTopBar: boolean) {
 				set({ showLeagueTopBar });
 				safeLocalStorage.setItem(
 					"bbgmShowLeagueTopBar",
 					String(showLeagueTopBar),
 				);
+			},
+
+			setShowDepthChart(showDepthChart: boolean) {
+				set({ showDepthChart });
+				safeLocalStorage.setItem(SHOW_DEPTH_CHART_KEY, String(showDepthChart));
 			},
 
 			setSidebarOpen(sidebarOpen: boolean) {
