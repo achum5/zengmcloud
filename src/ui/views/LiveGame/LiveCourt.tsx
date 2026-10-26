@@ -1737,6 +1737,9 @@ const LiveCourt = ({
 	const floorPattern = court?.floorPattern ?? "hardwood";
 	const paintColor = court?.paint || undefined; // undefined = no painted key
 	const trophyURL = court?.trophyURL || DEFAULT_TROPHY_URL;
+	// A floor picture has its own center court, which the trophy would bury:
+	// there the 3D view puts it on the scorer's table instead.
+	const floorTrophy = finals && !floorImageURL;
 	// (A floor picture has its own center court: the team logo goes on it
 	// only if asked for.)
 	const centerLogoURL =
@@ -2388,7 +2391,7 @@ const LiveCourt = ({
 				{/* Center-court branding OVER the lines. During a finals game a big
 				    championship trophy dominates center court with the home logo in
 				    front of its base; otherwise a large home logo. */}
-				{finals ? (
+				{floorTrophy ? (
 					<image
 						href={trophyURL}
 						{...placed("trophy", {
@@ -2404,10 +2407,10 @@ const LiveCourt = ({
 					<image
 						href={centerLogoURL}
 						{...placed("logo", {
-							x: COURT_W / 2 - (finals ? 13 : 15),
-							y: 25 - (finals ? 13 : 15),
-							width: finals ? 26 : 30,
-							height: finals ? 26 : 30,
+							x: COURT_W / 2 - (floorTrophy ? 13 : 15),
+							y: 25 - (floorTrophy ? 13 : 15),
+							width: floorTrophy ? 26 : 30,
+							height: floorTrophy ? 26 : 30,
 							opacity: 0.97,
 						})}
 					/>
@@ -2561,6 +2564,7 @@ const LiveCourt = ({
 			benchTextColor,
 			centerLogoURL,
 			trophyURL,
+			floorTrophy,
 			railLabel,
 			homeText,
 			homeColor,

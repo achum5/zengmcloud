@@ -1108,6 +1108,26 @@ export const paintRafters = (
 	return canvas;
 };
 
+// The championship trophy in the middle of the scorer's table front, for a
+// finals game whose floor picture keeps its own center court.
+export const withTrophy = (
+	board: HTMLCanvasElement,
+	trophy: HTMLCanvasElement,
+): HTMLCanvasElement => {
+	const out = document.createElement("canvas");
+	out.width = board.width;
+	out.height = board.height;
+	const ctx = out.getContext("2d")!;
+	ctx.drawImage(board, 0, 0);
+	const h = out.height * 0.86;
+	const w = (trophy.width / trophy.height) * h;
+	const x = (out.width - w) / 2;
+	ctx.fillStyle = "#0b0c10";
+	ctx.fillRect(x - w * 0.35, 0, w * 1.7, out.height);
+	ctx.drawImage(trophy, x, out.height - h, w, h);
+	return out;
+};
+
 export const paintTable = (
 	home: ArenaTeam | undefined,
 	away: ArenaTeam | undefined,
