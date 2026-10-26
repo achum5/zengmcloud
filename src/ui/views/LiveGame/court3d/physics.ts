@@ -119,7 +119,13 @@ export const playShot = (
 	// A basket comes down through the ring from above it. One that comes up
 	// under the iron and drops back, or up through the hoop from below, is
 	// no basket, however it falls after.
-	let cameDown = false;
+	// (Taken up already part way down through it - its middle inside the
+	// ring and less than its own size under it - it is on its way in.)
+	let cameDown =
+		Math.hypot(p0.x - cx, p0.y - cy) < RING &&
+		p0.z < RIM_Z &&
+		p0.z > RIM_Z - BALL_R &&
+		v0.z < 0;
 	let upThrough = false;
 	let underNet = false;
 	let decided: number | undefined;
