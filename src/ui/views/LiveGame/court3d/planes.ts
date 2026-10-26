@@ -259,17 +259,13 @@ const drawRows = (
 // So it too is drawn a row of the picture at a time, each row filled with
 // the picture laid on it slanted - exact, every pixel of the picture filled
 // once. (In triangles, each clipped to its own edges, every edge showed: a
-// lattice of faint slanting lines across the floor in every close-up.)
+// lattice of faint slanting lines across the floor in every close-up. A
+// band's clip is whole rows of pixels, so none of its edges shows.) The
+// picture is drawn as a picture, the way drawRows draws it, not filled in
+// as a pattern: a pattern moved about from one band to the next isn't laid
+// where it is told in every browser - a replay's floor came out warped and
+// out of place, its lines and paint nowhere near the game's.
 // Anything not lying flat, or a camera tilted over, can't be: false.
-const patterns = new WeakMap<HTMLCanvasElement, CanvasPattern | null>();
-const patternOf = (ctx: CanvasRenderingContext2D, img: HTMLCanvasElement) => {
-	let p = patterns.get(img);
-	if (p === undefined) {
-		p = ctx.createPattern(img, "no-repeat");
-		patterns.set(img, p);
-	}
-	return p ?? undefined;
-};
 const drawFlatRows = (
 	ctx: CanvasRenderingContext2D,
 	cam: Camera,
@@ -443,14 +439,9 @@ const drawFlatRows = (
 			x1 = nx1;
 			b = nb;
 		}
-		const pat = patternOf(ctx, b.pic);
-		if (!pat) {
-			ctx.restore();
-			return false;
-		}
 		// The picture's pixel (px, py) at the screen's (x, y): px = sx u,
-		// u = c.u + ua (x - xc) + uy (y - yc), the same for py - the pattern
-		// wants it the other way round.
+		// u = c.u + ua (x - xc) + uy (y - yc), the same for py - the picture
+		// is laid on the screen the other way round.
 		const m00 = b.sx * b.ua;
 		const m01 = b.sx * b.uy;
 		const m10 = b.sy * b.va;
@@ -458,23 +449,50 @@ const drawFlatRows = (
 		const t0 = b.sx * (b.c.u - b.ua * b.xc - b.uy * b.yc);
 		const t1 = b.sy * (b.c.v - b.va * b.xc - b.vy * b.yc);
 		const det = m00 * m11 - m01 * m10;
-		if (Math.abs(det) > 1e-12) {
+		// Only the part of the picture under the band, and a pixel or two
+		// round it, so its edge is never what a pixel of the band is drawn
+		// from. (Each row of the band only as far as the plane goes - the
+		// picture is no wider than the plane, so past its edge nothing is.)
+		let px0 = Infinity;
+		let py0 = Infinity;
+		let px1 = -Infinity;
+		let py1 = -Infinity;
+		for (const x of [x0, x1]) {
+			for (const y of [r, r + k]) {
+				const px = m00 * x + m01 * y + t0;
+				const py = m10 * x + m11 * y + t1;
+				px0 = Math.min(px0, px);
+				py0 = Math.min(py0, py);
+				px1 = Math.max(px1, px);
+				py1 = Math.max(py1, py);
+			}
+		}
+		const sx0 = Math.max(0, Math.floor(px0) - 2);
+		const sy0 = Math.max(0, Math.floor(py0) - 2);
+		const sx1 = Math.min(b.pic.width, Math.ceil(px1) + 2);
+		const sy1 = Math.min(b.pic.height, Math.ceil(py1) + 2);
+		if (Math.abs(det) > 1e-12 && sx1 > sx0 && sy1 > sy0) {
 			const a = m11 / det;
 			const bb = -m10 / det;
 			const c = -m01 / det;
 			const d = m00 / det;
-			pat.setTransform({
-				a,
-				b: bb,
-				c,
-				d,
-				e: -(a * t0 + c * t1),
-				f: -(bb * t0 + d * t1),
-			});
-			ctx.fillStyle = pat;
-			// (Each row of it only as far as the plane goes - the picture is
-			// no wider than the plane, so past its edge the pattern is clear.)
-			ctx.fillRect(x0, r, x1 - x0, k);
+			ctx.save();
+			ctx.beginPath();
+			ctx.rect(x0, r, x1 - x0, k);
+			ctx.clip();
+			ctx.transform(a, bb, c, d, -(a * t0 + c * t1), -(bb * t0 + d * t1));
+			ctx.drawImage(
+				b.pic,
+				sx0,
+				sy0,
+				sx1 - sx0,
+				sy1 - sy0,
+				sx0,
+				sy0,
+				sx1 - sx0,
+				sy1 - sy0,
+			);
+			ctx.restore();
 		}
 		r += k;
 	}

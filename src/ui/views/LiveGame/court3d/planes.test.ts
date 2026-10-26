@@ -1,5 +1,11 @@
 import { afterEach, assert, beforeEach, test, vi } from "vitest";
-import { courtFit, makeCamera, MAIN_RIG } from "./camera.ts";
+import {
+	type Camera,
+	courtFit,
+	makeCamera,
+	MAIN_RIG,
+	project,
+} from "./camera.ts";
 import { COURT_W } from "./geometry.ts";
 import {
 	drawTexturedLayers,
@@ -114,43 +120,49 @@ test("the floor far off is drawn from its picture halved, near from the whole of
 });
 
 // From a camera turned along the court (a replay's), the floor is drawn a
-// band of the screen's rows at a time, each filled with its picture laid
-// on it slanted - every row of the floor filled once, nothing clipped -
+// band of the screen's rows at a time, each its picture laid on it slanted
+// and clipped to its own whole rows - every row of the floor drawn once -
 // not in triangles, whose edges all showed: a lattice of faint slanting
 // lines across the floor.
-test("the floor seen by a turned camera: in bands of whole rows, none twice, no edges", () => {
-	const picture = stubCanvas();
-	picture.width = 1040;
-	picture.height = 550;
-	const fills: { x: number; y: number; w: number; h: number }[] = [];
-	let clips = 0;
-	const pattern = { setTransform: () => {} };
-	const ctx = {
-		globalAlpha: 1,
-		fillStyle: undefined as unknown,
-		save: () => {},
-		restore: () => {},
-		clip: () => {
-			clips++;
-		},
-		createPattern: () => pattern,
-		fillRect: (x: number, y: number, w: number, h: number) => {
-			fills.push({ x, y, w, h });
-		},
-		beginPath: () => {},
-		moveTo: () => {},
-		lineTo: () => {},
-		closePath: () => {},
-		transform: () => {},
-		drawImage: () => {},
-	} as unknown as CanvasRenderingContext2D;
-	const cam = makeCamera({ x: 12, width: 30, y: 25, z: 4 }, 1200, 675, {
+type Band = {
+	x: number;
+	y: number;
+	w: number;
+	h: number;
+	clips: number;
+	m: number[];
+	pic: Canvas;
+	src: number[];
+};
+const REPLAY_CAM = () =>
+	makeCamera({ x: 12, width: 30, y: 25, z: 4 }, 1200, 675, {
 		...MAIN_RIG,
 		back: 24,
 		high: 14,
 		slide: 0.92,
 		upright: false,
 	});
+const bandsOf = (cam: Camera, picture: Canvas) => {
+	const bands: Band[] = [];
+	let at = { x: 0, y: 0, w: 0, h: 0, clips: 0, m: [] as number[] };
+	const ctx = {
+		globalAlpha: 1,
+		save: () => {},
+		restore: () => {},
+		beginPath: () => {},
+		rect: (x: number, y: number, w: number, h: number) => {
+			at = { x, y, w, h, clips: 0, m: [] };
+		},
+		clip: () => {
+			at.clips++;
+		},
+		transform: (...m: number[]) => {
+			at.m = m;
+		},
+		drawImage: (pic: Canvas, ...src: number[]) => {
+			bands.push({ ...at, pic, src: src.slice(0, 4) });
+		},
+	} as unknown as CanvasRenderingContext2D;
 	drawTexturedPlane(
 		ctx,
 		cam,
@@ -159,22 +171,79 @@ test("the floor seen by a turned camera: in bands of whole rows, none twice, no 
 		26,
 		12,
 	);
-	assert.strictEqual(clips, 0);
-	assert.isAbove(fills.length, 20);
-	// Whole rows, top to bottom, each band starting where the last ended.
-	for (let i = 0; i < fills.length; i++) {
-		const f = fills[i]!;
+	return bands;
+};
+
+test("the floor seen by a turned camera: in bands of whole rows, none twice, each clipped to its rows", () => {
+	const picture = stubCanvas();
+	picture.width = 1040;
+	picture.height = 550;
+	const bands = bandsOf(REPLAY_CAM(), picture);
+	assert.isAbove(bands.length, 20);
+	// Whole rows, top to bottom, each band starting where the last ended,
+	// drawn under its own clip to them.
+	for (let i = 0; i < bands.length; i++) {
+		const f = bands[i]!;
+		assert.strictEqual(f.clips, 1);
 		assert.strictEqual(f.y, Math.round(f.y));
 		assert.isAtLeast(f.h, 1);
 		if (i > 0) {
-			assert.strictEqual(f.y, fills[i - 1]!.y + fills[i - 1]!.h);
+			assert.strictEqual(f.y, bands[i - 1]!.y + bands[i - 1]!.h);
 		}
 		assert.isAtLeast(f.x, 0);
 		assert.isAtMost(f.x + f.w, 1200 + 1e-9);
+		// From within its picture.
+		const [sx, sy, sw, sh] = f.src as [number, number, number, number];
+		assert.isAtLeast(sx, 0);
+		assert.isAtLeast(sy, 0);
+		assert.isAtMost(sx + sw, f.pic.width);
+		assert.isAtMost(sy + sh, f.pic.height);
 	}
 	// Down to the bottom of the picture: the floor right under the camera.
-	const last = fills.at(-1)!;
+	const last = bands.at(-1)!;
 	assert.strictEqual(last.y + last.h, 675);
+});
+
+// Each band's picture where the camera sees that part of the floor: a spot
+// on the screen, taken back through the band's map onto its picture, is
+// the spot on the floor the camera puts there - to within about a pixel.
+test("the floor seen by a turned camera: each band lays its picture where that floor is", () => {
+	const picture = stubCanvas();
+	picture.width = 1040;
+	picture.height = 550;
+	const cam = REPLAY_CAM();
+	const bands = bandsOf(cam, picture);
+	let checked = 0;
+	for (const f of bands) {
+		const [a, b, c, d, e, g] = f.m as [
+			number,
+			number,
+			number,
+			number,
+			number,
+			number,
+		];
+		const det = a * d - b * c;
+		for (const [x, y] of [
+			[f.x + 0.5, f.y + 0.5],
+			[f.x + f.w / 2, f.y + f.h / 2],
+			[f.x + f.w - 0.5, f.y + f.h - 0.5],
+		] as const) {
+			// The band's picture pixel at (x, y), and the floor there.
+			const px = (d * (x - e) - c * (y - g)) / det;
+			const py = (a * (y - g) - b * (x - e)) / det;
+			const u = (px / f.pic.width) * COURT.w;
+			const v = (py / f.pic.height) * COURT.h;
+			const spot = project(cam, {
+				x: COURT.origin.x + u,
+				y: COURT.origin.y + v,
+				z: 0,
+			});
+			assert.isAtMost(Math.hypot(spot.x - x, spot.y - y), 1.2);
+			checked++;
+		}
+	}
+	assert.isAbove(checked, 60);
 });
 
 // The stands behind a basket - drawn in triangles from the sideline - are
