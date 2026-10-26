@@ -12,6 +12,7 @@ import { helpers } from "../util/helpers.ts";
 import { toWorker } from "../util/toWorker.ts";
 import { realtimeUpdate } from "../util/realtimeUpdate.ts";
 import { BoxScore } from "./BoxScore.tsx";
+import { GameCharts } from "./GameCharts.basketball.tsx";
 import { range } from "../../common/utils.ts";
 import getWinner from "../../common/getWinner.ts";
 import { OverlayTrigger, Popover } from "react-bootstrap";
@@ -1345,6 +1346,7 @@ export const BoxScoreWrapper = ({
 				forceRowUpdate={forceRowUpdate}
 				sportState={sportState}
 			/>
+			{live ? null : <GameCharts boxScore={boxScore} />}
 			Attendance: {helpers.numberWithCommas(boxScore.att)}
 			{boxScore.neutralSite ? (
 				<>

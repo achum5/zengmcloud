@@ -20,6 +20,8 @@ export type GameShift = {
 	poss: [number, number];
 	// Points each team scored in them.
 	pts: [number, number];
+	// Seconds of game they played together.
+	sec?: number;
 };
 
 const signature = (lineups: [number[], number[]]) =>
@@ -39,7 +41,7 @@ export class ShiftLog {
 		const key = signature(lineups);
 		let shift = this.byLineup.get(key);
 		if (!shift) {
-			shift = { lineups, poss: [0, 0], pts: [0, 0] };
+			shift = { lineups, poss: [0, 0], pts: [0, 0], sec: 0 };
 			this.byLineup.set(key, shift);
 		}
 		this.current = shift;
@@ -48,6 +50,12 @@ export class ShiftLog {
 	addPossession(t: TeamNum) {
 		if (this.current) {
 			this.current.poss[t] += 1;
+		}
+	}
+
+	addTime(sec: number) {
+		if (this.current) {
+			this.current.sec = (this.current.sec ?? 0) + sec;
 		}
 	}
 

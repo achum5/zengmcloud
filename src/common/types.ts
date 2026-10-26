@@ -510,11 +510,20 @@ export type Game = {
 	numPeriods?: number; // Optional only for legacy, otherwise it's the number of periods in the game, defined at the start
 	numPlayersOnCourt?: number;
 
-	// Lineup-level scoring, for the season's RAPM regression. A flat run of
-	// integers, `2 * numPlayersOnCourt + 4` per ten-man matchup - see
-	// worker/util/gameShifts.ts. Regular season games only, and only in sports
-	// and versions that record it, so absent far more often than present.
+	// Lineup-level scoring, for the season's RAPM regression and the box
+	// score's lineups. A flat run of integers, `2 * numPlayersOnCourt + 4` per
+	// ten-man matchup - see worker/util/gameShifts.ts. Not the All-Star game,
+	// and only in sports and versions that record it, so often absent. (RAPM
+	// reads regular season rows only.)
 	shifts?: number[];
+	// When things happened, for the box score's pictures of the game - see
+	// worker/util/gameTimeline.ts. Flat runs of whole seconds of game: each
+	// player's stints on the floor, each score, where each period ended, and
+	// the seconds each row of `shifts` played.
+	stints?: number[];
+	scoring?: number[];
+	periodEnds?: number[];
+	shiftSecs?: number[];
 	// The pregame point spread from the home team's perspective (positive = home
 	// favored), as it was computed WHEN THE GAME WAS PLAYED. Stored because the
 	// formula can see things (lineup synergy) that a finished box score cannot

@@ -4,6 +4,7 @@ import { PHASE, STARTING_NUM_TIMEOUTS } from "../../../common/constants.ts";
 import jumpBallWinnerStartsThisPeriodWithPossession from "./jumpBallWinnerStartsThisPeriodWithPossession.ts";
 import { synergyForLineup, type SynergySkills } from "./synergy.ts";
 import { ShiftLog } from "./shiftLog.ts";
+import { TimelineLog } from "./timelineLog.ts";
 import {
 	lineupAt,
 	sanitizeRotation,
@@ -174,6 +175,18 @@ class GameSim extends GameSimBase {
 	// shiftLog.ts and util/rapm.ts.
 	shiftLog: ShiftLog;
 
+	// When each of it happened: stints, scores, period ends. See timelineLog.ts.
+	timelineLog: TimelineLog;
+
+	// Seconds of game played so far, on the clock minutes are counted on.
+	elapsed = 0;
+
+	// Where the possession being played started on that clock, and how long its
+	// inbound took - so a score inside it lands at the right moment. Undefined
+	// between possessions.
+	possessionStart: number | undefined;
+	possessionInbound = 0;
+
 	// Each team's rotation plan, already reduced to what can be followed, or
 	// undefined for a team the coach runs himself. See plannedLineup.
 	rotationStints: [RotationStint[] | undefined, RotationStint[] | undefined];
@@ -319,6 +332,7 @@ class GameSim extends GameSimBase {
 		];
 		this.ratingArrayCache = new Array(this.numPlayersOnCourt);
 		this.shiftLog = new ShiftLog();
+		this.timelineLog = new TimelineLog();
 
 		this.updatePlayersOnCourt({
 			recordStarters: true,
@@ -494,6 +508,7 @@ class GameSim extends GameSimBase {
 			numPlayersOnCourt: this.numPlayersOnCourt,
 			neutralSite: this.neutralSite,
 			shifts: this.shiftLog.getShifts(),
+			timeline: this.timelineLog.finish(this.elapsed),
 			// scoringSummary: this.playByPlay.scoringSummary,
 		};
 		return out;
@@ -732,6 +747,7 @@ class GameSim extends GameSimBase {
 
 			period += 1;
 
+			this.timelineLog.endPeriod(this.elapsed);
 			this.team[0].stat.ptsQtrs.push(0);
 			this.team[1].stat.ptsQtrs.push(0);
 			this.foulsThisQuarter = [0, 0];
@@ -754,6 +770,7 @@ class GameSim extends GameSimBase {
 
 		this.lastScoringPlay = [];
 		this.overtimes += 1;
+		this.timelineLog.endPeriod(this.elapsed);
 		this.team[0].stat.ptsQtrs.push(0);
 		this.team[1].stat.ptsQtrs.push(0);
 		this.foulsThisQuarter = [0, 0];
@@ -922,6 +939,8 @@ class GameSim extends GameSimBase {
 		const dtInbound = this.dtInbound();
 		this.t -= dtInbound;
 		this.possessionLength = 0;
+		this.possessionStart = this.elapsed;
+		this.possessionInbound = dtInbound;
 		this.isClockRunning = true; // Set after computing dtIinbound!
 
 		const clockFactor = this.getClockFactor();
@@ -940,6 +959,7 @@ class GameSim extends GameSimBase {
 
 		const possessionTime = dtInbound + this.possessionLength;
 		this.updatePlayingTime(possessionTime);
+		this.possessionStart = undefined;
 
 		// Nobody can get hurt if no time elapsed, otherwise a player could be injured immediately after subbing in, with 0 minutes played
 		const injuries = possessionTime > 0 ? this.injuries() : false;
@@ -1337,6 +1357,13 @@ class GameSim extends GameSimBase {
 			this.playersOnCourt[0].slice(0, this.numPlayersOnCourt).map((p) => p.id),
 			this.playersOnCourt[1].slice(0, this.numPlayersOnCourt).map((p) => p.id),
 		);
+		this.timelineLog.setLineups(
+			[
+				...this.playersOnCourt[0].slice(0, this.numPlayersOnCourt),
+				...this.playersOnCourt[1].slice(0, this.numPlayersOnCourt),
+			].map((p) => p.id),
+			this.elapsed,
+		);
 
 		return substitutions;
 	}
@@ -1416,6 +1443,8 @@ class GameSim extends GameSimBase {
 	 */
 	updatePlayingTime(possessionLength: number) {
 		const min = possessionLength / 60;
+		this.elapsed += possessionLength;
+		this.shiftLog.addTime(possessionLength);
 		for (const t of teamNums) {
 			const playersOnCourt = this.playersOnCourt[t];
 
@@ -2974,6 +3003,15 @@ class GameSim extends GameSimBase {
 				teamStat.ptsQtrs[teamStat.ptsQtrs.length - 1] += amt;
 
 				this.shiftLog.addPoints(t, amt);
+				this.timelineLog.addPoints(
+					t,
+					amt,
+					this.possessionStart === undefined
+						? this.elapsed
+						: this.possessionStart +
+								this.possessionInbound +
+								this.possessionLength,
+				);
 				this.flow.addPoints(
 					t,
 					amt,
