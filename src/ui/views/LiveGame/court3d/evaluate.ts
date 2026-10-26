@@ -4294,7 +4294,7 @@ const LIFT_HIP = 0.45;
 // which foot leads is no way to tell, half and half, so as the way he goes
 // comes round past straight ahead the lead goes over from the one foot to
 // the other, not in a frame. (Out of how much of the way is across him.)
-const LEAD_SURE = 0.25;
+const LEAD_SURE = 0.35;
 const leftLeads = (way: [number, number]): number | undefined => {
 	const m = Math.hypot(way[0], way[1]);
 	return m < 1e-6
