@@ -17948,19 +17948,12 @@ class Director {
 							this.ball[j - 1]?.kind === "bounce") &&
 						dist(this.ballSpotOf(this.ball[j - 1]!), m.to) < 4,
 				);
-				if (fetch || !acts.some((a) => a > m.t1 && a <= t1)) {
-					if (t1 <= (next?.t0 ?? Infinity)) {
-						m.t1 = t1;
-						return true;
-					}
-					// (What he does next there - settling over the ball before he
-					// picks it up, say - he does once he is there, if there is
-					// still time for it: not left standing short of it.)
-					if (next && t1 < next.t1 - 100 && dist(next.from, m.to) < 0.5) {
-						m.t1 = t1;
-						next.t0 = t1;
-						return true;
-					}
+				if (
+					t1 <= (next?.t0 ?? Infinity) &&
+					(fetch || !acts.some((a) => a > m.t1 && a <= t1))
+				) {
+					m.t1 = t1;
+					return true;
 				}
 				const k = most / far;
 				m.to = {
