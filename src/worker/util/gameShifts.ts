@@ -1,10 +1,10 @@
 // LINEUP SCORING, PACKED SMALL ENOUGH TO KEEP.
 //
-// A season's worth of ten-man matchups is the raw material for RAPM (see
-// rapm.ts), and it has to survive from the night a game is played until the
-// regular season ends. That means it lives on the game row, next to the box
-// score, which also means it inherits the box score's lifetime: leagues drop
-// old games after a couple of seasons, and these go with them.
+// The ten-man matchups a game produced are what its box score's lineups, a
+// team's season of lineups and a player's teammates are all read from. They
+// live on the game row, next to the box score, which also means they inherit
+// the box score's lifetime: leagues drop old games after a couple of seasons,
+// and these go with them.
 //
 // So it is stored as a flat run of integers rather than a list of objects,
 // because the field names would cost more than the numbers do. Each matchup

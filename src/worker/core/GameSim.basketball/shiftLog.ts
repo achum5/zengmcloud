@@ -3,12 +3,12 @@
 // A box score says what a player did. It cannot say what the game did while he
 // played, and that is the only evidence there is about the half of basketball
 // that never touches the ball. This records it: every distinct ten-man matchup
-// a game produces, with the possessions and points each side got out of it.
+// a game produces, with the possessions, points and time each side got out of
+// it.
 //
 // It is deliberately tiny. Matchups repeat constantly - the same starters face
 // each other all night - so they are folded together as they recur, which
-// leaves a game with a few dozen rows instead of a few hundred, and leaves the
-// season's regression with less to chew through.
+// leaves a game with a few dozen rows instead of a few hundred.
 
 import type { TeamNum } from "../../../common/types.ts";
 

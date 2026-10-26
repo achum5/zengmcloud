@@ -250,9 +250,6 @@ export const getCategoriesAndStats = (onlyStat?: string) => {
 				stat: "onOff100",
 				titleOverride: "+/- Per 100, On-Off",
 			},
-			{
-				stat: "rapm",
-			},
 		],
 		football: [
 			{

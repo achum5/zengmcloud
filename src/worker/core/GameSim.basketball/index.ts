@@ -171,8 +171,8 @@ class GameSim extends GameSimBase {
 
 	playersOnCourt: [PlayerGameSim[], PlayerGameSim[]];
 
-	// Lineup-level scoring, which is what RAPM is regressed on. See
-	// shiftLog.ts and util/rapm.ts.
+	// Lineup-level scoring: every ten-man matchup, its possessions and points.
+	// See shiftLog.ts.
 	shiftLog: ShiftLog;
 
 	// When each of it happened: stints, scores, period ends. See timelineLog.ts.

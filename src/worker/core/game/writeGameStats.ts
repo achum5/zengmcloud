@@ -262,9 +262,8 @@ export const gameSimToBoxScore = async (results: GameResults, att: number) => {
 	const allStarGame = results.team[0].id === -1 && results.team[1].id === -2;
 	let allStars;
 
-	// Lineup-level scoring: the regular season's for the RAPM regression, and
-	// every game's for the lineups in its box score. Not the All-Star game,
-	// which is nobody's record. See gameShifts.ts.
+	// Lineup-level scoring, for lineups in the box score and over a season.
+	// Not the All-Star game, which is nobody's record. See gameShifts.ts.
 	if (!allStarGame && results.numPlayersOnCourt) {
 		const shifts = encodeShifts(
 			results.shifts ?? [],

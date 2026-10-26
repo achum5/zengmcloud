@@ -156,20 +156,7 @@ export const getPlayer = async <
 			"pos",
 			"injuryIndex",
 		],
-		stats: [
-			"season",
-			"tid",
-			"abbrev",
-			"age",
-			"jerseyNumber",
-			...stats,
-			// The impact section shows where each rating stood in the league it
-			// was earned in, and how many possessions it rests on. Asked for by
-			// name because they belong to no stat table.
-			...(__SPORT === "basketball"
-				? (["orapmPct", "drapmPct", "rapmPct", "rapmPoss"] as const)
-				: []),
-		],
+		stats: ["season", "tid", "abbrev", "age", "jerseyNumber", ...stats],
 		seasonType: ["regularSeason", "playoffs", "combined"],
 		showRookies: true,
 		fuzz: true,

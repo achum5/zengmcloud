@@ -203,7 +203,7 @@ const Player2 = ({
 				/>
 			))}
 
-			<Impact impact={impact} pid={player.pid} stats={player.stats} />
+			<Impact impact={impact} />
 
 			<HideableSection
 				title="Ratings"

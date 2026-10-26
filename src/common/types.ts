@@ -510,11 +510,10 @@ export type Game = {
 	numPeriods?: number; // Optional only for legacy, otherwise it's the number of periods in the game, defined at the start
 	numPlayersOnCourt?: number;
 
-	// Lineup-level scoring, for the season's RAPM regression and the box
-	// score's lineups. A flat run of integers, `2 * numPlayersOnCourt + 4` per
-	// ten-man matchup - see worker/util/gameShifts.ts. Not the All-Star game,
-	// and only in sports and versions that record it, so often absent. (RAPM
-	// reads regular season rows only.)
+	// Lineup-level scoring, for lineups in the box score and over a season. A
+	// flat run of integers, `2 * numPlayersOnCourt + 4` per ten-man matchup -
+	// see worker/util/gameShifts.ts. Not the All-Star game, and only in sports
+	// and versions that record it, so often absent.
 	shifts?: number[];
 	// When things happened, for the box score's pictures of the game - see
 	// worker/util/gameTimeline.ts. Flat runs of whole seconds of game: each

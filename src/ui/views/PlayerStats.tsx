@@ -55,14 +55,7 @@ export const formatStatGameHigh = (
 		);
 	}
 
-	if (
-		__SPORT === "basketball" &&
-		(stat === "pm100" ||
-			stat === "onOff100" ||
-			stat === "orapm" ||
-			stat === "drapm" ||
-			stat === "rapm")
-	) {
+	if (__SPORT === "basketball" && (stat === "pm100" || stat === "onOff100")) {
 		return <PlusMinus>{ps[stat]}</PlusMinus>;
 	}
 

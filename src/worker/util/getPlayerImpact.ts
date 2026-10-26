@@ -1,17 +1,15 @@
 // WHAT THE GAME DID WHILE HE WAS OUT THERE, AND WHO HE WAS OUT THERE WITH.
 //
-// The lineups the sim records for RAPM (see gameShifts.ts) answer a question
-// no box score can: how the team actually scored and defended with a given
-// five on the floor. RAPM squeezes that into one number per player. This is
-// the same evidence left as it is - exact arithmetic on possessions and
-// points, no model, nothing fitted - so a reader can see the thing the rating
-// was estimated from.
+// The lineups the sim records (see gameShifts.ts) answer a question no box
+// score can: how the team actually scored and defended with a given five on
+// the floor. This is that evidence left as it is - exact arithmetic on
+// possessions and points, no model, nothing fitted.
 //
-// Two players who share almost every minute is exactly the situation RAPM
-// exists to untangle and this cannot: a bench big whose only minutes come
-// beside the starting point guard will show the point guard's number. The
-// possessions column is there so that is visible rather than hidden, and
-// pairings too thin to mean anything are dropped outright.
+// Two players who share almost every minute cannot be told apart this way: a
+// bench big whose only minutes come beside the starting point guard will show
+// the point guard's number. The possessions column is there so that is
+// visible rather than hidden, and pairings too thin to mean anything are
+// dropped outright.
 
 import { idb } from "../db/index.ts";
 import { decodeShifts } from "./gameShifts.ts";

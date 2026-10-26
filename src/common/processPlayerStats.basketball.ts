@@ -32,13 +32,6 @@ const straightThrough = new Set([
 	"fxf",
 	"pm100",
 	"onOff100",
-	"orapm",
-	"drapm",
-	"rapm",
-	"orapmPct",
-	"drapmPct",
-	"rapmPct",
-	"rapmPoss",
 	"jerseyNumber",
 	"season",
 ]);

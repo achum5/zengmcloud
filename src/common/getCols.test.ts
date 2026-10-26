@@ -8,7 +8,7 @@ import goatFormula from "../worker/util/goatFormula.ts";
 // the sport has as a formula variable and asks getCols to label them - and
 // getCols throws on a name it does not know. So a stat added for one corner of
 // one page does not degrade the lab, it takes the whole page down with
-// "Unknown column". That is what "stat:orapmPct" did.
+// "Unknown column". That is what a stat added for one page once did.
 //
 // A stat with nothing to say to a table stays out of the list instead, the way
 // minAvailable does: see BANNED_STAT_VARIABLES.

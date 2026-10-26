@@ -21,13 +21,6 @@ const stats = {
 		"obpm",
 		"dbpm",
 		"vorp",
-		"orapm",
-		"drapm",
-		"rapm",
-		"orapmPct",
-		"drapmPct",
-		"rapmPct",
-		"rapmPoss",
 	] as const,
 	raw: [
 		"gp",

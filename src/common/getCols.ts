@@ -921,48 +921,6 @@ const sportSpecificCols = bySport<{
 			sortType: "number",
 			title: "On-Off",
 		},
-		"stat:orapm": {
-			desc: "Offensive Regularized Adjusted Plus/Minus",
-			sortSequence: ["desc", "asc"],
-			sortType: "number",
-			title: "ORAPM",
-		},
-		"stat:drapm": {
-			desc: "Defensive Regularized Adjusted Plus/Minus",
-			sortSequence: ["desc", "asc"],
-			sortType: "number",
-			title: "DRAPM",
-		},
-		"stat:rapm": {
-			desc: "Regularized Adjusted Plus/Minus",
-			sortSequence: ["desc", "asc"],
-			sortType: "number",
-			title: "RAPM",
-		},
-		"stat:orapmPct": {
-			desc: "Offensive RAPM, Percentile Among That Season's Players",
-			sortSequence: ["desc", "asc"],
-			sortType: "number",
-			title: "ORAPM%ile",
-		},
-		"stat:drapmPct": {
-			desc: "Defensive RAPM, Percentile Among That Season's Players",
-			sortSequence: ["desc", "asc"],
-			sortType: "number",
-			title: "DRAPM%ile",
-		},
-		"stat:rapmPct": {
-			desc: "RAPM, Percentile Among That Season's Players",
-			sortSequence: ["desc", "asc"],
-			sortType: "number",
-			title: "RAPM%ile",
-		},
-		"stat:rapmPoss": {
-			desc: "Possessions The RAPM Estimate Rests On",
-			sortSequence: ["desc", "asc"],
-			sortType: "number",
-			title: "RAPM Poss",
-		},
 		"stat:tpp": {
 			desc: "Three Point Percentage",
 			sortSequence: ["desc", "asc"],
