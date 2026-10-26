@@ -346,6 +346,18 @@ export const menuItems: (MenuItemLink | MenuItemHeader)[] = [
 				path: ["schedule"],
 				text: "Schedule",
 			},
+			...(__SPORT === "basketball"
+				? ([
+						{
+							type: "link",
+							active: (pageID) => pageID === "lineups",
+							league: true,
+							commandPalette: true,
+							path: ["lineups"],
+							text: "Lineups",
+						},
+					] as MenuItemLink[])
+				: []),
 			{
 				type: "link",
 				active: (pageID) => pageID === "teamFinances",
