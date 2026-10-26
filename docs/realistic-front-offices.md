@@ -356,7 +356,8 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   that. From the lottery on, a pick priced as one prospect of the class
   carries his error as a player would; before, deals of this draft's picks
   carried none (39 of 285 arena trades were pick-only deals at the draft), and
-  pick 15 went for picks 25 and 31.
+  pick 15 went for picks 25 and 31. In the arena, pick-only deals at the
+  draft fell from 1.6 a draft to 0.1, trades at the draft from 3.5 to 3.3.
 - **Picks land back toward the middle.** Teams drift back toward the middle
   of the draft more than projecting their rosters forward says - others get
   better and worse too, rosters turn over. Measured in the arena against the
@@ -552,6 +553,15 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
     margin of error; the margin is a bar, not a cost (as a cost it made long
     deals look worse than short ones). Every free agent is first looked at
     for the length he wants and for a single season.
+  - What a signing is worth by its money is priced at the minimum, at the
+    player's market salary and at the maximum, in a straight line between.
+    Drawn on from his market salary through the maximum, a team with room to
+    spare lost nothing to the money, so paid a 55 the max for three years
+    for a better chance of landing him (3 times in 24 free agencies; 2.8% of
+    signings gave 15% of the cap or more to a 56 or worse, 0.4% in stock).
+    Half the teams each way (4 leagues x 2 seasons): those with the third
+    price made 0 long overpays to 5 and paid 4.1% of the cap a signing
+    against 4.9%, won 0.516 of their games to 0.484 and 5 titles to 3.
   - Room in the free agency under way is priced, at what teams with that room
     sign, shrinking as the best free agents go - left free, a one-year deal's
     premium cost a team nothing and prime players got one-year deals half the

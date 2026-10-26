@@ -1,0 +1,88 @@
+import { afterAll, assert, beforeAll, test } from "vitest";
+import { PHASE, PLAYER } from "../../../common/constants.ts";
+import { makeSeededRandom } from "../../../common/random.ts";
+import { idb } from "../../db/index.ts";
+import { g } from "../../util/index.ts";
+import { createArenaLeague } from "../../../test/arena/runLeague.ts";
+import { mostWorthPaying, priceSigning } from "./freeAgency.ts";
+import { currentOutlook, loadTeam } from "./market.ts";
+
+const importNode = (name: string) => import(/* @vite-ignore */ name);
+
+const realRandom = Math.random;
+
+beforeAll(async () => {
+	await importNode("fake-indexeddb/auto");
+	Math.random = makeSeededRandom(37);
+	// The test setup shares modules between files, and another may have left a
+	// stand-in database here; creating a league would try to close it.
+	(idb as any).league = undefined;
+	await createArenaLeague(9019);
+	g.setWithoutSavingToDB("realisticFrontOffices", true);
+	g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
+}, 120_000);
+
+afterAll(() => {
+	Math.random = realRandom;
+});
+
+test(
+	"no team would pay a free agent more than he is worth to it at that price",
+	{ timeout: 300_000 },
+	async () => {
+		// Teams left with their best player and room to spare: such a team loses
+		// nothing to a role player's market salary, and room it needs past that.
+		const season = g.get("season");
+		const cap = g.get("salaryCap");
+		const tids = [2, 8, 14, 20, 26];
+		for (const tid of tids) {
+			const roster = (
+				await idb.cache.players.indexGetAll("playersByTid", tid)
+			).sort((a, b) => b.valueNoPot - a.valueNoPot);
+			for (const p of roster.slice(1, 6)) {
+				p.tid = tid + 1;
+				await idb.cache.players.put(p);
+			}
+			const kept = roster.slice(0, 1).concat(roster.slice(6));
+			const total = kept.reduce((a, p) => a + p.contract.amount, 0);
+			for (const p of kept) {
+				p.contract.amount = Math.max(
+					g.get("minContract"),
+					(p.contract.amount * 0.4 * cap) / total,
+				);
+				await idb.cache.players.put(p);
+			}
+		}
+		const players = await idb.cache.players.indexGetAll("playersByTid", [
+			0,
+			Infinity,
+		]);
+		const freeAgents = [52, 56, 60].map((v) =>
+			players.find((p) => p.valueNoPot >= v && p.valueNoPot < v + 2)!,
+		);
+		for (const p of freeAgents) {
+			p.tid = PLAYER.FREE_AGENT;
+			p.born.year = season - 31;
+			await idb.cache.players.put(p);
+		}
+		const outlook = await currentOutlook();
+		let checked = 0;
+		for (const tid of tids) {
+			const t = await loadTeam(outlook, tid);
+			for (const p of freeAgents) {
+				const most = mostWorthPaying(outlook, t, p, 3);
+				if (most === undefined) {
+					continue;
+				}
+				checked += 1;
+				const amount = Math.min(most, g.get("maxContract"));
+				const { gain } = priceSigning(outlook, t, p, {
+					amount,
+					exp: season + 3,
+				});
+				assert.isAtLeast(gain, 0, `team ${tid}, player ${p.pid} at ${amount}`);
+			}
+		}
+		assert.isAbove(checked, 0);
+	},
+);

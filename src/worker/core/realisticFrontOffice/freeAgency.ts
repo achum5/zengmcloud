@@ -193,14 +193,21 @@ const lengths = () => {
 };
 
 // What signing him for this many years is worth to a team, by the money a
-// year: worth `atMin` at the minimum, less `slope()` for each dollar more. Two
-// prices are enough - money moves the value of a signing in a straight line,
-// through the cap room it uses. The second is worked out only when it is
-// needed: a team that may pay him no more than the minimum never needs it.
+// year: worth `atMin` at the minimum, less `slope()` for each dollar more up to
+// his market salary (`high`), and `steep()` for each dollar past it up to the
+// maximum. Money moves the value of a signing through the cap room it uses,
+// and that is not a straight line: a team with room to spare loses nothing to
+// his market salary, and room it needs past that. Drawn on through the
+// maximum, the first stretch had such a team pay a 55 the max for three years
+// for a better chance of landing him. The prices past the minimum are worked
+// out only when needed: a team that may pay him no more than the minimum never
+// needs them.
 type Line = {
 	years: number;
 	atMin: number;
+	high: number;
 	slope: () => number;
+	steep: () => number;
 	margin: number;
 };
 
@@ -211,26 +218,45 @@ const lineFor = (
 	years: number,
 ): Line => {
 	const minContract = g.get("minContract");
+	const maxContract = g.get("maxContract");
 	const exp = expFor(years);
 	const low = priceSigning(outlook, t, p, { amount: minContract, exp });
+	const high = helpers.bound(
+		marketSalary(p.value),
+		2 * minContract,
+		maxContract,
+	);
 	let slope: number | undefined;
-	return {
+	let steep: number | undefined;
+	const line: Line = {
 		years,
 		atMin: low.net,
+		high,
 		slope: () => {
 			if (slope === undefined) {
-				const high = helpers.bound(
-					marketSalary(p.value),
-					2 * minContract,
-					g.get("maxContract"),
-				);
 				const atHigh = priceSigning(outlook, t, p, { amount: high, exp }).net;
 				slope = Math.max(1e-9, (low.net - atHigh) / (high - minContract));
 			}
 			return slope;
 		},
+		steep: () => {
+			if (steep === undefined) {
+				if (high >= maxContract) {
+					steep = line.slope();
+				} else {
+					const atHigh = low.net - line.slope() * (high - minContract);
+					const atMax = priceSigning(outlook, t, p, {
+						amount: maxContract,
+						exp,
+					}).net;
+					steep = Math.max(1e-9, (atHigh - atMax) / (maxContract - high));
+				}
+			}
+			return steep;
+		},
 		margin: low.margin,
 	};
+	return line;
 };
 
 // The lengths every free agent is first looked at for: the one he wants, and
@@ -242,15 +268,30 @@ const firstLengths = (p: Player) => {
 	return wanted === one ? [wanted] : [wanted, one];
 };
 
-const netAt = (line: Line, amount: number) =>
-	amount === g.get("minContract")
-		? line.atMin
-		: line.atMin - line.slope() * (amount - g.get("minContract"));
+const netAt = (line: Line, amount: number) => {
+	if (amount === g.get("minContract")) {
+		return line.atMin;
+	}
+	const upToHigh =
+		line.atMin -
+		line.slope() * (Math.min(amount, line.high) - g.get("minContract"));
+	return amount <= line.high
+		? upToHigh
+		: upToHigh - line.steep() * (amount - line.high);
+};
 
 // The most a team would pay a year and still gain by more than the margin of
 // error, if anything.
-const mostFrom = (line: Line) =>
-	line.atMin > 0 ? g.get("minContract") + line.atMin / line.slope() : undefined;
+const mostFrom = (line: Line) => {
+	if (!(line.atMin > 0)) {
+		return undefined;
+	}
+	const most = g.get("minContract") + line.atMin / line.slope();
+	if (most <= line.high) {
+		return most;
+	}
+	return line.high + netAt(line, line.high) / line.steep();
+};
 
 // The same, up to `cap` (0 if nothing).
 const mostUpTo = (line: Line, cap: number) =>
@@ -259,6 +300,14 @@ const mostUpTo = (line: Line, cap: number) =>
 		: cap <= g.get("minContract")
 			? cap
 			: Math.min(cap, mostFrom(line)!);
+
+// The most a team would pay him a year for this many years, if anything.
+export const mostWorthPaying = (
+	outlook: LeagueOutlook,
+	t: TeamState,
+	p: Player,
+	years: number,
+) => mostFrom(lineFor(outlook, t, p, years));
 
 // The most a team may pay him under the cap rules, if anything.
 const mostAllowed = (t: TeamState, resigning: boolean) => {
