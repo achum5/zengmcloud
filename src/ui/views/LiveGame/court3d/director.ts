@@ -7144,19 +7144,25 @@ class Director {
 			);
 		}
 		const dBall = dist(man, ball);
-		const [off, sag] =
+		// One pass away he is up in the lane, a step or two off; two passes
+		// away, sagged into help.
+		const [off0, sag] =
 			dBall < 10
 				? [3.5, 0.8]
 				: dBall < 18
-					? [5.3, 3.6]
+					? [4.3, 2]
 					: dBall < 25
-						? [6.4, 5.3]
+						? [5.3, 3.4]
 						: dBall < 32
 							? [7.5, 6.3]
 							: dBall < 40
 								? [9.2, 8.2]
 								: [10.7, 9.7];
-		const s = Math.min(sag, toRim * 0.6);
+		// (A man in close - the short corner, the dunker spot - is played a
+		// step or two off, between him and the rim: not left for a spot in
+		// front of the rim his feet would never stop at.)
+		const off = Math.min(off0, 2.5 + toRim * 0.3);
+		const s = Math.min(sag, toRim * 0.6, off);
 		const side = Math.sqrt(Math.max(0, off * off - s * s));
 		const ub = unitVec(man, ball);
 		const p = {
