@@ -7169,6 +7169,14 @@ class Director {
 			x: man.x + ur.x * s + ub.x * side,
 			y: man.y + ur.y * s + ub.y * side,
 		};
+		// (Toward the rim and toward the ball can be near enough the same way -
+		// a man in the corner, the ball up top - and then the two add up: he
+		// is as far off him as he means to be, no farther.)
+		const got = dist(man, p);
+		if (got > off) {
+			p.x = man.x + ((p.x - man.x) * off) / got;
+			p.y = man.y + ((p.y - man.y) * off) / got;
+		}
 		// (Further in, waiting on him.)
 		if (sink > 0) {
 			const u = unitVec(p, rim);
