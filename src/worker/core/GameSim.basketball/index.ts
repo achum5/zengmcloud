@@ -748,6 +748,9 @@ class GameSim extends GameSimBase {
 			period += 1;
 
 			this.timelineLog.endPeriod(this.elapsed);
+			// A new period is a fresh shot clock: the lines logged before its
+			// first possession (the period itself) must not carry the last one's.
+			this.possessionLength = 0;
 			this.team[0].stat.ptsQtrs.push(0);
 			this.team[1].stat.ptsQtrs.push(0);
 			this.foulsThisQuarter = [0, 0];
@@ -764,6 +767,8 @@ class GameSim extends GameSimBase {
 
 	simOvertime() {
 		this.t = 60 * this.getOvertimeLength();
+		// (A fresh shot clock, as at the start of any period.)
+		this.possessionLength = 0;
 
 		this.timeouts = [NUM_TIMEOUTS_OVERTIME, NUM_TIMEOUTS_OVERTIME];
 		this.logTimeouts();
