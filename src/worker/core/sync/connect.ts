@@ -1134,12 +1134,7 @@ export const answerLiveOffer = async (watch: boolean) => {
 				mpFollower: true,
 			},
 		]);
-		if (offered.ended) {
-			// Played from the start at the page's own pace; nothing left to
-			// rejoin, so nothing to keep.
-			followedBroadcastPayload = undefined;
-			armEndedWatchCap(offered);
-		} else if (live) {
+		if (live) {
 			pushFollowerState(meta);
 		}
 		return;
@@ -1180,24 +1175,27 @@ const handleLiveBroadcastMeta = async (
 		roomBroadcastMeta = undefined;
 		setWatchablePill(undefined);
 		if (followedBroadcast || followerHold.isHeld()) {
-			// Still part way through it on this screen. The simmer leaving their
-			// game does not end it here: the page plays on at its own pace, and
-			// the result stays hidden until it reaches the final - or this
-			// device walks out of it, which is the one thing that may show it.
-			// (Or still asked whether to watch it: that holds the result the same
-			// way, and "Watch" plays it from the payload fetched with the offer.)
+			// Still part way through it on this screen: the result stays hidden
+			// until the page shows the final, which it goes straight on to.
 			const watching = followedBroadcast;
 			if (watching && !watching.over && !watching.left) {
 				if (!watching.ended) {
 					watching.ended = true;
-					if (!watching.offered) {
-						followedBroadcastPayload = undefined;
-					}
 					syncDebugLog("live:broadcast-ended-mid-watch", {
 						gid: watching.gid,
 						offered: watching.offered === true,
 					});
-					// Off the simmer's cursor: the page's own controls take over.
+					// Still asked whether to watch it: there is nothing live left
+					// to watch, so the question goes and the result shows.
+					if (watching.offered) {
+						withdrawOffer();
+						declineOffer(watching);
+						return;
+					}
+					followedBroadcastPayload = undefined;
+					// Over on the simmer's screen, so over on this one: the page
+					// goes on to the final (it remembers it was following), never
+					// left to play on at its own pace behind them.
 					void toUI("updateLocal", [{ mpLiveBroadcast: undefined }]);
 					armEndedWatchCap(watching);
 				}

@@ -109,8 +109,10 @@ export type Follow = {
 	restart: boolean;
 };
 
-// How far behind the other court to play (show ms).
-export const SYNC_BEHIND = 1000;
+// How far behind the other court to play (show ms): watching together, the
+// two screens should look like one - only enough slack that a report a
+// little late doesn't run this one into the other's picture.
+export const SYNC_BEHIND = 400;
 // How long past its last report the other court is taken to keep playing -
 // past that, it has stopped (its tab put away, say) until it says so.
 const RUN_ON = 3000;

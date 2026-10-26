@@ -1612,6 +1612,25 @@ export const LiveGame = (props: View<"liveGame">) => {
 		mpLiveBroadcast,
 		!!props.initialBoxScore?.replay,
 	);
+	// The league-mate's game this page has been following. Once it is over
+	// on their screen - they left it, or it lapsed - it is over on this one
+	// too: straight on to the final (below), never handed to this device to
+	// play on at its own pace, behind them.
+	const [followedGid, setFollowedGid] = useState<number | undefined>();
+	const shownGid = props.initialBoxScore?.gid;
+	useEffect(() => {
+		if (
+			isFollower &&
+			shownGid !== undefined &&
+			mpLiveBroadcast?.gid === shownGid
+		) {
+			setFollowedGid(shownGid);
+		}
+	}, [isFollower, shownGid, mpLiveBroadcast?.gid]);
+	const followEnded =
+		!isFollower && followedGid !== undefined && followedGid === shownGid;
+	// No controls of its own, following or done following.
+	const locked = isFollower || followEnded;
 	// A follower is stepped by the simmer's cursor and never paces playback
 	// itself, so its picture can follow the simmer's at any moment.
 	const court3d =
@@ -2173,6 +2192,21 @@ export const LiveGame = (props: View<"liveGame">) => {
 		started,
 		processToNextPause,
 	]);
+
+	// The simmer is done with the game this page was following: on to the
+	// final, where they are.
+	useEffect(() => {
+		if (!followEnded || !started || !events.current?.length) {
+			return;
+		}
+		let steps = 0;
+		while (events.current.length > 0) {
+			processToNextPause(true);
+			steps += 1;
+		}
+		setPlayIndex((prev) => prev + steps);
+		setSkips3d((prev) => prev + 1);
+	}, [followEnded, started, processToNextPause]);
 
 	// Broadcaster heartbeat: report our playback position to the room so followers
 	// stay in lockstep, and end the broadcast when we leave the page. Writes only
@@ -2977,7 +3011,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 										isStuck={isStuck}
 									/>
 								)}
-								{!isFollower ? (
+								{!locked ? (
 									<div className="d-flex flex-wrap row-gap-2 align-items-center d-md-none pt-2">
 										<PlayPauseNext
 											className="me-2"
@@ -3169,7 +3203,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 				</div>
 				<div className="col-md-3">
 					<div className="live-game-affix">
-						{!isFollower ? (
+						{!locked ? (
 							<div className="d-none d-md-flex flex-wrap row-gap-2 align-items-center mb-3 pt-md-2">
 								<PlayPauseNext
 									className="me-2"
