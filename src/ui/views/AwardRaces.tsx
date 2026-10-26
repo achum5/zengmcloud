@@ -20,6 +20,13 @@ import {
 	formatAmerican,
 } from "../../common/sportsbook.ts";
 
+// The award score is small (often under 1), so it gets two decimals to tell
+// close races apart.
+const roundAwardStat = (value: unknown, stat: string) =>
+	stat === "score" && typeof value === "number"
+		? value.toFixed(2)
+		: helpers.roundStat(value, stat);
+
 const MARGIN = 14;
 
 export type InputAward = Awaited<
@@ -173,7 +180,7 @@ const getRows = ({
 					}
 
 					if (!ps2 || stat === "score" || stat === "keyStats") {
-						return helpers.roundStat(ps[stat], stat);
+						return roundAwardStat(ps[stat], stat);
 					}
 
 					return (
@@ -203,7 +210,7 @@ const getRows = ({
 				}
 
 				return ps
-					? helpers.roundStat(
+					? roundAwardStat(
 							p.statOverrides ? p.statOverrides[stat] : ps[stat],
 							stat,
 						)
