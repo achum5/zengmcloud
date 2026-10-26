@@ -1,6 +1,6 @@
-// WIN PROBABILITY. How likely each team is to win from where a game stands -
-// worked out behind the scenes, for picking out the plays that mattered most
-// (see court3d/keyPlays.ts); never shown.
+// WIN PROBABILITY. How likely each team is to win from where a game stands:
+// for picking out the plays that mattered most (see court3d/keyPlays.ts), and
+// drawn over the game in the box score (see GameCharts).
 //
 // What the score says at the end is where it stands now, plus what each team
 // was expected to do over the time still to play, plus luck:
@@ -23,9 +23,9 @@
 // (Matching the sportsbook's own - common/sportsbookOdds.ts.)
 const MARGIN_SIGMA = 13;
 // Regulation in a league of the default length (seconds).
-const GAME_S = 48 * 60;
+export const GAME_S = 48 * 60;
 // Home court, when the game has no spread stored (points over a game).
-const HOME_EDGE = 3.35;
+export const HOME_EDGE = 3.35;
 // What having the ball is worth (points): about half a possession's - the
 // team with it gets, on average, half a possession more than the other in
 // what remains.

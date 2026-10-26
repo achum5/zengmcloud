@@ -16,6 +16,7 @@ import { formatClock } from "../../common/formatClock.ts";
 import { MAX_LINEUPS, MIN_LINEUP_SEC } from "../../common/lineups.ts";
 import clsx from "clsx";
 import { LineupFaces } from "./LineupFaces.tsx";
+import { GAME_S, HOME_EDGE, winProb } from "../views/LiveGame/winProb.ts";
 import { helpers } from "../util/helpers.ts";
 import { teamsInDisplayOrder } from "../util/boxScoreDisplayOrder.ts";
 
@@ -134,18 +135,24 @@ const useWidth = () => {
 	return { ref, width };
 };
 
+// The game as it went: up top the score margin, the lead stepping as each
+// basket goes in; under it each side's chance of winning from there (see
+// LiveGame/winProb.ts) - which moves with the clock as well as the score.
 const LeadChart = ({
 	charts,
 	order,
 	abbrevs,
 	colors,
 	numPeriods,
+	expected,
 }: {
 	charts: BoxScoreFlow;
 	order: [Side, Side];
 	abbrevs: [string, string];
 	colors: [string, string];
 	numPeriods: number;
+	// How many points team 0 was expected to win by, before the tip.
+	expected: number;
 }) => {
 	const { ref, width } = useWidth();
 	const clipId = useId();
@@ -159,16 +166,22 @@ const LeadChart = ({
 	// A multiple of 4, so the half-way ticks are whole points too.
 	const range = Math.max(4, Math.ceil(maxLead / 4) * 4);
 
-	const H = 180;
-	const padL = 30;
+	const H1 = 150;
+	const GAP = 22;
+	const H2 = 96;
+	const padL = 34;
 	const padR = 8;
 	const padT = 8;
 	const padB = 20;
+	const H = padT + H1 + GAP + H2 + padB;
+	const top2 = padT + H1 + GAP;
 	const plotW = Math.max(1, width - padL - padR);
-	const plotH = H - padT - padB;
 	const x = (t: number) => padL + (t / total) * plotW;
-	const y = (lead: number) => padT + ((range - lead) / (2 * range)) * plotH;
+	const y = (lead: number) => padT + ((range - lead) / (2 * range)) * H1;
 	const y0 = y(0);
+	// (The team listed first's chance, 1 at the top.)
+	const yW = (p: number) => top2 + (1 - p) * H2;
+	const yW0 = yW(0.5);
 
 	// The lead holds until the next score, then steps.
 	let line = `M${x(0)},${y0}`;
@@ -189,6 +202,46 @@ const LeadChart = ({
 		return scores[i]!;
 	};
 
+	// Regulation, and how much of it (or of an overtime, a sliver of one
+	// game's worth) is still to play at t.
+	const reg = periodEnds[numPeriods - 1] ?? total;
+	const left = (t: number) => {
+		if (t < reg) {
+			return (reg - t) / reg;
+		}
+		const end = periodEnds.find((e) => e > t) ?? total;
+		return (end - t) / reg;
+	};
+	const chance = (t: number, s: [number, number, number]) => {
+		const p0 = winProb({
+			margin: s[1] - s[2],
+			left: left(t),
+			spread: expected,
+			length: reg / GAME_S,
+		});
+		return top === 0 ? p0 : 1 - p0;
+	};
+	// Every few seconds, and either side of every score.
+	const STEP = Math.max(2, total / 600);
+	const samples: [number, number][] = [];
+	let k = 0;
+	for (let t = 0; t <= total; t += STEP) {
+		while (k + 1 < scores.length && scores[k + 1]![0] <= t) {
+			k += 1;
+			const s = scores[k]!;
+			if (s[0] > 0) {
+				samples.push([s[0], chance(s[0], scores[k - 1]!)]);
+			}
+			samples.push([s[0], chance(s[0], s)]);
+		}
+		samples.push([t, chance(t, scores[k]!)]);
+	}
+	samples.push([total, chance(total, scores.at(-1)!)]);
+	const wLine = samples
+		.map(([t, p], i) => `${i === 0 ? "M" : "L"}${x(t)},${yW(p)}`)
+		.join(" ");
+	const wArea = `${wLine} L${x(total)},${yW0} L${x(0)},${yW0} Z`;
+
 	const onMove = (event: PointerEvent<SVGSVGElement>) => {
 		const rect = event.currentTarget.getBoundingClientRect();
 		const px = event.clientX - rect.left;
@@ -198,6 +251,19 @@ const LeadChart = ({
 
 	const hovered = hover === undefined ? undefined : at(hover);
 	const ticks = [range, range / 2, 0, -range / 2, -range];
+	const pct = (p: number) => `${Math.round(100 * p)}%`;
+
+	const panels: {
+		key: string;
+		d: string;
+		fill: string;
+		mid: number;
+		top: number;
+		h: number;
+	}[] = [
+		{ key: "lead", d: line, fill: area, mid: y0, top: padT, h: H1 },
+		{ key: "win", d: wLine, fill: wArea, mid: yW0, top: top2, h: H2 },
+	];
 
 	return (
 		<div ref={ref} className="position-relative mb-3">
@@ -206,20 +272,35 @@ const LeadChart = ({
 					width={width}
 					height={H}
 					role="img"
-					aria-label={`Lead over the game: ${abbrevs[top]} up top, ${abbrevs[bottom]} below`}
+					aria-label={`Lead and win probability over the game: ${abbrevs[top]} up top, ${abbrevs[bottom]} below`}
 					onPointerMove={onMove}
+					onPointerDown={onMove}
 					onPointerLeave={() => {
 						setHover(undefined);
 					}}
 					style={{ touchAction: "pan-y", display: "block" }}
 				>
 					<defs>
-						<clipPath id={`${clipId}-up`}>
-							<rect x={0} y={0} width={width} height={y0} />
-						</clipPath>
-						<clipPath id={`${clipId}-down`}>
-							<rect x={0} y={y0} width={width} height={H - y0} />
-						</clipPath>
+						{panels.map((panel) => (
+							<g key={panel.key}>
+								<clipPath id={`${clipId}-${panel.key}-up`}>
+									<rect
+										x={0}
+										y={panel.top}
+										width={width}
+										height={panel.mid - panel.top}
+									/>
+								</clipPath>
+								<clipPath id={`${clipId}-${panel.key}-down`}>
+									<rect
+										x={0}
+										y={panel.mid}
+										width={width}
+										height={panel.top + panel.h - panel.mid}
+									/>
+								</clipPath>
+							</g>
+						))}
 					</defs>
 					{ticks.map((tick) => (
 						<g key={tick}>
@@ -246,17 +327,44 @@ const LeadChart = ({
 							</text>
 						</g>
 					))}
-					{periodEnds.slice(0, -1).map((end) => (
-						<line
-							key={end}
-							x1={x(end)}
-							x2={x(end)}
-							y1={padT}
-							y2={padT + plotH}
-							stroke="var(--bs-border-color)"
-							strokeWidth={1}
-						/>
+					{[1, 0.75, 0.25, 0].map((p) => (
+						<g key={p}>
+							<line
+								x1={padL}
+								x2={padL + plotW}
+								y1={yW(p)}
+								y2={yW(p)}
+								stroke="var(--bs-border-color)"
+								strokeWidth={0.5}
+							/>
+							<text
+								x={padL - 6}
+								y={yW(p)}
+								dy="0.32em"
+								textAnchor="end"
+								fontSize={11}
+								fill="var(--bs-secondary-color)"
+								style={{ fontVariantNumeric: "tabular-nums" }}
+							>
+								{pct(p >= 0.5 ? p : 1 - p)}
+							</text>
+						</g>
 					))}
+					{periodEnds
+						.slice(0, -1)
+						.map((end) =>
+							panels.map((panel) => (
+								<line
+									key={`${end}-${panel.key}`}
+									x1={x(end)}
+									x2={x(end)}
+									y1={panel.top}
+									y2={panel.top + panel.h}
+									stroke="var(--bs-border-color)"
+									strokeWidth={1}
+								/>
+							)),
+						)}
 					{periodEnds.map((end, k) => (
 						<text
 							key={end}
@@ -269,38 +377,75 @@ const LeadChart = ({
 							{periodLabel(k, numPeriods)}
 						</text>
 					))}
-					{[top, bottom].map((side, i) => (
-						<g
-							key={side}
-							clipPath={`url(#${clipId}-${i === 0 ? "up" : "down"})`}
-						>
-							<path d={area} fill={colors[side]} fillOpacity={0.25} />
-							<path
-								d={line}
-								fill="none"
-								stroke={colors[side]}
-								strokeWidth={2}
-								strokeLinejoin="round"
-							/>
-						</g>
-					))}
-					<line
-						x1={padL}
-						x2={padL + plotW}
-						y1={y0}
-						y2={y0}
-						stroke="var(--bs-secondary-color)"
-						strokeWidth={1}
-					/>
-					{hover === undefined ? null : (
+					{panels.map((panel) =>
+						[top, bottom].map((side, i) => (
+							<g
+								key={`${panel.key}-${side}`}
+								clipPath={`url(#${clipId}-${panel.key}-${i === 0 ? "up" : "down"})`}
+							>
+								<path d={panel.fill} fill={colors[side]} fillOpacity={0.25} />
+								<path
+									d={panel.d}
+									fill="none"
+									stroke={colors[side]}
+									strokeWidth={2}
+									strokeLinejoin="round"
+								/>
+							</g>
+						)),
+					)}
+					{panels.map((panel) => (
 						<line
-							x1={x(hover)}
-							x2={x(hover)}
-							y1={padT}
-							y2={padT + plotH}
-							stroke="var(--bs-body-color)"
+							key={panel.key}
+							x1={padL}
+							x2={padL + plotW}
+							y1={panel.mid}
+							y2={panel.mid}
+							stroke="var(--bs-secondary-color)"
 							strokeWidth={1}
 						/>
+					))}
+					<text
+						x={padL}
+						y={top2 - 7}
+						fontSize={11}
+						fontWeight={600}
+						fill="var(--bs-secondary-color)"
+					>
+						WIN %
+					</text>
+					{hover === undefined
+						? null
+						: panels.map((panel) => (
+								<line
+									key={panel.key}
+									x1={x(hover)}
+									x2={x(hover)}
+									y1={panel.top}
+									y2={panel.top + panel.h}
+									stroke="var(--bs-body-color)"
+									strokeWidth={1}
+								/>
+							))}
+					{hover === undefined || !hovered ? null : (
+						<>
+							<circle
+								cx={x(hover)}
+								cy={y(leadOf(hovered))}
+								r={3.5}
+								fill={colors[leadOf(hovered) >= 0 ? top : bottom]}
+								stroke="var(--bs-body-bg)"
+								strokeWidth={1.5}
+							/>
+							<circle
+								cx={x(hover)}
+								cy={yW(chance(hover, hovered))}
+								r={3.5}
+								fill={colors[chance(hover, hovered) >= 0.5 ? top : bottom]}
+								stroke="var(--bs-body-bg)"
+								strokeWidth={1.5}
+							/>
+						</>
 					)}
 				</svg>
 			) : (
@@ -314,30 +459,92 @@ const LeadChart = ({
 			</div>
 			<div
 				className="position-absolute small text-body-secondary"
-				style={{ left: padL + 6, top: padT + plotH - 20 }}
+				style={{ left: padL + 6, top: padT + H1 - 20 }}
 			>
 				<Swatch color={colors[bottom]} /> {abbrevs[bottom]}
 			</div>
 			{hover !== undefined && hovered ? (
-				<div
-					className="position-absolute bg-body border rounded px-2 py-1 small shadow-sm"
-					style={{
-						left: Math.min(Math.max(0, x(hover) + 8), Math.max(0, width - 150)),
-						top: padT,
-						pointerEvents: "none",
-						whiteSpace: "nowrap",
-						fontVariantNumeric: "tabular-nums",
-					}}
-				>
-					<div className="text-body-secondary">
-						{clockAt(hover, periodEnds, numPeriods)}
-					</div>
-					<div>
-						{abbrevs[top]} {hovered[1 + top]}, {abbrevs[bottom]}{" "}
-						{hovered[1 + bottom]}
-					</div>
-				</div>
+				<HoverCard
+					left={Math.min(Math.max(0, x(hover) + 10), Math.max(0, width - 170))}
+					top={padT}
+					clock={clockAt(hover, periodEnds, numPeriods)}
+					abbrevs={abbrevs}
+					colors={colors}
+					order={order}
+					score={hovered}
+					chance={chance(hover, hovered)}
+				/>
 			) : null}
+		</div>
+	);
+};
+
+// A chance to win, as a percent - never 0 or 100 until it is over.
+const winPct = (p: number) =>
+	p >= 1
+		? "100%"
+		: p <= 0
+			? "0%"
+			: p > 0.995
+				? ">99%"
+				: p < 0.005
+					? "<1%"
+					: `${Math.round(100 * p)}%`;
+
+// The moment under the pointer: the clock, the score, who leads by how much,
+// and each side's chance of winning from there.
+const HoverCard = ({
+	left,
+	top,
+	clock,
+	abbrevs,
+	colors,
+	order,
+	score,
+	chance,
+}: {
+	left: number;
+	top: number;
+	clock: string;
+	abbrevs: [string, string];
+	colors: [string, string];
+	order: [Side, Side];
+	score: [number, number, number];
+	chance: number;
+}) => {
+	const [a, b] = order;
+	const lead = score[1 + a]! - score[1 + b]!;
+	return (
+		<div
+			className="position-absolute bg-body border rounded-2 px-2 py-1 small shadow"
+			style={{
+				left,
+				top,
+				minWidth: 150,
+				pointerEvents: "none",
+				whiteSpace: "nowrap",
+				fontVariantNumeric: "tabular-nums",
+			}}
+		>
+			<div className="text-body-secondary mb-1">{clock}</div>
+			{([a, b] as const).map((side, i) => (
+				<div key={side} className="d-flex align-items-center gap-2">
+					<Swatch color={colors[side]} />
+					<span className="fw-semibold">{abbrevs[side]}</span>
+					<span className="ms-auto">{score[1 + side]}</span>
+					<span
+						className="text-body-secondary"
+						style={{ width: 36, textAlign: "right" }}
+					>
+						{winPct(i === 0 ? chance : 1 - chance)}
+					</span>
+				</div>
+			))}
+			<div className="text-body-secondary mt-1">
+				{lead === 0
+					? "Tied"
+					: `${abbrevs[lead > 0 ? a : b]} by ${Math.abs(lead)}`}
+			</div>
 		</div>
 	);
 };
@@ -639,6 +846,16 @@ export const GameCharts = ({ boxScore }: { boxScore: any }) => {
 					abbrevs={abbrevs}
 					colors={colors}
 					numPeriods={numPeriods}
+					expected={
+						typeof boxScore.spread === "number" &&
+						Number.isFinite(boxScore.spread)
+							? boxScore.spread
+							: boxScore.neutralSite
+								? 0
+								: (HOME_EDGE *
+										(charts.periodEnds[numPeriods - 1] ?? charts.total)) /
+									GAME_S
+					}
 				/>
 			</Section>
 			<Section title="Rotations">
