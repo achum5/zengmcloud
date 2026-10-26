@@ -129,11 +129,70 @@ export type RunShape = {
 // the pace he cruises at between his ramps, found by trying them out - at
 // the usual push if that gets him there in time, harder if it has to be.
 // (The farther he has to go in the time, the faster he cruises and the
-// longer his ramps - as far as both ramps fitting in, flat out.)
+// longer his ramps - as far as both ramps fitting in, flat out.) A run that
+// only gets quicker, or only slower, though, is one steady ramp from the one
+// pace to the other, on at the pace at one end of it the rest of the way -
+// not a burst, a coast and another burst the same way - if that is the
+// gentler.
 export const runShape = (L: number, T: number, v0 = 0, v1 = 0): RunShape => {
 	if (T <= 0.001 || L <= 0) {
 		return { T: Math.max(T, 0.001), v0, v1, vc: 0, ta: 0, td: 0, L };
 	}
+	const usual = shapeAt(L, T, v0, v1, 1);
+	if (usual && (usual.vc - v0) * (v1 - usual.vc) > 0.01) {
+		const one = oneRamp(L, T, v0, v1);
+		if (one && one.ta + one.td >= usual.ta + usual.td) {
+			return one;
+		}
+	}
+	if (usual) {
+		return usual;
+	}
+	for (let k = 1.1; k < 100; k *= 1.1) {
+		const got = shapeAt(L, T, v0, v1, k);
+		if (got) {
+			return got;
+		}
+	}
+	// Nothing fits: straight there at an even pace.
+	return { T, v0: L / T, v1: L / T, vc: L / T, ta: 0, td: 0, L };
+};
+// One ramp from v0 to v1 and, before or after it, on at the pace at that
+// end - if one fits the way and the time.
+const oneRamp = (
+	L: number,
+	T: number,
+	v0: number,
+	v1: number,
+): RunShape | undefined => {
+	if (v1 > TOP - 0.5 || v0 < 0 || v1 < 0) {
+		return undefined;
+	}
+	// (How fast he goes on average over the ramp, however long it is.)
+	const c =
+		v1 > v0
+			? TOP - (v1 - v0) / Math.log((TOP - v0) / (TOP - v1))
+			: (v0 + v1) / 2;
+	// On at the quicker end's pace if the way is further than the ramp
+	// alone takes him in the time, the slower's if it is shorter - the ramp
+	// before it or after, as that pace is the one he ends or starts at.
+	const p = L >= c * T ? Math.max(v0, v1) : Math.min(v0, v1);
+	const t = (p * T - L) / (p - c);
+	if (!(t > 0 && t <= T)) {
+		return undefined;
+	}
+	return p === v0
+		? { T, v0, v1, vc: v0, ta: 0, td: t, L }
+		: { T, v0, v1, vc: v1, ta: t, td: 0, L };
+};
+// The run at `k` times the usual push, if it can be done so.
+const shapeAt = (
+	L: number,
+	T: number,
+	v0: number,
+	v1: number,
+	k: number,
+): RunShape | undefined => {
 	const STEPS = 80;
 	const fits = (vc: number, k: number) =>
 		ramp(v0, vc, k) + ramp(vc, v1, k) <= T + 1e-9;
@@ -158,66 +217,60 @@ export const runShape = (L: number, T: number, v0 = 0, v1 = 0): RunShape => {
 		}
 		return a;
 	};
-	for (let k = 1; k < 100; k *= 1.1) {
-		const hi = Math.max(v0, v1, (2 * L) / T) * 1.5 + 1;
-		// The cruises that fit both ramps in: from the slowest to the fastest.
-		let first = -1;
-		let last = -1;
-		for (let i = 0; i <= STEPS; i++) {
-			if (fits((hi * i) / STEPS, k)) {
-				if (first < 0) {
-					first = i;
-				}
-				last = i;
-			} else if (last >= 0) {
-				break;
+	const hi = Math.max(v0, v1, (2 * L) / T) * 1.5 + 1;
+	// The cruises that fit both ramps in: from the slowest to the fastest.
+	let first = -1;
+	let last = -1;
+	for (let i = 0; i <= STEPS; i++) {
+		if (fits((hi * i) / STEPS, k)) {
+			if (first < 0) {
+				first = i;
 			}
+			last = i;
+		} else if (last >= 0) {
+			break;
 		}
-		if (first < 0) {
-			continue;
-		}
-		const slow =
-			first > 0 ? edge((hi * first) / STEPS, (hi * (first - 1)) / STEPS, k) : 0;
-		const fast =
-			last < STEPS
-				? edge((hi * last) / STEPS, (hi * (last + 1)) / STEPS, k)
-				: hi;
-		// Too little way even easing right off: he has to push harder.
-		if (far(slow, k) > L + 1e-6) {
-			continue;
-		}
-		// The cruise that gets him farthest in the time - past it, the ramps
-		// up to it and down from it eat more than it gives.
-		let p = slow;
-		let q = fast;
-		for (let n = 0; n < 40; n++) {
-			const m1 = p + (q - p) / 3;
-			const m2 = q - (q - p) / 3;
-			if (far(m1, k) < far(m2, k)) {
-				p = m1;
-			} else {
-				q = m2;
-			}
-		}
-		const best = (p + q) / 2;
-		// Too far to get even so: he has to push harder.
-		if (far(best, k) < L - 1e-6) {
-			continue;
-		}
-		let a = slow;
-		let b = best;
-		for (let n = 0; n < 30; n++) {
-			const m = (a + b) / 2;
-			if (far(m, k) < L) {
-				a = m;
-			} else {
-				b = m;
-			}
-		}
-		return { T, v0, v1, vc: b, ta: ramp(v0, b, k), td: ramp(b, v1, k), L };
 	}
-	// Nothing fits: straight there at an even pace.
-	return { T, v0: L / T, v1: L / T, vc: L / T, ta: 0, td: 0, L };
+	if (first < 0) {
+		return undefined;
+	}
+	const slow =
+		first > 0 ? edge((hi * first) / STEPS, (hi * (first - 1)) / STEPS, k) : 0;
+	const fast =
+		last < STEPS ? edge((hi * last) / STEPS, (hi * (last + 1)) / STEPS, k) : hi;
+	// Too little way even easing right off: he has to push harder.
+	if (far(slow, k) > L + 1e-6) {
+		return undefined;
+	}
+	// The cruise that gets him farthest in the time - past it, the ramps
+	// up to it and down from it eat more than it gives.
+	let p = slow;
+	let q = fast;
+	for (let n = 0; n < 40; n++) {
+		const m1 = p + (q - p) / 3;
+		const m2 = q - (q - p) / 3;
+		if (far(m1, k) < far(m2, k)) {
+			p = m1;
+		} else {
+			q = m2;
+		}
+	}
+	const best = (p + q) / 2;
+	// Too far to get even so: he has to push harder.
+	if (far(best, k) < L - 1e-6) {
+		return undefined;
+	}
+	let a = slow;
+	let b = best;
+	for (let n = 0; n < 30; n++) {
+		const m = (a + b) / 2;
+		if (far(m, k) < L) {
+			a = m;
+		} else {
+			b = m;
+		}
+	}
+	return { T, v0, v1, vc: b, ta: ramp(v0, b, k), td: ramp(b, v1, k), L };
 };
 
 // How far along it (feet) a run of this shape is, s seconds in.
