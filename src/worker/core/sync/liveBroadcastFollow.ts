@@ -1,14 +1,15 @@
 // WHO GETS PULLED INTO A LIVE SIM, AND WHEN.
 //
-// Every live sim in the room is watched by the whole room. The device in charge
-// of simming working through the schedule and a league-mate playing out their
-// own game produce the same experience on every other screen, because they are
-// the same event: a game happening right now. There used to be two kinds - the
-// simmer's, which navigated everyone in, and an opt-in one that only put a pill
-// in the header - and the same thing felt like two different features depending
-// on which device happened to be in charge that night.
+// Every live sim in the room is offered to the whole room: "Watch PHO @ DAL
+// live?" on every other screen, its result held back there till that is
+// answered - watched, or turned down. The device in charge of simming working
+// through the schedule and a league-mate playing out their own game produce
+// the same experience on every other screen, because they are the same event:
+// a game happening right now. (Nobody is navigated into one any more without
+// saying so: being taken off whatever you were doing to watch somebody else's
+// game was the complaint.)
 //
-// What is left of the difference is that anyone may walk out of any of them.
+// And anyone may walk out of any of them.
 // Walking out has to STICK: the broadcaster heartbeats its cursor two or three
 // times a second, and a rule that only asked "is this device on the live game
 // page" would fling them straight back in before they reached whatever they
@@ -20,13 +21,16 @@ export type FollowRecord =
 	| {
 			startedAt: number;
 			left?: boolean;
+			// Offered, not answered yet (the popup is up).
+			offered?: boolean;
 	  }
 	| undefined;
 
 export type FollowAction =
-	// Fetch the payload, navigate in, start playback. A broadcast this device
-	// has not seen before.
-	| "join"
+	// A broadcast this device has not seen before: ask whether to watch it,
+	// holding its result back till that is answered - or, asked already, go on
+	// waiting for the answer.
+	| "offer"
 	// Already inside it: step playback to the simmer's cursor.
 	| "cursor"
 	// Walked out of this one. Offer the way back rather than taking it for
@@ -47,7 +51,11 @@ export type FollowAction =
 export const shouldServeFollowedPayload = (
 	followed: FollowRecord,
 	localSimActive: boolean,
-): boolean => followed !== undefined && !followed.left && !localSimActive;
+): boolean =>
+	followed !== undefined &&
+	!followed.left &&
+	!followed.offered &&
+	!localSimActive;
 
 // How many times a device will try to fetch one broadcast's payload before it
 // gives up on that broadcast.
@@ -75,7 +83,7 @@ export const decideFollowAction = (
 	// A live sim of this device's OWN game is playing right now (two can run at
 	// once - see ownGameSimGate). Never navigated out from under: the pill is
 	// offered instead, and since nothing is recorded against the broadcast, the
-	// first heartbeat after the local sim ends joins it as normal.
+	// first heartbeat after the local sim ends offers it as normal.
 	localSimActive = false,
 	// Joins already attempted and failed against THIS broadcast, by startedAt.
 	// Counted outside the follow record because a failed join is precisely the
@@ -86,7 +94,7 @@ export const decideFollowAction = (
 		return "ignore";
 	}
 	if (!followed || followed.startedAt !== broadcast.startedAt) {
-		return localSimActive ? "pill" : "join";
+		return localSimActive ? "pill" : "offer";
 	}
 	if (followed.left) {
 		return broadcast.gameOver ? "ignore" : "pill";
@@ -97,6 +105,9 @@ export const decideFollowAction = (
 	// The way back is the pill, the same as having walked out.
 	if (localSimActive) {
 		return broadcast.gameOver ? "ignore" : "pill";
+	}
+	if (followed.offered) {
+		return "offer";
 	}
 	return "cursor";
 };
@@ -187,7 +198,7 @@ export const createFollowerHold = ({
 // A LEAGUE-MATE'S LIVE GAME, ITS RESULT HERE BEFORE ITS BROADCAST.
 //
 // The result of a live-simmed game syncs in on its own, and usually lands
-// well ahead of the broadcast that pulls this device in to watch it - which
+// well ahead of the broadcast that offers it to this device - which
 // goes live only once the whole play-by-play has uploaded. Nothing was held in
 // that gap, so the score bar, the ticker and the status line repainted with
 // the final before the game had started on this screen. The apply layer now

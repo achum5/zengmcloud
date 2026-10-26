@@ -1733,10 +1733,15 @@ export type LocalStateUI = {
 	// The live-sim broadcast this device is part of (simming to the room, or
 	// watching the simmer in lockstep). Undefined when none. See MpLiveBroadcast.
 	mpLiveBroadcast: MpLiveBroadcast | undefined;
-	// A live sim is running in the room and this device is not in it - it left,
-	// or the auto-join hasn't landed: the header pill, to (re)join. Undefined
+	// A live sim is running in the room and this device is not in it - it said
+	// no, or left: the header pill, to (re)join. Undefined
 	// when none, when already watching, or when this device is the one simming.
 	mpLiveWatchable:
+		| { gid: number; byName: string; label: string; startedAt: number }
+		| undefined;
+	// A league-mate's live sim just started: "Watch PHO @ DAL live?", its
+	// result held back until answered. Undefined when not asking.
+	mpLiveOffer:
 		| { gid: number; byName: string; label: string; startedAt: number }
 		| undefined;
 	// Live game chat for the broadcast currently being watched.

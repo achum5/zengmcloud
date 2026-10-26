@@ -472,12 +472,28 @@ let followedBroadcast:
 			// The broadcast is gone - the simmer left their game - while this
 			// screen was still part way through it (see handleLiveBroadcastMeta).
 			ended?: boolean;
+			// Asked whether to watch it, not answered yet (see offerBroadcast).
+			offered?: boolean;
 	  }
 	| undefined;
 // A watch that outlived its broadcast still ends some time, even if the page
 // never says so (a tab that died): this gives up on it.
 const ENDED_WATCH_CAP_MS = 30 * 60 * 1000;
 let endedWatchTimer: ReturnType<typeof setTimeout> | undefined;
+const armEndedWatchCap = (watching: NonNullable<typeof followedBroadcast>) => {
+	clearTimeout(endedWatchTimer);
+	endedWatchTimer = setTimeout(() => {
+		if (followedBroadcast === watching && !watching.over) {
+			if (watching.offered) {
+				followedBroadcastPayload = undefined;
+				withdrawOffer();
+			}
+			watching.over = true;
+			settleAwaitedLiveResult(watching.gid);
+			releaseFollowerHold("watch-outlived-broadcast");
+		}
+	}, ENDED_WATCH_CAP_MS);
+};
 
 // A live sim of this device's OWN game is underway: requested, being simmed,
 // or playing back. The gid is only known once the game is written, so the
@@ -629,8 +645,8 @@ let roomBroadcastMeta: LiveBroadcastMeta | undefined;
 
 // Show/clear the header pill. Its whole job is "a game is being simmed live,
 // click to watch" - so it is only up for a broadcast this device is NOT inside:
-// after walking out of one, or before an auto-join has managed to land. While
-// watching, it would point at the game already on screen.
+// after saying no to one or walking out of it. While watching, it would point
+// at the game already on screen.
 const setWatchablePill = (meta: LiveBroadcastMeta | undefined) => {
 	void toUI("updateLocal", [
 		{
@@ -644,6 +660,31 @@ const setWatchablePill = (meta: LiveBroadcastMeta | undefined) => {
 				: undefined,
 		},
 	]);
+};
+
+// Show/clear the "Watch PHO @ DAL live?" popup (see offerBroadcast).
+const setLiveOffer = (meta: LiveBroadcastMeta | undefined) => {
+	void toUI("updateLocal", [
+		{
+			mpLiveOffer: meta
+				? {
+						gid: meta.gid,
+						byName: meta.byName,
+						label: meta.label ?? "",
+						startedAt: meta.startedAt,
+					}
+				: undefined,
+		},
+	]);
+};
+
+// The popup is no longer asking: answered, or overtaken (a live sim of this
+// device's own, the broadcast vanishing).
+const withdrawOffer = () => {
+	if (followedBroadcast?.offered) {
+		followedBroadcast.offered = false;
+		setLiveOffer(undefined);
+	}
 };
 
 // "PHO @ DAL", for the header pill on every other device. teams[0] is home in
@@ -666,10 +707,10 @@ const broadcastLabel = async (boxScore: any): Promise<string> => {
 //
 // EVERY live sim is the room's live sim. It does not matter who ran it - the
 // person in charge of simming working through the schedule, or anyone else
-// live-simming their own game - the room is navigated in to watch it, and
-// anyone who would rather not can leave and pick it back up from the header
-// pill. (An earlier version made the own-game sims opt-in, so they only ever
-// put a pill up. That split meant the same event produced two different
+// live-simming their own game - every other device is asked whether to watch
+// it, and anyone who turns it down or leaves can pick it back up from the
+// header pill. (An earlier version made the own-game sims opt-in, so they only
+// ever put a pill up. That split meant the same event produced two different
 // experiences depending on which device happened to be in charge.)
 //
 // The play-by-play + a snapshot of the game record go out ONCE as payload
@@ -963,6 +1004,160 @@ const pushFollowerState = (meta: LiveBroadcastMeta) => {
 	]);
 };
 
+// A league-mate's live sim has started: ask whether to watch it rather than
+// taking this device there. Its result is held back - the score bar, the
+// ticker, everything a remote apply would repaint - until that is answered,
+// the same hold a watch takes. The payload is fetched now, while there is one
+// to fetch: the simmer leaving their game deletes it, and "Watch" still plays
+// the game then, from the start.
+const offerBroadcast = (
+	meta: LiveBroadcastMeta,
+	transport: FirebaseTransport,
+) => {
+	followedBroadcast = {
+		startedAt: meta.startedAt,
+		gid: meta.gid,
+		expiresAt: meta.expiresAt,
+		offered: true,
+	};
+	void beginLiveChat(meta.gid, meta.startedAt, false);
+	followerHold.take();
+	setLiveOffer(meta);
+	prefetchOffered(meta, transport);
+};
+
+let offerFetch: Promise<void> | undefined;
+const prefetchOffered = (
+	meta: LiveBroadcastMeta,
+	transport: FirebaseTransport,
+) => {
+	if (offerFetch || followedBroadcastPayload?.startedAt === meta.startedAt) {
+		return;
+	}
+	offerFetch = (async () => {
+		try {
+			const serialized = await transport.fetchLiveBroadcastData?.(
+				meta.chunkCount,
+			);
+			if (!serialized) {
+				const attempts = noteJoinFailure(meta.startedAt);
+				syncDebugLog("live:offer-payload-missing", {
+					gid: meta.gid,
+					startedAt: meta.startedAt,
+					attempts,
+				});
+				return;
+			}
+			const { boxScore, playByPlay } = deserializeChangeset(serialized);
+			if (followedBroadcast?.startedAt === meta.startedAt) {
+				followedBroadcastPayload = {
+					startedAt: meta.startedAt,
+					gid: meta.gid,
+					playByPlay,
+					boxScore,
+				};
+			}
+		} catch (error) {
+			const attempts = noteJoinFailure(meta.startedAt);
+			syncDebugLog("live:offer-fetch-failed", {
+				gid: meta.gid,
+				startedAt: meta.startedAt,
+				attempts,
+				error: String(error),
+			});
+		} finally {
+			offerFetch = undefined;
+		}
+	})();
+};
+
+// Turned down (or there is nothing left to watch): the result may show, and
+// the header pill is the way in while the game is still going.
+const declineOffer = (offered: NonNullable<typeof followedBroadcast>) => {
+	offered.left = true;
+	offered.over = true;
+	if (offered.ended) {
+		followedBroadcastPayload = undefined;
+	}
+	settleAwaitedLiveResult(offered.gid);
+	releaseFollowerHold("offer-declined");
+	const meta = roomBroadcastMeta;
+	if (
+		meta &&
+		meta.active &&
+		meta.startedAt === offered.startedAt &&
+		!meta.gameOver &&
+		meta.expiresAt > Date.now()
+	) {
+		setWatchablePill(meta);
+	}
+};
+
+// The answer to "Watch PHO @ DAL live?".
+export const answerLiveOffer = async (watch: boolean) => {
+	const offered = followedBroadcast;
+	if (!offered?.offered) {
+		setLiveOffer(undefined);
+		return;
+	}
+	withdrawOffer();
+	if (!watch || ownLiveSimUnderway()) {
+		declineOffer(offered);
+		return;
+	}
+
+	// The payload may still be on its way.
+	await offerFetch;
+	if (followedBroadcast !== offered) {
+		return;
+	}
+	const meta = roomBroadcastMeta;
+	const live =
+		meta !== undefined &&
+		meta.active &&
+		meta.startedAt === offered.startedAt &&
+		meta.expiresAt > Date.now();
+	const payload =
+		followedBroadcastPayload?.startedAt === offered.startedAt
+			? followedBroadcastPayload
+			: undefined;
+	if (payload) {
+		followerHold.take();
+		await toUI("realtimeUpdate", [
+			["gameSim"],
+			helpers.leagueUrl(["live_game"]),
+			{
+				gidOneGame: offered.gid,
+				playByPlay: payload.playByPlay,
+				boxScore: payload.boxScore,
+				fromAction: true,
+				mpFollower: true,
+			},
+		]);
+		if (offered.ended) {
+			// Played from the start at the page's own pace; nothing left to
+			// rejoin, so nothing to keep.
+			followedBroadcastPayload = undefined;
+			armEndedWatchCap(offered);
+		} else if (live) {
+			pushFollowerState(meta);
+		}
+		return;
+	}
+	const transport = currentTransport;
+	if (live && transport) {
+		joinFailures.delete(meta.startedAt);
+		await followBroadcast(meta, transport);
+		return;
+	}
+	declineOffer(offered);
+};
+
+// A watch or offer of a league-mate's game holds the live flag: a live game
+// page reporting some OTHER game over (a replay ending, the page this device
+// was on when it said "Watch") must not clear it. See onLiveSimOver.
+export const followerHoldsLiveFlag = () => followerHold.isHeld();
+
 const handleLiveBroadcastMeta = async (
 	meta: LiveBroadcastMeta | undefined,
 	clientId: string,
@@ -989,24 +1184,22 @@ const handleLiveBroadcastMeta = async (
 			// game does not end it here: the page plays on at its own pace, and
 			// the result stays hidden until it reaches the final - or this
 			// device walks out of it, which is the one thing that may show it.
+			// (Or still asked whether to watch it: that holds the result the same
+			// way, and "Watch" plays it from the payload fetched with the offer.)
 			const watching = followedBroadcast;
 			if (watching && !watching.over && !watching.left) {
 				if (!watching.ended) {
 					watching.ended = true;
-					followedBroadcastPayload = undefined;
+					if (!watching.offered) {
+						followedBroadcastPayload = undefined;
+					}
 					syncDebugLog("live:broadcast-ended-mid-watch", {
 						gid: watching.gid,
+						offered: watching.offered === true,
 					});
 					// Off the simmer's cursor: the page's own controls take over.
 					void toUI("updateLocal", [{ mpLiveBroadcast: undefined }]);
-					clearTimeout(endedWatchTimer);
-					endedWatchTimer = setTimeout(() => {
-						if (followedBroadcast === watching && !watching.over) {
-							watching.over = true;
-							settleAwaitedLiveResult(watching.gid);
-							releaseFollowerHold("watch-outlived-broadcast");
-						}
-					}, ENDED_WATCH_CAP_MS);
+					armEndedWatchCap(watching);
 				}
 				return;
 			}
@@ -1029,10 +1222,24 @@ const handleLiveBroadcastMeta = async (
 		ownLiveSimUnderway(),
 		joinFailures.get(meta.startedAt) ?? 0,
 	);
-	if (action === "join") {
+	if (action === "offer") {
 		setWatchablePill(undefined);
-		await followBroadcast(meta, transport);
+		if (followedBroadcast?.startedAt === meta.startedAt) {
+			// Still waiting on an answer. Kept up (a tab opened since gets it
+			// too), and the payload tried for again if it missed.
+			followedBroadcast.expiresAt = meta.expiresAt;
+			setLiveOffer(meta);
+			prefetchOffered(meta, transport);
+		} else {
+			offerBroadcast(meta, transport);
+		}
 		return;
+	}
+	// Asked about one whose payload never came: not there to watch.
+	if (action === "ignore" && followedBroadcast?.offered) {
+		const offered = followedBroadcast;
+		withdrawOffer();
+		declineOffer(offered);
 	}
 
 	if (followedBroadcast) {
@@ -1089,6 +1296,7 @@ const stepOutForOwnSim = () => {
 		gid: followedBroadcast.gid,
 		startedAt: followedBroadcast.startedAt,
 	});
+	withdrawOffer();
 	followedBroadcast.left = true;
 	followedBroadcast.over = true;
 	releaseFollowerHold("own-live-sim");
@@ -1180,7 +1388,13 @@ const checkLiveBroadcastLease = () => {
 		roomBroadcastMeta = undefined;
 		setWatchablePill(undefined);
 	}
-	if (followedBroadcast && Date.now() > followedBroadcast.expiresAt) {
+	// (A watch or offer that outlived its broadcast has its own cap.)
+	if (
+		followedBroadcast &&
+		!followedBroadcast.ended &&
+		Date.now() > followedBroadcast.expiresAt
+	) {
+		withdrawOffer();
 		followedBroadcast = undefined;
 		followedBroadcastPayload = undefined;
 		releaseFollowerHold("lease-expired");
@@ -2509,6 +2723,7 @@ const doConnectSharedLeague = async ({
 	// game and drives lockstep playback; on the broadcaster its own echo is
 	// ignored (handled locally).
 	activeBroadcast = undefined;
+	withdrawOffer();
 	followedBroadcast = undefined;
 	// (A hold some follow of the last session took goes with it - let go of,
 	// not just forgotten with the banner left up.)
@@ -2638,6 +2853,7 @@ export const teardownSharedLeague = async ({
 		void endLiveBroadcast();
 	}
 	activeBroadcast = undefined;
+	withdrawOffer();
 	followedBroadcast = undefined;
 	followedBroadcastPayload = undefined;
 	if (followerHold.isHeld()) {

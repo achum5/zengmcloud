@@ -28,6 +28,8 @@ export {
 	loadSyncDeviceName,
 	refreshSyncLocalName,
 	resolveSyncLocalName,
+	answerLiveOffer,
+	followerHoldsLiveFlag,
 	leaveLiveBroadcast,
 	markFollowedBroadcastOver,
 	markSyncRequired,

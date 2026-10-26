@@ -9,6 +9,7 @@ import { Header } from "./Header.tsx";
 import { LeagueTopBar } from "./LeagueTopBar.tsx";
 import { LeagueTicker } from "./LeagueTicker.tsx";
 import { MultiTeamMenu } from "./MultiTeamMenu.tsx";
+import { LiveOfferModal } from "./LiveOfferModal.tsx";
 import { NagModal } from "./NagModal.tsx";
 import { NavBar } from "./NavBar.tsx";
 import { Notifications } from "./Notifications.tsx";
@@ -187,6 +188,7 @@ export const Controller = () => {
 						</div>
 						<CommandPalette />
 						<NagModal close={closeNagModal} show={showNagModal} />
+						{inLeague ? <LiveOfferModal /> : null}
 					</div>
 				</div>
 			</div>

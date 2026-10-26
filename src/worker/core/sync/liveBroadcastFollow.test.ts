@@ -11,24 +11,24 @@ const live = { startedAt: 1000, gameOver: false };
 const finished = { startedAt: 1000, gameOver: true };
 
 describe("decideFollowAction", () => {
-	test("a broadcast this device has never seen pulls it in", () => {
-		assert.strictEqual(decideFollowAction(live, undefined), "join");
+	test("a broadcast this device has never seen is offered, not joined", () => {
+		assert.strictEqual(decideFollowAction(live, undefined), "offer");
 	});
 
 	test("who ran the sim makes no difference - there is only one kind now", () => {
 		// The whole point of the normalization: the decision cannot see, and does
 		// not ask, whether the simmer was the device in charge of simming.
-		assert.strictEqual(decideFollowAction(live, undefined), "join");
-		assert.strictEqual(decideFollowAction(finished, undefined), "join");
+		assert.strictEqual(decideFollowAction(live, undefined), "offer");
+		assert.strictEqual(decideFollowAction(finished, undefined), "offer");
 	});
 
-	test("the next broadcast pulls it in again, even after leaving the last", () => {
+	test("the next broadcast is offered again, even after leaving the last", () => {
 		assert.strictEqual(
 			decideFollowAction(
 				{ startedAt: 2000, gameOver: false },
 				{ startedAt: 1000, left: true },
 			),
-			"join",
+			"offer",
 		);
 	});
 
@@ -64,10 +64,10 @@ describe("decideFollowAction", () => {
 		assert.strictEqual(decideFollowAction(live, undefined, true), "pill");
 	});
 
-	test("once its own sim ends, the next heartbeat joins as normal", () => {
+	test("once its own sim ends, the next heartbeat offers it as normal", () => {
 		// Nothing was recorded against the broadcast while the local sim played,
 		// so the ordinary never-seen-it rule takes over.
-		assert.strictEqual(decideFollowAction(live, undefined, false), "join");
+		assert.strictEqual(decideFollowAction(live, undefined, false), "offer");
 	});
 
 	test("the page is only served the broadcast while actually inside it", () => {
@@ -82,9 +82,28 @@ describe("decideFollowAction", () => {
 		);
 		assert.isFalse(shouldServeFollowedPayload({ startedAt: 1000 }, true));
 		assert.isFalse(shouldServeFollowedPayload(undefined, false));
+		// Asked, not answered: the page is not theirs yet either.
+		assert.isFalse(
+			shouldServeFollowedPayload({ startedAt: 1000, offered: true }, false),
+		);
 	});
 
-	test("a broadcast whose payload cannot be read stops being joined", () => {
+	test("an offer waiting on an answer stays one - heartbeats never take the device in", () => {
+		// The complaint this replaced: a league-mate's live sim pulling every
+		// other device off what it was doing. Until "Watch" is clicked, every
+		// heartbeat - the game going final included - only keeps the question up.
+		const offered = { startedAt: 1000, offered: true };
+		assert.strictEqual(decideFollowAction(live, offered), "offer");
+		assert.strictEqual(decideFollowAction(finished, offered), "offer");
+	});
+
+	test("an own sim starting while asked turns the question into the pill", () => {
+		const offered = { startedAt: 1000, offered: true };
+		assert.strictEqual(decideFollowAction(live, offered, true), "pill");
+		assert.strictEqual(decideFollowAction(finished, offered, true), "ignore");
+	});
+
+	test("a broadcast whose payload cannot be read stops being offered", () => {
 		// THE FLICKER. A join that misses the payload leaves no follow record, so
 		// every one of the broadcaster's heartbeats read as a broadcast never seen
 		// before and started the join over - and each attempt freezes the header
@@ -94,7 +113,7 @@ describe("decideFollowAction", () => {
 		for (let failures = 0; failures < MAX_JOIN_ATTEMPTS; failures++) {
 			assert.strictEqual(
 				decideFollowAction(live, undefined, false, failures),
-				"join",
+				"offer",
 				`still worth a try after ${failures} failures`,
 			);
 		}
@@ -139,7 +158,7 @@ describe("decideFollowAction", () => {
 				false,
 				0,
 			),
-			"join",
+			"offer",
 		);
 	});
 

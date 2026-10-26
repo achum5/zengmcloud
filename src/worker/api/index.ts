@@ -129,7 +129,9 @@ import {
 	refreshSyncLocalName,
 	resolveSyncLocalName,
 	beginLotteryReveal,
+	answerLiveOffer,
 	flushDeferredRefreshAfterLive,
+	followerHoldsLiveFlag,
 	leaveLiveBroadcast,
 	markFollowedBroadcastOver,
 	markSyncRequired,
@@ -5550,9 +5552,16 @@ const onLiveSimOver = async (gid?: number) => {
 	// broadcaster eventually leaves their live game page.
 	markFollowedBroadcastOver(gid);
 
+	// Still watching - or asked whether to watch - a league-mate's game: this
+	// report was some other page's (a replay ending, the page left behind for
+	// "Watch"), and the score bar stays held for theirs.
+	const heldForFollow = followerHoldsLiveFlag();
+
 	// The show is over: paint everything remote applies held back during the
 	// playback (final scores in the ticker, a phase flip, the status line).
-	flushDeferredRefreshAfterLive();
+	if (!heldForFollow) {
+		flushDeferredRefreshAfterLive();
+	}
 
 	// Backstop: guarantee the single-game-sim force-silent window is closed once
 	// the live game is done (normal close is in play.ts). Only while no sim is
@@ -5580,7 +5589,9 @@ const onLiveSimOver = async (gid?: number) => {
 		}
 	}
 
-	await toUI("updateLocal", [{ liveGameInProgress: false }]);
+	if (!heldForFollow) {
+		await toUI("updateLocal", [{ liveGameInProgress: false }]);
+	}
 };
 
 // ---------------------------------------------------------------- LEAGUE FEED
@@ -8360,6 +8371,7 @@ const api = {
 		updateLiveBroadcast,
 		endLiveBroadcast,
 		watchLiveBroadcast,
+		answerLiveOffer,
 		leaveLiveBroadcast,
 		updateAwards,
 		updateBudget,

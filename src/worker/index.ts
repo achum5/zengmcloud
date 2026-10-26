@@ -140,6 +140,9 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	"updateLiveBroadcast",
 	"endLiveBroadcast",
 	"watchLiveBroadcast",
+	// The answer to "Watch PHO @ DAL live?" - this device's own record, like
+	// leaving one.
+	"answerLiveOffer",
 	// Walking out of a league-mate's broadcast only changes this device's own
 	// record of it. Refused by the guard (still catching up, a slow ping), it
 	// never registered - and the next heartbeat stepped the page on through
