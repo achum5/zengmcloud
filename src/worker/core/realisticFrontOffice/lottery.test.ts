@@ -4,7 +4,15 @@ import { makeSeededRandom } from "../../../common/random.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
-import { currentOutlook } from "./market.ts";
+import { draft } from "../index.ts";
+import { humanTradeSettings } from "./humanTrades.ts";
+import {
+	currentOutlook,
+	loadTeam,
+	marginOf,
+	MIN_GAIN,
+	priceFor,
+} from "./market.ts";
 import {
 	buildOutlook,
 	expectedPlace,
@@ -138,5 +146,54 @@ test(
 			);
 		}
 		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+	},
+);
+
+test(
+	"once the draft order is set, a pick carries the doubt of the player it is priced as",
+	{ timeout: 300_000 },
+	async () => {
+		const season = g.get("season");
+		g.setWithoutSavingToDB("phase", PHASE.DRAFT);
+		try {
+			await draft.genOrder();
+			const picks = await idb.cache.draftPicks.indexGetAll(
+				"draftPicksBySeason",
+				season,
+			);
+			const at = (overall: number) =>
+				picks.find(
+					(dp) => (dp.round - 1) * g.get("numTeams") + dp.pick === overall,
+				)!;
+			const outlook = await currentOutlook();
+			assert.isDefined(outlook.classBoard);
+			const first = at(1);
+			const t = await loadTeam(outlook, first.tid);
+			assert.isAbove(
+				marginOf(outlook, t, [{ kind: "pick", dp: first }], []),
+				0,
+			);
+
+			// Picks 30 and 58 for pick 15 (owner's exploit list).
+			const want = at(15);
+			const other = (want.tid + 1) % g.get("numTeams");
+			const give = [at(30), at(58)];
+			for (const dp of give) {
+				dp.tid = other;
+				await idb.cache.draftPicks.put(dp);
+			}
+			const seller = await loadTeam(outlook, want.tid);
+			const buyer = await loadTeam(outlook, other);
+			const outgoing = [{ kind: "pick" as const, dp: want }];
+			const incoming = give.map((dp) => ({ kind: "pick" as const, dp }));
+			assert.isBelow(
+				priceFor(outlook, seller, outgoing, incoming, buyer) -
+					humanTradeSettings.marginFactor *
+						marginOf(outlook, seller, outgoing, incoming),
+				MIN_GAIN,
+			);
+		} finally {
+			g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+		}
 	},
 );

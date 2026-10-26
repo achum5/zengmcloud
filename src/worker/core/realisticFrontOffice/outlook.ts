@@ -1000,6 +1000,20 @@ const asDrafted = (p: Player, round: number, slot: number, season: number) => {
 	} as Player;
 };
 
+// Whether a pick is priced as one of the class's players (classPickAt).
+export const isClassPick = (
+	outlook: Pick<LeagueOutlook, "classBoard">,
+	dp: PickLike,
+) => {
+	const board = outlook.classBoard;
+	return (
+		board !== undefined &&
+		dp.season === board.season &&
+		dp.pick > 0 &&
+		board.order.includes(`${dp.round}:${dp.pick}`)
+	);
+};
+
 // One of this draft's picks once the class is known and the order set: the
 // player who would go there off a board of the class by what each prospect is
 // generally worth - undefined for a pick it does not price, null for one with

@@ -26,6 +26,7 @@ import {
 	buildOutlook,
 	ensureRetention,
 	franchiseValue,
+	isClassPick,
 	OUTLOOK_YEARS,
 	pickLineAt,
 	placesAfter,
@@ -721,6 +722,25 @@ export const marginOf = (
 	const moved: MovedPlayer[] = [];
 	// A pick: what it is worth if its team is misread a little either way.
 	const addPick = (dp: DraftPick, roster: readonly Player[]) => {
+		// Once it is priced as one of the class's players, it is him, with a
+		// player's error. Before, a deal of this draft's picks made after the
+		// lottery carried no doubt at all.
+		if (isClassPick(outlook, dp)) {
+			const lines = Array.from(
+				{ length: OUTLOOK_YEARS + 1 },
+				(_, y) => pickLineAt(outlook, dp, y, 0, t.tid)?.line,
+			);
+			const ovr = lines.map((line) => line?.valueNoPot ?? 0);
+			moved.push({
+				place: placeBySeason(
+					roster.map((x) => x.valueNoPot),
+					ovr,
+				),
+				availability: lines.map((line) => line?.availability ?? 0),
+				ovr,
+			});
+			return;
+		}
 		const spread = draftPlaceMisread(outlook, dp);
 		const worth = (at: ReturnType<typeof pickLineAt>) =>
 			at ? at.line.availability * valueOverReplacement(at.line) : 0;

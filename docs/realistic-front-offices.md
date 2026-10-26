@@ -353,7 +353,10 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   there. Most of that is luck, so it goes into the pick's value, not its
   margin: a pick is worth the average over every place it may land. Its margin of error is only
   the misread of how good its team will be, by the outlook's own estimate of
-  that.
+  that. From the lottery on, a pick priced as one prospect of the class
+  carries his error as a player would; before, deals of this draft's picks
+  carried none (39 of 285 arena trades were pick-only deals at the draft), and
+  pick 15 went for picks 25 and 31.
 - **Picks land back toward the middle.** Teams drift back toward the middle
   of the draft more than projecting their rosters forward says - others get
   better and worse too, rosters turn over. Measured in the arena against the
@@ -626,6 +629,9 @@ Build the measuring tools before the front office.
   - Trading down in the draft for a haul - and then the CPU not even taking the
     player you wanted.
   - Trading up cheaply (picks 30 and 58 for pick 15).
+    The first and last are tests (humanTrades, lottery). Trading down, the CPU
+    takes about what an NBA draft chart calls fair (12 and 20 for 5) and turns
+    down hauls (8 and 12 for 5, 4 and 9 for 1).
 - **Trade checker** (`ARENA_CHECK_TRADES`): every trade the front offices make
   is played out - both teams before and after, against the rest of the league -
   next to what the model expected it to do for each side this season.

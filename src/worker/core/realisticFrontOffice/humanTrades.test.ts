@@ -95,6 +95,56 @@ test(
 	},
 );
 
+test(
+	"a winning team's aging star is not pried off it for a few firsts",
+	{ timeout: 300_000 },
+	async () => {
+		// Owner's exploit list: a 20-5 team selling its 37-year-old star.
+		const season = g.get("season");
+		const outlook = await currentOutlook();
+		const tid = [...outlook.teams.values()]
+			.filter((t) => t.tid !== userTid)
+			.sort((a, b) => b.strength[0]! - a.strength[0]!)[0]!.tid;
+		const star = (await roster(tid))[0]!;
+		const born = star.born.year;
+		const records = await idb.cache.teamSeasons.indexGetAll(
+			"teamSeasonsBySeasonTid",
+			[[season], [season, "Z"]],
+		);
+		const was = records.map((ts) => [ts.won, ts.lost] as const);
+		try {
+			star.born.year = season - 37;
+			await idb.cache.players.put(star);
+			for (const ts of records) {
+				ts.won = ts.tid === tid ? 20 : 12;
+				ts.lost = 25 - ts.won;
+				await idb.cache.teamSeasons.put(ts);
+			}
+			const firsts = (
+				await idb.cache.draftPicks.indexGetAll("draftPicksByTid", userTid)
+			)
+				.filter((dp) => dp.round === 1)
+				.sort((a, b) => (a.season as number) - (b.season as number));
+			const verdict = await judgeHumanOffer(
+				{ tid, pids: [star.pid], dpids: [] },
+				{
+					tid: userTid,
+					pids: [],
+					dpids: firsts.slice(0, 3).map((dp) => dp.dpid),
+				},
+			);
+			assert.strictEqual(verdict.kind, "no");
+		} finally {
+			star.born.year = born;
+			await idb.cache.players.put(star);
+			for (const [i, ts] of records.entries()) {
+				[ts.won, ts.lost] = was[i]!;
+				await idb.cache.teamSeasons.put(ts);
+			}
+		}
+	},
+);
+
 test("difficulty does nothing to trades", () => {
 	g.setWithoutSavingToDB("difficulty", 1);
 	assert.strictEqual(tradeDifficulty(), 0);
