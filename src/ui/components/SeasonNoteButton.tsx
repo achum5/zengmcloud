@@ -64,14 +64,13 @@ export const SeasonNoteButton = ({
 			// AROUND this button, so swallowing the event would mean the popover
 			// never opens. A stats table only toggles a row when the click landed on
 			// the cell itself (see DataTable's Row), so a button is already safe.
-			renderTarget={({ forwardedRef, onClick }) => (
+			renderTarget={({ onClick }) => (
 				<button
 					aria-label={title}
 					className="btn btn-link p-0 border-0 align-baseline text-decoration-none ms-1"
 					onClick={() => {
 						onClick?.();
 					}}
-					ref={forwardedRef as any}
 					title={title}
 					type="button"
 				>

@@ -47,13 +47,14 @@ const TeamRating = ({
 
 	return (
 		<>
-			<a
-				className="cursor-pointer"
+			<button
+				type="button"
+				className="btn btn-link p-0 border-0 align-baseline"
 				title={title}
 				onClick={() => setShowCurrent(!showCurrent)}
 			>
 				<span className={className}>{rating}</span>/{denom}
-			</a>
+			</button>
 		</>
 	);
 };
@@ -134,13 +135,7 @@ const PayrollAndPenalties = ({
 			}
 			rootClose
 		>
-			<button
-				className="btn btn-link p-0 border-0 text-danger"
-				style={{
-					// Without this, alignment is a bit off compared to the text version
-					verticalAlign: "baseline",
-				}}
-			>
+			<button className="btn btn-link p-0 border-0 align-baseline text-danger">
 				{payrollString}
 			</button>
 		</OverlayTrigger>

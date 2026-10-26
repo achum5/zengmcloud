@@ -38,18 +38,29 @@ const Pagination = ({
 	// URL is the source of truth for which page is showing, so it can be
 	// bookmarked, shared, middle-clicked and walked with the back button. No
 	// onClick: handling it here as well would page twice, once in state and once
-	// through the route.
-	const pageProps = (page: number, enabled: boolean) => {
+	// through the route. Without it, buttons.
+	const pageLink = (page: number, enabled: boolean, children: ReactNode) => {
 		if (pageUrl) {
-			return { href: enabled ? pageUrl(page) : undefined };
+			return (
+				<a
+					className="page-link user-select-none"
+					href={enabled ? pageUrl(page) : undefined}
+					aria-disabled={enabled ? undefined : true}
+				>
+					{children}
+				</a>
+			);
 		}
-		return {
-			onClick: () => {
-				if (enabled) {
-					onClick(page);
-				}
-			},
-		};
+		return (
+			<button
+				type="button"
+				className="page-link user-select-none"
+				disabled={!enabled}
+				onClick={() => onClick(page)}
+			>
+				{children}
+			</button>
+		);
 	};
 
 	const numberedPages: ReactNode[] = [];
@@ -61,16 +72,11 @@ const Pagination = ({
 				className={clsx("page-item", i === currentPage ? "active" : null)}
 			>
 				{i === currentPage ? (
-					<span
-						className="page-link user-select-none"
-						onClick={() => onClick(i)}
-					>
+					<span className="page-link user-select-none" aria-current="page">
 						{i}
 					</span>
 				) : (
-					<a className="page-link user-select-none" {...pageProps(i, true)}>
-						{i}
-					</a>
+					pageLink(i, true, i)
 				)}
 			</li>,
 		);
@@ -83,12 +89,7 @@ const Pagination = ({
 					disabled: !showPrev,
 				})}
 			>
-				<a
-					className="page-link user-select-none"
-					{...pageProps(currentPage - 1, showPrev)}
-				>
-					← Prev
-				</a>
+				{pageLink(currentPage - 1, showPrev, "← Prev")}
 			</li>
 			{numberedPages}
 			<li
@@ -96,12 +97,7 @@ const Pagination = ({
 					disabled: !showNext,
 				})}
 			>
-				<a
-					className="page-link user-select-none"
-					{...pageProps(currentPage + 1, showNext)}
-				>
-					Next →
-				</a>
+				{pageLink(currentPage + 1, showNext, "Next →")}
 			</li>
 		</ul>
 	);

@@ -573,7 +573,8 @@ class Cache {
 		number,
 		{
 			resolve: () => void;
-			timeoutID: number;
+			// ReturnType rather than number because bbgm-rosters type checks this with Node types
+			timeoutID: ReturnType<typeof setTimeout>;
 			validStatuses: Status[];
 		}
 	>;

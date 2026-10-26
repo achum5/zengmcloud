@@ -1,11 +1,15 @@
-import { memo, Fragment, type MouseEvent, type ReactNode } from "react";
+import { memo, Fragment, type ReactNode } from "react";
 import { ResponsiveTableWrapper } from "./ResponsiveTableWrapper.tsx";
 import { getCols } from "../../common/getCols.ts";
 import { helpers } from "../util/helpers.ts";
 import { PLAYER_GAME_STATS } from "../../common/constants.football.ts";
 import type { Col, SortBy } from "./DataTable/index.tsx";
 import { useBoxScoreSortBys } from "./useBoxScoreSortBys.ts";
-import { getSortClassName } from "./DataTable/Header.tsx";
+import {
+	getSortableHeaderProps,
+	getSortClassName,
+} from "./DataTable/Header.tsx";
+import type { SortEvent } from "./DataTable/updateSortBys.ts";
 import {
 	getScoreInfo,
 	getScoreInfoOld,
@@ -53,7 +57,7 @@ export const StatsHeader = ({
 	sortable,
 }: {
 	cols: Col[];
-	onClick: (b: MouseEvent, a: number) => void;
+	onClick: (b: SortEvent, a: number) => void;
 	sortBys: SortBy[];
 	sortable: boolean;
 }) => {
@@ -62,20 +66,25 @@ export const StatsHeader = ({
 			{cols.map((col, i) => {
 				const { desc, title } = col;
 
+				const onSort = (event: SortEvent) => {
+					onClick(event, i);
+				};
+
 				let className: string | undefined;
+				let sortableHeaderProps;
 
 				if (sortable) {
 					className = getSortClassName(sortBys, i);
+					sortableHeaderProps = getSortableHeaderProps(sortBys, i, onSort);
 				}
 
 				return (
 					<th
 						className={className}
 						key={i}
-						onClick={(event) => {
-							onClick(event, i);
-						}}
+						onClick={onSort}
 						title={desc}
+						{...sortableHeaderProps}
 					>
 						{title}
 					</th>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useId, useRef, useState, type ChangeEvent } from "react";
 import { Dropdown } from "react-bootstrap";
 import { helpers } from "../../util/helpers.ts";
 import { toWorker } from "../../util/toWorker.ts";
@@ -46,6 +46,7 @@ export const PlayerBioInfoRowButton = ({
 			onClick={onClick}
 			style={{ fontSize: 20, marginTop: 10 }}
 			title={title}
+			aria-label={title}
 			type="button"
 		>
 			<span className={`glyphicon ${icon}`} />
@@ -148,6 +149,8 @@ const Controls = ({
 	position: "top" | "bottom";
 	setInfoState: SetInfoState;
 }) => {
+	const id = useId();
+
 	const [importErrorMessage, setImportErrorMessage] = useState<
 		string | undefined
 	>();
@@ -181,7 +184,7 @@ const Controls = ({
 						<Dropdown.Toggle
 							className="btn-light-bordered btn-light-bordered-group-left"
 							variant="foo"
-							id="dropdown-countries-add"
+							id={`${id}-add`}
 						>
 							Add
 						</Dropdown.Toggle>
@@ -233,7 +236,7 @@ const Controls = ({
 						<Dropdown.Toggle
 							className="btn-light-bordered btn-light-bordered-group-left btn-light-bordered-group-right"
 							variant="foo"
-							id="dropdown-countries-reset"
+							id={`${id}-reset`}
 						>
 							Reset
 						</Dropdown.Toggle>

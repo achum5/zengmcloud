@@ -19,7 +19,7 @@ import { simGames, type SimGame } from "./testGames.ts";
 let games: SimGame[] = [];
 
 beforeAll(async () => {
-	games = await simGames([11, 12, 13]);
+	games = await simGames([18, 19, 20]);
 }, 120_000);
 
 // How far over a sideline a man run out of bounds may go (see action.ts

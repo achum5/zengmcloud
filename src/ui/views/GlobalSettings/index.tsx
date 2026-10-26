@@ -577,8 +577,12 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 							value={state.recapMaxPlayers}
 						/>
 					</div>
-					<div className="col-sm-3 col-6 mb-3">
-						<label className="form-label">
+					<div
+						className="col-sm-3 col-6 mb-3"
+						role="group"
+						aria-labelledby="options-phaseChangeRedirects"
+					>
+						<div className="form-label" id="options-phaseChangeRedirects">
 							Auto UI Redirect{" "}
 							<HelpPopover title="Auto UI Redirect">
 								<p>
@@ -588,7 +592,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 									you find that behavior annoying, you can disable it here.
 								</p>
 							</HelpPopover>
-						</label>
+						</div>
 						{phaseChangeRedirects.map(({ checked, label, phase }) => (
 							<div key={phase} className="form-check">
 								<input
@@ -652,7 +656,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 						</div>
 					</div>
 					<div className="col-sm-3 col-6 mb-3">
-						<label className="form-label">Persistent Storage</label>
+						<div className="form-label">Persistent Storage</div>
 						<Storage />
 					</div>
 				</div>

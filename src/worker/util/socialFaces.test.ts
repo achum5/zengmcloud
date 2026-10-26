@@ -1,5 +1,7 @@
 import { svgsIndex } from "facesjs";
 import { assert, describe, test } from "vitest";
+
+const importNode = (name: string) => import(/* @vite-ignore */ name);
 import {
 	CIVILIAN_CLOTHES,
 	CIVILIAN_OUTFITS,
@@ -81,7 +83,12 @@ describe("faces for the cast", () => {
 		// facesjs keeps headbands and eye black in `accessories`, which is
 		// exactly the thing this was supposed to stop - a beat writer in a
 		// headband is the roster-with-captions look in one detail.
-		const COURT = new Set(["headband", "headband-high", "eye-black", "facemask"]);
+		const COURT = new Set([
+			"headband",
+			"headband-high",
+			"eye-black",
+			"facemask",
+		]);
 		for (const p of everyone()) {
 			assert.isFalse(
 				COURT.has(p.face.accessories.id),
@@ -163,18 +170,36 @@ describe("faces for the cast", () => {
 	});
 
 	test("our copy of the library's gender table still matches it", async () => {
-		// svgsGenders is not exported and the package's exports map forbids a
-		// deep import, so socialFaces derives it - female art is prefixed
-		// "female", and the handful of male-only ids in types with no female
-		// art are written out. That derivation can rot if facesjs redraws its
-		// catalogue, so check it against the real table, loaded by path because
-		// the exports map only blocks the bare specifier.
-		const url = new URL(
-			"../../../node_modules/facesjs/build/svgs-index.js",
+		// svgsGenders is not exported, so socialFaces derives it - female art
+		// is prefixed "female", and the handful of male-only ids in types with
+		// no female art are written out. That derivation can rot if facesjs
+		// redraws its catalogue, so check it against the real table. Since
+		// facesjs 5.0.4 the table is bundled into a chunk with a hashed name
+		// rather than being a module of its own, so it's read out of whichever
+		// build file defines it.
+		const fs = await importNode("node:fs");
+		const build = new URL(
+			"../../../node_modules/facesjs/build/",
 			import.meta.url,
-		).href;
-		const mod: any = await import(/* @vite-ignore */ url);
-		const genders = mod.svgsGenders;
+		);
+		const source: string | undefined = (fs.readdirSync(build) as string[])
+			.filter((file) => file.endsWith(".js"))
+			.map((file) => fs.readFileSync(new URL(file, build), "utf8") as string)
+			.find((text) => text.includes("svgsGenders = {"));
+		assert.isDefined(source, "no svgsGenders in the facesjs build");
+		const start = source!.indexOf("{", source!.indexOf("svgsGenders = {"));
+		let end = start;
+		for (let depth = 0; end < source!.length; end++) {
+			if (source![end] === "{") {
+				depth += 1;
+			} else if (source![end] === "}") {
+				depth -= 1;
+				if (depth === 0) {
+					break;
+				}
+			}
+		}
+		const genders = JSON.parse(source!.slice(start, end + 1));
 
 		const femaleTagged = (type: string, id: string) =>
 			genders[type][(svgsIndex as any)[type].indexOf(id)] === "female";
@@ -200,8 +225,14 @@ describe("faces for the cast", () => {
 			((svgsIndex as any)[type] as string[]).filter(
 				(id) => genders[type][(svgsIndex as any)[type].indexOf(id)] === "male",
 			);
-		assert.deepStrictEqual(maleOnly("body").toSorted(), [...MALE_ONLY_BODY].toSorted());
-		assert.deepStrictEqual(maleOnly("ear").toSorted(), [...MALE_ONLY_EAR].toSorted());
+		assert.deepStrictEqual(
+			maleOnly("body").toSorted(),
+			[...MALE_ONLY_BODY].toSorted(),
+		);
+		assert.deepStrictEqual(
+			maleOnly("ear").toSorted(),
+			[...MALE_ONLY_EAR].toSorted(),
+		);
 
 		// 3. The types a woman is drawn from all still HAVE female art, which
 		//    is what lets the male-only list stay this short.

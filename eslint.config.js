@@ -52,11 +52,6 @@ export default defineConfig(
 			"@typescript-eslint/no-unnecessary-type-constraint": "off",
 			"import-x/extensions": ["error", "ignorePackages"],
 			"import-x/no-namespace": "off",
-			"jsx-a11y/anchor-has-content": "off",
-			"jsx-a11y/anchor-is-valid": "off",
-			"jsx-a11y/click-events-have-key-events": "off",
-			"jsx-a11y/label-has-associated-control": "off",
-			"jsx-a11y/no-static-element-interactions": "off",
 			"no-console": "off",
 			"no-empty": "off",
 			"no-self-compare": "error",
@@ -97,6 +92,30 @@ export default defineConfig(
 				"allowNullableNumber": false,
 				"allowAny": true
 			}],*/
+		},
+	},
+	// Upstream's accessibility rules, which these views from this fork don't
+	// meet yet
+	{
+		files: [
+			"src/ui/components/AchievementCards.tsx",
+			"src/ui/components/PlayerFaceModal.tsx",
+			"src/ui/components/RecapBanner.tsx",
+			"src/ui/components/TradingCardGallery.tsx",
+			"src/ui/views/AutoPlaySchedule.tsx",
+			"src/ui/views/CreateCards/index.tsx",
+			"src/ui/views/EditTeamCourt.tsx",
+			"src/ui/views/EditTeamUniform.tsx",
+			"src/ui/views/FaceConverter.tsx",
+			"src/ui/views/NewLeague/index.tsx",
+			"src/ui/views/Player/TopStuff.tsx",
+			"src/ui/views/Settings/settings.tsx",
+			"src/ui/views/SocialAccounts.tsx",
+		],
+		rules: {
+			"jsx-a11y/click-events-have-key-events": "off",
+			"jsx-a11y/label-has-associated-control": "off",
+			"jsx-a11y/no-static-element-interactions": "off",
 		},
 	},
 	{

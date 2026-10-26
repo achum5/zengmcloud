@@ -168,15 +168,15 @@ const Summary = ({
 					{excess > 0 ? (
 						<>
 							,{" "}
-							<a
-								href="#"
-								onClick={(event) => {
-									event.preventDefault();
+							<button
+								type="button"
+								className="btn btn-link p-0 border-0 align-baseline"
+								onClick={() => {
 									setExpanded([...expanded, key]);
 								}}
 							>
 								{excess} more
-							</a>
+							</button>
 						</>
 					) : null}
 				</>,

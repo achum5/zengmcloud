@@ -376,6 +376,14 @@ a.god-mode.active {
 	width: 180px;
 }
 
+// A <button> that looks like the bare icon inside it. Defined before .help-icon and .watch so their colors take precedence.
+.icon-button {
+	padding: 0;
+	border: 0;
+	background: none;
+	color: inherit;
+}
+
 .help-icon {
 	cursor: pointer;
 	font-size: 13px;
@@ -2083,13 +2091,6 @@ button.fast-forward {
 	background-color: var(--bs-alert-bg);
 }
 
-a.anchor {
-	display: block;
-	position: relative;
-	top: -60px;
-	visibility: hidden;
-}
-
 .settings-wrapper {
 	display: flex;
 	flex-direction: column-reverse;
@@ -2425,6 +2426,9 @@ tr.text-body-secondary {
 	cursor: pointer;
 
 	display: block;
+	width: 100%;
+	background: none;
+	border: 0;
 	font-weight: 500;
 	color: $black;
 
