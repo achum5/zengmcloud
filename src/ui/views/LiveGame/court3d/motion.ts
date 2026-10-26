@@ -158,7 +158,9 @@ export const runShape = (L: number, T: number, v0 = 0, v1 = 0): RunShape => {
 	return { T, v0: L / T, v1: L / T, vc: L / T, ta: 0, td: 0, L };
 };
 // One ramp from v0 to v1 and, before or after it, on at the pace at that
-// end - if one fits the way and the time.
+// end - if one fits the way and the time. (As slow as this, feet a second,
+// he is all but standing.)
+const STILL = 1.5;
 const oneRamp = (
 	L: number,
 	T: number,
@@ -178,7 +180,9 @@ const oneRamp = (
 	// before it or after, as that pace is the one he ends or starts at.
 	const p = L >= c * T ? Math.max(v0, v1) : Math.min(v0, v1);
 	const t = (p * T - L) / (p - c);
-	if (!(t > 0 && t <= T)) {
+	// (Not stood still the rest of it, though: a run is going somewhere
+	// all of it.)
+	if (!(t > 0 && t <= T) || (p < STILL && t < T - 0.001)) {
 		return undefined;
 	}
 	return p === v0

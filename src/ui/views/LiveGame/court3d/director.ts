@@ -704,9 +704,9 @@ const LAYUP_GATHER = 7;
 const DUNK_GATHER = 6;
 const LAYUP_STRIDE = 4.5;
 // Up off the floor for a layup, or a floater, how fast at the most he goes
-// on in the air (feet a second); and how hard he pulls up from it once he
-// is down (feet a second, a second), no nearer the middle of the rim than
-// this (feet).
+// on in the air (feet a second); how hard he pulls up from it coming down
+// (feet a second, a second); and no nearer the middle of the rim than this
+// (feet).
 const LAYUP_AIR = 7;
 // And up for a dunk, on in to the rim (feet a second).
 const DUNK_AIR = 8;
@@ -10230,7 +10230,7 @@ class Director {
 			// Where it leaves his hand - and once it has, the last of his way
 			// in carries him on a foot or so in the air (see below).
 			let drift: Pt | undefined;
-			let landing: { way: Pt; v: number; at: number } | undefined;
+			let landing: { v: number; at: number } | undefined;
 			if (close || floater) {
 				// The last strides in: up from a couple of feet out, where it
 				// can go up and over the front of the rim or off the glass - not
@@ -10280,10 +10280,9 @@ class Director {
 					}
 				}
 				// Off the floor still going, he goes on in the air at the pace
-				// he left it at - up to where it leaves his hand, on past it to
-				// where he comes down, and a step or two pulling up from there -
-				// as far as there is room before the rim (on a reverse, out from
-				// under it the way he goes).
+				// he left it at - up to where it leaves his hand, and on past it
+				// coming down - as far as there is room before the rim (on a
+				// reverse, out from under it the way he goes).
 				const from = this.posOf(shooter);
 				const tOff = gather + dur * jump[0];
 				const tLand = gather + dur * jump[1];
@@ -10322,13 +10321,15 @@ class Director {
 					v0: v,
 					v1: v,
 				});
-				if (v * after > 0.3) {
-					drift = clampPt({
-						x: S.x + way.x * v * after,
-						y: S.y + way.y * v * after,
-					});
+				// (Coming down, he has all but pulled up by the time he lands.)
+				const on = Math.max(
+					(v * after) / 2,
+					v * after - (v * v) / (2 * LAND_BRAKE),
+				);
+				if (on > 0.3) {
+					drift = clampPt({ x: S.x + way.x * on, y: S.y + way.y * on });
 				}
-				landing = { way, v, at: tLand };
+				landing = { v, at: tLand };
 			}
 			// The ball on his fingers then, as high as his jump has him.
 			const v = (letGo - jump[0]) / (jump[1] - jump[0]);
@@ -10565,32 +10566,16 @@ class Director {
 				}
 			}
 			if (drift && landing) {
-				// On in the air from where it left his hand, and down - pulling
-				// up over a step or two from there.
-				const { way, v, at } = landing;
-				const stop = (v * v) / (2 * LAND_BRAKE);
-				// (Barely going, he pulls up as he lands.)
-				const steps = stop >= 0.3;
+				// On in the air from where it left his hand, and down.
 				this.carry(
 					shooter,
 					drift,
 					release,
-					Math.max(120, at - release),
+					Math.max(120, landing.at - release),
 					"run",
 					faceRim,
-					{ onFrom: true, v0: v, v1: steps ? v : 0 },
+					{ onFrom: true, v0: landing.v, v1: 0 },
 				);
-				if (steps) {
-					this.carry(
-						shooter,
-						clampPt({ x: drift.x + way.x * stop, y: drift.y + way.y * stop }),
-						at,
-						(2000 * stop) / v,
-						"run",
-						faceRim,
-						{ onFrom: true, v0: v, v1: 0 },
-					);
-				}
 			}
 		}
 

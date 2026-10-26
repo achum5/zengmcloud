@@ -3737,7 +3737,7 @@ describe("3D director", () => {
 	test("a pass out to a man left open: his man is on his way while it is in the air", () => {
 		let passes = 0;
 		let stood = 0;
-		for (const seed of ["a", "b"]) {
+		for (const seed of ["a", "b", "c"]) {
 			const { tl } = compile(seed);
 			for (const seg of tl.ball) {
 				if (
