@@ -17530,6 +17530,15 @@ class Director {
 		const GAIN = 3;
 		// Too short a stretch to follow anybody in (ms).
 		const SHORTEST = 250;
+		// Done with a run of his that isn't following his man - into help, a
+		// stunt, a hand up - and nothing more for him for this long (ms), he
+		// holds there a beat and then picks his man up again: if that man was
+		// his this lately, and for at most so long, till the next thing he or
+		// the play does.
+		const FILL_GAP = 1200;
+		const FILL_HOLD = 300;
+		const FILL_RECENT = 4000;
+		const FILL_MAX = 8000;
 		// How far apart two of them keep (feet) - and how near he lets his
 		// man come before he gives ground.
 		const APART = 3;
@@ -17654,6 +17663,11 @@ class Director {
 		};
 		const cuts = [...this.cuts].sort((a, b) => a - b);
 		const changes = this.poss.map(([t]) => t).sort((a, b) => a - b);
+		// When each play's action gets going - a shot going up, a drive at
+		// the rim - for which the defense is placed by the play itself.
+		const actions = this.beats
+			.map((bt) => bt.actionStart)
+			.sort((a, b) => a - b);
 		// On a break - from when it got going till the ball changes hands -
 		// the man on the ball stops it about half court (see BREAK_PICK_UP).
 		const breaks = [...this.breaks].sort((a, b) => a - b);
@@ -17728,10 +17742,73 @@ class Director {
 				(v) => farthest(m.v1 ?? 0, v, T, HARDEST_PULL_UP) >= L,
 			);
 		};
+		// (The stretches of following put in where he would have stood - see
+		// FILL_GAP.)
+		const filled = new Set<Move>();
 		for (const tr of this.tracks.values()) {
 			const moves = tr.moves;
 			if (!moves.some((m) => this.marking.has(m))) {
 				continue;
+			}
+			// Stepped into help, a stunt, a hand up at a shot - and then stood
+			// there stock still, seconds, waiting on the next thing he does,
+			// the ball going round and his man left alone? He holds there a
+			// beat, then picks his man up again from where he is (see
+			// FILL_GAP): followed like any other stretch of him, on from there
+			// into whatever comes next.
+			for (let i = 0; i < moves.length; i++) {
+				const m = moves[i]!;
+				if (this.marking.has(m)) {
+					continue;
+				}
+				const t0 = m.t1 + FILL_HOLD;
+				const until = moves[i + 1]?.t0 ?? Infinity;
+				if (until - m.t1 < FILL_GAP) {
+					continue;
+				}
+				const had = moves
+					.slice(0, i)
+					.findLast((x) => this.marking.has(x) && x.t1 >= m.t0 - FILL_RECENT);
+				const man = had && this.marking.get(had);
+				// (Nor in the middle of something of his own - up to block it,
+				// a hand at the shot: that is where the play has him.)
+				const acting = tr.acts.some((a) => a.t0 <= t0 && t0 < a.t1);
+				if (
+					man === undefined ||
+					acting ||
+					firstAfter(cuts, had!.t0) <= t0 ||
+					firstAfter(changes, had!.t0) <= t0 ||
+					!shownAt(tr.pid, t0) ||
+					!shownAt(man, t0)
+				) {
+					continue;
+				}
+				const t1 = Math.min(
+					until,
+					t0 + FILL_MAX,
+					liveUntil(t0),
+					firstAfter(cuts, t0),
+					firstAfter(changes, t0),
+					firstAfter(actions, t0),
+					tr.acts.reduce(
+						(n, a) => (a.t0 > t0 ? Math.min(n, a.t0) : n),
+						Infinity,
+					),
+				);
+				if (t1 - t0 < SHORTEST) {
+					continue;
+				}
+				const fill: Move = {
+					t0,
+					t1,
+					from: { ...m.to },
+					to: { ...m.to },
+					anim: "slide",
+				};
+				moves.splice(i + 1, 0, fill);
+				this.marking.set(fill, man);
+				filled.add(fill);
+				i++;
 			}
 			// How much slower than the quickest of them he is to read what his
 			// man and the ball do (ms): each man his own.
@@ -17922,8 +17999,11 @@ class Director {
 				}
 				// (Not if this is only as far as one stretch of following goes,
 				// with more of it to come: he picks that up from wherever he is.)
+				// (Nor where a stretch put in for him ends: there was nowhere
+				// the schedule had him then.)
 				const end =
-					b === cap && moves[j] && this.marking.has(moves[j]!)
+					(b === cap && moves[j] && this.marking.has(moves[j]!)) ||
+					filled.has(moves[j - 1]!)
 						? undefined
 						: whereIn(planned, stop);
 				// Straight on into his next run, if it follows on from this at
