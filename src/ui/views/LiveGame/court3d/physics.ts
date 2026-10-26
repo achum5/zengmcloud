@@ -86,6 +86,8 @@ export type ShotPlay = {
 	decided: number;
 	// When, and how hard (feet a second into it), it hit the rim or the glass.
 	touches: Touch[];
+	// Up into the net from under the hoop: never a way a shot is played.
+	underNet: boolean;
 	// Where it is, and how fast it is going, at the end: off the rim for
 	// good, or - in - as it gets to the floor.
 	end: { t: number; p: Pt3; v: Pt3 };
@@ -114,6 +116,12 @@ export const playShot = (
 	const pts: number[] = [x, y, z];
 	const touches: Touch[] = [];
 	let made = false;
+	// A basket comes down through the ring from above it. One that comes up
+	// under the iron and drops back, or up through the hoop from below, is
+	// no basket, however it falls after.
+	let cameDown = false;
+	let upThrough = false;
+	let underNet = false;
 	let decided: number | undefined;
 	let lastTouch = -Infinity;
 	let landed: Pt3 | undefined;
@@ -125,11 +133,22 @@ export const playShot = (
 		vz -= GRAVITY * STEP;
 		x += vx * STEP;
 		y += vy * STEP;
+		const zWas = z;
 		z += vz * STEP;
 		// The rim: the nearest point of the ring to the ball's middle.
 		const hx = x - cx;
 		const hy = y - cy;
 		const rho = Math.sqrt(hx * hx + hy * hy);
+		if (rho < RING) {
+			if (zWas >= RIM_Z && z < RIM_Z) {
+				cameDown = true;
+			} else if (zWas < RIM_Z && z >= RIM_Z) {
+				upThrough = true;
+			}
+		}
+		if (!cameDown && rho < RIM_R - 0.1 && z < RIM_Z && z > RIM_Z - 1.5) {
+			underNet = true;
+		}
 		const qx = rho > 1e-9 ? cx + (hx / rho) * RING : cx + RING;
 		const qy = rho > 1e-9 ? cy + (hy / rho) * RING : cy;
 		const dx = x - qx;
@@ -218,7 +237,7 @@ export const playShot = (
 			// (Hugging the inside of the ring on its way down counts: with its
 			// middle inside the iron and that far under it, it has gone through
 			// - there is nothing down there to come back out off.)
-			if (rho < RIM_R && z < RIM_Z - 0.45 && vz < 0) {
+			if (rho < RIM_R && z < RIM_Z - 0.45 && vz < 0 && cameDown && !upThrough) {
 				// Down through the hoop.
 				made = true;
 				decided = t;
@@ -251,6 +270,7 @@ export const playShot = (
 		made,
 		decided: decided ?? t,
 		touches,
+		underNet,
 		end: {
 			t,
 			p: { x, y, z },
@@ -439,7 +459,7 @@ export const findShot = (
 			continue;
 		}
 		const play = playShot(side, p, v);
-		if (play.made !== want.made) {
+		if (play.made !== want.made || play.underNet) {
 			continue;
 		}
 		const kind = kindOf(play);

@@ -10359,15 +10359,29 @@ class Director {
 				decided = release + 130;
 				arrive = release + flight;
 			} else {
-				atRim = this.shootAtRim(
-					team,
-					shooter,
-					zone,
-					plan,
-					release,
-					close ? [380, 560] : [flight * 0.92, flight * 1.08],
-					fingers,
-				);
+				atRim =
+					this.shootAtRim(
+						team,
+						shooter,
+						zone,
+						plan,
+						release,
+						close ? [380, 560] : [flight * 0.92, flight * 1.08],
+						fingers,
+					) ??
+					// Let go of in under the rim, it takes a higher one to get up
+					// over the iron and come down through it.
+					(close
+						? this.shootAtRim(
+								team,
+								shooter,
+								zone,
+								plan,
+								release,
+								[560, 900],
+								fingers,
+							)
+						: undefined);
 				if (atRim) {
 					const p = atRim.found.play;
 					decided = atRim.t0 + atRim.line;
