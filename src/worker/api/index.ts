@@ -348,6 +348,7 @@ import { defaultTragicDeaths } from "../util/defaultTragicDeaths.ts";
 import { defaultInjuries } from "../util/defaultInjuries.ts";
 import { checkNaNs } from "../util/checkNaNs.ts";
 import { checkChanges } from "../util/checkChanges.ts";
+import { checkCloudChanges } from "../util/checkCloudChanges.ts";
 import { checkAccount } from "../util/checkAccount.ts";
 import { generateFace } from "../util/face.ts";
 import { choice } from "../../common/random.ts";
@@ -4190,6 +4191,10 @@ const init = async (inputEnv: Env, conditions: Conditions) => {
 			// Account check needs to complete before initAds, though
 			await checkAccount(conditions);
 			await toUI("initAds", ["accountChecked"], conditions);
+
+			// What's changed in this game (no request: ahead of BBGM's, which
+			// might fail).
+			await checkCloudChanges(conditions);
 
 			// This might make another HTTP request, and is less urgent than ads
 			await checkChanges(conditions);

@@ -39,6 +39,7 @@ export interface MetaDB extends DBSchema {
 			| unknown[];
 		key:
 			| "lastChangesVersion"
+			| "lastCloudChange"
 			| "nagged"
 			| "naggedMailingList"
 			| "options"
