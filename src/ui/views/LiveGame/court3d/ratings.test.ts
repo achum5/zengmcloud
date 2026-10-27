@@ -1,6 +1,6 @@
 import { assert, describe, test } from "vitest";
 import { compileCourt } from "./director.ts";
-import { evalBall } from "./evaluate.ts";
+import { evalBall, evalPlayer } from "./evaluate.ts";
 import { bodyOf } from "./poses.ts";
 import type { CourtRatings } from "./ratings.ts";
 import { fakeGame, gidOf } from "./testGame.ts";
@@ -240,5 +240,70 @@ describe("3D: players play like their ratings", () => {
 			poor.fancy + 0.1,
 			JSON.stringify({ great, poor }),
 		);
+	});
+
+	test("sharp defenders are closer to the shot than poor ones", () => {
+		const body = bodyOf();
+		const space = (diq: number) => {
+			let sum = 0;
+			let n = 0;
+			for (const seed of ["r1", "r2"]) {
+				const { events, players } = fakeGame(seed, 150);
+				const tl = compileCourt({
+					events,
+					// (Each side's defense rated so when it defends; the offense
+					// the same either way.)
+					players: players.map((p) => ({ ...p, ratings: { ...all(50), diq } })),
+					gid: gidOf(seed),
+				});
+				for (const s of tl.ball) {
+					if (
+						s.kind !== "fly" ||
+						!("pid" in s.from) ||
+						"pid" in s.to ||
+						s.to.z < 6
+					) {
+						continue;
+					}
+					const shooter = s.from.pid;
+					const team = tl.tracks.get(shooter)!.team;
+					const S = evalPlayer(tl, shooter, s.t0);
+					let near = Infinity;
+					for (const tr of tl.tracks.values()) {
+						if (tr.team === team) {
+							continue;
+						}
+						const q = evalPlayer(tl, tr.pid, s.t0);
+						if (q.shown) {
+							near = Math.min(near, Math.hypot(q.x - S.x, q.y - S.y));
+						}
+					}
+					if (near < 20) {
+						sum += near;
+						n += 1;
+					}
+				}
+			}
+			void body;
+			return sum / Math.max(1, n);
+		};
+		assert.isBelow(space(90), space(30) - 0.3);
+	});
+
+	test("a good passer puts zip on it; a poor one floats it", () => {
+		const flight = (pss: number) => {
+			let ms = 0;
+			let n = 0;
+			for (const seed of ["r1", "r2"]) {
+				for (const seg of play(seed, { ...all(50), pss }).ball) {
+					if (seg.kind === "fly" && "pid" in seg.from && "pid" in seg.to) {
+						ms += seg.t1 - seg.t0;
+						n += 1;
+					}
+				}
+			}
+			return ms / Math.max(1, n);
+		};
+		assert.isBelow(flight(90), flight(30) * 0.9);
 	});
 });

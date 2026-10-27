@@ -1199,6 +1199,12 @@ const FINAL_LOOK = 1600;
 // How long a defender takes to read a pass (ms), and how fast he closes out
 // once he has (feet a second) - breaking down for the last steps.
 const CLOSE_READ = 150;
+// A poor defender's closeout, at the worst: this much later (ms), and this
+// much further short of the shooter (feet) - a sharp one a little closer,
+// though never nearer than this (feet).
+const CLOSE_LATE_MOST = 250;
+const CLOSE_SHORT_MOST = 1.5;
+const CLOSE_TIGHTEST = 2.2;
 const CLOSE_RUN = 21;
 const CLOSE_CHOP = 8;
 // Leaving his man open, the slowest he goes out to him (feet a second).
@@ -2607,6 +2613,30 @@ class Director {
 	private byHandle(pid: number, base: number, lo: number, hi: number): number {
 		const h = this.level(pid, "drb");
 		return h === undefined ? base : lo + (hi - lo) * h;
+	}
+
+	// How long a defender takes to read a pass going out to his man (ms): a
+	// sharp one sees it as it leaves the passer's hands, a poor one a beat on.
+	private read(pid: number): number {
+		const iq = this.level(pid, "diq");
+		return iq === undefined ? CLOSE_READ : CLOSE_READ * (1.4 - 0.8 * iq);
+	}
+
+	// How far behind his man he plays (ms) - `base` for anybody, `own` his own
+	// touch slower: a sharp defender a beat sooner, a poor one a beat later.
+	private reacts(pid: number, base: number, own: number): number {
+		const iq = this.level(pid, "diq");
+		return iq === undefined
+			? base + own
+			: base * (1.25 - 0.5 * iq) + own * (1.3 - 0.6 * iq);
+	}
+
+	// Something that goes by how good a passer he is: `base` for anybody, the
+	// game knowing nothing of him - from `lo` for the poorest passer to `hi`
+	// for the best.
+	private byPassing(pid: number, base: number, lo: number, hi: number): number {
+		const p = this.level(pid, "pss");
+		return p === undefined ? base : lo + (hi - lo) * p;
 	}
 
 	// How high he gets up for something a man of his jump gets `peak` feet
@@ -4236,10 +4266,12 @@ class Director {
 				: d >= 9 && d < 22 && this.rng() < 0.3
 					? "bounce"
 					: "chest");
+		// (A good passer puts zip on it; a poor one floats it.)
+		const zip = this.byPassing(from, 1, 1.15, 0.9);
 		const flight =
-			kind === "lob"
+			(kind === "lob"
 				? Math.max(750, passMs(d) * 1.7)
-				: passMs(d) * (kind === "bounce" ? 1.15 : 1);
+				: passMs(d) * (kind === "bounce" ? 1.15 : 1)) * zip;
 		const over = kind === "overhead" || kind === "lob";
 		const wind = RELEASE_MS + (over ? OVERHEAD_WIND : 0);
 		const ready = Math.max(
@@ -4269,7 +4301,9 @@ class Director {
 			ready,
 			Math.max(t, this.free.get(from) ?? 0),
 		);
-		let start = Math.max(Math.min(ready, go), got);
+		// (A poor passer holds it a beat, making up his mind.)
+		let start =
+			Math.max(Math.min(ready, go), got) + this.byPassing(from, 0, 160, 0);
 		// Handing it on at a dead ball, he stops and turns to the man first -
 		// not tossing it over his shoulder off the walk he was on.
 		if (handOff) {
@@ -4334,7 +4368,13 @@ class Director {
 			ahead > BEHIND_AHEAD[0] &&
 			ahead < BEHIND_AHEAD[1] &&
 			onLeft === (pushHand === "R") &&
-			hash01(from * 7 + 3, Math.floor(ready)) < BEHIND_SHARE;
+			hash01(from * 7 + 3, Math.floor(ready)) <
+				this.byPassing(
+					from,
+					BEHIND_SHARE,
+					BEHIND_SHARE * 0.1,
+					BEHIND_SHARE * 1.6,
+				);
 		// Open, he calls for it: a hand up (cutting to get open for it, as
 		// he plants to come back out).
 		let callAt = start - 700;
@@ -10932,7 +10972,7 @@ class Director {
 			HELP_MAX,
 			ROOM_FT[3] +
 				reachIn(
-					outAt - Math.min(gather - 200, pass.t0 + CLOSE_READ),
+					outAt - Math.min(gather - 200, pass.t0 + this.read(guard)),
 					CLOSE_RUN,
 					BURST,
 				),
@@ -10964,7 +11004,7 @@ class Director {
 					Math.max(
 						HELP_EARLY,
 						runMs(dist(this.posAt(guard, pass.t0 - HELP_EARLY), H), HELP_FTPS) +
-							CLOSE_READ,
+							this.read(guard),
 					),
 				),
 		);
@@ -10997,6 +11037,23 @@ class Director {
 		down?: Pt,
 	) {
 		const P = this.posOf(shooter);
+		// A sharp defender is out on him in time and right up on him; a poor
+		// one a beat late, and pulling up short of him.
+		const iq = this.level(d, "diq");
+		if (iq !== undefined) {
+			late += Math.round((1 - iq) * CLOSE_LATE_MOST);
+			const off = dist(P, C);
+			if (off > 0.3) {
+				const want = Math.max(
+					CLOSE_TIGHTEST,
+					off + (1 - iq) * CLOSE_SHORT_MOST - iq * CLOSE_SHORT_MOST * 0.35,
+				);
+				C = clampPt({
+					x: P.x + ((C.x - P.x) * want) / off,
+					y: P.y + ((C.y - P.y) * want) / off,
+				});
+			}
+		}
 		let face = (P.x >= C.x ? 1 : -1) as 1 | -1;
 		// With the hand on the ball's side.
 		let left = this.leftToBall(C, shooter, P);
@@ -11039,7 +11096,7 @@ class Director {
 		let sees =
 			(thrown === undefined
 				? gather - 200
-				: Math.min(gather - 200, thrown + CLOSE_READ)) + late;
+				: Math.min(gather - 200, thrown + this.read(d))) + late;
 		// Where he breaks down from a run in from G.
 		const breakFrom = (G: Pt): Pt => {
 			const u = unitVec(G, C);
@@ -18366,7 +18423,7 @@ class Director {
 					}
 					const B0 = ballAt(t);
 					const on = B0.holder === who;
-					const R = (on ? REACT_ON : REACT_OFF) + quick;
+					const R = this.reacts(tr.pid, on ? REACT_ON : REACT_OFF, quick);
 					const { at: Bp, holder } = ballAt(t - R);
 					// Up on the ball he reads where his man is headed, not only
 					// where he was a beat ago: he gives ground as the drive comes,
