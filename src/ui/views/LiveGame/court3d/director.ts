@@ -708,6 +708,13 @@ const ON_FROM_MS = 700;
 const QUICK_FROM = 12;
 // A side-step jumper: how far across (feet) he goes before the hop back over.
 const SIDESTEP_FT = 2.6;
+// A hesitation pull-up (see driveTo): how far from his spot he must be to
+// drive at it, how far short of it he hesitates, for how long (ms), and the
+// nearest the rim the pull-up goes up from.
+const HESI_RUN = 5;
+const HESI_ON = 2.5;
+const HESI_MS = 420;
+const HESI_CLOSEST = 10;
 // How long (ms), at the most, a man takes to turn and go the other way as
 // the ball changes hands (see turnLag).
 const TURN_LAG = 300;
@@ -1681,6 +1688,7 @@ type ShotStyle =
 	| "euro"
 	| "stepBack"
 	| "sidestep"
+	| "hesi"
 	| "fade"
 	| "post"
 	| "hook"
@@ -2707,12 +2715,14 @@ class Director {
 						["stepBack", (0.12 + 0.25 * s) * go(0)],
 						["sidestep", (0.08 + 0.2 * s) * go(1)],
 						["crossover", (0.08 + 0.2 * h) * go(2)],
+						["hesi", (0.05 + 0.18 * h) * go(6)],
 						["plain", Math.max(0.15, 0.5 - 0.25 * h) * go(3)],
 					]
 				: [
 						["stepBack", (0.14 + 0.2 * s) * go(0)],
 						["sidestep", (0.06 + 0.12 * s) * go(1)],
 						["crossover", (0.1 + 0.2 * h) * go(2)],
+						["hesi", (0.07 + 0.2 * h) * go(6)],
 						["fade", (0.12 + 0.1 * (this.level(pid, "fg") ?? 0.5)) * go(4)],
 						// (Backed in a dribble or two from the elbow, and the
 						// turnaround over him: a man with a game inside.)
@@ -8543,6 +8553,55 @@ class Director {
 			const there = this.go(pid, P, t, RUN * 0.8, "run", dir);
 			this.act(pid, "euroStep", picked, there, { face: dir });
 			return there;
+		}
+		if (style === "hesi") {
+			// Hard at his man, and the hesitation - up out of it as if he is
+			// pulling up, his man coming up with him - then on, one sharp
+			// dribble, into the pull-up past him. (From a few strides off his
+			// spot; on it already, at his man and the pull-up a step or two
+			// in - not in so close it is no jumper, nor in over the line.)
+			const rim = rimPt(this.teamOf(pid));
+			const toRim = unitVec(from, rim);
+			const A =
+				d >= HESI_RUN
+					? inPlay({
+							x: from.x + dx * (1 - HESI_ON / d),
+							y: from.y + dy * (1 - HESI_ON / d),
+						})
+					: inPlay({ x: from.x + toRim.x * 2.4, y: from.y + toRim.y * 2.4 });
+			const B =
+				d >= HESI_RUN
+					? P
+					: inPlay({
+							x: from.x + toRim.x * (2.4 + HESI_ON),
+							y: from.y + toRim.y * (2.4 + HESI_ON),
+						});
+			const three = dist(P, rim) >= 22;
+			if (
+				(d >= HESI_RUN || (!three && dist(B, rim) >= HESI_CLOSEST)) &&
+				(!three || behindArc(this.teamOf(pid), B) === undefined)
+			) {
+				t = this.go(pid, A, t, DRIBBLE, "dribble", dir);
+				this.hold(pid, t, "dribble");
+				this.act(pid, "dribbleHesi", t, t + HESI_MS, { look: rim });
+				const guard = this.defenderOf(pid);
+				const G = guard === undefined ? undefined : this.posOf(guard);
+				if (guard !== undefined && G && dist(G, A) < 7) {
+					const u = unitVec(G, A);
+					this.go(
+						guard,
+						inPlay({ x: G.x + u.x * 0.9, y: G.y + u.y * 0.9 }),
+						Math.max(t + 120, this.free.get(guard) ?? 0),
+						6,
+						"shuffle",
+						-dir as 1 | -1,
+					);
+				}
+				t = this.go(pid, B, t + HESI_MS, DRIBBLE, "dribble", dir, {
+					effort: this.spring(pid),
+				});
+				return Math.max(t, this.hold(pid, t, "hold"));
+			}
 		}
 		if (style === "sidestep") {
 			// Often a move first, then across his man's face and a hop to the

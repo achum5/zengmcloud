@@ -532,4 +532,25 @@ describe("3D: players play like their ratings", () => {
 		}
 		assert.isAbove(n, 2, `${n}`);
 	});
+	test("a handler now and then gets his pull-up off a hesitation", () => {
+		let n = 0;
+		for (const seed of ["r1", "r2", "r3"]) {
+			for (const tr of play(seed, all(75)).tracks.values()) {
+				for (const a of tr.acts) {
+					if (
+						a.anim === "dribbleHesi" &&
+						tr.acts.some(
+							(x) =>
+								(x.anim === "shoot" || x.anim === "fade") &&
+								x.t0 > a.t1 &&
+								x.t0 < a.t1 + 1500,
+						)
+					) {
+						n += 1;
+					}
+				}
+			}
+		}
+		assert.isAbove(n, 2, `${n}`);
+	});
 });
