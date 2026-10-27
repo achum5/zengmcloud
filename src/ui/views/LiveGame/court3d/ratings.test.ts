@@ -475,4 +475,38 @@ describe("3D: players play like their ratings", () => {
 		const long = crouched(85);
 		assert.isAbove(short, long + 10, `${short} ${long}`);
 	});
+	test("a smart man off the ball keeps moving to where he's open; a poor one stands and watches more", () => {
+		// How much of the time the ball is in a man's hands his teammates
+		// are on the move.
+		const moving = (v: number) => {
+			const tl = play("r1", all(v));
+			let on = 0;
+			let n = 0;
+			tl.ball.forEach((s, k) => {
+				if (s.kind !== "hold") {
+					return;
+				}
+				const team = tl.tracks.get(s.pid)?.team;
+				const end = tl.ball[k + 1]?.t0 ?? s.t0;
+				for (let t = s.t0; t < end; t += 100) {
+					if (tl.fast.some(([a, b]) => t >= a && t < b)) {
+						continue;
+					}
+					for (const tr of tl.tracks.values()) {
+						if (tr.pid === s.pid || tr.team !== team) {
+							continue;
+						}
+						n += 1;
+						if (tr.moves.some((m) => m.t0 <= t && m.t1 > t)) {
+							on += 1;
+						}
+					}
+				}
+			});
+			return on / n;
+		};
+		const poor = moving(30);
+		const smart = moving(85);
+		assert.isAbove(smart, poor + 0.025, `${poor} ${smart}`);
+	});
 });

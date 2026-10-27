@@ -17296,8 +17296,13 @@ class Director {
 				// and then, he makes his man work - and with a pass to come to
 				// him where he is, he is back there, set, just as it comes.
 				const home = w.planted ? P : undefined;
-				const react = () => this.rand(200, 380);
-				const breather = () => this.rand(500, 1100);
+				// (A smart man is always at it - a little; a poor one stands
+				// and watches more, and is slower to move with the ball.)
+				const iq = this.level(tr.pid, "oiq");
+				const lazy = iq === undefined ? 1 : 1.5 - 0.75 * iq;
+				const moves = iq === undefined ? 0.3 : 0.12 + 0.4 * iq;
+				const react = () => this.rand(200, 380) * lazy;
+				const breather = () => this.rand(500, 1100) * lazy;
 				const busyMan = (): boolean => {
 					if (big) {
 						if (seal()) {
@@ -17395,7 +17400,7 @@ class Director {
 					const crowd =
 						dist(at, B) < (big ? 7 : 12) ||
 						othersAt(t0).some((m) => dist(m, at) < (big ? 6 : 8));
-					if (!crowd && this.rng() >= 0.3) {
+					if (!crowd && this.rng() >= moves) {
 						continue;
 					}
 					const Q = openSpot(t0, at, crowd ? 3 : 6);
