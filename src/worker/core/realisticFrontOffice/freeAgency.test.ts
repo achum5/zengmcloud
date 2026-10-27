@@ -6,6 +6,7 @@ import { g } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import { mostWorthPaying, priceSigning } from "./freeAgency.ts";
 import { currentOutlook, loadTeam } from "./market.ts";
+import { moneyCost, teamStrengths } from "./outlook.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 
@@ -58,6 +59,42 @@ test(
 				p.contract.amount = amounts[i]!;
 				await idb.cache.players.put(p);
 			}
+		}
+	},
+);
+
+test(
+	"in the season, a team over the tax line pays for this season's payroll",
+	{ timeout: 300_000 },
+	async () => {
+		const cap = g.get("salaryCap");
+		const tid = 11;
+		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+		const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+		const was = roster.map((p) => p.contract.amount);
+		const total = was.reduce((a, b) => a + b, 0);
+		try {
+			const outlook = await currentOutlook();
+			const costAt = async (payroll: number) => {
+				for (const [i, p] of roster.entries()) {
+					p.contract.amount = (was[i]! * payroll) / total;
+					await idb.cache.players.put(p);
+				}
+				const t = await loadTeam(outlook, tid);
+				return (
+					moneyCost(teamStrengths(outlook, tid, t.players, t.picks))?.[0] ?? 0
+				);
+			};
+			const under = await costAt(0.9 * cap);
+			const over = await costAt(g.get("luxuryPayroll") + 0.1 * cap);
+			assert.strictEqual(under, 0);
+			assert.isAbove(over, 0);
+		} finally {
+			for (const [i, p] of roster.entries()) {
+				p.contract.amount = was[i]!;
+				await idb.cache.players.put(p);
+			}
+			g.setWithoutSavingToDB("phase", PHASE.FREE_AGENCY);
 		}
 	},
 );

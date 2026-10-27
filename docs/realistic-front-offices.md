@@ -56,7 +56,9 @@ with "the Pistons", not with a named person.
   profit are ignored"): a team does what is best for the franchise, money
   included. Each season, payroll past the cap costs 0.02 titles per cap's
   worth, and the luxury tax's rate on top past the tax line; under the cap,
-  salary costs the room it uses. Cap room is used strategically to chase free
+  salary costs the room it uses. In the season under way, the tax counts on
+  the payroll as it will stand when the playoffs start, when it is charged,
+  and only the rest of the season's salary past the cap. Cap room is used strategically to chase free
   agents when that applies, and a team re-signs its own players over the cap
   (Bird rights) when that is good for its outlook. With money free, a team
   over the cap paid its own players whatever made them likeliest to stay -
