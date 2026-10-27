@@ -1507,6 +1507,10 @@ const hash01 = (a: number, b: number): number => {
 // from the quickest to the slowest.
 const FORM_LO = 0.93;
 const FORM_HI = 1.07;
+// By how good a shooter he is, where the game knows: from the poorest's to a
+// pure shooter's.
+const STROKE_POOR = 1.15;
+const STROKE_PURE = 0.87;
 
 // Nobody of theirs within this far of a shooter as it left his hands
 // (feet): he was left alone for it.
@@ -2584,6 +2588,17 @@ class Director {
 	private sooner(pid: number, from: number, by: number): number {
 		const q = this.quick(pid);
 		return q === 1 || by <= from ? by : from + (by - from) / q;
+	}
+
+	// His stroke - how long his shot takes of the usual time: his own, and by
+	// how good a shooter he is (by `keys`), where the game knows - a pure
+	// shooter quick and smooth off the catch, a poor one slower getting it off.
+	private stroke(pid: number, ...keys: RatingKey[]): number {
+		const own = hash01(pid, 6151);
+		const s = this.level(pid, ...keys);
+		return s === undefined
+			? FORM_LO + (FORM_HI - FORM_LO) * own
+			: STROKE_POOR - (STROKE_POOR - STROKE_PURE) * s + 0.06 * (own - 0.5);
 	}
 
 	// How high he gets up for something a man of his jump gets `peak` feet
@@ -10261,9 +10276,7 @@ class Director {
 			// (Each shooter his own stroke, every time: a quick one off a low
 			// lift, or a slower one rising higher - up as long as gravity
 			// takes for the height.)
-			const form = jumper
-				? FORM_LO + (FORM_HI - FORM_LO) * hash01(shooter, 6151)
-				: 1;
+			const form = jumper ? this.stroke(shooter, "tp", "fg") : 1;
 			// How high he gets up: off one foot in close, or on a hook, up and
 			// down as gravity has him, not popped up and dropped. (A jumper -
 			// or a fade - as high as the time he is up in his stroke takes him:
@@ -14079,8 +14092,7 @@ class Director {
 		}
 		const shotAt = set + 260;
 		// (His own stroke, as on his jumper.)
-		const stroke =
-			1000 * (FORM_LO + (FORM_HI - FORM_LO) * hash01(shooter, 6151));
+		const stroke = 1000 * this.stroke(shooter, "ft");
 		this.act(shooter, "setShot", shotAt, shotAt + stroke, {
 			face: dir,
 			look: rimSpot,

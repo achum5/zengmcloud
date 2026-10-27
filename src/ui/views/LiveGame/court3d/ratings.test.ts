@@ -188,4 +188,24 @@ describe("3D: players play like their ratings", () => {
 			}
 		}
 	});
+
+	test("a pure shooter gets it off quicker than a poor one", () => {
+		const strokes = (ratings: CourtRatings, anim: string) => {
+			const out: number[] = [];
+			for (const seed of ["r1", "r2"]) {
+				for (const tr of play(seed, ratings).tracks.values()) {
+					for (const a of tr.acts) {
+						if (a.anim === anim) {
+							out.push(a.t1 - a.t0);
+						}
+					}
+				}
+			}
+			return out.reduce((x, y) => x + y, 0) / Math.max(1, out.length);
+		};
+		const pure = { ...all(50), tp: 85, fg: 85, ft: 90 };
+		const poor = { ...all(50), tp: 30, fg: 30, ft: 40 };
+		assert.isBelow(strokes(pure, "shoot"), strokes(poor, "shoot") * 0.85);
+		assert.isBelow(strokes(pure, "setShot"), strokes(poor, "setShot") * 0.85);
+	});
 });
