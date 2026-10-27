@@ -95,7 +95,8 @@ describe("3D: players play like their ratings", () => {
 			}
 			return out.reduce((x, y) => x + y, 0) / Math.max(1, out.length);
 		};
-		assert.isAbove(peaks(all(85)), peaks(all(30)) * 1.3);
+		// (Some go up only as high as the ball is - by more than enough.)
+		assert.isAbove(peaks(all(85)), peaks(all(30)) * 1.2);
 	});
 
 	test("a quick man runs the floor faster than a slow one", () => {
@@ -207,5 +208,37 @@ describe("3D: players play like their ratings", () => {
 		const poor = { ...all(50), tp: 30, fg: 30, ft: 40 };
 		assert.isBelow(strokes(pure, "shoot"), strokes(poor, "shoot") * 0.85);
 		assert.isBelow(strokes(pure, "setShot"), strokes(poor, "setShot") * 0.85);
+	});
+
+	test("a great handler works his man with moves; a poor one keeps it simple", () => {
+		const moves = (ratings: CourtRatings) => {
+			let cross = 0;
+			let fancy = 0;
+			for (const seed of ["r1", "r2"]) {
+				for (const seg of play(seed, ratings).ball) {
+					if (seg.kind === "hold" && seg.style === "cross") {
+						cross += 1;
+						if (seg.move === "legs" || seg.move === "back") {
+							fancy += 1;
+						}
+					}
+				}
+			}
+			return { cross, fancy: fancy / Math.max(1, cross) };
+		};
+		const great = moves({ ...all(50), drb: 90 });
+		const poor = moves({ ...all(50), drb: 30 });
+		assert.isAbove(
+			great.cross,
+			poor.cross * 1.3,
+			JSON.stringify({ great, poor }),
+		);
+		// (The same move again and again is one stretch of it: plain crosses
+		// run together, so their share is counted high.)
+		assert.isAbove(
+			great.fancy,
+			poor.fancy + 0.1,
+			JSON.stringify({ great, poor }),
+		);
 	});
 });

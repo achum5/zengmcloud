@@ -2601,6 +2601,14 @@ class Director {
 			: STROKE_POOR - (STROKE_POOR - STROKE_PURE) * s + 0.06 * (own - 0.5);
 	}
 
+	// The odds of something a man does more the better his handle: `base`
+	// for everybody, the game knowing nothing of him - from `lo` for the
+	// poorest handler to `hi` for the best.
+	private byHandle(pid: number, base: number, lo: number, hi: number): number {
+		const h = this.level(pid, "drb");
+		return h === undefined ? base : lo + (hi - lo) * h;
+	}
+
 	// How high he gets up for something a man of his jump gets `peak` feet
 	// up for: a leaper well over it, a man who can't jump well short of it.
 	private leap(pid: number, peak: number): number {
@@ -6704,7 +6712,7 @@ class Director {
 				kind === "drive_baseline" ||
 				kind === "drive_middle") &&
 			dist(this.posOf(pid), P) > 7 &&
-			this.rng() < 0.5;
+			this.rng() < this.byHandle(pid, 0.5, 0.2, 0.8);
 		if ((handed || screened) && drive) {
 			this.skipCrossover(pid, P, start);
 		} else if (move || drive) {
@@ -9721,12 +9729,16 @@ class Director {
 					}
 					// His own shot: a move to get it.
 					const r = this.rng();
+					// (A move to get by him at the rim: the better his handle,
+					// the more often - see byHandle.)
+					const cross = this.byHandle(shooter, 0.5, 0.25, 0.65);
+					const euro = this.byHandle(shooter, 0.72, 0.38, 0.9);
 					style = quickIn
 						? "plain"
 						: zone === "atRim"
-							? r < 0.5
+							? r < cross
 								? "crossover"
-								: r < 0.72 && plan.finish === "layup"
+								: r < euro && plan.finish === "layup"
 									? "euro"
 									: "plain"
 							: zone === "lowPost"
@@ -17422,7 +17434,14 @@ class Director {
 						.at(-1) as { hand?: Hand } | undefined;
 					const inHand: Hand = lastSeg?.hand ?? hand;
 					combos += 1;
-					const made = this.runOfMoves(s.pid, tc, n3, 0.3, 0.2, inHand);
+					const made = this.runOfMoves(
+						s.pid,
+						tc,
+						n3,
+						this.byHandle(s.pid, 0.3, 0.08, 0.42),
+						this.byHandle(s.pid, 0.2, 0.03, 0.3),
+						inHand,
+					);
 					this.giveWith(tr, here, tc, n3, inHand);
 					segs.push(...made.segs, {
 						kind: "hold",
@@ -17454,7 +17473,7 @@ class Director {
 						dist(here, P) < 0.1 &&
 						go + out + 1000 <= left &&
 						left >= 3000 &&
-						r < 0.2
+						r < this.byHandle(s.pid, 0.2, 0.08, 0.3)
 					) {
 						// One hard go past his man's shoulder - cut off - and a
 						// dribble back out, still facing him.
@@ -17493,7 +17512,7 @@ class Director {
 						walked = true;
 						step(W, walk, "dribble");
 						wait(this.rand(500, 1000));
-					} else if (r < 0.8 && combo()) {
+					} else if (r < this.byHandle(s.pid, 0.8, 0.6, 0.92) && combo()) {
 						// (Done.)
 					} else {
 						// Just his dribble, low and steady, a beat or three.
@@ -17710,7 +17729,14 @@ class Director {
 			fake(from + 100);
 			added.push({ kind: "hold", t0: td, pid, style: "dribble", hand: start });
 			if (moves) {
-				const made = this.runOfMoves(pid, moves.tc, n, 0.45, 0.2, start);
+				const made = this.runOfMoves(
+					pid,
+					moves.tc,
+					n,
+					this.byHandle(pid, 0.45, 0.12, 0.5),
+					this.byHandle(pid, 0.2, 0.03, 0.3),
+					start,
+				);
 				added.push(...made.segs);
 				this.giveWith(tr, P, moves.tc, n, start);
 				if (throws) {
