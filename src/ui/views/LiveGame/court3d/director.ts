@@ -396,6 +396,9 @@ export type Beat = {
 };
 export type CourtTimeline = {
 	tracks: Map<number, Track>;
+	// How low each man the game has ratings for keeps his dribble, his own
+	// way (-1 to 1: see dribbleArm) - by his handle.
+	dribbleLow?: Map<number, number>;
 	ball: BallSeg[];
 	fx: Fx[];
 	beats: Beat[];
@@ -23170,8 +23173,24 @@ class Director {
 				shots.push({ t0: sh.t0, t1, kind: sh.kind });
 			}
 		}
+		// Each man's own dribble, by his handle: a fine handler keeps it low,
+		// a poor one bounces it up round his waist.
+		const dribbleLow = new Map<number, number>();
+		for (const pid of this.rated.keys()) {
+			const h = this.level(pid, "drb");
+			if (h !== undefined) {
+				dribbleLow.set(
+					pid,
+					Math.min(
+						1,
+						Math.max(-1, (h - 0.45) * 2.2 + 0.4 * (hash01(pid, 8101) - 0.5)),
+					),
+				);
+			}
+		}
 		const tl: CourtTimeline = {
 			tracks: this.tracks,
+			...(dribbleLow.size > 0 ? { dribbleLow } : {}),
 			ball: this.ball,
 			fx: this.fx,
 			beats: this.beats,

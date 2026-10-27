@@ -128,6 +128,8 @@ export type PlayerState = {
 	// How tight on him the nearest of theirs in front of him is (0 to 1):
 	// up on him, his dribble is kept in by his hip, not out in front.
 	tight?: number;
+	// How low he keeps his dribble, his own way (-1 to 1: see dribbleLow).
+	low?: number;
 	// Doing something with his arms on the run - a catch, a pass, a hand at
 	// the ball: the stride his legs keep on with under it (see STRIDE_ACTS).
 	stride?: Stride;
@@ -195,6 +197,7 @@ export type Blend = {
 	dribbleHand?: Hand;
 	dribbleFrom?: Hand;
 	tight?: number;
+	low?: number;
 	stride?: Stride;
 	target?: number;
 	mirror?: boolean;
@@ -2201,6 +2204,7 @@ type Doing = {
 	dribbleHand?: Hand;
 	dribbleFrom?: Hand;
 	tight?: number;
+	low?: number;
 	stride?: Stride;
 	target?: number;
 	// Stepping over off a man (not a shuffle he set off on).
@@ -2733,6 +2737,7 @@ const doingAt = (
 				? bounceOf(tl, bi, t)
 				: undefined;
 	const tight = has?.style === "dribble" ? tightAt(tl, tr, t, here) : 0;
+	const low = has?.style === "dribble" ? tl.dribbleLow?.get(tr.pid) : undefined;
 	// Since it came into his hands - or went out of them.
 	let grip: number | undefined;
 	if (has?.style === "hold") {
@@ -2784,6 +2789,7 @@ const doingAt = (
 		dribbleHand: beat ? (beat.ph < DOWN ? beat.from : beat.to) : undefined,
 		...(beat && beat.from !== beat.to ? { dribbleFrom: beat.from } : {}),
 		...(tight > 0 ? { tight } : {}),
+		...(low ? { low } : {}),
 		...(stride ? { stride } : {}),
 		...(down > 0 ? { down } : {}),
 		...(stepLen ? { stepLen } : {}),
@@ -3141,6 +3147,7 @@ const blendInto = (
 		dribbleHand: before.dribbleHand,
 		...(before.dribbleFrom ? { dribbleFrom: before.dribbleFrom } : {}),
 		...(before.tight ? { tight: before.tight } : {}),
+		...(before.low ? { low: before.low } : {}),
 		...(before.stride ? { stride: before.stride } : {}),
 		...(before.down ? { down: before.down } : {}),
 		...(before.stepLen ? { stepLen: before.stepLen } : {}),
@@ -5026,6 +5033,7 @@ const blendPose = (f: Blend, style?: RunStyle): Pose => {
 		f.target,
 		f.dribbleFrom,
 		f.tight,
+		f.low,
 	);
 	const short = shortSteps(legsKept(as, f), f.anim, f.stepLen, f.phase);
 	const m0 = strode(f.mirror ? mirror(short) : short, f.stride);
@@ -5080,6 +5088,7 @@ const standRef = (x: {
 	target?: number;
 	dribbleFrom?: Hand;
 	tight?: number;
+	low?: number;
 	mirror?: boolean;
 }): Pose => {
 	const q = posed(
@@ -5090,6 +5099,7 @@ const standRef = (x: {
 		x.target,
 		x.dribbleFrom,
 		x.tight,
+		x.low,
 	);
 	return x.mirror ? mirror(q) : q;
 };
@@ -5278,6 +5288,7 @@ const legsKept = (
 		target?: number;
 		dribbleFrom?: Hand;
 		tight?: number;
+		low?: number;
 	},
 ): Pose => {
 	const a = ANIMS[x.anim];
@@ -5296,6 +5307,7 @@ const legsKept = (
 		x.target,
 		x.dribbleFrom,
 		x.tight,
+		x.low,
 	);
 	const out = { ...q };
 	for (const k of LEG_KEYS) {
@@ -5401,6 +5413,7 @@ export const poseOf = (st: PlayerState): Pose => {
 		st.target,
 		st.dribbleFrom,
 		st.tight,
+		st.low,
 	);
 	const short = shortSteps(
 		st.z > 0 ? own : legsKept(own, st),

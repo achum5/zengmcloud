@@ -7147,6 +7147,10 @@ const DRIBBLE_TOP = { f: 0.72, s: 1.12, u: 0.5 };
 const DRIBBLE_LOW = { f: 0.82, s: 1.18, u: 0.02 };
 const DRIBBLE_TOP_AHEAD = { f: 1.12, s: 1.02, u: 0.6 };
 const DRIBBLE_LOW_AHEAD = { f: 1.38, s: 1.06, u: 0.2 };
+// The top of a fine handler's bounce, that much lower (feet) - and a poor
+// one's that much higher (see dribbleArm).
+const DRIBBLE_LOWER = 0.2;
+const DRIBBLE_HIGHER = 0.14;
 // Worked all the way in on an in-and-out: how much nearer the middle of him
 // (of the way), and how much further out in front (feet).
 export const IN_BY = 0.72;
@@ -7196,11 +7200,16 @@ export const dribbleArm = (
 	leaves?: Hand,
 	// Worked in toward the middle of him (see dribbleIn).
 	inward = 0,
+	// How low he keeps it, his own way: a fine handler's tight to his knee
+	// (up to 1), a poor one's up round his waist (down to -1).
+	deep = 0,
 ): Pose => {
 	const e = pushOf(ph);
 	const at = (k: "f" | "s" | "u") => {
 		const top =
-			DRIBBLE_TOP[k] + (DRIBBLE_TOP_AHEAD[k] - DRIBBLE_TOP[k]) * ahead;
+			DRIBBLE_TOP[k] +
+			(DRIBBLE_TOP_AHEAD[k] - DRIBBLE_TOP[k]) * ahead -
+			(k === "u" ? deep * (deep > 0 ? DRIBBLE_LOWER : DRIBBLE_HIGHER) : 0);
 		const low =
 			DRIBBLE_LOW[k] + (DRIBBLE_LOW_AHEAD[k] - DRIBBLE_LOW[k]) * ahead;
 		const v = top + (low - top) * e;
@@ -7284,6 +7293,8 @@ export const posed = (
 	leaves?: Hand,
 	// Somebody up on him (0 to 1): his dribble kept in by his hip.
 	tight = 0,
+	// How low he keeps it, his own way (-1 to 1: see dribbleArm).
+	low = 0,
 ): Pose => {
 	const q = poseAt(anim, phase);
 	if (dribble !== undefined && !MOVES.has(anim)) {
@@ -7294,6 +7305,7 @@ export const posed = (
 			dribbleAhead(anim) * (1 - tight),
 			leaves,
 			dribbleIn(anim, phase),
+			low,
 		);
 	}
 	if (target <= 0) {

@@ -616,4 +616,30 @@ describe("3D: players play like their ratings", () => {
 		assert.isAbove(good.mean, poor.mean * 1.4, JSON.stringify({ poor, good }));
 		assert.isAbove(poor.flat, good.flat, JSON.stringify({ poor, good }));
 	});
+	test("a fine handler keeps his dribble low; a poor one bounces it up round his waist", () => {
+		const body = bodyOf();
+		const high = (v: number) => {
+			const { events, players } = fakeGame("r1", 40);
+			const tl = compileCourt({
+				events,
+				players: players.map((p) => ({ ...p, ratings: all(v) })),
+				gid: gidOf("r1"),
+			});
+			const zs: number[] = [];
+			tl.ball.forEach((s, k) => {
+				if (s.kind !== "hold" || s.style !== "dribble") {
+					return;
+				}
+				const end = tl.ball[k + 1]?.t0 ?? s.t0;
+				for (let t = s.t0 + 300; t < end - 100; t += 40) {
+					zs.push(evalBall(tl, t, () => body).z);
+				}
+			});
+			zs.sort((a, b) => a - b);
+			return zs[Math.floor(zs.length * 0.95)]!;
+		};
+		const poor = high(30);
+		const fine = high(85);
+		assert.isBelow(fine, poor - 0.2, `${poor} ${fine}`);
+	});
 });
