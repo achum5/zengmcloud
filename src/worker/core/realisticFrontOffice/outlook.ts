@@ -505,6 +505,8 @@ export const outlookSettings = {
 	// Cap room is priced by how good the team is (payroll.ts), not the same
 	// for every team.
 	roomByRecord: true,
+	// A veteran's chance of staying counts how good he is (keptByValue).
+	retentionByValue: true,
 	// A pick's player past his rookie deal is let go when his salary buys more
 	// as room (letGo). Other players' chance of staying already counts the
 	// times their teams let them go (KEPT).
@@ -524,6 +526,7 @@ export const teamOutlookSettings = new Map<
 			| "upside"
 			| "pickUpside"
 			| "keptCalibration"
+			| "retentionByValue"
 			| "roomByRecord"
 			| "letGo"
 			| "moneyPerCap"
@@ -561,6 +564,19 @@ const KEPT: readonly (readonly [number, number])[] = [
 
 export const keptChance = (stay: number) => tableAt(KEPT, stay);
 
+// KEPT was measured on players of 50 or better that teams had traded for. A
+// veteran's team keeps him far more often the better he is: in arena leagues
+// under the current market (417 veterans whose contracts ran out, each over
+// several runs), those valued under 45 stayed 5% of the time whatever KEPT
+// gave them, those of 60 and up 72-93%. Refit on that, by the odds KEPT gives
+// and his value: per player, the log-likelihood of what happened went from
+// -0.65 to -0.47.
+const keptByValue = (kept: number, value: number) => {
+	const k = Math.min(0.99, Math.max(0.01, kept));
+	const x = -0.101 + 0.858 * Math.log(k / (1 - k)) + 0.812 * ((value - 55) / 5);
+	return 1 / (1 + Math.exp(-x));
+};
+
 export const ensureRetention = async (
 	outlook: Pick<LeagueOutlook, "retention">,
 	players: readonly Player[],
@@ -574,14 +590,14 @@ export const ensureRetention = async (
 			// testing the market - as he chooses in the offer market - turned
 			// into his chance of still being there after (KEPT).
 			const stay = await stayChance(p, asked);
-			outlook.retention.set(
-				key,
-				Math.round(
-					(outlookSettingFor(tid, "keptCalibration")
-						? keptChance(stay)
-						: stay) * 1000,
-				) / 1000,
-			);
+			let kept = outlookSettingFor(tid, "keptCalibration")
+				? keptChance(stay)
+				: stay;
+			// Players finishing rookie deals are kept as KEPT says.
+			if (outlookSettingFor(tid, "retentionByValue") && !p.contract.rookie) {
+				kept = keptByValue(kept, p.value);
+			}
+			outlook.retention.set(key, Math.round(kept * 1000) / 1000);
 		}
 	}
 };

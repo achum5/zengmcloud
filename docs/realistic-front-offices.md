@@ -489,6 +489,17 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   players - most of whom want out - were all leaving, so it sold them for
   little: of the CPU trade sides that lost most in hindsight, 58% gave away
   their best player priced at under 25% to stay.
+- **And by how good a veteran is.** That table was measured on players of 50
+  or better; a team keeps a veteran far more often the better he is. Of 417
+  whose contracts ran out (arena, under the current market), those valued
+  under 45 stayed 5% of the time whatever the table gave them, those of 60
+  and up 72-93%: priced at the table, the bench veterans of bad teams were
+  given 45% and stayed 13%. Refit by the table's odds and his value, the
+  log-likelihood of what happened went from -0.65 to -0.47 a player.
+  Players finishing rookie deals stay as the table says. Half the teams each
+  way (4 leagues x 2 seasons): those pricing it won 0.543 of their games to
+  0.457 the second season (0.513 to 0.487 the first, before it counted), and
+  their trades did better in hindsight (+49 to -35).
 - **A pick's player is kept past his rookie deal only if he is worth his
   second contract** - if the team is better with him than with what his
   salary buys as room over every season ahead, decided the season his rookie
