@@ -43,7 +43,7 @@ import {
 	shortSteps,
 	runStyleOf,
 	type RunStyle,
-	shotForm,
+	shotWith,
 	styledRun,
 	styledStance,
 	skeleton,
@@ -2600,7 +2600,7 @@ const doingAt = (
 			act.anim === "shoot"
 				? act.push
 					? "shootPush"
-					: shotForm(pid)
+					: shotWith(pid, act.arms)
 				: act.anim;
 		const a = ANIMS[anim];
 		// (A loop on the same beat as when he does it standing of his own

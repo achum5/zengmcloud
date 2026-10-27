@@ -573,4 +573,18 @@ describe("3D: players play like their ratings", () => {
 		assert.isAbove(moved / n, 0.2, `${moved}/${n}`);
 		assert.isBelow(moved / n, 0.85, `${moved}/${n}`);
 	});
+	test("each shooter his own release - high, quick or the usual - the same every time", () => {
+		const tl = play("r1", all(75));
+		const kinds = new Set<string>();
+		for (const tr of tl.tracks.values()) {
+			const his = new Set(
+				tr.acts.filter((a) => a.anim === "shoot").map((a) => a.arms ?? "-"),
+			);
+			assert.isAtMost(his.size, 1, `${tr.pid}`);
+			for (const k of his) {
+				kinds.add(k);
+			}
+		}
+		assert.strictEqual(kinds.size, 3, [...kinds].join(","));
+	});
 });

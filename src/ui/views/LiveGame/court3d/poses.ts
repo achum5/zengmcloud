@@ -1356,6 +1356,65 @@ const PUSH_ARMS: [number, Partial<Pose>][] = [
 	[0.92, { shN: 40, elN: 50, wrN: 0, shF: 18, elF: 50, abF: 12, wrF: 0 }],
 	[1, { shN: 28, elN: 46, shF: 8, elF: 32, abF: 12 }],
 ];
+// A HIGH RELEASE: the same jumper, the ball set and let go higher over his
+// head - the arm straight up at the top.
+const HIGH_ARMS: [number, Partial<Pose>][] = [
+	[0, { shN: 30, elN: 100, shF: 28, elF: 104 }],
+	[0.1, { shN: -6, elN: 112, shF: -8, elF: 116, abN: 8, abF: 8, wrN: 20 }],
+	[0.25, { shN: 76, elN: 108, abN: -9, wrN: 52, shF: 66, elF: 112, abF: -4 }],
+	[0.32, { shN: 96, elN: 82, abN: -16, wrN: 60, shF: 116, elF: 72, abF: -10 }],
+	[
+		0.4,
+		{
+			shN: 133,
+			elN: 54,
+			abN: -12,
+			wrN: 74,
+			shF: 134,
+			elF: 66,
+			abF: -8,
+			wrF: 25,
+			free: 0,
+		},
+	],
+	[0.47, { shN: 138, elN: 48 }],
+	[0.51, { shN: 156, elN: 26, wrN: 50, free: 0 }],
+	[0.55, { shN: 168, elN: 2, abN: -10, wrN: 12, free: 1 }],
+	[0.6, { shN: 168, elN: 2, wrN: -85 }],
+	[0.66, { elN: 3, wrN: -108, shF: 120, elF: 57, wrF: 22 }],
+	[0.84, { shN: 164, elN: 5, shF: 96, elF: 64, abF: -2, wrF: 12 }],
+	[0.92, { shN: 160, elN: 6, wrN: -104, shF: 18, elF: 52, abF: 12, wrF: 0 }],
+	[1, { shN: 156, elN: 7, shF: 6, elF: 30, abF: 12 }],
+];
+// A QUICK ONE: set lower, in front of his forehead, and up through it in
+// one motion - no pause at the top - the follow-through let down sooner.
+const QUICK_ARMS: [number, Partial<Pose>][] = [
+	[0, { shN: 30, elN: 100, shF: 28, elF: 104 }],
+	[0.1, { shN: -6, elN: 112, shF: -8, elF: 116, abN: 8, abF: 8, wrN: 20 }],
+	[0.25, { shN: 70, elN: 106, abN: -9, wrN: 52, shF: 60, elF: 110, abF: -4 }],
+	[0.32, { shN: 92, elN: 72, abN: -16, wrN: 62, shF: 108, elF: 66, abF: -10 }],
+	[
+		0.38,
+		{
+			shN: 112,
+			elN: 52,
+			abN: -14,
+			wrN: 70,
+			shF: 112,
+			elF: 56,
+			abF: -10,
+			wrF: 25,
+			free: 0,
+		},
+	],
+	[0.47, { shN: 132, elN: 30, wrN: 58, free: 0 }],
+	[0.55, { shN: 150, elN: 2, abN: -12, wrN: 12, free: 1 }],
+	[0.6, { shN: 151, elN: 2, wrN: -85 }],
+	[0.66, { elN: 3, wrN: -100, shF: 112, elF: 57, wrF: 22 }],
+	[0.8, { shN: 140, elN: 8, shF: 90, elF: 62, abF: -2, wrF: 12 }],
+	[0.92, { shN: 118, elN: 22, wrN: -70, shF: 18, elF: 52, abF: 12, wrF: 0 }],
+	[1, { shN: 98, elN: 32, shF: 6, elF: 30, abF: 12 }],
+];
 // Those arms over these legs, each on its own keys.
 const jumper = (
 	legs: [number, Partial<Pose>][],
@@ -1386,7 +1445,7 @@ const jumper = (
 // A jump shot: straight up and straight down, his toes pointed in the air,
 // landing where he took off.
 const AIR = { hipN: 2, hipF: -2, wide: 0.18, toe: 1 };
-const JUMP_SHOT = jumper([
+const JUMP_LEGS: [number, Partial<Pose>][] = [
 	[0, { hipN: -2, kneeN: 34, hipF: 4, kneeF: 36, lean: 8, wide: 0.2 }],
 	[0.1, { hipN: 0, kneeN: 56, hipF: -2, kneeF: 58, lean: 13, wide: 0.22 }],
 	[0.24, { hipN: 2, kneeN: 18, hipF: -2, kneeF: 20, lean: 4, wide: 0.2 }],
@@ -1396,12 +1455,13 @@ const JUMP_SHOT = jumper([
 	[0.87, { ...AIR, hipN: 1, kneeN: 12, kneeF: 14, lean: 2, toe: 0 }],
 	[0.93, { hipN: 0, kneeN: 32, hipF: -2, kneeF: 34, lean: 6, wide: 0.22 }],
 	[1, { hipN: -2, kneeN: 26, hipF: 2, kneeF: 28, lean: 5, wide: 0.2 }],
-]);
+];
+const JUMP_SHOT = jumper(JUMP_LEGS);
 // The same jumper, each man his own way of it (see shotForm in
 // evaluate.ts): his other leg kicked out in front of him at the top -
 // the leg under the ball straight, so the ball goes up just as high -
 // or his feet split a little, one ahead of the other, landing wide.
-const KICK_SHOT = jumper([
+const KICK_LEGS: [number, Partial<Pose>][] = [
 	[0, { hipN: -2, kneeN: 34, hipF: 4, kneeF: 36, lean: 8, wide: 0.2 }],
 	[0.1, { hipN: 0, kneeN: 56, hipF: -2, kneeF: 58, lean: 13, wide: 0.22 }],
 	[0.24, { hipN: 2, kneeN: 18, hipF: -2, kneeF: 20, lean: 4, wide: 0.2 }],
@@ -1413,8 +1473,9 @@ const KICK_SHOT = jumper([
 	[0.87, { ...AIR, hipN: 1, kneeN: 12, kneeF: 14, lean: 2, toe: 0 }],
 	[0.93, { hipN: 0, kneeN: 32, hipF: -2, kneeF: 34, lean: 6, wide: 0.22 }],
 	[1, { hipN: -2, kneeN: 26, hipF: 2, kneeF: 28, lean: 5, wide: 0.2 }],
-]);
-const SPLIT_SHOT = jumper([
+];
+const KICK_SHOT = jumper(KICK_LEGS);
+const SPLIT_LEGS: [number, Partial<Pose>][] = [
 	[0, { hipN: -2, kneeN: 34, hipF: 4, kneeF: 36, lean: 8, wide: 0.2 }],
 	[0.1, { hipN: 0, kneeN: 56, hipF: -2, kneeF: 58, lean: 13, wide: 0.22 }],
 	[0.24, { hipN: 2, kneeN: 18, hipF: -2, kneeF: 20, lean: 4, wide: 0.22 }],
@@ -1442,7 +1503,15 @@ const SPLIT_SHOT = jumper([
 	],
 	[0.93, { hipN: -4, kneeN: 34, hipF: 6, kneeF: 36, lean: 6, wide: 0.3 }],
 	[1, { hipN: -4, kneeN: 28, hipF: 6, kneeF: 30, lean: 5, wide: 0.28 }],
-]);
+];
+const SPLIT_SHOT = jumper(SPLIT_LEGS);
+// Each with a high release, and each a quick one (see shotWith).
+const HIGH_SHOT = jumper(JUMP_LEGS, HIGH_ARMS);
+const HIGH_KICK_SHOT = jumper(KICK_LEGS, HIGH_ARMS);
+const HIGH_SPLIT_SHOT = jumper(SPLIT_LEGS, HIGH_ARMS);
+const QUICK_SHOT = jumper(JUMP_LEGS, QUICK_ARMS);
+const QUICK_KICK_SHOT = jumper(KICK_LEGS, QUICK_ARMS);
+const QUICK_SPLIT_SHOT = jumper(SPLIT_LEGS, QUICK_ARMS);
 const PUSH_SHOT = jumper(
 	[
 		[0, { hipN: -2, kneeN: 34, hipF: 4, kneeF: 36, lean: 8, wide: 0.22 }],
@@ -2656,6 +2725,12 @@ export const ANIMS = {
 	shootKick: { kind: "act", n: 12, keys: KICK_SHOT },
 	shootSplit: { kind: "act", n: 12, keys: SPLIT_SHOT },
 	shootPush: { kind: "act", n: 12, keys: PUSH_SHOT },
+	shootHigh: { kind: "act", n: 12, keys: HIGH_SHOT },
+	shootHighKick: { kind: "act", n: 12, keys: HIGH_KICK_SHOT },
+	shootHighSplit: { kind: "act", n: 12, keys: HIGH_SPLIT_SHOT },
+	shootQuick: { kind: "act", n: 12, keys: QUICK_SHOT },
+	shootQuickKick: { kind: "act", n: 12, keys: QUICK_KICK_SHOT },
+	shootQuickSplit: { kind: "act", n: 12, keys: QUICK_SPLIT_SHOT },
 	setShot: { kind: "act", n: 12, keys: SET_SHOT },
 	layup: {
 		kind: "act",
@@ -6748,6 +6823,12 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 	shootKick: "shot",
 	shootSplit: "shot",
 	shootPush: "shot",
+	shootHigh: "shot",
+	shootHighKick: "shot",
+	shootHighSplit: "shot",
+	shootQuick: "shot",
+	shootQuickKick: "shot",
+	shootQuickSplit: "shot",
 	setShot: "shot",
 	fade: "shot",
 	shotFake: "shot",
@@ -6853,6 +6934,18 @@ export const shotForm = (pid: number): AnimName => {
 	const x = Math.sin(pid * 91.7 + 13.1) * 43758.5453;
 	const r = x - Math.floor(x);
 	return r < 0.6 ? "shoot" : r < 0.8 ? "shootKick" : "shootSplit";
+};
+// And his arms through it: a high release, or a quick one (see HIGH_ARMS),
+// over those legs of his.
+export type ShotArms = "high" | "quick";
+export const shotWith = (pid: number, arms?: ShotArms): AnimName => {
+	const legs = shotForm(pid);
+	if (arms === undefined) {
+		return legs;
+	}
+	const k =
+		legs === "shootKick" ? "Kick" : legs === "shootSplit" ? "Split" : "";
+	return `shoot${arms === "high" ? "High" : "Quick"}${k}` as AnimName;
 };
 
 // A basketball's radius, feet.

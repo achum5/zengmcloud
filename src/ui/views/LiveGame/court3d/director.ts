@@ -87,7 +87,8 @@ import {
 	mirror as mirrorPose,
 	poseAt,
 	releaseAt,
-	shotForm,
+	shotWith,
+	type ShotArms,
 	skeleton,
 	standingReach,
 	type AnimName,
@@ -206,8 +207,10 @@ export type Act = {
 	// Done the other way round: his left hand doing what the move does with
 	// his right - a block or a contest with the hand on the ball's side.
 	mirror?: true;
-	// A jumper, a poor shooter's push of it (see PUSH_JUMPER).
+	// A jumper, a poor shooter's push of it (see PUSH_JUMPER) - or his own
+	// release, high or quick (see shotWith).
 	push?: true;
+	arms?: ShotArms;
 	// Only for show, and in a stretch the picture runs through too fast to
 	// see more than a frame or two of it: left out of the picture (see
 	// flashes).
@@ -2789,6 +2792,18 @@ class Director {
 	// How long after the ball changes hands he is off the other way (ms).
 	private turnLag(pid: number, t: number, ...keys: RatingKey[]): number {
 		return this.lagOf(pid, t, TURN_LAG, ...keys);
+	}
+
+	// His own release on a jumper, the same every time: a high one - more
+	// often the taller he is - a quick one, or just the usual. (Only for a
+	// man the game has ratings for.)
+	private armsOf(pid: number): ShotArms | undefined {
+		const tall = this.level(pid, "hgt");
+		if (tall === undefined) {
+			return undefined;
+		}
+		const k = hash01(pid, 7901);
+		return k < 0.15 + 0.3 * tall ? "high" : k > 0.7 ? "quick" : undefined;
 	}
 
 	// How sharp his hop is - a step-back, a side-step: the more athletic,
@@ -10775,6 +10790,8 @@ class Director {
 				anim === "shoot" &&
 				(this.level(shooter, zone === "three" ? "tp" : "fg") ?? 1) < PUSH_BELOW;
 			const J = push ? PUSH_JUMPER : JUMPER;
+			// (Anybody else the game has ratings for: his own release.)
+			const arms = anim === "shoot" && !push ? this.armsOf(shooter) : undefined;
 			// How high he gets up: off one foot in close, or on a hook, up and
 			// down as gravity has him, not popped up and dropped. (A jumper -
 			// or a fade - as high as the time he is up in his stroke takes him:
@@ -10850,6 +10867,7 @@ class Director {
 				jump,
 				...(reverse && offLeft ? { mirror: true as const } : {}),
 				...(push ? { push: true as const } : {}),
+				...(arms ? { arms } : {}),
 			});
 			const letGo = close ? 0.6 : floater ? 0.5 : jumper ? J.release : 0.55;
 			const release = gather + dur * letGo;
@@ -10961,7 +10979,7 @@ class Director {
 			const v = (letGo - jump[0]) / (jump[1] - jump[0]);
 			// (Up off his own jumper, the ball in his hand on it.)
 			let fingers = releaseAt(
-				push ? "shootPush" : anim === "shoot" ? shotForm(shooter) : anim,
+				push ? "shootPush" : anim === "shoot" ? shotWith(shooter, arms) : anim,
 				letGo,
 			);
 			fingers.u += v > 0 && v < 1 ? 4 * jump[2] * v * (1 - v) : 0;
