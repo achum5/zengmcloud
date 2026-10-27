@@ -1,7 +1,14 @@
 import { assert, describe, test } from "vitest";
 import { compileCourt } from "./director.ts";
+import { evalBall } from "./evaluate.ts";
+import { bodyOf } from "./poses.ts";
 import type { CourtRatings } from "./ratings.ts";
 import { fakeGame, gidOf } from "./testGame.ts";
+
+const hash01 = (a: number, b: number) => {
+	const x = Math.sin(a * 12.9898 + b * 78.233) * 43758.5453;
+	return x - Math.floor(x);
+};
 
 // Players play like their ratings: the same game, everybody rated the same
 // way, and what they do at the rim shows it.
@@ -66,5 +73,119 @@ describe("3D: players play like their ratings", () => {
 			(n.fingerRoll ?? 0) /
 			Math.max(1, (n.fingerRoll ?? 0) + (n.powerLayup ?? 0));
 		assert.isAbove(roll(crafty), roll(strong) + 0.3);
+	});
+
+	test("a leaper gets up higher for it; a man who can't jump barely leaves the floor", () => {
+		const peaks = (ratings: CourtRatings) => {
+			const out: number[] = [];
+			for (const seed of ["r1", "r2"]) {
+				for (const tr of play(seed, ratings).tracks.values()) {
+					for (const a of tr.acts) {
+						if (
+							(a.anim === "board" ||
+								a.anim === "rebound" ||
+								a.anim === "block" ||
+								a.anim === "contest") &&
+							a.jump
+						) {
+							out.push(a.jump[2]);
+						}
+					}
+				}
+			}
+			return out.reduce((x, y) => x + y, 0) / Math.max(1, out.length);
+		};
+		assert.isAbove(peaks(all(85)), peaks(all(30)) * 1.3);
+	});
+
+	test("a quick man runs the floor faster than a slow one", () => {
+		const pace = (ratings: CourtRatings) => {
+			let feet = 0;
+			let ms = 0;
+			for (const seed of ["r1", "r2"]) {
+				for (const tr of play(seed, ratings).tracks.values()) {
+					for (const m of tr.moves) {
+						const d = Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y);
+						if (m.anim === "run" && d > 25) {
+							feet += d;
+							ms += m.t1 - m.t0;
+						}
+					}
+				}
+			}
+			return feet / (ms / 1000);
+		};
+		assert.isAbove(
+			pace({ ...all(50), spd: 85 }),
+			pace({ ...all(50), spd: 30 }) * 1.08,
+		);
+	});
+
+	// However each man is rated - every one his own way, as in a real game -
+	// the rules every game keeps still hold: nobody faster than a man can run,
+	// and the ball never jumps from one place to another.
+	test("rated every which way, the game still holds together", () => {
+		const body = bodyOf();
+		for (const seed of ["r1", "r2"]) {
+			const { events, players } = fakeGame(seed, 150);
+			const keys = [
+				"stre",
+				"spd",
+				"jmp",
+				"ins",
+				"dnk",
+				"drb",
+				"tp",
+				"fg",
+				"diq",
+				"oiq",
+				"pss",
+				"reb",
+			] as const;
+			const tl = compileCourt({
+				events,
+				players: players.map((p) => ({
+					...p,
+					ratings: Object.fromEntries(
+						keys.map((k, i) => [
+							k,
+							Math.round(25 + 65 * hash01(p.pid, 811 + i)),
+						]),
+					) as CourtRatings,
+				})),
+				gid: gidOf(seed),
+			});
+			const skipped = (a: number, b: number) =>
+				tl.fast.some(([x, y]) => a < y && b > x) ||
+				tl.cuts.some((c) => c >= a && c <= b);
+			for (const tr of tl.tracks.values()) {
+				for (const m of tr.moves) {
+					const L = Math.hypot(m.to.x - m.from.x, m.to.y - m.from.y);
+					if (L >= 1 && !skipped(m.t0, m.t1)) {
+						assert.isAtMost(
+							L / ((m.t1 - m.t0) / 1000),
+							34,
+							`${seed} ${tr.pid} at ${Math.round(m.t0)}`,
+						);
+					}
+				}
+			}
+			let prev: { x: number; y: number; z: number } | undefined;
+			let last = -Infinity;
+			for (let t = 0; t <= tl.end; t += 20) {
+				const b = evalBall(tl, t, () => body);
+				const cut = tl.cuts.some((c) => c > last && c <= t);
+				last = t;
+				if (prev && !cut) {
+					const d = Math.hypot(b.x - prev.x, b.y - prev.y, b.z - prev.z);
+					assert.isBelow(
+						d,
+						2,
+						`${seed}: ball jumped ${d.toFixed(2)}ft at ${t}`,
+					);
+				}
+				prev = b;
+			}
+		}
 	});
 });

@@ -700,6 +700,12 @@ const BACK_REACT = 250;
 // How long a pause (ms) a man's last stride up at the rim can follow on
 // from the end of his drive without his pulling up for it (see carry).
 const ON_FROM_MS = 700;
+// Going this fast (feet a second) or faster - running, driving - a quick man
+// goes quicker and a slow one slower (see quick).
+const QUICK_FROM = 12;
+// And as long a run as this (feet), timed to be somewhere by some time: a
+// quick man there sooner.
+const QUICK_LONG = 20;
 // Driving to the rim, how far out (feet, from the middle of the rim) he
 // gathers it for a layup, and for a dunk; and the most his last strides in
 // to a layup cover, up into the air and all.
@@ -1950,6 +1956,13 @@ class Director {
 			}
 			return start;
 		}
+		// Running, or driving it: the quicker the man, the quicker there.
+		if (
+			speed >= QUICK_FROM &&
+			(anim === "run" || anim === "sprint" || anim === "dribble")
+		) {
+			speed *= this.quick(pid);
+		}
 		// Taking it a long way back out - out of the lane, up out of the
 		// corner, back to the top to set up - he turns and dribbles it out:
 		// a retreat dribble is a couple of steps, not a backpedal all the way
@@ -2270,6 +2283,16 @@ class Director {
 	): number {
 		const start = Math.max(t0, this.free.get(pid) ?? 0);
 		const d = dist(this.posOf(pid), to);
+		// A long way to go flat out or near it: a quick man is there sooner.
+		// (Never later for a slow one - somebody may be counting on him being
+		// there; see fillLanes for where he is let fall behind.)
+		if (
+			d >= QUICK_LONG &&
+			(anim === "run" || anim === "sprint") &&
+			this.quick(pid) > 1
+		) {
+			by = this.sooner(pid, start, by);
+		}
 		const speed = Math.max(
 			JOG,
 			paceFor(
@@ -2345,7 +2368,12 @@ class Director {
 		};
 		for (const m of lanes) {
 			const from = this.posOf(m.pid);
-			const at = m.by ?? by;
+			// (The quicker the man, the sooner he is down the floor.)
+			const at = this.sooner(
+				m.pid,
+				Math.max(t0 + m.j * 90, this.free.get(m.pid) ?? 0),
+				m.by ?? by,
+			);
 			const endX = m.fill === undefined ? m.to.x : rim.x - dir * m.fill;
 			if ((endX - from.x) * dir < 24) {
 				const end = m.fill === undefined ? m.to : fillAt(m.fill, from.y);
@@ -2542,6 +2570,27 @@ class Director {
 	// How much of a thing he has (0-1), from his ratings - or nothing to go by.
 	private level(pid: number, ...keys: RatingKey[]): number | undefined {
 		return levelOf(this.rated.get(pid), keys);
+	}
+
+	// How much quicker than most (or slower) he gets about the floor: speed
+	// times this.
+	private quick(pid: number): number {
+		const q = this.level(pid, "spd");
+		return q === undefined ? 1 : 0.88 + 0.24 * q;
+	}
+
+	// When he gets there, setting off at `from` for somewhere most would be
+	// by `by`.
+	private sooner(pid: number, from: number, by: number): number {
+		const q = this.quick(pid);
+		return q === 1 || by <= from ? by : from + (by - from) / q;
+	}
+
+	// How high he gets up for something a man of his jump gets `peak` feet
+	// up for: a leaper well over it, a man who can't jump well short of it.
+	private leap(pid: number, peak: number): number {
+		const up = this.level(pid, "jmp");
+		return up === undefined ? peak : peak * (0.7 + 0.6 * up);
 	}
 
 	private dunkFor(pid: number, r: number): AnimName {
@@ -9907,7 +9956,7 @@ class Director {
 					d > 6 ? "run" : "slide",
 					-faceRim as 1 | -1,
 				);
-				const leap = blockLeap(gather + 520, 2.3);
+				const leap = blockLeap(gather + 520, this.leap(victim, 2.3));
 				this.act(victim, "block", leap.t0, leap.t1, {
 					face: -faceRim as 1 | -1,
 					look: { ...P1 },
@@ -10116,7 +10165,7 @@ class Director {
 					shooter,
 					P1,
 				);
-				const leap = blockLeap(contact, 3.3);
+				const leap = blockLeap(contact, this.leap(b, 3.3));
 				this.act(b, "block", leap.t0, leap.t1, {
 					face: -faceRim as 1 | -1,
 					look: { ...P1 },
@@ -10449,7 +10498,7 @@ class Director {
 				const contact = Math.max(release + 110, there + 180);
 				// With the hand on the ball's side, straight up at it.
 				const left = this.leftToBall(this.posOf(b), shooter, P1);
-				const leap = blockLeap(contact, 2.5);
+				const leap = blockLeap(contact, this.leap(b, 2.5));
 				this.act(b, "block", leap.t0, leap.t1, {
 					face: -faceRim as 1 | -1,
 					look: { ...P1 },
@@ -10926,7 +10975,8 @@ class Director {
 		let face = (P.x >= C.x ? 1 : -1) as 1 | -1;
 		// With the hand on the ball's side.
 		let left = this.leftToBall(C, shooter, P);
-		const contest = (t: number, peak: number) => {
+		const contest = (t: number, height: number) => {
+			const peak = this.leap(d, height);
 			// Off the floor as long as gravity keeps a man up that high, at
 			// the top of it when he always was - the contest drawn out round
 			// a big leap (no sooner off the floor, nor later down, than the
@@ -11626,7 +11676,7 @@ class Director {
 				Math.max(arrive, catchT - 420),
 				catchAt,
 				team,
-				blocked ? 1.2 : 2.4,
+				this.leap(r, blocked ? 1.2 : 2.4),
 				!blocked,
 			);
 			this.fly(t, catchT, from, { pid: r });
@@ -11804,7 +11854,7 @@ class Director {
 			(rim.x >= spot.x ? 1 : -1) as 1 | -1,
 		);
 		const top = Math.max(arrive + BOARD_TOP, t + this.rand(700, 900));
-		const peak = 2.2;
+		const peak = this.leap(r, 2.2);
 		this.goUpFor(r, top - BOARD_TOP, spot, team, peak, !blocked, "rebound");
 		const back = unitVec(spot, rim);
 		const at = {
@@ -17013,7 +17063,11 @@ class Director {
 		};
 		for (const tr of this.tracks.values()) {
 			tr.moves.forEach((m, i) => {
-				const easy = EASY[m.anim];
+				// (Easier for a quick man is quicker.)
+				const easy =
+					EASY[m.anim] === undefined
+						? undefined
+						: EASY[m.anim]! * this.quick(tr.pid);
 				const d = dist(m.from, m.to);
 				if (easy === undefined || d < 4 || this.marking.has(m)) {
 					return;
