@@ -1499,7 +1499,14 @@ const Court3D = ({
 			} else if (p.clocks) {
 				const game = gameClockAt(p.clocks, s.t);
 				const shot = shotClockAt(p.clocks, s.t);
-				clockText = game === undefined ? "" : formatGameClock(game);
+				const elam = p.clocks.elam;
+				// (An Elam Ending: no clock - the score to play to.)
+				clockText =
+					elam && s.t >= elam.t
+						? `TARGET ${elam.target}`
+						: game === undefined || !Number.isFinite(game)
+							? ""
+							: formatGameClock(game);
 				shotText = shot === undefined ? "" : String(Math.ceil(shot - 1e-6));
 				bugShot = shot === undefined ? "" : shotClockText(shot);
 			}

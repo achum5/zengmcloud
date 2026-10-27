@@ -41,6 +41,9 @@ export type Clocks = {
 	// `hold`: the clock is reset but not running - a basket was made, and it
 	// starts again when the ball is inbounded (the next reset, at tl.poss).
 	resets: { t: number; from: number; hold?: true }[];
+	// An Elam Ending: from when the game clock is off, played to a target
+	// score instead.
+	elam?: { t: number; target: number };
 };
 
 export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
@@ -76,7 +79,8 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 			last = undefined;
 			fresh = typeof e.clock === "number" ? e.clock : undefined;
 		}
-		if (typeof e.clock !== "number") {
+		// (Off for an Elam Ending: no reading to run it by.)
+		if (typeof e.clock !== "number" || !Number.isFinite(e.clock)) {
 			continue;
 		}
 		// The lead-in runs the clock from the last line's reading to this one's -
@@ -191,7 +195,26 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 	}
 	// Stable, so at one moment the later entry - the more specific one - wins.
 	resets.sort((a, b) => a.t - b.t);
-	return { marks, resets };
+	// The Elam target, from the first moment of the line it is set on (or the
+	// next one shown, if that line has nothing of its own to show).
+	const ei = events.findIndex(
+		(e) =>
+			e.type === "elamActive" &&
+			typeof (e as { target?: unknown }).target === "number",
+	);
+	const at = ei < 0 ? undefined : tl.beats.find((b) => b.i >= ei);
+	return {
+		marks,
+		resets,
+		...(ei >= 0
+			? {
+					elam: {
+						t: at ? at.preStart : tl.end,
+						target: (events[ei] as unknown as { target: number }).target,
+					},
+				}
+			: {}),
+	};
 };
 
 // When the first pass from one man to another in [a, b) - the inbound, after
