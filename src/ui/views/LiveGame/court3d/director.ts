@@ -10798,6 +10798,8 @@ class Director {
 				landed = gather + dur;
 				pushed = push;
 			}
+			// (Where a jumper of his comes down, if not where he went up.)
+			let lands: Pt | undefined;
 			if (anim === "fade") {
 				// Drifting back as he rises.
 				this.carry(
@@ -10811,6 +10813,31 @@ class Director {
 					"run",
 					faceRim,
 				);
+			} else if (anim === "shoot" && this.rated.has(shooter)) {
+				// Each his own way of coming down, the same every time: most
+				// right where they went up, some a little ahead of it, some a
+				// touch back.
+				const k = hash01(shooter, 7801);
+				const by =
+					k < 0.4
+						? 0
+						: k < 0.75
+							? 0.4 + 0.6 * hash01(shooter, 7802)
+							: -(0.3 + 0.4 * hash01(shooter, 7802));
+				if (Math.abs(by) > 0.2) {
+					lands = clampPt({
+						x: P1.x + (toRim.x / len) * by,
+						y: P1.y + (toRim.y / len) * by,
+					});
+					this.carry(
+						shooter,
+						lands,
+						gather + dur * J.off,
+						dur * (J.land - J.off),
+						"run",
+						faceRim,
+					);
+				}
 			}
 			const jump: [number, number, number] = jumper
 				? [J.off, J.land, hopFor(dur, J.land - J.off)]
@@ -11155,7 +11182,7 @@ class Director {
 						close,
 						close ? 0 : CLOSE_LATE[room]!,
 						undefined,
-						close ? (drift ?? this.posOf(shooter)) : undefined,
+						close ? (drift ?? this.posOf(shooter)) : lands,
 					);
 				}
 				// (Anybody else of theirs right there goes up with him - see

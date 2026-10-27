@@ -553,4 +553,24 @@ describe("3D: players play like their ratings", () => {
 		}
 		assert.isAbove(n, 2, `${n}`);
 	});
+	test("shooters come down their own way: some where they went up, some ahead of it, some back", () => {
+		const tl = play("r1", all(75));
+		let moved = 0;
+		let n = 0;
+		for (const tr of tl.tracks.values()) {
+			for (const a of tr.acts) {
+				if (a.anim !== "shoot") {
+					continue;
+				}
+				const up = evalPlayer(tl, tr.pid, a.t0 + (a.t1 - a.t0) * 0.3);
+				const down = evalPlayer(tl, tr.pid, a.t1 - 20);
+				n += 1;
+				if (Math.hypot(down.x - up.x, down.y - up.y) > 0.35) {
+					moved += 1;
+				}
+			}
+		}
+		assert.isAbove(moved / n, 0.2, `${moved}/${n}`);
+		assert.isBelow(moved / n, 0.85, `${moved}/${n}`);
+	});
 });
