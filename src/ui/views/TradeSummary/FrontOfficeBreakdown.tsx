@@ -149,6 +149,16 @@ const FrontOfficeBreakdown = ({
 										<td key={y}>{signed(100 * x, 2)}</td>
 									))}
 								</tr>
+								{side.money?.some((x) => Math.abs(x) >= 5e-5) ? (
+									<tr>
+										<td title="What the change in payroll past the cap costs or saves">
+											Money x100
+										</td>
+										{side.money.map((x, y) => (
+											<td key={y}>{signed(100 * x, 2)}</td>
+										))}
+									</tr>
+								) : null}
 								{side.rival?.some((x) => Math.abs(x) >= 5e-5) ? (
 									<tr>
 										<td title="What the other team's change in title odds does to this team's">

@@ -509,6 +509,9 @@ export const outlookSettings = {
 	// as room (letGo). Other players' chance of staying already counts the
 	// times their teams let them go (KEPT).
 	letGo: true,
+	// What payroll past the cap costs a team, in titles a season per cap's
+	// worth, and the luxury tax's rate on top past the tax line (payrollCost).
+	moneyPerCap: 0.02,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -518,7 +521,12 @@ export const teamOutlookSettings = new Map<
 	Partial<
 		Pick<
 			typeof outlookSettings,
-			"upside" | "pickUpside" | "keptCalibration" | "roomByRecord" | "letGo"
+			| "upside"
+			| "pickUpside"
+			| "keptCalibration"
+			| "roomByRecord"
+			| "letGo"
+			| "moneyPerCap"
 		>
 	>
 >();
@@ -1333,6 +1341,9 @@ export const teamPoints = (
 	// What a season's points are worth to the franchise, for deciding whom to
 	// let go by it; points themselves without.
 	worth?: (y: number, points: number) => number,
+	// What a season's payroll costs the franchise at this much room, in the
+	// same units as `worth` (payrollCost).
+	spend?: (y: number, room: number) => number,
 ) => {
 	const retentionFor = (p: Player) => {
 		const r = retentionOf(outlook, p.pid, tid);
@@ -1489,6 +1500,7 @@ export const teamPoints = (
 			(all) => expectedRosterPoints(asPlayed(tid, all)),
 			known,
 			worth,
+			spend,
 		);
 	}
 	const out: number[] = [];
@@ -1610,6 +1622,7 @@ const letGo = (
 	points: (lines: readonly SeasonLine[]) => number,
 	known?: LetGoDecisions,
 	worth: (y: number, points: number) => number = (_, x) => x,
+	spend?: (y: number, room: number) => number,
 ) => {
 	const minContract = g.get("minContract");
 	const tolerance = LET_GO_ROOM_TOLERANCE * g.get("salaryCap");
@@ -1711,6 +1724,9 @@ const letGo = (
 					break;
 				}
 				gain += worth(s.y, after) - worth(s.y, kept);
+				if (spend) {
+					gain += spend(s.y, s.room!) - spend(s.y, s.room! + at.salary);
+				}
 			}
 			if (gain > 0) {
 				if (known?.record) {
@@ -1863,20 +1879,50 @@ export const teamStrengths = (
 		points -
 		outlook.meanPoints[y]! +
 		(y === 0 ? (outlook.recordEdge.get(tid) ?? 0) : 0);
-	return teamPoints(
+	const perCap = outlookSettingFor(tid, "moneyPerCap");
+	const salaryCap = g.get("salaryCap");
+	const money: number[] = [];
+	const strengths = teamPoints(
 		outlook,
 		tid,
 		players,
 		picks,
 		trading,
-		refill,
+		(y, room, signings) => {
+			money[y] = payrollCost(perCap, y, room);
+			refill?.(y, room, signings);
+		},
 		undefined,
 		known,
 		outlook.titleCurves.length > 0
 			? (y, points) => seasonValue(outlook, y, strengthOf(y, points))
 			: undefined,
+		(y, room) => payrollCost(perCap, y, room / salaryCap),
 	).map((x, y) => strengthOf(y, x));
+	moneyOf.set(strengths, money);
+	return strengths;
 };
+
+// MONEY (owner's call: a small real cost). A team does what is best for the
+// franchise, and money spent is part of that: each season, payroll past the
+// cap costs `moneyPerCap` titles per cap's worth, and the luxury tax's rate
+// on top past the tax line. Under the cap, salary already costs the room it
+// uses. With money free, a team over the cap paid its own players whatever
+// made them likeliest to stay - the max to 21-year-olds rated 50.
+const payrollCost = (perCap: number, y: number, room: number) => {
+	if (!(room < 0) || perCap === 0) {
+		return 0;
+	}
+	const taxLine = g.get("luxuryPayroll") / g.get("salaryCap");
+	const taxed = Math.max(0, 1 - room - taxLine);
+	return PATIENCE ** y * perCap * (-room + g.get("luxuryTax") * taxed);
+};
+
+// What each season's payroll costs, for strengths worked out by
+// teamStrengths.
+const moneyOf = new WeakMap<readonly number[], readonly number[]>();
+export const moneyCost = (strengths: readonly number[]) =>
+	moneyOf.get(strengths);
 
 // Logistic fit of a probability against strength. Used to price a roster that
 // is not any team's actual roster.
@@ -2304,6 +2350,11 @@ export const franchiseValue = (outlook: LeagueOutlook, strengths: number[]) => {
 			weight *
 			(curveAt(outlook.titleCurves[y]!, s) +
 				PLAYOFF_TIEBREAK * curveAt(outlook.playoffCurves[y]!, s));
+	}
+	for (const x of moneyOf.get(strengths) ?? []) {
+		if (x !== undefined) {
+			value -= x;
+		}
 	}
 	return value;
 };

@@ -16,6 +16,7 @@ import {
 	pickLineAt,
 	retentionOf,
 	seasonLine,
+	moneyCost,
 	seasonValue,
 	teamStrengths,
 	type LetGoDecisions,
@@ -207,10 +208,18 @@ export const explainDeal = (
 				letGo,
 			).map((x, y) => round(x - before[y]!, 2));
 		paths[k] = { before, after };
+		// What the change in payroll past the cap costs or saves (outlook.ts
+		// payrollCost).
+		const spentBefore = moneyCost(before) ?? [];
+		const spentAfter = moneyCost(after) ?? [];
+		const money = years.map(
+			(y) => (spentBefore[y] ?? 0) - (spentAfter[y] ?? 0),
+		);
 		const value = years.map(
 			(y) =>
 				seasonValue(outlook, y, after[y]!) -
-				seasonValue(outlook, y, before[y]!),
+				seasonValue(outlook, y, before[y]!) +
+				money[y]!,
 		);
 		const title = (path: readonly number[]) =>
 			path.map((s, y) => round(curveAt(outlook.titleCurves[y]!, s), 4));
@@ -223,6 +232,7 @@ export const explainDeal = (
 			titleBefore: title(before),
 			titleAfter: title(after),
 			value: value.map((x) => round(x, 5)),
+			money: money.map((x) => round(x, 5)),
 			roomBefore: room[0]!,
 			roomAfter: room[1]!,
 			buysBefore: buys[0]!,

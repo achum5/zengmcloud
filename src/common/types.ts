@@ -3784,6 +3784,9 @@ export type FrontOfficeSide = {
 	// What the other team's change in title odds does to this one's each
 	// season, part of `value`. Missing on older trades.
 	rival?: number[];
+	// What the change in payroll past the cap costs (-) or saves (+) each
+	// season, part of `value`. Missing on older trades.
+	money?: number[];
 	reason: string;
 };
 

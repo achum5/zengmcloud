@@ -27,6 +27,42 @@ afterAll(() => {
 });
 
 test(
+	"over the cap, more money for the same player is worth less to a team",
+	{ timeout: 300_000 },
+	async () => {
+		const season = g.get("season");
+		const cap = g.get("salaryCap");
+		const tid = 5;
+		const roster = await idb.cache.players.indexGetAll("playersByTid", tid);
+		const amounts = roster.map((p) => p.contract.amount);
+		const total = amounts.reduce((a, b) => a + b, 0);
+		try {
+			for (const [i, p] of roster.entries()) {
+				p.contract.amount = (amounts[i]! * 1.2 * cap) / total;
+				p.contract.exp = Math.max(p.contract.exp, season + 3);
+				await idb.cache.players.put(p);
+			}
+			const outlook = await currentOutlook();
+			const t = await loadTeam(outlook, tid);
+			const p = (
+				await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
+			).sort((a, b) => b.value - a.value)[0]!;
+			const at = (amount: number) =>
+				priceSigning(outlook, t, p, { amount, exp: season + 3 }).gain;
+			assert.isBelow(
+				at(g.get("maxContract")),
+				at(g.get("minContract")) - 0.001,
+			);
+		} finally {
+			for (const [i, p] of roster.entries()) {
+				p.contract.amount = amounts[i]!;
+				await idb.cache.players.put(p);
+			}
+		}
+	},
+);
+
+test(
 	"no team would pay a free agent more than he is worth to it at that price",
 	{ timeout: 300_000 },
 	async () => {

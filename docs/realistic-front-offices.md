@@ -52,12 +52,20 @@ with "the Pistons", not with a named person.
   conference semis is a franchise disaster, not a strategy.
 - **"Stuck in the middle with no direction" is a failure** we measure and test
   against.
-- **Money:** the luxury tax and profit are ignored. Cap room is used
-  strategically to chase free agents when that applies. Reaffirmed with the
-  offer market (owner's call): a team re-signs its own players, over the cap
-  as far as it likes (Bird rights), whenever that is good for its outlook, and
-  clears room only for a free agent worth it - so players stay with their
-  teams more often than in the NBA, where the tax pushes role players out.
+- **Money: a small real cost** (owner's call, replacing "the luxury tax and
+  profit are ignored"): a team does what is best for the franchise, money
+  included. Each season, payroll past the cap costs 0.02 titles per cap's
+  worth, and the luxury tax's rate on top past the tax line; under the cap,
+  salary costs the room it uses. Cap room is used strategically to chase free
+  agents when that applies, and a team re-signs its own players over the cap
+  (Bird rights) when that is good for its outlook. With money free, a team
+  over the cap paid its own players whatever made them likeliest to stay -
+  the max to 21-year-olds rated 50. Half the teams each way (2 leagues x 2
+  seasons): re-signed at the max 7 against 17, a 56 or worse at 15% of the
+  cap or more 0 against 4, re-signings 7.5% of the cap against 9.4%, free
+  agent overpays 2 against 5 - and as many players stayed (rookie deals 71%
+  against 72%, the top ten veterans 88% against 87%). At 0.05 a cap, fewer
+  players finishing rookie deals stayed (63% against 77%).
 - **No tanking through lineups.** A rebuilding team sells for the future through
   trades, but on the floor every team plays to win.
 
