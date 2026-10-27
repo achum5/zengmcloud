@@ -100,6 +100,27 @@ and shoes - every one eventually, none rushed to get to the next.
 - [x] "Attempts low post shot" should usually be a real post move, not an awkward
       drive into a 6-foot jumper (currently close to 100% of the time).
 - [x] Injuries need an animation that depends on the kind of injury.
+- [~] Players play like their ratings - an 80 should look different on the
+  court, and in how he plays, from a 30. Not by overall: by the rating that
+  matters (jumping, speed, dunking, three, passing, ...). Really good passing
+  does not mean fancy passes nonstop. Weak players look plainer and a step
+  slower, never cartoonish. Owner's order (2026-10-27): athleticism,
+  shooting form, ball handling, then defense / IQ / passing.
+  (2026-10-27: the live game carries each player's ratings. Done so far:
+  dunks by leaping and dunking, layups by inside scoring, handle and
+  strength; jump height by leaping; running and driving pace by speed;
+  jumper and free throw stroke by shooting; dribble moves, combos and
+  shot moves by handle.)
+- [ ] Signature animations, 2K-style: each player assigned his own - jump
+      shot, off-balance shots, dribbling, passing, fancy passing, layups, dunks
+      and on and on - from a library as big as we can make it, eventually
+      thousands. Ideas from 2K, nothing copied from it: our own animations, with
+      real basketball as the reference.
+- [ ] Analyze tons of possessions - where all 10 players move the entire
+      possession - so nothing unrealistic or goofy ever happens, with so many
+      possibilities that it never feels repetitive. The goal: it really feels
+      like watching players play basketball, with brains and standout features
+      in each one's game.
 
 ## D. Visual quality and performance
 
@@ -185,6 +206,9 @@ make with AI help).
   "League Champions", the notched tail - each title in the team's colors and
   logo the season it won it, each retired number in the colors of the jersey
   it is shown in. Open: the customization.)
+
+- [ ] Arena editor like 2K's, saved in a file format that exports and
+      imports like courts and jerseys.
 
 ## F. Arena and broadcast atmosphere
 
@@ -524,3 +548,33 @@ very low on the list of things to do but i want to invesitgate adding some of th
 
 eventually investigate making an actual smart ai gm mode. we have one but i think it's probably way too overcomplicated at this point and i think we should probably restart. very very low on teh todo list
 ```
+
+## Raw list (as sent, 2026-10-27)
+
+> continue on with 3d improvements. themain thing i want youworking on is
+> building out as many good looking basketball animations as you can just to
+> make everything look more realstic as well as analyzing TONSSSS os
+> possessions simply looking at where the 10 players move around the court the
+> entire possession. i'd love to just build it out where u nrelasitic goofy
+> things never happen but there are so many possibilities for things to happen
+> that it never feels repeitive. that is the ultimate goal. i want it to really
+> feel like you are wathcing player play basketball. and really have brains and
+> really have standout features in each of hteir games based on their ratings
+> etc etc. an 80 overall player should really look different on the court and
+> in how they play than a 30 overall. i know this is not going to be fully
+> accomplished in one fell swoop here. but i just want us continually workin
+> gon that goal
+
+> well make sure it's not just by overall. like jumping/speed/dunking/three/passing/etc
+> but like really good passing doesnt mean just fancy passes non stop either.
+
+> or how cool owuld it be to have each player assigned to an animation. but
+> there should be like thousands of animations from shooting to off balance shot
+> to dribbling to paossing to fancy passing to etc etc etc etc etc etc etc
+> etcetcetc etc etc on and on as much as you can think of. honeslty if we can
+> just ehtically without getting it trouble rip it all from 2k. or just get all
+> our ideas from 2k. that is what i am envisioning. also if we could have arena
+> editor like 2k too that would be awesome. and have it saved in a file format
+> so it can be exported etc like courts and jersey.all this isnt necessary righ
+> this second but good to get down on paper so we can start working on it
+> evnetially
