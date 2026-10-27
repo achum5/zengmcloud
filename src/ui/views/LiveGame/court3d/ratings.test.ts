@@ -352,4 +352,47 @@ describe("3D: players play like their ratings", () => {
 		assert.isAbove(side, 2, `side ${side} back ${back}`);
 		assert.isAbove(back, 5, `side ${side} back ${back}`);
 	});
+	test("a hard closeout gets shot-faked, and gone by on one dribble - not run through", () => {
+		let n = 0;
+		let closest = Infinity;
+		for (const seed of ["r1", "r2", "r3"]) {
+			const tl = play(seed, all(75));
+			for (const tr of tl.tracks.values()) {
+				for (const f of tr.acts) {
+					if (f.anim !== "shotFake") {
+						continue;
+					}
+					const shot = tr.acts.find(
+						(a) => a.anim === "shoot" && a.t0 > f.t1 && a.t0 < f.t1 + 1200,
+					);
+					const by = tr.moves.find(
+						(m) => m.anim === "dribble" && m.t0 >= f.t0 && m.t0 < f.t1 + 200,
+					);
+					// His man up at it, on his way out to him.
+					const up = [...tl.tracks.values()].find(
+						(o) =>
+							o.team !== tr.team &&
+							o.acts.some(
+								(a) =>
+									a.anim === "contest" &&
+									a.jump !== undefined &&
+									a.t0 > f.t0 &&
+									a.t0 < f.t0 + 500,
+							),
+					);
+					if (!shot || !by || !up) {
+						continue;
+					}
+					n += 1;
+					for (let t = f.t0; t < shot.t0; t += 25) {
+						const a = evalPlayer(tl, tr.pid, t);
+						const b = evalPlayer(tl, up.pid, t);
+						closest = Math.min(closest, Math.hypot(a.x - b.x, a.y - b.y));
+					}
+				}
+			}
+		}
+		assert.isAbove(n, 2, `${n}`);
+		assert.isAbove(closest, 1.9, `${closest}`);
+	});
 });

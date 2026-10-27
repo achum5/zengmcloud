@@ -705,6 +705,14 @@ const ON_FROM_MS = 700;
 const QUICK_FROM = 12;
 // A side-step jumper: how far across (feet) he goes before the hop back over.
 const SIDESTEP_FT = 2.6;
+// His man this far off him (ft) as he catches it, flying out at him: what a
+// shot fake puts in the air (see fakeByHim) - and how far the one dribble
+// by him takes him along the line.
+const FLY_AT_FROM = 3.5;
+const FLY_AT_TO = 12;
+const FAKE_BY_FT = 3.6;
+// (A man up at a fake that long (ms) before a shot is up at that one.)
+const FLY_RECENT = 2500;
 // How sharp a hop is for the least athletic man the game has ratings for,
 // and how much sharper for the most (see spring).
 const SPRING_LEAST = 1.5;
@@ -1835,6 +1843,9 @@ class Director {
 	private readonly marking = new Map<Move, number>();
 	// Shot fakes on the floor: who, when, and where.
 	private readonly fakes: { pid: number; t: number; at: Pt }[] = [];
+	// Up off his feet at a shot fake and on by the shooter: till when (see
+	// fakeByHim).
+	private readonly flyBy = new Map<number, number>();
 	// Shots in close, for whoever of theirs is right there to go up with his
 	// arms high (see wallUp).
 	private readonly walls: { shooter: number; release: number }[] = [];
@@ -8248,6 +8259,79 @@ class Director {
 		);
 	}
 
+	// Caught with his man flying out at him: the shot fake - his man up off
+	// his feet at it and on by - and one dribble by him, along the line for
+	// a three, in and across for a jumper, to pull up from. Returns when he
+	// is gathered to go up.
+	private fakeByHim(
+		pid: number,
+		guard: number,
+		three: boolean,
+		t: number,
+		dir: 1 | -1,
+	): number {
+		const S = this.posOf(pid);
+		const team = this.teamOf(pid);
+		const rim = rimPt(team);
+		const G = this.posAt(guard, t);
+		const u = unitVec(G, S);
+		// The way he goes: his own side - unless that is out of bounds.
+		let s = hash01(pid, 7412) < 0.5 ? 1 : -1;
+		const spot = (sg: number): Pt => {
+			const toRim = unitVec(S, rim);
+			const across = { x: -toRim.y * sg, y: toRim.x * sg };
+			if (three) {
+				const q = inPlay({
+					x: S.x + across.x * FAKE_BY_FT,
+					y: S.y + across.y * FAKE_BY_FT,
+				});
+				return behindArc(team, q) ?? q;
+			}
+			return inPlay({
+				x: S.x + toRim.x * 2.5 + across.x * 2.2,
+				y: S.y + toRim.y * 2.5 + across.y * 2.2,
+			});
+		};
+		if (dist(spot(s), S) < 2) {
+			s = -s;
+		}
+		const Q = spot(s);
+		// He flies out at him, to a stride off him - up off his feet at the
+		// fake, and carried on by him past his shoulder, the other side from
+		// where he goes (by him, not through him).
+		const w = {
+			x: S.x - Q.x - u.x * ((S.x - Q.x) * u.x + (S.y - Q.y) * u.y),
+			y: S.y - Q.y - u.y * ((S.x - Q.x) * u.x + (S.y - Q.y) * u.y),
+		};
+		const wl = Math.hypot(w.x, w.y) || 1;
+		const by = (a: number, b: number): Pt =>
+			clampPt({
+				x: S.x + u.x * a + (w.x / wl) * b,
+				y: S.y + u.y * a + (w.y / wl) * b,
+			});
+		this.cutShort(guard, t);
+		const at = this.go(guard, by(-2.4, 1.6), t, CLOSE_RUN, "run", undefined, {
+			effort: BURST,
+			onto: CLOSE_CHOP,
+		});
+		const fake = Math.max(t + 60, at - 260);
+		this.act(pid, "shotFake", fake, fake + 640, { face: dir, look: rim });
+		const up = Math.max(at, fake + 150);
+		this.act(guard, "contest", up, up + 620, {
+			look: { ...S },
+			jump: [0.1, 0.9, hopFor(620, 0.8)],
+		});
+		const down = this.go(guard, by(1.2, 2.6), up, 7, "run");
+		this.flyBy.set(guard, Math.max(down, up + 620));
+		// By him: as he leaves his feet, one hard dribble, and up.
+		const go = Math.max(fake + 520, up + 80);
+		this.hold(pid, go, "dribble");
+		t = this.go(pid, Q, go, DRIBBLE, "dribble", dir, {
+			effort: this.spring(pid),
+		});
+		return Math.max(t, this.hold(pid, t, "hold"));
+	}
+
 	private driveTo(
 		pid: number,
 		P: Pt,
@@ -9195,6 +9279,32 @@ class Director {
 			(x): x is Extract<BallSeg, { kind: "fly" }> =>
 				x.kind === "fly" && "pid" in x.to && x.to.pid === shooter,
 		);
+		// Caught with his man flying out at him: now and then a smart shooter
+		// with a handle puts him in the air with a shot fake, and is by him
+		// with one dribble into a pull-up as he comes down past him.
+		const guard = this.defenderOf(shooter);
+		const G = guard === undefined ? undefined : this.posAt(guard, t);
+		const S = this.posOf(shooter);
+		if (
+			(o.zone === "three" || o.zone === "mid") &&
+			o.kind === "catch_and_shoot" &&
+			!staged &&
+			plan.kind !== "block" &&
+			this.rated.has(shooter) &&
+			this.holder === shooter &&
+			caught !== undefined &&
+			caught.t1 >= t - OWN_MOVE_AFTER &&
+			guard !== undefined &&
+			G !== undefined &&
+			dist(G, S) >= FLY_AT_FROM &&
+			dist(G, S) <= FLY_AT_TO &&
+			hash01(shooter, Math.round(t / 17)) <
+				(0.06 + 0.3 * (this.level(shooter, "oiq", "drb") ?? 0.5)) *
+					(0.4 + 1.4 * hash01(shooter, 7305))
+		) {
+			t = this.fakeByHim(shooter, guard, o.zone === "three", t, dir);
+			return { t, style: "plain" };
+		}
 		if (
 			(o.zone === "three" || o.zone === "mid") &&
 			o.kind !== "fadeaway" &&
@@ -11254,6 +11364,12 @@ class Director {
 			(thrown === undefined
 				? gather - 200
 				: Math.min(gather - 200, thrown + this.read(d))) + late;
+		// Up at a fake and on by him: after him as soon as he is down.
+		const flew = this.flyBy.get(d);
+		this.flyBy.delete(d);
+		if (flew !== undefined && flew > gather - FLY_RECENT && flew < gather) {
+			sees = flew + 80;
+		}
 		// Where he breaks down from a run in from G.
 		const breakFrom = (G: Pt): Pt => {
 			const u = unitVec(G, C);
