@@ -55,6 +55,7 @@ import {
 import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local, logEvent, toUI } from "../../util/index.ts";
+import { liveFlagShown } from "../../util/toUI.ts";
 import { env } from "../../util/env.ts";
 import { ERROR_MESSAGE_SYNC_ROOM_MISMATCH } from "../../../common/constants.ts";
 import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
@@ -470,8 +471,10 @@ let followedBroadcast:
 			over?: boolean;
 			left?: boolean;
 			// The broadcast is gone - the simmer left their game - while this
-			// screen was still part way through it (see handleLiveBroadcastMeta).
+			// screen was still part way through it (see handleLiveBroadcastMeta),
+			// and when that was.
 			ended?: boolean;
+			endedAt?: number;
 			// Asked whether to watch it, not answered yet (see offerBroadcast).
 			offered?: boolean;
 	  }
@@ -578,6 +581,9 @@ const isWatchingABroadcast = () =>
 	followedBroadcast !== undefined &&
 	!followedBroadcast.over &&
 	!followedBroadcast.left;
+// How long after a league-mate's live sim its broadcast can still be on its
+// way (ms): it goes live only once the whole play-by-play has uploaded.
+const BROADCAST_LEAD_MS = 2 * 60 * 1000;
 const liveResultWait = createLiveResultWait({
 	take: () => {
 		followerHold.take();
@@ -587,6 +593,13 @@ const liveResultWait = createLiveResultWait({
 	},
 	isFollowing: (gid) => followedBroadcast?.gid === gid,
 	isWatching: isWatchingABroadcast,
+	worthWaiting: (gid, liveAt) =>
+		(roomBroadcastMeta !== undefined &&
+			roomBroadcastMeta.active &&
+			roomBroadcastMeta.gid === gid &&
+			!roomBroadcastMeta.gameOver &&
+			roomBroadcastMeta.expiresAt >= Date.now()) ||
+		Date.now() - liveAt < BROADCAST_LEAD_MS,
 	log: syncDebugLog,
 });
 const settleAwaitedLiveResult = liveResultWait.settle;
@@ -1174,6 +1187,8 @@ const handleLiveBroadcastMeta = async (
 	if (!meta || !meta.active || meta.expiresAt < Date.now()) {
 		roomBroadcastMeta = undefined;
 		setWatchablePill(undefined);
+		// (Nothing live left to show a result held for it.)
+		liveResultWait.dropUnwatchable();
 		if (followedBroadcast || followerHold.isHeld()) {
 			// Still part way through it on this screen: the result stays hidden
 			// until the page shows the final, which it goes straight on to.
@@ -1181,6 +1196,7 @@ const handleLiveBroadcastMeta = async (
 			if (watching && !watching.over && !watching.left) {
 				if (!watching.ended) {
 					watching.ended = true;
+					watching.endedAt = Date.now();
 					syncDebugLog("live:broadcast-ended-mid-watch", {
 						gid: watching.gid,
 						offered: watching.offered === true,
@@ -1210,6 +1226,8 @@ const handleLiveBroadcastMeta = async (
 	}
 
 	roomBroadcastMeta = meta;
+	// (Moved on to another game: one held for the last has no broadcast now.)
+	liveResultWait.dropUnwatchable();
 
 	// Whoever is simming it, the room watches it - see liveBroadcastFollow.ts
 	// for the rules, why leaving has to survive the cursor heartbeats, and why a
@@ -1396,6 +1414,67 @@ const checkLiveBroadcastLease = () => {
 		followedBroadcast = undefined;
 		followedBroadcastPayload = undefined;
 		releaseFollowerHold("lease-expired");
+	}
+};
+
+// THE FLAG LEFT UP WITH NOTHING BEHIND IT. "Live game in progress" freezes the
+// score bar, the ticker and the header, and holds back every repaint a sync
+// brings - so a flag nothing owns any more is a screen that never moves again.
+// A catch-up with a league-mate's live sim landing in the middle of it left
+// exactly that: the data all in, the header still saying a game was on.
+// Whatever holds the flag always has a reason this can see - a live sim of
+// this device's own, a broadcast being watched or asked about, a league-mate's
+// result waiting on its broadcast - so with none of them for a while, the flag
+// comes down and everything held back paints. Called from the health tick.
+const STRANDED_FLAG_MS = 10_000;
+// A broadcast gone while this screen was still in it: the page goes straight
+// on to the final, so one still not over well after has nothing left showing
+// it (the page never opened - a catch-up was running, say).
+const ENDED_WATCH_GRACE_MS = 2 * 60 * 1000;
+let strandedSince: number | undefined;
+const checkStrandedLiveFlag = () => {
+	liveResultWait.dropUnwatchable();
+	const f = followedBroadcast;
+	if (
+		f &&
+		f.ended &&
+		!f.over &&
+		!f.offered &&
+		f.endedAt !== undefined &&
+		Date.now() - f.endedAt > ENDED_WATCH_GRACE_MS
+	) {
+		clearTimeout(endedWatchTimer);
+		f.over = true;
+		settleAwaitedLiveResult(f.gid);
+		releaseFollowerHold("watch-outlived-broadcast");
+	}
+	const owned =
+		ownLiveSimUnderway() ||
+		liveResultWait.pending() ||
+		(followedBroadcast !== undefined &&
+			!followedBroadcast.over &&
+			!followedBroadcast.left);
+	if (owned) {
+		strandedSince = undefined;
+		return;
+	}
+	// (Nothing live, so anything a sync held back may paint.)
+	flushDeferredRefreshAfterLive();
+	if (!liveFlagShown()) {
+		strandedSince = undefined;
+		return;
+	}
+	strandedSince ??= Date.now();
+	if (Date.now() - strandedSince < STRANDED_FLAG_MS) {
+		return;
+	}
+	strandedSince = undefined;
+	syncDebugLog("live:flag-stranded", { held: followerHold.isHeld() });
+	if (followerHold.isHeld()) {
+		releaseFollowerHold("stranded");
+	} else {
+		void toUI("updateLocal", [{ liveGameInProgress: false }]);
+		flushDeferredRefreshAfterLive();
 	}
 };
 
@@ -2662,6 +2741,8 @@ const doConnectSharedLeague = async ({
 		pushSyncStateFull();
 		// Unlock a follower whose broadcaster went away without a clean end.
 		checkLiveBroadcastLease();
+		// And never leave the live flag up with nothing live behind it.
+		checkStrandedLiveFlag();
 		// V2's whole health story: ask the server where the head is (the live
 		// listener is the fast path, but this probe is what bounds staleness
 		// when a listener dies silently - one tiny doc read per tick), and

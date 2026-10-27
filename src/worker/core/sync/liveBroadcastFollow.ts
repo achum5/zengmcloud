@@ -212,6 +212,13 @@ export const createFollowerHold = ({
 //
 // Kept per game, not as one switch: a result arriving while another game is
 // being watched must not be released by THAT game's final buzzer.
+//
+// And only while there is a broadcast to wait for (see worthWaiting): a result
+// that arrives with its broadcast already gone - a catch-up after time away,
+// every game the room live-simmed meanwhile coming in at once - has nothing
+// to hold for. Held anyway, each re-armed the wait, and the score bar, the
+// ticker and the header sat frozen on "Live game in progress" long after the
+// data had landed.
 export const LIVE_RESULT_WAIT_MS = 90_000;
 const MAX_REMEMBERED_LIVE_RESULTS = 16;
 
@@ -220,6 +227,7 @@ export const createLiveResultWait = ({
 	release,
 	isFollowing,
 	isWatching,
+	worthWaiting = () => true,
 	log,
 	waitMs = LIVE_RESULT_WAIT_MS,
 	schedule = (fn: () => void, ms: number) => setTimeout(fn, ms),
@@ -235,24 +243,46 @@ export const createLiveResultWait = ({
 	isFollowing: (gid: number) => boolean;
 	// This device is watching some broadcast right now.
 	isWatching: () => boolean;
+	// Whether a broadcast of this game may yet be watched here: live in the
+	// room now, or the result so new its broadcast may still be on the way.
+	worthWaiting?: (gid: number, liveAt: number) => boolean;
 	log?: (event: string, data: Record<string, unknown>) => void;
 	waitMs?: number;
 	schedule?: (fn: () => void, ms: number) => unknown;
 	cancel?: (timer: unknown) => void;
 }) => {
-	const awaited = new Map<number, unknown>();
+	const awaited = new Map<number, { timer: unknown; liveAt: number }>();
 	// The ones already held for (gid -> liveAt), so the same result arriving
 	// twice - a re-delivered changeset - never holds it a second time.
 	const seen = new Map<number, number>();
 	const settle = (gid: number) => {
-		if (awaited.has(gid)) {
-			cancel(awaited.get(gid));
+		const w = awaited.get(gid);
+		if (w) {
+			cancel(w.timer);
 			awaited.delete(gid);
 		}
 	};
 	return {
 		// Holding a result for a game not yet watched here.
 		pending: () => awaited.size > 0,
+		// The room's broadcast changed (ended, or moved on to another game):
+		// stop waiting on any result no broadcast can show here any more - and
+		// with none left waiting, let the paint go now rather than when the
+		// wait would have run out.
+		dropUnwatchable: () => {
+			let dropped = false;
+			for (const [gid, w] of awaited) {
+				if (!worthWaiting(gid, w.liveAt)) {
+					cancel(w.timer);
+					awaited.delete(gid);
+					dropped = true;
+					log?.("live:result-hold-dropped", { gid });
+				}
+			}
+			if (dropped && awaited.size === 0 && !isWatching()) {
+				release();
+			}
+		},
 		notice: (gid: number, liveAt: number) => {
 			if (seen.get(gid) === liveAt) {
 				return;
@@ -269,12 +299,16 @@ export const createLiveResultWait = ({
 			if (isFollowing(gid)) {
 				return;
 			}
+			if (!worthWaiting(gid, liveAt)) {
+				log?.("live:result-not-held", { gid });
+				return;
+			}
 			log?.("live:result-held", { gid });
 			take();
 			settle(gid);
-			awaited.set(
-				gid,
-				schedule(() => {
+			awaited.set(gid, {
+				liveAt,
+				timer: schedule(() => {
 					awaited.delete(gid);
 					if (awaited.size > 0 || isWatching()) {
 						return;
@@ -282,7 +316,7 @@ export const createLiveResultWait = ({
 					log?.("live:result-hold-expired", { gid });
 					release();
 				}, waitMs),
-			);
+			});
 		},
 		// This game has been watched to the end here, or walked out of: its
 		// result may show.

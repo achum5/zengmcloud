@@ -87,11 +87,14 @@ describe("createLiveResultWait", () => {
 		const timers: (() => void)[] = [];
 		const calls: string[] = [];
 		let watching = false;
+		// Games a broadcast could still show here.
+		const watchable = new Set<number>([7, 8]);
 		const wait = createLiveResultWait({
 			take: () => calls.push("take"),
 			release: () => calls.push("release"),
 			isFollowing: (gid) => gid === following,
 			isWatching: () => watching,
+			worthWaiting: (gid) => watchable.has(gid),
 			schedule: (fn) => {
 				timers.push(fn);
 				return timers.length - 1;
@@ -104,11 +107,41 @@ describe("createLiveResultWait", () => {
 			wait,
 			calls,
 			timers,
+			watchable,
 			setWatching: (w: boolean) => {
 				watching = w;
 			},
 		};
 	};
+
+	// Caught up after time away: the room's live games come in with their
+	// broadcasts long over. Nothing to wait for, so nothing held - holding
+	// froze the score bar and the header on "Live game in progress".
+	test("a result with no broadcast left to show it is not held", () => {
+		const { wait, calls } = make();
+		wait.notice(9, 100);
+		assert.deepStrictEqual(calls, []);
+		assert.isFalse(wait.pending());
+	});
+
+	test("its broadcast gone, the result held for it is let go at once", () => {
+		const { wait, calls, watchable } = make();
+		wait.notice(7, 100);
+		watchable.delete(7);
+		wait.dropUnwatchable();
+		assert.deepStrictEqual(calls, ["take", "release"]);
+		assert.isFalse(wait.pending());
+	});
+
+	test("one still to be shown keeps the paint held when another is let go", () => {
+		const { wait, calls, watchable } = make();
+		wait.notice(7, 100);
+		wait.notice(8, 200);
+		watchable.delete(7);
+		wait.dropUnwatchable();
+		assert.deepStrictEqual(calls, ["take", "take"]);
+		assert.isTrue(wait.pending());
+	});
 
 	test("holds the paint the moment the result lands, before any broadcast", () => {
 		const { wait, calls } = make();
