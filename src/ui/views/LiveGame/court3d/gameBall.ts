@@ -443,9 +443,9 @@ export const ballSurface = (
 // HOW IT SITS. Its frame against the picture's (x right, y up, z out of the
 // picture toward the camera): as it was in his hands - the printed side a
 // little to the right of facing the camera, and tipped forward - and turned from
-// there by its spin, about the court's axis across the floor (spin > 0 rolls
-// it toward the far basket, the top going first). Columns: where the ball's
-// x, y and z point in the picture.
+// there by its spin, about the level axis square to the way it goes (spin > 0
+// rolls it on that way, the top going first; with no way given, toward the
+// far basket). Columns: where the ball's x, y and z point in the picture.
 
 type V3 = [number, number, number];
 
@@ -494,11 +494,22 @@ export const viewFrame = (cam: Camera): [V3, V3, V3] => {
 	return [R, U, [T[0] / l, T[1] / l, T[2] / l]];
 };
 
-// Where its frame points in the picture with this much spin on it.
-export const ballTurn = (frame: [V3, V3, V3], spin: number): [V3, V3, V3] => {
+// Where its frame points in the picture with this much spin on it, going
+// `way` (radians, across the floor from toward the far basket).
+export const ballTurn = (
+	frame: [V3, V3, V3],
+	spin: number,
+	way = 0,
+): [V3, V3, V3] => {
 	const [R, U, T] = frame;
-	// The court's axis across the floor (world y), in the picture.
-	const a: V3 = [R[1], U[1], T[1]];
+	// The level axis square to the way it goes, in the picture.
+	const wx = -Math.sin(way);
+	const wy = Math.cos(way);
+	const a: V3 = [
+		R[0] * wx + R[1] * wy,
+		U[0] * wx + U[1] * wy,
+		T[0] * wx + T[1] * wy,
+	];
 	const l = Math.hypot(a[0], a[1], a[2]) || 1;
 	const axis: V3 = [a[0] / l, a[1] / l, a[2] / l];
 	return HELD.map((c) => turnAbout(c, axis, -spin)) as [V3, V3, V3];

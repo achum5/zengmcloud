@@ -5726,9 +5726,12 @@ export type BallState = {
 	y: number;
 	z: number;
 	holder?: number;
-	// How far it has turned (radians, positive rolling toward the right rim):
+	// How far it has turned (radians, positive rolling on the way it goes):
 	// backspin off a shooter's fingers or a passer's, a roll along the floor.
 	roll?: number;
+	// The way it goes, turning so (radians across the floor, from toward the
+	// right rim - which it is if not given).
+	rollWay?: number;
 };
 
 // Turns a second of backspin on a ball thrown or shot.
@@ -6240,16 +6243,21 @@ const ballOn = (
 				0.5 * GRAVITY * tau * tau +
 				(w ? (w.z - (vz - GRAVITY * T)) * bend : 0) +
 				(by ? by.z * bow : 0),
-			// (Caught, it has turned whole times over, so it comes into his
-			// hands as it left the passer's; into a play at the rim, as the play
-			// takes it on.)
+			// Spinning back the way it goes. (Caught, it has turned whole
+			// times over, so it comes into his hands as it left the passer's;
+			// into a play at the rim, as the play takes it on.)
 			roll:
 				-Math.PI *
 				2 *
 				("pid" in seg.to && T > 0
 					? (Math.max(1, Math.round(BACKSPIN * T)) * tau) / T
-					: BACKSPIN * tau) *
-				(Math.sign(b.x - a.x) || 1),
+					: BACKSPIN * tau),
+			rollWay:
+				next?.kind === "path" && next.t0 === seg.t1 && next.way !== undefined
+					? next.way
+					: Math.abs(b.x - a.x) + Math.abs(b.y - a.y) > 1e-3
+						? Math.atan2(b.y - a.y, b.x - a.x)
+						: 0,
 		};
 	}
 	if (seg.kind === "bounce") {
@@ -6316,6 +6324,7 @@ const ballOn = (
 		return {
 			...playAt(seg.pts, ms),
 			roll: seg.roll0 + (seg.spin * ms) / 1000,
+			...(seg.way !== undefined ? { rollWay: seg.way } : {}),
 		};
 	}
 	return { ...seg.at };

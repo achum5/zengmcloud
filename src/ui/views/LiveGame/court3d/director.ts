@@ -318,7 +318,8 @@ export type BallSeg =
 	// Off the rim and the glass, down through the net (see physics.ts):
 	// where it is every SAMPLE_MS from t0 (x, y, z, x, y, z, ...), how fast
 	// it is going at the start, and how it turns - from `roll0`, `spin`
-	// radians a second.
+	// radians a second, about the level axis square to `way` (see ballTurn
+	// in gameBall.ts).
 	| {
 			kind: "path";
 			t0: number;
@@ -327,6 +328,7 @@ export type BallSeg =
 			v0: Pt3;
 			roll0: number;
 			spin: number;
+			way?: number;
 	  };
 // "roar" is a big play - a dunk, a three, an and-one - that brings the bench
 // and the crowd up.
@@ -10622,7 +10624,6 @@ class Director {
 		flight: [number, number],
 		want: ShotWant,
 	): AtRim | undefined {
-		const rim = rimPt(team);
 		let seed = Math.round(hash01(shooter * 31 + 7, release) * 2 ** 31);
 		const rand = () => {
 			seed = (seed + 0x6d2b79f5) | 0;
@@ -10638,7 +10639,7 @@ class Director {
 		// back the way it was thrown.
 		const t0 = release + found.handoff;
 		this.fly(release, t0, { pid: shooter }, found.p);
-		const spin = -Math.PI * 2 * BACKSPIN * (Math.sign(rim.x - from.x) || 1);
+		const spin = -Math.PI * 2 * BACKSPIN;
 		this.pushBall({
 			kind: "path",
 			t0,
@@ -10647,6 +10648,7 @@ class Director {
 			v0: found.v,
 			roll0: (spin * found.handoff) / 1000,
 			spin,
+			way: Math.atan2(found.p.y - from.y, found.p.x - from.x),
 		});
 		this.holder = undefined;
 		this.ballAt = { ...found.play.end.p };

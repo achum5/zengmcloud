@@ -1729,6 +1729,8 @@ export const drawBall = (
 	ball: Pt3,
 	spin: number,
 	mirrored = false,
+	// The way it spins on (see ballTurn).
+	way = 0,
 ) => {
 	const c = project(cam, ball);
 	const r = Math.max(1.6, BALL_R * c.k);
@@ -1738,7 +1740,7 @@ export const drawBall = (
 	ctx.lineWidth = Math.max(1, 0.05 * c.k) * 2;
 	ctx.stroke();
 	const frame = viewFrame(cam);
-	const turn = ballTurn(frame, spin);
+	const turn = ballTurn(frame, spin, way);
 	const mirror = mirrored ? floorMirror(frame) : undefined;
 	if (paintBall(ctx, c.x, c.y, r, turn, mirror)) {
 		return;
