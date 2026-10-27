@@ -10,12 +10,12 @@ import {
 	team,
 } from "../index.ts";
 import {
+	DEFAULT_REAL_DRAFT_RATINGS,
 	DEFAULT_STADIUM_CAPACITY,
 	DEPTH_CHART_NAME,
 	LEAGUE_DATABASE_VERSION,
 	PHASE,
 	PLAYER,
-	REAL_PLAYERS_INFO,
 } from "../../../common/constants.ts";
 import type {
 	Conditions,
@@ -1336,6 +1336,12 @@ type CreateStreamProps = {
 	tid: number;
 };
 
+const isRandomDebuts = (randomization: Settings["randomization"]) =>
+	randomization === "debuts" ||
+	randomization === "debutsKeepCurrent" ||
+	randomization === "debutsForever" ||
+	randomization === "debutsForeverKeepCurrent";
+
 const beforeDBStream = async ({
 	conditions,
 	confs,
@@ -1386,11 +1392,8 @@ const beforeDBStream = async ({
 		divs,
 	};
 
-	// This setting is allowed to be undefined, so make it that way when appropriate
-	if (
-		!REAL_PLAYERS_INFO &&
-		(!getLeagueOptions || getLeagueOptions.type !== "real")
-	) {
+	// This setting is allowed to be undefined, so make it that way when it does nothing - it's only used for real players leagues and random debuts
+	if (getLeagueOptions?.type !== "real" && !isRandomDebuts(randomization)) {
 		delete gameAttributeOverrides.realDraftRatings;
 	}
 
@@ -1461,10 +1464,7 @@ const beforeDBStream = async ({
 			fileHasPlayers:
 				keptKeys.has("players") ||
 				teamInfos.some((t) => t.usePlayers) ||
-				randomization === "debuts" ||
-				randomization === "debutsKeepCurrent" ||
-				randomization === "debutsForever" ||
-				randomization === "debutsForeverKeepCurrent",
+				isRandomDebuts(randomization),
 			fileHasTeams: !!filteredFromFile.teams,
 		},
 		conditions,
@@ -1655,11 +1655,7 @@ const afterDBStream = async ({
 		}
 	}
 
-	const randomDebuts =
-		randomization === "debuts" ||
-		randomization === "debutsKeepCurrent" ||
-		randomization === "debutsForever" ||
-		randomization === "debutsForeverKeepCurrent";
+	const randomDebuts = isRandomDebuts(randomization);
 
 	let activePlayers = fileHasPlayers
 		? extraFromStream.activePlayers
@@ -1760,7 +1756,8 @@ const afterDBStream = async ({
 			players: activePlayers,
 			basketball,
 			numActiveTeams: gameAttributes.numActiveTeams,
-			realDraftRatings: gameAttributes.realDraftRatings ?? "rookie",
+			realDraftRatings:
+				gameAttributes.realDraftRatings ?? DEFAULT_REAL_DRAFT_RATINGS,
 			phase: gameAttributes.phase,
 			season: gameAttributes.season,
 		});

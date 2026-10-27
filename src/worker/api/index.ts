@@ -29,6 +29,7 @@ import {
 	DEFAULT_RECAP_MAX_DAYS,
 	DEFAULT_RECAP_MAX_PLAYERS,
 	getPlayerStatsTableStats,
+	DEFAULT_REAL_DRAFT_RATINGS,
 } from "../../common/constants.ts";
 import { DEFAULT_OWN_GAME_SIM_CUTOFF_SECONDS } from "../../common/ownGameSim.ts";
 import { isGoldActive } from "../../common/isGoldActive.ts";
@@ -4082,7 +4083,7 @@ const importPlayersGetReal = async (param: unknown, conditions: Conditions) => {
 			phase: g.get("phase"),
 			randomDebuts: false,
 			randomDebutsKeepCurrent: false,
-			realDraftRatings: g.get("realDraftRatings") ?? "rookie",
+			realDraftRatings: g.get("realDraftRatings") ?? DEFAULT_REAL_DRAFT_RATINGS,
 			realStats: "all", // Maybe should default to "none" on mobile, but then I'd need a UI to change it, and most people probably want "all"  if they are using this feature
 			includePlayers: true,
 		},

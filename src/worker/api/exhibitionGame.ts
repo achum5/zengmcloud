@@ -46,11 +46,14 @@ export const getSeasons = async (lid: number) => {
 
 	league.close();
 
-	if (!season || typeof season.value !== "number") {
-		throw new Error("Invalid season");
-	}
-	if (!startingSeason || typeof startingSeason.value !== "number") {
-		throw new Error("Invalid startingSeason");
+	// League database might be missing or corrupted, in which case it can't be used
+	if (
+		!season ||
+		typeof season.value !== "number" ||
+		!startingSeason ||
+		typeof startingSeason.value !== "number"
+	) {
+		return;
 	}
 
 	return {
@@ -122,6 +125,9 @@ const getSeasonInfoLeague = async ({
 		.getAll(IDBKeyRange.bound([season], [season, ""]));
 
 	let pid = pidOffset;
+
+	// g.season might not be set yet (fresh worker), but it's needed by addStatsRow and player.updateValues below
+	g.setWithoutSavingToDB("season", season);
 
 	const players = (await getPlayersActiveSeason(league, season)).filter((p) => {
 		// Keep players who ended the season on this team. Not perfect, will miss released players. Second check is for players added to the team in God Mode during the playoffs.
@@ -215,7 +221,6 @@ const getSeasonInfoLeague = async ({
 
 			if (!isCurrentOngoingSeason) {
 				// Update player values, since it will be needed for either depth chart or rosterOrder
-				g.setWithoutSavingToDB("season", season);
 				g.setWithoutSavingToDB("numActiveTeams", 2);
 				local.playerOvrMean = 48;
 				local.playerOvrStd = 10;
@@ -345,6 +350,7 @@ export const getSeasonInfo = async (
 
 		// Some value here is needed for ratingsStatsPopoverInfo and game sim
 		g.setWithoutSavingToDB("season", 0);
+		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
 		g.setWithoutSavingToDB("numActiveTeams", 2);
 	}
 

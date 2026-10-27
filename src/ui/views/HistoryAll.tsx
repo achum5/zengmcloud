@@ -50,6 +50,10 @@ const teamName = (
 	season: number,
 ) => {
 	if (t) {
+		if (t.missing) {
+			return t.region;
+		}
+
 		return (
 			<>
 				<a href={helpers.leagueUrl(["roster", `${t.abbrev}_${t.tid}`, season])}>
@@ -77,7 +81,9 @@ const formatTeam = (
 		classNames: t.tid === userTid ? "table-info py-1" : "py-1",
 		value: (
 			<div className="d-flex align-items-center">
-				<TeamLogoInline imgURL={t.imgURL} imgURLSmall={t.imgURLSmall} />
+				{t.missing ? null : (
+					<TeamLogoInline imgURL={t.imgURL} imgURLSmall={t.imgURLSmall} />
+				)}
 				<div className="ms-1 me-auto">
 					{t.seed !== undefined
 						? `${displaySeed(t.seed, local.getState().college)}. `
@@ -87,7 +93,9 @@ const formatTeam = (
 				<CountBadge count={t.count} />
 			</div>
 		),
-		sortValue: `${t.region} ${t.name} ${season}`,
+		sortValue: t.missing
+			? `${t.region} ${season}`
+			: `${t.region} ${t.name} ${season}`,
 	};
 };
 
