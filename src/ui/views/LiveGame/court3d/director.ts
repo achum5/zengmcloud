@@ -708,6 +708,22 @@ const ON_FROM_MS = 700;
 const QUICK_FROM = 12;
 // A side-step jumper: how far across (feet) he goes before the hop back over.
 const SIDESTEP_FT = 2.6;
+// How long (ms), at the most, a man takes to turn and go the other way as
+// the ball changes hands (see turnLag).
+const TURN_LAG = 300;
+// Worn down (see tired): from how many game minutes on the floor this
+// stretch it starts to tell, and over how many more it tells all the way;
+// how worn he is before he is bent over getting his breath at the line, and
+// how much later and slower, all the way worn, he gets back.
+const TIRED_FROM = 4;
+const TIRED_SPAN = 8;
+const WORN = 0.5;
+const WORN_LATE = 250;
+const WORN_SLOWER = 0.12;
+// And to go in to the glass as a free throw leaves the shooter's hand, and
+// as a shot goes up (see lagOf).
+const FT_LAG = 140;
+const CRASH_LAG = 220;
 // A man this poor a shooter from where he shoots it (0 to 1, see level)
 // pushes it (see PUSH_JUMPER).
 const PUSH_BELOW = 0.3;
@@ -1794,6 +1810,11 @@ class Director {
 	}[] = [];
 	// The period being played, and whether it is overtime.
 	private periodNo = 1;
+	// Game seconds played so far, and from when each man's stretch on the
+	// floor counts (see tired).
+	private gameSecs = 0;
+	private clockSeen: number | undefined;
+	private readonly stint = new Map<number, number>();
 	private overtime = false;
 	// `stretch`: may run on to the next cut (see finish).
 	readonly shots: (ArenaShot & { stretch?: boolean })[] = [];
@@ -2405,20 +2426,21 @@ class Director {
 		};
 		for (const m of lanes) {
 			const from = this.posOf(m.pid);
+			const lag = this.turnLag(m.pid, t0, "oiq");
 			// (The quicker the man, the sooner he is down the floor.)
 			const at = this.sooner(
 				m.pid,
-				Math.max(t0 + m.j * 90, this.free.get(m.pid) ?? 0),
+				Math.max(t0 + m.j * 90, this.free.get(m.pid) ?? 0) + lag,
 				m.by ?? by,
 			);
 			const endX = m.fill === undefined ? m.to.x : rim.x - dir * m.fill;
 			if ((endX - from.x) * dir < 24) {
 				const end = m.fill === undefined ? m.to : fillAt(m.fill, from.y);
-				this.goBy(m.pid, end, t0 + m.j * 90, at, "run");
+				this.goBy(m.pid, end, t0 + m.j * 90 + lag, at, "run");
 				continue;
 			}
 			const laneY = laneFor(COURT_H / 2 + m.side * (m.big ? 3.5 : 19), m.side);
-			const start = Math.max(t0 + m.j * 90, this.free.get(m.pid) ?? 0);
+			const start = Math.max(t0 + m.j * 90, this.free.get(m.pid) ?? 0) + lag;
 			if (m.fill !== undefined) {
 				this.goBy(m.pid, fillAt(m.fill, laneY), start, at, "run");
 				continue;
@@ -2701,6 +2723,55 @@ class Director {
 			}
 		}
 		return "plain";
+	}
+
+	// How long he takes to react to something (ms), `most` at the most: a
+	// sharp man at once, a slower one a beat later - and each on his own
+	// beat, not everybody moving as one. (0 for a man the game knows nothing
+	// of.)
+	private lagOf(
+		pid: number,
+		t: number,
+		most: number,
+		...keys: RatingKey[]
+	): number {
+		const iq = this.level(pid, ...keys);
+		return iq === undefined
+			? 0
+			: Math.round(
+					most *
+						(0.35 + 0.65 * hash01(pid, Math.round(t / 7))) *
+						(1.3 - 0.6 * iq),
+				);
+	}
+
+	// How worn down he is (0 to 1): the longer he has been out there this
+	// stretch - game minutes since he came on, or the period started - the
+	// more, and the poorer his endurance the sooner it tells. (Only for a
+	// man the game has ratings for.)
+	private tired(pid: number): number | undefined {
+		const e = this.level(pid, "endu");
+		if (e === undefined) {
+			return undefined;
+		}
+		const mins = (this.gameSecs - (this.stint.get(pid) ?? 0)) / 60;
+		return Math.min(
+			1,
+			Math.max(0, (mins - TIRED_FROM) / TIRED_SPAN) * (1.2 - 0.8 * e),
+		);
+	}
+
+	// The odds he goes in to the glass, or puts a body on his man: `base`
+	// for anybody the game knows nothing of - between `range` for the poorest
+	// rebounder and the best.
+	private rebOdds(pid: number, base: number, range: [number, number]): number {
+		const r = this.level(pid, "reb");
+		return r === undefined ? base : range[0] + (range[1] - range[0]) * r;
+	}
+
+	// How long after the ball changes hands he is off the other way (ms).
+	private turnLag(pid: number, t: number, ...keys: RatingKey[]): number {
+		return this.lagOf(pid, t, TURN_LAG, ...keys);
 	}
 
 	// How sharp his hop is - a step-back, a side-step: the more athletic,
@@ -4760,7 +4831,7 @@ class Director {
 				pid,
 				P,
 				to: { x: rx, y: P.y + (COURT_H / 2 - P.y) * BACK_PINCH },
-				at: t + BACK_REACT + j * 60,
+				at: t + BACK_REACT + j * 60 + this.turnLag(pid, t, "diq"),
 			});
 		});
 		// Each back down his own lane - two that went in to the glass
@@ -4794,12 +4865,13 @@ class Director {
 					r.at = Math.max(r.at, q.at + BACK_BEHIND);
 				}
 			}
-			// (On a break, flat out.)
+			// (On a break, flat out - worn down, a step slower at it.)
+			const worn = this.tired(r.pid) ?? 0;
 			this.go(
 				r.pid,
 				clampPt(r.to),
-				r.at,
-				flatOut ? SPRINT : RUN,
+				r.at + Math.round(WORN_LATE * worn),
+				(flatOut ? SPRINT : RUN) * (1 - WORN_SLOWER * worn),
 				"run",
 				undefined,
 				{ effort: flatOut ? BURST : 1 },
@@ -4903,7 +4975,13 @@ class Director {
 				lanes.push({ pid, to: S, j, by: arrive + j * 250 });
 				return;
 			}
-			this.goBy(pid, S, t0 + j * 60, arrive + j * 250, "run");
+			this.goBy(
+				pid,
+				S,
+				t0 + j * 60 + this.turnLag(pid, t0, "oiq"),
+				arrive + j * 250,
+				"run",
+			);
 		});
 		if (lanes.length > 0) {
 			this.fillLanes(team, lanes, t0, arrive, ballY);
@@ -4941,7 +5019,7 @@ class Director {
 			const back = this.goBy(
 				pid,
 				target,
-				t + 40 * j,
+				t + 40 * j + this.turnLag(pid, t, "diq"),
 				arrive + 200,
 				"run",
 				undefined,
@@ -9358,6 +9436,14 @@ class Director {
 		t: number,
 		style: PassStyle | undefined,
 	): number | undefined {
+		// (A poor passer doesn't always see it coming: now and then it goes
+		// in late, once the cutter has got there - see byPassing.)
+		if (
+			this.rated.has(passer) &&
+			hash01(passer, Math.round(t / 9)) > this.byPassing(passer, 1, 0.35, 1.05)
+		) {
+			return undefined;
+		}
 		// (Into the lane for a hook or a floater: he has it as he gets to his
 		// spot there.)
 		const lane = run.option?.zone === "post";
@@ -11502,7 +11588,8 @@ class Director {
 					t = Math.max(t, a.t1);
 				}
 			}
-			return t;
+			// (Each on his own beat: see lagOf.)
+			return t + this.lagOf(pid, gather, CRASH_LAG, "reb");
 		};
 		// The shot up, nobody runs on with what he was doing before it -
 		// shadowing his man out on the floor, a cut still on its way: each
@@ -11600,7 +11687,15 @@ class Director {
 			const out = dist(M, rim);
 			const big = (this.rank.get(pid) ?? 4) >= 6 || j >= 4;
 			const r = draw();
-			if (big ? r < 0.85 : out < 17 ? r < 0.45 : r < 0.18) {
+			// (The better a rebounder, the more often he goes - see rebOdds.)
+			if (
+				r <
+				this.rebOdds(
+					pid,
+					big ? 0.85 : out < 17 ? 0.45 : 0.18,
+					big ? [0.5, 0.97] : out < 17 ? [0.15, 0.7] : [0.03, 0.35],
+				)
+			) {
 				const u = unitVec(M, rim);
 				const k = Math.max(0, Math.min(out - (5 + 3 * draw()), 9));
 				const C = apart(clampPt({ x: M.x + u.x * k, y: M.y + u.y * k }));
@@ -11663,8 +11758,19 @@ class Director {
 					mark = other;
 				}
 			}
+			// A poor rebounder, now and then, just turns and watches it -
+			// and his man goes on by him to the glass.
+			const watches =
+				C !== undefined &&
+				this.rated.has(d) &&
+				hash01(d, Math.round(meet / 13)) >= this.rebOdds(d, 1, [0.55, 1]);
 			let spot: Pt;
-			if (C) {
+			if (C && watches) {
+				const D0 = this.posOf(d);
+				const u = unitVec(D0, rim);
+				spot = clampPt({ x: D0.x + u.x * 2, y: D0.y + u.y * 2 });
+				C = undefined;
+			} else if (C) {
 				// Into him: a step in front of where he is coming, between him
 				// and the rim.
 				const u = unitVec(C, rim);
@@ -13188,6 +13294,10 @@ class Director {
 			this.periodNo =
 				typeof e.period === "number" ? e.period : this.periodNo + 1;
 			this.overtime = e.type === "overtime";
+			// (Rested over the break.)
+			for (const pid of [...this.lineup[0], ...this.lineup[1]]) {
+				this.stint.set(pid, this.gameSecs);
+			}
 		}
 		if (!this.overtime && this.periodNo < 4) {
 			return 0;
@@ -14515,7 +14625,10 @@ class Director {
 		// hand, in to box out.
 		const lane = [...def.slice(0, 3), ...off.slice(0, 2)];
 		for (const pid of lane) {
-			const h = hash01(pid, 17);
+			// (Worn down, he is bent over, hands on his knees, getting his
+			// breath - see tired.)
+			const worn = (this.tired(pid) ?? 0) > WORN;
+			const h = worn ? 0.6 : hash01(pid, 17);
 			if (!more) {
 				this.act(
 					pid,
@@ -14527,7 +14640,7 @@ class Director {
 			} else if (h < 0.75) {
 				this.act(
 					pid,
-					h < 0.45 || off.includes(pid) ? "hips" : "crouch",
+					!worn && (h < 0.45 || off.includes(pid)) ? "hips" : "crouch",
 					Math.max(T, ready),
 					at + 600,
 					{ look: S },
@@ -14666,7 +14779,7 @@ class Director {
 			const there = this.goBy(
 				pid,
 				C,
-				go + 60,
+				go + 60 + this.lagOf(pid, release, FT_LAG, "reb"),
 				go + 700,
 				"run",
 				undefined,
@@ -14692,7 +14805,15 @@ class Director {
 			const C = coming.get(mine) ?? this.posOf(mine);
 			const u = unitVec(C, rim);
 			const spot = clampPt({ x: C.x + u.x * 1.8, y: C.y + u.y * 1.8 });
-			const there = this.goBy(pid, spot, go, go + 600, "run", undefined, BURST);
+			const there = this.goBy(
+				pid,
+				spot,
+				go + this.lagOf(pid, release, FT_LAG, "reb"),
+				go + 600,
+				"run",
+				undefined,
+				BURST,
+			);
 			this.act(pid, "boxOut", Math.min(there, at), until, { look: rim });
 			const fights = inAt.get(mine);
 			if (fights !== undefined) {
@@ -16232,6 +16353,11 @@ class Director {
 				}
 			}
 		});
+		for (const pid of on) {
+			if (!this.lineup[team].includes(pid)) {
+				this.stint.set(pid, this.gameSecs);
+			}
+		}
 		this.lineup[team] = [
 			...this.lineup[team].filter((p) => !off.includes(p)),
 			...on.filter((p) => !this.lineup[team].includes(p)),
@@ -16255,6 +16381,11 @@ class Director {
 				// (Back on: nobody is on in his place any more - see mark.)
 				for (const r of this.replaced.get(pid) ?? []) {
 					r.until = Math.min(r.until, this.T);
+				}
+			}
+			for (const pid of on) {
+				if (!this.lineup[t].includes(pid)) {
+					this.stint.set(pid, this.gameSecs);
 				}
 			}
 			this.lineup[t] = [
@@ -16325,6 +16456,10 @@ class Director {
 	noteClock(e: RawEvent) {
 		if (typeof e.clock === "number") {
 			this.lastClock = e.clock;
+			if (this.clockSeen !== undefined && e.clock < this.clockSeen) {
+				this.gameSecs += this.clockSeen - e.clock;
+			}
+			this.clockSeen = e.clock;
 		}
 	}
 
@@ -17467,6 +17602,16 @@ class Director {
 						t0 = Math.max(t0, c);
 					}
 				}
+				// (The ball changing hands, each off on his own beat - not all
+				// ten as one: see turnLag.)
+				for (const [c] of this.poss) {
+					if (c <= m.t0) {
+						t0 = Math.max(
+							t0,
+							Math.min(m.t0, c + this.turnLag(tr.pid, c, "oiq", "diq")),
+						);
+					}
+				}
 				if (
 					t0 < m.t0 - 60 &&
 					tr.shown.every(([at]) => at <= t0 || at > m.t0) &&
@@ -18393,7 +18538,15 @@ class Director {
 						Infinity,
 					),
 				);
-				if (t1 - t0 < SHORTEST) {
+				// (Nor off after his man when he has the block, the poke at the
+				// ball, to come before his next run: the play has him where he
+				// is for it.)
+				if (
+					t1 - t0 < SHORTEST ||
+					tr.acts.some(
+						(a) => FOR_IT.has(a.anim) && a.t0 > m.t1 && a.t0 <= until,
+					)
+				) {
 					continue;
 				}
 				const fill: Move = {

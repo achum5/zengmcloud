@@ -426,4 +426,53 @@ describe("3D: players play like their ratings", () => {
 		}
 		assert.isAbove(pushed, 5);
 	});
+	test("good rebounders crash the glass and put a body on a man; poor ones watch it", () => {
+		const glass = (v: number) => {
+			const n = { boxOut: 0, fight: 0 };
+			for (const tr of play("r1", all(v)).tracks.values()) {
+				for (const a of tr.acts) {
+					if (a.anim === "boxOut" || a.anim === "fight") {
+						n[a.anim] += 1;
+					}
+				}
+			}
+			return n;
+		};
+		const poor = glass(30);
+		const good = glass(85);
+		assert.isAbove(
+			good.boxOut,
+			poor.boxOut * 1.6,
+			JSON.stringify({ poor, good }),
+		);
+		assert.isAbove(
+			good.fight,
+			poor.fight * 1.4,
+			JSON.stringify({ poor, good }),
+		);
+	});
+	test("worn down deep into a long stretch, a man short on endurance is bent over getting his breath at the line", () => {
+		// (The game's minutes drawn out, so its free throws come late in
+		// each period.)
+		const crouched = (endu: number) => {
+			const { events, players } = fakeGame("r1", 150);
+			const tl = compileCourt({
+				events: events.map((e) =>
+					typeof e.clock === "number"
+						? { ...e, clock: Math.max(0, 720 - (720 - e.clock) * 3) }
+						: e,
+				),
+				players: players.map((p) => ({ ...p, ratings: { ...all(60), endu } })),
+				gid: gidOf("r1"),
+			});
+			let n = 0;
+			for (const tr of tl.tracks.values()) {
+				n += tr.acts.filter((a) => a.anim === "crouch").length;
+			}
+			return n;
+		};
+		const short = crouched(30);
+		const long = crouched(85);
+		assert.isAbove(short, long + 10, `${short} ${long}`);
+	});
 });
