@@ -142,7 +142,6 @@ const AutoPlayCountdown = () => {
 				href={helpers.leagueUrl(["auto_play_schedule"])}
 				title="Auto Play Scheduler"
 			>
-				{"⏱ "}
 				{format(nextRunAt - now)}
 			</a>
 		</>
