@@ -1899,6 +1899,25 @@ export const teamStrengths = (
 			: undefined,
 		(y, room) => payrollCost(perCap, y, room / salaryCap),
 	).map((x, y) => strengthOf(y, x));
+	// This season's payroll, as it will stand when the playoffs start and the
+	// tax is charged: the tax in full, and the rest of the season's salary
+	// past the cap.
+	if (outlook.offset === 0 && perCap > 0 && g.get("phase") < PHASE.PLAYOFFS) {
+		let payroll = 0;
+		for (const p of players) {
+			payroll += p.contract.amount;
+		}
+		for (const row of outlook.deadMoney.get(tid) ?? []) {
+			if (row.exp >= outlook.season) {
+				payroll += row.amount;
+			}
+		}
+		money[0] = payrollCostNow(
+			perCap,
+			payroll / salaryCap,
+			1 - outlook.progress,
+		);
+	}
 	moneyOf.set(strengths, money);
 	return strengths;
 };
@@ -1916,6 +1935,17 @@ const payrollCost = (perCap: number, y: number, room: number) => {
 	const taxLine = g.get("luxuryPayroll") / g.get("salaryCap");
 	const taxed = Math.max(0, 1 - room - taxLine);
 	return PATIENCE ** y * perCap * (-room + g.get("luxuryTax") * taxed);
+};
+
+// The same for the season under way: the luxury tax on the payroll as the
+// playoffs start, and what is left of its salary past the cap.
+const payrollCostNow = (perCap: number, payroll: number, left: number) => {
+	const taxLine = g.get("luxuryPayroll") / g.get("salaryCap");
+	return (
+		perCap *
+		(left * Math.max(0, payroll - 1) +
+			g.get("luxuryTax") * Math.max(0, payroll - taxLine))
+	);
 };
 
 // What each season's payroll costs, for strengths worked out by
