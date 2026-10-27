@@ -19,3 +19,11 @@
   charge of simming ("You're in charge of simming", "Alex is in charge of
   simming", "Sim here"). Do not use driving metaphors or "sim authority" in
   user-facing copy.
+
+## What's changed
+
+- Every update pushed to `master` that league mates would notice adds an
+  entry to the top of `CLOUD_CHANGES` in `src/common/cloudChanges.ts` (next
+  number, the date, a sentence or two in plain words). Everybody sees new
+  entries once, the next time they load the game. Put the same text in the
+  update message to the owner so it can be passed on.
