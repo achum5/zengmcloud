@@ -703,6 +703,15 @@ const ON_FROM_MS = 700;
 // Going this fast (feet a second) or faster - running, driving - a quick man
 // goes quicker and a slow one slower (see quick).
 const QUICK_FROM = 12;
+// A side-step jumper: how far across (feet) he goes before the hop back over.
+const SIDESTEP_FT = 2.6;
+// How sharp a hop is for the least athletic man the game has ratings for,
+// and how much sharper for the most (see spring).
+const SPRING_LEAST = 1.5;
+const SPRING_MOST = 0.9;
+// Caught this long ago (ms) or more, a jumper at the end of a set is his own
+// to get off - not a catch-and-shoot.
+const OWN_MOVE_AFTER = 700;
 // And as long a run as this (feet), timed to be somewhere by some time: a
 // quick man there sooner.
 const QUICK_LONG = 20;
@@ -1641,6 +1650,7 @@ type ShotStyle =
 	| "crossover"
 	| "euro"
 	| "stepBack"
+	| "sidestep"
 	| "fade"
 	| "post"
 	| "hook"
@@ -2637,6 +2647,57 @@ class Director {
 	private byPassing(pid: number, base: number, lo: number, hi: number): number {
 		const p = this.level(pid, "pss");
 		return p === undefined ? base : lo + (hi - lo) * p;
+	}
+
+	// His way of getting his own jumper off, `r` of the way through his odds:
+	// by his handle and his shooting, and his own go-to's - one lives on the
+	// step-back, another the side-step, another just rises up - so no two
+	// get theirs the same way. (Only for a man the game has ratings for.)
+	private jumperMoveFor(
+		pid: number,
+		zone: "midRange" | "three",
+		r: number,
+	): ShotStyle {
+		const h = this.level(pid, "drb") ?? 0.5;
+		const s = this.level(pid, "drb", zone === "three" ? "tp" : "fg") ?? 0.5;
+		const go = (k: number) => 0.4 + 1.4 * hash01(pid, 7300 + k);
+		const odds: [ShotStyle, number][] =
+			zone === "three"
+				? [
+						["stepBack", (0.12 + 0.25 * s) * go(0)],
+						["sidestep", (0.08 + 0.2 * s) * go(1)],
+						["crossover", (0.08 + 0.2 * h) * go(2)],
+						["plain", Math.max(0.15, 0.5 - 0.25 * h) * go(3)],
+					]
+				: [
+						["stepBack", (0.14 + 0.2 * s) * go(0)],
+						["sidestep", (0.06 + 0.12 * s) * go(1)],
+						["crossover", (0.1 + 0.2 * h) * go(2)],
+						["fade", (0.12 + 0.1 * (this.level(pid, "fg") ?? 0.5)) * go(4)],
+						["plain", Math.max(0.15, 0.45 - 0.2 * h) * go(3)],
+					];
+		let x = r * odds.reduce((a, [, w]) => a + w, 0);
+		for (const [style, w] of odds) {
+			x -= w;
+			if (x <= 0) {
+				return style;
+			}
+		}
+		return "plain";
+	}
+
+	// How sharp his hop is - a step-back, a side-step: the more athletic,
+	// the quicker off the floor and down. (1 for a man the game knows
+	// nothing of.)
+	private spring(pid: number): number {
+		const a = this.level(pid, "spd", "jmp");
+		return a === undefined ? 1 : SPRING_LEAST + SPRING_MOST * a;
+	}
+
+	// How much of a hop back is in the air: a sharper hop (see spring) is
+	// over quicker, but no lower for it.
+	private hopShare(pid: number): number {
+		return this.rated.has(pid) ? 0.75 : 0.6;
 	}
 
 	// How high he gets up for something a man of his jump gets `peak` feet
@@ -8308,6 +8369,51 @@ class Director {
 			this.act(pid, "euroStep", picked, there, { face: dir });
 			return there;
 		}
+		if (style === "sidestep") {
+			// Often a move first, then across his man's face and a hop to the
+			// side - along the arc - to where he shoots from, his man left
+			// leaning the wrong way.
+			if (hash01(pid, Math.round(t / 13)) < 0.5) {
+				this.hold(pid, t, "dribble");
+				const top = this.dribbleTop(pid, t + 1) ?? t;
+				t = this.moveRun(pid, top < t ? top + DRIBBLE_MS : top, 1, 0.3, 0.1);
+				this.hold(pid, t, "dribble");
+			}
+			const toRim = unitVec(P, rimPt(this.teamOf(pid)));
+			const k = hash01(pid, 7411) < 0.5 ? 1 : -1;
+			const besideOf = (sg: number) =>
+				inPlay({
+					x: P.x - toRim.y * sg * SIDESTEP_FT,
+					y: P.y + toRim.x * sg * SIDESTEP_FT,
+				});
+			// (His side for it - unless the line is that way.)
+			const beside =
+				dist(besideOf(k), P) >= SIDESTEP_FT - 0.2 ? besideOf(k) : besideOf(-k);
+			// His man, up on him, goes with the dribble - and is leaning the
+			// wrong way as he hops back off it.
+			const guard = this.defenderOf(pid);
+			const G = guard === undefined ? undefined : this.posOf(guard);
+			if (guard !== undefined && G !== undefined && dist(G, P) < 7) {
+				this.go(
+					guard,
+					inPlay({ x: G.x + beside.x - P.x, y: G.y + beside.y - P.y }),
+					Math.max(t + 150, this.free.get(guard) ?? 0),
+					9,
+					"slide",
+					-dir as 1 | -1,
+				);
+			}
+			t = this.go(pid, beside, t, DRIBBLE, "dribble", dir);
+			t = Math.max(t, this.hold(pid, t, "hold"));
+			const there = this.go(pid, P, t + 40, 9, "shuffle", dir, {
+				effort: this.spring(pid),
+			});
+			this.act(pid, "stepBack", t, there, {
+				face: dir,
+				jump: [0.2, 0.9, hopFor(there - t, this.hopShare(pid))],
+			});
+			return there;
+		}
 		if (style === "stepBack") {
 			// Often a move first - between his legs, a crossover - then into
 			// his man, and a hop back to where he shoots from.
@@ -8331,10 +8437,12 @@ class Director {
 			const inside = inPlay({ x: P.x + u.x * 2.6, y: P.y + u.y * 2.6 });
 			t = this.go(pid, inside, t, DRIBBLE, "dribble", dir);
 			t = Math.max(t, this.hold(pid, t, "hold"));
-			const there = this.go(pid, P, t + 40, 9, "back", dir);
+			const there = this.go(pid, P, t + 40, 9, "back", dir, {
+				effort: this.spring(pid),
+			});
 			this.act(pid, "stepBack", t, there, {
 				face: dir,
-				jump: [0.25, 0.85, hopFor(there - t, 0.6)],
+				jump: [0.25, 0.85, hopFor(there - t, this.hopShare(pid))],
 			});
 			return there;
 		}
@@ -8898,6 +9006,8 @@ class Director {
 		}
 		const P = this.posOf(shooter);
 		const out = dist(P, rim);
+		// (Got to where he shoots from by a move of the set's own.)
+		let staged = false;
 		if (o.zone === "rim" && out > 4.5 && !stride) {
 			// Caught short of the rim: one hard dribble and up. (Hit on his cut
 			// in, he goes up in stride.)
@@ -8939,6 +9049,7 @@ class Director {
 			);
 		} else if (o.zone === "mid" && out < 8) {
 			// Too deep for a jumper: a step back out to shoot it.
+			staged = true;
 			const u = unitVec(rim, P);
 			t = this.go(
 				shooter,
@@ -8967,6 +9078,7 @@ class Director {
 			// past the man who gave it him: not stood with it beside him while
 			// he turns to screen, nor up off the catch with the two of them
 			// shoulder to shoulder.)
+			staged = true;
 			const sc = run.screen;
 			const S = this.posOf(sc.screeners[0]!);
 			const ur = unitVec(P, rim);
@@ -9041,10 +9153,12 @@ class Director {
 			);
 			t = Math.max(t, this.hold(shooter, t, "hold"));
 			const hop = t;
-			t = this.go(shooter, P, t + 40, 9, "back", dir);
+			t = this.go(shooter, P, t + 40, 9, "back", dir, {
+				effort: this.spring(shooter),
+			});
 			this.act(shooter, "stepBack", hop, t, {
 				face: dir,
-				jump: [0.25, 0.85, hopFor(t - hop, 0.6)],
+				jump: [0.25, 0.85, hopFor(t - hop, this.hopShare(shooter))],
 			});
 		}
 		t = Math.max(t, this.hold(shooter, t, "hold"));
@@ -9072,6 +9186,38 @@ class Director {
 				style: "post",
 				move: o.kind === "fadeaway" || fade ? "fade" : "hook",
 			};
+		}
+		// The ball in his hands a while - not a catch-and-shoot - and his own
+		// jumper to get off: his own way of getting it off, by his handle, his
+		// shooting and his go-to's (see jumperMoveFor). (Only for a man the
+		// game has ratings for.)
+		const caught = this.ball.findLast(
+			(x): x is Extract<BallSeg, { kind: "fly" }> =>
+				x.kind === "fly" && "pid" in x.to && x.to.pid === shooter,
+		);
+		if (
+			(o.zone === "three" || o.zone === "mid") &&
+			o.kind !== "fadeaway" &&
+			o.kind !== "hook" &&
+			o.kind !== "step_back" &&
+			!staged &&
+			this.rated.has(shooter) &&
+			this.holder === shooter &&
+			(caught === undefined || caught.t1 < t - OWN_MOVE_AFTER)
+		) {
+			const own = this.jumperMoveFor(
+				shooter,
+				o.zone === "three" ? "three" : "midRange",
+				hash01(shooter, Math.round(t / 11)),
+			);
+			if (own === "fade") {
+				return { t, style: "fade" };
+			}
+			if (own !== "plain") {
+				t = this.driveTo(shooter, this.posOf(shooter), t, dir, own);
+				t = Math.max(t, this.hold(shooter, t, "hold"));
+			}
+			return { t, style: "plain" };
 		}
 		return {
 			t,
@@ -9769,35 +9915,44 @@ class Director {
 					}
 					// His own shot: a move to get it.
 					const r = this.rng();
+					const own =
+						!quickIn &&
+						this.rated.has(shooter) &&
+						(zone === "midRange" ||
+							(zone === "three" && heaveSecs === undefined))
+							? this.jumperMoveFor(shooter, zone, r)
+							: undefined;
 					// (A move to get by him at the rim: the better his handle,
 					// the more often - see byHandle.)
 					const cross = this.byHandle(shooter, 0.5, 0.25, 0.65);
 					const euro = this.byHandle(shooter, 0.72, 0.38, 0.9);
-					style = quickIn
-						? "plain"
-						: zone === "atRim"
-							? r < cross
-								? "crossover"
-								: r < euro && plan.finish === "layup"
-									? "euro"
-									: "plain"
-							: zone === "lowPost"
-								? "post"
-								: zone === "midRange"
-									? r < 0.28
-										? "stepBack"
-										: r < 0.44
-											? "fade"
-											: r < 0.66
-												? "crossover"
-												: "plain"
-									: zone === "three" && heaveSecs === undefined
+					style = own
+						? own
+						: quickIn
+							? "plain"
+							: zone === "atRim"
+								? r < cross
+									? "crossover"
+									: r < euro && plan.finish === "layup"
+										? "euro"
+										: "plain"
+								: zone === "lowPost"
+									? "post"
+									: zone === "midRange"
 										? r < 0.28
 											? "stepBack"
-											: r < 0.42
-												? "crossover"
-												: "plain"
-										: "plain";
+											: r < 0.44
+												? "fade"
+												: r < 0.66
+													? "crossover"
+													: "plain"
+										: zone === "three" && heaveSecs === undefined
+											? r < 0.28
+												? "stepBack"
+												: r < 0.42
+													? "crossover"
+													: "plain"
+											: "plain";
 					t = this.driveTo(shooter, spotNow(), t, dir, style);
 					t = Math.max(t, this.hold(shooter, t, "hold"));
 				}
@@ -9825,10 +9980,12 @@ class Director {
 			if (out && dist(this.posOf(shooter), out) <= STEP_BACK_MOST) {
 				t = Math.max(t, this.hold(shooter, t, "hold"));
 				const hop = t;
-				t = this.go(shooter, out, t + 40, 9, "back", dir);
+				t = this.go(shooter, out, t + 40, 9, "back", dir, {
+					effort: this.spring(shooter),
+				});
 				this.act(shooter, "stepBack", hop, t, {
 					face: dir,
-					jump: [0.25, 0.85, hopFor(t - hop, 0.6)],
+					jump: [0.25, 0.85, hopFor(t - hop, this.hopShare(shooter))],
 				});
 			} else if (out) {
 				this.hold(shooter, t, "dribble");

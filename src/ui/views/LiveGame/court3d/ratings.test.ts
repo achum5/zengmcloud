@@ -306,4 +306,50 @@ describe("3D: players play like their ratings", () => {
 		};
 		assert.isBelow(flight(90), flight(30) * 0.9);
 	});
+
+	test("shooters get their own shots off their own ways: step-backs and side-steps", () => {
+		let back = 0;
+		let side = 0;
+		const byMan = new Map<number, { back: number; side: number }>();
+		for (const seed of ["r1", "r2", "r3"]) {
+			const tl = play(seed, all(70));
+			for (const tr of tl.tracks.values()) {
+				const rimX = tr.team === 0 ? 5.25 : 88.75;
+				for (const a of tr.acts) {
+					if (a.anim !== "stepBack") {
+						continue;
+					}
+					// The hop: the run he is on through it.
+					const m = tr.moves.find(
+						(x) => x.t0 >= a.t0 - 60 && x.t0 <= a.t0 + 60,
+					);
+					if (!m) {
+						continue;
+					}
+					const hx = m.to.x - m.from.x;
+					const hy = m.to.y - m.from.y;
+					const L = Math.hypot(hx, hy);
+					const rx = rimX - m.to.x;
+					const ry = 25 - m.to.y;
+					const R = Math.hypot(rx, ry);
+					if (L < 1 || R < 1) {
+						continue;
+					}
+					const along = Math.abs((hx * rx + hy * ry) / (L * R));
+					const k = byMan.get(tr.pid) ?? { back: 0, side: 0 };
+					if (along < 0.5) {
+						side += 1;
+						k.side += 1;
+					} else {
+						back += 1;
+						k.back += 1;
+					}
+					byMan.set(tr.pid, k);
+				}
+			}
+		}
+		// (A side-step is the rarer of the two.)
+		assert.isAbove(side, 2, `side ${side} back ${back}`);
+		assert.isAbove(back, 5, `side ${side} back ${back}`);
+	});
 });
