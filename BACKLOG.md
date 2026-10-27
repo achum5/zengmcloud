@@ -110,17 +110,32 @@ and shoes - every one eventually, none rushed to get to the next.
   dunks by leaping and dunking, layups by inside scoring, handle and
   strength; jump height by leaping; running and driving pace by speed;
   jumper and free throw stroke by shooting; dribble moves, combos and
-  shot moves by handle.)
+  shot moves by handle. Since: closeouts and reaction by defensive IQ;
+  pass zip, release and leading the cutter by passing; each shooter's own
+  ways of getting his jumper off - step-back, side-step, hesitation,
+  crossover, fade, elbow turnaround, shot fake on a hard closeout - by
+  handle, shooting, inside game and his own go-to's; a poor shooter's push
+  shot; sharper hops for athletes; crashing and boxing out by rebounding;
+  bent over at the line and slower back when worn down, by endurance;
+  working off the ball by offensive IQ; each shooter landing his own way.)
 - [ ] Signature animations, 2K-style: each player assigned his own - jump
       shot, off-balance shots, dribbling, passing, fancy passing, layups, dunks
       and on and on - from a library as big as we can make it, eventually
       thousands. Ideas from 2K, nothing copied from it: our own animations, with
       real basketball as the reference.
+      (2026-10-27: a start - each rated man's own go-to jumper moves, his
+      own landing, and the jumper's legs his own way of it.)
 - [ ] Analyze tons of possessions - where all 10 players move the entire
       possession - so nothing unrealistic or goofy ever happens, with so many
       possibilities that it never feels repetitive. The goal: it really feels
       like watching players play basketball, with brains and standout features
       in each one's game.
+      (2026-10-27: nobody moves in lockstep any more - as the ball changes
+      hands, a shot goes up or a last free throw is let go, each man reacts
+      on his own beat; a defender with a block to come no longer drifts off
+      after his man first. Audited and clean: body overlaps, the man with it
+      stood holding it in live play, defenders on the ball facing it, set
+      play variety - 64 different sets in 132 trips.)
 
 ## D. Visual quality and performance
 
