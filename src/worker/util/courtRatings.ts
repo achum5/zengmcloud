@@ -32,7 +32,8 @@ export const courtRatingsFor = async (
 		return out;
 	}
 	for (const p of await idb.merged.players.getAll({ pids: want })) {
-		const r = p.ratings.findLast((x) => x.season <= season) ?? p.ratings.at(-1);
+		// (A game from before his first season here: as he first was.)
+		const r = p.ratings.findLast((x) => x.season <= season) ?? p.ratings[0];
 		if (!r) {
 			continue;
 		}
