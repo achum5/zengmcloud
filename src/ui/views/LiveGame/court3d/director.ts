@@ -83,6 +83,7 @@ import {
 import {
 	bodyOf,
 	JUMPER,
+	PUSH_JUMPER,
 	mirror as mirrorPose,
 	poseAt,
 	releaseAt,
@@ -205,6 +206,8 @@ export type Act = {
 	// Done the other way round: his left hand doing what the move does with
 	// his right - a block or a contest with the hand on the ball's side.
 	mirror?: true;
+	// A jumper, a poor shooter's push of it (see PUSH_JUMPER).
+	push?: true;
 	// Only for show, and in a stretch the picture runs through too fast to
 	// see more than a frame or two of it: left out of the picture (see
 	// flashes).
@@ -705,6 +708,9 @@ const ON_FROM_MS = 700;
 const QUICK_FROM = 12;
 // A side-step jumper: how far across (feet) he goes before the hop back over.
 const SIDESTEP_FT = 2.6;
+// A man this poor a shooter from where he shoots it (0 to 1, see level)
+// pushes it (see PUSH_JUMPER).
+const PUSH_BELOW = 0.3;
 // His man this far off him (ft) as he catches it, flying out at him: what a
 // shot fake puts in the air (see fakeByHim) - and how far the one dribble
 // by him takes him along the line.
@@ -10231,6 +10237,8 @@ class Director {
 		let atRim: AtRim | undefined;
 		// When he lands off a jumper, if that is what it is.
 		let landed: number | undefined;
+		// (Pushed it: nothing held after - see PUSH_JUMPER.)
+		let pushed = false;
 		const faceRim = (rim.x >= P1.x ? 1 : -1) as 1 | -1;
 		const look = { x: rim.x, y: rim.y };
 
@@ -10596,6 +10604,11 @@ class Director {
 			// lift, or a slower one rising higher - up as long as gravity
 			// takes for the height.)
 			const form = jumper ? this.stroke(shooter, "tp", "fg") : 1;
+			// (A poor shooter pushes it: see PUSH_JUMPER.)
+			const push =
+				anim === "shoot" &&
+				(this.level(shooter, zone === "three" ? "tp" : "fg") ?? 1) < PUSH_BELOW;
+			const J = push ? PUSH_JUMPER : JUMPER;
 			// How high he gets up: off one foot in close, or on a hook, up and
 			// down as gravity has him, not popped up and dropped. (A jumper -
 			// or a fade - as high as the time he is up in his stroke takes him:
@@ -10617,6 +10630,7 @@ class Director {
 					: (close || floater ? 760 : zone === "lowPost" ? 900 : 1000) * form;
 			if (jumper) {
 				landed = gather + dur;
+				pushed = push;
 			}
 			if (anim === "fade") {
 				// Drifting back as he rises.
@@ -10626,14 +10640,14 @@ class Director {
 						x: P1.x - (toRim.x / len) * 1.4,
 						y: P1.y - (toRim.y / len) * 1.4,
 					}),
-					gather + dur * JUMPER.off - 40,
+					gather + dur * J.off - 40,
 					350,
 					"run",
 					faceRim,
 				);
 			}
 			const jump: [number, number, number] = jumper
-				? [JUMPER.off, JUMPER.land, hopFor(dur, JUMPER.land - JUMPER.off)]
+				? [J.off, J.land, hopFor(dur, J.land - J.off)]
 				: [0.24, 0.93, peak];
 			this.act(shooter, anim, gather, gather + dur, {
 				face: faceRim,
@@ -10642,14 +10656,9 @@ class Director {
 					: look,
 				jump,
 				...(reverse && offLeft ? { mirror: true as const } : {}),
+				...(push ? { push: true as const } : {}),
 			});
-			const letGo = close
-				? 0.6
-				: floater
-					? 0.5
-					: jumper
-						? JUMPER.release
-						: 0.55;
+			const letGo = close ? 0.6 : floater ? 0.5 : jumper ? J.release : 0.55;
 			const release = gather + dur * letGo;
 			// Where it leaves his hand - and once it has, the last of his way
 			// in carries him on a foot or so in the air (see below).
@@ -10759,7 +10768,7 @@ class Director {
 			const v = (letGo - jump[0]) / (jump[1] - jump[0]);
 			// (Up off his own jumper, the ball in his hand on it.)
 			let fingers = releaseAt(
-				anim === "shoot" ? shotForm(shooter) : anim,
+				push ? "shootPush" : anim === "shoot" ? shotForm(shooter) : anim,
 				letGo,
 			);
 			fingers.u += v > 0 && v < 1 ? 4 * jump[2] * v * (1 - v) : 0;
@@ -11008,6 +11017,7 @@ class Director {
 		// with.)
 		if (
 			landed !== undefined &&
+			!pushed &&
 			(plan.kind === "make" || plan.kind === "miss")
 		) {
 			this.gesture(

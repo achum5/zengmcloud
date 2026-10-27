@@ -1305,10 +1305,64 @@ const ARM_FIELDS: (keyof Pose)[] = [
 	"tuck",
 	"free",
 ];
+// A POOR SHOOTER'S PUSH. Longer down in his legs and less of him off the
+// floor; the ball brought up in front of his face, not over his eyes, his
+// elbow out - a hitch there - and pushed out at the rim more than up, both
+// hands on it till late, no snap to speak of. And the arm comes straight
+// back down: nothing held.
+export const PUSH_JUMPER = { off: 0.36, land: 0.84, release: 0.58 };
+const PUSH_ARMS: [number, Partial<Pose>][] = [
+	[0, { shN: 30, elN: 100, shF: 28, elF: 104 }],
+	// The dip: the ball at his hip.
+	[0.14, { shN: -6, elN: 112, shF: -8, elF: 116, abN: 10, abF: 10, wrN: 20 }],
+	[
+		0.3,
+		{
+			shN: 60,
+			elN: 112,
+			abN: -2,
+			wrN: 45,
+			shF: 56,
+			elF: 114,
+			abF: 0,
+			tuck: 0.5,
+		},
+	],
+	[0.38, { shN: 84, elN: 92, abN: -4, wrN: 58, shF: 92, elF: 84, abF: -4 }],
+	// The set point in front of his face, his elbow out - and a hitch.
+	[
+		0.47,
+		{
+			shN: 100,
+			elN: 72,
+			abN: -2,
+			wrN: 66,
+			shF: 104,
+			elF: 66,
+			abF: -6,
+			wrF: 20,
+			free: 0,
+			tuck: 0.6,
+		},
+	],
+	[0.52, { shN: 106, elN: 62 }],
+	// Pushed out at the rim, the guide hand pushing with it.
+	[0.56, { shN: 120, elN: 30, wrN: 50, shF: 112, elF: 48, free: 0 }],
+	[0.58, { shN: 130, elN: 12, wrN: 30, free: 0.4 }],
+	[0.63, { shN: 132, elN: 10, wrN: -30, shF: 100, elF: 50, free: 1 }],
+	// And down.
+	[0.72, { shN: 118, elN: 22, wrN: -30, shF: 70, elF: 50 }],
+	[0.84, { shN: 74, elN: 40, wrN: -10, shF: 34, elF: 52, abF: 6 }],
+	[0.92, { shN: 40, elN: 50, wrN: 0, shF: 18, elF: 50, abF: 12, wrF: 0 }],
+	[1, { shN: 28, elN: 46, shF: 8, elF: 32, abF: 12 }],
+];
 // Those arms over these legs, each on its own keys.
-const jumper = (legs: [number, Partial<Pose>][]): [number, Pose][] => {
+const jumper = (
+	legs: [number, Partial<Pose>][],
+	keys: [number, Partial<Pose>][] = JUMPER_ARMS,
+): [number, Pose][] => {
 	let carry: Partial<Pose> = {};
-	const arms = JUMPER_ARMS.map(([u, a]): [number, Pose] => {
+	const arms = keys.map(([u, a]): [number, Pose] => {
 		carry = {
 			...carry,
 			tuck: u < 0.2 ? 0 : u < 0.3 ? 0.65 : 1,
@@ -1389,6 +1443,20 @@ const SPLIT_SHOT = jumper([
 	[0.93, { hipN: -4, kneeN: 34, hipF: 6, kneeF: 36, lean: 6, wide: 0.3 }],
 	[1, { hipN: -4, kneeN: 28, hipF: 6, kneeF: 30, lean: 5, wide: 0.28 }],
 ]);
+const PUSH_SHOT = jumper(
+	[
+		[0, { hipN: -2, kneeN: 34, hipF: 4, kneeF: 36, lean: 8, wide: 0.22 }],
+		[0.14, { hipN: 0, kneeN: 58, hipF: -2, kneeF: 60, lean: 14, wide: 0.24 }],
+		[0.31, { hipN: 2, kneeN: 18, hipF: -2, kneeF: 20, lean: 5, wide: 0.22 }],
+		[0.36, { ...AIR, kneeN: 8, kneeF: 10, lean: 3, toe: 0 }],
+		[0.42, { ...AIR, kneeN: 7, kneeF: 9, lean: 2 }],
+		[0.78, { ...AIR, kneeN: 9, kneeF: 12, lean: 2 }],
+		[0.84, { ...AIR, hipN: 1, kneeN: 13, kneeF: 15, lean: 3, toe: 0 }],
+		[0.91, { hipN: 0, kneeN: 34, hipF: -2, kneeF: 36, lean: 7, wide: 0.24 }],
+		[1, { hipN: -2, kneeN: 26, hipF: 2, kneeF: 28, lean: 5, wide: 0.22 }],
+	],
+	PUSH_ARMS,
+);
 // A fadeaway: the same arms, but leaning back away from his man as he
 // rises, his legs out in front of him, landing a step back.
 const BACK = { plant: 0.3, toe: 1 };
@@ -2587,6 +2655,7 @@ export const ANIMS = {
 	shoot: { kind: "act", n: 12, keys: JUMP_SHOT },
 	shootKick: { kind: "act", n: 12, keys: KICK_SHOT },
 	shootSplit: { kind: "act", n: 12, keys: SPLIT_SHOT },
+	shootPush: { kind: "act", n: 12, keys: PUSH_SHOT },
 	setShot: { kind: "act", n: 12, keys: SET_SHOT },
 	layup: {
 		kind: "act",
@@ -6678,6 +6747,7 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 	shoot: "shot",
 	shootKick: "shot",
 	shootSplit: "shot",
+	shootPush: "shot",
 	setShot: "shot",
 	fade: "shot",
 	shotFake: "shot",

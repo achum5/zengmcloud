@@ -1,7 +1,7 @@
 import { assert, describe, test } from "vitest";
 import { compileCourt } from "./director.ts";
 import { evalBall, evalPlayer } from "./evaluate.ts";
-import { bodyOf } from "./poses.ts";
+import { bodyOf, PUSH_JUMPER } from "./poses.ts";
 import type { CourtRatings } from "./ratings.ts";
 import { fakeGame, gidOf } from "./testGame.ts";
 
@@ -394,5 +394,36 @@ describe("3D: players play like their ratings", () => {
 		}
 		assert.isAbove(n, 2, `${n}`);
 		assert.isAbove(closest, 1.9, `${closest}`);
+	});
+	test("a poor shooter pushes his jumper, a good one doesn't - and it leaves his hand", () => {
+		const body = bodyOf();
+		let pushed = 0;
+		for (const [v, poor] of [
+			[40, true],
+			[75, false],
+		] as const) {
+			const tl = play("r1", all(v));
+			for (const tr of tl.tracks.values()) {
+				for (const a of tr.acts) {
+					if (a.anim !== "shoot") {
+						continue;
+					}
+					assert.strictEqual(a.push === true, poor, `${v} ${Math.round(a.t0)}`);
+					if (!poor) {
+						continue;
+					}
+					pushed += 1;
+					const go = a.t0 + (a.t1 - a.t0) * PUSH_JUMPER.release;
+					const b0 = evalBall(tl, go - 8, () => body);
+					const b1 = evalBall(tl, go + 8, () => body);
+					assert.isBelow(
+						Math.hypot(b1.x - b0.x, b1.y - b0.y, b1.z - b0.z),
+						0.8,
+						`${Math.round(go)}`,
+					);
+				}
+			}
+		}
+		assert.isAbove(pushed, 5);
 	});
 });

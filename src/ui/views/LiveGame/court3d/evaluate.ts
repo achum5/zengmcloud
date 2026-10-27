@@ -2596,7 +2596,12 @@ const doingAt = (
 		mirrored = act.mirror === true;
 		const u = (t - act.t0) / (act.t1 - act.t0);
 		// (A jumper, each man his own way of it.)
-		anim = act.anim === "shoot" ? shotForm(pid) : act.anim;
+		anim =
+			act.anim === "shoot"
+				? act.push
+					? "shootPush"
+					: shotForm(pid)
+				: act.anim;
 		const a = ANIMS[anim];
 		// (A loop on the same beat as when he does it standing of his own
 		// accord - so one held for a while and then just stood in, a

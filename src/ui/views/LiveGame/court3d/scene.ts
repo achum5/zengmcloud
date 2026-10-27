@@ -1464,6 +1464,7 @@ const SHOOTING = new Set([
 	"shoot",
 	"shootKick",
 	"shootSplit",
+	"shootPush",
 	"setShot",
 	"fade",
 	"hook",
