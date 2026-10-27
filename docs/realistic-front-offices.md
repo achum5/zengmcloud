@@ -182,6 +182,16 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
 
 - **Core rule: a CPU team never makes a trade it would not make on its own.** A
   human's offer can only add a bidder; it can never create a deal.
+- **A contender does not arm its rivals.** Title chances are shared: what a
+  deal adds to the other team's comes out of everyone else's, this team's
+  too. Each season a team's title chance is scaled by the share the other
+  team leaves, after the deal against before. Priced as if the rest of the
+  league stood still, a 7.5% contender made a 72% favorite better for a gain
+  of 0.3 hundredths of a title - as it would a human contender. Half the
+  teams each way (4 leagues x 2 seasons): those pricing their rivals made
+  fewer trades (140 sides to 186), better in hindsight (+22 to -12). The
+  rival is priced only into deals that could clear the bar, so the search is
+  hardly slower.
 - **Shopping.** When you offer a CPU team a deal, it compares three things:
   keeping its players, your offer, and the best deal it can get elsewhere by
   asking the other CPU teams instantly.

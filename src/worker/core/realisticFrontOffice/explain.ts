@@ -21,7 +21,7 @@ import {
 	type LetGoDecisions,
 	type LeagueOutlook,
 } from "./outlook.ts";
-import { marketSettings } from "./market.ts";
+import { marketSettings, rivalBySeason, settingFor } from "./market.ts";
 import type { TradedAway } from "./tradePenalty.ts";
 
 // THE WHOLE CALCULATION behind a deal, for the trade page and the arena's
@@ -141,7 +141,8 @@ export const explainDeal = (
 				})),
 			)
 		: outlook;
-	const explained = sides.map((side): FrontOfficeSide => {
+	const paths: { before: number[]; after: number[] }[] = [];
+	const explained = sides.map((side, k): FrontOfficeSide => {
 		const outD = new Set(side.gives.picks.map((dp) => dp.dpid));
 		const playersAfter = rosterAfter(side);
 		const picksAfter = [
@@ -205,6 +206,7 @@ export const explainDeal = (
 				undefined,
 				letGo,
 			).map((x, y) => round(x - before[y]!, 2));
+		paths[k] = { before, after };
 		const value = years.map(
 			(y) =>
 				seasonValue(outlook, y, after[y]!) -
@@ -280,6 +282,25 @@ export const explainDeal = (
 			reason: reasonFor(outlook, value, side.gain, side.margin),
 		};
 	});
+	// What each team's change in title chances does to the other's, as the
+	// deal was priced (market.ts rivalBySeason).
+	for (const k of [0, 1] as const) {
+		if (!settingFor(sides[k].tid, "rivals")) {
+			continue;
+		}
+		const other = paths[1 - k]!;
+		const rival = rivalBySeason(
+			outlook,
+			paths[k]!.after,
+			other.before,
+			other.after,
+		);
+		const side = explained[k]!;
+		const value = side.value.map((x, y) => x + rival[y]!);
+		side.rival = rival.map((x) => round(x, 5));
+		side.value = value.map((x) => round(x, 5));
+		side.reason = reasonFor(outlook, value, sides[k].gain, sides[k].margin);
+	}
 	return {
 		seasons: years.map((y) => outlookSeason(outlook, y)),
 		sides: [explained[0]!, explained[1]!],

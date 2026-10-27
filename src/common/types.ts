@@ -3781,6 +3781,9 @@ export type FrontOfficeSide = {
 		before: number;
 		after: number;
 	}[];
+	// What the other team's change in title odds does to this one's each
+	// season, part of `value`. Missing on older trades.
+	rival?: number[];
 	reason: string;
 };
 

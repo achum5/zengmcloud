@@ -188,6 +188,25 @@ test(
 );
 
 test(
+	"a contender asks more of its rival than of a bad team for the same player",
+	{ timeout: 300_000 },
+	async () => {
+		const outlook = await currentOutlook();
+		const ranked = [...outlook.teams.values()].sort(
+			(a, b) => b.strength[0]! - a.strength[0]!,
+		);
+		const t = await loadTeam(outlook, ranked[1]!.tid);
+		const rival = await loadTeam(outlook, ranked[0]!.tid);
+		const weak = await loadTeam(outlook, ranked.at(-1)!.tid);
+		const x = [...t.players].sort((a, b) => b.valueNoPot - a.valueNoPot)[2]!;
+		const give = [{ kind: "player" as const, p: x }];
+		const toRival = priceFor(outlook, t, give, [], rival);
+		const toWeak = priceFor(outlook, t, give, [], weak);
+		assert.isBelow(toRival, toWeak - 0.001, `${toRival} against ${toWeak}`);
+	},
+);
+
+test(
 	"no team is better off giving one of its picks away for nothing",
 	{ timeout: 300_000 },
 	async () => {
@@ -422,9 +441,9 @@ test(
 			}
 			const partner = await loadTeam(outlook, p.tid);
 			checked += 1;
-			assert.isBelow(
-				priceFor(outlook, t, [], [{ kind: "player", p }], partner),
-				0,
+			// Not for nothing, though taking him leaves his team a little weaker.
+			assert.isFalse(
+				await wouldMake(t, [], [{ kind: "player", p }], partner),
 				`player ${p.pid}, value ${p.value}`,
 			);
 		}

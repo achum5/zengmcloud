@@ -24,10 +24,12 @@ import { notifyProposal, refreshProposals } from "./proposals.ts";
 import { valueOverReplacement } from "./strength.ts";
 import {
 	buildOutlook,
+	curveAt,
 	ensureRetention,
 	franchiseValue,
 	isClassPick,
 	OUTLOOK_YEARS,
+	PATIENCE,
 	pickLineAt,
 	placesAfter,
 	retentionOf,
@@ -155,6 +157,9 @@ export const marketSettings = {
 	// Which deals two CPU teams agree are held a trading day for other teams'
 	// bids (windows.ts), over the league's setting.
 	windows: undefined as "notable" | "all" | "off" | undefined,
+	// A deal's title chances for the other team come out of everyone else's,
+	// this team's among them.
+	rivals: true,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -498,6 +503,10 @@ export const priceFor = (
 	outgoing: readonly Asset[],
 	incoming: readonly Asset[],
 	partner?: TeamState,
+	// When all the caller needs is whether the deal clears this: one that could
+	// not even if the other team's title chances all came to this one is not
+	// priced against them, and what comes back is only below it.
+	floor?: number,
 ) => {
 	const after = applyTrade(t, outgoing, incoming);
 	// Each team on the roster it will have once games are played.
@@ -543,22 +552,132 @@ export const priceFor = (
 			view,
 		};
 	}
-	return (
-		valueOf(
-			kept.deadMoney === outlook.deadMoney
+	const pathOf = (
+		x: TeamState,
+		gives: readonly Asset[],
+		gets: readonly Asset[],
+	) => {
+		const traded = applyTrade(x, gives, gets);
+		const left = afterCuts(outlook, x.tid, traded.players);
+		return teamStrengths(
+			left.deadMoney === outlook.deadMoney
 				? view
-				: { ...view, deadMoney: kept.deadMoney },
-			t.tid,
-			kept.players,
-			after.picks,
-			{
-				tradedAway: t.tradedAway,
-				extra: count(outgoing),
-			},
-			t.letGo,
-		) - valueAsKept(outlook, t)
+				: { ...view, deadMoney: left.deadMoney },
+			x.tid,
+			left.players,
+			traded.picks,
+			{ tradedAway: x.tradedAway, extra: count(gives) },
+			undefined,
+			x.letGo,
+		);
+	};
+	if (
+		!settingFor(t.tid, "rivals") ||
+		!partner ||
+		count(outgoing) + count(incoming) === 0
+	) {
+		return (
+			valueOf(
+				kept.deadMoney === outlook.deadMoney
+					? view
+					: { ...view, deadMoney: kept.deadMoney },
+				t.tid,
+				kept.players,
+				after.picks,
+				{
+					tradedAway: t.tradedAway,
+					extra: count(outgoing),
+				},
+				t.letGo,
+			) - valueAsKept(outlook, t)
+		);
+	}
+	// Both teams' seasons after the deal, the other team's priced next from its
+	// side: the same both ways.
+	const last = lastPaths;
+	let path: number[];
+	let theirs: number[];
+	if (
+		last &&
+		last.view === view &&
+		last.teams[0] === partner &&
+		last.teams[1] === t &&
+		last.rosterKeys[0] === partner.rosterKey &&
+		last.rosterKeys[1] === t.rosterKey &&
+		last.outgoing === incoming &&
+		last.incoming === outgoing
+	) {
+		path = last.paths[1];
+		theirs = last.paths[0];
+	} else {
+		path = pathOf(t, outgoing, incoming);
+		if (floor !== undefined) {
+			let most = franchiseValue(outlook, path) - valueAsKept(outlook, t);
+			for (const [y, s] of path.entries()) {
+				const curve = outlook.titleCurves[y]!;
+				const was = curveAt(curve, partner.path[y]!);
+				most +=
+					PATIENCE ** y * curveAt(curve, s) * (1 / Math.max(0.01, 1 - was) - 1);
+			}
+			if (most < floor) {
+				return most;
+			}
+		}
+		theirs = pathOf(partner, incoming, outgoing);
+	}
+	lastPaths = {
+		view,
+		teams: [t, partner],
+		rosterKeys: [t.rosterKey, partner.rosterKey],
+		outgoing,
+		incoming,
+		paths: [path, theirs],
+	};
+	return (
+		franchiseValue(outlook, path) +
+		rivalEffect(outlook, path, partner.path, theirs) -
+		valueAsKept(outlook, t)
 	);
 };
+
+// What a deal's change in the other team's title chances does to this one's,
+// each season: the share of the title the other team takes is shared out of
+// everyone else's chances, this team's too. A contender that makes a rival
+// better loses some of its own chances; one that makes it worse gains them.
+export const rivalBySeason = (
+	outlook: LeagueOutlook,
+	path: readonly number[],
+	before: readonly number[],
+	after: readonly number[],
+) =>
+	path.map((s, y) => {
+		const curve = outlook.titleCurves[y]!;
+		const was = curveAt(curve, before[y]!);
+		const now = curveAt(curve, after[y]!);
+		return was === now
+			? 0
+			: PATIENCE ** y *
+					curveAt(curve, s) *
+					((1 - now) / Math.max(0.01, 1 - was) - 1);
+	});
+
+const rivalEffect = (
+	outlook: LeagueOutlook,
+	path: readonly number[],
+	before: readonly number[],
+	after: readonly number[],
+) => rivalBySeason(outlook, path, before, after).reduce((a, x) => a + x, 0);
+
+let lastPaths:
+	| {
+			view: LeagueOutlook;
+			teams: readonly [TeamState, TeamState];
+			rosterKeys: readonly [string, string];
+			outgoing: readonly Asset[];
+			incoming: readonly Asset[];
+			paths: readonly [number[], number[]];
+	  }
+	| undefined;
 
 // The best deal between two teams, if there is one both would make. `single`
 // holds what one asset is worth to one team, gained or lost, for the day.
@@ -676,7 +795,7 @@ export const bestDealWith = (
 		}
 		checked += 1;
 		// A deal one side would not make needs no price from the other.
-		const gainA = priceFor(outlook, a, giveA, giveB, b);
+		const gainA = priceFor(outlook, a, giveA, giveB, b, MIN_GAIN);
 		if (gainA < MIN_GAIN) {
 			continue;
 		}
