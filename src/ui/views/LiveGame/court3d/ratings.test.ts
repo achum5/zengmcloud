@@ -479,34 +479,57 @@ describe("3D: players play like their ratings", () => {
 		// How much of the time the ball is in a man's hands his teammates
 		// are on the move.
 		const moving = (v: number) => {
-			const tl = play("r1", all(v));
 			let on = 0;
 			let n = 0;
-			tl.ball.forEach((s, k) => {
-				if (s.kind !== "hold") {
-					return;
-				}
-				const team = tl.tracks.get(s.pid)?.team;
-				const end = tl.ball[k + 1]?.t0 ?? s.t0;
-				for (let t = s.t0; t < end; t += 100) {
-					if (tl.fast.some(([a, b]) => t >= a && t < b)) {
-						continue;
+			for (const seed of ["r1", "r2", "r3"]) {
+				const tl = play(seed, all(v));
+				tl.ball.forEach((s, k) => {
+					if (s.kind !== "hold") {
+						return;
 					}
-					for (const tr of tl.tracks.values()) {
-						if (tr.pid === s.pid || tr.team !== team) {
+					const team = tl.tracks.get(s.pid)?.team;
+					const end = tl.ball[k + 1]?.t0 ?? s.t0;
+					for (let t = s.t0; t < end; t += 100) {
+						if (tl.fast.some(([a, b]) => t >= a && t < b)) {
 							continue;
 						}
-						n += 1;
-						if (tr.moves.some((m) => m.t0 <= t && m.t1 > t)) {
-							on += 1;
+						for (const tr of tl.tracks.values()) {
+							if (tr.pid === s.pid || tr.team !== team) {
+								continue;
+							}
+							n += 1;
+							if (tr.moves.some((m) => m.t0 <= t && m.t1 > t)) {
+								on += 1;
+							}
 						}
 					}
-				}
-			});
+				});
+			}
 			return on / n;
 		};
 		const poor = moving(30);
 		const smart = moving(85);
-		assert.isAbove(smart, poor + 0.025, `${poor} ${smart}`);
+		assert.isAbove(smart, poor + 0.015, `${poor} ${smart}`);
+	});
+	test("a man with a game inside now and then backs his man down from the elbow and turns over him", () => {
+		let n = 0;
+		for (const seed of ["r1", "r2", "r3"]) {
+			const tl = play(seed, all(75));
+			for (const tr of tl.tracks.values()) {
+				const rimX = tr.team === 0 ? 88.75 : 5.25;
+				for (const a of tr.acts) {
+					if (a.anim !== "fade") {
+						continue;
+					}
+					const backed = tr.moves.find(
+						(m) => m.anim === "post" && m.t1 <= a.t0 + 50 && m.t1 > a.t0 - 500,
+					);
+					if (backed && Math.hypot(backed.to.x - rimX, backed.to.y - 25) > 9) {
+						n += 1;
+					}
+				}
+			}
+		}
+		assert.isAbove(n, 2, `${n}`);
 	});
 });

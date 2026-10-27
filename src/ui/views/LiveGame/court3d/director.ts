@@ -2690,17 +2690,18 @@ class Director {
 
 	// His way of getting his own jumper off, `r` of the way through his odds:
 	// by his handle and his shooting, and his own go-to's - one lives on the
-	// step-back, another the side-step, another just rises up - so no two
-	// get theirs the same way. (Only for a man the game has ratings for.)
+	// step-back, another the side-step, another backs his man down and
+	// turns over him, another just rises up - so no two get theirs the same
+	// way. (Only for a man the game has ratings for.)
 	private jumperMoveFor(
 		pid: number,
 		zone: "midRange" | "three",
 		r: number,
-	): ShotStyle {
+	): ShotStyle | "turnaround" {
 		const h = this.level(pid, "drb") ?? 0.5;
 		const s = this.level(pid, "drb", zone === "three" ? "tp" : "fg") ?? 0.5;
 		const go = (k: number) => 0.4 + 1.4 * hash01(pid, 7300 + k);
-		const odds: [ShotStyle, number][] =
+		const odds: [ShotStyle | "turnaround", number][] =
 			zone === "three"
 				? [
 						["stepBack", (0.12 + 0.25 * s) * go(0)],
@@ -2713,6 +2714,12 @@ class Director {
 						["sidestep", (0.06 + 0.12 * s) * go(1)],
 						["crossover", (0.1 + 0.2 * h) * go(2)],
 						["fade", (0.12 + 0.1 * (this.level(pid, "fg") ?? 0.5)) * go(4)],
+						// (Backed in a dribble or two from the elbow, and the
+						// turnaround over him: a man with a game inside.)
+						[
+							"turnaround",
+							(0.02 + 0.22 * (this.level(pid, "ins", "fg") ?? 0.5)) * go(5),
+						],
 						["plain", Math.max(0.15, 0.45 - 0.2 * h) * go(3)],
 					];
 		let x = r * odds.reduce((a, [, w]) => a + w, 0);
@@ -9407,6 +9414,9 @@ class Director {
 			if (own === "fade") {
 				return { t, style: "fade" };
 			}
+			if (own === "turnaround") {
+				return { t: this.backDown(shooter, t, dir), style: "fade" };
+			}
 			if (own !== "plain") {
 				t = this.driveTo(shooter, this.posOf(shooter), t, dir, own);
 				t = Math.max(t, this.hold(shooter, t, "hold"));
@@ -10129,7 +10139,9 @@ class Director {
 					const cross = this.byHandle(shooter, 0.5, 0.25, 0.65);
 					const euro = this.byHandle(shooter, 0.72, 0.38, 0.9);
 					style = own
-						? own
+						? own === "turnaround"
+							? "fade"
+							: own
 						: quickIn
 							? "plain"
 							: zone === "atRim"
@@ -10155,8 +10167,17 @@ class Director {
 													? "crossover"
 													: "plain"
 											: "plain";
-					t = this.driveTo(shooter, spotNow(), t, dir, style);
+					t = this.driveTo(
+						shooter,
+						spotNow(),
+						t,
+						dir,
+						own === "turnaround" ? "plain" : style,
+					);
 					t = Math.max(t, this.hold(shooter, t, "hold"));
+					if (own === "turnaround") {
+						t = this.backDown(shooter, t, dir);
+					}
 				}
 			}
 		}
@@ -17299,8 +17320,8 @@ class Director {
 				// (A smart man is always at it - a little; a poor one stands
 				// and watches more, and is slower to move with the ball.)
 				const iq = this.level(tr.pid, "oiq");
-				const lazy = iq === undefined ? 1 : 1.5 - 0.75 * iq;
-				const moves = iq === undefined ? 0.3 : 0.12 + 0.4 * iq;
+				const lazy = iq === undefined ? 1 : 1.6 - 0.9 * iq;
+				const moves = iq === undefined ? 0.3 : 0.1 + 0.5 * iq;
 				const react = () => this.rand(200, 380) * lazy;
 				const breather = () => this.rand(500, 1100) * lazy;
 				const busyMan = (): boolean => {
