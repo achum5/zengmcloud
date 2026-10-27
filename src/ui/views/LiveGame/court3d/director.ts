@@ -711,6 +711,10 @@ const ON_FROM_MS = 700;
 const QUICK_FROM = 12;
 // A side-step jumper: how far across (feet) he goes before the hop back over.
 const SIDESTEP_FT = 2.6;
+// Going up with a man in close (see wallUp): how late (ms), at the most, a
+// poor defender is up - and how far up he gets, caught flat-footed (ft).
+const WALL_LATE = 90;
+const WALL_FLAT = 0.2;
 // A hesitation pull-up (see driveTo): how far from his spot he must be to
 // drive at it, how far short of it he hesitates, for how long (ms), and the
 // nearest the rim the pull-up goes up from.
@@ -22861,12 +22865,20 @@ class Director {
 				}
 				tr.acts = tr.acts.filter((a) => !busy.includes(a));
 				const D = this.posAt(tr.pid, release, false, true);
+				// (Up as high as he gets up; a sharp one on time, a poor one a
+				// beat late - and now and then caught flat-footed, just a hand
+				// up. Only for a man the game has ratings for.)
+				const iq = this.level(tr.pid, "diq");
+				const late = iq === undefined ? 0 : Math.round((1 - iq) * WALL_LATE);
+				const flat =
+					iq !== undefined &&
+					hash01(tr.pid, Math.round(release / 11)) > 0.5 + 0.5 * iq;
 				tr.acts.push({
-					t0: release - 120,
-					t1: release + 560,
+					t0: release - 120 + late,
+					t1: release + 560 + late,
 					anim: "contest",
 					look: { ...S },
-					jump: [0.15, 0.85, 0.9],
+					jump: [0.15, 0.85, flat ? WALL_FLAT : this.leap(tr.pid, 0.9)],
 					...(this.leftToBall(D, shooter, S) ? { mirror: true as const } : {}),
 				});
 				tr.acts.sort((a, b) => a.t0 - b.t0);

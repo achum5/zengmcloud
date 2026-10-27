@@ -587,4 +587,33 @@ describe("3D: players play like their ratings", () => {
 		}
 		assert.strictEqual(kinds.size, 3, [...kinds].join(","));
 	});
+	test("a good defender at the rim goes up with the man going up; a poor one is sometimes caught flat-footed", () => {
+		// (The man right there going straight up with him: see wallUp.)
+		const ups = (v: number) => {
+			const peaks: number[] = [];
+			for (const seed of ["r1", "r2"]) {
+				for (const tr of play(seed, all(v)).tracks.values()) {
+					for (const a of tr.acts) {
+						if (
+							a.anim === "contest" &&
+							a.jump?.[0] === 0.15 &&
+							a.jump[1] === 0.85 &&
+							Math.abs(a.t1 - a.t0 - 680) < 1
+						) {
+							peaks.push(a.jump[2]);
+						}
+					}
+				}
+			}
+			return {
+				mean: peaks.reduce((x, y) => x + y, 0) / peaks.length,
+				flat: peaks.filter((p) => p < 0.3).length,
+				n: peaks.length,
+			};
+		};
+		const poor = ups(30);
+		const good = ups(85);
+		assert.isAbove(good.mean, poor.mean * 1.4, JSON.stringify({ poor, good }));
+		assert.isAbove(poor.flat, good.flat, JSON.stringify({ poor, good }));
+	});
 });
