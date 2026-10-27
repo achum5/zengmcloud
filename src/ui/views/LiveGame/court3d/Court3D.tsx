@@ -309,6 +309,10 @@ const Court3D = ({
 						team: t,
 						pos: p.pos,
 						skills: Array.isArray(p.skills) ? p.skills : undefined,
+						ratings:
+							p.courtRatings && typeof p.courtRatings === "object"
+								? p.courtRatings
+								: undefined,
 						injury:
 							p.injury?.newThisGame && typeof p.injury.type === "string"
 								? {

@@ -1,3 +1,4 @@
+import { levelOf, type CourtRatings, type RatingKey } from "./ratings.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import {
 	HEAVE_MAX_SECONDS,
@@ -164,6 +165,8 @@ export type CourtPlayer = {
 	skills?: string[];
 	// Hurt in this game: what it is, and how many games it keeps him out.
 	injury?: { type: string; games: number };
+	// His ratings, where they are known (see ratings.ts).
+	ratings?: CourtRatings;
 };
 
 export type Move = {
@@ -1697,6 +1700,8 @@ class Director {
 	private readonly team = new Map<number, Side>();
 	private readonly rank = new Map<number, number>();
 	private readonly skills = new Map<number, string[]>();
+	// Each man's ratings, where the game has them (see ratings.ts).
+	private rated = new Map<number, CourtRatings>();
 	private readonly injuries = new Map<
 		number,
 		{ type: string; games: number }
@@ -1835,6 +1840,9 @@ class Director {
 			this.rank.set(p.pid, POS_RANK[p.pos ?? ""] ?? 4);
 			if (p.skills) {
 				this.skills.set(p.pid, p.skills);
+			}
+			if (p.ratings) {
+				this.rated.set(p.pid, p.ratings);
 			}
 			if (p.injury) {
 				this.injuries.set(p.pid, p.injury);
@@ -2531,15 +2539,50 @@ class Director {
 	// How he throws it down, `r` of the way through his own odds: a big man
 	// two hands, mostly; an athlete up over his head, as often as not - and
 	// each man his own way of it, the same every game.
+	// How much of a thing he has (0-1), from his ratings - or nothing to go by.
+	private level(pid: number, ...keys: RatingKey[]): number | undefined {
+		return levelOf(this.rated.get(pid), keys);
+	}
+
 	private dunkFor(pid: number, r: number): AnimName {
 		const big = (this.rank.get(pid) ?? 4) >= 6;
 		const athlete = this.skills.get(pid)?.includes("A") ?? false;
 		const own = hash01(pid, 9131);
-		const two = (big ? 0.6 : athlete ? 0.2 : 0.4) * (1.5 - own);
+		// How high and how hard he gets up to it: the better a leaper and a
+		// dunker, the more he puts on show - a plodder just puts it in.
+		const fly = this.level(pid, "jmp", "dnk");
+		const two =
+			(fly !== undefined
+				? big
+					? 0.65 - 0.25 * fly
+					: 0.6 - 0.45 * fly
+				: big
+					? 0.6
+					: athlete
+						? 0.2
+						: 0.4) *
+			(1.5 - own);
 		const one = 0.35;
-		const over = (big ? 0.05 : athlete ? 0.45 : 0.2) * (0.5 + own);
+		const over =
+			(fly !== undefined
+				? (big ? 0.03 : 0.08) + (big ? 0.2 : 0.45) * fly
+				: big
+					? 0.05
+					: athlete
+						? 0.45
+						: 0.2) *
+			(0.5 + own);
 		// (A windmill takes a flier: an athlete, now and then, on his own.)
-		const mill = (big ? 0 : athlete ? 0.3 : 0.03) * own;
+		const mill =
+			(fly !== undefined
+				? big
+					? 0
+					: Math.max(0, fly - 0.55) * 0.8
+				: big
+					? 0
+					: athlete
+						? 0.3
+						: 0.03) * own;
 		const x = r * (two + one + over + mill);
 		return x < two
 			? "dunk"
@@ -11322,8 +11365,15 @@ class Director {
 		const r = hash01(shooter, Math.round(t / 7));
 		const under = plan.kind === "block" || plan.kind === "foul";
 		// (And each man his own touch: some roll it in off their fingers
-		// more, some go up strong with it more.)
-		const soft = 0.5 + hash01(shooter, 4409);
+		// more, some go up strong with it more - by his ratings, where the
+		// game has them: the craftier at the rim, the softer; the stronger,
+		// the harder he goes up.)
+		const craft = this.level(shooter, "ins", "drb");
+		const strong = this.level(shooter, "stre");
+		const soft =
+			craft !== undefined && strong !== undefined
+				? 0.35 + 1.1 * craft - 0.4 * strong + 0.3 * hash01(shooter, 4409)
+				: 0.5 + hash01(shooter, 4409);
 		const odds: [AnimName, number][] = big
 			? [
 					["powerLayup", 0.42 * (2 - soft)],
