@@ -200,6 +200,17 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   fewer trades (140 sides to 186), better in hindsight (+22 to -12). The
   rival is priced only into deals that could clear the bar, so the search is
   hardly slower.
+- **The side a deal does least for asks for more.** The search prices a few
+  packages and takes the deal that does most for the side it does least
+  for; that side then haggles - one asset at a time from what the other team
+  puts on the table, or one fewer of its own - as long as it comes out
+  further ahead and both still clear their margins. Taking the first deal
+  both would make, a team at the deadline gave two starters on minimum deals
+  for a 19-year-old rated 34, clearing its margin by a quarter of a
+  hundredth of a title while the contender buying them cleared its own by
+  two. Half the teams each way (4 leagues x 2 seasons): haggling teams were
+  the short side of 67 trades to 111, clearing their margins by 0.81 of what
+  the other side did against 0.73 (medians), better in hindsight (+13 to -9).
 - **Shopping.** When you offer a CPU team a deal, it compares three things:
   keeping its players, your offer, and the best deal it can get elsewhere by
   asking the other CPU teams instantly.

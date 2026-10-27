@@ -160,6 +160,8 @@ export const marketSettings = {
 	// A deal's title chances for the other team come out of everyone else's,
 	// this team's among them.
 	rivals: true,
+	// The side a deal does less for asks for more (haggle).
+	haggle: true,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -981,6 +983,97 @@ const split = (assets: readonly Asset[]) => ({
 	dpids: assets.flatMap((x) => (x.kind === "pick" ? [x.dp.dpid] : [])),
 });
 
+// HAGGLING. The search prices a few packages and takes the deal that does
+// most for the side it does least for; that side then asks for more. One
+// asset at a time from what the other team puts on the table - or one fewer
+// of its own - as long as it comes out further ahead and both still clear
+// their margins. Taking the first deal both would make, a team at the
+// deadline gave two starters on minimum deals for a 19-year-old rated 34,
+// clearing its margin by a quarter of a hundredth of a title while the
+// contender buying them cleared its own by two.
+const HAGGLE_ROUNDS = 2;
+const haggle = (
+	outlook: LeagueOutlook,
+	a: TeamState,
+	b: TeamState,
+	deal: Deal,
+): Deal => {
+	const maxRosterSize =
+		g.get("phase") === PHASE.REGULAR_SEASON ? g.get("maxRosterSize") : Infinity;
+	let best = deal;
+	for (let round = 0; round < HAGGLE_ROUNDS; round++) {
+		const k =
+			best.gains[0] - best.margins[0] <= best.gains[1] - best.margins[1]
+				? 0
+				: 1;
+		const short = k === 0 ? a : b;
+		if (!settingFor(short.tid, "haggle")) {
+			break;
+		}
+		const other = k === 0 ? b : a;
+		const mine = best.assets[k];
+		const theirs = best.assets[1 - k]!;
+		const taken = new Set(theirs.map(assetKey));
+		const tries: [Asset[], Asset[]][] = [];
+		for (const x of tableAssets(other)) {
+			if (!taken.has(assetKey(x))) {
+				tries.push([mine, [...theirs, x]]);
+			}
+		}
+		if (mine.length > 1) {
+			for (const x of mine) {
+				tries.push([mine.filter((y) => y !== x), theirs]);
+			}
+		}
+		let better: Deal | undefined;
+		for (const [give, get] of tries) {
+			const [giveA, giveB] = k === 0 ? [give, get] : [get, give];
+			if (
+				a.players.length + count(giveB) - count(giveA) > maxRosterSize ||
+				b.players.length + count(giveA) - count(giveB) > maxRosterSize ||
+				!salariesWork(a, giveA, giveB) ||
+				!salariesWork(b, giveB, giveA)
+			) {
+				continue;
+			}
+			const gainA = priceFor(outlook, a, giveA, giveB, b, MIN_GAIN);
+			if (gainA < MIN_GAIN) {
+				continue;
+			}
+			const gains: [number, number] = [
+				gainA,
+				priceFor(outlook, b, giveB, giveA, a),
+			];
+			if (gains[1] < MIN_GAIN) {
+				continue;
+			}
+			const margins: [number, number] = [
+				marginOf(outlook, a, giveA, giveB),
+				marginOf(outlook, b, giveB, giveA),
+			];
+			const candidate = { gains, margins };
+			if (
+				gains[0] - margins[0] >= MIN_GAIN &&
+				gains[1] - margins[1] >= MIN_GAIN &&
+				netOf(candidate) > netOf(better ?? best)
+			) {
+				better = {
+					tids: [a.tid, b.tid],
+					give: [split(giveA), split(giveB)],
+					gains,
+					margins,
+					assets: [giveA, giveB],
+				};
+			}
+		}
+		if (!better) {
+			break;
+		}
+		best = better;
+	}
+	return best;
+};
+
 // The best deal this team can find with any of these teams, made or not.
 export const findBestDeal = async (
 	outlook: LeagueOutlook,
@@ -988,18 +1081,18 @@ export const findBestDeal = async (
 	partners: readonly number[],
 	single: Map<string, number>,
 ) => {
-	let best: Deal | undefined;
+	let best: { deal: Deal; b: TeamState } | undefined;
 	for (const otherTid of partners) {
 		const b = await loadTeam(outlook, otherTid);
 		// How each side's players would feel about re-signing with the other.
 		await ensureRetention(outlook, b.tradablePlayers, a.tid);
 		await ensureRetention(outlook, a.tradablePlayers, b.tid);
 		const deal = bestDealWith(outlook, a, b, single);
-		if (deal && (!best || netOf(deal) > netOf(best))) {
-			best = deal;
+		if (deal && (!best || netOf(deal) > netOf(best.deal))) {
+			best = { deal, b };
 		}
 	}
-	return best;
+	return best && haggle(outlook, a, best.b, best.deal);
 };
 
 // The outlook the market is working from today.
