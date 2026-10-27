@@ -638,6 +638,12 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   salary and fit aside.
 - **Short of the roster minimum, it signs the minimum-salary free agent worth
   the most to it** - a guard when it has none - among the best few by value.
+- **With a full roster in the season, it still signs a free agent worth more
+  to it than his cost**, then releases whoever it can best do without, his
+  salary still owed - as a signing is priced. A full roster used to keep its
+  fifteenth man all season: as one season opened, 22 teams were full, and
+  21 of them would have gained from one of the best free agents left - a 62
+  asking 6% of the cap among them - even releasing a player for it.
 
 ## Coaching
 

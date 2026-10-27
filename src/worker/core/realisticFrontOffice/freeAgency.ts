@@ -11,6 +11,7 @@ import { uniformSeed } from "../../../common/random.ts";
 import { revertBefore } from "../player/revertSnapshot.ts";
 import { contractNegotiation, player, team } from "../index.ts";
 import { mayPay } from "./contracts.ts";
+import { frontOfficeCuts } from "./cuts.ts";
 import { marketSalary, setFreeAgentPoolLeft } from "./payroll.ts";
 import { REPLACEMENT_OVR } from "./strength.ts";
 import {
@@ -637,10 +638,15 @@ export const freeAgencyDay = async () => {
 	}
 
 	// Teams that may sign anyone today: once games are played, only with a
-	// place on the roster. And the most each may pay under the cap rules.
+	// place on the roster - or a CPU team with a full one, releasing whoever
+	// it can best do without, as a signing is priced (afterCuts). Without, a
+	// full roster kept its fifteenth man all season while a starter went
+	// unsigned. And the most each may pay under the cap rules.
 	const signing = teams.filter(
 		(t) =>
-			!inSeason || states.get(t.tid)!.players.length < g.get("maxRosterSize"),
+			!inSeason ||
+			states.get(t.tid)!.players.length < g.get("maxRosterSize") ||
+			(cpu.has(t.tid) && settingFor(t.tid, "fullRosterSignings")),
 	);
 	const allowed = new Map(
 		signing.map((t) => [t.tid, mostAllowed(states.get(t.tid)!, false)]),
@@ -952,10 +958,18 @@ export const freeAgencyDay = async () => {
 						resigning: false,
 						rosterSize: roster.length,
 					}) &&
-					(!inSeason || roster.length < g.get("maxRosterSize"));
+					(!inSeason ||
+						roster.length < g.get("maxRosterSize") ||
+						(cpu.has(tid) && roster.length === g.get("maxRosterSize")));
 				if (fits) {
 					await sign(p, tid, { amount: offer.amount, exp: offer.exp });
 					remaining.delete(p.pid);
+					if (inSeason && roster.length === g.get("maxRosterSize")) {
+						await frontOfficeCuts(
+							await idb.cache.players.indexGetAll("playersByTid", tid),
+							1,
+						);
+					}
 				} else {
 					remaining.set(
 						p.pid,

@@ -162,6 +162,9 @@ export const marketSettings = {
 	rivals: true,
 	// The side a deal does less for asks for more (haggle).
 	haggle: true,
+	// In the season, a CPU team with a full roster may sign a free agent and
+	// release whoever it can best do without (freeAgency.ts).
+	fullRosterSignings: true,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
