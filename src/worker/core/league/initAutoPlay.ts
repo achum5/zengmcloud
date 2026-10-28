@@ -48,14 +48,14 @@ const initAutoPlay = async (conditions: Conditions) => {
 		// hook would otherwise publish) never reached the cloud. startAutoPlay's
 		// promise settles when cleanupAutoPlay runs - the target phase reached,
 		// or the run cancelled - which is exactly when the window should close.
-		changeTracker.beginSim();
+		changeTracker.beginSim("playMenu.day");
 		void (async () => {
 			try {
 				await startAutoPlay(season, phase as Phase, conditions);
 			} catch (error) {
 				console.error("autoPlay failed", error);
 			} finally {
-				changeTracker.endSim();
+				changeTracker.endSim("playMenu.day");
 			}
 			await runAfterActionHook("playMenu", "day").catch(() => {});
 		})();

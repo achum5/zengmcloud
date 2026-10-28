@@ -16,7 +16,7 @@ import {
 	decideOwnGameSimCall,
 	isOwnGameSimCall,
 } from "./core/sync/ownGameSimGate.ts";
-import { setCurrentAction } from "./util/actionContext.ts";
+import { beginAction } from "./util/actionContext.ts";
 import { syncDebugLog } from "./core/sync/debugLog.ts";
 import { setAfterActionHook } from "./core/sync/afterActionHook.ts";
 import { setLiveBroadcastStartHook } from "./core/sync/liveBroadcastHook.ts";
@@ -560,11 +560,11 @@ const handleCall: Parameters<typeof promiseWorker.register>[0] = async (
 	// several calls down) can attribute themselves to the click that caused
 	// them. Cleared in a finally: a stale label would blame the wrong action.
 	const call = async () => {
-		setCurrentAction(`${type}.${name}`);
+		const end = beginAction(`${type}.${name}`);
 		try {
 			return await api[type][name](param, conditions);
 		} finally {
-			setCurrentAction(undefined);
+			end();
 		}
 	};
 

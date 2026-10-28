@@ -1282,11 +1282,14 @@ const play = async (
 				// Bracket the whole sim (all days, including the recursive continuations
 				// nested inside cbRunDay) so a concurrent runSuppressed call can't swallow
 				// the sim's interleaved writes and leave its delta unpublished.
-				changeTracker.beginSim();
+				// (A whole day or more is a timeline advance, published as one -
+				// see changeTracker.advanceLabel.)
+				const advance = gidOneGame === undefined ? "playMenu.sim" : undefined;
+				changeTracker.beginSim(advance);
 				try {
 					await cbRunDay();
 				} finally {
-					changeTracker.endSim();
+					changeTracker.endSim(advance);
 				}
 			}
 		} finally {

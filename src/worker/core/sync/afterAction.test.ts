@@ -5,10 +5,7 @@ import { g } from "../../util/index.ts";
 import { idb } from "../../db/index.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
 import { afterAction } from "./afterAction.ts";
-import {
-	beginSingleGameSim,
-	resetSingleGameSims,
-} from "./afterActionHook.ts";
+import { beginSingleGameSim, resetSingleGameSims } from "./afterActionHook.ts";
 import { setSyncEngine } from "./engineHolder.ts";
 import {
 	beginLiveSimNotificationHold,
@@ -263,6 +260,65 @@ describe("afterAction silent publishing", () => {
 		await afterAction("playMenu", "sim");
 
 		assert.strictEqual(published[0]!.label, "playMenu.sim");
+	});
+
+	// A day (or more) being simmed, and an edit made meanwhile - a lock
+	// toggled - drains the day so far with it. Published under the edit's
+	// label, a lost race would rebase that day onto a world it no longer
+	// matches; it goes up as the advance it is.
+	test("a day being simmed, drained by an edit made meanwhile, publishes as the day", async () => {
+		const { engine, published } = makeEngine();
+		setSyncEngine(engine as any);
+		changeTracker.beginSim("playMenu.sim");
+		try {
+			await seedOneGame();
+			await afterAction("main", "lockSet");
+		} finally {
+			changeTracker.endSim("playMenu.sim");
+		}
+
+		assert.strictEqual(published.length, 1);
+		assert.strictEqual(published[0]!.label, "playMenu.sim");
+	});
+
+	test("an advance drained under its own label keeps it; once the sim is done, so does an edit", async () => {
+		const { engine, published } = makeEngine();
+		setSyncEngine(engine as any);
+		changeTracker.beginSim("playMenu.day");
+		await seedOneGame();
+		await afterAction("playMenu", "untilPlayoffs");
+		changeTracker.endSim("playMenu.day");
+		// (An edit's own write, in its own capture.)
+		changeTracker.beginSim();
+		try {
+			await idb.cache.games.put({
+				gid: 1,
+				season: 2026,
+				day: 6,
+				teams: [{ tid: 0 }, { tid: 1 }],
+			} as any);
+		} finally {
+			changeTracker.endSim();
+		}
+		await afterAction("main", "lockSet");
+
+		assert.deepEqual(
+			published.map((x) => x.label),
+			["playMenu.untilPlayoffs", "main.lockSet"],
+		);
+	});
+
+	test("auto play still running when a day sim inside it ends: still an advance", async () => {
+		const { engine, published } = makeEngine();
+		setSyncEngine(engine as any);
+		changeTracker.beginSim("playMenu.day");
+		changeTracker.beginSim("playMenu.sim");
+		changeTracker.endSim("playMenu.sim");
+		await seedOneGame();
+		await afterAction("main", "lockSet");
+		changeTracker.endSim("playMenu.day");
+
+		assert.strictEqual(published[0]!.label, "playMenu.day");
 	});
 
 	test("a full-day sim to a game (simToGame) DOES notify", async () => {

@@ -181,11 +181,11 @@ const afterLotteryPhase = (): Phase => {
 // Run a phase change as a ready-up advance: captured + published like any
 // other bulk change.
 const advancePhase = async (phase: Phase) => {
-	changeTracker.beginSim();
+	changeTracker.beginSim("playMenu.day");
 	try {
 		await newPhase(phase, {});
 	} finally {
-		changeTracker.endSim();
+		changeTracker.endSim("playMenu.day");
 	}
 	await runAfterActionHook("playMenu", "day");
 };
@@ -261,12 +261,12 @@ const getStageInfo = async (): Promise<StageInfo | undefined> => {
 				}
 				// Same order as the sim path in play.ts: drop the sentinel, then
 				// change phase, then tell the UI.
-				changeTracker.beginSim();
+				changeTracker.beginSim("playMenu.day");
 				try {
 					await idb.cache.schedule.delete(gid);
 					await newPhase(PHASE.AFTER_TRADE_DEADLINE, {});
 				} finally {
-					changeTracker.endSim();
+					changeTracker.endSim("playMenu.day");
 				}
 				await toUI("deleteGames", [[gid]]);
 				await runAfterActionHook("playMenu", "day");

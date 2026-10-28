@@ -96,6 +96,11 @@ const canaryCheck = (store: string, id: number | string, type: ChangeType) => {
 // While this is > 0, runSuppressed becomes a pass-through so nothing can swallow
 // the sim's writes. Bracketed by game/play.ts around the sim.
 let simDepth = 0;
+// What each open sim window that advances the shared timeline publishes
+// under ("playMenu.sim", "playMenu.day", ...), counted: whatever drains the
+// tracker while one is open is draining (some of) that advance, and must be
+// published as it - see afterAction.
+const advances = new Map<string, number>();
 const pending = new Map<string, PendingChange>();
 
 export const changeTracker = {
@@ -134,7 +139,7 @@ export const changeTracker = {
 
 	// For sync debug logs, so a capture wedge is diagnosable from the console.
 	debugState() {
-		return { enabled, captureDepth, simDepth };
+		return { enabled, captureDepth, simDepth, advances: [...advances.keys()] };
 	},
 
 	// Whether writes made right now would be recorded for sync (a cloud-tracked
@@ -191,12 +196,36 @@ export const changeTracker = {
 	// a pass-through, so a concurrent runSuppressed call (a read-only view load,
 	// etc.) can't swallow the sim's interleaved writes. Counted, so nested/repeated
 	// sims are safe; game/play.ts brackets each sim with these.
-	beginSim() {
+	//
+	// `advance`: the label a sim that advances the shared timeline publishes
+	// under - the same one passed to endSim (see advanceLabel).
+	beginSim(advance?: string) {
 		simDepth += 1;
+		if (advance !== undefined) {
+			advances.set(advance, (advances.get(advance) ?? 0) + 1);
+		}
 	},
 
-	endSim() {
+	endSim(advance?: string) {
 		simDepth = Math.max(0, simDepth - 1);
+		if (advance !== undefined) {
+			const n = (advances.get(advance) ?? 0) - 1;
+			if (n > 0) {
+				advances.set(advance, n);
+			} else {
+				advances.delete(advance);
+			}
+		}
+	},
+
+	// The timeline advance being simmed right now, if one is: what anything
+	// draining the tracker in the meantime publishes under.
+	advanceLabel(): string | undefined {
+		let last: string | undefined;
+		for (const label of advances.keys()) {
+			last = label;
+		}
+		return last;
 	},
 
 	// Put changes back after a failed sync attempt, so they can be retried by a

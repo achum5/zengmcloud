@@ -96,11 +96,11 @@ async function play(
 			// resolved, so without this the free-agency days and the season
 			// rollover they end in - the biggest changeset of the year - would sit
 			// unpublished until some later unrelated action.
-			changeTracker.beginSim();
+			changeTracker.beginSim("playMenu.day");
 			try {
 				await cbRunDay();
 			} finally {
-				changeTracker.endSim();
+				changeTracker.endSim("playMenu.day");
 			}
 			await runAfterActionHook("playMenu", "day");
 		}

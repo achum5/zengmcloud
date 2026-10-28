@@ -22,6 +22,8 @@ import type { Phase } from "../../../common/types.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { getCurrentAction } from "../../util/actionContext.ts";
+import { changeTracker } from "../../db/changeTracker.ts";
+import { isTimelineAdvanceLabel } from "../sync/actionLabels.ts";
 import { getSyncEngine } from "../sync/engineHolder.ts";
 
 export type PhaseForensicsEntry = {
@@ -75,6 +77,17 @@ export const formatPhaseForensics = (
 	].join("\n");
 };
 
+// What a phase change is credited to: the click that advances the timeline,
+// if that is what is running; else a sim carrying on after its click came
+// back (a multi-day sim, auto play); else whatever else is running.
+const phaseSource = (): string | undefined => {
+	const action = getCurrentAction();
+	if (action !== undefined && isTimelineAdvanceLabel(action)) {
+		return action;
+	}
+	return changeTracker.advanceLabel() ?? action;
+};
+
 export const recordPhaseForensics = async (to: Phase): Promise<void> => {
 	// Forensics must never be the reason a phase change fails.
 	try {
@@ -92,7 +105,7 @@ export const recordPhaseForensics = async (to: Phase): Promise<void> => {
 			season: g.get("season"),
 			from: g.get("phase"),
 			to,
-			source: getCurrentAction(),
+			source: phaseSource(),
 			engine: engine !== undefined,
 			authority: engine?.isAuthority() ?? false,
 		};

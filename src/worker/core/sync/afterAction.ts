@@ -4,7 +4,10 @@ import { logChangeset } from "./devChangesetLogger.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { getConnectedLid } from "./connect.ts";
 import { isSingleGameSimActive } from "./afterActionHook.ts";
-import { isSingleGameSimLabel } from "./actionLabels.ts";
+import {
+	isSingleGameSimLabel,
+	isTimelineAdvanceLabel,
+} from "./actionLabels.ts";
 import { buildNotifications } from "./notifications.ts";
 import {
 	holdLiveSimNotifications,
@@ -187,10 +190,18 @@ export const afterAction = async (
 			// lost race means "rebase" or "discard" (see isTimelineAdvanceLabel),
 			// and for the fence re-validation of a queued result, which has to be
 			// able to recognise the entry as a fenced game at all.
+			// And the same for a whole day (or more) being simmed: an edit made
+			// meanwhile - a lock toggled, a lineup set - drains the day so far
+			// with it, and published under the edit's label a lost race would
+			// rebase that day onto a world it no longer matches, instead of
+			// discarding it as the stale advance it is.
+			const advance = changeTracker.advanceLabel();
 			const publishLabel =
 				isSingleGameSimActive() && !isSingleGameSimLabel(label)
 					? "playMenu.simGame"
-					: label;
+					: advance !== undefined && !isTimelineAdvanceLabel(label)
+						? advance
+						: label;
 			try {
 				if (trace) {
 					syncDebugLog("afterAction:publish-start", {
