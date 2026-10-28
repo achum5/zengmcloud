@@ -129,25 +129,33 @@ test(
 	{ timeout: 300_000 },
 	async () => {
 		const outlook = await currentOutlook();
-		for (const { t, partner } of await teams()) {
-			const best = [...t.players].sort(
-				(a, b) => b.valueNoPot - a.valueNoPot,
-			)[0]!;
-			const hurt = {
-				...helpers.deepCopy(best),
-				injury: { type: "Torn ACL", gamesRemaining: 60 },
-			};
-			const players = t.players.map((p) => (p === best ? hurt : p));
-			const now = { ...t, players, tradablePlayers: players };
-			// The team as it stands with him hurt.
-			const before = priceFor(outlook, now, [], []);
-			const give: Asset[] = [{ kind: "player", p: hurt }];
-			const gain = priceFor(outlook, now, give, [], partner) - before;
-			assert.isAtMost(
-				gain - marginOf(outlook, now, give, []),
-				0.002,
-				`team ${t.tid} would give away its injured best player`,
-			);
+		// Money aside: a team going nowhere may rightly shed a veteran it pays
+		// more than he is worth to it, hurt or not. This is about the injury.
+		const perCap = outlookSettings.moneyPerCap;
+		outlookSettings.moneyPerCap = 0;
+		try {
+			for (const { t, partner } of await teams()) {
+				const best = [...t.players].sort(
+					(a, b) => b.valueNoPot - a.valueNoPot,
+				)[0]!;
+				const hurt = {
+					...helpers.deepCopy(best),
+					injury: { type: "Torn ACL", gamesRemaining: 60 },
+				};
+				const players = t.players.map((p) => (p === best ? hurt : p));
+				const now = { ...t, players, tradablePlayers: players };
+				// The team as it stands with him hurt.
+				const before = priceFor(outlook, now, [], []);
+				const give: Asset[] = [{ kind: "player", p: hurt }];
+				const gain = priceFor(outlook, now, give, [], partner) - before;
+				assert.isAtMost(
+					gain - marginOf(outlook, now, give, []),
+					0.002,
+					`team ${t.tid} would give away its injured best player`,
+				);
+			}
+		} finally {
+			outlookSettings.moneyPerCap = perCap;
 		}
 	},
 );

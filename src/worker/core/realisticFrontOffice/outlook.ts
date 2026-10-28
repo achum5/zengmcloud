@@ -514,6 +514,9 @@ export const outlookSettings = {
 	// What payroll past the cap costs a team, in titles a season per cap's
 	// worth, and the luxury tax's rate on top past the tax line (payrollCost).
 	moneyPerCap: 0.02,
+	// And payroll under the cap, past the league's minimum, with what the
+	// room is expected to buy; off, money costs only past the cap.
+	moneyUnderCap: true,
 };
 
 // For the arena's version-against-version leagues: settings for some teams'
@@ -530,6 +533,7 @@ export const teamOutlookSettings = new Map<
 			| "roomByRecord"
 			| "letGo"
 			| "moneyPerCap"
+			| "moneyUnderCap"
 		>
 	>
 >();
@@ -539,7 +543,10 @@ const outlookSettingFor = <
 		| "pickUpside"
 		| "keptCalibration"
 		| "roomByRecord"
-		| "letGo",
+		| "retentionByValue"
+		| "letGo"
+		| "moneyPerCap"
+		| "moneyUnderCap",
 >(
 	tid: number,
 	key: K,
@@ -1359,7 +1366,11 @@ export const teamPoints = (
 	worth?: (y: number, points: number) => number,
 	// What a season's payroll costs the franchise at this much room, in the
 	// same units as `worth` (payrollCost).
-	spend?: (y: number, room: number) => number,
+	spend?: (
+		y: number,
+		room: number,
+		signings: readonly { valueNoPot: number; availability: number }[],
+	) => number,
 ) => {
 	const retentionFor = (p: Player) => {
 		const r = retentionOf(outlook, p.pid, tid);
@@ -1638,7 +1649,11 @@ const letGo = (
 	points: (lines: readonly SeasonLine[]) => number,
 	known?: LetGoDecisions,
 	worth: (y: number, points: number) => number = (_, x) => x,
-	spend?: (y: number, room: number) => number,
+	spend?: (
+		y: number,
+		room: number,
+		signings: readonly { valueNoPot: number; availability: number }[],
+	) => number,
 ) => {
 	const minContract = g.get("minContract");
 	const tolerance = LET_GO_ROOM_TOLERANCE * g.get("salaryCap");
@@ -1741,7 +1756,9 @@ const letGo = (
 				}
 				gain += worth(s.y, after) - worth(s.y, kept);
 				if (spend) {
-					gain += spend(s.y, s.room!) - spend(s.y, s.room! + at.salary);
+					gain +=
+						spend(s.y, s.room!, s.signingsAt!(s.room!)) -
+						spend(s.y, s.room! + at.salary, s.signingsAt!(s.room! + at.salary));
 				}
 			}
 			if (gain > 0) {
@@ -1897,6 +1914,9 @@ export const teamStrengths = (
 		(y === 0 ? (outlook.recordEdge.get(tid) ?? 0) : 0);
 	const perCap = outlookSettingFor(tid, "moneyPerCap");
 	const salaryCap = g.get("salaryCap");
+	const floor = outlookSettingFor(tid, "moneyUnderCap")
+		? g.get("minPayroll") / salaryCap
+		: 1;
 	const money: number[] = [];
 	const strengths = teamPoints(
 		outlook,
@@ -1905,7 +1925,7 @@ export const teamStrengths = (
 		picks,
 		trading,
 		(y, room, signings) => {
-			money[y] = payrollCost(perCap, y, room);
+			money[y] = payrollCost(perCap, floor, y, room, signings);
 			refill?.(y, room, signings);
 		},
 		undefined,
@@ -1913,7 +1933,8 @@ export const teamStrengths = (
 		outlook.titleCurves.length > 0
 			? (y, points) => seasonValue(outlook, y, strengthOf(y, points))
 			: undefined,
-		(y, room) => payrollCost(perCap, y, room / salaryCap),
+		(y, room, signings) =>
+			payrollCost(perCap, floor, y, room / salaryCap, signings),
 	).map((x, y) => strengthOf(y, x));
 	// This season's payroll, as it will stand when the playoffs start and the
 	// tax is charged: the tax in full, and the rest of the season's salary
@@ -1928,8 +1949,9 @@ export const teamStrengths = (
 				payroll += row.amount;
 			}
 		}
-		money[0] = payrollCostNow(
+		money[0] = payrollShareCost(
 			perCap,
+			floor,
 			payroll / salaryCap,
 			1 - outlook.progress,
 		);
@@ -1940,28 +1962,49 @@ export const teamStrengths = (
 
 // MONEY (owner's call: a small real cost). A team does what is best for the
 // franchise, and money spent is part of that: each season, payroll past the
-// cap costs `moneyPerCap` titles per cap's worth, and the luxury tax's rate
-// on top past the tax line. Under the cap, salary already costs the room it
-// uses. With money free, a team over the cap paid its own players whatever
-// made them likeliest to stay - the max to 21-year-olds rated 50.
-const payrollCost = (perCap: number, y: number, room: number) => {
-	if (!(room < 0) || perCap === 0) {
-		return 0;
-	}
-	const taxLine = g.get("luxuryPayroll") / g.get("salaryCap");
-	const taxed = Math.max(0, 1 - room - taxLine);
-	return PATIENCE ** y * perCap * (-room + g.get("luxuryTax") * taxed);
-};
-
-// The same for the season under way: the luxury tax on the payroll as the
-// playoffs start, and what is left of its salary past the cap.
-const payrollCostNow = (perCap: number, payroll: number, left: number) => {
+// league's minimum costs `moneyPerCap` titles per cap's worth, and the luxury
+// tax's rate on top past the tax line. Payroll counts the free agents the
+// team's room is expected to buy, at their market salaries: room it would
+// spend anyway costs nothing more spent on someone else, room it could not
+// spend is money kept. With money free, a team over the cap paid its own
+// players whatever made them likeliest to stay - the max to 21-year-olds
+// rated 50 - and charged only past the cap, a bad team with room it could
+// not use gave the max for four years to young players rated 53.
+const payrollShareCost = (
+	perCap: number,
+	// Payroll costs money past this share of the cap.
+	floor: number,
+	payroll: number,
+	left = 1,
+) => {
 	const taxLine = g.get("luxuryPayroll") / g.get("salaryCap");
 	return (
 		perCap *
-		(left * Math.max(0, payroll - 1) +
+		(left * Math.max(0, payroll - floor) +
 			g.get("luxuryTax") * Math.max(0, payroll - taxLine))
 	);
+};
+
+const payrollCost = (
+	perCap: number,
+	floor: number,
+	y: number,
+	room: number,
+	signings: readonly { valueNoPot: number; availability: number }[],
+) => {
+	if (perCap === 0) {
+		return 0;
+	}
+	let payroll = 1 - room;
+	if (room > 0 && floor < 1) {
+		const salary = marketSalaries();
+		const cap = g.get("salaryCap");
+		for (const s of signings) {
+			payroll += (s.availability * salary(s.valueNoPot)) / cap;
+		}
+		payroll = Math.min(1, payroll);
+	}
+	return PATIENCE ** y * payrollShareCost(perCap, floor, payroll);
 };
 
 // What each season's payroll costs, for strengths worked out by

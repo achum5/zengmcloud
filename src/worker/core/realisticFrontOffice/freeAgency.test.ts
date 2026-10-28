@@ -64,7 +64,7 @@ test(
 );
 
 test(
-	"in the season, a team over the tax line pays for this season's payroll",
+	"in the season, a team pays for this season's payroll past the minimum",
 	{ timeout: 300_000 },
 	async () => {
 		const cap = g.get("salaryCap");
@@ -85,7 +85,7 @@ test(
 					moneyCost(teamStrengths(outlook, tid, t.players, t.picks))?.[0] ?? 0
 				);
 			};
-			const under = await costAt(0.9 * cap);
+			const under = await costAt(0.9 * g.get("minPayroll"));
 			const over = await costAt(g.get("luxuryPayroll") + 0.1 * cap);
 			assert.strictEqual(under, 0);
 			assert.isAbove(over, 0);

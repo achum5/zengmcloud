@@ -54,11 +54,14 @@ with "the Pistons", not with a named person.
   against.
 - **Money: a small real cost** (owner's call, replacing "the luxury tax and
   profit are ignored"): a team does what is best for the franchise, money
-  included. Each season, payroll past the cap costs 0.02 titles per cap's
-  worth, and the luxury tax's rate on top past the tax line; under the cap,
-  salary costs the room it uses. In the season under way, the tax counts on
-  the payroll as it will stand when the playoffs start, when it is charged,
-  and only the rest of the season's salary past the cap. Cap room is used strategically to chase free
+  included. Each season, payroll past the league's minimum costs 0.02 titles
+  per cap's worth, and the luxury tax's rate on top past the tax line.
+  Payroll counts the free agents a team's room is expected to buy, at their
+  market salaries: room it would spend anyway costs nothing more spent on
+  someone else, room it could not spend is money kept. In the season under
+  way, the tax counts on the payroll as it will stand when the playoffs
+  start, when it is charged, and only the rest of the season's salary past
+  the minimum. Cap room is used strategically to chase free
   agents when that applies, and a team re-signs its own players over the cap
   (Bird rights) when that is good for its outlook. With money free, a team
   over the cap paid its own players whatever made them likeliest to stay -
@@ -67,7 +70,14 @@ with "the Pistons", not with a named person.
   cap or more 0 against 4, re-signings 7.5% of the cap against 9.4%, free
   agent overpays 2 against 5 - and as many players stayed (rookie deals 71%
   against 72%, the top ten veterans 88% against 87%). At 0.05 a cap, fewer
-  players finishing rookie deals stayed (63% against 77%).
+  players finishing rookie deals stayed (63% against 77%). Charged only past
+  the cap at first, salary under it was free to a team with room it could
+  not use, and once room was measured to buy less, bad teams gave the max
+  for three or four years to young players rated 48-56 (6 in 4 leagues x 2
+  seasons; charged from the minimum, 1). Half the teams each way: as many
+  wins, as many players finishing rookie deals kept (77% against 79% of 58
+  or better), long overpays 0 against 2. A team going nowhere may now shed
+  a veteran it pays more than he is worth to it.
 - **No tanking through lineups.** A rebuilding team sells for the future through
   trades, but on the floor every team plays to win.
 
@@ -521,7 +531,11 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   in the arena, by room as free agency opens), not what a signing at that price
   gets: teams with room do better than that, and what they get rises smoothly
   with room. Pricing it by the price of a signing gave clearing a max slot a
-  special value, so teams dumped prospects' future salaries for it.
+  special value, so teams dumped prospects' future salaries for it. What room
+  buys moves with how teams bid, so it is measured again as that changes, a
+  half step at a time (teams act on the table they are given): once money
+  past the cap cost something, with no room a bad team landed someone better
+  than the minimum 30% of the time, not 74% (1,200 team-summers).
 - **And by how good the team is.** Free agents want to win: with 30% of the
   cap a team that won a quarter of its games signed a 56 first, an average
   one a 61, a good one a 66 (arena, 1,380 team-summers). Priced the same for
