@@ -27,6 +27,12 @@ import { validateAbbrev } from "../util/processInputs.ts";
 import { validateSeason } from "../util/processInputs.ts";
 import { validateSeasonType } from "../util/processInputs.ts";
 import { player } from "../core/index.ts";
+import {
+	roundFromSeriesKey,
+	seriesDropdownOptions,
+	seriesStatsRows,
+	teamPlayoffSeries,
+} from "./playoffSeriesStats.ts";
 
 const processInputs = (params: RouteParams<"playerStats">) => {
 	let abbrev;
@@ -72,6 +78,12 @@ const processInputs = (params: RouteParams<"playerStats">) => {
 		season,
 		statType,
 		playoffs: validateSeasonType(params.playoffs),
+		// One playoff series (basketball, one team, one season) - see
+		// playoffSeriesStats.ts. Checked against the team's series in load.
+		seriesRound:
+			__SPORT === "basketball" && typeof season === "number"
+				? roundFromSeriesKey(params.playoffs)
+				: undefined,
 	};
 };
 
@@ -86,7 +98,8 @@ export default defineView({
 			inputs.abbrev !== prevInputs?.abbrev ||
 			inputs.season !== prevInputs?.season ||
 			inputs.statType !== prevInputs?.statType ||
-			inputs.playoffs !== prevInputs?.playoffs
+			inputs.playoffs !== prevInputs?.playoffs ||
+			inputs.seriesRound !== prevInputs?.seriesRound
 		) {
 			let statsTable;
 
@@ -150,9 +163,35 @@ export default defineView({
 				tid = undefined;
 			}
 
+			// The team's playoff series, for the menu - and the one asked for.
+			const teamSeries =
+				__SPORT === "basketball" &&
+				tid !== undefined &&
+				typeof inputs.season === "number"
+					? await teamPlayoffSeries(tid, inputs.season)
+					: [];
+			const series =
+				inputs.seriesRound === undefined
+					? undefined
+					: teamSeries.find((x) => x.round === inputs.seriesRound);
+			const seriesRows =
+				series && tid !== undefined && typeof inputs.season === "number"
+					? await seriesStatsRows({
+							tid,
+							series,
+							seasonNum: inputs.season,
+						})
+					: undefined;
+			const seriesOptions =
+				typeof inputs.season === "number"
+					? await seriesDropdownOptions(teamSeries, inputs.season)
+					: [];
+
 			// Applied while reading players, so players who won't be shown are not all held in memory. For a team, this keeps anyone with any stats for that team, and formatting does the exact filtering.
 			let filter: ((p: Player) => boolean) | undefined;
-			if (tid !== undefined) {
+			if (seriesRows) {
+				filter = (p) => seriesRows.has(p.pid);
+			} else if (tid !== undefined) {
 				const season = inputs.season;
 				filter = (p) =>
 					p.stats.some(
@@ -226,7 +265,7 @@ export default defineView({
 				stats: ["abbrev", "tid", "jerseyNumber", "season", ...actualStats],
 				tid,
 				statType,
-				seasonType: inputs.playoffs,
+				seasonType: seriesRows ? "playoffs" : inputs.playoffs,
 				mergeStats: "totOnly",
 			} as const;
 
@@ -267,7 +306,11 @@ export default defineView({
 					abbrevs,
 				);
 				rows = await readRows((pRaw) => {
-					const p = formatPlayer(pRaw);
+					// For a series, the series is the only stats row he has.
+					const seriesRow = seriesRows?.get(pRaw.pid);
+					const p = formatPlayer(
+						seriesRow ? { ...pRaw, stats: [seriesRow] } : pRaw,
+					);
 					if (!p) {
 						return [];
 					}
@@ -376,7 +419,7 @@ export default defineView({
 			// been filtered to one team, and calibrating off a single payroll
 			// would make a cheap roster look like a roster full of bargains.
 			const contractValueContext =
-				showContractValue && typeof inputs.season === "number"
+				showContractValue && !seriesRows && typeof inputs.season === "number"
 					? await loadContractValueContext(inputs.season)
 					: undefined;
 
@@ -411,8 +454,9 @@ export default defineView({
 				abbrev: inputs.abbrev,
 				season: inputs.season,
 				statType: inputs.statType,
-				playoffs: inputs.playoffs,
-				showContractValue,
+				playoffs: series ? series.key : inputs.playoffs,
+				seriesOptions,
+				showContractValue: showContractValue && !seriesRows,
 				stats,
 				superCols,
 			};

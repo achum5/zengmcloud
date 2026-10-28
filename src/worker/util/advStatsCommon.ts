@@ -36,7 +36,7 @@ export const advStatsSave = async (
 	await idb.cache.players.putAll(playersToSave);
 };
 
-const PLAYER_STATS = bySport({
+export const PLAYER_STATS = bySport({
 	baseball: [
 		"h",
 		"2b",

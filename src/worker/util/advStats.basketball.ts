@@ -750,77 +750,56 @@ const calculateRatings = (
  * @memberOf util.advStats
  * @return {Promise}
  */
-const advStats = async () => {
-	const playoffs = PHASE.PLAYOFFS === g.get("phase");
+// Total team stats (not per game averages)	// For PER: gp, ft, pf, ast, fg, pts, fga, orb, tov, fta, trb, oppPts, pace
+// For AST%: min, fg
+// For BLK%: min, oppFga, oppTpa
+// For DRB%: min, drb, oppOrb
+// For ORB%: min, orb, oppDrb
+// For STL%: min, stl, poss
+// For TRB%: min, trb, oppTrb
+// For USG%: min, fga, fta, tov
+// For DRtg: blk, drb, drtg, min, oppFga, oppFg, oppFta, oppFt, oppOrb, oppPts, oppTov, stl, poss
+// For Ortg: min, pts, ft, fg, fga, fta, ast, oppDrb, orb, tp, tov, poss
+export const ADV_TEAM_STATS = [
+	"gp",
+	"ft",
+	"pf",
+	"ast",
+	"fg",
+	"pts",
+	"fga",
+	"orb",
+	"tov",
+	"fta",
+	"trb",
+	"oppPts",
+	"pace",
+	"min",
+	"oppFga",
+	"oppTpa",
+	"drb",
+	"oppOrb",
+	"oppDrb",
+	"oppFta",
+	"oppFg",
+	"oppTov",
+	"oppTrb",
+	"blk",
+	"drtg",
+	"ortg",
+	"oppFg",
+	"oppFt",
+	"stl",
+	"tp",
+	"poss",
+] as const;
 
-	// Total player stats (not per game averages)
-	// For PER: pos, min, tp, ast, fg, ft, tov, fga, fta, trb, orb, stl, blk, pf
-	// For AST%: min, fg
-	// For BLK%: min, blk
-	// For DRB%: min, drb
-	// For ORB%: min, orb
-	// For STL%: min, stl
-	// For TRB%: min, trb
-	// For USG%: min, fga, fta, tov
-	// For DRtg: min, pf, blk, stl, drb
-	// For Ortg: min, tp, ast, fg, pts, ft, fga, fta, orb
-
-	const { players, playersRaw } = await getPlayers(playoffs);
-
-	// Total team stats (not per game averages)	// For PER: gp, ft, pf, ast, fg, pts, fga, orb, tov, fta, trb, oppPts, pace
-	// For AST%: min, fg
-	// For BLK%: min, oppFga, oppTpa
-	// For DRB%: min, drb, oppOrb
-	// For ORB%: min, orb, oppDrb
-	// For STL%: min, stl, poss
-	// For TRB%: min, trb, oppTrb
-	// For USG%: min, fga, fta, tov
-	// For DRtg: blk, drb, drtg, min, oppFga, oppFg, oppFta, oppFt, oppOrb, oppPts, oppTov, stl, poss
-	// For Ortg: min, pts, ft, fg, fga, fta, ast, oppDrb, orb, tp, tov, poss
-
-	const teams = await team.getFormattedAll({
-		attrs: ["tid"],
-		stats: [
-			"gp",
-			"ft",
-			"pf",
-			"ast",
-			"fg",
-			"pts",
-			"fga",
-			"orb",
-			"tov",
-			"fta",
-			"trb",
-			"oppPts",
-			"pace",
-			"min",
-			"oppFga",
-			"oppTpa",
-			"drb",
-			"oppOrb",
-			"oppDrb",
-			"oppFta",
-			"oppFg",
-			"oppTov",
-			"oppTrb",
-			"blk",
-			"drtg",
-			"ortg",
-			"oppFg",
-			"oppFt",
-			"stl",
-			"tp",
-			"poss",
-		],
-		season: g.get("season"),
-		playoffs,
-		regularSeason: !playoffs,
-		statType: "totals",
-		addDummySeason: true,
-		active: true,
-	});
-
+// Every advanced stat for these players, against these teams - which are the
+// whole league as far as the league averages go. Undefined when no games.
+export const computeAdvStats = (
+	players: any[],
+	teams: { tid: number; stats: Team["stats"] }[],
+) => {
 	// Total league stats (not per game averages)
 	// For PER: gp, ft, pf, ast, fg, pts, fga, orb, tov, fta, trb
 	const leagueStats = [
@@ -859,19 +838,53 @@ const advStats = async () => {
 	league.pace /= league.gp;
 
 	// If no games have been played, somehow, don't continue. But why would no games be played? I don't know, but it happens some times.
-	if (league.gp === 0) {
-		return;
+	if (!(league.gp > 0)) {
+		return undefined;
 	}
 
-	const teamsByTid = groupByUnique(teams, "tid");
+	const teamsByTid = groupByUnique(teams as Team[], "tid");
 
-	const updatedStats = {
+	return {
 		...calculateOnOff(players, teamsByTid),
 		...calculatePER(players, teamsByTid, league),
 		...calculatePercentages(players, teamsByTid),
 		...calculateRatings(players, teamsByTid, league),
 		...calculateBPM(players, teamsByTid, league),
 	};
+};
+
+const advStats = async () => {
+	const playoffs = PHASE.PLAYOFFS === g.get("phase");
+
+	// Total player stats (not per game averages)
+	// For PER: pos, min, tp, ast, fg, ft, tov, fga, fta, trb, orb, stl, blk, pf
+	// For AST%: min, fg
+	// For BLK%: min, blk
+	// For DRB%: min, drb
+	// For ORB%: min, orb
+	// For STL%: min, stl
+	// For TRB%: min, trb
+	// For USG%: min, fga, fta, tov
+	// For DRtg: min, pf, blk, stl, drb
+	// For Ortg: min, tp, ast, fg, pts, ft, fga, fta, orb
+
+	const { players, playersRaw } = await getPlayers(playoffs);
+
+	const teams = await team.getFormattedAll({
+		attrs: ["tid"],
+		stats: ADV_TEAM_STATS,
+		season: g.get("season"),
+		playoffs,
+		regularSeason: !playoffs,
+		statType: "totals",
+		addDummySeason: true,
+		active: true,
+	});
+
+	const updatedStats = computeAdvStats(players, teams);
+	if (!updatedStats) {
+		return;
+	}
 	await advStatsSave(players, playersRaw, updatedStats);
 };
 

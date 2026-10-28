@@ -11,6 +11,7 @@ import type { DataTableRow } from "../components/DataTable/index.tsx";
 import { PlusMinus } from "../components/PlusMinus.tsx";
 import { useLocal } from "../util/local.ts";
 import { contractValueCell } from "../util/contractValueCell.tsx";
+import { getDropdownValue } from "../hooks/useDropdownOptions.tsx";
 
 export const formatStatGameHigh = (
 	ps: any,
@@ -67,6 +68,7 @@ const PlayerStats = ({
 	players,
 	playoffs,
 	season,
+	seriesOptions,
 	showContractValue,
 	statType,
 	stats,
@@ -83,6 +85,20 @@ const PlayerStats = ({
 			statTypesAdv: statType,
 			playoffsCombined: playoffs,
 		},
+		// And each playoff series the team played, on its own.
+		...(seriesOptions.length > 0
+			? {
+					dropdownCustomOptions: {
+						playoffsCombined: [
+							...["regularSeason", "playoffs", "combined"].map((key) => ({
+								key,
+								value: getDropdownValue(key, {}),
+							})),
+							...seriesOptions,
+						],
+					},
+				}
+			: {}),
 	});
 	const { userTid } = useLocal(["userTid"]);
 
@@ -172,7 +188,11 @@ const PlayerStats = ({
 				type: "player",
 				pid: p.pid,
 				season: season === "all" ? p.stats.season : season,
-				playoffs,
+				// (One series is still the playoffs, as far as a row goes.)
+				playoffs:
+					playoffs === "regularSeason" || playoffs === "combined"
+						? playoffs
+						: "playoffs",
 			},
 			data: [
 				null,
