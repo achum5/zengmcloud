@@ -381,6 +381,24 @@ const newPossessionTypes: Record<string, boolean> = {
 };
 
 // Mutates boxScore!!!
+// The game as it goes, for the live chart of it (see GameCharts): the score
+// after each score, by game seconds since the tip; where each period done
+// ended; and the one under way - from when, how long, and how far in.
+export type LiveFlow = {
+	scores: [number, number, number][];
+	ends: number[];
+	start: number;
+	len?: number;
+	now: number;
+};
+const flowOf = (boxScore: any): LiveFlow =>
+	(boxScore.liveFlow ??= {
+		scores: [[0, 0, 0]],
+		ends: [],
+		start: 0,
+		now: 0,
+	});
+
 const processLiveGameEvents = ({
 	events,
 	boxScore,
@@ -423,6 +441,22 @@ const processLiveGameEvents = ({
 
 		const eventT: 0 | 1 | undefined =
 			eAny.t === 0 || eAny.t === 1 ? eAny.t : undefined;
+
+		// Where the game is (see LiveFlow): a new period starts where the last
+		// one ended, as long as its clock starts at; the clock running down
+		// takes the game on through it.
+		const flow = flowOf(boxScore);
+		if (e.type === "period" || e.type === "overtime") {
+			if (flow.len !== undefined) {
+				flow.start += flow.len;
+				flow.ends.push(flow.start);
+			}
+			flow.len = undefined;
+		}
+		if (typeof eAny.clock === "number" && Number.isFinite(eAny.clock)) {
+			flow.len ??= eAny.clock;
+			flow.now = flow.start + Math.max(0, flow.len! - eAny.clock);
+		}
 
 		// Hacky quarter stuff, ugh
 		if (
@@ -490,6 +524,13 @@ const processLiveGameEvents = ({
 				const p = playersByPid[e.pid!];
 				(p as any)[e.s] += e.amt;
 				boxScore.teams[eventT!][e.s] += e.amt;
+				if (e.s === "pts") {
+					flow.scores.push([
+						flow.now,
+						boxScore.teams[0].pts,
+						boxScore.teams[1].pts,
+					]);
+				}
 
 				if (e.s === "pts") {
 					for (let j = 0; j < 2; j++) {

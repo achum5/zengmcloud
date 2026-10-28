@@ -192,3 +192,27 @@ describe("silent substitutions", () => {
 		assert.ok(stopped.includes("sub"));
 	});
 });
+
+describe("the game as it goes, for the live chart of it", () => {
+	test("each score at its time of the game, and where each period ended", () => {
+		const boxScore = makeBoxScore();
+		const events: any[] = [
+			{ type: "init", boxScore: {} },
+			{ type: "period", period: 1, clock: 720 },
+			{ type: "fgAtRim", t: 0, pid: 5, pidDefense: 100, clock: 700 },
+			{ type: "stat", t: 0, pid: 5, s: "pts", amt: 2 },
+			{ type: "period", period: 2, clock: 720 },
+			{ type: "tp", t: 1, pid: 100, clock: 600 },
+			{ type: "stat", t: 1, pid: 100, s: "pts", amt: 3 },
+		];
+		playAll(boxScore, events);
+		const flow = (boxScore as any).liveFlow;
+		assert.deepEqual(flow.scores, [
+			[0, 0, 0],
+			[20, 2, 0],
+			[840, 2, 3],
+		]);
+		assert.deepEqual(flow.ends, [720]);
+		assert.strictEqual(flow.now, 840);
+	});
+});

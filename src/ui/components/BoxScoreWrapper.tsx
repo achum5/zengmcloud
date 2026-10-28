@@ -1346,7 +1346,7 @@ export const BoxScoreWrapper = ({
 				forceRowUpdate={forceRowUpdate}
 				sportState={sportState}
 			/>
-			{live ? null : <GameCharts boxScore={boxScore} />}
+			<GameCharts boxScore={boxScore} live={live} />
 			Attendance: {helpers.numberWithCommas(boxScore.att)}
 			{boxScore.neutralSite ? (
 				<>

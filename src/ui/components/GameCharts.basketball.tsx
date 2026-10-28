@@ -19,6 +19,7 @@ import { LineupFaces } from "./LineupFaces.tsx";
 import { GAME_S, HOME_EDGE, winProb } from "../views/LiveGame/winProb.ts";
 import { helpers } from "../util/helpers.ts";
 import { teamsInDisplayOrder } from "../util/boxScoreDisplayOrder.ts";
+import type { LiveFlow } from "../util/processLiveGameEvents.basketball.tsx";
 
 // THE GAME OVER TIME, UNDER ITS BOX SCORE: the lead as it went, who was on the
 // floor when, and how each five did. Drawn from what the sim logged as it
@@ -78,40 +79,64 @@ const net = (x: OnCourt) => {
 const fmt = (x: number | undefined, signed = false) =>
 	x === undefined ? "—" : signed ? helpers.plusMinus(x, 1) : x.toFixed(1);
 
-// Team colors for the two sides: each team's main color, unless it would be
-// lost on the page (near white) or be taken for the other team's.
+// Team colors for the two sides, always: the pair, one of each team's,
+// that tells them apart best - each team's main color if those do, a team's
+// other one if its main color would be taken for the other team's - never
+// one lost on the page (near white) where a team has another.
 const hexRgb = (hex: string | undefined) => {
-	const m = /^#?([\da-f]{6})$/i.exec(hex ?? "");
-	if (!m) {
+	const six = /^#?([\da-f]{6})$/i.exec(hex ?? "")?.[1];
+	const three = /^#?([\da-f]{3})$/i.exec(hex ?? "")?.[1];
+	const full =
+		six ?? (three ? [...three].map((c) => c + c).join("") : undefined);
+	if (!full) {
 		return undefined;
 	}
-	const n = Number.parseInt(m[1]!, 16);
+	const n = Number.parseInt(full, 16);
 	return [(n >> 16) & 255, (n >> 8) & 255, n & 255] as const;
 };
 const lightness = (rgb: readonly number[]) =>
 	(0.2126 * rgb[0]! + 0.7152 * rgb[1]! + 0.0722 * rgb[2]!) / 255;
 const distance = (a: readonly number[], b: readonly number[]) =>
 	Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!, a[2]! - b[2]!);
+// (Only a team with no colors at all.)
 const FALLBACK: [string, string] = ["#2c6fbb", "#d9662b"];
 
-const sideColors = (teams: any[]): [string, string] => {
-	const pick = (side: Side, avoid?: readonly number[]) => {
-		const colors: string[] = teams[side]?.colors ?? [];
-		for (const c of colors) {
-			const rgb = hexRgb(c);
-			if (
-				rgb &&
-				lightness(rgb) < 0.85 &&
-				(!avoid || distance(rgb, avoid) > 90)
-			) {
-				return c;
+export const sideColors = (teams: any[]): [string, string] => {
+	const options = (side: Side) =>
+		((teams[side]?.colors ?? []) as string[])
+			.map((c, i) => ({ c, i, rgb: hexRgb(c) }))
+			.filter(
+				(
+					x,
+				): x is {
+					c: string;
+					i: number;
+					rgb: readonly [number, number, number];
+				} => x.rgb !== undefined,
+			);
+	const zero = options(0);
+	const one = options(1);
+	if (zero.length === 0 || one.length === 0) {
+		return [zero[0]?.c ?? FALLBACK[0], one[0]?.c ?? FALLBACK[1]];
+	}
+	// The worse for a color the further down a team's list it is and the
+	// lighter it is (hard to see on the page), and the nearer the two are
+	// to each other.
+	const cost = (x: { i: number; rgb: readonly number[] }) =>
+		x.i * 60 + Math.max(0, lightness(x.rgb) - 0.6) * 1000;
+	let best: [string, string] = [zero[0]!.c, one[0]!.c];
+	let lowest = Infinity;
+	for (const a of zero) {
+		for (const b of one) {
+			const c =
+				cost(a) + cost(b) + Math.max(0, 100 - distance(a.rgb, b.rgb)) * 4;
+			if (c < lowest) {
+				lowest = c;
+				best = [a.c, b.c];
 			}
 		}
-		return undefined;
-	};
-	const zero = pick(0) ?? FALLBACK[0];
-	const one = pick(1, hexRgb(zero)) ?? FALLBACK[1];
-	return [zero, one];
+	}
+	return best;
 };
 
 const useWidth = () => {
@@ -145,20 +170,25 @@ const LeadChart = ({
 	colors,
 	numPeriods,
 	expected,
+	upTo,
 }: {
-	charts: BoxScoreFlow;
+	charts: Pick<BoxScoreFlow, "scores" | "total" | "periodEnds">;
 	order: [Side, Side];
 	abbrevs: [string, string];
 	colors: [string, string];
 	numPeriods: number;
 	// How many points team 0 was expected to win by, before the tip.
 	expected: number;
+	// Live, how far into it the game is (seconds): drawn that far, across
+	// the whole of it.
+	upTo?: number;
 }) => {
 	const { ref, width } = useWidth();
 	const clipId = useId();
 	const [hover, setHover] = useState<number | undefined>();
 
 	const { scores, total, periodEnds } = charts;
+	const end = Math.min(total, upTo ?? total);
 	const [top, bottom] = order;
 	// Up is the team listed first ahead.
 	const leadOf = (s: [number, number, number]) => s[1 + top]! - s[1 + bottom]!;
@@ -191,8 +221,8 @@ const LeadChart = ({
 		line += ` L${x(s[0])},${y(prev)} L${x(s[0])},${y(lead)}`;
 		prev = lead;
 	}
-	line += ` L${x(total)},${y(prev)}`;
-	const area = `${line} L${x(total)},${y0} Z`;
+	line += ` L${x(end)},${y(prev)}`;
+	const area = `${line} L${x(end)},${y0} Z`;
 
 	const at = (t: number) => {
 		let i = 0;
@@ -225,7 +255,7 @@ const LeadChart = ({
 	const STEP = Math.max(2, total / 600);
 	const samples: [number, number][] = [];
 	let k = 0;
-	for (let t = 0; t <= total; t += STEP) {
+	for (let t = 0; t <= end; t += STEP) {
 		while (k + 1 < scores.length && scores[k + 1]![0] <= t) {
 			k += 1;
 			const s = scores[k]!;
@@ -236,17 +266,17 @@ const LeadChart = ({
 		}
 		samples.push([t, chance(t, scores[k]!)]);
 	}
-	samples.push([total, chance(total, scores.at(-1)!)]);
+	samples.push([end, chance(end, scores.at(-1)!)]);
 	const wLine = samples
 		.map(([t, p], i) => `${i === 0 ? "M" : "L"}${x(t)},${yW(p)}`)
 		.join(" ");
-	const wArea = `${wLine} L${x(total)},${yW0} L${x(0)},${yW0} Z`;
+	const wArea = `${wLine} L${x(end)},${yW0} L${x(0)},${yW0} Z`;
 
 	const onMove = (event: PointerEvent<SVGSVGElement>) => {
 		const rect = event.currentTarget.getBoundingClientRect();
 		const px = event.clientX - rect.left;
 		const t = ((px - padL) / plotW) * total;
-		setHover(Math.min(total, Math.max(0, t)));
+		setHover(Math.min(end, Math.max(0, t)));
 	};
 
 	const hovered = hover === undefined ? undefined : at(hover);
@@ -825,23 +855,60 @@ const Section = ({
 	</div>
 );
 
-export const GameCharts = ({ boxScore }: { boxScore: any }) => {
-	const charts: BoxScoreFlow | undefined = boxScore.charts;
-	if (!charts) {
+// Live, the game so far (see LiveFlow): the scores to now, across the whole
+// of regulation - the periods still to come where they will end.
+const liveLead = (boxScore: any, numPeriods: number) => {
+	// (Before the tip: the clock it will start from.)
+	const [m, sec] = String(boxScore.time ?? "").split(":");
+	const f: LiveFlow = boxScore.liveFlow ?? {
+		scores: [[0, 0, 0]],
+		ends: [],
+		start: 0,
+		now: 0,
+		len: 60 * Number(m) + Number(sec),
+	};
+	const len = f.ends[0] ?? f.len;
+	if (len === undefined || !Number.isFinite(len) || len <= 0) {
+		return undefined;
+	}
+	const periodEnds = [...f.ends];
+	let end = f.start + (f.len ?? len);
+	periodEnds.push(end);
+	while (periodEnds.length < numPeriods) {
+		end += len;
+		periodEnds.push(end);
+	}
+	return {
+		charts: { scores: f.scores, periodEnds, total: periodEnds.at(-1)! },
+		upTo: f.now,
+	};
+};
+
+export const GameCharts = ({
+	boxScore,
+	live,
+}: {
+	boxScore: any;
+	live?: boolean;
+}) => {
+	const numPeriods = boxScore.numPeriods ?? 4;
+	const now = live ? liveLead(boxScore, numPeriods) : undefined;
+	const charts: BoxScoreFlow | undefined = live ? undefined : boxScore.charts;
+	const lead = now?.charts ?? charts;
+	if (!lead) {
 		return null;
 	}
 	const order = teamsInDisplayOrder<Side>([0, 1]);
 	const teams = boxScore.teams as [any, any];
 	const abbrevs: [string, string] = [teams[0].abbrev, teams[1].abbrev];
 	const colors = sideColors(teams);
-	const numPeriods = boxScore.numPeriods ?? 4;
-	const lineups = charts.lineups;
+	const lineups = charts?.lineups;
 
 	return (
 		<>
 			<Section title="Game Flow">
 				<LeadChart
-					charts={charts}
+					charts={lead}
 					order={order}
 					abbrevs={abbrevs}
 					colors={colors}
@@ -853,11 +920,44 @@ export const GameCharts = ({ boxScore }: { boxScore: any }) => {
 							: boxScore.neutralSite
 								? 0
 								: (HOME_EDGE *
-										(charts.periodEnds[numPeriods - 1] ?? charts.total)) /
+										(lead.periodEnds[numPeriods - 1] ?? lead.total)) /
 									GAME_S
 					}
+					{...(now ? { upTo: now.upTo } : {})}
 				/>
 			</Section>
+			{charts ? (
+				<GameFlowRest
+					charts={charts}
+					teams={teams}
+					order={order}
+					colors={colors}
+					numPeriods={numPeriods}
+					lineups={lineups}
+				/>
+			) : null}
+		</>
+	);
+};
+
+// Who was on the floor when, and how each five did: once it is over.
+const GameFlowRest = ({
+	charts,
+	teams,
+	order,
+	colors,
+	numPeriods,
+	lineups,
+}: {
+	charts: BoxScoreFlow;
+	teams: [any, any];
+	order: [Side, Side];
+	colors: [string, string];
+	numPeriods: number;
+	lineups: BoxScoreFlow["lineups"];
+}) => {
+	return (
+		<>
 			<Section title="Rotations">
 				{order.map((side) => (
 					<RotationTable
