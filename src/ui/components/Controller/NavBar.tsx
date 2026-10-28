@@ -13,6 +13,7 @@ import SyncStatusDot from "./SyncStatusDot.tsx";
 import SyncPausedIndicator from "./SyncPausedIndicator.tsx";
 import SyncCatchUpIndicator from "./SyncCatchUpIndicator.tsx";
 import LiveWatchPill from "./LiveWatchPill.tsx";
+import PendingDealsPill from "./PendingDealsPill.tsx";
 import { menuItems } from "../../util/menuItems.tsx";
 import type { Phase } from "../../../common/types.ts";
 import type { LeagueUrlParts } from "../../router/types.ts";
@@ -132,6 +133,7 @@ export const NavBar = ({ updating }: { updating: boolean }) => {
 				{inLeague ? <SyncCatchUpIndicator /> : null}
 				{inLeague ? <SyncPausedIndicator /> : null}
 				{inLeague ? <LiveWatchPill /> : null}
+				{inLeague ? <PendingDealsPill /> : null}
 				<div className="flex-grow-1" />
 				{inLeague ? <PhaseReadyControl /> : null}
 				<div className="d-none d-sm-flex">

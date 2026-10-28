@@ -60,7 +60,7 @@ const AssetRows = ({
 							{teamInfoCache[asset.originalTid]?.abbrev ?? asset.originalTid})
 						</td>
 						<td>
-							place {asset.place + 1} ± {asset.spread}
+							place {(asset.place + 1).toFixed(1)} ± {asset.spread}
 						</td>
 						{cells}
 					</tr>
@@ -87,7 +87,7 @@ const FrontOfficeBreakdown = ({
 					<h3>{abbrevs[i]}</h3>
 					<p className="mb-2">{side.reason}</p>
 					<p className="mb-2 text-body-secondary">
-						Traded away: {side.tradedAway.join(" / ")}
+						Traded away: {side.tradedAway.map((x) => x.toFixed(1)).join(" / ")}
 					</p>
 					{side.picksMoved && side.picksMoved.length > 0 ? (
 						<p className="mb-2 text-body-secondary">

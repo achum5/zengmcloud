@@ -171,7 +171,8 @@ export const getDefaultSettings = () => {
 		allStarGame: unwrapGameAttribute(defaultGameAttributes, "allStarGame"),
 		allStarNum: unwrapGameAttribute(defaultGameAttributes, "allStarNum"),
 		allStarType: unwrapGameAttribute(defaultGameAttributes, "allStarType"),
-		budget: unwrapGameAttribute(defaultGameAttributes, "budget"),
+		// Off for new leagues (owner's call); the game's own default is on.
+		budget: false,
 		numSeasonsFutureDraftPicks: unwrapGameAttribute(
 			defaultGameAttributes,
 			"numSeasonsFutureDraftPicks",

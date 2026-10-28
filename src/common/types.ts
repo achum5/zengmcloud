@@ -1750,6 +1750,8 @@ export type LocalStateUI = {
 	mpLiveWatchable:
 		| { gid: number; byName: string; label: string; startedAt: number }
 		| undefined;
+	// Realistic Front Offices: deals held for bids, for the header.
+	pendingDeals: number;
 	// A league-mate's live sim just started: "Watch PHO @ DAL live?", its
 	// result held back until answered. Undefined when not asking.
 	mpLiveOffer:

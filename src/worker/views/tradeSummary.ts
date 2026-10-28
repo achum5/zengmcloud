@@ -659,8 +659,8 @@ export default defineView({
 				seasonsToPlot,
 				usePts,
 				// Realistic front offices: how the CPU teams worked it out. It shows
-				// true ratings, so only in God Mode.
-				frontOffice: godMode ? event.aiTrade?.frontOffice : undefined,
+				// true ratings; shown with God Mode off too, for now (owner's call).
+				frontOffice: event.aiTrade?.frontOffice,
 			};
 		}
 	},
