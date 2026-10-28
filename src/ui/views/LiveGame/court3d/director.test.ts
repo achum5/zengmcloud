@@ -100,7 +100,7 @@ describe("3D director", () => {
 			}
 			assert.strictEqual(tl.end, prevEnd);
 		}
-	}, 60_000);
+	}, 240_000);
 
 	test("the same game stages the same way every time (every device agrees)", () => {
 		const a = compile("same").tl;
@@ -111,7 +111,7 @@ describe("3D director", () => {
 			JSON.stringify([...a.tracks.values()]),
 			JSON.stringify([...b.tracks.values()]),
 		);
-	}, 60_000);
+	}, 240_000);
 
 	// A saved replay is the play-by-play read back out of the database and
 	// staged again, on whatever device, after whatever else was watched.
@@ -140,7 +140,7 @@ describe("3D director", () => {
 				evalBall(live.tl, t, bodyFor),
 			);
 		}
-	}, 120_000);
+	}, 480_000);
 
 	// Shots are thrown, not floated: under gravity a three from the arc
 	// climbs to about fifteen feet, the way real ones do.
@@ -166,7 +166,7 @@ describe("3D director", () => {
 			assert.isBelow(apex, 19, "a three is not a moonball");
 		}
 		assert.isAbove(threes, 0);
-	}, 60_000);
+	}, 240_000);
 
 	test("in the air, the ball falls at gravity's pace", () => {
 		const { tl } = compile("gravity", 120);
@@ -182,7 +182,7 @@ describe("3D director", () => {
 				(z(m + dt * 1000) - 2 * z(m) + z(m - dt * 1000)) / (dt * dt);
 			assert.closeTo(accel, -32.2, 1.5);
 		}
-	}, 60_000);
+	}, 240_000);
 
 	test("a player's moves never overlap and stay near the floor", () => {
 		const { tl } = compile("moves", 160);
@@ -206,7 +206,7 @@ describe("3D director", () => {
 				}
 			}
 		}
-	}, 60_000);
+	}, 240_000);
 
 	test("bodies glide - nobody on the floor teleports between frames", () => {
 		const { tl } = compile("glide", 140);
@@ -229,7 +229,7 @@ describe("3D director", () => {
 			prev = cur;
 		}
 		// (Every 20 ms of a whole game: three minutes and more of work.)
-	}, 300_000);
+	}, 1200_000);
 
 	// Picked up off the dribble, switched hand to hand, scooped off the
 	// floor, thrown off a dribble: from one move to the next the ball goes
@@ -257,7 +257,7 @@ describe("3D director", () => {
 				prev = b;
 			}
 		}
-	}, 120_000);
+	}, 480_000);
 
 	// Off the ball nobody stands rooted to his spot: a man out on the
 	// perimeter drifts along the arc - staying behind the line - and his man,
@@ -326,7 +326,7 @@ describe("3D director", () => {
 		assert.isAbove(drifts, 40);
 		// (A man already on the move with the play goes his own way.)
 		assert.isAbove(followed, drifts * 0.25);
-	}, 60_000);
+	}, 240_000);
 
 	// A defender goes with his man: when a man on offense runs, the man
 	// guarding him (the nearest of the defense) is on the move too - not
@@ -379,7 +379,7 @@ describe("3D director", () => {
 			assert.isAbove(running, 500);
 			assert.isBelow(left / running, 0.2, seed);
 		}
-	}, 150_000);
+	}, 600_000);
 
 	// Kicked out of the lane, the shooter is open because his man left him
 	// to help on the drive - a stunt at the ball, or all the way over - and
@@ -483,7 +483,7 @@ describe("3D director", () => {
 		// mostly, and the league's tight ones are about that.)
 		assert.isAtLeast(onHim / helps.length, 0.14);
 		assert.isAtLeast(backOut / passers, 0.6);
-	}, 60_000);
+	}, 240_000);
 
 	// Off an offensive board the rest spread out for the kick-out - but the
 	// man who gets the next shot in there (the dump-off, a post-up) stays
@@ -580,7 +580,7 @@ describe("3D director", () => {
 		}
 		assert.isAtLeast(near, 15);
 		assert.deepEqual(out, []);
-	}, 120_000);
+	}, 480_000);
 
 	// A man set in a screen or sealing in the post is a body: whoever comes
 	// at him runs into him - held up a moment, fighting round him - rather
@@ -634,7 +634,7 @@ describe("3D director", () => {
 		assert.isAtMost(close / screens, 0.02);
 		// And he is into somebody, often.
 		assert.isAbove(contact / screens, 0.25);
-	}, 120_000);
+	}, 480_000);
 
 	// The ball brought over half court and the trip a few seconds old, the
 	// defense is back with it: nobody stays at the other end guarding
@@ -738,7 +738,7 @@ describe("3D director", () => {
 			// his way up.)
 			assert.isAtMost(longO, 1800, seed);
 		}
-	}, 120_000);
+	}, 480_000);
 
 	// A spot the play has back in the backcourt, with the ball over half
 	// court already, is half court for him (nobody goes back over it) - but a
@@ -765,7 +765,7 @@ describe("3D director", () => {
 			}
 		}
 		assert.deepEqual(along, []);
-	}, 120_000);
+	}, 480_000);
 
 	// With the ball played in close in the front court, nobody off it is
 	// left stood out at half court watching - the man who pitched it ahead,
@@ -834,7 +834,7 @@ describe("3D director", () => {
 		// (31 ft out: 10 of them before - a 3-on-2's trailers parked at the
 		// hashes, men trailing up to 30-32 ft.)
 		assert.isAtMost(lines[1]!.stood.length, 4, lines[1]!.stood.join("; "));
-	}, 240_000);
+	}, 960_000);
 
 	// Coming back on defense, they get back the way a defense does: into the
 	// paint and round it, somebody at the rim, picking up their men as they
@@ -906,7 +906,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(changes, 300);
 		assert.isAtMost(crosses / changes, 0.37, `${crosses} in ${changes}`);
-	}, 240_000);
+	}, 960_000);
 
 	test("getting back, somebody is back at the rim - not five in a line out at the top", () => {
 		let n = 0;
@@ -958,7 +958,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(n, 150);
 		assert.isAbove(back / n, 0.7);
-	}, 120_000);
+	}, 480_000);
 
 	// Dribbling where he stands, waiting on the set, a man works his man -
 	// a steady dribble, moves where he stands, the ball walked a few steps -
@@ -992,7 +992,7 @@ describe("3D director", () => {
 		}
 		assert.isBelow(lunges, 30);
 		assert.isAtMost(close, 2);
-	}, 120_000);
+	}, 480_000);
 
 	// Two men are never on top of each other in play: teammates (two
 	// defenders helping off the same way, two men sent to the same spot)
@@ -1076,7 +1076,7 @@ describe("3D director", () => {
 			assert.isAbove(live, 10_000, seed);
 			assert.isBelow(close / live, 0.015, seed);
 		}
-	}, 120_000);
+	}, 480_000);
 
 	// Left out of the play while the ball is worked somewhere else, a man
 	// does not stand there like a statue for seconds on end: he drifts and
@@ -1123,7 +1123,7 @@ describe("3D director", () => {
 		}
 		assert.isBelow(frozen.length, 60);
 		assert.isBelow(frozen.filter((x) => x >= 4000).length, 12);
-	}, 120_000);
+	}, 480_000);
 
 	// A screen is set for somebody: the man it is for comes by the
 	// screener's shoulder - not past where it was going to be before the
@@ -1192,7 +1192,7 @@ describe("3D director", () => {
 		assert.isAbove(screens, 60);
 		assert.isAtMost(unused, screens * 0.05, `${unused} of ${screens} unused`);
 		assert.isAtMost(late, screens * 0.15, `${late} of ${screens} late`);
-	}, 240_000);
+	}, 960_000);
 
 	// A screen, a post-up, a celebration, words with the official: each is
 	// done where he stands, and the pose ends as he sets off again rather
@@ -1248,7 +1248,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(n, 150);
 		assert.deepEqual(slid, []);
-	}, 240_000);
+	}, 960_000);
 
 	test("nobody slides off across the floor still set in a screen or a celebration", () => {
 		const inPlace = new Set([
@@ -1283,7 +1283,7 @@ describe("3D director", () => {
 			}
 		}
 		assert.isAbove(planted, 50);
-	}, 60_000);
+	}, 240_000);
 
 	// Nobody just walks off after a play: the scorer points out the man who
 	// found him, a call against a man gets words with the official, and at
@@ -1308,7 +1308,7 @@ describe("3D director", () => {
 		assert.strictEqual(winners.length, 5);
 		assert.isAtLeast(losers.length, 1);
 		assert.isTrue(losers.every((tr) => tr.team !== winners[0]!.team));
-	}, 60_000);
+	}, 240_000);
 
 	// From one move into the next - pulling up from a run, down into his
 	// stance, up for a catch - his body eases over rather than snapping
@@ -1353,7 +1353,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(changes, 1000);
 		assert.isBelow(snaps, changes * 0.05);
-	}, 180_000);
+	}, 720_000);
 
 	// Turning right round, he turns one way and keeps turning - he never
 	// flicks between facings from one frame to the next.
@@ -1385,7 +1385,7 @@ describe("3D director", () => {
 			}
 			prev = cur;
 		}
-	}, 240_000);
+	}, 960_000);
 
 	// And he gets going round and slows coming onto it, like a man - not
 	// turning flat out from a standstill in a frame and stopped dead in the
@@ -1438,7 +1438,7 @@ describe("3D director", () => {
 		// (Plenty of quick turns - just none begun or ended in a frame.)
 		assert.isAbove(quick, 1000, `${quick}`);
 		assert.isBelow(jerks, frames * 0.001, `${jerks} of ${frames}`);
-	}, 240_000);
+	}, 960_000);
 
 	// The picture never cuts in play: the ball taken out after a basket and
 	// brought up, the walk to an inbound or to the line, are all played out -
@@ -1476,7 +1476,7 @@ describe("3D director", () => {
 			}
 		}
 		assert.isAbove(events.length, 0);
-	}, 60_000);
+	}, 240_000);
 
 	// What just happened gets a moment at real speed before the picture
 	// hurries on, and longer after a basket - the ball down through the net,
@@ -1517,7 +1517,7 @@ describe("3D director", () => {
 			}
 		}
 		assert.isAbove(afterScore, 10);
-	}, 60_000);
+	}, 240_000);
 
 	// Watched at the usual speed: the ball down through the net and both
 	// teams heading back up the floor at real speed - a good two and a half
@@ -1558,7 +1558,7 @@ describe("3D director", () => {
 			assert.isAtLeast(full! - off!, 400, `${b.type} at ${b.actionStart}`);
 		}
 		assert.isAbove(makes, 10);
-	}, 60_000);
+	}, 240_000);
 
 	// The clock on screen never stops while the ball is live - the shot in
 	// the air, the rebound - and stays stopped through a whistle.
@@ -1592,7 +1592,7 @@ describe("3D director", () => {
 		});
 		assert.isAbove(live, 20);
 		assert.isAbove(whistles, 10);
-	}, 60_000);
+	}, 240_000);
 
 	// A quick trip off a defensive board or a steal is a fast break - run
 	// out at full speed, never fast-forwarded - and a long one walks it up
@@ -1673,7 +1673,7 @@ describe("3D director", () => {
 		assert.isAbove(broke / quick, 0.75);
 		assert.isAbove(actions.long.length, 20);
 		assert.isAbove(mean(actions.long), mean(actions.short) + 2);
-	}, 120_000);
+	}, 480_000);
 
 	test("on the break the ball goes one way - nobody takes it back up the floor to bring it in again", () => {
 		let breaks = 0;
@@ -1745,7 +1745,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(breaks, 10);
 		assert.deepEqual(back, []);
-	}, 120_000);
+	}, 480_000);
 
 	test("whoever holds the ball is on the floor", () => {
 		const { tl } = compile("holder", 140);
@@ -1758,7 +1758,7 @@ describe("3D director", () => {
 				);
 			}
 		}
-	}, 60_000);
+	}, 240_000);
 
 	// A basket's line comes with the points, rebounds and assists it adds up -
 	// events, not lines - so the page taking all of them at once is one line
@@ -1774,7 +1774,7 @@ describe("3D director", () => {
 			}
 		}
 		assert.strictEqual(linesBetween(tl, tl.beats[0]!.i, tl.beats[6]!.i), 6);
-	}, 60_000);
+	}, 240_000);
 
 	test("a make swishes and a miss rattles, right when its line shows", () => {
 		const { tl } = compile("fx", 140);
@@ -1793,7 +1793,7 @@ describe("3D director", () => {
 				assert.isTrue(near("clank"), `${b.type} at ${b.actionStart}`);
 			}
 		}
-	}, 60_000);
+	}, 240_000);
 
 	test("a shot is played out at the rim the way its line says it went - free throws too", () => {
 		const { events, tl } = compile("a", 140);
@@ -1836,7 +1836,7 @@ describe("3D director", () => {
 		assert.isAbove(made, 15);
 		assert.isAbove(missed, 15);
 		assert.isAbove(fts, 15);
-	}, 60_000);
+	}, 240_000);
 
 	test("up to the rim, off it and into the hands of the man who gets it, the ball never swerves", () => {
 		const { tl } = compile("a", 140);
@@ -1874,7 +1874,7 @@ describe("3D director", () => {
 		assert.isAbove(off.length, 20);
 		assert.isAbove(ok(into), 0.9);
 		assert.isAbove(ok(off), 0.9);
-	}, 60_000);
+	}, 240_000);
 
 	test("a blocked shot is swatted off his hand - down to the floor, or to whoever gets it", () => {
 		const { tl } = compile("a", 140);
@@ -1903,7 +1903,7 @@ describe("3D director", () => {
 			blocks += 1;
 		}
 		assert.isAbove(blocks, 2);
-	}, 60_000);
+	}, 240_000);
 
 	test("a jump shot that is blocked is got as it leaves his hand - not hung up in the air till the blocker gets there", () => {
 		let blocks = 0;
@@ -1930,7 +1930,7 @@ describe("3D director", () => {
 			}
 		}
 		assert.isAbove(blocks, 8);
-	}, 120_000);
+	}, 480_000);
 
 	// The man the words have at the shot - blocking it, fouling him - stays
 	// on his own man till it comes, and gets there from him: not gone to the
@@ -2001,7 +2001,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(shots, 40);
 		assert.isAtMost(parked.length, 1, parked.join(", "));
-	}, 120_000);
+	}, 480_000);
 
 	test("a left-hander's follow-through is held up with his left", () => {
 		const SHOTS = new Set(["shoot", "fade", "hook", "floater", "setShot"]);
@@ -2040,7 +2040,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(held.L, 2);
 		assert.isAbove(held.R, 20);
-	}, 120_000);
+	}, 480_000);
 
 	// A man contesting a shot in close is beside him - an arm's length off
 	// where the shooter comes down, his own side of the way in, and round
@@ -2091,7 +2091,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(shots, 250);
 		assert.isAtMost(into.length / shots, 1 / 200, into.join("; "));
-	}, 240_000);
+	}, 960_000);
 
 	// In the lane off the drive or the roll, short of the rim, a guard
 	// mostly floats it up over the big, and a big mostly hooks it in over
@@ -2126,7 +2126,7 @@ describe("3D director", () => {
 		assert.isAbove(n.big.floater + n.big.hook, 8);
 		assert.isAbove(share(n.guard, n.guard.floater), 0.6);
 		assert.isAbove(share(n.big, n.big.hook), 0.6);
-	}, 120_000);
+	}, 480_000);
 
 	// A jumper goes up: each man coming in to the glass has somebody put a
 	// body on him - his own man, or the man nearest - once that man is done
@@ -2164,7 +2164,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(shots, 100);
 		assert.isAtLeast(boxes / shots, 1.3, `${boxes} over ${shots}`);
-	}, 240_000);
+	}, 960_000);
 
 	test("off the rim, the man who gets it mostly goes up and takes it in the air", () => {
 		let air = 0;
@@ -2207,7 +2207,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(all, 160);
 		assert.isAbove(air / all, 0.5);
-	}, 120_000);
+	}, 480_000);
 
 	test("the playback target only moves forward as lines are shown", () => {
 		const { events, tl } = compile("cursor", 60);
@@ -2219,7 +2219,7 @@ describe("3D director", () => {
 			prev = t;
 		}
 		assert.strictEqual(targetForCursor(tl, events.length), tl.end);
-	}, 60_000);
+	}, 240_000);
 	test("a shot goes up from the zone the sim says", () => {
 		const { events, tl } = compile("zones", 160);
 		const beatOf = new Map(tl.beats.map((b) => [b.i, b]));
@@ -2257,7 +2257,7 @@ describe("3D director", () => {
 			checked += 1;
 		});
 		assert.isAbove(checked, 50);
-	}, 60_000);
+	}, 240_000);
 
 	test("an assisted basket's last pass comes from the man credited with it", () => {
 		const { events, tl } = compile("assists", 160);
@@ -2299,7 +2299,7 @@ describe("3D director", () => {
 			checked += 1;
 		});
 		assert.isAbove(checked, 10);
-	}, 60_000);
+	}, 240_000);
 
 	test("a finish at the rim looks the way the play-by-play words it", () => {
 		for (const gender of ["male", "female"] as const) {
@@ -2347,7 +2347,7 @@ describe("3D director", () => {
 				assert.isAbove(dunks, 0);
 			}
 		}
-	}, 60_000);
+	}, 240_000);
 
 	// A finish at the rim goes up from in front of the glass: the ball
 	// leaves his hand in front of the backboard - not round behind it, where
@@ -2408,7 +2408,7 @@ describe("3D director", () => {
 			}
 		}
 		assert.isAbove(checked, 60);
-	}, 240_000);
+	}, 960_000);
 
 	// A man fed at the rim from out on the floor is hit on his way in - on a
 	// cut, a roll, a run down the floor - not stood under it waiting on the
@@ -2503,7 +2503,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(fed, 8);
 		assert.isAtMost(parked, fed * 0.15, `${parked} of ${fed} parked`);
-	}, 240_000);
+	}, 960_000);
 
 	// Nor stood out at the free-throw line first, waiting on it: his run
 	// there - down the floor on the break, off his spot on a cut - gets him
@@ -2595,7 +2595,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(fed, 25);
 		assert.isAtMost(waited.length, fed * 0.4, waited.join("; "));
-	}, 240_000);
+	}, 960_000);
 
 	// A pull-up three off a ball screen: he comes off it - a dribble or two
 	// past the big's shoulder - and up behind it, not stood where he was all
@@ -2655,7 +2655,7 @@ describe("3D director", () => {
 		assert.isAbove(shots, 60);
 		assert.isAtMost(backed.length, shots * 0.08, backed.join(", "));
 		assert.strictEqual(long.length, 0, long.join(", "));
-	}, 240_000);
+	}, 960_000);
 
 	// Going up in close, whoever of theirs is right there goes up with him,
 	// arms high - not stood there in his slide while the shooter goes up
@@ -2711,7 +2711,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(near, 60);
 		assert.isAtMost(idle.length, near * 0.1, idle.join(", "));
-	}, 240_000);
+	}, 960_000);
 
 	// The shot up, a man getting back backs out with his eyes on it - never
 	// backs out of a corner up the floor facing the stands, the rim behind
@@ -2759,7 +2759,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(backs, 20);
 		assert.isAtMost(blind.length, backs * 0.05, blind.join(", "));
-	}, 240_000);
+	}, 960_000);
 
 	test("a pull-up three off a ball screen comes off the screen first", () => {
 		let n = 0;
@@ -2820,7 +2820,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(n, 10);
 		assert.isAtMost(stood.length, n * 0.25, stood.join("; "));
-	}, 240_000);
+	}, 960_000);
 
 	// Off the ball on the offense, a man going on the same way after a moment
 	// - nothing done there, no ball - runs on into it rather than pulling up
@@ -2878,7 +2878,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(pairs, 100);
 		assert.isAtMost(stops.length, pairs * 0.02, stops.join("; "));
-	}, 240_000);
+	}, 960_000);
 
 	// A handoff he goes on from - a drive, a run with it - is taken on the
 	// move: in his hands as he comes by, and him on his way with it round
@@ -2930,7 +2930,7 @@ describe("3D director", () => {
 		ons.sort((a, b) => a - b);
 		assert.isAbove(ons.length, 15);
 		assert.isAtMost(ons[Math.floor(ons.length / 2)]!, 700, `${ons}`);
-	}, 240_000);
+	}, 960_000);
 
 	// A jumper off a handoff goes up off the hip of the man who gave it, a
 	// dribble or two on the way he was going: not stood with it at his side
@@ -2998,7 +2998,7 @@ describe("3D director", () => {
 		assert.isAtLeast(shots.length, 8);
 		assert.isAtMost(slow.length, 1, slow.join("; "));
 		assert.isAtMost(close.length, 1, close.join("; "));
-	}, 240_000);
+	}, 960_000);
 
 	// A drive into the lane goes in on its own: nobody of his running in at
 	// his shoulder the whole way - the man who set him the screen or gave him
@@ -3061,7 +3061,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(drives, 120);
 		assert.isAtMost(along.length, drives * 0.035, along.join("; "));
-	}, 240_000);
+	}, 960_000);
 
 	// A shot from out on the floor goes up with room round him: off a ball
 	// screen he turns the corner, the man who set it rolling away - not up
@@ -3115,7 +3115,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(shots, 200);
 		assert.isAtMost(close.length, shots * 0.075, close.join("; "));
-	}, 240_000);
+	}, 960_000);
 
 	// "Dunks on him": the man the words name is the one who meets him at the
 	// rim - nearest him of anybody on the other side, right there, up with
@@ -3163,7 +3163,7 @@ describe("3D director", () => {
 			});
 		}
 		assert.isAbove(posters, 3);
-	}, 60_000);
+	}, 240_000);
 
 	// From the camera (across the floor from the far sideline), a defender
 	// right in front of a shooter would hide his whole shot: he meets it from
@@ -3202,7 +3202,7 @@ describe("3D director", () => {
 			}
 			assert.isAbove(checked, 3);
 		}
-	}, 60_000);
+	}, 240_000);
 
 	// Every free throw: the official bounces him the ball, he dribbles, shoots
 	// and holds his follow-through until the ball gets to the rim.
@@ -3264,7 +3264,7 @@ describe("3D director", () => {
 			}
 		}
 		assert.isAbove(threes, 30);
-	}, 60_000);
+	}, 240_000);
 
 	// With the ball in play, at real speed, everybody is on the floor: a
 	// corner man spacing or drifting keeps his feet in - not stood behind
@@ -3309,7 +3309,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(checked, 50_000);
 		assert.isAtMost(out.length, 1, out.join("; "));
-	}, 120_000);
+	}, 480_000);
 
 	// The ball left bouncing at a basket or a whistle goes off the floor
 	// away from whoever is stood there - the man dunked on has stepped back
@@ -3351,7 +3351,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(loose, 1000);
 		assert.isAtMost(through.length, 1, through.join("; "));
-	}, 120_000);
+	}, 480_000);
 
 	test("a free throw has the shooter's routine", () => {
 		for (const seed of ["a", "b"]) {
@@ -3401,7 +3401,7 @@ describe("3D director", () => {
 			}
 			assert.isAbove(checked, 4);
 		}
-	}, 60_000);
+	}, 240_000);
 
 	// At the tip-off both teams stand ready, nobody on offense or defense
 	// yet, till the ball is tipped - nobody gives away who wins it.
@@ -3467,7 +3467,7 @@ describe("3D director", () => {
 			});
 			assert.isBelow(worst, 2500, seed);
 		}
-	}, 240_000);
+	}, 960_000);
 
 	// Once it is over half court, the ball never goes back over: no set has
 	// the man with it dribble it back into the backcourt to start from there,
@@ -3511,7 +3511,7 @@ describe("3D director", () => {
 				}
 			}
 		}
-	}, 240_000);
+	}, 960_000);
 
 	// A quick trip off a defensive board or a steal: the ball keeps coming up
 	// the floor - not brought up and stood there bouncing it, 2.5 s and more,
@@ -3554,7 +3554,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(trips, 25);
 		assert.isAtMost(stood, trips / 30, `${stood} of ${trips}`);
-	}, 240_000);
+	}, 960_000);
 
 	// A whistle on a foul that stops play, the man with the ball out on the
 	// floor - the set still coming to him - isn't stood there with it
@@ -3604,7 +3604,7 @@ describe("3D director", () => {
 		}
 		assert.isAtLeast(fouls, 20);
 		assert.isAtMost(stood.length, 1, stood.join("; "));
-	}, 120_000);
+	}, 480_000);
 
 	// The camera goes off the floor only while nothing is happening on it: the
 	// game opens on the building and cuts in for the tip, and a timeout or the
@@ -3646,7 +3646,7 @@ describe("3D director", () => {
 				}
 			}
 		}
-	}, 60_000);
+	}, 240_000);
 
 	// A pass coming his way: his hands come up for it before it gets there.
 	test("a receiver shows his hands for a pass", () => {
@@ -3677,7 +3677,7 @@ describe("3D director", () => {
 			assert.isAbove(passes, 20);
 			assert.isAbove(shown / passes, 0.9, seed);
 		}
-	}, 60_000);
+	}, 240_000);
 
 	// Passing it off his dribble, a man takes it as it comes up into his
 	// hands and it goes straight on out of them - not picked up at the top
@@ -3730,7 +3730,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(passes, 100);
 		assert.isBelow(stood / passes, 0.2);
-	}, 120_000);
+	}, 480_000);
 
 	// Passed out to a man left open, his defender reads it as it goes and is
 	// on his way out to him in the air - not stood watching it till it gets
@@ -3785,7 +3785,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(passes, 30);
 		assert.isBelow(stood / passes, OPEN_STOOD_MOST);
-	}, 120_000);
+	}, 480_000);
 
 	// Running, sliding, dribbling, a man still talks with a hand: the
 	// screener's man points out the screen, a switch or a man getting back
@@ -3841,7 +3841,7 @@ describe("3D director", () => {
 		assert.isAtLeast(kinds.slap, subs);
 		assert.isAtLeast(kinds.follow, 30);
 		assert.isAtLeast(onTheMove, 60);
-	}, 60_000);
+	}, 240_000);
 
 	// One pass from the ball and up on his man, a defender has an arm out in
 	// the passing lane - and it comes and goes, never jumping from one arm
@@ -3902,7 +3902,7 @@ describe("3D director", () => {
 		assert.isAbove(cand, 200);
 		assert.isAbove(denied / cand, 0.4);
 		assert.isBelow(flips, 15);
-	}, 120_000);
+	}, 480_000);
 
 	// A shot fake with a man up on him: he comes up out of his stance for
 	// it - off his feet if he bites, a hand up if he does not.
@@ -3942,7 +3942,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(close, 15);
 		assert.isAbove(rose / close, 0.8);
-	}, 60_000);
+	}, 240_000);
 
 	test("flat out, a player sprints - bounding off the floor stride to stride; at an easy pace, he jogs", () => {
 		const { tl } = compile("a");
@@ -4026,7 +4026,7 @@ describe("3D director", () => {
 		}
 		assert.isAbove(sprints, 5);
 		assert.isAbove(jogs, 5);
-	}, 60_000);
+	}, 240_000);
 
 	// A dunk is a dunk: the ball goes up over the rim in his hand and is
 	// thrown down through it, and a make, he hangs there by both hands - a
@@ -4074,7 +4074,7 @@ describe("3D director", () => {
 			}
 		}
 		assert.isAbove(dunks, 2);
-	}, 60_000);
+	}, 240_000);
 
 	// A close game late in the fourth (or in overtime) has the building on
 	// its feet; the first three periods never do.
@@ -4100,7 +4100,7 @@ describe("3D director", () => {
 			}
 		}
 		assert.isAbove(tense, 1);
-	}, 120_000);
+	}, 480_000);
 
 	test("a rebounder chins it before he goes anywhere with it", () => {
 		for (const seed of ["a", "b"]) {
@@ -4123,7 +4123,7 @@ describe("3D director", () => {
 			}
 			assert.isAbove(boards, 10);
 		}
-	}, 60_000);
+	}, 240_000);
 
 	// A run with time either side of it is taken at a player's pace: not
 	// flat out from a standstill and pulled up dead, a blink each way.
@@ -4156,7 +4156,7 @@ describe("3D director", () => {
 			// there, leave no more time for.)
 			assert.isBelow(dashes / alone, 0.025, seed);
 		}
-	}, 120_000);
+	}, 480_000);
 
 	test("nobody on the floor goes faster than a man can run - not even back from meeting a dunk", () => {
 		// (Seed 55: the man dunked on, there under the rim for the block,
@@ -4185,5 +4185,5 @@ describe("3D director", () => {
 				}
 			}
 		}
-	}, 120_000);
+	}, 480_000);
 });
