@@ -2817,6 +2817,9 @@ export type Team = {
 			side: 0 | 1;
 			give: { pids: number[]; dpids: number[] };
 		}[];
+		// In plain words, for each side: why it makes the deal and what it would
+		// want most in a bid. Missing on deals held before.
+		notes?: [{ why: string; wants: string }, { why: string; wants: string }];
 	};
 
 	// [regular season, playoffs]

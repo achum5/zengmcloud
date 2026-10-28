@@ -120,7 +120,12 @@ const teamLink = (tid: number) => {
 		: "";
 };
 
-export const holdDeal = async (initiatorTid: number, deal: Deal) => {
+export const holdDeal = async (
+	initiatorTid: number,
+	deal: Deal,
+	// Why each team makes it and what it wants most in a bid (dealNotes.ts).
+	notes?: Pending["notes"],
+) => {
 	const t = await idb.cache.teams.get(initiatorTid);
 	if (!t) {
 		return;
@@ -130,6 +135,7 @@ export const holdDeal = async (initiatorTid: number, deal: Deal) => {
 		give: deal.give,
 		day: await dayKey(),
 		bids: [],
+		notes,
 	};
 	await idb.cache.teams.put(t);
 	reserve(deal.give);

@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 23,
+		date: "2026-10-28",
+		text: 'Realistic Front Offices: pending deals on Trade Proposals now show each player\'s age and ovr/pot, why each team is making the deal ("A contender adding for a title run", "Rebuilding, for later", "Saves money"...) and what it wants most in a bid (players who help now, young players and picks, or cap relief).',
+	},
+	{
 		n: 22,
 		date: "2026-10-28",
 		text: "Realistic Front Offices: when two CPU teams agree a deal that's open for bids, a \"Pending deal\" button now shows in the header (it takes you to Trade Proposals) and everyone's phone gets a notification. The front office breakdown on a trade's summary page now shows without God Mode. New leagues start with Budget off.",

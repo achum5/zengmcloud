@@ -1,4 +1,5 @@
 import { idb } from "../db/index.ts";
+import { player } from "../core/index.ts";
 import { g, helpers } from "../util/index.ts";
 import type { TradeTeams } from "../../common/types.ts";
 import isUntradable from "../core/trade/isUntradable.ts";
@@ -27,9 +28,37 @@ const pendingDeals = async (userTid: number) => {
 			dpidsExcluded: [],
 		});
 		const teams: TradeTeams = [side(0), side(1)];
+		const dealSummary = await getSummary(teams);
+		// Each player with his age, ratings and stats, as on trade proposals.
+		const withInfo = async (k: 0 | 1) => {
+			const players = await player.formatAll(
+				(await idb.cache.players.getAll()).filter((p) =>
+					deal.give[k].pids.includes(p.pid),
+				),
+				{
+					attrs: ["pid", "age"],
+					ratings: ["ovr", "pot", "skills", "pos"],
+					stats: ["gp", "min", "pts", "trb", "ast", "per"],
+					season: g.get("season"),
+					showNoStats: true,
+					showRookies: true,
+					fuzz: true,
+				},
+			);
+			return {
+				...dealSummary.teams[k],
+				trade: dealSummary.teams[k].trade.map((p) => {
+					const p2 = players.find((p2) => p2.pid === p.pid);
+					return p2
+						? { ...p, age: p2.age, ratings: p2.ratings, stats: p2.stats }
+						: p;
+				}),
+			};
+		};
 		out.push({
 			tids: deal.tids,
 			give: deal.give,
+			notes: deal.notes,
 			bid: [0, 1].map((k) =>
 				deal.bids.some((bid) => bid.tid === userTid && bid.side === k),
 			),
@@ -39,7 +68,10 @@ const pendingDeals = async (userTid: number) => {
 					deal.bids.filter((bid) => bid.side === k).map((bid) => bid.tid),
 				),
 			]),
-			summary: await getSummary(teams),
+			summary: {
+				...dealSummary,
+				teams: [await withInfo(0), await withInfo(1)] as const,
+			},
 		});
 	}
 	return out;

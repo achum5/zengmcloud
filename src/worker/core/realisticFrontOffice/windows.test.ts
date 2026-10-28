@@ -5,6 +5,7 @@ import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import { judgeHumanOffer } from "./humanTrades.ts";
+import tradeProposals from "../../views/tradeProposals.ts";
 import { currentOutlook, loadTeam, tableAssets } from "./market.ts";
 import {
 	closeWindows,
@@ -162,5 +163,53 @@ test(
 		await closeWindows();
 		assert.strictEqual((await idb.cache.players.get(theirs.pid))!.tid, userTid);
 		assert.strictEqual((await idb.cache.players.get(best.pid))!.tid, tid);
+	},
+);
+
+test(
+	"a pending deal shows each player's ratings, and why each team makes it",
+	{ timeout: 120_000 },
+	async () => {
+		const outlook = await currentOutlook();
+		const a = await loadTeam(outlook, 5);
+		const [p1] = [...a.tradablePlayers].sort(
+			(x, y) => y.valueNoPot - x.valueNoPot,
+		);
+		const dp = (await picks(6, 1))[0]!;
+		const t = (await idb.cache.teams.get(5))!;
+		t.pendingTrade = {
+			tids: [5, 6],
+			give: [
+				{ pids: [p1!.pid], dpids: [] },
+				{ pids: [], dpids: [dp.dpid] },
+			],
+			day: "earlier",
+			bids: [],
+			notes: [
+				{ why: "Rebuilding, for later", wants: "Young players and picks" },
+				{
+					why: "A contender adding for a title run",
+					wants: "Players who help now",
+				},
+			],
+		};
+		await idb.cache.teams.put(t);
+		await loadReserved();
+		const data = (await tradeProposals.load({
+			inputs: {},
+			updateEvents: new Set(["firstRun"]),
+			prevInputs: undefined,
+			prevOutput: {},
+			conditions: {},
+		} as any)) as any;
+		const deal = data.pending.find((x: any) => x.tids[0] === 5);
+		assert.isDefined(deal);
+		assert.strictEqual(deal.notes[1].wants, "Players who help now");
+		const shown = deal.summary.teams[0].trade[0];
+		assert.strictEqual(shown.pid, p1!.pid);
+		assert.isNumber(shown.age);
+		assert.isNumber(shown.ratings.ovr);
+		assert.isNumber(shown.ratings.pot);
+		await closeWindows();
 	},
 );

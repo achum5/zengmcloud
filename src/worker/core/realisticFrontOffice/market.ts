@@ -13,6 +13,7 @@ import getPayroll from "../team/getPayroll.ts";
 import isUntradable from "../trade/isUntradable.ts";
 import processTrade from "../trade/processTrade.ts";
 import summary from "../trade/summary.ts";
+import { dealNotes } from "./dealNotes.ts";
 import { explainDeal, type ExplainSide } from "./explain.ts";
 import {
 	draftPlaceMisread,
@@ -1282,6 +1283,29 @@ export const legalDeal = async (deal: Pick<Deal, "tids" | "give">) =>
 		])
 	).warning;
 
+// The whole calculation behind a deal two CPU teams agreed (explain.ts).
+const breakdownOf = (
+	outlook: LeagueOutlook,
+	best: Deal,
+	sides: readonly [TeamState, TeamState],
+) => {
+	const assetsOf = (k: 0 | 1) => ({
+		players: best.assets[k].flatMap((x) => (x.kind === "player" ? [x.p] : [])),
+		picks: best.assets[k].flatMap((x) => (x.kind === "pick" ? [x.dp] : [])),
+	});
+	const sideFor = (k: 0 | 1): ExplainSide => ({
+		tid: best.tids[k],
+		players: sides[k].players,
+		picks: sides[k].picks,
+		tradedAway: sides[k].tradedAway,
+		gain: best.gains[k],
+		margin: best.margins[k],
+		gives: assetsOf(k),
+		gets: assetsOf(k === 0 ? 1 : 0),
+	});
+	return explainDeal(outlook, [sideFor(0), sideFor(1)]);
+};
+
 // Makes a deal two CPU teams agreed, with its record for the trade history;
 // false if the trade screen would not allow it.
 export const makeDeal = async (
@@ -1319,21 +1343,7 @@ export const makeDeal = async (
 			? `${o.strength[0]! >= 0 ? "+" : ""}${o.strength[0]!.toFixed(1)} now, ${(100 * o.title[0]!).toFixed(1)}% title`
 			: "";
 	};
-	const assetsOf = (k: 0 | 1) => ({
-		players: best.assets[k].flatMap((x) => (x.kind === "player" ? [x.p] : [])),
-		picks: best.assets[k].flatMap((x) => (x.kind === "pick" ? [x.dp] : [])),
-	});
-	const sideFor = (k: 0 | 1): ExplainSide => ({
-		tid: best.tids[k],
-		players: sides[k].players,
-		picks: sides[k].picks,
-		tradedAway: sides[k].tradedAway,
-		gain: best.gains[k],
-		margin: best.margins[k],
-		gives: assetsOf(k),
-		gets: assetsOf(k === 0 ? 1 : 0),
-	});
-	const breakdown = explainDeal(outlook, [sideFor(0), sideFor(1)]);
+	const breakdown = breakdownOf(outlook, best, sides);
 	for (const watch of tradeWatchers) {
 		watch({
 			tids: best.tids,
@@ -1416,7 +1426,11 @@ const shop = async (numShoppers: number, holds = false) => {
 			// Held until the next trading day, for other teams to bid on
 			// either side's assets (windows.ts).
 			if (await legalDeal(best)) {
-				await holdDeal(tid, best);
+				await holdDeal(
+					tid,
+					best,
+					dealNotes(outlook, breakdownOf(outlook, best, sides)),
+				);
 			}
 			continue;
 		}

@@ -136,7 +136,19 @@ const TradeProposals = ({
 						>
 							{deal.summary.teams.map((t, k) => (
 								<div key={k}>
-									<SummaryTeam hideFinanceInfo summary={deal.summary} t={t} />
+									<SummaryTeam
+										hideFinanceInfo
+										showInlinePlayerInfo
+										summary={deal.summary}
+										t={t}
+									/>
+									{deal.notes ? (
+										<div className="text-body-secondary small mb-1">
+											{deal.notes[k]!.why}. Wants{" "}
+											{deal.notes[k]!.wants.charAt(0).toLowerCase()}
+											{deal.notes[k]!.wants.slice(1)}.
+										</div>
+									) : null}
 									{deal.give[k]!.pids.length + deal.give[k]!.dpids.length >
 									0 ? (
 										<button
