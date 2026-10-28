@@ -1230,8 +1230,8 @@ const describeTradesFromEvents = (
 	return out;
 };
 
-// Realistic Front Offices: a deal two CPU teams agreed, held for bids until
-// the next sim day (realisticFrontOffice/windows.ts). Announced as it is
+// Realistic Front Offices: a deal two CPU teams agreed, held for bids
+// (realisticFrontOffice/windows.ts). Announced as it is
 // held - in the trading period it was held in, before anyone has bid.
 const describePendingDeals = async (
 	changeset: Changeset,
@@ -1273,7 +1273,7 @@ const describePendingDeals = async (
 		const [a, b] = pending.tids as [number, number];
 		out.push({
 			title: "Pending deal",
-			body: `The ${teamLabel(teamById, a)} would get ${await assets(pending.give[1])} from the ${teamLabel(teamById, b)} for ${await assets(pending.give[0])}. Bids are open until the next sim day.`,
+			body: `The ${teamLabel(teamById, a)} would get ${await assets(pending.give[1])} from the ${teamLabel(teamById, b)} for ${await assets(pending.give[0])}. Bids are open for at least two more sims.`,
 			targetTids: null,
 			path: "trade_proposals",
 		});
