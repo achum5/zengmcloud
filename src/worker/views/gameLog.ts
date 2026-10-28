@@ -12,7 +12,6 @@ import { DEFAULT_TEAM_COLORS, PHASE } from "../../common/constants.ts";
 import { getProcessedGames } from "../util/getProcessedGames.ts";
 import { getAutoRecapForGid } from "../util/getDayGamesForRecap.ts";
 import { getBoxScoreFlow } from "../util/gameTimeline.ts";
-import { MAX_LINEUPS, MIN_LINEUP_SEC } from "../../common/lineups.ts";
 import { lineupPictures } from "../util/lineupPictures.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { validateAbbrev } from "../util/processInputs.ts";
@@ -311,14 +310,10 @@ const boxScore = async (gid: number) => {
 	if (__SPORT === "basketball") {
 		const charts = getBoxScoreFlow(game);
 		if (charts?.lineups) {
-			// (Faces for the fives the box score shows.)
+			// (Faces for everyone who played: any of them can be in a group
+			// the box score shows, or picked for on/off.)
 			charts.pics = await lineupPictures(
-				charts.lineups.flatMap((lines) =>
-					lines
-						.filter((line) => line.sec >= MIN_LINEUP_SEC)
-						.slice(0, MAX_LINEUPS)
-						.flatMap((line) => line.pids),
-				),
+				charts.lineups.flatMap((lines) => lines.flatMap((line) => line.pids)),
 			);
 		}
 		(game2 as any).charts = charts;

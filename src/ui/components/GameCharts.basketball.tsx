@@ -12,10 +12,11 @@ import type {
 	OnCourt,
 	Stint,
 } from "../../worker/util/gameTimeline.ts";
+import type { FloorBox } from "../../worker/util/gameShifts.ts";
 import { formatClock } from "../../common/formatClock.ts";
-import { MAX_LINEUPS, MIN_LINEUP_SEC } from "../../common/lineups.ts";
+import { groupsOf, MAX_LINEUPS, MIN_LINEUP_SEC } from "../../common/lineups.ts";
 import clsx from "clsx";
-import { LineupFaces } from "./LineupFaces.tsx";
+import { LineupFace, LineupFaces } from "./LineupFaces.tsx";
 import { GAME_S, HOME_EDGE, winProb } from "../views/LiveGame/winProb.ts";
 import { helpers } from "../util/helpers.ts";
 import { teamsInDisplayOrder } from "../util/boxScoreDisplayOrder.ts";
@@ -844,14 +845,44 @@ const LineupTable = ({
 
 const Section = ({
 	title,
+	control,
 	children,
 }: {
 	title: string;
+	control?: ReactNode;
 	children: ReactNode;
 }) => (
 	<div className="mb-3">
-		<h2>{title}</h2>
+		<div className="d-flex flex-wrap align-items-center column-gap-3 row-gap-1 mb-2">
+			<h2 className="mb-0">{title}</h2>
+			{control}
+		</div>
 		{children}
+	</div>
+);
+
+const Switch = <T extends string | number>({
+	options,
+	value,
+	onChange,
+}: {
+	options: [T, string][];
+	value: T;
+	onChange: (value: T) => void;
+}) => (
+	<div className="btn-group btn-group-sm" role="group">
+		{options.map(([option, label]) => (
+			<button
+				key={option}
+				type="button"
+				className={`btn ${option === value ? "btn-secondary" : "btn-light-bordered"}`}
+				onClick={() => {
+					onChange(option);
+				}}
+			>
+				{label}
+			</button>
+		))}
 	</div>
 );
 
@@ -940,6 +971,301 @@ export const GameCharts = ({
 	);
 };
 
+// A stretch of the game from one team's side: its minutes, possessions and
+// points, and its box score and the other team's (when the game kept them).
+type Stretch = OnCourt & { min: number; us?: FloorBox; them?: FloorBox };
+
+const minus = (a: FloorBox, b: FloorBox) =>
+	Object.fromEntries(
+		Object.entries(a).map(([k, v]) => [k, v - b[k as keyof FloorBox]]),
+	) as FloorBox;
+
+const share = (num: number, den: number) =>
+	den > 0 ? (100 * num) / den : undefined;
+
+// Each row: how to read it off a stretch, how to show it, and which way is
+// good for the team.
+type Row = {
+	label: string;
+	get: (x: Stretch) => number | undefined;
+	kind: "count" | "signed" | "rating" | "net" | "pct";
+	good: 1 | -1 | 0;
+	box?: true;
+};
+
+const ROWS: Row[] = [
+	{ label: "MIN", get: (x) => x.min, kind: "count", good: 0 },
+	{ label: "POSS", get: (x) => x.poss, kind: "count", good: 0 },
+	{ label: "+/-", get: (x) => x.pts - x.ptsOpp, kind: "signed", good: 1 },
+	{ label: "ORTG", get: (x) => rating(x.pts, x.poss), kind: "rating", good: 1 },
+	{
+		label: "DRTG",
+		get: (x) => rating(x.ptsOpp, x.possOpp),
+		kind: "rating",
+		good: -1,
+	},
+	{ label: "NRTG", get: net, kind: "net", good: 1 },
+	{
+		label: "eFG%",
+		get: ({ us }) => us && share(us.fg + 0.5 * us.tp, us.fga),
+		kind: "pct",
+		good: 1,
+		box: true,
+	},
+	{
+		label: "OREB%",
+		get: ({ us, them }) => us && them && share(us.orb, us.orb + them.drb),
+		kind: "pct",
+		good: 1,
+		box: true,
+	},
+	{
+		label: "DREB%",
+		get: ({ us, them }) => us && them && share(us.drb, us.drb + them.orb),
+		kind: "pct",
+		good: 1,
+		box: true,
+	},
+	{
+		label: "REB%",
+		get: ({ us, them }) =>
+			us &&
+			them &&
+			share(us.orb + us.drb, us.orb + us.drb + them.orb + them.drb),
+		kind: "pct",
+		good: 1,
+		box: true,
+	},
+	{
+		label: "AST%",
+		get: ({ us }) => us && share(us.ast, us.fg),
+		kind: "pct",
+		good: 1,
+		box: true,
+	},
+	{
+		label: "BLK%",
+		get: ({ us, them }) => us && them && share(us.blk, them.fga - them.tpa),
+		kind: "pct",
+		good: 1,
+		box: true,
+	},
+	{
+		label: "STL%",
+		get: (x) => x.us && share(x.us.stl, x.possOpp),
+		kind: "pct",
+		good: 1,
+		box: true,
+	},
+	{
+		label: "TOV%",
+		get: ({ us }) => us && share(us.tov, us.fga + 0.44 * us.fta + us.tov),
+		kind: "pct",
+		good: -1,
+		box: true,
+	},
+];
+
+const show = (x: number | undefined, kind: Row["kind"], diff = false) => {
+	if (x === undefined) {
+		return "—";
+	}
+	if (kind === "count") {
+		return diff ? "—" : String(Math.round(x));
+	}
+	if (kind === "signed") {
+		return helpers.plusMinus(x, 0);
+	}
+	// (No "-0.0".)
+	const y = Math.abs(x) < 0.05 ? 0 : x;
+	const text = diff || kind === "net" ? helpers.plusMinus(y, 1) : y.toFixed(1);
+	return kind === "pct" ? `${text}%` : text;
+};
+
+// The other team's side of the same stretch.
+const flip = (x: Stretch): Stretch => ({
+	...x,
+	poss: x.possOpp,
+	possOpp: x.poss,
+	pts: x.ptsOpp,
+	ptsOpp: x.pts,
+	us: x.them,
+	them: x.us,
+});
+
+// One team's: pick a man, see his team (or the other one) with him on the
+// floor and off it.
+const OnOffTable = ({
+	t,
+	side,
+	charts,
+	theirs,
+}: {
+	t: any;
+	side: Side;
+	charts: BoxScoreFlow;
+	theirs: boolean;
+}) => {
+	const onCourt = charts.onCourt![side];
+	const boxes = charts.floorBox?.[side];
+	const players = (t.players as any[]).filter(
+		(p) => onCourt.byPid[p.pid] !== undefined,
+	);
+	const [picked, setPicked] = useState<number | undefined>(undefined);
+	const p = players.find((p) => p.pid === picked) ?? players[0];
+	if (!p) {
+		return null;
+	}
+
+	const gameMin = charts.total / 60;
+	const min = Math.min(gameMin, p.min ?? 0);
+	const team = onCourt.team;
+	const onFloor = onCourt.byPid[p.pid]!;
+	const usOn = boxes ? boxes.byPid[p.pid]?.[0] : undefined;
+	const themOn = boxes ? boxes.byPid[p.pid]?.[1] : undefined;
+	// (Nothing of the box score while he was out there: a box of zeros.)
+	const nothing = boxes && minus(boxes.team[0], boxes.team[0]);
+	const on: Stretch = {
+		...onFloor,
+		min,
+		us: usOn ?? nothing,
+		them: themOn ?? nothing,
+	};
+	const off: Stretch = {
+		sec: team.sec - onFloor.sec,
+		poss: team.poss - onFloor.poss,
+		possOpp: team.possOpp - onFloor.possOpp,
+		pts: team.pts - onFloor.pts,
+		ptsOpp: team.ptsOpp - onFloor.ptsOpp,
+		min: gameMin - min,
+		us: boxes && on.us && minus(boxes.team[0], on.us),
+		them: boxes && on.them && minus(boxes.team[1], on.them),
+	};
+	const [a, b] = theirs ? [flip(on), flip(off)] : [on, off];
+	const rows = ROWS.filter((row) => !row.box || boxes);
+
+	return (
+		<>
+			<select
+				className="form-select form-select-sm w-auto mb-2"
+				value={p.pid}
+				onChange={(event) => {
+					setPicked(Number(event.target.value));
+				}}
+			>
+				{players.map((p) => (
+					<option key={p.pid} value={p.pid}>
+						{p.name}
+					</option>
+				))}
+			</select>
+			<div className="table-responsive">
+				<table className="table table-striped table-borderless table-sm mb-0 align-middle">
+					<thead>
+						<tr>
+							<th className="text-end align-bottom">{t.abbrev}</th>
+							{(["ON", "OFF"] as const).map((label) => (
+								<th key={label} className="text-end">
+									<div className="d-inline-block">
+										<LineupFace
+											pid={p.pid}
+											pic={charts.pics?.[p.pid]}
+											colors={t.colors}
+											jersey={t.jersey}
+											scale={0.8}
+											label={label}
+											dim={label === "OFF"}
+										/>
+									</div>
+								</th>
+							))}
+							<th className="text-end align-bottom">DIFF</th>
+						</tr>
+					</thead>
+					<tbody style={{ fontVariantNumeric: "tabular-nums" }}>
+						{rows.map((row) => {
+							const x = row.get(a);
+							const y = row.get(b);
+							const diff =
+								row.good === 0 || x === undefined || y === undefined
+									? undefined
+									: x - y;
+							// Good or bad for his team, whichever side is shown.
+							const sign =
+								diff === undefined
+									? 0
+									: Math.sign(diff) * row.good * (theirs ? -1 : 1);
+							return (
+								<tr key={row.label}>
+									<th className="text-end text-body-secondary fw-semibold">
+										{row.label}
+									</th>
+									<td className="text-end">{show(x, row.kind)}</td>
+									<td className="text-end">{show(y, row.kind)}</td>
+									<td
+										className={clsx(
+											"text-end fw-bold",
+											sign > 0
+												? "text-success"
+												: sign < 0
+													? "text-danger"
+													: undefined,
+										)}
+									>
+										{row.good === 0 ? "—" : show(diff, row.kind, true)}
+									</td>
+								</tr>
+							);
+						})}
+					</tbody>
+				</table>
+			</div>
+		</>
+	);
+};
+
+const OnOff = ({
+	charts,
+	teams,
+	order,
+}: {
+	charts: BoxScoreFlow;
+	teams: [any, any];
+	order: [Side, Side];
+}) => {
+	const [theirs, setTheirs] = useState(false);
+	return (
+		<Section
+			title="On/Off"
+			control={
+				<Switch
+					options={[
+						["own", "Own Team"],
+						["opp", "Opposing Team"],
+					]}
+					value={theirs ? "opp" : "own"}
+					onChange={(value) => {
+						setTheirs(value === "opp");
+					}}
+				/>
+			}
+		>
+			<div className="row g-3">
+				{order.map((side) => (
+					<div key={side} className="col-xl-6">
+						<OnOffTable
+							t={teams[side]}
+							side={side}
+							charts={charts}
+							theirs={theirs}
+						/>
+					</div>
+				))}
+			</div>
+		</Section>
+	);
+};
+
 // Who was on the floor when, and how each five did: once it is over.
 const GameFlowRest = ({
 	charts,
@@ -956,6 +1282,17 @@ const GameFlowRest = ({
 	numPeriods: number;
 	lineups: BoxScoreFlow["lineups"];
 }) => {
+	// Fives, or the fours, threes or pairs inside them.
+	const size = lineups?.[0][0]?.pids.length ?? 0;
+	const [n, setN] = useState(size);
+	const groups = lineups?.map((lines) =>
+		n < size ? groupsOf(lines, n) : lines,
+	);
+	const sizes: [number, string][] = [];
+	for (let k = size; k >= 2; k--) {
+		sizes.push([k, `${k}-man`]);
+	}
+
 	return (
 		<>
 			<Section title="Rotations">
@@ -971,20 +1308,31 @@ const GameFlowRest = ({
 				))}
 			</Section>
 			{lineups &&
+			groups &&
 			lineups.some((lines) => lines.some((l) => l.sec >= MIN_LINEUP_SEC)) ? (
-				<Section title="Lineups">
+				<Section
+					title="Lineups"
+					control={
+						sizes.length > 1 ? (
+							<Switch options={sizes} value={n} onChange={setN} />
+						) : null
+					}
+				>
 					<div className="row g-3">
 						{order.map((side) => (
 							<div key={side} className="col-xl-6">
 								<LineupTable
 									t={teams[side]}
-									lines={lineups[side]}
+									lines={groups[side]!}
 									pics={charts.pics}
 								/>
 							</div>
 						))}
 					</div>
 				</Section>
+			) : null}
+			{charts.onCourt ? (
+				<OnOff charts={charts} teams={teams} order={order} />
 			) : null}
 		</>
 	);

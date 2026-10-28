@@ -14,7 +14,7 @@ import { headToHead, season } from "../index.ts";
 import getWinner from "../../../common/getWinner.ts";
 import formatScoreWithShootout from "../../../common/formatScoreWithShootout.ts";
 import { getBestPlayerBoxScore } from "../../../common/getBestPlayerBoxScore.ts";
-import { encodeShifts } from "../../util/gameShifts.ts";
+import { encodeOnFloor, encodeShifts } from "../../util/gameShifts.ts";
 import { encodeShiftSecs, encodeTimeline } from "../../util/gameTimeline.ts";
 
 const allStarMVP = async (
@@ -275,6 +275,9 @@ export const gameSimToBoxScore = async (results: GameResults, att: number) => {
 				results.shifts ?? [],
 				results.numPlayersOnCourt,
 			);
+			if (results.onFloor?.length > 0) {
+				gameStats.onFloor = encodeOnFloor(results.onFloor);
+			}
 		}
 	}
 

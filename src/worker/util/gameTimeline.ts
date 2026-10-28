@@ -16,7 +16,8 @@
 import type { Game } from "../../common/types.ts";
 import type { GameShift } from "../core/GameSim.basketball/shiftLog.ts";
 import type { GameTimelineRaw } from "../core/GameSim.basketball/timelineLog.ts";
-import { decodeShifts } from "./gameShifts.ts";
+import { decodeOnFloor, decodeShifts, type FloorBox } from "./gameShifts.ts";
+import { ON_FLOOR_STATS } from "../core/GameSim.basketball/shiftLog.ts";
 import type { LineupPic } from "./lineupPictures.ts";
 
 export const encodeTimeline = (timeline: GameTimelineRaw) => {
@@ -128,8 +129,17 @@ export type BoxScoreFlow = {
 		{ team: OnCourt; byPid: Record<number, OnCourt> },
 		{ team: OnCourt; byPid: Record<number, OnCourt> },
 	];
+	// Per team: the box score, its own and the other team's, for the whole
+	// game and for each man's time on the floor. Absent for games from before
+	// it was kept.
+	floorBox?: [FloorBoxes, FloorBoxes];
 	// Faces for the fives shown (see util/lineupPictures).
 	pics?: Record<number, LineupPic>;
+};
+
+export type FloorBoxes = {
+	team: [FloorBox, FloorBox];
+	byPid: Record<number, [FloorBox, FloorBox]>;
 };
 
 const blank = (): OnCourt => ({
@@ -200,6 +210,37 @@ const onCourtOf = (lines: LineupLine[]) => {
 	return { team, byPid };
 };
 
+const boxOf = (t: object) =>
+	Object.fromEntries(
+		ON_FLOOR_STATS.map((stat) => {
+			const x = (t as Record<string, unknown>)[stat];
+			return [stat, typeof x === "number" ? x : 0];
+		}),
+	) as FloorBox;
+
+// Each side's on-floor boxes, its own first.
+const floorBoxes = (
+	game: Pick<Game, "onFloor"> & { teams: object[] },
+	sideOf: Map<number, 0 | 1>,
+): [FloorBoxes, FloorBoxes] | undefined => {
+	const byPid = decodeOnFloor(game.onFloor);
+	if (byPid.size === 0) {
+		return undefined;
+	}
+	const teams = [boxOf(game.teams[0]!), boxOf(game.teams[1]!)] as const;
+	const out: [FloorBoxes, FloorBoxes] = [
+		{ team: [teams[0], teams[1]], byPid: {} },
+		{ team: [teams[1], teams[0]], byPid: {} },
+	];
+	for (const [pid, boxes] of byPid) {
+		const side = sideOf.get(pid);
+		if (side !== undefined) {
+			out[side].byPid[pid] = boxes;
+		}
+	}
+	return out;
+};
+
 export const getBoxScoreFlow = (
 	game: Pick<
 		Game,
@@ -209,6 +250,7 @@ export const getBoxScoreFlow = (
 		| "shifts"
 		| "shiftSecs"
 		| "numPlayersOnCourt"
+		| "onFloor"
 	> & { teams: { players: { pid: number }[] }[] },
 ): BoxScoreFlow | undefined => {
 	const stints = decodeStints(game.stints);
@@ -240,6 +282,7 @@ export const getBoxScoreFlow = (
 	}
 
 	const lineups = foldLineups(game);
+	const floorBox = lineups ? floorBoxes(game, sideOf) : undefined;
 	return {
 		total,
 		periodEnds,
@@ -251,6 +294,7 @@ export const getBoxScoreFlow = (
 					onCourt: [onCourtOf(lineups[0]), onCourtOf(lineups[1])],
 				}
 			: {}),
+		...(floorBox ? { floorBox } : {}),
 	};
 };
 

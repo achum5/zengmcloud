@@ -523,6 +523,9 @@ export type Game = {
 	scoring?: number[];
 	periodEnds?: number[];
 	shiftSecs?: number[];
+	// What the box score did while each player was on the floor, his team's
+	// and the other's, for on/off - see worker/util/gameShifts.ts.
+	onFloor?: number[];
 	// The pregame point spread from the home team's perspective (positive = home
 	// favored), as it was computed WHEN THE GAME WAS PLAYED. Stored because the
 	// formula can see things (lineup synergy) that a finished box score cannot

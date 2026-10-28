@@ -1,6 +1,14 @@
 import { assert, describe, test } from "vitest";
-import { decodeShifts, encodeShifts } from "./gameShifts.ts";
-import { ShiftLog } from "../core/GameSim.basketball/shiftLog.ts";
+import {
+	decodeOnFloor,
+	decodeShifts,
+	encodeOnFloor,
+	encodeShifts,
+} from "./gameShifts.ts";
+import {
+	ON_FLOOR_STATS,
+	ShiftLog,
+} from "../core/GameSim.basketball/shiftLog.ts";
 
 const shift = (
 	zero: number[],
@@ -112,5 +120,69 @@ describe("ShiftLog", () => {
 		log.addPossession(0);
 		log.addPoints(0, 2);
 		assert.deepStrictEqual(log.getShifts(), []);
+	});
+});
+
+describe("on the floor", () => {
+	const K = ON_FLOOR_STATS.length;
+	const at = (stat: string) => ON_FLOOR_STATS.indexOf(stat as any);
+
+	test("a stat goes to the five who were out there, as theirs and as the other side's", () => {
+		const log = new ShiftLog();
+		log.setLineups([1, 2, 3, 4, 5], [11, 12, 13, 14, 15]);
+		log.addStat(0, "fga", 1);
+		log.addStat(1, "drb", 1);
+		log.setLineups([1, 2, 3, 4, 6], [11, 12, 13, 14, 15]);
+		log.addStat(0, "tp", 1);
+		// Not one of them.
+		log.addStat(0, "pf", 1);
+
+		const byPid = new Map(log.getOnFloor());
+		assert.strictEqual(byPid.get(1)![at("fga")], 1);
+		assert.strictEqual(byPid.get(1)![K + at("drb")], 1);
+		assert.strictEqual(byPid.get(1)![at("tp")], 1);
+		// On the bench for the three.
+		assert.strictEqual(byPid.get(5)![at("tp")], 0);
+		assert.strictEqual(byPid.get(6)![at("tp")], 1);
+		assert.strictEqual(byPid.get(6)![at("fga")], 0);
+		// The other side saw it as theirs against them.
+		assert.strictEqual(byPid.get(11)![K + at("fga")], 1);
+		assert.strictEqual(byPid.get(11)![at("drb")], 1);
+		assert.strictEqual(byPid.get(11)![K + at("tp")], 1);
+		assert.strictEqual(
+			byPid.get(1)!.reduce((a, b) => a + b, 0),
+			3,
+		);
+	});
+
+	test("nothing is credited before anybody is on the floor", () => {
+		const log = new ShiftLog();
+		log.addStat(0, "fga", 1);
+		assert.deepStrictEqual(log.getOnFloor(), []);
+	});
+
+	test("the boxes survive the round trip", () => {
+		const log = new ShiftLog();
+		log.setLineups([1, 2, 3, 4, 5], [11, 12, 13, 14, 15]);
+		log.addStat(0, "fg", 1);
+		log.addStat(0, "fga", 2);
+		log.addStat(1, "stl", 1);
+		log.addStat(0, "tov", 1);
+		const decoded = decodeOnFloor(encodeOnFloor(log.getOnFloor()));
+		assert.strictEqual(decoded.size, 10);
+		const [us, them] = decoded.get(3)!;
+		assert.strictEqual(us.fg, 1);
+		assert.strictEqual(us.fga, 2);
+		assert.strictEqual(us.tov, 1);
+		assert.strictEqual(them.stl, 1);
+		assert.strictEqual(them.fga, 0);
+		assert.strictEqual(decoded.get(12)![0].stl, 1);
+	});
+
+	// A list of a different length is some other version's; not misread.
+	test("a run kept with another stat list reads as nothing", () => {
+		assert.strictEqual(decodeOnFloor([K + 1, 1, 2, 3]).size, 0);
+		assert.strictEqual(decodeOnFloor(undefined).size, 0);
+		assert.strictEqual(decodeOnFloor([]).size, 0);
 	});
 });

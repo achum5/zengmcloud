@@ -12,7 +12,11 @@
 // and points for each side.
 
 import type { Game } from "../../common/types.ts";
-import type { GameShift } from "../core/GameSim.basketball/shiftLog.ts";
+import {
+	ON_FLOOR_STATS,
+	type GameShift,
+	type OnFloorStat,
+} from "../core/GameSim.basketball/shiftLog.ts";
 
 export const encodeShifts = (
 	shifts: readonly GameShift[],
@@ -72,6 +76,40 @@ export const decodeShifts = (
 				shifts[i + 2 * numPlayersOnCourt + 3]!,
 			],
 		});
+	}
+	return out;
+};
+
+// What the box score did while each player was on the floor (see
+// ShiftLog.addStat): a flat run too, opening with how many stats each side
+// keeps, so a later list cannot be misread as this one - then per player
+// `pid,` his team's stats, the other team's.
+export const encodeOnFloor = (
+	onFloor: Iterable<readonly [number, readonly number[]]>,
+) => {
+	const out: number[] = [ON_FLOOR_STATS.length];
+	for (const [pid, box] of onFloor) {
+		out.push(pid, ...box);
+	}
+	return out;
+};
+
+export type FloorBox = Record<OnFloorStat, number>;
+
+export const decodeOnFloor = (
+	flat: readonly number[] | undefined,
+): Map<number, [FloorBox, FloorBox]> => {
+	const out = new Map<number, [FloorBox, FloorBox]>();
+	const k = ON_FLOOR_STATS.length;
+	if (!flat || flat[0] !== k) {
+		return out;
+	}
+	const box = (at: number) =>
+		Object.fromEntries(
+			ON_FLOOR_STATS.map((s, i) => [s, flat[at + i]!]),
+		) as FloorBox;
+	for (let i = 1; i + 1 + 2 * k <= flat.length; i += 1 + 2 * k) {
+		out.set(flat[i]!, [box(i + 1), box(i + 1 + k)]);
 	}
 	return out;
 };

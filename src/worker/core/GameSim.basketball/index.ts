@@ -508,6 +508,7 @@ class GameSim extends GameSimBase {
 			numPlayersOnCourt: this.numPlayersOnCourt,
 			neutralSite: this.neutralSite,
 			shifts: this.shiftLog.getShifts(),
+			onFloor: this.shiftLog.getOnFloor(),
 			timeline: this.timelineLog.finish(this.elapsed),
 			// scoringSummary: this.playByPlay.scoringSummary,
 		};
@@ -3003,6 +3004,7 @@ class GameSim extends GameSimBase {
 		if (s !== "gs" && s !== "gp") {
 			const teamStat = this.team[t].stat;
 			teamStat[s] += amt; // Record quarter-by-quarter scoring too
+			this.shiftLog.addStat(t, s, amt);
 
 			if (s === "pts") {
 				teamStat.ptsQtrs[teamStat.ptsQtrs.length - 1] += amt;
