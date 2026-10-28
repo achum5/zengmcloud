@@ -33,6 +33,7 @@ export {
 	leaveLiveBroadcast,
 	markFollowedBroadcastOver,
 	recheckLiveSpoilers,
+	noteLiveWatchAlive,
 	markSyncRequired,
 	publishAutoPlayState,
 	refreshSyncUIState,

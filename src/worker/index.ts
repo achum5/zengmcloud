@@ -148,6 +148,8 @@ const SKIP_CHANGESET_CAPTURE = new Set([
 	// never registered - and the next heartbeat stepped the page on through
 	// their game, over whatever this device went to watch instead.
 	"leaveLiveBroadcast",
+	// Only this device's own note that a watch is still playing on.
+	"liveWatchAlive",
 	// A live game's page reporting the game over: it only lets go of this
 	// device's own spoiler hold, repaints, and sends the notifications held
 	// back - no league write. Refused while catching up - a league opened as

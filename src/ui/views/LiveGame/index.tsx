@@ -1629,16 +1629,24 @@ export const LiveGame = (props: View<"liveGame">) => {
 	}, [isFollower, shownGid, mpLiveBroadcast?.gid]);
 	const followEnded =
 		!isFollower && followedGid !== undefined && followedGid === shownGid;
-	// No controls of its own, following or done following.
-	const locked = isFollower || followEnded;
+	// No controls of its own while following. Done following, the rest of the
+	// game is this page's own to play (see below), controls and all.
+	const locked = isFollower;
 	// A follower is stepped by the simmer's cursor and never paces playback
-	// itself, so its picture can follow the simmer's at any moment.
+	// itself, so its picture can follow the simmer's at any moment. Done
+	// following, it stays the picture it was showing.
+	const followView3dRef = useRef<boolean | undefined>(undefined);
+	if (isFollower) {
+		followView3dRef.current = parseLiveGameView(mpLiveBroadcast?.view) === "3d";
+	}
 	const court3d =
 		(__SPORT === "basketball" || __SPORT === "football") &&
 		!court3dLost &&
 		(isFollower
 			? parseLiveGameView(mpLiveBroadcast?.view) === "3d"
-			: ownView === "3d");
+			: followEnded && followView3dRef.current !== undefined
+				? followView3dRef.current
+				: ownView === "3d");
 	court3dRef.current = court3d;
 	// Which of the two teams in the box score is this device's, if either.
 	const mineIndex: number = Array.isArray(boxScore.current?.teams)
@@ -2193,20 +2201,42 @@ export const LiveGame = (props: View<"liveGame">) => {
 		processToNextPause,
 	]);
 
-	// The simmer is done with the game this page was following: on to the
-	// final, where they are.
+	// The simmer is done with the game this page was following - left it, or
+	// it lapsed - before it was over here: the rest plays on here, at this
+	// page's own pace. (It used to jump straight to the final: a viewer who
+	// joined late, or whose simmer moved on at 8x, got the ending and the
+	// celebration out of nowhere.)
 	useEffect(() => {
 		if (!followEnded || !started || !events.current?.length) {
 			return;
 		}
-		let steps = 0;
-		while (events.current.length > 0) {
-			processToNextPause(true);
-			steps += 1;
+		// (The 3D court asks for its next line itself once it is not stepped;
+		// the 2D one has to be started.)
+		if (pausedRef.current || court3dRef.current) {
+			return;
 		}
-		setPlayIndex((prev) => prev + steps);
-		setSkips3d((prev) => prev + 1);
+		processToNextPause();
+		setPlayIndex((prev) => prev + 1);
 	}, [followEnded, started, processToNextPause]);
+
+	// Meanwhile the worker keeps the score out of the bars - but only while it
+	// hears the page is still at it.
+	const followEndedGid = followEnded ? shownGid : undefined;
+	useEffect(() => {
+		if (followEndedGid === undefined) {
+			return;
+		}
+		const ping = () => {
+			if (!boxScore.current?.gameOver) {
+				toWorker("main", "liveWatchAlive", followEndedGid);
+			}
+		};
+		ping();
+		const interval = setInterval(ping, 20_000);
+		return () => {
+			clearInterval(interval);
+		};
+	}, [followEndedGid]);
 
 	// Broadcaster heartbeat: report our playback position to the room so followers
 	// stay in lockstep, and end the broadcast when we leave the page. Writes only

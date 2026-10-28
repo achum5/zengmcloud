@@ -134,6 +134,7 @@ import {
 	flushDeferredRefreshAfterLive,
 	followerHoldsLiveFlag,
 	recheckLiveSpoilers,
+	noteLiveWatchAlive,
 	leaveLiveBroadcast,
 	markFollowedBroadcastOver,
 	markSyncRequired,
@@ -5531,6 +5532,12 @@ const switchTeam = async (tid: number, conditions: Conditions) => {
 	}
 };
 
+// A page playing on by itself the rest of a game whose broadcast ended (see
+// noteLiveWatchAlive).
+const liveWatchAlive = async (gid?: number) => {
+	noteLiveWatchAlive(gid);
+};
+
 const onLiveSimOver = async (gid?: number) => {
 	// Only the page playing THE CURRENT live sim gets to declare it over. Every
 	// LiveGame page fires this - on unmount and on reaching its final play -
@@ -8385,6 +8392,7 @@ const api = {
 		setTradesAfterDeadline,
 		tradeCounterOffer,
 		onLiveSimOver,
+		liveWatchAlive,
 		updateLiveBroadcast,
 		endLiveBroadcast,
 		watchLiveBroadcast,

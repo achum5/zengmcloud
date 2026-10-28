@@ -490,6 +490,9 @@ let followedBroadcast:
 			// and when that was.
 			ended?: boolean;
 			endedAt?: number;
+			// The page still playing it on by itself, last heard (see
+			// noteLiveWatchAlive).
+			aliveAt?: number;
 			// Asked whether to watch it, not answered yet (see offerBroadcast).
 			offered?: boolean;
 	  }
@@ -720,6 +723,17 @@ export const markFollowedBroadcastOver = (gid?: number) => {
 	settleAwaitedLiveResult(gid);
 	syncDebugLog("live:watch-over", { gid });
 	recheckLiveSpoilers();
+};
+
+// The page of a watch whose broadcast ended mid-game is playing the rest on by
+// itself: still a game in progress on this screen, so the hold and the bars'
+// guard stay up for it (checkStrandedLiveFlag would otherwise take them down
+// as a page that never opened).
+export const noteLiveWatchAlive = (gid?: number) => {
+	const f = followedBroadcast;
+	if (f && gid !== undefined && f.gid === gid && !f.over) {
+		f.aliveAt = Date.now();
+	}
 };
 
 // The followed broadcast's game payload, kept for the liveGame view to serve on
@@ -1312,9 +1326,9 @@ const handleLiveBroadcastMeta = async (
 						return;
 					}
 					followedBroadcastPayload = undefined;
-					// Over on the simmer's screen, so over on this one: the page
-					// goes on to the final (it remembers it was following), never
-					// left to play on at its own pace behind them.
+					// Over on the simmer's screen, not on this one: the page plays
+					// the rest on by itself, at its own pace (it remembers it was
+					// following), and the hold stays up till it gets there.
 					void toUI("updateLocal", [{ mpLiveBroadcast: undefined }]);
 					armEndedWatchCap(watching);
 				}
@@ -1551,7 +1565,7 @@ const checkStrandedLiveFlag = () => {
 		!f.over &&
 		!f.offered &&
 		f.endedAt !== undefined &&
-		Date.now() - f.endedAt > ENDED_WATCH_GRACE_MS
+		Date.now() - Math.max(f.endedAt, f.aliveAt ?? 0) > ENDED_WATCH_GRACE_MS
 	) {
 		clearTimeout(endedWatchTimer);
 		f.over = true;

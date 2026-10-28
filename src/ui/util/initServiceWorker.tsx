@@ -123,5 +123,26 @@ export const initServiceWorker = async () => {
 		};
 
 		watchForUpdates();
+
+		// And whenever the app comes back to the front. A phone that spends its
+		// time switching apps barely runs the hourly timer (a backgrounded app's
+		// timers are parked), so a league-mate could play on for days on a build
+		// that predates every fix since.
+		const CHECK_EVERY_MS = 5 * 60 * 1000;
+		let lastCheck = Date.now();
+		document.addEventListener("visibilitychange", () => {
+			if (
+				document.visibilityState !== "visible" ||
+				Date.now() - lastCheck < CHECK_EVERY_MS
+			) {
+				return;
+			}
+			lastCheck = Date.now();
+			if (updateAvailable) {
+				showUpdateAvailableNotification();
+			} else {
+				void workbox.update().catch(() => {});
+			}
+		});
 	}
 };
