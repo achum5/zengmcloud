@@ -399,6 +399,8 @@ export type CourtTimeline = {
 	// How low each man the game has ratings for keeps his dribble, his own
 	// way (-1 to 1: see dribbleArm) - by his handle.
 	dribbleLow?: Map<number, number>;
+	// And his eyes for a pass (-1 to 1: see passLook) - by his passing.
+	passEyes?: Map<number, number>;
 	ball: BallSeg[];
 	fx: Fx[];
 	beats: Beat[];
@@ -23188,9 +23190,23 @@ class Director {
 				);
 			}
 		}
+		const passEyes = new Map<number, number>();
+		for (const pid of this.rated.keys()) {
+			const p = this.level(pid, "pss");
+			if (p !== undefined) {
+				passEyes.set(
+					pid,
+					Math.min(
+						1,
+						Math.max(-1, (p - 0.45) * 2.2 + 0.3 * (hash01(pid, 8111) - 0.5)),
+					),
+				);
+			}
+		}
 		const tl: CourtTimeline = {
 			tracks: this.tracks,
 			...(dribbleLow.size > 0 ? { dribbleLow } : {}),
+			...(passEyes.size > 0 ? { passEyes } : {}),
 			ball: this.ball,
 			fx: this.fx,
 			beats: this.beats,

@@ -642,4 +642,35 @@ describe("3D: players play like their ratings", () => {
 		const fine = high(85);
 		assert.isBelow(fine, poor - 0.2, `${poor} ${fine}`);
 	});
+	test("a poor passer stares down where it is going; a fine one sees it late", () => {
+		// How far round to the man he is passing to his head already is,
+		// a good while before it goes (degrees, on average).
+		const staring = (v: number) => {
+			let sum = 0;
+			let n = 0;
+			for (const seed of ["r1", "r2"]) {
+				const tl = play(seed, all(v));
+				tl.ball.forEach((s, k) => {
+					const before = tl.ball[k - 1];
+					if (
+						s.kind !== "fly" ||
+						!("pid" in s.from) ||
+						!("pid" in s.to) ||
+						before?.kind !== "hold" ||
+						before.pid !== s.from.pid ||
+						s.t0 - before.t0 < 900 ||
+						tl.fast.some(([a, b]) => s.t0 - 1000 < b && s.t0 > a)
+					) {
+						return;
+					}
+					n += 1;
+					sum += Math.abs(evalPlayer(tl, s.from.pid, s.t0 - 600).look ?? 0);
+				});
+			}
+			return sum / n;
+		};
+		const poor = staring(30);
+		const fine = staring(85);
+		assert.isAbove(poor, fine + 10, `${poor} ${fine}`);
+	});
 });

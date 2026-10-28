@@ -4010,6 +4010,13 @@ const lookAt = (
 const PASS_LOOK = 700;
 const PASS_LOOK_SET = 250;
 const PASS_LOOK_OFF = 250;
+// By his own eyes for it (see passEyes): how much longer the poorest passer
+// stares it down, how much later the finest sees it - and, a fine enough
+// passer, at the most how many of his passes go without a look.
+const STARE_MORE = 0.9;
+const SEE_LATE = 0.45;
+const NO_LOOK_FROM = 0.3;
+const NO_LOOK_MOST = 0.3;
 const passLook = (
 	tl: CourtTimeline,
 	pid: number,
@@ -4075,11 +4082,27 @@ const passLook = (
 	if (!to) {
 		return 0;
 	}
+	// His own eyes for it (see passEyes): a poor passer stares it down long
+	// before it goes; a fine one sees it late - and now and then throws it
+	// without a look at all.
+	const eyes = tl.passEyes?.get(pid) ?? 0;
+	if (eyes > NO_LOOK_FROM && t < pass.t0) {
+		const x = Math.sin(pid * 12.9898 + pass.t0 * 0.0137) * 43758.5453;
+		if (
+			x - Math.floor(x) <
+			NO_LOOK_MOST * ((eyes - NO_LOOK_FROM) / (1 - NO_LOOK_FROM))
+		) {
+			return 0;
+		}
+	}
+	const lookFor =
+		PASS_LOOK * (eyes < 0 ? 1 - STARE_MORE * eyes : 1 - SEE_LATE * eyes);
+	const set = Math.min(PASS_LOOK_SET, lookFor * 0.6);
 	const w =
 		t < pass.t0
 			? Math.min(
-					smooth01((PASS_LOOK - (pass.t0 - t)) / (PASS_LOOK - PASS_LOOK_SET)),
-					smooth01(since / PASS_LOOK_SET),
+					smooth01((lookFor - (pass.t0 - t)) / (lookFor - set)),
+					smooth01(since / set),
 				)
 			: 1 - smooth01((t - pass.t0) / PASS_LOOK_OFF);
 	const at = spotAt(to, Math.min(t, pass.t0));
