@@ -3841,11 +3841,56 @@ const clearOf = (
 	return w > 0 ? { ...arm, w } : undefined;
 };
 
+// Whether a man is on the floor at t (see Track.shown) - all a picture of
+// it needs to know of the men on the bench, before working out anything
+// more of them.
+export const shownAt = (tl: CourtTimeline, pid: number, t: number): boolean => {
+	const tr = tl.tracks.get(pid);
+	if (!tr) {
+		return false;
+	}
+	const si = lastIndex(tr.shown, t, (s) => s[0]);
+	return si >= 0 ? tr.shown[si]![1] : false;
+};
+
+// THE SAME MAN AT THE SAME MOMENT, WORKED OUT ONCE. A frame asks after the
+// man with the ball again for where the ball is in his hands, the officials
+// after whoever has it, and a pass in the air after the passer and the
+// catcher at either end of it - the same moments every frame it flies. A
+// timeline never changes once made (a new one comes whole), so what a man
+// was doing at a moment is kept for the last few moments asked about.
+const MEMO_MOMENTS = 8;
+const memos = new WeakMap<
+	CourtTimeline,
+	Map<number, Map<number, PlayerState>>
+>();
 export const evalPlayer = (
 	tl: CourtTimeline,
 	pid: number,
 	t: number,
 ): PlayerState => {
+	let byT = memos.get(tl);
+	if (!byT) {
+		byT = new Map();
+		memos.set(tl, byT);
+	}
+	let at = byT.get(t);
+	if (!at) {
+		at = new Map();
+		byT.set(t, at);
+		if (byT.size > MEMO_MOMENTS) {
+			byT.delete(byT.keys().next().value!);
+		}
+	}
+	let st = at.get(pid);
+	if (!st) {
+		st = playerAt(tl, pid, t);
+		at.set(pid, st);
+	}
+	return st;
+};
+
+const playerAt = (tl: CourtTimeline, pid: number, t: number): PlayerState => {
 	const tr = tl.tracks.get(pid);
 	if (!tr) {
 		return {

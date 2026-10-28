@@ -430,12 +430,26 @@ const FINE_STEPS: Steps = {
 // A move's frame: an act stepped through its frames (a long one - a dunk -
 // gets more, so its quickest part, the slam, still shows), a cycle or a loop
 // through its dozen.
+// An idle loop slower than this (times round a second) - a man sat on the
+// bench breathing, stood shifting his weight, a photographer crouched at the
+// baseline - moves so little and so slowly that it is drawn in two frames to
+// each of its poses rather than a stride's dozen to the loop: it looks the
+// same, and each frame of it is one more picture of him to make at every
+// turn and size he is seen at (sat on the bench, about one picture in six).
+const SLOW_LOOP = 0.35;
 const frameOf = (anim: AnimName, phase: number, k: Steps): number => {
 	const a = ANIMS[anim];
 	const frames = Math.max(k.act, a.n * 2 * (k.act / ACT_FRAMES));
-	return a.kind === "act"
-		? Math.round(Math.min(1, Math.max(0, phase)) * (frames - 1)) / (frames - 1)
-		: Math.floor((((phase % 1) + 1) % 1) * k.cycle) / k.cycle;
+	if (a.kind === "act") {
+		return (
+			Math.round(Math.min(1, Math.max(0, phase)) * (frames - 1)) / (frames - 1)
+		);
+	}
+	const cycle =
+		a.kind === "loop" && a.fps / a.n < SLOW_LOOP
+			? Math.min(k.cycle, Math.max(4, 2 * a.n) * (k.cycle / CYCLE_FRAMES))
+			: k.cycle;
+	return Math.floor((((phase % 1) + 1) % 1) * cycle) / cycle;
 };
 const dribbleFrame = (d: number | undefined, k: Steps) =>
 	d === undefined ? undefined : Math.floor(d * k.dribble) / k.dribble;

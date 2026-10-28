@@ -40,6 +40,7 @@ import {
 import { courtTexture, edgeColor } from "./courtTexture.ts";
 import { FaceLoader } from "./FaceLoader.tsx";
 import { adjust, artFor, makeResolution } from "./resolution.ts";
+import { drawn, due, FAST, makePace } from "./pace.ts";
 import { makeFarm } from "./farm.ts";
 import { makeScratch, makeSpriteCache, releaseSprites } from "./sprite.ts";
 import {
@@ -1185,6 +1186,14 @@ const Court3D = ({
 		let fineOffAt = -Infinity;
 		// How fine the picture is: as fine as this device can draw it.
 		const res = makeResolution(performance.now() + 1500);
+		// How often it is drawn (see pace.ts) - and whether this frame says
+		// anything about how fast the device draws (not held back, paused).
+		const pacing = makePace(
+			performance.now() + 1500,
+			typeof matchMedia !== "undefined" &&
+				matchMedia("(pointer: coarse)").matches,
+		);
+		let judging = true;
 		// The size the canvas is laid on the page at (CSS px).
 		let laidW = 0;
 		let laidH = 0;
@@ -1565,6 +1574,7 @@ const Court3D = ({
 				black: o >= 0.999 || flash >= 0.999 || s.wipe.hold === now,
 			});
 			if (
+				judging &&
 				adjust(
 					res,
 					h * dpr,
@@ -1584,7 +1594,7 @@ const Court3D = ({
 			// Time to spare, at the finest picture: poses in finer steps - and
 			// back to the usual ones well before that costs a size.
 			const spare = res.drawMs;
-			if (res.coarser > 0 || spare === undefined) {
+			if (res.coarser > 0 || spare === undefined || pacing.fps !== FAST) {
 				sprites.fine = false;
 			} else if (
 				!sprites.fine &&
@@ -1646,9 +1656,32 @@ const Court3D = ({
 			}
 		};
 
+		// Off the screen - scrolled away to the box score - nothing to draw.
+		let onScreen = true;
+		const seen =
+			typeof IntersectionObserver === "undefined"
+				? undefined
+				: new IntersectionObserver((entries) => {
+						onScreen = entries.some((entry) => entry.isIntersecting);
+					});
+		if (canvasRef.current) {
+			seen?.observe(canvasRef.current);
+		}
 		let raf = requestAnimationFrame(function frame(now) {
-			tick(now, true);
 			raf = requestAnimationFrame(frame);
+			if (!onScreen) {
+				tick(now, false);
+				return;
+			}
+			const s = play.current;
+			const paused = live.current.paused && !s.stepping && !s.replay;
+			if (!due(pacing, now, paused)) {
+				return;
+			}
+			judging = !paused;
+			const began = performance.now();
+			tick(now, true);
+			drawn(pacing, now, performance.now() - began, paused);
 		});
 		// A background tab gets no animation frames. Keep the game moving anyway
 		// (nothing to draw), or a hidden tab would hold up everyone watching.
@@ -1659,6 +1692,7 @@ const Court3D = ({
 		}, 250);
 		return () => {
 			cancelAnimationFrame(raf);
+			seen?.disconnect();
 			clearInterval(interval);
 			releaseSprites(sprites);
 			farm?.stop();

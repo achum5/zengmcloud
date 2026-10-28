@@ -49,6 +49,7 @@ import {
 	benchLook,
 	evalBall,
 	evalPlayer,
+	shownAt,
 	offenseAt,
 	recentFx,
 	seatsAt,
@@ -188,6 +189,11 @@ export const momentAt = (
 ): Moment => {
 	const players: PlayerState[] = [];
 	for (const p of roster) {
+		// (The men on the bench are drawn there from elsewhere - see
+		// benchStates.)
+		if (!shownAt(tl, p.pid, t)) {
+			continue;
+		}
 		const st = evalPlayer(tl, p.pid, t);
 		if (st.shown) {
 			players.push(
@@ -1553,8 +1559,7 @@ export const aimFor = (
 	let x = (ball.x * 0.62 + mid * 0.38) * on + mid * (1 - on);
 	// Ahead of the play: on toward where the ball is going.
 	if (on > 0) {
-		const ahead = evalBall(tl, Math.min(tl.end, m.t + LEAD_MS), leadBody);
-		const d = ahead.x - ball.x;
+		const d = aheadX(tl, Math.min(tl.end, m.t + LEAD_MS)) - ball.x;
 		x += Math.sign(d) * Math.max(0, Math.abs(d) - LEAD_FROM) * LEAD_K * on;
 	}
 	// A shot going up: push in on the shooter - eased in as he goes up and
@@ -1591,6 +1596,34 @@ const LEAD_FROM = 6;
 const LEAD_K = 0.8;
 let leadBodyOf: Body | undefined;
 const leadBody = (): Body => (leadBodyOf ??= bodyOf());
+// (Where the ball will be, worked out at whole steps of the game this far
+// apart and eased between - not afresh every frame, the man with it and his
+// hands and all: the camera eases after its aim anyway.)
+const LEAD_STEP_MS = 100;
+const leadSamples = new WeakMap<CourtTimeline, Map<number, number>>();
+const aheadX = (tl: CourtTimeline, t: number): number => {
+	let samples = leadSamples.get(tl);
+	if (!samples) {
+		samples = new Map();
+		leadSamples.set(tl, samples);
+	}
+	const at = (k: number) => {
+		let x = samples.get(k);
+		if (x === undefined) {
+			x = evalBall(tl, Math.min(tl.end, k), leadBody).x;
+			samples.set(k, x);
+			// (Only the last few: the picture only goes on.)
+			if (samples.size > 8) {
+				samples.delete(samples.keys().next().value!);
+			}
+		}
+		return x;
+	};
+	const k0 = Math.floor(t / LEAD_STEP_MS) * LEAD_STEP_MS;
+	const u = (t - k0) / LEAD_STEP_MS;
+	const x0 = at(k0);
+	return u > 0 ? x0 + (at(k0 + LEAD_STEP_MS) - x0) * u : x0;
+};
 
 // A free throw's shot: about two thirds as wide as the whole floor's (but
 // never narrower than FT_MIN_W feet, and these widths without one), and
