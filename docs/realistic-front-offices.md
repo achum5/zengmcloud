@@ -246,7 +246,8 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   team's players to make the salaries work was turned down, and "What would
   make this work" said there was no deal.
 - **Humans see held deals on a Pending Deals list** (owner's call), on the
-  Trade Proposals page, with a notification. Bidding opens the trade screen
+  Trade Proposals page, with a notification - and a bell in the header with
+  a red count of held deals and proposals to the team. Bidding opens the trade screen
   with that team; the offer is judged like any other and, if it is the best,
   holds until the window closes.
 - **Built** (realisticFrontOffice/windows.ts). A notable deal two CPU teams

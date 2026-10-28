@@ -21,7 +21,8 @@ const outlook = {
 	]),
 } as unknown as LeagueOutlook;
 
-const player = (age: number, amount: number): FrontOfficeAsset => ({
+// `helps`: points a game he adds this season and next.
+const player = (age: number, amount: number, helps = 1): FrontOfficeAsset => ({
 	kind: "player",
 	pid: age,
 	name: "A Player",
@@ -32,7 +33,7 @@ const player = (age: number, amount: number): FrontOfficeAsset => ({
 	ovrBySeason: [],
 	hereBySeason: [],
 	reSign: 0.5,
-	effect: [],
+	effect: [helps / 2, helps / 2],
 });
 
 const pick: FrontOfficeAsset = {
@@ -54,18 +55,37 @@ const side = (
 	gets: FrontOfficeAsset[],
 	gives: FrontOfficeAsset[],
 	money?: number[],
+	title: [number, number] = [0.2, 0.2],
 ): FrontOfficeSide =>
-	({ tid, value, gets, gives, money }) as unknown as FrontOfficeSide;
+	({
+		tid,
+		value,
+		gets,
+		gives,
+		money,
+		titleBefore: [title[0]],
+		titleAfter: [title[1]],
+	}) as unknown as FrontOfficeSide;
 
 test("a contender buying a veteran with picks, a rebuilding team selling", () => {
 	const [buyer, seller] = dealNotes(outlook, {
 		seasons: [],
 		sides: [
-			side(0, [0.02, 0.01, -0.002, -0.002], [player(30, 10_000)], [pick]),
+			side(
+				0,
+				[0.02, 0.01, -0.002, -0.002],
+				[player(30, 10_000)],
+				[pick],
+				undefined,
+				[0.2, 0.212],
+			),
 			side(1, [-0.001, 0, 0.003, 0.004], [pick], [player(30, 10_000)]),
 		],
 	});
-	assert.strictEqual(buyer.why, "A contender adding for a title run");
+	assert.strictEqual(
+		buyer.why,
+		"A contender adding for a title run: +1.2% title chance",
+	);
 	assert.strictEqual(buyer.wants, "Players who help now");
 	assert.strictEqual(seller.why, "Rebuilding, for later");
 	assert.strictEqual(seller.wants, "Young players and picks");
@@ -87,4 +107,20 @@ test("shedding salary for nothing", () => {
 	});
 	assert.strictEqual(shedder.why, "Saves money");
 	assert.strictEqual(shedder.wants, "Cap relief");
+});
+
+test("a veteran there for his salary is not what a team wants", () => {
+	const [, seller] = dealNotes(outlook, {
+		seasons: [],
+		sides: [
+			side(0, [0.01, 0.01, 0, 0], [player(28, 3000)], [pick]),
+			side(
+				1,
+				[0, 0, 0.003, 0.003],
+				[player(29, 3000, 0), pick],
+				[player(28, 3000)],
+			),
+		],
+	});
+	assert.strictEqual(seller.wants, "Young players and picks");
 });

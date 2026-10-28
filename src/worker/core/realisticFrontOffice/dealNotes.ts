@@ -17,6 +17,8 @@ const YOUNG = 24;
 const CONTENDER = 0.05;
 // Rebuilding: this many points a game worse than average or more.
 const REBUILDING = -3;
+// A veteran who helps: this many points a game better, this season and next.
+const HELPS = 0.2;
 
 const total = (xs: readonly number[] | undefined, from = 0, to?: number) =>
 	(xs ?? []).slice(from, to).reduce((a, x) => a + x, 0);
@@ -44,10 +46,14 @@ const whyFor = (outlook: LeagueOutlook, side: FrontOfficeSide) => {
 		return "Keeps a player from a rival";
 	}
 	if (best === now) {
+		// What it does to the title chance, where it shows.
+		const change = (side.titleAfter[0] ?? 0) - (side.titleBefore[0] ?? 0);
+		const odds =
+			change >= 0.001 ? `: +${(100 * change).toFixed(1)}% title chance` : "";
 		if (contender) {
-			return "A contender adding for a title run";
+			return `A contender adding for a title run${odds}`;
 		}
-		return later < 0 ? "Better now, at a cost later" : "Better now and later";
+		return `${later < 0 ? "Better now, at a cost later" : "Better now and later"}${odds}`;
 	}
 	if (rebuilding) {
 		return "Rebuilding, for later";
@@ -61,7 +67,8 @@ const wantsFor = (side: FrontOfficeSide) => {
 	for (const x of side.gets) {
 		if (x.kind === "pick" || x.age <= YOUNG) {
 			future += 1;
-		} else {
+		} else if (total(x.effect, 0, 2) >= HELPS) {
+			// A veteran who makes it better: not one there for his salary.
 			help += 1;
 		}
 	}
