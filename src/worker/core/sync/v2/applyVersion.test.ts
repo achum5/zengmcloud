@@ -7,6 +7,7 @@ import { setApplyGuard } from "../applyGuard.ts";
 import {
 	applyCheckpointV2,
 	applyVersionedChangeset,
+	dropPlayedScheduleRows,
 	readAppliedVersion,
 } from "./applyVersion.ts";
 import { APPLIED_VERSION_KEY, type VersionedChangeset } from "./protocol.ts";
@@ -390,5 +391,85 @@ describe("applyCheckpointV2", () => {
 			((await (idb as any).league.getAll("players")) as any[]).length,
 			1,
 		);
+	});
+});
+
+// A played game never goes back on the schedule. In the playoffs a sim
+// rewrites the whole schedule from its own device's knowledge, so a later
+// version can carry a row for a game already played - seen in the field as a
+// Mavs-Clippers game listed upcoming right under its own final score.
+describe("a played game's schedule row", () => {
+	let restoreCache: () => void;
+
+	beforeEach(async () => {
+		resetG();
+		g.setWithoutSavingToDB("season", 2006);
+		await resetCache({});
+		restoreCache = stubCacheLifecycle();
+		changeTracker.disable();
+		changeTracker.reset();
+	});
+
+	afterEach(() => {
+		restoreCache();
+		setApplyGuard(undefined);
+	});
+
+	const scheduleRow = (gid: number) => ({
+		store: "schedule" as any,
+		id: gid,
+		type: "put" as const,
+		value: { gid, day: 104, homeTid: 6, awayTid: 12 },
+	});
+
+	test("is refused when the game is already saved here", async () => {
+		(idb as any).league = makeLeagueDb({
+			games: [{ gid: 40, season: 2006 }],
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 7 }],
+		});
+		const outcome = await applyVersionedChangeset(
+			vcs(8, [scheduleRow(40), scheduleRow(41), tradePut(1, 2)]),
+		);
+		assert.strictEqual(outcome, "apply");
+		assert.strictEqual(await readAppliedVersion(), 8);
+		const schedule = await (idb as any).league.getAll("schedule");
+		assert.deepStrictEqual(
+			schedule.map((row: any) => row.gid),
+			[41],
+			"the played game stays off the schedule; the unplayed one lands",
+		);
+		assert.strictEqual(await idb.cache.schedule.get(40), undefined);
+		const players = await (idb as any).league.getAll("players");
+		assert.strictEqual(players[0].tid, 2, "the rest of the version applies");
+	});
+
+	test("is refused when the game arrives in the same version", async () => {
+		(idb as any).league = makeLeagueDb({
+			gameAttributes: [{ key: APPLIED_VERSION_KEY, value: 7 }],
+		});
+		await applyVersionedChangeset(
+			vcs(8, [
+				{
+					store: "games" as any,
+					id: 40,
+					type: "put" as const,
+					value: { gid: 40, season: 2006 },
+				},
+				scheduleRow(40),
+			]),
+		);
+		assert.deepStrictEqual(await (idb as any).league.getAll("schedule"), []);
+	});
+
+	test("one already on this device is dropped, and an unplayed one kept", async () => {
+		await idb.cache.schedule.put({ gid: 40, day: 104 } as any);
+		await idb.cache.schedule.put({ gid: 42, day: 104 } as any);
+		await idb.cache.games.put({ gid: 40, season: 2006 } as any);
+		assert.strictEqual(await dropPlayedScheduleRows(), 1);
+		assert.deepStrictEqual(
+			(await idb.cache.schedule.getAll()).map((row) => row.gid),
+			[42],
+		);
+		assert.strictEqual(await dropPlayedScheduleRows(), 0);
 	});
 });

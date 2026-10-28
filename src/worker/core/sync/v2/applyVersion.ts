@@ -12,7 +12,11 @@ import {
 	type ApplyDecision,
 	type VersionedChangeset,
 } from "./protocol.ts";
-import { isDeviceLocal, preserveLocalWatch } from "../changeset.ts";
+import {
+	isDeviceLocal,
+	preserveLocalWatch,
+	sweepPhantomScheduleRows,
+} from "../changeset.ts";
 import { noteInjuryApply, recordInjuryForensics } from "../injuryForensics.ts";
 
 // ---------------------------------------------------------------------------
@@ -68,6 +72,58 @@ const patchCache = async (
 	});
 };
 
+// A played game must never become scheduled again - the same rule the v1
+// apply enforces (see applyChangeset). In the playoffs a sim rewrites the whole
+// schedule from its own device's knowledge, so a schedule row for a game that
+// has already been played can ride in a later version - and, applied, put that
+// game back on the Daily Schedule as upcoming next to its own final score.
+// Refused on this device only; read before the apply's transaction opens.
+const withoutPlayedSchedule = async (
+	changes: VersionedChangeset["changeset"]["changes"],
+	version: number,
+): Promise<VersionedChangeset["changeset"]["changes"]> => {
+	const gidOf = (change: (typeof changes)[number]) =>
+		((change.value as { gid?: number } | undefined)?.gid ??
+			change.id) as number;
+	const playedNow = new Set(
+		changes
+			.filter((change) => change.store === "games" && change.type === "put")
+			.map(gidOf),
+	);
+	const refused: number[] = [];
+	const out: typeof changes = [];
+	for (const change of changes) {
+		if (change.store === "schedule" && change.type === "put") {
+			const gid = gidOf(change);
+			if (
+				playedNow.has(gid) ||
+				(await (idb.league as any).get("games", gid)) !== undefined
+			) {
+				refused.push(gid);
+				continue;
+			}
+		}
+		out.push(change);
+	}
+	if (refused.length > 0) {
+		syncDebugLog("v2:played-schedule-refused", { version, gids: refused });
+	}
+	return out;
+};
+
+// And any such row already on this device - landed before that rule, or in a
+// checkpoint taken while one stood: removed here, uncaptured like the apply it
+// cleans up after. The room's copy goes the next time whoever is in charge of
+// simming rewrites the schedule without it; until then each device drops it.
+export const dropPlayedScheduleRows = async (): Promise<number> => {
+	changeTracker.beginApply();
+	try {
+		return await sweepPhantomScheduleRows();
+	} finally {
+		changeTracker.endApply();
+	}
+};
+
 // Apply one versioned changeset. The admission rule is decideApply and
 // nothing else; "gap" is returned to the caller (who recovers via the
 // checkpoint), never worked around here.
@@ -106,9 +162,10 @@ export const applyVersionedChangeset = async (
 	// carry THEIR watch-list flag onto this device. Both resolved BEFORE the
 	// transaction opens - an IndexedDB transaction dies if it idles across an
 	// await.
-	const changes = vcs.changeset.changes.filter(
+	const kept = vcs.changeset.changes.filter(
 		(change) => !isDeviceLocal(change.store, change.id),
 	);
+	const changes = await withoutPlayedSchedule(kept, vcs.version);
 	for (const change of changes) {
 		if (change.store === "players" && change.type === "put" && change.value) {
 			await preserveLocalWatch(change.value);

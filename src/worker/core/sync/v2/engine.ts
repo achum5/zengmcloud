@@ -1,4 +1,4 @@
-import { g, local, lock, logEvent } from "../../../util/index.ts";
+import { g, local, lock, logEvent, toUI } from "../../../util/index.ts";
 import { idb } from "../../../db/index.ts";
 import { outbox } from "../outbox.ts";
 import {
@@ -40,6 +40,7 @@ import type {
 import {
 	applyCheckpointV2,
 	applyVersionedChangeset,
+	dropPlayedScheduleRows,
 	readAppliedVersion,
 	reapplyOwnChangesLocally,
 } from "./applyVersion.ts";
@@ -2089,14 +2090,21 @@ export class SyncEngineV2 {
 					sweepGames: false,
 					redirect: false,
 				});
+				if ((await dropPlayedScheduleRows()) > 0) {
+					await toUI("realtimeUpdate", [["gameSim"]]);
+				}
 			} else {
 				// A league-mate's live game among these: hold the paint before
 				// the refresh below can show its result.
 				await noticeLiveResults(changeset);
+				const summary = summarizeChangesetForRefresh(changeset);
+				if (summary.touchedGames) {
+					await dropPlayedScheduleRows();
+				}
 				await refreshAfterApply({
-					...summarizeChangesetForRefresh(changeset),
+					...summary,
 					refreshUI: true,
-					// v2 applies are atomic - phantoms and stranded days cannot exist.
+					// v2 applies are atomic - stranded days cannot exist.
 					sweepGames: false,
 					redirect: true,
 				});
