@@ -231,6 +231,8 @@ type Offer = {
 	net: number;
 	human: boolean;
 	take?: Give;
+	// The deal's other team, giving more than it agreed.
+	raised?: boolean;
 };
 
 // What a side gives with a human's bid: the held deal's assets and any more
@@ -321,6 +323,23 @@ const bestOffer = async (
 			best = offer;
 		}
 	}
+
+	// About to lose the deal, the other team answers with the most it would
+	// really give for the same - so the deal only goes to a better offer than
+	// any CPU team would make, not to one nobody else had the chance to match.
+	if (best.tid !== sides[j].tid) {
+		const others = (await aiTids()).filter((tid) => tid !== sides[j].tid);
+		const raise = await bestElsewhere(outlook, a, given[k], others, best.net);
+		if (raise && raise.net > best.net) {
+			best = {
+				tid: sides[j].tid,
+				give: giveOf(raise.assets),
+				net: raise.net,
+				human: false,
+				raised: true,
+			};
+		}
+	}
 	return best;
 };
 
@@ -381,7 +400,7 @@ const closeWindow = async (outlook: LeagueOutlook, pending: Pending) => {
 		await bestOffer(outlook, pending, sides, given, 1),
 	] as const;
 	const kept = offers.every(
-		(offer, k) => offer.tid === pending.tids[k === 0 ? 1 : 0],
+		(offer, k) => offer.tid === pending.tids[k === 0 ? 1 : 0] && !offer.raised,
 	);
 	if (kept) {
 		if (
@@ -403,7 +422,7 @@ const closeWindow = async (outlook: LeagueOutlook, pending: Pending) => {
 	// A side with a better offer takes it; the deal is off.
 	for (const k of [0, 1] as const) {
 		const offer = offers[k];
-		if (offer.tid === pending.tids[k === 0 ? 1 : 0]) {
+		if (offer.tid === pending.tids[k === 0 ? 1 : 0] && !offer.raised) {
 			continue;
 		}
 		const a = await loadTeam(outlook, pending.tids[k]);

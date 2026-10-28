@@ -4,9 +4,14 @@ import { makeSeededRandom } from "../../../common/random.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
-import { humanTradeSettings, judgeHumanOffer } from "./humanTrades.ts";
+import {
+	bestElsewhere,
+	humanTradeSettings,
+	judgeHumanOffer,
+} from "./humanTrades.ts";
 import tradeProposals from "../../views/tradeProposals.ts";
 import {
+	aiTids,
 	currentOutlook,
 	legalDeal,
 	loadTeam,
@@ -250,6 +255,84 @@ test(
 		assert.strictEqual((await idb.cache.players.get(held))!.tid, userTid);
 		assert.strictEqual((await idb.cache.players.get(more))!.tid, userTid);
 		assert.strictEqual((await idb.cache.players.get(best.pid))!.tid, tid);
+	},
+);
+
+test(
+	"outbid on a held deal, the other team answers with the most it would really give",
+	{ timeout: 300_000 },
+	async () => {
+		// A team giving a good player for nothing, to a team that would give
+		// more for him; a human's bid that beats nothing but not that.
+		const outlook = await currentOutlook();
+		const ai = await aiTids();
+		const mine = (
+			await idb.cache.players.indexGetAll("playersByTid", userTid)
+		).sort((a, b) => a.valueNoPot - b.valueNoPot);
+		let found:
+			| { tid: number; partner: number; pid: number; bid: number }
+			| undefined;
+		const tried: string[] = [];
+		for (let tid = 20; tid < g.get("numTeams") && !found; tid++) {
+			const a = await loadTeam(outlook, tid);
+			const p = [...a.tradablePlayers].sort(
+				(x, y) => y.valueNoPot - x.valueNoPot,
+			)[2]!;
+			const held = [{ kind: "player" as const, p }];
+			for (const partner of ai.filter((x) => x !== tid && x > 4)) {
+				const raise = await bestElsewhere(
+					outlook,
+					a,
+					held,
+					ai.filter((x) => x !== partner),
+				);
+				if (!raise) {
+					continue;
+				}
+				const h = await loadTeam(outlook, userTid);
+				for (const q of mine) {
+					const getting = [{ kind: "player" as const, p: q }];
+					const verdict = await judgeHumanOffer(
+						{ tid, pids: [p.pid], dpids: [] },
+						{ tid: userTid, pids: [q.pid], dpids: [] },
+					);
+					if (
+						verdict.kind !== "yes" &&
+						verdict.kind !== "better" &&
+						verdict.kind !== "wait"
+					) {
+						continue;
+					}
+					const net =
+						priceFor(outlook, a, held, getting, h) -
+						humanTradeSettings.marginFactor *
+							marginOf(outlook, a, held, getting);
+					const kept =
+						priceFor(outlook, a, held, []) - marginOf(outlook, a, held, []);
+					tried.push(
+						`${tid}/${partner}: kept ${kept.toFixed(4)} bid ${net.toFixed(4)} raise ${raise.net.toFixed(4)}`,
+					);
+					if (net > kept && net < raise.net) {
+						found = { tid, partner, pid: p.pid, bid: q.pid };
+						break;
+					}
+				}
+				if (found) {
+					break;
+				}
+			}
+		}
+		assert.isDefined(found, `no such deal: ${tried.slice(0, 12).join("; ")}`);
+		const { tid, partner, pid, bid } = found!;
+		await hold([tid, partner], { pids: [pid], dpids: [] }, nothing);
+		const cpu = { tid, pids: [pid], dpids: [] };
+		const human = { tid: userTid, pids: [bid], dpids: [] };
+		assert.strictEqual((await judgeHumanOffer(cpu, human)).kind, "bid");
+		assert.isTrue(await placeBid(cpu, human));
+
+		await closeWindows();
+		assert.strictEqual((await idb.cache.players.get(pid))!.tid, partner);
+		assert.strictEqual((await idb.cache.players.get(bid))!.tid, userTid);
 	},
 );
 

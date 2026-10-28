@@ -240,7 +240,9 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
 - **Bids are for either side's assets** (owner's call): any team can offer
   either team more for what it is giving up. Each side takes the best offer
   for its assets by its own read when the window closes, which may break the
-  deal. A human's bid asks for all a side gives in the held deal, and may ask
+  deal - but about to lose it, the deal's other team answers with the most it
+  would really give for the same (owner's call: both teams pay the market
+  price, not a steal because nobody else had the chance to match). A human's bid asks for all a side gives in the held deal, and may ask
   for more of that team's assets, not held, as salaries may need: once a
   bid had to be exactly the held package, so one that needed another of the
   team's players to make the salaries work was turned down, and "What would

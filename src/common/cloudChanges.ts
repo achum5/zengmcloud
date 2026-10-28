@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 26,
+		date: "2026-10-28",
+		text: "Realistic Front Offices: when a pending deal is about to go to a better bid, the team it was agreed with now gets to answer with the most it would really pay for the same players. So a bid wins only if it beats what every CPU team would actually give - no more stealing a player just because nobody else got a chance to match.",
+	},
+	{
 		n: 25,
 		date: "2026-10-28",
 		text: 'Realistic Front Offices: the "Pending deal" button is now a bell in the header with a red count of pending deals and trade proposals made to your team. A contender\'s pending deal now says how much it raises its title chance, and a player thrown in just for salary no longer counts as "help now" in what a team wants.',
