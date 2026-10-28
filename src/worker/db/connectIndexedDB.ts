@@ -33,6 +33,36 @@ export const isTransientTransactionError = (error: any): boolean => {
 	);
 };
 
+// An operation aborted is usually nothing wrong at all: a transaction the
+// game cancelled itself (sync catching up, replacing stale work), or one the
+// browser cut off as the app went into the background on a phone. Only when
+// storage really is all but full is it worth telling anybody about.
+export const isAbortError = (error: any): boolean =>
+	!!error &&
+	(error.name === "AbortError" ||
+		(typeof error.message === "string" &&
+			/operation was aborted/i.test(error.message)));
+const storageNearlyFull = async (): Promise<boolean> => {
+	try {
+		const storage = (globalThis as any).navigator?.storage;
+		if (!storage?.estimate) {
+			return false;
+		}
+		const { usage, quota } = (await storage.estimate()) as {
+			usage?: number;
+			quota?: number;
+		};
+		return (
+			usage !== undefined &&
+			quota !== undefined &&
+			quota > 0 &&
+			usage / quota > 0.9
+		);
+	} catch {
+		return false;
+	}
+};
+
 // If duplicate message is sent multiple times in a row (like IndexedDB transaction abort with many open requests), only show one
 // ReturnType rather than number because bbgm-rosters type checks this with Node types
 const debounceMessagesStore = new Map<string, ReturnType<typeof setTimeout>>();
@@ -106,12 +136,31 @@ const connectIndexedDB = async <DBTypes>({
 
 	const quotaErrorMessage = `browser isn't letting the game store any more data!<br><br>Try <a href="/">deleting some old leagues</a> or deleting old data (Tools > Delete Old Data within a league). Clearing space elsewhere on your hard drive might help too. <a href="https://${WEBSITE_ROOT}/manual/debugging/quota-errors/"><b>Read this for more info.</b></a>`;
 
+	// (Aborted: a word only if storage really is all but full.)
+	const warnIfFull = () => {
+		void storageNearlyFull().then((full) => {
+			const text = `Your ${quotaErrorMessage}`;
+			if (full && !stopBecauseDebounce(text)) {
+				logEvent({
+					type: "error",
+					text,
+					saveToDb: false,
+					persistent: true,
+				});
+			}
+		});
+	};
+
 	db.addEventListener("abort", (event: any) => {
 		console.log(`${name} database abort event`, event.target.error);
 
 		// A transaction that aborted because it went inactive under load self-heals
 		// on the next attempt; don't nag the user about it.
 		if (isTransientTransactionError(event.target.error)) {
+			return;
+		}
+		if (isAbortError(event.target.error)) {
+			warnIfFull();
 			return;
 		}
 
@@ -145,6 +194,10 @@ const connectIndexedDB = async <DBTypes>({
 		// Rethrowing it here (below) would force the transaction to abort and pop a
 		// SECOND toast, so bail out entirely: console-only, no toast, no rethrow.
 		if (isTransientTransactionError(event.target.error)) {
+			return;
+		}
+		if (isAbortError(event.target.error)) {
+			warnIfFull();
 			return;
 		}
 

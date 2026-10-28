@@ -1,5 +1,8 @@
 import { assert, describe, test } from "vitest";
-import { isTransientTransactionError } from "./connectIndexedDB.ts";
+import {
+	isAbortError,
+	isTransientTransactionError,
+} from "./connectIndexedDB.ts";
 
 describe("isTransientTransactionError", () => {
 	test("matches the iOS inactive-transaction hiccup that self-heals", () => {
@@ -54,5 +57,28 @@ describe("isTransientTransactionError", () => {
 		);
 		assert.strictEqual(isTransientTransactionError(undefined), false);
 		assert.strictEqual(isTransientTransactionError(null), false);
+	});
+});
+
+describe("isAbortError", () => {
+	test("an aborted operation - a cancelled transaction, the app put in the background - is one", () => {
+		assert.isTrue(
+			isAbortError({
+				name: "AbortError",
+				message: "The operation was aborted.",
+			}),
+		);
+		assert.isTrue(
+			isAbortError({ name: "Error", message: "The operation was aborted." }),
+		);
+	});
+	test("running out of room, or anything else, is not", () => {
+		assert.isFalse(
+			isAbortError({ name: "QuotaExceededError", message: "Quota exceeded" }),
+		);
+		assert.isFalse(
+			isAbortError({ name: "UnknownError", message: "Internal error" }),
+		);
+		assert.isFalse(isAbortError(null));
 	});
 });
