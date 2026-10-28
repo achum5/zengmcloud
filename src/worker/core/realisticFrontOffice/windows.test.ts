@@ -5,6 +5,7 @@ import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import {
+	type Side,
 	bestElsewhere,
 	humanTradeSettings,
 	judgeHumanOffer,
@@ -19,8 +20,10 @@ import {
 	priceFor,
 	tableAssets,
 } from "./market.ts";
+import { pendingDealsSimStarted, SIMS_TO_CLOSE } from "./windowClock.ts";
 import {
 	closeWindows,
+	holdHumanDeal,
 	isNotable,
 	isReserved,
 	loadReserved,
@@ -120,7 +123,7 @@ test(
 		assert.strictEqual(verdict.kind, "held");
 
 		// Its window closes on the next trading day.
-		await closeWindows();
+		await closeWindows(true);
 		assert.isUndefined((await idb.cache.teams.get(3))!.pendingTrade);
 		assert.isFalse(isReserved({ kind: "player", p: p1! }));
 	},
@@ -172,7 +175,7 @@ test(
 		assert.strictEqual(verdict.kind, "bid");
 		assert.isTrue(await placeBid(cpu, human));
 
-		await closeWindows();
+		await closeWindows(true);
 		assert.strictEqual((await idb.cache.players.get(theirs.pid))!.tid, userTid);
 		assert.strictEqual((await idb.cache.players.get(best.pid))!.tid, tid);
 	},
@@ -251,7 +254,7 @@ test(
 		assert.strictEqual((await judgeHumanOffer(cpu, human)).kind, "bid");
 		assert.isTrue(await placeBid(cpu, human));
 
-		await closeWindows();
+		await closeWindows(true);
 		assert.strictEqual((await idb.cache.players.get(held))!.tid, userTid);
 		assert.strictEqual((await idb.cache.players.get(more))!.tid, userTid);
 		assert.strictEqual((await idb.cache.players.get(best.pid))!.tid, tid);
@@ -330,9 +333,104 @@ test(
 		assert.strictEqual((await judgeHumanOffer(cpu, human)).kind, "bid");
 		assert.isTrue(await placeBid(cpu, human));
 
-		await closeWindows();
+		await closeWindows(true);
 		assert.strictEqual((await idb.cache.players.get(pid))!.tid, partner);
 		assert.strictEqual((await idb.cache.players.get(bid))!.tid, userTid);
+	},
+);
+
+test(
+	"a held deal stays open for two full sims after it is held or bid on",
+	{ timeout: 120_000 },
+	async () => {
+		const outlook = await currentOutlook();
+		const a = await loadTeam(outlook, 7);
+		const p = [...a.tradablePlayers].sort(
+			(x, y) => y.valueNoPot - x.valueNoPot,
+		)[3]!;
+		await hold([7, 8], { pids: [p.pid], dpids: [] }, nothing);
+		const open = async () => !!(await idb.cache.teams.get(7))!.pendingTrade;
+
+		// Held during one sim, it stays through the next two.
+		for (let i = 0; i < SIMS_TO_CLOSE - 1; i++) {
+			await pendingDealsSimStarted();
+			await closeWindows();
+			assert.isTrue(await open(), `after ${i + 1} sims`);
+		}
+		// A bid placed just before a sim gives everyone two full sims more.
+		const human = { tid: userTid, pids: [], dpids: [] };
+		assert.isTrue(await placeBid({ tid: 7, pids: [p.pid], dpids: [] }, human));
+		for (let i = 0; i < SIMS_TO_CLOSE - 1; i++) {
+			await pendingDealsSimStarted();
+			await closeWindows();
+			assert.isTrue(await open(), `after the bid and ${i + 1} sims`);
+		}
+		await pendingDealsSimStarted();
+		await closeWindows();
+		assert.isFalse(await open());
+	},
+);
+
+test(
+	"a person's notable deal waits for others to top it, and goes through if none does",
+	{ timeout: 300_000 },
+	async () => {
+		const mine = (
+			await idb.cache.players.indexGetAll("playersByTid", userTid)
+		).sort((a, b) => b.valueNoPot - a.valueNoPot);
+		let found: { cpu: Side; human: Side } | undefined;
+		for (let tid = 12; tid < g.get("numTeams") && !found; tid++) {
+			// One of its five best players, so the deal is notable.
+			const theirs = (await idb.cache.players.indexGetAll("playersByTid", tid))
+				.sort((a, b) => b.valueNoPot - a.valueNoPot)
+				.slice(2, 5);
+			for (const p of theirs) {
+				for (const q of mine.slice(0, 4)) {
+					const cpu = { tid, pids: [p.pid], dpids: [] };
+					const human = { tid: userTid, pids: [q.pid], dpids: [] };
+					if (
+						(await judgeHumanOffer(cpu, human)).kind === "yes" &&
+						(await legalDeal({
+							tids: [tid, userTid],
+							give: [cpu, human],
+						}))
+					) {
+						found = { cpu, human };
+						break;
+					}
+				}
+				if (found) {
+					break;
+				}
+			}
+		}
+		assert.isDefined(found, "no deal a CPU team would take");
+		const { cpu, human } = found!;
+		// Held in the preseason: this league has no schedule to wait on.
+		g.setWithoutSavingToDB("phase", PHASE.PRESEASON);
+		try {
+			assert.strictEqual(await holdHumanDeal(cpu, human), "held");
+			assert.strictEqual(await holdHumanDeal(cpu, human), "busy");
+		} finally {
+			g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+		}
+		// Its players are off the table meanwhile.
+		assert.strictEqual((await judgeHumanOffer(cpu, human)).kind, "bid");
+		assert.strictEqual(
+			(await idb.cache.players.get(cpu.pids[0]!))!.tid,
+			cpu.tid,
+		);
+
+		await closeWindows(true);
+		assert.strictEqual(
+			(await idb.cache.players.get(cpu.pids[0]!))!.tid,
+			userTid,
+		);
+		assert.strictEqual(
+			(await idb.cache.players.get(human.pids[0]!))!.tid,
+			cpu.tid,
+		);
+		assert.isUndefined((await idb.cache.teams.get(userTid))!.pendingTrade);
 	},
 );
 
@@ -380,6 +478,6 @@ test(
 		assert.isNumber(shown.age);
 		assert.isNumber(shown.ratings.ovr);
 		assert.isNumber(shown.ratings.pot);
-		await closeWindows();
+		await closeWindows(true);
 	},
 );

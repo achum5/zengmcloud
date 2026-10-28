@@ -273,7 +273,7 @@ const pickName = (dp: DraftPick) => {
 // What a rejection says.
 export const verdictMessage = (verdict: Exclude<Verdict, { kind: "yes" }>) => {
 	if (verdict.kind === "bid") {
-		return "Bid placed. They decide tomorrow.";
+		return "Bid placed. They decide after two more sims with no new bid.";
 	}
 	if (verdict.kind === "held") {
 		return "Trade rejected. Part of a pending deal.";

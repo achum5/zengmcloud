@@ -18,6 +18,7 @@ import { settleBets } from "../sportsbook/bets.ts";
 import { cleanupAutoPlay } from "../league/autoPlay.ts";
 import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
 import { tradeWindow as realisticFrontOfficeTradeWindow } from "../realisticFrontOffice/market.ts";
+import { pendingDealsSimStarted as realisticFrontOfficeSimStarted } from "../realisticFrontOffice/windowClock.ts";
 
 const save = async () => {
 	await updateStatus("Saving...");
@@ -46,8 +47,12 @@ const finalize = async (
 	});
 
 	// Realistic front offices trade as some offseason phases open, before the
-	// save below.
+	// save below. A phase advanced on its own, not inside a sim of days, counts
+	// as a sim towards closing deals held for bids.
 	if (realisticFrontOfficesOn()) {
+		if (!lock.get("gameSim")) {
+			await realisticFrontOfficeSimStarted();
+		}
 		await realisticFrontOfficeTradeWindow();
 	}
 

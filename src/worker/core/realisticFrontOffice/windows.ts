@@ -11,8 +11,10 @@ import {
 	type Side,
 } from "./humanTrades.ts";
 import { ensureRetention, type LeagueOutlook } from "./outlook.ts";
+import { DAYS_ALONE, SIMS_TO_CLOSE } from "./windowClock.ts";
 import {
 	aiTids,
+	canHold,
 	currentOutlook,
 	gamesPlayed,
 	legalDeal,
@@ -30,8 +32,8 @@ import {
 
 // MATCHING WINDOWS (owner's calls). A notable deal two CPU teams agree - one
 // in which a team gives one of its five best players or a first-round pick -
-// is held until the next trading day, and any team, human or CPU, can offer
-// either side more for what it gives. When the window closes each side takes
+// is held for bids (for as long as windowClock.ts says), and any team, human
+// or CPU, can offer either side more for what it gives. When the window closes each side takes
 // the best offer for its assets by its own read - a human's binding, judged as
 // any human's offer - which may break the deal. Its assets are off the table
 // meanwhile.
@@ -149,6 +151,56 @@ export const holdDeal = async (
 	}
 };
 
+// A person's deal with a CPU team that it would take (owner's call): if
+// notable, held for bids like one between CPU teams, so other teams get to
+// top it; it goes through if none does. Kept on the person's team, one at a
+// time: "busy" if one is held already, false if not notable.
+export const holdHumanDeal = async (
+	cpu: Side,
+	human: Side,
+): Promise<"held" | "busy" | false> => {
+	const outlook = await currentOutlook();
+	const sides = [
+		await loadTeam(outlook, cpu.tid),
+		await loadTeam(outlook, human.tid),
+	] as const;
+	const assets = [
+		assetsFor(sides[0], cpu.pids, cpu.dpids),
+		assetsFor(sides[1], human.pids, human.dpids),
+	] as const;
+	if (
+		!(await canHold()) ||
+		!assets[0] ||
+		!assets[1] ||
+		!isNotable({ assets: [assets[0], assets[1]] }, sides, human.tid)
+	) {
+		return false;
+	}
+	const t = await idb.cache.teams.get(human.tid);
+	if (!t) {
+		return false;
+	}
+	if (t.pendingTrade) {
+		return "busy";
+	}
+	const give: Pending["give"] = [
+		{ pids: [...cpu.pids], dpids: [...cpu.dpids] },
+		{ pids: [...human.pids], dpids: [...human.dpids] },
+	];
+	t.pendingTrade = {
+		tids: [cpu.tid, human.tid],
+		give,
+		day: await dayKey(),
+		bids: [],
+		sims: 0,
+		days: 0,
+	};
+	await idb.cache.teams.put(t);
+	reserve(give);
+	marketClock.held += 1;
+	return "held";
+};
+
 // The held deal in which this team gives all of these assets but those not
 // held anywhere, its side, and those more it is asked for.
 const pendingSide = async (
@@ -206,6 +258,9 @@ export const placeBid = async (cpu: Side, human: Side) => {
 	if (!found) {
 		return false;
 	}
+	// Two full sims more for anyone to answer it.
+	found.t.pendingTrade!.sims = 0;
+	found.t.pendingTrade!.days = 0;
 	found.t.pendingTrade!.bids.push({
 		tid: human.tid,
 		side: found.k,
@@ -269,11 +324,22 @@ const bestOffer = async (
 ) => {
 	const j = k === 0 ? 1 : 0;
 	const a = sides[k];
+	const humans = await humanTids();
+	// A person's own side of a deal is his to decide, not shopped.
+	if (humans.includes(a.tid)) {
+		return {
+			tid: sides[j].tid,
+			give: pending.give[j],
+			net: Infinity,
+			human: true,
+		};
+	}
+	const partnerHuman = humans.includes(sides[j].tid);
 	let best: Offer = {
 		tid: sides[j].tid,
 		give: pending.give[j],
-		net: netFor(outlook, a, given[k], given[j], sides[j], false),
-		human: false,
+		net: netFor(outlook, a, given[k], given[j], sides[j], partnerHuman),
+		human: partnerHuman,
 	};
 	if (given[k].length === 0) {
 		return best;
@@ -395,6 +461,7 @@ const closeWindow = async (outlook: LeagueOutlook, pending: Pending) => {
 		);
 	}
 
+	const humans = await humanTids();
 	const offers = [
 		await bestOffer(outlook, pending, sides, given, 0),
 		await bestOffer(outlook, pending, sides, given, 1),
@@ -403,7 +470,29 @@ const closeWindow = async (outlook: LeagueOutlook, pending: Pending) => {
 		(offer, k) => offer.tid === pending.tids[k === 0 ? 1 : 0] && !offer.raised,
 	);
 	if (kept) {
-		if (
+		const humanK = ([0, 1] as const).find((k) =>
+			humans.includes(pending.tids[k]),
+		);
+		if (humanK !== undefined) {
+			// A person's deal: it goes through if the CPU team still wants it.
+			const cpuK = humanK === 0 ? 1 : 0;
+			if (offers[cpuK].net >= MIN_GAIN) {
+				await takeBid(pending.tids[cpuK], pending.give[cpuK], {
+					tid: pending.tids[humanK],
+					give: pending.give[humanK],
+					net: offers[cpuK].net,
+					human: true,
+				});
+				winners.add(pending.tids[humanK]);
+				marketClock.heldKept += 1;
+			} else {
+				await logEvent({
+					type: "info",
+					text: `The ${teamLink(pending.tids[cpuK])} no longer want your deal.`,
+					saveToDb: false,
+				});
+			}
+		} else if (
 			offers[0].net >= MIN_GAIN &&
 			offers[1].net >= MIN_GAIN &&
 			(await makeDeal(
@@ -461,6 +550,16 @@ const closeWindow = async (outlook: LeagueOutlook, pending: Pending) => {
 			}
 		}
 	}
+	for (const k of [0, 1] as const) {
+		const tid = pending.tids[k];
+		if (humans.includes(tid) && !winners.has(tid)) {
+			await logEvent({
+				type: "info",
+				text: `The ${teamLink(pending.tids[k === 0 ? 1 : 0])} took a better offer than your deal.`,
+				saveToDb: false,
+			});
+		}
+	}
 	await tellBidders(pending, winners);
 };
 
@@ -500,12 +599,29 @@ const tellBidders = async (pending: Pending, winners: Set<number>) => {
 	}
 };
 
-// Closes the windows of deals held on an earlier trading day.
-export const closeWindows = async () => {
+// Closes the windows of deals held on an earlier trading day once enough
+// sims have started since (windowClock.ts) - or all of them, `force`d, on
+// the last trading day before the deadline or the end of free agency.
+export const closeWindows = async (force = false) => {
 	const today = await dayKey();
-	const due = (await idb.cache.teams.getAll()).filter(
-		(t) => t.pendingTrade && t.pendingTrade.day !== today,
-	);
+	const alone = (await humanTids()).length <= 1;
+	const due: Team[] = [];
+	for (const t of await idb.cache.teams.getAll()) {
+		const pending = t.pendingTrade;
+		if (!pending || (!force && pending.day === today)) {
+			continue;
+		}
+		pending.days = (pending.days ?? 0) + 1;
+		if (
+			force ||
+			(pending.sims ?? 0) >= SIMS_TO_CLOSE ||
+			(alone && pending.days >= DAYS_ALONE)
+		) {
+			due.push(t);
+		} else {
+			await idb.cache.teams.put(t);
+		}
+	}
 	if (due.length === 0) {
 		return;
 	}

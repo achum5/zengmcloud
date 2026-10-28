@@ -13,10 +13,11 @@ import { defineView } from "../util/defineView.ts";
 import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
 import { proposalsTo } from "../core/realisticFrontOffice/proposalStore.ts";
 import { heldDeals } from "../core/realisticFrontOffice/windows.ts";
+import { SIMS_TO_CLOSE } from "../core/realisticFrontOffice/windowClock.ts";
 import { getSummary } from "./trade.ts";
 
-// Deals two CPU teams agreed, open to bids till the next trading day
-// (realisticFrontOffice/windows.ts): each with the sides this team has bid on.
+// Deals agreed and held for bids (realisticFrontOffice/windows.ts): each with
+// the sides this team has bid on, and the full sims it stays open.
 const pendingDeals = async (userTid: number) => {
 	const out = [];
 	for (const deal of await heldDeals()) {
@@ -59,6 +60,10 @@ const pendingDeals = async (userTid: number) => {
 			tids: deal.tids,
 			give: deal.give,
 			notes: deal.notes,
+			// A person's side is his to decide: no bids on it.
+			human: deal.tids.map((tid) => g.get("userTids").includes(tid)),
+			// Full sims left before it closes, as the one after starts.
+			simsLeft: Math.max(0, SIMS_TO_CLOSE - 1 - (deal.sims ?? 0)),
 			bid: [0, 1].map((k) =>
 				deal.bids.some((bid) => bid.tid === userTid && bid.side === k),
 			),

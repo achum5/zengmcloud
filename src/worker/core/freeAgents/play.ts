@@ -1,3 +1,5 @@
+import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import { pendingDealsSimStarted as realisticFrontOfficeSimStarted } from "../realisticFrontOffice/windowClock.ts";
 import { PHASE } from "../../../common/constants.ts";
 import { league, phase, trade } from "../index.ts";
 import autoSign from "./autoSign.ts";
@@ -98,6 +100,11 @@ async function play(
 			// unpublished until some later unrelated action.
 			changeTracker.beginSim("playMenu.day");
 			try {
+				// Realistic front offices: a sim of days counts towards closing deals
+				// held for bids.
+				if (realisticFrontOfficesOn()) {
+					await realisticFrontOfficeSimStarted();
+				}
 				await cbRunDay();
 			} finally {
 				changeTracker.endSim("playMenu.day");

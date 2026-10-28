@@ -1198,16 +1198,36 @@ export const tradeDay = () =>
 	timed(async () => {
 		const phase = g.get("phase");
 		if (phase === PHASE.REGULAR_SEASON) {
-			await closeWindows();
+			// On the last trading day every held deal is decided.
+			const another = await anotherTradingDay();
+			await closeWindows(!another);
 			await shop(
 				(await inDeadlineWindow()) ? Infinity : SHOPPERS_PER_DAY,
-				await anotherTradingDay(),
+				another,
 			);
 		} else if (phase === PHASE.FREE_AGENCY) {
-			await closeWindows();
-			await shop(marketSettings.freeAgencyShoppers, await anotherTradingDay());
+			const another = await anotherTradingDay();
+			await closeWindows(!another);
+			await shop(marketSettings.freeAgencyShoppers, another);
 		}
 	});
+
+// Whether a deal made now can wait for bids: there is another trading day
+// before the deadline or the end of free agency, or it is an offseason phase,
+// which another trading window follows.
+export const canHold = async () => {
+	const phase = g.get("phase");
+	if (phase === PHASE.REGULAR_SEASON || phase === PHASE.FREE_AGENCY) {
+		return anotherTradingDay();
+	}
+	return (
+		phase === PHASE.DRAFT_LOTTERY ||
+		phase === PHASE.DRAFT ||
+		phase === PHASE.AFTER_DRAFT ||
+		phase === PHASE.RESIGN_PLAYERS ||
+		phase === PHASE.PRESEASON
+	);
+};
 
 // Whether there is a trading day after this one, before the deadline or the
 // end of the regular season or of free agency - for a deal to wait for bids.
@@ -1423,7 +1443,7 @@ const shop = async (numShoppers: number, holds = false) => {
 			continue;
 		}
 		if (holds && isNotable(best, sides, tid)) {
-			// Held until the next trading day, for other teams to bid on
+			// Held for bids (windowClock.ts), for other teams to bid on
 			// either side's assets (windows.ts).
 			if (await legalDeal(best)) {
 				await holdDeal(

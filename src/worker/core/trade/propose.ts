@@ -15,7 +15,10 @@ import {
 	judgeHumanOffer as realisticFrontOfficeJudgeOffer,
 	verdictMessage as realisticFrontOfficeVerdictMessage,
 } from "../realisticFrontOffice/humanTrades.ts";
-import { placeBid as realisticFrontOfficePlaceBid } from "../realisticFrontOffice/windows.ts";
+import {
+	holdHumanDeal as realisticFrontOfficeHoldHumanDeal,
+	placeBid as realisticFrontOfficePlaceBid,
+} from "../realisticFrontOffice/windows.ts";
 
 const accept = async (teams: TradeTeams, tids: [number, number]) => {
 	const hash = hashSavedTrade(teams);
@@ -96,6 +99,21 @@ const propose = async (
 			return {
 				accepted: false as const,
 				message: realisticFrontOfficeVerdictMessage(verdict),
+			};
+		}
+		// A notable deal is held for other teams to top first.
+		const held = await realisticFrontOfficeHoldHumanDeal(teams[1], teams[0]);
+		if (held === "held") {
+			return {
+				accepted: false as const,
+				message:
+					"Deal agreed. It's pending for two sims in case another team tops it.",
+			};
+		}
+		if (held === "busy") {
+			return {
+				accepted: false as const,
+				message: "You already have a deal pending.",
 			};
 		}
 		return accept(teams, tids);

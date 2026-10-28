@@ -1,3 +1,5 @@
+import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import { pendingDealsSimStarted as realisticFrontOfficeSimStarted } from "../realisticFrontOffice/windowClock.ts";
 import {
 	ALL_STAR_GAME_ONLY,
 	PHASE,
@@ -1290,6 +1292,11 @@ const play = async (
 				const advance = gidOneGame === undefined ? "playMenu.sim" : undefined;
 				changeTracker.beginSim(advance);
 				try {
+					// Realistic front offices: a sim of days counts towards closing
+					// deals held for bids (not one game of a day).
+					if (gidOneGame === undefined && realisticFrontOfficesOn()) {
+						await realisticFrontOfficeSimStarted();
+					}
 					await cbRunDay();
 				} finally {
 					changeTracker.endSim(advance);

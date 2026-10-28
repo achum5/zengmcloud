@@ -230,9 +230,21 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   - Someone else's is better: it says so, shows you that offer in full, and
     shows its counter - what it would need from you to beat it.
   - You walk away: it does the other deal, because it would have anyway.
-- **Matching window.** A deal involving a CPU team is held until the next sim
-  day, and other teams (humans included) can bid on it. Bidding wars are fine;
-  a bid cannot be withdrawn. Everything is public - every team sees the bids.
+- **Matching window.** A deal involving a CPU team is held for bids, and other
+  teams (humans included) can bid on it. Bidding wars are fine; a bid cannot
+  be withdrawn. Everything is public - every team sees the bids.
+- **How long** (owner's calls): not real time, and the sim never stops for
+  it. A deal stays open for two full sims after it is held or last bid on -
+  it closes as the third sim starts, a sim being one run of days however
+  long, or a phase advanced on its own - so a bid made just before someone
+  sims cannot win before the others have had a sim to answer it. With one
+  person in the league there is no one else to wait for, so a deal also
+  closes after 14 trading days. Every deal is decided on the last trading day
+  before the deadline or the end of free agency.
+- **A person's own notable deal with a CPU team is held too** (owner's call,
+  in every league): the CPU team says yes, then other teams get the same two
+  sims to top it; if none does, it goes through. One at a time per person;
+  the bids are on the CPU team's side - a person's side is his own.
 - **Which deals get a window** (every deal, or only notable ones) is a user
   setting; notable ones by default (owner's call) - a deal with one of a
   team's five best players or a first-round pick. The rest go through at

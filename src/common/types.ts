@@ -2822,6 +2822,10 @@ export type Team = {
 			give: { pids: number[]; dpids: number[] };
 			take?: { pids: number[]; dpids: number[] };
 		}[];
+		// Sims started, and trading days passed, since it was held or last bid
+		// on (realisticFrontOffice/windowClock.ts).
+		sims?: number;
+		days?: number;
 		// In plain words, for each side: why it makes the deal and what it would
 		// want most in a bid. Missing on deals held before.
 		notes?: [{ why: string; wants: string }, { why: string; wants: string }];

@@ -134,6 +134,11 @@ const TradeProposals = ({
 							key={`${deal.tids[0]}-${deal.tids[1]}`}
 							className="d-flex flex-wrap gap-5 mb-3"
 						>
+							<div className="w-100 mb-n4 text-body-secondary small">
+								{deal.simsLeft === 0
+									? "Closes when the next sim starts"
+									: `Open for ${deal.simsLeft} more ${deal.simsLeft === 1 ? "sim" : "sims"}`}
+							</div>
 							{deal.summary.teams.map((t, k) => (
 								<div key={k}>
 									<SummaryTeam
@@ -149,8 +154,8 @@ const TradeProposals = ({
 											{deal.notes[k]!.wants.slice(1)}.
 										</div>
 									) : null}
-									{deal.give[k]!.pids.length + deal.give[k]!.dpids.length >
-									0 ? (
+									{!deal.human[k] &&
+									deal.give[k]!.pids.length + deal.give[k]!.dpids.length > 0 ? (
 										<button
 											className="btn btn-sm btn-primary"
 											onClick={() => {
