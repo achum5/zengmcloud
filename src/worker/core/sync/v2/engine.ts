@@ -483,7 +483,7 @@ export class SyncEngineV2 {
 				this.authorityUnsubscribe?.();
 				this.authorityUnsubscribe = undefined;
 				this.onAuthorityChange?.(undefined);
-				syncDebugLog("v2:authority-listener-died", { error });
+				syncDebugLog("v2:authority-listener-died", { error: String(error) });
 				if (this.authorityRestartTimer !== undefined) {
 					clearTimeout(this.authorityRestartTimer);
 				}
@@ -2253,7 +2253,14 @@ export class SyncEngineV2 {
 			this.onUploadComplete?.();
 			return true;
 		} catch (error) {
-			syncDebugLog("v2:drain-failed", { error });
+			// (As text: an Error is `{}` once the log entry is serialized.)
+			syncDebugLog("v2:drain-failed", {
+				error: String(error),
+				stack:
+					error instanceof Error
+						? error.stack?.split("\n").slice(1, 4)
+						: undefined,
+			});
 			return false;
 		} finally {
 			this.draining = false;
