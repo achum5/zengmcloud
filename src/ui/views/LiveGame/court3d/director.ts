@@ -211,6 +211,9 @@ export type Act = {
 	// release, high or quick (see shotWith).
 	push?: true;
 	arms?: ShotArms;
+	// Or leaning off balance to his left or right, away from a hand right up
+	// at it.
+	lean?: "L" | "R";
 	// Only for show, and in a stretch the picture runs through too fast to
 	// see more than a frame or two of it: left out of the picture (see
 	// flashes).
@@ -716,6 +719,9 @@ const ON_FROM_MS = 700;
 const QUICK_FROM = 12;
 // A side-step jumper: how far across (feet) he goes before the hop back over.
 const SIDESTEP_FT = 2.6;
+// Of the jumpers with a hand right up at them, how many he leans away from
+// it on (see the shot).
+const LEAN_ODDS = 0.35;
 // Going up with a man in close (see wallUp): how late (ms), at the most, a
 // poor defender is up - and how far up he gets, caught flat-footed (ft).
 const WALL_LATE = 90;
@@ -1279,6 +1285,30 @@ const ROOM_MISSED = [0.09, 0.42, 0.33, 0.16] as const;
 // feet, as the league's tracking has them.)
 const ROOM_MADE_3 = [0.01, 0.07, 0.34, 0.58] as const;
 const ROOM_MISSED_3 = [0.02, 0.12, 0.38, 0.48] as const;
+// How much room a jumper gets (an index into ROOM_FT): the same draw for the
+// shot wherever it is asked for.
+const roomFor = (
+	shooter: number,
+	release: number,
+	three: boolean,
+	made: boolean,
+): number => {
+	const odds = three
+		? made
+			? ROOM_MADE_3
+			: ROOM_MISSED_3
+		: made
+			? ROOM_MADE
+			: ROOM_MISSED;
+	let room = 0;
+	for (let x = hash01(shooter * 5 + 2, release); room < 3; room++) {
+		x -= odds[room]!;
+		if (x < 0) {
+			break;
+		}
+	}
+	return room;
+};
 // Left all alone off a pass, his man had sunk in to help as it was swung
 // to him: as far off him as he can get back out from in the time it takes
 // - though no farther than this (feet) - and there from this long before
@@ -10820,6 +10850,29 @@ class Director {
 				(close || floater) && !tip
 					? (2 * Math.sqrt((2 * peak) / GRAVITY) * 1000) / (0.93 - 0.24)
 					: (close || floater ? 760 : zone === "lowPost" ? 900 : 1000) * form;
+			// A hand right up at it: now and then he leans away from it as he
+			// rises - off balance, away from the side his man comes at him
+			// from. (Only for a man the game has ratings for.)
+			let lean: "L" | "R" | undefined;
+			const tight =
+				anim === "shoot" && !push && this.rated.has(shooter)
+					? roomFor(
+							shooter,
+							gather + dur * J.release,
+							zone === "three",
+							plan.kind === "make",
+						)
+					: 3;
+			if (
+				tight <= 1 &&
+				this.defenderOf(shooter) !== undefined &&
+				hash01(shooter, Math.round(gather / 7)) < LEAN_ODDS
+			) {
+				// (Where his man meets the shot - see ahead: on his left, going
+				// at the rim, he leans right.)
+				const G = ahead(ROOM_FT[tight]!);
+				lean = toRim.x * (G.y - P1.y) - toRim.y * (G.x - P1.x) > 0 ? "R" : "L";
+			}
 			if (jumper) {
 				landed = gather + dur;
 				pushed = push;
@@ -10876,7 +10929,8 @@ class Director {
 				jump,
 				...(reverse && offLeft ? { mirror: true as const } : {}),
 				...(push ? { push: true as const } : {}),
-				...(arms ? { arms } : {}),
+				...(arms && !lean ? { arms } : {}),
+				...(lean ? { lean } : {}),
 			});
 			const letGo = close ? 0.6 : floater ? 0.5 : jumper ? J.release : 0.55;
 			const release = gather + dur * letGo;
@@ -10988,7 +11042,15 @@ class Director {
 			const v = (letGo - jump[0]) / (jump[1] - jump[0]);
 			// (Up off his own jumper, the ball in his hand on it.)
 			let fingers = releaseAt(
-				push ? "shootPush" : anim === "shoot" ? shotWith(shooter, arms) : anim,
+				push
+					? "shootPush"
+					: lean
+						? lean === "L"
+							? "shootLeanL"
+							: "shootLeanR"
+						: anim === "shoot"
+							? shotWith(shooter, arms)
+							: anim,
 				letGo,
 			);
 			fingers.u += v > 0 && v < 1 ? 4 * jump[2] * v * (1 - v) : 0;
@@ -11153,21 +11215,12 @@ class Director {
 				}
 				// How much room he gets: at the rim, a body on him; out on the
 				// floor, anything from a hand in his face to nobody near.
-				const odds =
-					zone === "three"
-						? plan.kind === "make"
-							? ROOM_MADE_3
-							: ROOM_MISSED_3
-						: plan.kind === "make"
-							? ROOM_MADE
-							: ROOM_MISSED;
-				let room = 0;
-				for (let x = hash01(shooter * 5 + 2, release); room < 3; room++) {
-					x -= odds[room]!;
-					if (x < 0) {
-						break;
-					}
-				}
+				let room = roomFor(
+					shooter,
+					release,
+					zone === "three",
+					plan.kind === "make",
+				);
 				const outAt =
 					guard === undefined
 						? release

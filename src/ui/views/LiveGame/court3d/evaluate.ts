@@ -2604,7 +2604,11 @@ const doingAt = (
 			act.anim === "shoot"
 				? act.push
 					? "shootPush"
-					: shotWith(pid, act.arms)
+					: act.lean
+						? act.lean === "L"
+							? "shootLeanL"
+							: "shootLeanR"
+						: shotWith(pid, act.arms)
 				: act.anim;
 		const a = ANIMS[anim];
 		// (A loop on the same beat as when he does it standing of his own

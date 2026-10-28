@@ -1505,6 +1505,28 @@ const SPLIT_LEGS: [number, Partial<Pose>][] = [
 	[1, { hipN: -4, kneeN: 28, hipF: 6, kneeF: 30, lean: 5, wide: 0.28 }],
 ];
 const SPLIT_SHOT = jumper(SPLIT_LEGS);
+// Leaning off balance as he goes up, to his left or his right - away from
+// a hand right up at it: tipped over at the top, and back up as he lands.
+const LEAN_TILT = 14;
+const leaning = (keys: [number, Pose][], side: 1 | -1): [number, Pose][] => {
+	const by = (u: number) =>
+		u < 0.24
+			? 0
+			: u < 0.42
+				? (u - 0.24) / 0.18
+				: u < 0.84
+					? 1
+					: Math.max(0, (1 - u) / 0.16);
+	const at = [...new Set([...keys.map(([u]) => u), 0.42, 0.84])].sort(
+		(a, b) => a - b,
+	);
+	return at.map((u) => {
+		const q = keyed(keys, u);
+		return [u, { ...q, tilt: q.tilt + side * LEAN_TILT * by(u) }];
+	});
+};
+const LEAN_L_SHOT = leaning(JUMP_SHOT, 1);
+const LEAN_R_SHOT = leaning(JUMP_SHOT, -1);
 // Each with a high release, and each a quick one (see shotWith).
 const HIGH_SHOT = jumper(JUMP_LEGS, HIGH_ARMS);
 const HIGH_KICK_SHOT = jumper(KICK_LEGS, HIGH_ARMS);
@@ -2725,6 +2747,8 @@ export const ANIMS = {
 	shootKick: { kind: "act", n: 12, keys: KICK_SHOT },
 	shootSplit: { kind: "act", n: 12, keys: SPLIT_SHOT },
 	shootPush: { kind: "act", n: 12, keys: PUSH_SHOT },
+	shootLeanL: { kind: "act", n: 12, keys: LEAN_L_SHOT },
+	shootLeanR: { kind: "act", n: 12, keys: LEAN_R_SHOT },
 	shootHigh: { kind: "act", n: 12, keys: HIGH_SHOT },
 	shootHighKick: { kind: "act", n: 12, keys: HIGH_KICK_SHOT },
 	shootHighSplit: { kind: "act", n: 12, keys: HIGH_SPLIT_SHOT },
@@ -6823,6 +6847,8 @@ const GRIPS: Partial<Record<AnimName, Grip>> = {
 	shootKick: "shot",
 	shootSplit: "shot",
 	shootPush: "shot",
+	shootLeanL: "shot",
+	shootLeanR: "shot",
 	shootHigh: "shot",
 	shootHighKick: "shot",
 	shootHighSplit: "shot",

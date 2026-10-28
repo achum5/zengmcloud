@@ -1465,6 +1465,8 @@ const SHOOTING = new Set([
 	"shootKick",
 	"shootSplit",
 	"shootPush",
+	"shootLeanL",
+	"shootLeanR",
 	"shootHigh",
 	"shootHighKick",
 	"shootHighSplit",

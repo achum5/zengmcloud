@@ -1,7 +1,7 @@
 import { assert, describe, test } from "vitest";
 import { compileCourt } from "./director.ts";
 import { evalBall, evalPlayer } from "./evaluate.ts";
-import { bodyOf, PUSH_JUMPER } from "./poses.ts";
+import { bodyOf, JUMPER, PUSH_JUMPER } from "./poses.ts";
 import type { CourtRatings } from "./ratings.ts";
 import { fakeGame, gidOf } from "./testGame.ts";
 
@@ -672,5 +672,29 @@ describe("3D: players play like their ratings", () => {
 		const poor = staring(30);
 		const fine = staring(85);
 		assert.isAbove(poor, fine + 10, `${poor} ${fine}`);
+	});
+	test("now and then a shooter leans away from a hand right up at it - and it still leaves his hand", () => {
+		const body = bodyOf();
+		let n = 0;
+		for (const seed of ["r1", "r2", "r3"]) {
+			const tl = play(seed, all(75));
+			for (const tr of tl.tracks.values()) {
+				for (const a of tr.acts) {
+					if (a.anim !== "shoot" || a.lean === undefined) {
+						continue;
+					}
+					n += 1;
+					const go = a.t0 + (a.t1 - a.t0) * JUMPER.release;
+					const b0 = evalBall(tl, go - 8, () => body);
+					const b1 = evalBall(tl, go + 8, () => body);
+					assert.isBelow(
+						Math.hypot(b1.x - b0.x, b1.y - b0.y, b1.z - b0.z),
+						0.8,
+						`${Math.round(go)}`,
+					);
+				}
+			}
+		}
+		assert.isAbove(n, 2, `${n}`);
 	});
 });
