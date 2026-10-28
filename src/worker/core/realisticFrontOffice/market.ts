@@ -703,6 +703,42 @@ export const tableAssets = (t: TeamState): Asset[] =>
 			.map((dp) => ({ kind: "pick" as const, dp })),
 	].filter((x) => !isReserved(x));
 
+// What one asset at a time is worth to each team, for the screens: kept for
+// the outlook's life, under each team's roster as it was (TeamState.rosterKey).
+const screens = new WeakMap<LeagueOutlook, Map<string, number>>();
+const screensOf = (outlook: LeagueOutlook) => {
+	let map = screens.get(outlook);
+	if (!map) {
+		map = new Map();
+		screens.set(outlook, map);
+	}
+	return map;
+};
+
+// One asset alone, either way: what losing it ("-") costs a team, or what
+// gaining it ("+") is worth to it - remembered in `single` while both the
+// team's roster and the asset stand as they are.
+const singleKey = (t: TeamState, sign: "-" | "+", x: Asset) =>
+	`${t.tid}:${t.rosterKey}${sign}${assetKey(x)}${x.kind === "player" ? `.${x.p.injury.gamesRemaining}` : ""}`;
+export const singlePrice = (
+	outlook: LeagueOutlook,
+	t: TeamState,
+	sign: "-" | "+",
+	x: Asset,
+	single: Map<string, number> = screensOf(outlook),
+) => {
+	const k = singleKey(t, sign, x);
+	let value = single.get(k);
+	if (value === undefined) {
+		value =
+			sign === "-"
+				? priceFor(outlook, t, [x], [])
+				: priceFor(outlook, t, [], [x]);
+		single.set(k, value);
+	}
+	return value;
+};
+
 export const bestDealWith = (
 	outlook: LeagueOutlook,
 	a: TeamState,
@@ -715,32 +751,14 @@ export const bestDealWith = (
 	// One asset at a time, each way: what losing it costs its team and what
 	// gaining it is worth to the other. The screen adds these up; the deals
 	// that pass it are then priced whole.
-	const price = (
-		t: TeamState,
-		outgoing: readonly Asset[],
-		incoming: readonly Asset[],
-	) => priceFor(outlook, t, outgoing, incoming);
-	// Remembered while both the team's roster and the asset stand as they are.
-	const key = (t: TeamState, sign: "-" | "+", x: Asset) =>
-		`${t.tid}:${t.rosterKey}${sign}${assetKey(x)}${x.kind === "player" ? `.${x.p.injury.gamesRemaining}` : ""}`;
-	const remember = (
-		t: TeamState,
-		sign: "-" | "+",
-		x: Asset,
-		compute: () => number,
-	) => {
-		const k = key(t, sign, x);
-		if (!single.has(k)) {
-			single.set(k, compute());
-		}
-	};
+	const key = singleKey;
 	for (const x of assetsA) {
-		remember(a, "-", x, () => price(a, [x], []));
-		remember(b, "+", x, () => price(b, [], [x]));
+		singlePrice(outlook, a, "-", x, single);
+		singlePrice(outlook, b, "+", x, single);
 	}
 	for (const y of assetsB) {
-		remember(b, "-", y, () => price(b, [y], []));
-		remember(a, "+", y, () => price(a, [], [y]));
+		singlePrice(outlook, b, "-", y, single);
+		singlePrice(outlook, a, "+", y, single);
 	}
 	const screen = (t: TeamState, outgoing: Asset[], incoming: Asset[]) =>
 		outgoing.reduce((s, x) => s + single.get(key(t, "-", x))!, 0) +
@@ -1338,18 +1356,6 @@ export const makeDeal = async (
 	});
 	marketClock.trades += 1;
 	return true;
-};
-
-// What one asset at a time is worth to each team, for the screens: kept for
-// the outlook's life, under each team's roster as it was (TeamState.rosterKey).
-const screens = new WeakMap<LeagueOutlook, Map<string, number>>();
-const screensOf = (outlook: LeagueOutlook) => {
-	let map = screens.get(outlook);
-	if (!map) {
-		map = new Map();
-		screens.set(outlook, map);
-	}
-	return map;
 };
 
 // `holds`: notable deals wait a day for bids (windows.ts).

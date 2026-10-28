@@ -202,33 +202,55 @@ test(
 );
 
 test(
-	"the trading block gets offers CPU teams would make",
+	"the trading block gets bids CPU teams would make",
 	{ timeout: 300_000 },
 	async () => {
 		const players = (
 			await idb.cache.players.indexGetAll("playersByTid", userTid)
 		).sort((a, b) => b.valueNoPot - a.valueNoPot);
+		const pid = players[0]!.pid;
 		const started = Date.now();
-		const offers = await tradingBlockTeams(userTid, [players[4]!.pid], [], {
+		const offers = await tradingBlockTeams(userTid, [pid], [], {
 			positions: new Set(),
 			skills: new Set(),
-			draftPicks: false,
+			draftPicks: true,
 		});
 		const seconds = (Date.now() - started) / 1000;
 		assert.isBelow(seconds, 60);
+		// A good player draws bids, in picks only when only those are asked for.
+		assert.isAbove(offers.length, 0);
 		for (const [user, cpu] of offers) {
-			assert.deepEqual(user.pids, [players[4]!.pid]);
+			assert.deepEqual(user.pids, [pid]);
+			assert.deepEqual(cpu.pids, []);
+			assert.isAbove(cpu.dpids.length, 0);
+			// One the team would take as offered, before it shops what it gives.
 			const verdict = await judgeHumanOffer(
 				{ tid: cpu.tid, pids: cpu.pids, dpids: cpu.dpids },
 				{ tid: userTid, pids: user.pids, dpids: user.dpids },
+				{ shop: false },
 			);
 			assert.strictEqual(verdict.kind, "yes");
 		}
+
+		// Asked for a position, every bid holds a player there.
+		const pos = "G";
+		const guards = await tradingBlockTeams(userTid, [pid], [], {
+			positions: new Set([pos]),
+			skills: new Set(),
+			draftPicks: false,
+		});
+		for (const [, cpu] of guards) {
+			const theirs = await Promise.all(
+				cpu.pids.map((x) => idb.cache.players.get(x)),
+			);
+			assert.isTrue(theirs.some((p) => p!.ratings.at(-1)!.pos.includes(pos)));
+		}
+
 		const fs = await importNode("node:fs/promises");
 		if ((globalThis as any).process?.env?.PROPOSALS_TIMING) {
 			await fs.writeFile(
 				(globalThis as any).process.env.PROPOSALS_TIMING,
-				`trading block: ${offers.length} offers in ${seconds.toFixed(1)} s\n`,
+				`trading block: ${offers.length} bids in ${seconds.toFixed(1)} s\n`,
 			);
 		}
 	},

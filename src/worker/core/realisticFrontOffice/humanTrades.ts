@@ -2,7 +2,6 @@ import type { DraftPick, Player } from "../../../common/types.ts";
 import { g, helpers } from "../../util/index.ts";
 import {
 	aiTids,
-	assetKey,
 	count,
 	currentOutlook,
 	loadTeam,
@@ -11,6 +10,7 @@ import {
 	packages,
 	priceFor,
 	salariesWork,
+	singlePrice,
 	tableAssets,
 	waitingOf,
 	type Asset,
@@ -82,14 +82,36 @@ export const assetsFor = (
 	return out;
 };
 
+// Teams loaded once for many judgements in a row, while the outlook holds.
+export type Loaded = { outlook: LeagueOutlook; teams: Map<number, TeamState> };
+
+export const load = async (
+	outlook: LeagueOutlook,
+	tid: number,
+	loaded?: Loaded,
+) => {
+	if (loaded?.outlook !== outlook) {
+		return loadTeam(outlook, tid);
+	}
+	let t = loaded.teams.get(tid);
+	if (!t) {
+		t = await loadTeam(outlook, tid);
+		loaded.teams.set(tid, t);
+	}
+	return t;
+};
+
 // The best another CPU team would give for these assets, by what it is worth
 // to the team giving them up (less its margin of error), among packages that
-// clear the other team's own bar - undefined if no team would deal.
+// clear the other team's own bar - undefined if no team would deal, or none
+// for more than `beat`.
 export const bestElsewhere = async (
 	outlook: LeagueOutlook,
 	a: TeamState,
 	giving: readonly Asset[],
 	excluded: readonly number[],
+	beat = -Infinity,
+	loaded?: Loaded,
 ) => {
 	const costToA = priceFor(outlook, a, giving, []);
 	let best: { tid: number; assets: Asset[]; net: number } | undefined;
@@ -97,7 +119,7 @@ export const bestElsewhere = async (
 		if (tid === a.tid || excluded.includes(tid)) {
 			continue;
 		}
-		const b = await loadTeam(outlook, tid);
+		const b = await load(outlook, tid, loaded);
 		await ensureRetention(outlook, playersIn(giving), tid);
 		await ensureRetention(outlook, b.tradablePlayers, a.tid);
 		const worthToB = priceFor(outlook, b, [], giving);
@@ -105,22 +127,15 @@ export const bestElsewhere = async (
 			continue;
 		}
 		const assets = tableAssets(b);
-		const single = new Map<string, { cost: number; worth: number }>();
-		for (const x of assets) {
-			single.set(assetKey(x), {
-				cost: priceFor(outlook, b, [x], []),
-				worth: priceFor(outlook, a, [], [x]),
-			});
-		}
-		const screened = packages(assets, (x) => -single.get(assetKey(x))!.cost)
-			.map((pkg) => ({
-				pkg,
-				forA:
-					costToA + pkg.reduce((s, x) => s + single.get(assetKey(x))!.worth, 0),
-				forB:
-					worthToB + pkg.reduce((s, x) => s + single.get(assetKey(x))!.cost, 0),
-			}))
-			.filter(({ forA, forB }) => forA > 0 && forB > 0)
+		const cost = (x: Asset) => singlePrice(outlook, b, "-", x);
+		const worth = (x: Asset) => singlePrice(outlook, a, "+", x);
+		const sum = (pkg: Asset[], of: (x: Asset) => number) =>
+			pkg.reduce((s, x) => s + of(x), 0);
+		// (What the other team would not give needs no price for this one.)
+		const screened = packages(assets, (x) => -cost(x))
+			.filter((pkg) => worthToB + sum(pkg, cost) > 0)
+			.map((pkg) => ({ pkg, forA: costToA + sum(pkg, worth) }))
+			.filter(({ forA }) => forA > 0)
 			.sort((x, y) => y.forA - x.forA)
 			.slice(0, SHOP_CANDIDATES);
 		for (const { pkg } of screened) {
@@ -132,16 +147,27 @@ export const bestElsewhere = async (
 			) {
 				continue;
 			}
+			// Worth more to it than the best so far first - most are not, and
+			// need no full price to tell - then the other team's bar.
+			const bar = Math.max(beat, best?.net ?? -Infinity);
+			const marginA = marginOf(outlook, a, giving, pkg);
+			const net =
+				priceFor(
+					outlook,
+					a,
+					giving,
+					pkg,
+					b,
+					bar === -Infinity ? undefined : bar + marginA,
+				) - marginA;
+			if (net <= bar) {
+				continue;
+			}
 			const gainB = priceFor(outlook, b, pkg, giving, a);
 			if (gainB - marginOf(outlook, b, pkg, giving) < MIN_GAIN) {
 				continue;
 			}
-			const net =
-				priceFor(outlook, a, giving, pkg, b) -
-				marginOf(outlook, a, giving, pkg);
-			if (!best || net > best.net) {
-				best = { tid, assets: pkg, net };
-			}
+			best = { tid, assets: pkg, net };
 		}
 	}
 	return best;
@@ -158,14 +184,24 @@ export type Side = {
 export const judgeHumanOffer = async (
 	cpu: Side,
 	human: Side,
+	{
+		loaded,
+		shop = true,
+	}: {
+		// Teams already loaded, for a run of judgements on the same day.
+		loaded?: Loaded;
+		// Whether it shops what it would give (a trading block bid does not:
+		// that is weighed when the human offers the deal).
+		shop?: boolean;
+	} = {},
 ): Promise<Verdict> => {
 	const held = await offerOnHeld(cpu);
 	if (held === "held") {
 		return { kind: "held" };
 	}
 	const outlook = await currentOutlook();
-	const a = await loadTeam(outlook, cpu.tid);
-	const h = await loadTeam(outlook, human.tid);
+	const a = await load(outlook, cpu.tid, loaded);
+	const h = await load(outlook, human.tid, loaded);
 	const giving = assetsFor(a, cpu.pids, cpu.dpids);
 	const getting = assetsFor(h, human.pids, human.dpids);
 	if (!giving || !getting) {
@@ -201,8 +237,15 @@ export const judgeHumanOffer = async (
 	}
 
 	// Better than the most any other CPU team would give for the same.
-	if (giving.length > 0) {
-		const elsewhere = await bestElsewhere(outlook, a, giving, [h.tid]);
+	if (shop && giving.length > 0) {
+		const elsewhere = await bestElsewhere(
+			outlook,
+			a,
+			giving,
+			[h.tid],
+			net,
+			loaded,
+		);
 		if (elsewhere && elsewhere.net > net) {
 			return {
 				kind: "better",

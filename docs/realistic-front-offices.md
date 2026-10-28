@@ -292,10 +292,20 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
     by. Best for it by its own read, over the same bar as a human's deal, so
     it takes the deal when it is offered back; fair when the human's side
     gains by the ratings he sees, scouting fuzz and all, through the same
-    projections and title odds. The same goes for the trading block (what
-    each CPU team would give for the assets on it). Deals both sides gain
-    from are as rare as between CPU teams, so the trading block often comes
-    back empty.
+    projections and title odds.
+  - **The trading block** (owner's call, replacing the fair rule there, which
+    left it empty - a good starter put up for picks drew no offer at all) is
+    where the human sees what the market would pay: each CPU team bids up to
+    three of its assets, one at least of the kinds asked for (picks alone when
+    only picks are), salaries left out - the human makes the money work. The
+    stock trade AI's values size the bid (by its own read a contender's bids
+    in picks all came out as its three best, for anyone): the biggest they
+    call fair for the CPU team, worth a third of their price for what it gets
+    at least, and made only if the team would take the deal by its own read,
+    over the human bar, and would not rather wait for the deadline. A bid is
+    not shopped: whether its assets would fetch more elsewhere is weighed when
+    the human offers the deal (shopping every bid took the block from a second
+    or two to most of a minute).
   - **"What would make this work"** (owner's call) names the CPU team's
     price: of the deals it would take that keep everything in the human's
     offer (the offer itself if it would take that), the one it gains least

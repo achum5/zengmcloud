@@ -12,6 +12,8 @@ import {
 	assetsFor,
 	humanTradeSettings,
 	judgeHumanOffer,
+	load,
+	type Loaded,
 	type Side,
 } from "./humanTrades.ts";
 import {
@@ -38,10 +40,11 @@ import {
 } from "./outlook.ts";
 import { IMPACT_RATINGS } from "./playerImpact.ts";
 import { proposalKey, wasDeclined } from "./proposalStore.ts";
+import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 
-// CPU TEAMS' OFFERS TO HUMANS (owner's calls): "What would make this work",
-// the trading block and Trade Proposals. A CPU team offers the deal best for
-// it by its own read - its gain over the bar a human's deal must clear
+// CPU TEAMS' OFFERS TO HUMANS (owner's calls): "What would make this work"
+// and Trade Proposals (the trading block is below). A CPU team offers the deal
+// best for it by its own read - its gain over the bar a human's deal must clear
 // (humanTrades.ts), so it takes the deal if it is offered back - that still
 // looks fair on what the human can see: his side gains by the ratings he
 // sees, scouting fuzz and all, through the same projections and title odds.
@@ -51,6 +54,31 @@ import { proposalKey, wasDeclined } from "./proposalStore.ts";
 const CANDIDATES = 12;
 // Asked for a price, the deals nearest what the CPU team needs priced in full.
 const PRICE_CANDIDATES = 30;
+
+// THE TRADING BLOCK (owner's call, replacing one that its offers had to look
+// fair to the human): where a human sees what the market would pay for what
+// he puts up. Each team bids up to three of its assets, one at least of the
+// kinds he asks for, salaries left out (he makes the money work after).
+// - How big: a pick barely moves a title contender's odds, so by its own read
+//   nearly every bid in picks it would make at all was its three best, for
+//   anyone, and the bids all came out alike. So the market sets the size: the
+//   biggest bid the stock trade AI's values call fair for it (they price
+//   players against picks the way the game always has), made only if the
+//   team would still take the deal by its own read (this many priced in
+//   full at most) and, before the deadline, would not rather wait.
+// - Not shopped: whether its assets would fetch more elsewhere is weighed
+//   when the human offers the deal (shopping every bid took the block from a
+//   second or two to most of a minute).
+// - Made of the assets it would give for his alone by those values, the most
+//   valuable first, so many of each kind (players of the kinds asked for,
+//   other players, picks) - a player only if the human would keep him, not
+//   cut him - and worth this share of the price at least (a lowball is no
+//   guide to the market).
+const BID_WANTED = 3;
+const BID_OTHERS = 1;
+const BID_PICKS = 4;
+const BID_CANDIDATES = 8;
+const MIN_SHARE = 1 / 3;
 
 // A player as the human sees him: every rating with his scouting fuzz on it.
 const publicRow = <R extends MinimalPlayerRatings>(r: R): R => {
@@ -151,21 +179,16 @@ const keyOf = (assets: readonly Asset[]) => assets.map(assetKey).sort().join();
 
 // The deal best for `cpu` with `human` that the human would see as fair: it
 // gives `keep.give` and gets `keep.get` plus up to two more of each side's
-// assets - none more of the human's when `humanFixed`, and only its own
-// assets that pass `allow`.
+// assets.
 export const bestProposal = async (
 	outlook: LeagueOutlook,
 	cpu: TeamState,
 	human: TeamState,
 	{
 		keep = { give: [], get: [] },
-		humanFixed = false,
-		allow = () => true,
 		price = false,
 	}: {
 		keep?: { give: Asset[]; get: Asset[] };
-		humanFixed?: boolean;
-		allow?: (x: Asset) => boolean;
 		// The CPU team's price for what the human asked for: of the deals it
 		// would take, the one it gains least from - no more than it needs, good
 		// for the human or not, as he decides. Otherwise the deal best for the
@@ -179,12 +202,8 @@ export const bestProposal = async (
 	await ensureRetention(outlook, cpu.tradablePlayers, human.tid);
 	const pub = publicTeam(outlook, human);
 	const kept = new Set([...keep.give, ...keep.get].map(assetKey));
-	const cpuAssets = tableAssets(cpu).filter(
-		(x) => !kept.has(assetKey(x)) && allow(x),
-	);
-	const humanAssets = humanFixed
-		? []
-		: tableAssets(human).filter((x) => !kept.has(assetKey(x)));
+	const cpuAssets = tableAssets(cpu).filter((x) => !kept.has(assetKey(x)));
+	const humanAssets = tableAssets(human).filter((x) => !kept.has(assetKey(x)));
 
 	// One asset at a time: what it is worth to the CPU team by its read, and
 	// to the human by his. The screen adds these up.
@@ -213,13 +232,11 @@ export const bestProposal = async (
 		: 0;
 	// Pairs and threes of the human's assets: for a price, those worth most to
 	// the CPU team over what they cost the human.
-	const extraGet = humanFixed
-		? [[]]
-		: packages(humanAssets, (x) =>
-				price
-					? cpuSingle.get(assetKey(x))! + humanSingle.get(assetKey(x))!
-					: humanSingle.get(assetKey(x))!,
-			);
+	const extraGet = packages(humanAssets, (x) =>
+		price
+			? cpuSingle.get(assetKey(x))! + humanSingle.get(assetKey(x))!
+			: humanSingle.get(assetKey(x))!,
+	);
 	for (const pg of extraGive) {
 		for (const ph of extraGet) {
 			const give = [...keep.give, ...pg];
@@ -286,17 +303,25 @@ export const bestProposal = async (
 };
 
 // The proposal, if the CPU team would take it as offered and the trade screen
-// would process it: the same judge as a human's offer, and no warning.
+// would process it: the same judge as a human's offer, and no warning - a
+// bid's salaries and shopping aside (see BID_WANTED).
 const confirmed = async (
 	cpuTid: number,
 	humanTid: number,
 	proposal: Proposal,
+	{ bid = false, loaded }: { bid?: boolean; loaded?: Loaded } = {},
 ) => {
 	const cpuSide = sideOf(cpuTid, proposal.give);
 	const humanSide = sideOf(humanTid, proposal.get);
-	const verdict = await judgeHumanOffer(cpuSide, humanSide);
+	const verdict = await judgeHumanOffer(cpuSide, humanSide, {
+		loaded,
+		shop: !bid,
+	});
 	if (verdict.kind !== "yes") {
 		return false;
+	}
+	if (bid) {
+		return true;
 	}
 	const s = await summary([
 		{
@@ -344,28 +369,164 @@ export const counterOffer = async (
 	return undefined;
 };
 
-// The trading block: what each CPU team would give for these assets of the
-// human's, best for it first.
+// What a bid is worth to the team making it by the stock trade values: more
+// than nothing, or it does not make it.
+const marketGain = (
+	classic: ValueChangeCalculator,
+	cpuTid: number,
+	humanTid: number,
+	give: readonly Asset[],
+	get: readonly Asset[],
+) => {
+	const gives = sideOf(cpuTid, give);
+	const gets = sideOf(humanTid, get);
+	return classic.evaluate({
+		tid: cpuTid,
+		pidsAdd: gets.pids,
+		pidsRemove: gives.pids,
+		dpidsAdd: gets.dpids,
+		dpidsRemove: gives.dpids,
+		tradingPartnerTid: humanTid,
+	});
+};
+
+// A team's bid for what a human put on the block (see BID_WANTED), of its
+// assets that pass `allow`, one at least that passes `wanted`: `pub` is the
+// human team as it sees itself, `base` what giving `get` up for nothing does
+// for it by that read.
+const bestBid = async (
+	outlook: LeagueOutlook,
+	cpu: TeamState,
+	human: TeamState,
+	{
+		get,
+		pub,
+		base,
+		allow,
+		wanted,
+		classic,
+	}: {
+		get: Asset[];
+		pub: TeamState;
+		base: number;
+		allow: (x: Asset) => boolean;
+		wanted: (x: Asset) => boolean;
+		classic: ValueChangeCalculator;
+	},
+): Promise<Proposal | undefined> => {
+	// What it gets is worth this to it by the market.
+	const price = await marketGain(classic, cpu.tid, human.tid, [], get);
+	if (price <= 0) {
+		return undefined;
+	}
+	// How each side's players would feel about re-signing with the other.
+	await ensureRetention(outlook, human.tradablePlayers, cpu.tid);
+	await ensureRetention(outlook, cpu.tradablePlayers, human.tid);
+	// (The less it would gain giving one, the more that one is worth.)
+	const assets: { x: Asset; dv: number }[] = [];
+	for (const x of tableAssets(cpu)) {
+		if (allow(x)) {
+			const dv = await marketGain(classic, cpu.tid, human.tid, [x], get);
+			if (dv > 0) {
+				assets.push({ x, dv });
+			}
+		}
+	}
+	assets.sort((x, y) => x.dv - y.dv);
+	const first = (n: number, pass: (x: Asset) => boolean) => {
+		const out: Asset[] = [];
+		for (const { x } of assets) {
+			if (out.length >= n) {
+				break;
+			}
+			if (
+				pass(x) &&
+				(x.kind === "pick" || publicGain(outlook, pub, get, [x]) > base)
+			) {
+				out.push(x);
+			}
+		}
+		return out;
+	};
+	const top = [
+		...first(BID_WANTED, (x) => x.kind === "player" && wanted(x)),
+		...first(BID_OTHERS, (x) => x.kind === "player" && !wanted(x)),
+		...first(BID_PICKS, (x) => x.kind === "pick"),
+	];
+	// Every one, two or three of those it would give, the most generous by
+	// the market first.
+	const combos: Asset[][] = [];
+	for (let i = 0; i < top.length; i++) {
+		combos.push([top[i]!]);
+		for (let j = i + 1; j < top.length; j++) {
+			combos.push([top[i]!, top[j]!]);
+			for (let k = j + 1; k < top.length; k++) {
+				combos.push([top[i]!, top[j]!, top[k]!]);
+			}
+		}
+	}
+	const sized: { give: Asset[]; dv: number }[] = [];
+	for (const give of combos) {
+		if (!give.some(wanted)) {
+			continue;
+		}
+		const dv = await marketGain(classic, cpu.tid, human.tid, give, get);
+		if (dv > 0 && price - dv >= MIN_SHARE * price) {
+			sized.push({ give, dv });
+		}
+	}
+	sized.sort((x, y) => x.dv - y.dv);
+	const factor = humanTradeSettings.marginFactor;
+	for (const { give } of sized.slice(0, BID_CANDIDATES)) {
+		const net =
+			priceFor(outlook, cpu, give, get, human) -
+			factor * marginOf(outlook, cpu, give, get);
+		if (net >= MIN_GAIN) {
+			return { give, get, net };
+		}
+	}
+	return undefined;
+};
+
+// The trading block: each CPU team's bid for these assets of the human's (see
+// bestBid), if it would make it today.
 export const blockOffers = async (
 	outlook: LeagueOutlook,
 	cpuTids: readonly number[],
 	human: Side,
-	allow: (x: Asset) => boolean,
+	{
+		allow,
+		wanted,
+	}: {
+		allow: (x: Asset) => boolean;
+		wanted: (x: Asset) => boolean;
+	},
 ) => {
-	const h = await loadTeam(outlook, human.tid);
+	// (Nothing changes while it asks around.)
+	const loaded: Loaded = { outlook, teams: new Map() };
+	const h = await load(outlook, human.tid, loaded);
 	const get = assetsFor(h, human.pids, human.dpids);
 	if (!get || get.length === 0) {
 		return [];
 	}
+	const pub = publicTeam(outlook, h);
+	const base = publicGain(outlook, pub, get, []);
+	const classic = new ValueChangeCalculator();
 	const offers: { tid: number; proposal: Proposal }[] = [];
 	for (const tid of cpuTids) {
-		const a = await loadTeam(outlook, tid);
-		const proposal = await bestProposal(outlook, a, h, {
-			keep: { give: [], get },
-			humanFixed: true,
+		const a = await load(outlook, tid, loaded);
+		const proposal = await bestBid(outlook, a, h, {
+			get,
+			pub,
+			base,
 			allow,
+			wanted,
+			classic,
 		});
-		if (proposal && (await confirmed(tid, human.tid, proposal))) {
+		if (
+			proposal &&
+			(await confirmed(tid, human.tid, proposal, { bid: true, loaded }))
+		) {
 			offers.push({ tid, proposal });
 		}
 	}
@@ -468,10 +629,10 @@ export const counterTeams = async (
 	];
 };
 
-// The trading block: each CPU team's offer for these assets of the user's,
-// as trade screens hold them, user's side first. Only its players at the
-// positions and with the skills asked for, and its picks only when asked
-// for or when nothing narrower is.
+// The trading block: each CPU team's bid for these assets of the user's, as
+// trade screens hold them, user's side first. Each holds one at least of its
+// players at the positions and with the skills asked for or, asked for, its
+// picks - picks alone when only those are.
 export const tradingBlockTeams = async (
 	userTid: number,
 	pids: number[],
@@ -484,9 +645,14 @@ export const tradingBlockTeams = async (
 ): Promise<TradeTeams[]> => {
 	const outlook = await currentOutlook();
 	const narrowed = lookingFor.positions.size > 0 || lookingFor.skills.size > 0;
-	const allow = (x: Asset) => {
+	const allow = (x: Asset) =>
+		x.kind === "pick" || narrowed || !lookingFor.draftPicks;
+	const wanted = (x: Asset) => {
 		if (x.kind === "pick") {
 			return lookingFor.draftPicks || !narrowed;
+		}
+		if (!narrowed) {
+			return !lookingFor.draftPicks;
 		}
 		const r = x.p.ratings.at(-1)!;
 		return (
@@ -506,7 +672,7 @@ export const tradingBlockTeams = async (
 		outlook,
 		cpuTids,
 		{ tid: userTid, pids, dpids },
-		allow,
+		{ allow, wanted },
 	);
 	return offers.map(({ tid, proposal }) => {
 		const cpu = sideOf(tid, proposal.give);
