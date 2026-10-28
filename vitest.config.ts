@@ -92,7 +92,14 @@ export default defineConfig({
 			}),
 			makeProject("basketball", "browser", {
 				name: "browser-basketball",
-				include: ["**/*.test.browser.ts"],
+				// BROWSER_CHECKS=1: also the long checks (*.check.browser.ts), too
+				// slow for every run.
+				include: [
+					"**/*.test.browser.ts",
+					...(process.env.BROWSER_CHECKS === "1"
+						? ["**/*.check.browser.ts"]
+						: []),
+				],
 				benchmark,
 			}),
 			makeProject("football", "browser", {
