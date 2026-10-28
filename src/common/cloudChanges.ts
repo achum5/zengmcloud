@@ -6,6 +6,16 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 9,
+		date: "2026-10-28",
+		text: "3D game: poor passers stare down where the ball is going before they throw it; great passers see it late and now and then throw it without looking.",
+	},
+	{
+		n: 8,
+		date: "2026-10-28",
+		text: "The game flow chart (score and win %) now always uses the two teams' colors, and shows during live games too, under the box score, filling in as the game goes. The faces in the Lineups section are plain now - no colored boxes around them.",
+	},
+	{
 		n: 7,
 		date: "2026-10-27",
 		text: "Realistic Front Offices: CPU teams now judge much better which players will re-sign with them - a star on an expiring deal is worth more to them in a trade, a fringe veteran less.",
