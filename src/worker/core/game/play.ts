@@ -50,6 +50,7 @@ import {
 import { settleBets } from "../sportsbook/bets.ts";
 import { idb } from "../../db/index.ts";
 import { updateTickerItems } from "../../util/updateTickerItems.ts";
+import { hideLiveResults } from "../../util/liveSpoilers.ts";
 import {
 	g,
 	helpers,
@@ -565,7 +566,9 @@ const play = async (
 				gamesToUi.push(upcomingGame);
 			}
 
-			await toUI("mergeGames", [gamesToUi]);
+			// (This device's own live game reads as not played yet till it has
+			// played out - see liveSpoilers.ts.)
+			await toUI("mergeGames", [hideLiveResults(gamesToUi)]);
 		} else {
 			// This loads next game and calls mergeGames internally
 			await recomputeLocalUITeamOvrs();

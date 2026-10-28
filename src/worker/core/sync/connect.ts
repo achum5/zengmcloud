@@ -41,6 +41,7 @@ import {
 	createWakeClock,
 	decideFollowAction,
 	followGivenUp,
+	QUIET_WATCH_MS,
 	shouldServeFollowedPayload,
 } from "./liveBroadcastFollow.ts";
 import { isLiveSimNotificationHoldActive } from "./liveSimNotificationHold.ts";
@@ -58,6 +59,11 @@ import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
 import { g, helpers, local, logEvent, toUI } from "../../util/index.ts";
 import { liveFlagShown } from "../../util/toUI.ts";
+import {
+	liveSpoilerGids,
+	setLiveSpoilerProvider,
+} from "../../util/liveSpoilers.ts";
+import { initUILocalGames } from "../../util/initUILocalGames.ts";
 import { env } from "../../util/env.ts";
 import { ERROR_MESSAGE_SYNC_ROOM_MISMATCH } from "../../../common/constants.ts";
 import { serializeChangeset, deserializeChangeset } from "./serialize.ts";
@@ -545,6 +551,9 @@ const ownLiveSimUnderway = () =>
 // for the other owner of that flag, and why a follow ending must leave it be.
 const followerHold = createFollowerHold({
 	push: (patch) => {
+		syncDebugLog("live:hold", {
+			flag: "liveGameInProgress" in patch ? patch.liveGameInProgress : "kept",
+		});
 		void toUI("updateLocal", [patch]);
 	},
 	ownLiveSimUnderway,
@@ -556,12 +565,18 @@ const followerHold = createFollowerHold({
 // Release the hold this device took as a follower - if it is still the
 // follow's to release.
 const releaseFollowerHold = (how: string) => {
+	syncDebugLog("live:hold-release", {
+		how,
+		gid: followedBroadcast?.gid,
+		held: followerHold.isHeld(),
+	});
 	if (followerHold.release() === "kept-for-own-sim") {
 		syncDebugLog("live:release-kept-for-own-sim", {
 			how,
 			liveSimGid: local.liveSimGid,
 		});
 	}
+	recheckLiveSpoilers();
 };
 
 // Joins that failed to fetch a payload, per broadcast (keyed by startedAt).
@@ -623,7 +638,57 @@ const liveResultWait = createLiveResultWait({
 	log: syncDebugLog,
 });
 const settleAwaitedLiveResult = liveResultWait.settle;
-setLiveResultNotice(liveResultWait.notice);
+
+// The games whose finals the score bar and the ticker must not show yet (see
+// util/liveSpoilers.ts): this device's own live sim; the broadcast it is in,
+// or is being asked about, till it plays out here; whatever broadcast the room
+// has running, watched here or not - walking out of a game shows the rest of
+// the league again, not that game's final; and a result held for a broadcast
+// still on its way. Asked of the data, not of the liveGameInProgress flag, so
+// nothing that drops the flag early can put a final in the bar.
+setLiveSpoilerProvider(() => {
+	const gids = new Set<number>();
+	if (local.liveSimGid !== undefined) {
+		gids.add(local.liveSimGid);
+	}
+	const f = followedBroadcast;
+	if (f && !f.over) {
+		gids.add(f.gid);
+	}
+	const m = roomBroadcastMeta;
+	if (
+		m &&
+		m.active &&
+		!m.gameOver &&
+		Date.now() - m.expiresAt < QUIET_WATCH_MS
+	) {
+		gids.add(m.gid);
+	}
+	for (const gid of liveResultWait.awaitedGids()) {
+		gids.add(gid);
+	}
+	return gids;
+});
+
+// Repaint the bars whenever that set changes: a final goes in once its game
+// has played out, and comes out again if a broadcast turns out to be live for
+// it (a result that landed before its broadcast was known here).
+let lastLiveSpoilers = "";
+export const recheckLiveSpoilers = (force = false) => {
+	const key = [...liveSpoilerGids()].sort((a, b) => a - b).join(",");
+	if (key === lastLiveSpoilers && !force) {
+		return;
+	}
+	lastLiveSpoilers = key;
+	syncDebugLog("live:spoilers", { gids: key });
+	if (local.leagueLoaded) {
+		void initUILocalGames().catch(() => {});
+	}
+};
+setLiveResultNotice((gid, liveAt) => {
+	liveResultWait.notice(gid, liveAt);
+	recheckLiveSpoilers();
+});
 
 // The apply layer asks this before repainting: remote data landing while this
 // device is watching a broadcast - or holding a league-mate's live result for
@@ -653,6 +718,8 @@ export const markFollowedBroadcastOver = (gid?: number) => {
 	followedBroadcast.over = true;
 	followerHold.markOver();
 	settleAwaitedLiveResult(gid);
+	syncDebugLog("live:watch-over", { gid });
+	recheckLiveSpoilers();
 };
 
 // The followed broadcast's game payload, kept for the liveGame view to serve on
@@ -2274,9 +2341,22 @@ const doConnectSharedLeague = async ({
 		}
 	}
 
+	// A league-mate's game being watched here survives a reconnect to the same
+	// room: the broadcast is still the room's, and its heartbeats pick up where
+	// they left off. Dropping it on every session cycle threw the page to the
+	// final and put the score in the bar, mid-game.
+	const lidAtConnect = g.get("lid");
+	const keepFollow =
+		followedBroadcast !== undefined &&
+		!followedBroadcast.over &&
+		currentCode === trimmed &&
+		connectedLid !== undefined &&
+		connectedLid ===
+			(typeof lidAtConnect === "number" ? lidAtConnect : undefined);
+
 	// Tear down any existing live session first, but do not erase the persisted
 	// room intent while reconnecting/switching transports.
-	await teardownSharedLeague({ clearPersisted: false });
+	await teardownSharedLeague({ clearPersisted: false, keepFollow });
 
 	// From here on this device is committed to the session, so simming stays
 	// gated through the whole async connect (and if it throws) - never sim
@@ -2788,6 +2868,8 @@ const doConnectSharedLeague = async ({
 		checkLiveBroadcastLease();
 		// And never leave the live flag up with nothing live behind it.
 		checkStrandedLiveFlag();
+		// (A watch ending, a broadcast lapsing: the bars catch up.)
+		recheckLiveSpoilers();
 		// V2's whole health story: ask the server where the head is (the live
 		// listener is the fast path, but this probe is what bounds staleness
 		// when a listener dies silently - one tiny doc read per tick), and
@@ -2847,18 +2929,31 @@ const doConnectSharedLeague = async ({
 	// game and drives lockstep playback; on the broadcaster its own echo is
 	// ignored (handled locally).
 	activeBroadcast = undefined;
-	withdrawOffer();
-	followedBroadcast = undefined;
-	// (A hold some follow of the last session took goes with it - let go of,
-	// not just forgotten with the banner left up.)
-	if (followerHold.isHeld()) {
-		releaseFollowerHold("session-boundary");
+	if (keepFollow && followedBroadcast) {
+		syncDebugLog("live:follow-kept-across-reconnect", {
+			gid: followedBroadcast.gid,
+		});
+		void beginLiveChat(
+			followedBroadcast.gid,
+			followedBroadcast.startedAt,
+			false,
+		);
+	} else {
+		withdrawOffer();
+		followedBroadcast = undefined;
+		// (A hold some follow of the last session took goes with it - let go
+		// of, not just forgotten with the banner left up.)
+		if (followerHold.isHeld()) {
+			releaseFollowerHold("session-boundary");
+		}
+		followerHold.reset();
 	}
-	followerHold.reset();
 	roomBroadcastMeta = undefined;
 	joinFailures.clear();
 	liveBroadcastUnsub = transport.subscribeLiveBroadcast?.((meta) => {
-		void handleLiveBroadcastMeta(meta, clientId, transport);
+		void handleLiveBroadcastMeta(meta, clientId, transport).then(() => {
+			recheckLiveSpoilers();
+		});
 	});
 
 	// Draft ready-up: watch everyone's ready state and auto-advance CPU picks
@@ -2941,7 +3036,13 @@ const doConnectSharedLeague = async ({
 
 export const teardownSharedLeague = async ({
 	clearPersisted = false,
-}: { clearPersisted?: boolean } = {}) => {
+	keepFollow = false,
+}: {
+	clearPersisted?: boolean;
+	// Reconnecting to the same room: leave a watch in progress as it is (see
+	// doConnectSharedLeague).
+	keepFollow?: boolean;
+} = {}) => {
 	const lid = g.get("lid");
 	const lidToClear =
 		connectedLid ?? (typeof lid === "number" ? lid : undefined);
@@ -2977,13 +3078,15 @@ export const teardownSharedLeague = async ({
 		void endLiveBroadcast();
 	}
 	activeBroadcast = undefined;
-	withdrawOffer();
-	followedBroadcast = undefined;
-	followedBroadcastPayload = undefined;
-	if (followerHold.isHeld()) {
-		releaseFollowerHold("session-boundary");
+	if (!keepFollow) {
+		withdrawOffer();
+		followedBroadcast = undefined;
+		followedBroadcastPayload = undefined;
+		if (followerHold.isHeld()) {
+			releaseFollowerHold("session-boundary");
+		}
+		followerHold.reset();
 	}
-	followerHold.reset();
 	roomBroadcastMeta = undefined;
 	joinFailures.clear();
 	setWatchablePill(undefined);
@@ -2996,7 +3099,8 @@ export const teardownSharedLeague = async ({
 			mpSyncHealthy: false,
 			mpEditsPaused: false,
 			mpCatchUp: undefined,
-			mpLiveBroadcast: undefined,
+			// (A watch kept across a reconnect keeps its page.)
+			...(keepFollow ? {} : { mpLiveBroadcast: undefined }),
 			mpLotteryReveal: undefined,
 			mpPendingUploads: 0,
 		},

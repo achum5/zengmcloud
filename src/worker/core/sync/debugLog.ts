@@ -43,7 +43,15 @@ export const syncDebugLog = (
 	// v2 produces one line per version - a day of heavy play fits in the ring
 	// buffer - and always-on means a tester's copy-paste capture just works,
 	// with zero setup, on the exact session where something misbehaved.
-	if (!loggingEnabled && !event.startsWith("v2:")) {
+	// So are the live-game ones - what took or let go of the spoiler hold, and
+	// what a sync held back while it was up: a few lines a game, and without
+	// them a capture cannot say why a final showed early.
+	if (
+		!loggingEnabled &&
+		!event.startsWith("v2:") &&
+		!event.startsWith("live:") &&
+		!event.startsWith("apply:refresh")
+	) {
 		return;
 	}
 	const payload = {

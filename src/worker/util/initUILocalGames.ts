@@ -4,6 +4,7 @@ import toUI from "./toUI.ts";
 import type { LocalStateUI } from "../../common/types.ts";
 import { getOneUpcomingGame } from "./recomputeLocalUITeamOvrs.ts";
 import { updateTickerItems } from "./updateTickerItems.ts";
+import { hideLiveResults, liveSpoilerGids } from "./liveSpoilers.ts";
 
 export const initUILocalGames = async () => {
 	const userTid = g.get("userTid");
@@ -47,7 +48,9 @@ export const initUILocalGames = async () => {
 
 	await toUI("updateLocal", [
 		{
-			games,
+			// (A game still playing out live reads as not played yet - see
+			// liveSpoilers.ts.)
+			games: hideLiveResults(games, liveSpoilerGids()),
 		},
 	]);
 

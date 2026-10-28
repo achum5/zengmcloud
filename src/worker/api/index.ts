@@ -133,6 +133,7 @@ import {
 	answerLiveOffer,
 	flushDeferredRefreshAfterLive,
 	followerHoldsLiveFlag,
+	recheckLiveSpoilers,
 	leaveLiveBroadcast,
 	markFollowedBroadcastOver,
 	markSyncRequired,
@@ -5547,8 +5548,16 @@ const onLiveSimOver = async (gid?: number) => {
 		local.liveSimGid !== undefined &&
 		gid !== local.liveSimGid
 	) {
+		syncDebugLog("live:over-report-ignored", {
+			gid,
+			liveSimGid: local.liveSimGid,
+		});
 		return;
 	}
+	syncDebugLog("live:over-report", { gid, liveSimGid: local.liveSimGid });
+	// (This device's own game went into the bar as not played - see
+	// liveSpoilers.ts - so its final is put in now, changed set or not.)
+	const ownLiveSimOver = local.liveSimGid !== undefined;
 	local.liveSimGid = undefined;
 
 	local.liveSimRatingsStatsPopoverPlayers = undefined;
@@ -5598,6 +5607,8 @@ const onLiveSimOver = async (gid?: number) => {
 	if (!heldForFollow) {
 		await toUI("updateLocal", [{ liveGameInProgress: false }]);
 	}
+	// (Its final can go in the bars now.)
+	recheckLiveSpoilers(ownLiveSimOver);
 };
 
 // ---------------------------------------------------------------- LEAGUE FEED

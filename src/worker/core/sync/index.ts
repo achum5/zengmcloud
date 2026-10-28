@@ -32,6 +32,7 @@ export {
 	followerHoldsLiveFlag,
 	leaveLiveBroadcast,
 	markFollowedBroadcastOver,
+	recheckLiveSpoilers,
 	markSyncRequired,
 	publishAutoPlayState,
 	refreshSyncUIState,

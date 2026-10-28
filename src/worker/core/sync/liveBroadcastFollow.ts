@@ -344,6 +344,8 @@ export const createLiveResultWait = ({
 	return {
 		// Holding a result for a game not yet watched here.
 		pending: () => awaited.size > 0,
+		// Which games those are.
+		awaitedGids: () => [...awaited.keys()],
 		// The room's broadcast changed (ended, or moved on to another game):
 		// stop waiting on any result no broadcast can show here any more - and
 		// with none left waiting, let the paint go now rather than when the

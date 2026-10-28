@@ -14,6 +14,7 @@ import {
 import { getUpcoming } from "../views/schedule.ts";
 import getAwardRaceOdds from "../core/season/getAwardRaceOdds.ts";
 import type { EventBBGM, Game } from "../../common/types.ts";
+import { liveSpoilerGids, mentionsHiddenGame } from "./liveSpoilers.ts";
 
 // Everything the bottom ticker shows, built league-wide.
 //
@@ -320,11 +321,15 @@ export const tightenNews = (text: string, type: string): string => {
 		.replace(" has recovered from his injury.", " is back");
 };
 
-const newsItems = async (): Promise<TickerItem[]> => {
+const newsItems = async (
+	hidden: ReadonlySet<number>,
+): Promise<TickerItem[]> => {
 	const qualifies = (event: EventBBGM) =>
 		!IGNORE_TYPES.has(event.type) &&
 		event.score !== undefined &&
-		event.score >= MIN_NEWS_SCORE;
+		event.score >= MIN_NEWS_SCORE &&
+		// (A story about a game still playing out live gives it away.)
+		!mentionsHiddenGame(event.text, hidden);
 
 	const picked: EventBBGM[] = [];
 	const seen = new Set<number>();
@@ -455,16 +460,14 @@ const upcomingAndRaces = async (fresh: boolean): Promise<TickerItem[]> => {
 					// Annotated on the way out. getAwardRaceOdds hands back `any`, so a
 					// missing field here is not a compile error - it is a name in the
 					// ticker that quietly stops being a link.
-					entries: top.map(
-						(p: any): TickerRaceEntry => ({
-							pid: p.pid,
-							name: p.name,
-							abbrev: typeof p.abbrev === "string" ? p.abbrev : undefined,
-							stat: raceStatLine(p, race.stats),
-							odds:
-								typeof p.odds === "number" ? formatAmerican(p.odds) : undefined,
-						}),
-					),
+					entries: top.map((p: any): TickerRaceEntry => ({
+						pid: p.pid,
+						name: p.name,
+						abbrev: typeof p.abbrev === "string" ? p.abbrev : undefined,
+						stat: raceStatLine(p, race.stats),
+						odds:
+							typeof p.odds === "number" ? formatAmerican(p.odds) : undefined,
+					})),
 				});
 			}
 		} catch (error) {
@@ -485,11 +488,13 @@ export const updateTickerItems = async ({ fresh = false } = {}) => {
 
 	try {
 		await loadTeamMarks();
-		const games = await recentGames();
+		// (Nothing from a game still playing out live - see liveSpoilers.ts.)
+		const hidden = liveSpoilerGids();
+		const games = (await recentGames()).filter((game) => !hidden.has(game.gid));
 		items = [
 			...scoreItems(games),
 			...performanceItems(games),
-			...(await newsItems()),
+			...(await newsItems(hidden)),
 			...(await upcomingAndRaces(fresh)),
 		];
 	} catch (error) {
