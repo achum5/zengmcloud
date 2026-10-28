@@ -38,7 +38,9 @@ import { setLiveResultNotice, setLiveWatchGate } from "./liveWatchGate.ts";
 import {
 	createFollowerHold,
 	createLiveResultWait,
+	createWakeClock,
 	decideFollowAction,
+	followGivenUp,
 	shouldServeFollowedPayload,
 } from "./liveBroadcastFollow.ts";
 import { isLiveSimNotificationHoldActive } from "./liveSimNotificationHold.ts";
@@ -410,6 +412,7 @@ export const refreshSyncUIState = () => {
 // NOW - probe the head, drain anything queued, re-assert the UI state -
 // instead of waiting out the next timer tick.
 export const syncNudge = () => {
+	wakeClock.woke();
 	const engine = getSyncEngine();
 	if (!engine) {
 		return;
@@ -442,6 +445,10 @@ export const getRoomAutoPlayNextRunAt = () => roomAutoPlayNextRunAt;
 // it as ended (crash recovery). Generously above the ~400ms UI heartbeat.
 const LIVE_BROADCAST_LEASE_MS = 12_000;
 
+// Time this device spent parked in the background is not time the
+// broadcaster was silent - see QUIET_WATCH_MS.
+const wakeClock = createWakeClock(HEALTH_TICK_MS);
+
 // The subscription every device keeps on the broadcast meta doc.
 let liveBroadcastUnsub: (() => void) | undefined;
 
@@ -468,6 +475,8 @@ let followedBroadcast:
 			startedAt: number;
 			gid: number;
 			expiresAt: number;
+			// When this device last heard it live, by its own clock.
+			heardAt: number;
 			over?: boolean;
 			left?: boolean;
 			// The broadcast is gone - the simmer left their game - while this
@@ -479,6 +488,17 @@ let followedBroadcast:
 			offered?: boolean;
 	  }
 	| undefined;
+// Gone quiet for good here: no heartbeat heard for long enough while this
+// device was awake to hear one (see followGivenUp).
+const followIsOver = (f: NonNullable<typeof followedBroadcast>) =>
+	followGivenUp({
+		now: Date.now(),
+		expiresAt: f.expiresAt,
+		heardAt: f.heardAt,
+		wokeAt: wakeClock.wokeAt(),
+		watching: !f.offered && !f.over && !f.left && !f.ended,
+		leaseMs: LIVE_BROADCAST_LEASE_MS,
+	});
 // A watch that outlived its broadcast still ends some time, even if the page
 // never says so (a tab that died): this gives up on it.
 const ENDED_WATCH_CAP_MS = 30 * 60 * 1000;
@@ -915,6 +935,7 @@ const followBroadcast = async (
 		startedAt: meta.startedAt,
 		gid: meta.gid,
 		expiresAt: meta.expiresAt,
+		heardAt: Date.now(),
 	};
 	// Accept only this broadcast's chat (the broadcaster does the clearing).
 	void beginLiveChat(meta.gid, meta.startedAt, false);
@@ -1031,6 +1052,7 @@ const offerBroadcast = (
 		startedAt: meta.startedAt,
 		gid: meta.gid,
 		expiresAt: meta.expiresAt,
+		heardAt: Date.now(),
 		offered: true,
 	};
 	void beginLiveChat(meta.gid, meta.startedAt, false);
@@ -1180,6 +1202,20 @@ const handleLiveBroadcastMeta = async (
 		return;
 	}
 
+	// Still live, only quiet - its lease lapsed by this clock, and it is the one
+	// this device is in: asleep here till just now, or the broadcaster's app is
+	// in the background. Hold where it is (see QUIET_WATCH_MS); the health tick
+	// lets go if it stays quiet.
+	if (
+		meta &&
+		meta.active &&
+		meta.expiresAt < Date.now() &&
+		followedBroadcast?.startedAt === meta.startedAt &&
+		!followIsOver(followedBroadcast)
+	) {
+		return;
+	}
+
 	// No live broadcast (ended, expired, or none): drop the pill, release any
 	// follow we had, and unfreeze the header score ticker (liveGameInProgress) it
 	// was watching under. Clear the freeze even if followedBroadcast is already
@@ -1226,6 +1262,9 @@ const handleLiveBroadcastMeta = async (
 	}
 
 	roomBroadcastMeta = meta;
+	if (followedBroadcast?.startedAt === meta.startedAt) {
+		followedBroadcast.heardAt = Date.now();
+	}
 	// (Moved on to another game: one held for the last has no broadcast now.)
 	liveResultWait.dropUnwatchable();
 
@@ -1408,8 +1447,12 @@ const checkLiveBroadcastLease = () => {
 	if (
 		followedBroadcast &&
 		!followedBroadcast.ended &&
-		Date.now() > followedBroadcast.expiresAt
+		followIsOver(followedBroadcast)
 	) {
+		syncDebugLog("live:follow-lease-over", {
+			gid: followedBroadcast.gid,
+			quietMs: Date.now() - followedBroadcast.heardAt,
+		});
 		withdrawOffer();
 		followedBroadcast = undefined;
 		followedBroadcastPayload = undefined;
@@ -2735,6 +2778,8 @@ const doConnectSharedLeague = async ({
 	}
 	lastMemberTid = undefined;
 	healthTimer = setInterval(() => {
+		// (First: a long gap since the last tick is time spent asleep.)
+		wakeClock.tick();
 		// Re-assert the whole sync UI state (not just health/edits) so a UI that
 		// drifted from the engine - stale "nobody simming", an unlocked Play menu -
 		// heals itself within a tick instead of needing a manual refresh.

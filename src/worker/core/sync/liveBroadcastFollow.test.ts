@@ -1,10 +1,13 @@
 import { assert, describe, test } from "vitest";
 import {
 	createFollowerHold,
+	createWakeClock,
 	decideFollowAction,
-	type FollowerHoldPatch,
+	followGivenUp,
 	MAX_JOIN_ATTEMPTS,
+	QUIET_WATCH_MS,
 	shouldServeFollowedPayload,
+	type FollowerHoldPatch,
 } from "./liveBroadcastFollow.ts";
 
 const live = { startedAt: 1000, gameOver: false };
@@ -290,5 +293,100 @@ describe("createFollowerHold", () => {
 		hold.reset();
 		assert.strictEqual(hold.isHeld(), false);
 		assert.deepStrictEqual(pushes, [{ liveGameInProgress: true }]);
+	});
+});
+
+// Switching apps in the middle of a league-mate's game parks this one: no
+// heartbeats can arrive. Coming back used to end the watch on the spot - the
+// game jumped to its final and the score bar showed it.
+describe("a quiet broadcast", () => {
+	const LEASE = 12_000;
+	const base = {
+		expiresAt: 100_000,
+		heardAt: 88_000,
+		wokeAt: 0,
+		leaseMs: LEASE,
+	};
+
+	test("a game being watched waits out silence instead of ending at the lease", () => {
+		assert.isFalse(
+			followGivenUp({ ...base, now: 100_000 + 60_000, watching: true }),
+		);
+		assert.isTrue(
+			followGivenUp({
+				...base,
+				now: 88_000 + QUIET_WATCH_MS + 1,
+				watching: true,
+			}),
+		);
+	});
+
+	test("time asleep is not silence: just back, the clock starts over", () => {
+		// Ten minutes in another app, then back.
+		const back = 88_000 + 10 * 60_000;
+		assert.isFalse(
+			followGivenUp({
+				...base,
+				now: back + 1_000,
+				wokeAt: back,
+				watching: true,
+			}),
+		);
+		assert.isTrue(
+			followGivenUp({
+				...base,
+				now: back + QUIET_WATCH_MS + 1,
+				wokeAt: back,
+				watching: true,
+			}),
+		);
+	});
+
+	test("an offer or a finished watch keeps the plain lease, but not across a nap", () => {
+		assert.isTrue(followGivenUp({ ...base, now: 100_001, watching: false }));
+		const back = 400_000;
+		assert.isFalse(
+			followGivenUp({
+				...base,
+				now: back + 5_000,
+				wokeAt: back,
+				watching: false,
+			}),
+		);
+		assert.isTrue(
+			followGivenUp({
+				...base,
+				now: back + LEASE + 1,
+				wokeAt: back,
+				watching: false,
+			}),
+		);
+	});
+
+	test("the wake clock notices a long gap between ticks", () => {
+		let now = 1_000;
+		const clock = createWakeClock(5_000, () => now);
+		clock.tick();
+		now += 5_000;
+		clock.tick();
+		assert.strictEqual(clock.wokeAt(), 0);
+		// Parked for a minute.
+		now += 60_000;
+		// A listener delivery can beat the first tick back.
+		assert.strictEqual(clock.wokeAt(), now);
+		clock.tick();
+		const woke = now;
+		now += 5_000;
+		clock.tick();
+		assert.strictEqual(clock.wokeAt(), woke);
+	});
+
+	test("the app coming back to the front counts as waking", () => {
+		let now = 1_000;
+		const clock = createWakeClock(5_000, () => now);
+		clock.tick();
+		now += 2_000;
+		clock.woke();
+		assert.strictEqual(clock.wokeAt(), 3_000);
 	});
 });

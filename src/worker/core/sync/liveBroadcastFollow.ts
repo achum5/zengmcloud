@@ -112,6 +112,85 @@ export const decideFollowAction = (
 	return "cursor";
 };
 
+// A QUIET BROADCAST IS NOT AN ENDED ONE.
+//
+// A phone parks an app it is not showing: no timers, no listener deliveries.
+// Switch away to answer a text in the middle of a league-mate's game, come
+// back, and the last heartbeat this device heard is long past its lease - not
+// because the broadcast is gone, but because nothing could be heard. Treating
+// that as the end dropped the watch: the page went straight to the final and
+// the score bar showed it. The broadcaster's own phone going into the
+// background is the same silence from the other side.
+//
+// So a game being watched only ends when the broadcast says so (it goes
+// inactive or away), or after this long with nothing heard WHILE this device
+// was awake to hear it. Until then the page holds where it was, the way the
+// broadcaster's own screen does, and picks up at their cursor when they are
+// heard from again. A crashed broadcaster still lets go - just not in seconds.
+export const QUIET_WATCH_MS = 3 * 60 * 1000;
+
+// When this device last came back from being parked. Ticked by something
+// that runs only while awake (the health tick): a gap far longer than its
+// period is time spent asleep. The UI saying the app is in front again
+// counts too, and a gap noticed between ticks counts at once - a listener
+// delivery can beat the first tick back.
+export const createWakeClock = (
+	tickMs: number,
+	now: () => number = Date.now,
+) => {
+	const SLEPT_MS = 3 * tickMs;
+	let lastTick: number | undefined;
+	let wokeAt = 0;
+	const check = () => {
+		const t = now();
+		if (lastTick !== undefined && t - lastTick > SLEPT_MS) {
+			wokeAt = t;
+		}
+		return t;
+	};
+	return {
+		tick: () => {
+			lastTick = check();
+		},
+		woke: () => {
+			wokeAt = now();
+		},
+		wokeAt: () => {
+			check();
+			return wokeAt;
+		},
+	};
+};
+
+// Whether a follow record's broadcast has gone quiet for good on this device.
+// A game being watched gets QUIET_WATCH_MS of awake silence; anything else (a
+// popup still asking, a game already over or walked out of here) the plain
+// lease - but neither runs while this device was asleep, nor in the first
+// lease after it woke, when the listener has not had its chance yet.
+export const followGivenUp = ({
+	now,
+	expiresAt,
+	heardAt,
+	wokeAt,
+	watching,
+	leaseMs,
+}: {
+	now: number;
+	// The broadcaster's lease on its last heartbeat heard here.
+	expiresAt: number;
+	// When this device last heard the broadcast live (its own clock).
+	heardAt: number;
+	wokeAt: number;
+	// Inside the game, part way through it.
+	watching: boolean;
+	leaseMs: number;
+}): boolean => {
+	if (watching) {
+		return now - Math.max(heardAt, wokeAt) > QUIET_WATCH_MS;
+	}
+	return now > Math.max(expiresAt, wokeAt + leaseMs);
+};
+
 // THE FOLLOWER'S HALF OF THE SPOILER HOLD.
 //
 // liveGameInProgress - the flag that freezes the score bar and the ticker and
