@@ -15,6 +15,8 @@ import {
 import type { Player } from "../../../common/types.ts";
 import { explainDeal, type ExplainSide } from "./explain.ts";
 import { priceSigning } from "./freeAgency.ts";
+import { judgeHumanOffer } from "./humanTrades.ts";
+import { counterOffer } from "./proposals.ts";
 import {
 	buildOutlook,
 	outlookSettings,
@@ -457,5 +459,55 @@ test(
 		}
 		assert.isAbove(checked, 0);
 		g.setWithoutSavingToDB("phase", PHASE.REGULAR_SEASON);
+	},
+);
+
+test(
+	"what would make it work names a price for most players asked for",
+	{ timeout: 300_000 },
+	async () => {
+		const outlook = await currentOutlook();
+		// Team 0 played by a person.
+		const userTid = 0;
+		g.setWithoutSavingToDB("spectator", false);
+		g.setWithoutSavingToDB("userTid", userTid);
+		g.setWithoutSavingToDB("userTids", [userTid]);
+		let asked = 0;
+		let priced = 0;
+		for (let tid = 1; tid < g.get("numTeams"); tid += 3) {
+			// A good player, not the team's best, for nothing.
+			const p = (await loadTeam(outlook, tid)).tradablePlayers
+				.toSorted((a, b) => b.value - a.value)
+				.at(2)!;
+			const ask = { tid, pids: [p.pid], dpids: [] };
+			const side = (
+				t: number,
+				assets: readonly { kind: string; p?: Player; dp?: { dpid: number } }[],
+			) => ({
+				tid: t,
+				pids: assets.flatMap((x) => (x.kind === "player" ? [x.p!.pid] : [])),
+				dpids: assets.flatMap((x) => (x.kind === "pick" ? [x.dp!.dpid] : [])),
+			});
+			const counter = await counterOffer(outlook, ask, {
+				tid: userTid,
+				pids: [],
+				dpids: [],
+			});
+			asked += 1;
+			if (!counter) {
+				continue;
+			}
+			priced += 1;
+			assert.include(side(tid, counter.give).pids, p.pid);
+			const verdict = await judgeHumanOffer(
+				side(tid, counter.give),
+				side(userTid, counter.get),
+			);
+			assert.strictEqual(verdict.kind, "yes");
+		}
+		g.setWithoutSavingToDB("spectator", true);
+		// Before, it asked only for deals it judged good for the human too,
+		// and named a price for one ask in ten.
+		assert.isAtLeast(priced, asked / 2, `${priced} of ${asked}`);
 	},
 );

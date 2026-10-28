@@ -49,6 +49,8 @@ import { proposalKey, wasDeclined } from "./proposalStore.ts";
 
 // Deals priced in full for each pair of teams, after a screen of many.
 const CANDIDATES = 12;
+// Asked for a price, the deals nearest what the CPU team needs priced in full.
+const PRICE_CANDIDATES = 30;
 
 // A player as the human sees him: every rating with his scouting fuzz on it.
 const publicRow = <R extends MinimalPlayerRatings>(r: R): R => {
@@ -159,10 +161,16 @@ export const bestProposal = async (
 		keep = { give: [], get: [] },
 		humanFixed = false,
 		allow = () => true,
+		price = false,
 	}: {
 		keep?: { give: Asset[]; get: Asset[] };
 		humanFixed?: boolean;
 		allow?: (x: Asset) => boolean;
+		// The CPU team's price for what the human asked for: of the deals it
+		// would take, the one it gains least from - no more than it needs, good
+		// for the human or not, as he decides. Otherwise the deal best for the
+		// CPU team that is fair on what the human sees.
+		price?: boolean;
 	} = {},
 ): Promise<Proposal | undefined> => {
 	const factor = humanTradeSettings.marginFactor;
@@ -194,10 +202,24 @@ export const bestProposal = async (
 		assets.reduce((s, x) => s + map.get(assetKey(x))!, 0);
 
 	const candidates: { give: Asset[]; get: Asset[]; screen: number }[] = [];
-	const extraGive = packages(cpuAssets, (x) => -cpuSingle.get(assetKey(x))!);
+	// Asked his price, the CPU team adds at most one of its own, as salaries
+	// may need.
+	const extraGive = price
+		? [[], ...cpuAssets.map((x) => [x])]
+		: packages(cpuAssets, (x) => -cpuSingle.get(assetKey(x))!);
+	// And a deal has to clear its margin of error on the screen too.
+	const bar = price
+		? factor * marginOf(outlook, cpu, keep.give, keep.get) + MIN_GAIN
+		: 0;
+	// Pairs and threes of the human's assets: for a price, those worth most to
+	// the CPU team over what they cost the human.
 	const extraGet = humanFixed
 		? [[]]
-		: packages(humanAssets, (x) => humanSingle.get(assetKey(x))!);
+		: packages(humanAssets, (x) =>
+				price
+					? cpuSingle.get(assetKey(x))! + humanSingle.get(assetKey(x))!
+					: humanSingle.get(assetKey(x))!,
+			);
 	for (const pg of extraGive) {
 		for (const ph of extraGet) {
 			const give = [...keep.give, ...pg];
@@ -209,8 +231,8 @@ export const bestProposal = async (
 			}
 			const forCpu = sum(cpuSingle, give) + sum(cpuSingle, get);
 			const forHuman = sum(humanSingle, give) + sum(humanSingle, get);
-			if (forCpu > 0 && forHuman >= 0) {
-				candidates.push({ give, get, screen: forCpu });
+			if (forCpu > bar && (price || forHuman >= 0)) {
+				candidates.push({ give, get, screen: price ? -forCpu : forCpu });
 			}
 		}
 	}
@@ -222,7 +244,7 @@ export const bestProposal = async (
 	const maxRosterSize = g.get("maxRosterSize");
 	const inSeason = g.get("phase") === PHASE.REGULAR_SEASON;
 	for (const { give, get } of candidates) {
-		if (checked >= CANDIDATES) {
+		if (checked >= (price ? PRICE_CANDIDATES : CANDIDATES)) {
 			break;
 		}
 		const key = `${keyOf(give)}|${keyOf(get)}`;
@@ -243,7 +265,16 @@ export const bestProposal = async (
 		const net =
 			priceFor(outlook, cpu, give, get, human) -
 			factor * marginOf(outlook, cpu, give, get);
-		if (net < MIN_GAIN || (best && net <= best.net)) {
+		if (net < MIN_GAIN) {
+			continue;
+		}
+		if (price) {
+			if (!best || net < best.net) {
+				best = { give, get, net };
+			}
+			continue;
+		}
+		if (best && net <= best.net) {
 			continue;
 		}
 		if (publicGain(outlook, pub, get, give, cpu) < 0) {
@@ -303,7 +334,10 @@ export const counterOffer = async (
 	if ((await judgeHumanOffer(cpu, human)).kind === "yes") {
 		return { give, get, net: 0 };
 	}
-	const proposal = await bestProposal(outlook, a, h, { keep: { give, get } });
+	const proposal = await bestProposal(outlook, a, h, {
+		keep: { give, get },
+		price: true,
+	});
 	if (proposal && (await confirmed(cpu.tid, human.tid, proposal))) {
 		return proposal;
 	}

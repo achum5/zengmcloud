@@ -292,12 +292,17 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
     by. Best for it by its own read, over the same bar as a human's deal, so
     it takes the deal when it is offered back; fair when the human's side
     gains by the ratings he sees, scouting fuzz and all, through the same
-    projections and title odds. The same goes for "What would make this
-    work" (the deal best for it that keeps everything in the human's offer -
-    the offer itself if it would take that) and the trading block (what each
-    CPU team would give for the assets on it). Deals both sides gain from are
-    as rare as between CPU teams, so the trading block often comes back
-    empty.
+    projections and title odds. The same goes for the trading block (what
+    each CPU team would give for the assets on it). Deals both sides gain
+    from are as rare as between CPU teams, so the trading block often comes
+    back empty.
+  - **"What would make this work"** (owner's call) names the CPU team's
+    price: of the deals it would take that keep everything in the human's
+    offer (the offer itself if it would take that), the one it gains least
+    from, adding at most one asset of its own - good for the human or not,
+    he decides. Held to the fair rule as well, it named a price for one ask
+    in ten (a good player, not a team's best, asked for nothing); naming its
+    price, for seven in ten.
   - **How many** (owner's call): no fixed count and no reroll. A CPU team
     makes an offer when it wants a deal, and the offer stays while it still
     does; it goes away once the team loses interest or finds something better
