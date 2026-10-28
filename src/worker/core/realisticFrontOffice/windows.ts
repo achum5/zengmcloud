@@ -149,15 +149,14 @@ export const holdDeal = async (
 	}
 };
 
-const sameSet = (a: readonly number[], b: readonly number[]) =>
-	a.length === b.length && a.every((x) => b.includes(x));
-
-// The held deal in which this team gives exactly these assets, and its side.
+// The held deal in which this team gives all of these assets but those not
+// held anywhere, its side, and those more it is asked for.
 const pendingSide = async (
 	tid: number,
 	pids: readonly number[],
 	dpids: readonly number[],
 ) => {
+	await loadReserved();
 	for (const t of await idb.cache.teams.getAll()) {
 		const pending = t.pendingTrade;
 		for (const k of [0, 1] as const) {
@@ -166,10 +165,20 @@ const pendingSide = async (
 				pending?.tids[k] === tid &&
 				give &&
 				give.pids.length + give.dpids.length > 0 &&
-				sameSet(give.pids, pids) &&
-				sameSet(give.dpids, dpids)
+				give.pids.every((pid) => pids.includes(pid)) &&
+				give.dpids.every((dpid) => dpids.includes(dpid))
 			) {
-				return { t, k };
+				const take = {
+					pids: pids.filter((pid) => !give.pids.includes(pid)),
+					dpids: dpids.filter((dpid) => !give.dpids.includes(dpid)),
+				};
+				if (
+					take.pids.some((pid) => reserved.pids.has(pid)) ||
+					take.dpids.some((dpid) => reserved.dpids.has(dpid))
+				) {
+					continue;
+				}
+				return { t, k, take };
 			}
 		}
 	}
@@ -177,8 +186,9 @@ const pendingSide = async (
 };
 
 // What a human's offer for a CPU team's assets in a held deal is: a bid, if
-// it asks for exactly what that team gives in it; refused if it asks for any
-// of them otherwise; neither if it asks for none of them.
+// it asks for all that team gives in it (and maybe more of its assets, not
+// held - salaries may need it); refused if it asks for some of them, or for
+// another held deal's too; neither if it asks for none of them.
 export const offerOnHeld = async (cpu: Side) => {
 	await loadReserved();
 	const asked =
@@ -200,6 +210,9 @@ export const placeBid = async (cpu: Side, human: Side) => {
 		tid: human.tid,
 		side: found.k,
 		give: { pids: [...human.pids], dpids: [...human.dpids] },
+		...(found.take.pids.length + found.take.dpids.length > 0
+			? { take: found.take }
+			: {}),
 	});
 	await idb.cache.teams.put(found.t);
 	return true;
@@ -210,8 +223,26 @@ const giveOf = (assets: readonly Asset[]): Give => ({
 	dpids: assets.flatMap((x) => (x.kind === "pick" ? [x.dp.dpid] : [])),
 });
 
-// A side's offers for what it gives: the deal it has, or another team's.
-type Offer = { tid: number; give: Give; net: number; human: boolean };
+// A side's offers for what it gives: the deal it has, or another team's - a
+// human's maybe for more of its assets (`take`).
+type Offer = {
+	tid: number;
+	give: Give;
+	net: number;
+	human: boolean;
+	take?: Give;
+};
+
+// What a side gives with a human's bid: the held deal's assets and any more
+// the bid asks for - undefined if any has gone.
+const givingFor = (a: TeamState, held: Give, take: Give | undefined) => {
+	const all = {
+		pids: [...held.pids, ...(take?.pids ?? [])],
+		dpids: [...held.dpids, ...(take?.dpids ?? [])],
+	};
+	const assets = assetsFor(a, all.pids, all.dpids);
+	return assets && { give: all, assets };
+};
 
 // What one side, giving `giving`, nets from `getting` from team `b`: its gain
 // less its margin of error, which counts for more with a human.
@@ -267,11 +298,13 @@ const bestOffer = async (
 		}
 		const h = await loadTeam(outlook, bid.tid);
 		const getting = assetsFor(h, bid.give.pids, bid.give.dpids);
+		const giving = givingFor(a, pending.give[k], bid.take);
 		if (
 			!getting ||
+			!giving ||
 			!(await legalDeal({
 				tids: [a.tid, h.tid],
-				give: [pending.give[k], bid.give],
+				give: [giving.give, bid.give],
 			}))
 		) {
 			continue;
@@ -280,8 +313,9 @@ const bestOffer = async (
 		const offer = {
 			tid: h.tid,
 			give: bid.give,
-			net: netFor(outlook, a, given[k], getting, h, true),
+			net: netFor(outlook, a, giving.assets, getting, h, true),
 			human: true,
+			take: bid.take,
 		};
 		if (better(offer)) {
 			best = offer;
@@ -374,14 +408,16 @@ const closeWindow = async (outlook: LeagueOutlook, pending: Pending) => {
 		}
 		const a = await loadTeam(outlook, pending.tids[k]);
 		const b = await loadTeam(outlook, offer.tid);
-		const giving = assetsFor(a, pending.give[k].pids, pending.give[k].dpids);
+		const held = givingFor(a, pending.give[k], offer.take);
+		const giving = held?.assets;
 		const getting = assetsFor(b, offer.give.pids, offer.give.dpids);
 		if (
+			!held ||
 			!giving ||
 			!getting ||
 			!(await legalDeal({
 				tids: [a.tid, b.tid],
-				give: [pending.give[k], offer.give],
+				give: [held.give, offer.give],
 			}))
 		) {
 			continue;
@@ -389,7 +425,7 @@ const closeWindow = async (outlook: LeagueOutlook, pending: Pending) => {
 		if (offer.human) {
 			// Still worth it to the CPU side after anything the other side did.
 			if (netFor(outlook, a, giving, getting, b, true) >= MIN_GAIN) {
-				await takeBid(a.tid, pending.give[k], offer);
+				await takeBid(a.tid, held.give, offer);
 				winners.add(b.tid);
 				marketClock.heldTaken += 1;
 			}

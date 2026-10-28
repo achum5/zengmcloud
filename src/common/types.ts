@@ -2811,11 +2811,14 @@ export type Team = {
 		];
 		// The trading day it was held, `season:phase:games:daysLeft`.
 		day: string;
-		// Offers from human teams for what one side gives.
+		// Offers from human teams for what one side gives - and for any more of
+		// that side's assets, not held, that it also asks for (`take`), as
+		// salaries may need.
 		bids: {
 			tid: number;
 			side: 0 | 1;
 			give: { pids: number[]; dpids: number[] };
+			take?: { pids: number[]; dpids: number[] };
 		}[];
 		// In plain words, for each side: why it makes the deal and what it would
 		// want most in a bid. Missing on deals held before.

@@ -4,9 +4,16 @@ import { makeSeededRandom } from "../../../common/random.ts";
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
-import { judgeHumanOffer } from "./humanTrades.ts";
+import { humanTradeSettings, judgeHumanOffer } from "./humanTrades.ts";
 import tradeProposals from "../../views/tradeProposals.ts";
-import { currentOutlook, loadTeam, tableAssets } from "./market.ts";
+import {
+	currentOutlook,
+	legalDeal,
+	loadTeam,
+	marginOf,
+	priceFor,
+	tableAssets,
+} from "./market.ts";
 import {
 	closeWindows,
 	isNotable,
@@ -162,6 +169,86 @@ test(
 
 		await closeWindows();
 		assert.strictEqual((await idb.cache.players.get(theirs.pid))!.tid, userTid);
+		assert.strictEqual((await idb.cache.players.get(best.pid))!.tid, tid);
+	},
+);
+
+test(
+	"a bid may ask for more of that team's players, not held, as salaries may need",
+	{ timeout: 300_000 },
+	async () => {
+		// As above, searched for: a team that would take the human's best for
+		// one of its players and a cheap one more.
+		// Two for two, so the rosters stay as long.
+		const mine = (
+			await idb.cache.players.indexGetAll("playersByTid", userTid)
+		).sort((a, b) => b.valueNoPot - a.valueNoPot);
+		const best = mine[0]!;
+		const worst = mine.at(-1)!;
+		const human = { tid: userTid, pids: [best.pid, worst.pid], dpids: [] };
+		let found: { tid: number; held: number; more: number } | undefined;
+		for (let tid = 10; tid < g.get("numTeams") - 1 && !found; tid++) {
+			const roster = (
+				await idb.cache.players.indexGetAll("playersByTid", tid)
+			).sort((a, b) => a.valueNoPot - b.valueNoPot);
+			const more = roster[0]!;
+			for (const p of roster.slice(1)) {
+				if (p.valueNoPot >= best.valueNoPot - 10) {
+					break;
+				}
+				const alone = await judgeHumanOffer(
+					{ tid, pids: [p.pid, more.pid], dpids: [] },
+					human,
+				);
+				if (
+					(alone.kind !== "yes" && alone.kind !== "wait") ||
+					!(await legalDeal({
+						tids: [tid, userTid],
+						give: [
+							{ pids: [p.pid, more.pid], dpids: [] },
+							{ pids: human.pids, dpids: [] },
+						],
+					}))
+				) {
+					continue;
+				}
+				// And better for it than the held deal: him for nothing.
+				const outlook = await currentOutlook();
+				const a = await loadTeam(outlook, tid);
+				const h = await loadTeam(outlook, userTid);
+				const giving = [p, more].map((x) => ({
+					kind: "player" as const,
+					p: x,
+				}));
+				const getting = [best, worst].map((x) => ({
+					kind: "player" as const,
+					p: x,
+				}));
+				const held = [{ kind: "player" as const, p }];
+				const bid =
+					priceFor(outlook, a, giving, getting, h) -
+					humanTradeSettings.marginFactor *
+						marginOf(outlook, a, giving, getting);
+				const kept =
+					priceFor(outlook, a, held, []) - marginOf(outlook, a, held, []);
+				if (bid > kept) {
+					found = { tid, held: p.pid, more: more.pid };
+					break;
+				}
+			}
+		}
+		assert.isDefined(found, "no team would take the human's best player");
+		const { tid, held, more } = found!;
+		await hold([tid, tid + 1], { pids: [held], dpids: [] }, nothing);
+
+		// All it gives in the held deal and more of its own is a bid.
+		const cpu = { tid, pids: [held, more], dpids: [] };
+		assert.strictEqual((await judgeHumanOffer(cpu, human)).kind, "bid");
+		assert.isTrue(await placeBid(cpu, human));
+
+		await closeWindows();
+		assert.strictEqual((await idb.cache.players.get(held))!.tid, userTid);
+		assert.strictEqual((await idb.cache.players.get(more))!.tid, userTid);
 		assert.strictEqual((await idb.cache.players.get(best.pid))!.tid, tid);
 	},
 );

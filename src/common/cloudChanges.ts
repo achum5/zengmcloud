@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 24,
+		date: "2026-10-28",
+		text: 'Realistic Front Offices: a bid on a pending deal can now also ask for more of that team\'s players to make the salaries work - before, adding one (say, to match salary with a team over the cap) got the offer turned down as "part of a pending deal". "What would make this work?" works on bids too.',
+	},
+	{
 		n: 23,
 		date: "2026-10-28",
 		text: 'Realistic Front Offices: pending deals on Trade Proposals now show each player\'s age and ovr/pot, why each team is making the deal ("A contender adding for a title run", "Rebuilding, for later", "Saves money"...) and what it wants most in a bid (players who help now, young players and picks, or cap relief).',

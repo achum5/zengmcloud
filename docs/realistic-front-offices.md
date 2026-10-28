@@ -240,7 +240,11 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
 - **Bids are for either side's assets** (owner's call): any team can offer
   either team more for what it is giving up. Each side takes the best offer
   for its assets by its own read when the window closes, which may break the
-  deal.
+  deal. A human's bid asks for all a side gives in the held deal, and may ask
+  for more of that team's assets, not held, as salaries may need: once a
+  bid had to be exactly the held package, so one that needed another of the
+  team's players to make the salaries work was turned down, and "What would
+  make this work" said there was no deal.
 - **Humans see held deals on a Pending Deals list** (owner's call), on the
   Trade Proposals page, with a notification. Bidding opens the trade screen
   with that team; the offer is judged like any other and, if it is the best,
