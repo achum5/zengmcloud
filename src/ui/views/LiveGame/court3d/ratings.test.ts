@@ -244,10 +244,12 @@ describe("3D: players play like their ratings", () => {
 
 	test("sharp defenders are closer to the shot than poor ones", () => {
 		const body = bodyOf();
+		// (Over four games: a few tenths of a foot, which one or two games
+		// alone may not show.)
 		const space = (diq: number) => {
 			let sum = 0;
 			let n = 0;
-			for (const seed of ["r1", "r2"]) {
+			for (const seed of ["r1", "r2", "r3", "r4"]) {
 				const { events, players } = fakeGame(seed, 150);
 				const tl = compileCourt({
 					events,
@@ -577,8 +579,12 @@ describe("3D: players play like their ratings", () => {
 		const tl = play("r1", all(75));
 		const kinds = new Set<string>();
 		for (const tr of tl.tracks.values()) {
+			// (Leaning away from a hand up at it, he goes up his own way of
+			// that instead: see LEAN_ODDS.)
 			const his = new Set(
-				tr.acts.filter((a) => a.anim === "shoot").map((a) => a.arms ?? "-"),
+				tr.acts
+					.filter((a) => a.anim === "shoot" && a.lean === undefined)
+					.map((a) => a.arms ?? "-"),
 			);
 			assert.isAtMost(his.size, 1, `${tr.pid}`);
 			for (const k of his) {
