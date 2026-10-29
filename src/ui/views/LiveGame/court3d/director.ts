@@ -647,6 +647,9 @@ const POST_FINISH_OUT = 3.4;
 const WIDE_OF = 3;
 // How far out in front of his feet a man bent to the floor has his hands.
 const PICKUP_REACH = releaseAt("pickup", 0.65).f;
+// How far through a pickup his hands are down on the ball, and it is his
+// (see the pickup in poses.ts).
+const PICKUP_TAKE = 0.58;
 // A ball bouncing on the floor keeps its middle this far off a man's
 // (feet): off him, not through him.
 const BOUNCE_CLEAR = 1.2;
@@ -3463,13 +3466,24 @@ class Director {
 		return run ? run.t0 + run.n * CROSS_MS : t;
 	}
 
+	// The ball's part in play at t (its index): the last to start by then -
+	// whatever is laid out after it already (the steps of a set run on
+	// ahead, say).
+	private segAt(t: number): number {
+		let j = this.ball.length - 1;
+		while (j >= 0 && this.ball[j]!.t0 > t) {
+			j--;
+		}
+		return j;
+	}
+
 	// When his dribble started, if he is dribbling at t: his dribbles back to
 	// back keep one beat from the first of them (see evaluate.ts).
 	private dribbleFrom(pid: number, t: number): number | undefined {
 		const dribbling = (s: BallSeg | undefined) =>
 			s?.kind === "hold" && s.pid === pid && s.style === "dribble";
-		let j = this.ball.length - 1;
-		if (!dribbling(this.ball[j]) || this.ball[j]!.t0 > t) {
+		let j = this.segAt(t);
+		if (j < 0 || !dribbling(this.ball[j])) {
 			return undefined;
 		}
 		while (j > 0 && dribbling(this.ball[j - 1])) {
@@ -3524,7 +3538,7 @@ class Director {
 	private gather(pid: number, by: number): number {
 		// (Off a crossover: as it comes up into a hand at the top of a
 		// bounce - the last before, or the first, if it is not up yet.)
-		const last = this.ball.at(-1);
+		const last = this.ball[this.segAt(by)];
 		if (
 			last?.kind === "hold" &&
 			last.pid === pid &&
@@ -3554,7 +3568,7 @@ class Director {
 		floor: number,
 	): { got: number; go: number } {
 		const from = this.dribbleFrom(pid, by);
-		const last = this.ball.at(-1);
+		const last = this.ball[this.segAt(by)];
 		if (
 			from === undefined ||
 			(last?.kind === "hold" && last.pid === pid && last.style === "cross")
@@ -3715,7 +3729,9 @@ class Director {
 		this.free.set(pid, Math.max(this.free.get(pid) ?? 0, got));
 		// (Bending for it as he comes in on it - see the pickup in poses.ts.)
 		this.act(pid, "pickup", got - 200, got + 300, { look: { x: b.x, y: b.y } });
-		this.hold(pid, got + 150, "hold");
+		// (In his hands as they get down to it - up with them, not left lying
+		// as they come back up: see PICKUP_TAKE.)
+		this.hold(pid, got - 200 + 500 * PICKUP_TAKE, "hold");
 		if (style === "dribble") {
 			this.hold(pid, got + 300, "dribble");
 		}
@@ -13552,7 +13568,7 @@ class Director {
 				this.act(r, "pickup", tc - 350, tc + 150, { look: { x: B.x, y: B.y } });
 				this.bounce(land, tc, F, B, 1, h0);
 			}
-			this.hold(r, tc, "hold");
+			this.hold(r, inAir ? tc : tc - 350 + 500 * PICKUP_TAKE, "hold");
 			this.free.set(r, Math.max(this.free.get(r) ?? 0, tc + 300));
 			if (easy) {
 				return tc;
@@ -15935,9 +15951,15 @@ class Director {
 			// Still a step short of the lane, he gets there as it does: the
 			// pass is thrown a beat later, at its own pace - never floated
 			// up for him.
-			const wait = thrown.lane
+			// (Off his dribble, in his hands first: not thrown from on its way
+			// to the floor.)
+			let wait = thrown.lane
 				? Math.max(0, thrown.lane.need - thrown.lane.tI)
 				: 0;
+			wait += Math.max(
+				0,
+				this.gather(victim, thrown.start + wait) - (thrown.start + wait),
+			);
 			const { B, over, wind } = thrown;
 			const start = thrown.start + wait;
 			const release = thrown.release + wait;

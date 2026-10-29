@@ -55,7 +55,6 @@ import {
 	type AnimName,
 	type Body,
 	type DribbleMove,
-	type Grip,
 	type Hand,
 	type Limb,
 	type Pose,
@@ -2537,6 +2536,38 @@ const tightAt = (
 // How long his hands take to close on the ball once it is his.
 const GRIP_MS = 110;
 const GRIP_FLOOR_MS = 50;
+// TAKEN INTO HIS HANDS - up off his dribble, off the floor, out of a move -
+// the ball comes from where it was into where he holds it as his hands close
+// on it, the two together (see closedOn): if the hold at `bi` is that (or
+// held on straight from one that is), the first of those holds and when the
+// hand-over is done. Meanwhile it is drawn on its own, where it is on its way
+// - not in his hands already (see scene.ts), jumped there in a frame.
+const takenOver = (
+	tl: CourtTimeline,
+	bi: number,
+): { k: number; until: number } | undefined => {
+	const seg = tl.ball[bi];
+	if (seg?.kind !== "hold" || seg.style !== "hold") {
+		return undefined;
+	}
+	let k = bi;
+	for (; k > 0; k--) {
+		const x = tl.ball[k - 1]!;
+		if (x.kind !== "hold" || x.pid !== seg.pid || x.style !== "hold") {
+			break;
+		}
+	}
+	const prev = tl.ball[k - 1];
+	const ms =
+		prev?.kind === "rest"
+			? GRIP_FLOOR_MS
+			: (prev?.kind === "hold" && prev.pid === seg.pid) ||
+				  prev?.kind === "bounce" ||
+				  prev?.kind === "path"
+				? GRIP_MS
+				: undefined;
+	return ms === undefined ? undefined : { k, until: tl.ball[k]!.t0 + ms };
+};
 const LET_GO_MS = 140;
 const GRABS = new Set<AnimName>(["poke", "reach"]);
 const ballIsHis = (tl: CourtTimeline, pid: number, t: number): boolean => {
@@ -2824,7 +2855,8 @@ const doingNow = (
 		...(aside ? { aside: true } : {}),
 		...(dunk ? { dunk } : {}),
 		...(reach ? { reach } : {}),
-		holding: has?.style === "hold",
+		holding:
+			has?.style === "hold" && !(t < (takenOver(tl, bi)?.until ?? -Infinity)),
 		...(grip === undefined ? {} : { grip }),
 		dribble: beat?.ph,
 		dribbleHand: beat ? (beat.ph < DOWN ? beat.from : beat.to) : undefined,
@@ -5741,15 +5773,14 @@ export const gripped = (
 };
 
 // The ball in his hands and his arms on it, the way his move holds it - and,
-// easing out of a move that held it another way, into one that has it all
-// in one hand from the start (cupped for a windmill out of a rebound,
-// pushed out for a pass, pulled round in a spin), where that one had it as
-// it changed, as much as his arms are still in it: it goes over from the
-// one hold to the other, not across in a frame. (Up on a jumper or a
-// finish, the hand takes it over as it comes up anyway - see holdBall.)
+// easing out of a move that held it another way (in both hands, into one
+// that has it all in one hand from the start - cupped for a windmill out of
+// a rebound, pushed out for a pass, pulled round in a spin - or up on his
+// shooting hand), where that one had it as it changed, as much as his arms
+// are still in it: it goes over from the one hold to the other, not across
+// in a frame.
 // Whatever draws him and whatever puts the ball in his hands both ask
 // this, so the two agree.
-const ONE_HAND = new Set<Grip>(["push", "pull", "cup"]);
 export const holdOf = (
 	st: PlayerState,
 	body: Body,
@@ -5765,7 +5796,6 @@ export const holdOf = (
 		!f ||
 		w <= 0 ||
 		!f.held ||
-		!(ONE_HAND.has(a!) || ONE_HAND.has(b)) ||
 		(a === b && (f.mirror === true) === (st.mirror === true))
 	) {
 		return now;
@@ -5870,10 +5900,9 @@ export const BALL_R = 0.39;
 export const GRAVITY = 32.2;
 
 // The ball's hand-overs from one move to the next - a dribble picked up, a
-// ball scooped off the floor - take this long, eased from where the last
-// move left it, so it never jumps.
-const HANDOVER_MS = 140;
-const HANDOVER_FLOOR_MS = 40;
+// ball scooped off the floor - are eased from where the last move left it,
+// as his hands close on it (see takenOver), so it never jumps: from no
+// farther off than this (feet).
 const HANDOVER_REACH = 6;
 const BEFORE = 0.5;
 
@@ -6287,29 +6316,23 @@ const ballOn = (
 		}
 		const held: BallState = { ...heldBall(st, body), holder: seg.pid };
 		// Taken into both hands - up off his dribble, off the floor, out of
-		// another move - it comes from where it was. (Not when the picture
-		// cut to him with it: that is no hand-over.)
-		// (Off the floor, quicker: his hands come down to it where it lies.)
-		const u =
-			(t - seg.t0) / (prev?.kind === "rest" ? HANDOVER_FLOOR_MS : HANDOVER_MS);
-		if (
-			prev &&
-			u < 1 &&
-			((prev.kind === "hold" && prev.pid === seg.pid) ||
-				prev.kind === "rest" ||
-				prev.kind === "bounce" ||
-				prev.kind === "path")
-		) {
-			const was = left();
-			const then = evalPlayer(tl, seg.pid, seg.t0 - BEFORE);
+		// another move - it comes from where it was, as his hands close on it
+		// (see takenOver): from the first of his holds straight on. (Not when
+		// the picture cut to him with it: that is no hand-over.)
+		const over = depth < 2 ? takenOver(tl, i) : undefined;
+		if (over && t < over.until) {
+			const first = tl.ball[over.k]!;
+			const before = tl.ball[over.k - 1]!;
+			const was = ballOn(tl, over.k - 1, first.t0 - BEFORE, bodyFor, depth + 1);
+			const then = evalPlayer(tl, seg.pid, first.t0 - BEFORE);
 			const at = heldBall(then, body);
 			if (dist2(was, at) + (was.z - at.z) ** 2 < HANDOVER_REACH ** 2) {
 				// Carried along with him if it was already his.
 				const moved =
-					prev.kind === "hold"
+					before.kind === "hold"
 						? { x: st.x - then.x, y: st.y - then.y }
 						: { x: 0, y: 0 };
-				const e = ease(u);
+				const e = smooth01((t - first.t0) / (over.until - first.t0));
 				return {
 					x: was.x + moved.x + (held.x - was.x - moved.x) * e,
 					y: was.y + moved.y + (held.y - was.y - moved.y) * e,

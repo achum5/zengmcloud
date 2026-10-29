@@ -5121,9 +5121,10 @@ export const ANIMS = {
 	// Down to the floor for it - knees bent deep, reaching out, a hand on
 	// either side of it where it lies - a moment there to take it, and up
 	// with it in both hands. (Most of it the way down, begun as he comes in
-	// on it: not a snap to the floor in a tenth of a second. And up as soon
-	// as he has it - the director gives it him 0.7 of the way through - not
-	// a moment more down there and then up in a rush.)
+	// on it: not a snap to the floor in a tenth of a second. His hands on it
+	// - the director gives it him there, 0.58 of the way through - a moment,
+	// and up as soon as he has it: not a moment more down there and then up
+	// in a rush.)
 	pickup: {
 		kind: "act",
 		n: 6,

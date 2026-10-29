@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 30,
+		date: "2026-10-29",
+		text: "3D game: the ball no longer jumps into a player's hands - picked up off the dribble or off the floor, it comes up into his hands as they close on it, and passes always come out of the passer's hands instead of straight up out of a bounce of his dribble.",
+	},
+	{
 		n: 29,
 		date: "2026-10-29",
 		text: "3D game: end-of-quarter heaves now happen in the time that was actually left - the inbound goes straight to the shooter, he races up the floor and lets it fly as time runs out, with a real heave thrown from over his head on the run instead of a 70-foot jump shot, and his man chasing him instead of standing in his face. The game clock also keeps running at real speed while a shot is in the air or the ball bounces out of bounds, instead of crawling, and the horn goes with the heave in the air.",
