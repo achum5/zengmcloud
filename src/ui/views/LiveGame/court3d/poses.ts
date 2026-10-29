@@ -5273,6 +5273,90 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// What the foul was, after the fist: a hand chopped down on his other
+	// wrist, twice - a hit on the arm, a reach in on the ball;
+	signalHit: {
+		kind: "act",
+		n: 8,
+		keys: [
+			[0, P.ready],
+			[0.2, pose({ shN: 112, elN: 82, abN: -10, shF: 58, elF: 84, abF: -8 })],
+			[0.42, pose({ shN: 64, elN: 56, abN: -22, shF: 58, elF: 84, abF: -8 })],
+			[0.58, pose({ shN: 106, elN: 80, abN: -10, shF: 58, elF: 84, abF: -8 })],
+			[0.8, pose({ shN: 64, elN: 56, abN: -22, shF: 58, elF: 84, abF: -8 })],
+			[1, P.ready],
+		],
+	},
+	// a hand round his other wrist, held - holding;
+	signalHold: {
+		kind: "act",
+		n: 5,
+		keys: [
+			[0, P.ready],
+			[0.25, pose({ shN: 50, elN: 72, abN: -26, shF: 52, elF: 60, abF: -6 })],
+			[0.85, pose({ shN: 50, elN: 74, abN: -26, shF: 54, elF: 58, abF: -6 })],
+			[1, P.ready],
+		],
+	},
+	// both hands on his hips - blocking;
+	signalBlock: {
+		kind: "act",
+		n: 5,
+		keys: [
+			[0, P.ready],
+			[
+				0.25,
+				pose({
+					shN: -6,
+					elN: 56,
+					abN: 30,
+					shF: -6,
+					elF: 56,
+					abF: 30,
+					onHipN: 1,
+					onHipF: 1,
+				}),
+			],
+			[
+				0.85,
+				pose({
+					shN: -6,
+					elN: 56,
+					abN: 30,
+					shF: -6,
+					elF: 56,
+					abF: 30,
+					onHipN: 1,
+					onHipF: 1,
+				}),
+			],
+			[1, P.ready],
+		],
+	},
+	// both hands pushed out from his chest - pushing;
+	signalPush: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.ready],
+			[0.3, pose({ shN: 46, elN: 120, shF: 46, elF: 120 })],
+			[0.55, pose({ shN: 84, elN: 8, shF: 84, elF: 8, lean: 4 })],
+			[0.75, pose({ shN: 50, elN: 112, shF: 50, elF: 112 })],
+			[1, P.ready],
+		],
+	},
+	// a fist punched out - the charge, the offensive foul.
+	signalCharge: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.ready],
+			[0.3, pose({ shN: 62, elN: 128, abN: 6, shF: 14, elF: 22 })],
+			[0.5, pose({ shN: 88, elN: 6, abN: 6, shF: 14, elF: 22, lean: 4 })],
+			[0.85, pose({ shN: 86, elN: 8, abN: 6, shF: 14, elF: 22, lean: 2 })],
+			[1, P.ready],
+		],
+	},
 	// An arm straight out to his right: the way the ball goes, the way the
 	// play is headed.
 	signalSide: {
@@ -5564,6 +5648,32 @@ export const ANIMS = {
 				wide: 0.3,
 			});
 		},
+	},
+	// Fouled with it in his hands: jerked back and round by the hit, the
+	// ball pulled down and away with his arms - and he gathers himself.
+	jolt: {
+		kind: "act",
+		n: 5,
+		keys: [
+			[0, P.hold],
+			[
+				0.22,
+				pose({
+					...P.hold,
+					shN: 18,
+					elN: 70,
+					shF: 30,
+					elF: 92,
+					lean: -9,
+					tilt: -8,
+					twist: 14,
+					kneeN: 26,
+					kneeF: 20,
+				}),
+			],
+			[0.55, pose({ ...P.hold, lean: -3, tilt: -2, twist: 4 })],
+			[1, P.hold],
+		],
 	},
 	// What was that? Arms out, palms up.
 	protest: {

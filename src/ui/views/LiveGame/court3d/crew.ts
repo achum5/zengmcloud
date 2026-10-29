@@ -946,6 +946,23 @@ const cuesBefore = (tl: CourtTimeline, t: number): Cue[] => {
 			const dir = f.team === undefined ? 1 : attackDir(f.team);
 			const side = { anim: "signalSide" as const, yaw: pointing(dir) };
 			const up = { anim: "signalUp" as const, yaw: FACING_US };
+			// (A foul, after the fist, what it was: hit, held, blocked,
+			// pushed; on a shot, the hit; the charge, a fist punched out.)
+			const what = (anim: AnimName) => ({ anim, yaw: FACING_US });
+			const how: AnimName | undefined =
+				f.call === "offensive"
+					? "signalCharge"
+					: f.call === "shootingFoul" || f.call === "andOne"
+						? "signalHit"
+						: f.call === "foul"
+							? f.how === "hold"
+								? "signalHold"
+								: f.how === "block"
+									? "signalBlock"
+									: f.how === "push"
+										? "signalPush"
+										: "signalHit"
+							: undefined;
 			const plan: [{ anim: AnimName; yaw: number }, number][] =
 				f.call === "out"
 					? [[side, 1300]]
@@ -954,12 +971,23 @@ const cuesBefore = (tl: CourtTimeline, t: number): Cue[] => {
 								[{ anim: "travel", yaw: FACING_US }, 1000],
 								[side, 950],
 							]
-						: f.call === "shootingFoul" || f.call === "stop"
+						: f.call === "stop"
 							? [[up, 1100]]
-							: [
-									[up, 850],
-									[side, 950],
-								];
+							: f.call === "shootingFoul" && how
+								? [
+										[up, 800],
+										[what(how), 900],
+									]
+								: how
+									? [
+											[up, 700],
+											[what(how), 900],
+											[side, 850],
+										]
+									: [
+											[up, 850],
+											[side, 950],
+										];
 			let t0 = f.t;
 			out.push({
 				at: f.at ?? ballSpot(tl, f.t),

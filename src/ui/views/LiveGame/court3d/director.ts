@@ -389,10 +389,14 @@ export type Fx = {
 	team?: Side;
 	big?: boolean;
 	what?: "three" | "dunk" | "andOne";
-	// A whistle's call, where it was, and (as `team`) who gets the ball.
+	// A whistle's call, where it was, and (as `team`) who gets the ball -
+	// and, a foul, what it was (the official signals it: see crew.ts).
 	call?: Call;
 	at?: Pt;
+	how?: FoulHow;
 };
+// A foul: a hit on the arm or the ball, holding, blocking, pushing.
+export type FoulHow = "hit" | "hold" | "block" | "push";
 // A look round the building while play is stopped - before the opening tip,
 // through a timeout, between periods: the whole arena wide, or low in the
 // seats looking up at the crowd and the rafters. The picture cuts in and out
@@ -14040,14 +14044,18 @@ class Director {
 					// are on their way up as it goes, not stood out there.)
 					this.trailUp(run, [], undefined, t, true);
 				}
-				const { hit, at: vp } = this.stageFoul(
+				const {
+					hit,
+					at: vp,
+					how,
+				} = this.stageFoul(
 					fouler,
 					team,
 					t,
 					typeof e.pidShooting === "number" ? e.pidShooting : undefined,
 					gap !== undefined && gap < 4 && this.foulingToStopClock(fouler, e),
 				);
-				this.effect("whistle", hit, { call: "foul", at: vp, team });
+				this.effect("whistle", hit, { call: "foul", at: vp, team, how });
 				if (this.rng() < 0.3) {
 					this.react(fouler, "protest", hit + 420, 950);
 				}
@@ -15331,7 +15339,7 @@ class Director {
 		t: number,
 		victim: number | undefined,
 		deliberate: boolean,
-	): { hit: number; at: Pt } {
+	): { hit: number; at: Pt; how: FoulHow } {
 		const dir = attackDir(team);
 		const rim = { x: rimX(team), y: COURT_H / 2 };
 		const manOf = this.slots(team).find((p) => this.defenderOf(p) === fouler);
@@ -15350,13 +15358,27 @@ class Director {
 			t = this.passTo(handler, fouled, t);
 			handler = fouled;
 		}
-		const contact = (v: number, hit: number) => {
+		// The contact, and what it does to him: hit on the arm, the ball in
+		// his hands jerked down and away; bumped off his line on the drive,
+		// knocked off balance; held, he tries to pull free and looks for the
+		// call.
+		const free = (pid: number, t0: number, t1: number) =>
+			!(this.track(pid)?.acts ?? []).some((a) => a.t1 > t0 && a.t0 < t1);
+		const contact = (v: number, hit: number, how: FoulHow) => {
 			const V = this.posOf(v);
 			const F = this.posOf(fouler);
-			this.act(fouler, "reach", hit - 140, hit + 320, {
-				face: (V.x >= F.x ? 1 : -1) as 1 | -1,
-				look: { ...V },
-			});
+			const face = (V.x >= F.x ? 1 : -1) as 1 | -1;
+			if (how === "hit" && free(fouler, hit - 180, hit + HACK_MS)) {
+				this.act(fouler, "hack", hit - 180, hit - 180 + HACK_MS, {
+					face,
+					look: { ...V },
+				});
+			} else {
+				this.act(fouler, "reach", hit - 140, hit + 320, {
+					face,
+					look: { ...V },
+				});
+			}
 			if (this.holder !== undefined) {
 				this.hold(
 					this.holder,
@@ -15364,7 +15386,18 @@ class Director {
 					"hold",
 				);
 			}
-			return { hit, at: V };
+			const has = this.holder === v;
+			if (how === "block" && free(v, hit - 40, hit + 700)) {
+				this.act(v, "stumble", hit - 40, hit + 700, { face: -face as 1 | -1 });
+			} else if (has && free(v, hit - 30, hit + 520)) {
+				this.act(v, "jolt", hit - 30, hit + 520, {
+					face: -face as 1 | -1,
+					look: { ...F },
+				});
+			} else if (how === "hold" && hash01(v, Math.round(hit)) < 0.6) {
+				this.react(v, "protest", hit + 260, 900);
+			}
+			return { hit, at: V, how };
 		};
 		const start = (pid: number) => Math.max(t, this.free.get(pid) ?? 0);
 
@@ -15381,7 +15414,7 @@ class Director {
 			);
 			// (Bringing it up, he is still on his way as they get to him.)
 			this.keepComing(handler, hit);
-			return contact(handler, hit);
+			return contact(handler, hit, "hold");
 		}
 
 		if (offBall) {
@@ -15406,7 +15439,7 @@ class Director {
 				this.keepComing(this.holder, hit);
 				this.probe(this.holder, hit);
 			}
-			return contact(fouled, hit);
+			return contact(fouled, hit, "hold");
 		}
 
 		// On the ball: he puts it on the floor and goes. (Stood with it a
@@ -15459,7 +15492,7 @@ class Director {
 					team,
 				);
 			}
-			return contact(handler, Math.max(arrive, set));
+			return contact(handler, Math.max(arrive, set), "block");
 		}
 		const s0 = start(handler);
 		this.hold(handler, s0, "dribble");
@@ -15481,6 +15514,7 @@ class Director {
 		return contact(
 			handler,
 			Math.max(arrive - 120, (this.free.get(fouler) ?? 0) - 60),
+			"hit",
 		);
 	}
 

@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 32,
+		date: "2026-10-29",
+		text: "3D game: fouls look like fouls - a reach-in is a chop down at the ball that jerks it in the ball handler's hands, a help man a step late knocks the driver off balance, and a cutter held up gets grabbed and looks for the call. The official then signals what it was - a chop on his wrist for a hit, a hand round it for holding, hands on his hips for blocking, a fist punched out for a charge - and points the way it goes.",
+	},
+	{
 		n: 31,
 		date: "2026-10-29",
 		text: "3D game: dribbling looks more like real basketball - walking it up with nobody near him, a player stands tall and bounces it easy at his waist; with his man up on him he gets down in his stance and pounds it quicker; and every player has his own stance, rhythm and dribble height. Turnovers outside a set play now look like the real thing too - a pass picked off in the lane, the ball stripped off the dribble, a pass thrown away past the man it was meant for, a charge, a travel - instead of the ball just flying to the defender.",
