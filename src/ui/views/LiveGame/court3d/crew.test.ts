@@ -4,7 +4,8 @@ import { bodyPoint, cameraCuts, fastAt, poseOf, withBody } from "./evaluate.ts";
 import { benchX, COURT_H, COURT_W, HUDDLE_Y, type Pt3 } from "./geometry.ts";
 import { compileCourt, type CourtPlayer, type RawEvent } from "./director.ts";
 import { bodyOf, skeleton } from "./poses.ts";
-import { compile, gidOf } from "./testGame.ts";
+import { buildClocks, gameClockAt } from "./clock.ts";
+import { compile, fakeGame, gidOf } from "./testGame.ts";
 
 const AWAY = {
 	region: "Golden State",
@@ -17,7 +18,13 @@ const HOME = {
 	colors: ["#ce1141", "#000000", "#ffffff"] as [string, string, string],
 };
 
-const SIGNALS = new Set(["signalUp", "signalSide", "threeUp", "travel"]);
+const SIGNALS = new Set([
+	"signalUp",
+	"signalSide",
+	"threeUp",
+	"travel",
+	"waveOff",
+]);
 const isRef = (pid: number) => pid >= -3 && pid <= -1;
 
 // The end of regulation, the sim's way, and overtime started with a tip -
@@ -174,7 +181,9 @@ describe("3D crew", () => {
 				if (next && next.t < f.t + 700) {
 					return;
 				}
-				const refs = crewAt(tl, f.t + 350, crew).states.filter((s) =>
+				// (A shot after the horn, once he has run in to wave it off.)
+				const by = f.call === "noBasket" ? 1300 : 350;
+				const refs = crewAt(tl, f.t + by, crew).states.filter((s) =>
 					isRef(s.pid),
 				);
 				if (f.kind === "whistle" && f.call) {
@@ -195,6 +204,86 @@ describe("3D crew", () => {
 			assert.isAbove(threes, 0);
 		}
 	}, 60_000);
+
+	// A period run out with no shot: more often than not one goes up all the
+	// same, a beat after the horn - the clock at nothing as it leaves his
+	// hands - and two officials run in waving it off, turning as they go,
+	// never spun round.
+	test("a shot let go after the horn is waved off", () => {
+		let ends = 0;
+		let late = 0;
+		for (const seed of ["a", "b"]) {
+			const { events, players } = fakeGame(seed, 150);
+			// (Every period run out with five seconds left after its last line.)
+			events.forEach((e, end) => {
+				if (e.type === "endOfPeriod") {
+					const k = events.findLastIndex(
+						(x, j) =>
+							j < end && typeof x.clock === "number" && x.type !== "stat",
+					);
+					events[k]!.clock = 5;
+				}
+			});
+			const tl = compileCourt({ events, players, gid: gidOf(seed) });
+			const crew = crewFor(gidOf(seed), AWAY, HOME);
+			const clocks = buildClocks(tl, events);
+			const cuts = cameraCuts(tl);
+			const refs = (t: number) =>
+				crewAt(tl, t, crew).states.filter((s) => isRef(s.pid));
+			for (const b of tl.beats) {
+				if (b.type !== "endOfPeriod" || events[b.i]!.reason !== "noShot") {
+					continue;
+				}
+				ends += 1;
+				const horn = b.actionStart;
+				const wave = tl.fx.find(
+					(f) =>
+						f.kind === "whistle" &&
+						f.call === "noBasket" &&
+						f.t > horn &&
+						f.t < horn + 1500,
+				);
+				if (!wave) {
+					continue;
+				}
+				late += 1;
+				const shot = tl.ball.find(
+					(q) =>
+						q.kind === "fly" &&
+						"pid" in q.from &&
+						!("pid" in q.to) &&
+						q.t0 > horn - 1000,
+				)!;
+				assert.isAtLeast(shot.t0 - horn, 100, `${seed} ${horn}`);
+				assert.isAtMost(shot.t0 - horn, 700, `${seed} ${horn}`);
+				assert.isAbove(gameClockAt(clocks, horn - 400)!, 0);
+				assert.strictEqual(gameClockAt(clocks, horn + 20), 0);
+				assert.strictEqual(
+					refs(wave.t + 1300).filter((r) => r.anim === "waveOff").length,
+					2,
+					`${seed} ${horn}`,
+				);
+				let was = refs(horn);
+				for (let t = horn + 16; t < wave.t + 4000; t += 16) {
+					const now = refs(t);
+					if (!cuts.some((c) => c > t - 16 && c <= t)) {
+						now.forEach((r, j) => {
+							let d = r.yaw - was[j]!.yaw;
+							d -= Math.round(d / (Math.PI * 2)) * Math.PI * 2;
+							assert.isBelow(
+								Math.abs(d),
+								(25 * Math.PI) / 180,
+								`${seed} ${Math.round(t - horn)} ${r.pid}`,
+							);
+						});
+					}
+					was = now;
+				}
+			}
+		}
+		assert.isAtLeast(late, 3);
+		assert.isAtLeast(late, ends * 0.3);
+	}, 240_000);
 
 	test("at the line, the official under the basket bounces the shooter the ball", () => {
 		const { tl, crew } = working("a");

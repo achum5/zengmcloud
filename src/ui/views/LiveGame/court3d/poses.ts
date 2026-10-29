@@ -5553,6 +5553,27 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// No basket - let go after the horn: both arms out straight in front of
+	// him, swept out wide and back across each other, over and over.
+	waveOff: {
+		kind: "loop",
+		n: 6,
+		fps: 10,
+		pose: (i) => {
+			const w = (1 - Math.cos((i / 6) * Math.PI * 2)) / 2;
+			return pose({
+				shN: 84 - 8 * w,
+				elN: 6 + 10 * w,
+				abN: 74 - 104 * w,
+				shF: 72 - 8 * w,
+				elF: 6 + 10 * w,
+				abF: 74 - 104 * w,
+				kneeN: 12,
+				kneeF: 12,
+				lean: 4,
+			});
+		},
+	},
 	// Traveling: the fists rolling over each other in front of him.
 	travel: {
 		kind: "loop",

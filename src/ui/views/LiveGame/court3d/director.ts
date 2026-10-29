@@ -368,7 +368,8 @@ export type FxKind =
 	| "confetti";
 // What a whistle was for, for the officials to signal: a foul (on a shot,
 // or through one that counts), a travel, an offensive foul, the ball out of
-// bounds, the shot clock or five seconds, or play stopped.
+// bounds, the shot clock or five seconds, or play stopped - or, no whistle,
+// a shot let go after the horn waved off.
 export type Call =
 	| "foul"
 	| "shootingFoul"
@@ -377,7 +378,8 @@ export type Call =
 	| "offensive"
 	| "out"
 	| "clock"
-	| "stop";
+	| "stop"
+	| "noBasket";
 // `big` marks a dunk worth a replay: on somebody, off a lob, or through
 // contact - or, on a swish (not a dunk's), a three in a tight finish, a
 // basket at the buzzer, or one through contact (an and-one). A roar says
@@ -1313,6 +1315,15 @@ const FINAL_DRIBBLE = 3600;
 // How high the man with it at the horn, winning, throws it (feet).
 const GAME_BALL_UP = 27;
 const FINAL_LOOK = 1600;
+// No more than this left (seconds) at his own end and no shot: on his way up
+// with it as the horn goes (see playOutClock).
+const NO_SHOT_RACE = 8;
+// ... and more often than not the horn goes as he gets it up: he lets it go
+// anyway, a beat after it (ms) - a jumper in now and then (a heave half as
+// often), never counting (see lateShot).
+const LATE_HEAVE = 0.6;
+const LATE_BY: [number, number] = [150, 500];
+const LATE_MAKE = 0.12;
 // How long a defender takes to read a pass (ms), and how fast he closes out
 // once he has (feet a second) - breaking down for the last steps.
 const CLOSE_READ = 150;
@@ -9017,6 +9028,9 @@ class Director {
 		shooter: number,
 		t: number,
 		gap: number | undefined,
+		// No shot at the end of it (the period run out on him): on the run
+		// with it till the horn, still dribbling - see playOutClock.
+		shoot = true,
 	): number {
 		const t0 = t;
 		const rim = rimPt(team);
@@ -9067,7 +9081,7 @@ class Director {
 		// short, easing off if he would get in too close too soon. Never in
 		// inside the arc.
 		const S = this.posOf(shooter);
-		const ms = due - t - HEAVE_PICK_UP;
+		const ms = due - t + (shoot ? -HEAVE_PICK_UP : HEAVE_GATHER);
 		const room = dist(S, rim) - HEAVE_NEAREST;
 		const run = Math.max(0, Math.min(room, reachIn(ms, HEAVE_RUN)));
 		const u = unitVec(S, rim);
@@ -9148,7 +9162,166 @@ class Director {
 				dir,
 			);
 		}
-		return Math.max(t, this.hold(shooter, t, "hold"));
+		return shoot ? Math.max(t, this.hold(shooter, t, "hold")) : t;
+	}
+
+	// A shot let go too late (see lateShot): a heave, or his own jumper -
+	// how long it takes, and when it leaves his hand through it.
+	private lateForm(
+		pid: number,
+		heave: boolean,
+	): {
+		anim: AnimName;
+		dur: number;
+		letGo: number;
+		jump: [number, number, number];
+		arms?: ShotArms;
+	} {
+		if (heave) {
+			return {
+				anim: "heave",
+				dur: HEAVE_MS,
+				letGo: HEAVE_HOP.release,
+				jump: [
+					HEAVE_HOP.off,
+					HEAVE_HOP.land,
+					hopFor(HEAVE_MS, HEAVE_HOP.land - HEAVE_HOP.off),
+				],
+			};
+		}
+		const dur = 1000 * this.stroke(pid, "tp", "fg");
+		const arms = this.armsOf(pid);
+		return {
+			anim: "shoot",
+			dur,
+			letGo: JUMPER.release,
+			jump: [JUMPER.off, JUMPER.land, hopFor(dur, JUMPER.land - JUMPER.off)],
+			...(arms ? { arms } : {}),
+		};
+	}
+
+	// How long after the horn he lets it go (ms).
+	private lateBy(pid: number, t: number): number {
+		return (
+			LATE_BY[0] +
+			(LATE_BY[1] - LATE_BY[0]) * hash01(pid * 5 + 2, Math.round(t))
+		);
+	}
+
+	// Too late: up with it from `gather` as the horn goes at `horn`, he lets
+	// it go anyway - a heave on the run (as in stageShot), or a jumper - and
+	// in or not, it counts for nothing. The officials run in waving it off
+	// (see crew.ts). Returns when it is down and still.
+	private lateShot(
+		team: Side,
+		shooter: number,
+		gather: number,
+		horn: number,
+		form: ReturnType<Director["lateForm"]>,
+	): number {
+		const rim = rimPt(team);
+		const dir = attackDir(team);
+		const P1 = this.posOf(shooter);
+		const toRim = unitVec(P1, rim);
+		const faceRim = (rim.x >= P1.x ? 1 : -1) as 1 | -1;
+		const { anim, dur, letGo, jump, arms } = form;
+		if (anim === "heave") {
+			this.carry(
+				shooter,
+				clampPt({
+					x: P1.x + toRim.x * HEAVE_ON,
+					y: P1.y + toRim.y * HEAVE_ON,
+				}),
+				gather,
+				dur * HEAVE_HOP.land,
+				"run",
+				faceRim,
+				{ onFrom: true, v1: 0 },
+			);
+		}
+		this.act(shooter, anim, gather, gather + dur, {
+			face: faceRim,
+			look: { x: rim.x, y: rim.y },
+			jump,
+			...(arms ? { arms } : {}),
+		});
+		// (Nowhere off to the bench till he is down.)
+		this.free.set(
+			shooter,
+			Math.max(this.free.get(shooter) ?? 0, gather + dur + 150),
+		);
+		// Out of his hand where it is as he lets it go - as high as his jump
+		// has him.
+		const release = gather + dur * letGo;
+		const hand = releaseAt(
+			anim === "shoot" ? shotWith(shooter, arms) : anim,
+			letGo,
+		);
+		const v = (letGo - jump[0]) / (jump[1] - jump[0]);
+		hand.u += v > 0 && v < 1 ? 4 * jump[2] * v * (1 - v) : 0;
+		if (this.offHisLeft(shooter)) {
+			hand.s = -hand.s;
+		}
+		const P = this.posAt(shooter, release);
+		const u = unitVec(P, rim);
+		const from = {
+			x: P.x + u.x * hand.f + u.y * hand.s,
+			y: P.y + u.y * hand.f - u.x * hand.s,
+			z: hand.u,
+		};
+		// (His man, if he is near enough, gets a hand up at it all the same.)
+		this.chaseHeave(this.defenderOf(shooter), shooter, release);
+		const flight = 620 + dist(P, rim) * 22;
+		const roll = hash01(shooter * 5 + 3, Math.round(horn));
+		this.effect("whistle", release + 150, {
+			call: "noBasket",
+			at: P,
+			rim: team,
+		});
+		const made = roll < (anim === "heave" ? LATE_MAKE / 2 : LATE_MAKE);
+		const play = this.playAtRim(
+			team,
+			shooter,
+			from,
+			release,
+			[flight * 0.92, flight * 1.08],
+			made
+				? { made, kinds: ["swish", "rim"] }
+				: { made, kinds: ["off", "rimOut", "brick"], inPlay: true },
+		);
+		if (play) {
+			this.rimClanks(play, team);
+			const p = play.found.play;
+			if (p.made) {
+				this.effect("swish", play.t0 + p.decided + 20, { rim: team });
+				return this.dropThrough(play.t0, p, {
+					x: rim.x - dir * 2.5,
+					y: rim.y + (roll - 0.5) * 4,
+				});
+			}
+			const end = p.end;
+			const floor = this.toFloor(play.t0 + end.t, end.p, end.v);
+			const v = Math.hypot(end.v.x, end.v.y) || 1;
+			const away = clampPt({
+				x: floor.at.x + (end.v.x / v) * 5,
+				y: floor.at.y + (end.v.y / v) * 5,
+			});
+			const still = floor.t + this.bounceSpan(floor.h0, 2, 900);
+			this.bounce(floor.t, still, floor.at, away, 2, floor.h0);
+			return still;
+		}
+		// (Nothing to play out at the rim: off the back of it and away.)
+		const at = release + flight;
+		const iron = {
+			x: rim.x + dir * (RIM_R + 0.1),
+			y: rim.y + (roll - 0.5),
+			z: RIM_Z + 0.12,
+		};
+		this.fly(release, at, { pid: shooter }, iron);
+		this.effect("clank", at, { rim: team });
+		const away = clampPt({ x: rim.x - dir * 9, y: rim.y + (roll - 0.5) * 12 });
+		this.bounce(at, at + 1400, iron, away, 3, 2.4);
+		return at + 1400;
 	}
 
 	// Back to the rim, a dribble or two to back his man down: in at the rim
@@ -14148,10 +14321,11 @@ class Director {
 				}
 				// (The end of a period: whatever is left on the clock played out
 				// first.)
-				const at =
+				const played =
 					type === "endOfPeriod"
-						? this.playOutClock(e, d ?? this.offense, gap)
-						: T;
+						? this.playOutClock(e, d ?? this.offense, gap, true)
+						: { at: T, still: T };
+				const at = played.at;
 				this.effect("whistle", at, { call: "stop", team: this.offense });
 				// (Where play stopped: where it comes back in from.)
 				const ballX = (
@@ -14169,7 +14343,7 @@ class Director {
 							)[0]
 						: undefined;
 				const over = this.toHuddles(i, at, type === "timeout", taker);
-				this.beat(i, type, at, over);
+				this.beat(i, type, at, Math.max(over, played.still));
 				const team = this.offense;
 				this.inboundAt =
 					type === "timeout" && e.advancesBall
@@ -16643,7 +16817,7 @@ class Director {
 		team: Side,
 		gap: number | undefined,
 	) {
-		const t = this.playOutClock(e, team, gap);
+		const t = this.playOutClock(e, team, gap).at;
 		this.effect("whistle", t, { call: "stop", team: this.offense });
 		if (this.holder !== undefined) {
 			this.hold(this.holder, t, "hold");
@@ -16655,15 +16829,41 @@ class Director {
 	// The seconds left on the clock when a period runs out with no shot: the
 	// side with the ball gets it up the floor - fast - and dribbles out what
 	// is left of it (or, looking for a shot, never finds one). Returns when
-	// the horn goes.
+	// the horn goes - and, with `late` (not the end of the game), when a shot
+	// let go after it is down and still.
 	private playOutClock(
 		e: RawEvent,
 		team: Side,
 		gap: number | undefined,
-	): number {
+		late = false,
+	): { at: number; still: number } {
 		let t = this.T;
 		if (gap === undefined || gap < 2) {
-			return t;
+			return { at: t, still: t };
+		}
+		// A few seconds left and it back in his own end - in from under the
+		// basket, off a board: no time to bring it up and look for a shot. He
+		// gets it and is on his way up the floor with it as the horn goes, the
+		// clock out on the run (see raceToHeave) - not up the floor in no time
+		// and stood there with it after.
+		const mine = this.holder !== undefined && this.teamOf(this.holder) === team;
+		const back = mine
+			? this.inBackcourt(team, this.posOf(this.holder!))
+			: this.phase === "inboundBase" ||
+				(this.inboundAt !== undefined &&
+					this.inBackcourt(team, this.inboundAt));
+		if (e.reason === "noShot" && gap <= NO_SHOT_RACE && back) {
+			const pid = mine ? this.holder! : this.handlerOf(team);
+			if (late && hash01(pid * 5 + 1, Math.round(t)) < LATE_HEAVE) {
+				// (Up with it as a heave goes - see stageShot - and the horn a
+				// beat before it is out of his hands.)
+				const gather = this.raceToHeave(team, pid, t, gap) + HEAVE_GATHER;
+				const form = this.lateForm(pid, true);
+				const at = gather + form.dur * form.letGo - this.lateBy(pid, t);
+				return { at, still: this.lateShot(team, pid, gather, at, form) };
+			}
+			const at = this.raceToHeave(team, pid, t, gap, false) + HEAVE_GATHER;
+			return { at, still: at };
 		}
 		const from = t;
 		t = this.develop(team, t, gap, undefined, undefined, true).t;
@@ -16674,8 +16874,30 @@ class Director {
 			const out = e.reason === "noShot" ? FINAL_LOOK : FINAL_DRIBBLE;
 			t += Math.max(out, gap * 1000 - (t - from));
 			this.hurry(from, t - out);
+			// Looking for a shot, more often than not he gets one up - just
+			// too late: a jumper from out there, a heave from way out.
+			const pid = this.holder;
+			if (
+				late &&
+				e.reason === "noShot" &&
+				pid !== undefined &&
+				hash01(pid * 5 + 1, Math.round(t)) < LATE_HEAVE
+			) {
+				const far = dist(this.posOf(pid), rimPt(team)) >= HEAVE_FROM;
+				const form = this.lateForm(pid, far);
+				const by = this.lateBy(pid, t);
+				const gather = Math.max(
+					this.hold(
+						pid,
+						t + by - form.dur * form.letGo - HEAVE_PICK_UP,
+						"hold",
+					),
+					t + by - form.dur * form.letGo,
+				);
+				return { at: t, still: this.lateShot(team, pid, gather, t, form) };
+			}
 		}
-		return t;
+		return { at: t, still: t };
 	}
 
 	private beatJumpBall(e: RawEvent, i: number) {

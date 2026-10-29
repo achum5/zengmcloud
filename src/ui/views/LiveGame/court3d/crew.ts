@@ -27,6 +27,7 @@ import {
 	HUDDLE_Y,
 	other,
 	RIM_Z,
+	rimX,
 	spot,
 	type Pt,
 	type Pt3,
@@ -883,9 +884,10 @@ type Signal = {
 	// Each move of it: the anim, its span, which way he faces.
 	moves: { anim: AnimName; t0: number; t1: number; yaw: number }[];
 	// Where he stood to make it, and how long he then takes to run back to
-	// where the play has him.
+	// where the play has him - and, if he ran in to make it, from where.
 	still: Pt;
 	back: number;
+	from?: Pt;
 };
 
 const FACING_US = Math.PI / 2;
@@ -900,6 +902,14 @@ const BACK_LEAST = 500;
 const signalPos = (s: Signal, t: number, liveAt: (when: number) => Pt): Pt => {
 	const t1 = s.moves.at(-1)!.t1;
 	if (t < t1) {
+		const m0 = s.moves[0]!.t0;
+		if (s.from && t < m0) {
+			const k = smooth01((t - s.t0) / (m0 - s.t0));
+			return {
+				x: s.from.x + (s.still.x - s.from.x) * k,
+				y: s.from.y + (s.still.y - s.from.y) * k,
+			};
+		}
 		return s.still;
 	}
 	if (t >= t1 + s.back) {
@@ -931,8 +941,21 @@ const signalPos = (s: Signal, t: number, liveAt: (when: number) => Pt): Pt => {
 
 // Everything the officials have had to signal lately: each whistle's call,
 // a three going up (an arm raised while it is in the air) and going in
-// (both arms).
-type Cue = { at: Pt; t0: number; moves: Signal["moves"] };
+// (both arms). Some he runs in this far toward to make (feet) - and some go
+// to another official than the one before (`pair`).
+type Cue = {
+	at: Pt;
+	t0: number;
+	moves: Signal["moves"];
+	onto?: number;
+	pair?: boolean;
+};
+// A shot after the horn waved off: run in at it - no nearer it than this
+// (feet), as quick as this (feet a second) - waving it off this long (ms).
+const WAVE_ONTO = 7;
+const WAVE_SHORT = 5;
+const WAVE_PACE = 11;
+const WAVE_MS = 1600;
 // (Long enough for the signal and the jog back to his place after it.)
 const CUE_MS = 11000;
 const cuesBefore = (tl: CourtTimeline, t: number): Cue[] => {
@@ -942,7 +965,23 @@ const cuesBefore = (tl: CourtTimeline, t: number): Cue[] => {
 		if (t - f.t > CUE_MS) {
 			break;
 		}
-		if (f.kind === "whistle" && f.call) {
+		if (f.kind === "whistle" && f.call === "noBasket") {
+			// The one nearest the man who let it go runs in at him, another
+			// in at the basket, both waving it off.
+			const wave = (at: Pt, pair: boolean): Cue => ({
+				at,
+				t0: f.t,
+				moves: [
+					{ anim: "waveOff", t0: f.t, t1: f.t + WAVE_MS, yaw: FACING_US },
+				],
+				onto: WAVE_ONTO,
+				pair,
+			});
+			out.push(wave(f.at ?? ballSpot(tl, f.t), false));
+			if (f.rim !== undefined) {
+				out.push(wave({ x: rimX(f.rim), y: COURT_H / 2 }, true));
+			}
+		} else if (f.kind === "whistle" && f.call) {
 			const dir = f.team === undefined ? 1 : attackDir(f.team);
 			const side = { anim: "signalSide" as const, yaw: pointing(dir) };
 			const up = { anim: "signalUp" as const, yaw: FACING_US };
@@ -1044,6 +1083,7 @@ const signalsAt = (
 	const per: (Signal | undefined)[] = [undefined, undefined, undefined];
 	// A cut settles everyone where the play has them.
 	const cut = lastCut(tl, t);
+	let last = -1;
 	for (const cue of cuesBefore(tl, t)) {
 		if (cue.t0 < cut) {
 			continue;
@@ -1053,14 +1093,32 @@ const signalsAt = (
 			const s = per[i];
 			return s ? signalPos(s, cue.t0, (when) => refPlaces(tl, when).at[i]!) : p;
 		});
-		let ref = 0;
-		for (let i = 1; i < 3; i++) {
-			if (dist(pos[i]!, cue.at) < dist(pos[ref]!, cue.at)) {
+		const taken = cue.pair ? last : -1;
+		let ref = taken === 0 ? 1 : 0;
+		for (let i = ref + 1; i < 3; i++) {
+			if (i !== taken && dist(pos[i]!, cue.at) < dist(pos[ref]!, cue.at)) {
 				ref = i;
 			}
 		}
-		const still = pos[ref]!;
-		const t1 = cue.moves.at(-1)!.t1;
+		last = ref;
+		let still = pos[ref]!;
+		let moves = cue.moves;
+		let from: Pt | undefined;
+		// (Running in to make it: the signal once he is there.)
+		const onto = cue.onto
+			? Math.min(cue.onto, dist(still, cue.at) - WAVE_SHORT)
+			: 0;
+		if (onto > 0.5) {
+			const k = onto / dist(still, cue.at);
+			from = still;
+			still = {
+				x: still.x + (cue.at.x - still.x) * k,
+				y: still.y + (cue.at.y - still.y) * k,
+			};
+			const ms = (onto / WAVE_PACE) * 1000;
+			moves = moves.map((m) => ({ ...m, t0: m.t0 + ms, t1: m.t1 + ms }));
+		}
+		const t1 = moves.at(-1)!.t1;
 		// As long as it takes him to jog back to where the play will have him
 		// by then (longer, never shorter, till he can make it) - BACK_PACE
 		// feet a second, on average (see signalPos) - and never so short he
@@ -1077,7 +1135,14 @@ const signalsAt = (
 			}
 			back = need;
 		}
-		per[ref] = { ref, t0: cue.t0, moves: cue.moves, still, back };
+		per[ref] = {
+			ref,
+			t0: cue.t0,
+			moves,
+			still,
+			back,
+			...(from ? { from } : {}),
+		};
 	}
 	return per.map((s) =>
 		s && t < s.moves.at(-1)!.t1 + s.back + after ? s : undefined,
@@ -1411,8 +1476,16 @@ const refStates = (
 								depth + 1,
 							)[i]
 						: undefined;
+				// (Run in to make it: round from the way he ran.)
+				const ran =
+					signal.from && move === signal.moves[0]
+						? Math.atan2(
+								signal.still.y - signal.from.y,
+								signal.still.x - signal.from.x,
+							)
+						: undefined;
 				yaw = turnToward(
-					chained ? done.yaw : (prior?.yaw ?? yaw),
+					chained ? done.yaw : (ran ?? prior?.yaw ?? yaw),
 					move.yaw,
 					smooth01((t - move.t0) / SIGNAL_TURN),
 				);
@@ -1453,11 +1526,23 @@ const refStates = (
 				const out = done ? 1 - smooth01((t - done.t1) / SIGNAL_EASE) : 0;
 				gaitFrom =
 					out > 0 && done ? over(easing, { ...endOf(done), w: out }) : easing;
+				// (Which way round he comes, about to face the other way - into
+				// the play from running back to his place in it: the same
+				// way all through, never one way one frame and the other the
+				// next as the two come to face away from each other.)
+				const end = signal.moves.at(-1)!.t1 + signal.back;
+				const home = liveAt(end);
+				const leg = viaCorner(signal.still, home);
+				const into =
+					Math.atan2(
+						home.y - (dist(leg, home) > 0.01 ? leg : signal.still).y,
+						home.x - (dist(leg, home) > 0.01 ? leg : signal.still).x,
+					) - yawTo(home, ballSpot(tl, end));
 				// (The way he goes over the longer moment, as he faces in
 				// the play: round a corner of the floor, not swung round it.)
 				const fa = signalPos(signal, t - FACE_SPAN / 2, liveAt);
 				const fb = signalPos(signal, t + FACE_SPAN / 2, liveAt);
-				const going = turnToward(
+				const going = turnRound(
 					yaw,
 					dist(fa, fb) > 1e-3
 						? Math.atan2(fb.y - fa.y, fb.x - fa.x)
@@ -1466,6 +1551,7 @@ const refStates = (
 						(speed - GAIT_BANDS[0]![2]) /
 							(GAIT_BANDS[0]![3] - GAIT_BANDS[0]![2]),
 					),
+					into,
 				);
 				// (Round the way he will be going once he is round - not the
 				// short way each frame, which, turning right about, is one way
@@ -1480,8 +1566,41 @@ const refStates = (
 					smooth01((t - (done ? done.t1 : signal.t0)) / SIGNAL_TURN),
 					dist(ra, rb) > 1e-3 ? Math.atan2(rb.y - ra.y, rb.x - ra.x) - from : 0,
 				);
-				const end = signal.moves.at(-1)!.t1 + signal.back;
-				yaw = turnToward(yaw, toward, smooth01((end - t) / SIGNAL_TURN));
+				yaw = turnRound(yaw, toward, smooth01((end - t) / SIGNAL_TURN), into);
+				// Running in to make it: the way he runs, round from how he
+				// was as he set off - another signal he was making, say - and
+				// out of it over a moment.
+				if (signal.from && t < signal.moves[0]!.t0) {
+					const since = t - signal.t0;
+					const prior =
+						depth < 2 &&
+						since < Math.max(SIGNAL_TURN, SIGNAL_EASE) &&
+						signalsAt(tl, signal.t0 - 16)[i] !== undefined
+							? refStates(
+									tl,
+									signal.t0 - 16,
+									refs,
+									ballSpot(tl, signal.t0 - 16),
+									depth + 1,
+								)[i]
+							: undefined;
+					yaw = turnToward(
+						prior?.yaw ?? yaw,
+						Math.atan2(
+							signal.still.y - signal.from.y,
+							signal.still.x - signal.from.x,
+						),
+						smooth01(since / SIGNAL_TURN),
+					);
+					const w = 1 - smooth01(since / SIGNAL_EASE);
+					if (prior && w > 0) {
+						gaitFrom = over(gaitFrom, {
+							anim: prior.anim,
+							phase: prior.phase,
+							w,
+						});
+					}
+				}
 			}
 			watching = !move;
 		}
