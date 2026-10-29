@@ -7341,15 +7341,20 @@ export const dribbleArm = (
 	// How low he keeps it, his own way: a fine handler's tight to his knee
 	// (up to 1), a poor one's up round his waist (down to -1).
 	deep = 0,
+	// That much higher (feet), easy about it (see easy).
+	up = 0,
 ): Pose => {
 	const e = pushOf(ph);
 	const at = (k: "f" | "s" | "u") => {
 		const top =
 			DRIBBLE_TOP[k] +
 			(DRIBBLE_TOP_AHEAD[k] - DRIBBLE_TOP[k]) * ahead -
-			(k === "u" ? deep * (deep > 0 ? DRIBBLE_LOWER : DRIBBLE_HIGHER) : 0);
+			(k === "u" ? deep * (deep > 0 ? DRIBBLE_LOWER : DRIBBLE_HIGHER) : 0) +
+			(k === "u" ? up : 0);
 		const low =
-			DRIBBLE_LOW[k] + (DRIBBLE_LOW_AHEAD[k] - DRIBBLE_LOW[k]) * ahead;
+			DRIBBLE_LOW[k] +
+			(DRIBBLE_LOW_AHEAD[k] - DRIBBLE_LOW[k]) * ahead +
+			(k === "u" ? up * 0.5 : 0);
 		const v = top + (low - top) * e;
 		return k === "s"
 			? v * (1 - IN_BY * inward)
@@ -7419,6 +7424,81 @@ export const dribbleArm = (
 	};
 };
 
+// EASY ABOUT IT - nobody near him, way out, walking it up (0 to 1): not down
+// in his stance sizing his man up, his arm out as a bar, but stood up tall,
+// bouncing it up round his waist, the other arm loose at his side. Stood,
+// that far over into it; walking, the crouch and the lean that much out of
+// his stride, and the arm the same. Only his man right up on him in front
+// of him (`tight`) has him all the way down in his stance: a step off him,
+// he is that much up out of it (STANCE_UP) - his arm still up, though.
+const DRIBBLE_EASY_UP = 0.4;
+const STOOD_EASY: Partial<Pose> = {
+	hipN: 4,
+	kneeN: 22,
+	hipF: 12,
+	kneeF: 24,
+	lean: 6,
+	wide: 0.34,
+	twist: 0,
+	tilt: 0,
+};
+const STANCE_UP = 0.35;
+// EACH HIS OWN WAY of it (`flair`, 0 to 1, the same every time): one sits
+// down lower in his stance than the next, leans into it more; easy about
+// it, one lets his other arm hang, one carries it bent at his side, one
+// holds it out in front of him; and one bounces it a little higher than
+// another (feet, all told).
+const OWN_CROUCH = 14;
+const OWN_LEAN = 6;
+const ARMS_EASY = [
+	{ shF: 12, elF: 26, abF: 12 },
+	{ shF: 24, elF: 72, abF: 18 },
+	{ shF: 42, elF: 48, abF: 26 },
+];
+const DRIBBLE_OWN_UP = 0.24;
+// (Another draw off the same one, for how high.)
+const second = (f: number) => (f * 7.31) % 1;
+const easy = (
+	q: Pose,
+	anim: AnimName,
+	calm: number,
+	tight: number,
+	flair = 0.5,
+): Pose => {
+	if (anim !== "dribbleIdle" && anim !== "dribbleWalk") {
+		return q;
+	}
+	const up = Math.max(calm, STANCE_UP * (1 - tight));
+	const own = flair - 0.5;
+	if (up <= 0 && calm <= 0 && own === 0) {
+		return q;
+	}
+	const out = { ...q };
+	// (Down lower, or less so - all the way down only with his man up on
+	// him, the same for everybody.)
+	const deeper = own * (1 - tight);
+	out.kneeN = q.kneeN + OWN_CROUCH * deeper;
+	out.kneeF = q.kneeF + OWN_CROUCH * deeper;
+	out.lean = q.lean + OWN_LEAN * deeper;
+	const ARM_EASY = ARMS_EASY[Math.min(2, Math.floor(flair * 3))]!;
+	const toward = (k: keyof Pose, v: number, w: number) => {
+		out[k] = (out[k] as number) + (v - (out[k] as number)) * w;
+	};
+	if (anim === "dribbleIdle") {
+		for (const [k, v] of Object.entries(STOOD_EASY)) {
+			toward(k as keyof Pose, v as number, up);
+		}
+	} else {
+		out.lean = out.lean * (1 - 0.6 * up);
+		out.kneeN = Math.max(Math.min(4, q.kneeN), out.kneeN - 14 * up);
+		out.kneeF = Math.max(Math.min(4, q.kneeF), out.kneeF - 14 * up);
+	}
+	for (const [k, v] of Object.entries(ARM_EASY)) {
+		toward(k as keyof Pose, v, calm);
+	}
+	return out;
+};
+
 // His pose at a moment: the move's, with the dribbling hand on the bounce
 // when he is dribbling, or - `target` of the way (0 to 1) - his hands up for
 // a pass on its way to him, whatever his feet are doing.
@@ -7433,17 +7513,22 @@ export const posed = (
 	tight = 0,
 	// How low he keeps it, his own way (-1 to 1: see dribbleArm).
 	low = 0,
+	// How easy he is about it (0 to 1: see easy).
+	calm = 0,
+	// His own way of dribbling it (0 to 1: see easy).
+	flair = 0.5,
 ): Pose => {
 	const q = poseAt(anim, phase);
 	if (dribble !== undefined && !MOVES.has(anim)) {
 		return dribbleArm(
-			q,
+			easy(q, anim, calm, tight, flair),
 			dribble,
 			hand,
 			dribbleAhead(anim) * (1 - tight),
 			leaves,
 			dribbleIn(anim, phase),
 			low,
+			calm * DRIBBLE_EASY_UP + (second(flair) - 0.5) * DRIBBLE_OWN_UP,
 		);
 	}
 	if (target <= 0) {

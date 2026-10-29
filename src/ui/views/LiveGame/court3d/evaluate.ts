@@ -129,6 +129,13 @@ export type PlayerState = {
 	tight?: number;
 	// How low he keeps his dribble, his own way (-1 to 1: see dribbleLow).
 	low?: number;
+	// How easy he is about it (0 to 1): nobody near him, way out from the
+	// rim, walking it up - stood up tall, the ball up round his waist, the
+	// other arm loose (see calmAt).
+	calm?: number;
+	// His own way of dribbling it (0 to 1, the same every time: see easy in
+	// poses.ts) - how far down in his stance, his other arm, how high.
+	flair?: number;
 	// Doing something with his arms on the run - a catch, a pass, a hand at
 	// the ball: the stride his legs keep on with under it (see STRIDE_ACTS).
 	stride?: Stride;
@@ -197,6 +204,8 @@ export type Blend = {
 	dribbleFrom?: Hand;
 	tight?: number;
 	low?: number;
+	calm?: number;
+	flair?: number;
 	stride?: Stride;
 	target?: number;
 	mirror?: boolean;
@@ -242,8 +251,9 @@ export type ArmPose = {
 	point?: boolean;
 };
 
-// Bounces a second on a dribble: one steady beat, walking or driving, so the
-// ball never skips a bounce when he starts or stops.
+// Bounces a second on a dribble, unless a piece of it says otherwise (see
+// beatsAt): one steady beat through it, walking or driving, so the ball never
+// skips a bounce when he starts or stops.
 export const DRIBBLE_RATE = 2.1;
 // A crossover's bounces, quicker: low and hand to hand.
 export const CROSS_RATE = 3.2;
@@ -251,24 +261,35 @@ const otherHand = (h: Hand): Hand => (h === "R" ? "L" : "R");
 
 // Through a crossover: which bounce, how far through it, and the hand it
 // left - each bounce the other hand from the one before.
-const crossAt = (seg: { t0: number; hand?: Hand }, t: number) => {
-	const b = ((t - seg.t0) / 1000) * CROSS_RATE;
+// (Each its own pace, if it says: see keepDribbling in director.ts.)
+const crossMs = (seg: { rate?: number }) => 1000 / (seg.rate ?? CROSS_RATE);
+const crossAt = (
+	seg: { t0: number; hand?: Hand; rate?: number },
+	t: number,
+) => {
+	const b = (t - seg.t0) / crossMs(seg);
 	const k = Math.floor(b);
 	const from = k % 2 ? otherHand(seg.hand ?? "R") : (seg.hand ?? "R");
 	return { ph: b - k, from, to: otherHand(from) };
 };
-const CROSS_MS = 1000 / CROSS_RATE;
 // A bounce of a dribble move done as the move it is - between his legs,
 // behind his back - only if he stands through the whole of it. On the move,
 // any of them is a crossover in front, his legs running, the ball pushed
 // further out ahead of him.
 const crossMoveAt = (
 	tl: CourtTimeline,
-	seg: { t0: number; pid: number; hand?: Hand; move?: DribbleMove },
+	seg: {
+		t0: number;
+		pid: number;
+		hand?: Hand;
+		move?: DribbleMove;
+		rate?: number;
+	},
 	t: number,
 ) => {
 	const c = crossAt(seg, t);
 	const tr = tl.tracks.get(seg.pid);
+	const CROSS_MS = crossMs(seg);
 	const b0 = t - c.ph * CROSS_MS;
 	// Setting off on a drive as it comes up into his hand still counts.
 	const still =
@@ -338,8 +359,10 @@ export const liveSeg = (list: readonly BallSeg[], i: number): boolean => {
 // a switch of hands or a new move does not start the bounce over - and a
 // switch goes down from one hand and comes up into the other.
 type Bounce = {
-	// How far through this bounce (0 the ball at the top, in his hand).
+	// How far through this bounce (0 the ball at the top, in his hand), and
+	// when it was at the top.
 	ph: number;
+	top: number;
 	// The hand it left, and the hand it comes up to.
 	from: Hand;
 	to: Hand;
@@ -349,20 +372,116 @@ type Bounce = {
 	start: number;
 	origin: number;
 };
-const DRIBBLE_MS = 1000 / DRIBBLE_RATE;
+// HIS DRIBBLE'S BEAT. Each piece of a dribble has its own bounces a second -
+// stood or walking it up easy, slower; driving or with his man up on him,
+// quicker (see dribbleRate in director.ts) - but one man's dribbles back to
+// back keep one beat: the next piece takes over at the beat the last had
+// got to, not starting the bounce over. The director lays out his moves on
+// the beat this keeps, and what is drawn follows it.
+export const rateOf = (s: BallSeg | undefined): number =>
+	(s?.kind === "hold" && s.rate) || DRIBBLE_RATE;
+const dribblingBy = (s: BallSeg | undefined, pid: number): boolean =>
+	s?.kind === "hold" && s.pid === pid && s.style === "dribble";
+// The first piece of the run of his dribble the piece at `i` is in.
+export const dribbleStart = (ball: readonly BallSeg[], i: number): number => {
+	const s = ball[i];
+	if (s?.kind !== "hold") {
+		return i;
+	}
+	let j = i;
+	while (j > 0 && dribblingBy(ball[j - 1], s.pid)) {
+		j--;
+	}
+	return j;
+};
+// The pieces of the beat of the run of his dribble beginning at `start`:
+// from when (t), how many bounces in (n), how many a second (r). A piece of
+// his dribble at another rate takes over at the next top of the bounce it
+// comes in on - not quicker or slower through the rest of that one - and
+// two of them in one bounce, the later.
+type BeatPiece = { t: number; n: number; r: number };
+const beatPieces = (ball: readonly BallSeg[], start: number): BeatPiece[] => {
+	const first = ball[start];
+	if (first?.kind !== "hold") {
+		return [{ t: 0, n: 0, r: DRIBBLE_RATE }];
+	}
+	const out: BeatPiece[] = [{ t: first.t0, n: 0, r: rateOf(first) }];
+	for (let j = start + 1; j < ball.length; j++) {
+		const s = ball[j]!;
+		if (!dribblingBy(s, first.pid)) {
+			break;
+		}
+		const r = rateOf(s);
+		const last = out.at(-1)!;
+		if (s.t0 < last.t) {
+			last.r = r;
+			continue;
+		}
+		if (r === last.r) {
+			continue;
+		}
+		const k = Math.ceil(last.n + ((s.t0 - last.t) / 1000) * last.r - 1e-6);
+		out.push({ t: last.t + ((k - last.n) / last.r) * 1000, n: k, r });
+	}
+	return out;
+};
+// (Worked out once a run, for the timeline drawn.)
+const pieceMemo = new WeakMap<object, BeatPiece[]>();
+const piecesOf = (ball: readonly BallSeg[], start: number): BeatPiece[] => {
+	const key = ball[start];
+	if (!key) {
+		return beatPieces(ball, start);
+	}
+	let p = pieceMemo.get(key);
+	if (!p) {
+		p = beatPieces(ball, start);
+		pieceMemo.set(key, p);
+	}
+	return p;
+};
+const nAt = (pieces: BeatPiece[], t: number): number => {
+	let p = pieces[0]!;
+	for (const q of pieces) {
+		if (q.t > t) {
+			break;
+		}
+		p = q;
+	}
+	return p.n + ((t - p.t) / 1000) * p.r;
+};
+const tAt = (pieces: BeatPiece[], n: number): number => {
+	let p = pieces[0]!;
+	for (const q of pieces) {
+		if (q.n > n) {
+			break;
+		}
+		p = q;
+	}
+	return p.t + ((n - p.n) / p.r) * 1000;
+};
+// How many bounces into the run of his dribble beginning at `start` he is
+// at t (on at its last rate past the end of it) - and when he is `n` in.
+// (The ball's pieces as they are now: laid out still, nothing kept.)
+export const beatsAt = (
+	ball: readonly BallSeg[],
+	start: number,
+	t: number,
+): number => nAt(beatPieces(ball, start), t);
+export const beatTime = (
+	ball: readonly BallSeg[],
+	start: number,
+	n: number,
+): number => tAt(beatPieces(ball, start), n);
 const bounceOf = (tl: CourtTimeline, i: number, t: number): Bounce => {
 	const seg = tl.ball[i]!;
 	const pid = seg.kind === "hold" ? seg.pid : -1;
-	const dribbling = (s: BallSeg | undefined) =>
-		s?.kind === "hold" && s.pid === pid && s.style === "dribble";
-	let j = i;
-	while (j > 0 && dribbling(tl.ball[j - 1])) {
-		j--;
-	}
+	const j = dribbleStart(tl.ball, i);
 	const origin = tl.ball[j]!.t0;
-	const b = Math.max(0, t - origin) / DRIBBLE_MS;
+	const beat = piecesOf(tl.ball, j);
+	const b = nAt(beat, Math.max(origin, t)) + 1e-9;
 	const k = Math.floor(b);
-	const top = origin + k * DRIBBLE_MS;
+	const top = tAt(beat, k);
+	const next = tAt(beat, k + 1);
 	// The hand the ball is in at a top: a dribble's, or the one a crossover
 	// off it starts in.
 	const handAt = (when: number): Hand | undefined => {
@@ -378,14 +497,15 @@ const bounceOf = (tl: CourtTimeline, i: number, t: number): Bounce => {
 	// into.)
 	const from =
 		handAt(top) ??
-		handAt(top - DRIBBLE_MS) ??
+		handAt(k > 0 ? tAt(beat, k - 1) : top - (next - top)) ??
 		(seg.kind === "hold" ? seg.hand : "R") ??
 		"R";
 	const before = j > 0 ? tl.ball[j - 1] : undefined;
 	return {
-		ph: b - k,
+		ph: Math.min(1, b - k),
+		top,
 		from,
-		to: handAt(top + DRIBBLE_MS) ?? from,
+		to: handAt(next) ?? from,
 		start: j,
 		origin,
 		// Held, or just caught.
@@ -2205,6 +2325,8 @@ type Doing = {
 	dribbleFrom?: Hand;
 	tight?: number;
 	low?: number;
+	calm?: number;
+	flair?: number;
 	stride?: Stride;
 	target?: number;
 	// Stepping over off a man (not a shuffle he set off on).
@@ -2533,6 +2655,51 @@ const tightAt = (
 	}
 	return most;
 };
+// EASY ABOUT IT. Nobody of theirs near him (feet: from the farther in, less
+// so, and not at all by the nearer), way out from the rim (from the nearer
+// out, more so, all of it by the farther - though some, alone, anywhere),
+// walking it or stood (feet a second: up to the slower, all of it; none by
+// the quicker): stood up tall bouncing it, the ball up round his waist, the
+// other arm loose (0 to 1).
+// (Each man's own way of dribbling it: see flair.)
+const FLAIR_KEY = 4241;
+const CALM_FAR = 10;
+const CALM_NEAR = 3.5;
+const CALM_RIM: [number, number] = [24, 36];
+const CALM_ANYWHERE = 0.55;
+const CALM_SLOW = 8;
+const CALM_QUICK = 14;
+const calmAt = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	here: Spot,
+): number => {
+	let near = Infinity;
+	for (const o of tl.tracks.values()) {
+		if (o.team === tr.team) {
+			continue;
+		}
+		const si = lastIndex(o.shown, t, (x) => x[0]);
+		if (si < 0 || !o.shown[si]![1]) {
+			continue;
+		}
+		const p = spotAt(o, t, false);
+		near = Math.min(near, Math.hypot(p.x - here.x, p.y - here.y));
+	}
+	const alone = clamp01((near - CALM_NEAR) / (CALM_FAR - CALM_NEAR));
+	if (alone <= 0) {
+		return 0;
+	}
+	const out = clamp01(
+		(Math.hypot(rimX(tr.team) - here.x, COURT_H / 2 - here.y) - CALM_RIM[0]) /
+			(CALM_RIM[1] - CALM_RIM[0]),
+	);
+	const slow = clamp01(
+		(CALM_QUICK - speedAt(tr, t)) / (CALM_QUICK - CALM_SLOW),
+	);
+	return alone * slow * (CALM_ANYWHERE + (1 - CALM_ANYWHERE) * out);
+};
 // How long his hands take to close on the ball once it is his.
 const GRIP_MS = 110;
 const GRIP_FLOOR_MS = 50;
@@ -2810,6 +2977,7 @@ const doingNow = (
 				: undefined;
 	const tight = has?.style === "dribble" ? tightAt(tl, tr, t, here) : 0;
 	const low = has?.style === "dribble" ? tl.dribbleLow?.get(tr.pid) : undefined;
+	const easy = has?.style === "dribble" ? calmAt(tl, tr, t, here) : 0;
 	// Since it came into his hands - or went out of them.
 	let grip: number | undefined;
 	if (has?.style === "hold") {
@@ -2862,6 +3030,8 @@ const doingNow = (
 		dribbleHand: beat ? (beat.ph < DOWN ? beat.from : beat.to) : undefined,
 		...(beat && beat.from !== beat.to ? { dribbleFrom: beat.from } : {}),
 		...(tight > 0 ? { tight } : {}),
+		...(easy > 0 ? { calm: easy } : {}),
+		...(has?.style === "dribble" ? { flair: hash01(tr.pid, FLAIR_KEY) } : {}),
 		...(low ? { low } : {}),
 		...(stride ? { stride } : {}),
 		...(down > 0 ? { down } : {}),
@@ -3221,6 +3391,8 @@ const blendInto = (
 		...(before.dribbleFrom ? { dribbleFrom: before.dribbleFrom } : {}),
 		...(before.tight ? { tight: before.tight } : {}),
 		...(before.low ? { low: before.low } : {}),
+		...(before.calm ? { calm: before.calm } : {}),
+		...(before.flair !== undefined ? { flair: before.flair } : {}),
 		...(before.stride ? { stride: before.stride } : {}),
 		...(before.down ? { down: before.down } : {}),
 		...(before.stepLen ? { stepLen: before.stepLen } : {}),
@@ -5175,6 +5347,8 @@ const blendPose = (f: Blend, style?: RunStyle): Pose => {
 		f.dribbleFrom,
 		f.tight,
 		f.low,
+		f.calm,
+		f.flair,
 	);
 	const short = shortSteps(legsKept(as, f), f.anim, f.stepLen, f.phase);
 	const m0 = strode(f.mirror ? mirror(short) : short, f.stride);
@@ -5230,6 +5404,8 @@ const standRef = (x: {
 	dribbleFrom?: Hand;
 	tight?: number;
 	low?: number;
+	calm?: number;
+	flair?: number;
 	mirror?: boolean;
 }): Pose => {
 	const q = posed(
@@ -5241,6 +5417,8 @@ const standRef = (x: {
 		x.dribbleFrom,
 		x.tight,
 		x.low,
+		x.calm,
+		x.flair,
 	);
 	return x.mirror ? mirror(q) : q;
 };
@@ -5430,6 +5608,8 @@ const legsKept = (
 		dribbleFrom?: Hand;
 		tight?: number;
 		low?: number;
+		calm?: number;
+		flair?: number;
 	},
 ): Pose => {
 	const a = ANIMS[x.anim];
@@ -5449,6 +5629,8 @@ const legsKept = (
 		x.dribbleFrom,
 		x.tight,
 		x.low,
+		x.calm,
+		x.flair,
 	);
 	const out = { ...q };
 	for (const k of LEG_KEYS) {
@@ -5555,6 +5737,8 @@ export const poseOf = (st: PlayerState): Pose => {
 		st.dribbleFrom,
 		st.tight,
 		st.low,
+		st.calm,
+		st.flair,
 	);
 	const short = shortSteps(
 		st.z > 0 ? own : legsKept(own, st),
@@ -6216,7 +6400,7 @@ const ballOn = (
 				prev?.kind === "hold" &&
 				prev.pid === seg.pid &&
 				prev.style === "hold" &&
-				t - seg.t0 < CROSS_MS &&
+				t - seg.t0 < crossMs(seg) &&
 				ph < down
 			) {
 				const was = left();
@@ -6233,7 +6417,8 @@ const ballOn = (
 			return { ...ball, holder: seg.pid };
 		}
 		if (seg.style === "dribble") {
-			const { ph, from, to, first, start, origin } = bounceOf(tl, i, t);
+			const bounce = bounceOf(tl, i, t);
+			const { ph, from, to, first, start, origin } = bounce;
 			const down = ph < DOWN;
 			const hand = down ? from : to;
 			// Out of both hands the first time, from where he had it - carried
@@ -6279,13 +6464,16 @@ const ballOn = (
 			// (Easing from one dribble into another - setting off from where he
 			// stood, say - the spot goes out ahead of him as his hand does,
 			// not a foot on in a frame.)
-			const was = st.from && st.from.w > 0 ? st.from : undefined;
-			const ahead =
-				(was
-					? dribbleAhead(st.anim) +
-						(dribbleAhead(was.anim) - dribbleAhead(st.anim)) * was.w
-					: dribbleAhead(st.anim)) *
-				(1 - (st.tight ?? 0));
+			// (Back through each move he is easing out of: two changes in a
+			// frame or two - off a drive into a backpedal, then stood - and
+			// it is still out where the drive had it, coming in.)
+			const aheadOf = (anim: AnimName, f?: Blend, depth = 0): number => {
+				const a = dribbleAhead(anim);
+				return f && f.w > 0 && depth < 3
+					? a + (aheadOf(f.anim, f.from, depth + 1) - a) * f.w
+					: a;
+			};
+			const ahead = aheadOf(st.anim, st.from) * (1 - (st.tight ?? 0));
 			// (Worked in toward the middle of him on an in-and-out.)
 			const inward = dribbleIn(st.anim, st.phase);
 			const out = (1.22 - 0.12 * ahead) * (1 - IN_BY * inward);
@@ -6300,7 +6488,7 @@ const ballOn = (
 			// On the move up or down the floor it turns over once a bounce,
 			// pushed on ahead from its top - and so comes back up to his hand
 			// the way it left it; standing, it barely turns at all.
-			const top = evalPlayer(tl, seg.pid, t - ph * DRIBBLE_MS);
+			const top = evalPlayer(tl, seg.pid, bounce.top);
 			const c = Math.cos(top.yaw);
 			const roll =
 				dribbleAhead(top.anim) === 1 && Math.abs(c) > 0.5

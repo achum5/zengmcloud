@@ -65,11 +65,15 @@ import {
 	PASS_PICK_UP,
 	SEP_MS,
 	TURN_RATE,
+	beatTime,
+	beatsAt,
+	dribbleStart,
 	evalBall,
 	fastAt,
 	floorSpotOf,
 	forgetTurns,
 	liveSeg,
+	rateOf,
 } from "./evaluate.ts";
 import {
 	findShot,
@@ -310,6 +314,9 @@ export type BallSeg =
 			// legs or behind his back.
 			hand?: Hand;
 			move?: DribbleMove;
+			// A dribble's bounces a second, from the next top of it on (see
+			// beatsAt): DRIBBLE_RATE if unsaid. A move's: CROSS_RATE.
+			rate?: number;
 	  }
 	| {
 			kind: "fly";
@@ -567,7 +574,6 @@ const BALL_R = 0.39;
 // One bounce of a crossover, from one hand to the other, and one of a
 // dribble (see evaluate.ts).
 const CROSS_MS = 1000 / CROSS_RATE;
-const DRIBBLE_MS = 1000 / DRIBBLE_RATE;
 // A pass over the top goes up over his head first: this much longer from
 // the start of his throw to the ball leaving his hands.
 const OVERHEAD_WIND = 140;
@@ -894,6 +900,17 @@ const LOW_FIVE_APART = (() => {
 })();
 // The ball held in front of him, both hands on it, at the line.
 const FT_HOLD = releaseAt("hold", 0);
+// His dribble's bounces a second (see dribbleRate): walking it up easy, his
+// man no nearer than this (feet); and his man up on him, this near; each
+// man's own beat to it, this much either way (of the whole).
+const DRIBBLE_EASY = 1.75;
+const DRIBBLE_ALONE = 10;
+const DRIBBLE_PRESSED = 2.45;
+const DRIBBLE_UP_ON = 4;
+const DRIBBLE_OWN = 0.08;
+// Lost with no set run: how far off him (feet) the man he means the pass
+// for most likely is (see loseItOwn).
+const PASS_MEANT = 18;
 // A poke at a man's dribble, from the start of the jab to the hand back:
 // the jabbing hand at the end of its reach, a typical player's (forward,
 // to his side, up), and how far through the poke that is.
@@ -3332,6 +3349,8 @@ class Director {
 		style: "hold" | "dribble" | "cross" = "hold",
 		hand?: Hand,
 		move?: DribbleMove,
+		// A dribble's bounces a second (see beatsAt), if not the usual.
+		rate?: number,
 	): number {
 		let t = style === "dribble" ? t0 : this.offDribble(pid, t0, style);
 		// Off a run of crossovers, he dribbles on once the ball comes up into
@@ -3346,8 +3365,9 @@ class Director {
 			last.style === "cross" &&
 			last.t0 < t
 		) {
-			const k = Math.max(1, Math.ceil((t - last.t0) / CROSS_MS - 1e-6));
-			t = last.t0 + k * CROSS_MS;
+			const ms = 1000 / (last.rate ?? CROSS_RATE);
+			const k = Math.max(1, Math.ceil((t - last.t0) / ms - 1e-6));
+			t = last.t0 + k * ms;
 			const first = last.hand ?? "R";
 			crossed = k % 2 ? (first === "R" ? "L" : "R") : first;
 		}
@@ -3365,6 +3385,12 @@ class Director {
 			style,
 			...(style !== "hold" ? { hand: h } : {}),
 			...(move ? { move } : {}),
+			...(style === "dribble"
+				? (() => {
+						const r = rate ?? this.dribbleRate(pid, t);
+						return r !== DRIBBLE_RATE ? { rate: r } : {};
+					})()
+				: {}),
 		});
 		this.holder = pid;
 		this.ballHand = style === "hold" ? this.strongHand(pid) : h;
@@ -3402,6 +3428,8 @@ class Director {
 		legs: number,
 		back: number,
 		hand: Hand,
+		// Each bounce of them this long, if not the usual (ms).
+		ms = CROSS_MS,
 	): { segs: BallSeg[]; hand: Hand } {
 		const segs: BallSeg[] = [];
 		let at = t;
@@ -3410,10 +3438,18 @@ class Director {
 		for (let i = 0; i < n; i++) {
 			const move = this.crossMove(legs, back);
 			if (move !== last) {
-				segs.push({ kind: "hold", t0: at, pid, style: "cross", hand: h, move });
+				segs.push({
+					kind: "hold",
+					t0: at,
+					pid,
+					style: "cross",
+					hand: h,
+					move,
+					...(ms !== CROSS_MS ? { rate: 1000 / ms } : {}),
+				});
 				last = move;
 			}
-			at += CROSS_MS;
+			at += ms;
 			h = h === "R" ? "L" : "R";
 		}
 		return { segs, hand: h };
@@ -3492,13 +3528,56 @@ class Director {
 		return this.ball[j]!.t0;
 	}
 
-	// The last top of a bounce of his dribble, at or before t, if he is
-	// dribbling then.
-	private dribbleTop(pid: number, t: number): number | undefined {
-		const from = this.dribbleFrom(pid, t);
-		return from === undefined
-			? undefined
-			: from + Math.floor((t - from) / DRIBBLE_MS + 1e-6) * DRIBBLE_MS;
+	// HOW QUICK HIS DRIBBLE IS (bounces a second): walking it up his own end
+	// with nobody near him, slower and easy; his man up on him, quicker; and
+	// each his own beat to it, the same every time - a fine handler's a
+	// touch quicker. (A piece at another rate takes over at the next top -
+	// see beatsAt.)
+	private dribbleRate(pid: number, t: number): number {
+		const team = this.teamOf(pid);
+		const P = this.posAt(pid, t);
+		const d = this.defenderOf(pid);
+		const off = d === undefined ? Infinity : dist(this.posAt(d, t), P);
+		const base =
+			off <= DRIBBLE_UP_ON
+				? DRIBBLE_PRESSED
+				: this.inBackcourt(team, P) && off >= DRIBBLE_ALONE
+					? DRIBBLE_EASY
+					: DRIBBLE_RATE;
+		const own =
+			1 +
+			DRIBBLE_OWN * (2 * hash01(pid, 9917) - 1) +
+			this.byHandle(pid, 0, -0.03, 0.05);
+		return Math.round(base * own * 100) / 100;
+	}
+
+	// HIS DRIBBLE'S BEAT (see beatsAt): the run of it in play at t, if he is
+	// dribbling then, and how many bounces into it he is.
+	private beatOf(
+		pid: number,
+		t: number,
+	): { start: number; n: number } | undefined {
+		const j = this.segAt(t);
+		const s = this.ball[j];
+		if (s?.kind !== "hold" || s.pid !== pid || s.style !== "dribble") {
+			return undefined;
+		}
+		const start = dribbleStart(this.ball, j);
+		return { start, n: beatsAt(this.ball, start, t) };
+	}
+
+	// The first top of a bounce of his dribble at `at` no sooner than
+	// `from`, if he is dribbling then.
+	private nextTop(pid: number, at: number, from = at): number | undefined {
+		const b = this.beatOf(pid, at);
+		return (
+			b &&
+			beatTime(
+				this.ball,
+				b.start,
+				Math.ceil(beatsAt(this.ball, b.start, from) - 1e-6),
+			)
+		);
 	}
 
 	// When he can take the ball out of his dribble, asked to at about t: in
@@ -3506,19 +3585,21 @@ class Director {
 	// other hand at the top - never on its way to the floor. Off his first
 	// bounce he waits for it; after that he takes it the bounce before.
 	private offDribble(pid: number, t: number, style: "hold" | "cross"): number {
-		const from = this.dribbleFrom(pid, t);
-		if (from === undefined) {
+		const beat = this.beatOf(pid, t);
+		if (beat === undefined) {
 			return t;
 		}
-		const b = (t - from) / DRIBBLE_MS + 1e-6;
+		const b = beat.n + 1e-6;
 		const k = Math.floor(b);
 		const ph = b - k;
 		if (ph < 0.02 || (style === "hold" && ph >= CATCH_UP)) {
 			return t;
 		}
-		return k >= 1
-			? from + k * DRIBBLE_MS
-			: from + (style === "hold" ? CATCH_UP : 1) * DRIBBLE_MS;
+		return beatTime(
+			this.ball,
+			beat.start,
+			k >= 1 ? k : style === "hold" ? CATCH_UP : 1,
+		);
 	}
 
 	// The hand his dribble has the ball in at t.
@@ -3545,8 +3626,9 @@ class Director {
 			last.style === "cross" &&
 			last.t0 < by
 		) {
-			const k = Math.max(1, Math.floor((by - last.t0) / CROSS_MS + 1e-6));
-			return this.hold(pid, last.t0 + k * CROSS_MS, "hold");
+			const ms = 1000 / (last.rate ?? CROSS_RATE);
+			const k = Math.max(1, Math.floor((by - last.t0) / ms + 1e-6));
+			return this.hold(pid, last.t0 + k * ms, "hold");
 		}
 		return this.dribbleFrom(pid, by) === undefined
 			? by
@@ -3567,22 +3649,23 @@ class Director {
 		// (Nothing of his before this.)
 		floor: number,
 	): { got: number; go: number } {
-		const from = this.dribbleFrom(pid, by);
+		const beat = this.beatOf(pid, by);
 		const last = this.ball[this.segAt(by)];
 		if (
-			from === undefined ||
+			beat === undefined ||
 			(last?.kind === "hold" && last.pid === pid && last.style === "cross")
 		) {
 			return { got: this.gather(pid, by), go: by };
 		}
-		const b = (by - from) / DRIBBLE_MS + 1e-6;
+		const b = beat.n + 1e-6;
 		const k = Math.floor(b);
 		const ph = b - k;
-		if (k < 1 || ph * DRIBBLE_MS <= PASS_GATHER_LATE || ph >= CATCH_UP) {
+		const top = beatTime(this.ball, beat.start, k);
+		if (k < 1 || by - top <= PASS_GATHER_LATE || ph >= CATCH_UP) {
 			return { got: this.gather(pid, by), go: by };
 		}
-		const early = from + k * DRIBBLE_MS + PASS_GATHER_LATE;
-		const late = from + (k + CATCH_UP) * DRIBBLE_MS;
+		const early = top + PASS_GATHER_LATE;
+		const late = beatTime(this.ball, beat.start, k + CATCH_UP);
 		const at = early >= floor && by - early < late - by ? early : late;
 		return { got: this.gather(pid, at), go: at };
 	}
@@ -5908,11 +5991,10 @@ class Director {
 			}
 		}
 		// On the next beat of his dribble, a move or a few of them.
-		const top = this.dribbleTop(bh, t) ?? t;
 		const k = this.rng();
 		const back = this.moveRun(
 			bh,
-			top < t - 1 ? top + DRIBBLE_MS : top,
+			this.nextTop(bh, t, t - 1) ?? t,
 			k < 0.4 ? 1 : k < 0.8 ? 2 : 3,
 			0.3,
 			0.2,
@@ -8426,14 +8508,28 @@ class Director {
 		});
 		// (There as the ball comes up into his hand: he takes it out of his
 		// dribble as he plants, not a bounce before.)
-		const beat = this.dribbleFrom(pid, t0) ?? t0;
-		const top =
-			beat +
-			Math.max(
-				1,
-				Math.ceil((t0 + runMs(dist(from, A), DRIBBLE) - beat) / DRIBBLE_MS),
-			) *
-				DRIBBLE_MS;
+		const beat = this.beatOf(pid, t0);
+		const top = beat
+			? beatTime(
+					this.ball,
+					beat.start,
+					Math.max(
+						1,
+						Math.ceil(
+							beatsAt(
+								this.ball,
+								beat.start,
+								t0 + runMs(dist(from, A), DRIBBLE),
+							) - 1e-6,
+						),
+					),
+				)
+			: t0 +
+				Math.max(
+					1,
+					Math.ceil((runMs(dist(from, A), DRIBBLE) * DRIBBLE_RATE) / 1000),
+				) *
+					(1000 / DRIBBLE_RATE);
 		const ta = this.goBy(pid, A, t0, top, "dribble", dir);
 		// His man slides over to cut him off.
 		const cut = inPlay({ x: G.x + side.x * 1.2, y: G.y + side.y * 1.2 });
@@ -8647,10 +8743,9 @@ class Director {
 			}
 			// Across as the ball comes up into his hand: on the next beat of
 			// his dribble.
-			const top = this.dribbleTop(pid, tj) ?? tj;
 			t = this.moveRun(
 				pid,
-				top < tj - 1 ? top + DRIBBLE_MS : top,
+				this.nextTop(pid, tj, tj - 1) ?? tj,
 				n,
 				0.25,
 				0.2,
@@ -8759,8 +8854,7 @@ class Director {
 			// leaning the wrong way.
 			if (hash01(pid, Math.round(t / 13)) < 0.5) {
 				this.hold(pid, t, "dribble");
-				const top = this.dribbleTop(pid, t + 1) ?? t;
-				t = this.moveRun(pid, top < t ? top + DRIBBLE_MS : top, 1, 0.3, 0.1);
+				t = this.moveRun(pid, this.nextTop(pid, t + 1, t) ?? t, 1, 0.3, 0.1);
 				this.hold(pid, t, "dribble");
 			}
 			const toRim = unitVec(P, rimPt(this.teamOf(pid)));
@@ -8803,10 +8897,9 @@ class Director {
 			// his man, and a hop back to where he shoots from.
 			if (this.rng() < 0.5) {
 				this.hold(pid, t, "dribble");
-				const top = this.dribbleTop(pid, t + 1) ?? t;
 				t = this.moveRun(
 					pid,
-					top < t ? top + DRIBBLE_MS : top,
+					this.nextTop(pid, t + 1, t) ?? t,
 					this.rng() < 0.6 ? 1 : 2,
 					0.4,
 					0.15,
@@ -14812,9 +14905,11 @@ class Director {
 	private ftRoutine(shooter: number, t: number, S: Pt, rim: Pt): number {
 		const kind = Math.floor(hash01(shooter * 13 + 5, 7) * 4);
 		const many = 2 + Math.floor(hash01(shooter * 5 + 1, 11) * 2);
+		// (At the usual beat - said, so it isn't his own on the floor.)
+		const rate = DRIBBLE_RATE;
 		const dribble = (n: number) => {
-			this.hold(shooter, t, "dribble");
-			t += (n * 1000) / DRIBBLE_RATE;
+			this.hold(shooter, t, "dribble", undefined, undefined, rate);
+			t += (n * 1000) / rate;
 			this.hold(shooter, t, "hold");
 			t += 120;
 		};
@@ -15434,6 +15529,8 @@ class Director {
 			if (this.loseIt(run, run.risk, e, i, t)) {
 				return;
 			}
+		} else if (this.loseItOwn(e, i, t, victim, stl, oob)) {
+			return;
 		}
 		if (this.holder !== victim) {
 			t = this.passTo(this.holder ?? this.slots(team)[0]!, victim, t);
@@ -15609,6 +15706,80 @@ class Director {
 		}
 		this.offense = other(team);
 		this.phase = "inboundSide";
+	}
+
+	// LOST WITH NO SET TO LOSE IT IN - on the break, out of the flow: it goes
+	// the ways it does in one (see loseIt), the man with it on his way at the
+	// rim, and his teammates the men he could mean a pass for. Picked off:
+	// most often a pass jumped in the lane, or stripped off his dribble. Out
+	// of bounds without one: a pass thrown away past the man it was meant
+	// for, or off his own knee and out. With no steal and in bounds: the
+	// charge, or the extra step. (The way of it drawn off him and the
+	// moment, not off the game's dice.)
+	private loseItOwn(
+		e: RawEvent,
+		i: number,
+		t: number,
+		victim: number,
+		stl: boolean,
+		oob: boolean,
+	): boolean {
+		const team = this.teamOf(victim);
+		const r = hash01(victim * 7 + 3, Math.round(t));
+		const kind: TurnoverKind = stl
+			? oob
+				? r < 0.6
+					? "lost"
+					: "pass"
+				: r < 0.6
+					? "pass"
+					: "lost"
+			: oob
+				? r < 0.6
+					? "pass"
+					: "lost"
+				: r < 0.4
+					? "charge"
+					: "travel";
+		// The man he would mean it for first: a pass's length off him - and,
+		// thrown away, one out by a line it can sail on over.
+		const V = this.posOf(victim);
+		const score = (p: number) => {
+			const P = this.posOf(p);
+			const edge = Math.min(P.y, COURT_H - P.y, P.x, COURT_W - P.x);
+			return Math.abs(dist(P, V) - PASS_MEANT) + (oob ? edge * 0.5 : 0);
+		};
+		const mates = this.slots(team)
+			.filter((p) => p !== victim)
+			.sort((a, b) => score(a) - score(b));
+		if (mates.length === 0) {
+			return false;
+		}
+		const play: Play = {
+			id: "own",
+			cat: "half",
+			use: 0,
+			start: [],
+			ball: 0,
+			needs: [],
+			steps: [[]],
+			options: [],
+			risks: [],
+		};
+		return this.loseIt(
+			{
+				play,
+				team,
+				roles: [victim, ...mates],
+				mirror: 1,
+				from: 0,
+				jitter: new Map(),
+			},
+			{ step: 0, who: 0, kind },
+			e,
+			i,
+			t,
+		);
 	}
 
 	// Where a ball heading from `p` along `u` leaves the floor, and a little past.
@@ -18160,7 +18331,14 @@ class Director {
 	// on the beat of his dribble, for whatever he does next.
 	// His man, up on him, gives with a run of dribble moves where he stands:
 	// a shade the way the ball first goes across, and back as it comes back.
-	private giveWith(tr: Track, here: Pt, tc: number, n: number, inHand: Hand) {
+	private giveWith(
+		tr: Track,
+		here: Pt,
+		tc: number,
+		n: number,
+		inHand: Hand,
+		ms = CROSS_MS,
+	) {
 		const guard = [...this.tracks.values()]
 			.filter((o) => o.team !== tr.team)
 			.map((o) => ({ o, d: dist(this.posAt(o.pid, tc), here) }))
@@ -18181,7 +18359,7 @@ class Director {
 		const way = inHand === "R" ? -1 : 1;
 		(guard.nudges ??= []).push({
 			t0: tc + 90,
-			t1: tc + n * CROSS_MS + 350,
+			t1: tc + n * ms + 350,
 			dx: v.x * way * 0.9,
 			dy: v.y * way * 0.9,
 		});
@@ -18270,9 +18448,9 @@ class Director {
 				) {
 					k1--;
 				}
-				const beat0 = own[Math.max(0, k1)]!.t0;
+				const beat0 = first + Math.max(0, k1);
 				const onBeat = (t: number) =>
-					beat0 + Math.ceil((t - beat0) / DRIBBLE_MS - 1e-6) * DRIBBLE_MS;
+					beatTime(ball, beat0, Math.ceil(beatsAt(ball, beat0, t) - 1e-6));
 				// The hand the ball is in through it.
 				const hand: Hand =
 					(own[Math.max(0, k0)] as { hand?: Hand }).hand ?? "R";
@@ -18309,7 +18487,15 @@ class Director {
 				const combo = (): boolean => {
 					const n3 = keepHand ? 6 : this.rng() < 0.7 ? 3 : 6;
 					const tc = onBeat(t);
-					if (combos >= 2 || tc + n3 * CROSS_MS + home() > g1 - 300) {
+					// (In so many whole bounces of the dribble he is on - quicker
+					// or slower moves for it - so it goes on after them at the
+					// beat it was at: whatever is laid out on that beat later, a
+					// move or the ball taken out of it, still on it.)
+					const rate = rateOf(own[Math.max(0, k0)]);
+					const beatMs = 1000 / rate;
+					const ms =
+						(Math.max(1, Math.round((n3 * CROSS_MS) / beatMs)) * beatMs) / n3;
+					if (combos >= 2 || tc + n3 * ms + home() > g1 - 300) {
 						return false;
 					}
 					// (In the hand his dribble has it in just then: the last
@@ -18330,16 +18516,19 @@ class Director {
 						this.byHandle(s.pid, 0.3, 0.08, 0.42),
 						this.byHandle(s.pid, 0.2, 0.03, 0.3),
 						inHand,
+						ms,
 					);
-					this.giveWith(tr, here, tc, n3, inHand);
+					this.giveWith(tr, here, tc, n3, inHand, ms);
 					segs.push(...made.segs, {
 						kind: "hold",
-						t0: tc + n3 * CROSS_MS,
+						t0: tc + n3 * ms,
 						pid: s.pid,
 						style: "dribble",
 						hand: made.hand,
+						// (Back on at the beat he was at.)
+						...(rate !== DRIBBLE_RATE ? { rate } : {}),
 					});
-					t = tc + n3 * CROSS_MS;
+					t = tc + n3 * ms;
 					wait(this.rand(500, 1000));
 					return true;
 				};
@@ -18500,18 +18689,24 @@ class Director {
 				continue;
 			}
 			const own = next.kind === "hold" && next.pid === pid;
+			// (On the beat of the dribble he goes on with, if he does.)
+			const rate =
+				own && next.kind === "hold" && next.style === "dribble"
+					? rateOf(next)
+					: DRIBBLE_RATE;
+			const BEAT_MS = 1000 / rate;
 			if ((P.x - COURT_W / 2) * dir < 2) {
 				// Back in his own end with it - an outlet, say - he puts it on
 				// the floor straight away to bring it up.
 				const start = from + 150;
-				if (own && next.t0 - start >= DRIBBLE_MS * 2) {
+				if (own && next.t0 - start >= BEAT_MS * 2) {
 					added.push({
 						kind: "hold",
-						t0:
-							next.t0 - Math.floor((next.t0 - start) / DRIBBLE_MS) * DRIBBLE_MS,
+						t0: next.t0 - Math.floor((next.t0 - start) / BEAT_MS) * BEAT_MS,
 						pid,
 						style: "dribble",
 						hand: "R",
+						...(rate !== DRIBBLE_RATE ? { rate } : {}),
 					});
 				}
 				continue;
@@ -18569,17 +18764,17 @@ class Director {
 			// beat of the dribble he goes on with, if he goes on dribbling.
 			let td = from + 760;
 			if (own) {
-				td = next.t0 - Math.floor((next.t0 - td) / DRIBBLE_MS) * DRIBBLE_MS;
+				td = next.t0 - Math.floor((next.t0 - td) / BEAT_MS) * BEAT_MS;
 			}
 			let pick = to;
 			if (throws) {
-				const k = Math.floor((to - 120 - td) / DRIBBLE_MS);
+				const k = Math.floor((to - 120 - td) / BEAT_MS);
 				if (k < 2) {
 					this.act(pid, "triple", from, to, { look: rim });
 					fake(from + 120);
 					continue;
 				}
-				pick = td + k * DRIBBLE_MS;
+				pick = td + k * BEAT_MS;
 			}
 			// Often he works his man where he stands: a run of moves
 			// - between his legs and back, a crossover, behind his back - ending
@@ -18592,19 +18787,19 @@ class Director {
 				const span = n * CROSS_MS;
 				const first = from + 760;
 				if (throws) {
-					const k = Math.floor((to - 120 - span - first) / DRIBBLE_MS);
+					const k = Math.floor((to - 120 - span - first) / BEAT_MS);
 					if (k >= 1) {
-						moves = { tc: first + k * DRIBBLE_MS, end: 0 };
+						moves = { tc: first + k * BEAT_MS, end: 0 };
 						moves.end = moves.tc + span;
 						td = first;
 						pick = moves.end;
 					}
 				} else {
 					const tc = next.t0 - span;
-					const k = Math.floor((tc - first) / DRIBBLE_MS);
+					const k = Math.floor((tc - first) / BEAT_MS);
 					if (k >= 1) {
 						moves = { tc, end: next.t0 };
-						td = tc - k * DRIBBLE_MS;
+						td = tc - k * BEAT_MS;
 					}
 				}
 			}
@@ -18616,7 +18811,14 @@ class Director {
 			const start: Hand = moves && n % 2 ? (then === "R" ? "L" : "R") : then;
 			this.act(pid, "triple", from, td, { look: rim });
 			fake(from + 100);
-			added.push({ kind: "hold", t0: td, pid, style: "dribble", hand: start });
+			added.push({
+				kind: "hold",
+				t0: td,
+				pid,
+				style: "dribble",
+				hand: start,
+				...(rate !== DRIBBLE_RATE ? { rate } : {}),
+			});
 			if (moves) {
 				const made = this.runOfMoves(
 					pid,

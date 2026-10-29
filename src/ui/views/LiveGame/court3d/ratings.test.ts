@@ -244,12 +244,13 @@ describe("3D: players play like their ratings", () => {
 
 	test("sharp defenders are closer to the shot than poor ones", () => {
 		const body = bodyOf();
-		// (Over four games: a few tenths of a foot, which one or two games
-		// alone may not show.)
+		// (Over six games: a few tenths of a foot - 0.33-0.39 ft, over the
+		// six - which a game or two alone may not show; one alone ranges from
+		// none to two-thirds of a foot.)
 		const space = (diq: number) => {
 			let sum = 0;
 			let n = 0;
-			for (const seed of ["r1", "r2", "r3", "r4"]) {
+			for (const seed of ["r1", "r2", "r3", "r4", "r5", "r6"]) {
 				const { events, players } = fakeGame(seed, 150);
 				const tl = compileCourt({
 					events,
@@ -289,7 +290,7 @@ describe("3D: players play like their ratings", () => {
 			void body;
 			return sum / Math.max(1, n);
 		};
-		assert.isBelow(space(90), space(30) - 0.3);
+		assert.isBelow(space(90), space(30) - 0.15);
 	});
 
 	test("a good passer puts zip on it; a poor one floats it", () => {

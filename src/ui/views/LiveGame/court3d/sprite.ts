@@ -532,6 +532,7 @@ const stepBlend = (f: Blend, w: number, k: Steps): Blend => {
 		...(f.dribbleFrom ? { dribbleFrom: f.dribbleFrom } : {}),
 		...(f.tight ? { tight: Math.round(f.tight * k.blend) / k.blend } : {}),
 		...(f.low ? { low: Math.round(f.low * 4) / 4 } : {}),
+		...(f.calm ? { calm: Math.round(f.calm * 4) / 4 } : {}),
 		...(f.stride ? { stride: stepStride(f.stride, k) } : {}),
 		...(f.held ? { held: true } : {}),
 		target: targetFrame(f.target, k),
@@ -594,7 +595,7 @@ const lookStep = (d: number | undefined, k: Steps) =>
 const driveStep = (d: number | undefined, k: Steps) =>
 	d ? Math.round(d * k.arm) / k.arm || undefined : undefined;
 const blendKey = (f: Blend): string =>
-	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.stepLen ? `l${f.stepLen}` : ""}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.dribbleFrom ?? ""}${f.tight ? `t${f.tight}` : ""}${f.low ? `o${f.low}` : ""}${strideKey(f.stride)}${f.held ? "h" : ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.turns ?? ""}~${f.pivot ?? ""}~${f.down ?? ""}~${f.way ?? ""}~${f.feet ?? ""}~${f.drive ?? ""}${f.step ? "~st" : ""}${f.paced ? "~pc" : ""}${f.slip ? `~s${f.slip}` : ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
+	`${f.anim}${f.mirror ? "m" : ""}${f.phase}${f.stepLen ? `l${f.stepLen}` : ""}${f.dribble ?? ""}${f.dribbleHand ?? ""}${f.dribbleFrom ?? ""}${f.tight ? `t${f.tight}` : ""}${f.low ? `o${f.low}` : ""}${f.calm ? `e${f.calm}` : ""}${strideKey(f.stride)}${f.held ? "h" : ""}${f.target ?? ""}~${f.w}~${f.arms ?? ""}~${f.turns ?? ""}~${f.pivot ?? ""}~${f.down ?? ""}~${f.way ?? ""}~${f.feet ?? ""}~${f.drive ?? ""}${f.step ? "~st" : ""}${f.paced ? "~pc" : ""}${f.slip ? `~s${f.slip}` : ""}${f.from ? `<${blendKey(f.from)}` : ""}`;
 
 // The pose he is drawn in: his own, stepped to the sprite's frames and turns
 // - and, easing out of his last move, a few steps of that.
@@ -638,6 +639,8 @@ const stepped = (st: PlayerState, k: Steps) => {
 		// His dribble kept in by his hip, in steps.
 		tight: st.tight ? Math.round(st.tight * k.blend) / k.blend : undefined,
 		low: st.low ? Math.round(st.low * 4) / 4 : undefined,
+		// How easy he is about his dribble, the same.
+		calm: st.calm ? Math.round(st.calm * 4) / 4 || undefined : undefined,
 		stride: st.stride ? stepStride(st.stride, k) : undefined,
 		target: targetFrame(st.target, k),
 		down: st.down ? Math.round(st.down * k.blend) / k.blend : undefined,
@@ -733,7 +736,7 @@ const planOf = (
 		const f = pose.from;
 		const a = pose.arm;
 		plan.id = id;
-		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.lock ? `k${pose.lock}` : ""}${pose.slip ? `s${pose.slip}` : ""}${pose.look ? `h${pose.look}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${pose.low ? `o${pose.low}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
+		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.lock ? `k${pose.lock}` : ""}${pose.slip ? `s${pose.slip}` : ""}${pose.look ? `h${pose.look}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${pose.low ? `o${pose.low}` : ""}${pose.calm ? `e${pose.calm}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
 			f ? `|${blendKey(f)}` : ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 	}
@@ -786,6 +789,7 @@ const jobOf = (
 			dribble: pose.dribble,
 			tight: pose.tight,
 			low: pose.low,
+			calm: pose.calm,
 			stride: pose.stride,
 			target: pose.target,
 			from: pose.from,
