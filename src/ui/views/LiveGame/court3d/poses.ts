@@ -4921,6 +4921,117 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
+	// A HEAVE from way out as time runs out - no jumper: on the last stride
+	// the ball taken back over his head in both hands, and thrown, the whole
+	// of him in it, up and out at the rim; on through after it, a hop off
+	// the front foot, his back leg up behind him, and down a step on (see
+	// HEAVE in director.ts).
+	heave: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[
+				0,
+				pose({
+					hipN: -10,
+					kneeN: 38,
+					hipF: 18,
+					kneeF: 40,
+					shN: 40,
+					elN: 95,
+					shF: 34,
+					elF: 100,
+					lean: 14,
+				}),
+			],
+			[
+				0.24,
+				pose({
+					hipN: -14,
+					kneeN: 30,
+					hipF: 30,
+					kneeF: 28,
+					shN: 170,
+					elN: 80,
+					shF: 164,
+					elF: 84,
+					lean: -8,
+				}),
+			],
+			[
+				0.38,
+				pose({
+					hipN: -20,
+					kneeN: 22,
+					hipF: 34,
+					kneeF: 34,
+					shN: 162,
+					elN: 40,
+					shF: 156,
+					elF: 44,
+					lean: 4,
+				}),
+			],
+			[
+				0.48,
+				pose({
+					hipN: -26,
+					kneeN: 14,
+					hipF: 30,
+					kneeF: 22,
+					shN: 136,
+					elN: 4,
+					shF: 130,
+					elF: 8,
+					lean: 16,
+					toe: 0.5,
+				}),
+			],
+			[
+				0.62,
+				pose({
+					hipN: -36,
+					kneeN: 54,
+					hipF: 18,
+					kneeF: 14,
+					shN: 114,
+					elN: 6,
+					shF: 106,
+					elF: 10,
+					lean: 22,
+					toe: 1,
+				}),
+			],
+			[
+				0.82,
+				pose({
+					hipN: -16,
+					kneeN: 34,
+					hipF: 14,
+					kneeF: 36,
+					shN: 70,
+					elN: 22,
+					shF: 60,
+					elF: 26,
+					lean: 14,
+				}),
+			],
+			[
+				1,
+				pose({
+					hipN: -6,
+					kneeN: 26,
+					hipF: 8,
+					kneeF: 28,
+					shN: 36,
+					elN: 40,
+					shF: 26,
+					elF: 44,
+					lean: 6,
+				}),
+			],
+		],
+	},
 	catch: {
 		kind: "act",
 		n: 3,

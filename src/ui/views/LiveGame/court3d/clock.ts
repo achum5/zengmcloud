@@ -8,17 +8,34 @@ import type { CourtTimeline, RawEvent } from "./director.ts";
 // picture runs fast through the walk up the floor (or cuts past it), the
 // clock makes up the time the sim spent there. Through live play - a shot in
 // the air, a rebound, a steal - it never stops: it runs on from one line
-// straight into the next one's lead-in. After a whistle, a free throw or a
-// ball out of bounds it waits for the ball to be back in play. The sim keeps
-// no shot clock in the play-by-play, so the one on screen is read off
-// possession: 24 when a team gets the ball, 14 after an offensive rebound,
-// running with the game clock - and off once the game clock is shorter.
+// straight into the next one's lead-in. Where the picture takes longer over
+// it than the sim (the ball in the air longer than the sim gives the shot),
+// it runs on true all the same, a little ahead of the sim's clock, and
+// gives that back over the next trip up the floor - and with the period
+// running out, it is out as time runs out, not crawling to 0.0 as the
+// heave comes down (a shot as time runs out is up before it). After a
+// whistle, a free throw or a ball out of bounds it waits for the ball to be
+// back in play. The sim keeps no shot clock in the play-by-play, so the one
+// on screen is read off possession: 24 when a team gets the ball, 14 after
+// an offensive rebound, running with the game clock - and off once the game
+// clock is shorter.
 
 const SHOT_CLOCK = 24;
 const RESET_ORB = 14;
 // The last seconds into a line run true even when the picture holds more
 // than the sim's time (see buildClocks).
 const LEAD_TRUE = 3.5;
+// How far (seconds) the clock on screen may run ahead of the sim's - and, a
+// shot still to go up, never out before it is (see buildClocks).
+export const LEAD_MOST = 2;
+const SHOT_UP = 0.1;
+// (In the last few seconds, no more than this share of what is left: what
+// comes next gets the time the sim gives it.)
+const LEAD_SHARE = 0.25;
+// A whistle on a shot: the and-one, or the free throws.
+const SHOT_FOUL = /AndOne$|^pf(FG|TP)$/;
+// A shot is let go this soon after its line, if at all (ms).
+const RELEASE_MOST = 2000;
 
 type Mark = { t: number; clock: number; period: number };
 
@@ -28,7 +45,7 @@ const madeBasket = (e: RawEvent): boolean =>
 	/^fg(?!a)/.test(e.type) || /^tp/.test(e.type) || e.type === "ft";
 
 // A line the ball stays live through.
-const runsOn = (e: RawEvent): boolean =>
+export const runsOn = (e: RawEvent): boolean =>
 	(/^(fga|fg|tp|miss|blk|drb|orb)/.test(e.type) &&
 		!e.type.endsWith("AndOne")) ||
 	((e.type === "stl" || e.type === "tov") && e.outOfBounds !== true) ||
@@ -56,7 +73,7 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 	let live: number | undefined;
 	// The last line that carried the sim's shot clock.
 	let anchor:
-		| { t: number; clock: number; shot: number; period: number }
+		| { t: number; clock: number; shot: number; period: number; lead: number }
 		| undefined;
 	// Whether this game's lines carry the shot clock at all (older saved
 	// replays don't, and fall back to reading it off possession).
@@ -69,7 +86,17 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 	let fresh: number | undefined;
 	const possStarts = tl.poss.map(([t]) => t).filter(Number.isFinite);
 	const possStartSet = new Set(possStarts);
-	for (const b of tl.beats) {
+	// How far the clock on screen is ahead of the sim's (see LEAD_MOST). The
+	// shot clock runs with it: set afresh - a new possession, a reset - it
+	// reads what it is set to, and each reading the sim gives it after that
+	// is put as far ahead as the game clock has got since, so it never jumps
+	// back up (or down) at the next line.
+	let lead = 0;
+	const leads: { t: number; lead: number }[] = [];
+	const starts = [...possStarts].sort((a, b) => a - b);
+	let freshAt = -Infinity;
+	let freshLead = 0;
+	for (const [j, b] of tl.beats.entries()) {
 		const e = events[b.i];
 		if (!e) {
 			continue;
@@ -77,67 +104,132 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 		if (e.type === "period" || e.type === "overtime") {
 			period = typeof e.period === "number" ? e.period : period + 1;
 			last = undefined;
+			lead = 0;
 			fresh = typeof e.clock === "number" ? e.clock : undefined;
 		}
 		// (Off for an Elam Ending: no reading to run it by.)
 		if (typeof e.clock !== "number" || !Number.isFinite(e.clock)) {
 			continue;
 		}
-		// The lead-in runs the clock from the last line's reading to this one's -
-		// unless the clock went up, which is a new period starting.
-		if (last !== undefined && e.clock <= last) {
-			let from = Math.min(live ?? b.preStart, b.preStart);
-			if (live === undefined) {
-				// A dead ball: the clock waits for it to be put back in play -
-				// the inbound caught.
-				const inbound = inboundCaught(tl, from, b.actionStart);
-				if (inbound !== undefined) {
-					marks.push({ t: from, clock: last, period });
-					from = inbound;
-				}
-			}
-			marks.push({ t: from, clock: last, period });
-			// The time the sim spent in the lead-in that the picture runs through
-			// fast (or cuts past): the clock runs true on either side of it and
-			// makes up the rest there.
-			// Where the picture holds more than the sim's time, the play itself -
-			// what leads straight into the line - still runs true, and the
-			// clock takes less of the time before it (waiting, if it must).
-			const fast = fastIn(tl.fast, from, b.actionStart);
-			const cut = lastCutIn(tl.cuts, from, b.actionStart);
-			const shown = (b.actionStart - from) / 1000;
-			const gap = last - e.clock;
-			if (fast) {
-				const [f0, f1] = fast;
-				const tail = Math.min((b.actionStart - f1) / 1000, gap);
-				const head = Math.min((f0 - from) / 1000, gap - tail);
-				marks.push(
-					{ t: f0, clock: last - head, period },
-					{ t: f1, clock: e.clock + tail, period },
-				);
-			} else if (cut !== undefined && gap > shown) {
-				marks.push(
-					{ t: cut - 1, clock: last - (cut - 1 - from) / 1000, period },
-					{ t: cut, clock: e.clock + (b.actionStart - cut) / 1000, period },
-				);
-			} else if (shown > gap + 0.05 && shown > LEAD_TRUE) {
-				// (The ball live all the while, it never stops: a little of it
-				// runs down before that too, slower.)
-				const tail = Math.min(live === undefined ? gap : gap * 0.75, LEAD_TRUE);
-				marks.push({
-					t: b.actionStart - tail * 1000,
-					clock: e.clock + tail,
-					period,
-				});
-			}
-		}
-		marks.push({ t: b.actionStart, clock: e.clock, period });
 		if (fresh !== undefined && e.clock < fresh) {
 			fresh = undefined;
 		}
 		const logged = typeof e.shotClock === "number" ? e.shotClock : undefined;
 		const shot =
 			logged !== undefined && fresh !== undefined ? SHOT_CLOCK : logged;
+		// The reading on the line - a shot the period ends on, as it is let go
+		// (it is up before the horn).
+		let at = b.actionStart;
+		if (/^fga/.test(e.type)) {
+			const next = nextTimed(tl, events, j);
+			const out = next !== undefined && events[next.i]!.clock === 0;
+			const release = out ? releaseOf(tl, b.actionStart, e.pid) : undefined;
+			if (release !== undefined) {
+				at = Math.min(release, (b.actionStart + next!.actionStart) / 2);
+			}
+		}
+		// The lead-in runs the clock from the last line's reading to this one's -
+		// unless the clock went up, which is a new period starting.
+		if (last !== undefined && e.clock <= last) {
+			// (What the clock read at the last line.)
+			const was = last - lead;
+			let from = Math.max(
+				Math.min(live ?? b.preStart, b.preStart),
+				marks.at(-1)?.t ?? -Infinity,
+			);
+			if (live === undefined) {
+				// A dead ball: the clock waits for it to be put back in play -
+				// the inbound caught.
+				const inbound = inboundCaught(tl.ball, from, b.actionStart);
+				if (inbound !== undefined) {
+					marks.push({ t: from, clock: was, period });
+					from = inbound;
+				}
+			}
+			marks.push({ t: from, clock: was, period });
+			// The time the sim spent in the lead-in that the picture runs through
+			// fast (or cuts past): the clock runs true on either side of it and
+			// makes up the rest there.
+			// Where the picture holds more than the sim's time, the play itself -
+			// what leads straight into the line - still runs true, and the
+			// clock takes less of the time before it (waiting, if it must).
+			const fast = fastIn(tl.fast, from, at);
+			const cut = lastCutIn(tl.cuts, from, at);
+			const shown = (at - from) / 1000;
+			// Ahead of the sim's: no less than it was (it never goes back up),
+			// and - the ball live all the while, the picture taking longer
+			// than the sim - as far as it gets running true. (Not after a
+			// dead ball - whatever is thrown about before it is put back in
+			// play - nor on past a whistle on the shot: it stops as he is
+			// hit.)
+			const kept = Math.max(0, lead - (last - e.clock));
+			lead =
+				live === undefined ||
+				fast ||
+				cut !== undefined ||
+				SHOT_FOUL.test(e.type)
+					? kept
+					: Math.max(
+							kept,
+							Math.min(
+								shown - (was - e.clock),
+								LEAD_MOST,
+								Math.max(0, e.clock - SHOT_UP) * LEAD_SHARE,
+								Math.max(0, (shot ?? Infinity) - SHOT_UP) * LEAD_SHARE,
+							),
+						);
+			const now = e.clock - lead;
+			const gap = was - now;
+			if (
+				e.clock === 0 &&
+				live !== undefined &&
+				!fast &&
+				cut === undefined &&
+				shown > gap
+			) {
+				// Time running out: out on time, and stopped there.
+				marks.push({ t: from + gap * 1000, clock: 0, period });
+			} else if (fast) {
+				const [f0, f1] = fast;
+				const tail = Math.min((at - f1) / 1000, gap);
+				const head = Math.min((f0 - from) / 1000, gap - tail);
+				marks.push(
+					{ t: f0, clock: was - head, period },
+					{ t: f1, clock: now + tail, period },
+				);
+			} else if (cut !== undefined && gap > shown) {
+				marks.push(
+					{ t: cut - 1, clock: was - (cut - 1 - from) / 1000, period },
+					{ t: cut, clock: now + (at - cut) / 1000, period },
+				);
+			} else if (shown > gap + 0.05 && shown > LEAD_TRUE) {
+				// (The ball live all the while, it never stops: a little of it
+				// runs down before that too, slower.)
+				const tail = Math.min(live === undefined ? gap : gap * 0.75, LEAD_TRUE);
+				marks.push({
+					t: at - tail * 1000,
+					clock: now + tail,
+					period,
+				});
+			}
+		} else {
+			lead = 0;
+		}
+		marks.push({ t: at, clock: e.clock - lead, period });
+		leads.push({ t: b.actionStart, lead });
+		// (A new possession since: a fresh shot clock, from as far ahead as the
+		// game clock was then.)
+		const p =
+			starts[
+				lastAt(
+					starts.map((t) => ({ t })),
+					b.actionStart,
+				)
+			];
+		if (p !== undefined && p > freshAt) {
+			freshAt = p;
+			freshLead = leads[lastAt(leads, p)]?.lead ?? 0;
+		}
 		if (shot !== undefined) {
 			// The sim's own shot clock (games simmed since it started logging
 			// it). If it reads higher than the last line's, run down by the game
@@ -158,18 +250,25 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 					t: anchor.t,
 					from: Math.min(SHOT_CLOCK, shot + (anchor.clock - e.clock)),
 				});
+				if (anchor.t > freshAt) {
+					freshAt = anchor.t;
+					freshLead = anchor.lead;
+				}
 			}
 			// A line that hands the ball over (a defensive rebound, a steal)
 			// carries the clock of the possession that just ended; the new
 			// one starts fresh there (tl.poss), so it isn't an anchor for it.
 			if (!possStartSet.has(b.actionStart)) {
-				resets.push({ t: b.actionStart, from: shot });
-				anchor = { t: b.actionStart, clock: e.clock, shot, period };
+				resets.push({
+					t: b.actionStart,
+					from: Math.max(0, shot - (lead - freshLead)),
+				});
+				anchor = { t: b.actionStart, clock: e.clock, shot, period, lead };
 			}
 			exact = true;
 		}
 		last = e.clock;
-		live = runsOn(e) ? b.actionStart : undefined;
+		live = runsOn(e) ? at : undefined;
 		if (madeBasket(e)) {
 			// Reset by the make, and stopped until the inbound - it doesn't run
 			// on toward zero while the ball is dead.
@@ -218,17 +317,75 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 };
 
 // When the first pass from one man to another in [a, b) - the inbound, after
-// a dead ball - is caught, if there is one.
-const inboundCaught = (
-	tl: CourtTimeline,
+// a dead ball - is caught, if there is one: in the air to him, or bounced
+// to him (down off the floor and up into his hands).
+export const inboundCaught = (
+	ball: CourtTimeline["ball"],
 	a: number,
 	b: number,
+): number | undefined => {
+	let lo = 0;
+	let hi = ball.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (ball[mid]!.t0 < a) {
+			lo = mid + 1;
+		} else {
+			hi = mid;
+		}
+	}
+	for (let i = lo; i < ball.length; i++) {
+		const s = ball[i]!;
+		if (s.t0 >= b) {
+			break;
+		}
+		if (s.kind !== "fly" || !("pid" in s.from)) {
+			continue;
+		}
+		const up = ball[i + 1];
+		const to =
+			"pid" in s.to
+				? s
+				: up?.kind === "fly" &&
+					  !("pid" in up.from) &&
+					  "pid" in up.to &&
+					  up.t0 - s.t1 < 1
+					? up
+					: undefined;
+		if (to && to.t1 < b) {
+			return to.t1;
+		}
+	}
+	return undefined;
+};
+
+// The next line after the j-th that carries the clock.
+const nextTimed = (
+	tl: CourtTimeline,
+	events: RawEvent[],
+	j: number,
+): CourtTimeline["beats"][number] | undefined => {
+	for (let k = j + 1; k < tl.beats.length; k++) {
+		const e = events[tl.beats[k]!.i];
+		if (typeof e?.clock === "number" && Number.isFinite(e.clock)) {
+			return tl.beats[k];
+		}
+	}
+	return undefined;
+};
+
+// When the shot on a line at t is let go by him - the ball off his hands -
+// if it is soon enough.
+const releaseOf = (
+	tl: CourtTimeline,
+	t: number,
+	pid: unknown,
 ): number | undefined => {
 	let lo = 0;
 	let hi = tl.ball.length;
 	while (lo < hi) {
 		const mid = (lo + hi) >> 1;
-		if (tl.ball[mid]!.t0 < a) {
+		if (tl.ball[mid]!.t0 < t) {
 			lo = mid + 1;
 		} else {
 			hi = mid;
@@ -236,11 +393,11 @@ const inboundCaught = (
 	}
 	for (let i = lo; i < tl.ball.length; i++) {
 		const s = tl.ball[i]!;
-		if (s.t0 >= b) {
+		if (s.t0 > t + RELEASE_MOST) {
 			break;
 		}
-		if (s.kind === "fly" && "pid" in s.from && "pid" in s.to && s.t1 < b) {
-			return s.t1;
+		if (s.kind === "fly" && "pid" in s.from && s.from.pid === pid) {
+			return s.t0;
 		}
 	}
 	return undefined;

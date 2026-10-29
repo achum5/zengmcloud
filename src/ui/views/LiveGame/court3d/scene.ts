@@ -1480,6 +1480,7 @@ const SHOOTING = new Set([
 	"shootQuickKick",
 	"shootQuickSplit",
 	"setShot",
+	"heave",
 	"fade",
 	"hook",
 	"layup",

@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 29,
+		date: "2026-10-29",
+		text: "3D game: end-of-quarter heaves now happen in the time that was actually left - the inbound goes straight to the shooter, he races up the floor and lets it fly as time runs out, with a real heave thrown from over his head on the run instead of a 70-foot jump shot, and his man chasing him instead of standing in his face. The game clock also keeps running at real speed while a shot is in the air or the ball bounces out of bounds, instead of crawling, and the horn goes with the heave in the air.",
+	},
+	{
 		n: 28,
 		date: "2026-10-29",
 		text: "3D game: players on offense no longer hang around in the lane - a big who ducks in to seal his man pops right back out, and anybody left standing in there steps out to the short corner or dunker spot before three seconds are up. The 3D court also does about half the work it did each frame, so it should run smoother and cooler on phones.",

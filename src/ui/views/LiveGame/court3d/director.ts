@@ -1,5 +1,6 @@
 import { levelOf, type CourtRatings, type RatingKey } from "./ratings.ts";
 import { makeCourtRng } from "../courtRng.ts";
+import { inboundCaught, runsOn } from "./clock.ts";
 import {
 	HEAVE_MAX_SECONDS,
 	MOTION_HANDLER_SLOT,
@@ -1203,6 +1204,34 @@ const ENTRY_PASS = 18;
 const ENTRY_DEEP = 34;
 // Flat out up the floor with it, a heave to beat the buzzer (feet a second).
 const HEAVE_RUN = 19;
+// The slowest he brings it up with time to spare - and never in closer to
+// the rim than this to let it go (feet).
+const HEAVE_EASY = 9;
+const HEAVE_NEAREST = 28;
+// From the run with it to up to let it go: the dribble picked up, and the
+// gather (ms; see stageShot).
+const HEAVE_PICK_UP = 200;
+const HEAVE_GATHER = 60;
+// From the pass he makes ahead to him being on it (ms).
+const HEAVE_THROW = 250;
+// THE HEAVE ITSELF, from this far out (feet) - nearer in, a jumper: how
+// long it takes (ms), off the floor and back down on it, and let go
+// (through the act; see the heave in poses.ts); how far on he goes
+// through it (feet). His man, chasing, gets a hand up at it from as far
+// off as this (feet).
+const HEAVE_FROM = 36;
+const HEAVE_MS = 900;
+const HEAVE_HOP = { off: 0.5, land: 0.8, release: 0.48 };
+const HEAVE_ON = 4;
+const HEAVE_REACH = 7;
+// How far off him his man is as he lets it go (feet): in front of him,
+// backing off it; behind him, chasing.
+const HEAVE_FRONT = 5.5;
+const HEAVE_BEHIND = 4;
+const HEAVE_BACK_OFF = 12;
+// Up the floor with him, the rest no nearer the ball's way than this
+// (feet).
+const HEAVE_LANE = 9;
 // Coming off a ball screen with the man who set it right in his way, he
 // goes round him this far off (feet) - the ball on the far side.
 const ROUND_SCREEN = 2.0;
@@ -1634,6 +1663,7 @@ const OUTSIDE_HAND = new Set<AnimName>(["layup", "fingerRoll", "scoop"]);
 const UP_WITH_SHOT = new Set<AnimName>([
 	"shoot",
 	"setShot",
+	"heave",
 	"fade",
 	"hook",
 	"floater",
@@ -3981,11 +4011,19 @@ class Director {
 	// takes it out of bounds behind the baseline and inbounds it to the point
 	// guard, who comes back for it - while the rest head up the floor and the
 	// team that scored gets back. Returns when the point guard has it.
-	private inboundAfterMake(team: Side, t: number, quick = false): number {
+	private inboundAfterMake(
+		team: Side,
+		t: number,
+		quick = false,
+		// In to him rather than the point guard: the man who lets it go at the
+		// buzzer - quick, all of it as fast as it goes, the clock running.
+		buzzer?: number,
+	): number {
 		const dir = attackDir(team);
 		const off = this.slots(team);
 		const def = this.slots(other(team));
-		const pg = off[0]!;
+		const pg = buzzer !== undefined && off.includes(buzzer) ? buzzer : off[0]!;
+		const rush = quick && pg === buzzer;
 		this.bounceClear([...off, ...def]);
 		// Where the ball ends up, and when it gets there.
 		const b = this.ballPoint();
@@ -4022,9 +4060,15 @@ class Director {
 		const got =
 			this.offTheHop(inb, on) ??
 			this.pickUp(inb, Math.max(on, still - 700), quick ? RUN : JOG);
-		const there = quick
-			? this.go(inb, out, got + 120, JOG, "run")
-			: this.go(inb, out, got + 350, WALK * 1.5, "walk");
+		// (In a rush, out with it as he takes it.)
+		if (rush) {
+			this.free.set(inb, Math.min(this.free.get(inb) ?? 0, got + 60));
+		}
+		const there = rush
+			? this.go(inb, out, got + 60, RUN, "run")
+			: quick
+				? this.go(inb, out, got + 120, JOG, "run")
+				: this.go(inb, out, got + 350, WALK * 1.5, "walk");
 		this.turn(inb, there, dir);
 		// The point guard comes back to a few strides in from him.
 		const gets = clampPt({
@@ -4034,17 +4078,21 @@ class Director {
 		// (A few steps on up the floor first, then back to the ball as it
 		// is thrown in - not stood waiting on it.)
 		const away = clampPt({ x: gets.x + dir * COME_BACK, y: gets.y });
-		this.go(pg, away, readyAt(pg, scored + 150, t + 150), JOG, "run");
-		this.go(
-			pg,
-			gets,
-			Math.max(
-				this.free.get(pg) ?? 0,
-				there + (quick ? 60 : 250) - runMs(COME_BACK, JOG),
-			),
-			JOG,
-			"run",
-		);
+		if (rush) {
+			this.go(pg, gets, readyAt(pg, scored + 150, t + 150), RUN, "run");
+		} else {
+			this.go(pg, away, readyAt(pg, scored + 150, t + 150), JOG, "run");
+			this.go(
+				pg,
+				gets,
+				Math.max(
+					this.free.get(pg) ?? 0,
+					there + (quick ? 60 : 250) - runMs(COME_BACK, JOG),
+				),
+				JOG,
+				"run",
+			);
+		}
 		// The rest up the floor, getting there a beat before the ball does;
 		// the team that scored back down it, each picking up the man nearest
 		// him.
@@ -4099,7 +4147,12 @@ class Director {
 				0.3,
 			);
 		});
-		const tIn = this.passTo(inb, pg, there + (quick ? 60 : 250));
+		const tIn = this.passTo(
+			inb,
+			pg,
+			there + (rush ? 0 : quick ? 60 : 250),
+			rush ? "chest" : undefined,
+		);
 		if (!quick) {
 			this.hurry(t + 300, tIn);
 		}
@@ -5192,7 +5245,14 @@ class Director {
 			// after a field goal - in quick and pushed before the defense is back.
 			this.guarding.clear();
 			transition = resultOf(last)?.kind === "make" && quick("make");
-			t = this.inboundAfterMake(team, t, transition);
+			// (At the buzzer, in to the man who lets it go - and in a hurry off
+			// a basket, the clock running.)
+			t = this.inboundAfterMake(
+				team,
+				t,
+				transition || (heave && resultOf(last)?.kind === "make"),
+				heave ? shooter : undefined,
+			);
 			into = "flow";
 		} else if (phase === "loose" || phase === "tip" || phase === "set") {
 			if (this.holder === undefined || this.teamOf(this.holder) !== team) {
@@ -5223,7 +5283,7 @@ class Director {
 				// putback the sim has after a timeout, say): the ball goes in to
 				// the man who shoots it, where he shoots it from. No set.
 				const quickTo =
-					shot !== undefined &&
+					(shot !== undefined || heave) &&
 					shooter !== undefined &&
 					gap !== undefined &&
 					gap < QUICK_IN
@@ -5239,7 +5299,10 @@ class Director {
 						at,
 						quickTo === undefined
 							? undefined
-							: { pid: quickTo, at: this.quickSpot(team, shot!, at) },
+							: {
+									pid: quickTo,
+									at: this.quickSpot(team, shot ?? "three", at),
+								},
 					);
 					if (run) {
 						t = this.flowToPlay(run, t);
@@ -5248,8 +5311,25 @@ class Director {
 				}
 				into = "set";
 			} else {
+				// (At the buzzer, in to the man who lets it go, a few strides up
+				// the floor from it.)
+				const baseline = at !== undefined && (at.x < 0 || at.x > COURT_W);
+				const to =
+					at && heave && shooter !== undefined
+						? {
+								pid: shooter,
+								at: clampPt({
+									x: at.x + attackDir(team) * (baseline ? 12 : 6),
+									y: baseline
+										? at.y + (COURT_H / 2 - at.y) * 0.3
+										: at.y < COURT_H / 2
+											? 8
+											: COURT_H - 8,
+								}),
+							}
+						: undefined;
 				t = at
-					? this.inboundFrom(team, t, at)
+					? this.inboundFrom(team, t, at, to)
 					: this.ballTo(this.slots(team)[0]!, t);
 				into = "flow";
 			}
@@ -8813,10 +8893,12 @@ class Director {
 	// THE HEAVE AT THE BUZZER.
 	//
 	// A second or two on the clock and the ball at the wrong end: whoever has
-	// it gets it to him, and he races up the floor with it, flat out, and lets
-	// it go from wherever he has got to as time runs out - from half court,
-	// or from well back of it. His man chases him. Returns when he is up to
-	// let it go.
+	// it gets it to him, and he races up the floor with it and lets it go
+	// from wherever he has got to as time runs out - from half court, or from
+	// well back of it. His man chases him. All in the time the sim gives it,
+	// from when the clock starts on it: off a board, a steal or a basket it
+	// is running already; after a whistle, from the inbound (see
+	// buildClocks). Returns when he is up to let it go.
 	private raceToHeave(
 		team: Side,
 		shooter: number,
@@ -8826,55 +8908,105 @@ class Director {
 		const t0 = t;
 		const rim = rimPt(team);
 		const dir = attackDir(team);
-		t = this.develop(team, t, gap, undefined, undefined, true).t;
+		const prior = this.beats.findLast(
+			(b) => typeof this.events[b.i]?.clock === "number",
+		);
+		const live = prior !== undefined && runsOn(this.events[prior.i]!);
+		t = this.develop(team, t, gap, undefined, undefined, true, shooter).t;
+		const inbound = live ? undefined : inboundCaught(this.ball, t0, Infinity);
+		// When it has to be up (its line is the gather - see stageShot).
+		const due =
+			(live ? prior.actionStart : (inbound ?? t)) +
+			(gap ?? 2) * 1000 -
+			HEAVE_GATHER;
 		const h = this.holder;
 		if (h === undefined) {
 			t = this.pickUp(shooter, t, SPRINT) + 150;
 		} else if (h !== shooter) {
-			// Run on ahead of it inside the arc, he comes back out to meet it -
-			// round it from the corner, not out over the sideline.
-			const S0 = this.posOf(shooter);
-			if (dist(S0, rim) < 29) {
-				const out = unitVec(rim, S0);
-				const lim = COURT_H / 2 - SIDELINE_GAP - 1;
-				const dy = Math.max(-lim, Math.min(lim, out.y * 31));
-				this.goBy(
-					shooter,
-					clampPt({
-						x: rim.x - dir * Math.sqrt(31 * 31 - dy * dy),
-						y: rim.y + dy,
-					}),
-					t,
-					t + 900,
-					"run",
-					dir,
-				);
-			}
-			// Not stood there with it while he gets out ahead: up the floor
-			// with it meanwhile, behind him, and it goes ahead when he is due.
+			// Out to him at once, ahead of him up the floor - his runs
+			// elsewhere dropped - as he goes to meet it: no further than he
+			// gets while it is on its way, and never in inside the arc (in
+			// there already, he comes back out for it).
+			this.cutShort(shooter, t);
+			const S = this.posOf(shooter);
 			const H = this.posOf(h);
-			const wait =
-				(this.free.get(shooter) ?? t) -
-				Math.max(t, this.free.get(h) ?? 0) -
-				900;
-			const ahead = (this.posOf(shooter).x - H.x) * dir - 14;
-			const push = Math.min(ahead, (HEAVE_RUN * 0.8 * wait) / 1000);
-			if (push > 4) {
-				this.hold(h, Math.max(t, this.free.get(h) ?? 0), "dribble");
-				this.go(
-					h,
-					clampPt({ x: H.x + dir * push, y: H.y + (COURT_H / 2 - H.y) * 0.3 }),
-					t,
-					HEAVE_RUN * 0.8,
-					"dribble",
-					dir,
-				);
+			let M = S;
+			if (dist(S, rim) < HEAVE_NEAREST) {
+				const out = unitVec(rim, S);
+				M = clampPt({
+					x: rim.x + out.x * HEAVE_NEAREST,
+					y: rim.y + out.y * HEAVE_NEAREST,
+				});
+			} else {
+				for (let n = 0; n < 3; n++) {
+					const k = Math.min(
+						dist(S, rim) - HEAVE_NEAREST,
+						reachIn(passMs(dist(H, M)) + HEAVE_THROW, RUN),
+					);
+					const u = unitVec(S, rim);
+					M = clampPt({ x: S.x + u.x * k, y: S.y + u.y * k });
+				}
 			}
+			this.go(shooter, M, t, RUN, "run", dir);
 			t = this.passTo(h, shooter, t);
+		}
+		// What is left of the time on the run with it - flat out if it is
+		// short, easing off if he would get in too close too soon. Never in
+		// inside the arc.
+		const S = this.posOf(shooter);
+		const ms = due - t - HEAVE_PICK_UP;
+		const room = dist(S, rim) - HEAVE_NEAREST;
+		const run = Math.max(0, Math.min(room, reachIn(ms, HEAVE_RUN)));
+		const u = unitVec(S, rim);
+		const P =
+			ms > 300 && run > 2
+				? clampPt({ x: S.x + u.x * run, y: S.y + u.y * run })
+				: S;
+		const start = t;
+		if (P !== S) {
+			this.hold(shooter, t, "dribble");
+			t = this.go(
+				shooter,
+				P,
+				t,
+				Math.max(HEAVE_EASY, paceFor(run, ms, 0, HEAVE_RUN)),
+				"dribble",
+				dir,
+			);
+		}
+		// His man after him: a step off him as he lets it go, on the side he
+		// is coming from - behind him, chasing, or still in front of him,
+		// backing off it (off where he comes down from it, on through it:
+		// see HEAVE_ON) - never through him.
+		const d = this.defenderOf(shooter);
+		if (d !== undefined) {
+			const G = this.posAt(d, start);
+			const off = dist(G, S) > 0.5 ? unitVec(S, G) : { x: -u.x, y: -u.y };
+			const front = off.x * u.x + off.y * u.y > 0;
+			const from = front
+				? { x: P.x + u.x * HEAVE_ON, y: P.y + u.y * HEAVE_ON }
+				: P;
+			const k = front ? HEAVE_FRONT : HEAVE_BEHIND;
+			const T = clampPt({ x: from.x + off.x * k, y: from.y + off.y * k });
+			// (Giving ground a few steps, he backs off it facing him; a long
+			// way, he turns and runs.)
+			const D = this.posOf(d);
+			const back =
+				front &&
+				(T.x - D.x) * u.x + (T.y - D.y) * u.y > 0.5 &&
+				dist(D, T) <= HEAVE_BACK_OFF;
+			this.goBy(
+				d,
+				T,
+				start + 150,
+				t,
+				back ? "back" : "run",
+				back ? (-dir as 1 | -1) : undefined,
+			);
 		}
 		// The rest up the floor after it - out from under the far basket,
 		// not stood back there as it goes up - in a lane of their own, wide
-		// of the man who brought it up.
+		// of the man who brought it up and of him with it.
 		const by = h !== undefined && h !== shooter ? h : undefined;
 		for (const pid of this.slots(team)) {
 			const Q = this.posOf(pid);
@@ -8882,44 +9014,26 @@ class Director {
 				continue;
 			}
 			const B = by !== undefined && pid !== by ? this.posOf(by) : undefined;
-			const y =
+			let y =
 				B && Math.abs(Q.y - B.y) < 10 ? B.y + (Q.y < B.y ? -12 : 12) : Q.y;
+			const x = COURT_W / 2 + dir * this.rand(2, 8);
+			// (Where the ball goes by there.)
+			const k = Math.abs(P.x - S.x) > 0.5 ? (x - S.x) / (P.x - S.x) : 1;
+			const ballY = S.y + (P.y - S.y) * Math.min(1, Math.max(0, k));
+			if (Math.abs(y - ballY) < HEAVE_LANE) {
+				y = ballY + (y < ballY ? -HEAVE_LANE : HEAVE_LANE);
+				if (y < 5 || y > COURT_H - 5) {
+					y = ballY + (y < ballY ? HEAVE_LANE : -HEAVE_LANE);
+				}
+			}
 			this.go(
 				pid,
-				clampPt({
-					x: COURT_W / 2 + dir * this.rand(2, 8),
-					y: Math.min(COURT_H - 5, Math.max(5, y)),
-				}),
+				clampPt({ x, y: Math.min(COURT_H - 5, Math.max(5, y)) }),
 				t0,
 				RUN,
 				"run",
 				dir,
 			);
-		}
-		// What is left of the sim's time for the trip, on the run - never
-		// inside the arc.
-		const left = Math.max(0.5, (gap ?? 2) - (t - t0) / 1000);
-		const S = this.posOf(shooter);
-		const room = dist(S, rim) - 28;
-		const run = Math.max(0, Math.min(room, left * HEAVE_RUN));
-		if (run > 2) {
-			const u = unitVec(S, rim);
-			const P = clampPt({ x: S.x + u.x * run, y: S.y + u.y * run });
-			this.hold(shooter, t, "dribble");
-			const there = this.go(shooter, P, t, HEAVE_RUN, "dribble", dir);
-			// His man after him, a step behind.
-			const d = this.defenderOf(shooter);
-			if (d !== undefined) {
-				const back = unitVec(rim, P);
-				this.goBy(
-					d,
-					clampPt({ x: P.x + back.x * 4, y: P.y + back.y * 4 }),
-					t + 150,
-					there,
-					"run",
-				);
-			}
-			t = there;
 		}
 		return Math.max(t, this.hold(shooter, t, "hold"));
 	}
@@ -10816,6 +10930,16 @@ class Director {
 			if (reverse) {
 				anim = "reverseLayup";
 			}
+			// From way out as time runs out: a heave, not a jumper.
+			if (
+				heaveSecs !== undefined &&
+				!putback &&
+				lob === undefined &&
+				len >= HEAVE_FROM
+			) {
+				anim = "heave";
+			}
+			const heave = anim === "heave";
 			// A jumper takes a second from the dip to landing (the ball gone
 			// just past halfway: about two-thirds of a second off the catch,
 			// the league's typical catch-and-shoot).
@@ -10846,8 +10970,9 @@ class Director {
 							: zone === "midRange"
 								? 1.55
 								: 1.4;
-			const dur =
-				(close || floater) && !tip
+			const dur = heave
+				? HEAVE_MS
+				: (close || floater) && !tip
 					? (2 * Math.sqrt((2 * peak) / GRAVITY) * 1000) / (0.93 - 0.24)
 					: (close || floater ? 760 : zone === "lowPost" ? 900 : 1000) * form;
 			// A hand right up at it: now and then he leans away from it as he
@@ -10892,6 +11017,22 @@ class Director {
 					"run",
 					faceRim,
 				);
+			} else if (heave) {
+				// On up the floor through it, the way he was going - slowing,
+				// and down a step on.
+				lands = clampPt({
+					x: P1.x + (toRim.x / len) * HEAVE_ON,
+					y: P1.y + (toRim.y / len) * HEAVE_ON,
+				});
+				this.carry(
+					shooter,
+					lands,
+					gather,
+					dur * HEAVE_HOP.land,
+					"run",
+					faceRim,
+					{ onFrom: true, v1: 0 },
+				);
 			} else if (anim === "shoot" && this.rated.has(shooter)) {
 				// Each his own way of coming down, the same every time: most
 				// right where they went up, some a little ahead of it, some a
@@ -10918,9 +11059,15 @@ class Director {
 					);
 				}
 			}
-			const jump: [number, number, number] = jumper
-				? [J.off, J.land, hopFor(dur, J.land - J.off)]
-				: [0.24, 0.93, peak];
+			const jump: [number, number, number] = heave
+				? [
+						HEAVE_HOP.off,
+						HEAVE_HOP.land,
+						hopFor(dur, HEAVE_HOP.land - HEAVE_HOP.off),
+					]
+				: jumper
+					? [J.off, J.land, hopFor(dur, J.land - J.off)]
+					: [0.24, 0.93, peak];
 			this.act(shooter, anim, gather, gather + dur, {
 				face: faceRim,
 				look: reverse
@@ -10932,7 +11079,15 @@ class Director {
 				...(arms && !lean ? { arms } : {}),
 				...(lean ? { lean } : {}),
 			});
-			const letGo = close ? 0.6 : floater ? 0.5 : jumper ? J.release : 0.55;
+			const letGo = close
+				? 0.6
+				: floater
+					? 0.5
+					: jumper
+						? J.release
+						: heave
+							? HEAVE_HOP.release
+							: 0.55;
 			const release = gather + dur * letGo;
 			// Where it leaves his hand - and once it has, the last of his way
 			// in carries him on a foot or so in the air (see below).
@@ -11233,7 +11388,11 @@ class Director {
 				) {
 					room = 2;
 				}
-				if (guard !== undefined && room === 3 && !close) {
+				if (heave) {
+					// After him up the floor, not set in front of him: a hand up
+					// at it from behind, if he has caught him.
+					this.chaseHeave(guard, shooter, release);
+				} else if (guard !== undefined && room === 3 && !close) {
 					// Out of the help, or from wherever he was, flat out - only
 					// as it goes up: a hand up as it goes over him, if that.
 					this.closeOut(
@@ -11571,6 +11730,33 @@ class Director {
 	// him to help - he reads the pass, sprints out and breaks down into
 	// short, choppy steps, a hand high, and gets there when he gets there:
 	// up into the shot, or a hand in the shooter's face as it goes over him.
+	// A heave from way out, his man after him: a hand up at it as it goes,
+	// from wherever chasing him has got him - beside him or behind him, not
+	// in front of him - if that is near enough.
+	private chaseHeave(d: number | undefined, shooter: number, release: number) {
+		if (d === undefined) {
+			return;
+		}
+		const P = this.posAt(shooter, release);
+		const G = this.posAt(d, release);
+		if (dist(G, P) > HEAVE_REACH) {
+			return;
+		}
+		const peak = this.leap(d, 1.4);
+		const half = Math.sqrt((2 * peak) / GRAVITY) * 1000;
+		const D = Math.max(680, half / 0.43);
+		const t0 = release + 80 - 0.525 * D;
+		if (this.track(d)?.acts.some((a) => a.t1 > t0 && a.t0 < t0 + D)) {
+			return;
+		}
+		this.act(d, "contest", t0, t0 + D, {
+			face: (P.x >= G.x ? 1 : -1) as 1 | -1,
+			look: { ...P },
+			jump: [0.525 - half / D, 0.525 + half / D, peak],
+			...(this.leftToBall(G, shooter, P) ? { mirror: true as const } : {}),
+		});
+	}
+
 	private closeOut(
 		d: number,
 		shooter: number,
@@ -16825,6 +17011,7 @@ class Director {
 			"postUp",
 			"shoot",
 			"setShot",
+			"heave",
 			"fade",
 			"hook",
 			"layup",
@@ -19941,6 +20128,7 @@ class Director {
 			"contest",
 			"shoot",
 			"setShot",
+			"heave",
 			"fade",
 			"hook",
 			"catch",
@@ -20894,6 +21082,7 @@ class Director {
 		const HOLDS = new Set<AnimName>([
 			"shoot",
 			"setShot",
+			"heave",
 			"fade",
 			"hook",
 			"layup",
@@ -21658,6 +21847,7 @@ class Director {
 		const FIXED = new Set<AnimName>([
 			"shoot",
 			"setShot",
+			"heave",
 			"fade",
 			"hook",
 			"layup",

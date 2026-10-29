@@ -184,6 +184,48 @@ describe("the shot clock on the score bug", () => {
 		assert.closeTo(shotClockAt(clocks, 6600)!, 14.7, 0.01);
 	});
 
+	// The picture taking longer over a shot in the air and the board off it
+	// than the sim gives them, the game clock runs on ahead of the sim's - and
+	// the shot clock with it: never back up at the next line (only to a
+	// reset - the 14 off the offensive board).
+	test("it runs with the game clock, never back up between resets", () => {
+		const events: any[] = [
+			{ type: "jumpBall", t: 0, clock: 720, shotClock: 24 },
+			{ type: "fgaTp", t: 0, clock: 700, shotClock: 4, desperation: false },
+			{ type: "missTp", t: 0, clock: 699.7, shotClock: 3.7 },
+			{ type: "orb", t: 0, clock: 699.5, shotClock: 14 },
+			{ type: "fgaAtRim", t: 0, clock: 698, shotClock: 12.5 },
+			{ type: "fgAtRim", t: 0, clock: 697.8, shotClock: 12.3 },
+		];
+		const at = [600, 20600, 22600, 23800, 25600, 26600];
+		const tl = {
+			beats: events.map((e, i) => ({
+				i,
+				type: e.type,
+				preStart: i === 0 ? 0 : at[i - 1]!,
+				actionStart: at[i]!,
+				end: at[i]! + 200,
+			})),
+			poss: [[600, 0]],
+			fast: [],
+			cuts: [],
+			ball: [],
+		};
+		const clocks = buildClocks(tl as never, events);
+		// (Ahead of the sim's by the board.)
+		assert.isBelow(gameClockAt(clocks, 23800)!, 699.5 - 0.5);
+		let was = shotClockAt(clocks, 600)!;
+		for (let t = 650; t <= 26600; t += 50) {
+			const now = shotClockAt(clocks, t)!;
+			if (now > was + 1e-6) {
+				assert.isAtLeast(now, 13.9, `${t}: ${was} to ${now}`);
+			}
+			// (Never out before the shot goes up.)
+			assert.isAbove(now, 0, `${t}`);
+			was = now;
+		}
+	});
+
 	// Whole seconds as it counts down, never 0 while there is time on it;
 	// in its last five, tenths.
 	test("tenths in its last five seconds", () => {

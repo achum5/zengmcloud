@@ -25,7 +25,13 @@ import {
 	tensionAt,
 	withBody,
 } from "./evaluate.ts";
-import { buildClocks, gameClockAt } from "./clock.ts";
+import {
+	buildClocks,
+	gameClockAt,
+	inboundCaught,
+	LEAD_MOST,
+	runsOn,
+} from "./clock.ts";
 import { crowdAt } from "./scene.ts";
 import {
 	attackDir,
@@ -1581,18 +1587,154 @@ describe("3D director", () => {
 			const at = (t: number) => gameClockAt(clocks, t)!;
 			const mid = (b.actionStart + b.end) / 2;
 			if (/^fga/.test(e.type) && n.clock < e.clock - 0.3) {
-				// In the air: already running down to the result's reading.
-				assert.isBelow(at(mid), e.clock, `${e.type} at ${b.actionStart}`);
-				assert.isAtLeast(at(mid), n.clock);
+				// In the air: already running down to the result's reading (or
+				// a little past it, the picture taking longer - see LEAD_MOST).
+				const air = next!.actionStart - 1;
+				assert.isBelow(at(air), e.clock, `${e.type} at ${b.actionStart}`);
+				assert.isAtLeast(at(air), n.clock - LEAD_MOST);
 				live += 1;
 			} else if (/^(pf|ft|missFt)/.test(e.type) && n.clock === e.clock) {
-				assert.strictEqual(at(mid), e.clock, `${e.type} at ${b.actionStart}`);
+				// (Stopped at it - or as far ahead of it as it had got - and on
+				// through the dead time to the next free throw.)
+				const stopped = at(b.actionStart);
+				assert.strictEqual(at(mid), stopped, `${e.type} at ${b.actionStart}`);
+				assert.isAtMost(stopped, e.clock);
+				assert.isAtLeast(stopped, e.clock - LEAD_MOST);
+				if (/^(ft|missFt)$/.test(n.type)) {
+					assert.strictEqual(
+						at(next!.actionStart),
+						stopped,
+						`${e.type} to ${n.type} at ${b.actionStart}`,
+					);
+				}
 				whistles += 1;
 			}
 		});
 		assert.isAbove(live, 20);
 		assert.isAbove(whistles, 10);
 	}, 240_000);
+
+	// THE HEAVE AT THE BUZZER. Up in the time the sim gives it, from when
+	// the clock starts on it - running already off a board, from the inbound
+	// after a whistle (off a basket, no longer than it takes to get it out
+	// of the net and in) - from way out, the ball out of his hands before the
+	// horn, and the clock out as it flies: not crawling to 0.0 the whole way.
+	test("a heave at the buzzer goes up as time runs out", () => {
+		const players: CourtPlayer[] = [];
+		const POS = ["PG", "SG", "SF", "PF", "C"];
+		const events: RawEvent[] = [{ type: "init", boxScore: {} }];
+		for (const raw of [0, 1] as const) {
+			for (let j = 0; j < 5; j++) {
+				const pid = raw * 10 + j + 1;
+				players.push({ pid, team: raw === 0 ? 1 : 0, pos: POS[j] });
+				events.push({ type: "stat", t: raw, pid, s: "gs", amt: 1 });
+			}
+		}
+		events.push({ type: "jumpBall", t: 0, pid: 5, pid2: 15, clock: 720 });
+		// How the other end ends, c on the clock, before the heave.
+		const ends: ((c: number) => RawEvent[])[] = [
+			// A miss and their board,
+			(c) => [
+				{ type: "fgaMidRange", t: 0, pid: 2, clock: c, desperation: false },
+				{ type: "missMidRange", t: 0, pid: 2, clock: c - 0.8 },
+				{ type: "drb", t: 1, pid: 15, clock: c - 1.2 },
+			],
+			// a miss out of bounds off the shooting team,
+			(c) => [
+				{ type: "fgaTp", t: 0, pid: 3, clock: c, desperation: false },
+				{ type: "missTp", t: 0, pid: 3, clock: c - 1 },
+				{ type: "outOfBounds", t: 0, on: "offense", clock: c - 1.3 },
+			],
+			// a basket.
+			(c) => [
+				{ type: "fgaAtRim", t: 0, pid: 4, clock: c, desperation: false },
+				{ type: "fgAtRim", t: 0, pid: 4, clock: c - 0.5 },
+				{ type: "stat", t: 0, pid: 4, s: "pts", amt: 2 },
+			],
+		];
+		const lefts = [3.6, 2.4, 4.4, 1.8, 3.1, 2.7];
+		let period = 1;
+		for (let k = 0; k < lefts.length * ends.length; k++) {
+			// (Up and down the floor till then.)
+			for (let c = 130; c > 60; c -= 22) {
+				events.push(
+					{ type: "fgaMidRange", t: 0, pid: 1, clock: c, desperation: false },
+					{ type: "missMidRange", t: 0, pid: 1, clock: c - 1 },
+					{ type: "drb", t: 1, pid: 14, clock: c - 1.5 },
+					{ type: "fgaTp", t: 1, pid: 12, clock: c - 12, desperation: false },
+					{ type: "tp", t: 1, pid: 12, clock: c - 13 },
+					{ type: "stat", t: 1, pid: 12, s: "pts", amt: 3 },
+				);
+			}
+			const left = lefts[k % lefts.length]!;
+			const shooter = 11 + (k % 5);
+			events.push(
+				...ends[k % ends.length]!(left + 1.3),
+				{
+					type: "fgaTp",
+					t: 1,
+					pid: shooter,
+					clock: 0.1,
+					desperation: true,
+				},
+				{ type: "missTp", t: 1, pid: shooter, clock: 0 },
+				{ type: "endOfPeriod", t: 1, reason: "noShot", clock: 0 },
+			);
+			period += 1;
+			events.push({ type: "period", period, clock: 720 });
+		}
+		events.push({ type: "gameOver" });
+		const tl = compileCourt({ events, players, gid: 7 });
+		const clocks = buildClocks(tl, events);
+		let heaves = 0;
+		let far = 0;
+		tl.beats.forEach((b, j) => {
+			const e = events[b.i]!;
+			if (e.desperation !== true) {
+				return;
+			}
+			heaves += 1;
+			const prior = tl.beats
+				.slice(0, j)
+				.findLast((x) => typeof events[x.i]!.clock === "number")!;
+			const p = events[prior.i]!;
+			const gap = (p.clock as number) - (e.clock as number);
+			const from = runsOn(p)
+				? prior.actionStart
+				: inboundCaught(tl.ball, b.preStart, b.actionStart)!;
+			const took = b.actionStart - from;
+			const what = `${p.type} ${gap.toFixed(1)}s at ${Math.round(b.actionStart)}`;
+			if (/^fg(?!a)/.test(p.type)) {
+				assert.isAtMost(took, Math.max(3600, gap * 1000 + 300), what);
+			} else {
+				assert.isAtMost(took, gap * 1000 + 300, what);
+				assert.isAtLeast(took, gap * 1000 - 600, what);
+			}
+			const shooter = e.pid as number;
+			const P = evalPlayer(tl, shooter, b.actionStart);
+			const rim = { x: rimX(tl.tracks.get(shooter)!.team), y: COURT_H / 2 };
+			const act = tl.tracks
+				.get(shooter)!
+				.acts.find(
+					(a) => a.t0 >= b.actionStart - 100 && a.t0 <= b.actionStart + 100,
+				);
+			if (Math.hypot(P.x - rim.x, P.y - rim.y) > 40) {
+				assert.strictEqual(act?.anim, "heave", what);
+				far += 1;
+			}
+			const release = tl.ball.find(
+				(s) =>
+					s.t0 >= b.actionStart &&
+					s.kind === "fly" &&
+					"pid" in s.from &&
+					s.from.pid === shooter,
+			)!.t0;
+			assert.isAbove(gameClockAt(clocks, release - 20)!, 0, what);
+			assert.strictEqual(gameClockAt(clocks, release + 300), 0, what);
+		});
+		assert.strictEqual(heaves, lefts.length * ends.length);
+		assert.isAtLeast(far, 6);
+	}, 480_000);
 
 	// A quick trip off a defensive board or a steal is a fast break - run
 	// out at full speed, never fast-forwarded - and a long one walks it up
