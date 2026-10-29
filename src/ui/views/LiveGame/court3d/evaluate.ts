@@ -1664,6 +1664,7 @@ export const forgetTurns = (tracks: Iterable<Track>) => {
 		footfalls.delete(tr);
 		footsAt.delete(tr);
 		pushLeads.delete(tr);
+		doings.delete(tr);
 	}
 };
 const yawOnBeat = (tl: CourtTimeline, tr: Track, g: number): number => {
@@ -2568,11 +2569,47 @@ const closedOn = (
 	const off = was?.kind === "rest" ? GRIP_FLOOR_MS : GRIP_MS;
 	return smooth01((t - since) / off);
 };
+// WHAT HE IS DOING AT A MOMENT, WORKED OUT ONCE. Easing from one move into
+// the next (see blendInto) looks back at what he was doing a moment ago -
+// at the same moments of the game, whatever the frame - so the frames on
+// either side of this one ask after the same moments again: kept, the last
+// few hundred moments a man, for the timeline they were worked out on.
+const DOING_KEEP = 512;
+const doings = new WeakMap<
+	Track,
+	{ tl: CourtTimeline; at: Map<number, Doing> }
+>();
 const doingAt = (
 	tl: CourtTimeline,
 	tr: Track,
 	t: number,
-	here: Spot = spotAt(tr, t),
+	here?: Spot,
+): Doing => {
+	if (here !== undefined) {
+		return doingNow(tl, tr, t, here);
+	}
+	let kept = doings.get(tr);
+	if (kept?.tl !== tl) {
+		kept = { tl, at: new Map() };
+		doings.set(tr, kept);
+	}
+	let d = kept.at.get(t);
+	if (d === undefined) {
+		d = doingNow(tl, tr, t, spotAt(tr, t));
+		// (The longest kept is the first to go: no frame has to work them
+		// all out again at once.)
+		if (kept.at.size >= DOING_KEEP) {
+			kept.at.delete(kept.at.keys().next().value!);
+		}
+		kept.at.set(t, d);
+	}
+	return d;
+};
+const doingNow = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+	here: Spot,
 ): Doing => {
 	const pid = tr.pid;
 	const standing = actAt(tr, t);

@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 28,
+		date: "2026-10-29",
+		text: "3D game: players on offense no longer hang around in the lane - a big who ducks in to seal his man pops right back out, and anybody left standing in there steps out to the short corner or dunker spot before three seconds are up. The 3D court also does about half the work it did each frame, so it should run smoother and cooler on phones.",
+	},
+	{
 		n: 27,
 		date: "2026-10-28",
 		text: "Realistic Front Offices: pending deals now stay open for two full sims after they open or get a new bid (a sim being one press of Play, however many days), so a bid made right before someone sims can't win before everyone else gets a sim to answer it. Every pending deal is decided by the last day before the trade deadline. Your own big trades with CPU teams (one of their 5 best players, or a 1st) now become pending deals too: the CPU team agrees, other teams get two sims to top it, and if nobody does it goes through.",

@@ -17339,14 +17339,15 @@ class Director {
 				};
 				const claim = (Q: Pt, t0: number) =>
 					claims.push({ team, pid: tr.pid, at: Q, t0, t1: until });
-				// A big ducks in on his man toward the ball, seals him, and is
-				// back out where he was before the count of three.
+				// A big ducks in on his man toward the ball - hard, a few quick
+				// steps to just inside the lane line - seals him, and is back out
+				// where he was before the count of three.
 				const seal = (): boolean => {
 					const B = ballSpot(t);
 					const side = B.y >= rim.y ? 1 : -1;
 					const S = clampPt({
 						x: rim.x - attackDir(team) * this.rand(4, 6),
-						y: rim.y + side * this.rand(4.5, 6),
+						y: rim.y + side * (this.rand(4.5, 6) + SEAL_OUT),
 					});
 					const back = at;
 					const hold = this.rand(600, 900);
@@ -17354,17 +17355,19 @@ class Director {
 						dist(S, at) < 2 ||
 						dist(S, B) < 7 ||
 						othersAt(t).some((m) => dist(m, S) < 4) ||
-						!room(dur(at, S, 9) + hold + dur(S, back, 8))
+						!room(
+							dur(at, S, SEAL_IN_PACE) + hold + dur(S, back, SEAL_BACK_PACE),
+						)
 					) {
 						return false;
 					}
-					step(S, 9, "run");
+					step(S, SEAL_IN_PACE, "run");
 					addedActs.push({
 						tr,
 						act: { t0: t, t1: t + hold, anim: "fight", look: B },
 					});
 					t += hold;
-					step(back, 8, "back", 300);
+					step(back, SEAL_BACK_PACE, "back", 300);
 					return true;
 				};
 				// Out of the lane: to the side of it he is on - or the other, or a
@@ -22756,6 +22759,157 @@ class Director {
 		return set === undefined ? LIVE_LEAD : b.actionStart - set + SCREEN_SEEN;
 	}
 
+	// THREE SECONDS. A man on the offense without the ball is out of the lane
+	// before the official can count three: in there that long for no shot
+	// or board - parked on his spot in a set, ducked in and back on his man,
+	// a cutter left waiting under the rim - he steps out to the nearest
+	// spot just outside it (the short corner, the dunker spot, over the
+	// free throw line) at the first moment he is stood still with nothing
+	// on, and goes on to whatever he does next from there.
+	private clearTheLane() {
+		const shots = this.beats
+			.filter((b) => /^(fga|ft$|missFt$)/.test(b.type))
+			.map((b): [number, number] => [
+				(/^fga/.test(b.type) ? b.actionStart : b.preStart) - LANE_SHOT_BEFORE,
+				b.end + LANE_SHOT_AFTER,
+			])
+			.sort((x, y) => x[0] - y[0]);
+		// (Each worked out walking forward through the game: the last of a
+		// list begun by t, from where the last look left off.)
+		const walker = <X extends { t0: number } | [number, ...unknown[]]>(
+			list: readonly X[],
+		) => {
+			let k = -1;
+			return (t: number): X | undefined => {
+				const t0 = (x: X) => (Array.isArray(x) ? x[0] : x.t0) as number;
+				if (k >= 0 && t0(list[k]!) > t) {
+					k = -1;
+				}
+				while (k + 1 < list.length && t0(list[k + 1]!) <= t) {
+					k++;
+				}
+				return k >= 0 ? list[k] : undefined;
+			};
+		};
+		const where = (m: Move | undefined, start: Pt, t: number): Pt => {
+			if (!m) {
+				return start;
+			}
+			if (t >= m.t1) {
+				return m.to;
+			}
+			const e = 0.5 - 0.5 * Math.cos((Math.PI * (t - m.t0)) / (m.t1 - m.t0));
+			return {
+				x: m.from.x + (m.to.x - m.from.x) * e,
+				y: m.from.y + (m.to.y - m.from.y) * e,
+			};
+		};
+		for (const tr of this.tracks.values()) {
+			if (tr.moves.length === 0) {
+				continue;
+			}
+			const base = rimX(tr.team) < COURT_W / 2 ? 0 : COURT_W;
+			const inLane = (q: Pt) =>
+				Math.abs(q.x - base) < LANE_DEEP &&
+				Math.abs(q.y - COURT_H / 2) < LANE_HALF;
+			const possAt = walker(this.poss);
+			const ballAt = walker(this.ball);
+			const shownAt = walker(tr.shown);
+			const shotAt = walker(shots);
+			let moveAt = walker(tr.moves);
+			const end = tr.moves.at(-1)!.t1;
+			let since: number | undefined;
+			for (let t = tr.moves[0]!.t0; t <= end; t += LANE_STEP) {
+				const m = moveAt(t);
+				const P = where(m, tr.start, t);
+				const seg = ballAt(t);
+				const shot = shotAt(t);
+				const inside =
+					inLane(P) &&
+					possAt(t)?.[1] === tr.team &&
+					!(seg?.kind === "hold" && seg.pid === tr.pid) &&
+					!(shot && t <= shot[1]) &&
+					shownAt(t)?.[1] === true;
+				if (!inside) {
+					since = undefined;
+					continue;
+				}
+				since ??= t;
+				if (t < since + LANE_OUT + hash01(tr.pid, since) * LANE_GIVE) {
+					continue;
+				}
+				// Stood still, nothing on: not on a run, nor in an act.
+				if (
+					(m && t < m.t1) ||
+					tr.acts.some((a) => a.t0 <= t + 600 && a.t1 > t)
+				) {
+					continue;
+				}
+				// Out to his side of the lane, or up over the line - whichever is
+				// nearer, and not where a teammate is.
+				const side =
+					Math.sign(P.y - COURT_H / 2) || (hash01(tr.pid, t) < 0.5 ? -1 : 1);
+				const up = base === 0 ? 1 : -1;
+				const mates = [...this.tracks.values()].filter(
+					(o) =>
+						o !== tr &&
+						o.team === tr.team &&
+						o.shown.some(([t0, on]) => on && t0 <= t),
+				);
+				const spots = [
+					{ x: P.x, y: COURT_H / 2 + side * LANE_EXIT },
+					{ x: P.x + up * 2.5, y: COURT_H / 2 + side * LANE_EXIT },
+					{ x: P.x - up * 2.5, y: COURT_H / 2 + side * LANE_EXIT },
+					...(Math.abs(P.x - base) > 12
+						? [{ x: base + up * (LANE_DEEP + 1.5), y: P.y }]
+						: []),
+				].map((q) => clampPt(q));
+				let Q: Pt | undefined;
+				let best = Infinity;
+				for (const q of spots) {
+					if (inLane(q)) {
+						continue;
+					}
+					const crowd = mates.some(
+						(o) => dist(this.posAt(o.pid, t + 1000), q) < 4,
+					);
+					const cost = dist(P, q) + (crowd ? 20 : 0);
+					if (cost < best) {
+						best = cost;
+						Q = q;
+					}
+				}
+				if (!Q) {
+					since = undefined;
+					continue;
+				}
+				const d = dist(P, Q);
+				const t1 = t + (d / LANE_PACE) * 1000;
+				const k = tr.moves.findIndex((x) => x.t0 > t);
+				const next = k >= 0 ? tr.moves[k] : undefined;
+				if (next && next.t0 < t1 + 150) {
+					continue;
+				}
+				const step: Move = {
+					t0: t,
+					t1,
+					from: { ...P },
+					to: Q,
+					anim: d < 8 ? "drift" : "run",
+				};
+				if (next) {
+					tr.moves.splice(k, 0, step);
+					next.from = { ...Q };
+				} else {
+					tr.moves.push(step);
+				}
+				moveAt = walker(tr.moves);
+				since = undefined;
+				t = t1;
+			}
+		}
+	}
+
 	// NOBODY GOES ON THE SAME COUNT. Three or more setting off from standing
 	// in the same instant - five running back the moment the ball changes
 	// hands, the whole floor moving as a shot goes up - is a drill, not a
@@ -23144,6 +23298,7 @@ class Director {
 		this.keepDribbling();
 		this.flowOn();
 		this.liven();
+		this.clearTheLane();
 		this.stagger();
 		for (const tr of this.tracks.values()) {
 			// One thing at a time with his arm: the first he started.
@@ -23319,6 +23474,25 @@ const DEAD_MIN = 1400;
 // Lines whose lead-in is the ball in play, building to them - and how much
 // of it before the line's action is shown at real speed (ms; see liveLead).
 const LIVE_PLAY = /^(fga|tov$|stl$|pfNonShooting$|pfBonus$)/;
+// The lane (see clearTheLane): in it, deeper than his toes on the line, at
+// the most so long before he steps out - this much later for some - and
+// out to a foot and a half past the line, at an easy pace. (Not round a
+// shot: from just before it goes up till the board is got.)
+const LANE_DEEP = 18.5;
+const LANE_HALF = 7.3;
+const LANE_OUT = 2200;
+const LANE_GIVE = 500;
+const LANE_EXIT = 9.5;
+const LANE_PACE = 8;
+const LANE_STEP = 100;
+const LANE_SHOT_BEFORE = 700;
+const LANE_SHOT_AFTER = 2500;
+// A big's seal off the ball (see liven): ducked in this much nearer the
+// lane line than his spot in front of the rim, and in and back out at
+// these paces (feet a second) - in the lane under three seconds all told.
+const SEAL_OUT = 1.2;
+const SEAL_IN_PACE = 12;
+const SEAL_BACK_PACE = 10;
 const LIVE_LEAD = 2600;
 const LIVE_MIN = 2200;
 const LIVE_MAX = 3400;
