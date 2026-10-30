@@ -2336,6 +2336,54 @@ describe("3D director", () => {
 		assert.isAtMost(by.length, 34, by.join("; "));
 	}, 900_000);
 
+	test("a man backing down in the post backs into his man, not nobody", () => {
+		let n = 0;
+		const off: string[] = [];
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl } = compile(seed, 140);
+			const tracks = [...tl.tracks.values()];
+			for (const tr of tracks) {
+				const rim = { x: rimX(tr.team), y: COURT_H / 2 };
+				for (const m of tr.moves) {
+					if (
+						m.anim !== "post" ||
+						m.t1 - m.t0 < 200 ||
+						fastAt(tl, m.t0) > 1.001 ||
+						evalBall(tl, (m.t0 + m.t1) / 2, bodyFor).holder !== tr.pid
+					) {
+						continue;
+					}
+					n += 1;
+					// A man of theirs up against him on the rim side of him.
+					let k = 0;
+					let on = 0;
+					for (let t = m.t0; t <= m.t1; t += 100) {
+						k += 1;
+						const P = evalPlayer(tl, tr.pid, t);
+						on += tracks.some((o) => {
+							if (o.team === tr.team || o.pid < 0) {
+								return false;
+							}
+							const q = evalPlayer(tl, o.pid, t);
+							return (
+								q.shown &&
+								Math.hypot(q.x - P.x, q.y - P.y) < 3 &&
+								(q.x - P.x) * (rim.x - P.x) + (q.y - P.y) * (rim.y - P.y) > 0
+							);
+						})
+							? 1
+							: 0;
+					}
+					if (on < 0.7 * k) {
+						off.push(`${seed}: ${tr.pid} at ${Math.round(m.t0)} (${on}/${k})`);
+					}
+				}
+			}
+		}
+		assert.isAbove(n, 15);
+		assert.deepEqual(off, []);
+	}, 900_000);
+
 	test("a left-hander's follow-through is held up with his left", () => {
 		const SHOTS = new Set(["shoot", "fade", "hook", "floater", "setShot"]);
 		const held = { L: 0, R: 0 };

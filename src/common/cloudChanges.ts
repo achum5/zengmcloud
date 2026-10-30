@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 67,
+		date: "2026-10-30",
+		text: "3D game: a player backing down in the post now always has his defender on his back. The defender steps around him as the entry pass comes and gives ground with him. If nobody can get there in time (his man still trailing him down the floor, say), he faces up and takes it in on the dribble instead of backing into empty space.",
+	},
+	{
 		n: 66,
 		date: "2026-10-30",
 		quiet: true,

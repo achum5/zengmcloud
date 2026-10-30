@@ -2136,6 +2136,12 @@ class Director {
 	// The runs that take a defender to where his man has him be, and whose man
 	// that is: in the end (see mark) he follows his man every step of the way.
 	private readonly marking = new Map<Move, number>();
+	// Each back-down in the post, whose it is, and the man he backs down -
+	// as the plan had it (see onHisBack).
+	private readonly backingDown = new Map<
+		Move,
+		{ pid: number; guard: number | undefined }
+	>();
 	// Shot fakes on the floor: who, when, and where.
 	private readonly fakes: { pid: number; t: number; at: Pt }[] = [];
 	// Up off his feet at a shot fake and on by the shooter: till when (see
@@ -9628,6 +9634,10 @@ class Director {
 		// His man gives ground with him - if he is on him, not off somewhere
 		// else (gone to meet the shot, say).
 		const guard = this.defenderOf(pid);
+		const m = this.track(pid)?.moves.at(-1);
+		if (m?.anim === "post" && m.t1 === done) {
+			this.backingDown.set(m, { pid, guard });
+		}
 		if (guard !== undefined && dist(this.posOf(guard), at) < 5) {
 			this.go(
 				guard,
@@ -23330,6 +23340,31 @@ class Director {
 		};
 		const offenseAt = (t: number): Side | undefined =>
 			this.poss[lastBy(this.poss, t, (x) => x[0])]?.[1];
+		// (Backing his man down - and his man on him still, after: the ball
+		// in his hands, till it is gone or he goes.)
+		const backing = new Map<number, [number, number][]>();
+		for (const tr of this.tracks.values()) {
+			for (const m of tr.moves) {
+				if (m.anim !== "post") {
+					continue;
+				}
+				let until = Infinity;
+				for (const x of tr.moves) {
+					if (x.t0 >= m.t1 - 1 && x !== m) {
+						until = Math.min(until, x.t0);
+					}
+				}
+				const b = this.ball.find(
+					(x) => x.t0 > m.t1 && !(x.kind === "hold" && x.pid === tr.pid),
+				);
+				until = Math.min(until, b?.t0 ?? Infinity);
+				const w = backing.get(tr.pid) ?? [];
+				w.push([m.t0, Number.isFinite(until) ? until : m.t1]);
+				backing.set(tr.pid, w);
+			}
+		}
+		const backsDown = (pid: number, t: number) =>
+			backing.get(pid)?.some(([a, b]) => a <= t && t <= b) ?? false;
 		// Over a few steps either side of him, as far as the most he needs
 		// to be over - and smoothly.
 		const R = 3 * SOFT;
@@ -23937,7 +23972,9 @@ class Director {
 									off = offenseAt(t);
 								}
 								const ih = A.pid === holder ? 1 : B.pid === holder ? -1 : 0;
-								if (ih !== 0) {
+								// (Backing his man down, the ball is out the other
+								// way: his man is on his back.)
+								if (ih !== 0 && !backsDown(holder!, t)) {
 									const H = ih === 1 ? A : B;
 									const hx = ih === 1 ? xi : xi - ddx;
 									const hy = ih === 1 ? yi : yi - ddy;
@@ -24707,6 +24744,199 @@ class Director {
 		}
 	}
 
+	// ON HIS BACK. A man backing his man down in the post backs into him:
+	// his man is there on his back, between him and the rim, giving ground a
+	// step at a time - not off wherever following him had him (fronting him
+	// for the entry, trailing in behind him on his way to the block), the man
+	// with the ball backing into nobody. Off him as it starts, he steps round
+	// him onto his back as the ball comes - round him, not through him - and
+	// gives ground with him from there. With nobody of theirs near enough to
+	// get there in time - his man trailing him down the floor, say - there is
+	// nobody to back down: he faces up and takes it in on the dribble.
+	private onHisBack() {
+		// How near him (feet) a man of theirs has to be to get on him, and
+		// how near where he should be to be on him already; how quickly he
+		// steps round (feet a second), and how long that takes him to get
+		// going and pull up (ms).
+		const NEAR = 7;
+		const ON = 0.9;
+		const ROUND = 9;
+		const SETTLE = 200;
+		// Off as soon as the ball is on its way in to him - and never more
+		// than this long (ms) before the back-down; and there no later than
+		// this long (ms) into it.
+		const SOONEST = 1200;
+		const LATE = 300;
+		for (const [m, { pid, guard: his }] of this.backingDown) {
+			const tr = this.track(pid);
+			if (!tr || !tr.moves.includes(m) || m.t1 - m.t0 < 200) {
+				continue;
+			}
+			const rim = rimPt(tr.team);
+			const dir = attackDir(tr.team);
+			const P0 = this.posAt(pid, m.t0);
+			// Where his man is on him: on his back, his middle a body off his.
+			const back = (t: number): Pt => {
+				const P = this.posAt(pid, t);
+				const u = unitVec(P, rim);
+				return clampPt({ x: P.x + u.x * BODY, y: P.y + u.y * BODY });
+			};
+			// His man - or, him off somewhere, whoever of theirs is nearest.
+			const onCourt = (o: Track | undefined) => {
+				const k = o ? lastBy(o.shown, m.t0, (x) => x[0]) : -1;
+				return o !== undefined && k >= 0 && o.shown[k]![1];
+			};
+			let g =
+				his !== undefined &&
+				onCourt(this.track(his)) &&
+				dist(this.posAt(his, m.t0), P0) < NEAR
+					? his
+					: undefined;
+			if (g === undefined) {
+				let near = NEAR;
+				for (const o of this.tracks.values()) {
+					const d = dist(this.posAt(o.pid, m.t0), P0);
+					if (o.team !== tr.team && o.pid >= 0 && onCourt(o) && d < near) {
+						near = d;
+						g = o.pid;
+					}
+				}
+			}
+			const gt = g === undefined ? undefined : this.track(g);
+			const faceUp = () => {
+				m.anim = "dribble";
+				m.face = dir;
+			};
+			if (g === undefined || !gt) {
+				faceUp();
+				continue;
+			}
+			let on = true;
+			for (let t = m.t0; t <= m.t1 && on; t += 100) {
+				on = dist(this.posAt(g, t), back(t)) <= ON;
+			}
+			if (on) {
+				continue;
+			}
+			// Off when the ball is on its way in to him - or when what he was
+			// doing is done.
+			const fly = this.ball.findLast(
+				(x) =>
+					x.kind === "fly" && x.t0 <= m.t0 && "pid" in x.to && x.to.pid === pid,
+			);
+			let lo = Math.max(m.t0 - SOONEST, fly?.t0 ?? -Infinity);
+			for (const a of gt.acts) {
+				if (a.t1 > lo && a.t0 < m.t0 && a.anim !== "fight") {
+					lo = Math.max(lo, a.t1);
+				}
+			}
+			lo = Math.min(lo, m.t0);
+			// Round him - past his shoulder on the side he is on - where
+			// straight there would take him through him.
+			const route = (G: Pt, B: Pt): Pt[] => {
+				const dx = B.x - G.x;
+				const dy = B.y - G.y;
+				const L2 = dx * dx + dy * dy;
+				const u = L2 > 0.01 ? ((P0.x - G.x) * dx + (P0.y - G.y) * dy) / L2 : 0;
+				if (
+					u <= 0 ||
+					u >= 1 ||
+					dist({ x: G.x + dx * u, y: G.y + dy * u }, P0) >= BODY
+				) {
+					return [B];
+				}
+				const ur = unitVec(P0, rim);
+				const side = (G.x - P0.x) * -ur.y + (G.y - P0.y) * ur.x;
+				const s = side >= 0 ? 1 : -1;
+				const R = BODY + 0.2;
+				return [clampPt({ x: P0.x - ur.y * s * R, y: P0.y + ur.x * s * R }), B];
+			};
+			const lengthOf = (G: Pt, pts: Pt[]) => {
+				let d = 0;
+				let a = G;
+				for (const p of pts) {
+					d += dist(a, p);
+					a = p;
+				}
+				return d;
+			};
+			const G1 = this.posAt(g, lo);
+			const need =
+				(lengthOf(G1, route(G1, back(m.t0))) / ROUND) * 1000 + SETTLE;
+			const s0 = Math.max(lo, m.t0 - need);
+			const G0 = this.posAt(g, s0);
+			const there = Math.max(m.t0, s0 + need);
+			if (there > m.t0 + LATE) {
+				faceUp();
+				continue;
+			}
+			const B = back(Math.min(there, m.t1));
+			const legs = route(G0, B);
+			const L = lengthOf(G0, legs);
+			const end = Math.max(there, m.t1);
+			// His runs from then till the back-down is over make way - the
+			// one he is on as he goes stopped where he is, the one he is on
+			// as it ends picked up from where he is then.
+			const Bend = back(m.t1);
+			const after: Move[] = [];
+			gt.moves = gt.moves.filter((x) => {
+				if (x.t1 <= s0 || x.t0 >= end) {
+					return true;
+				}
+				if (x.t1 > end) {
+					after.push({
+						...x,
+						t0: end,
+						from: { ...Bend },
+						v0: undefined,
+					});
+				}
+				if (x.t0 < s0) {
+					x.to = { ...G0 };
+					x.t1 = s0;
+					x.v1 = undefined;
+					return true;
+				}
+				return false;
+			});
+			let t = s0;
+			let from = G0;
+			for (const p of legs) {
+				const ms = L > 0.05 ? ((there - s0) * dist(from, p)) / L : 0;
+				if (ms > 1) {
+					gt.moves.push({
+						t0: t,
+						t1: t + ms,
+						from: { ...from },
+						to: { ...p },
+						anim: "slide",
+						face: -dir as 1 | -1,
+					});
+				}
+				t += ms;
+				from = p;
+			}
+			if (m.t1 - there > 1) {
+				gt.moves.push({
+					t0: there,
+					t1: m.t1,
+					from: { ...B },
+					to: { ...Bend },
+					anim: "back",
+					face: -dir as 1 | -1,
+				});
+			}
+			gt.moves.push(...after);
+			gt.moves.sort((a, b) => a.t0 - b.t0);
+			// (On from where he ends up.)
+			const next = gt.moves.find((x) => x.t0 >= end - 0.5);
+			if (next && !after.includes(next) && dist(next.from, Bend) > 0.05) {
+				next.from = { ...Bend };
+				next.v0 = undefined;
+			}
+		}
+	}
+
 	// WORKING HIS MAN. Stood with the ball on his dribble in the half court,
 	// his man up on him, a ball handler is never just bouncing it: he jabs at
 	// him, or hesitates as if to pull up - and his man gives ground to the
@@ -24893,6 +25123,7 @@ class Director {
 		this.wallUp();
 		this.workHisMan();
 		this.joinUp();
+		this.onHisBack();
 		// A fight for position or a box-out cut to a moment by what came
 		// after it never really shows - and left in, an arm thrown up for a
 		// frame is all it adds.
