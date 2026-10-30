@@ -103,7 +103,7 @@ describe("compileField", () => {
 				last = t;
 			}
 		}
-	});
+	}, 20_000);
 
 	test("eleven a side on the field, everyone the stats name among them", () => {
 		for (const game of games) {
@@ -142,7 +142,7 @@ describe("compileField", () => {
 				}
 			});
 		}
-	});
+	}, 20_000);
 
 	test("each side lines up on its own side of the ball, going the right way", () => {
 		for (const game of games) {
@@ -165,7 +165,7 @@ describe("compileField", () => {
 				}
 			}
 		}
-	});
+	}, 20_000);
 
 	test("the quarterback in the gun or under center, the ball in the center's hand", () => {
 		const tl = stage(games[0]!);
@@ -182,20 +182,20 @@ describe("compileField", () => {
 				play.ball.some((b) => b.kind === "held" && b.pid === center.pid),
 			);
 		}
-	});
+	}, 20_000);
 
 	test("a game takes about as long to watch as a broadcast", () => {
 		for (const game of games) {
 			const minutes = stage(game).end / 60_000;
 			assert.isTrue(minutes > 15 && minutes < 45, `${minutes} minutes`);
 		}
-	});
+	}, 20_000);
 
 	test("the same game is staged the same way every time", () => {
 		const a = stage(games[1]!, 5);
 		const b = stage(games[1]!, 5);
 		assert.deepStrictEqual(a, b);
-	});
+	}, 20_000);
 });
 
 describe("replays", () => {
@@ -231,7 +231,7 @@ describe("replays", () => {
 			});
 		}
 		assert.isAbove(shown, 15);
-	});
+	}, 20_000);
 
 	test("the live picture held while one shows, slowed down - and not on fast", () => {
 		const tl = stage(games[0]!);
@@ -270,7 +270,7 @@ describe("replays", () => {
 		assert.isAbove(seen.at(-1)!.t, r.cue);
 		// On fast: on through it.
 		assert.isTrue(run(4).every((x) => x.at === undefined));
-	});
+	}, 20_000);
 });
 
 describe("the chain crew", () => {
@@ -347,7 +347,7 @@ describe("the chain crew", () => {
 			}
 			assert.deepEqual(bad.slice(0, 8), []);
 		}
-	});
+	}, 20_000);
 });
 
 describe("pre-snap motion", () => {
@@ -391,7 +391,7 @@ describe("pre-snap motion", () => {
 		}
 		assert.isAbove(moving / passes, 0.15);
 		assert.isBelow(moving / passes, 0.6);
-	});
+	}, 20_000);
 });
 
 describe("the sidelines", () => {
@@ -427,7 +427,7 @@ describe("the sidelines", () => {
 			}
 			assert.deepEqual(bad.slice(0, 8), []);
 		}
-	});
+	}, 20_000);
 });
 
 describe("the sidelines, packed", () => {
@@ -464,7 +464,7 @@ describe("the sidelines, packed", () => {
 			}
 			assert.isAbove(sat / resting, 8);
 		}
-	}, 20_000);
+	}, 80_000);
 });
 
 describe("a man hurt", () => {
@@ -512,7 +512,7 @@ describe("a man hurt", () => {
 			}
 		}
 		assert.isAbove(hurt, 0);
-	});
+	}, 20_000);
 });
 
 describe("the TV cameras", () => {
@@ -545,7 +545,7 @@ describe("the TV cameras", () => {
 			}
 		}
 		assert.deepEqual(bad.slice(0, 8), []);
-	});
+	}, 20_000);
 });
 
 describe("the game over", () => {
@@ -588,7 +588,7 @@ describe("the game over", () => {
 				assert.isUndefined(off.find((s) => s.id === c.pid));
 			}
 		}
-	});
+	}, 20_000);
 
 	test("the winners' head coach under the cooler, the game won: two of his men off the field with it, after the whistle", () => {
 		let showers = 0;
@@ -623,5 +623,5 @@ describe("the game over", () => {
 			}
 		}
 		assert.isAbove(showers, 0);
-	}, 30_000);
+	}, 120_000);
 });

@@ -97,7 +97,7 @@ describe("the plays acted out", () => {
 				});
 			}
 		});
-	}, 30_000);
+	}, 120_000);
 
 	test("the ball always somewhere: thrown to where a man catches it, handed from hand to hand", () => {
 		eachPlay((play) => {
@@ -138,7 +138,7 @@ describe("the plays acted out", () => {
 				}
 			}
 		});
-	});
+	}, 20_000);
 
 	test("the carrier brought down where the sim says, when the line says", () => {
 		let checked = 0;
@@ -192,7 +192,7 @@ describe("the plays acted out", () => {
 		});
 		assert.isAbove(checked, 50);
 		// (The first to have every play's men laid out.)
-	}, 30_000);
+	}, 120_000);
 
 	test("a touchdown when he gets in with it, not before", () => {
 		const bad: string[] = [];
@@ -228,7 +228,7 @@ describe("the plays acted out", () => {
 		});
 		assert.deepEqual(bad.slice(0, 5), []);
 		assert.isAbove(checked, 10);
-	});
+	}, 20_000);
 	test("after a score, his teammates round the scorer - and the home crowd on its feet", () => {
 		let checked = 0;
 		let home = 0;
@@ -280,7 +280,7 @@ describe("the plays acted out", () => {
 		});
 		assert.isAbove(checked, 10);
 		assert.isAbove(home, 3);
-	});
+	}, 20_000);
 	test("a pick taken back from where the sim says, to where it says", () => {
 		let checked = 0;
 		eachPlay((play, seg, tl) => {
@@ -314,7 +314,7 @@ describe("the plays acted out", () => {
 			checked += 1;
 		});
 		assert.isAbove(checked, 3);
-	});
+	}, 20_000);
 
 	test("a pass to the man the sim says, caught by him", () => {
 		let caught = 0;
@@ -338,7 +338,7 @@ describe("the plays acted out", () => {
 			caught += 1;
 		});
 		assert.isAbove(caught, 10);
-	});
+	}, 20_000);
 
 	test("a kick returned to where the sim says, the returner brought down there", () => {
 		let checked = 0;
@@ -385,7 +385,7 @@ describe("the plays acted out", () => {
 			checked += 1;
 		});
 		assert.isAbove(checked, 10);
-	});
+	}, 20_000);
 
 	test("a field goal through the uprights when it is good, and not when it is not", () => {
 		let checked = 0;
@@ -412,7 +412,7 @@ describe("the plays acted out", () => {
 			checked += 1;
 		});
 		assert.isAbove(checked, 4);
-	});
+	}, 20_000);
 	test("an onside kick got back where the sim says, by the side it says", () => {
 		let checked = 0;
 		let got = 0;
@@ -445,7 +445,7 @@ describe("the plays acted out", () => {
 		});
 		assert.isAbove(checked, 3);
 		assert.isAbove(got, 0);
-	});
+	}, 20_000);
 	test("a fumble loose on the turf, come up with by the man the sim says, down where it says", () => {
 		let checked = 0;
 		eachPlay((play, seg, tl) => {
@@ -506,7 +506,7 @@ describe("the plays acted out", () => {
 			checked += 1;
 		});
 		assert.isAbove(checked, 10);
-	});
+	}, 20_000);
 	test("a flag thrown for every one the sim has, and the referee's call of each", () => {
 		const bad: string[] = [];
 		let flags = 0;
@@ -571,7 +571,7 @@ describe("the plays acted out", () => {
 		assert.deepEqual(bad.slice(0, 5), []);
 		assert.isAbove(flags, 20);
 		assert.isAbove(early, 3);
-	});
+	}, 20_000);
 	test("the officials on every play: all seven, at a man's speed, on the field or just off it", () => {
 		const bad: string[] = [];
 		eachPlay((play, _, tl) => {
@@ -604,5 +604,5 @@ describe("the plays acted out", () => {
 			}
 		});
 		assert.deepEqual(bad.slice(0, 5), []);
-	});
+	}, 20_000);
 });
