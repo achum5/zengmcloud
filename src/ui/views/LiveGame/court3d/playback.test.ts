@@ -295,6 +295,8 @@ const watch = ({
 			render(b);
 			const bt = b.s.t;
 			frame(b, tl, now, now + SKEW);
+			// (The camera takes a cut as it draws the frame - see Court3D.)
+			b.s.snapCam = false;
 			seen(seenB, tl, bt, b.s, now);
 			shown.push({ w: b.s.w, t: b.s.t, rp: b.s.replay?.at ?? -1 });
 			render(b);
@@ -307,6 +309,7 @@ const watch = ({
 			const line = f.s.t >= targetForCursor(ftl, f.cursor);
 			const ft = f.s.t;
 			frame(f, ftl, now, now);
+			f.s.snapCam = false;
 			seen(seenF, ftl, ft, f.s, now);
 			if (f.s.lost && !stepped) {
 				stepped = true;
