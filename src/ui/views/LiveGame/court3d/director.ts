@@ -935,6 +935,8 @@ const FOUL_REACH = 4.5;
 // The man who fouls a shooter sets off for him no sooner than this (ms)
 // before he gets there.
 const FOUL_SET_OFF = 3500;
+// ... and gets there no slower than this (feet a second).
+const FOUL_SLOWEST = 4;
 // A whistle off the ball with the man with it stood waiting (see probe):
 // he takes a beat with it first (ms), probes for at most the last this long
 // (ms) before it goes, and in toward the rim no nearer than this (feet).
@@ -11926,19 +11928,30 @@ class Director {
 					}
 					from = by - need;
 				}
+				// (Paced to get there just as he fouls him: on his way as soon as
+				// he is free - not stood waiting to go flat out at the last, nor
+				// there early and stood about, or wandering off with his man
+				// meanwhile.)
 				const idle = Math.max(
 					by - FOUL_SET_OFF,
 					...(this.track(f)?.moves ?? [])
 						.filter((m) => m.t0 < from)
 						.map((m) => m.t1),
 				);
-				if (idle < from - 400) {
-					from = idle;
+				const paced = idle < from - 400;
+				if (paced) {
+					const d0 = dist(this.posAt(f, idle), F);
+					from = Math.max(idle, by - (d0 / FOUL_SLOWEST) * 1000);
 				}
 				if ((this.free.get(f) ?? 0) > from) {
 					this.cutShort(f, from);
 				}
-				this.goBy(f, F, from, by, "run", -faceRim as 1 | -1, BURST);
+				if (paced) {
+					const v = (dist(this.posOf(f), F) * 1000) / Math.max(250, by - from);
+					this.go(f, F, from, v, v < JOG ? "jog" : "run", -faceRim as 1 | -1);
+				} else {
+					this.goBy(f, F, from, by, "run", -faceRim as 1 | -1, BURST);
+				}
 				this.act(f, "hack", release - 250, release - 250 + HACK_MS, {
 					face: -faceRim as 1 | -1,
 					look: { ...P1 },
