@@ -542,6 +542,16 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 			if (two) {
 				const l = two.pts[1 - wSide]!;
 				const w = two.pts[wSide]!;
+				// The basket that won it is the lede's, so nothing between the
+				// two-minute score and the last one says how it turned: "The
+				// Spurs were up 120-116 with two minutes left. Darius Webb's
+				// free throw with no time left made the final 129-126." The
+				// two minutes, in two numbers: "The Nuggets outscored them 13-6
+				// from there."
+				const closing =
+					shotTold && l >= w
+						? `${cap(W)} outscored ${l > w ? "them" : L} ${winner.pts - w}-${loser.pts - l} from there.`
+						: undefined;
 				if (l > w) {
 					say(
 						pick(
@@ -559,6 +569,9 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 							? `With two minutes to play, it was ${w}-${w}.`
 							: `It was ${w}-${w} with two minutes to play.`,
 					);
+				}
+				if (closing) {
+					say(closing);
 				}
 			}
 		}

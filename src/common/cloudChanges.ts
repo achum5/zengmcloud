@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 47,
+		date: "2026-10-30",
+		text: 'Recaps: when a team was behind with two minutes left and the winning basket is already in the first sentence, the finish now says how the last two minutes went ("The Spurs were up 120-116 with two minutes left. The Nuggets outscored them 13-6 from there.") instead of skipping straight to the final score.',
+	},
+	{
 		n: 46,
 		date: "2026-10-30",
 		text: "Playoff recaps always say which game of which round it was in the first sentence (\"...113-111 in Game 1 of the Finals\"), and a title recap says when it's the franchise's first championship (or a repeat) right up top instead of in the last line.",

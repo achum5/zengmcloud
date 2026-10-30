@@ -642,6 +642,26 @@ export const verifyRecap = (
 			"biggest lead",
 		);
 		claim(/(\d+)-0 run/g, (n) => n === flow.run?.pts, "run");
+		// "The Spurs were up 120-116 with two minutes left. The Nuggets
+		// outscored them 13-6 from there": from the two-minute score to the
+		// final.
+		const twoMin = flow.late?.find((m) => m.clock === 120);
+		const all = splitSentences(recap);
+		for (let i = 1; i < all.length; i++) {
+			const m = /outscored (?:them|the [\w ]+?) (\d+)-(\d+) from there/.exec(
+				all[i]!,
+			);
+			if (!m || !/two minutes/.test(all[i - 1]!)) {
+				continue;
+			}
+			const wSide = game.teams[0].tid === winner.tid ? 0 : 1;
+			const real = twoMin
+				? `${winner.pts - twoMin.pts[wSide]!}-${loser.pts - twoMin.pts[1 - wSide]!}`
+				: undefined;
+			if (real !== `${m[1]}-${m[2]}`) {
+				add("last two minutes", `said ${m[1]}-${m[2]}, real ${real}`, all[i]!);
+			}
+		}
 		claim(/ran off (\d+) straight/g, (n) => n === flow.run?.pts, "run");
 		claim(
 			/scored (\d+) unanswered|scored the last (\d+) points/g,
@@ -724,7 +744,9 @@ export const verifyRecap = (
 				// number.
 				const lead = sentence.slice(Math.max(0, m.index - 30), m.index);
 				if (
-					/glass|boards|rebound|run\b|assist|three|line|turnover/i.test(lead)
+					/glass|boards|rebound|run\b|assist|three|line|turnover|outscored/i.test(
+						lead,
+					)
 				) {
 					continue;
 				}

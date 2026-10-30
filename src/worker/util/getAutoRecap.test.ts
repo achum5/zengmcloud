@@ -8410,6 +8410,17 @@ describe("the wire lede", () => {
 		// A basket at the horn is not followed by "got no closer".
 		assert.match(recap, /at the buzzer made the final 101-99/);
 		assert.deepEqual(verifyRecap(recap, closeWin), []);
+		// The go-ahead is the lede's, so the finish says how the last two
+		// minutes went from 97-95 down - and the checker holds it to them.
+		if (/with two minutes/.test(recap)) {
+			assert.match(recap, /outscored them 6-2 from there/, recap);
+			assert.ok(
+				verifyRecap(
+					recap.replace("6-2 from there", "7-2 from there"),
+					closeWin,
+				).some((v) => v.kind === "last two minutes"),
+			);
+		}
 	});
 });
 
