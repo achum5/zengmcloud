@@ -69,9 +69,9 @@ export const contractValueContextFrom = (
 
 // Same thing for callers holding only part of the league (team finances), which
 // have to go and read the rest of it.
-export const loadContractValueContext = async (
-	season: number,
-): Promise<ContractValueContext> => {
+// Everyone in the league that season, priced: salary, and the regular
+// season's production.
+const loadSeasonPlayers = async (season: number): Promise<PricedPlayer[]> => {
 	const playersAll =
 		season === g.get("season") && g.get("phase") <= PHASE.PLAYOFFS
 			? await idb.cache.players.indexGetAll("playersByTid", [
@@ -80,15 +80,39 @@ export const loadContractValueContext = async (
 				])
 			: await idb.merged.players.getAll({ activeSeason: season });
 
-	const players = await player.formatAll(playersAll, {
+	return await player.formatAll(playersAll, {
 		attrs: ["pid", "salary"],
 		stats: ["vorp", "gp"],
 		season,
 		showNoStats: true,
 		showRookies: true,
+		// (Traded in the middle of it: all of his season, not his last team's.)
+		mergeStats: "totOnly",
 	});
+};
 
-	return contractValueContextFrom(players);
+export const loadContractValueContext = async (
+	season: number,
+): Promise<ContractValueContext> =>
+	contractValueContextFrom(await loadSeasonPlayers(season));
+
+// Each player's contract value for the season, by pid - his regular season's
+// production against his salary, whatever games a table is showing (the
+// playoffs, one series of them): it is the season's contract that is priced,
+// not a handful of games against a whole year's pay.
+export const loadSeasonContractValues = async (
+	season: number,
+): Promise<Map<number, ContractValueBreakdown>> => {
+	const players = await loadSeasonPlayers(season);
+	const context = contractValueContextFrom(players);
+	const values = new Map<number, ContractValueBreakdown>();
+	for (const p of players) {
+		const value = valueForPlayer(p, context);
+		if (value !== undefined) {
+			values.set(p.pid, value);
+		}
+	}
+	return values;
 };
 
 // Prices for several seasons at once, for the player page's salary history.

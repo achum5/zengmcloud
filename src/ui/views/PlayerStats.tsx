@@ -102,26 +102,29 @@ const PlayerStats = ({
 	});
 	const { userTid } = useLocal(["userTid"]);
 
-	const cols = getCols([
-		"#",
-		"Name",
-		"Pos",
-		"Age",
-		"Experience",
-		"Team",
-		// Inserted after the leading block on purpose: the football sortCol
-		// indices below count from the front, and the shotLocations titles count
-		// from the back. This column is basketball-only and never present for
-		// season === "all", so it can't disturb either.
-		...(showContractValue ? ["Contract Value"] : []),
-		...(season === "all" ? ["Season"] : []),
-		...stats.map((stat) =>
-			stat === "pos"
-				? "Pos"
-				: `stat:${stat.endsWith("Max") ? stat.replace("Max", "") : stat}`,
-		),
-	]);
-	cols[3]!.title = "YOE";
+	const cols = getCols(
+		[
+			"#",
+			"Name",
+			"Pos",
+			"Age",
+			"Experience",
+			"Team",
+			// Inserted after the leading block on purpose: the football sortCol
+			// indices below count from the front, and the shotLocations titles count
+			// from the back. This column is basketball-only and never present for
+			// season === "all", so it can't disturb either.
+			...(showContractValue ? ["Contract Value"] : []),
+			...(season === "all" ? ["Season"] : []),
+			...stats.map((stat) =>
+				stat === "pos"
+					? "Pos"
+					: `stat:${stat.endsWith("Max") ? stat.replace("Max", "") : stat}`,
+			),
+		],
+		// (Years in the league - not the Age column next to it.)
+		{ Experience: { title: "YOE" } },
+	);
 
 	if (statType === "shotLocations") {
 		cols.at(-7)!.title = "M";
@@ -241,6 +244,12 @@ const PlayerStats = ({
 		};
 	});
 
+	// Its own saved sort and columns for each set of columns there is - a
+	// season's (Contract Value in it, whichever games: regular season,
+	// playoffs, one series), every season's (a Season column), a career's -
+	// so one's are never put on the other's columns, shifted one over.
+	const layout = season === "all" ? "All" : season === "career" ? "Career" : "";
+
 	return (
 		<>
 			<MoreLinks
@@ -262,7 +271,7 @@ const PlayerStats = ({
 				cols={cols}
 				defaultSort={[sortCol, "desc"]}
 				defaultStickyCols={window.mobile ? 0 : 2}
-				name={`PlayerStats${statType}`}
+				name={`PlayerStats${statType}${layout}`}
 				rankCol={0}
 				rows={rows}
 				superCols={superCols}

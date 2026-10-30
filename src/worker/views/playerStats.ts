@@ -12,10 +12,7 @@ import type { Player, PlayerStatType } from "../../common/types.ts";
 import { defineView } from "../util/defineView.ts";
 import addFirstNameShort from "../util/addFirstNameShort.ts";
 import { getBestPos } from "../core/player/checkJerseyNumberRetirement.ts";
-import {
-	loadContractValueContext,
-	valueForPlayer,
-} from "../util/contractValues.ts";
+import { loadSeasonContractValues } from "../util/contractValues.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { getActivePlayoffTids } from "./playerRatings.ts";
 import { last } from "../../common/utils.ts";
@@ -143,14 +140,6 @@ export default defineView({
 						hockey: "ps",
 					} as const),
 				];
-			} else if (showContractValue) {
-				// vorp feeds the Value column; it is fetched even on stat tables that
-				// don't display it, and adding it here rather than to `stats` keeps it
-				// out of the table's own columns.
-				const tableStats = getPlayerStatsTableStats(stats);
-				actualStats = tableStats.includes("vorp")
-					? tableStats
-					: [...tableStats, "vorp" as const];
 			} else {
 				actualStats = getPlayerStatsTableStats(stats);
 			}
@@ -259,7 +248,6 @@ export default defineView({
 					"hof",
 					"watch",
 					"awards",
-					...(showContractValue ? (["salary"] as const) : []),
 				],
 				ratings: ["skills", "pos", "season"],
 				stats: ["abbrev", "tid", "jerseyNumber", "season", ...actualStats],
@@ -417,10 +405,12 @@ export default defineView({
 
 			// Priced against the whole league, not the rows above - those may have
 			// been filtered to one team, and calibrating off a single payroll
-			// would make a cheap roster look like a roster full of bargains.
-			const contractValueContext =
-				showContractValue && !seriesRows && typeof inputs.season === "number"
-					? await loadContractValueContext(inputs.season)
+			// would make a cheap roster look like a roster full of bargains. And
+			// the season's contract, whichever games are shown - the playoffs, one
+			// series of them: the column is there, the same, every time.
+			const contractValues =
+				showContractValue && typeof inputs.season === "number"
+					? await loadSeasonContractValues(inputs.season)
 					: undefined;
 
 			const players = addFirstNameShort(rows).map((p) => ({
@@ -431,9 +421,7 @@ export default defineView({
 					p.pid,
 					inputs.season === "career" ? undefined : p.stats.season,
 				),
-				contractValue: contractValueContext
-					? valueForPlayer(p as any, contractValueContext)
-					: undefined,
+				contractValue: contractValues?.get(p.pid),
 			}));
 
 			const superCols = helpers.deepCopy(statsTable.superCols);
@@ -443,6 +431,11 @@ export default defineView({
 						// Account for extra "Season" column
 						superCols[0].colspan += 1;
 					}
+				}
+
+				// The Contract Value column, among the leading ones.
+				if (showContractValue) {
+					superCols[0].colspan += 1;
 				}
 
 				// # columns
@@ -456,7 +449,7 @@ export default defineView({
 				statType: inputs.statType,
 				playoffs: series ? series.key : inputs.playoffs,
 				seriesOptions,
-				showContractValue: showContractValue && !seriesRows,
+				showContractValue,
 				stats,
 				superCols,
 			};

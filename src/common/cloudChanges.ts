@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 59,
+		date: "2026-10-30",
+		text: "Player Stats: switching between Regular Season, Playoffs, Combined and a single playoff series no longer scrambles the columns. The Contract Value column stays in every view - always the player's regular-season value against his salary, rather than a few playoff games against a full year's pay - the Shot Locations column headers line up again, the YOE heading is over years in the league instead of over Age, and the career and all-seasons tables keep their own sort and column settings.",
+	},
+	{
 		n: 58,
 		date: "2026-10-30",
 		text: "3D game: defenders stay with their man instead of drifting off and coming back. A defender no longer heads for a spot his man has already left, so a ball handler who turns the corner doesn't slip past him by accident, he doesn't sprint ahead to where a drive ends and wait there, and he no longer runs right past a ball handler he's stepping up to pick up. A post or cutter's defender no longer turns and runs away from his man after the catch, only to turn back and jump at the shot. When he has to turn and run to stay in front of a drive, he keeps his head and shoulders turned toward the ball.",
