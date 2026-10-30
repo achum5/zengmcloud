@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 41,
+		date: "2026-10-30",
+		text: "Recaps no longer skip the part of a game that made it close: a 20-point lead that shrank to 3 in the fourth, a team that came back late before losing, or a lead the other side built after halftime in a game won in overtime are all told now, in order. The day recap opens on the game its headline is about (with the streak it ended, when that's why it's the headline), and a few more awkward bits are fixed, like \"at the buzzer... but time had run out\".",
+	},
+	{
 		n: 40,
 		date: "2026-10-30",
 		text: 'Recaps: when both teams come in with the same record, the first line now shows it for both of them instead of only one, and a few clumsy sentences that used the same verb twice ("They led the rest of the way and led by as many as 27", "had 31 points... had a triple-double") are gone.',

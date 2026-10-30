@@ -718,6 +718,11 @@ export const verifyRecap = (
 				) {
 					continue;
 				}
+				// "...with 38.6 seconds left, closing out the series 4-2": the
+				// series, checked with the series claims.
+				if (/series(?: at)? $|series lead $/.test(lead)) {
+					continue;
+				}
 				const a = Number(m[1]);
 				const b = Number(m[2]);
 				const isFinal = finalPts.has(a) && finalPts.has(b) && a !== b;

@@ -2985,3 +2985,93 @@ describe("an overtime game told in order", () => {
 		}
 	});
 });
+
+// THE PART OF THE GAME THE FINISH NEEDS. Each of these left a story that
+// jumped from a big lead to a one-possession finish with nothing between.
+describe("how it got close", () => {
+	const story = (hq: number[], aq: number[], flow: GameFlow, overtimes = 0) => {
+		const sum = (q: number[]) => q.reduce((a, b) => a + b, 0);
+		const home = squad(
+			{ tid: 1, name: "Hawks", ptsQtrs: hq },
+			{ name: "Ace Hawk", pid: 11, pts: 27, reb: 7, fg: 10, fga: 19 },
+			sum(hq),
+		);
+		const away = squad(
+			{ tid: 2, name: "Bulls", ptsQtrs: aq },
+			{ name: "Bo Bull", pid: 21, pts: 24, reb: 9, fg: 9, fga: 20 },
+			sum(aq),
+		);
+		return (gid: number) => {
+			const g = game([home, away], { gid, flow, overtimes });
+			const recap = getAutoRecap(g);
+			clean(recap);
+			assert.deepEqual(verifyRecap(recap, g), [], recap);
+			return recap;
+		};
+	};
+
+	test("a lead stretched to 20 and nearly lost says who made it close", () => {
+		const recap = story([28, 27, 30, 20], [25, 22, 23, 32], {
+			leadChanges: 1,
+			ties: 1,
+			maxLead: [20, 2],
+			maxLeadAt: [4, 1],
+			lastLead: { side: 0, period: 1, clock: 600, pts: [5, 3], by: 2 },
+		});
+		let told = 0;
+		for (let gid = 1; gid <= 12; gid++) {
+			const text = recap(gid);
+			if (/stretched it to 20/.test(text)) {
+				assert.match(text, /Bulls took the fourth quarter 32-20/, text);
+				told += 1;
+			}
+		}
+		assert.isAbove(told, 0);
+	});
+
+	test("a lead that came back in the last quarter says so", () => {
+		const recap = story([26, 26, 30, 20], [24, 24, 22, 29], {
+			leadChanges: 4,
+			ties: 2,
+			maxLead: [14, 2],
+			maxLeadAt: [3, 4],
+			lastLead: { side: 0, period: 4, clock: 70, pts: [100, 99], by: 2 },
+		});
+		let told = 0;
+		for (let gid = 1; gid <= 12; gid++) {
+			const text = recap(gid);
+			if (/going into the fourth/.test(text)) {
+				assert.match(
+					text,
+					/going into the fourth, but the Bulls (?:came back|rallied|fought back)/,
+					text,
+				);
+				told += 1;
+			}
+		}
+		assert.isAbove(told, 0);
+	});
+
+	test("up at the half, down after it, winners in overtime", () => {
+		const recap = story(
+			[30, 28, 18, 24, 12],
+			[25, 23, 35, 17, 8],
+			{
+				leadChanges: 3,
+				ties: 2,
+				maxLead: [12, 12],
+				maxLeadAt: [2, 3],
+				lastLead: { side: 0, period: 5, clock: 150, pts: [104, 102], by: 2 },
+			},
+			1,
+		);
+		for (let gid = 1; gid <= 12; gid++) {
+			const text = recap(gid);
+			assert.match(
+				text,
+				/Bulls took over after (?:the break|halftime), led by as many as 12 in the third and were still up 7 going into the fourth\. (?:The Hawks|They) won the fourth quarter 24-17\./,
+				text,
+			);
+		}
+	});
+});

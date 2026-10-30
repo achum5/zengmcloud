@@ -728,7 +728,9 @@ export const finishStory = (input: FinishInput, rng: Rng): string[] => {
 		say(
 			`${cap(cutText)}, ${pick(
 				rng,
-				[`too late to matter`, `but time had run out`],
+				// Not "but time had run out" after "at the buzzer" or "with no
+				// time left": the clock already said so.
+				[`too late to matter`, `and that was the game`],
 				"finishHoldBuzzer",
 			)}.`,
 			closest.name,

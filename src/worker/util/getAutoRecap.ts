@@ -3476,6 +3476,9 @@ const teamLede = (
 		};
 	}
 	const w = teamStats(shape.winner);
+	// "got seven men into double figures and got past the Nuggets": not on a
+	// verb that says it again.
+	const got = verb.startsWith("got ") ? "put" : "got";
 	if (w.dblFig >= 6 && star.pts < 18 && dd < 3) {
 		// "Led by" and "leading the way" say he led the team, which is false
 		// when a teammate outscored him - "led by Jaden Mathis' 10 points and
@@ -3490,11 +3493,11 @@ const teamLede = (
 							// past..., Keegan Mathis' 15 points leading the way": the
 							// team twice in one clause, and the man an afterthought.
 							`${poss(star.name)} ${statPhrase(star)} led ${numWord(w.dblFig)} players in double figures as ${W} ${verb} ${L}${score}${tail}.`,
-							`${cap(W)} got ${numWord(w.dblFig)} men into double figures and ${verb} ${L}${score}${tail}, led by ${poss(star.name)} ${statPhrase(star)}.`,
+							`${cap(W)} ${got} ${numWord(w.dblFig)} men in double figures and ${verb} ${L}${score}${tail}, led by ${poss(star.name)} ${statPhrase(star)}.`,
 						]
 					: [
 							`${star.name} had ${statPhrase(star)}, and ${numWord(w.dblFig)} players reached double figures as ${W} ${verb} ${L}${score}${tail}.`,
-							`${cap(W)} got ${numWord(w.dblFig)} men into double figures and ${verb} ${L}${score}${tail}, with ${star.name} putting up ${statPhrase(star)}.`,
+							`${cap(W)} ${got} ${numWord(w.dblFig)} men in double figures and ${verb} ${L}${score}${tail}, with ${star.name} putting up ${statPhrase(star)}.`,
 						],
 				"teamLedeBalance",
 			),
@@ -4356,6 +4359,18 @@ const gameStory = (
 		const wLast = wq[regPeriods - 1] ?? 0;
 		if (stretched) {
 			covers.add("entering");
+			// Stretched to 20 and won by 3: the quarter that made it close is
+			// the part a reader needs. "They took a 15-point lead into the
+			// fourth and stretched it to 20" went straight to a three at the
+			// buzzer that cut it to 115-112.
+			if (
+				(shape.ot > 0 || shape.margin <= 6) &&
+				wMax - shape.margin >= 10 &&
+				lLast > wLast
+			) {
+				covers.add("lastQuarter");
+				return `${stretched}, but ${l} took the ${last} quarter ${lLast}-${wLast}${shape.ot > 0 ? "" : " to make a game of it"}.`;
+			}
 			return `${stretched}.`;
 		}
 		// AGAINST THE HALF. Right after a halftime line that put the same
@@ -4391,6 +4406,32 @@ const gameStory = (
 							)
 						: `It was still ${aNum(Math.abs(m))}-point game going into the ${last}`
 				: undefined;
+		// Up 12 going into the fourth, in front for good only late in it: the
+		// losers caught them in between. "The lead had grown to 12 going into
+		// the fourth. The Grizzlies led 101-100 with two minutes left" left
+		// the reader to work out how.
+		const caughtLate =
+			m >= 8 &&
+			shape.ot === 0 &&
+			shape.margin <= 6 &&
+			lLast - wLast < 10 &&
+			lastLead?.side === wSide &&
+			lastLead.period === regPeriods;
+		if (caughtLate && !peak) {
+			covers.add("entering");
+			return `${
+				againstHalf ??
+				pick(
+					rng,
+					[
+						`${W} were ${m} up going into the ${last}`,
+						`It was ${aNum(m)}-point game entering the ${last}`,
+						`Going into the ${last}, ${w} were up ${m}`,
+					],
+					"story:enteringUp",
+				)
+			}, but ${l} ${pick(rng, ["came back", "rallied", "fought back"], "story:caughtLate")}.`;
+		}
 		// In overtime too: "They were still 18 up going into the fourth. The
 		// Pelicans' Quentin Ingram forced overtime on a three-pointer at the
 		// buzzer" skipped the quarter the Pelicans won 30-12 to get there.
@@ -4860,6 +4901,38 @@ const gameStory = (
 		// Tight to the end: how tight, going into the last period. The finish
 		// takes it from there.
 		const most = Math.max(wMax, lMax);
+		// THE LEAD THEY CAME BACK FROM. Up at the half, then down 15 in the
+		// fourth, then winners in overtime: "The Bucks carried a 58-48 lead
+		// into the second half. Isaiah Nash forced overtime on a
+		// three-pointer" never said how they came to need one.
+		const lateLoserLead =
+			!covers.has("loserPeak") &&
+			lMaxAt !== undefined &&
+			lMaxAt > halfN &&
+			lMaxAt <= regPeriods &&
+			lMax >= 10;
+		if (lateLoserLead) {
+			covers.add("loserPeak").add("secondHalf");
+			const m = shape.marginEnteringLast;
+			const last = ordinal(regPeriods);
+			if (lMaxAt < regPeriods && m < 0) {
+				covers.add("entering").add("lastQuarter");
+				out.push(
+					`${L} took over after the break, led by as many as ${lMax} in ${when(lMaxAt)} and were still up ${-m} going into the ${last}.`,
+					`${W} won the ${last} quarter ${wLast}-${lLast}.`,
+				);
+			} else {
+				out.push(
+					`${L} took over after the break and led by as many as ${lMax} in ${when(lMaxAt)}.`,
+				);
+				// Back in front by the last quarter: where it stood then.
+				const e = lMaxAt < regPeriods ? entering(true) : undefined;
+				if (e) {
+					out.push(e);
+				}
+			}
+			return { sentences: out, covers };
+		}
 		if (flow && most > 0 && most <= 8) {
 			out.push(
 				pick(
@@ -7757,7 +7830,20 @@ const buildGameRecap = (game: RecapGame): string => {
 						GERUND[verb] ? `, ${GERUND[verb]}` : m,
 					)
 				: where;
-		if (tag) {
+		if (
+			!tag &&
+			goAhead &&
+			first.endsWith(`${goAhead.text}.`) &&
+			/^ to (\w+)/.test(where)
+		) {
+			// After the basket that won it, not between the losers and it:
+			// "upset the Pelicans to close out the series 4-2 on Jalen Green's
+			// go-ahead three-pointer" closed the series on the three.
+			para1[i] = `${first.slice(0, -1)},${where.replace(
+				/^ to (\w+)/,
+				(m, verb: string) => (GERUND[verb] ? ` ${GERUND[verb]}` : m),
+			)}.`;
+		} else if (tag) {
 			para1[i] = first.replace(tag, `${tag}${stakes}`);
 		} else {
 			const at = first.indexOf(loserName);
@@ -8055,6 +8141,18 @@ const buildGameRecap = (game: RecapGame): string => {
 			} else if (enterNow >= 0) {
 				// Told after the quarter's result, so looking back.
 				blown = `${L} had led by as many as ${lead} in the ${q}.`;
+			} else if (loserPeakAt < shape.regPeriods && halfNow >= 0) {
+				// No score going into the last quarter to put it before: right
+				// after the half it grew out of. "The Jazz went into halftime
+				// ahead 57-46. The second half belonged to the Magic, 68-42.
+				// The Jazz led by as many as 13." told the third quarter last.
+				storyPara.splice(
+					halfNow + 1,
+					0,
+					`${L} led by as many as ${lead} in the ${q}.`,
+				);
+				finishAt += 1;
+				blown = undefined;
 			}
 		}
 		const big =
@@ -11392,11 +11490,40 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	// a reader should not have to take the headline on trust. Previously the
 	// deck covered it, which made the roundup skip it as already told, and the
 	// night's stated lead story appeared nowhere in the wrap.
+	// And it leads it from the top: "11 straight losses, and then the 76ers
+	// beat the Hawks" over a body that opened on the Bulls and the Celtics
+	// read as though the headline belonged to another page.
 	if (headline.game !== marquee && !coveredGames.has(headline.game)) {
-		para1.push(
-			`${cap(tailAfter(gameBlurb(headline.game, rng), tailFor(headline.game)))}.`,
-		);
-		coveredGames.add(headline.game);
+		const hg = headline.game;
+		const hShape = analyzeShape(hg);
+		// The headline's reason, on its result: "11 straight losses, and
+		// then the 76ers beat the Hawks" sat over a lede that never said
+		// there had been a streak.
+		let why = tailFor(hg);
+		const skid = snappedSkid(hShape);
+		const run = hShape.winner.streak;
+		if (why === "" && !streakTold.has(hg)) {
+			if (
+				skid !== undefined &&
+				/skid|straight losses|losing streak/.test(headline.text)
+			) {
+				why = ` to snap ${aNumWord(skid)}-game losing streak`;
+				streakTold.add(hg);
+			} else if (
+				run?.won &&
+				run.count >= 3 &&
+				/straight|in a row|streak/.test(headline.text)
+			) {
+				why = ` for their ${ordinal(run.count)} straight win`;
+				streakTold.add(hg);
+			}
+		}
+		// Not two of one shape to open on: "The Raptors shocked the Celtics
+		// 123-118 behind Anthony Carter's 26 points. The Pistons knocked off
+		// the Kings 119-112 behind Walker Young's 43 points."
+		const starFirst = / behind /.test(para1[0] ?? "");
+		para1.unshift(`${cap(tailAfter(gameBlurb(hg, rng, starFirst), why))}.`);
+		coveredGames.add(hg);
 	}
 
 	const marqueeTids = new Set([mShape.winner.tid, mShape.loser.tid]);
@@ -11480,30 +11607,43 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		// The sentence before this one has just given the matchup and score
 		// when his game is the marquee, so "in the Nets' 124-114 loss to the
 		// Clippers" straight after "beat the Nets 124-114" says it twice.
+		// Told further up, not right before: whose game it was, without the
+		// score a second time.
+		const toldAbove =
+			coveredGames.has(topScorer.game) &&
+			para1.some(
+				(t) =>
+					t.includes(nick(topScorer.team)) &&
+					t.includes(plainScore(analyzeShape(topScorer.game))),
+			);
 		para1.push(
 			coveredGames.has(topScorer.game) &&
 				para1.at(-1)?.includes(nick(topScorer.team))
 				? `${topScorer.p.name} ${led} in ${
 						topScorer.won ? "the win" : "the loss"
 					}.`
-				: topScorer.won
-					? (() => {
-							const tail =
-								tailFor(topScorer.game) || deckReason(topScorer.game, true);
-							// As above: "...in the Thunder's 124-98 win over the
-							// Grizzlies to force a Game 6" hung the infinitive off
-							// the man.
-							return tail.startsWith(" to ")
-								? `${topScorer.p.name} ${led} as ${theNick(topScorer.team)} beat ${theNick(topScorer.opp)} ${topScore}${tail}.`
-								: `${topScorer.p.name} ${led} in ${poss(
-										theNick(topScorer.team),
-									)} ${topScore} win over ${theNick(topScorer.opp)}${tail}.`;
-						})()
-					: `${topScorer.p.name} ${led} in ${poss(
-							theNick(topScorer.team),
-						)} ${topScore} loss to ${theNick(topScorer.opp)}${
-							whoFor(topScorer.game) || deckReason(topScorer.game, false)
-						}.`,
+				: toldAbove
+					? `${topScorer.p.name} ${led} for ${theNick(topScorer.team)} in ${
+							topScorer.won ? "the win" : "the loss"
+						}.`
+					: topScorer.won
+						? (() => {
+								const tail =
+									tailFor(topScorer.game) || deckReason(topScorer.game, true);
+								// As above: "...in the Thunder's 124-98 win over the
+								// Grizzlies to force a Game 6" hung the infinitive off
+								// the man.
+								return tail.startsWith(" to ")
+									? `${topScorer.p.name} ${led} as ${theNick(topScorer.team)} beat ${theNick(topScorer.opp)} ${topScore}${tail}.`
+									: `${topScorer.p.name} ${led} in ${poss(
+											theNick(topScorer.team),
+										)} ${topScore} win over ${theNick(topScorer.opp)}${tail}.`;
+							})()
+						: `${topScorer.p.name} ${led} in ${poss(
+								theNick(topScorer.team),
+							)} ${topScore} loss to ${theNick(topScorer.opp)}${
+								whoFor(topScorer.game) || deckReason(topScorer.game, false)
+							}.`,
 		);
 		named.add(topScorer.p);
 		coveredGames.add(topScorer.game);
@@ -11733,7 +11873,10 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 				g &&
 				city &&
 				homeCities.get(city) === 1 &&
-				g !== gameOf(para1[i - 1]!) &&
+				// A game no sentence above has told: "In Boston" on the
+				// Celtics' loss two sentences after the lede gave it reads as a
+				// second game there.
+				!para1.slice(0, i).some((x) => gameOf(x) === g) &&
 				!t.includes(city) &&
 				[...names].some((n) => t.startsWith(`${n} `) || t.startsWith(`${n}'`))
 			) {
