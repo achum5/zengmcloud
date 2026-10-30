@@ -692,7 +692,8 @@ describe("simmed recaps", () => {
 	// his team.
 	test("a foul-out or a minutes note says whose man it was", () => {
 		for (const { gid, recap, game } of pairs) {
-			const nicks = game.teams.map((t) => t.name);
+			// "Dallas' Herb Underwood" says it as well as "the Mavericks'".
+			const nicks = game.teams.flatMap((t) => [t.name, t.region]);
 			for (const x of recap.split(/(?<=[!.?])\s+/)) {
 				if (
 					/fouling out with|fouled out with|sixth foul, done|Foul trouble cost|logged \d+ minutes/.test(
@@ -838,7 +839,10 @@ describe("simmed recaps", () => {
 					if (recap.indexOf(p.name) === at) {
 						assert.match(
 							recap.slice(0, at),
-							new RegExp(`(?:the|teammate) ${t.name}'s? $|teammate $`, "i"),
+							new RegExp(
+								String.raw`(?:the|teammate) ${t.name}'s? $|(?:^|\s)${t.region}'s? $|teammate $`,
+								"i",
+							),
 							`gid ${gid}: ${p.name}\n${recap}`,
 						);
 					}
@@ -910,15 +914,18 @@ describe("simmed recaps", () => {
 				const who = [...sideOf.keys()].find((n) => cur.startsWith(`${n} `));
 				const mine = who ? sideOf.get(who) : undefined;
 				const other = game.teams.find((t) => t !== mine);
-				if (!who || !mine || !other || cur.includes(mine.name)) {
+				// A team is named by its nickname or, now and then, its city.
+				const named = (x: string, t: RecapTeam) =>
+					x.includes(t.name) || x.includes(t.region);
+				if (!who || !mine || !other || named(cur, mine)) {
 					continue;
 				}
 				const opensOnOther =
 					prev.startsWith(`The ${other.name}`) ||
+					prev.startsWith(other.region) ||
 					other.players.some((p) => prev.startsWith(p.name));
 				const mentionsMine =
-					prev.includes(mine.name) ||
-					mine.players.some((p) => prev.includes(p.name));
+					named(prev, mine) || mine.players.some((p) => prev.includes(p.name));
 				assert.ok(
 					!opensOnOther ||
 						mentionsMine ||
@@ -1126,10 +1133,12 @@ describe("simmed recaps", () => {
 					}
 					// And the rest of the line it gave him: "Naji Foster turns in
 					// 13 points and 20 rebounds" over a body with no 20 rebounds.
+					// A loser's "28 points and 13 rebounds not enough" is not
+					// restated: the body says how he shot instead.
 					const line = new RegExp(
 						String.raw`${p.name}[^*]* ${p.pts} points and (\d+) (rebounds|assists)`,
 					).exec(head!);
-					if (line) {
+					if (line && t.tid === game.winnerTid) {
 						assert.match(
 							body,
 							new RegExp(String.raw`\b${line[1]} ${line[2]}`),

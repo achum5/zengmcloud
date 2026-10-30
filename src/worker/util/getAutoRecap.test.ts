@@ -827,8 +827,9 @@ describe("recap quality (from real Day 1 output)", () => {
 		const recap = getAutoRecap(
 			game({ gid: 9080, teams: [spurs, hurtRockets], winnerTid: 46 }),
 		);
-		// Told as what happened to him, the acronym kept.
-		assert.ok(recap.includes("Manu Ginobili tore his ACL"), recap);
+		// Told as what happened to him, the acronym kept - by his surname,
+		// since the losers' line already named him.
+		assert.ok(recap.includes("Ginobili tore his ACL"), recap);
 		assert.ok(/about 40 games/.test(recap), recap);
 		assert.ok(!recap.includes("Torn ACL"), recap);
 	});

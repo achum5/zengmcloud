@@ -32,6 +32,7 @@ import {
 	otPhrase,
 	pick,
 	pickByDay,
+	placeName,
 	pickSentence,
 	plural,
 	poss,
@@ -79,6 +80,11 @@ import {
 	winningShotKind,
 	withSettledLead,
 } from "./recapFinish.ts";
+import {
+	cityReferences,
+	secondReferences,
+	type ReferenceTeam,
+} from "./recapNames.ts";
 
 // A procedural, no-AI recap engine. getAutoRecap turns one RecapGame into a
 // bold headline plus a couple of tight paragraphs; getAutoDayRecap turns a whole
@@ -2956,13 +2962,22 @@ const resultLead = (
 	// whether the headline already printed his whole line.
 	star?: RecapPlayer,
 	starLineTold = false,
+	// What the tail is (a streak kept or ended), the headline it sits under,
+	// and whether the star shares top billing with a teammate - which the
+	// other ways of opening the story need to know.
+	more: {
+		tailKind?: LedeTail["streak"];
+		headline?: string;
+		twin?: boolean;
+	} = {},
 ): {
 	text: string;
 	covers?: "comeback" | "wire" | "ot" | "run";
 	// The opener carried the star's line, so the body must not.
 	starFolded?: boolean;
 } => {
-	const verb = pastTense(pick(rng, verbPool(game, shape)));
+	const baseVerb = pick(rng, verbPool(game, shape));
+	const verb = pastTense(baseVerb);
 	const w = theNick(shape.winner);
 	const l = theNick(shape.loser);
 	const score = scoreTold ? "" : ` ${scoreTag(shape)}`;
@@ -3122,7 +3137,156 @@ const resultLead = (
 			return { text: `${cap(w)} went on the road and ${verb} ${l}.` };
 		}
 	}
-	return { text: `${cap(w)} ${verb} ${l}${score}${tail}.` };
+	return (
+		otherLede(
+			game,
+			shape,
+			rng,
+			baseVerb,
+			scoreTold,
+			tail,
+			star,
+			starLineTold,
+			more,
+		) ?? { text: `${cap(w)} ${verb} ${l}${score}${tail}.` }
+	);
+};
+
+// "beating", "holding off", "storming back to beat".
+const ING: Record<string, string> = {
+	get: "getting",
+	run: "running",
+	slip: "slipping",
+	stun: "stunning",
+	top: "topping",
+	upset: "upsetting",
+};
+const gerund = (verb: string): string => {
+	const [head, ...rest] = verb.split(" ");
+	const ing =
+		ING[head!] ??
+		(head!.endsWith("e") && !head!.endsWith("ee")
+			? `${head!.slice(0, -1)}ing`
+			: `${head}ing`);
+	return [ing, ...rest].join(" ");
+};
+
+// THE OTHER WAYS INTO A STORY. Three ledes in four opened "The Lakers
+// (10-3) beat the Pacers (5-8) 104-99", whatever else the night held: a
+// writer has more than one way in. The streak first when the win kept one
+// going or ended one - "The Pacers snapped a five-game losing streak with a
+// 104-99 win over the Bulls" - the man first, as the wire does it, or where
+// it was won when the winners were on the road. The plain result stays in
+// the rotation; pick() spreads the rest across a night.
+const otherLede = (
+	game: RecapGame,
+	shape: Shape,
+	rng: () => number,
+	// The pool's verb in its bare form, for "by beating".
+	baseVerb: string,
+	scoreTold: boolean,
+	tail: string,
+	star: RecapPlayer | undefined,
+	starLineTold: boolean,
+	more: { tailKind?: LedeTail["streak"]; headline?: string; twin?: boolean },
+): { text: string; starFolded?: boolean } | undefined => {
+	const w = theNick(shape.winner);
+	const l = theNick(shape.loser);
+	const plain = `${shape.winner.pts}-${shape.loser.pts}`;
+	const verb = pastTense(baseVerb);
+	const kinds: string[] = ["plain"];
+	if (
+		!game.playoffs &&
+		(more.tailKind === "skid" ||
+			more.tailKind === "run" ||
+			more.tailKind === "win")
+	) {
+		kinds.push("context");
+	}
+	const lineFree =
+		star !== undefined &&
+		shape.winner.players.includes(star) &&
+		!starLineTold &&
+		!more.twin &&
+		!(more.headline ?? "").includes(String(star.pts));
+	if (lineFree && !scoreTold) {
+		kinds.push("star");
+	}
+	const home = game.teams[0];
+	const city = placeName(home.region) ?? "";
+	if (
+		!game.playoffs &&
+		!scoreTold &&
+		home.tid === shape.loser.tid &&
+		city !== "" &&
+		city.toLowerCase() !== (home.name ?? "").toLowerCase() &&
+		city.toLowerCase() !== (shape.winner.region ?? "").trim().toLowerCase()
+	) {
+		kinds.push("road");
+	}
+	if (kinds.length === 1) {
+		return undefined;
+	}
+	const kind = pick(rng, kinds, `lede:shape:${kinds.join(",")}`);
+	if (kind === "context") {
+		const winOver = scoreTold
+			? `by ${gerund(baseVerb)} ${l}`
+			: `with ${aFigure(plain)} win over ${l}`;
+		if (more.tailKind === "skid") {
+			const n = snappedSkid(shape)!;
+			return {
+				text: pick(
+					rng,
+					[
+						`${cap(w)} snapped ${aNumWord(n)}-game losing streak ${winOver}.`,
+						`${cap(w)} ended ${aNumWord(n)}-game skid ${winOver}.`,
+					],
+					"lede:skidFirst",
+				),
+			};
+		}
+		if (more.tailKind === "run") {
+			const n = shape.loser.streakBefore!.count;
+			return {
+				text: scoreTold
+					? `${cap(w)} ended ${poss(l)} ${numWord(n)}-game winning streak.`
+					: `${cap(w)} ended ${poss(l)} ${numWord(n)}-game winning streak with ${aFigure(plain)} victory.`,
+			};
+		}
+		const n = shape.winner.streak!.count;
+		return {
+			text: pick(
+				rng,
+				scoreTold
+					? [
+							`${cap(w)} won their ${ordinal(n)} straight game, ${gerund(baseVerb)} ${l}.`,
+							`${cap(w)} made it ${numWord(n)} in a row ${winOver}.`,
+						]
+					: [
+							`${cap(w)} won their ${ordinal(n)} straight game, ${gerund(baseVerb)} ${l} ${plain}.`,
+							`${cap(w)} made it ${numWord(n)} in a row ${winOver}.`,
+						],
+				"lede:streakFirst",
+			),
+		};
+	}
+	if (kind === "star" && star) {
+		// His line first and the result after it, the wire's commonest lede -
+		// with everything the star sentence knows (a triple-double named, the
+		// shooting, the rookie, the age) - or the result carried by his line.
+		const behind =
+			tail === "" && doubleCategories(star).length < 3 && rng() < 0.35;
+		return {
+			text: behind
+				? `${cap(w)} ${verb} ${l} ${plain} behind ${poss(star.name)} ${statPhrase(star)}.`
+				: leadSentence(game, shape, star, rng, false, false, tail),
+			starFolded: true,
+		};
+	}
+	if (kind === "road") {
+		return { text: `${cap(w)} ${verb} ${l} ${plain} in ${city}${tail}.` };
+	}
+	return undefined;
 };
 
 // "the visiting 76ers" - the wire tag for the away side in a result
@@ -4605,6 +4769,8 @@ const gameStory = (
 
 	// --- IN FRONT AT THE BREAK. ---
 	const up = wh - lh;
+	// Where the plain halftime line went, so the lead it grew into can join it.
+	let plainHalfAt = -1;
 	const firstRun = run && run.winner && run.period <= halfN ? run : undefined;
 	if (
 		!opts.comebackTold &&
@@ -4677,6 +4843,7 @@ const gameStory = (
 		);
 	} else {
 		out.push(halfLine(shape.winner, wh, lh));
+		plainHalfAt = out.length - 1;
 	}
 	toldLead = Math.max(toldLead, up);
 	peakShown();
@@ -4838,6 +5005,25 @@ const gameStory = (
 		// Lakers led by as many as 17" names them twice running.
 		const aboutWinner = !covers.has("loserPeak");
 		const onlyPeak = parts.length === 1 && covers.has("winnerPeak");
+		// The quarter it peaked in, which says more than "the second half":
+		// a lead that reached 20 in the third is a game over early, one
+		// that reached 20 in the fourth may have been close until then.
+		const at = wMaxAt !== undefined ? when(wMaxAt) : "the second half";
+		if (onlyPeak && plainHalfAt === out.length - 1 && rng() < 0.5) {
+			// One sentence for the half and what became of it, as a writer
+			// with a lead and nothing else to say about it puts it.
+			out[plainHalfAt] = pick(
+				rng,
+				[
+					`${W} led ${wh}-${lh} at halftime and pushed the lead to ${wMax} in ${at}.`,
+					`${W} were up ${wh}-${lh} at the break and led by as many as ${wMax} in ${at}.`,
+					`It was ${wh}-${lh} at halftime, and ${w} stretched the lead to ${wMax} in ${at}.`,
+					`${W} took a ${wh}-${lh} lead into the break and built it to ${wMax} in ${at}.`,
+				],
+				"story:halfAndPeak",
+			);
+			return { sentences: out, covers };
+		}
 		out.push(
 			onlyPeak
 				? // The commonest case - nothing to add but how big it got - and
@@ -4845,9 +5031,10 @@ const gameStory = (
 					pick(
 						rng,
 						[
-							`${pick(rng, ["After the break", "In the second half", "From there"], "story:after")}, ${aboutWinner ? "they" : w} led by as many as ${wMax}.`,
-							`The lead reached ${wMax} in the second half.`,
-							`After halftime the lead reached ${wMax}.`,
+							`${pick(rng, ["After the break", "From there"], "story:after")}, ${aboutWinner ? "they" : w} led by as many as ${wMax}.`,
+							`The lead reached ${wMax} in ${at}.`,
+							`The lead grew to ${wMax} in ${at}.`,
+							`${aboutWinner ? "They" : W} led by as many as ${wMax} in ${at}.`,
 							`${aboutWinner ? "They" : W} pushed on after the break and led by as many as ${wMax}.`,
 						].filter((t) => !ledBefore || !t.includes(" led by ")),
 						"story:peakOnly",
@@ -7291,6 +7478,7 @@ const buildGameRecap = (game: RecapGame): string => {
 		// The headline already told the star's story. Open on the RESULT and let
 		// his line follow as its own sentence, rather than writing the headline
 		// again with the verbs swapped.
+		const twin = twinOf(shape, star);
 		const opener = resultLead(
 			game,
 			shape,
@@ -7300,6 +7488,7 @@ const buildGameRecap = (game: RecapGame): string => {
 			tail.text,
 			star,
 			headline.spentLine,
+			{ tailKind: tail.streak, headline: headline.text, twin: !!twin },
 		);
 		flowCovered = opener.covers;
 		para1.push(opener.text);
@@ -7308,7 +7497,6 @@ const buildGameRecap = (game: RecapGame): string => {
 		// sentence is the same numbers twice. Keep the sentence whenever it
 		// brings anything new - a shooting split, a second category - and drop it
 		// only when every figure in it was in the headline.
-		const twin = twinOf(shape, star);
 		const starSentence = twin
 			? `${star.name} and ${twin.name} scored ${star.pts} points apiece.`
 			: leadSentence(game, shape, star, rng, true);
@@ -7425,6 +7613,9 @@ const buildGameRecap = (game: RecapGame): string => {
 			headline.spentScore,
 			/straight|in a row|skid|losing streak/.test(headline.text),
 			tail.text,
+			undefined,
+			false,
+			{ tailKind: tail.streak, headline: headline.text },
 		);
 		flowCovered = opener.covers;
 		const clutch = clutchSentence(shot, shape);
@@ -8535,8 +8726,31 @@ export const teamTheSwitch = (paragraphs: string[], shape: Shape): string[] => {
 	});
 };
 
-export const getAutoRecap = (game: RecapGame): string =>
-	fixArticles(buildGameRecap(withSettledLead(game)));
+// Everyone the text could name: who played, and who sat out hurt.
+const peopleIn = (games: readonly RecapGame[]): string[] =>
+	games.flatMap((g) =>
+		g.teams.flatMap((t) => [
+			...t.players.map((p) => p.name),
+			...(t.injuries ?? []).map((p) => p.name),
+		]),
+	);
+const teamsIn = (games: readonly RecapGame[]): ReferenceTeam[] =>
+	games.flatMap((g) =>
+		g.teams.map((t) => ({ name: t.name ?? "", region: t.region ?? "" })),
+	);
+
+export const getAutoRecap = (game: RecapGame): string => {
+	const text = fixArticles(buildGameRecap(withSettledLead(game)));
+	const names = peopleIn([game]);
+	const teams = teamsIn([game]);
+	return secondReferences(
+		game.allStar
+			? text
+			: cityReferences(text, teams, names, (game.gid + 1) * 7919 + 17),
+		names,
+		teams,
+	);
+};
 
 // NOT "FOR THE LAKERS" TWICE RUNNING. "Naji Green supplied 19 points and
 // Keegan Green 16 for the Lakers. Shots fell for the Lakers - 54.2% from the
@@ -10849,8 +11063,12 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 	beginRecapBatch();
 	resetVerbLedger();
 	try {
-		return fixArticles(
-			buildDayRecap({ ...input, games: input.games.map(withSettledLead) }),
+		return secondReferences(
+			fixArticles(
+				buildDayRecap({ ...input, games: input.games.map(withSettledLead) }),
+			),
+			peopleIn(input.games),
+			teamsIn(input.games),
 		);
 	} finally {
 		endRecapBatch();
@@ -11468,6 +11686,55 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 				0,
 				`${cap(poss(shot.name))} ${shot.shot}${when} won it for ${theNick(analyzeShape(g).winner)}.`,
 			);
+		}
+	}
+
+	// WHERE IT HAPPENED. Every sentence of the night's standouts opened on a
+	// man's name - "Evan Carter outscored everyone... Grant Jackson had
+	// 30 points... Payton Brooks' 26 came in..." - which reads as a list. A
+	// wrap moves around the league the way a writer does, now and then from
+	// a dateline: "In Charlotte, Evan Carter had 32 points and 13 assists as
+	// the Hornets beat the Timberwolves 121-104." Once a night at most, on a
+	// sentence about a game the one before it was not, and only where the
+	// city names one game.
+	{
+		const homeCities = new Map<string, number>();
+		for (const g of games) {
+			const c = placeName(g.teams[0].region);
+			if (c) {
+				homeCities.set(c, (homeCities.get(c) ?? 0) + 1);
+			}
+		}
+		const gameOf = (t: string) =>
+			games.find((g) => {
+				const sh = analyzeShape(g);
+				return t.includes(nick(sh.winner)) && t.includes(nick(sh.loser));
+			});
+		const names = new Set(
+			games.flatMap((g) =>
+				g.teams.flatMap((t) => t.players.map((p) => p.name)),
+			),
+		);
+		const spots: number[] = [];
+		for (let i = 1; i < para1.length; i++) {
+			const t = para1[i]!;
+			const g = gameOf(t);
+			const city = g ? placeName(g.teams[0].region) : undefined;
+			if (
+				g &&
+				city &&
+				homeCities.get(city) === 1 &&
+				g !== gameOf(para1[i - 1]!) &&
+				!t.includes(city) &&
+				[...names].some((n) => t.startsWith(`${n} `) || t.startsWith(`${n}'`))
+			) {
+				spots.push(i);
+			}
+		}
+		if (spots.length > 0 && rng() < 0.6) {
+			const i = spots[Math.floor(rng() * spots.length)]!;
+			const g = gameOf(para1[i]!)!;
+			para1[i] = `In ${placeName(g.teams[0].region)!}, ${para1[i]!}`;
 		}
 	}
 

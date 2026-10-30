@@ -5,6 +5,7 @@ import type {
 } from "./getDayGamesForRecap.ts";
 import { finishScores, withSettledLead } from "./recapFinish.ts";
 import { clockLeft } from "../../common/gameFlow.ts";
+import { expandSecondReferences } from "./recapNames.ts";
 
 // DOES THE RECAP SAY ANYTHING THAT ISN'T TRUE?
 //
@@ -128,9 +129,20 @@ const RESULT_VERB =
 	/beat|topped|handled|downed|routed|edged|held off|took down|stunned|shocked|knocked off|upset|survived|outlast|blew out|rolled|cruised|crushed|trounced|got past|pulled away|defeat|\bwin\b|\bwon\b/i;
 
 export const verifyRecap = (
-	recap: string,
+	written: string,
 	game: RecapGame,
 ): RecapViolation[] => {
+	// "Ingram's layup tied it" is Lonnie Ingram's layup: the recap writes a
+	// man's surname after his first mention, and the checks below go by
+	// whole names.
+	const recap = expandSecondReferences(
+		written,
+		game.teams.flatMap((t) => [
+			...t.players.map((p) => p.name),
+			...(t.injuries ?? []).map((p) => p.name),
+		]),
+		game.teams.map((t) => ({ name: t.name ?? "", region: t.region ?? "" })),
+	);
 	const out: RecapViolation[] = [];
 	const add = (kind: string, detail: string, sentence: string) => {
 		out.push({ kind, detail, sentence });

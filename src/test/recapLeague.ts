@@ -137,6 +137,36 @@ const LAST = [
 	"Everett",
 	"Flagg",
 	"Gilmore",
+	"Harper",
+	"Iverson",
+	"Jennings",
+	"Knight",
+	"Lambert",
+	"Monroe",
+	"Nash",
+	"Owens",
+	"Pierce",
+	"Rivers",
+	"Simmons",
+	"Thompson",
+	"Vance",
+	"Webb",
+	"Young",
+	"Abbott",
+	"Barnes",
+	"Coleman",
+	"Drummond",
+	"Fields",
+	"Garland",
+	"Holiday",
+	"Johnson",
+	"Kidd",
+	"Lillard",
+	"Murray",
+	"Nance",
+	"Oliver",
+	"Parker",
+	"Randle",
 ];
 
 // Math.random overridden for the duration of fn, so player generation and
@@ -256,8 +286,11 @@ export const simRecapLeague = async ({
 		Infinity,
 	])) {
 		await player.updateValues(p);
-		p.firstName = FIRST[n % FIRST.length]!;
-		p.lastName = `${LAST[Math.floor(n / FIRST.length) % LAST.length]!}`;
+		// Surnames spread across the league, the way they are in a real one -
+		// teammates rarely share one, and now and then two men in a game do -
+		// with the first name stepping so no two men share both.
+		p.lastName = LAST[n % LAST.length]!;
+		p.firstName = FIRST[(n * 7 + Math.floor(n / LAST.length)) % FIRST.length]!;
 		n += 1;
 		await idb.cache.players.put(p);
 	}

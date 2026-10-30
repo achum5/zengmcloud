@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 39,
+		date: "2026-10-30",
+		text: 'Recaps read more like a reporter wrote them: after a player\'s first mention he goes by his last name ("Ingram\'s layup tied it"), and now and then a team goes by its city ("for Indiana"). Game recaps open in more ways - a streak first, a player first, or where a road win happened ("beat the Celtics 102-91 in Boston") - and the halftime score and the biggest lead share a sentence more often. Day recaps sometimes move around the league with a city ("In Charlotte, ..."), and "Game 2 in Golden State" is now "Game 2 at the Warriors\' place".',
+	},
+	{
 		n: 38,
 		date: "2026-10-30",
 		text: "3D game: the building looks a lot more like an NBA arena. Every fan has a real face and a body with arms and hands, the stick-figure people along the court are gone, and the courtside seats behind the baskets and in the corners are full of real-looking fans in padded chairs - on their phones, holding drinks, clapping when their team scores and up waving when the place erupts. The officials wear the NBA's gray, the benches have high-backed chairs with the staff in a row behind them, a cooler and towels, the stanchions show the home team's name, and there's a sideline reporter, security, TV cameras in the corners, and moppers who wipe the floor during breaks. After the game there's no more handshake line: players find a few of the other team around midcourt for daps and hugs before heading off, the head coaches meet at the scorer's table, and the officials leave the floor.",

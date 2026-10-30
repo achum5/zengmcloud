@@ -34,6 +34,7 @@ import {
 	numWord,
 	ordinal,
 	pick,
+	placeName,
 	pickByDay,
 	plural,
 	poss,
@@ -1009,9 +1010,9 @@ const nextPlayoffGame = (ctx: BeatContext, rng: Rng): string | undefined => {
 	}
 	const gameNo = ser.homeWon + ser.awayWon + 2;
 	const host = next.home ? ctx.winner : ctx.loser;
-	const where = host.region
-		? ` in ${host.region}`
-		: ` at ${poss(theNick(host))} place`;
+	// "Game 2 in Golden State" is not a place; "at the Warriors' place" is.
+	const city = placeName(host.region);
+	const where = city ? ` in ${city}` : ` at ${poss(theNick(host))} place`;
 	const hostNick = theNick(host);
 	// The stakes sentence already named the game - "Nothing short of four
 	// straight saves the Pelicans, and Game 4 could end it. Next is Game 4 in
@@ -1020,15 +1021,12 @@ const nextPlayoffGame = (ctx: BeatContext, rng: Rng): string | undefined => {
 		const stays = ctx.game.teams[0].tid === host.tid;
 		// Not "That one is in Los Angeles": the injury line can land between
 		// it and the sentence that named the game.
-		return host.region
+		return city
 			? stays
-				? `The series stays in ${host.region}.`
+				? `The series stays in ${city}.`
 				: pick(
 						rng,
-						[
-							`The series shifts to ${host.region}.`,
-							`The series heads to ${host.region}.`,
-						],
+						[`The series shifts to ${city}.`, `The series heads to ${city}.`],
 						"nextPlayoffGameShifts",
 					)
 			: `${cap(hostNick)} are at home for it.`;
@@ -1105,8 +1103,8 @@ export const nextGameBeat = (
 			[
 				`The two go again next, with ${host} at home.`,
 				`The two meet again in the next game, ${host} hosting.`,
-				hostTeam.region
-					? `The teams meet again next, in ${hostTeam.region}.`
+				placeName(hostTeam.region)
+					? `The teams meet again next, in ${placeName(hostTeam.region)!}.`
 					: `The teams meet again next, at ${poss(host)} place.`,
 			],
 			"nextGameRematch",

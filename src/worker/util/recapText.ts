@@ -622,6 +622,19 @@ export const nick = (t: RecapTeam): string =>
 
 export const theNick = (t: RecapTeam): string => `the ${nick(t)}`;
 
+// A region that is a place a game is played IN: "in Boston", "in Utah" -
+// but not "in Golden State", which is a team's name for a region, nor a
+// region that is not a proper noun at all.
+export const placeName = (region: string | undefined): string | undefined => {
+	const r = (region ?? "").trim();
+	return r !== "" &&
+		/^\p{Lu}/u.test(r) &&
+		!/^the\s/i.test(r) &&
+		!/\bstate$|^bay area$|^new england$/i.test(r)
+		? r
+		: undefined;
+};
+
 // Possessive that reads right for plural team nicknames ("the Kings'", "the
 // 76ers'") and singular names ("Kobe Bryant's").
 export const poss = (s: string): string =>
