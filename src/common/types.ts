@@ -692,14 +692,16 @@ export type FaDayResultItem =
 			exp: number;
 	  };
 
-// The full, transparent record of one multiplayer free-agency day: every
-// board as submitted, and how each claim resolved (odds, roll, winner).
+// The record of one multiplayer free-agency day: how each claim resolved
+// (odds, roll, winner) - but no team's board: a board is that team's alone,
+// never shown to anybody else. (`boards`: only in days recorded before that,
+// and never sent to the page - see the freeAgents view.)
 export type FaDayResults = {
 	key: string; // `${season}-${daysLeft}`
 	season: number;
 	daysLeft: number; // before this day simmed
 	items: FaDayResultItem[];
-	boards: {
+	boards?: {
 		tid: number;
 		abbrev: string;
 		pids: { pid: number; name: string }[];

@@ -277,15 +277,6 @@ const FaBoardPanel = ({
 					) : (
 						results.items.map((item, i) => <FaResultItem key={i} item={item} />)
 					)}
-					<details className="mt-2">
-						<summary className="text-body-secondary">Boards</summary>
-						{results.boards.map((b) => (
-							<div key={b.tid}>
-								<b>{b.abbrev}:</b>{" "}
-								{b.pids.map((row) => row.name).join(", ") || "—"}
-							</div>
-						))}
-					</details>
 				</div>
 			) : null}
 		</div>

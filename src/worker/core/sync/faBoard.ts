@@ -11,11 +11,12 @@
 //   - A team that lands a player is done for the day (one board signing per
 //     team per day); losers roll again next round with their next claim.
 //
-// Everything about the resolution - every board, every band, every roll - is
-// recorded to the faDayResults store (synced like any other data) so the whole
-// room can see exactly what happened and why. Contracts use the engine's own
-// mood-adjusted asking price, and signings go through player.sign inside a
-// capture window, so they publish like any other transaction.
+// How each claim resolved - every band, every roll - is recorded to the
+// faDayResults store (synced like any other data) so the whole room can see
+// exactly what happened and why. No team's board is recorded, though: a board
+// is that team's alone, never shown to anybody else. Contracts use the
+// engine's own mood-adjusted asking price, and signings go through player.sign
+// inside a capture window, so they publish like any other transaction.
 
 import { PHASE, PLAYER } from "../../../common/constants.ts";
 import { changeTracker } from "../../db/changeTracker.ts";
@@ -187,7 +188,6 @@ export const resolveFaBoards = async (): Promise<void> => {
 	const abbrevFor = (tid: number) => teamInfo[tid]?.abbrev ?? `#${tid}`;
 
 	const items: FaDayResultItem[] = [];
-	const revealedBoards: FaDayResults["boards"] = [];
 
 	changeTracker.beginSim();
 	try {
@@ -199,7 +199,6 @@ export const resolveFaBoards = async (): Promise<void> => {
 		const effective = new Map<number, Candidate[]>();
 		for (const [tid, pids] of boards) {
 			const rows: Candidate[] = [];
-			const boardNames: { pid: number; name: string }[] = [];
 			const payroll = await team.getPayroll(tid);
 			for (const pid of pids) {
 				const p = await idb.cache.players.get(pid);
@@ -207,7 +206,6 @@ export const resolveFaBoards = async (): Promise<void> => {
 					continue;
 				}
 				const name = `${p.firstName} ${p.lastName}`;
-				boardNames.push({ pid, name });
 				if (p.tid !== PLAYER.FREE_AGENT) {
 					continue;
 				}
@@ -246,7 +244,6 @@ export const resolveFaBoards = async (): Promise<void> => {
 				});
 			}
 			effective.set(tid, rows);
-			revealedBoards.push({ tid, abbrev: abbrevFor(tid), pids: boardNames });
 		}
 
 		const taken = new Set<number>();
@@ -342,7 +339,6 @@ export const resolveFaBoards = async (): Promise<void> => {
 			season,
 			daysLeft,
 			items,
-			boards: revealedBoards,
 			at: Date.now(),
 		};
 		await idb.cache.faDayResults.put(results);

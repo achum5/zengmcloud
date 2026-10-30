@@ -334,7 +334,15 @@ export default defineView({
 				faBoard = {
 					numSlots: g.get("userTids").length,
 					pids,
-					results,
+					// (Without any team's board - a day recorded before boards
+					// stopped being kept has them: a board is that team's alone.)
+					results: results && {
+						key: results.key,
+						season: results.season,
+						daysLeft: results.daysLeft,
+						items: results.items,
+						at: results.at,
+					},
 				};
 			}
 
