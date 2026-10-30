@@ -197,6 +197,100 @@ const SAT_DOWN = pose({
 	wide: 0.5,
 	plant: 0,
 });
+// The dance team's eight counts (see dance). A hand on the hip: the arm
+// down and back, bent, the elbow out.
+const DANCE: Pose[] = [
+	pose({
+		shN: 10,
+		elN: 20,
+		abN: 15,
+		shF: 10,
+		elF: 20,
+		abF: 15,
+		kneeN: 30,
+		kneeF: 30,
+		lean: 6,
+	}),
+	pose({
+		shN: 170,
+		elN: 8,
+		abN: 10,
+		shF: -10,
+		elF: 100,
+		abF: 45,
+		kneeN: 8,
+		kneeF: 14,
+		tilt: 6,
+		twist: 8,
+	}),
+	pose({
+		shN: 10,
+		elN: 6,
+		abN: 85,
+		shF: 10,
+		elF: 6,
+		abF: 85,
+		kneeN: 26,
+		kneeF: 26,
+	}),
+	pose({
+		shN: 160,
+		elN: 6,
+		abN: 35,
+		shF: 160,
+		elF: 6,
+		abF: 35,
+		kneeN: 6,
+		kneeF: 6,
+		lean: -4,
+	}),
+	pose({
+		shN: 70,
+		elN: 70,
+		abN: -25,
+		shF: 70,
+		elF: 70,
+		abF: -25,
+		kneeN: 28,
+		kneeF: 28,
+		lean: 8,
+		tilt: -6,
+	}),
+	pose({
+		shN: -10,
+		elN: 100,
+		abN: 45,
+		shF: 170,
+		elF: 8,
+		abF: 10,
+		kneeN: 14,
+		kneeF: 8,
+		tilt: -6,
+		twist: -8,
+	}),
+	pose({
+		shN: 90,
+		elN: 4,
+		abN: 10,
+		shF: 90,
+		elF: 4,
+		abF: 10,
+		kneeN: 30,
+		kneeF: 30,
+		lean: 10,
+	}),
+	pose({
+		shN: 172,
+		elN: 4,
+		abN: 15,
+		shF: 172,
+		elF: 4,
+		abF: 15,
+		kneeN: 4,
+		kneeF: 4,
+		lean: -6,
+	}),
+];
 const P = {
 	// Standing easy but live, the way a man spaced out on the floor does:
 	// a little sunk at the knees, feet a shade wider than his hips and one
@@ -4525,6 +4619,27 @@ export const ANIMS = {
 			],
 			[0.26, SAT_DOWN],
 			[0.55, { ...SAT_DOWN, lean: -18, shN: 2, shF: -4 }],
+			// (Up onto a knee by way of a leg tucked under him and a foot
+			// planted - not, his legs swung straight from out in front of him
+			// to under him, popped up to his full height and back down.)
+			[
+				0.615,
+				pose({
+					hipN: 110,
+					kneeN: 150,
+					hipF: 100,
+					kneeF: 90,
+					shN: 11,
+					elN: 38,
+					abN: 25,
+					shF: 30,
+					elF: 49,
+					abF: 23,
+					lean: -10,
+					wide: 0.37,
+					plant: 0,
+				}),
+			],
 			[
 				0.68,
 				pose({
@@ -5228,6 +5343,16 @@ export const ANIMS = {
 				kneeF: i ? 12 : 24,
 				lean: 2,
 			}),
+	},
+	// The dance team's routine at a timeout, eight counts: down on the beat,
+	// an arm up and the other on the hip, out wide, up in a V, crossed in
+	// front, the other arm up, punched out in front, and both up high - the
+	// hips swinging from side to side with it.
+	dance: {
+		kind: "loop",
+		n: 8,
+		fps: 4,
+		pose: (i) => DANCE[i % DANCE.length]!,
 	},
 
 	// Holding the follow-through - arm up, wrist snapped down - until the

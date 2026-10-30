@@ -55,15 +55,19 @@ export type CrewRole =
 	| "table"
 	| "media"
 	| "mop"
-	| "staff";
+	| "staff"
+	| "dance";
 export type CrewMember = {
 	// Never a player's: crew are numbered below zero.
 	pid: number;
 	role: CrewRole;
 	// A coach's team; a photographer's end of the floor (0 the left).
 	team: Side;
-	// A photographer's place on the baseline; a chair at the scorer's table.
+	// A photographer's place on the baseline; a chair at the scorer's table;
+	// a dancer's in the routine.
 	spot?: Pt;
+	// A dancer: of the timeouts, how many the dance team comes out for.
+	share?: number;
 	hgt: number;
 	weight: number;
 	face: FaceConfig;
@@ -316,6 +320,28 @@ export const crewFor = (
 			),
 		});
 	});
+	// The dance team, in the home colors (see danceState).
+	DANCE_SPOTS.slice(0, spec.entertainment.dancers).forEach((at, n) => {
+		const seed = `dance|${teamKey(home)}|${n}`;
+		const r = makeCourtRng(seed);
+		out.push({
+			pid: -81 - n,
+			role: "dance",
+			team: 0,
+			spot: at,
+			share: spec.entertainment.danceShare,
+			hgt: 64 + r() * 5,
+			weight: 118 + r() * 20,
+			face: faceFor(seed, true),
+			dress: dress(
+				home?.colors?.[0] ?? "#8c1d40",
+				"#141416",
+				{},
+				"#f4f4f2",
+				home?.colors?.[1] ?? "#f2c14e",
+			),
+		});
+	});
 	// Stood about the floor all game: the sideline reporter by the corner
 	// past the home bench (out of the way of the team going off at the
 	// end), microphone in hand; security at the two far corners, arms
@@ -542,6 +568,104 @@ const mopState = (tl: CourtTimeline, t: number, m: CrewMember): PlayerState => {
 		phase: loopPhase("wipe", t, m.pid * 0.3),
 		w: 1,
 	});
+};
+
+// THE DANCE TEAM: at a timeout, the teams in their huddles, out they run
+// from the seats on the near side to center court - two rows, facing that
+// side - and the routine, all of them as one (see dance), till the teams
+// come back out; then off at a run the way they came, straight off the
+// floor, not across it through the teams. Not every
+// timeout (ArenaSpec.entertainment) - and only one the picture looks out
+// over the whole floor for.
+const DANCE_SPOTS: Pt[] = [
+	{ x: COURT_W / 2 - 7.5, y: 29.5 },
+	{ x: COURT_W / 2 - 2.5, y: 29.5 },
+	{ x: COURT_W / 2 + 2.5, y: 29.5 },
+	{ x: COURT_W / 2 + 7.5, y: 29.5 },
+	{ x: COURT_W / 2 - 5, y: 24 },
+	{ x: COURT_W / 2, y: 24 },
+	{ x: COURT_W / 2 + 5, y: 24 },
+];
+const DANCE_OFF = COURT_H + 6;
+// Into the timeout before they run out - the teams in their huddles - one
+// after another (ms); their pace (feet a second); the shortest timeout they
+// come out for (ms).
+const DANCE_AFTER = 2500;
+const DANCE_NEXT = 110;
+const DANCE_PACE = 14;
+const DANCE_LONGEST = 7000;
+type Dance = { t0: number; end: number };
+const danceCache = new WeakMap<CourtTimeline, Dance[]>();
+const dancesOf = (tl: CourtTimeline, share: number): Dance[] => {
+	const had = danceCache.get(tl);
+	if (had) {
+		return had;
+	}
+	const out: Dance[] = [];
+	for (const b of tl.beats) {
+		// (When the picture is on the whole floor for it, not the crowd.)
+		if (
+			b.type === "timeout" &&
+			b.end - b.actionStart >= DANCE_LONGEST &&
+			tl.shots.some(
+				(x) => x.kind === "wide" && x.t0 < b.end && x.t1 > b.actionStart,
+			) &&
+			unit(Math.round(b.preStart), 4242) < share
+		) {
+			out.push({ t0: b.actionStart + DANCE_AFTER, end: b.end + 150 });
+		}
+	}
+	danceCache.set(tl, out);
+	return out;
+};
+const danceState = (
+	tl: CourtTimeline,
+	t: number,
+	m: CrewMember,
+): PlayerState | undefined => {
+	const k = -81 - m.pid;
+	const d = dancesOf(tl, m.share ?? 0).findLast((x) => x.t0 <= t);
+	const at = m.spot!;
+	const door = { x: at.x, y: DANCE_OFF };
+	const run = ((DANCE_OFF - at.y) / DANCE_PACE) * 1000;
+	const out0 = d && d.t0 + k * DANCE_NEXT;
+	const there = out0 !== undefined ? out0 + run : 0;
+	const off = d ? d.end + k * DANCE_NEXT * 0.8 : 0;
+	if (!d || t < out0! || t >= off + run) {
+		return undefined;
+	}
+	const base = { pid: m.pid, team: m.team, shown: true, z: 0, moving: false };
+	const running = (A: Pt, B: Pt, a: number): PlayerState => {
+		const u = Math.min(1, Math.max(0, (t - a) / run));
+		return {
+			...base,
+			x: A.x + (B.x - A.x) * u,
+			y: A.y + (B.y - A.y) * u,
+			yaw: yawTo(A, B),
+			anim: "run",
+			phase: (t / 1000) * 1.7 + k * 0.13,
+			moving: true,
+		};
+	};
+	if (t < there) {
+		return running(door, at, out0!);
+	}
+	if (t >= off) {
+		return running(at, door, off);
+	}
+	// (All as one: the same count, from when the first of them is there.)
+	const st: PlayerState = {
+		...base,
+		x: at.x,
+		y: at.y,
+		yaw: Math.PI / 2,
+		anim: "dance",
+		phase: loopPhase("dance", t - (d.t0 + run), 0),
+	};
+	const k0 = 1 - smooth01((t - there) / 300);
+	return k0 > 0
+		? { ...st, from: { anim: "run", phase: (t / 1000) * 1.7, w: k0 } }
+		: st;
 };
 
 // Where the pre-game show stands, and what each of them does.
@@ -2356,6 +2480,11 @@ export const crewAt = (
 			states.push(mopState(tl, t, m));
 		} else if (m.role === "staff") {
 			states.push(staffState(t, m));
+		} else if (m.role === "dance") {
+			const st = danceState(tl, t, m);
+			if (st) {
+				states.push(st);
+			}
 		} else if (m.role === "photo") {
 			const st = photoState(tl, t, m, ball);
 			states.push(st);

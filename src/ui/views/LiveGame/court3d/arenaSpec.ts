@@ -47,6 +47,12 @@ export type ArenaSpec = {
 		cooler: string;
 		towels: string;
 	};
+	// At a timeout: the dance team (how many of them - up to seven - and of
+	// the timeouts, how many they come out for).
+	entertainment: {
+		dancers: number;
+		danceShare: number;
+	};
 };
 
 const DEFAULT_MAIN = "#8c1d40";
@@ -78,6 +84,10 @@ export const arenaSpecFor = (home: ArenaTeam | undefined): ArenaSpec => {
 		bench: {
 			cooler: r() < 0.7 ? "#f07c1c" : "#3d9a46",
 			towels: "#f4f4f2",
+		},
+		entertainment: {
+			dancers: 7,
+			danceShare: 0.6,
 		},
 	};
 };

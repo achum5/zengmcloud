@@ -319,6 +319,10 @@ export type ShotCall = {
 	// Whoever has the ball, when the set must start from him (a break).
 	holder?: number;
 	five: Cast[];
+	// How many times as often as most he gets it going one-on-one, his
+	// teammates cleared out of his way: a star, more (see isoFor in
+	// director.ts).
+	iso?: number;
 };
 
 export const callShot = (
@@ -400,7 +404,8 @@ export const callShot = (
 			w:
 				(k === "Transition" && call.cats.early === undefined) || k === "Putback"
 					? 0
-					: playTypeOdds(k, call.zone, assisted, rank),
+					: playTypeOdds(k, call.zone, assisted, rank) *
+						(k === "Isolation" ? (call.iso ?? 1) : 1),
 		})),
 	)?.pick;
 	return choose(

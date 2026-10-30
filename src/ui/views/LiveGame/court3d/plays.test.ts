@@ -238,4 +238,34 @@ describe("3D playbook", () => {
 			);
 		}
 	}, 60_000);
+
+	// A star gets his own shot going one-on-one - the floor cleared for him -
+	// a lot more than most; everybody else as often as before.
+	test("a star's own shot comes off an isolation more often", () => {
+		const isos = (iso: number | undefined) => {
+			const rng = makeCourtRng("iso");
+			let n = 0;
+			let own = 0;
+			for (const zone of ["rim", "post", "mid", "three"] as const) {
+				for (let j = 0; j < 150; j++) {
+					const call = callShot(rng, {
+						cats: { half: 1 },
+						zone,
+						shooter: 20,
+						unassisted: true,
+						five: FIVE,
+						...(iso === undefined ? {} : { iso }),
+					});
+					own += 1;
+					if (call?.pick.playType === "Isolation") {
+						n += 1;
+					}
+				}
+			}
+			return n / own;
+		};
+		const most = isos(undefined);
+		assert.strictEqual(isos(1), most);
+		assert.isAbove(isos(3), most * 1.6);
+	});
 });

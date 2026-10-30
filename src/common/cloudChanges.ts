@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 53,
+		date: "2026-10-30",
+		text: "3D game: stars go one-on-one more. Players who create their own shot well get the floor cleared for them and isolate up to three times as often as most. At many timeouts the home team's dance team now runs out and performs at center court while the teams huddle, then clears the floor as play resumes. Also cleaned up a few awkward moments: on a charge, the player who ran into the defender backs off instead of standing over them, and the teammate who helps them up comes around rather than walking through people. At the final horn, players caught in a scramble step apart, and players heading to dap each other up no longer walk on top of each other. Fixed: a defender leaving the ball handler to follow a cutter, which could leave the ball handler wide open for seconds.",
+	},
+	{
 		n: 52,
 		date: "2026-10-30",
 		text: "Realistic Front Offices has a new setting, Realistic Free Agency (on by default). Turn it off to keep the smart CPU teams with regular BBGM free agency and re-signing: you negotiate and sign like normal, players treat every team the same, asking prices follow what CPU teams would really pay, and CPU teams decide who to sign by their own valuation.",

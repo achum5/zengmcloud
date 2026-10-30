@@ -138,6 +138,43 @@ describe("3D crew", () => {
 		assert.isAbove(wiped, 0);
 	}, 120_000);
 
+	// At a timeout, now and then, the dance team: out at center court in the
+	// home colors while the teams huddle - never out there with the clock
+	// running, nor in the middle of the floor before the teams are off it.
+	test("the dance team dances at center court in a timeout, and only then", () => {
+		let danced = 0;
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl, crew, events } = working(seed);
+			const clocks = buildClocks(tl, events);
+			const dancers = crew.filter((m) => m.role === "dance");
+			assert.strictEqual(dancers.length, 7);
+			const timeouts = tl.beats.filter((b) => b.type === "timeout");
+			for (let t = 0; t <= tl.end; t += 250) {
+				for (const s of crewAt(tl, t, crew).states) {
+					if (!dancers.some((m) => m.pid === s.pid)) {
+						continue;
+					}
+					assert.strictEqual(
+						gameClockAt(clocks, t),
+						gameClockAt(clocks, t - 250),
+						`${seed} ${t}`,
+					);
+					assert.isTrue(
+						timeouts.some(
+							(b) => t >= b.actionStart + 2000 && t <= b.end + 4000,
+						),
+						`${seed} ${t}`,
+					);
+					if (s.anim === "dance") {
+						danced += 1;
+						assert.isBelow(Math.abs(s.x - COURT_W / 2), 9);
+					}
+				}
+			}
+		}
+		assert.isAbove(danced, 0);
+	}, 120_000);
+
 	// Officials run with the play, so in the picture they never pop from
 	// one place to another - except where the picture cuts.
 	test("the officials keep to the floor and run - never jump, but at a cut", () => {

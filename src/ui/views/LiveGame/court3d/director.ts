@@ -591,7 +591,12 @@ const RELEASE_MS = 120;
 // teammates there to help him up from this long after it, if no further off
 // than so far (feet).
 const CHARGE_DOWN_MS = 2400;
+// The man who ran him over backs off him this far (feet) at the whistle.
+const CHARGE_BACK = 3.2;
 const HELP_UP_AT = 1100;
+// Coming from his feet, a helper goes round the man who ran into him this
+// far out beside him (feet) - from the far side, this far round behind him.
+const HELP_UP_WIDE = 3;
 const HELP_UP_FROM = 18;
 // (Still down until so far into it, then up onto a knee - as a teammate's
 // hand gets to him, if one is coming: there by so long after the contact.)
@@ -1391,8 +1396,13 @@ const DEAD_SETUPS =
 // The last of the clock, ahead, dribbled out at real speed at the end of a
 // game (ms) - and, behind, the last look for a shot that never comes.
 const FINAL_DRIBBLE = 3600;
+// A star gets it going one-on-one more than most (see isoFor).
+const ISO_FROM = 0.6;
+const ISO_STAR = 2;
 // How high the man with it at the horn, winning, throws it (feet).
 const GAME_BALL_UP = 27;
+// Nearer anybody than this (feet) at the horn, a loser steps off him.
+const HORN_APART = 2.4;
 const FINAL_LOOK = 1600;
 // No more than this left (seconds) at his own end and no shot: on his way up
 // with it as the horn goes (see playOutClock).
@@ -2031,9 +2041,10 @@ class Director {
 	private ballHand: Hand = "R";
 	private ballHandOf: number | undefined;
 	private ballAt: Pt3 = { x: COURT_W / 2, y: COURT_H / 2, z: 4 };
-	// Two men going to each other to dap up after the game, from when they
-	// set off to when they are through (see gameOver) - not kept off each
-	// other on the way, nor in the middle of it (see keepOff).
+	// Two men going to each other to dap up after the game, from their last
+	// steps in to it to when they are through (see gameOver) - not kept off
+	// each other as they come together, nor in the middle of it (see
+	// keepOff). (Crossing the floor to it side by side, they are.)
 	private meets = new Map<string, [number, number][]>();
 	// And each man's own: his last steps in to where he meets his man,
 	// waiting there for him, and with him, he holds his line - anybody else in the way goes round him (before that,
@@ -2807,6 +2818,18 @@ class Director {
 		}
 	}
 
+	// How many times as often as most a man gets it going one-on-one for his
+	// own shot, his teammates cleared out of his way (see callShot): the
+	// better he creates for himself - reading it, and his handle - from
+	// ISO_FROM of the way up, up to 1 + ISO_STAR times for the very best.
+	// (Nothing to go by, as often as anybody.)
+	private isoFor(pid: number): number | undefined {
+		const s = this.level(pid, "oiq", "drb");
+		return s === undefined || s <= ISO_FROM
+			? undefined
+			: 1 + (ISO_STAR * (s - ISO_FROM)) / (1 - ISO_FROM);
+	}
+
 	// How he celebrates a three, his own way every time: both arms up, the
 	// goggles, a shimmy - or, most of all, a finger at the bench.
 	private threeCelebration(pid: number): AnimName {
@@ -3339,9 +3362,11 @@ class Director {
 	// Something to say about what just happened - at the official (out
 	// toward the sideline nearer him), or at whoever he means - for a moment
 	// before he goes on: he does not set off until he has said it.
-	// A man down on the floor at F, facing A: the nearest of his teammates
-	// (one, or two of them close) come over, stand over him to his side away
-	// from X, lean in and pull him up as he gets up.
+	// A man down on the floor at F, facing A - the man who put him there
+	// at X: the nearest of his teammates (one, or two of them close) come
+	// over, stand over him at his side - the first the side he comes from -
+	// lean in and pull him up as he gets up. Coming from out past X, round
+	// him, not through him.
 	// Returns when the first of them has a hand on him (the contact itself,
 	// if nobody comes).
 	private helpUp(down: number, F: Pt, A: Pt, X: Pt, hit: number): number {
@@ -3354,21 +3379,53 @@ class Director {
 		const n = near.length >= 2 && hash01(down, hit) < 0.4 ? 2 : 1;
 		const u = unitVec(F, A);
 		const side = { x: -u.y, y: u.x };
-		const away = (X.x - F.x) * side.x + (X.y - F.y) * side.y > 0 ? -1 : 1;
+		const sideOf = (P: Pt) =>
+			(P.x - F.x) * side.x + (P.y - F.y) * side.y >= 0 ? 1 : -1;
+		const first0 = near[0] ? sideOf(this.posOf(near[0].p)) : 1;
 		let first: number | undefined;
 		near.slice(0, n).forEach(({ p }, k) => {
-			const s = k === 0 ? away : -away;
+			const s = k === 0 ? first0 : -first0;
 			const spot = clampPt({
-				x: F.x + side.x * s * 2.3 + u.x * 1.1,
-				y: F.y + side.y * s * 2.3 + u.y * 1.1,
+				x: F.x + side.x * s * 2.3 - u.x * 0.4,
+				y: F.y + side.y * s * 2.3 - u.y * 0.4,
 			});
 			const from = Math.max(hit + 200, this.free.get(p) ?? 0);
+			const P = this.posOf(p);
+			// (Round the man who ran into him, out beside him first - or from
+			// the other side of him, round behind his head.)
+			const round =
+				(P.x - F.x) * u.x + (P.y - F.y) * u.y > 1
+					? clampPt({
+							x: X.x + side.x * s * HELP_UP_WIDE,
+							y: X.y + side.y * s * HELP_UP_WIDE,
+						})
+					: sideOf(P) !== s
+						? clampPt({
+								x: F.x - u.x * HELP_UP_WIDE,
+								y: F.y - u.y * HELP_UP_WIDE,
+							})
+						: undefined;
+			const way = round ? dist(P, round) + dist(round, spot) : dist(P, spot);
 			// (Only one who gets there while he is still down.)
-			const need = runMs(dist(this.posOf(p), spot), SPRINT);
+			const need = runMs(way, SPRINT);
 			if (from + need > hit + HELP_UP_BY) {
 				return;
 			}
-			const there = this.goBy(p, spot, from, from + need + 120, "run");
+			const there = round
+				? this.goBy(
+						p,
+						spot,
+						this.goBy(
+							p,
+							round,
+							from,
+							from + (need * dist(P, round)) / way,
+							"run",
+						),
+						from + need + 120,
+						"run",
+					)
+				: this.goBy(p, spot, from, from + need + 120, "run");
 			const t0 = Math.max(there, hit + HELP_UP_AT);
 			// (A hand down to him a moment after he gets there; a second man
 			// in the pull as it comes.)
@@ -5915,6 +5972,7 @@ class Director {
 					unassisted: plan.kind === "make" && assist === undefined,
 					holder,
 					five,
+					iso: this.isoFor(shooter),
 				},
 				sets,
 			);
@@ -12557,14 +12615,15 @@ class Director {
 			busy.push(reads.pid);
 		}
 		// Where each man going in to the glass ends up: a step apart, never
-		// two on the one spot - round the rim from it, if it is taken.
+		// two on the one spot - round the rim from it, if it is taken (never
+		// round behind the baseline: the ball is live).
 		const taken: Pt[] = reads && spot ? [spot] : [];
 		const apart = (P: Pt): Pt => {
 			const d = dist(P, rim);
 			const a0 = Math.atan2(P.y - rim.y, P.x - rim.x);
 			for (const k of [0, 1, -1, 2, -2, 3, -3]) {
 				const a = a0 + k * GLASS_TURN;
-				const Q = clampPt({
+				const Q = inPlay({
 					x: rim.x + Math.cos(a) * d,
 					y: rim.y + Math.sin(a) * d,
 				});
@@ -12600,7 +12659,7 @@ class Director {
 			) {
 				const u = unitVec(M, rim);
 				const k = Math.max(0, Math.min(out - (5 + 3 * draw()), 9));
-				const C = apart(clampPt({ x: M.x + u.x * k, y: M.y + u.y * k }));
+				const C = apart(inPlay({ x: M.x + u.x * k, y: M.y + u.y * k }));
 				crash.set(pid, C);
 				inAt.set(pid, this.goBy(pid, C, r0, meet, "run", undefined, BURST));
 			} else if (out < 30) {
@@ -12670,13 +12729,13 @@ class Director {
 			if (C && watches) {
 				const D0 = this.posOf(d);
 				const u = unitVec(D0, rim);
-				spot = clampPt({ x: D0.x + u.x * 2, y: D0.y + u.y * 2 });
+				spot = inPlay({ x: D0.x + u.x * 2, y: D0.y + u.y * 2 });
 				C = undefined;
 			} else if (C) {
 				// Into him: a step in front of where he is coming, between him
-				// and the rim.
+				// and the rim - inside the lines, the ball live.
 				const u = unitVec(C, rim);
-				spot = clampPt({ x: C.x + u.x * 1.8, y: C.y + u.y * 1.8 });
+				spot = inPlay({ x: C.x + u.x * 1.8, y: C.y + u.y * 1.8 });
 			} else {
 				// Nobody to put a body on: a big in to the glass himself, eyes
 				// on it; anybody else no further in than where a long one comes
@@ -14720,6 +14779,7 @@ class Director {
 				// A series won and not at the buzzer: together at center court,
 				// all over each other.
 				const middle = { x: COURT_W / 2, y: COURT_H / 2 };
+				const W0 = this.slots(winner);
 				this.slots(winner).forEach((pid, j) => {
 					const from = Math.max(T + 150 + j * 80, this.free.get(pid) ?? 0);
 					if (mob) {
@@ -14770,7 +14830,33 @@ class Director {
 					}
 				});
 				this.slots(loser).forEach((pid, j) => {
-					const from = Math.max(T + 350 + j * 90, this.free.get(pid) ?? 0);
+					let from = Math.max(T + 350 + j * 90, this.free.get(pid) ?? 0);
+					// (In among them where the horn found him - a scramble for a
+					// board, say - he steps off them first, not stood on a man
+					// jumping up and down.)
+					const P = this.posOf(pid);
+					const close = [...W0, ...this.slots(loser)].filter(
+						(q) => q !== pid && dist(this.posOf(q), P) < HORN_APART,
+					);
+					if (close.length > 0) {
+						const c = close.reduce(
+							(a, q) => ({
+								x: a.x + this.posOf(q).x / close.length,
+								y: a.y + this.posOf(q).y / close.length,
+							}),
+							{ x: 0, y: 0 },
+						);
+						const away = dist(P, c) > 0.1 ? unitVec(c, P) : unitVec(c, middle);
+						const near = Math.min(...close.map((q) => dist(this.posOf(q), P)));
+						const k = Math.min(3, HORN_APART + 0.4 - near);
+						from = this.go(
+							pid,
+							clampPt({ x: P.x + away.x * k, y: P.y + away.y * k }),
+							from,
+							WALK * 1.2,
+							"walk",
+						);
+					}
 					if (hero !== undefined && j < 2) {
 						this.react(pid, "crouch", from, 1800);
 					} else if (this.rng() < 0.75) {
@@ -14907,7 +14993,7 @@ class Director {
 						const key = `${Math.min(w, l)}|${Math.max(w, l)}`;
 						this.meets.set(key, [
 							...(this.meets.get(key) ?? []),
-							[Math.min(tw, tl), met + long],
+							[Math.min(aw, al) - DAP_HOLD, met + long],
 						]);
 						for (const [p, there] of [
 							[w, aw],
@@ -16991,23 +17077,31 @@ class Director {
 				"dribble",
 				dir,
 			);
+			// He backs off the man he ran over - down at his feet, legs out
+			// at him - as the whistle goes, not stood over him.
+			this.hold(victim, hit, "hold");
+			const away = unitVec(C, E);
+			const V = clampPt({
+				x: E.x + away.x * CHARGE_BACK,
+				y: E.y + away.y * CHARGE_BACK,
+			});
+			const backed = this.go(victim, V, hit + 250, 4.5, "back", dir);
 			// Down on the floor with it - and a teammate or two over to give
 			// him a hand up: up off the floor as they pull him up.
-			const reach = this.helpUp(helper, C, A, E, hit);
+			const reach = this.helpUp(helper, C, A, V, hit);
 			const up = Math.max(
 				hit + CHARGE_DOWN_MS,
 				hit - 60 + (reach + 60 - hit) / CHARGE_UP_AT,
 			);
 			this.act(helper, "takeCharge", hit - 60, up, { look: A });
 			this.free.set(helper, Math.max(this.free.get(helper) ?? 0, up));
-			this.hold(victim, hit, "hold");
 			this.effect("whistle", hit + 120, {
 				call: "offensive",
 				at: E,
 				team: other(team),
 			});
 			if (this.rng() < 0.6) {
-				this.react(victim, "protest", hit + 500, 1000);
+				this.react(victim, "protest", backed + 80, 1000);
 			}
 			this.turnOver(team, E);
 			this.beat(i, e.type, hit + 120, up - 300);
@@ -18208,8 +18302,11 @@ class Director {
 							);
 						const last = runAt(o, s0);
 						const his = last !== undefined && this.marking.get(last) === tr.pid;
-						// (The man marking him, sagged off him in help, goes too.)
-						if (!ow || dist(ow.at, P) >= (his ? 24 : 10)) {
+						// (The man marking him, sagged off him in help, goes too -
+						// but not a man marking somebody else, off after him and
+						// leaving his own: the man with the ball, say.)
+						const other = !his && last !== undefined && this.marking.has(last);
+						if (!ow || other || dist(ow.at, P) >= (his ? 24 : 10)) {
 							continue;
 						}
 						if (
@@ -19774,12 +19871,15 @@ class Director {
 					),
 				);
 				// (Nor off after his man when he has the block, the poke at the
-				// ball, to come before his next run: the play has him where he
-				// is for it.)
+				// ball, a charge to take, to come before his next run: the play
+				// has him where he is for it.)
 				if (
 					t1 - t0 < SHORTEST ||
 					tr.acts.some(
-						(a) => FOR_IT.has(a.anim) && a.t0 > m.t1 && a.t0 <= until,
+						(a) =>
+							(FOR_IT.has(a.anim) || a.anim === "takeCharge") &&
+							a.t0 > m.t1 &&
+							a.t0 <= until,
 					)
 				) {
 					continue;

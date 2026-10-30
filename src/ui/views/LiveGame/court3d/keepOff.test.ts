@@ -117,6 +117,55 @@ describe("keeping bodies apart", () => {
 		assert.isBelow(inside / loose, 0.008, `${inside} of ${loose}`);
 	});
 
+	// A charge: the man who ran him over backs off him once he is down -
+	// not stood over him with the ball - and whoever comes to help him up
+	// comes round that man, not through him.
+	test("down taking a charge, nobody stands on him or on the man who ran into him", () => {
+		let charges = 0;
+		let helped = 0;
+		for (const seed of ["apart", "e"]) {
+			const { tl } = compile(seed, 150);
+			for (const tr of tl.tracks.values()) {
+				for (const a of tr.acts) {
+					if (a.anim !== "takeCharge") {
+						continue;
+					}
+					charges += 1;
+					const seg = tl.ball.findLast(
+						(s) => s.kind === "hold" && s.t0 <= a.t0 + 300,
+					);
+					const by = seg?.kind === "hold" ? tl.tracks.get(seg.pid) : undefined;
+					assert.isDefined(by);
+					const helpers = [...tl.tracks.values()].filter((o) =>
+						o.acts.some(
+							(x) => x.anim === "helpUp" && x.t1 > a.t0 && x.t0 < a.t1,
+						),
+					);
+					helped += helpers.length;
+					for (let t = a.t0 + 900; t < a.t1; t += 50) {
+						const F = floorSpotOf(tr, t)!;
+						const H = floorSpotOf(by!, t)!;
+						assert.isAbove(
+							Math.hypot(F.x - H.x, F.y - H.y),
+							2.4,
+							`${seed} ${t}`,
+						);
+						for (const o of helpers) {
+							const P = floorSpotOf(o, t)!;
+							assert.isAbove(
+								Math.hypot(P.x - H.x, P.y - H.y),
+								2,
+								`${seed} ${t}`,
+							);
+						}
+					}
+				}
+			}
+		}
+		assert.isAbove(charges, 5);
+		assert.isAbove(helped, 3);
+	});
+
 	test("kept off a man, he eases over and back - no jump", () => {
 		const { tl } = compile("apart", 80);
 		let seen = 0;
