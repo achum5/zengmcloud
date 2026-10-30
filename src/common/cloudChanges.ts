@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 46,
+		date: "2026-10-30",
+		text: "Playoff recaps always say which game of which round it was in the first sentence (\"...113-111 in Game 1 of the Finals\"), and a title recap says when it's the franchise's first championship (or a repeat) right up top instead of in the last line.",
+	},
+	{
 		n: 45,
 		date: "2026-10-30",
 		text: "Realistic Front Offices: pending deals and bidding are gone - trades work like regular BBGM again, and the header bell and the Pending Deals setting are removed. CPU teams still won't take less from you than another team would give them: if a team turns you down because someone else would pay more, it now just says it has a better offer elsewhere, without saying who.",

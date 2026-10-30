@@ -7828,10 +7828,13 @@ const buildGameRecap = (game: RecapGame): string => {
 						next: false,
 					};
 	}
-	const where =
-		headline.spentState && post.state
-			? ` in Game ${post.state.gameNo} of ${post.state.round}`
-			: (clinchLede?.text ?? post.playInLede);
+	// A playoff lede says which game of which round, whatever the headline
+	// said: "The Magic rallied past the Grizzlies 113-111" opened Game 1 of
+	// the Finals, and the round turned up three sentences on in "The Magic
+	// are up 1-0 in the Finals".
+	const where = post.state
+		? ` in Game ${post.state.gameNo} of ${post.state.round}`
+		: (clinchLede?.text ?? post.playInLede);
 	if (where && para1.length > 0) {
 		// The sentence with the result in it: after the score, or after the
 		// losers' name when the headline has the score.
@@ -8396,7 +8399,26 @@ const buildGameRecap = (game: RecapGame): string => {
 	// Where the series stands is part of what happened, and closes the lede.
 	// When the headline already carried it, what is left is the stakes
 	// ("The Raptors can still close it out in Game 5"), which is context.
-	const seriesState = headline.spentState ? undefined : postSentences[0];
+	// The lede named the round, so the series score that closes the story
+	// does not name it again: "The Magic lead the series 1-0", not "...are
+	// up 1-0 in the Finals" under "in Game 1 of the Finals".
+	const rnd = post.state?.round;
+	const seriesState =
+		headline.spentState || postSentences[0] === undefined
+			? undefined
+			: rnd && para1.join(" ").includes(` of ${rnd}`)
+				? postSentences[0]
+						.replace(
+							new RegExp(String.raw`^Game \d+ of ${rnd} went to (.+)\.$`),
+							(_, w: string) =>
+								`${cap(w)} lead the series ${post.state!.wAfter}-${post.state!.lBefore}.`,
+						)
+						.replace(
+							new RegExp(String.raw` are up (\d+-\d+) in ${rnd}\.$`),
+							" lead the series $1.",
+						)
+						.replace(` in ${rnd}`, "")
+				: postSentences[0];
 	const postContext = headline.spentState
 		? postSentences
 		: postSentences.slice(1);
@@ -8607,8 +8629,18 @@ const buildGameRecap = (game: RecapGame): string => {
 			beatCtx.written = `${beatCtx.written} ${text}`;
 		}
 	};
+	// A first title in franchise history, or a repeat, is part of the lede's
+	// news, not the last line of the piece: it goes up with the result.
+	const history = postContext.find((t) =>
+		/championship in franchise history|back-to-back championships/.test(t),
+	);
+	if (history && para1.length > 0) {
+		para1.push(history);
+	}
 	for (const text of postContext) {
-		addContext(() => text);
+		if (text !== history) {
+			addContext(() => text);
+		}
 	}
 	const seriesCount = context.length;
 	// What the lede and the story told, and the body so far - without the
