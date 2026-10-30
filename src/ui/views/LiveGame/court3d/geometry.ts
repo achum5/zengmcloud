@@ -112,6 +112,57 @@ export const huddleSpots = (t: Side): Pt[] => {
 		return { x: cx + Math.cos(a) * 2.6, y: HUDDLE_Y + Math.sin(a) * 1.7 };
 	});
 };
+// A break, the way the NBA has it: the five sat on chairs set out in front
+// of their bench, in a shallow arc (round from HUDDLE_ROUND feet out) - the
+// middle one just in off the sideline - the coach down on a knee in front of
+// them (HUDDLE_COACH feet out from the middle chair). Each chair turned in
+// toward a point a little out past him (huddleFace) - and the man in it
+// looking that way: turned right in to the coach, the five stood up in
+// front of their chairs were in each other. Where each chair has a man's
+// hips as he sits in it.
+export const HUDDLE_GAP = 2.8;
+const HUDDLE_ROUND = 9;
+const HUDDLE_COACH = 3.4;
+const HUDDLE_FACE = 5.6;
+const HUDDLE_IN = 0.9;
+export type Chair = Pt & { yaw: number };
+export const huddleCoach = (t: Side): Pt => ({
+	x: benchX(t),
+	y: HUDDLE_IN + HUDDLE_COACH,
+});
+export const huddleFace = (t: Side): Pt => ({
+	x: benchX(t),
+	y: HUDDLE_IN + HUDDLE_FACE,
+});
+export const huddleChairs = (t: Side): Chair[] => {
+	const cx = benchX(t);
+	const a = HUDDLE_GAP / HUDDLE_ROUND;
+	const f = huddleFace(t);
+	return [-2, -1, 0, 1, 2].map((k) => {
+		const x = cx + HUDDLE_ROUND * Math.sin(k * a);
+		const y = HUDDLE_IN + HUDDLE_ROUND * (1 - Math.cos(k * a));
+		return { x, y, yaw: Math.atan2(f.y - y, f.x - x) };
+	});
+};
+// And the rest of them up off the bench, stood round them: a row behind
+// the chairs, one round each end of the row, and a second row behind -
+// nearest the middle first.
+export const huddleRing = (t: Side): Pt[] => {
+	const cx = benchX(t);
+	const y = HUDDLE_IN - 2;
+	return [
+		...[0, -2.2, 2.2, -4.4, 4.4].map((dx) => ({
+			x: cx + dx,
+			y: y - Math.abs(dx) * 0.06,
+		})),
+		{ x: cx - 7.6, y: HUDDLE_IN + 1.4 },
+		{ x: cx + 7.6, y: HUDDLE_IN + 1.4 },
+		...[-1.1, 1.1, -3.3, 3.3, -5.5, 5.5].map((dx) => ({
+			x: cx + dx,
+			y: y - 1.8,
+		})),
+	];
+};
 
 // Free throw alignment, by depth from the shooting team's baseline: the
 // defense takes the blocks nearest the rim, the offense the spots between.

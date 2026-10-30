@@ -550,6 +550,27 @@ const jumpZ = (act: Act, u: number): number => {
 	return v <= 0 || v >= 1 ? 0 : 4 * peak * v * (1 - v);
 };
 
+// Still up off the floor from what he was doing (a contest, say) as the
+// next thing starts (going up for the board): as high as that jump has him
+// till it would have had him down, this one's taking him on from there - not
+// dropped to the floor in a frame to go up again. (Only a jump he was up in
+// as this one started - not one of its own still to come.)
+const stillUp = (tr: Track, act: Act, t: number): number => {
+	let up = 0;
+	const ai = lastIndex(tr.acts, act.t0, (a) => a.t0);
+	for (let k = ai; k >= 0 && k >= ai - 4; k--) {
+		const a = tr.acts[k]!;
+		if (a === act || a.flash || t >= a.t1 || (!a.jump && !a.zKeys)) {
+			continue;
+		}
+		const span = a.t1 - a.t0;
+		if (jumpZ(a, (act.t0 - a.t0) / span) > 0.05) {
+			up = Math.max(up, jumpZ(a, (t - a.t0) / span));
+		}
+	}
+	return up;
+};
+
 // HOW HE RUNS.
 //
 // A run gets up to speed in a few strides, holds it, and eases off into
@@ -2864,7 +2885,7 @@ const doingNow = (
 					: a.kind === "loop"
 						? (t / 1000) * (a.fps / a.n) + pid * 0.37
 						: (t - act.t0) / 1000;
-		z = jumpZ(act, u);
+		z = Math.max(jumpZ(act, u), stillUp(tr, act, t));
 		if (act.reach && act.jump) {
 			reach = act.jump[2];
 		}

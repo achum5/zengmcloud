@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 56,
+		date: "2026-10-30",
+		text: "3D game: timeouts and breaks between quarters now look like an NBA huddle - chairs are set out in front of each bench, the five players on the floor sit down in them facing their coach, who walks over and kneels in front of them, the rest of the team gets up off the bench and stands around behind them, and everyone breaks together as the timeout ends. Players heading to their own huddle walk around the other team's instead of through it. Also fixed: a player who contests a shot and then goes up for the rebound no longer drops to the floor in a single frame between the two jumps.",
+	},
+	{
 		n: 55,
 		date: "2026-10-30",
 		text: "3D game: when a player takes a charge, the teammate who comes over to help them up now stands at their feet, grabs both of their hands, and actually pulls them up by them - hands gripped the whole way - instead of reaching down somewhere near them.",

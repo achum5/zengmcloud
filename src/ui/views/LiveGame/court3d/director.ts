@@ -25,6 +25,9 @@ import {
 	ftOffenseSpot,
 	guardSpot,
 	HUDDLE_Y,
+	huddleChairs,
+	huddleCoach,
+	huddleFace,
 	inPlay,
 	OFFICIALS_SETTLE,
 	sideOn,
@@ -37,6 +40,7 @@ import {
 	rimX,
 	spot,
 	TABLE,
+	type Chair,
 	type Pt,
 	type Pt3,
 	type Side,
@@ -446,6 +450,8 @@ export type CourtTimeline = {
 	fast: [number, number][];
 	// The men going to the scorer's table to check in, before each comes on.
 	checkIns?: CheckIn[];
+	// The huddles at the breaks, the five sat on chairs (see toHuddles).
+	huddles?: Huddle[];
 	// The starting lineups called out before the opening tip (see intro.ts).
 	intro?: Intro;
 	// The warm-ups, before it is ready (see pregame.ts): the pre-game show
@@ -468,6 +474,17 @@ export type CheckIn = {
 };
 // How long pulling the warm-up off takes.
 export const STRIP_MS = 1000;
+
+// A team's huddle at a break: called at `called`; its chairs out on the
+// floor from t0 to t1 (as they are put out, and cleared away), and who sits
+// in each.
+export type Huddle = {
+	team: Side;
+	called: number;
+	t0: number;
+	t1: number;
+	seats: { pid: number; at: Chair }[];
+};
 const CHECK_IN_WALK = 4.4;
 
 const NOT_A_LINE = new Set(["stat", "timeouts", "init"]);
@@ -595,7 +612,7 @@ const CHARGE_DOWN_MS = 2400;
 const CHARGE_FALL_MS = 630;
 const HELP_UP_AT = 1100;
 const HELP_UP_FROM = 18;
-const HELP_UP_BY = 1700;
+const HELP_UP_BY = 2200;
 // The man who ran him over backs off him this far (feet) at the whistle -
 // and this far over to the side, out of the way of the teammate coming to
 // help him up.
@@ -610,6 +627,24 @@ const CHARGE_ASIDE = 3;
 const HELP_UP_FRONT = 3.6;
 const HELP_UP_MS = 1300;
 const HELP_UP_WIDE = 3;
+// A dribble picked up this long ago (ms) or less, and going again: never
+// picked up (see hold).
+const REGATHER_MS = 150;
+// The huddle at a break (see toHuddles): how far in front of his chair a
+// man stands to sit down in it, his feet where they will be as he sits
+// (feet); turning round to it first, sitting down, and getting up off it
+// (ms); and the look at them sat there, longer by this than it was with them
+// stood in a ring.
+const CHAIR_STEP = 1.3;
+const CHAIR_TURN_MS = 320;
+const CHAIR_DOWN_MS = 700;
+const CHAIR_UP_MS = 650;
+const CHAIR_LONGER = 400;
+// (Out from the start of the break, and gone this long after it; and a man
+// on his way to his own, round the other side's this far out from it.)
+const CHAIRS_CLEAR = 50;
+const CHAIRS_OUT = 900;
+const CHAIRS_PAST = 3.4;
 // Of passes off a live dribble, how many go one-handed: on the move, stood.
 const PUSH_SHARE: [number, number] = [0.9, 0.5];
 const PUSH_OFF_MS = 60;
@@ -2007,6 +2042,7 @@ class Director {
 	// before the tip - how they stood or went would give away who won it.
 	readonly jumps: [number, number][] = [];
 	readonly checkIns: CheckIn[] = [];
+	readonly huddles: Huddle[] = [];
 	// Each man subbed out: who came on for him, when he went off, when the
 	// man coming on was out there, and when he came back on himself (see
 	// mark).
@@ -2296,6 +2332,25 @@ class Director {
 		this.face.set(pid, f);
 		this.free.set(pid, start + dur);
 		return start + dur;
+	}
+
+	// Shifted over to `to` from t0 to t1, exactly - his legs as what he is
+	// doing then has them (down into a chair, say, his hips going back over
+	// it), not walking there.
+	private shift(pid: number, to: Pt, t0: number, t1: number) {
+		const tr = this.track(pid);
+		if (!tr) {
+			return;
+		}
+		tr.moves.push({
+			t0,
+			t1,
+			from: { ...this.posOf(pid) },
+			to: { ...to },
+			anim: "walk",
+		});
+		this.pos.set(pid, to);
+		this.free.set(pid, t1);
 	}
 
 	// Room round a dunk (see clears): anybody of theirs following his man
@@ -3551,6 +3606,26 @@ class Director {
 		// A dribble's bounces a second (see beatsAt), if not the usual.
 		rate?: number,
 	): number {
+		// Picked up only a moment ago, and off on the dribble again: he never
+		// picked it up - not in both hands for a frame, and down again out of
+		// the other one (a man's own move into his jumper, say: see
+		// playToShot).
+		const was = this.ball.at(-1);
+		const under = this.ball.at(-2);
+		if (
+			style === "dribble" &&
+			was?.kind === "hold" &&
+			was.pid === pid &&
+			was.style === "hold" &&
+			t0 >= was.t0 &&
+			t0 - was.t0 < REGATHER_MS &&
+			under?.kind === "hold" &&
+			under.pid === pid &&
+			under.style === "dribble"
+		) {
+			this.ball.pop();
+			this.ballHand = under.hand ?? this.ballHand;
+		}
 		let t = style === "dribble" ? t0 : this.offDribble(pid, t0, style);
 		// Off a run of crossovers, he dribbles on once the ball comes up into
 		// a hand - the hand it comes up into. (Off the last of the ball's moves
@@ -13227,12 +13302,23 @@ class Director {
 				(a, b) => dist(this.posAt(a, t), from) - dist(this.posAt(b, t), from),
 			)[0];
 			if (back !== undefined) {
-				// (Off his chest, where he is then: plainly off him, whoever
-				// else is about.)
-				const P = this.posAt(back, t);
-				const u = unitVec(P, from);
-				const at = { x: P.x + u.x * 0.1, y: P.y + u.y * 0.1, z: 4.2 };
-				const hit = t + Math.max(140, (dist(from, at) / 30) * 1000);
+				// (Off his chest, where he is as it gets to him: plainly off
+				// him, whoever else is about - not where he was as it was
+				// swatted, a step or two from him by then.)
+				const off = (P: Pt) => {
+					const u = unitVec(P, from);
+					const at = { x: P.x + u.x * 0.1, y: P.y + u.y * 0.1, z: 4.2 };
+					return {
+						P,
+						at,
+						hit: t + Math.max(140, (dist(from, at) / 30) * 1000),
+					};
+				};
+				let o = off(this.posAt(back, t));
+				for (let n = 0; n < 2; n++) {
+					o = off(this.posAt(back, o.hit));
+				}
+				const { P, at, hit } = o;
 				this.fly(t, hit, start, at);
 				// Hands up to it as it comes back at him - and off them.
 				this.act(back, "catch", hit - 200, hit + 160, {
@@ -17256,32 +17342,110 @@ class Director {
 		} else {
 			this.pickUpLoose(at + 200);
 		}
-		// Each to the place in the huddle on his side of it, so nobody walks
-		// across anybody to get there.
-		const there = this.walkTo(
-			([0, 1] as const).flatMap((t) => {
-				const spots = huddleSpots(t);
-				const c = { x: benchX(t), y: HUDDLE_Y };
-				const angle = (p: Pt) => Math.atan2(p.y - c.y, p.x - c.x);
-				const men = [...this.slots(t)].sort(
-					(a, b) => angle(this.posOf(a)) - angle(this.posOf(b)),
-				);
-				const places = [...spots].sort((a, b) => angle(a) - angle(b));
-				return men.map((pid, j) => ({
-					pid,
-					at: places[j] ?? places[0]!,
-				}));
-			}),
+		// Each to the chair on his side of the row, so nobody walks across
+		// anybody to get there: stood in front of it, round to face the coach,
+		// and down into it, his hips going back over the seat.
+		const seats = ([0, 1] as const).map((t) => {
+			const chairs = huddleChairs(t);
+			const men = [...this.slots(t)].sort(
+				(a, b) => this.posOf(a).x - this.posOf(b).x,
+			);
+			return men.map((pid, j) => ({ pid, at: chairs[j] ?? chairs[0]! }));
+		});
+		const front = (c: Chair): Pt => ({
+			x: c.x + Math.cos(c.yaw) * CHAIR_STEP,
+			y: c.y + Math.sin(c.yaw) * CHAIR_STEP,
+		});
+		// (Not through the other side's huddle on the way to his own, along
+		// the sideline from the far end of the floor: round in front of it,
+		// out past their coach.)
+		const past = (t: Side): Pt => {
+			const c = huddleCoach(t);
+			return { x: c.x, y: c.y + CHAIRS_PAST };
+		};
+		const near = (P: Pt, Q: Pt, X: Pt) => {
+			const dx = Q.x - P.x;
+			const dy = Q.y - P.y;
+			const u = Math.max(
+				0,
+				Math.min(
+					1,
+					((X.x - P.x) * dx + (X.y - P.y) * dy) / (dx * dx + dy * dy || 1),
+				),
+			);
+			return Math.hypot(P.x + dx * u - X.x, P.y + dy * u - X.y);
+		};
+		const round = new Map<number, Pt>();
+		([0, 1] as const).forEach((t) => {
+			const them = other(t);
+			const in_ = [...huddleChairs(them), huddleCoach(them)];
+			for (const { pid, at: c } of seats[t]!) {
+				const P = this.posOf(pid);
+				if (in_.some((X) => near(P, front(c), X) < CHAIRS_PAST)) {
+					round.set(pid, past(them));
+				}
+			}
+		});
+		this.walkTo(
+			seats.flat().map(({ pid, at }) => ({
+				pid,
+				at: round.get(pid) ?? front(at),
+			})),
 			at + 600,
 		);
-		for (const t of [0, 1] as const) {
-			this.slots(t).forEach((pid) => {
-				this.lookAt(pid, there + 1, { x: benchX(t), y: HUDDLE_Y });
-			});
+		for (const { pid, at: c } of seats.flat()) {
+			const W = round.get(pid);
+			if (W) {
+				const far = dist(this.posOf(pid), front(c)) > 25;
+				const pace = (far ? JOG : WALK * 1.4) * (0.88 + 0.24 * hash01(pid, at));
+				this.go(
+					pid,
+					front(c),
+					this.free.get(pid) ?? at,
+					pace,
+					far ? "run" : "walk",
+				);
+			}
 		}
-		this.hurry(at + 800, there);
-		const tc = Math.max(at + 800, there);
-		const over = tc + (long ? 1700 : 1300);
+		let sat = at + 800;
+		const down = new Map<number, number>();
+		const first = [Infinity, Infinity];
+		([0, 1] as const).forEach((t) => {
+			const face = huddleFace(t);
+			for (const { pid, at: c } of seats[t]!) {
+				const there = this.free.get(pid) ?? at;
+				first[t] = Math.min(first[t]!, there);
+				this.lookAt(pid, there + 1, face);
+				const d0 = there + CHAIR_TURN_MS;
+				const d1 = d0 + CHAIR_DOWN_MS;
+				this.act(pid, "chairDown", d0, d1, { look: face });
+				this.shift(pid, c, d0 + CHAIR_DOWN_MS * 0.12, d1 - 40);
+				down.set(pid, d1);
+				sat = Math.max(sat, d1);
+			}
+		});
+		this.hurry(at + 800, sat);
+		const tc = Math.max(at + 800, sat);
+		const over = tc + (long ? 1700 : 1300) + CHAIR_LONGER;
+		// Up as the break ends, all together, onto their feet where they
+		// were before they sat.
+		const up = over - CHAIR_UP_MS;
+		([0, 1] as const).forEach((t) => {
+			const face = huddleFace(t);
+			for (const { pid, at: c } of seats[t]!) {
+				this.act(pid, "chairSit", down.get(pid) ?? tc, up, { look: face });
+				this.act(pid, "chairUp", up, over, { look: face });
+				this.shift(pid, front(c), up + CHAIR_UP_MS * 0.1, over - 60);
+			}
+			// (Put out as they get there.)
+			this.huddles.push({
+				team: t,
+				called: at,
+				t0: Math.max(at + 600, first[t]! - CHAIRS_OUT),
+				t1: over + CHAIRS_CLEAR,
+				seats: seats[t]!,
+			});
+		});
 		this.shots.push({ t0: tc, t1: over, kind: i % 3 ? "wide" : "crowd" });
 		return over;
 	}
@@ -21111,6 +21275,9 @@ class Director {
 			"takeCharge",
 			"chargeDown",
 			"sitFloor",
+			"chairDown",
+			"chairSit",
+			"chairUp",
 			"pulledUp",
 			"helpUp",
 			"hurt",
@@ -21394,6 +21561,9 @@ class Director {
 			"takeCharge",
 			"chargeDown",
 			"sitFloor",
+			"chairDown",
+			"chairSit",
+			"chairUp",
 			"pulledUp",
 			"helpUp",
 		]);
@@ -21965,7 +22135,15 @@ class Director {
 					b.t1 > n0 &&
 					b.t0 < n1,
 			);
-			if (to) {
+			const through = (back: number) => {
+				for (let t = back - GIVE_WAY_MS; t <= back; t += 40) {
+					if (dist(at(tr, t, false), at(sh, t, false)) < GIVE_WAY) {
+						return true;
+					}
+				}
+				return false;
+			};
+			if (to && !through(to.t0)) {
 				n1 = Math.min(n1, to.t0);
 				if (n1 - n0 < 2 * GIVE_WAY_MS) {
 					return;
@@ -22064,6 +22242,9 @@ class Director {
 			"takeCharge",
 			"chargeDown",
 			"sitFloor",
+			"chairDown",
+			"chairSit",
+			"chairUp",
 			"pulledUp",
 			"helpUp",
 			"hurt",
@@ -22085,6 +22266,9 @@ class Director {
 			"takeCharge",
 			"chargeDown",
 			"sitFloor",
+			"chairDown",
+			"chairSit",
+			"chairUp",
 			"pulledUp",
 			"helpUp",
 			"hurt",
@@ -22906,6 +23090,9 @@ class Director {
 			"takeCharge",
 			"chargeDown",
 			"sitFloor",
+			"chairDown",
+			"chairSit",
+			"chairUp",
 			"pulledUp",
 			"helpUp",
 			"hurt",
@@ -22938,6 +23125,9 @@ class Director {
 			"takeCharge",
 			"chargeDown",
 			"sitFloor",
+			"chairDown",
+			"chairSit",
+			"chairUp",
 			"pulledUp",
 			"helpUp",
 		]);
@@ -22949,6 +23139,9 @@ class Director {
 			"takeCharge",
 			"chargeDown",
 			"sitFloor",
+			"chairDown",
+			"chairSit",
+			"chairUp",
 			"pulledUp",
 			"helpUp",
 			"hurt",
@@ -24669,6 +24862,7 @@ class Director {
 			seats: this.seats,
 			fast,
 			checkIns: this.checkIns,
+			huddles: this.huddles,
 			end: this.T,
 		};
 		this.flashes(tl);

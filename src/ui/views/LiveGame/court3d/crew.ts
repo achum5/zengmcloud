@@ -1,6 +1,6 @@
 import { generate, type FaceConfig } from "facesjs";
 import { makeCourtRng } from "../courtRng.ts";
-import type { BallEnd, CourtTimeline, Fx } from "./director.ts";
+import type { BallEnd, CourtTimeline, Fx, Huddle } from "./director.ts";
 import {
 	arenaShotAt,
 	ballBearing,
@@ -24,7 +24,7 @@ import {
 	FT_OFFICIAL,
 	FT_SHOOTER_DEPTH,
 	ftOfficialBall,
-	HUDDLE_Y,
+	huddleCoach,
 	other,
 	RIM_Z,
 	rimX,
@@ -2048,6 +2048,8 @@ const coachState = (
 	t: number,
 	m: CrewMember,
 	ball: Pt,
+	// (Only pacing his box, the breaks aside.)
+	paced = false,
 ): PlayerState => {
 	const team = m.team;
 	const home = benchX(team);
@@ -2055,7 +2057,6 @@ const coachState = (
 		x: home + (unit(j, team * 97 + 13) - 0.5) * 11,
 		y: COACH_Y,
 	});
-	const shot = arenaShotAt(tl, t);
 	const base = {
 		pid: m.pid,
 		team,
@@ -2083,19 +2084,15 @@ const coachState = (
 	if (last?.type === "gameOver" && t >= last.actionStart + COACH_OFF) {
 		return coachAfter(tl, t, m, ball, last.actionStart + COACH_OFF);
 	}
-	// (Not the last look round the building, the game over.)
-	if (shot && shot !== tl.shots[0] && beatAt(tl, t)?.type !== "gameOver") {
-		// In the huddle with his five, in the middle of them - not out on the
-		// edge of it by the bench, where a man coming off walks to.
-		return {
-			...base,
-			x: home,
-			y: HUDDLE_Y,
-			yaw: FACING_US,
-			anim: "talk",
-			phase: loopPhase("talk", t, team * 0.5),
-			moving: false,
-		};
+	// A break: in the huddle with his five (see huddleWalk).
+	if (!paced) {
+		const h = (tl.huddles ?? []).find(
+			(x) => x.team === team && t >= x.called && t < x.t1 + HUDDLE_BACK_MOST,
+		);
+		const st = h && huddleWalk(tl, t, m, ball, h);
+		if (st) {
+			return st;
+		}
 	}
 	const j = Math.floor(t / PACE_MS);
 	const from = spotOf(j - 1);
@@ -2203,6 +2200,165 @@ const coachState = (
 		...(eased && eased.w > 0 ? { from: eased } : {}),
 	};
 };
+// A break: over to his five sat on their chairs - round the end of the
+// row, not through it nor the men stood behind it - and down on a knee in
+// front of them, facing them, talking it through; up as they get up, and
+// back round to his box, to where he would be pacing it by then.
+const HUDDLE_PACE = 5.5;
+const KNEEL_EASE = 400;
+const TURN_AHEAD = 1.5;
+const HUDDLE_BACK_MOST = 9000;
+// (A walk's stride, feet - his feet on the floor as he goes.)
+const WALK_STRIDE = 4.2;
+const pathLength = (ps: Pt[]) =>
+	ps
+		.slice(1)
+		.reduce((a, p, i) => a + Math.hypot(p.x - ps[i]!.x, p.y - ps[i]!.y), 0);
+const pathAt = (ps: Pt[], d: number): { p: Pt; yaw: number } => {
+	let left = d;
+	for (let i = 1; i < ps.length; i++) {
+		const a = ps[i - 1]!;
+		const b = ps[i]!;
+		const l = Math.hypot(b.x - a.x, b.y - a.y);
+		if (left <= l || i === ps.length - 1) {
+			const u = l > 0 ? Math.min(1, left / l) : 1;
+			return { p: lerp(a, b, u), yaw: Math.atan2(b.y - a.y, b.x - a.x) };
+		}
+		left -= l;
+	}
+	return { p: ps.at(-1)!, yaw: 0 };
+};
+const huddleWalk = (
+	tl: CourtTimeline,
+	t: number,
+	m: CrewMember,
+	ball: Pt,
+	h: Huddle,
+): PlayerState | undefined => {
+	const team = m.team;
+	const K = huddleCoach(team);
+	const set = h.called + 300;
+	if (t < set) {
+		return undefined;
+	}
+	const was = coachState(tl, set, m, ball, true);
+	const s = was.x >= K.x ? 1 : -1;
+	const round = [
+		{ x: K.x + s * 9.6, y: 1 },
+		{ x: K.x + s * 9.6, y: 4.8 },
+		{ x: K.x + s * 2.5, y: 6 },
+	];
+	const to = [{ x: was.x, y: was.y }, ...round, K];
+	const there = set + (pathLength(to) / HUDDLE_PACE) * 1000;
+	const up = Math.max(h.t1 - 700, there);
+	const off = up + KNEEL_EASE;
+	// (Back to where his pacing has him as he gets there.)
+	let home: Pt = coachState(tl, off, m, ball, true);
+	let back: Pt[] = [K, ...[...round].reverse(), home];
+	let done = off;
+	for (let n = 0; n < 3; n++) {
+		done = off + (pathLength(back) / HUDDLE_PACE) * 1000;
+		home = coachState(tl, done, m, ball, true);
+		back = [K, ...[...round].reverse(), home];
+	}
+	const base = { pid: m.pid, team, shown: true, z: 0 };
+	// Facing the way he goes - a step and a half on along it, so he comes
+	// round each corner of it, not spun round there in a frame.
+	const heading = (ps: Pt[], d: number): number => {
+		const a = pathAt(ps, d).p;
+		const b = pathAt(ps, d + TURN_AHEAD).p;
+		return Math.hypot(b.x - a.x, b.y - a.y) > 0.05
+			? Math.atan2(b.y - a.y, b.x - a.x)
+			: pathAt(ps, d).yaw;
+	};
+	const stride = (ps: Pt[], from: number) =>
+		(Math.min(pathLength(ps), ((t - from) / 1000) * HUDDLE_PACE) /
+			WALK_STRIDE) %
+		1;
+	const walking = (
+		ps: Pt[],
+		from: number,
+		yaw0: number,
+		blend?: Blend,
+	): PlayerState => {
+		const d = ((t - from) / 1000) * HUDDLE_PACE;
+		const { p } = pathAt(ps, d);
+		return {
+			...base,
+			x: p.x,
+			y: p.y,
+			yaw: turnToward(yaw0, heading(ps, d), smooth01((t - from) / KNEEL_EASE)),
+			anim: "walk",
+			phase: stride(ps, from),
+			moving: true,
+			...(blend && blend.w > 0 ? { from: blend } : {}),
+		};
+	};
+	const kneelPhase = loopPhase("coachKneel", t, team * 0.5);
+	const toK = heading(to, pathLength(to) - TURN_AHEAD);
+	if (t < there) {
+		return walking(to, set, was.yaw, {
+			anim: was.anim,
+			phase: was.phase,
+			w: 1 - smooth01((t - set) / COACH_EASE),
+		});
+	}
+	if (t < off) {
+		// Round to face his five, and down on his knee - then up as they get
+		// up, and round to the way back.
+		const kneeling = t < up;
+		const yaw = kneeling
+			? turnToward(toK, -Math.PI / 2, smooth01((t - there) / KNEEL_EASE))
+			: turnToward(
+					-Math.PI / 2,
+					heading(back, 0),
+					smooth01((t - up) / KNEEL_EASE),
+				);
+		const w = kneeling
+			? 1 - smooth01((t - there) / KNEEL_EASE)
+			: 1 - smooth01((t - up) / KNEEL_EASE);
+		return {
+			...base,
+			x: K.x,
+			y: K.y,
+			yaw,
+			anim: kneeling ? "coachKneel" : "ready",
+			phase: kneeling ? kneelPhase : 0,
+			moving: false,
+			...(w > 0
+				? {
+						from: kneeling
+							? { anim: "walk", phase: stride(to, set), w }
+							: { anim: "coachKneel", phase: kneelPhase, w },
+					}
+				: {}),
+		};
+	}
+	if (t < done) {
+		return walking(back, off, heading(back, 0), {
+			anim: "ready",
+			phase: 0,
+			w: 1 - smooth01((t - off) / COACH_EASE),
+		});
+	}
+	// Back pacing his box: out of his walk, and round to the play, over a
+	// moment.
+	const w = 1 - smooth01((t - done) / COACH_EASE);
+	if (w <= 0) {
+		return undefined;
+	}
+	const paced = coachState(tl, t, m, ball, true);
+	return {
+		...paced,
+		yaw: turnToward(
+			heading(back, pathLength(back) - TURN_AHEAD),
+			paced.yaw,
+			1 - w,
+		),
+		from: { anim: "walk", phase: stride(back, off), w },
+	};
+};
+
 // The game over, a moment after the horn, the two head coaches go to each
 // other in front of the table, at center court - a hand and a hug (see
 // dapHug), right shoulder to right shoulder - and off to his own end of

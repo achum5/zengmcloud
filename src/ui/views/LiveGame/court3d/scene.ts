@@ -44,6 +44,7 @@ import {
 	type Beat,
 	type CheckIn,
 	type CourtTimeline,
+	type Huddle,
 } from "./director.ts";
 import {
 	arenaShotAt,
@@ -65,8 +66,12 @@ import {
 	benchX,
 	COURT_W,
 	HUDDLE_Y,
+	huddleCoach,
+	huddleRing,
 	RIM_Z,
 	seatSpot,
+	type Chair,
+	type Pt,
 	type Pt3,
 	type Side,
 } from "./geometry.ts";
@@ -723,6 +728,106 @@ const stormState = (
 		moving: false,
 	} as PlayerState;
 };
+// A break: the bench up and over round the five sat in the huddle, stood
+// there with them facing the coach (see huddleRing) - then back to their
+// seats as the break ends, sat down again. Up off the bench and back down
+// into it over a moment either end (BENCH_EASE); walked there at a good
+// clip (RING_PACE), each a beat after the man beside him (RING_NEXT).
+const RING_PACE = 6;
+const RING_NEXT = 110;
+const WALK = ANIMS.walk;
+// (Who goes where, the same all through it: the men on the bench but for
+// any about to check in, from their seats to the table - the nearest the
+// middle as many places as there are of them, each to the one on his side.)
+const RING_KEEP = 12_000;
+const ringOf = (f: Frame, h: Huddle): Map<number, Pt> => {
+	const sat = new Set(h.seats.map((x) => x.pid));
+	const men = f.roster.filter(
+		(p) =>
+			p.team === h.team &&
+			!sat.has(p.pid) &&
+			!f.tl.checkIns?.some(
+				(c) => c.pid === p.pid && c.t1 > h.t0 - 2000 && c.t0 < h.t1 + RING_KEEP,
+			),
+	);
+	const spots = huddleRing(h.team)
+		.slice(0, men.length)
+		.sort((a, b) => a.x - b.x);
+	return new Map(men.map((p, k) => [p.pid, spots[k]!]));
+};
+const ringState = (
+	f: Frame,
+	pid: number,
+	team: Side,
+	seat: Pt,
+	t: number,
+): PlayerState | undefined => {
+	const tl = f.tl;
+	const now = f.now ?? t;
+	const h = (tl.huddles ?? []).find(
+		(x) => x.team === team && t >= x.called && t < x.t1 + RING_KEEP,
+	);
+	const spot = h && ringOf(f, h).get(pid);
+	if (!h || !spot) {
+		return undefined;
+	}
+	const k = Math.abs(spot.x - benchX(team));
+	const d = Math.hypot(spot.x - seat.x, spot.y - seat.y);
+	const walk = (d / RING_PACE) * 1000;
+	const up = h.called + 500 + k * RING_NEXT * 0.5;
+	const out = up + BENCH_EASE;
+	const there = out + walk;
+	const back = h.t1 + k * RING_NEXT * 0.3;
+	const sat = back + walk;
+	if (t < up || t >= sat + BENCH_EASE) {
+		return undefined;
+	}
+	const base = { pid, team, shown: true, z: 0 };
+	const coach = huddleCoach(team);
+	const stand = STANDING[Math.abs(pid) % STANDING.length]!;
+	const stood = (w: number, from: AnimName, at: Pt, yaw: number) =>
+		({
+			...base,
+			x: at.x,
+			y: at.y,
+			yaw,
+			anim: stand,
+			phase: benchPhase(stand, now, pid),
+			moving: false,
+			...(w > 0 ? { from: { anim: from, phase: 0, w } } : {}),
+		}) as PlayerState;
+	const walking = (A: Pt, B: Pt, a: number) => {
+		const u = Math.min(1, Math.max(0, (t - a) / walk));
+		return {
+			...base,
+			x: A.x + (B.x - A.x) * u,
+			y: A.y + (B.y - A.y) * u,
+			yaw: Math.atan2(B.y - A.y, B.x - A.x),
+			anim: "walk",
+			phase: (u * d) / (WALK.kind === "cycle" ? WALK.stride : 4.6),
+			moving: true,
+		} as PlayerState;
+	};
+	const toCoach = Math.atan2(coach.y - spot.y, coach.x - spot.x);
+	if (t < out) {
+		return stood(1 - (t - up) / BENCH_EASE, "sit", seat, Math.PI / 2);
+	}
+	if (t < there) {
+		return walking(seat, spot, out);
+	}
+	if (t < back) {
+		return stood(1 - Math.min(1, (t - there) / 300), "walk", spot, toCoach);
+	}
+	if (t < sat) {
+		return walking(spot, seat, back);
+	}
+	return {
+		...stood(0, "sit", seat, Math.PI / 2),
+		anim: "sit",
+		phase: benchPhase("sit", now, pid),
+		from: { anim: stand, phase: 0, w: 1 - (t - sat) / BENCH_EASE },
+	} as PlayerState;
+};
 // How a bench is at t: up cheering, on its feet, or sat.
 export type BenchMood = "up" | "stood" | "sat";
 const benchMood = (tl: CourtTimeline, t: number, team: Side): BenchMood => {
@@ -820,6 +925,11 @@ const benchStates = (
 			out.push({ st: storm, warm });
 			continue;
 		}
+		const ring = ringState(f, p.pid, p.team, at, t);
+		if (ring) {
+			out.push({ st: ring, warm });
+			continue;
+		}
 		const mood = moods[p.team]!;
 		const animOf = (m: BenchMood): AnimName =>
 			m === "up"
@@ -905,6 +1015,95 @@ const drawDroppedTops = (
 			Math.max(1, b.k * 0.1),
 		);
 	}
+};
+
+// THE HUDDLE'S CHAIRS (see toHuddles): padded, black, the team's color
+// across the back - each with its seat at the height of the hips of the man
+// who sits in it (under his thighs), put out at the start of the break and
+// cleared away at the end of it. The seat and its legs, and the back - each
+// drawn in its own place among everybody else, so the back of it is behind
+// him sat in it from the front, and over him from behind.
+const CHAIR_PAD = "#1c1d22";
+const CHAIR_EDGE = "#121316";
+const CHAIR_LEG = "#3a3c42";
+const CHAIR_FADE = 300;
+const chairsAt = (tl: CourtTimeline, t: number) =>
+	(tl.huddles ?? []).filter((h) => t >= h.t0 && t < h.t1);
+const seatHeight = (b: Body) => b.shin + b.ankleH - b.thighR;
+const drawChair = (
+	ctx: CanvasRenderingContext2D,
+	cam: Camera,
+	c: Chair,
+	h: number,
+	trim: string,
+	part: "seat" | "back",
+) => {
+	const ux = Math.cos(c.yaw);
+	const uy = Math.sin(c.yaw);
+	const at = (f: number, s: number, z: number) =>
+		project(cam, {
+			x: c.x + ux * f - uy * s,
+			y: c.y + uy * f + ux * s,
+			z,
+		});
+	const quad = (pts: { x: number; y: number }[], color: string) => {
+		ctx.fillStyle = color;
+		ctx.beginPath();
+		for (const p of pts) {
+			ctx.lineTo(p.x, p.y);
+		}
+		ctx.closePath();
+		ctx.fill();
+	};
+	const line = (
+		a: { x: number; y: number; k: number },
+		b: { x: number; y: number },
+		w: number,
+	) => {
+		ctx.strokeStyle = CHAIR_LEG;
+		ctx.lineWidth = Math.max(1, a.k * w);
+		ctx.beginPath();
+		ctx.moveTo(a.x, a.y);
+		ctx.lineTo(b.x, b.y);
+		ctx.stroke();
+	};
+	const F = 0.62;
+	const S = 0.68;
+	if (part === "seat") {
+		for (const [f, s] of [
+			[0.5, 0.56],
+			[0.5, -0.56],
+			[-0.5, 0.56],
+			[-0.5, -0.56],
+		] as const) {
+			line(at(f, s, 0), at(f, s, h - 0.16), 0.07);
+		}
+		// The front of the pad, and the top of it.
+		quad(
+			[at(F, -S, h - 0.18), at(F, S, h - 0.18), at(F, S, h), at(F, -S, h)],
+			CHAIR_EDGE,
+		);
+		quad([at(-F, -S, h), at(F, -S, h), at(F, S, h), at(-F, S, h)], CHAIR_PAD);
+		return;
+	}
+	// Its uprights, and the padded back between them, the color across it.
+	const B = -F - 0.04;
+	const lean = 0.14;
+	for (const s of [S - 0.08, -S + 0.08]) {
+		line(at(B, s, h - 0.1), at(B - lean, s, h + 1.38), 0.06);
+	}
+	const back = (z0: number, z1: number, color: string) =>
+		quad(
+			[
+				at(B - (lean * (z0 - h)) / 1.4, -S, z0),
+				at(B - (lean * (z0 - h)) / 1.4, S, z0),
+				at(B - (lean * (z1 - h)) / 1.4, S, z1),
+				at(B - (lean * (z1 - h)) / 1.4, -S, z1),
+			],
+			color,
+		);
+	back(h + 0.5, h + 1.36, CHAIR_PAD);
+	back(h + 0.82, h + 1.02, trim);
 };
 
 // A monitor on the table in front of each seat behind it, its back to the
@@ -1218,6 +1417,16 @@ export const drawFrame = (f: Frame) => {
 		const lift = Math.min(1, st.z / 4);
 		drawShadow(ctx, cam, st.x, st.y, 1.25 * (1 - lift * 0.35), 1 - lift * 0.6);
 	}
+	const huddles = chairsAt(tl, t);
+	const chairFade = (h: { t0: number; t1: number }) =>
+		Math.max(0, Math.min(1, (t - h.t0) / CHAIR_FADE, (h.t1 - t) / CHAIR_FADE));
+	for (const h of huddles) {
+		ctx.globalAlpha = chairFade(h);
+		for (const { at } of h.seats) {
+			drawShadow(ctx, cam, at.x, at.y, 0.95, 0.7);
+		}
+		ctx.globalAlpha = 1;
+	}
 	const balls = [ball, ...(f.moment.balls ?? [])];
 	for (const b of balls) {
 		drawShadow(ctx, cam, b.x, b.y, 0.45, Math.max(0, 1 - b.z / 14) * 0.9);
@@ -1261,6 +1470,30 @@ export const drawFrame = (f: Frame) => {
 				);
 			},
 		});
+	}
+	for (const h of huddles) {
+		const a = chairFade(h);
+		const trim = f.warmups[h.team];
+		for (const { pid, at } of h.seats) {
+			const height = seatHeight(f.bodyFor(pid));
+			const back = {
+				x: at.x - Math.cos(at.yaw) * 0.72,
+				y: at.y - Math.sin(at.yaw) * 0.72,
+			};
+			for (const [part, p, nudge] of [
+				["seat", at, 0.05],
+				["back", back, 0],
+			] as const) {
+				items.push({
+					depth: depthOf(cam, { x: p.x, y: p.y, z: 3 }) + nudge,
+					draw: () => {
+						ctx.globalAlpha = a;
+						drawChair(ctx, cam, at, height, trim, part);
+						ctx.globalAlpha = 1;
+					},
+				});
+			}
+		}
 	}
 	// In somebody's hands it is drawn with him (see drawSprite); at the rim,
 	// with the rim (in front of its back, behind its front).

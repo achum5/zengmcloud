@@ -1,7 +1,7 @@
 import { assert, describe, test } from "vitest";
 import { crewAt, crewFor, type CrewMember } from "./crew.ts";
 import { bodyPoint, cameraCuts, fastAt, poseOf, withBody } from "./evaluate.ts";
-import { benchX, COURT_H, COURT_W, HUDDLE_Y, type Pt3 } from "./geometry.ts";
+import { benchX, COURT_H, COURT_W, type Pt3 } from "./geometry.ts";
 import { compileCourt, type CourtPlayer, type RawEvent } from "./director.ts";
 import { bodyOf, skeleton } from "./poses.ts";
 import { buildClocks, gameClockAt } from "./clock.ts";
@@ -469,10 +469,18 @@ describe("3D crew", () => {
 				}
 				if (s.pid === -11 || s.pid === -12) {
 					const team = s.pid === -11 ? 0 : 1;
+					// (Out on the floor only to his five in the huddle at a
+					// break, round the end of their chairs and back.)
+					const h = tl.huddles?.find(
+						(x) => x.team === team && t >= x.called && t < x.t1 + 9000,
+					);
+					if (h) {
+						assert.isBelow(Math.abs(s.x - benchX(team)), 10.5, `${t}`);
+						assert.isBelow(s.y, 7, `${t}`);
+						continue;
+					}
 					assert.isBelow(Math.abs(s.x - benchX(team)), 7, `${t}`);
-					// (Out on the floor only in the middle of his huddle.)
-					const huddle = s.x === benchX(team) && s.y === HUDDLE_Y;
-					assert.isTrue(huddle || (s.y > -4 && s.y < 0.5), `${t}`);
+					assert.isTrue(s.y > -4 && s.y < 0.5, `${t}`);
 				} else if (s.pid <= -21 && s.pid > -41) {
 					assert.isTrue(s.x < -2 || s.x > COURT_W + 2, `${t}`);
 					// Clear of the basket's stanchion and the lane under it.

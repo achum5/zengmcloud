@@ -354,6 +354,44 @@ const HELPING = (
 		lean,
 		wide: 0.34,
 	});
+// Sat on a chair in the huddle at a break: his thighs out level in front of
+// him and his shins straight down, bent forward over them to listen, his
+// hands on his knees. (His hips over the seat; his ankles lowest, at the
+// floor, sit him at its height - see huddleChairs.)
+const CHAIR_SAT = pose({
+	hipN: 90,
+	kneeN: 90,
+	hipF: 94,
+	kneeF: 100,
+	lean: 24,
+	shN: 30,
+	elN: 20,
+	shF: 28,
+	elF: 24,
+	abN: 8,
+	abF: 8,
+	onKneeN: 1,
+	onKneeF: 1,
+	wide: 0.5,
+	plant: 0,
+});
+// On his way down onto it, or up off it: his weight over his feet, his hips
+// going back over the seat.
+const CHAIR_LOWER = pose({
+	hipN: 58,
+	kneeN: 74,
+	hipF: 60,
+	kneeF: 78,
+	lean: 30,
+	shN: 34,
+	elN: 30,
+	shF: 32,
+	elF: 32,
+	abN: 10,
+	abF: 10,
+	wide: 0.46,
+	plant: 0.5,
+});
 const P = {
 	// Standing easy but live, the way a man spaced out on the floor does:
 	// a little sunk at the knees, feet a shade wider than his hips and one
@@ -6331,6 +6369,57 @@ export const ANIMS = {
 				elF: 96,
 				abF: -8,
 				lean: 4,
+			}),
+	},
+
+	// ---- the huddle at a break ----
+	// Down onto his chair (his feet where they are, his hips going back onto
+	// it); sat on it, listening, his breath going in and out; and up off it
+	// again, his weight forward over his feet.
+	chairDown: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, P.ready],
+			[0.45, CHAIR_LOWER],
+			[1, CHAIR_SAT],
+		],
+	},
+	chairSit: {
+		kind: "loop",
+		n: 2,
+		fps: 0.5,
+		pose: (i) => ({ ...CHAIR_SAT, lean: CHAIR_SAT.lean + 2 * i }),
+	},
+	chairUp: {
+		kind: "act",
+		n: 6,
+		keys: [
+			[0, CHAIR_SAT],
+			[0.35, { ...CHAIR_LOWER, lean: 36 }],
+			[1, P.ready],
+		],
+	},
+	// The coach down on a knee in front of them, talking it through: one
+	// hand on his knee, the other making the point.
+	coachKneel: {
+		kind: "loop",
+		n: 4,
+		fps: 2.2,
+		pose: (i) =>
+			pose({
+				hipN: -4,
+				kneeN: 96,
+				hipF: 84,
+				kneeF: 86,
+				lean: 14,
+				shN: [44, 58, 50, 62][i]!,
+				elN: [70, 54, 80, 48][i]!,
+				wrN: 20,
+				shF: 30,
+				elF: 40,
+				onKneeF: 1,
+				wide: 0.2,
 			}),
 	},
 

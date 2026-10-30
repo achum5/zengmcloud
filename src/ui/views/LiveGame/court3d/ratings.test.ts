@@ -745,10 +745,12 @@ describe("3D: players play like their ratings", () => {
 	});
 	// And now and then a great shooter doesn't wait to see his three go in:
 	// he is on his way back up the floor before it is through.
+	// (Over six games: a few threes in a game, and only now and then - three
+	// were too few to count on.)
 	test("a great shooter now and then heads back before his three is through", () => {
 		const away = (ratings: CourtRatings) => {
 			let n = 0;
-			for (const seed of ["r1", "r2", "r3"]) {
+			for (const seed of ["r1", "r2", "r3", "r4", "r5", "r6"]) {
 				const tl = play(seed, ratings);
 				for (const f of tl.fx) {
 					if (f.kind !== "roar" || f.what !== "three") {
@@ -783,7 +785,7 @@ describe("3D: players play like their ratings", () => {
 		const most = away({ ...all(60), tp: 60 });
 		assert.isAbove(great, 2, `${great} ${most}`);
 		assert.isBelow(most * 3, great, `${great} ${most}`);
-	});
+	}, 240_000);
 	// And a great handler crosses his man up so badly his feet go out from
 	// under him - a slow man on him most of all; hardly anybody else does.
 	test("a great handler crosses up a slow man; hardly anybody else does", () => {
