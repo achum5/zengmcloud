@@ -5,7 +5,7 @@ import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import { draft } from "../index.ts";
-import { humanTradeSettings } from "./humanTrades.ts";
+import { humanMarginFactor } from "./humanTrades.ts";
 import {
 	currentOutlook,
 	loadTeam,
@@ -188,8 +188,7 @@ test(
 			const incoming = give.map((dp) => ({ kind: "pick" as const, dp }));
 			assert.isBelow(
 				priceFor(outlook, seller, outgoing, incoming, buyer) -
-					humanTradeSettings.marginFactor *
-						marginOf(outlook, seller, outgoing, incoming),
+					humanMarginFactor() * marginOf(outlook, seller, outgoing, incoming),
 				MIN_GAIN,
 			);
 		} finally {

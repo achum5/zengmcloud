@@ -1992,6 +1992,18 @@ export const settings: Setting[] = (
 						name: "Realistic Front Offices",
 						type: "bool",
 					} as const,
+					{
+						category: "Game Modes",
+						key: "realisticFrontOfficesDifficulty",
+						name: "Front Office Difficulty",
+						type: "string",
+						values: [
+							{ key: "easy", value: "Easy" },
+							{ key: "realistic", value: "Realistic" },
+							{ key: "hard", value: "Hard" },
+							{ key: "insane", value: "Insane" },
+						],
+					} as const,
 				]
 			: []),
 		{

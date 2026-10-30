@@ -570,6 +570,10 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"realisticFrontOffices",
 		),
+		realisticFrontOfficesDifficulty: unwrapGameAttribute(
+			defaultGameAttributes,
+			"realisticFrontOfficesDifficulty",
+		),
 		fakeAgeProb: unwrapGameAttribute(defaultGameAttributes, "fakeAgeProb"),
 
 		// This can be undefined, but if the setting is ever displayed to the user, it should have a value

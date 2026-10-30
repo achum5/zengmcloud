@@ -9,7 +9,7 @@ import { getFuzz, applyFuzz } from "../player/fuzzRating.ts";
 import summary from "../trade/summary.ts";
 import {
 	assetsFor,
-	humanTradeSettings,
+	humanMarginFactor,
 	judgeHumanOffer,
 	load,
 	type Loaded,
@@ -188,7 +188,7 @@ export const bestProposal = async (
 		proposal?: boolean;
 	},
 ): Promise<Proposal | undefined> => {
-	const factor = humanTradeSettings.marginFactor;
+	const factor = humanMarginFactor();
 	// How each side's players would feel about re-signing with the other.
 	await ensureRetention(outlook, human.tradablePlayers, cpu.tid);
 	await ensureRetention(outlook, cpu.tradablePlayers, human.tid);
@@ -445,7 +445,7 @@ const bestBid = async (
 		}
 	}
 	sized.sort((x, y) => x.dv - y.dv);
-	const factor = humanTradeSettings.marginFactor;
+	const factor = humanMarginFactor();
 	for (const { give } of sized.slice(0, BID_CANDIDATES)) {
 		const net =
 			priceFor(outlook, cpu, give, get, human) -

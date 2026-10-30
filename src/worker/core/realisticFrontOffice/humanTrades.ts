@@ -32,9 +32,21 @@ import { ensureRetention, type LeagueOutlook } from "./outlook.ts";
 
 export const humanTradeSettings = {
 	// How much more the margin of error counts in a deal with a human than in
-	// one between CPU teams.
+	// one between CPU teams, at the realistic difficulty.
 	marginFactor: 1.5,
 };
+
+// DIFFICULTY (owner's call): the mode's own, unrelated to stock's, which does
+// nothing here. Realistic, the default, is the even playing field: a CPU team
+// as sharp as a human, no help either way. Harder, it wants to be surer of
+// gaining before it deals with a human; easier, less sure, so it caters more
+// to him, as stock does.
+const DIFFICULTY_MARGIN = { easy: 0.75, realistic: 1, hard: 1.25, insane: 2 };
+
+// How much the margin of error counts in a deal with a human.
+export const humanMarginFactor = () =>
+	humanTradeSettings.marginFactor *
+	DIFFICULTY_MARGIN[g.get("realisticFrontOfficesDifficulty") ?? "realistic"];
 
 // Packages from each other team priced in full when shopping.
 const SHOP_CANDIDATES = 6;
@@ -201,7 +213,7 @@ export const judgeHumanOffer = async (
 	// for in a deal with a human.
 	const net =
 		priceFor(outlook, a, giving, getting, h) -
-		humanTradeSettings.marginFactor * marginOf(outlook, a, giving, getting);
+		humanMarginFactor() * marginOf(outlook, a, giving, getting);
 	if (net < MIN_GAIN) {
 		return { kind: "no" };
 	}

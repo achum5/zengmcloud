@@ -152,6 +152,31 @@ test(
 );
 
 test(
+	"difficulty: harder, a CPU team wants to be surer of gaining from a human",
+	{ timeout: 300_000 },
+	async () => {
+		assert.isDefined(standing);
+		const cpu = { tid: proposer!, ...standing!.give };
+		const human = { tid: userTid, ...standing!.get };
+		const verdictAt = async (
+			level: "easy" | "realistic" | "hard" | "insane",
+		) => {
+			g.setWithoutSavingToDB("realisticFrontOfficesDifficulty", level);
+			try {
+				return (await judgeHumanOffer(cpu, human)).kind;
+			} finally {
+				g.setWithoutSavingToDB("realisticFrontOfficesDifficulty", "realistic");
+			}
+		};
+		// Its price at the realistic level: still a deal easier, too little
+		// at insane.
+		assert.strictEqual(await verdictAt("realistic"), "yes");
+		assert.strictEqual(await verdictAt("easy"), "yes");
+		assert.strictEqual(await verdictAt("insane"), "no");
+	},
+);
+
+test(
 	"the Trade Proposals page offers deals the vanilla way, priced by the mode",
 	{ timeout: 300_000 },
 	async () => {

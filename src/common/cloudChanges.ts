@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 51,
+		date: "2026-10-30",
+		text: "Realistic Front Offices has its own difficulty setting in League Settings (Game Modes > Front Office Difficulty): Easy, Realistic (the default), Hard or Insane. Realistic puts you on an even footing with CPU teams; higher makes them want a surer gain before they trade with you, lower makes them easier to deal with. The regular difficulty settings still do nothing in this mode.",
+	},
+	{
 		n: 50,
 		date: "2026-10-30",
 		text: "Realistic Front Offices: Trade Proposals works like regular BBGM again - same page, same refresh button - but each CPU team offers what it would really give for one of your players or picks, so every offer there is one it will accept. The page can take several seconds the first time; after that it's quick until the offers change.",

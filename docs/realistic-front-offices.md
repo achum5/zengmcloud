@@ -29,9 +29,10 @@ with "the Pistons", not with a named person.
   for every team, the draft, free-agency testing and mood terms.
 - **Existing leagues never switch on their own.** New leagues default to it only
   once the owner has played it and is happy with it.
-- **Difficulty does nothing when it is on.** The trade, signing and overall
-  difficulty settings stop applying: no handicap on CPU teams, no revenue or
-  free-agent penalty on humans. (A slider for this mode may be revisited later.)
+- **Stock's difficulty does nothing when it is on.** The trade, signing and
+  overall difficulty settings stop applying: no handicap on CPU teams, no
+  revenue or free-agent penalty on humans. The mode has its own, unrelated
+  scale (owner's call, see trades below).
 - **The old "Smart AI Front Offices" system is removed, not reused.** Its
   Franchise Outlook page goes with it; a new page showing this mode's view of
   each team comes later, shown only when the mode is on.
@@ -236,9 +237,10 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   soon as both teams agree. Only the CPU teams' judgment is the mode's.
 - **A higher bar for a human's deal** (owner's call): a human picks which
   deals to offer, so finds the ones the model gets wrong in his favour; the
-  margin of error counts 1.5 times as much in a deal with a human, tuned by
-  the shark bot (src/test/shark): an expert human hunting each season for the
-  deals the judge takes that help him most, graded on the game's own sim.
+  margin of error counts 1.5 times as much in a deal with a human (at the
+  realistic difficulty), tuned by the shark bot (src/test/shark): an expert
+  human hunting each season for the deals the judge takes that help him most,
+  graded on the game's own sim.
   At 1.5 the CPU team still comes out ahead by its own read after its misreads
   (2.5 ± 0.8 hundredths of a title a deal, 7% of deals leaving it worse off,
   4 leagues x 3 seasons); 1, 2 and 3 misread no less, so it stays at 1.5. What
@@ -259,8 +261,15 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   that deal by its own read) or "They would rather wait for the deadline" -
   never how close the offer came.
 - **Undo is unchanged** (owner's call).
-- **Difficulty does nothing to trades in this mode**: the CPU's read of a
-  deal is its own, and the trade screen no longer prints it to the console.
+- **Front Office Difficulty** (owner's call: the mode's own scale, unrelated
+  to stock's, which does nothing to trades here; the trade screen no longer
+  prints the CPU's read to the console). Realistic, the default, is the even
+  playing field: a CPU team as sharp as a human, no help either way. The
+  levels scale how much the margin of error counts in a deal with a human:
+  Easy 0.75 times the realistic bar (more willing to cater to him, as stock
+  is), Hard 1.25, Insane 2. Everywhere a CPU team decides on a deal with a
+  human: his offers, "What would make this work", Trade Proposals and the
+  trading block.
 - **Human-to-human trades are unchanged** (agreed in chat).
 - **CPU offers to humans** (owner's call: vanilla's mechanics, the mode's
   valuation). Each names the CPU team's price: of the deals it would take, by

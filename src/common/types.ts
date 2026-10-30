@@ -949,8 +949,11 @@ export type GameAttributesLeague = {
 	scoreBug: ScoreBugStyle | null;
 	aiTradesFactor: number;
 	// CPU teams run by the new front office (docs/realistic-front-offices.md)
-	// instead of stock's. Basketball only, and not in League Settings yet.
+	// instead of stock's. Basketball only.
 	realisticFrontOffices: boolean;
+	// Its own difficulty, unrelated to stock's (owner's call): how sure a CPU
+	// team must be of gaining before it trades with a human.
+	realisticFrontOfficesDifficulty: "easy" | "realistic" | "hard" | "insane";
 	allStarGame: number | null;
 	allStarNum: number;
 	allStarType: "draft" | "byConf" | "top";
