@@ -2444,6 +2444,61 @@ test("two teams with the same record both carry it", () => {
 	}
 });
 
+// "The Raptors held off the East-leading Knicks": a team that came in first
+// is tagged where the lede names it, now and then - and only then.
+test("a conference leader is tagged in the lede, and only a leader", () => {
+	const make = (gid: number, rankBefore: number) =>
+		game({
+			gid,
+			teams: [
+				realisticTeam(
+					{
+						tid: 1,
+						region: "Toronto",
+						name: "Raptors",
+						abbrev: "TOR",
+						pts: 114,
+						record: { won: 9, lost: 9 },
+					},
+					player({ name: "Toronto Guard", pts: 26, fg: 10, fga: 18 }),
+				),
+				realisticTeam(
+					{
+						tid: 2,
+						region: "New York",
+						name: "Knicks",
+						abbrev: "NYK",
+						pts: 109,
+						record: { won: 14, lost: 5 },
+						standing: {
+							conf: "Eastern Conference",
+							rank: rankBefore === 1 ? 2 : 3,
+							rankBefore,
+							gb: 0.5,
+							teams: 15,
+							won: 14,
+							lost: 5,
+						},
+					},
+					player({ name: "New York Guard", pts: 22, fg: 8, fga: 19 }),
+				),
+			],
+			winnerTid: 1,
+		});
+	let tagged = 0;
+	for (let gid = 9400; gid < 9430; gid++) {
+		const lede = getAutoRecap(make(gid, 1)).split("\n\n")[1]!;
+		if (/the East-leading Knicks/.test(lede)) {
+			tagged += 1;
+		}
+		assert.ok(
+			!/-leading/.test(getAutoRecap(make(gid, 2))),
+			"only a team that came in first",
+		);
+	}
+	assert.ok(tagged > 5 && tagged < 30, `tagged ${tagged}`);
+});
+
 describe("who was out", () => {
 	const gameWith = (gid: number, injuries: RecapTeam["injuries"]) =>
 		game({

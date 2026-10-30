@@ -8803,7 +8803,12 @@ const buildGameRecap = (game: RecapGame): string => {
 	if (para4.length > 0) {
 		paragraphs.push(tidy(para4));
 	}
-	return `**${headline.text}**\n\n${withRecords(teamTheSwitch(paragraphs, shape), game, shape).join("\n\n")}`;
+	return `**${headline.text}**\n\n${withStandingTag(
+		withRecords(teamTheSwitch(paragraphs, shape), game, shape),
+		game,
+		shape,
+		rng,
+	).join("\n\n")}`;
 };
 
 // A MAN WHOSE SIDE THE SENTENCE BEFORE DID NOT SET UP. A sentence that opens
@@ -9038,6 +9043,65 @@ const withRecords = (
 		}
 	}
 	return out;
+};
+
+// THE EAST-LEADING KNICKS. A wire lede tags a conference leader where it
+// names it - "The Raptors held off the East-leading Knicks 114-109" - and
+// the engine knew where every team stood without ever saying it there. Only
+// a team that came in first, a dozen games or more into a season, in a
+// league whose conferences are East and West; the loser first, since a
+// leader beaten is the news, and not every time.
+const withStandingTag = (
+	paragraphs: string[],
+	game: RecapGame,
+	shape: Shape,
+	rng: () => number,
+): string[] => {
+	if (game.playoffs || game.allStar || paragraphs.length === 0) {
+		return paragraphs;
+	}
+	const lede = paragraphs[0]!;
+	const firstEnd = lede.search(/[!.?](?:\s|$)/);
+	const first = firstEnd < 0 ? lede : lede.slice(0, firstEnd);
+	for (const t of [shape.loser, shape.winner]) {
+		const st = t.standing;
+		const rec = t.record;
+		const conf = /^(east|west)(?:ern)? conference$/i.exec(st?.conf ?? "")?.[1];
+		if (
+			!st ||
+			!rec ||
+			!conf ||
+			st.rankBefore !== 1 ||
+			st.teams < 4 ||
+			rec.won + rec.lost - 1 < 12
+		) {
+			continue;
+		}
+		const word = `${conf[0]!.toUpperCase()}${conf.slice(1).toLowerCase()}`;
+		// The rest of the piece about where they stand says it in its own
+		// words; a lede tag on top of "atop the East" is the same fact twice.
+		if (
+			paragraphs.some((p) =>
+				new RegExp(
+					String.raw`-leading|\b(?:atop|top of|first in|lead) the ${word}`,
+					"i",
+				).test(p),
+			)
+		) {
+			return paragraphs;
+		}
+		const re = new RegExp(String.raw`\b([Tt])he ${nick(t)}(?=[ ,.;:])(?!')`);
+		const m = re.exec(first);
+		if (!m || /visiting $/.test(first.slice(0, m.index)) || rng() >= 0.6) {
+			continue;
+		}
+		const tagged = `${m[1]}he ${word}-leading ${nick(t)}`;
+		return [
+			lede.slice(0, m.index) + tagged + lede.slice(m.index + m[0].length),
+			...paragraphs.slice(1),
+		];
+	}
+	return paragraphs;
 };
 
 // A GAME NOBODY WON. A league that caps overtime can end a game level; one
@@ -11953,8 +12017,9 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 	// way of saying it per night, starting from one the lead has not used.
 	const comebackForms = [
 		(n: number) => `erased ${aNum(n)}-point deficit to beat`,
-		(n: number) => `came back from ${n} down to beat`,
-		(n: number) => `rallied from ${n} points down to beat`,
+		// ...and not "to beat" in every one of them.
+		(n: number) => `came back from ${n} down to top`,
+		(n: number) => `rallied from ${n} points down to knock off`,
 	];
 	let comebackIdx = para1.some((t) => t.includes(" erased ")) ? 1 : 0;
 	for (const g of others) {
