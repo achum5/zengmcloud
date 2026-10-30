@@ -1,5 +1,4 @@
-import type { DraftPick, Player } from "../../../common/types.ts";
-import { g, helpers } from "../../util/index.ts";
+import { g } from "../../util/index.ts";
 import {
 	aiTids,
 	count,
@@ -17,7 +16,6 @@ import {
 	type TeamState,
 } from "./market.ts";
 import { ensureRetention, type LeagueOutlook } from "./outlook.ts";
-import { offerOnHeld } from "./windows.ts";
 
 // TRADING WITH HUMANS. A CPU team judges a human's offer exactly as it judges
 // a deal with another CPU team - what it does to its title chances, the trade
@@ -28,8 +26,9 @@ import { offerOnHeld } from "./windows.ts";
 //   amount tuned until an expert's search for such deals stops paying;
 // - shopping: what it gives up must fetch more from the human than the most
 //   any other CPU team would pay for it.
-// A no says only why in general: no, a better offer (shown in full), or not
-// before the deadline.
+// A no says only why in general: no, a better offer elsewhere (not whose or
+// what, so it cannot be worked from the other team's end), or not before the
+// deadline.
 
 export const humanTradeSettings = {
 	// How much more the margin of error counts in a deal with a human than in
@@ -44,17 +43,8 @@ export type Verdict =
 	| { kind: "yes" }
 	| { kind: "no" }
 	| { kind: "wait" }
-	// What it asks for is in a deal held for bids: a bid on it, if it asks
-	// for exactly what that team gives in it (windows.ts), else no.
-	| { kind: "bid" }
-	| { kind: "held" }
-	| {
-			kind: "better";
-			tid: number;
-			// What the other team would give for the same assets.
-			players: Player[];
-			picks: DraftPick[];
-	  };
+	// Another CPU team would give more for the same.
+	| { kind: "better" };
 
 export const playersIn = (assets: readonly Asset[]) =>
 	assets.flatMap((x) => (x.kind === "player" ? [x.p] : []));
@@ -195,10 +185,6 @@ export const judgeHumanOffer = async (
 		shop?: boolean;
 	} = {},
 ): Promise<Verdict> => {
-	const held = await offerOnHeld(cpu);
-	if (held === "held") {
-		return { kind: "held" };
-	}
 	const outlook = await currentOutlook();
 	const a = await load(outlook, cpu.tid, loaded);
 	const h = await load(outlook, human.tid, loaded);
@@ -218,10 +204,6 @@ export const judgeHumanOffer = async (
 		humanTradeSettings.marginFactor * marginOf(outlook, a, giving, getting);
 	if (net < MIN_GAIN) {
 		return { kind: "no" };
-	}
-	// A bid is weighed against the others when the window closes.
-	if (held === "bid") {
-		return { kind: "bid" };
 	}
 
 	// Before the deadline it may rather decide then.
@@ -247,52 +229,21 @@ export const judgeHumanOffer = async (
 			loaded,
 		);
 		if (elsewhere && elsewhere.net > net) {
-			return {
-				kind: "better",
-				tid: elsewhere.tid,
-				players: elsewhere.assets.flatMap((x) =>
-					x.kind === "player" ? [x.p] : [],
-				),
-				picks: elsewhere.assets.flatMap((x) =>
-					x.kind === "pick" ? [x.dp] : [],
-				),
-			};
+			return { kind: "better" };
 		}
 	}
 
 	return { kind: "yes" };
 };
 
-const pickName = (dp: DraftPick) => {
-	const round =
-		dp.round === 1 ? "1st" : dp.round === 2 ? "2nd" : `${dp.round}th`;
-	const abbrev = g.get("teamInfoCache")[dp.originalTid]?.abbrev;
-	return `${dp.season} ${round} round pick${abbrev ? ` (${abbrev})` : ""}`;
-};
-
 // What a rejection says.
 export const verdictMessage = (verdict: Exclude<Verdict, { kind: "yes" }>) => {
-	if (verdict.kind === "bid") {
-		return "Bid placed. They decide after two more sims with no new bid.";
-	}
-	if (verdict.kind === "held") {
-		return "Trade rejected. Part of a pending deal.";
-	}
 	if (verdict.kind === "wait") {
 		return "Trade rejected. They would rather wait for the deadline.";
 	}
+	// Only when another CPU team would make that deal by its own read.
 	if (verdict.kind === "better") {
-		const t = g.get("teamInfoCache")[verdict.tid];
-		const assets = [
-			...verdict.players.map(
-				(p) =>
-					`<a href="${helpers.leagueUrl(["player", p.pid])}">${p.firstName} ${p.lastName}</a>`,
-			),
-			...verdict.picks.map(pickName),
-		];
-		return `Trade rejected. They have a better offer: ${
-			assets.length > 0 ? assets.join(", ") : "nothing back"
-		} from the ${t?.region ?? ""} ${t?.name ?? ""}.`;
+		return "Trade rejected. They have a better offer elsewhere.";
 	}
-	return "Trade rejected.";
+	return "Trade rejected. They'd rather keep what they have.";
 };

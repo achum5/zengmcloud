@@ -951,8 +951,6 @@ export type GameAttributesLeague = {
 	// CPU teams run by the new front office (docs/realistic-front-offices.md)
 	// instead of stock's. Basketball only, and not in League Settings yet.
 	realisticFrontOffices: boolean;
-	// Which deals two CPU teams agree are held a trading day for bids.
-	realisticFrontOfficesWindows: "notable" | "all";
 	allStarGame: number | null;
 	allStarNum: number;
 	allStarType: "draft" | "byConf" | "top";
@@ -1756,10 +1754,6 @@ export type LocalStateUI = {
 	mpLiveWatchable:
 		| { gid: number; byName: string; label: string; startedAt: number }
 		| undefined;
-	// Realistic Front Offices, for the header: deals held for bids, and CPU
-	// teams' trade proposals to this team.
-	pendingDeals: number;
-	tradeProposals: number;
 	// A league-mate's live sim just started: "Watch PHO @ DAL live?", its
 	// result held back until answered. Undefined when not asking.
 	mpLiveOffer:
@@ -2807,35 +2801,6 @@ export type Team = {
 	adjustForInflation: boolean;
 	disabled: boolean;
 	keepRosterSorted: boolean;
-
-	// Realistic Front Offices: a deal this team agreed with another CPU team,
-	// held until the next trading day for other teams to bid on what either
-	// side gives.
-	pendingTrade?: {
-		tids: [number, number];
-		give: [
-			{ pids: number[]; dpids: number[] },
-			{ pids: number[]; dpids: number[] },
-		];
-		// The trading day it was held, `season:phase:games:daysLeft`.
-		day: string;
-		// Offers from human teams for what one side gives - and for any more of
-		// that side's assets, not held, that it also asks for (`take`), as
-		// salaries may need.
-		bids: {
-			tid: number;
-			side: 0 | 1;
-			give: { pids: number[]; dpids: number[] };
-			take?: { pids: number[]; dpids: number[] };
-		}[];
-		// Sims started, and trading days passed, since it was held or last bid
-		// on (realisticFrontOffice/windowClock.ts).
-		sims?: number;
-		days?: number;
-		// In plain words, for each side: why it makes the deal and what it would
-		// want most in a bid. Missing on deals held before.
-		notes?: [{ why: string; wants: string }, { why: string; wants: string }];
-	};
 
 	// [regular season, playoffs]
 	playThroughInjuries: [number, number];

@@ -4,7 +4,6 @@ import g from "./g.ts";
 import local from "./local.ts";
 import toUI from "./toUI.ts";
 import { helpers } from "./index.ts";
-import { updatePendingDeals } from "../core/realisticFrontOffice/pendingBadge.ts";
 
 const updateStatusIfNew = (statusText: string) => {
 	if (statusText !== local.statusText) {
@@ -45,9 +44,6 @@ const updateStatus = async (statusText?: string) => {
 	} else {
 		updateStatusIfNew(statusText);
 	}
-
-	// Realistic Front Offices: deals held for bids, in the header.
-	await updatePendingDeals();
 };
 
 export default updateStatus;

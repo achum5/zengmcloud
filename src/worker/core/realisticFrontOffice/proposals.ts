@@ -317,9 +317,7 @@ const confirmed = async (
 		loaded,
 		shop: !bid,
 	});
-	// A bid on a held deal's assets is one it would take, if it is still the
-	// best offer when the window closes.
-	if (verdict.kind !== "yes" && verdict.kind !== "bid") {
+	if (verdict.kind !== "yes") {
 		return false;
 	}
 	if (bid) {
@@ -358,8 +356,7 @@ export const counterOffer = async (
 	if (!give || !get) {
 		return undefined;
 	}
-	const verdict = (await judgeHumanOffer(cpu, human)).kind;
-	if (verdict === "yes" || verdict === "bid") {
+	if ((await judgeHumanOffer(cpu, human)).kind === "yes") {
 		return { give, get, net: 0 };
 	}
 	const proposal = await bestProposal(outlook, a, h, {

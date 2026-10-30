@@ -13,7 +13,6 @@ import getPayroll from "../team/getPayroll.ts";
 import isUntradable from "../trade/isUntradable.ts";
 import processTrade from "../trade/processTrade.ts";
 import summary from "../trade/summary.ts";
-import { dealNotes } from "./dealNotes.ts";
 import { explainDeal, type ExplainSide } from "./explain.ts";
 import {
 	draftPlaceMisread,
@@ -42,13 +41,6 @@ import {
 } from "./outlook.ts";
 import { waitingValues } from "./timing.ts";
 import type { TradedAway } from "./tradePenalty.ts";
-import {
-	closeWindows,
-	holdDeal,
-	isNotable,
-	isReserved,
-	loadReserved,
-} from "./windows.ts";
 
 // CPU TEAMS TRADING WITH EACH OTHER. Every day a few teams work the phones:
 // each prices what every other team has, and what it has itself, by what it
@@ -155,9 +147,6 @@ export const marketSettings = {
 	surplusPackages: true,
 	// How many drafts ahead a team's picks are on the table.
 	pickDraftsOnTable: PICK_DRAFTS_ON_TABLE,
-	// Which deals two CPU teams agree are held a trading day for other teams'
-	// bids (windows.ts), over the league's setting.
-	windows: undefined as "notable" | "all" | "off" | undefined,
 	// A deal's title chances for the other team come out of everyone else's,
 	// this team's among them.
 	rivals: true,
@@ -191,11 +180,6 @@ export const marketClock = {
 	// Deals both teams wanted, put off because one would rather decide at the
 	// deadline.
 	deferred: 0,
-	// Deals held a day for bids (windows.ts): how many, how many were made as
-	// agreed, and the sides that took another team's offer instead.
-	held: 0,
-	heldKept: 0,
-	heldTaken: 0,
 };
 
 // Called with every deal just before it is made, with both rosters as they
@@ -688,21 +672,20 @@ let lastPaths:
 // The best deal between two teams, if there is one both would make. `single`
 // holds what one asset is worth to one team, gained or lost, for the day.
 // What a team puts on the table: its tradable players, best first, and its
-// picks in the next few drafts - none held in a deal waiting for bids.
-export const tableAssets = (t: TeamState): Asset[] =>
-	[
-		...[...t.tradablePlayers]
-			.sort((x, y) => y.valueNoPot - x.valueNoPot)
-			.slice(0, marketSettings.wholeRoster ? undefined : PLAYERS_ON_TABLE)
-			.map((p) => ({ kind: "player" as const, p })),
-		...t.picks
-			.filter(
-				(dp) =>
-					typeof dp.season === "number" &&
-					dp.season <= g.get("season") + settingFor(t.tid, "pickDraftsOnTable"),
-			)
-			.map((dp) => ({ kind: "pick" as const, dp })),
-	].filter((x) => !isReserved(x));
+// picks in the next few drafts.
+export const tableAssets = (t: TeamState): Asset[] => [
+	...[...t.tradablePlayers]
+		.sort((x, y) => y.valueNoPot - x.valueNoPot)
+		.slice(0, marketSettings.wholeRoster ? undefined : PLAYERS_ON_TABLE)
+		.map((p) => ({ kind: "player" as const, p })),
+	...t.picks
+		.filter(
+			(dp) =>
+				typeof dp.season === "number" &&
+				dp.season <= g.get("season") + settingFor(t.tid, "pickDraftsOnTable"),
+		)
+		.map((dp) => ({ kind: "pick" as const, dp })),
+];
 
 // What one asset at a time is worth to each team, for the screens: kept for
 // the outlook's life, under each team's roster as it was (TeamState.rosterKey).
@@ -1198,52 +1181,11 @@ export const tradeDay = () =>
 	timed(async () => {
 		const phase = g.get("phase");
 		if (phase === PHASE.REGULAR_SEASON) {
-			// On the last trading day every held deal is decided.
-			const another = await anotherTradingDay();
-			await closeWindows(!another);
-			await shop(
-				(await inDeadlineWindow()) ? Infinity : SHOPPERS_PER_DAY,
-				another,
-			);
+			await shop((await inDeadlineWindow()) ? Infinity : SHOPPERS_PER_DAY);
 		} else if (phase === PHASE.FREE_AGENCY) {
-			const another = await anotherTradingDay();
-			await closeWindows(!another);
-			await shop(marketSettings.freeAgencyShoppers, another);
+			await shop(marketSettings.freeAgencyShoppers);
 		}
 	});
-
-// Whether a deal made now can wait for bids: there is another trading day
-// before the deadline or the end of free agency, or it is an offseason phase,
-// which another trading window follows.
-export const canHold = async () => {
-	const phase = g.get("phase");
-	if (phase === PHASE.REGULAR_SEASON || phase === PHASE.FREE_AGENCY) {
-		return anotherTradingDay();
-	}
-	return (
-		phase === PHASE.DRAFT_LOTTERY ||
-		phase === PHASE.DRAFT ||
-		phase === PHASE.AFTER_DRAFT ||
-		phase === PHASE.RESIGN_PLAYERS ||
-		phase === PHASE.PRESEASON
-	);
-};
-
-// Whether there is a trading day after this one, before the deadline or the
-// end of the regular season or of free agency - for a deal to wait for bids.
-const anotherTradingDay = async () => {
-	if (g.get("phase") === PHASE.FREE_AGENCY) {
-		return g.get("daysLeft") > 1;
-	}
-	try {
-		if ((await getDaysLeftSchedule("tradeDeadline")) <= 1) {
-			return false;
-		}
-	} catch {
-		// No deadline left this season.
-	}
-	return (await getDaysLeftSchedule()) > 1;
-};
 
 // The last days before the trade deadline (marketSettings.deadlineWindow).
 const inDeadlineWindow = async () => {
@@ -1276,7 +1218,6 @@ export const tradeWindow = async () => {
 		(marketSettings.preseasonWindow && g.get("phase") === PHASE.PRESEASON)
 	) {
 		await timed(async () => {
-			await closeWindows();
 			await shop(Infinity);
 		});
 	}
@@ -1388,8 +1329,7 @@ export const makeDeal = async (
 	return true;
 };
 
-// `holds`: notable deals wait a day for bids (windows.ts).
-const shop = async (numShoppers: number, holds = false) => {
+const shop = async (numShoppers: number) => {
 	const phase = g.get("phase");
 	const tids = await aiTids();
 	if (tids.length < 2) {
@@ -1397,7 +1337,6 @@ const shop = async (numShoppers: number, holds = false) => {
 	}
 	const games = await gamesPlayed();
 	const outlook = await getOutlook(games);
-	await loadReserved();
 	const random = makeSeededRandom(
 		g.get("season") * 100_003 + phase * 1009 + games + g.get("daysLeft") * 7,
 	);
@@ -1439,18 +1378,6 @@ const shop = async (numShoppers: number, holds = false) => {
 					margins: best.margins,
 					waiting,
 				});
-			}
-			continue;
-		}
-		if (holds && isNotable(best, sides, tid)) {
-			// Held for bids (windowClock.ts), for other teams to bid on
-			// either side's assets (windows.ts).
-			if (await legalDeal(best)) {
-				await holdDeal(
-					tid,
-					best,
-					dealNotes(outlook, breakdownOf(outlook, best, sides)),
-				);
 			}
 			continue;
 		}

@@ -156,7 +156,7 @@ test(
 		const season = g.get("season");
 		g.setWithoutSavingToDB("phase", PHASE.DRAFT);
 		try {
-			await draft.genOrder();
+			await draft.genOrder(false);
 			const picks = await idb.cache.draftPicks.indexGetAll(
 				"draftPicksBySeason",
 				season,

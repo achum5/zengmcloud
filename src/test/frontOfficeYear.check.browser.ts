@@ -86,7 +86,7 @@ const humanTrades = async (userTid: number) => {
 		const fair = await api.main.proposeTrade(false, conditions);
 		results.push(`fair ${otherTid}: ${JSON.stringify(fair)}`);
 	}
-	await api.main.clearTrade();
+	await api.main.clearTrade("all");
 	return results;
 };
 

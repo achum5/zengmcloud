@@ -1230,57 +1230,6 @@ const describeTradesFromEvents = (
 	return out;
 };
 
-// Realistic Front Offices: a deal two CPU teams agreed, held for bids
-// (realisticFrontOffice/windows.ts). Announced as it is
-// held - in the trading period it was held in, before anyone has bid.
-const describePendingDeals = async (
-	changeset: Changeset,
-	teamById: Map<number, TeamInfo>,
-): Promise<SyncNotification[]> => {
-	if (!g.get("realisticFrontOffices")) {
-		return [];
-	}
-	const out: SyncNotification[] = [];
-	for (const t of changesToValues(changeset, "teams")) {
-		const pending = t?.pendingTrade;
-		if (!pending || pending.bids?.length > 0) {
-			continue;
-		}
-		const [season, phase, , daysLeft] = String(pending.day).split(":");
-		if (
-			Number(season) !== g.get("season") ||
-			Number(phase) !== g.get("phase") ||
-			Number(daysLeft) !== g.get("daysLeft")
-		) {
-			continue;
-		}
-		const assets = async (side: { pids: number[]; dpids: number[] }) => {
-			const labels: string[] = [];
-			for (const pid of side.pids) {
-				const p = await idb.cache.players.get(pid);
-				if (p) {
-					labels.push(`${playerName(p)}${ratingParen(p)}`);
-				}
-			}
-			for (const dpid of side.dpids) {
-				const dp = await idb.cache.draftPicks.get(dpid);
-				if (dp) {
-					labels.push(`a ${dp.season} ${helpers.ordinal(dp.round)}-round pick`);
-				}
-			}
-			return labels.length > 0 ? joinAssets(labels) : "nothing";
-		};
-		const [a, b] = pending.tids as [number, number];
-		out.push({
-			title: "Pending deal",
-			body: `The ${teamLabel(teamById, a)} would get ${await assets(pending.give[1])} from the ${teamLabel(teamById, b)} for ${await assets(pending.give[0])}. Bids are open for at least two more sims.`,
-			targetTids: null,
-			path: "trade_proposals",
-		});
-	}
-	return out;
-};
-
 // The draft lottery result, if this changeset landed one: the top of the order
 // (who won the #1 pick, then 2-4). Fires wherever the result is written -
 // advancing past the lottery, or a manual reveal.
@@ -1499,7 +1448,6 @@ export const buildNotifications = async (
 	const extras = [
 		...(holdLottery ? [] : lotteryNotifs),
 		...describeTradesFromEvents(changeset, teamById),
-		...(await describePendingDeals(changeset, teamById)),
 	];
 
 	// "You're on the clock" whenever picks were just made (the order advanced) or

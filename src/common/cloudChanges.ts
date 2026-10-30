@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 45,
+		date: "2026-10-30",
+		text: "Realistic Front Offices: pending deals and bidding are gone - trades work like regular BBGM again, and the header bell and the Pending Deals setting are removed. CPU teams still won't take less from you than another team would give them: if a team turns you down because someone else would pay more, it now just says it has a better offer elsewhere, without saying who.",
+	},
+	{
 		n: 44,
 		date: "2026-10-30",
 		text: "Day recaps: a season high or a milestone for a player the recap hasn't mentioned yet now says whose player he is (\"the Thunder's Marcus Vaughn set a season high with 32 points\").",

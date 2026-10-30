@@ -201,7 +201,7 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
 ## Trades
 
 - **Core rule: a CPU team never makes a trade it would not make on its own.** A
-  human's offer can only add a bidder; it can never create a deal.
+  human's offer can never create a deal it would not take from anyone.
 - **A contender does not arm its rivals.** Title chances are shared: what a
   deal adds to the other team's comes out of everyone else's, this team's
   too. Each season a team's title chance is scaled by the share the other
@@ -225,58 +225,15 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   the other side did against 0.73 (medians), better in hindsight (+13 to -9).
 - **Shopping.** When you offer a CPU team a deal, it compares three things:
   keeping its players, your offer, and the best deal it can get elsewhere by
-  asking the other CPU teams instantly.
-  - Yours is best: it accepts.
-  - Someone else's is better: it says so, shows you that offer in full, and
-    shows its counter - what it would need from you to beat it.
-  - You walk away: it does the other deal, because it would have anyway.
-- **Matching window.** A deal involving a CPU team is held for bids, and other
-  teams (humans included) can bid on it. Bidding wars are fine; a bid cannot
-  be withdrawn. Everything is public - every team sees the bids.
-- **How long** (owner's calls): not real time, and the sim never stops for
-  it. A deal stays open for two full sims after it is held or last bid on -
-  it closes as the third sim starts, a sim being one run of days however
-  long, or a phase advanced on its own - so a bid made just before someone
-  sims cannot win before the others have had a sim to answer it. With one
-  person in the league there is no one else to wait for, so a deal also
-  closes after 14 trading days. Every deal is decided on the last trading day
-  before the deadline or the end of free agency.
-- **A person's own notable deal with a CPU team is held too** (owner's call,
-  in every league): the CPU team says yes, then other teams get the same two
-  sims to top it; if none does, it goes through. One at a time per person;
-  the bids are on the CPU team's side - a person's side is his own.
-- **Which deals get a window** (every deal, or only notable ones) is a user
-  setting; notable ones by default (owner's call) - a deal with one of a
-  team's five best players or a first-round pick. The rest go through at
-  once.
-- **Bids are for either side's assets** (owner's call): any team can offer
-  either team more for what it is giving up. Each side takes the best offer
-  for its assets by its own read when the window closes, which may break the
-  deal - but about to lose it, the deal's other team answers with the most it
-  would really give for the same (owner's call: both teams pay the market
-  price, not a steal because nobody else had the chance to match). A human's bid asks for all a side gives in the held deal, and may ask
-  for more of that team's assets, not held, as salaries may need: once a
-  bid had to be exactly the held package, so one that needed another of the
-  team's players to make the salaries work was turned down, and "What would
-  make this work" said there was no deal.
-- **Humans see held deals on a Pending Deals list** (owner's call), on the
-  Trade Proposals page, with a notification - and a bell in the header with
-  a red count of held deals and proposals to the team. Bidding opens the trade screen
-  with that team; the offer is judged like any other and, if it is the best,
-  holds until the window closes.
-- **Built** (realisticFrontOffice/windows.ts). A notable deal two CPU teams
-  agree is held to the next trading day - not on the last one before the
-  deadline, the end of the regular season or of free agency, and not in the
-  offseason's one-shot windows, which have no next day. Its assets are off
-  every table meanwhile. When the window closes, each side weighs the deal
-  against the best any other CPU team would give for the same assets (as when
-  judging a human's offer) and against the humans' bids, judged with a
-  human's higher bar; the best by its own read wins if it clears the minimum
-  gain, and the deal itself goes through only if both sides still want it. A
-  human bids by asking for exactly what one side gives; asking for part of it,
-  or for it with more, is refused while the window is open. The Pending
-  Deals list shows who has bid. League Settings > Pending Deals: notable
-  deals or every deal.
+  asking the other CPU teams instantly. Yours is best: it accepts. Someone
+  else's is better: "Trade rejected. They have a better offer elsewhere." -
+  not whose or what (owner's call), so the other team cannot be worked on
+  before coming back to the first. A CPU team never takes less from a human
+  than another CPU team would give it.
+- **No bidding** (owner's call, replacing matching windows and pending
+  deals): what a user sees and does is vanilla's - trade screen, trading
+  block, "What would make this work", Trade Proposals. Deals go through as
+  soon as both teams agree. Only the CPU teams' judgment is the mode's.
 - **A higher bar for a human's deal** (owner's call): a human picks which
   deals to offer, so finds the ones the model gets wrong in his favour; the
   margin of error counts 1.5 times as much in a deal with a human, tuned by
@@ -768,7 +725,7 @@ version-against-version tests show matters most.
 2. Arena and stock baseline. (Done.)
 3. The thin slice, ending in CPU-to-CPU trades measured in the arena.
 4. The market: shopping, matching windows, bidding, the rebuilt Trade Proposals
-   page.
+   page. (Matching windows and bidding later removed - owner's call.)
 5. Free agency board, re-signing, draft, roster cuts, coaching.
 6. Explanations.
 

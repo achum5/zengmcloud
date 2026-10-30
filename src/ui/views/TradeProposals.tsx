@@ -16,12 +16,7 @@ import { useState } from "react";
 import { ActionButton } from "../components/ActionButton.tsx";
 import useTradeOffersSwitch from "../hooks/useTradeOffersSwitch.tsx";
 
-const TradeProposals = ({
-	offers,
-	pending,
-	seed,
-	standing,
-}: View<"tradeProposals">) => {
+const TradeProposals = ({ offers, seed, standing }: View<"tradeProposals">) => {
 	const {
 		challengeNoRatings,
 		challengeNoTrades,
@@ -126,66 +121,6 @@ const TradeProposals = ({
 
 	return (
 		<>
-			{pending.length > 0 ? (
-				<>
-					<h2>Pending deals</h2>
-					{pending.map((deal) => (
-						<div
-							key={`${deal.tids[0]}-${deal.tids[1]}`}
-							className="d-flex flex-wrap gap-5 mb-3"
-						>
-							<div className="w-100 mb-n4 text-body-secondary small">
-								{deal.simsLeft === 0
-									? "Closes when the next sim starts"
-									: `Open for ${deal.simsLeft} more ${deal.simsLeft === 1 ? "sim" : "sims"}`}
-							</div>
-							{deal.summary.teams.map((t, k) => (
-								<div key={k}>
-									<SummaryTeam
-										hideFinanceInfo
-										showInlinePlayerInfo
-										summary={deal.summary}
-										t={t}
-									/>
-									{deal.notes ? (
-										<div className="text-body-secondary small mb-1">
-											{deal.notes[k]!.why}. Wants{" "}
-											{deal.notes[k]!.wants.charAt(0).toLowerCase()}
-											{deal.notes[k]!.wants.slice(1)}.
-										</div>
-									) : null}
-									{!deal.human[k] &&
-									deal.give[k]!.pids.length + deal.give[k]!.dpids.length > 0 ? (
-										<button
-											className="btn btn-sm btn-primary"
-											onClick={() => {
-												void handleNegotiate({
-													dpids: deal.give[k]!.dpids,
-													dpidsUser: [],
-													pids: deal.give[k]!.pids,
-													pidsUser: [],
-													tid: deal.tids[k]!,
-												});
-											}}
-										>
-											{deal.bid[k] ? "Bid again" : "Bid"}
-										</button>
-									) : null}
-									{deal.bidders[k]!.length > 0 ? (
-										<span className="ms-2 text-body-secondary">
-											Bids:{" "}
-											{deal.bidders[k]!.map(
-												(tid) => teamInfoCache[tid]?.abbrev,
-											).join(", ")}
-										</span>
-									) : null}
-								</div>
-							))}
-						</div>
-					))}
-					<h2>Trade proposals</h2>
-				</>
-			) : null}
 			{standing ? (
 				offers.length === 0 ? (
 					<p>No trade proposals right now.</p>

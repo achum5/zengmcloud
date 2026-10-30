@@ -1,5 +1,4 @@
 import { idb } from "../db/index.ts";
-import { player } from "../core/index.ts";
 import { g, helpers } from "../util/index.ts";
 import type { TradeTeams } from "../../common/types.ts";
 import isUntradable from "../core/trade/isUntradable.ts";
@@ -12,75 +11,6 @@ import { orderBy } from "../../common/utils.ts";
 import { defineView } from "../util/defineView.ts";
 import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
 import { proposalsTo } from "../core/realisticFrontOffice/proposalStore.ts";
-import { heldDeals } from "../core/realisticFrontOffice/windows.ts";
-import { SIMS_TO_CLOSE } from "../core/realisticFrontOffice/windowClock.ts";
-import { getSummary } from "./trade.ts";
-
-// Deals agreed and held for bids (realisticFrontOffice/windows.ts): each with
-// the sides this team has bid on, and the full sims it stays open.
-const pendingDeals = async (userTid: number) => {
-	const out = [];
-	for (const deal of await heldDeals()) {
-		const side = (k: 0 | 1) => ({
-			tid: deal.tids[k],
-			pids: deal.give[k].pids,
-			dpids: deal.give[k].dpids,
-			pidsExcluded: [],
-			dpidsExcluded: [],
-		});
-		const teams: TradeTeams = [side(0), side(1)];
-		const dealSummary = await getSummary(teams);
-		// Each player with his age, ratings and stats, as on trade proposals.
-		const withInfo = async (k: 0 | 1) => {
-			const players = await player.formatAll(
-				(await idb.cache.players.getAll()).filter((p) =>
-					deal.give[k].pids.includes(p.pid),
-				),
-				{
-					attrs: ["pid", "age"],
-					ratings: ["ovr", "pot", "skills", "pos"],
-					stats: ["gp", "min", "pts", "trb", "ast", "per"],
-					season: g.get("season"),
-					showNoStats: true,
-					showRookies: true,
-					fuzz: true,
-				},
-			);
-			return {
-				...dealSummary.teams[k],
-				trade: dealSummary.teams[k].trade.map((p) => {
-					const p2 = players.find((p2) => p2.pid === p.pid);
-					return p2
-						? { ...p, age: p2.age, ratings: p2.ratings, stats: p2.stats }
-						: p;
-				}),
-			};
-		};
-		out.push({
-			tids: deal.tids,
-			give: deal.give,
-			notes: deal.notes,
-			// A person's side is his to decide: no bids on it.
-			human: deal.tids.map((tid) => g.get("userTids").includes(tid)),
-			// Full sims left before it closes, as the one after starts.
-			simsLeft: Math.max(0, SIMS_TO_CLOSE - 1 - (deal.sims ?? 0)),
-			bid: [0, 1].map((k) =>
-				deal.bids.some((bid) => bid.tid === userTid && bid.side === k),
-			),
-			// The teams that have bid on each side, for everyone to see.
-			bidders: [0, 1].map((k) => [
-				...new Set(
-					deal.bids.filter((bid) => bid.side === k).map((bid) => bid.tid),
-				),
-			]),
-			summary: {
-				...dealSummary,
-				teams: [await withInfo(0), await withInfo(1)] as const,
-			},
-		});
-	}
-	return out;
-};
 
 const getOffers = async (seed: number) => {
 	const NUM_OFFERS = 5;
@@ -258,7 +188,6 @@ export default defineView({
 					offers: (await augmentOffers(standing)).map((offer) =>
 						addInlinePlayerInfo(offer),
 					),
-					pending: await pendingDeals(userTid),
 					seed: 0,
 					standing: true,
 				};
@@ -284,7 +213,6 @@ export default defineView({
 
 			return {
 				offers,
-				pending: [] as Awaited<ReturnType<typeof pendingDeals>>,
 				seed,
 				standing: false,
 			};
