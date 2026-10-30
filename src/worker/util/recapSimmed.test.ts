@@ -8,6 +8,7 @@ import {
 	type RecapGame,
 	type RecapTeam,
 } from "./getDayGamesForRecap.ts";
+import { getAutoRecap } from "./getAutoRecap.ts";
 import { verifyRecap } from "./recapAccuracy.ts";
 
 // RECAPS OF REAL GAMES, CHECKED IN CI.
@@ -76,6 +77,25 @@ describe("simmed recaps", () => {
 			),
 		);
 		assert.deepStrictEqual(bad, []);
+	});
+
+	// A women's league: the same games, written with her pronouns, every
+	// claim still checked, and no "he", "his" or "six men" left over.
+	test("a women's league's recaps are about women", () => {
+		for (const { gid, game } of pairs) {
+			const hers = { ...game, gender: "female" as const };
+			const recap = getAutoRecap(hers);
+			assert.notMatch(
+				recap,
+				/\b(?:he|He|his|His|him|himself|men)\b/,
+				`gid ${gid}\n${recap}`,
+			);
+			assert.deepStrictEqual(
+				verifyRecap(recap, hers),
+				[],
+				`gid ${gid}\n${recap}`,
+			);
+		}
 	});
 
 	// "breaking it open with a 28-19 second quarter" of a quarter that turned

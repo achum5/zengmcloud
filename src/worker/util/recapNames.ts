@@ -62,6 +62,40 @@ export const surnameOf = (name: string): string | undefined => {
 	return surname.length >= 2 ? surname : undefined;
 };
 
+// Surnames that would read as a word of the sentence on their own: "He had
+// 20 points" for Lin He is a pronoun to every reader. They stay whole names.
+const PLAIN_WORDS = new Set([
+	"a",
+	"an",
+	"and",
+	"at",
+	"but",
+	"by",
+	"for",
+	"he",
+	"her",
+	"him",
+	"his",
+	"i",
+	"in",
+	"it",
+	"its",
+	"man",
+	"men",
+	"of",
+	"on",
+	"or",
+	"she",
+	"so",
+	"the",
+	"them",
+	"they",
+	"to",
+	"us",
+	"we",
+	"you",
+]);
+
 const firstNameOf = (name: string): string => name.trim().split(/\s+/)[0] ?? "";
 
 const escape = (s: string) =>
@@ -112,6 +146,7 @@ export const shortNames = (
 			s &&
 			taken.get(s.toLowerCase()) === 1 &&
 			!reserved.has(s.toLowerCase()) &&
+			!PLAIN_WORDS.has(s.toLowerCase()) &&
 			// A surname that is a whole other man's full name ("Grant" for
 			// "Jerami Grant" beside a "Grant") is caught above; one that reads as
 			// part of a team name is too.
@@ -343,4 +378,51 @@ export const cityReferences = (
 		}
 	}
 	return join(head, out);
+};
+
+// A WOMEN'S LEAGUE. Every template says "he", "his" and "six men in double
+// figures"; in a league of women that is wrong in nearly every recap. The
+// last pass turns them, with every player and team name held out of it first
+// - a surname "He", a club called the Iron Men - so only the prose changes.
+export const inWomensLeague = (
+	text: string,
+	players: readonly string[],
+	teams: readonly ReferenceTeam[],
+): string => {
+	const keep = [
+		...new Set(
+			[
+				...players,
+				// A bare surname only where one can stand alone (see
+				// PLAIN_WORDS): a "He" on its own is the pronoun.
+				...players.map((n) => {
+					const s = surnameOf(n) ?? "";
+					return PLAIN_WORDS.has(s.toLowerCase()) ? "" : s;
+				}),
+				...teams.flatMap((t) => [t.name, t.region]),
+			]
+				.map((n) => n.trim())
+				.filter((n) => n !== ""),
+		),
+	];
+	const marks: string[] = [];
+	const held =
+		keep.length === 0
+			? text
+			: text.replace(nameRegex(keep), (m: string) => {
+					marks.push(m);
+					return `${marks.length - 1}`;
+				});
+	return held
+		.replaceAll(/\bthe open man\b/g, "the open teammate")
+		.replaceAll(/\bmen\b/g, "players")
+		.replaceAll(/\bman\b/g, "player")
+		.replaceAll(/\bhimself\b/g, "herself")
+		.replaceAll(/\bHimself\b/g, "Herself")
+		.replaceAll(/\bhim\b/g, "her")
+		.replaceAll(/\bhis\b/g, "her")
+		.replaceAll(/\bHis\b/g, "Her")
+		.replaceAll(/\bhe\b/g, "she")
+		.replaceAll(/\bHe\b/g, "She")
+		.replaceAll(/(\d+)/g, (_, i: string) => marks[Number(i)]!);
 };

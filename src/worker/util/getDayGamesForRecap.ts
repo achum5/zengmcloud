@@ -298,6 +298,9 @@ export type RecapGame = {
 	// The regular season's length in games, so an injury that outlasts it is
 	// "the rest of the season" and not "about 175 games".
 	seasonGames?: number;
+	// A women's league: the recap's pronouns are hers, and "six men in double
+	// figures" is six players.
+	gender?: "female";
 	// Set ONLY for the All-Star Game. The game itself is still the normal box
 	// score in `teams`; this carries the weekend extras (MVP + the dunk and
 	// three-point contests) so the recap can cover the whole All-Star Weekend.
@@ -1220,6 +1223,7 @@ export const getDayGamesForRecap = async ({
 			flow: game.flow,
 			seasonGames: allStar ? undefined : g.get("numGames"),
 			allStar: allStar ? allStarPayload() : undefined,
+			...(g.get("gender") === "female" ? { gender: "female" as const } : {}),
 		});
 	}
 
@@ -1920,6 +1924,7 @@ const createAutoRecapContext = async (season: number) => {
 			flow: game.flow,
 			seasonGames: allStar ? undefined : g.get("numGames"),
 			allStar: allStar ? allStarPayload() : undefined,
+			...(g.get("gender") === "female" ? { gender: "female" as const } : {}),
 		};
 	};
 

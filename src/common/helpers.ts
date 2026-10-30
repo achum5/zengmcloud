@@ -1480,7 +1480,7 @@ const pronoun = (
 			case "his":
 				return "her";
 			case "His":
-				return "her";
+				return "Her";
 			case "himself":
 				return "herself";
 			case "Himself":

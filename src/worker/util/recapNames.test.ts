@@ -2,6 +2,7 @@ import { assert, describe, test } from "vitest";
 import {
 	cityReferences,
 	expandSecondReferences,
+	inWomensLeague,
 	secondReferences,
 	shortNames,
 	surnameOf,
@@ -166,5 +167,20 @@ describe("cityReferences", () => {
 			);
 			assert.notInclude(out, "Los Angeles");
 		}
+	});
+});
+
+describe("inWomensLeague", () => {
+	test("the prose turns, the names do not", () => {
+		const text =
+			"**Lin He leads the Iron Men**\n\nLin He had 20 points. He made his first six shots, and the Iron Men got six men in double figures. The ball found the open man all night. Nobody stopped him; he did it himself. His streak is at five.";
+		assert.strictEqual(
+			inWomensLeague(
+				text,
+				["Lin He"],
+				[{ region: "Pittsburgh", name: "Iron Men" }],
+			),
+			"**Lin He leads the Iron Men**\n\nLin He had 20 points. She made her first six shots, and the Iron Men got six players in double figures. The ball found the open teammate all night. Nobody stopped her; she did it herself. Her streak is at five.",
+		);
 	});
 });

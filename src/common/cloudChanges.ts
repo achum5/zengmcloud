@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 49,
+		date: "2026-10-30",
+		text: 'Recaps in a women\'s league now say she and her instead of he and his, and "six players in double figures" instead of "six men", in game and day recaps alike.',
+	},
+	{
 		n: 48,
 		date: "2026-10-30",
 		text: "Recaps no longer call it an upset when a team with a clearly better record beats a worse one, even if the betting line had it the other way. The All-Star Game recap gets more headlines and puts the dunk contest and three-point shootout in their own paragraph.",

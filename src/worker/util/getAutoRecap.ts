@@ -82,6 +82,7 @@ import {
 } from "./recapFinish.ts";
 import {
 	cityReferences,
+	inWomensLeague,
 	secondReferences,
 	type ReferenceTeam,
 } from "./recapNames.ts";
@@ -8948,13 +8949,16 @@ export const getAutoRecap = (game: RecapGame): string => {
 	const text = fixArticles(buildGameRecap(withSettledLead(game)));
 	const names = peopleIn([game]);
 	const teams = teamsIn([game]);
-	return secondReferences(
+	const referenced = secondReferences(
 		game.allStar
 			? text
 			: cityReferences(text, teams, names, (game.gid + 1) * 7919 + 17),
 		names,
 		teams,
 	);
+	return game.gender === "female"
+		? inWomensLeague(referenced, names, teams)
+		: referenced;
 };
 
 // NOT "FOR THE LAKERS" TWICE RUNNING. "Naji Green supplied 19 points and
@@ -11329,13 +11333,18 @@ export const getAutoDayRecap = (input: AutoDayRecapInput): string => {
 	beginRecapBatch();
 	resetVerbLedger();
 	try {
-		return secondReferences(
+		const names = peopleIn(input.games);
+		const teams = teamsIn(input.games);
+		const text = secondReferences(
 			fixArticles(
 				buildDayRecap({ ...input, games: input.games.map(withSettledLead) }),
 			),
-			peopleIn(input.games),
-			teamsIn(input.games),
+			names,
+			teams,
 		);
+		return input.games.some((g) => g.gender === "female")
+			? inWomensLeague(text, names, teams)
+			: text;
 	} finally {
 		endRecapBatch();
 	}

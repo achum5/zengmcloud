@@ -191,7 +191,7 @@ export const verifyRecap = (
 	}
 	for (const sentence of splitSentences(recap)) {
 		const prevOwner = chainOwner;
-		const pronounLed = /^(?:He|His)\b/.test(sentence);
+		const pronounLed = /^(?:He|His|She|Her)\b/.test(sentence);
 		chainOwner = lastNameIn(sentence) ?? (pronounLed ? chainOwner : undefined);
 		// --- the final score -------------------------------------------------
 		for (const m of sentence.matchAll(/\b(\d{2,3})-(\d{2,3})\b/g)) {
@@ -333,7 +333,7 @@ export const verifyRecap = (
 		}
 		// "hitting all 4 of his threes" is 4-of-4.
 		for (const m of sentence.matchAll(
-			/\ball (\d+) of his (?:threes|three-pointers|free throws|shots)\b/g,
+			/\ball (\d+) of (?:his|her) (?:threes|three-pointers|free throws|shots)\b/g,
 		)) {
 			if (!splits.has(`${m[1]}-${m[1]}`)) {
 				add("shooting split", `${m[1]}-of-${m[1]} matches nothing`, sentence);
@@ -955,7 +955,7 @@ export const verifyRecap = (
 	// line, or in the playoffs the postseason one, whichever he had.
 	for (const sentence of splitSentences(recap)) {
 		for (const m of sentence.matchAll(
-			/\b(?:came in averaging|had been averaging) (\d+(?:\.\d)?) points a game|\bhis (\d+(?:\.\d)?)(?:-point)? average\b/g,
+			/\b(?:came in averaging|had been averaging) (\d+(?:\.\d)?) points a game|\b(?:his|her) (\d+(?:\.\d)?)(?:-point)? average\b/g,
 		)) {
 			const who = lastNameIn(sentence.slice(0, m.index));
 			const p = who ? byName.get(who) : undefined;
@@ -1000,9 +1000,10 @@ export const verifyRecap = (
 	{
 		let owner: string | undefined;
 		for (const sentence of splitSentences(recap)) {
-			const pronounLed = /^(?:He|His|It was his|That is|Make it)\b/.test(
-				sentence,
-			);
+			const pronounLed =
+				/^(?:He|His|She|Her|It was his|It was her|That is|Make it)\b/.test(
+					sentence,
+				);
 			const named = lastNameIn(sentence);
 			owner = named ?? (pronounLed ? owner : undefined);
 			const p = owner ? byName.get(owner) : undefined;
