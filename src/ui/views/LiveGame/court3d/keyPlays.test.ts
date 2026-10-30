@@ -3,6 +3,7 @@ import { compile } from "./testGame.ts";
 import {
 	getKeyPlays,
 	KEY_PLAY_DEFAULTS,
+	LAST_SHOT_S,
 	keyOutAt,
 	parseKeyPlays,
 	planKeyPlays,
@@ -211,6 +212,57 @@ describe("3D key plays", () => {
 		assert.isAbove(n(6, 1), n(2, 1));
 		assert.isAbove(n(2, 4), n(2, 1));
 	}, 60_000);
+
+	// A shot got up in the last seconds of a period - any period, overtime
+	// too - is always in the reel, in or not: the shot and what came of it.
+	// (The last shot of each period here has the last few seconds on the
+	// clock - the reel goes by the lines for that.)
+	test("every shot at the end of a period is in it, made or missed", () => {
+		let made = 0;
+		let missed = 0;
+		for (const seed of ["keys", "a", "b"]) {
+			const game = seed === "keys" ? { tl, events } : compile(seed, 140);
+			const beats = game.tl.beats;
+			const late = new Set<number>();
+			const lines = game.events.map((e: any) => ({ ...e }));
+			beats.forEach((b, k) => {
+				const next = beats.slice(k + 1).find((x) => /^fga/.test(x.type));
+				const end = beats
+					.slice(k + 1)
+					.find((x) => x.type === "endOfPeriod" || x.type === "period");
+				if (
+					/^fga/.test(b.type) &&
+					end &&
+					(!next || next.i > end.i) &&
+					beats[k + 1]
+				) {
+					late.add(k);
+					lines[b.i].clock = LAST_SHOT_S - 0.5;
+					lines[beats[k + 1]!.i].clock = LAST_SHOT_S - 1;
+				}
+			});
+			const plan = planKeyPlays(
+				game.tl,
+				lines,
+				{ ...on, minutes: 2, buzzer: false },
+				{ rate: 1, numPeriods: 4 },
+			);
+			for (const k of late) {
+				const b = beats[k]!;
+				const out = beats[k + 1]!;
+				if (/^(fg|tp)/.test(out.type)) {
+					made += 1;
+				} else {
+					missed += 1;
+				}
+				const s = segmentAt(plan, b.actionStart).at;
+				assert.isDefined(s, `${seed} line ${b.i}`);
+				assert.isAtLeast(s!.t1, out.actionStart, `${seed} line ${b.i}`);
+			}
+		}
+		assert.isAbove(made, 0);
+		assert.isAbove(missed, 0);
+	}, 240_000);
 
 	test("a close finish is every play of it", () => {
 		const plan = planKeyPlays(

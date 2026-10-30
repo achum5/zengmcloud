@@ -179,6 +179,9 @@ const isPlay = (type: string) =>
 // How long after the ball is in the air at the end of a clip it may yet take
 // to come down to somebody (ms): no longer than this.
 const SETTLE_MS = 4000;
+// A shot taken with this little left on the clock of a period (seconds) is
+// always in the reel, in or not.
+export const LAST_SHOT_S = 3;
 
 // The ball through a stretch of the game: where it is at t, and when it is
 // next in somebody's hands, or still.
@@ -348,6 +351,18 @@ export const planKeyPlays = (
 		t0: Math.max(last.preStart, last.actionStart - LEAD_MS),
 		t1: tl.end,
 		close: false,
+	});
+	// Every shot at the end of a period - any period, overtime too - got up
+	// in its last seconds: in at the horn or off the rim, from the play that
+	// gets it up till the ball is down.
+	beats.forEach((b, k) => {
+		const st = before[b.i];
+		if (!st || !isAttempt(typeOf(b)) || st.clock > LAST_SHOT_S) {
+			return;
+		}
+		const next = beats[k + 1];
+		const { t0, t1 } = clipOf(next && !isAttempt(typeOf(next)) ? k + 1 : k);
+		picked.push({ t0, t1, close: false });
 	});
 	// Every play of a close finish: from the end of the play before it.
 	beats.forEach((b, k) => {
