@@ -747,6 +747,19 @@ const WALL_FLAT = 0.2;
 // nearest the rim the pull-up goes up from.
 const HESI_RUN = 5;
 const HESI_ON = 2.5;
+const HESI_MS = 420;
+const HESI_CLOSEST = 10;
+// A travel: how far on he goes with it in his hands after the gather
+// (feet) - steps enough to see.
+const TRAVEL_FT = 5;
+// A chase-down: the man blocking it more than this far (feet) behind him
+// going in, he comes from there - up a step behind him and beside him, the
+// hand over his shoulder at it, a beat later than a man in front of him
+// gets to it (ms).
+const CHASE_BEHIND = 3;
+const CHASE_BACK = 1.2;
+const CHASE_SIDE = 1.1;
+const CHASE_LATE = 140;
 // Crossed up so badly his feet go out from under him: this often, the game
 // knowing nothing of either of them - and, if it does, hardly ever but by
 // a great handler, and most of all with a slow man on him (see driveTo).
@@ -769,8 +782,6 @@ const WALK_FROM = 0.75;
 const WALK_MOST = 0.3;
 const WALK_AFTER = 250;
 const WALK_FT = 8;
-const HESI_MS = 420;
-const HESI_CLOSEST = 10;
 // How long (ms), at the most, a man takes to turn and go the other way as
 // the ball changes hands (see turnLag).
 const TURN_LAG = 300;
@@ -1013,6 +1024,8 @@ const pokeHand = (mirrored: boolean): V3 => {
 // the rim - and how far out from the middle of the rim he goes up.
 const DUNK_LEAP = RIM_Z + 1.45 - standingReach(bodyOf());
 const DUNK_FROM = 1.8;
+// The steps of his gather into a dunk, at the quickest (feet a second).
+const DUNK_STEPS_FTPS = 24;
 // The furthest round to the side of the rim he goes up from (radians off
 // straight in front of it) - for a dunk, or a finish off a post move.
 const DUNK_SIDE = (55 * Math.PI) / 180;
@@ -1052,6 +1065,21 @@ const behindArc = (team: Side, p: Pt): Pt | undefined => {
 	const u = unitVec(rim, p);
 	const r = 23.75 + THREE_CLEAR + 0.5;
 	return onTheFloor({ x: rim.x + u.x * r, y: rim.y + u.y * r });
+};
+// Moved from `from` to `to`, a man in play goes no further out past the
+// lines (see inPlay) than he already was: up to them, or along them.
+const noFurtherOut = (from: Pt, to: Pt): Pt => {
+	const lo = inPlay({ x: -Infinity, y: -Infinity });
+	const hi = inPlay({ x: Infinity, y: Infinity });
+	const axis = (f: number, v: number, a: number, b: number) =>
+		Math.min(
+			Math.max(Math.max(Math.min(v, b), Math.min(f, v)), a),
+			Math.max(f, Math.max(Math.min(v, b), Math.min(f, v))),
+		);
+	return clampPt({
+		x: axis(from.x, to.x, lo.x, hi.x),
+		y: axis(from.y, to.y, lo.y, hi.y),
+	});
 };
 // Where a man out on the floor in play can stand: inside the lines (see
 // inPlay) - and out wide, down in the corner, a step in from the baseline,
@@ -1357,8 +1385,9 @@ const CLOSE_SHORT_MOST = 1.5;
 const CLOSE_TIGHTEST = 2.2;
 const CLOSE_RUN = 21;
 const CLOSE_CHOP = 8;
-// Leaving his man open, the slowest he goes out to him (feet a second).
-const OPEN_PACE = 9;
+// Leaving his man open, the slowest he goes out to him (feet a second): on
+// his way as the pass goes, not stood watching it and then off.
+const OPEN_PACE = 6;
 const CLOSE_BREAK = 3.5;
 // How much room a jump shooter gets (by how far off him his man meets the
 // shot, feet): right on him, an arm's length, a step late - or none of it,
@@ -3649,6 +3678,18 @@ class Director {
 	// other hand at the top - never on its way to the floor. Off his first
 	// bounce he waits for it; after that he takes it the bounce before.
 	private offDribble(pid: number, t: number, style: "hold" | "cross"): number {
+		// In the middle of a run of moves: on the beat of those - not of the
+		// dribble before them, its tops somewhere in their bounces.
+		const was = this.ball[this.segAt(t)];
+		if (was?.kind === "hold" && was.pid === pid && was.style === "cross") {
+			const ms = 1000 / (was.rate ?? CROSS_RATE);
+			const b = (t - was.t0) / ms + 1e-6;
+			const k = Math.floor(b);
+			const ph = b - k;
+			return ph < 0.02 || (style === "hold" && ph >= CATCH_UP)
+				? t
+				: was.t0 + (k + 1) * ms;
+		}
 		const beat = this.beatOf(pid, t);
 		if (beat === undefined) {
 			return t;
@@ -7778,14 +7819,15 @@ class Director {
 							: toRim < 30
 								? 3.9
 								: 5.5;
+			// (Spots in play, every one: inside the lines - see inPlay.)
 			// (Right under it with the ball, he is played from out in front
 			// of him, toward the floor - not from on top of him.)
 			if (toRim < 1.5) {
 				const out = unitVec(rim, { x: COURT_W / 2, y: COURT_H / 2 });
-				return clampPt({ x: man.x + out.x * 2.2, y: man.y + out.y * 2.2 });
+				return inPlay({ x: man.x + out.x * 2.2, y: man.y + out.y * 2.2 });
 			}
 			const k = Math.min(gap, toRim * 0.5);
-			return clampPt(
+			return inPlay(
 				sideOn(man, { x: man.x + ur.x * k, y: man.y + ur.y * k }, rim.x),
 			);
 		}
@@ -7836,9 +7878,9 @@ class Director {
 		const pr = dist(p, rim);
 		if (pr < 3) {
 			const u = unitVec(rim, pr > 0.1 ? p : man);
-			return clampPt({ x: rim.x + u.x * 3, y: rim.y + u.y * 3 });
+			return inPlay({ x: rim.x + u.x * 3, y: rim.y + u.y * 3 });
 		}
-		return clampPt(sideOn(man, p, rim.x));
+		return inPlay(sideOn(man, p, rim.x));
 	}
 
 	// A defender to his spot by `by`: sliding if it is close, running if not -
@@ -9096,7 +9138,11 @@ class Director {
 		);
 		const live = prior !== undefined && runsOn(this.events[prior.i]!);
 		t = this.develop(team, t, gap, undefined, undefined, true, shooter).t;
-		const inbound = live ? undefined : inboundCaught(this.ball, t0, Infinity);
+		// (The ball in from out of bounds after that line - which can be
+		// before this one starts to be staged.)
+		const inbound = live
+			? undefined
+			: inboundCaught(this.ball, prior?.actionStart ?? t0, Infinity);
 		// When it has to be up (its line is the gather - see stageShot).
 		const due =
 			(live ? prior.actionStart : (inbound ?? t)) +
@@ -9156,6 +9202,11 @@ class Director {
 				"dribble",
 				dir,
 			);
+		} else if (shoot && ms > 0) {
+			// (In as far as he goes already: on his dribble where he is till
+			// the clock is all but out - not up with it while time is left.)
+			this.hold(shooter, t, "dribble");
+			t += ms;
 		}
 		// His man after him: a step off him as he lets it go, on the side he
 		// is coming from - behind him, chasing, or still in front of him,
@@ -11172,15 +11223,17 @@ class Director {
 				x: under.x - (way.x * v * (top - tOff)) / 1000,
 				y: under.y - (way.y * v * (top - tOff)) / 1000,
 			};
-			this.carry(
-				shooter,
-				T,
-				gather + 60,
-				Math.max(120, tOff - gather - 60),
-				"run",
-				faceRim,
-				{ onFrom: true, v1: v },
+			// (From further out than a gather's steps cover in the time, he
+			// sets off for it sooner - as soon as he is free to - not shot
+			// across the floor to it.)
+			const s0 = Math.max(
+				this.free.get(shooter) ?? -Infinity,
+				Math.min(gather + 60, tOff - (dist(from, T) / DUNK_STEPS_FTPS) * 1000),
 			);
+			this.carry(shooter, T, s0, Math.max(120, tOff - s0), "run", faceRim, {
+				onFrom: true,
+				v1: v,
+			});
 			const down = gather + dur * (hang ? 0.86 : 0.8);
 			const on = Math.min(
 				plan.finish === "poster" ? 0.4 : DUNK_FROM * 0.8,
@@ -11637,7 +11690,32 @@ class Director {
 				// (Ahead of where he comes down, a floater carried on in the air
 				// - not where he took off, the shooter drifting into him.)
 				const on = dist(P1, drift ?? this.posOf(shooter));
-				const B = ahead(Math.min(2.6, Math.max(1.4, len - 1 - on)) + on);
+				// Trailing the play, going in at the rim - off a break, say -
+				// he runs him down from behind instead: up beside him and a
+				// hand over his shoulder at it on its way to the glass (see
+				// CHASE_BEHIND), not round in front of him in no time.
+				const G0 = this.posAt(b, gather - 600);
+				const chase =
+					close &&
+					((G0.x - P1.x) * toRim.x + (G0.y - P1.y) * toRim.y) / len <
+						-CHASE_BEHIND;
+				const S1 = drift ?? this.posOf(shooter);
+				const sideOf =
+					Math.sign(
+						(G0.x - P1.x) * (toRim.y / len) - (G0.y - P1.y) * (toRim.x / len),
+					) || 1;
+				const B = chase
+					? clampPt({
+							x:
+								S1.x -
+								(toRim.x / len) * CHASE_BACK +
+								(toRim.y / len) * sideOf * CHASE_SIDE,
+							y:
+								S1.y -
+								(toRim.y / len) * CHASE_BACK -
+								(toRim.x / len) * sideOf * CHASE_SIDE,
+						})
+					: ahead(Math.min(2.6, Math.max(1.4, len - 1 - on)) + on);
 				const by = release - 80;
 				let from = gather - 600;
 				for (let n = 0; n < 4; n++) {
@@ -11657,16 +11735,19 @@ class Director {
 					from,
 					by,
 					"run",
-					-faceRim as 1 | -1,
+					(chase ? faceRim : -faceRim) as 1 | -1,
 					BURST,
 				);
-				const contact = Math.max(release + 110, there + 180);
+				const contact = Math.max(
+					release + (chase ? CHASE_LATE : 110),
+					there + 180,
+				);
 				// With the hand on the ball's side, straight up at it.
 				const left = this.leftToBall(this.posOf(b), shooter, P1);
-				const leap = blockLeap(contact, this.leap(b, 2.5));
+				const leap = blockLeap(contact, this.leap(b, chase ? 3 : 2.5));
 				this.act(b, "block", leap.t0, leap.t1, {
-					face: -faceRim as 1 | -1,
-					look: { ...P1 },
+					face: (chase ? faceRim : -faceRim) as 1 | -1,
+					look: chase ? { x: rim.x, y: rim.y } : { ...P1 },
 					jump: leap.jump,
 					...(left ? { mirror: true as const } : {}),
 				});
@@ -16780,7 +16861,8 @@ class Director {
 			this.beat(i, e.type, hit + 120, up - 300);
 			return true;
 		}
-		// A travel: the drive, the gather, a step too many.
+		// A travel: the drive, the gather, and on with it in his hands a
+		// stride or two too many (TRAVEL_FT) before the whistle.
 		const G = clampPt({
 			x: A.x + (D.x - A.x) * 0.6,
 			y: A.y + (D.y - A.y) * 0.6,
@@ -16790,7 +16872,7 @@ class Director {
 		const u = unitVec(A, D);
 		tt = this.go(
 			victim,
-			clampPt({ x: G.x + u.x * 2.5, y: G.y + u.y * 2.5 }),
+			clampPt({ x: G.x + u.x * TRAVEL_FT, y: G.y + u.y * TRAVEL_FT }),
 			tt,
 			8,
 			"run",
@@ -19477,6 +19559,23 @@ class Director {
 			if (!moves.some((m) => this.marking.has(m))) {
 				continue;
 			}
+			// (Marking his man, he is in play: never out past the lines -
+			// wherever a spot for him was worked out to be - and on from
+			// there, not from out where it was.)
+			moves.forEach((m, k) => {
+				if (!this.marking.has(m)) {
+					return;
+				}
+				const to = noFurtherOut(m.from, m.to);
+				if (to.x === m.to.x && to.y === m.to.y) {
+					return;
+				}
+				const next = moves[k + 1];
+				if (next && dist(next.from, m.to) < 1e-6) {
+					next.from = { ...to };
+				}
+				m.to = to;
+			});
 			// Stepped into help, a stunt, a hand up at a shot - and then stood
 			// there stock still, seconds, waiting on the next thing he does,
 			// the ball going round and his man left alone? He holds there a
@@ -19787,11 +19886,23 @@ class Director {
 				// with more of it to come: he picks that up from wherever he is.)
 				// (Nor where a stretch put in for him ends: there was nowhere
 				// the schedule had him then.)
-				const end =
+				const mark =
 					(b === cap && moves[j] && this.marking.has(moves[j]!)) ||
 					filled.has(moves[j - 1]!)
 						? undefined
 						: whereIn(planned, stop);
+				// (Inside the lines, wherever the schedule had him - and what
+				// he does next from there, not from out past them.)
+				const end = mark && inPlay(mark);
+				if (
+					mark &&
+					end &&
+					(end.x !== mark.x || end.y !== mark.y) &&
+					moves[j] &&
+					dist(moves[j]!.from, mark) < 0.05
+				) {
+					moves[j]!.from = { ...end };
+				}
 				// Straight on into his next run, if it follows on from this at
 				// once (a closeout, crashing the glass): he goes into it at
 				// speed - as much as the turn into it lets him keep, and no
@@ -20081,7 +20192,8 @@ class Director {
 							const nx = d > 0.05 ? ox / d : -vy / sp;
 							const ny = d > 0.05 ? oy / d : vx / sp;
 							const by = Math.min(BODY - d, PUSH_OUT);
-							p = clampPt({ x: p.x + nx * by, y: p.y + ny * by });
+							// (Round him along the lines, not out past them.)
+							p = noFurtherOut(p, { x: p.x + nx * by, y: p.y + ny * by });
 							const into = vx * nx + vy * ny;
 							if (into < 0) {
 								vx -= into * nx;
@@ -23608,6 +23720,18 @@ class Director {
 			const ballAt = walker(this.ball);
 			const shownAt = walker(tr.shown);
 			const shotAt = walker(shots);
+			// (Nor with the ball on its way to him, or about to be.)
+			const catchAt = walker(
+				this.ball
+					.filter(
+						(x) => x.kind === "fly" && "pid" in x.to && x.to.pid === tr.pid,
+					)
+					.map((x): [number, number] => [
+						x.t0 - LANE_CATCH,
+						(x as { t1: number }).t1,
+					])
+					.sort((x, y) => x[0] - y[0]),
+			);
 			let moveAt = walker(tr.moves);
 			const end = tr.moves.at(-1)!.t1;
 			let since: number | undefined;
@@ -23616,11 +23740,13 @@ class Director {
 				const P = where(m, tr.start, t);
 				const seg = ballAt(t);
 				const shot = shotAt(t);
+				const pass = catchAt(t);
 				const inside =
 					inLane(P) &&
 					possAt(t)?.[1] === tr.team &&
 					!(seg?.kind === "hold" && seg.pid === tr.pid) &&
 					!(shot && t <= shot[1]) &&
+					!(pass && t <= pass[1]) &&
 					shownAt(t)?.[1] === true;
 				if (!inside) {
 					since = undefined;
@@ -24279,6 +24405,9 @@ const LANE_PACE = 8;
 const LANE_STEP = 100;
 const LANE_SHOT_BEFORE = 700;
 const LANE_SHOT_AFTER = 2500;
+// (Nor with a pass on its way to him, nor from this long (ms) before it
+// is thrown.)
+const LANE_CATCH = 1500;
 // A big's seal off the ball (see liven): ducked in this much nearer the
 // lane line than his spot in front of the rim, and in and back out at
 // these paces (feet a second) - in the lane under three seconds all told.

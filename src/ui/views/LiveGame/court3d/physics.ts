@@ -371,6 +371,26 @@ export type FoundShot = {
 	kind: ShotKind;
 };
 
+// A miss in the net: the ball in among it under the rim - in through its
+// side, not down through the hoop - or dropped down the middle under it.
+const inTheNet = (side: Side, pts: number[]): boolean => {
+	const cx = rimX(side);
+	const cy = COURT_H / 2;
+	for (let k = 0; k < pts.length; k += 3) {
+		const rho = Math.hypot(pts[k]! - cx, pts[k + 1]! - cy);
+		const z = pts[k + 2]!;
+		if (
+			(z < RIM_Z - 0.4 &&
+				z > RIM_Z - NET_DEPTH &&
+				rho < RIM_R + BALL_R - 0.25) ||
+			(z < RIM_Z - 0.5 && rho < 0.63)
+		) {
+			return true;
+		}
+	}
+	return false;
+};
+
 // A shot from `from`, released and getting to the rim between `flight[0]`
 // and `flight[1]` ms later (the longer, the higher the arc): tried aimed a
 // shade differently each time (offsets from `rand`) until one plays out the
@@ -465,7 +485,11 @@ export const findShot = (
 			continue;
 		}
 		const play = playShot(side, p, v);
-		if (play.made !== want.made || play.underNet) {
+		if (
+			play.made !== want.made ||
+			play.underNet ||
+			(!want.made && inTheNet(side, play.pts))
+		) {
 			continue;
 		}
 		const kind = kindOf(play);

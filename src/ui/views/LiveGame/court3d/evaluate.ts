@@ -131,6 +131,9 @@ export type PlayerState = {
 	// the way he faces: he leans in no further than that leaves (see
 	// leanRoom).
 	room?: number;
+	// How far each arm (right, left) is drawn in toward his chest, off a man
+	// it would be in (0 to 1: see tuckAt).
+	armsIn?: [number, number];
 	// How low he keeps his dribble, his own way (-1 to 1: see dribbleLow).
 	low?: number;
 	// How easy he is about it (0 to 1): nobody near him, way out from the
@@ -3056,6 +3059,10 @@ const doingNow = (
 const DRIVE_FULL = 28;
 const DRIVE_MIN = 0.08;
 const DRIVE_MS = 200;
+// (Taken over a few windows, each this much further back: a run set off at
+// full pace - no getting going to it - leans him into it over a tenth of a
+// second, not in a frame.)
+const DRIVE_LAGS = [0, 60, 120];
 const DRIVES = new Set<AnimName>(["run", "sprint", "jog", "dribble"]);
 const paceAt = (tr: Track, t: number): number => {
 	const s = spotAt(tr, t);
@@ -3065,15 +3072,21 @@ const driveOf = (tr: Track, anim: AnimName, t: number): number => {
 	if (!DRIVES.has(anim)) {
 		return 0;
 	}
-	const d = Math.max(
-		-1,
-		Math.min(
-			1,
-			((paceAt(tr, t) - paceAt(tr, t - DRIVE_MS)) * 1000) /
-				DRIVE_MS /
-				DRIVE_FULL,
-		),
-	);
+	const d =
+		DRIVE_LAGS.reduce(
+			(sum, lag) =>
+				sum +
+				Math.max(
+					-1,
+					Math.min(
+						1,
+						((paceAt(tr, t - lag) - paceAt(tr, t - lag - DRIVE_MS)) * 1000) /
+							DRIVE_MS /
+							DRIVE_FULL,
+					),
+				),
+			0,
+		) / DRIVE_LAGS.length;
 	return (
 		(Math.sign(d) * Math.max(0, Math.abs(d) - DRIVE_MIN)) / (1 - DRIVE_MIN)
 	);
@@ -3197,11 +3210,15 @@ const blendInto = (
 	// (A change of move - or, the same move, from stepping over off a man
 	// into strides he set off on, or from dribbling it into holding it: his
 	// feet and hands are not where they were either.)
+	// (And the same move done over - a second contest straight off the
+	// first: further through it a moment ago than now, it is a new one.)
+	const once = ANIMS[now.anim].kind === "act";
 	const same = (d: Doing) =>
 		d.anim === now.anim &&
 		(d.aside === true) === (now.aside === true) &&
 		(d.dribble === undefined) === (now.dribble === undefined) &&
-		d.stride?.anim === now.stride?.anim;
+		d.stride?.anim === now.stride?.anim &&
+		!(once && d.phase > now.phase + 0.02);
 	const anim = now.anim;
 	// (Back as far as the longest of these eases goes - stepping off, too.)
 	let lo = t - Math.max(BLEND_MS, START_MS);
@@ -3644,6 +3661,13 @@ const denyArm = (
 	const lane = { x: B.x + (man.x - B.x) * 0.7, y: B.y + (man.y - B.y) * 0.7 };
 	const bearing = wrapAngle(Math.atan2(lane.y - here.y, lane.x - here.x) - yaw);
 	const deg = (Math.abs(bearing) * 180) / Math.PI;
+	// The arm on his man's side, whichever side of him the lane is - out to
+	// that side, or straight out in front of him for a lane there. (His man
+	// right in front of him or behind him, which side that is is not clear:
+	// no arm, so it never swaps from one to the other.)
+	const toMan = wrapAngle(Math.atan2(man.y - here.y, man.x - here.x) - yaw);
+	const side = toMan >= 0 ? 1 : -1;
+	const manDeg = (Math.abs(toMan) * 180) / Math.PI;
 	// (Down while he turns, or while it is not clear which man is his: it
 	// changes sides only then.)
 	const turning = Math.abs(wrapAngle(yaw - yawAt(tl, tr, t - 100)));
@@ -3651,8 +3675,9 @@ const denyArm = (
 		smooth01((7 - near) / 2.5) *
 		smooth01((26 - far) / 4) *
 		smooth01((far - 9) / 3) *
-		smooth01((deg - 10) / 20) *
 		smooth01((125 - deg) / 30) *
+		smooth01((manDeg - 8) / 12) *
+		smooth01((172 - manDeg) / 12) *
 		smooth01((0.22 - turning) / 0.12) *
 		smooth01((next - near) / 2) *
 		smooth01((t - since) / 350) *
@@ -3661,10 +3686,10 @@ const denyArm = (
 		return undefined;
 	}
 	return {
-		hand: bearing >= 0 ? "R" : "L",
+		hand: side > 0 ? "R" : "L",
 		sh: 90,
 		el: 12,
-		ab: Math.min(85, deg),
+		ab: Math.min(85, Math.max(0, (bearing * side * 180) / Math.PI)),
 		wr: 36,
 		w,
 	};
@@ -4135,7 +4160,13 @@ export const evalPlayer = (
 	return st;
 };
 
-const playerAt = (tl: CourtTimeline, pid: number, t: number): PlayerState => {
+const playerAt = (
+	tl: CourtTimeline,
+	pid: number,
+	t: number,
+	// Without his arms drawn in off anybody (see tuckAt).
+	bare = false,
+): PlayerState => {
 	const tr = tl.tracks.get(pid);
 	if (!tr) {
 		return {
@@ -4173,6 +4204,8 @@ const playerAt = (tl: CourtTimeline, pid: number, t: number): PlayerState => {
 			: doing;
 	const yaw = spinYawAt(tl, tr, t) ?? yawAt(tl, tr, t);
 	const room = shown ? roomAt(tl, tr, t) : undefined;
+	const armsIn =
+		shown && !bare && TUCKS.has(now.anim) ? tuckAt(tl, tr, t) : undefined;
 	const legs = flippedLegs(
 		tl,
 		tr,
@@ -4229,6 +4262,7 @@ const playerAt = (tl: CourtTimeline, pid: number, t: number): PlayerState => {
 		...(from ? { from } : {}),
 		...(arm ? { arm } : {}),
 		...(room === undefined ? {} : { room }),
+		...(armsIn ? { armsIn } : {}),
 	};
 };
 
@@ -4327,6 +4361,188 @@ const leanRoom = (p: Pose, room: number | undefined): Pose => {
 	const spine = Math.hypot(sk.head.f - sk.pelvis.f, sk.head.u - sk.pelvis.u);
 	const want = Math.asin(clamp01(Math.sin(p.lean * rad) - over / spine)) / rad;
 	return { ...p, lean: Math.max(want, p.lean - LEAN_GIVE, 0) };
+};
+// Only his arms carried as he goes or stands - not a hand put on a man on
+// purpose, nor one up at the ball.
+const TUCKS = new Set<AnimName>([
+	"run",
+	"jog",
+	"sprint",
+	"walk",
+	"shuffle",
+	"slide",
+	"back",
+	"drift",
+	"stance",
+	"stanceHands",
+	"guard",
+	"ready",
+	"easy",
+	"crouch",
+]);
+// HIS HANDS KEPT OUT OF ANOTHER MAN. An arm of his that would be in a man
+// next to him - out wide in his stance, swung as he runs by - is drawn in
+// toward his own chest (TUCK), as far as keeps the hand off him: no nearer
+// the line of the man's back, from his hips to his chest, than ARM_CLEAR
+// (feet), nor his head than his head's size. Worked out every ROOM_STEP,
+// each the mean of it and those either side, and eased between, as his room
+// is (see roomAt): never in a frame.
+const TUCK = { sh: 22, el: 105, ab: 14 };
+const ARM_CLEAR = 0.55;
+// Where a man's body is (his hips, chest and head), every ROOM_STEP, without
+// his arms drawn in (they make no odds to it).
+const bodySteps = new WeakMap<
+	Track,
+	Map<number, { hip: Pt3; chest: Pt3; head: Pt3 }>
+>();
+const bodyAtStep = (tl: CourtTimeline, tr: Track, t: number) => {
+	let steps = bodySteps.get(tr);
+	if (!steps) {
+		steps = new Map();
+		bodySteps.set(tr, steps);
+	}
+	let b = steps.get(t);
+	if (!b) {
+		const st = playerAt(tl, tr.pid, t, true);
+		const sk = skeleton(TYPICAL, poseOf(st));
+		b = {
+			hip: bodyPoint(st, sk.pelvis),
+			chest: bodyPoint(st, sk.chest),
+			head: bodyPoint(st, sk.head),
+		};
+		steps.set(t, b);
+		if (steps.size > 8) {
+			steps.delete(steps.keys().next().value!);
+		}
+	}
+	return b;
+};
+const toSegment = (p: Pt3, a: Pt3, b: Pt3): number => {
+	const ab = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+	const L = ab.x * ab.x + ab.y * ab.y + ab.z * ab.z || 1;
+	const u = clamp01(
+		((p.x - a.x) * ab.x + (p.y - a.y) * ab.y + (p.z - a.z) * ab.z) / L,
+	);
+	return Math.hypot(
+		p.x - a.x - ab.x * u,
+		p.y - a.y - ab.y * u,
+		p.z - a.z - ab.z * u,
+	);
+};
+const tuckedArms = (p: Pose, w: readonly [number, number]): Pose => {
+	if (w[0] <= 0 && w[1] <= 0) {
+		return p;
+	}
+	const mix = (a: number, b: number, k: number) => a + (b - a) * k;
+	return {
+		...p,
+		shN: mix(p.shN, TUCK.sh, w[0]),
+		elN: mix(p.elN, TUCK.el, w[0]),
+		abN: mix(p.abN, TUCK.ab, w[0]),
+		shF: mix(p.shF, TUCK.sh, w[1]),
+		elF: mix(p.elF, TUCK.el, w[1]),
+		abF: mix(p.abF, TUCK.ab, w[1]),
+	};
+};
+const NO_TUCK: readonly [number, number] = [0, 0];
+const tuckNow = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+): readonly [number, number] => {
+	const st = playerAt(tl, tr.pid, t, true);
+	if (
+		!st.shown ||
+		st.holding ||
+		st.grip !== undefined ||
+		st.dribble !== undefined ||
+		st.z > 0 ||
+		!TUCKS.has(st.anim)
+	) {
+		return NO_TUCK;
+	}
+	const near: { hip: Pt3; chest: Pt3; head: Pt3 }[] = [];
+	for (const o of tl.tracks.values()) {
+		if (o === tr) {
+			continue;
+		}
+		const si = lastIndex(o.shown, t, (x) => x[0]);
+		if (si < 0 || !o.shown[si]![1]) {
+			continue;
+		}
+		const p = spotAt(o, t, false);
+		if (Math.hypot(p.x - st.x, p.y - st.y) < 4) {
+			near.push(bodyAtStep(tl, o, t));
+		}
+	}
+	if (near.length === 0) {
+		return NO_TUCK;
+	}
+	const p0 = poseOf(st);
+	const p1 = tuckedArms(p0, [1, 1]);
+	const sk0 = skeleton(TYPICAL, p0);
+	const sk1 = skeleton(TYPICAL, p1);
+	// (How far the hand is into the nearest man's body: its room off the
+	// line of his back past ARM_CLEAR, or off his head past its size - the
+	// less of the two.)
+	const headClear = TYPICAL.headR * 0.95;
+	const clear = (arm: Limb): number => {
+		const tip = arm.tip ?? arm.end;
+		const h = bodyPoint(st, {
+			f: (arm.end.f + tip.f) / 2,
+			s: (arm.end.s + tip.s) / 2,
+			u: (arm.end.u + tip.u) / 2,
+		});
+		return Math.min(
+			...near.map((q) =>
+				Math.min(
+					toSegment(h, q.hip, q.chest) - ARM_CLEAR,
+					Math.hypot(h.x - q.head.x, h.y - q.head.y, h.z - q.head.z) -
+						headClear,
+				),
+			),
+		);
+	};
+	const way = (a0: Limb, a1: Limb) => {
+		const d0 = clear(a0);
+		if (d0 >= 0) {
+			return 0;
+		}
+		const d1 = clear(a1);
+		return d1 > d0 + 0.02 ? clamp01(-d0 / (d1 - d0)) : 1;
+	};
+	return [way(sk0.armR, sk1.armR), way(sk0.armL, sk1.armL)];
+};
+const tuckSteps = new WeakMap<Track, Map<number, readonly [number, number]>>();
+const tuckAt = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+): [number, number] | undefined => {
+	let steps = tuckSteps.get(tr);
+	if (!steps) {
+		steps = new Map();
+		tuckSteps.set(tr, steps);
+	}
+	const at = (g: number) => {
+		let r = steps.get(g);
+		if (r === undefined) {
+			r = tuckNow(tl, tr, g);
+			steps.set(g, r);
+			if (steps.size > 8) {
+				steps.delete(steps.keys().next().value!);
+			}
+		}
+		return r;
+	};
+	const mean = (g: number, i: 0 | 1) =>
+		(at(g - ROOM_STEP)[i] + at(g)[i] + at(g + ROOM_STEP)[i]) / 3;
+	const g = Math.floor(t / ROOM_STEP) * ROOM_STEP;
+	const u = (t - g) / ROOM_STEP;
+	const w = ([0, 1] as const).map(
+		(i) => mean(g, i) + (mean(g + ROOM_STEP, i) - mean(g, i)) * u,
+	) as [number, number];
+	return w[0] > 0.01 || w[1] > 0.01 ? w : undefined;
 };
 
 // WATCHING THE BALL. Off it - running, down in his stance, stood waiting
@@ -5830,7 +6046,10 @@ const slipped = (
 
 // His pose: his move's, eased in from the last one's just after a change -
 // and an arm in whatever it is saying.
-export const poseOf = (st: PlayerState): Pose => leanRoom(poseFor(st), st.room);
+export const poseOf = (st: PlayerState): Pose => {
+	const p = leanRoom(poseFor(st), st.room);
+	return st.armsIn ? tuckedArms(p, st.armsIn) : p;
+};
 const poseFor = (st: PlayerState): Pose => {
 	const own = posed(
 		st.anim,

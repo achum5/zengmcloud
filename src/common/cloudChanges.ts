@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 37,
+		date: "2026-10-30",
+		text: "3D game: a shot blocked by a man trailing the play is now a chase-down - he runs the shooter down and gets a hand on it from behind, instead of turning up in front of him out of nowhere. A travel now shows the player carrying the ball a stride or two too many before the whistle, and the arena has tunnels into the lower bowl. Fixed: a defender's arms reaching into the man he's guarding, a missed layup passing through the net, a defender sliding out of bounds along the baseline, a second crossover snapping the ball up off the floor, and a player's body snapping forward as he takes off.",
+	},
+	{
 		n: 36,
 		date: "2026-10-30",
 		text: "Realistic faces: Black players have black hair now - about a third were getting brown hair and beards, and made-up players who already have it get fixed at the next preseason. Fewer redheads and blonds, no more blush or cheek scribbles, and draft prospects look their draft-day age. Facial hair is different for every player: some already have a goatee or even a beard as rookies, some start late, some stay clean-shaven their whole career, and some shave it off or trim it back partway through. With Face Aging, every season's face is kept (click a player's picture to see them all), the latest one always matches his picture, and a retired player's face never changes again.",

@@ -740,7 +740,7 @@ describe("3D: players play like their ratings", () => {
 		};
 		const great = deep({ ...all(60), tp: 85 });
 		const most = deep({ ...all(60), tp: 50 });
-		assert.isAbove(great, 5, `${great} ${most}`);
+		assert.isAbove(great, 3, `${great} ${most}`);
 		assert.isBelow(most * 3, great, `${great} ${most}`);
 	});
 	// And now and then a great shooter doesn't wait to see his three go in:

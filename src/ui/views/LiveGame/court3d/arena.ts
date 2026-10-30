@@ -234,6 +234,14 @@ export const standsPoint = (x: number, up: number): Pt3 => ({
 // board between the lower and upper deck.
 const ROW_FT = 2.75;
 const RIBBON_ROW = 13;
+// The home fans down low who hold a sign up (the D and the fence): in the
+// first so many rows, so many of them.
+const SIGN_ROWS = 9;
+const SIGN_SHARE = 0.03;
+// A tunnel in under the lower deck: how wide (feet), and the rows it takes
+// up, from the front.
+const TUNNEL_W = 7;
+const TUNNEL_ROWS: [number, number] = [2, 4];
 
 // The ribbon board, along the front of the upper deck.
 export const RIBBON = plane(
@@ -346,6 +354,7 @@ export const paintStands = (
 	// Seats in the team's color, or plain gray ones.
 	const seatColor = seatRng() < 0.55 ? shade(homeC[0]!, -0.28) : "#4b505b";
 	let next = 0;
+	const signs: { x: number; top: number }[] = [];
 	for (let r = 0; r < rows; r++) {
 		// Rows from the front (bottom of the picture) up.
 		const yb = h - r * ROW_FT * px;
@@ -424,6 +433,11 @@ export const paintStands = (
 			ctx.beginPath();
 			ctx.arc(x, headY, 0.36 * px, 0, Math.PI * 2);
 			ctx.fill();
+			// Now and then a home fan down low holds a sign up over his head
+			// (painted once the rows behind him are: see below).
+			if (homeFan && r < SIGN_ROWS && seatRng() < SIGN_SHARE) {
+				signs.push({ x, top: headY - 0.55 * px - (standing ? 0.6 * px : 0) });
+			}
 			if (rng() < 0.05) {
 				// Somebody's on his feet.
 				ctx.fillRect(
@@ -434,11 +448,61 @@ export const paintStands = (
 				);
 			}
 		}
-		// The aisles.
+		// The aisles - a light on each step.
 		ctx.fillStyle = "#2b2e35";
 		for (let xf = A0; xf < A1; xf += aisle) {
 			ctx.fillRect((xf - A0) * px, yb - ROW_FT * px, 2.4 * px, ROW_FT * px);
 		}
+		ctx.fillStyle = "rgba(255,214,140,0.55)";
+		for (let xf = A0; xf < A1; xf += aisle) {
+			ctx.fillRect((xf - A0 + 0.15) * px, yb - 0.35 * px, 0.35 * px, 0.2 * px);
+		}
+	}
+	// The signs held up: the D and the fence, in the home team's color.
+	for (const { x, top } of signs) {
+		const sw = 2.2 * px;
+		const sh = 1.3 * px;
+		const sx = x - sw / 2;
+		const sy = top - sh;
+		ctx.fillStyle = "#f4f4f2";
+		ctx.fillRect(sx, sy, sw, sh);
+		ctx.strokeStyle = "#1b1c20";
+		ctx.lineWidth = Math.max(1, 0.08 * px);
+		ctx.strokeRect(sx, sy, sw, sh);
+		ctx.fillStyle = homeC[0]!;
+		ctx.font = `900 ${Math.round(sh * 0.9)}px sans-serif`;
+		ctx.textBaseline = "middle";
+		ctx.fillText("D", sx + 0.12 * px, sy + sh / 2 + 0.05 * px);
+		ctx.strokeStyle = homeC[0]!;
+		ctx.lineWidth = Math.max(1, 0.12 * px);
+		ctx.beginPath();
+		for (let k = 0; k < 4; k++) {
+			const fx = sx + sw * (0.52 + k * 0.13);
+			ctx.moveTo(fx, sy + sh * 0.18);
+			ctx.lineTo(fx, sy + sh * 0.86);
+		}
+		ctx.moveTo(sx + sw * 0.47, sy + sh * 0.45);
+		ctx.lineTo(sx + sw * 0.93, sy + sh * 0.45);
+		ctx.stroke();
+	}
+	// The tunnels in under the lower deck, at every other aisle: a dark
+	// mouth a few rows up from the front, a rail along its top.
+	for (let k = 1, xf = A0 + aisle; xf < A1 - 4; k++, xf += aisle) {
+		if (k % 2) {
+			continue;
+		}
+		const x = (xf - A0 + 1.2 - TUNNEL_W / 2) * px;
+		const top = h - (TUNNEL_ROWS[1] + 1) * ROW_FT * px;
+		const tall = (TUNNEL_ROWS[1] - TUNNEL_ROWS[0] + 1) * ROW_FT * px;
+		ctx.fillStyle = "#0a0b0e";
+		ctx.fillRect(x, top, TUNNEL_W * px, tall);
+		ctx.fillStyle = "#3a3e47";
+		ctx.fillRect(
+			x - 0.4 * px,
+			top - 0.35 * px,
+			(TUNNEL_W + 0.8) * px,
+			0.35 * px,
+		);
 	}
 	// The light falls on the court: the upper deck fades into the dark.
 	const dark = ctx.createLinearGradient(0, 0, 0, h);
