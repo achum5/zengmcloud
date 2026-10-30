@@ -1,3 +1,4 @@
+import { speedsOf, type FieldRatings } from "./ratings.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import {
 	alignDefense,
@@ -939,6 +940,10 @@ class Director {
 	// toss before overtime's.
 	runOutNext = true;
 	tossNext = false;
+	// Each man's speed against the others at his position, and his ratings,
+	// where the game has them (see ratings.ts).
+	readonly speeds: Map<number, number>;
+	readonly rated = new Map<number, FieldRatings>();
 
 	constructor({ events, players, gid, numPeriods = 4 }: FieldInput) {
 		this.events = events;
@@ -950,6 +955,12 @@ class Director {
 			players.filter((p) => p.team === 0).map((p) => p.pid),
 			players.filter((p) => p.team === 1).map((p) => p.pid),
 		];
+		this.speeds = speedsOf(players);
+		for (const p of players) {
+			if (p.ratings) {
+				this.rated.set(p.pid, p.ratings);
+			}
+		}
 		for (const p of players) {
 			if (p.name !== undefined) {
 				this.byName[p.team].set(p.name, p.pid);
@@ -1401,6 +1412,8 @@ class Director {
 						...(moved ? { firstDown: true } : {}),
 						...(stopped ? { stopped } : {}),
 						...(out ? { out: true } : {}),
+						speeds: this.speeds,
+						rated: this.rated,
 						r: this.rng(i0, "action"),
 					})
 				: undefined;

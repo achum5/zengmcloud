@@ -312,6 +312,7 @@ const Field3D = ({
 						pos: typeof p.pos === "string" ? p.pos : "",
 						name: p.name,
 						jerseyNumber: p.jerseyNumber,
+						...(p.courtRatings ? { ratings: p.courtRatings } : {}),
 					});
 				}
 			}

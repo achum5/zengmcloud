@@ -22,9 +22,37 @@ export const COURT_RATING_KEYS = [
 	"reb",
 ] as const;
 
+// Football's (see field3d/ratings.ts): how fast he is, how strong, how hard
+// to bring down, how sure his hands - by what he does.
+export const FIELD_RATING_KEYS = [
+	"ovr",
+	"hgt",
+	"stre",
+	"spd",
+	"endu",
+	"elu",
+	"bsc",
+	"rtr",
+	"hnd",
+	"thv",
+	"thp",
+	"tha",
+	"rbk",
+	"pbk",
+	"pcv",
+	"tck",
+	"prs",
+	"rns",
+	"kpw",
+	"kac",
+	"ppw",
+	"pac",
+] as const;
+
 export const courtRatingsFor = async (
 	pids: Iterable<number>,
 	season: number,
+	keys: readonly string[] = COURT_RATING_KEYS,
 ): Promise<Record<number, Record<string, number>>> => {
 	const want = [...new Set(pids)].filter((pid) => pid >= 0);
 	const out: Record<number, Record<string, number>> = {};
@@ -38,7 +66,7 @@ export const courtRatingsFor = async (
 			continue;
 		}
 		const row: Record<string, number> = {};
-		for (const k of COURT_RATING_KEYS) {
+		for (const k of keys) {
 			const v = (r as unknown as Record<string, unknown>)[k];
 			if (typeof v === "number" && Number.isFinite(v)) {
 				row[k] = v;

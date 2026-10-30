@@ -24,7 +24,11 @@ import type {
 	Game,
 } from "../../common/types.ts";
 import { defineView } from "../util/defineView.ts";
-import { courtRatingsFor } from "../util/courtRatings.ts";
+import {
+	COURT_RATING_KEYS,
+	courtRatingsFor,
+	FIELD_RATING_KEYS,
+} from "../util/courtRatings.ts";
 import { STARTING_NUM_TIMEOUTS } from "../../common/constants.ts";
 import { formatClock } from "../../common/formatClock.ts";
 import { getPeriodName } from "../../common/getPeriodName.ts";
@@ -145,17 +149,15 @@ export const boxScoreToLiveSim = async ({
 
 	const initialBoxScore: any = boxScore;
 
-	if (__SPORT === "basketball") {
-		resetStatsTeam.push("ba");
-
-		initialBoxScore.elam = allStars ? g.get("elamASG") : g.get("elam");
-		// Each man's ratings, for the 3D game to play him by.
+	// Each man's ratings, for the 3D game to play him by.
+	if (__SPORT === "basketball" || __SPORT === "football") {
 		try {
 			const rated = await courtRatingsFor(
 				initialBoxScore.teams.flatMap((t: any) =>
 					(t.players ?? []).map((p: any) => p.pid),
 				),
 				initialBoxScore.season ?? g.get("season"),
+				__SPORT === "football" ? FIELD_RATING_KEYS : COURT_RATING_KEYS,
 			);
 			for (const t of initialBoxScore.teams) {
 				for (const p of t.players ?? []) {
@@ -168,6 +170,12 @@ export const boxScoreToLiveSim = async ({
 			// Cosmetic: without them, everybody plays the way he always did.
 			console.error("Failed to load court ratings", error);
 		}
+	}
+
+	if (__SPORT === "basketball") {
+		resetStatsTeam.push("ba");
+
+		initialBoxScore.elam = allStars ? g.get("elamASG") : g.get("elam");
 		initialBoxScore.elamOvertime = g.get("elamOvertime");
 		// When a team is in the bonus, for the 3D score bug.
 		initialBoxScore.foulsUntilBonus = g.get("foulsUntilBonus");

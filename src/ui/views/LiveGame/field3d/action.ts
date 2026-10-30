@@ -1,3 +1,4 @@
+import { elusiveness, type FieldRatings } from "./ratings.ts";
 import type {
 	BallHold,
 	BallSeg,
@@ -82,6 +83,10 @@ export type ActInput = {
 	stopped?: "third" | "fourth";
 	// The man with it got out of bounds (see the director).
 	out?: boolean;
+	// Each man's speed against the others at his position, and his ratings,
+	// where the game has them (see ratings.ts).
+	speeds?: Map<number, number>;
+	rated?: Map<number, FieldRatings>;
 	r: () => number;
 };
 
@@ -581,6 +586,8 @@ const closest = (men: Actor[], p: Pt, t?: number): Actor | undefined => {
 class Actor {
 	readonly part: Part;
 	readonly top: number;
+	// His ratings, where the game has them (see ratings.ts).
+	readonly rated: FieldRatings | undefined;
 	// The way he faces at the end of what he has been given so far.
 	yaw: number;
 	// How far past a sideline he may go: out of bounds.
@@ -590,9 +597,10 @@ class Actor {
 	// bendInto).
 	pinned = -Infinity;
 
-	constructor(part: Part) {
+	constructor(part: Part, speed = 1, rated?: FieldRatings) {
 		this.part = part;
-		this.top = topOf(part.role);
+		this.top = topOf(part.role) * speed;
+		this.rated = rated;
 		let yaw = part.legs[0]?.yaw ?? 0;
 		for (const l of part.legs) {
 			yaw = yawOf(l, yaw);
@@ -2856,6 +2864,17 @@ const SPIN = 0.22;
 const SPIN_MS = 480;
 const SPIN_ON = 2.5;
 const SPIN_OVER = 2.5;
+// By his ratings (see ratings.ts), where the game has them: as often as
+// this times as everybody else to make a man miss, the least elusive, and
+// this much more often the most - and over or round a man that much more,
+// from this times as often.
+const EVADE_LEAST = 0.4;
+const EVADE_MORE = 1.2;
+const FANCY_LEAST = 0.5;
+const evasive = (m: Actor) => {
+	const lvl = elusiveness(m.rated);
+	return lvl === undefined ? 1 : EVADE_LEAST + EVADE_MORE * lvl;
+};
 // How much later than he would have been a carrier can be brought down, his
 // run slowed, for the man the sim says made the tackle to get there.
 const SLACK_MS = 700;
@@ -3136,7 +3155,9 @@ class Action {
 	constructor(input: ActInput) {
 		this.input = input;
 		this.r = input.r;
-		this.men = input.parts.map((p) => new Actor(p));
+		this.men = input.parts.map(
+			(p) => new Actor(p, input.speeds?.get(p.pid), input.rated?.get(p.pid)),
+		);
 		this.o = this.men.filter((m) => m.team === input.offense);
 		this.d = this.men.filter((m) => m.team !== input.offense);
 		const { dir, ballY, losX } = input;
@@ -5201,7 +5222,7 @@ class Action {
 			moveKind(l.move) !== "cycle" ||
 			dist(l.from, l.to) < EVADE_FAR ||
 			ms < EVADE_MS ||
-			r() > EVADE
+			r() > EVADE * evasive(carrier)
 		) {
 			return t;
 		}
@@ -5284,10 +5305,16 @@ class Action {
 				const fps = far / Math.max(0.001, (at - carrier.t) / 1000);
 				carrier.go(to, at, GAITS.has(move) ? gait(fps) : move);
 			};
-			const u = how === "spin" ? HURDLE : how === "juke" ? 1 : r();
+			// (The slipperier he is, the more he goes over a man or round
+			// him rather than only cutting away.)
+			const lvl = elusiveness(carrier.rated);
+			const fancy = lvl === undefined ? 1 : FANCY_LEAST + lvl;
+			const hurdle = HURDLE * fancy;
+			const spin = SPIN * fancy;
+			const u = how === "spin" ? hurdle : how === "juke" ? 1 : r();
 			const half = HURDLE_MS / 2;
 			if (
-				u < HURDLE &&
+				u < hurdle &&
 				Math.cos(toHim - ang) > HURDLE_AHEAD &&
 				tc - half > l.t0 &&
 				tc + half < t1
@@ -5310,7 +5337,7 @@ class Action {
 				this.done.add(m.pid);
 				return t + carrier.t - t1;
 			}
-			if (u < HURDLE + SPIN) {
+			if (u < hurdle + spin) {
 				// Got a hand on him: round on a planted foot, out of it, and on.
 				const off = beside(
 					beside(at, ang, SPIN_ON),

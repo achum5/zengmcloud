@@ -1,3 +1,4 @@
+import type { FieldRatings } from "./ratings.ts";
 import type { Side } from "./geometry.ts";
 
 // WHO IS ON THE FIELD FOR A SNAP. The sim picks its eleven off each depth
@@ -27,7 +28,14 @@ export const GROUPS = [
 export type Group = (typeof GROUPS)[number];
 export type DepthChart = Partial<Record<Group, number[]>>;
 
-export type RosterMan = { pid: number; team: Side; pos: string; name?: string };
+export type RosterMan = {
+	pid: number;
+	team: Side;
+	pos: string;
+	name?: string;
+	// His ratings, where the game has them (see ratings.ts).
+	ratings?: FieldRatings;
+};
 
 const isGroup = (s: unknown): s is Group =>
 	typeof s === "string" && (GROUPS as readonly string[]).includes(s);
