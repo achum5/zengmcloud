@@ -14,7 +14,7 @@ import {
 	reSignChance,
 	reSigningWith,
 } from "./freeAgency.ts";
-import { realisticFrontOfficesOn } from "./isOn.ts";
+import { realisticFreeAgencyOn } from "./isOn.ts";
 import { askFor, offerYears, wantedYears } from "./offers.ts";
 
 // WHAT A HUMAN TEAM SEES OF THE OFFER MARKET (owner's calls: no instant
@@ -40,7 +40,7 @@ export const unsignedDraftPick = (
 // No instant signing: a contract is offered, and he decides. Unsigned draft
 // picks sign as in stock.
 export const instantSigningRefusal = async (pid: number) => {
-	if (!realisticFrontOfficesOn()) {
+	if (!realisticFreeAgencyOn()) {
 		return undefined;
 	}
 	const p = await idb.cache.players.get(pid);

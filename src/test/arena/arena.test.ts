@@ -106,7 +106,11 @@ test.runIf(env.ARENA_RUN === "1")(
 			}
 			const firstSeason = g.get("season");
 			if (env.ARENA_FO === "1") {
-				await league.setGameAttributes({ realisticFrontOffices: true });
+				await league.setGameAttributes({
+					realisticFrontOffices: true,
+					// ARENA_STOCK_FA=1: free agency and re-signing by stock's rules.
+					realisticFreeAgency: env.ARENA_STOCK_FA !== "1",
+				});
 				// ARENA_NO_WAIT=1: deals are made as soon as they are found.
 				marketSettings.valueWaiting = env.ARENA_NO_WAIT !== "1";
 				// ARENA_MARKET='{"oneSided":false}': any other market setting.

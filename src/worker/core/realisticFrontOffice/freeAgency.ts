@@ -88,7 +88,7 @@ export type FreeAgencyDayLog = {
 
 export const freeAgencyWatchers: ((day: FreeAgencyDayLog) => void)[] = [];
 
-const without = (
+export const without = (
 	outlook: LeagueOutlook,
 	t: TeamState,
 	pid: number,
@@ -376,7 +376,11 @@ const bestBid = (
 	return best;
 };
 
-const sign = async (p: Player, tid: number, contract: PlayerContract) => {
+export const sign = async (
+	p: Player,
+	tid: number,
+	contract: PlayerContract,
+) => {
 	// Him as he was before signing, so reverting the signing hands back the
 	// free agent he was.
 	const before = revertBefore(p);
@@ -583,56 +587,75 @@ const lineCache: { outlook?: LeagueOutlook; lines: Map<string, Line> } = {
 
 let poolAtOpen: { lid: number; season: number; quality: number } | undefined;
 
-// A day of free agency, or of the season.
-export const freeAgencyDay = async () => {
+// During free agency, the quality left in the pool against the quality as it
+// opened - players above the minimum's level, by how far - for what cap room
+// buys (payroll.ts); -1 otherwise.
+export const notePoolLeft = (pool: readonly Player[]) => {
+	if (g.get("phase") !== PHASE.FREE_AGENCY) {
+		return -1;
+	}
+	const quality = pool.reduce(
+		(a, p) => a + Math.max(0, p.valueNoPot - REPLACEMENT_OVR),
+		0,
+	);
+	if (
+		poolAtOpen?.season !== g.get("season") ||
+		poolAtOpen.lid !== g.get("lid")
+	) {
+		poolAtOpen = { lid: g.get("lid"), season: g.get("season"), quality };
+	}
+	const poolLeft =
+		poolAtOpen.quality > 0 ? Math.min(1, quality / poolAtOpen.quality) : 0;
+	setFreeAgentPoolLeft(poolLeft);
+	return poolLeft;
+};
+
+// Free agents' asks, moved toward the market's (the best of the pool, sorted
+// best first; see below) - and what the day's offers are made with. `once`:
+// all the way there at once, as re-signing opens by stock's rules, for
+// players whose contracts are up (priced as free agents, though his own team
+// may go over the cap for him). `bidOf`: what a team after him would bid, as
+// an ask for the length he wants, given the most it would pay (stock's rules:
+// stockRules.ts) - by default, as an offer from a team he feels nothing about.
+export const priceMarket = async (
+	pool: readonly Player[],
+	teams: readonly Team[],
+	{
+		once = false,
+		numCandidates = CANDIDATES,
+		bidOf,
+	}: {
+		once?: boolean;
+		numCandidates?: number;
+		bidOf?: (
+			p: Player,
+			tid: number,
+			most: number,
+		) => Promise<number | undefined>;
+	} = {},
+) => {
 	const phase = g.get("phase");
 	const inSeason =
 		phase === PHASE.REGULAR_SEASON || phase === PHASE.AFTER_TRADE_DEADLINE;
 	const minContract = g.get("minContract");
 	const maxContract = g.get("maxContract");
-	const pool = (
-		await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
-	).sort((a, b) => b.valueNoPot - a.valueNoPot || a.pid - b.pid);
-	const teams = (await idb.cache.teams.getAll()).filter((t) => !t.disabled);
-	const poolPids = new Set(pool.map((p) => p.pid));
-	// Offers for players no longer free agents are gone.
-	for (const t of teams) {
-		if (t.offerBoard?.some((x) => !poolPids.has(x.pid))) {
-			t.offerBoard = t.offerBoard.filter((x) => poolPids.has(x.pid));
-			await idb.cache.teams.put(t);
-		}
-	}
-	if (pool.length === 0) {
-		return;
-	}
-
-	let poolLeft = -1;
-	if (phase === PHASE.FREE_AGENCY) {
-		// The quality left in the pool, against the quality as free agency
-		// opened: players above the minimum's level, by how far.
-		const quality = pool.reduce(
-			(a, p) => a + Math.max(0, p.valueNoPot - REPLACEMENT_OVR),
-			0,
-		);
-		if (
-			poolAtOpen?.season !== g.get("season") ||
-			poolAtOpen.lid !== g.get("lid")
-		) {
-			poolAtOpen = { lid: g.get("lid"), season: g.get("season"), quality };
-		}
-		poolLeft =
-			poolAtOpen.quality > 0 ? Math.min(1, quality / poolAtOpen.quality) : 0;
-		setFreeAgentPoolLeft(poolLeft);
-	}
+	const poolLeft = notePoolLeft(pool);
 	const outlook = await currentOutlook();
 	const cpu = new Set(await aiTids());
 	const rankOf = await leagueRanks();
-	let rosters = await rostersByTid();
+	const rosters = await rostersByTid();
 	const states = new Map<number, TeamState>();
 	for (const t of teams) {
-		states.set(t.tid, await loadTeam(outlook, t.tid));
+		let state = await loadTeam(outlook, t.tid);
+		// Players under contract priced as free agents, as re-signing opens.
+		for (const p of pool) {
+			if (p.tid === t.tid) {
+				state = without(outlook, state, p.pid);
+			}
+		}
+		states.set(t.tid, state);
 	}
-	const candidates = pool.slice(0, CANDIDATES);
+	const candidates = pool.slice(0, numCandidates);
 	for (const t of teams) {
 		await ensureRetention(outlook, candidates, t.tid);
 	}
@@ -692,11 +715,20 @@ export const freeAgencyDay = async () => {
 	// what the cap rules let it pay. With one team after him, halfway between
 	// the minimum and its most; with none, down - toward the most any team
 	// would pay, or the minimum - by enough that someone will be.
+	const allowedOwn = new Map(
+		once
+			? signing.map((t) => [t.tid, mostAllowed(states.get(t.tid)!, true)])
+			: [],
+	);
 	const worth = new Map<number, Map<number, number>>();
 	for (const p of candidates) {
 		const byTeam = new Map<number, number>();
 		for (const t of signing) {
-			const cap = Math.min(maxContract, allowed.get(t.tid) ?? -Infinity);
+			const cap = Math.min(
+				maxContract,
+				(once && p.tid === t.tid ? allowedOwn : allowed).get(t.tid) ??
+					-Infinity,
+			);
 			if (!(cap >= minContract)) {
 				continue;
 			}
@@ -730,7 +762,12 @@ export const freeAgencyDay = async () => {
 				}
 				most = line === undefined ? undefined : Math.min(line, cap);
 			}
-			if (most !== undefined && most >= minContract) {
+			if (most !== undefined && most >= minContract && bidOf) {
+				const bid = await bidOf(p, t.tid, most);
+				if (bid !== undefined) {
+					byTeam.set(t.tid, bid);
+				}
+			} else if (most !== undefined && most >= minContract) {
 				const appeal = await appealFor(p, t.tid, rankOf(p), rosters);
 				byTeam.set(t.tid, most * Math.exp(offerSettings.moodWeight * appeal));
 			}
@@ -764,11 +801,11 @@ export const freeAgencyDay = async () => {
 				? bids[1]!
 				: bids.length === 1
 					? (minContract + bids[0]!) / 2
-					: Math.min(p.contract.amount * NOBODY_AFTER, anyone);
+					: Math.min(p.contract.amount * (once ? 1 : NOBODY_AFTER), anyone);
 		const from = p.contract.amount;
 		const to = helpers.bound(
 			helpers.roundContract(
-				from + freeAgencySettings.priceSpeed * (market - from),
+				from + (once ? 1 : freeAgencySettings.priceSpeed) * (market - from),
 			),
 			minContract,
 			maxContract,
@@ -779,6 +816,51 @@ export const freeAgencyDay = async () => {
 		}
 		priced.push({ pid: p.pid, from, to, teams: bids.length });
 	}
+	return {
+		outlook,
+		cpu,
+		rankOf,
+		rosters,
+		states,
+		candidates,
+		allowed,
+		lineOf,
+		priced,
+	};
+};
+
+// A day of free agency, or of the season.
+export const freeAgencyDay = async () => {
+	const phase = g.get("phase");
+	const inSeason =
+		phase === PHASE.REGULAR_SEASON || phase === PHASE.AFTER_TRADE_DEADLINE;
+	const pool = (
+		await idb.cache.players.indexGetAll("playersByTid", PLAYER.FREE_AGENT)
+	).sort((a, b) => b.valueNoPot - a.valueNoPot || a.pid - b.pid);
+	const teams = (await idb.cache.teams.getAll()).filter((t) => !t.disabled);
+	const poolPids = new Set(pool.map((p) => p.pid));
+	// Offers for players no longer free agents are gone.
+	for (const t of teams) {
+		if (t.offerBoard?.some((x) => !poolPids.has(x.pid))) {
+			t.offerBoard = t.offerBoard.filter((x) => poolPids.has(x.pid));
+			await idb.cache.teams.put(t);
+		}
+	}
+	if (pool.length === 0) {
+		return;
+	}
+
+	const {
+		cpu,
+		rankOf,
+		rosters: rostersAtOpen,
+		states,
+		candidates,
+		allowed,
+		lineOf,
+		priced,
+	} = await priceMarket(pool, teams);
+	let rosters = rostersAtOpen;
 
 	// Every offer standing, by player: humans' and yesterday's CPU teams'.
 	const standing = new Map<number, Offer[]>();

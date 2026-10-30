@@ -32,7 +32,7 @@ import {
 import {
 	formatChance,
 	formatOfferAmount,
-	useRealisticFrontOffices,
+	useRealisticFreeAgency,
 } from "../components/OfferEditor.tsx";
 
 const useSeasonsFreeAgents = () => {
@@ -519,7 +519,7 @@ const FreeAgents = ({
 
 	const negotiationModal = useNegotiaionModal();
 
-	const realistic = useRealisticFrontOffices();
+	const realistic = useRealisticFreeAgency();
 	const offerRanks = new Map(
 		(offers?.list ?? []).map((row, i) => [row.pid, i + 1]),
 	);

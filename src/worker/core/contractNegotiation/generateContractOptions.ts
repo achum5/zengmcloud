@@ -5,11 +5,10 @@ import g from "../../util/g.ts";
 import helpers from "../../util/helpers.ts";
 import accept from "./accept.ts";
 
-export const generateContractOptions = async (
-	negotiation: Negotiation,
-	contract: PlayerContract,
-	ovr: number,
-) => {
+// What he asks for each length, from what he asks for the length he wants
+// (amounts in millions) - also how a realistic front office prices a signing
+// under stock's rules.
+export const contractOptionsFor = (contract: PlayerContract, ovr: number) => {
 	let growthFactor = 0.15;
 
 	// Modulate contract amounts based on last digit of ovr (add some deterministic noise)
@@ -78,6 +77,16 @@ export const generateContractOptions = async (
 
 		return contractOption.amount * 1000 <= g.get("maxContract");
 	});
+
+	return possible;
+};
+
+export const generateContractOptions = async (
+	negotiation: Negotiation,
+	contract: PlayerContract,
+	ovr: number,
+) => {
+	const possible = contractOptionsFor(contract, ovr);
 
 	for (const row of possible) {
 		const disabledReason = await accept({

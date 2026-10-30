@@ -2004,6 +2004,12 @@ export const settings: Setting[] = (
 							{ key: "insane", value: "Insane" },
 						],
 					} as const,
+					{
+						category: "Game Modes",
+						key: "realisticFreeAgency",
+						name: "Realistic Free Agency",
+						type: "bool",
+					} as const,
 				]
 			: []),
 		{

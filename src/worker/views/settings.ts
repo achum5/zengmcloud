@@ -213,6 +213,7 @@ type Key =
 	| "easterEggPlayers"
 	| "realisticFrontOffices"
 	| "realisticFrontOfficesDifficulty"
+	| "realisticFreeAgency"
 	| "fakeAgeProb";
 
 export type Settings = Pick<
@@ -462,6 +463,7 @@ export const getInitialSettings = (): Settings => {
 		easterEggPlayers: g.get("easterEggPlayers"),
 		realisticFrontOffices: g.get("realisticFrontOffices"),
 		realisticFrontOfficesDifficulty: g.get("realisticFrontOfficesDifficulty"),
+		realisticFreeAgency: g.get("realisticFreeAgency"),
 		fakeAgeProb: g.get("fakeAgeProb"),
 
 		// Might as well be undefined, because it will never be saved from this form, only the new league form

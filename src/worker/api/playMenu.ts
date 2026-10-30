@@ -14,7 +14,7 @@ import {
 import { runDraft } from "./actions.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { cleanupAutoPlay } from "../core/league/autoPlay.ts";
-import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
+import { realisticFreeAgencyOn } from "../core/realisticFrontOffice/isOn.ts";
 
 const getNumDaysThisRound = (playoffSeries: PlayoffSeries) => {
 	let numDaysThisRound = 0;
@@ -274,7 +274,7 @@ const playMenu = {
 
 			let proceed = true;
 
-			if (numRemaining > 0 && realisticFrontOfficesOn()) {
+			if (numRemaining > 0 && realisticFreeAgencyOn()) {
 				// Realistic front offices: standing re-signing offers are decided as
 				// free agency opens.
 				const t = await idb.cache.teams.get(g.get("userTid"));

@@ -5,7 +5,7 @@ import { collegeOpenPortal } from "../college/portal.ts";
 import { idb } from "../../db/index.ts";
 import { PLAYER } from "../../../common/constants.ts";
 import { getNumPlayersTradedAwayNormalizedAll } from "../player/getNumPlayersTradedAwayNormalized.ts";
-import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import { realisticFreeAgencyOn } from "../realisticFrontOffice/isOn.ts";
 import { decideReSignings as realisticFrontOfficeDecideReSignings } from "../realisticFrontOffice/freeAgency.ts";
 
 const newPhaseFreeAgency = async (
@@ -16,7 +16,7 @@ const newPhaseFreeAgency = async (
 
 	// Realistic front offices: human teams' re-signing offers not yet decided
 	// are decided now.
-	if (realisticFrontOfficesOn()) {
+	if (realisticFreeAgencyOn()) {
 		for (const tid of g.get("userTids")) {
 			await realisticFrontOfficeDecideReSignings(tid);
 		}

@@ -472,6 +472,44 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   unchanged. CPU teams are subject to it and account for it. The hope is that the
   league can drop it once CPU teams are hard to fleece.
 
+## Realistic Free Agency (sub-setting)
+
+On by default with the mode (owner's call): re-signing and free agency as
+below, the offer market. Off, they are stock's (owner's call), so a league
+can keep the mode's front offices with the free agency it knows:
+
+- **Humans** negotiate and re-sign exactly as in stock - the negotiation
+  screen, asking prices by length, instant signing when a player is willing.
+- **Every team on the same terms** (owner's call): a player's mood and
+  willingness are stock's, but no team is helped or hurt - stock's
+  difficulty does nothing, and CPU teams' players test free agency no more
+  than a human team's do in stock (the offer market's extra testing, tuned
+  for its odds, would leave almost nobody willing to re-sign under stock's).
+- **CPU teams choose by the mode's valuation** (owner's call): each day, at
+  stock's pace (a team skips a day three times in four, nine in ten if
+  rebuilding), a CPU team signs the free agent willing to sign with it who
+  is worth the most to it, taking whichever of his asks by length it values
+  most, if any is worth more than its margin of error and the cap rules allow
+  it - so it pays what he would ask a human team. Once games are played, a
+  full roster signs only by releasing whoever it can best do without. While
+  re-signing, it keeps a player who is willing if one of his asks is worth
+  it; draft picks sign as in stock. It forecasts its players' staying by
+  their chance of being willing.
+- **What he asks is the market's** (owner's call). Stock prices players as
+  if CPU teams spent all their room on whoever is best, and lowers an ask
+  only about $2M over all of free agency; smart CPU teams would not pay
+  that - in two arena seasons half the top-10 free agents went unsigned all
+  summer, good young players willing to re-sign among them. So his ask (for
+  a team he feels nothing about; stock's mood adds to it for others) is the
+  offer market's price, on stock's terms: about the second-highest that any
+  CPU team after him - one he is willing to sign with, that the cap rules
+  let pay it - would pay, with his mood toward it added. It moves halfway
+  there each day of free agency (for the twenty best), and all the way at
+  once for every player whose contract is up as re-signing opens, priced as
+  a free agent (his own team may go over the cap for him).
+- Code: realisticFrontOffice/stockRules.ts; isOn.ts (realisticFreeAgencyOn)
+  switches every offer-market path.
+
 ## Re-signing
 
 - **Every team on the same terms** (owner's call, provisional): a player

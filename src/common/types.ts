@@ -954,6 +954,8 @@ export type GameAttributesLeague = {
 	// Its own difficulty, unrelated to stock's (owner's call): how sure a CPU
 	// team must be of gaining before it trades with a human.
 	realisticFrontOfficesDifficulty: "easy" | "realistic" | "hard" | "insane";
+	// Its free agency and re-signing: the offer market, or stock's.
+	realisticFreeAgency: boolean;
 	allStarGame: number | null;
 	allStarNum: number;
 	allStarType: "draft" | "byConf" | "top";

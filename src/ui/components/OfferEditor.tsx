@@ -11,9 +11,16 @@ import { toWorker } from "../util/toWorker.ts";
 // and the player chooses among his offers (or tests the market, while
 // re-signing) with odds.
 
-export const useRealisticFrontOffices = () => {
-	const { realisticFrontOffices } = useLocal(["realisticFrontOffices"]);
-	return __SPORT === "basketball" && !!realisticFrontOffices;
+export const useRealisticFreeAgency = () => {
+	const { realisticFrontOffices, realisticFreeAgency } = useLocal([
+		"realisticFrontOffices",
+		"realisticFreeAgency",
+	]);
+	return (
+		__SPORT === "basketball" &&
+		!!realisticFrontOffices &&
+		realisticFreeAgency !== false
+	);
 };
 
 export type OfferProps = NonNullable<

@@ -34,6 +34,7 @@ export const gameAttributesSyncedToUi = [
 	"phase",
 	"quarterLength",
 	"realisticFrontOffices",
+	"realisticFreeAgency",
 	"rotationPlans",
 	"salaryCap",
 	"salaryCapType",

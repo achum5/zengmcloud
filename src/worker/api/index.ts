@@ -329,7 +329,10 @@ import { getAdjustedTicketPrice } from "../../common/getAdjustedTicketPrice.ts";
 import { gameAttributesArrayToObject } from "../../common/gameAttributesArrayToObject.ts";
 import { bySport } from "../../common/sportFunctions.ts";
 import { generateContractOptions } from "../core/contractNegotiation/generateContractOptions.ts";
-import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
+import {
+	realisticFreeAgencyOn,
+	realisticFrontOfficesOn,
+} from "../core/realisticFrontOffice/isOn.ts";
 import { afterPick as realisticFrontOfficeAfterPick } from "../core/realisticFrontOffice/draft.ts";
 import { tradingBlockTeams } from "../core/realisticFrontOffice/proposals.ts";
 import {
@@ -662,7 +665,7 @@ const cancelContractNegotiation = async (pid: number) => {
 
 	// Realistic front offices: a re-signing offer to a player let go would
 	// otherwise stand as a free agency offer.
-	if (realisticFrontOfficesOn()) {
+	if (realisticFreeAgencyOn()) {
 		const t = await idb.cache.teams.get(tid);
 		if (t?.offerBoard?.some((offer) => offer.pid === pid)) {
 			await realisticFrontOfficeWithdrawOffer(tid, pid);
@@ -2704,7 +2707,7 @@ const getOfferChance = async ({
 	amount: number;
 	exp: number;
 }) => {
-	if (!realisticFrontOfficesOn()) {
+	if (!realisticFreeAgencyOn()) {
 		return undefined;
 	}
 	return realisticFrontOfficeChanceOfOffer(g.get("userTid"), {
@@ -2725,7 +2728,7 @@ const makeFreeAgentOffer = async ({
 	amount: number;
 	exp: number;
 }) => {
-	if (!realisticFrontOfficesOn()) {
+	if (!realisticFreeAgencyOn()) {
 		return "Not available in this league.";
 	}
 	if (lock.get("gameSim")) {
@@ -2743,7 +2746,7 @@ const makeFreeAgentOffer = async ({
 };
 
 const withdrawFreeAgentOffer = async (pid: number) => {
-	if (!realisticFrontOfficesOn() || lock.get("gameSim")) {
+	if (!realisticFreeAgencyOn() || lock.get("gameSim")) {
 		return;
 	}
 	await realisticFrontOfficeWithdrawOffer(g.get("userTid"), pid);
@@ -2753,7 +2756,7 @@ const withdrawFreeAgentOffer = async (pid: number) => {
 // The user's offers in priority order: if two of them are accepted the same
 // day and both don't fit, the higher one signs.
 const rankFreeAgentOffers = async (pids: number[]) => {
-	if (!realisticFrontOfficesOn() || lock.get("gameSim")) {
+	if (!realisticFreeAgencyOn() || lock.get("gameSim")) {
 		return;
 	}
 	await realisticFrontOfficeRankOffers(g.get("userTid"), pids);
@@ -2763,7 +2766,7 @@ const rankFreeAgentOffers = async (pids: number[]) => {
 // Decide all of the user's re-signing offers now. Each player's roll is fixed
 // for the season, so deciding again changes nothing.
 const decideReSigningOffers = async () => {
-	if (!realisticFrontOfficesOn()) {
+	if (!realisticFreeAgencyOn()) {
 		return [];
 	}
 	if (lock.get("gameSim")) {
@@ -2782,7 +2785,7 @@ const decideReSigningOffers = async () => {
 const getNegotiationProps = async (pid: number) => {
 	const userTid = g.get("userTid");
 
-	if (realisticFrontOfficesOn()) {
+	if (realisticFreeAgencyOn()) {
 		const p = await idb.cache.players.get(pid);
 		if (!p || !unsignedDraftPick(p, await idb.cache.negotiations.get(pid))) {
 			return getOfferProps(pid);

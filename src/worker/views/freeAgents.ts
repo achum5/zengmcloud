@@ -12,7 +12,7 @@ import { bySport } from "../../common/sportFunctions.ts";
 import type { RouteParams } from "../../ui/router/types.ts";
 import { helpers } from "../util/index.ts";
 import { validateSeason } from "../util/processInputs.ts";
-import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
+import { realisticFreeAgencyOn } from "../core/realisticFrontOffice/isOn.ts";
 import {
 	lastChoices,
 	offersList,
@@ -259,7 +259,7 @@ export default defineView({
 
 			// Realistic front offices: what he asks is the same for every team -
 			// how he feels about a team is in its odds.
-			const realistic = realisticFrontOfficesOn();
+			const realistic = realisticFreeAgencyOn();
 
 			// Apply contract
 			for (const p of players) {

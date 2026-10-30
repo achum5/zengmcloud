@@ -16,11 +16,18 @@ import { getNumPlayersTradedAwayNormalizedAll } from "../player/getNumPlayersTra
 import { bySport } from "../../../common/sportFunctions.ts";
 import { ValueChangeCalculator } from "../team/ValueChangeCalculator.ts";
 import { getHardCap } from "../../util/getHardCap.ts";
-import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import {
+	realisticFreeAgencyOn,
+	realisticFrontOfficesOn,
+} from "../realisticFrontOffice/isOn.ts";
 import {
 	defaultReSignOffer as realisticFrontOfficeDefaultReSignOffer,
 	reSignDecision as realisticFrontOfficeReSignDecision,
 } from "../realisticFrontOffice/freeAgency.ts";
+import {
+	marketAsks as realisticFrontOfficeMarketAsks,
+	reSignAsk as realisticFrontOfficeReSignAsk,
+} from "../realisticFrontOffice/stockRules.ts";
 
 export const FREE_AGENCY_DAYS = 30;
 // College: four weeks of offseason recruiting, then signing day.
@@ -172,6 +179,11 @@ const newPhaseResignPlayers = async (
 		type: "includeExpiringContracts",
 	});
 
+	// Realistic front offices by stock's rules: what the market would pay them.
+	if (realisticFrontOfficesOn() && !realisticFreeAgencyOn()) {
+		await realisticFrontOfficeMarketAsks(expiringPids);
+	}
+
 	await contractNegotiation.cancelAll();
 
 	const valueChangeCalculator = new ValueChangeCalculator();
@@ -225,7 +237,7 @@ const newPhaseResignPlayers = async (
 			} else {
 				await idb.cache.negotiations.add(info);
 				// Draft picks sign as in stock, as CPU teams' do.
-				if (realisticFrontOfficesOn() && !draftPick) {
+				if (realisticFreeAgencyOn() && !draftPick) {
 					await realisticFrontOfficeDefaultReSignOffer(tid, p);
 				}
 			}
@@ -293,11 +305,17 @@ const newPhaseResignPlayers = async (
 				if (realisticFrontOfficesOn() && !draftPick) {
 					// Realistic front offices offer what their own valuation finds
 					// best, and he takes it or tests the market, with odds - in
-					// place of his willingness.
-					const offer = await realisticFrontOfficeReSignDecision(
-						p,
-						payroll ?? 0,
-					);
+					// place of his willingness. By stock's rules, if he is willing,
+					// they take whichever of his asks they value most, if any.
+					const offer = realisticFreeAgencyOn()
+						? await realisticFrontOfficeReSignDecision(p, payroll ?? 0)
+						: mood.willing
+							? await realisticFrontOfficeReSignAsk(
+									p,
+									payroll ?? 0,
+									mood.contractAmount,
+								)
+							: undefined;
 					if (offer) {
 						await player.sign(p, p.tid, offer, PHASE.RESIGN_PLAYERS);
 						if (payroll !== undefined) {

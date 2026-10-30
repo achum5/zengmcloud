@@ -29,7 +29,7 @@ import {
 	amountForYears,
 	formatChance,
 	formatOfferAmount,
-	useRealisticFrontOffices,
+	useRealisticFreeAgency,
 } from "../components/OfferEditor.tsx";
 
 const showReleaseUndo = ({
@@ -336,7 +336,7 @@ const NegotiationList = ({
 
 	// Realistic front offices: each player has an offer and his chance of
 	// taking it, instead of contracts to sign.
-	const realistic = useRealisticFrontOffices();
+	const realistic = useRealisticFreeAgency();
 	const { change, drop, edits } = useReSignEdits(players);
 	const [decided, setDecided] =
 		useState<

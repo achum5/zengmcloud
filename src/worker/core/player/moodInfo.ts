@@ -8,6 +8,7 @@ import { last } from "../../../common/utils.ts";
 import { uniformSeed } from "../../../common/random.ts";
 import {
 	MARKET_TESTING,
+	realisticFreeAgencyOn,
 	realisticFrontOfficesOn,
 } from "../realisticFrontOffice/isOn.ts";
 
@@ -94,11 +95,12 @@ const moodInfo = async (
 	const thisIsAUserTeam = g.get("userTids").includes(tid);
 
 	// More AI players testing free agency. Not with realistic front offices,
-	// where players judge every team on the same terms - and every team's
-	// players test the market the same amount when their contracts run out,
-	// except those finishing rookie deals, who mostly stay (as with the NBA's
-	// restricted free agency).
-	if (realisticFrontOfficesOn()) {
+	// where players judge every team on the same terms - in the offer market,
+	// every team's players test the market the same amount when their
+	// contracts run out, except those finishing rookie deals, who mostly stay
+	// (as with the NBA's restricted free agency); by stock's rules, none test
+	// it more than a human team's would in stock.
+	if (realisticFreeAgencyOn()) {
 		if (
 			components.rookieContract <= 0 &&
 			(p.tid === tid ||
@@ -108,7 +110,7 @@ const moodInfo = async (
 		) {
 			sumAndStuff -= MARKET_TESTING;
 		}
-	} else if (!thisIsAUserTeam) {
+	} else if (!thisIsAUserTeam && !realisticFrontOfficesOn()) {
 		sumAndStuff -= 3;
 	}
 

@@ -23,7 +23,7 @@ import { changeTracker } from "../../db/changeTracker.ts";
 import { idb } from "../../db/index.ts";
 import { g, toUI } from "../../util/index.ts";
 import { player, team } from "../index.ts";
-import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import { realisticFreeAgencyOn } from "../realisticFrontOffice/isOn.ts";
 import { getSyncEngine } from "./engineHolder.ts";
 import { syncDebugLog } from "./debugLog.ts";
 import type { FaBoardEntry, SyncTransport } from "./types.ts";
@@ -174,7 +174,7 @@ type Candidate = {
 export const resolveFaBoards = async (): Promise<void> => {
 	// Realistic front offices decide every team's offers in the day's free
 	// agency (realisticFrontOffice/freeAgency.ts).
-	if (g.get("phase") !== PHASE.FREE_AGENCY || realisticFrontOfficesOn()) {
+	if (g.get("phase") !== PHASE.FREE_AGENCY || realisticFreeAgencyOn()) {
 		return;
 	}
 	const boards = boardsPerTeam();

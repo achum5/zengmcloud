@@ -7,8 +7,12 @@ import { getHardCap } from "../../util/getHardCap.ts";
 import { orderBy } from "../../../common/utils.ts";
 import { shuffle } from "../../../common/random.ts";
 import { revertBefore } from "../player/revertSnapshot.ts";
-import { realisticFrontOfficesOn } from "../realisticFrontOffice/isOn.ts";
+import {
+	realisticFreeAgencyOn,
+	realisticFrontOfficesOn,
+} from "../realisticFrontOffice/isOn.ts";
 import { freeAgencyDay as realisticFrontOfficeFreeAgencyDay } from "../realisticFrontOffice/freeAgency.ts";
+import { signingDay as realisticFrontOfficeSigningDay } from "../realisticFrontOffice/stockRules.ts";
 
 /**
  * AI teams sign free agents.
@@ -19,9 +23,14 @@ import { freeAgencyDay as realisticFrontOfficeFreeAgencyDay } from "../realistic
  * @return {Promise}
  */
 const autoSign = async () => {
-	// Realistic front offices sign by their own valuation.
-	if (realisticFrontOfficesOn()) {
+	// Realistic front offices sign by their own valuation, in the offer market
+	// or by stock's rules.
+	if (realisticFreeAgencyOn()) {
 		await realisticFrontOfficeFreeAgencyDay();
+		return;
+	}
+	if (realisticFrontOfficesOn()) {
+		await realisticFrontOfficeSigningDay();
 		return;
 	}
 
