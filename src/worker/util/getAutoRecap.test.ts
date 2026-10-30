@@ -2410,6 +2410,40 @@ describe("who got hurt", () => {
 	});
 });
 
+// "The Celtics (3-3) survived the Timberwolves 111-108": the second 3-3 team
+// found the first one's record in the lede and took it for its own.
+test("two teams with the same record both carry it", () => {
+	const side = (tid: number, region: string, name: string, pts: number) =>
+		realisticTeam(
+			{
+				tid,
+				region,
+				name,
+				abbrev: name.slice(0, 3).toUpperCase(),
+				pts,
+				record: { won: tid === 1 ? 4 : 3, lost: tid === 1 ? 3 : 4 },
+			},
+			player({ name: `${region} Guard`, pts: 24, fg: 9, fga: 17 }),
+		);
+	for (let gid = 9300; gid < 9320; gid++) {
+		const g = game({
+			gid,
+			teams: [
+				side(1, "Boston", "Celtics", 111),
+				side(2, "Minnesota", "Timberwolves", 108),
+			],
+			winnerTid: 1,
+		});
+		// 4-3 after the win, 3-4 after the loss: not the same. Make them so.
+		g.teams[1].record = { won: 4, lost: 3 };
+		const lede = getAutoRecap(g).split("\n\n")[1]!;
+		if (lede.includes("Celtics") && lede.includes("Timberwolves")) {
+			assert.ok(lede.includes("Celtics (4-3)"), lede);
+			assert.ok(lede.includes("Timberwolves (4-3)"), lede);
+		}
+	}
+});
+
 describe("who was out", () => {
 	const gameWith = (gid: number, injuries: RecapTeam["injuries"]) =>
 		game({

@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 40,
+		date: "2026-10-30",
+		text: 'Recaps: when both teams come in with the same record, the first line now shows it for both of them instead of only one, and a few clumsy sentences that used the same verb twice ("They led the rest of the way and led by as many as 27", "had 31 points... had a triple-double") are gone.',
+	},
+	{
 		n: 39,
 		date: "2026-10-30",
 		text: 'Recaps read more like a reporter wrote them: after a player\'s first mention he goes by his last name ("Ingram\'s layup tied it"), and now and then a team goes by its city ("for Indiana"). Game recaps open in more ways - a streak first, a player first, or where a road win happened ("beat the Celtics 102-91 in Boston") - and the halftime score and the biggest lead share a sentence more often. Day recaps sometimes move around the league with a city ("In Charlotte, ..."), and "Game 2 in Golden State" is now "Game 2 at the Warriors\' place".',

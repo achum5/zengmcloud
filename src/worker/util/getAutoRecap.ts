@@ -385,7 +385,10 @@ export const joinShortPairs = (sentences: string[]): string[] => {
 			a.endsWith(".") &&
 			plain(a) &&
 			leadsWithSubject(a) &&
-			plain(b)
+			plain(b) &&
+			// Not on the same verb: "They led the rest of the way and led by
+			// as many as 27."
+			!a.includes(` ${b.slice(pronoun.length).split(" ")[0]} `)
 		) {
 			// After an appositive ("controlled the boards, 54-38") the join
 			// takes a comma of its own.
@@ -8884,9 +8887,11 @@ const withRecords = (
 		}
 		const tag = `${rec.won}-${rec.lost}`;
 		// The body already states it ("improved to 10-3"). Whole numbers
-		// only: "0-1" is inside "110-109".
+		// only: "0-1" is inside "110-109". The body as written, not as this
+		// pass has tagged it: two 3-3 teams each get their record, where the
+		// second used to find the first one's and go without.
 		const stated = new RegExp(String.raw`(?<![\d-])${tag}(?![\d-])`);
-		if (out.some((p) => stated.test(p))) {
+		if (paragraphs.some((p) => stated.test(p))) {
 			continue;
 		}
 		// In the lede, where wire copy carries it, or not at all. A team the
@@ -11646,6 +11651,10 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 		const at = para1.findIndex((t) => toldIn(g, t));
 		const left = untold(g, para1.join(" "));
 		if (at >= 0 && left.length > 0) {
+			// "Anthony Johnson had 31 points as the Raptors beat the Knicks.
+			// Trey Randle had a triple-double for the Raptors": not the same
+			// verb twice running.
+			const had = / had /.test(para1[at]!) ? "finished with" : "had";
 			para1.splice(
 				at + 1,
 				0,
@@ -11654,7 +11663,7 @@ const buildDayRecap = (input: AutoDayRecapInput): string => {
 						const line = deckLine(perf);
 						// "Marcus Green had a triple-double for the Clippers" gave the
 						// deck's word and none of the line.
-						return `${perf.p.name} had ${line === "triple-double" ? `a triple-double (${statPhrase(perf.p)})` : line} for ${theNick(perf.team)}`;
+						return `${perf.p.name} ${had} ${line === "triple-double" ? `a triple-double (${statPhrase(perf.p)})` : line} for ${theNick(perf.team)}`;
 					}),
 				)}.`,
 			);
