@@ -314,7 +314,7 @@ describe("3D: players play like their ratings", () => {
 		let back = 0;
 		let side = 0;
 		const byMan = new Map<number, { back: number; side: number }>();
-		for (const seed of ["r1", "r2", "r3"]) {
+		for (const seed of ["r1", "r2", "r3", "r4"]) {
 			const tl = play(seed, all(70));
 			for (const tr of tl.tracks.values()) {
 				const rimX = tr.team === 0 ? 5.25 : 88.75;
@@ -703,5 +703,114 @@ describe("3D: players play like their ratings", () => {
 			}
 		}
 		assert.isAbove(n, 2, `${n}`);
+	});
+	// Elite players do what nobody else does: a great shooter now and then
+	// pulls up from way out, a few steps back of the line; nobody else ever
+	// does but at the buzzer.
+	test("a great shooter now and then pulls up from way out; most never do", () => {
+		const deep = (ratings: CourtRatings) => {
+			let n = 0;
+			for (const seed of ["r1", "r2", "r3", "r4", "r5"]) {
+				const tl = play(seed, ratings);
+				for (const s of tl.ball) {
+					if (s.kind !== "fly" || !("pid" in s.from) || "pid" in s.to) {
+						continue;
+					}
+					const pid = s.from.pid;
+					if (
+						!tl.tracks
+							.get(pid)
+							?.acts.some(
+								(a) => a.anim === "shoot" && a.t0 <= s.t0 && a.t1 > s.t0,
+							)
+					) {
+						continue;
+					}
+					const P = evalPlayer(tl, pid, s.t0);
+					const d = Math.min(
+						Math.hypot(P.x - 5.25, P.y - 25),
+						Math.hypot(P.x - 88.75, P.y - 25),
+					);
+					if (d >= 28.5 && d <= 34) {
+						n += 1;
+					}
+				}
+			}
+			return n;
+		};
+		const great = deep({ ...all(60), tp: 85 });
+		const most = deep({ ...all(60), tp: 50 });
+		assert.isAbove(great, 5, `${great} ${most}`);
+		assert.isBelow(most * 3, great, `${great} ${most}`);
+	});
+	// And now and then a great shooter doesn't wait to see his three go in:
+	// he is on his way back up the floor before it is through.
+	test("a great shooter now and then heads back before his three is through", () => {
+		const away = (ratings: CourtRatings) => {
+			let n = 0;
+			for (const seed of ["r1", "r2", "r3"]) {
+				const tl = play(seed, ratings);
+				for (const f of tl.fx) {
+					if (f.kind !== "roar" || f.what !== "three") {
+						continue;
+					}
+					const shot = tl.ball.findLast(
+						(s) =>
+							s.kind === "fly" &&
+							"pid" in s.from &&
+							!("pid" in s.to) &&
+							s.t0 < f.t,
+					);
+					if (
+						shot?.kind !== "fly" ||
+						!("pid" in shot.from) ||
+						"pid" in shot.to
+					) {
+						continue;
+					}
+					const pid = shot.from.pid;
+					const rx = shot.to.x < 47 ? 5.25 : 88.75;
+					const A = evalPlayer(tl, pid, shot.t0);
+					const B = evalPlayer(tl, pid, f.t - 150);
+					if (Math.abs(B.x - rx) - Math.abs(A.x - rx) > 3) {
+						n += 1;
+					}
+				}
+			}
+			return n;
+		};
+		const great = away({ ...all(60), tp: 85 });
+		const most = away({ ...all(60), tp: 60 });
+		assert.isAbove(great, 2, `${great} ${most}`);
+		assert.isBelow(most * 3, great, `${great} ${most}`);
+	});
+	// And a great handler crosses his man up so badly his feet go out from
+	// under him - a slow man on him most of all; hardly anybody else does.
+	test("a great handler crosses up a slow man; hardly anybody else does", () => {
+		// (Stumbling on defense - not the man driving, knocked off balance
+		// by a man a step late to help.)
+		const stumbles = (ratings: CourtRatings) => {
+			let n = 0;
+			for (const seed of ["r1", "r2", "r3"]) {
+				const tl = play(seed, ratings);
+				for (const tr of tl.tracks.values()) {
+					for (const a of tr.acts) {
+						const b = evalBall(tl, a.t0 + 60, () => bodyOf());
+						if (
+							a.anim === "stumble" &&
+							b.holder !== undefined &&
+							tl.tracks.get(b.holder)?.team !== tr.team
+						) {
+							n += 1;
+						}
+					}
+				}
+			}
+			return n;
+		};
+		const great = stumbles({ ...all(55), drb: 85, spd: 35, diq: 35 });
+		const most = stumbles(all(55));
+		assert.isAbove(great, 3, `${great} ${most}`);
+		assert.isBelow(most * 3, great, `${great} ${most}`);
 	});
 });

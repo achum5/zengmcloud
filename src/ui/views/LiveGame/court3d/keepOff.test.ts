@@ -1,6 +1,13 @@
 import { assert, describe, test } from "vitest";
-import { evalBall, floorSpotOf } from "./evaluate.ts";
-import { bodyOf } from "./poses.ts";
+import {
+	bodyPoint,
+	evalBall,
+	evalPlayer,
+	floorSpotOf,
+	poseOf,
+	withBody,
+} from "./evaluate.ts";
+import { bodyOf, skeleton } from "./poses.ts";
 import { compile } from "./testGame.ts";
 
 // Wherever two men would end up in each other at real speed, one is kept off
@@ -35,6 +42,50 @@ describe("keeping bodies apart", () => {
 		// the runs fell, about one in twenty.)
 		assert.isAbove(live, 1000);
 		assert.isBelow(inside / live, 0.01);
+	});
+
+	// Face to face - up on the man with the ball, both down in it - two men
+	// each lean in only as far as leaves their heads apart, never one head
+	// drawn in the other.
+	test("two men face to face keep their heads apart", () => {
+		const { tl } = compile("apart", 80);
+		const body = bodyOf();
+		const fast = (t: number) => tl.fast.some(([a, b]) => t >= a && t < b);
+		const pids = [...tl.tracks.keys()];
+		const head = (pid: number, t: number) => {
+			const st = withBody(evalPlayer(tl, pid, t), body);
+			return st.shown
+				? { st, at: bodyPoint(st, skeleton(body, poseOf(st)).head) }
+				: undefined;
+		};
+		let close = 0;
+		let met = 0;
+		for (let t = 0; t < tl.end; t += 50) {
+			if (fast(t)) {
+				continue;
+			}
+			const heads = pids.map((pid) => head(pid, t));
+			for (let i = 0; i < heads.length; i++) {
+				for (let j = i + 1; j < heads.length; j++) {
+					const a = heads[i];
+					const b = heads[j];
+					if (!a || !b || Math.hypot(a.st.x - b.st.x, a.st.y - b.st.y) > 3.5) {
+						continue;
+					}
+					close += 1;
+					const d = Math.hypot(
+						a.at.x - b.at.x,
+						a.at.y - b.at.y,
+						a.at.z - b.at.z,
+					);
+					if (d < 1.6 * body.headR) {
+						met += 1;
+					}
+				}
+			}
+		}
+		assert.isAbove(close, 500);
+		assert.isBelow(met / close, 0.005, `${met} of ${close}`);
 	});
 
 	test("a loose ball bounces round a man, not through him", () => {

@@ -641,6 +641,8 @@ const stepped = (st: PlayerState, k: Steps) => {
 		low: st.low ? Math.round(st.low * 4) / 4 : undefined,
 		// How easy he is about his dribble, the same.
 		calm: st.calm ? Math.round(st.calm * 4) / 4 || undefined : undefined,
+		// The room in front of him to lean into, to a quarter of a foot.
+		room: st.room === undefined ? undefined : Math.round(st.room * 4) / 4,
 		stride: st.stride ? stepStride(st.stride, k) : undefined,
 		target: targetFrame(st.target, k),
 		down: st.down ? Math.round(st.down * k.blend) / k.blend : undefined,
@@ -736,7 +738,7 @@ const planOf = (
 		const f = pose.from;
 		const a = pose.arm;
 		plan.id = id;
-		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.lock ? `k${pose.lock}` : ""}${pose.slip ? `s${pose.slip}` : ""}${pose.look ? `h${pose.look}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${pose.low ? `o${pose.low}` : ""}${pose.calm ? `e${pose.calm}` : ""}${strideKey(pose.stride)}|${pose.target ?? ""}${
+		plan.key = `${fine ? "f" : ""}${id}|${st.anim}${st.mirror ? "m" : ""}|${pose.phase}${pose.stepLen ? `l${pose.stepLen}` : ""}${pose.drive ? `v${pose.drive}` : ""}|${pose.turn}|${scale}|${px}|${st.holding ? 1 : 0}${pose.grip ?? ""}|${pose.legs ?? ""}${pose.way === undefined ? "" : `w${pose.way}`}${pose.pivot ? `p${pose.pivot}` : ""}${pose.lock ? `k${pose.lock}` : ""}${pose.slip ? `s${pose.slip}` : ""}${pose.look ? `h${pose.look}` : ""}${pose.down ? `d${pose.down}` : ""}|${pose.dribble ?? ""}${st.dribbleHand ?? ""}${st.dribbleFrom ?? ""}${pose.tight ? `t${pose.tight}` : ""}${pose.low ? `o${pose.low}` : ""}${pose.calm ? `e${pose.calm}` : ""}${pose.room === undefined ? "" : `r${pose.room}`}${strideKey(pose.stride)}|${pose.target ?? ""}${
 			f ? `|${blendKey(f)}` : ""
 		}${a ? `|${a.hand}${a.point ? "p" : ""}${a.tuck ? `t${a.tuck}` : ""}${a.sh},${a.el},${a.ab},${a.wr}~${a.w}` : ""}`;
 	}
@@ -790,6 +792,7 @@ const jobOf = (
 			tight: pose.tight,
 			low: pose.low,
 			calm: pose.calm,
+			room: pose.room,
 			stride: pose.stride,
 			target: pose.target,
 			from: pose.from,

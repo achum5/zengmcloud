@@ -127,6 +127,10 @@ export type PlayerState = {
 	// How tight on him the nearest of theirs in front of him is (0 to 1):
 	// up on him, his dribble is kept in by his hip, not out in front.
 	tight?: number;
+	// How much room there is in front of him (feet), with anybody that near
+	// the way he faces: he leans in no further than that leaves (see
+	// leanRoom).
+	room?: number;
 	// How low he keeps his dribble, his own way (-1 to 1: see dribbleLow).
 	low?: number;
 	// How easy he is about it (0 to 1): nobody near him, way out from the
@@ -4168,6 +4172,7 @@ const playerAt = (tl: CourtTimeline, pid: number, t: number): PlayerState => {
 				}
 			: doing;
 	const yaw = spinYawAt(tl, tr, t) ?? yawAt(tl, tr, t);
+	const room = shown ? roomAt(tl, tr, t) : undefined;
 	const legs = flippedLegs(
 		tl,
 		tr,
@@ -4223,7 +4228,105 @@ const playerAt = (tl: CourtTimeline, pid: number, t: number): PlayerState => {
 		...(pivot ? { pivot } : {}),
 		...(from ? { from } : {}),
 		...(arm ? { arm } : {}),
+		...(room === undefined ? {} : { room }),
 	};
+};
+
+// KEPT OFF THE MAN IN FRONT OF HIM. Two men face to face - a man up on the
+// man with the ball, both down in it - each leans in no further than leaves
+// their heads apart: how much room there is in front of him, along the way
+// he faces, to the nearest man (feet - more of it the further off to one
+// side he is, past ROOM_SIDE, and the nearer beside him, inside
+// ROOM_BESIDE), if any is nearer than ROOM_FAR. Worked out every ROOM_STEP,
+// each the mean of it and those either side, and eased between: a man
+// coming into it, or going by across it, and his lean goes over a quarter
+// of a second, never in a frame.
+// (As far out as a head bent right over goes - so it comes into it as
+// gently as it goes on.)
+const ROOM_FAR = 7.6;
+const ROOM_SIDE = 0.9;
+const ROOM_BESIDE = 0.8;
+const ROOM_STEP = 80;
+const roomNow = (tl: CourtTimeline, tr: Track, t: number): number => {
+	const here = spotAt(tr, t, false);
+	const yaw = spinYawAt(tl, tr, t) ?? yawAt(tl, tr, t);
+	const fx = Math.cos(yaw);
+	const fy = Math.sin(yaw);
+	let most = ROOM_FAR;
+	for (const o of tl.tracks.values()) {
+		if (o === tr) {
+			continue;
+		}
+		const si = lastIndex(o.shown, t, (x) => x[0]);
+		if (si < 0 || !o.shown[si]![1]) {
+			continue;
+		}
+		const p = spotAt(o, t, false);
+		const dx = p.x - here.x;
+		const dy = p.y - here.y;
+		const along = dx * fx + dy * fy;
+		if (along <= 0 || along >= most) {
+			continue;
+		}
+		const side = Math.abs(dy * fx - dx * fy);
+		most = Math.min(
+			most,
+			along +
+				Math.max(0, side - ROOM_SIDE) * 3 +
+				Math.max(0, ROOM_BESIDE - along) * 6,
+		);
+	}
+	return most;
+};
+const roomSteps = new WeakMap<Track, Map<number, number>>();
+const roomAt = (
+	tl: CourtTimeline,
+	tr: Track,
+	t: number,
+): number | undefined => {
+	let steps = roomSteps.get(tr);
+	if (!steps) {
+		steps = new Map();
+		roomSteps.set(tr, steps);
+	}
+	const at = (g: number) => {
+		let r = steps.get(g);
+		if (r === undefined) {
+			r = roomNow(tl, tr, g);
+			steps.set(g, r);
+			if (steps.size > 8) {
+				steps.delete(steps.keys().next().value!);
+			}
+		}
+		return r;
+	};
+	const mean = (g: number) =>
+		(at(g - ROOM_STEP) + at(g) + at(g + ROOM_STEP)) / 3;
+	const g = Math.floor(t / ROOM_STEP) * ROOM_STEP;
+	const a = mean(g);
+	const b = mean(g + ROOM_STEP);
+	const room = a + (b - a) * ((t - g) / ROOM_STEP);
+	return room < ROOM_FAR ? room : undefined;
+};
+
+// His head no further out in front of him than half that room, less a head
+// apart (in head radii) - his lean given up for it, down to upright at
+// most, no more than LEAN_GIVE (degrees).
+const HEADS_APART = 0.95;
+const LEAN_GIVE = 22;
+const leanRoom = (p: Pose, room: number | undefined): Pose => {
+	if (room === undefined || p.lean <= 0) {
+		return p;
+	}
+	const sk = skeleton(TYPICAL, p);
+	const over = sk.head.f - (room / 2 - TYPICAL.headR * HEADS_APART);
+	if (over <= 0) {
+		return p;
+	}
+	const rad = Math.PI / 180;
+	const spine = Math.hypot(sk.head.f - sk.pelvis.f, sk.head.u - sk.pelvis.u);
+	const want = Math.asin(clamp01(Math.sin(p.lean * rad) - over / spine)) / rad;
+	return { ...p, lean: Math.max(want, p.lean - LEAN_GIVE, 0) };
 };
 
 // WATCHING THE BALL. Off it - running, down in his stance, stood waiting
@@ -5727,7 +5830,8 @@ const slipped = (
 
 // His pose: his move's, eased in from the last one's just after a change -
 // and an arm in whatever it is saying.
-export const poseOf = (st: PlayerState): Pose => {
+export const poseOf = (st: PlayerState): Pose => leanRoom(poseFor(st), st.room);
+const poseFor = (st: PlayerState): Pose => {
 	const own = posed(
 		st.anim,
 		st.phase,

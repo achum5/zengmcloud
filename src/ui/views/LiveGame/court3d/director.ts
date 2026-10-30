@@ -747,6 +747,28 @@ const WALL_FLAT = 0.2;
 // nearest the rim the pull-up goes up from.
 const HESI_RUN = 5;
 const HESI_ON = 2.5;
+// Crossed up so badly his feet go out from under him: this often, the game
+// knowing nothing of either of them - and, if it does, hardly ever but by
+// a great handler, and most of all with a slow man on him (see driveTo).
+const ANKLES_ANY = 0.22;
+const ANKLES_LEAST = 0.03;
+const ANKLES_MOST = 0.35;
+// A great shooter's own three, now and then, from way out - a few steps
+// back of where anybody else shoots it from (feet further out, at the
+// most): never by most, now and then by a good shooter, more by the best.
+const DEEP_FROM = 0.65;
+const DEEP_MOST = 0.4;
+const DEEP_FT: [number, number] = [2.5, 5.5];
+const DEEP_SPOT_UP = 0.5;
+// And now and then he doesn't wait to see one go in: down from it, his hand
+// still up, he turns and heads back up the floor before it is through -
+// this long after he lands (ms), this far (feet). Only the best of them
+// (from WALK_FROM up), and the best of those most (WALK_MOST of his makes
+// from three).
+const WALK_FROM = 0.75;
+const WALK_MOST = 0.3;
+const WALK_AFTER = 250;
+const WALK_FT = 8;
 const HESI_MS = 420;
 const HESI_CLOSEST = 10;
 // How long (ms), at the most, a man takes to turn and go the other way as
@@ -2847,6 +2869,33 @@ class Director {
 			}
 		}
 		return "plain";
+	}
+
+	// Whether a three of his, going in, he turns away from before it does
+	// (see WALK_FROM).
+	private walksAway(pid: number, t: number): boolean {
+		const s = this.level(pid, "tp");
+		return (
+			s !== undefined &&
+			s > WALK_FROM &&
+			hash01(pid * 11 + 5, Math.round(t)) <
+				(WALK_MOST * (s - WALK_FROM)) / (1 - WALK_FROM)
+		);
+	}
+
+	// How much further out than most a three of his own goes up from (feet):
+	// none, most of the time (see DEEP_MOST) - and caught out there set to
+	// shoot it, `share` as often.
+	private deepThree(pid: number, t: number, share = 1): number {
+		const s = this.level(pid, "tp");
+		if (s === undefined || s <= DEEP_FROM) {
+			return 0;
+		}
+		const odds = (share * DEEP_MOST * (s - DEEP_FROM)) / (1 - DEEP_FROM);
+		return hash01(pid * 3 + 7, Math.round(t)) < odds
+			? DEEP_FT[0] +
+					(DEEP_FT[1] - DEEP_FT[0]) * hash01(pid * 3 + 8, Math.round(t))
+			: 0;
 	}
 
 	// How long he takes to react to something (ms), `most` at the most: a
@@ -8453,7 +8502,7 @@ class Director {
 	// way, in from the line for a pull-up, out to it for a three - not
 	// anywhere at all on the floor, for him to go across the whole of it to
 	// get there.
-	private shotSpotNear(team: Side, zone: Zone, from: Pt): Pt {
+	private shotSpotNear(team: Side, zone: Zone, from: Pt, deep = 0): Pt {
 		const depth = team === 0 ? from.x : COURT_W - from.x;
 		const dx = depth - RIM_INSET;
 		const dy = from.y - COURT_H / 2;
@@ -8472,7 +8521,7 @@ class Director {
 					? [4.5, 9.5, 30, 150]
 					: zone === "midRange"
 						? [11, 19, 20, 160]
-						: [25.4, 27.2, 32, 148];
+						: [25.4 + deep, 27.2 + deep, 32, 148];
 		const rs = Math.hypot(dx, dy);
 		// His angle round the rim (90: straight out; 0 and 180, along the
 		// baseline) - right under it, either side.
@@ -8770,7 +8819,14 @@ class Director {
 				// Now and then he is crossed up so badly his feet go out from
 				// under him - and he is that much later after it.
 				let late = 80;
-				if (hash01(guard, t) < 0.22) {
+				const h = this.level(pid, "drb");
+				const q = this.level(guard, "spd", "diq");
+				const ankles =
+					h === undefined || q === undefined
+						? ANKLES_ANY
+						: ANKLES_LEAST +
+							ANKLES_MOST * Math.max(0, (h - 0.5) / 0.5) ** 2 * (1.25 - q);
+				if (hash01(guard, t) < ankles) {
 					this.act(guard, "stumble", t - 60, t + 640, {
 						face: -dir as 1 | -1,
 						look: this.posOf(pid),
@@ -9673,13 +9729,33 @@ class Director {
 				// A three: out behind the line before it comes, and caught
 				// there set to shoot - not caught on the line and backed out
 				// with it (see shoot).
+				// (A great shooter, now and then, a few steps further out still
+				// - nobody out there with him: see DEEP_SPOT_UP.)
+				const S0 = this.posOf(shooter);
+				const deep =
+					o.zone === "three" && o.kind === "catch_and_shoot"
+						? this.deepThree(shooter, t, DEEP_SPOT_UP)
+						: 0;
+				const u0 = unitVec(rim, S0);
+				const r0 = Math.max(dist(S0, rim), 23.75 + THREE_CLEAR + 0.5) + deep;
+				const D =
+					deep > 0
+						? onTheFloor({ x: rim.x + u0.x * r0, y: rim.y + u0.y * r0 })
+						: undefined;
 				const out =
-					o.zone === "three" ? behindArc(team, this.posOf(shooter)) : undefined;
+					D && Math.abs(D.y - COURT_H / 2) < 19
+						? D
+						: o.zone === "three"
+							? behindArc(team, S0)
+							: undefined;
 				if (out) {
 					this.go(
 						shooter,
 						out,
-						Math.max(t - 400, this.free.get(shooter) ?? 0),
+						Math.max(
+							t - 400 - (dist(S0, out) / 7) * 1000 * (out === D ? 1 : 0),
+							this.free.get(shooter) ?? 0,
+						),
 						7,
 						"back",
 						dir,
@@ -9930,8 +10006,26 @@ class Director {
 			if (own === "turnaround") {
 				return { t: this.backDown(shooter, t, dir), style: "fade" };
 			}
-			if (own !== "plain") {
-				t = this.driveTo(shooter, this.posOf(shooter), t, dir, own);
+			// (A great shooter, now and then, from way out: his move - or a
+			// dribble or two back - ends a few steps further out. Never in the
+			// corner, where there is no further out, nor off a side-step, a
+			// step across.)
+			const S0 = this.posOf(shooter);
+			const deep =
+				o.zone === "three" && own !== "sidestep"
+					? this.deepThree(shooter, t)
+					: 0;
+			const D =
+				deep > 0
+					? (() => {
+							const u = unitVec(rim, S0);
+							return inPlay({ x: S0.x + u.x * deep, y: S0.y + u.y * deep });
+						})()
+					: undefined;
+			const far =
+				D !== undefined && Math.abs(D.y - COURT_H / 2) < 19 ? D : undefined;
+			if (own !== "plain" || far) {
+				t = this.driveTo(shooter, far ?? S0, t, dir, own);
 				t = Math.max(t, this.hold(shooter, t, "hold"));
 			}
 			return { t, style: "plain" };
@@ -10680,6 +10774,13 @@ class Director {
 													? "crossover"
 													: "plain"
 											: "plain";
+					// (A great shooter, now and then, from way out.)
+					if (P === undefined && zone === "three") {
+						const deep = this.deepThree(shooter, t);
+						if (deep > 0) {
+							P = this.shotSpotNear(team, zone, this.posOf(shooter), deep);
+						}
+					}
 					t = this.driveTo(
 						shooter,
 						spotNow(),
@@ -11730,6 +11831,27 @@ class Director {
 			}
 		}
 
+		// A great shooter, sure of it, now and then doesn't wait to see it go
+		// in (see WALK_FROM).
+		if (
+			landed !== undefined &&
+			!pushed &&
+			plan.kind === "make" &&
+			zone === "three" &&
+			this.walksAway(shooter, gather)
+		) {
+			const S = this.posOf(shooter);
+			this.go(
+				shooter,
+				clampPt({
+					x: S.x - dir * WALK_FT,
+					y: S.y + (COURT_H / 2 - S.y) * 0.15,
+				}),
+				landed + WALK_AFTER,
+				JOG,
+				"run",
+			);
+		}
 		// A shooter holds his follow-through after he lands, till the ball
 		// gets there - whatever his feet do next. (With the hand he shot it
 		// with.)

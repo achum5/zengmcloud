@@ -7630,6 +7630,44 @@ const easy = (
 	return out;
 };
 
+// HIS MAN RIGHT UP ON HIM (`tight`), stood with it: his shoulders turned
+// away from him, the ball on the far side of him and his other shoulder
+// into him, dipped a little (degrees, at the most) - some of it walking it.
+// Taking it across to his other hand, he comes round with it.
+const PROTECT_TWIST = 24;
+const PROTECT_TILT = 5;
+const PROTECT_WALKING = 0.4;
+const protect = (
+	q: Pose,
+	anim: AnimName,
+	tight: number,
+	ph: number,
+	hand: Hand,
+	leaves?: Hand,
+): Pose => {
+	const k =
+		anim === "dribbleIdle"
+			? tight
+			: anim === "dribbleWalk"
+				? tight * PROTECT_WALKING
+				: 0;
+	if (k <= 0) {
+		return q;
+	}
+	const side = (h: Hand) => (h === "L" ? 1 : -1);
+	const way =
+		leaves === undefined
+			? side(hand)
+			: side(leaves) +
+				(side(leaves === "L" ? "R" : "L") - side(leaves)) *
+					(ph * ph * (3 - 2 * ph));
+	return {
+		...q,
+		twist: q.twist + way * PROTECT_TWIST * k,
+		tilt: q.tilt - way * PROTECT_TILT * k,
+	};
+};
+
 // His pose at a moment: the move's, with the dribbling hand on the bounce
 // when he is dribbling, or - `target` of the way (0 to 1) - his hands up for
 // a pass on its way to him, whatever his feet are doing.
@@ -7652,7 +7690,14 @@ export const posed = (
 	const q = poseAt(anim, phase);
 	if (dribble !== undefined && !MOVES.has(anim)) {
 		return dribbleArm(
-			easy(q, anim, calm, tight, flair),
+			protect(
+				easy(q, anim, calm, tight, flair),
+				anim,
+				tight,
+				dribble,
+				hand ?? "R",
+				leaves,
+			),
 			dribble,
 			hand,
 			dribbleAhead(anim) * (1 - tight),
