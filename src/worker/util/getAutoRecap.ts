@@ -4357,6 +4357,10 @@ const gameStory = (
 		// never told.
 		const lLast = lq[regPeriods - 1] ?? 0;
 		const wLast = wq[regPeriods - 1] ?? 0;
+		// How much of a lead the losers have to take back in the last quarter
+		// for it to be the story: "were still 11 up going into the fourth"
+		// over a 4-point final had to say who closed the gap.
+		const PUSH = 7;
 		if (stretched) {
 			covers.add("entering");
 			// Stretched to 20 and won by 3: the quarter that made it close is
@@ -4370,6 +4374,11 @@ const gameStory = (
 			) {
 				covers.add("lastQuarter");
 				return `${stretched}, but ${l} took the ${last} quarter ${lLast}-${wLast}${shape.ot > 0 ? "" : " to make a game of it"}.`;
+			}
+			// Stretched to 15 and won by 5 without the losers winning the
+			// quarter: the gap they closed, all the same.
+			if (shape.ot === 0 && shape.margin <= 6 && wMax - shape.margin >= 10) {
+				return `${stretched}, though ${l} cut it to ${shape.margin} by the end.`;
 			}
 			return `${stretched}.`;
 		}
@@ -4410,14 +4419,23 @@ const gameStory = (
 		// losers caught them in between. "The lead had grown to 12 going into
 		// the fourth. The Grizzlies led 101-100 with two minutes left" left
 		// the reader to work out how.
+		// The losers did not win the quarter by much, but they caught up in it
+		// - a tie in the last quarter is as much a comeback as the lead.
 		const caughtLate =
 			m >= 8 &&
 			shape.ot === 0 &&
 			shape.margin <= 6 &&
-			lLast - wLast < 10 &&
-			lastLead?.side === wSide &&
-			lastLead.period === regPeriods;
-		if (caughtLate && !peak) {
+			lLast - wLast < PUSH &&
+			((lastLead?.side === wSide && lastLead.period === regPeriods) ||
+				flow?.lastTie?.period === regPeriods);
+		const cameBack = () =>
+			pick(rng, ["came back", "rallied", "fought back"], "story:caughtLate");
+		if (caughtLate && peak) {
+			covers.add("entering");
+			out.push(`${peak}.`);
+			return `It was ${aNum(m)}-point game going into the ${last}, but ${l} ${cameBack()}.`;
+		}
+		if (caughtLate) {
 			covers.add("entering");
 			return `${
 				againstHalf ??
@@ -4430,18 +4448,33 @@ const gameStory = (
 					],
 					"story:enteringUp",
 				)
-			}, but ${l} ${pick(rng, ["came back", "rallied", "fought back"], "story:caughtLate")}.`;
+			}, but ${l} ${cameBack()}.`;
 		}
 		// In overtime too: "They were still 18 up going into the fourth. The
 		// Pelicans' Quentin Ingram forced overtime on a three-pointer at the
 		// buzzer" skipped the quarter the Pelicans won 30-12 to get there.
-		if (m > 0 && (shape.ot > 0 || shape.margin <= 6) && lLast - wLast >= 10) {
+		if (m > 0 && (shape.ot > 0 || shape.margin <= 6) && lLast - wLast >= PUSH) {
 			covers.add("entering").add("lastQuarter");
+			// The quarter that made it close, in more than one shape: lowered
+			// to a 7-point push, it is a few games a night.
+			const q = `${lLast}-${wLast}`;
+			const pushed =
+				shape.ot > 0
+					? `, but ${l} took the ${last} quarter ${q}`
+					: pick(
+							rng,
+							[
+								`, but ${l} took the ${last} quarter ${q}`,
+								`, but ${l} won the ${last} quarter ${q} to make it close`,
+								`, but ${l} cut into it with ${aFigure(q)} ${last} quarter`,
+							],
+							"story:nearlyWent",
+						);
 			if (peak) {
 				// Two sentences, not one of 140 characters that named the
 				// winners twice running: the lead, then where it stood.
 				out.push(`${peak}.`);
-				return `It was ${aNum(m)}-point game going into the ${last}, but ${l} took the ${last} quarter ${lLast}-${wLast}.`;
+				return `It was ${aNum(m)}-point game going into the ${last}${pushed}.`;
 			}
 			return `${
 				againstHalf ??
@@ -4454,7 +4487,7 @@ const gameStory = (
 					],
 					"story:enteringUp",
 				)
-			}, but ${l} took the ${last} quarter ${lLast}-${wLast}.`;
+			}${pushed}.`;
 		}
 		if (peak) {
 			covers.add("entering");

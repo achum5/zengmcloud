@@ -1841,7 +1841,11 @@ describe("the lead that nearly went", () => {
 			const recap = getAutoRecap(g);
 			clean(recap);
 			if (/going into the fourth|entering the fourth/.test(recap)) {
-				assert.match(recap, /fourth quarter 29-19/, recap);
+				assert.match(
+					recap,
+					/fourth quarter 29-19|\ba 29-19 fourth quarter/,
+					recap,
+				);
 				told += 1;
 			}
 			assert.notMatch(
@@ -3043,7 +3047,7 @@ describe("how it got close", () => {
 			if (/going into the fourth/.test(text)) {
 				assert.match(
 					text,
-					/going into the fourth, but the Bulls (?:came back|rallied|fought back)/,
+					/going into the fourth, but the Bulls (?:came back|rallied|fought back|took the fourth quarter 29-20|won the fourth quarter 29-20 to make it close|cut into it with a 29-20 fourth quarter)/,
 					text,
 				);
 				told += 1;
