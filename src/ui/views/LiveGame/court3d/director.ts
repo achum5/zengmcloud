@@ -925,6 +925,13 @@ const ROLL_AWAY_ACROSS = 4.5;
 // Holding it this near the rim (feet) or nearer, a man fakes going up with
 // it - never a jab step (see liveHands).
 const IN_CLOSE_FAKE = 9;
+// A jab step or a fake for a man of theirs this near him (feet) - and a shot
+// fake no farther out than this from the rim.
+const FAKE_AT = 10;
+const FAKE_SHOT_MOST = 27;
+// A hand across a shooter as he lets it go reaches this far (feet), middle to
+// middle.
+const FOUL_REACH = 4.5;
 // A whistle off the ball with the man with it stood waiting (see probe):
 // he takes a beat with it first (ms), probes for at most the last this long
 // (ms) before it goes, and in toward the rim no nearer than this (feet).
@@ -11154,6 +11161,16 @@ class Director {
 
 		// The defense: his man closes out, or the blocker / fouler gets there.
 		const guard = this.defenderOf(shooter);
+		// Fouled on it and in anyway: the man who fouled him is the one on him
+		// as he goes up - up into him, a hand on him - not off somewhere, the
+		// whistle for somebody nowhere near him.
+		const onHim =
+			plan.kind === "make" &&
+			plan.fouler !== undefined &&
+			this.teamOf(plan.fouler) !== team
+				? plan.fouler
+				: guard;
+		const andOne = onHim !== guard;
 		const P1 = this.posOf(shooter);
 		const toRim = { x: rim.x - P1.x, y: rim.y - P1.y };
 		const len = Math.hypot(toRim.x, toRim.y) || 1;
@@ -11326,25 +11343,36 @@ class Director {
 					}
 				}
 			} else if (
-				guard !== undefined &&
-				!(plan.kind === "block" && plan.blocker === guard)
+				onHim !== undefined &&
+				!(plan.kind === "block" && plan.blocker === onHim)
 			) {
 				// Beaten to the rim, his man is still after him: in a stride
 				// behind him as he goes up, a hand swiped at it too late.
-				const G = this.posOf(guard);
-				if (dist(G, under) < 15) {
+				const G = this.posOf(onHim);
+				if (andOne || dist(G, under) < 15) {
 					const away = dist(G, under) > 0.5 ? unitVec(under, G) : back;
 					const w = { x: away.x + back.x, y: away.y + back.y };
 					const L = Math.hypot(w.x, w.y);
 					const u = L > 0.5 ? { x: w.x / L, y: w.y / L } : away;
 					const B = clampPt({ x: under.x + u.x * 2.6, y: under.y + u.y * 2.6 });
-					if ((this.free.get(guard) ?? 0) > gather - 300) {
-						this.cutShort(guard, gather - 300);
+					// (The man who fouls him gets there, from wherever he is -
+					// setting off in time to.)
+					let from = gather - 300;
+					for (let n = 0; andOne && n < 4; n++) {
+						const need =
+							runMs(dist(this.posAt(onHim, from), B), SPRINT, 0, BURST) + 60;
+						if (gather + 380 - from >= need) {
+							break;
+						}
+						from = gather + 380 - need;
+					}
+					if ((this.free.get(onHim) ?? 0) > from) {
+						this.cutShort(onHim, from);
 					}
 					const there = this.goBy(
-						guard,
+						onHim,
 						B,
-						gather - 300,
+						from,
 						gather + 380,
 						"run",
 						undefined,
@@ -11353,7 +11381,7 @@ class Director {
 					if (there < gather + 700) {
 						// (Up after it from behind him.)
 						const t0 = Math.max(there - 100, gather + 300);
-						this.act(guard, "hack", t0, t0 + HACK_MS, {
+						this.act(onHim, "hack", t0, t0 + HACK_MS, {
 							look: { x: rim.x, y: rim.y },
 							jump: HACK_JUMP,
 							...(this.leftToBall(B, shooter, under)
@@ -11876,6 +11904,32 @@ class Director {
 				: floater
 					? 760 + d * 24
 					: 620 + d * 22;
+			// The man who fouls him on it: there as he goes up - from a way
+			// off, setting off in time to get there - and up with him, the hand
+			// at the ball and down across his arm with it.
+			const foulHim = (f: number) => {
+				const F = ahead(1.6);
+				const by = release - 180;
+				let from = gather - 300;
+				for (let n = 0; n < 4; n++) {
+					const need =
+						runMs(dist(this.posAt(f, from), F), SPRINT, 0, BURST) + 60;
+					if (by - from >= need) {
+						break;
+					}
+					from = by - need;
+				}
+				if ((this.free.get(f) ?? 0) > from) {
+					this.cutShort(f, from);
+				}
+				this.goBy(f, F, from, by, "run", -faceRim as 1 | -1, BURST);
+				this.act(f, "hack", release - 250, release - 250 + HACK_MS, {
+					face: -faceRim as 1 | -1,
+					look: { ...P1 },
+					jump: HACK_JUMP,
+					...(this.leftToBall(F, shooter, P1) ? { mirror: true as const } : {}),
+				});
+			};
 			if (plan.kind === "block" && plan.blocker !== undefined) {
 				const b = plan.blocker;
 				// He is there as it goes up, and gets a hand on it as it leaves
@@ -11958,32 +12012,7 @@ class Director {
 			} else if (plan.kind === "foul") {
 				const f = plan.fouler ?? guard;
 				if (f !== undefined) {
-					// (From a way off, setting off in time to get there.)
-					const F = ahead(1.6);
-					const by = release - 180;
-					let from = gather - 300;
-					for (let n = 0; n < 4; n++) {
-						const need =
-							runMs(dist(this.posAt(f, from), F), SPRINT, 0, BURST) + 60;
-						if (by - from >= need) {
-							break;
-						}
-						from = by - need;
-					}
-					if ((this.free.get(f) ?? 0) > from) {
-						this.cutShort(f, from);
-					}
-					this.goBy(f, F, from, by, "run", -faceRim as 1 | -1, BURST);
-					// (Up with him, the hand at the ball and down across his
-					// arm with it.)
-					this.act(f, "hack", release - 250, release - 250 + HACK_MS, {
-						face: -faceRim as 1 | -1,
-						look: { ...P1 },
-						jump: HACK_JUMP,
-						...(this.leftToBall(F, shooter, P1)
-							? { mirror: true as const }
-							: {}),
-					});
+					foulHim(f);
 				}
 				target = { x: rim.x - dir * (RIM_R + 0.1), y: 24.7, z: RIM_Z + 0.1 };
 				this.fly(release, release + flight, { pid: shooter }, target);
@@ -12040,26 +12069,30 @@ class Director {
 					plan.kind === "make",
 				);
 				const outAt =
-					guard === undefined
+					onHim === undefined
 						? release
-						: release + OPEN_LATE * hash01(guard * 7 + 3, release);
+						: release + OPEN_LATE * hash01(onHim * 7 + 3, release);
 				if (
 					room === 3 &&
-					guard !== undefined &&
-					!this.helpOff(guard, shooter, P1, rim, gather, outAt) &&
-					dist(this.posOf(guard), P1) < ALONE_FT
+					!andOne &&
+					onHim !== undefined &&
+					!this.helpOff(onHim, shooter, P1, rim, gather, outAt) &&
+					dist(this.posOf(onHim), P1) < ALONE_FT
 				) {
 					room = 2;
 				}
 				if (heave) {
 					// After him up the floor, not set in front of him: a hand up
 					// at it from behind, if he has caught him.
-					this.chaseHeave(guard, shooter, release);
-				} else if (guard !== undefined && room === 3 && !close) {
+					this.chaseHeave(onHim, shooter, release);
+				} else if (andOne) {
+					// Fouled on it, and in anyway.
+					foulHim(onHim!);
+				} else if (onHim !== undefined && room === 3 && !close) {
 					// Out of the help, or from wherever he was, flat out - only
 					// as it goes up: a hand up as it goes over him, if that.
 					this.closeOut(
-						guard,
+						onHim,
 						shooter,
 						ahead(ROOM_FT[1]),
 						gather,
@@ -12068,16 +12101,16 @@ class Director {
 						0,
 						outAt,
 					);
-				} else if (guard !== undefined) {
+				} else if (onHim !== undefined) {
 					this.closeOut(
-						guard,
+						onHim,
 						shooter,
 						// (An arm's length off him at the least: his hand at the
 						// ball, not his body in the shooter's. In close, beside
 						// where he comes down - not stood in his way in, the
 						// shooter going up through him.)
 						close
-							? this.besideLanding(guard, drift ?? this.posOf(shooter), toRim)
+							? this.besideLanding(onHim, drift ?? this.posOf(shooter), toRim)
 							: ahead(ROOM_FT[room]!),
 						gather,
 						release,
@@ -15406,13 +15439,28 @@ class Director {
 					at: this.posOf(shot.pid),
 					team,
 				});
-				// (Up with him already, the man he dunked on: that was the foul.)
+				// The foul was on the shot, as he let it go: up into him already
+				// (the man he dunked on, the hand in his face) - or, right there
+				// with nothing on, a hand across him then. Not a swipe at the air
+				// as it drops, by a man nowhere near him by then.
+				const rel =
+					this.ball.findLast(
+						(s) =>
+							s.kind === "fly" &&
+							"pid" in s.from &&
+							s.from.pid === shot.pid &&
+							s.t0 <= at,
+					)?.t0 ?? at;
+				const F = this.posAt(e.pidFoul, rel);
 				if (
+					dist(F, this.posAt(shot.pid, rel)) < FOUL_REACH &&
 					!this.track(e.pidFoul)?.acts.some(
-						(a) => a.t1 > at - 150 && a.t0 < at + 300,
+						(a) => a.t1 > rel - 400 && a.t0 < rel + 300,
 					)
 				) {
-					this.act(e.pidFoul, "reach", at - 150, at + 300);
+					this.act(e.pidFoul, "reach", rel - 150, rel + 300, {
+						look: this.posAt(shot.pid, rel),
+					});
 				}
 				end = at + 1400;
 			}
@@ -19577,6 +19625,9 @@ class Director {
 			// Out on the floor - not inbounding it.
 			const P = this.posAt(pid, s.t0);
 			const team = tr.team;
+			const theirs = [...this.tracks.values()].filter(
+				(o) => o.team !== team && o.pid >= 0,
+			);
 			const dir = attackDir(team);
 			if (P.x < 1 || P.x > COURT_W - 1 || P.y < 1 || P.y > COURT_H - 1) {
 				continue;
@@ -19653,11 +19704,27 @@ class Director {
 			}
 			const fake = (t: number): number => {
 				// (In close - a board in his hands under the rim, say - he
-				// shows it to go up: a pump fake, not a jab step at his man.)
+				// shows it to go up: a pump fake, not a jab step at his man.
+				// From way out, a jab step: not a shot he would never take.)
+				const r = this.rng();
+				const out = dist(P, rim);
 				const anim =
-					this.rng() < 0.55 && dist(P, rim) >= IN_CLOSE_FAKE
+					(r < 0.55 || out > FAKE_SHOT_MOST) && out >= IN_CLOSE_FAKE
 						? "jab"
 						: "shotFake";
+				// (Only with a man of theirs there to sell it to.)
+				if (
+					!theirs.some((o) => {
+						const k = lastBy(o.shown, t, (x) => x[0]);
+						return (
+							k >= 0 &&
+							o.shown[k]![1] &&
+							dist(this.posAt(o.pid, t), P) < FAKE_AT
+						);
+					})
+				) {
+					return 0;
+				}
 				const dur = anim === "jab" ? 520 : 640;
 				this.act(pid, anim, t, t + dur, { look: rim });
 				if (anim === "shotFake") {

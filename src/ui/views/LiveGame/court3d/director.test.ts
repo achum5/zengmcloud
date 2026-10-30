@@ -2384,6 +2384,83 @@ describe("3D director", () => {
 		assert.deepEqual(off, []);
 	}, 900_000);
 
+	test("an and-one's foul is on the shooter as he lets it go, and nobody fakes at nobody", () => {
+		const CONTACT = new Set(["hack", "contest", "block", "reach", "bump"]);
+		let fouls = 0;
+		let fakes = 0;
+		const off: string[] = [];
+		for (const seed of ["a", "b", "c", "f"]) {
+			const { tl, events } = compile(seed, 140);
+			const tracks = [...tl.tracks.values()];
+			for (const b of tl.beats) {
+				const e = events[b.i];
+				if (
+					!e ||
+					typeof e.pidFoul !== "number" ||
+					typeof e.pid !== "number" ||
+					!/^(fg|tp)/.test(e.type)
+				) {
+					continue;
+				}
+				const shooter = e.pid;
+				const rel = tl.ball.findLast(
+					(s) =>
+						s.kind === "fly" &&
+						"pid" in s.from &&
+						s.from.pid === shooter &&
+						!("pid" in s.to) &&
+						s.t0 <= b.end,
+				);
+				if (!rel) {
+					continue;
+				}
+				fouls += 1;
+				const S = evalPlayer(tl, shooter, rel.t0);
+				const F = evalPlayer(tl, e.pidFoul, rel.t0);
+				const near = Math.hypot(S.x - F.x, S.y - F.y);
+				const on = tl.tracks
+					.get(e.pidFoul)!
+					.acts.some(
+						(a) =>
+							CONTACT.has(a.anim) && a.t1 > rel.t0 - 600 && a.t0 < rel.t0 + 400,
+					);
+				if (near > 5.5 || !on) {
+					off.push(
+						`${seed}: ${e.type} by ${e.pidFoul} ${near.toFixed(1)} ft off${on ? "" : ", no hand on him"}`,
+					);
+				}
+			}
+			for (const tr of tracks) {
+				for (const a of tr.acts) {
+					if (
+						(a.anim !== "jab" && a.anim !== "shotFake") ||
+						fastAt(tl, a.t0) > 1.001 ||
+						!evalPlayer(tl, tr.pid, a.t0).shown
+					) {
+						continue;
+					}
+					fakes += 1;
+					const P = evalPlayer(tl, tr.pid, a.t0);
+					const there = tracks.some((o) => {
+						const q = evalPlayer(tl, o.pid, a.t0);
+						return (
+							o.team !== tr.team &&
+							o.pid >= 0 &&
+							q.shown &&
+							Math.hypot(q.x - P.x, q.y - P.y) < 12
+						);
+					});
+					if (!there) {
+						off.push(`${seed}: ${a.anim} by ${tr.pid} at ${Math.round(a.t0)}`);
+					}
+				}
+			}
+		}
+		assert.isAbove(fouls, 8);
+		assert.isAbove(fakes, 8);
+		assert.deepEqual(off, []);
+	}, 900_000);
+
 	test("a left-hander's follow-through is held up with his left", () => {
 		const SHOTS = new Set(["shoot", "fade", "hook", "floater", "setShot"]);
 		const held = { L: 0, R: 0 };
