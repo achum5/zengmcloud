@@ -1570,6 +1570,7 @@ export const PASS_PICK_UP = new Set<AnimName>([
 // lets him (radians off the way he goes).
 const CATCH_OPEN_MS = 400;
 const CATCH_OPEN_MAX = (95 * Math.PI) / 180;
+const RUN_OPEN_MAX = (60 * Math.PI) / 180;
 const passComing = (tl: CourtTimeline, pid: number, t: number): boolean => {
 	const i = ballIndexAt(tl, t);
 	for (let k = i; k <= i + 2 && k < tl.ball.length; k++) {
@@ -1652,6 +1653,23 @@ const yawTarget = (tl: CourtTimeline, tr: Track, t: number): number => {
 				: Math.atan2(mv.to.y - mv.from.y, mv.to.x - mv.from.x);
 		const d = wrapAngle(angleTo(here, ballNear(tl, t), heading) - heading);
 		return heading + Math.max(-CATCH_OPEN_MAX, Math.min(CATCH_OPEN_MAX, d));
+	}
+	// A defensive slide too quick to be one - opened up and running, back
+	// in front of a drive, say - is turned the way he goes only as far
+	// round off the ball as running lets him: his head and shoulders still
+	// on it, not his back to the man coming at him.
+	if (
+		mv &&
+		here.moving &&
+		(mv.anim === "slide" || mv.anim === "shuffle") &&
+		(gait === "run" || gait === "sprint")
+	) {
+		const heading =
+			here.hx * here.hx + here.hy * here.hy > 1e-6
+				? Math.atan2(here.hy, here.hx)
+				: Math.atan2(mv.to.y - mv.from.y, mv.to.x - mv.from.x);
+		const d = wrapAngle(angleTo(here, ballNear(tl, t), heading) - heading);
+		return heading + Math.max(-RUN_OPEN_MAX, Math.min(RUN_OPEN_MAX, d));
 	}
 	// A defensive slide keeps his eyes on the ball whichever way he goes -
 	// and so does a man drifting along the arc for it.

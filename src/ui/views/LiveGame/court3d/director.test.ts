@@ -2145,6 +2145,89 @@ describe("3D director", () => {
 		assert.isAtMost(parked.length, 1, parked.join(", "));
 	}, 480_000);
 
+	// The man guarding the shooter - the nearest of theirs to him, on
+	// average, over the few seconds before it - stays with him: not off
+	// away from him, three feet and more, while he hardly moves (the ball
+	// fed in to him in the post, the drive pulled up), only to come back
+	// at him for the shot. Help off him and back is part of the game, but
+	// not that often. (Six games: one shot in eleven, where it was more
+	// than one in eleven before.)
+	test("the man guarding the shooter is not off away from him and back before the shot", () => {
+		let shots = 0;
+		const back: string[] = [];
+		for (const seed of ["a", "b", "c", "d", "e", "f"]) {
+			const { tl } = compile(seed, 140);
+			for (const s of tl.ball) {
+				if (s.kind !== "fly" || !("pid" in s.from) || "pid" in s.to) {
+					continue;
+				}
+				const S = s.from.pid;
+				const rel = s.t0;
+				const team = tl.tracks.get(S)?.team;
+				if (fastAt(tl, rel) > 1 || team === undefined) {
+					continue;
+				}
+				let D: number | undefined;
+				let best = 6;
+				for (const o of tl.tracks.values()) {
+					if (o.team === team || o.pid < 0) {
+						continue;
+					}
+					let sum = 0;
+					let k = 0;
+					for (let t = rel - 3500; t <= rel; t += 250) {
+						const a = evalPlayer(tl, S, t);
+						const d = evalPlayer(tl, o.pid, t);
+						if (!d.shown) {
+							sum = Infinity;
+							break;
+						}
+						sum += Math.hypot(a.x - d.x, a.y - d.y);
+						k += 1;
+					}
+					if (sum / k < best) {
+						best = sum / k;
+						D = o.pid;
+					}
+				}
+				if (D === undefined) {
+					continue;
+				}
+				shots += 1;
+				const apart: number[] = [];
+				const man: { x: number; y: number }[] = [];
+				for (let t = rel - 3500; t <= rel; t += 100) {
+					const a = evalPlayer(tl, S, t);
+					const d = evalPlayer(tl, D, t);
+					apart.push(Math.hypot(a.x - d.x, a.y - d.y));
+					man.push({ x: a.x, y: a.y });
+				}
+				let off: string | undefined;
+				for (let i = 0; i < apart.length && !off; i++) {
+					for (let j = i + 3; j < apart.length && j <= i + 20 && !off; j++) {
+						if (
+							apart[j]! - apart[i]! < 3 ||
+							Math.hypot(man[j]!.x - man[i]!.x, man[j]!.y - man[i]!.y) > 2.5
+						) {
+							continue;
+						}
+						for (let k = j + 1; k < apart.length && k <= j + 20; k++) {
+							if (apart[j]! - apart[k]! >= 3) {
+								off = `${seed}: ${D} off ${S} at ${Math.round(rel - 3500 + j * 100)}`;
+								break;
+							}
+						}
+					}
+				}
+				if (off) {
+					back.push(off);
+				}
+			}
+		}
+		assert.isAbove(shots, 400);
+		assert.isAtMost(back.length / shots, 1 / 11, back.join("; "));
+	}, 600_000);
+
 	test("a left-hander's follow-through is held up with his left", () => {
 		const SHOTS = new Set(["shoot", "fade", "hook", "floater", "setShot"]);
 		const held = { L: 0, R: 0 };

@@ -19938,6 +19938,13 @@ class Director {
 		// Into whatever comes next he arrives where the schedule had him: at
 		// the shot he contests, the help spot he steps into.
 		const SETTLE = 600;
+		// Unless that is where his man was going to be when the schedule was
+		// laid, and he has gone somewhere else since - the drive gone later,
+		// the cut laid again to meet the pass: as far as this (feet) off
+		// where following him has him, it is where his man is now he goes
+		// to - not back to a spot his man left a second ago, beaten while he
+		// gets there, or turned and running away from him to it.
+		const STALE = 3;
 		// The most a body he is inside puts him back out of it a tick (feet).
 		const PUSH_OUT = 0.5;
 		// A run of his, laid down at his pace and then told to end slower
@@ -20246,6 +20253,48 @@ class Director {
 				};
 				return false;
 			};
+			// A run of his set off from somewhere other than where it was laid
+			// from - where following his man has him, not where the schedule
+			// had him - that was the first leg of a longer one (out to close
+			// out on the shot, say) and now goes back the way he came, only to
+			// come round and go on again from there: straight on to where the
+			// next leg goes instead, as far along the way as that leg had him.
+			const straighten = (m: Move, next: Move | undefined) => {
+				if (
+					!next ||
+					this.marking.has(next) ||
+					Math.abs(next.t0 - m.t1) > 1 ||
+					dist(next.from, m.to) > 0.05
+				) {
+					return;
+				}
+				const ax = m.to.x - m.from.x;
+				const ay = m.to.y - m.from.y;
+				const bx = next.to.x - m.to.x;
+				const by = next.to.y - m.to.y;
+				if (ax * bx + ay * by >= 0) {
+					return;
+				}
+				const k = (m.t1 - m.t0) / Math.max(1, next.t1 - m.t0);
+				m.to = {
+					x: m.from.x + (next.to.x - m.from.x) * k,
+					y: m.from.y + (next.to.y - m.from.y) * k,
+				};
+				next.from = { ...m.to };
+			};
+			// Or one set off from past where it was taking him - following his
+			// man has got him farther along than the schedule had him going:
+			// he stays where he is (the run dropped), not run back the way he
+			// came to it.
+			const overran = (m: Move, was: Pt): boolean => {
+				const ux = m.to.x - was.x;
+				const uy = m.to.y - was.y;
+				return (
+					Math.hypot(ux, uy) >= 1.5 &&
+					dist(m.from, m.to) >= 1.5 &&
+					(m.to.x - m.from.x) * ux + (m.to.y - m.from.y) * uy < 0
+				);
+			};
 			// Following his man on from one stretch straight into the next, how
 			// fast he was going at the end of the last, and when that was.
 			let carry: { vx: number; vy: number; t: number } | undefined;
@@ -20261,7 +20310,14 @@ class Director {
 						left = undefined;
 					}
 					if (left) {
+						const was = m.from;
 						m.from = { ...left };
+						straighten(m, moves[i + 1]);
+						if (overran(m, was)) {
+							carry = undefined;
+							i++;
+							continue;
+						}
 						short = !getsThere(m, moves[i + 1]);
 					}
 					left = short ? { ...m.to } : undefined;
@@ -20313,7 +20369,14 @@ class Director {
 					// than his legs for that either.
 					let short = false;
 					if (left) {
+						const was = m.from;
 						m.from = { ...left };
+						straighten(m, moves[i + 1]);
+						if (overran(m, was)) {
+							carry = undefined;
+							i++;
+							continue;
+						}
 						short = !getsThere(m, moves[i + 1]);
 					}
 					left = short ? { ...m.to } : undefined;
@@ -20341,7 +20404,7 @@ class Director {
 						: whereIn(planned, stop);
 				// (Inside the lines, wherever the schedule had him - and what
 				// he does next from there, not from out past them.)
-				const end = mark && inPlay(mark);
+				let end = mark && inPlay(mark);
 				if (
 					mark &&
 					end &&
@@ -20351,26 +20414,6 @@ class Director {
 				) {
 					moves[j]!.from = { ...end };
 				}
-				// Straight on into his next run, if it follows on from this at
-				// once (a closeout, crashing the glass): he goes into it at
-				// speed - as much as the turn into it lets him keep, and no
-				// faster than it goes - rather than pulling up for it first.
-				const nextUp = moves[j];
-				const into =
-					end &&
-					nextUp &&
-					!this.marking.has(nextUp) &&
-					Math.abs(nextUp.t0 - stop) <= 1 &&
-					!cuts.some((c) => Math.abs(c - nextUp.t0) < 2) &&
-					!acts.some((x) => Math.abs(x - stop) <= 1) &&
-					dist(end, nextUp.to) > 1
-						? nextUp
-						: undefined;
-				const intoDir = into && end ? unitVec(end, into.to) : undefined;
-				const intoPace =
-					into && end
-						? dist(end, into.to) / Math.max(0.2, (into.t1 - into.t0) / 1000)
-						: 0;
 				// (Carrying on from the last stretch of following: from where it
 				// ended - no pause between the two.)
 				const onT = carry && a - carry.t <= DT ? carry.t : undefined;
@@ -20456,6 +20499,41 @@ class Director {
 					last = aim;
 					ticks.push({ t, aim, ball: B0.at, on, man: where(who, t) });
 				}
+				// (Off where his man has gone since the schedule was laid - see
+				// STALE. Not if what he does next is laid from where the schedule
+				// had him, though - a step into help from there, say: it goes on
+				// from there, not from where his man is now.)
+				const now = ticks.at(-1);
+				const after =
+					moves[j] && !this.marking.has(moves[j]!) ? moves[j]!.to : undefined;
+				if (
+					end &&
+					now &&
+					dist(end, now.aim) > STALE &&
+					(!after || dist(after, now.aim) <= dist(after, end))
+				) {
+					end = inPlay(now.aim);
+				}
+				// Straight on into his next run, if it follows on from this at
+				// once (a closeout, crashing the glass): he goes into it at
+				// speed - as much as the turn into it lets him keep, and no
+				// faster than it goes - rather than pulling up for it first.
+				const nextUp = moves[j];
+				const into =
+					end &&
+					nextUp &&
+					!this.marking.has(nextUp) &&
+					Math.abs(nextUp.t0 - stop) <= 1 &&
+					!cuts.some((c) => Math.abs(c - nextUp.t0) < 2) &&
+					!acts.some((x) => Math.abs(x - stop) <= 1) &&
+					dist(end, nextUp.to) > 1
+						? nextUp
+						: undefined;
+				const intoDir = into && end ? unitVec(end, into.to) : undefined;
+				const intoPace =
+					into && end
+						? dist(end, into.to) / Math.max(0.2, (into.t1 - into.t0) / 1000)
+						: 0;
 				// Never where a teammate already is: two defenders don't share a
 				// spot - helping off the same way, the one keeps a step off the
 				// other.
@@ -20494,17 +20572,25 @@ class Director {
 				);
 				let hits: { t: number; at: Pt }[] = [];
 				const spaced = ticks.map((x) => apart(x.aim, x.t));
+				// (Onto his mark still following his man all the way there, the
+				// way following him has gone only shifted over onto it - not off
+				// to the spot ahead of time, there before his man and waiting on
+				// him.)
+				const off = end && {
+					x: end.x - spaced.at(-1)!.x,
+					y: end.y - spaced.at(-1)!.y,
+				};
 				const follow = (settle: number) => {
 					hits = [];
 					const aims = ticks.map((x, i) => {
-						if (!end || x.t <= stop - settle - 200) {
+						if (!off || x.t <= stop - settle - 200) {
 							return spaced[i]!;
 						}
 						const u = Math.min(1, (x.t - (stop - settle - 200)) / settle);
 						const w = u * u * (3 - 2 * u);
 						return {
-							x: x.aim.x + (end.x - x.aim.x) * w,
-							y: x.aim.y + (end.y - x.aim.y) * w,
+							x: spaced[i]!.x + off.x * w,
+							y: spaced[i]!.y + off.y * w,
 						};
 					});
 					// Smoothed: a man's feet don't follow every flicker of the ball.
@@ -22126,7 +22212,9 @@ class Director {
 							: -1;
 			const k = s * (GIVE_WAY + GIVE_WAY_SLACK + 0.2) - off;
 			// (Back where he was by the time the ball is in the air to him -
-			// off the rim, say: where his hands are, it goes.)
+			// off the rim, say: where his hands are, it goes. Unless back
+			// there by then is back through the shooter, still coming down:
+			// then he has it where he stepped to.)
 			const to = this.ball.find(
 				(b) =>
 					b.kind === "fly" &&

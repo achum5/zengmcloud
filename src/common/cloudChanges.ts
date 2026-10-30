@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 58,
+		date: "2026-10-30",
+		text: "3D game: defenders stay with their man instead of drifting off and coming back. A defender no longer heads for a spot his man has already left, so a ball handler who turns the corner doesn't slip past him by accident, and he doesn't sprint ahead to where a drive ends and wait there. A post or cutter's defender no longer turns and runs away from his man after the catch, only to turn back and jump at the shot. When he has to turn and run to stay in front of a drive, he keeps his head and shoulders turned toward the ball.",
+	},
+	{
 		n: 57,
 		date: "2026-10-30",
 		text: "Highlight reels now always include every shot taken in the last 3 seconds of a quarter or overtime, made or missed.",
