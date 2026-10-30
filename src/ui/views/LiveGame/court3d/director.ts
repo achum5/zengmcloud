@@ -19775,6 +19775,9 @@ class Director {
 		// Flat out, at the very most.
 		const FASTEST = SPRINT * 1.1;
 		const ACCEL = 24;
+		// (Of that, how much he counts on to pull up with, coming at a spot or
+		// at his man.)
+		const BRAKE = 0.8;
 		const GAIN = 3;
 		// Too short a stretch to follow anybody in (ms).
 		const SHORTEST = 250;
@@ -20635,8 +20638,11 @@ class Director {
 						const ex = T.x - p.x;
 						const ey = T.y - p.y;
 						const e = Math.hypot(ex, ey);
-						let wx = fx + ex * GAIN;
-						let wy = fy + ey * GAIN;
+						// (Coming at it, no faster than he can pull up in the room
+						// there is: there, not run on past it.)
+						const toward = Math.min(e * GAIN, Math.sqrt(2 * ACCEL * BRAKE * e));
+						let wx = fx + (e > 1e-6 ? (ex / e) * toward : 0);
+						let wy = fy + (e > 1e-6 ? (ey / e) * toward : 0);
 						// Up against his man he gives ground, as quick as his feet
 						// let him - never into him (or not for long: see keepOff).
 						{
@@ -20648,6 +20654,24 @@ class Director {
 								const k = ((GIVE - md) * GAIN * 2) / Math.max(md, 0.3);
 								wx += mx * k;
 								wy += my * k;
+							}
+							// Coming at him - his man coming at him too, picking him
+							// up - no faster than he can pull up before he is on him:
+							// not run on past him, the two of them by each other.
+							const M0 = ticks[i - 1]!.man;
+							if (md > 0.3) {
+								const ux = -mx / md;
+								const uy = -my / md;
+								const closing =
+									(wx - (M.x - M0.x) / (DT / 1000)) * ux +
+									(wy - (M.y - M0.y) / (DT / 1000)) * uy;
+								const room = Math.sqrt(
+									2 * ACCEL * BRAKE * Math.max(0, md - GIVE),
+								);
+								if (closing > room) {
+									wx -= ux * (closing - room);
+									wy -= uy * (closing - room);
+								}
 							}
 						}
 						// Turning and running to cover ground, until he has caught up.

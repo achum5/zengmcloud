@@ -2228,6 +2228,113 @@ describe("3D director", () => {
 		assert.isAtMost(back.length / shots, 1 / 11, back.join("; "));
 	}, 600_000);
 
+	// Out on the floor with it, a man does not get by the man guarding him
+	// - the nearest of theirs to him - for nothing: level with him or past
+	// him on the way to the rim for a beat and more, no screen in it, only
+	// for him to be back in front of him again, the man with the ball still
+	// out there (picked up coming at him, he ran on past him). (Four games:
+	// eleven a game at most, where it was twelve and more before.)
+	test("the man with the ball does not get by his man for nothing", () => {
+		let times = 0;
+		const by: string[] = [];
+		for (const seed of ["a", "b", "c", "d"]) {
+			const { tl } = compile(seed, 140);
+			const tracks = [...tl.tracks.values()];
+			let run: { t0: number; h: number; d: number } | undefined;
+			for (let t = 0; t < tl.end; t += 50) {
+				const h =
+					fastAt(tl, t) > 1.001 ? undefined : evalBall(tl, t, bodyFor).holder;
+				const H = h === undefined ? undefined : evalPlayer(tl, h, t);
+				const team = h === undefined ? undefined : tl.tracks.get(h)?.team;
+				if (
+					!H ||
+					h === undefined ||
+					team === undefined ||
+					!H.shown ||
+					!/^dribble/.test(H.anim)
+				) {
+					run = undefined;
+					continue;
+				}
+				const rim = { x: rimX(team), y: COURT_H / 2 };
+				const dr = Math.hypot(rim.x - H.x, rim.y - H.y);
+				if (dr < 15 || (H.x - COURT_W / 2) * (rim.x - COURT_W / 2) < 0) {
+					run = undefined;
+					continue;
+				}
+				let d: number | undefined;
+				let near = 9;
+				for (const o of tracks) {
+					const q = evalPlayer(tl, o.pid, t);
+					if (o.team !== team && o.pid >= 0 && q.shown) {
+						const g = Math.hypot(q.x - H.x, q.y - H.y);
+						if (g < near) {
+							near = g;
+							d = o.pid;
+						}
+					}
+				}
+				if (d === undefined) {
+					run = undefined;
+					continue;
+				}
+				const G = evalPlayer(tl, d, t);
+				if (
+					(G.x - H.x) * (rim.x - H.x) + (G.y - H.y) * (rim.y - H.y) >=
+					0.5 * dr
+				) {
+					run = undefined;
+					continue;
+				}
+				if (!run || run.h !== h || run.d !== d) {
+					run = { t0: t, h, d };
+				}
+				if (t - run.t0 !== 400) {
+					continue;
+				}
+				// (Coming off a screen is another thing.)
+				const t0 = run.t0;
+				const screened = tracks.some(
+					(o) =>
+						o.team === team &&
+						o.pid !== h &&
+						o.acts.some(
+							(a) => a.anim === "screen" && a.t1 > t0 - 2000 && a.t0 < t,
+						) &&
+						(() => {
+							const q = evalPlayer(tl, o.pid, t0);
+							return Math.hypot(q.x - H.x, q.y - H.y) < 10;
+						})(),
+				);
+				if (screened) {
+					continue;
+				}
+				times += 1;
+				for (let u = t; u < t + 2500; u += 100) {
+					if (evalBall(tl, u, bodyFor).holder !== h) {
+						break;
+					}
+					const H2 = evalPlayer(tl, h, u);
+					const G2 = evalPlayer(tl, d, u);
+					const d2 = Math.hypot(rim.x - H2.x, rim.y - H2.y);
+					if (d2 < 12) {
+						break;
+					}
+					if (
+						((G2.x - H2.x) * (rim.x - H2.x) + (G2.y - H2.y) * (rim.y - H2.y)) /
+							d2 >
+						2
+					) {
+						by.push(`${seed}: ${h} by ${d} at ${t0}`);
+						break;
+					}
+				}
+			}
+		}
+		assert.isAbove(times, 40);
+		assert.isAtMost(by.length, 44, by.join("; "));
+	}, 900_000);
+
 	test("a left-hander's follow-through is held up with his left", () => {
 		const SHOTS = new Set(["shoot", "fade", "hook", "floater", "setShot"]);
 		const held = { L: 0, R: 0 };
