@@ -24811,6 +24811,38 @@ class Director {
 		}
 	}
 
+	// Nobody there after all - the man he was to put a body on gone
+	// somewhere else by the time it came to it (the ball down off the rim
+	// early, the run in of his cut short): no box-out of the air, no fight
+	// for position with a man nowhere near him. He just plays the ball.
+	private nobodyToBox() {
+		const NEAR = 6;
+		const all = [...this.tracks.values()].filter((o) => o.pid >= 0);
+		const shown = (o: Track, t: number) => {
+			const k = lastBy(o.shown, t, (x) => x[0]);
+			return k >= 0 && o.shown[k]![1];
+		};
+		for (const tr of all) {
+			const theirs = all.filter((o) => o.team !== tr.team);
+			tr.acts = tr.acts.filter((a) => {
+				if (a.anim !== "boxOut" && a.anim !== "fight") {
+					return true;
+				}
+				for (let t = a.t0; t <= a.t1; t += 100) {
+					const P = this.posAt(tr.pid, t);
+					if (
+						theirs.some(
+							(o) => shown(o, t) && dist(this.posAt(o.pid, t), P) < NEAR,
+						)
+					) {
+						return true;
+					}
+				}
+				return false;
+			});
+		}
+	}
+
 	// ON HIS BACK. A man backing his man down in the post backs into him:
 	// his man is there on his back, between him and the rim, giving ground a
 	// step at a time - not off wherever following him had him (fronting him
@@ -25199,6 +25231,7 @@ class Director {
 				(a) => a.t1 - a.t0 >= GLIMPSE_MS || !GLIMPSED.has(a.anim),
 			);
 		}
+		this.nobodyToBox();
 		// (Nor, with those gone, does a man pull up dead where one was.)
 		this.flowOn();
 		// The lead-in to a play - the ball brought up, the set getting going

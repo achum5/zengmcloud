@@ -2384,7 +2384,7 @@ describe("3D director", () => {
 		assert.deepEqual(off, []);
 	}, 900_000);
 
-	test("an and-one's foul is on the shooter as he lets it go, and nobody fakes at nobody", () => {
+	test("an and-one's foul is on the shooter as he lets it go - and nobody fakes, boxes out or fights for position with nobody there", () => {
 		const CONTACT = new Set(["hack", "contest", "block", "reach", "bump"]);
 		let fouls = 0;
 		let fakes = 0;
@@ -2452,6 +2452,30 @@ describe("3D director", () => {
 					});
 					if (!there) {
 						off.push(`${seed}: ${a.anim} by ${tr.pid} at ${Math.round(a.t0)}`);
+					}
+				}
+				for (const a of tr.acts) {
+					if (
+						(a.anim !== "boxOut" && a.anim !== "fight") ||
+						fastAt(tl, a.t0) > 1.001 ||
+						!evalPlayer(tl, tr.pid, a.t0).shown
+					) {
+						continue;
+					}
+					let near = Infinity;
+					for (let t = a.t0; t <= a.t1; t += 100) {
+						const P = evalPlayer(tl, tr.pid, t);
+						for (const o of tracks) {
+							const q = evalPlayer(tl, o.pid, t);
+							if (o.team !== tr.team && o.pid >= 0 && q.shown) {
+								near = Math.min(near, Math.hypot(q.x - P.x, q.y - P.y));
+							}
+						}
+					}
+					if (near > 7) {
+						off.push(
+							`${seed}: ${a.anim} by ${tr.pid} at ${Math.round(a.t0)}, ${near.toFixed(1)} ft from anybody`,
+						);
 					}
 				}
 			}
