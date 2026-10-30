@@ -530,6 +530,11 @@ export const positionCost = (guards: number, forwards: number) => {
 	return MODEL.guards.cost * g ** 3 + MODEL.forwards.cost * f ** 3;
 };
 
+// The parts of the last roster priced, for the arena's trade checker: its
+// players' points, its lineups' synergy and what its positions cost, in
+// points a game.
+const lastParts = { players: 0, synergy: 0, positions: 0 };
+
 // Points of the roster in placeRoleFree, placeOffense, placeUsage,
 // placeGuard, placeForward, placeHeld and placeSkills.
 const pointsOfPlaces = () => {
@@ -553,7 +558,11 @@ const pointsOfPlaces = () => {
 	}
 	const synergy =
 		STARTER_SYNERGY * unitSynergy(0) + (1 - STARTER_SYNERGY) * unitSynergy(5);
-	return total + MODEL.synergy * synergy - positionCost(guards, forwards);
+	const positions = positionCost(guards, forwards);
+	lastParts.players = total;
+	lastParts.synergy = MODEL.synergy * synergy;
+	lastParts.positions = positions;
+	return total + MODEL.synergy * synergy - positions;
 };
 
 // The roster's places from players already in pecking order.
@@ -577,6 +586,12 @@ const pointsOfSorted = (sorted: readonly StrengthPlayer[]) => {
 // Only differences between rosters mean anything.
 export const rosterPoints = (players: readonly StrengthPlayer[]) =>
 	pointsOfSorted([...players].sort(byValueNoPot));
+
+// The same, in its parts (see lastParts).
+export const rosterParts = (players: readonly StrengthPlayer[]) => {
+	const total = rosterPoints(players);
+	return { total, ...lastParts };
+};
 
 // What one player is worth as a single number: his points at the sixth man's
 // minutes with a typical share of the ball, over a minimum player's. For

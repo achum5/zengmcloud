@@ -47,6 +47,7 @@ import {
 	rosterPoints,
 	strengthSettings,
 	type ValueRatings,
+	rosterParts,
 } from "../../worker/core/realisticFrontOffice/strength.ts";
 import { inGameOrder, play, toSimTeam } from "../impact/simTools.ts";
 import {
@@ -855,16 +856,35 @@ const healthy = (players: readonly Player[]) =>
 		return copy;
 	});
 
+const strengthPlayers = (players: readonly Player[]) =>
+	players.map((p) => ({
+		...playerLine(
+			last(p.ratings) as unknown as ValueRatings,
+			last(p.ratings).pos,
+		),
+		valueNoPot: p.valueNoPot,
+	}));
+
 const modelPoints = (players: readonly Player[]) =>
-	rosterPoints(
-		players.map((p) => ({
-			...playerLine(
-				last(p.ratings) as unknown as ValueRatings,
-				last(p.ratings).pos,
-			),
-			valueNoPot: p.valueNoPot,
-		})),
-	);
+	rosterPoints(strengthPlayers(players));
+
+// The model's points in their parts (players, synergy, positions), and the
+// skills of the eight who will play most, for the fit audit.
+const fitOf = (players: readonly Player[]) => {
+	const { total, ...parts } = rosterParts(strengthPlayers(players));
+	const skills: Record<string, number> = {};
+	const positions: Record<string, number> = {};
+	for (const p of [...players]
+		.sort((a, b) => b.valueNoPot - a.valueNoPot)
+		.slice(0, 8)) {
+		for (const skill of last(p.ratings).skills) {
+			skills[skill] = (skills[skill] ?? 0) + 1;
+		}
+		const pos = last(p.ratings).pos;
+		positions[pos] = (positions[pos] ?? 0) + 1;
+	}
+	return { total, ...parts, skills, positions };
+};
 
 // For each side of each trade: what the model expected its healthy roster to
 // gain this season, and what it gained in games against the rest of the league
@@ -907,12 +927,18 @@ const checkTrades = async (trades: WatchedTrade[], games: number) => {
 						trade.rosters[j].filter((p) => trade.give[j].pids.includes(p.pid)),
 					),
 				];
+				const o = trade.outlook.teams.get(trade.tids[k]);
 				rows.push({
 					trade: n,
 					season: trade.season,
 					phase: trade.phase,
 					tid: trade.tids[k],
 					gain: trade.gains[k],
+					// Where the team stood: its title odds and strength this season.
+					title: o?.title[0],
+					strength: o?.strength[0],
+					fitBefore: fitOf(before),
+					fitAfter: fitOf(after),
 					modelNow: modelPoints(after) - modelPoints(before),
 					simNow:
 						(await marginOf(trade.tids[k], after, n * 2 + k)) -
