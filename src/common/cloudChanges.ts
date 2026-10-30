@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 48,
+		date: "2026-10-30",
+		text: "Recaps no longer call it an upset when a team with a clearly better record beats a worse one, even if the betting line had it the other way. The All-Star Game recap gets more headlines and puts the dunk contest and three-point shootout in their own paragraph.",
+	},
+	{
 		n: 47,
 		date: "2026-10-30",
 		text: 'Recaps: when a team was behind with two minutes left and the winning basket is already in the first sentence, the finish now says how the last two minutes went ("The Spurs were up 120-116 with two minutes left. The Nuggets outscored them 13-6 from there.") instead of skipping straight to the final score.',

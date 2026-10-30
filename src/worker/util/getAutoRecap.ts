@@ -966,6 +966,23 @@ const isUpset = (game: RecapGame, shape: Shape): boolean => {
 	if (!s || s.points < 6) {
 		return false;
 	}
+	// Not when the records say otherwise. The line reads who is in uniform
+	// tonight, the reader reads the standings: "Trail Blazers pull the upset
+	// over the 76ers" of a 22-8 team beating a 10-21 one reads as a mistake,
+	// whatever the books thought.
+	const wr = shape.winner.record;
+	const lr = shape.loser.record;
+	if (!game.playoffs && wr && lr) {
+		const wGames = wr.won + wr.lost - 1;
+		const lGames = lr.won + lr.lost - 1;
+		if (
+			wGames >= 10 &&
+			lGames >= 10 &&
+			(wr.won - 1) / wGames - lr.won / lGames >= 0.15
+		) {
+			return false;
+		}
+	}
 	return s.favTid === shape.loser.tid;
 };
 
@@ -6850,6 +6867,13 @@ const buildAllStar = (game: RecapGame, rng: () => number): string => {
 	const l = squad(loser);
 	const total = winner.pts + loser.pts;
 
+	// One a season, so across seasons the same three headlines came round
+	// again and again: more of them, with his points and his side's win
+	// when the box score has them.
+	const mvpRow = as.mvp
+		? [...winner.players, ...loser.players].find((p) => p.name === as.mvp)
+		: undefined;
+	const mvpWon = !!mvpRow && winner.players.includes(mvpRow);
 	const headline = as.mvp
 		? pick(
 				rng,
@@ -6857,6 +6881,10 @@ const buildAllStar = (game: RecapGame, rng: () => number): string => {
 					`${as.mvp} takes home All-Star Game MVP`,
 					`${as.mvp} is the All-Star Game MVP`,
 					`${as.mvp} steals the show at the All-Star Game`,
+					...(mvpRow && mvpRow.pts >= 20
+						? [`${as.mvp} scores ${mvpRow.pts} and wins All-Star MVP`]
+						: []),
+					...(mvpWon ? [`${as.mvp} leads ${w} to an All-Star Game win`] : []),
 				],
 				"allStarHeadlineMvp",
 			)
@@ -6886,9 +6914,7 @@ const buildAllStar = (game: RecapGame, rng: () => number): string => {
 	// box score - the old version named whoever the impact score liked best and
 	// left the headline's MVP unexplained.
 	const named = new Set<string>();
-	const mvpLine = as.mvp
-		? [...winner.players, ...loser.players].find((p) => p.name === as.mvp)
-		: undefined;
+	const mvpLine = mvpRow;
 	if (mvpLine) {
 		named.add(mvpLine.name);
 		// With how he got there ("on 8 three-pointers"), and the award said in
@@ -6950,6 +6976,7 @@ const buildAllStar = (game: RecapGame, rng: () => number): string => {
 
 	// The weekend's contests, with the field named - the runners-up were in the
 	// data all along and never reached the page.
+	const contests: string[] = [];
 	const extras: string[] = [];
 	const field = (c: { winner?: string; players: string[] } | undefined) => {
 		if (!c?.winner) {
@@ -6971,7 +6998,7 @@ const buildAllStar = (game: RecapGame, rng: () => number): string => {
 		// in its own "A and B" field list, and "won the dunk contest over Zach
 		// LaVine and Derrick Jones Jr. and Stephen Curry took the three-point
 		// shootout" runs the two together.
-		sentences.push(
+		contests.push(
 			`${pick(
 				rng,
 				["Over the weekend", "Elsewhere on the weekend", "On the undercard"],
@@ -6980,7 +7007,9 @@ const buildAllStar = (game: RecapGame, rng: () => number): string => {
 		);
 	}
 
-	return `**${headline}**\n\n${sentences.join(" ")}`;
+	// The weekend's contests are their own paragraph: the game is one story
+	// and the dunk contest another.
+	return [`**${headline}**`, sentences.join(" "), ...contests].join("\n\n");
 };
 
 // --- Entry point: one game -----------------------------------------------------
