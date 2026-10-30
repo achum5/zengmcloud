@@ -2232,8 +2232,9 @@ describe("3D director", () => {
 	// - the nearest of theirs to him - for nothing: level with him or past
 	// him on the way to the rim for a beat and more, no screen in it, only
 	// for him to be back in front of him again, the man with the ball still
-	// out there (picked up coming at him, he ran on past him). (Four games:
-	// eleven a game at most, where it was twelve and more before.)
+	// out there (picked up coming at him, he ran on past him; or expected to
+	// pull up at the end of a run he went straight on from). (Four games:
+	// eight or nine a game at most, where it was twelve and more before.)
 	test("the man with the ball does not get by his man for nothing", () => {
 		let times = 0;
 		const by: string[] = [];
@@ -2332,7 +2333,7 @@ describe("3D director", () => {
 			}
 		}
 		assert.isAbove(times, 40);
-		assert.isAtMost(by.length, 44, by.join("; "));
+		assert.isAtMost(by.length, 34, by.join("; "));
 	}, 900_000);
 
 	test("a left-hander's follow-through is held up with his left", () => {

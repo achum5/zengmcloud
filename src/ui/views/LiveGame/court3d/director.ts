@@ -19827,6 +19827,23 @@ class Director {
 			}
 			return found;
 		};
+		// (A run of his gone straight on into the next the same way - his
+		// dribble on up the floor - is one going on, not a pull-up and a set
+		// off at every one: by the time it is shown the two have run
+		// together, and his man is picking him up as he comes, not as he
+		// stops.)
+		const joined = (a: Move | undefined, b: Move | undefined) => {
+			if (!a || !b || b.t0 - a.t1 > 60) {
+				return false;
+			}
+			const ax = a.to.x - a.from.x;
+			const ay = a.to.y - a.from.y;
+			const bx = b.to.x - b.from.x;
+			const by = b.to.y - b.from.y;
+			const la = Math.hypot(ax, ay);
+			const lb = Math.hypot(bx, by);
+			return la > 0.3 && lb > 0.3 && (ax * bx + ay * by) / (la * lb) > 0.5;
+		};
 		const whereIn = (tr: Track, t: number): Pt => {
 			const k = lastAt(tr.moves, t, (m) => m.t0);
 			if (k < 0) {
@@ -19836,7 +19853,17 @@ class Director {
 			if (t >= m.t1) {
 				return m.to;
 			}
-			const e = 0.5 - 0.5 * Math.cos((Math.PI * (t - m.t0)) / (m.t1 - m.t0));
+			const inJ = joined(tr.moves[k - 1], m);
+			const outJ = joined(m, tr.moves[k + 1]);
+			const u = (t - m.t0) / (m.t1 - m.t0);
+			const e =
+				inJ && outJ
+					? u
+					: inJ
+						? Math.sin((Math.PI / 2) * u)
+						: outJ
+							? 1 - Math.cos((Math.PI / 2) * u)
+							: 0.5 - 0.5 * Math.cos(Math.PI * u);
 			return {
 				x: m.from.x + (m.to.x - m.from.x) * e,
 				y: m.from.y + (m.to.y - m.from.y) * e,

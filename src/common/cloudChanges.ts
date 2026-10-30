@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 60,
+		date: "2026-10-30",
+		text: "3D game: defenders read a ball handler's dribble up the floor as one continuous move, so they pick him up in stride instead of setting up for him to stop - fewer handlers slipping past their man without trying to.",
+	},
+	{
 		n: 59,
 		date: "2026-10-30",
 		text: "Player Stats: switching between Regular Season, Playoffs, Combined and a single playoff series no longer scrambles the columns. The Contract Value column stays in every view - always the player's regular-season value against his salary, rather than a few playoff games against a full year's pay - the Shot Locations column headers line up again, the YOE heading is over years in the league instead of over Age, and the career and all-seasons tables keep their own sort and column settings.",
