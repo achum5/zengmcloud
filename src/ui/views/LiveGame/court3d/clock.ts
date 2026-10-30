@@ -29,6 +29,9 @@ const LEAD_TRUE = 3.5;
 // shot still to go up, never out before it is (see buildClocks).
 export const LEAD_MOST = 2;
 const SHOT_UP = 0.1;
+// The shot clock runs at most this much faster (or slower) than the game
+// clock on screen, catching up with the sim's (see shotClockAt).
+const RATE_MOST = 1.5;
 // (In the last few seconds, no more than this share of what is left: what
 // comes next gets the time the sim gives it.)
 const LEAD_SHARE = 0.25;
@@ -57,7 +60,9 @@ export type Clocks = {
 	// When the shot clock restarted, and from what.
 	// `hold`: the clock is reset but not running - a basket was made, and it
 	// starts again when the ball is inbounded (the next reset, at tl.poss).
-	resets: { t: number; from: number; hold?: true }[];
+	// `line`: not a reset at all - the sim's own reading on a line, which the
+	// clock on screen reads exactly there (see shotClockAt).
+	resets: { t: number; from: number; hold?: true; line?: true }[];
 	// An Elam Ending: from when the game clock is off, played to a target
 	// score instead.
 	elam?: { t: number; target: number };
@@ -73,7 +78,7 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 	let live: number | undefined;
 	// The last line that carried the sim's shot clock.
 	let anchor:
-		| { t: number; clock: number; shot: number; period: number; lead: number }
+		| { t: number; clock: number; shot: number; period: number }
 		| undefined;
 	// Whether this game's lines carry the shot clock at all (older saved
 	// replays don't, and fall back to reading it off possession).
@@ -86,16 +91,8 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 	let fresh: number | undefined;
 	const possStarts = tl.poss.map(([t]) => t).filter(Number.isFinite);
 	const possStartSet = new Set(possStarts);
-	// How far the clock on screen is ahead of the sim's (see LEAD_MOST). The
-	// shot clock runs with it: set afresh - a new possession, a reset - it
-	// reads what it is set to, and each reading the sim gives it after that
-	// is put as far ahead as the game clock has got since, so it never jumps
-	// back up (or down) at the next line.
+	// How far the clock on screen is ahead of the sim's (see LEAD_MOST).
 	let lead = 0;
-	const leads: { t: number; lead: number }[] = [];
-	const starts = [...possStarts].sort((a, b) => a - b);
-	let freshAt = -Infinity;
-	let freshLead = 0;
 	for (const [j, b] of tl.beats.entries()) {
 		const e = events[b.i];
 		if (!e) {
@@ -216,20 +213,6 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 			lead = 0;
 		}
 		marks.push({ t: at, clock: e.clock - lead, period });
-		leads.push({ t: b.actionStart, lead });
-		// (A new possession since: a fresh shot clock, from as far ahead as the
-		// game clock was then.)
-		const p =
-			starts[
-				lastAt(
-					starts.map((t) => ({ t })),
-					b.actionStart,
-				)
-			];
-		if (p !== undefined && p > freshAt) {
-			freshAt = p;
-			freshLead = leads[lastAt(leads, p)]?.lead ?? 0;
-		}
 		if (shot !== undefined) {
 			// The sim's own shot clock (games simmed since it started logging
 			// it). If it reads higher than the last line's, run down by the game
@@ -250,20 +233,13 @@ export const buildClocks = (tl: CourtTimeline, events: RawEvent[]): Clocks => {
 					t: anchor.t,
 					from: Math.min(SHOT_CLOCK, shot + (anchor.clock - e.clock)),
 				});
-				if (anchor.t > freshAt) {
-					freshAt = anchor.t;
-					freshLead = anchor.lead;
-				}
 			}
 			// A line that hands the ball over (a defensive rebound, a steal)
 			// carries the clock of the possession that just ended; the new
 			// one starts fresh there (tl.poss), so it isn't an anchor for it.
 			if (!possStartSet.has(b.actionStart)) {
-				resets.push({
-					t: b.actionStart,
-					from: Math.max(0, shot - (lead - freshLead)),
-				});
-				anchor = { t: b.actionStart, clock: e.clock, shot, period, lead };
+				resets.push({ t: b.actionStart, from: shot, line: true });
+				anchor = { t: b.actionStart, clock: e.clock, shot, period };
 			}
 			exact = true;
 		}
@@ -485,7 +461,21 @@ export const shotClockAt = (c: Clocks, t: number): number | undefined => {
 	if (start === undefined || start < game) {
 		return undefined;
 	}
-	const left = Math.max(0, r.from - (start - game));
+	// It runs with the game clock on screen - stopped when that is - down to
+	// exactly what the sim has on its next line. (The game clock on screen
+	// can be a little ahead of the sim's, and give it back - see LEAD_MOST -
+	// so the shot clock runs that little faster or slower to get there: it
+	// never jumps at the line.)
+	const next = c.resets[i + 1];
+	const end = next?.line ? gameClockAt(c, next.t) : undefined;
+	const rate =
+		next && end !== undefined && start - end > 0.5 && next.from < r.from
+			? Math.min(
+					RATE_MOST,
+					Math.max(1 / RATE_MOST, (r.from - next.from) / (start - end)),
+				)
+			: 1;
+	const left = Math.max(0, r.from - (start - game) * rate);
 	// Turned off when it can't run out before the period does.
 	return left > game ? undefined : left;
 };
