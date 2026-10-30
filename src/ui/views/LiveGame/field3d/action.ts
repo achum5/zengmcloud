@@ -1,4 +1,4 @@
-import { elusiveness, type FieldRatings } from "./ratings.ts";
+import { elusiveness, type FieldRatings, type Flair } from "./ratings.ts";
 import type {
 	BallHold,
 	BallSeg,
@@ -87,6 +87,7 @@ export type ActInput = {
 	// where the game has them (see ratings.ts).
 	speeds?: Map<number, number>;
 	rated?: Map<number, FieldRatings>;
+	flair?: Map<number, Flair>;
 	r: () => number;
 };
 
@@ -586,8 +587,10 @@ const closest = (men: Actor[], p: Pt, t?: number): Actor | undefined => {
 class Actor {
 	readonly part: Part;
 	readonly top: number;
-	// His ratings, where the game has them (see ratings.ts).
+	// His ratings, where the game has them, and how he stands out by them
+	// (see ratings.ts).
 	readonly rated: FieldRatings | undefined;
+	readonly flair: Flair;
 	// The way he faces at the end of what he has been given so far.
 	yaw: number;
 	// How far past a sideline he may go: out of bounds.
@@ -597,10 +600,11 @@ class Actor {
 	// bendInto).
 	pinned = -Infinity;
 
-	constructor(part: Part, speed = 1, rated?: FieldRatings) {
+	constructor(part: Part, speed = 1, rated?: FieldRatings, flair: Flair = {}) {
 		this.part = part;
 		this.top = topOf(part.role) * speed;
 		this.rated = rated;
+		this.flair = flair;
 		let yaw = part.legs[0]?.yaw ?? 0;
 		for (const l of part.legs) {
 			yaw = yawOf(l, yaw);
@@ -2199,9 +2203,13 @@ const G = 32;
 const PASS_FPS = 70;
 const PASS_LOFT = 0.05;
 const PASS_LEAST_FPS = 60;
-const flightOf = (from: Pt, to: Pt): { ms: number; peak: number } => {
+// (A big arm, against the other quarterbacks in the game: that much harder
+// at the most, a weak one that much softer.)
+const ARM = 0.08;
+const flightOf = (from: Pt, to: Pt, arm = 0): { ms: number; peak: number } => {
 	const l = dist(from, to);
-	const v = Math.max(PASS_LEAST_FPS, PASS_FPS - l * PASS_LOFT);
+	const v =
+		Math.max(PASS_LEAST_FPS, PASS_FPS - l * PASS_LOFT) * (1 + ARM * arm);
 	const s = l / v;
 	return { ms: s * 1000, peak: Math.max(0.4, (G * s * s) / 8) };
 };
@@ -2658,6 +2666,9 @@ const SLIP_SWAT_ON = 2;
 // and a man on him (this near) or the end zone; how long he is up (ms), and
 // how high it is caught (feet).
 const LEAP = 0.5;
+// (Sure hands, against the other receivers in the game: up for it, or laid
+// out for it, that much more often at the most.)
+const HANDS = 0.5;
 const LEAP_DEEP = 36;
 const LEAP_YAC = 9;
 const CONTESTED = 6;
@@ -2851,6 +2862,9 @@ const EVADE = 0.5;
 const EVADE_FAR = 30;
 const EVADE_MS = 1200;
 const STIFF_ARM = 0.5;
+// (Strong, against the others at his position: an arm out that much more
+// often at the most.)
+const STRONG = 0.5;
 const JUKE_MS = 300;
 const JUKE_ON = 2;
 const JUKE_OVER = 5;
@@ -3156,7 +3170,13 @@ class Action {
 		this.input = input;
 		this.r = input.r;
 		this.men = input.parts.map(
-			(p) => new Actor(p, input.speeds?.get(p.pid), input.rated?.get(p.pid)),
+			(p) =>
+				new Actor(
+					p,
+					input.speeds?.get(p.pid),
+					input.rated?.get(p.pid),
+					input.flair?.get(p.pid),
+				),
 		);
 		this.o = this.men.filter((m) => m.team === input.offense);
 		this.d = this.men.filter((m) => m.team !== input.offense);
@@ -4020,6 +4040,7 @@ class Action {
 			const fl = flightOf(
 				this.w({ d: this.of(setAt).d + 1, a: this.of(setAt).a }),
 				catchPt,
+				qb.flair.arm,
 			);
 			const hold =
 				tr.settles && tr.name !== "screen" ? r() * SETTLE_HOLD_MS : 0;
@@ -4078,7 +4099,7 @@ class Action {
 				...this.w({ d: at.d + 0.8, a: at.a }),
 				z: RELEASE_Z,
 			};
-			const fl = flightOf(release, catchPt);
+			const fl = flightOf(release, catchPt, qb.flair.arm);
 			this.ball.push({
 				kind: "fly",
 				t0: throwAt,
@@ -4741,7 +4762,7 @@ class Action {
 			deep > LEAP_DEEP &&
 			yac < LEAP_YAC &&
 			(covered || e.td === true) &&
-			r() < LEAP;
+			r() < LEAP * (1 + HANDS * (rec.flair.hands ?? 0));
 		// Or, on the run and down about where he would land laid out for it,
 		// off his feet for it, some of the time - down there, then.
 		const lands = this.of({
@@ -4757,7 +4778,7 @@ class Action {
 			Math.abs(rec.t - catchAt) < 5 &&
 			(l.from.x !== l.to.x || l.from.y !== l.to.y) &&
 			Math.abs(lands.d - end.d) < DIVE_SHORT &&
-			r() < DIVE_CATCH;
+			r() < DIVE_CATCH * (1 + HANDS * (rec.flair.hands ?? 0));
 		if (dive) {
 			end = this.endOf(gain, lands.a, false, false);
 		}
@@ -5286,7 +5307,11 @@ class Action {
 		// (Where he leaves his feet, this far out - no further than he is.)
 		const out = (ft: number) =>
 			Math.max(HIT_LEAST_FT, Math.min(ft, dist(from, at)));
-		if (!how && side < 0 && r() < STIFF_ARM) {
+		if (
+			!how &&
+			side < 0 &&
+			r() < STIFF_ARM * (1 + STRONG * (carrier.flair.power ?? 0))
+		) {
 			const hit = beside(at, ang - Math.PI / 2, 2.6);
 			const face = this.toward(hit, at);
 			this.closeOn(m, hit, tc - 80, face, carrier);

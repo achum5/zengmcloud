@@ -1,4 +1,4 @@
-import { speedsOf, type FieldRatings } from "./ratings.ts";
+import { flairOf, speedsOf, type Flair, type FieldRatings } from "./ratings.ts";
 import { makeCourtRng } from "../courtRng.ts";
 import {
 	alignDefense,
@@ -943,6 +943,7 @@ class Director {
 	// Each man's speed against the others at his position, and his ratings,
 	// where the game has them (see ratings.ts).
 	readonly speeds: Map<number, number>;
+	readonly flair: Map<number, Flair>;
 	readonly rated = new Map<number, FieldRatings>();
 
 	constructor({ events, players, gid, numPeriods = 4 }: FieldInput) {
@@ -956,6 +957,7 @@ class Director {
 			players.filter((p) => p.team === 1).map((p) => p.pid),
 		];
 		this.speeds = speedsOf(players);
+		this.flair = flairOf(players);
 		for (const p of players) {
 			if (p.ratings) {
 				this.rated.set(p.pid, p.ratings);
@@ -1414,6 +1416,7 @@ class Director {
 						...(out ? { out: true } : {}),
 						speeds: this.speeds,
 						rated: this.rated,
+						flair: this.flair,
 						r: this.rng(i0, "action"),
 					})
 				: undefined;

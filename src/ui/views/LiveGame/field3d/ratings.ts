@@ -73,3 +73,61 @@ export const elusiveness = (r: FieldRatings | undefined): number | undefined =>
 	typeof r?.elu === "number"
 		? Math.min(1, Math.max(0, (r.elu - ELU_LOW) / (ELU_HIGH - ELU_LOW)))
 		: undefined;
+
+// HOW HE STANDS OUT from the others in the game who play where he does, at
+// what he is rated in (-1 well short of them, 1 well beyond them): this far
+// from the middle of them is a whole step, however spread out they are.
+const STEP_LEAST = 6;
+const standOut = (
+	players: { pid: number; pos: string; ratings?: FieldRatings }[],
+	key: keyof FieldRatings,
+): Map<number, number> => {
+	const byPos = new Map<string, number[]>();
+	for (const p of players) {
+		const v = p.ratings?.[key];
+		if (typeof v === "number") {
+			byPos.set(p.pos, [...(byPos.get(p.pos) ?? []), v]);
+		}
+	}
+	const out = new Map<number, number>();
+	for (const p of players) {
+		const v = p.ratings?.[key];
+		const all = byPos.get(p.pos);
+		if (typeof v !== "number" || !all || all.length < 2) {
+			continue;
+		}
+		const mean = all.reduce((a, b) => a + b, 0) / all.length;
+		const sd = Math.sqrt(
+			all.reduce((a, b) => a + (b - mean) ** 2, 0) / all.length,
+		);
+		out.set(
+			p.pid,
+			Math.max(-1, Math.min(1, (v - mean) / Math.max(STEP_LEAST, sd * 2))),
+		);
+	}
+	return out;
+};
+
+// Where the stars show it: a quarterback's arm (how hard he throws it), a
+// receiver's hands (up for it, or laid out for it), a back's strength (an
+// arm out into a man) - each against the others at his position.
+export type Flair = { arm?: number; hands?: number; power?: number };
+export const flairOf = (
+	players: { pid: number; pos: string; ratings?: FieldRatings }[],
+): Map<number, Flair> => {
+	const arm = standOut(players, "thp");
+	const hands = standOut(players, "hnd");
+	const power = standOut(players, "stre");
+	const out = new Map<number, Flair>();
+	for (const p of players) {
+		const f: Flair = {
+			...(arm.has(p.pid) ? { arm: arm.get(p.pid) } : {}),
+			...(hands.has(p.pid) ? { hands: hands.get(p.pid) } : {}),
+			...(power.has(p.pid) ? { power: power.get(p.pid) } : {}),
+		};
+		if (Object.keys(f).length > 0) {
+			out.set(p.pid, f);
+		}
+	}
+	return out;
+};

@@ -1,7 +1,13 @@
 import { assert, beforeAll, describe, test } from "vitest";
 import { compileField, type FieldTimeline } from "./director.ts";
 import type { RosterMan } from "./personnel.ts";
-import { elusiveness, speedsOf, type FieldRatings } from "./ratings.ts";
+import {
+	elusiveness,
+	flairOf,
+	speedsOf,
+	type FieldRatings,
+} from "./ratings.ts";
+import { dist } from "./geometry.ts";
 import { simGames, type SimGame } from "./testGames.ts";
 
 let games: SimGame[] = [];
@@ -57,6 +63,51 @@ describe("3D field ratings", () => {
 		assert.strictEqual(elusiveness({ elu: 5 }), 0);
 		assert.isUndefined(elusiveness({}));
 	});
+
+	test("the stars stand out against the others at their position, and nobody else", () => {
+		const flair = flairOf([
+			{ pid: 1, pos: "QB", ratings: { thp: 95 } },
+			{ pid: 2, pos: "QB", ratings: { thp: 55 } },
+			{ pid: 3, pos: "WR", ratings: { hnd: 70, stre: 30 } },
+			{ pid: 4, pos: "WR", ratings: { hnd: 72, stre: 30 } },
+			{ pid: 5, pos: "K", ratings: { thp: 90 } },
+		]);
+		assert.isAbove(flair.get(1)!.arm!, 0.4);
+		assert.isBelow(flair.get(2)!.arm!, -0.4);
+		// (Next to nothing between them: next to no difference.)
+		assert.isBelow(Math.abs(flair.get(3)!.hands!), 0.2);
+		assert.strictEqual(flair.get(3)!.power, 0);
+		assert.isUndefined(flair.get(5));
+	});
+
+	test("a big arm throws it harder, a weak one softer", () => {
+		const game = games[0]!;
+		const qbs = game.roster.filter((p) => p.pos === "QB");
+		const strong = new Set(qbs.filter((p) => p.team === 0).map((p) => p.pid));
+		const plain = staged(game);
+		const rated = staged(game, (p) =>
+			p.pos === "QB" ? { thp: strong.has(p.pid) ? 95 : 45 } : {},
+		);
+		// Feet a second through the air, each quarterback's passes.
+		const pace = (tl: FieldTimeline, side: 0 | 1) => {
+			let ft = 0;
+			let ms = 0;
+			for (const play of tl.plays) {
+				if (play.kind !== "pass" || play.offense !== side) {
+					continue;
+				}
+				for (const b of play.ball) {
+					if (b.kind === "fly" && b.spiral) {
+						ft += dist(b.from, b.to);
+						ms += b.t1 - b.t0;
+					}
+				}
+			}
+			return ft / Math.max(1, ms);
+		};
+		assert.isAbove(pace(rated, 0), pace(plain, 0) * 1.01);
+		assert.isBelow(pace(rated, 1), pace(plain, 1) * 0.99);
+	}, 80_000);
 
 	test("a game with ratings is staged line for line as one without", () => {
 		for (const game of games) {
