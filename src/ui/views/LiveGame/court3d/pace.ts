@@ -9,11 +9,10 @@
 // And a device that can't draw 60 - its typical frame, a few seconds at a
 // time, coming slower than 50 a second with the drawing what takes the time -
 // draws a steady 30 instead: half the work, and smoother than an uneven 40
-// with the odd long frame in it. So does a phone that can draw 60 only by
-// doing little else, its drawing most of the time between frames: run flat
-// out like that, one got hot, and slower as it got hotter. Back to 60 once a
-// frame at 30 takes so little that 60 would leave room to spare, and then
-// not again for a while.
+// with the odd long frame in it. A phone too - but one that draws 60 keeps
+// 60, however little room that leaves it. Back to 60 once a frame at 30
+// takes so little that 60 would leave room to spare, and then not again for
+// a while.
 //
 // Paused, the game holds still - only the crowd and the benches move - and 30
 // is plenty. Off the screen (scrolled away to the box score), nothing is
@@ -28,11 +27,9 @@ const SETTLE_MS = 2500;
 const STRETCH_MS = 3000;
 const AGREE = 2;
 // Slower than this between frames (ms, typically), with this much of each
-// spent drawing - or, however often they come, this much of the time
-// between them: down to SLOW.
+// spent drawing: down to SLOW.
 const SLOW_GAP_MS = 20;
 const SLOW_WORK_MS = 10;
-const SLOW_BUSY = 0.65;
 // At SLOW, a frame drawn in under this (typically): up to FAST again - but
 // not within this long of going down to SLOW, and only so many times.
 const FAST_WORK_MS = 6;
@@ -44,9 +41,6 @@ const SLACK_MS = 3;
 
 export type Pace = {
 	fps: typeof FAST | typeof SLOW;
-	// A phone (see Court3D): kept from running flat out, not just from
-	// falling behind.
-	phone: boolean;
 	// The last frame drawn, and when the rate last changed (or the stretch
 	// began), and the stretch so far: the time between frames and drawing
 	// each (ms).
@@ -60,9 +54,8 @@ export type Pace = {
 	rises: number;
 };
 
-export const makePace = (now: number, phone = false): Pace => ({
+export const makePace = (now: number): Pace => ({
 	fps: FAST,
-	phone,
 	drawnAt: -Infinity,
 	since: now,
 	from: now,
@@ -115,11 +108,7 @@ export const drawn = (
 	pace.gaps = [];
 	pace.work = [];
 	let verdict = 0;
-	if (
-		pace.fps === FAST &&
-		((gapMs > SLOW_GAP_MS && work > SLOW_WORK_MS) ||
-			(pace.phone && work > gapMs * SLOW_BUSY))
-	) {
+	if (pace.fps === FAST && gapMs > SLOW_GAP_MS && work > SLOW_WORK_MS) {
 		verdict = -1;
 	} else if (
 		pace.fps === SLOW &&

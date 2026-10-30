@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 61,
+		date: "2026-10-30",
+		text: "3D game: phones and tablets now draw at 60 frames a second, like computers. They only drop to 30 if they really can't keep up.",
+	},
+	{
 		n: 60,
 		date: "2026-10-30",
 		text: "3D game: defenders read a ball handler's dribble up the floor as one continuous move, so they pick him up in stride instead of setting up for him to stop - fewer handlers slipping past their man without trying to.",

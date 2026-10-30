@@ -52,17 +52,10 @@ describe("3D frame pacing", () => {
 		assert.strictEqual(pace.fps, FAST);
 	});
 
-	test("a phone drawing 60 only by doing little else draws 30; a computer keeps 60", () => {
-		const phone = makePace(0, true);
-		run(phone, 0, 15_000, 1000 / 60, 13);
-		assert.strictEqual(phone.fps, SLOW);
-		const computer = makePace(0);
-		run(computer, 0, 15_000, 1000 / 60, 13);
-		assert.strictEqual(computer.fps, FAST);
-		// Plenty of room: a phone stays at 60 too.
-		const easy = makePace(0, true);
-		run(easy, 0, 15_000, 1000 / 60, 5);
-		assert.strictEqual(easy.fps, FAST);
+	test("a device that draws 60 with little to spare keeps 60 - a phone too", () => {
+		const pace = makePace(0);
+		run(pace, 0, 15_000, 1000 / 60, 13);
+		assert.strictEqual(pace.fps, FAST);
 	});
 
 	test("paused, 30 a second - and the pause says nothing about the device", () => {
