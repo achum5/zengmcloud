@@ -932,6 +932,9 @@ const FAKE_SHOT_MOST = 27;
 // A hand across a shooter as he lets it go reaches this far (feet), middle to
 // middle.
 const FOUL_REACH = 4.5;
+// The man who fouls a shooter sets off for him no sooner than this (ms)
+// before he gets there.
+const FOUL_SET_OFF = 3500;
 // A whistle off the ball with the man with it stood waiting (see probe):
 // he takes a beat with it first (ms), probes for at most the last this long
 // (ms) before it goes, and in toward the rim no nearer than this (feet).
@@ -11907,8 +11910,10 @@ class Director {
 					? 760 + d * 24
 					: 620 + d * 22;
 			// The man who fouls him on it: there as he goes up - from a way
-			// off, setting off in time to get there - and up with him, the hand
-			// at the ball and down across his arm with it.
+			// off, setting off in time to get there (not stood waiting for
+			// the moment to go flat out: on his way as soon as he is free) -
+			// and up with him, the hand at the ball and down across his arm
+			// with it.
 			const foulHim = (f: number) => {
 				const F = ahead(1.6);
 				const by = release - 180;
@@ -11920,6 +11925,15 @@ class Director {
 						break;
 					}
 					from = by - need;
+				}
+				const idle = Math.max(
+					by - FOUL_SET_OFF,
+					...(this.track(f)?.moves ?? [])
+						.filter((m) => m.t0 < from)
+						.map((m) => m.t1),
+				);
+				if (idle < from - 400) {
+					from = idle;
 				}
 				if ((this.free.get(f) ?? 0) > from) {
 					this.cutShort(f, from);

@@ -4053,7 +4053,7 @@ describe("3D director", () => {
 	test("off a board or a steal, the man with the ball keeps it coming", () => {
 		let trips = 0;
 		let stood = 0;
-		for (const seed of ["a", "b", "c"]) {
+		for (const seed of ["a", "b", "c", "d"]) {
 			const { tl } = compile(seed, 150);
 			tl.beats.forEach((b, k) => {
 				const prev = tl.beats[k - 1];

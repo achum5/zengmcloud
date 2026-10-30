@@ -130,7 +130,7 @@ describe("keeping bodies apart", () => {
 		};
 		let charges = 0;
 		let helped = 0;
-		for (const seed of ["apart", "e"]) {
+		for (const seed of ["apart", "e", "h"]) {
 			const { tl } = compile(seed, 150);
 			for (const tr of tl.tracks.values()) {
 				for (const a of tr.acts) {
