@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 63,
+		date: "2026-10-30",
+		text: "Realistic Front Offices with Realistic Free Agency turned off: CPU teams now look at free agents every day instead of most days sitting it out, so decent players no longer sit unsigned all summer.",
+	},
+	{
 		n: 62,
 		date: "2026-10-30",
 		text: "3D game: the shot clock on the court matches the game's own shot clock at every play again, instead of drifting a second or two off after some resets.",

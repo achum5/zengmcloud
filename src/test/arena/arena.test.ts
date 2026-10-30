@@ -442,8 +442,17 @@ test.runIf(env.ARENA_RUN === "1")(
 			}
 			if (env.ARENA_CHECK_TRADES !== undefined) {
 				tradeWatchers.push((deal) => {
+					// Not the outlook or the breakdown: held for every trade of a
+					// long run, they ran it out of memory.
+					const standing = (tid: number) => {
+						const o = deal.outlook.teams.get(tid);
+						return { title: o?.title[0], strength: o?.strength[0] };
+					};
 					watched.push({
-						...deal,
+						tids: deal.tids,
+						give: deal.give,
+						gains: deal.gains,
+						standing: [standing(deal.tids[0]), standing(deal.tids[1])],
 						season: g.get("season"),
 						phase: g.get("phase"),
 						rosters: [
@@ -844,7 +853,15 @@ const stampSeasonClock = async (
 	row.records = records;
 };
 
-type WatchedTrade = Parameters<(typeof tradeWatchers)[number]>[0] & {
+type WatchedTrade = Pick<
+	Parameters<(typeof tradeWatchers)[number]>[0],
+	"tids" | "give" | "gains" | "rosters"
+> & {
+	// Each side's title odds and strength this season, at the trade.
+	standing: [
+		{ title?: number; strength?: number },
+		{ title?: number; strength?: number },
+	];
 	season: number;
 	phase: number;
 };
@@ -927,7 +944,7 @@ const checkTrades = async (trades: WatchedTrade[], games: number) => {
 						trade.rosters[j].filter((p) => trade.give[j].pids.includes(p.pid)),
 					),
 				];
-				const o = trade.outlook.teams.get(trade.tids[k]);
+				const o = trade.standing[k];
 				rows.push({
 					trade: n,
 					season: trade.season,
@@ -935,8 +952,8 @@ const checkTrades = async (trades: WatchedTrade[], games: number) => {
 					tid: trade.tids[k],
 					gain: trade.gains[k],
 					// Where the team stood: its title odds and strength this season.
-					title: o?.title[0],
-					strength: o?.strength[0],
+					title: o.title,
+					strength: o.strength,
 					fitBefore: fitOf(before),
 					fitAfter: fitOf(after),
 					modelNow: modelPoints(after) - modelPoints(before),

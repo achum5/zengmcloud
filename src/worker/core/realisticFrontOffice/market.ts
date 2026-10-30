@@ -177,6 +177,9 @@ export const marketClock = {
 	// Deals both teams wanted, put off because one would rather decide at the
 	// deadline.
 	deferred: 0,
+	// The time by kind of day: an ordinary one, one in the deadline window,
+	// one of free agency, and an offseason window (every team shops).
+	byKind: {} as Record<string, { days: number; ms: number }>,
 };
 
 // Called with every deal just before it is made, with both rosters as they
@@ -1163,26 +1166,32 @@ export const deferWatchers: ((deal: {
 	waiting: ReturnType<typeof waitingOf>;
 }) => void)[] = [];
 
-const timed = async (work: () => Promise<void>) => {
+const timed = async (kind: string, work: () => Promise<void>) => {
 	const started = performance.now();
 	try {
 		await work();
 	} finally {
+		const ms = performance.now() - started;
 		marketClock.days += 1;
-		marketClock.ms += performance.now() - started;
+		marketClock.ms += ms;
+		const row = (marketClock.byKind[kind] ??= { days: 0, ms: 0 });
+		row.days += 1;
+		row.ms += ms;
 	}
 };
 
 // A day of the season, or of free agency.
-export const tradeDay = () =>
-	timed(async () => {
-		const phase = g.get("phase");
-		if (phase === PHASE.REGULAR_SEASON) {
-			await shop((await inDeadlineWindow()) ? Infinity : SHOPPERS_PER_DAY);
-		} else if (phase === PHASE.FREE_AGENCY) {
-			await shop(marketSettings.freeAgencyShoppers);
-		}
-	});
+export const tradeDay = async () => {
+	const phase = g.get("phase");
+	if (phase === PHASE.REGULAR_SEASON) {
+		const deadline = await inDeadlineWindow();
+		await timed(deadline ? "deadline" : "day", () =>
+			shop(deadline ? Infinity : SHOPPERS_PER_DAY),
+		);
+	} else if (phase === PHASE.FREE_AGENCY) {
+		await timed("freeAgency", () => shop(marketSettings.freeAgencyShoppers));
+	}
+};
 
 // The last days before the trade deadline (marketSettings.deadlineWindow).
 const inDeadlineWindow = async () => {
@@ -1214,9 +1223,7 @@ export const tradeWindow = async () => {
 			WINDOW_PHASES.includes(g.get("phase"))) ||
 		(marketSettings.preseasonWindow && g.get("phase") === PHASE.PRESEASON)
 	) {
-		await timed(async () => {
-			await shop(Infinity);
-		});
+		await timed("window", () => shop(Infinity));
 	}
 };
 

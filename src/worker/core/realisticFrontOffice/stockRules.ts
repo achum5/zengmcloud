@@ -7,7 +7,14 @@ import { contractOptionsFor } from "../contractNegotiation/generateContractOptio
 import { player } from "../index.ts";
 import { mayPay } from "./contracts.ts";
 import { frontOfficeCuts } from "./cuts.ts";
-import { priceMarket, priceSigning, sign, without } from "./freeAgency.ts";
+import {
+	netAt,
+	priceMarket,
+	priceSigning,
+	sign,
+	without,
+	yearsFor,
+} from "./freeAgency.ts";
 import {
 	aiTids,
 	currentOutlook,
@@ -49,7 +56,7 @@ const bidsBy = async () => {
 
 // Free agents a team prices each day at the length each wants, best first,
 // and how many of those it prices at every length.
-const CANDIDATES = 60;
+const CANDIDATES = 30;
 const SHORTLIST = 4;
 
 // The best of his asks for a team, by what each is worth to it - undefined if
@@ -90,8 +97,10 @@ const bestAsk = (
 };
 
 // A day of free agency for the CPU teams, in place of stock's autoSign: each,
-// in random order and at stock's pace, signs the free agent willing to sign
-// with it who is worth the most to it. Returns the signings.
+// in random order, signs the free agent willing to sign with it who is worth
+// the most to it. Every day (owner's call): at stock's pace - a team sat out
+// three days in four - good players were still unsigned as free agency
+// ended. Returns the signings.
 export const signingDay = async () => {
 	// And what he asked of the team for the length he wanted.
 	const signed: {
@@ -110,9 +119,16 @@ export const signingDay = async () => {
 		return signed;
 	}
 	const teams = (await idb.cache.teams.getAll()).filter((t) => !t.disabled);
-	const { outlook, states } = await priceMarket(pool, teams, {
+	const { outlook, states, lineOf } = await priceMarket(pool, teams, {
 		bidOf: await bidsBy(),
+		// A team bids only what it would sign him for.
+		gain: MIN_GAIN,
 	});
+	// What a contract is worth to a team, by its line for that length - quick,
+	// and remembered while the roster stands (the offer market's); a team's
+	// pick is priced in full before it signs.
+	const lineNet = (tid: number, p: Player, contract: PlayerContract) =>
+		netAt(lineOf(tid, p, yearsFor(contract.exp)), contract.amount);
 
 	shuffle(teams);
 	for (const t of teams) {
@@ -121,12 +137,6 @@ export const signingDay = async () => {
 			!local.autoPlayUntil &&
 			!g.get("spectator")
 		) {
-			continue;
-		}
-
-		// Stock's pace.
-		const probSkip = t.strategy === "rebuilding" ? 0.9 : 0.75;
-		if (Math.random() < probSkip) {
 			continue;
 		}
 
@@ -171,20 +181,49 @@ export const signingDay = async () => {
 			screened.push({
 				p,
 				ask,
-				net: priceSigning(outlook, state, p, {
-					amount: ask,
-					exp: p.contract.exp,
-				}).net,
+				net: lineNet(t.tid, p, { amount: ask, exp: p.contract.exp }),
 			});
 		}
 		screened.sort((a, b) => b.net - a.net);
-		let best:
-			| { p: Player; ask: number; contract: PlayerContract; net: number }
-			| undefined;
+		const options: {
+			p: Player;
+			ask: number;
+			contract: PlayerContract;
+			net: number;
+		}[] = [];
 		for (const { p, ask } of screened.slice(0, SHORTLIST)) {
-			const found = bestAsk(outlook, state, p, ask, false);
-			if (found && (!best || found.net > best.net)) {
-				best = { p, ask, ...found };
+			for (const option of contractOptionsFor(
+				{ amount: ask / 1000, exp: p.contract.exp },
+				p.ratings.at(-1)!.ovr,
+			)) {
+				const contract = {
+					amount: Math.round(option.amount * 1000),
+					exp: option.exp,
+				};
+				if (
+					mayPay({
+						tid: t.tid,
+						payroll: state.payroll,
+						amount: contract.amount,
+						resigning: false,
+						rosterSize: state.players.length,
+					})
+				) {
+					options.push({ p, ask, contract, net: lineNet(t.tid, p, contract) });
+				}
+			}
+		}
+		options.sort((a, b) => b.net - a.net);
+		let best: (typeof options)[number] | undefined;
+		for (const option of options.slice(0, SHORTLIST)) {
+			if (option.net < MIN_GAIN) {
+				break;
+			}
+			if (
+				priceSigning(outlook, state, option.p, option.contract).net >= MIN_GAIN
+			) {
+				best = option;
+				break;
 			}
 		}
 		if (!best) {
@@ -223,9 +262,11 @@ export const reSignAsk = async (p: Player, payroll: number, ask: number) => {
 	return bestAsk(outlook, t, p, ask, true)?.contract;
 };
 
-// As re-signing opens, what the market would pay each player whose contract
-// is up, priced as a free agent - drafted players aside, who sign as in
-// stock, and those no better than the minimum's level, who keep stock's ask.
+// As re-signing opens, what the market would pay each of the best players
+// whose contracts are up, priced as free agents. The rest keep stock's ask,
+// about the minimum anyway (pricing every one took most of a minute), and
+// drafted players sign as in stock.
+const MARKET_ASKS = 60;
 export const marketAsks = async (pids: readonly number[]) => {
 	const season = g.get("season");
 	const players: Player[] = [];
@@ -240,9 +281,10 @@ export const marketAsks = async (pids: readonly number[]) => {
 	}
 	players.sort((a, b) => b.valueNoPot - a.valueNoPot || a.pid - b.pid);
 	const teams = (await idb.cache.teams.getAll()).filter((t) => !t.disabled);
-	await priceMarket(players, teams, {
+	await priceMarket(players.slice(0, MARKET_ASKS), teams, {
 		once: true,
-		numCandidates: players.length,
+		numCandidates: MARKET_ASKS,
 		bidOf: await bidsBy(),
+		gain: MIN_GAIN,
 	});
 };

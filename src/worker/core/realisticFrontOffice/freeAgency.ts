@@ -181,6 +181,9 @@ const firstSeason = () =>
 
 const expFor = (years: number) => firstSeason() + years - 1;
 
+// How many seasons a contract running through `exp` covers (1 at least).
+export const yearsFor = (exp: number) => Math.max(1, exp - firstSeason() + 1);
+
 const lengths = () => {
 	const out: number[] = [];
 	for (
@@ -203,7 +206,7 @@ const lengths = () => {
 // for a better chance of landing him. The prices past the minimum are worked
 // out only when needed: a team that may pay him no more than the minimum never
 // needs them.
-type Line = {
+export type Line = {
 	years: number;
 	atMin: number;
 	high: number;
@@ -269,7 +272,7 @@ const firstLengths = (p: Player) => {
 	return wanted === one ? [wanted] : [wanted, one];
 };
 
-const netAt = (line: Line, amount: number) => {
+export const netAt = (line: Line, amount: number) => {
 	if (amount === g.get("minContract")) {
 		return line.atMin;
 	}
@@ -282,16 +285,16 @@ const netAt = (line: Line, amount: number) => {
 };
 
 // The most a team would pay a year and still gain by more than the margin of
-// error, if anything.
-const mostFrom = (line: Line) => {
-	if (!(line.atMin > 0)) {
+// error (and `gain` more), if anything.
+const mostFrom = (line: Line, gain = 0) => {
+	if (!(line.atMin > gain)) {
 		return undefined;
 	}
-	const most = g.get("minContract") + line.atMin / line.slope();
+	const most = g.get("minContract") + (line.atMin - gain) / line.slope();
 	if (most <= line.high) {
 		return most;
 	}
-	return line.high + netAt(line, line.high) / line.steep();
+	return line.high + (netAt(line, line.high) - gain) / line.steep();
 };
 
 // The same, up to `cap` (0 if nothing).
@@ -624,9 +627,12 @@ export const priceMarket = async (
 		once = false,
 		numCandidates = CANDIDATES,
 		bidOf,
+		gain = 0,
 	}: {
 		once?: boolean;
 		numCandidates?: number;
+		// What a team must gain by (past its margin of error) to bid.
+		gain?: number;
 		bidOf?: (
 			p: Player,
 			tid: number,
@@ -735,7 +741,7 @@ export const priceMarket = async (
 			// At the length he wants, or for a season - priced as his ask for
 			// the length he wants.
 			const asWanted = (years: number) => {
-				const most = mostFrom(lineOf(t.tid, p, years));
+				const most = mostFrom(lineOf(t.tid, p, years), gain);
 				return most === undefined
 					? undefined
 					: (most * askFor(p, wantedYears(p))) / askFor(p, years);
@@ -746,7 +752,7 @@ export const priceMarket = async (
 				if (
 					firstLengths(p).some((years) =>
 						years === wantedYears(p)
-							? lineOf(t.tid, p, years).atMin > 0
+							? lineOf(t.tid, p, years).atMin > gain
 							: (asWanted(years) ?? -Infinity) >= minContract,
 					)
 				) {
