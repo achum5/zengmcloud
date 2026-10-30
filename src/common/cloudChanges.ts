@@ -12,6 +12,11 @@ export type CloudChange = {
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 71,
+		date: "2026-10-30",
+		text: "3D game: players' hands have real fingers now - jointed, curled naturally, no more mitten. On the ball they wrap it: laid over it when holding it, spread over the top of it at every dribble.",
+	},
+	{
 		n: 70,
 		date: "2026-10-30",
 		text: "3D game: a defender who ends up right on a jump shooter gets a hand up at the shot instead of standing there in his stance watching it go.",

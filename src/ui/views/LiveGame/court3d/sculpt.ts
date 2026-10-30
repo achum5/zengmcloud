@@ -24,6 +24,7 @@ import { ballSurface, type BallSurface, HELD, surfaceFor } from "./gameBall.ts";
 import {
 	gripOf,
 	skeleton,
+	underPalm,
 	turnUpper,
 	type Body,
 	type Limb,
@@ -710,6 +711,71 @@ const untwistTable = (q: Pose, pel: V3): Float64Array => {
 };
 
 const HELD_BALL_R = 0.39;
+// How far each joint of a finger bends (radians) - the knuckle, the middle
+// joint, the end one - back (a little past straight) and forward.
+const BEND_LO = [-0.3, 0, -0.15];
+// The share of a bounce, at its top, the ball is in his hand on his dribble
+// - from as it comes up into it to as it leaves.
+const DRIBBLE_TOUCH = 0.12;
+const BEND_HI = [1.6, 1.9, 1.3];
+
+// A finger on a ball: the bend at a joint - at (x, y) in the finger's plane,
+// heading phi - that first brings the end of the next bone (l long) round
+// to the ball, cut through in that plane (round (cu, cv), rho across), and
+// no further: the bone laid on it. Already into it without bending, bent
+// back - a fingertip pressed flat on the ball - as far as keeps it on the
+// surface (PRESS_MOST past its stop at the most); out of its reach, as it
+// rests.
+const PRESS_MOST = 0.35;
+export const wrapBend = (
+	x: number,
+	y: number,
+	phi: number,
+	l: number,
+	cu: number,
+	cv: number,
+	rho: number,
+	lo: number,
+	hi: number,
+	rest: number,
+): number => {
+	const qx = cu - x;
+	const qy = cv - y;
+	const D = Math.hypot(qx, qy);
+	const K = (l * l + D * D - rho * rho) / (2 * l);
+	const meets = D > 1e-6 && Math.abs(K) <= D;
+	const tq = Math.atan2(qy, qx);
+	const ac = meets ? Math.acos(K / D) : 0;
+	const into =
+		Math.hypot(
+			x + l * Math.cos(phi + lo) - cu,
+			y + l * Math.sin(phi + lo) - cv,
+		) <= rho;
+	if (into) {
+		if (!meets) {
+			return lo;
+		}
+		let back = -Infinity;
+		for (const psi of [tq - ac, tq + ac]) {
+			let a = psi - phi;
+			a -= 2 * Math.PI * Math.ceil((a - lo) / (2 * Math.PI));
+			back = Math.max(back, a);
+		}
+		return Math.max(lo - PRESS_MOST, back);
+	}
+	if (!meets) {
+		return Math.min(hi, Math.max(lo, rest));
+	}
+	let best = Infinity;
+	for (const psi of [tq - ac, tq + ac]) {
+		let a = psi - phi;
+		a -= 2 * Math.PI * Math.floor((a - lo) / (2 * Math.PI));
+		if (a <= hi && a < best) {
+			best = a;
+		}
+	}
+	return best < Infinity ? best : Math.min(hi, Math.max(lo, rest));
+};
 // How far down from the top of his shoulders a quarter-zip's zip runs, as a
 // share of the torso.
 const T_ZIP = 0.22;
@@ -947,7 +1013,27 @@ const build = (
 		const sgn = side === 0 ? -1 : 1;
 		// (A jumper's guide hand, once it has come off the ball, is open.)
 		const off = which === "L" && gripOf(st.anim) === "shot" && q.free > 0.5;
-		const grip = gripFor(st, which, held !== undefined && !off);
+		// Dribbling, the ball up in this hand at the top of its bounce: his
+		// palm down on it, his fingers spread over it.
+		const ph = st.dribble;
+		const touch =
+			!held && ph !== undefined && st.dribbleHand === which
+				? Math.max(0, 1 - Math.min(ph, 1 - ph) / DRIBBLE_TOUCH)
+				: 0;
+		// (Between, his hand loose over where it comes back up to.)
+		const grip: Grip =
+			touch > 0.3
+				? "ball"
+				: !held && ph !== undefined && st.dribbleHand === which
+					? "relaxed"
+					: gripFor(st, which, held !== undefined && !off);
+		// The ball his hand is on, if it is.
+		const cup =
+			held && grip === "ball"
+				? held.ball
+				: touch > 0.3
+					? underPalm(limb)
+					: undefined;
 		const wrist = limb.end;
 		const tip = limb.tip ?? limb.end;
 		let h = lenV(subV(tip, wrist)) > 1e-3 ? unit(subV(tip, wrist)) : foreDir;
@@ -960,13 +1046,14 @@ const build = (
 			square(addV(inward, fwd, -0.75 + 1.9 * Math.max(0, h.u)), h),
 			inward,
 		);
-		if (held && grip === "ball") {
+		if (cup) {
 			// Palm onto the ball: a jumper's shooting hand cocked back behind
-			// it, fingers up its back; any other, fingers up its side.
-			const onto = unit(subV(held.ball, addV(wrist, h, H * 0.04)));
+			// it, fingers up its back; on his dribble, over the top of it; any
+			// other, fingers up its side.
+			const onto = unit(subV(cup, addV(wrist, h, H * 0.04)));
 			palmN = onto;
 			const shooting = which === "R" && gripOf(st.anim) === "shot";
-			h = unit(square(shooting ? h : addV(h, upV, 1.4), onto), h);
+			h = unit(square(shooting || !held ? h : addV(h, upV, 1.4), onto), h);
 		}
 		// A pass let go: palms out, thumbs down.
 		if (
@@ -998,94 +1085,157 @@ const build = (
 				side,
 			);
 		}
-		// Fingers, side by side: straight out (open), curled a little
-		// (relaxed), round the ball, or folded into the palm (a fist).
-		const curl =
-			grip === "fist" || grip === "point"
-				? 1.95
-				: grip === "relaxed"
-					? 0.6
-					: grip === "ball"
-						? 0.55
-						: 0.15;
-		const fingerR = H * 0.0088;
+		// Each finger three bones, each joint bent the way the moment calls
+		// for: nearly straight (open); curled a little, the little finger
+		// most (relaxed); folded into the palm (a fist) - or laid round the
+		// ball, each joint bent just as far as keeps the next bone on its
+		// surface, the pads of his fingers on it, spread wide.
+		const ball = cup;
+		const fingerR = H * 0.0078;
 		const lens = [0.4, 0.44, 0.41, 0.33];
-		const bend = (d: V3, c: number) =>
-			unit(
-				addV(
-					v3(d.f * Math.cos(c), d.s * Math.cos(c), d.u * Math.cos(c)),
-					palmN,
-					Math.sin(c),
-				),
-			);
-		if (fingerR * kMid < 1.4 && grip !== "point") {
-			// Too small to tell apart: the four as one, flat like the palm.
-			const dir = bend(h, curl);
-			const len = L * 0.4 * (curl > 1.2 ? 0.55 : 1);
-			for (const o of [-1, 1]) {
-				const base = addV(knuckles, ts, o * halfW * 0.85);
+		// The joints of a finger (or the thumb) from base, set off along d:
+		// each bone's length, its bend at rest, and how far it bends back
+		// and forward - on the ball, as far as lays it on the ball instead.
+		const lay = (
+			base: V3,
+			d: V3,
+			bones: number[],
+			rest: number[],
+			r: number,
+		): V3[] => {
+			const pts = [base];
+			let rho = 0;
+			let cu = 0;
+			let cv = 0;
+			if (ball) {
+				const c = subV(ball, base);
+				const off = dotV(c, unit(cross(d, palmN)));
+				const R = HELD_BALL_R + r;
+				rho = R * R > off * off ? Math.sqrt(R * R - off * off) : 0;
+				cu = dotV(c, d);
+				cv = dotV(c, palmN);
+			}
+			let x = 0;
+			let y = 0;
+			let phi = 0;
+			bones.forEach((l, k) => {
+				const a =
+					rho > 0
+						? wrapBend(
+								x,
+								y,
+								phi,
+								l,
+								cu,
+								cv,
+								rho,
+								BEND_LO[k]!,
+								BEND_HI[k]!,
+								rest[k]!,
+							)
+						: rest[k]!;
+				phi += a;
+				x += l * Math.cos(phi);
+				y += l * Math.sin(phi);
+				pts.push(addV(addV(base, d, x), palmN, y));
+			});
+			return pts;
+		};
+		// Bone by bone, each a little slimmer than the last, melted into one.
+		const bones = (pts: V3[], r: number, group: number) => {
+			for (let k = 1; k < pts.length; k++) {
+				const r0 = r * (1 - 0.07 * (k - 1));
 				add(
-					base,
-					addV(base, dir, len),
+					pts[k - 1]!,
+					pts[k]!,
 					[
-						[0, palmR * 0.95],
-						[1, palmR * 0.8],
+						[0, r0],
+						[1, r0 * (k === pts.length - 1 ? 0.84 : 0.95)],
 					],
 					HAND,
-					G_FINGER + side * 5,
+					group,
 					side,
 				);
+			}
+		};
+		const restOf = (i: number): number[] =>
+			grip === "fist" || (grip === "point" && i > 0)
+				? [1.45, 1.75, 1.05]
+				: grip === "point"
+					? [0.02, 0.04, 0.02]
+					: grip === "relaxed"
+						? [0.24 + 0.06 * i, 0.5 + 0.08 * i, 0.32 + 0.05 * i]
+						: grip === "ball"
+							? [0.2, 0.35, 0.25]
+							: [0.04 + 0.02 * i, 0.08, 0.05];
+		const spread =
+			grip === "ball"
+				? 0.22
+				: grip === "open"
+					? 0.1
+					: grip === "relaxed"
+						? 0.05
+						: 0.02;
+		if (fingerR * kMid < 0.9 && grip !== "point" && !ball) {
+			// Too small to tell apart: the four as one, flat like the palm,
+			// bent as the middle two are.
+			for (const o of [-1, 1]) {
+				const pts = lay(
+					addV(knuckles, ts, o * halfW * 0.85),
+					h,
+					[0.47, 0.3, 0.23].map((k) => k * L * 0.42),
+					restOf(1),
+					palmR * 0.8,
+				);
+				bones(pts, palmR * 0.88, G_FINGER + side * 5);
 			}
 		} else {
 			for (let i = 0; i < 4; i++) {
 				const across = (1.5 - i) / 1.5;
-				const base = addV(knuckles, ts, across * halfW * 1.25);
-				const c = i === 0 && grip === "point" ? 0.04 : curl;
-				const spread = grip === "open" ? 0.08 : grip === "ball" ? 0.12 : 0.02;
-				const dir = bend(unit(addV(h, ts, across * spread)), c);
-				const len = L * lens[i]! * (c > 1.2 ? 0.6 : 1);
-				add(
-					base,
-					addV(base, dir, len),
-					[
-						[0, fingerR],
-						[0.7, fingerR * 0.96],
-						[1, fingerR * 0.84],
-					],
-					HAND,
-					G_FINGER + side * 5 + i,
-					side,
+				// (The knuckles in an arc: the middle one furthest out.)
+				const base = addV(
+					addV(knuckles, ts, across * halfW * 1.2),
+					h,
+					L * [0.0, 0.025, 0.005, -0.04][i]!,
 				);
+				const len = L * lens[i]!;
+				const pts = lay(
+					base,
+					unit(addV(h, ts, across * spread)),
+					[0.47, 0.3, 0.23].map((k) => k * len),
+					restOf(i),
+					fingerR,
+				);
+				bones(pts, fingerR, G_FINGER + side * 5 + i);
 			}
 		}
-		// The thumb: out from the heel of the palm on its side - across the
-		// fingers in a fist.
+		// The thumb: out from the heel of the palm on its side, two bones -
+		// across the fingers in a fist, round the side of the ball on it.
 		const tBase = addV(addV(wrist, h, L * 0.16), ts, halfW * 1.05);
 		knuckleAt[side] = knuckles;
 		thumbAt[side] = tBase;
-		const tTip =
+		const tLen = L * 0.36;
+		const thumb =
 			grip === "fist" || grip === "point"
-				? addV(addV(knuckles, palmN, H * 0.016), ts, halfW * 0.1)
-				: addV(
-						addV(
-							addV(wrist, h, L * 0.5),
-							ts,
-							halfW * (grip === "ball" ? 2.2 : 1.9),
+				? (() => {
+						const tip = addV(addV(knuckles, palmN, H * 0.016), ts, halfW * 0.1);
+						const mid = addV(lerpV(tBase, tip, 0.5), palmN, H * 0.006);
+						return [tBase, mid, tip];
+					})()
+				: lay(
+						tBase,
+						unit(
+							addV(h, ts, grip === "ball" ? 1.1 : grip === "open" ? 0.85 : 0.6),
 						),
-						palmN,
-						H * 0.012,
+						[tLen * 0.55, tLen * 0.45],
+						grip === "relaxed"
+							? [0.3, 0.35]
+							: grip === "ball"
+								? [0.2, 0.2]
+								: [0.1, 0.12],
+						H * 0.0095,
 					);
-		add(
-			tBase,
-			tTip,
-			[
-				[0, H * 0.0105],
-				[1, H * 0.0085],
-			],
-			HAND,
-			G_FINGER + side * 5 + 4,
-			side,
-		);
+		bones(thumb, H * 0.0105, G_FINGER + side * 5 + 4);
 	};
 	arm(sk.armR, 0);
 	arm(sk.armL, 1);
