@@ -1557,6 +1557,8 @@ const CLOSE_FINISHES = new Set<AnimName>([
 // Anybody else of theirs this near (feet) a shot in close goes up with his
 // arms high (see shoot).
 const WALL_FT = 4.5;
+// And this near a jumper, a hand up at it.
+const WALL_JUMPER_FT = 4;
 // A hack on a man going up (see poses): this long (ms), off the floor for
 // the middle of it - as high as that long in the air takes him.
 const HACK_MS = 670;
@@ -24696,15 +24698,30 @@ class Director {
 	// the help stepped in, the big at the rim, the man who crashed in under
 	// it - going straight up with him, arms high: not stood there in his
 	// slide while the shooter goes up through him. (Here, once everybody's
-	// way there is laid out.)
+	// way there is laid out.) And a jumper, whoever has ended up right on him
+	// - however open the shot was meant to be - gets a hand up at it: not
+	// stood there in his stance a step off him watching it go.
 	private wallUp() {
 		// Every shot in close, however it came about - a putback, a layup off
 		// a steal - not just those planned as one: whatever close finish the
 		// ball leaves his hands in, once it is all laid out (and when it
 		// really leaves them).
-		const walls: { shooter: number; release: number }[] = [];
+		const walls: { shooter: number; release: number; jumper?: true }[] = [];
 		for (const b of this.ball) {
 			if (b.kind !== "fly" || !("pid" in b.from)) {
+				continue;
+			}
+			const from = b.from.pid;
+			if (
+				!("pid" in b.to) &&
+				this.track(from)?.acts.some(
+					(a) =>
+						(a.anim === "shoot" || a.anim === "setShot") &&
+						a.t0 <= b.t0 &&
+						a.t1 >= b.t0,
+				)
+			) {
+				walls.push({ shooter: from, release: b.t0, jumper: true });
 				continue;
 			}
 			const shooter = b.from.pid;
@@ -24733,21 +24750,26 @@ class Director {
 				walls.push(w);
 			}
 		}
-		for (const { shooter, release } of walls) {
+		for (const { shooter, release, jumper } of walls) {
 			const team = this.teamOf(shooter);
 			const S = this.posAt(shooter, release, false, true);
 			for (const tr of this.tracks.values()) {
 				if (
 					tr.team === team ||
-					dist(this.posAt(tr.pid, release, false, true), S) > WALL_FT
+					tr.pid < 0 ||
+					dist(this.posAt(tr.pid, release, false, true), S) >
+						(jumper ? WALL_JUMPER_FT : WALL_FT)
 				) {
 					continue;
 				}
 				// (A hand up only once it has gone - his closeout reckoned him
 				// still on his way - is put up as it goes instead: he is right
 				// there.)
+				// (At a jumper, a hand up as it goes, even if he is about to turn
+				// and box out: up till then.)
+				const until = jumper ? release + 150 : release + 500;
 				const busy = tr.acts.filter(
-					(a) => a.t1 > release - 300 && a.t0 < release + 500,
+					(a) => a.t1 > release - 300 && a.t0 < until,
 				);
 				if (busy.some((a) => a.anim !== "contest" || a.t0 < release - 120)) {
 					continue;
@@ -24762,12 +24784,24 @@ class Director {
 				const flat =
 					iq !== undefined &&
 					hash01(tr.pid, Math.round(release / 11)) > 0.5 + 0.5 * iq;
+				const t0 = release - 120 + late;
+				const next = tr.acts.find(
+					(a) => !busy.includes(a) && a.t0 >= until && a.t0 < release + 560,
+				);
+				const t1 = Math.min(release + 560 + late, next?.t0 ?? Infinity);
+				if (t1 - t0 < 350) {
+					continue;
+				}
 				tr.acts.push({
-					t0: release - 120 + late,
-					t1: release + 560 + late,
+					t0,
+					t1,
 					anim: "contest",
 					look: { ...S },
-					jump: [0.15, 0.85, flat ? WALL_FLAT : this.leap(tr.pid, 0.9)],
+					jump: [
+						0.15,
+						0.85,
+						flat || jumper ? WALL_FLAT : this.leap(tr.pid, 0.9),
+					],
 					...(this.leftToBall(D, shooter, S) ? { mirror: true as const } : {}),
 				});
 				tr.acts.sort((a, b) => a.t0 - b.t0);

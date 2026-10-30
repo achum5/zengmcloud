@@ -2384,6 +2384,57 @@ describe("3D director", () => {
 		assert.deepEqual(off, []);
 	}, 900_000);
 
+	test("a man right on a jump shooter does not just stand there watching it go", () => {
+		let n = 0;
+		const idle: string[] = [];
+		for (const seed of ["a", "b"]) {
+			const { tl } = compile(seed, 140);
+			const tracks = [...tl.tracks.values()];
+			for (const s of tl.ball) {
+				if (
+					s.kind !== "fly" ||
+					!("pid" in s.from) ||
+					"pid" in s.to ||
+					fastAt(tl, s.t0) > 1.001
+				) {
+					continue;
+				}
+				const rel = s.t0;
+				const shooter = tl.tracks.get(s.from.pid)!;
+				if (
+					!shooter.acts.some(
+						(a) =>
+							(a.anim === "shoot" || a.anim === "setShot") &&
+							a.t0 <= rel &&
+							a.t1 >= rel,
+					)
+				) {
+					continue;
+				}
+				const S = evalPlayer(tl, shooter.pid, rel);
+				for (const o of tracks) {
+					const q = evalPlayer(tl, o.pid, rel);
+					if (
+						o.team === shooter.team ||
+						o.pid < 0 ||
+						!q.shown ||
+						Math.hypot(q.x - S.x, q.y - S.y) > 3.5
+					) {
+						continue;
+					}
+					n += 1;
+					if (!o.acts.some((a) => a.t1 > rel - 400 && a.t0 < rel + 300)) {
+						idle.push(
+							`${seed}: ${o.pid} by ${shooter.pid} at ${Math.round(rel)}`,
+						);
+					}
+				}
+			}
+		}
+		assert.isAbove(n, 20);
+		assert.deepEqual(idle, []);
+	}, 900_000);
+
 	test("an and-one's foul is on the shooter as he lets it go - and nobody fakes, boxes out or fights for position with nobody there", () => {
 		const CONTACT = new Set(["hack", "contest", "block", "reach", "bump"]);
 		let fouls = 0;
