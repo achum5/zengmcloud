@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 66,
+		date: "2026-10-30",
+		text: "Football 3D game: replays go in and out behind the same sweep as basketball's - a band in the colors of the team that made the play, its logo in the middle - instead of a dip to black.",
+	},
+	{
 		n: 65,
 		date: "2026-10-30",
 		text: "Football 3D game: Key plays, like basketball's. Pick a length next to the speed and the game plays as its big moments - touchdowns, takeaways, long gains, kicks that count, lead changes - with the score catching up in between, and every play of a close finish. What counts as close is in Global Settings.",

@@ -43,7 +43,7 @@ import {
 	paintTurf,
 	type FieldTeam,
 } from "./fieldPaint.ts";
-import { FIELD_L } from "./geometry.ts";
+import { FIELD_L, type Side } from "./geometry.ts";
 import { sidelineGear } from "./bench.ts";
 import { chainCrewFor } from "./chains.ts";
 import { crewFor } from "./crew.ts";
@@ -63,11 +63,12 @@ import {
 import type { RosterMan } from "./personnel.ts";
 import {
 	makeFieldClock,
+	makeFieldWipe,
 	nextReplay,
 	onFieldCursor,
 	REPLAY_SPEED,
-	showsAgain,
 	stepField,
+	wipeAt,
 } from "./playback.ts";
 import {
 	keyOutAt,
@@ -122,10 +123,12 @@ import { inShadow, venueFor } from "./venue.ts";
 
 // How long the picture dips to black either side of a cut (timeline ms).
 const DIP_MS = 150;
-// Replay-time ms the picture takes to come up out of black and go back down,
-// and (ms) to come back up out of it to the game.
-const REPLAY_DIP = 90;
-const BACK_DIP_MS = 180;
+// THE WIPE into a replay and out of it (see playback's wipeAt): the 3D
+// court's band in the colors of the team whose play it is, its logo in the
+// middle, slanting, sweeping across the picture - this much wider than it
+// (%), slanting this far (deg).
+const STING_W = 140;
+const STING_SLANT = 18;
 // Screen ms the picture takes to come up out of black into the next of the
 // key plays (see keyPlays.ts).
 const KEY_DIP_MS = 320;
@@ -553,6 +556,13 @@ const Field3D = ({
 	const bugRef = useRef<HTMLDivElement | null>(null);
 	const covers = useRef({ at: -Infinity, boxes: [] as TagCover[] });
 	const dipRef = useRef<HTMLDivElement | null>(null);
+	const stingRefs = useRef<[HTMLDivElement | null, HTMLDivElement | null]>([
+		null,
+		null,
+	]);
+	// Each man's side, for the wipe in the colors of whoever made the play.
+	const sideOf = useRef(new Map<number, Side>());
+	sideOf.current = new Map(roster.map((r) => [r.pid, r.team]));
 	const replayRef = useRef<HTMLDivElement | null>(null);
 	const clockRef = useRef<HTMLSpanElement | null>(null);
 	const shotRef = useRef<HTMLSpanElement | null>(null);
@@ -641,6 +651,8 @@ const Field3D = ({
 		// says anything about how fast the device draws (not paused).
 		const pacing = makePace(performance.now() + 1500);
 		let judging = true;
+		const wipe = makeFieldWipe();
+		let wipeSide: Side = 1;
 
 		const tick = (now: number, draw: boolean) => {
 			const p = live.current;
@@ -864,9 +876,6 @@ const Field3D = ({
 					(m, x) => Math.min(m, Math.abs(s.t - x)),
 					Infinity,
 				);
-				// (And down into a replay coming up, and up out of one.)
-				const coming = nextReplay(tl, s.t);
-				const toReplay = showsAgain(s, p, coming) ? coming.cue - s.t : Infinity;
 				// (And between the key plays: down to black out of one, up out
 				// of it into the next.)
 				const keyOut =
@@ -875,28 +884,51 @@ const Field3D = ({
 						: 0;
 				const keyUp = 1 - (now - s.keyDip) / KEY_DIP_MS;
 				const o = replay
-					? Math.max(
-							0,
-							1 -
-								Math.min(replay.at - replay.from, replay.to - replay.at) /
-									REPLAY_DIP,
-						)
+					? 0
 					: cut
 						? 1
-						: Math.max(
-								0,
-								1 - Math.min(near, toReplay) / DIP_MS,
-								1 - (now - s.backAt) / BACK_DIP_MS,
-								keyOut,
-								keyUp,
-							);
+						: Math.max(0, 1 - near / DIP_MS, keyOut, keyUp);
 				if (dip.style.opacity !== String(o)) {
 					dip.style.opacity = String(o);
 				}
 			}
+			// The wipe: in over the picture to the cut into a replay or out of
+			// it, then on off it - in the colors of whoever made the play.
+			const sting = wipeAt(wipe, s, p, tl, now);
+			if (sting !== undefined) {
+				const pid = (replay ?? nextReplay(tl, s.t))?.pid;
+				const team = pid === undefined ? undefined : sideOf.current.get(pid);
+				if (team !== undefined) {
+					wipeSide = team;
+				}
+			}
+			for (const side of [0, 1] as const) {
+				const band = stingRefs.current[side];
+				if (!band) {
+					continue;
+				}
+				const on = sting !== undefined && side === wipeSide;
+				const show = on ? "flex" : "none";
+				if (band.style.display !== show) {
+					band.style.display = show;
+				}
+				if (on && sting !== undefined) {
+					// From all the way off the picture to its left to all the
+					// way off it to its right, the slant and all.
+					const off = (50 * h * Math.tan((STING_SLANT * Math.PI) / 180)) / w;
+					const from = -STING_W - off;
+					const to = 100 + off;
+					const x = ((from + (to - from) * sting) * w) / 100;
+					const tr = `translate3d(${x.toFixed(1)}px,0,0) skewX(${-STING_SLANT}deg)`;
+					if (band.style.transform !== tr) {
+						band.style.transform = tr;
+					}
+				}
+			}
 			const tag = replayRef.current;
 			if (tag) {
-				const show = replay ? "block" : "none";
+				const show =
+					replay && (sting === undefined || sting > 0.75) ? "block" : "none";
 				if (tag.style.display !== show) {
 					tag.style.display = show;
 				}
@@ -1056,6 +1088,48 @@ const Field3D = ({
 					pointerEvents: "none",
 				}}
 			/>
+			{([away, home] as const).map((team, side) => {
+				const logo = side === 0 ? awayLogo : homeLogo;
+				const main = team?.colors?.[0] ?? "#8c1d40";
+				const accent = team?.colors?.[1] ?? "#f2c14e";
+				return (
+					<div
+						key={side}
+						ref={(el) => {
+							stingRefs.current[side] = el;
+						}}
+						aria-hidden
+						style={{
+							display: "none",
+							position: "absolute",
+							top: 0,
+							left: 0,
+							width: `${STING_W}%`,
+							height: "100%",
+							alignItems: "center",
+							justifyContent: "center",
+							pointerEvents: "none",
+							willChange: "transform",
+							// (Lit from above, a little.)
+							background: `linear-gradient(180deg, rgba(255,255,255,0.16), rgba(0,0,0,0.22)), linear-gradient(90deg, #fff 0 2%, ${accent} 2% 7%, ${main} 7% 93%, ${accent} 93% 98%, #fff 98% 100%)`,
+						}}
+					>
+						{logo ? (
+							<img
+								alt=""
+								src={logo}
+								style={{
+									height: "34%",
+									maxWidth: "24%",
+									objectFit: "contain",
+									transform: `skewX(${STING_SLANT}deg)`,
+									filter: "drop-shadow(0 0.4cqw 0.6cqw rgba(0,0,0,0.35))",
+								}}
+							/>
+						) : null}
+					</div>
+				);
+			})}
 			<div
 				ref={replayRef}
 				style={{

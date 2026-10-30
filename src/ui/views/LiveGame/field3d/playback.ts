@@ -32,10 +32,8 @@ export type FieldClock = {
 	prevSkips: number;
 	// Cut the camera straight to its shot, next frame.
 	snapCam: boolean;
-	// The replay showing now; the live clock held while it does - and when
-	// (frame time, ms) the last one ended.
+	// The replay showing now; the live clock held while it does.
 	replay: FieldReplayShowing | undefined;
-	backAt: number;
 	// Key plays: the cursor it has asked the page to go on to (-1 none), and
 	// when (frame time) it went on to the next one.
 	jumpTo: number;
@@ -52,7 +50,6 @@ export const makeFieldClock = (paused: boolean, skips: number): FieldClock => ({
 	prevSkips: skips,
 	snapCam: true,
 	replay: undefined,
-	backAt: -Infinity,
 	jumpTo: -1,
 	keyDip: -Infinity,
 });
@@ -146,7 +143,6 @@ export const stepField = (
 		if (r.at >= r.to) {
 			s.replay = undefined;
 			s.snapCam = true;
-			s.backAt = now;
 		}
 	} else if ((!p.paused || s.stepping) && s.t < target) {
 		// On to the next line - stopping on the moment to show a big play
@@ -214,4 +210,72 @@ export const nextReplay = (
 		}
 	}
 	return undefined;
+};
+
+// THE WIPE: a replay gone into, and come out of, behind a band across the
+// picture in the colors of the team whose play it is - the 3D court's (see
+// court3d/playback.ts), the cut made while it covers all of it. How far
+// across it is, 0 to 1 (0.5: all of the picture covered): in over the last
+// STING_IN ms (real time) before a replay cuts in, or before it is over, to
+// the cut; then on off the picture in as long.
+export const STING_IN = 280;
+// (All of the picture covered while it is this close to halfway across.)
+export const STING_COVERS = 0.03;
+export type FieldWipe = {
+	// Whether a replay was showing last frame, and when it last cut in or
+	// out (frame time, ms).
+	was: boolean;
+	cut: number | undefined;
+	covered: boolean;
+};
+export const makeFieldWipe = (): FieldWipe => ({
+	was: false,
+	cut: undefined,
+	covered: false,
+});
+// Before the cut: how far in it has come.
+const stingIn = (
+	s: FieldClock,
+	p: Pick<FieldPlayInput, "rate" | "keyPlan">,
+	tl: FieldTimeline,
+): number | undefined => {
+	const r = s.replay;
+	const rate = Math.max(1e-6, p.rate);
+	if (r) {
+		const left = (r.to - r.at) / (rate * REPLAY_SPEED);
+		return left < STING_IN ? 0.5 * (1 - left / STING_IN) : undefined;
+	}
+	const next = nextReplay(tl, s.t);
+	if (!showsAgain(s, p, next)) {
+		return undefined;
+	}
+	const lead = STING_IN * rate;
+	const d = next.cue - s.t;
+	return d < lead ? 0.5 * (1 - Math.max(0, d) / lead) : undefined;
+};
+// The wipe this frame (after the clock's step - see stepField), and the
+// replay it is for.
+export const wipeAt = (
+	w: FieldWipe,
+	s: FieldClock,
+	p: Pick<FieldPlayInput, "rate" | "keyPlan">,
+	tl: FieldTimeline,
+	now: number,
+): number | undefined => {
+	if (!!s.replay !== w.was) {
+		w.was = !!s.replay;
+		w.cut = now;
+	}
+	let u: number | undefined;
+	if (w.cut !== undefined) {
+		const e = now - w.cut;
+		if (e < STING_IN) {
+			u = 0.5 + (0.5 * e) / STING_IN;
+		} else {
+			w.cut = undefined;
+		}
+	}
+	u ??= stingIn(s, p, tl);
+	w.covered = u !== undefined && Math.abs(u - 0.5) <= STING_COVERS;
+	return u;
 };
