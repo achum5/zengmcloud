@@ -65,10 +65,16 @@ import {
 	makeFieldClock,
 	nextReplay,
 	onFieldCursor,
-	REPLAY_RATE_MAX,
 	REPLAY_SPEED,
+	showsAgain,
 	stepField,
 } from "./playback.ts";
+import {
+	keyOutAt,
+	type KeyPlaySettings,
+	type KeySegment,
+} from "../court3d/keyPlays.ts";
+import { planFieldKeyPlays } from "./keyPlays.ts";
 import { replayAim } from "./replays.ts";
 import { poolsOf } from "./pools.ts";
 import { drawFieldFrame, type FieldPaint } from "./scene.ts";
@@ -120,6 +126,9 @@ const DIP_MS = 150;
 // and (ms) to come back up out of it to the game.
 const REPLAY_DIP = 90;
 const BACK_DIP_MS = 180;
+// Screen ms the picture takes to come up out of black into the next of the
+// key plays (see keyPlays.ts).
+const KEY_DIP_MS = 320;
 // How quickly the camera pans and zooms after what it follows (per second).
 const CAM_PAN = 3.2;
 const CAM_ZOOM = 2.4;
@@ -250,7 +259,12 @@ type Props = {
 	follower: boolean;
 	// How many times "next play" has been asked for.
 	skips?: number;
+	// Only the key plays (see keyPlays.ts), and the viewer's own team (box
+	// score team) among them, if playing.
+	keyPlays?: { settings: KeyPlaySettings; mine?: 0 | 1 };
 	onReady: () => void;
+	// Key plays: on past the plays left out, the page caught up to `cursor`.
+	onJump?: (cursor: number) => void;
 	// The field cannot play this game: the page goes on without it.
 	onFail?: () => void;
 };
@@ -265,7 +279,9 @@ const Field3D = ({
 	rate,
 	follower,
 	skips = 0,
+	keyPlays,
 	onReady,
+	onJump,
 	onFail,
 }: Props) => {
 	const { lid } = useLocal(["lid"]);
@@ -340,6 +356,22 @@ const Field3D = ({
 			onFailRef.current?.();
 		}
 	}, [matched, timeline]);
+	// Key plays only: the stretches of the game shown.
+	const numPeriods: number = boxScore?.numPeriods ?? 4;
+	const keyPlan = useMemo(
+		(): KeySegment[] | undefined =>
+			timeline && events && keyPlays?.settings.on
+				? planFieldKeyPlays(timeline, events, keyPlays.settings, {
+						rate,
+						numPeriods,
+						...(keyPlays.mine === undefined ? {} : { mine: keyPlays.mine }),
+						...(typeof boxScore?.spread === "number"
+							? { spread: boxScore.spread }
+							: {}),
+					})
+				: undefined,
+		[timeline, events, keyPlays, rate, numPeriods, boxScore?.spread],
+	);
 
 	// The stadium and the field, painted once a game.
 	const team = (t: any): FieldTeam => ({
@@ -558,7 +590,9 @@ const Field3D = ({
 		paused,
 		rate,
 		follower,
+		keyPlan,
 		onReady,
+		onJump,
 		timeline,
 		paint,
 		size,
@@ -569,7 +603,9 @@ const Field3D = ({
 		paused,
 		rate,
 		follower,
+		keyPlan,
 		onReady,
+		onJump,
 		timeline,
 		paint,
 		size,
@@ -830,10 +866,14 @@ const Field3D = ({
 				);
 				// (And down into a replay coming up, and up out of one.)
 				const coming = nextReplay(tl, s.t);
-				const toReplay =
-					coming && !s.stepping && p.rate <= REPLAY_RATE_MAX
-						? coming.cue - s.t
-						: Infinity;
+				const toReplay = showsAgain(s, p, coming) ? coming.cue - s.t : Infinity;
+				// (And between the key plays: down to black out of one, up out
+				// of it into the next.)
+				const keyOut =
+					p.keyPlan && !p.follower && !p.paused
+						? keyOutAt(p.keyPlan, s.t, Math.max(1e-6, p.rate))
+						: 0;
+				const keyUp = 1 - (now - s.keyDip) / KEY_DIP_MS;
 				const o = replay
 					? Math.max(
 							0,
@@ -847,6 +887,8 @@ const Field3D = ({
 								0,
 								1 - Math.min(near, toReplay) / DIP_MS,
 								1 - (now - s.backAt) / BACK_DIP_MS,
+								keyOut,
+								keyUp,
 							);
 				if (dip.style.opacity !== String(o)) {
 					dip.style.opacity = String(o);

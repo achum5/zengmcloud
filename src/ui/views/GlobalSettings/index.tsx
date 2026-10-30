@@ -283,7 +283,7 @@ const GlobalSettings = (props: View<"globalSettings">) => {
 
 				<h2>Games</h2>
 				<div className="row">
-					{__SPORT === "basketball" ? (
+					{__SPORT === "basketball" || __SPORT === "football" ? (
 						<>
 							{numberField("closePoints", "Close Game (pts)", {
 								min: KEY_PLAY_LIMITS.closePoints[0],

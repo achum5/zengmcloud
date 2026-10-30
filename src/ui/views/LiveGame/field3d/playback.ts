@@ -4,12 +4,14 @@ import {
 	targetForCursor,
 	type FieldTimeline,
 } from "./director.ts";
+import { segmentAt, type KeySegment } from "../court3d/keyPlays.ts";
 import type { FieldReplay } from "./replays.ts";
 
 // THE 3D FIELD'S CLOCK, frame by frame - the 3D court's, for football (see
 // court3d/playback.ts): how far along the timeline the picture is, run on
 // toward the page's cursor, and at each line it gets to, asking the page for
-// it - and a big play, once it is over, shown again.
+// it - and a big play, once it is over, shown again. Or, the key plays only
+// (see keyPlays.ts), on from each one shown straight to the next.
 
 // Watched quicker than this, a big play is not shown again.
 export const REPLAY_RATE_MAX = 2;
@@ -34,6 +36,10 @@ export type FieldClock = {
 	// (frame time, ms) the last one ended.
 	replay: FieldReplayShowing | undefined;
 	backAt: number;
+	// Key plays: the cursor it has asked the page to go on to (-1 none), and
+	// when (frame time) it went on to the next one.
+	jumpTo: number;
+	keyDip: number;
 };
 
 export const makeFieldClock = (paused: boolean, skips: number): FieldClock => ({
@@ -47,6 +53,8 @@ export const makeFieldClock = (paused: boolean, skips: number): FieldClock => ({
 	snapCam: true,
 	replay: undefined,
 	backAt: -Infinity,
+	jumpTo: -1,
+	keyDip: -Infinity,
 });
 
 // Follow the page's cursor: run on to the next line normally; cut straight
@@ -61,12 +69,18 @@ export const onFieldCursor = (
 	// the next one - never back.
 	const skipped =
 		s.prevCursor >= 0 && skips !== s.prevSkips && cursor > s.prevCursor;
+	// (Caught up to the key play it went on to: it is there already - or a
+	// line on, the page getting there a line at a time.)
+	const expected =
+		s.jumpTo >= 0 &&
+		(cursor <= s.jumpTo || linesBetween(tl, s.jumpTo, cursor) <= 1);
 	const snap =
-		s.prevCursor < 0 ||
-		cursor < s.prevCursor ||
-		target < s.t - 1 ||
-		skipped ||
-		(linesBetween(tl, s.prevCursor, cursor) > 2 && target - s.t > 9000);
+		!expected &&
+		(s.prevCursor < 0 ||
+			cursor < s.prevCursor ||
+			target < s.t - 1 ||
+			skipped ||
+			(linesBetween(tl, s.prevCursor, cursor) > 2 && target - s.t > 9000));
 	if (snap) {
 		const at = snapForCursor(tl, cursor);
 		s.t = skipped ? Math.max(s.t, at) : at;
@@ -78,6 +92,7 @@ export const onFieldCursor = (
 	}
 	if (s.prevPaused && !paused) {
 		s.readyFor = -1;
+		s.jumpTo = -1;
 	}
 	s.prevCursor = cursor;
 	s.prevPaused = paused;
@@ -90,9 +105,24 @@ export type FieldPlayInput = {
 	rate: number;
 	// Stepped by the device in charge of simming: never asks for a line.
 	follower: boolean;
+	keyPlan?: KeySegment[];
 	eventsLength: number;
 	onReady: () => void;
+	onJump?: (cursor: number) => void;
 };
+
+// Whether a big play coming up is shown again: not stepping through play
+// by play, not watching on fast - and, a reel of the key plays, only in a
+// close finish, shown the way it happened.
+export const showsAgain = (
+	s: FieldClock,
+	p: Pick<FieldPlayInput, "rate" | "keyPlan">,
+	r: FieldReplay | undefined,
+): r is FieldReplay =>
+	!!r &&
+	!s.stepping &&
+	p.rate <= REPLAY_RATE_MAX &&
+	(!p.keyPlan || segmentAt(p.keyPlan, r.cue).at?.close === true);
 
 // One frame: the clock run on to `now` (ms). How long the frame was, and
 // whether it went through a cut.
@@ -106,6 +136,8 @@ export const stepField = (
 	s.last = now;
 	const target = targetForCursor(tl, p.cursor);
 	const before = s.t;
+	const plan = p.keyPlan;
+	const keyOn = !!plan && !p.paused && !p.follower;
 	const r = s.replay;
 	if (r) {
 		if (!p.paused) {
@@ -118,16 +150,40 @@ export const stepField = (
 		}
 	} else if ((!p.paused || s.stepping) && s.t < target) {
 		// On to the next line - stopping on the moment to show a big play
-		// again, unless stepping play by play or watching on fast.
+		// again, or at the end of the key play shown, exactly there.
 		const next = nextReplay(tl, before);
-		const again = !!next && !s.stepping && p.rate <= REPLAY_RATE_MAX;
-		s.t = Math.min(target, again ? next.cue : Infinity, s.t + dt * p.rate);
+		const again = showsAgain(s, p, next);
+		const seg = keyOn ? segmentAt(plan, s.t).at : undefined;
+		s.t = Math.min(
+			target,
+			again ? next.cue : Infinity,
+			seg ? seg.t1 : Infinity,
+			s.t + dt * p.rate,
+		);
 		if (again && s.t >= next.cue) {
 			s.replay = { ...next, at: next.from };
 			s.snapCam = true;
 		}
 	}
-	const cut = tl.cuts.some((c) => c > before && c <= s.t);
+	let cut = tl.cuts.some((c) => c > before && c <= s.t);
+	// Key plays only: past what is left out, straight on to the next
+	// stretch shown - the page catching the score and the lines up to it on
+	// the way.
+	if (keyOn && !s.replay && s.jumpTo < 0) {
+		const { at, next } = segmentAt(plan, s.t);
+		if (!at && next) {
+			s.t = next.t0;
+			s.keyDip = now;
+			cut = true;
+			if (next.cursor > p.cursor && p.onJump) {
+				s.jumpTo = next.cursor;
+				p.onJump(next.cursor);
+			}
+		}
+	}
+	if (s.jumpTo >= 0 && p.cursor >= s.jumpTo) {
+		s.jumpTo = -1;
+	}
 	if (cut) {
 		s.snapCam = true;
 	}
@@ -136,6 +192,7 @@ export const stepField = (
 		if (
 			!p.paused &&
 			!p.follower &&
+			s.jumpTo < 0 &&
 			p.cursor < p.eventsLength &&
 			s.readyFor !== p.cursor
 		) {

@@ -3067,7 +3067,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 														setSpeed3d(String(s));
 													}}
 												/>
-												{__SPORT === "basketball" ? (
+												{__SPORT === "basketball" || __SPORT === "football" ? (
 													<KeyPlaysPicker
 														value={keyPlays}
 														onChange={setKeyPlaysState}
@@ -3174,7 +3174,9 @@ export const LiveGame = (props: View<"liveGame">) => {
 											rate={rate3d}
 											follower={isFollower}
 											skips={skips3d}
+											keyPlays={isFollower ? undefined : keyPlays3d}
 											onReady={onCourt3DReady}
+											onJump={onCourt3DJump}
 											onFail={onCourt3DFail}
 										/>
 									) : (
@@ -3257,7 +3259,7 @@ export const LiveGame = (props: View<"liveGame">) => {
 												setSpeed3d(String(s));
 											}}
 										/>
-										{__SPORT === "basketball" ? (
+										{__SPORT === "basketball" || __SPORT === "football" ? (
 											<KeyPlaysPicker
 												value={keyPlays}
 												onChange={setKeyPlaysState}

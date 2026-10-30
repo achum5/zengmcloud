@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 65,
+		date: "2026-10-30",
+		text: "Football 3D game: Key plays, like basketball's. Pick a length next to the speed and the game plays as its big moments - touchdowns, takeaways, long gains, kicks that count, lead changes - with the score catching up in between, and every play of a close finish. What counts as close is in Global Settings.",
+	},
+	{
 		n: 64,
 		date: "2026-10-30",
 		text: "Football 3D game: drawn the way the basketball 3D game is - at most 60 frames a second (a 120 Hz screen no longer draws twice as many), a steady 30 on a device that can't keep up, 30 while paused, and nothing at all while it's scrolled off screen. Phones run cooler.",
