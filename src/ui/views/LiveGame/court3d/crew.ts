@@ -429,6 +429,7 @@ const MOP_BREAKS = new Set(["timeout", "period", "endOfPeriod"]);
 const FELL = new Set<AnimName>([
 	"fall",
 	"takeCharge",
+	"chargeDown",
 	"hurt",
 	"hurtKnee",
 	"hurtAnkle",

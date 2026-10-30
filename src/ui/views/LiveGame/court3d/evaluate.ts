@@ -4344,8 +4344,15 @@ const roomAt = (
 };
 
 // (Not two men meant to be up against each other: dapping up after the
-// game, hugging - see dapHug.)
-const EMBRACES = new Set<AnimName>(["dap", "dapPat", "dapHug"]);
+// game, hugging - see dapHug - or one pulling the other up off the floor by
+// the hands.)
+const EMBRACES = new Set<AnimName>([
+	"dap",
+	"dapPat",
+	"dapHug",
+	"helpUp",
+	"pulledUp",
+]);
 // His head no further out in front of him than half that room, less a head
 // apart (in head radii) - his lean given up for it, down to upright at
 // most, no more than LEAN_GIVE (degrees).

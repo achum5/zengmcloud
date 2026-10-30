@@ -587,25 +587,29 @@ const CROSS_MS = 1000 / CROSS_RATE;
 // the start of his throw to the ball leaving his hands.
 const OVERHEAD_WIND = 140;
 const RELEASE_MS = 120;
-// Down taking a charge (ms from the contact until he is back up); his
-// teammates there to help him up from this long after it, if no further off
-// than so far (feet).
+// Down taking a charge (ms from the contact until he is back up, on his
+// own); going down, till he is sat on the floor (ms); his teammate there to
+// help him up from this long after it, if no further off than so far
+// (feet), and there in time for it.
 const CHARGE_DOWN_MS = 2400;
-// The man who ran him over backs off him this far (feet) at the whistle.
-const CHARGE_BACK = 3.2;
+const CHARGE_FALL_MS = 630;
 const HELP_UP_AT = 1100;
-// Coming from his feet, a helper goes round the man who ran into him this
-// far out beside him (feet) - from the far side, this far round behind him.
-const HELP_UP_WIDE = 3;
 const HELP_UP_FROM = 18;
-// (Still down until so far into it, then up onto a knee - as a teammate's
-// hand gets to him, if one is coming: there by so long after the contact.)
-const CHARGE_UP_AT = 0.6;
 const HELP_UP_BY = 1700;
-// A helper's hand down to him so long (ms) after he gets there; the pull up
-// over so long after that.
-const HELP_HAND_MS = 300;
-const HELP_PULL_MS = 650;
+// The man who ran him over backs off him this far (feet) at the whistle -
+// and this far over to the side, out of the way of the teammate coming to
+// help him up.
+const CHARGE_BACK = 3.2;
+const CHARGE_ASIDE = 3;
+// The teammate helping him up stands at his feet, this far out in front of
+// him (feet), and gives him both hands: leaning in to him, hands gripped,
+// and pulling him up (ms, the grip HELP_UP_GRIP of the way in) - the two of
+// them made for each other there, hand in hand all the way (see helpUp and
+// pulledUp in poses.ts). Coming from behind him, he goes round his side,
+// this far out (feet).
+const HELP_UP_FRONT = 3.6;
+const HELP_UP_MS = 1300;
+const HELP_UP_WIDE = 3;
 // Of passes off a live dribble, how many go one-handed: on the move, stood.
 const PUSH_SHARE: [number, number] = [0.9, 0.5];
 const PUSH_OFF_MS = 60;
@@ -3373,80 +3377,74 @@ class Director {
 	// Something to say about what just happened - at the official (out
 	// toward the sideline nearer him), or at whoever he means - for a moment
 	// before he goes on: he does not set off until he has said it.
-	// A man down on the floor at F, facing A - the man who put him there
-	// at X: the nearest of his teammates (one, or two of them close) come
-	// over, stand over him at his side - the first the side he comes from -
-	// lean in and pull him up as he gets up. Coming from out past X, round
-	// him, not through him.
-	// Returns when the first of them has a hand on him (the contact itself,
-	// if nobody comes).
-	private helpUp(down: number, F: Pt, A: Pt, X: Pt, hit: number): number {
-		const team = this.teamOf(down);
-		const near = this.slots(team)
-			.filter((p) => p !== down)
-			.map((p) => ({ p, d: dist(this.posOf(p), F) }))
-			.filter((x) => x.d < HELP_UP_FROM)
-			.sort((a, b) => a.d - b.d);
-		const n = near.length >= 2 && hash01(down, hit) < 0.4 ? 2 : 1;
+	// A man down on the floor at F, facing A: the nearest of his teammates,
+	// if one can get there in time, comes over to stand at his feet in front
+	// of him - round his side if he comes from behind him - leans in, takes
+	// both his hands, and pulls him up. Returns when the pull begins (as
+	// long as HELP_UP_MS), or nothing, if nobody comes.
+	private helpUp(down: number, F: Pt, A: Pt, hit: number): number | undefined {
+		const p = this.helperOf(down, F);
+		if (p === undefined) {
+			return undefined;
+		}
 		const u = unitVec(F, A);
 		const side = { x: -u.y, y: u.x };
-		const sideOf = (P: Pt) =>
-			(P.x - F.x) * side.x + (P.y - F.y) * side.y >= 0 ? 1 : -1;
-		const first0 = near[0] ? sideOf(this.posOf(near[0].p)) : 1;
-		let first: number | undefined;
-		near.slice(0, n).forEach(({ p }, k) => {
-			const s = k === 0 ? first0 : -first0;
-			const spot = clampPt({
-				x: F.x + side.x * s * 2.3 - u.x * 0.4,
-				y: F.y + side.y * s * 2.3 - u.y * 0.4,
-			});
-			const from = Math.max(hit + 200, this.free.get(p) ?? 0);
-			const P = this.posOf(p);
-			// (Round the man who ran into him, out beside him first - or from
-			// the other side of him, round behind his head.)
-			const round =
-				(P.x - F.x) * u.x + (P.y - F.y) * u.y > 1
-					? clampPt({
-							x: X.x + side.x * s * HELP_UP_WIDE,
-							y: X.y + side.y * s * HELP_UP_WIDE,
-						})
-					: sideOf(P) !== s
-						? clampPt({
-								x: F.x - u.x * HELP_UP_WIDE,
-								y: F.y - u.y * HELP_UP_WIDE,
-							})
-						: undefined;
-			const way = round ? dist(P, round) + dist(round, spot) : dist(P, spot);
-			// (Only one who gets there while he is still down.)
-			const need = runMs(way, SPRINT);
-			if (from + need > hit + HELP_UP_BY) {
-				return;
-			}
-			const there = round
-				? this.goBy(
-						p,
-						spot,
-						this.goBy(
-							p,
-							round,
-							from,
-							from + (need * dist(P, round)) / way,
-							"run",
-						),
-						from + need + 120,
-						"run",
-					)
-				: this.goBy(p, spot, from, from + need + 120, "run");
-			const t0 = Math.max(there, hit + HELP_UP_AT);
-			// (A hand down to him a moment after he gets there; a second man
-			// in the pull as it comes.)
-			const hand = t0 + HELP_HAND_MS;
-			first ??= hand;
-			const t1 = Math.max(hand, first) + HELP_PULL_MS;
-			this.act(p, "helpUp", t0, t1, { look: { ...F } });
-			this.free.set(p, Math.max(this.free.get(p) ?? 0, t1));
+		const P = this.posOf(p);
+		const s = (P.x - F.x) * side.x + (P.y - F.y) * side.y >= 0 ? 1 : -1;
+		const spot = clampPt({
+			x: F.x + u.x * HELP_UP_FRONT,
+			y: F.y + u.y * HELP_UP_FRONT,
 		});
-		return first ?? hit;
+		const from = Math.max(hit + 200, this.free.get(p) ?? 0);
+		// (From behind him, round his side - not over him; from out in front,
+		// in from his own side - not through the man who ran into him, off
+		// to the other.)
+		const along = (P.x - F.x) * u.x + (P.y - F.y) * u.y;
+		const round =
+			along < 1.5
+				? clampPt({
+						x: F.x + side.x * s * HELP_UP_WIDE + u.x * 1.5,
+						y: F.y + side.y * s * HELP_UP_WIDE + u.y * 1.5,
+					})
+				: along > HELP_UP_FRONT
+					? clampPt({
+							x: spot.x + side.x * s * HELP_UP_WIDE,
+							y: spot.y + side.y * s * HELP_UP_WIDE,
+						})
+					: undefined;
+		const way = round ? dist(P, round) + dist(round, spot) : dist(P, spot);
+		// (Only if he gets there while he is still down.)
+		const need = runMs(way, SPRINT);
+		if (from + need > hit + HELP_UP_BY) {
+			return undefined;
+		}
+		const there = round
+			? this.goBy(
+					p,
+					spot,
+					this.goBy(
+						p,
+						round,
+						from,
+						from + (need * dist(P, round)) / way,
+						"run",
+					),
+					from + need + 120,
+					"run",
+				)
+			: this.goBy(p, spot, from, from + need + 120, "run");
+		const t0 = Math.max(there, hit + HELP_UP_AT);
+		this.act(p, "helpUp", t0, t0 + HELP_UP_MS, { look: { ...F } });
+		this.free.set(p, Math.max(this.free.get(p) ?? 0, t0 + HELP_UP_MS));
+		return t0;
+	}
+
+	// The teammate nearest a man down at F, if near enough to come and help
+	// him up.
+	private helperOf(down: number, F: Pt): number | undefined {
+		return this.slots(this.teamOf(down))
+			.filter((p) => p !== down && dist(this.posOf(p), F) < HELP_UP_FROM)
+			.sort((a, b) => dist(this.posOf(a), F) - dist(this.posOf(b), F))[0];
 	}
 
 	private react(
@@ -17092,22 +17090,40 @@ class Director {
 				dir,
 			);
 			// He backs off the man he ran over - down at his feet, legs out
-			// at him - as the whistle goes, not stood over him.
+			// at him - as the whistle goes, not stood over him: back, and to
+			// the side away from the teammate who will come to help him up.
 			this.hold(victim, hit, "hold");
 			const away = unitVec(C, E);
+			const mate = this.helperOf(helper, C);
+			const across = { x: -away.y, y: away.x };
+			const off =
+				mate === undefined
+					? 0
+					: (this.posOf(mate).x - C.x) * across.x +
+								(this.posOf(mate).y - C.y) * across.y >=
+						  0
+						? -CHARGE_ASIDE
+						: CHARGE_ASIDE;
 			const V = clampPt({
-				x: E.x + away.x * CHARGE_BACK,
-				y: E.y + away.y * CHARGE_BACK,
+				x: E.x + away.x * CHARGE_BACK + across.x * off,
+				y: E.y + away.y * CHARGE_BACK + across.y * off,
 			});
 			const backed = this.go(victim, V, hit + 250, 4.5, "back", dir);
-			// Down on the floor with it - and a teammate or two over to give
-			// him a hand up: up off the floor as they pull him up.
-			const reach = this.helpUp(helper, C, A, V, hit);
-			const up = Math.max(
-				hit + CHARGE_DOWN_MS,
-				hit - 60 + (reach + 60 - hit) / CHARGE_UP_AT,
-			);
-			this.act(helper, "takeCharge", hit - 60, up, { look: A });
+			// Down on the floor with it - sat there till a teammate gets to
+			// him, and pulled up by the hands (see helpUp); or, nobody coming,
+			// up on his own.
+			const pull = this.helpUp(helper, C, A, hit);
+			let up: number;
+			if (pull === undefined) {
+				up = hit + CHARGE_DOWN_MS;
+				this.act(helper, "takeCharge", hit - 60, up, { look: A });
+			} else {
+				const sat = hit - 60 + CHARGE_FALL_MS;
+				up = pull + HELP_UP_MS;
+				this.act(helper, "chargeDown", hit - 60, sat, { look: A });
+				this.act(helper, "sitFloor", sat, pull, { look: A });
+				this.act(helper, "pulledUp", pull, up, { look: A });
+			}
 			this.free.set(helper, Math.max(this.free.get(helper) ?? 0, up));
 			this.effect("whistle", hit + 120, {
 				call: "offensive",
@@ -19891,7 +19907,9 @@ class Director {
 					t1 - t0 < SHORTEST ||
 					tr.acts.some(
 						(a) =>
-							(FOR_IT.has(a.anim) || a.anim === "takeCharge") &&
+							(FOR_IT.has(a.anim) ||
+								a.anim === "takeCharge" ||
+								a.anim === "chargeDown") &&
 							a.t0 > m.t1 &&
 							a.t0 <= until,
 					)
@@ -21091,6 +21109,9 @@ class Director {
 			"dapHug",
 			"fall",
 			"takeCharge",
+			"chargeDown",
+			"sitFloor",
+			"pulledUp",
 			"helpUp",
 			"hurt",
 			"hurtKnee",
@@ -21371,6 +21392,9 @@ class Director {
 			"contest",
 			"fall",
 			"takeCharge",
+			"chargeDown",
+			"sitFloor",
+			"pulledUp",
 			"helpUp",
 		]);
 		const body = bodyOf();
@@ -22038,6 +22062,9 @@ class Director {
 			"windmill",
 			"fall",
 			"takeCharge",
+			"chargeDown",
+			"sitFloor",
+			"pulledUp",
 			"helpUp",
 			"hurt",
 			"hurtKnee",
@@ -22056,6 +22083,9 @@ class Director {
 			"chestBump",
 			"fall",
 			"takeCharge",
+			"chargeDown",
+			"sitFloor",
+			"pulledUp",
 			"helpUp",
 			"hurt",
 			"hurtKnee",
@@ -22874,6 +22904,9 @@ class Director {
 			"postUp",
 			"fall",
 			"takeCharge",
+			"chargeDown",
+			"sitFloor",
+			"pulledUp",
 			"helpUp",
 			"hurt",
 			"hurtKnee",
@@ -22903,6 +22936,9 @@ class Director {
 			"pickup",
 			"fall",
 			"takeCharge",
+			"chargeDown",
+			"sitFloor",
+			"pulledUp",
 			"helpUp",
 		]);
 		const MATES_TOGETHER = new Set<AnimName>([
@@ -22911,6 +22947,9 @@ class Director {
 			"chestBump",
 			"fall",
 			"takeCharge",
+			"chargeDown",
+			"sitFloor",
+			"pulledUp",
 			"helpUp",
 			"hurt",
 			"hurtKnee",

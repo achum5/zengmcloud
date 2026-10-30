@@ -291,6 +291,69 @@ const DANCE: Pose[] = [
 		lean: -6,
 	}),
 ];
+// Both arms the same way (degrees): raised in front of him, bent at the
+// elbow - reaching for a man's hands in front of him.
+const arms = (sh: number, el: number) => ({
+	shN: sh,
+	elN: el,
+	abN: 0,
+	shF: sh,
+	elF: el,
+	abF: 0,
+});
+// Taking a charge: braced for it, chest out and arms in; then going over
+// backward, arms flung up.
+const CHARGE_BRACE = pose({
+	hipN: 10,
+	kneeN: 34,
+	hipF: 18,
+	kneeF: 36,
+	shN: 40,
+	elN: 124,
+	abN: 30,
+	shF: 40,
+	elF: 124,
+	abF: 30,
+	lean: -6,
+	wide: 0.42,
+});
+const CHARGE_FALLING = pose({
+	hipN: 56,
+	kneeN: 66,
+	hipF: 46,
+	kneeF: 58,
+	shN: 128,
+	elN: 30,
+	abN: 30,
+	shF: 136,
+	elF: 34,
+	abF: 30,
+	lean: -36,
+	wide: 0.46,
+	plant: 0,
+});
+// Sat on the floor, sat up off his hands to give them to a teammate.
+const PULLED_SAT = { ...SAT_DOWN, lean: -14 };
+// Leaning over a teammate on the floor, both hands out to his: how far over
+// (lean), his hips and knees, and his arms (see arms).
+const HELPING = (
+	lean: number,
+	hipN: number,
+	kneeN: number,
+	hipF: number,
+	kneeF: number,
+	sh: number,
+	el: number,
+) =>
+	pose({
+		hipN,
+		kneeN,
+		hipF,
+		kneeF,
+		...arms(sh, el),
+		lean,
+		wide: 0.34,
+	});
 const P = {
 	// Standing easy but live, the way a man spaced out on the floor does:
 	// a little sunk at the knees, feet a shade wider than his hips and one
@@ -4582,41 +4645,8 @@ export const ANIMS = {
 		n: 10,
 		keys: [
 			[0, P.stance],
-			[
-				0.06,
-				pose({
-					hipN: 10,
-					kneeN: 34,
-					hipF: 18,
-					kneeF: 36,
-					shN: 40,
-					elN: 124,
-					abN: 30,
-					shF: 40,
-					elF: 124,
-					abF: 30,
-					lean: -6,
-					wide: 0.42,
-				}),
-			],
-			[
-				0.16,
-				pose({
-					hipN: 56,
-					kneeN: 66,
-					hipF: 46,
-					kneeF: 58,
-					shN: 128,
-					elN: 30,
-					abN: 30,
-					shF: 136,
-					elF: 34,
-					abF: 30,
-					lean: -36,
-					wide: 0.46,
-					plant: 0,
-				}),
-			],
+			[0.06, CHARGE_BRACE],
+			[0.16, CHARGE_FALLING],
 			[0.26, SAT_DOWN],
 			[0.55, { ...SAT_DOWN, lean: -18, shN: 2, shF: -4 }],
 			// (Up onto a knee by way of a leg tucked under him and a foot
@@ -4676,66 +4706,91 @@ export const ANIMS = {
 			[1, P.ready],
 		],
 	},
-	// A teammate down: he stands over him, leans in and gives him a hand,
-	// and pulls him up.
-	helpUp: {
+	// Down taking a charge, with a teammate on his way over to help him up:
+	// set, he takes it and goes down on his backside (chargeDown) - sat there,
+	// leaning back on his hands, till the teammate gets to him (sitFloor) -
+	// and his hands up for the teammate's, gripped, and pulled up by them
+	// onto a knee, into a crouch and up (pulledUp, as long as the teammate's
+	// helpUp, his hands the teammate's all the way: see HELP_UP_FRONT).
+	chargeDown: {
 		kind: "act",
-		n: 8,
+		n: 6,
 		keys: [
-			[0, P.ready],
+			[0, P.stance],
+			[0.23, CHARGE_BRACE],
+			[0.62, CHARGE_FALLING],
+			[1, SAT_DOWN],
+		],
+	},
+	sitFloor: {
+		kind: "act",
+		n: 2,
+		keys: [
+			[0, SAT_DOWN],
+			[1, { ...SAT_DOWN, lean: -18, shN: 2, shF: -4 }],
+		],
+	},
+	pulledUp: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, { ...PULLED_SAT, ...arms(60, 60) }],
+			[0.23, { ...PULLED_SAT, ...arms(106, 27) }],
 			[
-				0.28,
+				0.38,
 				pose({
-					hipN: 34,
-					kneeN: 52,
-					hipF: 22,
-					kneeF: 44,
-					shN: 46,
-					elN: 10,
-					abN: 8,
-					wrN: 20,
-					shF: 24,
-					elF: 40,
-					abF: 18,
-					lean: 44,
-					wide: 0.34,
+					hipN: 110,
+					kneeN: 150,
+					hipF: 100,
+					kneeF: 90,
+					...arms(88, 54),
+					lean: -6,
+					wide: 0.37,
+					plant: 0,
 				}),
 			],
 			[
-				0.62,
+				0.52,
+				pose({
+					hipN: -4,
+					kneeN: 100,
+					hipF: 84,
+					kneeF: 90,
+					...arms(76, 87),
+					lean: 18,
+					wide: 0.24,
+					plant: 0,
+				}),
+			],
+			[
+				0.75,
 				pose({
 					hipN: 36,
-					kneeN: 54,
-					hipF: 24,
-					kneeF: 46,
-					shN: 50,
-					elN: 14,
-					abN: 8,
-					wrN: 20,
-					shF: 24,
-					elF: 40,
-					abF: 18,
-					lean: 42,
-					wide: 0.34,
+					kneeN: 70,
+					hipF: 40,
+					kneeF: 72,
+					...arms(67, 78),
+					lean: 22,
+					wide: 0.36,
 				}),
 			],
-			[
-				0.82,
-				pose({
-					hipN: 8,
-					kneeN: 30,
-					hipF: 4,
-					kneeF: 26,
-					shN: 52,
-					elN: 56,
-					abN: 8,
-					shF: 22,
-					elF: 40,
-					abF: 16,
-					lean: 6,
-					wide: 0.34,
-				}),
-			],
+			[0.88, { ...P.ready, ...arms(30, 40), lean: 8 }],
+			[1, P.ready],
+		],
+	},
+	// A teammate down in front of him: he stands at his feet, leans in and
+	// gives him both hands, and pulls him up by them, straightening as he
+	// comes - his hands in the other man's all the way (see pulledUp).
+	helpUp: {
+		kind: "act",
+		n: 10,
+		keys: [
+			[0, P.ready],
+			[0.23, HELPING(44, 34, 52, 22, 44, 49, 27)],
+			[0.38, HELPING(38, 32, 50, 20, 42, 43, 57)],
+			[0.52, HELPING(30, 26, 40, 16, 34, 28, 87)],
+			[0.75, HELPING(14, 12, 24, 8, 20, 43, 78)],
+			[0.88, { ...P.ready, ...arms(24, 34), lean: 4 }],
 			[1, P.ready],
 		],
 	},

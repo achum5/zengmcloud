@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 55,
+		date: "2026-10-30",
+		text: "3D game: when a player takes a charge, the teammate who comes over to help them up now stands at their feet, grabs both of their hands, and actually pulls them up by them - hands gripped the whole way - instead of reaching down somewhere near them.",
+	},
+	{
 		n: 54,
 		date: "2026-10-30",
 		text: "3D game: dunks look like real dunks - players rise to the rim and come back down at a natural speed instead of popping up and dropping in a quarter of a second, so the takeoff, the slam and the hang on the rim are all easy to see (especially in replays).",

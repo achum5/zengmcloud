@@ -119,18 +119,30 @@ describe("keeping bodies apart", () => {
 
 	// A charge: the man who ran him over backs off him once he is down -
 	// not stood over him with the ball - and whoever comes to help him up
-	// comes round that man, not through him.
+	// comes round that man, not through him; and takes his hands, theirs
+	// gripped all the way up.
 	test("down taking a charge, nobody stands on him or on the man who ran into him", () => {
+		const body = bodyOf();
+		const hands = (st: ReturnType<typeof evalPlayer>) => {
+			const b = withBody(st, body);
+			const sk = skeleton(body, poseOf(b));
+			return [bodyPoint(b, sk.armR.end), bodyPoint(b, sk.armL.end)];
+		};
 		let charges = 0;
 		let helped = 0;
 		for (const seed of ["apart", "e"]) {
 			const { tl } = compile(seed, 150);
 			for (const tr of tl.tracks.values()) {
 				for (const a of tr.acts) {
-					if (a.anim !== "takeCharge") {
+					if (a.anim !== "takeCharge" && a.anim !== "chargeDown") {
 						continue;
 					}
 					charges += 1;
+					// (Till he is up: on his own, or pulled up.)
+					const pulled = tr.acts.find(
+						(x) => x.anim === "pulledUp" && x.t0 >= a.t1 && x.t0 < a.t1 + 4000,
+					);
+					const end = pulled?.t1 ?? a.t1;
 					const seg = tl.ball.findLast(
 						(s) => s.kind === "hold" && s.t0 <= a.t0 + 300,
 					);
@@ -138,11 +150,11 @@ describe("keeping bodies apart", () => {
 					assert.isDefined(by);
 					const helpers = [...tl.tracks.values()].filter((o) =>
 						o.acts.some(
-							(x) => x.anim === "helpUp" && x.t1 > a.t0 && x.t0 < a.t1,
+							(x) => x.anim === "helpUp" && x.t1 > a.t0 && x.t0 < end,
 						),
 					);
 					helped += helpers.length;
-					for (let t = a.t0 + 900; t < a.t1; t += 50) {
+					for (let t = a.t0 + 900; t < end; t += 50) {
 						const F = floorSpotOf(tr, t)!;
 						const H = floorSpotOf(by!, t)!;
 						assert.isAbove(
@@ -157,6 +169,22 @@ describe("keeping bodies apart", () => {
 								2,
 								`${seed} ${t}`,
 							);
+						}
+					}
+					// Hand in hand, from when they grip to when he is all but up.
+					if (pulled) {
+						const helper = helpers[0]!;
+						for (const k of [0.25, 0.4, 0.55, 0.7]) {
+							const t = pulled.t0 + (pulled.t1 - pulled.t0) * k;
+							const [aR, aL] = hands(evalPlayer(tl, tr.pid, t));
+							const [hR, hL] = hands(evalPlayer(tl, helper.pid, t));
+							const d = Math.min(
+								Math.hypot(aR!.x - hL!.x, aR!.y - hL!.y, aR!.z - hL!.z) +
+									Math.hypot(aL!.x - hR!.x, aL!.y - hR!.y, aL!.z - hR!.z),
+								Math.hypot(aR!.x - hR!.x, aR!.y - hR!.y, aR!.z - hR!.z) +
+									Math.hypot(aL!.x - hL!.x, aL!.y - hL!.y, aL!.z - hL!.z),
+							);
+							assert.isBelow(d / 2, 0.45, `${seed} ${Math.round(t)}`);
 						}
 					}
 				}
