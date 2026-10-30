@@ -16,7 +16,7 @@ import { useState } from "react";
 import { ActionButton } from "../components/ActionButton.tsx";
 import useTradeOffersSwitch from "../hooks/useTradeOffersSwitch.tsx";
 
-const TradeProposals = ({ offers, seed, standing }: View<"tradeProposals">) => {
+const TradeProposals = ({ offers, seed }: View<"tradeProposals">) => {
 	const {
 		challengeNoRatings,
 		challengeNoTrades,
@@ -121,30 +121,22 @@ const TradeProposals = ({ offers, seed, standing }: View<"tradeProposals">) => {
 
 	return (
 		<>
-			{standing ? (
-				offers.length === 0 ? (
-					<p>No trade proposals right now.</p>
-				) : null
-			) : (
-				<>
-					<p>
-						These are trade proposals from up to 5 AI teams. New teams will
-						appear here every 10 games.
-					</p>
-					<ActionButton
-						onClick={async () => {
-							setRefreshing(true);
-							await toWorker("main", "incrementTradeProposalsSeed", undefined);
-							setRefreshing(false);
-						}}
-						processing={refreshing}
-						processingText="Loading"
-						variant="secondary"
-					>
-						Refresh trade proposals
-					</ActionButton>
-				</>
-			)}
+			<p>
+				These are trade proposals from up to 5 AI teams. New teams will appear
+				here every 10 games.
+			</p>
+			<ActionButton
+				onClick={async () => {
+					setRefreshing(true);
+					await toWorker("main", "incrementTradeProposalsSeed", undefined);
+					setRefreshing(false);
+				}}
+				processing={refreshing}
+				processingText="Loading"
+				variant="secondary"
+			>
+				Refresh trade proposals
+			</ActionButton>
 			{tradeOffersSwitch.toggle}
 			{tradeOffersSwitch.value === "table" ? (
 				<OfferTable
@@ -191,12 +183,8 @@ const TradeProposals = ({ offers, seed, standing }: View<"tradeProposals">) => {
 					challengeNoRatings={challengeNoRatings}
 					handleNegotiate={handleNegotiate}
 					handleRemove={(i) => {
-						// The table lists the offers not yet removed.
-						const tid = filteredOffers[i]!.tid;
+						const tid = offers[i]!.tid;
 						setRemovedTids((prevTids) => [...prevTids, tid]);
-						if (standing) {
-							void toWorker("main", "declineTradeProposal", tid);
-						}
 					}}
 					offers={filteredOffers}
 					salaryCap={salaryCap}
@@ -215,9 +203,6 @@ const TradeProposals = ({ offers, seed, standing }: View<"tradeProposals">) => {
 								onRemove={() => {
 									const tid = offer.tid;
 									setRemovedTids((prevTids) => [...prevTids, tid]);
-									if (standing) {
-										void toWorker("main", "declineTradeProposal", tid);
-									}
 								}}
 								salaryCap={salaryCap}
 								salaryCapType={salaryCapType}

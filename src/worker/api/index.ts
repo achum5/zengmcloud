@@ -332,7 +332,6 @@ import { generateContractOptions } from "../core/contractNegotiation/generateCon
 import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
 import { afterPick as realisticFrontOfficeAfterPick } from "../core/realisticFrontOffice/draft.ts";
 import { tradingBlockTeams } from "../core/realisticFrontOffice/proposals.ts";
-import { declineProposal } from "../core/realisticFrontOffice/proposalStore.ts";
 import {
 	decideReSignings as realisticFrontOfficeDecideReSignings,
 	makeOffer as realisticFrontOfficeMakeOffer,
@@ -4170,11 +4169,6 @@ const setTeamFinancesPlan = async ({
 };
 
 // Realistic front offices: the user turns down a CPU team's standing proposal.
-const declineTradeProposal = async (tid: number) => {
-	await declineProposal(tid, g.get("userTid"));
-	await toUI("realtimeUpdate", [["g.tradeProposalsSeed"]]);
-};
-
 const incrementTradeProposalsSeed = async () => {
 	await league.setGameAttributes({
 		tradeProposalsSeed: g.get("tradeProposalsSeed") + 1,
@@ -8329,7 +8323,6 @@ const api = {
 		idbCacheFlush,
 		importPlayers,
 		importPlayersGetReal,
-		declineTradeProposal,
 		incrementTradeProposalsSeed,
 		init,
 		initGold,

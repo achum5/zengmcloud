@@ -10,18 +10,44 @@ import { ValueChangeCalculator } from "../core/team/ValueChangeCalculator.ts";
 import { orderBy } from "../../common/utils.ts";
 import { defineView } from "../util/defineView.ts";
 import { realisticFrontOfficesOn } from "../core/realisticFrontOffice/isOn.ts";
-import { proposalsTo } from "../core/realisticFrontOffice/proposalStore.ts";
+import {
+	proposalStands,
+	proposalTeams as realisticFrontOfficeProposalTeams,
+} from "../core/realisticFrontOffice/proposals.ts";
+
+// Realistic front offices price each try in full: one a team, so many teams
+// at most, and what they offer kept for the seed (it changes every 10 games
+// or on a refresh) less any offer that no longer stands.
+const SMART_TRIES_PER_TEAM = 1;
+const SMART_TEAMS = 12;
+let smartCache: { key: string; offers: TradeTeams[] } | undefined;
 
 const getOffers = async (seed: number) => {
 	const NUM_OFFERS = 5;
 	const NUM_TRIES_PER_TEAM = 10;
+	const smart = realisticFrontOfficesOn();
+	const tries = smart ? SMART_TRIES_PER_TEAM : NUM_TRIES_PER_TEAM;
 
 	const userTid = g.get("userTid");
+
+	const cacheKey = `${g.get("lid")}:${userTid}:${seed}`;
+	if (smart && smartCache?.key === cacheKey) {
+		const kept: TradeTeams[] = [];
+		for (const offer of smartCache.offers) {
+			if (await proposalStands(offer)) {
+				kept.push(offer);
+			}
+		}
+		return augmentOffers(kept);
+	}
 
 	const teams = (await idb.cache.teams.getAll()).filter(
 		(t) => !t.disabled && t.tid !== userTid,
 	);
 	shuffle(teams, seed);
+	if (smart) {
+		teams.splice(SMART_TEAMS);
+	}
 
 	const players = orderBy(
 		(await idb.cache.players.indexGetAll("playersByTid", userTid)).filter(
@@ -43,7 +69,7 @@ const getOffers = async (seed: number) => {
 	const valueChangeCalculator = new ValueChangeCalculator();
 
 	for (const t of teams) {
-		for (let i = 0; i < NUM_TRIES_PER_TEAM; i++) {
+		for (let i = 0; i < tries; i++) {
 			const seedBase = seed + NUM_TRIES_PER_TEAM * t.tid + i;
 			const r = uniformSeed(seedBase);
 			const pids: number[] = [];
@@ -76,11 +102,15 @@ const getOffers = async (seed: number) => {
 				},
 			];
 
-			const teams = await makeItWork(teams0, {
-				holdUserConstant: false,
-				maxAssetsToAdd: 5,
-				valueChangeCalculator,
-			});
+			// Realistic front offices: what the team would really give for it
+			// (realisticFrontOffice/proposals.ts).
+			const teams = smart
+				? await realisticFrontOfficeProposalTeams(teams0)
+				: await makeItWork(teams0, {
+						holdUserConstant: false,
+						maxAssetsToAdd: 5,
+						valueChangeCalculator,
+					});
 
 			if (!teams) {
 				continue;
@@ -112,6 +142,9 @@ const getOffers = async (seed: number) => {
 		}
 	}
 
+	if (smart) {
+		smartCache = { key: cacheKey, offers };
+	}
 	return augmentOffers(offers);
 };
 
@@ -164,35 +197,6 @@ export default defineView({
 			updateEvents.has("newPhase") ||
 			updateEvents.has("g.tradeProposalsSeed")
 		) {
-			// Realistic front offices: the deals CPU teams stand ready to make
-			// (realisticFrontOffice/proposals.ts), no refreshing for others.
-			if (realisticFrontOfficesOn()) {
-				const userTid = g.get("userTid");
-				const standing: TradeTeams[] = (await proposalsTo(userTid)).map((x) => [
-					{
-						tid: userTid,
-						pids: x.get.pids,
-						dpids: x.get.dpids,
-						pidsExcluded: [],
-						dpidsExcluded: [],
-					},
-					{
-						tid: x.tid,
-						pids: x.give.pids,
-						dpids: x.give.dpids,
-						pidsExcluded: [],
-						dpidsExcluded: [],
-					},
-				]);
-				return {
-					offers: (await augmentOffers(standing)).map((offer) =>
-						addInlinePlayerInfo(offer),
-					),
-					seed: 0,
-					standing: true,
-				};
-			}
-
 			const teamSeason = await idb.cache.teamSeasons.indexGet(
 				"teamSeasonsByTidSeason",
 				[g.get("userTid"), g.get("season")],
@@ -214,7 +218,6 @@ export default defineView({
 			return {
 				offers,
 				seed,
-				standing: false,
 			};
 		}
 	},

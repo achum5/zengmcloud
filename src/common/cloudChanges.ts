@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 50,
+		date: "2026-10-30",
+		text: "Realistic Front Offices: Trade Proposals works like regular BBGM again - same page, same refresh button - but each CPU team offers what it would really give for one of your players or picks, so every offer there is one it will accept. The page can take several seconds the first time; after that it's quick until the offers change.",
+	},
+	{
 		n: 49,
 		date: "2026-10-30",
 		text: 'Recaps in a women\'s league now say she and her instead of he and his, and "six players in double figures" instead of "six men", in game and day recaps alike.',

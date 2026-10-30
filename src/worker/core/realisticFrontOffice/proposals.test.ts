@@ -5,22 +5,14 @@ import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
 import { createArenaLeague } from "../../../test/arena/runLeague.ts";
 import { judgeHumanOffer } from "./humanTrades.ts";
-import { currentOutlook, loadTeam } from "./market.ts";
+import { currentOutlook } from "./market.ts";
 import {
-	bestProposal,
 	counterOffer,
-	publicGain,
 	publicPlayer,
-	publicTeam,
-	refreshProposals,
+	proposalTeams,
 	tradingBlockTeams,
 } from "./proposals.ts";
-import {
-	declineProposal,
-	dropMovedProposals,
-	proposalKey,
-	proposalsTo,
-} from "./proposalStore.ts";
+import tradeProposals from "../../views/tradeProposals.ts";
 
 const importNode = (name: string) => import(/* @vite-ignore */ name);
 
@@ -65,76 +57,59 @@ test("a human sees his players' ratings with the scouting fuzz on them", async (
 	assert.strictEqual(seen.valueNoPot, p!.valueNoPotFuzz);
 });
 
-// The first CPU team with a standing proposal for the user.
+// The first CPU team with a proposal for the user, and its proposal.
 let proposer: number | undefined;
+let standing:
+	| {
+			give: { pids: number[]; dpids: number[] };
+			get: { pids: number[]; dpids: number[] };
+	  }
+	| undefined;
 
 test(
-	"a CPU team's proposal is one it would take, and fair on what the human sees",
+	"Trade Proposals: what a team would really give for one of the human's assets",
 	{ timeout: 300_000 },
 	async () => {
-		const outlook = await currentOutlook();
-		const human = await loadTeam(outlook, userTid);
-		const pub = publicTeam(outlook, human);
+		const mine = (
+			await idb.cache.players.indexGetAll("playersByTid", userTid)
+		).sort((a, b) => b.value - a.value);
 		let found = 0;
 		for (let tid = 1; tid < g.get("numTeams") && found < 3; tid++) {
-			const cpu = await loadTeam(outlook, tid);
-			const proposal = await bestProposal(outlook, cpu, human);
-			if (!proposal) {
-				continue;
+			for (const p of mine.slice(0, 3)) {
+				const teams = await proposalTeams([
+					{
+						tid: userTid,
+						pids: [p.pid],
+						dpids: [],
+						pidsExcluded: [],
+						dpidsExcluded: [],
+					},
+					{ tid, pids: [], dpids: [], pidsExcluded: [], dpidsExcluded: [] },
+				]);
+				if (!teams) {
+					continue;
+				}
+				found += 1;
+				if (proposer === undefined) {
+					proposer = tid;
+					standing = {
+						give: { pids: teams[1].pids, dpids: teams[1].dpids },
+						get: { pids: teams[0].pids, dpids: teams[0].dpids },
+					};
+				}
+				// It keeps the asset asked for, gives something for it, and would
+				// take it offered back.
+				assert.include(teams[0].pids, p.pid);
+				assert.isAbove(teams[1].pids.length + teams[1].dpids.length, 0);
+				const verdict = await judgeHumanOffer(
+					{ tid, pids: teams[1].pids, dpids: teams[1].dpids },
+					{ tid: userTid, pids: teams[0].pids, dpids: teams[0].dpids },
+				);
+				assert.strictEqual(verdict.kind, "yes");
+				break;
 			}
-			found += 1;
-			assert.isAbove(proposal.give.length, 0);
-			assert.isAbove(proposal.get.length, 0);
-			// Its gain clears the bar for a human's deal.
-			assert.isAbove(proposal.net, 0);
-			// The human gains by what he can see.
-			assert.isAtLeast(
-				publicGain(outlook, pub, proposal.get, proposal.give, cpu),
-				-1e-9,
-			);
 		}
 		assert.isAbove(found, 0);
-	},
-);
-
-test(
-	"a standing proposal is kept, shown, and gone once its players move",
-	{ timeout: 300_000 },
-	async () => {
-		const outlook = await currentOutlook();
-		for (let tid = 1; tid < g.get("numTeams") && !proposer; tid++) {
-			const fresh = await refreshProposals(outlook, tid, [userTid]);
-			if (fresh.includes(userTid)) {
-				proposer = tid;
-			}
-		}
-		assert.isDefined(proposer);
-		const standing = (await proposalsTo(userTid)).find(
-			(x) => x.tid === proposer,
-		);
-		assert.isDefined(standing);
-		// Offered back, the CPU team takes it.
-		const verdict = await judgeHumanOffer(
-			{ tid: proposer!, ...standing!.give },
-			{ tid: userTid, ...standing!.get },
-		);
-		assert.strictEqual(verdict.kind, "yes");
-		// Asked again with nothing changed, it stands as it was.
-		assert.deepEqual(await refreshProposals(outlook, proposer!, [userTid]), []);
-
-		// One of the players in it leaves.
-		const pid = standing!.get.pids[0] ?? standing!.give.pids[0]!;
-		const p = (await idb.cache.players.get(pid))!;
-		const tid = p.tid;
-		p.tid = proposer === 5 ? 6 : 5;
-		await idb.cache.players.put(p);
-		await dropMovedProposals();
-		assert.isUndefined(
-			(await proposalsTo(userTid)).find((x) => x.tid === proposer),
-		);
-		p.tid = tid;
-		await idb.cache.players.put(p);
-		await refreshProposals(outlook, proposer!, [userTid]);
 	},
 );
 
@@ -143,9 +118,6 @@ test(
 	{ timeout: 300_000 },
 	async () => {
 		const outlook = await currentOutlook();
-		const standing = (await proposalsTo(userTid)).find(
-			(x) => x.tid === proposer,
-		);
 		assert.isDefined(standing);
 		const asked = { tid: proposer!, ...standing!.give };
 		// A deal it would take already is left as it is.
@@ -180,24 +152,37 @@ test(
 );
 
 test(
-	"a proposal turned down is off and not made again",
+	"the Trade Proposals page offers deals the vanilla way, priced by the mode",
 	{ timeout: 300_000 },
 	async () => {
-		const outlook = await currentOutlook();
-		const standing = (await proposalsTo(userTid)).find(
-			(x) => x.tid === proposer,
-		);
-		assert.isDefined(standing);
-		await declineProposal(proposer!, userTid);
-		assert.isUndefined(
-			(await proposalsTo(userTid)).find((x) => x.tid === proposer),
-		);
-		// Asked again, it does not make the same one.
-		await refreshProposals(outlook, proposer!, [userTid]);
-		const again = (await proposalsTo(userTid)).find((x) => x.tid === proposer);
-		if (again) {
-			assert.notStrictEqual(proposalKey(again), proposalKey(standing!));
+		const load = async () =>
+			(await tradeProposals.load({
+				inputs: {},
+				updateEvents: new Set(["firstRun"]),
+				prevInputs: undefined,
+				prevOutput: {},
+				conditions: {},
+			} as any)) as any;
+		const started = Date.now();
+		const data = await load();
+		assert.isArray(data.offers);
+		for (const offer of data.offers) {
+			const verdict = await judgeHumanOffer(
+				{ tid: offer.tid, pids: offer.pids, dpids: offer.dpids },
+				{ tid: userTid, pids: offer.pidsUser, dpids: offer.dpidsUser },
+			);
+			assert.strictEqual(verdict.kind, "yes");
 		}
+		console.log(
+			`${data.offers.length} offers in ${((Date.now() - started) / 1000).toFixed(1)} s`,
+		);
+
+		// Loaded again for the same seed, the same offers, kept.
+		const again = await load();
+		assert.deepEqual(
+			again.offers.map((x: any) => [x.tid, x.pids, x.dpids]),
+			data.offers.map((x: any) => [x.tid, x.pids, x.dpids]),
+		);
 	},
 );
 

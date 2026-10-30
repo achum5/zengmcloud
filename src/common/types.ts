@@ -2849,17 +2849,6 @@ export type Team = {
 	// first (realisticFrontOffice/freeAgency.ts).
 	offerBoard?: { pid: number; amount: number; exp: number }[];
 
-	// Realistic front offices: the trade this CPU team stands ready to make
-	// with each human team, if any (realisticFrontOffice/proposals.ts).
-	tradeProposals?: {
-		tid: number;
-		// What the CPU team gives and what it gets.
-		give: { pids: number[]; dpids: number[] };
-		get: { pids: number[]; dpids: number[] };
-	}[];
-	// The ones human teams turned down, not to be made again.
-	declinedTradeProposals?: { tid: number; key: string }[];
-
 	// Its home and away uniforms for the 3D live game, drawn from pictures:
 	// ids of JerseySkin rows. Optional (no upgrade).
 	jerseySkins?: JerseySkinIds;

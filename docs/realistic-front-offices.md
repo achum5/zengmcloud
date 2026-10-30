@@ -254,21 +254,26 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
   CPU misreads by -0.12 ± 0.35 and is still ahead after it (2.5 ± 1.3
   hundredths of a title). Its deals are a rebuilding team's young player (on a
   rookie deal in 68% of them) for older players.
-- **What a no says** (owner's call): no, a better offer (shown in full), or
-  not before the deadline - never how close the offer came.
+- **What a no says** (owner's call): "They'd rather keep what they have",
+  "They have a better offer elsewhere" (only when another CPU team would make
+  that deal by its own read) or "They would rather wait for the deadline" -
+  never how close the offer came.
 - **Undo is unchanged** (owner's call).
 - **Difficulty does nothing to trades in this mode**: the CPU's read of a
   deal is its own, and the trade screen no longer prints it to the console.
 - **Human-to-human trades are unchanged** (agreed in chat).
-- **CPU offers to humans** appear on the Trade Proposals page, which is rebuilt
-  for this mode, with a notification so the user knows an offer is waiting. The
-  user can accept, decline, dismiss or counter.
-  - **What it asks** (owner's call): the deal best for the CPU team, fair by
-    what the human can see - public ratings, not the true ones the CPU judges
-    by. Best for it by its own read, over the same bar as a human's deal, so
-    it takes the deal when it is offered back; fair when the human's side
-    gains by the ratings he sees, scouting fuzz and all, through the same
-    projections and title odds.
+- **CPU offers to humans** (owner's call: vanilla's mechanics, the mode's
+  valuation). Each names the CPU team's price: of the deals it would take, by
+  its own read over the human bar, the one it gains least from - good for the
+  human or not, he decides.
+  - **Trade Proposals** works as in stock: the same teams in the same order,
+    the same reroll, one of the human's players or picks picked for each team
+    the same way, and more added to either side as stock adds them. What the
+    team offers for it is its price, adding up to three assets a side, and
+    only if it would not rather give its own up elsewhere. To keep the page quick each team gets one
+    try (stock: ten) and twelve teams at most are asked; the offers are kept
+    until the page would change them anyway (5 offers in about 10 seconds in a
+    test league, instant after).
   - **The trading block** (owner's call, replacing the fair rule there, which
     left it empty - a good starter put up for picks drew no offer at all) is
     where the human sees what the market would pay: each CPU team bids up to
@@ -289,15 +294,9 @@ every team, again whenever a signing changes the pool), memory cleanup 17%.
     he decides. Held to the fair rule as well, it named a price for one ask
     in ten (a good player, not a team's best, asked for nothing); naming its
     price, for seven in ten.
-  - **How many** (owner's call): no fixed count and no reroll. A CPU team
-    makes an offer when it wants a deal, and the offer stays while it still
-    does; it goes away once the team loses interest or finds something better
-    elsewhere. One team a day looks again at what it would offer each human
-    team, the day's first shopper (a quarter of a second each); an offer is
-    off as soon as any of its players or picks moves. Removing one on Trade Proposals declines it:
-    the team takes it back and does not make that deal again.
 - **The whole calculation behind each CPU-to-CPU trade** is on its trade
-  summary page, in God Mode only (owner's call): it shows true ratings.
+  summary page, with God Mode off too for now (owner's call), though it shows
+  true ratings.
 - **Talking (later).** CPU teams explain their side of a deal the way a real
   front office would, without giving their hand away.
 - **Trade volume: whatever the gains say** (owner's call). Every deal both
@@ -725,7 +724,8 @@ version-against-version tests show matters most.
 2. Arena and stock baseline. (Done.)
 3. The thin slice, ending in CPU-to-CPU trades measured in the arena.
 4. The market: shopping, matching windows, bidding, the rebuilt Trade Proposals
-   page. (Matching windows and bidding later removed - owner's call.)
+   page. (Matching windows and bidding later removed, and Trade Proposals back
+   to stock's mechanics - owner's call.)
 5. Free agency board, re-signing, draft, roster cuts, coaching.
 6. Explanations.
 

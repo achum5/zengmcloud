@@ -20,7 +20,6 @@ import {
 	sideMargin,
 	type MovedPlayer,
 } from "./margin.ts";
-import { notifyProposal, refreshProposals } from "./proposals.ts";
 import { valueOverReplacement } from "./strength.ts";
 import {
 	buildOutlook,
@@ -57,8 +56,6 @@ import type { TradedAway } from "./tradePenalty.ts";
 
 // Teams looking for a deal each day, and how many other teams each one calls.
 const SHOPPERS_PER_DAY = 2;
-// Teams a day that look again at what they would offer the human teams.
-const PROPOSERS_PER_DAY = 1;
 const PARTNERS_PER_SHOPPER = 6;
 
 // The smallest gain, in titles, that makes a trade worth making for either
@@ -1382,18 +1379,5 @@ const shop = async (numShoppers: number) => {
 			continue;
 		}
 		await makeDeal(outlook, best, tid, sides, waiting);
-	}
-
-	// Then what the day's first shopper would offer the human teams: one team
-	// a day, each about every month - looking at a deal with a human takes
-	// about a quarter of a second.
-	const humanTids = g.get("userTids").filter((tid) => !tids.includes(tid));
-	if (humanTids.length > 0) {
-		for (const tid of shoppers.slice(0, PROPOSERS_PER_DAY)) {
-			const fresh = await refreshProposals(outlook, tid, humanTids);
-			for (const humanTid of fresh) {
-				await notifyProposal(tid, humanTid);
-			}
-		}
 	}
 };
