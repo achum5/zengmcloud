@@ -3353,8 +3353,13 @@ const leadSentence = (
 	// When the result has already been stated, the star's sentence is the only
 	// place his line lands in the body, so let the shooting split in at a lower
 	// bar - it's what makes restating the headline's numbers worth reading.
+	// In a rout the minutes are the flourish: "28 points in just 26 minutes"
+	// is how the wire says a star was done by the fourth quarter.
 	const flourish =
-		star.pts >= (omitResult ? 16 : 25) ? shootingFlourish(star) : undefined;
+		(star.pts >= (omitResult ? 16 : 25) ? shootingFlourish(star) : undefined) ??
+		(shape.margin >= 20 && star.pts >= 20 && star.min > 0 && star.min <= 30
+			? `in just ${star.min} minutes`
+			: undefined);
 	const line = enteringLine(star, game.playoffs);
 
 	let subject = star.name;

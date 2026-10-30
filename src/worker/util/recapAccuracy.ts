@@ -179,6 +179,16 @@ export const verifyRecap = (
 		}
 		return who;
 	};
+	// "28 points in just 26 minutes": his minutes, the nearest man before it.
+	for (const sentence of splitSentences(recap)) {
+		for (const m of sentence.matchAll(/\bin (?:just|only) (\d+) minutes/g)) {
+			const who = lastNameIn(sentence.slice(0, m.index));
+			const p = who ? byName.get(who) : undefined;
+			if (p && p.min !== Number(m[1])) {
+				add("minutes", `said ${m[1]}, real ${p.min} for ${who}`, sentence);
+			}
+		}
+	}
 	for (const sentence of splitSentences(recap)) {
 		const prevOwner = chainOwner;
 		const pronounLed = /^(?:He|His)\b/.test(sentence);

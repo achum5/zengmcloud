@@ -1535,7 +1535,18 @@ export const dayStandingsMovers = (
 									.replace(` in ${m.conf}`, ""),
 					),
 				)}`
-			: naturalList(top.map((m) => m.text));
+			: // Across conferences the verb is said once too: "the Magic climbed
+				// to fifth in the West, the Pistons to seventh in the East" - not
+				// "climbed" three times.
+				naturalList(
+					top.map((m, i) =>
+						i > 0 &&
+						top[0]!.text.includes(" climbed to ") &&
+						m.text.includes(" climbed to ")
+							? m.text.replace(" climbed to ", " to ")
+							: m.text,
+					),
+				);
 	// Not "In the standings": the conference-picture sentence in the paragraph
 	// above owns that opener, and the wrap was running two paragraphs in a row
 	// that both began with it.

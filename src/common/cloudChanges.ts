@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 43,
+		date: "2026-10-30",
+		text: 'Recaps: in a blowout, the star\'s line can say how little he played ("28 points in just 26 minutes"), and the day recap\'s standings list says "climbed" once instead of for every team.',
+	},
+	{
 		n: 42,
 		date: "2026-10-30",
 		text: 'Recaps now and then tag a conference leader in the first line, the way the wire does ("The Raptors held off the East-leading Knicks 114-109"), and the day recap\'s list of comebacks no longer says "to beat" every time.',

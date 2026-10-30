@@ -3079,3 +3079,24 @@ describe("how it got close", () => {
 		}
 	});
 });
+
+test("the checker holds 'in just N minutes' to his minutes", () => {
+	const home = squad(
+		{ tid: 1, name: "Hawks" },
+		{ name: "Ace Hawk", pid: 11, pts: 30, min: 26, fg: 11, fga: 18 },
+		130,
+	);
+	const away = squad(
+		{ tid: 2, name: "Bulls" },
+		{ name: "Bo Bull", pid: 21, pts: 20 },
+		100,
+	);
+	const g = game([home, away]);
+	const said = (min: number) =>
+		verifyRecap(
+			`**Hawks rout the Bulls**\n\nAce Hawk scored 30 points in just ${min} minutes as the Hawks routed the Bulls 130-100.`,
+			g,
+		).filter((v) => v.kind === "minutes");
+	assert.lengthOf(said(26), 0);
+	assert.lengthOf(said(22), 1);
+});
