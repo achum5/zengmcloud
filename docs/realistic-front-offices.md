@@ -507,6 +507,15 @@ can keep the mode's front offices with the free agency it knows:
   there each day of free agency (for the twenty best), and all the way at
   once for every player whose contract is up as re-signing opens, priced as
   a free agent (his own team may go over the cap for him).
+- **Measured** (arena, 2 seasons, seed 3; stock / offer market / these
+  rules): top-10 free agents unsigned all summer 0 / 0 / 0 (10 before asks
+  were the market's); players worth 60+ whose contracts were up left
+  unsigned 0 / 0 / 0 (16 before). Mid-level ones (50-60) are left unsigned
+  more as free agency ends (none / 3 / about 28 a summer): at stock's pace
+  CPU teams sign less often than in the offer market, rebuilding teams with
+  room pass on veterans (a win now costs them lottery odds), and teams over
+  the cap sign them only once their asks fall to the minimum. Rosters short
+  of the minimum are filled as the season opens (cuts.ts), as in the mode.
 - Code: realisticFrontOffice/stockRules.ts; isOn.ts (realisticFreeAgencyOn)
   switches every offer-market path.
 

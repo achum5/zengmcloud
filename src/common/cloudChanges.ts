@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 52,
+		date: "2026-10-30",
+		text: "Realistic Front Offices has a new setting, Realistic Free Agency (on by default). Turn it off to keep the smart CPU teams with regular BBGM free agency and re-signing: you negotiate and sign like normal, players treat every team the same, asking prices follow what CPU teams would really pay, and CPU teams decide who to sign by their own valuation.",
+	},
+	{
 		n: 51,
 		date: "2026-10-30",
 		text: "Realistic Front Offices has its own difficulty setting in League Settings (Game Modes > Front Office Difficulty): Easy, Realistic (the default), Hard or Insane. Realistic puts you on an even footing with CPU teams; higher makes them want a surer gain before they trade with you, lower makes them easier to deal with. The regular difficulty settings still do nothing in this mode.",
