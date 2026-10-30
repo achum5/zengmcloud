@@ -1060,6 +1060,17 @@ const DUNK_LEAP = RIM_Z + 1.45 - standingReach(bodyOf());
 const DUNK_FROM = 1.8;
 // The steps of his gather into a dunk, at the quickest (feet a second).
 const DUNK_STEPS_FTPS = 24;
+// A dunk, start to finish (ms), and through it: off the floor, at the top,
+// thrown down, and back on the floor. He gets up as fast as a man can -
+// his feet four feet and more off the floor, the most of half a second up
+// - and comes down the same: not popped up there and back in a quarter of
+// one. (The lob for an alley-oop meets him just short of the top.)
+const DUNK_MS = 1750;
+const DUNK_OFF = 0.16;
+const DUNK_TOP = 0.4;
+const DUNK_SLAM = 0.445;
+const DUNK_LANDS = 0.9;
+const DUNK_CATCH = 0.376;
 // The furthest round to the side of the rim he goes up from (radians off
 // straight in front of it) - for a dunk, or a finish off a post move.
 const DUNK_SIDE = (55 * Math.PI) / 180;
@@ -10311,7 +10322,7 @@ class Director {
 				: ms;
 		const flight = (x: number) =>
 			Math.max(700, 380 + dist(this.posAt(lobber, x), rim) * 20);
-		const lead = 1300 * 0.4 + 60 - RELEASE_MS - OVERHEAD_WIND - 200;
+		const lead = DUNK_MS * DUNK_CATCH + 60 - RELEASE_MS - OVERHEAD_WIND - 200;
 		this.cutFrom(shooter, cut);
 		let go = this.setOff(shooter, P, cut.tQ, -Infinity, speed, false);
 		const up = go.there - go.ms + gathered(go.ms) + lead;
@@ -11085,7 +11096,7 @@ class Director {
 		const caught =
 			lobber === undefined
 				? -Infinity
-				: gather + (dunk ? 1300 * 0.4 : 760 * 0.45);
+				: gather + (dunk ? DUNK_MS * DUNK_CATCH : 760 * 0.45);
 		if (lobber !== undefined) {
 			const catchT = caught;
 			const flight = Math.max(
@@ -11113,7 +11124,7 @@ class Director {
 		const look = { x: rim.x, y: rim.y };
 
 		if (dunk) {
-			const dur = 1300;
+			const dur = DUNK_MS;
 			// A made dunk hangs on the rim; one that is stuffed or rattles out
 			// comes straight back down.
 			const hang = plan.kind === "make";
@@ -11168,7 +11179,10 @@ class Director {
 					d > 6 ? "run" : "slide",
 					-faceRim as 1 | -1,
 				);
-				const leap = blockLeap(gather + 520, this.leap(victim, 2.3));
+				const leap = blockLeap(
+					gather + DUNK_MS * DUNK_CATCH,
+					this.leap(victim, 2.3),
+				);
 				this.act(victim, "block", leap.t0, leap.t1, {
 					face: -faceRim as 1 | -1,
 					look: { ...P1 },
@@ -11272,20 +11286,20 @@ class Director {
 				zKeys: hang
 					? [
 							[0, 0],
-							[0.22, 0],
-							[0.42, DUNK_LEAP],
-							[0.47, DUNK_LEAP - 0.05],
-							[0.53, DUNK_LEAP - 0.55],
-							[0.7, DUNK_LEAP - 0.68],
-							[0.86, 0],
+							[DUNK_OFF, 0],
+							[DUNK_TOP, DUNK_LEAP],
+							[DUNK_SLAM, DUNK_LEAP - 0.05],
+							[0.502, DUNK_LEAP - 0.55],
+							[0.66, DUNK_LEAP - 0.68],
+							[DUNK_LANDS, 0],
 							[1, 0],
 						]
 					: [
 							[0, 0],
-							[0.22, 0],
-							[0.44, DUNK_LEAP],
-							[0.6, DUNK_LEAP - 0.8],
-							[0.8, 0],
+							[DUNK_OFF, 0],
+							[0.419, DUNK_LEAP],
+							[0.567, DUNK_LEAP - 0.8],
+							[0.81, 0],
 							[1, 0],
 						],
 				rim: {
@@ -11296,10 +11310,10 @@ class Director {
 					},
 					grip: hang
 						? [
-								[0.47, 0],
-								[0.53, 1],
-								[0.69, 1],
-								[0.74, 0],
+								[DUNK_SLAM, 0],
+								[0.502, 1],
+								[0.651, 1],
+								[0.72, 0],
 							]
 						: [],
 				},
@@ -11311,8 +11325,8 @@ class Director {
 			const top =
 				gather +
 				60 +
-				Math.max(240, (dist(from, under) / SPRINT) * 1000, dur * 0.42 - 60);
-			const tOff = Math.min(gather + dur * 0.22, top - 120);
+				Math.max(240, (dist(from, under) / SPRINT) * 1000, dur * DUNK_TOP - 60);
+			const tOff = Math.min(gather + dur * DUNK_OFF, top - 120);
 			const rise = dist(from, under);
 			const way =
 				rise > 0.3 ? unitVec(from, under) : { x: -back.x, y: -back.y };
@@ -11332,7 +11346,7 @@ class Director {
 				onFrom: true,
 				v1: v,
 			});
-			const down = gather + dur * (hang ? 0.86 : 0.8);
+			const down = gather + dur * (hang ? DUNK_LANDS : 0.81);
 			const on = Math.min(
 				plan.finish === "poster" ? 0.4 : DUNK_FROM * 0.8,
 				(v * (down - top)) / 2000,
@@ -11357,7 +11371,7 @@ class Director {
 				// Met at the rim - off a lob, once he has it. From a way off -
 				// chasing him down - he sets off for it in time to get there,
 				// whatever he was doing.
-				const contact = Math.max(gather + dur * 0.42, caught + 100);
+				const contact = Math.max(gather + dur * DUNK_TOP, caught + 100);
 				const b = plan.blocker;
 				const B = clampPt({ x: rim.x - dir * 1.7, y: 25 - 1.1 });
 				const by = contact - 300;
@@ -11397,20 +11411,20 @@ class Director {
 				target = { x: rim.x - dir * 1.4, y: 25, z: RIM_Z - 0.3 };
 			} else if (plan.kind === "miss") {
 				// Hammered off the back iron.
-				decided = gather + dur * 0.47;
+				decided = gather + dur * DUNK_SLAM;
 				arrive = decided;
 				target = { x: rim.x + dir * (RIM_R + 0.1), y: 25, z: RIM_Z + 0.25 };
 				this.fly(decided - 90, decided, { pid: shooter }, target);
 			} else {
 				// Thrown down at the top of the slam.
-				decided = gather + dur * 0.47;
+				decided = gather + dur * DUNK_SLAM;
 				arrive = decided;
 				target = rimPt(team, 0.45);
 			}
 			// (Whoever of theirs is right there goes up with him - see wallUp.
 			// Not round a man dunked on: the room there is cleared.)
 			if (plan.finish !== "poster" && plan.kind !== "block") {
-				this.walls.push({ shooter, release: gather + dur * 0.38 });
+				this.walls.push({ shooter, release: gather + dur * 0.35 });
 			}
 		} else {
 			// "Tips it in": a one-handed tap at the top of the jump.

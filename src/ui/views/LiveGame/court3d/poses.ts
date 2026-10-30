@@ -3292,7 +3292,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.22,
+				0.16,
 				pose({
 					hipN: -10,
 					kneeN: 30,
@@ -3306,7 +3306,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.34,
+				0.304,
 				pose({
 					hipN: 12,
 					kneeN: 34,
@@ -3321,7 +3321,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.42,
+				0.4,
 				pose({
 					hipN: 6,
 					kneeN: 40,
@@ -3336,7 +3336,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.47,
+				0.446,
 				pose({
 					hipN: 10,
 					kneeN: 30,
@@ -3353,7 +3353,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.53,
+				0.502,
 				pose({
 					hipN: 4,
 					kneeN: 24,
@@ -3368,7 +3368,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.7,
+				0.66,
 				pose({
 					hipN: -2,
 					kneeN: 20,
@@ -3397,7 +3397,7 @@ export const ANIMS = {
 					toe: 0.5,
 				}),
 			],
-			[0.88, P.land],
+			[0.914, P.land],
 			[1, P.land],
 		],
 	},
@@ -3421,7 +3421,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.22,
+				0.16,
 				pose({
 					hipN: -10,
 					kneeN: 30,
@@ -3436,7 +3436,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.34,
+				0.304,
 				pose({
 					hipN: 12,
 					kneeN: 34,
@@ -3452,7 +3452,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.42,
+				0.4,
 				pose({
 					hipN: 6,
 					kneeN: 40,
@@ -3468,7 +3468,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.47,
+				0.446,
 				pose({
 					hipN: 10,
 					kneeN: 30,
@@ -3485,7 +3485,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.53,
+				0.502,
 				pose({
 					hipN: 4,
 					kneeN: 24,
@@ -3500,7 +3500,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.7,
+				0.66,
 				pose({
 					hipN: -2,
 					kneeN: 20,
@@ -3529,7 +3529,7 @@ export const ANIMS = {
 					toe: 0.5,
 				}),
 			],
-			[0.88, P.land],
+			[0.914, P.land],
 			[1, P.land],
 		],
 	},
@@ -3556,7 +3556,7 @@ export const ANIMS = {
 			],
 			// Swung down by his hip as he loads,
 			[
-				0.12,
+				0.087,
 				pose({
 					hipN: -14,
 					kneeN: 54,
@@ -3573,7 +3573,7 @@ export const ANIMS = {
 			],
 			// back and out behind him as he goes up,
 			[
-				0.22,
+				0.16,
 				pose({
 					hipN: -10,
 					kneeN: 32,
@@ -3591,7 +3591,7 @@ export const ANIMS = {
 			// straight out from his side - (where it is all one which way
 			// round the arm has come: from here it has come up over the top)
 			[
-				0.28,
+				0.232,
 				pose({
 					hipN: 10,
 					kneeN: 36,
@@ -3608,7 +3608,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.3,
+				0.256,
 				pose({
 					hipN: 10,
 					kneeN: 37,
@@ -3626,7 +3626,7 @@ export const ANIMS = {
 			],
 			// up past his ear and over the top,
 			[
-				0.4,
+				0.376,
 				pose({
 					hipN: 6,
 					kneeN: 40,
@@ -3644,7 +3644,7 @@ export const ANIMS = {
 			],
 			// and down through the rim.
 			[
-				0.47,
+				0.446,
 				pose({
 					hipN: 10,
 					kneeN: 30,
@@ -3661,7 +3661,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.53,
+				0.502,
 				pose({
 					hipN: 4,
 					kneeN: 24,
@@ -3676,7 +3676,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.7,
+				0.66,
 				pose({
 					hipN: -2,
 					kneeN: 20,
@@ -3705,7 +3705,7 @@ export const ANIMS = {
 					toe: 0.5,
 				}),
 			],
-			[0.88, P.land],
+			[0.914, P.land],
 			[1, P.land],
 		],
 	},
@@ -3729,7 +3729,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.22,
+				0.16,
 				pose({
 					hipN: -10,
 					kneeN: 30,
@@ -3743,7 +3743,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.34,
+				0.304,
 				pose({
 					hipN: 12,
 					kneeN: 34,
@@ -3758,7 +3758,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.4,
+				0.376,
 				pose({
 					hipN: 6,
 					kneeN: 40,
@@ -3773,7 +3773,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.47,
+				0.446,
 				pose({
 					hipN: 10,
 					kneeN: 30,
@@ -3789,7 +3789,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.53,
+				0.502,
 				pose({
 					hipN: 4,
 					kneeN: 24,
@@ -3804,7 +3804,7 @@ export const ANIMS = {
 				}),
 			],
 			[
-				0.7,
+				0.66,
 				pose({
 					hipN: -2,
 					kneeN: 20,
@@ -3833,7 +3833,7 @@ export const ANIMS = {
 					toe: 0.5,
 				}),
 			],
-			[0.88, P.land],
+			[0.914, P.land],
 			[1, P.land],
 		],
 	},
