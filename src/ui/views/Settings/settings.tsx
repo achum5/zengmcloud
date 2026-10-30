@@ -944,6 +944,15 @@ export const settings: Setting[] = (
 		},
 		{
 			category: "Draft",
+			key: "realisticDraftProspects",
+			name: "Realistic Draft Prospects",
+			godModeRequired: "always",
+			type: "bool",
+			description:
+				"Generate draft classes whose skills are spread out and paired like real NBA players'. Replaces Specialized Draft Prospects when both are on.",
+		},
+		{
+			category: "Draft",
 			key: "numSeasonsFutureDraftPicks",
 			name: "# Tradable Draft Pick Seasons",
 			godModeRequired: "existingLeagueOnly",

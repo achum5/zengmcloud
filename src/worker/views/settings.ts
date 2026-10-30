@@ -48,6 +48,7 @@ type Key =
 	| "rookiesCanRefuse"
 	| "tragicDeathRate"
 	| "specializedDraftProspects"
+	| "realisticDraftProspects"
 	| "realisticFaces"
 	| "faceAging"
 	| "faceAgingPlayers"
@@ -283,6 +284,7 @@ export const getInitialSettings = (): Settings => {
 		rookiesCanRefuse: g.get("rookiesCanRefuse"),
 		tragicDeathRate: g.get("tragicDeathRate"),
 		specializedDraftProspects: g.get("specializedDraftProspects"),
+		realisticDraftProspects: g.get("realisticDraftProspects"),
 		collegePortalRate: g.get("collegePortalRate"),
 		collegeRetentionEase: g.get("collegeRetentionEase"),
 		collegeRecruitingDifficulty: g.get("collegeRecruitingDifficulty"),

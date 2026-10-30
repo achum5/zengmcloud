@@ -38,6 +38,7 @@ export type Key =
 	| "injuryRate"
 	| "tragicDeathRate"
 	| "specializedDraftProspects"
+	| "realisticDraftProspects"
 	| "realisticFaces"
 	| "faceAging"
 	| "faceAgingPlayers"

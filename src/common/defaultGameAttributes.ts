@@ -112,6 +112,7 @@ const gameAttributesKeysSportSpecific = {
 		"forceRetireRealPlayers",
 		"forceHistoricalRosters",
 		"specializedDraftProspects",
+		"realisticDraftProspects",
 		"realisticFaces",
 		"faceAging",
 		"faceAgingPlayers",
@@ -559,6 +560,7 @@ export const defaultGameAttributes: GameAttributesLeagueWithHistory = {
 	// The tragic death rate is the probability that a player will die a tragic death on a given regular season day. Yes, this only happens in the regular season. With roughly 100 days in a season, the default is about one death every 50 years.
 	tragicDeathRate: 1 / (100 * 50),
 	specializedDraftProspects: false,
+	realisticDraftProspects: false,
 	realisticFaces: true,
 	// Aging is its own switch rather than part of realisticFaces: a league can
 	// want faces drawn to a player's age without wanting them to change under

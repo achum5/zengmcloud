@@ -2,6 +2,7 @@ import { catchUpFace } from "../../util/face.ts";
 import { PLAYER } from "../../../common/constants.ts";
 import { player } from "../index.ts";
 import { specializeProspect } from "./specializeProspects.ts";
+import { realisticProspect } from "./realisticProspects.ts";
 import { g } from "../../util/index.ts";
 import type { PlayerWithoutKey } from "../../../common/types.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
@@ -223,10 +224,19 @@ const genPlayersWithoutSaving = async (
 	// last, after every bonus and nerf above, so the shape the user scouts is the
 	// shape that survives - and it only ever touches players generated right
 	// here, so real draft prospects (which arrive as existingPlayers and are
-	// never in this list) keep their real ratings.
-	if (__SPORT === "basketball" && g.get("specializedDraftProspects")) {
+	// never in this list) keep their real ratings. Realistic wins when both are
+	// on: each reshapes the class from stock, and doing both would stack them.
+	let reshape: ((p: PlayerWithoutKey) => void) | undefined;
+	if (__SPORT === "basketball") {
+		if (g.get("realisticDraftProspects")) {
+			reshape = realisticProspect;
+		} else if (g.get("specializedDraftProspects")) {
+			reshape = specializeProspect;
+		}
+	}
+	if (reshape) {
 		for (const p of enteringDraft) {
-			specializeProspect(p);
+			reshape(p);
 
 			// ovr, pot, pos and skills are all derived from the ratings that just
 			// changed, so they have to be recomputed before anyone sees them.

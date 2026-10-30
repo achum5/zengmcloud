@@ -130,6 +130,10 @@ export const getDefaultSettings = () => {
 			defaultGameAttributes,
 			"specializedDraftProspects",
 		),
+		realisticDraftProspects: unwrapGameAttribute(
+			defaultGameAttributes,
+			"realisticDraftProspects",
+		),
 		realisticFaces: unwrapGameAttribute(
 			defaultGameAttributes,
 			"realisticFaces",

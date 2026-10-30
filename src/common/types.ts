@@ -1010,6 +1010,10 @@ export type GameAttributesLeague = {
 	// Reshape generated draft prospects into specialists - good ratings
 	// better, bad ratings worse. See draft/specializeProspects.ts.
 	specializedDraftProspects: boolean;
+	// Reshape generated draft prospects' skills to be spread and paired like
+	// real NBA players'. Wins over specializedDraftProspects when both are on.
+	// See draft/realisticProspects.ts.
+	realisticDraftProspects: boolean;
 	// Age-aware, less novelty-heavy, more varied GENERATED faces. See
 	// worker/util/realisticFaces.ts.
 	realisticFaces: boolean;

@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 34,
+		date: "2026-10-30",
+		text: "New Draft setting, Realistic Draft Prospects (needs God Mode): random draft classes come out with skills spread out and paired like real NBA players' - more true non-shooters, 3-point shooters who aren't automatically good from mid-range, ball handlers who aren't all passers. It only changes classes generated after it's turned on, and replaces Specialized Draft Prospects if both are on.",
+	},
+	{
 		n: 33,
 		date: "2026-10-29",
 		text: "3D game: a quarter that runs out without a shot now ends the way it does in the NBA - with a few seconds left, the man with the ball races up the floor with it as the horn goes instead of standing there with it, and more often than not he gets a shot or a heave off a split second after the horn. The officials run onto the floor waving it off, and it doesn't count even if it goes in.",
