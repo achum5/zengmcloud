@@ -123,7 +123,23 @@ with "the Pistons", not with a named person.
   from 1.49 to 1.23 points a game on fresh leagues. A player whose position
   is not known yet (a pick, a free agent a team may sign) counts as a
   typical one, and a projected player at the position his ratings will put
-  him.
+  him. Checked again on 3 fresh leagues (2,466 swaps, below), a shortage of
+  guards cost 1.28 points a game against 0.95 predicted (bigs: 0.13 either
+  way). 1.2 times the guards' cost fit a little better (error 1.210 against
+  1.213 points a game) but tipped a CPU team into taking picks 30 and 58 for
+  pick 15 (the owner's trading-up exploit) - two picks' players counting as
+  part-guards in its future rosters - so it stays at the first fit.
+- **Lineup fit, checked against the sim** (synergy lab, owner's concern):
+  2,466 swaps of a player for one of the same value at his position with or
+  without each of the sim's synergy skills (shooting, ball handling,
+  passing, athleticism, post scoring, perimeter and interior defense,
+  rebounding), 300 games each, 3 leagues. The sim moved with the model's
+  synergy 0.93 ± 0.08 times as much as the model said (its players 0.93 ±
+  0.02), and every skill's swaps landed within about 0.3 points a game of
+  the prediction: CPU teams read fit as the sim plays it. In the arena's
+  trades no contender's fit got worse by more than half a point a game by
+  the model (294 trade sides, 3 leagues x 3 seasons, each played out 200
+  games).
 - **What else it misses is small and spread out.** 1,200 random swaps of a
   top-8 player for one of the same value (swap lab, 2 leagues): the model's
   own error on a swap is about half a point a game, and neither the swapped

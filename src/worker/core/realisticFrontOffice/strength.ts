@@ -517,6 +517,10 @@ const placeForward = new Float64Array(ROSTER_PLACES);
 export const strengthSettings = {
 	// Off: positions cost a roster nothing.
 	positions: true,
+	// What a shortage of guards, and of forwards, costs, against the model's
+	// fit - for the positions lab to try others on its rosters.
+	guardsCostScale: 1,
+	forwardsCostScale: 1,
 };
 
 // What the floor's positions cost a roster whose places hold this many guards
@@ -527,7 +531,10 @@ export const positionCost = (guards: number, forwards: number) => {
 	}
 	const g = Math.max(0, MODEL.guards.need - guards);
 	const f = Math.max(0, MODEL.forwards.need - forwards);
-	return MODEL.guards.cost * g ** 3 + MODEL.forwards.cost * f ** 3;
+	return (
+		strengthSettings.guardsCostScale * MODEL.guards.cost * g ** 3 +
+		strengthSettings.forwardsCostScale * MODEL.forwards.cost * f ** 3
+	);
 };
 
 // The parts of the last roster priced, for the arena's trade checker: its

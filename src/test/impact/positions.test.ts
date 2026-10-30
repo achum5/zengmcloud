@@ -6,6 +6,7 @@ import { last } from "../../common/utils.ts";
 import { IMPACT_RATINGS } from "../../worker/core/realisticFrontOffice/playerImpact.ts";
 import {
 	playerLine,
+	rosterParts,
 	rosterPoints,
 	type StrengthPlayer,
 	type ValueRatings,
@@ -30,6 +31,12 @@ import { inGameOrder, play, toSimTeam, type SimTeam } from "./simTools.ts";
 //
 // POSITIONS_RANDOM=20 adds that many more swaps of a top-8 player for one of
 // the same value at any position, for hunting what else the model misses.
+//
+// POSITIONS_SKILLS=1 makes it the synergy lab too: for each of the sim's
+// synergy skills, the top-8 players with it swapped for the players closest
+// in value at the same position without it, and players without it for ones
+// with it - fit moved a lot, value and positions hardly at all. Every variant
+// records the model's points in their parts (players, synergy, positions).
 //
 //   POSITIONS_RUN=1 POSITIONS_SEED=1 POSITIONS_GAMES=300 POSITIONS_OUT=/tmp/pos \
 //     npx vitest --run --project basketball src/test/impact/positions.test.ts
@@ -135,12 +142,12 @@ test.runIf(env.POSITIONS_RUN === "1")(
 			const swapFor = (
 				p: Player,
 				roster: readonly Player[],
-				kind: (pos: string) => boolean,
+				kind: (pos: string, x: Player) => boolean,
 			) => {
 				const taken = new Set(roster.map((x) => x.pid));
 				let best: Player | undefined;
 				for (const x of pool) {
-					if (taken.has(x.pid) || !kind(posOf(x))) {
+					if (taken.has(x.pid) || !kind(posOf(x), x)) {
 						continue;
 					}
 					if (
@@ -166,7 +173,7 @@ test.runIf(env.POSITIONS_RUN === "1")(
 				const variants: {
 					name: string;
 					out: Player[];
-					from: (pos: string) => boolean;
+					from: (pos: string, x: Player) => boolean;
 				}[] = [];
 				const guards = top.filter((p) => pureGuard(posOf(p)));
 				const bigs = top.filter((p) => pureBig(posOf(p)));
@@ -201,7 +208,33 @@ test.runIf(env.POSITIONS_RUN === "1")(
 						from: (pos) => pos === to,
 					});
 				}
+				if (env.POSITIONS_SKILLS === "1") {
+					const skillsOf = (x: Player) => last(x.ratings).skills;
+					for (const skill of ["3", "B", "Ps", "A", "Po", "Di", "Dp", "R"]) {
+						const have = top.filter((x) => skillsOf(x).includes(skill));
+						const lack = top.filter((x) => !skillsOf(x).includes(skill));
+						for (const [name, out, want] of [
+							[`${skill} out`, have.slice(0, 2), false],
+							[`${skill} in`, lack.slice(-2), true],
+						] as const) {
+							if (out.length === 0) {
+								continue;
+							}
+							// Each for the closest in value at his position, with or
+							// without the skill.
+							for (const p of out) {
+								variants.push({
+									name,
+									out: [p],
+									from: (pos, x) =>
+										pos === posOf(p) && skillsOf(x).includes(skill) === want,
+								});
+							}
+						}
+					}
+				}
 
+				const baseParts = rosterParts(base.map(lineOf));
 				const team = {
 					tid,
 					roster: byValue.map((p) => ({
@@ -234,11 +267,17 @@ test.runIf(env.POSITIONS_RUN === "1")(
 					const mean = d.reduce((a, x) => a + x, 0) / d.length;
 					const variance =
 						d.reduce((a, x) => a + (x - mean) ** 2, 0) / (d.length - 1);
+					const parts = rosterParts(roster.map(lineOf));
 					team.variants.push({
 						name: v.name,
 						out: v.out.map(describe),
 						in: incoming.map(describe),
 						model: rosterPoints(roster.map(lineOf)) - baseModel,
+						parts: {
+							players: parts.players - baseParts.players,
+							synergy: parts.synergy - baseParts.synergy,
+							positions: parts.positions - baseParts.positions,
+						},
 						sim: { mean, se: Math.sqrt(variance / d.length) },
 						roster: [...roster]
 							.sort((a, b) => b.valueNoPot - a.valueNoPot)

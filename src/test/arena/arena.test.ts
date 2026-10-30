@@ -890,7 +890,7 @@ const modelPoints = (players: readonly Player[]) =>
 const fitOf = (players: readonly Player[]) => {
 	const { total, ...parts } = rosterParts(strengthPlayers(players));
 	const skills: Record<string, number> = {};
-	const positions: Record<string, number> = {};
+	const posCounts: Record<string, number> = {};
 	for (const p of [...players]
 		.sort((a, b) => b.valueNoPot - a.valueNoPot)
 		.slice(0, 8)) {
@@ -898,9 +898,9 @@ const fitOf = (players: readonly Player[]) => {
 			skills[skill] = (skills[skill] ?? 0) + 1;
 		}
 		const pos = last(p.ratings).pos;
-		positions[pos] = (positions[pos] ?? 0) + 1;
+		posCounts[pos] = (posCounts[pos] ?? 0) + 1;
 	}
-	return { total, ...parts, skills, positions };
+	return { total, ...parts, skills, posCounts };
 };
 
 // For each side of each trade: what the model expected its healthy roster to
