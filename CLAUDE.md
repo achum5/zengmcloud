@@ -27,3 +27,5 @@
   number, the date, a sentence or two in plain words). Everybody sees new
   entries once, the next time they load the game. Put the same text in the
   update message to the owner so it can be passed on.
+- Football changes get no entry (the owner, 2026-10-30). Entries 64-66 were
+  football's and are marked `quiet` (kept for their numbers, never shown).
