@@ -90,6 +90,11 @@ with "the Pistons", not with a named person.
   can be below league average in production while a 50 ovr is above it; humans
   exploit that gap today. The sim is ground truth and CPU teams can measure any
   ratings profile against it, including lineup fit (the sim's synergy).
+- **Lineup fit counts through title odds** (owner's call: a team cares about
+  synergy when it is building a winner). A season's fit counts exactly as much
+  as that season matters for a title: fully for a contender now, almost
+  nothing for a rebuilding team now, and in a rebuilding team's projected
+  window, by that window's odds.
 - **Projected forward** with the game's own progression model.
 - **Learned ahead of time, never simmed live.** What a set of ratings is worth
   is learned from millions of simulated games and shipped as a model; CPU teams
