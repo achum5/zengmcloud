@@ -6,12 +6,20 @@ import {
 	applyRealisticFace,
 	baldingOnsetAge,
 	bandForAge,
+	CLEANS_UP_FROM_AGE,
+	CLEANS_UP_SHARE,
+	CLEANS_UP_SPREAD,
+	cleansUpAtAge,
+	EARLY_FACIAL_HAIR_SHARE,
+	facialHairStart,
+	LATE_FACIAL_HAIR_FROM_AGE,
 	CUTS_HAIR_FROM_AGE,
 	CUTS_HAIR_SPREAD,
 	cutsHair,
 	cutsHairFromAge,
 	facialHairCeiling,
 	facialHairForAge,
+	growFacialHair as growFacialHairForTest,
 	fatnessForAthlete,
 	FULL_BEARD_SHARE,
 	growsFacialHair,
@@ -89,8 +97,12 @@ describe("facial hair, against the real league", () => {
 		assert.isBelow(at26.none, 0.3, `${at26.none} clean-shaven at 26`);
 	});
 
-	test("full beards come in the mid-twenties, not at the draft", () => {
-		assert.strictEqual(league(22).heavy, 0);
+	test("a few already wear a full beard at 22; most come in the mid-twenties", () => {
+		// Not every draft class is baby-faced - real 19-to-23-year-olds include
+		// one in ten - but it is still a minority look that young.
+		const at22 = league(22).heavy;
+		assert.isAbove(at22, 0.03, `${at22} bearded at 22`);
+		assert.isBelow(at22, 0.16, `${at22} bearded at 22`);
 		const at26 = league(26).heavy;
 		assert.isAbove(at26, 0.15, `${at26} bearded at 26`);
 		assert.isBelow(at26, 0.4, `${at26} bearded at 26`);
@@ -153,7 +165,8 @@ describe("how far a man takes it", () => {
 
 	test("no season of aging takes him past it", () => {
 		for (let pid = 0; pid < 300; pid++) {
-			if (!growsFacialHair(pid)) {
+			// The men who clean up end below it by design - see the next block.
+			if (!growsFacialHair(pid) || cleansUpAtAge(pid) !== undefined) {
 				continue;
 			}
 			const face: any = generate(
@@ -177,7 +190,10 @@ describe("how far a man takes it", () => {
 	test("a style already past it is kept, never trimmed back", () => {
 		const pid = (() => {
 			for (let p = 0; p < 500; p++) {
-				if (facialHairCeiling(p) === "light") {
+				if (
+					facialHairCeiling(p) === "light" &&
+					cleansUpAtAge(p) === undefined
+				) {
 					return p;
 				}
 			}
@@ -329,5 +345,116 @@ describe("athletes", () => {
 		assert.isAbove(heavy / n, 0.08);
 		assert.isBelow(heavy / n, 0.2);
 		assert.isAtMost(max, 0.7);
+	});
+});
+
+// EVERY MAN ON HIS OWN SCHEDULE - see facialHairStart and cleansUpAtAge. The
+// report behind it: aging read as the same thing for everyone, a baby-faced
+// rookie filling into a beard.
+describe("not everyone wears it the same way", () => {
+	// What each man wore every season from `from` to `to`.
+	const careers = (n: number, from: number, to: number) => {
+		const out: { pid: number; ids: Map<number, string> }[] = [];
+		for (let i = 0; i < n; i++) {
+			const pid = i * 7 + 3;
+			const rand = mulberry32(pid * 13 + 5);
+			let id = facialHairForAge(from, rand, pid);
+			const ids = new Map<number, string>([[from, id]]);
+			for (let age = from + 1; age <= to; age++) {
+				id = growFacialHairForTest(id, age, pid, rand);
+				ids.set(age, id);
+			}
+			out.push({ pid, ids });
+		}
+		return out;
+	};
+
+	test("the traits are fixed per player and come in roughly their shares", () => {
+		let early = 0;
+		let cleans = 0;
+		let growers = 0;
+		const N = 4000;
+		for (let pid = 0; pid < N; pid++) {
+			assert.strictEqual(facialHairStart(pid), facialHairStart(pid));
+			assert.strictEqual(cleansUpAtAge(pid), cleansUpAtAge(pid));
+			if (facialHairStart(pid) === "early") {
+				early += 1;
+			}
+			if (growsFacialHair(pid)) {
+				growers += 1;
+				const at = cleansUpAtAge(pid);
+				if (at !== undefined) {
+					cleans += 1;
+					assert.isAtLeast(at, CLEANS_UP_FROM_AGE);
+					assert.isAtMost(at, CLEANS_UP_FROM_AGE + CLEANS_UP_SPREAD);
+				}
+			}
+		}
+		assert.closeTo(early / N, EARLY_FACIAL_HAIR_SHARE, 0.03);
+		assert.closeTo(cleans / growers, CLEANS_UP_SHARE, 0.03);
+		// A man who never grows any has nothing to clean up.
+		for (let pid = 0; pid < N; pid++) {
+			if (!growsFacialHair(pid)) {
+				assert.isUndefined(cleansUpAtAge(pid));
+			}
+		}
+	});
+
+	test("an early starter is already wearing it at the draft", () => {
+		const rand = mulberry32(31);
+		for (let pid = 0; pid < 3000; pid++) {
+			if (facialHairStart(pid) === "early" && growsFacialHair(pid)) {
+				assert.notStrictEqual(facialHairForAge(19, rand, pid), "none");
+			}
+		}
+	});
+
+	test("a late starter is clean until his mid-twenties", () => {
+		for (const { pid, ids } of careers(3000, 19, 30)) {
+			if (facialHairStart(pid) === "late") {
+				for (let age = 19; age < LATE_FACIAL_HAIR_FROM_AGE; age++) {
+					assert.strictEqual(ids.get(age), "none", `pid ${pid} at ${age}`);
+				}
+			}
+		}
+	});
+
+	test("a man who cleans up does it once, at his own age, and keeps it", () => {
+		let seen = 0;
+		for (const { pid, ids } of careers(3000, 19, 40)) {
+			const at = cleansUpAtAge(pid);
+			if (at === undefined) {
+				continue;
+			}
+			const before = ids.get(at - 1)!;
+			const after = ids.get(at)!;
+			if (before !== "none") {
+				seen += 1;
+				// Shaved clean or trimmed back to something light.
+				assert.isTrue(
+					after === "none" || tierOf(after) === "light",
+					`pid ${pid}: ${before} -> ${after}`,
+				);
+				if (tierOf(before) === "light") {
+					assert.strictEqual(after, "none");
+				}
+			}
+			// What he chose is what he wears for the rest of his career.
+			for (let age = at; age <= 40; age++) {
+				assert.strictEqual(ids.get(age), after, `pid ${pid} at ${age}`);
+			}
+		}
+		assert.isAbove(seen, 0);
+	});
+
+	test("at thirty, a league has every look in it", () => {
+		const league30 = replayLeague(2000, [30])(30);
+		assert.isAbove(league30.none, 0.12, "clean-shaven");
+		assert.isAbove(league30.heavy, 0.3, "full beards");
+		assert.isAbove(
+			1 - league30.none - league30.heavy,
+			0.25,
+			"goatees and the like",
+		);
 	});
 });

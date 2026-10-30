@@ -8,8 +8,12 @@
 // league that turns the setting on years in looks the way it would have if it
 // had been on from the start.
 //
-// The result is stable: the balding and beard traits come from the player's
-// id, so running this twice does not produce two different men.
+// The traits that decide a career - whether and when a man balds, whether he
+// grows a beard and how far he takes it, when his lines come in - come from
+// his id, so running this twice gives the same kind of man. The exact styles
+// drawn along the way are rolled fresh each run.
+//
+// Retired players are left alone: a face stops at retirement.
 
 import { idb } from "../../db/index.ts";
 import { g } from "../../util/index.ts";
@@ -18,9 +22,12 @@ import {
 	familySeed,
 	inferRaceFromFace,
 } from "../../util/realisticFaces.ts";
-import { recordAppearance } from "../../../common/playerAppearance.ts";
+import {
+	recordSeasonLook,
+	type PlayerAppearance,
+} from "../../../common/playerAppearance.ts";
+import { PLAYER } from "../../../common/constants.ts";
 import type { FaceAgingScope } from "../../../common/types.ts";
-import { helpers } from "../../util/index.ts";
 
 export type { FaceAgingScope } from "../../../common/types.ts";
 
@@ -76,7 +83,8 @@ export const applyFaceAgingToLeague = async (
 
 	let changed = 0;
 	for (const p of players) {
-		if (!p.face || !playerInScope(p, scope)) {
+		// Once a player retires, his face is done. Nothing replays it.
+		if (!p.face || p.tid === PLAYER.RETIRED || !playerInScope(p, scope)) {
 			continue;
 		}
 
@@ -85,7 +93,6 @@ export const applyFaceAgingToLeague = async (
 			continue;
 		}
 
-		const before = { face: helpers.deepCopy(p.face), imgURL: p.imgURL };
 		const rookieAge = replayStartAge({
 			draftYear: p.draft?.year,
 			bornYear: p.born.year,
@@ -95,9 +102,11 @@ export const applyFaceAgingToLeague = async (
 			continue;
 		}
 
-		// Every season the look changed, so the career reads as a history rather
-		// than one jump to today's face.
-		const changes: { age: number; face: any }[] = [];
+		// The face every season of the replayed career wore, so the gallery
+		// has one for each of them (see common/playerAppearance.ts). The
+		// replay is a new career from the draft on, so the history it leaves
+		// is rebuilt from scratch rather than laid over the old one.
+		let appearances: PlayerAppearance[] | undefined;
 		applyFaceAgingHistory({
 			face: p.face,
 			rookieAge,
@@ -105,24 +114,26 @@ export const applyFaceAgingToLeague = async (
 			pid: p.pid,
 			familyPid: familySeed(p.pid, p.relatives),
 			race: inferRaceFromFace(p.face),
-			onChange: (age) => {
-				changes.push({ age, face: helpers.deepCopy(p.face) });
+			onYear: (age) => {
+				const playedSeason = p.born.year + age;
+				if (!record || playedSeason >= season) {
+					return;
+				}
+				appearances =
+					recordSeasonLook({
+						appearances,
+						season: playedSeason,
+						look: { face: p.face, imgURL: p.imgURL },
+					}) ?? appearances;
 			},
 		});
 
-		let appearances = p.appearances;
-		for (const change of record ? changes : []) {
-			appearances =
-				recordAppearance({
-					appearances,
-					season: p.born.year + change.age,
-					firstSeason: p.born.year + rookieAge,
-					look: { face: change.face, imgURL: p.imgURL },
-					previous: before,
-				}) ?? appearances;
-		}
-		if (appearances) {
-			p.appearances = appearances;
+		if (record) {
+			if (appearances) {
+				p.appearances = appearances;
+			} else {
+				delete p.appearances;
+			}
 		}
 
 		await idb.cache.players.put(p);

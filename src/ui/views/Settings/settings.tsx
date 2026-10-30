@@ -1445,21 +1445,12 @@ export const settings: Setting[] = (
 			name: "Face Aging",
 			type: "bool",
 			description:
-				"Let a player's face mature over his career: facial hair grows in and thickens, hairlines recede.",
+				"Let a player's face age a little every season, until he retires. Every season's face is kept.",
 			descriptionLong: (
-				<>
-					<p>
-						Changes happen at a few threshold ages and only ever add, so a
-						player stays recognizable rather than growing and shaving a beard at
-						random. Past appearances are kept, so an old box score still shows
-						the rookie.
-					</p>
-					<p>
-						Faces already in your league are left where they are and age from
-						here. To backfill the careers that already happened, use Face aging
-						in the Danger Zone.
-					</p>
-				</>
+				<p>
+					Faces already in your league age from here. To backfill the careers
+					that already happened, use Face aging in the Danger Zone.
+				</p>
 			),
 			// The scope only means anything while aging is on, so it sits in the
 			// same box rather than as a second entry in the list.

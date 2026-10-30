@@ -32,12 +32,12 @@ import {
 	EYES_NATURAL,
 	HAIR_BALD,
 	HAIR_THINNING,
-	HAIR_TONES,
 	hairPoolForRace,
+	hairTone,
 	lineStylesFor,
 	MOUTHS_NATURAL,
 	NOSES_NATURAL,
-	skinTone,
+	skinToneAt,
 } from "./realisticFaces.ts";
 
 type Gender = "male" | "female";
@@ -274,8 +274,9 @@ export const socialFace = (
 	const race = pick(rng, RACES);
 	const age = Math.round(role.age[0] + rng() * (role.age[1] - role.age[0]));
 
-	const skinColor = skinTone(race, rng);
-	let hairColor = pick(rng, HAIR_TONES[race]);
+	const skin = skinToneAt(race, rng);
+	const skinColor = skin.color;
+	let hairColor = hairTone(race, rng, skin.depth);
 	if (rng() < greyChance(age, gender)) {
 		// Salt and pepper first, full grey later.
 		hairColor = age < 52 ? pick(rng, SALT_AND_PEPPER) : pick(rng, GREYS);

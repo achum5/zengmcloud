@@ -566,6 +566,33 @@ export const NOSES_NATURAL: readonly string[] = [
 ];
 const CARTOON_KEEP = 0.2;
 
+// CHEEK MARKS. facesjs puts blush or freckles on about one face in seven,
+// whoever he is. Two of the three are hatching - the blush is an anime blush,
+// a red oval with diagonal strokes through it, and freckles2 is the same
+// strokes in brown - and they read as a cartoon on any face and as a rash on
+// dark skin. Dot freckles (freckles1) are real on fair skin, and some are kept
+// there.
+export const CHEEK_HATCHING: readonly string[] = ["blush", "freckles2"];
+export const CHEEK_FRECKLES = "freckles1";
+const FRECKLES_KEEP_WHITE = 0.35;
+
+const settleCheekMarks = (
+	face: FaceConfig,
+	race: Race | undefined,
+	rand: () => number,
+) => {
+	const misc = face.miscLine?.id;
+	if (misc !== undefined && CHEEK_HATCHING.includes(misc)) {
+		face.miscLine.id = "none";
+	} else if (
+		misc === CHEEK_FRECKLES &&
+		race !== undefined &&
+		!(race === "white" && rand() < FRECKLES_KEEP_WHITE)
+	) {
+		face.miscLine.id = "none";
+	}
+};
+
 // THE DIALS, AWAY FROM THEIR STOPS. A brow at 20 degrees is a scowl and at
 // -15 a look of alarm; a nose at 1.25 is a caricature of one. facesjs draws
 // each dial uniformly across its whole range, so a fifth of every roster was
@@ -616,9 +643,26 @@ export const SKIN_TONES: Record<Race, readonly string[]> = {
 	],
 };
 
-// Hair the same way. facesjs has one colour for Black players and two for
-// brown and Asian ones; these add the dark browns that are as common as the
-// black.
+// HAIR COLOUR, and what it goes with.
+//
+// Black players' hair is black. The first cut of these lists gave them a dark
+// brown as one of three anchors - "#3b2a20", as common as the black - and with
+// the brightness nudge on top it rendered as plainly brown hair, and a brown
+// beard to match, on a third of the league's Black players, which a league
+// owner reported. Black hair under arena light is a warm near-black, not a
+// brown, so the list is near-blacks only.
+//
+// "brown" is facesjs's lighter-brown skin, which in an American league is
+// mostly lighter-skinned Black and mixed players as much as Latino or South
+// Asian ones - the default USA mix draws it for a third of all players - and
+// the same reddish brown read the same wrong way on them. Near-blacks too.
+//
+// White hair is the one real range, and facesjs drew it flat across eight
+// colours: one white player in eight a redhead and one in four blond, on a
+// league where red hair is a curiosity. Weighted toward the browns instead
+// (HAIR_TONE_WEIGHTS), and the light colours fall away on darker, olive skin -
+// a deeply tanned man with strawberry-blond hair is a combination you can
+// find, and one a roster page full of them makes look like a mistake.
 export const HAIR_TONES: Record<Race, readonly string[]> = {
 	white: [
 		"#272421",
@@ -631,8 +675,49 @@ export const HAIR_TONES: Record<Race, readonly string[]> = {
 		"#D7BF91",
 	],
 	asian: ["#272421", "#0f0902", "#2e1f16"],
-	brown: ["#272421", "#1c1008", "#3a2417"],
-	black: ["#272421", "#1a1613", "#3b2a20"],
+	brown: ["#141110", "#1c1008", "#211c19", "#272421"],
+	black: ["#141110", "#1a1613", "#211c19", "#272421"],
+};
+
+// Relative weights, in the same order as HAIR_TONES. Missing means even.
+//
+// For white players, measured against what a league of mostly American and
+// European players looks like: dark and mid browns most of all, then black and
+// light brown, blond about one in ten and red about one in thirty.
+export const HAIR_TONE_WEIGHTS: Partial<Record<Race, readonly number[]>> = {
+	white: [10, 20, 20, 12, 14, 4, 6, 8],
+};
+
+// The light colours - light brown, red, the two blonds - that thin out on
+// darker skin. At the darkest white anchor they keep this share of their
+// weight.
+const LIGHT_HAIR = new Set(["#CC9966", "#B55239", "#e9c67b", "#D7BF91"]);
+const LIGHT_HAIR_ON_DARKEST_SKIN = 0.15;
+
+// `skinDepth` is where the skin sits in its race's range, 0 lightest to 1
+// darkest (see skinToneAt).
+export const hairTone = (
+	race: Race,
+	rand: () => number,
+	skinDepth = 0.5,
+): string => {
+	const tones = HAIR_TONES[race];
+	const base = HAIR_TONE_WEIGHTS[race];
+	const weights = tones.map((tone, i) => {
+		const w = base?.[i] ?? 1;
+		return LIGHT_HAIR.has(tone)
+			? w * (1 - (1 - LIGHT_HAIR_ON_DARKEST_SKIN) * skinDepth)
+			: w;
+	});
+	const total = weights.reduce((a, b) => a + b, 0);
+	let roll = rand() * total;
+	for (const [i, w] of weights.entries()) {
+		roll -= w;
+		if (roll < 0) {
+			return tones[i]!;
+		}
+	}
+	return tones.at(-1)!;
 };
 
 // What a player of a given age should look like.
@@ -689,15 +774,17 @@ type AgeBand = {
 //                  19-21 22-23 24-25 26-27 28-29 30-31 32-33 34-36 37-40
 //   clean-shaven
 //     real players  62%   49%   29%   20%   16%   22%   12%   18%    9%
-//     replayed      65%   44%   30%   22%   20%   18%   17%   16%   16%
+//     replayed      62%   45%   34%   25%   21%   20%   21%   20%   20%
 //   full beard
 //     real players   9%   12%   20%   23%   35%   46%   33%   41%   70%
-//     replayed       0%    0%   14%   27%   32%   34%   36%   38%   40%
+//     replayed       6%   11%   22%   30%   34%   37%   38%   39%   42%
 //
-// The one place they part on purpose is the draft: no prospect is drawn with
-// a full beard, so a class still reads as a class. The old bands had facial
-// hair arriving half a career late - 58% of 24-year-olds clean-shaven against
-// 29% on the real floor, and not one full beard in the league before 28.
+// With every man on his own schedule (see facialHairStart and cleansUpAtAge):
+// a few prospects already wear a full beard, a few men never take it past
+// clean, and some clean up partway through. The old bands had facial hair
+// arriving half a career late - 58% of 24-year-olds clean-shaven against 29%
+// on the real floor - and then a version with no full beard anywhere before
+// 23, which made every draft class baby-faced.
 export const FACE_AGE_BANDS: AgeBand[] = [
 	// Three bands under 23, not one: a 22-year-old should look older than an
 	// 18-year-old on average, and with one band for both a draft class had no
@@ -746,7 +833,7 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 	{
 		minAge: 27,
 		growPerYear: 0.12,
-		thickenPerYear: 0.15,
+		thickenPerYear: 0.22,
 		tiers: ["light", "medium", "heavy"],
 		balding: 0.06,
 		baldingPerYear: 0.04,
@@ -758,7 +845,7 @@ export const FACE_AGE_BANDS: AgeBand[] = [
 		// makes is a change to someone's real photo.
 		minAge: 31,
 		growPerYear: 0.06,
-		thickenPerYear: 0.08,
+		thickenPerYear: 0.12,
 		tiers: ["light", "medium", "heavy"],
 		balding: 0.12,
 		baldingPerYear: 0.065,
@@ -804,7 +891,7 @@ export const BALDING_PRONE_SHARE_OUT_OF_FAMILY = 0.15;
 // And the share who stay clean-shaven whatever their age. Roughly one real
 // veteran in six is - see FACE_AGE_BANDS - and some of those simply have not
 // yet, so the trait is a little under that.
-export const NEVER_GROWS_FACIAL_HAIR_SHARE = 0.12;
+export const NEVER_GROWS_FACIAL_HAIR_SHARE = 0.1;
 
 // WHEN IT STARTS, WHICH IS NOT AT TWENTY-THREE.
 //
@@ -898,8 +985,8 @@ export const growsFacialHair = (pid: number | undefined): boolean =>
 // id like the rest - a full beard for most, a connected goatee or mustache
 // for some, and for a fifth whatever light style he first grew. It caps
 // aging only: nothing already on a face is taken off it.
-export const FULL_BEARD_SHARE = 0.6;
-export const LIGHT_ONLY_SHARE = 0.2;
+export const FULL_BEARD_SHARE = 0.66;
+export const LIGHT_ONLY_SHARE = 0.16;
 
 export const facialHairCeiling = (pid: number | undefined): FacialHairTier => {
 	if (pid === undefined) {
@@ -1012,40 +1099,178 @@ const pickFrom = <T>(list: readonly T[], rand: () => number): T =>
 const generatable = (tier: string): tier is FacialHairTier =>
 	(GENERATED_FACIAL_HAIR[tier as FacialHairTier]?.length ?? 0) > 0;
 
-// The share already wearing some at FACIAL_HAIR_FIRST_AGE: a thin goatee on
-// a college freshman, nothing heavier.
-export const FIRST_FACIAL_HAIR_SHARE = 0.25;
+// EVERY MAN WEARS IT HIS OWN WAY. A league where everyone arrives baby-faced
+// and fills into a beard on the same schedule is the uniform thing a real
+// floor is not. So on top of how far a man takes it (facialHairCeiling) and
+// whether he grows any at all (growsFacialHair), two more traits, fixed from
+// his id like the rest:
+//
+//  - WHEN IT STARTS. Most start in their early twenties. Some are already
+//    wearing it at the draft - a goatee, sometimes a full beard; not every
+//    nineteen-year-old is baby-faced - and some stay clean until their mid
+//    twenties.
+//  - WHETHER HE CLEANS UP. Some men who wear it take it off one season - they
+//    shave clean, or trim back to something light - and keep that look from
+//    then on. Once, at an age of his own, never back and forth.
+//
+// Measured against the real league's hand-picked faces (the table on
+// FACE_AGE_BANDS), this is also what that table asks for: real 19-to-21-year-
+// olds include a full beard about one time in eleven, and real veterans
+// include a steady share who are clean-shaven by choice.
+export type FacialHairStart = "early" | "typical" | "late";
+export const EARLY_FACIAL_HAIR_SHARE = 0.2;
+export const LATE_FACIAL_HAIR_SHARE = 0.15;
+export const LATE_FACIAL_HAIR_FROM_AGE = 25;
 
-// ONE SEASON OF GROWTH. The first hair always comes in light, and what is
-// there fills out one tier at a time, so a beard arrives the way beards do -
-// over several seasons - and never goes back. Aging and generation both run
-// on this, which is what keeps the two paths to an age in agreement.
+export const facialHairStart = (pid: number | undefined): FacialHairStart => {
+	if (pid === undefined) {
+		return "typical";
+	}
+	const roll = hashPid(pid, 16);
+	if (roll < EARLY_FACIAL_HAIR_SHARE) {
+		return "early";
+	}
+	return roll < EARLY_FACIAL_HAIR_SHARE + LATE_FACIAL_HAIR_SHARE
+		? "late"
+		: "typical";
+};
+
+// How fast an early starter grows and fills out, at any age, and how fast a
+// late starter grows in once his time comes - at least.
+const EARLY_GROW_PER_YEAR = 0.35;
+const EARLY_THICKEN_PER_YEAR = 0.3;
+const LATE_GROW_PER_YEAR = 0.3;
+// Where the schedules meet: from here an early starter grows at everyone's
+// rates, and a late one three seasons after.
+const SCHEDULES_MEET_AGE = 27;
+
+// How an early starter arrives at the draft: weights for light, medium and
+// heavy, over the tiers his ceiling allows.
+const EARLY_LOOK_WEIGHTS: Record<FacialHairTier, number> = {
+	light: 0.3,
+	medium: 0.3,
+	heavy: 0.4,
+	period: 0,
+};
+
+// Of the men who grow any, the share who clean up once, and when.
+export const CLEANS_UP_SHARE = 0.12;
+export const CLEANS_UP_FROM_AGE = 26;
+export const CLEANS_UP_SPREAD = 8;
+// Of those, the share who shave clean; the rest trim back to something light.
+export const CLEANS_UP_TO_NONE = 0.5;
+
+export const cleansUpAtAge = (pid: number | undefined): number | undefined =>
+	pid !== undefined &&
+	growsFacialHair(pid) &&
+	hashPid(pid, 17) < CLEANS_UP_SHARE
+		? CLEANS_UP_FROM_AGE + Math.floor(hashPid(pid, 18) * (CLEANS_UP_SPREAD + 1))
+		: undefined;
+
+// What a man who cleans up changes his look to.
+const cleanedUpLook = (current: string, pid: number): string => {
+	if (
+		hashPid(pid, 19) < CLEANS_UP_TO_NONE ||
+		tierOf(current) === "light" ||
+		!generatable("light")
+	) {
+		return "none";
+	}
+	return pickStable(GENERATED_FACIAL_HAIR.light!, pid, 20);
+};
+
+// The share of typical starters already wearing some at
+// FACIAL_HAIR_FIRST_AGE: a thin goatee on a college freshman.
+export const FIRST_FACIAL_HAIR_SHARE = 0.2;
+
+// ONE SEASON OF IT. Growing in comes light and fills out one tier at a time,
+// so a beard arrives the way beards do - over several seasons. The one way
+// back is the clean-up above, which happens once. Aging and generation both
+// run on this, which is what keeps the two paths to an age in agreement.
 export const growFacialHair = (
 	current: string,
 	age: number,
 	pid: number | undefined,
 	rand: () => number,
 ): string => {
+	const cleanUp = cleansUpAtAge(pid);
+	if (cleanUp !== undefined && age >= cleanUp) {
+		// The season he decides, and every season after: what he chose stays.
+		return age === cleanUp && current !== "none"
+			? cleanedUpLook(current, pid!)
+			: current;
+	}
+
 	const band = bandForAge(age);
+	const start = facialHairStart(pid);
 	if (current === "none") {
 		// Some men never grow any, whatever their age, so this is gated on the
 		// player rather than only on the roll.
-		return growsFacialHair(pid) &&
-			generatable("light") &&
-			rand() < band.growPerYear
+		if (
+			!growsFacialHair(pid) ||
+			!generatable("light") ||
+			(start === "late" && age < LATE_FACIAL_HAIR_FROM_AGE)
+		) {
+			return current;
+		}
+		// An early starter is on an older man's schedule while he is young, and
+		// a late one catches up for a few seasons once he starts. Past those
+		// years everyone is on the same rates: a man still clean-shaven in his
+		// thirties has mostly decided, whoever he is.
+		const rate =
+			start === "early" && age < SCHEDULES_MEET_AGE
+				? Math.max(band.growPerYear, EARLY_GROW_PER_YEAR)
+				: start === "late" && age < SCHEDULES_MEET_AGE + 3
+					? Math.max(band.growPerYear, LATE_GROW_PER_YEAR)
+					: band.growPerYear;
+		return rand() < rate
 			? pickFrom(GENERATED_FACIAL_HAIR.light!, rand)
 			: current;
 	}
 	const tier = tierOf(current);
 	const next =
 		tier === undefined ? undefined : TIER_ORDER[TIER_ORDER.indexOf(tier) + 1];
+	const early = start === "early";
+	const youngEarly = early && age < SCHEDULES_MEET_AGE;
 	return next !== undefined &&
-		band.tiers.includes(next) &&
+		(early || band.tiers.includes(next)) &&
 		TIER_ORDER.indexOf(next) <= TIER_ORDER.indexOf(facialHairCeiling(pid)) &&
 		generatable(next) &&
-		rand() < band.thickenPerYear
+		rand() <
+			(youngEarly
+				? Math.max(band.thickenPerYear, EARLY_THICKEN_PER_YEAR)
+				: band.thickenPerYear)
 		? pickFrom(GENERATED_FACIAL_HAIR[next]!, rand)
 		: current;
+};
+
+// What an early starter is wearing when he arrives: anything up to how far he
+// will ever take it.
+const earlyLook = (
+	age: number,
+	pid: number | undefined,
+	rand: () => number,
+): string => {
+	const ceiling = TIER_ORDER.indexOf(facialHairCeiling(pid));
+	const tiers = (["light", "medium", "heavy"] as const).filter(
+		(tier) =>
+			TIER_ORDER.indexOf(tier) <= ceiling &&
+			generatable(tier) &&
+			// A full beard on a man drafted at seventeen is a stretch.
+			(tier !== "heavy" || age >= FACIAL_HAIR_FIRST_AGE),
+	);
+	if (tiers.length === 0) {
+		return "none";
+	}
+	const total = tiers.reduce((sum, tier) => sum + EARLY_LOOK_WEIGHTS[tier], 0);
+	let roll = rand() * total;
+	for (const tier of tiers) {
+		roll -= EARLY_LOOK_WEIGHTS[tier];
+		if (roll < 0) {
+			return pickFrom(GENERATED_FACIAL_HAIR[tier]!, rand);
+		}
+	}
+	return pickFrom(GENERATED_FACIAL_HAIR[tiers.at(-1)!]!, rand);
 };
 
 // A facial hair style suitable for this age, or "none": what a man drawn at
@@ -1060,12 +1285,15 @@ export const facialHairForAge = (
 	pid?: number,
 ): string => {
 	const first = Math.min(age, FACIAL_HAIR_FIRST_AGE);
-	let id =
-		growsFacialHair(pid) &&
-		generatable("light") &&
-		rand() < FIRST_FACIAL_HAIR_SHARE
-			? pickFrom(GENERATED_FACIAL_HAIR.light!, rand)
-			: "none";
+	const start = facialHairStart(pid);
+	let id = "none";
+	if (growsFacialHair(pid) && generatable("light")) {
+		if (start === "early") {
+			id = earlyLook(first, pid, rand);
+		} else if (start === "typical" && rand() < FIRST_FACIAL_HAIR_SHARE) {
+			id = pickFrom(GENERATED_FACIAL_HAIR.light!, rand);
+		}
+	}
 	for (let year = first + 1; year <= age; year++) {
 		id = growFacialHair(id, year, pid, rand);
 	}
@@ -1082,6 +1310,10 @@ export const facialHairForAge = (
 // to invent colors the palette never had.
 const SKIN_JITTER = 0.06;
 const HAIR_JITTER = 0.1;
+// Light hair takes a much smaller nudge. Brightening a blond by a tenth turns
+// it from hair into a highlighter - "#e9c67b" became "#f9d483", and the beard
+// that grows in that colour later lit up the whole face.
+const LIGHT_HAIR_JITTER = 0.03;
 
 const hexToRgb = (hex: string): [number, number, number] => [
 	Number.parseInt(hex.slice(1, 3), 16),
@@ -1097,6 +1329,9 @@ const rgbToHex = (rgb: [number, number, number]): string =>
 				.padStart(2, "0"),
 		)
 		.join("")}`;
+
+const hexLightness = (hex: string): number =>
+	/^#[\da-f]{6}$/i.test(hex) ? rgbToHsl(hexToRgb(hex))[2] : 0;
 
 export const jitterColor = (
 	hex: string,
@@ -1117,7 +1352,10 @@ export const jitterColor = (
 // warmer, one greyer - and that, more than the shade, is what tells faces
 // apart on a roster page. So the hue and saturation get a small nudge each,
 // well inside what real skin does, on top of the lightness one applied later.
-export const skinTone = (race: Race, rand: () => number): string => {
+export const skinToneAt = (
+	race: Race,
+	rand: () => number,
+): { color: string; depth: number } => {
 	const tones = SKIN_TONES[race];
 	const i = Math.min(tones.length - 2, Math.floor(rand() * (tones.length - 1)));
 	const t = rand();
@@ -1134,8 +1372,14 @@ export const skinTone = (race: Race, rand: () => number): string => {
 		0,
 		Math.min(1, sat * (1 + (rand() * 2 - 1) * SKIN_SATURATION_JITTER)),
 	);
-	return rgbToHex(hslToRgb([hue, saturation, l]));
+	return {
+		color: rgbToHex(hslToRgb([hue, saturation, l])),
+		depth: (i + t) / (tones.length - 1),
+	};
 };
+
+export const skinTone = (race: Race, rand: () => number): string =>
+	skinToneAt(race, rand).color;
 
 // Degrees, and a share of the saturation.
 const SKIN_HUE_JITTER = 4;
@@ -1586,6 +1830,32 @@ export const inferRaceFromFace = (face: FaceConfig): Race | undefined => {
 	return best?.race;
 };
 
+// THE OLD DARK BROWN, ON A FACE THAT READS AS BLACK - see HAIR_TONES and
+// worker/core/player/agePlayerFace.ts. Recognised by what it is rather than by
+// the exact value, because the brightness nudge moved every copy of it: warm,
+// clearly coloured, and lighter than any near-black but far darker than a
+// colour anyone chooses (a bleached or dyed head is left alone). Swapped for a
+// near-black picked from the old colour, so the same man gets the same one on
+// every device and in every season of his history.
+export const fixBrownHairOnBlackFace = (face: FaceConfig): boolean => {
+	const color = face?.hair?.color;
+	if (
+		typeof color !== "string" ||
+		!/^#[\da-f]{6}$/i.test(color) ||
+		inferRaceFromFace(face) !== "black"
+	) {
+		return false;
+	}
+	const rgb = hexToRgb(color);
+	const [h, saturation, l] = rgbToHsl(rgb);
+	if (l <= 0.15 || l > 0.3 || saturation < 0.18 || h < 5 || h > 50) {
+		return false;
+	}
+	const tones = HAIR_TONES.black;
+	face.hair.color = tones[(rgb[0] + rgb[1] + rgb[2]) % tones.length]!;
+	return true;
+};
+
 // EVERY SEASON A PLAYER HAS ALREADY LIVED, run through the aging rules at once.
 //
 // Turning the setting on only affects faces generated afterwards, so an
@@ -1605,6 +1875,7 @@ export const applyFaceAgingHistory = ({
 	race,
 	rand = faceStream(),
 	onChange,
+	onYear,
 }: {
 	face: FaceConfig;
 	rookieAge: number;
@@ -1613,10 +1884,15 @@ export const applyFaceAgingHistory = ({
 	familyPid?: number;
 	race?: Race;
 	rand?: () => number;
+	// A season the look took a step in (see ageFace's return).
 	onChange?: (age: number) => void;
+	// Every season, the first one included, with the face as it was that
+	// season - which is what a per-season history is built from.
+	onYear?: (age: number) => void;
 }) => {
+	const startAge = Math.min(rookieAge, currentAge);
 	applyRealisticFace(face, {
-		age: Math.min(rookieAge, currentAge),
+		age: startAge,
 		race: race ?? inferRaceFromFace(face),
 		pid,
 		// This man already has his colours. Replaying his career is not an
@@ -1625,15 +1901,13 @@ export const applyFaceAgingHistory = ({
 		keepColors: true,
 		rand,
 	});
+	onYear?.(startAge);
 
-	for (
-		let age = Math.min(rookieAge, currentAge) + 1;
-		age <= currentAge;
-		age++
-	) {
+	for (let age = startAge + 1; age <= currentAge; age++) {
 		if (ageFace(face, age, pid, rand, familyPid)) {
 			onChange?.(age);
 		}
+		onYear?.(age);
 	}
 };
 
@@ -1741,6 +2015,12 @@ export const applyRealisticFace = (
 		face.glasses.id = "none";
 	}
 
+	// Blush and freckles share the slot the brow lines use. Before the lines,
+	// so a face that loses one can still have them - see applyWrinkles.
+	if (!keepFeatures) {
+		settleCheekMarks(face, race, rand);
+	}
+
 	// Lines to match the age - the same age a face aged into would show. See
 	// wrinkleLevelAgedTo.
 	applyWrinkles(
@@ -1752,16 +2032,20 @@ export const applyRealisticFace = (
 
 	if (!keepColors) {
 		// The whole range when the race is known, the library's pick nudged
-		// when it is not.
+		// when it is not. Hair after skin, because the light colours depend on
+		// how dark the skin came out - see hairTone.
+		const skin = race === undefined ? undefined : skinToneAt(race, rand);
 		face.body.color = jitterColor(
-			race === undefined ? face.body.color : skinTone(race, rand),
+			skin?.color ?? face.body.color,
 			rand,
 			SKIN_JITTER,
 		);
+		const hair =
+			race === undefined ? face.hair.color : hairTone(race, rand, skin?.depth);
 		face.hair.color = jitterColor(
-			race === undefined ? face.hair.color : pickFrom(HAIR_TONES[race], rand),
+			hair,
 			rand,
-			HAIR_JITTER,
+			hexLightness(hair) > 0.4 ? LIGHT_HAIR_JITTER : HAIR_JITTER,
 		);
 	}
 

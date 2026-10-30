@@ -4,7 +4,7 @@ import { PlayerPicture } from "./PlayerPicture.tsx";
 import { TeamLogoInline } from "./TeamLogoInline.tsx";
 import {
 	appearanceForSeason,
-	appearancesDiffer,
+	lookStepped,
 } from "../../common/playerAppearance.ts";
 import type { PlayerAppearance } from "../../common/playerAppearance.ts";
 import { DEFAULT_JERSEY, DEFAULT_TEAM_COLORS } from "../../common/constants.ts";
@@ -165,8 +165,15 @@ export const PlayerAppearanceGallery = ({
 }) => {
 	const stints = groupSeasonsByUniform(seasons, teams);
 
-	// THE SEASONS AGING ACTUALLY CHANGED SOMETHING IN, which is the only place
-	// there is anything to undo. Compared against the season before it IN THIS
+	// His latest season shows p.face, the same face as the rest of the page;
+	// every season before it shows the history. See playerAppearance.ts.
+	const latestSeason = seasons.at(-1);
+	const lookFor = (season: number) =>
+		appearanceForSeason(player, season, latestSeason);
+
+	// THE SEASONS THE LOOK TOOK A STEP IN - a beard, a line, a haircut - which
+	// is the only place there is anything to undo. The slow aging every season
+	// carries does not count. Compared against the season before it IN THIS
 	// CAREER rather than the calendar year before, so a year out of the league
 	// does not read as a change. The first season has nothing behind it.
 	const previousSeason = new Map<number, number>();
@@ -174,10 +181,7 @@ export const PlayerAppearanceGallery = ({
 		const previous = seasons[i - 1];
 		if (
 			previous !== undefined &&
-			appearancesDiffer(
-				appearanceForSeason(player, previous),
-				appearanceForSeason(player, season),
-			)
+			lookStepped(lookFor(previous), lookFor(season))
 		) {
 			previousSeason.set(season, previous);
 		}
@@ -242,7 +246,7 @@ export const PlayerAppearanceGallery = ({
 							</div>
 							<div className="player-appearance-grid">
 								{stint.seasons.map((season) => {
-									const { face, imgURL } = appearanceForSeason(player, season);
+									const { face, imgURL } = lookFor(season);
 									// Only a season he spent on a roster has a game log to open;
 									// the years in the scouting pool have no games behind them.
 									const Card = team ? "a" : "div";

@@ -251,8 +251,9 @@ const genPlayersWithoutSaving = async (
 			p.college = "";
 		}
 		// Everyone was drawn at baseAge and some have been developed a season
-		// or three since; the face has to have lived those seasons too.
-		catchUpFace(p, baseAge);
+		// or three since; the face has to have lived those seasons too - up to
+		// draft day, since it does not age in the pool (see catchUpFace).
+		catchUpFace(p, baseAge, ageAtDraft);
 	}
 
 	/*console.log(draftYear, enteringDraft.length);

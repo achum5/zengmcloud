@@ -364,7 +364,10 @@ import { ValueChangeCalculator } from "../core/team/ValueChangeCalculator.ts";
 import type { GenOrderResult } from "../core/draft/genOrder.ts";
 import { allowCrossingNextSimStop } from "../core/sync/tradeDeadlineGate.ts";
 import { parseSimStopDays, stopsOnDay } from "../../common/simStopDays.ts";
-import { revertAppearance } from "../../common/playerAppearance.ts";
+import {
+	latestAppearanceSeason,
+	revertAppearance,
+} from "../../common/playerAppearance.ts";
 import undoLog from "./undoLog.ts";
 import revertTransaction from "../core/player/revertTransaction.ts";
 import {
@@ -6372,12 +6375,8 @@ const revertPlayerFace = async ({
 		throw new Error("Player not found.");
 	}
 
-	// The newest season the player has: the one his live face belongs to, so
-	// reverting it moves p.face and reverting an older one does not.
-	const latestSeason = Math.max(
-		g.get("season"),
-		...p.ratings.map((row) => row.season),
-	);
+	// The season his live face belongs to - see common/playerAppearance.ts.
+	const latestSeason = latestAppearanceSeason(p.ratings) ?? g.get("season");
 
 	const reverted = revertAppearance({
 		appearances: p.appearances,

@@ -20,7 +20,8 @@ import useTitleBar from "../../hooks/useTitleBar.tsx";
 import { helpers } from "../../util/helpers.ts";
 import {
 	appearanceForSeason,
-	recordAppearance,
+	recordSeasonLook,
+	type PlayerAppearance,
 } from "../../../common/playerAppearance.ts";
 import { showNotification } from "../../util/showNotification.ts";
 import { toWorker } from "../../util/toWorker.ts";
@@ -311,6 +312,40 @@ const copyValidValues = (
 	return recomputePosOvrPot;
 };
 
+type EditorLook = { face: string; imgURL: string };
+
+// Put what the editor holds where it belongs: an earlier season's look into
+// the appearance history, the current look into `live`. Undefined when the
+// face box is not valid JSON.
+const bankEditedSeason = (state: {
+	editSeason: number | undefined;
+	live: EditorLook | undefined;
+	p: any;
+}):
+	| { appearances: PlayerAppearance[] | undefined; live: EditorLook }
+	| undefined => {
+	const editor: EditorLook = {
+		face: state.p.face,
+		imgURL: state.p.imgURL ?? "",
+	};
+	let face;
+	try {
+		face = JSON.parse(editor.face);
+	} catch {
+		return undefined;
+	}
+	if (state.editSeason === undefined || state.live === undefined) {
+		return { appearances: state.p.appearances, live: editor };
+	}
+	const appearances =
+		recordSeasonLook({
+			appearances: state.p.appearances,
+			season: state.editSeason,
+			look: { face, imgURL: editor.imgURL },
+		}) ?? state.p.appearances;
+	return { appearances, live: state.live };
+};
+
 const useJerseyNumberConflictInfo = (
 	pid: number | undefined,
 	tid: number,
@@ -376,8 +411,12 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 		return {
 			appearanceOption: props.appearanceOption,
 			// undefined means the player's current look; a number means that
-			// season's entry in his appearance history.
+			// season's look in his appearance history.
 			editSeason: undefined as number | undefined,
+			// The current look, set aside while an earlier season is in the
+			// editor - so going back to "Current", or saving, puts the player's
+			// own face back rather than the old season's.
+			live: undefined as { face: string; imgURL: string } | undefined,
 			saving: false,
 			p,
 		};
@@ -411,9 +450,22 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 		try {
 			const p = helpers.deepCopy(props.p);
 
+			// An earlier season still in the editor goes into the history, and
+			// the face saved as the player's own is his current one.
+			const banked = bankEditedSeason(state);
+			if (!banked) {
+				throw new Error("The face is not valid JSON.");
+			}
+			const source = {
+				...state.p,
+				appearances: banked.appearances,
+				face: banked.live.face,
+				imgURL: banked.live.imgURL,
+			};
+
 			// Copy over values from state, if they're valid
 			const recomputePosOvrPot = copyValidValues(
-				state.p,
+				source as any,
 				p,
 				minContract,
 				phase,
@@ -553,16 +605,20 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 	} = props;
 	const { appearanceOption, editSeason, p, saving } = state;
 
-	// Every season the player has ratings for - the seasons a look can be
-	// attached to. The stored history only holds the seasons that CHANGED, so
-	// it cannot be the source of this list.
-	const editableSeasons = p
+	// Every season the player has ratings for. The latest is "Current" - his
+	// face, p.face - and the ones before it are the seasons of his appearance
+	// history (see common/playerAppearance.ts).
+	const careerSeasons: number[] = p
 		? [
 				...new Set(
 					(p.ratings ?? []).map((row: { season: number }) => row.season),
 				),
 			].sort((a: number, b: number) => a - b)
 		: [];
+	const latestSeason = careerSeasons.at(-1);
+	const editableSeasons = careerSeasons.filter(
+		(year) => latestSeason === undefined || year < latestSeason,
+	);
 
 	// Switching seasons banks whatever is in the editor into the season it
 	// belonged to, then loads the newly chosen one. Without the banking half,
@@ -577,42 +633,38 @@ const CustomizePlayer = (props: View<"customizePlayer">) => {
 				return prevState;
 			}
 
-			let face;
-			try {
-				face = JSON.parse((prevP as any).face);
-			} catch {
-				// Invalid JSON in the box: leave the history alone rather than
-				// storing something unparseable.
-				face = undefined;
+			const banked = bankEditedSeason(prevState);
+			if (!banked) {
+				// Invalid JSON in the box: stay put rather than lose the edit or
+				// store something unparseable.
+				return prevState;
 			}
+			const { appearances, live } = banked;
 
-			let appearances = prevP.appearances;
-			if (face !== undefined && prevState.editSeason !== undefined) {
-				appearances =
-					recordAppearance({
-						appearances,
-						season: prevState.editSeason,
-						firstSeason: prevState.editSeason,
-						look: { face, imgURL: prevP.imgURL },
-					}) ?? appearances;
+			let loaded: { face: string; imgURL: string };
+			if (next === undefined) {
+				loaded = live;
+			} else {
+				const look = appearanceForSeason(
+					{ face: JSON.parse(live.face), imgURL: live.imgURL, appearances },
+					next,
+					latestSeason,
+				);
+				loaded = {
+					face: JSON.stringify(look.face, null, 2),
+					imgURL: look.imgURL ?? "",
+				};
 			}
-
-			const loaded =
-				next === undefined
-					? { face, imgURL: prevP.imgURL }
-					: appearanceForSeason(
-							{ face, imgURL: prevP.imgURL, appearances },
-							next,
-						);
 
 			return {
 				...prevState,
 				editSeason: next,
+				live: next === undefined ? undefined : live,
 				p: {
 					...prevP,
 					appearances,
-					imgURL: loaded.imgURL ?? "",
-					face: JSON.stringify(loaded.face ?? face, null, 2),
+					imgURL: loaded.imgURL,
+					face: loaded.face,
 				} as any,
 			};
 		});

@@ -24,9 +24,10 @@ import { applyRealTeamInfo } from "../../../common/applyRealTeamInfo.ts";
 import { bySport } from "../../../common/sportFunctions.ts";
 import { choice, randInt, uniform } from "../../../common/random.ts";
 import { env } from "../../util/env.ts";
-import { ageFace, familySeed } from "../../util/realisticFaces.ts";
-import { playerInScope } from "../player/applyFaceAgingToLeague.ts";
-import { recordAppearance } from "../../../common/playerAppearance.ts";
+import {
+	agePlayerFace,
+	fixBrownHairOnBlackPlayer,
+} from "../player/agePlayerFace.ts";
 import { SPORTSBOOK_PRESEASON_GRANT } from "../../../common/sportsbook.ts";
 import { collegePreseasonFill } from "../college/portal.ts";
 import { collegeSigningDay } from "../college/recruiting.ts";
@@ -363,8 +364,22 @@ const newPhasePreseason = async (
 		}
 	}
 
+	// Draft prospects waiting in the pool are not aged (their faces were built
+	// for draft day - see catchUpFace), but they carry the old brown hair as
+	// much as anyone does.
+	const prospects = await idb.cache.players.indexGetAll(
+		"playersByTid",
+		PLAYER.UNDRAFTED,
+	);
+	for (const p of prospects) {
+		if (fixBrownHairOnBlackPlayer(p)) {
+			await idb.cache.players.put(p);
+		}
+	}
+
 	// Loop through all non-retired players
 	for (const p of players) {
+		fixBrownHairOnBlackPlayer(p);
 		if (__SPORT === "hockey" && p.numConsecutiveGamesG !== undefined) {
 			p.numConsecutiveGamesG = 0;
 		}
@@ -406,46 +421,8 @@ const newPhasePreseason = async (
 			player.addRatingsRow(p, scoutingLevel);
 			await player.develop(p, 1, false, coachingLevels[p.tid]);
 
-			// Grow into the look. Only fires at a few threshold ages and only
-			// ever adds - see realisticFaces.ts - so this writes a face on a
-			// handful of players a season rather than all of them.
-			if (
-				__SPORT === "basketball" &&
-				g.get("faceAging") &&
-				playerInScope(p, g.get("faceAgingPlayers")) &&
-				p.face
-			) {
-				const before = {
-					face: helpers.deepCopy(p.face),
-					imgURL: p.imgURL,
-				};
-				// Baldness runs in families, so a player with a father, a son or a
-				// brother in the league is judged against the family's seed rather
-				// than his own alone.
-				if (
-					ageFace(
-						p.face,
-						newSeason - p.born.year,
-						p.pid,
-						undefined,
-						familySeed(p.pid, p.relatives),
-					)
-				) {
-					// Keep what he used to look like, so a past box score shows the
-					// rookie rather than today's receding hairline. Written only on
-					// the seasons that actually changed - see playerAppearance.ts.
-					const appearances = recordAppearance({
-						appearances: p.appearances,
-						season: newSeason,
-						firstSeason: p.draft.year > 0 ? p.draft.year : newSeason,
-						look: { face: p.face, imgURL: p.imgURL },
-						previous: before,
-					});
-					if (appearances) {
-						p.appearances = appearances;
-					}
-				}
-			}
+			// A year older. See agePlayerFace.
+			agePlayerFace(p, newSeason);
 		}
 
 		if (

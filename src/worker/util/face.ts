@@ -8,9 +8,11 @@ import { bySport } from "../../common/sportFunctions.ts";
 import {
 	applyFaceAgingHistory,
 	applyRealisticFace,
+	faceStream,
 	familySeed,
 	inferRaceFromFace,
 } from "./realisticFaces.ts";
+import { makeSeededRandom } from "../../common/random.ts";
 import { registerGlobal } from "../../common/registerGlobal.ts";
 
 export const generateFace = (
@@ -147,6 +149,12 @@ export const generateFace = (
 // face arrives where a played career would have taken it. Nothing when the
 // mode is off (facesjs ignores age anyway), when there is no face, or when
 // there are no years to replay.
+//
+// `toAge` defaults to his age now. A draft prospect passes his age on draft
+// day instead: classes are drawn up to three years ahead, and nothing ages a
+// face while it waits in the pool (preseason only ages players on a roster or
+// in free agency), so a face built for today was drafted looking three years
+// younger than he was.
 export const catchUpFace = (
 	p: {
 		face?: FaceConfig;
@@ -155,6 +163,7 @@ export const catchUpFace = (
 		relatives?: { pid: number }[];
 	},
 	fromAge: number,
+	toAge?: number,
 ) => {
 	const realisticFaces = Object.hasOwn(g, "realisticFaces")
 		? g.get("realisticFaces")
@@ -162,18 +171,37 @@ export const catchUpFace = (
 	if (__SPORT !== "basketball" || !realisticFaces || !p.face) {
 		return;
 	}
-	const currentAge = g.get("season") - p.born.year;
-	if (!Number.isFinite(currentAge) || currentAge <= fromAge) {
+	const ageNow = g.get("season") - p.born.year;
+	const targetAge = toAge ?? ageNow;
+	if (!Number.isFinite(targetAge) || targetAge <= fromAge) {
 		return;
 	}
 	applyFaceAgingHistory({
 		face: p.face,
 		rookieAge: fromAge,
-		currentAge,
+		currentAge: targetAge,
 		pid: p.pid,
 		familyPid: familySeed(p.pid, p.relatives),
 		race: inferRaceFromFace(p.face),
+		// A replay that only exists to reach draft day (he is not older than
+		// he was drawn yet) takes its randomness from the face itself rather
+		// than from the league's stream. Drawing from the stream would shift
+		// every random number the league draws after a class is generated -
+		// every roster, every seeded test - for the sake of a face.
+		rand: ageNow > fromAge ? faceStream() : makeSeededRandom(hashFace(p.face)),
 	});
+};
+
+// FNV-1a over the face's JSON: a stable seed that depends on nothing but the
+// face.
+const hashFace = (face: FaceConfig): number => {
+	const text = JSON.stringify(face);
+	let hash = 2166136261;
+	for (let i = 0; i < text.length; i++) {
+		hash ^= text.charCodeAt(i);
+		hash = Math.imul(hash, 16777619);
+	}
+	return hash >>> 0;
 };
 
 export const upgradeFace = async (p: PlayerWithoutKey) => {

@@ -16,6 +16,7 @@ import {
 	baldingProne,
 	BALDING_ONSET_MIN_AGE,
 	growsFacialHair,
+	cleansUpAtAge,
 	inferRaceFromFace,
 	MAX_WRINKLE_LEVEL,
 	weathersLess,
@@ -531,10 +532,20 @@ describe("ageFace", () => {
 	});
 
 	test("facial hair never thins back out, at any age", () => {
+		// Except the once a man who cleans up does it - see cleansUpAtAge, and
+		// its own tests. This is a man who does not.
+		const pid = (() => {
+			for (let p = 1; p < 500; p++) {
+				if (cleansUpAtAge(p) === undefined) {
+					return p;
+				}
+			}
+			throw new Error("no pid that keeps it");
+		})();
 		for (const age of [24, 28, 33, 38]) {
 			for (const start of ["goatee1", "fullgoatee", "beard1"]) {
 				const f = face({ facialHair: { id: start } });
-				ageFace(f, age, 1, sequence([0, 0.5, 0.5, 0.99]));
+				ageFace(f, age, pid, sequence([0, 0.5, 0.5, 0.99]));
 				const order = ["light", "medium", "heavy", "period"];
 				assert.isAtLeast(
 					order.indexOf(tierOf(f.facialHair.id)!),
@@ -624,14 +635,20 @@ describe("generateFace plumbing", () => {
 	test("with it on, a draft class has no period styles and nobody balding", () => {
 		resetG();
 		g.setWithoutSavingToDB("realisticFaces", true);
-		for (let i = 0; i < 200; i++) {
-			const face = generateFace({ age: 19 + (i % 4) });
+		let heavy = 0;
+		for (let i = 0; i < 400; i++) {
+			const face = generateFace({ age: 19 + (i % 4), pid: 1000 + i });
 			const tier = tierOf(face.facialHair.id);
 			assert.notStrictEqual(tier, "period", face.facialHair.id);
-			assert.notStrictEqual(tier, "heavy", face.facialHair.id);
+			if (tier === "heavy") {
+				heavy += 1;
+			}
 			// A shaved head is allowed at this age; a receding one is not.
 			assert.notStrictEqual(face.hair.id, HAIR_THINNING);
 		}
+		// A few prospects already wear a full beard - not every class is
+		// baby-faced - but only a few.
+		assert.isBelow(heavy / 400, 0.15);
 	});
 });
 

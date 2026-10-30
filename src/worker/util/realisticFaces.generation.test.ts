@@ -4,6 +4,10 @@ import {
 	ageFace,
 	applyRealisticFace,
 	baldingProne,
+	CHEEK_FRECKLES,
+	CHEEK_HATCHING,
+	cleansUpAtAge,
+	hairTone,
 	CUTS_HAIR_FROM_AGE,
 	cutsHair,
 	HAIR_SPIKED,
@@ -370,6 +374,22 @@ describe("catching a face up to its player's age", () => {
 		assert.isAbove(bearded / N, 0.45, "facial hair at 34");
 	});
 
+	test("a prospect drawn years ahead is caught up to draft day", () => {
+		// Nothing ages a face in the draft pool, so a class drawn three years
+		// ahead has to be drawn for the day it is drafted. Ears lengthen a
+		// fixed amount each season past 19, which makes the years replayed
+		// countable: three of them between 19 and 22.
+		resetG();
+		g.setWithoutSavingToDB("realisticFaces", true);
+		g.setWithoutSavingToDB("season", 2026);
+		const now = build("black", 16, 6, seeded(15));
+		const atDraft = structuredClone(now);
+		const born = { year: 2026 - 16 };
+		catchUpFace({ face: now, born, pid: 6 }, 16);
+		catchUpFace({ face: atDraft, born, pid: 6 }, 16, 22);
+		assert.closeTo(atDraft.ear.size - now.ear.size, 3 * 0.004, 1e-9);
+	});
+
 	test("nothing to replay, nothing touched", () => {
 		resetG();
 		g.setWithoutSavingToDB("realisticFaces", true);
@@ -406,6 +426,10 @@ describe("a beard arrives over seasons, not in one", () => {
 	test("first growth is light, and it thickens one tier at a time", () => {
 		const rand = seeded(15);
 		for (let pid = 1; pid <= 200; pid++) {
+			// A man who cleans up steps down once, by design - see its own tests.
+			if (cleansUpAtAge(pid) !== undefined) {
+				continue;
+			}
 			const face = generate(
 				{ jersey: { id: "jersey" } },
 				{ gender: "male", race: "white" },
@@ -428,6 +452,103 @@ describe("a beard arrives over seasons, not in one", () => {
 					);
 					previous = now;
 				}
+			}
+		}
+	});
+});
+
+// HAIR COLOUR, held to what a real league looks like - see HAIR_TONES. The
+// report behind this: a third of Black players had brown hair.
+describe("hair colour", () => {
+	const hsl = (hex: string) => {
+		const [r, g, b] = [1, 3, 5].map(
+			(i) => Number.parseInt(hex.slice(i, i + 2), 16) / 255,
+		) as [number, number, number];
+		const max = Math.max(r, g, b);
+		const min = Math.min(r, g, b);
+		const l = (max + min) / 2;
+		const s =
+			max === min
+				? 0
+				: l > 0.5
+					? (max - min) / (2 - max - min)
+					: (max - min) / (max + min);
+		return { s, l };
+	};
+
+	test("Black and brown-skinned players have black hair", () => {
+		const rand = seeded(21);
+		for (const race of ["black", "brown"] as const) {
+			for (let pid = 1; pid <= 1500; pid++) {
+				const f = build(race, 19 + (pid % 18), pid, rand);
+				const { s, l } = hsl(f.hair.color);
+				// Near-black: dark, and never dark AND clearly coloured, which is
+				// what read as brown.
+				assert.isAtMost(l, 0.16, `${race} ${f.hair.color}`);
+				assert.isFalse(l > 0.13 && s > 0.3, `${race} ${f.hair.color}`);
+			}
+		}
+	});
+
+	test("white players are mostly brown-haired; red and blond are a minority", () => {
+		const rand = seeded(22);
+		const N = 4000;
+		let red = 0;
+		let blond = 0;
+		for (let pid = 1; pid <= N; pid++) {
+			const f = build("white", 25, pid, rand);
+			const { l } = hsl(f.hair.color);
+			const [r, g] = [1, 3].map((i) =>
+				Number.parseInt(f.hair.color.slice(i, i + 2), 16),
+			) as [number, number];
+			if (r - g > 45 && l > 0.3 && l < 0.55) {
+				red += 1;
+			} else if (l > 0.65) {
+				blond += 1;
+			}
+		}
+		// facesjs drew them flat: 12.5% red, 25% blond.
+		assert.isAbove(red / N, 0.01);
+		assert.isBelow(red / N, 0.06);
+		assert.isAbove(blond / N, 0.04);
+		assert.isBelow(blond / N, 0.16);
+	});
+
+	test("light hair thins out on darker skin", () => {
+		const light = (depth: number) => {
+			const rand = seeded(23);
+			let n = 0;
+			for (let i = 0; i < 4000; i++) {
+				if (
+					["#CC9966", "#B55239", "#e9c67b", "#D7BF91"].includes(
+						hairTone("white", rand, depth),
+					)
+				) {
+					n += 1;
+				}
+			}
+			return n / 4000;
+		};
+		assert.isAbove(light(0), 3 * light(1));
+	});
+});
+
+describe("cheek marks", () => {
+	test("no blush or hatching on anyone; dot freckles only on fair skin", () => {
+		const rand = seeded(24);
+		for (const race of ["white", "black", "brown", "asian"] as const) {
+			let freckles = 0;
+			for (let pid = 1; pid <= 1500; pid++) {
+				const f = build(race, 22, pid, rand);
+				assert.notInclude(CHEEK_HATCHING, f.miscLine.id, race);
+				if (f.miscLine.id === CHEEK_FRECKLES) {
+					freckles += 1;
+				}
+			}
+			if (race === "white") {
+				assert.isAbove(freckles, 0);
+			} else {
+				assert.strictEqual(freckles, 0, race);
 			}
 		}
 	});
