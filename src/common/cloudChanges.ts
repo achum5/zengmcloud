@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 44,
+		date: "2026-10-30",
+		text: "Day recaps: a season high or a milestone for a player the recap hasn't mentioned yet now says whose player he is (\"the Thunder's Marcus Vaughn set a season high with 32 points\").",
+	},
+	{
 		n: 43,
 		date: "2026-10-30",
 		text: 'Recaps: in a blowout, the star\'s line can say how little he played ("28 points in just 26 minutes"), and the day recap\'s standings list says "climbed" once instead of for every team.',

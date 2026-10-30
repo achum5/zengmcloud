@@ -1658,7 +1658,13 @@ export const dayMilestones = (
 	ctx: DayBeatContext,
 	rng: Rng,
 ): string | undefined => {
-	type Hit = { text: string; tail: string; name: string; weight: number };
+	type Hit = {
+		text: string;
+		tail: string;
+		name: string;
+		who: string;
+		weight: number;
+	};
 	const hits: Hit[] = [];
 	for (const game of realGames(ctx.games)) {
 		for (const t of game.teams) {
@@ -1672,11 +1678,15 @@ export const dayMilestones = (
 					m.scope === "career"
 						? `${fmtNum(m.mark)} career ${word}`
 						: `${fmtNum(m.mark)} ${word} for the season`;
+				// Not named above, so with his team: "the Bulls' Franz Nance
+				// went past 1,000 career rebounds".
+				const who = `${poss(theNick(t))} ${p.name}`;
 				hits.push({
 					name: p.name,
+					who,
 					tail,
 					weight: (m.scope === "career" ? 100 : 0) + m.mark / 100,
-					text: `${p.name} went past ${tail}`,
+					text: `${who} went past ${tail}`,
 				});
 			}
 		}
@@ -1693,7 +1703,7 @@ export const dayMilestones = (
 	// 500 points for the season", not the same sentence twice.
 	const list =
 		top.length === 2 && top[0]!.tail === top[1]!.tail
-			? `${top[0]!.name} and ${top[1]!.name} both went past ${top[0]!.tail}`
+			? `${top[0]!.who} and ${top[1]!.who} both went past ${top[0]!.tail}`
 			: naturalList(top.map((h) => h.text));
 	return pick(
 		rng,
@@ -1743,8 +1753,11 @@ export const daySeasonHighs = (
 					continue;
 				}
 				ctx.saidPlayers.add(p.name);
+				// Nothing above has named him, so whose man: "Marcus Vaughn set
+				// a season high with 32 points" closed a wrap that had not
+				// mentioned the Thunder's game.
 				names.push(
-					`${p.name} set a season high with ${plural(p.pts, "point")}`,
+					`${poss(theNick(t))} ${p.name} set a season high with ${plural(p.pts, "point")}`,
 				);
 			}
 		}
@@ -1762,7 +1775,7 @@ export const daySeasonHighs = (
 		[
 			`${cap(naturalList(all))}.`,
 			`Season bests on the night: ${naturalList(all)}.`,
-			`It was a night for career-best sort of numbers - ${naturalList(all)}.`,
+			`Season highs fell too - ${naturalList(all)}.`,
 		],
 		"dayHighs",
 	);
