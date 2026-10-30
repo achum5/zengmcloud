@@ -16,6 +16,7 @@ import { depthOf } from "../court3d/camera.ts";
 import { FaceLoader } from "../court3d/FaceLoader.tsx";
 import { headColors } from "../court3d/faces.ts";
 import { logoPicture } from "../court3d/logoPicture.ts";
+import { drawn, due, FAST, makePace } from "../court3d/pace.ts";
 import { adjust, artFor, makeResolution } from "../court3d/resolution.ts";
 import { eventsMatchRoster } from "../court3d/rosterMatch.ts";
 import { ScoreBug, type BugRefs } from "../court3d/ScoreBug.tsx";
@@ -600,6 +601,10 @@ const Field3D = ({
 			() => sprites.fine === true,
 		);
 		const res = makeResolution(performance.now() + 1500);
+		// How often it is drawn (see court3d/pace.ts) - and whether this frame
+		// says anything about how fast the device draws (not paused).
+		const pacing = makePace(performance.now() + 1500);
+		let judging = true;
 
 		const tick = (now: number, draw: boolean) => {
 			const p = live.current;
@@ -779,7 +784,17 @@ const Field3D = ({
 				Math.max(1, Math.round(8 / ((7 * art) / dpr))),
 				covers.current.boxes,
 			);
-			if (adjust(res, h * dpr, dt, performance.now() - drawStart, now)) {
+			if (
+				judging &&
+				adjust(
+					res,
+					h * dpr,
+					dt,
+					performance.now() - drawStart,
+					now,
+					sprites.spent,
+				)
+			) {
 				releaseSprites(sprites);
 				sprites = makeSpriteCache();
 				sprites.budget = SPRITE_BUDGET_MS;
@@ -787,7 +802,7 @@ const Field3D = ({
 			// Time to spare, at the finest picture: poses in finer steps - and
 			// back to the usual ones well before that costs a size.
 			const spare = res.drawMs;
-			if (res.coarser > 0 || spare === undefined) {
+			if (res.coarser > 0 || spare === undefined || pacing.fps !== FAST) {
 				sprites.fine = false;
 			} else if (
 				!sprites.fine &&
@@ -862,9 +877,32 @@ const Field3D = ({
 			}
 		};
 
+		// Off the screen - scrolled away to the box score - nothing to draw.
+		let onScreen = true;
+		const seen =
+			typeof IntersectionObserver === "undefined"
+				? undefined
+				: new IntersectionObserver((entries) => {
+						onScreen = entries.some((entry) => entry.isIntersecting);
+					});
+		if (canvasRef.current) {
+			seen?.observe(canvasRef.current);
+		}
 		let raf = requestAnimationFrame(function frame(now) {
-			tick(now, true);
 			raf = requestAnimationFrame(frame);
+			if (!onScreen) {
+				tick(now, false);
+				return;
+			}
+			const s = clock.current;
+			const paused = live.current.paused && !s.stepping && !s.replay;
+			if (!due(pacing, now, paused)) {
+				return;
+			}
+			judging = !paused;
+			const began = performance.now();
+			tick(now, true);
+			drawn(pacing, now, performance.now() - began, paused);
 		});
 		// A background tab gets no animation frames. Keep the game moving anyway
 		// (nothing to draw), or a hidden tab would hold up everyone watching.
@@ -876,6 +914,7 @@ const Field3D = ({
 		return () => {
 			cancelAnimationFrame(raf);
 			clearInterval(interval);
+			seen?.disconnect();
 			releaseSprites(sprites);
 			farm?.stop();
 		};

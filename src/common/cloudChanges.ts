@@ -6,6 +6,11 @@ export type CloudChange = { n: number; date: string; text: string };
 
 export const CLOUD_CHANGES: CloudChange[] = [
 	{
+		n: 64,
+		date: "2026-10-30",
+		text: "Football 3D game: drawn the way the basketball 3D game is - at most 60 frames a second (a 120 Hz screen no longer draws twice as many), a steady 30 on a device that can't keep up, 30 while paused, and nothing at all while it's scrolled off screen. Phones run cooler.",
+	},
+	{
 		n: 63,
 		date: "2026-10-30",
 		text: "Realistic Front Offices with Realistic Free Agency turned off: CPU teams now look at free agents every day instead of most days sitting it out, so decent players no longer sit unsigned all summer.",
